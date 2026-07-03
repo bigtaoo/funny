@@ -149,7 +149,7 @@ function siegeHpView(o: TileDoc): { hp?: number; maxHp?: number } {
 }
 
 
-const emptyResources = (): Record<ResourceType, number> => ({ ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 });
+export const emptyResources = (): Record<ResourceType, number> => ({ ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 });
 
 /**
  * Batch deletion (§17.6): a single deleteMany on a collection with tens of thousands of records would hold
@@ -157,7 +157,7 @@ const emptyResources = (): Record<ResourceType, number> => ({ ink: 0, paper: 0, 
  * documents, yielding the event loop between iterations. Idempotent: re-entry on already-deleted docs is a
  * no-op; eventually consistent. Returns the total number of deleted documents.
  */
-async function deleteInBatches(
+export async function deleteInBatches(
   col: { find: (f: object) => { project: (p: object) => { limit: (n: number) => { toArray: () => Promise<Array<{ _id: string }>> } } }; deleteMany: (f: object) => Promise<{ deletedCount: number }> },
   filter: object,
   batch: number,
@@ -189,20 +189,20 @@ function tileVisionRadius(t: { type: TileType; watchtower?: boolean }): number {
 }
 
 export class WorldCore {
-  private readonly gateway: WorldGatewayClient;
-  private readonly meta: WorldMetaClient;
-  private readonly commercial: WorldCommercialClient;
-  private readonly mail: WorldMailClient;
+  readonly gateway: WorldGatewayClient;
+  readonly meta: WorldMetaClient;
+  readonly commercial: WorldCommercialClient;
+  readonly mail: WorldMailClient;
   /** In-process monotonic sequence number — ensures marchIds do not collide when multiple marches depart within the same millisecond. */
-  private marchSeq = 0;
+  marchSeq = 0;
   /** In-process monotonic sequence number — ensures siegeIds do not collide when multiple sieges resolve within the same millisecond. */
-  private siegeSeq = 0;
+  siegeSeq = 0;
   /** Cached capital coordinate list derived from the current mapW/mapH (lazy-initialized). */
   private _capitals: [number, number][] | null = null;
 
-  private readonly socialsvc: WorldSocialsvcClient;
+  readonly socialsvc: WorldSocialsvcClient;
 
-  constructor(private readonly deps: WorldServiceDeps) {
+  constructor(readonly deps: WorldServiceDeps) {
     this.gateway = deps.gateway ?? nullWorldGatewayClient;
     this.meta = deps.meta ?? nullWorldMetaClient;
     this.commercial = deps.commercial ?? nullWorldCommercialClient;
@@ -217,7 +217,7 @@ export class WorldCore {
     return this._capitals;
   }
 
-  private inBounds(x: number, y: number): boolean {
+  inBounds(x: number, y: number): boolean {
     return x >= 0 && y >= 0 && x < this.deps.mapW && y < this.deps.mapH;
   }
 
@@ -552,7 +552,7 @@ export class WorldCore {
   }
 
   /** G5-2: push a tile change to all observers whose vision covers it (exclude parties already pushed individually, such as the tile owner / defender). */
-  private async pushTileToObservers(t: TileDoc, exclude: ReadonlySet<string>): Promise<void> {
+  async pushTileToObservers(t: TileDoc, exclude: ReadonlySet<string>): Promise<void> {
     const observers = await this.visionObservers(t.worldId, [{ x: t.x, y: t.y }], exclude);
     for (const acct of observers) void this.pushTile(acct, t);
   }
@@ -596,308 +596,6 @@ export class WorldCore {
       ...(doc.baseTroopStock != null ? { baseTroopStock: doc.baseTroopStock } : {}),
       ...(doc.teamState && Object.keys(doc.teamState).length > 0 ? { teamState: doc.teamState } : {}),
     };
-  }
-
-  // ── S8-1: enter world / occupy / abandon ───────────────────────────
-
-  /**
-   * Enter the world: place the capital. Idempotent (returns current state immediately if already joined, no second placement).
-   *
-   * Spawn point (§3.4, decided 2026-06-24): **first entry uses system auto-placement** (prefer near family → fall back to outer newbie ring → whole-map fallback).
-   * Players no longer choose coordinates — only paid relocation (`relocateBase`) / passive relocation after base destruction (`passiveRelocate`) can change position.
-   * The optional `(x,y)` manual placement is retained for internal/test use only (public endpoints never pass coordinates; always auto-place).
-   * Validation: world open + not full (+ manual path: coordinates in bounds / not center/obstacle/gate/stronghold / unoccupied).
-   * Effect: write base TileDoc (with newbie protection shield PROTECTION_SEC) + create playerWorld (full troops + initial yield).
-   */
-  async joinWorld(worldId: string, accountId: string, x?: number, y?: number): Promise<PlayerWorldView> {
-    const { cols, now } = this.deps;
-    const existing = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
-    if (existing) {
-      // Idempotent for a healthy player. But if the stored capital is corrupt/legacy (not a complete
-      // same-owner 3×3, ADR-025) — e.g. a pre-ADR-025 single-tile base — purge all their world data
-      // and fall through to a fresh placement, so they re-enter as a brand-new user. A player with no
-      // mainBaseTile (awaiting voluntary relocation) is treated as healthy and left untouched.
-      const intact = existing.mainBaseTile
-        ? await this.isBaseIntact(worldId, accountId, existing.mainBaseTile)
-        : true;
-      if (intact) return this.getMe(worldId, accountId);
-      await this.purgePlayerWorld(worldId, accountId);
-    }
-
-    // SS7: resolve the familyId read-only mirror once up front (subsequent family changes are not written back;
-    // clients read from /social/family/mine). Used for both auto-spawn placement and the playerWorld mirror below.
-    const familyId = await this.socialsvc.getFamilyId(accountId).catch(() => null) ?? undefined;
-
-    let spawn: { x: number; y: number; level: number; resType?: ResourceType };
-    if (x !== undefined && y !== undefined) {
-      // Manual placement (internal/test): retain the original validation rules.
-      if (!this.inBounds(x, y)) throw new SlgError('OUT_OF_RANGE', 'Capital coordinates out of bounds');
-      const proc = proceduralTile(worldId, x, y);
-      if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'Cannot place capital at the world center');
-      if (proc.type === 'obstacle' || proc.type === 'gate') throw new SlgError('BAD_REQUEST', 'Cannot place capital on obstacle/gate terrain');
-      if (proc.type === 'stronghold') throw new SlgError('BAD_REQUEST', 'Cannot place capital on stronghold terrain');
-      const occ = await cols.tiles.findOne({ _id: tileId(worldId, x, y) });
-      if (occ?.ownerId) throw new SlgError('TILE_OCCUPIED', 'This tile is already occupied');
-      // ADR-025: the capital is a 3×3 building — the whole footprint must fit + be free.
-      if (!(await this.footprintFree(worldId, x, y, this.deps.mapW, this.deps.mapH))) {
-        throw new SlgError('TILE_OCCUPIED', 'The 3×3 capital footprint does not fit / is occupied here');
-      }
-      spawn = { x, y, level: proc.level, ...(proc.resType ? { resType: proc.resType } : {}) };
-    } else {
-      // Auto-placement: prefer near family members → outer newbie ring → whole-map fallback.
-      const spot = await this.pickSpawnTile(worldId, accountId, familyId);
-      if (!spot) throw new SlgError('WORLD_FULL', 'No available spawn tile');
-      spawn = spot;
-    }
-    const tid = tileId(worldId, spawn.x, spawn.y);
-
-    // Capacity guard (enforced only when the world document exists — dev environments without a world document are uncapped).
-    const world = await cols.worlds.findOne({ _id: worldId });
-    if (world) {
-      if (world.status !== 'open' && world.status !== 'active') {
-        throw new SlgError('WORLD_CLOSED', 'World is not open');
-      }
-      const inc = await cols.worlds.findOneAndUpdate(
-        { _id: worldId, status: { $in: ['open', 'active'] }, $expr: { $lt: ['$population', '$capacity'] } },
-        { $inc: { population: 1 } },
-      );
-      if (!inc) throw new SlgError('WORLD_FULL', 'World is at capacity');
-      // The first player to join advances the world from open to active (§17.3 state machine; fixes the `active` stuck value). CAS idempotent.
-      if (inc.status === 'open') {
-        await cols.worlds.updateOne({ _id: worldId, status: 'open' }, { $set: { status: 'active' as const } });
-      }
-    }
-
-    const t = now();
-    // ADR-025: only the anchor contributes the base ink trickle (ring cells add no yield).
-    const yieldRate = this.yieldRecord([{ type: 'base', level: spawn.level }]);
-    // Write all 9 footprint tiles (anchor + 8 ring), idempotent via $setOnInsert like the old single-tile write.
-    const baseDocs = this.baseTileDocs(worldId, spawn.x, spawn.y, accountId, {
-      garrison: GARRISON_PER_TILE,
-      level: spawn.level,
-      ...(spawn.resType ? { resType: spawn.resType } : {}),
-      protectedUntil: t + PROTECTION_SEC * 1000,
-      ...(familyId ? { familyId } : {}),
-    });
-    await Promise.all(
-      baseDocs.map((d) => cols.tiles.updateOne({ _id: d._id }, { $setOnInsert: d }, { upsert: true })),
-    );
-
-    // Home-city building system (SLG_CITY_DESIGN): a fresh capital starts with desk:1; troopCap derives from buildings (drillYard 0 → TROOP_CAP_BASE).
-    const buildings: Partial<Record<BuildingKey, number>> = { desk: 1 };
-    const pw: PlayerWorldDoc = {
-      _id: playerWorldId(worldId, accountId),
-      worldId,
-      accountId,
-      troops: troopCapFor(buildings),
-      troopCap: troopCapFor(buildings),
-      resources: emptyResources(),
-      yieldRate,
-      lastTickAt: t,
-      mainBaseTile: tid,
-      buildings,
-      baseTroopStock: BASE_TROOP_STOCK_INITIAL,
-      ...(familyId ? { familyId } : {}),
-      rev: 0,
-    };
-    await cols.playerWorld.insertOne(pw);
-    return this.getMe(worldId, accountId);
-  }
-
-  /**
-   * Occupy a tile (S8-1 direct occupation, no march travel; S8-2 switches to march occupy).
-   * Validation: joined + coordinates in bounds + not center + enough troops for one garrison unit + target unoccupied by others.
-   * Effect: settle resources first → deduct GARRISON_PER_TILE troops → write territory TileDoc (preserve resource type) → recompute yieldRate.
-   */
-  async occupyTile(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
-    const { cols, now } = this.deps;
-    const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
-    if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
-    if (!this.inBounds(x, y)) throw new SlgError('OUT_OF_RANGE', 'Coordinates out of bounds');
-
-    const proc = proceduralTile(worldId, x, y);
-    if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'World center is contested by sects and cannot be directly occupied');
-    if (proc.type === 'obstacle') throw new SlgError('BAD_REQUEST', 'Obstacle terrain cannot be occupied');
-
-    const tid = tileId(worldId, x, y);
-    const occ = await cols.tiles.findOne({ _id: tid });
-    // ADR-025: a base is a 3×3 indivisible building — no cell (anchor or ring) can be occupied. Take it via siege.
-    if (occ?.type === 'base') throw new SlgError('TILE_OCCUPIED', 'Cannot occupy a capital (siege the base instead)');
-    if (occ?.ownerId === accountId) return this.tileDocView(occ, accountId); // idempotent
-    if (occ?.ownerId) {
-      // Another player's territory: S8-1 has no siege; if protected or otherwise occupied, always reject (take via S8-3 siege).
-      if (occ.protectedUntil && occ.protectedUntil > now()) {
-        throw new SlgError('PROTECTED', 'Target tile is under protection');
-      }
-      throw new SlgError('TILE_OCCUPIED', 'This tile is already occupied (use siege to take it, S8-3)');
-    }
-
-    if (pw.troops < GARRISON_PER_TILE) throw new SlgError('NO_TROOPS', 'Insufficient troops to garrison the tile');
-
-    const t = now();
-    const resources = this.settle(pw, t);
-
-    const resType = proc.resType;
-    const tileDoc: TileDoc = {
-      _id: tid,
-      worldId,
-      x,
-      y,
-      type: 'territory',
-      level: proc.level,
-      ...(resType ? { resType } : {}),
-      ownerId: accountId,
-      garrison: GARRISON_PER_TILE,
-      rev: 0,
-    };
-    await cols.tiles.updateOne({ _id: tid }, { $set: tileDoc }, { upsert: true });
-
-    const yieldRate = await this.recomputeYield(worldId, accountId);
-    await cols.playerWorld.updateOne(
-      { _id: pw._id },
-      {
-        $set: { resources, yieldRate, lastTickAt: t },
-        $inc: { troops: -GARRISON_PER_TILE, rev: 1 },
-      },
-    );
-    const after = await cols.tiles.findOne({ _id: tid });
-    if (after) await this.pushTileToObservers(after, new Set([accountId])); // G5-2: new territory is visible to observers within vision
-    // §17.4 activity increment: direct occupation (S8-1 path) → occupier's family +1 (including prosperity refresh).
-    void this.bumpFamilyActivity(worldId, pw.familyId, 1);
-    return this.tileDocView(after!, accountId);
-  }
-
-  /**
-   * Abandon a tile: refund garrison troops + recompute yield. The capital cannot be abandoned.
-   */
-  async abandonTile(worldId: string, accountId: string, x: number, y: number): Promise<PlayerWorldView> {
-    const { cols, now } = this.deps;
-    const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
-    if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
-
-    const tid = tileId(worldId, x, y);
-    const tile = await cols.tiles.findOne({ _id: tid });
-    if (!tile || tile.ownerId !== accountId) throw new SlgError('TILE_NOT_OWNED', 'Not your territory');
-    // ADR-025: all 9 footprint cells are type:'base', so this single check rejects abandoning anchor OR ring — no change needed.
-    if (tile.type === 'base') throw new SlgError('TILE_NOT_OWNED', 'Cannot abandon the capital');
-
-    const t = now();
-    const resources = this.settle(pw, t);
-    const refund = tile.garrison ?? 0;
-    await cols.tiles.deleteOne({ _id: tid }); // abandon → revert to procedural neutral (sparse storage leaves no empty shell)
-    const yieldRate = await this.recomputeYield(worldId, accountId);
-    await cols.playerWorld.updateOne(
-      { _id: pw._id },
-      {
-        $set: { resources, yieldRate, lastTickAt: t },
-        $inc: { troops: refund, rev: 1 },
-      },
-    );
-    return this.getMe(worldId, accountId);
-  }
-
-  /**
-   * Voluntary relocation (§3.4 / §8.2, available to all players): spend RELOCATE_COST coins to move the capital to a chosen legal empty tile.
-   * Validation: joined + target in bounds + not center/obstacle/gate + unoccupied by anyone. All territory is retained (only passive relocation loses territory).
-   * Effect: deduct coins → delete old base tile → write base tile at new location (carrying old garrison and remaining protection shield) → update mainBaseTile + recompute yield.
-   */
-  async relocateBase(worldId: string, accountId: string, x: number, y: number): Promise<PlayerWorldView> {
-    const { cols, now } = this.deps;
-    const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
-    if (!pw || !pw.mainBaseTile) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
-    if (!this.inBounds(x, y)) throw new SlgError('OUT_OF_RANGE', 'Relocation coordinates out of bounds');
-
-    const newTid = tileId(worldId, x, y);
-    if (newTid === pw.mainBaseTile) return this.getMe(worldId, accountId); // relocating to the same tile = no-op, no charge
-
-    const proc = proceduralTile(worldId, x, y);
-    if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'Cannot place capital at the world center');
-    if (proc.type === 'obstacle' || proc.type === 'gate') throw new SlgError('BAD_REQUEST', 'Cannot place capital on obstacle/gate terrain');
-    if (proc.type === 'stronghold') throw new SlgError('BAD_REQUEST', 'Cannot place capital on stronghold terrain');
-    const occ = await cols.tiles.findOne({ _id: newTid });
-    if (occ?.ownerId) throw new SlgError('TILE_OCCUPIED', 'This tile is already occupied');
-    // ADR-025: the whole 3×3 footprint must fit + be free at the new anchor (ignore our own old base cells).
-    if (!(await this.footprintFree(worldId, x, y, this.deps.mapW, this.deps.mapH, { ignoreOwnerId: accountId }))) {
-      throw new SlgError('TILE_OCCUPIED', 'The 3×3 capital footprint does not fit / is occupied at the new location');
-    }
-
-    // Deduct coins first (failure throws INSUFFICIENT_FUNDS; map state is not modified).
-    const orderId = `slg_relocate:${worldId}:${accountId}:${now()}`;
-    await this.commercial.spend(accountId, RELOCATE_COST, orderId);
-
-    const t = now();
-    const oldBase = await cols.tiles.findOne({ _id: pw.mainBaseTile });
-    const carryGarrison = oldBase?.garrison ?? GARRISON_PER_TILE;
-    const carryProtect = oldBase?.protectedUntil; // carry over the old capital's remaining protection shield (voluntary relocation grants no extension)
-    // ADR-025: a player has exactly one base = its 9 footprint tiles; delete them all.
-    await cols.tiles.deleteMany({ worldId, ownerId: accountId, type: 'base' });
-
-    const baseDocs = this.baseTileDocs(worldId, x, y, accountId, {
-      garrison: carryGarrison,
-      level: proc.level,
-      ...(proc.resType ? { resType: proc.resType } : {}),
-      ...(carryProtect ? { protectedUntil: carryProtect } : {}),
-      ...(pw.familyId ? { familyId: pw.familyId } : {}),
-    });
-    await Promise.all(
-      baseDocs.map((d) => cols.tiles.updateOne({ _id: d._id }, { $set: d }, { upsert: true })),
-    );
-
-    const resources = this.settle(pw, t);
-    const yieldRate = await this.recomputeYield(worldId, accountId);
-    await cols.playerWorld.updateOne(
-      { _id: pw._id },
-      { $set: { resources, yieldRate, mainBaseTile: newTid, lastTickAt: t }, $inc: { rev: 1 } },
-    );
-
-    // Push changes for both the old and new tiles (old address reverts to neutral, new address becomes the capital).
-    const after = await cols.tiles.findOne({ _id: newTid });
-    if (after) {
-      void this.pushTile(accountId, after);
-      await this.pushTileToObservers(after, new Set([accountId])); // G5-2: new capital after relocation is visible to observers
-    }
-    return this.getMe(worldId, accountId);
-  }
-
-  /**
-   * Build a watchtower (§18 G5 V2): spend resources on a player-owned non-capital tile to upgrade it to a
-   * large-radius (VISION_WATCHTOWER_RADIUS) persistent vision source. Persisted with TileDoc — losing the tile
-   * also destroys the tower; no separate refund.
-   * Validation: joined + own territory + not capital (capital has built-in vision). Idempotent: if tower already exists, return current view without charging again.
-   */
-  async buildWatchtower(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
-    const { cols, now } = this.deps;
-    const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
-    if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
-
-    const tid = tileId(worldId, x, y);
-    const tile = await cols.tiles.findOne({ _id: tid });
-    if (!tile || tile.ownerId !== accountId) throw new SlgError('TILE_NOT_OWNED', 'Not your territory');
-    if (tile.type === 'base') throw new SlgError('BAD_REQUEST', 'The capital has built-in vision; a watchtower cannot be built here');
-    if (tile.watchtower) return this.tileDocView(tile, accountId); // idempotent
-
-    // Settle resources first, then validate sufficiency, then deduct (insufficient resources throw INSUFFICIENT_RESOURCES; map state is not modified).
-    const t = now();
-    const resources = this.settle(pw, t);
-    for (const rt of RESOURCE_TYPES) {
-      if ((resources[rt] ?? 0) < (WATCHTOWER_COST[rt] ?? 0)) {
-        throw new SlgError('INSUFFICIENT_RESOURCES', 'Insufficient resources to build a watchtower');
-      }
-    }
-    for (const rt of RESOURCE_TYPES) resources[rt] -= WATCHTOWER_COST[rt] ?? 0;
-
-    await cols.tiles.updateOne({ _id: tid }, { $set: { watchtower: true }, $inc: { rev: 1 } });
-    await cols.playerWorld.updateOne(
-      { _id: pw._id },
-      { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } },
-    );
-
-    const after = await cols.tiles.findOne({ _id: tid });
-    if (after) {
-      void this.pushTile(accountId, after); // owner refetch → expanded vision from the new tower takes effect on next getMap
-      await this.pushTileToObservers(after, new Set([accountId])); // tower is a visible structure; observers within vision also see it
-    }
-    return this.tileDocView(after!, accountId);
   }
 
   // ── S8-2: march / recall / arrival processing ──────────────────────────
@@ -1233,7 +931,7 @@ export class WorldCore {
    * Increment family activity by delta and refresh prosperity (§17.4, server-authoritative, no client write path).
    * Best-effort: failure is logged but does not block the main occupy/siege flow. familyId absent (solo player) → skip.
    */
-  private async bumpFamilyActivity(worldId: string, familyId: string | undefined, delta: number): Promise<void> {
+  async bumpFamilyActivity(worldId: string, familyId: string | undefined, delta: number): Promise<void> {
     if (!familyId) return;
     try {
       await this.socialsvc.bumpActivity(familyId, delta);
@@ -2057,7 +1755,7 @@ export class WorldCore {
    *  2) Fall back to outer newbie ring random (dr > SPAWN_OUTER_MIN_DR, away from the central contest zone).
    *  3) Whole-map random fallback. If none found, return null (treated as world full / no empty tile).
    */
-  private async pickSpawnTile(
+  async pickSpawnTile(
     worldId: string,
     accountId: string,
     familyId?: string,
@@ -2126,7 +1824,7 @@ export class WorldCore {
    * (garrison + level + optional resType), the 8 ring cells are type:'base' placeholders (ownerId + protection,
    * baseRing:true, baseAnchor→anchor tileId, level:1, no garrison/resType/yield). All are indivisible (ADR-025).
    */
-  private baseTileDocs(
+  baseTileDocs(
     worldId: string,
     ax: number,
     ay: number,
@@ -2179,7 +1877,7 @@ export class WorldCore {
    * blocking/reserved procedural type (center/obstacle/gate/stronghold), and no cell is occupied by another
    * player. `ignoreOwnerId` excludes a player's own existing tiles (belt-and-suspenders for relocate).
    */
-  private async footprintFree(
+  async footprintFree(
     worldId: string,
     ax: number,
     ay: number,
@@ -2213,7 +1911,7 @@ export class WorldCore {
    * fails it is corrupt or legacy (e.g. a pre-ADR-025 single-tile capital) and must be purged rather
    * than tolerated — the client renders the city sprite only on a full 3×3 anchor.
    */
-  private async isBaseIntact(worldId: string, accountId: string, mainBaseTile: string): Promise<boolean> {
+  async isBaseIntact(worldId: string, accountId: string, mainBaseTile: string): Promise<boolean> {
     const ax = this.coordX(mainBaseTile);
     const ay = this.coordY(mainBaseTile);
     if (!Number.isFinite(ax) || !Number.isFinite(ay)) return false;
@@ -2233,7 +1931,7 @@ export class WorldCore {
    * player as a brand-new user with a proper 3×3 (ADR-025). Marches/sieges are left to expire
    * naturally (they reference tiles by id and no-op once the tiles are gone).
    */
-  private async purgePlayerWorld(worldId: string, accountId: string): Promise<void> {
+  async purgePlayerWorld(worldId: string, accountId: string): Promise<void> {
     await this.deps.cols.tiles.deleteMany({ worldId, ownerId: accountId });
     await this.deps.cols.playerWorld.deleteOne({ _id: playerWorldId(worldId, accountId) });
   }
@@ -2241,7 +1939,7 @@ export class WorldCore {
   // ── Internal helpers ─────────────────────────────────────────────
 
   /** Lazy resource settlement: resources += yieldRate × dt (hours), capped at the cabinet-adjusted storage cap (SLG_CITY_DESIGN). */
-  private settle(doc: PlayerWorldDoc, now: number): Record<ResourceType, number> {
+  settle(doc: PlayerWorldDoc, now: number): Record<ResourceType, number> {
     const dtHours = Math.max(0, (now - doc.lastTickAt) / 3_600_000);
     const cap = resourceCapFor(doc.buildings);
     const out = emptyResources();
@@ -2253,7 +1951,7 @@ export class WorldCore {
   }
 
   /** Aggregate a list of {type,level,resType} tiles into an hourly yield record. */
-  private yieldRecord(
+  yieldRecord(
     tiles: { type: TileType; level: number; resType?: ResourceType }[],
   ): Record<ResourceType, number> {
     const acc = emptyResources();
@@ -2268,7 +1966,7 @@ export class WorldCore {
    * Recompute the aggregated yield from all currently owned tiles in the DB (called after occupy / abandon / build completion).
    * Single exit for yield (SLG_CITY_DESIGN §5): tile yields → nation production bonus → home-city building multipliers + sticker self-production.
    */
-  private async recomputeYield(
+  async recomputeYield(
     worldId: string,
     accountId: string,
     buildingsOverride?: Partial<Record<BuildingKey, number>>,
@@ -2308,7 +2006,7 @@ export class WorldCore {
     return acc;
   }
 
-  private tileDocView(o: TileDoc, accountId: string, ownerProfile?: PlayerProfile): WorldTileView {
+  tileDocView(o: TileDoc, accountId: string, ownerProfile?: PlayerProfile): WorldTileView {
     return {
       x: o.x,
       y: o.y,
@@ -2410,7 +2108,7 @@ export class WorldCore {
       status: v.status,
     });
   }
-  private async pushTile(accountId: string, t: TileDoc): Promise<void> {
+  async pushTile(accountId: string, t: TileDoc): Promise<void> {
     const ownerProfile = (t.ownerId && this.meta.available)
       ? await this.meta.getProfile(t.ownerId).catch(() => null)
       : null;
@@ -3044,633 +2742,7 @@ export class WorldCore {
     return this.deps.cols.nations.findOne({ _id: nationId });
   }
 
-  // ── S8-7: season management ────────────────────────────────────────
 
-  /** Get world/season info (GET /world/season). */
-  async getSeason(worldId: string): Promise<{
-    worldId: string;
-    season: number;
-    shard: number;
-    status: string;
-    openAt: number;
-    resetAt?: number;
-    capacity: number;
-    population: number;
-    mapW: number;
-    mapH: number;
-  } | null> {
-    const w = await this.deps.cols.worlds.findOne({ _id: worldId });
-    if (!w) return null;
-    return {
-      worldId: w._id,
-      season: w.season,
-      shard: w.shard,
-      status: w.status,
-      openAt: w.openAt,
-      ...(w.resetAt ? { resetAt: w.resetAt } : {}),
-      capacity: w.capacity,
-      population: w.population,
-      mapW: w.mapW,
-      mapH: w.mapH,
-    };
-  }
-
-  /**
-   * Return the highest season number among currently open/active worlds (§20.8).
-   * Used by GET /world/active-season so the client does not need to hard-code CURRENT_SEASON.
-   * Falls back to 1 when no worlds exist yet (dev/test environments).
-   */
-  async getActiveSeasonNo(): Promise<number> {
-    const w = await this.deps.cols.worlds.findOne(
-      { status: { $in: ['open', 'active'] } },
-      { sort: { season: -1 }, projection: { season: 1 } },
-    );
-    return w?.season ?? 1;
-  }
-
-  /**
-   * Open a season: create the world document (idempotent — if it already exists, update status → open).
-   * worldId must have the form `s{season}-{shard}`.
-   */
-  async openSeason(
-    worldId: string,
-    season: number,
-    shard: number,
-    capacity: number,
-  ): Promise<void> {
-    const { cols, now } = this.deps;
-    await cols.worlds.updateOne(
-      { _id: worldId },
-      {
-        $setOnInsert: {
-          _id: worldId,
-          season,
-          shard,
-          mapW: this.deps.mapW,
-          mapH: this.deps.mapH,
-          openAt: now(),
-          capacity,
-          population: 0,
-          rev: 0,
-        },
-        // status is set only in $set (both first insert and reopen set it to open); the same field cannot appear in both $set and $setOnInsert (Mongo upsert conflict).
-        // Pin the engine version on open (C7/§17.9): consistency anchor for authoritative siege / replay. Reopen pins the current process version.
-        $set: { status: 'open' as const, engineVersion: ENGINE_VERSION },
-      },
-      { upsert: true },
-    );
-    // Initialize the 10 capital documents
-    await this.initNations(worldId);
-  }
-
-  /**
-   * Expand a ranking entity to the set of all player accounts it covers (§17.5 reward recipients).
-   * sect → all members of its member families; family → all family members; solo → the occupier themselves. Deduped.
-   */
-  private async expandToAccounts(worldId: string, scope: 'sect' | 'family' | 'solo', id: string): Promise<string[]> {
-    const { cols } = this.deps;
-    if (scope === 'solo') return [id];
-    const familyIds = scope === 'sect'
-      ? (await this.socialsvc.getFamiliesBySect(id)).map((f) => f.familyId)
-      : [id];
-    if (familyIds.length === 0) return [];
-    const members = await cols.playerWorld.find({ worldId, familyId: { $in: familyIds } }).project({ accountId: 1 }).toArray();
-    return [...new Set(members.map((m) => (m as unknown as { accountId: string }).accountId))];
-  }
-
-  /**
-   * Season settlement (settling): rank entities by the number of capitals they occupy (§2.1 grand contest = shard-level ranking of sects by capital count).
-   * Aggregation priority: sect → unaffiliated family → individual (owner), cascading fallback for occupiers with no sect/family.
-   * Settlement only computes rankings; it does not wipe data (data wipe goes through resetSeason). Returns the ranking list (descending by capital count).
-   * `scope` identifies the aggregation dimension: 'sect' | 'family' | 'solo'.
-   */
-  async settleSeason(worldId: string): Promise<Array<{
-    rank: number;
-    scope: 'sect' | 'family' | 'solo';
-    /** Aggregation entity ID (sectId / familyId / ownerId). Field name kept as familyId for backward compatibility with existing callers. */
-    familyId: string;
-    name?: string;
-    nationCount: number;
-    capitalIdxs: number[];
-  }>> {
-    const { cols, now } = this.deps;
-
-    // Mark the season as entering settlement state (§17.3 guard: only active/settling may settle; reentrant safe).
-    // dev/test environments without a world document skip the guard (consistent with joinWorld capacity guard policy) and compute rankings directly.
-    const w = await cols.worlds.findOne({ _id: worldId });
-    if (w) {
-      const moved = await cols.worlds.findOneAndUpdate(
-        { _id: worldId, status: { $in: ['active', 'settling'] } },
-        { $set: { status: 'settling' as const } },
-      );
-      if (!moved) throw new SlgError('WORLD_CLOSED', 'World cannot be settled (must be active/settling)');
-    }
-
-    const nations = await cols.nations.find({ worldId, ownerId: { $exists: true } }).toArray();
-
-    // family → sectId mapping (which sect each occupier's family belongs to), fetched from socialsvc for just the families that occupy a nation.
-    const occupyingFamilyIds = [...new Set(nations.map((n) => n.familyId).filter((id): id is string => !!id))];
-    const fams = await this.socialsvc.getFamiliesByIds(occupyingFamilyIds);
-    const familySect = new Map<string, string | undefined>();
-    const familyName = new Map<string, string>();
-    for (const f of fams) {
-      familySect.set(f.familyId, f.sectId);
-      familyName.set(f.familyId, f.name);
-    }
-    const sectName = new Map<string, string>();
-    for (const s of await cols.sects.find({ worldId }).toArray()) sectName.set(s._id, s.name);
-
-    // Aggregate capital counts by "sect → family → individual" in order of priority.
-    const agg = new Map<string, { scope: 'sect' | 'family' | 'solo'; name?: string; capitalIdxs: number[] }>();
-    for (const n of nations) {
-      let scope: 'sect' | 'family' | 'solo';
-      let key: string;
-      let name: string | undefined;
-      const sid = n.familyId ? familySect.get(n.familyId) : undefined;
-      if (sid) {
-        scope = 'sect'; key = sid; name = sectName.get(sid);
-      } else if (n.familyId) {
-        scope = 'family'; key = n.familyId; name = familyName.get(n.familyId);
-      } else {
-        scope = 'solo'; key = n.ownerId ?? 'solo';
-      }
-      const cur = agg.get(key) ?? { scope, name, capitalIdxs: [] };
-      cur.capitalIdxs.push(n.capitalIdx);
-      agg.set(key, cur);
-    }
-
-    const ranking = [...agg.entries()]
-      .sort((a, b) => b[1].capitalIdxs.length - a[1].capitalIdxs.length)
-      .map(([id, v], i) => ({
-        rank: i + 1,
-        scope: v.scope,
-        familyId: id,
-        ...(v.name ? { name: v.name } : {}),
-        nationCount: v.capitalIdxs.length,
-        capitalIdxs: v.capitalIdxs,
-      }));
-
-    // Persist historical records + dispatch rewards (C1/C2) only when a world document exists (requires the season anchor for dispatchKey / idempotency key).
-    if (w) {
-      // Sect prosperity snapshot (aggregated and refreshed on settle, §17.4) + member family list snapshot (G6 next-season familyShard expansion, §20 R2).
-      const sectProsperity = new Map<string, number>();
-      const sectMemberFamilyIds = new Map<string, string[]>();
-      for (const r of ranking) {
-        if (r.scope === 'sect') {
-          const memberFams = await this.socialsvc.getFamiliesBySect(r.familyId);
-          const sum = aggregateSectProsperity(memberFams, now());
-          sectProsperity.set(r.familyId, sum);
-          sectMemberFamilyIds.set(r.familyId, memberFams.map((f) => f.familyId));
-          await cols.sects.updateOne({ _id: r.familyId }, { $set: { prosperity: sum } });
-        }
-      }
-
-      // ① Persist historical record (C2, idempotent: _id = `${worldId}:s${season}`, $setOnInsert).
-      await cols.seasonResults.updateOne(
-        { _id: `${worldId}:s${w.season}` },
-        {
-          $setOnInsert: {
-            worldId,
-            season: w.season,
-            settledAt: now(),
-            ranking: ranking.map((r) => ({
-              rank: r.rank,
-              scope: r.scope,
-              id: r.familyId,
-              ...(r.name ? { name: r.name } : {}),
-              nationCount: r.nationCount,
-              capitalIdxs: r.capitalIdxs,
-              tier: settleTier(r.rank),
-              ...(r.scope === 'sect' ? {
-                prosperity: sectProsperity.get(r.familyId) ?? 0,
-                memberFamilyIds: sectMemberFamilyIds.get(r.familyId) ?? [],
-              } : {}),
-            })),
-          },
-        },
-        { upsert: true },
-      );
-
-      // ② Dispatch rewards (C1): for each ranking entity, expand to all player accounts under it and send a system mail with attachments (dispatchKey idempotent).
-      for (const r of ranking) {
-        const tier = settleTier(r.rank);
-        const base = SETTLE_REWARDS[tier];
-        const mult = r.capitalIdxs.includes(CENTER_CAPITAL_IDX) ? CENTER_CAPITAL_MULT : 1; // central capital multiplier (§2.4)
-        const items: Record<string, number> = {};
-        for (const [id, n] of Object.entries(base.items)) items[id] = n * mult;
-        const accounts = await this.expandToAccounts(worldId, r.scope, r.familyId);
-        const dispatchKey = `slg-settle:${worldId}:s${w.season}`;
-        const attachments = [
-          // Materials (scrap/lead/binding) are sent to SaveData.materials — the unified progression pool (SLG8) — so kind:'material'
-          // is used rather than the generic 'item' (which lands in inventory.items and is invisible to progression/equipment/auction → orphaned).
-          ...Object.entries(items).filter(([, n]) => n > 0).map(([id, count]) => ({ kind: 'material' as const, id, count })),
-          ...base.skins.map((id) => ({ kind: 'skin' as const, id })),
-          ...(base.coins ? [{ kind: 'coins' as const, count: base.coins }] : []),
-        ];
-        for (const acct of accounts) {
-          void this.mail.sendSystemMail(acct, dispatchKey, {
-            subject: 'slg.settle.subject',
-            body: `slg.settle.body|rank=${r.rank}|tier=${tier}|nations=${r.nationCount}`,
-            attachments,
-            expireDays: 30,
-          });
-          if (base.titleId) {
-            void this.meta.grantTitle(acct, base.titleId).catch((e) =>
-              console.error('[worldsvc] settle grantTitle failed', { acct, titleId: base.titleId, err: (e as Error).message }),
-            );
-          }
-        }
-      }
-
-      // Extra settlement reward for battle-pass holders (S8-8 额外结算奖励档): sent once per holder regardless of tier.
-      const bpPlayers = await cols.playerWorld
-        .find({ worldId, hasBattlePass: true }, { projection: { accountId: 1 } })
-        .toArray();
-      const bpDispatchKey = `slg-settle-bp:${worldId}:s${w.season}`;
-      const bpAttachments = Object.entries(BP_SETTLE_EXTRA.items)
-        .filter(([, n]) => n > 0)
-        .map(([id, count]) => ({ kind: 'material' as const, id, count }));
-      for (const pw of bpPlayers) {
-        void this.mail.sendSystemMail(pw.accountId, bpDispatchKey, {
-          subject: 'slg.settle.bp.subject',
-          body: 'slg.settle.bp.body',
-          attachments: bpAttachments,
-          expireDays: 30,
-        });
-      }
-    }
-
-    return ranking;
-  }
-
-  /**
-   * Season reset (wipe map state; preserve progression + cosmetics + rank, §2.3 SLG4 / §17.6).
-   * Guard (C5): only settling/resetting may reset (settle must persist seasonResults first; prevents skipping settlement and losing history).
-   * State machine: settling → resetting (intermediate) → wipe → open; a crash mid-resetting resumes from resetting on retry (idempotent).
-   * Data wipe is batched (tens of thousands of records, yields the event loop); family membership is preserved but season state is zeroed; engineVersion re-pinned to current process version (C7).
-   */
-  async resetSeason(worldId: string): Promise<{ deleted: Record<string, number> }> {
-    const { cols, now } = this.deps;
-    // ① Status guard + intermediate state (idempotent: already resetting → continue directly).
-    const w = await cols.worlds.findOneAndUpdate(
-      { _id: worldId, status: { $in: ['settling', 'resetting'] } },
-      { $set: { status: 'resetting' as const } },
-    );
-    if (!w) throw new SlgError('WORLD_CLOSED', 'Must settle before resetting');
-
-    // ② Snapshot which families were active in this world (needed to zero their SLG state on socialsvc below — playerWorld is about to be wiped).
-    const activeFamilyIds = [...new Set(
-      (await cols.playerWorld.find({ worldId, familyId: { $exists: true } }).project<{ familyId: string }>({ familyId: 1 }).toArray())
-        .map((p) => p.familyId),
-    )];
-
-    // ③ Batch-delete large collections (tiles/marches/playerWorld/sieges may have tens of thousands of records).
-    const deleted: Record<string, number> = {};
-    for (const c of ['tiles', 'marches', 'playerWorld', 'nations', 'sieges', 'sects', 'sectMessages'] as const) {
-      deleted[c] = await deleteInBatches(cols[c] as never, { worldId }, RESET_DELETE_BATCH);
-    }
-
-    // ④ Zero season state (territory/prosperity/activity reset to 0 + clear sect affiliation) for families that played in this world.
-    // Family identity/membership itself persists across seasons on socialsvc — only the SLG mirror is reset here.
-    await Promise.all(activeFamilyIds.map((fid) => this.socialsvc.resetSlgState(fid)));
-
-    // ⑤ Reopen (re-pin engineVersion to the current process version, C7).
-    await cols.worlds.updateOne(
-      { _id: worldId },
-      { $set: { status: 'open' as const, population: 0, resetAt: now(), engineVersion: ENGINE_VERSION }, $inc: { rev: 1 } },
-    );
-    // Re-initialize capital documents
-    await this.initNations(worldId);
-    return { deleted };
-  }
-
-  /** List all shard world operational summaries (G7/§17.7 admin backend, internal endpoint). */
-  async listWorlds(): Promise<Array<{
-    worldId: string; season: number; shard: number; status: string;
-    population: number; capacity: number; openAt: number; resetAt?: number; engineVersion?: number;
-  }>> {
-    const worlds = await this.deps.cols.worlds.find({}).sort({ season: -1, shard: 1 }).toArray();
-    return worlds.map((w) => ({
-      worldId: w._id,
-      season: w.season,
-      shard: w.shard,
-      status: w.status,
-      population: w.population,
-      capacity: w.capacity,
-      openAt: w.openAt,
-      ...(w.resetAt ? { resetAt: w.resetAt } : {}),
-      ...(w.engineVersion != null ? { engineVersion: w.engineVersion } : {}),
-    }));
-  }
-
-  /** Close a world (archive at end of season). */
-  async closeSeason(worldId: string): Promise<void> {
-    await this.deps.cols.worlds.updateOne(
-      { _id: worldId },
-      { $set: { status: 'closed' as const }, $inc: { rev: 1 } },
-    );
-  }
-
-  // ── G6 multi-shard runtime scheduling (§20) ────────────────────────────
-
-  /**
-   * New season shard orchestration (admin, §20.4): read last season's seasonResults, snake-draft sects by strength for balanced shard assignment,
-   * persist to shardAllocations.familyShard (member families of the same sect land in the same shard; unaffiliated families fill the least-loaded shard),
-   * then call openSeason for each shardIndex. Idempotent (openSeason $setOnInsert + alloc upsert; retry does not create duplicates).
-   */
-  async allocateNextSeason(season: number, capacity: number = WORLD_CAPACITY): Promise<{
-    shardCount: number; worldIds: string[]; allocatedFamilies: number;
-  }> {
-    const { cols, now } = this.deps;
-    const prevSeason = season - 1;
-
-    // ① Read last season's full shard settlement history → SectStrength[] + each sect's member family list.
-    const prevResults = await cols.seasonResults.find({ season: prevSeason }).toArray();
-    const sectStrengths: SectStrength[] = [];
-    const sectFamilies = new Map<string, string[]>(); // sectId (last season) → member familyIds
-    const sectFamilyAll = new Set<string>();          // families already assigned to a sect (used to distinguish unaffiliated families for fill-in)
-    for (const res of prevResults) {
-      for (const r of res.ranking) {
-        if (r.scope !== 'sect') continue;
-        const memberFamilyIds = r.memberFamilyIds ?? [];
-        sectStrengths.push({
-          sectId: r.id,
-          lastSeasonRank: r.rank,
-          memberFamilyCount: memberFamilyIds.length,
-          prosperity: r.prosperity ?? 0,
-        });
-        sectFamilies.set(r.id, memberFamilyIds);
-        for (const fid of memberFamilyIds) sectFamilyAll.add(fid);
-      }
-    }
-
-    // ② shardCount = ceil(last season's total population across all shards / capacity) (first season has no prior season → 0 → 1 shard).
-    const prevWorldIds = (await cols.worlds.find({ season: prevSeason }).project({ _id: 1 }).toArray()).map((w) => w._id);
-    const totalPlayers = prevWorldIds.length > 0
-      ? await cols.playerWorld.countDocuments({ worldId: { $in: prevWorldIds } })
-      : 0;
-    const shardCount = shardCountForPopulation(totalPlayers, capacity);
-
-    // ③ Snake-draft balanced assignment: sect → shardIdx, then expand to member family granularity.
-    const assignment = allocateSectsToShards(sectStrengths, shardCount);
-    const familyShard: Record<string, number> = {};
-    for (const [sectId, idx] of assignment) {
-      for (const fid of sectFamilies.get(sectId) ?? []) familyShard[fid] = idx;
-    }
-    // ④ Unaffiliated families (last season had a family but no sect): deterministic fill-in to the least-loaded shard (even distribution).
-    const shardLoad = new Array(shardCount).fill(0);
-    for (const idx of Object.values(familyShard)) if (idx < shardCount) shardLoad[idx]++;
-    if (prevWorldIds.length > 0) {
-      const looseFamilyIds = [...new Set(
-        (await cols.playerWorld
-          .find({ worldId: { $in: prevWorldIds }, familyId: { $exists: true, $nin: [...sectFamilyAll] } })
-          .project<{ familyId: string }>({ familyId: 1 }).toArray())
-          .map((p) => p.familyId),
-      )].sort();
-      for (const fid of looseFamilyIds) {
-        let min = 0;
-        for (let i = 1; i < shardCount; i++) if (shardLoad[i] < shardLoad[min]) min = i;
-        familyShard[fid] = min;
-        shardLoad[min]++;
-      }
-    }
-
-    // ⑤ Persist shardAllocations (idempotent upsert: retry overwrites the latest allocation; shardCount is incremented later on overflow).
-    await cols.shardAllocations.updateOne(
-      { _id: `s${season}` },
-      { $set: { season, shardCount, capacity, familyShard }, $setOnInsert: { createdAt: now() } },
-      { upsert: true },
-    );
-
-    // ⑥ Open N shard worlds.
-    const worldIds: string[] = [];
-    for (let i = 0; i < shardCount; i++) {
-      const wid = worldShardId(season, i);
-      await this.openSeason(wid, season, i, capacity);
-      worldIds.push(wid);
-    }
-    return { shardCount, worldIds, allocatedFamilies: Object.keys(familyShard).length };
-  }
-
-  /**
-   * Resolve the shard worldId this account should join for the current season (§20.4): sticky > family lookup table > least-loaded open shard > overflow (open new shard).
-   */
-  private async resolveShardForJoin(season: number, accountId: string): Promise<string> {
-    const { cols } = this.deps;
-
-    // ① Sticky: already has a playerWorld in some shard this season → return that worldId (prevents double-joining across shards).
-    const existing = await cols.playerWorld.findOne(
-      { accountId, worldId: { $regex: `^s${season}-` } },
-      { projection: { worldId: 1 } },
-    );
-    if (existing) return existing.worldId;
-
-    const alloc = await cols.shardAllocations.findOne({ _id: `s${season}` });
-
-    // ② Family lookup: last season's family → familyShard table hit (shard must be open/active and not full).
-    if (alloc) {
-      const prevPw = await cols.playerWorld.findOne(
-        { accountId, worldId: { $regex: `^s${season - 1}-` } },
-        { projection: { familyId: 1 } },
-      );
-      const idx = prevPw?.familyId ? alloc.familyShard[prevPw.familyId] : undefined;
-      if (idx != null) {
-        const wid = worldShardId(season, idx);
-        const w = await cols.worlds.findOne({ _id: wid });
-        if (w && (w.status === 'open' || w.status === 'active') && w.population < w.capacity) return wid;
-        // Matched shard is full or not open → fall through to overflow fill-in (preserves balance: still prefer the least-loaded open shard).
-      }
-    }
-
-    // ③ Least-loaded open shard: open/active this season and not full, take the least-loaded by population ascending.
-    const open = await cols.worlds
-      .find({ season, status: { $in: ['open', 'active'] }, $expr: { $lt: ['$population', '$capacity'] } })
-      .sort({ population: 1 }).limit(1).toArray();
-    if (open.length > 0) return open[0]!._id;
-
-    // ④ Overflow: no available shard → open a new shard (idx = alloc.shardCount or current world count), $inc shardCount.
-    const capacity = alloc?.capacity ?? WORLD_CAPACITY;
-    const nextIdx = alloc?.shardCount ?? await cols.worlds.countDocuments({ season });
-    const wid = worldShardId(season, nextIdx);
-    await this.openSeason(wid, season, nextIdx, capacity);
-    await cols.shardAllocations.updateOne({ _id: `s${season}` }, { $inc: { shardCount: 1 } });
-    return wid;
-  }
-
-  /**
-   * Resolve only the shard for this account's current season (player-facing browse entry, §20.5): does not place the capital; lets the client fetch the worldId before entering the map.
-   * Shares resolveShardForJoin with joinSeason (sticky > family lookup > least-loaded open shard > overflow new shard).
-   */
-  async resolveSeasonShard(season: number, accountId: string): Promise<{ worldId: string }> {
-    return { worldId: await this.resolveShardForJoin(season, accountId) };
-  }
-
-  /**
-   * Join by season (player-facing, §20.4): server resolves the shard → joinWorld (system auto-places the capital, §3.4; player does not pass coordinates).
-   * WORLD_FULL (concurrent full) falls back to re-resolving once more (most likely lands in an overflow new shard). Returns the player view with worldId.
-   */
-  async joinSeason(season: number, accountId: string): Promise<PlayerWorldView> {
-    let worldId = await this.resolveShardForJoin(season, accountId);
-    try {
-      return await this.joinWorld(worldId, accountId);
-    } catch (e) {
-      if (e instanceof SlgError && e.code === 'WORLD_FULL') {
-        worldId = await this.resolveShardForJoin(season, accountId);
-        return await this.joinWorld(worldId, accountId);
-      }
-      throw e;
-    }
-  }
-
-  /**
-   * Cross-shard isolation patrol (admin read-only, §20.4): scan for cross-shard leaks — cross-shard marches / players double-joined across shards / orphaned tiles.
-   */
-  async patrolShardIsolation(): Promise<{
-    scannedWorlds: number;
-    crossWorldMarches: { count: number; samples: string[] };
-    multiShardPlayers: { count: number; samples: string[] };
-    orphanTiles: { count: number; samples: string[] };
-  }> {
-    const { cols } = this.deps;
-    const SAMPLE = 20;
-    const scannedWorlds = await cols.worlds.countDocuments({});
-
-    // ① Cross-shard marches: fromTile/toTile prefix ≠ worldId (march references a tile in another shard).
-    const crossMarches: string[] = [];
-    let crossCount = 0;
-    for await (const m of cols.marches.find({}, { projection: { worldId: 1, fromTile: 1, toTile: 1 } })) {
-      const pfx = `${m.worldId}:`;
-      if (!m.fromTile.startsWith(pfx) || !m.toTile.startsWith(pfx)) {
-        crossCount++;
-        if (crossMarches.length < SAMPLE) crossMarches.push(m._id);
-      }
-    }
-
-    // ② Players double-joined: accounts with playerWorld records across multiple worldIds in the same season.
-    const worldSeason = new Map<string, number>(
-      (await cols.worlds.find({}, { projection: { season: 1 } }).toArray()).map((w) => [w._id, w.season]),
-    );
-    const acctWorlds = new Map<string, Map<number, Set<string>>>();
-    for await (const p of cols.playerWorld.find({}, { projection: { accountId: 1, worldId: 1 } })) {
-      const season = worldSeason.get(p.worldId) ?? -1;
-      let byS = acctWorlds.get(p.accountId);
-      if (!byS) { byS = new Map(); acctWorlds.set(p.accountId, byS); }
-      let set = byS.get(season);
-      if (!set) { set = new Set(); byS.set(season, set); }
-      set.add(p.worldId);
-    }
-    const multiSamples: string[] = [];
-    let multiCount = 0;
-    for (const [acct, byS] of acctWorlds) {
-      for (const [season, set] of byS) {
-        if (set.size > 1) {
-          multiCount++;
-          if (multiSamples.length < SAMPLE) multiSamples.push(`${acct}@s${season}:${[...set].join(',')}`);
-        }
-      }
-    }
-
-    // ③ Orphaned tiles: tiles._id prefix ≠ worldId field.
-    const orphanSamples: string[] = [];
-    let orphanCount = 0;
-    for await (const t of cols.tiles.find({}, { projection: { worldId: 1 } })) {
-      if (!t._id.startsWith(`${t.worldId}:`)) {
-        orphanCount++;
-        if (orphanSamples.length < SAMPLE) orphanSamples.push(t._id);
-      }
-    }
-
-    return {
-      scannedWorlds,
-      crossWorldMarches: { count: crossCount, samples: crossMarches },
-      multiShardPlayers: { count: multiCount, samples: multiSamples },
-      orphanTiles: { count: orphanCount, samples: orphanSamples },
-    };
-  }
-
-  // ── S8-8: SLG shop ────────────────────────────────────────
-
-  /**
-   * SLG shop purchase (item definitions in SLG_SHOP_ITEMS).
-   * Deducts coins → takes effect immediately (speedup/resource pack/protection shield/battle pass written to playerWorld).
-   */
-  async buySlgShopItem(worldId: string, accountId: string, itemId: string): Promise<PlayerWorldView> {
-    const item = SLG_SHOP_ITEMS.find((i) => i.id === itemId);
-    if (!item) throw new SlgError('NOT_FOUND', 'Item not found');
-
-    const { cols, now } = this.deps;
-    const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
-    if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
-
-    const orderId = `slg_shop:${worldId}:${accountId}:${itemId}:${now()}`;
-    await this.commercial.spend(accountId, item.cost, orderId);
-
-    const t = now();
-    const resources = this.settle(pw, t);
-
-    if (item.kind === 'troop_speedup') {
-      const secToSpeed = Number(item.effect['duration_sec'] ?? 0);
-      // Simplified version of speedupTraining logic (coins already deducted; operate on queue directly)
-      const queue = (pw.trainingQueue ?? []).slice();
-      let remaining = secToSpeed * 1000;
-      let troopsReady = 0;
-      for (let i = 0; i < queue.length && remaining > 0; ) {
-        const e = queue[i]!;
-        const left = e.completeAt - t;
-        if (remaining >= left) {
-          remaining -= left;
-          troopsReady += e.qty;
-          queue.splice(i, 1);
-        } else {
-          queue[i] = { ...e, completeAt: e.completeAt - remaining };
-          remaining = 0;
-          i++;
-        }
-      }
-      const newTroops = Math.min(pw.troopCap, pw.troops + troopsReady);
-      await cols.playerWorld.updateOne(
-        { _id: pw._id },
-        { $set: { resources, troops: newTroops, trainingQueue: queue, lastTickAt: t }, $inc: { rev: 1 } },
-      );
-    } else if (item.kind === 'resource_pack') {
-      const each = Number(item.effect['each'] ?? 0);
-      for (const rt of RESOURCE_TYPES) {
-        resources[rt] = Math.min(RESOURCE_CAP, (resources[rt] ?? 0) + each);
-      }
-      await cols.playerWorld.updateOne(
-        { _id: pw._id },
-        { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } },
-      );
-    } else if (item.kind === 'protection') {
-      const durSec = Number(item.effect['duration_sec'] ?? 0);
-      const baseId = pw.mainBaseTile;
-      if (baseId) {
-        const existingProtection = await cols.tiles.findOne({ _id: baseId });
-        const currentProtectUntil = existingProtection?.protectedUntil ?? t;
-        const newProtectUntil = Math.max(currentProtectUntil, t) + durSec * 1000;
-        await cols.tiles.updateOne(
-          { _id: baseId },
-          { $set: { protectedUntil: newProtectUntil }, $inc: { rev: 1 } },
-        );
-      }
-      await cols.playerWorld.updateOne(
-        { _id: pw._id },
-        { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } },
-      );
-    } else if (item.kind === 'battle_pass') {
-      await cols.playerWorld.updateOne(
-        { _id: pw._id },
-        { $set: { resources, hasBattlePass: true, lastTickAt: t }, $inc: { rev: 1 } },
-      );
-    }
-
-    return this.getMe(worldId, accountId);
-  }
-
-  /** SLG shop item list (for client display). */
-  getSlgShopItems(): typeof SLG_SHOP_ITEMS {
-    return SLG_SHOP_ITEMS;
-  }
 }
 
 /** Human-readable loot summary (non-zero items only, e.g. "ink+250,metal+40"; empty string if nothing looted). Used directly in siege_result push payloads. */
