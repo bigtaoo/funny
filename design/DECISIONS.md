@@ -305,4 +305,4 @@
 - **已知遗留（不阻塞，v1 可接受）**：`city_atlas.png` 素材是画在方形画布上的建筑图，v1 仍按 `BASE_SPRITE_TILES` 原尺寸贴到菱形 footprint，四角可能有留白/比例不完全贴合菱形俯视角，是否需要重新出图待视觉验收后再定。
 - **为什么**：等距菱形是移动 SLG 的行业惯例观感，且经确认是纯投影变换、不涉及契约/寻路/数据模型改动，改动面收敛在单一文件，值得直接做到位而非留妥协方案。
 - **影响**：新增 [`client/src/render/isoGrid.ts`](../client/src/render/isoGrid.ts)；[`client/src/scenes/WorldMapScene.ts`](../client/src/scenes/WorldMapScene.ts) 渲染层大改（详见文件内注释）；[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.2 补一句视觉呈现说明，避免与"正交网格"表述产生歧义；无服务端/契约改动。
-- **Out of scope（本次不做，已记录跟进）**：地形/据点手绘贴图接入（`terrainAtlasLoader.ts` 及配套图集，已有生成 prompt 清单待产出素材）；据点建筑贴图针对菱形 footprint 的重新出图。
+- **Out of scope（本次不做，已记录跟进）**：地形/据点手绘贴图接入（`terrainAtlasLoader.ts` 及配套图集，出图 prompt 清单见 [`product/slg-terrain-art.md`](product/slg-terrain-art.md)，待产出素材）；据点建筑贴图针对菱形 footprint 的重新出图。
