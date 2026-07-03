@@ -1403,11 +1403,53 @@ export class WorldMapScene implements Scene {
   // Drawn into a separate Graphics above the tile pool. Fast to redraw (~few dozen objects).
 
   /**
+   * Clip a convex polygon to the axis-aligned rect [0,0]–[w,h] (Sutherland–Hodgman).
+   * Returns the clipped vertex list (possibly empty). Used so renderFog's hole polygon
+   * always has viewport-bounded coordinates before it reaches earcut — see renderFog.
+   */
+  private static clipConvexToRect(pts: { x: number; y: number }[], w: number, h: number): { x: number; y: number }[] {
+    // Each edge: inside test + segment-crossing intersection with that edge's line.
+    const edges: [(p: { x: number; y: number }) => boolean, (a: { x: number; y: number }, b: { x: number; y: number }) => { x: number; y: number }][] = [
+      [(p) => p.x >= 0, (a, b) => { const t = (0 - a.x) / (b.x - a.x); return { x: 0, y: a.y + t * (b.y - a.y) }; }],
+      [(p) => p.x <= w, (a, b) => { const t = (w - a.x) / (b.x - a.x); return { x: w, y: a.y + t * (b.y - a.y) }; }],
+      [(p) => p.y >= 0, (a, b) => { const t = (0 - a.y) / (b.y - a.y); return { x: a.x + t * (b.x - a.x), y: 0 }; }],
+      [(p) => p.y <= h, (a, b) => { const t = (h - a.y) / (b.y - a.y); return { x: a.x + t * (b.x - a.x), y: h }; }],
+    ];
+    let poly = pts;
+    for (const [inside, isect] of edges) {
+      if (poly.length === 0) break;
+      const next: { x: number; y: number }[] = [];
+      for (let i = 0; i < poly.length; i++) {
+        const cur = poly[i]!;
+        const prev = poly[(i + poly.length - 1) % poly.length]!;
+        const curIn = inside(cur);
+        const prevIn = inside(prev);
+        if (curIn) {
+          if (!prevIn) next.push(isect(prev, cur));
+          next.push(cur);
+        } else if (prevIn) {
+          next.push(isect(prev, cur));
+        }
+      }
+      poly = next;
+    }
+    return poly;
+  }
+
+  /**
    * Cloud/mist veil over everything outside the map's tile area. The map's tile rectangle
    * (0..mapW-1 × 0..mapH-1) projects to a screen-space parallelogram; we fill the whole
    * viewport with cloud and punch that parallelogram out as a hole, then lay a soft thick
    * stroke along its edge so the map fades into mist rather than ending on a hard diamond.
    * Redrawn from renderOverlay(), which fires on every pan / zoom / data change.
+   *
+   * The map is up to 1500×1500, so the projected parallelogram is enormous — its outer
+   * vertices sit hundreds of thousands of px past the viewport. Feeding that raw polygon
+   * to beginHole() makes PIXI's earcut hole triangulation fail, leaving the cloud rect a
+   * solid fill that blanks the whole map (the "SLG map went blank" regression). So we first
+   * clip the parallelogram to the viewport rect: the hole then has bounded coordinates, and
+   * when the map fully covers the viewport (camera centered on a big map) the clip collapses
+   * to the rect itself → hole == fill → no veil shows, exactly as intended.
    */
   private renderFog(): void {
     const g = this.fogGfx;
@@ -1423,23 +1465,32 @@ export class WorldMapScene implements Scene {
     const right  = tileToScreen(this.mapW - 1, 0, tp);
     const bottom = tileToScreen(this.mapW - 1, this.mapH - 1, tp);
     const left   = tileToScreen(0, this.mapH - 1, tp);
-    const hole = [
-      px + top.x,          py + top.y - hh,
-      px + right.x + hw,   py + right.y,
-      px + bottom.x,       py + bottom.y + hh,
-      px + left.x - hw,    py + left.y,
+    const holePts = [
+      { x: px + top.x,        y: py + top.y - hh },
+      { x: px + right.x + hw, y: py + right.y },
+      { x: px + bottom.x,     y: py + bottom.y + hh },
+      { x: px + left.x - hw,  y: py + left.y },
     ];
+    const clipped = WorldMapScene.clipConvexToRect(holePts, this.w, mapViewH);
     g.beginFill(CLOUD_COLOR, 0.97);
     g.drawRect(0, 0, this.w, mapViewH);
-    g.beginHole();
-    g.drawPolygon(hole);
-    g.endHole();
+    // Only punch a hole when the map actually intersects the viewport; a degenerate clip
+    // (< 3 vertices) means the map is entirely off-screen, so the veil covers everything.
+    if (clipped.length >= 3) {
+      const flat: number[] = [];
+      for (const p of clipped) { flat.push(p.x, p.y); }
+      g.beginHole();
+      g.drawPolygon(flat);
+      g.endHole();
+    }
     g.endFill();
-    // Misty rim: a soft thick stroke straddling the map boundary, blurring the hard tile edge.
+    // Misty rim: a soft thick stroke along the true map boundary (the un-clipped parallelogram,
+    // so the stroke follows real map edges; the mapClip mask trims whatever falls off-screen).
+    const rim = [holePts[0]!.x, holePts[0]!.y, holePts[1]!.x, holePts[1]!.y, holePts[2]!.x, holePts[2]!.y, holePts[3]!.x, holePts[3]!.y];
     g.lineStyle(Math.max(6, tp * 0.55), CLOUD_COLOR, 0.4);
-    g.drawPolygon(hole);
+    g.drawPolygon(rim);
     g.lineStyle(Math.max(3, tp * 0.22), CLOUD_COLOR, 0.55);
-    g.drawPolygon(hole);
+    g.drawPolygon(rim);
     g.lineStyle(0);
   }
 
