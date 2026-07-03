@@ -220,7 +220,7 @@ export class ResultScene implements Scene {
 
     // Mood doodles scribbled in the margins (behind the text/buttons): a little
     // notebook flourish that swings with the result — stars/sparkles on a win,
-    // a snapped pencil + cross-outs on a loss (echoes the "red-pen" art motif).
+    // red cross-outs on a loss (echoes the "red-pen" art motif).
     this.addMoodDeco(isDraw ? 'draw' : (isWin ? 'win' : 'loss'));
 
     const title = new PIXI.Text(headline, {
@@ -370,15 +370,8 @@ export class ResultScene implements Scene {
       spark(w * 0.27, h * 0.40, h * 0.034, 0.75);
       spark(w * 0.88, h * 0.45, h * 0.040, 0.8);
     } else if (mood === 'loss') {
-      // A snapped pencil low-left + a couple of red cross-out scribbles.
-      const wood = 0x9a7b40, lead = 0x444444, red = ui.red;
-      const pw = Math.max(2, h * 0.012);
-      // Pencil body (broken into two offset segments around a snap point).
-      pen.line(w * 0.10, h * 0.62, w * 0.20, h * 0.52, { color: wood, width: pw, jitter: 0.4, taper: 0.9, double: false, alpha: 0.85 });
-      pen.line(w * 0.22, h * 0.50, w * 0.30, h * 0.42, { color: wood, width: pw, jitter: 0.4, taper: 0.9, double: false, alpha: 0.85 });
-      // Exposed lead tips at the break.
-      pen.line(w * 0.20, h * 0.52, w * 0.205, h * 0.515, { color: lead, width: pw * 0.7, jitter: 0.3, taper: 0.8, double: false, alpha: 0.9 });
-      pen.line(w * 0.215, h * 0.505, w * 0.22, h * 0.50, { color: lead, width: pw * 0.7, jitter: 0.3, taper: 0.8, double: false, alpha: 0.9 });
+      // A couple of red cross-out scribbles (echoes the "red-pen" art motif).
+      const red = ui.red;
       // Red cross-out scribbles upper-right.
       const xout = (cx: number, cy: number, s: number, alpha: number): void => {
         pen.line(cx - s, cy - s * 0.6, cx + s, cy + s * 0.6, { color: red, width: Math.max(1.6, s * 0.18), jitter: 0.6, taper: 0.85, double: false, alpha });
