@@ -152,7 +152,7 @@
   - **已知历史 cruft（非本任务范围）**：`art/units/archer/archer.tao.editor.tao.editor`、`.../shield_bearer/shieldbearer.tao.editor.tao.editor` 是早先保存 bug 留下的双扩展名文件；manifest 用规范单扩展名，首次同步会写正确文件，双扩展名残件待单独清理。
 - P3（种子回灌）未开始。
 - **上线 + 云端自动同步（2026-06-23，已合 main）✅**：
-  - **部署实况**：Cloudflare 实际建成的是 **Workers 构建（非 Pages）**——build=`cd tools/animator && npm install && npm run build`，deploy=`npx wrangler versions upload`。故仓库根加 `wrangler/animator.jsonc`（assets-only：`directory ../tools/animator/dist` + SPA 回退；`name: animator` 对齐 Worker 名）。站点 `https://animator.tao-wang-go.workers.dev`。Build variables `NW_SUPABASE_URL` / `NW_SUPABASE_ANON_KEY`（实测线上 bundle 已注入）。
+  - **部署实况（06-23 初始形态，次日即改为 GH Action，见下条 06-24）**：最初 Cloudflare 建成的是 **Workers 构建（非 Pages）**——build=`cd tools/animator && npm install && npm run build`，deploy=`npx wrangler versions upload`。故加 `wrangler/animator.jsonc`（assets-only：`directory ../tools/animator/dist` + SPA 回退；`name: animator` 对齐 Worker 名）。站点 `https://animator.tao-wang-go.workers.dev`。Build variables `NW_SUPABASE_URL` / `NW_SUPABASE_ANON_KEY`（实测线上 bundle 已注入）。
   - **命名统一**：同步桥 `anim-sync.mjs`/`.yml` 改读 `NW_SUPABASE_URL`（与前端同名，省去用户再建无前缀 secret）+ `SUPABASE_SERVICE_KEY`；启用开关是 **repo variable `ANIM_SYNC_ENABLED=true`**（非 secret）。
   - **云端自动同步**：`ui/WorkspacePanel.ts` 新增——绑定槽位（手动存 / 打开时 `bindTo`）、勾选框（偏好存 `localStorage` key `nw-animator:workspaceAutoSync`）、防抖 4s 上传、`visibilitychange` 隐藏时抢存；`io/AutoSaveController.ts` 导出 `DIRTY_EVENTS` 供复用。`tsc` + `webpack` 通过。
   - **v1 限制**：绑定为会话级（刷新后需重新打开/保存才再绑定；开关偏好持久），避免刷新后把内容错写到旧槽位；本地 IndexedDB 自动存仍兜底内容不丢。
