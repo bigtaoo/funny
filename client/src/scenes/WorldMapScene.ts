@@ -1437,10 +1437,17 @@ export class WorldMapScene implements Scene {
         g.lineStyle(enemy ? 2.5 : 1.5, col, enemy ? 0.75 : 0.55);
         g.moveTo(fpx, fpy);
         g.lineTo(px, py);
+        // Directed chevron head at the destination (was a plain dot): a march has a heading
+        // (attack / return / …), so the tip should encode direction. Drawn slightly bolder and
+        // more opaque than the shaft so it reads at a glance. Zero-length march → ang=0 (harmless).
+        const ang = Math.atan2(py - fpy, px - fpx);
+        const headLen = enemy ? 11 : 9;
+        const spread = 0.45; // radians off the shaft on each side
+        g.lineStyle(enemy ? 3 : 2, col, 0.9);
+        g.moveTo(px - Math.cos(ang - spread) * headLen, py - Math.sin(ang - spread) * headLen);
+        g.lineTo(px, py);
+        g.lineTo(px - Math.cos(ang + spread) * headLen, py - Math.sin(ang + spread) * headLen);
         g.lineStyle(0);
-        g.beginFill(col, 0.9);
-        g.drawCircle(px, py, enemy ? 5 : 4);
-        g.endFill();
       }
     }
   }
@@ -1456,7 +1463,12 @@ export class WorldMapScene implements Scene {
     for (let i = 0; i < 10; i++) {
       const rad = i % 2 === 0 ? r : r * 0.45;
       const a = -Math.PI / 2 + (i * Math.PI) / 5;
-      pts.push(cx + Math.cos(a) * rad, cy + Math.sin(a) * rad);
+      // Deterministic per-vertex radius jitter (index-seeded, position-independent) so the
+      // star reads as hand-drawn ink like the rest of the map, yet stays stable across the
+      // ~5s overlay redraws and while panning — no shimmer.
+      const h = Math.sin(i * 12.9898) * 43758.5453;
+      const wob = ((h - Math.floor(h)) - 0.5) * r * 0.14;
+      pts.push(cx + Math.cos(a) * (rad + wob), cy + Math.sin(a) * (rad + wob));
     }
     g.lineStyle(1.5, 0x6a5a20, 0.9);
     if (filled) g.beginFill(color, 0.95);

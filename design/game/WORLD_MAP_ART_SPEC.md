@@ -92,9 +92,9 @@
 
 | 资产名 | 描述 | 尺寸 | 当前程序占位 |
 |---|---|---|---|
-| `marker_capital_owned.png` | 首府星标（已被占领） | 32×32 | 实心五角星金色 |
-| `marker_capital_free.png` | 首府星标（未占领） | 32×32 | 空心五角星米色 |
-| `arrow_attack.png` | 行军箭头—攻击 | 32×8 | 程序直线+圆点 |
+| `marker_capital_owned.png` | 首府星标（已被占领） | 32×32 | 实心五角星金色（保持程序绘制，含手绘抖动，不出图） |
+| `marker_capital_free.png` | 首府星标（未占领） | 32×32 | 空心五角星米色（保持程序绘制，含手绘抖动，不出图） |
+| `arrow_attack.png` | 行军箭头—攻击 | 32×8 | 程序直线+有向箭簇（保持程序绘制，不出图） |
 | `arrow_reinforce.png` | 行军箭头—增援 | 32×8 | 同上 |
 | `arrow_scout.png` | 行军箭头—侦察 | 32×8 | 同上 |
 | `arrow_return.png` | 行军箭头—回师 | 32×8 | 同上 |
@@ -109,6 +109,15 @@
 > attack→`swords`、reinforce→`armor`(盾)、return→`replay`(环箭)、scout→`scope`(望远镜，新增)、
 > occupy→`flag`(旗，新增)。`scope`/`flag` 为本次新增的 SketchPen 图标。
 > 注：这只替换 HUD **列表内**的兵种字形；地图上的**行军连线 `arrow_*`** 仍为程序矢量（见上表，属可选 PNG 升级）。
+
+> **§五 复核与程序 polish（2026-07-03 拍板：三项全部保持程序绘制，不出图）**：
+> `overlay_*` 占领水洗 / `arrow_*` 行军连线 / `marker_capital_*` 首府星标经评估**均维持程序绘制**——
+> 动态阵营色（6 变体 tint）、逐格自适应描边、变长线段几何，转静态 PNG 会牺牲灵活性且收益趋零。
+> 同时落两处不牺牲灵活性的**程序 polish**（`WorldMapScene.ts`）：
+> - **行军箭头**：终点由圆点 → **按线段角度旋转的有向箭簇**（`renderOverlay`），行军方向一眼可读；
+> - **首府星标**：`drawStar` 顶点加**索引种子、位置无关的确定性半径抖动**，融入手绘笔记本风，
+>   且跨 ~5s 重绘与拖动不闪烁（不用 `Math.random`，用 `sin` 哈希）。
+> `overlay_*` 水洗（`drawTileL1` option-3 淡填充+墨色描边）已是最优解，无改动。
 
 ---
 
