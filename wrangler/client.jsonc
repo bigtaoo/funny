@@ -5,16 +5,17 @@
   // 构建（地址烘焙到 api.gamestao.com）：
   //   cd client && NW_API_BASE=https://api.gamestao.com/api \
   //     NW_GATEWAY_WS=wss://api.gamestao.com/gw \
-  //     NW_WORLD_BASE=https://api.gamestao.com npm run build:web
+  //     NW_WORLD_BASE=https://api.gamestao.com \
+  //     NW_SOCIAL_BASE=https://api.gamestao.com npm run build:web
   // 部署（从仓库根读本文件，把 client/dist 作为静态资源发布，无 Worker 脚本）：
-  //   npx wrangler deploy -c wrangler.client.jsonc
+  //   npx wrangler deploy -c wrangler/client.jsonc
   //
   // routes.custom_domain=true 会自动建 DNS + 边缘证书（橙云代理）。
   // 设计：design/product/deploy-cloudflare.md §6
   "name": "nivara-client",
   "compatibility_date": "2025-06-01",
   "assets": {
-    "directory": "./client/dist",
+    "directory": "../client/dist",
     "not_found_handling": "single-page-application"
   },
   "routes": [

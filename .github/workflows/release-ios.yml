@@ -1,0 +1,147 @@
+name: iOS - Build & Release
+
+# Builds the native iOS app (Capacitor shell wrapping client/dist) and uploads to App Store Connect.
+# Trigger: push a tag `ios-v*` (e.g. ios-v1.0.0), or run manually.
+# Flow: npm ci → build:mobile (bakes api.gamestao.com) → cap sync ios → xcodebuild archive/export → altool upload.
+# Full setup + required secrets: design/game/IOS_RELEASE.md.
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   BUILD_CERTIFICATE_BASE64        Apple Distribution cert (.p12) base64
+#   P12_PASSWORD                    password for that .p12
+#   KEYCHAIN_PASSWORD               any string; temp keychain password on the runner
+#   BUILD_PROVISION_PROFILE_BASE64  App Store provisioning profile (.mobileprovision) base64
+#   PROVISIONING_PROFILE_NAME       the profile's name (as shown in the Developer portal)
+#   APPLE_TEAM_ID                   10-char Team ID
+#   ASC_API_KEY_ID                  App Store Connect API key id
+#   ASC_API_ISSUER_ID              App Store Connect API issuer id
+#   ASC_API_KEY_CONTENT_BASE64      the API key .p8 file, base64
+
+on:
+  push:
+    tags:
+      - 'ios-v*'
+  workflow_dispatch:
+    inputs:
+      destination:
+        description: 'Upload destination'
+        required: true
+        default: 'testflight'
+        type: choice
+        options:
+          - testflight
+          - appstore
+
+jobs:
+  build-and-publish:
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install dependencies
+        working-directory: client
+        run: npm ci
+
+      # Outputs client/dist with production backend addresses baked in (webpack mobile target
+      # defaults to api.gamestao.com; env here is an explicit override / documentation).
+      - name: Build web bundle (mobile target)
+        working-directory: client
+        env:
+          NW_API_BASE: https://api.gamestao.com/api
+          NW_GATEWAY_WS: wss://api.gamestao.com/gw
+          NW_WORLD_BASE: https://api.gamestao.com
+          NW_SOCIAL_BASE: https://api.gamestao.com
+        run: npm run build:mobile
+
+      # Regenerates client/ios/App/App/public from dist and runs pod install.
+      - name: Sync Capacitor (ios)
+        working-directory: client
+        run: npx cap sync ios
+
+      - name: Set build number
+        working-directory: client/ios/App
+        run: agvtool new-version -all ${{ github.run_number }}
+
+      - name: Import signing certificate
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          p12-password: ${{ secrets.P12_PASSWORD }}
+          keychain-password: ${{ secrets.KEYCHAIN_PASSWORD }}
+
+      - name: Install provisioning profile
+        run: |
+          PP_PATH=$RUNNER_TEMP/profile.mobileprovision
+          echo -n "${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}" | base64 --decode -o $PP_PATH
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles/
+
+      - name: Generate ExportOptions.plist
+        run: |
+          cat > client/ios/ExportOptions.plist << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>app-store</string>
+              <key>teamID</key>
+              <string>${{ secrets.APPLE_TEAM_ID }}</string>
+              <key>uploadSymbols</key>
+              <true/>
+              <key>compileBitcode</key>
+              <false/>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>provisioningProfiles</key>
+              <dict>
+                  <key>com.gamestao.nivara</key>
+                  <string>${{ secrets.PROVISIONING_PROFILE_NAME }}</string>
+              </dict>
+          </dict>
+          </plist>
+          EOF
+
+      - name: Build IPA (xcodebuild)
+        run: |
+          xcodebuild \
+            -workspace client/ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -archivePath $RUNNER_TEMP/App.xcarchive \
+            archive \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="iPhone Distribution" \
+            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
+            PROVISIONING_PROFILE_SPECIFIER="${{ secrets.PROVISIONING_PROFILE_NAME }}"
+
+          xcodebuild \
+            -exportArchive \
+            -archivePath $RUNNER_TEMP/App.xcarchive \
+            -exportOptionsPlist client/ios/ExportOptions.plist \
+            -exportPath $RUNNER_TEMP/ipa
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: App.ipa
+          path: ${{ runner.temp }}/ipa/*.ipa
+
+      - name: Upload to App Store Connect
+        run: |
+          mkdir -p ~/private_keys
+          echo -n "${{ secrets.ASC_API_KEY_CONTENT_BASE64 }}" | base64 --decode > ~/private_keys/AuthKey_${{ secrets.ASC_API_KEY_ID }}.p8
+          xcrun altool \
+            --upload-app \
+            --type ios \
+            --file "$RUNNER_TEMP/ipa/App.ipa" \
+            --apiKey "${{ secrets.ASC_API_KEY_ID }}" \
+            --apiIssuer "${{ secrets.ASC_API_ISSUER_ID }}"

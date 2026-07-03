@@ -38,6 +38,7 @@ import {
   defaultPvpDeck, validatePvpDeckClient, getPvpUnlockedCards, PVP_DECK_SIZE,
 } from '../game/meta/pvpLoadout';
 import type { ProfileData } from '../render/ProfilePopup';
+import type { IconKind } from '../render/icons';
 import type { AuthOutcome } from '../scenes/LoginScene';
 import type { RenameOutcome } from '../scenes/SettingsScene';
 import type { EloResult } from '../scenes/ResultScene';
@@ -562,6 +563,17 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     });
   }
 
+  /**
+   * The player's PvP deck resolved against their *current* ELO (PVP_LOADOUT §3): the saved deck if it
+   * still validates, else the default base deck. Shared by ranked queue, friendly rooms, and PvP-vs-AI
+   * so all three apply the same unlock gate (a dropped-ELO player loses high-tier units everywhere).
+   */
+  function resolvePvpDeck(): string[] {
+    const d = saveManager.get().pvpDeck;
+    if (d && validatePvpDeckClient(d, saveManager.get().pvp.elo) === null) return d;
+    return defaultPvpDeck();
+  }
+
   function goRoom(opts?: { autoRanked?: boolean }): void {
     inLobby = false;
     analytics.track('screen_view', { scene: 'RoomScene', ranked: !!opts?.autoRanked });
@@ -573,11 +585,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
         gatewayUrl,
       });
     }
-    const getSavedDeck = (): string[] => {
-      const d = saveManager.get().pvpDeck;
-      if (d && validatePvpDeckClient(d, saveManager.get().pvp.elo) === null) return d;
-      return defaultPvpDeck();
-    };
+    const getSavedDeck = resolvePvpDeck;
     let rankedQueued = false;
     const queueRanked = (): void => {
       if (rankedQueued) return;
@@ -594,8 +602,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
         if (session) session.handlers = { onMatchStart: (info) => goGameNet(info) };
         goLobby();
       },
-      createRoom() { analytics.track('pvp_room_create', { mode: 'friendly' }); session?.createRoom(); },
-      joinRoom(code: string) { session?.joinRoom(code); },
+      createRoom() { analytics.track('pvp_room_create', { mode: 'friendly' }); session?.createRoom(getSavedDeck()); },
+      joinRoom(code: string) { session?.joinRoom(code, getSavedDeck()); },
       setReady(ready: boolean) { session?.setReady(ready); },
       startMatch() { session?.startMatch(); },
       createRanked() { analytics.track('pvp_room_create', { mode: 'ranked' }); session?.createRanked(getSavedDeck()); },
@@ -1272,6 +1280,10 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       },
     }, {
       equippedSkin: saveManager.get().equipped[EQUIP_SLOT] ?? null,
+      // PvP-vs-AI must honour the same ELO card-unlock gate as online PvP (PVP_LOADOUT §3/§6.3):
+      // filter both sides' draw pool to the player's current-elo-validated deck (mirror match).
+      // Without this the local engine draws from the full pool and leaks locked units (runner/splitter/…).
+      decks: (() => { const d = resolvePvpDeck(); return { top: d, bottom: d }; })(),
       ...(opts?.seed !== undefined ? { seed: opts.seed } : {}),
     });
   }
@@ -1337,7 +1349,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     views.showCollection({
       onBack: back,
       initialTab,
-      ...(api && equipLoggedIn ? { onOpenEquipment: () => goEquipment(() => goCollection(back, initialTab), true) } : {}),
+      ...(api && equipLoggedIn ? { onOpenEquipment: () => goEquipment(() => goCollection(back, initialTab), 'collection') } : {}),
       getSkins: () => saveManager.get().inventory.skins,
       getEquipped: () => saveManager.get().equipped[EQUIP_SLOT] ?? null,
       equip: (skinId) => {
@@ -1381,7 +1393,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
         } catch { return { ok: false as const, key: 'roster.err.generic' as TranslationKey }; }
       },
       // Per-card gear editing (CC-1 flow: CardScene → EquipmentScene → back to roster).
-      openEquipment: (cardInstanceId: string) => goEquipment(() => goCardRoster(back), false, cardInstanceId),
+      openEquipment: (cardInstanceId: string) => goEquipment(() => goCardRoster(back), 'none', cardInstanceId),
+      // Standalone equipment bag as a roster peer (LOBBY_IA): [Cards|Equipment] group; no active card.
+      openEquipmentBag: () => goEquipment(() => goCardRoster(back), 'roster', ''),
     });
   }
 
@@ -1409,17 +1423,22 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
    * the campaign map (default back) or the "Growth" tab (LOBBY_IA_REDESIGN §3, back=collection page);
    * `back` determines where the user returns to.
    */
-  function goEquipment(back: () => void = goCampaignMap, inCollectionGroup = false, cardInstanceId = ''): void {
+  function goEquipment(back: () => void = goCampaignMap, group: 'none' | 'collection' | 'roster' = 'none', cardInstanceId = ''): void {
     if (!api) { back(); return; }
     const client = api;
     inLobby = false;
     analytics.track('screen_view', { scene: 'EquipmentScene' });
+    // Growth group peer tabs (LOBBY_IA_REDESIGN P1.5): a top [<peer>|Equipment] strip is shown when
+    // entered from the collection page ([Collection|Equipment]) or the card roster ([Cards|Equipment]);
+    // tapping the peer navigates back (= back). Campaign / per-card entry does not inject this → plain back.
+    const peerTab = group === 'collection'
+      ? { labelKey: 'collection.title' as TranslationKey, icon: 'book' as IconKind, onSelect: () => back() }
+      : group === 'roster'
+        ? { labelKey: 'roster.title' as TranslationKey, icon: 'cards' as IconKind, onSelect: () => back() }
+        : undefined;
     views.showEquipment({
       onBack() { back(); },
-      // Growth group peer tabs (LOBBY_IA_REDESIGN P1.5): when entered from the collection page, a
-      // top [Collection|Equipment] tab bar is shown; tapping Collection navigates back to growth (= back).
-      // Campaign-map entry (back=goCampaignMap) does not inject this → plain back only.
-      ...(inCollectionGroup ? { openCollection: () => back() } : {}),
+      ...(peerTab ? { peerTab } : {}),
       activeCardInstanceId: cardInstanceId,
       getSave: () => saveManager.get(),
       async craft(defId: string) {
@@ -1639,8 +1658,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       equippedSkin: saveManager.get().equipped[EQUIP_SLOT] ?? null,
       // Hero Roster → engine (card level + per-card equipment buff blueprints, §9) and to the
       // renderer (worn gear drawn on units, §20.4). PvE-only; PvP omits both (hard wall).
-      cardInstances: toEngineCardInstances(saveManager.get().cardInv),
-      equipmentInv: saveManager.get().equipmentInv,
+      cardInstances: toEngineCardInstances(saveManager.get().cardInv ?? {}),
+      equipmentInv: saveManager.get().equipmentInv ?? {},
     });
   }
 

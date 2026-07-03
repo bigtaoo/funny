@@ -16,7 +16,8 @@ import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
-import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance } from '../game/meta/SaveData';
+import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance, CardInstance } from '../game/meta/SaveData';
+import { CARD_DEFS, cardPower } from '../game/meta/cardDefs';
 import {
   EQUIPMENT_DEFS,
   craftableDefs,
@@ -45,12 +46,14 @@ export type EnhanceResult =
 export interface EquipmentCallbacks {
   onBack(): void;
   /**
-   * Peer-level navigation within the progression group (LOBBY_IA_REDESIGN P1.5).
-   * Injected only in the "Progression" group context (entered from the Collection screen);
-   * when injected, a [Collection|Equipment] tab strip appears below the header, and tapping
-   * Collection returns to the progression view. Not injected from the campaign entry point → plain back.
+   * Peer-level navigation within a progression hub group (LOBBY_IA_REDESIGN P1.5).
+   * Injected only in a group context; when set, a [<peer>|Equipment] tab strip appears below the
+   * header and tapping the peer runs onSelect (back to the sibling scene). Absent from the campaign
+   * entry and the per-card edit entry → no strip, plain back.
+   *   - from Collection : { labelKey: 'collection.title', ... }  → [Collection|Equipment]
+   *   - from Card roster : { labelKey: 'roster.title', ... }      → [Cards|Equipment]
    */
-  openCollection?(): void;
+  peerTab?: { labelKey: TranslationKey; icon?: IconKind; onSelect(): void };
   /** Read the current authoritative save (server pushes after each action → adoptServer; this scene re-reads and redraws). */
   getSave(): SaveData;
   craft(defId: string): Promise<EquipResult>;
@@ -119,11 +122,18 @@ export class EquipmentScene implements Scene {
 
   private activeTab: EquipTab = 'inv';
   /**
-   * Height of the group strip ([Collection|Equipment] within the progression group);
-   * >0 only when openCollection is injected. All body content is offset down by HUD_H + groupH
+   * Height of the group strip ([<peer>|Equipment] within a progression group);
+   * >0 only when peerTab is injected. All body content is offset down by HUD_H + groupH
    * (LOBBY_IA_REDESIGN P1.5).
    */
   private readonly groupH: number;
+  /**
+   * Bag "assign" sub-mode: active only in bag mode (no active card) after tapping Equip on an item.
+   * While set, the inventory list is replaced by a card picker; choosing a card equips instId into slot.
+   */
+  private assign: { instId: string; slot: EquipSlot } | null = null;
+  /** Bag mode = no active card (standalone bag from the roster group); equip then prompts for a card. */
+  private get bag(): boolean { return !this.cb.activeCardInstanceId; }
   private readonly bt = new BusyTracker();
   /** Whether to use the protect-enhance item on the next enhance (E7); state is sticky until the player toggles it. */
   private useProtectEnhance = false;
@@ -154,7 +164,7 @@ export class EquipmentScene implements Scene {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.cb = cb;
-    this.groupH = cb.openCollection ? hubTabsHeight(this.h) : 0;
+    this.groupH = cb.peerTab ? hubTabsHeight(this.h) : 0;
     this.container = new PIXI.Container();
     this.build();
     this.render();
@@ -194,9 +204,15 @@ export class EquipmentScene implements Scene {
     this.hitRects = [];
     this.loadingLayer.removeChildren();
     // Back button (header is static art; its hit lives here so re-render keeps it).
-    this.hitRects.push({ rect: this.backRect, action: () => this.cb.onBack() });
+    // While assigning, Back cancels the card picker rather than leaving the scene.
+    this.hitRects.push({ rect: this.backRect, action: () => (this.assign ? this.cancelAssign() : this.cb.onBack()) });
 
     this.renderGroupTabs();
+    if (this.assign) {
+      this.renderAssign(this.cb.getSave());
+      if (this.bt.loadingVisible) drawLoadingOverlay(this.loadingLayer, this.w, this.h, this.bt.dots, t('common.processing'));
+      return;
+    }
     this.renderTabs();
     this.renderResourceBar();
     if (this.activeTab === 'inv') this.renderInventory();
@@ -211,18 +227,18 @@ export class EquipmentScene implements Scene {
   }
 
   /**
-   * Progression group tab strip [Collection|Equipment] (LOBBY_IA_REDESIGN P1.5): Equipment is active;
-   * tapping Collection returns to the progression view.
-   * Drawn only in the group context (openCollection injected, groupH>0); rendered below the header and above the content tabs.
+   * Progression group tab strip [<peer>|Equipment] (LOBBY_IA_REDESIGN P1.5): Equipment is active;
+   * tapping the peer returns to the sibling scene (Collection or Card roster).
+   * Drawn only in the group context (peerTab injected, groupH>0); rendered below the header and above the content tabs.
    */
   private renderGroupTabs(): void {
-    if (this.groupH <= 0) return;
+    if (this.groupH <= 0 || !this.cb.peerTab) return;
     const tabs: HubTab[] = [
-      { label: t('collection.title'), active: false },
-      { label: t('equip.title'), active: true },
+      { label: t(this.cb.peerTab.labelKey), active: false, icon: this.cb.peerTab.icon },
+      { label: t('equip.title'), active: true, icon: 'armor' },
     ];
     const hits = drawHubTabs(this.bodyLayer, this.w, HUD_H, this.groupH, tabs, (i) => {
-      if (i === 0) this.cb.openCollection?.();
+      if (i === 0) this.cb.peerTab?.onSelect();
     });
     for (const hit of hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
   }
@@ -281,10 +297,10 @@ export class EquipmentScene implements Scene {
   private renderInventory(): void {
     const { w, h } = this;
     const save = this.cb.getSave();
-    const loadoutY = HUD_H + this.groupH + TAB_H + RES_H;
-    this.renderLoadout(save, loadoutY);
-
-    const filterY = loadoutY + LOADOUT_H;
+    // Bag mode (no active card) has no single-card loadout to show; the list starts right below the resource bar.
+    const base = HUD_H + this.groupH + TAB_H + RES_H;
+    let filterY = base;
+    if (!this.bag) { this.renderLoadout(save, base); filterY = base + LOADOUT_H; }
     this.renderSlotFilter(filterY);
     const listY = filterY + FILTER_H;
     const listH = h - listY - 8;
@@ -491,8 +507,8 @@ export class EquipmentScene implements Scene {
       e.x = tagX; e.y = cy + 9; this.bodyLayer.addChild(e); tagX += e.width + 6;
     }
     if (inst.locked) {
-      const l = txt('🔒', 11, C.mid);
-      l.x = tagX; l.y = cy + 8; this.bodyLayer.addChild(l);
+      const l = buildIcon('lock', 14, C.mid);
+      l.x = tagX; l.y = cy + 7; this.bodyLayer.addChild(l);
     }
 
     // Right side: show "Equip ›" in accent color when unequipped (signals actionability); show "›" quietly when equipped.
@@ -652,13 +668,20 @@ export class EquipmentScene implements Scene {
       // Protect-item row (E7): show quantity held + toggle switch.
       const canToggle = protectCount > 0;
       const protecting = this.useProtectEnhance && canToggle;
-      const checkStr = protecting ? '[✓]' : '[ ]';
       const protectColor = canToggle ? (protecting ? C.accent : C.dark) : C.mid;
-      const protectLbl = txt(
-        `${checkStr} ${t('equip.protect')} ×${protectCount}`,
-        10, protectColor,
-      );
-      protectLbl.x = mx + 12; protectLbl.y = cy;
+      // Toggle checkbox: a small ink box, ticked with a hand-drawn check when on (replaces [✓]/[ ]).
+      const boxSz = 14;
+      const box = new PIXI.Graphics();
+      box.lineStyle(1.5, protectColor, 1);
+      box.drawRect(mx + 12, cy, boxSz, boxSz);
+      ml.addChild(box);
+      if (protecting) {
+        const ck = buildIcon('check', boxSz, C.accent);
+        ck.x = mx + 12; ck.y = cy;
+        ml.addChild(ck);
+      }
+      const protectLbl = txt(`${t('equip.protect')} ×${protectCount}`, 10, protectColor);
+      protectLbl.x = mx + 12 + boxSz + 4; protectLbl.y = cy + 2;
       ml.addChild(protectLbl);
       if (canToggle && !this.bt.busy) {
         this.modalHits.push({
@@ -688,9 +711,19 @@ export class EquipmentScene implements Scene {
       buttons.push({ label: t('equip.enhance'), fill: on ? C.dark : C.btnOff, stroke: on ? C.accent : C.mid, on, fn: () => void this.doEnhance(inst.id) });
     }
     if (slot) {
-      buttons.push(equipped
-        ? { label: t('equip.unequip'), fill: 0xf0e0e0, stroke: C.red, on: !this.bt.busy, fn: () => void this.doEquip(slot, null) }
-        : { label: t('equip.equip'), fill: C.dark, stroke: C.green, on: !this.bt.busy, fn: () => void this.doEquip(slot, inst.id) });
+      if (equipped) {
+        // Unequip: in bag mode the item may be on any card → look up its owner; otherwise the active card.
+        buttons.push({ label: t('equip.unequip'), fill: 0xf0e0e0, stroke: C.red, on: !this.bt.busy, fn: () => {
+          const cardId = this.bag ? this.ownerCardId(save, inst.id) : this.cb.activeCardInstanceId;
+          if (cardId) void this.doEquip(slot, null, cardId);
+        } });
+      } else {
+        // Equip: in bag mode we don't know the target card yet → open the card picker; otherwise the active card.
+        buttons.push({ label: t('equip.equip'), fill: C.dark, stroke: C.green, on: !this.bt.busy, fn: () => {
+          if (this.bag) this.beginAssign(inst.id, slot);
+          else void this.doEquip(slot, inst.id, this.cb.activeCardInstanceId);
+        } });
+      }
     }
     if (requiredMatRarity) {
       buttons.push({ label: t('equip.reforge'), fill: reforgeOn ? 0x3355aa : C.btnOff, stroke: reforgeOn ? 0x6688dd : C.mid, on: reforgeOn, fn: () => this.openReforgeSelect(inst) });
@@ -786,11 +819,11 @@ export class EquipmentScene implements Scene {
     }
   }
 
-  private async doEquip(slot: EquipSlot, instanceId: string | null): Promise<void> {
+  private async doEquip(slot: EquipSlot, instanceId: string | null, cardId: string): Promise<void> {
     if (this.bt.busy) return;
     this.bt.start();
     try {
-      const res = await withTimeout(this.cb.equip(slot, instanceId, this.cb.activeCardInstanceId));
+      const res = await withTimeout(this.cb.equip(slot, instanceId, cardId));
       if (res.ok) this.showToast(instanceId ? t('equip.equipped') : t('equip.unequipped'), C.green);
       else this.showToast(t(res.key), C.red);
     } catch (e) {
@@ -799,6 +832,116 @@ export class EquipmentScene implements Scene {
       this.bt.stop();
       this.render();
     }
+  }
+
+  // ── Bag "assign to card" sub-mode ─────────────────────────────────────────
+  // Reached only in bag mode (roster group): tapping Equip on a bag item opens a full-view card
+  // picker (reusing the main drag-scroll), and choosing a card equips the item onto that card.
+
+  /** Find the card currently wearing `instId` in any slot (bag-mode unequip needs the owner). */
+  private ownerCardId(save: SaveData, instId: string): string | null {
+    for (const card of Object.values(save.cardInv ?? {})) {
+      for (const slot of SLOTS) if (card.gear[slot] === instId) return card.id;
+    }
+    return null;
+  }
+
+  private beginAssign(instId: string, slot: EquipSlot): void {
+    this.assign = { instId, slot };
+    this.detailId = null;
+    this.closeModal();
+    this.scrollY = 0;
+    this.render();
+  }
+
+  private cancelAssign(): void {
+    this.assign = null;
+    this.scrollY = 0;
+    this.render();
+  }
+
+  private async doEquipTo(cardId: string): Promise<void> {
+    if (!this.assign || this.bt.busy) return;
+    const { instId, slot } = this.assign;
+    this.assign = null;
+    this.scrollY = 0;
+    await this.doEquip(slot, instId, cardId);
+  }
+
+  /** Full-view card picker shown while assigning a bag item to a card (reuses the main scrollY). */
+  private renderAssign(save: SaveData): void {
+    const { w, h } = this;
+    if (!this.assign) return;
+    const inst = save.equipmentInv[this.assign.instId];
+    if (!inst) { this.assign = null; this.render(); return; }
+    const slot = this.assign.slot;
+
+    const top = HUD_H + this.groupH;
+    const barBg = new PIXI.Graphics();
+    barBg.beginFill(0xf3f1ea).drawRect(0, top, w, RES_H).endFill();
+    this.bodyLayer.addChild(barBg);
+    const title = txt(t('equip.assignTitle').replace('{name}', `${this.itemName(inst.defId)} +${inst.level}`), 12, C.dark, true);
+    title.anchor.set(0.5, 0.5); title.x = w / 2; title.y = top + RES_H / 2;
+    this.bodyLayer.addChild(title);
+
+    const listY = top + RES_H;
+    const listH = h - listY - 8;
+    const cards = Object.values(save.cardInv ?? {});
+    if (cards.length === 0) {
+      const lbl = txt(t('equip.assignEmpty'), 13, C.mid);
+      lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = listY + listH / 2;
+      this.bodyLayer.addChild(lbl);
+      return;
+    }
+
+    const equipInv = save.equipmentInv ?? {};
+    const sorted = [...cards].sort((a, b) => {
+      const pd = cardPower(b, equipInv) - cardPower(a, equipInv);
+      if (pd !== 0) return pd;
+      if (b.level !== a.level) return b.level - a.level;
+      return a.id < b.id ? -1 : 1;
+    });
+    const totalH = sorted.length * ROW_H;
+    this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
+    let cy = listY - this.scrollY;
+    for (const card of sorted) {
+      if (cy + ROW_H >= listY && cy <= listY + listH) this.renderAssignRow(card, cy, slot, save);
+      cy += ROW_H;
+    }
+  }
+
+  private renderAssignRow(card: CardInstance, cy: number, slot: EquipSlot, save: SaveData): void {
+    const { w } = this;
+    const def = CARD_DEFS[card.defId];
+    const row = sketchPanel(w - 12, ROW_H - 4, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(cy, 30, w) });
+    row.x = 6; row.y = cy;
+    this.bodyLayer.addChild(row);
+
+    const factionColor = def?.faction === 'anna' ? 0xcc4466 : 0x4477cc;
+    const dot = new PIXI.Graphics();
+    dot.beginFill(factionColor).drawCircle(0, 0, 5).endFill();
+    dot.x = 18; dot.y = cy + 18;
+    this.bodyLayer.addChild(dot);
+
+    const nameLbl = txt(t(`card.${card.defId}.name` as TranslationKey), 13, C.dark, true);
+    nameLbl.x = 30; nameLbl.y = cy + 8;
+    this.bodyLayer.addChild(nameLbl);
+    const lvLbl = txt(`Lv.${card.level}`, 11, C.mid);
+    lvLbl.x = 30; lvLbl.y = cy + 26;
+    this.bodyLayer.addChild(lvLbl);
+
+    // Current occupant of the target slot (so the player knows an equip here will swap it out).
+    const curId = card.gear[slot];
+    const cur = curId ? save.equipmentInv[curId] : undefined;
+    const curLbl = txt(
+      cur ? t('equip.assignCurrent').replace('{name}', `${this.itemName(cur.defId)} +${cur.level}`) : t('equip.assignSlotFree'),
+      10, cur ? C.gold : C.mid,
+    );
+    curLbl.anchor.set(1, 0.5); curLbl.x = w - 18; curLbl.y = cy + ROW_H / 2 - 2;
+    this.bodyLayer.addChild(curLbl);
+
+    const cardId = card.id;
+    this.hitRects.push({ rect: { x: 6, y: cy, w: w - 12, h: ROW_H - 4 }, action: () => void this.doEquipTo(cardId) });
   }
 
   /** Open the reforge material selection modal (the target item is already set in detailId). */

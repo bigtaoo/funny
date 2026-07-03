@@ -17,10 +17,12 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChild
 import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, NationView, SeasonView, SlgShopItemView } from '../net/WorldApiClient';
 import { WorldApiError } from '../net/WorldApiClient';
 import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult } from '../net/proto/transport';
-import { proceduralTile } from '@nw/shared';
+import { proceduralTile, type ProceduralTile } from '@nw/shared';
 import { loadResAtlas, getResTexture, isResAtlasReady } from '../render/resAtlasLoader';
+import { buildIcon, type IconKind } from '../render/icons';
 import { loadCityAtlas, getCityTexture, isCityAtlasReady } from '../render/cityAtlasLoader';
 import { loadTerrainAtlas, getTerrainTexture, isTerrainAtlasReady, type TerrainTextureName } from '../render/terrainAtlasLoader';
+import { loadBuildingAtlas, getBuildingTexture, isBuildingAtlasReady } from '../render/buildingAtlasLoader';
 import { ISO_RATIO, tileToScreen, screenToTile, screenToTileF, diamondPath, diamondVertices, visibleTileBounds } from '../render/isoGrid';
 
 // ── Public callbacks ────────────────────────────────────────────────────────
@@ -332,6 +334,7 @@ export class WorldMapScene implements Scene {
       loadTerrainAtlas().catch((err) => console.warn('[WorldMapScene] terrain atlas load failed:', err)),
       loadCityAtlas().catch((err) => console.warn('[WorldMapScene] city atlas load failed:', err)),
       loadResAtlas().catch((err) => console.warn('[WorldMapScene] res atlas load failed:', err)),
+      loadBuildingAtlas().catch((err) => console.warn('[WorldMapScene] building atlas load failed:', err)),
     ];
     Promise.allSettled(atlasLoads).then(() => {
       if (this.destroyed) return;
@@ -486,6 +489,23 @@ export class WorldMapScene implements Scene {
     const x = Number(parts[parts.length - 2]);
     const y = Number(parts[parts.length - 1]);
     return [Number.isFinite(x) ? x : 0, Number.isFinite(y) ? y : 0];
+  }
+
+  /**
+   * Strict tile-id parse for rendering (marches): returns null — instead of parseTileId's (0,0)
+   * fallback — when the id is missing/malformed or the coords fall outside the map. A march with a
+   * bad endpoint would otherwise draw a line from the world origin (0,0) straight across the whole
+   * screen (the "stray red line" artifact); callers skip drawing when this returns null.
+   */
+  private parseTileStrict(tileId: string | undefined | null): [number, number] | null {
+    if (!tileId) return null;
+    const parts = tileId.split(':');
+    if (parts.length < 2) return null;
+    const x = Number(parts[parts.length - 2]);
+    const y = Number(parts[parts.length - 1]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    if (x < 0 || y < 0 || x >= this.mapW || y >= this.mapH) return null;
+    return [x, y];
   }
 
   private async loadMapViewport(): Promise<void> {
@@ -759,6 +779,11 @@ export class WorldMapScene implements Scene {
     g.visible = true;
 
     const tile = this.tileCache.get(`${tx}:${ty}`);
+    // Uncached tiles (outside the fetched viewport / never claimed) still have a deterministic
+    // terrain identity — proceduralTile() is computable on either end (§14.2). Without this the
+    // texture/motif layers fell back to 'neutral'→grass on every uncached tile, hiding the whole
+    // map's variety (obstacles / gates / center / biome resources) under one repeated doodle.
+    const proc: ProceduralTile | null = tile ? null : proceduralTile(this.cb.worldId, tx, ty);
     // Terrain fill and ownership are now two separate signals (see ownerTint/terrainFill).
     const fill = tile ? terrainFill(tile) : proceduralTileColor(this.cb.worldId, tx, ty);
     const owner = tile ? ownerTint(tile) : null;
@@ -766,8 +791,8 @@ export class WorldMapScene implements Scene {
 
     if (this.zoom === 1) {
       const isAnchor = tile?.type === 'base' && this.isBaseAnchor(tx, ty);
-      const texName = terrainTextureName(tile?.type ?? 'neutral', tx, ty);
-      this.drawTileL1(g, tile ?? null, fill, owner, fogged, tp, isAnchor, texName);
+      const texName = terrainTextureName(tile?.type ?? proc?.type ?? 'neutral', tx, ty);
+      this.drawTileL1(g, tile ?? null, fill, owner, fogged, tp, isAnchor, texName, proc);
     } else {
       this.drawTileL2(g, fill, owner, fogged, tp);
     }
@@ -802,7 +827,7 @@ export class WorldMapScene implements Scene {
   private drawTileL1(
     g: PIXI.Graphics, tile: WorldTileView | null,
     fill: number, owner: number | null, fogged: boolean, tp: number, isAnchor: boolean,
-    texName: TerrainTextureName,
+    texName: TerrainTextureName, proc: ProceduralTile | null = null,
   ): void {
     const hh = (tp * ISO_RATIO) / 2;
     // Soft sketch grid, then the ground: hand-drawn texture fill once the atlas has
@@ -827,6 +852,18 @@ export class WorldMapScene implements Scene {
     // dimmed motif, no abundance/defense detail), matching "地形可见、局势看不清".
     if (tile?.type === 'resource' && tile.resType) {
       this.drawResMotif(g, tile.resType, tile.level ?? 1, tp, fogged);
+    } else if (!tile && proc && (proc.type === 'resource' || proc.type === 'familyKeep' || proc.type === 'stronghold') && proc.resType) {
+      // Uncached tile: reveal its procedural resource TYPE (the terrain layer is always visible
+      // map-wide, §18 V1 model 2a) so biome zones read as varied instead of uniform grass.
+      this.drawResMotif(g, proc.resType, proc.level, tp, false);
+    }
+
+    // Overlay landmark buildings for chokepoints / NPC strongholds. Like the ground texture,
+    // these are TERRAIN features (their type is procedural, visible map-wide), so they draw
+    // before the fog return, dimmed when fogged. Neutral ink — ownership is the wash below.
+    const featType = tile?.type ?? proc?.type;
+    if (featType === 'familyKeep' || featType === 'stronghold') {
+      this.placeBuildingSprite(g, featType === 'familyKeep' ? 'building_keep' : 'building_stronghold', tp, hh, tp * 1.3, fogged);
     }
 
     // Ownership overlay (option-3): a light wash + colored border, not a full opaque fill —
@@ -885,25 +922,50 @@ export class WorldMapScene implements Scene {
     }
 
     if (tile?.watchtower) {
-      // Was anchored at the square's bottom-center (baseY=tp-5); the diamond analog
-      // is the bottom vertex, nudged up slightly so the tower base still reads as
-      // sitting inside the tile rather than poking past its edge.
-      const tcx = 0;
-      const baseY = hh - 4;
-      const towerW = Math.max(4, tp * 0.18);
-      const towerH = Math.max(7, tp * 0.36);
-      g.lineStyle(1, 0x4a3520, 0.9);
-      g.beginFill(0xe8dcc0, 0.95);
-      g.drawRect(tcx - towerW / 2, baseY - towerH, towerW, towerH);
-      g.endFill();
-      g.beginFill(0x4a3520, 0.95);
-      g.drawPolygon([
-        tcx - towerW / 2 - 1, baseY - towerH,
-        tcx + towerW / 2 + 1, baseY - towerH,
-        tcx, baseY - towerH - towerW,
-      ]);
-      g.endFill();
+      // Hand-drawn watchtower sprite once the atlas is ready; falls back to the geometric
+      // tower until then. Anchored just inside the diamond's bottom vertex so it reads as
+      // standing on the tile rather than poking past its edge.
+      if (!this.placeBuildingSprite(g, 'icon_watchtower', tp, hh, tp * 0.95, false)) {
+        const tcx = 0;
+        const baseY = hh - 4;
+        const towerW = Math.max(4, tp * 0.18);
+        const towerH = Math.max(7, tp * 0.36);
+        g.lineStyle(1, 0x4a3520, 0.9);
+        g.beginFill(0xe8dcc0, 0.95);
+        g.drawRect(tcx - towerW / 2, baseY - towerH, towerW, towerH);
+        g.endFill();
+        g.beginFill(0x4a3520, 0.95);
+        g.drawPolygon([
+          tcx - towerW / 2 - 1, baseY - towerH,
+          tcx + towerW / 2 + 1, baseY - towerH,
+          tcx, baseY - towerH - towerW,
+        ]);
+        g.endFill();
+      }
     }
+  }
+
+  /**
+   * Add a neutral-ink building sprite from building_atlas, anchored bottom-center just inside
+   * the tile's lower vertex so the structure "stands" on the diamond and rises upward.
+   * `targetH` is the on-screen pixel height. Returns false (drawing nothing) if the atlas
+   * isn't ready or the frame is missing, so callers can fall back. Sprite children are cleaned
+   * each redraw by drawTileSlot.
+   */
+  private placeBuildingSprite(
+    g: PIXI.Graphics, name: string, tp: number, hh: number, targetH: number, fogged: boolean,
+  ): boolean {
+    if (!isBuildingAtlasReady()) return false;
+    const tex = getBuildingTexture(name);
+    if (!tex) return false;
+    const sp = new PIXI.Sprite(tex);
+    sp.anchor.set(0.5, 1);
+    sp.scale.set(targetH / tex.height);
+    sp.x = 0;
+    sp.y = hh * 0.72;   // base sits near the lower part of the diamond, below center
+    sp.alpha = fogged ? 0.5 : 1;
+    g.addChild(sp);
+    return true;
   }
 
   /**
@@ -1354,8 +1416,11 @@ export class WorldMapScene implements Scene {
     // March arrows (L1/L2 only; L3 is too zoomed-out for detail).
     if (this.zoom < 3) {
       for (const march of this.marches) {
-        const [fx, fy] = this.parseTileId(march.fromTile);
-        const [tx2, ty2] = this.parseTileId(march.toTile);
+        const fromXY = this.parseTileStrict(march.fromTile);
+        const toXY = this.parseTileStrict(march.toTile);
+        if (!fromXY || !toXY) continue; // skip malformed/out-of-bounds endpoints (no origin-crossing stray line)
+        const [fx, fy] = fromXY;
+        const [tx2, ty2] = toXY;
         const from = tileToScreen(fx, fy, tp);
         const to = tileToScreen(tx2, ty2, tp);
         const fpx = this.panX + from.x;
@@ -1372,10 +1437,17 @@ export class WorldMapScene implements Scene {
         g.lineStyle(enemy ? 2.5 : 1.5, col, enemy ? 0.75 : 0.55);
         g.moveTo(fpx, fpy);
         g.lineTo(px, py);
+        // Directed chevron head at the destination (was a plain dot): a march has a heading
+        // (attack / return / …), so the tip should encode direction. Drawn slightly bolder and
+        // more opaque than the shaft so it reads at a glance. Zero-length march → ang=0 (harmless).
+        const ang = Math.atan2(py - fpy, px - fpx);
+        const headLen = enemy ? 11 : 9;
+        const spread = 0.45; // radians off the shaft on each side
+        g.lineStyle(enemy ? 3 : 2, col, 0.9);
+        g.moveTo(px - Math.cos(ang - spread) * headLen, py - Math.sin(ang - spread) * headLen);
+        g.lineTo(px, py);
+        g.lineTo(px - Math.cos(ang + spread) * headLen, py - Math.sin(ang + spread) * headLen);
         g.lineStyle(0);
-        g.beginFill(col, 0.9);
-        g.drawCircle(px, py, enemy ? 5 : 4);
-        g.endFill();
       }
     }
   }
@@ -1391,7 +1463,12 @@ export class WorldMapScene implements Scene {
     for (let i = 0; i < 10; i++) {
       const rad = i % 2 === 0 ? r : r * 0.45;
       const a = -Math.PI / 2 + (i * Math.PI) / 5;
-      pts.push(cx + Math.cos(a) * rad, cy + Math.sin(a) * rad);
+      // Deterministic per-vertex radius jitter (index-seeded, position-independent) so the
+      // star reads as hand-drawn ink like the rest of the map, yet stays stable across the
+      // ~5s overlay redraws and while panning — no shimmer.
+      const h = Math.sin(i * 12.9898) * 43758.5453;
+      const wob = ((h - Math.floor(h)) - 0.5) * r * 0.14;
+      pts.push(cx + Math.cos(a) * (rad + wob), cy + Math.sin(a) * (rad + wob));
     }
     g.lineStyle(1.5, 0x6a5a20, 0.9);
     if (filled) g.beginFill(color, 0.95);
@@ -1429,19 +1506,40 @@ export class WorldMapScene implements Scene {
         `${t('world.troops')} ${troops}/${troopCap}`,
         `${t('world.territory')} ${territory}`,
       ];
-      const res = this.me.resources ?? {};
-      if (res['ink'] !== undefined) infos.push(`🖋️${res['ink']}`);
-      if (res['paper'] !== undefined) infos.push(`📄${res['paper']}`);
-      if (res['graphite'] !== undefined) infos.push(`✏️${res['graphite']}`);
-      if (res['metal'] !== undefined) infos.push(`🔩${res['metal']}`);
-      if (res['sticker'] !== undefined) infos.push(`⭐${res['sticker']}`);
-
       let ix = 106;
+      const resRowY = h - HUD_H + 18;
       for (const info of infos) {
         const lbl = txt(info, 11, C.dark);
-        lbl.x = ix; lbl.y = h - HUD_H + 18;
+        lbl.x = ix; lbl.y = resRowY;
         hud.addChild(lbl);
         ix += lbl.width + 14;
+      }
+
+      // Resource counts: hand-drawn motif icon (res_atlas, reused from the map tiles) + count,
+      // replacing the earlier emoji glyphs that broke the notebook art style. Falls back to
+      // emoji only while the atlas is still decoding (getResTexture null).
+      const res = this.me.resources ?? {};
+      const RES_EMOJI: Record<string, string> = { ink: '🖋️', paper: '📄', graphite: '✏️', metal: '🔩', sticker: '⭐' };
+      const RES_ICON = 18;
+      for (const rt of ['ink', 'paper', 'graphite', 'metal', 'sticker']) {
+        if (res[rt] === undefined) continue;
+        const tex = getResTexture(rt);
+        if (tex) {
+          const sp = new PIXI.Sprite(tex);
+          sp.width = sp.height = RES_ICON;
+          sp.x = ix; sp.y = resRowY - 4;
+          hud.addChild(sp);
+          ix += RES_ICON + 1;
+          const cnt = txt(`${res[rt]}`, 11, C.dark);
+          cnt.x = ix; cnt.y = resRowY;
+          hud.addChild(cnt);
+          ix += cnt.width + 12;
+        } else {
+          const lbl = txt(`${RES_EMOJI[rt]}${res[rt]}`, 11, C.dark);
+          lbl.x = ix; lbl.y = resRowY;
+          hud.addChild(lbl);
+          ix += lbl.width + 14;
+        }
       }
     }
 
@@ -1468,10 +1566,17 @@ export class WorldMapScene implements Scene {
         const m = myMarches[i];
         const [tx, ty] = this.parseTileId(m.toTile);
         const remaining = Math.max(0, Math.ceil((m.arriveAt - now) / 1000));
-        const kindIcon = m.kind === 'attack' ? '⚔' : m.kind === 'reinforce' ? '🛡' : m.kind === 'scout' ? '🔭' : m.kind === 'return' ? '↩' : '→';
+        // Hand-drawn march-kind glyph (icons.ts) replacing the earlier emoji, to match the
+        // notebook art style. attack→swords, reinforce→shield, scout→scope, return→loop, occupy→flag.
+        const MARCH_KIND_ICON: Record<string, IconKind> = {
+          attack: 'swords', reinforce: 'armor', scout: 'scope', return: 'replay', occupy: 'flag',
+        };
         const rowY = ROW_Y0 + i * MARCH_ROW_H;
-        const rowLbl = txt(`${kindIcon} (${tx},${ty})  ${remaining}s`, 11, C.dark);
-        rowLbl.x = MARCH_PANEL_X; rowLbl.y = rowY + 2;
+        const kindIc = buildIcon(MARCH_KIND_ICON[m.kind] ?? 'flag', 14, C.dark);
+        kindIc.x = MARCH_PANEL_X; kindIc.y = rowY + 1;
+        hud.addChild(kindIc);
+        const rowLbl = txt(`(${tx},${ty})  ${remaining}s`, 11, C.dark);
+        rowLbl.x = MARCH_PANEL_X + 17; rowLbl.y = rowY + 2;
         hud.addChild(rowLbl);
 
         // Recall button (only for non-return marches)
@@ -1559,10 +1664,15 @@ export class WorldMapScene implements Scene {
     const zoomBtn = sketchPanel(zoomW, zoomH, { fill: C.dark, border: C.accent, seed: seedFor(4, 2, zoomW) });
     zoomBtn.x = 8; zoomBtn.y = 8;
     hud.addChild(zoomBtn);
-    const zoomLbl = txt(`🔍 ${zoomLabels[this.zoom] ?? ''}`, 13, C.light);
-    zoomLbl.anchor.set(0.5, 0.5);
-    zoomLbl.x = zoomBtn.x + zoomW / 2; zoomLbl.y = zoomBtn.y + zoomH / 2;
-    hud.addChild(zoomLbl);
+    // Hand-drawn magnifier glyph + the ×N label, centred as a group (replaces the 🔍 emoji).
+    const zIcon = buildIcon('zoom', 16, C.light);
+    const zTxt = txt(zoomLabels[this.zoom] ?? '', 13, C.light);
+    zTxt.anchor.set(0, 0.5);
+    const zGrpW = 16 + 4 + zTxt.width;
+    const zGx = zoomBtn.x + (zoomW - zGrpW) / 2;
+    zIcon.x = zGx; zIcon.y = zoomBtn.y + (zoomH - 16) / 2;
+    zTxt.x = zGx + 20; zTxt.y = zoomBtn.y + zoomH / 2;
+    hud.addChild(zIcon); hud.addChild(zTxt);
     this.zoomBtnRect = { x: zoomBtn.x, y: zoomBtn.y, w: zoomW, h: zoomH };
   }
 
@@ -1618,10 +1728,17 @@ export class WorldMapScene implements Scene {
       const bp = sketchPanel(btnW, 28, { fill: C.dark, border: C.accent, seed: seedFor(bx, by, btnW) });
       bp.x = bx; bp.y = by;
       ml.addChild(bp);
-      const bl = txt(btn.label, 12, C.light);
-      bl.anchor.set(0.5, 0.5);
-      bl.x = bx + btnW / 2; bl.y = by + 14;
-      ml.addChild(bl);
+      // '✕' cancel buttons render the hand-drawn close glyph instead of the bare dingbat.
+      if (btn.label === '✕') {
+        const ic = buildIcon('close', 16, C.light);
+        ic.x = bx + btnW / 2 - 8; ic.y = by + 6;
+        ml.addChild(ic);
+      } else {
+        const bl = txt(btn.label, 12, C.light);
+        bl.anchor.set(0.5, 0.5);
+        bl.x = bx + btnW / 2; bl.y = by + 14;
+        ml.addChild(bl);
+      }
       this.modalBtnRects.push({ rect: { x: bx, y: by, w: btnW, h: 28 }, action: btn.action });
       bx += btnW + MARGIN;
     }
@@ -2057,17 +2174,34 @@ export class WorldMapScene implements Scene {
     ml.addChild(title);
     ly += 26;
 
-    // Resources + yield
+    // Resources + yield — hand-drawn motif icon (res_atlas, reused from the map tiles) + count,
+    // replacing the earlier emoji glyphs. Falls back to emoji while the atlas is still decoding.
     const res = me.resources ?? {};
     const yield_ = me.yieldRate ?? {};
-    const fmt = (icon: string, key: string): string => {
-      const amt = Math.floor(res[key] ?? 0);
-      const yr = yield_[key];
-      return yr ? `${icon}${amt} (+${Math.round(yr)}/${t('world.resYield')})` : `${icon}${amt}`;
+    const RES_EMOJI: Record<string, string> = { ink: '🖋️', paper: '📄', graphite: '✏️', metal: '🔩', sticker: '⭐' };
+    const RES_ICON = 16;
+    const layoutResRow = (types: string[], rowY: number): void => {
+      let rx = px + 14;
+      for (const key of types) {
+        const amt = Math.floor(res[key] ?? 0);
+        const yr = yield_[key];
+        const valStr = yr ? `${amt} (+${Math.round(yr)}/${t('world.resYield')})` : `${amt}`;
+        const tex = getResTexture(key);
+        if (tex) {
+          const sp = new PIXI.Sprite(tex);
+          sp.width = sp.height = RES_ICON;
+          sp.x = rx; sp.y = rowY - 3;
+          ml.addChild(sp);
+          rx += RES_ICON + 2;
+          rx += addText(valStr, rowY, 11, C.dark, rx).width + 14;
+        } else {
+          rx += addText(`${RES_EMOJI[key]}${valStr}`, rowY, 11, C.dark, rx).width + 14;
+        }
+      }
     };
-    addText(`${fmt('🖋️', 'ink')}   ${fmt('📄', 'paper')}   ${fmt('✏️', 'graphite')}`, ly, 11);
+    layoutResRow(['ink', 'paper', 'graphite'], ly);
     ly += 18;
-    addText(`${fmt('🔩', 'metal')}   ${fmt('⭐', 'sticker')}`, ly, 11);
+    layoutResRow(['metal', 'sticker'], ly);
     ly += 20;
 
     // Troops
@@ -2252,7 +2386,10 @@ export class WorldMapScene implements Scene {
           if (ly > bodyBottom) break;
           const name = n.nationName || t('world.nationCol').replace('{idx}', String(n.capitalIdx));
           const mine = !!n.ownerId && n.ownerId === this.cb.accountId;
-          addText(`★ ${name}  (${n.x},${n.y})`, px + 14, ly, 11);
+          const nStar = buildIcon('star', 12, C.gold);
+          nStar.x = px + 14; nStar.y = ly - 1;
+          ml.addChild(nStar);
+          addText(`${name}  (${n.x},${n.y})`, px + 30, ly, 11);
           if (mine) {
             // Owner may rename their capital (server re-checks ownerId).
             const bw = 54;

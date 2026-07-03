@@ -232,11 +232,11 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
       expect(r.data.save.cardInv[cardId].gear.weapon).toBeUndefined();
     });
 
-    it('equip to non-existent card → 404 CARD_NOT_FOUND', async () => {
+    it('equip to non-existent card → 404 NOT_FOUND', async () => {
       await seedEquipInstance('eq3', 'wp_pencil');
       const res = await equip('weapon', 'eq3', 'card_does_not_exist');
       expect(res.statusCode).toBe(404);
-      expect(body(res).error.code).toBe('CARD_NOT_FOUND');
+      expect(body(res).error.code).toBe('NOT_FOUND'); // equipEquipment emits generic NOT_FOUND for a missing card (no CARD_NOT_FOUND code exists)
     });
 
     it('equip two cards with the same equipment → second write moves it (isEquipped check)', async () => {

@@ -131,6 +131,21 @@
 ### 6.3 防作弊
 解锁判定与 deck 合法性校验**全在服务端**（ELO 服务端权威）。客户端无法提交 ELO 未解锁的单位——服务端按玩家**当前** `elo` 算出的已解锁集是唯一真源，非法 deck 直接拒。掉分即掉锁，与匹配分段（同样按当前 elo）保持一致，避免峰值玩家掉到新手分段后仍带高段单位。
 
+### 6.4 门禁覆盖所有 PvP 入口（2026-07-03 补漏）
+> 起因：`tao`（积分 998）匹配 30s 超时后打人机，手牌里出现应被锁的跑兵/裂爽兵。排查发现门禁**只**做在排位入队路径（`enqueueRanked`）上，其余 PvP 入口全部漏判——引擎 PvP 路径在 `config.decks` 缺省时回退到**全卡池** `CARD_DEFINITIONS`，于是把所有锁定单位漏出。
+
+门禁必须覆盖**三条** PvP 入口，全部走同一套「当前 elo → `resolvedDeck` 校验/回退 `defaultPvpDeck`」逻辑：
+
+| 入口 | 之前的漏洞 | 修复 |
+|---|---|---|
+| 排位队列 | —（已正确） | `enqueueRanked`（既有） |
+| 好友/自定义房 | `room_create` 非排位分支 & `room_join` **不取 elo、不校验**，deck 直接透传/为空 | 新增 `createRoomValidated` / `joinRoomValidated`；`RoomJoin` proto 加 `deck` 字段（加入方之前根本不提交卡组）；客户端 `createRoom()`/`joinRoom()` 提交 `getSavedDeck()` |
+| 匹配超时人机（`match_bot`，**本地** AI 局） | 服务器 push 无 deck，客户端 `goGame()→createLocalMatch()` 不传 `decks` → 引擎全卡池 | `goGame` 用 `resolvePvpDeck()` 生成镜像卡组（bottom=人 / top=AI），经 `GameScene`→`matchEngine` 传入引擎 `decks` |
+
+**兜底**：`matchsvc` `startMatch` 把任意空 deck 替换为 `defaultPvpDeck()`，`decks` 恒有值——保证引擎永不落到全卡池（引擎的 `decks` 缺省=全 `CARD_DEFINITIONS` 是 PvE 语义，PvP 绝不允许）。
+
+回归测试：`client/test/pvp-ai-deck-gate.test.ts`（人机局镜像门禁 + 无 deck 时全卡池泄漏对照）、`matchsvc.test.ts`（空 deck→default / 提交 deck 透传）、`gateway-routing.test.ts`（好友房锁牌剔除 + join 透传）。
+
 ---
 
 ## 7. 美术现实 & 遗留

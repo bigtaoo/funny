@@ -1,9 +1,10 @@
 # Local "production-like" full-stack: 9 server processes + main client + 3 tools + mongo + redis, all in Docker.
 #
-#   Start (rebuild from latest code):  docker compose -f docker-compose.local.yml up -d --build
-#   Stop (keep data):                  docker compose -f docker-compose.local.yml down
-#   Stop and wipe DB:                  docker compose -f docker-compose.local.yml down -v
-#   Follow logs:                       docker compose -f docker-compose.local.yml logs -f nginx metaserver worldsvc
+# This file lives in docker/; all build contexts are relative to it (../ = repo root). Prefer ./docker/local-up.ps1.
+#   Start (rebuild from latest code):  docker compose -f docker/docker-compose.local.yml up -d --build
+#   Stop (keep data):                  docker compose -f docker/docker-compose.local.yml down
+#   Stop and wipe DB:                  docker compose -f docker/docker-compose.local.yml down -v
+#   Follow logs:                       docker compose -f docker/docker-compose.local.yml logs -f nginx metaserver worldsvc
 #
 # Frontend URLs (host ports):
 #   http://localhost:8088   Main game (nginx same-origin: SPA + /api REST + /gw control-plane WS + /ws data-plane WS
@@ -24,6 +25,10 @@
 #
 # Code-change isolation: all processes run from images (source snapshotted at build time); editing local code
 # does not affect running containers. After `down`, `up --build` rebuilds images from the latest code.
+
+# Pinned so moving this file into docker/ doesn't change the default project name (was the repo-dir
+# name "funny" when this lived at root) — keeps the existing mongo-data volume and container identities.
+name: funny
 
 services:
   # MongoDB single-node replica set (transactions + change streams). Cluster-internal only, not exposed to the host.
@@ -51,7 +56,7 @@ services:
     restart: unless-stopped
 
   metaserver:
-    build: { context: ./server, dockerfile: Dockerfile }
+    build: { context: ../server, dockerfile: Dockerfile }
     image: nw-server:local
     command: ["node", "metaserver/dist/index.js"]
     environment:
@@ -78,7 +83,7 @@ services:
     restart: unless-stopped
 
   commercial:
-    build: { context: ./server, dockerfile: Dockerfile }
+    build: { context: ../server, dockerfile: Dockerfile }
     image: nw-server:local
     command: ["node", "commercial/dist/index.js"]
     environment:
@@ -92,7 +97,7 @@ services:
     restart: unless-stopped
 
   gateway:
-    build: { context: ./server, dockerfile: Dockerfile }
+    build: { context: ../server, dockerfile: Dockerfile }
     image: nw-server:local
     command: ["node", "gateway/dist/index.js"]
     environment:
@@ -113,7 +118,7 @@ services:
     restart: unless-stopped
 
   matchsvc:
-    build: { context: ./server, dockerfile: Dockerfile }
+    build: { context: ../server, dockerfile: Dockerfile }
     image: nw-server:local
     command: ["node", "matchsvc/dist/index.js"]
     environment:
@@ -127,7 +132,7 @@ services:
     restart: unless-stopped
 
   gameserver:
-    build: { context: ./server, dockerfile: Dockerfile }
+    build: { context: ../server, dockerfile: Dockerfile }
     image: nw-server:local
     command: ["node", "gameserver/dist/index.js"]
     environment:
@@ -144,7 +149,7 @@ services:
 
   # worldsvc: SLG world map, fourth public face (/world /family /auction). Requires Redis; proxied via nginx same-origin.
   worldsvc:
-    build: { context: ./server, dockerfile: Dockerfile }
+    build: { context: ../server, dockerfile: Dockerfile }
     image: nw-server:local
     command: ["node", "worldsvc/dist/index.js"]
     environment:
@@ -169,7 +174,7 @@ services:
   # socialsvc: social fifth public face (/social/*). Family / friends / mail / channels; proxied via nginx same-origin.
   # Pushes real-time events to gateway /gw/push; publicId reverse-lookup via meta /internal. Separate DB: nw_social.
   socialsvc:
-    build: { context: ./server, dockerfile: Dockerfile }
+    build: { context: ../server, dockerfile: Dockerfile }
     image: nw-server:local
     command: ["node", "socialsvc/dist/index.js"]
     environment:
@@ -189,7 +194,7 @@ services:
 
   # analyticsvc: event ingestion + internal queries. Player-facing only via nginx /analytics for event delivery.
   analyticsvc:
-    build: { context: ./server, dockerfile: Dockerfile }
+    build: { context: ../server, dockerfile: Dockerfile }
     image: nw-server:local
     command: ["node", "analyticsvc/dist/index.js"]
     environment:
@@ -206,7 +211,7 @@ services:
 
   # admin: ops backend. The only backend service exposed to the host (ops frontend accesses it cross-origin at :18083).
   admin:
-    build: { context: ./server, dockerfile: Dockerfile }
+    build: { context: ../server, dockerfile: Dockerfile }
     image: nw-server:local
     command: ["node", "admin/dist/index.js"]
     environment:
@@ -236,7 +241,7 @@ services:
   # Build context must be the repo root (context: .) so the webpack @nw/engine alias can resolve server/engine/src.
   nginx:
     build:
-      context: .
+      context: ..
       dockerfile: client/Dockerfile
       args:
         NW_API_BASE: ${NW_PUBLIC_API:-http://localhost:8088/api}
@@ -256,7 +261,7 @@ services:
 
   # ── Tool frontends (pure static files, each in their own nginx container; ports match the dev convention 9091/9092/9093) ──
   animator:
-    build: { context: ./tools/animator, dockerfile: Dockerfile }
+    build: { context: ../tools/animator, dockerfile: Dockerfile }
     image: nw-animator:local
     container_name: nw-local-animator
     ports:
@@ -265,7 +270,7 @@ services:
 
   # level-editor: build context is the repo root so the webpack @game alias can resolve client/src/game.
   level-editor:
-    build: { context: ., dockerfile: tools/level-editor/Dockerfile }
+    build: { context: .., dockerfile: tools/level-editor/Dockerfile }
     image: nw-level-editor:local
     container_name: nw-local-level-editor
     ports:
@@ -274,7 +279,7 @@ services:
 
   # ops: ops admin frontend; browser makes cross-origin calls to the admin backend (default http://localhost:18083).
   ops:
-    build: { context: ./tools/ops, dockerfile: Dockerfile }
+    build: { context: ../tools/ops, dockerfile: Dockerfile }
     image: nw-ops:local
     container_name: nw-local-ops
     ports:

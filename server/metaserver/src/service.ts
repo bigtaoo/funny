@@ -18,6 +18,7 @@ import {
   accrueStats,
   CARD_DEFS,
   levelCardReward,
+  parseCardKey,
   UNIT_CARD_POOL_ID,
   type CardDef,
   makeDropInstance,
@@ -847,10 +848,15 @@ export class MetaService {
     const grant: Record<string, number> = capped ? {} : { ...reward };
     const cardGrant: Record<string, number> = capped ? {} : { ...cardReward };
 
-    // Map unitType → CardDef for the new Hero Roster grant (CHARACTER_CARDS_DESIGN §4)
+    // Map card drop → CardDef for the new Hero Roster grant (CHARACTER_CARDS_DESIGN §4).
+    // levelCardReward returns cardKeys (`${unitId}:${tier}`), so match CARD_DEFS by the unitId parsed
+    // out of the key — not the whole key (a raw `infantry:1` never equals any CardDef.unitType `infantry`).
+    // The drop tier in the key is informational only; Hero Roster instances are granted at a fixed level below.
     const defsToGrant: CardDef[] = [];
-    for (const [unitType, count] of Object.entries(cardGrant)) {
-      const def = Object.values(CARD_DEFS).find((d) => d.unitType === unitType);
+    for (const [key, count] of Object.entries(cardGrant)) {
+      const unitId = parseCardKey(key)?.unitId;
+      if (!unitId) continue;
+      const def = Object.values(CARD_DEFS).find((d) => d.unitType === unitId);
       if (def) for (let i = 0; i < count; i++) defsToGrant.push(def);
     }
 
@@ -874,10 +880,11 @@ export class MetaService {
     });
     if ('error' in out) return out;
 
-    // Card instance grant at level=2 (separate rev loop; compensation coins dropped — [DRAFT: wire commercial])
+    // Card instance grant at level 1 (separate rev loop; compensation coins dropped — [DRAFT: wire commercial]).
+    // Level 1 matches every other card source (starters / auction / gacha, §12); players raise cards via feeding, not the drop tier.
     let latestSave = out.save;
     if (defsToGrant.length > 0) {
-      const cardResult = await grantCards(cols, now, accountId, defsToGrant, 2);
+      const cardResult = await grantCards(cols, now, accountId, defsToGrant);
       if ('error' in cardResult) return cardResult;
       latestSave = cardResult.save;
     }
@@ -2159,8 +2166,8 @@ export class MetaService {
       materialId: string;
       idempotencyKey: string;
     };
-    const { cols, now } = this.deps;
-    const r = await reforgeEquipment(cols, now, accountId, targetId, materialId, idempotencyKey);
+    const { cols, commercial, now } = this.deps;
+    const r = await reforgeEquipment(cols, commercial, now, accountId, targetId, materialId, idempotencyKey);
     if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
     return ok({ instance: r.instance, save: r.save });
   }

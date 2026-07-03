@@ -6,6 +6,7 @@ import { t, TranslationKey } from '../i18n';
 import type { ShopItem } from '../net/ApiClient';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
+import { buildIcon, type IconKind } from '../render/icons';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
@@ -26,6 +27,9 @@ const WEB_COIN_TIERS: CoinTierDef[] = [
   { id: 't4999', usdCents: 4999, base: 5000, coins:  6500 },
   { id: 't9999', usdCents: 9999, base: 10000, coins: 13500 },
 ];
+
+// Per-tier treasure glyph — escalating gold so bigger tiers read richer (ascending order).
+const COIN_TIER_ICONS: IconKind[] = ['coin', 'coins', 'coinStack', 'coinSack', 'coinChest'];
 
 // ── ShopScene (S2-6 + B-PROMO) — direct-purchase shop ────────────────────────
 //
@@ -293,11 +297,17 @@ export class ShopScene implements Scene {
       box.x = x; box.y = y;
       this.container.addChild(box);
       const active = mon.subscriptionExpiry > Date.now();
+      // Treasure-chest glyph flags the monthly card as the richest recurring value.
+      const mIconS = Math.round(rowH * 0.6);
+      const mIcon = buildIcon('coinChest', mIconS, C.gold);
+      mIcon.x = x + Math.round(w * 0.035); mIcon.y = y + (rowH - mIconS) / 2;
+      this.container.addChild(mIcon);
+      const mTextX = x + Math.round(w * 0.035) + mIconS + Math.round(w * 0.025);
       const name = txt(t('shop.monthlyCard'), Math.round(rowH * 0.24), C.dark, true);
-      name.anchor.set(0, 0.5); name.x = x + Math.round(w * 0.04); name.y = y + rowH * 0.34;
+      name.anchor.set(0, 0.5); name.x = mTextX; name.y = y + rowH * 0.34;
       this.container.addChild(name);
       const status = txt(active ? t('shop.monthlyActive') : t('shop.monthlyInactive'), Math.round(rowH * 0.18), active ? C.green : C.mid, true);
-      status.anchor.set(0, 0.5); status.x = x + Math.round(w * 0.04); status.y = y + rowH * 0.68;
+      status.anchor.set(0, 0.5); status.x = mTextX; status.y = y + rowH * 0.68;
       this.container.addChild(status);
       // Buy + Claim buttons (right).
       const bw = Math.round(w * 0.24), bh = Math.round(rowH * 0.5);
@@ -313,9 +323,9 @@ export class ShopScene implements Scene {
 
     // Starter packs: one row each, "已购" when already owned.
     if (this.cb.buyStarter) {
-      const packs: { id: 'starter_draw' | 'starter_growth'; label: TranslationKey }[] = [
-        { id: 'starter_draw', label: 'shop.starterDraw' },
-        { id: 'starter_growth', label: 'shop.starterGrowth' },
+      const packs: { id: 'starter_draw' | 'starter_growth'; label: TranslationKey; icon: IconKind }[] = [
+        { id: 'starter_draw', label: 'shop.starterDraw', icon: 'coins' },
+        { id: 'starter_growth', label: 'shop.starterGrowth', icon: 'coinSack' },
       ];
       for (const pk of packs) {
         const used = mon.starterUsed.includes(pk.id);
@@ -323,8 +333,14 @@ export class ShopScene implements Scene {
         box.x = x; box.y = y;
         sketchAccentBar(box, rowH, C.accent, seedFor(x, rowH, 4));
         this.container.addChild(box);
+        // Coin-pile glyph signals the pack's bundled value.
+        const pIconS = Math.round(rowH * 0.56);
+        const pIcon = buildIcon(pk.icon, pIconS, C.gold);
+        pIcon.x = x + Math.round(w * 0.035); pIcon.y = y + (rowH - pIconS) / 2;
+        this.container.addChild(pIcon);
+        const pTextX = x + Math.round(w * 0.035) + pIconS + Math.round(w * 0.025);
         const name = txt(t(pk.label), Math.round(rowH * 0.22), C.dark, true);
-        name.anchor.set(0, 0.5); name.x = x + Math.round(w * 0.04); name.y = y + rowH * 0.5;
+        name.anchor.set(0, 0.5); name.x = pTextX; name.y = y + rowH * 0.5;
         this.container.addChild(name);
         const bw = Math.round(w * 0.26), bh = Math.round(rowH * 0.56);
         const bx = x + w - bw - Math.round(w * 0.03);
@@ -390,10 +406,15 @@ export class ShopScene implements Scene {
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
-    // Coin balance (top-right).
-    const coins = txt(t('shop.coins', { coins: this.cb.getCoins() }), Math.round(h * 0.026), C.gold, true);
-    coins.anchor.set(1, 0.5); coins.x = w - Math.round(w * 0.04); coins.y = tbH / 2;
-    this.container.addChild(coins);
+    // Coin balance (top-right): coin glyph + number, no "金币：" text prefix — the icon is the unit.
+    const balNum = txt(this.cb.getCoins().toLocaleString(), Math.round(h * 0.028), C.gold, true);
+    balNum.anchor.set(1, 0.5); balNum.x = w - Math.round(w * 0.04); balNum.y = tbH / 2;
+    this.container.addChild(balNum);
+    const balIcon = Math.round(h * 0.036);
+    const bIcon = buildIcon('coin', balIcon, C.gold);
+    bIcon.x = balNum.x - balNum.width - balIcon - Math.round(w * 0.008);
+    bIcon.y = tbH / 2 - balIcon / 2;
+    this.container.addChild(bIcon);
 
     return tbH;
   }
@@ -410,11 +431,11 @@ export class ShopScene implements Scene {
     const showCoins = !!this.cb.rechargeCoins;
 
     const tabs: HubTab[] = [
-      { label: t('shop.title'), active: this.tab === 'shop' },
+      { label: t('shop.title'), active: this.tab === 'shop', icon: 'tag' },
     ];
-    if (showCoins) tabs.push({ label: t('shop.coinsTab'), active: this.tab === 'coins' });
-    tabs.push({ label: t('gacha.title'), active: false });
-    if (this.cb.openBattlePass) tabs.push({ label: t('battlepass.title'), active: false });
+    if (showCoins) tabs.push({ label: t('shop.coinsTab'), active: this.tab === 'coins', icon: 'coin' });
+    tabs.push({ label: t('gacha.title'), active: false, icon: 'capsule' });
+    if (this.cb.openBattlePass) tabs.push({ label: t('battlepass.title'), active: false, icon: 'trophy' });
 
     const hits = drawHubTabs(this.container, w, tbH, stripH, tabs, (i) => {
       if (!showCoins) {
@@ -477,13 +498,27 @@ export class ShopScene implements Scene {
     sketchAccentBar(box, h, C.accent, seedFor(x, h, 3));
     this.container.addChild(box);
 
+    const pad = Math.round(w * 0.04);
+    // Thumbnail: skins are cosmetic → brush glyph (real skin art pending). Gives every row a visual anchor.
+    const thumb = Math.round(h * 0.5);
+    const thumbIcon = buildIcon('brush', thumb, C.accent);
+    thumbIcon.x = x + pad;
+    thumbIcon.y = y + (h - thumb) / 2;
+    this.container.addChild(thumbIcon);
+    const textX = x + pad + thumb + Math.round(w * 0.03);
+
     // Name (placeholder: kind label + id, real skin art/names pending).
     const name = txt(`${t('shop.skinLabel')} · ${item.id}`, Math.round(h * 0.22), C.dark, true);
-    name.anchor.set(0, 0.5); name.x = x + Math.round(w * 0.04); name.y = y + h * 0.36;
+    name.anchor.set(0, 0.5); name.x = textX; name.y = y + h * 0.36;
     this.container.addChild(name);
 
-    const cost = txt(`◎ ${item.cost}`, Math.round(h * 0.22), C.gold, true);
-    cost.anchor.set(0, 0.5); cost.x = x + Math.round(w * 0.04); cost.y = y + h * 0.70;
+    // Price: coin glyph + number (drops the old ◎ text so the cost reads as coins).
+    const costIcon = Math.round(h * 0.26);
+    const cIcon = buildIcon('coin', costIcon, C.gold);
+    cIcon.x = textX; cIcon.y = y + h * 0.70 - costIcon / 2;
+    this.container.addChild(cIcon);
+    const cost = txt(`${item.cost}`, Math.round(h * 0.22), C.gold, true);
+    cost.anchor.set(0, 0.5); cost.x = cIcon.x + costIcon + Math.round(w * 0.012); cost.y = y + h * 0.70;
     this.container.addChild(cost);
 
     // Buy / owned button (right).
@@ -572,7 +607,7 @@ export class ShopScene implements Scene {
     const rowH = Math.round(h * 0.10);
     const gap = Math.round(h * 0.018);
 
-    for (const tier of WEB_COIN_TIERS) {
+    WEB_COIN_TIERS.forEach((tier, idx) => {
       const priceDollars = (tier.usdCents / 100).toFixed(2);
       const bonusCoins = tier.coins - tier.base;
       const isBusy = this.bt.busy;
@@ -594,27 +629,42 @@ export class ShopScene implements Scene {
       priceLbl.y = y + rowH * 0.5;
       this.container.addChild(priceLbl);
 
+      // Treasure icon — escalates with the tier so bigger packs look richer.
+      const iconSize = Math.round(rowH * 0.66);
+      const iconX = listX + Math.round(listW * 0.16);
+      const icon = buildIcon(COIN_TIER_ICONS[idx] ?? 'coin', iconSize, C.gold);
+      icon.x = iconX;
+      icon.y = y + Math.round((rowH - iconSize) / 2);
+      this.container.addChild(icon);
+
+      const textX = iconX + iconSize + Math.round(listW * 0.015);
+
       // Coin amount.
-      const coinLbl = txt(`◎ ${tier.coins.toLocaleString()}`, Math.round(rowH * 0.24), C.gold, true);
+      const coinLbl = txt(tier.coins.toLocaleString(), Math.round(rowH * 0.26), C.gold, true);
       coinLbl.anchor.set(0, 0.5);
-      coinLbl.x = listX + Math.round(listW * 0.22);
+      coinLbl.x = textX;
       coinLbl.y = y + rowH * 0.36;
       this.container.addChild(coinLbl);
 
-      // Bonus label.
+      // Bonus label: "+N" in green followed by a coin glyph (drops the stray English "bonus" word).
       if (bonusCoins > 0) {
-        const bonusLbl = txt(`+${bonusCoins} bonus`, Math.round(rowH * 0.18), C.green, true);
+        const bonusLbl = txt(`+${bonusCoins}`, Math.round(rowH * 0.18), C.green, true);
         bonusLbl.anchor.set(0, 0.5);
-        bonusLbl.x = listX + Math.round(listW * 0.22);
+        bonusLbl.x = textX;
         bonusLbl.y = y + rowH * 0.68;
         this.container.addChild(bonusLbl);
+        const bIconS = Math.round(rowH * 0.20);
+        const bonusIcon = buildIcon('coin', bIconS, C.green);
+        bonusIcon.x = bonusLbl.x + bonusLbl.width + Math.round(listW * 0.008);
+        bonusIcon.y = y + rowH * 0.68 - bIconS / 2;
+        this.container.addChild(bonusIcon);
       }
 
       // Best Value badge.
       if (tier.bestValue) {
         const badge = txt(t('shop.bestValue'), Math.round(rowH * 0.18), C.gold, true);
         badge.anchor.set(0, 0.5);
-        badge.x = listX + Math.round(listW * 0.22);
+        badge.x = textX;
         badge.y = y + (bonusCoins > 0 ? rowH * 0.05 : rowH * 0.36);
         this.container.addChild(badge);
       }
@@ -651,7 +701,7 @@ export class ShopScene implements Scene {
       }
 
       y += rowH + gap;
-    }
+    });
   }
 
   private drawToast(): void {

@@ -15,6 +15,7 @@ import {
 } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
+import { buildIcon } from '../render/icons';
 import { CARD_DEFINITIONS } from '../game/config';
 import {
   PVP_DECK_SIZE,
@@ -222,15 +223,17 @@ export class DeckBuilderScene implements Scene {
 
       // Lock badge for tier-unlock cards that are not yet unlocked
       if (!isUnlocked) {
-        const lockTxt = txt('🔒', Math.round(h * 0.028), C.mid);
-        lockTxt.anchor.set(1, 0); lockTxt.x = cx + cardW - Math.round(w * 0.02); lockTxt.y = cy + Math.round(h * 0.01);
-        listContainer.addChild(lockTxt);
+        const lockSz = Math.round(h * 0.032);
+        const lockIcon = buildIcon('lock', lockSz, C.mid);
+        lockIcon.x = cx + cardW - Math.round(w * 0.02) - lockSz; lockIcon.y = cy + Math.round(h * 0.01);
+        listContainer.addChild(lockIcon);
       }
 
       // Selected check badge
       if (isSelected && isUnlocked) {
-        const check = txt('✓', Math.round(h * 0.03), C.accent);
-        check.anchor.set(1, 0); check.x = cx + cardW - Math.round(w * 0.02); check.y = cy + Math.round(h * 0.01);
+        const checkSz = Math.round(h * 0.03);
+        const check = buildIcon('check', checkSz, C.accent);
+        check.x = cx + cardW - Math.round(w * 0.02) - checkSz; check.y = cy + Math.round(h * 0.01);
         listContainer.addChild(check);
       }
     });

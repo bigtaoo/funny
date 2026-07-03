@@ -173,6 +173,7 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 - 商品来自服务端 `shopItems`；购买走 `EconomyClient`（服务器权威，§META S2-2）。
 - i18n：`shop.*`。
 - **充值码 overlay**：Canvas 画伪输入框，背后挂隐藏 `<input>` 捕获键盘。光标用 `|` 以 0.5s 交替闪烁；空输入时光标-on 显示 `|`、光标-off 显示 placeholder，确保聚焦即可见光标（不依赖已有字符才显示）。
+- **充值档位图标**：每档左侧画随金额升级的宝藏图标（`coin`→`coins`→`coinStack`→`coinSack`→`coinChest`，见 `render/icons.ts`），越贵越有料，替代千篇一律的 `◎` 文字提升转化诱惑。手绘 SketchPen 笔触 + 金币扁平淡金填充（守三笔风、无渐变），走 `buildIcon` 贴图缓存。
 
 ### 4.4 GachaScene（盲盒，S2）
 ```
@@ -219,6 +220,7 @@ Collection  Stats     Lobby    Shop/Gacha    Room
   - **单位卡**：每行最左侧显示**单位立绘**（`cardArt.UNIT_ART_URLS`：infantry/archer/shieldbearer + Anna 的 max/lena/mara，六张 png 齐全），名称/等级右移。
   - **皮肤衣柜**：皮肤是服务器侧 id、无立绘数据，保留**手绘图标**（`icons.ts`：默认外观=铅笔 `pencils`，已拥有皮肤=笔刷 `brush`，已装备转绿）。
   - 立绘纹理异步解码、本场景是静态渲染：`drawArtFit()` 在纹理未 valid 时跳过本帧并挂一次性 `baseTexture.once('loaded', render)`，加载完重绘（战斗通常已暖共享纹理缓存，少触发）。
+- **属性行图标化（2026-07-03）**：图鉴卡片的关键属性原是一行 `HP 100 · ATK 20 · Range 3` 纯文字。改为 glyph+数值 chip 行：HP=心形（`icons.ts` `hp`）、ATK=刀刃（`atk`），Range 无对应字形保留短文字标签兜底。`cardStatsLine()`（拼字符串）重构为结构化 `cardStats()` + `drawStatChips()`（整行超宽等比缩放塞进 tile）。
 
 ### 4.6 ProfileScene（档案，S0/S3）
 - 账号信息（匿名 id / 昵称）、云同步状态（已同步/同步中/离线，含「手动同步」按钮）、成就墙（后续）、设置入口（语言/音量，复用 i18n）。
@@ -280,6 +282,73 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 - **A-group 边距涂鸦**（`buildMarginDeco`，新增私有方法）：左右各 11% 纸边放置对战同款小涂鸦（太阳/星/心等，alpha 0.30–0.50），seed `0xDEADBEEF`，bake key `result-margin:WxH`。
 - **战败 mood deco 增强**：原 2 个红叉扩充为 5 个，分布到左上/左下/右下三角，强化「红笔批改」美术母题。
 - 两层 deco 均 `interactiveChildren = false`，不干扰按钮点击。
+
+#### 4.11 菜单奖励/属性图标化推进（2026-07-03，批①）
+
+用户反馈「很多界面还是纯文字，更喜欢图标化」。第一批复用**现成** `icons.ts` 字形（零新增图标定义），把养成/成就侧的奖励与属性文字换成手绘 glyph：
+
+- **DailyScene（签到）**：签到日历格子的金币奖励由 `+30c` 文字改为 `coin` 字形 + 数字；体力奖励无对应字形，保留 `+N` 文字。
+- **BattlePassScene（战令）**：双轨奖励格由 `rewardCoins/rewardMaterial` 文案改为类型 glyph + `×N`——`coins`→`coin`、`material` 按 `id` 映射 `scrap/lead/binding`、`skin`→`brush`（皮肤为单件，仅 glyph 不带数量）。`drawCell` 的 reward 形参补 `id?`。
+- **EventScene（活动）**：兑换奖励条在原文字标签前加类型 glyph 前缀（coin/材料/brush，可映射时），保留文字名，信息不丢。
+- **AchievementScene（成就）**：分类 Tab 加类别字形（`pve`→`book` / `pvp`→`swords` / `collection`→`brush` / `progression`→`trophy`）；未达成档位的奖励由「reward N coins」文字改为 `coin` 字形 + 数字。
+- **CollectionScene**：见 §4.5 属性行 chip。
+- 全部走 `buildIcon` 烘焙缓存共享纹理，销毁经各场景既有 `tearDownChildren`（Sprite 走 `{children:true}`、`texture:false` 不碰共享纹理，符合防泄漏契约）。验证：`tsc --noEmit` + `build:web` + `test:ui`（85 例）全绿。
+- **待批②（需新增图标定义或谨慎布局）**：CardScene/TeamsScene 无属性文字、装备槽缺 `trinket` 字形；CityScene/WorldMapScene 的 SLG 资源与 GachaScene 稀有度、`event/battlepass` 的 `pass_required` 🔒 均需新字形。
+
+#### 4.12 CityScene 图标化（2026-07-03，批②）
+
+主城界面此前满屏 emoji（资源条 🖊📄✏️🔩🏷、建筑格 🗂🖊…🏯📚、队列 🔨）。本批全部去 emoji：
+
+- **资源图标**：SLG 的五种资源即五种文具（ink/paper/graphite/metal/sticker，**非**粮/铁/木——那是 `project_currency_canon` 的口头称呼，实际 `ResourceType` 走文具母题）。这五种已有 `res_atlas` 手绘母题（`WorldMapScene` HUD 已复用），故资源条 + 升级消耗行直接复用 `getResTexture`，**零新增资源图标**。emoji 仅作 atlas 解码前的兜底（atlas 为模块单例，进城前通常已由地图加载）。
+- **建筑图标**：五座产出建筑（inkPot/paperTray/graphiteMill/metalForge/stickerShop）复用其产出资源的 `res_atlas` 母题（建筑↔资源视觉强关联，零新增）；drillYard→`swords`、wall→`castle`、academy→`book` 复用现成 `icons.ts` 字形；仅 HQ **desk** 与仓库 **cabinet** 两座新增手绘字形。
+- **新增 `icons.ts` 字形（3 个）**：`desk`（桌面+左腿+右抽屉柜带把手）、`cabinet`（三抽屉档案柜）、`hammer`（建造队列角标，斜柄+锤头）。
+- **升级消耗行**：原 `🌾100✓` 拼字符串改为「文案 + 每资源(母题 + 数量)」横排布局，数量在不足时染红（替代 ✓/✗ 符号）。
+- 解析走两个 helper：`resIcon(rt,size)`（atlas sprite 兜底 emoji）、`bldIcon(key,size,color)`（producer→atlas / 其余→`buildIcon` / 兜底 emoji）。`load()` 追加 `loadResAtlas().then(render)`。
+- 验证：`tsc --noEmit` + `build:web` 全绿。
+
+#### 4.13 AuctionScene 图标化（2026-07-03，批③-拍卖）
+
+拍卖行的物品类型与挂单模式此前全是文字。本批**零新增图标定义**，复用现成 `icons.ts` 字形：
+
+- **物品类型字形**：equipment→`armor`（盾）、card→`cards`（卡叠，批③-Tab 导航新增）、material→其对应材料字形（`scrap`/`lead`/`binding`）。走 helper `itemKind(itemType, material?)`。
+- **挂单模式字形**：fixed（一口价）→`tag`（价签，批③-Tab 导航新增）、auction（竞拍）→`hammer`（复用主城建造锤当拍卖槌）。走 helper `saleModeKind(mode)`。
+- **落点**：① 市场列表行左侧加类型字形（标签右移到 x=40，价格/一口价行同步右移）；原 `[竞拍]` 文字标记改为行内模式字形（竞拍红/一口价灰）。② 顶部筛选 chip（材料/装备/角色卡）加字形前缀，`全部` 保持纯文字。③ 创建挂单表单的物品类别选择器 + 挂单模式选择器按钮加左侧小字形。
+- 依赖批③-Tab 导航（commit `e3118841`）已落地的 `tag`/`cards` 字形。
+- 验证：`tsc --noEmit` + `build:web` 全绿。
+
+#### 4.14 GachaScene 图标化（2026-07-03，批③-抽卡）
+
+抽卡界面的稀有度与卡池类型此前靠纯色圆点 + 文字。本批新增 **1 个** `icons.ts` 字形 `star`（实心五角星 + 细手绘描边，按稀有度色 tint），其余复用现成字形：
+
+- **稀有度星级**：`RARITY_STARS` 映射 common=1 / rare=2 / epic=3 / legendary=4 星。① Banner 下方图例：每档稀有度画 N 颗 tint 星（星尺寸按「4 星一行塞进 82% 组间距」自适应，避免相邻档重叠）。② 赔率详情弹窗每行的稀有度圆点改为单颗 tint 星。
+- **卡池类型徽标**：Banner 左上角加类型徽标——限定池→金色 `star`、常驻池→`capsule`（抽卡扭蛋球，复用批③-Tab 导航字形）。
+- 全走 `buildIcon` 烘焙缓存；`ⓘ` 详情按钮为排版符号非绘文字，保留。
+- 验证：`tsc --noEmit` + `build:web` 全绿。
+
+至此批③（Tab 导航 / 拍卖 / 抽卡）+ 批②（主城）+ 批①（菜单奖励/属性）覆盖：主城、拍卖、抽卡、Tab 导航、养成/成就侧奖励属性全部去 emoji 图标化。
+
+#### 4.15 锁定徽标统一（2026-07-03，批④）
+
+四处「已锁定」状态各自用 🔒 emoji（拍卖挂单选择器的锁定卡 / 装备行锁定标 / 卡组构建未解锁卡 / 战令 `pass_required` 档）。新增 **1 个** `icons.ts` 字形 `lock`（挂锁：拱形锁梁 + 锁体 + 锁孔），四处统一 `buildIcon('lock', …)`：
+
+- AuctionScene 卡片选择器锁定卡、EquipmentScene 装备行锁定标：行内小锁（14px，左上锚点）。
+- DeckBuilderScene 未解锁卡：卡片右上角锁徽标（右上锚点→左移一个 lockSz）。
+- BattlePassScene `pass_required` 档：格子右下角金锁；原共享文本路径拆成「pass_required 画锁 / 其余画文字」两支，底部右锚点不变。
+- 验证：`tsc --noEmit` + `build:web` 全绿。
+
+#### 4.16 排行榜名次奖牌（2026-07-03，批⑤）
+
+LeaderboardScene 前三名用 🥇🥈🥉 emoji。新增 **1 个** `icons.ts` 字形 `medal`（绶带 + 双环奖牌盘），前三名改 `buildIcon('medal', …)` 按名次 tint 金(0xf0c040)/银(0xc2c6cc)/铜(0xcd8a4b)；第 4 名起保留 `#N` 文字。验证：`tsc --noEmit` + `build:web` 全绿。
+
+#### 4.17 收尾去 emoji + 排版符号图标化（2026-07-03，批⑥）
+
+批①–⑤ 的收尾批：清掉剩余彩色 emoji、把文字星 `★/☆` 换成现有 `star` 字形，并把遍布各弹窗的排版符号 `✕/✓/▶` 统一为手绘字形。新增 **5 个** `icons.ts` 字形：`zoom`（放大镜：镜片环 + 斜柄）、`gift`（礼盒 + 缎带蝴蝶结）、`close`（✕ 双斜笔）、`check`（✓ 两段勾）、`play`（▶ 实心三角 + 描边）。
+
+- **彩色 emoji 去除**：WorldMapScene 缩放按钮 🔍→`zoom` 字形 + ×N 文字；训练面板资源 🖋️📄✏️🔩⭐ 改复用 `res_atlas` 母题贴图 + 数值（与 HUD 资源行同款，atlas 解码前退回 emoji 兜底）；FriendsScene 邮件附件 🎁→`gift` 字形前缀。
+- **文字星 → `star` 字形**：CampaignMapScene 章节进度 `★ N/M` 与关卡三星行（已得金/未得 `btnOff` 灰）、StatsScene 战役星数行（`Row.valueIcon` 新增可选字段）、WorldMapScene 国家列表首府星标。
+- **排版符号 → 字形**：`✕` 关闭键（WorldMapScene `showModal` 按钮渲染器统一特判 11 处；FriendsScene `addButton` 特判；AuctionScene ×3 / FamilyScene ×2 / SectScene ×2 独立按钮）改 `close` 字形；`✓` 勾（DailyScene 签到戳、DeckBuilderScene 选中角标、CardScene/EquipmentScene 的 `[✓]/[ ]` 复选框改「墨框 + 选中叠 `check`」、LoginScene 校验行满足态）改 `check` 字形；`▶` 播放（StatsScene 回放行提示、StatePlayerScene 回放标签）改 `play` 字形。CardScene/EquipmentScene 复选框未选态画空心墨框；LoginScene 未满足态保留 `•` 圆点（非 ✕/✓/▶，跨端正常）。
+- **未动**：`res_atlas` 解码兜底的 `RES_EMOJI` 映射（一闪而过、既有模式）；CityScene（批②已处理）；行内 `→` 导航箭头与 `•` 圆点（属正常排版符号，不在本批范围）。
+- 验证：`tsc --noEmit` + `build:web` + render/ui 测试全绿。
 
 ---
 

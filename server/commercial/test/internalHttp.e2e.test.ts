@@ -85,7 +85,8 @@ describe.skipIf(!mongo)('commercial internalHttp', () => {
       headers: hdr(KEY),
       body: JSON.stringify({ accountId: 'u', platform: 'web', receipt: 'tier:t499', receiptId: 'rx1' }),
     });
-    expect(await r.json()).toMatchObject({ ok: true, coinsGranted: 550, coinsAfter: 550 });
+    // First recharge on a fresh account gets the first-purchase 2× bonus (t499 = 550 → 1100).
+    expect(await r.json()).toMatchObject({ ok: true, coinsGranted: 1100, coinsAfter: 1100 });
   });
 
   it('GET /internal/orders/undelivered → list', async () => {

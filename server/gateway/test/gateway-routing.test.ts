@@ -8,7 +8,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import * as path from 'path';
 import * as protobuf from 'protobufjs';
 import { WebSocket } from 'ws';
-import { signToken, type JwtConfig } from '@nw/shared';
+import { signToken, defaultPvpDeck, type JwtConfig } from '@nw/shared';
 import { Gateway } from '../src/Gateway';
 import { MatchsvcClient } from '../src/matchsvcClient';
 import { MetaClient } from '../src/metaClient';
@@ -36,14 +36,24 @@ class RecordingMatchsvc extends MatchsvcClient {
   constructor() {
     super(null, KEY);
   }
-  override roomCreate(a: string, n: string, p: string): void { this.calls.push({ m: 'roomCreate', args: [a, n, p] }); }
-  override roomJoin(a: string, n: string, p: string, c: string): void { this.calls.push({ m: 'roomJoin', args: [a, n, p, c] }); }
+  override roomCreate(a: string, n: string, p: string, e = '', deck: string[] = []): void { this.calls.push({ m: 'roomCreate', args: [a, n, p, e, deck] }); }
+  override roomJoin(a: string, n: string, p: string, c: string, e = '', deck: string[] = []): void { this.calls.push({ m: 'roomJoin', args: [a, n, p, c, e, deck] }); }
   override roomReady(a: string, r: boolean): void { this.calls.push({ m: 'roomReady', args: [a, r] }); }
   override roomStart(a: string): void { this.calls.push({ m: 'roomStart', args: [a] }); }
   override roomLeave(a: string): void { this.calls.push({ m: 'roomLeave', args: [a] }); }
   override enqueue(a: string, n: string, p: string, e: number): void { this.calls.push({ m: 'enqueue', args: [a, n, p, e] }); }
   override connected(a: string): void { this.calls.push({ m: 'connected', args: [a] }); }
   override disconnected(a: string): void { this.calls.push({ m: 'disconnected', args: [a] }); }
+}
+
+/** MetaClient stub reporting a fixed ELO (available), so deck-unlock gating can be exercised. */
+class FakeMeta extends MetaClient {
+  constructor(private readonly elo: number) { super('http://meta.invalid', KEY); }
+  override get available(): boolean { return true; }
+  override async getElo(): Promise<{ elo: number }> { return { elo: this.elo }; }
+  override async getProfile(): Promise<{ displayName?: string; publicId?: string; equippedTitle?: string }> {
+    return { displayName: 'Player', publicId: '100000001', equippedTitle: '' };
+  }
 }
 
 let gateway: Gateway | null = null;
@@ -112,7 +122,10 @@ describe('Gateway control-plane routing', () => {
     expect(mm.calls.find((c) => c.m === 'roomStart')?.args).toEqual(['acc-a']);
     expect(mm.calls.find((c) => c.m === 'roomLeave')?.args).toEqual(['acc-a']);
     // friendly create: meta unavailable → name falls back to accountId prefix, publicId empty.
-    expect(mm.calls.find((c) => c.m === 'roomCreate')?.args).toEqual(['acc-a', 'acc-a', '']);
+    // No deck submitted → gateway resolves to defaultPvpDeck (never the full pool; PVP_LOADOUT §6.3).
+    const create = mm.calls.find((c) => c.m === 'roomCreate');
+    expect(create?.args.slice(0, 3)).toEqual(['acc-a', 'acc-a', '']);
+    expect(create?.args[4]).toEqual(defaultPvpDeck());
   });
 
   it('push is delivered only to the socket that owns the given accountId', async () => {
@@ -143,6 +156,38 @@ describe('Gateway control-plane routing', () => {
 
     await connect(port, 'dup'); // second connection for the same account
     expect(await closed).toBe(4409);
+  });
+
+  it('friendly room_create with a locked card → gateway strips it (falls back to defaultPvpDeck)', async () => {
+    // The reported-bug class: a sub-1500 player must not field ELO-locked units even in a
+    // friendly/custom room — server-side gating is universal (PVP_LOADOUT §6.3).
+    const port = 19524;
+    const mm = new RecordingMatchsvc();
+    startGateway(port, mm, new FakeMeta(998)); // below the 1500 diamond gate
+    const a = await connect(port, 'acc-a');
+
+    a.send(encodeClient({ room_create: { mode: 0, deck: [...defaultPvpDeck().slice(0, 9), 'runner'] } }));
+    await sleep(80);
+
+    const deck = mm.calls.find((c) => c.m === 'roomCreate')?.args[4] as string[] | undefined;
+    expect(deck).toBeDefined();
+    expect(deck).not.toContain('runner');       // locked at 998 → rejected
+    expect(deck).toEqual(defaultPvpDeck());      // invalid deck → default fallback
+  });
+
+  it('friendly room_join forwards the joiner’s current-elo-validated deck', async () => {
+    const port = 19525;
+    const mm = new RecordingMatchsvc();
+    startGateway(port, mm, new FakeMeta(998));
+    const a = await connect(port, 'acc-a');
+
+    // A fully-legal base deck is preserved as-is (join now carries a deck, previously it did not).
+    a.send(encodeClient({ room_join: { code: 'ABC123', deck: defaultPvpDeck() } }));
+    await sleep(80);
+
+    const join = mm.calls.find((c) => c.m === 'roomJoin');
+    expect(join?.args[3]).toBe('ABC123');
+    expect(join?.args[5]).toEqual(defaultPvpDeck());
   });
 
   it('ranked enqueue when meta unavailable → push back RANKED_UNAVAILABLE, and do not enqueue', async () => {

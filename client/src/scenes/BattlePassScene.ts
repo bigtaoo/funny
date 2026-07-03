@@ -4,6 +4,7 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
+import { buildIcon, type IconKind } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
@@ -98,9 +99,9 @@ export class BattlePassScene implements Scene {
     const { w, h } = this;
     const stripH = hubTabsHeight(h);
     const tabs: HubTab[] = [
-      { label: t('shop.title'), active: false },
-      { label: t('gacha.title'), active: false },
-      { label: t('battlepass.title'), active: true },
+      { label: t('shop.title'), active: false, icon: 'tag' },
+      { label: t('gacha.title'), active: false, icon: 'capsule' },
+      { label: t('battlepass.title'), active: true, icon: 'trophy' },
     ];
     const hits = drawHubTabs(this.container, w, tbH, stripH, tabs, (i) => {
       if (i === 0) this.cb.openShop?.();
@@ -292,7 +293,7 @@ export class BattlePassScene implements Scene {
     parent: PIXI.Container,
     x: number, y: number, w: number, h: number,
     level: number,
-    reward: { kind: string; count: number } | null,
+    reward: { kind: string; id?: string; count: number } | null,
     state: CellState,
   ): void {
     const fillColor = state === 'claimable' ? 0xe8f5e9 : state === 'claimed' ? 0xf0f0f0 : C.paper;
@@ -308,29 +309,54 @@ export class BattlePassScene implements Scene {
     lvlTxt.anchor.set(0, 0); lvlTxt.x = x + Math.round(w * 0.05); lvlTxt.y = y + Math.round(h * 0.08);
     parent.addChild(lvlTxt);
 
-    // Reward label
+    // Reward: hand-drawn type glyph + amount (coins → coin, material → its craft icon, skin → brush).
     if (reward) {
-      const rewardStr = reward.kind === 'coins'
-        ? t('battlepass.rewardCoins', { n: String(reward.count) })
-        : t('battlepass.rewardMaterial', { n: String(reward.count) });
+      const iconKind: IconKind =
+        reward.kind === 'coins' ? 'coin'
+          : reward.kind === 'skin' ? 'brush'
+            : reward.id === 'lead' ? 'lead'
+              : reward.id === 'binding' ? 'binding'
+                : 'scrap';
       const rewardColor = state === 'claimed' ? C.mid : reward.kind === 'coins' ? C.gold : C.accent;
-      const rew = txt(rewardStr, Math.round(h * 0.4), rewardColor, state === 'claimable');
-      rew.anchor.set(0.5, 0.5); rew.x = x + w / 2; rew.y = y + h * 0.62;
-      parent.addChild(rew);
+      const cy = y + h * 0.62;
+      const ic = Math.round(h * 0.42);
+      const glyph = buildIcon(iconKind, ic, rewardColor);
+      if (reward.kind === 'skin') {
+        // Skins are singletons — glyph alone, centred.
+        glyph.x = x + w / 2 - ic / 2; glyph.y = cy - ic / 2;
+        parent.addChild(glyph);
+      } else {
+        const rew = txt(`×${reward.count}`, Math.round(h * 0.4), rewardColor, state === 'claimable');
+        const gap = Math.round(w * 0.02);
+        const groupW = ic + gap + rew.width;
+        const gx = x + w / 2 - groupW / 2;
+        glyph.x = gx; glyph.y = cy - ic / 2;
+        rew.anchor.set(0, 0.5); rew.x = gx + ic + gap; rew.y = cy;
+        parent.addChild(glyph, rew);
+      }
     }
 
-    // State overlay label
-    let stateLbl: string | null = null;
-    if (state === 'claimed') stateLbl = t('battlepass.claimed');
-    else if (state === 'locked') stateLbl = t('battlepass.locked');
-    else if (state === 'pass_required') stateLbl = '🔒';
-    else if (state === 'claimable') stateLbl = t('battlepass.claim');
+    // State overlay — pass_required shows a lock glyph; other states show a text label.
+    // Both anchor to the cell's bottom-right corner.
+    const anchorX = x + w - Math.round(w * 0.05);
+    const anchorY = y + h - Math.round(h * 0.08);
+    if (state === 'pass_required') {
+      const lockSz = Math.round(h * 0.32);
+      const lock = buildIcon('lock', lockSz, C.gold);
+      lock.x = anchorX - lockSz; lock.y = anchorY - lockSz;
+      parent.addChild(lock);
+    } else {
+      let stateLbl: string | null = null;
+      if (state === 'claimed') stateLbl = t('battlepass.claimed');
+      else if (state === 'locked') stateLbl = t('battlepass.locked');
+      else if (state === 'claimable') stateLbl = t('battlepass.claim');
 
-    if (stateLbl) {
-      const stateColor = state === 'claimable' ? C.green : state === 'pass_required' ? C.gold : C.mid;
-      const sl = txt(stateLbl, Math.round(h * 0.34), stateColor, state === 'claimable');
-      sl.anchor.set(1, 1); sl.x = x + w - Math.round(w * 0.05); sl.y = y + h - Math.round(h * 0.08);
-      parent.addChild(sl);
+      if (stateLbl) {
+        const stateColor = state === 'claimable' ? C.green : C.mid;
+        const sl = txt(stateLbl, Math.round(h * 0.34), stateColor, state === 'claimable');
+        sl.anchor.set(1, 1); sl.x = anchorX; sl.y = anchorY;
+        parent.addChild(sl);
+      }
     }
   }
 

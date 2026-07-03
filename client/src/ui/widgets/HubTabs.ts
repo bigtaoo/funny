@@ -30,11 +30,18 @@
 import * as PIXI from 'pixi.js-legacy';
 import type { Rect } from '../../layout/ILayout';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { buildIcon, type IconKind } from '../../render/icons';
 
 export interface HubTab {
   label: string;
   /** The current page — drawn highlighted and not tappable. */
   active: boolean;
+  /**
+   * Optional hand-drawn glyph shown left of the label (art-direction: tab icons
+   * as a standard convention — see LOBBY_IA_REDESIGN P1.5). Tinted to match the
+   * label (white when active, mid when inactive).
+   */
+  icon?: IconKind;
 }
 
 /** Standard strip height (5% of design height) — a touch shorter than a full header. */
@@ -73,10 +80,25 @@ export function drawHubTabs(
     box.x = x; box.y = y;
     container.addChild(box);
 
-    const lbl = txt(tab.label, Math.round(stripH * 0.42), tab.active ? 0xffffff : C.mid, true);
+    const fg = tab.active ? 0xffffff : C.mid;
+    const lbl = txt(tab.label, Math.round(stripH * 0.42), fg, true);
     lbl.anchor.set(0.5, 0.5);
-    lbl.x = x + cellW / 2;
     lbl.y = y + stripH / 2;
+
+    if (tab.icon) {
+      // Icon + label as one centred group: [icon][gap][label].
+      const iconSize = Math.round(stripH * 0.6);
+      const gapIL = Math.round(stripH * 0.16);
+      const groupW = iconSize + gapIL + lbl.width;
+      const gx = x + (cellW - groupW) / 2;
+      const icon = buildIcon(tab.icon, iconSize, fg);
+      icon.x = gx;
+      icon.y = y + (stripH - iconSize) / 2;
+      container.addChild(icon);
+      lbl.x = gx + iconSize + gapIL + lbl.width / 2;
+    } else {
+      lbl.x = x + cellW / 2;
+    }
     container.addChild(lbl);
 
     if (!tab.active) {

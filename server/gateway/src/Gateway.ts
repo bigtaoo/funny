@@ -291,18 +291,14 @@ export class Gateway {
           void this.enqueueRanked(accountId, submittedDeck);
         } else {
           log.info('-> matchsvc roomCreate', { accountId });
-          void this.resolveProfile(accountId).then(({ name, publicId, equippedTitle }) =>
-            this.matchsvc.roomCreate(accountId, name, publicId, equippedTitle, submittedDeck),
-          );
+          void this.createRoomValidated(accountId, submittedDeck);
         }
         break;
       }
       case 'room_join': {
         const code = msg.code;
         log.info('-> matchsvc roomJoin', { accountId, code });
-        void this.resolveProfile(accountId).then(({ name, publicId, equippedTitle }) =>
-          this.matchsvc.roomJoin(accountId, name, publicId, code, equippedTitle),
-        );
+        void this.joinRoomValidated(accountId, code, msg.deck ?? []);
         break;
       }
       case 'room_ready':
@@ -421,6 +417,30 @@ export class Gateway {
     if (!this.conns.has(accountId)) return;
     log.info('-> matchsvc enqueue', { accountId, elo, deckSize: deck.length });
     this.matchsvc.enqueue(accountId, name, publicId, elo, equippedTitle, '', deck);
+  }
+
+  /**
+   * Friendly (custom) room create: validate the submitted deck against the player's *current* elo,
+   * exactly like ranked — friendly rooms are NOT a sandbox (PVP_LOADOUT §6.3, universal server-side
+   * gating). Without this, an empty/unvalidated deck lets the engine fall back to the full card pool.
+   */
+  private async createRoomValidated(accountId: string, submittedDeck: string[]): Promise<void> {
+    const { elo } = await this.meta.getElo(accountId);
+    if (!this.conns.has(accountId)) return;
+    const deck = this.resolvedDeck(accountId, submittedDeck, elo);
+    const { name, publicId, equippedTitle } = await this.resolveProfile(accountId);
+    if (!this.conns.has(accountId)) return;
+    this.matchsvc.roomCreate(accountId, name, publicId, equippedTitle, deck);
+  }
+
+  /** Friendly room join: same current-elo deck gating as create (PVP_LOADOUT §6.3). */
+  private async joinRoomValidated(accountId: string, code: string, submittedDeck: string[]): Promise<void> {
+    const { elo } = await this.meta.getElo(accountId);
+    if (!this.conns.has(accountId)) return;
+    const deck = this.resolvedDeck(accountId, submittedDeck, elo);
+    const { name, publicId, equippedTitle } = await this.resolveProfile(accountId);
+    if (!this.conns.has(accountId)) return;
+    this.matchsvc.roomJoin(accountId, name, publicId, code, equippedTitle, deck);
   }
 
   /**

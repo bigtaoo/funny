@@ -177,6 +177,21 @@
 ### 5.3 长期通胀提示
 **金币/材料 sink 主要来自"反复强化的失败损耗"**（高级低成功率 = 持续吞材料）。膨胀治理已上 [ADR-012](DECISIONS.md)：**分解回收**（+0~4 返 70%，30% 损耗本身是温和 sink）+ **库存硬上限 300 实例**封顶（堆叠件不计），机制权威见 EQUIPMENT_DESIGN §3.3 / §6.3。高级件（+5↑）不可分解，出口走拍卖/穿戴。
 
+#### 5.3.1 ADR-030 深水 sink 占位数值（2026-07-03，除洗练金币外全 DRAFT，待经济模拟）
+
+盲盒管"抽到"，本节管"抽空之后"——补长尾鲸鱼深水区 + 非 SLG 玩家的装备出口（政策见 ECONOMY_BALANCE §3.4，决策见 [ADR-030](DECISIONS.md)）。全部**不新增金币龙头、不卖直接战力**。
+
+| sink | 数值 | 权威/落点 | 状态 |
+|---|---|---|---|
+| 洗练基础金币（每次，按目标稀有度） | fine **80** / rare **200** / epic **500** | 代码 `@nw/shared REFORGE_COIN_COST`（`reforgeCoinCost()`） | ✅ 已实装（`reforgeEquipment` 走 commercial 扣费）；数值按 enhance 量级（+8→9 =360）估的 DRAFT |
+| SLG 便利：迁城令 | `[待铺]` coins | SLG_CITY_DESIGN / SLG_DESIGN | 未实装（coin 只买方便，不买上限/战力，红线同 ADR-022） |
+| SLG 便利：开新地块 | `[待铺]` coins | 同上 | 未实装 |
+| SLG 便利：宗门科技捐献 | `[待铺]` coins | 同上 | 未实装 |
+| 外观广度定价（主城/城池皮肤·宗门旗徽·头像框·称号装饰·战斗特效·录像装饰） | `[待铺]` coins（按稀有度分档） | ECONOMY_BALANCE §3.4 / art-direction | 未实装（纯外观，文具 bone-slot 程序绘制，近零美术成本） |
+| PvE 多人副本产出（材料/装备 faucet，受体力闸门） | `[待铺]` | CAMPAIGN_DESIGN | 未实装（faucet 计入反通胀预算，不新增金币龙头） |
+
+> `[待铺]` 数值待与盲盒/皮肤定价一起过一次经济模拟（§9 / ECONOMY_BALANCE §6 反通胀预算）后再拍。**改这些数值须同步 [ADR-030](DECISIONS.md) 与各落点文档。**
+
 ---
 
 ## 6. 金币（coins）

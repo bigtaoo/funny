@@ -64,12 +64,14 @@ export interface FrameBatch {
 /** ── Client → Server ────────────────────────────────── */
 export interface RoomCreate {
   mode: MatchMode;
-  /** PvP loadout deck card ids; empty = server assigns defaultPvpDeck (P3). */
+  /** PvP loadout: card ids in the player's chosen deck (PVP_LOADOUT §4); empty = server assigns defaultPvpDeck */
   deck: string[];
 }
 
 export interface RoomJoin {
   code: string;
+  /** PvP loadout: joiner's chosen deck (PVP_LOADOUT §4); empty = server assigns defaultPvpDeck */
+  deck: string[];
 }
 
 export interface RoomReady {
@@ -156,9 +158,9 @@ export interface MatchStart {
   opponentPublicId: string;
   /** opponent's equipped title id (UI use, display only; empty string = no title) */
   opponentTitle: string;
-  /** side-0 player's deck (PvP loadout P2); empty = defaultPvpDeck used by server. */
+  /** side-0 player's deck (PVP_LOADOUT §6.2); both sides receive both decks for deterministic engine construction */
   topDeck: string[];
-  /** side-1 player's deck (PvP loadout P2). */
+  /** side-1 player's deck */
   bottomDeck: string[];
 }
 
@@ -701,7 +703,7 @@ export const RoomCreate: MessageFns<RoomCreate> = {
       writer.uint32(8).int32(message.mode);
     }
     for (const v of message.deck) {
-      writer.uint32(18).string(v);
+      writer.uint32(18).string(v!);
     }
     return writer;
   },
@@ -750,13 +752,16 @@ export const RoomCreate: MessageFns<RoomCreate> = {
 };
 
 function createBaseRoomJoin(): RoomJoin {
-  return { code: "" };
+  return { code: "", deck: [] };
 }
 
 export const RoomJoin: MessageFns<RoomJoin> = {
   encode(message: RoomJoin, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.code !== "") {
       writer.uint32(10).string(message.code);
+    }
+    for (const v of message.deck) {
+      writer.uint32(18).string(v!);
     }
     return writer;
   },
@@ -776,6 +781,14 @@ export const RoomJoin: MessageFns<RoomJoin> = {
           message.code = reader.string();
           continue;
         }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.deck.push(reader.string());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -791,6 +804,7 @@ export const RoomJoin: MessageFns<RoomJoin> = {
   fromPartial<I extends Exact<DeepPartial<RoomJoin>, I>>(object: I): RoomJoin {
     const message = createBaseRoomJoin();
     message.code = object.code ?? "";
+    message.deck = object.deck?.map((e) => e) || [];
     return message;
   },
 };
@@ -1579,10 +1593,10 @@ export const MatchStart: MessageFns<MatchStart> = {
       writer.uint32(66).string(message.opponentTitle);
     }
     for (const v of message.topDeck) {
-      writer.uint32(74).string(v);
+      writer.uint32(74).string(v!);
     }
     for (const v of message.bottomDeck) {
-      writer.uint32(82).string(v);
+      writer.uint32(82).string(v!);
     }
     return writer;
   },

@@ -11,6 +11,7 @@ import { gachaCardTexture, gachaFrameTexture, gachaBannerTexture, preloadGachaTe
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
+import { buildIcon } from '../render/icons';
 
 // ── GachaScene (S2-6) — single / ten-pull lootbox with pity + reveal ───────────
 //
@@ -25,6 +26,11 @@ const RARITY_COLOR: Record<Rarity, number> = {
   rare:      0x4477cc,
   epic:      0xaa55cc,
   legendary: 0xddaa33,
+};
+
+/** Rarity → star-pip count (rank at a glance, tinted by RARITY_COLOR). */
+const RARITY_STARS: Record<Rarity, number> = {
+  common: 1, rare: 2, epic: 3, legendary: 4,
 };
 
 export type GachaDrawResult =
@@ -214,10 +220,10 @@ export class GachaScene implements Scene {
     const { w, h } = this;
     const stripH = hubTabsHeight(h);
     const tabs: HubTab[] = [
-      { label: t('shop.title'), active: false },
-      { label: t('gacha.title'), active: true },
+      { label: t('shop.title'), active: false, icon: 'tag' },
+      { label: t('gacha.title'), active: true, icon: 'capsule' },
     ];
-    if (this.cb.openBattlePass) tabs.push({ label: t('battlepass.title'), active: false });
+    if (this.cb.openBattlePass) tabs.push({ label: t('battlepass.title'), active: false, icon: 'trophy' });
     const hits = drawHubTabs(this.container, w, tbH, stripH, tabs, (i) => {
       if (i === 0) this.cb.openShop?.();
       else if (i === 2) this.cb.openBattlePass?.();
@@ -274,17 +280,30 @@ export class GachaScene implements Scene {
     bannerSpr.width = bannerW; bannerSpr.height = bannerH;
     this.container.addChild(bannerSpr);
 
-    // Rarity legend dots.
+    // Pool-type badge (banner top-left): limited → gold star, standard → gacha capsule.
+    const poolBadge = buildIcon(pool.limited ? 'star' : 'capsule', Math.round(h * 0.036), pool.limited ? C.gold : C.mid);
+    poolBadge.x = bx + Math.round(w * 0.02); poolBadge.y = by + Math.round(h * 0.015);
+    this.container.addChild(poolBadge);
+
+    // Rarity legend: N star-pips per rarity (1..4), tinted by rarity colour.
     const dotR = Math.round(h * 0.012);
     const order: Rarity[] = ['common', 'rare', 'epic', 'legendary'];
     const legendY = by + bannerH * 0.68;
     const legendGap = bannerW / (order.length + 1);
+    // Size stars so a full 4-pip row fits within ~82% of the inter-group gap.
+    const starSz = Math.max(6, Math.min(Math.round(dotR * 1.8), Math.floor((legendGap * 0.82) / 4) - 2));
     order.forEach((rar, i) => {
       const cx = bx + legendGap * (i + 1);
-      const dot = new PIXI.Graphics();
-      dot.beginFill(RARITY_COLOR[rar]); dot.drawCircle(0, 0, dotR); dot.endFill();
-      dot.x = cx; dot.y = legendY - Math.round(h * 0.02);
-      this.container.addChild(dot);
+      const n = RARITY_STARS[rar];
+      const rowW = n * starSz + (n - 1) * 2;
+      const starY = legendY - Math.round(h * 0.02) - starSz / 2;
+      let sxp = cx - rowW / 2;
+      for (let k = 0; k < n; k++) {
+        const st = buildIcon('star', starSz, RARITY_COLOR[rar]);
+        st.x = sxp; st.y = starY;
+        this.container.addChild(st);
+        sxp += starSz + 2;
+      }
       const lbl = txt(t(('rarity.' + rar) as TranslationKey), Math.round(h * 0.016), C.mid);
       lbl.anchor.set(0.5, 0); lbl.x = cx; lbl.y = legendY;
       this.container.addChild(lbl);
@@ -471,9 +490,11 @@ export class GachaScene implements Scene {
     entries.forEach((e, i) => {
       const cy = listTop + i * rowH + rowH / 2;
       total += e.probability;
-      const dot = new PIXI.Graphics();
-      dot.beginFill(RARITY_COLOR[e.rarity]); dot.drawCircle(colDotX, cy, Math.round(rowH * 0.2)); dot.endFill();
-      this.container.addChild(dot);
+      // Rarity star-pip (tinted), centred where the colour dot used to sit.
+      const starSz = Math.round(rowH * 0.5);
+      const star = buildIcon('star', starSz, RARITY_COLOR[e.rarity]);
+      star.x = colDotX - starSz / 2; star.y = cy - starSz / 2;
+      this.container.addChild(star);
 
       const name = txt(e.itemId, fontSize, C.dark);
       name.anchor.set(0, 0.5); name.x = colNameX; name.y = cy;

@@ -1,4 +1,4 @@
-// Cloudflare Worker for the ops admin panel (paired with wrangler.ops.jsonc).
+// Cloudflare Worker for the ops admin panel (paired with ops.jsonc).
 //
 // Two responsibilities:
 //   1. Static assets (page + bundle) are served directly from the assets binding (ASSETS), with SPA fallback to index.html.
@@ -10,7 +10,7 @@
 // logs in, CF_Authorization is a first-party cookie and is automatically included in /admin/* fetches, avoiding CORS issues.
 // Design: design/product/deploy-cloudflare.md §6.
 //
-// Configuration dependencies (see wrangler.ops.jsonc / wrangler secret):
+// Configuration dependencies (see ops.jsonc / wrangler secret):
 //   · env.ADMIN_ORIGIN       — admin backend base URL, e.g. https://api.gamestao.com/ops (vars, may be public)
 //   · env.ADMIN_PROXY_SECRET — shared secret matching NW_OPS_PROXY_SECRET on the VPS (secret, never committed to git)
 

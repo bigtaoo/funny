@@ -4,6 +4,7 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
+import { buildIcon, type IconKind } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { MATERIAL_ORDER } from '../game/balance/pveUpgrades';
@@ -52,7 +53,7 @@ export interface StatsCallbacks {
 }
 
 interface Hit { rect: Rect; fn: () => void; }
-interface Row { label: string; value: string; valueColor?: number; rowHit?: () => void; }
+interface Row { label: string; value: string; valueColor?: number; rowHit?: () => void; valueIcon?: IconKind; }
 
 export class StatsScene implements Scene {
   readonly container: PIXI.Container;
@@ -182,7 +183,7 @@ export class StatsScene implements Scene {
     const collectionRows: Row[] = [{ label: t('stats.skins'), value: String(s.skinsOwned) }, ...matRows];
     const campaignRows: Row[] = [
       { label: t('stats.cleared'), value: `${s.cleared} / ${s.totalLevels}` },
-      { label: t('stats.stars'), value: `★ ${s.stars}` },
+      { label: t('stats.stars'), value: String(s.stars), valueIcon: 'star' },
     ];
 
     if (this.landscape) {
@@ -269,12 +270,21 @@ export class StatsScene implements Scene {
         this.container.addChild(lbl);
       }
       const val = txt(row.value, Math.round(rowH * 0.66), row.valueColor ?? C.dark, true);
-      val.anchor.set(1, 0.5); val.x = x + w - Math.round(w * 0.05); val.y = ry + rowH / 2;
+      const valRight = x + w - Math.round(w * 0.05);
+      val.anchor.set(1, 0.5); val.x = valRight; val.y = ry + rowH / 2;
       this.container.addChild(val);
-      // Rows with a watchable replay: draw a ▶ hint on the left + a full-row hit area.
+      // Optional hand-drawn glyph to the left of the value (e.g. a star for the star count).
+      if (row.valueIcon) {
+        const isz = Math.round(rowH * 0.7);
+        const ic = buildIcon(row.valueIcon, isz, row.valueColor ?? C.gold);
+        ic.x = valRight - val.width - isz - 4; ic.y = ry + rowH / 2 - isz / 2;
+        this.container.addChild(ic);
+      }
+      // Rows with a watchable replay: draw a hand-drawn play glyph on the left + a full-row hit area.
       if (row.rowHit) {
-        const play = txt('▶', Math.round(rowH * 0.6), accent, true);
-        play.anchor.set(0, 0.5); play.x = x + Math.round(w * 0.035); play.y = ry + rowH / 2;
+        const psz = Math.round(rowH * 0.6);
+        const play = buildIcon('play', psz, accent);
+        play.x = x + Math.round(w * 0.035); play.y = ry + rowH / 2 - psz / 2;
         this.container.addChild(play);
         this.hits.push({ rect: { x, y: ry, w, h: rowH }, fn: row.rowHit });
       }

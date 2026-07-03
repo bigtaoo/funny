@@ -64,7 +64,7 @@ describe.skipIf(!mongo)('metaserver save-service e2e', () => {
     expect(body(r).error.code).toBe('UNAUTHENTICATED');
   });
 
-  it('GET /save with token → auto-creates new save rev 0, coins 0', async () => {
+  it('GET /save with token → auto-creates new save rev 1 (starter roster grant), coins 0', async () => {
     const { token, accountId } = await authDevice('device-2');
     const r = await app.inject({
       method: 'GET',
@@ -73,7 +73,7 @@ describe.skipIf(!mongo)('metaserver save-service e2e', () => {
     });
     expect(r.statusCode).toBe(200);
     const save = body(r).data.save;
-    expect(save.rev).toBe(0);
+    expect(save.rev).toBe(1); // account creation grants the starter card roster (CC-2) → one write → fresh save is rev 1
     expect(save.accountId).toBe(accountId);
     expect(save.wallet.coins).toBe(0);
   });
@@ -81,30 +81,31 @@ describe.skipIf(!mongo)('metaserver save-service e2e', () => {
   it('PUT /save optimistic lock: If-Match hit writes rev+1, stale rev → 409 + current server value', async () => {
     const { token } = await authDevice('device-3');
     const auth = { authorization: `Bearer ${token}` };
+    // Account creation already wrote the starter roster → base rev is 1 (see GET /save test above).
 
     const ok = await app.inject({
       method: 'PUT',
       url: '/save',
-      headers: { ...auth, 'if-match': '0' },
+      headers: { ...auth, 'if-match': '1' },
       // materials is a server-authoritative field (§8); PUT does not accept it → only flags are persisted.
       payload: { save: { flags: { seenIntro: true }, materials: { wood: 5 } } },
     });
     expect(ok.statusCode).toBe(200);
     const saved = body(ok).data.save;
-    expect(saved.rev).toBe(1);
+    expect(saved.rev).toBe(2);
     expect(saved.flags.seenIntro).toBe(true);
     expect(saved.materials.wood).toBeUndefined(); // server-authoritative; not overwritten by PUT
 
     const stale = await app.inject({
       method: 'PUT',
       url: '/save',
-      headers: { ...auth, 'if-match': '0' },
+      headers: { ...auth, 'if-match': '1' },
       payload: { save: { flags: { x: true } } },
     });
     expect(stale.statusCode).toBe(409);
     const c = body(stale);
     expect(c.error.code).toBe('REV_CONFLICT');
-    expect(c.save.rev).toBe(1);
+    expect(c.save.rev).toBe(2);
   });
 
   it('concurrent PUTs with same rev → exactly one 200, one 409', async () => {
@@ -140,7 +141,7 @@ describe.skipIf(!mongo)('metaserver save-service e2e', () => {
     await app.inject({
       method: 'PUT',
       url: '/save',
-      headers: { ...auth, 'if-match': '0' },
+      headers: { ...auth, 'if-match': '1' }, // base rev 1 after starter-roster grant on account creation
       // SyncPatch only accepts equipped/flags → all other fields are discarded even if the client injects them (§8)
       payload: {
         save: {

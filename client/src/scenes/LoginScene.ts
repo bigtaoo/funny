@@ -4,6 +4,7 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
+import { buildIcon } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 
 // ── LoginScene (SA-3) — account login / register + single-player entry ─────────
@@ -448,9 +449,22 @@ export class LoginScene implements Scene {
   /** Live requirement line under a field: ✓ green when satisfied, • grey otherwise. */
   private drawHint(text: string, ok: boolean, x: number, y: number, w: number): void {
     const { h } = this;
-    const hint = txt((ok ? '✓ ' : '• ') + text, Math.round(h * 0.019), ok ? C.green : C.mid);
-    hint.anchor.set(0, 0); hint.x = x + Math.round(w * 0.02); hint.y = y + Math.round(h * 0.004);
-    this.container.addChild(hint);
+    const fs = Math.round(h * 0.019);
+    const baseX = x + Math.round(w * 0.02);
+    const ty = y + Math.round(h * 0.004);
+    if (ok) {
+      // Satisfied: a hand-drawn green check glyph (replaces the ✓ prefix).
+      const ck = buildIcon('check', fs, C.green);
+      ck.x = baseX; ck.y = ty;
+      this.container.addChild(ck);
+      const hint = txt(text, fs, C.green);
+      hint.anchor.set(0, 0); hint.x = baseX + fs + 3; hint.y = ty;
+      this.container.addChild(hint);
+    } else {
+      const hint = txt('• ' + text, fs, C.mid);
+      hint.anchor.set(0, 0); hint.x = baseX; hint.y = ty;
+      this.container.addChild(hint);
+    }
   }
 
   private drawSubmitting(): void {

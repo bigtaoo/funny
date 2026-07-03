@@ -1,0 +1,15 @@
+{
+  // animator 在线编辑器的静态托管（Cloudflare Workers static assets），与 client/ops/vfx 各一份配置、各一个 Worker。
+  // 与其余三者同一套部署方式：GitHub Actions（.github/workflows/animator-deploy.yml）自动 deploy，
+  // 也可从仓库根手动：
+  //   cd tools/animator && npm install && npm run build   ← 产出 tools/animator/dist（build 时注入 NW_SUPABASE_URL / NW_SUPABASE_ANON_KEY）
+  //   cd ../.. && npx wrangler deploy -c wrangler/animator.jsonc
+  // Cloudflare 侧 git 仓库连接已于 2026-06-24 解绑：CF 不再因 push 自行构建，Action 是唯一部署入口。
+  // 设计：design/tools/animator/WORKSPACE_SYNC.md
+  "name": "animator",
+  "compatibility_date": "2025-06-01",
+  "assets": {
+    "directory": "../tools/animator/dist",
+    "not_found_handling": "single-page-application"
+  }
+}

@@ -4,10 +4,19 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
+import { buildIcon, type IconKind } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import type { AchievementsView, Achievement } from '../net/ApiClient';
 import { tierState, achievementClaimable, type TierState } from '../game/meta/achievements';
+
+/** Category → hand-drawn tab glyph (pve = notebook, pvp = crossed swords, collection = brush, progression = trophy). */
+const CATEGORY_ICON: Record<Achievement['category'], IconKind> = {
+  pve: 'book',
+  pvp: 'swords',
+  collection: 'brush',
+  progression: 'trophy',
+};
 
 // ── AchievementScene — achievement wall (personal view, ACHIEVEMENT_DESIGN §7) ──────────────────────
 //
@@ -222,8 +231,16 @@ export class AchievementScene implements Scene {
       box.x = x; box.y = y;
       this.container.addChild(box);
 
+      // Category glyph + label, centred as a group.
       const lbl = txt(t(('achievement.category.' + cat) as TranslationKey), Math.round(tabH * 0.42), on ? 0xffffff : C.dark, on);
-      lbl.anchor.set(0.5, 0.5); lbl.x = x + tabW / 2; lbl.y = y + tabH / 2;
+      const icS = Math.round(tabH * 0.52);
+      const iconGap = Math.round(tabW * 0.04);
+      const groupW = icS + iconGap + lbl.width;
+      const gx = x + (tabW - groupW) / 2;
+      const glyph = buildIcon(CATEGORY_ICON[cat], icS, on ? 0xffffff : C.dark);
+      glyph.x = gx; glyph.y = y + tabH / 2 - icS / 2;
+      this.container.addChild(glyph);
+      lbl.anchor.set(0, 0.5); lbl.x = gx + icS + iconGap; lbl.y = y + tabH / 2;
       this.container.addChild(lbl);
 
       // Tab badge: shown when any achievement in this category is claimable.
@@ -317,12 +334,19 @@ export class AchievementScene implements Scene {
       lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
       this.container.addChild(lbl);
       this.hits.push({ rect: { x: bx, y: by, w: bw, h: bh }, fn: () => void this.claim(def.id, s.tier) });
-    } else {
-      const label = s.claimed ? t('achievement.claimed') : t('achievement.reward', { coins: s.coins });
-      const color = s.claimed ? C.green : C.mid;
-      const st = txt(label, Math.round(rowH * 0.34), color, s.claimed);
+    } else if (s.claimed) {
+      const st = txt(t('achievement.claimed'), Math.round(rowH * 0.34), C.green, true);
       st.anchor.set(1, 0.5); st.x = rightX; st.y = cy;
       this.container.addChild(st);
+    } else {
+      // Not yet reached: coin glyph + reward amount (replaces "reward N coins" text).
+      const amt = txt(String(s.coins), Math.round(rowH * 0.34), C.mid);
+      amt.anchor.set(1, 0.5); amt.x = rightX; amt.y = cy;
+      this.container.addChild(amt);
+      const icS = Math.round(rowH * 0.4);
+      const ic = buildIcon('coin', icS, C.gold);
+      ic.x = rightX - amt.width - Math.round(rowH * 0.15) - icS; ic.y = cy - icS / 2;
+      this.container.addChild(ic);
     }
   }
 

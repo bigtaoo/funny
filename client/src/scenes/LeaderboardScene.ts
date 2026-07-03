@@ -6,6 +6,7 @@ import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
+import { buildIcon } from '../render/icons';
 import { formatLadderTitle, getTitleKeys } from '../game/meta/titles';
 
 // ── LeaderboardScene — global ladder leaderboard (SE-6) ─────────────────────────
@@ -188,10 +189,18 @@ export class LeaderboardScene implements Scene {
     if (isTop3) sketchAccentBar(box, rowH, C.gold, seedFor(index, rowH, 4));
     parent.addChild(box);
 
-    const rankEmoji = e.rank === 1 ? '🥇' : e.rank === 2 ? '🥈' : e.rank === 3 ? '🥉' : `#${e.rank}`;
-    const rankLbl = txt(rankEmoji, Math.round(rowH * 0.5), isTop3 ? C.gold : C.mid, isTop3);
-    rankLbl.anchor.set(0, 0.5); rankLbl.x = x + Math.round(w * 0.03); rankLbl.y = y + rowH / 2;
-    parent.addChild(rankLbl);
+    // Top-3: a rank medal tinted gold / silver / bronze; below that, plain "#N" text.
+    if (isTop3) {
+      const medalColor = e.rank === 1 ? 0xf0c040 : e.rank === 2 ? 0xc2c6cc : 0xcd8a4b;
+      const medalSz = Math.round(rowH * 0.62);
+      const medal = buildIcon('medal', medalSz, medalColor);
+      medal.x = x + Math.round(w * 0.03); medal.y = y + rowH / 2 - medalSz / 2;
+      parent.addChild(medal);
+    } else {
+      const rankLbl = txt(`#${e.rank}`, Math.round(rowH * 0.5), C.mid);
+      rankLbl.anchor.set(0, 0.5); rankLbl.x = x + Math.round(w * 0.03); rankLbl.y = y + rowH / 2;
+      parent.addChild(rankLbl);
+    }
 
     const nameLbl = txt(e.displayName || `#${e.publicId}`, Math.round(rowH * 0.48), C.dark);
     nameLbl.anchor.set(0, 0.5); nameLbl.x = x + Math.round(w * 0.18); nameLbl.y = y + rowH / 2;

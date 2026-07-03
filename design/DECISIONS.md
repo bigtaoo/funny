@@ -265,7 +265,9 @@
 - **不迁移**：SLG 未上线，无存量数据；现有 dev/test 单格主城在下次 join/relocate 时自然重建为九格。
 - **影响**：`@nw/shared`（`slg.ts`：新增 3×3 footprint 工具函数 + `findMarchPath` 增 `blockedBaseKeys`）**属公共依赖，最先合 main**；`worldsvc`（`service.ts` joinWorld/relocateBase/passiveRelocate 写 9 格、placement 校验 9 格、`computeMarchPath` 构建 `blockedBaseKeys`、`applySiege` 任一 base 格→锚点、abandon/occupy 拒绝 base 格、`pickSpawnTile` 3×3 扫描）；`client`（`WorldMapScene` 城市 sprite 对齐真实九格 + 修贴图留白 + 点击任一格开主城菜单）。[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.1 主城行 + §3 footprint 说明须更新。
 
-## ADR-026 拍卖物品交割/退回 = escrow-out + 系统邮件（废弃"溢出暂存区"） — Accepted — 2026-07-02
+## ADR-026b 拍卖物品交割/退回 = escrow-out + 系统邮件（废弃"溢出暂存区"） — Accepted — 2026-07-02
+
+> 📌 编号订正（2026-07-03）：本条原误编为第二个「ADR-026」，与上方「SLG 建筑攻防」撞号。因 SLG 建筑攻防那条被代码/文档大量按 `ADR-026` 引用（siege 相关），保留其为 026，本条改为 **026b**。无 inbound `ADR-026` 引用指向本条，改号不破坏交叉引用。
 
 - **决策**（用户拍板）：拍卖走 **escrow-out** 模型——玩家挂单即把物品**从背包移出寄存**（拍卖期间背包不可见、不可用）；**所有离开拍卖系统的物品一律通过系统邮件附件下发，玩家领取附件后才回背包**。范围含**成交发给买家 + 流拍/取消/季末清算退回卖家**，物料/装备/角色卡三类皆然。**推翻** EQUIPMENT_DESIGN §13 早先的「满仓溢出暂存区领取 UI」提案——邮件本身即持有缓冲，天然规避满仓资损、不突破 300 硬上限（ADR-012），语义也更清晰（寄存物取回）。
 - **为什么**：旧路径成交/退回直接 `grantEquipment/grantCard/grantMaterial` 写回背包，撞满仓时要么资损要么需另建暂存区；且"退回即刻入库"与"寄存出去"的心智不符。改经邮件后，出账与领取解耦，一套机制覆盖买卖两侧。
@@ -306,3 +308,16 @@
 - **为什么**：等距菱形是移动 SLG 的行业惯例观感，且经确认是纯投影变换、不涉及契约/寻路/数据模型改动，改动面收敛在单一文件，值得直接做到位而非留妥协方案。
 - **影响**：新增 [`client/src/render/isoGrid.ts`](../client/src/render/isoGrid.ts)；[`client/src/scenes/WorldMapScene.ts`](../client/src/scenes/WorldMapScene.ts) 渲染层大改（详见文件内注释）；[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.2 补一句视觉呈现说明，避免与"正交网格"表述产生歧义；无服务端/契约改动。
 - **Out of scope（本次不做，已记录跟进）**：地形/据点手绘贴图接入（`terrainAtlasLoader.ts` 及配套图集，出图 prompt 清单见 [`product/slg-terrain-art.md`](product/slg-terrain-art.md)，待产出素材）；据点建筑贴图针对菱形 footprint 的重新出图。
+
+## ADR-030 深化金币 sink（洗练金币化 / SLG 便利 / 外观广度）+ PvE 多人副本 + SLG 新手区毕业软过渡 — Accepted — 2026-07-03
+
+- **背景**：本会话核查确认经济收支两端已**全实装**（盲盒/装备/成就/留存/战令，均有代码+测试；README 状态标签本轮已从「设计中」修正为「已实现」）。但金币深水 sink 集中在**盲盒 + 装备强化**两处，暴露两个偏浅：①长尾鲸鱼「买空盲盒后金币无处去」；②变现重心压在 **SLG 参与率**（纯 PvP/收集玩家付费弱）。用户全数采纳补深方案。
+- **先厘清既有、只记增量**（不重复既有拍板）：SLG 建筑/练兵「coin 只买加速不买上限」= ADR-022；洗练 2 技能「金币锁 1 条」= ADR-017；SLG 外环新手区 + 宗门>家族>单随路由 + 跨区隔离 = **G6 已实现（2026-06-21，[`SLG_DESIGN.md`](game/SLG_DESIGN.md) §20 / R4）**。
+- **决策（5 项增量，用户 2026-07-03 拍板全采纳）**：
+  1. **洗练基础金币化**：洗练**每次**收基础金币（不止 2 技能锁定费）——把「重洗词条」整体做成可无限重复的深水 coin sink（付的是**尝试次数**、买不到确定结果，不破公平红线）。落 [`EQUIPMENT_DESIGN.md`](game/EQUIPMENT_DESIGN.md) §7.8，数字 ECONOMY_NUMBERS §5.3。⚠️ 代码缺口：`metaserver/src/equipment.ts reforgeEquipment()` 现仅扣材料未扣基础金币（2026-07-03 核查），落地补。
+  2. **SLG 便利 sink 扩展**（在 ADR-022 加速之外新增）：迁城令 / 开新地块 / 宗门科技捐献等「买方便不买战力」的 coin sink。红线同 ADR-022（coin 不买上限、永不喂天梯）。落 SLG_CITY_DESIGN / SLG_DESIGN。
+  3. **外观广度 sink**：角色皮肤之外扩程序绘制外观——主城/城池皮肤、宗门旗帜徽章、头像框、称号装饰、战斗特效皮肤、录像分享装饰。走文具 bone-slot 程序叠加**近零美术成本**；是「买空图鉴后仍可花钱」的长尾鲸鱼去处，纯外观不触公平。落 ECONOMY_BALANCE §3.4 + art-direction。
+  4. **PvE 后期多人副本（co-op）**：战役后期加多人合作副本，给**不玩 SLG 的鲸鱼**一个装备/角色卡战力的消耗与展示出口（摊薄「变现全压 SLG」的偏科）。PvE 性质 → 装备战力生效、**天梯硬墙不受影响**；产出复用 PvE 材料/装备 faucet（受体力闸门 + 反通胀预算，**不新增金币龙头**，ADR-011/014）。落 [`CAMPAIGN_DESIGN.md`](game/CAMPAIGN_DESIGN.md)。
+  5. **SLG 新手区毕业软过渡**：新手在外环新手区（G6 已实现）养成，赛季末/达阈值迁入正式区时，**整个新手区打包迁入同一新开正式区**（一起毕业、起跑线齐），而非散插成熟老区——补掉「保护期一过即被老玩家碾压」的断崖。是 R4 分服规则的增量。落 SLG_DESIGN §R4/§20。
+- **为什么**：盲盒管「抽到」，洗练/便利/外观管「抽空之后」——补长尾鲸鱼深水区；多人副本给非 SLG 付费人群一个装备出口，摊薄营收单点；毕业软过渡补新手 onramp 最后一跳。全部**不新增金币龙头、不卖直接战力**（洗练卖尝试、SLG 卖便利、外观卖体面、副本卖内容），守 ADR-009/011/014 经济基调与公平红线（ADR-009 硬墙）。
+- **影响**：[`EQUIPMENT_DESIGN.md`](game/EQUIPMENT_DESIGN.md) §7.8、[`ECONOMY_BALANCE.md`](game/ECONOMY_BALANCE.md) §3.4、[`SLG_DESIGN.md`](game/SLG_DESIGN.md) §R4、[`SLG_CITY_DESIGN.md`](game/SLG_CITY_DESIGN.md)、[`CAMPAIGN_DESIGN.md`](game/CAMPAIGN_DESIGN.md) 均加本 ADR 指针；数字落 ECONOMY_NUMBERS（§5.3 洗练 / §13-SLG 便利 / 外观定价 / 副本产出）待铺。均为**方向拍板 + DRAFT**，实现期配合代码定参。

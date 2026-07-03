@@ -17,8 +17,8 @@ on:
     branches: [main]
     paths:
       - 'tools/ops/**'
-      - 'wrangler.ops.jsonc'
-      - 'worker.ops.js'
+      - 'wrangler/ops.jsonc'
+      - 'wrangler/worker.ops.js'
       - '.github/workflows/ops-deploy.yml'
   workflow_dispatch: {}
 
@@ -58,4 +58,4 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx -y wrangler@4.104.0 deploy -c wrangler.ops.jsonc
+        run: npx -y wrangler@4.104.0 deploy -c wrangler/ops.jsonc

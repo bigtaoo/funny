@@ -8,7 +8,6 @@ import { TICK_RATE } from '../game/math/fixed';
 import { SketchPen } from './sketch';
 import { palette } from './theme';
 import { CARD_ART_URLS, cardArtKey } from './cardArt';
-import { tearDownChildren } from './sketchUi';
 
 const CARD_BG              = 0xfaf6ee;
 const CARD_BORDER          = 0x333333;
@@ -94,6 +93,17 @@ export class HandView {
   private lastSyncKey:   string           = '';
   private artTextures    = new Map<string, PIXI.Texture>();
 
+  // ── Per-slot incremental-update caches ─────────────────────────────────────
+  // Slots persist across frames (never torn down per-sync). Each layer redraws
+  // only when its own signature changes, so a per-tick refresh-bar update no
+  // longer forces a full card rebuild (SketchPen path + text layout + art fit).
+  /** Content signature (card id + selection + card size); '' forces a rebuild. */
+  private slotContentKey: string[] = [];
+  /** Last affordability state; null forces a cost-badge / overlay redraw. */
+  private slotAfford:     (boolean | null)[] = [];
+  /** Last refresh-bar pixel signature; '' forces a redraw, 'off' means hidden. */
+  private slotBarSig:     string[] = [];
+
   /** slotIndex → flash start timestamp (ms). Cleared once expired. */
   private refreshFlashes = new Map<number, number>();
 
@@ -138,47 +148,84 @@ export class HandView {
     if (syncKey === this.lastSyncKey) return;
     this.lastSyncKey = syncKey;
 
-    for (const slot of this.slots) this.pool.release(slot);
-    tearDownChildren(this.container);
-    this.slots = [];
-
     const { cardWidth: cw, cardHeight: ch, cardMargin: cm, handRect } = this.layout;
+    this.ensureSlotCount(hand.length);
+
     const numCards   = hand.length;
     const totalWidth = numCards * (cw + cm) - cm;
-
     this.startX = handRect.x + (handRect.w - totalWidth) / 2;
     this.baseY  = handRect.y + (handRect.h - ch) / 2;
 
     hand.forEach((handSlot, i) => {
+      const slot       = this.slots[i];
+      const card       = handSlot?.card ?? null;
       const isSelected = this.selectedIndex === i;
-      const slot = this.pool.acquire();
-      this.configureSlot(slot, handSlot?.card ?? null, i, player.ink, isSelected, cw, ch);
 
-      if (handSlot) {
-        this.drawRefreshBar(
-          slot.getChildByName('bar') as PIXI.Graphics,
-          handSlot.refreshRemainingTicks,
-          handSlot.refreshDurationTicks,
-          cw, ch,
-        );
+      // ── Content layer — rebuilt only when identity / selection / size change ──
+      const contentKey = `${card?.id ?? 'x'}:${isSelected ? 1 : 0}:${cw}x${ch}`;
+      if (this.slotContentKey[i] !== contentKey) {
+        this.slotContentKey[i] = contentKey;
+        this.configureSlot(slot, card, i, isSelected, cw, ch);
+        this.slotAfford[i] = null; // force cost-badge / overlay refresh
+        this.slotBarSig[i] = '';   // force refresh-bar redraw (size may have changed)
       }
 
+      // ── Affordability layer — redraw only when it flips ──
+      if (card) {
+        const canAfford = player.ink >= card.cost;
+        if (this.slotAfford[i] !== canAfford) {
+          this.slotAfford[i] = canAfford;
+          this.drawAfford(slot, canAfford, cw, ch);
+        }
+      }
+
+      // ── Refresh-bar layer — redraw only when its pixel signature changes ──
+      if (handSlot) {
+        this.updateRefreshBar(i, slot, handSlot.refreshRemainingTicks, handSlot.refreshDurationTicks, cw, ch);
+      } else if (this.slotBarSig[i] !== 'off') {
+        (slot.getChildByName('bar') as PIXI.Graphics).clear();
+        this.slotBarSig[i] = 'off';
+      }
+
+      // ── Flash layer — animates frame-by-frame while active; self-clears on end ──
       const flashStart = this.refreshFlashes.get(i);
       if (flashStart !== undefined) {
-        const elapsed = now - flashStart;
+        const elapsed  = now - flashStart;
+        const flashGfx = slot.getChildByName('flash') as PIXI.Graphics;
         if (elapsed < FLASH_DURATION_MS) {
-          const flashAlpha = (1 - elapsed / FLASH_DURATION_MS) * 0.7;
-          this.drawFlash(slot.getChildByName('flash') as PIXI.Graphics, flashAlpha, cw, ch);
+          this.drawFlash(flashGfx, (1 - elapsed / FLASH_DURATION_MS) * 0.7, cw, ch);
         } else {
           this.refreshFlashes.delete(i);
+          flashGfx.clear();
         }
       }
 
       slot.x = this.startX + i * (cw + cm);
       slot.y = this.baseY - (isSelected ? CARD_LIFT : 0);
+    });
+  }
+
+  /**
+   * Reconcile the persistent slot array with the current hand size. Grown slots
+   * come from the pool (added as children, forced to rebuild via '' caches);
+   * shrunk slots go back to the pool (resetCardSlot detaches + clears them).
+   */
+  private ensureSlotCount(n: number): void {
+    while (this.slots.length < n) {
+      const slot = this.pool.acquire();
       this.container.addChild(slot);
       this.slots.push(slot);
-    });
+      this.slotContentKey.push('');
+      this.slotAfford.push(null);
+      this.slotBarSig.push('');
+    }
+    while (this.slots.length > n) {
+      const slot = this.slots.pop()!;
+      this.slotContentKey.pop();
+      this.slotAfford.pop();
+      this.slotBarSig.pop();
+      this.pool.release(slot);
+    }
   }
 
   // ── Public control ─────────────────────────────────────────────────────────
@@ -219,21 +266,26 @@ export class HandView {
 
   // ── Private helpers ────────────────────────────────────────────────────────
 
+  /**
+   * (Re)draw the heavy "content" layer of a slot: border/fill, colour wash,
+   * hand-drawn dog-ear corner, card art, and name/cost text. Called only on a
+   * content-key change, so the SketchPen path + text layout + art fit run at
+   * most once per card identity/selection — not every tick. The affordability
+   * badge/overlay ({@link drawAfford}) and refresh bar are separate layers.
+   */
   private configureSlot(
     c: PIXI.Container,
     card: CardDefinition | null,
     index: number,
-    ink: number,
     isSelected: boolean,
     cardW: number,
     cardH: number,
   ): void {
-    const canAfford   = card !== null && ink >= card.cost;
-
     const nameStyle = (c.getChildByName('name') as PIXI.Text).style;
     nameStyle.wordWrapWidth = cardW - 8;
 
     const bg = c.getChildByName('bg') as PIXI.Graphics;
+    bg.clear();
     if (isSelected) {
       // Selected: faint border + a hand-drawn faction-blue scribble frame (the
       // outline look, used where it fits — a discrete selection affordance, not
@@ -279,22 +331,41 @@ export class HandView {
 
       this.configureArt(c.getChildByName('art') as PIXI.Sprite, card, cardW, cardH);
 
-      const costBg = c.getChildByName('costBg') as PIXI.Graphics;
-      costBg.beginFill(canAfford ? 0x2244aa : 0xaa4422);
-      costBg.drawCircle(cardW - 14, cardH - 14, 12);
-      costBg.endFill();
-
       const costText = c.getChildByName('cost') as PIXI.Text;
       costText.text = String(card.cost);
       costText.x    = cardW  - 14 - costText.width  / 2;
       costText.y    = cardH - 14 - costText.height / 2;
+    } else {
+      // Empty slot: clear every content-owned child so a reused slot shows nothing.
+      (c.getChildByName('type') as PIXI.Text).text = '';
+      (c.getChildByName('name') as PIXI.Text).text = '';
+      (c.getChildByName('cost') as PIXI.Text).text = '';
+      const art = c.getChildByName('art') as PIXI.Sprite;
+      art.texture = PIXI.Texture.EMPTY;
+      art.visible = false;
+      (c.getChildByName('costBg')  as PIXI.Graphics).clear();
+      (c.getChildByName('overlay') as PIXI.Graphics).clear();
+    }
+  }
 
-      if (!canAfford) {
-        const overlay = c.getChildByName('overlay') as PIXI.Graphics;
-        overlay.beginFill(0xffffff, 0.45);
-        overlay.drawRoundedRect(0, 0, cardW, cardH, 4);
-        overlay.endFill();
-      }
+  /**
+   * Affordability layer: the cost badge colour and the "can't afford" dim
+   * overlay. Redrawn only when affordability flips (or after a content rebuild),
+   * so ink changes that don't cross a card's cost threshold cost nothing.
+   */
+  private drawAfford(c: PIXI.Container, canAfford: boolean, cardW: number, cardH: number): void {
+    const costBg = c.getChildByName('costBg') as PIXI.Graphics;
+    costBg.clear();
+    costBg.beginFill(canAfford ? 0x2244aa : 0xaa4422);
+    costBg.drawCircle(cardW - 14, cardH - 14, 12);
+    costBg.endFill();
+
+    const overlay = c.getChildByName('overlay') as PIXI.Graphics;
+    overlay.clear();
+    if (!canAfford) {
+      overlay.beginFill(0xffffff, 0.45);
+      overlay.drawRoundedRect(0, 0, cardW, cardH, 4);
+      overlay.endFill();
     }
   }
 
@@ -315,8 +386,13 @@ export class HandView {
     if (!tex) {
       tex = PIXI.Texture.from(url);
       if (!tex.baseTexture.valid) {
-        // Texture loads async — force a re-sync once ready so size can be computed
-        tex.baseTexture.once('loaded', () => { this.lastSyncKey = ''; });
+        // Texture loads async — force a full re-sync AND invalidate content keys
+        // so the affected slots re-run configureSlot and pick up the now-valid
+        // texture (a bare lastSyncKey reset would be gated out by the content key).
+        tex.baseTexture.once('loaded', () => {
+          this.lastSyncKey = '';
+          this.slotContentKey.fill('');
+        });
       }
       this.artTextures.set(key, tex);
     }
@@ -338,15 +414,20 @@ export class HandView {
     art.visible = true;
   }
 
-  private drawRefreshBar(
-    gfx: PIXI.Graphics,
+  private updateRefreshBar(
+    index: number,
+    slot: PIXI.Container,
     remainingTicks: number,
     durationTicks: number,
     cardW: number,
     cardH: number,
   ): void {
-    gfx.clear();
-    if (remainingTicks <= 0 || durationTicks <= 0) return;
+    const gfx = slot.getChildByName('bar') as PIXI.Graphics;
+
+    if (remainingTicks <= 0 || durationTicks <= 0) {
+      if (this.slotBarSig[index] !== 'off') { gfx.clear(); this.slotBarSig[index] = 'off'; }
+      return;
+    }
 
     const fraction     = remainingTicks / durationTicks;
     const barMaxW      = cardW - BAR_MARGIN * 2;
@@ -363,6 +444,13 @@ export class HandView {
       ? 0.6 + 0.4 * Math.abs(Math.sin((remainingTicks / 15) * Math.PI))
       : 1;
 
+    // Skip the redraw when nothing visible changed (independent per slot, so one
+    // card's countdown no longer forces the other cards' bars to re-render).
+    const sig = `${barW}:${color}:${Math.round(barAlpha * 100)}`;
+    if (this.slotBarSig[index] === sig) return;
+    this.slotBarSig[index] = sig;
+
+    gfx.clear();
     // Background track
     gfx.beginFill(0x000000, BAR_TRACK_ALPHA);
     gfx.drawRect(BAR_MARGIN, barY, barMaxW, BAR_HEIGHT);
@@ -391,6 +479,9 @@ export class HandView {
   destroy(): void {
     this.pool.drain((c) => c.destroy({ children: true }));
     this.slots = [];
+    this.slotContentKey = [];
+    this.slotAfford     = [];
+    this.slotBarSig     = [];
     this.artTextures.clear();
     this.refreshFlashes.clear();
     this.container.destroy({ children: true });

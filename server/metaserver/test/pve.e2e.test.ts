@@ -57,12 +57,21 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     expect(r.data.save.materials.scrap).toBe(6);
   });
 
-  it('level drops unit card (S12-C): first chapter level drops T1 card into cardInventory + grantedCards', async () => {
+  // CC-2 Hero Roster model: a PvE level drop is granted as a CardInstance in `cardInv` (unitType → CARD_DEFS entry),
+  // NOT the retired S12 `cardInventory`/`unitLevels` fields (removed from SaveData v4). `grantedCards` (cardKey→count)
+  // remains the response contract (openapi.yml). Helper: count roster instances of a given defId.
+  const defCount = (save: { cardInv: Record<string, { defId: string; level: number }> }, defId: string) =>
+    Object.values(save.cardInv).filter((c) => c.defId === defId).length;
+
+  it('level drops unit card (CC-2): first chapter level grants an infantry Hero-Roster card + grantedCards', async () => {
+    const before = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    expect(defCount(before.data.save, 'lichuang')).toBe(1); // onboarding starter (infantry = lichuang)
     const r = body(await clear('ch1_lv1', 3)); // ch1 → infantry T1 x1
     expect(r.data.grantedCards).toEqual({ 'infantry:1': 1 });
-    expect(r.data.save.cardInventory['infantry:1']).toBe(1);
-    // A single T1 card does not raise level (deriveUnitLevels only produces level>1).
-    expect(r.data.save.unitLevels.infantry ?? 1).toBe(1);
+    // Drop is granted as a fresh level-1 CardInstance (same as every other card source); starter is also level 1.
+    expect(defCount(r.data.save, 'lichuang')).toBe(2);
+    expect(Object.values(r.data.save.cardInv).filter((c: any) => c.defId === 'lichuang')).toHaveLength(2);
+    expect(Object.values(r.data.save.cardInv).every((c: any) => c.defId !== 'lichuang' || c.level === 1)).toBe(true);
     // Final level (lv10) grants double cards.
     await seedCleared([
       'ch1_lv1', 'ch1_lv2', 'ch1_lv3', 'ch1_lv4', 'ch1_lv5',
@@ -70,26 +79,30 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     ]);
     const r10 = body(await clear('ch1_lv10', 3));
     expect(r10.data.grantedCards).toEqual({ 'infantry:1': 2 });
+    expect(defCount(r10.data.save, 'lichuang')).toBe(4); // +2 from the double drop
   });
 
-  it('later chapter drops higher card (S12-C): ch3 drops T2 → unitLevels derived accordingly', async () => {
+  it('later chapter drops higher-tier card (CC-2): ch3 drops a shieldbearer card into the roster', async () => {
     // Unlock ch3_lv1 (prerequisite: ch2_lv10).
     const upto = ['ch1_lv1'];
     for (let c = 1; c <= 2; c++) for (let l = 1; l <= 10; l++) upto.push(`ch${c}_lv${l}`);
     await seedCleared(upto);
     const r = body(await clear('ch3_lv1', 3)); // ch3 → shieldbearer T2 x1
     expect(r.data.grantedCards).toEqual({ 'shieldbearer:2': 1 });
-    expect(r.data.save.cardInventory['shieldbearer:2']).toBe(1);
-    expect(r.data.save.unitLevels.shieldbearer).toBe(2); // a single T2 raises level to 2
+    // Drop tier (T2 in the cardKey) is informational; the Hero Roster grants a fresh level-1 shieldbearer (= chenshou) instance.
+    expect(defCount(r.data.save, 'chenshou')).toBe(2); // starter + drop
   });
 
-  it('daily cap: when capped both materials and unit cards are not granted (S12-C)', async () => {
+  it('daily cap: when capped neither materials nor unit cards are granted (CC-2)', async () => {
     for (let i = 0; i < PVE_DAILY_CLEAR_REWARD_CAP; i++) await clear('ch1_lv1', 2);
+    const capped = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    const lichuangAtCap = defCount(capped.data.save, 'lichuang'); // 1 starter + CAP drops
+    expect(lichuangAtCap).toBe(PVE_DAILY_CLEAR_REWARD_CAP + 1);
     const over = body(await clear('ch1_lv1', 2));
     expect(over.data.capped).toBe(true);
     expect(over.data.granted).toEqual({});
     expect(over.data.grantedCards).toEqual({});
-    expect(over.data.save.cardInventory['infantry:1']).toBe(PVE_DAILY_CLEAR_REWARD_CAP); // not incremented further
+    expect(defCount(over.data.save, 'lichuang')).toBe(lichuangAtCap); // over-cap clear grants no card
   });
 
   it('locked level (prerequisite not cleared) → 400', async () => {

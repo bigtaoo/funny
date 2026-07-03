@@ -57,6 +57,8 @@ Web 端充值走 Paddle（非上面的 `/iap/verify`，而是 `metaserver/src/pa
 
 ## 3. 上线前 checklist
 
+> **iOS 专项**：Apple 渠道的商店/证书/云构建全流程见 [`IOS_RELEASE.md`](IOS_RELEASE.md)。要点：App Bundle 为 `com.gamestao.nivara`，commercial 必须设 `NW_IAP_BUNDLE=com.gamestao.nivara`（默认 `com.nw` 匹配不到商品，fail closed），并在 ASC 建 7 个消耗型商品 `com.gamestao.nivara.coins.t099…t9999`。
+
 - [ ] 至少配齐目标渠道的真实 IAP 凭据（海外：Apple + Google + Stripe；中国：微信支付）。
 - [ ] 生产环境 `NW_IAP_DEV` **不设或设为 `false`**（设 `true` 会被 commercial 拒启）。
 - [ ] 生产进程 `NODE_ENV=production`（确保 dev 桩双保险生效）。

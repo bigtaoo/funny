@@ -31,6 +31,13 @@ const MIGRATIONS: Array<(d: AnyObj) => AnyObj> = [
     d.version = 3;
     return d;
   },
+  // v3 → v4: Hero Roster (CC-1). unitLevels + cardInventory + gear are dropped in favour of cardInv;
+  // cardInv / equipmentInv are additive-only fields that fillDefaults backfills with {} (progression
+  // restarts per-card from L1). Just pin the version number so the chain length matches SAVE_VERSION.
+  (d) => {
+    d.version = 4;
+    return d;
+  },
 ];
 
 /** Deep-merge defaults: keys missing from obj are filled from def; existing keys are kept (objects recurse, arrays/scalars are kept as-is). */

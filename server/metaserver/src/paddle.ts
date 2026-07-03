@@ -188,66 +188,71 @@ export function registerPaddleRoutes(app: FastifyInstance, deps: PaddleDeps): vo
   );
 
   // ── POST /paddle/webhook ───────────────────────────────────────────────────
-  // Raw body needed for signature verification; Fastify parses JSON by default so we
-  // register this route with addContentTypeParser to intercept as raw Buffer first.
-  app.addContentTypeParser(
-    'application/json',
-    { parseAs: 'string', bodyLimit: 1024 * 64 },
-    (_req, body, done) => {
-      // Store raw string on req for signature check; also parse for handler use.
-      (_req as FastifyRequest & { rawBody?: string }).rawBody = body as string;
-      try {
-        done(null, JSON.parse(body as string));
-      } catch (e) {
-        done(e as Error);
-      }
-    },
-  );
+  // Raw body needed for signature verification; Fastify parses JSON by default so we override the
+  // application/json parser to capture the raw string. This MUST be encapsulated in its own plugin
+  // scope: registering the parser on the shared `app` would replace the global JSON parser for every
+  // route and impose its 64KB bodyLimit app-wide (e.g. /replay/share's 2MB blobs → Fastify 413 before
+  // the app-layer 400 ever fires). A child context confines both the parser and its limit to this route.
+  app.register(async (webhook) => {
+    webhook.addContentTypeParser(
+      'application/json',
+      { parseAs: 'string', bodyLimit: 1024 * 64 },
+      (_req, body, done) => {
+        // Store raw string on req for signature check; also parse for handler use.
+        (_req as FastifyRequest & { rawBody?: string }).rawBody = body as string;
+        try {
+          done(null, JSON.parse(body as string));
+        } catch (e) {
+          done(e as Error);
+        }
+      },
+    );
 
-  app.post(
-    '/paddle/webhook',
-    async (req: FastifyRequest, reply: FastifyReply) => {
-      const secret = process.env.NW_PADDLE_WEBHOOK_SECRET;
-      if (!secret) return reply.code(503).send('paddle webhook not configured');
+    webhook.post(
+      '/paddle/webhook',
+      async (req: FastifyRequest, reply: FastifyReply) => {
+        const secret = process.env.NW_PADDLE_WEBHOOK_SECRET;
+        if (!secret) return reply.code(503).send('paddle webhook not configured');
 
-      const sigHeader = (req.headers['paddle-signature'] as string) ?? '';
-      const rawBody = (req as FastifyRequest & { rawBody?: string }).rawBody ?? '';
+        const sigHeader = (req.headers['paddle-signature'] as string) ?? '';
+        const rawBody = (req as FastifyRequest & { rawBody?: string }).rawBody ?? '';
 
-      if (!verifyPaddleSignature(secret, rawBody, sigHeader)) {
-        return reply.code(400).send('invalid signature');
-      }
+        if (!verifyPaddleSignature(secret, rawBody, sigHeader)) {
+          return reply.code(400).send('invalid signature');
+        }
 
-      const event = req.body as PaddleWebhookEvent;
+        const event = req.body as PaddleWebhookEvent;
 
-      // Only process transaction.completed events.
-      if (event.event_type !== 'transaction.completed') {
-        return reply.code(200).send('ignored');
-      }
+        // Only process transaction.completed events.
+        if (event.event_type !== 'transaction.completed') {
+          return reply.code(200).send('ignored');
+        }
 
-      const txData = event.data;
-      const transactionId = txData?.id;
-      const status = txData?.status;
-      const accountId = txData?.custom_data?.accountId;
-      const priceId = txData?.items?.[0]?.price?.id;
+        const txData = event.data;
+        const transactionId = txData?.id;
+        const status = txData?.status;
+        const accountId = txData?.custom_data?.accountId;
+        const priceId = txData?.items?.[0]?.price?.id;
 
-      if (!transactionId || status !== 'completed' || !accountId || !priceId) {
-        return reply.code(400).send('missing required fields');
-      }
+        if (!transactionId || status !== 'completed' || !accountId || !priceId) {
+          return reply.code(400).send('missing required fields');
+        }
 
-      const coins = coinsForPriceId(priceId);
-      if (coins === 0) {
-        app.log.warn(`paddle webhook: unknown priceId ${priceId} for tx ${transactionId}`);
-        return reply.code(200).send('unknown price'); // 200 so Paddle does not retry
-      }
+        const coins = coinsForPriceId(priceId);
+        if (coins === 0) {
+          app.log.warn(`paddle webhook: unknown priceId ${priceId} for tx ${transactionId}`);
+          return reply.code(200).send('unknown price'); // 200 so Paddle does not retry
+        }
 
-      const result = await deps.commercial.paddleComplete({ accountId, transactionId, coins });
-      if (!result.ok) {
-        app.log.error(`paddle paddleComplete failed: ${result.error} tx=${transactionId}`);
-        return reply.code(200).send('processed'); // still 200 to prevent retry loops on business errors
-      }
+        const result = await deps.commercial.paddleComplete({ accountId, transactionId, coins });
+        if (!result.ok) {
+          app.log.error(`paddle paddleComplete failed: ${result.error} tx=${transactionId}`);
+          return reply.code(200).send('processed'); // still 200 to prevent retry loops on business errors
+        }
 
-      await mirrorCoins(deps.cols, accountId, result.coinsAfter, deps.now());
-      return reply.code(200).send('ok');
-    },
-  );
+        await mirrorCoins(deps.cols, accountId, result.coinsAfter, deps.now());
+        return reply.code(200).send('ok');
+      },
+    );
+  });
 }

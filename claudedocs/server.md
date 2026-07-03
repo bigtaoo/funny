@@ -55,13 +55,13 @@ npm run dev:all             # 起全部进程（dev-up.ps1）
 
 ### 本地全栈模拟（完整：9 进程 + 主客户端 + 3 工具 + mongo + redis）
 
-`docker-compose.local.yml` 拉起**全部 9 个服务端进程 + redis + 主客户端(nginx) + animator/level-editor/ops 三个工具前端**，每次 up 都 `--build`（从当前代码重建镜像）。
+`docker/docker-compose.local.yml` 拉起**全部 9 个服务端进程 + redis + 主客户端(nginx) + animator/level-editor/ops 三个工具前端**，每次 up 都 `--build`（从当前代码重建镜像）。编排文件在 `docker/`，所有 build context 相对它写（`../` = 仓库根），并 pin 了 `name: funny` 保持项目名/数据卷不变。
 
 ```powershell
-./local-up.ps1              # 构建最新代码 + docker compose，浏览器开 http://localhost:8088
-./local-up.ps1 -Fresh       # 先清空 mongo 数据卷
-./local-up.ps1 -Port 9000   # 换主游戏入口端口（客户端地址构建期烘焙，须重建 nginx 镜像）
-./local-down.ps1            # 停（保留 DB）；-Fresh 连数据清
+./docker/local-up.ps1              # 构建最新代码 + docker compose，浏览器开 http://localhost:8088
+./docker/local-up.ps1 -Fresh       # 先清空 mongo 数据卷
+./docker/local-up.ps1 -Port 9000   # 换主游戏入口端口（客户端地址构建期烘焙，须重建 nginx 镜像）
+./docker/local-down.ps1            # 停（保留 DB）；-Fresh 连数据清
 ```
 
 > **脚本编码**：`local-up.ps1`/`local-down.ps1` 含中文，**必须存为 UTF-8 with BOM**——否则 Windows PowerShell 5.1 按系统 ANSI 码页解析多字节字符，会把含中文的字符串引号读错而整脚本解析失败（`Missing closing ')'`）。改这两个脚本后务必保留 BOM。
