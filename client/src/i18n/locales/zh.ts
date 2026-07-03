@@ -285,6 +285,11 @@ export const zh = {
   // ── Out-of-game replay share (REPLAY_SHARE_DESIGN) ───────────────────────────
   'share.button': '分享',
   'share.title': '来看我这一局！',
+  'share.copied': '📋 链接已复制，发给好友一起看吧',
+  'share.manual': '请复制弹窗里的链接分享给好友',
+  'share.errTooLarge': '这局太长了，暂时无法分享',
+  'share.errRateLimited': '分享太频繁，请稍后再试',
+  'share.errGeneric': '分享失败，请稍后再试',
   'stateplayer.tag': '录像分享',
   'stateplayer.you': '蓝方',
   'stateplayer.opponent': '红方',

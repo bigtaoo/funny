@@ -1,5 +1,5 @@
 import type * as PIXI from 'pixi.js-legacy';
-import { IPlatform, IStorage, AuthCredential, IGameSocket, SocketHandlers } from '../IPlatform';
+import { IPlatform, IStorage, AuthCredential, IGameSocket, SocketHandlers, ShareResult } from '../IPlatform';
 import { InputManager } from '../../inputSystem/InputManager';
 import { WechatAdapter } from '../../inputSystem/WechatAdapter';
 import type { Locale } from '../../i18n';
@@ -142,10 +142,11 @@ export class WechatPlatform implements IPlatform {
   }
 
   /** Cannot share arbitrary external links: sends a game card into chat; recipients open the mini-game and read query.r to reach the player directly (§4.1). */
-  async shareReplay(shareCode: string, title: string): Promise<void> {
+  async shareReplay(shareCode: string, title: string): Promise<ShareResult> {
     try {
       wx.shareAppMessage({ title, query: `r=${shareCode}` });
     } catch { /* ignore */ }
+    return { method: 'card' };
   }
 
   getLaunchShareCode(): string | null {

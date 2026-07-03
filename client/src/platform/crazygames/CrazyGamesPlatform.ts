@@ -1,5 +1,5 @@
 import type * as PIXI from 'pixi.js-legacy';
-import { IPlatform, IStorage, AuthCredential, IGameSocket, SocketHandlers } from '../IPlatform';
+import { IPlatform, IStorage, AuthCredential, IGameSocket, SocketHandlers, ShareResult } from '../IPlatform';
 import { InputManager } from '../../inputSystem/InputManager';
 import { WebAdapter } from '../../inputSystem/WebAdapter';
 import { getOrCreateDeviceId } from '../uuid';
@@ -124,14 +124,22 @@ export class CrazyGamesPlatform implements IPlatform {
     return new BrowserGameSocket(url, handlers);
   }
 
-  async shareReplay(shareCode: string, title: string): Promise<void> {
+  async shareReplay(shareCode: string, title: string): Promise<ShareResult> {
     const url = `${window.location.origin}${window.location.pathname}?r=${encodeURIComponent(shareCode)}`;
     const nav = navigator as Navigator & { share?: (d: { title?: string; url?: string }) => Promise<void> };
     if (nav.share) {
-      await nav.share({ title, url });
-      return;
+      try {
+        await nav.share({ title, url });
+        return { method: 'native', url };
+      } catch { /* dismissed / failed → fall through to clipboard */ }
     }
-    await navigator.clipboard.writeText(url);
+    try {
+      await navigator.clipboard.writeText(url);
+      return { method: 'clipboard', url };
+    } catch {
+      try { window.prompt(title, url); } catch { /* no window.prompt */ }
+      return { method: 'manual', url };
+    }
   }
 
   getLaunchShareCode(): string | null {

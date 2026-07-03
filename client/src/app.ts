@@ -52,6 +52,7 @@ import { InputManager } from './inputSystem/InputManager';
 import type { ILayout } from './layout/ILayout';
 import { installGlobalErrorHandlers, setToastSink } from './net/log';
 import { GlobalToast } from './ui/GlobalToast';
+import { ui as C } from './render/sketchUi';
 import { setBakeRenderer } from './render/bake';
 import { preloadBoot } from './assets/bootManifest';
 import { LoadingOverlay } from './render/LoadingOverlay';
@@ -370,7 +371,7 @@ export async function startApp(platform: IPlatform): Promise<void> {
   // logic lives in net/log; this layer only provides the render outlet. The same outlet is
   // reused by SaveManager for targeted cloud-sync failure notifications.
   const globalToast = new GlobalToast(app);
-  setToastSink((text) => globalToast.show(text));
+  setToastSink((text, kind) => globalToast.show(text, kind === 'success' ? C.green : C.red));
 
   const layout: ILayout = createLayout(screenW, screenH);
   const scaling = new ScalingManager(app, layout);

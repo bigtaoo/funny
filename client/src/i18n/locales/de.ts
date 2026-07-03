@@ -283,6 +283,11 @@ export const de: Record<TranslationKey, string> = {
   // ── Spielexternes Teilen von Wiederholungen (REPLAY_SHARE_DESIGN) ────────────
   'share.button': 'Teilen',
   'share.title': 'Sieh dir mein Match an!',
+  'share.copied': '📋 Link kopiert — schick ihn deinen Freunden!',
+  'share.manual': 'Kopiere den Link im Fenster zum Teilen',
+  'share.errTooLarge': 'Dieses Match ist momentan zu lang zum Teilen',
+  'share.errRateLimited': 'Zu oft geteilt — versuch es gleich noch mal',
+  'share.errGeneric': 'Teilen fehlgeschlagen — bitte später erneut versuchen',
   'stateplayer.tag': 'Geteilte Wiederholung',
   'stateplayer.you': 'Blau',
   'stateplayer.opponent': 'Rot',

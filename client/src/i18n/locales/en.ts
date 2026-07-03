@@ -283,6 +283,11 @@ export const en: Record<TranslationKey, string> = {
   // ── Out-of-game replay sharing (REPLAY_SHARE_DESIGN) ─────────────────────────
   'share.button': 'Share',
   'share.title': 'Watch my match!',
+  'share.copied': '📋 Link copied — send it to your friends!',
+  'share.manual': 'Copy the link in the popup to share it',
+  'share.errTooLarge': 'This match is too long to share right now',
+  'share.errRateLimited': 'Sharing too often — try again in a moment',
+  'share.errGeneric': 'Share failed — please try again later',
   'stateplayer.tag': 'Shared replay',
   'stateplayer.you': 'Blue',
   'stateplayer.opponent': 'Red',
