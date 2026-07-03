@@ -387,6 +387,8 @@ export const de: Record<TranslationKey, string> = {
   // ── Limitierter Pool + Schicksalspunkte (GACHA_DESIGN §2.2/§7) ──
   'gacha.pool.standard': 'Standard',
   'gacha.pool.limited': 'Limitiert',
+  'gacha.pool.endsIn': 'Endet in {d}T {h}h',
+  'gacha.pool.ended': 'Beendet',
   'gacha.fate.balance': 'Schicksal {cur}/{cost}',
   'gacha.fate.redeem': 'Einlösen',
   'gacha.fate.redeemed': '{item} eingelöst',

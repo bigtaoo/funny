@@ -36,18 +36,22 @@ export const GACHA_CATEGORY_ORDER: GachaCategory[] = [
 ];
 
 /**
- * Stage-1 category weights (owner reference values 2026-07-03, DRAFT [adjustable]; sum = 100). Materials are
- * the bulk faucet; character cards next; equipment splits into three tiers (t1=fine, t2=rare, t3=epic gear);
- * skins are the rarest jackpot. NOTE: under these reference weights the effective legendary-rarity rate
- * (legendary cards + epic-gear tier + legendary skins) is ~3%, higher than the old flat 1% — tune here if undesired.
+ * Stage-1 category weights (owner reference 2026-07-03, DRAFT [adjustable]; sum = 1000). Materials are the bulk
+ * faucet; character cards next; equipment splits into three tiers (t1=fine, t2=rare, t3=epic gear); skins are
+ * the rarest jackpot. Shares ≈ 70.1/15/10/3/0.8/1.1 %.
+ *
+ * Tuned so the effective legendary-rarity rate ≈ 1% (owner target 2026-07-03), split across its three sources:
+ *   equip_t3 (epic gear, 100% legendary) 0.80% + legendary cards 0.10% (down-weighted 150:1 within the card
+ *   bucket, see CARD_TIER_WEIGHTS) + legendary skin 0.10% (skin 1.1% × 1/11). The card/skin buckets keep their
+ *   ~15%/1% shares — only equip_t3 was nudged 1%→0.8% to leave headroom for the card & skin legendaries.
  */
 export const CATEGORY_WEIGHTS: Record<GachaCategory, number> = {
-  material: 70,
-  card: 15,
-  equip_t1: 10,
-  equip_t2: 3,
-  equip_t3: 1,
-  skin: 1,
+  material: 701,
+  card: 150,
+  equip_t1: 100,
+  equip_t2: 30,
+  equip_t3: 8,
+  skin: 11,
 };
 
 /**
@@ -63,9 +67,24 @@ export const SKIN_TIER_WEIGHTS: Record<Rarity, number> = {
   legendary: 1,
 };
 
-/** Within-category item weight: skins use their own tier ladder; every other category weights by rarity. */
+/**
+ * Card sub-tier weights (owner decision 2026-07-03): the card bucket is large (~15%), so legendary Anna cards
+ * (max/lena/mara) are deliberately down-weighted 150:1 vs epic cards — otherwise they alone would dominate the
+ * legendary rate (~2.1%). At launch only epic/legendary card tiers are populated (common/rare renormalized out),
+ * so per-card legendary ≈ 0.033% and the card bucket contributes ~0.10% legendary total.
+ */
+export const CARD_TIER_WEIGHTS: Record<Rarity, number> = {
+  common: 600,
+  rare: 300,
+  epic: 150,
+  legendary: 1,
+};
+
+/** Within-category item weight: skins and cards use their own tier ladders; every other category weights by rarity. */
 export function withinCategoryWeight(category: GachaCategory, rarity: Rarity): number {
-  return category === 'skin' ? SKIN_TIER_WEIGHTS[rarity] : RARITY_WEIGHTS[rarity];
+  if (category === 'skin') return SKIN_TIER_WEIGHTS[rarity];
+  if (category === 'card') return CARD_TIER_WEIGHTS[rarity];
+  return RARITY_WEIGHTS[rarity];
 }
 
 export interface GachaPoolDef {

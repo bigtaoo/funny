@@ -389,6 +389,8 @@ export const zh = {
   // ── Limited pool + Fate Points (GACHA_DESIGN §2.2/§7) ──
   'gacha.pool.standard': '常驻池',
   'gacha.pool.limited': '限定池',
+  'gacha.pool.endsIn': '{d}天{h}小时后结束',
+  'gacha.pool.ended': '已结束',
   'gacha.fate.balance': '命运点 {cur}/{cost}',
   'gacha.fate.redeem': '兑换限定',
   'gacha.fate.redeemed': '已兑换 {item}',

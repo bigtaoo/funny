@@ -1,6 +1,6 @@
 // commercial internal client (S5-5): meta calls commercial via internal HTTP (X-Internal-Key) to
 // handle coin deduction / gacha draws / bookkeeping. Contract: SERVER_API.md §9 / COMMERCIAL_DESIGN §5. meta is the sole caller of commercial.
-import { internalHeaders, type Rarity, type LimitedPoolConfig } from '@nw/shared';
+import { internalHeaders, type Rarity, type LimitedPoolConfig, type CustomPoolConfig } from '@nw/shared';
 
 export interface GachaResultEntry {
   itemId: string;
@@ -24,12 +24,20 @@ export interface WalletView {
   starterUsed: string[];
 }
 
-/** Limited pool config as stored/listed by commercial (LimitedPoolConfig + audit fields). */
-export interface GachaPoolView extends LimitedPoolConfig {
+/** Audit fields commercial stamps on every stored pool config. */
+interface GachaPoolAudit {
   createdBy: string;
   createdAt: number;
   closedAt?: number;
 }
+
+/**
+ * A pool config as stored/listed by commercial. Discriminated by `kind` (absent = derived, GACHA_DESIGN §2.2;
+ * 'custom' = ops-authored free-form pool, §12). meta.getGachaPools branches on it to build the client view.
+ */
+export type GachaPoolView =
+  | (LimitedPoolConfig & GachaPoolAudit & { kind?: 'derived' })
+  | (CustomPoolConfig & GachaPoolAudit & { kind: 'custom' });
 
 type Body<T> = ({ ok: true } & T) | { ok: false; error: string };
 
@@ -61,6 +69,10 @@ export interface CommercialClient {
   // ── Limited pools + monetization (GACHA_DESIGN §2/§5/§6/§7) ──
   createLimitedPool(args: {
     config: LimitedPoolConfig;
+    createdBy: string;
+  }): Promise<Body<{ id: string }>>;
+  createCustomPool(args: {
+    config: CustomPoolConfig;
     createdBy: string;
   }): Promise<Body<{ id: string }>>;
   closeLimitedPool(args: { id: string }): Promise<Body<{ id: string }>>;
@@ -212,6 +224,10 @@ export class HttpCommercialClient implements CommercialClient {
 
   createLimitedPool(args: { config: LimitedPoolConfig; createdBy: string }) {
     return this.post<{ id: string }>('/internal/gacha/pool', args);
+  }
+
+  createCustomPool(args: { config: CustomPoolConfig; createdBy: string }) {
+    return this.post<{ id: string }>('/internal/gacha/pool/custom', args);
   }
 
   closeLimitedPool(args: { id: string }) {

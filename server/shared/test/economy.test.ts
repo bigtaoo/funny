@@ -108,10 +108,10 @@ describe('poolEntries', () => {
     const total = entries.reduce((s, e) => s + e.weight, 0);
     expect(total).toBeGreaterThan(0);
     expect(entries.reduce((s, e) => s + e.weight / total, 0)).toBeCloseTo(1, 5);
-    // Effective legendary-rarity share (epic-gear tier + legendary cards + legendary skin) ≈ 3% under the reference weights.
+    // Effective legendary-rarity share (epic-gear tier + legendary cards + legendary skin) is tuned to ~1%.
     const legShare = entries.filter((e) => e.rarity === 'legendary').reduce((s, e) => s + e.weight / total, 0);
-    expect(legShare).toBeGreaterThan(0.02);
-    expect(legShare).toBeLessThan(0.05);
+    expect(legShare).toBeGreaterThan(0.009);
+    expect(legShare).toBeLessThan(0.011);
   });
 
   it('tags every entry with its rarity', () => {

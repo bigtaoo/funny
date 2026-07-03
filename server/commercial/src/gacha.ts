@@ -15,6 +15,9 @@ import {
   withinCategoryWeight,
   itemRarityMap,
   type GachaCategory,
+  catalogItem,
+  type CustomPoolCategory,
+  type CustomPoolConfig,
   type GachaPoolDef,
   type Rarity,
 } from '@nw/shared';
@@ -172,6 +175,50 @@ export function rollGacha(
   }
 
   return { results, pityAfter: pity };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Custom (ops-authored) pool roll (GACHA_DESIGN §12). Two-stage weighted pick — a category by weight,
+// then an item within it by weight — with NO pity, NO soft-pity and NO featured-legendary / Fate logic.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Pick an index into `weights` proportional to weight. Weights are scaled to integers (1e6 resolution,
+ * enough for fractional percentages) so the pick stays on the RandInt(n) integer contract.
+ */
+function weightedIndex(weights: number[], rng: RandInt): number {
+  const scaled = weights.map((w) => Math.max(0, Math.round(w * 1_000_000)));
+  const total = scaled.reduce((s, w) => s + w, 0);
+  if (total <= 0) return 0;
+  let roll = rng(total);
+  for (let i = 0; i < scaled.length; i++) {
+    roll -= scaled[i]!;
+    if (roll < 0) return i;
+  }
+  return scaled.length - 1;
+}
+
+function rollCustomOne(cats: CustomPoolCategory[], rng: RandInt): GachaResultEntry {
+  const cat = cats[weightedIndex(cats.map((c) => c.weight), rng)]!;
+  const items = cat.items.filter((it) => it.weight > 0);
+  const item = items[weightedIndex(items.map((it) => it.weight), rng)]!;
+  return { itemId: item.itemId, rarity: catalogItem(item.itemId)?.rarity ?? 'common' };
+}
+
+/**
+ * Roll `count` pulls on an ops-authored custom pool. Pure probability: each pull independently rolls a
+ * category then an item. Categories/items with non-positive weight are ignored. Assumes `cfg` passed
+ * validateCustomPool (≥1 usable category), so `cats` is non-empty.
+ */
+export function rollCustomGacha(
+  cfg: CustomPoolConfig,
+  count: number,
+  rng: RandInt = cryptoRand,
+): GachaResultEntry[] {
+  const cats = cfg.categories.filter((c) => c.weight > 0 && c.items.some((it) => it.weight > 0));
+  const results: GachaResultEntry[] = [];
+  for (let i = 0; i < count; i++) results.push(rollCustomOne(cats, rng));
+  return results;
 }
 
 /**

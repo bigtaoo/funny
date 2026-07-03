@@ -11,6 +11,10 @@ import type {
   CompTicketView,
   EventDoc,
   EventInput,
+  AdminGachaPool,
+  GachaCategory,
+  GachaCatalogItem,
+  CustomPoolConfig,
   FeatureFlagDoc,
   FeatureFlagRow,
   FlagRollout,
@@ -256,6 +260,22 @@ export class Api {
   }
   async deleteEvent(id: string): Promise<void> {
     await this.req('DELETE', `/admin/events/${encodeURIComponent(id)}`);
+  }
+
+  // ── Custom gacha pool management (GACHA_DESIGN §12, gacha.pools.manage) ──
+  async gachaPools(): Promise<AdminGachaPool[]> {
+    const r = await this.req<{ pools: AdminGachaPool[] }>('GET', '/admin/gacha/pools');
+    return r.pools;
+  }
+  async gachaCatalog(): Promise<Record<GachaCategory, GachaCatalogItem[]>> {
+    const r = await this.req<{ catalog: Record<GachaCategory, GachaCatalogItem[]> }>('GET', '/admin/gacha/catalog');
+    return r.catalog;
+  }
+  async createCustomPool(config: CustomPoolConfig): Promise<{ id: string }> {
+    return this.req<{ id: string }>('POST', '/admin/gacha/pools/custom', config);
+  }
+  async closeGachaPool(id: string): Promise<void> {
+    await this.req('POST', '/admin/gacha/pools/close', { id });
   }
 
   // ── SLG season ops (G7/§17.7; slg.season.view / slg.season.manage) ──

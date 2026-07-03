@@ -38,44 +38,44 @@ describe('rollGacha', () => {
   });
 
   it('ten-pull already contains epic+: floor promotion not triggered', () => {
-    // First pull: category roll 99 lands in the skin segment [99,100); within-skin roll 0 → skin_e1 (epic).
+    // First pull: category roll 990 lands in the skin segment [989,1000); within-skin roll 0 → skin_e1 (epic).
     // Remaining pulls rng=0 → material/common. An epic is already present, so no floor promotion.
-    const { results } = rollGacha(pool, 10, 0, seq([99, 0]));
+    const { results } = rollGacha(pool, 10, 0, seq([990, 0]));
     expect(results[0]!.rarity).toBe('epic');
     expect(results[0]!.itemId).toBe('skin_e1');
     expect(results[9]!.rarity).toBe('common'); // last pull is not promoted
   });
 });
 
-// Two-stage base roll (GACHA_DESIGN §2.1a): category picked by CATEGORY_WEIGHTS (sum 100), then an item within
-// it weighted by display rarity. Category segments: material[0,70) card[70,85) equip_t1[85,95) equip_t2[95,98) equip_t3[98,99) skin[99,100).
+// Two-stage base roll (GACHA_DESIGN §2.1a): category picked by CATEGORY_WEIGHTS (sum 1000), then an item within it
+// weighted by display rarity. Category segments: material[0,701) card[701,851) equip_t1[851,951) equip_t2[951,981) equip_t3[981,989) skin[989,1000).
 describe('two-stage base roll', () => {
   it('category roll picks the skin bucket, then the within-skin tier ladder', () => {
-    // Category roll 99 → skin. Within-skin weights [skin_e1:5, skin_e2:5, skin_l1:1] (SKIN_TIER_WEIGHTS), total 11.
+    // Category roll 990 → skin. Within-skin weights [skin_e1:5, skin_e2:5, skin_l1:1] (SKIN_TIER_WEIGHTS), total 11.
     // Within roll 0 → skin_e1 (epic); roll 10 → skin_l1 (legendary, and pity resets).
-    const epicSkin = rollGacha(pool, 1, 0, seq([99, 0]));
+    const epicSkin = rollGacha(pool, 1, 0, seq([990, 0]));
     expect(epicSkin.results[0]).toEqual({ itemId: 'skin_e1', rarity: 'epic' });
     expect(epicSkin.pityAfter).toBe(1); // epic does not reset pity
 
-    const legSkin = rollGacha(pool, 1, 0, seq([99, 10]));
+    const legSkin = rollGacha(pool, 1, 0, seq([990, 10]));
     expect(legSkin.results[0]).toEqual({ itemId: 'skin_l1', rarity: 'legendary' });
     expect(legSkin.pityAfter).toBe(0); // legendary skin resets pity
   });
 
   it('a legendary character card from the card category resets pity', () => {
-    // Category roll 84 → card [70,85). Within-card weights [lichuang/chenshou/suyuan:60(epic), max/lena/mara:10(legendary)],
-    // total 210. Within roll 185 → index 3 (max, legendary).
-    const { results, pityAfter } = rollGacha(pool, 1, 5, seq([84, 185]));
+    // Category roll 800 → card [701,851). Within-card weights [lichuang/chenshou/suyuan:150(epic), max/lena/mara:1(legendary)]
+    // (CARD_TIER_WEIGHTS, legendary down-weighted 150:1), total 453. Within roll 450 → index 3 (max, legendary).
+    const { results, pityAfter } = rollGacha(pool, 1, 5, seq([800, 450]));
     expect(results[0]).toEqual({ itemId: 'max', rarity: 'legendary' });
     expect(pityAfter).toBe(0);
   });
 
   it('equipment tiers map to gear rarities (t1=fine→rare display, t3=epic→legendary display)', () => {
-    // t1 [85,95): first fine weapon wp_pen, displayed as rare.
-    const t1 = rollGacha(pool, 1, 0, seq([85, 0]));
+    // t1 [851,951): first fine weapon wp_pen, displayed as rare.
+    const t1 = rollGacha(pool, 1, 0, seq([851, 0]));
     expect(t1.results[0]).toEqual({ itemId: 'wp_pen', rarity: 'rare' });
-    // t3 [98,99): first epic gear wp_highlighter, displayed as legendary → resets pity.
-    const t3 = rollGacha(pool, 1, 0, seq([98, 0]));
+    // t3 [981,989): first epic gear wp_highlighter, displayed as legendary → resets pity.
+    const t3 = rollGacha(pool, 1, 0, seq([981, 0]));
     expect(t3.results[0]).toEqual({ itemId: 'wp_highlighter', rarity: 'legendary' });
     expect(t3.pityAfter).toBe(0);
   });
@@ -86,13 +86,17 @@ describe('poolEntries (two-stage)', () => {
   it('per-item probabilities sum to 1 and match the two-stage math', () => {
     const entries = poolEntries(pool);
     const total = entries.reduce((s, e) => s + e.weight, 0);
-    // skin_l1 = P(skin 1%) · P(l1 | skin = 1/11) ; the flagship legendary skin is ~0.152%.
+    // skin_l1 = P(skin 11/1000) · P(l1 | skin = 1/11) = 1/1000 ; the flagship legendary skin is ~0.10%.
     const l1 = entries.find((e) => e.itemId === 'skin_l1')!;
     expect(l1.rarity).toBe('legendary');
-    expect(l1.weight / total).toBeCloseTo((1 / 100) * (1 / 11), 4);
-    // mat_scrap = P(material 70%) · P(scrap | material = 700/990) ≈ 49.5%.
+    expect(l1.weight / total).toBeCloseTo((11 / 1000) * (1 / 11), 4);
+    // mat_scrap = P(material 701/1000) · P(scrap | material = 700/990) ≈ 49.6%.
     const scrap = entries.find((e) => e.itemId === 'mat_scrap')!;
-    expect(scrap.weight / total).toBeCloseTo(0.7 * (700 / 990), 3);
+    expect(scrap.weight / total).toBeCloseTo((701 / 1000) * (700 / 990), 3);
+    // Effective legendary rate is tuned to ~1%.
+    const legShare = entries.filter((e) => e.rarity === 'legendary').reduce((s, e) => s + e.weight / total, 0);
+    expect(legShare).toBeGreaterThan(0.009);
+    expect(legShare).toBeLessThan(0.011);
     // Probabilities normalize to 1.
     expect(entries.reduce((s, e) => s + e.weight / total, 0)).toBeCloseTo(1, 5);
   });
@@ -119,8 +123,8 @@ describe('soft pity', () => {
   });
 
   it('below the soft-pity start the base roll is the two-stage category draw, not the flat table', () => {
-    // pity 5 (< 70): no soft-pity boost → category roll. Category 84 → card, within 185 → max (legendary card).
-    const { results } = rollGacha(pool, 1, 5, seq([84, 185]));
+    // pity 5 (< 70): no soft-pity boost → category roll. Category 800 → card, within 450 → max (legendary card).
+    const { results } = rollGacha(pool, 1, 5, seq([800, 450]));
     expect(results[0]).toEqual({ itemId: 'max', rarity: 'legendary' });
   });
 });

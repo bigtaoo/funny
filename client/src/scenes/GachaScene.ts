@@ -285,6 +285,24 @@ export class GachaScene implements Scene {
     poolBadge.x = bx + Math.round(w * 0.02); poolBadge.y = by + Math.round(h * 0.015);
     this.container.addChild(poolBadge);
 
+    // Limited / custom pool expiry countdown (banner bottom-left). Server only serves in-window pools,
+    // so this normally counts down; a cached pool that just lapsed shows "Ended".
+    if (pool.limited && pool.endAt) {
+      const remain = pool.endAt - Date.now();
+      const cdLabel =
+        remain <= 0
+          ? t('gacha.pool.ended')
+          : t('gacha.pool.endsIn', {
+              d: Math.floor(remain / 86_400_000),
+              h: Math.floor((remain % 86_400_000) / 3_600_000),
+            });
+      const cd = txt(cdLabel, Math.round(h * 0.016), remain <= 0 ? C.mid : C.gold, true);
+      cd.anchor.set(0, 1);
+      cd.x = bx + Math.round(w * 0.02);
+      cd.y = by + bannerH - Math.round(h * 0.015);
+      this.container.addChild(cd);
+    }
+
     // Rarity legend: N star-pips per rarity (1..4), tinted by rarity colour.
     const dotR = Math.round(h * 0.012);
     const order: Rarity[] = ['common', 'rare', 'epic', 'legendary'];

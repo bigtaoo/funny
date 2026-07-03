@@ -50,6 +50,8 @@ import {
   poolEntries,
   gachaCost,
   buildLimitedPool,
+  customPoolEntries,
+  customPoolCostTen,
   ADS_REWARD_COINS,
   ADS_DAILY_CAP,
   ADS_MIN_INTERVAL_MS,
@@ -84,7 +86,7 @@ import {
 import { createOAuthService, OAuthError, type OAuthProvider } from './oauth.js';
 import { profileOf } from './social.js';
 import { splitAttachments, insertSystemMail } from './mail.js';
-import type { CommercialClient } from './commercialClient.js';
+import type { CommercialClient, GachaPoolView } from './commercialClient.js';
 import type { GatewayClient } from './gatewayClient.js';
 import {
   markDuplicates,
@@ -1802,12 +1804,31 @@ export class MetaService {
         })),
       };
     };
+    // Build a client view for an ops-authored custom pool (§12): its own cost/entries, no pity/featured.
+    const customToView = (cfg: Extract<GachaPoolView, { kind: 'custom' }>): PoolView => {
+      const entries = customPoolEntries(cfg);
+      const totalWeight = entries.reduce((s, e) => s + e.weight, 0);
+      return {
+        id: cfg.id,
+        costSingle: cfg.costSingle,
+        costTen: customPoolCostTen(cfg),
+        pityThreshold: 0, // custom pools have no pity
+        dupePolicy: 'coins',
+        limited: true,
+        name: cfg.name,
+        endAt: cfg.endAt,
+        entries: entries.map((e) => ({ ...e, probability: totalWeight > 0 ? e.weight / totalWeight : 0 })),
+      };
+    };
     const pools: PoolView[] = GACHA_POOLS.map((p) => toView(p));
     // Append active limited pools (best-effort; if commercial is down the client still gets the static pools).
     if (commercial.available) {
       try {
         const active = await commercial.listActiveLimitedPools(now());
-        for (const cfg of active) pools.push(toView(buildLimitedPool(cfg), cfg.name));
+        for (const cfg of active) {
+          if (cfg.kind === 'custom') pools.push(customToView(cfg));
+          else pools.push(toView(buildLimitedPool(cfg), cfg.name));
+        }
       } catch {
         /* best-effort: static pools already returned */
       }
