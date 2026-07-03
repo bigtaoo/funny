@@ -277,6 +277,14 @@ export class WorldMapScene implements Scene {
   private modalLayer!: PIXI.Container;
   private toastLayer!: PIXI.Container;
 
+  // First-paint loading gate: an opaque paper cover shown until the terrain / city /
+  // resource atlases have decoded, so the map reveals fully textured rather than
+  // flashing flat color blocks that then swap to the hand-drawn ground textures.
+  private loadingLayer: PIXI.Container | null = null;
+  private loadingSpinner: PIXI.Graphics | null = null;
+  private loadingAngle = 0;
+  private loadingTimeout: ReturnType<typeof setTimeout> | null = null;
+
   // Selected tile
   private selectedTile: { x: number; y: number } | null = null;
 
@@ -315,16 +323,26 @@ export class WorldMapScene implements Scene {
 
     this.marchPoll = setInterval(() => { if (!this.destroyed) this.refreshMarches(); }, 5000);
 
-    // Lazy-load resource motif atlas (fire-and-forget; tiles fall back to color if not ready).
-    loadResAtlas().catch((err) => console.warn('[WorldMapScene] res atlas load failed:', err));
-    // Lazy-load city sprite atlas; once ready, redraw tiles to drop programmatic icons.
-    loadCityAtlas().then(() => {
-      if (!this.destroyed) this.renderMap();
-    }).catch((err) => console.warn('[WorldMapScene] city atlas load failed:', err));
-    // Lazy-load terrain ground-tile atlas; once ready, redraw tiles to swap in the texture fill.
-    loadTerrainAtlas().then(() => {
-      if (!this.destroyed) this.renderMap();
-    }).catch((err) => console.warn('[WorldMapScene] terrain atlas load failed:', err));
+    // Load the map atlases (terrain ground tiles / city sprites / resource motifs)
+    // behind the loading cover, then reveal the map fully textured in one paint —
+    // rather than showing flat color blocks that visibly swap to textures. Each load
+    // is best-effort: on decode failure that layer falls back to its flat-color /
+    // programmatic rendering, so a failed atlas must not trap the player on the cover.
+    const atlasLoads = [
+      loadTerrainAtlas().catch((err) => console.warn('[WorldMapScene] terrain atlas load failed:', err)),
+      loadCityAtlas().catch((err) => console.warn('[WorldMapScene] city atlas load failed:', err)),
+      loadResAtlas().catch((err) => console.warn('[WorldMapScene] res atlas load failed:', err)),
+    ];
+    Promise.allSettled(atlasLoads).then(() => {
+      if (this.destroyed) return;
+      this.renderMap();
+      this.hideLoading();
+    });
+    // Safety net: reveal anyway if an atlas hangs (e.g. a stalled decode), so the
+    // player is never stuck staring at the loading cover.
+    this.loadingTimeout = setTimeout(() => {
+      if (!this.destroyed) { this.renderMap(); this.hideLoading(); }
+    }, 8000);
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────
@@ -372,9 +390,57 @@ export class WorldMapScene implements Scene {
     this.toastLayer = new PIXI.Container();
     this.container.addChild(this.toastLayer);
 
+    // Loading cover — top-most so the half-built / untextured map never peeks through.
+    this.buildLoadingOverlay();
+
     this.buildPool();
     this.renderHud();
     this.invalidatePool();
+  }
+
+  /**
+   * The first-paint loading cover: an opaque notebook-paper sheet + a hand-drawn
+   * spinning ink ring + localized "loading map…" caption. Hidden by hideLoading()
+   * once the map atlases have settled (see constructor). Sized to the full scene so
+   * nothing underneath — flat color tiles, fog, half-loaded city sprites — shows.
+   */
+  private buildLoadingOverlay(): void {
+    const { w, h } = this;
+    const layer = new PIXI.Container();
+
+    const sheet = buildPaperBackground('worldmap-loading', w, h);
+    layer.addChild(sheet);
+
+    const cx = w / 2;
+    const cy = (h - HUD_H) / 2;
+
+    // Broken ink ring (open arc) — rotated each frame in update() while active.
+    const spinner = new PIXI.Graphics();
+    spinner.lineStyle(3, 0x3a3a3a, 0.9);
+    spinner.arc(0, 0, 22, -Math.PI * 0.15, Math.PI * 1.25);
+    spinner.position.set(cx, cy);
+    layer.addChild(spinner);
+
+    const label = new PIXI.Text(t('world.loading'), {
+      fontFamily: 'sans-serif', fontSize: 18, fill: 0x3a3a3a,
+    });
+    label.anchor.set(0.5);
+    label.position.set(cx, cy + 50);
+    layer.addChild(label);
+
+    this.container.addChild(layer);
+    this.loadingLayer = layer;
+    this.loadingSpinner = spinner;
+  }
+
+  /** Remove the first-paint loading cover (idempotent); clears the safety timeout. */
+  private hideLoading(): void {
+    if (this.loadingTimeout) { clearTimeout(this.loadingTimeout); this.loadingTimeout = null; }
+    if (this.loadingLayer) {
+      this.loadingLayer.destroy({ children: true });
+      this.loadingLayer = null;
+      this.loadingSpinner = null;
+    }
   }
 
   // ── Data loading ───────────────────────────────────────────────────────────
@@ -2512,6 +2578,11 @@ export class WorldMapScene implements Scene {
   }
 
   update(dt: number): void {
+    // Spin the loading ring while the first-paint cover is up.
+    if (this.loadingSpinner) {
+      this.loadingAngle += dt * 4;
+      this.loadingSpinner.rotation = this.loadingAngle;
+    }
     if (this.toastTimer > 0) {
       this.toastTimer -= dt * 1000;
       if (this.toastTimer <= 0) this.toastLayer.removeChildren();
@@ -2532,6 +2603,7 @@ export class WorldMapScene implements Scene {
 
   destroy(): void {
     this.destroyed = true;
+    if (this.loadingTimeout) { clearTimeout(this.loadingTimeout); this.loadingTimeout = null; }
     if (this.marchPoll) { clearInterval(this.marchPoll); this.marchPoll = null; }
     if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
     for (const u of this.unsubs) u();

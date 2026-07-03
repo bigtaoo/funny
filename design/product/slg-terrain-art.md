@@ -82,6 +82,7 @@ lines
 - **画幅**：正方形画布（如 512×512），对应菱形（2:1 等距）的外接矩形，渲染时程序侧裁成菱形（`diamondPath`），不需要美术手工裁边。
 - **叠加关系**：这层贴图只替换 `drawTileL1` 里的纯色地形填充（[`WorldMapScene.ts:719-722`](../../client/src/scenes/WorldMapScene.ts:719)）；归属水洗/描边、迷雾、等级点、HP 血条、资源母题、城池贴图等继续是程序绘制/已有贴图叠在上面，不受影响。
 - **接入实现（已完成）**：仿照 `resAtlasLoader.ts` / `cityAtlasLoader.ts` 的模式新增 `terrainAtlasLoader.ts` + 打包脚本 `pack_terrain.cjs`，产物放 `client/src/assets/slg/terrain_atlas.{png,json}`；贴图未就绪时保留纯色 `beginFill` 兜底，和 city/res 的 fallback 逻辑一致。渲染实现用的是 `Graphics.beginTextureFill()` 直接把贴图当纹理铺进 `drawPolygon(diamondPath(...))`（不是额外叠 `PIXI.Sprite` + mask），矩阵把方形贴图坐标映射进菱形外接矩形，边角自然被 `drawPolygon` 裁掉，不需要单独的遮罩层。
+- **首帧加载门控（已完成）**：`WorldMapScene` 进场即盖一层不透明纸面 loading 遮罩（旋转墨环 + `world.loading` 文案，`buildLoadingOverlay`/`hideLoading`），三张地图图集（terrain/city/res）`Promise.allSettled` 全部落定后一次性 `renderMap` 再揭遮罩——避免"先闪纯色色块再换贴图"。任一图集解码失败按各自 fallback 走、不阻塞；另设 8s 兜底超时，图集卡死也不会把玩家困在遮罩上。上面「贴图未就绪保留纯色兜底」的 fallback 仍在（遮罩之下不可见，仅超时/失败后生效）。
 
 ---
 
