@@ -238,3 +238,28 @@ App 启动
 - **AnimatedSprite textures 切换**：复用对象时只需替换 `textures` 数组，不需要重建对象。
 - **release 时机**：确保对象从舞台移除后再归还池，避免池内对象仍在渲染树中被访问。
 - **内存预算**：无内存回收意味着峰值内存即为最终占用。建议在开发阶段用 Chrome DevTools Memory 面板评估全量资源的纹理内存总量，桌面端通常 512MB 以内是安全的。
+
+---
+
+## 五、程序绘制的烘焙与增量更新
+
+除资源缓存与对象池外，手绘笔记本风格靠 `SketchPen` 程序绘制的图形还有第三层复用策略：**静态一次烘焙、动态分层增量重绘**。
+
+### 5.1 静态图形烘焙（draw-once → bake → reuse）
+
+- `src/render/bake.ts`：`bake` / `bakeLazy` 通过 `renderer.generateTexture` / `RenderTexture` 把 `SketchPen` 画的静态美术（棋盘纸/方格/边框）烘焙成 GPU 纹理并按 key 缓存，之后只发 `PIXI.Sprite`，每帧零成本。
+- `src/ui/widgets/uiCache.ts`：`bake` 的 UI 封装（`getCachedTexture` / `getCachedDisplay`），返回键约定 `widget+size+variant`。返回键、卡框、稀有度边框、图标（`icons.ts`）都走它。
+- 无渲染器（headless 测试）时自动回退到实时绘制，调用方无需分支。
+
+### 5.2 动态图形的增量更新（HandView 卡牌）
+
+对内容频繁变化、不宜烘焙的动态图形（如手牌），采用**卡槽持久化 + 按变化频率分层、各层独立按需重绘**，替代「每次 `syncKey` 变化就全量 `teardown` + 重建 6 张卡」：
+
+| 层 | 触发重绘的条件 | 说明 |
+|---|---|---|
+| 内容层（bg 手绘/涂色/角标 + art + name/cost 文本） | `卡id / 选中 / 卡尺寸` 变化（`slotContentKey`） | 最贵的一层（SketchPen 路径 + 文本布局 + 纹理适配），几帧才变一次 |
+| 可负担层（cost 徽章色 + 变暗遮罩） | `canAfford` 翻转（`slotAfford`） | ink 频繁变但不跨越 cost 阈值时零成本 |
+| 刷新条 | 像素签名 `barW:color:alpha` 变化（`slotBarSig`） | 每 tick 变；不同卡独立刷新，一张卡倒计时不再连累其余卡重绘 |
+| 闪白 | 过期动画进行中 | 逐帧，动画结束即 `clear` |
+
+顶层仍保留 `syncKey` 空闲帧早退，tick 之间的帧零成本。卡槽随手牌大小通过对象池 `ensureSlotCount` 增删；纹理异步加载完成时须同时失效 `slotContentKey`（`fill('')`）以触发内容层重建。
