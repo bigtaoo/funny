@@ -22,6 +22,7 @@ import {
 } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { buildIcon } from '../render/icons';
+import { UNIT_ART_URLS, getArtTexture } from '../render/cardArt';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
@@ -57,8 +58,13 @@ export interface CardCallbacks {
 
 const HUD_H = 50;
 const RES_H = 28;
-const ROW_H = 64;
 const MODAL_DIM = 0x000000;
+
+// Roster grid: icon-card cells (name top / portrait left / attributes right)
+// packed into columns sized to the wide (1920) landscape canvas.
+const CELL_GAP = 12;
+const CARD_CELL_H = 118;
+const CARD_CELL_W_TARGET = 360;
 
 interface Rect { x: number; y: number; w: number; h: number; }
 
@@ -110,6 +116,8 @@ export class CardScene implements Scene {
   private toastTimer = 0;
   private destroyed = false;
   private readonly unsubs: (() => void)[] = [];
+  /** Portrait urls whose texture we've hooked for a one-shot re-render on load. */
+  private readonly artHooked = new Set<string>();
 
   constructor(layout: ILayout, input: InputManager, cb: CardCallbacks) {
     this.w = layout.designWidth;
@@ -218,99 +226,144 @@ export class CardScene implements Scene {
     }
 
     const sorted = sortCards(cards, save.equipmentInv ?? {});
-    const totalH = sorted.length * ROW_H;
+    const cols = Math.max(1, Math.floor((w - CELL_GAP) / (CARD_CELL_W_TARGET + CELL_GAP)));
+    const cellW = (w - CELL_GAP * (cols + 1)) / cols;
+    const rows = Math.ceil(sorted.length / cols);
+    const totalH = rows * (CARD_CELL_H + CELL_GAP) + CELL_GAP;
     this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
 
     const now = Date.now();
-    let cy = listY - this.scrollY;
-    for (const card of sorted) {
-      if (cy + ROW_H >= listY && cy <= listY + listH) {
-        this.renderCardRow(card, cy, cardState[card.id], now, save);
+    sorted.forEach((card, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = CELL_GAP + col * (cellW + CELL_GAP);
+      const y = listY + CELL_GAP + row * (CARD_CELL_H + CELL_GAP) - this.scrollY;
+      if (y + CARD_CELL_H >= listY && y <= listY + listH) {
+        this.renderCardCell(card, x, y, cellW, cardState[card.id], now, save);
       }
-      cy += ROW_H;
-    }
+    });
   }
 
-  private renderCardRow(
+  /**
+   * Icon-card cell: name across the top, unit portrait on the left, stats
+   * (level / power / troops / gear) on the right. Border color encodes SLG
+   * state (injured = red, deployed = accent).
+   */
+  private renderCardCell(
     card: CardInstance,
-    cy: number,
+    x: number,
+    y: number,
+    cellW: number,
     state: CardSLGState | undefined,
     now: number,
     save: SaveData,
   ): void {
-    const { w } = this;
     const def = CARD_DEFS[card.defId];
     const injuredUntil = state?.injuredUntil ?? 0;
     const isInjured = injuredUntil > now;
     const inTeam = !!state?.teamId;
+    const pad = 10;
 
     const border = isInjured ? C.red : (inTeam ? C.accent : C.mid);
-    const row = sketchPanel(w - 12, ROW_H - 4, { fill: 0xfaf9f5, border, seed: seedFor(cy, 0, w) });
-    row.x = 6; row.y = cy;
-    this.bodyLayer.addChild(row);
+    const cell = sketchPanel(cellW, CARD_CELL_H, { fill: 0xfaf9f5, border, seed: seedFor(x, y, cellW) });
+    cell.x = x; cell.y = y;
+    this.bodyLayer.addChild(cell);
 
-    // Faction dot
+    // ── Top: faction dot + name (name clipped so long names don't overrun) ──
     const factionColor = def?.faction === 'anna' ? 0xcc4466 : 0x4477cc;
     const dot = new PIXI.Graphics();
     dot.beginFill(factionColor).drawCircle(0, 0, 5).endFill();
-    dot.x = 18; dot.y = cy + 18;
+    dot.x = x + pad + 5; dot.y = y + pad + 7;
     this.bodyLayer.addChild(dot);
 
-    // Name + level
     const cardName = t(`card.${card.defId}.name` as TranslationKey);
-    const nameLbl = txt(`${cardName}`, 13, C.dark, true);
-    nameLbl.x = 30; nameLbl.y = cy + 8;
+    const nameLbl = txt(cardName, 14, C.dark, true);
+    nameLbl.x = x + pad + 16; nameLbl.y = y + pad;
+    nameLbl.style.wordWrap = false;
+    if (nameLbl.width > cellW - pad * 2 - 20) {
+      const s = cellW / (nameLbl.width + 40);
+      nameLbl.scale.set(Math.min(1, s));
+    }
     this.bodyLayer.addChild(nameLbl);
 
-    const lvLbl = txt(`Lv.${card.level}`, 11, C.mid);
-    lvLbl.x = 30; lvLbl.y = cy + 26;
-    this.bodyLayer.addChild(lvLbl);
-
-    // Power score
-    const power = Math.round(cardPower(card, save.equipmentInv ?? {}));
-    const pwrLbl = txt(`${t('roster.power')} ${power}`, 10, C.dark);
-    pwrLbl.x = 30 + lvLbl.width + 10; pwrLbl.y = cy + 27;
-    this.bodyLayer.addChild(pwrLbl);
-
-    // Tags: locked / inTeam / injured
-    let tagX = nameLbl.x + nameLbl.width + 8;
+    // Lock badge (top-right).
     if (card.locked) {
-      const tag = txt(`[${t('roster.locked')}]`, 10, C.mid);
-      tag.x = tagX; tag.y = cy + 10; this.bodyLayer.addChild(tag); tagX += tag.width + 4;
-    }
-    if (inTeam) {
-      const tag = txt(`[${t('roster.inTeam')}]`, 10, C.accent, true);
-      tag.x = tagX; tag.y = cy + 10; this.bodyLayer.addChild(tag); tagX += tag.width + 4;
-    }
-    if (isInjured) {
-      const tag = txt(`[${t('roster.injured').replace('{time}', injuryCountdown(injuredUntil, now))}]`, 10, C.red);
-      tag.x = tagX; tag.y = cy + 10; this.bodyLayer.addChild(tag);
+      const lk = buildIcon('lock', 15, C.mid);
+      lk.x = x + cellW - pad - 15; lk.y = y + pad;
+      this.bodyLayer.addChild(lk);
     }
 
-    // Troop count (right side)
+    // ── Left: portrait in a light frame ──
+    const imgBox = CARD_CELL_H - (pad + 28) - pad; // square
+    const imgX = x + pad;
+    const imgY = y + pad + 28;
+    const frame = sketchPanel(imgBox, imgBox, { fill: 0xf0eee7, border: C.mid, seed: seedFor(x, y, imgBox) });
+    frame.x = imgX; frame.y = imgY;
+    this.bodyLayer.addChild(frame);
+    const artUrl = def ? UNIT_ART_URLS[def.unitType] : undefined;
+    if (artUrl) this.drawArtFit(artUrl, imgX + 2, imgY + 2, imgBox - 4);
+
+    // ── Right: stats column ──
+    const ax = imgX + imgBox + 12;
+    let ay = imgY;
+    const lvLbl = txt(`Lv.${card.level}`, 12, C.mid, true);
+    lvLbl.x = ax; lvLbl.y = ay; this.bodyLayer.addChild(lvLbl);
+    ay += 19;
+
+    const power = Math.round(cardPower(card, save.equipmentInv ?? {}));
+    const pwrLbl = txt(`${t('roster.power')} ${power}`, 12, C.dark);
+    pwrLbl.x = ax; pwrLbl.y = ay; this.bodyLayer.addChild(pwrLbl);
+    ay += 19;
+
     if (def && state !== undefined) {
       const cap = troopCap(card);
       const cur = state.currentTroops;
-      const troopLbl = txt(`${cur}/${cap}`, 10, cur >= cap ? C.gold : C.mid);
-      troopLbl.anchor.set(1, 0); troopLbl.x = w - 18; troopLbl.y = cy + 10;
-      this.bodyLayer.addChild(troopLbl);
+      const troopLbl = txt(`${cur}/${cap}`, 12, cur >= cap ? C.gold : C.mid);
+      troopLbl.x = ax; troopLbl.y = ay; this.bodyLayer.addChild(troopLbl);
+      ay += 19;
     }
 
-    // Gear slot indicators (3 dots: filled = has equipment)
-    const gearX = w - 18;
-    const gearY = cy + 30;
+    // Status tag (deployed / injured).
+    if (inTeam) {
+      const tag = txt(`[${t('roster.inTeam')}]`, 10, C.accent, true);
+      tag.x = ax; tag.y = ay; this.bodyLayer.addChild(tag); ay += 16;
+    } else if (isInjured) {
+      const tag = txt(`[${t('roster.injured').replace('{time}', injuryCountdown(injuredUntil, now))}]`, 10, C.red);
+      tag.x = ax; tag.y = ay; this.bodyLayer.addChild(tag); ay += 16;
+    }
+
+    // Gear slot indicators (3 dots: filled = has equipment) — bottom-right.
+    const gearY = y + CARD_CELL_H - pad - 4;
     (['weapon', 'armor', 'trinket'] as EquipSlot[]).forEach((slot, i) => {
       const filled = !!(card.gear[slot]);
       const g = new PIXI.Graphics();
-      g.beginFill(filled ? C.accent : 0xddddcc).drawCircle(0, 0, 3).endFill();
-      g.x = gearX - (2 - i) * 10; g.y = gearY;
+      g.beginFill(filled ? C.accent : 0xddddcc).drawCircle(0, 0, 4).endFill();
+      g.x = x + cellW - pad - (2 - i) * 12; g.y = gearY;
       this.bodyLayer.addChild(g);
     });
 
     this.hitRects.push({
-      rect: { x: 6, y: cy, w: w - 12, h: ROW_H - 4 },
+      rect: { x, y, w: cellW, h: CARD_CELL_H },
       action: () => this.openDetail(card.id),
     });
+  }
+
+  /** Draw a unit portrait, centered & fit into a box; re-render once the texture loads. */
+  private drawArtFit(url: string, x: number, y: number, box: number): void {
+    const tex = getArtTexture(url);
+    if (!tex.baseTexture.valid) {
+      if (!this.artHooked.has(url)) {
+        this.artHooked.add(url);
+        tex.baseTexture.once('loaded', () => this.render());
+      }
+      return;
+    }
+    const scale = Math.min(box / tex.width, box / tex.height);
+    const sp = new PIXI.Sprite(tex);
+    sp.anchor.set(0.5);
+    sp.scale.set(scale);
+    sp.position.set(x + box / 2, y + box / 2);
+    this.bodyLayer.addChild(sp);
   }
 
   // ── Detail modal ─────────────────────────────────────────────────────────
