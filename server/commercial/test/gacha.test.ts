@@ -1,12 +1,6 @@
 // Gacha RNG + pity system unit tests (S5-3). Inject deterministic random sources to reproduce: weight mapping, hard pity hit, ten-pull floor, pity counter reset.
 import { describe, it, expect } from 'vitest';
-import {
-  GACHA_POOLS,
-  UNIT_CARD_POOL_ID,
-  GACHA_RARITY_TO_CARD_LEVEL,
-  findGachaPool,
-  parseCardKey,
-} from '@nw/shared';
+import { GACHA_POOLS } from '@nw/shared';
 import { buildLimitedPool } from '@nw/shared';
 import { rollGacha, rollStarterPack, softPityLegendaryProb, type RandInt } from '../src/gacha';
 
@@ -120,33 +114,5 @@ describe('buildLimitedPool', () => {
     const featuredSlots = p.itemsByRarity.legendary.filter((x) => x === 'skin_limited_01').length;
     expect(featuredSlots).toBeGreaterThanOrEqual(1);
     expect(p.itemsByRarity.legendary.some((x) => x !== 'skin_limited_01')).toBe(true);
-  });
-});
-
-// Unit card pool (S12-C): item = valid cardKey, rarity mapped to card level via GACHA_RARITY_TO_CARD_LEVEL.
-describe('rollGacha unit card pool', () => {
-  const units = findGachaPool(UNIT_CARD_POOL_ID)!;
-
-  it('every item in the pool is a valid cardKey, and card level matches rarity mapping', () => {
-    for (const rarity of ['common', 'rare', 'epic', 'legendary'] as const) {
-      const expectLevel = GACHA_RARITY_TO_CARD_LEVEL[rarity]!;
-      for (const itemId of units.itemsByRarity[rarity]) {
-        const parsed = parseCardKey(itemId);
-        expect(parsed).not.toBeNull();
-        expect(parsed!.level).toBe(expectLevel);
-      }
-    }
-  });
-
-  it('rng=0 → first common card = infantry:1 (T1)', () => {
-    const { results } = rollGacha(units, 1, 0, zero);
-    expect(results[0]!.rarity).toBe('common');
-    expect(parseCardKey(results[0]!.itemId)!.level).toBe(1);
-  });
-
-  it('legendary hit → T4 card', () => {
-    const { results } = rollGacha(units, 1, units.pityThreshold - 1, zero); // hard pity guarantees legendary
-    expect(results[0]!.rarity).toBe('legendary');
-    expect(parseCardKey(results[0]!.itemId)!.level).toBe(4);
   });
 });

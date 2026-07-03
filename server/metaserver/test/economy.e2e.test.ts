@@ -146,6 +146,8 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     const pools = body(await app.inject({ method: 'GET', url: '/gacha/pools', headers: auth() }));
     expect(pools.data.pools[0].id).toBe('standard');
     expect(pools.data.pools[0].entries.length).toBeGreaterThan(0);
+    // The retired unit-card pool (`units`) must never be surfaced as a second standard pool (removed 2026-07-03).
+    expect(pools.data.pools.some((p: { id: string }) => p.id === 'units')).toBe(false);
   });
 
   it('top-up → mirrored balance pushed back', async () => {
@@ -205,42 +207,8 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(r2.data.save.inventory.skins.filter((s: string) => s === 'skin_l1')).toHaveLength(1);
   });
 
-  // Gacha "units" pool still delivers into the (deprecated) cardInventory — this path was NOT migrated to the
-  // Hero Roster cardInv (unlike PvE level drops). The former `unitLevels` derivation was dropped with SaveData v4
-  // (field removed; the engine reads cardInv now), so it is no longer asserted here (cf. the reconciliation test below).
-  it('gacha unit card pool (S12-C): deduct coins → card goes into cardInventory, not treated as a skin', async () => {
-    comm.coins.set(accountId, 2000);
-    comm.nextResults = [{ itemId: 'archer:3', rarity: 'epic' }]; // epic→T3
-    const r = body(
-      await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'units', count: 1 } }),
-    );
-    // Unit card: duplicate is always false, goes into cardInventory.
-    expect(r.data.results[0]).toMatchObject({ itemId: 'archer:3', rarity: 'epic', duplicate: false });
-    expect(r.data.save.cardInventory['archer:3']).toBe(1);
-    expect(r.data.save.inventory.skins).not.toContain('archer:3'); // never goes into skin inventory
-    expect(r.data.save.gacha.pity.units).toBe(1);
-    // Draw the same card again → inventory incremented (card collection naturally allows duplicates: no refund, no dedup).
-    const r2 = body(
-      await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'units', count: 1 } }),
-    );
-    expect(r2.data.results[0].duplicate).toBe(false);
-    expect(r2.data.save.cardInventory['archer:3']).toBe(2);
-  });
-
-  it('unit card pool reconciliation (S12-C): crash after coin deduction → GET /save re-delivers into cardInventory, no loss no duplication', async () => {
-    comm.coins.set(accountId, 2000);
-    // Simulate commercial having deducted coins and created a charged units order, but meta has not yet delivered.
-    await comm.gachaDraw({ accountId, poolId: 'units', count: 1, orderId: 'orphan-units-1' });
-    comm.orders.get('orphan-units-1')!.result.results = [{ itemId: 'infantry:2', rarity: 'rare' }];
-    expect(await comm.undeliveredOrders(accountId)).toHaveLength(1);
-    const r1 = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
-    expect(r1.data.save.cardInventory['infantry:2']).toBe(1); // re-delivered into card inventory (not skins)
-    expect(r1.data.save.inventory.skins).not.toContain('infantry:2');
-    expect(await comm.undeliveredOrders(accountId)).toHaveLength(0);
-    // GET /save again: idempotent, no duplicate $inc.
-    const r2 = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
-    expect(r2.data.save.cardInventory['infantry:2']).toBe(1);
-  });
+  // (The separate `units` gacha pool + its cardInventory delivery/reconciliation were removed on 2026-07-03;
+  // unit cards now come only from PvE level drops — covered by pve.e2e.test.ts.)
 
   it('ad cap: more than 5 times → 429', async () => {
     for (let i = 0; i < 5; i++) {
