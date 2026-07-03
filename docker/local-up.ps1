@@ -83,5 +83,5 @@ Write-Host "    http://localhost:9092`t关卡编辑器 (level-editor)" -Foregrou
 Write-Host "    http://localhost:9093`t运维后台 (ops；默认连 admin http://localhost:18083)" -ForegroundColor White
 Write-Host ""
 Write-Host "  admin 种子账号: admin / admin123  (改 NW_ADMIN_SEED_USER / NW_ADMIN_SEED_PASS)" -ForegroundColor DarkGray
-Write-Host "  logs : docker compose -f docker-compose.local.yml logs -f nginx metaserver worldsvc" -ForegroundColor DarkGray
-Write-Host "  stop : ./local-down.ps1   (add -Fresh to wipe data)" -ForegroundColor DarkGray
+Write-Host "  logs : docker compose -f docker/docker-compose.local.yml logs -f nginx metaserver worldsvc" -ForegroundColor DarkGray
+Write-Host "  stop : ./docker/local-down.ps1   (add -Fresh to wipe data)" -ForegroundColor DarkGray
