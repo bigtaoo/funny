@@ -1639,8 +1639,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       equippedSkin: saveManager.get().equipped[EQUIP_SLOT] ?? null,
       // Hero Roster → engine (card level + per-card equipment buff blueprints, §9) and to the
       // renderer (worn gear drawn on units, §20.4). PvE-only; PvP omits both (hard wall).
-      cardInstances: toEngineCardInstances(saveManager.get().cardInv),
-      equipmentInv: saveManager.get().equipmentInv,
+      cardInstances: toEngineCardInstances(saveManager.get().cardInv ?? {}),
+      equipmentInv: saveManager.get().equipmentInv ?? {},
     });
   }
 

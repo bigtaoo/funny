@@ -103,10 +103,10 @@ export function cardPower(card: CardInstance, equipmentInv: Record<string, Equip
  * no card parameter, so card progression / equipment cannot leak into ladder/duel).
  */
 export function toEngineCardInstances(
-  cardInv: Record<string, CardInstance>,
+  cardInv: Record<string, CardInstance> | undefined,
 ): EngineCardInstance[] {
   const out: EngineCardInstance[] = [];
-  for (const card of Object.values(cardInv)) {
+  for (const card of Object.values(cardInv ?? {})) {
     const def = CARD_DEFS[card.defId];
     if (!def) continue; // unknown defId (forward-compat): skip
     out.push({

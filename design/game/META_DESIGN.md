@@ -129,6 +129,8 @@ function migrate(raw: any): SaveData { /* 按 version 顺序套用 */ }
 
 > **最易后期返工点**：开局即埋 `version` + 迁移链，否则改字段废老存档。
 
+> **不变量（2026-07-03 修）**：`migrate()` 的入参含 **cloud** 存档，不止 localStorage。任何采纳云存档的路径（`SaveManager.reconcile` / `adoptCloud`，即 bootstrap/refresh/adoptServer/putSave 409）都必须先过 `migrate()` 归一化，否则旧账号云端缺失的「客户端专属新字段」（如 v4 `cardInv`/`equipmentInv`）会以 `undefined` 落入 `this.save` → 开战 `Object.values(cardInv)` 抛 `TypeError: can't convert undefined to object`（线上返场玩家点战役必崩）。`MIGRATIONS` 链长须与 `SAVE_VERSION` 对齐（v0→…→v4 齐全）。
+
 ### 3.3 云存档（自托管 Node + Mongo）
 
 | 层 | v1 做法 | 说明 |
