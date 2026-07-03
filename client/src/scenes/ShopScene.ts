@@ -6,6 +6,7 @@ import { t, TranslationKey } from '../i18n';
 import type { ShopItem } from '../net/ApiClient';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
+import { buildIcon, type IconKind } from '../render/icons';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
@@ -26,6 +27,9 @@ const WEB_COIN_TIERS: CoinTierDef[] = [
   { id: 't4999', usdCents: 4999, base: 5000, coins:  6500 },
   { id: 't9999', usdCents: 9999, base: 10000, coins: 13500 },
 ];
+
+// Per-tier treasure glyph — escalating gold so bigger tiers read richer (ascending order).
+const COIN_TIER_ICONS: IconKind[] = ['coin', 'coins', 'coinStack', 'coinSack', 'coinChest'];
 
 // ── ShopScene (S2-6 + B-PROMO) — direct-purchase shop ────────────────────────
 //
@@ -572,7 +576,7 @@ export class ShopScene implements Scene {
     const rowH = Math.round(h * 0.10);
     const gap = Math.round(h * 0.018);
 
-    for (const tier of WEB_COIN_TIERS) {
+    WEB_COIN_TIERS.forEach((tier, idx) => {
       const priceDollars = (tier.usdCents / 100).toFixed(2);
       const bonusCoins = tier.coins - tier.base;
       const isBusy = this.bt.busy;
@@ -594,10 +598,20 @@ export class ShopScene implements Scene {
       priceLbl.y = y + rowH * 0.5;
       this.container.addChild(priceLbl);
 
+      // Treasure icon — escalates with the tier so bigger packs look richer.
+      const iconSize = Math.round(rowH * 0.66);
+      const iconX = listX + Math.round(listW * 0.16);
+      const icon = buildIcon(COIN_TIER_ICONS[idx] ?? 'coin', iconSize, C.gold);
+      icon.x = iconX;
+      icon.y = y + Math.round((rowH - iconSize) / 2);
+      this.container.addChild(icon);
+
+      const textX = iconX + iconSize + Math.round(listW * 0.015);
+
       // Coin amount.
-      const coinLbl = txt(`◎ ${tier.coins.toLocaleString()}`, Math.round(rowH * 0.24), C.gold, true);
+      const coinLbl = txt(tier.coins.toLocaleString(), Math.round(rowH * 0.26), C.gold, true);
       coinLbl.anchor.set(0, 0.5);
-      coinLbl.x = listX + Math.round(listW * 0.22);
+      coinLbl.x = textX;
       coinLbl.y = y + rowH * 0.36;
       this.container.addChild(coinLbl);
 
@@ -605,7 +619,7 @@ export class ShopScene implements Scene {
       if (bonusCoins > 0) {
         const bonusLbl = txt(`+${bonusCoins} bonus`, Math.round(rowH * 0.18), C.green, true);
         bonusLbl.anchor.set(0, 0.5);
-        bonusLbl.x = listX + Math.round(listW * 0.22);
+        bonusLbl.x = textX;
         bonusLbl.y = y + rowH * 0.68;
         this.container.addChild(bonusLbl);
       }
@@ -614,7 +628,7 @@ export class ShopScene implements Scene {
       if (tier.bestValue) {
         const badge = txt(t('shop.bestValue'), Math.round(rowH * 0.18), C.gold, true);
         badge.anchor.set(0, 0.5);
-        badge.x = listX + Math.round(listW * 0.22);
+        badge.x = textX;
         badge.y = y + (bonusCoins > 0 ? rowH * 0.05 : rowH * 0.36);
         this.container.addChild(badge);
       }
@@ -651,7 +665,7 @@ export class ShopScene implements Scene {
       }
 
       y += rowH + gap;
-    }
+    });
   }
 
   private drawToast(): void {
