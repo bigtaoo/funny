@@ -60,23 +60,31 @@
 
 | 资产名 | 描述 | 尺寸 | 当前程序占位 |
 |---|---|---|---|
-| `icon_watchtower.png` | 瞭望塔（己方领地建造，扩视野） | 32×32 | 几何三角塔身（程序绘制） |
-| `icon_level_dot.png` | 等级指示圆点（格子升级后右上角） | 12×12 | 实心圆，颜色按归属 |
-| `icon_allysect_border.png` | 联盟宗门黄色内描边（重复九宫格拼接） | 96×96 | 程序描边 |
+| ~~`icon_watchtower.png`~~ | 瞭望塔（己方领地建造，扩视野） | — | ✅ **已接入手绘贴图**（`building_atlas` 帧 `icon_watchtower`，见 §四）；atlas 未就绪时回落几何塔身 |
+| `icon_level_dot.png` | 等级指示圆点（格子升级后右上角） | 12×12 | 实心圆，颜色按归属（保持程序绘制，可动态取归属色，不出图） |
+| `icon_allysect_border.png` | 联盟宗门黄色内描边（重复九宫格拼接） | 96×96 | 程序描边（保持程序绘制，不出图） |
 
 ---
 
-## 四、覆盖层建筑（Overlay Buildings，L1 档，独立图层）
+## 四、覆盖层建筑（Overlay Buildings）
 
-计划作为独立 `Sprite` 放在格子中央，需单独图层。
+| 资产名 | 描述 | 状态 |
+|---|---|---|
+| `city_lv1..4` | 我/敌/盟主城（4 级建筑，归属靠程序上色） | ✅ 已接入 `city_atlas`（3×3 base 锚点，深度排序图层） |
+| `building_keep` | 战略要点/咽喉点建筑（城楼门楼） | ✅ 已接入 `building_atlas`（2026-07-03） |
+| `building_stronghold` | 险地 NPC 据点（暗色石垒） | ✅ 已接入 `building_atlas`（2026-07-03） |
+| `icon_watchtower` | 己方瞭望塔（扩视野） | ✅ 已接入 `building_atlas`（2026-07-03） |
 
-| 资产名 | 描述 | 尺寸 | 备注 |
-|---|---|---|---|
-| `building_base_mine.png` | 我方主城（城池轮廓） | 64×64 | 笔记本手绘城堡图 |
-| `building_base_enemy.png` | 敌方主城 | 64×64 | 同上，蓝色调 |
-| `building_base_ally.png` | 盟友主城 | 64×64 | 同上，绿色调 |
-| `building_keep.png` | 战略要点建筑 | 64×64 | 城楼/箭塔感 |
-| `building_stronghold.png` | 险地 NPC 据点 | 64×64 | 暗色石垒 |
+> **接入落地（2026-07-03）**：`building_keep` / `building_stronghold` / `icon_watchtower` 三张手绘钢笔线稿
+> 经 `art/ui/slg-map/pack_buildings.cjs`（近白→透明+裁边+长边 256，同 `res` 管线）打包为
+> `client/src/assets/slg/building_atlas.{png,json}`，`buildingAtlasLoader.ts` 懒加载 + 并入进场
+> loading 门控。渲染在 `WorldMapScene.drawTileL1` → `placeBuildingSprite()`：
+> - keep/stronghold 属**地形层**（type 由 `proceduralTile` 决定、全图可见），随格底纹一起画、fog 下压淡；
+> - watchtower 属**动态层**（`tile.watchtower`），fog 下隐藏，atlas 未就绪回落原几何塔身；
+> - 三张均为中性墨线**不 tint**，归属由格下水洗表达；bottom-center 锚在菱形下部使建筑「立」在格上。
+>
+> 旧规划里 `building_base_mine/enemy/ally.png` 三张**作废**——主城改由 `city_atlas`（4 级 × 程序上色）承担，
+> 不再按阵营出三份。原 64×64 尺寸列亦作废（打包按长边 256、渲染期按 tile 尺寸缩放）。
 
 ---
 

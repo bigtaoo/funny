@@ -22,6 +22,7 @@ import { loadResAtlas, getResTexture, isResAtlasReady } from '../render/resAtlas
 import { buildIcon, type IconKind } from '../render/icons';
 import { loadCityAtlas, getCityTexture, isCityAtlasReady } from '../render/cityAtlasLoader';
 import { loadTerrainAtlas, getTerrainTexture, isTerrainAtlasReady, type TerrainTextureName } from '../render/terrainAtlasLoader';
+import { loadBuildingAtlas, getBuildingTexture, isBuildingAtlasReady } from '../render/buildingAtlasLoader';
 import { ISO_RATIO, tileToScreen, screenToTile, screenToTileF, diamondPath, diamondVertices, visibleTileBounds } from '../render/isoGrid';
 
 // ── Public callbacks ────────────────────────────────────────────────────────
@@ -333,6 +334,7 @@ export class WorldMapScene implements Scene {
       loadTerrainAtlas().catch((err) => console.warn('[WorldMapScene] terrain atlas load failed:', err)),
       loadCityAtlas().catch((err) => console.warn('[WorldMapScene] city atlas load failed:', err)),
       loadResAtlas().catch((err) => console.warn('[WorldMapScene] res atlas load failed:', err)),
+      loadBuildingAtlas().catch((err) => console.warn('[WorldMapScene] building atlas load failed:', err)),
     ];
     Promise.allSettled(atlasLoads).then(() => {
       if (this.destroyed) return;
@@ -856,6 +858,14 @@ export class WorldMapScene implements Scene {
       this.drawResMotif(g, proc.resType, proc.level, tp, false);
     }
 
+    // Overlay landmark buildings for chokepoints / NPC strongholds. Like the ground texture,
+    // these are TERRAIN features (their type is procedural, visible map-wide), so they draw
+    // before the fog return, dimmed when fogged. Neutral ink — ownership is the wash below.
+    const featType = tile?.type ?? proc?.type;
+    if (featType === 'familyKeep' || featType === 'stronghold') {
+      this.placeBuildingSprite(g, featType === 'familyKeep' ? 'building_keep' : 'building_stronghold', tp, hh, tp * 1.3, fogged);
+    }
+
     // Ownership overlay (option-3): a light wash + colored border, not a full opaque fill —
     // territory reads clearly while the terrain/motif underneath stays legible. Motif sprites
     // are Graphics children and always render above this wash, so they are never covered.
@@ -912,25 +922,50 @@ export class WorldMapScene implements Scene {
     }
 
     if (tile?.watchtower) {
-      // Was anchored at the square's bottom-center (baseY=tp-5); the diamond analog
-      // is the bottom vertex, nudged up slightly so the tower base still reads as
-      // sitting inside the tile rather than poking past its edge.
-      const tcx = 0;
-      const baseY = hh - 4;
-      const towerW = Math.max(4, tp * 0.18);
-      const towerH = Math.max(7, tp * 0.36);
-      g.lineStyle(1, 0x4a3520, 0.9);
-      g.beginFill(0xe8dcc0, 0.95);
-      g.drawRect(tcx - towerW / 2, baseY - towerH, towerW, towerH);
-      g.endFill();
-      g.beginFill(0x4a3520, 0.95);
-      g.drawPolygon([
-        tcx - towerW / 2 - 1, baseY - towerH,
-        tcx + towerW / 2 + 1, baseY - towerH,
-        tcx, baseY - towerH - towerW,
-      ]);
-      g.endFill();
+      // Hand-drawn watchtower sprite once the atlas is ready; falls back to the geometric
+      // tower until then. Anchored just inside the diamond's bottom vertex so it reads as
+      // standing on the tile rather than poking past its edge.
+      if (!this.placeBuildingSprite(g, 'icon_watchtower', tp, hh, tp * 0.95, false)) {
+        const tcx = 0;
+        const baseY = hh - 4;
+        const towerW = Math.max(4, tp * 0.18);
+        const towerH = Math.max(7, tp * 0.36);
+        g.lineStyle(1, 0x4a3520, 0.9);
+        g.beginFill(0xe8dcc0, 0.95);
+        g.drawRect(tcx - towerW / 2, baseY - towerH, towerW, towerH);
+        g.endFill();
+        g.beginFill(0x4a3520, 0.95);
+        g.drawPolygon([
+          tcx - towerW / 2 - 1, baseY - towerH,
+          tcx + towerW / 2 + 1, baseY - towerH,
+          tcx, baseY - towerH - towerW,
+        ]);
+        g.endFill();
+      }
     }
+  }
+
+  /**
+   * Add a neutral-ink building sprite from building_atlas, anchored bottom-center just inside
+   * the tile's lower vertex so the structure "stands" on the diamond and rises upward.
+   * `targetH` is the on-screen pixel height. Returns false (drawing nothing) if the atlas
+   * isn't ready or the frame is missing, so callers can fall back. Sprite children are cleaned
+   * each redraw by drawTileSlot.
+   */
+  private placeBuildingSprite(
+    g: PIXI.Graphics, name: string, tp: number, hh: number, targetH: number, fogged: boolean,
+  ): boolean {
+    if (!isBuildingAtlasReady()) return false;
+    const tex = getBuildingTexture(name);
+    if (!tex) return false;
+    const sp = new PIXI.Sprite(tex);
+    sp.anchor.set(0.5, 1);
+    sp.scale.set(targetH / tex.height);
+    sp.x = 0;
+    sp.y = hh * 0.72;   // base sits near the lower part of the diamond, below center
+    sp.alpha = fogged ? 0.5 : 1;
+    g.addChild(sp);
+    return true;
   }
 
   /**
