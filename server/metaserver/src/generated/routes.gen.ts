@@ -16507,6 +16507,27 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   }
                 }
               }
+            },
+            "me": {
+              "type": "object",
+              "description": "Caller's own standing this season (absent when they have not played a ranked match this season). Rank may exceed 100.",
+              "required": [
+                "rank",
+                "elo",
+                "pvpRank"
+              ],
+              "properties": {
+                "rank": {
+                  "type": "integer",
+                  "description": "Rank, 1-based"
+                },
+                "elo": {
+                  "type": "integer"
+                },
+                "pvpRank": {
+                  "type": "string"
+                }
+              }
             }
           }
         }

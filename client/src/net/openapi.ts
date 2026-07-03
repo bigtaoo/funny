@@ -1360,6 +1360,7 @@ export interface components {
                 checkin?: {
                     monthKey: string;
                     claimedDays: number[];
+                    lastClaimedDayKey?: string;
                 };
                 daily?: {
                     dayKey: string;
@@ -2902,6 +2903,7 @@ export interface operations {
                             checkin?: {
                                 monthKey?: string;
                                 claimedDays?: number[];
+                                lastClaimedDayKey?: string;
                             } | null;
                             daily?: {
                                 dayKey?: string;
@@ -3971,6 +3973,13 @@ export interface operations {
                                 elo: number;
                                 pvpRank: string;
                             }[];
+                            /** @description Caller's own standing this season (absent when they have not played a ranked match this season). Rank may exceed 100. */
+                            me?: {
+                                /** @description Rank, 1-based */
+                                rank: number;
+                                elo: number;
+                                pvpRank: string;
+                            };
                         };
                     };
                 };
