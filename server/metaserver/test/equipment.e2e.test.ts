@@ -207,15 +207,9 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
   });
 
   it('escrow equipped instance → 409 EQUIP_IN_USE', async () => {
-    await m.collections.saves.updateOne(
-      { _id: accountId },
-      {
-        $set: {
-          'save.equipmentInv.worn1': { id: 'worn1', defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [] },
-          'save.gear': { global: { weapon: 'worn1' } },
-        },
-      },
-    );
+    // CC-2: equipped state lives in cardInv[].gear (not the deprecated save.gear.global). Equip via the real flow.
+    await seedInstance('worn1', 'wp_pencil', 0);
+    await equip('weapon', 'worn1', await starterCardId());
     const res = await escrow('worn1', 'order-worn');
     expect(res.statusCode).toBe(409);
     expect(body(res).code).toBe('EQUIP_IN_USE');
@@ -346,7 +340,7 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     expect(body(await salvage(['sl'], 'sk-lock2')).error.code).toBe('EQUIP_LOCKED');
 
     await seedInstance('sw', 'wp_pencil', 0);
-    await m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.gear': { global: { weapon: 'sw' } } } });
+    await equip('weapon', 'sw', await starterCardId()); // CC-2: equip via cardInv[].gear, not deprecated save.gear.global
     expect(body(await salvage(['sw'], 'sk-worn')).error.code).toBe('EQUIP_IN_USE');
   });
 
@@ -400,7 +394,7 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     await seedInstance('w3', 'wp_pencil', 0);
     const res = await equip('weapon', 'w3', 'card_does_not_exist');
     expect(res.statusCode).toBe(404);
-    expect(body(res).error.code).toBe('CARD_NOT_FOUND');
+    expect(body(res).error.code).toBe('NOT_FOUND'); // equipEquipment emits generic NOT_FOUND for a missing card (no CARD_NOT_FOUND code exists)
   });
 
   it('equip equipped instance cannot be salvaged (EQUIP_IN_USE)', async () => {
