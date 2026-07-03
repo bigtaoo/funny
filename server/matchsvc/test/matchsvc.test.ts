@@ -1,7 +1,7 @@
 // matchsvc unit tests (S1-M1): friendly room create/join/ready/start + ranked matchmaking, both producing verifiable
 // match tickets (shared roomId/seed, individual side per player). Push callbacks recorded; GameRegistry uses a static fallback URL.
 import { describe, it, expect, vi } from 'vitest';
-import { verifyTicket, FeatureFlagCache } from '@nw/shared';
+import { verifyTicket, FeatureFlagCache, defaultPvpDeck } from '@nw/shared';
 import { Matchsvc, CODE_ALPHABET, type PushMsg } from '../src/Matchsvc';
 import { GameRegistry } from '../src/GameRegistry';
 
@@ -83,6 +83,44 @@ describe('Matchsvc friendly', () => {
     expect(ta.mode).toBe('friendly');
     expect(ta.accountId).toBe('a');
     expect(tb.accountId).toBe('b');
+  });
+
+  it('empty deck → ticket carries defaultPvpDeck for both sides (never the full pool)', () => {
+    // Safety net: every matchsvc match is PvP and must never let the engine fall back to the
+    // full CARD_DEFINITIONS pool. A room created/joined without a validated deck (e.g. a client
+    // that submits nothing) is resolved to defaultPvpDeck at startMatch (PVP_LOADOUT §6.3).
+    const { svc, last } = setup();
+    svc.roomCreate('a', 'Alice', '100000001'); // no deck arg → []
+    const rs = last('a', 'room_state');
+    if (rs?.kind !== 'room_state') throw new Error();
+    svc.roomJoin('b', 'Bob', '100000002', rs.code); // no deck arg → []
+    svc.roomReady('a', true);
+    svc.roomReady('b', true);
+    svc.roomStart('a');
+
+    const fa = last('a', 'match_found');
+    if (fa?.kind !== 'match_found') throw new Error('no match_found');
+    const ta = verifyTicket(fa.ticket, { key: KEY });
+    expect(ta.decks).toEqual({ top: defaultPvpDeck(), bottom: defaultPvpDeck() });
+  });
+
+  it('submitted decks are passed through to the ticket per side (top = side 0, bottom = side 1)', () => {
+    const { svc, last } = setup();
+    const deckA = [...defaultPvpDeck().slice(0, 9), 'runner']; // a distinct, deck-sized list for side 0
+    const deckB = defaultPvpDeck();
+    svc.roomCreate('a', 'Alice', '100000001', '', deckA);
+    const rs = last('a', 'room_state');
+    if (rs?.kind !== 'room_state') throw new Error();
+    svc.roomJoin('b', 'Bob', '100000002', rs.code, '', deckB);
+    svc.roomReady('a', true);
+    svc.roomReady('b', true);
+    svc.roomStart('a');
+
+    const fa = last('a', 'match_found');
+    if (fa?.kind !== 'match_found') throw new Error('no match_found');
+    const ta = verifyTicket(fa.ticket, { key: KEY });
+    // side 0 (creator = host = top), side 1 (joiner = bottom).
+    expect(ta.decks).toEqual({ top: deckA, bottom: deckB });
   });
 
   it('non-host start is ignored; start while not all ready is ignored', () => {

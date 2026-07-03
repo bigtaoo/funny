@@ -15,7 +15,7 @@ export interface QueueEntry {
   enqueuedAt: number;
   /** Platform (used for feature flag targeted evaluation; defaults to empty string). */
   platform: string;
-  /** PvP deck (card ids; validated and resolved by gateway; defaults to empty = engine uses defaultPvpDeck). */
+  /** PvP deck (card ids; validated and resolved by gateway; defaults to empty = matchsvc substitutes defaultPvpDeck at startMatch). */
   deck: string[];
   /**
    * Timestamp (ms) of the last bot-fallback timeout callback firing. Default = never fired (first check uses enqueuedAt).

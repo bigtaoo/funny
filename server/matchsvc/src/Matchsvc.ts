@@ -14,7 +14,7 @@
 // **No database connections**: the ELO value needed for matchmaking is fetched by the gateway from
 // meta before enqueuing and passed in as the `elo` parameter to enqueue.
 import { randomUUID, randomInt } from 'crypto';
-import { signTicket, createLogger, type FeatureFlagCache, type TicketClaims } from '@nw/shared';
+import { signTicket, createLogger, defaultPvpDeck, type FeatureFlagCache, type TicketClaims } from '@nw/shared';
 import { Matchmaking, type QueueEntry } from './Matchmaking';
 import { GameRegistry } from './GameRegistry';
 
@@ -62,7 +62,7 @@ interface Slot {
   publicId: string;
   /** Equipped title id (from meta /internal/profile; empty string = no title). */
   equippedTitle: string;
-  /** PvP deck (card ids; validated and resolved by gateway; empty = engine uses defaultPvpDeck). */
+  /** PvP deck (card ids; validated and resolved by gateway; empty = matchsvc substitutes defaultPvpDeck at startMatch). */
   deck: string[];
   side: 0 | 1;
   ready: boolean;
@@ -358,10 +358,14 @@ export class Matchsvc {
     const roomId = randomUUID();
     const seed = randomInt(1, 2 ** 48); // < 2^48, within safe integer range
     // a = side 0 (top), b = side 1 (bottom) — both tickets carry both decks for deterministic engine construction.
-    const decks = a.deck.length > 0 || b.deck.length > 0
-      ? { top: a.deck, bottom: b.deck }
-      : undefined;
-    log.info('match starting', { mode, roomId, gameUrl, a: a.accountId, b: b.accountId, seed, hasDecks: !!decks });
+    // Every matchsvc match is PvP, which must never draw from the full card pool. An empty deck (missing
+    // or unvalidated upstream) is resolved to defaultPvpDeck here so the engine always gets a gated deck —
+    // the engine's undefined-decks fallback is the full CARD_DEFINITIONS pool, which would leak locked units.
+    const decks = {
+      top: a.deck.length > 0 ? a.deck : defaultPvpDeck(),
+      bottom: b.deck.length > 0 ? b.deck : defaultPvpDeck(),
+    };
+    log.info('match starting', { mode, roomId, gameUrl, a: a.accountId, b: b.accountId, seed, topDeck: decks.top.length, bottomDeck: decks.bottom.length });
 
     const sign = (
       self: { accountId: string; name: string; publicId: string; equippedTitle: string },
@@ -378,7 +382,7 @@ export class Matchsvc {
         opponentTitle: opp.equippedTitle || undefined,
         gameUrl,
         accountId: self.accountId,
-        ...(decks ? { decks } : {}),
+        decks,
       };
       return signTicket(claims, { key: this.internalKey, ttlSec: this.ticketTtlSec });
     };

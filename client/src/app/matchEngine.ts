@@ -44,6 +44,12 @@ export interface LocalMatchOpts {
    * Structurally compatible with EngineEquipInv; omit for PvP.
    */
   equipmentInv?: EngineEquipInv;
+  /**
+   * PvP-vs-AI deck gating (PVP_LOADOUT_DESIGN §3). Filters each side's draw pool to the given card ids
+   * (bottom = human, top = AI). Omit → the engine draws from the full CARD_DEFINITIONS pool, which would
+   * leak ELO-locked units (runner/splitter/…) into the bot-fallback match. Ignored when `level` is set.
+   */
+  decks?: { top: string[]; bottom: string[] };
 }
 
 export interface LocalMatch {
@@ -75,7 +81,9 @@ export function createLocalMatch(opts: LocalMatchOpts = {}): LocalMatch {
             ...(opts.cardInstances ? { cardInstances: opts.cardInstances } : {}),
             ...(opts.equipmentInv ? { equipmentInv: opts.equipmentInv } : {}),
           }
-        : {}),
+        : opts.decks
+          ? { decks: opts.decks }
+          : {}),
     },
     recorder,
   );

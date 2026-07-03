@@ -70,6 +70,8 @@ export interface RoomCreate {
 
 export interface RoomJoin {
   code: string;
+  /** PvP loadout: joiner's chosen deck (PVP_LOADOUT §4); empty = server assigns defaultPvpDeck */
+  deck: string[];
 }
 
 export interface RoomReady {
@@ -750,13 +752,16 @@ export const RoomCreate: MessageFns<RoomCreate> = {
 };
 
 function createBaseRoomJoin(): RoomJoin {
-  return { code: "" };
+  return { code: "", deck: [] };
 }
 
 export const RoomJoin: MessageFns<RoomJoin> = {
   encode(message: RoomJoin, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.code !== "") {
       writer.uint32(10).string(message.code);
+    }
+    for (const v of message.deck) {
+      writer.uint32(18).string(v!);
     }
     return writer;
   },
@@ -776,6 +781,14 @@ export const RoomJoin: MessageFns<RoomJoin> = {
           message.code = reader.string();
           continue;
         }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.deck.push(reader.string());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -791,6 +804,7 @@ export const RoomJoin: MessageFns<RoomJoin> = {
   fromPartial<I extends Exact<DeepPartial<RoomJoin>, I>>(object: I): RoomJoin {
     const message = createBaseRoomJoin();
     message.code = object.code ?? "";
+    message.deck = object.deck?.map((e) => e) || [];
     return message;
   },
 };

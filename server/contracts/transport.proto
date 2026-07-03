@@ -50,7 +50,10 @@ message RoomCreate {
   MatchMode       mode = 1;
   repeated string deck = 2;   // PvP loadout: card ids in the player's chosen deck (PVP_LOADOUT §4); empty = server assigns defaultPvpDeck
 }
-message RoomJoin   { string code = 1; }
+message RoomJoin   {
+  string          code = 1;
+  repeated string deck = 2;   // PvP loadout: joiner's chosen deck (PVP_LOADOUT §4); empty = server assigns defaultPvpDeck
+}
 message RoomReady  { bool ready = 1; }
 message RoomLeave  {}
 message RoomStart  {}

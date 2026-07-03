@@ -156,8 +156,8 @@ export class NetSession {
   createRoom(deck: string[] = []): void {
     this.gateway.createRoom(MatchMode.FRIENDLY, deck);
   }
-  joinRoom(code: string): void {
-    this.gateway.joinRoom(code);
+  joinRoom(code: string, deck: string[] = []): void {
+    this.gateway.joinRoom(code, deck);
   }
   setReady(ready: boolean): void {
     this.gateway.setReady(ready);
