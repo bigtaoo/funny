@@ -1337,7 +1337,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     views.showCollection({
       onBack: back,
       initialTab,
-      ...(api && equipLoggedIn ? { onOpenEquipment: () => goEquipment(() => goCollection(back, initialTab), true) } : {}),
+      ...(api && equipLoggedIn ? { onOpenEquipment: () => goEquipment(() => goCollection(back, initialTab), 'collection') } : {}),
       getSkins: () => saveManager.get().inventory.skins,
       getEquipped: () => saveManager.get().equipped[EQUIP_SLOT] ?? null,
       equip: (skinId) => {
@@ -1381,7 +1381,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
         } catch { return { ok: false as const, key: 'roster.err.generic' as TranslationKey }; }
       },
       // Per-card gear editing (CC-1 flow: CardScene → EquipmentScene → back to roster).
-      openEquipment: (cardInstanceId: string) => goEquipment(() => goCardRoster(back), false, cardInstanceId),
+      openEquipment: (cardInstanceId: string) => goEquipment(() => goCardRoster(back), 'none', cardInstanceId),
+      // Standalone equipment bag as a roster peer (LOBBY_IA): [Cards|Equipment] group; no active card.
+      openEquipmentBag: () => goEquipment(() => goCardRoster(back), 'roster', ''),
     });
   }
 
@@ -1409,17 +1411,22 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
    * the campaign map (default back) or the "Growth" tab (LOBBY_IA_REDESIGN §3, back=collection page);
    * `back` determines where the user returns to.
    */
-  function goEquipment(back: () => void = goCampaignMap, inCollectionGroup = false, cardInstanceId = ''): void {
+  function goEquipment(back: () => void = goCampaignMap, group: 'none' | 'collection' | 'roster' = 'none', cardInstanceId = ''): void {
     if (!api) { back(); return; }
     const client = api;
     inLobby = false;
     analytics.track('screen_view', { scene: 'EquipmentScene' });
+    // Growth group peer tabs (LOBBY_IA_REDESIGN P1.5): a top [<peer>|Equipment] strip is shown when
+    // entered from the collection page ([Collection|Equipment]) or the card roster ([Cards|Equipment]);
+    // tapping the peer navigates back (= back). Campaign / per-card entry does not inject this → plain back.
+    const peerTab = group === 'collection'
+      ? { labelKey: 'collection.title' as TranslationKey, onSelect: () => back() }
+      : group === 'roster'
+        ? { labelKey: 'roster.title' as TranslationKey, onSelect: () => back() }
+        : undefined;
     views.showEquipment({
       onBack() { back(); },
-      // Growth group peer tabs (LOBBY_IA_REDESIGN P1.5): when entered from the collection page, a
-      // top [Collection|Equipment] tab bar is shown; tapping Collection navigates back to growth (= back).
-      // Campaign-map entry (back=goCampaignMap) does not inject this → plain back only.
-      ...(inCollectionGroup ? { openCollection: () => back() } : {}),
+      ...(peerTab ? { peerTab } : {}),
       activeCardInstanceId: cardInstanceId,
       getSave: () => saveManager.get(),
       async craft(defId: string) {

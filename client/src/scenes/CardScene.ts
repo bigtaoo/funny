@@ -22,6 +22,7 @@ import {
 } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
+import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import type { SaveData, CardInstance, EquipSlot } from '../game/meta/SaveData';
 import type { CardSLGState } from '../net/WorldApiClient';
@@ -46,6 +47,11 @@ export interface CardCallbacks {
   recoverCard?(cardInstanceId: string): Promise<CardActionResult>;
   /** Navigate to equipment scene for a specific card. */
   openEquipment?(cardInstanceId: string): void;
+  /**
+   * Open the equipment bag as a peer of the roster (LOBBY_IA_REDESIGN). When injected, a
+   * [Cards|Equipment] group tab strip is shown; tapping Equipment enters the bag (no active card).
+   */
+  openEquipmentBag?(): void;
 }
 
 const HUD_H = 50;
@@ -97,6 +103,8 @@ export class CardScene implements Scene {
   private detailId: string | null = null;
   private scrollY = 0;
   private dragStart: { x: number; y: number; scroll: number } | null = null;
+  /** Height of the [Cards|Equipment] group strip; >0 only when openEquipmentBag is injected. */
+  private readonly groupH: number;
 
   private toastTimer = 0;
   private destroyed = false;
@@ -106,6 +114,7 @@ export class CardScene implements Scene {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.cb = cb;
+    this.groupH = cb.openEquipmentBag ? hubTabsHeight(this.h) : 0;
     this.container = new PIXI.Container();
     this.build();
     this.render();
@@ -145,6 +154,7 @@ export class CardScene implements Scene {
     this.loadingLayer.removeChildren();
     this.hitRects.push({ rect: this.backRect, action: () => this.cb.onBack() });
 
+    this.renderGroupTabs();
     this.renderCapacityBar();
     this.renderList();
 
@@ -154,22 +164,39 @@ export class CardScene implements Scene {
     if (this.bt.loadingVisible) drawLoadingOverlay(this.loadingLayer, this.w, this.h, this.bt.dots, t('common.processing'));
   }
 
+  /**
+   * Progression group tab strip [Cards|Equipment] (LOBBY_IA_REDESIGN): Cards is active; tapping
+   * Equipment opens the equipment bag (openEquipmentBag). Drawn only when injected (groupH>0).
+   */
+  private renderGroupTabs(): void {
+    if (this.groupH <= 0) return;
+    const tabs: HubTab[] = [
+      { label: t('roster.title'), active: true },
+      { label: t('equip.title'), active: false },
+    ];
+    const hits = drawHubTabs(this.bodyLayer, this.w, HUD_H, this.groupH, tabs, (i) => {
+      if (i === 1) this.cb.openEquipmentBag?.();
+    });
+    for (const hit of hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
+  }
+
   private renderCapacityBar(): void {
     const { w } = this;
     const save = this.cb.getSave();
     const count = Object.keys(save.cardInv ?? {}).length;
     const warn = count >= CARD_INV_WARN;
     const full = count >= CARD_INV_CAP;
+    const top = HUD_H + this.groupH;
 
     const bg = new PIXI.Graphics();
-    bg.beginFill(0xf3f1ea).drawRect(0, HUD_H, w, RES_H).endFill();
+    bg.beginFill(0xf3f1ea).drawRect(0, top, w, RES_H).endFill();
     this.bodyLayer.addChild(bg);
 
     const capLbl = txt(
       `${t('roster.capacity').replace('{cur}', String(count)).replace('{cap}', String(CARD_INV_CAP))}`,
       11, full ? C.red : warn ? C.gold : C.mid,
     );
-    capLbl.anchor.set(1, 0.5); capLbl.x = w - 10; capLbl.y = HUD_H + RES_H / 2;
+    capLbl.anchor.set(1, 0.5); capLbl.x = w - 10; capLbl.y = top + RES_H / 2;
     this.bodyLayer.addChild(capLbl);
   }
 
@@ -178,7 +205,7 @@ export class CardScene implements Scene {
     const save = this.cb.getSave();
     const cardState = this.cb.getCardState?.() ?? {};
     const cards = Object.values(save.cardInv ?? {});
-    const listY = HUD_H + RES_H;
+    const listY = HUD_H + this.groupH + RES_H;
     const listH = h - listY - 8;
 
     if (cards.length === 0) {
