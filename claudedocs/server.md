@@ -94,6 +94,7 @@ cp .env.example .env        # 填 NW_JWT_SECRET / NW_DOMAIN
 
 ## SLG worldsvc 要点
 
+- **业务层已按领域拆分（2026-07-03）**：原 `service.ts` 3817 行 god-class 拆为 `worldTypes.ts`（视图/Deps 类型）+ `core.ts`（`WorldCore`：共享状态/地图读/视野/spawn/push&schedule 基建/settle&yield/国家）+ 领域子服务 `territory.ts`/`city.ts`/`combat.ts`（行军+攻城+防御+回放）/`season.ts`/`shop.ts`。`service.ts` 收为薄门面 `WorldService extends WorldCore`，逐一委托子服务，公开 API 与导出类型不变（httpApi/index/scheduler/测试零改动）。子服务经 `this.core.*` 调共享 helper（hub 模式破循环）；唯一 peer 边=season 注入 territory 走 `joinWorld`。
 - `shared/slg.ts`：`proceduralTile(world,x,y)` 确定性程序化地图（单一来源，client/server 共用）
 - `auctions.expireAt` **故意非 TTL**——过期需结算退还托管物/竞拍结拍，用普通索引+扫描器
 - **拍卖行反 RMT（S8-5，2026-06-21）**：每日限额（`auctionDaily` 集合 TTL 计数 lists/buys）+ 价格护栏（`auctionPrices` 滑窗中位数 refPrice + 静态回退，越界 `PRICE_OUT_OF_RANGE`）+ 绑定禁挂机制（`AUCTION_BANNED_MATERIALS` 空集）+ 季末冻结（settling 拒挂）/ 清算（`clearWorldOnReset` 退还，挂在 `/admin/world/reset`）+ 竞拍（`saleMode=auction`：`placeBid` 托管/防狙击/买断，`/auction/{id}/bid`）。机制权威 `design/game/AUCTION_DESIGN.md`
