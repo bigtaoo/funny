@@ -107,6 +107,14 @@
 - `ReplayScene`（回放看完）：同上。
 - 其它场景不出现该按钮。
 
+**分享反馈（必须给玩家可见结果）**：`IPlatform.shareReplay` 返回 `ShareResult{ method, url }`，`doShareReplay` 据此提示：
+- `native`（`navigator.share` 系统面板）/ `card`（微信卡片）：平台自带 UI 即确认，不弹 toast。
+- `clipboard`（桌面 Web 主路径，无 `navigator.share`）：链接已写入剪贴板 → 绿色 toast `share.copied`。
+- `manual`（剪贴板被拒：非安全上下文/无权限）：`window.prompt` 弹出链接供手动复制 → toast `share.manual`。
+- 失败：按 `BAD_REQUEST`/`RATE_LIMITED`/其它映射 `share.errTooLarge` / `share.errRateLimited` / `share.errGeneric` 红色 toast。
+
+> 历史坑：早期 Web 路径「静默复制到剪贴板」没有任何提示，玩家点分享「啥反应都没有」（2026-07-03 修）。全局 toast 出口 `net/log.setToastSink` 现支持 `ToastKind`（error 红 / success 绿）。
+
 ---
 
 ## 5. 信任与合规

@@ -31,16 +31,23 @@ const WEB_COIN_TIERS: CoinTierDef[] = [
 // Per-tier treasure glyph — escalating gold so bigger tiers read richer (ascending order).
 const COIN_TIER_ICONS: IconKind[] = ['coin', 'coins', 'coinStack', 'coinSack', 'coinChest'];
 
+// Subscription-card display prices (¥). Mirror of @nw/shared MONTHLY/YEAR_CARD_PRICE_YUAN — the real IAP charge is
+// server-authorized (no coins debited); these drive the strike-through + savings badge only. Year = 12×¥30 (¥360) at ~9折 → ¥298.
+const MONTHLY_CARD_YUAN = 30;
+const YEAR_CARD_YUAN = 298;
+const YEAR_CARD_LIST_YUAN = 360;
+
 // ── ShopScene (S2-6 + B-PROMO) — direct-purchase shop ────────────────────────
 //
-// Canvas-drawn (mirrors LoginScene/RoomScene): a render()-on-change tree with a
-// flat hit-list. The economy itself is server-authoritative — every buy returns a
-// fresh SaveData that the app adopts; this scene only reads the current wallet via
-// getCoins() and re-renders. Gacha lives in its own scene, reached via the 🎁 tab.
+// Canvas-drawn (mirrors LoginScene/RoomScene): a render()-on-change tree with a flat hit-list. The economy is
+// server-authoritative — every buy returns a fresh SaveData that the app adopts; this scene only reads the current
+// wallet via getCoins() and re-renders. Gacha lives in its own scene, reached via the capsule tab.
 //
-// Promo-code redemption (B-PROMO): a single text row at the bottom of the list.
-// Text entry uses the same hidden-<input> technique as LoginScene (works on both
-// desktop keyboards and mobile soft keyboards).
+// Layout: products are icon-cards laid out in a responsive grid (mirrors CardScene/EquipmentScene). The grid scrolls
+// (drag) inside a masked body region so the header + tab strip stay fixed. Subscription cards (monthly / year) are
+// globally single-slot: while any card is active, both Buy buttons read "生效中" and are disabled (server enforces the
+// same via ALREADY_ACTIVE). Promo-code redemption (B-PROMO) is a full-width row below the grid; text entry uses the same
+// hidden-<input> technique as LoginScene (works on both desktop keyboards and mobile soft keyboards).
 
 /** Outcome of a buy — ok, or a message key to surface as a toast. */
 export type ShopActionResult =
@@ -73,14 +80,38 @@ export interface ShopSceneCallbacks {
    */
   rechargeCoins?(tierId: string): Promise<ShopActionResult>;
   // ── Monetization deals (GACHA_DESIGN §5–§6). All optional; absent = section not shown (offline / not logged in). ──
-  /** Monthly card + starter state (subscription end ms, purchased one-off product ids). */
+  /** Monthly/year card + starter state (subscription end ms, purchased one-off product ids). */
   getMonetization?(): { subscriptionExpiry: number; starterUsed: string[] };
   buyMonthlyCard?(): Promise<ShopActionResult>;
+  /** Buy the year card (365-day subscription). Absent = year card not shown. */
+  buyYearCard?(): Promise<ShopActionResult>;
   claimMonthlyCard?(): Promise<ShopActionResult>;
   buyStarter?(productId: 'starter_draw' | 'starter_growth'): Promise<ShopActionResult>;
 }
 
 interface Hit { rect: Rect; fn: () => void; }
+
+/** One action button inside a product card. */
+interface BtnSpec { label: string; enabled: boolean; primary: boolean; fn?: () => void; }
+
+/** Declarative spec for one product card cell; drawCard() lays it out uniformly. */
+interface CardSpec {
+  icon: IconKind;
+  iconColor: number;
+  title: string;
+  /** Prominent gold coin amount (coin glyph + number), shown under the title (skins / coin tiers). */
+  coinAmount?: number;
+  /** Yuan price (subscription cards). strike = original list price rendered with a line through it. */
+  yuanPrice?: number;
+  yuanStrike?: number;
+  /** Small stacked info lines beside the icon (status / bonus / badges). */
+  lines?: { text: string; color: number }[];
+  /** Top-right corner badge (savings / best value). */
+  badge?: { text: string; color: number };
+  /** Gold panel highlight (featured / best value). */
+  highlight?: boolean;
+  buttons: BtnSpec[];
+}
 
 export class ShopScene implements Scene {
   readonly container: PIXI.Container;
@@ -100,6 +131,10 @@ export class ShopScene implements Scene {
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
 
+  // ── Scroll state (grid may overflow the body region) ──────────────────────
+  private scrollY = 0;
+  private dragStart: { y: number; scroll: number } | null = null;
+
   // ── Promo-code state ──────────────────────────────────────────────────────
   private promoCode = '';
   private promoFocused = false;
@@ -112,6 +147,8 @@ export class ShopScene implements Scene {
     this.h = layout.designHeight;
     this.cb = cb;
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
+    this.unsubs.push(input.onMove((_x, y) => this.handleMove(y)));
+    this.unsubs.push(input.onUp(() => this.handleUp()));
     if (cb.redeemPromo) this.setupHiddenInput();
     this.render();
     void this.loadItems();
@@ -266,7 +303,7 @@ export class ShopScene implements Scene {
     }
   }
 
-  // ── Monetization deals (monthly card / starter packs) ─────────────────────
+  // ── Monetization deals (monthly / year card, starter packs) ────────────────
 
   private async runDeal(action: () => Promise<ShopActionResult>, okKey: TranslationKey): Promise<void> {
     if (this.bt.busy) return;
@@ -285,84 +322,6 @@ export class ShopScene implements Scene {
     }
   }
 
-  /** Deals block (GACHA_DESIGN §5–§6): monthly card (buy + daily claim) + one-off starter packs. Returns the new y. */
-  private drawDeals(x: number, y: number, w: number, rowH: number): number {
-    const gap = Math.round(this.h * 0.018);
-    const mon = this.cb.getMonetization?.() ?? { subscriptionExpiry: 0, starterUsed: [] };
-    const busy = this.bt.busy;
-
-    // Monthly card row: [label + status] [Buy] [Claim].
-    if (this.cb.buyMonthlyCard) {
-      const box = sketchPanel(w, rowH, { fill: 0xfff8e8, border: C.gold, width: 2, seed: seedFor(x, y, w) });
-      box.x = x; box.y = y;
-      this.container.addChild(box);
-      const active = mon.subscriptionExpiry > Date.now();
-      // Treasure-chest glyph flags the monthly card as the richest recurring value.
-      const mIconS = Math.round(rowH * 0.6);
-      const mIcon = buildIcon('coinChest', mIconS, C.gold);
-      mIcon.x = x + Math.round(w * 0.035); mIcon.y = y + (rowH - mIconS) / 2;
-      this.container.addChild(mIcon);
-      const mTextX = x + Math.round(w * 0.035) + mIconS + Math.round(w * 0.025);
-      const name = txt(t('shop.monthlyCard'), Math.round(rowH * 0.24), C.dark, true);
-      name.anchor.set(0, 0.5); name.x = mTextX; name.y = y + rowH * 0.34;
-      this.container.addChild(name);
-      const status = txt(active ? t('shop.monthlyActive') : t('shop.monthlyInactive'), Math.round(rowH * 0.18), active ? C.green : C.mid, true);
-      status.anchor.set(0, 0.5); status.x = mTextX; status.y = y + rowH * 0.68;
-      this.container.addChild(status);
-      // Buy + Claim buttons (right).
-      const bw = Math.round(w * 0.24), bh = Math.round(rowH * 0.5);
-      const bx2 = x + w - bw - Math.round(w * 0.03);
-      const bx1 = bx2 - bw - Math.round(w * 0.02);
-      const by = y + (rowH - bh) / 2;
-      this.dealButton(t('shop.buy'), bx1, by, bw, bh, !busy, () => void this.runDeal(() => this.cb.buyMonthlyCard!(), 'shop.bought'));
-      if (this.cb.claimMonthlyCard) {
-        this.dealButton(t('shop.monthlyClaim'), bx2, by, bw, bh, !busy && active, () => void this.runDeal(() => this.cb.claimMonthlyCard!(), 'shop.monthlyClaimed'));
-      }
-      y += rowH + gap;
-    }
-
-    // Starter packs: one row each, "已购" when already owned.
-    if (this.cb.buyStarter) {
-      const packs: { id: 'starter_draw' | 'starter_growth'; label: TranslationKey; icon: IconKind }[] = [
-        { id: 'starter_draw', label: 'shop.starterDraw', icon: 'coins' },
-        { id: 'starter_growth', label: 'shop.starterGrowth', icon: 'coinSack' },
-      ];
-      for (const pk of packs) {
-        const used = mon.starterUsed.includes(pk.id);
-        const box = sketchPanel(w, rowH, { fill: C.paper, border: C.line, width: 1.6, seed: seedFor(x, y, w) });
-        box.x = x; box.y = y;
-        sketchAccentBar(box, rowH, C.accent, seedFor(x, rowH, 4));
-        this.container.addChild(box);
-        // Coin-pile glyph signals the pack's bundled value.
-        const pIconS = Math.round(rowH * 0.56);
-        const pIcon = buildIcon(pk.icon, pIconS, C.gold);
-        pIcon.x = x + Math.round(w * 0.035); pIcon.y = y + (rowH - pIconS) / 2;
-        this.container.addChild(pIcon);
-        const pTextX = x + Math.round(w * 0.035) + pIconS + Math.round(w * 0.025);
-        const name = txt(t(pk.label), Math.round(rowH * 0.22), C.dark, true);
-        name.anchor.set(0, 0.5); name.x = pTextX; name.y = y + rowH * 0.5;
-        this.container.addChild(name);
-        const bw = Math.round(w * 0.26), bh = Math.round(rowH * 0.56);
-        const bx = x + w - bw - Math.round(w * 0.03);
-        const by = y + (rowH - bh) / 2;
-        this.dealButton(used ? t('shop.owned') : t('shop.buy'), bx, by, bw, bh, !used && !busy,
-          () => void this.runDeal(() => this.cb.buyStarter!(pk.id), 'shop.bought'));
-        y += rowH + gap;
-      }
-    }
-    return y;
-  }
-
-  private dealButton(label: string, x: number, y: number, w: number, h: number, enabled: boolean, fn: () => void): void {
-    const btn = sketchPanel(w, h, { fill: enabled ? C.dark : C.btnOff, border: enabled ? C.green : C.light, width: 2, seed: seedFor(x, y, w) });
-    btn.x = x; btn.y = y;
-    this.container.addChild(btn);
-    const lbl = txt(label, Math.round(h * 0.4), enabled ? 0xffffff : C.mid, true);
-    lbl.anchor.set(0.5, 0.5); lbl.x = x + w / 2; lbl.y = y + h / 2;
-    this.container.addChild(lbl);
-    if (enabled) this.hits.push({ rect: { x, y, w, h }, fn });
-  }
-
   // ── Input ─────────────────────────────────────────────────────────────────
 
   private handleDown(x: number, y: number): void {
@@ -371,8 +330,22 @@ export class ShopScene implements Scene {
       const r = hit.rect;
       if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); return; }
     }
-    // Tap outside any hit — blur promo field if focused.
+    // No hit — begin a drag-scroll (and blur the promo field if it was focused).
     if (this.promoFocused) this.blurPromo();
+    this.dragStart = { y, scroll: this.scrollY };
+  }
+
+  private handleMove(y: number): void {
+    if (!this.dragStart) return;
+    const dy = y - this.dragStart.y;
+    if (Math.abs(dy) > 6) {
+      this.scrollY = Math.max(0, this.dragStart.scroll - dy);
+      this.render();
+    }
+  }
+
+  private handleUp(): void {
+    this.dragStart = null;
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -384,11 +357,21 @@ export class ShopScene implements Scene {
     this.drawBackground();
     const tbH = this.drawHeader();
     const top = this.drawGroupTabs(tbH);
+
+    // Body grid lives in a masked layer so overscrolled cells never bleed into the fixed header / tab strip.
+    const body = new PIXI.Container();
+    this.container.addChild(body);
+    const mask = new PIXI.Graphics();
+    mask.beginFill(0xffffff).drawRect(0, top, this.w, this.h - top).endFill();
+    this.container.addChild(mask);
+    body.mask = mask;
+
     if (this.tab === 'coins') {
-      this.drawCoinsList(top);
+      this.drawCoinsGrid(body, top);
     } else {
-      this.drawList(top);
+      this.drawShopGrid(body, top);
     }
+
     if (this.toast) this.drawToast();
     if (this.bt.loadingVisible) drawLoadingOverlay(this.container, this.w, this.h, this.bt.dots, t('common.processing'));
   }
@@ -437,14 +420,15 @@ export class ShopScene implements Scene {
     tabs.push({ label: t('gacha.title'), active: false, icon: 'capsule' });
     if (this.cb.openBattlePass) tabs.push({ label: t('battlepass.title'), active: false, icon: 'trophy' });
 
+    const switchTab = (tab: 'shop' | 'coins') => { this.tab = tab; this.scrollY = 0; this.render(); };
     const hits = drawHubTabs(this.container, w, tbH, stripH, tabs, (i) => {
       if (!showCoins) {
         if (i === 1) this.cb.openGacha();
         else if (i === 2) this.cb.openBattlePass?.();
         return;
       }
-      if (i === 0) { this.tab = 'shop'; this.render(); }
-      else if (i === 1) { this.tab = 'coins'; this.render(); }
+      if (i === 0) switchTab('shop');
+      else if (i === 1) switchTab('coins');
       else if (i === 2) this.cb.openGacha();
       else if (i === 3) this.cb.openBattlePass?.();
     });
@@ -452,104 +436,296 @@ export class ShopScene implements Scene {
     return tbH + stripH;
   }
 
-  private drawList(top: number): void {
+  // ── Grid layout ────────────────────────────────────────────────────────────
+
+  /** Responsive column count + cell width for the product grid (mirrors CardScene/EquipmentScene). */
+  private gridMetrics(): { listX: number; listW: number; gap: number; cols: number; cellW: number; cellH: number } {
     const { w, h } = this;
-    const listX = Math.round(w * 0.06);
+    const listX = Math.round(w * 0.04);
     const listW = w - listX * 2;
-    let y = top + Math.round(h * 0.025);
+    const gap = Math.round(w * 0.015);
+    const targetW = Math.round(w * 0.30);
+    const cols = Math.max(1, Math.floor((listW + gap) / (targetW + gap)));
+    const cellW = Math.round((listW - gap * (cols - 1)) / cols);
+    const cellH = Math.round(h * 0.22);
+    return { listX, listW, gap, cols, cellW, cellH };
+  }
+
+  /** Shop tab: monthly/year cards + starter packs + skins as an icon-card grid, then a full-width promo row. */
+  private drawShopGrid(body: PIXI.Container, top: number): void {
+    const { w, h } = this;
+    const bodyTop = top + Math.round(h * 0.02);
+    const viewH = h - bodyTop - Math.round(h * 0.02);
 
     if (this.loading) {
       const lbl = txt(t('shop.loading'), Math.round(h * 0.028), C.mid);
-      lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = top + Math.round(h * 0.14);
-      this.container.addChild(lbl);
+      lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = bodyTop + Math.round(h * 0.14);
+      body.addChild(lbl);
       return;
     }
 
-    const rowH = Math.round(h * 0.10);
-    const gap = Math.round(h * 0.018);
+    const specs = this.buildShopCards();
+    const { listX, listW, gap, cols, cellW, cellH } = this.gridMetrics();
+    const rows = Math.ceil(specs.length / cols);
+    const gridH = rows > 0 ? rows * (cellH + gap) : 0;
 
-    // Monetization deals (monthly card + starter packs) at the top of the shop tab.
-    if (this.cb.getMonetization) y = this.drawDeals(listX, y, listW, rowH);
+    // Promo row sits full-width below the grid, inside the same scroll flow.
+    const promoH = this.cb.redeemPromo ? Math.round(h * 0.09) : 0;
+    const totalH = gridH + (promoH ? promoH + gap : 0);
+    this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - viewH)));
 
+    if (specs.length === 0 && !this.cb.redeemPromo) {
+      const lbl = txt(t('shop.empty'), Math.round(h * 0.028), C.mid);
+      lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = bodyTop + Math.round(h * 0.14);
+      body.addChild(lbl);
+      return;
+    }
+
+    specs.forEach((spec, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const cx = listX + col * (cellW + gap);
+      const cy = bodyTop + row * (cellH + gap) - this.scrollY;
+      if (cy + cellH >= top && cy <= h) this.drawCard(body, spec, cx, cy, cellW, cellH);
+    });
+
+    if (promoH) {
+      const py = bodyTop + gridH - this.scrollY;
+      if (py + promoH >= top && py <= h) this.drawPromoRow(body, listX, py, listW, promoH);
+    }
+  }
+
+  /** Assemble the shop tab's card specs in a fixed order: monthly · year · starter packs · skins. */
+  private buildShopCards(): CardSpec[] {
+    const specs: CardSpec[] = [];
+    const busy = this.bt.busy;
+    const mon = this.cb.getMonetization?.() ?? { subscriptionExpiry: 0, starterUsed: [] };
+    const active = mon.subscriptionExpiry > Date.now();
+
+    // Monthly card: Buy (locked while a card is active) + daily Claim.
+    if (this.cb.buyMonthlyCard) {
+      const buttons: BtnSpec[] = [
+        active
+          ? { label: t('shop.monthlyActive'), enabled: false, primary: true }
+          : { label: t('shop.buy'), enabled: !busy, primary: true, fn: () => void this.runDeal(() => this.cb.buyMonthlyCard!(), 'shop.bought') },
+      ];
+      if (this.cb.claimMonthlyCard) {
+        buttons.push({ label: t('shop.monthlyClaim'), enabled: !busy && active, primary: false, fn: () => void this.runDeal(() => this.cb.claimMonthlyCard!(), 'shop.monthlyClaimed') });
+      }
+      specs.push({
+        icon: 'coinChest', iconColor: C.gold, title: t('shop.monthlyCard'), highlight: true,
+        yuanPrice: MONTHLY_CARD_YUAN,
+        lines: [{ text: active ? t('shop.monthlyActive') : t('shop.monthlyInactive'), color: active ? C.green : C.mid }],
+        buttons,
+      });
+    }
+
+    // Year card: 365-day, ~9折 vs 12 monthly cards. Same single-slot gate.
+    if (this.cb.buyYearCard) {
+      specs.push({
+        icon: 'trophy', iconColor: C.gold, title: t('shop.yearCard'), highlight: true,
+        yuanPrice: YEAR_CARD_YUAN, yuanStrike: YEAR_CARD_LIST_YUAN,
+        badge: { text: t('shop.save', { amount: `¥${YEAR_CARD_LIST_YUAN - YEAR_CARD_YUAN}` }), color: C.green },
+        lines: [{ text: active ? t('shop.monthlyActive') : t('shop.monthlyInactive'), color: active ? C.green : C.mid }],
+        buttons: [
+          active
+            ? { label: t('shop.monthlyActive'), enabled: false, primary: true }
+            : { label: t('shop.buy'), enabled: !busy, primary: true, fn: () => void this.runDeal(() => this.cb.buyYearCard!(), 'shop.bought') },
+        ],
+      });
+    }
+
+    // Starter packs: one card each, "已购" when already owned.
+    if (this.cb.buyStarter) {
+      const packs: { id: 'starter_draw' | 'starter_growth'; label: TranslationKey; icon: IconKind }[] = [
+        { id: 'starter_draw', label: 'shop.starterDraw', icon: 'capsule' },
+        { id: 'starter_growth', label: 'shop.starterGrowth', icon: 'gift' },
+      ];
+      for (const pk of packs) {
+        const used = mon.starterUsed.includes(pk.id);
+        specs.push({
+          icon: pk.icon, iconColor: C.gold, title: t(pk.label),
+          buttons: [{
+            label: used ? t('shop.owned') : t('shop.buy'), enabled: !used && !busy, primary: true,
+            fn: () => void this.runDeal(() => this.cb.buyStarter!(pk.id), 'shop.bought'),
+          }],
+        });
+      }
+    }
+
+    // Skins (cosmetic → brush glyph; real skin art pending).
     if (this.items && this.items.length > 0) {
       const owned = new Set(this.cb.getOwnedSkins());
       for (const item of this.items) {
-        this.drawItemRow(item, owned.has(item.grants ?? item.id), listX, y, listW, rowH);
-        y += rowH + gap;
+        const isOwned = owned.has(item.grants ?? item.id);
+        const canBuy = !isOwned && !busy && this.cb.getCoins() >= item.cost;
+        specs.push({
+          icon: 'brush', iconColor: C.accent, title: `${t('shop.skinLabel')} · ${item.id}`,
+          coinAmount: item.cost,
+          buttons: [{
+            label: isOwned ? t('shop.owned') : t('shop.buy'), enabled: canBuy, primary: true,
+            fn: () => void this.onBuy(item.id),
+          }],
+        });
       }
-    } else {
-      const lbl = txt(t('shop.empty'), Math.round(h * 0.028), C.mid);
-      lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = top + Math.round(h * 0.14);
-      this.container.addChild(lbl);
-      y += Math.round(h * 0.18);
     }
 
-    if (this.cb.redeemPromo) {
-      y += Math.round(h * 0.012);
-      this.drawPromoRow(listX, y, listW, rowH);
-    }
+    return specs;
   }
 
-  private drawItemRow(
-    item: ShopItem, isOwned: boolean, x: number, y: number, w: number, h: number,
-  ): void {
-    const box = sketchPanel(w, h, { fill: C.paper, border: C.line, width: 1.6, seed: seedFor(x, y, w) });
-    box.x = x; box.y = y;
-    sketchAccentBar(box, h, C.accent, seedFor(x, h, 3));
-    this.container.addChild(box);
+  /** Coins recharge tab: USD tiers as an icon-card grid (price · treasure glyph · coins + bonus · buy). */
+  private drawCoinsGrid(body: PIXI.Container, top: number): void {
+    const { h } = this;
+    const bodyTop = top + Math.round(h * 0.02);
+    const viewH = h - bodyTop - Math.round(h * 0.02);
+    const busy = this.bt.busy;
 
-    const pad = Math.round(w * 0.04);
-    // Thumbnail: skins are cosmetic → brush glyph (real skin art pending). Gives every row a visual anchor.
-    const thumb = Math.round(h * 0.5);
-    const thumbIcon = buildIcon('brush', thumb, C.accent);
-    thumbIcon.x = x + pad;
-    thumbIcon.y = y + (h - thumb) / 2;
-    this.container.addChild(thumbIcon);
-    const textX = x + pad + thumb + Math.round(w * 0.03);
-
-    // Name (placeholder: kind label + id, real skin art/names pending).
-    const name = txt(`${t('shop.skinLabel')} · ${item.id}`, Math.round(h * 0.22), C.dark, true);
-    name.anchor.set(0, 0.5); name.x = textX; name.y = y + h * 0.36;
-    this.container.addChild(name);
-
-    // Price: coin glyph + number (drops the old ◎ text so the cost reads as coins).
-    const costIcon = Math.round(h * 0.26);
-    const cIcon = buildIcon('coin', costIcon, C.gold);
-    cIcon.x = textX; cIcon.y = y + h * 0.70 - costIcon / 2;
-    this.container.addChild(cIcon);
-    const cost = txt(`${item.cost}`, Math.round(h * 0.22), C.gold, true);
-    cost.anchor.set(0, 0.5); cost.x = cIcon.x + costIcon + Math.round(w * 0.012); cost.y = y + h * 0.70;
-    this.container.addChild(cost);
-
-    // Buy / owned button (right).
-    const bw = Math.round(w * 0.26);
-    const bh = Math.round(h * 0.56);
-    const bx = x + w - bw - Math.round(w * 0.03);
-    const by = y + (h - bh) / 2;
-    const canBuy = !isOwned && !this.bt.busy && this.cb.getCoins() >= item.cost;
-
-    const btn = sketchPanel(bw, bh, {
-      fill: isOwned ? C.btnOff : (canBuy ? C.dark : C.btnOff),
-      border: isOwned ? C.light : (canBuy ? C.green : C.light),
-      width: 2, seed: seedFor(bx, by, bw),
+    const specs: CardSpec[] = WEB_COIN_TIERS.map((tier, idx) => {
+      const bonus = tier.coins - tier.base;
+      const lines: { text: string; color: number }[] = [];
+      if (bonus > 0) lines.push({ text: `+${bonus}`, color: C.green });
+      if (tier.bestValue) lines.push({ text: t('shop.bestValue'), color: C.gold });
+      lines.push({ text: t('shop.firstDouble'), color: 0xff6b00 });
+      const tierId = tier.id;
+      return {
+        icon: COIN_TIER_ICONS[idx] ?? 'coin', iconColor: C.gold,
+        title: `$${(tier.usdCents / 100).toFixed(2)}`,
+        coinAmount: tier.coins,
+        lines,
+        highlight: tier.bestValue,
+        buttons: [{ label: t('shop.buy'), enabled: !busy, primary: true, fn: () => void this.onRecharge(tierId) }],
+      };
     });
-    btn.x = bx; btn.y = by;
-    this.container.addChild(btn);
 
-    const blabel = txt(isOwned ? t('shop.owned') : t('shop.buy'),
-      Math.round(bh * 0.40), isOwned ? C.mid : 0xffffff, true);
-    blabel.anchor.set(0.5, 0.5); blabel.x = bx + bw / 2; blabel.y = by + bh / 2;
-    this.container.addChild(blabel);
+    const { listX, gap, cols, cellW, cellH } = this.gridMetrics();
+    const rows = Math.ceil(specs.length / cols);
+    const totalH = rows * (cellH + gap);
+    this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - viewH)));
 
-    if (!isOwned && !this.bt.busy) {
-      this.hits.push({ rect: { x: bx, y: by, w: bw, h: bh }, fn: () => void this.onBuy(item.id) });
-    }
+    specs.forEach((spec, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const cx = listX + col * (cellW + gap);
+      const cy = bodyTop + row * (cellH + gap) - this.scrollY;
+      if (cy + cellH >= top && cy <= h) this.drawCard(body, spec, cx, cy, cellW, cellH);
+    });
   }
 
-  /** Promo-code row: [text field showing code / placeholder] [Redeem button]. */
-  private drawPromoRow(x: number, y: number, w: number, h: number): void {
-    const btnW = Math.round(w * 0.28);
-    const gap = Math.round(w * 0.025);
+  // ── Card cell ────────────────────────────────────────────────────────────
+
+  /** Draw one product card: name across the top, icon on the left, price/info on the right, action button(s) at the bottom. */
+  private drawCard(body: PIXI.Container, spec: CardSpec, x: number, y: number, cw: number, ch: number): void {
+    const box = sketchPanel(cw, ch, {
+      fill: spec.highlight ? 0xfff8e8 : C.paper,
+      border: spec.highlight ? C.gold : C.line,
+      width: spec.highlight ? 2 : 1.6,
+      seed: seedFor(x, y, cw),
+    });
+    box.x = x; box.y = y;
+    if (!spec.highlight) sketchAccentBar(box, ch, C.accent, seedFor(x, ch, 3));
+    body.addChild(box);
+
+    const pad = Math.round(cw * 0.06);
+
+    // Top-right corner badge (savings / best value).
+    if (spec.badge) {
+      const badge = txt(spec.badge.text, Math.round(ch * 0.11), spec.badge.color, true);
+      badge.anchor.set(1, 0); badge.x = x + cw - pad; badge.y = y + pad;
+      body.addChild(badge);
+    }
+
+    // Title (auto-scaled to fit the width minus padding / badge).
+    const title = txt(spec.title, Math.round(ch * 0.15), C.dark, true);
+    title.anchor.set(0, 0);
+    title.x = x + pad; title.y = y + pad;
+    this.fitText(title, cw - pad * 2 - (spec.badge ? Math.round(cw * 0.22) : 0));
+    body.addChild(title);
+
+    // Icon (left).
+    const iconS = Math.round(ch * 0.32);
+    const iconX = x + pad;
+    const iconY = y + Math.round(ch * 0.30);
+    const icon = buildIcon(spec.icon, iconS, spec.iconColor);
+    icon.x = iconX; icon.y = iconY;
+    body.addChild(icon);
+
+    // Info column (right of the icon).
+    const infoX = iconX + iconS + Math.round(cw * 0.05);
+    let iy = y + Math.round(ch * 0.30);
+    const lineH = Math.round(ch * 0.15);
+
+    if (spec.coinAmount !== undefined) {
+      const cs = Math.round(ch * 0.16);
+      const ci = buildIcon('coin', cs, C.gold);
+      ci.x = infoX; ci.y = iy;
+      body.addChild(ci);
+      const amt = txt(spec.coinAmount.toLocaleString(), Math.round(ch * 0.16), C.gold, true);
+      amt.anchor.set(0, 0); amt.x = infoX + cs + Math.round(cw * 0.02); amt.y = iy;
+      body.addChild(amt);
+      iy += lineH;
+    }
+
+    if (spec.yuanPrice !== undefined) {
+      const price = txt(`¥${spec.yuanPrice}`, Math.round(ch * 0.18), C.gold, true);
+      price.anchor.set(0, 0); price.x = infoX; price.y = iy;
+      body.addChild(price);
+      if (spec.yuanStrike !== undefined) {
+        const strike = txt(`¥${spec.yuanStrike}`, Math.round(ch * 0.12), C.mid, false);
+        strike.anchor.set(0, 0.5);
+        strike.x = price.x + price.width + Math.round(cw * 0.03);
+        strike.y = iy + Math.round(ch * 0.09);
+        body.addChild(strike);
+        const line = new PIXI.Graphics();
+        line.lineStyle(2, C.mid, 1);
+        line.moveTo(strike.x, strike.y).lineTo(strike.x + strike.width, strike.y);
+        body.addChild(line);
+      }
+      iy += lineH;
+    }
+
+    for (const ln of spec.lines ?? []) {
+      const l = txt(ln.text, Math.round(ch * 0.12), ln.color, true);
+      l.anchor.set(0, 0); l.x = infoX; l.y = iy;
+      body.addChild(l);
+      iy += Math.round(ch * 0.14);
+    }
+
+    // Action buttons at the bottom (1 = full width, 2 = split).
+    const btnH = Math.round(ch * 0.22);
+    const btnY = y + ch - pad - btnH;
+    const n = spec.buttons.length;
+    const totalW = cw - pad * 2;
+    const bGap = Math.round(cw * 0.03);
+    const bw = n > 1 ? Math.round((totalW - bGap * (n - 1)) / n) : totalW;
+    spec.buttons.forEach((b, i) => {
+      const bx = x + pad + i * (bw + bGap);
+      this.drawButton(body, b, bx, btnY, bw, btnH);
+    });
+  }
+
+  private drawButton(body: PIXI.Container, b: BtnSpec, x: number, y: number, w: number, h: number): void {
+    const btn = sketchPanel(w, h, {
+      fill: b.enabled ? C.dark : C.btnOff,
+      border: b.enabled ? (b.primary ? C.green : C.accent) : C.light,
+      width: 2, seed: seedFor(x, y, w),
+    });
+    btn.x = x; btn.y = y;
+    body.addChild(btn);
+    const lbl = txt(b.label, Math.round(h * 0.42), b.enabled ? 0xffffff : C.mid, true);
+    lbl.anchor.set(0.5, 0.5); lbl.x = x + w / 2; lbl.y = y + h / 2;
+    body.addChild(lbl);
+    if (b.enabled && b.fn) this.hits.push({ rect: { x, y, w, h }, fn: b.fn });
+  }
+
+  /** Scale a Text down (never up) so it fits within maxW. */
+  private fitText(node: PIXI.Text, maxW: number): void {
+    if (maxW > 0 && node.width > maxW) node.scale.set(maxW / node.width);
+  }
+
+  /** Promo-code row: full-width [text field showing code / placeholder] [Redeem button]. */
+  private drawPromoRow(body: PIXI.Container, x: number, y: number, w: number, h: number): void {
+    const btnW = Math.round(w * 0.20);
+    const gap = Math.round(w * 0.02);
     const fieldW = w - btnW - gap;
 
     // Field box.
@@ -559,13 +735,13 @@ export class ShopScene implements Scene {
       width: focused ? 2.2 : 1.4, seed: seedFor(x, y, fieldW),
     });
     field.x = x; field.y = y;
-    this.container.addChild(field);
+    body.addChild(field);
 
     const display = this.promoCode || t('shop.promoPlaceholder');
     const isPlaceholder = !this.promoCode;
     const fieldTxt = txt(display, Math.round(h * 0.30), isPlaceholder ? C.mid : C.dark, true);
-    fieldTxt.anchor.set(0, 0.5); fieldTxt.x = x + Math.round(fieldW * 0.05); fieldTxt.y = y + h / 2;
-    this.container.addChild(fieldTxt);
+    fieldTxt.anchor.set(0, 0.5); fieldTxt.x = x + Math.round(fieldW * 0.04); fieldTxt.y = y + h / 2;
+    body.addChild(fieldTxt);
 
     // Blinking caret when focused.
     if (focused) {
@@ -573,7 +749,7 @@ export class ShopScene implements Scene {
       caret.anchor.set(0, 0.5);
       caret.x = fieldTxt.x + fieldTxt.width + 2;
       caret.y = y + h / 2;
-      this.container.addChild(caret);
+      body.addChild(caret);
     }
 
     this.hits.push({ rect: { x, y, w: fieldW, h }, fn: () => this.focusPromo() });
@@ -587,121 +763,15 @@ export class ShopScene implements Scene {
       width: 2, seed: seedFor(bx, y, btnW),
     });
     btn.x = bx; btn.y = y;
-    this.container.addChild(btn);
+    body.addChild(btn);
 
     const blabel = txt(t('shop.promoRedeem'), Math.round(h * 0.30), canRedeem ? 0xffffff : C.mid, true);
     blabel.anchor.set(0.5, 0.5); blabel.x = bx + btnW / 2; blabel.y = y + h / 2;
-    this.container.addChild(blabel);
+    body.addChild(blabel);
 
     if (canRedeem) {
       this.hits.push({ rect: { x: bx, y, w: btnW, h }, fn: () => void this.onRedeem() });
     }
-  }
-
-  /** Coins recharge tab: list of USD tiers with price, coins total, bonus, and buy button. */
-  private drawCoinsList(top: number): void {
-    const { w, h } = this;
-    const listX = Math.round(w * 0.06);
-    const listW = w - listX * 2;
-    let y = top + Math.round(h * 0.025);
-    const rowH = Math.round(h * 0.10);
-    const gap = Math.round(h * 0.018);
-
-    WEB_COIN_TIERS.forEach((tier, idx) => {
-      const priceDollars = (tier.usdCents / 100).toFixed(2);
-      const bonusCoins = tier.coins - tier.base;
-      const isBusy = this.bt.busy;
-
-      const box = sketchPanel(listW, rowH, {
-        fill: tier.bestValue ? 0xfff8e8 : C.paper,
-        border: tier.bestValue ? C.gold : C.line,
-        width: tier.bestValue ? 2.2 : 1.6,
-        seed: seedFor(listX, y, listW),
-      });
-      box.x = listX; box.y = y;
-      sketchAccentBar(box, rowH, tier.bestValue ? C.gold : C.accent, seedFor(listX, rowH, 5));
-      this.container.addChild(box);
-
-      // Price badge (left).
-      const priceLbl = txt(`$${priceDollars}`, Math.round(rowH * 0.28), C.dark, true);
-      priceLbl.anchor.set(0, 0.5);
-      priceLbl.x = listX + Math.round(listW * 0.04);
-      priceLbl.y = y + rowH * 0.5;
-      this.container.addChild(priceLbl);
-
-      // Treasure icon — escalates with the tier so bigger packs look richer.
-      const iconSize = Math.round(rowH * 0.66);
-      const iconX = listX + Math.round(listW * 0.16);
-      const icon = buildIcon(COIN_TIER_ICONS[idx] ?? 'coin', iconSize, C.gold);
-      icon.x = iconX;
-      icon.y = y + Math.round((rowH - iconSize) / 2);
-      this.container.addChild(icon);
-
-      const textX = iconX + iconSize + Math.round(listW * 0.015);
-
-      // Coin amount.
-      const coinLbl = txt(tier.coins.toLocaleString(), Math.round(rowH * 0.26), C.gold, true);
-      coinLbl.anchor.set(0, 0.5);
-      coinLbl.x = textX;
-      coinLbl.y = y + rowH * 0.36;
-      this.container.addChild(coinLbl);
-
-      // Bonus label: "+N" in green followed by a coin glyph (drops the stray English "bonus" word).
-      if (bonusCoins > 0) {
-        const bonusLbl = txt(`+${bonusCoins}`, Math.round(rowH * 0.18), C.green, true);
-        bonusLbl.anchor.set(0, 0.5);
-        bonusLbl.x = textX;
-        bonusLbl.y = y + rowH * 0.68;
-        this.container.addChild(bonusLbl);
-        const bIconS = Math.round(rowH * 0.20);
-        const bonusIcon = buildIcon('coin', bIconS, C.green);
-        bonusIcon.x = bonusLbl.x + bonusLbl.width + Math.round(listW * 0.008);
-        bonusIcon.y = y + rowH * 0.68 - bIconS / 2;
-        this.container.addChild(bonusIcon);
-      }
-
-      // Best Value badge.
-      if (tier.bestValue) {
-        const badge = txt(t('shop.bestValue'), Math.round(rowH * 0.18), C.gold, true);
-        badge.anchor.set(0, 0.5);
-        badge.x = textX;
-        badge.y = y + (bonusCoins > 0 ? rowH * 0.05 : rowH * 0.36);
-        this.container.addChild(badge);
-      }
-
-      // First-purchase 2x badge (always shown; server applies it to the first purchase).
-      const firstBadge = txt(t('shop.firstDouble'), Math.round(rowH * 0.17), 0xff6b00, true);
-      firstBadge.anchor.set(1, 0.5);
-      firstBadge.x = listX + Math.round(listW * 0.72);
-      firstBadge.y = y + rowH * 0.5;
-      this.container.addChild(firstBadge);
-
-      // Buy button (right).
-      const bw = Math.round(listW * 0.22);
-      const bh = Math.round(rowH * 0.56);
-      const bx = listX + listW - bw - Math.round(listW * 0.03);
-      const by = y + (rowH - bh) / 2;
-
-      const btn = sketchPanel(bw, bh, {
-        fill: isBusy ? C.btnOff : C.dark,
-        border: isBusy ? C.light : C.green,
-        width: 2,
-        seed: seedFor(bx, by, bw),
-      });
-      btn.x = bx; btn.y = by;
-      this.container.addChild(btn);
-
-      const blabel = txt(t('shop.buy'), Math.round(bh * 0.40), isBusy ? C.mid : 0xffffff, true);
-      blabel.anchor.set(0.5, 0.5); blabel.x = bx + bw / 2; blabel.y = by + bh / 2;
-      this.container.addChild(blabel);
-
-      if (!isBusy) {
-        const tierId = tier.id;
-        this.hits.push({ rect: { x: bx, y: by, w: bw, h: bh }, fn: () => void this.onRecharge(tierId) });
-      }
-
-      y += rowH + gap;
-    });
   }
 
   private drawToast(): void {

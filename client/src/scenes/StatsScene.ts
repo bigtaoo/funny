@@ -46,6 +46,14 @@ export interface StatsCallbacks {
   hasClaimableAchievement?: boolean;
   /** Open the global leaderboard (SE-6). Shown in the ranked section when online. */
   onOpenLeaderboard?(): void;
+  /**
+   * Fetch the player's own ladder position (1-based) for the current season, or null when
+   * outside the ranked leaderboard. Shown as a row in the ranked section next to the
+   * leaderboard link. Omitted when offline.
+   */
+  getMyRank?(): Promise<number | null>;
+  /** The player's own display name, used for the "me vs opponent" match-history line. */
+  playerName?: string;
   /** Open the titles wall (S10). Shown as a header button to the left of achievements. */
   onOpenTitles?(): void;
   /** Current season info for the banner (SE-6). */
@@ -66,6 +74,11 @@ export class StatsScene implements Scene {
   private readonly unsubs: Array<() => void> = [];
   /** null = not fetched yet (loading); [] = fetched, empty. Only meaningful when loadHistory is provided. */
   private history: MatchHistoryEntry[] | null = null;
+  /** undefined = not fetched yet; null = unranked / fetch failed; number = 1-based ladder position. */
+  private myRank: number | null | undefined = undefined;
+
+  /** Match history is capped at the most recent 10 games. */
+  private static readonly HISTORY_LIMIT = 10;
 
   constructor(layout: ILayout, input: InputManager, cb: StatsCallbacks) {
     this.container = new PIXI.Container();
@@ -76,13 +89,23 @@ export class StatsScene implements Scene {
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.render();
     if (this.cb.loadHistory) void this.fetchHistory();
+    if (this.cb.getMyRank) void this.fetchMyRank();
   }
 
   private async fetchHistory(): Promise<void> {
     try {
-      this.history = (await this.cb.loadHistory!()).slice(0, 10);
+      this.history = (await this.cb.loadHistory!()).slice(0, StatsScene.HISTORY_LIMIT);
     } catch {
       this.history = [];
+    }
+    this.render();
+  }
+
+  private async fetchMyRank(): Promise<void> {
+    try {
+      this.myRank = await this.cb.getMyRank!();
+    } catch {
+      this.myRank = null;
     }
     this.render();
   }
@@ -173,6 +196,13 @@ export class StatsScene implements Scene {
       { label: t('stats.record'), value: `${s.pvp.wins} / ${s.pvp.losses}` },
       { label: t('stats.winrate'), value: winrate },
       { label: t('stats.streak'), value: streak, valueColor: s.pvp.streak > 0 ? C.green : s.pvp.streak < 0 ? C.red : C.mid },
+      ...(this.cb.getMyRank
+        ? [{
+            label: t('stats.myRank'),
+            value: this.myRank === undefined ? '…' : this.myRank === null ? t('stats.rankUnranked') : `#${this.myRank}`,
+            valueColor: typeof this.myRank === 'number' ? C.gold : C.mid,
+          }]
+        : []),
       ...(this.cb.onOpenLeaderboard ? [{ label: '', value: t('leaderboard.openLeaderboard') + ' →', valueColor: C.accent, rowHit: () => this.cb.onOpenLeaderboard!() }] : []),
     ];
 
@@ -187,23 +217,27 @@ export class StatsScene implements Scene {
     ];
 
     if (this.landscape) {
-      // ── Landscape: two columns ───────────────────────────────────────────────────
+      // ── Landscape: profile column (compact stat panels) + match-history column ────
+      // Left stacks the three read-at-a-glance panels (ranked / campaign / collection);
+      // the right column is dedicated to the taller match-history feed. This keeps each
+      // column's content roughly the same height instead of leaving the old layout's
+      // large empty gap under the short campaign panel.
       const colGap = Math.round(w * 0.025);
       const totalW = w - pad * 2;
-      const leftW = Math.round(totalW * 0.54);
+      const leftW = Math.round(totalW * 0.46);
       const rightW = totalW - leftW - colGap;
       const leftX = pad;
       const rightX = pad + leftW + colGap;
 
-      // Left: ranked + campaign
+      // Left: ranked + campaign + collection
       let ly = this.drawSection(leftX, topY, leftW, t('stats.pvp'), C.accent, pvpRows);
       ly += gap;
-      this.drawSection(leftX, ly, leftW, t('stats.campaign'), C.gold, campaignRows);
+      ly = this.drawSection(leftX, ly, leftW, t('stats.campaign'), C.gold, campaignRows);
+      ly += gap;
+      this.drawSection(leftX, ly, leftW, t('stats.collection'), C.green, collectionRows);
 
-      // Right: collection + history
-      let ry = this.drawSection(rightX, topY, rightW, t('stats.collection'), C.green, collectionRows);
-      ry += gap;
-      this.drawSection(rightX, ry, rightW, t('stats.history'), C.mid, this.historyRows());
+      // Right: match history
+      this.drawHistorySection(rightX, topY, rightW);
     } else {
       // ── Portrait: single column with narrower margins ───────────────────────────
       const secW = w - pad * 2;
@@ -211,35 +245,101 @@ export class StatsScene implements Scene {
       y = this.drawSection(pad, y, secW, t('stats.pvp'), C.accent, pvpRows); y += gap;
       y = this.drawSection(pad, y, secW, t('stats.campaign'), C.gold, campaignRows); y += gap;
       y = this.drawSection(pad, y, secW, t('stats.collection'), C.green, collectionRows); y += gap;
-      this.drawSection(pad, y, secW, t('stats.history'), C.mid, this.historyRows());
+      this.drawHistorySection(pad, y, secW);
     }
   }
 
-  /** Rows for the match-history section, reflecting fetch state. */
-  private historyRows(): Row[] {
-    if (!this.cb.loadHistory) {
-      return [{ label: '', value: t('stats.historyOffline'), valueColor: C.mid }];
+  /**
+   * Match-history panel — the most recent {@link HISTORY_LIMIT} games, each shown as a
+   * "me vs opponent" line (with a crossed-swords glyph) plus a win/loss result chip,
+   * rather than the generic label:value list used by the stat panels. Empty / loading /
+   * offline states render a single centred notice inside the panel.
+   */
+  private drawHistorySection(x: number, y: number, w: number): number {
+    const { h } = this;
+    const titleH = Math.round(h * 0.034);
+    const entryH = Math.round(h * 0.048);
+    const padV = Math.round(h * 0.012);
+    const accent = C.mid;
+
+    const notice = !this.cb.loadHistory
+      ? t('stats.historyOffline')
+      : this.history === null
+        ? t('stats.historyLoading')
+        : this.history.length === 0
+          ? t('stats.historyEmpty')
+          : null;
+    const entries = notice ? [] : this.history!;
+    const bodyRows = notice ? 1 : entries.length;
+    const panelH = titleH + bodyRows * entryH + padV * 2;
+
+    const box = sketchPanel(w, panelH, { fill: C.paper, border: C.line, width: 1.6, seed: seedFor(x, y, w) });
+    box.x = x; box.y = y;
+    sketchAccentBar(box, panelH, accent, seedFor(x, panelH, 7));
+    this.container.addChild(box);
+
+    const titleLbl = txt(t('stats.history'), Math.round(titleH * 0.7), accent, true);
+    titleLbl.anchor.set(0, 0); titleLbl.x = x + Math.round(w * 0.05); titleLbl.y = y + padV;
+    this.container.addChild(titleLbl);
+
+    const bodyTop = y + padV + titleH;
+
+    if (notice) {
+      const n = txt(notice, Math.round(entryH * 0.5), C.mid);
+      n.anchor.set(0.5, 0.5); n.x = x + w / 2; n.y = bodyTop + entryH / 2;
+      this.container.addChild(n);
+      return y + panelH;
     }
-    if (this.history === null) {
-      return [{ label: '', value: t('stats.historyLoading'), valueColor: C.mid }];
-    }
-    if (this.history.length === 0) {
-      return [{ label: '', value: t('stats.historyEmpty'), valueColor: C.mid }];
-    }
-    return this.history.map((m) => {
-      const opp =
-        m.opponentName || (m.opponentPublicId ? `#${m.opponentPublicId}` : t('stats.historyUnknownOpp'));
-      const res =
-        m.result === 'win' ? t('stats.win') : m.result === 'loss' ? t('stats.loss') : '—';
-      const elo =
-        m.eloDelta !== undefined ? ` (${m.eloDelta >= 0 ? '+' : ''}${m.eloDelta})` : '';
-      return {
-        label: opp,
-        value: res + elo,
-        valueColor: m.result === 'win' ? C.green : m.result === 'loss' ? C.red : C.mid,
-        ...(this.cb.onWatchReplay ? { rowHit: () => this.cb.onWatchReplay!(m.roomId) } : {}),
-      };
+
+    const glyphX = x + Math.round(w * 0.045);
+    const matchupX = x + Math.round(w * 0.11);
+    const valRight = x + w - Math.round(w * 0.05);
+    const me = this.cb.playerName || t('stats.you');
+
+    entries.forEach((m, i) => {
+      const ry = bodyTop + i * entryH;
+
+      // Hairline separator between entries (skip above the first one).
+      if (i > 0) {
+        const sep = new PIXI.Graphics();
+        sep.lineStyle(1, C.line, 0.5);
+        sep.moveTo(x + Math.round(w * 0.045), ry); sep.lineTo(valRight, ry);
+        this.container.addChild(sep);
+      }
+
+      // Crossed-swords glyph marks a match; doubles as the replay affordance when watchable.
+      const gsz = Math.round(entryH * 0.5);
+      const glyph = buildIcon('swords', gsz, m.result === 'win' ? C.green : m.result === 'loss' ? C.red : C.mid);
+      glyph.x = glyphX; glyph.y = ry + entryH / 2 - gsz / 2;
+      this.container.addChild(glyph);
+
+      // "me vs opponent" — the opponent name is truncated so the matchup never collides
+      // with the result chip on the right.
+      const opp = m.opponentName || (m.opponentPublicId ? `#${m.opponentPublicId}` : t('stats.historyUnknownOpp'));
+      const matchup = `${this.truncate(me, 10)} vs ${this.truncate(opp, 12)}`;
+      const mt = txt(matchup, Math.round(entryH * 0.42), C.dark);
+      mt.anchor.set(0, 0.5); mt.x = matchupX; mt.y = ry + entryH / 2;
+      this.container.addChild(mt);
+
+      // Result chip: win/loss plus signed ELO delta (delta absent for friendly matches).
+      const res = m.result === 'win' ? t('stats.win') : m.result === 'loss' ? t('stats.loss') : '—';
+      const elo = m.eloDelta !== undefined ? `  ${m.eloDelta >= 0 ? '+' : ''}${m.eloDelta}` : '';
+      const resColor = m.result === 'win' ? C.green : m.result === 'loss' ? C.red : C.mid;
+      const rt = txt(res + elo, Math.round(entryH * 0.44), resColor, true);
+      rt.anchor.set(1, 0.5); rt.x = valRight; rt.y = ry + entryH / 2;
+      this.container.addChild(rt);
+
+      if (this.cb.onWatchReplay) {
+        this.hits.push({ rect: { x, y: ry, w, h: entryH }, fn: () => this.cb.onWatchReplay!(m.roomId) });
+      }
     });
+
+    return y + panelH;
+  }
+
+  /** Clip an over-long display name to `max` chars with an ellipsis, so matchup lines stay on one row. */
+  private truncate(s: string, max: number): string {
+    return s.length > max ? s.slice(0, max - 1) + '…' : s;
   }
 
   /**

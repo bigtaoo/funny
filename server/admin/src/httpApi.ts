@@ -6,7 +6,7 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import { signToken, verifyToken, createLogger, roleHasCapability, type AdminCapability, type InternalAuthVerifier, type JwtConfig } from '@nw/shared';
 import { AdminError, type Actor, type AdminService } from './service';
 import { EventsClientError } from './clients';
-import type { CompTarget, EventInput } from '@nw/shared';
+import type { CompTarget, EventInput, CustomPoolConfig } from '@nw/shared';
 
 const log = createLogger('admin:http');
 
@@ -465,6 +465,28 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           const id = decodeURIComponent(eventDel[1]!);
           await svc.deleteEvent(actor, id);
           return send(res, 200, { ok: true });
+        }
+
+        // ── Custom gacha pool management (GACHA_DESIGN §12, gacha.pools.manage) ──
+        if (method === 'GET' && path === '/admin/gacha/pools') {
+          requireCap(actor, 'gacha.pools.manage');
+          return send(res, 200, { ok: true, pools: await svc.listGachaPools() });
+        }
+        if (method === 'GET' && path === '/admin/gacha/catalog') {
+          requireCap(actor, 'gacha.pools.manage');
+          return send(res, 200, { ok: true, catalog: await svc.gachaCatalog() });
+        }
+        if (method === 'POST' && path === '/admin/gacha/pools/custom') {
+          requireCap(actor, 'gacha.pools.manage');
+          const b = await readJson(req);
+          const r = await svc.createCustomPool(actor, b as unknown as CustomPoolConfig);
+          return send(res, 200, { ok: true, id: r.id });
+        }
+        if (method === 'POST' && path === '/admin/gacha/pools/close') {
+          requireCap(actor, 'gacha.pools.manage');
+          const b = (await readJson(req)) as { id?: string };
+          const r = await svc.closeGachaPool(actor, String(b.id ?? ''));
+          return send(res, 200, { ok: true, id: r.id });
         }
 
         send(res, 404, { ok: false, error: 'not found' });

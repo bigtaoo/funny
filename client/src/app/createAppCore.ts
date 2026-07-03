@@ -1118,7 +1118,22 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
             converted = true;
             analytics.track('monthly_card_buy', {});
             return { ok: true as const };
-          } catch { return { ok: false as const, key: 'shop.error' as const }; }
+          } catch (e) {
+            const key = e instanceof ApiError && e.code === 'ALREADY_ACTIVE' ? 'shop.cardActive' as const : 'shop.error' as const;
+            return { ok: false as const, key };
+          }
+        },
+        async buyYearCard() {
+          try {
+            const { save } = await client.yearCardBuy();
+            saveManager.adoptServer(save);
+            converted = true;
+            analytics.track('year_card_buy', {});
+            return { ok: true as const };
+          } catch (e) {
+            const key = e instanceof ApiError && e.code === 'ALREADY_ACTIVE' ? 'shop.cardActive' as const : 'shop.error' as const;
+            return { ok: false as const, key };
+          }
         },
         async claimMonthlyCard() {
           try {
@@ -1508,7 +1523,22 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
           }
         : {}),
       ...(client && loggedIn ? { onOpenAchievements: () => goAchievements(), hasClaimableAchievement: achievementClaimable } : {}),
-      ...(client && loggedIn ? { onOpenLeaderboard: () => goLeaderboard() } : {}),
+      ...(client && loggedIn
+        ? {
+            onOpenLeaderboard: () => goLeaderboard(),
+            getMyRank: async () => {
+              const myId = platform.storage.getItem(PLAYER_PUBLIC_ID_KEY);
+              if (!myId) return null;
+              try {
+                const lb = await client.getLeaderboard();
+                return lb.entries.find((e) => e.publicId === myId)?.rank ?? null;
+              } catch {
+                return null;
+              }
+            },
+          }
+        : {}),
+      ...(platform.storage.getItem(PLAYER_NAME_KEY) ? { playerName: platform.storage.getItem(PLAYER_NAME_KEY)! } : {}),
       // Titles merged into the "Career" top bar (LOBBY_IA_REDESIGN §3); battle pass has moved to the "Shop" tab and is no longer linked here.
       ...(loggedIn ? { onOpenTitles: () => goTitles(goStats) } : {}),
       // Season banner: read from save pvp.seasonNo; endAt comes from the leaderboard cache or stays undefined (displays "ended").
@@ -1714,15 +1744,24 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     if (!enc) return;
     try {
       const { shareCode } = await api.createStateReplayShare(enc);
-      await platform.shareReplay(shareCode, t('share.title'));
+      const res = await platform.shareReplay(shareCode, t('share.title'));
+      // Confirm the outcome so the button never feels dead (the previous silent success was the bug).
+      // native / card: the OS share sheet or WeChat card is its own confirmation → no toast.
+      if (res.method === 'clipboard') showToastMessage(t('share.copied'), 'success');
+      else if (res.method === 'manual') showToastMessage(t('share.manual'), 'success');
     } catch (e) {
-      // Classify share failures by cause for debugging and future UI feedback. The two most common
+      // Classify share failures by cause so the player gets an actionable message. The two most common
       // reasons: payload too large (this match was too long, still exceeds the limit after compression)
       // / minting rate-limited (too many shares in a short window). All others are treated as network / unknown.
       const code = e instanceof ApiError ? e.code : null;
       const reason =
         code === 'BAD_REQUEST' ? 'too_large' : code === 'RATE_LIMITED' ? 'rate_limited' : 'error';
       log.error('state replay share failed', { reason, err: String(e) });
+      const key =
+        reason === 'too_large' ? 'share.errTooLarge'
+        : reason === 'rate_limited' ? 'share.errRateLimited'
+        : 'share.errGeneric';
+      showToastMessage(t(key));
     }
   }
 

@@ -241,6 +241,66 @@ describe.skipIf(!mongo)('commercial service e2e', () => {
     expect(bad).toEqual({ ok: false, error: 'FATE_INVALID_ITEM' });
   });
 
+  // ── Custom (ops-authored) pools (GACHA_DESIGN §12) ─────────────────────────
+  it('custom pool: rejects invalid config; active pool debits custom cost, rolls by weight, no pity/fate; expired → POOL_UNAVAILABLE', async () => {
+    // Invalid: no categories.
+    const badCfg = await svc.createCustomPool({
+      config: { id: 'fest1', name: 'Fest', costSingle: 200, startAt: 0, endAt: 9_999_999_999_999, categories: [] },
+      createdBy: 'admin',
+    });
+    expect(badCfg).toEqual({ ok: false, error: 'BAD_REQUEST' });
+
+    // Must not shadow a static pool id.
+    const shadow = await svc.createCustomPool({
+      config: {
+        id: 'standard',
+        name: 'X',
+        costSingle: 200,
+        startAt: 0,
+        endAt: 9_999_999_999_999,
+        categories: [{ category: 'skin', weight: 1, items: [{ itemId: 'skin_l1', weight: 1 }] }],
+      },
+      createdBy: 'admin',
+    });
+    expect(shadow).toEqual({ ok: false, error: 'BAD_REQUEST' });
+
+    await svc.rechargeVerify({ accountId: 'cp', platform: 'web', receipt: 'tier:t999', receiptId: 'rccp' }); // 1150
+
+    // Draw before the pool exists → unavailable.
+    const miss = await svc.gachaDraw({ accountId: 'cp', poolId: 'fest1', count: 1, orderId: 'cpm' });
+    expect(miss).toEqual({ ok: false, error: 'POOL_UNAVAILABLE' });
+
+    const created = await svc.createCustomPool({
+      config: {
+        id: 'fest1',
+        name: 'Fest',
+        costSingle: 200,
+        startAt: 0,
+        endAt: 9_999_999_999_999,
+        categories: [{ category: 'skin', weight: 100, items: [{ itemId: 'skin_l1', weight: 1 }] }],
+      },
+      createdBy: 'admin',
+    });
+    expect(created).toEqual({ ok: true, id: 'fest1' });
+
+    // rng=zero → first category, first item = skin_l1. Custom pools carry no pity/fate.
+    const before = (await svc.getWallet('cp')).coins;
+    const draw = await svc.gachaDraw({ accountId: 'cp', poolId: 'fest1', count: 1, orderId: 'cp1' });
+    expect(draw.ok).toBe(true);
+    if (draw.ok) {
+      expect(draw.results).toEqual([{ itemId: 'skin_l1', rarity: 'legendary' }]);
+      expect(draw.coinsAfter).toBe(before - 200); // debits the custom costSingle
+      expect(draw.pityAfter).toBe(0);
+      expect(draw.fateGained).toBe(0);
+    }
+    expect((await svc.getWallet('cp')).pity.fest1 ?? 0).toBe(0); // no pity accrual
+
+    // Closing clamps the window → subsequent draw unavailable.
+    await svc.closeLimitedPool({ id: 'fest1' });
+    const afterClose = await svc.gachaDraw({ accountId: 'cp', poolId: 'fest1', count: 1, orderId: 'cp2' });
+    expect(afterClose).toEqual({ ok: false, error: 'POOL_UNAVAILABLE' });
+  });
+
   // ── Monthly card (GACHA_DESIGN §5) ─────────────────────────────────────────
   it('monthly card: buy grants immediate 600 + activates subscription; daily claim once per day', async () => {
     const buy = await svc.monthlyCardBuy({ accountId: 'mc', orderId: 'mcb' });
@@ -252,6 +312,12 @@ describe.skipIf(!mongo)('commercial service e2e', () => {
     // Buy idempotency: replaying the same orderId does not double-grant.
     const buy2 = await svc.monthlyCardBuy({ accountId: 'mc', orderId: 'mcb' });
     expect(buy2.ok && buy2.coinsAfter).toBe(600);
+    // Single-slot gate: a fresh purchase while the card is still active is refused (buy → use up → rebuy).
+    const activeExpiry = buy.ok ? buy.subscriptionExpiry : 0;
+    const gated = await svc.monthlyCardBuy({ accountId: 'mc', orderId: 'mcb2' });
+    expect(gated).toEqual({ ok: false, error: 'ALREADY_ACTIVE' });
+    expect((await svc.getWallet('mc')).subscriptionExpiry).toBe(activeExpiry); // expiry unchanged, no extra grant
+    expect((await svc.getWallet('mc')).coins).toBe(600);
     // Daily claim: +120 the first time, 0 the second time same day.
     const c1 = await svc.monthlyCardClaim({ accountId: 'mc', dayKey: '2026-07-02' });
     expect(c1).toMatchObject({ ok: true, claimed: 120 });
@@ -261,6 +327,27 @@ describe.skipIf(!mongo)('commercial service e2e', () => {
     // No active subscription → claim yields 0.
     const none = await svc.monthlyCardClaim({ accountId: 'nosub', dayKey: '2026-07-02' });
     expect(none).toMatchObject({ ok: true, claimed: 0 });
+  });
+
+  it('year card: 365-day subscription + 600 immediate; single-slot gate blocks a second card; daily claim works', async () => {
+    const DAY = 86400000;
+    const buy = await svc.yearCardBuy({ accountId: 'yc', orderId: 'ycb' });
+    expect(buy.ok).toBe(true);
+    if (buy.ok) {
+      expect(buy.coinsAfter).toBe(600);
+      // ~365 days out (not the 30-day monthly figure) — well past a 300-day floor.
+      expect(buy.subscriptionExpiry).toBeGreaterThan(now() + 300 * DAY);
+    }
+    // Global single-slot: buying a monthly card while the year card is active is refused.
+    const gated = await svc.monthlyCardBuy({ accountId: 'yc', orderId: 'ycb-m' });
+    expect(gated).toEqual({ ok: false, error: 'ALREADY_ACTIVE' });
+    // Buying another year card while active is refused too.
+    const gated2 = await svc.yearCardBuy({ accountId: 'yc', orderId: 'ycb2' });
+    expect(gated2).toEqual({ ok: false, error: 'ALREADY_ACTIVE' });
+    // Daily claim works the same for a year subscription.
+    const c1 = await svc.monthlyCardClaim({ accountId: 'yc', dayKey: '2026-07-02' });
+    expect(c1).toMatchObject({ ok: true, claimed: 120 });
+    expect((await svc.getWallet('yc')).coins).toBe(720);
   });
 
   // ── Starter packs (GACHA_DESIGN §6) ────────────────────────────────────────

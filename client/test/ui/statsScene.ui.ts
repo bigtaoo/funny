@@ -96,14 +96,14 @@ describe('StatsScene match history', () => {
     const scene = build({ loadHistory: async () => history });
     await flush();
     const ts = texts(scene.container);
-    // Row 1: named opponent + win + (+16)
-    expect(ts).toContain('Alice');
+    // Row 1: named opponent shown in a "me vs opponent" matchup line + win + (+16)
+    expect(ts.some((s) => s.includes('Alice'))).toBe(true);
     expect(ts.some((s) => s.includes(t('stats.win')) && s.includes('+16'))).toBe(true);
-    // Row 2: publicId fallback label + loss + (-16)
-    expect(ts).toContain('#987654321');
+    // Row 2: publicId fallback label (matchup line) + loss + (-16)
+    expect(ts.some((s) => s.includes('#987654321'))).toBe(true);
     expect(ts.some((s) => s.includes(t('stats.loss')) && s.includes('-16'))).toBe(true);
-    // Row 3: unknown opponent fallback label, no ELO suffix
-    expect(ts).toContain(t('stats.historyUnknownOpp'));
+    // Row 3: unknown opponent fallback label (matchup line), no ELO suffix
+    expect(ts.some((s) => s.includes(t('stats.historyUnknownOpp')))).toBe(true);
     scene.destroy();
   });
 
@@ -119,7 +119,7 @@ describe('StatsScene match history', () => {
     const scene = build({ loadHistory: async () => many });
     await flush();
     const ts = texts(scene.container);
-    const shown = many.filter((m) => ts.includes(m.opponentName!));
+    const shown = many.filter((m) => ts.some((s) => s.includes(m.opponentName!)));
     expect(shown).toHaveLength(10);
     scene.destroy();
   });

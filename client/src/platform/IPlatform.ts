@@ -4,6 +4,19 @@ import type { Locale } from '../i18n';
 import type { IapKind } from './iap';
 
 /**
+ * Outcome of {@link IPlatform.shareReplay}, so the caller can tell the player what happened:
+ * - `native`    — handed to the OS share sheet (`navigator.share`); no extra feedback needed.
+ * - `clipboard` — link copied to the clipboard; caller should confirm with a toast.
+ * - `manual`    — clipboard was blocked; the platform showed the link for manual copy.
+ * - `card`      — sent as an in-app card (WeChat); the host UI provides its own feedback.
+ * `url` is the shareable link (absent for the WeChat card path).
+ */
+export interface ShareResult {
+  method: 'native' | 'clipboard' | 'manual' | 'card';
+  url?: string;
+}
+
+/**
  * IPlatform — abstraction layer for platform-specific capabilities.
  * Implemented per-platform: WebPlatform, WechatPlatform, CrazyGamesPlatform, …
  */
@@ -132,9 +145,12 @@ export interface IPlatform {
    * - WeChat: `wx.shareAppMessage({ query: 'r=<shareCode>' })` sends it as a game card
    *   in chat (no external link).
    *
-   * Resolves when the share action has been initiated (or copied); rejects on failure.
+   * Resolves with a {@link ShareResult} describing how the link was surfaced so the caller can
+   * give the player feedback (e.g. a "link copied" toast). Rejects only on upstream failure
+   * (the share code is minted before this is called); the platform never rejects on a missing
+   * native-share API — it falls back to clipboard, then to a manual prompt.
    */
-  shareReplay(shareCode: string, title: string): Promise<void>;
+  shareReplay(shareCode: string, title: string): Promise<ShareResult>;
 
   /**
    * Read the replay share code from launch parameters (REPLAY_SHARE_DESIGN §4.1).

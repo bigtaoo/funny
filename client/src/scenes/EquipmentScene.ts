@@ -81,6 +81,12 @@ const ROW_H = 56;
 const FILTER_H = 28;   // slot filter bar (All / Weapon / Armor / Trinket)
 const SECTION_H = 20;  // section divider (Equipped / Bag)
 
+// Inventory grid: icon-card cells (name top / glyph left / rarity+level right)
+// packed into columns sized to the wide (1920) landscape canvas.
+const CELL_GAP = 12;
+const EQUIP_CELL_H = 92;
+const EQUIP_CELL_W_TARGET = 320;
+
 const SLOTS: readonly EquipSlot[] = ['weapon', 'armor', 'trinket'];
 const TRACKED_MATERIALS = ['scrap', 'lead', 'binding'] as const;
 
@@ -331,19 +337,40 @@ export class EquipmentScene implements Scene {
     });
 
     const entries = this.buildDisplayEntries(instances, equippedIds);
-    const totalH = entries.reduce((s, e) => s + (e.kind === 'header' ? SECTION_H : ROW_H), 0);
-    this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
-    let cy = listY - this.scrollY;
+    const cols = Math.max(1, Math.floor((w - CELL_GAP) / (EQUIP_CELL_W_TARGET + CELL_GAP)));
+    const cellW = (w - CELL_GAP * (cols + 1)) / cols;
+
+    // Layout pass: headers span a full row and reset the column cursor; item
+    // cells pack left-to-right into `cols` columns. `off` is the vertical
+    // offset from listY (pre-scroll), computed up-front to clamp scrollY.
+    type Placed =
+      | { kind: 'header'; label: string; off: number }
+      | { kind: 'item'; inst: EquipmentInstance; isEquipped: boolean; count: number; x: number; off: number };
+    const placed: Placed[] = [];
+    let off = CELL_GAP;
+    let col = 0;
     for (const entry of entries) {
-      const entryH = entry.kind === 'header' ? SECTION_H : ROW_H;
-      if (cy + entryH >= listY && cy <= listY + listH) {
-        if (entry.kind === 'header') {
-          this.renderSectionHeader(entry.label, cy);
-        } else {
-          this.renderInstanceRow(entry.inst, cy, entry.isEquipped, entry.count);
-        }
+      if (entry.kind === 'header') {
+        if (col !== 0) { off += EQUIP_CELL_H + CELL_GAP; col = 0; }
+        placed.push({ kind: 'header', label: entry.label, off });
+        off += SECTION_H;
+        continue;
       }
-      cy += entryH;
+      const x = CELL_GAP + col * (cellW + CELL_GAP);
+      placed.push({ kind: 'item', inst: entry.inst, isEquipped: entry.isEquipped, count: entry.count, x, off });
+      col++;
+      if (col >= cols) { col = 0; off += EQUIP_CELL_H + CELL_GAP; }
+    }
+    if (col !== 0) off += EQUIP_CELL_H + CELL_GAP;
+    const totalH = off + CELL_GAP;
+
+    this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
+    for (const p of placed) {
+      const y = listY + p.off - this.scrollY;
+      const eh = p.kind === 'header' ? SECTION_H : EQUIP_CELL_H;
+      if (y + eh < listY || y > listY + listH) continue;
+      if (p.kind === 'header') this.renderSectionHeader(p.label, y);
+      else this.renderInstanceCell(p.inst, p.x, y, cellW, p.isEquipped, p.count);
     }
   }
 
@@ -482,51 +509,61 @@ export class EquipmentScene implements Scene {
     });
   }
 
-  private renderInstanceRow(inst: EquipmentInstance, cy: number, equipped: boolean, count = 1): void {
-    const { w } = this;
+  /**
+   * Icon-card cell: name +level across the top, equipment glyph on the left,
+   * rarity / equipped tag / stack count on the right, action hint bottom-right.
+   * Border color encodes rarity when equipped, neutral otherwise.
+   */
+  private renderInstanceCell(inst: EquipmentInstance, x: number, y: number, cellW: number, equipped: boolean, count = 1): void {
+    const pad = 8;
     const color = RARITY_COLOR[inst.rarity];
-    const row = sketchPanel(w - 12, ROW_H - 4, { fill: 0xfaf9f5, border: equipped ? color : C.mid, seed: seedFor(cy, 0, w) });
-    row.x = 6; row.y = cy;
-    this.bodyLayer.addChild(row);
+    const cell = sketchPanel(cellW, EQUIP_CELL_H, { fill: 0xfaf9f5, border: equipped ? color : C.mid, seed: seedFor(x, y, cellW) });
+    cell.x = x; cell.y = y;
+    this.bodyLayer.addChild(cell);
 
-    const slot = getEquipDef(inst.defId)?.slot ?? 'weapon';
-    this.addGlyph(slot, inst.rarity, 32, cy + (ROW_H - 4) / 2, 38, seedFor(cy, 3, w), 1, inst.defId);
-    const tx = 56;
-
+    // Top: name +level (scaled down to fit if too wide).
     const name = txt(`${this.itemName(inst.defId)} +${inst.level}`, 13, C.dark, true);
-    name.x = tx; name.y = cy + 7;
+    name.x = x + pad; name.y = y + pad;
+    if (name.width > cellW - pad * 2 - 16) name.scale.set(Math.min(1, cellW / (name.width + 32)));
     this.bodyLayer.addChild(name);
 
-    const rar = txt(t(`equip.rarity.${inst.rarity}` as TranslationKey), 10, color, true);
-    rar.x = tx; rar.y = cy + 28;
-    this.bodyLayer.addChild(rar);
-
-    let tagX = name.x + name.width + 8;
-    if (equipped) {
-      const e = txt(`[${t('equip.equipped')}]`, 10, C.green, true);
-      e.x = tagX; e.y = cy + 9; this.bodyLayer.addChild(e); tagX += e.width + 6;
-    }
+    // Lock badge (top-right).
     if (inst.locked) {
       const l = buildIcon('lock', 14, C.mid);
-      l.x = tagX; l.y = cy + 7; this.bodyLayer.addChild(l);
+      l.x = x + cellW - pad - 14; l.y = y + pad;
+      this.bodyLayer.addChild(l);
     }
 
-    // Right side: show "Equip ›" in accent color when unequipped (signals actionability); show "›" quietly when equipped.
-    // Stack count (×N) sits immediately to the left of the action hint.
-    const midY = cy + ROW_H / 2 - 2;
-    const hintStr = equipped ? '›' : t('equip.hintEquip');
-    const hintColor = equipped ? C.mid : C.accent;
-    const hint = txt(hintStr, equipped ? 18 : 11, hintColor, !equipped);
-    hint.anchor.set(1, 0.5); hint.x = w - 14; hint.y = midY;
+    // Left: glyph in a rarity-bordered frame.
+    const slot = getEquipDef(inst.defId)?.slot ?? 'weapon';
+    const imgBox = EQUIP_CELL_H - (pad + 24) - pad;
+    const imgX = x + pad;
+    const imgY = y + pad + 24;
+    const frame = sketchPanel(imgBox, imgBox, { fill: 0xf0eee7, border: color, seed: seedFor(x, y, imgBox) });
+    frame.x = imgX; frame.y = imgY;
+    this.bodyLayer.addChild(frame);
+    this.addGlyph(slot, inst.rarity, imgX + imgBox / 2, imgY + imgBox / 2, imgBox - 8, seedFor(x, imgBox, cellW), 1, inst.defId);
+
+    // Right: rarity / equipped tag / stack count.
+    const ax = imgX + imgBox + 12;
+    let ay = imgY;
+    const rar = txt(t(`equip.rarity.${inst.rarity}` as TranslationKey), 12, color, true);
+    rar.x = ax; rar.y = ay; this.bodyLayer.addChild(rar); ay += 19;
+    if (equipped) {
+      const e = txt(`[${t('equip.equipped')}]`, 11, C.green, true);
+      e.x = ax; e.y = ay; this.bodyLayer.addChild(e); ay += 18;
+    }
+    if (count > 1) {
+      const badge = txt(`×${count}`, 12, C.mid);
+      badge.x = ax; badge.y = ay; this.bodyLayer.addChild(badge);
+    }
+
+    // Bottom-right action hint: "Equip ›" (accent) when unequipped, quiet "›" when equipped.
+    const hint = txt(equipped ? '›' : t('equip.hintEquip'), equipped ? 16 : 11, equipped ? C.mid : C.accent, !equipped);
+    hint.anchor.set(1, 1); hint.x = x + cellW - pad; hint.y = y + EQUIP_CELL_H - pad;
     this.bodyLayer.addChild(hint);
 
-    if (count > 1) {
-      const badge = txt(`×${count}`, 11, C.mid);
-      badge.anchor.set(1, 0.5); badge.x = hint.x - hint.width - 5; badge.y = midY;
-      this.bodyLayer.addChild(badge);
-    }
-
-    this.hitRects.push({ rect: { x: 6, y: cy, w: w - 12, h: ROW_H - 4 }, action: () => this.openDetail(inst.id) });
+    this.hitRects.push({ rect: { x, y, w: cellW, h: EQUIP_CELL_H }, action: () => this.openDetail(inst.id) });
   }
 
   // ── Craft tab ───────────────────────────────────────────────────────────────

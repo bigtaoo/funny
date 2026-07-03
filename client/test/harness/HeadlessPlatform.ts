@@ -12,6 +12,7 @@ import type {
   IGameSocket,
   IPlatform,
   IStorage,
+  ShareResult,
   SocketHandlers,
 } from '../../src/platform/IPlatform';
 import type { Locale } from '../../src/i18n';
@@ -104,7 +105,7 @@ export class HeadlessPlatform implements IPlatform {
     return new HeadlessSocket(url, handlers);
   }
 
-  async shareReplay(): Promise<void> { /* no-op in headless */ }
+  async shareReplay(): Promise<ShareResult> { return { method: 'native' }; }
   getLaunchShareCode(): string | null { return null; }
 
   // In-app recharge is not exercised in headless E2E (no store SDK / no DOM).

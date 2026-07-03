@@ -106,18 +106,21 @@ export function netLog(tag: string): NetLogger {
  * targeted toasts (fully localized strings) are provided by the caller.
  * Extracted here because log.ts has no PIXI dependency and can be safely imported by non-rendering modules such as SaveManager / createAppCore.
  */
-let toastSink: ((text: string) => void) | null = null;
+/** Toast intent → the render outlet maps this to a colour (error = red bar, success = green bar). */
+export type ToastKind = 'error' | 'success';
+
+let toastSink: ((text: string, kind: ToastKind) => void) | null = null;
 
 /** Register the player toast render outlet (call once on application startup). */
-export function setToastSink(fn: (text: string) => void): void {
+export function setToastSink(fn: (text: string, kind: ToastKind) => void): void {
   toastSink = fn;
 }
 
 /** Show a localized player toast (used as a targeted fallback for events such as SaveManager cloud sync failure). Silently no-ops if no sink is registered. */
-export function showToastMessage(text: string): void {
+export function showToastMessage(text: string, kind: ToastKind = 'error'): void {
   if (!toastSink) return;
   // The sink must not throw — otherwise it could trigger another unhandledrejection and form a cycle.
-  try { toastSink(text); } catch { /* swallow */ }
+  try { toastSink(text, kind); } catch { /* swallow */ }
 }
 
 /**

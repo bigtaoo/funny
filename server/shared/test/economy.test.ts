@@ -97,19 +97,21 @@ describe('gachaCost', () => {
 describe('poolEntries', () => {
   const entries = poolEntries(standard);
 
-  it('aggregates duplicate itemIds within a tier into a single entry', () => {
-    // standard common tier is [mat_scrap, mat_scrap, mat_scrap] → one aggregated entry
+  it('lists each item once with its display rarity (mat_scrap is the only common)', () => {
+    // Two-stage pool: each catalogue item appears once; only mat_scrap carries the common display rarity.
     const commons = entries.filter((e) => e.rarity === 'common');
     expect(commons).toHaveLength(1);
     expect(commons[0]!.itemId).toBe('mat_scrap');
   });
 
-  it('per-tier weights sum (approximately) to that tier weight', () => {
-    for (const r of RARITY_ORDER) {
-      const tierSum = entries.filter((e) => e.rarity === r).reduce((s, e) => s + e.weight, 0);
-      // rounding of per-slot weights allows small drift
-      expect(Math.abs(tierSum - RARITY_WEIGHTS[r])).toBeLessThanOrEqual(entries.filter((e) => e.rarity === r).length);
-    }
+  it('weights are scaled two-stage probabilities that normalize to 1', () => {
+    const total = entries.reduce((s, e) => s + e.weight, 0);
+    expect(total).toBeGreaterThan(0);
+    expect(entries.reduce((s, e) => s + e.weight / total, 0)).toBeCloseTo(1, 5);
+    // Effective legendary-rarity share (epic-gear tier + legendary cards + legendary skin) is tuned to ~1%.
+    const legShare = entries.filter((e) => e.rarity === 'legendary').reduce((s, e) => s + e.weight / total, 0);
+    expect(legShare).toBeGreaterThan(0.009);
+    expect(legShare).toBeLessThan(0.011);
   });
 
   it('tags every entry with its rarity', () => {

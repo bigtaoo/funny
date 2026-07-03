@@ -694,8 +694,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Buy / renew the monthly card (GACHA_DESIGN §5) */
+        /** Buy the monthly card (GACHA_DESIGN §5; single-slot — 400 ALREADY_ACTIVE while a card is still running) */
         post: operations["monthlyCardBuy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/year-card/buy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Buy the year card (GACHA_DESIGN §5; 365-day subscription, single-slot — 400 ALREADY_ACTIVE while a card is still running) */
+        post: operations["yearCardBuy"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1360,6 +1377,7 @@ export interface components {
                 checkin?: {
                     monthKey: string;
                     claimedDays: number[];
+                    lastClaimedDayKey?: string;
                 };
                 daily?: {
                     dayKey: string;
@@ -2902,6 +2920,7 @@ export interface operations {
                             checkin?: {
                                 monthKey?: string;
                                 claimedDays?: number[];
+                                lastClaimedDayKey?: string;
                             } | null;
                             daily?: {
                                 dayKey?: string;
@@ -3161,6 +3180,33 @@ export interface operations {
         };
     };
     monthlyCardBuy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+        };
+    };
+    yearCardBuy: {
         parameters: {
             query?: never;
             header?: never;
@@ -3971,6 +4017,13 @@ export interface operations {
                                 elo: number;
                                 pvpRank: string;
                             }[];
+                            /** @description Caller's own standing this season (absent when they have not played a ranked match this season). Rank may exceed 100. */
+                            me?: {
+                                /** @description Rank, 1-based */
+                                rank: number;
+                                elo: number;
+                                pvpRank: string;
+                            };
                         };
                     };
                 };

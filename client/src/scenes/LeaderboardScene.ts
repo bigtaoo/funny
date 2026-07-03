@@ -12,8 +12,8 @@ import { formatLadderTitle, getTitleKeys } from '../game/meta/titles';
 // ── LeaderboardScene — global ladder leaderboard (SE-6) ─────────────────────────
 //
 // Entry: StatsScene ladder section "Leaderboard" button (onOpenLeaderboard).
-// Displays: current season Top-100 (ELO descending) + a pinned "my rank" row at
-// the bottom (when available).
+// Displays: current season Top-100 (ELO descending), drag-scrollable, with the
+// caller's own rank pinned under the season label (even when outside the Top-100).
 // Data: GET /leaderboard (JWT, driven by the loadLeaderboard callback).
 
 export interface LeaderboardEntry {
@@ -25,17 +25,27 @@ export interface LeaderboardEntry {
   equippedTitle?: string;
 }
 
+/** The caller's own standing (may fall outside the Top-100). */
+export interface LeaderboardMe {
+  rank: number;
+  elo: number;
+  pvpRank: string;
+}
+
 export interface LeaderboardCallbacks {
   onBack(): void;
   /**
    * Fetch the leaderboard. When absent (offline / not logged in), shows a "log in to view" message.
    */
-  loadLeaderboard?(): Promise<{ seasonNo: number; entries: LeaderboardEntry[] }>;
+  loadLeaderboard?(): Promise<{ seasonNo: number; entries: LeaderboardEntry[]; me?: LeaderboardMe }>;
   /** Tap a row to view the profile (reuses ProfilePopup). Absent = rows are not tappable. */
   onOpenProfile?(publicId: string): void;
 }
 
 interface Hit { rect: Rect; fn: () => void; }
+
+/** Pointer travel (design px) beyond which a press becomes a drag rather than a tap. */
+const DRAG_THRESHOLD = 8;
 
 export class LeaderboardScene implements Scene {
   readonly container: PIXI.Container;
@@ -45,18 +55,27 @@ export class LeaderboardScene implements Scene {
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
 
-  private data: { seasonNo: number; entries: LeaderboardEntry[] } | null = null;
+  private data: { seasonNo: number; entries: LeaderboardEntry[]; me?: LeaderboardMe } | null = null;
   private loading = false;
   private scrollY = 0;
   private scrollMax = 0;
   private maskGfx?: PIXI.Graphics;
+
+  // Drag-to-scroll state.
+  private pointerActive = false;
+  private dragging = false;
+  private downX = 0;
+  private downY = 0;
+  private dragStartScroll = 0;
 
   constructor(layout: ILayout, input: InputManager, cb: LeaderboardCallbacks) {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.cb = cb;
-    this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
+    this.unsubs.push(input.onDown((x, y) => this.onPointerDown(x, y)));
+    this.unsubs.push(input.onMove((x, y) => this.onPointerMove(x, y)));
+    this.unsubs.push(input.onUp((x, y) => this.onPointerUp(x, y)));
     this.render();
     if (this.cb.loadLeaderboard) void this.fetchData();
   }
@@ -78,7 +97,29 @@ export class LeaderboardScene implements Scene {
 
   destroy(): void { this.unsubs.forEach((u) => u()); }
 
-  private handleDown(x: number, y: number): void {
+  private onPointerDown(x: number, y: number): void {
+    this.pointerActive = true;
+    this.dragging = false;
+    this.downX = x;
+    this.downY = y;
+    this.dragStartScroll = this.scrollY;
+  }
+
+  private onPointerMove(x: number, y: number): void {
+    if (!this.pointerActive) return;
+    if (!this.dragging && Math.hypot(x - this.downX, y - this.downY) > DRAG_THRESHOLD) {
+      this.dragging = true;
+    }
+    if (this.dragging && this.scrollMax > 0) {
+      const next = Math.max(0, Math.min(this.scrollMax, this.dragStartScroll + (this.downY - y)));
+      if (next !== this.scrollY) { this.scrollY = next; this.render(); }
+    }
+  }
+
+  private onPointerUp(x: number, y: number): void {
+    if (!this.pointerActive) return;
+    this.pointerActive = false;
+    if (this.dragging) { this.dragging = false; return; }
     for (const hit of this.hits) {
       const r = hit.rect;
       if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); return; }
@@ -88,6 +129,7 @@ export class LeaderboardScene implements Scene {
   private render(): void {
     tearDownChildren(this.container);
     this.hits = [];
+    this.scrollMax = 0;
     const { w, h } = this;
 
     this.container.addChild(buildPaperBackground('lbbg', w, h));
@@ -136,10 +178,24 @@ export class LeaderboardScene implements Scene {
     const rowH = Math.round(h * 0.065);
     const listW = w - pad * 2;
 
+    // ── "My rank" line — right-aligned, just below the season label ────────────
+    const meText = this.data.me
+      ? `${t('leaderboard.myRank', { rank: String(this.data.me.rank) })}   ${this.data.me.elo}`
+      : t('leaderboard.myRankNone');
+    const meLbl = txt(meText, Math.round(h * 0.026), C.accent, true);
+    meLbl.anchor.set(1, 0.5);
+    meLbl.x = w - Math.round(w * 0.04);
+    meLbl.y = tbH + Math.round(h * 0.028);
+    this.container.addChild(meLbl);
+
+    // The scrollable list starts below the "my rank" strip.
+    const listTop = tbH + Math.round(h * 0.06);
+    const listH = h - listTop;
+
     // Scrollable list container
     const listContainer = new PIXI.Container();
     listContainer.x = pad;
-    listContainer.y = bodyY;
+    listContainer.y = listTop;
 
     let totalH = 0;
     entries.forEach((e, i) => {
@@ -148,13 +204,13 @@ export class LeaderboardScene implements Scene {
       this.drawRow(listContainer, e, 0, ry, listW, rowH, i);
     });
 
-    this.scrollMax = Math.max(0, totalH - bodyH);
+    this.scrollMax = Math.max(0, totalH - listH);
     const sy = Math.min(this.scrollY, this.scrollMax);
-    listContainer.y = bodyY - sy;
+    listContainer.y = listTop - sy;
 
     // Mask to clip the scrollable area
     const maskGfx = new PIXI.Graphics();
-    maskGfx.beginFill(0xffffff).drawRect(0, bodyY, w, bodyH).endFill();
+    maskGfx.beginFill(0xffffff).drawRect(0, listTop, w, listH).endFill();
     this.container.addChild(maskGfx);
     listContainer.mask = maskGfx;
 
@@ -163,8 +219,8 @@ export class LeaderboardScene implements Scene {
     // Hits (absolute coords offset by current scroll)
     entries.forEach((e, i) => {
       const ry = i * (rowH + Math.round(h * 0.008));
-      const absY = bodyY - sy + ry;
-      if (absY + rowH < bodyY || absY > bodyY + bodyH) return;
+      const absY = listTop - sy + ry;
+      if (absY + rowH < listTop || absY > listTop + listH) return;
       if (this.cb.onOpenProfile) {
         this.hits.push({
           rect: { x: pad, y: absY, w: listW, h: rowH },

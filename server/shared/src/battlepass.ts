@@ -31,40 +31,60 @@ export interface BpLevelDef {
   paid?: BpReward; // paid track reward (requires hasPass)
 }
 
+// ── Reward shorthands (keep the table below terse + scannable) ──────────────────
+const coins = (count: number): BpReward => ({ kind: 'coins', count });
+const scrap = (count: number): BpReward => ({ kind: 'material', id: 'scrap', count });
+const lead = (count: number): BpReward => ({ kind: 'material', id: 'lead', count });
+const binding = (count: number): BpReward => ({ kind: 'material', id: 'binding', count });
+
 /**
- * Battle Pass level definition table. Free track gives a small coin pack every 5 levels; paid track
- * gives rewards every level, with special milestones (10/20/30) awarding large coin/material bonuses.
- * Numbers are provisional, pending calibration in ECONOMY_NUMBERS §13.
+ * Battle Pass reward table (30 levels, re-planned ECONOMY_NUMBERS §13.3). Design shape:
+ *  · Both tracks escalate — material tiers climb scrap → lead → binding and coin milestones grow.
+ *  · Milestone rows (every 5th level) always pay coins, growing to a season-ending jackpot at Lv30.
+ *  · Free track fills the gaps with crafting material (a steady equipment-economy faucet); its coin
+ *    total (960) stays under one 10-pull (1,350), per the §13.3 cap.
+ *  · Paid track pays coins on most levels (the monetization faucet) with fatter material bundles on a
+ *    few levels; every paid coin payout ≥ its free counterpart, and Lv30 is the single biggest payout.
+ * Only 'coins' and 'material' kinds are used — these are the two the claim path grants (service.ts);
+ * card/skin rewards are intentionally excluded (would enter PvP power / collide with skin monetization).
+ * Numbers are [可调] — tune here + mirror in client/src/game/balance/battlepassDefs.ts + doc §13.3.
  */
-export const BATTLEPASS_DEFS: BpLevelDef[] = Array.from({ length: BATTLEPASS_MAX_LEVEL }, (_, i) => {
+const REWARD_ROWS: Array<[free: BpReward, paid: BpReward]> = [
+  /* Lv1  */ [scrap(2), coins(20)],
+  /* Lv2  */ [scrap(3), coins(20)],
+  /* Lv3  */ [scrap(3), scrap(5)],
+  /* Lv4  */ [scrap(4), coins(25)],
+  /* Lv5  */ [coins(60), coins(60)],
+  /* Lv6  */ [lead(1), coins(25)],
+  /* Lv7  */ [scrap(5), lead(2)],
+  /* Lv8  */ [lead(1), coins(30)],
+  /* Lv9  */ [lead(2), coins(30)],
+  /* Lv10 */ [coins(150), coins(220)],
+  /* Lv11 */ [lead(2), coins(30)],
+  /* Lv12 */ [scrap(6), lead(3)],
+  /* Lv13 */ [lead(2), coins(35)],
+  /* Lv14 */ [lead(3), coins(35)],
+  /* Lv15 */ [coins(90), coins(90)],
+  /* Lv16 */ [binding(1), coins(35)],
+  /* Lv17 */ [lead(3), binding(2)],
+  /* Lv18 */ [binding(1), coins(40)],
+  /* Lv19 */ [binding(2), coins(40)],
+  /* Lv20 */ [coins(220), coins(320)],
+  /* Lv21 */ [binding(2), coins(40)],
+  /* Lv22 */ [lead(4), binding(3)],
+  /* Lv23 */ [binding(2), coins(45)],
+  /* Lv24 */ [binding(3), coins(45)],
+  /* Lv25 */ [coins(120), coins(120)],
+  /* Lv26 */ [binding(3), coins(45)],
+  /* Lv27 */ [lead(5), binding(4)],
+  /* Lv28 */ [binding(3), coins(50)],
+  /* Lv29 */ [binding(4), coins(50)],
+  /* Lv30 */ [coins(320), coins(520)],
+];
+
+export const BATTLEPASS_DEFS: BpLevelDef[] = REWARD_ROWS.map(([free, paid], i) => {
   const level = i + 1;
-  const xpRequired = level * BP_XP_PER_LEVEL;
-
-  let free: BpReward | undefined;
-  let paid: BpReward | undefined;
-
-  // Free track: award coins at every 5th level; other levels award material (early scrap / mid lead / late binding).
-  if (level % 5 === 0) {
-    free = { kind: 'coins', count: 50 };
-  } else if (level <= 10) {
-    free = { kind: 'material', id: 'scrap', count: 3 };
-  } else if (level <= 20) {
-    free = { kind: 'material', id: 'lead', count: 1 };
-  } else {
-    free = { kind: 'material', id: 'binding', count: 1 };
-  }
-  // Special milestone overrides
-  if (level === 10) free = { kind: 'coins', count: 150 };
-  if (level === 20) free = { kind: 'coins', count: 200 };
-  if (level === 30) free = { kind: 'coins', count: 300 };
-
-  // Paid track: 20 coins per level + special milestones
-  paid = { kind: 'coins', count: 20 };
-  if (level === 10) paid = { kind: 'coins', count: 200 };
-  if (level === 20) paid = { kind: 'coins', count: 300 };
-  if (level === 30) paid = { kind: 'coins', count: 500 };
-
-  return { level, xpRequired, free, paid };
+  return { level, xpRequired: level * BP_XP_PER_LEVEL, free, paid };
 });
 
 /** Given cumulative XP, return the current Battle Pass level (1-based, capped at MAX_LEVEL). */

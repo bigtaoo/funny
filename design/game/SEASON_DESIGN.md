@@ -292,8 +292,8 @@ POST /battlepass/buy                      (JWT) → 下单（commercial）
 | **SE-2** | meta：`ladderSeasons` 集合 + 懒创建当前赛季；`migrateIfStale` 接入 `GET /save` reconcile 与 ranked 结算前；`applyPvp` 补**峰值追踪 + 段位首达金币**（修 §4.3 现状缺口） | SE-1 | P0 |
 | **SE-3** | meta：`POST /admin/ladder/season/roll`（CAS 幂等）；S7 ops 后台加「开启新赛季」按钮（手动触发）+ 临近 `endAt` 高亮提示 | SE-2、S7 | P0 |
 | **SE-4** | meta：`settleSeasonForPlayer`（峰值金币走邮件 + `grantTitle` 段位称号，幂等）；接入迁移点 | SE-2、S6 邮件、S10 | P0 |
-| **SE-5** | meta：`GET /leaderboard`（Top100 缓存 60s + 我的名次实算 + 称号 join）+ 复合索引 | SE-2 | P0 |
-| **SE-6** ✅ | 客户端：赛季横幅 + 排行榜面板 + 赛季结算弹层 + i18n（`season.*`/`leaderboard.*`）（2026-06-22：`LeaderboardScene`/`StatsScene` 横幅/`LobbyScene.showSeasonSettlement`/i18n zh+en+de） | SE-5、UI_DESIGN | P0 |
+| **SE-5** ✅ | meta：`GET /leaderboard`（Top100 + 我的名次实算 + 称号 join）+ 复合索引 + 60s 进程缓存（2026-07-03：`getLeaderboard` 补 `me` 实算=`countDocuments(elo>myElo & 本季)+1`，未打本季则省略 → 契约 openapi + routes.gen + 客户端 openapi.ts 已同步；同日补 60s 进程缓存：Top-100 `entries` 按 `seasonNo` 缓存 60s、赛季 roll 因键不匹配隐式失效，`me` 每次实算不缓存；缓存命中/失效/换季三例单测 `leaderboard-cache.test.ts`） | SE-2 | P0 |
+| **SE-6** ✅ | 客户端：赛季横幅 + 排行榜面板 + 赛季结算弹层 + i18n（`season.*`/`leaderboard.*`）（2026-06-22：`LeaderboardScene`/`StatsScene` 横幅/`LobbyScene.showSeasonSettlement`/i18n zh+en+de；2026-07-03：榜单补拖拽滚动 + 赛季标下固定「我的名次」行 `leaderboard.myRank`/`myRankNone`） | SE-5、UI_DESIGN | P0 |
 | **SE-7** | `@nw/shared` `BATTLEPASS_DEFS` + `battlePass` 块入 SaveData 权威段；赛季经验在留存/ranked 结算点累加 | SE-1、RETENTION | P1 |
 | **SE-8** | meta：`POST /battlepass/claim`（双轨二次校验 + 幂等）+ `/buy`（commercial 发货置 hasPass）+ 迁移点补发未领（§9） | SE-7、S5 | P1 |
 | **SE-9** ✅ | 客户端：战令面板（双轨/四态/红点/购 Pass）+ i18n `battlepass.*`（2026-06-22：`BattlePassScene`/`battlepassDefs.ts`/`AppViews.showBattlePass`/i18n） | SE-8、UI_DESIGN | P1 |

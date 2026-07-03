@@ -74,34 +74,10 @@ export function grantCards(
   return next;
 }
 
-// ── Card sources (S12-C, ECONOMY_NUMBERS §3 level drops / §4.1 gacha cards) ────────────────
-// Two card sources: ① gacha (independent unit card pool, RNG rolled by commercial) ② level drops (deterministic integer rewards on PvE clear).
+// ── Card sources (S12-C, ECONOMY_NUMBERS §3 level drops) ────────────────
+// Level drops (deterministic integer rewards on PvE clear) are now the only unit-card source: the separate unit-card
+// gacha pool (`units`/UNIT_CARD_POOL_ID) was removed on 2026-07-03 (it surfaced as a duplicate "standard" pool tab).
 // All cards enter the system through grantCards → cardInventory; unitLevels is recomputed by deriveUnitLevels (server-authoritative).
-
-/** Unit card gacha pool id (separate from the skin pool `standard`: progression ≠ cosmetics, motivations and tuning parameters are independent). */
-export const UNIT_CARD_POOL_ID = 'units';
-
-/**
- * Gacha rarity → unit card level mapping (independent unit card pool, §4.1 "gacha card" supplemental source).
- * Gacha produces T1–T4: common→T1 / rare→T2 / epic→T3 / legendary→T4 (accelerates access to higher tiers; T5+ still requires merging/auction).
- * Same rarity weights as the skin pool (economy.ts `RARITY_WEIGHTS`); cards are collectibles → **no dupe coin refund**, all go into inventory.
- */
-export const GACHA_RARITY_TO_CARD_LEVEL: Record<string, number> = {
-  common: 1,
-  rare: 2,
-  epic: 3,
-  legendary: 4,
-};
-
-/**
- * Builds the unit card pool's itemsByRarity (cardKey used as itemId, 3 unit types × 1 tier per rarity).
- * Called when economy.ts assembles GACHA_POOLS, ensuring "pool item = valid cardKey" so the delivery side can identify them with parseCardKey.
- */
-export function unitCardPoolItems(): Record<'common' | 'rare' | 'epic' | 'legendary', string[]> {
-  const at = (rarity: string) =>
-    PROGRESSABLE_UNIT_IDS.map((u) => cardKey(u, GACHA_RARITY_TO_CARD_LEVEL[rarity]!));
-  return { common: at('common'), rare: at('rare'), epic: at('epic'), legendary: at('legendary') };
-}
 
 /**
  * Level drop for unit cards (deterministic integer, §3 stamina-gated + §4.1 "late chapters produce T3 cards").

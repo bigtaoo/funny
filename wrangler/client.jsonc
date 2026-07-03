@@ -1,5 +1,5 @@
 {
-  // 主游戏 client（web 包）的静态托管（Cloudflare Workers static assets），对外 a.gamestao.com。
+  // 主游戏 client（web 包）的静态托管（Cloudflare Workers static assets），对外 nivara.gamestao.com（品牌域名）+ a.gamestao.com（沿用旧入口）。
   // 与 animator 各一份 wrangler 配置、各一个 Worker，互不影响。
   //
   // 构建（地址烘焙到 api.gamestao.com）：
@@ -19,6 +19,7 @@
     "not_found_handling": "single-page-application"
   },
   "routes": [
-    { "pattern": "a.gamestao.com", "custom_domain": true }
+    { "pattern": "a.gamestao.com", "custom_domain": true },
+    { "pattern": "nivara.gamestao.com", "custom_domain": true }
   ]
 }

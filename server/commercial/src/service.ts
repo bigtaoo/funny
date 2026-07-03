@@ -15,6 +15,8 @@ import {
   MONTHLY_CARD_DAYS,
   MONTHLY_CARD_DAILY_COINS,
   MONTHLY_CARD_IMMEDIATE_COINS,
+  YEAR_CARD_DAYS,
+  YEAR_CARD_IMMEDIATE_COINS,
   GROWTH_PACK_COINS,
   GROWTH_PACK_CARD_DAYS,
   STARTER_DRAW_COUNT,
@@ -22,20 +24,28 @@ import {
   PRODUCT_MONTHLY_CARD,
   PRODUCT_STARTER_DRAW,
   PRODUCT_STARTER_GROWTH,
+  customPoolCost,
+  validateCustomPool,
   type Rarity,
   type GachaPoolDef,
   type LimitedPoolConfig,
+  type CustomPoolConfig,
 } from '@nw/shared';
 import type {
   CommercialCollections,
   GachaPoolDoc,
+  CustomGachaPoolDoc,
   GachaResultEntry,
   OrderDoc,
   PromoCodeDoc,
   PromoRedemptionDoc,
   WalletDoc,
 } from './db';
-import { rollGacha, rollStarterPack, type RandInt } from './gacha';
+import { isCustomPoolDoc } from './db';
+import { rollGacha, rollCustomGacha, rollStarterPack, type RandInt } from './gacha';
+
+/** A resolved, drawable pool: either a derived/static GachaPoolDef or an ops-authored custom config (§12). */
+type ResolvedPool = { kind: 'derived'; pool: GachaPoolDef } | { kind: 'custom'; cfg: CustomPoolConfig };
 
 export type ServiceErr =
   | 'INSUFFICIENT_FUNDS'
@@ -49,7 +59,8 @@ export type ServiceErr =
   | 'POOL_UNAVAILABLE'
   | 'FATE_INSUFFICIENT'
   | 'FATE_INVALID_ITEM'
-  | 'ALREADY_PURCHASED';
+  | 'ALREADY_PURCHASED'
+  | 'ALREADY_ACTIVE';
 
 /** Wallet view returned to meta (mirrored into SaveData). Includes monetization state (§5–§7). */
 export interface WalletView {
@@ -94,8 +105,8 @@ function walletView(w: WalletDoc | null): WalletView {
   };
 }
 
-/** Strip the mongo/audit fields off a GachaPoolDoc back to a plain LimitedPoolConfig. */
-function limitedConfigFromDoc(doc: GachaPoolDoc): LimitedPoolConfig {
+/** Strip the mongo/audit fields off a derived GachaPoolDoc back to a plain LimitedPoolConfig. */
+function limitedConfigFromDoc(doc: Exclude<GachaPoolDoc, CustomGachaPoolDoc>): LimitedPoolConfig {
   return {
     id: doc.id,
     name: doc.name,
@@ -103,6 +114,19 @@ function limitedConfigFromDoc(doc: GachaPoolDoc): LimitedPoolConfig {
     startAt: doc.startAt,
     endAt: doc.endAt,
     ...(doc.fillerLegendaries ? { fillerLegendaries: doc.fillerLegendaries } : {}),
+  };
+}
+
+/** Strip the mongo/audit fields off a custom GachaPoolDoc back to a plain CustomPoolConfig (§12). */
+function customConfigFromDoc(doc: CustomGachaPoolDoc): CustomPoolConfig {
+  return {
+    id: doc.id,
+    name: doc.name,
+    costSingle: doc.costSingle,
+    ...(doc.costTen != null ? { costTen: doc.costTen } : {}),
+    startAt: doc.startAt,
+    endAt: doc.endAt,
+    categories: doc.categories,
   };
 }
 
@@ -151,12 +175,13 @@ export class CommercialService {
    * @nw/shared; limited pools are built from the admin-authored config in `gachaPools` and are only returned
    * while inside their [startAt, endAt) window. Returns null when unknown or a closed/out-of-window limited pool.
    */
-  private async resolvePool(poolId: string, now: number): Promise<GachaPoolDef | null> {
+  private async resolvePool(poolId: string, now: number): Promise<ResolvedPool | null> {
     const stat = findGachaPool(poolId);
-    if (stat) return stat;
+    if (stat) return { kind: 'derived', pool: stat };
     const doc = await this.cols.gachaPools.findOne({ _id: poolId });
     if (!doc || !isLimitedPoolActive(doc, now)) return null;
-    return buildLimitedPool(limitedConfigFromDoc(doc));
+    if (isCustomPoolDoc(doc)) return { kind: 'custom', cfg: customConfigFromDoc(doc) };
+    return { kind: 'derived', pool: buildLimitedPool(limitedConfigFromDoc(doc)) };
   }
 
   /** Create (or overwrite) a limited pool config (admin, GACHA_DESIGN §2.2). */
@@ -178,6 +203,36 @@ export class CommercialService {
       ...(c.fillerLegendaries ? { fillerLegendaries: c.fillerLegendaries } : {}),
       createdBy: args.createdBy,
       createdAt: this.now(),
+    };
+    await this.cols.gachaPools.replaceOne({ _id: c.id }, doc, { upsert: true });
+    return { ok: true, id: c.id };
+  }
+
+  /**
+   * Create (or overwrite) an ops-authored custom pool config (GACHA_DESIGN §12). Validates the config,
+   * refuses to shadow a static pool id, and preserves createdBy/createdAt across edits. Shares the
+   * `gachaPools` collection with derived pools, discriminated by `kind:'custom'`.
+   */
+  async createCustomPool(args: {
+    config: CustomPoolConfig;
+    createdBy: string;
+  }): Promise<Result<{ id: string }>> {
+    const c = args.config;
+    if (validateCustomPool(c) !== null) return { ok: false, error: 'BAD_REQUEST' };
+    if (findGachaPool(c.id)) return { ok: false, error: 'BAD_REQUEST' }; // must not shadow a static pool id
+    const prev = await this.cols.gachaPools.findOne({ _id: c.id });
+    const doc: CustomGachaPoolDoc = {
+      _id: c.id,
+      kind: 'custom',
+      id: c.id,
+      name: c.name,
+      costSingle: c.costSingle,
+      ...(c.costTen != null ? { costTen: c.costTen } : {}),
+      startAt: c.startAt,
+      endAt: c.endAt,
+      categories: c.categories,
+      createdBy: prev?.createdBy ?? args.createdBy,
+      createdAt: prev?.createdAt ?? this.now(),
     };
     await this.cols.gachaPools.replaceOne({ _id: c.id }, doc, { upsert: true });
     return { ok: true, id: c.id };
@@ -436,23 +491,37 @@ export class CommercialService {
         fatePointsAfter: w?.fatePoints ?? 0,
       };
     }
-    const pool = await this.resolvePool(args.poolId, this.now());
-    if (!pool || (args.count !== 1 && args.count !== 10)) {
-      return { ok: false, error: pool ? 'BAD_REQUEST' : 'POOL_UNAVAILABLE' };
+    const resolved = await this.resolvePool(args.poolId, this.now());
+    if (!resolved || (args.count !== 1 && args.count !== 10)) {
+      return { ok: false, error: resolved ? 'BAD_REQUEST' : 'POOL_UNAVAILABLE' };
     }
-    const cost = gachaCost(pool, args.count);
+    const cost =
+      resolved.kind === 'custom' ? customPoolCost(resolved.cfg, args.count) : gachaCost(resolved.pool, args.count);
 
     const wallet = await this.ensureWallet(args.accountId);
     if (wallet.coins < cost) return { ok: false, error: 'INSUFFICIENT_FUNDS' };
 
     const prevPity = wallet.gacha.pity[args.poolId] ?? 0;
-    const { results, pityAfter } = rollGacha(pool, args.count, prevPity, this.rng);
-
-    // Fate points (GACHA_DESIGN §7): in a limited pool, each legendary that is NOT the featured banner is a "歪" → +1.
-    const fateGained =
-      pool.limited && pool.featuredLegendary
-        ? results.filter((r) => r.rarity === 'legendary' && r.itemId !== pool.featuredLegendary).length
-        : 0;
+    // Custom pools (§12) have NO pity, NO soft-pity and NO featured-legendary/Fate logic — a plain weighted roll.
+    // Derived/static pools keep the full pity + Fate machinery.
+    let results: GachaResultEntry[];
+    let pityAfter: number;
+    let fateGained: number;
+    if (resolved.kind === 'custom') {
+      results = rollCustomGacha(resolved.cfg, args.count, this.rng);
+      pityAfter = prevPity; // untouched: custom pools do not accrue pity
+      fateGained = 0;
+    } else {
+      const pool = resolved.pool;
+      const roll = rollGacha(pool, args.count, prevPity, this.rng);
+      results = roll.results;
+      pityAfter = roll.pityAfter;
+      // Fate points (GACHA_DESIGN §7): in a limited pool, each legendary that is NOT the featured banner is a "歪" → +1.
+      fateGained =
+        pool.limited && pool.featuredLegendary
+          ? results.filter((r) => r.rarity === 'legendary' && r.itemId !== pool.featuredLegendary).length
+          : 0;
+    }
 
     // Insert-first idempotency (§6.5): reserve the orderId slot (with the rolled results) BEFORE debiting so two
     // concurrent calls with the same orderId cannot both debit. E11000 → replay the existing draw's result.
@@ -619,14 +688,33 @@ export class CommercialService {
     return { coinsAfter, expiry: res!.subscription?.expiry ?? now + ms };
   }
 
-  /**
-   * Activate / renew the monthly card (GACHA_DESIGN §5). Idempotent by orderId. Extends the subscription by
-   * MONTHLY_CARD_DAYS and grants MONTHLY_CARD_IMMEDIATE_COINS at once. Real IAP receipt verification is the
-   * caller's concern (meta); here it is treated as an already-authorized purchase.
-   */
+  /** Activate the monthly card (GACHA_DESIGN §5): 30-day subscription + 600 immediate coins. */
   async monthlyCardBuy(args: {
     accountId: string;
     orderId: string;
+  }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number }>> {
+    return this.subscriptionCardBuy({ ...args, days: MONTHLY_CARD_DAYS, immediateCoins: MONTHLY_CARD_IMMEDIATE_COINS });
+  }
+
+  /** Activate the year card (GACHA_DESIGN §5): 365-day subscription + 600 immediate coins. Same daily claim as the monthly card. */
+  async yearCardBuy(args: {
+    accountId: string;
+    orderId: string;
+  }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number }>> {
+    return this.subscriptionCardBuy({ ...args, days: YEAR_CARD_DAYS, immediateCoins: YEAR_CARD_IMMEDIATE_COINS });
+  }
+
+  /**
+   * Shared monthly/year card activation (GACHA_DESIGN §5). Idempotent by orderId, and globally single-slot:
+   * refuses with ALREADY_ACTIVE while any subscription is still running (buy → use up → rebuy), so cards no longer
+   * stack open-endedly. Extends the subscription by `days` and grants `immediateCoins` at once. Real IAP receipt
+   * verification is the caller's concern (meta); here it is treated as an already-authorized purchase.
+   */
+  private async subscriptionCardBuy(args: {
+    accountId: string;
+    orderId: string;
+    days: number;
+    immediateCoins: number;
   }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number }>> {
     const existing = await this.cols.orders.findOne({ _id: args.orderId });
     if (existing) {
@@ -634,6 +722,9 @@ export class CommercialService {
       return { ok: true, coinsAfter: w?.coins ?? 0, subscriptionExpiry: w?.subscription?.expiry ?? 0 };
     }
     const now = this.now();
+    // Claim the order slot first. Concurrent replays of the SAME orderId race here; only one wins, the rest take the
+    // E11000 branch and return the existing grant (idempotent). The single-slot gate is applied AFTER the slot is
+    // claimed so it never intercepts an idempotent replay — only the unique winner of this orderId evaluates it.
     try {
       await this.cols.orders.insertOne({
         _id: args.orderId,
@@ -653,10 +744,17 @@ export class CommercialService {
       }
       throw e;
     }
+    // Single-slot gate: refuse a distinct purchase while a card is still active (buy → use up → rebuy). Roll back the
+    // just-claimed slot so the account isn't left with a phantom grant order and a later (post-expiry) retry works.
+    const wallet = await this.ensureWallet(args.accountId);
+    if ((wallet.subscription?.expiry ?? 0) > now) {
+      await this.cols.orders.deleteOne({ _id: args.orderId });
+      return { ok: false, error: 'ALREADY_ACTIVE' };
+    }
     const { coinsAfter, expiry } = await this.applySubscription(
       args.accountId,
-      MONTHLY_CARD_DAYS,
-      MONTHLY_CARD_IMMEDIATE_COINS,
+      args.days,
+      args.immediateCoins,
       now,
       { orderId: args.orderId },
     );

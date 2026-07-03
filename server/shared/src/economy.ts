@@ -2,17 +2,90 @@
 // meta uses it to list shop items/gacha pools + compute dupe refunds; commercial uses it to run gacha RNG. Same source on both ends avoids drift.
 import type { Rarity } from './types';
 import type { RankId } from './ladder';
-import { UNIT_CARD_POOL_ID, unitCardPoolItems } from './unitCards';
 
 export const RARITY_ORDER: Rarity[] = ['common', 'rare', 'epic', 'legendary'];
 
-/** Standard pool rarity weights (§4.1). */
+/** Standard pool rarity weights (§4.1). Used as the pity/soft-pity fallback roll and, in the two-stage draw,
+ *  as the within-category item weight for every category except skins (which use SKIN_TIER_WEIGHTS). */
 export const RARITY_WEIGHTS: Record<Rarity, number> = {
   common: 700,
   rare: 230,
   epic: 60,
   legendary: 10,
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Two-stage draw (GACHA_DESIGN §2.1a, owner decision 2026-07-03).
+// A base (non-pity) roll first picks an item *category* by CATEGORY_WEIGHTS, then a specific item within
+// that category weighted by the item's display rarity. This replaces the old flat rarity-tier roll on the
+// standard pool. The rarity axis is *retained*: each item still carries a display rarity (looked up from
+// itemsByRarity) that drives result-card colour, dupe refund, and the pity/soft-pity/ten-pull guarantees —
+// which still roll on the rarity axis. Only the standard pool opts in (sets `categories`); limited pools
+// (buildLimitedPool) and the starter pack keep the flat rarity roll.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Item categories for the two-stage draw. Order defines the stage-1 roll segments. */
+export type GachaCategory = 'material' | 'card' | 'equip_t1' | 'equip_t2' | 'equip_t3' | 'skin';
+export const GACHA_CATEGORY_ORDER: GachaCategory[] = [
+  'material',
+  'card',
+  'equip_t1',
+  'equip_t2',
+  'equip_t3',
+  'skin',
+];
+
+/**
+ * Stage-1 category weights (owner reference 2026-07-03, DRAFT [adjustable]; sum = 1000). Materials are the bulk
+ * faucet; character cards next; equipment splits into three tiers (t1=fine, t2=rare, t3=epic gear); skins are
+ * the rarest jackpot. Shares ≈ 70.1/15/10/3/0.8/1.1 %.
+ *
+ * Tuned so the effective legendary-rarity rate ≈ 1% (owner target 2026-07-03), split across its three sources:
+ *   equip_t3 (epic gear, 100% legendary) 0.80% + legendary cards 0.10% (down-weighted 150:1 within the card
+ *   bucket, see CARD_TIER_WEIGHTS) + legendary skin 0.10% (skin 1.1% × 1/11). The card/skin buckets keep their
+ *   ~15%/1% shares — only equip_t3 was nudged 1%→0.8% to leave headroom for the card & skin legendaries.
+ */
+export const CATEGORY_WEIGHTS: Record<GachaCategory, number> = {
+  material: 701,
+  card: 150,
+  equip_t1: 100,
+  equip_t2: 30,
+  equip_t3: 8,
+  skin: 11,
+};
+
+/**
+ * Skin sub-tier weights (owner decision 2026-07-03): once the skin category is rolled, the specific skin is
+ * drawn by these tier weights — a ladder distinct from the global RARITY_WEIGHTS. Tiers with no launch skins
+ * (common/rare — see §9.5 catalogue) are renormalized out, so at launch skin pulls resolve to epic/legendary
+ * skins only (skin_e1/skin_e2 ≈ 5:5, skin_l1 ≈ 1, i.e. the flagship legendary skin is ~1/6 of skin pulls).
+ */
+export const SKIN_TIER_WEIGHTS: Record<Rarity, number> = {
+  common: 79,
+  rare: 15,
+  epic: 5,
+  legendary: 1,
+};
+
+/**
+ * Card sub-tier weights (owner decision 2026-07-03): the card bucket is large (~15%), so legendary Anna cards
+ * (max/lena/mara) are deliberately down-weighted 150:1 vs epic cards — otherwise they alone would dominate the
+ * legendary rate (~2.1%). At launch only epic/legendary card tiers are populated (common/rare renormalized out),
+ * so per-card legendary ≈ 0.033% and the card bucket contributes ~0.10% legendary total.
+ */
+export const CARD_TIER_WEIGHTS: Record<Rarity, number> = {
+  common: 600,
+  rare: 300,
+  epic: 150,
+  legendary: 1,
+};
+
+/** Within-category item weight: skins and cards use their own tier ladders; every other category weights by rarity. */
+export function withinCategoryWeight(category: GachaCategory, rarity: Rarity): number {
+  if (category === 'skin') return SKIN_TIER_WEIGHTS[rarity];
+  if (category === 'card') return CARD_TIER_WEIGHTS[rarity];
+  return RARITY_WEIGHTS[rarity];
+}
 
 export interface GachaPoolDef {
   id: string;
@@ -22,6 +95,10 @@ export interface GachaPoolDef {
   tenFloor: Rarity; // ten-pull guaranteed minimum rarity (§4.2, at least 1 epic+ per 10 pulls)
   dupePolicy: 'shards' | 'coins'; // openapi top-level compatibility field; per-rarity breakdown see DUPE_*
   itemsByRarity: Record<Rarity, string[]>;
+  // ── Two-stage draw (GACHA_DESIGN §2.1a). When present, base (non-pity) rolls go category-first (see
+  //    CATEGORY_WEIGHTS). Every listed itemId MUST also appear in itemsByRarity (that map is the item's
+  //    display-rarity / dupe-refund source and backs the pity/soft-pity/ten-pull picks). Absent → flat rarity roll. ──
+  categories?: Partial<Record<GachaCategory, string[]>>;
   // ── Soft pity (GACHA_DESIGN §3): starting at softPityStart cumulative pulls, legendary probability climbs
   //    each pull by softPityStep until the hard pity guarantees it. Absent = hard-cliff only. ──
   softPityStart?: number; // pity count at which the ramp begins (e.g. 70)
@@ -78,22 +155,21 @@ export const GACHA_POOLS: GachaPoolDef[] = [
       // legendary: 1 Anna skin (Max, flagship) + 3 epic equipment + 3 Anna character cards (DRAFT [adjustable] → ECONOMY_NUMBERS §6)
       legendary: ['skin_l1', 'wp_highlighter', 'ar_foil', 'tk_seal', 'max', 'lena', 'mara'],
     },
+    // Two-stage grouping of the SAME items above (GACHA_DESIGN §2.1a). Category picked by CATEGORY_WEIGHTS,
+    // then an item within it weighted by its display rarity (skins → SKIN_TIER_WEIGHTS). Equipment tiers map
+    // to the gear rarities: t1=fine (pen/cardstock/bookmark), t2=rare (marker/leather/sticker), t3=epic (highlighter/foil/seal).
+    categories: {
+      material: ['mat_scrap', 'mat_lead', 'mat_binding'],
+      card: ['lichuang', 'chenshou', 'suyuan', 'max', 'lena', 'mara'],
+      equip_t1: ['wp_pen', 'ar_cardstock', 'tk_bookmark'],
+      equip_t2: ['wp_marker', 'ar_leather', 'tk_sticker'],
+      equip_t3: ['wp_highlighter', 'ar_foil', 'tk_seal'],
+      skin: ['skin_e1', 'skin_e2', 'skin_l1'],
+    },
   },
-  // Unit card pool (S12-C, progression ≠ cosmetics, separate pool): item = cardKey (infantry:1 …), rarity-to-card-level mapping see
-  // unitCards.GACHA_RARITY_TO_CARD_LEVEL (common→T1 … legendary→T4). Delivery side by poolId credits unit cards
-  // (cardInventory + recalculate unitLevels), **bypasses skin dupe refund** (cards naturally duplicate, all credited).
-  // Pricing/pity reuses skin pool placeholder `[adjustable]` (§3.2); dupePolicy is only an openapi top-level compatibility field, not read by unit card delivery.
-  {
-    id: UNIT_CARD_POOL_ID,
-    costSingle: 150,
-    costTen: 1350,
-    pityThreshold: 90,
-    tenFloor: 'epic',
-    softPityStart: SOFT_PITY_START,
-    softPityStep: SOFT_PITY_STEP,
-    dupePolicy: 'coins',
-    itemsByRarity: unitCardPoolItems(),
-  },
+  // NOTE: the separate unit-card gacha pool (`units`/UNIT_CARD_POOL_ID, S12-C) was removed on 2026-07-03 — it surfaced as a
+  // duplicate second "standard" pool tab in the client. Unit-card progression now comes only from PvE level drops
+  // (unitCards.levelCardReward → cardInventory → deriveUnitLevels); character cards are granted from the standard pool above.
 ];
 
 export interface ShopItemDef {
@@ -218,12 +294,23 @@ export function gachaCost(pool: GachaPoolDef, count: number): number {
   return count === 10 ? pool.costTen : pool.costSingle * count;
 }
 
-/** Expand into openapi GachaPool.entries (for client display, weight evenly distributed within each tier).
- *  Duplicate itemIds within a tier (e.g. a weighted featured legendary in a limited pool) are aggregated
- *  so the odds list shows each item once with its summed weight. */
+/** Reverse index itemId → display rarity, derived from itemsByRarity (the rarity source of truth for
+ *  display / dupe refund / pity picks). First tier an item appears in wins (items are unique across tiers). */
+export function itemRarityMap(pool: GachaPoolDef): Map<string, Rarity> {
+  const m = new Map<string, Rarity>();
+  for (const rarity of RARITY_ORDER) {
+    for (const id of pool.itemsByRarity[rarity]) if (!m.has(id)) m.set(id, rarity);
+  }
+  return m;
+}
+
+/** Expand into openapi GachaPool.entries (per-item display probability, for the odds panel — Apple 3.1.1).
+ *  Two-stage pools (standard) reflect P(category)·P(item|category); flat pools (limited) keep the old
+ *  rarity-tier even split. Weights are scaled probabilities (÷ their sum by the caller = true probability). */
 export function poolEntries(
   pool: GachaPoolDef,
 ): { itemId: string; weight: number; rarity: Rarity }[] {
+  if (pool.categories) return categoryPoolEntries(pool);
   const out: { itemId: string; weight: number; rarity: Rarity }[] = [];
   for (const rarity of RARITY_ORDER) {
     const items = pool.itemsByRarity[rarity];
@@ -232,6 +319,34 @@ export function poolEntries(
     const byItem = new Map<string, number>();
     for (const itemId of items) byItem.set(itemId, (byItem.get(itemId) ?? 0) + perSlot);
     for (const [itemId, w] of byItem) out.push({ itemId, weight: Math.round(w), rarity });
+  }
+  return out;
+}
+
+/** Odds expansion for a two-stage pool: weight ∝ P(category)·P(item|category), scaled to integers. */
+function categoryPoolEntries(
+  pool: GachaPoolDef,
+): { itemId: string; weight: number; rarity: Rarity }[] {
+  const rarityOf = itemRarityMap(pool);
+  const cats = pool.categories!;
+  // Only categories that actually contain items contribute to the stage-1 denominator.
+  const catTotal = GACHA_CATEGORY_ORDER.reduce(
+    (s, c) => s + ((cats[c]?.length ?? 0) > 0 ? CATEGORY_WEIGHTS[c] : 0),
+    0,
+  );
+  const out: { itemId: string; weight: number; rarity: Rarity }[] = [];
+  if (catTotal <= 0) return out;
+  for (const cat of GACHA_CATEGORY_ORDER) {
+    const items = cats[cat];
+    if (!items || items.length === 0) continue;
+    const w = items.map((id) => withinCategoryWeight(cat, rarityOf.get(id) ?? 'common'));
+    const wTotal = w.reduce((a, b) => a + b, 0);
+    if (wTotal <= 0) continue;
+    const catProb = CATEGORY_WEIGHTS[cat] / catTotal;
+    items.forEach((id, i) => {
+      const prob = catProb * (w[i]! / wTotal);
+      out.push({ itemId: id, weight: Math.round(prob * 100000), rarity: rarityOf.get(id) ?? 'common' });
+    });
   }
   return out;
 }
@@ -305,6 +420,22 @@ export const MONTHLY_CARD_DAYS = 30;
 export const MONTHLY_CARD_DAILY_COINS = 120;
 export const MONTHLY_CARD_IMMEDIATE_COINS = 600;
 
+/**
+ * Year card (§5): 365-day subscription, same 120 coins/day + 600 immediate as the monthly card — only the
+ * duration is ×12. The daily claim reuses MONTHLY_CARD_DAILY_COINS (subscription is one field; claim is card-agnostic).
+ * Both cards are globally single-slot: buying either is refused while any subscription is still active (buy → use up → rebuy).
+ */
+export const YEAR_CARD_DAYS = 365;
+export const YEAR_CARD_IMMEDIATE_COINS = 600;
+
+/**
+ * Display prices only (real IAP charge is treated as already-authorized upstream; no coins are debited here).
+ * Year card is a ~10%-off take on 12 monthly cards (12×¥30 = ¥360 → ¥298), surfaced in the shop as a strike-through + savings badge.
+ */
+export const MONTHLY_CARD_PRICE_YUAN = 30;
+export const YEAR_CARD_PRICE_YUAN = 298;
+export const YEAR_CARD_LIST_PRICE_YUAN = 360;
+
 /** Starter growth pack (§6.2): 3,300 coins + a 7-day monthly card; buyable once, within the first 7 days of the account. */
 export const GROWTH_PACK_COINS = 3300;
 export const GROWTH_PACK_CARD_DAYS = 7;
@@ -316,5 +447,6 @@ export const STARTER_DRAW_FLOOR: Rarity = 'rare';
 
 /** Product ids for the one-off / subscription IAP-style products (marked in wallet.starterUsed / subscription). */
 export const PRODUCT_MONTHLY_CARD = 'monthly_card';
+export const PRODUCT_YEAR_CARD = 'year_card';
 export const PRODUCT_STARTER_DRAW = 'starter_draw';
 export const PRODUCT_STARTER_GROWTH = 'starter_growth';

@@ -10,7 +10,7 @@
 //    in commercial is already prepared.
 import { createHash } from 'node:crypto';
 import type { Collections, SaveData, Rarity, EquipmentInstance } from '@nw/shared';
-import { grantCards, UNIT_CARD_POOL_ID, EQUIPMENT_DEFS, GACHA_MATERIAL_GRANTS, makeGachaEquipInstance, EQUIPMENT_INV_CAP, equipmentInvCount, CARD_DEFS, type CardDef } from '@nw/shared';
+import { EQUIPMENT_DEFS, GACHA_MATERIAL_GRANTS, makeGachaEquipInstance, EQUIPMENT_INV_CAP, equipmentInvCount, CARD_DEFS, type CardDef } from '@nw/shared';
 import { grantCards as grantHeroCards } from './cards.js';
 import type { CommercialClient, GachaResultEntry, WalletView } from './commercialClient.js';
 
@@ -77,53 +77,6 @@ export async function deliverGrant(
   const cur = await cols.saves.findOne({ _id: accountId });
   if (!cur) throw new Error('save missing after grant');
   return cur.save;
-}
-
-/**
- * Deliver a unit-card loot-box grant (S12-C, dedicated unit card pool): adds cardGrants
- * (cardKey→count) into cardInventory. (The derived `unitLevels` snapshot was dropped with the
- * Hero Roster migration — SaveData v4 removed the field; the engine now reads `cardInv` instead.)
- * Uses an **optimistic lock read-modify-write** (rev CAS + retry, same as service.mutateSave) so a
- * concurrent PUT equipped/flags or PvE write cannot clobber the $inc. Idempotent: if deliveredOrders already contains
- * orderId the current save is returned immediately (guards against duplicate $inc, which matters
- * more here than for skin sets). Also mirrors the wallet + pity in the same operation (symmetric
- * with skin-pool deliverGrant).
- */
-export async function deliverCardGrant(
-  cols: Collections,
-  accountId: string,
-  orderId: string,
-  cardGrants: Record<string, number>,
-  coinsAfter: number,
-  pityPatch: Record<string, number> | null,
-  now: number,
-): Promise<SaveData> {
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const doc = await cols.saves.findOne({ _id: accountId });
-    if (!doc) throw new Error('save missing before card grant');
-    if (doc.save.deliveredOrders?.includes(orderId)) return doc.save; // idempotent: already delivered, skip $inc
-    const cardInventory = grantCards(doc.save.cardInventory ?? {}, cardGrants);
-    const set: Record<string, unknown> = {
-      'save.updatedAt': now,
-      'save.wallet.coins': coinsAfter,
-      'save.cardInventory': cardInventory,
-    };
-    if (pityPatch) {
-      for (const [pool, v] of Object.entries(pityPatch)) set[`save.gacha.pity.${pool}`] = v;
-    }
-    const res = await cols.saves.findOneAndUpdate(
-      { _id: accountId, rev: doc.rev },
-      {
-        $addToSet: { 'save.deliveredOrders': orderId },
-        $inc: { 'save.rev': 1, rev: 1 },
-        $set: set,
-      },
-      { returnDocument: 'after' },
-    );
-    if (res) return res.save;
-    // rev conflict (concurrent PUT equipped/flags or concurrent PvE write) → re-read and retry.
-  }
-  throw new Error('rev conflict delivering card grant');
 }
 
 /**
@@ -235,15 +188,6 @@ export async function deliverOrder(
     const owned = cur?.save.inventory.skins ?? [];
     const newSkins = owned.includes(order.result.itemId) ? [] : [order.result.itemId];
     const save = await deliverGrant(cols, accountId, order._id, newSkins, coinsAfter, pityPatch, now);
-    await commercial.orderDelivered({ orderId: order._id });
-    return save;
-  }
-
-  // Unit card pool order (S12-C): results.itemId is a cardKey; goes into cardInventory (not treated as a skin).
-  if (order.kind === 'gacha' && order.result.poolId === UNIT_CARD_POOL_ID) {
-    const cardGrants: Record<string, number> = {};
-    for (const r of order.result.results ?? []) cardGrants[r.itemId] = (cardGrants[r.itemId] ?? 0) + 1;
-    const save = await deliverCardGrant(cols, accountId, order._id, cardGrants, coinsAfter, pityPatch, now);
     await commercial.orderDelivered({ orderId: order._id });
     return save;
   }

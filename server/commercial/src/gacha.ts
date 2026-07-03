@@ -1,11 +1,23 @@
 // Gacha RNG + pity system (S5-3, ECONOMY_BALANCE §4). Pure functions with an injected random
-// source so unit tests can reproduce pity hits deterministically. Rolls a rarity tier by
-// weight first, then picks an item uniformly within that tier. Pity: the hard pity counter
-// guarantees a legendary at pityThreshold cumulative pulls; the 10-pull pity floor upgrades
-// the last pull to tenFloor when count===10 and no epic+ appeared in the set.
+// source so unit tests can reproduce pity hits deterministically.
+//
+// Base (non-pity) rolls: two-stage on pools that declare `categories` (standard, GACHA_DESIGN §2.1a) —
+// pick a category by CATEGORY_WEIGHTS, then an item within it weighted by the item's display rarity
+// (skins use SKIN_TIER_WEIGHTS). Pools without categories (limited, starter) keep the flat rarity-tier roll.
+// Pity is unchanged and rarity-based: the hard pity counter guarantees a legendary at pityThreshold cumulative
+// pulls; the soft-pity ramp raises legendary probability; the 10-pull pity floor upgrades the last pull to
+// tenFloor when count===10 and no epic+ appeared in the set. All three pick from itemsByRarity.
 import {
   RARITY_ORDER,
   RARITY_WEIGHTS,
+  GACHA_CATEGORY_ORDER,
+  CATEGORY_WEIGHTS,
+  withinCategoryWeight,
+  itemRarityMap,
+  type GachaCategory,
+  catalogItem,
+  type CustomPoolCategory,
+  type CustomPoolConfig,
   type GachaPoolDef,
   type Rarity,
 } from '@nw/shared';
@@ -71,6 +83,41 @@ function pickItem(pool: GachaPoolDef, rarity: Rarity, rng: RandInt): string {
   return items[rng(items.length)]!;
 }
 
+/** Stage 1: pick a category by CATEGORY_WEIGHTS, considering only categories that contain items. */
+function rollCategory(pool: GachaPoolDef, rng: RandInt): GachaCategory {
+  const cats = GACHA_CATEGORY_ORDER.filter((c) => (pool.categories![c]?.length ?? 0) > 0);
+  const total = cats.reduce((s, c) => s + CATEGORY_WEIGHTS[c], 0);
+  let roll = rng(total);
+  for (const c of cats) {
+    roll -= CATEGORY_WEIGHTS[c];
+    if (roll < 0) return c;
+  }
+  return cats[cats.length - 1]!;
+}
+
+/**
+ * Two-stage base roll (GACHA_DESIGN §2.1a): pick a category, then an item within it weighted by its display
+ * rarity (skins use SKIN_TIER_WEIGHTS; empty rarity tiers within a category are naturally renormalized out).
+ * The returned rarity is the item's display rarity, which still drives dupe refund + the legendary pity reset.
+ */
+function rollCategoryItem(
+  pool: GachaPoolDef,
+  rarityOf: Map<string, Rarity>,
+  rng: RandInt,
+): GachaResultEntry {
+  const cat = rollCategory(pool, rng);
+  const items = pool.categories![cat]!;
+  const weights = items.map((id) => withinCategoryWeight(cat, rarityOf.get(id) ?? 'common'));
+  const total = weights.reduce((a, b) => a + b, 0);
+  let roll = total > 0 ? rng(total) : 0;
+  for (let i = 0; i < items.length; i++) {
+    roll -= weights[i]!;
+    if (roll < 0) return { itemId: items[i]!, rarity: rarityOf.get(items[i]!) ?? 'common' };
+  }
+  const last = items.length - 1;
+  return { itemId: items[last]!, rarity: rarityOf.get(items[last]!) ?? 'common' };
+}
+
 export interface RollOutcome {
   results: GachaResultEntry[];
   pityAfter: number;
@@ -89,19 +136,34 @@ export function rollGacha(
   const results: GachaResultEntry[] = [];
   let pity = prevPity;
   const epicRank = rarityRank('epic');
+  // Two-stage pools carry a display-rarity index for their base rolls; flat pools stay on rollRarity.
+  const rarityOf = pool.categories ? itemRarityMap(pool) : null;
 
   for (let i = 0; i < count; i++) {
     pity += 1;
-    let rarity: Rarity;
     if (pity >= pool.pityThreshold) {
-      rarity = 'legendary'; // hard pity triggered
-    } else {
-      const legProb = softPityLegendaryProb(pool, pity);
-      // Soft-pity ramp active → boosted roll; otherwise the flat weight table (unchanged behavior).
-      rarity = legProb != null ? rollRarityBoosted(rng, legProb) : rollRarity(rng);
+      // Hard pity → guaranteed legendary (rarity axis, pick from itemsByRarity).
+      results.push({ itemId: pickItem(pool, 'legendary', rng), rarity: 'legendary' });
+      pity = 0;
+      continue;
     }
-    if (rarity === 'legendary') pity = 0; // reset pity on legendary
-    results.push({ itemId: pickItem(pool, rarity, rng), rarity });
+    const legProb = softPityLegendaryProb(pool, pity);
+    if (legProb != null) {
+      // Soft-pity ramp active → boosted rarity roll (unchanged behavior, overrides the two-stage roll).
+      const rarity = rollRarityBoosted(rng, legProb);
+      if (rarity === 'legendary') pity = 0;
+      results.push({ itemId: pickItem(pool, rarity, rng), rarity });
+      continue;
+    }
+    // Base roll: two-stage category draw where configured, else the flat rarity table.
+    const entry = rarityOf
+      ? rollCategoryItem(pool, rarityOf, rng)
+      : ((): GachaResultEntry => {
+          const rarity = rollRarity(rng);
+          return { itemId: pickItem(pool, rarity, rng), rarity };
+        })();
+    if (entry.rarity === 'legendary') pity = 0; // reset pity on legendary (either roll path)
+    results.push(entry);
   }
 
   // 10-pull pity floor: count===10 and no epic+ in the set → upgrade the last pull to tenFloor.
@@ -113,6 +175,50 @@ export function rollGacha(
   }
 
   return { results, pityAfter: pity };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Custom (ops-authored) pool roll (GACHA_DESIGN §12). Two-stage weighted pick — a category by weight,
+// then an item within it by weight — with NO pity, NO soft-pity and NO featured-legendary / Fate logic.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Pick an index into `weights` proportional to weight. Weights are scaled to integers (1e6 resolution,
+ * enough for fractional percentages) so the pick stays on the RandInt(n) integer contract.
+ */
+function weightedIndex(weights: number[], rng: RandInt): number {
+  const scaled = weights.map((w) => Math.max(0, Math.round(w * 1_000_000)));
+  const total = scaled.reduce((s, w) => s + w, 0);
+  if (total <= 0) return 0;
+  let roll = rng(total);
+  for (let i = 0; i < scaled.length; i++) {
+    roll -= scaled[i]!;
+    if (roll < 0) return i;
+  }
+  return scaled.length - 1;
+}
+
+function rollCustomOne(cats: CustomPoolCategory[], rng: RandInt): GachaResultEntry {
+  const cat = cats[weightedIndex(cats.map((c) => c.weight), rng)]!;
+  const items = cat.items.filter((it) => it.weight > 0);
+  const item = items[weightedIndex(items.map((it) => it.weight), rng)]!;
+  return { itemId: item.itemId, rarity: catalogItem(item.itemId)?.rarity ?? 'common' };
+}
+
+/**
+ * Roll `count` pulls on an ops-authored custom pool. Pure probability: each pull independently rolls a
+ * category then an item. Categories/items with non-positive weight are ignored. Assumes `cfg` passed
+ * validateCustomPool (≥1 usable category), so `cats` is non-empty.
+ */
+export function rollCustomGacha(
+  cfg: CustomPoolConfig,
+  count: number,
+  rng: RandInt = cryptoRand,
+): GachaResultEntry[] {
+  const cats = cfg.categories.filter((c) => c.weight > 0 && c.items.some((it) => it.weight > 0));
+  const results: GachaResultEntry[] = [];
+  for (let i = 0; i < count; i++) results.push(rollCustomOne(cats, rng));
+  return results;
 }
 
 /**

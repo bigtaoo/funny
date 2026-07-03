@@ -19,7 +19,6 @@ import {
   CARD_DEFS,
   levelCardReward,
   parseCardKey,
-  UNIT_CARD_POOL_ID,
   type CardDef,
   makeDropInstance,
   EQUIPMENT_INV_CAP,
@@ -51,6 +50,8 @@ import {
   poolEntries,
   gachaCost,
   buildLimitedPool,
+  customPoolEntries,
+  customPoolCostTen,
   ADS_REWARD_COINS,
   ADS_DAILY_CAP,
   ADS_MIN_INTERVAL_MS,
@@ -85,12 +86,11 @@ import {
 import { createOAuthService, OAuthError, type OAuthProvider } from './oauth.js';
 import { profileOf } from './social.js';
 import { splitAttachments, insertSystemMail } from './mail.js';
-import type { CommercialClient } from './commercialClient.js';
+import type { CommercialClient, GachaPoolView } from './commercialClient.js';
 import type { GatewayClient } from './gatewayClient.js';
 import {
   markDuplicates,
   deliverGrant,
-  deliverCardGrant,
   deliverMailGrant,
   deliverOrder,
   mirrorCoins,
@@ -132,11 +132,26 @@ export interface ServiceDeps {
   socialsvc: import('./socialsvcClient.js').MetaSocialsvcClient | null;
 }
 
+/** One row of the season Top-100 leaderboard (SE-5). */
+interface LeaderboardEntry {
+  rank: number;
+  displayName: string;
+  publicId: string;
+  elo: number;
+  pvpRank: string;
+  equippedTitle?: string;
+}
+
 /** Retrieve the accountId written by the security handler (the handler guarantees the request is authenticated). */
 function accountIdOf(req: FastifyRequest): string {
   const id = req.accountId;
   if (!id) throw new Error('accountId missing after auth');
   return id;
+}
+
+/** Map a commercial subscription-card error to a client error code (single-slot gate surfaces ALREADY_ACTIVE; else BAD_REQUEST). */
+function subscriptionErrCode(error: string): ErrorCode {
+  return error === 'ALREADY_ACTIVE' ? ErrorCode.ALREADY_ACTIVE : ErrorCode.BAD_REQUEST;
 }
 
 /** Normalize the upgrade map (remove zero-value entries + sort keys) for stable cross-source comparison (L0 blueprint anomaly detection). */
@@ -199,6 +214,13 @@ export class MetaService {
   private readonly authRate: { allow(key: string, now: number): boolean };
   /** Rate limit for "full coverage" anomaly event uploads, keyed by IP: at most 30 POST /client/anomaly requests per IP per 60s (guards against Loki flooding). In-process approximation. */
   private readonly anomalyRate = new SlidingRateLimiter(30, 60 * 1000);
+  /**
+   * SE-5: 60s in-process cache of the season Top-100 (the `entries` array only — the per-caller `me`
+   * standing is always recomputed live). Keyed by seasonNo so a season roll implicitly invalidates it.
+   * When meta scales out this becomes a per-instance approximation; readers tolerate a leaderboard up to
+   * 60s stale, so cache incoherence across instances is acceptable. SEASON_DESIGN §5. */
+  private leaderboardCache: { seasonNo: number; expiresAt: number; entries: LeaderboardEntry[] } | null = null;
+  private static readonly LEADERBOARD_CACHE_MS = 60 * 1000;
 
   constructor(private readonly deps: ServiceDeps) {
     this.authRate = deps.authRateLimit > 0
@@ -1782,12 +1804,31 @@ export class MetaService {
         })),
       };
     };
+    // Build a client view for an ops-authored custom pool (§12): its own cost/entries, no pity/featured.
+    const customToView = (cfg: Extract<GachaPoolView, { kind: 'custom' }>): PoolView => {
+      const entries = customPoolEntries(cfg);
+      const totalWeight = entries.reduce((s, e) => s + e.weight, 0);
+      return {
+        id: cfg.id,
+        costSingle: cfg.costSingle,
+        costTen: customPoolCostTen(cfg),
+        pityThreshold: 0, // custom pools have no pity
+        dupePolicy: 'coins',
+        limited: true,
+        name: cfg.name,
+        endAt: cfg.endAt,
+        entries: entries.map((e) => ({ ...e, probability: totalWeight > 0 ? e.weight / totalWeight : 0 })),
+      };
+    };
     const pools: PoolView[] = GACHA_POOLS.map((p) => toView(p));
     // Append active limited pools (best-effort; if commercial is down the client still gets the static pools).
     if (commercial.available) {
       try {
         const active = await commercial.listActiveLimitedPools(now());
-        for (const cfg of active) pools.push(toView(buildLimitedPool(cfg), cfg.name));
+        for (const cfg of active) {
+          if (cfg.kind === 'custom') pools.push(customToView(cfg));
+          else pools.push(toView(buildLimitedPool(cfg), cfg.name));
+        }
       } catch {
         /* best-effort: static pools already returned */
       }
@@ -1841,35 +1882,9 @@ export class MetaService {
       }
       return reply.code(400).send(err(ErrorCode.BAD_REQUEST, draw.error));
     }
-    // Delivery is routed by pool type (separate unit card pool, S12-C):
-    //  • Unit card pool → results.itemId is a cardKey; added to cardInventory + unitLevels recomputed (no dupe refund —
-    //    card collecting naturally accepts all duplicates; duplicate is always false for display only).
-    //  • Skin pool → new skins added to inventory.skins (idempotent); duplicate-to-coin conversion deferred to S5 (see economy.ts comment).
-    await getOrCreateSave(cols, accountId, now());
-    if (poolId === UNIT_CARD_POOL_ID) {
-      const cardGrants: Record<string, number> = {};
-      for (const r of draw.results) cardGrants[r.itemId] = (cardGrants[r.itemId] ?? 0) + 1;
-      const save = await deliverCardGrant(
-        cols,
-        accountId,
-        orderId,
-        cardGrants,
-        draw.coinsAfter,
-        { [poolId]: draw.pityAfter },
-        now(),
-      );
-      await commercial.orderDelivered({ orderId });
-      const marked = draw.results.map((r) => ({
-        itemId: r.itemId,
-        rarity: r.rarity,
-        duplicate: false,
-      }));
-      // B5: record daily task "open gacha"; merge retention into the returned save so the client immediately sees task completion.
-      await this.bumpRetentionTask(accountId, 'gacha.draw');
-      const nextRetention1 = accrueRetentionTask(save.retention, 'gacha.draw', now());
-      const saveWithRet1 = nextRetention1 !== save.retention ? { ...save, retention: nextRetention1 } : save;
-      return ok({ save: saveWithRet1, results: marked });
-    }
+    // Skin/standard pool delivery: new skins added to inventory.skins (idempotent); duplicate-to-coin conversion
+    // deferred to S5 (see economy.ts comment). (The separate unit-card pool + its cardInventory delivery branch were
+    // removed on 2026-07-03; unit cards now come only from PvE level drops.)
     const cur = await getOrCreateSave(cols, accountId, now());
     const { newSkins, marked } = markDuplicates(cur.inventory.skins, draw.results);
     const save = await deliverGrant(
@@ -1937,14 +1952,29 @@ export class MetaService {
     return ok({ save, granted: itemId });
   }
 
-  /** Buy / renew the monthly card (GACHA_DESIGN §5). Real IAP verification is out of scope here (treated as authorized). */
+  /** Buy the monthly card (GACHA_DESIGN §5). Single-slot: ALREADY_ACTIVE while a card is still running. Real IAP verification is out of scope here (treated as authorized). */
   async monthlyCardBuy(req: FastifyRequest, reply: FastifyReply) {
     if (!this.ensureCommercial(reply)) return;
     const accountId = accountIdOf(req);
     const { cols, commercial, now } = this.deps;
     const orderId = randomUUID();
     const r = await commercial.monthlyCardBuy({ accountId, orderId });
-    if (!r.ok) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, r.error));
+    if (!r.ok) return reply.code(400).send(err(subscriptionErrCode(r.error), r.error));
+    const w = await commercial.getWallet(accountId);
+    const save = w
+      ? await mirrorWalletFrom(cols, accountId, w, now())
+      : await getOrCreateSave(cols, accountId, now());
+    return ok({ save });
+  }
+
+  /** Buy the year card (GACHA_DESIGN §5): 365-day subscription, same single-slot gate + daily claim as the monthly card. */
+  async yearCardBuy(req: FastifyRequest, reply: FastifyReply) {
+    if (!this.ensureCommercial(reply)) return;
+    const accountId = accountIdOf(req);
+    const { cols, commercial, now } = this.deps;
+    const orderId = randomUUID();
+    const r = await commercial.yearCardBuy({ accountId, orderId });
+    if (!r.ok) return reply.code(400).send(err(subscriptionErrCode(r.error), r.error));
     const w = await commercial.getWallet(accountId);
     const save = w
       ? await mirrorWalletFrom(cols, accountId, w, now())
@@ -2193,12 +2223,14 @@ export class MetaService {
 
   // ── S11 Leaderboard / Battle Pass ──────────────────────────────────────────────────────
 
-  /** Top-100 ladder leaderboard (current season ELO descending, S11 §5). */
-  async getLeaderboard(req: FastifyRequest) {
-    const { cols, now } = this.deps;
-    const season = await getCurrentSeason(cols, now());
+  /**
+   * Build the season Top-100 (ELO descending) with display name + equipped title joined.
+   * Pure read — no per-caller state — so the result is safely shared across callers via the 60s cache.
+   */
+  private async buildLeaderboardTop100(seasonNo: number): Promise<LeaderboardEntry[]> {
+    const { cols } = this.deps;
     const top = await cols.saves
-      .find({ 'save.pvp.seasonNo': season.seasonNo })
+      .find({ 'save.pvp.seasonNo': seasonNo })
       .sort({ 'save.pvp.elo': -1 })
       .limit(100)
       .project({ _id: 1, 'save.pvp': 1, 'save.equipped': 1 })
@@ -2208,7 +2240,7 @@ export class MetaService {
       .find({ _id: { $in: accountIds } }, { projection: { _id: 1, displayName: 1, publicId: 1 } })
       .toArray();
     const byId = new Map(accounts.map((a) => [a._id, a]));
-    const entries = top.map((d, i) => {
+    return top.map((d, i) => {
       const a = byId.get(d._id);
       const pvp = (d as unknown as { save: { pvp: { elo: number; rank: string }; equipped?: Record<string, string> } }).save.pvp;
       const equipped = (d as unknown as { save: { equipped?: Record<string, string> } }).save.equipped;
@@ -2222,7 +2254,42 @@ export class MetaService {
         ...(equippedTitle ? { equippedTitle } : {}),
       };
     });
-    return ok({ seasonNo: season.seasonNo, entries });
+  }
+
+  /** Top-100 ladder leaderboard (current season ELO descending, S11 §5). Top-100 is served from a 60s process cache; the caller's own `me` standing is always recomputed live. */
+  async getLeaderboard(req: FastifyRequest) {
+    const { cols, now } = this.deps;
+    const season = await getCurrentSeason(cols, now());
+
+    // SE-5: reuse the cached Top-100 when it is for this season and still fresh; otherwise rebuild + cache.
+    const t = now();
+    const cached = this.leaderboardCache;
+    let entries: LeaderboardEntry[];
+    if (cached && cached.seasonNo === season.seasonNo && cached.expiresAt > t) {
+      entries = cached.entries;
+    } else {
+      entries = await this.buildLeaderboardTop100(season.seasonNo);
+      this.leaderboardCache = { seasonNo: season.seasonNo, expiresAt: t + MetaService.LEADERBOARD_CACHE_MS, entries };
+    }
+
+    // Caller's own standing (may be outside the Top-100). Rank = # of players with strictly
+    // higher ELO this season + 1. Absent when the caller has not played this season.
+    let me: { rank: number; elo: number; pvpRank: string } | undefined;
+    const accountId = accountIdOf(req);
+    const mine = await cols.saves.findOne(
+      { _id: accountId, 'save.pvp.seasonNo': season.seasonNo },
+      { projection: { 'save.pvp': 1 } },
+    );
+    const myPvp = (mine as unknown as { save?: { pvp?: { elo: number; rank: string } } } | null)?.save?.pvp;
+    if (myPvp) {
+      const higher = await cols.saves.countDocuments({
+        'save.pvp.seasonNo': season.seasonNo,
+        'save.pvp.elo': { $gt: myPvp.elo },
+      });
+      me = { rank: higher + 1, elo: myPvp.elo, pvpRank: myPvp.rank };
+    }
+
+    return ok({ seasonNo: season.seasonNo, entries, ...(me ? { me } : {}) });
   }
 
   /** Purchase the current season's battle pass (600 coins, S11 §9). */

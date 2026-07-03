@@ -1,5 +1,5 @@
 import type * as PIXI from 'pixi.js-legacy';
-import { IPlatform, IStorage, AuthCredential, IGameSocket, SocketHandlers } from '../IPlatform';
+import { IPlatform, IStorage, AuthCredential, IGameSocket, SocketHandlers, ShareResult } from '../IPlatform';
 import { InputManager } from '../../inputSystem/InputManager';
 import { WebAdapter } from '../../inputSystem/WebAdapter';
 import { getOrCreateDeviceId } from '../uuid';
@@ -70,15 +70,25 @@ export class WebPlatform implements IPlatform {
     return new BrowserGameSocket(url, handlers);
   }
 
-  async shareReplay(shareCode: string, title: string): Promise<void> {
+  async shareReplay(shareCode: string, title: string): Promise<ShareResult> {
     const url = `${window.location.origin}${window.location.pathname}?r=${encodeURIComponent(shareCode)}`;
     const nav = navigator as Navigator & { share?: (d: { title?: string; url?: string }) => Promise<void> };
     if (nav.share) {
-      await nav.share({ title, url });
-      return;
+      try {
+        await nav.share({ title, url });
+        return { method: 'native', url };
+      } catch { /* user dismissed the sheet or it failed → fall through to clipboard */ }
     }
-    // No native share API → copy the link to the clipboard (primary path on desktop browsers).
-    await navigator.clipboard.writeText(url);
+    // No native share API (typical on desktop) → copy the link to the clipboard.
+    try {
+      await navigator.clipboard.writeText(url);
+      return { method: 'clipboard', url };
+    } catch {
+      // Clipboard blocked (insecure context / denied permission) → surface the raw link so the
+      // player can copy it by hand. window.prompt pre-selects the value for a quick Ctrl+C.
+      try { window.prompt(title, url); } catch { /* headless / no window.prompt */ }
+      return { method: 'manual', url };
+    }
   }
 
   getLaunchShareCode(): string | null {

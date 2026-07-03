@@ -47,6 +47,18 @@ interface Hit { rect: Rect; fn: () => void; }
 /** Four cell states for a single reward cell */
 type CellState = 'claimable' | 'claimed' | 'locked' | 'pass_required';
 
+/**
+ * Coin reward → escalating pile glyph so larger payouts read visibly richer at a glance
+ * (single coin → cluster → stack → sack → chest). Milestone jackpots become chests.
+ */
+function coinIconTier(count: number): IconKind {
+  if (count >= 300) return 'coinChest';
+  if (count >= 150) return 'coinSack';
+  if (count >= 80) return 'coinStack';
+  if (count >= 40) return 'coins';
+  return 'coin';
+}
+
 export class BattlePassScene implements Scene {
   readonly container: PIXI.Container;
   private readonly w: number;
@@ -296,30 +308,46 @@ export class BattlePassScene implements Scene {
     reward: { kind: string; id?: string; count: number } | null,
     state: CellState,
   ): void {
-    const fillColor = state === 'claimable' ? 0xe8f5e9 : state === 'claimed' ? 0xf0f0f0 : C.paper;
-    const borderColor = state === 'claimable' ? C.green : state === 'claimed' ? C.line : state === 'pass_required' ? C.gold : C.line;
-    const borderW = state === 'claimable' ? 2 : 1.2;
+    // Milestone rows (every 5th level) carry the coin jackpots — tint them gold so they stand out
+    // from the material-filler rows, unless an active state (claimable/claimed) owns the colour.
+    const milestone = level % 5 === 0;
+    const fillColor = state === 'claimable' ? 0xe8f5e9
+      : state === 'claimed' ? 0xf0f0f0
+        : milestone ? 0xfdf3d0
+          : C.paper;
+    const borderColor = state === 'claimable' ? C.green
+      : state === 'claimed' ? C.line
+        : (state === 'pass_required' || milestone) ? C.gold
+          : C.line;
+    const borderW = state === 'claimable' ? 2 : milestone ? 1.8 : 1.2;
 
     const box = sketchPanel(w, h, { fill: fillColor, border: borderColor, width: borderW, seed: seedFor(x, y + level, w) });
     box.x = x; box.y = y;
     parent.addChild(box);
 
-    // Level badge
+    // Level badge (+ a gold star flag on milestone rows).
     const lvlTxt = txt(t('battlepass.level', { n: String(level) }), Math.round(h * 0.32), C.mid);
     lvlTxt.anchor.set(0, 0); lvlTxt.x = x + Math.round(w * 0.05); lvlTxt.y = y + Math.round(h * 0.08);
     parent.addChild(lvlTxt);
+    if (milestone) {
+      const stSz = Math.round(h * 0.26);
+      const star = buildIcon('star', stSz, C.gold);
+      star.x = lvlTxt.x + lvlTxt.width + Math.round(w * 0.03); star.y = y + Math.round(h * 0.06);
+      parent.addChild(star);
+    }
 
-    // Reward: hand-drawn type glyph + amount (coins → coin, material → its craft icon, skin → brush).
+    // Reward: hand-drawn glyph + amount. Coins use an escalating pile icon (coinIconTier) so a
+    // 20-coin drop and a 520-coin jackpot read differently; materials use their craft icon.
     if (reward) {
       const iconKind: IconKind =
-        reward.kind === 'coins' ? 'coin'
+        reward.kind === 'coins' ? coinIconTier(reward.count)
           : reward.kind === 'skin' ? 'brush'
             : reward.id === 'lead' ? 'lead'
               : reward.id === 'binding' ? 'binding'
                 : 'scrap';
       const rewardColor = state === 'claimed' ? C.mid : reward.kind === 'coins' ? C.gold : C.accent;
       const cy = y + h * 0.62;
-      const ic = Math.round(h * 0.42);
+      const ic = Math.round(h * 0.5);
       const glyph = buildIcon(iconKind, ic, rewardColor);
       if (reward.kind === 'skin') {
         // Skins are singletons — glyph alone, centred.
