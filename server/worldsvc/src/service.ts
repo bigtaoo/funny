@@ -16,8 +16,11 @@ import { WorldCore } from './core';
 import { ShopService } from './shop';
 import { TerritoryService } from './territory';
 import { SeasonService } from './season';
-import type { PlayerWorldView, WorldTileView } from './worldTypes';
-import type { SLG_SHOP_ITEMS } from '@nw/shared';
+import { CityService } from './city';
+import { CombatService } from './combat';
+import type { PlayerWorldView, WorldTileView, MarchView } from './worldTypes';
+import type { SLG_SHOP_ITEMS, BuildingKey, MarchKind } from '@nw/shared';
+import type { TeamTemplate } from './db';
 
 // Re-export the response/deps types so existing `import { ... } from './service'` keeps working.
 export * from './worldTypes';
@@ -27,6 +30,70 @@ export class WorldService extends WorldCore {
   private readonly shop = new ShopService(this);
   private readonly territory = new TerritoryService(this);
   private readonly season = new SeasonService(this, this.territory);
+  private readonly city = new CityService(this);
+  private readonly combat = new CombatService(this);
+
+  // ── marches / siege / defense / replay (combat.ts) ───────────
+  startMarch(
+    worldId: string, accountId: string,
+    fromX: number, fromY: number, toX: number, toY: number,
+    kind: MarchKind, troops: number, teamId?: string,
+  ): Promise<MarchView> {
+    return this.combat.startMarch(worldId, accountId, fromX, fromY, toX, toY, kind, troops, teamId);
+  }
+  recallMarch(worldId: string, accountId: string, mid: string): Promise<MarchView> {
+    return this.combat.recallMarch(worldId, accountId, mid);
+  }
+  getMarches(worldId: string, accountId: string): Promise<MarchView[]> {
+    return this.combat.getMarches(worldId, accountId);
+  }
+  processDueArrivals(nowMs?: number): Promise<number> {
+    return this.combat.processDueArrivals(nowMs);
+  }
+  processDueSiegeDamage(nowMs?: number): Promise<number> {
+    return this.combat.processDueSiegeDamage(nowMs);
+  }
+  setDefense(worldId: string, accountId: string, tileKey: string, defenseConfig: Record<string, unknown>): Promise<void> {
+    return this.combat.setDefense(worldId, accountId, tileKey, defenseConfig);
+  }
+  getDefense(worldId: string, accountId: string, tileKey: string): Promise<Record<string, unknown> | null> {
+    return this.combat.getDefense(worldId, accountId, tileKey);
+  }
+  getSiegeReplay(worldId: string, accountId: string, sid: string): ReturnType<CombatService['getSiegeReplay']> {
+    return this.combat.getSiegeReplay(worldId, accountId, sid);
+  }
+
+  // ── home city: training / buildings / teams / cards (city.ts) ─
+  trainTroops(worldId: string, accountId: string, qty: number): Promise<PlayerWorldView> {
+    return this.city.trainTroops(worldId, accountId, qty);
+  }
+  speedupTraining(worldId: string, accountId: string, coins: number): Promise<PlayerWorldView> {
+    return this.city.speedupTraining(worldId, accountId, coins);
+  }
+  processCompletedTraining(nowMs?: number): Promise<number> {
+    return this.city.processCompletedTraining(nowMs);
+  }
+  upgradeBuilding(worldId: string, accountId: string, key: BuildingKey): Promise<PlayerWorldView> {
+    return this.city.upgradeBuilding(worldId, accountId, key);
+  }
+  speedupBuild(worldId: string, accountId: string, coins: number): Promise<PlayerWorldView> {
+    return this.city.speedupBuild(worldId, accountId, coins);
+  }
+  processCompletedBuilds(nowMs?: number): Promise<number> {
+    return this.city.processCompletedBuilds(nowMs);
+  }
+  getTeams(worldId: string, accountId: string): Promise<TeamTemplate[]> {
+    return this.city.getTeams(worldId, accountId);
+  }
+  setTeams(worldId: string, accountId: string, teams: TeamTemplate[]): Promise<void> {
+    return this.city.setTeams(worldId, accountId, teams);
+  }
+  distributeTroops(worldId: string, accountId: string, allocations: Record<string, number>): Promise<void> {
+    return this.city.distributeTroops(worldId, accountId, allocations);
+  }
+  recoverCard(worldId: string, accountId: string, cardInstanceId: string): Promise<void> {
+    return this.city.recoverCard(worldId, accountId, cardInstanceId);
+  }
 
   // ── season / multi-shard (season.ts) ─────────────────────────
   getSeason(worldId: string): ReturnType<SeasonService['getSeason']> {
