@@ -68,9 +68,10 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     expect(defCount(before.data.save, 'lichuang')).toBe(1); // onboarding starter (infantry = lichuang)
     const r = body(await clear('ch1_lv1', 3)); // ch1 → infantry T1 x1
     expect(r.data.grantedCards).toEqual({ 'infantry:1': 1 });
-    // Drop is granted as a level-2 CardInstance (grantClearReward grants at level 2); starter stays level 1.
+    // Drop is granted as a fresh level-1 CardInstance (same as every other card source); starter is also level 1.
     expect(defCount(r.data.save, 'lichuang')).toBe(2);
-    expect(Object.values(r.data.save.cardInv).filter((c: any) => c.defId === 'lichuang' && c.level === 2)).toHaveLength(1);
+    expect(Object.values(r.data.save.cardInv).filter((c: any) => c.defId === 'lichuang')).toHaveLength(2);
+    expect(Object.values(r.data.save.cardInv).every((c: any) => c.defId !== 'lichuang' || c.level === 1)).toBe(true);
     // Final level (lv10) grants double cards.
     await seedCleared([
       'ch1_lv1', 'ch1_lv2', 'ch1_lv3', 'ch1_lv4', 'ch1_lv5',
@@ -88,7 +89,7 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     await seedCleared(upto);
     const r = body(await clear('ch3_lv1', 3)); // ch3 → shieldbearer T2 x1
     expect(r.data.grantedCards).toEqual({ 'shieldbearer:2': 1 });
-    // Drop tier (T2 in the cardKey) is informational; the Hero Roster grants a level-2 shieldbearer (= chenshou) instance.
+    // Drop tier (T2 in the cardKey) is informational; the Hero Roster grants a fresh level-1 shieldbearer (= chenshou) instance.
     expect(defCount(r.data.save, 'chenshou')).toBe(2); // starter + drop
   });
 
