@@ -90,3 +90,50 @@ export function visibleTileBounds(
   }
   return { minTx: Math.floor(minTx), maxTx: Math.ceil(maxTx), minTy: Math.floor(minTy), maxTy: Math.ceil(maxTy) };
 }
+
+/**
+ * Clip a convex polygon to the axis-aligned rect [0,0]–[w,h] (Sutherland–Hodgman).
+ * Returns the clipped vertex list (possibly empty if the polygon is fully outside).
+ *
+ * WorldMapScene.renderFog() uses this to bound its cloud-veil hole polygon before it
+ * reaches PIXI's `beginHole()`. The world map is up to 1500×1500 tiles, so the map's
+ * projected parallelogram has outer vertices hundreds of thousands of px past the
+ * viewport; feeding that raw polygon to earcut hole-triangulation FAILS, leaving the
+ * cloud rect a solid fill that blanks the entire map (the 2026-07-03 "SLG map went
+ * blank" regression). Clipping to the viewport first keeps the hole's coordinates
+ * bounded, and when the map fully covers the viewport the clip collapses to the rect
+ * itself → hole == fill → the veil correctly shows nothing.
+ */
+export function clipConvexToRect(
+  pts: { x: number; y: number }[], w: number, h: number,
+): { x: number; y: number }[] {
+  // Each rect edge: an inside test + the segment-crossing intersection with that edge's line.
+  const edges: [
+    (p: { x: number; y: number }) => boolean,
+    (a: { x: number; y: number }, b: { x: number; y: number }) => { x: number; y: number },
+  ][] = [
+    [(p) => p.x >= 0, (a, b) => { const t = (0 - a.x) / (b.x - a.x); return { x: 0, y: a.y + t * (b.y - a.y) }; }],
+    [(p) => p.x <= w, (a, b) => { const t = (w - a.x) / (b.x - a.x); return { x: w, y: a.y + t * (b.y - a.y) }; }],
+    [(p) => p.y >= 0, (a, b) => { const t = (0 - a.y) / (b.y - a.y); return { x: a.x + t * (b.x - a.x), y: 0 }; }],
+    [(p) => p.y <= h, (a, b) => { const t = (h - a.y) / (b.y - a.y); return { x: a.x + t * (b.x - a.x), y: h }; }],
+  ];
+  let poly = pts;
+  for (const [inside, isect] of edges) {
+    if (poly.length === 0) break;
+    const next: { x: number; y: number }[] = [];
+    for (let i = 0; i < poly.length; i++) {
+      const cur = poly[i]!;
+      const prev = poly[(i + poly.length - 1) % poly.length]!;
+      const curIn = inside(cur);
+      const prevIn = inside(prev);
+      if (curIn) {
+        if (!prevIn) next.push(isect(prev, cur));
+        next.push(cur);
+      } else if (prevIn) {
+        next.push(isect(prev, cur));
+      }
+    }
+    poly = next;
+  }
+  return poly;
+}

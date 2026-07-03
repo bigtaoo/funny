@@ -23,7 +23,7 @@ import { buildIcon, type IconKind } from '../render/icons';
 import { loadCityAtlas, getCityTexture, isCityAtlasReady } from '../render/cityAtlasLoader';
 import { loadTerrainAtlas, getTerrainTexture, isTerrainAtlasReady, type TerrainTextureName } from '../render/terrainAtlasLoader';
 import { loadBuildingAtlas, getBuildingTexture, isBuildingAtlasReady } from '../render/buildingAtlasLoader';
-import { ISO_RATIO, tileToScreen, screenToTile, screenToTileF, diamondPath, diamondVertices, visibleTileBounds } from '../render/isoGrid';
+import { ISO_RATIO, tileToScreen, screenToTile, screenToTileF, diamondPath, diamondVertices, visibleTileBounds, clipConvexToRect } from '../render/isoGrid';
 
 // ── Public callbacks ────────────────────────────────────────────────────────
 
@@ -1403,40 +1403,6 @@ export class WorldMapScene implements Scene {
   // Drawn into a separate Graphics above the tile pool. Fast to redraw (~few dozen objects).
 
   /**
-   * Clip a convex polygon to the axis-aligned rect [0,0]–[w,h] (Sutherland–Hodgman).
-   * Returns the clipped vertex list (possibly empty). Used so renderFog's hole polygon
-   * always has viewport-bounded coordinates before it reaches earcut — see renderFog.
-   */
-  private static clipConvexToRect(pts: { x: number; y: number }[], w: number, h: number): { x: number; y: number }[] {
-    // Each edge: inside test + segment-crossing intersection with that edge's line.
-    const edges: [(p: { x: number; y: number }) => boolean, (a: { x: number; y: number }, b: { x: number; y: number }) => { x: number; y: number }][] = [
-      [(p) => p.x >= 0, (a, b) => { const t = (0 - a.x) / (b.x - a.x); return { x: 0, y: a.y + t * (b.y - a.y) }; }],
-      [(p) => p.x <= w, (a, b) => { const t = (w - a.x) / (b.x - a.x); return { x: w, y: a.y + t * (b.y - a.y) }; }],
-      [(p) => p.y >= 0, (a, b) => { const t = (0 - a.y) / (b.y - a.y); return { x: a.x + t * (b.x - a.x), y: 0 }; }],
-      [(p) => p.y <= h, (a, b) => { const t = (h - a.y) / (b.y - a.y); return { x: a.x + t * (b.x - a.x), y: h }; }],
-    ];
-    let poly = pts;
-    for (const [inside, isect] of edges) {
-      if (poly.length === 0) break;
-      const next: { x: number; y: number }[] = [];
-      for (let i = 0; i < poly.length; i++) {
-        const cur = poly[i]!;
-        const prev = poly[(i + poly.length - 1) % poly.length]!;
-        const curIn = inside(cur);
-        const prevIn = inside(prev);
-        if (curIn) {
-          if (!prevIn) next.push(isect(prev, cur));
-          next.push(cur);
-        } else if (prevIn) {
-          next.push(isect(prev, cur));
-        }
-      }
-      poly = next;
-    }
-    return poly;
-  }
-
-  /**
    * Cloud/mist veil over everything outside the map's tile area. The map's tile rectangle
    * (0..mapW-1 × 0..mapH-1) projects to a screen-space parallelogram; we fill the whole
    * viewport with cloud and punch that parallelogram out as a hole, then lay a soft thick
@@ -1471,7 +1437,7 @@ export class WorldMapScene implements Scene {
       { x: px + bottom.x,     y: py + bottom.y + hh },
       { x: px + left.x - hw,  y: py + left.y },
     ];
-    const clipped = WorldMapScene.clipConvexToRect(holePts, this.w, mapViewH);
+    const clipped = clipConvexToRect(holePts, this.w, mapViewH);
     g.beginFill(CLOUD_COLOR, 0.97);
     g.drawRect(0, 0, this.w, mapViewH);
     // Only punch a hole when the map actually intersects the viewport; a degenerate clip
