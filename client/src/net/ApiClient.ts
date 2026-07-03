@@ -640,10 +640,12 @@ export class ApiClient {
   async getLeaderboard(): Promise<{
     seasonNo: number;
     entries: { rank: number; displayName: string; publicId: string; elo: number; pvpRank: string }[];
+    me?: { rank: number; elo: number; pvpRank: string };
   }> {
     return this.request<{
       seasonNo: number;
       entries: { rank: number; displayName: string; publicId: string; elo: number; pvpRank: string }[];
+      me?: { rank: number; elo: number; pvpRank: string };
     }>('GET', '/leaderboard');
   }
 

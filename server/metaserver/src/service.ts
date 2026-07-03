@@ -2222,7 +2222,25 @@ export class MetaService {
         ...(equippedTitle ? { equippedTitle } : {}),
       };
     });
-    return ok({ seasonNo: season.seasonNo, entries });
+
+    // Caller's own standing (may be outside the Top-100). Rank = # of players with strictly
+    // higher ELO this season + 1. Absent when the caller has not played this season.
+    let me: { rank: number; elo: number; pvpRank: string } | undefined;
+    const accountId = accountIdOf(req);
+    const mine = await cols.saves.findOne(
+      { _id: accountId, 'save.pvp.seasonNo': season.seasonNo },
+      { projection: { 'save.pvp': 1 } },
+    );
+    const myPvp = (mine as unknown as { save?: { pvp?: { elo: number; rank: string } } } | null)?.save?.pvp;
+    if (myPvp) {
+      const higher = await cols.saves.countDocuments({
+        'save.pvp.seasonNo': season.seasonNo,
+        'save.pvp.elo': { $gt: myPvp.elo },
+      });
+      me = { rank: higher + 1, elo: myPvp.elo, pvpRank: myPvp.rank };
+    }
+
+    return ok({ seasonNo: season.seasonNo, entries, ...(me ? { me } : {}) });
   }
 
   /** Purchase the current season's battle pass (600 coins, S11 §9). */
