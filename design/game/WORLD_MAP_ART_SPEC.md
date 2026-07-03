@@ -12,7 +12,7 @@
 
 | 资产名 | 描述 | 临时程序色 |
 |---|---|---|
-| `tile_neutral.png` | 空地（未占领） | `#f5f0e8` 纸底米白 |
+| ~~`tile_neutral.png`~~ | 空地（未占领）→ **走 `terrain_grass` 贴图**，非纯纸白（拍板 2026-07-03，见 §一脚注） | `#f5f0e8` 仅作贴图未加载时的兜底色块 |
 | `tile_food.png` | 食物资源格（麦穗/农田） | `#a8d870` 嫩草绿 |
 | `tile_wood.png` | 木材资源格（树林） | `#90b860` 深草绿 |
 | `tile_iron.png` | 铁矿资源格（矿石） | `#a0b8c8` 灰蓝 |
@@ -26,6 +26,10 @@
 - 手绘笔记本风，铅笔/钢笔线条感，轻微纹理，无卡通描边
 - 格子边缘留 1px 透明，由程序控制间距
 - 提供 @1x（96px）即可；若需要 @2x 高清请另行通知
+
+> **§一 脚注（neutral 底图口径，2026-07-03 拍板）**：`neutral`（空地/未占领）**走 `terrain_grass` 满铺草地贴图，不留纯纸白**。
+> 权威见 [`slg-terrain-art.md §2`](../product/slg-terrain-art.md)（`terrain_grass` → `neutral`/`territory`/`base`），7 张地形贴图已按「满铺纹理、无留白」基调定稿验收。
+> 本表 `#f5f0e8` 等临时程序色仅作贴图未加载时的兜底色块，不再是空地的目标外观。上表其余行同为旧命名，权威地块类型见 `slg.ts` `TileType`。
 
 ---
 
@@ -176,8 +180,8 @@ art/world/
 
 > 历史 bug：此前 L1 贴图对未缓存格恒取 `'neutral'→terrain_grass`，把整张图的地形多样性糊成同一张
 > grass 涂鸦（颜色层算对了却被 alpha 0.9 的贴图盖住）。已修（2026-07-03）。
-> 注：`neutral` 底图走 `terrain_grass` 还是纯纸白，`WORLD_MAP_ART_SPEC §一` 与 `slg-terrain-art.md`
-> 口径不一，属独立待决项；本次修复只保证「按真实 type 渲染」，不改 neutral 的贴图选择。
+> 注：`neutral` 底图走 `terrain_grass`（非纯纸白）已于 2026-07-03 拍板收敛，§一 与 `slg-terrain-art.md`
+> 口径已统一（见 §一脚注）；本次 bug 修复只保证「按真实 type 渲染」，neutral 的贴图选择由该拍板确定。
 
 ### 行军连线端点校验
 
