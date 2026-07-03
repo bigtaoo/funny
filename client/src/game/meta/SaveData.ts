@@ -70,6 +70,7 @@ export interface SaveData {
   monetization?: {
     fatePoints: number; // Fate Points balance (§7)
     subscriptionExpiry: number; // monthly card end timestamp (ms); 0 = none (§5)
+    subscriptionLastClaimDay?: string; // UTC day (YYYY-MM-DD) of last daily-coin claim; absent = never claimed (§5)
     starterUsed: string[]; // one-off product ids already purchased (§6)
   };
   // Delivered purchase orders (commercial orderId); server-authoritative, client read-only (S5-5).

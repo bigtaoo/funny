@@ -1109,7 +1109,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       ...(shopLoggedIn ? {
         getMonetization: () => {
           const m = saveManager.get().monetization;
-          return { subscriptionExpiry: m?.subscriptionExpiry ?? 0, starterUsed: m?.starterUsed ?? [] };
+          return { subscriptionExpiry: m?.subscriptionExpiry ?? 0, subscriptionLastClaimDay: m?.subscriptionLastClaimDay, starterUsed: m?.starterUsed ?? [] };
         },
         async buyMonthlyCard() {
           try {

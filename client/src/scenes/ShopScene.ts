@@ -81,7 +81,7 @@ export interface ShopSceneCallbacks {
   rechargeCoins?(tierId: string): Promise<ShopActionResult>;
   // ── Monetization deals (GACHA_DESIGN §5–§6). All optional; absent = section not shown (offline / not logged in). ──
   /** Monthly/year card + starter state (subscription end ms, purchased one-off product ids). */
-  getMonetization?(): { subscriptionExpiry: number; starterUsed: string[] };
+  getMonetization?(): { subscriptionExpiry: number; subscriptionLastClaimDay?: string; starterUsed: string[] };
   buyMonthlyCard?(): Promise<ShopActionResult>;
   /** Buy the year card (365-day subscription). Absent = year card not shown. */
   buyYearCard?(): Promise<ShopActionResult>;
@@ -501,6 +501,9 @@ export class ShopScene implements Scene {
     const busy = this.bt.busy;
     const mon = this.cb.getMonetization?.() ?? { subscriptionExpiry: 0, starterUsed: [] };
     const active = mon.subscriptionExpiry > Date.now();
+    // Whether today's daily coins were already claimed. UTC day compared to the mirrored last-claim day (server authority).
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const claimedToday = active && mon.subscriptionLastClaimDay === todayKey;
 
     // Monthly card: Buy (locked while a card is active) + daily Claim.
     if (this.cb.buyMonthlyCard) {
@@ -510,7 +513,14 @@ export class ShopScene implements Scene {
           : { label: t('shop.buy'), enabled: !busy, primary: true, fn: () => void this.runDeal(() => this.cb.buyMonthlyCard!(), 'shop.bought') },
       ];
       if (this.cb.claimMonthlyCard) {
-        buttons.push({ label: t('shop.monthlyClaim'), enabled: !busy && active, primary: false, fn: () => void this.runDeal(() => this.cb.claimMonthlyCard!(), 'shop.monthlyClaimed') });
+        // Claim greys out both when the card is inactive (not purchased) and once today's reward is taken.
+        // The label itself is the clear status — no ambiguous "claimed-or-inactive" toast on tap.
+        buttons.push({
+          label: claimedToday ? t('shop.monthlyClaimedToday') : t('shop.monthlyClaim'),
+          enabled: !busy && active && !claimedToday,
+          primary: false,
+          fn: () => void this.runDeal(() => this.cb.claimMonthlyCard!(), 'shop.monthlyClaimed'),
+        });
       }
       specs.push({
         icon: 'coinChest', iconColor: C.gold, title: t('shop.monthlyCard'), highlight: true,

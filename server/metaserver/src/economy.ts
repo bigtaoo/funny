@@ -155,6 +155,7 @@ export async function mirrorWalletFrom(
         'save.monetization': {
           fatePoints: wallet.fatePoints,
           subscriptionExpiry: wallet.subscriptionExpiry,
+          subscriptionLastClaimDay: wallet.subscriptionLastClaimDay,
           starterUsed: wallet.starterUsed,
         },
         'save.updatedAt': now,

@@ -145,7 +145,7 @@
 |---|---|
 | 价格 | ¥30（对标中档 IAP 档，见 `ECONOMY_BALANCE §2.2`） |
 | 有效期 | 购买后 **30 天**（精确到秒，服务端 `subscriptionExpiry` 字段） |
-| 每日奖励 | 登录后发 **120 coins / 天**（需当日首次登录触发，服务端按 dayKey） |
+| 每日奖励 | 登录后发 **120 coins / 天**（需当日首次登录触发，服务端按 dayKey）；最近一次领取的 UTC 日 `subscription.lastClaimDayKey` 经 `WalletView.subscriptionLastClaimDay` 镜像进 `SaveData.monetization`，客户端据此判断「今日已领取」并置灰「领取」按钮（按钮标签即状态：可领 / 今日已领取 / 未开通置灰），不再依赖点击后的模糊提示 |
 | 总价值 | 30 × 120 = **3,600 coins**（折算 120 coins/¥，等同于大档 IAP 率）|
 | 免费天花板对比 | 无氪日上限 ~215 coins（`ECONOMY_BALANCE §6`），月卡使其 +120 → ~335/天 |
 | 立即赠送 | 购买即刻额外发 **600 coins**（= 4 抽，即时满足感） |

@@ -68,6 +68,7 @@ export interface WalletView {
   pity: Record<string, number>;
   fatePoints: number;
   subscriptionExpiry: number; // 0 = no active subscription
+  subscriptionLastClaimDay?: string; // UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed
   starterUsed: string[];
 }
 
@@ -101,6 +102,7 @@ function walletView(w: WalletDoc | null): WalletView {
     pity: w?.gacha.pity ?? {},
     fatePoints: w?.fatePoints ?? 0,
     subscriptionExpiry: w?.subscription?.expiry ?? 0,
+    subscriptionLastClaimDay: w?.subscription?.lastClaimDayKey,
     starterUsed: w?.starterUsed ?? [],
   };
 }
