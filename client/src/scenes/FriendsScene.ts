@@ -418,6 +418,11 @@ export class FriendsScene implements Scene {
 
   private render(): void {
     if (this.dead) return;
+    // popup.container is a persistent singleton (built once in ctor, reused across
+    // renders) — detach it first so tearDownChildren doesn't destroy it. Otherwise
+    // the next render re-adds a destroyed container (transform === null) and Pixi
+    // throws "can't access property _parentID, e.transform is null".
+    this.container.removeChild(this.popup.container);
     tearDownChildren(this.container);
     this.hits = [];
 
