@@ -130,6 +130,16 @@ export interface ServiceDeps {
   socialsvc: import('./socialsvcClient.js').MetaSocialsvcClient | null;
 }
 
+/** One row of the season Top-100 leaderboard (SE-5). */
+interface LeaderboardEntry {
+  rank: number;
+  displayName: string;
+  publicId: string;
+  elo: number;
+  pvpRank: string;
+  equippedTitle?: string;
+}
+
 /** Retrieve the accountId written by the security handler (the handler guarantees the request is authenticated). */
 function accountIdOf(req: FastifyRequest): string {
   const id = req.accountId;
@@ -197,6 +207,13 @@ export class MetaService {
   private readonly authRate: { allow(key: string, now: number): boolean };
   /** Rate limit for "full coverage" anomaly event uploads, keyed by IP: at most 30 POST /client/anomaly requests per IP per 60s (guards against Loki flooding). In-process approximation. */
   private readonly anomalyRate = new SlidingRateLimiter(30, 60 * 1000);
+  /**
+   * SE-5: 60s in-process cache of the season Top-100 (the `entries` array only — the per-caller `me`
+   * standing is always recomputed live). Keyed by seasonNo so a season roll implicitly invalidates it.
+   * When meta scales out this becomes a per-instance approximation; readers tolerate a leaderboard up to
+   * 60s stale, so cache incoherence across instances is acceptable. SEASON_DESIGN §5. */
+  private leaderboardCache: { seasonNo: number; expiresAt: number; entries: LeaderboardEntry[] } | null = null;
+  private static readonly LEADERBOARD_CACHE_MS = 60 * 1000;
 
   constructor(private readonly deps: ServiceDeps) {
     this.authRate = deps.authRateLimit > 0
@@ -2165,12 +2182,14 @@ export class MetaService {
 
   // ── S11 Leaderboard / Battle Pass ──────────────────────────────────────────────────────
 
-  /** Top-100 ladder leaderboard (current season ELO descending, S11 §5). */
-  async getLeaderboard(req: FastifyRequest) {
-    const { cols, now } = this.deps;
-    const season = await getCurrentSeason(cols, now());
+  /**
+   * Build the season Top-100 (ELO descending) with display name + equipped title joined.
+   * Pure read — no per-caller state — so the result is safely shared across callers via the 60s cache.
+   */
+  private async buildLeaderboardTop100(seasonNo: number): Promise<LeaderboardEntry[]> {
+    const { cols } = this.deps;
     const top = await cols.saves
-      .find({ 'save.pvp.seasonNo': season.seasonNo })
+      .find({ 'save.pvp.seasonNo': seasonNo })
       .sort({ 'save.pvp.elo': -1 })
       .limit(100)
       .project({ _id: 1, 'save.pvp': 1, 'save.equipped': 1 })
@@ -2180,7 +2199,7 @@ export class MetaService {
       .find({ _id: { $in: accountIds } }, { projection: { _id: 1, displayName: 1, publicId: 1 } })
       .toArray();
     const byId = new Map(accounts.map((a) => [a._id, a]));
-    const entries = top.map((d, i) => {
+    return top.map((d, i) => {
       const a = byId.get(d._id);
       const pvp = (d as unknown as { save: { pvp: { elo: number; rank: string }; equipped?: Record<string, string> } }).save.pvp;
       const equipped = (d as unknown as { save: { equipped?: Record<string, string> } }).save.equipped;
@@ -2194,6 +2213,23 @@ export class MetaService {
         ...(equippedTitle ? { equippedTitle } : {}),
       };
     });
+  }
+
+  /** Top-100 ladder leaderboard (current season ELO descending, S11 §5). Top-100 is served from a 60s process cache; the caller's own `me` standing is always recomputed live. */
+  async getLeaderboard(req: FastifyRequest) {
+    const { cols, now } = this.deps;
+    const season = await getCurrentSeason(cols, now());
+
+    // SE-5: reuse the cached Top-100 when it is for this season and still fresh; otherwise rebuild + cache.
+    const t = now();
+    const cached = this.leaderboardCache;
+    let entries: LeaderboardEntry[];
+    if (cached && cached.seasonNo === season.seasonNo && cached.expiresAt > t) {
+      entries = cached.entries;
+    } else {
+      entries = await this.buildLeaderboardTop100(season.seasonNo);
+      this.leaderboardCache = { seasonNo: season.seasonNo, expiresAt: t + MetaService.LEADERBOARD_CACHE_MS, entries };
+    }
 
     // Caller's own standing (may be outside the Top-100). Rank = # of players with strictly
     // higher ELO this season + 1. Absent when the caller has not played this season.
