@@ -383,6 +383,19 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 视觉：装备绘制走 bone slot 程序叠加（§2），换装即时反映在角色立绘。
 
+### 11.1 入口（两条）——按卡编辑 vs 独立背包
+
+`EquipmentScene` 有两种进入上下文，由 `activeCardInstanceId` 是否为空区分：
+
+| 入口 | `activeCardInstanceId` | 组标签 | 顶部 loadout | 「穿戴」行为 |
+|---|---|---|---|---|
+| **按卡编辑**（CC-1）：养成→点卡→详情三槽 | = 该卡 id | 无（plain back） | 显示该卡三槽 | 直接装到该卡 |
+| **独立背包**（LOBBY_IA）：养成 `[卡牌\|装备]` 组标签 → 装备 | `''` | `[卡牌\|装备]`（`peerTab`） | 隐藏（无单卡上下文） | 弹「选卡」子视图，选卡后装上 |
+
+- **组标签泛化**：`EquipmentScene` 原 `openCollection`（图鉴组 `[图鉴|装备]`）泛化为 `peerTab: { labelKey, onSelect }`，图鉴组与养成组共用一套 `HubTabs`；`CardScene` 同样注入 `[卡牌|装备]` 组标签（`openEquipmentBag`）。
+- **背包「选卡」子模式**（`assign`）：背包里点某件装备的「穿戴」→ 整屏卡片选择列表（按战力降序，复用主 scrollY 拖动），列出每张卡该槽当前占用件，点卡即装（占用则替换，旧件回库）；卸下则回扫佩戴该件的卡。`合成 / 洗练 / 强化 / 分解` 都无需选卡，照常在背包/详情里用。
+- **术语**：现有 zh 标签把 craft 叫「锻造」、enhance 叫「强化」；产品口径的「合成 / 洗练 / 锻造(=强化+级)」与之有出入，标签对齐待定（本次未改）。
+
 > **i18n**：装备名 / 词条 / 特技 / 稀有度 一律走 i18n key（`equip.<defId>.name`、`affix.<id>.desc`、`skill.<id>.*`），不硬编码中文（项目 i18n 纪律，见 UI_DESIGN）。
 
 ---
