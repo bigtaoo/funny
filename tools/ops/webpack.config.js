@@ -9,7 +9,7 @@ function gitCommit() {
     // Check only ops-related files for uncommitted changes → mark -dirty (avoids false-dirty from parallel changes elsewhere in the repo).
     const root = execSync('git rev-parse --show-toplevel', { cwd: __dirname }).toString().trim();
     const dirty = execSync(
-      'git status --porcelain -- tools/ops wrangler.ops.jsonc worker.ops.js',
+      'git status --porcelain -- tools/ops wrangler/ops.jsonc wrangler/worker.ops.js',
       { cwd: root },
     ).toString().trim().length > 0;
     return dirty ? `${hash}-dirty` : hash;

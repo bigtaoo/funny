@@ -7,15 +7,16 @@
   //
   // 构建 + 部署：
   //   cd tools/ops && npm run build          ← 产出 tools/ops/dist
-  //   cd ../.. && npx wrangler deploy -c wrangler.ops.jsonc
-  //   npx wrangler secret put ADMIN_PROXY_SECRET -c wrangler.ops.jsonc   ← 与 VPS NW_OPS_PROXY_SECRET 同值
+  //   cd ../.. && npx wrangler deploy -c wrangler/ops.jsonc
+  //   npx wrangler secret put ADMIN_PROXY_SECRET -c wrangler/ops.jsonc   ← 与 VPS NW_OPS_PROXY_SECRET 同值
   //
   // CF Access 控制台操作 + 共享密钥生成：见 design/product/deploy-cloudflare.md §6。
   "name": "nivara-ops",
   "compatibility_date": "2025-06-01",
+  // main/assets 路径相对本文件所在目录（wrangler/）解析：worker.ops.js 同目录，dist 需 ../ 回到仓库根。
   "main": "worker.ops.js",
   "assets": {
-    "directory": "./tools/ops/dist",
+    "directory": "../tools/ops/dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
     // /admin/* 先进 Worker（反代），不被 SPA 回退当成未知路由吃成 index.html。

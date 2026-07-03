@@ -92,10 +92,10 @@ docker compose -f docker-compose.cloud.yml --env-file .env up -d --build
 
 与 animator 同模式，但**各一份 wrangler 配置、各一个 Worker**，互不影响：
 
-- animator → 仓库根 `wrangler.jsonc`（Worker `animator`）
-- client → 仓库根 `wrangler.client.jsonc`（Worker `nivara-client`，`routes.custom_domain=true` 自动建 DNS+边缘证书，橙云）
+- animator → 仓库根 `wrangler/animator.jsonc`（Worker `animator`）
+- client → 仓库根 `wrangler/client.jsonc`（Worker `nivara-client`，`routes.custom_domain=true` 自动建 DNS+边缘证书，橙云）
 
-**首次上线记录（2026-06-24，✅ 已验证）**：CF 账号 `tao.wang.go@gmail.com`（Account ID `e64b61f1...`）；`wrangler login`（OAuth，凭证存本机）→ `wrangler deploy -c wrangler.client.jsonc` 一次成功，上传 14 个静态资源，`custom_domain` 自动建好 `a.gamestao.com`；外网 `https://a.gamestao.com` HTTP 200、证书有效、可登录开局并连到 `api.gamestao.com`。以后更新只需「重构建 → deploy」两条命令，无需再登录。
+**首次上线记录（2026-06-24，✅ 已验证）**：CF 账号 `tao.wang.go@gmail.com`（Account ID `e64b61f1...`）；`wrangler login`（OAuth，凭证存本机）→ `wrangler deploy -c wrangler/client.jsonc` 一次成功，上传 14 个静态资源，`custom_domain` 自动建好 `a.gamestao.com`；外网 `https://a.gamestao.com` HTTP 200、证书有效、可登录开局并连到 `api.gamestao.com`。以后更新只需「重构建 → deploy」两条命令，无需再登录。
 
 ```bash
 # 1. 构建（地址烘焙到 api.gamestao.com）
@@ -103,7 +103,7 @@ cd client && NW_API_BASE=https://api.gamestao.com/api \
   NW_GATEWAY_WS=wss://api.gamestao.com/gw \
   NW_WORLD_BASE=https://api.gamestao.com npm run build:web
 # 2. 部署（从仓库根，-c 指定 client 的配置）
-cd .. && npx wrangler deploy -c wrangler.client.jsonc
+cd .. && npx wrangler deploy -c wrangler/client.jsonc
 ```
 
 > **首次需登录 CF**：`npx wrangler login`（浏览器 OAuth，写本机凭证）后再 deploy；或设 `CLOUDFLARE_API_TOKEN` 环境变量走非交互。
@@ -138,7 +138,7 @@ cd .. && npx wrangler deploy -c wrangler.client.jsonc
 
 #### 自动发布（GitHub Action，免手敲命令）
 
-`.github/workflows/client-deploy.yml`：push 到 `main` 且改动落在 `client/**` / `wrangler.client.jsonc` / 该 workflow 时自动 `npm ci → build:web（地址烘焙到 api.gamestao.com）→ wrangler deploy`；也可在 Actions 页手动 Run（`workflow_dispatch`）。与 ops-deploy 同套路：
+`.github/workflows/client-deploy.yml`：push 到 `main` 且改动落在 `client/**` / `wrangler/client.jsonc` / 该 workflow 时自动 `npm ci → build:web（地址烘焙到 api.gamestao.com）→ wrangler deploy`；也可在 Actions 页手动 Run（`workflow_dispatch`）。与 ops-deploy 同套路：
 
 1. **复用 ops 那套 secrets**：`CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` 已配（同一 CF 账号 `e64b61f1...`，"Edit Cloudflare Workers" token 是账号级 Workers 写权限，覆盖 `nivara-client`，**无需新建 token**）。
 2. **开关**：设 repo variable `CLIENT_DEPLOY_ENABLED = true`（未设则 job 跳过）。
@@ -162,7 +162,7 @@ cd .. && npx wrangler deploy -c wrangler.client.jsonc
 三道闸：① CF Access 身份门（边缘）→ ② Worker↔Caddy 共享密钥头（玩家直连 `/ops/*` 无密钥 → 403）→ ③ admin 自身账号密码。**要害是 admin 后端被保护，而非静态页**（页面只是公开 JS，无秘密）。
 
 - 前端 API 基址：`tools/ops/src/api.ts` 默认 = 本地 `localhost:18083` / 线上**同源空串**（→ 相对 `/admin/*`，由 Worker 反代）。运行时仍可在登录页输入框覆盖（localStorage `nw_admin_api`）。
-- 配置实体：`wrangler.ops.jsonc`（Worker `nivara-ops` + `run_worker_first:["/admin/*"]` + var `ADMIN_ORIGIN`）、`worker.ops.js`（反代逻辑）、`server/Caddyfile` 的 `/ops/*` 路由、`docker-compose.cloud.yml` caddy 的 `NW_OPS_PROXY_SECRET`。
+- 配置实体：`wrangler/ops.jsonc`（Worker `nivara-ops` + `run_worker_first:["/admin/*"]` + var `ADMIN_ORIGIN`）、`wrangler/worker.ops.js`（反代逻辑）、`server/Caddyfile` 的 `/ops/*` 路由、`docker-compose.cloud.yml` caddy 的 `NW_OPS_PROXY_SECRET`。
 
 **完整闭环已上线（2026-06-24 ✅ 已验证）**：Worker `nivara-ops` + `custom_domain` 建好 `ops.gamestao.com`（HTTP 200、证书有效）；CF Access 应用 `ops`（team `gamestao.cloudflareaccess.com`，policy Allow + Emails 白名单，登录方式 One-time PIN 默认即用）罩整站；`/admin/*` 经 Worker 注入密钥头反代到 `api.gamestao.com/ops/*`（Caddy 校验：无密钥→403），strip `/ops` 转 `admin:8083`。VPS 端验证：无密钥直连 `/ops/admin/me`→403、带密钥 `admin` 登录→200+完整超管权限；admin 容器日志确认已种子超管 `username=admin`。共享密钥两端：VPS `server/.env` 的 `NW_OPS_PROXY_SECRET` ＝ ops Worker 的 `ADMIN_PROXY_SECRET`（wrangler secret）。
 
@@ -173,18 +173,18 @@ cd .. && npx wrangler deploy -c wrangler.client.jsonc
 ```bash
 git rev-parse --short HEAD                          # 记下目标提交号，发布后比对
 cd tools/ops && npm run build                      # 产物 tools/ops/dist（构建期烘入 git hash）
-cd ../.. && npx wrangler deploy -c wrangler.ops.jsonc
+cd ../.. && npx wrangler deploy -c wrangler/ops.jsonc
 # 共享密钥（与 VPS 端 NW_OPS_PROXY_SECRET 同值；首次 + 轮换时执行；交互粘贴，不进 git）：
-npx wrangler secret put ADMIN_PROXY_SECRET -c wrangler.ops.jsonc
+npx wrangler secret put ADMIN_PROXY_SECRET -c wrangler/ops.jsonc
 ```
 
 > **构建版本号（确认线上是否旧 bundle）**：ops header 右侧显示 `v <git short hash>`（hover 出构建时间 UTC），由 webpack `DefinePlugin` 构建期注入 `git rev-parse --short HEAD`。发布后**硬刷新**（Ctrl+Shift+R，避开缓存的 `index.html`）并比对该号与上面记下的目标提交：一致＝发对了，仍是旧号＝旧 bundle 没覆盖需重发。号带 `-dirty` 后缀＝构建时工作区有未提交改动（非干净提交，不建议作为正式发布）。
 
-> admin 后端入口若不在 `api.gamestao.com/ops`（如改用 cloudflared tunnel 或独立子域），改 `wrangler.ops.jsonc` 的 `ADMIN_ORIGIN` 后重 deploy。
+> admin 后端入口若不在 `api.gamestao.com/ops`（如改用 cloudflared tunnel 或独立子域），改 `wrangler/ops.jsonc` 的 `ADMIN_ORIGIN` 后重 deploy。
 
 #### 自动发布（GitHub Action，免手敲命令）
 
-`.github/workflows/ops-deploy.yml`：push 到 `main` 且改动落在 `tools/ops/**` / `wrangler.ops.jsonc` / `worker.ops.js` 时自动 `npm ci → build → wrangler deploy`；也可在 GitHub **Actions 页手动 Run**（`workflow_dispatch`）。一次性配置：
+`.github/workflows/ops-deploy.yml`：push 到 `main` 且改动落在 `tools/ops/**` / `wrangler/ops.jsonc` / `wrangler/worker.ops.js` 时自动 `npm ci → build → wrangler deploy`；也可在 GitHub **Actions 页手动 Run**（`workflow_dispatch`）。一次性配置：
 
 1. **CF API Token**：Cloudflare「My Profile → API Tokens」用 *Edit Cloudflare Workers* 模板建一个 → 存为 repo secret `CLOUDFLARE_API_TOKEN`；账号 ID 存 `CLOUDFLARE_ACCOUNT_ID`（CF 控制台右栏，即 `e64b61f1...`）。
 2. **开关**：设 repo variable `OPS_DEPLOY_ENABLED = true`（未设则 job 跳过，避免配好前每次 push 报红，与 `anim-sync` 同套路）。
@@ -215,7 +215,7 @@ openssl rand -hex 32        # 记下输出，下面 A/B 用同一个值
 
 **Step B — ops Worker 填同一密钥**（本机）：
 ```bash
-npx wrangler secret put ADMIN_PROXY_SECRET -c wrangler.ops.jsonc   # 粘贴 Step0 的值
+npx wrangler secret put ADMIN_PROXY_SECRET -c wrangler/ops.jsonc   # 粘贴 Step0 的值
 ```
 
 **Step C — Cloudflare Zero Trust 配 CF Access**（控制台，约 5 分钟，Free 含 50 用户）：

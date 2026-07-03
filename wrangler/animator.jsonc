@@ -1,12 +1,13 @@
 {
   // animator 在线编辑器的静态托管（Cloudflare Workers static assets）。
   // CF 构建：build = `cd tools/animator && npm install && npm run build`（产出 tools/animator/dist），
-  // deploy = `npx wrangler deploy`（从仓库根读本文件，把 dist 作为静态资源发布，无 Worker 脚本）。
+  // deploy = `npx wrangler deploy -c wrangler/animator.jsonc`（从仓库根运行，把 dist 作为静态资源发布，无 Worker 脚本）。
+  // 注意：本文件已从仓库根移入 wrangler/，deploy 必须显式 `-c wrangler/animator.jsonc`（不再自动探测根目录 wrangler.jsonc）。
   // 设计：design/tools/animator/WORKSPACE_SYNC.md
   "name": "animator",
   "compatibility_date": "2025-06-01",
   "assets": {
-    "directory": "./tools/animator/dist",
+    "directory": "../tools/animator/dist",
     "not_found_handling": "single-page-application"
   }
 }

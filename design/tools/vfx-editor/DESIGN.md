@@ -434,7 +434,7 @@ _2026-06-24（补全施工细节）：_
 
 编辑器作为纯静态前端站，复用 animator/ops 那套 **GitHub Action + npx wrangler + repo variable 开关**模式自动发布到 Cloudflare Workers（static assets，无 Worker 脚本）。
 
-- **`wrangler.vfx.jsonc`（仓库根）**：Worker 名 `nivara-vfx`，`assets.directory` 指向 `./tools/vfx-editor/dist`，`not_found_handling: single-page-application`。
-- **`.github/workflows/vfx-deploy.yml`**：push 到 main 命中 `tools/vfx-editor/**`（或 `wrangler.vfx.jsonc` / 本 workflow）触发，亦可 Actions 页手动 Run；`npm ci → npm run build → npx -y wrangler@4.104.0 deploy -c wrangler.vfx.jsonc`。`concurrency: vfx-deploy` 新跑取消旧跑。
+- **`wrangler/vfx.jsonc`（仓库根）**：Worker 名 `nivara-vfx`，`assets.directory` 指向 `./tools/vfx-editor/dist`，`not_found_handling: single-page-application`。
+- **`.github/workflows/vfx-deploy.yml`**：push 到 main 命中 `tools/vfx-editor/**`（或 `wrangler/vfx.jsonc` / 本 workflow）触发，亦可 Actions 页手动 Run；`npm ci → npm run build → npx -y wrangler@4.104.0 deploy -c wrangler/vfx.jsonc`。`concurrency: vfx-deploy` 新跑取消旧跑。
 - **secret 复用**：账号级 `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`（与 ops/client/animator 同值，无需新建）。vfx 编辑器**无 Supabase/后端依赖**，构建期不注入任何变量。
 - **启用开关**：repo variable `VFX_DEPLOY_ENABLED = true`（未设则整个 job 跳过，避免配好前每次 push 报红）。设好后即随 vfx 改动自动发布。
