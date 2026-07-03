@@ -210,6 +210,18 @@ POST /internal/ads/credit
 
 广告凭证校验 + 当日 cap 计数留在 **meta**（属请求面、与平台广告回调耦合，`S2-4`），meta 校验通过后调 `/internal/ads/credit` 让 commercial 加币记账。
 
+### 6.5 幂等落位不变量（先占槽后动账）
+
+`orderId` / `receiptId` 由**调用方（meta）透传**（`internalHttp` 直接 `str(b.orderId)`），meta 超时重试 / 客户端双击都可能把**同一 id 并发**打到 commercial。所有涉及余额变更的路径必须遵守同一不变量：
+
+> **先用唯一 `_id` 占幂等槽（`orders.insertOne` / `recharges.insertOne`），捕获 E11000 短路返回已有结果；再动钱包余额并回填 `coinsAfter`。**
+
+- **入账路径**（`grant` / `monthlyCardBuy` / `rechargeVerify` / `paddleComplete`）本就如此。
+- **扣款路径**（`shopCharge` / `spend` / `gachaDraw`）同样先占槽：占槽成功后再做 `$gte` 守卫的原子扣币；若扣币因余额不足失败，**回滚删除刚占的槽**并返回 `INSUFFICIENT_FUNDS`（保证后续充值后可用同 orderId 重放）。E11000（并发同 orderId）短路返回已有订单结果，**不再二次扣币**。
+  - 历史 bug（已修）：扣款路径曾「先扣币、后 `insertOne` 且无 catch」，两个并发同 orderId 请求会**双重扣款**、第二个 `insertOne` 抛 E11000 冒泡成 400。**顺序重放安全，并发重放不安全**。
+- **返回值仅供参考**：并发竞争的败者走 E11000 分支读订单时，赢者可能尚未回填 `coinsAfter`（读到占位 0）。余额权威以 `getWallet` / 后续镜像为准，`coinsAfter` 非权威。
+- **首充 2× 奖励时序**：`rechargeVerify` / `paddleComplete` 均须在 `claimFirstPurchaseBonus()` **之前** `ensureWallet`——`claim` 的 `findOneAndUpdate({firstPurchasedAt:{$exists:false}})` 无 upsert，钱包不存在时匹配不到会把 2× 漏到第二笔。
+
 ---
 
 ## 7. 服务形态与部署
