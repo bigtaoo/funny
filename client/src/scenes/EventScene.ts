@@ -4,8 +4,14 @@ import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
+import { buildIcon, type IconKind } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
+
+/** Map a reward's craft-material id to its hand-drawn icon (scrap / lead / binding), else null. */
+function materialIcon(id: string | undefined): IconKind | null {
+  return id === 'scrap' || id === 'lead' || id === 'binding' ? id : null;
+}
 
 // ── EventScene — limited-time events (B6, ADR-014) ────────────────────────────
 //
@@ -302,9 +308,21 @@ export class EventScene implements Scene {
       const rewardLabel = reward.kind === 'coins'
         ? t('event.rewards.coins', { n: reward.count ?? 0 })
         : reward.id ?? reward.kind;
+      // Type glyph prefix (coins → coin, craft material → its icon, skin → brush) when mappable.
+      const rk: IconKind | null = reward.kind === 'coins' ? 'coin'
+        : reward.kind === 'skin' ? 'brush'
+          : materialIcon(reward.id) ?? materialIcon(reward.kind);
+      let labelX = PAD + cardW * 0.04;
+      if (rk) {
+        const ic = Math.round(cardH * 0.42);
+        const glyph = buildIcon(rk, ic, exhausted ? C.mid : reward.kind === 'coins' ? C.gold : C.accent);
+        glyph.x = labelX; glyph.y = cy + cardH * 0.5 - ic / 2;
+        this.container.addChild(glyph);
+        labelX += ic + Math.round(cardH * 0.12);
+      }
       const label = txt(rewardLabel, Math.round(cardH * 0.34), exhausted ? 0x999999 : 0x333333);
       label.anchor.set(0, 0.5);
-      label.x = PAD + cardW * 0.04;
+      label.x = labelX;
       label.y = cy + cardH * 0.5;
       this.container.addChild(label);
 

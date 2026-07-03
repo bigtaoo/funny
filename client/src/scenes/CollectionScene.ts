@@ -5,7 +5,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
-import { buildIcon } from '../render/icons';
+import { buildIcon, type IconKind } from '../render/icons';
 import { cardArtUrl, getArtTexture, preloadL1CardArtTextures } from '../render/cardArt';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
@@ -310,14 +310,9 @@ export class CollectionScene implements Scene {
     sub.anchor.set(0, 0); sub.x = textX; sub.y = y + Math.round(h * 0.32);
     this.layer.addChild(sub);
 
-    const stats = this.cardStatsLine(card);
+    const stats = this.cardStats(card);
     if (stats) {
-      const st = txt(stats, Math.round(h * 0.115), C.mid);
-      st.anchor.set(0, 0); st.x = x + Math.round(w * 0.07); st.y = y + Math.round(h * 0.55);
-      // Keep the stat line inside the tile.
-      const maxW = w * 0.86;
-      if (st.width > maxW) st.scale.set(maxW / st.width);
-      this.layer.addChild(st);
+      this.drawStatChips(stats, x + Math.round(w * 0.07), y + Math.round(h * 0.55), w * 0.86, Math.round(h * 0.14));
     }
 
     const desc = txt(t(card.descKey as TranslationKey), Math.round(h * 0.10), C.mid);
@@ -327,22 +322,61 @@ export class CollectionScene implements Scene {
     this.layer.addChild(desc);
   }
 
-  /** Compact stat line from the unit/building blueprint; null for spells. */
-  private cardStatsLine(card: CardDefinition): string | null {
+  /** Structured key stats from the unit/building blueprint; null for spells. `icon:null` = no glyph (label text instead). */
+  private cardStats(card: CardDefinition): { icon: IconKind | null; label: string; value: number }[] | null {
     if (card.cardType === CardType.Unit && card.unitType !== undefined) {
       const b = UNIT_BLUEPRINTS[card.unitType];
-      return `${t('collection.stat.hp')} ${b.hp} · ${t('collection.stat.atk')} ${b.attack} · ${t('collection.stat.range')} ${b.range}`;
+      return [
+        { icon: 'hp', label: t('collection.stat.hp'), value: b.hp },
+        { icon: 'atk', label: t('collection.stat.atk'), value: b.attack },
+        { icon: null, label: t('collection.stat.range'), value: b.range },
+      ];
     }
     if (card.cardType === CardType.Building && card.buildingType !== undefined) {
       const b = BUILDING_BLUEPRINTS[card.buildingType];
-      const parts = [`${t('collection.stat.hp')} ${b.hp}`];
+      const out: { icon: IconKind | null; label: string; value: number }[] = [
+        { icon: 'hp', label: t('collection.stat.hp'), value: b.hp },
+      ];
       if (b.attack !== undefined) {
-        parts.push(`${t('collection.stat.atk')} ${b.attack}`);
-        if (b.attackRange !== undefined) parts.push(`${t('collection.stat.range')} ${b.attackRange}`);
+        out.push({ icon: 'atk', label: t('collection.stat.atk'), value: b.attack });
+        if (b.attackRange !== undefined) out.push({ icon: null, label: t('collection.stat.range'), value: b.attackRange });
       }
-      return parts.join(' · ');
+      return out;
     }
     return null;
+  }
+
+  /**
+   * Draw the key stats as a row of glyph+value chips (hp = heart, atk = blade); stats with no glyph
+   * (range) fall back to their short label. The whole row scales down to fit `maxW`.
+   */
+  private drawStatChips(
+    stats: { icon: IconKind | null; label: string; value: number }[],
+    x: number, y: number, maxW: number, size: number,
+  ): void {
+    const row = new PIXI.Container();
+    const gap = Math.round(size * 0.28);
+    const chipGap = Math.round(size * 0.75);
+    const valSize = Math.round(size * 0.74);
+    let cx = 0;
+    stats.forEach((s, i) => {
+      if (i > 0) cx += chipGap;
+      if (s.icon) {
+        const ic = buildIcon(s.icon, size, C.mid);
+        ic.x = cx; ic.y = 0; row.addChild(ic);
+        cx += size + gap;
+      } else {
+        const lbl = txt(s.label, valSize, C.mid);
+        lbl.anchor.set(0, 0.5); lbl.x = cx; lbl.y = size / 2; row.addChild(lbl);
+        cx += lbl.width + gap;
+      }
+      const val = txt(String(s.value), valSize, C.dark, true);
+      val.anchor.set(0, 0.5); val.x = cx; val.y = size / 2; row.addChild(val);
+      cx += val.width;
+    });
+    row.x = x; row.y = y;
+    if (row.width > maxW) row.scale.set(maxW / row.width);
+    this.layer.addChild(row);
   }
 
   // ── Skins wardrobe (original) ───────────────────────────────────────────────────

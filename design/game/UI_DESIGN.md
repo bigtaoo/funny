@@ -220,6 +220,7 @@ Collection  Stats     Lobby    Shop/Gacha    Room
   - **单位卡**：每行最左侧显示**单位立绘**（`cardArt.UNIT_ART_URLS`：infantry/archer/shieldbearer + Anna 的 max/lena/mara，六张 png 齐全），名称/等级右移。
   - **皮肤衣柜**：皮肤是服务器侧 id、无立绘数据，保留**手绘图标**（`icons.ts`：默认外观=铅笔 `pencils`，已拥有皮肤=笔刷 `brush`，已装备转绿）。
   - 立绘纹理异步解码、本场景是静态渲染：`drawArtFit()` 在纹理未 valid 时跳过本帧并挂一次性 `baseTexture.once('loaded', render)`，加载完重绘（战斗通常已暖共享纹理缓存，少触发）。
+- **属性行图标化（2026-07-03）**：图鉴卡片的关键属性原是一行 `HP 100 · ATK 20 · Range 3` 纯文字。改为 glyph+数值 chip 行：HP=心形（`icons.ts` `hp`）、ATK=刀刃（`atk`），Range 无对应字形保留短文字标签兜底。`cardStatsLine()`（拼字符串）重构为结构化 `cardStats()` + `drawStatChips()`（整行超宽等比缩放塞进 tile）。
 
 ### 4.6 ProfileScene（档案，S0/S3）
 - 账号信息（匿名 id / 昵称）、云同步状态（已同步/同步中/离线，含「手动同步」按钮）、成就墙（后续）、设置入口（语言/音量，复用 i18n）。
@@ -281,6 +282,18 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 - **A-group 边距涂鸦**（`buildMarginDeco`，新增私有方法）：左右各 11% 纸边放置对战同款小涂鸦（太阳/星/心等，alpha 0.30–0.50），seed `0xDEADBEEF`，bake key `result-margin:WxH`。
 - **战败 mood deco 增强**：原 2 个红叉扩充为 5 个，分布到左上/左下/右下三角，强化「红笔批改」美术母题。
 - 两层 deco 均 `interactiveChildren = false`，不干扰按钮点击。
+
+#### 4.11 菜单奖励/属性图标化推进（2026-07-03，批①）
+
+用户反馈「很多界面还是纯文字，更喜欢图标化」。第一批复用**现成** `icons.ts` 字形（零新增图标定义），把养成/成就侧的奖励与属性文字换成手绘 glyph：
+
+- **DailyScene（签到）**：签到日历格子的金币奖励由 `+30c` 文字改为 `coin` 字形 + 数字；体力奖励无对应字形，保留 `+N` 文字。
+- **BattlePassScene（战令）**：双轨奖励格由 `rewardCoins/rewardMaterial` 文案改为类型 glyph + `×N`——`coins`→`coin`、`material` 按 `id` 映射 `scrap/lead/binding`、`skin`→`brush`（皮肤为单件，仅 glyph 不带数量）。`drawCell` 的 reward 形参补 `id?`。
+- **EventScene（活动）**：兑换奖励条在原文字标签前加类型 glyph 前缀（coin/材料/brush，可映射时），保留文字名，信息不丢。
+- **AchievementScene（成就）**：分类 Tab 加类别字形（`pve`→`book` / `pvp`→`swords` / `collection`→`brush` / `progression`→`trophy`）；未达成档位的奖励由「reward N coins」文字改为 `coin` 字形 + 数字。
+- **CollectionScene**：见 §4.5 属性行 chip。
+- 全部走 `buildIcon` 烘焙缓存共享纹理，销毁经各场景既有 `tearDownChildren`（Sprite 走 `{children:true}`、`texture:false` 不碰共享纹理，符合防泄漏契约）。验证：`tsc --noEmit` + `build:web` + `test:ui`（85 例）全绿。
+- **待批②（需新增图标定义或谨慎布局）**：CardScene/TeamsScene 无属性文字、装备槽缺 `trinket` 字形；CityScene/WorldMapScene 的 SLG 资源（粮/铁/木）与 GachaScene 稀有度、`event/battlepass` 的 `pass_required` 🔒 均需新字形。
 
 ---
 

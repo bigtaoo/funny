@@ -4,6 +4,7 @@ import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
+import { buildIcon } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import type { SaveData } from '../game/meta/SaveData';
@@ -209,11 +210,24 @@ export class DailyScene implements Scene {
 
       const reward = rewards[day - 1];
       if (reward) {
-        const rewardStr = reward.kind === 'coins' ? `+${reward.count}c` : `+${reward.count}`;
-        const rt = txt(rewardStr, Math.round(ch * 0.24), reward.kind === 'coins' ? 0x8a7020 : 0x336644);
-        rt.anchor.set(0.5, 1);
-        rt.x = cx; rt.y = y + ch * 0.92;
-        this.container.addChild(rt);
+        const isCoin = reward.kind === 'coins';
+        const rt = txt(`+${reward.count}`, Math.round(ch * 0.24), isCoin ? 0x8a7020 : 0x336644);
+        const baseY = y + ch * 0.92;
+        if (isCoin) {
+          // Coin reward: little hand-drawn coin glyph left of the amount (replaces the "c" suffix).
+          const rc = Math.round(ch * 0.26);
+          const ic = buildIcon('coin', rc, C.gold);
+          const groupW = rc + Math.round(ch * 0.03) + rt.width;
+          const gx = cx - groupW / 2;
+          ic.x = gx; ic.y = baseY - rc;
+          rt.anchor.set(0, 1);
+          rt.x = gx + rc + Math.round(ch * 0.03); rt.y = baseY;
+          this.container.addChild(ic, rt);
+        } else {
+          rt.anchor.set(0.5, 1);
+          rt.x = cx; rt.y = baseY;
+          this.container.addChild(rt);
+        }
       }
 
       // Claimed cell: stamp a green checkmark (user feedback: tick the claimed date after collecting).
