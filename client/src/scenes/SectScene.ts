@@ -13,6 +13,7 @@ import type { InputManager } from '../inputSystem/InputManager';
 import type { Scene } from './SceneManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
+import { buildIcon } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import type {
@@ -269,8 +270,8 @@ export class SectScene implements Scene {
     const cancelBtn = sketchPanel(100, 34, { fill: 0xeeeeee, border: C.mid, seed: seedFor(1, 0, 100) });
     cancelBtn.x = w / 2 + 10; cancelBtn.y = HUD_H + 120;
     this.bodyLayer.addChild(cancelBtn);
-    const ca = txt('✕', 13, C.dark);
-    ca.anchor.set(0.5, 0.5); ca.x = w / 2 + 60; ca.y = HUD_H + 137;
+    const ca = buildIcon('close', 15, C.dark);
+    ca.x = w / 2 + 60 - 7.5; ca.y = HUD_H + 137 - 7.5;
     this.bodyLayer.addChild(ca);
     this.hitRects.push({ rect: { x: w / 2 + 10, y: HUD_H + 120, w: 100, h: 34 }, action: () => { this.mode = 'noSect'; this.render(); } });
   }
@@ -751,8 +752,8 @@ export class SectScene implements Scene {
     const cancelBtn = sketchPanel(80, 28, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 2, 80) });
     cancelBtn.x = mx + mw / 2 + 8; cancelBtn.y = my + mh - 36;
     ml.addChild(cancelBtn);
-    const cl = txt('✕', 13, C.dark);
-    cl.anchor.set(0.5, 0.5); cl.x = mx + mw / 2 + 48; cl.y = my + mh - 22;
+    const cl = buildIcon('close', 15, C.dark);
+    cl.x = mx + mw / 2 + 48 - 7.5; cl.y = my + mh - 22 - 7.5;
     ml.addChild(cl);
     this.modalHits.push({ rect: { x: cancelBtn.x, y: cancelBtn.y, w: 80, h: 28 }, action: () => this.closeModal() });
   }

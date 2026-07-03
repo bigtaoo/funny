@@ -340,7 +340,15 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 
 LeaderboardScene 前三名用 🥇🥈🥉 emoji。新增 **1 个** `icons.ts` 字形 `medal`（绶带 + 双环奖牌盘），前三名改 `buildIcon('medal', …)` 按名次 tint 金(0xf0c040)/银(0xc2c6cc)/铜(0xcd8a4b)；第 4 名起保留 `#N` 文字。验证：`tsc --noEmit` + `build:web` 全绿。
 
-**仍可迭代（后续批）**：WorldMapScene 🔍 缩放 + 瓦片详情弹窗资源 emoji、FriendsScene 邮件附件 🎁、CampaignMap/Stats 的 ★/☆ 文字星（可复用现有 `star` 字形）、各弹窗 ✕/✓ 排版符号（低优先，跨端渲染正常）。
+#### 4.17 收尾去 emoji + 排版符号图标化（2026-07-03，批⑥）
+
+批①–⑤ 的收尾批：清掉剩余彩色 emoji、把文字星 `★/☆` 换成现有 `star` 字形，并把遍布各弹窗的排版符号 `✕/✓/▶` 统一为手绘字形。新增 **5 个** `icons.ts` 字形：`zoom`（放大镜：镜片环 + 斜柄）、`gift`（礼盒 + 缎带蝴蝶结）、`close`（✕ 双斜笔）、`check`（✓ 两段勾）、`play`（▶ 实心三角 + 描边）。
+
+- **彩色 emoji 去除**：WorldMapScene 缩放按钮 🔍→`zoom` 字形 + ×N 文字；训练面板资源 🖋️📄✏️🔩⭐ 改复用 `res_atlas` 母题贴图 + 数值（与 HUD 资源行同款，atlas 解码前退回 emoji 兜底）；FriendsScene 邮件附件 🎁→`gift` 字形前缀。
+- **文字星 → `star` 字形**：CampaignMapScene 章节进度 `★ N/M` 与关卡三星行（已得金/未得 `btnOff` 灰）、StatsScene 战役星数行（`Row.valueIcon` 新增可选字段）、WorldMapScene 国家列表首府星标。
+- **排版符号 → 字形**：`✕` 关闭键（WorldMapScene `showModal` 按钮渲染器统一特判 11 处；FriendsScene `addButton` 特判；AuctionScene ×3 / FamilyScene ×2 / SectScene ×2 独立按钮）改 `close` 字形；`✓` 勾（DailyScene 签到戳、DeckBuilderScene 选中角标、CardScene/EquipmentScene 的 `[✓]/[ ]` 复选框改「墨框 + 选中叠 `check`」、LoginScene 校验行满足态）改 `check` 字形；`▶` 播放（StatsScene 回放行提示、StatePlayerScene 回放标签）改 `play` 字形。CardScene/EquipmentScene 复选框未选态画空心墨框；LoginScene 未满足态保留 `•` 圆点（非 ✕/✓/▶，跨端正常）。
+- **未动**：`res_atlas` 解码兜底的 `RES_EMOJI` 映射（一闪而过、既有模式）；CityScene（批②已处理）；行内 `→` 导航箭头与 `•` 圆点（属正常排版符号，不在本批范围）。
+- 验证：`tsc --noEmit` + `build:web` + render/ui 测试全绿。
 
 ---
 

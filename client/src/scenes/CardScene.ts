@@ -21,6 +21,7 @@ import {
   drawLoadingOverlay, tearDownChildren,
 } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
+import { buildIcon } from '../render/icons';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
@@ -576,9 +577,17 @@ export class CardScene implements Scene {
         rowBg.x = mx + 8; rowBg.y = cy;
         ml.addChild(rowBg);
 
-        const check = txt(isSelected ? '[✓]' : '[ ]', 12, isSelected ? C.accent : C.mid);
-        check.x = mx + 14; check.y = cy + 6;
-        ml.addChild(check);
+        // Checkbox: a small ink box, ticked with a hand-drawn check when selected (replaces [✓]/[ ]).
+        const boxSz = 14;
+        const box = new PIXI.Graphics();
+        box.lineStyle(1.5, isSelected ? C.accent : C.mid, 1);
+        box.drawRect(mx + 14, cy + 6, boxSz, boxSz);
+        ml.addChild(box);
+        if (isSelected) {
+          const ck = buildIcon('check', boxSz, C.accent);
+          ck.x = mx + 14; ck.y = cy + 6;
+          ml.addChild(ck);
+        }
 
         const matName = t(`card.${mat.defId}.name` as TranslationKey);
         const nameLbl = txt(`${matName} Lv.${mat.level}`, 12, C.dark, true);

@@ -42,7 +42,14 @@ export type IconKind =
   // Lock badge: locked cards/equipment/deck slots + battle-pass pass-required tier.
   | 'lock'
   // Leaderboard top-3 rank medal (tinted gold / silver / bronze per rank).
-  | 'medal';
+  | 'medal'
+  // Zoom cycle button (WorldMapScene HUD): a magnifier lens + handle.
+  | 'zoom'
+  // Mail attachment marker (FriendsScene): a wrapped present with a bow.
+  | 'gift'
+  // Common UI dingbats replacing bare typographic glyphs so they share the ink
+  // language: close (✕) / confirm tick (✓) / replay-triangle (▶).
+  | 'close' | 'check' | 'play';
 
 /** Open book — splayed pages over a centre spine, with a couple of text lines. */
 function drawBook(g: PIXI.Graphics, s: number, color: number): void {
@@ -732,6 +739,64 @@ function drawMedal(g: PIXI.Graphics, s: number, color: number): void {
   pen.circle(cx, cy, r * 0.58, { ...o, width: w * 0.7 });
 }
 
+/** Zoom (map zoom cycle) — a magnifier: a lens ring in the upper-left with a stout diagonal handle. */
+function drawZoom(g: PIXI.Graphics, s: number, color: number): void {
+  const pen = new SketchPen(g, 0x2007);
+  const w = Math.max(1.4, s * 0.06);
+  const cx = s * 0.44, cy = s * 0.42, r = s * 0.24;
+  pen.circle(cx, cy, r, { color, width: w, jitter: 0.4, taper: 0.95, double: false });
+  // Handle from the lower-right of the lens outward to the corner.
+  const hx = cx + r * Math.SQRT1_2, hy = cy + r * Math.SQRT1_2;
+  pen.line(hx, hy, s * 0.80, s * 0.80, { color, width: w * 1.15, jitter: 0.3, taper: 0.85, double: false });
+}
+
+/** Gift (mail attachment) — a wrapped present: box + lid over the rim, a centre ribbon and a two-loop bow. */
+function drawGift(g: PIXI.Graphics, s: number, color: number): void {
+  const pen = new SketchPen(g, 0x91f7);
+  const w = Math.max(1.3, s * 0.05);
+  const o = { color, width: w, jitter: 0.4, taper: 0.92, double: false };
+  const lx = s * 0.26, rx = s * 0.74, top = s * 0.44, bot = s * 0.80;
+  // Box body.
+  pen.stroke([{ x: lx, y: top }, { x: lx, y: bot }, { x: rx, y: bot }, { x: rx, y: top }, { x: lx, y: top }], o);
+  // Lid — a slightly wider band across the top of the body.
+  const llx = s * 0.22, lrx = s * 0.78, lt = s * 0.32;
+  pen.stroke([{ x: llx, y: lt }, { x: llx, y: top }, { x: lrx, y: top }, { x: lrx, y: lt }, { x: llx, y: lt }], o);
+  // Centre ribbon down the box.
+  pen.line(s * 0.50, lt, s * 0.50, bot, { ...o, width: w * 0.85 });
+  // Two-loop bow above the lid.
+  pen.stroke([{ x: s * 0.50, y: lt }, { x: s * 0.36, y: s * 0.20 }, { x: s * 0.50, y: s * 0.30 }], { ...o, width: w * 0.8 });
+  pen.stroke([{ x: s * 0.50, y: lt }, { x: s * 0.64, y: s * 0.20 }, { x: s * 0.50, y: s * 0.30 }], { ...o, width: w * 0.8 });
+}
+
+/** Close (✕) — two crossed ink strokes. */
+function drawClose(g: PIXI.Graphics, s: number, color: number): void {
+  const pen = new SketchPen(g, 0xc105);
+  const w = Math.max(1.5, s * 0.10);
+  const o = { color, width: w, jitter: 0.4, taper: 0.85, double: false };
+  pen.line(s * 0.28, s * 0.28, s * 0.72, s * 0.72, o);
+  pen.line(s * 0.72, s * 0.28, s * 0.28, s * 0.72, o);
+}
+
+/** Check (✓) — a single two-segment tick. */
+function drawCheck(g: PIXI.Graphics, s: number, color: number): void {
+  const pen = new SketchPen(g, 0xc4ec);
+  const w = Math.max(1.5, s * 0.11);
+  pen.stroke([
+    { x: s * 0.22, y: s * 0.52 }, { x: s * 0.42, y: s * 0.70 }, { x: s * 0.78, y: s * 0.26 },
+  ], { color, width: w, jitter: 0.35, taper: 0.85, double: false });
+}
+
+/** Play (▶) — a filled right-pointing triangle with a thin ink rim. */
+function drawPlay(g: PIXI.Graphics, s: number, color: number): void {
+  const pts = [{ x: s * 0.32, y: s * 0.22 }, { x: s * 0.78, y: s * 0.50 }, { x: s * 0.32, y: s * 0.78 }];
+  g.beginFill(color, 1);
+  g.lineStyle(0);
+  g.drawPolygon(pts.flatMap((p) => [p.x, p.y]));
+  g.endFill();
+  const pen = new SketchPen(g, 0x9147);
+  pen.stroke([...pts, pts[0]!], { color, width: Math.max(1, s * 0.05), jitter: 0.25, taper: 0.95, double: false });
+}
+
 const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number) => void> = {
   book:    drawBook,
   globe:   drawGlobe,
@@ -767,6 +832,11 @@ const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number) => voi
   star:    drawStar,
   lock:    drawLock,
   medal:   drawMedal,
+  zoom:    drawZoom,
+  gift:    drawGift,
+  close:   drawClose,
+  check:   drawCheck,
+  play:    drawPlay,
 };
 
 /**

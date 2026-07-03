@@ -232,9 +232,9 @@ export class DailyScene implements Scene {
 
       // Claimed cell: stamp a green checkmark (user feedback: tick the claimed date after collecting).
       if (isClaimed) {
-        const tick = txt('✓', Math.round(ch * 0.5), 0x2e7d32, true);
-        tick.anchor.set(0.5, 0.5);
-        tick.x = cx; tick.y = cy;
+        const tickSz = Math.round(ch * 0.5);
+        const tick = buildIcon('check', tickSz, 0x2e7d32);
+        tick.x = cx - tickSz / 2; tick.y = cy - tickSz / 2;
         tick.alpha = 0.85;
         this.container.addChild(tick);
       }

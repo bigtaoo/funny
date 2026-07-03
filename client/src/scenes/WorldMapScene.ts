@@ -1664,10 +1664,15 @@ export class WorldMapScene implements Scene {
     const zoomBtn = sketchPanel(zoomW, zoomH, { fill: C.dark, border: C.accent, seed: seedFor(4, 2, zoomW) });
     zoomBtn.x = 8; zoomBtn.y = 8;
     hud.addChild(zoomBtn);
-    const zoomLbl = txt(`🔍 ${zoomLabels[this.zoom] ?? ''}`, 13, C.light);
-    zoomLbl.anchor.set(0.5, 0.5);
-    zoomLbl.x = zoomBtn.x + zoomW / 2; zoomLbl.y = zoomBtn.y + zoomH / 2;
-    hud.addChild(zoomLbl);
+    // Hand-drawn magnifier glyph + the ×N label, centred as a group (replaces the 🔍 emoji).
+    const zIcon = buildIcon('zoom', 16, C.light);
+    const zTxt = txt(zoomLabels[this.zoom] ?? '', 13, C.light);
+    zTxt.anchor.set(0, 0.5);
+    const zGrpW = 16 + 4 + zTxt.width;
+    const zGx = zoomBtn.x + (zoomW - zGrpW) / 2;
+    zIcon.x = zGx; zIcon.y = zoomBtn.y + (zoomH - 16) / 2;
+    zTxt.x = zGx + 20; zTxt.y = zoomBtn.y + zoomH / 2;
+    hud.addChild(zIcon); hud.addChild(zTxt);
     this.zoomBtnRect = { x: zoomBtn.x, y: zoomBtn.y, w: zoomW, h: zoomH };
   }
 
@@ -1723,10 +1728,17 @@ export class WorldMapScene implements Scene {
       const bp = sketchPanel(btnW, 28, { fill: C.dark, border: C.accent, seed: seedFor(bx, by, btnW) });
       bp.x = bx; bp.y = by;
       ml.addChild(bp);
-      const bl = txt(btn.label, 12, C.light);
-      bl.anchor.set(0.5, 0.5);
-      bl.x = bx + btnW / 2; bl.y = by + 14;
-      ml.addChild(bl);
+      // '✕' cancel buttons render the hand-drawn close glyph instead of the bare dingbat.
+      if (btn.label === '✕') {
+        const ic = buildIcon('close', 16, C.light);
+        ic.x = bx + btnW / 2 - 8; ic.y = by + 6;
+        ml.addChild(ic);
+      } else {
+        const bl = txt(btn.label, 12, C.light);
+        bl.anchor.set(0.5, 0.5);
+        bl.x = bx + btnW / 2; bl.y = by + 14;
+        ml.addChild(bl);
+      }
       this.modalBtnRects.push({ rect: { x: bx, y: by, w: btnW, h: 28 }, action: btn.action });
       bx += btnW + MARGIN;
     }
@@ -2162,17 +2174,34 @@ export class WorldMapScene implements Scene {
     ml.addChild(title);
     ly += 26;
 
-    // Resources + yield
+    // Resources + yield — hand-drawn motif icon (res_atlas, reused from the map tiles) + count,
+    // replacing the earlier emoji glyphs. Falls back to emoji while the atlas is still decoding.
     const res = me.resources ?? {};
     const yield_ = me.yieldRate ?? {};
-    const fmt = (icon: string, key: string): string => {
-      const amt = Math.floor(res[key] ?? 0);
-      const yr = yield_[key];
-      return yr ? `${icon}${amt} (+${Math.round(yr)}/${t('world.resYield')})` : `${icon}${amt}`;
+    const RES_EMOJI: Record<string, string> = { ink: '🖋️', paper: '📄', graphite: '✏️', metal: '🔩', sticker: '⭐' };
+    const RES_ICON = 16;
+    const layoutResRow = (types: string[], rowY: number): void => {
+      let rx = px + 14;
+      for (const key of types) {
+        const amt = Math.floor(res[key] ?? 0);
+        const yr = yield_[key];
+        const valStr = yr ? `${amt} (+${Math.round(yr)}/${t('world.resYield')})` : `${amt}`;
+        const tex = getResTexture(key);
+        if (tex) {
+          const sp = new PIXI.Sprite(tex);
+          sp.width = sp.height = RES_ICON;
+          sp.x = rx; sp.y = rowY - 3;
+          ml.addChild(sp);
+          rx += RES_ICON + 2;
+          rx += addText(valStr, rowY, 11, C.dark, rx).width + 14;
+        } else {
+          rx += addText(`${RES_EMOJI[key]}${valStr}`, rowY, 11, C.dark, rx).width + 14;
+        }
+      }
     };
-    addText(`${fmt('🖋️', 'ink')}   ${fmt('📄', 'paper')}   ${fmt('✏️', 'graphite')}`, ly, 11);
+    layoutResRow(['ink', 'paper', 'graphite'], ly);
     ly += 18;
-    addText(`${fmt('🔩', 'metal')}   ${fmt('⭐', 'sticker')}`, ly, 11);
+    layoutResRow(['metal', 'sticker'], ly);
     ly += 20;
 
     // Troops
@@ -2357,7 +2386,10 @@ export class WorldMapScene implements Scene {
           if (ly > bodyBottom) break;
           const name = n.nationName || t('world.nationCol').replace('{idx}', String(n.capitalIdx));
           const mine = !!n.ownerId && n.ownerId === this.cb.accountId;
-          addText(`★ ${name}  (${n.x},${n.y})`, px + 14, ly, 11);
+          const nStar = buildIcon('star', 12, C.gold);
+          nStar.x = px + 14; nStar.y = ly - 1;
+          ml.addChild(nStar);
+          addText(`${name}  (${n.x},${n.y})`, px + 30, ly, 11);
           if (mine) {
             // Owner may rename their capital (server re-checks ownerId).
             const bw = 54;

@@ -687,8 +687,8 @@ export class AuctionScene implements Scene {
     const caBtn = sketchPanel(80, 28, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 1, 80) });
     caBtn.x = mx + mw / 2 + 8; caBtn.y = cy;
     ml.addChild(caBtn);
-    const cl = txt('✕', 12, C.dark);
-    cl.anchor.set(0.5, 0.5); cl.x = mx + mw / 2 + 48; cl.y = cy + 14;
+    const cl = buildIcon('close', 14, C.dark);
+    cl.x = mx + mw / 2 + 48 - 7; cl.y = cy + 14 - 7;
     ml.addChild(cl);
     this.modalHits.push({ rect: { x: caBtn.x, y: caBtn.y, w: 80, h: 28 }, action: () => this.closeModal() });
   }
@@ -851,8 +851,8 @@ export class AuctionScene implements Scene {
     const caBtn = sketchPanel(80, 28, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 4, 80) });
     caBtn.x = mx + mw / 2 + 8; caBtn.y = my + mh - 36;
     ml.addChild(caBtn);
-    const cl = txt('✕', 12, C.dark);
-    cl.anchor.set(0.5, 0.5); cl.x = mx + mw / 2 + 48; cl.y = my + mh - 22;
+    const cl = buildIcon('close', 14, C.dark);
+    cl.x = mx + mw / 2 + 48 - 7; cl.y = my + mh - 22 - 7;
     ml.addChild(cl);
     this.modalHits.push({ rect: { x: caBtn.x, y: caBtn.y, w: 80, h: 28 }, action: () => this.closeBidModal() });
   }
@@ -945,8 +945,8 @@ export class AuctionScene implements Scene {
     const caBtn = sketchPanel(80, 28, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 2, 80) });
     caBtn.x = mx + mw / 2 + 8; caBtn.y = my + mh - 36;
     ml.addChild(caBtn);
-    const cl = txt('✕', 12, C.dark);
-    cl.anchor.set(0.5, 0.5); cl.x = mx + mw / 2 + 48; cl.y = my + mh - 22;
+    const cl = buildIcon('close', 14, C.dark);
+    cl.x = mx + mw / 2 + 48 - 7; cl.y = my + mh - 22 - 7;
     ml.addChild(cl);
     this.modalHits.push({ rect: { x: caBtn.x, y: caBtn.y, w: 80, h: 28 }, action: () => this.closeModal() });
   }

@@ -5,6 +5,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ProfilePopup } from '../render/ProfilePopup';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
+import { buildIcon } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import type {
@@ -1232,8 +1233,17 @@ export class FriendsScene implements Scene {
       layer.addChild(dot);
     }
     const tx = rx + Math.round(rw * 0.1);
-    const subj = txt((hasAtt ? '🎁 ' : '') + m.subject, Math.round(rh * 0.3), C.dark, true);
-    subj.anchor.set(0, 0.5); subj.x = tx; subj.y = y + rh * 0.34;
+    // Attachment marker: a hand-drawn gift glyph before the subject (replaces the 🎁 emoji).
+    let subjX = tx;
+    if (hasAtt) {
+      const giftSz = Math.round(rh * 0.34);
+      const gi = buildIcon('gift', giftSz, C.gold);
+      gi.x = tx; gi.y = y + rh * 0.34 - giftSz / 2;
+      layer.addChild(gi);
+      subjX = tx + giftSz + Math.round(rw * 0.015);
+    }
+    const subj = txt(m.subject, Math.round(rh * 0.3), C.dark, true);
+    subj.anchor.set(0, 0.5); subj.x = subjX; subj.y = y + rh * 0.34;
     layer.addChild(subj);
     const from = txt(m.fromName || (m.from === 'system' ? t('mail.system') : `#${m.from}`), Math.round(rh * 0.22), C.mid);
     from.anchor.set(0, 0.5); from.x = tx; from.y = y + rh * 0.70;
@@ -1452,9 +1462,17 @@ export class FriendsScene implements Scene {
     g.x = x; g.y = y;
     target.addChild(g);
 
-    const tl = txt(label, fontSize ?? Math.round(h * 0.36), textColor, true);
-    tl.anchor.set(0.5, 0.5); tl.x = x + w / 2; tl.y = y + h / 2;
-    target.addChild(tl);
+    if (label === '✕') {
+      // Hand-drawn close glyph instead of the bare dingbat.
+      const sz = Math.round(Math.min(w, h) * 0.5);
+      const ic = buildIcon('close', sz, textColor);
+      ic.x = x + (w - sz) / 2; ic.y = y + (h - sz) / 2;
+      target.addChild(ic);
+    } else {
+      const tl = txt(label, fontSize ?? Math.round(h * 0.36), textColor, true);
+      tl.anchor.set(0.5, 0.5); tl.x = x + w / 2; tl.y = y + h / 2;
+      target.addChild(tl);
+    }
 
     this.hits.push({ rect: { x, y, w, h }, scroll: !!layer, fn });
   }

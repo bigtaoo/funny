@@ -7,6 +7,7 @@ import { CHAPTER_ORDER, getChapterMap } from '../game';
 import type { ChapterMap, ChapterNode } from '../game';
 import { parseLevelId, isLevelUnlocked, currentChapter, currentLevelIdInChapter } from '../game/campaign/progress';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
+import { buildIcon } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { SketchPen } from '../render/sketch';
@@ -287,10 +288,15 @@ export class CampaignMapScene implements Scene {
       root.addChild(prog);
 
       if (unlocked) {
-        const starStr = `★ ${earned}/${map.nodes.length * 3}`;
-        const st = txt(starStr, Math.round(cardH * 0.26), C.gold, true);
-        st.anchor.set(1, 0.5); st.x = listX + listW - Math.round(w * 0.04); st.y = y + cardH / 2;
+        // Hand-drawn star glyph + earned/total count (replaces the ★ text bullet).
+        const rightX = listX + listW - Math.round(w * 0.04);
+        const st = txt(`${earned}/${map.nodes.length * 3}`, Math.round(cardH * 0.26), C.gold, true);
+        st.anchor.set(1, 0.5); st.x = rightX; st.y = y + cardH / 2;
         root.addChild(st);
+        const starSz = Math.round(cardH * 0.28);
+        const starIc = buildIcon('star', starSz, C.gold);
+        starIc.x = rightX - st.width - starSz - 4; starIc.y = y + cardH / 2 - starSz / 2;
+        root.addChild(starIc);
         hits.push({ rect: { x: listX, y, w: listW, h: cardH }, fn: () => this.openChapter(ch) });
       } else {
         // Locked chapter — taped shut.
@@ -430,10 +436,16 @@ export class CampaignMapScene implements Scene {
     root.addChild(num);
 
     if (unlocked && isCleared) {
-      const starStr = '★'.repeat(starCount) + '☆'.repeat(3 - starCount);
-      const st = txt(starStr, Math.round(r * 0.62), C.gold);
-      st.anchor.set(0.5, 0); st.x = cx; st.y = cy + r + Math.round(h * 0.004);
-      root.addChild(st);
+      // Three hand-drawn star glyphs: earned in gold, unearned dimmed (replaces ★/☆ text).
+      const starSz = Math.round(r * 0.62);
+      const gap = Math.round(starSz * 0.2);
+      const rowW = starSz * 3 + gap * 2;
+      const sy = cy + r + Math.round(h * 0.004);
+      for (let i = 0; i < 3; i++) {
+        const ic = buildIcon('star', starSz, i < starCount ? C.gold : C.btnOff);
+        ic.x = cx - rowW / 2 + i * (starSz + gap); ic.y = sy;
+        root.addChild(ic);
+      }
     } else if (unlocked && pending) {
       const pd = txt(t('campaign.pending'), Math.round(r * 0.55), C.mid);
       pd.anchor.set(0.5, 0); pd.x = cx; pd.y = cy + r + Math.round(h * 0.004);

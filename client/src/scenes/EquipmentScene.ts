@@ -668,13 +668,20 @@ export class EquipmentScene implements Scene {
       // Protect-item row (E7): show quantity held + toggle switch.
       const canToggle = protectCount > 0;
       const protecting = this.useProtectEnhance && canToggle;
-      const checkStr = protecting ? '[✓]' : '[ ]';
       const protectColor = canToggle ? (protecting ? C.accent : C.dark) : C.mid;
-      const protectLbl = txt(
-        `${checkStr} ${t('equip.protect')} ×${protectCount}`,
-        10, protectColor,
-      );
-      protectLbl.x = mx + 12; protectLbl.y = cy;
+      // Toggle checkbox: a small ink box, ticked with a hand-drawn check when on (replaces [✓]/[ ]).
+      const boxSz = 14;
+      const box = new PIXI.Graphics();
+      box.lineStyle(1.5, protectColor, 1);
+      box.drawRect(mx + 12, cy, boxSz, boxSz);
+      ml.addChild(box);
+      if (protecting) {
+        const ck = buildIcon('check', boxSz, C.accent);
+        ck.x = mx + 12; ck.y = cy;
+        ml.addChild(ck);
+      }
+      const protectLbl = txt(`${t('equip.protect')} ×${protectCount}`, 10, protectColor);
+      protectLbl.x = mx + 12 + boxSz + 4; protectLbl.y = cy + 2;
       ml.addChild(protectLbl);
       if (canToggle && !this.bt.busy) {
         this.modalHits.push({

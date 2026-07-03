@@ -231,8 +231,9 @@ export class DeckBuilderScene implements Scene {
 
       // Selected check badge
       if (isSelected && isUnlocked) {
-        const check = txt('✓', Math.round(h * 0.03), C.accent);
-        check.anchor.set(1, 0); check.x = cx + cardW - Math.round(w * 0.02); check.y = cy + Math.round(h * 0.01);
+        const checkSz = Math.round(h * 0.03);
+        const check = buildIcon('check', checkSz, C.accent);
+        check.x = cx + cardW - Math.round(w * 0.02) - checkSz; check.y = cy + Math.round(h * 0.01);
         listContainer.addChild(check);
       }
     });

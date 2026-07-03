@@ -8,6 +8,7 @@ import { VFXSystem } from '../render/VFXSystem';
 import { Side, UnitType, UnitState, BuildingType, ownerToSide, type OwnerId } from '../game';
 import { t } from '../i18n';
 import { ui, sketchPanel, seedFor } from '../render/sketchUi';
+import { buildIcon } from '../render/icons';
 import { stateRecorder } from '../game/replay/StateRecorder';
 import type {
   StateReplay,
@@ -298,13 +299,18 @@ export class StatePlayerScene implements Scene {
     this.progressFill = new PIXI.Graphics();
     this.overlay.addChild(track, this.progressFill);
 
-    const tag = new PIXI.Text(`▶ ${t('stateplayer.tag')}`, {
-      fontSize: Math.round(btnH * 0.5),
+    // Hand-drawn play glyph + label (replaces the ▶ dingbat prefix).
+    const tagSz = Math.round(btnH * 0.5);
+    const tagIc = buildIcon('play', tagSz, 0x2244aa);
+    tagIc.x = Math.round(w * 0.04); tagIc.y = this.barY - 2;
+    this.overlay.addChild(tagIc);
+    const tag = new PIXI.Text(t('stateplayer.tag'), {
+      fontSize: tagSz,
       fill: 0x2244aa,
       fontWeight: 'bold',
       fontFamily: 'monospace',
     });
-    tag.x = Math.round(w * 0.04);
+    tag.x = Math.round(w * 0.04) + tagSz + 4;
     tag.y = this.barY - 2;
     this.overlay.addChild(tag);
 
