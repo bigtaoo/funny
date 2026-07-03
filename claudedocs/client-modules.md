@@ -39,7 +39,7 @@
 | `net/NetClient.ts` | WS 连接/重连（退避+代次）/ts-proto 编解码 |
 | `net/NetSession.ts` | 联机会话：gateway(控制面 `/gw`) + game(数据面 `?ticket=`) 双连接；跨场景存活；含社交 + **SLG 实时 push** 路由（`onMarchUpdate/onTileUpdate/onUnderAttack/onSiegeResult/onFamilyMsg`，worldsvc→gateway 下发） |
 | `net/WorldApiClient.ts` | **SLG worldsvc REST 客户端**（第四公网面，独立 base URL）；DTO 由 `server/contracts/openapi-world.yml` → `npm run rest:gen` → `net/openapi-world.ts` 生成（勿手改）；覆盖 world/march/troops/siege/defense/nations/season/shop/family/auction 全端点。**⚠️ `checkHealth()` 网络失败→true（inconclusive）**：dev 环境 `/health` 常缺 CORS 头而 fetch 抛错，但实际 feature 路由（`/world*`）完全正常——返回 false 会误标大世界离线。故所有 catch（连接被拒/超时/CORS）均视为"不确定"返 true，只有 HTTP 4xx/5xx 才返 false。单测断言需对应 true。 |
-| `scenes/WorldMapScene.ts` | **SLG 大世界地图**（视口裁剪+拖拽平移；瓦片类型对齐服务端 8 类型；敌蓝我红；首府星标；行军连线；地图尺寸从 `getSeason` 动态取）；HUD「练兵」面板（训练队列倒计时+招募预设+金币加速，C4）+ 右上「世界」面板（国家/赛季/商城三 Tab，C5） |
+| `scenes/WorldMapScene.ts` + `scenes/worldmap/` | **SLG 大世界地图**（视口裁剪+拖拽平移；瓦片类型对齐服务端 8 类型；敌蓝我红；首府星标；行军连线；地图尺寸从 `getSeason` 动态取）；HUD「练兵」面板（训练队列倒计时+招募预设+金币加速，C4）+ 右上「世界」面板（国家/赛季/商城三 Tab，C5）。**已按 MVC 拆分**：`WorldMapScene.ts`=瘦编排壳（仅构造/生命周期/推送委派）；`worldmap/WorldMapContext.ts`=共享状态+类型出口（`WorldMapCallbacks`/`WorldMapView`/`DeployKind`）；`WorldMapRenderer`(渲染+视图变换)/`WorldMapNet`(worldsvc API+行军动作+实时 push)/`WorldMapInput`(拖拽+瓦片点击派发) 三协作类持 ctx；纯 helper `constants.ts`/`tileStyle.ts`/`zoom.ts`/`tileGraphics.ts`(无状态绘制原语) |
 | `scenes/FamilyScene.ts` / `scenes/AuctionScene.ts` | SLG 家族 / 拍卖行场景 |
 | `net/proto/{transport,game}.ts` | ts-proto 生成（勿手改） |
 | `scenes/RoomScene.ts` | 好友房 UI：idle→codeEntry→connecting→inRoom |
