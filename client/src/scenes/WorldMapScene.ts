@@ -17,7 +17,7 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChild
 import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, NationView, SeasonView, SlgShopItemView } from '../net/WorldApiClient';
 import { WorldApiError } from '../net/WorldApiClient';
 import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult } from '../net/proto/transport';
-import { proceduralTile } from '@nw/shared';
+import { proceduralTile, type ProceduralTile } from '@nw/shared';
 import { loadResAtlas, getResTexture, isResAtlasReady } from '../render/resAtlasLoader';
 import { loadCityAtlas, getCityTexture, isCityAtlasReady } from '../render/cityAtlasLoader';
 import { loadTerrainAtlas, getTerrainTexture, isTerrainAtlasReady, type TerrainTextureName } from '../render/terrainAtlasLoader';
@@ -488,6 +488,23 @@ export class WorldMapScene implements Scene {
     return [Number.isFinite(x) ? x : 0, Number.isFinite(y) ? y : 0];
   }
 
+  /**
+   * Strict tile-id parse for rendering (marches): returns null — instead of parseTileId's (0,0)
+   * fallback — when the id is missing/malformed or the coords fall outside the map. A march with a
+   * bad endpoint would otherwise draw a line from the world origin (0,0) straight across the whole
+   * screen (the "stray red line" artifact); callers skip drawing when this returns null.
+   */
+  private parseTileStrict(tileId: string | undefined | null): [number, number] | null {
+    if (!tileId) return null;
+    const parts = tileId.split(':');
+    if (parts.length < 2) return null;
+    const x = Number(parts[parts.length - 2]);
+    const y = Number(parts[parts.length - 1]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    if (x < 0 || y < 0 || x >= this.mapW || y >= this.mapH) return null;
+    return [x, y];
+  }
+
   private async loadMapViewport(): Promise<void> {
     if (this.destroyed) return;
     const { cx, cy, r } = this.viewportCenter();
@@ -759,6 +776,11 @@ export class WorldMapScene implements Scene {
     g.visible = true;
 
     const tile = this.tileCache.get(`${tx}:${ty}`);
+    // Uncached tiles (outside the fetched viewport / never claimed) still have a deterministic
+    // terrain identity — proceduralTile() is computable on either end (§14.2). Without this the
+    // texture/motif layers fell back to 'neutral'→grass on every uncached tile, hiding the whole
+    // map's variety (obstacles / gates / center / biome resources) under one repeated doodle.
+    const proc: ProceduralTile | null = tile ? null : proceduralTile(this.cb.worldId, tx, ty);
     // Terrain fill and ownership are now two separate signals (see ownerTint/terrainFill).
     const fill = tile ? terrainFill(tile) : proceduralTileColor(this.cb.worldId, tx, ty);
     const owner = tile ? ownerTint(tile) : null;
@@ -766,8 +788,8 @@ export class WorldMapScene implements Scene {
 
     if (this.zoom === 1) {
       const isAnchor = tile?.type === 'base' && this.isBaseAnchor(tx, ty);
-      const texName = terrainTextureName(tile?.type ?? 'neutral', tx, ty);
-      this.drawTileL1(g, tile ?? null, fill, owner, fogged, tp, isAnchor, texName);
+      const texName = terrainTextureName(tile?.type ?? proc?.type ?? 'neutral', tx, ty);
+      this.drawTileL1(g, tile ?? null, fill, owner, fogged, tp, isAnchor, texName, proc);
     } else {
       this.drawTileL2(g, fill, owner, fogged, tp);
     }
@@ -802,7 +824,7 @@ export class WorldMapScene implements Scene {
   private drawTileL1(
     g: PIXI.Graphics, tile: WorldTileView | null,
     fill: number, owner: number | null, fogged: boolean, tp: number, isAnchor: boolean,
-    texName: TerrainTextureName,
+    texName: TerrainTextureName, proc: ProceduralTile | null = null,
   ): void {
     const hh = (tp * ISO_RATIO) / 2;
     // Soft sketch grid, then the ground: hand-drawn texture fill once the atlas has
@@ -827,6 +849,10 @@ export class WorldMapScene implements Scene {
     // dimmed motif, no abundance/defense detail), matching "地形可见、局势看不清".
     if (tile?.type === 'resource' && tile.resType) {
       this.drawResMotif(g, tile.resType, tile.level ?? 1, tp, fogged);
+    } else if (!tile && proc && (proc.type === 'resource' || proc.type === 'familyKeep' || proc.type === 'stronghold') && proc.resType) {
+      // Uncached tile: reveal its procedural resource TYPE (the terrain layer is always visible
+      // map-wide, §18 V1 model 2a) so biome zones read as varied instead of uniform grass.
+      this.drawResMotif(g, proc.resType, proc.level, tp, false);
     }
 
     // Ownership overlay (option-3): a light wash + colored border, not a full opaque fill —
@@ -1354,8 +1380,11 @@ export class WorldMapScene implements Scene {
     // March arrows (L1/L2 only; L3 is too zoomed-out for detail).
     if (this.zoom < 3) {
       for (const march of this.marches) {
-        const [fx, fy] = this.parseTileId(march.fromTile);
-        const [tx2, ty2] = this.parseTileId(march.toTile);
+        const fromXY = this.parseTileStrict(march.fromTile);
+        const toXY = this.parseTileStrict(march.toTile);
+        if (!fromXY || !toXY) continue; // skip malformed/out-of-bounds endpoints (no origin-crossing stray line)
+        const [fx, fy] = fromXY;
+        const [tx2, ty2] = toXY;
         const from = tileToScreen(fx, fy, tp);
         const to = tileToScreen(tx2, ty2, tp);
         const fpx = this.panX + from.x;

@@ -96,11 +96,44 @@
 
 ## 六、资源图标（HUD 内显示）
 
-| 资产名 | 描述 | 尺寸 |
-|---|---|---|
-| `res_food.png` | 食物图标（当前临时用 🌾 emoji） | 24×24 |
-| `res_wood.png` | 木材图标（当前临时用 🪵 emoji） | 24×24 |
-| `res_iron.png` | 铁矿图标（当前临时用 ⛏️ emoji） | 24×24 |
+> **赛季资源权威 = 5 种**（`server/shared/src/slg.ts` `RESOURCE_TYPES` + `WorldMapScene.renderHud()`）：
+> `ink 墨水` / `paper 纸张` / `graphite 石墨` / `metal 金属` / `sticker 贴纸`。
+> 旧「食物/木材/铁矿（food/wood/iron）」命名已废弃，勿再使用。
+> 当前 HUD 用 emoji 兜底（`🖋️📄✏️🔩⭐`），待下列 PNG 接入后替换。
+
+| 资产名 | 资源 | emoji 兜底 | 描述 | 尺寸 |
+|---|---|---|---|---|
+| `res_ink.png` | ink 墨水 | 🖋️ | 墨水瓶 + 一滴墨，深蓝墨 | 24×24 |
+| `res_paper.png` | paper 纸张 | 📄 | 单张折角纸 + 两条淡横线 | 24×24 |
+| `res_graphite.png` | graphite 石墨 | ✏️ | 削尖铅笔 / 六棱石墨条 | 24×24 |
+| `res_metal.png` | metal 金属 | 🔩 | 金属锭 + 螺栓（军工锻造） | 24×24 |
+| `res_sticker.png` | sticker 贴纸 | ⭐ | 奖励星星贴纸（老师奖励款） | 24×24 |
+
+**要求**：24×24 RGBA PNG；单主体居中，透明背景；深墨线（`#2c2c2a`）+ 单一强调色 + 轻铅笔阴影；
+无卡通描边、无投影；在浅色 HUD（`#f5f0e8`）上小尺寸仍清晰可辨。
+
+### AI 生成 prompt
+
+**统一风格前缀**（拼在每个 prompt 之前）：
+
+```
+Hand-drawn notebook doodle icon, single stationery object centered on transparent
+background, dark ink outline (#2c2c2a) with light pencil shading, one accent color
+only, no cartoon outline, no drop shadow, flat top-down, worn-paper aesthetic,
+24x24 crisp at small size.
+```
+
+| 文件 | 追加 prompt |
+|---|---|
+| `res_ink.png` | `a small ink bottle with one ink drop, deep blue accent (#3355aa).` |
+| `res_paper.png` | `a single sheet of paper with one folded corner and two faint ruled lines, cream fill, blue ink outline (#4477bb).` |
+| `res_graphite.png` | `a short sharpened pencil / hexagonal graphite stick, grey body (#778899), wood-tone tip (#ccaa44).` |
+| `res_metal.png` | `a small forged metal ingot with a bolt, muted olive-steel accent (#889966), industrial feel.` |
+| `res_sticker.png` | `a shiny five-point reward star sticker (teacher's homework style), warm gold accent (#cc9922), thin white sticker border.` |
+
+> ⚠ 上方 **§一 格子地形底图** 的资源行（`tile_food/wood/iron`、麦穗/树林/矿石）同为旧命名，
+> 权威地块类型见 `slg.ts` `TileType`/`ResourceType`；资源格通过格内母题（§三 / `drawResMotif`）区分
+> ink/paper/graphite/metal 四大 biome，而非独立底图。该节待随地形贴图重做一并订正。
 
 ---
 
@@ -133,3 +166,20 @@ art/world/
 2. `drawTileSlot()` 改为 `Sprite`（底图）+ `Sprite`（叠加层）复用，颜色改为 `tint`
 3. 标记类图标改为每格固定 `Sprite` 子节点，按 `visible` 切换显示
 4. L2/L3 仍可继续用色块（减少 draw call），或改用 `RenderTexture` 批量
+
+### 未缓存格的程序地形（§14.2 computable on either end）
+
+视野外 / 从未拉取的格子不在 `tileCache` 里，但地块类型是 `proceduralTile(worldId,x,y)` 确定性生成的、
+两端可算。`drawTileSlot()` 对未缓存格用 `proceduralTile()` 现算 `type/resType`，喂给 **贴图选择**
+（`terrainTextureName`）与 **资源母题**（`drawResMotif`），使山脉/河流/关隘/中心/四大 biome 资源
+在全图可见（§18 V1 model 2a：地形层全图可见，仅动态层 [归属/城/驻军/等级] 受视野门控）。
+
+> 历史 bug：此前 L1 贴图对未缓存格恒取 `'neutral'→terrain_grass`，把整张图的地形多样性糊成同一张
+> grass 涂鸦（颜色层算对了却被 alpha 0.9 的贴图盖住）。已修（2026-07-03）。
+> 注：`neutral` 底图走 `terrain_grass` 还是纯纸白，`WORLD_MAP_ART_SPEC §一` 与 `slg-terrain-art.md`
+> 口径不一，属独立待决项；本次修复只保证「按真实 type 渲染」，不改 neutral 的贴图选择。
+
+### 行军连线端点校验
+
+`renderOverlay()` 画行军连线前用 `parseTileStrict()` 校验 `fromTile/toTile`：缺失/格式错/越界 → 跳过该 march，
+避免端点异常时 `parseTileId` 兜底成 `(0,0)` 而从世界原点拉一条线贯穿全屏（已修 2026-07-03）。
