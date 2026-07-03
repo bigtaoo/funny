@@ -306,6 +306,16 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 - 解析走两个 helper：`resIcon(rt,size)`（atlas sprite 兜底 emoji）、`bldIcon(key,size,color)`（producer→atlas / 其余→`buildIcon` / 兜底 emoji）。`load()` 追加 `loadResAtlas().then(render)`。
 - 验证：`tsc --noEmit` + `build:web` 全绿。
 
+#### 4.13 AuctionScene 图标化（2026-07-03，批③-拍卖）
+
+拍卖行的物品类型与挂单模式此前全是文字。本批**零新增图标定义**，复用现成 `icons.ts` 字形：
+
+- **物品类型字形**：equipment→`armor`（盾）、card→`cards`（卡叠，批③-Tab 导航新增）、material→其对应材料字形（`scrap`/`lead`/`binding`）。走 helper `itemKind(itemType, material?)`。
+- **挂单模式字形**：fixed（一口价）→`tag`（价签，批③-Tab 导航新增）、auction（竞拍）→`hammer`（复用主城建造锤当拍卖槌）。走 helper `saleModeKind(mode)`。
+- **落点**：① 市场列表行左侧加类型字形（标签右移到 x=40，价格/一口价行同步右移）；原 `[竞拍]` 文字标记改为行内模式字形（竞拍红/一口价灰）。② 顶部筛选 chip（材料/装备/角色卡）加字形前缀，`全部` 保持纯文字。③ 创建挂单表单的物品类别选择器 + 挂单模式选择器按钮加左侧小字形。
+- 依赖批③-Tab 导航（commit `e3118841`）已落地的 `tag`/`cards` 字形。
+- 验证：`tsc --noEmit` + `build:web` 全绿。
+
 ---
 
 ## 5. 战斗内 UI 的联机增量（GameScene/HUD）

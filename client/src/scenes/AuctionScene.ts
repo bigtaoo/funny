@@ -14,6 +14,7 @@ import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import type { WorldApiClient, AuctionView } from '../net/WorldApiClient';
 import { WorldApiError } from '../net/WorldApiClient';
 import type { SaveData, EquipmentInstance, CardInstance } from '../game/meta/SaveData';
+import { buildIcon, type IconKind } from '../render/icons';
 
 export interface AuctionSceneCallbacks {
   onBack(): void;
@@ -194,8 +195,15 @@ export class AuctionScene implements Scene {
       const chip = sketchPanel(chipW - 6, FILTER_H - 8, { fill: active ? C.dark : 0xeeeeee, border: active ? C.accent : C.mid, seed: seedFor(i, 3, chipW) });
       chip.x = i * chipW + 3; chip.y = y + 2;
       this.bodyLayer.addChild(chip);
+      const midY = y + 2 + (FILTER_H - 8) / 2;
+      // Category glyph prefix (the 'all' filter stays text-only).
+      if (f !== '') {
+        const fi = buildIcon(this.itemKind(f), 16, active ? C.light : C.dark);
+        fi.x = i * chipW + 7; fi.y = midY - 8;
+        this.bodyLayer.addChild(fi);
+      }
       const lbl = txt(t(keys[f]), 11, active ? C.light : C.dark);
-      lbl.anchor.set(0.5, 0.5); lbl.x = i * chipW + chipW / 2; lbl.y = y + 2 + (FILTER_H - 8) / 2;
+      lbl.anchor.set(0.5, 0.5); lbl.x = i * chipW + chipW / 2 + (f !== '' ? 8 : 0); lbl.y = midY;
       this.bodyLayer.addChild(lbl);
       this.hitRects.push({
         rect: { x: i * chipW + 3, y: y + 2, w: chipW - 6, h: FILTER_H - 8 },
@@ -256,27 +264,31 @@ export class AuctionScene implements Scene {
 
       const isAuction = auc.saleMode === 'auction';
 
+      // Item-class glyph (equipment/card/material) at the row's left edge.
+      const clsIcon = buildIcon(this.itemKind(auc.itemType, auc.item?.['material'] as string | undefined), 22, C.dark);
+      clsIcon.x = 12; clsIcon.y = cy + 6;
+      this.bodyLayer.addChild(clsIcon);
+
       const itemLbl = txt(this.auctionLabel(auc), 13, C.dark);
-      itemLbl.x = 14; itemLbl.y = cy + 6;
+      itemLbl.x = 40; itemLbl.y = cy + 6;
       this.bodyLayer.addChild(itemLbl);
 
-      if (isAuction) {
-        const tag = txt(`[${t('auction.auctionTag')}]`, 10, C.red);
-        tag.x = itemLbl.x + itemLbl.width + 6; tag.y = cy + 8;
-        this.bodyLayer.addChild(tag);
-      }
+      // Sale-mode glyph after the label (tag = buy-now, gavel = auction).
+      const modeIcon = buildIcon(this.saleModeKind(isAuction ? 'auction' : 'fixed'), 16, isAuction ? C.red : C.mid);
+      modeIcon.x = itemLbl.x + itemLbl.width + 6; modeIcon.y = cy + 5;
+      this.bodyLayer.addChild(modeIcon);
 
       // Fixed-price: show the unit sale price; auction: show the current bid (or the starting price when no bids).
       const priceText = isAuction
         ? `${t(auc.topBid ? 'auction.currentBid' : 'auction.startPrice')}: ${auc.price}`
         : `${t('auction.price')}: ${auc.price}`;
       const priceLbl = txt(priceText, 12, C.accent);
-      priceLbl.x = 14; priceLbl.y = cy + 24;
+      priceLbl.x = 40; priceLbl.y = cy + 24;
       this.bodyLayer.addChild(priceLbl);
 
       if (isAuction && auc.buyoutPrice) {
         const boLbl = txt(t('auction.buyoutAt').replace('{price}', String(auc.buyoutPrice)), 10, C.mid);
-        boLbl.x = 14; boLbl.y = cy + 40;
+        boLbl.x = 40; boLbl.y = cy + 40;
         this.bodyLayer.addChild(boLbl);
       }
 
@@ -338,6 +350,22 @@ export class AuctionScene implements Scene {
     const key = `card.${defId}.name` as TranslationKey;
     const s = t(key);
     return s === key ? defId : s;
+  }
+
+  // ── Icon resolution ────────────────────────────────────────────────────────
+  // Reuses existing icons.ts glyphs (no new definitions): equipment→shield, card→card
+  // stack, material→its own material glyph; sale-mode fixed→price tag, auction→gavel(hammer).
+
+  /** Glyph for an item class / listing item type. */
+  private itemKind(itemType: string | undefined, material?: string): IconKind {
+    if (itemType === 'equipment') return 'armor';
+    if (itemType === 'card') return 'cards';
+    return (material ?? 'scrap') as IconKind;
+  }
+
+  /** Glyph for a sale mode: fixed buy-now → price tag, auction → gavel. */
+  private saleModeKind(mode: 'fixed' | 'auction'): IconKind {
+    return mode === 'auction' ? 'hammer' : 'tag';
   }
 
   /** Human label for a listing row/title, per item class. */
@@ -512,8 +540,11 @@ export class AuctionScene implements Scene {
       const btn = sketchPanel(66, 24, { fill, border: active ? C.accent : C.mid, seed: seedFor(i, 7, 66) });
       btn.x = cbx; btn.y = cy - 2;
       ml.addChild(btn);
+      const ci = buildIcon(this.itemKind(cls), 14, active ? C.light : (enabled ? C.dark : C.mid));
+      ci.x = cbx + 4; ci.y = cy + 3;
+      ml.addChild(ci);
       const bl = txt(t(classKeys[cls]), 11, active ? C.light : (enabled ? C.dark : C.mid));
-      bl.anchor.set(0.5, 0.5); bl.x = cbx + 33; bl.y = cy + 10;
+      bl.anchor.set(0.5, 0.5); bl.x = cbx + 39; bl.y = cy + 10;
       ml.addChild(bl);
       if (enabled) {
         this.modalHits.push({ rect: { x: cbx, y: cy - 2, w: 66, h: 24 }, action: () => { this.createClass = cls; this.openCreateForm(); } });
@@ -577,8 +608,11 @@ export class AuctionScene implements Scene {
       const btn = sketchPanel(72, 24, { fill: active ? C.dark : 0xeeeeee, border: active ? C.accent : C.mid, seed: seedFor(i, 5, 72) });
       btn.x = sx; btn.y = cy - 2;
       ml.addChild(btn);
+      const mi = buildIcon(this.saleModeKind(md.key), 14, active ? C.light : C.dark);
+      mi.x = sx + 5; mi.y = cy + 3;
+      ml.addChild(mi);
       const bl = txt(md.label, 11, active ? C.light : C.dark);
-      bl.anchor.set(0.5, 0.5); bl.x = sx + 36; bl.y = cy + 10;
+      bl.anchor.set(0.5, 0.5); bl.x = sx + 42; bl.y = cy + 10;
       ml.addChild(bl);
       this.modalHits.push({ rect: { x: sx, y: cy - 2, w: 72, h: 24 }, action: () => { this.createSaleMode = md.key; this.openCreateForm(); } });
       sx += 76;
