@@ -259,24 +259,39 @@ export class CommercialService {
     if (!def || def.cost !== args.cost) return { ok: false, error: 'BAD_REQUEST' };
 
     await this.ensureWallet(args.accountId);
+    // Insert-first idempotency (§6.5): claim the orderId slot BEFORE debiting so two concurrent calls with the
+    // same orderId cannot both pass the "existing?" check and double-charge. E11000 → replay the existing order.
+    try {
+      await this.cols.orders.insertOne({
+        _id: args.orderId,
+        accountId: args.accountId,
+        kind: 'shop',
+        cost: args.cost,
+        status: 'charged',
+        coinsAfter: 0, // back-filled after the debit succeeds
+        result: { itemId: def.grants },
+        ts: this.now(),
+      });
+    } catch (e) {
+      if ((e as { code?: number }).code === 11000) {
+        const o = await this.cols.orders.findOne({ _id: args.orderId });
+        return { ok: true, orderId: args.orderId, coinsAfter: o?.coinsAfter ?? 0, status: o?.status ?? 'charged' };
+      }
+      throw e;
+    }
     const charged = await this.cols.wallets.findOneAndUpdate(
       { _id: args.accountId, coins: { $gte: args.cost } },
       { $inc: { coins: -args.cost, rev: 1 }, $set: { updatedAt: this.now() } },
       { returnDocument: 'after' },
     );
-    if (!charged) return { ok: false, error: 'INSUFFICIENT_FUNDS' };
+    if (!charged) {
+      // Insufficient funds: release the reserved slot so a later top-up can retry the same orderId.
+      await this.cols.orders.deleteOne({ _id: args.orderId });
+      return { ok: false, error: 'INSUFFICIENT_FUNDS' };
+    }
     const coinsAfter = charged.coins;
 
-    await this.cols.orders.insertOne({
-      _id: args.orderId,
-      accountId: args.accountId,
-      kind: 'shop',
-      cost: args.cost,
-      status: 'charged',
-      coinsAfter,
-      result: { itemId: def.grants },
-      ts: this.now(),
-    });
+    await this.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter } });
     await this.cols.ledger.insertOne({
       accountId: args.accountId,
       delta: -args.cost,
@@ -305,25 +320,39 @@ export class CommercialService {
     if (amount === 0) return { ok: false, error: 'BAD_REQUEST' };
 
     await this.ensureWallet(args.accountId);
+    // Insert-first idempotency (§6.5): reserve the orderId slot before debiting; E11000 → replay the existing order.
+    try {
+      await this.cols.orders.insertOne({
+        _id: args.orderId,
+        accountId: args.accountId,
+        kind: 'sink',
+        cost: amount,
+        status: 'delivered',
+        coinsAfter: 0, // back-filled after the debit succeeds
+        result: {},
+        deliveredAt: this.now(),
+        ts: this.now(),
+      });
+    } catch (e) {
+      if ((e as { code?: number }).code === 11000) {
+        const o = await this.cols.orders.findOne({ _id: args.orderId });
+        return { ok: true, coinsAfter: o?.coinsAfter ?? 0 };
+      }
+      throw e;
+    }
     const charged = await this.cols.wallets.findOneAndUpdate(
       { _id: args.accountId, coins: { $gte: amount } },
       { $inc: { coins: -amount, rev: 1 }, $set: { updatedAt: this.now() } },
       { returnDocument: 'after' },
     );
-    if (!charged) return { ok: false, error: 'INSUFFICIENT_FUNDS' };
+    if (!charged) {
+      // Insufficient funds: release the reserved slot so a later top-up can retry the same orderId.
+      await this.cols.orders.deleteOne({ _id: args.orderId });
+      return { ok: false, error: 'INSUFFICIENT_FUNDS' };
+    }
     const coinsAfter = charged.coins;
 
-    await this.cols.orders.insertOne({
-      _id: args.orderId,
-      accountId: args.accountId,
-      kind: 'sink',
-      cost: amount,
-      status: 'delivered',
-      coinsAfter,
-      result: {},
-      deliveredAt: this.now(),
-      ts: this.now(),
-    });
+    await this.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter } });
     await this.cols.ledger.insertOne({
       accountId: args.accountId,
       delta: -amount,
@@ -425,6 +454,36 @@ export class CommercialService {
         ? results.filter((r) => r.rarity === 'legendary' && r.itemId !== pool.featuredLegendary).length
         : 0;
 
+    // Insert-first idempotency (§6.5): reserve the orderId slot (with the rolled results) BEFORE debiting so two
+    // concurrent calls with the same orderId cannot both debit. E11000 → replay the existing draw's result.
+    try {
+      await this.cols.orders.insertOne({
+        _id: args.orderId,
+        accountId: args.accountId,
+        kind: 'gacha',
+        cost,
+        status: 'charged',
+        coinsAfter: 0, // back-filled after the debit succeeds
+        result: { results, poolId: args.poolId },
+        pityAfter: { [args.poolId]: pityAfter },
+        ts: this.now(),
+      });
+    } catch (e) {
+      if ((e as { code?: number }).code === 11000) {
+        const o = await this.cols.orders.findOne({ _id: args.orderId });
+        const w = await this.cols.wallets.findOne({ _id: args.accountId });
+        return {
+          ok: true,
+          orderId: args.orderId,
+          coinsAfter: o?.coinsAfter ?? 0,
+          pityAfter: o?.pityAfter?.[args.poolId] ?? pityAfter,
+          results: o?.result.results ?? results,
+          fateGained: 0, // replay: fate already credited on the original draw
+          fatePointsAfter: w?.fatePoints ?? 0,
+        };
+      }
+      throw e;
+    }
     // Debit coins + update pity for this pool (+ credit fate points); single-document atomic op with $gte guard.
     const charged = await this.cols.wallets.findOneAndUpdate(
       { _id: args.accountId, coins: { $gte: cost } },
@@ -434,21 +493,15 @@ export class CommercialService {
       },
       { returnDocument: 'after' },
     );
-    if (!charged) return { ok: false, error: 'INSUFFICIENT_FUNDS' };
+    if (!charged) {
+      // Insufficient funds (raced drain after the pre-check): release the reserved slot before returning.
+      await this.cols.orders.deleteOne({ _id: args.orderId });
+      return { ok: false, error: 'INSUFFICIENT_FUNDS' };
+    }
     const coinsAfter = charged.coins;
     const fatePointsAfter = charged.fatePoints ?? 0;
 
-    await this.cols.orders.insertOne({
-      _id: args.orderId,
-      accountId: args.accountId,
-      kind: 'gacha',
-      cost,
-      status: 'charged',
-      coinsAfter,
-      result: { results, poolId: args.poolId },
-      pityAfter: { [args.poolId]: pityAfter },
-      ts: this.now(),
-    });
+    await this.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter } });
     await this.cols.ledger.insertOne({
       accountId: args.accountId,
       delta: -cost,
@@ -781,8 +834,16 @@ export class CommercialService {
       }
       throw e;
     }
+    // ensureWallet BEFORE claiming the first-purchase bonus: claimFirstPurchaseBonus's CAS has no upsert, so on a
+    // genuine first purchase the wallet must already exist or the 2× bonus would leak to the second recharge (§6.5).
+    await this.ensureWallet(args.accountId);
     const isFirst = await this.claimFirstPurchaseBonus(args.accountId);
     const coinsGranted = isFirst ? v.coins * FIRST_PURCHASE_BONUS_MULTIPLIER : v.coins;
+    // The receipt slot was reserved above with the pre-bonus v.coins; back-fill the actual granted amount so a
+    // later idempotent replay reports the bonus-inclusive value (mirrors the orders coinsAfter back-fill).
+    if (coinsGranted !== v.coins) {
+      await this.cols.recharges.updateOne({ _id: args.receiptId }, { $set: { coinsGranted } });
+    }
     const coinsAfter = await this.credit(args.accountId, coinsGranted, 'recharge', {
       receiptId: args.receiptId,
     });

@@ -103,25 +103,25 @@ describe.skipIf(!mongo)('commercial service — idempotency / concurrency / boun
     expect((await ledgerOf('scs')).filter((l) => l.reason === 'shop').length).toBe(1);
   });
 
-  // KNOWN BUG (pinned with it.fails so it flips red the moment it is fixed): the debit paths
-  // (shopCharge / spend / gachaDraw) deduct coins from the wallet BEFORE claiming the order-id
-  // idempotency slot, and the orders.insertOne has no E11000 catch. So two CONCURRENT calls with
-  // the same orderId both pass the "existing order?" check, both debit the wallet (DOUBLE CHARGE),
-  // then the second insertOne throws E11000 (surfaced to meta as a 400). The credit paths
-  // (grant / monthlyCardBuy / rechargeVerify / paddleComplete) do this correctly: claim the slot
-  // first, catch E11000. Fix = same insert-first pattern for the debit paths.
-  it.fails('shopCharge: concurrent duplicate orderId should debit exactly once and never throw (currently double-charges)', async () => {
+  // Insert-first idempotency on the debit paths (shopCharge / spend / gachaDraw): the order-id slot is claimed
+  // BEFORE the wallet is debited and orders.insertOne's E11000 is caught, so two CONCURRENT calls with the same
+  // orderId can no longer both pass the "existing order?" check and double-charge. The loser of the race takes the
+  // E11000 branch and returns the existing order's result without a second debit — matching the credit paths
+  // (grant / monthlyCardBuy / rechargeVerify / paddleComplete). Fixed in service.ts (see COMMERCIAL_DESIGN §6.5).
+  it('shopCharge: concurrent duplicate orderId debits exactly once and never throws', async () => {
     await fund('sc', 1000);
     const calls = Array.from({ length: 6 }, () =>
       svc.shopCharge({ accountId: 'sc', itemId: 'skin_shop_c1', cost: 300, orderId: 'dup-shop' }),
     );
     const res = await Promise.allSettled(calls);
-    // Correct behavior (currently violated): no call rejects, wallet debited once.
+    // No call rejects, wallet debited once, and exactly one order/ledger row survive the race.
     expect(res.every((r) => r.status === 'fulfilled')).toBe(true);
     expect((await svc.getWallet('sc')).coins).toBe(700);
+    expect(await m.collections.orders.countDocuments({ _id: 'dup-shop' })).toBe(1);
+    expect((await ledgerOf('sc')).filter((l) => l.reason === 'shop').length).toBe(1);
   });
 
-  it.fails('spend: concurrent duplicate orderId should debit exactly once and never throw (currently double-charges)', async () => {
+  it('spend: concurrent duplicate orderId debits exactly once and never throws', async () => {
     await fund('spc', 1000);
     const calls = Array.from({ length: 6 }, () =>
       svc.spend({ accountId: 'spc', amount: 300, reason: 'rename', orderId: 'dup-spend' }),
@@ -129,6 +129,22 @@ describe.skipIf(!mongo)('commercial service — idempotency / concurrency / boun
     const res = await Promise.allSettled(calls);
     expect(res.every((r) => r.status === 'fulfilled')).toBe(true);
     expect((await svc.getWallet('spc')).coins).toBe(700);
+    expect(await m.collections.orders.countDocuments({ _id: 'dup-spend' })).toBe(1);
+    expect((await ledgerOf('spc')).filter((l) => l.reason === 'rename').length).toBe(1);
+  });
+
+  it('gachaDraw: concurrent duplicate orderId debits exactly once and never throws', async () => {
+    await fund('gcx', 1000);
+    const calls = Array.from({ length: 6 }, () =>
+      svc.gachaDraw({ accountId: 'gcx', poolId: 'standard', count: 1, orderId: 'dup-gacha' }),
+    );
+    const res = await Promise.allSettled(calls);
+    expect(res.every((r) => r.status === 'fulfilled')).toBe(true);
+    // Single draw costs 150 → debited once (850), not 6×.
+    expect((await svc.getWallet('gcx')).coins).toBe(850);
+    expect(await m.collections.orders.countDocuments({ _id: 'dup-gacha' })).toBe(1);
+    expect((await ledgerOf('gcx')).filter((l) => l.reason === 'gacha').length).toBe(1);
+    expect(await m.collections.gachaHistory.countDocuments({ orderId: 'dup-gacha' })).toBe(1);
   });
 
   // ── rechargeVerify: receipt-id conflict + cross-account guard under concurrency ──
@@ -196,17 +212,15 @@ describe.skipIf(!mongo)('commercial service — idempotency / concurrency / boun
     expect((await ledgerOf('pdc')).filter((l) => l.reason === 'recharge').length).toBe(1);
   });
 
-  // ── First-purchase bonus semantics on rechargeVerify (documents a known quirk) ──
-  it('rechargeVerify: first-purchase 2× bonus lands on the SECOND recharge, not the first (lazy wallet creation quirk)', async () => {
-    // On a genuinely first recharge the wallet does not exist yet; claimFirstPurchaseBonus() has no upsert,
-    // so it matches nothing and the 2× bonus is skipped. The wallet is created by the credit() that follows,
-    // so the bonus is instead claimed on the NEXT recharge. This pins current behavior; paddleComplete does
-    // NOT share the quirk (it ensures the wallet first) — see the paddleComplete tests above.
+  // ── First-purchase bonus semantics on rechargeVerify ───────────────────────────
+  it('rechargeVerify: first-purchase 2× bonus lands on the FIRST recharge; the second gets no bonus', async () => {
+    // rechargeVerify now ensures the wallet BEFORE claimFirstPurchaseBonus (§6.5), so the CAS matches on the
+    // genuine first purchase and the 2× multiplier is applied to recharge #1 — matching paddleComplete.
     const first = await svc.rechargeVerify({ accountId: 'q', platform: 'web', receipt: 'tier:t499', receiptId: 'q1' });
-    expect(first.ok && first.coinsGranted).toBe(550); // no bonus on the true first purchase
+    expect(first.ok && first.coinsGranted).toBe(550 * FIRST_PURCHASE_BONUS_MULTIPLIER); // 2× on the true first purchase
     const second = await svc.rechargeVerify({ accountId: 'q', platform: 'web', receipt: 'tier:t499', receiptId: 'q2' });
-    expect(second.ok && second.coinsGranted).toBe(550 * FIRST_PURCHASE_BONUS_MULTIPLIER); // bonus leaks to #2
-    expect((await svc.getWallet('q')).coins).toBe(550 + 550 * FIRST_PURCHASE_BONUS_MULTIPLIER);
+    expect(second.ok && second.coinsGranted).toBe(550); // no bonus on the second purchase
+    expect((await svc.getWallet('q')).coins).toBe(550 * FIRST_PURCHASE_BONUS_MULTIPLIER + 550);
   });
 
   // ── Boundary inputs ────────────────────────────────────────────────────────────
