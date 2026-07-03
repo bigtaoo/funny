@@ -53,7 +53,7 @@ export interface EquipmentCallbacks {
    *   - from Collection : { labelKey: 'collection.title', ... }  → [Collection|Equipment]
    *   - from Card roster : { labelKey: 'roster.title', ... }      → [Cards|Equipment]
    */
-  peerTab?: { labelKey: TranslationKey; onSelect(): void };
+  peerTab?: { labelKey: TranslationKey; icon?: IconKind; onSelect(): void };
   /** Read the current authoritative save (server pushes after each action → adoptServer; this scene re-reads and redraws). */
   getSave(): SaveData;
   craft(defId: string): Promise<EquipResult>;
@@ -234,8 +234,8 @@ export class EquipmentScene implements Scene {
   private renderGroupTabs(): void {
     if (this.groupH <= 0 || !this.cb.peerTab) return;
     const tabs: HubTab[] = [
-      { label: t(this.cb.peerTab.labelKey), active: false },
-      { label: t('equip.title'), active: true },
+      { label: t(this.cb.peerTab.labelKey), active: false, icon: this.cb.peerTab.icon },
+      { label: t('equip.title'), active: true, icon: 'armor' },
     ];
     const hits = drawHubTabs(this.bodyLayer, this.w, HUD_H, this.groupH, tabs, (i) => {
       if (i === 0) this.cb.peerTab?.onSelect();

@@ -214,10 +214,10 @@ export class GachaScene implements Scene {
     const { w, h } = this;
     const stripH = hubTabsHeight(h);
     const tabs: HubTab[] = [
-      { label: t('shop.title'), active: false },
-      { label: t('gacha.title'), active: true },
+      { label: t('shop.title'), active: false, icon: 'tag' },
+      { label: t('gacha.title'), active: true, icon: 'capsule' },
     ];
-    if (this.cb.openBattlePass) tabs.push({ label: t('battlepass.title'), active: false });
+    if (this.cb.openBattlePass) tabs.push({ label: t('battlepass.title'), active: false, icon: 'trophy' });
     const hits = drawHubTabs(this.container, w, tbH, stripH, tabs, (i) => {
       if (i === 0) this.cb.openShop?.();
       else if (i === 2) this.cb.openBattlePass?.();

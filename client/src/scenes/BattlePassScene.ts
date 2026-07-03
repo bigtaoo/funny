@@ -99,9 +99,9 @@ export class BattlePassScene implements Scene {
     const { w, h } = this;
     const stripH = hubTabsHeight(h);
     const tabs: HubTab[] = [
-      { label: t('shop.title'), active: false },
-      { label: t('gacha.title'), active: false },
-      { label: t('battlepass.title'), active: true },
+      { label: t('shop.title'), active: false, icon: 'tag' },
+      { label: t('gacha.title'), active: false, icon: 'capsule' },
+      { label: t('battlepass.title'), active: true, icon: 'trophy' },
     ];
     const hits = drawHubTabs(this.container, w, tbH, stripH, tabs, (i) => {
       if (i === 0) this.cb.openShop?.();

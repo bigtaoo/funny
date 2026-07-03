@@ -171,8 +171,8 @@ export class CardScene implements Scene {
   private renderGroupTabs(): void {
     if (this.groupH <= 0) return;
     const tabs: HubTab[] = [
-      { label: t('roster.title'), active: true },
-      { label: t('equip.title'), active: false },
+      { label: t('roster.title'), active: true, icon: 'cards' },
+      { label: t('equip.title'), active: false, icon: 'armor' },
     ];
     const hits = drawHubTabs(this.bodyLayer, this.w, HUD_H, this.groupH, tabs, (i) => {
       if (i === 1) this.cb.openEquipmentBag?.();

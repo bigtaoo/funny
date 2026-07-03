@@ -33,7 +33,10 @@ export type IconKind =
   | 'scope' | 'flag'
   // SLG city buildings (CityScene grid): HQ desk / archive cabinet + a build-queue hammer badge.
   // Resource-producer buildings reuse the res_atlas motifs; drillYard→swords, wall→castle, academy→book.
-  | 'desk' | 'cabinet' | 'hammer';
+  | 'desk' | 'cabinet' | 'hammer'
+  // Hub tab strip glyphs (HubTabs): shop price-tag / gacha capsule / roster card stack.
+  // Other hub tabs reuse existing glyphs — coins→coin, battlepass→trophy, equipment→armor, collection→book.
+  | 'tag' | 'capsule' | 'cards';
 
 /** Open book — splayed pages over a centre spine, with a couple of text lines. */
 function drawBook(g: PIXI.Graphics, s: number, color: number): void {
@@ -616,6 +619,54 @@ function drawHammer(g: PIXI.Graphics, s: number, color: number): void {
     { color, width: w * 1.5, jitter: 0.3, taper: 0.9, double: false });
 }
 
+/** Tag (shop) — a price tag pointing right: five-sided body with a punched hole. */
+function drawTag(g: PIXI.Graphics, s: number, color: number): void {
+  const pen = new SketchPen(g, 0x7a61);
+  const w = Math.max(1.4, s * 0.05);
+  pen.stroke([
+    { x: s * 0.22, y: s * 0.30 }, { x: s * 0.58, y: s * 0.30 },
+    { x: s * 0.80, y: s * 0.50 }, { x: s * 0.58, y: s * 0.70 },
+    { x: s * 0.22, y: s * 0.70 }, { x: s * 0.22, y: s * 0.30 },
+  ], { color, width: w, jitter: 0.5, taper: 0.95, double: false });
+  // Punched hole near the point.
+  pen.circle(s * 0.55, s * 0.44, s * 0.035, { color, width: w * 0.7, jitter: 0.25, taper: 0.9, double: false });
+}
+
+/** Capsule (gacha) — a toy-machine ball: circle split by a seam, with a shine tick. */
+function drawCapsule(g: PIXI.Graphics, s: number, color: number): void {
+  const pen = new SketchPen(g, 0x7ca9);
+  const w = Math.max(1.4, s * 0.05);
+  const cx = s / 2, cy = s * 0.52, r = s * 0.30;
+  pen.circle(cx, cy, r, { color, width: w, jitter: 0.5, taper: 0.95, double: false });
+  // Horizontal seam across the middle (the ball's split line).
+  pen.line(cx - r, cy, cx + r, cy, { color, width: w * 0.8, jitter: 0.35, taper: 0.9, double: false });
+  // Short shine tick in the upper-left.
+  pen.line(cx - r * 0.5, cy - r * 0.5, cx - r * 0.2, cy - r * 0.62,
+    { color, width: w * 0.7, jitter: 0.2, taper: 0.6, double: false, alpha: 0.8 });
+}
+
+/** Cards (roster) — two overlapping cards, the front ruled with a couple of lines. */
+function drawCards(g: PIXI.Graphics, s: number, color: number): void {
+  const pen = new SketchPen(g, 0x7cd3);
+  const w = Math.max(1.4, s * 0.045);
+  // Back card, shifted up-right (drawn first → behind).
+  pen.stroke([
+    { x: s * 0.42, y: s * 0.24 }, { x: s * 0.74, y: s * 0.24 },
+    { x: s * 0.74, y: s * 0.66 }, { x: s * 0.42, y: s * 0.66 }, { x: s * 0.42, y: s * 0.24 },
+  ], { color, width: w * 0.85, jitter: 0.4, taper: 0.9, double: false, alpha: 0.75 });
+  // Front card.
+  pen.stroke([
+    { x: s * 0.26, y: s * 0.34 }, { x: s * 0.58, y: s * 0.34 },
+    { x: s * 0.58, y: s * 0.78 }, { x: s * 0.26, y: s * 0.78 }, { x: s * 0.26, y: s * 0.34 },
+  ], { color, width: w, jitter: 0.45, taper: 0.92, double: false });
+  // Two faint ruled lines on the front card.
+  const lw = Math.max(1, s * 0.022);
+  for (let i = 0; i < 2; i++) {
+    const ly = s * 0.50 + i * s * 0.12;
+    pen.line(s * 0.31, ly, s * 0.53, ly, { color, width: lw, jitter: 0.25, taper: 0.7, double: false, alpha: 0.7 });
+  }
+}
+
 const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number) => void> = {
   book:    drawBook,
   globe:   drawGlobe,
@@ -645,6 +696,9 @@ const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number) => voi
   desk:    drawDesk,
   cabinet: drawCabinet,
   hammer:  drawHammer,
+  tag:     drawTag,
+  capsule: drawCapsule,
+  cards:   drawCards,
 };
 
 /**

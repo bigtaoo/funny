@@ -212,8 +212,8 @@ export class CollectionScene implements Scene {
    */
   private drawGroupTabs(y: number, stripH: number): void {
     const tabs: HubTab[] = [
-      { label: t('collection.title'), active: true },
-      { label: t('collection.tab.equipment'), active: false },
+      { label: t('collection.title'), active: true, icon: 'book' },
+      { label: t('collection.tab.equipment'), active: false, icon: 'armor' },
     ];
     const hits = drawHubTabs(this.container, this.w, y, stripH, tabs, (i) => {
       if (i === 1) this.cb.onOpenEquipment?.();

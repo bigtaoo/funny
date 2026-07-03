@@ -431,11 +431,11 @@ export class ShopScene implements Scene {
     const showCoins = !!this.cb.rechargeCoins;
 
     const tabs: HubTab[] = [
-      { label: t('shop.title'), active: this.tab === 'shop' },
+      { label: t('shop.title'), active: this.tab === 'shop', icon: 'tag' },
     ];
-    if (showCoins) tabs.push({ label: t('shop.coinsTab'), active: this.tab === 'coins' });
-    tabs.push({ label: t('gacha.title'), active: false });
-    if (this.cb.openBattlePass) tabs.push({ label: t('battlepass.title'), active: false });
+    if (showCoins) tabs.push({ label: t('shop.coinsTab'), active: this.tab === 'coins', icon: 'coin' });
+    tabs.push({ label: t('gacha.title'), active: false, icon: 'capsule' });
+    if (this.cb.openBattlePass) tabs.push({ label: t('battlepass.title'), active: false, icon: 'trophy' });
 
     const hits = drawHubTabs(this.container, w, tbH, stripH, tabs, (i) => {
       if (!showCoins) {

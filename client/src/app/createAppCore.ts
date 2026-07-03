@@ -38,6 +38,7 @@ import {
   defaultPvpDeck, validatePvpDeckClient, getPvpUnlockedCards, PVP_DECK_SIZE,
 } from '../game/meta/pvpLoadout';
 import type { ProfileData } from '../render/ProfilePopup';
+import type { IconKind } from '../render/icons';
 import type { AuthOutcome } from '../scenes/LoginScene';
 import type { RenameOutcome } from '../scenes/SettingsScene';
 import type { EloResult } from '../scenes/ResultScene';
@@ -1420,9 +1421,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     // entered from the collection page ([Collection|Equipment]) or the card roster ([Cards|Equipment]);
     // tapping the peer navigates back (= back). Campaign / per-card entry does not inject this → plain back.
     const peerTab = group === 'collection'
-      ? { labelKey: 'collection.title' as TranslationKey, onSelect: () => back() }
+      ? { labelKey: 'collection.title' as TranslationKey, icon: 'book' as IconKind, onSelect: () => back() }
       : group === 'roster'
-        ? { labelKey: 'roster.title' as TranslationKey, onSelect: () => back() }
+        ? { labelKey: 'roster.title' as TranslationKey, icon: 'cards' as IconKind, onSelect: () => back() }
         : undefined;
     views.showEquipment({
       onBack() { back(); },
