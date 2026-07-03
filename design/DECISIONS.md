@@ -262,8 +262,8 @@
   2. **封路**：主城九格对**非城主行军不可穿过**（等同障碍），敌军寻路必须绕行——玩家可用主城**封路**。城主自己的行军可进出自己的主城（`findMarchPath` 新增 `blockedBaseKeys` 参数，语义同 `passableGateKeys`：命中即阻挡，但 `isDest` 放行以便围攻敌方主城）。
   3. **一体防守**：主城为一体，**攻击九格中任意一格 = 围攻整座主城**，到达后一律以锚点的驻军/防守 config 结算同一场围攻；「在主城的队伍依次作为守军出战」沿用既有防守 config 机制（§3.3），本条不新建多队波次系统。
   4. **繁荣/领地计数**：九格**全部计入** `territoryCount` 与家族繁荣（`countDocuments{ownerId}` 无需特判）。
-- **不迁移**：SLG 未上线，无存量数据；现有 dev/test 单格主城在下次 join/relocate 时自然重建为九格。
-- **影响**：`@nw/shared`（`slg.ts`：新增 3×3 footprint 工具函数 + `findMarchPath` 增 `blockedBaseKeys`）**属公共依赖，最先合 main**；`worldsvc`（`service.ts` joinWorld/relocateBase/passiveRelocate 写 9 格、placement 校验 9 格、`computeMarchPath` 构建 `blockedBaseKeys`、`applySiege` 任一 base 格→锚点、abandon/occupy 拒绝 base 格、`pickSpawnTile` 3×3 扫描）；`client`（`WorldMapScene` 城市 sprite 对齐真实九格 + 修贴图留白 + 点击任一格开主城菜单）。[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.1 主城行 + §3 footprint 说明须更新。
+- **不迁移 → 强制自愈（2026-07-03 修订）**：SLG 未上线，无正式存量数据，但 **dev/test 世界里可能残留 ADR-025 之前建的单格主城**。原以为「下次 join/relocate 时自然重建」——**错**：旧 `joinWorld` 对已存在玩家是幂等早返回，根本不会重建，遗留单格主城会一直渲染不出城市 sprite（客户端严格要求完整 3×3 锚点）。**改为强制数据正确**：worldsvc 新增 `isBaseIntact()`（校验 `mainBaseTile` 锚点九格全在、全 `type:'base'`、同主）+ `purgePlayerWorld()`（删该玩家该世界全部 tiles + playerWorld）；`joinWorld` 对已存在玩家改为「基座完整→幂等；损坏/遗留→purge 全部旧数据 + 落全新 3×3」，即以全新用户重入。**`getMe` 保持只读、不做门控**（避免波及被围攻方读态等所有调用方、并规避与 `passiveRelocate` 的并发写竞争），自愈只放在唯一入口 `joinWorld`。客户端 `WorldMapScene.loadData` 进图时**总是**调 `joinWorld`（健康号幂等空转，损坏号触发重建）。
+- **影响**：`@nw/shared`（`slg.ts`：新增 3×3 footprint 工具函数 + `findMarchPath` 增 `blockedBaseKeys`）**属公共依赖，最先合 main**；`worldsvc`（`service.ts` joinWorld/relocateBase/passiveRelocate 写 9 格、placement 校验 9 格、`computeMarchPath` 构建 `blockedBaseKeys`、`applySiege` 任一 base 格→锚点、abandon/occupy 拒绝 base 格、`pickSpawnTile` 3×3 扫描；**+ `isBaseIntact`/`purgePlayerWorld` 完整性自愈**，e2e `base-integrity.e2e.test.ts` 4 例）；`client`（`WorldMapScene` 城市 sprite 对齐真实九格严格锚点 + 修贴图留白 + 点击任一格开主城菜单 + 进图总是 joinWorld 触发自愈）。[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.1 主城行 + §3 footprint 说明须更新。
 
 ## ADR-026b 拍卖物品交割/退回 = escrow-out + 系统邮件（废弃"溢出暂存区"） — Accepted — 2026-07-02
 

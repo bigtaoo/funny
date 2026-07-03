@@ -102,7 +102,10 @@ export function seedFor(x: number, y: number, w: number, h = 0): number {
  * the lobby / board so every screen is the same page. Falls back to live Graphics
  * when no bake renderer is wired (headless tests).
  */
-export function buildPaperBackground(tag: string, w: number, h: number): PIXI.DisplayObject {
+export function buildPaperBackground(
+  tag: string, w: number, h: number, opts: { marginLine?: boolean } = {},
+): PIXI.DisplayObject {
+  const { marginLine = true } = opts;
   const gfx = new PIXI.Graphics();
   gfx.beginFill(ui.bg);
   gfx.drawRect(0, 0, w, h);
@@ -113,8 +116,13 @@ export function buildPaperBackground(tag: string, w: number, h: number): PIXI.Di
   for (let y = lineGap; y < h; y += lineGap) {
     pen.line(0, y, w, y, { color: palette.ruleLine, width: 1.1, jitter: 0.7, taper: 0.9, double: false });
   }
-  const mx = Math.round(w * 0.09);
-  pen.line(mx, 0, mx, h, { color: palette.inkRed, width: 2.2, jitter: 1.0, taper: 0.95 });
+  // The notebook's red margin rule. Suppressed on the SLG overworld (marginLine:false):
+  // there the paper is a backdrop for a full-bleed isometric map, and a lone red vertical
+  // stripe down the left read as a stray artifact rather than as notebook stationery.
+  if (marginLine) {
+    const mx = Math.round(w * 0.09);
+    pen.line(mx, 0, mx, h, { color: palette.inkRed, width: 2.2, jitter: 1.0, taper: 0.95 });
+  }
 
   const tex = bake(`${tag}:${Math.round(w)}x${Math.round(h)}`, gfx, w, h);
   if (tex) {

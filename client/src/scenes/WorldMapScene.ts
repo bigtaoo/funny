@@ -107,6 +107,7 @@ const ENEMY_BASE_TINT= 0x4477cc; // enemy capital (deep blue ink)
 const ALLY_TINT      = 0x9cd6a4; // family-ally territory (light green ink — G5 friendly third color)
 const ALLY_BASE_TINT = 0x46a85a; // family-ally capital (deep green ink)
 const FOG_COLOR      = 0x6b6458; // fog of war (pencil grey, overlaid on terrain)
+const CLOUD_COLOR    = 0xcfc7b6; // off-map cloud/mist veil (warm paper-grey) — hides the blank paper beyond the map edge
 const ALLY_SECT_BORDER = 0xe6a817; // allied-sect territory yellow border (amber gold, G5; marks without shared vision, §8.2)
 
 /** Ownership color for the wash/border overlay, or null when the tile is unowned. */
@@ -271,6 +272,10 @@ export class WorldMapScene implements Scene {
   // Keyed by "tx:ty". Each value is a Container holding a Sprite (image) + Graphics (level dots).
   private citySprites: Map<string, PIXI.Container> = new Map();
 
+  // Off-map cloud veil: covers everything outside the map's tile area with a soft mist so the
+  // blank paper (and the doodle backdrop) beyond the map edge never shows. Redrawn on pan/zoom.
+  private fogGfx!: PIXI.Graphics;
+
   // Overlay: march arrows, selected tile highlight, capital stars (fast, always redrawn).
   private overlayGfx!: PIXI.Graphics;
 
@@ -354,7 +359,7 @@ export class WorldMapScene implements Scene {
     const { w, h } = this;
 
     // Paper background
-    const bg = buildPaperBackground('worldmap', w, h);
+    const bg = buildPaperBackground('worldmap', w, h, { marginLine: false });
     this.container.addChild(bg);
 
     // Map area (clip to above-HUD area)
@@ -378,6 +383,11 @@ export class WorldMapScene implements Scene {
     this.cityLayer = new PIXI.Container();
     this.cityLayer.sortableChildren = true;
     mapClip.addChild(this.cityLayer);
+
+    // Off-map cloud veil (above tiles/cities, below the interactive overlay so march
+    // arrows / capital stars / selection — all on-map — always read on top).
+    this.fogGfx = new PIXI.Graphics();
+    mapClip.addChild(this.fogGfx);
 
     // Overlay: capitals, march arrows, selected tile highlight
     this.overlayGfx = new PIXI.Graphics();
@@ -411,7 +421,7 @@ export class WorldMapScene implements Scene {
     const { w, h } = this;
     const layer = new PIXI.Container();
 
-    const sheet = buildPaperBackground('worldmap-loading', w, h);
+    const sheet = buildPaperBackground('worldmap-loading', w, h, { marginLine: false });
     layer.addChild(sheet);
 
     const cx = w / 2;
@@ -462,14 +472,18 @@ export class WorldMapScene implements Scene {
     } catch { /* offline — no nation overlay */ }
     try {
       this.me = await this.cb.worldApi.getMe(this.cb.worldId);
-      // First entry: the system automatically places the capital (§3.4, preferring proximity to the family) — the player no longer picks a coordinate manually.
-      // If the world is full or no slot is available, stay in the unjoined state (the user can tap the map to retry); do not block map entry.
-      if (!this.me.joined) {
-        try {
-          this.me = await this.cb.worldApi.joinWorld(this.cb.worldId);
-          this.showToast(t('world.myBase'));
-        } catch { /* world full / no slot available — remain in unjoined state */ }
-      }
+      // Ensure a valid 3×3 capital exists on entry (ADR-025). joinWorld is the single heal point:
+      //   • not joined     → system auto-places the capital (§3.4, prefers proximity to family);
+      //   • healthy 3×3    → idempotent no-op, returns current state;
+      //   • corrupt/legacy → worldsvc purges the stale data and re-places a fresh 3×3, so the player
+      //     re-enters as a brand-new user (fixes a pre-ADR-025 single-tile base rendering no city).
+      // Always call it (not only when unjoined) so a corrupt base can't leave the player stuck.
+      // World full / no slot / offline → keep whatever getMe returned; do not block map entry.
+      const wasJoined = this.me.joined;
+      try {
+        this.me = await this.cb.worldApi.joinWorld(this.cb.worldId);
+        if (!wasJoined) this.showToast(t('world.myBase'));
+      } catch { /* world full / no slot available / offline — keep current state */ }
       if (this.me.mainBaseTile) {
         const [bx, by] = this.parseTileId(this.me.mainBaseTile);
         this.centerAt(bx, by);
@@ -802,6 +816,10 @@ export class WorldMapScene implements Scene {
    * Is (tx,ty) the CENTER anchor of a 3×3 base (ADR-025)? True iff the tile and all 4 orthogonal
    * neighbors are base tiles of the same owner — only the center of a 3×3 satisfies this, so ring
    * cells return false. Used to draw the city sprite/icon exactly once per base.
+   *
+   * The strict 3×3 requirement is intentional: worldsvc guarantees every capital is a complete
+   * same-owner 3×3 (join places all 9 cells; getMe/joinWorld purge any legacy/corrupt base). A tile
+   * that fails this test therefore signals bad data rather than a shape we should tolerate here.
    */
   private isBaseAnchor(tx: number, ty: number): boolean {
     const c = this.tileCache.get(`${tx}:${ty}`);
@@ -1384,7 +1402,49 @@ export class WorldMapScene implements Scene {
   // ── Overlay (march arrows, capitals, selected tile) ────────────────────────
   // Drawn into a separate Graphics above the tile pool. Fast to redraw (~few dozen objects).
 
+  /**
+   * Cloud/mist veil over everything outside the map's tile area. The map's tile rectangle
+   * (0..mapW-1 × 0..mapH-1) projects to a screen-space parallelogram; we fill the whole
+   * viewport with cloud and punch that parallelogram out as a hole, then lay a soft thick
+   * stroke along its edge so the map fades into mist rather than ending on a hard diamond.
+   * Redrawn from renderOverlay(), which fires on every pan / zoom / data change.
+   */
+  private renderFog(): void {
+    const g = this.fogGfx;
+    g.clear();
+    const tp = this.tp;
+    const mapViewH = this.h - HUD_H;
+    const hw = tp / 2;
+    const hh = (tp * ISO_RATIO) / 2;
+    const px = this.panX;
+    const py = this.panY;
+    // Outer vertices of the tile-area parallelogram (extreme corner tiles' outer diamond points).
+    const top    = tileToScreen(0, 0, tp);
+    const right  = tileToScreen(this.mapW - 1, 0, tp);
+    const bottom = tileToScreen(this.mapW - 1, this.mapH - 1, tp);
+    const left   = tileToScreen(0, this.mapH - 1, tp);
+    const hole = [
+      px + top.x,          py + top.y - hh,
+      px + right.x + hw,   py + right.y,
+      px + bottom.x,       py + bottom.y + hh,
+      px + left.x - hw,    py + left.y,
+    ];
+    g.beginFill(CLOUD_COLOR, 0.97);
+    g.drawRect(0, 0, this.w, mapViewH);
+    g.beginHole();
+    g.drawPolygon(hole);
+    g.endHole();
+    g.endFill();
+    // Misty rim: a soft thick stroke straddling the map boundary, blurring the hard tile edge.
+    g.lineStyle(Math.max(6, tp * 0.55), CLOUD_COLOR, 0.4);
+    g.drawPolygon(hole);
+    g.lineStyle(Math.max(3, tp * 0.22), CLOUD_COLOR, 0.55);
+    g.drawPolygon(hole);
+    g.lineStyle(0);
+  }
+
   private renderOverlay(): void {
+    this.renderFog();
     const g = this.overlayGfx;
     g.clear();
     const tp = this.tp;
@@ -2577,6 +2637,7 @@ export class WorldMapScene implements Scene {
    */
   private clampPan(): void {
     const tp = this.tp;
+    const mapViewH = this.h - HUD_H;
     const corners = [
       tileToScreen(0, 0, tp), tileToScreen(this.mapW, 0, tp),
       tileToScreen(0, this.mapH, tp), tileToScreen(this.mapW, this.mapH, tp),
@@ -2585,13 +2646,19 @@ export class WorldMapScene implements Scene {
     const maxSx = Math.max(...corners.map((c) => c.x));
     const minSy = Math.min(...corners.map((c) => c.y));
     const maxSy = Math.max(...corners.map((c) => c.y));
-    const buf = tp * 2;
-    const maxX = -minSx + buf;
-    const minX = this.w - maxSx - buf;
-    const maxY = -minSy + buf;
-    const minY = (this.h - HUD_H) - maxSy - buf;
-    this.panX = Math.min(maxX, Math.max(minX, this.panX));
-    this.panY = Math.min(maxY, Math.max(minY, this.panY));
+    // Keep the viewport inside the map — no buffer past the edge (the camera should not
+    // leave the map). When the map's projected span is smaller than the viewport on an axis,
+    // there is nowhere to pan to, so lock it centered instead of letting it drift off-screen.
+    if (maxSx - minSx <= this.w) {
+      this.panX = this.w / 2 - (minSx + maxSx) / 2;
+    } else {
+      this.panX = Math.min(-minSx, Math.max(this.w - maxSx, this.panX));
+    }
+    if (maxSy - minSy <= mapViewH) {
+      this.panY = mapViewH / 2 - (minSy + maxSy) / 2;
+    } else {
+      this.panY = Math.min(-minSy, Math.max(mapViewH - maxSy, this.panY));
+    }
   }
 
   private screenToTile(sx: number, sy: number): { x: number; y: number } {

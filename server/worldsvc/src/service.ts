@@ -748,7 +748,17 @@ export class WorldService {
   async joinWorld(worldId: string, accountId: string, x?: number, y?: number): Promise<PlayerWorldView> {
     const { cols, now } = this.deps;
     const existing = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
-    if (existing) return this.getMe(worldId, accountId); // idempotent
+    if (existing) {
+      // Idempotent for a healthy player. But if the stored capital is corrupt/legacy (not a complete
+      // same-owner 3×3, ADR-025) — e.g. a pre-ADR-025 single-tile base — purge all their world data
+      // and fall through to a fresh placement, so they re-enter as a brand-new user. A player with no
+      // mainBaseTile (awaiting voluntary relocation) is treated as healthy and left untouched.
+      const intact = existing.mainBaseTile
+        ? await this.isBaseIntact(worldId, accountId, existing.mainBaseTile)
+        : true;
+      if (intact) return this.getMe(worldId, accountId);
+      await this.purgePlayerWorld(worldId, accountId);
+    }
 
     // SS7: resolve the familyId read-only mirror once up front (subsequent family changes are not written back;
     // clients read from /social/family/mine). Used for both auto-spawn placement and the playerWorld mirror below.
@@ -2330,6 +2340,38 @@ export class WorldService {
       if (e.ownerId && e.ownerId !== opts?.ignoreOwnerId) return false;
     }
     return true;
+  }
+
+  /**
+   * ADR-025 data integrity: is the capital anchored at `mainBaseTile` a complete, same-owner 3×3?
+   * True iff all 9 footprint cells exist as `type:'base'` owned by `accountId` (anchor + 8 rings).
+   * A player created by joinWorld/relocate/passiveRelocate always satisfies this; a stored base that
+   * fails it is corrupt or legacy (e.g. a pre-ADR-025 single-tile capital) and must be purged rather
+   * than tolerated — the client renders the city sprite only on a full 3×3 anchor.
+   */
+  private async isBaseIntact(worldId: string, accountId: string, mainBaseTile: string): Promise<boolean> {
+    const ax = this.coordX(mainBaseTile);
+    const ay = this.coordY(mainBaseTile);
+    if (!Number.isFinite(ax) || !Number.isFinite(ay)) return false;
+    if (!baseFootprintInBounds(ax, ay, this.deps.mapW, this.deps.mapH)) return false;
+    const ids = baseFootprintCells(ax, ay).map(({ x, y }) => tileId(worldId, x, y));
+    const cells = await this.deps.cols.tiles
+      .find({ _id: { $in: ids } })
+      .project<{ ownerId?: string; type?: string }>({ ownerId: 1, type: 1 })
+      .toArray();
+    if (cells.length !== ids.length) return false; // some footprint cell missing
+    return cells.every((c) => c.type === 'base' && c.ownerId === accountId);
+  }
+
+  /**
+   * Wipe a player's entire presence in a world: all owned tiles (capital + territory) + the
+   * playerWorld doc. Used to discard a corrupt/legacy capital so the next joinWorld re-places the
+   * player as a brand-new user with a proper 3×3 (ADR-025). Marches/sieges are left to expire
+   * naturally (they reference tiles by id and no-op once the tiles are gone).
+   */
+  private async purgePlayerWorld(worldId: string, accountId: string): Promise<void> {
+    await this.deps.cols.tiles.deleteMany({ worldId, ownerId: accountId });
+    await this.deps.cols.playerWorld.deleteOne({ _id: playerWorldId(worldId, accountId) });
   }
 
   // ── Internal helpers ─────────────────────────────────────────────
