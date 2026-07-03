@@ -40,7 +40,9 @@ export type IconKind =
   // GachaScene rarity pips + limited-pool marker (standard pool reuses capsule). Tinted per rarity.
   | 'star'
   // Lock badge: locked cards/equipment/deck slots + battle-pass pass-required tier.
-  | 'lock';
+  | 'lock'
+  // Leaderboard top-3 rank medal (tinted gold / silver / bronze per rank).
+  | 'medal';
 
 /** Open book — splayed pages over a centre spine, with a couple of text lines. */
 function drawBook(g: PIXI.Graphics, s: number, color: number): void {
@@ -716,6 +718,20 @@ function drawLock(g: PIXI.Graphics, s: number, color: number): void {
   pen.line(cx, s * 0.62, cx, s * 0.71, { ...o, width: w * 0.75 });
 }
 
+/** Medal (leaderboard rank) — two ribbon strips descending to a double-ringed disc. */
+function drawMedal(g: PIXI.Graphics, s: number, color: number): void {
+  const pen = new SketchPen(g, 0x3ed1);
+  const w = Math.max(1.3, s * 0.05);
+  const o = { color, width: w, jitter: 0.35, taper: 0.9, double: false };
+  // Ribbons from the top down to the disc.
+  pen.line(s * 0.40, s * 0.12, s * 0.46, s * 0.48, o);
+  pen.line(s * 0.60, s * 0.12, s * 0.54, s * 0.48, o);
+  // Disc + inner ring.
+  const cx = s * 0.5, cy = s * 0.64, r = s * 0.22;
+  pen.circle(cx, cy, r, o);
+  pen.circle(cx, cy, r * 0.58, { ...o, width: w * 0.7 });
+}
+
 const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number) => void> = {
   book:    drawBook,
   globe:   drawGlobe,
@@ -750,6 +766,7 @@ const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number) => voi
   cards:   drawCards,
   star:    drawStar,
   lock:    drawLock,
+  medal:   drawMedal,
 };
 
 /**

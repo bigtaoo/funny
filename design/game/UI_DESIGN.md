@@ -336,7 +336,11 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 - BattlePassScene `pass_required` 档：格子右下角金锁；原共享文本路径拆成「pass_required 画锁 / 其余画文字」两支，底部右锚点不变。
 - 验证：`tsc --noEmit` + `build:web` 全绿。
 
-**仍可迭代（后续批）**：LeaderboardScene 名次 🥇🥈🥉、WorldMapScene 🔍 缩放 + 瓦片详情弹窗资源 emoji、FriendsScene 邮件附件 🎁、CampaignMap/Stats 的 ★/☆ 文字星（可复用新 `star` 字形）、各弹窗 ✕/✓ 排版符号（低优先，跨端渲染正常）。
+#### 4.16 排行榜名次奖牌（2026-07-03，批⑤）
+
+LeaderboardScene 前三名用 🥇🥈🥉 emoji。新增 **1 个** `icons.ts` 字形 `medal`（绶带 + 双环奖牌盘），前三名改 `buildIcon('medal', …)` 按名次 tint 金(0xf0c040)/银(0xc2c6cc)/铜(0xcd8a4b)；第 4 名起保留 `#N` 文字。验证：`tsc --noEmit` + `build:web` 全绿。
+
+**仍可迭代（后续批）**：WorldMapScene 🔍 缩放 + 瓦片详情弹窗资源 emoji、FriendsScene 邮件附件 🎁、CampaignMap/Stats 的 ★/☆ 文字星（可复用现有 `star` 字形）、各弹窗 ✕/✓ 排版符号（低优先，跨端渲染正常）。
 
 ---
 
