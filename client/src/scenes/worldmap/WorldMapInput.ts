@@ -35,11 +35,11 @@ export class WorldMapInput {
     if (!me?.joined) {
       // Not yet placed (normally auto-placed on map entry; this is the manual-retry path for the world-full / no-slot fallback).
       // The system picks the location automatically; the tap coordinate is no longer used for placement.
-      this.ctx.view.showModal(
+      this.ctx.panels.showModal(
         [t('world.joinTitle'), t('world.confirmJoin')],
         [
           { label: t('world.confirmJoinBtn'), action: () => void this.ctx.net.doJoin() },
-          { label: '✕', action: () => this.ctx.view.closeModal() },
+          { label: '✕', action: () => this.ctx.panels.closeModal() },
         ],
       );
       return;
@@ -51,30 +51,30 @@ export class WorldMapInput {
       const isBase = bx === tx && by === ty;
       if (isBase) {
         // Main city — enter desk / defense / teams.
-        this.ctx.view.showModal(
+        this.ctx.panels.showModal(
           [t('world.myBase'), `(${tx}, ${ty})`],
           [
-            { label: t('world.actEnterCity'), action: () => { this.ctx.view.closeModal(); this.ctx.cb.onOpenCity(); } },
-            { label: t('world.actDefense'), action: () => { this.ctx.view.closeModal(); this.ctx.cb.onOpenDefense('base'); } },
-            { label: t('world.team.manage'), action: () => { this.ctx.view.closeModal(); this.ctx.cb.onOpenTeams(); } },
-            { label: '✕', action: () => this.ctx.view.closeModal() },
+            { label: t('world.actEnterCity'), action: () => { this.ctx.panels.closeModal(); this.ctx.cb.onOpenCity(); } },
+            { label: t('world.actDefense'), action: () => { this.ctx.panels.closeModal(); this.ctx.cb.onOpenDefense('base'); } },
+            { label: t('world.team.manage'), action: () => { this.ctx.panels.closeModal(); this.ctx.cb.onOpenTeams(); } },
+            { label: '✕', action: () => this.ctx.panels.closeModal() },
           ],
         );
         return;
       }
       const tileKey = `${this.ctx.cb.worldId}:${tx}:${ty}`;
       const myButtons: { label: string; action: () => void }[] = [
-        { label: t('world.actReinforce'), action: () => this.ctx.view.showDeployDialog(tx, ty, 'reinforce') },
-        { label: t('world.actDefense'), action: () => { this.ctx.view.closeModal(); this.ctx.cb.onOpenDefense(tileKey); } },
+        { label: t('world.actReinforce'), action: () => this.ctx.panels.showDeployDialog(tx, ty, 'reinforce') },
+        { label: t('world.actDefense'), action: () => { this.ctx.panels.closeModal(); this.ctx.cb.onOpenDefense(tileKey); } },
       ];
       // Watchtower (§18 G5 V2): build a long-radius persistent vision source on an owned tile. If a tower already exists, show a status line instead of the build button.
       if (!tile.watchtower) {
         myButtons.push({ label: t('world.actWatchtower'), action: () => this.ctx.net.confirmWatchtower(tx, ty) });
       }
       myButtons.push({ label: t('world.actAbandon'), action: () => this.ctx.net.doAbandon(tx, ty) });
-      myButtons.push({ label: '✕', action: () => this.ctx.view.closeModal() });
+      myButtons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
       const head = tile.watchtower ? [t('world.mine'), t('world.hasWatchtower'), `(${tx}, ${ty})`] : [t('world.mine'), `(${tx}, ${ty})`];
-      this.ctx.view.showModal(head, myButtons);
+      this.ctx.panels.showModal(head, myButtons);
       return;
     }
 
@@ -90,26 +90,26 @@ export class WorldMapInput {
       }
       // Scout: no attack, no capture — send a scout to reveal enemy info / defenses then auto-return (scouting is also allowed during a protection window).
       buttons.push({ label: t('world.actScout'), action: () => void this.ctx.net.doScout(tx, ty) });
-      buttons.push({ label: '✕', action: () => this.ctx.view.closeModal() });
+      buttons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
       const enemyHead = [t('world.enemyTile'), ownerLine, `(${tx}, ${ty})`];
       if (tile.maxHp && tile.hp != null) enemyHead.push(t('world.buildingHp').replace('{hp}', String(tile.hp)).replace('{max}', String(tile.maxHp)));
-      this.ctx.view.showModal(enemyHead, buttons);
+      this.ctx.panels.showModal(enemyHead, buttons);
       return;
     }
 
     if (tile?.type === 'center') {
-      this.ctx.view.showToast(t('world.center'));
+      this.ctx.panels.showToast(t('world.center'));
       return;
     }
 
     // Stronghold (G8 §3.1): while unoccupied it is an ultra-strong NPC garrison — cannot be directly occupied or swept, only besieged (march with a team). Once captured it becomes a territory tile handled by the mine/occupied branches above.
     if (tile?.type === 'stronghold') {
-      this.ctx.view.showModal(
+      this.ctx.panels.showModal(
         [t('world.stronghold'), t('world.strongholdHint'), `(${tx}, ${ty})`],
         [
           { label: t('world.actAttack'), action: () => void this.ctx.net.showAttackTeamPicker(tx, ty) },
           { label: t('world.actScout'), action: () => void this.ctx.net.doScout(tx, ty) },
-          { label: '✕', action: () => this.ctx.view.closeModal() },
+          { label: '✕', action: () => this.ctx.panels.closeModal() },
         ],
       );
       return;
@@ -122,7 +122,7 @@ export class WorldMapInput {
       { label: t('world.actOccupy'), action: () => this.ctx.net.doOccupy(tx, ty) },
     ];
     if (garrison > 0) {
-      buttons.push({ label: t('world.actSweep'), action: () => this.ctx.view.showDeployDialog(tx, ty, 'sweep') });
+      buttons.push({ label: t('world.actSweep'), action: () => this.ctx.panels.showDeployDialog(tx, ty, 'sweep') });
     }
     // Scout: send a scout to lift distant fog / reveal an unknown tile, then auto-return (no capture).
     buttons.push({ label: t('world.actScout'), action: () => void this.ctx.net.doScout(tx, ty) });
@@ -131,9 +131,9 @@ export class WorldMapInput {
     if (relocatable) {
       buttons.push({ label: t('world.actRelocate'), action: () => this.ctx.net.confirmRelocate(tx, ty) });
     }
-    buttons.push({ label: '✕', action: () => this.ctx.view.closeModal() });
+    buttons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
     const head = garrison > 0 ? t('world.garrison').replace('{n}', String(garrison)) : t('world.actOccupy');
-    this.ctx.view.showModal([head, `(${tx}, ${ty})`], buttons);
+    this.ctx.panels.showModal([head, `(${tx}, ${ty})`], buttons);
   }
 
   // ── Deploy (troop-count dialog) ──────────────────────────────────────────────────
@@ -150,7 +150,7 @@ export class WorldMapInput {
           return;
         }
       }
-      this.ctx.view.closeModal();
+      this.ctx.panels.closeModal();
       return;
     }
 
@@ -164,7 +164,7 @@ export class WorldMapInput {
     // World info button (floats top-right over the map)
     const ib = this.ctx.infoBtnRect;
     if (ib.w > 0 && x >= ib.x && x <= ib.x + ib.w && y >= ib.y && y <= ib.y + ib.h) {
-      this.ctx.view.openInfoPanel();
+      this.ctx.panels.openInfoPanel();
       return;
     }
 
@@ -178,7 +178,7 @@ export class WorldMapInput {
     // Train / Family / Auction buttons
     const tr = this.ctx.trainBtnRect;
     if (tr.w > 0 && x >= tr.x && x <= tr.x + tr.w && y >= tr.y && y <= tr.y + tr.h) {
-      this.ctx.view.openTrainPanel();
+      this.ctx.panels.openTrainPanel();
       return;
     }
     const f = this.ctx.famBtnRect;

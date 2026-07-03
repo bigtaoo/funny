@@ -48,7 +48,7 @@ export class WorldMapNet {
       const wasJoined = this.ctx.me.joined;
       try {
         this.ctx.me = await this.ctx.cb.worldApi.joinWorld(this.ctx.cb.worldId);
-        if (!wasJoined) this.ctx.view.showToast(t('world.myBase'));
+        if (!wasJoined) this.ctx.panels.showToast(t('world.myBase'));
       } catch { /* world full / no slot available / offline — keep current state */ }
       if (this.ctx.me.mainBaseTile) {
         const [bx, by] = this.ctx.parseTileId(this.ctx.me.mainBaseTile);
@@ -57,7 +57,7 @@ export class WorldMapNet {
       await this.loadMapViewport();
       await this.refreshMarches();
     } catch { /* offline OK */ }
-    if (!this.ctx.destroyed) { this.ctx.view.renderMap(); this.ctx.view.renderHud(); }
+    if (!this.ctx.destroyed) { this.ctx.view.renderMap(); this.ctx.panels.renderHud(); }
   }
 
   async loadMapViewport(): Promise<void> {
@@ -95,7 +95,7 @@ export class WorldMapNet {
     if (this.ctx.destroyed) return;
     try {
       this.ctx.marches = await this.ctx.cb.worldApi.getMarches(this.ctx.cb.worldId);
-      if (!this.ctx.destroyed) { this.ctx.view.renderHud(); this.ctx.view.renderMap(); }
+      if (!this.ctx.destroyed) { this.ctx.panels.renderHud(); this.ctx.view.renderMap(); }
     } catch { /* offline */ }
   }
 
@@ -103,7 +103,7 @@ export class WorldMapNet {
     if (this.ctx.destroyed) return;
     try {
       this.ctx.me = await this.ctx.cb.worldApi.getMe(this.ctx.cb.worldId);
-      if (!this.ctx.destroyed) this.ctx.view.renderHud();
+      if (!this.ctx.destroyed) this.ctx.panels.renderHud();
     } catch { /* offline */ }
   }
 
@@ -111,7 +111,7 @@ export class WorldMapNet {
 
   async showAttackTeamPicker(tx: number, ty: number): Promise<void> {
     const me = this.ctx.me;
-    if (!me?.joined || !me.mainBaseTile) { this.ctx.view.showToast(t('world.needBase'), C.red); return; }
+    if (!me?.joined || !me.mainBaseTile) { this.ctx.panels.showToast(t('world.needBase'), C.red); return; }
     let teams: { id: string; name: string; army: { initialHp?: number }[] }[] = [];
     try {
       teams = await this.ctx.cb.worldApi.getTeams(this.ctx.cb.worldId);
@@ -126,15 +126,15 @@ export class WorldMapNet {
       });
     }
     buttons.push({ label: t('world.team.manage'), action: () => this.ctx.cb.onOpenTeams() });
-    buttons.push({ label: '✕', action: () => this.ctx.view.closeModal() });
+    buttons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
     const head = usable.length > 0 ? t('world.team.pickTitle') : t('world.team.noTeams');
-    this.ctx.view.showModal([head, `(${tx}, ${ty})`], buttons);
+    this.ctx.panels.showModal([head, `(${tx}, ${ty})`], buttons);
   }
 
   async doMarchTeam(tx: number, ty: number, teamId: string): Promise<void> {
-    this.ctx.view.closeModal();
+    this.ctx.panels.closeModal();
     const me = this.ctx.me;
-    if (!me?.mainBaseTile) { this.ctx.view.showToast(t('world.needBase'), C.red); return; }
+    if (!me?.mainBaseTile) { this.ctx.panels.showToast(t('world.needBase'), C.red); return; }
     const [fx, fy] = this.ctx.parseTileId(me.mainBaseTile);
     try {
       // troops=1 is a placeholder; the server overwrites it with the team's committed troop count (§16.2).
@@ -142,28 +142,28 @@ export class WorldMapNet {
       this.ctx.myAttackTiles.add(march.toTile);
       this.ctx.marches = await this.ctx.cb.worldApi.getMarches(this.ctx.cb.worldId);
       this.ctx.me = await this.ctx.cb.worldApi.getMe(this.ctx.cb.worldId);
-      this.ctx.view.showToast(t('world.dispatched'));
-      this.ctx.view.renderMap(); this.ctx.view.renderHud();
+      this.ctx.panels.showToast(t('world.dispatched'));
+      this.ctx.view.renderMap(); this.ctx.panels.renderHud();
     } catch (e) {
-      this.ctx.view.showToast(this.errorMsg(e), C.red);
+      this.ctx.panels.showToast(this.errorMsg(e), C.red);
     }
   }
 
   async doMarch(tx: number, ty: number, kind: DeployKind, troops: number): Promise<void> {
-    this.ctx.view.closeModal();
+    this.ctx.panels.closeModal();
     const me = this.ctx.me;
-    if (!me?.mainBaseTile) { this.ctx.view.showToast(t('world.needBase'), C.red); return; }
-    if (troops < 1) { this.ctx.view.showToast(t('world.err.noTroops'), C.red); return; }
+    if (!me?.mainBaseTile) { this.ctx.panels.showToast(t('world.needBase'), C.red); return; }
+    if (troops < 1) { this.ctx.panels.showToast(t('world.err.noTroops'), C.red); return; }
     const [fx, fy] = this.ctx.parseTileId(me.mainBaseTile);
     try {
       const march = await this.ctx.cb.worldApi.startMarch(this.ctx.cb.worldId, fx, fy, tx, ty, kind, troops);
       if (kind === 'attack') this.ctx.myAttackTiles.add(march.toTile);
       this.ctx.marches = await this.ctx.cb.worldApi.getMarches(this.ctx.cb.worldId);
       this.ctx.me = await this.ctx.cb.worldApi.getMe(this.ctx.cb.worldId);
-      this.ctx.view.showToast(t('world.dispatched'));
-      this.ctx.view.renderMap(); this.ctx.view.renderHud();
+      this.ctx.panels.showToast(t('world.dispatched'));
+      this.ctx.view.renderMap(); this.ctx.panels.renderHud();
     } catch (e) {
-      this.ctx.view.showToast(this.errorMsg(e), C.red);
+      this.ctx.panels.showToast(this.errorMsg(e), C.red);
     }
   }
 
@@ -175,50 +175,50 @@ export class WorldMapNet {
    */
 
   async doScout(tx: number, ty: number): Promise<void> {
-    this.ctx.view.closeModal();
+    this.ctx.panels.closeModal();
     const me = this.ctx.me;
-    if (!me?.mainBaseTile) { this.ctx.view.showToast(t('world.needBase'), C.red); return; }
-    if ((me.troops ?? 0) < 1) { this.ctx.view.showToast(t('world.err.noTroops'), C.red); return; }
+    if (!me?.mainBaseTile) { this.ctx.panels.showToast(t('world.needBase'), C.red); return; }
+    if ((me.troops ?? 0) < 1) { this.ctx.panels.showToast(t('world.err.noTroops'), C.red); return; }
     const [fx, fy] = this.ctx.parseTileId(me.mainBaseTile);
     try {
       await this.ctx.cb.worldApi.startMarch(this.ctx.cb.worldId, fx, fy, tx, ty, 'scout', 1);
       this.ctx.marches = await this.ctx.cb.worldApi.getMarches(this.ctx.cb.worldId);
       this.ctx.me = await this.ctx.cb.worldApi.getMe(this.ctx.cb.worldId);
-      this.ctx.view.showToast(t('world.scoutSent'));
-      this.ctx.view.renderMap(); this.ctx.view.renderHud();
+      this.ctx.panels.showToast(t('world.scoutSent'));
+      this.ctx.view.renderMap(); this.ctx.panels.renderHud();
     } catch (e) {
-      this.ctx.view.showToast(this.errorMsg(e), C.red);
+      this.ctx.panels.showToast(this.errorMsg(e), C.red);
     }
   }
 
   /** Join the world: the system automatically places the capital (§3.4, preferring proximity to the family); the position is determined by the server. After placement, pan the camera to the new capital. */
 
   async doJoin(): Promise<void> {
-    this.ctx.view.closeModal();
+    this.ctx.panels.closeModal();
     try {
       this.ctx.me = await this.ctx.cb.worldApi.joinWorld(this.ctx.cb.worldId);
-      this.ctx.view.showToast(t('world.myBase'));
+      this.ctx.panels.showToast(t('world.myBase'));
       if (this.ctx.me.mainBaseTile) {
         const [bx, by] = this.ctx.parseTileId(this.ctx.me.mainBaseTile);
         this.ctx.view.centerAt(bx, by);
       }
       await this.loadMapViewport();
-      this.ctx.view.renderMap(); this.ctx.view.renderHud();
+      this.ctx.view.renderMap(); this.ctx.panels.renderHud();
     } catch (e) {
-      this.ctx.view.showToast(this.errorMsg(e), C.red);
+      this.ctx.panels.showToast(this.errorMsg(e), C.red);
     }
   }
 
   async doOccupy(tx: number, ty: number): Promise<void> {
-    this.ctx.view.closeModal();
+    this.ctx.panels.closeModal();
     try {
       await this.ctx.cb.worldApi.occupyTile(this.ctx.cb.worldId, tx, ty);
       this.ctx.me = await this.ctx.cb.worldApi.getMe(this.ctx.cb.worldId);
       await this.loadMapViewport();
-      this.ctx.view.showToast(t('world.occupied'));
-      this.ctx.view.renderMap(); this.ctx.view.renderHud();
+      this.ctx.panels.showToast(t('world.occupied'));
+      this.ctx.view.renderMap(); this.ctx.panels.renderHud();
     } catch (e) {
-      this.ctx.view.showToast(this.errorMsg(e), C.red);
+      this.ctx.panels.showToast(this.errorMsg(e), C.red);
     }
   }
 
@@ -226,26 +226,26 @@ export class WorldMapNet {
     try {
       await this.ctx.cb.worldApi.recallMarch(marchId, worldId);
       this.ctx.marches = await this.ctx.cb.worldApi.getMarches(this.ctx.cb.worldId);
-      this.ctx.view.renderHud();
+      this.ctx.panels.renderHud();
     } catch (e) {
-      this.ctx.view.showToast(this.errorMsg(e), C.red);
+      this.ctx.panels.showToast(this.errorMsg(e), C.red);
     }
   }
 
   /** Second confirmation before relocation (shows cost); confirm → doRelocate. */
 
   confirmRelocate(tx: number, ty: number): void {
-    this.ctx.view.showModal(
+    this.ctx.panels.showModal(
       [t('world.relocateTitle'), t('world.relocateConfirm').replace('{n}', String(RELOCATE_COST))],
       [
         { label: t('world.relocateBtn'), action: () => this.doRelocate(tx, ty) },
-        { label: '✕', action: () => this.ctx.view.closeModal() },
+        { label: '✕', action: () => this.ctx.panels.closeModal() },
       ],
     );
   }
 
   async doRelocate(tx: number, ty: number): Promise<void> {
-    this.ctx.view.closeModal();
+    this.ctx.panels.closeModal();
     try {
       this.ctx.me = await this.ctx.cb.worldApi.relocateBase(this.ctx.cb.worldId, tx, ty);
       this.ctx.tileCache.clear(); // capital position changed + old location reverts to neutral — re-fetch the entire viewport
@@ -254,17 +254,17 @@ export class WorldMapNet {
         this.ctx.view.centerAt(bx, by);
       }
       await this.loadMapViewport();
-      this.ctx.view.showToast(t('world.relocated'));
-      this.ctx.view.renderMap(); this.ctx.view.renderHud();
+      this.ctx.panels.showToast(t('world.relocated'));
+      this.ctx.view.renderMap(); this.ctx.panels.renderHud();
     } catch (e) {
-      this.ctx.view.showToast(this.errorMsg(e), C.red);
+      this.ctx.panels.showToast(this.errorMsg(e), C.red);
     }
   }
 
   /** Second confirmation before building a watchtower (shows resource cost); confirm → doWatchtower. */
 
   confirmWatchtower(tx: number, ty: number): void {
-    this.ctx.view.showModal(
+    this.ctx.panels.showModal(
       [
         t('world.watchtowerTitle'),
         t('world.watchtowerConfirm')
@@ -273,36 +273,36 @@ export class WorldMapNet {
       ],
       [
         { label: t('world.watchtowerBtn'), action: () => void this.doWatchtower(tx, ty) },
-        { label: '✕', action: () => this.ctx.view.closeModal() },
+        { label: '✕', action: () => this.ctx.panels.closeModal() },
       ],
     );
   }
 
   async doWatchtower(tx: number, ty: number): Promise<void> {
-    this.ctx.view.closeModal();
+    this.ctx.panels.closeModal();
     try {
       await this.ctx.cb.worldApi.buildWatchtower(this.ctx.cb.worldId, tx, ty);
       this.ctx.me = await this.ctx.cb.worldApi.getMe(this.ctx.cb.worldId); // resources deducted — refresh local state
       this.ctx.tileCache.clear();                                  // new tower expands vision → re-fetch entire viewport to reveal tiles
       await this.loadMapViewport();
-      this.ctx.view.showToast(t('world.watchtowerBuilt'));
-      this.ctx.view.renderMap(); this.ctx.view.renderHud();
+      this.ctx.panels.showToast(t('world.watchtowerBuilt'));
+      this.ctx.view.renderMap(); this.ctx.panels.renderHud();
     } catch (e) {
-      this.ctx.view.showToast(this.errorMsg(e), C.red);
+      this.ctx.panels.showToast(this.errorMsg(e), C.red);
     }
   }
 
   async doAbandon(tx: number, ty: number): Promise<void> {
-    this.ctx.view.closeModal();
+    this.ctx.panels.closeModal();
     try {
       await this.ctx.cb.worldApi.abandonTile(this.ctx.cb.worldId, tx, ty);
       this.ctx.me = await this.ctx.cb.worldApi.getMe(this.ctx.cb.worldId);
       // Remove from cache so it shows as empty
       this.ctx.tileCache.delete(`${tx}:${ty}`);
       await this.loadMapViewport();
-      this.ctx.view.renderMap(); this.ctx.view.renderHud();
+      this.ctx.view.renderMap(); this.ctx.panels.renderHud();
     } catch (e) {
-      this.ctx.view.showToast(this.errorMsg(e), C.red);
+      this.ctx.panels.showToast(this.errorMsg(e), C.red);
     }
   }
 
@@ -315,22 +315,22 @@ export class WorldMapNet {
   async doTrain(qty: number): Promise<void> {
     try {
       this.ctx.me = await this.ctx.cb.worldApi.trainTroops(this.ctx.cb.worldId, qty);
-      this.ctx.view.showToast(t('world.trained'));
-      if (this.ctx.trainPanelOpen) this.ctx.view.renderTrainPanel();
-      this.ctx.view.renderHud();
+      this.ctx.panels.showToast(t('world.trained'));
+      if (this.ctx.trainPanelOpen) this.ctx.panels.renderTrainPanel();
+      this.ctx.panels.renderHud();
     } catch (e) {
-      this.ctx.view.showToast(this.errorMsg(e), C.red);
+      this.ctx.panels.showToast(this.errorMsg(e), C.red);
     }
   }
 
   async doSpeedup(coins: number): Promise<void> {
     try {
       this.ctx.me = await this.ctx.cb.worldApi.speedupTraining(this.ctx.cb.worldId, coins);
-      this.ctx.view.showToast(t('world.spedup'));
-      if (this.ctx.trainPanelOpen) this.ctx.view.renderTrainPanel();
-      this.ctx.view.renderHud();
+      this.ctx.panels.showToast(t('world.spedup'));
+      if (this.ctx.trainPanelOpen) this.ctx.panels.renderTrainPanel();
+      this.ctx.panels.renderHud();
     } catch (e) {
-      this.ctx.view.showToast(this.errorMsg(e), C.red);
+      this.ctx.panels.showToast(this.errorMsg(e), C.red);
     }
   }
 
@@ -343,11 +343,11 @@ export class WorldMapNet {
   async doBuyShopItem(itemId: string): Promise<void> {
     try {
       await this.ctx.cb.worldApi.buyShopItem(this.ctx.cb.worldId, itemId);
-      this.ctx.view.showToast(t('world.shopBought'));
+      this.ctx.panels.showToast(t('world.shopBought'));
       await this.refreshMe();
-      if (this.ctx.modalDimRect && !this.ctx.trainPanelOpen) this.ctx.view.renderInfoPanel();
+      if (this.ctx.modalDimRect && !this.ctx.trainPanelOpen) this.ctx.panels.renderInfoPanel();
     } catch (e) {
-      this.ctx.view.showToast(this.errorMsg(e), C.red);
+      this.ctx.panels.showToast(this.errorMsg(e), C.red);
     }
   }
 
@@ -361,9 +361,9 @@ export class WorldMapNet {
       await this.ctx.cb.worldApi.setNationName(this.ctx.cb.worldId, capitalIdx, name);
       const n = this.ctx.nations.find(x => x.capitalIdx === capitalIdx);
       if (n) n.nationName = name;
-      if (this.ctx.modalDimRect && !this.ctx.trainPanelOpen) this.ctx.view.renderInfoPanel();
+      if (this.ctx.modalDimRect && !this.ctx.trainPanelOpen) this.ctx.panels.renderInfoPanel();
     } catch (e) {
-      this.ctx.view.showToast(this.errorMsg(e), C.red);
+      this.ctx.panels.showToast(this.errorMsg(e), C.red);
     }
   }
 
@@ -382,7 +382,7 @@ export class WorldMapNet {
     const [tx, ty] = this.ctx.parseTileId(u.tile);
     const sec = Math.max(0, Math.ceil((u.arriveAt - Date.now()) / 1000));
     const name = u.attackerName || ('#' + (u.attackerPublicId || '?'));
-    this.ctx.view.showToast(
+    this.ctx.panels.showToast(
       `${t('world.underAttack')} ${t('world.underAttackMsg')
         .replace('{name}', name)
         .replace('{tile}', `(${tx},${ty})`)
@@ -404,17 +404,17 @@ export class WorldMapNet {
       const line = s.outcome === 'attacker_win' ? t('world.siegeWin').replace('{loot}', loot)
         : s.outcome === 'defender_win' ? t('world.siegeLoss')
         : t('world.siegeDraw');
-      this.ctx.view.showModal(
+      this.ctx.panels.showModal(
         [line],
         [
-          { label: t('world.replaySiege'), action: () => { this.ctx.view.closeModal(); this.ctx.cb.onReplaySiege(s.siegeId); } },
-          { label: '✕', action: () => this.ctx.view.closeModal() },
+          { label: t('world.replaySiege'), action: () => { this.ctx.panels.closeModal(); this.ctx.cb.onReplaySiege(s.siegeId); } },
+          { label: '✕', action: () => this.ctx.panels.closeModal() },
         ],
       );
     } else {
       // We were the defender (or a bystander) — toast only.
       const line = s.outcome === 'attacker_win' ? t('world.defendLost') : t('world.defendHeld');
-      this.ctx.view.showToast(line, s.outcome === 'attacker_win' ? C.red : C.dark);
+      this.ctx.panels.showToast(line, s.outcome === 'attacker_win' ? C.red : C.dark);
     }
   }
 

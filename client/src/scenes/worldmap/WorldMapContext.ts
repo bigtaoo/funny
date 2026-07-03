@@ -9,6 +9,7 @@ import type { ZoomCfg, PoolSlot } from './zoom';
 import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, NationView, SeasonView, SlgShopItemView } from '../../net/WorldApiClient';
 import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult } from '../../net/proto/transport';
 import type { WorldMapRenderer } from './WorldMapRenderer';
+import type { WorldMapPanels } from './WorldMapPanels';
 import type { WorldMapNet } from './WorldMapNet';
 import type { WorldMapInput } from './WorldMapInput';
 
@@ -118,6 +119,7 @@ export class WorldMapContext {
 
   // Collaborators (assigned by WorldMapScene right after construction).
   view!: WorldMapRenderer;
+  panels!: WorldMapPanels;
   net!: WorldMapNet;
   input!: WorldMapInput;
 

@@ -1,6 +1,7 @@
 // WorldMapScene — SLG overworld map scene (S8). Thin orchestrator over an MVC split:
 //   • WorldMapContext  — shared mutable state (pan/zoom/tiles/layers/hit-rects) + callbacks.
-//   • WorldMapRenderer — all PIXI rendering (map pool, HUD, modals, panels) + view transforms.
+//   • WorldMapRenderer — map/tile rendering (pool, city sprites, fog, overlay, L3) + view transforms.
+//   • WorldMapPanels   — chrome UI: HUD bar, modals/toasts, deploy dialog, train + world-info panels.
 //   • WorldMapNet      — worldsvc API calls, march actions, and live-push handlers.
 //   • WorldMapInput    — pointer handling (drag-to-pan) + tile-click action dispatch.
 // This class wires them together and satisfies the Scene + WorldMapView (push) contracts.
@@ -14,6 +15,7 @@ import type { Scene } from './SceneManager';
 import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult } from '../net/proto/transport';
 import { WorldMapContext, type WorldMapCallbacks } from './worldmap/WorldMapContext';
 import { WorldMapRenderer } from './worldmap/WorldMapRenderer';
+import { WorldMapPanels } from './worldmap/WorldMapPanels';
 import { WorldMapNet } from './worldmap/WorldMapNet';
 import { WorldMapInput } from './worldmap/WorldMapInput';
 
@@ -25,6 +27,7 @@ export class WorldMapScene implements Scene {
   constructor(layout: ILayout, input: InputManager, cb: WorldMapCallbacks) {
     const ctx = new WorldMapContext(layout, cb);
     ctx.view = new WorldMapRenderer(ctx);
+    ctx.panels = new WorldMapPanels(ctx);
     ctx.net = new WorldMapNet(ctx);
     ctx.input = new WorldMapInput(ctx);
     this.ctx = ctx;
