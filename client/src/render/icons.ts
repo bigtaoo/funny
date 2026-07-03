@@ -30,7 +30,10 @@ export type IconKind =
   | 'swords' | 'replay' | 'share' | 'home'
   // SLG march-kind glyphs (WorldMapScene HUD): scout (telescope) / occupy (planted flag).
   // attack→swords, reinforce→armor(shield), return→replay are reused from above.
-  | 'scope' | 'flag';
+  | 'scope' | 'flag'
+  // SLG city buildings (CityScene grid): HQ desk / archive cabinet + a build-queue hammer badge.
+  // Resource-producer buildings reuse the res_atlas motifs; drillYard→swords, wall→castle, academy→book.
+  | 'desk' | 'cabinet' | 'hammer';
 
 /** Open book — splayed pages over a centre spine, with a couple of text lines. */
 function drawBook(g: PIXI.Graphics, s: number, color: number): void {
@@ -558,6 +561,61 @@ function drawFlag(g: PIXI.Graphics, s: number, color: number): void {
   ], { color, width: w * 0.9, jitter: 0.4, taper: 0.9, double: false }); // pennant
 }
 
+/** Desk (city HQ) — a tabletop on a left leg + a right drawer pedestal with a knob. */
+function drawDesk(g: PIXI.Graphics, s: number, color: number): void {
+  const pen = new SketchPen(g, 0x0e5c);
+  const w = Math.max(1.4, s * 0.045);
+  const o = { color, width: w, jitter: 0.4, taper: 0.9, double: false };
+  // Tabletop.
+  pen.stroke([
+    { x: s * 0.14, y: s * 0.40 }, { x: s * 0.86, y: s * 0.40 },
+  ], o);
+  // Left leg.
+  pen.line(s * 0.22, s * 0.40, s * 0.22, s * 0.80, o);
+  // Right drawer pedestal (box) with one drawer divider.
+  pen.stroke([
+    { x: s * 0.54, y: s * 0.40 }, { x: s * 0.54, y: s * 0.80 },
+    { x: s * 0.80, y: s * 0.80 }, { x: s * 0.80, y: s * 0.40 },
+  ], o);
+  pen.line(s * 0.54, s * 0.56, s * 0.80, s * 0.56, { ...o, width: w * 0.8 });
+  // Drawer knob.
+  pen.circle(s * 0.67, s * 0.48, s * 0.02, { ...o, width: w * 0.7 });
+}
+
+/** Cabinet (city archive/warehouse) — a tall body split into three drawers, each with a handle. */
+function drawCabinet(g: PIXI.Graphics, s: number, color: number): void {
+  const pen = new SketchPen(g, 0x0ab7);
+  const w = Math.max(1.4, s * 0.045);
+  const o = { color, width: w, jitter: 0.4, taper: 0.92, double: false };
+  const lx = s * 0.30, rx = s * 0.70, top = s * 0.20, bot = s * 0.82;
+  pen.stroke([
+    { x: lx, y: top }, { x: rx, y: top }, { x: rx, y: bot }, { x: lx, y: bot }, { x: lx, y: top },
+  ], o);
+  // Two dividers → three drawers; a short centred handle line in each.
+  const rows = [top, s * 0.41, s * 0.62, bot];
+  for (let i = 1; i < 3; i++) {
+    pen.line(lx, rows[i]!, rx, rows[i]!, { ...o, width: w * 0.8 });
+  }
+  for (let i = 0; i < 3; i++) {
+    const my = (rows[i]! + rows[i + 1]!) / 2;
+    pen.line(s * 0.44, my, s * 0.56, my, { ...o, width: w * 0.7 });
+  }
+}
+
+/** Hammer (build-queue badge) — a diagonal handle capped by a rectangular head. */
+function drawHammer(g: PIXI.Graphics, s: number, color: number): void {
+  const pen = new SketchPen(g, 0x4a33);
+  const w = Math.max(1.4, s * 0.06);
+  const grip = { x: s * 0.34, y: s * 0.80 }, neck = { x: s * 0.60, y: s * 0.42 };
+  // Handle.
+  pen.line(grip.x, grip.y, neck.x, neck.y, { color, width: w, jitter: 0.35, taper: 0.85, double: false });
+  // Head — a short thick bar across the top of the handle, perpendicular to it.
+  const dx = neck.x - grip.x, dy = neck.y - grip.y, len = Math.hypot(dx, dy) || 1;
+  const px = (-dy / len) * s * 0.16, py = (dx / len) * s * 0.16;
+  pen.line(neck.x + px, neck.y + py, neck.x - px, neck.y - py,
+    { color, width: w * 1.5, jitter: 0.3, taper: 0.9, double: false });
+}
+
 const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number) => void> = {
   book:    drawBook,
   globe:   drawGlobe,
@@ -584,6 +642,9 @@ const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number) => voi
   home:    drawHome,
   scope:   drawScope,
   flag:    drawFlag,
+  desk:    drawDesk,
+  cabinet: drawCabinet,
+  hammer:  drawHammer,
 };
 
 /**

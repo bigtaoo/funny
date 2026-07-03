@@ -293,7 +293,18 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 - **AchievementScene（成就）**：分类 Tab 加类别字形（`pve`→`book` / `pvp`→`swords` / `collection`→`brush` / `progression`→`trophy`）；未达成档位的奖励由「reward N coins」文字改为 `coin` 字形 + 数字。
 - **CollectionScene**：见 §4.5 属性行 chip。
 - 全部走 `buildIcon` 烘焙缓存共享纹理，销毁经各场景既有 `tearDownChildren`（Sprite 走 `{children:true}`、`texture:false` 不碰共享纹理，符合防泄漏契约）。验证：`tsc --noEmit` + `build:web` + `test:ui`（85 例）全绿。
-- **待批②（需新增图标定义或谨慎布局）**：CardScene/TeamsScene 无属性文字、装备槽缺 `trinket` 字形；CityScene/WorldMapScene 的 SLG 资源（粮/铁/木）与 GachaScene 稀有度、`event/battlepass` 的 `pass_required` 🔒 均需新字形。
+- **待批②（需新增图标定义或谨慎布局）**：CardScene/TeamsScene 无属性文字、装备槽缺 `trinket` 字形；CityScene/WorldMapScene 的 SLG 资源与 GachaScene 稀有度、`event/battlepass` 的 `pass_required` 🔒 均需新字形。
+
+#### 4.12 CityScene 图标化（2026-07-03，批②）
+
+主城界面此前满屏 emoji（资源条 🖊📄✏️🔩🏷、建筑格 🗂🖊…🏯📚、队列 🔨）。本批全部去 emoji：
+
+- **资源图标**：SLG 的五种资源即五种文具（ink/paper/graphite/metal/sticker，**非**粮/铁/木——那是 `project_currency_canon` 的口头称呼，实际 `ResourceType` 走文具母题）。这五种已有 `res_atlas` 手绘母题（`WorldMapScene` HUD 已复用），故资源条 + 升级消耗行直接复用 `getResTexture`，**零新增资源图标**。emoji 仅作 atlas 解码前的兜底（atlas 为模块单例，进城前通常已由地图加载）。
+- **建筑图标**：五座产出建筑（inkPot/paperTray/graphiteMill/metalForge/stickerShop）复用其产出资源的 `res_atlas` 母题（建筑↔资源视觉强关联，零新增）；drillYard→`swords`、wall→`castle`、academy→`book` 复用现成 `icons.ts` 字形；仅 HQ **desk** 与仓库 **cabinet** 两座新增手绘字形。
+- **新增 `icons.ts` 字形（3 个）**：`desk`（桌面+左腿+右抽屉柜带把手）、`cabinet`（三抽屉档案柜）、`hammer`（建造队列角标，斜柄+锤头）。
+- **升级消耗行**：原 `🌾100✓` 拼字符串改为「文案 + 每资源(母题 + 数量)」横排布局，数量在不足时染红（替代 ✓/✗ 符号）。
+- 解析走两个 helper：`resIcon(rt,size)`（atlas sprite 兜底 emoji）、`bldIcon(key,size,color)`（producer→atlas / 其余→`buildIcon` / 兜底 emoji）。`load()` 追加 `loadResAtlas().then(render)`。
+- 验证：`tsc --noEmit` + `build:web` 全绿。
 
 ---
 

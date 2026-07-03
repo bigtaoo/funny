@@ -35,6 +35,8 @@ import {
 } from '@nw/shared';
 import { BusyTracker } from '../ui/busyTracker';
 import { buildDecorCLayer } from '../render/decorCLayer';
+import { buildIcon, type IconKind } from '../render/icons';
+import { loadResAtlas, getResTexture } from '../render/resAtlasLoader';
 
 // ── Public interface ─────────────────────────────────────────────────────────
 
@@ -58,6 +60,8 @@ const RES_COLORS: Readonly<Record<ResourceType, number>> = {
   sticker:  0xe6b8d0,
 };
 
+// Emoji fallbacks — only used while res_atlas is still decoding (rare: the atlas is
+// a module singleton usually already loaded by WorldMapScene before city entry).
 const RES_ICON: Readonly<Record<ResourceType, string>> = {
   ink: '🖊', paper: '📄', graphite: '✏️', metal: '🔩', sticker: '🏷',
 };
@@ -73,6 +77,16 @@ const BLD_ICON: Readonly<Record<BuildingKey, string>> = {
   drillYard:    '⚔️',
   wall:         '🏯',
   academy:      '📚',
+};
+
+// Building glyph source: the five resource-producer buildings reuse the res_atlas
+// motif of what they yield (strong resource↔building visual link, zero new art);
+// the rest use hand-drawn icons.ts line-art.
+const BLD_RES: Partial<Record<BuildingKey, ResourceType>> = {
+  inkPot: 'ink', paperTray: 'paper', graphiteMill: 'graphite', metalForge: 'metal', stickerShop: 'sticker',
+};
+const BLD_GLYPH: Partial<Record<BuildingKey, IconKind>> = {
+  desk: 'desk', cabinet: 'cabinet', drillYard: 'swords', wall: 'castle', academy: 'book',
 };
 
 // ── CityScene ────────────────────────────────────────────────────────────────
@@ -123,12 +137,36 @@ export class CityScene implements Scene {
   // ── Data loading ──────────────────────────────────────────────────────────
 
   private async load(): Promise<void> {
+    // Resource / producer-building glyphs reuse the res_atlas motifs; re-render once decoded.
+    void loadResAtlas().then(() => this.render()).catch(() => { /* color/emoji fallback */ });
     try {
       this.me = await this.cb.worldApi.getMe(this.cb.worldId);
     } catch {
       /* use null — shows loading skeleton */
     }
     this.render();
+  }
+
+  // ── Icon resolution ─────────────────────────────────────────────────────────
+
+  /** Resource glyph: res_atlas motif sprite when decoded, else the emoji fallback. */
+  private resIcon(rt: ResourceType, size: number): PIXI.DisplayObject {
+    const tex = getResTexture(rt);
+    if (tex) {
+      const sp = new PIXI.Sprite(tex);
+      sp.width = sp.height = size;
+      return sp;
+    }
+    return txt(RES_ICON[rt], Math.round(size * 0.85), C.dark);
+  }
+
+  /** Building glyph: producer→res_atlas motif, others→icons.ts line-art, emoji as last resort. */
+  private bldIcon(key: BuildingKey, size: number, color: number): PIXI.DisplayObject {
+    const res = BLD_RES[key];
+    if (res) return this.resIcon(res, size);
+    const kind = BLD_GLYPH[key];
+    if (kind) return buildIcon(kind, size, color);
+    return txt(BLD_ICON[key], Math.round(size * 0.85), color);
   }
 
   private async doUpgrade(key: BuildingKey): Promise<void> {
@@ -293,9 +331,9 @@ export class CityScene implements Scene {
       ab.endFill();
       this.container.addChild(ab);
 
-      const icon = txt(RES_ICON[rt], 14, C.dark);
+      const icon = this.resIcon(rt, 16);
       icon.x = cx + 6;
-      icon.y = startY + 10;
+      icon.y = startY + 9;
       this.container.addChild(icon);
 
       const curLbl = txt(this.fmtNum(cur), 11, C.dark, true);
@@ -402,9 +440,9 @@ export class CityScene implements Scene {
       bg.y = cy + 2;
       this.container.addChild(bg);
 
-      const icon = txt(BLD_ICON[key], 20, C.dark);
+      const icon = this.bldIcon(key, 22, isSelected ? C.accent : C.dark);
       icon.x = cx + 8;
-      icon.y = cy + 8;
+      icon.y = cy + 6;
       this.container.addChild(icon);
 
       const nameLbl = txt(t(`city.bld.${key}` as 'city.bld.desk'), 10, isSelected ? C.accent : C.dark, isSelected);
@@ -418,9 +456,9 @@ export class CityScene implements Scene {
       this.container.addChild(lvlLbl);
 
       if (inQueue) {
-        const qDot = txt('🔨', 11, C.gold);
-        qDot.x = cx + cellW - 22;
-        qDot.y = cy + 6;
+        const qDot = buildIcon('hammer', 14, C.gold);
+        qDot.x = cx + cellW - 24;
+        qDot.y = cy + 5;
         this.container.addChild(qDot);
       }
 
@@ -462,9 +500,13 @@ export class CityScene implements Scene {
 
     let iy = py + 10;
 
-    // Header
-    const hdr = txt(`${BLD_ICON[key]} ${t(`city.bld.${key}` as 'city.bld.desk')} ${t('city.lvlLabel').replace('{lvl}', String(lvl))}`, 14, C.dark, true);
-    hdr.x = px + 10;
+    // Header — building glyph + name + level.
+    const hIcon = this.bldIcon(key, 18, C.dark);
+    hIcon.x = px + 10;
+    hIcon.y = iy - 1;
+    this.container.addChild(hIcon);
+    const hdr = txt(`${t(`city.bld.${key}` as 'city.bld.desk')} ${t('city.lvlLabel').replace('{lvl}', String(lvl))}`, 14, C.dark, true);
+    hdr.x = px + 32;
     hdr.y = iy;
     this.container.addChild(hdr);
     iy += 22;
@@ -495,20 +537,29 @@ export class CityScene implements Scene {
     this.container.addChild(nextHdr);
     iy += 16;
 
-    // Cost
-    const costParts: string[] = [];
-    for (const rt of RESOURCE_TYPES) {
-      const need = cost[rt];
-      if (!need) continue;
-      const have = resources?.[rt] ?? 0;
-      const color = have >= need ? '✓' : '✗';
-      costParts.push(`${RES_ICON[rt]}${this.fmtNum(need)}${color}`);
-    }
-    if (costParts.length > 0) {
-      const costLbl = txt(t('city.costLabel') + costParts.join(' '), 11, C.dark);
+    // Cost — label, then each resource as a mini motif + amount (red when short).
+    const costEntries = RESOURCE_TYPES
+      .map((rt) => ({ rt, need: cost[rt] ?? 0 }))
+      .filter((e) => e.need > 0);
+    if (costEntries.length > 0) {
+      const costLbl = txt(t('city.costLabel'), 11, C.dark);
       costLbl.x = px + 10;
       costLbl.y = iy;
       this.container.addChild(costLbl);
+      let cxp = px + 10 + costLbl.width + 6;
+      for (const { rt, need } of costEntries) {
+        const ok = (resources?.[rt] ?? 0) >= need;
+        const mi = this.resIcon(rt, 14);
+        mi.x = cxp;
+        mi.y = iy - 1;
+        this.container.addChild(mi);
+        cxp += 16;
+        const nl = txt(this.fmtNum(need), 11, ok ? C.dark : C.red);
+        nl.x = cxp;
+        nl.y = iy;
+        this.container.addChild(nl);
+        cxp += nl.width + 8;
+      }
       iy += 16;
     }
 
