@@ -2159,8 +2159,8 @@ export class MetaService {
       materialId: string;
       idempotencyKey: string;
     };
-    const { cols, now } = this.deps;
-    const r = await reforgeEquipment(cols, now, accountId, targetId, materialId, idempotencyKey);
+    const { cols, commercial, now } = this.deps;
+    const r = await reforgeEquipment(cols, commercial, now, accountId, targetId, materialId, idempotencyKey);
     if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
     return ok({ instance: r.instance, save: r.save });
   }

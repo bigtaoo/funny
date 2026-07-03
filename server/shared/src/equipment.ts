@@ -312,6 +312,22 @@ export const REFORGE_MATERIAL_RARITY: Partial<Record<EquipRarity, EquipRarity>> 
 };
 
 /**
+ * Per-reforge base coin fee by target rarity (ADR-030, 2026-07-03): reforge is a repeatable deep coin sink
+ * (pay per attempt, cannot buy a guaranteed roll). Charged on every reforge, on top of the fuel item.
+ * DRAFT [adjustable] — authoritative values → ECONOMY_NUMBERS §5.3.
+ */
+export const REFORGE_COIN_COST: Partial<Record<EquipRarity, number>> = {
+  fine: 80,
+  rare: 200,
+  epic: 500,
+};
+
+/** Base coin cost to reforge an item of the given rarity (0 if not reforge-eligible). */
+export function reforgeCoinCost(rarity: EquipRarity): number {
+  return REFORGE_COIN_COST[rarity] ?? 0;
+}
+
+/**
  * Reforge: re-rolls sub-affixes (main affix is kept unchanged).
  * @param defId   defId of the equipment being reforged.
  * @param seedKey Idempotency key (same key always produces the same result on replay).

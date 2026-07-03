@@ -20,6 +20,7 @@ import {
   makeDropInstance,
   rollReforgedAffixes,
   REFORGE_MATERIAL_RARITY,
+  reforgeCoinCost,
   EQUIP_AUCTION_REF_PRICE_BY_RARITY,
   type EquipRarity,
 } from '../src/equipment';
@@ -311,6 +312,20 @@ describe('REFORGE_MATERIAL_RARITY', () => {
 
   it('common cannot be reforged (no material entry)', () => {
     expect(REFORGE_MATERIAL_RARITY.common).toBeUndefined();
+  });
+});
+
+describe('reforgeCoinCost (ADR-030 coin sink)', () => {
+  it('charges a positive coin fee that rises with rarity', () => {
+    expect(reforgeCoinCost('fine')).toBe(80);
+    expect(reforgeCoinCost('rare')).toBe(200);
+    expect(reforgeCoinCost('epic')).toBe(500);
+    expect(reforgeCoinCost('fine')).toBeLessThan(reforgeCoinCost('rare'));
+    expect(reforgeCoinCost('rare')).toBeLessThan(reforgeCoinCost('epic'));
+  });
+
+  it('is 0 for non-reforgeable rarities (common)', () => {
+    expect(reforgeCoinCost('common')).toBe(0);
   });
 });
 

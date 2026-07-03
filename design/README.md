@@ -34,13 +34,13 @@
 | [ECONOMY_BALANCE.md](game/ECONOMY_BALANCE.md) | 经济**哲学/政策**（faucet/sink、鲸鱼天花板、反通胀） | 实现中 |
 | [ECONOMY_NUMBERS.md](game/ECONOMY_NUMBERS.md) | **经济/养成数值演算表（数字权威：体力/合成/护甲/金币/皮肤）** | 设计中 |
 | [CHARACTER_CARDS_DESIGN.md](game/CHARACTER_CARDS_DESIGN.md) | **角色卡实例系统（Hero Roster/喂卡升级/兵力/受伤/布阵对接；数字→ECONOMY_NUMBERS §6）** | 设计中 |
-| [EQUIPMENT_DESIGN.md](game/EQUIPMENT_DESIGN.md) | **装备系统机制基准（槽位/获取/强化/洗练/引擎注入；数字→ECONOMY_NUMBERS §5）** | 设计中 |
-| [ACHIEVEMENT_DESIGN.md](game/ACHIEVEMENT_DESIGN.md) | **成就系统机制基准（统计里程碑→一次性金币；服务器权威/领取；数字→ECONOMY_BALANCE §2.4）** | 实现中 |
-| [RETENTION_DESIGN.md](game/RETENTION_DESIGN.md) | **留存系统机制基准（签到/每日任务/周常；服务器权威+dayKey；不新增金币龙头；数字→ECONOMY_NUMBERS §12）** | 设计中 |
+| [EQUIPMENT_DESIGN.md](game/EQUIPMENT_DESIGN.md) | **装备系统机制基准（槽位/获取/强化/洗练/引擎注入；数字→ECONOMY_NUMBERS §5）** | 已实现（`shared/equipment.ts` craft/enhance+0..9/reforge/salvage+e2e）；⚠️洗练当前不扣金币 |
+| [ACHIEVEMENT_DESIGN.md](game/ACHIEVEMENT_DESIGN.md) | **成就系统机制基准（统计里程碑→一次性金币；服务器权威/领取；数字→ECONOMY_BALANCE §2.4）** | 已实现（`shared/achievements.ts` StatKey/分阶/反作弊L1+测试） |
+| [RETENTION_DESIGN.md](game/RETENTION_DESIGN.md) | **留存系统机制基准（签到/每日任务/周常；服务器权威+dayKey；不新增金币龙头；数字→ECONOMY_NUMBERS §12）** | 已实现（`shared/retention.ts` 30格签到/每日任务/dayKey+e2e；周常预留） |
 | [EVENTS_DESIGN.md](game/EVENTS_DESIGN.md) | **活动/Live-ops 编排（配置/生命周期/限定直购/双倍期；发奖走邮件、计数复用 statKey；不新增金币龙头 ADR-014）** | 设计中 |
 | [TITLE_DESIGN.md](game/TITLE_DESIGN.md) | **称号系统机制基准（公开身份名片；统一 titleId 容器/赛季快照/四处展示；段位金币→ECONOMY_BALANCE §2.3）** | 设计中 |
 | [SEASON_OVERVIEW.md](game/SEASON_OVERVIEW.md) | **两套赛季（天梯6周/SLG大区2月）的独立性契约·边界·对照（不重述机制，只锁边界）** | 设计中 |
-| [SEASON_DESIGN.md](game/SEASON_DESIGN.md) | **天梯赛季/战令/排行榜机制基准（6周赛季·软重置·峰值奖励·Top100·Battle Pass；数字→ECONOMY_NUMBERS §13）** | 设计中 |
+| [SEASON_DESIGN.md](game/SEASON_DESIGN.md) | **天梯赛季/战令/排行榜机制基准（6周赛季·软重置·峰值奖励·Top100·Battle Pass；数字→ECONOMY_NUMBERS §13）** | 已实现（S11 天梯+`shared/battlepass.ts` 30级双轨+测试） |
 | [CHARACTER_DESIGN.md](game/CHARACTER_DESIGN.md) | **角色卡机制/流派基准（6张＝陶3现有兵转具名·锚点 + Anna3新画变体；数值锚点占位→config.ts/BALANCE）** | 设计中 |
 | [PVP_LOADOUT_DESIGN.md](game/PVP_LOADOUT_DESIGN.md) | **PvP 构筑卡组 + 按段位解锁单位机制基准（复用 6 PvE 单位入 PvP·全池随机→构筑·diamond/king 解锁；数值→config.ts/BALANCE，段位→ladder.ts）** | 设计中 |
 | [ANNA_CHARACTERS.md](game/ANNA_CHARACTERS.md) | Anna 方三角色（Max/Lena/…）立绘与设定细化（引擎定义见 CHARACTER_DESIGN，叙事见 product/characters） | 设计中 |
@@ -60,7 +60,7 @@
 | [GATEWAY_DESIGN.md](game/GATEWAY_DESIGN.md) | gateway 控制面 | 已实现 |
 | [MATCHSVC_DESIGN.md](game/MATCHSVC_DESIGN.md) | matchsvc 匹配大脑 | 已实现 |
 | [COMMERCIAL_DESIGN.md](game/COMMERCIAL_DESIGN.md) | 钱包 / 交易 / 充值 | 已实现 |
-| [GACHA_DESIGN.md](game/GACHA_DESIGN.md) | **盲盒系统完整设计（限定池/软保底/月卡/新手包/命运点/美术资源清单；数字→ECONOMY_BALANCE §3–4）** | 设计中 |
+| [GACHA_DESIGN.md](game/GACHA_DESIGN.md) | **盲盒系统完整设计（限定池/软保底/月卡/新手包/命运点/美术资源清单；数字→ECONOMY_BALANCE §3–4）** | 已实现（`commercial/src/gacha.ts` 软保底70/硬保底90/十连保底+测试） |
 | [SOCIAL_DESIGN.md](game/SOCIAL_DESIGN.md) | 好友 / 私聊 / 邮件（原社交数据模型；**已被 SOCIAL_SVC_DESIGN 取代**，仅留数据模型作迁移参考） | 已归档 |
 | [SOCIAL_SVC_DESIGN.md](game/SOCIAL_SVC_DESIGN.md) | **socialsvc 独立社交服务（家族/好友/邮件/频道/push 路由；推翻 SOC1，新增第五公网面）** | 设计中 |
 | [OPS_DESIGN.md](game/OPS_DESIGN.md) | 运维后台（监控/匹配池/补偿工单） | 已实现 |

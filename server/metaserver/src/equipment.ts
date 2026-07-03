@@ -20,6 +20,7 @@ import {
   EQUIP_SLOTS,
   SALVAGE_MAX_LEVEL,
   REFORGE_MATERIAL_RARITY,
+  reforgeCoinCost,
   PROTECT_ENHANCE_ITEM_ID,
   equipmentInvCount,
   rollCraftedAffixes,
@@ -293,7 +294,7 @@ export async function enhanceEquipment(
   const replay = await cols.equipmentIdem.findOne({ _id: idempotencyKey });
   if (replay?.op === 'enhance') {
     const r = replay.result as { success: boolean; instance: EquipmentInstance; coins: number; skipMaterials?: boolean };
-    const save = await settleEnhanceCoins(cols, commercial, now, accountId, idempotencyKey, r.coins);
+    const save = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, r.coins);
     return { success: r.success, instance: r.instance, save };
   }
 
@@ -336,7 +337,7 @@ export async function enhanceEquipment(
     if ((e as { code?: number }).code === 11000) {
       const prev = await cols.equipmentIdem.findOne({ _id: idempotencyKey });
       const r = prev?.result as { success: boolean; instance: EquipmentInstance; coins: number; skipMaterials?: boolean };
-      const save = await settleEnhanceCoins(cols, commercial, now, accountId, idempotencyKey, r.coins);
+      const save = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, r.coins);
       return { success: r.success, instance: r.instance, save };
     }
     throw e;
@@ -393,7 +394,7 @@ export async function enhanceEquipment(
     );
     if (res) {
       // Save update committed → deduct coins (idemKey idempotent) + mirror. If coin deduction fails (concurrent exhaustion) it is merely under-charged; the enhancement is already finalized (§6.2).
-      const saveFinal = await settleEnhanceCoins(cols, commercial, now, accountId, idempotencyKey, cost.coins);
+      const saveFinal = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, cost.coins);
       return { success, instance: instanceAfter, save: saveFinal };
     }
     // rev conflict → re-read and retry
@@ -403,17 +404,18 @@ export async function enhanceEquipment(
   return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
 }
 
-/** Deducts enhancement coins (commercial authoritative, orderId=idemKey idempotent) + writes mirror; if commercial is unavailable/fails, the mirror is not updated. */
-async function settleEnhanceCoins(
+/** Deducts equipment operation coins (commercial authoritative, orderId=idemKey idempotent) + writes mirror; if commercial is unavailable/fails, the mirror is not updated. */
+async function settleEquipCoins(
   cols: Collections,
   commercial: CommercialClient,
   now: () => number,
   accountId: string,
   idempotencyKey: string,
   coins: number,
+  reason = 'equip_enhance',
 ): Promise<SaveData> {
   if (coins > 0 && commercial.available) {
-    const charge = await commercial.spend({ accountId, amount: coins, reason: 'equip_enhance', orderId: idempotencyKey });
+    const charge = await commercial.spend({ accountId, amount: coins, reason, orderId: idempotencyKey });
     if (charge.ok) return mirrorCoins(cols, accountId, charge.coinsAfter, now());
   }
   return getOrCreateSave(cols, accountId, now());
@@ -523,6 +525,7 @@ export async function salvageEquipment(
  */
 export async function reforgeEquipment(
   cols: Collections,
+  commercial: CommercialClient,
   now: () => number,
   accountId: string,
   targetId: string,
@@ -532,12 +535,16 @@ export async function reforgeEquipment(
   if (!idempotencyKey) return { error: 'idempotencyKey required', code: 'BAD_REQUEST' };
   if (targetId === materialId) return { error: 'target and material must differ', code: 'BAD_REQUEST' };
 
-  // Idempotency replay check
+  // Replay: return first re-roll result + idempotently settle coins (covers the "save updated but coin deduction interrupted" window).
   const replay = await cols.equipmentIdem.findOne({ _id: idempotencyKey });
   if (replay?.op === 'reforge') {
-    const r = replay.result as { instance: EquipmentInstance };
-    return { instance: r.instance, save: await getOrCreateSave(cols, accountId, now()) };
+    const r = replay.result as { instance: EquipmentInstance; coins?: number };
+    const save = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, r.coins ?? 0, 'equip_reforge');
+    return { instance: r.instance, save };
   }
+
+  // Reforge is a coin sink (ADR-030): coins go through commercial authority; if not configured, reforge is unavailable (same 503 as enhance/shop).
+  if (!commercial.available) return { error: 'commercial service unavailable', code: 'NOT_IMPLEMENTED' };
 
   const cur = await getOrCreateSave(cols, accountId, now());
   const target = cur.equipmentInv?.[targetId];
@@ -560,24 +567,30 @@ export async function reforgeEquipment(
     return { error: `material must be ${requiredMatRarity} (got ${material.rarity})`, code: 'INVALID_RARITY' };
   }
 
+  // Reforge coin fee (ADR-030): charged every attempt on top of the fuel item. Pre-validate (commercial authoritative; insufficient → no state changes).
+  const coins = reforgeCoinCost(target.rarity);
+  const wallet = await commercial.getWallet(accountId);
+  if ((wallet?.coins ?? 0) < coins) return { error: 'not enough coins', code: 'INSUFFICIENT_FUNDS' };
+
   // Deterministic re-roll (idempotencyKey used as seed)
   const newAffixes = rollReforgedAffixes(target.defId, idempotencyKey, target.affixes);
   const reforged: EquipmentInstance = { ...target, affixes: newAffixes };
 
-  // Idempotency claim
+  // Idempotency claim (result includes coins for replay re-settlement)
   try {
     await cols.equipmentIdem.insertOne({
       _id: idempotencyKey,
       accountId,
       op: 'reforge',
-      result: { instance: reforged },
+      result: { instance: reforged, coins },
       expireAt: idemExpireAt(now()),
     });
   } catch (e) {
     if ((e as { code?: number }).code === 11000) {
       const prev = await cols.equipmentIdem.findOne({ _id: idempotencyKey });
-      const r = prev?.result as { instance: EquipmentInstance };
-      return { instance: r.instance, save: await getOrCreateSave(cols, accountId, now()) };
+      const r = prev?.result as { instance: EquipmentInstance; coins?: number };
+      const save = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, r.coins ?? 0, 'equip_reforge');
+      return { instance: r.instance, save };
     }
     throw e;
   }
@@ -606,7 +619,11 @@ export async function reforgeEquipment(
       { _id: accountId, rev: doc.rev },
       { $set: { save: next, rev: next.rev } },
     );
-    if (res) return { instance: reforged, save: next };
+    if (res) {
+      // Save committed → deduct coins (idemKey idempotent) + mirror. If coin deduction is interrupted the replay path re-settles.
+      const saveFinal = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, coins, 'equip_reforge');
+      return { instance: reforged, save: saveFinal };
+    }
   }
   await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
   return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
