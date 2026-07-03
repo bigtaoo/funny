@@ -19,6 +19,7 @@ import { WorldApiError } from '../net/WorldApiClient';
 import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult } from '../net/proto/transport';
 import { proceduralTile, type ProceduralTile } from '@nw/shared';
 import { loadResAtlas, getResTexture, isResAtlasReady } from '../render/resAtlasLoader';
+import { buildIcon, type IconKind } from '../render/icons';
 import { loadCityAtlas, getCityTexture, isCityAtlasReady } from '../render/cityAtlasLoader';
 import { loadTerrainAtlas, getTerrainTexture, isTerrainAtlasReady, type TerrainTextureName } from '../render/terrainAtlasLoader';
 import { ISO_RATIO, tileToScreen, screenToTile, screenToTileF, diamondPath, diamondVertices, visibleTileBounds } from '../render/isoGrid';
@@ -1458,19 +1459,40 @@ export class WorldMapScene implements Scene {
         `${t('world.troops')} ${troops}/${troopCap}`,
         `${t('world.territory')} ${territory}`,
       ];
-      const res = this.me.resources ?? {};
-      if (res['ink'] !== undefined) infos.push(`🖋️${res['ink']}`);
-      if (res['paper'] !== undefined) infos.push(`📄${res['paper']}`);
-      if (res['graphite'] !== undefined) infos.push(`✏️${res['graphite']}`);
-      if (res['metal'] !== undefined) infos.push(`🔩${res['metal']}`);
-      if (res['sticker'] !== undefined) infos.push(`⭐${res['sticker']}`);
-
       let ix = 106;
+      const resRowY = h - HUD_H + 18;
       for (const info of infos) {
         const lbl = txt(info, 11, C.dark);
-        lbl.x = ix; lbl.y = h - HUD_H + 18;
+        lbl.x = ix; lbl.y = resRowY;
         hud.addChild(lbl);
         ix += lbl.width + 14;
+      }
+
+      // Resource counts: hand-drawn motif icon (res_atlas, reused from the map tiles) + count,
+      // replacing the earlier emoji glyphs that broke the notebook art style. Falls back to
+      // emoji only while the atlas is still decoding (getResTexture null).
+      const res = this.me.resources ?? {};
+      const RES_EMOJI: Record<string, string> = { ink: '🖋️', paper: '📄', graphite: '✏️', metal: '🔩', sticker: '⭐' };
+      const RES_ICON = 18;
+      for (const rt of ['ink', 'paper', 'graphite', 'metal', 'sticker']) {
+        if (res[rt] === undefined) continue;
+        const tex = getResTexture(rt);
+        if (tex) {
+          const sp = new PIXI.Sprite(tex);
+          sp.width = sp.height = RES_ICON;
+          sp.x = ix; sp.y = resRowY - 4;
+          hud.addChild(sp);
+          ix += RES_ICON + 1;
+          const cnt = txt(`${res[rt]}`, 11, C.dark);
+          cnt.x = ix; cnt.y = resRowY;
+          hud.addChild(cnt);
+          ix += cnt.width + 12;
+        } else {
+          const lbl = txt(`${RES_EMOJI[rt]}${res[rt]}`, 11, C.dark);
+          lbl.x = ix; lbl.y = resRowY;
+          hud.addChild(lbl);
+          ix += lbl.width + 14;
+        }
       }
     }
 
@@ -1497,10 +1519,17 @@ export class WorldMapScene implements Scene {
         const m = myMarches[i];
         const [tx, ty] = this.parseTileId(m.toTile);
         const remaining = Math.max(0, Math.ceil((m.arriveAt - now) / 1000));
-        const kindIcon = m.kind === 'attack' ? '⚔' : m.kind === 'reinforce' ? '🛡' : m.kind === 'scout' ? '🔭' : m.kind === 'return' ? '↩' : '→';
+        // Hand-drawn march-kind glyph (icons.ts) replacing the earlier emoji, to match the
+        // notebook art style. attack→swords, reinforce→shield, scout→scope, return→loop, occupy→flag.
+        const MARCH_KIND_ICON: Record<string, IconKind> = {
+          attack: 'swords', reinforce: 'armor', scout: 'scope', return: 'replay', occupy: 'flag',
+        };
         const rowY = ROW_Y0 + i * MARCH_ROW_H;
-        const rowLbl = txt(`${kindIcon} (${tx},${ty})  ${remaining}s`, 11, C.dark);
-        rowLbl.x = MARCH_PANEL_X; rowLbl.y = rowY + 2;
+        const kindIc = buildIcon(MARCH_KIND_ICON[m.kind] ?? 'flag', 14, C.dark);
+        kindIc.x = MARCH_PANEL_X; kindIc.y = rowY + 1;
+        hud.addChild(kindIc);
+        const rowLbl = txt(`(${tx},${ty})  ${remaining}s`, 11, C.dark);
+        rowLbl.x = MARCH_PANEL_X + 17; rowLbl.y = rowY + 2;
         hud.addChild(rowLbl);
 
         // Recall button (only for non-return marches)

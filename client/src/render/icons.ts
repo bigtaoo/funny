@@ -27,7 +27,10 @@ export type IconKind =
   // Collection page skin tag: cosmetic brush (cards/units use real PNG art, see cardArt.ts).
   | 'brush'
   // Results page actions: rematch (crossed swords) / replay (loop arrow) / share (out-of-box arrow) / back to lobby (house).
-  | 'swords' | 'replay' | 'share' | 'home';
+  | 'swords' | 'replay' | 'share' | 'home'
+  // SLG march-kind glyphs (WorldMapScene HUD): scout (telescope) / occupy (planted flag).
+  // attack→swords, reinforce→armor(shield), return→replay are reused from above.
+  | 'scope' | 'flag';
 
 /** Open book — splayed pages over a centre spine, with a couple of text lines. */
 function drawBook(g: PIXI.Graphics, s: number, color: number): void {
@@ -530,6 +533,31 @@ function drawHome(g: PIXI.Graphics, s: number, color: number): void {
   ], { color, width: w * 0.8, jitter: 0.3, taper: 0.85, double: false });
 }
 
+/** Scope (scout) — a slanted telescope tube with a narrow eyepiece and a wider objective rim. */
+function drawScope(g: PIXI.Graphics, s: number, color: number): void {
+  const pen = new SketchPen(g, 0x5e21);
+  const w = Math.max(1.4, s * 0.05);
+  const near = { x: s * 0.26, y: s * 0.74 }, far = { x: s * 0.72, y: s * 0.30 };
+  pen.line(near.x, near.y, far.x, far.y, { color, width: w, jitter: 0.4, taper: 0.9, double: false }); // tube
+  const dx = far.x - near.x, dy = far.y - near.y, len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len, ny = dx / len;
+  pen.line(near.x + nx * s * 0.05, near.y + ny * s * 0.05, near.x - nx * s * 0.05, near.y - ny * s * 0.05,
+    { color, width: w * 0.85, jitter: 0.3, taper: 0.8, double: false }); // eyepiece
+  pen.line(far.x + nx * s * 0.10, far.y + ny * s * 0.10, far.x - nx * s * 0.10, far.y - ny * s * 0.10,
+    { color, width: w * 0.9, jitter: 0.3, taper: 0.8, double: false }); // objective rim
+}
+
+/** Flag (occupy) — a vertical pole with a triangular pennant near the top. */
+function drawFlag(g: PIXI.Graphics, s: number, color: number): void {
+  const pen = new SketchPen(g, 0x4c7d);
+  const w = Math.max(1.4, s * 0.05);
+  const poleX = s * 0.34;
+  pen.line(poleX, s * 0.16, poleX, s * 0.84, { color, width: w, jitter: 0.35, taper: 0.9, double: false }); // pole
+  pen.stroke([
+    { x: poleX, y: s * 0.18 }, { x: s * 0.74, y: s * 0.30 }, { x: poleX, y: s * 0.46 },
+  ], { color, width: w * 0.9, jitter: 0.4, taper: 0.9, double: false }); // pennant
+}
+
 const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number) => void> = {
   book:    drawBook,
   globe:   drawGlobe,
@@ -554,6 +582,8 @@ const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number) => voi
   replay:  drawReplay,
   share:   drawShare,
   home:    drawHome,
+  scope:   drawScope,
+  flag:    drawFlag,
 };
 
 /**

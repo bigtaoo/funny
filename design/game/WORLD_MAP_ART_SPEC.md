@@ -96,14 +96,24 @@
 - 攻击 `#cc3333`，增援 `#44aacc`，侦察 `#9b59b6`，回师 `#44cc88`，占领 `#cc8844`
 - 敌方行军统一 `#4477cc`，线宽 2.5px（己方 1.5px）
 
+> **HUD 行军列表兵种字形 — ✅ 已接入（2026-07-03，`icons.ts` 手绘，无需出图）**：
+> `renderHud()` 行军列表原用 emoji `⚔🛡🔭↩→`，已改用 `buildIcon()` 手绘图标：
+> attack→`swords`、reinforce→`armor`(盾)、return→`replay`(环箭)、scout→`scope`(望远镜，新增)、
+> occupy→`flag`(旗，新增)。`scope`/`flag` 为本次新增的 SketchPen 图标。
+> 注：这只替换 HUD **列表内**的兵种字形；地图上的**行军连线 `arrow_*`** 仍为程序矢量（见上表，属可选 PNG 升级）。
+
 ---
 
-## 六、资源图标（HUD 内显示）
+## 六、资源图标（HUD 内显示）— ✅ 已接入（复用 `res_atlas`，无需单独出 24px 图）
 
 > **赛季资源权威 = 5 种**（`server/shared/src/slg.ts` `RESOURCE_TYPES` + `WorldMapScene.renderHud()`）：
 > `ink 墨水` / `paper 纸张` / `graphite 石墨` / `metal 金属` / `sticker 贴纸`。
 > 旧「食物/木材/铁矿（food/wood/iron）」命名已废弃，勿再使用。
-> 当前 HUD 用 emoji 兜底（`🖋️📄✏️🔩⭐`），待下列 PNG 接入后替换。
+>
+> **接入拍板（2026-07-03）**：HUD 资源图标**不再单独出 24px 图**，直接**复用已定稿的地图母题 `res_atlas`**
+> （`getResTexture('ink'|...)`），在 `renderHud()` 里建 18px `PIXI.Sprite` 替换原 emoji `🖋️📄✏️🔩⭐`。
+> 母题墨线在浅纸底 HUD（`C.paper`）上小尺寸可辨，风格与地图格母题天然统一。图集解码前仍以 emoji 兜底。
+> 下表 `res_*.png`（24×24 独立版）**作废，不再需要出图**，保留仅作历史记录。
 
 | 资产名 | 资源 | emoji 兜底 | 描述 | 尺寸 |
 |---|---|---|---|---|
