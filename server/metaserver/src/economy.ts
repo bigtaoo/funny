@@ -10,7 +10,7 @@
 //    in commercial is already prepared.
 import { createHash } from 'node:crypto';
 import type { Collections, SaveData, Rarity, EquipmentInstance } from '@nw/shared';
-import { grantCards, deriveUnitLevels, UNIT_CARD_POOL_ID, EQUIPMENT_DEFS, GACHA_MATERIAL_GRANTS, makeGachaEquipInstance, EQUIPMENT_INV_CAP, equipmentInvCount, CARD_DEFS, type CardDef } from '@nw/shared';
+import { grantCards, UNIT_CARD_POOL_ID, EQUIPMENT_DEFS, GACHA_MATERIAL_GRANTS, makeGachaEquipInstance, EQUIPMENT_INV_CAP, equipmentInvCount, CARD_DEFS, type CardDef } from '@nw/shared';
 import { grantCards as grantHeroCards } from './cards.js';
 import type { CommercialClient, GachaResultEntry, WalletView } from './commercialClient.js';
 
@@ -81,10 +81,10 @@ export async function deliverGrant(
 
 /**
  * Deliver a unit-card loot-box grant (S12-C, dedicated unit card pool): adds cardGrants
- * (cardKey→count) into cardInventory + recalculates unitLevels (server-authoritative; the engine
- * reads this to run blueprints). Uses an **optimistic lock read-modify-write** (rev CAS + retry,
- * same as service.mutateSave) because unitLevels = deriveUnitLevels(cardInventory) is a derived
- * value that cannot be expressed as a single $inc. Idempotent: if deliveredOrders already contains
+ * (cardKey→count) into cardInventory. (The derived `unitLevels` snapshot was dropped with the
+ * Hero Roster migration — SaveData v4 removed the field; the engine now reads `cardInv` instead.)
+ * Uses an **optimistic lock read-modify-write** (rev CAS + retry, same as service.mutateSave) so a
+ * concurrent PUT equipped/flags or PvE write cannot clobber the $inc. Idempotent: if deliveredOrders already contains
  * orderId the current save is returned immediately (guards against duplicate $inc, which matters
  * more here than for skin sets). Also mirrors the wallet + pity in the same operation (symmetric
  * with skin-pool deliverGrant).
@@ -103,12 +103,10 @@ export async function deliverCardGrant(
     if (!doc) throw new Error('save missing before card grant');
     if (doc.save.deliveredOrders?.includes(orderId)) return doc.save; // idempotent: already delivered, skip $inc
     const cardInventory = grantCards(doc.save.cardInventory ?? {}, cardGrants);
-    const unitLevels = deriveUnitLevels(cardInventory);
     const set: Record<string, unknown> = {
       'save.updatedAt': now,
       'save.wallet.coins': coinsAfter,
       'save.cardInventory': cardInventory,
-      'save.unitLevels': unitLevels,
     };
     if (pityPatch) {
       for (const [pool, v] of Object.entries(pityPatch)) set[`save.gacha.pity.${pool}`] = v;

@@ -114,20 +114,21 @@ describe.skipIf(!mongo)('pve L1 verify e2e', () => {
     expect((await verify('no-such-id')).statusCode).toBe(404);
   });
 
-  // TODO(e2e-triage): quarantined — the loop can't accrue 3 rejections (only the first clear spot-checks; non-first clears skip verify), so the ban never triggers. Needs code-vs-test triage (drive 3 distinct first-clears, or fix accrual). See spawned task.
-  it.skip('three-strikes ban: pveClear returns 403 after 3 re-computation rejections', async () => {
+  it('three-strikes ban: pveClear returns 403 after 3 re-computation rejections', async () => {
     // PVE_REJECT_BAN_THRESHOLD = 3: 3 rejected verdicts → pveBanned = true → subsequent clears return 403.
+    // Only *first* clears are force-sampled for spot-check (non-first clears are only randomly sampled), so drive
+    // three distinct first-clears — ch1_lv1→lv2→lv3. Each clear writes progress even on the spot-check path
+    // (materials withheld), so the next level unlocks; each is then rejected via verify.
     gateway.next = { ok: true, stars: 1 }; // re-computation yields 1 star, claimed 3 → rejected
 
-    for (let i = 0; i < 3; i++) {
-      const c = b(await clear('ch1_lv1', 3));
-      // if spot-check is triggered, call verify; otherwise (non-first-clear cannot trigger) simulate the material-deduction path
-      if (c.data.needsReplay) {
-        await verify(c.data.verifyId);
-      }
+    for (const levelId of ['ch1_lv1', 'ch1_lv2', 'ch1_lv3']) {
+      const c = b(await clear(levelId, 3));
+      expect(c.data.needsReplay).toBe(true); // first clear is always spot-checked
+      const v = b(await verify(c.data.verifyId));
+      expect(v.data.verified).toBe(false); // rejected → pveRejectCount++
     }
 
-    // 4th pveClear should be blocked by the ban (after first clear + 3 rejections)
+    // 4th pveClear is blocked by the ban (3 rejections → pveBanned).
     const blocked = await clear('ch1_lv1', 3);
     expect(blocked.statusCode).toBe(403);
   });

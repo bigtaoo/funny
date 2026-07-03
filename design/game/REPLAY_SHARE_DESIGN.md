@@ -145,5 +145,7 @@
 > - **gzip 压缩**：抽稀后的 delta JSON 仍高度重复，分享前客户端 `CompressionStream('gzip')` + base64（`net/replayCompress.ts`），服务端 opaque 存压缩串，取回客户端解压。分享仅 Web 可达（需 fetch + 在线），故直接用浏览器原生 API。
 > - **体量上限重定**：`STATE_REPLAY_MAX_BYTES=2MB`（压缩串），Fastify `bodyLimit=4MB`（≥ 应用上限，令优雅 400 先于 413 触发）。openapi `blob` 类型由 `object` 改 `string`。
 > - **实测（确定性合成：整 10 分钟 / 18000 帧 / 场上 ~50 单位）**：满帧 JSON ~90MB → 抽稀省 94% → gzip 再省 95% → **base64 上传仅 ~367KB**（6.7 分钟约 245KB），均 << 2MB；还原最大位置误差 0.0085 格。体量已非瓶颈，故 `MAX_FRAMES` 由 12000（6.7min）上调到 **18000（10min）**；该上限现主要约束**录制期内存**（满帧逐 tick 驻留，所有平台都付，分享仅 Web 可用）—— 若内存吃紧再降。
+>
+> **2026-07-03 回归修复（e2e 首次真跑暴露）**：上面的 `bodyLimit=4MB` 被 Paddle 回调静默击穿——`registerPaddleRoutes` 在**共享 app 实例**上 `addContentTypeParser('application/json', {bodyLimit:64KB})` 用于抓 webhook 原始体，Fastify content-type parser 非路由级而是**全局替换**，于是所有 JSON 路由（含 `/replay/share`、`/internal/match/report`）都被压到 64KB，>64KB 一律 Fastify 413，优雅 400 与大回放归档全失效。修复：把 webhook 路由 + 其 parser 收进独立 `app.register(async (webhook)=>{…})` 封装作用域，64KB 只作用于 webhook 自身；其余路由回到 app 的 4MB。守卫：`state-replay-share.e2e`（2MB→应用层 400）+ `match-replay.e2e`（400KB 归档 replayRef 可取回）。
 - 铸码限流阈值 / 分享过期策略：每账号 `STATE_REPLAY_SHARE_PER_HOUR=20`/小时（429）；`STATE_REPLAY_EXPIRE_DAYS=14` 天 TTL 自清。永久 vs N 天上线期再定。
 - 微信分享卡片封面：当前用 `shareAppMessage` 默认截图，静态图 vs 后续烤短动图待定。
