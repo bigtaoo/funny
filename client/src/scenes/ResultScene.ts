@@ -356,19 +356,26 @@ export class ResultScene implements Scene {
     const pen = new SketchPen(g, 0x9e3 + (mood === 'win' ? 1 : mood === 'loss' ? 2 : 3));
 
     if (mood === 'win') {
-      // A scatter of celebratory four-point sparkles in warm marker-gold.
+      // A scatter of celebratory hand-drawn five-point stars in warm marker-gold.
       const gold = ui.gold;
-      const spark = (cx: number, cy: number, r: number, alpha: number): void => {
-        pen.line(cx - r, cy, cx + r, cy, { color: gold, width: Math.max(1.4, r * 0.22), jitter: 0.3, taper: 0.95, double: false, alpha });
-        pen.line(cx, cy - r, cx, cy + r, { color: gold, width: Math.max(1.4, r * 0.22), jitter: 0.3, taper: 0.95, double: false, alpha });
-        pen.line(cx - r * 0.5, cy - r * 0.5, cx + r * 0.5, cy + r * 0.5, { color: gold, width: Math.max(1, r * 0.14), jitter: 0.3, taper: 0.9, double: false, alpha: alpha * 0.8 });
-        pen.line(cx - r * 0.5, cy + r * 0.5, cx + r * 0.5, cy - r * 0.5, { color: gold, width: Math.max(1, r * 0.14), jitter: 0.3, taper: 0.9, double: false, alpha: alpha * 0.8 });
+      const star = (cx: number, cy: number, r: number, alpha: number): void => {
+        const inner = r * 0.42;                     // classic 5-point star waist
+        const pts: { x: number; y: number }[] = [];
+        for (let i = 0; i < 5; i++) {
+          const ao = -Math.PI / 2 + (i * 2 * Math.PI) / 5;   // outer tip
+          const ai = ao + Math.PI / 5;                       // inner notch
+          pts.push({ x: cx + Math.cos(ao) * r, y: cy + Math.sin(ao) * r });
+          pts.push({ x: cx + Math.cos(ai) * inner, y: cy + Math.sin(ai) * inner });
+        }
+        // Close the loop by hand — overshoot back past the first tip.
+        pts.push(pts[0]!, pts[1]!);
+        pen.stroke(pts, { color: gold, width: Math.max(1.4, r * 0.13), jitter: 0.35, taper: 0.9, double: false, alpha });
       };
-      spark(w * 0.18, h * 0.20, h * 0.045, 0.9);
-      spark(w * 0.83, h * 0.16, h * 0.060, 0.95);
-      spark(w * 0.74, h * 0.30, h * 0.030, 0.7);
-      spark(w * 0.27, h * 0.40, h * 0.034, 0.75);
-      spark(w * 0.88, h * 0.45, h * 0.040, 0.8);
+      star(w * 0.18, h * 0.20, h * 0.045, 0.9);
+      star(w * 0.83, h * 0.16, h * 0.060, 0.95);
+      star(w * 0.74, h * 0.30, h * 0.030, 0.7);
+      star(w * 0.27, h * 0.40, h * 0.034, 0.75);
+      star(w * 0.88, h * 0.45, h * 0.040, 0.8);
     } else if (mood === 'loss') {
       // A couple of red cross-out scribbles (echoes the "red-pen" art motif).
       const red = ui.red;
