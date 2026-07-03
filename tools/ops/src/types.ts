@@ -22,6 +22,7 @@ export type AdminCapability =
   | 'slg.audit.manage'
   | 'config.manage'
   | 'events.manage'
+  | 'gacha.pools.manage'
   | 'admin.manage';
 
 export interface AdminAccountView {
@@ -259,4 +260,46 @@ export interface EventInput {
   windowEnd: number;
   tasks: EventTaskDef[];
   rewards: EventRewardDef[];
+}
+
+// ── Custom gacha pools (GACHA_DESIGN §12, gacha.pools.manage) ──
+export type GachaCategory = 'skin' | 'card' | 'equipment' | 'material';
+export interface GachaCatalogItem {
+  itemId: string;
+  category: GachaCategory;
+  rarity: 'common' | 'rare' | 'epic' | 'legendary';
+  name: string;
+}
+export interface CustomPoolItem {
+  itemId: string;
+  weight: number;
+}
+export interface CustomPoolCategory {
+  category: GachaCategory;
+  weight: number;
+  items: CustomPoolItem[];
+}
+export interface CustomPoolConfig {
+  id: string;
+  name: string;
+  costSingle: number;
+  costTen?: number;
+  startAt: number;
+  endAt: number;
+  categories: CustomPoolCategory[];
+}
+/** A pool as listed by the backend (derived §2.2 or custom §12; discriminated by `kind`). */
+export interface AdminGachaPool {
+  id: string;
+  name: string;
+  startAt: number;
+  endAt: number;
+  kind?: 'derived' | 'custom';
+  featuredLegendary?: string; // derived pools
+  costSingle?: number; // custom pools
+  costTen?: number;
+  categories?: CustomPoolCategory[];
+  createdBy: string;
+  createdAt: number;
+  closedAt?: number;
 }

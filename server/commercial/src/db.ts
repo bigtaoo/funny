@@ -1,7 +1,7 @@
 // Commercial database factory (S5-1, COMMERCIAL_DESIGN §3/§7). Database name notebook_wars_commercial,
 // physically isolated from the meta database. Collections: wallets / ledger / orders / recharges / gachaHistory.
 import { MongoClient, Db, Collection, type MongoClientOptions } from 'mongodb';
-import type { Rarity, LimitedPoolConfig } from '@nw/shared';
+import type { Rarity, LimitedPoolConfig, CustomPoolCategory } from '@nw/shared';
 
 /** Balance (single-document atomic update + optimistic lock rev). pity embedded in the same document (design default A: coin deduction + pity counter in one atomic operation). */
 export interface WalletDoc {
@@ -107,12 +107,42 @@ export interface PromoRedemptionDoc {
   ts: number;
 }
 
-/** Limited gacha pool config (GACHA_DESIGN §2.2). _id = pool id; content is derived from the standard pool (economy.buildLimitedPool). Retained after close so past-featured legendaries stay redeemable with Fate Points (§7). */
-export interface GachaPoolDoc extends LimitedPoolConfig {
+/**
+ * Gacha pool config stored in `gachaPools`. Two kinds share the collection (discriminated by `kind`,
+ * absent = 'derived' for backward compatibility with pre-§12 docs):
+ *   · derived — GACHA_DESIGN §2.2 limited pool: content derived from the standard pool
+ *     (economy.buildLimitedPool), featured legendary + Fate Points. Retained after close so
+ *     past-featured legendaries stay redeemable with Fate Points (§7).
+ *   · custom  — GACHA_DESIGN §12 ops-authored pool: free-form categories/items/weights, no pity/fate.
+ */
+export interface DerivedGachaPoolDoc extends LimitedPoolConfig {
   _id: string; // = LimitedPoolConfig.id
+  kind?: 'derived';
   createdBy: string; // adminId
   createdAt: number;
   closedAt?: number; // set when an admin closes the pool early (endAt is also clamped to now)
+}
+
+export interface CustomGachaPoolDoc {
+  _id: string; // = pool id
+  kind: 'custom';
+  id: string;
+  name: string;
+  costSingle: number;
+  costTen?: number; // defaults to costSingle * 10
+  startAt: number;
+  endAt: number;
+  categories: CustomPoolCategory[];
+  createdBy: string; // adminId
+  createdAt: number;
+  closedAt?: number;
+}
+
+export type GachaPoolDoc = DerivedGachaPoolDoc | CustomGachaPoolDoc;
+
+/** Narrow a stored pool doc to the ops-authored custom kind (GACHA_DESIGN §12). */
+export function isCustomPoolDoc(doc: GachaPoolDoc): doc is CustomGachaPoolDoc {
+  return doc.kind === 'custom';
 }
 
 export interface CommercialCollections {

@@ -241,6 +241,66 @@ describe.skipIf(!mongo)('commercial service e2e', () => {
     expect(bad).toEqual({ ok: false, error: 'FATE_INVALID_ITEM' });
   });
 
+  // ── Custom (ops-authored) pools (GACHA_DESIGN §12) ─────────────────────────
+  it('custom pool: rejects invalid config; active pool debits custom cost, rolls by weight, no pity/fate; expired → POOL_UNAVAILABLE', async () => {
+    // Invalid: no categories.
+    const badCfg = await svc.createCustomPool({
+      config: { id: 'fest1', name: 'Fest', costSingle: 200, startAt: 0, endAt: 9_999_999_999_999, categories: [] },
+      createdBy: 'admin',
+    });
+    expect(badCfg).toEqual({ ok: false, error: 'BAD_REQUEST' });
+
+    // Must not shadow a static pool id.
+    const shadow = await svc.createCustomPool({
+      config: {
+        id: 'standard',
+        name: 'X',
+        costSingle: 200,
+        startAt: 0,
+        endAt: 9_999_999_999_999,
+        categories: [{ category: 'skin', weight: 1, items: [{ itemId: 'skin_l1', weight: 1 }] }],
+      },
+      createdBy: 'admin',
+    });
+    expect(shadow).toEqual({ ok: false, error: 'BAD_REQUEST' });
+
+    await svc.rechargeVerify({ accountId: 'cp', platform: 'web', receipt: 'tier:t999', receiptId: 'rccp' }); // 1150
+
+    // Draw before the pool exists → unavailable.
+    const miss = await svc.gachaDraw({ accountId: 'cp', poolId: 'fest1', count: 1, orderId: 'cpm' });
+    expect(miss).toEqual({ ok: false, error: 'POOL_UNAVAILABLE' });
+
+    const created = await svc.createCustomPool({
+      config: {
+        id: 'fest1',
+        name: 'Fest',
+        costSingle: 200,
+        startAt: 0,
+        endAt: 9_999_999_999_999,
+        categories: [{ category: 'skin', weight: 100, items: [{ itemId: 'skin_l1', weight: 1 }] }],
+      },
+      createdBy: 'admin',
+    });
+    expect(created).toEqual({ ok: true, id: 'fest1' });
+
+    // rng=zero → first category, first item = skin_l1. Custom pools carry no pity/fate.
+    const before = (await svc.getWallet('cp')).coins;
+    const draw = await svc.gachaDraw({ accountId: 'cp', poolId: 'fest1', count: 1, orderId: 'cp1' });
+    expect(draw.ok).toBe(true);
+    if (draw.ok) {
+      expect(draw.results).toEqual([{ itemId: 'skin_l1', rarity: 'legendary' }]);
+      expect(draw.coinsAfter).toBe(before - 200); // debits the custom costSingle
+      expect(draw.pityAfter).toBe(0);
+      expect(draw.fateGained).toBe(0);
+    }
+    expect((await svc.getWallet('cp')).pity.fest1 ?? 0).toBe(0); // no pity accrual
+
+    // Closing clamps the window → subsequent draw unavailable.
+    await svc.closeLimitedPool({ id: 'fest1' });
+    const afterClose = await svc.gachaDraw({ accountId: 'cp', poolId: 'fest1', count: 1, orderId: 'cp2' });
+    expect(afterClose).toEqual({ ok: false, error: 'POOL_UNAVAILABLE' });
+  });
+
   // ── Monthly card (GACHA_DESIGN §5) ─────────────────────────────────────────
   it('monthly card: buy grants immediate 600 + activates subscription; daily claim once per day', async () => {
     const buy = await svc.monthlyCardBuy({ accountId: 'mc', orderId: 'mcb' });

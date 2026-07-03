@@ -2,7 +2,7 @@
 // Uses node:http (commercial does not import fastify). Contract: SERVER_API.md §9 / COMMERCIAL_DESIGN §5.
 // Protocol errors (auth / method / parsing) → 4xx; business results (including INSUFFICIENT_FUNDS etc.) → 200 + {ok,...} mapped by meta.
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
-import { createLogger, type InternalAuthVerifier } from '@nw/shared';
+import { createLogger, type InternalAuthVerifier, type CustomPoolCategory } from '@nw/shared';
 import type { CommercialService } from './service';
 
 const log = createLogger('commercial:internal');
@@ -216,6 +216,37 @@ export function startInternalHttp(
                   ...(Array.isArray(cfg.fillerLegendaries)
                     ? { fillerLegendaries: (cfg.fillerLegendaries as unknown[]).map((x) => str(x)) }
                     : {}),
+                },
+                createdBy: str(b.createdBy),
+              }),
+            );
+          }
+          case '/internal/gacha/pool/custom': {
+            const cfg = (b.config ?? {}) as Record<string, unknown>;
+            const categories = Array.isArray(cfg.categories)
+              ? (cfg.categories as Record<string, unknown>[]).map((c) => ({
+                  category: str(c.category) as CustomPoolCategory['category'],
+                  weight: num(c.weight, 0),
+                  items: Array.isArray(c.items)
+                    ? (c.items as Record<string, unknown>[]).map((it) => ({
+                        itemId: str(it.itemId),
+                        weight: num(it.weight, 0),
+                      }))
+                    : [],
+                }))
+              : [];
+            return send(
+              res,
+              200,
+              await svc.createCustomPool({
+                config: {
+                  id: str(cfg.id),
+                  name: str(cfg.name),
+                  costSingle: num(cfg.costSingle, 0),
+                  ...(typeof cfg.costTen === 'number' ? { costTen: cfg.costTen } : {}),
+                  startAt: num(cfg.startAt, 0),
+                  endAt: num(cfg.endAt, 0),
+                  categories,
                 },
                 createdBy: str(b.createdBy),
               }),

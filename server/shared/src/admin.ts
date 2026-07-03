@@ -34,6 +34,7 @@ export type AdminCapability =
   | 'slg.audit.manage' // file / adjudicate anomalous-trade audit tickets (G7 anti-RMT)
   | 'config.manage' // feature flag master switch / targeted edit (FEATURE_FLAGS_DESIGN §5)
   | 'events.manage' // limited-time events (B6): create / edit / take offline (ADR-014)
+  | 'gacha.pools.manage' // ops-authored custom gacha pools (GACHA_DESIGN §12): create / close festival pools
   | 'promo.manage' // promo-code create / view (B-PROMO)
   | 'admin.manage'; // account / role management
 
@@ -64,6 +65,7 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'slg.audit.manage',
     'config.manage',
     'events.manage',
+    'gacha.pools.manage',
     'promo.manage',
     'admin.manage',
   ],
@@ -84,6 +86,7 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'slg.audit.manage',
     'config.manage',
     'events.manage',
+    'gacha.pools.manage',
     'promo.manage',
   ],
   support: [
@@ -284,6 +287,8 @@ export type AuditAction =
   | 'event.create'
   | 'event.update'
   | 'event.delete'
+  | 'gacha.pool.create'
+  | 'gacha.pool.close'
   | 'promo.create';
 
 export interface AuditEntryView {

@@ -375,6 +375,7 @@
 - [x] **G6 新手包** ✅（2026-07-02）：`wallet.starterUsed[]` 一次性；`/starter/buy`：draw=rare+ 保底十连（不动 pity），growth=3300+7天卡（首 7 天窗口由 meta 按 `accounts.createdAt` 把关）。
 - [x] **客户端最小占位** ✅（2026-07-02）：GachaScene 池切换 tab + 命运点/兑换；ShopScene 月卡（买/领）+ 新手包按钮；`SaveData.monetization` 只读镜像；i18n zh/en/de 全补。
 - [ ] **G7–G10 美术展示层**：概率详情两 tab、限定 banner+倒计时真图、legendary 翻牌粒子、月卡卡面 + 到期本地推送。美术阻塞（程序占位可跑）。
+- [x] **G11 自定义池（ops 自由配置 / 节日限定）** ✅（2026-07-03）：与 §2.2 派生式限定池并存的**第二种池类型**——内容/概率全由 ops 编排，无保底/无主打 legendary/无命运点。类别=物品大类（skin/card/equipment/material），两阶段加权（类别→物品）。**服务端**：`@nw/shared gachaCatalog.ts`（`GACHA_CATALOG` 聚合 EQUIPMENT_DEFS/CARD_DEFS+皮肤/材料表 + `CustomPoolConfig`/`customPoolEntries`/`validateCustomPool`）；commercial `gacha.ts rollCustomGacha` + `GachaPoolDoc` 加 `kind:'derived'|'custom'` 判别式 + `createCustomPool` + `gachaDraw`/`resolvePool` 分支（无 pity/fate）；meta `getGachaPools` 追加活跃自定义池（`customPoolEntries` 算概率公示）+ `/admin/gacha/pools/custom`、`/admin/gacha/catalog` 端点。**后台**：能力点 `gacha.pools.manage`（super/ops）+ 审计 `gacha.pool.create/close`；admin `GachaPoolsClient` 代理；ops `pageGachaPools`（类别开关+权重+物品选择器+币价+时间窗，实时归一化 %）。**客户端**：既有 `/gacha/pools` 链路零契约改动，GachaScene 加到期倒计时/已结束标签（`gacha.pool.endsIn/ended`，zh/en/de）。**验证**：server 全包 tsc + commercial 单测（rollCustomGacha 4 + e2e custom pool 1）+ shared 单测（gachaCatalog 18）+ ops/client tsc + webpack 构建全绿。文档见 `GACHA_DESIGN.md §12`。
 - [ ] **真实 IAP 接单**：月卡/新手包当前当作已授权购买；接平台 SDK 时在 meta 端前置验单（复用 `commercial/iap.ts` 验签）。
 
 ---
