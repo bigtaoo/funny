@@ -1,0 +1,443 @@
+// worldsvc combat domain: marches (S8-2) — start / recall / list + arrival processing & dispatch.
+// Peeled out of CombatService (2026-07-03). Depends on WorldCore for shared state, vision, push/schedule
+// infra and nations (applyNationChange); attack/sweep arrivals are dispatched to SiegeService. No behavior change.
+import {
+  proceduralTile,
+  tileId,
+  marchId,
+  playerWorldId,
+  findMarchPath,
+  marchDurationFromPath,
+  OCCUPY_MIN_TROOPS,
+  MARCH_MIN_TROOPS,
+  isInVision,
+  marchInterpPos,
+  SlgError,
+  type PathCell,
+  type MarchKind,
+} from '@nw/shared';
+import type { TileDoc, MarchDoc, ArmyEntry } from './db';
+import { WorldCore, MARCHABLE_KINDS } from './core';
+import type { MarchView } from './worldTypes';
+import { refundTroops } from './combatShared';
+import type { SiegeService } from './combatSiege';
+
+export class MarchService {
+  constructor(
+    private readonly core: WorldCore,
+    private readonly siege: SiegeService,
+  ) {}
+
+  /**
+   * A* pathfinding for marches: pre-fetch all occupied gate tiles, assemble passableGateKeys, then call findMarchPath.
+   * Gate passage rules (S8-4): gates occupied by the requester and gates occupied by members of the same family are passable
+   * (allied sect passage is S8-4+ with the alliance system pending; currently only within the same family).
+   * No path found → throw PATH_BLOCKED (HTTP 400).
+   */
+  private async computeMarchPath(
+    worldId: string,
+    fromX: number,
+    fromY: number,
+    toX: number,
+    toY: number,
+    requesterId: string,
+  ): Promise<PathCell[]> {
+    // Retrieve the requester's current family (if any); gates occupied by fellow family members are also passable.
+    const requesterPw = await this.core.deps.cols.playerWorld.findOne({ _id: playerWorldId(worldId, requesterId) });
+    const allyFamilyId = requesterPw?.familyId;
+
+    // Gates are sparse (~20–40 across the whole map); fetch all at once and filter, to avoid async calls inside A*.
+    const gateTiles = await this.core.deps.cols.tiles
+      .find({ worldId, type: 'gate' })
+      .project<{ _id: string; x: number; y: number; ownerId: string | undefined; familyId: string | undefined }>({
+        _id: 1, x: 1, y: 1, ownerId: 1, familyId: 1,
+      })
+      .toArray();
+    const passableGateKeys = new Set<string>(
+      gateTiles
+        .filter((g) =>
+          g.ownerId === requesterId ||
+          (allyFamilyId && g.familyId === allyFamilyId),
+        )
+        .map((g) => `${g.x}:${g.y}`),
+    );
+    // ADR-025: other players' 3×3 capitals are solid buildings that block pathing (封路); the marcher
+    // routes around them but can still march ONTO an enemy base tile to besiege it (findMarchPath exempts
+    // the destination). The marcher's own base cells are excluded so owners march in/out freely.
+    // When the destination IS an enemy base cell (a siege), also exclude THAT base's whole footprint so
+    // every one of its 9 cells — including the center, which is otherwise walled in by its own ring — is
+    // reachable ("attack any cell = attack the base"). Only that one base opens up; all others still block.
+    const destTile = await this.core.deps.cols.tiles.findOne({ _id: tileId(worldId, toX, toY) });
+    const siegeBaseOwner = destTile?.type === 'base' ? destTile.ownerId : undefined;
+    const excludeOwners = siegeBaseOwner ? [requesterId, siegeBaseOwner] : [requesterId];
+    const blockedBaseTiles = await this.core.deps.cols.tiles
+      .find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
+      .project<{ x: number; y: number }>({ x: 1, y: 1 })
+      .toArray();
+    const blockedBaseKeys = new Set<string>(blockedBaseTiles.map((b) => `${b.x}:${b.y}`));
+    const path = findMarchPath(
+      worldId,
+      this.core.deps.mapW,
+      this.core.deps.mapH,
+      fromX,
+      fromY,
+      toX,
+      toY,
+      passableGateKeys,
+      blockedBaseKeys,
+    );
+    if (!path) throw new SlgError('PATH_BLOCKED', 'No viable path found');
+    return path;
+  }
+
+  // ── S8-2: march / recall / arrival processing ──────────────────────────
+
+  /**
+   * Start a march (occupy / reinforce; attack/sweep = siege S8-3). Troops are **immediately deducted from the pool** on departure (in-transit);
+   * on arrival they are applied according to kind (occupy writes TileDoc / reinforce adds garrison); on failure or recall, troops are refunded to the pool.
+   * Validation (at departure): joined + valid kind + from/to in bounds + from is own tile + enough troops +
+   *   occupy: target is an empty tile (not center / unoccupied) and troops ≥ OCCUPY_MIN_TROOPS / reinforce: target is own tile.
+   */
+  async startMarch(
+    worldId: string,
+    accountId: string,
+    fromX: number,
+    fromY: number,
+    toX: number,
+    toY: number,
+    kind: MarchKind,
+    troops: number,
+    teamId?: string,
+  ): Promise<MarchView> {
+    const { cols, now } = this.core.deps;
+    if (!MARCHABLE_KINDS.has(kind)) {
+      throw new SlgError('NOT_IMPLEMENTED', `March kind ${kind} is not implemented (siege S8-3)`);
+    }
+    const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+    if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
+    if (!this.core.inBounds(fromX, fromY) || !this.core.inBounds(toX, toY)) {
+      throw new SlgError('OUT_OF_RANGE', 'Coordinates out of bounds');
+    }
+    // Siege with a team (G3-2c): draw the army from the saved attack formation template; committed troops = sum of troops assigned to each unit.
+    // The team can be edited after departure without affecting the in-transit march (the army snapshot is persisted with MarchDoc). Not attack or no team → use flat troops.
+    let army: ArmyEntry[] | undefined;
+    if (kind === 'attack' && teamId) {
+      const team = (pw.teams ?? []).find((t) => t.id === teamId);
+      if (!team || team.army.length === 0) throw new SlgError('BAD_REQUEST', 'Team does not exist or is empty');
+      army = team.army;
+      troops = team.army.reduce((s, e) => s + Math.max(1, Math.floor(e.initialHp ?? 0)), 0);
+    }
+    if (!Number.isFinite(troops) || troops < MARCH_MIN_TROOPS) {
+      throw new SlgError('NO_TROOPS', 'Invalid march troop count');
+    }
+    troops = Math.floor(troops);
+    if (kind === 'occupy' && troops < OCCUPY_MIN_TROOPS) {
+      throw new SlgError('NO_TROOPS', `Occupation requires at least ${OCCUPY_MIN_TROOPS} troops`);
+    }
+
+    const fromTid = tileId(worldId, fromX, fromY);
+    const fromTile = await cols.tiles.findOne({ _id: fromTid });
+    if (!fromTile || fromTile.ownerId !== accountId) {
+      throw new SlgError('TILE_NOT_OWNED', 'Can only march from your own tile');
+    }
+
+    // Validate the target tile at departure (will be re-validated on arrival since state may have changed).
+    const toTid = tileId(worldId, toX, toY);
+    const proc = proceduralTile(worldId, toX, toY);
+    if (proc.type === 'obstacle') throw new SlgError('BAD_REQUEST', 'Cannot march into obstacle terrain');
+    const toTile = await cols.tiles.findOne({ _id: toTid });
+    let defenderId: string | undefined; // attack: the attacked player's accountId (under_attack warning is pushed immediately on departure)
+    if (kind === 'occupy') {
+      if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'Cannot directly occupy the world center');
+      // Stronghold (G8 §3.1): guarded by an extremely powerful system NPC; cannot be directly occupied — must be captured via attack siege.
+      if (proc.type === 'stronghold' && !toTile?.ownerId) {
+        throw new SlgError('TILE_OCCUPIED', 'Strongholds cannot be directly occupied; use attack siege to capture');
+      }
+      if (toTile?.ownerId === accountId) throw new SlgError('TILE_OCCUPIED', 'This tile is already your territory (use reinforce)');
+      if (toTile?.ownerId) {
+        if (toTile.protectedUntil && toTile.protectedUntil > now()) {
+          throw new SlgError('PROTECTED', 'Target tile is under protection');
+        }
+        throw new SlgError('TILE_OCCUPIED', 'This tile is already occupied (use attack siege to take it)');
+      }
+    } else if (kind === 'reinforce') {
+      if (!toTile || toTile.ownerId !== accountId) throw new SlgError('TILE_NOT_OWNED', 'Can only reinforce your own tile');
+    } else if (kind === 'attack') {
+      // Siege: target must be another player's territory/capital, or an ownerless stronghold (G8 PvE to defeat the system garrison). Use occupy/sweep for neutral ownerless tiles.
+      if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'World center is contested by sects and cannot be sieged');
+      if (!toTile?.ownerId) {
+        // No owner: only strongholds can be sieged (defeating the ultra-strong system NPC); all other ownerless tiles use occupy/sweep.
+        if (proc.type !== 'stronghold') throw new SlgError('TILE_NOT_OWNED', 'Siege target has no owner (use occupy/sweep)');
+        // Stronghold PvE: leave defenderId unset (NPC does not receive an under_attack warning).
+      } else {
+        if (toTile.ownerId === accountId) throw new SlgError('TILE_OCCUPIED', 'Cannot siege your own territory');
+        // R-3 (§8.2 / §18.7): friendly-fire block — cannot siege own family / same sect / allied sect territory.
+        if ((await this.core.friendlyAccountIds(worldId, accountId)).has(toTile.ownerId)) {
+          throw new SlgError('ALLY_TILE', 'Cannot siege friendly territory (family / sect / alliance)');
+        }
+        if (toTile.protectedUntil && toTile.protectedUntil > now()) {
+          throw new SlgError('PROTECTED', 'Target tile is under protection');
+        }
+        defenderId = toTile.ownerId;
+      }
+      if (troops < OCCUPY_MIN_TROOPS) throw new SlgError('NO_TROOPS', `Siege requires at least ${OCCUPY_MIN_TROOPS} troops`);
+    } else if (kind === 'scout') {
+      // Scout: no fighting or occupation; send a small force to any non-obstacle tile (including enemy/protected/neutral/center) to reveal vision, then auto-return.
+      // No ownership/center/protection-period restriction — blocking obstacle terrain above is sufficient. No defenderId (no under_attack warning).
+    } else {
+      // sweep: clear NPC garrison from neutral / resource tiles (no occupation; loot is carried back on return).
+      if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'Cannot sweep the world center');
+      // Stronghold (G8): ultra-strong system garrison; cannot be swept for loot — must be captured via attack siege.
+      if (proc.type === 'stronghold') throw new SlgError('TILE_OCCUPIED', 'Strongholds must be captured via attack siege; sweeping is not allowed');
+      if (toTile?.ownerId) throw new SlgError('TILE_OCCUPIED', 'Target is already occupied (use attack siege to take it)');
+    }
+
+    const t = now();
+    const resources = this.core.settle(pw, t);
+    if (pw.troops < troops) throw new SlgError('NO_TROOPS', 'Insufficient troops');
+
+    const path = await this.computeMarchPath(worldId, fromX, fromY, toX, toY, accountId);
+    const departAt = t;
+    const arriveAt = departAt + marchDurationFromPath(path) * 1000;
+    const mid = marchId(worldId, accountId, departAt, ++this.core.marchSeq);
+    const doc: MarchDoc = {
+      _id: mid,
+      worldId,
+      ownerId: accountId,
+      fromTile: fromTid,
+      toTile: toTid,
+      kind,
+      troops,
+      ...(army && army.length > 0 ? { army } : {}),
+      // ADR-026: record the deployed team slot so it is skipped as a defender while out (only meaningful for team-based attacks).
+      ...(kind === 'attack' && teamId ? { teamId } : {}),
+      departAt,
+      arriveAt,
+      status: 'marching',
+      rev: 0,
+    };
+    await cols.marches.insertOne(doc);
+    // Deduct troops on departure (in-transit; not in the pool).
+    await cols.playerWorld.updateOne(
+      { _id: pw._id },
+      { $set: { resources, lastTickAt: t }, $inc: { troops: -troops, rev: 1 } },
+    );
+    await this.core.scheduleMarch(worldId, mid, arriveAt);
+    const view = this.core.marchView(doc);
+    void this.core.pushMarch(accountId, view);
+    // G5-2 reverse vision push: push this march to observers whose vision covers its path (enemy march entering your vision triggers a push, V4).
+    // Reuse the already-computed path; one reverse query (not per tick). The defender (attack) already receives under_attack separately, so exclude them from observers.
+    const observers = await this.core.visionObservers(worldId, path, new Set([accountId, ...(defenderId ? [defenderId] : [])]));
+    for (const acct of observers) void this.core.pushMarch(acct, view);
+    // Siege: push an under_attack warning to the defender immediately on departure (§5 / §14.5).
+    if (kind === 'attack' && defenderId) {
+      const did = defenderId;
+      void (this.core.meta.available
+        ? this.core.meta.getProfile(accountId).catch(() => null)
+        : Promise.resolve(null)
+      ).then((p) => this.core.gateway.push(did, {
+        kind: 'under_attack',
+        tile: toTid,
+        attackerName: p?.displayName ?? '',
+        attackerPublicId: p?.publicId ?? '',
+        arriveAt,
+        troopsHint: troops,
+      }));
+    }
+    return view;
+  }
+
+  /**
+   * Recall a march: flip an in-transit outbound march into a return leg (troops travel back to the origin tile and are refunded to the troop pool).
+   * Return travel time = time already elapsed (min(elapsed, total)). Troops are refunded on the return arrival. Already arrived / already recalled → MARCH_NOT_FOUND.
+   */
+  async recallMarch(worldId: string, accountId: string, mid: string): Promise<MarchView> {
+    const { cols, now } = this.core.deps;
+    const m = await cols.marches.findOne({ _id: mid, worldId, ownerId: accountId });
+    if (!m || m.status !== 'marching' || m.kind === 'return') {
+      throw new SlgError('MARCH_NOT_FOUND', 'March not found or cannot be recalled');
+    }
+    const t = now();
+    const total = m.arriveAt - m.departAt;
+    const traveled = Math.max(0, Math.min(t - m.departAt, total));
+    const backArrive = t + traveled;
+    // Atomic claim (prevents race with arrival processing): only an outbound march still in 'marching' state is flipped to a return leg.
+    const claimed = await cols.marches.findOneAndUpdate(
+      { _id: mid, status: 'marching', kind: { $ne: 'return' } },
+      {
+        $set: {
+          kind: 'return',
+          fromTile: m.toTile,
+          toTile: m.fromTile,
+          departAt: t,
+          arriveAt: backArrive,
+        },
+        $inc: { rev: 1 },
+      },
+      { returnDocument: 'after' },
+    );
+    if (!claimed) throw new SlgError('MARCH_NOT_FOUND', 'March has already arrived or been recalled');
+    await this.core.scheduleMarch(worldId, mid, backArrive); // update score on the same member (ZSET)
+    const view = this.core.marchView(claimed);
+    void this.core.pushMarch(accountId, view);
+    return view;
+  }
+
+  /** List of all in-transit marches in the player's current world (the scheduler deletes them on arrival, so all results are marches that have not yet arrived). */
+  async getMarches(worldId: string, accountId: string): Promise<MarchView[]> {
+    const { cols, mapW, mapH, now } = this.core.deps;
+    const own = await cols.marches.find({ worldId, ownerId: accountId }).sort({ arriveAt: 1 }).toArray();
+    const result: MarchView[] = own.map((d) => ({ ...this.core.marchView(d), mine: true }));
+
+    // G5: enemy marches within vision (after reverse-push, the client renders these via refreshMarches). Family ally marches are excluded
+    // (ally determination relies on the family set); only genuinely non-family others' in-transit marches whose interpolated current position falls within our vision are included.
+    const family = await this.core.familyMemberIds(worldId, accountId);
+    const sources = await this.core.computeVisionSources(worldId, accountId, 0, mapW - 1, 0, mapH - 1);
+    const t = now();
+    const others = await cols.marches.find({ worldId, status: 'marching' }).toArray();
+    for (const d of others) {
+      if (family.has(d.ownerId)) continue; // own / family — no duplicate and not treated as enemy
+      const pos = marchInterpPos(
+        this.core.coordX(d.fromTile), this.core.coordY(d.fromTile),
+        this.core.coordX(d.toTile), this.core.coordY(d.toTile),
+        d.departAt, d.arriveAt, t,
+      );
+      if (isInVision(sources, pos.x, pos.y)) result.push({ ...this.core.marchView(d), mine: false });
+    }
+    return result;
+  }
+
+  /**
+   * Arrival processing: scan all in-transit marches with arriveAt ≤ now, atomically claim them (findOneAndDelete), then apply effects by kind.
+   * The Mongo `arriveAt` index scan is authoritative (works across worlds and without Redis); the Redis ZSET is only a precise wake-up hint
+   * (maintained by scheduleMarch, §14.4). Returns the number of marches processed. worldsvc single-consumer (U12; single-process is acceptable for early stage).
+   */
+  async processDueArrivals(nowMs?: number): Promise<number> {
+    const { cols } = this.core.deps;
+    const t = nowMs ?? this.core.deps.now();
+    const due = await cols.marches
+      .find({ status: 'marching', arriveAt: { $lte: t } })
+      .limit(500)
+      .toArray();
+    let n = 0;
+    for (const m of due) {
+      // Atomic claim + delete (transient document consumed on arrival); skip if lost to a recall or concurrent processor.
+      const claimed = await cols.marches.findOneAndDelete({ _id: m._id, status: 'marching' });
+      if (!claimed) continue;
+      await this.core.unscheduleMarch(claimed.worldId, claimed._id);
+      await this.applyArrival(claimed, t);
+      n++;
+    }
+    return n;
+  }
+
+  /** Apply the effects of a single arrived march (already removed from marches collection). */
+  private async applyArrival(m: MarchDoc, t: number): Promise<void> {
+    const { cols } = this.core.deps;
+    const pw = await cols.playerWorld.findOne({ _id: playerWorldId(m.worldId, m.ownerId) });
+    if (!pw) return; // player state missing (should not happen); troops are lost with it; exit safely.
+
+    if (m.kind === 'return') {
+      await refundTroops(this.core, pw, m.troops, t);
+      void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
+      return;
+    }
+
+    if (m.kind === 'attack') {
+      await this.siege.applySiege(m, pw, t);
+      return;
+    }
+
+    if (m.kind === 'sweep') {
+      await this.siege.applySweep(m, pw, t);
+      return;
+    }
+
+    if (m.kind === 'scout') {
+      await this.autoReturnScout(m, t);
+      return;
+    }
+
+    if (m.kind === 'occupy') {
+      const proc = proceduralTile(m.worldId, this.core.coordX(m.toTile), this.core.coordY(m.toTile));
+      const occ = await cols.tiles.findOne({ _id: m.toTile });
+      const blocked =
+        proc.type === 'center' ||
+        (occ?.ownerId && occ.ownerId !== m.ownerId) ||
+        (occ?.ownerId === m.ownerId && occ.type !== 'base'); // already own territory (base is the exception, but the march would never reach here for base)
+      if (blocked) {
+        // Target is occupied or non-occupiable on arrival → troops refunded to the pool immediately (S8-3 could instead use a return march).
+        await refundTroops(this.core, pw, m.troops, t);
+        void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
+        return;
+      }
+      const x = this.core.coordX(m.toTile);
+      const y = this.core.coordY(m.toTile);
+      const tileDoc: TileDoc = {
+        _id: m.toTile,
+        worldId: m.worldId,
+        x,
+        y,
+        type: 'territory',
+        level: proc.level,
+        ...(proc.resType ? { resType: proc.resType } : {}),
+        ownerId: m.ownerId,
+        garrison: m.troops,
+        rev: 0,
+      };
+      await cols.tiles.updateOne({ _id: m.toTile }, { $set: tileDoc }, { upsert: true });
+      // Troops were already deducted on departure → do not modify the pool again; only update the yield rate.
+      const resources = this.core.settle(pw, t);
+      const yieldRate = await this.core.recomputeYield(m.worldId, m.ownerId);
+      await cols.playerWorld.updateOne(
+        { _id: pw._id },
+        { $set: { resources, yieldRate, lastTickAt: t }, $inc: { rev: 1 } },
+      );
+      void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'arrived' }));
+      void this.core.pushTile(m.ownerId, tileDoc);
+      await this.core.pushTileToObservers(tileDoc, new Set([m.ownerId])); // G5-2: occupation arrival is visible to observers
+      // Capital tile occupied → trigger nation founding (S8-6.5)
+      void this.core.applyNationChange(m.worldId, x, y, m.ownerId, pw.familyId);
+      // §17.4 activity increment: occupying new territory → occupier's family +1 (including prosperity refresh).
+      void this.core.bumpFamilyActivity(m.worldId, pw.familyId, 1);
+      return;
+    }
+
+    // reinforce
+    const target = await cols.tiles.findOne({ _id: m.toTile });
+    if (!target || target.ownerId !== m.ownerId) {
+      // Reinforcement target is no longer own territory (captured / abandoned) → refund troops.
+      await refundTroops(this.core, pw, m.troops, t);
+      void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
+      return;
+    }
+    await cols.tiles.updateOne({ _id: m.toTile }, { $inc: { garrison: m.troops, rev: 1 } });
+    void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'arrived' }));
+    const after = await cols.tiles.findOne({ _id: m.toTile });
+    if (after) void this.core.pushTile(m.ownerId, after);
+  }
+
+  /**
+   * Scout march arrives at the target: no fighting or occupation; automatically flip to a return leg (same troops take the same route back to the origin tile, providing vision along the way);
+   * on return arrival, troops are refunded to the troop pool. Return travel time = outbound travel time (symmetric approximation; avoids recomputing the path).
+   */
+  private async autoReturnScout(m: MarchDoc, t: number): Promise<void> {
+    const { cols } = this.core.deps;
+    const back: MarchDoc = {
+      _id: marchId(m.worldId, m.ownerId, t, ++this.core.marchSeq),
+      worldId: m.worldId,
+      ownerId: m.ownerId,
+      fromTile: m.toTile,
+      toTile: m.fromTile,
+      kind: 'return',
+      troops: m.troops,
+      departAt: t,
+      arriveAt: t + Math.max(0, m.arriveAt - m.departAt),
+      status: 'marching',
+      rev: 0,
+    };
+    await cols.marches.insertOne(back);
+    await this.core.scheduleMarch(m.worldId, back._id, back.arriveAt);
+    void this.core.pushMarch(m.ownerId, this.core.marchView(back));
+  }
+}
