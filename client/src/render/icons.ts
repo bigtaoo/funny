@@ -36,7 +36,9 @@ export type IconKind =
   | 'desk' | 'cabinet' | 'hammer'
   // Hub tab strip glyphs (HubTabs): shop price-tag / gacha capsule / roster card stack.
   // Other hub tabs reuse existing glyphs — coins→coin, battlepass→trophy, equipment→armor, collection→book.
-  | 'tag' | 'capsule' | 'cards';
+  | 'tag' | 'capsule' | 'cards'
+  // GachaScene rarity pips + limited-pool marker (standard pool reuses capsule). Tinted per rarity.
+  | 'star';
 
 /** Open book — splayed pages over a centre spine, with a couple of text lines. */
 function drawBook(g: PIXI.Graphics, s: number, color: number): void {
@@ -667,6 +669,28 @@ function drawCards(g: PIXI.Graphics, s: number, color: number): void {
   }
 }
 
+/** Star (rarity pip / limited-pool marker) — a filled five-point star with a thin ink rim. */
+function drawStar(g: PIXI.Graphics, s: number, color: number): void {
+  const cx = s / 2, cy = s * 0.52, rO = s * 0.44, rI = s * 0.18;
+  const flat: number[] = [];
+  const loop: { x: number; y: number }[] = [];
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    const r = i % 2 === 0 ? rO : rI;
+    const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
+    flat.push(x, y);
+    loop.push({ x, y });
+  }
+  g.beginFill(color, 1);
+  g.lineStyle(0);
+  g.drawPolygon(flat);
+  g.endFill();
+  // Thin hand-drawn rim to firm up the edges at small sizes.
+  loop.push(loop[0]!);
+  const pen = new SketchPen(g, 0x57a2);
+  pen.stroke(loop, { color, width: Math.max(1, s * 0.03), jitter: 0.25, taper: 0.95, double: false });
+}
+
 const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number) => void> = {
   book:    drawBook,
   globe:   drawGlobe,
@@ -699,6 +723,7 @@ const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number) => voi
   tag:     drawTag,
   capsule: drawCapsule,
   cards:   drawCards,
+  star:    drawStar,
 };
 
 /**

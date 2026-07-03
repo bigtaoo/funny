@@ -316,6 +316,17 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 - 依赖批③-Tab 导航（commit `e3118841`）已落地的 `tag`/`cards` 字形。
 - 验证：`tsc --noEmit` + `build:web` 全绿。
 
+#### 4.14 GachaScene 图标化（2026-07-03，批③-抽卡）
+
+抽卡界面的稀有度与卡池类型此前靠纯色圆点 + 文字。本批新增 **1 个** `icons.ts` 字形 `star`（实心五角星 + 细手绘描边，按稀有度色 tint），其余复用现成字形：
+
+- **稀有度星级**：`RARITY_STARS` 映射 common=1 / rare=2 / epic=3 / legendary=4 星。① Banner 下方图例：每档稀有度画 N 颗 tint 星（星尺寸按「4 星一行塞进 82% 组间距」自适应，避免相邻档重叠）。② 赔率详情弹窗每行的稀有度圆点改为单颗 tint 星。
+- **卡池类型徽标**：Banner 左上角加类型徽标——限定池→金色 `star`、常驻池→`capsule`（抽卡扭蛋球，复用批③-Tab 导航字形）。
+- 全走 `buildIcon` 烘焙缓存；`ⓘ` 详情按钮为排版符号非绘文字，保留。
+- 验证：`tsc --noEmit` + `build:web` 全绿。
+
+至此批③（Tab 导航 / 拍卖 / 抽卡）+ 批②（主城）+ 批①（菜单奖励/属性）覆盖：主城、拍卖、抽卡、Tab 导航、养成/成就侧奖励属性全部去 emoji 图标化。
+
 ---
 
 ## 5. 战斗内 UI 的联机增量（GameScene/HUD）
