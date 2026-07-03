@@ -5,7 +5,8 @@
   // 构建（地址烘焙到 api.gamestao.com）：
   //   cd client && NW_API_BASE=https://api.gamestao.com/api \
   //     NW_GATEWAY_WS=wss://api.gamestao.com/gw \
-  //     NW_WORLD_BASE=https://api.gamestao.com npm run build:web
+  //     NW_WORLD_BASE=https://api.gamestao.com \
+  //     NW_SOCIAL_BASE=https://api.gamestao.com npm run build:web
   // 部署（从仓库根读本文件，把 client/dist 作为静态资源发布，无 Worker 脚本）：
   //   npx wrangler deploy -c wrangler/client.jsonc
   //
