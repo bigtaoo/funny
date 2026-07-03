@@ -321,3 +321,14 @@
   5. **SLG 新手区毕业软过渡**：新手在外环新手区（G6 已实现）养成，赛季末/达阈值迁入正式区时，**整个新手区打包迁入同一新开正式区**（一起毕业、起跑线齐），而非散插成熟老区——补掉「保护期一过即被老玩家碾压」的断崖。是 R4 分服规则的增量。落 SLG_DESIGN §R4/§20。
 - **为什么**：盲盒管「抽到」，洗练/便利/外观管「抽空之后」——补长尾鲸鱼深水区；多人副本给非 SLG 付费人群一个装备出口，摊薄营收单点；毕业软过渡补新手 onramp 最后一跳。全部**不新增金币龙头、不卖直接战力**（洗练卖尝试、SLG 卖便利、外观卖体面、副本卖内容），守 ADR-009/011/014 经济基调与公平红线（ADR-009 硬墙）。
 - **影响**：[`EQUIPMENT_DESIGN.md`](game/EQUIPMENT_DESIGN.md) §7.8、[`ECONOMY_BALANCE.md`](game/ECONOMY_BALANCE.md) §3.4、[`SLG_DESIGN.md`](game/SLG_DESIGN.md) §R4、[`SLG_CITY_DESIGN.md`](game/SLG_CITY_DESIGN.md)、[`CAMPAIGN_DESIGN.md`](game/CAMPAIGN_DESIGN.md) 均加本 ADR 指针；数字落 ECONOMY_NUMBERS（§5.3 洗练 / §13-SLG 便利 / 外观定价 / 副本产出）待铺。均为**方向拍板 + DRAFT**，实现期配合代码定参。
+
+## ADR-031 订阅卡全局单卡门控 + 年卡（九折）+ 商店图标卡网格 — Accepted — 2026-07-03
+
+- **背景**：月卡原实现可无限叠购（每次 `max(now,expiry)+30d` 续期），玩家可一次性堆很多个月；且商店商品用横向 list row 展示。用户拍板两点：①月卡改为「买了必须用完才能再买」，并新增年卡；②商店改图标卡网格（与卡背包/装备背包 790d3cff、战令 a383728b 一致的视觉语言）。
+- **决策（用户 2026-07-03 拍板）**：
+  1. **全局单卡门控**：只要有任意订阅卡生效（`subscription.expiry > now`），月卡与年卡的购买都锁定，服务端返回 `ALREADY_ACTIVE`；到期后才可再买（不叠购、不续期）。新手成长包的 7 天卡不受此门控约束（一次性新手包）。
+  2. **年卡**：365 天，奖励结构与月卡一致（每日 120 + 即赠 600），仅时长 ×12。定价 **¥298**（= 12 张月卡 ¥360 的九折取整），UI 原价 ¥360 划线 + 「省 ¥62」角标。真实 IAP 扣款仍为「视为已授权」占位，年卡价格仅前端展示。
+  3. **商店图标卡网格**：`ShopScene` 从 list row 改为响应式图标卡网格（名字上·图标左·价格/状态右·底部动作按钮），拖动滚动 + 遮罩裁剪固定表头/tab；充值 tab 同改网格；兑换码保留为网格下方整行。
+- **实现**：`@nw/shared`（economy 加 YEAR_CARD_DAYS/IMMEDIATE_COINS/价格常量 + PRODUCT_YEAR_CARD；api 加 `ALREADY_ACTIVE`）；`commercial`（`monthlyCardBuy`/`yearCardBuy` 收敛到私有 `subscriptionCardBuy`：先占 orderId 槽→门控回滚→applySubscription，门控置于占槽之后以不误伤同 orderId 幂等重放；internalHttp 加 `/internal/year-card/buy`）；`metaserver`（commercialClient 加 `yearCardBuy`；service 加 `yearCardBuy` handler + `subscriptionErrCode` 把 `ALREADY_ACTIVE` 透传给客户端）；`openapi.yml` 加 `/year-card/buy`（重生 routes.gen + 客户端 openapi.ts）；客户端 ApiClient/createAppCore(`buyYearCard` + `ALREADY_ACTIVE`→`shop.cardActive`)/ShopScene 大改 + i18n 三语（`shop.yearCard`/`shop.cardActive`/`shop.save`）。
+- **为什么**：门控把月卡从「可囤积」改为「用完再买」，强化每日留存锚（月卡定位本就是留存而非性价比）；年卡九折给长线玩家一个更划算的锚，同时单卡门控避免年卡+月卡叠加把订阅收益一次性透支；图标卡网格提升付费诱惑并与全局 UI 统一。
+- **影响**：[`GACHA_DESIGN.md`](game/GACHA_DESIGN.md) §5/§5.1b + 实现小结；`@nw/shared` economy/api；`commercial` service/internalHttp（+e2e：门控 + 年卡用例，91 全绿）；`metaserver` commercialClient/service（+ routes.gen，293 全绿）；`openapi.yml`；客户端 ShopScene/ApiClient/createAppCore/i18n。真实 IAP 验单仍范围外。

@@ -359,6 +359,9 @@ export const zh = {
   'shop.rechargePending': '支付成功，金币稍后到账',
   // ── Monetization deals (GACHA_DESIGN §5–§6) ──
   'shop.monthlyCard': '月卡',
+  'shop.yearCard': '年卡',
+  'shop.cardActive': '订阅卡生效中，用完后再购买',
+  'shop.save': '省 {amount}',
   'shop.monthlyActive': '生效中',
   'shop.monthlyInactive': '未开通',
   'shop.monthlyClaim': '领取',

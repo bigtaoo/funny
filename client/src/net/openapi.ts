@@ -694,8 +694,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Buy / renew the monthly card (GACHA_DESIGN §5) */
+        /** Buy the monthly card (GACHA_DESIGN §5; single-slot — 400 ALREADY_ACTIVE while a card is still running) */
         post: operations["monthlyCardBuy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/year-card/buy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Buy the year card (GACHA_DESIGN §5; 365-day subscription, single-slot — 400 ALREADY_ACTIVE while a card is still running) */
+        post: operations["yearCardBuy"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3163,6 +3180,33 @@ export interface operations {
         };
     };
     monthlyCardBuy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+        };
+    };
+    yearCardBuy: {
         parameters: {
             query?: never;
             header?: never;

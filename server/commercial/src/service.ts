@@ -15,6 +15,8 @@ import {
   MONTHLY_CARD_DAYS,
   MONTHLY_CARD_DAILY_COINS,
   MONTHLY_CARD_IMMEDIATE_COINS,
+  YEAR_CARD_DAYS,
+  YEAR_CARD_IMMEDIATE_COINS,
   GROWTH_PACK_COINS,
   GROWTH_PACK_CARD_DAYS,
   STARTER_DRAW_COUNT,
@@ -49,7 +51,8 @@ export type ServiceErr =
   | 'POOL_UNAVAILABLE'
   | 'FATE_INSUFFICIENT'
   | 'FATE_INVALID_ITEM'
-  | 'ALREADY_PURCHASED';
+  | 'ALREADY_PURCHASED'
+  | 'ALREADY_ACTIVE';
 
 /** Wallet view returned to meta (mirrored into SaveData). Includes monetization state (§5–§7). */
 export interface WalletView {
@@ -619,14 +622,33 @@ export class CommercialService {
     return { coinsAfter, expiry: res!.subscription?.expiry ?? now + ms };
   }
 
-  /**
-   * Activate / renew the monthly card (GACHA_DESIGN §5). Idempotent by orderId. Extends the subscription by
-   * MONTHLY_CARD_DAYS and grants MONTHLY_CARD_IMMEDIATE_COINS at once. Real IAP receipt verification is the
-   * caller's concern (meta); here it is treated as an already-authorized purchase.
-   */
+  /** Activate the monthly card (GACHA_DESIGN §5): 30-day subscription + 600 immediate coins. */
   async monthlyCardBuy(args: {
     accountId: string;
     orderId: string;
+  }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number }>> {
+    return this.subscriptionCardBuy({ ...args, days: MONTHLY_CARD_DAYS, immediateCoins: MONTHLY_CARD_IMMEDIATE_COINS });
+  }
+
+  /** Activate the year card (GACHA_DESIGN §5): 365-day subscription + 600 immediate coins. Same daily claim as the monthly card. */
+  async yearCardBuy(args: {
+    accountId: string;
+    orderId: string;
+  }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number }>> {
+    return this.subscriptionCardBuy({ ...args, days: YEAR_CARD_DAYS, immediateCoins: YEAR_CARD_IMMEDIATE_COINS });
+  }
+
+  /**
+   * Shared monthly/year card activation (GACHA_DESIGN §5). Idempotent by orderId, and globally single-slot:
+   * refuses with ALREADY_ACTIVE while any subscription is still running (buy → use up → rebuy), so cards no longer
+   * stack open-endedly. Extends the subscription by `days` and grants `immediateCoins` at once. Real IAP receipt
+   * verification is the caller's concern (meta); here it is treated as an already-authorized purchase.
+   */
+  private async subscriptionCardBuy(args: {
+    accountId: string;
+    orderId: string;
+    days: number;
+    immediateCoins: number;
   }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number }>> {
     const existing = await this.cols.orders.findOne({ _id: args.orderId });
     if (existing) {
@@ -634,6 +656,9 @@ export class CommercialService {
       return { ok: true, coinsAfter: w?.coins ?? 0, subscriptionExpiry: w?.subscription?.expiry ?? 0 };
     }
     const now = this.now();
+    // Claim the order slot first. Concurrent replays of the SAME orderId race here; only one wins, the rest take the
+    // E11000 branch and return the existing grant (idempotent). The single-slot gate is applied AFTER the slot is
+    // claimed so it never intercepts an idempotent replay — only the unique winner of this orderId evaluates it.
     try {
       await this.cols.orders.insertOne({
         _id: args.orderId,
@@ -653,10 +678,17 @@ export class CommercialService {
       }
       throw e;
     }
+    // Single-slot gate: refuse a distinct purchase while a card is still active (buy → use up → rebuy). Roll back the
+    // just-claimed slot so the account isn't left with a phantom grant order and a later (post-expiry) retry works.
+    const wallet = await this.ensureWallet(args.accountId);
+    if ((wallet.subscription?.expiry ?? 0) > now) {
+      await this.cols.orders.deleteOne({ _id: args.orderId });
+      return { ok: false, error: 'ALREADY_ACTIVE' };
+    }
     const { coinsAfter, expiry } = await this.applySubscription(
       args.accountId,
-      MONTHLY_CARD_DAYS,
-      MONTHLY_CARD_IMMEDIATE_COINS,
+      args.days,
+      args.immediateCoins,
       now,
       { orderId: args.orderId },
     );

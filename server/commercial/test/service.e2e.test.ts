@@ -252,6 +252,12 @@ describe.skipIf(!mongo)('commercial service e2e', () => {
     // Buy idempotency: replaying the same orderId does not double-grant.
     const buy2 = await svc.monthlyCardBuy({ accountId: 'mc', orderId: 'mcb' });
     expect(buy2.ok && buy2.coinsAfter).toBe(600);
+    // Single-slot gate: a fresh purchase while the card is still active is refused (buy → use up → rebuy).
+    const activeExpiry = buy.ok ? buy.subscriptionExpiry : 0;
+    const gated = await svc.monthlyCardBuy({ accountId: 'mc', orderId: 'mcb2' });
+    expect(gated).toEqual({ ok: false, error: 'ALREADY_ACTIVE' });
+    expect((await svc.getWallet('mc')).subscriptionExpiry).toBe(activeExpiry); // expiry unchanged, no extra grant
+    expect((await svc.getWallet('mc')).coins).toBe(600);
     // Daily claim: +120 the first time, 0 the second time same day.
     const c1 = await svc.monthlyCardClaim({ accountId: 'mc', dayKey: '2026-07-02' });
     expect(c1).toMatchObject({ ok: true, claimed: 120 });
@@ -261,6 +267,27 @@ describe.skipIf(!mongo)('commercial service e2e', () => {
     // No active subscription → claim yields 0.
     const none = await svc.monthlyCardClaim({ accountId: 'nosub', dayKey: '2026-07-02' });
     expect(none).toMatchObject({ ok: true, claimed: 0 });
+  });
+
+  it('year card: 365-day subscription + 600 immediate; single-slot gate blocks a second card; daily claim works', async () => {
+    const DAY = 86400000;
+    const buy = await svc.yearCardBuy({ accountId: 'yc', orderId: 'ycb' });
+    expect(buy.ok).toBe(true);
+    if (buy.ok) {
+      expect(buy.coinsAfter).toBe(600);
+      // ~365 days out (not the 30-day monthly figure) — well past a 300-day floor.
+      expect(buy.subscriptionExpiry).toBeGreaterThan(now() + 300 * DAY);
+    }
+    // Global single-slot: buying a monthly card while the year card is active is refused.
+    const gated = await svc.monthlyCardBuy({ accountId: 'yc', orderId: 'ycb-m' });
+    expect(gated).toEqual({ ok: false, error: 'ALREADY_ACTIVE' });
+    // Buying another year card while active is refused too.
+    const gated2 = await svc.yearCardBuy({ accountId: 'yc', orderId: 'ycb2' });
+    expect(gated2).toEqual({ ok: false, error: 'ALREADY_ACTIVE' });
+    // Daily claim works the same for a year subscription.
+    const c1 = await svc.monthlyCardClaim({ accountId: 'yc', dayKey: '2026-07-02' });
+    expect(c1).toMatchObject({ ok: true, claimed: 120 });
+    expect((await svc.getWallet('yc')).coins).toBe(720);
   });
 
   // ── Starter packs (GACHA_DESIGN §6) ────────────────────────────────────────

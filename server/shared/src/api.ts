@@ -89,6 +89,7 @@ export const ErrorCode = {
   FATE_INSUFFICIENT: 'FATE_INSUFFICIENT',           // not enough Fate Points to redeem (§7)
   FATE_INVALID_ITEM: 'FATE_INVALID_ITEM',           // fate redemption target is not a (past-)featured limited legendary
   ALREADY_PURCHASED: 'ALREADY_PURCHASED',           // one-off starter pack already bought (§6)
+  ALREADY_ACTIVE: 'ALREADY_ACTIVE',                 // monthly/year card still running — single-slot gate, buy again once it expires (§5)
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

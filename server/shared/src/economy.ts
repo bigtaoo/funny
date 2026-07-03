@@ -401,6 +401,22 @@ export const MONTHLY_CARD_DAYS = 30;
 export const MONTHLY_CARD_DAILY_COINS = 120;
 export const MONTHLY_CARD_IMMEDIATE_COINS = 600;
 
+/**
+ * Year card (§5): 365-day subscription, same 120 coins/day + 600 immediate as the monthly card — only the
+ * duration is ×12. The daily claim reuses MONTHLY_CARD_DAILY_COINS (subscription is one field; claim is card-agnostic).
+ * Both cards are globally single-slot: buying either is refused while any subscription is still active (buy → use up → rebuy).
+ */
+export const YEAR_CARD_DAYS = 365;
+export const YEAR_CARD_IMMEDIATE_COINS = 600;
+
+/**
+ * Display prices only (real IAP charge is treated as already-authorized upstream; no coins are debited here).
+ * Year card is a ~10%-off take on 12 monthly cards (12×¥30 = ¥360 → ¥298), surfaced in the shop as a strike-through + savings badge.
+ */
+export const MONTHLY_CARD_PRICE_YUAN = 30;
+export const YEAR_CARD_PRICE_YUAN = 298;
+export const YEAR_CARD_LIST_PRICE_YUAN = 360;
+
 /** Starter growth pack (§6.2): 3,300 coins + a 7-day monthly card; buyable once, within the first 7 days of the account. */
 export const GROWTH_PACK_COINS = 3300;
 export const GROWTH_PACK_CARD_DAYS = 7;
@@ -412,5 +428,6 @@ export const STARTER_DRAW_FLOOR: Rarity = 'rare';
 
 /** Product ids for the one-off / subscription IAP-style products (marked in wallet.starterUsed / subscription). */
 export const PRODUCT_MONTHLY_CARD = 'monthly_card';
+export const PRODUCT_YEAR_CARD = 'year_card';
 export const PRODUCT_STARTER_DRAW = 'starter_draw';
 export const PRODUCT_STARTER_GROWTH = 'starter_growth';

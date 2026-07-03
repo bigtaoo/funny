@@ -147,6 +147,11 @@ function accountIdOf(req: FastifyRequest): string {
   return id;
 }
 
+/** Map a commercial subscription-card error to a client error code (single-slot gate surfaces ALREADY_ACTIVE; else BAD_REQUEST). */
+function subscriptionErrCode(error: string): ErrorCode {
+  return error === 'ALREADY_ACTIVE' ? ErrorCode.ALREADY_ACTIVE : ErrorCode.BAD_REQUEST;
+}
+
 /** Normalize the upgrade map (remove zero-value entries + sort keys) for stable cross-source comparison (L0 blueprint anomaly detection). */
 function normUpgrades(u: Record<string, number>): Record<string, number> {
   const out: Record<string, number> = {};
@@ -1926,14 +1931,29 @@ export class MetaService {
     return ok({ save, granted: itemId });
   }
 
-  /** Buy / renew the monthly card (GACHA_DESIGN §5). Real IAP verification is out of scope here (treated as authorized). */
+  /** Buy the monthly card (GACHA_DESIGN §5). Single-slot: ALREADY_ACTIVE while a card is still running. Real IAP verification is out of scope here (treated as authorized). */
   async monthlyCardBuy(req: FastifyRequest, reply: FastifyReply) {
     if (!this.ensureCommercial(reply)) return;
     const accountId = accountIdOf(req);
     const { cols, commercial, now } = this.deps;
     const orderId = randomUUID();
     const r = await commercial.monthlyCardBuy({ accountId, orderId });
-    if (!r.ok) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, r.error));
+    if (!r.ok) return reply.code(400).send(err(subscriptionErrCode(r.error), r.error));
+    const w = await commercial.getWallet(accountId);
+    const save = w
+      ? await mirrorWalletFrom(cols, accountId, w, now())
+      : await getOrCreateSave(cols, accountId, now());
+    return ok({ save });
+  }
+
+  /** Buy the year card (GACHA_DESIGN §5): 365-day subscription, same single-slot gate + daily claim as the monthly card. */
+  async yearCardBuy(req: FastifyRequest, reply: FastifyReply) {
+    if (!this.ensureCommercial(reply)) return;
+    const accountId = accountIdOf(req);
+    const { cols, commercial, now } = this.deps;
+    const orderId = randomUUID();
+    const r = await commercial.yearCardBuy({ accountId, orderId });
+    if (!r.ok) return reply.code(400).send(err(subscriptionErrCode(r.error), r.error));
     const w = await commercial.getWallet(accountId);
     const save = w
       ? await mirrorWalletFrom(cols, accountId, w, now())

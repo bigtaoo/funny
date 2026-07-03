@@ -357,6 +357,9 @@ export const en: Record<TranslationKey, string> = {
   'shop.rechargePending': 'Payment received — coins will arrive shortly',
   // ── Monetization deals (GACHA_DESIGN §5–§6) ──
   'shop.monthlyCard': 'Monthly Card',
+  'shop.yearCard': 'Year Card',
+  'shop.cardActive': 'Card active — buy again once it expires',
+  'shop.save': 'Save {amount}',
   'shop.monthlyActive': 'Active',
   'shop.monthlyInactive': 'Not active',
   'shop.monthlyClaim': 'Claim',

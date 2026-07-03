@@ -2072,7 +2072,30 @@ paths:
     post:
       operationId: monthlyCardBuy
       tags: [gacha]
-      summary: Buy / renew the monthly card (GACHA_DESIGN §5)
+      summary: Buy the monthly card (GACHA_DESIGN §5; single-slot — 400 ALREADY_ACTIVE while a card is still running)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [save]
+                    properties:
+                      save: { $ref: '#/components/schemas/SaveData' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+
+  /year-card/buy:
+    post:
+      operationId: yearCardBuy
+      tags: [gacha]
+      summary: Buy the year card (GACHA_DESIGN §5; 365-day subscription, single-slot — 400 ALREADY_ACTIVE while a card is still running)
       security: [{ bearerAuth: [] }]
       responses:
         '200':

@@ -1118,7 +1118,22 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
             converted = true;
             analytics.track('monthly_card_buy', {});
             return { ok: true as const };
-          } catch { return { ok: false as const, key: 'shop.error' as const }; }
+          } catch (e) {
+            const key = e instanceof ApiError && e.code === 'ALREADY_ACTIVE' ? 'shop.cardActive' as const : 'shop.error' as const;
+            return { ok: false as const, key };
+          }
+        },
+        async buyYearCard() {
+          try {
+            const { save } = await client.yearCardBuy();
+            saveManager.adoptServer(save);
+            converted = true;
+            analytics.track('year_card_buy', {});
+            return { ok: true as const };
+          } catch (e) {
+            const key = e instanceof ApiError && e.code === 'ALREADY_ACTIVE' ? 'shop.cardActive' as const : 'shop.error' as const;
+            return { ok: false as const, key };
+          }
         },
         async claimMonthlyCard() {
           try {

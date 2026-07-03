@@ -75,6 +75,10 @@ export interface CommercialClient {
     accountId: string;
     orderId: string;
   }): Promise<Body<{ coinsAfter: number; subscriptionExpiry: number }>>;
+  yearCardBuy(args: {
+    accountId: string;
+    orderId: string;
+  }): Promise<Body<{ coinsAfter: number; subscriptionExpiry: number }>>;
   monthlyCardClaim(args: {
     accountId: string;
     dayKey: string;
@@ -240,6 +244,13 @@ export class HttpCommercialClient implements CommercialClient {
   monthlyCardBuy(args: { accountId: string; orderId: string }) {
     return this.post<{ coinsAfter: number; subscriptionExpiry: number }>(
       '/internal/monthly-card/buy',
+      args,
+    );
+  }
+
+  yearCardBuy(args: { accountId: string; orderId: string }) {
+    return this.post<{ coinsAfter: number; subscriptionExpiry: number }>(
+      '/internal/year-card/buy',
       args,
     );
   }

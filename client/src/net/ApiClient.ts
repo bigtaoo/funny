@@ -428,9 +428,14 @@ export class ApiClient {
     return this.post<{ save: SaveData; granted: string }>('/fate/redeem', { itemId });
   }
 
-  /** Buy / renew the monthly card (GACHA_DESIGN §5). */
+  /** Buy the monthly card (GACHA_DESIGN §5). Single-slot → ApiError('ALREADY_ACTIVE') while a card is still running. */
   async monthlyCardBuy(): Promise<{ save: SaveData }> {
     return this.post<{ save: SaveData }>('/monthly-card/buy', {});
+  }
+
+  /** Buy the year card (GACHA_DESIGN §5): 365-day subscription. Single-slot → ApiError('ALREADY_ACTIVE') while a card is still running. */
+  async yearCardBuy(): Promise<{ save: SaveData }> {
+    return this.post<{ save: SaveData }>('/year-card/buy', {});
   }
 
   /** Claim the monthly card daily coins (once per UTC day; claimed=0 if inactive or already claimed). */

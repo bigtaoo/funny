@@ -239,6 +239,12 @@ export function startInternalHttp(
               200,
               await svc.monthlyCardBuy({ accountId: str(b.accountId), orderId: str(b.orderId) }),
             );
+          case '/internal/year-card/buy':
+            return send(
+              res,
+              200,
+              await svc.yearCardBuy({ accountId: str(b.accountId), orderId: str(b.orderId) }),
+            );
           case '/internal/monthly-card/claim':
             return send(
               res,
