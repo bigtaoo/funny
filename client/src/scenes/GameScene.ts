@@ -74,6 +74,11 @@ export interface GameSceneOptions {
    */
   equipmentInv?: EngineEquipInv;
   /**
+   * PvP-vs-AI deck gating (PVP_LOADOUT_DESIGN §3): filters each side's draw pool (bottom = human,
+   * top = AI). Omit → full card pool, leaking ELO-locked units. Ignored when `level`/`engine` is set.
+   */
+  decks?: { top: string[]; bottom: string[] };
+  /**
    * Dedicated tutorial level `ch0_tutorial` (ONBOARDING_DESIGN §3). Enables the
    * presentation-layer tutorial director: guided overview + three-beat gating +
    * free play + never-fail mode. Only used together with `level=ch0_tutorial`.
@@ -103,6 +108,7 @@ export class GameScene implements Scene {
         ...(opts.mode ? { mode: opts.mode } : {}),
         ...(opts.cardInstances ? { cardInstances: opts.cardInstances } : {}),
         ...(opts.equipmentInv ? { equipmentInv: opts.equipmentInv } : {}),
+        ...(opts.decks ? { decks: opts.decks } : {}),
         ...(opts.seed !== undefined ? { seed: opts.seed } : {}),
       });
       engine = match.engine;

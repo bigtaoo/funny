@@ -27,7 +27,7 @@ export type MatchModeVal = (typeof MatchMode)[keyof typeof MatchMode];
 
 export type ClientMsg =
   | { case: 'room_create'; mode: number; deck: string[] }
-  | { case: 'room_join'; code: string }
+  | { case: 'room_join'; code: string; deck: string[] }
   | { case: 'room_ready'; ready: boolean }
   | { case: 'room_leave' }
   | { case: 'room_start' }
@@ -124,7 +124,7 @@ export function decodeClient(buf: Uint8Array): ClientMsg {
   if (client.roomCreate) {
     return { case: 'room_create', mode: client.roomCreate.mode, deck: client.roomCreate.deck };
   }
-  if (client.roomJoin) return { case: 'room_join', code: client.roomJoin.code };
+  if (client.roomJoin) return { case: 'room_join', code: client.roomJoin.code, deck: client.roomJoin.deck };
   if (client.roomReady) return { case: 'room_ready', ready: client.roomReady.ready };
   if (client.roomLeave !== undefined) return { case: 'room_leave' };
   if (client.roomStart !== undefined) return { case: 'room_start' };

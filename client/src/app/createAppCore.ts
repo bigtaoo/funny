@@ -563,6 +563,17 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     });
   }
 
+  /**
+   * The player's PvP deck resolved against their *current* ELO (PVP_LOADOUT §3): the saved deck if it
+   * still validates, else the default base deck. Shared by ranked queue, friendly rooms, and PvP-vs-AI
+   * so all three apply the same unlock gate (a dropped-ELO player loses high-tier units everywhere).
+   */
+  function resolvePvpDeck(): string[] {
+    const d = saveManager.get().pvpDeck;
+    if (d && validatePvpDeckClient(d, saveManager.get().pvp.elo) === null) return d;
+    return defaultPvpDeck();
+  }
+
   function goRoom(opts?: { autoRanked?: boolean }): void {
     inLobby = false;
     analytics.track('screen_view', { scene: 'RoomScene', ranked: !!opts?.autoRanked });
@@ -574,11 +585,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
         gatewayUrl,
       });
     }
-    const getSavedDeck = (): string[] => {
-      const d = saveManager.get().pvpDeck;
-      if (d && validatePvpDeckClient(d, saveManager.get().pvp.elo) === null) return d;
-      return defaultPvpDeck();
-    };
+    const getSavedDeck = resolvePvpDeck;
     let rankedQueued = false;
     const queueRanked = (): void => {
       if (rankedQueued) return;
@@ -595,8 +602,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
         if (session) session.handlers = { onMatchStart: (info) => goGameNet(info) };
         goLobby();
       },
-      createRoom() { analytics.track('pvp_room_create', { mode: 'friendly' }); session?.createRoom(); },
-      joinRoom(code: string) { session?.joinRoom(code); },
+      createRoom() { analytics.track('pvp_room_create', { mode: 'friendly' }); session?.createRoom(getSavedDeck()); },
+      joinRoom(code: string) { session?.joinRoom(code, getSavedDeck()); },
       setReady(ready: boolean) { session?.setReady(ready); },
       startMatch() { session?.startMatch(); },
       createRanked() { analytics.track('pvp_room_create', { mode: 'ranked' }); session?.createRanked(getSavedDeck()); },
@@ -1273,6 +1280,10 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       },
     }, {
       equippedSkin: saveManager.get().equipped[EQUIP_SLOT] ?? null,
+      // PvP-vs-AI must honour the same ELO card-unlock gate as online PvP (PVP_LOADOUT §3/§6.3):
+      // filter both sides' draw pool to the player's current-elo-validated deck (mirror match).
+      // Without this the local engine draws from the full pool and leaks locked units (runner/splitter/…).
+      decks: (() => { const d = resolvePvpDeck(); return { top: d, bottom: d }; })(),
       ...(opts?.seed !== undefined ? { seed: opts.seed } : {}),
     });
   }

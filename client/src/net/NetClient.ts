@@ -94,8 +94,8 @@ export class NetClient {
   createRoom(mode: MatchMode, deck: string[] = []): void {
     this.sendClient({ roomCreate: { mode, deck } });
   }
-  joinRoom(code: string): void {
-    this.sendClient({ roomJoin: { code } });
+  joinRoom(code: string, deck: string[] = []): void {
+    this.sendClient({ roomJoin: { code, deck } });
   }
   setReady(ready: boolean): void {
     this.sendClient({ roomReady: { ready } });
