@@ -14,6 +14,7 @@ import {
   type LevelRecord,
   type SaveData,
 } from './SaveData';
+import { migrate } from './migrate';
 import { replayIdFor } from './ReplayStore';
 import type { PendingClear, SaveStore } from './SaveStore';
 
@@ -374,7 +375,12 @@ export class SaveManager {
    * preserve them to prevent the push receipt from overwriting optimistic writes.
    * best is a purely local display stat (never uploaded) → take the union of better values, consistent with reconcile.
    */
-  private adoptCloud(cloud: SaveData): void {
+  private adoptCloud(cloudRaw: SaveData): void {
+    // Cloud saves are adopted verbatim; run them through migrate/fillDefaults so a document written by
+    // an older client (missing client-only fields like cardInv/equipmentInv added in later versions) is
+    // backfilled to the current shape. Without this, `Object.values(cardInv)` on campaign start throws
+    // "can't convert undefined to object".
+    const cloud = migrate(cloudRaw);
     const local = this.save;
     // Clears present locally but absent from cloud: from an in-flight pveClear (applyLocalClear already written but not yet persisted by the server).
     const localExtra = local.progress.cleared.filter((id) => !cloud.progress.cleared.includes(id));
@@ -402,7 +408,11 @@ export class SaveManager {
    * reward semantics) → union of better values preserves local data.
    * rev/accountId taken from cloud.
    */
-  private reconcile(cloud: SaveData): void {
+  private reconcile(cloudRaw: SaveData): void {
+    // Normalize the raw cloud document to the current shape before adopting (see adoptCloud): an older
+    // account's save may lack client-only fields (cardInv/equipmentInv), which would otherwise crash the
+    // campaign start path. migrate is idempotent for a complete save.
+    const cloud = migrate(cloudRaw);
     const local = this.save;
     this.save = {
       ...cloud, // authoritative sections (including progress.cleared/stars / materials / pveUpgrades) + rev/accountId from cloud
