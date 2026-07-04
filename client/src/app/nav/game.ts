@@ -330,13 +330,13 @@ export function createGameNav(ctx: AppCtx): GameNav {
     });
   }
 
-  function goLeaderboard(): void {
+  function goLeaderboard(onBack?: () => void): void {
     state.inLobby = false;
     analytics.track('screen_view', { scene: 'LeaderboardScene' });
     const loggedIn = !state.offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     const client = api;
     views.showLeaderboard({
-      onBack: () => goStats(),
+      onBack: onBack ?? (() => goStats()),
       ...(client && loggedIn
         ? { loadLeaderboard: () => client.getLeaderboard() }
         : {}),

@@ -87,6 +87,8 @@ export interface ShopSceneCallbacks {
   buyYearCard?(): Promise<ShopActionResult>;
   claimMonthlyCard?(): Promise<ShopActionResult>;
   buyStarter?(productId: 'starter_draw' | 'starter_growth'): Promise<ShopActionResult>;
+  /** Tab to open on (defaults to 'shop'). 'coins' is only honored when rechargeCoins is provided. */
+  initialTab?: 'shop' | 'coins';
 }
 
 interface Hit { rect: Rect; fn: () => void; }
@@ -123,7 +125,7 @@ export class ShopScene implements Scene {
   private items: ShopItem[] | null = null;
   private loading = true;
   private readonly bt = new BusyTracker();
-  private tab: 'shop' | 'coins' = 'shop';
+  private tab: 'shop' | 'coins';
 
   /** Transient toast message (success / error), cleared on next action. */
   private toast: { text: string; color: number } | null = null;
@@ -146,6 +148,7 @@ export class ShopScene implements Scene {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.cb = cb;
+    this.tab = cb.initialTab === 'coins' && cb.rechargeCoins ? 'coins' : 'shop';
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((_x, y) => this.handleMove(y)));
     this.unsubs.push(input.onUp(() => this.handleUp()));

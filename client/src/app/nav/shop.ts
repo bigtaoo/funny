@@ -72,7 +72,7 @@ export function createShopNav(ctx: AppCtx): ShopNav {
     return false;
   }
 
-  function goShop(onBack?: () => void): void {
+  function goShop(onBack?: () => void, initialTab?: 'shop' | 'coins'): void {
     if (!api) { nav.goLobby(); return; }
     const client = api;
     state.inLobby = false;
@@ -84,6 +84,7 @@ export function createShopNav(ctx: AppCtx): ShopNav {
     // Battle pass merged into the shop (LOBBY_IA_REDESIGN §3): the battle-pass entry is only shown when logged in online; back returns to the shop.
     const shopLoggedIn = !state.offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     views.showShop({
+      ...(initialTab ? { initialTab } : {}),
       onBack() {
         analytics.track('shop_close', { converted, time_sec: Math.round((Date.now() - shopOpenTs) / 1000) });
         if (onBack) onBack(); else nav.goLobby();
