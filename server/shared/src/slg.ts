@@ -102,12 +102,13 @@ export const SLG_WORLD_CAPACITY_TARGET = 400;
 export const SLG_WORLD_CAPACITY_MAX = 500;
 
 /**
- * Map dimensions: scaled to capacity; back-calculated from ~150–300 developable tiles per player → ~400 players locks in 300×300 (90k tiles).
+ * Map dimensions (ADR-032, 2026-07-04 finalized): 500×500 (250k tiles), targeting ~500 players × 200 level-5+ tiles each.
  * Sparse storage: dimensions only affect the pace of expansion and the feel of march distances; they do not affect storage (only occupied tiles are persisted).
  */
-export const SLG_MAP_W = 300;
-export const SLG_MAP_H = 300;
-export const SLG_MAP_MAX_LEVEL = 5;
+export const SLG_MAP_W = 500;
+export const SLG_MAP_H = 500;
+/** Tile level cap (ADR-032): aligned with Three Kingdoms Strategy Edition's real land-level cap (see SGZ_LAND_REFERENCE.md). */
+export const SLG_MAP_MAX_LEVEL = 10;
 
 // ── Main-base 3×3 footprint (ADR-025) ─────────────────────────────────────────
 // The player home city is a real multi-tile building occupying a 3×3 block centered on its
@@ -138,14 +139,16 @@ export function baseFootprintInBounds(ax: number, ay: number, mapW: number, mapH
 
 // ── Procedural distribution knobs (U6 initial DRAFT; centralized here for easy tuning) ────────
 export const SLG_GEN = {
-  /** Resource tile density: fraction of non-neutral tiles classified as resource tiles. */
-  resourceDensity: 0.34,
+  /** Resource tile density: fraction of non-neutral tiles classified as resource tiles (ADR-032: raised to 1.0 — no pure no-yield neutral land; every non-blocking/keep/stronghold/center tile is some level of resource land). */
+  resourceDensity: 1.0,
   /** familyKeep noise threshold; higher = sparser. */
   keepThreshold: 0.86,
   /** Minimum distance ratio from center for strategic points (prevents keeps from spawning too close to the center). */
   keepMinDistRatio: 0.12,
   /** Level noise frequency (higher = more fragmented patches). */
   levelFreq: 1 / 14,
+  /** Level falloff exponent applied to (1-dr) (ADR-032: 1 → 1.1, pushes more of the map above level 5 so ~50% of tiles reach level 5+ at 500 players × 200-tile target). */
+  levelFalloffExp: 1.1,
   /** Biome (resource type) noise frequency (lower = larger patches → large same-resource zones encourage specialization and trade). */
   biomeFreq: 1 / 40,
   /** Strategic point noise frequency. */
@@ -834,7 +837,7 @@ export function proceduralTile(world: string, x: number, y: number): ProceduralT
 
   // Level: high at center → low at edge (dominated by (1-dr)) + medium-frequency noise perturbation
   const lvlNoise = valueNoise(x, y, SLG_GEN.levelFreq, seed ^ 0x0111);
-  let level = Math.round((1 - dr) * (SLG_MAP_MAX_LEVEL - 1) + 1 + (lvlNoise - 0.5) * 1.5);
+  let level = Math.round(Math.pow(1 - dr, SLG_GEN.levelFalloffExp) * (SLG_MAP_MAX_LEVEL - 1) + 1 + (lvlNoise - 0.5) * 1.5);
   level = Math.max(1, Math.min(SLG_MAP_MAX_LEVEL, level));
 
   // Stronghold (G8 §3.1): extremely sparse high-strategic-value PvE tiles, guarded by overwhelmingly powerful system NPCs, only beyond a minimum distance from the center.
