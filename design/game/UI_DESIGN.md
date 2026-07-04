@@ -293,6 +293,7 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 - **BattlePassScene（战令）**：双轨奖励格由 `rewardCoins/rewardMaterial` 文案改为类型 glyph + `×N`——`coins`→`coin`、`material` 按 `id` 映射 `scrap/lead/binding`、`skin`→`brush`（皮肤为单件，仅 glyph 不带数量）。`drawCell` 的 reward 形参补 `id?`。
 - **EventScene（活动）**：兑换奖励条在原文字标签前加类型 glyph 前缀（coin/材料/brush，可映射时），保留文字名，信息不丢。
 - **AchievementScene（成就）**：分类 Tab 加类别字形（`pve`→`book` / `pvp`→`swords` / `collection`→`brush` / `progression`→`trophy`）；未达成档位的奖励由「reward N coins」文字改为 `coin` 字形 + 数字。
+- **AchievementScene 分类 Tab 布局改版（2026-07-04）**：原横排 Tab 条压在页面红色装订线上、Tab 偏小。改为竖排侧栏——三/四个分类 Tab 堆叠在红线**左侧**（图标在上、文字在下，因侧栏窄），每格更大；成就卡片内容整体移到红线**右侧**（`marginLineX(w)` 起算），呼应笔记本纸「装订线 + 正文」的既有分区，不再跨线压字。
 - **CollectionScene**：见 §4.5 属性行 chip。
 - 全部走 `buildIcon` 烘焙缓存共享纹理，销毁经各场景既有 `tearDownChildren`（Sprite 走 `{children:true}`、`texture:false` 不碰共享纹理，符合防泄漏契约）。验证：`tsc --noEmit` + `build:web` + `test:ui`（85 例）全绿。
 - **待批②（需新增图标定义或谨慎布局）**：CardScene/TeamsScene 无属性文字、装备槽缺 `trinket` 字形；CityScene/WorldMapScene 的 SLG 资源与 GachaScene 稀有度、`event/battlepass` 的 `pass_required` 🔒 均需新字形。
