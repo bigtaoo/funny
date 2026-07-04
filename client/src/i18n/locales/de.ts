@@ -269,6 +269,7 @@ export const de: Record<TranslationKey, string> = {
   'profile.title': 'Spielerprofil',
   'profile.close': 'Schließen',
   'profile.id': 'Öffentliche ID',
+  'profile.copied': 'Kopiert',
   'profile.rank': 'Rang',
   'profile.you': '(du)',
   'result.vs': 'vs {name}',

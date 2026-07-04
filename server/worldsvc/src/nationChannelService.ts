@@ -16,6 +16,8 @@ export interface NationMessageView {
   id: string;
   senderId: string;
   senderName: string;
+  /** 9-digit public id (display-only); empty if unknown (meta unavailable or message predates this field). */
+  senderPublicId: string;
   body: string;
   ts: number;
 }
@@ -67,20 +69,23 @@ export class NationChannelService {
     const seq = ++msgSeq;
     const msgId = `nm:${worldId}:${ts}:${seq}`;
 
+    // Resolve publicId from meta (best-effort; falls back to empty string if meta unavailable or profile not found).
+    const profile = this.meta.available ? await this.meta.getProfile(accountId).catch(() => null) : null;
+    const senderPublicId = profile?.publicId ?? '';
+
     const msgDoc: NationMessageDoc = {
       _id: msgId,
       worldId,
       senderId: accountId,
       senderName,
+      senderPublicId,
       body,
       ts: new Date(ts),
     };
     await cols.nationMessages.insertOne(msgDoc);
 
-    // Resolve publicId from meta (best-effort; falls back to empty string if meta unavailable or profile not found).
-    const profile = this.meta.available ? await this.meta.getProfile(accountId).catch(() => null) : null;
     // Push: prefer delegating to socialsvc (push hub, §5); fall back to direct gateway push O(n) when socialsvc is unavailable.
-    const payload = { worldId, fromPublicId: profile?.publicId ?? '', fromName: senderName, body, ts };
+    const payload = { worldId, fromPublicId: senderPublicId, fromName: senderName, body, ts };
     if (this.socialsvc.available) {
       const recipients = await this.worldMemberAccountIds(worldId, accountId);
       void this.socialsvc.push({ kind: 'world', worldId }, 'nation_msg', payload, recipients);
@@ -89,7 +94,7 @@ export class NationChannelService {
       void this.deps.gateway.broadcast(recipients, { kind: 'nation_msg', ...payload });
     }
 
-    return { id: msgId, senderId: accountId, senderName, body, ts };
+    return { id: msgId, senderId: accountId, senderName, senderPublicId, body, ts };
   }
 
   /**
@@ -121,6 +126,7 @@ export class NationChannelService {
       id: d._id,
       senderId: d.senderId,
       senderName: d.senderName,
+      senderPublicId: d.senderPublicId ?? '',
       body: d.body,
       ts: d.ts.getTime(),
     }));

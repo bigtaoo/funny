@@ -265,6 +265,8 @@ export interface NationMessageDoc {
   worldId: string;
   senderId: string;
   senderName: string;
+  /** Sender's 9-digit public id snapshot (meta lookup at send time); empty if meta was unavailable. */
+  senderPublicId: string;
   body: string;
   ts: Date;
 }
