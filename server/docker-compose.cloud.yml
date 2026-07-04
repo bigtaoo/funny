@@ -150,9 +150,14 @@ services:
       NW_WORLD_MONGO_DB: ${NW_WORLD_MONGO_DB:-notebook_wars_world}
       NW_WORLD_REDIS_URL: ${NW_WORLD_REDIS_URL:-redis://redis:6379}
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
+      # Auction coin trading + world-chat 50-coin fee (nationChannelService) both go through commercial; missing this
+      # → commercial.available=false → both silently skip coin deduction instead of erroring.
+      NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
     depends_on:
       redis:
         condition: service_healthy
+      commercial:
+        condition: service_started
     restart: unless-stopped
 
   # socialsvc: social fifth public face (/social/*, including clan). Caddy /social → this process; missing it causes all social routes to 502.

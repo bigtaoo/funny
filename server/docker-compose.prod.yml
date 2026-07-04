@@ -185,12 +185,17 @@ services:
       # Real-time event push back to clients (S8-1+ via gateway /gw/push).
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
       NW_SOCIALSVC_INTERNAL_URL: http://socialsvc:8085
+      # Auction coin trading + world-chat 50-coin fee (nationChannelService) both go through commercial; missing this
+      # → commercial.available=false → both silently skip coin deduction instead of erroring.
+      NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
     depends_on:
       mongo:
         condition: service_healthy
       redis:
         condition: service_healthy
       socialsvc:
+        condition: service_started
+      commercial:
         condition: service_started
     restart: unless-stopped
 
