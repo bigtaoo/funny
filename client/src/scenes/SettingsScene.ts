@@ -443,34 +443,39 @@ export class SettingsScene implements Scene {
     });
   }
 
+  // Help (left) and Account (right) sit side by side on the same row so the
+  // help block no longer pushes account down when the tutorial replay is shown.
   private drawHelp(): void {
     const { w, h } = this;
-    const secY = Math.round(h * 0.61);
+    const secY = Math.round(h * 0.73);
+    const x = Math.round(w * 0.56);
     const label = txt(t('settings.help'), Math.round(h * 0.028), C.dark, true);
-    label.anchor.set(0, 0.5); label.x = Math.round(w * 0.12); label.y = secY;
+    label.anchor.set(0, 0.5); label.x = x; label.y = secY;
     this.container.addChild(label);
-    this.addButton(t('settings.replayTutorial'), secY + Math.round(h * 0.045), C.accent, () => this.cb.onReplayTutorial!());
+    this.addButton(t('settings.replayTutorial'), secY + Math.round(h * 0.045), C.accent, () => this.cb.onReplayTutorial!(), Math.round(w * 0.4), x);
   }
 
   private drawAccount(): void {
     const { w, h } = this;
     const secY = Math.round(h * 0.73);
+    const x = Math.round(w * 0.12);
+    const btnW = Math.round(w * 0.4);
     const label = txt(t('settings.account'), Math.round(h * 0.028), C.dark, true);
-    label.anchor.set(0, 0.5); label.x = Math.round(w * 0.12); label.y = secY;
+    label.anchor.set(0, 0.5); label.x = x; label.y = secY;
     this.container.addChild(label);
 
     if (this.cb.offline) {
       const hint = txt(t('settings.offlineHint'), Math.round(h * 0.022), C.mid);
-      hint.anchor.set(0, 0.5); hint.x = Math.round(w * 0.12); hint.y = secY + Math.round(h * 0.045);
+      hint.anchor.set(0, 0.5); hint.x = x; hint.y = secY + Math.round(h * 0.045);
       this.container.addChild(hint);
       if (this.cb.onLogin) {
-        this.addButton(t('auth.loginEntry'), secY + Math.round(h * 0.09), C.gold, () => this.cb.onLogin!());
+        this.addButton(t('auth.loginEntry'), secY + Math.round(h * 0.09), C.gold, () => this.cb.onLogin!(), btnW, x);
       }
     } else if (this.cb.onLogout) {
-      this.addButton(t('auth.logout'), secY + Math.round(h * 0.045), C.dark, () => this.cb.onLogout!());
+      this.addButton(t('auth.logout'), secY + Math.round(h * 0.045), C.dark, () => this.cb.onLogout!(), btnW, x);
       // Account deletion (C5-b, Apple 5.1.1(v)) — danger entry below logout, online only.
       if (this.cb.onDeleteAccount) {
-        this.addButton(t('settings.deleteAccount'), secY + Math.round(h * 0.125), C.red, () => this.openDelete());
+        this.addButton(t('settings.deleteAccount'), secY + Math.round(h * 0.125), C.red, () => this.openDelete(), btnW, x);
       }
     }
   }
@@ -556,11 +561,11 @@ export class SettingsScene implements Scene {
   }
 
   /** A dark button with a hand-drawn border. `fn = null` → disabled (greyed, inert). */
-  private addButton(label: string, y: number, border: number, fn: (() => void) | null, width?: number): void {
+  private addButton(label: string, y: number, border: number, fn: (() => void) | null, width?: number, x?: number): void {
     const { w, h } = this;
     const btnW = width ?? Math.round(w * 0.5);
     const btnH = Math.round(h * 0.07);
-    const bx = Math.round(w * 0.12);
+    const bx = x ?? Math.round(w * 0.12);
     const enabled = fn !== null;
     const box = new PIXI.Graphics();
     box.beginFill(enabled ? C.dark : 0xbbbbbb);
