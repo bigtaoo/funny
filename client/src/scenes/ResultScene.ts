@@ -400,12 +400,16 @@ export class ResultScene implements Scene {
       };
       // Kept in the top band + the far left/right paper margins so they never
       // float over the central badge/detail column (which reads as "stray").
-      star(w * 0.12, h * 0.16, h * 0.050, 0.9);
-      star(w * 0.88, h * 0.14, h * 0.060, 0.95);
-      star(w * 0.92, h * 0.30, h * 0.032, 0.7);
-      star(w * 0.08, h * 0.34, h * 0.036, 0.75);
-      star(w * 0.90, h * 0.60, h * 0.040, 0.7);
-      star(w * 0.09, h * 0.60, h * 0.032, 0.6);
+      // Position is re-rolled on every view — 12 stars split across both margins.
+      const starCount = 12;
+      for (let i = 0; i < starCount; i++) {
+        const leftSide = i % 2 === 0;
+        const sx = leftSide ? w * (0.03 + Math.random() * 0.14) : w * (0.83 + Math.random() * 0.14);
+        const sy = h * (0.08 + Math.random() * 0.57);
+        const sr = h * (0.028 + Math.random() * 0.034);
+        const sa = 0.6 + Math.random() * 0.35;
+        star(sx, sy, sr, sa);
+      }
     } else if (mood === 'loss') {
       // A couple of red cross-out scribbles (echoes the "red-pen" art motif).
       const red = ui.red;
