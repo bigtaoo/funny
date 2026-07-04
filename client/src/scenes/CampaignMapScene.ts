@@ -471,10 +471,15 @@ export class CampaignMapScene implements Scene {
     const g = new PIXI.Graphics();
     const pen = new SketchPen(g, seedFor(pts[0]!.x, pts[0]!.y, pts.length));
     const dash = Math.round(this.h * 0.018), gapLen = Math.round(this.h * 0.012);
+    const nodeR = Math.round(this.h * 0.032);
     for (let s = 0; s < pts.length - 1; s++) {
-      const a = pts[s]!, b = pts[s + 1]!;
-      const len = Math.hypot(b.x - a.x, b.y - a.y);
-      const ux = (b.x - a.x) / len, uy = (b.y - a.y) / len;
+      const a0 = pts[s]!, b0 = pts[s + 1]!;
+      const fullLen = Math.hypot(b0.x - a0.x, b0.y - a0.y);
+      if (fullLen <= nodeR * 2) continue;
+      const ux = (b0.x - a0.x) / fullLen, uy = (b0.y - a0.y) / fullLen;
+      // Trim both ends so the trail stops at the node circle's edge instead of crossing its center.
+      const a = { x: a0.x + ux * nodeR, y: a0.y + uy * nodeR };
+      const len = fullLen - nodeR * 2;
       for (let d = 0; d < len; d += dash + gapLen) {
         const d2 = Math.min(len, d + dash);
         pen.line(a.x + ux * d, a.y + uy * d, a.x + ux * d2, a.y + uy * d2, {
