@@ -93,6 +93,8 @@ export interface WorldChatMessage {
   id: string;
   senderId: string;
   senderName: string;
+  /** 9-digit public id (display-only); empty if unknown (meta unavailable or message predates this field). */
+  senderPublicId: string;
   body: string;
   ts: number;
 }
@@ -359,15 +361,14 @@ export class WorldApiClient {
 
   // ── Family ─────────────────────────────────────────────────────────────────
 
+  /** The caller's own family (live from socialsvc), or null if not in one. Not a "list of joinable families" despite the name below. */
+  async getMyFamily(): Promise<FamilyDetailView | null> {
+    return this.req('GET', '/social/family/mine', undefined, 10_000, getSocialBaseUrl());
+  }
+
   async listFamilies(): Promise<FamilyView[]> {
-    const social = getSocialBaseUrl();
-    try {
-      const fam = await this.req<FamilyDetailView | null>('GET', '/social/family/mine', undefined, 10_000, social);
-      return fam ? [fam] : [];
-    } catch (e) {
-      if (e instanceof WorldApiError && e.code === 'NOT_FOUND') return [];
-      throw e;
-    }
+    const fam = await this.getMyFamily();
+    return fam ? [fam] : [];
   }
 
   async getFamily(familyId: string): Promise<FamilyDetailView> {

@@ -10,6 +10,7 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedF
 import { buildIcon } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
+import { caretDisplay } from '../render/inputDisplay';
 import type { WorldApiClient, FamilyView, FamilyDetailView, FamilyMemberView, FamilyMessageView } from '../net/WorldApiClient';
 import { WorldApiError } from '../net/WorldApiClient';
 
@@ -54,6 +55,8 @@ export class FamilyScene implements Scene {
   private createName = '';
   private createTag = '';
   private createField: 'name' | 'tag' | null = null;
+  private caretOn = true;
+  private caretTimer = 0;
 
   // Scroll
   private scrollY = 0;
@@ -115,12 +118,11 @@ export class FamilyScene implements Scene {
   private async loadData(): Promise<void> {
     if (this.destroyed) return;
     try {
-      // Try to get my family by fetching the family list and seeing which one I'm in
-      // The server's getMe includes familyId
-      // We call listFamilies then look for one where the player is a member
-      const me = await this.cb.worldApi.getMe(this.cb.worldId);
-      if (me.familyId) {
-        await this.loadMyFamily(me.familyId);
+      // Family membership lives in socialsvc; worldsvc's playerWorld.familyId is a
+      // join-time-only mirror that never reflects a family created/joined afterward.
+      const fam = await this.cb.worldApi.getMyFamily();
+      if (fam) {
+        this.applyFamily(fam);
       } else {
         this.mode = 'noFamily';
       }
@@ -132,6 +134,10 @@ export class FamilyScene implements Scene {
 
   private async loadMyFamily(familyId: string): Promise<void> {
     const fam = await this.cb.worldApi.getFamily(familyId);
+    this.applyFamily(fam);
+  }
+
+  private async applyFamily(fam: FamilyDetailView): Promise<void> {
     this.family = fam;
     this.members = fam.members ?? [];
     this.mode = 'myFamily';
@@ -201,7 +207,7 @@ export class FamilyScene implements Scene {
     const nameField = sketchPanel(w - 120, 32, { fill: 0xfaf9f5, border: this.createField === 'name' ? C.accent : C.mid, seed: seedFor(0, 0, w - 120) });
     nameField.x = 100; nameField.y = HUD_H + 14;
     this.bodyLayer.addChild(nameField);
-    const nl = txt(this.createName || ' ', 13, C.dark);
+    const nl = txt(caretDisplay(this.createName, this.createField === 'name' && this.caretOn, ' '), 13, C.dark);
     nl.x = 108; nl.y = HUD_H + 22;
     this.bodyLayer.addChild(nl);
     this.hitRects.push({ rect: { x: 100, y: HUD_H + 14, w: w - 120, h: 32 }, action: () => this.openInputFor('name') });
@@ -213,7 +219,7 @@ export class FamilyScene implements Scene {
     const tagField = sketchPanel(100, 32, { fill: 0xfaf9f5, border: this.createField === 'tag' ? C.accent : C.mid, seed: seedFor(1, 0, 100) });
     tagField.x = 100; tagField.y = HUD_H + 64;
     this.bodyLayer.addChild(tagField);
-    const tl = txt(this.createTag || ' ', 13, C.dark);
+    const tl = txt(caretDisplay(this.createTag, this.createField === 'tag' && this.caretOn, ' '), 13, C.dark);
     tl.x = 108; tl.y = HUD_H + 72;
     this.bodyLayer.addChild(tl);
     this.hitRects.push({ rect: { x: 100, y: HUD_H + 64, w: 100, h: 32 }, action: () => this.openInputFor('tag') });
@@ -392,6 +398,8 @@ export class FamilyScene implements Scene {
 
   private openInputFor(field: 'name' | 'tag'): void {
     this.createField = field;
+    this.caretOn = true;
+    this.caretTimer = 0;
     const inp = document.createElement('input');
     inp.type = 'text';
     inp.value = field === 'name' ? this.createName : this.createTag;
@@ -696,6 +704,10 @@ export class FamilyScene implements Scene {
     if (this.toastTimer > 0) {
       this.toastTimer -= dt * 1000;
       if (this.toastTimer <= 0) this.toastLayer.removeChildren();
+    }
+    if (this.createField) {
+      this.caretTimer += dt;
+      if (this.caretTimer >= 0.5) { this.caretTimer = 0; this.caretOn = !this.caretOn; this.render(); }
     }
   }
 
