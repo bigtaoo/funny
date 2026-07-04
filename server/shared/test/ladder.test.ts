@@ -5,9 +5,13 @@ import {
   RANK_TIERS,
   INITIAL_ELO,
   ELO_K,
+  BOT_ELO_K,
+  BOT_ELO_THRESHOLD,
+  STREAK_K_CAP,
   eloToRank,
   computeEloDelta,
   nextStreak,
+  streakMultiplier,
   type RankId,
 } from '../src/ladder';
 
@@ -92,15 +96,51 @@ describe('computeEloDelta', () => {
     expect(winner).toBeLessThanOrEqual(ELO_K);
   });
 
-  it('respects a custom K-factor', () => {
-    const { winner } = computeEloDelta(1500, 1500, 16);
+  it('respects a custom K-factor (both sides)', () => {
+    const { winner, loser } = computeEloDelta(1500, 1500, { winnerK: 16, loserK: 16 });
     expect(winner).toBe(8);
+    expect(loser).toBe(-8);
+  });
+
+  it('respects the bot K-factor for onboarding calibration matches', () => {
+    const { winner, loser } = computeEloDelta(1000, 1000, { winnerK: BOT_ELO_K, loserK: BOT_ELO_K });
+    expect(winner).toBe(BOT_ELO_K / 2);
+    expect(loser).toBe(-BOT_ELO_K / 2);
+  });
+
+  it('an asymmetric K (streak bonus on one side only) breaks zero-sum on purpose', () => {
+    const { winner, loser } = computeEloDelta(1500, 1500, { winnerK: 48, loserK: 32 });
+    expect(winner).toBe(24); // 48 * 0.5
+    expect(loser).toBe(-16); // -(32 * 0.5)
+    expect(loser).not.toBe(-winner);
   });
 
   it('returns integers', () => {
     const { winner, loser } = computeEloDelta(1537, 1489);
     expect(Number.isInteger(winner)).toBe(true);
     expect(Number.isInteger(loser)).toBe(true);
+  });
+});
+
+// ── streakMultiplier ──────────────────────────────────────────────────────────────
+
+describe('streakMultiplier', () => {
+  it('no bonus for a fresh streak (0 or 1 consecutive result)', () => {
+    expect(streakMultiplier(0)).toBe(1);
+    expect(streakMultiplier(1)).toBe(1);
+  });
+
+  it('grows by STREAK_K_STEP per extra consecutive result', () => {
+    expect(streakMultiplier(2)).toBeCloseTo(1.3);
+    expect(streakMultiplier(3)).toBeCloseTo(1.6);
+  });
+
+  it('caps at STREAK_K_CAP for long streaks', () => {
+    expect(streakMultiplier(20)).toBe(STREAK_K_CAP);
+  });
+
+  it('BOT_ELO_THRESHOLD matches the gold-rank floor (RANK_TIERS)', () => {
+    expect(RANK_TIERS.find((t) => t.id === 'gold')?.minElo).toBe(BOT_ELO_THRESHOLD);
   });
 });
 

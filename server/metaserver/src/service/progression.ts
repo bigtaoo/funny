@@ -3,14 +3,30 @@
 // buy/claim battle pass are optimistic-locked writes with commercial coin delivery.
 import { randomUUID } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { ErrorCode, err, ok, BATTLEPASS_BUY_COST, makeFreshBattlePass, claimBpReward } from '@nw/shared';
+import {
+  ErrorCode,
+  err,
+  ok,
+  BATTLEPASS_BUY_COST,
+  makeFreshBattlePass,
+  claimBpReward,
+  BOT_ELO_K,
+  BOT_ELO_THRESHOLD,
+  ELO_FLOOR,
+  computeEloDelta,
+  eloToRank,
+  accrueRetentionTask,
+} from '@nw/shared';
 import { getOrCreateSave } from '../save.js';
 import { getCurrentSeason } from '../ladderSeason.js';
 import { mirrorCoins } from '../economy.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
 import { accountIdOf, type Constructor, type MetaBaseCtor } from './base.js';
 
-type ProgressionHandlers = Pick<MetaHandlers, 'getLeaderboard' | 'buyBattlePass' | 'claimBattlePass'>;
+/** Minimum gap between two accepted bot-result reports per account — backstops the 30s bot-fallback queue timeout against scripted spam. */
+const BOT_RESULT_MIN_GAP_MS = 15_000;
+
+type ProgressionHandlers = Pick<MetaHandlers, 'getLeaderboard' | 'buyBattlePass' | 'claimBattlePass' | 'submitBotResult'>;
 
 /** One row of the season Top-100 leaderboard (SE-5). */
 interface LeaderboardEntry {
@@ -194,6 +210,51 @@ export function ProgressionMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase
         }
       }
       return ok({ battlePass: finalSave.battlePass!, reward });
+    }
+
+    /**
+     * Report the outcome of a client-local AI-fallback (bot) match (MATCHSVC_DESIGN §match_bot_fallback:
+     * matchmaking timed out with no human opponent, so no gameserver session / room_id exists to settle
+     * through /internal/match/report). Always credits the 'pvp.match' daily task; ELO only moves while
+     * the caller is below BOT_ELO_THRESHOLD, at a quarter of ranked K (BOT_ELO_K), throttled to one
+     * accepted result per BOT_RESULT_MIN_GAP_MS so scripted spam can't out-pace the real 30s queue timeout.
+     */
+    async submitBotResult(req: FastifyRequest, reply: FastifyReply) {
+      const accountId = accountIdOf(req);
+      const { won } = req.body as { won: boolean };
+      const { now } = this.deps;
+
+      let appliedDelta = 0;
+      let resultElo = 0;
+      let resultRank = '';
+      const out = await this.mutateSave(accountId, (s) => {
+        const pvp = s.pvp;
+        const tsNow = now();
+        const nextRetention = accrueRetentionTask(s.retention, 'pvp.match', tsNow);
+        const onCooldown = pvp.lastBotResultAt !== undefined && tsNow - pvp.lastBotResultAt < BOT_RESULT_MIN_GAP_MS;
+        let elo = pvp.elo;
+        let rank = pvp.rank;
+        let lastBotResultAt = pvp.lastBotResultAt;
+        if (!onCooldown && pvp.elo < BOT_ELO_THRESHOLD) {
+          const { winner, loser } = computeEloDelta(pvp.elo, pvp.elo, { winnerK: BOT_ELO_K, loserK: BOT_ELO_K });
+          const after = Math.max(ELO_FLOOR, pvp.elo + (won ? winner : loser));
+          appliedDelta = after - pvp.elo;
+          elo = after;
+          rank = eloToRank(after);
+          lastBotResultAt = tsNow;
+        }
+        resultElo = elo;
+        resultRank = rank;
+        return {
+          ...s,
+          ...(nextRetention !== s.retention ? { retention: nextRetention } : {}),
+          pvp: { ...pvp, elo, rank, lastBotResultAt },
+        };
+      });
+      if ('error' in out) {
+        return reply.code(409).send(err(ErrorCode.REV_CONFLICT, out.error));
+      }
+      return ok({ elo: resultElo, rank: resultRank, delta: appliedDelta });
     }
   };
 }

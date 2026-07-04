@@ -2876,6 +2876,48 @@ paths:
                           pvpRank: { type: string }
         '401': { $ref: '#/components/responses/ErrorResp' }
 
+  /pvp/bot-result:
+    post:
+      operationId: submitBotResult
+      tags: [ranked]
+      summary: >-
+        Report the outcome of an AI-fallback (bot) match (matchmaking timed out waiting for a human
+        opponent and the client played a local AI battle instead, MATCHSVC_DESIGN §match_bot_fallback).
+        Always credits the 'pvp.match' daily task. Only moves ELO while the caller is below
+        BOT_ELO_THRESHOLD (bot matches are onboarding calibration, not a substitute for ranked climbing
+        once a player nears their real bracket); at/above the threshold the call still succeeds but ELO
+        is unchanged. Rate-limited to one accepted result per ~15s per account to prevent scripted spam.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [won]
+              properties:
+                won: { type: boolean }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [elo, rank, delta]
+                    properties:
+                      elo: { type: integer }
+                      rank: { type: string }
+                      delta:
+                        type: integer
+                        description: ELO change actually applied this call (0 when at/above BOT_ELO_THRESHOLD or throttled)
+        '401': { $ref: '#/components/responses/ErrorResp' }
+
   /battlepass/buy:
     post:
       operationId: buyBattlePass
