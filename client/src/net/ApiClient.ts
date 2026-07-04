@@ -345,10 +345,12 @@ export class ApiClient {
   async feedCards(
     targetCardId: string,
     materialCardIds: string[],
+    idempotencyKey: string,
   ): Promise<{ save: SaveData; levelsGained: number }> {
     return this.post<{ save: SaveData; levelsGained: number }>('/cards/feed', {
-      targetCardId,
-      materialCardIds,
+      targetId: targetCardId,
+      materialIds: materialCardIds,
+      idempotencyKey,
     });
   }
 
