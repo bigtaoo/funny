@@ -1,126 +1,126 @@
 # Notebook Wars
 
-一款**手绘风格回合制策略游戏**，支持浏览器与微信小游戏双端，配套独立的骨骼动画编辑器。
+A **hand-drawn turn-based strategy game**, playable in the browser and as a WeChat Mini Game, with a companion standalone skeletal-animation editor.
 
 ---
 
-## 游戏玩法
+## Gameplay
 
-双方各持一个基地，通过打出手牌派遣士兵、建造建筑，争夺对方基地的血量。
+Each side holds a base and fights to destroy the opponent's base by playing cards to deploy soldiers and construct buildings.
 
-- **手牌系统**：6 张手牌自动轮换（30 秒未使用自动刷新），消耗墨水打出
-- **兵种**：普通兵 Infantry（群体、廉价）、盾兵 ShieldBearer（高血量、缓慢）、弓箭兵 Archer（远程）
-- **建筑**：兵营（持续生产单位）、箭塔（全向攻击范围内所有敌人）
-- **法术**：急速冲锋（加速己方单位）、陨石打击（2×2 范围秒杀）
-- **基地升级**：消耗墨水提升墨水回速，最多升级 3 次
-- **时间加速**：随对局时长墨水回速逐步加快（3/6/10 分钟三档），13 分钟后全军攻击力翻倍，17 分钟强制平局
+- **Hand system**: 6 cards that auto-rotate (a card unused for 30 s is automatically refreshed), played by spending ink
+- **Units**: Infantry (cheap, swarm), ShieldBearer (high HP, slow), Archer (ranged)
+- **Buildings**: Barracks (continuously produces units), Arrow Tower (attacks all enemies within range, in every direction)
+- **Spells**: Haste Charge (speeds up your own units), Meteor Strike (instantly kills everything in a 2×2 area)
+- **Base upgrades**: spend ink to raise your ink regen rate, up to 3 times
+- **Time acceleration**: ink regen speeds up as the match runs long (three tiers at 3 / 6 / 10 minutes); after 13 minutes every unit's attack doubles; at 17 minutes the match is force-drawn
 
-### 战场规则
+### Battlefield rules
 
 ```
-Row 17 ── 敌方建筑行
-Row 16 ── 敌方出兵行
-  …         战斗区（14 行）
-Row  1 ── 己方出兵行
-Row  0 ── 己方建筑行（含基地，占中央 2 列）
+Row 17 ── Enemy building row
+Row 16 ── Enemy spawn row
+  …         Combat zone (14 rows)
+Row  1 ── Your spawn row
+Row  0 ── Your building row (base occupies the central 2 columns)
 ```
 
-单位沿各自列纵向推进，到达敌方建筑行后横向穿越，抵达基地列造成伤害。
+Units advance vertically along their own column, then cross horizontally once they reach the enemy building row, finally reaching the base column to deal damage.
 
 ---
 
-## 技术范围
+## Technical scope
 
-### 主游戏（`client/`）
+### Main game (`client/`)
 
-| 层 | 技术 |
+| Layer | Technology |
 |---|---|
-| 渲染 | PixiJS Legacy（兼容微信小游戏 WebGL） |
-| 游戏逻辑 | 纯 TypeScript，定点数运算，与渲染完全解耦 |
-| 随机性 | LCG 确定性 PRNG，游戏逻辑内禁用 `Math.random()` |
-| 平台 | Web / 微信小游戏 / CrazyGames，多入口 Webpack 构建 |
-| 输入 | 手动 hit-test，无 PIXI interactive，支持触屏拖拽打牌 |
+| Rendering | PixiJS Legacy (compatible with WeChat Mini Game WebGL) |
+| Game logic | Pure TypeScript, fixed-point arithmetic, fully decoupled from rendering |
+| Randomness | LCG deterministic PRNG; `Math.random()` is banned inside game logic |
+| Platforms | Web / WeChat Mini Game / CrazyGames, multi-entry Webpack builds |
+| Input | Manual hit-testing, no PIXI interactive, supports touch drag-to-play |
 
-**核心系统：**
+**Core systems:**
 
-- `MovementSystem`：定点数推进，友军半径碰撞，横穿逻辑
-- `CombatSystem`：单位 & 箭塔攻击，箭塔全向 Chebyshev 范围寻敌
-- `BuildingProductionSystem`：兵营定时生产
-- `ResourceSystem`：多档加速金币回速
-- `AISystem`：对手 AI，威胁驱动决策（防守 / 经济 / 升级规划，难度分级），确定性 PRNG
-- `SpellSystem`：法术效果处理
+- `MovementSystem`: fixed-point advance, friendly-radius collision, cross-over logic
+- `CombatSystem`: unit & tower attacks; tower finds targets omnidirectionally within Chebyshev range
+- `BuildingProductionSystem`: timed unit production from barracks
+- `ResourceSystem`: multi-tier accelerated ink regen
+- `AISystem`: opponent AI, threat-driven decisions (defense / economy / upgrade planning, tiered difficulty), deterministic PRNG
+- `SpellSystem`: spell effect handling
 
-### 动画编辑器（`tools/animator/`）
+### Animation editor (`tools/animator/`)
 
-独立运行的骨骼动画编辑工具，用于制作游戏角色动画。
+A standalone skeletal-animation tool for authoring the game's character animations.
 
-- **11 根固定骨骼**，FK 正向运动学
-- 关键帧时间轴，支持多 clip 管理
-- Undo/Redo 命令模式（100 步）
-- 导出 `.tao`（ZIP：spritesheet + animation.json）供游戏 Runtime 读取（`StickmanRuntime`，普通兵已接入）
+- **11 fixed bones**, forward kinematics (FK)
+- Keyframe timeline with multi-clip management
+- Undo/Redo command pattern (100 steps)
+- Exports `.tao` (a ZIP of spritesheet + animation.json) for the game runtime (`StickmanRuntime`; Infantry already wired up)
 
 ```bash
 cd tools/animator
-npm run start   # 开发服务器，端口 9091
+npm run start   # dev server, port 9091
 ```
 
 ---
 
-## 快速启动
+## Quick start
 
-### 方式一：Docker 一键全栈（推荐，模拟真实发布）
+### Option 1: Docker full stack in one command (recommended, mirrors a real deployment)
 
-需要 Docker Desktop。一条命令重建最新代码并拉起**全部 9 个服务端进程 + 主客户端 + 3 个工具 + MongoDB + Redis**：
+Requires Docker Desktop. A single command rebuilds the latest code and brings up **all 9 server processes + the main client + 3 tools + MongoDB + Redis**:
 
 ```powershell
-./docker/local-up.ps1            # 重建并启动；浏览器打开 http://localhost:8088
-./docker/local-up.ps1 -Fresh     # 顺带清空数据库后再起
-./docker/local-up.ps1 -Port 9000 # 换主游戏入口端口（客户端地址构建期烘焙，须 --build 重建）
-./docker/local-down.ps1          # 停止（保留数据）；-Fresh 连数据一起清
+./docker/local-up.ps1            # rebuild and start; browser opens http://localhost:8088
+./docker/local-up.ps1 -Fresh     # wipe the database first, then start
+./docker/local-up.ps1 -Port 9000 # change the main-game entry port (baked into the client at build time, requires --build rebuild)
+./docker/local-down.ps1          # stop (data preserved); -Fresh also wipes data
 ```
 
-> 每次 `up` 都会 `--build`，即从当前代码重新构建镜像——改完代码重跑即可生效。
-> 容器从镜像快照跑，编辑本地代码不影响运行中的容器，直到下次重跑（重建）。
+> Every `up` runs `--build`, i.e. rebuilds the images from the current code — just re-run after editing code and it takes effect.
+> Containers run from an image snapshot; editing local code does not affect running containers until the next re-run (rebuild).
 
-**前端地址**（启动后浏览器直接打开）：
+**Frontend URLs** (opened in the browser after startup):
 
-| 地址 | 说明 |
+| URL | Description |
 |---|---|
-| http://localhost:8088 | **主游戏**——nginx 同源托管 SPA，并反代 `/api`(REST) `/gw`(控制面 WS) `/ws`(对战数据面 WS) `/world` `/auction`(SLG 大世界) `/social`(社交第五公网面，含家族) `/analytics`(埋点) |
-| http://localhost:9091 | **动画编辑器** animator |
-| http://localhost:9092 | **关卡编辑器** level-editor |
-| http://localhost:9093 | **运维后台** ops（跨源调 admin 后端 http://localhost:18083，种子账号 `admin` / `admin123`） |
+| http://localhost:8088 | **Main game** — nginx serves the SPA same-origin and reverse-proxies `/api` (REST), `/gw` (control-plane WS), `/ws` (battle data-plane WS), `/world` `/auction` (SLG open world), `/social` (fifth public-facing plane: social, incl. clans), `/analytics` (telemetry) |
+| http://localhost:9091 | **Animation editor** animator |
+| http://localhost:9092 | **Level editor** level-editor |
+| http://localhost:9093 | **Ops console** ops (cross-origin calls to the admin backend at http://localhost:18083; seed account `admin` / `admin123`) |
 
-**服务端九进程**（均跑同一镜像 `nw-server:local`，由 `command` 选进程）：
-`metaserver`(REST) · `commercial`(钱包) · `gateway`(控制面 WS) · `matchsvc`(匹配) · `gameserver`(对战数据面 WS) · `worldsvc`(SLG 第四公网面) · `socialsvc`(社交第五公网面) · `admin`(运维) · `analyticsvc`(埋点)。
-对玩家暴露的入口只有主游戏 `:8088`（同源），其余服务经 nginx 反代或仅内网可达。
+**The nine server processes** (all run the same image `nw-server:local`, the process is selected by `command`):
+`metaserver` (REST) · `commercial` (wallet) · `gateway` (control-plane WS) · `matchsvc` (matchmaking) · `gameserver` (battle data-plane WS) · `worldsvc` (SLG, fourth public-facing plane) · `socialsvc` (social, fifth public-facing plane) · `admin` (ops) · `analyticsvc` (telemetry).
+The only entry exposed to players is the main game at `:8088` (same-origin); the rest are reachable only via the nginx reverse proxy or on the internal network.
 
-编排见 [`docker/docker-compose.local.yml`](docker/docker-compose.local.yml)。
+See the orchestration in [`docker/docker-compose.local.yml`](docker/docker-compose.local.yml).
 
-### 方式二：单模块 dev server（改前端时热更最快）
+### Option 2: single-module dev server (fastest hot-reload when working on the frontend)
 
 ```bash
-cd client && npm install && npm run start          # 主游戏，端口 19090
-cd tools/animator && npm install && npm run start  # 动画编辑器，端口 9091
-cd tools/level-editor && npm install && npm run start  # 关卡编辑器，端口 9092
-cd tools/ops && npm install && npm run start        # 运维后台，端口 9093
+cd client && npm install && npm run start          # main game, port 19090
+cd tools/animator && npm install && npm run start  # animation editor, port 9091
+cd tools/level-editor && npm install && npm run start  # level editor, port 9092
+cd tools/ops && npm install && npm run start        # ops console, port 9093
 ```
 
-dev server 默认连本地裸跑的后端（见 `client/webpack.config.js` 注入的默认地址）；要联调完整后端，仍推荐方式一。
+The dev server defaults to a locally bare-run backend (see the default URLs injected in `client/webpack.config.js`); for full backend integration, Option 1 is still recommended.
 
 ---
 
-## 目录结构
+## Directory structure
 
 ```
 funny/
-├── client/        主游戏（TypeScript + PixiJS）
+├── client/        Main game (TypeScript + PixiJS)
 ├── tools/
-│   ├── animator/      骨骼动画编辑器（TypeScript + PixiJS）
-│   ├── level-editor/  战役关卡编辑器（TypeScript + 纯 Canvas）
-│   ├── ops/           运维后台前端（TypeScript）
-│   └── vfx-editor/    战斗特效编辑器（TypeScript + PixiJS）
-├── server/        Node.js 后端（npm workspaces，九进程）
-├── art/           地图 & 角色概念图
-└── design/        产品 & 美术设计文档
+│   ├── animator/      Skeletal-animation editor (TypeScript + PixiJS)
+│   ├── level-editor/  Campaign level editor (TypeScript + pure Canvas)
+│   ├── ops/           Ops-console frontend (TypeScript)
+│   └── vfx-editor/    Combat VFX editor (TypeScript + PixiJS)
+├── server/        Node.js backend (npm workspaces, nine processes)
+├── art/           Map & character concept art
+└── design/        Product & art design docs
 ```
