@@ -1,6 +1,6 @@
 # 决策日志（ADR）
 
-> 状态：实现中 · 权威：本文 · 更新：2026-06-21
+> 状态：实现中 · 权威：本文 · 更新：2026-07-04
 
 记录**会造成文档间漂移**的关键拍板：改数值口径、改命名、改架构、废弃旧方案。
 每条 ADR 注明：日期、决策、影响的文档、为什么。新拍板追加在末尾，不改旧条目（要改就加一条新的 *Supersedes*）。
@@ -329,6 +329,28 @@
   1. **全局单卡门控**：只要有任意订阅卡生效（`subscription.expiry > now`），月卡与年卡的购买都锁定，服务端返回 `ALREADY_ACTIVE`；到期后才可再买（不叠购、不续期）。新手成长包的 7 天卡不受此门控约束（一次性新手包）。
   2. **年卡**：365 天，奖励结构与月卡一致（每日 120 + 即赠 600），仅时长 ×12。定价 **¥298**（= 12 张月卡 ¥360 的九折取整），UI 原价 ¥360 划线 + 「省 ¥62」角标。真实 IAP 扣款仍为「视为已授权」占位，年卡价格仅前端展示。
   3. **商店图标卡网格**：`ShopScene` 从 list row 改为响应式图标卡网格（名字上·图标左·价格/状态右·底部动作按钮），拖动滚动 + 遮罩裁剪固定表头/tab；充值 tab 同改网格；兑换码保留为网格下方整行。
+
+## ADR-032 SLG 大地图尺寸 500×500 + 地块等级 1-10 + 取消无产出中立地 — Accepted — 2026-07-04
+
+- **背景**：用户怀疑 SLG 文档与实现脱节，逐项核查后确认属实，且比预想的更严重：
+  1. `SLG_DESIGN.md` 曾在 2026-06-18 拍板"U2 地图尺寸 ✅ 1500×1500替代300×300"和"U4 大区容量 ✅ 1万玩家替代300-500"，但代码里 `SLG_MAP_W/H`（`server/shared/src/slg.ts:108-109`）从未改过，一直是 300；`SLG_WORLD_CAPACITY_MIN/TARGET/MAX` 也一直是 300/400/500。这次"✅"标记的升级从未真正实现。
+  2. 更严重的是，2026-06-30 的经济核验（`ECONOMY_NUMBERS.md` §13-SLG-NATION、§13-SLG-STRONGHOLD）是在这次"从未实现的升级"之后做的，却仍然是在未升级的 300×300 上跑蒙特卡洛，并被打上「已过核验」标签——即错误的地图尺寸假设已经污染了一份"已核验"的经济结论。
+  3. 地块等级上限代码实际是 `SLG_MAP_MAX_LEVEL=5`（`slg.ts:110`），用户回忆中的"9 级"实际是装备强化/武将卡的 `MAX_LEVEL=9`（`equipment.ts:64`/`unitCards.ts:12`）——两套毫不相关的系统被记混。经网络调研核实，用户参照的三国志战略版真实地块等级上限是 **10 级**，不是 9 级也不是 5 级（详见 [`SGZ_LAND_REFERENCE.md`](game/SGZ_LAND_REFERENCE.md)）。
+  4. 现有等级生成公式 `level = round((1-dr)×(MAX-1)+1+noise)` 配合 `resourceDensity=0.34`（34% 概率地块保留计算出的等级，66% 被降级为"中立地"、等级强制封顶 2 级且不产任何资源）——这与用户在本轮讨论最初提出的设计前提"地图上没有真正空地，低级地也是某种资源，只是没人要"直接矛盾。
+- **决策（用户 2026-07-04 拍板，逐步收敛到最终数字）**：
+  1. **地图尺寸 = 500×500（25 万格）**。推导：用户要求"5 级以上地块占总地块约一半，500 玩家人均最多占 200 块 5 级+地"→ 500×200=10 万块 5 级+地块 ÷ 50% 占比 = 20 万总格子 → 边长 √200,000≈447，实测 447×447/450×450 更精确贴合目标（人均 202-208），但用户最终选择好记的整数 **500×500**（实测人均 5 级+地块约 254，略超目标但用户认可，理由：容量有余量，早期够用，未来扩容不用换图）。
+  2. **地块等级上限 = 10**（不是 5，不是 9），对齐调研到的三战真实上限。
+  3. **取消无产出中立地**：`resourceDensity` 从 0.34 改为 **1.0**——除阻挡地形/关隘/据点/首府外，所有格子都是某等级的资源地，不再有"中立地=不产任何东西"的类别。
+  4. **等级分布曲线指数从 1 调到 1.1**：`level = round((1-dr)^1.1 × (MAX-1) + 1 + noise)`。配合 3.，实测（Monte Carlo，`hash2`/`rand2`/`valueNoise` 原样复刻自 `slg.ts`）在 300×300 上得到约 49.8-51.3% 的格子达到 5 级以上，验证曲线形状本身正确，再按 §1 反推地图尺寸。
+  5. **正式废止 2026-06-18 的"1500×1500/1万玩家"版本**：不是"改成更小的数字"，是承认那次升级从未真正发生过，`WORLD_CAPACITY` 维持代码现状 300-500。
+  6. **国家版图布局（6 外围国+2 资源国+1 霸业的三战式环带结构）本次不拍板**：现有 10 首府对称布局、等级公式与"国家身份"完全脱钩的结构性问题已确认（详见 `SLG_DESIGN.md` §3.2 待定项），但改国家数量/布局是更大的结构改动，留待下一轮设计。
+- **为什么**：用户对三战玩法节奏非常熟悉，希望 Notebook Wars 的 SLG 数值手感向其看齐；核查发现两轮此前的"文档拍板"都从未真正实现，且已经污染了下游的经济核验结论，必须先把地图尺寸/等级上限这个地基钉死，才能继续设计地块建筑、国家版图等上层玩法。
+- **影响**：
+  - [`SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.2、§14.2（P3）、§14.10（U2/U4/U11/U12/U14）已按本决议改写。
+  - [`ECONOMY_NUMBERS.md`](game/ECONOMY_NUMBERS.md) 的 `WORLD_CAPACITY` 行、§13-SLG-NATION、§13-SLG-STRONGHOLD 已标记「待重跑」，尚未重新跑 econ-sim（下一步工作）。
+  - 新增 [`SGZ_LAND_REFERENCE.md`](game/SGZ_LAND_REFERENCE.md)：三战地块/建筑/版图机制调研笔记，供后续设计参考，非本项目设计基准。
+  - **代码尚未改动**：`server/shared/src/slg.ts` 的 `SLG_MAP_W/H`、`SLG_MAP_MAX_LEVEL`、`SLG_GEN.resourceDensity`、等级曲线指数均待实现（本次只是拍板+文档，依本会话"先文档后代码"的既定流程，实现是下一步任务，会牵动十余个 e2e 测试的坐标假设）。
+  - 地块建筑系统（三战式"6-10级解锁造币厂/工坊/虎帐/仓库/乐府"）与国家版图重构均为后续独立任务，不在本 ADR 范围内。
 - **实现**：`@nw/shared`（economy 加 YEAR_CARD_DAYS/IMMEDIATE_COINS/价格常量 + PRODUCT_YEAR_CARD；api 加 `ALREADY_ACTIVE`）；`commercial`（`monthlyCardBuy`/`yearCardBuy` 收敛到私有 `subscriptionCardBuy`：先占 orderId 槽→门控回滚→applySubscription，门控置于占槽之后以不误伤同 orderId 幂等重放；internalHttp 加 `/internal/year-card/buy`）；`metaserver`（commercialClient 加 `yearCardBuy`；service 加 `yearCardBuy` handler + `subscriptionErrCode` 把 `ALREADY_ACTIVE` 透传给客户端）；`openapi.yml` 加 `/year-card/buy`（重生 routes.gen + 客户端 openapi.ts）；客户端 ApiClient/createAppCore(`buyYearCard` + `ALREADY_ACTIVE`→`shop.cardActive`)/ShopScene 大改 + i18n 三语（`shop.yearCard`/`shop.cardActive`/`shop.save`）。
 - **为什么**：门控把月卡从「可囤积」改为「用完再买」，强化每日留存锚（月卡定位本就是留存而非性价比）；年卡九折给长线玩家一个更划算的锚，同时单卡门控避免年卡+月卡叠加把订阅收益一次性透支；图标卡网格提升付费诱惑并与全局 UI 统一。
 - **影响**：[`GACHA_DESIGN.md`](game/GACHA_DESIGN.md) §5/§5.1b + 实现小结；`@nw/shared` economy/api；`commercial` service/internalHttp（+e2e：门控 + 年卡用例，91 全绿）；`metaserver` commercialClient/service（+ routes.gen，293 全绿）；`openapi.yml`；客户端 ShopScene/ApiClient/createAppCore/i18n。真实 IAP 验单仍范围外。
