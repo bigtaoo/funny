@@ -184,6 +184,37 @@ describe('internal routes', () => {
     await app.close();
   });
 
+  it('ECONOMY_BALANCE §2.3 streak acceleration: a hot winner gains more than a fresh loser loses (asymmetric, not zero-sum)', async () => {
+    const a = makeNewSave('a');
+    a.pvp.streak = 2; // already on a 2-win streak entering this match
+    const b = makeNewSave('b'); // fresh (streak 0)
+    const { cols } = fakeCols({ a, b });
+    const app = build(cols);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/internal/match/report',
+      headers: { 'x-internal-key': KEY },
+      payload: {
+        room_id: 'STK1',
+        seed: '1',
+        mode: 'ranked',
+        reason: 'base',
+        winner_side: 0,
+        hash_ok: true,
+        players: [{ side: 0, accountId: 'a' }, { side: 1, accountId: 'b' }],
+        results: [{ side: 0, state_hash: 'H', winner_side: 0 }, { side: 1, state_hash: 'H', winner_side: 0 }],
+        replay: emptyReplay(),
+      },
+    });
+    const body = res.json() as { ok: boolean; elo?: Record<number, { delta: number; after: number }> };
+    expect(body.elo![0]!.delta).toBe(21); // 32 * 1.3 streak multiplier * 0.5 expWin, rounded
+    expect(body.elo![1]!.delta).toBe(-16); // plain K=32 for the fresh loser
+    expect(body.elo![0]!.delta).not.toBe(-body.elo![1]!.delta);
+    const sa = await cols.saves.findOne({ _id: 'a' });
+    expect(sa!.save.pvp.streak).toBe(3);
+    await app.close();
+  });
+
   it('S9-6 ranked accumulates achievement stats: kill/cast credited for both sides + only winner stats.pvp.wins +1', async () => {
     const a = makeNewSave('a');
     const b = makeNewSave('b');

@@ -104,6 +104,8 @@ export interface SaveData {
     seasonPeakRank: RankId;
     /** Rank ids ever first-reached historically (lifetime ledger; idempotent guard for first-reach coin reward; not reset across seasons). */
     reachedRanks: RankId[];
+    /** Timestamp (ms) of the last AI-fallback (bot) match result accepted for ELO settlement; throttles POST /pvp/bot-result. Absent = never. */
+    lastBotResultAt?: number;
   };
 
   // —— Stamina (A4). Server-authoritative, deducted in real time; natural regen 1 point/6 min, cap 120. Absent in old saves = treated as full. ——

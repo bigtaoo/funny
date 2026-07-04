@@ -654,6 +654,15 @@ export class ApiClient {
     }>('GET', '/leaderboard');
   }
 
+  /**
+   * Report the outcome of a client-local AI-fallback (bot) match (matchmaking timed out, no human
+   * opponent — MATCHSVC_DESIGN §match_bot_fallback). Always credits the 'pvp.match' daily task;
+   * ELO only moves below BOT_ELO_THRESHOLD, and only once per ~15s per account (server-throttled).
+   */
+  async submitBotResult(won: boolean): Promise<{ elo: number; rank: string; delta: number }> {
+    return this.post<{ elo: number; rank: string; delta: number }>('/pvp/bot-result', { won });
+  }
+
   /** Purchase the current season battle pass (600 coins). */
   async buyBattlePass(): Promise<{ battlePass: SaveData['battlePass'] }> {
     return this.post<{ battlePass: SaveData['battlePass'] }>('/battlepass/buy', {});

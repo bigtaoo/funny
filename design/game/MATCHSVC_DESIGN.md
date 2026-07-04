@@ -159,3 +159,13 @@ POST /internal/match/report
 - [x] **gateway+matchsvc 拆进程（S1-M5）**：原合一进程的函数调用换为内部 HTTP——gateway `MatchsvcClient` POST 命令、matchsvc `GatewayClient` POST `/gw/push` 回事件、gameserver 注册心跳直指 matchsvc。`Matchsvc` 类逻辑不变（`push` 回调改由 `GatewayClient.push` 注入）。
 - [x] **ticket 过期**：默认 30s（`NW_TICKET_TTL_SEC`），仅约束 match_found→首次连 game；重连复用同票据，game `verifyTicket(ignoreExpiration:true)` 放过已活房间的过期票据。
 - [x] 实现顺序：本次直接做了 S1-M（用户拍板「Full S1-M1~M4」）。
+
+---
+
+## 8. 排位超时兜底 AI 代打（`match_bot_fallback`，2026-07-04 补文档）
+
+> 实现早于本节文档化；此前设计文档从未记录该特性，仅存在于代码。
+
+- **触发**：ranked 队列等待超过 `botFallbackMs`（默认 30000ms，`NW_MM_BOT_FALLBACK_MS`）且 feature flag `match_bot_fallback` 打开 → matchsvc dequeue 该玩家，推 `{ kind: 'match_bot', seed, opponentName, elo, difficulty }`（`Matchsvc.ts onQueueTimeout`）。关闭则继续排队等真人，行为不变。
+- **无 ticket / 无 game_url**：这场"AI 代打"对局**完全在客户端本地跑**（复用与手动练习赛相同的本地引擎路径，仅用服务器给的 `seed` 保证确定性），不建 gameserver session，因此天生绕开 `/internal/match/report` 这条 ELO/归档结算唯一入口。
+- **结算**（2026-07-04 补齐，见 `SEASON_DESIGN.md §15.2`）：客户端本地对局结束后调用玩家态端点 `POST /pvp/bot-result { won }`（区别于内部密钥端点），始终记每日任务 `pvp.match`；仅当当前 ELO < 1200（黄金下限）时按 `BOT_ELO_K`=8 小幅加减分，节流 15s/次。不影响 `pvp.streak`、不发战令经验/首达段位金币/胜场金币——这些副作用只在真实 `/internal/match/report` 结算里发生，AI 代打只做"够不到真人时的保底体验 + 低分段引导"，不是真实天梯的替代品。
