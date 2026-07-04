@@ -6,6 +6,10 @@ export const BATTLEPASS_MAX_LEVEL = 30;
 export const BATTLEPASS_BUY_COST = 600;
 export const BP_XP_PER_LEVEL = 600;
 
+// Season XP awarded per ranked game (mirror of @nw/shared/battlepass.ts, for the "how to earn" hint).
+export const BP_XP_PER_RANKED_WIN = 120;
+export const BP_XP_PER_RANKED_LOSS = 40;
+
 export type BpRewardKind = 'coins' | 'material' | 'skin';
 
 export interface BpReward {

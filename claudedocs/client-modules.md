@@ -21,6 +21,7 @@
 
 | 文件 | 职责 |
 |---|---|
+| `app/createAppCore.ts` + `app/appCtx.ts` + `app/appConstants.ts` + `app/nav/*` | **无渲染编排核心**（同一份代码跑 PixiAppViews 真机 + HeadlessAppViews E2E）。`createAppCore` 现只做装配：建 `ApiClient`/`SaveManager`/`ReplayStore`/`FeatureFlags`/`NetSession` + 会话可变态 + 叶子 helper（session/gateway/profile/deck/replay/shard）+ `start`/`onResized`。**约 50 个 `go*` 屏幕跳转按域拆入 `app/nav/{auth,lobby,room,social,world,shop,game,result}.ts`**，各导出 `createXxxNav(ctx)`。`AppCtx`（`appCtx.ts`）= 依赖 + `state`（可变态，按引用共享）+ `nav`（跳转注册表）；`nav` 装配时 `Object.assign` 各模块产物，故跨模块互调走 `ctx.nav.goX()` 无 import 环。存储键/logger/`clientPlatformName` 在 `appConstants.ts`。**新增跳转须同步 `Nav` 接口 + 对应 nav 模块 + `AppViews`/HeadlessAppViews 补桩** |
 | `game/GameEngine.ts` | 主循环、系统编排、命令处理；每 tick 从 `InputSource` 消费指令；tick 顺序：resource→production→**trait**→combat→escort→hazard→movement→spell。**联机追帧**：`tick()` 按 `confirmedLead` 积压选倍速（>30s→5×/>10s→3×/>1s→2×/否则1×）缩短 `stepDt`，让暂停/最小化（rAF 停摆）落后的客户端加速排帧追上水位线；只重定时 step 不改帧序，确定性不变 |
 | `game/net/InputSource.ts` | 统一输入管线接口 + `LocalInputSource` |
 | `game/net/ReplayInputSource.ts` | `RecordingInputSource`（捕获确认帧，`snapshot()→Replay`）+ `ReplayInputSource`（喂 Replay，永不停步） |

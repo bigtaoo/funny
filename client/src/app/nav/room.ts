@@ -1,0 +1,88 @@
+// PvP room + ranked queue + deck builder navigation. Extracted from createAppCore.
+import * as analytics from '../../analytics';
+import type { RoomView } from '../AppViews';
+import type { AppCtx, Nav } from '../appCtx';
+import { log } from '../appConstants';
+
+export function createRoomNav(ctx: AppCtx): Pick<Nav, 'goRoom' | 'goDeckBuilder'> {
+  const { api, saveManager, views, state, nav, getNetSession, resolvePvpDeck } = ctx;
+
+  function goDeckBuilder(onSave: (deck: string[]) => void): void {
+    const save = saveManager.get();
+    views.showDeckBuilder({
+      onSave(deck) {
+        saveManager.patchLocal({ pvpDeck: deck });
+        onSave(deck);
+      },
+      onBack() { nav.goLobby(); },
+      getCurrentDeck() { return save.pvpDeck; },
+      getCurrentElo() { return save.pvp.elo; },
+    });
+  }
+
+  function goRoom(opts?: { autoRanked?: boolean }): void {
+    state.inLobby = false;
+    analytics.track('screen_view', { scene: 'RoomScene', ranked: !!opts?.autoRanked });
+    const session = getNetSession();
+    const autoRanked = !!opts?.autoRanked && session !== null;
+    if (opts?.autoRanked && session === null) {
+      log.warn('autoRanked requested but no NetSession (offline / no gateway url)', {
+        hasApi: !!api,
+        gatewayUrl: state.gatewayUrl,
+      });
+    }
+    const getSavedDeck = resolvePvpDeck;
+    let rankedQueued = false;
+    const queueRanked = (): void => {
+      if (rankedQueued) return;
+      rankedQueued = true;
+      log.info('entering ranked queue (createRanked)');
+      analytics.track('pvp_room_create', { mode: 'ranked' });
+      session?.createRanked(getSavedDeck());
+    };
+    const view: RoomView = views.showRoom({
+      available: session !== null,
+      autoRanked,
+      onBack() {
+        session?.close();
+        if (session) session.handlers = { onMatchStart: (info) => nav.goGameNet(info) };
+        nav.goLobby();
+      },
+      createRoom() { analytics.track('pvp_room_create', { mode: 'friendly' }); session?.createRoom(getSavedDeck()); },
+      joinRoom(code: string) { session?.joinRoom(code, getSavedDeck()); },
+      setReady(ready: boolean) { session?.setReady(ready); },
+      startMatch() { session?.startMatch(); },
+      createRanked() { analytics.track('pvp_room_create', { mode: 'ranked' }); session?.createRanked(getSavedDeck()); },
+      cancelQueue() { rankedQueued = false; session?.cancelQueue(); },
+    });
+
+    if (session) {
+      session.handlers = {
+        onMatchStart: (info) => nav.goGameNet(info),
+        // Matchmaking timeout fallback to AI (feature flag match_bot_fallback): server pushes match_bot →
+        // exit the queue UI and start a local AI match (using the server-provided seed).
+        onMatchBot: (seed) => {
+          rankedQueued = false;
+          log.info('match_bot fallback → local AI match', { seed });
+          nav.goGame({ seed, fromBotFallback: true });
+        },
+        onRoomState: (s) => view.applyRoomState(s),
+        onRoomError: (e) => view.applyRoomError(e),
+        onPeerDc:    (p) => view.applyPeerDc(p),
+        onNetState:  (s) => {
+          view.applyNetState(s);
+          if (autoRanked && s === 'open') queueRanked();
+        },
+      };
+      session.connect();
+      // If the gateway was already open from the lobby phase, connect() is a no-op
+      // and onNetState('open') will never fire — deliver it synchronously now.
+      if (session.gateway.getState() === 'open') {
+        view.applyNetState('open');
+        if (autoRanked) queueRanked();
+      }
+    }
+  }
+
+  return { goRoom, goDeckBuilder };
+}

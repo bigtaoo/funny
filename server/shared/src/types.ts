@@ -84,6 +84,7 @@ export interface SaveData {
   monetization?: {
     fatePoints: number; // Fate Points balance (§7)
     subscriptionExpiry: number; // monthly card end timestamp (ms); 0 = none (§5)
+    subscriptionLastClaimDay?: string; // UTC day (YYYY-MM-DD) of last daily-coin claim; absent = never claimed (§5)
     starterUsed: string[]; // one-off product ids already bought (§6)
   };
   // Fulfilled purchase orders (commercial orderId). Idempotent delivery ledger: redelivery uses $addToSet + $ne guard for deduplication (S5-5).

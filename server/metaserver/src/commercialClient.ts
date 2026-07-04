@@ -21,6 +21,7 @@ export interface WalletView {
   pity: Record<string, number>;
   fatePoints: number;
   subscriptionExpiry: number;
+  subscriptionLastClaimDay?: string; // UTC day (YYYY-MM-DD) of last daily-coin claim; absent = never claimed
   starterUsed: string[];
 }
 
@@ -199,6 +200,7 @@ export class HttpCommercialClient implements CommercialClient {
           pity: b.pity,
           fatePoints: b.fatePoints ?? 0,
           subscriptionExpiry: b.subscriptionExpiry ?? 0,
+          subscriptionLastClaimDay: b.subscriptionLastClaimDay,
           starterUsed: b.starterUsed ?? [],
         }
       : null;

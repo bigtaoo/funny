@@ -97,6 +97,14 @@ export function seedFor(x: number, y: number, w: number, h = 0): number {
 }
 
 /**
+ * X of the red notebook margin rule (see buildPaperBackground). Content columns
+ * should start to its right so icon cards don't sit on top of the red stripe.
+ */
+export function marginLineX(w: number): number {
+  return Math.round(w * 0.09);
+}
+
+/**
  * Notebook-paper background: aged paper + faint ruled lines + a red margin line
  * down the left, drawn with the shared SketchPen and baked per (tag,w,h). Mirrors
  * the lobby / board so every screen is the same page. Falls back to live Graphics
@@ -120,7 +128,7 @@ export function buildPaperBackground(
   // there the paper is a backdrop for a full-bleed isometric map, and a lone red vertical
   // stripe down the left read as a stray artifact rather than as notebook stationery.
   if (marginLine) {
-    const mx = Math.round(w * 0.09);
+    const mx = marginLineX(w);
     pen.line(mx, 0, mx, h, { color: palette.inkRed, width: 2.2, jitter: 1.0, taper: 0.95 });
   }
 

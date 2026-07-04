@@ -12,6 +12,7 @@ import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import type { SaveData } from '../game/meta/SaveData';
 import {
   BATTLEPASS_DEFS, BATTLEPASS_MAX_LEVEL, BATTLEPASS_BUY_COST, BP_XP_PER_LEVEL,
+  BP_XP_PER_RANKED_WIN, BP_XP_PER_RANKED_LOSS,
   xpToLevel, xpToNextLevel,
 } from '../game/balance/battlepassDefs';
 
@@ -186,13 +187,26 @@ export class BattlePassScene implements Scene {
     const xpLbl = txt(
       isMaxed
         ? t('battlepass.xpProgress', { xp: String(maxXp), total: String(maxXp) })
-        : t('battlepass.xpToNext', { n: String(xpToNextLevel(xp)) }),
+        : t('battlepass.xpStatus', { xp: String(xp), n: String(xpToNextLevel(xp)) }),
       Math.round(barH * 0.42), C.light,
     );
     xpLbl.anchor.set(1, 0.5); xpLbl.x = pad + barW - Math.round(barW * 0.03); xpLbl.y = y + barH / 2;
     this.container.addChild(xpLbl);
 
-    y += barH + Math.round(h * 0.018);
+    y += barH + Math.round(h * 0.014);
+
+    // "How to earn XP" hint — XP only comes from ranked games (win/loss awards differ).
+    if (!isMaxed) {
+      const hint = txt(
+        t('battlepass.xpEarnHint', { win: String(BP_XP_PER_RANKED_WIN), loss: String(BP_XP_PER_RANKED_LOSS) }),
+        Math.round(h * 0.024), C.mid,
+      );
+      hint.anchor.set(0, 0.5); hint.x = pad + Math.round(barW * 0.01); hint.y = y + Math.round(h * 0.016);
+      this.container.addChild(hint);
+      y += Math.round(h * 0.032);
+    }
+
+    y += Math.round(h * 0.008);
 
     // ── Buy Pass button (if not purchased) ────────────────────────────────────
     const buyAreaH = Math.round(h * 0.072);
