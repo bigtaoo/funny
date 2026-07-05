@@ -6,7 +6,7 @@
 
 ```
 client/          主游戏（TS + PixiJS，port 9090）
-tools/           animator(9091) / level-editor(9092) / ops(9093) / vfx-editor(9094)
+tools/           animator(9091) / level-editor(9092) / ops(9093) / vfx-editor(9094) / map-editor(9095)
 server/          9 个 Node 服务 + engine/contracts/shared 包（npm workspaces）
   contracts/     openapi.yml + openapi-world.yml + *.proto
   shared/        @nw/shared
@@ -32,6 +32,7 @@ claudedocs/      模块级快查文档（按需加载）
 | 服务端 | [`claudedocs/server.md`](claudedocs/server.md) | `design/game/META_DESIGN.md` |
 | animator | [`claudedocs/animator.md`](claudedocs/animator.md) | `design/tools/animator/` |
 | level-editor | — | `design/tools/level-editor/DESIGN.md` |
+| map-editor | — | `design/tools/map-editor/DESIGN.md` |
 | vfx-editor | — | `design/tools/vfx-editor/DESIGN.md` |
 | 文件格式 | [`claudedocs/file-formats.md`](claudedocs/file-formats.md) | — |
 

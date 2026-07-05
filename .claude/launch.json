@@ -18,6 +18,12 @@
       "runtimeExecutable": "cmd",
       "runtimeArgs": ["/c", "npm", "run", "start", "--prefix", "C:\\Users\\TaoWang\\Documents\\funny\\tools\\level-editor"],
       "port": 9092
+    },
+    {
+      "name": "map-editor",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "npm", "run", "start", "--prefix", "C:\\Users\\TaoWang\\Documents\\funny\\tools\\map-editor"],
+      "port": 9095
     }
   ]
 }
