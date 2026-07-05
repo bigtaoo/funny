@@ -44,7 +44,7 @@ export interface Nav {
   resolveEntry(): Promise<void>;
   goDeckBuilder(onSave: (deck: string[]) => void): void;
   goRoom(opts?: { autoRanked?: boolean }): void;
-  goFriends(opts?: { defaultTab?: 'friends' | 'mail' }): void;
+  goFriends(opts?: { defaultTab?: 'friends' | 'family' | 'sect' | 'world' | 'mail'; onBack?: () => void }): void;
   goMail(): void;
   goChat(peerPublicId: string, peerName: string): void;
   goWorldEntry(): void;

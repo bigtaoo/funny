@@ -78,8 +78,8 @@ export interface FriendsSceneCallbacks {
   playerName?(): string;
   /** Current coin balance — shown top-right on the world channel tab (each post costs coins). */
   getCoins?(): number;
-  /** Pre-select a tab on open — used by the lobby mail shortcut to jump straight to the mail tab. */
-  defaultTab?: 'friends' | 'mail';
+  /** Pre-select a tab on open — used by the lobby mail shortcut (mail) and the world-map chat bar (world). */
+  defaultTab?: Tab;
 }
 
 export type Tab = 'friends' | 'family' | 'sect' | 'world' | 'mail';

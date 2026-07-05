@@ -1527,4 +1527,36 @@ if (path.startsWith('/admin/world/')) {
 
 ---
 
+## 25. WorldMapScene HUD 重排（2026-07-05 拍板+落地）
+
+**背景**：现状底部 `HUD_H` 横栏把返回/缩放/状态文字/行军列表/Train/Family/Auction/World-info 全部平铺成一整条，纯文字堆砌、按钮风格不统一，且早期孤立据点视野内几乎全是空地，底栏又占满全部横向空间——判定为整体重排而非局部修补。
+
+**新布局**（四区，取代原单一横栏）：
+
+| 区域 | 内容（自上而下/自外而内） | 取代的旧元素 |
+|---|---|---|
+| 左上（浮层） | Back（`SceneHeader.drawFloatingBackButton`，`§3.1` 统一返回按钮迁移，2026-07-05 与本节并行落地）→ Zoom → Auction 竖排，后两者紧贴在 Back 下方 | 原 backRect（原底栏自绘）+ zoomBtnRect（原左上）+ aucBtnRect（原右下） |
+| 右上竖排 | 状态卡（部队/领地/资源，卡片化分组）→ 行军角标（默认收起，点开展开列表）→ World/info | 原资源行文字平铺 + 常驻 Marches 表头/列表 + infoBtnRect |
+| 底部 | 常驻聊天条（点击展开 FriendsScene 世界频道），也是家族管理入口 | 无（新增，原底栏无聊天入口） |
+| 点击主城弹窗 | 进城 / **训练**（新增）/ 防御 / 编队 | 原 HUD 常驻 `trainBtn`（`openTrainPanel()` 改由此处触发） |
+
+**拍板要点**：
+- 左右分区心智模型：**左=离开当前视图去做别的事**（返回、缩放档位、拍卖行），**右=留在原地看状态**（部队/领地/资源/行军/世界信息）。
+- **Family 按钮整体删除**——查证 `FriendsScene`（`orgForm.ts` `drawFamilyTab`）已有该逻辑：玩家已加入家族时自动 `cb.openFamilyHub?.()` 跳转到独立的 `FamilyScene`（成员/宗门内政管理）；未加入时展示创建/加入表单。即家族聊天 tab 本身就是家族管理的唯一入口，无需在世界地图额外开一个入口。
+- **Train 从常驻 HUD 移除**，改挂到点击自家主城时已有的弹窗（`WorldMapInput.ts` 的 `isBase` 分支，进城/训练/防御/编队四项）——训练本就是主城行为，不该占永久屏幕面积。
+- 地图空地问题（孤立据点四周大片空白）判定为**地图内容/装饰密度问题，非 HUD 布局问题**，本次不处理；若要改善需从中立地块程序化装饰密度或初始镶机位偏移入手，留后续任务。
+
+**落地状态（2026-07-05，已实现）**：
+- `client/src/scenes/worldmap/constants.ts`：`HUD_H` 100→56（底栏只剩聊天条，地图可视区相应变大）。
+- `client/src/scenes/worldmap/WorldMapPanels.ts`：`renderHud()` 重写为四区绘制；`aucBtn`/`zoomBtn` 挪到左上、紧贴 `ctx.backRect`（读取其 y+h 做垂直接续，不硬编码坐标）；状态卡/行军角标改为卡片化子面板（`marchBadgeRect` 命中后走 `ctx.marchesExpanded` 布尔开关展开/收起列表）；底部聊天条渲染（当前只有静态文案，**末条消息/未读数预览仍是占位，未接数据**，留后续任务）。
+- `client/src/scenes/worldmap/WorldMapInput.ts`：删 Train/Family 命中分支；新增 `marchBadgeRect` 切换 + `chatBarRect` 命中 → `cb.onOpenChat()`；`isBase` 分支弹窗加「训练」项直接调 `panels.openTrainPanel()`。
+- `client/src/scenes/worldmap/WorldMapContext.ts`：`onOpenFamily` → `onOpenChat`；删 `famBtnRect`/`trainBtnRect`，加 `marchBadgeRect`/`chatBarRect`/`marchesExpanded`。
+- `client/src/app/nav/world.ts`：`onOpenChat()` 调 `nav.goFriends({ defaultTab: 'world', onBack: () => goWorldMap(...) })`——返回时回到世界地图而非大厅。
+- `client/src/app/nav/social.ts` + `client/src/app/appCtx.ts` + `client/src/scenes/FriendsScene/base.ts`：`goFriends`/`FriendsSceneCallbacks.defaultTab` 从 `'friends' | 'mail'` 放宽到完整 `Tab`（`'friends' | 'family' | 'sect' | 'world' | 'mail'`）+ `goFriends` 新增可选 `onBack` 覆盖（默认仍是 `nav.goLobby()`），使世界地图能指定"返回世界地图"而非硬编码回大厅。
+- i18n 新增 `world.chat`（zh/en/de 三语）；`world.family` key 保留未删（其他场景仍可能引用，只是世界地图不再用它做按钮文案）。
+- **跟 §3.1 撞车**：本节开发期间，另一次改动（commit `f3e237ce`）恰好也在同步把 WorldMapScene 的返回按钮从底栏自绘迁移到 `SceneHeader.drawFloatingBackButton`（统一 22 个场景的返回按钮规格），两者改的是同一批文件（`WorldMapContext.ts`/`WorldMapPanels.ts`）。两次改动语义不冲突（各改各的字段），已核对合并后 `tsc --noEmit` + `webpack --mode production` 全绿，未丢内容。
+- **已知缺口，留后续任务**：底部聊天条只有静态"聊天"文案，末条消息预览/未读角标未接 `FriendsScene/worldChat.ts` 的数据源；行军展开列表未做数量上限（理论上可能撑高右侧栏，未见真实上限值需求，暂不处理）。
+
+---
+
 *本文档为 SLG 设计基准，DRAFT 标注处随实现/调参细化；锁定决策（SLG1~13）非经重新拍板不改。*

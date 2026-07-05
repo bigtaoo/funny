@@ -346,7 +346,7 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
     build: (w, h) =>
       new WorldMapScene(createLayout(w, h), new InputManager(), {
         onBack() {},
-        onOpenFamily() {},
+        onOpenChat() {},
         onOpenAuction() {},
         onReplaySiege() {},
         onOpenCity() {},

@@ -8,7 +8,7 @@ import { FALLBACK_SEASON, PLAYER_PUBLIC_ID_KEY } from '../appConstants';
 export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' | 'goChat'> {
   const { api, saveManager, platform, state, views, nav, getNetSession, playerName } = ctx;
 
-  function goFriends(opts?: { defaultTab?: 'friends' | 'mail' }): void {
+  function goFriends(opts?: { defaultTab?: 'friends' | 'family' | 'sect' | 'world' | 'mail'; onBack?: () => void }): void {
     // Social needs a server account; offline / no API → bounce to login.
     if (!api) { analytics.track('login_gate_hit', { scene: 'FriendsScene' }); nav.goLogin(); return; }
     analytics.track('screen_view', { scene: 'FriendsScene' });
@@ -35,7 +35,7 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
     };
 
     const view: FriendsView = views.showFriends({
-      onBack() { restore(); nav.goLobby(); },
+      onBack() { restore(); (opts?.onBack ?? nav.goLobby)(); },
       onOpenRoom() { nav.goRoom(); },
       ...(opts?.defaultTab ? { defaultTab: opts.defaultTab } : {}),
       loadFriends: () => client.getFriends(),

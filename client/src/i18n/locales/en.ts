@@ -774,6 +774,7 @@ export const en: Record<TranslationKey, string> = {
   'world.unknownOwner': 'Unknown Player',
   'world.family': 'Family',
   'world.auction': 'Auction',
+  'world.chat': 'Chat',
   'world.noBase': 'No base yet',
   'world.loading': 'Loading map…',
   'world.err.worldFull': 'World is full',

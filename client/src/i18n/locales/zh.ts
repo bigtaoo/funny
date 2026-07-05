@@ -784,6 +784,7 @@ export const zh = {
   'world.unknownOwner': '未知玩家',
   'world.family': '家族',
   'world.auction': '拍卖',
+  'world.chat': '聊天',
   'world.noBase': '未建立主城',
   'world.loading': '加载地图中…',
   'world.err.worldFull': '世界已满员',

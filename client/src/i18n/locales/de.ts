@@ -774,6 +774,7 @@ export const de: Record<TranslationKey, string> = {
   'world.unknownOwner': 'Unbekannter Spieler',
   'world.family': 'Familie',
   'world.auction': 'Auktion',
+  'world.chat': 'Chat',
   'world.noBase': 'Noch keine Basis',
   'world.loading': 'Karte wird geladen…',
   'world.err.worldFull': 'Welt ist voll',
