@@ -1,0 +1,237 @@
+// SLG core: error type, enums, deterministic ID derivation, capacity/map dimensions, main-base footprint,
+// procedural distribution knobs, and general numeric constants — single source of truth (SLG_DESIGN.md §14, S8-0).
+// Split out of slg.ts (god-file split, [[project_godfile_split_pattern]]).
+// Pure data + pure functions; no DB / no PIXI. worldsvc uses this as the authoritative server-side source for maps/territory/marches/families.
+//
+// ★ Procedural generation (§14.2 "sparse storage + procedural defaults"): the DB only stores tiles that have been claimed or modified.
+//   Untouched neutral tiles are computed on-the-fly by the pure function proceduralTile() derived from worldId — never persisted; this is the key to scalability.
+//   The same worldId + the same (x,y) always yields the same tile (computable on either end).
+
+import { ErrorCode, type ErrorCode as ErrorCodeT } from '../api';
+
+/**
+ * worldsvc endpoint error: carries an SLG ErrorCode (httpApi maps it to HTTP via ERROR_HTTP_STATUS).
+ * code is restricted to valid values from api.ts ErrorCode (including the SLG range + generic BAD_REQUEST/NOT_FOUND/…).
+ */
+export class SlgError extends Error {
+  readonly code: ErrorCodeT;
+  constructor(code: keyof typeof ErrorCode, message?: string) {
+    super(message ?? code);
+    this.name = 'SlgError';
+    this.code = ErrorCode[code];
+  }
+}
+
+// ── Enums (§14.7) ─────────────────────────────────────
+export type TileType =
+  | 'neutral' // neutral open land (low-level, claimable, minimal yield)
+  | 'resource' // resource tile (produces ink/paper/metal)
+  | 'territory' // player-claimed territory (only exists after runtime DB write; not generated as this type)
+  | 'familyKeep' // strategic point / family stronghold (sparse, high-level, high-value)
+  | 'center' // world center (sect ownership contest point; unique)
+  | 'base' // player home-city placement (written to DB at runtime)
+  | 'obstacle' // blocking terrain (mountains/rivers; fully impassable, S8-6.6)
+  | 'gate' // pass/bridge (embedded in blocking zone; passable by occupying faction and allies; treated as obstacle if unoccupied, S8-6.6)
+  | 'stronghold'; // stronghold (G8 §3.1): high-strategic-value tile guarded by an overwhelmingly powerful system NPC; cannot be directly occupied — must be conquered via a siege attack
+
+/**
+ * SLG season resources (SLG_DESIGN §3.4, naming locked 2026-06-30; stationery theme, aligned with Three-Kingdoms grain/wood/stone/iron/copper).
+ * - ink:      sustain — troop training / troop cap / march upkeep (was `food`). Shares the "ink is life" world-symbol with battle `ink` but is a fully separate pool.
+ * - paper:    basic building material (was `wood`).
+ * - graphite: advanced building material (4th land resource; map faucet via biomeAt quad-partition, sink via high-level building upgrades, SLG_CITY_DESIGN / ADR-022).
+ * - metal:    military / equipment forging (was `iron`).
+ * - sticker:  universal flexible resource (copper-coin slot: recruit / tech / small instant actions). NOT a global currency — season-scoped, cleared at season end, non-auctionable, not directly purchasable. Faucet = home-city stickerShop self-production (民居模型); sink = building upgrades.
+ * All five are season resources (cleared at season end, banned from the auction house); the only global currency is `coins` (ECONOMY_BALANCE).
+ */
+export type ResourceType = 'ink' | 'paper' | 'graphite' | 'metal' | 'sticker';
+export type MarchKind = 'attack' | 'reinforce' | 'occupy' | 'sweep' | 'scout' | 'return';
+export type SiegeOutcome = 'attacker_win' | 'defender_win' | 'draw';
+export type FamilyRole = 'leader' | 'elder' | 'member';
+export type WorldStatus = 'open' | 'active' | 'settling' | 'resetting' | 'closed';
+export type AuctionStatus = 'open' | 'sold' | 'expired' | 'cancelled';
+
+export const RESOURCE_TYPES: readonly ResourceType[] = ['ink', 'paper', 'graphite', 'metal', 'sticker'];
+
+// ── Deterministic ID derivation (§14.7; no lookup table required; computable on either end) ──────────
+/** World ID: `s{season}-{shard}`; one season-sect world = one map instance. */
+export function worldId(season: number, shard: number): string {
+  return `s${season}-${shard}`;
+}
+/** Tile ID: `{worldId}:{x}:{y}`. */
+export function tileId(world: string, x: number, y: number): string {
+  return `${world}:${x}:${y}`;
+}
+/** ID of the player's state document in a given world. */
+export function playerWorldId(world: string, accountId: string): string {
+  return `${world}:${accountId}`;
+}
+/** Family member document ID. */
+export function familyMemberId(world: string, accountId: string): string {
+  return `${world}:${accountId}`;
+}
+/** Family ID (S8-4): `f:{worldId}:{TAG}`; TAG is an uppercase unique abbreviation (3–4 characters). */
+export function familyId(worldId: string, tag: string): string {
+  return `f:${worldId}:${tag.toUpperCase()}`;
+}
+/** Sect ID (S8-4b): `s:{worldId}:{TAG}`; TAG is an uppercase unique abbreviation (2–5 characters), unique within a worldId. */
+export function sectId(worldId: string, tag: string): string {
+  return `s:${worldId}:${tag.toUpperCase()}`;
+}
+/** Auction ID (S8-5): `a:{worldId}:{sellerId}:{ts}:{seq}`; prevents key collisions when multiple listings are created within the same millisecond. */
+export function auctionId(worldId: string, sellerId: string, ts: number, seq: number): string {
+  return `a:${worldId}:${sellerId}:${ts}:${seq}`;
+}
+/**
+ * March ID (S8-2): `m:{worldId}:{ownerId}:{departAt}:{seq}`.
+ * Marches are transient documents (unlike tile/playerWorld which are globally deterministic); departAt(ms) + a process-local monotonic seq
+ * ensures no key collisions when multiple marches depart within the same millisecond. worldsvc is a non-deterministic engine and can safely use real timestamps.
+ */
+export function marchId(world: string, ownerId: string, departAt: number, seq: number): string {
+  return `m:${world}:${ownerId}:${departAt}:${seq}`;
+}
+/** Siege ID (S8-3): `g:{worldId}:{attackerId}:{ts}:{seq}`; transient battle-report record; uses the same key-collision prevention as marchId. */
+export function siegeId(world: string, attackerId: string, ts: number, seq: number): string {
+  return `g:${world}:${attackerId}:${ts}:${seq}`;
+}
+
+// ── Capacity / map dimensions (U4/U2 finalized, 2026-06-16; SLG_DESIGN §14.10) ──
+/** Target capacity for a single server (one season-sect world): medium-sized, 300–500 players. */
+export const SLG_WORLD_CAPACITY_MIN = 300;
+export const SLG_WORLD_CAPACITY_TARGET = 400;
+export const SLG_WORLD_CAPACITY_MAX = 500;
+
+/**
+ * Map dimensions (ADR-032, 2026-07-04 finalized): 500×500 (250k tiles), targeting ~500 players × 200 level-5+ tiles each.
+ * Sparse storage: dimensions only affect the pace of expansion and the feel of march distances; they do not affect storage (only occupied tiles are persisted).
+ */
+export const SLG_MAP_W = 500;
+export const SLG_MAP_H = 500;
+/** Tile level cap (ADR-032): aligned with Three Kingdoms Strategy Edition's real land-level cap (see SGZ_LAND_REFERENCE.md). */
+export const SLG_MAP_MAX_LEVEL = 10;
+
+// ── Main-base 3×3 footprint (ADR-025) ─────────────────────────────────────────
+// The player home city is a real multi-tile building occupying a 3×3 block centered on its
+// anchor (PlayerWorldDoc.mainBaseTile). All 9 cells are written as type:'base' with the same
+// ownerId — indivisible (an enemy cannot occupy/abandon a single corner), block enemy marches
+// (§ findMarchPath blockedBaseKeys), and all count toward territory/prosperity.
+/** Base footprint side length (3 → 3×3 = 9 cells). */
+export const BASE_FOOTPRINT = 3;
+/** Half-extent: the anchor spans ±this on each axis (1 for a 3×3 footprint). */
+export const BASE_FOOTPRINT_R = (BASE_FOOTPRINT - 1) / 2;
+
+/** All tile coordinates a base anchored (centered) at (ax,ay) occupies — BASE_FOOTPRINT² cells. */
+export function baseFootprintCells(ax: number, ay: number): { x: number; y: number }[] {
+  const cells: { x: number; y: number }[] = [];
+  for (let dy = -BASE_FOOTPRINT_R; dy <= BASE_FOOTPRINT_R; dy++) {
+    for (let dx = -BASE_FOOTPRINT_R; dx <= BASE_FOOTPRINT_R; dx++) {
+      cells.push({ x: ax + dx, y: ay + dy });
+    }
+  }
+  return cells;
+}
+
+/** True if the whole 3×3 block anchored at (ax,ay) fits inside [0,mapW) × [0,mapH). */
+export function baseFootprintInBounds(ax: number, ay: number, mapW: number, mapH: number): boolean {
+  return ax - BASE_FOOTPRINT_R >= 0 && ay - BASE_FOOTPRINT_R >= 0
+      && ax + BASE_FOOTPRINT_R < mapW && ay + BASE_FOOTPRINT_R < mapH;
+}
+
+// ── Procedural distribution knobs (U6 initial DRAFT; centralized here for easy tuning) ────────
+export const SLG_GEN = {
+  /** Resource tile density: fraction of non-neutral tiles classified as resource tiles (ADR-032: raised to 1.0 — no pure no-yield neutral land; every non-blocking/keep/stronghold/center tile is some level of resource land). */
+  resourceDensity: 1.0,
+  /** familyKeep noise threshold; higher = sparser. */
+  keepThreshold: 0.86,
+  /** Minimum distance ratio from a tile's own province capital for strategic points (ADR-034: distance is now to the tile's own province's capital, angle-sector-derived — prevents keeps from spawning too close to any capital). */
+  keepMinDistRatio: 0.12,
+  /** Level noise frequency (higher = more fragmented patches; feeds the ADR-034 §4 per-ring cumulative-distribution level lookup, not a distance falloff). */
+  levelFreq: 1 / 14,
+  /** Biome (resource type) noise frequency (lower = larger patches → large same-resource zones encourage specialization and trade). */
+  biomeFreq: 1 / 40,
+  /** Strategic point noise frequency. */
+  keepFreq: 1 / 22,
+  /**
+   * Biome quad-partition thresholds (ink < t0 < paper < t1 < graphite < t2 < metal). Four "land-mined" resources are biome-generated
+   * (SLG_CITY_DESIGN D-CITY-2, ADR-022): graphite is the 4th land resource, given a map faucet here so the building system can sink it.
+   * `sticker` (copper-coin slot) is NOT a land resource — it is self-produced by the home-city stickerShop (民居模型), so it has no biome threshold.
+   * ⚠ ADR-022 caveat: this changes the procedural map (unclaimed tiles only — claimed tiles persist resType in the DB). Pre-launch, so applied
+   * globally; once a season is live, gate behind a season-version flag instead of mutating live maps. Thresholds are DRAFT, tune in the balance pass.
+   */
+  biomeInkMax: 0.30,
+  biomePaperMax: 0.55,
+  biomeGraphiteMax: 0.78,
+  /** Level cap for neutral open land (keeps neutral tiles low-value). */
+  neutralLevelCap: 2,
+  // ── S8-6.6 blocking terrain + gates: obstacle/gate placement is now geometric (ring/river/branch bands,
+  // ADR-034 §2.2/§2.3, see TERRAIN_BAND_WIDTH_*/RING_GATE_*/RIVER_*/BRANCH_COUNT below), not noise-threshold-based.
+  // ── G8 strongholds (§3.1) ──────────────────────────
+  /**
+   * Stronghold per-tile hash threshold (ECONOMY_NUMBERS §13-SLG-STRONGHOLD). Strongholds are isolated
+   * strategic points at ~0.3% of the map — NOT contiguous zones — so they use a per-tile uniform hash
+   * gate `rand2(x,y,seed^0x0555) > strongholdThreshold` (a Bernoulli(1-threshold) draw per tile), NOT
+   * smooth value-noise. On a 300×300 map a low-frequency noise field has only ~18 lattice points, so a
+   * `noise > threshold` gate swings the count 0→thousands across seeds (CV≈1.0, 14% of worlds get ZERO)
+   * and clumps cells into large blobs. A per-tile Bernoulli(p=1-0.997=0.003) over 90,000 tiles gives
+   * count ≈ 270 ± √(90000·0.003·0.997) ≈ ±16 (CV ≈ 0.06), isolated points, hitting the "~0.3% extremely
+   * sparse" intent deterministically. Higher = sparser.
+   */
+  strongholdThreshold: 0.997,
+  /** Minimum distance ratio from a tile's own province capital for strongholds (ADR-034: distance is now to the tile's own province's capital — preserves a safe zone for new players in every province). */
+  strongholdMinDistRatio: 0.25,
+} as const;
+
+// ── Numeric constants (U6 DRAFT; tune after launch) ────────────────────
+export const TROOP_CAP_BASE = 2000;
+export const MARCH_SPEED_SEC_PER_TILE = 6; // seconds of march time per tile
+export const MARCH_MIN_TROOPS = 1; // minimum troops required to send a march
+export const RESOURCE_CAP = 200_000;
+export const RESOURCE_YIELD_BASE = 100; // base yield per tile per hour (× level multiplier)
+export const PROTECTION_SEC = 8 * 3600; // protection duration for new players / after home-city is destroyed
+export const FAMILY_CAP = 30; // S8-4 decision: max family size 30 members
+/** Family channel message retention duration (seconds); TTL anchor field must be a BSON Date (see FamilyMessageDoc note in db.ts). */
+export const FAMILY_MSG_RETENTION_SEC = 7 * 24 * 3600; // 7 days
+/** Maximum body length for a single family channel message. */
+export const FAMILY_MSG_BODY_MAX = 500;
+// ── Sect (S8-4b, §2.1 / §8.2) ──────────────────────────────
+/** Maximum number of families in a sect (≤30 families → ≤900 players). */
+export const SECT_FAMILY_CAP = 30;
+/** Coin cost to found a sect (U5: 5000 coins + prosperity threshold). */
+export const SECT_CREATE_COST = 5000;
+/** Maximum number of other sects a sect can ally with (alliance cap: ≤3 sects = self + 2 allies). */
+export const SECT_ALLY_CAP = 2;
+/** Fraction of current resources lost by all sect members when the sect leader's home city is destroyed (§8.2 major penalty). */
+export const SECT_LEADER_PENALTY_RATE = 0.5;
+/** Vote threshold to remove the sect leader (family-leader votes / number of families ≥ this ratio; §8.2 requires >2/3). */
+export const SECT_REMOVAL_VOTE_RATIO = 2 / 3;
+
+export const GARRISON_PER_TILE = 500;
+/** Minimum garrison required to occupy a tile (becomes that tile's garrison upon arrival; march is rejected if insufficient). */
+export const OCCUPY_MIN_TROOPS = GARRISON_PER_TILE;
+export const SEASON_LENGTH_DAYS = 60; // U3: 2 months
+/** Coin cost to voluntarily relocate the home city (§3.4 / §8.2 home-city relocation: choose a new site + pay to move; applies to all players, not exclusive to the sect leader). */
+export const RELOCATE_COST = 500;
+
+/**
+ * Resource cost to build a watchtower (§18 G5 V2 remaining item "fixed-radius persistent vision source", DRAFT).
+ * Built on a player's own territory (not the home city); the tile is upgraded to a large-radius vision source (VISION_WATCHTOWER_RADIUS), persisted in the DB with the tile (lost if the tile is lost). Costs resources, not coins.
+ */
+export const WATCHTOWER_COST: Readonly<Record<ResourceType, number>> = { ink: 0, paper: 3000, graphite: 0, metal: 2000, sticker: 0 };
+
+/**
+ * Gateway horizontal-scale push channel (SOC9 / §8.4): worldsvc publishes "one message + recipient list" to this Redis
+ * pub/sub channel; each gateway instance subscribes and fans out to recipient sockets that are online on that instance.
+ * This avoids O(n) direct HTTP pushes from worldsvc to sects of ≤900 players (too much traffic), and naturally supports routing across multiple gateway instances.
+ */
+export const GW_PUSH_REDIS_CHANNEL = 'nw:gw:push';
+
+// ── Training queue (S8-2, §4 troop cycle) ──────────────────────────────
+/** Ink cost per troop trained (sustain resource; DRAFT, tune after launch). */
+export const TROOP_TRAIN_INK_COST = 10;
+/** Training time per troop (seconds, DRAFT). */
+export const TROOP_TRAIN_TIME_SEC = 5;
+/** Maximum troops per training batch (single-batch queue size cap). */
+export const TROOP_TRAIN_BATCH_MAX = 500;
+/** Maximum concurrent training batches (training queue slots). */
+export const TROOP_TRAIN_QUEUE_MAX = 2;
+/** Speed-up rate: seconds of training time per coin spent (DRAFT, 60 s/coin). */
+export const TROOP_SPEEDUP_SECS_PER_COIN = 60;
