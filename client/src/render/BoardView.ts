@@ -332,6 +332,19 @@ export class BoardView {
     }
   }
 
+  /**
+   * Highlight a single full column, used by column-targeted spells (rockslide, bridge_collapse).
+   */
+  showColumnTargetHighlight(col: number): void {
+    this.highlightLayer.clear();
+    if (col < 0 || col >= BOARD_COLS) return;
+    const r = this.laneRect(col);
+    this.highlightLayer.beginFill(HIGHLIGHT_METEOR, 0.30);
+    this.highlightLayer.lineStyle(2, HIGHLIGHT_METEOR, 0.9);
+    this.highlightLayer.drawRect(r.x, r.y, r.w, r.h);
+    this.highlightLayer.endFill();
+  }
+
   showBaseUpgradeHighlight(active: boolean): void {
     this.highlightLayer.clear();
     if (!active) return;

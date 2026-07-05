@@ -296,6 +296,9 @@ export function InputMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
         case CardType.Spell: {
           if (spellType === SpellType.Haste)       this.engine.playCard(handIndex, 0);
           else if (spellType === SpellType.Meteor)  this.engine.playCard(handIndex, col, row);
+          else if (spellType === SpellType.Rockslide || spellType === SpellType.BridgeCollapse) {
+            this.engine.playCard(handIndex, col);
+          }
           break;
         }
       }
@@ -329,6 +332,11 @@ export function InputMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
         case CardType.Spell: {
           if (spellType === SpellType.Meteor && !this.layout.isOutsideBoard(x, y)) {
             this.boardView.showMeteorTargetHighlight(col, row);
+          } else if (
+            (spellType === SpellType.Rockslide || spellType === SpellType.BridgeCollapse)
+            && !this.layout.isOutsideBoard(x, y)
+          ) {
+            this.boardView.showColumnTargetHighlight(col);
           }
           break;
         }

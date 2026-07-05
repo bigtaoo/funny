@@ -335,6 +335,7 @@ LevelDef.levelSpells?: { cardId: string; initialCount: number }[]
 
 **卡牌 UI：**
 - 滚石 / 炸桥打出后选列（同单位/建筑出牌选列，复用现有拖拽逻辑）
+- **客户端 bug 修复（2026-07-05）**：`GameRenderer/input.ts` 的 `commitCardPlay`/`updatePlacementHighlights` 此前只接了 `Haste`/`Meteor` 两个 case，`Rockslide`/`BridgeCollapse` 从未被 wire 上——选中卡后点列没有任何反应（引擎侧一直是好的）。已补上两个 spell 的 `engine.playCard(handIndex, col)` 调用和列高亮（`BoardView.showColumnTargetHighlight`），并在 `client/test/ui/gameRendererSpellInput.ui.ts` 加了 tap-select/drag 的回归测试。
 
 ### 4.9.3 escort 护送目标（原 `multi_objective`，2026-06-17 拍板）
 
