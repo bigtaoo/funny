@@ -60,6 +60,7 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
           const key = subTabs[i].key;
           if (this.activeTab !== key) { this.activeTab = key; this.scrollY = 0; this.render(); }
         },
+        { sub: true },
       );
       for (const hit of sub.hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
     }

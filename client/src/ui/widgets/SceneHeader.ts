@@ -32,6 +32,7 @@ import type { Rect } from '../../layout/ILayout';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { getCachedDisplay } from './uiCache';
+import { buildIcon, type IconKind } from '../../render/icons';
 
 /**
  * Bar styling:
@@ -133,4 +134,61 @@ export function drawSceneHeader(
   }
 
   return { headerH, backRect: { x: 0, y: 0, w: BACK_HIT_W, h: headerH } };
+}
+
+export interface HeaderCurrencyChip {
+  icon: IconKind;
+  color: number;
+  amount: number;
+}
+
+/**
+ * Right-aligned coin (+ optional material chips, + optional capacity readout) drawn
+ * on top of an already-baked header bar so it reads as part of the title row instead
+ * of a separate band underneath it (the two used to visually float apart — see the
+ * "装备/卡背包" header-alignment fix). Draw into a per-render overlay layer added
+ * *after* the cached header chrome, so the coin icon isn't hidden behind the bar.
+ */
+export function drawHeaderCurrency(
+  container: PIXI.Container,
+  w: number, headerH: number,
+  coins: number,
+  chips: readonly HeaderCurrencyChip[] = [],
+  capacity?: { text: string; color: number },
+): void {
+  const midY = headerH / 2;
+  const iconSize = Math.round(headerH * 0.32);
+  const fontSize = Math.round(headerH * 0.26);
+  const capSize = Math.round(headerH * 0.2);
+  const gap = Math.round(headerH * 0.28);
+
+  const cluster = new PIXI.Container();
+  let cx = 0;
+
+  const addChip = (icon: IconKind, color: number, amount: number): void => {
+    const ic = buildIcon(icon, iconSize, color);
+    ic.x = cx; ic.y = -iconSize / 2;
+    cluster.addChild(ic);
+    cx += iconSize + 4;
+    const lbl = txt(`${amount}`, fontSize, C.dark);
+    lbl.anchor.set(0, 0.5); lbl.x = cx; lbl.y = 0;
+    cluster.addChild(lbl);
+    cx += lbl.width + gap;
+  };
+
+  addChip('coin', C.gold, coins);
+  for (const chip of chips) addChip(chip.icon, chip.color, chip.amount);
+
+  if (capacity) {
+    const capLbl = txt(capacity.text, capSize, capacity.color);
+    capLbl.anchor.set(0, 0.5); capLbl.x = cx; capLbl.y = 0;
+    cluster.addChild(capLbl);
+    cx += capLbl.width;
+  } else {
+    cx -= gap; // trim the trailing gap after the last chip
+  }
+
+  cluster.x = w - 10 - cx;
+  cluster.y = midY;
+  container.addChild(cluster);
 }

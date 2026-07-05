@@ -11,7 +11,7 @@ import type { Scene } from '../SceneManager';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren, marginLineX } from '../../render/sketchUi';
 import { buildDecorCLayer } from '../../render/decorCLayer';
-import { drawSceneHeader } from '../../ui/widgets/SceneHeader';
+import { drawSceneHeader, drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
 import { BusyTracker } from '../../ui/busyTracker';
 import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance } from '../../game/meta/SaveData';
 import { affixKind, EQUIPMENT_INV_CAP, type EnhanceCost } from '../../game/meta/equipmentDefs';
@@ -57,7 +57,6 @@ export type EquipTab = 'inv' | 'craft';
 
 export const HUD_H = 50;
 export const RES_H = 30;       // resource bar (coins + three materials + inventory count)
-export const RES_SCALE = 2;    // currency block is drawn 2x size, parked top-right of the right column
 export const LOADOUT_H = 78;   // loadout strip at the top of the inventory tab (three slots)
 export const ROW_H = 56;
 export const FILTER_H = 28;   // slot filter bar (All / Weapon / Armor / Trinket)
@@ -134,6 +133,8 @@ export class EquipmentSceneBase {
   protected modalLayer!: PIXI.Container;
   protected toastLayer!: PIXI.Container;
   protected loadingLayer!: PIXI.Container;
+  /** Drawn *after* the static header chrome so the coin/material readout sits on top of the header bar (same row as the title), not in a separate band below it. */
+  protected headerOverlayLayer!: PIXI.Container;
 
   /** Instance id of the currently open detail panel (null = none). Re-read from save on every repaint (closed if the item was salvaged). */
   protected detailId: string | null = null;
@@ -185,6 +186,9 @@ export class EquipmentSceneBase {
       variant: 'paper', headerH: HUD_H, titleSize: 15,
     });
     this.backRect = hdr.backRect;
+
+    this.headerOverlayLayer = new PIXI.Container();
+    this.container.addChild(this.headerOverlayLayer);
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -198,6 +202,7 @@ export class EquipmentSceneBase {
     // While assigning, Back cancels the card picker rather than leaving the scene.
     this.hitRects.push({ rect: this.backRect, action: () => (this.assign ? this.cancelAssign() : this.cb.onBack()) });
 
+    this.renderHeaderCurrency();
     this.renderSidebar();
     if (this.assign) {
       this.renderAssign(this.cb.getSave());
@@ -217,50 +222,39 @@ export class EquipmentSceneBase {
   }
 
   /**
-   * Header row below the header/sidebar: the 2x currency block (top-right corner) with the
-   * slot filter bar underneath (Inventory tab only), capped left at the red margin rule so it
-   * lines up with the bag-list / item-grid split below it. Returns the y where body content
-   * (loadout / grid) should start.
+   * Coin + material + capacity readout drawn into the header row itself (headerOverlayLayer sits
+   * on top of the static header chrome), so it lines up with the "装备" title instead of floating
+   * in its own band underneath. Called on every render(), independent of renderHeaderRow/assign
+   * mode, so it stays visible even while the card-assign picker is open.
+   */
+  protected renderHeaderCurrency(): void {
+    this.headerOverlayLayer.removeChildren();
+    const save = this.cb.getSave();
+    const chips = TRACKED_MATERIALS.map((m) => ({
+      icon: m,
+      color: MAT_COLOR[m],
+      amount: save.materials[m] ?? 0,
+    }));
+    const count = Object.keys(save.equipmentInv).length;
+    drawHeaderCurrency(this.headerOverlayLayer, this.w, HUD_H, save.wallet.coins, chips, {
+      text: `${count}/${EQUIPMENT_INV_CAP}`,
+      color: count >= EQUIPMENT_INV_CAP ? C.red : C.mid,
+    });
+  }
+
+  /**
+   * Header row below the header/sidebar: the slot filter bar (Inventory tab only), capped left
+   * at the red margin rule so it lines up with the bag-list / item-grid split below it. Returns
+   * the y where body content (loadout / grid) should start.
    */
   protected renderHeaderRow(): number {
     const { w } = this;
     const top = HUD_H;
     const leftW = marginLineX(w);
-
-    // ── Right column: 2x currency block (top-right) + slot filter ──
     const rightX = leftW;
     const rightW = w - leftW;
-    const resH = RES_H * RES_SCALE;
-    const bg = new PIXI.Graphics();
-    bg.beginFill(0xf3f1ea).drawRect(rightX, top, rightW, resH).endFill();
-    this.bodyLayer.addChild(bg);
 
-    const save = this.cb.getSave();
-    const bal: Record<string, number> = {};
-    for (const m of TRACKED_MATERIALS) bal[m] = save.materials[m] ?? 0;
-    const iconSize = 16 * RES_SCALE;
-    const fontSize = 11 * RES_SCALE;
-
-    // Build the coin+material cluster in a local container (coords start at 0) so it can be
-    // measured and then right-aligned as a whole; drawCostChips returns the trailing local x.
-    const cluster = new PIXI.Container();
-    const coinIc = buildIcon('coin', iconSize, C.gold);
-    coinIc.x = 0; coinIc.y = -iconSize / 2; cluster.addChild(coinIc);
-    let cx = iconSize + 6;
-    const coinLbl = txt(`${save.wallet.coins}`, fontSize, C.dark);
-    coinLbl.anchor.set(0, 0.5); coinLbl.x = cx; coinLbl.y = 0; cluster.addChild(coinLbl);
-    cx += coinLbl.width + 20;
-    cx = this.drawCostChips(cluster, cx, 0, bal, null, C.dark, iconSize, '');
-    cluster.x = w - 10 - cx;
-    cluster.y = top + resH * 0.38;
-    this.bodyLayer.addChild(cluster);
-
-    const count = Object.keys(save.equipmentInv).length;
-    const cnt = txt(`${count}/${EQUIPMENT_INV_CAP}`, 11, count >= EQUIPMENT_INV_CAP ? C.red : C.mid);
-    cnt.anchor.set(1, 0.5); cnt.x = w - 10; cnt.y = top + resH - 12;
-    this.bodyLayer.addChild(cnt);
-
-    let rightBottom = top + resH;
+    let rightBottom = top;
     if (this.activeTab === 'inv') {
       this.renderSlotFilter(rightX, rightBottom, rightW);
       rightBottom += FILTER_H;
