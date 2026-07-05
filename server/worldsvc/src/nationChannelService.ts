@@ -69,15 +69,18 @@ export class NationChannelService {
     const seq = ++msgSeq;
     const msgId = `nm:${worldId}:${ts}:${seq}`;
 
-    // Resolve publicId from meta (best-effort; falls back to empty string if meta unavailable or profile not found).
+    // Resolve publicId + display name from meta (source of truth for renames); best-effort,
+    // falls back to the client-supplied senderName if meta is unavailable or profile not found —
+    // a stale/incorrect client-side cache must never be preferred over the account's real name.
     const profile = this.meta.available ? await this.meta.getProfile(accountId).catch(() => null) : null;
     const senderPublicId = profile?.publicId ?? '';
+    const resolvedSenderName = profile?.displayName ?? senderName;
 
     const msgDoc: NationMessageDoc = {
       _id: msgId,
       worldId,
       senderId: accountId,
-      senderName,
+      senderName: resolvedSenderName,
       senderPublicId,
       body,
       ts: new Date(ts),
@@ -85,7 +88,7 @@ export class NationChannelService {
     await cols.nationMessages.insertOne(msgDoc);
 
     // Push: prefer delegating to socialsvc (push hub, §5); fall back to direct gateway push O(n) when socialsvc is unavailable.
-    const payload = { worldId, fromPublicId: senderPublicId, fromName: senderName, body, ts };
+    const payload = { worldId, fromPublicId: senderPublicId, fromName: resolvedSenderName, body, ts };
     if (this.socialsvc.available) {
       const recipients = await this.worldMemberAccountIds(worldId, accountId);
       void this.socialsvc.push({ kind: 'world', worldId }, 'nation_msg', payload, recipients);
@@ -94,7 +97,7 @@ export class NationChannelService {
       void this.deps.gateway.broadcast(recipients, { kind: 'nation_msg', ...payload });
     }
 
-    return { id: msgId, senderId: accountId, senderName, senderPublicId, body, ts };
+    return { id: msgId, senderId: accountId, senderName: resolvedSenderName, senderPublicId, body, ts };
   }
 
   /**

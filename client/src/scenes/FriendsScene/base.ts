@@ -12,7 +12,7 @@ import { ProfilePopup } from '../../render/ProfilePopup';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
 import { buildDecorCLayer } from '../../render/decorCLayer';
-import { drawSceneHeader } from '../../ui/widgets/SceneHeader';
+import { drawSceneHeader, drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
 import type {
   FriendView,
   FriendRequestView,
@@ -76,6 +76,8 @@ export interface FriendsSceneCallbacks {
   loadWorldChat?(before?: number): Promise<WorldChatMessage[]>;
   sendWorldChat?(body: string, senderName: string): Promise<void>;
   playerName?(): string;
+  /** Current coin balance — shown top-right on the world channel tab (each post costs coins). */
+  getCoins?(): number;
   /** Pre-select a tab on open — used by the lobby mail shortcut to jump straight to the mail tab. */
   defaultTab?: 'friends' | 'mail';
 }
@@ -414,6 +416,8 @@ export class FriendsSceneBase {
     const { w, h } = this;
     const hdr = drawSceneHeader(this.container, w, h, t('friends.title'), { titleSize: Math.round(h * 0.04) });
     this.hits.push({ rect: hdr.backRect, fn: () => this.onBack() });
+    // World channel posts cost coins — show the current balance top-right while on that tab.
+    if (this.tab === 'world' && this.cb.getCoins) drawHeaderCurrency(this.container, w, hdr.headerH, this.cb.getCoins());
   }
 
   // ── Toast & shared helpers ─────────────────────────────────────────────────────

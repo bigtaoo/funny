@@ -195,4 +195,68 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
       expect(history[0].senderPublicId).toBe('');
     });
   });
+
+  // Regression: senderName must never trust a stale client-side cache (e.g. leftover from before
+  // a rename, or the raw loginId fallback) once meta can resolve the account's real display name.
+  describe('regression: senderName is resolved from meta, not blindly trusted from the client', () => {
+    it('sendMessage() prefers meta.displayName over the client-supplied senderName', async () => {
+      const fakeMeta: WorldMetaClient = {
+        available: true,
+        async getProfile(id) { return id === 'alice' ? { publicId: 'alice#0042', displayName: 'RealNickname' } : null; },
+        async deductMaterial() { throw new Error('unused'); },
+        async grantMaterial() { /* no-op */ },
+        async getSaveFields() { return null; },
+        async escrowEquipment() { throw new Error('unused'); },
+        async grantEquipment() { /* no-op */ },
+        async grantTitle() { /* no-op */ },
+      };
+      const svc = new NationChannelService({
+        cols: mongo!.collections,
+        gateway: fakeGateway,
+        commercial: fakeCommercial,
+        meta: fakeMeta,
+        now: () => 7000,
+      });
+      // Client sends a stale cached name (e.g. the raw loginId) — meta's real nickname must win.
+      const result = await svc.sendMessage(W, 'alice', '233784986', 'hi');
+      expect(result.senderName).toBe('RealNickname');
+      expect(broadcasts[0]['fromName']).toBe('RealNickname');
+
+      const history = await svc.getChannel(W, 'alice');
+      expect(history[0].senderName).toBe('RealNickname');
+    });
+
+    it('sendMessage() falls back to the client-supplied senderName when meta has no profile for the account', async () => {
+      const fakeMeta: WorldMetaClient = {
+        available: true,
+        async getProfile() { return null; },
+        async deductMaterial() { throw new Error('unused'); },
+        async grantMaterial() { /* no-op */ },
+        async getSaveFields() { return null; },
+        async escrowEquipment() { throw new Error('unused'); },
+        async grantEquipment() { /* no-op */ },
+        async grantTitle() { /* no-op */ },
+      };
+      const svc = new NationChannelService({
+        cols: mongo!.collections,
+        gateway: fakeGateway,
+        commercial: fakeCommercial,
+        meta: fakeMeta,
+        now: () => 8000,
+      });
+      const result = await svc.sendMessage(W, 'alice', 'ClientFallback', 'hi');
+      expect(result.senderName).toBe('ClientFallback');
+    });
+
+    it('sendMessage() falls back to the client-supplied senderName when meta is not configured', async () => {
+      const svc = new NationChannelService({
+        cols: mongo!.collections,
+        gateway: fakeGateway,
+        commercial: fakeCommercial,
+        now: () => 9000,
+      });
+      const result = await svc.sendMessage(W, 'alice', 'ClientFallback', 'hi');
+      expect(result.senderName).toBe('ClientFallback');
+    });
+  });
 });

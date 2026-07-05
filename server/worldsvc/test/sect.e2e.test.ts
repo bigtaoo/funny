@@ -133,7 +133,7 @@ describe.skipIf(!mongo)('SectService e2e', () => {
 
   // Capture sect channel fan-out (recipients + message) to assert real-time push targets are correct.
   // Fan-out flows through socialsvc.push (preferred) or gateway.broadcast (fallback); both feed this array.
-  const broadcasts: Array<{ recipients: string[]; kind: string; body?: string; fromPublicId?: string }> = [];
+  const broadcasts: Array<{ recipients: string[]; kind: string; body?: string; fromPublicId?: string; fromName?: string }> = [];
   const fakeGateway: WorldGatewayClient = {
     available: true,
     async push() { /* sect does not use targeted push */ },
@@ -155,8 +155,8 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     broadcasts.length = 0;
     socialsvc = new FakeSocialsvc();
     socialsvc.onPush = (event, payload, targets) => {
-      const p = payload as { body?: string; fromPublicId?: string };
-      broadcasts.push({ recipients: targets ?? [], kind: event, body: p.body, fromPublicId: p.fromPublicId });
+      const p = payload as { body?: string; fromPublicId?: string; fromName?: string };
+      broadcasts.push({ recipients: targets ?? [], kind: event, body: p.body, fromPublicId: p.fromPublicId, fromName: p.fromName });
     };
     sect = new SectService({ cols, commercial, gateway: fakeGateway, socialsvc, now: () => Date.now() });
   });
@@ -405,5 +405,37 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     const sectNoMeta = new SectService({ cols: mongo!.collections, commercial, gateway: fakeGateway, socialsvc, now: () => Date.now() });
     await sectNoMeta.sendMessage(W, 'alice', 'Alice', 'hi again');
     expect((broadcasts[0] as Record<string, unknown>)['fromPublicId']).toBe('');
+  });
+
+  // Regression: senderName must never trust a stale client-side cache (e.g. leftover from before
+  // a rename, or the raw loginId fallback) once meta can resolve the account's real display name.
+  it('channel: senderName resolved from meta.displayName, not blindly trusted from the client', async () => {
+    await makeFamily('alice', 'A', 'AA');
+    await sect.createSect(W, 'alice', 'Sky', 'SKY');
+
+    const fakeMeta: WorldMetaClient = {
+      available: true,
+      async getProfile(id) { return id === 'alice' ? { publicId: 'alice#1234', displayName: 'RealNickname' } : null; },
+      async deductMaterial() { throw new Error('unused'); },
+      async grantMaterial() { /* no-op */ },
+      async getSaveFields() { return null; },
+      async escrowEquipment() { throw new Error('unused'); },
+      async grantEquipment() { /* no-op */ },
+      async grantTitle() { /* no-op */ },
+    };
+    const sectWithMeta = new SectService({ cols: mongo!.collections, commercial, gateway: fakeGateway, socialsvc, meta: fakeMeta, now: () => Date.now() });
+    broadcasts.length = 0;
+    // Client sends a stale cached name (e.g. the raw loginId) — meta's real nickname must win.
+    const result = await sectWithMeta.sendMessage(W, 'alice', '233784986', 'hi from alice');
+    expect(result.senderName).toBe('RealNickname');
+    expect(broadcasts[0]['fromName']).toBe('RealNickname');
+    const msgs = await sectWithMeta.getChannel(W, 'alice');
+    expect(msgs[0].senderName).toBe('RealNickname');
+
+    // Meta not configured → falls back to the client-supplied senderName.
+    broadcasts.length = 0;
+    const sectNoMeta = new SectService({ cols: mongo!.collections, commercial, gateway: fakeGateway, socialsvc, now: () => Date.now() });
+    const fallback = await sectNoMeta.sendMessage(W, 'alice', 'ClientFallback', 'hi again');
+    expect(fallback.senderName).toBe('ClientFallback');
   });
 });
