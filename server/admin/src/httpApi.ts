@@ -419,6 +419,50 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true, ticket });
         }
 
+        // ── SLG map templates (§24, admin map editor) ──
+        if (method === 'GET' && path === '/admin/slg/map-templates') {
+          requireCap(actor, 'slg.map.view');
+          return send(res, 200, { ok: true, templates: await svc.slgListMapTemplates() });
+        }
+        if (method === 'POST' && path === '/admin/slg/map-templates/generate') {
+          requireCap(actor, 'slg.map.manage');
+          const b = await readJson(req);
+          const summary = await svc.slgGenerateMapTemplate(actor.adminId, str(b.templateId), Number(b.width), Number(b.height));
+          return send(res, 200, { ok: true, template: summary });
+        }
+        const mapTiles = /^\/admin\/slg\/map-templates\/([^/]+)\/tiles$/.exec(path);
+        if (method === 'GET' && mapTiles) {
+          requireCap(actor, 'slg.map.view');
+          const templateId = decodeURIComponent(mapTiles[1]!);
+          const tiles = await svc.slgGetMapTemplateTiles(
+            templateId,
+            Number(url.searchParams.get('x') ?? '0'),
+            Number(url.searchParams.get('y') ?? '0'),
+            Number(url.searchParams.get('w') ?? '100'),
+            Number(url.searchParams.get('h') ?? '100'),
+          );
+          return send(res, 200, { ok: true, tiles });
+        }
+        if (method === 'PUT' && mapTiles) {
+          requireCap(actor, 'slg.map.manage');
+          const templateId = decodeURIComponent(mapTiles[1]!);
+          const b = await readJson(req);
+          const result = await svc.slgSaveMapTemplateTiles(actor.adminId, templateId, Array.isArray(b.tiles) ? (b.tiles as never[]) : []);
+          return send(res, 200, { ok: true, ...result });
+        }
+        const mapActivate = /^\/admin\/slg\/map-templates\/([^/]+)\/activate$/.exec(path);
+        if (method === 'POST' && mapActivate) {
+          requireCap(actor, 'slg.map.manage');
+          await svc.slgActivateMapTemplate(actor.adminId, decodeURIComponent(mapActivate[1]!));
+          return send(res, 200, { ok: true });
+        }
+        const mapDelete = /^\/admin\/slg\/map-templates\/([^/]+)$/.exec(path);
+        if (method === 'DELETE' && mapDelete) {
+          requireCap(actor, 'slg.map.manage');
+          await svc.slgDeleteMapTemplate(actor.adminId, decodeURIComponent(mapDelete[1]!));
+          return send(res, 200, { ok: true });
+        }
+
         // ── Promo code management (B-PROMO, promo.manage) ──
         if (method === 'GET' && path === '/admin/promo/codes') {
           requireCap(actor, 'promo.manage');

@@ -13,6 +13,7 @@ import { GachaMixin } from './service/gacha';
 import { PromoMixin } from './service/promo';
 import { LadderMixin } from './service/ladder';
 import { WorldMixin } from './service/world';
+import { MapTemplatesMixin } from './service/mapTemplates';
 import { SlgAuditMixin } from './service/slgAudit';
 import { AuthMixin } from './service/auth';
 import { AccountsMixin } from './service/accounts';
@@ -30,11 +31,13 @@ const Assembled = FlagsMixin(
       AccountsMixin(
         AuthMixin(
           SlgAuditMixin(
-            WorldMixin(
-              LadderMixin(
-                PromoMixin(
-                  GachaMixin(
-                    EventsMixin(AdminServiceBase),
+            MapTemplatesMixin(
+              WorldMixin(
+                LadderMixin(
+                  PromoMixin(
+                    GachaMixin(
+                      EventsMixin(AdminServiceBase),
+                    ),
                   ),
                 ),
               ),

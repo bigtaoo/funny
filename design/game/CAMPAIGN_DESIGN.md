@@ -123,6 +123,10 @@
 - `CombatSystem.findTargetForBuilding`：`unit.flying && !building.canTargetFlying` 时跳过
 - 箭塔 `canTargetFlying = true`；兵营 = false（默认）
 - 待接入：朱雀 / 哈耳庇厄 PvP 卡（数值草案：HP 45 / 速度 1.4 / 攻击 12 / 攻击间隔 1.0s / 射程 1 / 费用 11 墨）
+- **补漏（2026-07-05）**：弓箭手蓝图（`config.ts` `UNIT_BLUEPRINTS[Archer]`）此前从未真正设置 `canTargetFlying: true`，
+  与本节文档描述及 `types.ts` 注释（"archers = true"）不符——实际上线以来只有箭塔能命中哈耳庇厄，地面兵种打飞行波会卡死在
+  Attacking 空转（详见 `DIFFICULTY_SIM.md` 难度模拟器 AI 侧发现）。已补 `canTargetFlying: true` 使弓箭手与文档一致；
+  用难度模拟器验证 ch3_lv3/ch5_lv8/ch6_lv4/5/7/9/10（均已是基线 AI 各档 0% 的过载关）修复前后表现一致，无新增回归。
 
 #### 4.4c Trait 系统全表
 

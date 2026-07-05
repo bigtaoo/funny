@@ -97,9 +97,9 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
     // —— Core regression assertions: fields must exist and be the correct type ——
     expect(Array.isArray(r.data.defs.rewards)).toBe(true);
     expect(r.data.defs.rewards.length).toBe(30);
-    // Slot 1 = stamina 30; slot 7 (index 6) = milestone coins.
+    // Slot 1 = stamina 30; slot 7 (index 6) = milestone stamina pack (RETENTION_DESIGN §2.1).
     expect(r.data.defs.rewards[0]).toMatchObject({ kind: 'stamina', count: 30 });
-    expect(r.data.defs.rewards[6]).toMatchObject({ kind: 'coins', count: 5 });
+    expect(r.data.defs.rewards[6]).toMatchObject({ kind: 'stamina', count: 100 });
     // Each slot has kind + count (when stripped, count becomes undefined → client displays +undefined).
     for (const rw of r.data.defs.rewards) {
       expect(typeof rw.kind).toBe('string');

@@ -295,6 +295,7 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 - **EventScene（活动）**：兑换奖励条在原文字标签前加类型 glyph 前缀（coin/材料/brush，可映射时），保留文字名，信息不丢。
 - **AchievementScene（成就）**：分类 Tab 加类别字形（`pve`→`book` / `pvp`→`swords` / `collection`→`brush` / `progression`→`trophy`）；未达成档位的奖励由「reward N coins」文字改为 `coin` 字形 + 数字。
 - **AchievementScene 分类 Tab 布局改版（2026-07-04）**：原横排 Tab 条压在页面红色装订线上、Tab 偏小。改为竖排侧栏——三/四个分类 Tab 堆叠在红线**左侧**（图标在上、文字在下，因侧栏窄），每格更大；成就卡片内容整体移到红线**右侧**（`marginLineX(w)` 起算），呼应笔记本纸「装订线 + 正文」的既有分区，不再跨线压字。
+- **DailyScene 月历/任务改 Tab（2026-07-05）**：同上一条思路——原「月历+每日任务」左右分栏同屏显示两块，改为「月历」「每日任务」两个 Tab 堆叠在红线**左侧**（纯文字，无图标；沿用 AchievementScene 的 Tab 样式），内容区一次只画一个，整块移到红线**右侧**，不再区分横竖屏两套分栏比例。签到格奖励 glyph 补齐 `material`（scrap/lead/binding，同 EventScene 映射）/`card`（`cards`）/`equipment`（`armor`），单件奖励（card/equipment）只画 glyph 不带数量，同 BattlePassScene 的 skin 奖励。
 - **CollectionScene**：见 §4.5 属性行 chip。
 - 全部走 `buildIcon` 烘焙缓存共享纹理，销毁经各场景既有 `tearDownChildren`（Sprite 走 `{children:true}`、`texture:false` 不碰共享纹理，符合防泄漏契约）。验证：`tsc --noEmit` + `build:web` + `test:ui`（85 例）全绿。
 - **待批②（需新增图标定义或谨慎布局）**：CardScene/TeamsScene 无属性文字、装备槽缺 `trinket` 字形；CityScene/WorldMapScene 的 SLG 资源与 GachaScene 稀有度、`event/battlepass` 的 `pass_required` 🔒 均需新字形。

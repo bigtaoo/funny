@@ -6,8 +6,8 @@
     "kind": "survive"
   },
   "enemyScale": {
-    "hp": 1.49,
-    "damage": 1.35
+    "hp": 1.18,
+    "damage": 1.12
   },
   "loadout": [
     "max_1",
@@ -18,142 +18,142 @@
   "waves": {
     "entries": [
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "infantry",
         "col": 4,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 15
       },
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "infantry",
         "col": 7,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 15
       },
       {
-        "atTick": 300,
+        "atTick": 360,
         "unitType": "shieldbearer",
         "col": 3,
         "count": 1
       },
       {
-        "atTick": 300,
+        "atTick": 360,
         "unitType": "infantry",
         "col": 1,
-        "count": 4,
+        "count": 2,
         "spacingTicks": 9
       },
       {
-        "atTick": 300,
+        "atTick": 360,
         "unitType": "infantry",
         "col": 10,
-        "count": 4,
+        "count": 2,
         "spacingTicks": 9
       },
       {
-        "atTick": 540,
+        "atTick": 600,
         "unitType": "shieldbearer",
         "col": 4,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 22
       },
       {
-        "atTick": 540,
+        "atTick": 600,
         "unitType": "shieldbearer",
         "col": 7,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 22
       },
       {
-        "atTick": 540,
+        "atTick": 600,
         "unitType": "infantry",
         "col": 0,
-        "count": 4,
+        "count": 2,
         "spacingTicks": 8
       },
       {
-        "atTick": 780,
+        "atTick": 840,
         "unitType": "shieldbearer",
         "col": 4,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 38
       },
       {
-        "atTick": 780,
+        "atTick": 840,
         "unitType": "shieldbearer",
         "col": 7,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 38
       },
       {
-        "atTick": 780,
+        "atTick": 840,
         "unitType": "infantry",
         "col": 2,
-        "count": 4,
+        "count": 2,
         "spacingTicks": 13
       },
       {
-        "atTick": 780,
+        "atTick": 840,
         "unitType": "infantry",
         "col": 9,
-        "count": 4,
+        "count": 2,
         "spacingTicks": 13
       },
       {
-        "atTick": 1020,
+        "atTick": 1080,
         "unitType": "shieldbearer",
         "col": 0,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 35
       },
       {
-        "atTick": 1020,
+        "atTick": 1080,
         "unitType": "shieldbearer",
         "col": 11,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 35
       },
       {
-        "atTick": 1020,
+        "atTick": 1080,
         "unitType": "infantry",
         "col": 3,
-        "count": 5,
+        "count": 4,
         "spacingTicks": 7
       },
       {
-        "atTick": 1020,
+        "atTick": 1080,
         "unitType": "infantry",
         "col": 8,
-        "count": 5,
+        "count": 4,
         "spacingTicks": 7
       },
       {
-        "atTick": 1260,
+        "atTick": 1320,
         "unitType": "shieldbearer",
         "col": 3,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 32
       },
       {
-        "atTick": 1260,
+        "atTick": 1320,
         "unitType": "shieldbearer",
         "col": 8,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 32
       },
       {
-        "atTick": 1260,
+        "atTick": 1320,
         "unitType": "shieldbearer",
         "col": 4,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 20
       },
       {
-        "atTick": 1260,
+        "atTick": 1320,
         "unitType": "shieldbearer",
         "col": 7,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 20
       }
     ]
@@ -170,5 +170,7 @@
       "binding": 1
     }
   },
-  "nameKey": "campaign.ch2.lv8.name"
+  "nameKey": "campaign.ch2.lv8.name",
+  "startInk": 3,
+  "inkRegenMult": 0.96
 }

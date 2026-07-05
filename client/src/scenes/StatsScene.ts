@@ -3,10 +3,11 @@ import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren, marginLineX } from '../render/sketchUi';
 import { buildIcon, type IconKind } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
+import { drawSidebarTabs, sidebarItemHeight, type HubTab } from '../ui/widgets/HubTabs';
 import { MATERIAL_ORDER } from '../game/balance/pveUpgrades';
 import type { MatchHistoryEntry } from '../net/ApiClient';
 
@@ -134,41 +135,36 @@ export class StatsScene implements Scene {
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
-    // Top-bar right side: achievements (far right) + titles (to its left); both provided only when online.
-    // Layout accumulates nextRight right-to-left to handle the case where one is absent.
-    const rightPad = Math.round(w * 0.04);
-    const btnGap = Math.round(w * 0.03);
-    let nextRight = w - rightPad;
-
-    if (this.cb.onOpenAchievements) {
-      const ach = txt(t('stats.achievements'), Math.round(h * 0.026), C.gold, true);
-      ach.anchor.set(1, 0.5); ach.x = nextRight; ach.y = tbH / 2;
-      this.container.addChild(ach);
-      this.hits.push({
-        rect: { x: nextRight - ach.width - Math.round(w * 0.02), y: 0, w: ach.width + Math.round(w * 0.04), h: tbH },
-        fn: () => this.cb.onOpenAchievements!(),
+    // Left margin rail: 称号 (titles) + 成就 (achievements) shortcuts, stacked inside the
+    // notebook-margin gutter below the header (CardScene/EquipmentScene sidebar convention),
+    // so the stat panels start clear of the red margin rule instead of the rule cutting
+    // through them.
+    const sidebarW = marginLineX(w);
+    const sidebarTabs: HubTab[] = [];
+    if (this.cb.onOpenTitles) sidebarTabs.push({ label: t('stats.titles'), active: false, icon: 'medal' });
+    if (this.cb.onOpenAchievements) sidebarTabs.push({ label: t('stats.achievements'), active: false, icon: 'trophy' });
+    const sidebarTop = tbH + Math.round(h * 0.02);
+    if (sidebarTabs.length > 0) {
+      const { hits } = drawSidebarTabs(this.container, sidebarW, sidebarTop, h, sidebarTabs, (i) => {
+        if (sidebarTabs[i].icon === 'medal') this.cb.onOpenTitles!();
+        else this.cb.onOpenAchievements!();
       });
-      if (this.cb.hasClaimableAchievement) {
+      this.hits.push(...hits);
+      if (this.cb.hasClaimableAchievement && this.cb.onOpenAchievements) {
+        const achIdx = sidebarTabs.findIndex((tab) => tab.icon === 'trophy');
+        const itemH = sidebarItemHeight(h);
+        const itemGap = Math.round(h * 0.015);
+        const cy = sidebarTop + achIdx * (itemH + itemGap);
         const dot = new PIXI.Graphics();
         const r = Math.round(h * 0.011);
         dot.beginFill(0xee3333); dot.drawCircle(0, 0, r); dot.endFill();
-        dot.x = nextRight + r; dot.y = tbH / 2 - Math.round(h * 0.016);
+        dot.x = sidebarW - r; dot.y = cy + r;
         this.container.addChild(dot);
       }
-      nextRight = nextRight - ach.width - btnGap;
-    }
-
-    if (this.cb.onOpenTitles) {
-      const titl = txt(t('stats.titles'), Math.round(h * 0.026), C.gold, true);
-      titl.anchor.set(1, 0.5); titl.x = nextRight; titl.y = tbH / 2;
-      this.container.addChild(titl);
-      this.hits.push({
-        rect: { x: nextRight - titl.width - Math.round(w * 0.02), y: 0, w: titl.width + Math.round(w * 0.04), h: tbH },
-        fn: () => this.cb.onOpenTitles!(),
-      });
     }
 
     const pad = Math.round(w * 0.04);
+    const contentX = sidebarW + Math.round(w * 0.025);
     const topY = tbH + Math.round(h * 0.035);
     const gap = Math.round(h * 0.022);
 
@@ -223,11 +219,11 @@ export class StatsScene implements Scene {
       // column's content roughly the same height instead of leaving the old layout's
       // large empty gap under the short campaign panel.
       const colGap = Math.round(w * 0.025);
-      const totalW = w - pad * 2;
+      const totalW = w - contentX - pad;
       const leftW = Math.round(totalW * 0.46);
       const rightW = totalW - leftW - colGap;
-      const leftX = pad;
-      const rightX = pad + leftW + colGap;
+      const leftX = contentX;
+      const rightX = contentX + leftW + colGap;
 
       // Left: ranked + campaign + collection
       let ly = this.drawSection(leftX, topY, leftW, t('stats.pvp'), C.accent, pvpRows);
@@ -240,12 +236,12 @@ export class StatsScene implements Scene {
       this.drawHistorySection(rightX, topY, rightW);
     } else {
       // ── Portrait: single column with narrower margins ───────────────────────────
-      const secW = w - pad * 2;
+      const secW = w - contentX - pad;
       let y = topY;
-      y = this.drawSection(pad, y, secW, t('stats.pvp'), C.accent, pvpRows); y += gap;
-      y = this.drawSection(pad, y, secW, t('stats.campaign'), C.gold, campaignRows); y += gap;
-      y = this.drawSection(pad, y, secW, t('stats.collection'), C.green, collectionRows); y += gap;
-      this.drawHistorySection(pad, y, secW);
+      y = this.drawSection(contentX, y, secW, t('stats.pvp'), C.accent, pvpRows); y += gap;
+      y = this.drawSection(contentX, y, secW, t('stats.campaign'), C.gold, campaignRows); y += gap;
+      y = this.drawSection(contentX, y, secW, t('stats.collection'), C.green, collectionRows); y += gap;
+      this.drawHistorySection(contentX, y, secW);
     }
   }
 

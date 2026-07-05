@@ -9714,10 +9714,22 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     ],
                     "properties": {
                       "kind": {
-                        "type": "string"
+                        "type": "string",
+                        "enum": [
+                          "coins",
+                          "stamina",
+                          "material",
+                          "card",
+                          "equipment"
+                        ]
                       },
                       "count": {
                         "type": "integer"
+                      },
+                      "id": {
+                        "type": "string",
+                        "description": "Material id (scrap/lead/binding)",
+                        "set only when kind=material": null
                       }
                     }
                   }
@@ -10279,11 +10291,18 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   "type": "string",
                   "enum": [
                     "coins",
-                    "stamina"
+                    "stamina",
+                    "material",
+                    "card",
+                    "equipment"
                   ]
                 },
                 "count": {
                   "type": "integer"
+                },
+                "id": {
+                  "type": "string",
+                  "description": "Material id (material) or the drawn defId (card/equipment)"
                 }
               }
             }

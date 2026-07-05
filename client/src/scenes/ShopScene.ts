@@ -7,6 +7,7 @@ import type { ShopItem } from '../net/ApiClient';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { buildIcon, type IconKind } from '../render/icons';
+import { loadCoinIconAtlas, getCoinIconTexture } from '../render/coinIconAtlas';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
@@ -30,6 +31,9 @@ const WEB_COIN_TIERS: CoinTierDef[] = [
 
 // Per-tier treasure glyph — escalating gold so bigger tiers read richer (ascending order).
 const COIN_TIER_ICONS: IconKind[] = ['coin', 'coins', 'coinStack', 'coinSack', 'coinChest'];
+
+// The subset of IconKind with AI bitmap art in assets/shop/coins.{png,json} (coinIconAtlas.ts).
+const AI_COIN_ICONS = new Set<IconKind>(COIN_TIER_ICONS);
 
 // Subscription-card display prices (¥). Mirror of @nw/shared MONTHLY/YEAR_CARD_PRICE_YUAN — the real IAP charge is
 // server-authorized (no coins debited); these drive the strike-through + savings badge only. Year = 12×¥30 (¥360) at ~9折 → ¥298.
@@ -155,6 +159,26 @@ export class ShopScene implements Scene {
     if (cb.redeemPromo) this.setupHiddenInput();
     this.render();
     void this.loadItems();
+    loadCoinIconAtlas()
+      .catch((err) => console.warn('[ShopScene] coin icon atlas load failed:', err))
+      .then(() => this.render());
+  }
+
+  /**
+   * Coin-tier icon: the AI bitmap sprite once assets/shop/coins.png is loaded
+   * (revenue-critical recharge page, upgraded from the procedural glyph —
+   * see chat 2026-07-05), falling back to the procedural `buildIcon` glyph
+   * for any other icon kind or while the atlas is still loading.
+   */
+  private coinIcon(kind: IconKind, size: number, color: number): PIXI.DisplayObject {
+    const tex = AI_COIN_ICONS.has(kind) ? getCoinIconTexture(kind) : null;
+    if (tex) {
+      const sprite = new PIXI.Sprite(tex);
+      sprite.width = size;
+      sprite.height = size;
+      return sprite;
+    }
+    return buildIcon(kind, size, color);
   }
 
   // ── Scene interface ───────────────────────────────────────────────────────
@@ -397,7 +421,7 @@ export class ShopScene implements Scene {
     balNum.anchor.set(1, 0.5); balNum.x = w - Math.round(w * 0.04); balNum.y = tbH / 2;
     this.container.addChild(balNum);
     const balIcon = Math.round(h * 0.036);
-    const bIcon = buildIcon('coin', balIcon, C.gold);
+    const bIcon = this.coinIcon('coin', balIcon, C.gold);
     bIcon.x = balNum.x - balNum.width - balIcon - Math.round(w * 0.008);
     bIcon.y = tbH / 2 - balIcon / 2;
     this.container.addChild(bIcon);
@@ -658,7 +682,7 @@ export class ShopScene implements Scene {
     const iconS = Math.round(ch * 0.32);
     const iconX = x + pad;
     const iconY = y + Math.round(ch * 0.30);
-    const icon = buildIcon(spec.icon, iconS, spec.iconColor);
+    const icon = this.coinIcon(spec.icon, iconS, spec.iconColor);
     icon.x = iconX; icon.y = iconY;
     body.addChild(icon);
 
@@ -669,7 +693,7 @@ export class ShopScene implements Scene {
 
     if (spec.coinAmount !== undefined) {
       const cs = Math.round(ch * 0.16);
-      const ci = buildIcon('coin', cs, C.gold);
+      const ci = this.coinIcon('coin', cs, C.gold);
       ci.x = infoX; ci.y = iy;
       body.addChild(ci);
       const amt = txt(spec.coinAmount.toLocaleString(), Math.round(ch * 0.16), C.gold, true);

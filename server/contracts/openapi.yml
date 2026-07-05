@@ -1838,8 +1838,9 @@ paths:
                               type: object
                               required: [kind, count]
                               properties:
-                                kind:  { type: string }
+                                kind:  { type: string, enum: [coins, stamina, material, card, equipment] }
                                 count: { type: integer }
+                                id:    { type: string, description: Material id (scrap/lead/binding), set only when kind=material }
                           tasks:
                             type: array
                             items:
@@ -1884,8 +1885,9 @@ paths:
                         type: object
                         required: [kind, count]
                         properties:
-                          kind: { type: string, enum: [coins, stamina] }
+                          kind: { type: string, enum: [coins, stamina, material, card, equipment] }
                           count: { type: integer }
+                          id:    { type: string, description: Material id (material) or the drawn defId (card/equipment) }
         '401': { $ref: '#/components/responses/ErrorResp' }
         '409': { $ref: '#/components/responses/ErrorResp' }
 

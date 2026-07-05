@@ -1,17 +1,22 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // B-track runner — SLG nation-bonus "naked economy" check (SLG_ECONOMY_CHECK §4 §1).
 //   npx tsx src/nationBonusRun.ts
-// Prints Voronoi geometry + break-even math + strategy gap table.
+// Prints province geometry (ADR-034 angle-sector ring model) + break-even math + strategy gap table.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
-  voronoiTileCounts, mapLevelStats, breakEvenForeignLevel,
+  provinceTileCounts, mapLevelStats, breakEvenForeignLevel,
   runAllScenarios, HOURS_PER_SEASON,
 } from './nationBonus';
 import {
-  NATION_BONUS_PRODUCTION, NATION_COUNT, CAPITAL_FRACTIONS, NATION_KIND_BY_IDX,
+  NATION_BONUS_PRODUCTION, NATION_COUNT, NATION_KIND_BY_IDX,
+  provinceCapitalPositions, worldSeed,
   RESOURCE_YIELD_BASE, SEASON_LENGTH_DAYS, SLG_MAP_W, SLG_MAP_H, SLG_GEN,
 } from '@nw/shared';
+
+// Illustrative seed for printing capital coordinates below — capitals are seed-derived under ADR-034,
+// so these are one representative sample, not universal constants like the old CAPITAL_FRACTIONS.
+const SAMPLE_CAPS = provinceCapitalPositions(SLG_MAP_W, SLG_MAP_H, worldSeed('s0-0'));
 
 function bar(s: string) { console.log('═'.repeat(78)); console.log(s); console.log('═'.repeat(78)); }
 const fmt = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 0 });
@@ -21,22 +26,22 @@ const pct = (n: number) => n.toFixed(1) + '%';
 
 bar('SLG nation-bonus naked-economy check — B-track (SLG_ECONOMY_CHECK §4 ¶1)');
 console.log('Pure intra-season: NOTHING here enters the §6.1 monthly coin budget.\n');
-console.log(`  NATION_BONUS_PRODUCTION = ${NATION_BONUS_PRODUCTION} (+${pct(NATION_BONUS_PRODUCTION * 100)} resource yield in own Voronoi nation)`);
+console.log(`  NATION_BONUS_PRODUCTION = ${NATION_BONUS_PRODUCTION} (+${pct(NATION_BONUS_PRODUCTION * 100)} resource yield in own province)`);
 console.log(`  SEASON_LENGTH_DAYS      = ${SEASON_LENGTH_DAYS} days = ${HOURS_PER_SEASON} h`);
 console.log(`  RESOURCE_YIELD_BASE     = ${RESOURCE_YIELD_BASE} /tile/level/h\n`);
 
-// ── ① Voronoi geometry ───────────────────────────────────────────────────────
-console.log('── ①  Voronoi geometry (code-derived, no assumptions) ──────────────────────');
-const tileCounts = voronoiTileCounts();
+// ── ① Province geometry (ADR-034 angle-sector ring model) ────────────────────────────
+console.log('── ①  Province geometry (code-derived, no assumptions) ──────────────────────');
+const tileCounts = provinceTileCounts();
 const totalTiles = tileCounts.reduce((a, b) => a + b, 0);
 const stats = mapLevelStats();
 console.log(`  Map: ${SLG_MAP_W}×${SLG_MAP_H} = ${fmt(totalTiles)} tiles  (${fmt(stats.resourceTileCount)} resource tiles @ ${(SLG_GEN.resourceDensity * 100).toFixed(0)}% density)`);
-console.log(`  10 Voronoi nations, sizes (ADR-033 three-ring layout: 6 outer + 3 resource + 1 hegemony):\n`);
-console.log('  cap#  kind       fraction    tile count  coords');
+console.log(`  10 provinces, sizes (ADR-034 angle-sector ring layout: 6 outer + 3 resource + 1 core):\n`);
+console.log('  cap#  kind       fraction    tile count  coords (sample seed)');
 for (let i = 0; i < NATION_COUNT; i++) {
   const frac = tileCounts[i]! / totalTiles;
-  const [fx, fy] = CAPITAL_FRACTIONS[i]!;
-  console.log(`   ${i.toString().padStart(2)}   ${NATION_KIND_BY_IDX[i]!.padEnd(9)}  ${(frac * 100).toFixed(1).padStart(5)}%    ${fmt(tileCounts[i]!).padStart(8)}    (${fx.toFixed(2)},${fy.toFixed(2)})`);
+  const [cx, cy] = SAMPLE_CAPS[i]!;
+  console.log(`   ${i.toString().padStart(2)}   ${NATION_KIND_BY_IDX[i]!.padEnd(9)}  ${(frac * 100).toFixed(1).padStart(5)}%    ${fmt(tileCounts[i]!).padStart(8)}    (${cx},${cy})`);
 }
 const minN = Math.min(...tileCounts);
 const maxN = Math.max(...tileCounts);

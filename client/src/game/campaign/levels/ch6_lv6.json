@@ -40,10 +40,10 @@
   "waves": {
     "entries": [
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "runner",
         "col": 1,
-        "count": 5,
+        "count": 3,
         "spacingTicks": 7,
         "crossWaypoints": [
           {
@@ -53,10 +53,10 @@
         ]
       },
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "runner",
         "col": 10,
-        "count": 5,
+        "count": 3,
         "spacingTicks": 7,
         "crossWaypoints": [
           {
@@ -66,10 +66,10 @@
         ]
       },
       {
-        "atTick": 240,
+        "atTick": 300,
         "unitType": "ironclad",
         "col": 1,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 32,
         "crossWaypoints": [
           {
@@ -79,10 +79,10 @@
         ]
       },
       {
-        "atTick": 240,
+        "atTick": 300,
         "unitType": "ironclad",
         "col": 10,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 32,
         "crossWaypoints": [
           {
@@ -92,24 +92,24 @@
         ]
       },
       {
-        "atTick": 420,
+        "atTick": 480,
         "unitType": "runner",
         "col": 0,
-        "count": 5,
+        "count": 3,
         "spacingTicks": 7
       },
       {
-        "atTick": 420,
+        "atTick": 480,
         "unitType": "runner",
         "col": 9,
-        "count": 5,
+        "count": 3,
         "spacingTicks": 7
       },
       {
-        "atTick": 420,
+        "atTick": 480,
         "unitType": "ironclad",
         "col": 1,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 30,
         "crossWaypoints": [
           {
@@ -119,24 +119,24 @@
         ]
       },
       {
-        "atTick": 600,
+        "atTick": 660,
         "unitType": "ironclad",
         "col": 0,
-        "count": 4,
+        "count": 2,
         "spacingTicks": 26
       },
       {
-        "atTick": 600,
+        "atTick": 660,
         "unitType": "ironclad",
         "col": 9,
-        "count": 4,
+        "count": 2,
         "spacingTicks": 26
       },
       {
-        "atTick": 600,
+        "atTick": 660,
         "unitType": "runner",
         "col": 1,
-        "count": 6,
+        "count": 3,
         "spacingTicks": 6,
         "crossWaypoints": [
           {
@@ -146,10 +146,10 @@
         ]
       },
       {
-        "atTick": 600,
+        "atTick": 660,
         "unitType": "runner",
         "col": 10,
-        "count": 6,
+        "count": 3,
         "spacingTicks": 6,
         "crossWaypoints": [
           {
@@ -159,10 +159,10 @@
         ]
       },
       {
-        "atTick": 840,
+        "atTick": 900,
         "unitType": "ironclad",
         "col": 1,
-        "count": 5,
+        "count": 3,
         "spacingTicks": 22,
         "crossWaypoints": [
           {
@@ -172,10 +172,10 @@
         ]
       },
       {
-        "atTick": 840,
+        "atTick": 900,
         "unitType": "ironclad",
         "col": 10,
-        "count": 5,
+        "count": 3,
         "spacingTicks": 22,
         "crossWaypoints": [
           {
@@ -185,38 +185,38 @@
         ]
       },
       {
-        "atTick": 840,
+        "atTick": 900,
         "unitType": "runner",
         "col": 0,
-        "count": 7,
+        "count": 4,
         "spacingTicks": 5
       },
       {
-        "atTick": 840,
+        "atTick": 900,
         "unitType": "runner",
         "col": 9,
-        "count": 7,
+        "count": 4,
         "spacingTicks": 5
       },
       {
-        "atTick": 1080,
+        "atTick": 1140,
         "unitType": "ironclad",
         "col": 0,
-        "count": 5,
+        "count": 3,
         "spacingTicks": 20
       },
       {
-        "atTick": 1080,
+        "atTick": 1140,
         "unitType": "ironclad",
         "col": 9,
-        "count": 5,
+        "count": 3,
         "spacingTicks": 20
       },
       {
-        "atTick": 1080,
+        "atTick": 1140,
         "unitType": "runner",
         "col": 1,
-        "count": 7,
+        "count": 4,
         "spacingTicks": 5,
         "crossWaypoints": [
           {
@@ -226,10 +226,10 @@
         ]
       },
       {
-        "atTick": 1080,
+        "atTick": 1140,
         "unitType": "runner",
         "col": 10,
-        "count": 7,
+        "count": 4,
         "spacingTicks": 5,
         "crossWaypoints": [
           {
@@ -239,13 +239,13 @@
         ]
       },
       {
-        "atTick": 1080,
+        "atTick": 1140,
         "unitType": "medic",
         "col": 0,
         "count": 1
       },
       {
-        "atTick": 1080,
+        "atTick": 1140,
         "unitType": "medic",
         "col": 10,
         "count": 1
@@ -265,5 +265,11 @@
     }
   },
   "nameKey": "campaign.ch6.lv6.name",
-  "briefKey": "campaign.ch6.lv6.brief"
+  "briefKey": "campaign.ch6.lv6.brief",
+  "startInk": 80,
+  "inkRegenMult": 2.3,
+  "enemyScale": {
+    "hp": 1,
+    "damage": 0.96
+  }
 }

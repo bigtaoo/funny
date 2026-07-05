@@ -53,15 +53,28 @@ describe('CHECKIN_REWARDS', () => {
     for (const r of CHECKIN_REWARDS) expect(r.count).toBeGreaterThan(0);
   });
 
-  it('milestone days pay coins', () => {
+  it('milestone days are the enriched "big" slots (never plain coins)', () => {
     for (const day of CHECKIN_MILESTONE_DAYS) {
-      expect(CHECKIN_REWARDS[day - 1]!.kind).toBe('coins');
+      expect(CHECKIN_REWARDS[day - 1]!.kind).not.toBe('coins');
     }
   });
 
-  it('the month-end finale (day 30) is the biggest coin payout', () => {
-    const coinSlots = CHECKIN_REWARDS.filter((r) => r.kind === 'coins').map((r) => r.count);
-    expect(CHECKIN_REWARDS[29]!.count).toBe(Math.max(...coinSlots));
+  it('checkin itself almost never grants coins (R1: not a new coin faucet)', () => {
+    expect(CHECKIN_REWARDS.some((r) => r.kind === 'coins')).toBe(false);
+  });
+
+  it('spreads materials across the whole month, not just milestones', () => {
+    const materialDays = CHECKIN_REWARDS.filter((r) => r.kind === 'material');
+    expect(materialDays.length).toBeGreaterThanOrEqual(6);
+    for (const r of materialDays) expect(r.id).toMatch(/^(scrap|lead|binding)$/);
+  });
+
+  it('day 7/14/21/30 are stamina pack / card pack / material pack / equipment finale', () => {
+    expect(CHECKIN_REWARDS[6]!.kind).toBe('stamina');
+    expect(CHECKIN_REWARDS[6]!.count).toBeGreaterThan(30); // bigger than a regular day
+    expect(CHECKIN_REWARDS[13]!.kind).toBe('card');
+    expect(CHECKIN_REWARDS[20]!.kind).toBe('material');
+    expect(CHECKIN_REWARDS[29]!.kind).toBe('equipment');
   });
 });
 

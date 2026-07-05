@@ -28,29 +28,74 @@ import { createGameEngine } from '../src/game/GameEngine';
 import { CAMPAIGN_LEVELS } from '../src/game/campaign/levels';
 import type { GameConfig } from '../src/game/types';
 import { Side, UnitType, CardType, GamePhase } from '../src/game/types';
-import { ATTACK_LANES } from '../src/game/config';
+import { ATTACK_LANES, UNIT_BLUEPRINTS } from '../src/game/config';
+import { PROGRESSABLE_UNITS } from '../src/game/balance/progression';
+import { fromFp } from '../src/game/math/fixed';
 import type { LevelDefinition } from '../src/game/campaign/LevelDefinition';
 import { computeStars } from '../src/game/meta/campaignRewards';
 import { card } from './cardHelpers';
-import type { EngineCardInstance } from '../src/game/balance/equipment';
+import type { EngineCardInstance, EngineEquipInv, EngineSlotMap } from '../src/game/balance/equipment';
 
 const TICK_DT = 1 / 30;
 const TICK_RATE = 30;
 
-// ─── Progression presets ──────────────────────────────────────────────────────────────
-// Player-available units (from the ch1 loadout): infantry / shieldbearer / archer.
-// Each preset upgrades all three unit types uniformly to level N (one card instance per type at level N).
+// ─── Unit role classification (generalizes the AI beyond the ch1 trio) ──────────────────
+// Derived once from UNIT_BLUEPRINTS' static hp/attack/range so the AI can pick a sane card
+// for ANY unit type a level's loadout hands it (ch2+ heroes Max/Lena/Mara, PvE-unlock units),
+// not just infantry/shieldbearer/archer.
+type UnitRole = 'tank' | 'ranged' | 'melee' | 'support';
 
-const PLAYER_UNITS = [UnitType.Infantry, UnitType.ShieldBearer, UnitType.Archer];
+function classifyRole(hp: number, attack: number, range: number): UnitRole {
+  if (attack === 0) return 'support'; // e.g. Medic — no combat contribution, last-resort pick
+  if (range >= 2) return 'ranged';    // e.g. Archer / Mara — main clearing DPS
+  if (hp >= 140) return 'tank';       // e.g. ShieldBearer / Ironclad / Lena / Max — holds the line
+  return 'melee';                     // e.g. Infantry / Runner / Berserker / Splitter / Harpy
+}
+
+const ROLE_MAP: Record<UnitType, UnitRole> = Object.fromEntries(
+  (Object.keys(UNIT_BLUEPRINTS) as UnitType[]).map((ut) => {
+    const bp = UNIT_BLUEPRINTS[ut];
+    return [ut, classifyRole(bp.hp, bp.attack, bp.range)];
+  }),
+) as Record<UnitType, UnitRole>;
+
+// ─── Progression presets ──────────────────────────────────────────────────────────────
+// Each preset upgrades all progressable unit types (the 6 card-issuing heroes: Infantry/
+// ShieldBearer/Archer/Max/Lena/Mara — PROGRESSABLE_UNITS) uniformly to level N, and equips a
+// tier-appropriate reference gear set (PROGRESSION_GEAR below) so the simulated player looks
+// like a real one (card level + equipment), not just a bare card level.
 
 export type ProgressionPreset = 'fresh' | 'T2' | 'T3' | 'T4' | 'T5' | 'T6';
+
+// ── Reference equipment per tier (sim-only placeholder values) ──────────────────────────
+// NOT authoritative game balance numbers — ECONOMY_NUMBERS §5's equipment ranges are still
+// undrafted. This is just a plausible "typical equipped player at tier N" stand-in so the
+// simulator's progression axis isn't card-level-only. Affix ids/semantics are the real ones
+// from server/engine/src/balance/equipment.ts (AFFIX_FIELD_MAP).
+const PROGRESSION_EQUIP_INV: EngineEquipInv = {
+  sim_t2_weapon: { defId: 'sim_weapon', level: 0, affixes: [{ id: 'm_atk', value: 8 }] },
+  sim_t4_weapon: { defId: 'sim_weapon', level: 3, affixes: [{ id: 'm_atk', value: 8 }] },
+  sim_t4_armor: { defId: 'sim_armor', level: 3, affixes: [{ id: 'm_hp', value: 10 }] },
+  sim_t6_weapon: { defId: 'sim_weapon', level: 6, affixes: [{ id: 'm_atk', value: 8 }] },
+  sim_t6_armor: { defId: 'sim_armor', level: 6, affixes: [{ id: 'm_hp', value: 10 }, { id: 's_armor', value: 2 }] },
+  sim_t6_trinket: { defId: 'sim_trinket', level: 6, affixes: [{ id: 'm_crit', value: 5 }] },
+};
+
+const PROGRESSION_GEAR: Record<ProgressionPreset, EngineSlotMap> = {
+  fresh: {},
+  T2: { weapon: 'sim_t2_weapon' },
+  T3: { weapon: 'sim_t2_weapon' },
+  T4: { weapon: 'sim_t4_weapon', armor: 'sim_t4_armor' },
+  T5: { weapon: 'sim_t4_weapon', armor: 'sim_t4_armor' },
+  T6: { weapon: 'sim_t6_weapon', armor: 'sim_t6_armor', trinket: 'sim_t6_trinket' },
+};
 
 // CC-1: blueprint progression now flows through `cardInstances` (best card per unit type drives its
 // level) instead of the dropped `unitLevels` GameConfig field. `fresh` = no cards = all units at base.
 export function progressionCards(preset: ProgressionPreset): EngineCardInstance[] {
   if (preset === 'fresh') return [];
   const lvl = { T2: 2, T3: 3, T4: 4, T5: 5, T6: 6 }[preset];
-  return PLAYER_UNITS.map((u) => card(u, lvl));
+  return PROGRESSABLE_UNITS.map((u) => card(u, lvl, PROGRESSION_GEAR[preset]));
 }
 
 // ─── Tunable parameters for the baseline AI ─────────────────────────────────────────────────────
@@ -94,6 +139,16 @@ interface LaneThreat {
   allyCount: number;
   /** Number of our tanks (shield-bearers) in this lane — standard TD: each incoming lane should have a tank holding the line first. */
   allyTanks: number;
+  /** Number of living flying enemies in this lane (e.g. Harpy) — bypasses ground blocking, and only
+   *  canTargetFlying-capable units/towers can damage it. Ground units sent here to "hold the line"
+   *  can neither stop nor kill it: they park in a permanent no-op Attacking state instead (see
+   *  DIFFICULTY_SIM.md's ch5_lv8 diagnosis), silently deadlocking the lane forever. */
+  flyingCount: number;
+}
+
+/** Whether this unit type can damage flying enemies (only relevant blueprint flag for lane-defense picks). */
+function canHitFlying(unitType: UnitType): boolean {
+  return UNIT_BLUEPRINTS[unitType]?.canTargetFlying ?? false;
 }
 
 // ─── Baseline player AI ────────────────────────────────────────────────────────────
@@ -171,16 +226,36 @@ export class BaselinePlayer {
     };
     /**
      * Deploy one unit to the given lane using the "standard TD formation": if the lane has no
-     * tank yet → shield-bearer to hold the line first; otherwise prefer archer (high DPS, main
-     * clearing force), falling back to infantry. Returns whether a card was successfully played.
+     * tank yet → a tank-role card to hold the line first; otherwise prefer ranged (high DPS,
+     * main clearing force), falling back to melee, then support as a last resort. Role is looked
+     * up via ROLE_MAP so this works for ANY unit type a level's loadout deals (Max/Lena/Mara,
+     * PvE-unlock units), not just the ch1 trio. Returns whether a card was successfully played.
+     *
+     * Flying enemies (e.g. Harpy) are a special case: they bypass ground blocking entirely, and
+     * only canTargetFlying-capable units/towers can damage them, so a normal ground unit sent
+     * there can never win the fight — it parks in a permanent no-op Attacking state instead (see
+     * DIFFICULTY_SIM.md's ch5_lv8 diagnosis). If a flying-capable unit card is in hand, prefer it
+     * first (it can actually kill the target). No unit in the current roster has that flag today
+     * (only ArrowTower does), so this is a no-op in practice until one exists — but critically we
+     * still fall through to the ordinary tank/ranged/melee formation below rather than declining
+     * the deployment outright: empirically, that stuck ground unit still *aggros* the flyer into
+     * melee and halts its advance in place, which is the only thing currently keeping the base
+     * safe from a Harpy that would otherwise fly straight past row-0 arrow towers (2-row range)
+     * completely unengaged. Verified by reverting an earlier "decline if no counter" version of
+     * this fix, which turned ch6_lv9/ch6_lv10 unbeatable and dropped ch3_lv3's stars — removing
+     * the stall without another way to intercept mid-lane is strictly worse than the status quo.
      */
     const reinforceLane = (lane: number): boolean => {
       const t = laneThreat.get(lane)!;
+      const flyingThreat = t.flyingCount > 0;
       const tanks = t.allyTanks + (queuedTanks.get(lane) ?? 0);
       let idx = -1, isTank = false;
-      if (tanks === 0) { idx = findCard((k, sub) => k === CardType.Unit && sub === UnitType.ShieldBearer); isTank = idx >= 0; }
-      if (idx < 0) idx = findCard((k, sub) => k === CardType.Unit && sub === UnitType.Archer);
-      if (idx < 0) idx = findCard((k, sub) => k === CardType.Unit && sub === UnitType.Infantry);
+      if (flyingThreat) idx = findCard((k, sub) => k === CardType.Unit && canHitFlying(sub as UnitType));
+      if (idx >= 0) { play(idx, lane); reinforce(lane, isTank); return true; }
+      if (tanks === 0) { idx = findCard((k, sub) => k === CardType.Unit && ROLE_MAP[sub as UnitType] === 'tank'); isTank = idx >= 0; }
+      if (idx < 0) idx = findCard((k, sub) => k === CardType.Unit && ROLE_MAP[sub as UnitType] === 'ranged');
+      if (idx < 0) idx = findCard((k, sub) => k === CardType.Unit && ROLE_MAP[sub as UnitType] === 'melee');
+      if (idx < 0) idx = findCard((k, sub) => k === CardType.Unit && ROLE_MAP[sub as UnitType] === 'support');
       if (idx < 0) { idx = findCard((k) => k === CardType.Unit); isTank = false; }
       if (idx < 0) return false;
       play(idx, lane); reinforce(lane, isTank); return true;
@@ -196,14 +271,22 @@ export class BaselinePlayer {
           play(idx, clusterLane, row); meteorFired = true; continue;
         }
       }
-      // 2) Defence coverage (highest tactical priority): if any incoming enemy lane has fewer
+      // 2) Escort protection (escort objective levels only): proactively hold the escort's
+      //    current lane at blockersPerLane, regardless of whether an enemy is already adjacent —
+      //    unlike reactive lane defense, a moving friendly target needs its path camped ahead of
+      //    time, not defended only once threatened.
+      {
+        const lane = this.pickUnescortedLane(state, laneThreat, queued, this.opts.blockersPerLane);
+        if (lane >= 0 && reinforceLane(lane)) continue;
+      }
+      // 3) Defence coverage (highest reactive priority): if any incoming enemy lane has fewer
       //    blockers than blockersPerLane, reinforce the most threatened under-defended lane first
-      //    — shield-bearer to hold, then archer for DPS. Ensures every lane has coverage, no gaps.
+      //    — tank-role card to hold, then ranged for DPS. Ensures every lane has coverage, no gaps.
       {
         const lane = this.pickUnderBlockedLane(laneThreat, queued, this.opts.blockersPerLane);
         if (lane >= 0 && reinforceLane(lane)) continue;
       }
-      // 3) Defensive skeleton: once all incoming lanes have units, build arrow towers for back-row firepower (prioritise threatened lanes)
+      // 4) Defensive skeleton: once all incoming lanes have units, build arrow towers for back-row firepower (prioritise threatened lanes)
       if (towers < this.opts.towerCap) {
         const idx = findCard((k, sub) => k === CardType.Building && sub === 'arrow_tower');
         if (idx >= 0) {
@@ -211,7 +294,7 @@ export class BaselinePlayer {
           if (lane >= 0) { play(idx, lane); towers++; occupiedTowerLanes.add(lane); continue; }
         }
       }
-      // 4) Barracks: maintain one passive unit stream
+      // 5) Barracks: maintain one passive unit stream
       if (barracks < this.opts.barracksCap) {
         const idx = findCard((k, sub) => k === CardType.Building && sub === 'barracks');
         if (idx >= 0) {
@@ -219,12 +302,12 @@ export class BaselinePlayer {
           if (lane >= 0) { play(idx, lane); barracks++; occupiedTowerLanes.add(lane); continue; }
         }
       }
-      // 5) Spare-ink deployment: distribute remaining ink to the most under-defended incoming enemy lane (same formation logic)
+      // 6) Spare-ink deployment: distribute remaining ink to the most under-defended incoming enemy lane (same formation logic)
       {
         const lane = this.pickDefenseLane(laneThreat, queued);
         if (lane >= 0 && reinforceLane(lane)) continue;
       }
-      // 6) Economy: safe and ink to spare → upgrade base (increases ink regeneration)
+      // 7) Economy: safe and ink to spare → upgrade base (increases ink regeneration)
       if (!underThreat && player.upgradeLevel < this.opts.upgradeToLevel && player.canUpgradeBase()) {
         const cost = player.nextUpgradeCost ?? Infinity;
         if (ink - cost >= 6) { engine.upgradeBase(); ink -= cost; this.tokens -= 1; continue; }
@@ -236,7 +319,9 @@ export class BaselinePlayer {
   /** Scan the living enemy threat and friendly unit distribution across each attack lane. */
   private scanLanes(engine: Engine): Map<number, LaneThreat> {
     const m = new Map<number, LaneThreat>();
-    for (const lane of ATTACK_LANES) m.set(lane, { closestRow: Infinity, count: 0, totalHp: 0, allyCount: 0, allyTanks: 0 });
+    for (const lane of ATTACK_LANES) {
+      m.set(lane, { closestRow: Infinity, count: 0, totalHp: 0, allyCount: 0, allyTanks: 0, flyingCount: 0 });
+    }
     for (const u of engine.state.board.units.values()) {
       if (u.isDead) continue;
       const t = m.get(u.col);
@@ -244,11 +329,12 @@ export class BaselinePlayer {
       if (u.side === Side.Top) {
         t.count++;
         t.totalHp += u.hp;
+        if (u.flying) t.flyingCount++;
         // Enemies advance from row 17 toward row 0; smaller row = closer to our base.
         if (u.row < t.closestRow) t.closestRow = u.row;
       } else {
         t.allyCount++;
-        if (u.unitType === UnitType.ShieldBearer) t.allyTanks++;
+        if (ROLE_MAP[u.unitType] === 'tank') t.allyTanks++;
       }
     }
     return m;
@@ -273,7 +359,36 @@ export class BaselinePlayer {
     return best;
   }
 
-  /** Among incoming enemy lanes with fewer than min blockers, return the one with the closest enemy (the under-defended lane). Returns -1 if none. */
+  /**
+   * Among lanes currently occupied by a still-moving escort, return the first one whose
+   * friendly blocker count (including this-tick queued units) is below `min` — proactive
+   * escort camping, independent of whether an enemy has actually reached that lane yet.
+   * Returns -1 if there is no escort objective or all escort lanes are already held.
+   */
+  private pickUnescortedLane(state: Engine['state'], threat: Map<number, LaneThreat>, queued: Map<number, number>, min: number): number {
+    for (const escort of state.escorts) {
+      if (escort.status !== 'moving') continue;
+      const lane = Math.round(fromFp(escort.col_fp));
+      const t = threat.get(lane);
+      if (!t) continue; // escort column is not an attack lane (shouldn't happen, but stay safe)
+      const allies = t.allyCount + (queued.get(lane) ?? 0);
+      if (allies < min) return lane;
+    }
+    return -1;
+  }
+
+  /**
+   * Among incoming enemy lanes with fewer than min blockers, return the one with the closest
+   * enemy (the under-defended lane). Returns -1 if none.
+   *
+   * Deliberately still counts raw `allyCount` even on flying-threatened lanes (not just
+   * flying-capable allies): with no flying-capable unit in the current roster, gating coverage on
+   * `allyFlyingCapable` alone means it can never be satisfied, so the AI would keep dumping units
+   * into a dead-end lane every tick instead of distributing ink elsewhere. A tried-and-reverted
+   * variant of this fix did exactly that; it strictly wasted ink without fixing anything, since
+   * the real defensive value of a ground unit here is the incidental aggro-stall described in
+   * `reinforceLane`, which plain `allyCount` already captures correctly.
+   */
   private pickUnderBlockedLane(threat: Map<number, LaneThreat>, queued: Map<number, number>, min: number): number {
     let best = -1, bestRow = Infinity;
     for (const lane of ATTACK_LANES) {
@@ -285,10 +400,26 @@ export class BaselinePlayer {
     return best;
   }
 
-  /** Pick a lane to place a tower: prefer lanes with enemy threat that have no tower yet; otherwise the first empty lane in center-outward order. */
+  /**
+   * Pick a lane to place a tower: prefer lanes with enemy threat that have no tower yet;
+   * otherwise the first empty lane in center-outward order.
+   *
+   * Flying-threatened lanes jump the queue ahead of plain closest-row urgency: a tower is the
+   * *only* way to answer a Harpy the AI has no flying-capable unit card for (ground reinforcement
+   * can never resolve it — see `reinforceLane`/`pickUnderBlockedLane`), so leaving it to generic
+   * urgency ordering risks losing the tower budget to a merely-urgent ground lane while the
+   * flying lane deadlocks forever.
+   */
   private pickTowerLane(occupied: Set<number>, threat: Map<number, LaneThreat>): number {
-    // First pick a lane with enemies but no tower, ordered by threat urgency.
     let best = -1, bestRow = Infinity;
+    for (const lane of ATTACK_LANES) {
+      if (occupied.has(lane)) continue;
+      const t = threat.get(lane)!;
+      if (t.flyingCount > 0 && t.closestRow < bestRow) { best = lane; bestRow = t.closestRow; }
+    }
+    if (best >= 0) return best;
+    // Otherwise, a lane with enemies but no tower, ordered by threat urgency.
+    bestRow = Infinity;
     for (const lane of ATTACK_LANES) {
       if (occupied.has(lane)) continue;
       const t = threat.get(lane)!;
@@ -329,6 +460,10 @@ export interface SimResult {
   peakEnemies: number;
   /** Peak total HP of concurrent enemies on screen at any point during the run. */
   peakEnemyHp: number;
+  /** Minimum HP seen across all escort units during the run (escort objective only); null if the level has no escorts. */
+  escortMinHp: number | null;
+  /** Enemy units that reached row 0 (leak_limit objective diagnostic); 0 for levels without leaks. */
+  enemyLeaks: number;
 }
 
 export interface SimOptions {
@@ -355,6 +490,7 @@ export function simulateLevel(levelOrId: string | LevelDefinition, opts: SimOpti
     mode: 'campaign',
     level,
     cardInstances: progressionCards(preset),
+    equipmentInv: PROGRESSION_EQUIP_INV,
   };
   const engine = createGameEngine(config);
 
@@ -364,6 +500,9 @@ export function simulateLevel(levelOrId: string | LevelDefinition, opts: SimOpti
   let firstHitTick: number | null = null;
   let peakEnemies = 0;
   let peakEnemyHp = 0;
+  let escortMinHp: number | null = engine.state.escorts.length > 0
+    ? Math.min(...engine.state.escorts.map((e) => e.hp))
+    : null;
   let tick = 0;
 
   while (engine.state.phase !== GamePhase.GameOver && tick < maxTicks) {
@@ -385,6 +524,9 @@ export function simulateLevel(levelOrId: string | LevelDefinition, opts: SimOpti
     const bh = engine.state.bottomPlayer.baseHp;
     if (bh < minBaseHp) minBaseHp = bh;
     if (firstHitTick === null && bh < 100) firstHitTick = tick;
+    if (escortMinHp !== null) {
+      for (const e of engine.state.escorts) if (e.hp < escortMinHp) escortMinHp = e.hp;
+    }
   }
 
   const win = engine.state.winner === Side.Bottom;
@@ -405,6 +547,8 @@ export function simulateLevel(levelOrId: string | LevelDefinition, opts: SimOpti
     firstHitTick,
     peakEnemies,
     peakEnemyHp,
+    escortMinHp,
+    enemyLeaks: engine.state.enemyLeaks,
   };
 }
 

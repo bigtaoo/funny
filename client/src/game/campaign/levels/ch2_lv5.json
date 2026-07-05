@@ -6,8 +6,8 @@
     "kind": "survive"
   },
   "enemyScale": {
-    "hp": 1.28,
-    "damage": 1.2
+    "hp": 1.1,
+    "damage": 1.07
   },
   "loadout": [
     "max_1",
@@ -33,21 +33,21 @@
       "initialCount": 1
     }
   ],
-  "inkRegenMult": 0.5,
+  "inkRegenMult": 1.06,
   "waves": {
     "entries": [
       {
         "atTick": 120,
         "unitType": "infantry",
         "col": 4,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 20
       },
       {
         "atTick": 120,
         "unitType": "infantry",
         "col": 7,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 20
       },
       {
@@ -68,14 +68,14 @@
         "atTick": 600,
         "unitType": "shieldbearer",
         "col": 1,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 28
       },
       {
         "atTick": 600,
         "unitType": "shieldbearer",
         "col": 10,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 28
       },
       {
@@ -129,14 +129,14 @@
         "atTick": 1320,
         "unitType": "shieldbearer",
         "col": 3,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 38
       },
       {
         "atTick": 1320,
         "unitType": "shieldbearer",
         "col": 8,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 38
       },
       {
@@ -167,5 +167,6 @@
     }
   },
   "nameKey": "campaign.ch2.lv5.name",
-  "briefKey": "campaign.ch2.lv5.brief"
+  "briefKey": "campaign.ch2.lv5.brief",
+  "startInk": 8
 }

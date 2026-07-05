@@ -23,8 +23,10 @@ import {
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { buildIcon } from '../render/icons';
 import { UNIT_ART_URLS, getArtTexture } from '../render/cardArt';
+import { drawEquipmentGlyph } from '../render/equipmentGlyph';
+import { getEquipIconTexture } from '../render/equipmentAtlas';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
-import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
+import { drawSidebarTabs, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import type { SaveData, CardInstance, EquipSlot } from '../game/meta/SaveData';
 import type { CardSLGState } from '../net/WorldApiClient';
@@ -110,8 +112,8 @@ export class CardScene implements Scene {
   private detailId: string | null = null;
   private scrollY = 0;
   private dragStart: { x: number; y: number; scroll: number } | null = null;
-  /** Height of the [Cards|Equipment] group strip; >0 only when openEquipmentBag is injected. */
-  private readonly groupH: number;
+  /** Whether the [Cards|Equipment] sidebar nav is shown; only when openEquipmentBag is injected. */
+  private readonly showSidebar: boolean;
 
   private toastTimer = 0;
   private destroyed = false;
@@ -123,7 +125,7 @@ export class CardScene implements Scene {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.cb = cb;
-    this.groupH = cb.openEquipmentBag ? hubTabsHeight(this.h) : 0;
+    this.showSidebar = !!cb.openEquipmentBag;
     this.container = new PIXI.Container();
     this.build();
     this.render();
@@ -163,7 +165,7 @@ export class CardScene implements Scene {
     this.loadingLayer.removeChildren();
     this.hitRects.push({ rect: this.backRect, action: () => this.cb.onBack() });
 
-    this.renderGroupTabs();
+    this.renderSidebar();
     this.renderCapacityBar();
     this.renderList();
 
@@ -174,16 +176,18 @@ export class CardScene implements Scene {
   }
 
   /**
-   * Progression group tab strip [Cards|Equipment] (LOBBY_IA_REDESIGN): Cards is active; tapping
-   * Equipment opens the equipment bag (openEquipmentBag). Drawn only when injected (groupH>0).
+   * Progression group nav [Cards|Equipment] (LOBBY_IA_REDESIGN): a vertical rail stacked inside
+   * the left notebook-margin gutter (`marginLineX`), below the header. Cards is active; tapping
+   * Equipment opens the equipment bag (openEquipmentBag). Drawn only when injected (showSidebar).
    */
-  private renderGroupTabs(): void {
-    if (this.groupH <= 0) return;
+  private renderSidebar(): void {
+    if (!this.showSidebar) return;
+    const sidebarW = marginLineX(this.w);
     const tabs: HubTab[] = [
       { label: t('roster.title'), active: true, icon: 'cards' },
       { label: t('equip.title'), active: false, icon: 'armor' },
     ];
-    const hits = drawHubTabs(this.bodyLayer, this.w, HUD_H, this.groupH, tabs, (i) => {
+    const { hits } = drawSidebarTabs(this.bodyLayer, sidebarW, HUD_H, this.h, tabs, (i) => {
       if (i === 1) this.cb.openEquipmentBag?.();
     });
     for (const hit of hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
@@ -195,10 +199,11 @@ export class CardScene implements Scene {
     const count = Object.keys(save.cardInv ?? {}).length;
     const warn = count >= CARD_INV_WARN;
     const full = count >= CARD_INV_CAP;
-    const top = HUD_H + this.groupH;
+    const top = HUD_H;
+    const sidebarW = this.showSidebar ? marginLineX(w) : 0;
 
     const bg = new PIXI.Graphics();
-    bg.beginFill(0xf3f1ea).drawRect(0, top, w, RES_H).endFill();
+    bg.beginFill(0xf3f1ea).drawRect(sidebarW, top, w - sidebarW, RES_H).endFill();
     this.bodyLayer.addChild(bg);
 
     const capLbl = txt(
@@ -214,7 +219,7 @@ export class CardScene implements Scene {
     const save = this.cb.getSave();
     const cardState = this.cb.getCardState?.() ?? {};
     const cards = Object.values(save.cardInv ?? {});
-    const listY = HUD_H + this.groupH + RES_H;
+    const listY = HUD_H + RES_H;
     const listH = h - listY - 8;
 
     if (cards.length === 0) {
@@ -352,7 +357,7 @@ export class CardScene implements Scene {
   }
 
   /** Draw a unit portrait, centered & fit into a box; re-render once the texture loads. */
-  private drawArtFit(url: string, x: number, y: number, box: number): void {
+  private drawArtFit(url: string, x: number, y: number, box: number, layer: PIXI.Container = this.bodyLayer): void {
     const tex = getArtTexture(url);
     if (!tex.baseTexture.valid) {
       if (!this.artHooked.has(url)) {
@@ -366,7 +371,7 @@ export class CardScene implements Scene {
     sp.anchor.set(0.5);
     sp.scale.set(scale);
     sp.position.set(x + box / 2, y + box / 2);
-    this.bodyLayer.addChild(sp);
+    layer.addChild(sp);
   }
 
   // ── Detail modal ─────────────────────────────────────────────────────────
@@ -388,6 +393,7 @@ export class CardScene implements Scene {
     const state = cardState?.[card.id];
     const now = Date.now();
     const isInjured = (state?.injuredUntil ?? 0) > now;
+    const inTeam = !!state?.teamId;
     const cap = def ? troopCap(card) : 0;
     const power = Math.round(cardPower(card, save.equipmentInv ?? {}));
     const maxLevel = card.level >= 9;
@@ -396,9 +402,10 @@ export class CardScene implements Scene {
     const xpNeeded = maxLevel ? 1 : xpToNextLevel(card.level);
     const xpFrac = maxLevel ? 1 : Math.min(1, card.xp / xpNeeded);
 
-    const mw = Math.min(320, w - 24);
-    // Height: title(32) + stats(80) + skill(36) + xp(30) + gearSlots(28) + actions(40) + padding
-    const mh = Math.min(430, h - 60);
+    const mw = Math.min(380, w - 24);
+    // Content height: pad(12) + name(26) + portrait row(106) + injury(26|4) + skill(28) + xp(26) + gear(82) + button row(40).
+    const contentH = 12 + 26 + 106 + (isInjured ? 26 : 4) + 28 + 26 + 82 + 40;
+    const mh = Math.min(contentH, h - 60);
     const mx = (w - mw) / 2;
     const my = Math.max(HUD_H + 4, (h - mh) / 2);
 
@@ -415,31 +422,55 @@ export class CardScene implements Scene {
 
     // Name + faction
     const factionColor = def?.faction === 'anna' ? 0xcc4466 : 0x4477cc;
-    const nameLbl = txt(t(`card.${card.defId}.name` as TranslationKey), 15, C.dark, true);
+    const nameLbl = txt(t(`card.${card.defId}.name` as TranslationKey), 16, C.dark, true);
     nameLbl.x = mx + 12; nameLbl.y = cy;
     ml.addChild(nameLbl);
 
     const facStr = def ? t(`roster.faction.${def.faction}` as TranslationKey) : '';
     const facLbl = txt(facStr, 10, factionColor);
-    facLbl.anchor.set(1, 0); facLbl.x = mx + mw - 12; facLbl.y = cy + 2;
+    facLbl.anchor.set(1, 0); facLbl.x = mx + mw - 12; facLbl.y = cy + 3;
     ml.addChild(facLbl);
-    cy += 22;
+    cy += 26;
 
-    const lvLine = txt(`${t('roster.level').replace('{lv}', String(card.level))}   ${t('roster.power')} ${power}`, 12, C.mid);
-    lvLine.x = mx + 12; lvLine.y = cy;
+    // ── Portrait (left) + stats column (right) ──
+    const portraitBox = 96;
+    const portraitX = mx + 12;
+    const portraitY = cy;
+    const frame = sketchPanel(portraitBox, portraitBox, { fill: 0xf0eee7, border: factionColor, seed: seedFor(portraitX, portraitY, portraitBox) });
+    frame.x = portraitX; frame.y = portraitY;
+    ml.addChild(frame);
+    const artUrl = def ? UNIT_ART_URLS[def.unitType] : undefined;
+    if (artUrl) this.drawArtFit(artUrl, portraitX + 3, portraitY + 3, portraitBox - 6, ml);
+
+    const statX = portraitX + portraitBox + 14;
+    let statY = portraitY + 2;
+    const lvLine = txt(t('roster.level').replace('{lv}', String(card.level)), 13, C.mid, true);
+    lvLine.x = statX; lvLine.y = statY;
     ml.addChild(lvLine);
-    cy += 18;
+    statY += 20;
+
+    const pwrLine = txt(`${t('roster.power')} ${power}`, 13, C.dark, true);
+    pwrLine.x = statX; pwrLine.y = statY;
+    ml.addChild(pwrLine);
+    statY += 20;
 
     // Troop cap
-    const troopLine = txt(`${t('roster.troopCap')}: ${cap}`, 11, C.dark);
-    troopLine.x = mx + 12; troopLine.y = cy;
+    const troopStr = state !== undefined
+      ? `${t('roster.troopCap')}: ${state.currentTroops}/${cap}`
+      : `${t('roster.troopCap')}: ${cap}`;
+    const troopLine = txt(troopStr, 11, state !== undefined && state.currentTroops >= cap ? C.gold : C.dark);
+    troopLine.x = statX; troopLine.y = statY;
     ml.addChild(troopLine);
-    if (state !== undefined) {
-      const troopCurLbl = txt(`${state.currentTroops}/${cap}`, 11, state.currentTroops >= cap ? C.gold : C.dark);
-      troopCurLbl.anchor.set(1, 0); troopCurLbl.x = mx + mw - 12; troopCurLbl.y = cy;
-      ml.addChild(troopCurLbl);
+    statY += 18;
+
+    if (inTeam) {
+      const tag = txt(`[${t('roster.inTeam')}]`, 10, C.accent, true);
+      tag.x = statX; tag.y = statY;
+      ml.addChild(tag);
+      statY += 16;
     }
-    cy += 18;
+
+    cy = portraitY + Math.max(portraitBox, statY - portraitY) + 10;
 
     // Injury status + recover button
     if (isInjured && state?.injuredUntil) {
@@ -494,7 +525,7 @@ export class CardScene implements Scene {
 
     // Gear slots (3 slots; tap each to open equipment scene)
     this.renderDetailGearSlots(card, mx, cy, mw, save);
-    cy += 38;
+    cy += 82;
 
     // Action buttons
     const btnY = my + mh - 40;
@@ -535,11 +566,12 @@ export class CardScene implements Scene {
     this.modalHits.push({ rect: { x: 0, y: 0, w, h }, action: () => this.closeDetail() });
   }
 
-  /** Render 3 gear slot boxes inside the detail modal. */
+  /** Render 3 gear slot boxes (icon + level badge) inside the detail modal. */
   private renderDetailGearSlots(card: CardInstance, mx: number, cy: number, mw: number, save: SaveData): void {
     const EQUIP_SLOTS: EquipSlot[] = ['weapon', 'armor', 'trinket'];
     const cellW = (mw - 24 - 8 * 2) / 3;
-    const cellH = 34;
+    const cellH = 74;
+    const iconSize = Math.min(cellW, cellH) - 26;
 
     EQUIP_SLOTS.forEach((slot, i) => {
       const x = mx + 12 + i * (cellW + 8);
@@ -549,14 +581,31 @@ export class CardScene implements Scene {
       cell.x = x; cell.y = cy;
       this.modalLayer.addChild(cell);
 
+      const iconCx = x + cellW / 2;
+      const iconCy = cy + 6 + iconSize / 2;
+      const tex = inst ? getEquipIconTexture(inst.defId) : null;
+      if (tex) {
+        const sp = new PIXI.Sprite(tex);
+        sp.anchor.set(0.5);
+        sp.scale.set(iconSize / 128);
+        sp.position.set(iconCx, iconCy);
+        this.modalLayer.addChild(sp);
+      } else {
+        const gfx = new PIXI.Graphics();
+        drawEquipmentGlyph(gfx, slot, inst?.rarity ?? 'common', iconSize, seedFor(i, 8, cellW));
+        gfx.position.set(iconCx, iconCy);
+        gfx.alpha = inst ? 1 : 0.3;
+        this.modalLayer.addChild(gfx);
+      }
+
       const slotLbl = txt(t(`equip.slot.${slot}` as TranslationKey), 9, inst ? C.mid : C.light);
-      slotLbl.anchor.set(0.5, 0.5); slotLbl.x = x + cellW / 2; slotLbl.y = cy + cellH / 2;
+      slotLbl.anchor.set(0.5, 0); slotLbl.x = iconCx; slotLbl.y = cy + cellH - 16;
       this.modalLayer.addChild(slotLbl);
 
       if (inst) {
-        const nameLbl = txt(`+${inst.level}`, 10, C.dark, true);
-        nameLbl.anchor.set(1, 0); nameLbl.x = x + cellW - 4; nameLbl.y = cy + 4;
-        this.modalLayer.addChild(nameLbl);
+        const badge = txt(`+${inst.level}`, 10, C.dark, true);
+        badge.anchor.set(1, 0); badge.x = x + cellW - 4; badge.y = cy + 4;
+        this.modalLayer.addChild(badge);
       }
 
       if (this.cb.openEquipment && !this.bt.busy) {

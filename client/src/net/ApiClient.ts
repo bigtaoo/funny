@@ -53,7 +53,7 @@ export interface RetentionView {
   checkin: { monthKey: string; claimedDays: number[] } | null;
   daily: { dayKey: string; completedTasks: Record<string, number>; taskPoints: number; rewardClaimed: boolean } | null;
   defs: {
-    rewards: { kind: string; count: number }[];
+    rewards: { kind: string; count: number; id?: string }[];
     tasks: { id: string; points: number }[];
     pointsThreshold: number;
     dailyCoinsReward: number;
@@ -504,8 +504,8 @@ export class ApiClient {
     return this.request<RetentionView>('GET', '/retention');
   }
   /** Check in to claim the next reward in the current month's calendar (idempotent). */
-  async claimCheckin(): Promise<{ save: SaveData; day: number; reward: { kind: string; count: number } }> {
-    return this.post<{ save: SaveData; day: number; reward: { kind: string; count: number } }>('/retention/checkin', {});
+  async claimCheckin(): Promise<{ save: SaveData; day: number; reward: { kind: string; count: number; id?: string } }> {
+    return this.post<{ save: SaveData; day: number; reward: { kind: string; count: number; id?: string } }>('/retention/checkin', {});
   }
   /** Claim the daily full-points task coin reward (idempotent). */
   async claimDailyReward(): Promise<{ save: SaveData; coins: number }> {

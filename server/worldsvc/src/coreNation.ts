@@ -1,6 +1,7 @@
 // worldsvc core — nation primitives (S8-6.5). Peeled out of the WorldCore god-class (2026-07-03).
-// Capital doc init, nation founding/conquest on capital capture, naming, and Voronoi lookup. No behavior change.
-import { capitalIdxAt, nearestCapitalIdx, SlgError } from '@nw/shared';
+// Capital doc init, nation founding/conquest on capital capture, naming, and province lookup
+// (angle-sector ring model, ADR-034 — replaces the old Voronoi-nearest-capital lookup).
+import { capitalIdxAt, provinceIdxAt, SlgError } from '@nw/shared';
 import { WorldCorePush } from './corePush';
 import type { NationDoc } from './db';
 
@@ -12,7 +13,7 @@ export class WorldCoreNation extends WorldCorePush {
    * Skips existing documents ($setOnInsert + unique _id prevents duplicates).
    */
   async initNations(worldId: string): Promise<void> {
-    const caps = this.capitals;
+    const caps = this.capitalsFor(worldId);
     for (let i = 0; i < caps.length; i++) {
       const [x, y] = caps[i]!;
       const id = `nation:${worldId}:${i}`;
@@ -38,7 +39,7 @@ export class WorldCoreNation extends WorldCorePush {
     winnerAccountId: string,
     winnerFamilyId?: string,
   ): Promise<boolean> {
-    const idx = capitalIdxAt(x, y, this.capitals);
+    const idx = capitalIdxAt(x, y, this.capitalsFor(worldId));
     if (idx < 0) return false; // not a capital tile
     const nationId = `nation:${worldId}:${idx}`;
     await this.deps.cols.nations.updateOne(
@@ -67,11 +68,11 @@ export class WorldCoreNation extends WorldCorePush {
   }
 
   /**
-   * Query the nation corresponding to (x,y) (nearest capital by Voronoi partition).
-   * Returns null if the nearest capital currently has no nation (ownerless).
+   * Query the nation corresponding to (x,y) (province membership by angle-sector + ring, ADR-034).
+   * Returns null if that province currently has no nation (ownerless).
    */
   async getNationAt(worldId: string, x: number, y: number): Promise<NationDoc | null> {
-    const idx = nearestCapitalIdx(x, y, this.capitals);
+    const idx = provinceIdxAt(x, y);
     const nationId = `nation:${worldId}:${idx}`;
     return this.deps.cols.nations.findOne({ _id: nationId });
   }

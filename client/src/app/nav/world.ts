@@ -40,6 +40,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
         worldId,
         getSave: () => saveManager.get(),
         reloadSave: async () => { await saveManager.refresh(); },
+        myAccountId: platform.storage.getItem('nw_account_id') ?? '',
       });
     });
   }
@@ -194,6 +195,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       worldId,
       getSave: () => saveManager.get(),
       reloadSave: async () => { await saveManager.refresh(); },
+      myAccountId: platform.storage.getItem('nw_account_id') ?? '',
     });
   }
 

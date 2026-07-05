@@ -46,157 +46,157 @@
   "waves": {
     "entries": [
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "infantry",
         "col": 3,
         "count": 3,
         "spacingTicks": 15
       },
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "infantry",
         "col": 8,
         "count": 3,
         "spacingTicks": 15
       },
       {
-        "atTick": 300,
+        "atTick": 360,
         "unitType": "runner",
         "col": 4,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 8
       },
       {
-        "atTick": 300,
+        "atTick": 360,
         "unitType": "runner",
         "col": 7,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 8
       },
       {
-        "atTick": 540,
+        "atTick": 600,
         "unitType": "shieldbearer",
         "col": 3,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 24
       },
       {
-        "atTick": 540,
+        "atTick": 600,
         "unitType": "shieldbearer",
         "col": 8,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 24
       },
       {
-        "atTick": 540,
+        "atTick": 600,
         "unitType": "infantry",
         "col": 1,
         "count": 3,
         "spacingTicks": 14
       },
       {
-        "atTick": 540,
+        "atTick": 600,
         "unitType": "infantry",
         "col": 10,
         "count": 3,
         "spacingTicks": 14
       },
       {
-        "atTick": 780,
+        "atTick": 840,
         "unitType": "ironclad",
         "col": 4,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 40
       },
       {
-        "atTick": 780,
+        "atTick": 840,
         "unitType": "ironclad",
         "col": 7,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 40
       },
       {
-        "atTick": 780,
+        "atTick": 840,
         "unitType": "runner",
         "col": 0,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 8
       },
       {
-        "atTick": 780,
+        "atTick": 840,
         "unitType": "runner",
         "col": 11,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 8
       },
       {
-        "atTick": 1020,
+        "atTick": 1080,
         "unitType": "ironclad",
         "col": 3,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 36
       },
       {
-        "atTick": 1020,
+        "atTick": 1080,
         "unitType": "ironclad",
         "col": 8,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 36
       },
       {
-        "atTick": 1020,
+        "atTick": 1080,
         "unitType": "runner",
         "col": 4,
-        "count": 5,
+        "count": 4,
         "spacingTicks": 7
       },
       {
-        "atTick": 1020,
+        "atTick": 1080,
         "unitType": "runner",
         "col": 7,
-        "count": 5,
+        "count": 4,
         "spacingTicks": 7
       },
       {
-        "atTick": 1260,
+        "atTick": 1320,
         "unitType": "harpy",
         "col": 0,
         "count": 3,
         "spacingTicks": 12
       },
       {
-        "atTick": 1260,
+        "atTick": 1320,
         "unitType": "harpy",
         "col": 11,
         "count": 3,
         "spacingTicks": 12
       },
       {
-        "atTick": 1500,
+        "atTick": 1560,
         "unitType": "harpy",
         "col": 1,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 10
       },
       {
-        "atTick": 1500,
+        "atTick": 1560,
         "unitType": "harpy",
         "col": 10,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 10
       },
       {
-        "atTick": 1500,
+        "atTick": 1560,
         "unitType": "ironclad",
         "col": 4,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 34
       },
       {
-        "atTick": 1500,
+        "atTick": 1560,
         "unitType": "ironclad",
         "col": 7,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 34
       }
     ]
@@ -213,5 +213,11 @@
     }
   },
   "nameKey": "campaign.ch3.lv3.name",
-  "briefKey": "campaign.ch3.lv3.brief"
+  "briefKey": "campaign.ch3.lv3.brief",
+  "startInk": 2,
+  "inkRegenMult": 1.02,
+  "enemyScale": {
+    "hp": 1.1,
+    "damage": 1.08
+  }
 }

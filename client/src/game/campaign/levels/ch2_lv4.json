@@ -6,8 +6,8 @@
     "kind": "survive"
   },
   "enemyScale": {
-    "hp": 1.21,
-    "damage": 1.15
+    "hp": 1.08,
+    "damage": 1.06
   },
   "loadout": [
     "max_1",
@@ -47,121 +47,121 @@
   "waves": {
     "entries": [
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "infantry",
         "col": 4,
-        "count": 4,
+        "count": 2,
         "spacingTicks": 8
       },
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "infantry",
         "col": 7,
-        "count": 4,
+        "count": 2,
         "spacingTicks": 8
       },
       {
-        "atTick": 300,
+        "atTick": 360,
         "unitType": "shieldbearer",
         "col": 1,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 25
       },
       {
-        "atTick": 300,
+        "atTick": 360,
         "unitType": "shieldbearer",
         "col": 10,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 25
       },
       {
-        "atTick": 300,
+        "atTick": 360,
         "unitType": "infantry",
         "col": 3,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 16
       },
       {
-        "atTick": 300,
+        "atTick": 360,
         "unitType": "infantry",
         "col": 8,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 16
       },
       {
-        "atTick": 540,
+        "atTick": 600,
         "unitType": "shieldbearer",
         "col": 4,
         "count": 1
       },
       {
-        "atTick": 540,
+        "atTick": 600,
         "unitType": "infantry",
         "col": 1,
-        "count": 4,
+        "count": 2,
         "spacingTicks": 8
       },
       {
-        "atTick": 540,
+        "atTick": 600,
         "unitType": "infantry",
         "col": 10,
-        "count": 4,
+        "count": 2,
         "spacingTicks": 8
       },
       {
-        "atTick": 780,
+        "atTick": 840,
         "unitType": "shieldbearer",
         "col": 0,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 40
       },
       {
-        "atTick": 780,
+        "atTick": 840,
         "unitType": "shieldbearer",
         "col": 11,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 40
       },
       {
-        "atTick": 780,
+        "atTick": 840,
         "unitType": "shieldbearer",
         "col": 4,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 20
       },
       {
-        "atTick": 780,
+        "atTick": 840,
         "unitType": "shieldbearer",
         "col": 7,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 20
       },
       {
-        "atTick": 1020,
+        "atTick": 1080,
         "unitType": "shieldbearer",
         "col": 3,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 35
       },
       {
-        "atTick": 1020,
+        "atTick": 1080,
         "unitType": "shieldbearer",
         "col": 8,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 35
       },
       {
-        "atTick": 1020,
+        "atTick": 1080,
         "unitType": "infantry",
         "col": 4,
-        "count": 5,
+        "count": 4,
         "spacingTicks": 7
       },
       {
-        "atTick": 1020,
+        "atTick": 1080,
         "unitType": "infantry",
         "col": 7,
-        "count": 5,
+        "count": 4,
         "spacingTicks": 7
       }
     ]
@@ -178,5 +178,7 @@
       "binding": 1
     }
   },
-  "nameKey": "campaign.ch2.lv4.name"
+  "nameKey": "campaign.ch2.lv4.name",
+  "startInk": 13,
+  "inkRegenMult": 1.16
 }

@@ -1,7 +1,7 @@
 # Notebook Wars — SLG 地图编辑器设计文档
 
-> 创建：2026-07-04。地形骨架已拍板（2026-07-05，见 [DECISIONS.md ADR-034](../../DECISIONS.md)），编辑器工程实现待排期。
-> 配套阅读：`../../game/SLG_DESIGN.md`（§2.4 国家系统 / §3.2 地图规格）、`../../DECISIONS.md`（ADR-032 地图尺寸/等级、ADR-034 环形地形骨架，**注意**：曾短暂存在一版同日的 ADR-033"10 首府三层同心环"方案，与本文档方向不同，当天即被撤销/作废，本文档只跟 ADR-034 对应）、`../../game/SGZ_LAND_REFERENCE.md`（三战地块/城池调研，§5 环形结构 / §8 城池系统）、`server/shared/src/slg.ts`（现有 `proceduralTile` / `nearestCapitalIdx` / `CAPITAL_FRACTIONS` / `SLG_GEN`，均待按本文档改造——**含 ADR-033 遗留的代码，尚未回滚/重写**）、`../level-editor/DESIGN.md`（工程化参照）、根 `../../../CLAUDE.md`。
+> 创建：2026-07-04。地形骨架已拍板（2026-07-05，见 [DECISIONS.md ADR-034](../../DECISIONS.md)），代码重写已完成（2026-07-05），编辑器工程实现待排期。
+> 配套阅读：`../../game/SLG_DESIGN.md`（§2.4 国家系统 / §3.2 地图规格）、`../../DECISIONS.md`（ADR-032 地图尺寸/等级、ADR-034 环形地形骨架，**注意**：曾短暂存在一版同日的 ADR-033"10 首府三层同心环"方案，与本文档方向不同，当天即被撤销/作废，本文档只跟 ADR-034 对应）、`../../game/SGZ_LAND_REFERENCE.md`（三战地块/城池调研，§5 环形结构 / §8 城池系统）、`server/shared/src/slg.ts`（已按本文档重写：`provinceIdxAt()`/`provinceCapitalPositions()` 替代 `nearestCapitalIdx()`/`CAPITAL_FRACTIONS`，新增地形带+城池节点+按环等级分布表）、`../level-editor/DESIGN.md`（工程化参照）、根 `../../../CLAUDE.md`。
 > 讨论期用一次性 HTML/JS 原型（Artifact，未提交仓库）快速试错定稿，迭代记录见 §7；正式编辑器工具（`tools/map-editor`）尚未搭骨架，§6 是其需求清单。
 
 ---
@@ -13,7 +13,7 @@
 - 编辑器方向不变：不做"手绘 25 万格"，而是**参数化生成 + 编辑器覆盖**——山脉/河流存成**矢量路径**（折线 + 宽度），城池存成**点节点**（坐标 + 等级 + 归属），生成时按路径/节点栅格化到 tile，而不是维护一张 25 万格的逐格覆盖表。
 - 编辑器 MVP 需要的交互（本轮新定，§6）：画河流、画山脉（路径笔刷）、拖拽调整城池位置。
 - 工具形态不变：仿 `tools/level-editor` 的独立 Web 工具，暂定 `tools/map-editor`，端口 **9095**。
-- **代码现状（重要）**：`server/shared/src/slg.ts` 当前实现的是已作废的 ADR-033 方案（"10 首府三层同心环 + 距离衰减"），跟本文档描述的模型不一致，需要整体重写（`proceduralTile()`、`CAPITAL_FRACTIONS`/`nearestCapitalIdx()` 等价物、新增地形/城池数据结构）+ 修复受影响的 `server/worldsvc` e2e 测试。这是下一步任务，尚未开始。
+- **代码现状**：`server/shared/src/slg.ts` 已按本文档 §2-§4 整体重写（2026-07-05）——`provinceIdxAt()`/`provinceCapitalPositions()` 替代旧的 Voronoi `nearestCapitalIdx()`/固定表 `CAPITAL_FRACTIONS`；新增环形地形带（折痕岭主环/内环+墨河弦+出生州间支脉支流）、城池节点（州府+世界中心 9×9+关隘城池+每出生州 9 座分级城池）、按环（outer/resource/core）等级分布表。城池落地为现有 `ProceduralTile` 的 `familyKeep`/`center` 类型（不是独立 collection/带驻军HP的节点），因为 §5 城池驻军/耐久数值尚未拍板——这是本轮实现的刻意范围收窄，非疏漏。受影响的 `server/worldsvc` e2e（`nation-bonus`/`season-ops`/`fog`/`service`/`httpApi`/`pathfinding`）已同步修完，`server/shared`/`server/worldsvc`/`server/tools/econ-sim` typecheck+test 全绿。`tools/map-editor` 编辑器工程本身（§6）仍未搭骨架，是下一步任务。
 
 ---
 
@@ -113,7 +113,7 @@
 - **资源州/核心州是否也要分级城池梯度**（目前只有出生州拍板了 9 座/州的配额）？
 - **数据形态最终定案**（§6.2 是当前倾向，尚未在真正的编辑器工程里验证）。
 - **生效方式**：编辑结果是"下一赛季开新世界生效"（对齐 level-editor 思路），还是要支持修正当前运行中的世界？倾向前者，后者留后续。
-- **国家国民加成**（`NATION_BONUS_PRODUCTION`/`NATION_BONUS_DEFENSE`，`slg.ts:544-547`）跟新的三层环形结构怎么对应——原设计是"州级统一加成"，环形分层后要不要按层级给不同加成（三战式"越靠核心加成越薄"）？
+- **国家国民加成**（`NATION_BONUS_PRODUCTION`/`NATION_BONUS_DEFENSE`，`slg.ts` `provinceIdxAt()` 附近）跟新的三层环形结构怎么对应——本轮重写维持"州级统一加成"不变（仍是同一套 flat 数值，只是省份归属判定换成角度扇区），环形分层后要不要按层级给不同加成（三战式"越靠核心加成越薄"）仍待拍板。
 
 ---
 

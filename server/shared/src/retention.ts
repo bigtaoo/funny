@@ -18,45 +18,57 @@ export function makeMonthKey(tsMs: number): string {
 
 // ── Check-in calendar definition (ECONOMY_NUMBERS §12.1) ────────────────────────────────────
 
-export type CheckinRewardKind = 'coins' | 'stamina';
+// 'coins' kept only for backward-compat parsing of old save snapshots — checkin itself should
+// almost never grant coins (R1: not a new coin faucet). 'material' delivers a fixed id+count from
+// scrap/lead/binding (SaveData.materials keys). 'card'/'equipment' carry no fixed id: the actual
+// item is drawn at claim time from the existing gacha catalogue (uniform pick within the category
+// — see pickRandomCatalogItem in gachaCatalog.ts), so the table only marks the *slot*, not the prize.
+export type CheckinRewardKind = 'coins' | 'stamina' | 'material' | 'card' | 'equipment';
 
 export interface CheckinReward {
   kind: CheckinRewardKind;
   count: number;
+  /** Material id (scrap/lead/binding, SaveData.materials keys), only set when kind === 'material'. */
+  id?: string;
 }
 
-/** 30-slot monthly calendar reward table (index 0 = slot 1; milestone slots annotated). */
+/**
+ * 30-slot monthly calendar reward table (index 0 = slot 1). Regular days alternate stamina with a
+ * material drip (roughly 1 in 3); milestone days (7/14/21/30) are the "big" slots per
+ * RETENTION_DESIGN §2.1: 7 = stamina pack, 14 = card pack (random draw), 21 = mid-tier material
+ * pack, 30 = month-end finale (random equipment draw).
+ */
 export const CHECKIN_REWARDS: CheckinReward[] = [
-  { kind: 'stamina', count: 30 },   // 1
-  { kind: 'stamina', count: 30 },   // 2
-  { kind: 'stamina', count: 30 },   // 3
-  { kind: 'stamina', count: 30 },   // 4
-  { kind: 'stamina', count: 30 },   // 5
-  { kind: 'stamina', count: 30 },   // 6
-  { kind: 'coins',   count: 5  },   // 7  ← milestone: fragment pack (placeholder using coins)
-  { kind: 'stamina', count: 30 },   // 8
-  { kind: 'stamina', count: 30 },   // 9
-  { kind: 'stamina', count: 30 },   // 10
-  { kind: 'stamina', count: 30 },   // 11
-  { kind: 'stamina', count: 30 },   // 12
-  { kind: 'stamina', count: 30 },   // 13
-  { kind: 'coins',   count: 5  },   // 14 ← milestone: card pack
-  { kind: 'stamina', count: 30 },   // 15
-  { kind: 'stamina', count: 30 },   // 16
-  { kind: 'stamina', count: 30 },   // 17
-  { kind: 'stamina', count: 30 },   // 18
-  { kind: 'stamina', count: 30 },   // 19
-  { kind: 'stamina', count: 30 },   // 20
-  { kind: 'coins',   count: 5  },   // 21 ← milestone: mid-tier material pack
-  { kind: 'stamina', count: 30 },   // 22
-  { kind: 'stamina', count: 30 },   // 23
-  { kind: 'stamina', count: 30 },   // 24
-  { kind: 'stamina', count: 30 },   // 25
-  { kind: 'stamina', count: 30 },   // 26
-  { kind: 'stamina', count: 30 },   // 27
-  { kind: 'stamina', count: 30 },   // 28
-  { kind: 'stamina', count: 30 },   // 29
-  { kind: 'coins',   count: 10 },   // 30 ← month-end finale
+  { kind: 'stamina',   count: 30 },                  // 1
+  { kind: 'stamina',   count: 30 },                  // 2
+  { kind: 'stamina',   count: 30 },                  // 3
+  { kind: 'material',  count: 3,   id: 'scrap' },    // 4
+  { kind: 'stamina',   count: 30 },                  // 5
+  { kind: 'stamina',   count: 30 },                  // 6
+  { kind: 'stamina',   count: 100 },                 // 7  ← milestone: stamina pack
+  { kind: 'stamina',   count: 30 },                  // 8
+  { kind: 'material',  count: 3,   id: 'scrap' },    // 9
+  { kind: 'stamina',   count: 30 },                  // 10
+  { kind: 'stamina',   count: 30 },                  // 11
+  { kind: 'material',  count: 2,   id: 'lead' },     // 12
+  { kind: 'stamina',   count: 30 },                  // 13
+  { kind: 'card',      count: 1 },                   // 14 ← milestone: card pack (random draw)
+  { kind: 'stamina',   count: 30 },                  // 15
+  { kind: 'material',  count: 3,   id: 'scrap' },    // 16
+  { kind: 'stamina',   count: 30 },                  // 17
+  { kind: 'stamina',   count: 30 },                  // 18
+  { kind: 'material',  count: 2,   id: 'lead' },     // 19
+  { kind: 'stamina',   count: 30 },                  // 20
+  { kind: 'material',  count: 5,   id: 'lead' },     // 21 ← milestone: mid-tier material pack
+  { kind: 'stamina',   count: 30 },                  // 22
+  { kind: 'material',  count: 3,   id: 'scrap' },    // 23
+  { kind: 'stamina',   count: 30 },                  // 24
+  { kind: 'stamina',   count: 30 },                  // 25
+  { kind: 'material',  count: 1,   id: 'binding' },  // 26
+  { kind: 'stamina',   count: 30 },                  // 27
+  { kind: 'stamina',   count: 30 },                  // 28
+  { kind: 'material',  count: 3,   id: 'scrap' },    // 29
+  { kind: 'equipment', count: 1 },                   // 30 ← milestone: month-end finale (random equipment draw)
 ];
 
 export const CHECKIN_TOTAL_DAYS = 30;

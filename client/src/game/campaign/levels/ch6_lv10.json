@@ -5,7 +5,7 @@
   "objective": {
     "kind": "boss"
   },
-  "inkRegenMult": 0.4,
+  "inkRegenMult": 1.46,
   "bannedCards": [
     "meteor_1"
   ],
@@ -68,24 +68,24 @@
   "waves": {
     "entries": [
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "runner",
         "col": 2,
-        "count": 5,
+        "count": 3,
         "spacingTicks": 6
       },
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "runner",
         "col": 9,
-        "count": 5,
+        "count": 3,
         "spacingTicks": 6
       },
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "ironclad",
         "col": 1,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 36,
         "crossWaypoints": [
           {
@@ -95,10 +95,10 @@
         ]
       },
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "ironclad",
         "col": 10,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 36,
         "crossWaypoints": [
           {
@@ -108,66 +108,66 @@
         ]
       },
       {
-        "atTick": 300,
+        "atTick": 360,
         "unitType": "ironclad",
         "col": 3,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 30
       },
       {
-        "atTick": 300,
+        "atTick": 360,
         "unitType": "ironclad",
         "col": 8,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 30
       },
       {
-        "atTick": 300,
+        "atTick": 360,
         "unitType": "runner",
         "col": 0,
-        "count": 5,
+        "count": 3,
         "spacingTicks": 6
       },
       {
-        "atTick": 300,
+        "atTick": 360,
         "unitType": "runner",
         "col": 11,
-        "count": 5,
+        "count": 3,
         "spacingTicks": 6
       },
       {
-        "atTick": 600,
+        "atTick": 660,
         "unitType": "ironclad",
         "col": 4,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 28
       },
       {
-        "atTick": 600,
+        "atTick": 660,
         "unitType": "ironclad",
         "col": 7,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 28
       },
       {
-        "atTick": 600,
+        "atTick": 660,
         "unitType": "runner",
         "col": 2,
-        "count": 6,
+        "count": 4,
         "spacingTicks": 5
       },
       {
-        "atTick": 600,
+        "atTick": 660,
         "unitType": "runner",
         "col": 9,
-        "count": 6,
+        "count": 4,
         "spacingTicks": 5
       },
       {
-        "atTick": 600,
+        "atTick": 660,
         "unitType": "ironclad",
         "col": 1,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 28,
         "crossWaypoints": [
           {
@@ -177,10 +177,10 @@
         ]
       },
       {
-        "atTick": 600,
+        "atTick": 660,
         "unitType": "ironclad",
         "col": 10,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 28,
         "crossWaypoints": [
           {
@@ -190,141 +190,141 @@
         ]
       },
       {
-        "atTick": 900,
+        "atTick": 960,
         "unitType": "ironclad",
         "col": 0,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 24
       },
       {
-        "atTick": 900,
+        "atTick": 960,
         "unitType": "ironclad",
         "col": 11,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 24
       },
       {
-        "atTick": 900,
+        "atTick": 960,
         "unitType": "runner",
         "col": 3,
-        "count": 6,
+        "count": 4,
         "spacingTicks": 5
       },
       {
-        "atTick": 900,
+        "atTick": 960,
         "unitType": "runner",
         "col": 8,
-        "count": 6,
+        "count": 4,
         "spacingTicks": 5
       },
       {
-        "atTick": 900,
+        "atTick": 960,
         "unitType": "harpy",
         "col": 4,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 14
       },
       {
-        "atTick": 900,
+        "atTick": 960,
         "unitType": "harpy",
         "col": 7,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 14
       },
       {
-        "atTick": 900,
+        "atTick": 960,
         "unitType": "berserker",
         "col": 3,
         "count": 1,
         "spacingTicks": 40
       },
       {
-        "atTick": 900,
+        "atTick": 960,
         "unitType": "berserker",
         "col": 8,
         "count": 1,
         "spacingTicks": 40
       },
       {
-        "atTick": 900,
+        "atTick": 960,
         "unitType": "splitter",
         "col": 2,
         "count": 1,
         "spacingTicks": 38
       },
       {
-        "atTick": 900,
+        "atTick": 960,
         "unitType": "splitter",
         "col": 9,
         "count": 1,
         "spacingTicks": 38
       },
       {
-        "atTick": 960,
+        "atTick": 1020,
         "unitType": "medic",
         "col": 4,
         "count": 1
       },
       {
-        "atTick": 960,
+        "atTick": 1020,
         "unitType": "medic",
         "col": 7,
         "count": 1
       },
       {
-        "atTick": 1200,
+        "atTick": 1260,
         "unitType": "ironclad",
         "col": 3,
         "count": 1,
         "isBoss": true
       },
       {
-        "atTick": 1200,
+        "atTick": 1260,
         "unitType": "ironclad",
         "col": 4,
         "count": 1,
         "isBoss": true
       },
       {
-        "atTick": 1200,
+        "atTick": 1260,
         "unitType": "ironclad",
         "col": 7,
         "count": 1,
         "isBoss": true
       },
       {
-        "atTick": 1200,
+        "atTick": 1260,
         "unitType": "runner",
         "col": 2,
-        "count": 6,
+        "count": 4,
         "spacingTicks": 5
       },
       {
-        "atTick": 1200,
+        "atTick": 1260,
         "unitType": "runner",
         "col": 9,
-        "count": 6,
+        "count": 4,
         "spacingTicks": 5
       },
       {
-        "atTick": 1200,
+        "atTick": 1260,
         "unitType": "ironclad",
         "col": 0,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 20
       },
       {
-        "atTick": 1200,
+        "atTick": 1260,
         "unitType": "ironclad",
         "col": 11,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 20
       },
       {
-        "atTick": 1200,
+        "atTick": 1260,
         "unitType": "ironclad",
         "col": 1,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 26,
         "crossWaypoints": [
           {
@@ -334,10 +334,10 @@
         ]
       },
       {
-        "atTick": 1200,
+        "atTick": 1260,
         "unitType": "ironclad",
         "col": 10,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 26,
         "crossWaypoints": [
           {
@@ -362,5 +362,12 @@
   },
   "nameKey": "campaign.ch6.lv10.name",
   "briefKey": "campaign.ch6.lv10.brief",
-  "story": { "outroKey": "campaign.ch6.outro" }
+  "story": {
+    "outroKey": "campaign.ch6.outro"
+  },
+  "startInk": 32,
+  "enemyScale": {
+    "hp": 1.2,
+    "damage": 1.14
+  }
 }

@@ -6,8 +6,8 @@
     "kind": "survive"
   },
   "enemyScale": {
-    "hp": 1.07,
-    "damage": 1.05
+    "hp": 1.08,
+    "damage": 1.06
   },
   "loadout": [
     "max_1",
@@ -23,7 +23,7 @@
     "haste_1",
     "meteor_1"
   ],
-  "startInk": 10,
+  "startInk": 7,
   "waves": {
     "entries": [
       {
@@ -138,5 +138,6 @@
     }
   },
   "nameKey": "campaign.ch2.lv2.name",
-  "briefKey": "campaign.ch2.lv2.brief"
+  "briefKey": "campaign.ch2.lv2.brief",
+  "inkRegenMult": 1.06
 }

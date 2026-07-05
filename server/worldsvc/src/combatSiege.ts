@@ -13,7 +13,7 @@ import {
   strongholdGarrison,
   STRONGHOLD_LOOT_PER_LEVEL,
   strongholdMaterialLoot,
-  nearestCapitalIdx,
+  provinceIdxAt,
   SIEGE_LOOT_RATE,
   SWEEP_LOOT_PER_LEVEL,
   RESOURCE_CAP,
@@ -173,8 +173,8 @@ export class SiegeService {
     const baseTile = target.baseRing
       ? ((await cols.tiles.findOne({ _id: target.baseAnchor })) ?? target)
       : target;
-    // Nation defense bonus (§2.4 / G1): if the garrison tile is within the Voronoi region of a capital the defender occupies → effective garrison strength is increased.
-    const capIdx = nearestCapitalIdx(baseTile.x, baseTile.y, this.core.capitals);
+    // Nation defense bonus (§2.4 / G1, ADR-034): if the garrison tile is within the province of a capital the defender occupies → effective garrison strength is increased.
+    const capIdx = provinceIdxAt(baseTile.x, baseTile.y);
     const nation = await cols.nations.findOne({ _id: `nation:${m.worldId}:${capIdx}` });
     const inOwnNation = !!nation?.ownerId && nation.ownerId === defenderId;
     const effGarrison = nationDefenseStrength(baseTile.garrison ?? 0, inOwnNation);

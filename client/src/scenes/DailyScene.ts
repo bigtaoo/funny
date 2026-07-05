@@ -3,8 +3,8 @@ import { Scene } from './SceneManager';
 import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
-import { buildIcon } from '../render/icons';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren, marginLineX } from '../render/sketchUi';
+import { buildIcon, type IconKind } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import type { SaveData } from '../game/meta/SaveData';
@@ -19,27 +19,39 @@ import {
 // ── DailyScene — daily check-in + daily tasks (B5, RETENTION_DESIGN) ────────────
 //
 // Entry: LobbyScene "daily" button (onOpenDaily).
-// Portrait: upper half = 30-cell monthly check-in calendar, lower half = 3 daily task cards + claim button.
-// Landscape: left column (55%) = check-in calendar, right column (45%) = task cards.
+// Tab layout (2026-07-05): 月历/每日任务 are a vertical sidebar left of the notebook's red
+// margin rule (mirrors AchievementScene's category sidebar); content sits to its right and
+// shows only the active tab at a time, at full width, regardless of orientation.
 
 export interface DailyCallbacks {
   onBack(): void;
   getSave?(): SaveData | undefined;
   getRetention?(): Promise<RetentionView>;
-  onCheckin?(): Promise<{ day: number; reward: { kind: string; count: number } }>;
+  onCheckin?(): Promise<{ day: number; reward: { kind: string; count: number; id?: string } }>;
   onClaimDaily?(): Promise<{ coins: number }>;
 }
 
 interface Hit { x: number; y: number; w: number; h: number; fn: () => void }
 
+type DailyTab = 'checkin' | 'tasks';
+
+/** Reward-kind glyph (mirrors BattlePassScene/EventScene's kind→IconKind mapping). */
+function rewardIcon(kind: string, id?: string): IconKind | null {
+  if (kind === 'coins') return 'coin';
+  if (kind === 'material') return id === 'lead' ? 'lead' : id === 'binding' ? 'binding' : 'scrap';
+  if (kind === 'card') return 'cards';
+  if (kind === 'equipment') return 'armor';
+  return null; // stamina: plain "+N" text, no glyph
+}
+
 export class DailyScene implements Scene {
   readonly container: PIXI.Container;
   private readonly w: number;
   private readonly h: number;
-  private readonly landscape: boolean;
   private readonly cb: DailyCallbacks;
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
+  private activeTab: DailyTab = 'checkin';
 
   private readonly bt = new BusyTracker();
   private toast: string | null = null;
@@ -51,7 +63,6 @@ export class DailyScene implements Scene {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
     this.h = layout.designHeight;
-    this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.render();
@@ -128,21 +139,16 @@ export class DailyScene implements Scene {
 
     const nowMs = Date.now();
     const contentTop = h * 0.12;
+    const availH = h - contentTop - h * 0.03;
 
-    if (this.landscape) {
-      // Landscape: check-in calendar in the left column, tasks in the right column
-      const colGap = Math.round(w * 0.015);
-      const leftW = Math.round((w - colGap) * 0.55);
-      const rightX = leftW + colGap;
-      const rightW = w - rightX;
-      const availH = h - contentTop - h * 0.03;
-      this.renderCheckin(0, contentTop, leftW, availH, save, nowMs);
-      this.renderDailyTasks(rightX, contentTop, rightW, availH, save, nowMs);
+    this.drawSidebarTabs(contentTop, availH);
+
+    const contentX = marginLineX(w) + Math.round(w * 0.025);
+    const contentW = w - contentX - Math.round(w * 0.04);
+    if (this.activeTab === 'checkin') {
+      this.renderCheckin(contentX, contentTop, contentW, availH, save, nowMs);
     } else {
-      // Portrait: check-in calendar in the upper half, tasks in the lower half
-      const halfH = (h - contentTop) / 2;
-      this.renderCheckin(0, contentTop, w, halfH, save, nowMs);
-      this.renderDailyTasks(0, contentTop + halfH, w, halfH - h * 0.03, save, nowMs);
+      this.renderDailyTasks(contentX, contentTop, contentW, availH, save, nowMs);
     }
 
     if (this.toast) {
@@ -156,6 +162,44 @@ export class DailyScene implements Scene {
       this.container.addChild(toastBg, toastTxt);
     }
     if (this.bt.loadingVisible) drawLoadingOverlay(this.container, w, h, this.bt.dots, t('common.processing'));
+  }
+
+  /**
+   * 月历/每日任务 tabs stacked in the narrow strip left of the notebook's red margin rule
+   * (mirrors AchievementScene's category sidebar). Tapping a tab swaps the single content
+   * pane on the right — only one tab's content is ever drawn at a time.
+   */
+  private drawSidebarTabs(top: number, availH: number): void {
+    const { w } = this;
+    const tabs: { key: DailyTab; labelKey: TranslationKey }[] = [
+      { key: 'checkin', labelKey: 'daily.checkin.title' },
+      { key: 'tasks', labelKey: 'daily.tasks.title' },
+    ];
+    const x = Math.round(w * 0.012);
+    const tabW = marginLineX(w) - x - Math.round(w * 0.012);
+    const tabH = Math.round(availH * 0.16);
+    const gap = Math.round(availH * 0.03);
+
+    tabs.forEach((tab, i) => {
+      const y = top + i * (tabH + gap);
+      const on = tab.key === this.activeTab;
+      const box = sketchPanel(tabW, tabH, {
+        fill: on ? C.accent : C.paper, border: on ? C.accent : C.line,
+        width: on ? 2 : 1.2, seed: seedFor(x, y, i),
+      });
+      box.x = x; box.y = y;
+      this.container.addChild(box);
+
+      const lbl = new PIXI.Text(t(tab.labelKey), {
+        fontSize: Math.round(tabW * 0.24), fill: on ? 0xffffff : C.dark, fontFamily: 'monospace',
+        fontWeight: on ? 'bold' : 'normal', wordWrap: true, wordWrapWidth: tabW * 0.86, align: 'center',
+      });
+      lbl.anchor.set(0.5, 0.5);
+      lbl.x = x + tabW / 2; lbl.y = y + tabH / 2;
+      this.container.addChild(lbl);
+
+      this.hits.push({ x, y, w: tabW, h: tabH, fn: () => { this.activeTab = tab.key; this.render(); } });
+    });
   }
 
   private renderCheckin(areaX: number, top: number, areaW: number, areaH: number, save: SaveData, nowMs: number): void {
@@ -210,20 +254,28 @@ export class DailyScene implements Scene {
 
       const reward = rewards[day - 1];
       if (reward) {
-        const isCoin = reward.kind === 'coins';
-        const rt = txt(`+${reward.count}`, Math.round(ch * 0.24), isCoin ? 0x8a7020 : 0x336644);
+        const icon = rewardIcon(reward.kind, reward.id);
+        // Card/equipment milestones are single items (drawn randomly at claim time) — glyph only,
+        // no "+1" (mirrors BattlePassScene's skin reward: single item, no count).
+        const singleItem = reward.kind === 'card' || reward.kind === 'equipment';
         const baseY = y + ch * 0.92;
-        if (isCoin) {
-          // Coin reward: little hand-drawn coin glyph left of the amount (replaces the "c" suffix).
+        if (icon) {
           const rc = Math.round(ch * 0.26);
-          const ic = buildIcon('coin', rc, C.gold);
-          const groupW = rc + Math.round(ch * 0.03) + rt.width;
-          const gx = cx - groupW / 2;
-          ic.x = gx; ic.y = baseY - rc;
-          rt.anchor.set(0, 1);
-          rt.x = gx + rc + Math.round(ch * 0.03); rt.y = baseY;
-          this.container.addChild(ic, rt);
+          const ic = buildIcon(icon, rc, reward.kind === 'coins' ? C.gold : 0x336644);
+          if (singleItem) {
+            ic.x = cx - rc / 2; ic.y = baseY - rc;
+            this.container.addChild(ic);
+          } else {
+            const rt = txt(`+${reward.count}`, Math.round(ch * 0.24), reward.kind === 'coins' ? 0x8a7020 : 0x336644);
+            const groupW = rc + Math.round(ch * 0.03) + rt.width;
+            const gx = cx - groupW / 2;
+            ic.x = gx; ic.y = baseY - rc;
+            rt.anchor.set(0, 1);
+            rt.x = gx + rc + Math.round(ch * 0.03); rt.y = baseY;
+            this.container.addChild(ic, rt);
+          }
         } else {
+          const rt = txt(`+${reward.count}`, Math.round(ch * 0.24), 0x336644);
           rt.anchor.set(0.5, 1);
           rt.x = cx; rt.y = baseY;
           this.container.addChild(rt);
@@ -329,9 +381,12 @@ export class DailyScene implements Scene {
     this.bt.start();
     try {
       const r = await withTimeout(this.cb.onCheckin());
-      const rewardDesc = r.reward.kind === 'coins'
-        ? t('daily.tasks.rewardCoins', { n: r.reward.count })
-        : `+${r.reward.count} stamina`;
+      const rewardDesc =
+        r.reward.kind === 'coins' ? t('daily.tasks.rewardCoins', { n: r.reward.count })
+        : r.reward.kind === 'material' ? t('daily.checkin.rewardMaterial', { n: r.reward.count })
+        : r.reward.kind === 'card' ? t('daily.checkin.rewardCard')
+        : r.reward.kind === 'equipment' ? t('daily.checkin.rewardEquipment')
+        : t('daily.checkin.rewardStamina', { n: r.reward.count });
       this.showToast(`${t('daily.checkin.day', { n: r.day })} ${rewardDesc}`);
     } catch (e) {
       this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('daily.tasks.claimFailed'));

@@ -95,6 +95,22 @@ export function catalogItem(itemId: string): GachaCatalogItem | undefined {
   return CATALOG_INDEX.get(itemId);
 }
 
+/**
+ * Uniform random pick within one catalogue category (checkin card/equipment milestone draws,
+ * RETENTION_DESIGN §2.1). Deliberately simpler than the two-stage weighted custom-pool roll
+ * (commercial/gacha.ts rollCustomGacha) — checkin has no ops-authored weights to reuse, and metaserver
+ * does not depend on @nw/commercial, so this stays a pure @nw/shared pick over the same catalogue
+ * instead of crossing the service boundary. `rng` is injectable for deterministic tests.
+ */
+export function pickRandomCatalogItem(
+  category: GachaCategory,
+  rng: (max: number) => number = (max) => Math.floor(Math.random() * max),
+): GachaCatalogItem | undefined {
+  const pool = GACHA_CATALOG.filter((i) => i.category === category);
+  if (!pool.length) return undefined;
+  return pool[rng(pool.length)];
+}
+
 /** Catalogue grouped by category (all GACHA_CATEGORY_ORDER keys present, possibly empty), for the ops picker. */
 export function catalogByCategory(): Record<GachaCategory, GachaCatalogItem[]> {
   const out = Object.fromEntries(GACHA_CATEGORY_ORDER.map((c) => [c, [] as GachaCatalogItem[]])) as Record<

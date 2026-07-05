@@ -13,6 +13,8 @@ import {
   type GachaCategory,
   type GachaCatalogItem,
   type CustomPoolConfig,
+  type MapTemplateSummary,
+  type MapTemplateTile,
 } from '@nw/shared';
 
 const log = createLogger('admin:clients');
@@ -519,6 +521,14 @@ export interface WorldClient {
   closeWorld(worldId: string): Promise<void>;
   /** Scan for anomalous auction transactions (G7 anti-RMT). worldsvc aggregates suspicious pairs offline; admin creates an audit ticket based on the results. */
   listAuctionAnomalies(worldId: string, windowSec?: number): Promise<AuctionAnomaly[]>;
+
+  // ── Map templates (§24 Layer A, admin map editor) ──
+  listMapTemplates(): Promise<MapTemplateSummary[]>;
+  generateMapTemplate(templateId: string, width: number, height: number): Promise<MapTemplateSummary>;
+  getMapTemplateTiles(templateId: string, x: number, y: number, w: number, h: number): Promise<MapTemplateTile[]>;
+  saveMapTemplateTiles(templateId: string, tiles: MapTemplateTile[]): Promise<{ updated: number }>;
+  activateMapTemplate(templateId: string): Promise<void>;
+  deleteMapTemplate(templateId: string): Promise<void>;
 }
 
 /** admin → worldsvc internal HTTP (X-Internal-Key). worldsvc endpoints are in the internal branch of httpApi.ts. */
@@ -580,6 +590,53 @@ export class HttpWorldClient implements WorldClient {
     const body = (await res.json()) as { ok?: boolean; data?: AuctionAnomaly[] };
     return body.data ?? [];
   }
+
+  private async get(path: string): Promise<unknown> {
+    if (!this.baseUrl) throw new Error('worldsvc not configured');
+    const res = await fetch(`${this.baseUrl}${path}`, { headers: internalHeaders('admin', this.internalKey) });
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; data?: unknown; error?: { message?: string } };
+    if (!res.ok || body.ok === false) {
+      throw new Error(body.error?.message ?? `${path} failed: HTTP ${res.status}`);
+    }
+    return body.data;
+  }
+
+  private async putOrDelete(method: 'PUT' | 'DELETE', path: string, payload?: Record<string, unknown>): Promise<unknown> {
+    if (!this.baseUrl) throw new Error('worldsvc not configured');
+    const res = await fetch(`${this.baseUrl}${path}`, {
+      method,
+      headers: { 'content-type': 'application/json', ...internalHeaders('admin', this.internalKey) },
+      ...(payload ? { body: JSON.stringify(payload) } : {}),
+    });
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; data?: unknown; error?: { message?: string } };
+    if (!res.ok || body.ok === false) {
+      throw new Error(body.error?.message ?? `${path} failed: HTTP ${res.status}`);
+    }
+    return body.data;
+  }
+
+  // ── Map templates (§24 Layer A, admin map editor) ──
+  async listMapTemplates(): Promise<MapTemplateSummary[]> {
+    if (!this.baseUrl) return [];
+    return (await this.get('/admin/world/map-templates')) as MapTemplateSummary[];
+  }
+  async generateMapTemplate(templateId: string, width: number, height: number): Promise<MapTemplateSummary> {
+    return (await this.post('/admin/world/map-templates/generate', { templateId, width, height })) as MapTemplateSummary;
+  }
+  async getMapTemplateTiles(templateId: string, x: number, y: number, w: number, h: number): Promise<MapTemplateTile[]> {
+    if (!this.baseUrl) return [];
+    const qs = new URLSearchParams({ x: String(x), y: String(y), w: String(w), h: String(h) });
+    return (await this.get(`/admin/world/map-templates/${encodeURIComponent(templateId)}/tiles?${qs}`)) as MapTemplateTile[];
+  }
+  async saveMapTemplateTiles(templateId: string, tiles: MapTemplateTile[]): Promise<{ updated: number }> {
+    return (await this.putOrDelete('PUT', `/admin/world/map-templates/${encodeURIComponent(templateId)}/tiles`, { tiles })) as { updated: number };
+  }
+  async activateMapTemplate(templateId: string): Promise<void> {
+    await this.post(`/admin/world/map-templates/${encodeURIComponent(templateId)}/activate`, {});
+  }
+  async deleteMapTemplate(templateId: string): Promise<void> {
+    await this.putOrDelete('DELETE', `/admin/world/map-templates/${encodeURIComponent(templateId)}`);
+  }
 }
 
 export const nullWorldClient: WorldClient = {
@@ -590,6 +647,12 @@ export const nullWorldClient: WorldClient = {
   async resetWorld() { throw new Error('worldsvc not configured'); },
   async closeWorld() { throw new Error('worldsvc not configured'); },
   async listAuctionAnomalies() { return []; },
+  async listMapTemplates() { return []; },
+  async generateMapTemplate() { throw new Error('worldsvc not configured'); },
+  async getMapTemplateTiles() { return []; },
+  async saveMapTemplateTiles() { throw new Error('worldsvc not configured'); },
+  async activateMapTemplate() { throw new Error('worldsvc not configured'); },
+  async deleteMapTemplate() { throw new Error('worldsvc not configured'); },
 };
 
 // ── Ladder season (meta /admin/ladder/season/roll, SE-3) ─────────────────────

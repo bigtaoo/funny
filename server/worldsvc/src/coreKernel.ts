@@ -3,7 +3,7 @@
 // sequences, cached capitals, bounds/coord primitives and the tiny marchView mapper
 // that every higher layer (yield / push / nation / spawn / vision / map) builds on.
 // No behavior change — methods copied verbatim from the original core.ts.
-import { capitalPositions } from '@nw/shared';
+import { provinceCapitalPositions, worldSeed } from '@nw/shared';
 import type { MarchDoc } from './db';
 import { nullWorldGatewayClient, type WorldGatewayClient } from './gatewayClient';
 import { nullWorldMetaClient, type WorldMetaClient } from './metaClient';
@@ -21,8 +21,8 @@ export class WorldCoreKernel {
   marchSeq = 0;
   /** In-process monotonic sequence number — ensures siegeIds do not collide when multiple sieges resolve within the same millisecond. */
   siegeSeq = 0;
-  /** Cached capital coordinate list derived from the current mapW/mapH (lazy-initialized). */
-  private _capitals: [number, number][] | null = null;
+  /** Cached province-capital coordinate list, keyed by worldId (ADR-034: capitals are now seed-derived, not fixed by map size alone). */
+  private _capitalsByWorld = new Map<string, readonly [number, number][]>();
 
   readonly socialsvc: WorldSocialsvcClient;
 
@@ -34,11 +34,14 @@ export class WorldCoreKernel {
     this.socialsvc = deps.socialsvc ?? nullWorldSocialsvcClient;
   }
 
-  get capitals(): [number, number][] {
-    if (!this._capitals) {
-      this._capitals = capitalPositions(this.deps.mapW, this.deps.mapH);
+  /** Province-capital coordinates for a given world (ADR-034: seed-derived, so keyed per worldId rather than a single map-wide cache). */
+  capitalsFor(worldId: string): readonly [number, number][] {
+    let caps = this._capitalsByWorld.get(worldId);
+    if (!caps) {
+      caps = provinceCapitalPositions(this.deps.mapW, this.deps.mapH, worldSeed(worldId));
+      this._capitalsByWorld.set(worldId, caps);
     }
-    return this._capitals;
+    return caps;
   }
 
   inBounds(x: number, y: number): boolean {
