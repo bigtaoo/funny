@@ -5,11 +5,11 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import type { Rarity } from '../game/meta/SaveData';
 import type { GachaPool, GachaResultEntry } from '../net/ApiClient';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren, marginLineX } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { gachaCardTexture, gachaFrameTexture, gachaBannerTexture, preloadGachaTextures } from '../render/gachaArt';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
-import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
+import { drawSidebarTabs, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { buildIcon } from '../render/icons';
 
@@ -186,7 +186,8 @@ export class GachaScene implements Scene {
 
     this.drawBackground();
     const tbH = this.drawHeader();
-    this.drawBody(this.drawGroupTabs(tbH));
+    this.drawSidebar(tbH);
+    this.drawBody(tbH);
     if (this.toast) this.drawToast();
     if (this.reveal) this.drawReveal(this.reveal);
     if (this.oddsOpen && this.pool) this.drawOdds(this.pool);
@@ -213,14 +214,14 @@ export class GachaScene implements Scene {
   }
 
   /**
-   * Shop group tab strip (LOBBY_IA_REDESIGN P1.5): [Shop|Coins|Gacha|BattlePass], Gacha active.
-   * Only drawn when in the group context (openShop injected); returns the body start y.
-   * Otherwise returns tbH unchanged.
+   * Shop group nav [Shop|Coins|Gacha|BattlePass] (LOBBY_IA_REDESIGN §9), Gacha active: a vertical
+   * rail stacked inside the left notebook-margin gutter (`marginLineX`), mirroring the
+   * CardScene/EquipmentScene sidebar convention. Only drawn when in the group context (openShop
+   * injected). Consumes no vertical space — drawBody shifts its content start x instead.
    */
-  private drawGroupTabs(tbH: number): number {
-    if (!this.cb.openShop) return tbH;
+  private drawSidebar(tbH: number): void {
+    if (!this.cb.openShop) return;
     const { w, h } = this;
-    const stripH = hubTabsHeight(h);
     const tabs: HubTab[] = [{ label: t('shop.title'), active: false, icon: 'tag' }];
     const actions: Array<() => void> = [() => this.cb.openShop?.()];
     if (this.cb.openCoins) {
@@ -233,22 +234,33 @@ export class GachaScene implements Scene {
       tabs.push({ label: t('battlepass.title'), active: false, icon: 'trophy' });
       actions.push(() => this.cb.openBattlePass?.());
     }
-    const hits = drawHubTabs(this.container, w, tbH, stripH, tabs, (i) => actions[i]?.());
+    const sidebarW = marginLineX(w);
+    const { hits } = drawSidebarTabs(this.container, sidebarW, tbH, h, tabs, (i) => actions[i]?.());
     this.hits.push(...hits);
-    return tbH + stripH;
+  }
+
+  /** Content column bounds: shifted right of the sidebar rail when in the shop group, else full width. */
+  private contentBounds(): { x0: number; w: number } {
+    const { w } = this;
+    if (!this.cb.openShop) return { x0: 0, w };
+    const gap = Math.round(w * 0.02);
+    const x0 = marginLineX(w) + gap;
+    return { x0, w: w - x0 - gap };
   }
 
   private drawBody(tbH: number): void {
     const { w, h } = this;
+    const { x0: cx0, w: cw } = this.contentBounds();
+    const centerX = cx0 + cw / 2;
     if (this.loading) {
       const lbl = txt(t('gacha.loading'), Math.round(h * 0.028), C.mid);
-      lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = tbH + Math.round(h * 0.20);
+      lbl.anchor.set(0.5, 0.5); lbl.x = centerX; lbl.y = tbH + Math.round(h * 0.20);
       this.container.addChild(lbl);
       return;
     }
     if (!this.pool) {
       const lbl = txt(t('gacha.error'), Math.round(h * 0.028), C.mid);
-      lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = tbH + Math.round(h * 0.20);
+      lbl.anchor.set(0.5, 0.5); lbl.x = centerX; lbl.y = tbH + Math.round(h * 0.20);
       this.container.addChild(lbl);
       return;
     }
@@ -259,12 +271,12 @@ export class GachaScene implements Scene {
     let selH = 0;
     if (this.pools.length > 1) {
       selH = Math.round(h * 0.055);
-      const gap = Math.round(w * 0.02);
-      const totalW = Math.round(w * 0.9);
+      const gap = Math.round(cw * 0.02);
+      const totalW = Math.round(cw * 0.9);
       const tabW = Math.round((totalW - gap * (this.pools.length - 1)) / this.pools.length);
       const tabH = Math.round(h * 0.042);
       const sy = tbH + Math.round(h * 0.008);
-      let sx = (w - totalW) / 2;
+      let sx = cx0 + (cw - totalW) / 2;
       this.pools.forEach((p, i) => {
         const active = i === this.poolIdx;
         const label = p.limited ? (p.name ?? t('gacha.pool.limited')) : t('gacha.pool.standard');
@@ -276,9 +288,9 @@ export class GachaScene implements Scene {
     }
 
     // Banner image.
-    const bannerW = Math.round(w * 0.78);
+    const bannerW = Math.round(cw * 0.78);
     const bannerH = Math.round(h * 0.26);
-    const bx = (w - bannerW) / 2;
+    const bx = cx0 + (cw - bannerW) / 2;
     const by = tbH + selH + Math.round(h * 0.05);
     const bannerTex = gachaBannerTexture(pool.id);
     const bannerSpr = new PIXI.Sprite(bannerTex);
@@ -348,12 +360,12 @@ export class GachaScene implements Scene {
     if (pityMax > 0) {
       const cur = this.cb.getPity(pool.id);
       const pity = txt(t('gacha.pity', { cur, max: pityMax }), Math.round(h * 0.024), C.dark, true);
-      pity.anchor.set(0.5, 0.5); pity.x = w / 2; pity.y = by + bannerH + Math.round(h * 0.05);
+      pity.anchor.set(0.5, 0.5); pity.x = centerX; pity.y = by + bannerH + Math.round(h * 0.05);
       this.container.addChild(pity);
 
-      const barW = Math.round(w * 0.7);
+      const barW = Math.round(cw * 0.7);
       const barH = Math.round(h * 0.018);
-      const barX = (w - barW) / 2;
+      const barX = cx0 + (cw - barW) / 2;
       const barY = by + bannerH + Math.round(h * 0.08);
       const track = new PIXI.Graphics();
       track.beginFill(C.light); track.drawRoundedRect(0, 0, barW, barH, barH / 2); track.endFill();
@@ -369,9 +381,9 @@ export class GachaScene implements Scene {
     }
 
     // Draw buttons.
-    const btnW = Math.round(w * 0.78);
+    const btnW = Math.round(cw * 0.78);
     const btnH = Math.round(h * 0.092);
-    const btnX = (w - btnW) / 2;
+    const btnX = cx0 + (cw - btnW) / 2;
     let btnY = Math.round(h * 0.68);
     const single = pool.costSingle;
     const ten = pool.costTen ?? pool.costSingle * 10;

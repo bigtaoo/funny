@@ -3,11 +3,11 @@ import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay, tearDownChildren, marginLineX } from '../render/sketchUi';
 import { buildIcon, type IconKind } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
-import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
+import { drawSidebarTabs, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import type { SaveData } from '../game/meta/SaveData';
 import {
@@ -108,11 +108,15 @@ export class BattlePassScene implements Scene {
     this.render();
   }
 
-  /** Shop group tab bar (battle pass active). Only drawn in group context (openShop injected); returns body start y. */
-  private drawGroupTabs(tbH: number): number {
-    if (!this.cb.openShop) return tbH;
+  /**
+   * Shop group nav [Shop|Coins|Gacha|BattlePass] (LOBBY_IA_REDESIGN §9), battle pass active: a
+   * vertical rail stacked inside the left notebook-margin gutter (`marginLineX`), mirroring the
+   * CardScene/EquipmentScene sidebar convention. Only drawn in group context (openShop injected).
+   * Consumes no vertical space — render() shifts body content start x instead.
+   */
+  private drawSidebar(tbH: number): void {
+    if (!this.cb.openShop) return;
     const { w, h } = this;
-    const stripH = hubTabsHeight(h);
     const tabs: HubTab[] = [{ label: t('shop.title'), active: false, icon: 'tag' }];
     const actions: Array<() => void> = [() => this.cb.openShop?.()];
     if (this.cb.openCoins) {
@@ -123,9 +127,20 @@ export class BattlePassScene implements Scene {
     actions.push(() => this.cb.openGacha?.());
     tabs.push({ label: t('battlepass.title'), active: true, icon: 'trophy' });
     actions.push(() => {});
-    const hits = drawHubTabs(this.container, w, tbH, stripH, tabs, (i) => actions[i]?.());
+    const sidebarW = marginLineX(w);
+    const { hits } = drawSidebarTabs(this.container, sidebarW, tbH, h, tabs, (i) => actions[i]?.());
     this.hits.push(...hits);
-    return tbH + stripH;
+  }
+
+  /**
+   * Content column bounds: left edge shifts right of the sidebar rail when in the shop group
+   * (else the standalone 5%-of-w pad); right edge always keeps the 5%-of-w pad.
+   */
+  private contentBounds(): { x0: number; w: number } {
+    const { w } = this;
+    const rightPad = Math.round(w * 0.05);
+    const x0 = this.cb.openShop ? marginLineX(w) + Math.round(w * 0.02) : rightPad;
+    return { x0, w: w - x0 - rightPad };
   }
 
   private render(): void {
@@ -142,13 +157,16 @@ export class BattlePassScene implements Scene {
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
-    // Shop group tab bar (LOBBY_IA_REDESIGN P1.5): [Shop|Coins|Gacha|BattlePass], battle pass active. Only drawn in group context.
-    const top = this.drawGroupTabs(tbH);
+    // Shop group nav (LOBBY_IA_REDESIGN §9): [Shop|Coins|Gacha|BattlePass] sidebar rail, battle pass active. Only drawn in group context.
+    this.drawSidebar(tbH);
+    const top = tbH;
+    const { x0: cx0, w: cw } = this.contentBounds();
+    const centerX = cx0 + cw / 2;
 
     // ── Auth / offline guard ──────────────────────────────────────────────────
     if (!this.cb.getBattlePass) {
       const msg = txt(t('battlepass.loginRequired'), Math.round(h * 0.03), C.mid);
-      msg.anchor.set(0.5, 0.5); msg.x = w / 2; msg.y = h / 2;
+      msg.anchor.set(0.5, 0.5); msg.x = centerX; msg.y = h / 2;
       this.container.addChild(msg);
       this.renderToast();
       if (this.bt.loadingVisible) drawLoadingOverlay(this.container, w, h, this.bt.dots, t('common.processing'));
@@ -162,12 +180,12 @@ export class BattlePassScene implements Scene {
     const claimedFree = new Set(bp?.claimedFree ?? []);
     const claimedPaid = new Set(bp?.claimedPaid ?? []);
 
-    const pad = Math.round(w * 0.05);
+    const pad = cx0;
     let y = top + Math.round(h * 0.02);
 
     // ── XP progress bar ───────────────────────────────────────────────────────
     const barH = Math.round(h * 0.07);
-    const barW = w - pad * 2;
+    const barW = cw;
     const barBg = new PIXI.Graphics();
     barBg.beginFill(C.line).drawRoundedRect(pad, y, barW, barH, barH / 2).endFill();
     this.container.addChild(barBg);
@@ -220,7 +238,7 @@ export class BattlePassScene implements Scene {
       btnBox.x = pad; btnBox.y = y;
       this.container.addChild(btnBox);
       const btnLbl = txt(t('battlepass.buy', { coins: String(BATTLEPASS_BUY_COST) }), Math.round(buyAreaH * 0.5), C.gold, true);
-      btnLbl.anchor.set(0.5, 0.5); btnLbl.x = w / 2; btnLbl.y = y + buyAreaH / 2;
+      btnLbl.anchor.set(0.5, 0.5); btnLbl.x = centerX; btnLbl.y = y + buyAreaH / 2;
       this.container.addChild(btnLbl);
       this.hits.push({
         rect: { x: pad, y, w: barW, h: buyAreaH },
