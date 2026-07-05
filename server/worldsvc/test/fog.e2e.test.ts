@@ -120,7 +120,8 @@ function findCoord(
   }
   throw new Error('no matching tile found');
 }
-const NEUTRAL = (t: ReturnType<typeof proceduralTile>) => t.type === 'neutral';
+// ADR-032 follow-up: resourceDensity=1.0 means 'neutral' tiles no longer occur; any occupiable land is 'resource'.
+const NEUTRAL = (t: ReturnType<typeof proceduralTile>) => t.type === 'resource' || t.type === 'neutral';
 
 describe.skipIf(!mongo)('worldsvc fog/vision e2e (G5)', () => {
   const m = mongo!;
@@ -187,17 +188,17 @@ describe.skipIf(!mongo)('worldsvc fog/vision e2e (G5)', () => {
     socialsvc.addFamily(fam, 'a', 'Fam', 'FM');
     socialsvc.addMember('mate', fam);
     await svc.joinWorld(W, 'a', 5, 5);
-    await svc.joinWorld(W, 'mate', 250, 250); // distant, beyond a's base vision range
+    await svc.joinWorld(W, 'mate', 400, 400); // distant, beyond a's base vision range
 
-    const view = await svc.getMap(W, 'a', 250, 250, 2);
-    const mateBase = view.tiles.find((t) => t.x === 250 && t.y === 250)!;
+    const view = await svc.getMap(W, 'a', 400, 400, 2);
+    const mateBase = view.tiles.find((t) => t.x === 400 && t.y === 400)!;
     expect(mateBase).toMatchObject({ type: 'base', occupied: true, visible: true, ally: true });
     expect(mateBase.mine).toBeUndefined(); // belongs to ally, not me (ally=true tells the client to use ally color instead of enemy color)
 
     // Control: non-family e (distant) is still fogged.
     await svc.joinWorld(W, 'e', 280, 280);
-    const v2 = await svc.getMap(W, 'e', 250, 250, 2); // from e's perspective, mate's base → fog
-    expect(v2.tiles.find((t) => t.x === 250 && t.y === 250)!.visible).toBe(false);
+    const v2 = await svc.getMap(W, 'e', 400, 400, 2); // from e's perspective, mate's base → fog
+    expect(v2.tiles.find((t) => t.x === 400 && t.y === 400)!.visible).toBe(false);
   });
 
   it('march in transit illuminates path: tiles near the mid-march position are visible even outside base vision', async () => {

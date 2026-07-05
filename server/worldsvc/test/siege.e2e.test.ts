@@ -258,7 +258,7 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
 
   it('validation: attack unowned tile / attack own tile / sweep occupied tile / attack protected tile', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
-    const free = findCoord((t) => t.type === 'neutral', 30, 30);
+    const free = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 30, 30);
     // Attack unowned tile → TILE_NOT_OWNED.
     await expect(svc.startMarch(W, 'a', 5, 5, free.x, free.y, 'attack', OCCUPY_MIN_TROOPS)).rejects.toMatchObject({
       code: 'TILE_NOT_OWNED',

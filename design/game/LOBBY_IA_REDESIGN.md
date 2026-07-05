@@ -212,6 +212,7 @@
   - **`sideStripBadgeLayer`**：廉价重绘红点（retentionBadge→每日，socialBadge→邮件，achievementBadge→成就）；`applyRetentionBadge` 不再 `rebuild()`，改调 `drawSideStripBadges()`。
   - **邮件直达**：`FriendsSceneCallbacks.defaultTab?: 'friends'|'mail'`；`goMail()` → `goFriends({defaultTab:'mail'})`；大厅 `onOpenMail` 仅 online 注入。
   - **i18n**：新增 `lobby.strip.events/achieve/mail`（zh/en/de）。
+- ✅ **商城组 Coins tab 缺失补齐**（2026-07-05）：上条「顶栏金币直达」只给 `ShopScene` 加了 Coins tab，`GachaScene`/`BattlePassScene` 的分组 strip 是 P1.5 时写死的 `[商城|盲盒|战令]`（三格常量数组），从未跟进——从盲盒/战令页看不到充值 tab（用户报的 bug）。修复：两场景 `drawGroupTabs` 改用 `tabs`/`actions` 并行数组动态拼，新增可选回调 `openCoins?`（跟 `ShopScene.rechargeCoins` 同一可用性判断：登录在线 + `platform.iapKind()!==null`）；`createShopNav.goGacha/goBattlePass` 按同条件注入 `openCoins:()=>goShop(shopBack,'coins')`。分组 strip 现为 `[商城|充值?|盲盒|战令?]`，与 `ShopScene` 自身顺序一致。回归测试见 `client/test/ui/shopGroupTabs.ui.ts`（按渲染出的 tab 文案定位并模拟点击，非硬编码 index）。
 - ✅ **P3**（完成 2026-06-28）：视觉打磨三项：
   1. **底部 tab 图标化 + 加高**：高度 `h*0.08` → `h*0.105`，彩色圆点换手绘图标
      （养成=book / 商城=coin / 主页=home / 生涯=trophy / 社交=globe，复用 `icons.ts` 已有字形）；
