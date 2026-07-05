@@ -247,10 +247,10 @@
     }
   },
   "nameKey": "campaign.ch6.lv8.name",
-  "startInk": 45,
-  "inkRegenMult": 1.69,
+  "startInk": 28,
+  "inkRegenMult": 1.42,
   "enemyScale": {
-    "hp": 1.14,
-    "damage": 1.08
+    "hp": 1.19,
+    "damage": 1.14
   }
 }

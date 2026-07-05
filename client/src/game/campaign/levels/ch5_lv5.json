@@ -9,14 +9,14 @@
   "escorts": [
     {
       "id": "escort_1",
-      "hp": 325,
+      "hp": 374,
       "speed": 0.5,
       "startCol": 3,
       "startRow": 2
     },
     {
       "id": "escort_2",
-      "hp": 325,
+      "hp": 374,
       "speed": 0.5,
       "startCol": 8,
       "startRow": 2
@@ -207,10 +207,10 @@
   },
   "nameKey": "campaign.ch5.lv5.name",
   "briefKey": "campaign.ch5.lv5.brief",
-  "startInk": 40,
-  "inkRegenMult": 1.59,
+  "startInk": 24,
+  "inkRegenMult": 1.3,
   "enemyScale": {
-    "hp": 1.1,
-    "damage": 1.06
+    "hp": 1.09,
+    "damage": 1.07
   }
 }

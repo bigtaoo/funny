@@ -6,7 +6,7 @@
     "kind": "leak_limit",
     "maxLeaks": 1
   },
-  "inkRegenMult": 1.54,
+  "inkRegenMult": 1.36,
   "hazards": [
     {
       "col": 2,
@@ -299,9 +299,9 @@
   },
   "nameKey": "campaign.ch6.lv9.name",
   "briefKey": "campaign.ch6.lv9.brief",
-  "startInk": 34,
+  "startInk": 26,
   "enemyScale": {
-    "hp": 1.15,
-    "damage": 1.12
+    "hp": 1.24,
+    "damage": 1.18
   }
 }

@@ -297,6 +297,83 @@ ch3–ch4 多 T2–T4 夹杂几个 T5–T6、ch5–ch6 collect 更多 T4–T6）
 没有回写进脚本的 `policyFor()`——下次从头跑脚本会丢失这三关的针对性加强，如果要
 重跑整章记得把这三关的手工数值抄回去或跳过它们。
 
+## ch2–ch6 逐关精修（✅ 已应用 2026-07-05）
+
+上一节把 ch2–ch6 从「大量 unbeatable」修到「都能过」，但用的是**一条公式横扫 50 关**，
+章内曲线仍大量非单调抖动（例如上面矩阵里 `ch5_lv8` T3 能过、T4/T5 反而更差）。本节做
+`tune-ch1.cjs` 那种**逐关手调**，把 ch2–ch6 也精修成干净的星级阶梯，同时让六章难度
+整体递进（ch1 最易 → ch6 收尾最难）。
+
+**方法**：5 个 agent 各领一章并行工作，每章独立诊断+迭代（用 `findClearThreshold` 只
+评自己章节的 10 关，不跑 61 关全量矩阵，快很多），新增 `tune-chN-precision.cjs`（N=2..6，
+每关手调 POLICY 表，非公式横扫，在 `tune-ch2-6.cjs` 的经济修复基线上运行）。旋钮集合
+与 ch1 精修一致，同样克制：`startInk`/`inkRegenMult`/`enemyScale.{hp,damage}`/首波
+`atTick`（统一推到 4s）/波次 `count`（按目标总量等比缩放）/护送关加血，不碰
+objective/loadout/rewards/波次结构本身。
+
+**目标曲线**（章间递进，章内尽量单调，允许 timed_defense/boss/leak_limit 等 AI 天然
+更易的关型有 ±1 档偏移，同 ch1 的 lv5/lv6/lv7=T4/T4/T3 先例）：
+
+```
+ch1  fresh,fresh,T2,T2,T4,T4,T3,T4,T5,T5     （既有，未动）
+ch2  fresh,fresh,T2,T2,T3,T3,T4,T4,T4,T5
+ch3  fresh,T2,T2,T3,T3,T4,T4,T4,T5,T5
+ch4  T2,T2,T3,T3,T4,T4,T4,T5,T5,T5
+ch5  T2,T3,T3,T4,T4,T4,T5,T5,T5,T6
+ch6  T3,T3,T4,T4,T5,T5,T5,T6,T6,T6            （收尾章，最难）
+```
+
+**实际结果**（AI v2，5 种子中位，min通关；`npx vitest run difficulty` 全量复核）：
+
+```
+ch2  fresh,T2,T2,T2,T3,T3,T4,T3,T4,T5
+ch3  fresh,T2,T2,T3,T3,T4,T3,T5,T5,T5
+ch4  T2,T2,T3,T3,T4,T4,T4,T5,T5,T5            ← 与目标完全吻合
+ch5  T2,T2,T4,T5,T4,T5,T5,T4,T5,T6
+ch6  T3,T3,T4,T4,T5,T5,T5,T5,T6,T6
+```
+
+六章 min通关整体递进（ch1 fresh–T3 → ch2/ch3 fresh–T5 → ch4 T2–T5 → ch5 T2–T6 →
+ch6 T3–T6 全场最难），章内不再是大幅无序抖动，剩下的偏差都定位到具体原因：
+
+- **ch2_lv8**：可用卡组被砍到只剩 `max_1/max_2/meteor_1/haste_1`（无塔/兵营/Lena/
+  Mara），对 enemyScale/经济极度敏感，冲 T4 必超调到 T5/T6 unbeatable，T3 是唯一稳定
+  档，形成 T3→T4→T3→T4 的合理小凹陷（与 ch1_lv7 同类现象）。
+- **ch3_lv7**（timed_defense）：27 波全部落在 60s 时限内且有富余，AI 撑到时限即算赢，
+  总量/enemyScale 杠杆有限；改按「开局经济破产」处理（`startInk`=0、`regen`<1，比
+  fresh 默认更穷）才勉强移出 fresh，未能推到目标 T4，停在 T3。
+- **ch3_lv8**（leak_limit）：卡在陡峭档位边界，小幅调参会在 T3/T4/T5/unbeatable 间
+  跳变，选择稳定在比目标高 1 档的 T5，好过冒险跳回 unbeatable。
+- **ch5（全章最抖，也是 ch5_lv8 那个"遗留"抖动的最终诊断）**：根因是一个**引擎级
+  bug**——`UnitType.Harpy`（`flying: true`，`config.ts:217-229`）只有 `ArrowTower`
+  能命中（`canTargetFlying`，`config.ts:347`），而基线 AI 的 `pickUnderBlockedLane`
+  会在塔到位前就先派地面兵去"堵"来袭的 harpy；地面兵进入 `Attacking` 状态后
+  `MovementSystem` 不再推进它，于是永久卡在半路——打不到 harpy、也追不上，AI 还会
+  持续往该道加兵，把经济拖垮到守不住其它道。`survive` 的胜利条件要求敌人清空，一只
+  卡死的 harpy 就能让某些种子永远赢不了——**这才是 ch5_lv8 T3→T4/T5"反而变差"的真实
+  成因：种子间方差被这个引擎行为放大，不是数值不够**。缓解（数据侧，未动引擎代码）：
+  harpy/splitter 按 `capUnits` 限量到每道 1 只（而非按总量比例放大）+ 更富裕经济，让
+  AI 能在多数种子下解开僵局；残余方差记录在案而非硬调数值抹平。ch5_lv3/lv5 因与 lv8
+  共享同一类 AI 行为噪声，也各比目标高 1 档，属同源可接受偏差。若要根治需要修
+  `pickUnderBlockedLane`（识别 flying 目标改派/改配 ArrowTower）或调整该关卡布局，
+  超出本轮"只调关卡数值"的范围，留给后续。
+- **ch6_lv8**（destroy_base）：两次尝试把 enemyScale 推到目标 T6 都直接冲成
+  T6-still-unbeatable，退回稳定的 T5；`ch6_lv6`（survive）为脱离"即使 T6 也
+  unbeatable"的地板，用了全章最极端经济（`startInk`80/`regen`2.30）+ 敌人总量下修，
+  因为该关波次是大规模同 tick 敌人齐至（`count`4 同时刷），AI 的反应式补防吃不消，
+  只能靠经济换喘息。
+
+**产出脚本**（每关手调 POLICY 的单一来源，格式同 `tune-ch1.cjs`，`git checkout` 对应
+`ch{2..6}_lv*.json` 后重跑即可复现，注意要在 `tune-ch2-6.cjs` 的产出基线上跑，不要
+直接对未经济修复的原始 JSON 跑）：`client/scripts/tune-ch2-precision.cjs` /
+`tune-ch3-precision.cjs` / `tune-ch4-precision.cjs` / `tune-ch5-precision.cjs` /
+`tune-ch6-precision.cjs`。
+
+**遗留**：仍有非单调抖动的关卡见上（ch2_lv8、ch3_lv7/lv8、ch5 全章、ch6_lv6/lv8），
+均已定位到具体原因（受限卡组/AI 天然占优的关型/引擎级 flying-unit 卡死/齐至波次），
+不再是未探明的噪声。ch5 的 harpy 卡死是唯一触及引擎行为而非纯数值的发现，若后续要
+彻底解决需要改 AI 的 `pickUnderBlockedLane` 或该单位类型的可命中范围。
+
 ## ch1 难度矩阵（基线 AI v2，5 种子中位，历史记录）
 
 > ⚠️ 这是 AI v2（无角色泛化、无装备预设）时代的数据，数值已被上面「全部章节难度矩阵」

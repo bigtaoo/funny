@@ -9,14 +9,14 @@
   "escorts": [
     {
       "id": "escort_1",
-      "hp": 188,
+      "hp": 241,
       "speed": 0.42,
       "startCol": 1,
       "startRow": 2
     },
     {
       "id": "escort_2",
-      "hp": 188,
+      "hp": 241,
       "speed": 0.42,
       "startCol": 10,
       "startRow": 2
@@ -166,10 +166,10 @@
     }
   },
   "nameKey": "campaign.ch3.lv4.name",
-  "startInk": 31,
-  "inkRegenMult": 1.44,
+  "startInk": 24,
+  "inkRegenMult": 1.36,
   "enemyScale": {
     "hp": 1.04,
-    "damage": 1.02
+    "damage": 1.03
   }
 }

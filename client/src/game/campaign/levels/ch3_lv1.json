@@ -20,35 +20,35 @@
         "atTick": 120,
         "unitType": "infantry",
         "col": 1,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 16
       },
       {
         "atTick": 120,
         "unitType": "runner",
         "col": 4,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 9
       },
       {
         "atTick": 360,
         "unitType": "shieldbearer",
         "col": 2,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 26
       },
       {
         "atTick": 360,
         "unitType": "infantry",
         "col": 0,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 14
       },
       {
         "atTick": 360,
         "unitType": "runner",
         "col": 3,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 8
       },
       {
@@ -61,63 +61,63 @@
         "atTick": 600,
         "unitType": "runner",
         "col": 1,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 7
       },
       {
         "atTick": 600,
         "unitType": "infantry",
         "col": 2,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 14
       },
       {
         "atTick": 840,
         "unitType": "ironclad",
         "col": 0,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 38
       },
       {
         "atTick": 840,
         "unitType": "shieldbearer",
         "col": 3,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 20
       },
       {
         "atTick": 840,
         "unitType": "runner",
         "col": 4,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 7
       },
       {
         "atTick": 1080,
         "unitType": "ironclad",
         "col": 1,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 36
       },
       {
         "atTick": 1080,
         "unitType": "ironclad",
         "col": 3,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 36
       },
       {
         "atTick": 1080,
         "unitType": "runner",
         "col": 0,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 6
       },
       {
         "atTick": 1080,
         "unitType": "runner",
         "col": 2,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 6
       }
     ]
@@ -138,10 +138,10 @@
   "story": {
     "introKey": "campaign.ch3.intro"
   },
-  "startInk": 30,
-  "inkRegenMult": 1.42,
+  "startInk": 34,
+  "inkRegenMult": 1.55,
   "enemyScale": {
-    "hp": 1.03,
-    "damage": 1.02
+    "hp": 1,
+    "damage": 1
   }
 }

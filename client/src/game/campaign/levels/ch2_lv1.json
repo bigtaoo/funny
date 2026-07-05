@@ -23,7 +23,7 @@
     "haste_1",
     "meteor_1"
   ],
-  "inkRegenMult": 1.35,
+  "inkRegenMult": 1.4,
   "waves": {
     "entries": [
       {
@@ -141,5 +141,5 @@
   "story": {
     "introKey": "campaign.ch2.intro"
   },
-  "startInk": 26
+  "startInk": 30
 }

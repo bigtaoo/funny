@@ -48,7 +48,7 @@
         "atTick": 360,
         "unitType": "runner",
         "col": 8,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 8
       },
       {
@@ -61,7 +61,7 @@
         "atTick": 600,
         "unitType": "runner",
         "col": 10,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 7
       },
       {
@@ -89,7 +89,7 @@
         "atTick": 840,
         "unitType": "runner",
         "col": 7,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 7
       },
       {
@@ -110,14 +110,14 @@
         "atTick": 1080,
         "unitType": "runner",
         "col": 9,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 6
       },
       {
         "atTick": 1080,
         "unitType": "runner",
         "col": 11,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 6
       }
     ]
@@ -135,10 +135,10 @@
   },
   "nameKey": "campaign.ch3.lv2.name",
   "briefKey": "campaign.ch3.lv2.brief",
-  "startInk": 30,
-  "inkRegenMult": 1.43,
+  "startInk": 26,
+  "inkRegenMult": 1.42,
   "enemyScale": {
-    "hp": 1.03,
-    "damage": 1.02
+    "hp": 1.02,
+    "damage": 1.01
   }
 }

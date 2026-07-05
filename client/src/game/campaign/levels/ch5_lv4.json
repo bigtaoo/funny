@@ -244,10 +244,10 @@
     }
   },
   "nameKey": "campaign.ch5.lv4.name",
-  "startInk": 39,
-  "inkRegenMult": 1.59,
+  "startInk": 28,
+  "inkRegenMult": 1.34,
   "enemyScale": {
-    "hp": 1.1,
-    "damage": 1.05
+    "hp": 1.09,
+    "damage": 1.07
   }
 }

@@ -7,8 +7,8 @@
     "required": "all"
   },
   "enemyScale": {
-    "hp": 1.01,
-    "damage": 1
+    "hp": 1.05,
+    "damage": 1.03
   },
   "loadout": [
     "max_1",
@@ -31,7 +31,7 @@
   "escorts": [
     {
       "id": "escort_1",
-      "hp": 325,
+      "hp": 374,
       "speed": 0.25,
       "startCol": 3,
       "startRow": 2
@@ -158,6 +158,6 @@
   },
   "nameKey": "campaign.ch2.lv3.name",
   "briefKey": "campaign.ch2.lv3.brief",
-  "startInk": 27,
-  "inkRegenMult": 1.36
+  "startInk": 14,
+  "inkRegenMult": 1.14
 }

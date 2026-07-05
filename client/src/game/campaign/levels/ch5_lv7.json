@@ -136,14 +136,14 @@
         "atTick": 900,
         "unitType": "runner",
         "col": 1,
-        "count": 5,
+        "count": 4,
         "spacingTicks": 7
       },
       {
         "atTick": 900,
         "unitType": "runner",
         "col": 9,
-        "count": 5,
+        "count": 4,
         "spacingTicks": 7
       },
       {
@@ -170,14 +170,14 @@
         "atTick": 1140,
         "unitType": "runner",
         "col": 1,
-        "count": 5,
+        "count": 4,
         "spacingTicks": 6
       },
       {
         "atTick": 1140,
         "unitType": "runner",
         "col": 11,
-        "count": 5,
+        "count": 4,
         "spacingTicks": 6
       }
     ]
@@ -196,10 +196,10 @@
   },
   "nameKey": "campaign.ch5.lv7.name",
   "briefKey": "campaign.ch5.lv7.brief",
-  "startInk": 29,
-  "inkRegenMult": 1.47,
+  "startInk": 22,
+  "inkRegenMult": 1.26,
   "enemyScale": {
     "hp": 1.11,
-    "damage": 1.09
+    "damage": 1.11
   }
 }

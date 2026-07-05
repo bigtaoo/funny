@@ -118,14 +118,14 @@
         "atTick": 1140,
         "unitType": "runner",
         "col": 1,
-        "count": 4,
+        "count": 5,
         "spacingTicks": 6
       },
       {
         "atTick": 1140,
         "unitType": "runner",
         "col": 10,
-        "count": 4,
+        "count": 5,
         "spacingTicks": 6
       },
       {
@@ -189,10 +189,10 @@
   "story": {
     "outroKey": "campaign.ch3.outro"
   },
-  "startInk": 23,
-  "inkRegenMult": 1.37,
+  "startInk": 8,
+  "inkRegenMult": 1.1,
   "enemyScale": {
-    "hp": 1.06,
-    "damage": 1.05
+    "hp": 1.14,
+    "damage": 1.1
   }
 }

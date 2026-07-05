@@ -6,8 +6,8 @@
     "kind": "survive"
   },
   "enemyScale": {
-    "hp": 1.02,
-    "damage": 1.01
+    "hp": 1.18,
+    "damage": 1.12
   },
   "loadout": [
     "max_1",
@@ -118,14 +118,14 @@
         "atTick": 1080,
         "unitType": "infantry",
         "col": 3,
-        "count": 3,
+        "count": 4,
         "spacingTicks": 7
       },
       {
         "atTick": 1080,
         "unitType": "infantry",
         "col": 8,
-        "count": 3,
+        "count": 4,
         "spacingTicks": 7
       },
       {
@@ -171,6 +171,6 @@
     }
   },
   "nameKey": "campaign.ch2.lv8.name",
-  "startInk": 29,
-  "inkRegenMult": 1.4
+  "startInk": 3,
+  "inkRegenMult": 0.96
 }
