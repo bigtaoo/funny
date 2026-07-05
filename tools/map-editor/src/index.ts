@@ -1,23 +1,20 @@
-// Map Editor entry point (DESIGN.md §6): full procedural map render + river/mountain path brush (§6.1)
-// + city drag (§6.1 third bullet) + publish-to-server (§8, §24 admin map-template API). River/mountain
-// paths and city positions are rasterized (mapEdit.ts's rasterizeMapEdits) into a tile diff and pushed via
-// the existing admin map-template endpoints — a one-way bake, not a live sync (see api.ts/publish section below).
+// Map Editor entry point (DESIGN.md §6): PixiJS isometric viewport render (same atlases/projection
+// as the game client's WorldMapRenderer — DESIGN.md §6.3 art-parity requirement) + river/mountain
+// path brush + city drag + publish-to-server (§8, §24 admin map-template API). River/mountain paths
+// and city positions are rasterized (mapEdit.ts's rasterizeMapEdits) into a tile diff both for the
+// live WYSIWYG preview (baked into the base layer on every commit) and for publishing — the exact
+// same function drives both, so "what you see" and "what gets published" can never drift apart.
+import * as PIXI from 'pixi.js-legacy';
 import { MAP_TEMPLATE_SAVE_MAX_TILES, proceduralTile, rasterizeMapEdits, SLG_MAP_H, SLG_MAP_W, type MapTemplateSummary, type MapTemplateTile, type ResourceType, type TileType } from '@nw/shared/slg';
 import { distToPath, PathStore, randomDefaultWidth, type PathKind, type TilePoint } from './state/paths';
 import { CityStore, type MapEditorCityNode } from './state/cities';
 import { Api, ApiError } from './api';
-
-const TILE_COLORS: Record<TileType, string> = {
-  neutral: '#2a2a3e',
-  resource: '#4a6a3a',
-  territory: '#3a4e6a',
-  familyKeep: '#c9a24a',
-  center: '#e05a5a',
-  base: '#3a4e6a',
-  obstacle: '#5a4a3a',
-  gate: '#e0c85a',
-  stronghold: '#8a3a8a',
-};
+import { screenToTile, tileToScreen, visibleTileBounds } from './render/isoGrid';
+import { drawEditorTile } from './render/tileGraphics';
+import { terrainTextureName } from './render/tileStyle';
+import { loadTerrainAtlas } from './render/terrainAtlasLoader';
+import { loadResAtlas } from './render/resAtlasLoader';
+import { loadBuildingAtlas } from './render/buildingAtlasLoader';
 
 const RESOURCE_LABELS: Record<ResourceType, string> = {
   ink: '墨(ink)',
@@ -27,32 +24,48 @@ const RESOURCE_LABELS: Record<ResourceType, string> = {
   sticker: '贴纸(sticker)',
 };
 
-const PATH_COLORS: Record<PathKind, string> = { river: '#4fa8e0', mountain: '#a0785a' };
-const CITY_COLORS: Record<MapEditorCityNode['kind'], string> = {
+const PATH_COLORS: Record<PathKind, number> = { river: 0x4fa8e0, mountain: 0xa0785a };
+const PATH_COLORS_CSS: Record<PathKind, string> = { river: '#4fa8e0', mountain: '#a0785a' };
+const CITY_COLORS: Record<MapEditorCityNode['kind'], number> = {
+  worldCenter: 0xff5c8a,
+  capital: 0xffd166,
+  gateCity: 0xef6c53,
+  garrison: 0x4ce0c0,
+};
+const CITY_COLORS_CSS: Record<MapEditorCityNode['kind'], string> = {
   worldCenter: '#ff5c8a',
   capital: '#ffd166',
   gateCity: '#ef6c53',
   garrison: '#4ce0c0',
 };
+const TERRAIN_LEGEND: TileType[] = ['neutral', 'resource', 'territory', 'familyKeep', 'center', 'obstacle', 'gate', 'stronghold'];
+const TERRAIN_LEGEND_CSS: Record<TileType, string> = {
+  neutral: '#f5f0e8', resource: '#f0ece0', territory: '#f5f0e8', familyKeep: '#e8d29a',
+  center: '#f0dfa0', base: '#f5f0e8', obstacle: '#c4bdb0', gate: '#d8c2a0', stronghold: '#9a7a6a',
+};
 
-function hexToRgb(hex: string): [number, number, number] {
-  const n = parseInt(hex.slice(1), 16);
-  return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
-}
+// ── Viewport (camera into the up-to-500×500 world; see DESIGN.md §6.3) ────────────
+const VIEW_W = 900;
+const VIEW_H = 620;
+/** Rendered tiles extend this far past the visible edge so short pans don't reveal blank space (§ live-drag tradeoff below). */
+const VIEW_PAD_FACTOR = 1.5;
+const ZOOM_MIN = 10;
+const ZOOM_MAX = 56;
 
-const TILE_COLOR_RGB: Record<TileType, [number, number, number]> = Object.fromEntries(
-  (Object.keys(TILE_COLORS) as TileType[]).map((k) => [k, hexToRgb(TILE_COLORS[k])]),
-) as Record<TileType, [number, number, number]>;
+const pixiRoot = document.getElementById('pixi-root')!;
+const app = new PIXI.Application({ width: VIEW_W, height: VIEW_H, backgroundColor: 0x11111b, antialias: true });
+pixiRoot.appendChild(app.view as HTMLCanvasElement);
 
-const mapCanvas = document.getElementById('map-canvas') as HTMLCanvasElement;
-const mapCtx = mapCanvas.getContext('2d')!;
-const overlayCanvas = document.getElementById('overlay-canvas') as HTMLCanvasElement;
-const overlayCtx = overlayCanvas.getContext('2d')!;
-const cityCanvas = document.getElementById('city-canvas') as HTMLCanvasElement;
-const cityCtx = cityCanvas.getContext('2d')!;
-const canvasStack = document.getElementById('canvas-stack')!;
+const worldLayer = new PIXI.Container();
+app.stage.addChild(worldLayer);
+const baseLayer = new PIXI.Container();
+baseLayer.sortableChildren = true;
+const overlayLayer = new PIXI.Container();
+worldLayer.addChild(baseLayer, overlayLayer);
+
 const seedInput = document.getElementById('world-seed') as HTMLInputElement;
 const regenBtn = document.getElementById('btn-regen') as HTMLButtonElement;
+const centerBtn = document.getElementById('btn-center') as HTMLButtonElement;
 const zoomInput = document.getElementById('zoom') as HTMLInputElement;
 const statusEl = document.getElementById('status')!;
 const tileInfoEl = document.getElementById('tile-info')!;
@@ -90,13 +103,8 @@ const templateRefreshBtn = document.getElementById('btn-template-refresh') as HT
 const templateActivateBtn = document.getElementById('btn-template-activate') as HTMLButtonElement;
 const templateDeleteBtn = document.getElementById('btn-template-delete') as HTMLButtonElement;
 
-for (const c of [mapCanvas, overlayCanvas, cityCanvas]) {
-  c.width = SLG_MAP_W;
-  c.height = SLG_MAP_H;
-}
-
 // ── Editor state ─────────────────────────────────────────────────────────
-type Tool = 'select' | PathKind | 'city';
+type Tool = 'select' | PathKind | 'city' | 'pan';
 let tool: Tool = 'select';
 const store = new PathStore();
 const cityStore = new CityStore();
@@ -105,167 +113,210 @@ let selectedPathId: string | null = null;
 let dragging: { pathId: string; pointIdx: number } | null = null;
 let selectedCityId: string | null = null;
 let draggingCityId: string | null = null;
-/** Point/segment/city hit-test radius, in on-screen px (converted to tile units per current zoom). */
+let panning = false;
+let panLast: { x: number; y: number } | null = null;
+
+let tp = 28; // on-screen tile width in px — the sole "zoom" knob (replaces the old CSS-scale slider)
+let panX = 0;
+let panY = 0;
+/** worldId → tile diff Map ("x:y" → override), refreshed by renderBaseMap(); reused by hover info. */
+let diffCache = new Map<string, MapTemplateTile>();
+
+/** Point/segment/city hit-test radius, in on-screen px, converted to tile units at the current zoom. */
 const HIT_RADIUS_PX = 8;
-
-function currentZoom(): number {
-  return Number(zoomInput.value) || 1;
-}
-
 function hitRadiusTiles(): number {
-  return HIT_RADIUS_PX / currentZoom();
+  return HIT_RADIUS_PX / tp;
 }
 
-// ── Base map render ──────────────────────────────────────────────────────
-function renderLegend(): void {
-  legendEl.innerHTML = (Object.keys(TILE_COLORS) as TileType[])
-    .map((t) => `<div class="row"><i style="background:${TILE_COLORS[t]}"></i>${t}</div>`)
-    .join('');
-  cityLegendEl.innerHTML = (Object.keys(CITY_COLORS) as MapEditorCityNode['kind'][])
-    .map((k) => `<div class="row"><i style="background:${CITY_COLORS[k]}"></i>${k}</div>`)
-    .join('');
+function clampPan(): void {
+  const corners = [
+    tileToScreen(0, 0, tp), tileToScreen(SLG_MAP_W, 0, tp),
+    tileToScreen(0, SLG_MAP_H, tp), tileToScreen(SLG_MAP_W, SLG_MAP_H, tp),
+  ];
+  const minSx = Math.min(...corners.map((c) => c.x));
+  const maxSx = Math.max(...corners.map((c) => c.x));
+  const minSy = Math.min(...corners.map((c) => c.y));
+  const maxSy = Math.max(...corners.map((c) => c.y));
+  panX = maxSx - minSx <= VIEW_W ? VIEW_W / 2 - (minSx + maxSx) / 2 : Math.min(-minSx, Math.max(VIEW_W - maxSx, panX));
+  panY = maxSy - minSy <= VIEW_H ? VIEW_H / 2 - (minSy + maxSy) / 2 : Math.min(-minSy, Math.max(VIEW_H - maxSy, panY));
+  worldLayer.position.set(panX, panY);
+}
+
+function centerView(): void {
+  const s = tileToScreen(SLG_MAP_W / 2, SLG_MAP_H / 2, tp);
+  panX = VIEW_W / 2 - s.x;
+  panY = VIEW_H / 2 - s.y;
+  clampPan();
+}
+
+// ── Base map render (real atlas textures — DESIGN.md §6.3 art-parity) ─────
+function effectiveTile(worldId: string, x: number, y: number): { type: TileType; level: number; resType?: ResourceType } {
+  return diffCache.get(`${x}:${y}`) ?? proceduralTile(worldId, x, y);
 }
 
 function renderBaseMap(worldId: string): void {
   const t0 = performance.now();
-  const img = mapCtx.createImageData(SLG_MAP_W, SLG_MAP_H);
-  for (let y = 0; y < SLG_MAP_H; y++) {
-    for (let x = 0; x < SLG_MAP_W; x++) {
-      const tile = proceduralTile(worldId, x, y);
-      const [r, g, b] = TILE_COLOR_RGB[tile.type];
-      // Level shades brightness within a type so equal-type tiles aren't visually flat.
-      const shade = 0.55 + 0.045 * tile.level;
-      const i = (y * SLG_MAP_W + x) * 4;
-      img.data[i] = Math.min(255, r * shade);
-      img.data[i + 1] = Math.min(255, g * shade);
-      img.data[i + 2] = Math.min(255, b * shade);
-      img.data[i + 3] = 255;
+  const diffs = rasterizeMapEdits(worldId, store.paths, cityStore.nodes);
+  diffCache = new Map(diffs.map((d) => [`${d.x}:${d.y}`, d]));
+
+  baseLayer.removeChildren().forEach((c) => c.destroy({ children: true }));
+
+  const padW = VIEW_W * VIEW_PAD_FACTOR;
+  const padH = VIEW_H * VIEW_PAD_FACTOR;
+  const b = visibleTileBounds(padW, padH, panX + (padW - VIEW_W) / 2, panY + (padH - VIEW_H) / 2, tp);
+  const x0 = Math.max(0, b.minTx);
+  const x1 = Math.min(SLG_MAP_W - 1, b.maxTx);
+  const y0 = Math.max(0, b.minTy);
+  const y1 = Math.min(SLG_MAP_H - 1, b.maxTy);
+
+  let count = 0;
+  for (let ty = y0; ty <= y1; ty++) {
+    for (let tx = x0; tx <= x1; tx++) {
+      const tile = effectiveTile(worldId, tx, ty);
+      const g = new PIXI.Graphics();
+      const s = tileToScreen(tx, ty, tp);
+      g.x = s.x;
+      g.y = s.y;
+      g.zIndex = tx + ty;
+      drawEditorTile(g, tile, terrainTextureName(tile.type, tx, ty), tp);
+      baseLayer.addChild(g);
+      count++;
     }
   }
-  mapCtx.putImageData(img, 0, 0);
   const ms = (performance.now() - t0).toFixed(0);
-  statusEl.textContent = `world="${worldId}" — ${SLG_MAP_W}×${SLG_MAP_H} rendered in ${ms}ms — ${store.paths.length} path(s), ${cityStore.nodes.length} cit${cityStore.nodes.length === 1 ? 'y' : 'ies'}`;
+  statusEl.textContent = `world="${worldId}" — ${count} tile(s) rendered in ${ms}ms — ${store.paths.length} path(s), ${cityStore.nodes.length} cit${cityStore.nodes.length === 1 ? 'y' : 'ies'}`;
 }
 
 function loadCitiesAndRedraw(worldId: string): void {
   cityStore.loadFromSeed(worldId);
   selectedCityId = null;
   cityInfoEl.textContent = 'City 工具下拖动地图上的城池标记即可移动坐标（世界中心 9×9 占地拖拽时保持形状）；点击标记查看详情。';
-  redrawCities();
+  renderBaseMap(worldId);
+  redrawAll();
 }
 
-// ── Overlay (paths) render ───────────────────────────────────────────────
-function strokePolyline(ctx: CanvasRenderingContext2D, points: readonly TilePoint[], width: number, color: string, alpha: number): void {
+// ── Overlay (draft/selection chrome — vector, not atlas art; see module header) ────
+function strokePolylineScreen(g: PIXI.Graphics, points: readonly TilePoint[], width: number, color: number, alpha: number): void {
   if (points.length < 2) return;
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  ctx.strokeStyle = color;
-  ctx.lineWidth = width;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  ctx.beginPath();
-  ctx.moveTo(points[0]!.x, points[0]!.y);
-  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i]!.x, points[i]!.y);
-  ctx.stroke();
-  ctx.restore();
+  g.lineStyle(Math.max(1, width * tp * 0.5), color, alpha);
+  const p0 = tileToScreen(points[0]!.x, points[0]!.y, tp);
+  g.moveTo(p0.x, p0.y);
+  for (let i = 1; i < points.length; i++) {
+    const p = tileToScreen(points[i]!.x, points[i]!.y, tp);
+    g.lineTo(p.x, p.y);
+  }
 }
 
-function drawPointHandles(points: readonly TilePoint[], color: string): void {
-  const r = Math.max(1.5, 3 / currentZoom());
-  overlayCtx.save();
-  overlayCtx.fillStyle = color;
+function drawPointHandlesScreen(g: PIXI.Graphics, points: readonly TilePoint[], color: number): void {
+  const r = 4;
+  g.lineStyle(0);
+  g.beginFill(color);
   for (const p of points) {
-    overlayCtx.beginPath();
-    overlayCtx.arc(p.x, p.y, r, 0, Math.PI * 2);
-    overlayCtx.fill();
+    const s = tileToScreen(p.x, p.y, tp);
+    g.drawCircle(s.x, s.y, r);
   }
-  overlayCtx.restore();
+  g.endFill();
 }
 
 function redrawOverlay(hoverTile?: TilePoint): void {
-  overlayCtx.clearRect(0, 0, SLG_MAP_W, SLG_MAP_H);
+  const g = new PIXI.Graphics();
   for (const path of store.paths) {
     const isSelected = path.id === selectedPathId;
-    if (isSelected) strokePolyline(overlayCtx, path.points, path.width + 3, '#ffffff', 0.25);
-    strokePolyline(overlayCtx, path.points, path.width, PATH_COLORS[path.type], 0.55);
-    if (tool === 'select') drawPointHandles(path.points, isSelected ? '#ffffff' : PATH_COLORS[path.type]);
+    if (isSelected) strokePolylineScreen(g, path.points, path.width + 3, 0xffffff, 0.25);
+    strokePolylineScreen(g, path.points, path.width, PATH_COLORS[path.type], 0.55);
+    if (tool === 'select') drawPointHandlesScreen(g, path.points, isSelected ? 0xffffff : PATH_COLORS[path.type]);
   }
   if (draft) {
     const kind = tool as PathKind;
     const preview = hoverTile ? [...draft, hoverTile] : draft;
-    strokePolyline(overlayCtx, preview, Number(widthInput.value) || 1, PATH_COLORS[kind], 0.35);
-    drawPointHandles(draft, PATH_COLORS[kind]);
+    strokePolylineScreen(g, preview, Number(widthInput.value) || 1, PATH_COLORS[kind], 0.35);
+    drawPointHandlesScreen(g, draft, PATH_COLORS[kind]);
   }
+  overlayLayer.addChild(g);
 }
 
-// ── City markers render ──────────────────────────────────────────────────
-function drawCityMarker(node: MapEditorCityNode, isSelected: boolean): void {
-  const color = CITY_COLORS[node.kind];
-  const half = node.footprint / 2;
-  cityCtx.save();
-  if (isSelected) {
-    cityCtx.strokeStyle = '#ffffff';
-    cityCtx.lineWidth = Math.max(1, 2 / currentZoom());
-    if (node.footprint > 1) {
-      cityCtx.strokeRect(node.x - half - 1, node.y - half - 1, node.footprint + 2, node.footprint + 2);
-    } else {
-      const r = Math.max(2.5, 5 / currentZoom());
-      cityCtx.beginPath();
-      cityCtx.arc(node.x, node.y, r, 0, Math.PI * 2);
-      cityCtx.stroke();
+// ── City markers (footprint outline + selection ring — see module header) ─────────
+function drawCityMarkers(): void {
+  const g = new PIXI.Graphics();
+  for (const node of cityStore.nodes) {
+    const isSelected = node.id === selectedCityId;
+    const color = CITY_COLORS[node.kind];
+    const half = node.footprint / 2;
+    // Footprint corners project to a parallelogram under the iso transform, not an axis-aligned box.
+    const corners = [
+      tileToScreen(node.x - half, node.y - half, tp),
+      tileToScreen(node.x + half, node.y - half, tp),
+      tileToScreen(node.x + half, node.y + half, tp),
+      tileToScreen(node.x - half, node.y + half, tp),
+    ];
+    if (isSelected) {
+      g.lineStyle(2, 0xffffff, 0.9);
+      g.drawPolygon(corners.flatMap((c) => [c.x, c.y]));
     }
+    g.lineStyle(1.4, color, 0.85);
+    g.beginFill(color, 0.22);
+    g.drawPolygon(corners.flatMap((c) => [c.x, c.y]));
+    g.endFill();
   }
-  cityCtx.fillStyle = color;
-  cityCtx.globalAlpha = 0.9;
-  if (node.footprint > 1) {
-    cityCtx.fillRect(node.x - half, node.y - half, node.footprint, node.footprint);
-  } else {
-    const r = Math.max(1.8, 3.5 / currentZoom());
-    cityCtx.beginPath();
-    cityCtx.arc(node.x, node.y, r, 0, Math.PI * 2);
-    cityCtx.fill();
-  }
-  cityCtx.restore();
+  overlayLayer.addChild(g);
 }
 
-function redrawCities(): void {
-  cityCtx.clearRect(0, 0, SLG_MAP_W, SLG_MAP_H);
-  for (const node of cityStore.nodes) drawCityMarker(node, node.id === selectedCityId);
+function redrawAll(hoverTile?: TilePoint): void {
+  overlayLayer.removeChildren().forEach((c) => c.destroy());
+  redrawOverlay(hoverTile);
+  drawCityMarkers();
 }
 
-// ── Zoom / layout ────────────────────────────────────────────────────────
-function applyZoom(): void {
-  const z = currentZoom();
-  canvasStack.style.width = `${SLG_MAP_W * z}px`;
-  canvasStack.style.height = `${SLG_MAP_H * z}px`;
-  for (const c of [mapCanvas, overlayCanvas, cityCanvas]) {
-    c.style.width = `${SLG_MAP_W * z}px`;
-    c.style.height = `${SLG_MAP_H * z}px`;
-  }
-  redrawOverlay();
-  redrawCities();
+// ── Zoom (tile px width; keeps the tile under the anchor point fixed) ─────────────
+function setZoom(nextTp: number, anchor?: { sx: number; sy: number }): void {
+  nextTp = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(nextTp)));
+  if (nextTp === tp) return;
+  const ax = anchor?.sx ?? VIEW_W / 2;
+  const ay = anchor?.sy ?? VIEW_H / 2;
+  const frac = screenToTile(ax - panX, ay - panY, tp);
+  tp = nextTp;
+  const s = tileToScreen(frac.x, frac.y, tp);
+  panX = ax - s.x;
+  panY = ay - s.y;
+  clampPan();
+  renderBaseMap(seedInput.value || 'preview');
+  redrawAll();
 }
+
+zoomInput.min = String(ZOOM_MIN);
+zoomInput.max = String(ZOOM_MAX);
+zoomInput.step = '2';
+zoomInput.value = String(tp);
+zoomInput.addEventListener('input', () => setZoom(Number(zoomInput.value)));
+
+app.view.addEventListener?.('wheel', (ev: Event) => {
+  const we = ev as WheelEvent;
+  we.preventDefault();
+  const rect = (app.view as HTMLCanvasElement).getBoundingClientRect();
+  setZoom(tp - Math.sign(we.deltaY) * 4, { sx: we.clientX - rect.left, sy: we.clientY - rect.top });
+  zoomInput.value = String(tp);
+}, { passive: false });
+
+centerBtn.addEventListener('click', () => { centerView(); renderBaseMap(seedInput.value || 'preview'); redrawAll(); });
 
 // ── Tool switching ───────────────────────────────────────────────────────
 function cancelDraft(): void {
   draft = null;
-  redrawOverlay();
+  redrawAll();
 }
 
 function setTool(next: Tool): void {
   if (tool !== next) cancelDraft();
   tool = next;
   for (const btn of toolButtons) btn.classList.toggle('active', btn.dataset.tool === tool);
-  canvasStack.classList.toggle('tool-select', tool === 'select');
-  canvasStack.classList.toggle('tool-city', tool === 'city');
+  canvasEl().style.cursor = tool === 'pan' ? 'grab' : tool === 'select' || tool === 'city' ? 'default' : 'crosshair';
   if (tool !== 'select') {
     selectedPathId = null;
     deletePathBtn.disabled = true;
     renderPathList();
   }
   if (tool !== 'city') selectCity(null);
-  redrawOverlay();
-  redrawCities();
+  redrawAll();
 }
 
 for (const btn of toolButtons) {
@@ -279,7 +330,7 @@ function renderPathList(): void {
     .map(
       (p, i) =>
         `<div class="path-row${p.id === selectedPathId ? ' selected' : ''}" data-id="${p.id}">` +
-        `<i style="background:${PATH_COLORS[p.type]}"></i>${p.type} #${i + 1} — w${p.width}, ${p.points.length}pt</div>`,
+        `<i style="background:${PATH_COLORS_CSS[p.type]}"></i>${p.type} #${i + 1} — w${p.width}, ${p.points.length}pt</div>`,
     )
     .join('');
   for (const row of Array.from(pathListEl.querySelectorAll<HTMLDivElement>('.path-row'))) {
@@ -293,7 +344,7 @@ function selectPath(id: string | null): void {
   const path = id ? store.get(id) : undefined;
   if (path) widthInput.value = String(path.width);
   renderPathList();
-  redrawOverlay();
+  redrawAll();
 }
 
 function deleteSelectedPath(): void {
@@ -317,7 +368,7 @@ widthInput.addEventListener('change', () => {
   if (path) {
     path.width = w;
     renderPathList();
-    redrawOverlay();
+    renderBaseMap(seedInput.value || 'preview');
   }
 });
 
@@ -325,7 +376,7 @@ function undoDraftPoint(): void {
   if (!draft) return;
   draft.pop();
   if (draft.length === 0) draft = null;
-  redrawOverlay();
+  redrawAll();
 }
 undoPointBtn.addEventListener('click', undoDraftPoint);
 
@@ -335,6 +386,7 @@ function finishDraft(): void {
   draft = null;
   renderBaseMap(seedInput.value || 'preview');
   renderPathList();
+  redrawAll();
 }
 
 // ── City inspector ───────────────────────────────────────────────────────
@@ -349,7 +401,7 @@ function selectCity(id: string | null): void {
   cityInfoEl.textContent = node
     ? cityLabel(node)
     : 'City 工具下拖动地图上的城池标记即可移动坐标（世界中心 9×9 占地拖拽时保持形状）；点击标记查看详情。';
-  redrawCities();
+  redrawAll();
 }
 
 resetCitiesBtn.addEventListener('click', () => loadCitiesAndRedraw(seedInput.value || 'preview'));
@@ -378,6 +430,7 @@ cityImportBtn.addEventListener('click', () => {
   try {
     cityStore.loadFromJSON(cityJsonEl.value);
     selectCity(null);
+    renderBaseMap(seedInput.value || 'preview');
     statusEl.textContent = `Imported ${cityStore.nodes.length} cit${cityStore.nodes.length === 1 ? 'y' : 'ies'}.`;
   } catch (err) {
     statusEl.textContent = `Import failed: ${(err as Error).message}`;
@@ -548,126 +601,159 @@ if (api.hasToken) {
   showLoggedOut();
 }
 
-// ── Canvas input (single input surface: city-canvas, topmost layer) ──────
-function tileFromEvent(ev: MouseEvent): TilePoint {
-  const rect = cityCanvas.getBoundingClientRect();
-  const scaleX = SLG_MAP_W / rect.width;
-  const scaleY = SLG_MAP_H / rect.height;
-  const x = Math.round((ev.clientX - rect.left) * scaleX);
-  const y = Math.round((ev.clientY - rect.top) * scaleY);
-  return { x: Math.max(0, Math.min(SLG_MAP_W - 1, x)), y: Math.max(0, Math.min(SLG_MAP_H - 1, y)) };
+// ── Canvas input (isometric screen↔tile via isoGrid, pan-relative — see module header) ──
+function canvasEl(): HTMLCanvasElement {
+  return app.view as HTMLCanvasElement;
 }
 
-function findNearestPoint(tp: TilePoint): { pathId: string; pointIdx: number } | null {
+function screenFromClientXY(clientX: number, clientY: number): { sx: number; sy: number } {
+  const rect = canvasEl().getBoundingClientRect();
+  return { sx: ((clientX - rect.left) / rect.width) * VIEW_W, sy: ((clientY - rect.top) / rect.height) * VIEW_H };
+}
+
+function tileFromClientXY(clientX: number, clientY: number): TilePoint {
+  const { sx, sy } = screenFromClientXY(clientX, clientY);
+  const t = screenToTile(sx - panX, sy - panY, tp);
+  return { x: Math.max(0, Math.min(SLG_MAP_W - 1, t.x)), y: Math.max(0, Math.min(SLG_MAP_H - 1, t.y)) };
+}
+
+function findNearestPoint(t: TilePoint): { pathId: string; pointIdx: number } | null {
   const rTiles = hitRadiusTiles();
   let best: { pathId: string; pointIdx: number; dist: number } | null = null;
   for (const path of store.paths) {
     for (let idx = 0; idx < path.points.length; idx++) {
       const p = path.points[idx]!;
-      const dist = Math.hypot(p.x - tp.x, p.y - tp.y);
+      const dist = Math.hypot(p.x - t.x, p.y - t.y);
       if (dist <= rTiles && (!best || dist < best.dist)) best = { pathId: path.id, pointIdx: idx, dist };
     }
   }
   return best ? { pathId: best.pathId, pointIdx: best.pointIdx } : null;
 }
 
-function findNearestPath(tp: TilePoint): string | null {
+function findNearestPath(t: TilePoint): string | null {
   const rTiles = hitRadiusTiles();
   let best: { id: string; dist: number } | null = null;
   for (const path of store.paths) {
-    const dist = distToPath(tp.x, tp.y, path) - path.width / 2;
+    const dist = distToPath(t.x, t.y, path) - path.width / 2;
     if (dist <= rTiles && (!best || dist < best.dist)) best = { id: path.id, dist };
   }
   return best ? best.id : null;
 }
 
 /** Nearest city whose footprint box (or hit radius, for 1×1 nodes) contains/is near (x,y). */
-function findNearestCity(tp: TilePoint): string | null {
+function findNearestCity(t: TilePoint): string | null {
   const rTiles = hitRadiusTiles();
   let best: { id: string; dist: number } | null = null;
   for (const node of cityStore.nodes) {
     const half = node.footprint / 2;
-    const dx = Math.max(0, Math.abs(tp.x - node.x) - half);
-    const dy = Math.max(0, Math.abs(tp.y - node.y) - half);
+    const dx = Math.max(0, Math.abs(t.x - node.x) - half);
+    const dy = Math.max(0, Math.abs(t.y - node.y) - half);
     const dist = Math.hypot(dx, dy);
     if (dist <= rTiles && (!best || dist < best.dist)) best = { id: node.id, dist };
   }
   return best ? best.id : null;
 }
 
-function clampCityPos(node: MapEditorCityNode, tp: TilePoint): TilePoint {
+function clampCityPos(node: MapEditorCityNode, t: TilePoint): TilePoint {
   const half = Math.floor(node.footprint / 2);
   return {
-    x: Math.max(half, Math.min(SLG_MAP_W - 1 - half, tp.x)),
-    y: Math.max(half, Math.min(SLG_MAP_H - 1 - half, tp.y)),
+    x: Math.max(half, Math.min(SLG_MAP_W - 1 - half, t.x)),
+    y: Math.max(half, Math.min(SLG_MAP_H - 1 - half, t.y)),
   };
 }
 
-cityCanvas.addEventListener('mousedown', (ev) => {
+canvasEl().addEventListener('mousedown', (ev) => {
+  if (ev.button === 1 || tool === 'pan') {
+    panning = true;
+    panLast = { x: ev.clientX, y: ev.clientY };
+    canvasEl().style.cursor = 'grabbing';
+    return;
+  }
   if (ev.button !== 0) return;
-  const tp = tileFromEvent(ev);
+  const t = tileFromClientXY(ev.clientX, ev.clientY);
 
   if (tool === 'city') {
-    const id = findNearestCity(tp);
+    const id = findNearestCity(t);
     selectCity(id);
     if (id) draggingCityId = id;
     return;
   }
 
   if (tool === 'select') {
-    const hit = findNearestPoint(tp);
+    const hit = findNearestPoint(t);
     if (hit) {
       dragging = hit;
       selectPath(hit.pathId);
       return;
     }
-    selectPath(findNearestPath(tp));
+    selectPath(findNearestPath(t));
     return;
   }
 
-  if (!draft) draft = [tp];
-  else draft.push(tp);
-  redrawOverlay(tp);
+  if (!draft) draft = [t];
+  else draft.push(t);
+  redrawAll(t);
 });
 
-cityCanvas.addEventListener('mousemove', (ev) => {
-  const tp = tileFromEvent(ev);
-  const tile = proceduralTile(seedInput.value || 'preview', tp.x, tp.y);
+window.addEventListener('mousemove', (ev) => {
+  if (panning && panLast) {
+    panX += ev.clientX - panLast.x;
+    panY += ev.clientY - panLast.y;
+    panLast = { x: ev.clientX, y: ev.clientY };
+    clampPan();
+  }
+});
+
+canvasEl().addEventListener('mousemove', (ev) => {
+  if (panning) return;
+  const t = tileFromClientXY(ev.clientX, ev.clientY);
+  const tile = effectiveTile(seedInput.value || 'preview', t.x, t.y);
   const resLine = tile.resType ? `\nresource: ${RESOURCE_LABELS[tile.resType]}` : '';
-  tileInfoEl.textContent = `(${tp.x}, ${tp.y})\ntype: ${tile.type}\nlevel: ${tile.level}${resLine}`;
+  tileInfoEl.textContent = `(${t.x}, ${t.y})\ntype: ${tile.type}\nlevel: ${tile.level}${resLine}`;
 
   if (draggingCityId) {
     const node = cityStore.get(draggingCityId);
     if (node) {
-      const clamped = clampCityPos(node, tp);
+      const clamped = clampCityPos(node, t);
       node.x = clamped.x;
       node.y = clamped.y;
       cityInfoEl.textContent = cityLabel(node);
     }
-    redrawCities();
+    redrawAll();
     return;
   }
   if (dragging) {
     const path = store.get(dragging.pathId);
-    if (path) path.points[dragging.pointIdx] = tp;
-    redrawOverlay();
+    if (path) path.points[dragging.pointIdx] = t;
+    redrawAll();
     return;
   }
-  if (draft) redrawOverlay(tp);
+  if (draft) redrawAll(t);
 });
 
 window.addEventListener('mouseup', () => {
+  if (panning) {
+    panning = false;
+    panLast = null;
+    canvasEl().style.cursor = tool === 'pan' ? 'grab' : tool === 'select' || tool === 'city' ? 'default' : 'crosshair';
+    renderBaseMap(seedInput.value || 'preview');
+    redrawAll();
+    return;
+  }
   if (draggingCityId) {
     draggingCityId = null;
     statusEl.textContent = `Moved city "${selectedCityId}".`;
+    renderBaseMap(seedInput.value || 'preview');
+    redrawAll();
   }
   if (dragging) {
     dragging = null;
     renderBaseMap(seedInput.value || 'preview');
+    redrawAll();
   }
 });
 
-cityCanvas.addEventListener('dblclick', (ev) => {
+canvasEl().addEventListener('dblclick', (ev) => {
   if (tool !== 'river' && tool !== 'mountain') return;
   if (!draft) return;
   ev.preventDefault();
@@ -679,12 +765,12 @@ cityCanvas.addEventListener('dblclick', (ev) => {
   finishDraft();
 });
 
-cityCanvas.addEventListener('contextmenu', (ev) => {
+canvasEl().addEventListener('contextmenu', (ev) => {
   ev.preventDefault();
-  if (tool === 'city') return; // no delete-by-right-click for generated city nodes
+  if (tool === 'pan' || tool === 'city') return; // no delete-by-right-click for generated city nodes
   if (tool === 'select') {
-    const tp = tileFromEvent(ev);
-    const id = findNearestPath(tp);
+    const t = tileFromClientXY(ev.clientX, ev.clientY);
+    const id = findNearestPath(t);
     if (id) {
       store.remove(id);
       selectPath(null);
@@ -708,15 +794,26 @@ document.addEventListener('keydown', (ev) => {
 });
 
 // ── Boot ─────────────────────────────────────────────────────────────────
+function renderLegend(): void {
+  legendEl.innerHTML = TERRAIN_LEGEND
+    .map((t) => `<div class="row"><i style="background:${TERRAIN_LEGEND_CSS[t]}"></i>${t}</div>`)
+    .join('');
+  cityLegendEl.innerHTML = (Object.keys(CITY_COLORS_CSS) as MapEditorCityNode['kind'][])
+    .map((k) => `<div class="row"><i style="background:${CITY_COLORS_CSS[k]}"></i>${k}</div>`)
+    .join('');
+}
+
 regenBtn.addEventListener('click', () => {
   renderBaseMap(seedInput.value || 'preview');
   loadCitiesAndRedraw(seedInput.value || 'preview');
 });
-zoomInput.addEventListener('input', applyZoom);
 widthInput.value = String(randomDefaultWidth());
 
 renderLegend();
-applyZoom();
-renderBaseMap(seedInput.value);
-loadCitiesAndRedraw(seedInput.value);
+centerView();
+Promise.allSettled([loadTerrainAtlas(), loadResAtlas(), loadBuildingAtlas()]).then(() => {
+  renderBaseMap(seedInput.value);
+  loadCitiesAndRedraw(seedInput.value);
+  redrawAll();
+});
 renderPathList();
