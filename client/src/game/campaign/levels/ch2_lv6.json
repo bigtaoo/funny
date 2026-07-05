@@ -6,8 +6,8 @@
     "kind": "survive"
   },
   "enemyScale": {
-    "hp": 1.02,
-    "damage": 1.01
+    "hp": 1.15,
+    "damage": 1.1
   },
   "loadout": [
     "max_1",
@@ -99,14 +99,14 @@
         "atTick": 840,
         "unitType": "infantry",
         "col": 1,
-        "count": 3,
+        "count": 4,
         "spacingTicks": 7
       },
       {
         "atTick": 840,
         "unitType": "infantry",
         "col": 10,
-        "count": 3,
+        "count": 4,
         "spacingTicks": 7
       },
       {
@@ -169,14 +169,14 @@
         "atTick": 1320,
         "unitType": "infantry",
         "col": 3,
-        "count": 3,
+        "count": 4,
         "spacingTicks": 7
       },
       {
         "atTick": 1320,
         "unitType": "infantry",
         "col": 8,
-        "count": 3,
+        "count": 4,
         "spacingTicks": 7
       }
     ]
@@ -195,6 +195,6 @@
   },
   "nameKey": "campaign.ch2.lv6.name",
   "briefKey": "campaign.ch2.lv6.brief",
-  "startInk": 28,
-  "inkRegenMult": 1.39
+  "startInk": 5,
+  "inkRegenMult": 1.02
 }

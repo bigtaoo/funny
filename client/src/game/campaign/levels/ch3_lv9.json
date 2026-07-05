@@ -233,10 +233,10 @@
   },
   "nameKey": "campaign.ch3.lv9.name",
   "briefKey": "campaign.ch3.lv9.brief",
-  "startInk": 33,
-  "inkRegenMult": 1.48,
+  "startInk": 22,
+  "inkRegenMult": 1.3,
   "enemyScale": {
-    "hp": 1.06,
-    "damage": 1.03
+    "hp": 1.1,
+    "damage": 1.07
   }
 }

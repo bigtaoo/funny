@@ -61,7 +61,7 @@
         "atTick": 480,
         "unitType": "runner",
         "col": 9,
-        "count": 3,
+        "count": 4,
         "spacingTicks": 8
       },
       {
@@ -75,14 +75,14 @@
         "atTick": 660,
         "unitType": "runner",
         "col": 0,
-        "count": 3,
+        "count": 4,
         "spacingTicks": 8
       },
       {
         "atTick": 660,
         "unitType": "infantry",
         "col": 10,
-        "count": 3,
+        "count": 4,
         "spacingTicks": 13
       },
       {
@@ -109,7 +109,7 @@
         "atTick": 900,
         "unitType": "runner",
         "col": 0,
-        "count": 3,
+        "count": 4,
         "spacingTicks": 8
       },
       {
@@ -130,14 +130,14 @@
         "atTick": 1140,
         "unitType": "runner",
         "col": 2,
-        "count": 4,
+        "count": 5,
         "spacingTicks": 7
       },
       {
         "atTick": 1140,
         "unitType": "runner",
         "col": 9,
-        "count": 4,
+        "count": 5,
         "spacingTicks": 7
       },
       {
@@ -157,7 +157,7 @@
         "atTick": 1320,
         "unitType": "infantry",
         "col": 2,
-        "count": 3,
+        "count": 4,
         "spacingTicks": 12
       },
       {
@@ -183,10 +183,10 @@
   },
   "nameKey": "campaign.ch3.lv6.name",
   "briefKey": "campaign.ch3.lv6.brief",
-  "startInk": 32,
-  "inkRegenMult": 1.46,
+  "startInk": 5,
+  "inkRegenMult": 1.04,
   "enemyScale": {
-    "hp": 1.05,
-    "damage": 1.02
+    "hp": 1.105,
+    "damage": 1.085
   }
 }

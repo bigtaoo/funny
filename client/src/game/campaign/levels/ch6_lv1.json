@@ -250,10 +250,10 @@
   "story": {
     "introKey": "campaign.ch6.intro"
   },
-  "startInk": 42,
-  "inkRegenMult": 1.64,
+  "startInk": 46,
+  "inkRegenMult": 1.68,
   "enemyScale": {
-    "hp": 1.12,
-    "damage": 1.07
+    "hp": 1.11,
+    "damage": 1.06
   }
 }

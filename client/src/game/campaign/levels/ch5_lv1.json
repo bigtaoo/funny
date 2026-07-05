@@ -33,7 +33,7 @@
         "atTick": 120,
         "unitType": "runner",
         "col": 1,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 8
       },
       {
@@ -61,14 +61,14 @@
         "atTick": 300,
         "unitType": "runner",
         "col": 1,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 8
       },
       {
         "atTick": 300,
         "unitType": "runner",
         "col": 11,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 8
       },
       {
@@ -89,14 +89,14 @@
         "atTick": 480,
         "unitType": "runner",
         "col": 1,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 7
       },
       {
         "atTick": 480,
         "unitType": "infantry",
         "col": 10,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 13
       },
       {
@@ -117,14 +117,14 @@
         "atTick": 660,
         "unitType": "runner",
         "col": 1,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 7
       },
       {
         "atTick": 660,
         "unitType": "runner",
         "col": 11,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 7
       },
       {
@@ -145,7 +145,7 @@
         "atTick": 900,
         "unitType": "runner",
         "col": 1,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 7
       },
       {
@@ -173,14 +173,14 @@
         "atTick": 1140,
         "unitType": "runner",
         "col": 2,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 6
       },
       {
         "atTick": 1140,
         "unitType": "runner",
         "col": 9,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 7
       }
     ]
@@ -202,10 +202,10 @@
   "story": {
     "introKey": "campaign.ch5.intro"
   },
-  "startInk": 38,
-  "inkRegenMult": 1.56,
+  "startInk": 22,
+  "inkRegenMult": 1.2,
   "enemyScale": {
-    "hp": 1.09,
-    "damage": 1.05
+    "hp": 1.04,
+    "damage": 1.03
   }
 }

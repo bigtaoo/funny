@@ -28,7 +28,7 @@
         "atTick": 120,
         "unitType": "runner",
         "col": 4,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 9,
         "crossWaypoints": [
           {
@@ -41,14 +41,14 @@
         "atTick": 120,
         "unitType": "infantry",
         "col": 3,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 15
       },
       {
         "atTick": 300,
         "unitType": "infantry",
         "col": 8,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 15
       },
       {
@@ -81,21 +81,21 @@
         "atTick": 480,
         "unitType": "runner",
         "col": 1,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 8
       },
       {
         "atTick": 480,
         "unitType": "infantry",
         "col": 7,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 13
       },
       {
         "atTick": 660,
         "unitType": "runner",
         "col": 4,
-        "count": 5,
+        "count": 4,
         "spacingTicks": 7,
         "crossWaypoints": [
           {
@@ -115,14 +115,14 @@
         "atTick": 660,
         "unitType": "shieldbearer",
         "col": 8,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 20
       },
       {
         "atTick": 900,
         "unitType": "ironclad",
         "col": 4,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 34,
         "crossWaypoints": [
           {
@@ -135,7 +135,7 @@
         "atTick": 900,
         "unitType": "infantry",
         "col": 0,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 13
       },
       {
@@ -149,7 +149,7 @@
         "atTick": 1080,
         "unitType": "runner",
         "col": 4,
-        "count": 5,
+        "count": 4,
         "spacingTicks": 7,
         "crossWaypoints": [
           {
@@ -162,14 +162,14 @@
         "atTick": 1080,
         "unitType": "runner",
         "col": 10,
-        "count": 5,
+        "count": 4,
         "spacingTicks": 7
       },
       {
         "atTick": 1080,
         "unitType": "ironclad",
         "col": 3,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 32
       }
     ]
@@ -187,10 +187,10 @@
     }
   },
   "nameKey": "campaign.ch4.lv4.name",
-  "startInk": 35,
-  "inkRegenMult": 1.51,
+  "startInk": 16,
+  "inkRegenMult": 1.2,
   "enemyScale": {
-    "hp": 1.07,
-    "damage": 1.04
+    "hp": 1.06,
+    "damage": 1.05
   }
 }

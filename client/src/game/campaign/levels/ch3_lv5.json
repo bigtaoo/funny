@@ -167,14 +167,14 @@
         "atTick": 1140,
         "unitType": "runner",
         "col": 1,
-        "count": 3,
+        "count": 4,
         "spacingTicks": 7
       },
       {
         "atTick": 1140,
         "unitType": "runner",
         "col": 11,
-        "count": 3,
+        "count": 4,
         "spacingTicks": 7
       },
       {
@@ -207,10 +207,10 @@
   },
   "nameKey": "campaign.ch3.lv5.name",
   "briefKey": "campaign.ch3.lv5.brief",
-  "startInk": 32,
-  "inkRegenMult": 1.45,
+  "startInk": 10,
+  "inkRegenMult": 1.14,
   "enemyScale": {
-    "hp": 1.04,
-    "damage": 1.02
+    "hp": 1.07,
+    "damage": 1.05
   }
 }

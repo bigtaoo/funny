@@ -5,7 +5,7 @@
   "objective": {
     "kind": "boss"
   },
-  "inkRegenMult": 1.55,
+  "inkRegenMult": 1.46,
   "bannedCards": [
     "meteor_1"
   ],
@@ -365,10 +365,9 @@
   "story": {
     "outroKey": "campaign.ch6.outro"
   },
-  "startInk": 42,
-  "inkRegenMult": 1.65,
+  "startInk": 32,
   "enemyScale": {
-    "hp": 1.08,
-    "damage": 1.05
+    "hp": 1.2,
+    "damage": 1.14
   }
 }

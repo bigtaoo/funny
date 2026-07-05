@@ -5,7 +5,7 @@
   "objective": {
     "kind": "survive"
   },
-  "inkRegenMult": 1.68,
+  "inkRegenMult": 1.64,
   "bannedCards": [
     "meteor_1",
     "haste_1",
@@ -239,9 +239,9 @@
   },
   "nameKey": "campaign.ch6.lv7.name",
   "briefKey": "campaign.ch6.lv7.brief",
-  "startInk": 45,
+  "startInk": 44,
   "enemyScale": {
-    "hp": 1.14,
-    "damage": 1.08
+    "hp": 1.15,
+    "damage": 1.1
   }
 }

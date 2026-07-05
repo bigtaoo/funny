@@ -5,7 +5,7 @@
   "objective": {
     "kind": "destroy_base"
   },
-  "inkRegenMult": 1.6,
+  "inkRegenMult": 1.18,
   "hazards": [
     {
       "col": 2,
@@ -217,9 +217,9 @@
   },
   "nameKey": "campaign.ch5.lv6.name",
   "briefKey": "campaign.ch5.lv6.brief",
-  "startInk": 40,
+  "startInk": 16,
   "enemyScale": {
     "hp": 1.11,
-    "damage": 1.06
+    "damage": 1.08
   }
 }

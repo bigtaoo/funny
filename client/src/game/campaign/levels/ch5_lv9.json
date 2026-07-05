@@ -47,194 +47,194 @@
   "waves": {
     "entries": [
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "runner",
         "col": 1,
         "count": 4,
         "spacingTicks": 7
       },
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "runner",
         "col": 10,
         "count": 4,
         "spacingTicks": 7
       },
       {
-        "atTick": 240,
+        "atTick": 300,
         "unitType": "archer",
         "col": 4,
         "count": 3,
         "spacingTicks": 13
       },
       {
-        "atTick": 240,
+        "atTick": 300,
         "unitType": "archer",
         "col": 7,
         "count": 3,
         "spacingTicks": 13
       },
       {
-        "atTick": 240,
+        "atTick": 300,
         "unitType": "runner",
         "col": 1,
         "count": 4,
         "spacingTicks": 7
       },
       {
-        "atTick": 420,
+        "atTick": 480,
         "unitType": "ironclad",
         "col": 0,
         "count": 2,
         "spacingTicks": 38
       },
       {
-        "atTick": 420,
+        "atTick": 480,
         "unitType": "ironclad",
         "col": 11,
         "count": 2,
         "spacingTicks": 38
       },
       {
-        "atTick": 420,
+        "atTick": 480,
         "unitType": "runner",
         "col": 10,
         "count": 4,
         "spacingTicks": 7
       },
       {
-        "atTick": 600,
+        "atTick": 660,
         "unitType": "shieldbearer",
         "col": 3,
         "count": 3,
         "spacingTicks": 22
       },
       {
-        "atTick": 600,
+        "atTick": 660,
         "unitType": "shieldbearer",
         "col": 8,
         "count": 3,
         "spacingTicks": 22
       },
       {
-        "atTick": 600,
+        "atTick": 660,
         "unitType": "runner",
         "col": 1,
         "count": 5,
         "spacingTicks": 6
       },
       {
-        "atTick": 840,
+        "atTick": 900,
         "unitType": "ironclad",
         "col": 2,
         "count": 3,
         "spacingTicks": 30
       },
       {
-        "atTick": 840,
+        "atTick": 900,
         "unitType": "ironclad",
         "col": 9,
         "count": 3,
         "spacingTicks": 30
       },
       {
-        "atTick": 840,
+        "atTick": 900,
         "unitType": "runner",
         "col": 10,
         "count": 5,
         "spacingTicks": 6
       },
       {
-        "atTick": 1080,
+        "atTick": 1140,
         "unitType": "ironclad",
         "col": 1,
         "count": 4,
         "spacingTicks": 26
       },
       {
-        "atTick": 1080,
+        "atTick": 1140,
         "unitType": "ironclad",
         "col": 10,
         "count": 4,
         "spacingTicks": 26
       },
       {
-        "atTick": 1080,
+        "atTick": 1140,
         "unitType": "runner",
         "col": 4,
         "count": 5,
         "spacingTicks": 6
       },
       {
-        "atTick": 1080,
+        "atTick": 1140,
         "unitType": "runner",
         "col": 7,
         "count": 5,
         "spacingTicks": 6
       },
       {
-        "atTick": 1320,
+        "atTick": 1380,
         "unitType": "ironclad",
         "col": 3,
         "count": 4,
         "spacingTicks": 26
       },
       {
-        "atTick": 1320,
+        "atTick": 1380,
         "unitType": "ironclad",
         "col": 8,
         "count": 4,
         "spacingTicks": 26
       },
       {
-        "atTick": 1320,
+        "atTick": 1380,
         "unitType": "runner",
         "col": 1,
         "count": 6,
         "spacingTicks": 5
       },
       {
-        "atTick": 1320,
+        "atTick": 1380,
         "unitType": "runner",
         "col": 10,
         "count": 6,
         "spacingTicks": 5
       },
       {
-        "atTick": 1320,
+        "atTick": 1380,
         "unitType": "medic",
         "col": 3,
         "count": 1
       },
       {
-        "atTick": 1320,
+        "atTick": 1380,
         "unitType": "medic",
         "col": 8,
         "count": 1
       },
       {
-        "atTick": 1680,
+        "atTick": 1740,
         "unitType": "ironclad",
         "col": 1,
         "count": 5,
         "spacingTicks": 24
       },
       {
-        "atTick": 1680,
+        "atTick": 1740,
         "unitType": "ironclad",
         "col": 10,
         "count": 5,
         "spacingTicks": 24
       },
       {
-        "atTick": 1680,
+        "atTick": 1740,
         "unitType": "runner",
         "col": 0,
         "count": 6,
         "spacingTicks": 5
       },
       {
-        "atTick": 1680,
+        "atTick": 1740,
         "unitType": "runner",
         "col": 11,
         "count": 6,
@@ -255,5 +255,11 @@
     }
   },
   "nameKey": "campaign.ch5.lv9.name",
-  "briefKey": "campaign.ch5.lv9.brief"
+  "briefKey": "campaign.ch5.lv9.brief",
+  "startInk": 0,
+  "inkRegenMult": 0.58,
+  "enemyScale": {
+    "hp": 1.26,
+    "damage": 1.22
+  }
 }

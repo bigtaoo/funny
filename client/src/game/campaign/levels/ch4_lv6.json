@@ -219,10 +219,10 @@
   },
   "nameKey": "campaign.ch4.lv6.name",
   "briefKey": "campaign.ch4.lv6.brief",
-  "startInk": 36,
-  "inkRegenMult": 1.53,
+  "startInk": 10,
+  "inkRegenMult": 1.14,
   "enemyScale": {
-    "hp": 1.08,
-    "damage": 1.04
+    "hp": 1.09,
+    "damage": 1.06
   }
 }

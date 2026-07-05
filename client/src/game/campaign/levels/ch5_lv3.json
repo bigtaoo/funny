@@ -5,7 +5,7 @@
   "objective": {
     "kind": "survive"
   },
-  "inkRegenMult": 1.58,
+  "inkRegenMult": 1.36,
   "board": {
     "activeLanes": [
       0,
@@ -123,7 +123,7 @@
         "atTick": 480,
         "unitType": "runner",
         "col": 4,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 7,
         "crossWaypoints": [
           {
@@ -150,7 +150,7 @@
         "atTick": 660,
         "unitType": "runner",
         "col": 7,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 7,
         "crossWaypoints": [
           {
@@ -170,7 +170,7 @@
         "atTick": 900,
         "unitType": "runner",
         "col": 4,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 7,
         "crossWaypoints": [
           {
@@ -183,7 +183,7 @@
         "atTick": 900,
         "unitType": "runner",
         "col": 7,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 7,
         "crossWaypoints": [
           {
@@ -236,7 +236,7 @@
         "atTick": 1140,
         "unitType": "runner",
         "col": 1,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 7
       }
     ]
@@ -255,9 +255,9 @@
   },
   "nameKey": "campaign.ch5.lv3.name",
   "briefKey": "campaign.ch5.lv3.brief",
-  "startInk": 39,
+  "startInk": 32,
   "enemyScale": {
-    "hp": 1.1,
-    "damage": 1.05
+    "hp": 1.07,
+    "damage": 1.06
   }
 }

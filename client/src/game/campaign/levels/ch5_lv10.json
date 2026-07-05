@@ -5,7 +5,7 @@
   "objective": {
     "kind": "boss"
   },
-  "inkRegenMult": 0.7,
+  "inkRegenMult": 0.55,
   "hazards": [
     {
       "col": 2,
@@ -56,129 +56,129 @@
   "waves": {
     "entries": [
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "runner",
         "col": 2,
-        "count": 4,
+        "count": 5,
         "spacingTicks": 7
       },
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "runner",
         "col": 9,
-        "count": 4,
+        "count": 5,
         "spacingTicks": 7
       },
       {
-        "atTick": 300,
+        "atTick": 360,
         "unitType": "ironclad",
         "col": 3,
-        "count": 2,
+        "count": 3,
         "spacingTicks": 38
       },
       {
-        "atTick": 300,
+        "atTick": 360,
         "unitType": "ironclad",
         "col": 8,
-        "count": 2,
+        "count": 3,
         "spacingTicks": 38
       },
       {
-        "atTick": 300,
+        "atTick": 360,
         "unitType": "runner",
         "col": 2,
-        "count": 4,
+        "count": 5,
         "spacingTicks": 7
       },
       {
-        "atTick": 600,
+        "atTick": 660,
         "unitType": "shieldbearer",
         "col": 4,
-        "count": 3,
+        "count": 4,
         "spacingTicks": 22
       },
       {
-        "atTick": 600,
+        "atTick": 660,
         "unitType": "shieldbearer",
         "col": 7,
-        "count": 3,
+        "count": 4,
         "spacingTicks": 22
       },
       {
-        "atTick": 600,
+        "atTick": 660,
         "unitType": "runner",
         "col": 9,
-        "count": 5,
+        "count": 7,
         "spacingTicks": 6
       },
       {
-        "atTick": 900,
+        "atTick": 960,
         "unitType": "ironclad",
         "col": 0,
-        "count": 3,
+        "count": 4,
         "spacingTicks": 30
       },
       {
-        "atTick": 900,
+        "atTick": 960,
         "unitType": "ironclad",
         "col": 11,
-        "count": 3,
+        "count": 4,
         "spacingTicks": 30
       },
       {
-        "atTick": 900,
+        "atTick": 960,
         "unitType": "runner",
         "col": 2,
-        "count": 5,
+        "count": 7,
         "spacingTicks": 6
       },
       {
-        "atTick": 900,
+        "atTick": 960,
         "unitType": "runner",
         "col": 9,
-        "count": 5,
+        "count": 7,
         "spacingTicks": 6
       },
       {
-        "atTick": 1200,
+        "atTick": 1260,
         "unitType": "ironclad",
         "col": 1,
         "count": 1,
         "isBoss": true
       },
       {
-        "atTick": 1200,
+        "atTick": 1260,
         "unitType": "ironclad",
         "col": 10,
         "count": 1,
         "isBoss": true
       },
       {
-        "atTick": 1200,
+        "atTick": 1260,
         "unitType": "runner",
         "col": 2,
-        "count": 5,
+        "count": 7,
         "spacingTicks": 6
       },
       {
-        "atTick": 1200,
+        "atTick": 1260,
         "unitType": "runner",
         "col": 9,
-        "count": 5,
+        "count": 7,
         "spacingTicks": 6
       },
       {
-        "atTick": 1200,
+        "atTick": 1260,
         "unitType": "ironclad",
         "col": 4,
-        "count": 3,
+        "count": 4,
         "spacingTicks": 28
       },
       {
-        "atTick": 1200,
+        "atTick": 1260,
         "unitType": "ironclad",
         "col": 7,
-        "count": 3,
+        "count": 4,
         "spacingTicks": 28
       }
     ]
@@ -197,5 +197,12 @@
   },
   "nameKey": "campaign.ch5.lv10.name",
   "briefKey": "campaign.ch5.lv10.brief",
-  "story": { "outroKey": "campaign.ch5.outro" }
+  "story": {
+    "outroKey": "campaign.ch5.outro"
+  },
+  "startInk": 0,
+  "enemyScale": {
+    "hp": 1.19,
+    "damage": 1.16
+  }
 }
