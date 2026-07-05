@@ -113,6 +113,8 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 
 > **已落地（2026-06-25）**：`client/src/ui/widgets/SceneHeader.ts`。
 > - API：`drawSceneHeader(container, w, h, title, opts?)` → `{ headerH, backRect }`。顶栏 chrome（底 + 左上返回 glyph）作为**整块经 §2.1 缓存**（缓存键含 variant/朝向/语言，同类只烘焙一次复用）；标题为每场景动态文本，live 绘制。返回文案统一 `'← ' + t('common.back')`（色 `C.accent`），命中区固定 `{0,0,160,headerH}`。各场景保留自己的 hit 数组，只把 `hdr.backRect` push 进去（不强求统一 hit 结构）。
+>
+> **补充（2026-07-05）**：返回文字底下新增一个**轻量圆角色块**（`buildBackChip`）——`dark` variant 用白色 12% 透明度，`paper` variant 用墨色 8% 透明度，让返回按钮读成一个「按钮」而不是浮在标题栏上的裸文字；不是 §7.5 那种手绘描边的实体按钮框，只是一个衬底色块。同一改动把 `WorldMapScene` 唯一的例外（原来是左下角 HUD 里 88×34 的手绘按钮框，i18n key 是 `world.back`）迁移成新增的 `drawFloatingBackButton(container, h)`：同款色块 + `common.back` 文案，挪到左上角、同一个 `x=10` 缩进，与其余 22 个场景位置对齐；`floating` variant 用不透明的纸色底（92%）以便在地图任意底色上都能看清。至此返回按钮**位置 + 样式**在全部场景统一，无遗留例外。
 > - `title` 传 `null` 时只画 chrome、不画标题（供有副标题需抬升标题的场景自绘，如 CampaignMap）；`opts.titleSize`/`opts.headerH` 用于保真个别场景的大标题/矮栏（如 Settings/Titles 0.042、Chat 0.11 栏高）。
 > - `opts.variant`（`'dark'` 默认 / `'paper'`）：`'paper'` = `sketchPanel` 纸面底（`C.paper` 填充 + `C.mid` 手绘边）+ 深色标题，供 SLG/编辑器场景（其正文坐在纸面背景上）使用；返回在左、标题居中，右侧留空可由调用方在 chrome 之上自绘控件（如 DefenseEditor 的基地等级 stepper）。`'dark'` = 实心深色底 + 白色标题。
 > - **已迁移（14 个标准深色顶栏菜单场景）**：Achievement / BattlePass / Collection / Gacha / Friends / Leaderboard / Stats / Shop / Settings / Titles / Room / LevelPrep / CampaignMap / Chat。统一新增 i18n `common.back`（原各场景 `xxx.back` 键保留未删，部分仍被未迁场景使用）。

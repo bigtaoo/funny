@@ -34,17 +34,6 @@ export class WorldMapPanels {
     panel.y = h - HUD_H;
     hud.addChild(panel);
 
-    // Back button
-    const backW = 88, backH = 34;
-    const backBtn = sketchPanel(backW, backH, { fill: C.dark, border: C.accent, seed: seedFor(5, 3, backW) });
-    backBtn.x = 8; backBtn.y = h - HUD_H + 8;
-    hud.addChild(backBtn);
-    const backLbl = txt(t('world.back'), 13, C.light);
-    backLbl.anchor.set(0.5, 0.5);
-    backLbl.x = backBtn.x + backW / 2; backLbl.y = backBtn.y + backH / 2;
-    hud.addChild(backLbl);
-    this.ctx.backRect = { x: backBtn.x, y: backBtn.y, w: backW, h: backH };
-
     // Resources row
     if (this.ctx.me?.joined) {
       const troops = this.ctx.me.troops ?? 0;

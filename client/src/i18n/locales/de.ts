@@ -733,7 +733,6 @@ export const de: Record<TranslationKey, string> = {
   'mail.delete': 'Löschen',
   // SLG-Welt (S8)
   'world.title': 'Welt',
-  'world.back': '← Zurück',
   'world.troops': 'Truppen',
   'world.troopCap': 'Truppenmax.',
   'world.territory': 'Gebiet',

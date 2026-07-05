@@ -743,7 +743,6 @@ export const zh = {
   'mail.delete': '删除邮件',
   // ── SLG overworld (S8) ────────────────────────────────────────────────────
   'world.title': '大世界',
-  'world.back': '← 返回',
   'world.troops': '兵力',
   'world.troopCap': '兵力上限',
   'world.territory': '领地',

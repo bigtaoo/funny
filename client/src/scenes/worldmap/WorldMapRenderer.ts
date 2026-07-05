@@ -1,6 +1,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
+import { drawFloatingBackButton } from '../../ui/widgets/SceneHeader';
 import { buildIcon } from '../../render/icons';
 import { WorldApiError } from '../../net/WorldApiClient';
 import { proceduralTile } from '@nw/shared';
@@ -65,6 +66,11 @@ export class WorldMapRenderer {
     // HUD bar
     this.ctx.hudLayer = new PIXI.Container();
     this.ctx.container.addChild(this.ctx.hudLayer);
+
+    // Top-left back button — static, on its own layer above the map/HUD.
+    this.ctx.topLayer = new PIXI.Container();
+    this.ctx.container.addChild(this.ctx.topLayer);
+    this.ctx.backRect = drawFloatingBackButton(this.ctx.topLayer, h).backRect;
 
     this.ctx.modalLayer = new PIXI.Container();
     this.ctx.container.addChild(this.ctx.modalLayer);
