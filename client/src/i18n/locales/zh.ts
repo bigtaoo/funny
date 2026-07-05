@@ -382,7 +382,6 @@ export const zh = {
 
   // ── Gacha / loot box (S2-6) ───────────────────────────────────────────────────
   'gacha.title': '盲盒',
-  'gacha.coins': '金币：{coins}',
   'gacha.drawOne': '单抽 {cost}',
   'gacha.drawTen': '十连 {cost}',
   'gacha.pity': '保底 {cur}/{max}',

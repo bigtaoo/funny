@@ -65,6 +65,24 @@ function fakeCols(seed: Record<string, SaveData>): { cols: Collections; matches:
         matches.push(doc);
         return { insertedId: doc.roomId };
       },
+      // Minimal chainable cursor for GET /internal/mismatches (C3): .find({hashMismatch,ts:{$gte}}).sort({ts:-1}).limit(200).project(...).toArray()
+      find: (q: { hashMismatch?: boolean; ts?: { $gte: number } }) => {
+        let items = matches.filter(
+          (m) => (q.hashMismatch === undefined || m.hashMismatch === q.hashMismatch)
+            && (q.ts?.$gte === undefined || (m.ts as number) >= q.ts.$gte),
+        );
+        const cursor = {
+          sort: (spec: Record<string, 1 | -1>) => {
+            const [[key, dir]] = Object.entries(spec);
+            items = [...items].sort((a, b) => ((a[key] as number) - (b[key] as number)) * dir);
+            return cursor;
+          },
+          limit: (n: number) => { items = items.slice(0, n); return cursor; },
+          project: () => cursor,
+          toArray: async () => items,
+        };
+        return cursor;
+      },
     },
   } as unknown as Collections;
   return { cols, matches };
@@ -467,6 +485,34 @@ describe('internal routes', () => {
       method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY }, payload: noMismatchPayload,
     });
     expect((matches[0] as { hashMismatch?: boolean }).hashMismatch).toBeUndefined();
+    await app.close();
+  });
+});
+
+describe('GET /internal/mismatches (C3)', () => {
+  it('no key → 401', async () => {
+    const app = build(fakeCols({}).cols);
+    const res = await app.inject({ method: 'GET', url: '/internal/mismatches' });
+    expect(res.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('returns only hashMismatch=true matches within the last 24h, newest first', async () => {
+    const a = makeNewSave('a');
+    const b = makeNewSave('b');
+    const { cols, matches } = fakeCols({ a, b });
+    const now = 1000;
+    matches.push(
+      { roomId: 'old', mode: 'ranked', players: [], reason: 'mismatch', hashMismatch: true, ts: now - 25 * 3600 * 1000 }, // outside 24h window
+      { roomId: 'clean', mode: 'ranked', players: [], reason: 'base', ts: now }, // hashMismatch not set
+      { roomId: 'm1', mode: 'ranked', players: [], reason: 'mismatch', hashMismatch: true, ts: now - 1000 },
+      { roomId: 'm2', mode: 'ranked', players: [], reason: 'mismatch', hashMismatch: true, ts: now - 500 },
+    );
+    const app = build(cols);
+    const res = await app.inject({ method: 'GET', url: '/internal/mismatches', headers: { 'x-internal-key': KEY } });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body.matches.map((m: { roomId: string }) => m.roomId)).toEqual(['m2', 'm1']);
     await app.close();
   });
 });

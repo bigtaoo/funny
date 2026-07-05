@@ -4,12 +4,12 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import type { ShopItem } from '../net/ApiClient';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay, tearDownChildren, marginLineX } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { buildIcon, type IconKind } from '../render/icons';
 import { loadCoinIconAtlas, getCoinIconTexture } from '../render/coinIconAtlas';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
-import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
+import { drawSidebarTabs, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 
 interface CoinTierDef {
@@ -47,11 +47,13 @@ const YEAR_CARD_LIST_YUAN = 360;
 // server-authoritative — every buy returns a fresh SaveData that the app adopts; this scene only reads the current
 // wallet via getCoins() and re-renders. Gacha lives in its own scene, reached via the capsule tab.
 //
-// Layout: products are icon-cards laid out in a responsive grid (mirrors CardScene/EquipmentScene). The grid scrolls
-// (drag) inside a masked body region so the header + tab strip stay fixed. Subscription cards (monthly / year) are
-// globally single-slot: while any card is active, both Buy buttons read "生效中" and are disabled (server enforces the
-// same via ALREADY_ACTIVE). Promo-code redemption (B-PROMO) is a full-width row below the grid; text entry uses the same
-// hidden-<input> technique as LoginScene (works on both desktop keyboards and mobile soft keyboards).
+// Layout: products are icon-cards laid out in a responsive grid (mirrors CardScene/EquipmentScene). The group nav
+// [Shop|Coins|Gacha|BattlePass] is a vertical rail in the left notebook-margin gutter (marginLineX), so the grid
+// starts to its right and scrolls (drag) inside a masked body region while the header + rail stay fixed. Subscription
+// cards (monthly / year) are globally single-slot: while any card is active, both Buy buttons read "生效中" and are
+// disabled (server enforces the same via ALREADY_ACTIVE). Promo-code redemption (B-PROMO) is a full-width row below
+// the Coins tab's tier grid; text entry uses the same hidden-<input> technique as LoginScene (works on both desktop
+// keyboards and mobile soft keyboards).
 
 /** Outcome of a buy — ok, or a message key to surface as a toast. */
 export type ShopActionResult =
@@ -430,14 +432,15 @@ export class ShopScene implements Scene {
   }
 
   /**
-   * Shop group tab strip (LOBBY_IA_REDESIGN P1.5): [Shop|Coins|Gacha|BattlePass].
-   * Coins tab only appears when rechargeCoins callback is provided (logged in, web platform).
-   * BattlePass tab only appears when openBattlePass is provided.
-   * Returns the body start y (bottom edge of the strip).
+   * Shop group nav (LOBBY_IA_REDESIGN P1.5): [Shop|Coins|Gacha|BattlePass] as a vertical rail
+   * stacked in the left notebook-margin gutter (`marginLineX`), below the header — same convention
+   * as CardScene/EquipmentScene's sidebar nav. Coins tab only appears when rechargeCoins is provided
+   * (logged in, web platform); BattlePass tab only when openBattlePass is provided. Returns the body
+   * start y (just the header height — the rail occupies width, not height).
    */
   private drawGroupTabs(tbH: number): number {
     const { w, h } = this;
-    const stripH = hubTabsHeight(h);
+    const sidebarW = marginLineX(w);
     const showCoins = !!this.cb.rechargeCoins;
 
     const tabs: HubTab[] = [
@@ -448,7 +451,7 @@ export class ShopScene implements Scene {
     if (this.cb.openBattlePass) tabs.push({ label: t('battlepass.title'), active: false, icon: 'trophy' });
 
     const switchTab = (tab: 'shop' | 'coins') => { this.tab = tab; this.scrollY = 0; this.render(); };
-    const hits = drawHubTabs(this.container, w, tbH, stripH, tabs, (i) => {
+    const { hits } = drawSidebarTabs(this.container, sidebarW, tbH, h, tabs, (i) => {
       if (!showCoins) {
         if (i === 1) this.cb.openGacha();
         else if (i === 2) this.cb.openBattlePass?.();
@@ -460,7 +463,7 @@ export class ShopScene implements Scene {
       else if (i === 3) this.cb.openBattlePass?.();
     });
     this.hits.push(...hits);
-    return tbH + stripH;
+    return tbH;
   }
 
   // ── Grid layout ────────────────────────────────────────────────────────────
@@ -468,9 +471,9 @@ export class ShopScene implements Scene {
   /** Responsive column count + cell width for the product grid (mirrors CardScene/EquipmentScene). */
   private gridMetrics(): { listX: number; listW: number; gap: number; cols: number; cellW: number; cellH: number } {
     const { w, h } = this;
-    const listX = Math.round(w * 0.04);
-    const listW = w - listX * 2;
     const gap = Math.round(w * 0.015);
+    const listX = marginLineX(w) + gap;
+    const listW = w - listX - Math.round(w * 0.04);
     const targetW = Math.round(w * 0.30);
     const cols = Math.max(1, Math.floor((listW + gap) / (targetW + gap)));
     const cellW = Math.round((listW - gap * (cols - 1)) / cols);
@@ -478,7 +481,7 @@ export class ShopScene implements Scene {
     return { listX, listW, gap, cols, cellW, cellH };
   }
 
-  /** Shop tab: monthly/year cards + starter packs + skins as an icon-card grid, then a full-width promo row. */
+  /** Shop tab: monthly/year cards + starter packs + skins as an icon-card grid. */
   private drawShopGrid(body: PIXI.Container, top: number): void {
     const { w, h } = this;
     const bodyTop = top + Math.round(h * 0.02);
@@ -492,16 +495,12 @@ export class ShopScene implements Scene {
     }
 
     const specs = this.buildShopCards();
-    const { listX, listW, gap, cols, cellW, cellH } = this.gridMetrics();
+    const { listX, gap, cols, cellW, cellH } = this.gridMetrics();
     const rows = Math.ceil(specs.length / cols);
-    const gridH = rows > 0 ? rows * (cellH + gap) : 0;
-
-    // Promo row sits full-width below the grid, inside the same scroll flow.
-    const promoH = this.cb.redeemPromo ? Math.round(h * 0.09) : 0;
-    const totalH = gridH + (promoH ? promoH + gap : 0);
+    const totalH = rows > 0 ? rows * (cellH + gap) : 0;
     this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - viewH)));
 
-    if (specs.length === 0 && !this.cb.redeemPromo) {
+    if (specs.length === 0) {
       const lbl = txt(t('shop.empty'), Math.round(h * 0.028), C.mid);
       lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = bodyTop + Math.round(h * 0.14);
       body.addChild(lbl);
@@ -515,11 +514,6 @@ export class ShopScene implements Scene {
       const cy = bodyTop + row * (cellH + gap) - this.scrollY;
       if (cy + cellH >= top && cy <= h) this.drawCard(body, spec, cx, cy, cellW, cellH);
     });
-
-    if (promoH) {
-      const py = bodyTop + gridH - this.scrollY;
-      if (py + promoH >= top && py <= h) this.drawPromoRow(body, listX, py, listW, promoH);
-    }
   }
 
   /** Assemble the shop tab's card specs in a fixed order: monthly · year · starter packs · skins. */
@@ -610,7 +604,7 @@ export class ShopScene implements Scene {
     return specs;
   }
 
-  /** Coins recharge tab: USD tiers as an icon-card grid (price · treasure glyph · coins + bonus · buy). */
+  /** Coins recharge tab: USD tiers as an icon-card grid (price · treasure glyph · coins + bonus · buy), then a full-width promo-code redemption row. */
   private drawCoinsGrid(body: PIXI.Container, top: number): void {
     const { h } = this;
     const bodyTop = top + Math.round(h * 0.02);
@@ -634,9 +628,13 @@ export class ShopScene implements Scene {
       };
     });
 
-    const { listX, gap, cols, cellW, cellH } = this.gridMetrics();
+    const { listX, listW, gap, cols, cellW, cellH } = this.gridMetrics();
     const rows = Math.ceil(specs.length / cols);
-    const totalH = rows * (cellH + gap);
+    const gridH = rows * (cellH + gap);
+
+    // Promo-code redemption (B-PROMO) lives on the Coins tab, full-width below the tier grid.
+    const promoH = this.cb.redeemPromo ? Math.round(h * 0.09) : 0;
+    const totalH = gridH + (promoH ? promoH + gap : 0);
     this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - viewH)));
 
     specs.forEach((spec, i) => {
@@ -646,6 +644,11 @@ export class ShopScene implements Scene {
       const cy = bodyTop + row * (cellH + gap) - this.scrollY;
       if (cy + cellH >= top && cy <= h) this.drawCard(body, spec, cx, cy, cellW, cellH);
     });
+
+    if (promoH) {
+      const py = bodyTop + gridH - this.scrollY;
+      if (py + promoH >= top && py <= h) this.drawPromoRow(body, listX, py, listW, promoH);
+    }
   }
 
   // ── Card cell ────────────────────────────────────────────────────────────

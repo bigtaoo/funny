@@ -354,6 +354,19 @@ export class StickmanRuntime {
     if (this.gearSprites.length && this.currentClip) this._applyPose();
   }
 
+  /**
+   * Recolor every bone sprite to a flat tint — each texture's RGB is multiplied
+   * by `color` while its alpha (the silhouette shape) is untouched, so e.g.
+   * 0x000000 renders the whole rig as a solid black silhouette. Pass `null` to
+   * restore the original multi-color art. Purely decorative (ambient lobby
+   * figures); battle rendering never calls this — faction color there comes
+   * from {@link drawFactionMarker} instead (art-direction §3.2).
+   */
+  setSilhouette(color: number | null): void {
+    const tint = color ?? 0xffffff;
+    for (const s of this.sprites.values()) s.tint = tint;
+  }
+
   // ── Animation control ─────────────────────────────────────────────────────
 
   /** Switch to a named animation clip; resets time to 0 when the clip changes. */

@@ -168,10 +168,11 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
 
   it('rename: insufficient balance → 402, name unchanged', async () => {
     comm.coins.set(accountId, 100);
+    const before = body(await app.inject({ method: 'GET', url: '/save', headers: auth() })).data.displayName;
     const r = await app.inject({ method: 'POST', url: '/profile/rename', headers: auth(), payload: { displayName: 'Broke' } });
     expect(r.statusCode).toBe(402);
     const save = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
-    expect(save.data.displayName).toBeUndefined();
+    expect(save.data.displayName).toBe(before); // unchanged — GET /save lazily backfills a default the first time it's read, not 'Broke'
   });
 
   it('rename: empty name → 400', async () => {

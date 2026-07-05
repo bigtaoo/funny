@@ -380,7 +380,6 @@ export const en: Record<TranslationKey, string> = {
 
   // ── Gacha (S2-6) ─────────────────────────────────────────────────────────────
   'gacha.title': 'Gacha',
-  'gacha.coins': 'Coins: {coins}',
   'gacha.drawOne': 'Single {cost}',
   'gacha.drawTen': '10× {cost}',
   'gacha.pity': 'Pity {cur}/{max}',

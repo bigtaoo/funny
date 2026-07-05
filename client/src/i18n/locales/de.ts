@@ -380,7 +380,6 @@ export const de: Record<TranslationKey, string> = {
 
   // ── Lootbox (S2-6) ───────────────────────────────────────────────────────────
   'gacha.title': 'Lootbox',
-  'gacha.coins': 'Münzen: {coins}',
   'gacha.drawOne': 'Einzeln {cost}',
   'gacha.drawTen': '10× {cost}',
   'gacha.pity': 'Garantie {cur}/{max}',

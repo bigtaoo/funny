@@ -75,6 +75,7 @@ function buildGacha(cb: Partial<GachaSceneCallbacks>): GachaScene {
 function buildBattlePass(cb: Partial<BattlePassCallbacks>): BattlePassScene {
   return new BattlePassScene(createLayout(800, 1280), new InputManager(), {
     onBack() {},
+    getCoins: () => 1000,
     ...cb,
   });
 }

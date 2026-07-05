@@ -398,14 +398,23 @@ export class ResultScene implements Scene {
         pts.push(pts[0]!, pts[1]!);
         pen.stroke(pts, { color: gold, width: Math.max(1.4, r * 0.13), jitter: 0.35, taper: 0.9, double: false, alpha });
       };
-      // Kept in the top band + the far left/right paper margins so they never
-      // float over the central badge/detail column (which reads as "stray").
-      // Position is re-rolled on every view — 12 stars split across both margins.
+      // Scattered anywhere on the page (margins kept clear so nothing bleeds
+      // off-canvas). Position is re-rolled on every view; a minimum-distance
+      // floor between picks keeps them from clumping into one bright patch.
       const starCount = 12;
+      const marginX = w * 0.03;
+      const marginY = h * 0.05;
+      const minDist = Math.min(w, h) * 0.1;
+      const placed: { x: number; y: number }[] = [];
       for (let i = 0; i < starCount; i++) {
-        const leftSide = i % 2 === 0;
-        const sx = leftSide ? w * (0.03 + Math.random() * 0.14) : w * (0.83 + Math.random() * 0.14);
-        const sy = h * (0.08 + Math.random() * 0.57);
+        let sx = 0;
+        let sy = 0;
+        for (let attempt = 0; attempt < 20; attempt++) {
+          sx = marginX + Math.random() * (w - marginX * 2);
+          sy = marginY + Math.random() * (h - marginY * 2);
+          if (placed.every((p) => Math.hypot(p.x - sx, p.y - sy) >= minDist)) break;
+        }
+        placed.push({ x: sx, y: sy });
         const sr = h * (0.028 + Math.random() * 0.034);
         const sa = 0.6 + Math.random() * 0.35;
         star(sx, sy, sr, sa);

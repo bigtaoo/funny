@@ -33,8 +33,11 @@ import { WorldMapScene } from '../../src/scenes/WorldMapScene';
 import { FamilyScene } from '../../src/scenes/FamilyScene';
 import { SectScene } from '../../src/scenes/SectScene';
 import { AuctionScene } from '../../src/scenes/AuctionScene';
+import { EquipmentScene } from '../../src/scenes/EquipmentScene';
+import type { EquipmentCallbacks, EquipResult } from '../../src/scenes/EquipmentScene';
 import type { PlayerStats } from '../../src/game/types';
 import type { WorldApiClient } from '../../src/net/WorldApiClient';
+import { makeNewSave, type SaveData, type EquipSlot } from '../../src/game/meta/SaveData';
 
 // In-memory storage so initI18n (which persists the locale) has somewhere to write.
 const memStore = (() => {
@@ -82,6 +85,51 @@ function stubWorldApi(): WorldApiClient {
     allySect: never, unallySect: never, voteRemoveSectLeader: never,
     sendSectMessage: never, getSectChannel: never,
   } as unknown as WorldApiClient;
+}
+
+/**
+ * Equipment fixture (EQUIPMENT_DESIGN §11): one card ('card1', lichuang) wearing a fine weapon
+ * (eqEquippedFine), plus two unequipped bag items — a common weapon (eqBagCommon, doubles as the
+ * common-rarity reforge material) and a fine weapon (eqBagFine, the reforge target used below).
+ * Materials/coins are set high so afford checks never gate the tests.
+ */
+function buildEquipSave(): SaveData {
+  const save = makeNewSave('acc_test');
+  save.wallet.coins = 100000;
+  save.materials = { scrap: 999, lead: 999, binding: 999 };
+  save.cardInv = {
+    card1: { id: 'card1', defId: 'lichuang', level: 1, xp: 0, gear: { weapon: 'eqEquippedFine' }, locked: false },
+  };
+  save.equipmentInv = {
+    eqEquippedFine: { id: 'eqEquippedFine', defId: 'wp_pen', rarity: 'fine', level: 0, affixes: [{ id: 'm_atk', value: 20 }] },
+    eqBagCommon: { id: 'eqBagCommon', defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [{ id: 'm_atk', value: 10 }] },
+    eqBagFine: { id: 'eqBagFine', defId: 'wp_pen', rarity: 'fine', level: 0, affixes: [{ id: 'm_atk', value: 20 }] },
+  };
+  return save;
+}
+
+/** Spied EquipmentCallbacks over `buildEquipSave()`; every call is recorded in `calls` for assertions. */
+function buildEquipCallbacks(activeCardInstanceId: string) {
+  const calls = {
+    craft: [] as string[],
+    enhance: [] as Array<[string, boolean | undefined]>,
+    salvage: [] as string[][],
+    equip: [] as Array<[EquipSlot, string | null, string]>,
+    reforge: [] as Array<[string, string]>,
+  };
+  const save = buildEquipSave();
+  const ok: EquipResult = { ok: true };
+  const cb: EquipmentCallbacks = {
+    onBack() {},
+    getSave: () => save,
+    craft: async (defId) => { calls.craft.push(defId); return ok; },
+    enhance: async (id, useProtect) => { calls.enhance.push([id, useProtect]); return { ok: true, success: true, level: 1 }; },
+    salvage: async (ids) => { calls.salvage.push(ids); return ok; },
+    equip: async (slot, id, cardId) => { calls.equip.push([slot, id, cardId]); return ok; },
+    reforge: async (targetId, materialId) => { calls.reforge.push([targetId, materialId]); return ok; },
+    activeCardInstanceId,
+  };
+  return { cb, calls, save };
 }
 
 /** Build → update twice → destroy. Asserts the container is real and nothing throws. */
@@ -341,6 +389,14 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         worldApi: stubWorldApi(),
         worldId: 'world:1:0',
       }),
+  },
+  {
+    name: 'EquipmentScene (active card)',
+    build: (w, h) => new EquipmentScene(createLayout(w, h), new InputManager(), buildEquipCallbacks('card1').cb),
+  },
+  {
+    name: 'EquipmentScene (bag mode)',
+    build: (w, h) => new EquipmentScene(createLayout(w, h), new InputManager(), buildEquipCallbacks('').cb),
   },
 ];
 
@@ -742,4 +798,103 @@ describe('RoomScene — code-entry keypad', () => {
       scene.destroy();
     });
   }
+});
+
+// ── EquipmentScene: mixin-split wiring ───────────────────────────────────────
+// EquipmentScene.ts (client-modules split, see claudedocs) is assembled from 5 domain
+// mixins over EquipmentSceneBase: Inventory → Craft → Detail → Assign → Reforge. The
+// cross-mixin call points below (base.render() dispatching into each domain; the detail
+// modal invoking Assign's beginAssign / Reforge's openReforgeSelect; Assign's card picker
+// calling back into Detail's doEquip) type-check purely because base.ts declares their
+// signatures via interface merging — a wrong mixin order, a missing mixin in the
+// EquipmentScene.ts chain, or a typo'd method name would still compile but throw or
+// silently no-op at runtime. These tests drive the real render dispatch + hit rects to
+// prove the wiring actually resolves to working methods, not just satisfies the compiler.
+describe('EquipmentScene — mixin-split wiring', () => {
+  it('craft tab: base.render() dispatches to CraftMixin.renderCraft, and the Craft button calls cb.craft', async () => {
+    const { cb, calls } = buildEquipCallbacks('card1');
+    const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
+    (scene as any).activeTab = 'craft';
+    (scene as any).render();
+    // renderCraft must have populated hitRects with a Craft button for every affordable def.
+    const hits = (scene as any).hitRects as Array<{ action: () => void }>;
+    expect(hits.length).toBeGreaterThan(1);
+    await (scene as any).doCraft('wp_pencil');
+    expect(calls.craft).toEqual(['wp_pencil']);
+    scene.destroy();
+  });
+
+  it('detail modal (active-card mode): the Unequip button wired by DetailMixin.openDetail calls cb.equip', async () => {
+    const { cb, calls } = buildEquipCallbacks('card1');
+    const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
+    (scene as any).openDetail('eqEquippedFine');
+    expect((scene as any).modalOpen).toBe(true);
+    const modalHits = (scene as any).modalHits as Array<{ action: () => void }>;
+    // Button order for this fixture (fine, level 0, equipped, no reforge material since
+    // it's equipped, not salvageable since equipped): [Enhance, Unequip, panel-inert, outside-close].
+    expect(modalHits.length).toBe(4);
+    modalHits[1].action();
+    await Promise.resolve();
+    expect(calls.equip).toEqual([['weapon', null, 'card1']]);
+    expect(calls.enhance).toEqual([]); // sanity: we hit Unequip, not Enhance
+    scene.destroy();
+  });
+
+  it('bag mode: Detail → Assign(beginAssign) → base.render(renderAssign) → Assign(doEquipTo) → Detail(doEquip) → cb.equip', async () => {
+    const { cb, calls } = buildEquipCallbacks(''); // '' activeCardInstanceId = bag mode
+    const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
+    (scene as any).openDetail('eqBagCommon'); // unequipped common item
+    // Button order: [Enhance, Equip, Salvage, panel-inert, outside-close] (common rarity has no
+    // reforge material tier, so no Reforge button).
+    const modalHits = (scene as any).modalHits as Array<{ action: () => void }>;
+    expect(modalHits.length).toBe(5);
+    modalHits[1].action(); // Equip → bag mode → beginAssign('eqBagCommon', 'weapon')
+    expect((scene as any).assign).toEqual({ instId: 'eqBagCommon', slot: 'weapon' });
+    expect((scene as any).modalOpen).toBe(false); // beginAssign closes the detail modal
+    // render() dispatched to AssignMixin.renderAssign, which laid out one row per card (only card1).
+    // renderSidebar() also always runs (even in assign mode) and only pushes a hit for the
+    // INACTIVE sub-tab (drawSidebarTabs skips the active one) — so [back, Craft tab, card1 row].
+    const hits = (scene as any).hitRects as Array<{ action: () => void }>;
+    expect(hits.length).toBe(3);
+    hits[2].action(); // → doEquipTo('card1') → doEquip('weapon', 'eqBagCommon', 'card1')
+    await Promise.resolve();
+    expect(calls.equip).toEqual([['weapon', 'eqBagCommon', 'card1']]);
+    expect((scene as any).assign).toBeNull();
+    scene.destroy();
+  });
+
+  it('reforge flow: Detail → Reforge(openReforgeSelect) → base.showConfirm → Reforge(doReforge) → cb.reforge', async () => {
+    const { cb, calls } = buildEquipCallbacks('card1');
+    const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
+    (scene as any).openDetail('eqBagFine'); // unequipped fine item; eqBagCommon qualifies as its reforge material
+    // Button order: [Enhance, Equip, Reforge, Salvage, panel-inert, outside-close].
+    let modalHits = (scene as any).modalHits as Array<{ action: () => void }>;
+    expect(modalHits.length).toBe(6);
+    modalHits[2].action(); // Reforge → openReforgeSelect(eqBagFine)
+    expect((scene as any).modalOpen).toBe(true);
+    modalHits = (scene as any).modalHits;
+    modalHits[0].action(); // material row (eqBagCommon) → confirmReforge → showConfirm
+    modalHits = (scene as any).modalHits;
+    expect(modalHits.length).toBe(2); // showConfirm's [OK, Cancel]
+    modalHits[0].action(); // OK → doReforge
+    await Promise.resolve();
+    expect(calls.reforge).toEqual([['eqBagFine', 'eqBagCommon']]);
+    scene.destroy();
+  });
+
+  it('salvage flow: Detail → base.showConfirm → Detail(doSalvage) → cb.salvage', async () => {
+    const { cb, calls } = buildEquipCallbacks('card1');
+    const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
+    (scene as any).openDetail('eqBagCommon'); // unequipped common item, no reforge tier
+    // Button order: [Enhance, Equip, Salvage, panel-inert, outside-close].
+    let modalHits = (scene as any).modalHits as Array<{ action: () => void }>;
+    expect(modalHits.length).toBe(5);
+    modalHits[2].action(); // Salvage → confirmSalvage → showConfirm
+    modalHits = (scene as any).modalHits;
+    expect(modalHits.length).toBe(2); // showConfirm's [OK, Cancel]
+    modalHits[0].action(); // OK → doSalvage
+    await Promise.resolve();
+    expect(calls.salvage).toEqual([['eqBagCommon']]);
+    scene.destroy();
+  });
 });
