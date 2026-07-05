@@ -2,6 +2,7 @@
 // (B6), and player titles (S10). Counts are written only at authoritative settlement points elsewhere;
 // these handlers read definitions/progress and deliver one-time coin/title claims.
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { randomUUID } from 'node:crypto';
 import {
   ErrorCode,
   err,
@@ -21,12 +22,19 @@ import {
   makeDayKey,
   makeMonthKey,
   parseTitleId,
+  pickRandomCatalogItem,
+  CARD_DEFS,
+  EQUIPMENT_DEFS,
+  rollCraftedAffixes,
+  type EquipmentInstance,
 } from '@nw/shared';
 import { getOrCreateSave } from '../save.js';
 import { mirrorCoins } from '../economy.js';
 import { grantTitleToPlayer } from '../titles.js';
 import { getEventsForAccount, claimEventReward } from '../events.js';
 import { nullMetaSocialsvcClient } from '../socialsvcClient.js';
+import { grantCards } from '../cards.js';
+import { grantEquipment } from '../equipment.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
 import { accountIdOf, type Constructor, type MetaBaseCtor } from './base.js';
 
@@ -143,11 +151,19 @@ export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
         claimedDay = result.day;
         const newRetention = { ...r, checkin: result.newCheckin };
         let next = { ...s, retention: newRetention };
-        // Check-in reward: stamina type is written directly to materials; coins type is delivered via commercial service
+        // Check-in reward: stamina/material types are written directly to save.materials;
+        // coins/card/equipment types need a follow-up call (commercial grant / roster+inventory
+        // write) and are delivered below, once the claim itself is durably recorded.
         if (result.reward.kind === 'stamina') {
           next = {
             ...next,
             materials: { ...next.materials, stamina: (next.materials['stamina'] ?? 0) + result.reward.count },
+          };
+        } else if (result.reward.kind === 'material' && result.reward.id) {
+          const matId = result.reward.id;
+          next = {
+            ...next,
+            materials: { ...next.materials, [matId]: (next.materials[matId] ?? 0) + result.reward.count },
           };
         }
         return next;
@@ -161,17 +177,67 @@ export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
         }
         return reply.code(409).send(err(ErrorCode.REV_CONFLICT, recorded.error));
       }
-      // Coins reward (milestone) must be delivered via commercial
       let save = recorded.save;
-      if (reward && (reward as import('@nw/shared').CheckinReward).kind === 'coins') {
-        if (!this.ensureCommercial(reply)) return;
-        const { commercial, cols } = this.deps;
-        const coins = (reward as import('@nw/shared').CheckinReward).count;
-        const orderId = `checkin:${accountId}:${makeMonthKey(tsMs)}:${claimedDay}`;
-        const g = await commercial.grant({ accountId, amount: coins, reason: 'checkin', orderId });
-        if (g.ok) save = await mirrorCoins(cols, accountId, g.coinsAfter, tsMs);
+      let deliveredId: string | undefined;
+      // `reward` was assigned inside the mutateSave closure above, so TS no longer narrows its type
+      // past that point (widens to the declared `CheckinReward | null`); copy to a fresh binding so
+      // the rest of the function gets ordinary control-flow narrowing.
+      const claimedReward = reward as import('@nw/shared').CheckinReward | null;
+      if (claimedReward) {
+        const r = claimedReward;
+        if (r.kind === 'coins') {
+          // Coins reward (legacy path) must be delivered via commercial.
+          if (!this.ensureCommercial(reply)) return;
+          const { commercial, cols } = this.deps;
+          const orderId = `checkin:${accountId}:${makeMonthKey(tsMs)}:${claimedDay}`;
+          const g = await commercial.grant({ accountId, amount: r.count, reason: 'checkin', orderId });
+          if (g.ok) save = await mirrorCoins(cols, accountId, g.coinsAfter, tsMs);
+        } else if (r.kind === 'card') {
+          // Card pack milestone: uniform random draw from the existing gacha card catalogue,
+          // then delivered the same way a gacha pull would land it (roster cap → coin compensation).
+          const picked = pickRandomCatalogItem('card');
+          const def = picked ? CARD_DEFS[picked.itemId] : undefined;
+          if (def) {
+            const { cols, commercial, now } = this.deps;
+            const g = await grantCards(cols, now, accountId, [def]);
+            if (!('error' in g)) {
+              save = g.save;
+              deliveredId = def.id;
+              if (g.compensatedCoins > 0 && commercial.available) {
+                const orderId = `checkin:card_comp:${accountId}:${makeMonthKey(tsMs)}:${claimedDay}`;
+                const gr = await commercial.grant({ accountId, amount: g.compensatedCoins, reason: 'checkin', orderId });
+                if (gr.ok) save = await mirrorCoins(cols, accountId, gr.coinsAfter, tsMs);
+              }
+            }
+          }
+        } else if (r.kind === 'equipment') {
+          // Month-end finale: uniform random draw restricted to entry-tier gear (equip_t1), rolled
+          // with the same craft-affix function real crafting uses, delivered via the trade-transfer
+          // writer (grantEquipment — overwrite-by-id, no cap check, matches mail/escrow delivery).
+          const picked = pickRandomCatalogItem('equip_t1');
+          const def = picked ? EQUIPMENT_DEFS[picked.itemId] : undefined;
+          if (def) {
+            const { cols, now } = this.deps;
+            const instanceId = `eq_checkin_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
+            const instance: EquipmentInstance = {
+              id: instanceId,
+              defId: def.defId,
+              rarity: def.rarity,
+              level: 0,
+              affixes: rollCraftedAffixes(def.defId, instanceId),
+            };
+            const g = await grantEquipment(cols, now, accountId, instance);
+            if (!('error' in g)) {
+              save = await getOrCreateSave(cols, accountId, now());
+              deliveredId = def.defId;
+            }
+          }
+        }
       }
-      return ok({ save, day: claimedDay, reward });
+      const finalReward = claimedReward && deliveredId
+        ? { kind: claimedReward.kind, count: claimedReward.count, id: deliveredId }
+        : claimedReward;
+      return ok({ save, day: claimedDay, reward: finalReward });
     }
 
     /** Claim daily task completion coins (idempotent: threshold not reached → 400, already claimed → 409). */
