@@ -1,6 +1,6 @@
 // Family + Sect tabs: near-identical mirror render methods (info panel + create/join forms).
 import { t } from '../../i18n';
-import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { caretDisplay } from '../../render/inputDisplay';
 import { type Constructor, type FriendsSceneBaseCtor } from './base';
 
@@ -38,25 +38,9 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       let cy = this.regionTop + Math.round(h * 0.03);
 
       if (s.familyId) {
-        const ph = Math.round(h * 0.15);
-        const bg = sketchPanel(panelW, ph, { fill: C.paper, border: C.accent, width: 2, seed: seedFor(px, cy, panelW) });
-        bg.x = px; bg.y = cy;
-        sketchAccentBar(bg, ph, C.accent, seedFor(px, ph, 3));
-        this.container.addChild(bg);
-
-        const nameLabel = txt(s.familyName ?? s.familyId, Math.round(h * 0.034), C.dark, true);
-        nameLabel.anchor.set(0, 0.5); nameLabel.x = px + Math.round(panelW * 0.08); nameLabel.y = cy + ph * 0.38;
-        this.container.addChild(nameLabel);
-        if (s.familyTag) {
-          const tagLabel = txt(`[${s.familyTag}]`, Math.round(h * 0.024), C.mid);
-          tagLabel.anchor.set(0, 0.5); tagLabel.x = px + Math.round(panelW * 0.08); tagLabel.y = cy + ph * 0.68;
-          this.container.addChild(tagLabel);
-        }
-
-        cy += ph + Math.round(h * 0.03);
-        const bH = Math.round(h * 0.08);
-        this.addButton(t('social.family.enter'), px, cy, panelW, bH, C.dark, C.accent,
-          () => this.cb.openFamilyHub?.());
+        // Each player can only ever belong to one family — skip the extra confirmation step and jump straight in.
+        this.cb.openFamilyHub?.();
+        return;
       } else {
         if (this.familySubview === 'info') {
           const lbl = txt(t('social.family.none'), Math.round(h * 0.026), C.mid);
@@ -205,20 +189,9 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       }
 
       if (s.sectId) {
-        const ph = Math.round(h * 0.13);
-        const bg = sketchPanel(panelW, ph, { fill: C.paper, border: C.gold, width: 2, seed: seedFor(px, cy, panelW) });
-        bg.x = px; bg.y = cy;
-        sketchAccentBar(bg, ph, C.gold, seedFor(px, ph, 5));
-        this.container.addChild(bg);
-
-        const nameLabel = txt(s.sectName ?? s.sectId, Math.round(h * 0.032), C.dark, true);
-        nameLabel.anchor.set(0.5, 0.5); nameLabel.x = w / 2; nameLabel.y = cy + ph / 2;
-        this.container.addChild(nameLabel);
-
-        cy += ph + Math.round(h * 0.03);
-        const bH = Math.round(h * 0.08);
-        this.addButton(t('social.sect.enter'), px, cy, panelW, bH, C.dark, C.gold,
-          () => this.cb.openSectHub?.());
+        // Each player can only ever belong to one sect — skip the extra confirmation step and jump straight in.
+        this.cb.openSectHub?.();
+        return;
       } else {
         if (this.sectSubview === 'info') {
           const lbl = txt(t('social.sect.none'), Math.round(h * 0.026), C.mid);
