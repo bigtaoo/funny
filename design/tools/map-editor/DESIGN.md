@@ -1,6 +1,6 @@
 # Notebook Wars — SLG 地图编辑器设计文档
 
-> 创建：2026-07-04。地形骨架已拍板（2026-07-05，见 [DECISIONS.md ADR-034](../../DECISIONS.md)），代码重写已完成（2026-07-05），编辑器工程骨架+只读渲染+河流/山脉路径笔刷已搭（2026-07-05，见 §8）。
+> 创建：2026-07-04。地形骨架已拍板（2026-07-05，见 [DECISIONS.md ADR-034](../../DECISIONS.md)），代码重写已完成（2026-07-05），编辑器工程骨架+只读渲染+河流/山脉路径笔刷+城池拖拽已搭（2026-07-05，见 §8）。
 > 配套阅读：`../../game/SLG_DESIGN.md`（§2.4 国家系统 / §3.2 地图规格）、`../../DECISIONS.md`（ADR-032 地图尺寸/等级、ADR-034 环形地形骨架，**注意**：曾短暂存在一版同日的 ADR-033"10 首府三层同心环"方案，与本文档方向不同，当天即被撤销/作废，本文档只跟 ADR-034 对应）、`../../game/SGZ_LAND_REFERENCE.md`（三战地块/城池调研，§5 环形结构 / §8 城池系统）、`server/shared/src/slg/`（已按本文档重写，god-file split 后拆成 `province.ts`/`mapgen.ts` 等：`provinceIdxAt()`/`provinceCapitalPositions()` 替代 `nearestCapitalIdx()`/`CAPITAL_FRACTIONS`，新增地形带+城池节点+按环等级分布表）、`../level-editor/DESIGN.md`（工程化参照）、根 `../../../CLAUDE.md`。
 > 讨论期用一次性 HTML/JS 原型（Artifact，未提交仓库）快速试错定稿，迭代记录见 §7；正式编辑器工具（`tools/map-editor`）§8 为工程现状，§6 是其需求清单（编辑交互尚未实现）。
 
@@ -15,7 +15,8 @@
 - 工具形态不变：仿 `tools/level-editor` 的独立 Web 工具，暂定 `tools/map-editor`，端口 **9095**。
 - **代码现状**：`server/shared/src/slg/`（god-file split 后的 `province.ts`/`mapgen.ts` 等）已按本文档 §2-§4 整体重写（2026-07-05）——`provinceIdxAt()`/`provinceCapitalPositions()` 替代旧的 Voronoi `nearestCapitalIdx()`/固定表 `CAPITAL_FRACTIONS`；新增环形地形带（折痕岭主环/内环+墨河弦+出生州间支脉支流）、城池节点（州府+世界中心 9×9+关隘城池+每出生州 9 座分级城池）、按环（outer/resource/core）等级分布表。城池落地为现有 `ProceduralTile` 的 `familyKeep`/`center` 类型（不是独立 collection/带驻军HP的节点），因为 §5 城池驻军/耐久数值尚未拍板——这是本轮实现的刻意范围收窄，非疏漏。受影响的 `server/worldsvc` e2e（`nation-bonus`/`season-ops`/`fog`/`service`/`httpApi`/`pathfinding`）已同步修完，`server/shared`/`server/worldsvc`/`server/tools/econ-sim` typecheck+test 全绿。
 - **编辑器工程骨架**（2026-07-05，§8）：`tools/map-editor` 已搭好 webpack/ts 工程（仿 `tools/level-editor`），端口 9095；`src/index.ts` 直接 `import { proceduralTile, ... } from '@nw/shared/slg'`，整图 Canvas ImageData 渲染当前世界（按 tile type 上色、level 调亮度），hover 显示 tile 详情，可切换 world seed。webpack alias 只指向 `server/shared/src/slg/index.ts`（不是整个 `@nw/shared` barrel），因为 barrel 还 re-export 了 `mongo`/`jwt` 等 Node-only 模块，会污染浏览器包——这是刻意的窄别名，不是疏漏。`tsc --noEmit` + `webpack --mode production` 均过。
-- **河流/山脉路径笔刷**（2026-07-05，§8）：`src/state/paths.ts` 是纯数据层（`PathStore`：增删/JSON 序列化+反序列化/线段最近距离），`src/index.ts` 用 base canvas + 叠加的 overlay canvas 两层实现——base 只在 regenerate/路径改动落地时重绘，overlay 每次交互都轻量重绘，避免每次拖点都重跑整图 500×500 噪声。工具切换（Select/River/Mountain）、点击加点+双击/回车结束+Esc 取消草稿、Select 模式下拖端点/点击选中路径/Delete 键删除、宽度输入框（默认落在 `TERRAIN_BAND_WIDTH_MIN/MAX`=5–11 随机区间，复用生成侧同款常量）均已实现；Export/Import JSON 面板可把内存态路径序列化成 §6.2 的 `{ type, points, width }` 数组、也可反向导入校验。**尚未实现**：路径还没有栅格化覆盖回 `proceduralTile()`（即编辑效果目前只是叠加图层，不会真的改变地块类型）、城池拖拽（§6.1 第三条）、服务端持久化（§6.2/§5 生效方式仍待拍板）。
+- **河流/山脉路径笔刷**（2026-07-05，§8）：`src/state/paths.ts` 是纯数据层（`PathStore`：增删/JSON 序列化+反序列化/线段最近距离），`src/index.ts` 用 base canvas + 叠加的 overlay canvas 两层实现——base 只在 regenerate/路径改动落地时重绘，overlay 每次交互都轻量重绘，避免每次拖点都重跑整图 500×500 噪声。工具切换（Select/River/Mountain）、点击加点+双击/回车结束+Esc 取消草稿、Select 模式下拖端点/点击选中路径/Delete 键删除、宽度输入框（默认落在 `TERRAIN_BAND_WIDTH_MIN/MAX`=5–11 随机区间，复用生成侧同款常量）均已实现；Export/Import JSON 面板可把内存态路径序列化成 §6.2 的 `{ type, points, width }` 数组、也可反向导入校验。
+- **城池拖拽**（2026-07-05，§8）：`server/shared/src/slg/mapgen.ts` 新增导出 `allCityNodes(worldId)`（+`MapEditorCityNode` 类型）——纯加法改动，给 `_CityNode` 内部接口加了 `kind`/`provinceIdx` 标记，再拼出世界中心（1）+ 州府（9，核心州除外——它的"州府"就是世界中心）+ `_worldCityNodes` 里的分级城池/关隘城池，`proceduralTile()` 原有查表逻辑不受影响；`server/shared`/`server/worldsvc`/`server/tools/econ-sim` typecheck+`server/shared` 526 例单测全绿。编辑器侧第三层 `#city-canvas`（最上层，统一承接所有鼠标事件，按当前工具分派逻辑）+ `src/state/cities.ts`（`CityStore`：按 seed 从生成器加载/JSON 序列化反序列化，不做增删——城池集合由生成器决定，不像路径是自由绘制）。新增 City 工具：拖拽移动城池坐标（世界中心 9×9 footprint 拖拽时用外框可视化，保持占地形状不变，边界钳制保证 footprint 不越界）、点击查看详情（kind/level/province/坐标）、Reset Cities 按钮丢弃编辑重新按当前 seed 生成、独立的 Export/Import JSON 面板。**尚未实现**：路径和城池都还没有栅格化覆盖回 `proceduralTile()`（即编辑效果目前只是叠加图层，不会真的改变地块类型/生成结果），也没有服务端持久化（§6.2/§5 生效方式仍待拍板）；关隘/桥（§2.4，自由通行那类）不是城池，本轮没有对应的可编辑节点，仍是地形生成的一部分。
 
 ---
 
@@ -163,4 +164,4 @@ npm install     # 首次进入需要装依赖（worktree 各自独立）
 npm run start   # webpack dev server，端口 9095
 ```
 
-当前功能：整图渲染（切 world seed 输入框 + Regenerate 按钮）、hover 显示 tile 坐标/类型/等级/资源、缩放滑块、图例；河流/山脉路径笔刷（Select/River/Mountain 工具切换、点击加点/双击回车结束/Esc 取消、拖端点、选中删除、宽度可调、Export/Import JSON）。城池拖拽、路径栅格化回地块、服务端落盘尚未实现。
+当前功能：整图渲染（切 world seed 输入框 + Regenerate 按钮）、hover 显示 tile 坐标/类型/等级/资源、缩放滑块、图例；河流/山脉路径笔刷（Select/River/Mountain 工具切换、点击加点/双击回车结束/Esc 取消、拖端点、选中删除、宽度可调、Export/Import JSON）；城池拖拽（City 工具，拖动移动坐标、点击查看详情、Reset Cities、独立 Export/Import JSON）。路径/城池栅格化回地块、服务端落盘尚未实现。
