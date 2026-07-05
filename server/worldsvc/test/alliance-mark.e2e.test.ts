@@ -174,10 +174,10 @@ describe.skipIf(!mongo)('worldsvc alliance territory marking e2e (G5 / §8.2 V5)
   it('alliance does not share vision: distant allied territory remains fogged (visible:false, no allySect mark)', async () => {
     await setupAlliance();
     await svc.joinWorld(W, 'a', A_POS.x, A_POS.y);
-    await svc.joinWorld(W, 'ally2', 250, 250); // allied member but far beyond a's vision
+    await svc.joinWorld(W, 'ally2', 400, 400); // allied member but far beyond a's vision
 
-    const view = await svc.getMap(W, 'a', 250, 250, 2);
-    const far = view.tiles.find((t) => t.x === 250 && t.y === 250)!;
+    const view = await svc.getMap(W, 'a', 400, 400, 2);
+    const far = view.tiles.find((t) => t.x === 400 && t.y === 400)!;
     expect(far.visible).toBe(false);          // alliance does not share vision → not visible
     expect(far.allySect).toBeUndefined();     // nothing in the dynamic layer (including alliance marks) is leaked outside vision
     expect(far.occupied).toBeUndefined();

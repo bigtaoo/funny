@@ -106,7 +106,9 @@ function findNeutral(sx = 5, sy = 5): { x: number; y: number } {
         const y = sy + dy;
         if (x < 0 || y < 0 || x >= SLG_MAP_W || y >= SLG_MAP_H) continue;
         if (x === CENTER_X && y === CENTER_Y) continue;
-        if (proceduralTile(W, x, y).type === 'neutral') return { x, y };
+        // ADR-032 follow-up: resourceDensity=1.0 means 'neutral' tiles no longer occur; any occupiable land is 'resource'.
+        const t = proceduralTile(W, x, y).type;
+        if (t === 'resource' || t === 'neutral') return { x, y };
       }
     }
   }

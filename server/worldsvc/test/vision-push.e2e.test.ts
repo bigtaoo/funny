@@ -52,7 +52,8 @@ function findCoord(
   }
   throw new Error('no matching tile found');
 }
-const NEUTRAL = (t: ReturnType<typeof proceduralTile>) => t.type === 'neutral';
+// ADR-032 follow-up: resourceDensity=1.0 means 'neutral' tiles no longer occur; any occupiable land is 'resource'.
+const NEUTRAL = (t: ReturnType<typeof proceduralTile>) => t.type === 'resource' || t.type === 'neutral';
 
 describe.skipIf(!mongo)('worldsvc reverse-vision push e2e (G5-2)', () => {
   const m = mongo!;
@@ -90,8 +91,8 @@ describe.skipIf(!mongo)('worldsvc reverse-vision push e2e (G5-2)', () => {
     await svc.joinWorld(W, 'a', 5, 5);
     // obs home base at (5,20): base vision radius covers the mid-section of a's path from (5,5)→(5,40).
     await svc.joinWorld(W, 'obs', 5, 20);
-    // far is at (250,250), outside vision range.
-    await svc.joinWorld(W, 'far', 250, 250);
+    // far is at (400, 400), outside vision range.
+    await svc.joinWorld(W, 'far', 400, 400);
 
     const dst = findCoord(NEUTRAL, 5, 40);
     await svc.startMarch(W, 'a', 5, 5, dst.x, dst.y, 'occupy', OCCUPY_MIN_TROOPS);
@@ -107,7 +108,7 @@ describe.skipIf(!mongo)('worldsvc reverse-vision push e2e (G5-2)', () => {
   it('direct tile capture: falls within observer vision → push tile_update (capturer not re-pushed, far not pushed)', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     await svc.joinWorld(W, 'obs', 10, 10); // base vision radius 5 covers (12,11)
-    await svc.joinWorld(W, 'far', 250, 250);
+    await svc.joinWorld(W, 'far', 400, 400);
     pushes = []; // clear pushes from the join events themselves
 
     // a directly captures (12,11) (falls within obs's vision).
@@ -152,7 +153,7 @@ describe.skipIf(!mongo)('worldsvc reverse-vision push e2e (G5-2)', () => {
   it('getMarches: own marches mine:true + enemy marches within vision mine:false + enemy outside vision not returned', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     await svc.joinWorld(W, 'e', 8, 8);        // within a's base vision (chebyshev 3 ≤ 5)
-    await svc.joinWorld(W, 'far', 250, 250);  // outside vision
+    await svc.joinWorld(W, 'far', 400, 400);  // outside vision
 
     // a's own occupy march.
     const aDst = findCoord(NEUTRAL, 5, 9);
@@ -161,8 +162,8 @@ describe.skipIf(!mongo)('worldsvc reverse-vision push e2e (G5-2)', () => {
     const eDst = findCoord(NEUTRAL, 8, 12);
     await svc.startMarch(W, 'e', 8, 8, eDst.x, eDst.y, 'occupy', OCCUPY_MIN_TROOPS);
     // far's march: remote, outside a's vision range.
-    const fDst = findCoord(NEUTRAL, 250, 255);
-    await svc.startMarch(W, 'far', 250, 250, fDst.x, fDst.y, 'occupy', OCCUPY_MIN_TROOPS);
+    const fDst = findCoord(NEUTRAL, 400, 405);
+    await svc.startMarch(W, 'far', 400, 400, fDst.x, fDst.y, 'occupy', OCCUPY_MIN_TROOPS);
 
     const marches = await svc.getMarches(W, 'a');
     const own = marches.filter((m) => m.mine);

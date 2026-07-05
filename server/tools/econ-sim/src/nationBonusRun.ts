@@ -9,8 +9,8 @@ import {
   runAllScenarios, HOURS_PER_SEASON,
 } from './nationBonus';
 import {
-  NATION_BONUS_PRODUCTION, NATION_COUNT, CAPITAL_FRACTIONS,
-  RESOURCE_YIELD_BASE, SEASON_LENGTH_DAYS,
+  NATION_BONUS_PRODUCTION, NATION_COUNT, CAPITAL_FRACTIONS, NATION_KIND_BY_IDX,
+  RESOURCE_YIELD_BASE, SEASON_LENGTH_DAYS, SLG_MAP_W, SLG_MAP_H, SLG_GEN,
 } from '@nw/shared';
 
 function bar(s: string) { console.log('═'.repeat(78)); console.log(s); console.log('═'.repeat(78)); }
@@ -30,14 +30,13 @@ console.log('── ①  Voronoi geometry (code-derived, no assumptions) ──�
 const tileCounts = voronoiTileCounts();
 const totalTiles = tileCounts.reduce((a, b) => a + b, 0);
 const stats = mapLevelStats();
-console.log(`  Map: 300×300 = ${fmt(totalTiles)} tiles  (${fmt(stats.resourceTileCount)} resource tiles @ 34% density)`);
-console.log(`  10 Voronoi nations, sizes:\n`);
-console.log('  cap#  fraction    tile count  notes');
+console.log(`  Map: ${SLG_MAP_W}×${SLG_MAP_H} = ${fmt(totalTiles)} tiles  (${fmt(stats.resourceTileCount)} resource tiles @ ${(SLG_GEN.resourceDensity * 100).toFixed(0)}% density)`);
+console.log(`  10 Voronoi nations, sizes (ADR-033 three-ring layout: 6 outer + 3 resource + 1 hegemony):\n`);
+console.log('  cap#  kind       fraction    tile count  coords');
 for (let i = 0; i < NATION_COUNT; i++) {
   const frac = tileCounts[i]! / totalTiles;
   const [fx, fy] = CAPITAL_FRACTIONS[i]!;
-  const note = i === 9 ? '← center (contest objective)' : i === 8 ? '← inner-ring NW' : '';
-  console.log(`   ${i.toString().padStart(2)}   ${(frac * 100).toFixed(1).padStart(5)}%    ${fmt(tileCounts[i]!).padStart(8)}    (${fx.toFixed(2)},${fy.toFixed(2)}) ${note}`);
+  console.log(`   ${i.toString().padStart(2)}   ${NATION_KIND_BY_IDX[i]!.padEnd(9)}  ${(frac * 100).toFixed(1).padStart(5)}%    ${fmt(tileCounts[i]!).padStart(8)}    (${fx.toFixed(2)},${fy.toFixed(2)})`);
 }
 const minN = Math.min(...tileCounts);
 const maxN = Math.max(...tileCounts);
