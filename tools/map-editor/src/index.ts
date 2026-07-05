@@ -15,6 +15,7 @@ import { terrainTextureName } from './render/tileStyle';
 import { loadTerrainAtlas } from './render/terrainAtlasLoader';
 import { loadResAtlas } from './render/resAtlasLoader';
 import { loadBuildingAtlas } from './render/buildingAtlasLoader';
+import { getLocale, t, toggleLocale } from './i18n';
 
 const RESOURCE_LABELS: Record<ResourceType, string> = {
   ink: '墨(ink)',
@@ -76,7 +77,7 @@ const deletePathBtn = document.getElementById('btn-delete-path') as HTMLButtonEl
 const clearPathsBtn = document.getElementById('btn-clear-paths') as HTMLButtonElement;
 const resetCitiesBtn = document.getElementById('btn-reset-cities') as HTMLButtonElement;
 const pathListEl = document.getElementById('path-list')!;
-const pathCountEl = document.getElementById('path-count')!;
+const pathsTitleEl = document.getElementById('paths-title')!;
 const jsonEl = document.getElementById('json') as HTMLTextAreaElement;
 const exportBtn = document.getElementById('btn-export') as HTMLButtonElement;
 const importBtn = document.getElementById('btn-import') as HTMLButtonElement;
@@ -98,10 +99,11 @@ const templateIdInput = document.getElementById('template-id') as HTMLInputEleme
 const templateGenerateBtn = document.getElementById('btn-template-generate') as HTMLButtonElement;
 const publishBtn = document.getElementById('btn-publish') as HTMLButtonElement;
 const templateListEl = document.getElementById('template-list')!;
-const templateCountEl = document.getElementById('template-count')!;
+const templatesTitleEl = document.getElementById('templates-title')!;
 const templateRefreshBtn = document.getElementById('btn-template-refresh') as HTMLButtonElement;
 const templateActivateBtn = document.getElementById('btn-template-activate') as HTMLButtonElement;
 const templateDeleteBtn = document.getElementById('btn-template-delete') as HTMLButtonElement;
+const langBtn = document.getElementById('btn-lang') as HTMLButtonElement;
 
 // ── Editor state ─────────────────────────────────────────────────────────
 type Tool = 'select' | PathKind | 'city' | 'pan';
@@ -115,6 +117,8 @@ let selectedCityId: string | null = null;
 let draggingCityId: string | null = null;
 let panning = false;
 let panLast: { x: number; y: number } | null = null;
+/** Whether the Tile inspector panel has shown real hover data yet (vs. its initial hint text). */
+let tileInfoShown = false;
 
 let tp = 28; // on-screen tile width in px — the sole "zoom" knob (replaces the old CSS-scale slider)
 let panX = 0;
@@ -126,6 +130,28 @@ let diffCache = new Map<string, MapTemplateTile>();
 const HIT_RADIUS_PX = 8;
 function hitRadiusTiles(): number {
   return HIT_RADIUS_PX / tp;
+}
+
+/** "{n} tile(s)"/"{n} 个格子" — composed so both locales pluralize (or don't) correctly. */
+function tileCountLabel(n: number): string {
+  return `${n} ${t(n === 1 ? 'unit.tile' : 'unit.tiles')}`;
+}
+function pathCountLabel(n: number): string {
+  return `${n} ${t(n === 1 ? 'unit.path' : 'unit.paths')}`;
+}
+function cityCountLabel(n: number): string {
+  return `${n} ${t(n === 1 ? 'unit.city' : 'unit.cities')}`;
+}
+
+/**
+ * Stores a render thunk (not a pre-formatted string) so a locale toggle can re-run it and pick up
+ * the new language — this matters for messages built from count-label helpers like tileCountLabel(),
+ * whose singular/plural wording is locale-dependent and would otherwise go stale after a toggle.
+ */
+let lastStatusRender: (() => string) | null = null;
+function setStatus(render: () => string): void {
+  lastStatusRender = render;
+  statusEl.textContent = render();
 }
 
 function clampPan(): void {
@@ -184,13 +210,21 @@ function renderBaseMap(worldId: string): void {
     }
   }
   const ms = (performance.now() - t0).toFixed(0);
-  statusEl.textContent = `world="${worldId}" — ${count} tile(s) rendered in ${ms}ms — ${store.paths.length} path(s), ${cityStore.nodes.length} cit${cityStore.nodes.length === 1 ? 'y' : 'ies'}`;
+  setStatus(() =>
+    t('status.rendered', {
+      worldId,
+      tiles: tileCountLabel(count),
+      ms,
+      paths: pathCountLabel(store.paths.length),
+      cities: cityCountLabel(cityStore.nodes.length),
+    }),
+  );
 }
 
 function loadCitiesAndRedraw(worldId: string): void {
   cityStore.loadFromSeed(worldId);
   selectedCityId = null;
-  cityInfoEl.textContent = 'City 工具下拖动地图上的城池标记即可移动坐标（世界中心 9×9 占地拖拽时保持形状）；点击标记查看详情。';
+  cityInfoEl.textContent = t('city.hint');
   renderBaseMap(worldId);
   redrawAll();
 }
@@ -325,7 +359,7 @@ for (const btn of toolButtons) {
 
 // ── Path list / inspector ───────────────────────────────────────────────
 function renderPathList(): void {
-  pathCountEl.textContent = String(store.paths.length);
+  pathsTitleEl.textContent = t('insp.pathsTitle', { count: store.paths.length });
   pathListEl.innerHTML = store.paths
     .map(
       (p, i) =>
@@ -391,16 +425,17 @@ function finishDraft(): void {
 
 // ── City inspector ───────────────────────────────────────────────────────
 function cityLabel(node: MapEditorCityNode): string {
-  const provLine = node.provinceIdx !== undefined ? `\nprovince: ${node.provinceIdx}` : '';
-  return `id: ${node.id}\nkind: ${node.kind}\nlevel: ${node.level}\nfootprint: ${node.footprint}×${node.footprint}${provLine}\nx: ${node.x}, y: ${node.y}`;
+  const provLine = node.provinceIdx !== undefined ? `\n${t('city.province')}: ${node.provinceIdx}` : '';
+  return (
+    `${t('city.id')}: ${node.id}\n${t('city.kind')}: ${node.kind}\n${t('city.level')}: ${node.level}\n` +
+    `${t('city.footprint')}: ${node.footprint}×${node.footprint}${provLine}\n${t('city.coords', { x: node.x, y: node.y })}`
+  );
 }
 
 function selectCity(id: string | null): void {
   selectedCityId = id;
   const node = id ? cityStore.get(id) : undefined;
-  cityInfoEl.textContent = node
-    ? cityLabel(node)
-    : 'City 工具下拖动地图上的城池标记即可移动坐标（世界中心 9×9 占地拖拽时保持形状）；点击标记查看详情。';
+  cityInfoEl.textContent = node ? cityLabel(node) : t('city.hint');
   redrawAll();
 }
 
@@ -409,31 +444,31 @@ resetCitiesBtn.addEventListener('click', () => loadCitiesAndRedraw(seedInput.val
 // ── Export / Import ──────────────────────────────────────────────────────
 exportBtn.addEventListener('click', () => {
   jsonEl.value = store.toJSON();
-  statusEl.textContent = `Exported ${store.paths.length} path(s).`;
+  setStatus(() => t('status.pathsExported', { paths: pathCountLabel(store.paths.length) }));
 });
 importBtn.addEventListener('click', () => {
   try {
     store.loadFromJSON(jsonEl.value);
     selectPath(null);
     renderBaseMap(seedInput.value || 'preview');
-    statusEl.textContent = `Imported ${store.paths.length} path(s).`;
+    setStatus(() => t('status.pathsImported', { paths: pathCountLabel(store.paths.length) }));
   } catch (err) {
-    statusEl.textContent = `Import failed: ${(err as Error).message}`;
+    setStatus(() => t('status.importFailed', { msg: (err as Error).message }));
   }
 });
 
 cityExportBtn.addEventListener('click', () => {
   cityJsonEl.value = cityStore.toJSON();
-  statusEl.textContent = `Exported ${cityStore.nodes.length} cit${cityStore.nodes.length === 1 ? 'y' : 'ies'}.`;
+  setStatus(() => t('status.citiesExported', { cities: cityCountLabel(cityStore.nodes.length) }));
 });
 cityImportBtn.addEventListener('click', () => {
   try {
     cityStore.loadFromJSON(cityJsonEl.value);
     selectCity(null);
     renderBaseMap(seedInput.value || 'preview');
-    statusEl.textContent = `Imported ${cityStore.nodes.length} cit${cityStore.nodes.length === 1 ? 'y' : 'ies'}.`;
+    setStatus(() => t('status.citiesImported', { cities: cityCountLabel(cityStore.nodes.length) }));
   } catch (err) {
-    statusEl.textContent = `Import failed: ${(err as Error).message}`;
+    setStatus(() => t('status.importFailed', { msg: (err as Error).message }));
   }
 });
 
@@ -461,12 +496,12 @@ let templates: MapTemplateSummary[] = [];
 let selectedTemplateId: string | null = null;
 
 function renderTemplateList(): void {
-  templateCountEl.textContent = String(templates.length);
+  templatesTitleEl.textContent = t('publish.templatesTitle', { count: templates.length });
   templateListEl.innerHTML = templates
     .map(
-      (t) =>
-        `<div class="path-row${t.templateId === selectedTemplateId ? ' selected' : ''}" data-id="${t.templateId}">` +
-        `<i style="background:${t.active ? 'var(--ok)' : 'var(--text-dim)'}"></i>${t.templateId}${t.active ? ' (active)' : ''} — ${t.width}×${t.height}, ${t.tileCount} tiles, v${t.version}</div>`,
+      (tpl) =>
+        `<div class="path-row${tpl.templateId === selectedTemplateId ? ' selected' : ''}" data-id="${tpl.templateId}">` +
+        `<i style="background:${tpl.active ? 'var(--ok)' : 'var(--text-dim)'}"></i>${tpl.templateId}${tpl.active ? t('publish.template.active') : ''} — ${tpl.width}×${tpl.height}, ${tileCountLabel(tpl.tileCount)}, v${tpl.version}</div>`,
     )
     .join('');
   for (const row of Array.from(templateListEl.querySelectorAll<HTMLDivElement>('.path-row'))) {
@@ -484,7 +519,7 @@ async function refreshTemplates(): Promise<void> {
     templates = await api.listMapTemplates();
     renderTemplateList();
   } catch (err) {
-    statusEl.textContent = `Failed to list templates: ${err instanceof ApiError ? err.message : (err as Error).message}`;
+    setStatus(() => t('status.listFailed', { msg: err instanceof ApiError ? err.message : (err as Error).message }));
   }
 }
 
@@ -493,16 +528,16 @@ templateRefreshBtn.addEventListener('click', () => void refreshTemplates());
 templateActivateBtn.addEventListener('click', async () => {
   const templateId = (selectedTemplateId || templateIdInput.value.trim());
   if (!templateId) {
-    statusEl.textContent = 'Pick or type a template ID first.';
+    setStatus(() => t('status.pickTemplate'));
     return;
   }
   templateActivateBtn.disabled = true;
   try {
     await api.activateMapTemplate(templateId);
-    statusEl.textContent = `Activated template "${templateId}" — new worlds will clone it from now on.`;
+    setStatus(() => t('status.activated', { id: templateId }));
     await refreshTemplates();
   } catch (err) {
-    statusEl.textContent = `Activate failed: ${err instanceof ApiError ? err.message : (err as Error).message}`;
+    setStatus(() => t('status.activateFailed', { msg: err instanceof ApiError ? err.message : (err as Error).message }));
   } finally {
     templateActivateBtn.disabled = false;
   }
@@ -511,18 +546,18 @@ templateActivateBtn.addEventListener('click', async () => {
 templateDeleteBtn.addEventListener('click', async () => {
   const templateId = (selectedTemplateId || templateIdInput.value.trim());
   if (!templateId) {
-    statusEl.textContent = 'Pick or type a template ID first.';
+    setStatus(() => t('status.pickTemplate'));
     return;
   }
-  if (!window.confirm(`Delete template "${templateId}"? This cannot be undone.`)) return;
+  if (!window.confirm(t('status.deleteConfirm', { id: templateId }))) return;
   templateDeleteBtn.disabled = true;
   try {
     await api.deleteMapTemplate(templateId);
     if (selectedTemplateId === templateId) selectedTemplateId = null;
-    statusEl.textContent = `Deleted template "${templateId}".`;
+    setStatus(() => t('status.deleted', { id: templateId }));
     await refreshTemplates();
   } catch (err) {
-    statusEl.textContent = `Delete failed: ${err instanceof ApiError ? err.message : (err as Error).message}`;
+    setStatus(() => t('status.deleteFailed', { msg: err instanceof ApiError ? err.message : (err as Error).message }));
   } finally {
     templateDeleteBtn.disabled = false;
   }
@@ -535,9 +570,9 @@ adminLoginBtn.addEventListener('click', async () => {
     const session = await api.login(adminUserInput.value.trim(), adminPassInput.value);
     adminPassInput.value = '';
     showLoggedIn(`${session.admin.displayName} (${session.admin.role})`);
-    statusEl.textContent = 'Logged in.';
+    setStatus(() => t('status.loggedIn'));
   } catch (err) {
-    statusEl.textContent = `Login failed: ${err instanceof ApiError ? err.message : (err as Error).message}`;
+    setStatus(() => t('status.loginFailed', { msg: err instanceof ApiError ? err.message : (err as Error).message }));
   } finally {
     adminLoginBtn.disabled = false;
   }
@@ -546,20 +581,20 @@ adminLoginBtn.addEventListener('click', async () => {
 adminLogoutBtn.addEventListener('click', async () => {
   await api.logout();
   showLoggedOut();
-  statusEl.textContent = 'Logged out.';
+  setStatus(() => t('status.loggedOut'));
 });
 
 templateGenerateBtn.addEventListener('click', async () => {
   const templateId = templateIdInput.value.trim() || seedInput.value || 'preview';
   templateGenerateBtn.disabled = true;
-  statusEl.textContent = `Generating template "${templateId}" (${SLG_MAP_W}×${SLG_MAP_H})…`;
+  setStatus(() => t('status.generating', { id: templateId, w: SLG_MAP_W, h: SLG_MAP_H }));
   try {
     const summary = await api.generateMapTemplate(templateId, SLG_MAP_W, SLG_MAP_H);
-    statusEl.textContent = `Generated template "${summary.templateId}" — ${summary.tileCount} tiles (v${summary.version}).`;
+    setStatus(() => t('status.generated', { id: summary.templateId, tileCount: summary.tileCount, version: summary.version }));
     selectedTemplateId = summary.templateId;
     await refreshTemplates();
   } catch (err) {
-    statusEl.textContent = `Generate failed: ${err instanceof ApiError ? err.message : (err as Error).message}`;
+    setStatus(() => t('status.generateFailed', { msg: err instanceof ApiError ? err.message : (err as Error).message }));
   } finally {
     templateGenerateBtn.disabled = false;
   }
@@ -569,24 +604,24 @@ publishBtn.addEventListener('click', async () => {
   const templateId = templateIdInput.value.trim() || seedInput.value || 'preview';
   const worldId = seedInput.value || 'preview';
   publishBtn.disabled = true;
-  statusEl.textContent = 'Rasterizing edits…';
+  setStatus(() => t('status.rasterizing'));
   try {
     const diffs: MapTemplateTile[] = rasterizeMapEdits(worldId, store.paths, cityStore.nodes);
     if (diffs.length === 0) {
-      statusEl.textContent = 'Nothing to publish — no tiles differ from the procedural baseline.';
+      setStatus(() => t('status.nothingToPublish'));
       return;
     }
-    statusEl.textContent = `Publishing ${diffs.length} tile(s) to template "${templateId}"…`;
+    setStatus(() => t('status.publishing', { n: diffs.length, id: templateId }));
     let updated = 0;
     for (let i = 0; i < diffs.length; i += MAP_TEMPLATE_SAVE_MAX_TILES) {
       const chunk = diffs.slice(i, i + MAP_TEMPLATE_SAVE_MAX_TILES);
       const r = await api.saveMapTemplateTiles(templateId, chunk);
       updated += r.updated;
     }
-    statusEl.textContent = `Published ${updated} tile(s) to template "${templateId}".`;
+    setStatus(() => t('status.published', { n: updated, id: templateId }));
     await refreshTemplates();
   } catch (err) {
-    statusEl.textContent = `Publish failed: ${err instanceof ApiError ? err.message : (err as Error).message}`;
+    setStatus(() => t('status.publishFailed', { msg: err instanceof ApiError ? err.message : (err as Error).message }));
   } finally {
     publishBtn.disabled = false;
   }
@@ -706,15 +741,16 @@ window.addEventListener('mousemove', (ev) => {
 
 canvasEl().addEventListener('mousemove', (ev) => {
   if (panning) return;
-  const t = tileFromClientXY(ev.clientX, ev.clientY);
-  const tile = effectiveTile(seedInput.value || 'preview', t.x, t.y);
-  const resLine = tile.resType ? `\nresource: ${RESOURCE_LABELS[tile.resType]}` : '';
-  tileInfoEl.textContent = `(${t.x}, ${t.y})\ntype: ${tile.type}\nlevel: ${tile.level}${resLine}`;
+  const pos = tileFromClientXY(ev.clientX, ev.clientY);
+  const tile = effectiveTile(seedInput.value || 'preview', pos.x, pos.y);
+  const resLine = tile.resType ? `\n${t('tile.resource')}: ${RESOURCE_LABELS[tile.resType]}` : '';
+  tileInfoEl.textContent = `(${pos.x}, ${pos.y})\n${t('tile.type')}: ${tile.type}\n${t('tile.level')}: ${tile.level}${resLine}`;
+  tileInfoShown = true;
 
   if (draggingCityId) {
     const node = cityStore.get(draggingCityId);
     if (node) {
-      const clamped = clampCityPos(node, t);
+      const clamped = clampCityPos(node, pos);
       node.x = clamped.x;
       node.y = clamped.y;
       cityInfoEl.textContent = cityLabel(node);
@@ -724,11 +760,11 @@ canvasEl().addEventListener('mousemove', (ev) => {
   }
   if (dragging) {
     const path = store.get(dragging.pathId);
-    if (path) path.points[dragging.pointIdx] = t;
+    if (path) path.points[dragging.pointIdx] = pos;
     redrawAll();
     return;
   }
-  if (draft) redrawAll(t);
+  if (draft) redrawAll(pos);
 });
 
 window.addEventListener('mouseup', () => {
@@ -742,7 +778,7 @@ window.addEventListener('mouseup', () => {
   }
   if (draggingCityId) {
     draggingCityId = null;
-    statusEl.textContent = `Moved city "${selectedCityId}".`;
+    setStatus(() => t('status.cityMoved', { id: selectedCityId ?? '' }));
     renderBaseMap(seedInput.value || 'preview');
     redrawAll();
   }
@@ -796,12 +832,42 @@ document.addEventListener('keydown', (ev) => {
 // ── Boot ─────────────────────────────────────────────────────────────────
 function renderLegend(): void {
   legendEl.innerHTML = TERRAIN_LEGEND
-    .map((t) => `<div class="row"><i style="background:${TERRAIN_LEGEND_CSS[t]}"></i>${t}</div>`)
+    .map((kind) => `<div class="row"><i style="background:${TERRAIN_LEGEND_CSS[kind]}"></i>${kind}</div>`)
     .join('');
   cityLegendEl.innerHTML = (Object.keys(CITY_COLORS_CSS) as MapEditorCityNode['kind'][])
     .map((k) => `<div class="row"><i style="background:${CITY_COLORS_CSS[k]}"></i>${k}</div>`)
     .join('');
 }
+
+// ── i18n wiring — static chrome via data-i18n attributes, dynamic parts via re-render ──
+function applyStaticI18n(): void {
+  document.title = t('app.title');
+  document.documentElement.lang = getLocale() === 'zh' ? 'zh-CN' : 'en';
+  langBtn.textContent = t('toolbar.lang');
+  for (const el of Array.from(document.querySelectorAll<HTMLElement>('[data-i18n]'))) {
+    el.textContent = t(el.dataset.i18n!);
+  }
+  for (const el of Array.from(document.querySelectorAll<HTMLElement>('[data-i18n-title]'))) {
+    el.title = t(el.dataset.i18nTitle!);
+  }
+  for (const el of Array.from(document.querySelectorAll<HTMLInputElement>('[data-i18n-placeholder]'))) {
+    el.placeholder = t(el.dataset.i18nPlaceholder!);
+  }
+}
+
+function applyDynamicI18n(): void {
+  renderPathList();
+  renderTemplateList();
+  selectCity(selectedCityId);
+  if (!tileInfoShown) tileInfoEl.textContent = t('tile.hoverHint');
+  statusEl.textContent = lastStatusRender ? lastStatusRender() : t('status.ready');
+}
+
+langBtn.addEventListener('click', () => {
+  toggleLocale();
+  applyStaticI18n();
+  applyDynamicI18n();
+});
 
 regenBtn.addEventListener('click', () => {
   renderBaseMap(seedInput.value || 'preview');
@@ -809,6 +875,8 @@ regenBtn.addEventListener('click', () => {
 });
 widthInput.value = String(randomDefaultWidth());
 
+applyStaticI18n();
+applyDynamicI18n();
 renderLegend();
 centerView();
 Promise.allSettled([loadTerrainAtlas(), loadResAtlas(), loadBuildingAtlas()]).then(() => {

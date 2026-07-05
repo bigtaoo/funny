@@ -1,6 +1,6 @@
 # Notebook Wars — SLG 地图编辑器设计文档
 
-> 创建：2026-07-04。地形骨架已拍板（2026-07-05，见 [DECISIONS.md ADR-034](../../DECISIONS.md)），代码重写已完成（2026-07-05），编辑器工程骨架+河流/山脉路径笔刷+城池拖拽+栅格化发布到服务端模板+等距贴图美术对齐游戏客户端已搭（2026-07-05，见 §8）。
+> 创建：2026-07-04。地形骨架已拍板（2026-07-05，见 [DECISIONS.md ADR-034](../../DECISIONS.md)），代码重写已完成（2026-07-05），编辑器工程骨架+河流/山脉路径笔刷+城池拖拽+栅格化发布到服务端模板+等距贴图美术对齐游戏客户端+中英文切换已搭（2026-07-05，见 §8）。
 > 配套阅读：`../../game/SLG_DESIGN.md`（§2.4 国家系统 / §3.2 地图规格 / **§24 地图模板与编辑器**——本节的服务端持久化就是接到 §24 已实现的 admin 模板 API，不是新建一套）、`../../DECISIONS.md`（ADR-032 地图尺寸/等级、ADR-034 环形地形骨架，**注意**：曾短暂存在一版同日的 ADR-033"10 首府三层同心环"方案，与本文档方向不同，当天即被撤销/作废，本文档只跟 ADR-034 对应）、`../../game/SGZ_LAND_REFERENCE.md`（三战地块/城池调研，§5 环形结构 / §8 城池系统）、`server/shared/src/slg/`（已按本文档重写，god-file split 后拆成 `province.ts`/`mapgen.ts`/`mapEdit.ts` 等：`provinceIdxAt()`/`provinceCapitalPositions()` 替代 `nearestCapitalIdx()`/`CAPITAL_FRACTIONS`，新增地形带+城池节点+按环等级分布表+编辑层栅格化）、`../level-editor/DESIGN.md`（工程化参照）、根 `../../../CLAUDE.md`。
 > 讨论期用一次性 HTML/JS 原型（Artifact，未提交仓库）快速试错定稿，迭代记录见 §7；正式编辑器工具（`tools/map-editor`）§8 为工程现状，§6 是其需求清单（编辑交互尚未实现）。
 
@@ -31,6 +31,7 @@
   - **交互从"整图 1:1 CSS 缩放"改成"视口相机"**：原先 500×500 tile 直接 1:1 铺满一张 Canvas、缩放靠 CSS `width/height` 缩放整块；等距投影下一个 tile 的屏幕宽度就是缩放本身（`tp`，tile pixel width，10–56px 可调），不可能再整图铺开（500 格 diamond 投影后跨度远超屏幕），改成固定视口（900×620）+ 相机平移（新增 Pan 工具，或任意工具下按住鼠标中键拖动）+ 滚轮/Zoom 滑块缩放（缩放锚点是鼠标位置，同游戏客户端 `WorldMapRenderer.setZoom()` 的"缩放前后同一格保持在同一屏幕位置"手法）。视口按 1.5× 视口尺寸多渲染一圈 tile 作为缓冲，纯平移只挪 `worldLayer` 的 PIXI 容器位置（零重绘），只有平移结束(mouseup)/缩放/编辑提交才重新铺 tile Graphics——地图越大（500×500 全量约 1.4 万格视口内）单次重铺约 1.4–1.7 秒，可接受（不是每帧发生）。
   - **河流/山脉/城池编辑仍然精确所见即所得**：草稿中的路径描边、城池 footprint 选中框是轻量矢量 UI chrome（未采用贴图，因为编辑中的半成品不是"游戏画面"，是编辑器交互提示）；但一旦提交（双击结束路径/松开鼠标完成拖拽），base 层立刻用 `rasterizeMapEdits()`（跟发布用的是同一个函数）重新栅格化并整视口重绘——发布前看到的贴图效果跟发布后服务端模板生效的效果保证是同一份计算结果，不会走两套逻辑分叉。
   - 验证：`tsc --noEmit` + `webpack --mode production` 均过；额外用 PixiJS `renderer.extract.pixels()` 直接读取帧缓冲采样验证（因为该会话的浏览器自动化 `screenshot` 工具对这个 WebGL canvas 页面反复超时，原因未查——不影响功能，只是取证手段换了一种），确认河流路径提交后落地格子的像素色确为 `terrain_river` 贴图色调而非纯色色块。
+- **中英文切换**（2026-07-05，§8）：新增 `src/i18n.ts`（en/zh 双字典 + `t(key, vars)` 插值 + `localStorage`（key `map-editor-locale`）持久化选择），工具栏右侧新增切换按钮（显示对方语言名，中文界面下显示"EN"，反之显示"中文"）。静态 UI 文案（按钮/label/title/placeholder）走 HTML `data-i18n`/`data-i18n-title`/`data-i18n-placeholder` 属性 + `applyStaticI18n()` 统一扫描赋值；动态文案（状态栏消息、tile/city 详情、路径/模板计数标题）改造成 `t()` 调用，状态栏额外用一个"渲染函数"（而非预格式化字符串）记住上一条消息——因为消息里嵌了 `tileCountLabel()`/`pathCountLabel()`/`cityCountLabel()` 这类带单复数的组合标签，若只存最终字符串，切换语言后旧语言的复数词会残留（已踩过这个坑并修复）。地形/城池图例的枚举名（`neutral`/`capital`/…）刻意不翻译，保留跟 `TileType`/城池 `kind` 一致的技术标识，避免引入不准确的游戏内术语。验证：`tsc --noEmit` + `webpack --mode production` 均过，浏览器内实测切换按钮双向切换、刷新后语言保持、切换后状态栏/详情栏文案同步更新。
 
 ---
 
