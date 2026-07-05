@@ -13,6 +13,7 @@ import { palette } from '../../render/theme';
 import { bake } from '../../render/bake';
 import { IconKind } from '../../render/icons';
 import { BoilingSprite } from '../../render/boil';
+import { StickmanRuntime } from '../../render/stickman/StickmanRuntime';
 
 export { fmtCoins } from './format';
 
@@ -207,6 +208,17 @@ export class LobbySceneBase {
   protected oppLabel!: PIXI.Text;
   /** Boiling-line title underline (art-direction §5.4); cleaned up in destroy. */
   protected titleBoil: BoilingSprite | null = null;
+  /**
+   * Ambient silhouette figure stamped on the hero button (mirrors the crossed-pencils
+   * motif on the right) — a random playable character, tinted flat black + faded,
+   * cycling through random animation clips. Populated once its .tao bundle loads
+   * (async), so it's absent for the first render frame or two.
+   */
+  protected heroFigure: StickmanRuntime | null = null;
+  /** Clip names available on the loaded heroFigure asset, for random cycling. */
+  protected heroFigureClips: string[] = [];
+  /** Countdown (seconds) to the next random clip swap. */
+  protected heroFigureSwapTimer = 0;
 
   /** Hit rect for the start/matching button, in design space. */
   protected btnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
@@ -306,6 +318,15 @@ export class LobbySceneBase {
       if (this.toastTimer <= 0) this.clearToast();
       else if (this.toastLayer) this.toastLayer.alpha = Math.min(1, this.toastTimer / 0.4);
     }
+    if (this.heroFigure) {
+      this.heroFigure.update(dt);
+      this.heroFigureSwapTimer -= dt;
+      if (this.heroFigureSwapTimer <= 0 && this.heroFigureClips.length > 0) {
+        this.heroFigureSwapTimer = 1.6 + Math.random() * 1.6;
+        const name = this.heroFigureClips[Math.floor(Math.random() * this.heroFigureClips.length)]!;
+        this.heroFigure.play(name);
+      }
+    }
   }
 
   destroy(): void {
@@ -313,6 +334,8 @@ export class LobbySceneBase {
     this.unsubs.forEach(u => u());
     this.titleBoil?.destroy();
     this.titleBoil = null;
+    this.heroFigure?.destroy();
+    this.heroFigure = null;
     this.socialBadgeLayer = null;
     this.achievementBadgeLayer = null;
     this.sideStripBadgeLayer = null;

@@ -11,6 +11,8 @@ import { buildWearOverlay } from '../../render/wearOverlay';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { BoilingSprite } from '../../render/boil';
 import { buildAvatar } from '../../render/avatar';
+import { StickmanRuntime } from '../../render/stickman/StickmanRuntime';
+import { randomHeroAssetUrl } from '../../render/heroSilhouette';
 import { Rect } from '../../layout/ILayout';
 import {
   C, txt, fmtCoins, sketchPanel, drawBtn, buildBackground, randomAiName,
@@ -330,6 +332,31 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       heroMotif.x = Math.round(contentX + contentW - heroMotifS * 1.15);
       heroMotif.y = Math.round(heroY + heroH / 2 - heroMotifS / 2);
       this.container.addChild(heroMotif);
+
+      // Ambient character silhouette on the left of the hero (mirrors the pencils
+      // motif above): a random playable unit, flat-black + faded, cycling through
+      // random animation clips (§ hero-decoration). Loads async — appears a frame
+      // or two after the rest of the button since the .tao bundle must be fetched.
+      const heroFigureH   = Math.round(heroH * 0.88);
+      const heroFigureX   = Math.round(contentX + heroFigureH * 0.65);
+      const heroFigureFootY = Math.round(heroY + heroH * 0.94);
+      const heroFigureInsertAfter = heroMotif;
+      StickmanRuntime.loadAsset(randomHeroAssetUrl(), heroFigureH).then(asset => {
+        if (this.destroyed) return;
+        const runtime = new StickmanRuntime(asset, { targetHeight: heroFigureH });
+        runtime.setSilhouette(0x000000);
+        runtime.container.alpha = 0.22;
+        runtime.container.x = heroFigureX;
+        runtime.container.y = heroFigureFootY;
+        const idx = this.container.getChildIndex(heroFigureInsertAfter);
+        this.container.addChildAt(runtime.container, idx + 1);
+        this.heroFigureClips = [...asset.clips.keys()];
+        if (this.heroFigureClips.length) {
+          runtime.play(this.heroFigureClips[Math.floor(Math.random() * this.heroFigureClips.length)]!);
+        }
+        this.heroFigureSwapTimer = 1.6 + Math.random() * 1.6;
+        this.heroFigure = runtime;
+      });
 
       this.btnLabel = txt(this.cb.offline ? t('lobby.startVsAI') : t('lobby.startMatch'), Math.round(heroH * 0.30), 0xffffff, true);
       this.btnLabel.anchor.set(0.5, 0.5);
