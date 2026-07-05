@@ -12,6 +12,15 @@ import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawSidebarTabs, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { buildIcon } from '../render/icons';
+import { getEquipDef } from '../game/meta/equipmentDefs';
+import { drawEquipmentGlyph } from '../render/equipmentGlyph';
+import { CARD_DEFS } from '../game/meta/cardDefs';
+import { UNIT_ART_URLS, getArtTexture } from '../render/cardArt';
+
+/** itemId prefix → material icon glyph (mat_scrap/mat_lead/mat_binding). */
+const MATERIAL_ICON: Record<string, 'scrap' | 'lead' | 'binding'> = {
+  mat_scrap: 'scrap', mat_lead: 'lead', mat_binding: 'binding',
+};
 
 // ── GachaScene (S2-6) — single / ten-pull lootbox with pity + reveal ───────────
 //
@@ -80,6 +89,9 @@ export class GachaScene implements Scene {
 
   /** Fate Point redeem cost (mirrors @nw/shared FATE_POINT_REDEEM_COST; GACHA_DESIGN §7). */
   private static readonly FATE_COST = 30;
+
+  /** Hero-card art urls already hooked for a 'loaded' re-render (odds popup), so we don't double-hook. */
+  private readonly artHooked = new Set<string>();
 
   private toast: { text: string; color: number } | null = null;
   /** Reveal overlay: non-null while showing the latest draw's results. */
@@ -553,12 +565,10 @@ export class GachaScene implements Scene {
       card.x = cardX; card.y = cardY;
       this.container.addChild(card);
 
-      const starSz = Math.round(cardH * 0.32);
-      const star = buildIcon('star', starSz, RARITY_COLOR[e.rarity]);
-      star.x = cardX + cardW / 2 - starSz / 2; star.y = cardY + cardH * 0.12;
-      this.container.addChild(star);
+      const picSz = Math.round(Math.min(cardW * 0.62, cardH * 0.42));
+      this.drawEntryPicture(e.itemId, e.rarity, cardX + cardW / 2, cardY + cardH * 0.10 + picSz / 2, picSz, i + 1);
 
-      const nameSize = Math.max(9, Math.round(cardH * 0.15));
+      const nameSize = Math.max(9, Math.round(cardH * 0.13));
       const name = txt(e.itemId, nameSize, C.dark);
       name.anchor.set(0.5, 0); name.x = cardX + cardW / 2; name.y = cardY + cardH * 0.52;
       const nameMax = cardW * 0.9;
@@ -589,6 +599,62 @@ export class GachaScene implements Scene {
     const hint = txt(t('gacha.oddsDetail.tapClose'), Math.round(h * 0.02), C.mid);
     hint.anchor.set(0.5, 1); hint.x = w / 2; hint.y = py + ph - Math.round(h * 0.02);
     this.container.addChild(hint);
+  }
+
+  /**
+   * Per-item picture for one odds-grid cell, centered at (cx, cy) in a `size`×`size`
+   * box. No dedicated per-item art exists (art-direction §9.2: near-zero art cost),
+   * so this reuses whatever representation the item already has elsewhere in the
+   * client: hero cards → the real unit PNG (cardArt.ts), equipment → the procedural
+   * per-slot glyph (equipmentGlyph.ts), materials → their dedicated icon, skins →
+   * the wardrobe brush glyph. Falls back to a rarity star for anything unrecognised.
+   */
+  private drawEntryPicture(itemId: string, rarity: Rarity, cx: number, cy: number, size: number, seed: number): void {
+    const matKind = MATERIAL_ICON[itemId];
+    if (matKind) {
+      const icon = buildIcon(matKind, size, RARITY_COLOR[rarity]);
+      icon.x = cx - size / 2; icon.y = cy - size / 2;
+      this.container.addChild(icon);
+      return;
+    }
+
+    const equipDef = getEquipDef(itemId);
+    if (equipDef) {
+      const g = new PIXI.Graphics();
+      drawEquipmentGlyph(g, equipDef.slot, equipDef.rarity, size, seed);
+      g.x = cx; g.y = cy;
+      this.container.addChild(g);
+      return;
+    }
+
+    const cardDef = CARD_DEFS[itemId];
+    const artUrl = cardDef ? UNIT_ART_URLS[cardDef.unitType] : undefined;
+    if (artUrl) {
+      const tex = getArtTexture(artUrl);
+      if (tex.baseTexture.valid) {
+        const scale = Math.min(size / tex.width, size / tex.height);
+        const sp = new PIXI.Sprite(tex);
+        sp.anchor.set(0.5);
+        sp.scale.set(scale);
+        sp.position.set(cx, cy);
+        this.container.addChild(sp);
+      } else if (!this.artHooked.has(artUrl)) {
+        this.artHooked.add(artUrl);
+        tex.baseTexture.once('loaded', () => this.render());
+      }
+      return;
+    }
+
+    if (itemId.startsWith('skin_')) {
+      const icon = buildIcon('brush', size, RARITY_COLOR[rarity]);
+      icon.x = cx - size / 2; icon.y = cy - size / 2;
+      this.container.addChild(icon);
+      return;
+    }
+
+    const star = buildIcon('star', size, RARITY_COLOR[rarity]);
+    star.x = cx - size / 2; star.y = cy - size / 2;
+    this.container.addChild(star);
   }
 
   private addButton(
