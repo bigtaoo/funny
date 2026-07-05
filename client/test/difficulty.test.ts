@@ -11,15 +11,18 @@ import { CAMPAIGN_LEVEL_ORDER } from '../src/game/campaign/levels';
  * Level difficulty simulation (PvE balance tool) — see the top of difficultySim.ts for details.
  *
  * How to run:
- *   - Full difficulty report:  npx vitest run difficulty -t report
- *   - Chapter 1 only:          (default describe is ch1)
+ *   - Full difficulty report (all chapters): npx vitest run difficulty -t report
+ *   - One chapter only: filter ALL_LEVELS below to a prefix, or read the console table and
+ *     scan for the chapter you care about (the report always covers every chapter in one run).
  *
  * These cases also serve as a regression net: they guarantee simulator determinism and
- * guard the "ch1 difficulty curve" — if a future change breaks the numbers so badly that
- * level 1 cannot be cleared even with full progression, tests here will go red.
+ * guard the whole-game difficulty curve — if a future change breaks the numbers so badly that
+ * no level can be cleared even with full progression, tests here will go red.
  */
 
-const CH1 = CAMPAIGN_LEVEL_ORDER.filter((id) => id.startsWith('ch1_'));
+// ch_stress is a headless perf-stress fixture (absurd wave counts), not a real gameplay level —
+// excluded from the difficulty report. Every other campaign level (ch1–ch6) is included.
+const ALL_LEVELS = CAMPAIGN_LEVEL_ORDER.filter((id) => id !== 'ch_stress');
 
 describe('Difficulty simulator', () => {
   it('determinism: running the same level with the same preset twice gives identical results', () => {
@@ -36,8 +39,8 @@ describe('Difficulty simulator', () => {
     if (fresh.win) expect(t5.win).toBe(true);
   });
 
-  it('report: ch1 difficulty matrix — each level × progression preset', () => {
-    const results: ThresholdResult[] = CH1.map((id) => findClearThreshold(id));
+  it('report: full-game difficulty matrix — each level × progression preset', () => {
+    const results: ThresholdResult[] = ALL_LEVELS.map((id) => findClearThreshold(id));
     // Print to stdout (vitest shows console output by default).
     console.log('\n' + formatThresholdTable(results) + '\n');
     console.log('Legend: each cell = 5-seed evaluation. N★P% = median N stars / clear rate P%; ✗P% = majority fail (clear rate P%).');

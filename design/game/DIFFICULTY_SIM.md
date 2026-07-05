@@ -30,10 +30,14 @@
 
 ```bash
 cd client
-npx vitest run difficulty    # 难度矩阵（ch1 各关 × 养成预设）+ 确定性/单调性守卫
+npx vitest run difficulty    # 难度矩阵（全部 6 章 61 关 × 养成预设）+ 确定性/单调性守卫，约 2 分钟
 npx vitest run experiment    # ch1_lv1 各下调方案对比
-npx vitest run diag          # 单关逐秒时间线（改 diag.test.ts 顶部 LEVEL_ID/PRESET 换关）
+npx vitest run diag          # 单关逐秒时间线（改 diag.test.ts 顶部 LEVEL_ID/PRESET 可指向任意关卡）
 ```
+
+`difficulty.test.ts` 的 report 用例现在跑 `CAMPAIGN_LEVEL_ORDER` 全量（排除纯压测用的
+`ch_stress`），一次性输出全部章节的矩阵表；不需要单独按章节跑。61 关 × 6 档 × 5 种子
+体量下单次约 100–120s，属于按需手动跑的量级，不建议塞进快速预提交检查。
 
 ## 基线 AI 策略（启发式 v2，非最优）
 
@@ -59,8 +63,110 @@ v2 相对 v1 的关键修法（v1 几乎全 ch1 不过）：令牌桶按真实 A
 - 评星对**调好的关**可信（如 lv2 出现干净阶梯：T4=1★→T5=3★）；对 AI 过不了的关只说明「偏难/过载」，不代表人类也过不了。
 - **绝对通关与否偏保守**：AI 轻松过 ⇒ 偏易；AI 勉强过/过不了 ⇒ 偏难。
 - 调参 A/B 看的是**方向**与量级，不是精确数值。
+- **法术盲区**：AI 只用流星（单点 AOE）。Haste（buff）和关卡专属法术 Rockslide/Bridge Collapse
+  （地形/控场类）targeting 语义特殊，AI 完全不会用——含这些卡的关卡，AI 的评估会比实际更悲观。
 
-## ch1 难度矩阵（基线 AI v2，5 种子中位）
+## 兵种角色泛化（2026-07-05：从 ch1-only 扩到全部章节）
+
+AI 最初硬编码只认 ch1 三兵种（infantry/shieldbearer/archer）。ch2 起的关卡 loadout 会给
+Max/Lena/Mara（甚至 PvE 专属单位），AI 不认识就完全不用——相当于「拿到好牌不知道怎么打」，
+之前从未跑过 ch2+ 就是这个原因。
+
+现在改成从 `UNIT_BLUEPRINTS` 的静态 hp/attack/range 派生角色（`ROLE_MAP`），不再硬编码兵种名：
+
+- `attack === 0` → support（如 Medic，纯辅助，最后才选）
+- `range ≥ 2` → ranged（Archer/Mara，主输出）
+- `hp ≥ 140` → tank（ShieldBearer/Ironclad/Lena/Max，扛线）
+- 其余 → melee（Infantry/Runner/Berserker/Splitter/Harpy，平衡位）
+
+`reinforceLane()` 补线优先级从「缺盾兵→先补盾兵，否则弓手，否则步兵」泛化为
+「缺 tank 角色→先补 tank，否则 ranged，否则 melee，否则 support」，对任意关卡的实际
+loadout 都能摆出「坦克扛+输出跟」的标准 TD 阵型。
+
+## 装备预设
+
+`progressionCards(preset)` 现在除了给 6 个可养成兵种（`PROGRESSABLE_UNITS`：
+Infantry/ShieldBearer/Archer/Max/Lena/Mara）按档位升级，还会挂一套「档位对应装备」
+（`PROGRESSION_GEAR` + `PROGRESSION_EQUIP_INV`，`difficultySim.ts`）：
+
+| 档位 | 装备 |
+|---|---|
+| fresh | 无 |
+| T2/T3 | 武器（主词条 m_atk +8%，强化 0 级） |
+| T4/T5 | 武器 + 护甲（m_atk +8% / m_hp +10%，强化 3 级） |
+| T6 | 武器 + 护甲 + 饰品（m_atk / m_hp+s_armor / m_crit，强化 6 级） |
+
+⚠️ **这套数值是模拟器占位值，不是游戏权威数值**——装备强化系数用的是
+`server/engine/src/balance/equipment.ts` 里真实的 `AFFIX_FIELD_MAP`/`ENHANCE_COEFF_PER_LEVEL`
+机制，但具体数值（+8 atk、+10 hp…）是为了让「档位=卡等级+合理装备」这个模型跑起来而取的
+估计值；`ECONOMY_NUMBERS §5` 的装备数值权威表还未定稿，以后定了要回来对齐这里。
+
+**影响**：接入装备后同档位比纯卡等级更强，ch1 矩阵数值会整体比装备接入前的历史记录更容易
+（例如 lv4/lv7/lv8 min通关从 T4 降到 T2）——这是装备叠加的预期结果，不代表关卡本身变简单了。
+
+## 护送目标（escort objective）
+
+胜负判定本身不需要改引擎——`GameEngine.checkWinCondition()` 对 escort/leak_limit/
+destroy_base 等目标类型已经原生支持（到达即赢/全灭即输，`state.escorts[].status`
+自动流转），`simulateLevel()` 原有的 `win = engine.state.winner === Side.Bottom`
+判断直接适用。`destroy_base` 也不需要额外的「进攻 AI」——本作防守单位清线后本来就会
+自动前进破坏敌方基地（`MovementSystem`），基线 AI 现有的补线逻辑天然兼容。
+
+真正缺的是 AI 的护送防守意识：加了一步「护送预判防守」——只要还有 escort 处于
+`moving` 状态，AI 会主动把它当前所在列补到 `blockersPerLane`，**不等敌人真的逼近才
+反应**（`pickUnescortedLane`，优先级在流星之后、常规补线之前）。`SimResult` 新增
+`escortMinHp`（护送单位全程最低血量，无护送关为 null）和 `enemyLeaks`
+（leak_limit 诊断用）两个字段。
+
+## 全部章节难度矩阵（2026-07-05，AI v3：角色泛化+装备预设+护送防守，5 种子中位）
+
+```
+level    |fresh    |T2       |T3       |T4       |T5       |T6       |min_clear
+-------------------------------------------------------------------------------
+ch1_lv1  |3★80%    |3★100%   |3★100%   |3★100%   |3★100%   |3★100%   |fresh
+ch1_lv2  |3★100%   |3★100%   |3★100%   |3★100%   |3★100%   |3★100%   |fresh
+ch1_lv3  |1★60%    |2★100%   |3★100%   |3★100%   |3★100%   |3★100%   |fresh
+ch1_lv4  |✗40%     |3★100%   |3★100%   |3★100%   |3★100%   |3★100%   |T2
+ch1_lv5  |✗40%     |1★60%    |3★80%    |3★80%    |3★80%    |3★100%   |T2
+ch1_lv6  |3★100%   |2★100%   |3★100%   |3★100%   |3★100%   |3★100%   |fresh
+ch1_lv7  |✗20%     |3★80%    |3★80%    |3★100%   |3★100%   |3★100%   |T2
+ch1_lv8  |✗0%      |1★60%    |3★80%    |3★100%   |3★100%   |3★100%   |T2
+ch1_lv9  |✗0%      |✗40%     |1★80%    |3★100%   |3★100%   |3★100%   |T3
+ch1_lv10 |✗0%      |✗20%     |3★80%    |3★100%   |3★100%   |3★100%   |T3
+ch2_lv1  |✗0%      |✗0%      |✗20%     |✗40%     |✗40%     |1★60%    |T6
+ch2_lv2  |✗20%     |2★80%    |3★80%    |3★80%    |3★100%   |1★80%    |T2
+ch2_lv3  |✗0%      |✗0%      |✗0%      |✗0%      |✗0%      |✗0%      |unbeatable ← 护送关
+ch2_lv4  |✗0%      |✗0%      |✗0%      |✗0%      |✗0%      |3★80%    |T6
+ch2_lv5  |✗0%      |✗0%      |✗0%      |✗0%      |✗0%      |✗20%     |unbeatable
+ch2_lv6  |✗0%      |✗0%      |✗0%      |✗0%      |✗0%      |✗40%     |unbeatable
+ch2_lv7  |✗0%      |✗40%     |3★60%    |3★100%   |3★100%   |3★100%   |T3
+ch2_lv8  |✗0%      |✗0%      |✗0%      |✗0%      |✗0%      |1★80%    |T6
+ch2_lv9  |✗0%      |✗0%      |✗0%      |✗0%      |✗0%      |✗0%      |unbeatable
+ch2_lv10 |✗0%      |✗0%      |✗0%      |✗0%      |✗0%      |✗0%      |unbeatable
+ch3~ch6  大多数关卡 unbeatable（各档均 ✗，多数 0–40% 无法达到 50% 通关线）；
+          少数例外：ch3_lv7/ch4_lv7 fresh 即可清、ch5_lv9/ch6_lv2 等 T2–T4 可清。
+          完整逐关数据见 `npx vitest run difficulty -t report` 输出。
+```
+
+**这就是回答「护送关到底还难不难」的直接结论：`ch2_lv3` 在 AI 已经会主动护送防守、
+且拉满 T6 养成+装备的情况下依然 0% 通关（`unbeatable`）**——诊断单局（T6/seed 65537）
+显示：基地本身很安全（终局血量 45，从未被攻破），但护送单位全程最低血量归零
+（`escortMinHp: 0`，`enemyLeaks: 5`）——**输在护送单位被打死，不是输在基地失守**。
+说明 2026-06-28 那次「降速+加血」的调整方向没错，但幅度不够——护送单位在敌人持续
+输出下扛不住穿行全程，需要要么继续加血/减速，要么给护送路径加程序化的沿途友军支援
+（比如中途刷新增援波），而不是只调两个数值。
+
+**更大的信号**：ch3–ch6 绝大多数关卡在任意养成档位下都是 `unbeatable`——这些章节
+从未被难度模拟器碰过、也没有 `tune-ch1.cjs` 那样的重调，和第一章形成鲜明反差
+（第一章 min通关曲线平滑，7.4 章节矩阵参见下方历史小节）。这不代表人类玩家一定
+过不了（基线 AI 偏保守，见「重要局限」），但缺乏任何回归防护、数值大概率没被
+认真磨过，是比 ch2_lv3 单点问题更大的系统性缺口。
+
+## ch1 难度矩阵（基线 AI v2，5 种子中位，历史记录）
+
+> ⚠️ 这是 AI v2（无角色泛化、无装备预设）时代的数据，数值已被上面「全部章节难度矩阵」
+> （AI v3）取代——v3 因为叠加了装备加成，同档位比这里更容易通关，属于预期变化。保留本节
+> 是因为下面 lv2 阶梯和 lv1 诊断的**分析方法**依然有效，只是具体数字已经过时。
 
 ```
 level    |fresh   |T2     |T3     |T4     |T5     |T6     |min通关
