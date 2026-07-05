@@ -356,7 +356,7 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
         }
         this.heroFigureSwapTimer = 1.6 + Math.random() * 1.6;
         this.heroFigure = runtime;
-      });
+      }).catch(() => { /* decorative-only: missing/broken .tao must not crash the lobby */ });
 
       this.btnLabel = txt(this.cb.offline ? t('lobby.startVsAI') : t('lobby.startMatch'), Math.round(heroH * 0.30), 0xffffff, true);
       this.btnLabel.anchor.set(0.5, 0.5);
