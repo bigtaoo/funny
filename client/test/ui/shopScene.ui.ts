@@ -129,6 +129,91 @@ describe('ShopScene — group nav is a left-gutter sidebar, not a horizontal str
   });
 });
 
+describe('ShopScene — monthly card daily claim greys out once claimed today', () => {
+  /** Find the LAST hit rect whose fn === the button's fn is not exposed; locate by label text + enabled styling instead. */
+  function findButtonHit(scene: ShopScene, label: string): Hit | undefined {
+    const pos = findLabelPos(scene.container, label);
+    if (!pos) return undefined;
+    const hits = (scene as unknown as { hits: Hit[] }).hits;
+    return hits.find(({ rect: r }) => pos.x >= r.x && pos.x <= r.x + r.w && pos.y >= r.y && pos.y <= r.y + r.h);
+  }
+
+  /** Flush the microtask queue (constructor kicks off `loadItems()` async — the shop grid, including
+   * the monthly card, only renders once that promise resolves and re-triggers `render()`). */
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  const CLAIM = t('shop.monthlyClaim');
+  const CLAIMED_TODAY = t('shop.monthlyClaimedToday');
+
+  it('claim button is disabled while the card is inactive (not purchased)', async () => {
+    const scene = buildShop({
+      getMonetization: () => ({ subscriptionExpiry: 0, starterUsed: [] }),
+      buyMonthlyCard: async () => ({ ok: true }),
+      claimMonthlyCard: async () => ({ ok: true }),
+    });
+    await flush();
+    expect(findLabelPos(scene.container, CLAIM)).not.toBeNull();
+    expect(findButtonHit(scene, CLAIM)).toBeUndefined(); // disabled buttons register no hit rect
+    scene.destroy();
+  });
+
+  it('claim button is enabled ("领取") while active and not yet claimed today, then greys out ("今日已领取") after a successful claim', async () => {
+    // Mutable server-mirror stand-in: claimMonthlyCard mutates it exactly like the real
+    // shop.ts wiring does via saveManager.adoptServer(save) — getMonetization always reads
+    // the live object, so ShopScene's next render() picks up the change.
+    const state = { subscriptionExpiry: Date.now() + 86_400_000, subscriptionLastClaimDay: undefined as string | undefined, starterUsed: [] as string[] };
+    const scene = buildShop({
+      getMonetization: () => ({ ...state }),
+      buyMonthlyCard: async () => ({ ok: true }),
+      claimMonthlyCard: async () => {
+        state.subscriptionLastClaimDay = new Date().toISOString().slice(0, 10);
+        return { ok: true };
+      },
+    });
+    await flush();
+
+    expect(findLabelPos(scene.container, CLAIM)).not.toBeNull();
+    const hit = findButtonHit(scene, CLAIM);
+    expect(hit, 'claim button should be tappable before claiming').toBeDefined();
+
+    hit!.fn(); // triggers the async claim; runDeal awaits it and re-renders on completion
+    await flush();
+    await flush();
+
+    expect(findLabelPos(scene.container, CLAIMED_TODAY)).not.toBeNull();
+    expect(findButtonHit(scene, CLAIMED_TODAY)).toBeUndefined(); // now disabled
+    scene.destroy();
+  });
+
+  it('claim button stays greyed out ("今日已领取") across a second claim attempt that the server rejects as already-claimed', async () => {
+    // Reproduces the already-claimed-today server response (claimed=0 → ok:false) arriving
+    // for a card whose local mirror had not yet caught up — adoptServer-equivalent mutation
+    // still lands via getMonetization, so the button must grey out even on the error path.
+    const state = { subscriptionExpiry: Date.now() + 86_400_000, subscriptionLastClaimDay: undefined as string | undefined, starterUsed: [] as string[] };
+    const scene = buildShop({
+      getMonetization: () => ({ ...state }),
+      buyMonthlyCard: async () => ({ ok: true }),
+      claimMonthlyCard: async () => {
+        // Server already recorded today's claim (e.g. another session claimed first) — no
+        // coins granted, but the save mirror still carries today's lastClaimDay.
+        state.subscriptionLastClaimDay = new Date().toISOString().slice(0, 10);
+        return { ok: false, key: 'shop.monthlyNothing' };
+      },
+    });
+    await flush();
+
+    const hit = findButtonHit(scene, CLAIM);
+    expect(hit).toBeDefined();
+    hit!.fn();
+    await flush();
+    await flush();
+
+    expect(findLabelPos(scene.container, CLAIMED_TODAY)).not.toBeNull();
+    expect(findButtonHit(scene, CLAIMED_TODAY)).toBeUndefined();
+    scene.destroy();
+  });
+});
+
 describe('ShopScene — promo-code redemption lives on the Coins tab', () => {
   it('does not show the promo field on the Shop tab', () => {
     const scene = buildShop({
