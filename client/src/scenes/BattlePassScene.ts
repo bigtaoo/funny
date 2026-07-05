@@ -25,6 +25,8 @@ import {
 
 export interface BattlePassCallbacks {
   onBack(): void;
+  /** Current server-authoritative coin balance (read from SaveData), shown top-right in the header. */
+  getCoins(): number;
   /**
    * Get the current save's battle pass data. Returns undefined when not yet joined this season.
    * Omitted when offline/not logged in → shows "login to view".
@@ -141,6 +143,16 @@ export class BattlePassScene implements Scene {
     const hdr = drawSceneHeader(this.container, w, h, t('battlepass.title'));
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
+
+    // Coin balance (top-right): glyph + number, no "金币：" text prefix — matches ShopScene/GachaScene.
+    const balNum = txt(this.cb.getCoins().toLocaleString(), Math.round(h * 0.028), C.gold, true);
+    balNum.anchor.set(1, 0.5); balNum.x = w - Math.round(w * 0.04); balNum.y = tbH / 2;
+    this.container.addChild(balNum);
+    const balIcon = Math.round(h * 0.036);
+    const bIcon = buildIcon('coin', balIcon, C.gold);
+    bIcon.x = balNum.x - balNum.width - balIcon - Math.round(w * 0.008);
+    bIcon.y = tbH / 2 - balIcon / 2;
+    this.container.addChild(bIcon);
 
     // Shop group tab bar (LOBBY_IA_REDESIGN P1.5): [Shop|Coins|Gacha|BattlePass], battle pass active. Only drawn in group context.
     const top = this.drawGroupTabs(tbH);

@@ -205,9 +205,15 @@ export class GachaScene implements Scene {
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
-    const coins = txt(t('gacha.coins', { coins: this.cb.getCoins() }), Math.round(h * 0.026), C.gold, true);
-    coins.anchor.set(1, 0.5); coins.x = w - Math.round(w * 0.04); coins.y = tbH / 2;
-    this.container.addChild(coins);
+    // Coin balance: glyph + number, no "金币：" text prefix — matches ShopScene's header convention.
+    const balNum = txt(this.cb.getCoins().toLocaleString(), Math.round(h * 0.028), C.gold, true);
+    balNum.anchor.set(1, 0.5); balNum.x = w - Math.round(w * 0.04); balNum.y = tbH / 2;
+    this.container.addChild(balNum);
+    const balIcon = Math.round(h * 0.036);
+    const bIcon = buildIcon('coin', balIcon, C.gold);
+    bIcon.x = balNum.x - balNum.width - balIcon - Math.round(w * 0.008);
+    bIcon.y = tbH / 2 - balIcon / 2;
+    this.container.addChild(bIcon);
 
     return tbH;
   }

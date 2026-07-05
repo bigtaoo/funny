@@ -311,6 +311,7 @@ export function createShopNav(ctx: AppCtx): ShopNav {
     const coinsAvail = loggedIn && platform.iapKind() !== null;
     views.showBattlePass({
       onBack: inGroup ? () => goShop(shopBack) : () => nav.goLobby(),
+      getCoins: () => saveManager.get().wallet.coins,
       ...(inGroup ? { openShop: () => goShop(shopBack), openGacha: () => goGacha({ shopBack }) } : {}),
       ...(inGroup && coinsAvail ? { openCoins: () => goShop(shopBack, 'coins') } : {}),
       ...(loggedIn
