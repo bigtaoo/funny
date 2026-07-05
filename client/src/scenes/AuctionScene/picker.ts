@@ -1,18 +1,36 @@
-// Instance picker (scene-level overlay): choosing an equipment/card instance to list, reached from the
-// create form's item field. Selecting an instance (or cancelling) returns to the create form.
+// Unified item picker (scene-level overlay): choosing what to list, reached from the create form's item
+// field. Lists every sellable item across all three classes (materials + equipment + cards) in one scrollable
+// list, sorted by estimated value descending. Picking an entry returns to the create form.
+import { AUCTION_STATIC_REF_PRICE } from '@nw/shared';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { t } from '../../i18n';
-import { buildIcon } from '../../render/icons';
-import type { EquipmentInstance, CardInstance } from '../../game/meta/SaveData';
-import { HUD_H, ROW_H, type Constructor, type AuctionSceneBaseCtor } from './base';
+import { buildIcon, type IconKind } from '../../render/icons';
+import type { EquipmentInstance, CardInstance, EquipRarity } from '../../game/meta/SaveData';
+import { HUD_H, ROW_H, MATERIALS, type Constructor, type AuctionSceneBaseCtor } from './base';
+
+// Client tsconfig maps @nw/shared → server/shared/src/slg/index.ts only, so the server's per-rarity/per-card
+// auction reference prices (equipment.ts, not under slg/) aren't reachable here. These mirror the server's
+// EQUIP_AUCTION_REF_PRICE_BY_RARITY values for sort-order purposes only — not a suggested listing price.
+const EQUIP_VALUE_BY_RARITY: Record<EquipRarity, number> = { common: 50, fine: 150, rare: 400, epic: 1200 };
+// Cards have no server reference price at all — this is a level-based sort heuristic only.
+const CARD_VALUE_BASE = 500;
+const CARD_VALUE_PER_LEVEL = 300;
+
+interface PickEntry {
+  icon: IconKind;
+  label: string;
+  value: number;
+  locked: boolean;
+  onPick: () => void;
+}
 
 export interface PickerHandlers {
-  renderPicker(): void;
+  renderItemPicker(): void;
   listableEquipment(): EquipmentInstance[];
   listableCards(): CardInstance[];
-  selectedInstanceLabel(): string | null;
-  openPicker(kind: 'equipment' | 'card'): void;
-  cancelPicker(): void;
+  selectedItemLabel(): string | null;
+  openItemPicker(): void;
+  cancelItemPicker(): void;
 }
 
 export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBase & Constructor<PickerHandlers> {
@@ -35,84 +53,104 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
       return Object.values(save.cardInv ?? {}).filter((c) => !Object.values(c.gear ?? {}).some((v) => !!v));
     }
 
-    /** Label of the currently selected equipment/card instance for the create form, or null when none is chosen (or it is no longer listable). */
-    selectedInstanceLabel(): string | null {
+    /** Label of the currently selected item (any class) for the create form, or null when none is chosen (or it is no longer listable). */
+    selectedItemLabel(): string | null {
+      if (this.createClass === 'material') {
+        return t(`auction.${this.createMaterial}` as 'auction.scrap' | 'auction.lead' | 'auction.binding');
+      }
       if (this.createClass === 'equipment') {
         const inst = this.listableEquipment().find((e) => e.id === this.createEquipId);
         return inst ? `${this.equipName(inst.defId)} +${inst.level}` : null;
       }
-      if (this.createClass === 'card') {
-        const inst = this.listableCards().find((c) => c.id === this.createCardId);
-        return inst ? `${this.cardName(inst.defId)} Lv.${inst.level}` : null;
-      }
-      return null;
+      const inst = this.listableCards().find((c) => c.id === this.createCardId);
+      return inst ? `${this.cardName(inst.defId)} Lv.${inst.level}` : null;
     }
 
-    openPicker(kind: 'equipment' | 'card'): void {
+    /** Combined pick list across all three classes, sorted by estimated value descending. */
+    private buildPickEntries(): PickEntry[] {
+      const entries: PickEntry[] = [];
+      for (const mat of MATERIALS) {
+        entries.push({
+          icon: mat, label: t(`auction.${mat}` as 'auction.scrap' | 'auction.lead' | 'auction.binding'),
+          value: AUCTION_STATIC_REF_PRICE[mat] ?? 0, locked: false,
+          onPick: () => { this.createClass = 'material'; this.createMaterial = mat; this.closeItemPicker(); },
+        });
+      }
+      for (const e of this.listableEquipment()) {
+        entries.push({
+          icon: 'armor', label: `${this.equipName(e.defId)} +${e.level}`,
+          value: EQUIP_VALUE_BY_RARITY[e.rarity] ?? 0, locked: false,
+          onPick: () => { this.createClass = 'equipment'; this.createEquipId = e.id; this.closeItemPicker(); },
+        });
+      }
+      for (const c of this.listableCards()) {
+        entries.push({
+          icon: 'cards', label: `${this.cardName(c.defId)} Lv.${c.level}`,
+          value: CARD_VALUE_BASE + (c.level - 1) * CARD_VALUE_PER_LEVEL, locked: c.locked,
+          onPick: () => { this.createClass = 'card'; this.createCardId = c.id; this.closeItemPicker(); },
+        });
+      }
+      entries.sort((a, b) => b.value - a.value);
+      return entries;
+    }
+
+    openItemPicker(): void {
       this.closeModal();
-      this.pickerKind = kind;
+      this.itemPickerOpen = true;
       this.scrollY = 0;
       this.render();
     }
 
-    /** Cancel the picker and return to the create form (keeps any prior selection). */
-    cancelPicker(): void {
-      this.pickerKind = null;
+    private closeItemPicker(): void {
+      this.itemPickerOpen = false;
       this.scrollY = 0;
       this.render();
       this.openCreateForm();
     }
 
-    renderPicker(): void {
+    /** Cancel the picker and return to the create form (keeps any prior selection). */
+    cancelItemPicker(): void {
+      this.itemPickerOpen = false;
+      this.scrollY = 0;
+      this.render();
+      this.openCreateForm();
+    }
+
+    renderItemPicker(): void {
       const { w, h } = this;
-      const kind = this.pickerKind!;
       const titleY = HUD_H + 8;
-      const title = txt(t(kind === 'equipment' ? 'auction.pickEquip' : 'auction.pickCard'), 14, C.dark, true);
+      const title = txt(t('auction.pickItem'), 14, C.dark, true);
       title.x = 12; title.y = titleY;
       this.bodyLayer.addChild(title);
 
       const listY = HUD_H + 40;
       const listH = h - listY - 10;
 
-      const equip = kind === 'equipment' ? this.listableEquipment() : [];
-      const cards = kind === 'card' ? this.listableCards() : [];
-      const count = kind === 'equipment' ? equip.length : cards.length;
-
-      if (count === 0) {
-        const lbl = txt(t(kind === 'equipment' ? 'auction.noEquip' : 'auction.noCards'), 13, C.dark);
+      const entries = this.buildPickEntries();
+      if (entries.length === 0) {
+        const lbl = txt(t('auction.noItems'), 13, C.dark);
         lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = listY + listH / 2;
         this.bodyLayer.addChild(lbl);
         return;
       }
 
-      const totalH = count * ROW_H;
+      const totalH = entries.length * ROW_H;
       this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
       let cy = listY - this.scrollY;
-      for (let i = 0; i < count; i++) {
+      for (const entry of entries) {
         if (cy + ROW_H < listY || cy > listY + listH) { cy += ROW_H; continue; }
         const row = sketchPanel(w - 12, ROW_H - 4, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(cy, 4, w) });
         row.x = 6; row.y = cy;
         this.bodyLayer.addChild(row);
 
-        let label: string;
-        let locked = false;
-        let onPick: () => void;
-        if (kind === 'equipment') {
-          const e = equip[i]!;
-          label = `${this.equipName(e.defId)} +${e.level}`;
-          const id = e.id;
-          onPick = () => { this.createEquipId = id; this.pickerKind = null; this.scrollY = 0; this.render(); this.openCreateForm(); };
-        } else {
-          const c = cards[i]!;
-          label = `${this.cardName(c.defId)} Lv.${c.level}`;
-          locked = c.locked;
-          const id = c.id;
-          onPick = () => { this.createCardId = id; this.pickerKind = null; this.scrollY = 0; this.render(); this.openCreateForm(); };
-        }
-        const nameLbl = txt(label, 13, C.dark, true);
-        nameLbl.x = 14; nameLbl.y = cy + (ROW_H - 4) / 2 - 8;
+        const ic = buildIcon(entry.icon, 16, C.dark);
+        ic.x = 14; ic.y = cy + (ROW_H - 4) / 2 - 8;
+        this.bodyLayer.addChild(ic);
+
+        const nameLbl = txt(entry.label, 13, C.dark, true);
+        nameLbl.x = 36; nameLbl.y = cy + (ROW_H - 4) / 2 - 8;
         this.bodyLayer.addChild(nameLbl);
-        if (locked) {
+        if (entry.locked) {
           const lk = buildIcon('lock', 14, C.mid);
           lk.x = nameLbl.x + nameLbl.width + 6; lk.y = cy + (ROW_H - 4) / 2 - 9;
           this.bodyLayer.addChild(lk);
@@ -121,7 +159,7 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
         hint.anchor.set(1, 0.5); hint.x = w - 16; hint.y = cy + ROW_H / 2 - 2;
         this.bodyLayer.addChild(hint);
 
-        this.hitRects.push({ rect: { x: 6, y: cy, w: w - 12, h: ROW_H - 4 }, action: onPick });
+        this.hitRects.push({ rect: { x: 6, y: cy, w: w - 12, h: ROW_H - 4 }, action: entry.onPick });
         cy += ROW_H;
       }
     }

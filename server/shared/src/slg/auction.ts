@@ -3,7 +3,7 @@
 
 export const AUCTION_TAX_RATE = 0.1; // U1 deferred to S8-5; placeholder for now
 export const AUCTION_MAX_LISTINGS = 20;
-export const AUCTION_DURATIONS_SEC: readonly number[] = [6 * 3600, 12 * 3600, 24 * 3600];
+export const AUCTION_DURATIONS_SEC: readonly number[] = [72 * 3600];
 
 // ── Auction house anti-RMT gates (AUCTION_DESIGN §4; DRAFT values — tune after launch) ──────────────
 /** C daily cap: maximum new listing count per account per day (reset at server UTC day boundary). */
