@@ -139,6 +139,16 @@ interface LaneThreat {
   allyCount: number;
   /** Number of our tanks (shield-bearers) in this lane — standard TD: each incoming lane should have a tank holding the line first. */
   allyTanks: number;
+  /** Number of living flying enemies in this lane (e.g. Harpy) — bypasses ground blocking, and only
+   *  canTargetFlying-capable units/towers can damage it. Ground units sent here to "hold the line"
+   *  can neither stop nor kill it: they park in a permanent no-op Attacking state instead (see
+   *  DIFFICULTY_SIM.md's ch5_lv8 diagnosis), silently deadlocking the lane forever. */
+  flyingCount: number;
+}
+
+/** Whether this unit type can damage flying enemies (only relevant blueprint flag for lane-defense picks). */
+function canHitFlying(unitType: UnitType): boolean {
+  return UNIT_BLUEPRINTS[unitType]?.canTargetFlying ?? false;
 }
 
 // ─── Baseline player AI ────────────────────────────────────────────────────────────
@@ -220,11 +230,28 @@ export class BaselinePlayer {
      * main clearing force), falling back to melee, then support as a last resort. Role is looked
      * up via ROLE_MAP so this works for ANY unit type a level's loadout deals (Max/Lena/Mara,
      * PvE-unlock units), not just the ch1 trio. Returns whether a card was successfully played.
+     *
+     * Flying enemies (e.g. Harpy) are a special case: they bypass ground blocking entirely, and
+     * only canTargetFlying-capable units/towers can damage them, so a normal ground unit sent
+     * there can never win the fight — it parks in a permanent no-op Attacking state instead (see
+     * DIFFICULTY_SIM.md's ch5_lv8 diagnosis). If a flying-capable unit card is in hand, prefer it
+     * first (it can actually kill the target). No unit in the current roster has that flag today
+     * (only ArrowTower does), so this is a no-op in practice until one exists — but critically we
+     * still fall through to the ordinary tank/ranged/melee formation below rather than declining
+     * the deployment outright: empirically, that stuck ground unit still *aggros* the flyer into
+     * melee and halts its advance in place, which is the only thing currently keeping the base
+     * safe from a Harpy that would otherwise fly straight past row-0 arrow towers (2-row range)
+     * completely unengaged. Verified by reverting an earlier "decline if no counter" version of
+     * this fix, which turned ch6_lv9/ch6_lv10 unbeatable and dropped ch3_lv3's stars — removing
+     * the stall without another way to intercept mid-lane is strictly worse than the status quo.
      */
     const reinforceLane = (lane: number): boolean => {
       const t = laneThreat.get(lane)!;
+      const flyingThreat = t.flyingCount > 0;
       const tanks = t.allyTanks + (queuedTanks.get(lane) ?? 0);
       let idx = -1, isTank = false;
+      if (flyingThreat) idx = findCard((k, sub) => k === CardType.Unit && canHitFlying(sub as UnitType));
+      if (idx >= 0) { play(idx, lane); reinforce(lane, isTank); return true; }
       if (tanks === 0) { idx = findCard((k, sub) => k === CardType.Unit && ROLE_MAP[sub as UnitType] === 'tank'); isTank = idx >= 0; }
       if (idx < 0) idx = findCard((k, sub) => k === CardType.Unit && ROLE_MAP[sub as UnitType] === 'ranged');
       if (idx < 0) idx = findCard((k, sub) => k === CardType.Unit && ROLE_MAP[sub as UnitType] === 'melee');
@@ -292,7 +319,9 @@ export class BaselinePlayer {
   /** Scan the living enemy threat and friendly unit distribution across each attack lane. */
   private scanLanes(engine: Engine): Map<number, LaneThreat> {
     const m = new Map<number, LaneThreat>();
-    for (const lane of ATTACK_LANES) m.set(lane, { closestRow: Infinity, count: 0, totalHp: 0, allyCount: 0, allyTanks: 0 });
+    for (const lane of ATTACK_LANES) {
+      m.set(lane, { closestRow: Infinity, count: 0, totalHp: 0, allyCount: 0, allyTanks: 0, flyingCount: 0 });
+    }
     for (const u of engine.state.board.units.values()) {
       if (u.isDead) continue;
       const t = m.get(u.col);
@@ -300,6 +329,7 @@ export class BaselinePlayer {
       if (u.side === Side.Top) {
         t.count++;
         t.totalHp += u.hp;
+        if (u.flying) t.flyingCount++;
         // Enemies advance from row 17 toward row 0; smaller row = closer to our base.
         if (u.row < t.closestRow) t.closestRow = u.row;
       } else {
@@ -347,7 +377,18 @@ export class BaselinePlayer {
     return -1;
   }
 
-  /** Among incoming enemy lanes with fewer than min blockers, return the one with the closest enemy (the under-defended lane). Returns -1 if none. */
+  /**
+   * Among incoming enemy lanes with fewer than min blockers, return the one with the closest
+   * enemy (the under-defended lane). Returns -1 if none.
+   *
+   * Deliberately still counts raw `allyCount` even on flying-threatened lanes (not just
+   * flying-capable allies): with no flying-capable unit in the current roster, gating coverage on
+   * `allyFlyingCapable` alone means it can never be satisfied, so the AI would keep dumping units
+   * into a dead-end lane every tick instead of distributing ink elsewhere. A tried-and-reverted
+   * variant of this fix did exactly that; it strictly wasted ink without fixing anything, since
+   * the real defensive value of a ground unit here is the incidental aggro-stall described in
+   * `reinforceLane`, which plain `allyCount` already captures correctly.
+   */
   private pickUnderBlockedLane(threat: Map<number, LaneThreat>, queued: Map<number, number>, min: number): number {
     let best = -1, bestRow = Infinity;
     for (const lane of ATTACK_LANES) {
@@ -359,10 +400,26 @@ export class BaselinePlayer {
     return best;
   }
 
-  /** Pick a lane to place a tower: prefer lanes with enemy threat that have no tower yet; otherwise the first empty lane in center-outward order. */
+  /**
+   * Pick a lane to place a tower: prefer lanes with enemy threat that have no tower yet;
+   * otherwise the first empty lane in center-outward order.
+   *
+   * Flying-threatened lanes jump the queue ahead of plain closest-row urgency: a tower is the
+   * *only* way to answer a Harpy the AI has no flying-capable unit card for (ground reinforcement
+   * can never resolve it — see `reinforceLane`/`pickUnderBlockedLane`), so leaving it to generic
+   * urgency ordering risks losing the tower budget to a merely-urgent ground lane while the
+   * flying lane deadlocks forever.
+   */
   private pickTowerLane(occupied: Set<number>, threat: Map<number, LaneThreat>): number {
-    // First pick a lane with enemies but no tower, ordered by threat urgency.
     let best = -1, bestRow = Infinity;
+    for (const lane of ATTACK_LANES) {
+      if (occupied.has(lane)) continue;
+      const t = threat.get(lane)!;
+      if (t.flyingCount > 0 && t.closestRow < bestRow) { best = lane; bestRow = t.closestRow; }
+    }
+    if (best >= 0) return best;
+    // Otherwise, a lane with enemies but no tower, ordered by threat urgency.
+    bestRow = Infinity;
     for (const lane of ATTACK_LANES) {
       if (occupied.has(lane)) continue;
       const t = threat.get(lane)!;
