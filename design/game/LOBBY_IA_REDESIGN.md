@@ -219,3 +219,59 @@
   2. **每日按钮右对齐**：从全宽居中改为右对齐 44% 宽度，主页左侧留白更舒适；
      限时活动有效时依然各占约一半（`dailyX = contentX + contentW - cw`）。
   3. **头像选择器**：详见 `design/game/UI_DESIGN.md §头像系统`。
+
+---
+
+## 8. 养成组（卡背包/装备）改左侧竖排导航（2026-07-05）
+
+> 状态：**已实现**。范围只覆盖 `CardScene`/`EquipmentScene` 这一组；商城组 `[商城|盲盒|战令]` 等其余分组仍用 §7/P1.5 的水平 `drawHubTabs` 条，不受影响。
+
+### 8.1 起因
+
+真人用红笔在两屏截图上批注「布局完全错误」，来回三轮拖拽定稿 + 代码走查后，定位到两类问题：
+
+1. **真 bug**：`EquipmentScene.renderGroupTabs()` 把 `drawHubTabs` 的宽度参数传成了 `leftW`（`marginLineX(w)`，约等于屏宽 9%），而不是 `CardScene` 那样传 `this.w`（全屏宽）。组合 tab 因此被塞进红色装订线以左那条 9% 宽的窄缝里，挤成一小块——纯粹传错变量，不是"设计成这样"。
+2. **设计问题**：即便修好 bug 让组合 tab 恢复满宽，`EquipmentScene` 头部同时还有「背包/锻造」二级切换（`equip.tabInv`/`equip.tabCraft`）挤在同一条窄左列里，两条窄 tab 条叠在一起，读起来仍然乱。
+
+### 8.2 拍板方案
+
+把 `[卡背包|装备]` 分组 tab（原水平满宽条）和 `[背包|锻造]` 二级 tab（原头部左列横条）都改成**贴在红色装订线以内、竖直堆叠的侧栏**：
+
+```
+┌──┬──────────────────────────────┐
+│卡 │                              │
+│背 │        （容量条 + 卡片网格）   │  CardScene
+│包 │                              │
+├──┤                              │
+│装 │                              │
+│备 │                              │
+└──┴──────────────────────────────┘
+
+┌──┬──────────────────────────────┐
+│卡 │           货币/材料+计数 →    │
+│背 ├──────────────────────────────┤
+│包 │  全部/武器/护具/饰品(占满宽)   │
+├──┤ ─ 已装备 ──────────────────── │  EquipmentScene
+│装 │  [格][格][格]                │
+│备 │ ─ 背包 ──────────────────────│
+├──┤  [格][格][格][格]             │
+│背 │                              │
+│包 │                              │
+├──┤                              │
+│锻 │                              │
+│造 │                              │
+└──┴──────────────────────────────┘
+```
+
+- 侧栏宽度 = `marginLineX(w)`（既有的红色笔记本装订线位置），**不新增留白**——内容区左边界完全没变，卡片网格/装备网格/货币栏/过滤条一律照旧从 `marginLineX(w)+CELL_GAP` 或 `marginLineX(w)` 起算。
+- `[卡背包|装备]` 一级项目在上（仅分组语境注入，即 `openEquipmentBag`/`peerTab` 存在时才画）；`EquipmentScene` 独有的 `[背包|锻造]` 二级项目紧跟其后堆叠在同一侧栏里（不论是否分组语境都画，因为这是场景自身的 tab，不是跨场景导航）。
+- 顶部标题栏（`SceneHeader`：返回 + 「卡背包」/「装备」标题）维持不动，侧栏只占标题栏以下的左侧区域。标题文字和侧栏一级项目文字重复（都叫「卡背包」/「装备」）这件事本轮**没有处理**，留作后续小项。
+- 货币栏本轮定稿仍在右上角（不挪到左侧），过滤条撑满内容区全宽（侧栏右边界到屏幕右边）。
+- 「已装备/背包」维持原样，是**列表内滚动的分区标题**，不进侧栏——曾在拖拽稿里试过挪进侧栏，用户确认不改。
+
+### 8.3 实现记录
+
+- **`client/src/ui/widgets/HubTabs.ts`** 新增 `sidebarItemHeight(h) = round(h*0.09)` 和 `drawSidebarTabs(container, sidebarW, y, h, tabs, onSelect)`：在给定 x=0 起、宽 `sidebarW` 的竖直列里，从 `y` 起把 `tabs` 逐个堆叠（每格 `sidebarItemHeight(h)` 高，格间距 `h*0.015`），图标居上/文字居下（沿用底部大厅 tab 的排布习惯）。返回未选中格的命中矩形 + 最后一格底部 y（供调用方在同一列继续往下堆内容）。原有 `drawHubTabs`/`hubTabsHeight`（水平满宽条）不变，继续给商城组等用。
+- **`CardScene.ts`**：`groupH: number` 改名 `showSidebar: boolean`；`renderGroupTabs()` 改名 `renderSidebar()`，改调 `drawSidebarTabs`；`renderCapacityBar()`/`renderList()` 的纵向偏移去掉 `groupH` 加项（侧栏不再占垂直空间），`renderCapacityBar()` 的背景条改从 `sidebarW` 画到 `w`（避免盖住侧栏）。
+- **`EquipmentScene.ts`**：`groupH: number` 改名 `showGroup: boolean`；原 `renderGroupTabs(leftW)`（那个传错宽度的 bug 现场）删除，改为 `renderSidebar()`——先画分组一级项（仅 `showGroup` 时），再紧接着画 `[背包|锻造]` 二级项（恒画）；`renderHeaderRow()` 不再画头部左列的二级 tab，只保留右列货币块+过滤条，纵向偏移同样去掉 `groupH` 加项；`renderAssign()`/`renderAssignRow()`（装备指派卡片选择器）原先按 `HUD_H+groupH` 起算、且横向占满整个 `w`，现改为横向也让出 `marginLineX(w)` 侧栏列（否则会被侧栏盖住）。
+- 已用 `tsc --noEmit -p tsconfig.test.json` + `webpack --mode production --env TARGET=web` 验证通过；未跑游戏截图（按仓库约定，视觉验收留给人工）。
