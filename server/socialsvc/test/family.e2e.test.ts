@@ -172,6 +172,31 @@ describe.skipIf(!mongo)('socialsvc FamilyService e2e', () => {
     void fam;
   });
 
+  // Regression: senderName must never trust a stale client-side cache (e.g. leftover from before
+  // a rename, or the raw loginId fallback) once meta can resolve the account's real display name.
+  it('sendMessage: senderName resolved from meta.displayName, not blindly trusted from the client', async () => {
+    meta = new FakeMeta().add('leader', 'P-LEAD', 'RealNickname').add('m1', 'P-M1');
+    svc = new FamilyService({ cols: m.collections, now, gateway, meta });
+    const fam = await svc.createFamily('leader', 'Renamed', 'RNM');
+    await svc.joinFamily('m1', fam.familyId);
+
+    // Client sends a stale cached name (e.g. the raw loginId) — meta's real nickname must win.
+    const result = await svc.sendMessage('leader', '233784986', 'hi everyone');
+    expect(result.senderName).toBe('RealNickname');
+    const pushed = gateway.ofKind('family_msg');
+    expect(pushed[0]).toMatchObject({ fromName: 'RealNickname' });
+    const history = await svc.getChannel('leader');
+    expect(history[0].senderName).toBe('RealNickname');
+
+    // meta has no profile for this account → falls back to the client-supplied senderName.
+    const fallback = await svc.sendMessage('m1', 'ClientFallback', 'hi again');
+    expect(fallback.senderName).toBe('P-M1'); // m1 IS registered in meta, so meta wins here too
+
+    const svcNoMeta = new FamilyService({ cols: m.collections, now, gateway, meta: undefined });
+    const fallback2 = await svcNoMeta.sendMessage('leader', 'ClientFallback2', 'hi once more');
+    expect(fallback2.senderName).toBe('ClientFallback2');
+  });
+
   // ── worldsvc-facing internal API ──────────────────────────────────────────────
 
   it('getMember / getFamilyIdByAccount: one-round-trip membership identity', async () => {

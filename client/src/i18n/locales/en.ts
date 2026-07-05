@@ -59,7 +59,6 @@ export const en: Record<TranslationKey, string> = {
   'card.medic.desc': 'Heals nearby allies with a pen-light aura. In PvP it fights back — just barely.',
 
   // ── Lobby ─────────────────────────────────────────────────────────────────
-  'lobby.title': 'NOTEBOOK WARS',
   'lobby.subtitle': 'Real-time Tower Defense',
   'lobby.feature.1': 'Play cards  ->  deploy units & buildings',
   'lobby.feature.2': 'Destroy the enemy base to win',
@@ -734,7 +733,6 @@ export const en: Record<TranslationKey, string> = {
   'mail.delete': 'Delete',
   // SLG World (S8)
   'world.title': 'World',
-  'world.back': '← Back',
   'world.troops': 'Troops',
   'world.troopCap': 'Troop Cap',
   'world.territory': 'Territory',
@@ -768,6 +766,7 @@ export const en: Record<TranslationKey, string> = {
   'world.stronghold': 'Stronghold',
   'world.strongholdHint': 'Heavily-defended NPC bastion — take it by siege; capturing claims it as territory and grants a large resource reward',
   'world.marchList': 'Marches',
+  'world.marchMore': '+{n} more',
   'world.noMarches': 'No active marches',
   'world.marchTo': '→ ({x},{y})',
   'world.marchArr': 'Arriving',
@@ -776,6 +775,7 @@ export const en: Record<TranslationKey, string> = {
   'world.unknownOwner': 'Unknown Player',
   'world.family': 'Family',
   'world.auction': 'Auction',
+  'world.chat': 'Chat',
   'world.noBase': 'No base yet',
   'world.loading': 'Loading map…',
   'world.err.worldFull': 'World is full',
@@ -1003,10 +1003,6 @@ export const en: Record<TranslationKey, string> = {
   'auction.buy': 'Buy',
   'auction.cancel': 'Cancel',
   'auction.price': 'Starting Price (coins)',
-  'auction.duration': 'Duration',
-  'auction.dur6h': '6 Hours',
-  'auction.dur12h': '12 Hours',
-  'auction.dur24h': '24 Hours',
   'auction.seller': 'Seller',
   'auction.expires': 'Expires',
   'auction.qty': 'Qty',
@@ -1055,17 +1051,11 @@ export const en: Record<TranslationKey, string> = {
   'auction.err.equipLocked': 'Equipment locked, cannot list',
   'auction.err.equipInUse': 'Equipment equipped, cannot list',
   'auction.err.cardHasGear': 'Card still has gear equipped — unequip first',
-  'auction.itemClass': 'Type',
-  'auction.classMaterial': 'Material',
-  'auction.classEquipment': 'Equipment',
-  'auction.classCard': 'Card',
   'auction.filterCard': 'Cards',
   'auction.tapChoose': 'Tap to choose an item',
-  'auction.pickEquip': 'Choose equipment to sell',
-  'auction.pickCard': 'Choose a card to sell',
+  'auction.pickItem': 'Choose item to sell',
   'auction.pickHint': 'Select ›',
-  'auction.noEquip': 'No sellable equipment',
-  'auction.noCards': 'No sellable cards',
+  'auction.noItems': 'No sellable items',
 
   // ── Campaign level names & briefings ─────────────────────────────────────
   // Ch1 · Fang Clan · Internal Trial (Tao's notebook)

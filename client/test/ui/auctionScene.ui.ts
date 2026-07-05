@@ -12,6 +12,7 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { AuctionScene } from '../../src/scenes/AuctionScene';
+import { AUCTION_DURATION_SEC } from '../../src/scenes/AuctionScene/base';
 import { WorldApiError, type AuctionView, type WorldApiClient } from '../../src/net/WorldApiClient';
 import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { SaveData, EquipmentInstance, CardInstance } from '../../src/game/meta/SaveData';
@@ -226,13 +227,12 @@ describe('AuctionScene — doCreate()', () => {
     scene.createQty = 5;
     scene.createSaleMode = 'fixed';
     scene.createPrice = 20;
-    scene.createDuration = 43200;
     scene.createBuyer = 'acc_9';
 
     await scene.doCreate();
 
     expect(worldApi.createAuction).toHaveBeenCalledWith(
-      WORLD_ID, 'material', { material: 'lead' }, 5, 43200,
+      WORLD_ID, 'material', { material: 'lead' }, 5, AUCTION_DURATION_SEC,
       { saleMode: 'fixed', price: 20, designatedBuyerId: 'acc_9' },
     );
     scene.destroy();
@@ -247,12 +247,11 @@ describe('AuctionScene — doCreate()', () => {
     scene.createSaleMode = 'auction';
     scene.createStartPrice = 15;
     scene.createBuyoutPrice = 0;
-    scene.createDuration = 21600;
 
     await scene.doCreate();
 
     expect(worldApi.createAuction).toHaveBeenCalledWith(
-      WORLD_ID, 'equipment', { instanceId: 'eq_7' }, 1, 21600,
+      WORLD_ID, 'equipment', { instanceId: 'eq_7' }, 1, AUCTION_DURATION_SEC,
       { saleMode: 'auction', startPrice: 15, buyoutPrice: undefined, designatedBuyerId: undefined },
     );
     // Equipment/card listings escrow server-side — the picker selection is cleared and the save re-pulled.
@@ -268,12 +267,11 @@ describe('AuctionScene — doCreate()', () => {
     scene.createCardId = 'card_3';
     scene.createSaleMode = 'fixed';
     scene.createPrice = 500;
-    scene.createDuration = 86400;
 
     await scene.doCreate();
 
     expect(worldApi.createAuction).toHaveBeenCalledWith(
-      WORLD_ID, 'card', { instanceId: 'card_3' }, 1, 86400,
+      WORLD_ID, 'card', { instanceId: 'card_3' }, 1, AUCTION_DURATION_SEC,
       { saleMode: 'fixed', price: 500, designatedBuyerId: undefined },
     );
     scene.destroy();

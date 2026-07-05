@@ -49,7 +49,10 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
     state.inLobby = false;
     const view = views.showWorldMap({
       onBack() { nav.goLobby(); },
-      onOpenFamily() { goFamilyHub(worldApi, worldId); },
+      // Social overlay (world chat tab) — also the entry point to family management,
+      // since FriendsScene's family tab already delegates to goFamilyHub once the
+      // player has joined a family (§25 HUD relayout: dropped the standalone Family button).
+      onOpenChat() { nav.goFriends({ defaultTab: 'world', onBack: () => goWorldMap(worldApi, worldId) }); },
       onOpenAuction() { goAuctionHouse(worldApi, worldId); },
       onReplaySiege(siegeId) { void goSiegeReplay(worldApi, worldId, siegeId); },
       onOpenDefense(tileKey) { goDefenseEditor(worldApi, worldId, tileKey); },

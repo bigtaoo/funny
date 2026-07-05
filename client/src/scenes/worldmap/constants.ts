@@ -1,7 +1,7 @@
 // WorldMap constants — extracted from WorldMapScene (SLG overworld). Pure values, no PIXI/state.
 
 export const DEFAULT_MAP_SIZE = 1500; // server default 1500×1500; actual value comes from getSeason
-export const HUD_H    = 100;  // bottom HUD bar height
+export const HUD_H    = 56;   // bottom chat-bar height (§25 HUD relayout — status/marches moved to a floating top-right stack)
 export const MARGIN   = 4;    // margin inside modal
 export const CONFIRM_H = 140;
 

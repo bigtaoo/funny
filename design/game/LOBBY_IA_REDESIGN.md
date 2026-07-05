@@ -278,6 +278,16 @@
 - **`EquipmentScene.ts`**：`groupH: number` 改名 `showGroup: boolean`；原 `renderGroupTabs(leftW)`（那个传错宽度的 bug 现场）删除，改为 `renderSidebar()`——先画分组一级项（仅 `showGroup` 时），再紧接着画 `[背包|锻造]` 二级项（恒画）；`renderHeaderRow()` 不再画头部左列的二级 tab，只保留右列货币块+过滤条，纵向偏移同样去掉 `groupH` 加项；`renderAssign()`/`renderAssignRow()`（装备指派卡片选择器）原先按 `HUD_H+groupH` 起算、且横向占满整个 `w`，现改为横向也让出 `marginLineX(w)` 侧栏列（否则会被侧栏盖住）。
 - 已用 `tsc --noEmit -p tsconfig.test.json` + `webpack --mode production --env TARGET=web` 验证通过；未跑游戏截图（按仓库约定，视觉验收留给人工）。
 
+### 8.4 跟进：货币栏对齐头部 + `CardScene` 补显示 + 二级 tab 视觉降级（2026-07-05）
+
+> 状态：**已实现**。真人看 `EquipmentScene` 截图后反馈三点：① 右上角货币/材料条和最上面「装备」标题栏没对齐（各画各的、看起来是两条独立的横条）、且切到 `CardScene`（卡背包）时货币条整个消失；② 金币图标要统一到一个来源；③ 左侧「背包/锻造」二级 tab 视觉上应比「卡背包/装备」一级 tab 小一号，标出层级。逐条处理：
+
+1. **货币栏对齐**：新增 `client/src/ui/widgets/SceneHeader.ts` 的 `drawHeaderCurrency(container, w, headerH, coins, chips, capacity?)`，把金币+材料+容量算成一个整体右对齐簇，画在 headerH 范围内、垂直居中——不再自带背景条单独占一行。`EquipmentScene/base.ts` 新增 `headerOverlayLayer`（`build()` 里紧跟 `drawSceneHeader` 之后 `addChild`，确保盖在头部图案之上），`renderHeaderCurrency()` 每次 `render()` 都会画（含 `assign` 模式），`renderHeaderRow()` 只剩过滤条逻辑。`CardScene.ts` 同款接入：原来只有容量文字的 `renderCapacityBar()` 换成同一个 `renderHeaderCurrency()`，新增金币显示，容量数字并入同一簇尾部——修正了 §8.2 「货币栏本轮定稿仍在右上角」遗留的“卡背包页完全没有货币栏”缺口。
+2. **金币图标**：核实后确认代码里本来就只有一处来源——`client/src/render/icons.ts` 的 `buildIcon('coin', size, color)`，`EquipmentScene`/`LobbyScene`/`GachaScene`/`BattlePassScene`/`AchievementScene` 全部调用同一个函数，没有另画一套。反馈成因是视觉观感（不同场景图标尺寸/颜色不同），不是真的存在第二套图标资源；未改代码。
+3. **二级 tab 视觉降级**：`drawSidebarTabs()` 新增第 7 个可选参数 `opts?: { sub?: boolean }`——`sub: true` 时格高缩到 `sidebarItemHeight(h)*0.76`、整体从左侧内缩 `sidebarW*0.14`（`cellW`/命中矩形同步收窄），读起来是「装备」下面嵌套的二级项而非并列项。`EquipmentScene/inventory.ts` 的 `[背包|锻造]` 调用改传 `{ sub: true }`；`[卡背包|装备]` 一级组合 tab 不传，维持满宽原样。
+
+已用 `tsc --noEmit` + `webpack --mode production` 验证通过；未跑游戏截图。
+
 ---
 
 ## 9. 商城页 `ShopScene` 分组条改左侧竖排导航 + 兑换码搬到充值 tab（2026-07-05）

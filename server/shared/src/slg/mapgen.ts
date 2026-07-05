@@ -5,7 +5,7 @@ import { SLG_GEN, SLG_MAP_H, SLG_MAP_MAX_LEVEL, SLG_MAP_W, type ResourceType, ty
 import { valueNoise, worldSeed } from './noise';
 import {
   _angleOf, _MAP_CX, _MAP_CY, _MAP_HALF_DIAGONAL, _normRadius, _TWO_PI,
-  capitalIdxAt, NATION_KIND_BY_IDX, PROVINCE_CORE_RADIUS_RATIO, PROVINCE_RESOURCE_OUTER_RADIUS_RATIO,
+  capitalIdxAt, CENTER_CAPITAL_IDX, NATION_KIND_BY_IDX, PROVINCE_CORE_RADIUS_RATIO, PROVINCE_RESOURCE_OUTER_RADIUS_RATIO,
   provinceCapitalPositions, provinceIdxAt, type NationKind,
 } from './province';
 import { rand2 } from './noise';
@@ -24,7 +24,7 @@ export interface ProceduralTile {
  * specialization and cross-zone trade (geographic foundation for the U1 auction economy). graphite is the 4th land resource (ADR-022);
  * `sticker` is never biome-generated (home-city self-produced).
  */
-function biomeAt(x: number, y: number, seed: number): ResourceType {
+export function biomeAt(x: number, y: number, seed: number): ResourceType {
   const n = valueNoise(x, y, SLG_GEN.biomeFreq, seed ^ 0x0444);
   if (n < SLG_GEN.biomeInkMax) return 'ink';
   if (n < SLG_GEN.biomePaperMax) return 'paper';
@@ -152,7 +152,7 @@ export const GATE_CITY_LEVEL = Math.max(2, SLG_MAP_MAX_LEVEL - 1);
 /** State-capital city level (DRAFT, same convention as GATE_CITY_LEVEL but max — a province's capital is its strongest city). */
 export const PROVINCE_CAPITAL_LEVEL = SLG_MAP_MAX_LEVEL;
 
-interface _CityNode { x: number; y: number; level: number; }
+interface _CityNode { x: number; y: number; level: number; kind: 'garrison' | 'gateCity'; provinceIdx?: number; }
 
 const _cityNodeCache = new Map<number, readonly _CityNode[]>();
 
@@ -178,7 +178,7 @@ function _worldCityNodes(mapW: number, mapH: number, seed: number): readonly _Ci
       const r = rNorm * halfDiag;
       const x = Math.max(0, Math.min(mapW - 1, Math.round(cx + Math.cos(angle) * r)));
       const y = Math.max(0, Math.min(mapH - 1, Math.round(cy + Math.sin(angle) * r)));
-      nodes.push({ x, y, level: _OUTER_GRADED_CITY_TIERS[ci]! });
+      nodes.push({ x, y, level: _OUTER_GRADED_CITY_TIERS[ci]!, kind: 'garrison', provinceIdx: p });
     }
   }
 
@@ -198,11 +198,58 @@ function _worldCityNodes(mapW: number, mapH: number, seed: number): readonly _Ci
       const r = b.ringR + frac * b.len;
       const x = Math.max(0, Math.min(mapW - 1, Math.round(cx + Math.cos(b.angle) * r)));
       const y = Math.max(0, Math.min(mapH - 1, Math.round(cy + Math.sin(b.angle) * r)));
-      nodes.push({ x, y, level: GATE_CITY_LEVEL });
+      nodes.push({ x, y, level: GATE_CITY_LEVEL, kind: 'gateCity' });
     }
   }
 
   _cityNodeCache.set(seed, nodes);
+  return nodes;
+}
+
+/** One siege-point node, for editor consumption (DESIGN.md §6.2 data form: point nodes, not tile coverage). */
+export interface MapEditorCityNode {
+  id: string;
+  kind: 'capital' | 'gateCity' | 'worldCenter' | 'garrison';
+  /** Owning province index (§2.1), present for `capital`/`garrison` (their province is fixed by generation); absent for `gateCity` (straddles two provinces) and `worldCenter` (belongs to the core province by definition). */
+  provinceIdx?: number;
+  x: number;
+  y: number;
+  level: number;
+  /** Square footprint side length in tiles; 1 for all point nodes, `WORLD_CENTER_FOOTPRINT` for the world center. */
+  footprint: number;
+}
+
+/**
+ * All siege-point nodes for a world (ADR-034 §3), flattened for the map editor's city-drag tool (§6.1):
+ * world center (1) + province capitals (9, excludes the core province — its "capital" *is* the world
+ * center) + graded/gate cities from `_worldCityNodes`. Editor-only — `proceduralTile()` above computes
+ * these positions independently (not from this list) for the runtime tile classification.
+ */
+export function allCityNodes(worldId: string): MapEditorCityNode[] {
+  const seed = worldSeed(worldId);
+  const mapW = SLG_MAP_W;
+  const mapH = SLG_MAP_H;
+  const nodes: MapEditorCityNode[] = [];
+
+  const wcx = Math.floor(mapW / 2);
+  const wcy = Math.floor(mapH / 2);
+  nodes.push({ id: 'worldCenter', kind: 'worldCenter', x: wcx, y: wcy, level: SLG_MAP_MAX_LEVEL, footprint: WORLD_CENTER_FOOTPRINT });
+
+  const caps = provinceCapitalPositions(mapW, mapH, seed);
+  caps.forEach(([x, y], provinceIdx) => {
+    if (provinceIdx === CENTER_CAPITAL_IDX) return; // the core province's "capital" is the world center above
+    nodes.push({ id: `capital-${provinceIdx}`, kind: 'capital', provinceIdx, x, y, level: PROVINCE_CAPITAL_LEVEL, footprint: 1 });
+  });
+
+  let garrisonIdx = 0;
+  let gateIdx = 0;
+  for (const node of _worldCityNodes(mapW, mapH, seed)) {
+    if (node.kind === 'garrison') {
+      nodes.push({ id: `garrison-${garrisonIdx++}`, kind: 'garrison', provinceIdx: node.provinceIdx, x: node.x, y: node.y, level: node.level, footprint: 1 });
+    } else {
+      nodes.push({ id: `gate-${gateIdx++}`, kind: 'gateCity', x: node.x, y: node.y, level: node.level, footprint: 1 });
+    }
+  }
   return nodes;
 }
 

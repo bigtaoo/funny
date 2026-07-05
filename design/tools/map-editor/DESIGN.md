@@ -1,8 +1,8 @@
 # Notebook Wars — SLG 地图编辑器设计文档
 
-> 创建：2026-07-04。地形骨架已拍板（2026-07-05，见 [DECISIONS.md ADR-034](../../DECISIONS.md)），代码重写已完成（2026-07-05），编辑器工程实现待排期。
-> 配套阅读：`../../game/SLG_DESIGN.md`（§2.4 国家系统 / §3.2 地图规格）、`../../DECISIONS.md`（ADR-032 地图尺寸/等级、ADR-034 环形地形骨架，**注意**：曾短暂存在一版同日的 ADR-033"10 首府三层同心环"方案，与本文档方向不同，当天即被撤销/作废，本文档只跟 ADR-034 对应）、`../../game/SGZ_LAND_REFERENCE.md`（三战地块/城池调研，§5 环形结构 / §8 城池系统）、`server/shared/src/slg.ts`（已按本文档重写：`provinceIdxAt()`/`provinceCapitalPositions()` 替代 `nearestCapitalIdx()`/`CAPITAL_FRACTIONS`，新增地形带+城池节点+按环等级分布表）、`../level-editor/DESIGN.md`（工程化参照）、根 `../../../CLAUDE.md`。
-> 讨论期用一次性 HTML/JS 原型（Artifact，未提交仓库）快速试错定稿，迭代记录见 §7；正式编辑器工具（`tools/map-editor`）尚未搭骨架，§6 是其需求清单。
+> 创建：2026-07-04。地形骨架已拍板（2026-07-05，见 [DECISIONS.md ADR-034](../../DECISIONS.md)），代码重写已完成（2026-07-05），编辑器工程骨架+河流/山脉路径笔刷+城池拖拽+栅格化发布到服务端模板+等距贴图美术对齐游戏客户端+中英文切换已搭（2026-07-05，见 §8）。
+> 配套阅读：`../../game/SLG_DESIGN.md`（§2.4 国家系统 / §3.2 地图规格 / **§24 地图模板与编辑器**——本节的服务端持久化就是接到 §24 已实现的 admin 模板 API，不是新建一套）、`../../DECISIONS.md`（ADR-032 地图尺寸/等级、ADR-034 环形地形骨架，**注意**：曾短暂存在一版同日的 ADR-033"10 首府三层同心环"方案，与本文档方向不同，当天即被撤销/作废，本文档只跟 ADR-034 对应）、`../../game/SGZ_LAND_REFERENCE.md`（三战地块/城池调研，§5 环形结构 / §8 城池系统）、`server/shared/src/slg/`（已按本文档重写，god-file split 后拆成 `province.ts`/`mapgen.ts`/`mapEdit.ts` 等：`provinceIdxAt()`/`provinceCapitalPositions()` 替代 `nearestCapitalIdx()`/`CAPITAL_FRACTIONS`，新增地形带+城池节点+按环等级分布表+编辑层栅格化）、`../level-editor/DESIGN.md`（工程化参照）、根 `../../../CLAUDE.md`。
+> 讨论期用一次性 HTML/JS 原型（Artifact，未提交仓库）快速试错定稿，迭代记录见 §7；正式编辑器工具（`tools/map-editor`）§8 为工程现状，§6 是其需求清单（编辑交互尚未实现）。
 
 ---
 
@@ -13,7 +13,26 @@
 - 编辑器方向不变：不做"手绘 25 万格"，而是**参数化生成 + 编辑器覆盖**——山脉/河流存成**矢量路径**（折线 + 宽度），城池存成**点节点**（坐标 + 等级 + 归属），生成时按路径/节点栅格化到 tile，而不是维护一张 25 万格的逐格覆盖表。
 - 编辑器 MVP 需要的交互（本轮新定，§6）：画河流、画山脉（路径笔刷）、拖拽调整城池位置。
 - 工具形态不变：仿 `tools/level-editor` 的独立 Web 工具，暂定 `tools/map-editor`，端口 **9095**。
-- **代码现状**：`server/shared/src/slg.ts` 已按本文档 §2-§4 整体重写（2026-07-05）——`provinceIdxAt()`/`provinceCapitalPositions()` 替代旧的 Voronoi `nearestCapitalIdx()`/固定表 `CAPITAL_FRACTIONS`；新增环形地形带（折痕岭主环/内环+墨河弦+出生州间支脉支流）、城池节点（州府+世界中心 9×9+关隘城池+每出生州 9 座分级城池）、按环（outer/resource/core）等级分布表。城池落地为现有 `ProceduralTile` 的 `familyKeep`/`center` 类型（不是独立 collection/带驻军HP的节点），因为 §5 城池驻军/耐久数值尚未拍板——这是本轮实现的刻意范围收窄，非疏漏。受影响的 `server/worldsvc` e2e（`nation-bonus`/`season-ops`/`fog`/`service`/`httpApi`/`pathfinding`）已同步修完，`server/shared`/`server/worldsvc`/`server/tools/econ-sim` typecheck+test 全绿。`tools/map-editor` 编辑器工程本身（§6）仍未搭骨架，是下一步任务。
+- **代码现状**：`server/shared/src/slg/`（god-file split 后的 `province.ts`/`mapgen.ts` 等）已按本文档 §2-§4 整体重写（2026-07-05）——`provinceIdxAt()`/`provinceCapitalPositions()` 替代旧的 Voronoi `nearestCapitalIdx()`/固定表 `CAPITAL_FRACTIONS`；新增环形地形带（折痕岭主环/内环+墨河弦+出生州间支脉支流）、城池节点（州府+世界中心 9×9+关隘城池+每出生州 9 座分级城池）、按环（outer/resource/core）等级分布表。城池落地为现有 `ProceduralTile` 的 `familyKeep`/`center` 类型（不是独立 collection/带驻军HP的节点），因为 §5 城池驻军/耐久数值尚未拍板——这是本轮实现的刻意范围收窄，非疏漏。受影响的 `server/worldsvc` e2e（`nation-bonus`/`season-ops`/`fog`/`service`/`httpApi`/`pathfinding`）已同步修完，`server/shared`/`server/worldsvc`/`server/tools/econ-sim` typecheck+test 全绿。
+- **编辑器工程骨架**（2026-07-05，§8）：`tools/map-editor` 已搭好 webpack/ts 工程（仿 `tools/level-editor`），端口 9095；`src/index.ts` 直接 `import { proceduralTile, ... } from '@nw/shared/slg'`，整图 Canvas ImageData 渲染当前世界（按 tile type 上色、level 调亮度），hover 显示 tile 详情，可切换 world seed。webpack alias 只指向 `server/shared/src/slg/index.ts`（不是整个 `@nw/shared` barrel），因为 barrel 还 re-export 了 `mongo`/`jwt` 等 Node-only 模块，会污染浏览器包——这是刻意的窄别名，不是疏漏。`tsc --noEmit` + `webpack --mode production` 均过。
+- **河流/山脉路径笔刷**（2026-07-05，§8）：`src/state/paths.ts` 是纯数据层（`PathStore`：增删/JSON 序列化+反序列化/线段最近距离），`src/index.ts` 用 base canvas + 叠加的 overlay canvas 两层实现——base 只在 regenerate/路径改动落地时重绘，overlay 每次交互都轻量重绘，避免每次拖点都重跑整图 500×500 噪声。工具切换（Select/River/Mountain）、点击加点+双击/回车结束+Esc 取消草稿、Select 模式下拖端点/点击选中路径/Delete 键删除、宽度输入框（默认落在 `TERRAIN_BAND_WIDTH_MIN/MAX`=5–11 随机区间，复用生成侧同款常量）均已实现；Export/Import JSON 面板可把内存态路径序列化成 §6.2 的 `{ type, points, width }` 数组、也可反向导入校验。
+- **城池拖拽**（2026-07-05，§8）：`server/shared/src/slg/mapgen.ts` 新增导出 `allCityNodes(worldId)`（+`MapEditorCityNode` 类型）——纯加法改动，给 `_CityNode` 内部接口加了 `kind`/`provinceIdx` 标记，再拼出世界中心（1）+ 州府（9，核心州除外——它的"州府"就是世界中心）+ `_worldCityNodes` 里的分级城池/关隘城池，`proceduralTile()` 原有查表逻辑不受影响；`server/shared`/`server/worldsvc`/`server/tools/econ-sim` typecheck+`server/shared` 526 例单测全绿。编辑器侧第三层 `#city-canvas`（最上层，统一承接所有鼠标事件，按当前工具分派逻辑）+ `src/state/cities.ts`（`CityStore`：按 seed 从生成器加载/JSON 序列化反序列化，不做增删——城池集合由生成器决定，不像路径是自由绘制）。新增 City 工具：拖拽移动城池坐标（世界中心 9×9 footprint 拖拽时用外框可视化，保持占地形状不变，边界钳制保证 footprint 不越界）、点击查看详情（kind/level/province/坐标）、Reset Cities 按钮丢弃编辑重新按当前 seed 生成、独立的 Export/Import JSON 面板。关隘/桥（§2.4，自由通行那类）不是城池，本轮没有对应的可编辑节点，仍是地形生成的一部分——这条留白不受本轮改动影响。
+- **栅格化 + 发布到服务端模板**（2026-07-05，§8）：路径/城池两层编辑一直是"矢量覆盖层"（DESIGN.md §6.2），发布时才一次性"烘焙"成 tile 级 diff，不做双向同步——服务端模板不会反向生成回矢量图层，继续用已有的 Export/Import JSON 保存可编辑源数据（§6.2 的数据形态本身没变，只是新增了"怎么落地"这一步）。
+  - `server/shared/src/slg/mapEdit.ts`（新文件，纯函数，`rasterizeMapEdits(worldId, paths, cities)`）：路径按线段包围盒 + 点到线段距离栅格化成 `type:'obstacle', level:1`（河流/山脉在 ADR-034 里本就是同一种不可通行地形，无需区分渲染类型）；城池按 footprint 方框栅格化成 `type:'center'`（世界中心）或 `'familyKeep'`（其余三种 kind），resType 用 `mapgen.ts` 里原本内部的 `biomeAt()`（本轮改为 `export`）现场采样，不依赖该格原有地形；城池覆盖顺序在路径之后，保证拖到路径上的城池能"盖过"路径。只返回跟 `proceduralTile(worldId,x,y)` 基线比较后真正不同的格子（§24"只上发本次改动的格子"同款约束），未改动的地块完全不进 diff。`biomeAt` 从内部函数改成 `export`——纯加法，不影响任何现有调用方。新增 `server/shared/test/mapEdit.test.ts`（6 例，覆盖空输入/路径栅格化/城池栅格化/worldCenter 特判/城池盖过路径/跟基线相同时不产生 diff），`server/shared` 532 例全绿。
+  - **发布是单向操作，不是双向草稿同步**：这是本轮刻意的架构选择，不是遗留 gap——已存的模板 tile（含之前发布过的编辑）没有标记"哪些格子是编辑过的 diff、哪些是生成时的原始值"，无法从服务端反推出矢量路径/城池位置；本地矢量图层的持久化继续靠 Export/Import JSON（已实现），发布只负责把当前矢量图层的结果推上去，覆盖服务端模板上同名格子的旧值（后保存者覆盖，跟 §24"不做锁"的既有约束一致）。
+  - **服务端持久化直接接现有 §24 API，没有新建一套**：`tools/map-editor` 新增 `src/api.ts`（复刻 `tools/ops/src/api.ts` 的 Bearer token + localStorage 套路，localStorage key 换成 `nw_map_editor_admin_*` 避免跟 ops 撞车），只暴露本工具要用的几个方法（login/me/logout + `listMapTemplates`/`generateMapTemplate`/`saveMapTemplateTiles`/`activateMapTemplate`/`deleteMapTemplate`），对应 `/admin/slg/map-templates/*`（`slg.map.view`/`slg.map.manage`，同 §24 已实现的 admin 路由）。UI 新增"Publish to Server"面板：未登录显示行内登录表单（Admin API base / 用户名 / 密码），登录后显示 templateId 输入框 + "Generate Template"（按当前 `SLG_MAP_W`×`SLG_MAP_H` 用 `proceduralTile()` 播种，等价直接调 §24 的 generate endpoint）+ "Publish Edits"（跑 `rasterizeMapEdits` 拿 diff，按 `MAP_TEMPLATE_SAVE_MAX_TILES`=5000 分批 PUT）。
+  - **已知限制**：单个 templateId 只能对应固定 `SLG_MAP_W`×`SLG_MAP_H`（同 §24 已知限制 1，`proceduralTile()` 尚未参数化尺寸）；发布仍不做"从服务端拉取已有编辑回显"——见下条模板列表只是元数据浏览，不读回 tile 内容。
+- **模板列表 + Activate/Delete**（2026-07-05，§8）：Publish 面板登录后自动拉取 `listMapTemplates()` 并渲染成可点选列表（templateId/尺寸/tileCount/version/是否 active），点一行就把 `template-id` 输入框填成该行的 templateId（复用既有输入框，不引入第二套"当前选中模板"状态）；Generate/Publish 成功后自动刷新列表，保持 tileCount/version/updatedAt 跟服务端一致。新增 Activate（`activateMapTemplate`，标记为"创建新世界用"）和 Delete（`deleteMapTemplate`，浏览器原生 `confirm()` 二次确认）按钮，都作用于当前选中/手填的 templateId；worldsvc 侧既有的"不能删除 active 模板"校验（§24）原样生效，失败信息直接透传到状态栏。**已知限制**：列表只展示元数据，不支持按 viewport 读取/预览模板已存的 tile 内容（`getMapTemplateTiles` 尚未接线——不是本轮需要的功能，模板内容预览要等到"从模板加载回编辑器"这类需求出现再做）。
+- **美术表现对齐游戏内渲染**（2026-07-05，§8）：此前的整图 Canvas ImageData 渲染是纯程序化调试色块（按 tile type 上色+level 调亮度），跟游戏客户端 `client/src/scenes/worldmap/` 的贴图图集等距渲染完全不是一回事——用户明确要求"编辑器里的美术表现必须和游戏内完全一样"。改为 PixiJS 等距（2:1 diamond）视口相机渲染，直接复用游戏客户端同款资源与算法：
+  - `src/render/isoGrid.ts` 是 `client/src/render/isoGrid.ts` 的逐字节拷贝（纯投影数学，无依赖，两边保持一致靠人工同步，未抽成共享包——`tools/*` 和 `client/` 目前没有共享前端代码的先例，为这一个文件建共享包不值得）。
+  - `src/render/{terrain,res,building}AtlasLoader.ts` 拷贝自客户端同名文件，仅去掉 `assetIO` 间接层（编辑器只跑在 Web，`assetIO` 是给微信小游戏 CDN 缓存用的一层indirection，编辑器直接用 atlas URL 当 `PIXI.BaseTexture` source）；**没有拷贝 `cityAtlasLoader.ts`**——城池贴图对应的 tile type 是 `'base'`，只在玩家加入世界后由 worldsvc 运行时写入，`proceduralTile()`/模板基线永远不会产生 `'base'` 格子，编辑器的"city 节点"（capital/gateCity/worldCenter/garrison）栅格化后落地的是 `'center'`/`'familyKeep'`，走的是 `terrain_center`/`terrain_keep` 地面贴图，不是城池建筑贴图。
+  - `src/render/tileGraphics.ts` 是 `client/src/scenes/worldmap/tileGraphics.ts` 的裁剪版：保留地面贴图填色/资源图案(`drawResMotif`)/keep·stronghold 地标建筑贴图(`placeBuildingSprite`)三段，砍掉全部运行时态渲染（ownership 染色、fog、base 城池贴图、HP 条、瞭望塔、允许结盟边框、等级点）——这些只有活着的世界才有，模板编辑器永远看不到。
+  - 资源产出四张贴图集共 `~590KB`（terrain 358KB 最大），编辑器 `webpack.config.js` 新增 `{ test: /\.png$/, type: 'asset/resource' }` 规则（跟 client 一致的 webpack5 内置资源模块，非 url-loader）；`tsconfig.json` 已有 `resolveJsonModule: true`，`.json` 走 TS 原生解析，不需要额外声明；新增 `src/custom.d.ts` 补 `declare module '*.png';`。`package.json` 新增 `pixi.js-legacy@^7.4.3`（跟 client 同版本）。
+  - **交互从"整图 1:1 CSS 缩放"改成"视口相机"**：原先 500×500 tile 直接 1:1 铺满一张 Canvas、缩放靠 CSS `width/height` 缩放整块；等距投影下一个 tile 的屏幕宽度就是缩放本身（`tp`，tile pixel width，10–56px 可调），不可能再整图铺开（500 格 diamond 投影后跨度远超屏幕），改成固定视口（900×620）+ 相机平移（新增 Pan 工具，或任意工具下按住鼠标中键拖动）+ 滚轮/Zoom 滑块缩放（缩放锚点是鼠标位置，同游戏客户端 `WorldMapRenderer.setZoom()` 的"缩放前后同一格保持在同一屏幕位置"手法）。视口按 1.5× 视口尺寸多渲染一圈 tile 作为缓冲，纯平移只挪 `worldLayer` 的 PIXI 容器位置（零重绘），只有平移结束(mouseup)/缩放/编辑提交才重新铺 tile Graphics——地图越大（500×500 全量约 1.4 万格视口内）单次重铺约 1.4–1.7 秒，可接受（不是每帧发生）。
+  - **河流/山脉/城池编辑仍然精确所见即所得**：草稿中的路径描边、城池 footprint 选中框是轻量矢量 UI chrome（未采用贴图，因为编辑中的半成品不是"游戏画面"，是编辑器交互提示）；但一旦提交（双击结束路径/松开鼠标完成拖拽），base 层立刻用 `rasterizeMapEdits()`（跟发布用的是同一个函数）重新栅格化并整视口重绘——发布前看到的贴图效果跟发布后服务端模板生效的效果保证是同一份计算结果，不会走两套逻辑分叉。
+  - 验证：`tsc --noEmit` + `webpack --mode production` 均过；额外用 PixiJS `renderer.extract.pixels()` 直接读取帧缓冲采样验证（因为该会话的浏览器自动化 `screenshot` 工具对这个 WebGL canvas 页面反复超时，原因未查——不影响功能，只是取证手段换了一种），确认河流路径提交后落地格子的像素色确为 `terrain_river` 贴图色调而非纯色色块。
+- **中英文切换**（2026-07-05，§8）：新增 `src/i18n.ts`（en/zh 双字典 + `t(key, vars)` 插值 + `localStorage`（key `map-editor-locale`）持久化选择），工具栏右侧新增切换按钮（显示对方语言名，中文界面下显示"EN"，反之显示"中文"）。静态 UI 文案（按钮/label/title/placeholder）走 HTML `data-i18n`/`data-i18n-title`/`data-i18n-placeholder` 属性 + `applyStaticI18n()` 统一扫描赋值；动态文案（状态栏消息、tile/city 详情、路径/模板计数标题）改造成 `t()` 调用，状态栏额外用一个"渲染函数"（而非预格式化字符串）记住上一条消息——因为消息里嵌了 `tileCountLabel()`/`pathCountLabel()`/`cityCountLabel()` 这类带单复数的组合标签，若只存最终字符串，切换语言后旧语言的复数词会残留（已踩过这个坑并修复）。地形/城池图例的枚举名（`neutral`/`capital`/…）刻意不翻译，保留跟 `TileType`/城池 `kind` 一致的技术标识，避免引入不准确的游戏内术语。验证：`tsc --noEmit` + `webpack --mode production` 均过，浏览器内实测切换按钮双向切换、刷新后语言保持、切换后状态栏/详情栏文案同步更新。
+- **河流/山脉改为拖拽实时画笔**（2026-07-05，§8）：原交互是"点击加点 + 双击/回车结束草稿"（选起止点/多点折线，提交才落地），用户反馈体验应该跟刷 tilemap 一样——按住拖动就直接改地形，而不是先选起止点。改法没有动数据模型（矢量路径 `{ points, width }` + `rasterizeMapEdits()` 栅格化的架构不变，§6.2），只改了 `src/index.ts` 的输入状态机：`mousedown` 开始一笔（`painting=true`，`draft=[t,t]`——立即复制一个点形成零长度线段，纯点击也能画出一个笔刷大小的点，不用非拖不可），`mousemove` 期间持续把光标位置写进 `draft` 最后一个点（笔刷宽度输入框改名"Brush Size"/"笔刷大小"，语义不变，`min=1 max=20`），移动超过 `PAINT_MIN_SPACING`（0.4 格）阈值才 freeze 成新的折线定点，避免生成过密的点；`mouseup` 自动调用原有的 `finishDraft()` 收尾（原来挂在双击/回车上的那个函数，逻辑完全没变——只是触发时机从"双击"改成"松开鼠标"）。关键是 `renderBaseMap()` 现在会把"正在画的笔画"（`painting && draft`）当成一条临时路径，跟 `store.paths` 一起传给 `rasterizeMapEdits()`——所以拖动过程中每一次 `mousemove` 都会立刻重新栅格化+重绘 base 层，地形跟着笔刷实时变化，不再是先看一条矢量草稿描边、等提交那一下才变成贴图（松手时机不再有"落地那一下"的视觉跳变，因为提交前后走的是同一份栅格化结果）。原来挂在 river/mountain 上的 `dblclick`（双击结束路径）监听器整个删掉——现在每次 `mouseup` 都会话完一笔，双击等价于连续两次单点画笔，不再有特殊含义。Esc/Backspace 取消草稿/撤销草稿最后一点的行为保留（`cancelDraft()`/`undoDraftPoint()` 现在会在 `painting` 为真时额外触发一次 `renderBaseMap()`，撤销笔画中的点也要同步撤销已经画上去的地形）。验证：`tsc --noEmit` 过；浏览器内用合成 `MouseEvent` 模拟 mousedown→多次 mousemove→mouseup 拖拽，确认落点格子 hover 详情立刻变成 `type: obstacle`（山脉/河流栅格化目标类型）且路径列表实时新增一条；额外验证纯点击（mousedown 后原地 mouseup，不移动）也能画出一条 2 点、零长度的路径（笔刷大小生效的一个点）。
 
 ---
 
@@ -134,7 +153,7 @@
 
 ### 6.3 渲染
 
-- 500×500 格直接同规格渲染会较卡，本轮原型验证了**整图 Canvas 一次性渲染**（`ImageData` 逐像素填色）在浏览器端可行、够快（见 §7），编辑器可以复用这个渲染路径，不必等分块/viewport 裁剪方案。
+- **美术表现必须跟游戏客户端一致**（2026-07-05 用户拍板）：不是程序化调试色块，编辑器直接复用游戏客户端 `client/src/scenes/worldmap/` 同款贴图图集（地形/资源/建筑）+ 等距 2:1 diamond 投影（`isoGrid.ts`），所见即所得。原型阶段验证过的"整图 Canvas 一次性 ImageData 渲染"方案已废弃——那是纯色块调试视图，等距贴图渲染下 500×500 全图铺开的屏幕跨度远超视口，改为§8 的视口相机（平移+缩放）方案，见§8"美术表现对齐游戏内渲染"条目的实现细节。
 
 ---
 
@@ -153,9 +172,12 @@
 
 ---
 
-## 8. 启动（占位，未搭骨架）
+## 8. 启动（骨架已搭，2026-07-05）
 
 ```bash
 cd tools/map-editor
-npm run start   # webpack dev server，端口 9095（占位）
+npm install     # 首次进入需要装依赖（worktree 各自独立）
+npm run start   # webpack dev server，端口 9095
 ```
+
+当前功能：PixiJS 等距视口渲染，贴图跟游戏客户端一致（切 world seed 输入框 + Regenerate 按钮，Pan 工具/中键拖动平移，滚轮/Zoom 滑块缩放，Center View 按钮回中）、hover 显示 tile 坐标/类型/等级/资源、图例；河流/山脉路径画笔（Select/River/Mountain 工具切换，River/Mountain 下按住拖动实时刷地形、松开即落地——单击画一个笔刷大小的点，Esc 取消当前笔画，Select 模式下拖端点/选中删除，笔刷大小可调，Export/Import JSON）；城池拖拽（City 工具，拖动移动坐标、点击查看详情、Reset Cities、独立 Export/Import JSON）；路径/城池栅格化回地块+发布到服务端模板（Publish to Server 面板，含登录/模板生成/模板列表/Activate/Delete）均已实现。

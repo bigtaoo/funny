@@ -9,6 +9,7 @@ import { palette, fx } from './theme';
 import { bake } from './bake';
 import { buildDecorLayer } from './decorLayer';
 import { buildBattleLabels, type BattleLabelContext } from './battleLabels';
+import { loadBaseUpgradeAtlas, getBaseUpgradeTexture } from './baseUpgradeAtlasLoader';
 
 /** State/highlight colors sourced from theme.fx (art-direction §3.3). */
 const HIGHLIGHT_LANE     = fx.laneValid;     // valid attack lane
@@ -35,6 +36,8 @@ interface BaseRef {
   /** Monotonic seed so each pulse scrawls with a fresh hand. */
   pulseSeed: number;
   rect:     Rect;
+  /** Base-upgrade tier currently shown (0 = original texture, no upgrade bought yet). */
+  upgradeTier: number;
 }
 
 export class BoardView {
@@ -72,6 +75,7 @@ export class BoardView {
     this.drawBoard();
     this.drawDecorations();
     this.drawBases(layout);
+    loadBaseUpgradeAtlas().catch((err) => console.warn('[BoardView] base upgrade atlas load failed:', err));
     this.container.addChild(this.inactiveLaneLayer); // below no-build + highlights
     this.container.addChild(this.noBuildLayer);
     this.container.addChild(this.highlightLayer);
@@ -332,6 +336,19 @@ export class BoardView {
     }
   }
 
+  /**
+   * Highlight a single full column, used by column-targeted spells (rockslide, bridge_collapse).
+   */
+  showColumnTargetHighlight(col: number): void {
+    this.highlightLayer.clear();
+    if (col < 0 || col >= BOARD_COLS) return;
+    const r = this.laneRect(col);
+    this.highlightLayer.beginFill(HIGHLIGHT_METEOR, 0.30);
+    this.highlightLayer.lineStyle(2, HIGHLIGHT_METEOR, 0.9);
+    this.highlightLayer.drawRect(r.x, r.y, r.w, r.h);
+    this.highlightLayer.endFill();
+  }
+
   showBaseUpgradeHighlight(active: boolean): void {
     this.highlightLayer.clear();
     if (!active) return;
@@ -416,7 +433,28 @@ export class BoardView {
     const pulseGfx = new PIXI.Graphics();   // under-attack outline, drawn on top
     con.addChild(s, crackGfx, pulseGfx);
     this.container.addChild(con);
-    return { sprite: s, crackGfx, pulseGfx, pulseT: 0, pulseSeed: 1, rect };
+    return { sprite: s, crackGfx, pulseGfx, pulseT: 0, pulseSeed: 1, rect, upgradeTier: 0 };
+  }
+
+  /**
+   * Swap a base's sprite texture to match its current upgrade level once the
+   * upgrade atlas has decoded. Level 0 keeps the original `game_base.png`
+   * texture; level 1 → castle-town; level 2+ (max) → palace (the atlas only
+   * has 2 upgrade tiers, so the top tier covers both remaining levels).
+   * No-op if the tier hasn't changed or the atlas isn't ready yet.
+   */
+  setBaseUpgradeLevel(owner: 0 | 1, upgradeLevel: number): void {
+    const localOwner = sideToOwner(this.layout.localSide);
+    const base = owner === localOwner ? this.playerBase : this.enemyBase;
+    if (!base) return;
+
+    const tier = upgradeLevel <= 0 ? 0 : Math.min(upgradeLevel, 2);
+    if (tier === base.upgradeTier) return;
+
+    const tex = tier === 0 ? PIXI.Texture.from(baseTexUrl as string) : getBaseUpgradeTexture(tier as 1 | 2);
+    if (!tex) return; // atlas not decoded yet — try again next sync
+    base.sprite.texture = tex;
+    base.upgradeTier = tier;
   }
 
   /**

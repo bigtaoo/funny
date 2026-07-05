@@ -1,0 +1,114 @@
+{
+  "frames": {
+    "res_graphite": {
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 106,
+        "h": 128
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 106,
+        "h": 128
+      },
+      "sourceSize": {
+        "w": 106,
+        "h": 128
+      }
+    },
+    "res_ink": {
+      "frame": {
+        "x": 110,
+        "y": 2,
+        "w": 117,
+        "h": 128
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 117,
+        "h": 128
+      },
+      "sourceSize": {
+        "w": 117,
+        "h": 128
+      }
+    },
+    "res_metal": {
+      "frame": {
+        "x": 229,
+        "y": 2,
+        "w": 112,
+        "h": 128
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 112,
+        "h": 128
+      },
+      "sourceSize": {
+        "w": 112,
+        "h": 128
+      }
+    },
+    "res_paper": {
+      "frame": {
+        "x": 343,
+        "y": 2,
+        "w": 104,
+        "h": 128
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 104,
+        "h": 128
+      },
+      "sourceSize": {
+        "w": 104,
+        "h": 128
+      }
+    },
+    "res_sticker": {
+      "frame": {
+        "x": 2,
+        "y": 132,
+        "w": 125,
+        "h": 128
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 125,
+        "h": 128
+      },
+      "sourceSize": {
+        "w": 125,
+        "h": 128
+      }
+    }
+  },
+  "meta": {
+    "app": "pack_resources.cjs",
+    "image": "res_atlas.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 512,
+      "h": 512
+    },
+    "scale": "1"
+  }
+}

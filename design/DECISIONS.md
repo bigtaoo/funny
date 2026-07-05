@@ -287,6 +287,7 @@
 - **运维手动步骤（无代码接入点）**：**微信小游戏图标**须在**微信公众平台后台**手动上传，用 `art/logo/derived/logo-512.png`。列入上线前 checklist。
 - **待办 / 不在本次**：字标字体待打包（同 art-direction §7.4）。
 - **影响**：新增 `art/logo/**`；`client/public/{favicon-*,apple-touch-icon,icon-*}.png` + `site.webmanifest`；改 `client/webpack.config.js`（CopyPlugin）+ `client/public/{web,crazygames}/index.html`。[`product/art-direction.md`](product/art-direction.md) §13 记录全貌。
+- **大厅内落地**（2026-07-05 补）：大厅头部之前独立硬编码 `lobby.title`="NOTEBOOK WARS"（三语言未翻译），未跟上①的改名，且徽记只用于 favicon/manifest、局内头部纯文字无图标。改为：头部改用 `game.title`（= Nivara）+ `logo-simple-128.png` 图标并排居中，副标题维持现有 tagline（`lobby.subtitle`，玩法说明，不改成 "Notebook Wars"）。删除 `lobby.title` key。header 高度 `0.14h → 0.16h` 让出图标空间。logo 走 L0 启动清单（`bootManifest.ts`，与开局三兵同批预加载，避免首屏闪烁）。影响：`client/src/scenes/LobbyScene/build.ts`、`client/src/assets/{logo.png,bootManifest.ts}`、`client/src/i18n/locales/{zh,en,de}.ts`。
 
 ---
 

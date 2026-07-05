@@ -298,11 +298,17 @@ export class FamilyService {
     const seq = ++msgSeq;
     const msgId = `fm:${mem.familyId}:${ts}:${seq}`;
 
+    // Resolve display name from meta (source of truth for renames); best-effort, falls back to
+    // the client-supplied senderName if meta is unavailable or profile not found — a stale/incorrect
+    // client-side cache must never be preferred over the account's real name.
+    const profiles = this.meta.available ? await this.meta.batchProfiles([accountId]) : new Map();
+    const resolvedSenderName = profiles.get(accountId)?.displayName ?? senderName;
+
     const msgDoc: FamilyMessageDoc = {
       _id: msgId,
       familyId: mem.familyId,
       senderId: accountId,
-      senderName,
+      senderName: resolvedSenderName,
       body,
       ts: new Date(ts),
     };
@@ -314,10 +320,10 @@ export class FamilyService {
       .toArray();
     await this.gateway.pushMany(
       otherMembers.map((m) => m.accountId),
-      { kind: 'family_msg', familyId: mem.familyId, fromAccountId: accountId, fromName: senderName, body, ts },
+      { kind: 'family_msg', familyId: mem.familyId, fromAccountId: accountId, fromName: resolvedSenderName, body, ts },
     );
 
-    return { id: msgId, senderId: accountId, senderName, body, ts };
+    return { id: msgId, senderId: accountId, senderName: resolvedSenderName, body, ts };
   }
 
   /** Get channel history (reverse-chronological pagination; `before` is a ms-epoch cursor; limit ≤50). */

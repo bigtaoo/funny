@@ -394,6 +394,7 @@
   - **广播**：复用 `HttpWorldGatewayClient.broadcast`——Redis 可用 → 一条到 `GW_PUSH_REDIS_CHANNEL`，各 gateway 扇出在线成员；无 Redis → O(n) HTTP push 兜底。`SlgPushMsg` 新增 `nation_msg` 分支（`worldId/fromPublicId/fromName/body/ts`）。
   - **proto / gateway**：`transport.proto` 加 `NationMsg`（field 23）；`matchsvcClient.PushMsg` 加 `nation_msg`；`Gateway.toServerMsg` 加 `case 'nation_msg'`。
   - **错误码**：`api.ts` 加 `NOT_IN_WORLD`(403)——玩家未入驻该 world 时拒绝收发。
+  - **发言者昵称权威修正（2026-07-05）**：`sendMessage` 原先直接信任客户端传入的 `senderName`（本地缓存，改名后若本地未及时刷新会残留旧值/登录ID），现改为优先用 `meta.getProfile(accountId).displayName`（服务端 `ensureDisplayName` 权威值，随改名实时同步），仅在 meta 不可用时退回客户端值兜底。客户端 `FriendsScene` 世界频道 Tab 头部新增右上角金币余额显示（`getCoins` 回调 + `drawHeaderCurrency`），每条发言扣 50 金币，方便玩家发言前确认余额。同一 patch 顺带修了宗门频道（`worldsvc/sectService.ts`）+ 家族频道（`socialsvc/familyService.ts`）的同款 senderName 信任问题，统一改走各自的 meta client（`getProfile` / `batchProfiles`）解析权威昵称。三处均补了回归测试（`worldsvc/test/nation-channel.e2e.test.ts` + `sect.e2e.test.ts`、`socialsvc/test/family.e2e.test.ts`）：meta 命中时权威昵称覆盖客户端旧值，meta 未命中/未配置时兜底回退。
   - **gateway 掉线重连自动补订阅**：`gateway/redis.ts` 显式设 `autoResubscribe: true`（ioredis 默认已是，显式便于审计）+ 加 `ready` 事件 log；Redis 重连后自动重订 `GW_PUSH_REDIS_CHANNEL`，期间漏的 push 客户端 REST 拉 `/nation/channel` 历史补全。
   - **fix（2026-07-04）**：世界频道发言人昵称曾显示成公开 ID——`nav/social.ts` 的 `playerName` 回调误读了 `PLAYER_PUBLIC_ID_KEY` 而非真实昵称，已改用 `ctx.playerName()`。同时给 `NationMessageDoc`/`NationMessageView`/`WorldChatMessage` 加 `senderPublicId`（`meta.getProfile` 落库快照），`worldChat.ts` 消息行现在可点击打开 `ProfilePopup`；`ProfilePopup` 的公开 ID 行加了点击复制到剪贴板。回归测试：`client/test/social-world-chat-playername.test.ts`（`playerName` 回调不再回退成公开 ID）+ `worldsvc/test/nation-channel.e2e.test.ts` 补 3 例（`sendMessage`/`getChannel` 携带 `senderPublicId` + 旧文档缺字段兜底空串）。
   - 验证：`shared` + `worldsvc` + `gateway` `tsc --noEmit` 全绿。
@@ -1522,7 +1523,41 @@ if (path.startsWith('/admin/world/')) {
 - **已知限制，非本次范围**：
   1. `proceduralTile()` 目前仍硬编码 `SLG_MAP_W`×`SLG_MAP_H`（模块级 Voronoi 首府预计算），`generateTemplate()` 因此实际上只能正确生成当前固定尺寸；"多尺寸模板并存"在 schema/CRUD 层已经就位（`templateId`+`width`/`height`已入库），但要等 ADR-034 重写把 `proceduralTile` 参数化到任意尺寸后才能真正生成第二种尺寸。
   2. `mapBaselines` 只是被写入，读取路径（TileDoc 未命中时 fallback 到这份基线而非 `proceduralTile()`）尚未接入——这部分属于 ADR-034 重写的读路径整合范畴，与本节 admin/worldsvc endpoint 无关，留给该任务。
-  3. 编辑器前端（真正的地图编辑 UI 工具）尚未开工，本节只完成它要调用的后端 API。
+  3. ~~编辑器前端（真正的地图编辑 UI 工具）尚未开工~~——已接线（2026-07-05，见 [`design/tools/map-editor/DESIGN.md`](../tools/map-editor/DESIGN.md) §8"栅格化 + 发布到服务端模板"/"模板列表 + Activate/Delete"）：`tools/map-editor` 新增 `src/api.ts`（Bearer token 登录）调用本节列出的全部 6 个 endpoint（list/generate/get-tiles 未用/save-tiles-diff/activate/delete）。编辑器侧的路径/城池矢量图层通过新的 `server/shared/src/slg/mapEdit.ts::rasterizeMapEdits()` 一次性栅格化成 tile diff 再发布——单向烘焙，不做"从模板读回矢量图层"的反向同步（模板存储不区分"原始生成值"和"编辑覆盖值"，物理上无法可靠反推）；模板列表面板目前只展示元数据（`getMapTemplateTiles` 的 viewport 读取暂未接线，非当前需要）。
+
+---
+
+## 25. WorldMapScene HUD 重排（2026-07-05 拍板+落地）
+
+**背景**：现状底部 `HUD_H` 横栏把返回/缩放/状态文字/行军列表/Train/Family/Auction/World-info 全部平铺成一整条，纯文字堆砌、按钮风格不统一，且早期孤立据点视野内几乎全是空地，底栏又占满全部横向空间——判定为整体重排而非局部修补。
+
+**新布局**（四区，取代原单一横栏）：
+
+| 区域 | 内容（自上而下/自外而内） | 取代的旧元素 |
+|---|---|---|
+| 左上（浮层） | Back（`SceneHeader.drawFloatingBackButton`，`§3.1` 统一返回按钮迁移，2026-07-05 与本节并行落地）→ Zoom → Auction 竖排，后两者紧贴在 Back 下方 | 原 backRect（原底栏自绘）+ zoomBtnRect（原左上）+ aucBtnRect（原右下） |
+| 右上竖排 | 状态卡（部队/领地/资源，卡片化分组）→ 行军角标（默认收起，点开展开列表）→ World/info | 原资源行文字平铺 + 常驻 Marches 表头/列表 + infoBtnRect |
+| 底部 | 常驻聊天条（点击展开 FriendsScene 世界频道），也是家族管理入口 | 无（新增，原底栏无聊天入口） |
+| 点击主城弹窗 | 进城 / **训练**（新增）/ 防御 / 编队 | 原 HUD 常驻 `trainBtn`（`openTrainPanel()` 改由此处触发） |
+
+**拍板要点**：
+- 左右分区心智模型：**左=离开当前视图去做别的事**（返回、缩放档位、拍卖行），**右=留在原地看状态**（部队/领地/资源/行军/世界信息）。
+- **Family 按钮整体删除**——查证 `FriendsScene`（`orgForm.ts` `drawFamilyTab`）已有该逻辑：玩家已加入家族时自动 `cb.openFamilyHub?.()` 跳转到独立的 `FamilyScene`（成员/宗门内政管理）；未加入时展示创建/加入表单。即家族聊天 tab 本身就是家族管理的唯一入口，无需在世界地图额外开一个入口。
+- **Train 从常驻 HUD 移除**，改挂到点击自家主城时已有的弹窗（`WorldMapInput.ts` 的 `isBase` 分支，进城/训练/防御/编队四项）——训练本就是主城行为，不该占永久屏幕面积。
+- 地图空地问题（孤立据点四周大片空白）判定为**地图内容/装饰密度问题，非 HUD 布局问题**，本次不处理；若要改善需从中立地块程序化装饰密度或初始镶机位偏移入手，留后续任务。
+
+**落地状态（2026-07-05，已实现）**：
+- `client/src/scenes/worldmap/constants.ts`：`HUD_H` 100→56（底栏只剩聊天条，地图可视区相应变大）。
+- `client/src/scenes/worldmap/WorldMapPanels.ts`：`renderHud()` 重写为四区绘制；`aucBtn`/`zoomBtn` 挪到左上、紧贴 `ctx.backRect`（读取其 y+h 做垂直接续，不硬编码坐标）；状态卡/行军角标改为卡片化子面板（`marchBadgeRect` 命中后走 `ctx.marchesExpanded` 布尔开关展开/收起列表）；底部聊天条渲染（当前只有静态文案，**末条消息/未读数预览仍是占位，未接数据**，留后续任务）。
+- `client/src/scenes/worldmap/WorldMapInput.ts`：删 Train/Family 命中分支；新增 `marchBadgeRect` 切换 + `chatBarRect` 命中 → `cb.onOpenChat()`；`isBase` 分支弹窗加「训练」项直接调 `panels.openTrainPanel()`。
+- `client/src/scenes/worldmap/WorldMapContext.ts`：`onOpenFamily` → `onOpenChat`；删 `famBtnRect`/`trainBtnRect`，加 `marchBadgeRect`/`chatBarRect`/`marchesExpanded`。
+- `client/src/app/nav/world.ts`：`onOpenChat()` 调 `nav.goFriends({ defaultTab: 'world', onBack: () => goWorldMap(...) })`——返回时回到世界地图而非大厅。
+- `client/src/app/nav/social.ts` + `client/src/app/appCtx.ts` + `client/src/scenes/FriendsScene/base.ts`：`goFriends`/`FriendsSceneCallbacks.defaultTab` 从 `'friends' | 'mail'` 放宽到完整 `Tab`（`'friends' | 'family' | 'sect' | 'world' | 'mail'`）+ `goFriends` 新增可选 `onBack` 覆盖（默认仍是 `nav.goLobby()`），使世界地图能指定"返回世界地图"而非硬编码回大厅。
+- i18n 新增 `world.chat`（zh/en/de 三语）；`world.family` key 保留未删（其他场景仍可能引用，只是世界地图不再用它做按钮文案）。
+- **跟 §3.1 撞车**：本节开发期间，另一次改动（commit `f3e237ce`）恰好也在同步把 WorldMapScene 的返回按钮从底栏自绘迁移到 `SceneHeader.drawFloatingBackButton`（统一 22 个场景的返回按钮规格），两者改的是同一批文件（`WorldMapContext.ts`/`WorldMapPanels.ts`）。两次改动语义不冲突（各改各的字段），已核对合并后 `tsc --noEmit` + `webpack --mode production` 全绿，未丢内容。
+- **两个已知缺口已收尾（2026-07-05）**：
+  - 聊天条接数据：`WorldMapNet.refreshWorldChat()`（新增，随 5s march 轮询一并调用，`worldApi.getWorldChannel(worldId, {limit: 20})`）把最新一条消息存到 `ctx.worldChatLatest`；未读数用客户端本地"已读水位"计算——`WorldMapContext.markWorldChatSeen()` 把 `worldChatLatest.ts` 写入 `localStorage`（key 按 `worldId+accountId` 隔离，避免多号共享已读位），点击聊天条（`WorldMapInput.ts`）时调用；`renderHud()` 显示 `发送者: 正文前28字` + 超过已读水位的条数角标（封顶 `9+`）。未走服务端已读接口，因为 worldsvc 目前没有为世界频道维护已读状态（对比 `mail.unread` 是服务端字段）——纯本地近似,足够 HUD 预览用途。
+  - 行军列表数量上限：`renderHud()` 里加 `MAX_VISIBLE_MARCHES = 5`，超出部分显示 `+N more`（新 i18n key `world.marchMore`，zh/en/de 三语），面板高度按可见行数算，不再随行军数无上限增高。
 
 ---
 

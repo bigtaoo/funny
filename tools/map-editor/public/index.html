@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Notebook Wars — Map Editor</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #1a1a2e;
+      --surface: #242436;
+      --surface2: #2e2e46;
+      --border: #3a3a58;
+      --text: #cdd6f4;
+      --text-dim: #6e6e8a;
+      --accent: #89b4fa;
+      --ok: #a6e3a1;
+      --danger: #f38ba8;
+      --warn: #f9e2af;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 13px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .toolbar {
+      height: 46px; flex: 0 0 auto;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 8px; padding: 0 12px;
+    }
+    .toolbar .title { font-weight: 600; color: var(--accent); margin-right: 16px; }
+    .toolbar .spacer { flex: 1; }
+    .toolbar label { color: var(--text-dim); font-size: 12px; }
+    .toolbar input[type=text] {
+      background: #11111b; color: var(--text); border: 1px solid var(--border);
+      border-radius: 5px; padding: 5px 8px; font-size: 12px; width: 140px;
+    }
+
+    button {
+      background: var(--surface2); color: var(--text);
+      border: 1px solid var(--border); border-radius: 6px;
+      padding: 6px 12px; font-size: 13px; cursor: pointer;
+    }
+    button:hover { border-color: var(--accent); }
+    button.primary { background: var(--accent); color: #11111b; border-color: var(--accent); font-weight: 600; }
+
+    .main { flex: 1 1 auto; display: flex; min-height: 0; }
+
+    .canvas-wrap {
+      flex: 1 1 auto; overflow: hidden; display: flex; align-items: center;
+      justify-content: center; background: #0c0c14; padding: 12px;
+    }
+    #pixi-root canvas { display: block; }
+
+    .toolbar .tool { padding: 6px 10px; }
+    .toolbar .tool.active { background: var(--accent); color: #11111b; border-color: var(--accent); font-weight: 600; }
+    .toolbar input[type=number] {
+      background: #11111b; color: var(--text); border: 1px solid var(--border);
+      border-radius: 5px; padding: 5px 8px; font-size: 12px; width: 52px;
+    }
+    button.danger { background: var(--danger); color: #11111b; border-color: var(--danger); }
+    button:disabled { opacity: 0.4; cursor: default; }
+    button:disabled:hover { border-color: var(--border); }
+
+    .col-insp {
+      flex: 0 0 280px; border-left: 1px solid var(--border); overflow-y: auto;
+      background: var(--surface); display: flex; flex-direction: column;
+    }
+    .insp-body { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+    .insp-title { font-weight: 600; color: var(--accent); }
+    .legend { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+    .legend .row { display: flex; align-items: center; gap: 8px; }
+    .legend i { display: inline-block; width: 13px; height: 13px; border-radius: 3px; flex: 0 0 auto; }
+    .hint { color: var(--text-dim); font-size: 11px; line-height: 1.5; }
+    #tile-info { font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 12px; white-space: pre-wrap; }
+
+    .path-list { display: flex; flex-direction: column; gap: 4px; font-size: 12px; max-height: 160px; overflow-y: auto; }
+    .path-row {
+      display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 5px;
+      border: 1px solid transparent; cursor: pointer;
+    }
+    .path-row:hover { border-color: var(--border); }
+    .path-row.selected { border-color: var(--accent); background: var(--surface2); }
+    .path-row i { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+
+    textarea#json, textarea#city-json { width: 100%; height: 120px; background: #11111b; color: var(--text); border: 1px solid var(--border);
+      border-radius: 5px; padding: 8px; font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 11px;
+      resize: vertical; }
+    .json-bar { display: flex; gap: 8px; }
+    hr.sep { border: none; border-top: 1px solid var(--border); width: 100%; margin: 4px 0; }
+
+    .status {
+      flex: 0 0 auto; height: 30px; background: var(--surface);
+      border-top: 1px solid var(--border); display: flex; align-items: center;
+      padding: 0 12px; font-size: 12px; color: var(--text-dim);
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <span class="title" data-i18n="toolbar.title">Map Editor</span>
+    <label for="world-seed" data-i18n="toolbar.worldId">World ID (seed)</label>
+    <input type="text" id="world-seed" value="preview">
+    <button id="btn-regen" class="primary" data-i18n="toolbar.regenerate">Regenerate</button>
+    <span class="spacer"></span>
+    <button class="tool active" data-tool="select" id="tool-select" data-i18n="tool.select.label" data-i18n-title="tool.select.title" title="Click a point to drag it, click a path to select it">Select</button>
+    <button class="tool" data-tool="river" id="tool-river" data-i18n="tool.river.label" data-i18n-title="tool.river.title" title="Drag to paint terrain live (click for a single dot), Esc to cancel the stroke">River</button>
+    <button class="tool" data-tool="mountain" id="tool-mountain" data-i18n="tool.mountain.label" data-i18n-title="tool.mountain.title" title="Drag to paint terrain live (click for a single dot), Esc to cancel the stroke">Mountain</button>
+    <button class="tool" data-tool="city" id="tool-city" data-i18n="tool.city.label" data-i18n-title="tool.city.title" title="Drag a city marker to move it (footprint stays the same)">City</button>
+    <button class="tool" data-tool="pan" id="tool-pan" data-i18n="tool.pan.label" data-i18n-title="tool.pan.title" title="Drag to pan the camera (also: middle-mouse-drag in any tool)">Pan</button>
+    <label for="brush-width" data-i18n="toolbar.width">Brush Size</label>
+    <input type="number" id="brush-width" min="1" max="20" value="8">
+    <button id="btn-undo-point" data-i18n="toolbar.undoPoint" data-i18n-title="toolbar.undoPoint.title" title="Remove the last point from the stroke being painted (Backspace)">Undo Point</button>
+    <button id="btn-delete-path" class="danger" disabled data-i18n="toolbar.deletePath" data-i18n-title="toolbar.deletePath.title" title="Delete selected path (Delete)">Delete Path</button>
+    <button id="btn-clear-paths" data-i18n="toolbar.clearAll" data-i18n-title="toolbar.clearAll.title" title="Remove all river/mountain paths">Clear All</button>
+    <button id="btn-reset-cities" data-i18n="toolbar.resetCities" data-i18n-title="toolbar.resetCities.title" title="Reset all city positions back to the generated defaults">Reset Cities</button>
+    <button id="btn-center" data-i18n="toolbar.centerView" data-i18n-title="toolbar.centerView.title" title="Re-center the camera on the map">Center View</button>
+    <span class="spacer"></span>
+    <label for="zoom" data-i18n="toolbar.zoom">Zoom</label>
+    <input type="range" id="zoom" min="10" max="56" step="2" value="28">
+    <button id="btn-lang" title="Switch language / 切换语言">中文</button>
+  </div>
+
+  <div class="main">
+    <div class="canvas-wrap">
+      <div id="pixi-root"></div>
+    </div>
+    <div class="col-insp">
+      <div class="insp-body">
+        <div class="insp-title" data-i18n="insp.legend">Legend</div>
+        <div class="legend" id="legend"></div>
+        <div class="insp-title" data-i18n="insp.tile">Tile</div>
+        <div id="tile-info" class="hint" data-i18n="tile.hoverHint">Hover the map to inspect a tile.</div>
+        <div class="insp-title" id="paths-title">Paths (0)</div>
+        <div class="path-list" id="path-list"></div>
+        <div class="hint" data-i18n="hint.pathsAndPan">画河流/山脉：选中 River/Mountain 工具后在地图上点击加点，双击或回车结束路径，Esc 取消。Select 工具下拖动端点、点击路径选中后可删除。地图现在是真实贴图的等距相机视角（跟游戏内一样）：Pan 工具或任意工具下按住中键拖动可平移，滚轮/Zoom 滑块缩放。</div>
+        <div class="insp-title" data-i18n="insp.pathsJson">Paths — Export / Import JSON</div>
+        <textarea id="json" spellcheck="false"></textarea>
+        <div class="json-bar">
+          <button id="btn-export" data-i18n="io.export">Export →</button>
+          <button id="btn-import" data-i18n="io.import">← Import</button>
+        </div>
+        <hr class="sep">
+        <div class="insp-title" data-i18n="insp.citiesLegend">Cities Legend</div>
+        <div class="legend" id="city-legend"></div>
+        <div class="insp-title" data-i18n="insp.selectedCity">Selected City</div>
+        <div id="city-info" class="hint">City 工具下拖动地图上的城池标记即可移动坐标（世界中心 9×9 占地拖拽时保持形状）；点击标记查看详情。</div>
+        <div class="insp-title" data-i18n="insp.citiesJson">Cities — Export / Import JSON</div>
+        <textarea id="city-json" spellcheck="false"></textarea>
+        <div class="json-bar">
+          <button id="btn-city-export" data-i18n="io.export">Export →</button>
+          <button id="btn-city-import" data-i18n="io.import">← Import</button>
+        </div>
+        <hr class="sep">
+        <div class="insp-title" data-i18n="publish.title">Publish to Server (§24)</div>
+        <div id="publish-login" class="hint" style="display:flex; flex-direction:column; gap:6px;">
+          <label for="admin-base" data-i18n="publish.adminBase">Admin API base (empty = same-origin)</label>
+          <input type="text" id="admin-base" placeholder="http://localhost:18083">
+          <label for="admin-user" data-i18n="publish.username">Username</label>
+          <input type="text" id="admin-user">
+          <label for="admin-pass" data-i18n="publish.password">Password</label>
+          <input type="password" id="admin-pass">
+          <button id="btn-admin-login" class="primary" data-i18n="publish.login">Login</button>
+        </div>
+        <div id="publish-panel" style="display:none; flex-direction:column; gap:6px;">
+          <div id="publish-whoami" class="hint"></div>
+          <label for="template-id" data-i18n="publish.templateId">Template ID</label>
+          <input type="text" id="template-id" placeholder="same as World ID by default" data-i18n-placeholder="publish.templateId.placeholder">
+          <button id="btn-template-generate" data-i18n="publish.generateTemplate">Generate Template (seed from proceduralTile)</button>
+          <button id="btn-publish" class="primary" data-i18n="publish.publishEdits">Publish Edits → Template</button>
+          <div class="insp-title" id="templates-title" style="margin-top:4px;">Templates (0)</div>
+          <div class="json-bar">
+            <button id="btn-template-refresh" data-i18n="publish.refreshList">Refresh List</button>
+          </div>
+          <div class="path-list" id="template-list"></div>
+          <div class="json-bar">
+            <button id="btn-template-activate" data-i18n="publish.activate">Activate</button>
+            <button id="btn-template-delete" class="danger" data-i18n="publish.delete">Delete</button>
+          </div>
+          <div class="hint" data-i18n="publish.activateDeleteHint">Activate 后新建世界会克隆该模板作为地形基线（不影响正在跑的世界）；Delete 拒绝删除当前 active 的模板。</div>
+          <button id="btn-admin-logout" data-i18n="publish.logout">Logout</button>
+        </div>
+        <div class="hint" data-i18n="publish.rasterizeHint">栅格化路径/城池 → 只上发跟 proceduralTile() 基线不同的格子（diff-save，§24）。发布是单向"烘焙"：服务端模板不会反向生成回本地的河流/城池矢量图层，继续用上面的 Export/Import JSON 保存可编辑源数据。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="status" id="status">Ready</div>
+</body>
+</html>

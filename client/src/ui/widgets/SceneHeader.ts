@@ -32,6 +32,7 @@ import type { Rect } from '../../layout/ILayout';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { getCachedDisplay } from './uiCache';
+import { buildIcon, type IconKind } from '../../render/icons';
 
 /**
  * Bar styling:
@@ -68,7 +69,56 @@ function backSize(h: number): number {
   return Math.round(h * 0.026);
 }
 
-/** Build the static bar chrome (fill + back glyph) at local origin. */
+/** Chip fill for the back-button pill, keyed by where it sits. */
+type BackChipContext = SceneHeaderVariant | 'floating';
+
+/**
+ * Measure a back-button label at `size` without drawing it (headless-safe).
+ * Used to size the pill chip before baking the chrome.
+ */
+function measureBackLabel(label: string, size: number): { w: number; h: number } {
+  const node = txt(label, size, C.accent);
+  const dims = { w: node.width, h: node.height };
+  node.destroy({ texture: true, baseTexture: true });
+  return dims;
+}
+
+/** Chip padding + overall (w,h) around the back label — shared by the builder and callers that need the size before a cache-miss draw runs. */
+function backChipSize(label: string, size: number): { padX: number; padY: number; w: number; h: number } {
+  const { w: labelW, h: labelH } = measureBackLabel(label, size);
+  const padX = Math.round(size * 0.7);
+  const padY = Math.round(size * 0.5);
+  return { padX, padY, w: labelW + padX * 2, h: labelH + padY * 2 };
+}
+
+/**
+ * Build the back-button "pill": a lightweight rounded-rect chip behind the
+ * label so the tap target reads as a button rather than bare text floating
+ * on the bar (see the 05.07.2026 back-button unification pass). Deliberately
+ * *not* the hand-drawn `sketchPanel` border used for real buttons elsewhere
+ * (§7.5) — this is a subtle underlay, not a primary action button.
+ */
+function buildBackChip(label: string, size: number, ctx: BackChipContext): { chip: PIXI.Container; w: number; h: number } {
+  const { padX, w, h } = backChipSize(label, size);
+
+  const chip = new PIXI.Container();
+  const bg = new PIXI.Graphics();
+  const [fill, alpha] = ctx === 'paper' ? [C.dark, 0.08] : ctx === 'floating' ? [C.paper, 0.92] : [0xffffff, 0.12];
+  bg.beginFill(fill, alpha);
+  bg.drawRoundedRect(0, 0, w, h, Math.round(h * 0.32));
+  bg.endFill();
+  chip.addChild(bg);
+
+  const lbl = txt(label, size, C.accent);
+  lbl.anchor.set(0, 0.5);
+  lbl.x = padX;
+  lbl.y = h / 2;
+  chip.addChild(lbl);
+
+  return { chip, w, h };
+}
+
+/** Build the static bar chrome (fill + back chip) at local origin. */
 function buildChrome(
   w: number, headerH: number, label: string, size: number, variant: SceneHeaderVariant,
 ): PIXI.Container {
@@ -84,11 +134,10 @@ function buildChrome(
     c.addChild(bar);
   }
 
-  const back = txt(label, size, C.accent);
-  back.anchor.set(0, 0.5);
-  back.x = BACK_X;
-  back.y = headerH / 2;
-  c.addChild(back);
+  const { chip, h: chipH } = buildBackChip(label, size, variant);
+  chip.x = BACK_X;
+  chip.y = (headerH - chipH) / 2;
+  c.addChild(chip);
 
   return c;
 }
@@ -133,4 +182,94 @@ export function drawSceneHeader(
   }
 
   return { headerH, backRect: { x: 0, y: 0, w: BACK_HIT_W, h: headerH } };
+}
+
+/** Local origin of the floating back chip in design space — same 10px inset as the bar (§3.1). */
+const FLOAT_MARGIN = 10;
+
+export interface FloatingBackButtonResult {
+  /** Back-button hit area to register with the scene's own hit testing. */
+  backRect: Rect;
+}
+
+/**
+ * Draw a standalone back-button chip at the top-left corner, for full-bleed
+ * scenes (e.g. WorldMapScene) that have no title bar to embed it in. Same
+ * pill styling and left inset as {@link drawSceneHeader}'s back chip, just
+ * without a bar behind it — the chip itself carries enough contrast (opaque
+ * paper fill) to read over arbitrary content.
+ */
+export function drawFloatingBackButton(container: PIXI.Container, h: number): FloatingBackButtonResult {
+  const size = backSize(h);
+  const label = `← ${t('common.back')}`;
+
+  const { w: chipW, h: chipH } = backChipSize(label, size);
+
+  const display = getCachedDisplay(
+    `backfloat:${size}:${label}`,
+    () => buildBackChip(label, size, 'floating').chip,
+    chipW, chipH,
+  );
+  display.x = FLOAT_MARGIN;
+  display.y = FLOAT_MARGIN;
+  container.addChild(display);
+
+  return { backRect: { x: FLOAT_MARGIN, y: FLOAT_MARGIN, w: chipW, h: chipH } };
+}
+
+export interface HeaderCurrencyChip {
+  icon: IconKind;
+  color: number;
+  amount: number;
+}
+
+/**
+ * Right-aligned coin (+ optional material chips, + optional capacity readout) drawn
+ * on top of an already-baked header bar so it reads as part of the title row instead
+ * of a separate band underneath it (the two used to visually float apart — see the
+ * "装备/卡背包" header-alignment fix). Draw into a per-render overlay layer added
+ * *after* the cached header chrome, so the coin icon isn't hidden behind the bar.
+ */
+export function drawHeaderCurrency(
+  container: PIXI.Container,
+  w: number, headerH: number,
+  coins: number,
+  chips: readonly HeaderCurrencyChip[] = [],
+  capacity?: { text: string; color: number },
+): void {
+  const midY = headerH / 2;
+  const iconSize = Math.round(headerH * 0.32);
+  const fontSize = Math.round(headerH * 0.26);
+  const capSize = Math.round(headerH * 0.2);
+  const gap = Math.round(headerH * 0.28);
+
+  const cluster = new PIXI.Container();
+  let cx = 0;
+
+  const addChip = (icon: IconKind, color: number, amount: number): void => {
+    const ic = buildIcon(icon, iconSize, color);
+    ic.x = cx; ic.y = -iconSize / 2;
+    cluster.addChild(ic);
+    cx += iconSize + 4;
+    const lbl = txt(`${amount}`, fontSize, C.dark);
+    lbl.anchor.set(0, 0.5); lbl.x = cx; lbl.y = 0;
+    cluster.addChild(lbl);
+    cx += lbl.width + gap;
+  };
+
+  addChip('coin', C.gold, coins);
+  for (const chip of chips) addChip(chip.icon, chip.color, chip.amount);
+
+  if (capacity) {
+    const capLbl = txt(capacity.text, capSize, capacity.color);
+    capLbl.anchor.set(0, 0.5); capLbl.x = cx; capLbl.y = 0;
+    cluster.addChild(capLbl);
+    cx += capLbl.width;
+  } else {
+    cx -= gap; // trim the trailing gap after the last chip
+  }
+
+  cluster.x = w - 10 - cx;
+  cluster.y = midY;
+  container.addChild(cluster);
 }

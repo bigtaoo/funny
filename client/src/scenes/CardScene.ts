@@ -25,7 +25,7 @@ import { buildIcon } from '../render/icons';
 import { UNIT_ART_URLS, getArtTexture } from '../render/cardArt';
 import { drawEquipmentGlyph } from '../render/equipmentGlyph';
 import { getEquipIconTexture } from '../render/equipmentAtlas';
-import { drawSceneHeader } from '../ui/widgets/SceneHeader';
+import { drawSceneHeader, drawHeaderCurrency } from '../ui/widgets/SceneHeader';
 import { drawSidebarTabs, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import type { SaveData, CardInstance, EquipSlot } from '../game/meta/SaveData';
@@ -59,7 +59,6 @@ export interface CardCallbacks {
 }
 
 const HUD_H = 50;
-const RES_H = 28;
 const MODAL_DIM = 0x000000;
 
 // Roster grid: icon-card cells (name top / portrait left / attributes right)
@@ -103,6 +102,8 @@ export class CardScene implements Scene {
   private modalLayer!: PIXI.Container;
   private toastLayer!: PIXI.Container;
   private loadingLayer!: PIXI.Container;
+  /** Drawn after the static header chrome so the coin balance + capacity readout sit on the same row as the title (matches EquipmentScene, EQUIPMENT_DESIGN header-alignment fix). */
+  private headerOverlayLayer!: PIXI.Container;
 
   private backRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   private hitRects: { rect: Rect; action: () => void }[] = [];
@@ -154,6 +155,9 @@ export class CardScene implements Scene {
       variant: 'paper', headerH: HUD_H, titleSize: 15,
     });
     this.backRect = hdr.backRect;
+
+    this.headerOverlayLayer = new PIXI.Container();
+    this.container.addChild(this.headerOverlayLayer);
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -165,8 +169,8 @@ export class CardScene implements Scene {
     this.loadingLayer.removeChildren();
     this.hitRects.push({ rect: this.backRect, action: () => this.cb.onBack() });
 
+    this.renderHeaderCurrency();
     this.renderSidebar();
-    this.renderCapacityBar();
     this.renderList();
 
     if (this.detailId) this.openDetail(this.detailId);
@@ -193,25 +197,21 @@ export class CardScene implements Scene {
     for (const hit of hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
   }
 
-  private renderCapacityBar(): void {
-    const { w } = this;
+  /**
+   * Coin balance + card-capacity readout drawn into the header row itself (same treatment as
+   * EquipmentScene's renderHeaderCurrency), so the currency HUD stays visible and aligned with
+   * the title when navigating between the 卡背包/装备 peer scenes instead of popping in/out.
+   */
+  private renderHeaderCurrency(): void {
+    this.headerOverlayLayer.removeChildren();
     const save = this.cb.getSave();
     const count = Object.keys(save.cardInv ?? {}).length;
     const warn = count >= CARD_INV_WARN;
     const full = count >= CARD_INV_CAP;
-    const top = HUD_H;
-    const sidebarW = this.showSidebar ? marginLineX(w) : 0;
-
-    const bg = new PIXI.Graphics();
-    bg.beginFill(0xf3f1ea).drawRect(sidebarW, top, w - sidebarW, RES_H).endFill();
-    this.bodyLayer.addChild(bg);
-
-    const capLbl = txt(
-      `${t('roster.capacity').replace('{cur}', String(count)).replace('{cap}', String(CARD_INV_CAP))}`,
-      11, full ? C.red : warn ? C.gold : C.mid,
-    );
-    capLbl.anchor.set(1, 0.5); capLbl.x = w - 10; capLbl.y = top + RES_H / 2;
-    this.bodyLayer.addChild(capLbl);
+    drawHeaderCurrency(this.headerOverlayLayer, this.w, HUD_H, save.wallet.coins, [], {
+      text: `${t('roster.capacity').replace('{cur}', String(count)).replace('{cap}', String(CARD_INV_CAP))}`,
+      color: full ? C.red : warn ? C.gold : C.mid,
+    });
   }
 
   private renderList(): void {
@@ -219,7 +219,7 @@ export class CardScene implements Scene {
     const save = this.cb.getSave();
     const cardState = this.cb.getCardState?.() ?? {};
     const cards = Object.values(save.cardInv ?? {});
-    const listY = HUD_H + RES_H;
+    const listY = HUD_H;
     const listH = h - listY - 8;
 
     if (cards.length === 0) {

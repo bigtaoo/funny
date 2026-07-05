@@ -371,21 +371,26 @@ export class SectService {
     const ts = this.deps.now();
     const seq = ++msgSeq;
     const msgId = `sm:${sectId}:${ts}:${seq}`;
+
+    // Resolve display name from meta (source of truth for renames); best-effort, falls back to
+    // the client-supplied senderName if meta is unavailable or profile not found — a stale/incorrect
+    // client-side cache must never be preferred over the account's real name.
+    const profile = this.meta.available ? await this.meta.getProfile(accountId).catch(() => null) : null;
+    const resolvedSenderName = profile?.displayName ?? senderName;
+
     const msgDoc: SectMessageDoc = {
       _id: msgId,
       worldId,
       sectId,
       senderId: accountId,
-      senderName,
+      senderName: resolvedSenderName,
       body,
       ts: new Date(ts),
     };
     await cols.sectMessages.insertOne(msgDoc);
 
-    // Resolve publicId from meta (best-effort; falls back to empty string if meta unavailable or profile not found).
-    const profile = this.meta.available ? await this.meta.getProfile(accountId).catch(() => null) : null;
     // Push: prefer delegating to socialsvc (the push hub, §5); fall back to direct gateway push when socialsvc is unavailable.
-    const payload = { sectId, fromPublicId: profile?.publicId ?? '', fromName: senderName, body, ts };
+    const payload = { sectId, fromPublicId: profile?.publicId ?? '', fromName: resolvedSenderName, body, ts };
     if (this.socialsvc.available) {
       const recipients = await this.sectMemberAccountIds(worldId, sectId, accountId);
       void this.socialsvc.push({ kind: 'sect', sectId }, 'sect_msg', payload, recipients);
@@ -394,7 +399,7 @@ export class SectService {
       void this.gateway.broadcast(recipients, { kind: 'sect_msg', ...payload });
     }
 
-    return { id: msgId, senderId: accountId, senderName, body, ts };
+    return { id: msgId, senderId: accountId, senderName: resolvedSenderName, body, ts };
   }
 
   /** Collects all member accountIds within the sect who are joined to this world (spread across member families, via PlayerWorldDoc.familyId); optionally excludes one account (e.g., the sender). */

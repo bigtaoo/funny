@@ -76,6 +76,8 @@ export class BattlePassScene implements Scene {
   private toast: string | null = null;
   private toastTimer = 0;
   private scrollY = 0;
+  private scrollMax = 0;
+  private dragStart: { x: number; y: number; scroll: number } | null = null;
 
   constructor(layout: ILayout, input: InputManager, cb: BattlePassCallbacks) {
     this.container = new PIXI.Container();
@@ -83,6 +85,8 @@ export class BattlePassScene implements Scene {
     this.h = layout.designHeight;
     this.cb = cb;
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
+    this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
+    this.unsubs.push(input.onUp(() => this.handleUp()));
     this.render();
   }
 
@@ -102,6 +106,20 @@ export class BattlePassScene implements Scene {
       const r = hit.rect;
       if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); return; }
     }
+    this.dragStart = { x, y, scroll: this.scrollY };
+  }
+
+  private handleMove(_x: number, y: number): void {
+    if (!this.dragStart) return;
+    const dy = y - this.dragStart.y;
+    if (Math.abs(dy) > 6) {
+      this.scrollY = Math.max(0, Math.min(this.scrollMax, this.dragStart.scroll - dy));
+      this.render();
+    }
+  }
+
+  private handleUp(): void {
+    this.dragStart = null;
   }
 
   private showToast(msg: string): void {
@@ -278,6 +296,7 @@ export class BattlePassScene implements Scene {
     const scrollBodyH = h - bodyTopY;
     const totalContentH = headerH + BATTLEPASS_MAX_LEVEL * (cellH + cellGap);
     const scrollMax = Math.max(0, totalContentH - scrollBodyH);
+    this.scrollMax = scrollMax;
     const sy = Math.min(this.scrollY, scrollMax);
 
     const scrollContainer = new PIXI.Container();

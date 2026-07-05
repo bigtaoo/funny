@@ -182,7 +182,7 @@ hudView.container        ← HUD（最顶层）
 |---|---|
 | `Barracks`（兵营） | `game_infantry_barracks.png` |
 | `ArrowTower`（箭塔） | `game_archer_barracks.png` |
-| 基地（双方） | `game_base.png`，敌方按朝向镜像（横屏左右翻、竖屏上下翻） |
+| 基地（双方） | `game_base.png`（0 级，L0 预载），敌方按朝向镜像（横屏左右翻、竖屏上下翻）。1/2 级升级贴图打包在 `assets/base_upgrade_atlas.{png,json}`（`base_lv1`=城池，`base_lv2`=宫殿，覆盖 upgradeLevel 2-3），懒加载见 `render/baseUpgradeAtlasLoader.ts`，源图+打包脚本在 `art/ui/game/pack_base_atlas.js` |
 
 ### 箭塔攻击范围
 

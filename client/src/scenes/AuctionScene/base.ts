@@ -53,10 +53,9 @@ export const FILTER_H = 44;
 
 // Material types available for auction
 export const MATERIALS = ['scrap', 'lead', 'binding'] as const;
-// Item classes offered in the create form (equipment/card require getSave).
-export const ITEM_CLASSES = ['material', 'equipment', 'card'] as const;
-// Must match server-side AUCTION_DURATIONS_SEC (shared/slg.ts), otherwise createAuction throws BAD_REQUEST.
-export const DURATIONS = [21600, 43200, 86400] as const; // 6h, 12h, 24h
+// Fixed listing duration — must match server-side AUCTION_DURATIONS_SEC (shared/slg/auction.ts),
+// otherwise createAuction throws BAD_REQUEST. No longer user-selectable (all listings run 72h).
+export const AUCTION_DURATION_SEC = 72 * 3600;
 // Category filter for the market tab — matches AuctionView.itemType ('' = no filter).
 export const FILTERS = ['', 'material', 'equipment', 'card'] as const;
 export type AucFilter = typeof FILTERS[number];
@@ -94,16 +93,16 @@ export class AuctionSceneBase {
   protected createPrice = 10;        // fixed buy-now unit price
   protected createStartPrice = 10;   // auction starting unit price
   protected createBuyoutPrice = 0;   // auction buyout (0 = none)
-  protected createDuration: typeof DURATIONS[number] = 21600;
   protected createBuyer = '';
   protected buyerActive = false;
   protected caretOn = true;
   protected caretTimer = 0;
   protected createOpen = false;
 
-  // Instance picker (scene-level overlay, reuses the body drag-scroll): non-null → show the picker
-  // list instead of the market/mine list. Selecting an instance returns to the create form.
-  protected pickerKind: 'equipment' | 'card' | null = null;
+  // Unified item picker (scene-level overlay, reuses the body drag-scroll): true → show the picker
+  // list (materials + equipment + cards, sorted by value desc) instead of the market/mine list.
+  // Selecting an entry returns to the create form.
+  protected itemPickerOpen = false;
 
   // Bid form state (auction listings)
   protected bidAuction: AuctionView | null = null;
@@ -185,10 +184,10 @@ export class AuctionSceneBase {
     // Keep static header; only rebuild body hits (not back button)
     this.hitRects = [];
 
-    // Instance picker overlay (equipment/card): back button cancels the picker and returns to the create form.
-    if (this.pickerKind) {
-      this.hitRects.push({ rect: { x: 0, y: 0, w: 80, h: HUD_H }, action: () => this.cancelPicker() });
-      this.renderPicker();
+    // Item picker overlay: back button cancels the picker and returns to the create form.
+    if (this.itemPickerOpen) {
+      this.hitRects.push({ rect: { x: 0, y: 0, w: 80, h: HUD_H }, action: () => this.cancelItemPicker() });
+      this.renderItemPicker();
       return;
     }
 
@@ -437,12 +436,12 @@ export interface AuctionSceneBase {
   renderCreateButton(contentX: number): void;
   myBids(): AuctionView[];
   // picker.ts
-  renderPicker(): void;
+  renderItemPicker(): void;
   listableEquipment(): EquipmentInstance[];
   listableCards(): CardInstance[];
-  selectedInstanceLabel(): string | null;
-  openPicker(kind: 'equipment' | 'card'): void;
-  cancelPicker(): void;
+  selectedItemLabel(): string | null;
+  openItemPicker(): void;
+  cancelItemPicker(): void;
   // createForm.ts
   openCreateForm(): void;
   doCreate(): Promise<void>;

@@ -6,7 +6,7 @@ import { makeZoomCfgs } from './zoom';
 import { DEFAULT_MAP_SIZE } from './constants';
 import type { ILayout } from '../../layout/ILayout';
 import type { ZoomCfg, PoolSlot } from './zoom';
-import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, NationView, SeasonView, SlgShopItemView } from '../../net/WorldApiClient';
+import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, NationView, SeasonView, SlgShopItemView, WorldChatMessage } from '../../net/WorldApiClient';
 import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult } from '../../net/proto/transport';
 import type { WorldMapRenderer } from './WorldMapRenderer';
 import type { WorldMapPanels } from './WorldMapPanels';
@@ -16,7 +16,8 @@ import type { WorldMapInput } from './WorldMapInput';
 // ── Public callbacks ────────────────────────────────────────────────────────
 export interface WorldMapCallbacks {
   onBack(): void;
-  onOpenFamily(): void;
+  /** Open the social/chat overlay (FriendsScene, world channel tab) — also the entry point to family management (§25). */
+  onOpenChat(): void;
   onOpenAuction(): void;
   /**
    * Spectate a finished siege (G3-2c): app fetches the replay (seed + both armies)
@@ -87,6 +88,8 @@ export class WorldMapContext {
   fogGfx!: PIXI.Graphics;
   overlayGfx!: PIXI.Graphics;
   hudLayer!: PIXI.Container;
+  /** Top-left floating back button — static, drawn once (unlike hudLayer, which is torn down on every ~5s march-poll re-render). */
+  topLayer!: PIXI.Container;
   modalLayer!: PIXI.Container;
   toastLayer!: PIXI.Container;
   loadingLayer: PIXI.Container | null = null;
@@ -101,12 +104,18 @@ export class WorldMapContext {
   panelRepaint = 0;
   marchPoll: ReturnType<typeof setInterval> | null = null;
   readonly unsubs: (() => void)[] = [];
+  /** Marches badge (top-right stack) toggles between collapsed count and the full expanded list (§25). */
+  marchesExpanded = false;
   backRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
-  trainBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
-  famBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   aucBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   infoBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   zoomBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
+  marchBadgeRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
+  chatBarRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
+  /** Latest world-chat message, polled alongside marches (§25 follow-up) — null until first fetch. */
+  worldChatLatest: WorldChatMessage | null = null;
+  /** Count of fetched messages newer than the local "last seen" mark; capped by refreshWorldChat's page size. */
+  worldChatUnread = 0;
   marchRowRects: {
     marchId: string; worldId: string; destX: number; destY: number;
     rowRect: { x: number; y: number; w: number; h: number };
@@ -129,6 +138,23 @@ export class WorldMapContext {
     this.cb = cb;
     this.zoomCfgs = makeZoomCfgs(this.w, this.h);
     this.container = new PIXI.Container();
+  }
+
+  /** localStorage key for "last seen world-chat ts" — per world+account, so alts don't share a read marker. */
+  private worldChatSeenKey(): string {
+    return `nw_worldchat_seen_${this.cb.worldId}_${this.cb.accountId}`;
+  }
+
+  getWorldChatSeenTs(): number {
+    const raw = localStorage.getItem(this.worldChatSeenKey());
+    return raw ? Number(raw) || 0 : 0;
+  }
+
+  /** Marks all currently-fetched chat as read (called when the player opens the chat overlay). */
+  markWorldChatSeen(): void {
+    const ts = this.worldChatLatest?.ts ?? Date.now();
+    localStorage.setItem(this.worldChatSeenKey(), String(ts));
+    this.worldChatUnread = 0;
   }
 
   parseTileId(tileId: string): [number, number] {

@@ -61,7 +61,6 @@ export const zh = {
   'card.medic.desc': '光环持续治愈周围友军；PvP中附带微弱攻击，不再是完全无害的旁观者。',
 
   // ── Lobby ─────────────────────────────────────────────────────────────────
-  'lobby.title': 'NOTEBOOK WARS',
   'lobby.subtitle': '实时塔防对战',
   'lobby.feature.1': '打出卡牌 → 部署单位与建筑',
   'lobby.feature.2': '摧毁敌方基地即获胜',
@@ -744,7 +743,6 @@ export const zh = {
   'mail.delete': '删除邮件',
   // ── SLG overworld (S8) ────────────────────────────────────────────────────
   'world.title': '大世界',
-  'world.back': '← 返回',
   'world.troops': '兵力',
   'world.troopCap': '兵力上限',
   'world.territory': '领地',
@@ -778,6 +776,7 @@ export const zh = {
   'world.stronghold': '险地',
   'world.strongholdHint': '系统超强守军据点，须围攻攻克；得手占为领地并获大量资源',
   'world.marchList': '行军列表',
+  'world.marchMore': '还有 {n} 条',
   'world.noMarches': '暂无行军',
   'world.marchTo': '→ ({x},{y})',
   'world.marchArr': '到达',
@@ -786,6 +785,7 @@ export const zh = {
   'world.unknownOwner': '未知玩家',
   'world.family': '家族',
   'world.auction': '拍卖',
+  'world.chat': '聊天',
   'world.noBase': '未建立主城',
   'world.loading': '加载地图中…',
   'world.err.worldFull': '世界已满员',
@@ -1013,10 +1013,6 @@ export const zh = {
   'auction.buy': '购买',
   'auction.cancel': '取消拍卖',
   'auction.price': '起拍价（金币）',
-  'auction.duration': '时长',
-  'auction.dur6h': '6 小时',
-  'auction.dur12h': '12 小时',
-  'auction.dur24h': '24 小时',
   'auction.seller': '卖家',
   'auction.expires': '到期',
   'auction.qty': '数量',
@@ -1065,17 +1061,11 @@ export const zh = {
   'auction.err.equipLocked': '装备已锁定，无法挂拍',
   'auction.err.equipInUse': '装备穿戴中，无法挂拍',
   'auction.err.cardHasGear': '角色卡仍装备着道具，请先卸下',
-  'auction.itemClass': '类别',
-  'auction.classMaterial': '材料',
-  'auction.classEquipment': '装备',
-  'auction.classCard': '角色卡',
   'auction.filterCard': '角色卡',
   'auction.tapChoose': '点击选择物品',
-  'auction.pickEquip': '选择要出售的装备',
-  'auction.pickCard': '选择要出售的角色卡',
+  'auction.pickItem': '选择要出售的物品',
   'auction.pickHint': '选择 ›',
-  'auction.noEquip': '没有可出售的装备',
-  'auction.noCards': '没有可出售的角色卡',
+  'auction.noItems': '没有可出售的物品',
 
   // ── Campaign level names & briefings ─────────────────────────────────────
   // Ch1 · Fang family · internal clan trial (Tao's notebook)

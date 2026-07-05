@@ -14,6 +14,7 @@ import { buildAvatar } from '../../render/avatar';
 import { StickmanRuntime } from '../../render/stickman/StickmanRuntime';
 import { randomHeroAssetUrl } from '../../render/heroSilhouette';
 import { Rect } from '../../layout/ILayout';
+import logoUrl from '../../assets/logo.png';
 import {
   C, txt, fmtCoins, sketchPanel, drawBtn, buildBackground, randomAiName,
   type Constructor, type LobbySceneBaseCtor,
@@ -166,16 +167,31 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       wear.alpha = 0.55;
       this.container.addChild(wear);
 
-      // Header block
-      const tbH = Math.round(h * 0.14);
+      // Header block — sized up slightly (0.14 → 0.16) to fit the brand mark
+      // (shield-crest logo, ADR-027) alongside the "Nivara" title without
+      // crowding the tagline row.
+      const tbH = Math.round(h * 0.16);
       const titleBg = new PIXI.Graphics();
       titleBg.beginFill(C.dark);
       titleBg.drawRect(0, 0, w, tbH);
       titleBg.endFill();
       this.container.addChild(titleBg);
 
-      const title = txt(t('lobby.title'), Math.round(h * 0.048), 0xffffff, true);
-      title.anchor.set(0.5, 0.5); title.x = w / 2; title.y = tbH * 0.45;
+      const title = txt(t('game.title'), Math.round(h * 0.05), 0xffffff, true);
+      title.anchor.set(0, 0.5);
+
+      const logoSize = Math.round(tbH * 0.62);
+      const logoGap = Math.round(w * 0.015);
+      const groupW = logoSize + logoGap + title.width;
+      const groupX0 = Math.round(w / 2 - groupW / 2);
+
+      const logo = PIXI.Sprite.from(logoUrl as string);
+      logo.anchor.set(0, 0.5);
+      logo.width = logoSize; logo.height = logoSize;
+      logo.x = groupX0; logo.y = tbH * 0.45;
+      this.container.addChild(logo);
+
+      title.x = groupX0 + logoSize + logoGap; title.y = tbH * 0.45;
       this.container.addChild(title);
 
       const subtitle = txt(t('lobby.subtitle'), Math.round(h * 0.022), C.light);
@@ -216,7 +232,7 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
           { color: palette.marker, width: Math.max(4, ulH * 0.5), taper: 0.6, double: false },
         );
       }, { tag: 'lobby-title', variants: 3, fps: 8 });
-      this.titleBoil.x = w / 2 - ulW / 2;
+      this.titleBoil.x = title.x + title.width / 2 - ulW / 2;
       this.titleBoil.y = tbH * 0.45 + title.height / 2;
       this.container.addChild(this.titleBoil);
 
@@ -333,12 +349,21 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       heroMotif.y = Math.round(heroY + heroH / 2 - heroMotifS / 2);
       this.container.addChild(heroMotif);
 
+      this.btnLabel = txt(this.cb.offline ? t('lobby.startVsAI') : t('lobby.startMatch'), Math.round(heroH * 0.30), 0xffffff, true);
+      this.btnLabel.anchor.set(0.5, 0.5);
+      this.btnLabel.x = contentX + contentW / 2;
+      this.btnLabel.y = heroY + heroH * 0.38;
+      this.container.addChild(this.btnLabel);
+
       // Ambient character silhouette on the left of the hero (mirrors the pencils
       // motif above): a random playable unit, flat-black + faded, cycling through
       // random animation clips (§ hero-decoration). Loads async — appears a frame
       // or two after the rest of the button since the .tao bundle must be fetched.
-      const heroFigureH   = Math.round(heroH * 0.88);
-      const heroFigureX   = Math.round(contentX + heroFigureH * 0.65);
+      // Centred 1/3 of the way from the button's left edge to the label's left edge
+      // (not flush against the edge) so it reads as a companion beside the text.
+      const heroFigureH    = Math.round(heroH * 0.88);
+      const labelLeftEdge  = this.btnLabel.x - this.btnLabel.width / 2;
+      const heroFigureX    = Math.round(contentX + (labelLeftEdge - contentX) / 3);
       const heroFigureFootY = Math.round(heroY + heroH * 0.94);
       const heroFigureInsertAfter = heroMotif;
       StickmanRuntime.loadAsset(randomHeroAssetUrl(), heroFigureH).then(asset => {
@@ -346,6 +371,15 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
         const runtime = new StickmanRuntime(asset, { targetHeight: heroFigureH });
         runtime.setSilhouette(0x000000);
         runtime.container.alpha = 0.22;
+        // targetHeight normalizes to the rig's FK joint extents, but the drawn art
+        // (hair, weapon, cape…) can reach further — re-fit to the actual rendered
+        // bounds so the silhouette never overflows the hero button's height.
+        const rawBounds = runtime.container.getLocalBounds();
+        if (rawBounds.height > 0) {
+          const fit = heroFigureH / rawBounds.height;
+          runtime.container.scale.x *= fit;
+          runtime.container.scale.y *= fit;
+        }
         runtime.container.x = heroFigureX;
         runtime.container.y = heroFigureFootY;
         const idx = this.container.getChildIndex(heroFigureInsertAfter);
@@ -357,12 +391,6 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
         this.heroFigureSwapTimer = 1.6 + Math.random() * 1.6;
         this.heroFigure = runtime;
       }).catch(() => { /* decorative-only: missing/broken .tao must not crash the lobby */ });
-
-      this.btnLabel = txt(this.cb.offline ? t('lobby.startVsAI') : t('lobby.startMatch'), Math.round(heroH * 0.30), 0xffffff, true);
-      this.btnLabel.anchor.set(0.5, 0.5);
-      this.btnLabel.x = contentX + contentW / 2;
-      this.btnLabel.y = heroY + heroH * 0.38;
-      this.container.addChild(this.btnLabel);
 
       const heroSubKey: TranslationKey = this.cb.offline
         ? 'lobby.match.subSolo'

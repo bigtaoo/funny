@@ -695,14 +695,14 @@ export class ShopScene implements Scene {
     const lineH = Math.round(ch * 0.15);
 
     if (spec.coinAmount !== undefined) {
-      const cs = Math.round(ch * 0.16);
+      const cs = Math.round(ch * 0.22);
       const ci = this.coinIcon('coin', cs, C.gold);
       ci.x = infoX; ci.y = iy;
       body.addChild(ci);
-      const amt = txt(spec.coinAmount.toLocaleString(), Math.round(ch * 0.16), C.gold, true);
-      amt.anchor.set(0, 0); amt.x = infoX + cs + Math.round(cw * 0.02); amt.y = iy;
+      const amt = txt(spec.coinAmount.toLocaleString(), Math.round(ch * 0.22), C.gold, true);
+      amt.anchor.set(0, 0.5); amt.x = infoX + cs + Math.round(cw * 0.02); amt.y = ci.y + cs / 2;
       body.addChild(amt);
-      iy += lineH;
+      iy += Math.round(ch * 0.21);
     }
 
     if (spec.yuanPrice !== undefined) {

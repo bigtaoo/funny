@@ -134,33 +134,42 @@ export function drawSidebarTabs(
   h: number,
   tabs: HubTab[],
   onSelect: (index: number) => void,
+  /**
+   * `sub: true` demotes this stack to a second-tier group nested under the primary tabs above it
+   * (e.g. Inventory/Craft under the [Cards|Equipment] peer nav): smaller cells, indented from the
+   * left edge, so it visually reads as "belongs to" rather than a sibling of equal weight.
+   */
+  opts?: { sub?: boolean },
 ): { hits: Array<{ rect: Rect; fn: () => void }>; bottom: number } {
   const hits: Array<{ rect: Rect; fn: () => void }> = [];
   if (tabs.length === 0) return { hits, bottom: y };
 
-  const itemH = sidebarItemHeight(h);
+  const sub = opts?.sub ?? false;
+  const indent = sub ? Math.round(sidebarW * 0.14) : 0;
+  const cellW = sidebarW - indent;
+  const itemH = Math.round(sidebarItemHeight(h) * (sub ? 0.76 : 1));
   const gap = Math.round(h * 0.015);
   let cy = y;
 
   tabs.forEach((tab, i) => {
-    const box = sketchPanel(sidebarW, itemH, {
+    const box = sketchPanel(cellW, itemH, {
       fill: tab.active ? C.dark : C.paper,
       border: tab.active ? C.accent : C.line,
       width: tab.active ? 2.4 : 1.6,
-      seed: seedFor(0, cy, sidebarW),
+      seed: seedFor(0, cy, cellW),
     });
-    box.x = 0; box.y = cy;
+    box.x = indent; box.y = cy;
     container.addChild(box);
 
     const fg = tab.active ? 0xffffff : C.mid;
-    const lbl = txt(tab.label, Math.round(itemH * 0.24), fg, true);
+    const lbl = txt(tab.label, Math.round(itemH * (sub ? 0.28 : 0.24)), fg, true);
     lbl.anchor.set(0.5, 0.5);
-    lbl.x = sidebarW / 2;
+    lbl.x = indent + cellW / 2;
 
     if (tab.icon) {
       const iconSize = Math.round(itemH * 0.34);
       const icon = buildIcon(tab.icon, iconSize, fg);
-      icon.x = sidebarW / 2 - iconSize / 2;
+      icon.x = indent + cellW / 2 - iconSize / 2;
       icon.y = cy + itemH * 0.2;
       container.addChild(icon);
       lbl.y = cy + itemH * 0.72;
@@ -170,7 +179,7 @@ export function drawSidebarTabs(
     container.addChild(lbl);
 
     if (!tab.active) {
-      hits.push({ rect: { x: 0, y: cy, w: sidebarW, h: itemH }, fn: () => onSelect(i) });
+      hits.push({ rect: { x: indent, y: cy, w: cellW, h: itemH }, fn: () => onSelect(i) });
     }
     cy += itemH + gap;
   });

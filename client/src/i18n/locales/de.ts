@@ -59,7 +59,6 @@ export const de: Record<TranslationKey, string> = {
   'card.medic.desc': 'Heilt verbündete Einheiten mit einer Lichtstift-Aura. Im PvP schlägt er auch zurück — kaum.',
 
   // ── Lobby ─────────────────────────────────────────────────────────────────
-  'lobby.title': 'NOTEBOOK WARS',
   'lobby.subtitle': 'Echtzeit-Tower-Defense',
   'lobby.feature.1': 'Karten spielen  ->  Einheiten & Gebäude einsetzen',
   'lobby.feature.2': 'Zerstöre die gegnerische Basis, um zu gewinnen',
@@ -734,7 +733,6 @@ export const de: Record<TranslationKey, string> = {
   'mail.delete': 'Löschen',
   // SLG-Welt (S8)
   'world.title': 'Welt',
-  'world.back': '← Zurück',
   'world.troops': 'Truppen',
   'world.troopCap': 'Truppenmax.',
   'world.territory': 'Gebiet',
@@ -768,6 +766,7 @@ export const de: Record<TranslationKey, string> = {
   'world.stronghold': 'Feste',
   'world.strongholdHint': 'Stark verteidigte NPC-Bastion – nur durch Belagerung einnehmbar; bei Erfolg wird sie dein Gebiet und bringt eine große Ressourcenbelohnung',
   'world.marchList': 'Märsche',
+  'world.marchMore': '+{n} weitere',
   'world.noMarches': 'Keine aktiven Märsche',
   'world.marchTo': '→ ({x},{y})',
   'world.marchArr': 'Ankunft',
@@ -776,6 +775,7 @@ export const de: Record<TranslationKey, string> = {
   'world.unknownOwner': 'Unbekannter Spieler',
   'world.family': 'Familie',
   'world.auction': 'Auktion',
+  'world.chat': 'Chat',
   'world.noBase': 'Noch keine Basis',
   'world.loading': 'Karte wird geladen…',
   'world.err.worldFull': 'Welt ist voll',
@@ -1003,10 +1003,6 @@ export const de: Record<TranslationKey, string> = {
   'auction.buy': 'Kaufen',
   'auction.cancel': 'Abbrechen',
   'auction.price': 'Startpreis (Münzen)',
-  'auction.duration': 'Dauer',
-  'auction.dur6h': '6 Stunden',
-  'auction.dur12h': '12 Stunden',
-  'auction.dur24h': '24 Stunden',
   'auction.seller': 'Verkäufer',
   'auction.expires': 'Läuft ab',
   'auction.qty': 'Menge',
@@ -1055,17 +1051,11 @@ export const de: Record<TranslationKey, string> = {
   'auction.err.equipLocked': 'Ausrüstung gesperrt, nicht handelbar',
   'auction.err.equipInUse': 'Ausrüstung angelegt, nicht handelbar',
   'auction.err.cardHasGear': 'Karte trägt noch Ausrüstung — zuerst ablegen',
-  'auction.itemClass': 'Art',
-  'auction.classMaterial': 'Material',
-  'auction.classEquipment': 'Ausrüstung',
-  'auction.classCard': 'Karte',
   'auction.filterCard': 'Karten',
   'auction.tapChoose': 'Zum Auswählen tippen',
-  'auction.pickEquip': 'Ausrüstung zum Verkauf wählen',
-  'auction.pickCard': 'Karte zum Verkauf wählen',
+  'auction.pickItem': 'Gegenstand zum Verkauf wählen',
   'auction.pickHint': 'Wählen ›',
-  'auction.noEquip': 'Keine verkäufliche Ausrüstung',
-  'auction.noCards': 'Keine verkäuflichen Karten',
+  'auction.noItems': 'Keine verkäuflichen Gegenstände',
 
   // ── Kampagnenlevel: Namen & Briefings ────────────────────────────────────
   // Kap. 1 · Fang-Klan · Internes Turnier (Taos Notizbuch)

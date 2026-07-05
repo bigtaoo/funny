@@ -29,6 +29,7 @@ import shieldBearerArtUrl from './shieldbearer.png';
 import baseArtUrl from './game_base.png';
 import barracksArtUrl from './game_infantry_barracks.png';
 import towerArtUrl from './game_archer_barracks.png';
+import logoArtUrl from './logo.png';
 
 interface BootStep {
   /** Stable id (for logging). */
@@ -50,6 +51,7 @@ const STEPS: BootStep[] = [
   { id: 'art:base',         run: () => preloadTexture(baseArtUrl     as string) },
   { id: 'art:barracks',     run: () => preloadTexture(barracksArtUrl as string) },
   { id: 'art:tower',        run: () => preloadTexture(towerArtUrl    as string) },
+  { id: 'art:logo',         run: () => preloadTexture(logoArtUrl    as string) },
   { id: 'decor:atlas',      run: () => loadDecorAtlas() },
   { id: 'decor:labels',     run: () => loadLabelDecor() },
   { id: 'decor:c',          run: () => loadDecorCAtlas() },

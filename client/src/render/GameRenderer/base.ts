@@ -229,6 +229,8 @@ export class GameRendererBase {
     stateRecorder.capture(state);
     for (const event of state.events) this.handleEvent(event, state);
     this.boardView.update(dt);
+    this.boardView.setBaseUpgradeLevel(0, state.bottomPlayer.upgradeLevel);
+    this.boardView.setBaseUpgradeLevel(1, state.topPlayer.upgradeLevel);
     this.vfxSystem.update(dt);
     if (this.vignetteAlpha > 0) {
       this.vignetteAlpha = Math.max(0, this.vignetteAlpha - dt / GameRendererBase.VIGNETTE_FADE);

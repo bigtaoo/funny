@@ -56,6 +56,7 @@ export class WorldMapNet {
       }
       await this.loadMapViewport();
       await this.refreshMarches();
+      await this.refreshWorldChat();
     } catch { /* offline OK */ }
     if (!this.ctx.destroyed) { this.ctx.view.renderMap(); this.ctx.panels.renderHud(); }
   }
@@ -96,6 +97,17 @@ export class WorldMapNet {
     try {
       this.ctx.marches = await this.ctx.cb.worldApi.getMarches(this.ctx.cb.worldId);
       if (!this.ctx.destroyed) { this.ctx.panels.renderHud(); this.ctx.view.renderMap(); }
+    } catch { /* offline */ }
+  }
+
+  async refreshWorldChat(): Promise<void> {
+    if (this.ctx.destroyed) return;
+    try {
+      const msgs = await this.ctx.cb.worldApi.getWorldChannel(this.ctx.cb.worldId, { limit: 20 });
+      this.ctx.worldChatLatest = msgs[0] ?? null; // server returns newest-first
+      const seenTs = this.ctx.getWorldChatSeenTs();
+      this.ctx.worldChatUnread = msgs.filter((m) => m.ts > seenTs).length;
+      if (!this.ctx.destroyed) this.ctx.panels.renderHud();
     } catch { /* offline */ }
   }
 
@@ -443,7 +455,9 @@ export class WorldMapNet {
   // ── Lifecycle: march poll, split out of the original WorldMapScene ctor+destroy ──
 
   start(): void {
-    this.ctx.marchPoll = setInterval(() => { if (!this.ctx.destroyed) this.refreshMarches(); }, 5000);
+    this.ctx.marchPoll = setInterval(() => {
+      if (!this.ctx.destroyed) { this.refreshMarches(); this.refreshWorldChat(); }
+    }, 5000);
   }
 
   destroy(): void {

@@ -55,6 +55,7 @@ export class WorldMapInput {
           [t('world.myBase'), `(${tx}, ${ty})`],
           [
             { label: t('world.actEnterCity'), action: () => { this.ctx.panels.closeModal(); this.ctx.cb.onOpenCity(); } },
+            { label: t('world.train'), action: () => { this.ctx.panels.closeModal(); this.ctx.panels.openTrainPanel(); } },
             { label: t('world.actDefense'), action: () => { this.ctx.panels.closeModal(); this.ctx.cb.onOpenDefense('base'); } },
             { label: t('world.team.manage'), action: () => { this.ctx.panels.closeModal(); this.ctx.cb.onOpenTeams(); } },
             { label: '✕', action: () => this.ctx.panels.closeModal() },
@@ -168,27 +169,33 @@ export class WorldMapInput {
       return;
     }
 
-    // Back button
+    // Back button (floating top-left chip, drawn on topLayer — see WorldMapRenderer)
     const b = this.ctx.backRect;
     if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
       this.ctx.cb.onBack();
       return;
     }
 
-    // Train / Family / Auction buttons
-    const tr = this.ctx.trainBtnRect;
-    if (tr.w > 0 && x >= tr.x && x <= tr.x + tr.w && y >= tr.y && y <= tr.y + tr.h) {
-      this.ctx.panels.openTrainPanel();
-      return;
-    }
-    const f = this.ctx.famBtnRect;
-    if (x >= f.x && x <= f.x + f.w && y >= f.y && y <= f.y + f.h) {
-      this.ctx.cb.onOpenFamily();
-      return;
-    }
+    // Auction button (left column)
     const a = this.ctx.aucBtnRect;
     if (x >= a.x && x <= a.x + a.w && y >= a.y && y <= a.y + a.h) {
       this.ctx.cb.onOpenAuction();
+      return;
+    }
+
+    // Marches badge (right column) — toggles the expanded list
+    const mb = this.ctx.marchBadgeRect;
+    if (mb.w > 0 && x >= mb.x && x <= mb.x + mb.w && y >= mb.y && y <= mb.y + mb.h) {
+      this.ctx.marchesExpanded = !this.ctx.marchesExpanded;
+      this.ctx.panels.renderHud();
+      return;
+    }
+
+    // Bottom chat bar — opens the social overlay (also the entry point to family management)
+    const cbr = this.ctx.chatBarRect;
+    if (cbr.w > 0 && x >= cbr.x && x <= cbr.x + cbr.w && y >= cbr.y && y <= cbr.y + cbr.h) {
+      this.ctx.markWorldChatSeen();
+      this.ctx.cb.onOpenChat();
       return;
     }
 
