@@ -182,6 +182,16 @@
           <input type="text" id="template-id" placeholder="same as World ID by default">
           <button id="btn-template-generate">Generate Template (seed from proceduralTile)</button>
           <button id="btn-publish" class="primary">Publish Edits → Template</button>
+          <div class="insp-title" style="margin-top:4px;">Templates (<span id="template-count">0</span>)</div>
+          <div class="json-bar">
+            <button id="btn-template-refresh">Refresh List</button>
+          </div>
+          <div class="path-list" id="template-list"></div>
+          <div class="json-bar">
+            <button id="btn-template-activate">Activate</button>
+            <button id="btn-template-delete" class="danger">Delete</button>
+          </div>
+          <div class="hint">Activate 后新建世界会克隆该模板作为地形基线（不影响正在跑的世界）；Delete 拒绝删除当前 active 的模板。</div>
           <button id="btn-admin-logout">Logout</button>
         </div>
         <div class="hint">栅格化路径/城池 → 只上发跟 proceduralTile() 基线不同的格子（diff-save，§24）。发布是单向"烘焙"：服务端模板不会反向生成回本地的河流/城池矢量图层，继续用上面的 Export/Import JSON 保存可编辑源数据。</div>

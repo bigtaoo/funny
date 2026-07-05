@@ -2,7 +2,7 @@
 // + city drag (§6.1 third bullet) + publish-to-server (§8, §24 admin map-template API). River/mountain
 // paths and city positions are rasterized (mapEdit.ts's rasterizeMapEdits) into a tile diff and pushed via
 // the existing admin map-template endpoints — a one-way bake, not a live sync (see api.ts/publish section below).
-import { MAP_TEMPLATE_SAVE_MAX_TILES, proceduralTile, rasterizeMapEdits, SLG_MAP_H, SLG_MAP_W, type MapTemplateTile, type ResourceType, type TileType } from '@nw/shared/slg';
+import { MAP_TEMPLATE_SAVE_MAX_TILES, proceduralTile, rasterizeMapEdits, SLG_MAP_H, SLG_MAP_W, type MapTemplateSummary, type MapTemplateTile, type ResourceType, type TileType } from '@nw/shared/slg';
 import { distToPath, PathStore, randomDefaultWidth, type PathKind, type TilePoint } from './state/paths';
 import { CityStore, type MapEditorCityNode } from './state/cities';
 import { Api, ApiError } from './api';
@@ -84,6 +84,11 @@ const adminLogoutBtn = document.getElementById('btn-admin-logout') as HTMLButton
 const templateIdInput = document.getElementById('template-id') as HTMLInputElement;
 const templateGenerateBtn = document.getElementById('btn-template-generate') as HTMLButtonElement;
 const publishBtn = document.getElementById('btn-publish') as HTMLButtonElement;
+const templateListEl = document.getElementById('template-list')!;
+const templateCountEl = document.getElementById('template-count')!;
+const templateRefreshBtn = document.getElementById('btn-template-refresh') as HTMLButtonElement;
+const templateActivateBtn = document.getElementById('btn-template-activate') as HTMLButtonElement;
+const templateDeleteBtn = document.getElementById('btn-template-delete') as HTMLButtonElement;
 
 for (const c of [mapCanvas, overlayCanvas, cityCanvas]) {
   c.width = SLG_MAP_W;
@@ -388,11 +393,87 @@ function showLoggedIn(whoami: string): void {
   publishLoginEl.style.display = 'none';
   publishPanelEl.style.display = 'flex';
   publishWhoamiEl.textContent = whoami;
+  void refreshTemplates();
 }
 function showLoggedOut(): void {
   publishLoginEl.style.display = 'flex';
   publishPanelEl.style.display = 'none';
+  templates = [];
+  selectedTemplateId = null;
+  renderTemplateList();
 }
+
+// ── Template picker (list / activate / delete, §24) ─────────────────────
+let templates: MapTemplateSummary[] = [];
+let selectedTemplateId: string | null = null;
+
+function renderTemplateList(): void {
+  templateCountEl.textContent = String(templates.length);
+  templateListEl.innerHTML = templates
+    .map(
+      (t) =>
+        `<div class="path-row${t.templateId === selectedTemplateId ? ' selected' : ''}" data-id="${t.templateId}">` +
+        `<i style="background:${t.active ? 'var(--ok)' : 'var(--text-dim)'}"></i>${t.templateId}${t.active ? ' (active)' : ''} — ${t.width}×${t.height}, ${t.tileCount} tiles, v${t.version}</div>`,
+    )
+    .join('');
+  for (const row of Array.from(templateListEl.querySelectorAll<HTMLDivElement>('.path-row'))) {
+    row.addEventListener('click', () => {
+      selectedTemplateId = row.dataset.id!;
+      templateIdInput.value = selectedTemplateId;
+      renderTemplateList();
+    });
+  }
+}
+
+async function refreshTemplates(): Promise<void> {
+  if (!api.hasToken) return;
+  try {
+    templates = await api.listMapTemplates();
+    renderTemplateList();
+  } catch (err) {
+    statusEl.textContent = `Failed to list templates: ${err instanceof ApiError ? err.message : (err as Error).message}`;
+  }
+}
+
+templateRefreshBtn.addEventListener('click', () => void refreshTemplates());
+
+templateActivateBtn.addEventListener('click', async () => {
+  const templateId = (selectedTemplateId || templateIdInput.value.trim());
+  if (!templateId) {
+    statusEl.textContent = 'Pick or type a template ID first.';
+    return;
+  }
+  templateActivateBtn.disabled = true;
+  try {
+    await api.activateMapTemplate(templateId);
+    statusEl.textContent = `Activated template "${templateId}" — new worlds will clone it from now on.`;
+    await refreshTemplates();
+  } catch (err) {
+    statusEl.textContent = `Activate failed: ${err instanceof ApiError ? err.message : (err as Error).message}`;
+  } finally {
+    templateActivateBtn.disabled = false;
+  }
+});
+
+templateDeleteBtn.addEventListener('click', async () => {
+  const templateId = (selectedTemplateId || templateIdInput.value.trim());
+  if (!templateId) {
+    statusEl.textContent = 'Pick or type a template ID first.';
+    return;
+  }
+  if (!window.confirm(`Delete template "${templateId}"? This cannot be undone.`)) return;
+  templateDeleteBtn.disabled = true;
+  try {
+    await api.deleteMapTemplate(templateId);
+    if (selectedTemplateId === templateId) selectedTemplateId = null;
+    statusEl.textContent = `Deleted template "${templateId}".`;
+    await refreshTemplates();
+  } catch (err) {
+    statusEl.textContent = `Delete failed: ${err instanceof ApiError ? err.message : (err as Error).message}`;
+  } finally {
+    templateDeleteBtn.disabled = false;
+  }
+});
 
 adminLoginBtn.addEventListener('click', async () => {
   api.setBaseUrl(adminBaseInput.value.trim());
@@ -422,6 +503,8 @@ templateGenerateBtn.addEventListener('click', async () => {
   try {
     const summary = await api.generateMapTemplate(templateId, SLG_MAP_W, SLG_MAP_H);
     statusEl.textContent = `Generated template "${summary.templateId}" — ${summary.tileCount} tiles (v${summary.version}).`;
+    selectedTemplateId = summary.templateId;
+    await refreshTemplates();
   } catch (err) {
     statusEl.textContent = `Generate failed: ${err instanceof ApiError ? err.message : (err as Error).message}`;
   } finally {
@@ -448,6 +531,7 @@ publishBtn.addEventListener('click', async () => {
       updated += r.updated;
     }
     statusEl.textContent = `Published ${updated} tile(s) to template "${templateId}".`;
+    await refreshTemplates();
   } catch (err) {
     statusEl.textContent = `Publish failed: ${err instanceof ApiError ? err.message : (err as Error).message}`;
   } finally {
