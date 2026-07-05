@@ -68,6 +68,8 @@ interface AccountDoc {
 
 **索引**：`deviceId`(sparse,unique)、`openid`(sparse,unique)、`password.loginId`(sparse,unique)、`oauth.provider+oauth.sub`(unique)。
 
+> `displayName` 注册/设备登录时可选，多数账号（尤其游客）从不主动设置。`getDisplayName`/`getProfile`（`accounts.ts`）读取时会懒惰回填一个随机默认昵称（`ensureDisplayName`，与 `ensurePublicId` 同一套模式），避免对战历史、房间玩家列表等处永久退化成显示裸 id。
+
 > `isAnonymous`：只挂 device identity = true；一旦绑定 password/oauth/wx = false。联机/商店/充值要求 `isAnonymous=false`。
 
 ---

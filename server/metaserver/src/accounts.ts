@@ -153,13 +153,42 @@ export async function getRegion(cols: Collections, accountId: string): Promise<C
   return doc?.region ?? 'global';
 }
 
-/** Read the account's display name (returned alongside GET /save; restores profile on token re-login). */
+/** Read the account's display name (returned alongside GET /save; restores profile on token re-login). Lazily backfills a default if unset (see {@link ensureDisplayName}). */
 export async function getDisplayName(
   cols: Collections,
   accountId: string,
 ): Promise<string | undefined> {
-  const doc = await cols.accounts.findOne({ _id: accountId });
-  return doc?.displayName;
+  return ensureDisplayName(cols, accountId);
+}
+
+/** Adjective/noun pool for lazily-generated default nicknames (same narrative voice as Matchsvc's BOT_NAMES). */
+const DEFAULT_NAME_ADJECTIVES = ['Quiet', 'Restless', 'Ink-Stained', 'Dog-Eared', 'Margin', 'Doodle', 'Scribbled', 'Folded'];
+const DEFAULT_NAME_NOUNS = ['Scholar', 'Scribe', 'Notebook', 'Penpal', 'Sketcher', 'Wanderer', 'Author', 'Reader'];
+
+function randomDefaultDisplayName(): string {
+  const adj = DEFAULT_NAME_ADJECTIVES[randomInt(DEFAULT_NAME_ADJECTIVES.length)];
+  const noun = DEFAULT_NAME_NOUNS[randomInt(DEFAULT_NAME_NOUNS.length)];
+  return `${adj} ${noun} ${randomInt(1000, 9999)}`;
+}
+
+/**
+ * Ensure the account has a display name: returns the existing one immediately, otherwise lazily
+ * assigns and persists a random default. Mirrors {@link ensurePublicId}'s lazy-backfill pattern —
+ * displayName is optional at registration/device-login, so without this, guest accounts (the
+ * majority) would never have a nickname to show in match history, room player lists, etc.,
+ * and those surfaces would permanently fall back to a raw id.
+ */
+export async function ensureDisplayName(cols: Collections, accountId: string): Promise<string> {
+  const existing = await cols.accounts.findOne({ _id: accountId }, { projection: { displayName: 1 } });
+  if (existing?.displayName) return existing.displayName;
+  const candidate = randomDefaultDisplayName();
+  const res = await cols.accounts.updateOne(
+    { _id: accountId, displayName: { $exists: false } },
+    { $set: { displayName: candidate } },
+  );
+  if (res.modifiedCount === 1) return candidate;
+  const now = await cols.accounts.findOne({ _id: accountId }, { projection: { displayName: 1 } });
+  return now?.displayName ?? candidate;
 }
 
 /**
@@ -170,14 +199,14 @@ export async function getProfile(
   cols: Collections,
   accountId: string,
 ): Promise<{ displayName?: string; publicId: string; equippedTitle?: string }> {
-  const [doc, saveDoc, publicId] = await Promise.all([
-    cols.accounts.findOne({ _id: accountId }),
+  const [displayName, saveDoc, publicId] = await Promise.all([
+    ensureDisplayName(cols, accountId),
     cols.saves.findOne({ _id: accountId }, { projection: { 'save.equipped': 1 } }),
     ensurePublicId(cols, accountId),
   ]);
   const equippedTitle = (saveDoc?.save.equipped as Record<string, string> | undefined)?.['title'];
   return {
-    ...(doc?.displayName ? { displayName: doc.displayName } : {}),
+    displayName,
     publicId,
     ...(equippedTitle ? { equippedTitle } : {}),
   };
