@@ -59,7 +59,6 @@ export const en: Record<TranslationKey, string> = {
   'card.medic.desc': 'Heals nearby allies with a pen-light aura. In PvP it fights back — just barely.',
 
   // ── Lobby ─────────────────────────────────────────────────────────────────
-  'lobby.title': 'NOTEBOOK WARS',
   'lobby.subtitle': 'Real-time Tower Defense',
   'lobby.feature.1': 'Play cards  ->  deploy units & buildings',
   'lobby.feature.2': 'Destroy the enemy base to win',

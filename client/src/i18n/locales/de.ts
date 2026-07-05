@@ -59,7 +59,6 @@ export const de: Record<TranslationKey, string> = {
   'card.medic.desc': 'Heilt verbündete Einheiten mit einer Lichtstift-Aura. Im PvP schlägt er auch zurück — kaum.',
 
   // ── Lobby ─────────────────────────────────────────────────────────────────
-  'lobby.title': 'NOTEBOOK WARS',
   'lobby.subtitle': 'Echtzeit-Tower-Defense',
   'lobby.feature.1': 'Karten spielen  ->  Einheiten & Gebäude einsetzen',
   'lobby.feature.2': 'Zerstöre die gegnerische Basis, um zu gewinnen',

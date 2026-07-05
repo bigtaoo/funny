@@ -61,7 +61,6 @@ export const zh = {
   'card.medic.desc': '光环持续治愈周围友军；PvP中附带微弱攻击，不再是完全无害的旁观者。',
 
   // ── Lobby ─────────────────────────────────────────────────────────────────
-  'lobby.title': 'NOTEBOOK WARS',
   'lobby.subtitle': '实时塔防对战',
   'lobby.feature.1': '打出卡牌 → 部署单位与建筑',
   'lobby.feature.2': '摧毁敌方基地即获胜',

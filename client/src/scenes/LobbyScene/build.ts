@@ -14,6 +14,7 @@ import { buildAvatar } from '../../render/avatar';
 import { StickmanRuntime } from '../../render/stickman/StickmanRuntime';
 import { randomHeroAssetUrl } from '../../render/heroSilhouette';
 import { Rect } from '../../layout/ILayout';
+import logoUrl from '../../assets/logo.png';
 import {
   C, txt, fmtCoins, sketchPanel, drawBtn, buildBackground, randomAiName,
   type Constructor, type LobbySceneBaseCtor,
@@ -166,16 +167,31 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       wear.alpha = 0.55;
       this.container.addChild(wear);
 
-      // Header block
-      const tbH = Math.round(h * 0.14);
+      // Header block — sized up slightly (0.14 → 0.16) to fit the brand mark
+      // (shield-crest logo, ADR-027) alongside the "Nivara" title without
+      // crowding the tagline row.
+      const tbH = Math.round(h * 0.16);
       const titleBg = new PIXI.Graphics();
       titleBg.beginFill(C.dark);
       titleBg.drawRect(0, 0, w, tbH);
       titleBg.endFill();
       this.container.addChild(titleBg);
 
-      const title = txt(t('lobby.title'), Math.round(h * 0.048), 0xffffff, true);
-      title.anchor.set(0.5, 0.5); title.x = w / 2; title.y = tbH * 0.45;
+      const title = txt(t('game.title'), Math.round(h * 0.05), 0xffffff, true);
+      title.anchor.set(0, 0.5);
+
+      const logoSize = Math.round(tbH * 0.62);
+      const logoGap = Math.round(w * 0.015);
+      const groupW = logoSize + logoGap + title.width;
+      const groupX0 = Math.round(w / 2 - groupW / 2);
+
+      const logo = PIXI.Sprite.from(logoUrl as string);
+      logo.anchor.set(0, 0.5);
+      logo.width = logoSize; logo.height = logoSize;
+      logo.x = groupX0; logo.y = tbH * 0.45;
+      this.container.addChild(logo);
+
+      title.x = groupX0 + logoSize + logoGap; title.y = tbH * 0.45;
       this.container.addChild(title);
 
       const subtitle = txt(t('lobby.subtitle'), Math.round(h * 0.022), C.light);
@@ -216,7 +232,7 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
           { color: palette.marker, width: Math.max(4, ulH * 0.5), taper: 0.6, double: false },
         );
       }, { tag: 'lobby-title', variants: 3, fps: 8 });
-      this.titleBoil.x = w / 2 - ulW / 2;
+      this.titleBoil.x = title.x + title.width / 2 - ulW / 2;
       this.titleBoil.y = tbH * 0.45 + title.height / 2;
       this.container.addChild(this.titleBoil);
 
