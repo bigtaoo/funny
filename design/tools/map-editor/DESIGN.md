@@ -1,6 +1,6 @@
 # Notebook Wars — SLG 地图编辑器设计文档
 
-> 创建：2026-07-04。地形骨架已拍板（2026-07-05，见 [DECISIONS.md ADR-034](../../DECISIONS.md)），代码重写已完成（2026-07-05），编辑器工程骨架+只读渲染+河流/山脉路径笔刷+城池拖拽+栅格化发布到服务端模板已搭（2026-07-05，见 §8）。
+> 创建：2026-07-04。地形骨架已拍板（2026-07-05，见 [DECISIONS.md ADR-034](../../DECISIONS.md)），代码重写已完成（2026-07-05），编辑器工程骨架+河流/山脉路径笔刷+城池拖拽+栅格化发布到服务端模板+等距贴图美术对齐游戏客户端已搭（2026-07-05，见 §8）。
 > 配套阅读：`../../game/SLG_DESIGN.md`（§2.4 国家系统 / §3.2 地图规格 / **§24 地图模板与编辑器**——本节的服务端持久化就是接到 §24 已实现的 admin 模板 API，不是新建一套）、`../../DECISIONS.md`（ADR-032 地图尺寸/等级、ADR-034 环形地形骨架，**注意**：曾短暂存在一版同日的 ADR-033"10 首府三层同心环"方案，与本文档方向不同，当天即被撤销/作废，本文档只跟 ADR-034 对应）、`../../game/SGZ_LAND_REFERENCE.md`（三战地块/城池调研，§5 环形结构 / §8 城池系统）、`server/shared/src/slg/`（已按本文档重写，god-file split 后拆成 `province.ts`/`mapgen.ts`/`mapEdit.ts` 等：`provinceIdxAt()`/`provinceCapitalPositions()` 替代 `nearestCapitalIdx()`/`CAPITAL_FRACTIONS`，新增地形带+城池节点+按环等级分布表+编辑层栅格化）、`../level-editor/DESIGN.md`（工程化参照）、根 `../../../CLAUDE.md`。
 > 讨论期用一次性 HTML/JS 原型（Artifact，未提交仓库）快速试错定稿，迭代记录见 §7；正式编辑器工具（`tools/map-editor`）§8 为工程现状，§6 是其需求清单（编辑交互尚未实现）。
 
@@ -23,6 +23,14 @@
   - **服务端持久化直接接现有 §24 API，没有新建一套**：`tools/map-editor` 新增 `src/api.ts`（复刻 `tools/ops/src/api.ts` 的 Bearer token + localStorage 套路，localStorage key 换成 `nw_map_editor_admin_*` 避免跟 ops 撞车），只暴露本工具要用的几个方法（login/me/logout + `listMapTemplates`/`generateMapTemplate`/`saveMapTemplateTiles`/`activateMapTemplate`/`deleteMapTemplate`），对应 `/admin/slg/map-templates/*`（`slg.map.view`/`slg.map.manage`，同 §24 已实现的 admin 路由）。UI 新增"Publish to Server"面板：未登录显示行内登录表单（Admin API base / 用户名 / 密码），登录后显示 templateId 输入框 + "Generate Template"（按当前 `SLG_MAP_W`×`SLG_MAP_H` 用 `proceduralTile()` 播种，等价直接调 §24 的 generate endpoint）+ "Publish Edits"（跑 `rasterizeMapEdits` 拿 diff，按 `MAP_TEMPLATE_SAVE_MAX_TILES`=5000 分批 PUT）。
   - **已知限制**：单个 templateId 只能对应固定 `SLG_MAP_W`×`SLG_MAP_H`（同 §24 已知限制 1，`proceduralTile()` 尚未参数化尺寸）；发布仍不做"从服务端拉取已有编辑回显"——见下条模板列表只是元数据浏览，不读回 tile 内容。
 - **模板列表 + Activate/Delete**（2026-07-05，§8）：Publish 面板登录后自动拉取 `listMapTemplates()` 并渲染成可点选列表（templateId/尺寸/tileCount/version/是否 active），点一行就把 `template-id` 输入框填成该行的 templateId（复用既有输入框，不引入第二套"当前选中模板"状态）；Generate/Publish 成功后自动刷新列表，保持 tileCount/version/updatedAt 跟服务端一致。新增 Activate（`activateMapTemplate`，标记为"创建新世界用"）和 Delete（`deleteMapTemplate`，浏览器原生 `confirm()` 二次确认）按钮，都作用于当前选中/手填的 templateId；worldsvc 侧既有的"不能删除 active 模板"校验（§24）原样生效，失败信息直接透传到状态栏。**已知限制**：列表只展示元数据，不支持按 viewport 读取/预览模板已存的 tile 内容（`getMapTemplateTiles` 尚未接线——不是本轮需要的功能，模板内容预览要等到"从模板加载回编辑器"这类需求出现再做）。
+- **美术表现对齐游戏内渲染**（2026-07-05，§8）：此前的整图 Canvas ImageData 渲染是纯程序化调试色块（按 tile type 上色+level 调亮度），跟游戏客户端 `client/src/scenes/worldmap/` 的贴图图集等距渲染完全不是一回事——用户明确要求"编辑器里的美术表现必须和游戏内完全一样"。改为 PixiJS 等距（2:1 diamond）视口相机渲染，直接复用游戏客户端同款资源与算法：
+  - `src/render/isoGrid.ts` 是 `client/src/render/isoGrid.ts` 的逐字节拷贝（纯投影数学，无依赖，两边保持一致靠人工同步，未抽成共享包——`tools/*` 和 `client/` 目前没有共享前端代码的先例，为这一个文件建共享包不值得）。
+  - `src/render/{terrain,res,building}AtlasLoader.ts` 拷贝自客户端同名文件，仅去掉 `assetIO` 间接层（编辑器只跑在 Web，`assetIO` 是给微信小游戏 CDN 缓存用的一层indirection，编辑器直接用 atlas URL 当 `PIXI.BaseTexture` source）；**没有拷贝 `cityAtlasLoader.ts`**——城池贴图对应的 tile type 是 `'base'`，只在玩家加入世界后由 worldsvc 运行时写入，`proceduralTile()`/模板基线永远不会产生 `'base'` 格子，编辑器的"city 节点"（capital/gateCity/worldCenter/garrison）栅格化后落地的是 `'center'`/`'familyKeep'`，走的是 `terrain_center`/`terrain_keep` 地面贴图，不是城池建筑贴图。
+  - `src/render/tileGraphics.ts` 是 `client/src/scenes/worldmap/tileGraphics.ts` 的裁剪版：保留地面贴图填色/资源图案(`drawResMotif`)/keep·stronghold 地标建筑贴图(`placeBuildingSprite`)三段，砍掉全部运行时态渲染（ownership 染色、fog、base 城池贴图、HP 条、瞭望塔、允许结盟边框、等级点）——这些只有活着的世界才有，模板编辑器永远看不到。
+  - 资源产出四张贴图集共 `~590KB`（terrain 358KB 最大），编辑器 `webpack.config.js` 新增 `{ test: /\.png$/, type: 'asset/resource' }` 规则（跟 client 一致的 webpack5 内置资源模块，非 url-loader）；`tsconfig.json` 已有 `resolveJsonModule: true`，`.json` 走 TS 原生解析，不需要额外声明；新增 `src/custom.d.ts` 补 `declare module '*.png';`。`package.json` 新增 `pixi.js-legacy@^7.4.3`（跟 client 同版本）。
+  - **交互从"整图 1:1 CSS 缩放"改成"视口相机"**：原先 500×500 tile 直接 1:1 铺满一张 Canvas、缩放靠 CSS `width/height` 缩放整块；等距投影下一个 tile 的屏幕宽度就是缩放本身（`tp`，tile pixel width，10–56px 可调），不可能再整图铺开（500 格 diamond 投影后跨度远超屏幕），改成固定视口（900×620）+ 相机平移（新增 Pan 工具，或任意工具下按住鼠标中键拖动）+ 滚轮/Zoom 滑块缩放（缩放锚点是鼠标位置，同游戏客户端 `WorldMapRenderer.setZoom()` 的"缩放前后同一格保持在同一屏幕位置"手法）。视口按 1.5× 视口尺寸多渲染一圈 tile 作为缓冲，纯平移只挪 `worldLayer` 的 PIXI 容器位置（零重绘），只有平移结束(mouseup)/缩放/编辑提交才重新铺 tile Graphics——地图越大（500×500 全量约 1.4 万格视口内）单次重铺约 1.4–1.7 秒，可接受（不是每帧发生）。
+  - **河流/山脉/城池编辑仍然精确所见即所得**：草稿中的路径描边、城池 footprint 选中框是轻量矢量 UI chrome（未采用贴图，因为编辑中的半成品不是"游戏画面"，是编辑器交互提示）；但一旦提交（双击结束路径/松开鼠标完成拖拽），base 层立刻用 `rasterizeMapEdits()`（跟发布用的是同一个函数）重新栅格化并整视口重绘——发布前看到的贴图效果跟发布后服务端模板生效的效果保证是同一份计算结果，不会走两套逻辑分叉。
+  - 验证：`tsc --noEmit` + `webpack --mode production` 均过；额外用 PixiJS `renderer.extract.pixels()` 直接读取帧缓冲采样验证（因为该会话的浏览器自动化 `screenshot` 工具对这个 WebGL canvas 页面反复超时，原因未查——不影响功能，只是取证手段换了一种），确认河流路径提交后落地格子的像素色确为 `terrain_river` 贴图色调而非纯色色块。
 
 ---
 
@@ -143,7 +151,7 @@
 
 ### 6.3 渲染
 
-- 500×500 格直接同规格渲染会较卡，本轮原型验证了**整图 Canvas 一次性渲染**（`ImageData` 逐像素填色）在浏览器端可行、够快（见 §7），编辑器可以复用这个渲染路径，不必等分块/viewport 裁剪方案。
+- **美术表现必须跟游戏客户端一致**（2026-07-05 用户拍板）：不是程序化调试色块，编辑器直接复用游戏客户端 `client/src/scenes/worldmap/` 同款贴图图集（地形/资源/建筑）+ 等距 2:1 diamond 投影（`isoGrid.ts`），所见即所得。原型阶段验证过的"整图 Canvas 一次性 ImageData 渲染"方案已废弃——那是纯色块调试视图，等距贴图渲染下 500×500 全图铺开的屏幕跨度远超视口，改为§8 的视口相机（平移+缩放）方案，见§8"美术表现对齐游戏内渲染"条目的实现细节。
 
 ---
 
@@ -170,4 +178,4 @@ npm install     # 首次进入需要装依赖（worktree 各自独立）
 npm run start   # webpack dev server，端口 9095
 ```
 
-当前功能：整图渲染（切 world seed 输入框 + Regenerate 按钮）、hover 显示 tile 坐标/类型/等级/资源、缩放滑块、图例；河流/山脉路径笔刷（Select/River/Mountain 工具切换、点击加点/双击回车结束/Esc 取消、拖端点、选中删除、宽度可调、Export/Import JSON）；城池拖拽（City 工具，拖动移动坐标、点击查看详情、Reset Cities、独立 Export/Import JSON）。路径/城池栅格化回地块、服务端落盘尚未实现。
+当前功能：PixiJS 等距视口渲染，贴图跟游戏客户端一致（切 world seed 输入框 + Regenerate 按钮，Pan 工具/中键拖动平移，滚轮/Zoom 滑块缩放，Center View 按钮回中）、hover 显示 tile 坐标/类型/等级/资源、图例；河流/山脉路径笔刷（Select/River/Mountain 工具切换、点击加点/双击回车结束/Esc 取消、拖端点、选中删除、宽度可调、Export/Import JSON）；城池拖拽（City 工具，拖动移动坐标、点击查看详情、Reset Cities、独立 Export/Import JSON）；路径/城池栅格化回地块+发布到服务端模板（Publish to Server 面板，含登录/模板生成/模板列表/Activate/Delete）均已实现。

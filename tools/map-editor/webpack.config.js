@@ -28,6 +28,8 @@ module.exports = (env, argv) => {
           use: { loader: 'ts-loader', options: { transpileOnly: true } },
           exclude: /node_modules/,
         },
+        // Atlas PNGs (webpack5 asset module, matching client/webpack.config.js — not url-loader).
+        { test: /\.png$/, type: 'asset/resource' },
       ],
     },
     plugins: [

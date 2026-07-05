@@ -55,15 +55,10 @@
     .main { flex: 1 1 auto; display: flex; min-height: 0; }
 
     .canvas-wrap {
-      flex: 1 1 auto; overflow: auto; display: flex; align-items: flex-start;
-      justify-content: flex-start; background: #0c0c14; padding: 12px;
+      flex: 1 1 auto; overflow: hidden; display: flex; align-items: center;
+      justify-content: center; background: #0c0c14; padding: 12px;
     }
-    .canvas-stack { position: relative; flex: 0 0 auto; }
-    .canvas-stack canvas { image-rendering: pixelated; position: absolute; top: 0; left: 0; }
-    #map-canvas { background: #11111b; }
-    #city-canvas { cursor: crosshair; }
-    .canvas-stack.tool-select #city-canvas,
-    .canvas-stack.tool-city #city-canvas { cursor: default; }
+    #pixi-root canvas { display: block; }
 
     .toolbar .tool { padding: 6px 10px; }
     .toolbar .tool.active { background: var(--accent); color: #11111b; border-color: var(--accent); font-weight: 600; }
@@ -120,24 +115,22 @@
     <button class="tool" data-tool="river" id="tool-river" title="Click to add points, double-click/Enter to finish, Esc to cancel">River</button>
     <button class="tool" data-tool="mountain" id="tool-mountain" title="Click to add points, double-click/Enter to finish, Esc to cancel">Mountain</button>
     <button class="tool" data-tool="city" id="tool-city" title="Drag a city marker to move it (footprint stays the same)">City</button>
+    <button class="tool" data-tool="pan" id="tool-pan" title="Drag to pan the camera (also: middle-mouse-drag in any tool)">Pan</button>
     <label for="brush-width">Width</label>
     <input type="number" id="brush-width" min="1" max="20" value="8">
     <button id="btn-undo-point" title="Remove last draft point (Backspace)">Undo Point</button>
     <button id="btn-delete-path" class="danger" disabled title="Delete selected path (Delete)">Delete Path</button>
     <button id="btn-clear-paths" title="Remove all river/mountain paths">Clear All</button>
     <button id="btn-reset-cities" title="Reset all city positions back to the generated defaults">Reset Cities</button>
+    <button id="btn-center" title="Re-center the camera on the map">Center View</button>
     <span class="spacer"></span>
     <label for="zoom">Zoom</label>
-    <input type="range" id="zoom" min="1" max="4" step="1" value="1">
+    <input type="range" id="zoom" min="10" max="56" step="2" value="28">
   </div>
 
   <div class="main">
     <div class="canvas-wrap">
-      <div class="canvas-stack" id="canvas-stack">
-        <canvas id="map-canvas" width="500" height="500"></canvas>
-        <canvas id="overlay-canvas" width="500" height="500"></canvas>
-        <canvas id="city-canvas" width="500" height="500"></canvas>
-      </div>
+      <div id="pixi-root"></div>
     </div>
     <div class="col-insp">
       <div class="insp-body">
@@ -147,7 +140,7 @@
         <div id="tile-info" class="hint">Hover the map to inspect a tile.</div>
         <div class="insp-title">Paths (<span id="path-count">0</span>)</div>
         <div class="path-list" id="path-list"></div>
-        <div class="hint">画河流/山脉：选中 River/Mountain 工具后在地图上点击加点，双击或回车结束路径，Esc 取消。Select 工具下拖动端点、点击路径选中后可删除。</div>
+        <div class="hint">画河流/山脉：选中 River/Mountain 工具后在地图上点击加点，双击或回车结束路径，Esc 取消。Select 工具下拖动端点、点击路径选中后可删除。地图现在是真实贴图的等距相机视角（跟游戏内一样）：Pan 工具或任意工具下按住中键拖动可平移，滚轮/Zoom 滑块缩放。</div>
         <div class="insp-title">Paths — Export / Import JSON</div>
         <textarea id="json" spellcheck="false"></textarea>
         <div class="json-bar">
