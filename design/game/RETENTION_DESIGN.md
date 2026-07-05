@@ -1,6 +1,6 @@
 # 留存系统设计 — Daily Retention（签到 / 每日任务 / 周常）
 
-> 状态：**P0 已实现（2026-06-22）** · 权威：**本文（留存系统机制单一来源）**；数值（奖励/上限/曲线）镜像并最终落 [`ECONOMY_NUMBERS.md §12`](ECONOMY_NUMBERS.md)（DRAFT 初值）· 更新：2026-06-22
+> 状态：**P0 已实现（2026-06-22）**，签到奖励表 + Tab 改版见 §10.4（2026-07-05） · 权威：**本文（留存系统机制单一来源）**；数值（奖励/上限/曲线）镜像并最终落 [`ECONOMY_NUMBERS.md §12`](ECONOMY_NUMBERS.md)（DRAFT 初值）· 更新：2026-07-05
 >
 > **实现记录（B5 2026-06-22）**：
 > - `server/shared/src/retention.ts` — 纯函数 + 类型（`RetentionSave`, `CHECKIN_REWARDS[30]`, `DAILY_TASKS[3]`, `accrueRetentionTask`, `claimCheckinDay`, `claimDailyReward`）
@@ -65,9 +65,10 @@
 ### 2.1 每日签到曲线（月历式）`[可调 → §12]`
 
 - **形态**：30 格月历，每自然日（服务器时区）可领当月「下一未领格」一格。
-- **累进**：第 7 / 14 / 21 / 30 格为里程碑大奖（体力包 / 卡包 / 抽卡碎片 / 月末压轴）。
+- **累进**：第 7 / 14 / 21 / 30 格为里程碑大奖（体力包 / 卡包 / 中级材料包 / 月末压轴装备）。
 - **断签**：漏签只是当天不点亮，**累计格数不回退**；可选「补签」道具（金币/广告购买，劝退价，[可调]，前期不做）。
 - **跨月**：每月 1 号格位与已领记录重置（`monthKey`）。
+- **实现（2026-07-05）**：`CHECKIN_REWARDS[30]` 落定（`server/shared/src/retention.ts`）——常规格在体力（+30）间穿插材料滴灌（约每 3 格一次 scrap/lead/binding，全月覆盖，非只挂里程碑格）；里程碑格：第 7 天体力包（+100）、第 14 天卡包（**随机**从抽卡卡池均匀抽 1 张角色卡）、第 21 天中级材料包（lead ×5）、第 30 天月末压轴（**随机**从 equip_t1 抽 1 件装备）。卡/装备**不做**权重池抽取（commercial 的 `rollCustomGacha` 属于跨服务边界，metaserver 不依赖 `@nw/commercial`），改为 `@nw/shared` 内新增的 `pickRandomCatalogItem(category)`——同一份抽卡目录（`GACHA_CATALOG`）内均匀随机，纯函数、无 DB。签到本体自此**不再发金币**（`kind:'coins'` 只留兼容旧存档解析），符合 R1。
 
 ### 2.2 每日任务池 `[可调 → §12]`
 
@@ -200,7 +201,7 @@ POST /retention/weekly/claim            (JWT) { tier:1|2|3 } → { save, granted
 
 ### 6.1 待定项（实现前需拍）
 
-- [ ] 签到月历 30 格的具体奖励表（哪些格给体力/卡/碎片，里程碑大奖内容）→ §12。
+- [x] 签到月历 30 格的具体奖励表（哪些格给体力/材料/卡/装备，里程碑大奖内容）→ 见 §2.1 实现记录（2026-07-05）。
 - [ ] 每日任务「满点」阈值与金币额（必须使月度收敛到 ~60）→ §12 + ECONOMY §9 模拟验证。
 - [ ] 任务池是否做随机派发（前期倾向固定全集，不随机）。
 - [ ] 补签道具是否做（前期不做）。
@@ -216,6 +217,7 @@ POST /retention/weekly/claim            (JWT) { tier:1|2|3 } → { save, granted
 - **入口**：大厅显著位置（每日签到弹层可在登录后首屏弹出，一次/天）；ProfileScene 或独立「每日」面板汇总三层。
 - **签到**：月历网格（30 格），已领/可领/未达三态 + 里程碑大奖高亮；「领取」按钮领下一格。
 - **每日任务**：任务卡列表 + 当日任务点进度条 + 满点「领取金币」按钮。
+- **月历/任务 Tab（2026-07-05）**：DailyScene 原左右分栏同屏显示两块，改为竖排 Tab 侧栏堆叠在笔记本红色装订线**左侧**，内容区（月历 or 任务，二选一）整块移到红线**右侧**，同 AchievementScene 的分类 Tab 布局（呼应纸面装订线+正文分区）。
 - **周常**（P1）：周活跃进度条 + 三档宝箱。
 - **红点**：入口 + 各层三级红点，源于任一 claimable（§4.1）。
 - **i18n**：新增 `retention.*`（签到/任务/周常/领取/已领/进度/大奖），中英双语；**禁韩文**（见 memory）。
@@ -287,3 +289,15 @@ POST /retention/weekly/claim            (JWT) { tier:1|2|3 } → { save, granted
 **现象二**：`DailyScene.renderDailyTasks` 每日任务卡左侧任务文案（如「通关任意 PvE 关卡」）与右侧状态文案（「进行中」/「完成」）同一行绝对定位、无宽度约束，卡片较窄（横屏右列 45%）时文案变长会与状态文字重叠。
 
 **修复二**：任务文案改用 `wordWrap`（宽度上限卡片宽的 60%），超长自动换行，与右侧状态文案之间留出安全间距，不再重叠。
+
+### 10.4 签到奖励表落定 + 月历/任务 Tab 改版（2026-07-05）
+
+**背景**：`CHECKIN_REWARDS[30]` 里程碑格（7/14/21/30）此前用 `kind:'coins'` 占位（代码注释自称"placeholder"），§2.1 早已规划里程碑给「体力包/卡包/材料包/月末压轴」但一直没补——签到普通格显示的其实是**体力 +30**（不是金币），容易被误读；且 UI 左右分栏同屏挤两块内容，Tab 切换诉求（月历/任务）无处安放。
+
+**奖励表**：`CheckinRewardKind` 扩为 `coins | stamina | material | card | equipment`（`kind:'coins'` 只留兼容旧存档解析，签到本体自此不再发金币，符合 R1）。产品拍板：材料要覆盖全月（不只挂里程碑格）——普通格在体力间穿插材料滴灌（约 8/26 天）；里程碑格：7=体力包（+100）、14=卡包（随机 1 张角色卡）、21=中级材料包（lead×5）、30=月末压轴（随机 1 件 equip_t1 装备）。
+
+**随机抽取**：卡/装备milestone 复用"抽卡权重池"的诉求，落地为 `@nw/shared/gachaCatalog.ts` 新增的 `pickRandomCatalogItem(category)`——同一份 `GACHA_CATALOG` 目录内均匀随机挑 1 项（无 ops 权重表，checkin 没有运营配置的必要）。之所以不直接调 `commercial/gacha.ts` 的 `rollCustomGacha`：metaserver **不依赖** `@nw/commercial`（服务边界，commercial 只通过 `CommercialClient` RPC 接口被引用），跨服务导入内部纯函数会破坏这条边界，故改为在 `@nw/shared` 落一份更简单的均匀抽取。卡通过 `grantCards`（复用花名册满员补币逃生舱）交付；装备通过 `rollCraftedAffixes` 现场滚词条 + `grantEquipment`（trade-transfer 写法，覆盖写入、无 300 上限检查）交付，二者均落 `save.cardInv`/`save.equipmentInv`，PvP 蓝图硬墙自动生效（R3，见 DECISIONS.md）。
+
+**UI**：DailyScene 原「月历+任务」左右分栏同屏，改为竖排 Tab 侧栏（同 AchievementScene 分类 Tab）：两个 Tab 堆叠在笔记本红色装订线**左侧**，内容区（月历 or 任务，一次只显示一个）整块移到红线**右侧**（`marginLineX(w)` 起算），不再区分横竖屏两套分栏比例。
+
+**契约**：`openapi.yml` 的 `/retention` `defs.rewards[].kind` 枚举 + `/retention/checkin` `reward.kind` 枚举都加 `material|card|equipment`，两处都补可选 `id`（材料 id 或抽中的 defId）。`routes.gen.ts` 已用 `gen:api:server` 重新生成。
