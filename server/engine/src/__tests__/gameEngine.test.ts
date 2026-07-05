@@ -16,7 +16,7 @@ import { runHeadless } from '../runHeadless';
 import { LocalInputSource } from '../net/InputSource';
 import { toFp } from '../math/fixed';
 import { ATTACK_LANES, HAND_SIZE } from '../config';
-import { CardType, GamePhase, Side } from '../types';
+import { CardType, GamePhase, Side, UnitType } from '../types';
 import type { GameConfig, PlayerCommand } from '../types';
 import type { LevelDefinition } from '../campaign/LevelDefinition';
 
@@ -118,4 +118,28 @@ test('campaign timed_defense objective ends the match with GamePhase.GameOver an
   assert.ok(outcome.ok, 'match reaches GameOver within maxTicks');
   assert.equal(outcome.engine.state.phase, GamePhase.GameOver);
   assert.equal(outcome.engine.state.winner, Side.Bottom);
+});
+
+// ── Scripted enemy waves (CampaignMixin.spawnEnemyUnit + WaveDirector) ─────────────────
+
+test('a scripted wave spawns via CampaignMixin and a leak past the base ends the match with Top winning', () => {
+  const col = ATTACK_LANES[0];
+  const level: LevelDefinition = {
+    id: 'test_leak_limit',
+    chapter: 0,
+    seed: 5,
+    objective: { kind: 'leak_limit', maxLeaks: 0 },
+    waves: { entries: [{ atTick: 1, unitType: UnitType.Runner, col, count: 1 }] },
+    // Shorten the lane to 1 row so the runner reaches row 0 almost immediately, instead of
+    // needing to hand-simulate 250+ ticks of travel; it still has to walk laterally from
+    // its lane into the base's column afterward before the leak actually registers.
+    board: { laneLength: { [col]: 17 } },
+  };
+  const config: GameConfig = { seed: 5, mode: 'campaign', players: [{ id: 0 }, { id: 1 }], level };
+  const outcome = runHeadless(config, new LocalInputSource(), 150);
+
+  assert.ok(outcome.ok, 'match reaches GameOver within maxTicks');
+  assert.equal(outcome.engine.state.phase, GamePhase.GameOver);
+  assert.equal(outcome.engine.state.winner, Side.Top, 'a single leak past maxLeaks=0 loses the level');
+  assert.equal(outcome.engine.state.enemyLeaks, 1);
 });
