@@ -14,6 +14,8 @@ import { bake } from '../../render/bake';
 import { IconKind } from '../../render/icons';
 import { BoilingSprite } from '../../render/boil';
 
+export { fmtCoins } from './format';
+
 // ── AI name pool ───────────────────────────────────────────────────────────────
 
 const AI_NAMES = [
@@ -44,13 +46,6 @@ export function txt(label: string, size: number, color: number, bold = false): P
     fontSize: size, fill: color, fontFamily: 'monospace',
     fontWeight: bold ? 'bold' : 'normal',
   });
-}
-
-/** Compact coin formatting for the header chip (e.g. 1234 → "1,234", 23456 → "23.5k"). */
-export function fmtCoins(n: number): string {
-  const v = Math.max(0, Math.floor(n));
-  if (v >= 10000) return (v / 1000).toFixed(v >= 100000 ? 0 : 1) + 'k';
-  return v.toLocaleString('en-US');
 }
 
 /**
