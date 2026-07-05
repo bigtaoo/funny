@@ -5,7 +5,7 @@
   "objective": {
     "kind": "survive"
   },
-  "inkRegenMult": 0.3,
+  "inkRegenMult": 1.68,
   "bannedCards": [
     "meteor_1",
     "haste_1",
@@ -14,213 +14,213 @@
   "waves": {
     "entries": [
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "ironclad",
         "col": 1,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 38
       },
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "ironclad",
         "col": 10,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 38
       },
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "runner",
         "col": 2,
-        "count": 4,
+        "count": 2,
         "spacingTicks": 7
       },
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "runner",
         "col": 9,
-        "count": 4,
+        "count": 2,
         "spacingTicks": 7
       },
       {
-        "atTick": 240,
+        "atTick": 300,
         "unitType": "ironclad",
         "col": 0,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 32
       },
       {
-        "atTick": 240,
+        "atTick": 300,
         "unitType": "ironclad",
         "col": 11,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 32
       },
       {
-        "atTick": 240,
+        "atTick": 300,
         "unitType": "runner",
         "col": 3,
-        "count": 5,
+        "count": 3,
         "spacingTicks": 6
       },
       {
-        "atTick": 240,
+        "atTick": 300,
         "unitType": "runner",
         "col": 8,
-        "count": 5,
+        "count": 3,
         "spacingTicks": 6
       },
       {
-        "atTick": 420,
+        "atTick": 480,
         "unitType": "ironclad",
         "col": 4,
-        "count": 3,
-        "spacingTicks": 30
-      },
-      {
-        "atTick": 420,
-        "unitType": "ironclad",
-        "col": 7,
-        "count": 3,
-        "spacingTicks": 30
-      },
-      {
-        "atTick": 420,
-        "unitType": "runner",
-        "col": 1,
-        "count": 5,
-        "spacingTicks": 6
-      },
-      {
-        "atTick": 420,
-        "unitType": "runner",
-        "col": 10,
-        "count": 5,
-        "spacingTicks": 6
-      },
-      {
-        "atTick": 600,
-        "unitType": "ironclad",
-        "col": 2,
-        "count": 4,
-        "spacingTicks": 26
-      },
-      {
-        "atTick": 600,
-        "unitType": "ironclad",
-        "col": 9,
-        "count": 4,
-        "spacingTicks": 26
-      },
-      {
-        "atTick": 600,
-        "unitType": "runner",
-        "col": 0,
-        "count": 6,
-        "spacingTicks": 5
-      },
-      {
-        "atTick": 600,
-        "unitType": "runner",
-        "col": 11,
-        "count": 6,
-        "spacingTicks": 5
-      },
-      {
-        "atTick": 600,
-        "unitType": "splitter",
-        "col": 2,
         "count": 2,
         "spacingTicks": 30
       },
       {
-        "atTick": 600,
-        "unitType": "splitter",
-        "col": 9,
+        "atTick": 480,
+        "unitType": "ironclad",
+        "col": 7,
         "count": 2,
         "spacingTicks": 30
       },
       {
-        "atTick": 840,
+        "atTick": 480,
+        "unitType": "runner",
+        "col": 1,
+        "count": 3,
+        "spacingTicks": 6
+      },
+      {
+        "atTick": 480,
+        "unitType": "runner",
+        "col": 10,
+        "count": 3,
+        "spacingTicks": 6
+      },
+      {
+        "atTick": 660,
+        "unitType": "ironclad",
+        "col": 2,
+        "count": 2,
+        "spacingTicks": 26
+      },
+      {
+        "atTick": 660,
+        "unitType": "ironclad",
+        "col": 9,
+        "count": 2,
+        "spacingTicks": 26
+      },
+      {
+        "atTick": 660,
+        "unitType": "runner",
+        "col": 0,
+        "count": 4,
+        "spacingTicks": 5
+      },
+      {
+        "atTick": 660,
+        "unitType": "runner",
+        "col": 11,
+        "count": 4,
+        "spacingTicks": 5
+      },
+      {
+        "atTick": 660,
+        "unitType": "splitter",
+        "col": 2,
+        "count": 1,
+        "spacingTicks": 30
+      },
+      {
+        "atTick": 660,
+        "unitType": "splitter",
+        "col": 9,
+        "count": 1,
+        "spacingTicks": 30
+      },
+      {
+        "atTick": 900,
         "unitType": "ironclad",
         "col": 3,
-        "count": 4,
+        "count": 2,
         "spacingTicks": 24
       },
       {
-        "atTick": 840,
+        "atTick": 900,
         "unitType": "ironclad",
         "col": 8,
-        "count": 4,
+        "count": 2,
         "spacingTicks": 24
       },
       {
-        "atTick": 840,
+        "atTick": 900,
         "unitType": "runner",
         "col": 4,
-        "count": 6,
+        "count": 4,
         "spacingTicks": 5
       },
       {
-        "atTick": 840,
+        "atTick": 900,
         "unitType": "runner",
         "col": 7,
-        "count": 6,
+        "count": 4,
         "spacingTicks": 5
       },
       {
-        "atTick": 1080,
+        "atTick": 1140,
         "unitType": "ironclad",
         "col": 1,
-        "count": 5,
+        "count": 3,
         "spacingTicks": 20
       },
       {
-        "atTick": 1080,
+        "atTick": 1140,
         "unitType": "ironclad",
         "col": 10,
-        "count": 5,
+        "count": 3,
         "spacingTicks": 20
       },
       {
-        "atTick": 1080,
+        "atTick": 1140,
         "unitType": "runner",
         "col": 2,
-        "count": 7,
+        "count": 4,
         "spacingTicks": 5
       },
       {
-        "atTick": 1080,
+        "atTick": 1140,
         "unitType": "runner",
         "col": 9,
-        "count": 7,
+        "count": 4,
         "spacingTicks": 5
       },
       {
-        "atTick": 1080,
+        "atTick": 1140,
         "unitType": "ironclad",
         "col": 4,
-        "count": 4,
+        "count": 2,
         "spacingTicks": 22
       },
       {
-        "atTick": 1080,
+        "atTick": 1140,
         "unitType": "ironclad",
         "col": 7,
-        "count": 4,
+        "count": 2,
         "spacingTicks": 22
       },
       {
-        "atTick": 1080,
+        "atTick": 1140,
         "unitType": "harpy",
         "col": 1,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 18
       },
       {
-        "atTick": 1080,
+        "atTick": 1140,
         "unitType": "harpy",
         "col": 10,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 18
       }
     ]
@@ -238,5 +238,10 @@
     }
   },
   "nameKey": "campaign.ch6.lv7.name",
-  "briefKey": "campaign.ch6.lv7.brief"
+  "briefKey": "campaign.ch6.lv7.brief",
+  "startInk": 45,
+  "enemyScale": {
+    "hp": 1.14,
+    "damage": 1.08
+  }
 }

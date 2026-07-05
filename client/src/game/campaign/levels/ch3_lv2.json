@@ -17,107 +17,107 @@
   "waves": {
     "entries": [
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "infantry",
         "col": 10,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 16
       },
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "runner",
         "col": 7,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 9
       },
       {
-        "atTick": 300,
+        "atTick": 360,
         "unitType": "shieldbearer",
         "col": 9,
         "count": 2,
         "spacingTicks": 26
       },
       {
-        "atTick": 300,
+        "atTick": 360,
         "unitType": "infantry",
         "col": 11,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 14
       },
       {
-        "atTick": 300,
+        "atTick": 360,
         "unitType": "runner",
         "col": 8,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 8
       },
       {
-        "atTick": 540,
+        "atTick": 600,
         "unitType": "ironclad",
         "col": 7,
         "count": 1
       },
       {
-        "atTick": 540,
+        "atTick": 600,
         "unitType": "runner",
         "col": 10,
-        "count": 5,
+        "count": 4,
         "spacingTicks": 7
       },
       {
-        "atTick": 540,
+        "atTick": 600,
         "unitType": "infantry",
         "col": 9,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 14
       },
       {
-        "atTick": 780,
+        "atTick": 840,
         "unitType": "ironclad",
         "col": 11,
         "count": 2,
         "spacingTicks": 38
       },
       {
-        "atTick": 780,
+        "atTick": 840,
         "unitType": "shieldbearer",
         "col": 8,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 20
       },
       {
-        "atTick": 780,
+        "atTick": 840,
         "unitType": "runner",
         "col": 7,
-        "count": 5,
+        "count": 4,
         "spacingTicks": 7
       },
       {
-        "atTick": 1020,
+        "atTick": 1080,
         "unitType": "ironclad",
         "col": 8,
         "count": 2,
         "spacingTicks": 36
       },
       {
-        "atTick": 1020,
+        "atTick": 1080,
         "unitType": "ironclad",
         "col": 10,
         "count": 2,
         "spacingTicks": 36
       },
       {
-        "atTick": 1020,
+        "atTick": 1080,
         "unitType": "runner",
         "col": 9,
-        "count": 5,
+        "count": 4,
         "spacingTicks": 6
       },
       {
-        "atTick": 1020,
+        "atTick": 1080,
         "unitType": "runner",
         "col": 11,
-        "count": 5,
+        "count": 4,
         "spacingTicks": 6
       }
     ]
@@ -134,5 +134,11 @@
     }
   },
   "nameKey": "campaign.ch3.lv2.name",
-  "briefKey": "campaign.ch3.lv2.brief"
+  "briefKey": "campaign.ch3.lv2.brief",
+  "startInk": 30,
+  "inkRegenMult": 1.43,
+  "enemyScale": {
+    "hp": 1.03,
+    "damage": 1.02
+  }
 }

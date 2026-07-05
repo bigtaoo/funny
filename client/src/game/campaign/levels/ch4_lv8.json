@@ -29,10 +29,10 @@
   "waves": {
     "entries": [
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "runner",
         "col": 3,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 8,
         "crossWaypoints": [
           {
@@ -42,10 +42,10 @@
         ]
       },
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "runner",
         "col": 8,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 8,
         "crossWaypoints": [
           {
@@ -55,7 +55,7 @@
         ]
       },
       {
-        "atTick": 240,
+        "atTick": 300,
         "unitType": "ironclad",
         "col": 3,
         "count": 2,
@@ -68,7 +68,7 @@
         ]
       },
       {
-        "atTick": 240,
+        "atTick": 300,
         "unitType": "ironclad",
         "col": 8,
         "count": 2,
@@ -81,38 +81,38 @@
         ]
       },
       {
-        "atTick": 240,
+        "atTick": 300,
         "unitType": "infantry",
         "col": 1,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 15
       },
       {
-        "atTick": 240,
+        "atTick": 300,
         "unitType": "infantry",
         "col": 10,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 15
       },
       {
-        "atTick": 480,
+        "atTick": 540,
         "unitType": "shieldbearer",
         "col": 4,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 22
       },
       {
-        "atTick": 480,
+        "atTick": 540,
         "unitType": "shieldbearer",
         "col": 7,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 22
       },
       {
-        "atTick": 480,
+        "atTick": 540,
         "unitType": "runner",
         "col": 3,
-        "count": 5,
+        "count": 4,
         "spacingTicks": 7,
         "crossWaypoints": [
           {
@@ -122,24 +122,24 @@
         ]
       },
       {
-        "atTick": 720,
+        "atTick": 780,
         "unitType": "ironclad",
         "col": 4,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 34
       },
       {
-        "atTick": 720,
+        "atTick": 780,
         "unitType": "ironclad",
         "col": 7,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 34
       },
       {
-        "atTick": 720,
+        "atTick": 780,
         "unitType": "runner",
         "col": 8,
-        "count": 5,
+        "count": 4,
         "spacingTicks": 7,
         "crossWaypoints": [
           {
@@ -149,10 +149,10 @@
         ]
       },
       {
-        "atTick": 960,
+        "atTick": 1020,
         "unitType": "runner",
         "col": 3,
-        "count": 5,
+        "count": 4,
         "spacingTicks": 7,
         "crossWaypoints": [
           {
@@ -162,10 +162,10 @@
         ]
       },
       {
-        "atTick": 960,
+        "atTick": 1020,
         "unitType": "runner",
         "col": 8,
-        "count": 5,
+        "count": 4,
         "spacingTicks": 7,
         "crossWaypoints": [
           {
@@ -175,17 +175,17 @@
         ]
       },
       {
-        "atTick": 960,
+        "atTick": 1020,
         "unitType": "ironclad",
         "col": 1,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 32
       },
       {
-        "atTick": 960,
+        "atTick": 1020,
         "unitType": "ironclad",
         "col": 10,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 32
       }
     ]
@@ -202,5 +202,11 @@
       "binding": 3
     }
   },
-  "nameKey": "campaign.ch4.lv8.name"
+  "nameKey": "campaign.ch4.lv8.name",
+  "startInk": 40,
+  "inkRegenMult": 1.65,
+  "enemyScale": {
+    "hp": 1.02,
+    "damage": 1.02
+  }
 }

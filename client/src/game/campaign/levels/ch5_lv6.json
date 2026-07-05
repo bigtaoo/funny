@@ -5,7 +5,7 @@
   "objective": {
     "kind": "destroy_base"
   },
-  "inkRegenMult": 0.8,
+  "inkRegenMult": 1.6,
   "hazards": [
     {
       "col": 2,
@@ -29,176 +29,176 @@
   "waves": {
     "entries": [
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "ironclad",
         "col": 2,
         "count": 1
       },
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "ironclad",
         "col": 9,
         "count": 1
       },
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "runner",
         "col": 2,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 7
       },
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "runner",
         "col": 9,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 7
       },
       {
-        "atTick": 240,
+        "atTick": 300,
         "unitType": "shieldbearer",
         "col": 3,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 22
       },
       {
-        "atTick": 240,
+        "atTick": 300,
         "unitType": "shieldbearer",
         "col": 8,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 22
       },
       {
-        "atTick": 240,
+        "atTick": 300,
         "unitType": "runner",
         "col": 2,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 7
       },
       {
-        "atTick": 480,
+        "atTick": 540,
         "unitType": "ironclad",
         "col": 2,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 32
       },
       {
-        "atTick": 480,
+        "atTick": 540,
         "unitType": "ironclad",
         "col": 9,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 32
       },
       {
-        "atTick": 480,
+        "atTick": 540,
         "unitType": "infantry",
         "col": 4,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 13
       },
       {
-        "atTick": 480,
+        "atTick": 540,
         "unitType": "infantry",
         "col": 7,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 13
       },
       {
-        "atTick": 720,
+        "atTick": 780,
         "unitType": "ironclad",
         "col": 3,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 30
       },
       {
-        "atTick": 720,
+        "atTick": 780,
         "unitType": "ironclad",
         "col": 8,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 30
       },
       {
-        "atTick": 720,
+        "atTick": 780,
         "unitType": "runner",
         "col": 2,
-        "count": 5,
+        "count": 3,
         "spacingTicks": 6
       },
       {
-        "atTick": 720,
+        "atTick": 780,
         "unitType": "runner",
         "col": 9,
-        "count": 5,
+        "count": 3,
         "spacingTicks": 6
       },
       {
-        "atTick": 960,
+        "atTick": 1020,
         "unitType": "ironclad",
         "col": 1,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 28
       },
       {
-        "atTick": 960,
+        "atTick": 1020,
         "unitType": "ironclad",
         "col": 10,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 28
       },
       {
-        "atTick": 960,
+        "atTick": 1020,
         "unitType": "runner",
         "col": 2,
-        "count": 5,
+        "count": 3,
         "spacingTicks": 6
       },
       {
-        "atTick": 960,
+        "atTick": 1020,
         "unitType": "runner",
         "col": 9,
-        "count": 5,
+        "count": 3,
         "spacingTicks": 6
       },
       {
-        "atTick": 960,
+        "atTick": 1020,
         "unitType": "berserker",
         "col": 4,
         "count": 1,
         "spacingTicks": 45
       },
       {
-        "atTick": 960,
+        "atTick": 1020,
         "unitType": "berserker",
         "col": 7,
         "count": 1,
         "spacingTicks": 45
       },
       {
-        "atTick": 1200,
+        "atTick": 1260,
         "unitType": "ironclad",
         "col": 2,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 28
       },
       {
-        "atTick": 1200,
+        "atTick": 1260,
         "unitType": "ironclad",
         "col": 9,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 28
       },
       {
-        "atTick": 1200,
+        "atTick": 1260,
         "unitType": "runner",
         "col": 3,
-        "count": 6,
+        "count": 4,
         "spacingTicks": 5
       },
       {
-        "atTick": 1200,
+        "atTick": 1260,
         "unitType": "runner",
         "col": 8,
-        "count": 6,
+        "count": 4,
         "spacingTicks": 5
       }
     ]
@@ -216,5 +216,10 @@
     }
   },
   "nameKey": "campaign.ch5.lv6.name",
-  "briefKey": "campaign.ch5.lv6.brief"
+  "briefKey": "campaign.ch5.lv6.brief",
+  "startInk": 40,
+  "enemyScale": {
+    "hp": 1.11,
+    "damage": 1.06
+  }
 }

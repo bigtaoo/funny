@@ -31,179 +31,179 @@
   "waves": {
     "entries": [
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "archer",
         "col": 4,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 14
       },
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "archer",
         "col": 7,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 14
       },
       {
-        "atTick": 240,
+        "atTick": 300,
         "unitType": "infantry",
         "col": 3,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 13
       },
       {
-        "atTick": 240,
+        "atTick": 300,
         "unitType": "infantry",
         "col": 8,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 13
       },
       {
-        "atTick": 240,
+        "atTick": 300,
         "unitType": "runner",
         "col": 1,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 8
       },
       {
-        "atTick": 420,
+        "atTick": 480,
         "unitType": "shieldbearer",
         "col": 4,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 22
       },
       {
-        "atTick": 420,
+        "atTick": 480,
         "unitType": "shieldbearer",
         "col": 7,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 22
       },
       {
-        "atTick": 420,
+        "atTick": 480,
         "unitType": "runner",
         "col": 10,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 8
-      },
-      {
-        "atTick": 600,
-        "unitType": "ironclad",
-        "col": 4,
-        "count": 3,
-        "spacingTicks": 34
-      },
-      {
-        "atTick": 600,
-        "unitType": "ironclad",
-        "col": 7,
-        "count": 3,
-        "spacingTicks": 34
-      },
-      {
-        "atTick": 600,
-        "unitType": "infantry",
-        "col": 1,
-        "count": 4,
-        "spacingTicks": 13
-      },
-      {
-        "atTick": 600,
-        "unitType": "infantry",
-        "col": 10,
-        "count": 4,
-        "spacingTicks": 13
-      },
-      {
-        "atTick": 840,
-        "unitType": "archer",
-        "col": 4,
-        "count": 4,
-        "spacingTicks": 12
-      },
-      {
-        "atTick": 840,
-        "unitType": "archer",
-        "col": 7,
-        "count": 4,
-        "spacingTicks": 12
-      },
-      {
-        "atTick": 840,
-        "unitType": "ironclad",
-        "col": 3,
-        "count": 3,
-        "spacingTicks": 32
-      },
-      {
-        "atTick": 840,
-        "unitType": "ironclad",
-        "col": 8,
-        "count": 3,
-        "spacingTicks": 32
-      },
-      {
-        "atTick": 1080,
-        "unitType": "runner",
-        "col": 0,
-        "count": 5,
-        "spacingTicks": 7
-      },
-      {
-        "atTick": 1080,
-        "unitType": "runner",
-        "col": 11,
-        "count": 5,
-        "spacingTicks": 7
-      },
-      {
-        "atTick": 1080,
-        "unitType": "ironclad",
-        "col": 4,
-        "count": 3,
-        "spacingTicks": 32
-      },
-      {
-        "atTick": 1080,
-        "unitType": "ironclad",
-        "col": 7,
-        "count": 3,
-        "spacingTicks": 32
-      },
-      {
-        "atTick": 1320,
-        "unitType": "ironclad",
-        "col": 1,
-        "count": 4,
-        "spacingTicks": 30
-      },
-      {
-        "atTick": 1320,
-        "unitType": "ironclad",
-        "col": 10,
-        "count": 4,
-        "spacingTicks": 30
-      },
-      {
-        "atTick": 420,
-        "unitType": "medic",
-        "col": 4,
-        "count": 1
       },
       {
         "atTick": 660,
-        "unitType": "medic",
+        "unitType": "ironclad",
+        "col": 4,
+        "count": 2,
+        "spacingTicks": 34
+      },
+      {
+        "atTick": 660,
+        "unitType": "ironclad",
         "col": 7,
-        "count": 1
+        "count": 2,
+        "spacingTicks": 34
+      },
+      {
+        "atTick": 660,
+        "unitType": "infantry",
+        "col": 1,
+        "count": 3,
+        "spacingTicks": 13
+      },
+      {
+        "atTick": 660,
+        "unitType": "infantry",
+        "col": 10,
+        "count": 3,
+        "spacingTicks": 13
       },
       {
         "atTick": 900,
+        "unitType": "archer",
+        "col": 4,
+        "count": 3,
+        "spacingTicks": 12
+      },
+      {
+        "atTick": 900,
+        "unitType": "archer",
+        "col": 7,
+        "count": 3,
+        "spacingTicks": 12
+      },
+      {
+        "atTick": 900,
+        "unitType": "ironclad",
+        "col": 3,
+        "count": 2,
+        "spacingTicks": 32
+      },
+      {
+        "atTick": 900,
+        "unitType": "ironclad",
+        "col": 8,
+        "count": 2,
+        "spacingTicks": 32
+      },
+      {
+        "atTick": 1140,
+        "unitType": "runner",
+        "col": 0,
+        "count": 3,
+        "spacingTicks": 7
+      },
+      {
+        "atTick": 1140,
+        "unitType": "runner",
+        "col": 11,
+        "count": 3,
+        "spacingTicks": 7
+      },
+      {
+        "atTick": 1140,
+        "unitType": "ironclad",
+        "col": 4,
+        "count": 2,
+        "spacingTicks": 32
+      },
+      {
+        "atTick": 1140,
+        "unitType": "ironclad",
+        "col": 7,
+        "count": 2,
+        "spacingTicks": 32
+      },
+      {
+        "atTick": 1380,
+        "unitType": "ironclad",
+        "col": 1,
+        "count": 3,
+        "spacingTicks": 30
+      },
+      {
+        "atTick": 1380,
+        "unitType": "ironclad",
+        "col": 10,
+        "count": 3,
+        "spacingTicks": 30
+      },
+      {
+        "atTick": 480,
         "unitType": "medic",
         "col": 4,
         "count": 1
       },
       {
-        "atTick": 1140,
+        "atTick": 720,
+        "unitType": "medic",
+        "col": 7,
+        "count": 1
+      },
+      {
+        "atTick": 960,
+        "unitType": "medic",
+        "col": 4,
+        "count": 1
+      },
+      {
+        "atTick": 1200,
         "unitType": "medic",
         "col": 7,
         "count": 1
@@ -223,5 +223,11 @@
     }
   },
   "nameKey": "campaign.ch4.lv9.name",
-  "briefKey": "campaign.ch4.lv9.brief"
+  "briefKey": "campaign.ch4.lv9.brief",
+  "startInk": 37,
+  "inkRegenMult": 1.55,
+  "enemyScale": {
+    "hp": 1.09,
+    "damage": 1.05
+  }
 }

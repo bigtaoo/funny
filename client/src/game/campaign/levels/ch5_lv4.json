@@ -54,21 +54,21 @@
   "waves": {
     "entries": [
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "archer",
         "col": 2,
         "count": 3,
         "spacingTicks": 14
       },
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "archer",
         "col": 9,
         "count": 3,
         "spacingTicks": 14
       },
       {
-        "atTick": 60,
+        "atTick": 120,
         "unitType": "infantry",
         "col": 3,
         "count": 3,
@@ -81,21 +81,21 @@
         ]
       },
       {
-        "atTick": 240,
+        "atTick": 300,
         "unitType": "shieldbearer",
         "col": 2,
         "count": 3,
         "spacingTicks": 22
       },
       {
-        "atTick": 240,
+        "atTick": 300,
         "unitType": "runner",
         "col": 1,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 8
       },
       {
-        "atTick": 240,
+        "atTick": 300,
         "unitType": "infantry",
         "col": 8,
         "count": 3,
@@ -108,35 +108,35 @@
         ]
       },
       {
-        "atTick": 420,
+        "atTick": 480,
         "unitType": "ironclad",
         "col": 2,
         "count": 2,
         "spacingTicks": 38
       },
       {
-        "atTick": 420,
+        "atTick": 480,
         "unitType": "ironclad",
         "col": 9,
         "count": 2,
         "spacingTicks": 38
       },
       {
-        "atTick": 420,
+        "atTick": 480,
         "unitType": "runner",
         "col": 10,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 8
       },
       {
-        "atTick": 420,
+        "atTick": 480,
         "unitType": "archer",
         "col": 2,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 12
       },
       {
-        "atTick": 600,
+        "atTick": 660,
         "unitType": "shieldbearer",
         "col": 3,
         "count": 3,
@@ -149,7 +149,7 @@
         ]
       },
       {
-        "atTick": 600,
+        "atTick": 660,
         "unitType": "shieldbearer",
         "col": 8,
         "count": 3,
@@ -162,14 +162,14 @@
         ]
       },
       {
-        "atTick": 600,
+        "atTick": 660,
         "unitType": "ironclad",
         "col": 2,
         "count": 3,
         "spacingTicks": 32
       },
       {
-        "atTick": 840,
+        "atTick": 900,
         "unitType": "ironclad",
         "col": 3,
         "count": 3,
@@ -182,7 +182,7 @@
         ]
       },
       {
-        "atTick": 840,
+        "atTick": 900,
         "unitType": "ironclad",
         "col": 8,
         "count": 3,
@@ -195,38 +195,38 @@
         ]
       },
       {
-        "atTick": 840,
+        "atTick": 900,
         "unitType": "runner",
         "col": 1,
-        "count": 5,
+        "count": 4,
         "spacingTicks": 7
       },
       {
-        "atTick": 840,
+        "atTick": 900,
         "unitType": "runner",
         "col": 10,
-        "count": 5,
+        "count": 4,
         "spacingTicks": 7
       },
       {
-        "atTick": 1080,
+        "atTick": 1140,
         "unitType": "ironclad",
         "col": 2,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 30
       },
       {
-        "atTick": 1080,
+        "atTick": 1140,
         "unitType": "ironclad",
         "col": 9,
-        "count": 4,
+        "count": 3,
         "spacingTicks": 30
       },
       {
-        "atTick": 1080,
+        "atTick": 1140,
         "unitType": "runner",
         "col": 0,
-        "count": 5,
+        "count": 4,
         "spacingTicks": 7
       }
     ]
@@ -243,5 +243,11 @@
       "binding": 4
     }
   },
-  "nameKey": "campaign.ch5.lv4.name"
+  "nameKey": "campaign.ch5.lv4.name",
+  "startInk": 39,
+  "inkRegenMult": 1.59,
+  "enemyScale": {
+    "hp": 1.1,
+    "damage": 1.05
+  }
 }
