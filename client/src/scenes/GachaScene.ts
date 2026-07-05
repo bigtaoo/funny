@@ -481,9 +481,13 @@ export class GachaScene implements Scene {
   }
 
   /**
-   * Odds-detail overlay (L1-3, Apple 3.1.1): a per-item probability table plus the
+   * Odds-detail overlay (L1-3, Apple 3.1.1): a per-item probability grid plus the
    * pity rule. Probabilities come straight from the server (`entry.probability`,
    * 0–1) — the client only renders, never computes. Any tap closes it.
+   *
+   * Laid out as a grid of icon cards (rarity-tinted star + id + %) rather than a
+   * single-column list — a flat list left most of the panel's width empty since
+   * each row only needed a fraction of it.
    */
   private drawOdds(pool: GachaPool): void {
     const { w, h } = this;
@@ -491,50 +495,67 @@ export class GachaScene implements Scene {
     dim.beginFill(0x000000, 0.78); dim.drawRect(0, 0, w, h); dim.endFill();
     this.container.addChild(dim);
 
-    const pw = Math.round(w * 0.86), ph = Math.round(h * 0.8);
+    const pw = Math.round(w * 0.9), ph = Math.round(h * 0.86);
     const px = (w - pw) / 2, py = (h - ph) / 2;
     const panel = sketchPanel(pw, ph, { fill: C.paper, border: C.gold, width: 2.6, seed: seedFor(pw, ph, 7) });
     panel.x = px; panel.y = py;
     this.container.addChild(panel);
 
     const header = txt(t('gacha.oddsDetail.title'), Math.round(h * 0.032), C.dark, true);
-    header.anchor.set(0.5, 0); header.x = w / 2; header.y = py + Math.round(h * 0.025);
+    header.anchor.set(0.5, 0); header.x = w / 2; header.y = py + Math.round(h * 0.02);
     this.container.addChild(header);
 
     const entries = pool.entries;
-    const listTop = py + Math.round(h * 0.08);
-    const listBottom = py + ph - Math.round(h * 0.13);
-    const rowH = Math.min(Math.round(h * 0.05), Math.max(1, (listBottom - listTop) / Math.max(1, entries.length)));
-    const colDotX = px + Math.round(pw * 0.08);
-    const colNameX = px + Math.round(pw * 0.14);
-    const colProbX = px + pw - Math.round(pw * 0.08);
-    const fontSize = Math.max(10, Math.round(rowH * 0.42));
+    const gridTop = py + Math.round(h * 0.075);
+    const gridBottom = py + ph - Math.round(h * 0.135);
+    const gridPad = Math.round(pw * 0.03);
+    const gridX = px + gridPad, gridW = pw - gridPad * 2;
+    const gridH = Math.max(1, gridBottom - gridTop);
+
+    const n = Math.max(1, entries.length);
+    const cols = Math.min(7, Math.max(3, Math.round(Math.sqrt((n * gridW) / gridH))));
+    const rows = Math.ceil(n / cols);
+    const cellW = gridW / cols;
+    const cellH = Math.min(gridH / rows, cellW * 0.92);
+    // Cells may not fill the full grid height (short pools) — centre the block.
+    const gridYOffset = gridTop + Math.max(0, (gridH - cellH * rows) / 2);
+    const gap = Math.round(cellW * 0.08);
 
     let total = 0;
     entries.forEach((e, i) => {
-      const cy = listTop + i * rowH + rowH / 2;
+      const col = i % cols, row = Math.floor(i / cols);
+      const cardW = cellW - gap, cardH = cellH - gap;
+      const cardX = gridX + col * cellW + gap / 2;
+      const cardY = gridYOffset + row * cellH + gap / 2;
       total += e.probability;
-      // Rarity star-pip (tinted), centred where the colour dot used to sit.
-      const starSz = Math.round(rowH * 0.5);
+
+      const card = sketchPanel(cardW, cardH, {
+        fill: C.paper, border: RARITY_COLOR[e.rarity], width: 1.8, seed: seedFor(cardX, cardY, i + 1),
+      });
+      card.x = cardX; card.y = cardY;
+      this.container.addChild(card);
+
+      const starSz = Math.round(cardH * 0.32);
       const star = buildIcon('star', starSz, RARITY_COLOR[e.rarity]);
-      star.x = colDotX - starSz / 2; star.y = cy - starSz / 2;
+      star.x = cardX + cardW / 2 - starSz / 2; star.y = cardY + cardH * 0.12;
       this.container.addChild(star);
 
-      const name = txt(e.itemId, fontSize, C.dark);
-      name.anchor.set(0, 0.5); name.x = colNameX; name.y = cy;
-      // Clamp overly long ids so the percentage column stays legible.
-      const nameMax = colProbX - colNameX - Math.round(pw * 0.16);
+      const nameSize = Math.max(9, Math.round(cardH * 0.15));
+      const name = txt(e.itemId, nameSize, C.dark);
+      name.anchor.set(0.5, 0); name.x = cardX + cardW / 2; name.y = cardY + cardH * 0.52;
+      const nameMax = cardW * 0.9;
       if (name.width > nameMax) name.scale.set(nameMax / name.width);
       this.container.addChild(name);
 
-      const prob = txt(`${(e.probability * 100).toFixed(2)}%`, fontSize, C.accent, true);
-      prob.anchor.set(1, 0.5); prob.x = colProbX; prob.y = cy;
+      const probSize = Math.max(10, Math.round(cardH * 0.17));
+      const prob = txt(`${(e.probability * 100).toFixed(2)}%`, probSize, C.accent, true);
+      prob.anchor.set(0.5, 1); prob.x = cardX + cardW / 2; prob.y = cardY + cardH * 0.94;
       this.container.addChild(prob);
     });
 
     // Total + pity rule + close hint.
     const totalLbl = txt(t('gacha.oddsDetail.total', { pct: (total * 100).toFixed(2) }), Math.round(h * 0.022), C.mid, true);
-    totalLbl.anchor.set(0.5, 1); totalLbl.x = w / 2; totalLbl.y = listBottom + Math.round(h * 0.005);
+    totalLbl.anchor.set(0.5, 1); totalLbl.x = w / 2; totalLbl.y = gridBottom + Math.round(h * 0.005);
     this.container.addChild(totalLbl);
 
     const pity = pool.pityThreshold ?? 0;
@@ -543,7 +564,7 @@ export class GachaScene implements Scene {
         fontSize: Math.round(h * 0.02), fill: C.dark, fontFamily: 'monospace',
         wordWrap: true, wordWrapWidth: pw * 0.84, align: 'center',
       });
-      pityLbl.anchor.set(0.5, 0); pityLbl.x = w / 2; pityLbl.y = listBottom + Math.round(h * 0.02);
+      pityLbl.anchor.set(0.5, 0); pityLbl.x = w / 2; pityLbl.y = gridBottom + Math.round(h * 0.02);
       this.container.addChild(pityLbl);
     }
 
