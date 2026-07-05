@@ -1,11 +1,11 @@
 // Map Editor entry point (DESIGN.md §6): full procedural map render + river/mountain path brush (§6.1)
-// + city drag (§6.1 third bullet). All three editing layers are pure client-side overlays for now —
-// neither paths nor city positions are rasterized back into proceduralTile() or persisted server-side
-// (§6.2/§5 open questions); Export/Import JSON round-trips each in-memory layer so the data shapes can
-// be validated ahead of the persistence work.
-import { proceduralTile, SLG_MAP_H, SLG_MAP_W, type ResourceType, type TileType } from '@nw/shared/slg';
+// + city drag (§6.1 third bullet) + publish-to-server (§8, §24 admin map-template API). River/mountain
+// paths and city positions are rasterized (mapEdit.ts's rasterizeMapEdits) into a tile diff and pushed via
+// the existing admin map-template endpoints — a one-way bake, not a live sync (see api.ts/publish section below).
+import { MAP_TEMPLATE_SAVE_MAX_TILES, proceduralTile, rasterizeMapEdits, SLG_MAP_H, SLG_MAP_W, type MapTemplateTile, type ResourceType, type TileType } from '@nw/shared/slg';
 import { distToPath, PathStore, randomDefaultWidth, type PathKind, type TilePoint } from './state/paths';
 import { CityStore, type MapEditorCityNode } from './state/cities';
+import { Api, ApiError } from './api';
 
 const TILE_COLORS: Record<TileType, string> = {
   neutral: '#2a2a3e',
@@ -73,6 +73,17 @@ const cityJsonEl = document.getElementById('city-json') as HTMLTextAreaElement;
 const cityExportBtn = document.getElementById('btn-city-export') as HTMLButtonElement;
 const cityImportBtn = document.getElementById('btn-city-import') as HTMLButtonElement;
 const toolButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.toolbar .tool'));
+const publishLoginEl = document.getElementById('publish-login')!;
+const publishPanelEl = document.getElementById('publish-panel')!;
+const publishWhoamiEl = document.getElementById('publish-whoami')!;
+const adminBaseInput = document.getElementById('admin-base') as HTMLInputElement;
+const adminUserInput = document.getElementById('admin-user') as HTMLInputElement;
+const adminPassInput = document.getElementById('admin-pass') as HTMLInputElement;
+const adminLoginBtn = document.getElementById('btn-admin-login') as HTMLButtonElement;
+const adminLogoutBtn = document.getElementById('btn-admin-logout') as HTMLButtonElement;
+const templateIdInput = document.getElementById('template-id') as HTMLInputElement;
+const templateGenerateBtn = document.getElementById('btn-template-generate') as HTMLButtonElement;
+const publishBtn = document.getElementById('btn-publish') as HTMLButtonElement;
 
 for (const c of [mapCanvas, overlayCanvas, cityCanvas]) {
   c.width = SLG_MAP_W;
@@ -367,6 +378,91 @@ cityImportBtn.addEventListener('click', () => {
     statusEl.textContent = `Import failed: ${(err as Error).message}`;
   }
 });
+
+// ── Publish to server (§24 admin map-template API) ───────────────────────
+const api = new Api();
+adminBaseInput.value = api.baseUrl;
+api.onUnauthorized = () => showLoggedOut();
+
+function showLoggedIn(whoami: string): void {
+  publishLoginEl.style.display = 'none';
+  publishPanelEl.style.display = 'flex';
+  publishWhoamiEl.textContent = whoami;
+}
+function showLoggedOut(): void {
+  publishLoginEl.style.display = 'flex';
+  publishPanelEl.style.display = 'none';
+}
+
+adminLoginBtn.addEventListener('click', async () => {
+  api.setBaseUrl(adminBaseInput.value.trim());
+  adminLoginBtn.disabled = true;
+  try {
+    const session = await api.login(adminUserInput.value.trim(), adminPassInput.value);
+    adminPassInput.value = '';
+    showLoggedIn(`${session.admin.displayName} (${session.admin.role})`);
+    statusEl.textContent = 'Logged in.';
+  } catch (err) {
+    statusEl.textContent = `Login failed: ${err instanceof ApiError ? err.message : (err as Error).message}`;
+  } finally {
+    adminLoginBtn.disabled = false;
+  }
+});
+
+adminLogoutBtn.addEventListener('click', async () => {
+  await api.logout();
+  showLoggedOut();
+  statusEl.textContent = 'Logged out.';
+});
+
+templateGenerateBtn.addEventListener('click', async () => {
+  const templateId = templateIdInput.value.trim() || seedInput.value || 'preview';
+  templateGenerateBtn.disabled = true;
+  statusEl.textContent = `Generating template "${templateId}" (${SLG_MAP_W}×${SLG_MAP_H})…`;
+  try {
+    const summary = await api.generateMapTemplate(templateId, SLG_MAP_W, SLG_MAP_H);
+    statusEl.textContent = `Generated template "${summary.templateId}" — ${summary.tileCount} tiles (v${summary.version}).`;
+  } catch (err) {
+    statusEl.textContent = `Generate failed: ${err instanceof ApiError ? err.message : (err as Error).message}`;
+  } finally {
+    templateGenerateBtn.disabled = false;
+  }
+});
+
+publishBtn.addEventListener('click', async () => {
+  const templateId = templateIdInput.value.trim() || seedInput.value || 'preview';
+  const worldId = seedInput.value || 'preview';
+  publishBtn.disabled = true;
+  statusEl.textContent = 'Rasterizing edits…';
+  try {
+    const diffs: MapTemplateTile[] = rasterizeMapEdits(worldId, store.paths, cityStore.nodes);
+    if (diffs.length === 0) {
+      statusEl.textContent = 'Nothing to publish — no tiles differ from the procedural baseline.';
+      return;
+    }
+    statusEl.textContent = `Publishing ${diffs.length} tile(s) to template "${templateId}"…`;
+    let updated = 0;
+    for (let i = 0; i < diffs.length; i += MAP_TEMPLATE_SAVE_MAX_TILES) {
+      const chunk = diffs.slice(i, i + MAP_TEMPLATE_SAVE_MAX_TILES);
+      const r = await api.saveMapTemplateTiles(templateId, chunk);
+      updated += r.updated;
+    }
+    statusEl.textContent = `Published ${updated} tile(s) to template "${templateId}".`;
+  } catch (err) {
+    statusEl.textContent = `Publish failed: ${err instanceof ApiError ? err.message : (err as Error).message}`;
+  } finally {
+    publishBtn.disabled = false;
+  }
+});
+
+if (api.hasToken) {
+  api.me().then(
+    (r) => showLoggedIn(`${r.admin.displayName} (${r.admin.role})`),
+    () => showLoggedOut(),
+  );
+} else {
+  showLoggedOut();
+}
 
 // ── Canvas input (single input surface: city-canvas, topmost layer) ──────
 function tileFromEvent(ev: MouseEvent): TilePoint {

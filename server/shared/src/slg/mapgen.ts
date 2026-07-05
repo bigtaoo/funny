@@ -24,7 +24,7 @@ export interface ProceduralTile {
  * specialization and cross-zone trade (geographic foundation for the U1 auction economy). graphite is the 4th land resource (ADR-022);
  * `sticker` is never biome-generated (home-city self-produced).
  */
-function biomeAt(x: number, y: number, seed: number): ResourceType {
+export function biomeAt(x: number, y: number, seed: number): ResourceType {
   const n = valueNoise(x, y, SLG_GEN.biomeFreq, seed ^ 0x0444);
   if (n < SLG_GEN.biomeInkMax) return 'ink';
   if (n < SLG_GEN.biomePaperMax) return 'paper';
