@@ -3,7 +3,7 @@
 // meta unavailable → fromPublicId is empty string (not the raw accountId).
 // Requires `cd server && docker compose up -d`.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { createWorldMongo, type WorldMongo } from '../src/db';
+import { createWorldMongo, type WorldMongo, type NationMessageDoc } from '../src/db';
 import { NationChannelService } from '../src/nationChannelService';
 import type { WorldCommercialClient } from '../src/commercialClient';
 import type { HttpWorldGatewayClient } from '../src/gatewayClient';
@@ -118,5 +118,81 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
     expect(broadcasts[0]['fromPublicId']).toBe('');
     // Must not expose the raw accountId as publicId.
     expect(broadcasts[0]['fromPublicId']).not.toBe('alice');
+  });
+
+  // Regression: the profile popup (client) needs a real public id to open + let the user
+  // copy it. senderPublicId must be threaded onto both the sendMessage return value and
+  // every entry returned by getChannel — not just the fire-and-forget push payload.
+  describe('regression: senderPublicId on the message view (ProfilePopup needs a real id, not just the push payload)', () => {
+    it('sendMessage() return value carries senderPublicId when meta resolves a profile', async () => {
+      const fakeMeta: WorldMetaClient = {
+        available: true,
+        async getProfile(id) { return id === 'alice' ? { publicId: 'alice#0042', displayName: 'Alice' } : null; },
+        async deductMaterial() { throw new Error('unused'); },
+        async grantMaterial() { /* no-op */ },
+        async getSaveFields() { return null; },
+        async escrowEquipment() { throw new Error('unused'); },
+        async grantEquipment() { /* no-op */ },
+        async grantTitle() { /* no-op */ },
+      };
+      const svc = new NationChannelService({
+        cols: mongo!.collections,
+        gateway: fakeGateway,
+        commercial: fakeCommercial,
+        meta: fakeMeta,
+        now: () => 4000,
+      });
+      const result = await svc.sendMessage(W, 'alice', 'Alice', 'hi');
+      expect(result.senderPublicId).toBe('alice#0042');
+    });
+
+    it('getChannel() history carries senderPublicId for each message', async () => {
+      const fakeMeta: WorldMetaClient = {
+        available: true,
+        async getProfile(id) { return id === 'alice' ? { publicId: 'alice#0042', displayName: 'Alice' } : null; },
+        async deductMaterial() { throw new Error('unused'); },
+        async grantMaterial() { /* no-op */ },
+        async getSaveFields() { return null; },
+        async escrowEquipment() { throw new Error('unused'); },
+        async grantEquipment() { /* no-op */ },
+        async grantTitle() { /* no-op */ },
+      };
+      const svc = new NationChannelService({
+        cols: mongo!.collections,
+        gateway: fakeGateway,
+        commercial: fakeCommercial,
+        meta: fakeMeta,
+        now: () => 5000,
+      });
+      await svc.sendMessage(W, 'alice', 'Alice', 'hi again');
+
+      const history = await svc.getChannel(W, 'alice');
+      expect(history).toHaveLength(1);
+      expect(history[0].senderPublicId).toBe('alice#0042');
+    });
+
+    it('getChannel() falls back to empty string for legacy docs written before this field existed', async () => {
+      // Simulate a pre-migration document: no senderPublicId field at all.
+      const legacyDoc = {
+        _id: `nm:${W}:6000:1`,
+        worldId: W,
+        senderId: 'alice',
+        senderName: 'Alice',
+        body: 'legacy message',
+        ts: new Date(6000),
+        // senderPublicId intentionally omitted — pretends to predate the migration.
+      } as unknown as NationMessageDoc;
+      await mongo!.collections.nationMessages.insertOne(legacyDoc);
+
+      const svc = new NationChannelService({
+        cols: mongo!.collections,
+        gateway: fakeGateway,
+        commercial: fakeCommercial,
+        now: () => 6000,
+      });
+      const history = await svc.getChannel(W, 'alice');
+      expect(history).toHaveLength(1);
+      expect(history[0].senderPublicId).toBe('');
+    });
   });
 });

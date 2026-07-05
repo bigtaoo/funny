@@ -485,6 +485,8 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 **网格左起点右移过红边线**（2026-07-03 追加）：两个网格（库存 + 锻造，及 `CardScene` 卡背包）的图标卡起点从 `CELL_GAP` 改为 `marginLineX(w) + CELL_GAP`——`marginLineX(w)=round(w*0.09)`（`sketchUi` 新导出，与 `buildPaperBackground` 红边线同一 x），列宽/列数按缩减后的可用宽重算，右侧仍留一个 `CELL_GAP`。避免图标卡压在红色竖边线上。整行元素（资源/筛选条、分区标题、loadout）保持整宽不动。同时 `hubTabsHeight` 由 `h*0.05` 提到 `h*0.066`，顶部分组 tab（如 `[卡背包|装备]`）更醒目。
 
+**头部按红边线拆左右两栏**（2026-07-04 追加）：上条只挪了网格起点，头部（分组 tab / 背包·锻造 tab / 资源条 / 槽位筛选）此前仍整宽横条。改为新的 `renderHeaderRow`：**左栏**（红线左侧，`marginLineX(w)` 宽）纵向堆叠「`[卡背包\|装备]` 分组 tab」+「`背包/锻造` 内容 tab」；**右栏**（红线右侧）放大 2 倍（`RES_SCALE`）的金币+材料资源条、整体右对齐停靠右上角，下接「全部/武器/护具/饰品」槽位筛选条（仅背包 tab 显示，锻造 tab 无筛选，右栏只剩资源条）。`renderHeaderRow` 返回左右两栏中较高一栏的 y 作为正文（loadout/网格）起始位置，两栏高度不一致时不会重叠。`renderSlotFilter` 签名从 `(y)` 改为 `(x,y,w)` 以支持限定在右栏宽度内绘制。loadout 三槽条仍整宽不受影响。
+
 #### E2 掉落 faucet + E6 洗练 实现记录（2026-06-22，✅）
 
 **E2 关卡掉落 faucet**

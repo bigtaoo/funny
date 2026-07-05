@@ -41,6 +41,18 @@ export function createGameNav(ctx: AppCtx): GameNav {
           result: winner === 0 ? 'win' : winner === 1 ? 'loss' : 'draw',
           duration_sec: Math.round((Date.now() - gameStartTs) / 1000),
         });
+        // Bot-fallback matches are played entirely client-local (matchsvc issues no ticket/gameUrl),
+        // so this is the only settlement hook for them: credits the daily task + (below threshold)
+        // a small ELO nudge (SEASON_DESIGN §match_bot_fallback). Manually-chosen practice matches
+        // (fromBotFallback=false) are not reported — only the queue-timeout fallback counts.
+        // Draws (winner===2) report nothing: there's no clear win/loss to settle.
+        if (opts?.fromBotFallback && api && (winner === 0 || winner === 1)) {
+          void api.submitBotResult(winner === 0).then((res) => {
+            saveManager.update((s) => { s.pvp.elo = res.elo; s.pvp.rank = res.rank; });
+          }).catch(() => {
+            // Best-effort: offline/expired-token failures don't block the result screen.
+          });
+        }
         void nav.goResult(winner, stats, 0, keepReplay(replay));
       },
       onExitToLobby() {
@@ -147,7 +159,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
       getSave: () => saveManager.get(),
       async feedCards(targetCardId, materialCardIds) {
         try {
-          const { save, levelsGained } = await client.feedCards(targetCardId, materialCardIds);
+          const { save, levelsGained } = await client.feedCards(targetCardId, materialCardIds, genUuid());
           saveManager.adoptServer(save);
           analytics.track('card_feed', { target_id: targetCardId, material_count: materialCardIds.length, levels_gained: levelsGained });
           return { ok: true as const, levelsGained };
@@ -318,13 +330,13 @@ export function createGameNav(ctx: AppCtx): GameNav {
     });
   }
 
-  function goLeaderboard(): void {
+  function goLeaderboard(onBack?: () => void): void {
     state.inLobby = false;
     analytics.track('screen_view', { scene: 'LeaderboardScene' });
     const loggedIn = !state.offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     const client = api;
     views.showLeaderboard({
-      onBack: () => goStats(),
+      onBack: onBack ?? (() => goStats()),
       ...(client && loggedIn
         ? { loadLeaderboard: () => client.getLeaderboard() }
         : {}),

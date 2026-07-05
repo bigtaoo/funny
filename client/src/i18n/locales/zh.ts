@@ -271,6 +271,7 @@ export const zh = {
   'profile.title': '玩家资料',
   'profile.close': '关闭',
   'profile.id': '公开 ID',
+  'profile.copied': '已复制',
   'profile.rank': '段位',
   'profile.you': '（你）',
   'result.vs': 'vs {name}',

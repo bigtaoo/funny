@@ -2,6 +2,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { caretDisplay } from '../../render/inputDisplay';
 import type { WorldChatMessage } from '../../net/WorldApiClient';
 import { type Constructor, type FriendsSceneBaseCtor } from './base';
 
@@ -46,7 +47,7 @@ export function WorldChatMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase):
       inputBg.x = px; inputBg.y = inputY + Math.round(inputH * 0.125);
       this.container.addChild(inputBg);
       const inputTxt = txt(
-        this.worldChatInput || t('social.world.placeholder'),
+        caretDisplay(this.worldChatInput, this.worldChatActive && this.caretOn, t('social.world.placeholder')),
         Math.round(inputH * 0.3),
         this.worldChatInput ? C.dark : C.mid,
       );
@@ -121,6 +122,12 @@ export function WorldChatMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase):
       const body = txt(m.body.slice(0, 60), Math.round(rh * 0.26), C.dark);
       body.anchor.set(0, 0.5); body.x = rx + Math.round(rw * 0.04); body.y = y + rh * 0.68;
       layer.addChild(body);
+
+      this.hits.push({ rect: { x: rx, y, w: rw, h: rh }, scroll: true, fn: () => this.openWorldSenderProfile(m) });
+    }
+
+    private openWorldSenderProfile(m: WorldChatMessage): void {
+      this.popup.show({ name: m.senderName, publicId: m.senderPublicId });
     }
   };
 }

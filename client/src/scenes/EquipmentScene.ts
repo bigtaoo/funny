@@ -76,6 +76,7 @@ type EquipTab = 'inv' | 'craft';
 const HUD_H = 50;
 const TAB_H = 36;
 const RES_H = 30;       // resource bar (coins + three materials + inventory count)
+const RES_SCALE = 2;    // currency block is drawn 2x size, parked top-right of the right column
 const LOADOUT_H = 78;   // loadout strip at the top of the inventory tab (three slots)
 const ROW_H = 56;
 const FILTER_H = 28;   // slot filter bar (All / Weapon / Armor / Trinket)
@@ -216,16 +217,16 @@ export class EquipmentScene implements Scene {
     // While assigning, Back cancels the card picker rather than leaving the scene.
     this.hitRects.push({ rect: this.backRect, action: () => (this.assign ? this.cancelAssign() : this.cb.onBack()) });
 
-    this.renderGroupTabs();
+    const leftW = marginLineX(this.w);
+    this.renderGroupTabs(leftW);
     if (this.assign) {
       this.renderAssign(this.cb.getSave());
       if (this.bt.loadingVisible) drawLoadingOverlay(this.loadingLayer, this.w, this.h, this.bt.dots, t('common.processing'));
       return;
     }
-    this.renderTabs();
-    this.renderResourceBar();
-    if (this.activeTab === 'inv') this.renderInventory();
-    else this.renderCraft();
+    const bodyTop = this.renderHeaderRow(leftW);
+    if (this.activeTab === 'inv') this.renderInventory(bodyTop);
+    else this.renderCraft(bodyTop);
 
     // Re-open detail modal if an instance is selected (refreshes after actions);
     // otherwise ensure no stale modal (e.g. confirm) lingers after it cleared detailId.
@@ -240,32 +241,41 @@ export class EquipmentScene implements Scene {
    * tapping the peer returns to the sibling scene (Collection or Card roster).
    * Drawn only in the group context (peerTab injected, groupH>0); rendered below the header and above the content tabs.
    */
-  private renderGroupTabs(): void {
+  private renderGroupTabs(leftW: number): void {
     if (this.groupH <= 0 || !this.cb.peerTab) return;
     const tabs: HubTab[] = [
       { label: t(this.cb.peerTab.labelKey), active: false, icon: this.cb.peerTab.icon },
       { label: t('equip.title'), active: true, icon: 'armor' },
     ];
-    const hits = drawHubTabs(this.bodyLayer, this.w, HUD_H, this.groupH, tabs, (i) => {
+    const hits = drawHubTabs(this.bodyLayer, leftW, HUD_H, this.groupH, tabs, (i) => {
       if (i === 0) this.cb.peerTab?.onSelect();
     });
     for (const hit of hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
   }
 
-  private renderTabs(): void {
+  /**
+   * Header row below the (peer-tab strip / header): left column gets the Inventory/Craft
+   * toggle stacked under the peer tabs, right column gets the 2x currency block (top-right
+   * corner) with the slot filter bar underneath (Inventory tab only). Both columns are capped
+   * left/right at the red margin rule so the header visually matches the bag-list vs item-grid
+   * split below it. Returns the y where body content (loadout / grid) should start.
+   */
+  private renderHeaderRow(leftW: number): number {
     const { w } = this;
     const top = HUD_H + this.groupH;
+
+    // ── Left column: Inventory / Craft toggle ──
     const tabs: { key: EquipTab; label: TranslationKey }[] = [
       { key: 'inv', label: 'equip.tabInv' },
       { key: 'craft', label: 'equip.tabCraft' },
     ];
-    const tw = w / tabs.length;
+    const tw = leftW / tabs.length;
     tabs.forEach((tab, i) => {
       const active = tab.key === this.activeTab;
       const tp = sketchPanel(tw, TAB_H, { fill: active ? C.paper : 0xddddcc, border: C.mid, seed: seedFor(i, 0, tw) });
       tp.x = i * tw; tp.y = top;
       this.bodyLayer.addChild(tp);
-      const tl = txt(t(tab.label), 13, active ? C.accent : C.dark, active);
+      const tl = txt(t(tab.label), 11, active ? C.accent : C.dark, active);
       tl.anchor.set(0.5, 0.5); tl.x = i * tw + tw / 2; tl.y = top + TAB_H / 2;
       this.bodyLayer.addChild(tl);
       this.hitRects.push({
@@ -273,45 +283,58 @@ export class EquipmentScene implements Scene {
         action: () => { if (this.activeTab !== tab.key) { this.activeTab = tab.key; this.scrollY = 0; this.render(); } },
       });
     });
-  }
+    const leftBottom = top + TAB_H;
 
-  private renderResourceBar(): void {
-    const { w } = this;
-    const save = this.cb.getSave();
-    const y = HUD_H + this.groupH + TAB_H;
+    // ── Right column: 2x currency block (top-right) + slot filter ──
+    const rightX = leftW;
+    const rightW = w - leftW;
+    const resH = RES_H * RES_SCALE;
     const bg = new PIXI.Graphics();
-    bg.beginFill(0xf3f1ea).drawRect(0, y, w, RES_H).endFill();
+    bg.beginFill(0xf3f1ea).drawRect(rightX, top, rightW, resH).endFill();
     this.bodyLayer.addChild(bg);
 
-    // Balance (non-cost display): icon + amount, no '×' prefix.
-    const midY = y + RES_H / 2;
+    const save = this.cb.getSave();
     const bal: Record<string, number> = {};
     for (const m of TRACKED_MATERIALS) bal[m] = save.materials[m] ?? 0;
-    let cx = 10;
-    const coinIc = buildIcon('coin', 16, C.gold);
-    coinIc.x = cx; coinIc.y = midY - 8; this.bodyLayer.addChild(coinIc); cx += 18;
-    const coinLbl = txt(`${save.wallet.coins}`, 11, C.dark);
-    coinLbl.anchor.set(0, 0.5); coinLbl.x = cx; coinLbl.y = midY; this.bodyLayer.addChild(coinLbl);
-    cx += coinLbl.width + 12;
-    this.drawCostChips(this.bodyLayer, cx, midY, bal, null, C.dark, 16, '');
+    const iconSize = 16 * RES_SCALE;
+    const fontSize = 11 * RES_SCALE;
+
+    // Build the coin+material cluster in a local container (coords start at 0) so it can be
+    // measured and then right-aligned as a whole; drawCostChips returns the trailing local x.
+    const cluster = new PIXI.Container();
+    const coinIc = buildIcon('coin', iconSize, C.gold);
+    coinIc.x = 0; coinIc.y = -iconSize / 2; cluster.addChild(coinIc);
+    let cx = iconSize + 6;
+    const coinLbl = txt(`${save.wallet.coins}`, fontSize, C.dark);
+    coinLbl.anchor.set(0, 0.5); coinLbl.x = cx; coinLbl.y = 0; cluster.addChild(coinLbl);
+    cx += coinLbl.width + 20;
+    cx = this.drawCostChips(cluster, cx, 0, bal, null, C.dark, iconSize, '');
+    cluster.x = w - 10 - cx;
+    cluster.y = top + resH * 0.38;
+    this.bodyLayer.addChild(cluster);
 
     const count = Object.keys(save.equipmentInv).length;
     const cnt = txt(`${count}/${EQUIPMENT_INV_CAP}`, 11, count >= EQUIPMENT_INV_CAP ? C.red : C.mid);
-    cnt.anchor.set(1, 0.5); cnt.x = w - 10; cnt.y = y + RES_H / 2;
+    cnt.anchor.set(1, 0.5); cnt.x = w - 10; cnt.y = top + resH - 12;
     this.bodyLayer.addChild(cnt);
+
+    let rightBottom = top + resH;
+    if (this.activeTab === 'inv') {
+      this.renderSlotFilter(rightX, rightBottom, rightW);
+      rightBottom += FILTER_H;
+    }
+
+    return Math.max(leftBottom, rightBottom);
   }
 
   // ── Inventory tab ───────────────────────────────────────────────────────────
 
-  private renderInventory(): void {
+  private renderInventory(bodyTop: number): void {
     const { w, h } = this;
     const save = this.cb.getSave();
-    // Bag mode (no active card) has no single-card loadout to show; the list starts right below the resource bar.
-    const base = HUD_H + this.groupH + TAB_H + RES_H;
-    let filterY = base;
-    if (!this.bag) { this.renderLoadout(save, base); filterY = base + LOADOUT_H; }
-    this.renderSlotFilter(filterY);
-    const listY = filterY + FILTER_H;
+    // Bag mode (no active card) has no single-card loadout to show; the list starts right below the header row.
+    let listY = bodyTop;
+    if (!this.bag) { this.renderLoadout(save, bodyTop); listY = bodyTop + LOADOUT_H; }
     const listH = h - listY - 8;
 
     const allInstances = Object.values(save.equipmentInv);
@@ -380,9 +403,8 @@ export class EquipmentScene implements Scene {
     }
   }
 
-  /** Slot filter bar (All / Weapon / Armor / Trinket). */
-  private renderSlotFilter(y: number): void {
-    const { w } = this;
+  /** Slot filter bar (All / Weapon / Armor / Trinket), confined to [x, x+w) — the right column. */
+  private renderSlotFilter(x: number, y: number, w: number): void {
     const filters: { key: EquipSlot | 'all'; label: string }[] = [
       { key: 'all',     label: t('equip.filterAll') },
       { key: 'weapon',  label: t('equip.slot.weapon') },
@@ -391,12 +413,12 @@ export class EquipmentScene implements Scene {
     ];
     const fw = w / filters.length;
     const bg = new PIXI.Graphics();
-    bg.beginFill(0xe8e5da).drawRect(0, y, w, FILTER_H).endFill();
+    bg.beginFill(0xe8e5da).drawRect(x, y, w, FILTER_H).endFill();
     this.bodyLayer.addChild(bg);
 
     filters.forEach((f, i) => {
       const active = this.filterSlot === f.key;
-      const fx = i * fw;
+      const fx = x + i * fw;
       if (active) {
         const hlt = new PIXI.Graphics();
         hlt.beginFill(0xfaf9f5).drawRoundedRect(fx + 3, y + 3, fw - 6, FILTER_H - 6, 3).endFill();
@@ -574,11 +596,11 @@ export class EquipmentScene implements Scene {
 
   // ── Craft tab ───────────────────────────────────────────────────────────────
 
-  private renderCraft(): void {
+  private renderCraft(bodyTop: number): void {
     const { w, h } = this;
     const save = this.cb.getSave();
     const defs = craftableDefs();
-    const listY = HUD_H + this.groupH + TAB_H + RES_H + 4;
+    const listY = bodyTop + 4;
     const listH = h - listY - 8;
     const full = Object.keys(save.equipmentInv).length >= EQUIPMENT_INV_CAP;
 

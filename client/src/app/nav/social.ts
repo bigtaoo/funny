@@ -6,7 +6,7 @@ import type { AppCtx, Nav } from '../appCtx';
 import { FALLBACK_SEASON, PLAYER_PUBLIC_ID_KEY } from '../appConstants';
 
 export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' | 'goChat'> {
-  const { api, saveManager, platform, state, views, nav, getNetSession } = ctx;
+  const { api, saveManager, platform, state, views, nav, getNetSession, playerName } = ctx;
 
   function goFriends(opts?: { defaultTab?: 'friends' | 'mail' }): void {
     // Social needs a server account; offline / no API → bounce to login.
@@ -65,27 +65,27 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
       ...(worldApi ? {
         async loadSLGStatus() {
           const wid = await ensureWorldId();
-          const me = await worldApi.getMe(wid);
           const myAccountId = platform.storage.getItem('nw_account_id') ?? '';
           const status: import('../../scenes/FriendsScene').SLGSocialStatus = {
             worldId: wid,
-            familyId: me.familyId,
+            familyId: undefined,
             isLeader: false,
           };
-          if (me.familyId) {
-            try {
-              const fam = await worldApi.getFamily(me.familyId);
-              status.familyName = fam.name;
-              status.familyTag = fam.tag;
-              status.isLeader = !!myAccountId && fam.leaderId === myAccountId;
-              if (fam.sectId) {
-                status.sectId = fam.sectId;
-                try {
-                  const sect = await worldApi.getSect(fam.sectId);
-                  status.sectName = sect?.name;
-                } catch { /* sect lookup best-effort; sectId alone is still useful to the caller */ }
-              }
-            } catch { /* missing family is non-fatal */ }
+          // Family membership lives in socialsvc; worldsvc's playerWorld.familyId is a
+          // join-time-only mirror (SS7) that never reflects a family created/joined later.
+          const fam = await worldApi.getMyFamily().catch(() => null);
+          if (fam) {
+            status.familyId = fam.familyId;
+            status.familyName = fam.name;
+            status.familyTag = fam.tag;
+            status.isLeader = !!myAccountId && fam.leaderId === myAccountId;
+            if (fam.sectId) {
+              status.sectId = fam.sectId;
+              try {
+                const sect = await worldApi.getSect(fam.sectId);
+                status.sectName = sect?.name;
+              } catch { /* sect lookup best-effort; sectId alone is still useful to the caller */ }
+            }
           }
           return status;
         },
@@ -97,7 +97,7 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
         openSectHub:   () => { if (slgWorldId) nav.goSectHub(worldApi, slgWorldId); },
         loadWorldChat: async (before) => { const wid = await ensureWorldId(); return worldApi.getWorldChannel(wid, { before }); },
         sendWorldChat: async (body, senderName) => { const wid = await ensureWorldId(); await worldApi.sendWorldChannelMessage(wid, body, senderName); },
-        playerName: () => platform.storage.getItem(PLAYER_PUBLIC_ID_KEY) ?? '',
+        playerName: () => playerName(),
       } : {}),
     });
     // Live social pushes (presence / request / friend add-remove / chat / mail)

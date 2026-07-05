@@ -58,7 +58,7 @@ export interface Nav {
   goFamilyHub(worldApi: WorldApiClient, worldId: string): void;
   goSectHub(worldApi: WorldApiClient, worldId: string): void;
   goAuctionHouse(worldApi: WorldApiClient, worldId: string): void;
-  goShop(onBack?: () => void): void;
+  goShop(onBack?: () => void, initialTab?: 'shop' | 'coins'): void;
   goGacha(group?: { shopBack?: () => void }): void;
   goDaily(): void;
   goEvents(): void;
@@ -70,7 +70,7 @@ export interface Nav {
   goCardRoster(back?: () => void): void;
   goEquipment(back?: () => void, group?: 'none' | 'collection' | 'roster', cardInstanceId?: string): void;
   goStats(): void;
-  goLeaderboard(): void;
+  goLeaderboard(onBack?: () => void): void;
   goAchievements(): void;
   goCampaign(levelId: string | undefined): void;
   goTutorial(): void;

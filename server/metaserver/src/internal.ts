@@ -8,7 +8,9 @@ import type { Collections, SaveDoc, SaveData } from '@nw/shared';
 import {
   INITIAL_ELO,
   ELO_FLOOR,
+  ELO_K,
   computeEloDelta,
+  streakMultiplier,
   eloToRank,
   nextStreak,
   victoryCoinsForRank,
@@ -1054,7 +1056,15 @@ async function settleElo(
   ]);
   const wElo = wDoc?.save.pvp.elo ?? INITIAL_ELO;
   const lElo = lDoc?.save.pvp.elo ?? INITIAL_ELO;
-  const { winner: wDelta, loser: lDelta } = computeEloDelta(wElo, lElo);
+  // Streak acceleration (ECONOMY_BALANCE.md §2.3): a player's own incoming win/loss streak scales
+  // their side of the swing only — a hot winner rides their streak to a real bracket faster, a player
+  // on a losing skid falls back to theirs faster, independent of the opponent's streak. Not zero-sum
+  // by design (see computeEloDelta docstring).
+  const wStreak = wDoc?.save.pvp.streak ?? 0;
+  const lStreak = lDoc?.save.pvp.streak ?? 0;
+  const winnerK = ELO_K * streakMultiplier(wStreak > 0 ? wStreak : 0);
+  const loserK = ELO_K * streakMultiplier(lStreak < 0 ? -lStreak : 0);
+  const { winner: wDelta, loser: lDelta } = computeEloDelta(wElo, lElo, { winnerK, loserK });
   const out: Record<number, EloResult> = {};
   const [wRes, lRes] = await Promise.all([
     applyPvp(cols, now, commercial, socialsvc, winner.accountId, wDoc, wDelta, true, winnerStats),

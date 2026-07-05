@@ -124,6 +124,8 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
       onOpenSocial() { withGuide('social', 'guide.social.title', 'guide.social.body', () => nav.goFriends()); },
       ...(online ? { onOpenMail: () => nav.goMail() } : {}),
       onOpenShop() { withGuide('shop', 'guide.shop.title', 'guide.shop.body', () => nav.goGacha({})); },
+      ...(online ? { onOpenRecharge: () => nav.goShop(goLobby, 'coins') } : {}),
+      ...(online ? { onOpenLeaderboard: () => nav.goLeaderboard(goLobby) } : {}),
       // Lobby "cards" slot → Hero Roster (CHARACTER_CARDS_DESIGN §10). Roster mutations (feed/lock)
       // are server-authoritative, so logged-out / offline falls back to the offline-capable Collection
       // (card codex + skins wardrobe), which stays reachable from the campaign map too.

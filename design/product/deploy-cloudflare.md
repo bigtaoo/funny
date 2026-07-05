@@ -457,7 +457,9 @@ docker compose -f docker-compose.cloud.yml --env-file .env up -d
 
 #### 自动发布（GitHub Action，免手敲命令）
 
-`.github/workflows/server-deploy.yml`：push 到 `main` 且改动落在 `server/**` / 该 workflow 时，自动 SSH 进 VPS 跑 `git fetch + reset --hard origin/main → docker compose -f docker-compose.cloud.yml --env-file .env up -d --build`；也可在 Actions 页手动 Run（`workflow_dispatch`）。与 client-deploy / ops-deploy 同理念（裸 ssh，不用第三方 action，报错原样可见）。
+`.github/workflows/server-deploy.yml`：push 到 `main` 且改动落在 `server/**` / 该 workflow 时，自动 SSH 进 VPS 跑 `git fetch + reset --hard origin/main → docker compose -f docker-compose.cloud.yml --env-file .env up -d --build → docker compose restart caddy`；也可在 Actions 页手动 Run（`workflow_dispatch`）。与 client-deploy / ops-deploy 同理念（裸 ssh，不用第三方 action，报错原样可见）。
+
+> `restart caddy` 是必需的、不是可选优化：Caddyfile 走 bind mount，`up` 只在 compose 服务定义本身变化时才重建/重启容器，文件**内容**变了但挂载路径没变，compose 侦测不到，caddy 就会照旧跑着旧配置——2026-07-03 两次 Caddyfile 修复（`/health`、`/sect` `/nation` 反代）都是重启前的修复：合入 main、CI 部署跑完、但 caddy 容器仍在跑 10 天前的旧配置，直到手动 `docker compose restart caddy` 才生效。
 
 **镜像在 VPS 本机构建**（与手动运维命令一致，2 核机 + 2G swap 扛得住）；`.env` 是 gitignore，`reset --hard` 不动它。同步用 `reset --hard origin/main`（非 `git pull`）以消除 VPS 工作区漂移（如之前 ops 改容器留下的本地变动）。
 

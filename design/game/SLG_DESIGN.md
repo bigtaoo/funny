@@ -107,10 +107,14 @@
 
 ### 3.2 地图尺寸与地形布局
 
-- **地图尺寸**：**1500×1500（约 225 万格）**，对应单大区 ~1 万玩家、人均 ~150–225 格可开发空间。
+- **地图尺寸 ✅ 已实现（ADR-032，2026-07-04 定案 + 落地，`shared/slg.ts`）**：**500×500（25 万格）**，对应大区容量 **300–500 玩家**（`SLG_WORLD_CAPACITY_MIN/TARGET/MAX`，见 §14.10 U4）。
+  > **历史记录**（避免与旧数字混淆，仅留一条指针，其余口径已废止）：曾短暂拍板过 1500×1500/对应 1 万玩家（2026-06-18 "U2 ✅"），但从未真正实现——代码里 `SLG_MAP_W/H` 一直是 300，且 2026-06-30 的经济核验（`ECONOMY_NUMBERS.md` §13-SLG-NATION）仍是在未升级的 300×300 上跑的。500×500 是重新核实代码现状后的新定案，不是"恢复旧值"也不是"1500×1500 打折"，详见 ADR-032。
+- **地块等级 1–10 ✅ 已实现（ADR-032）**：`SLG_MAP_MAX_LEVEL=10`（对齐三国志战略版真实地块等级上限，调研见 [`SGZ_LAND_REFERENCE.md`](SGZ_LAND_REFERENCE.md)）。**不是** 5（旧代码实际值）也不是 9（与装备/武将卡的 `MAX_LEVEL=9` 混淆过一次，二者无关）。
+- **无纯空地 ✅ 已实现（ADR-032）**：取消"中立地不产出"的分级（`resourceDensity` 从 0.34 提到 **1.0**）——除阻挡地形/关隘/据点/首府外，所有格子都是某一等级的资源地，呼应"地图上没有真正空地，只是低级地没人要"的设计前提。
+- **等级分布曲线 ✅ 已实现（ADR-032）**：`level = round((1-dr)^1.1 × (MAX-1) + 1 + noise)`（`dr` = 距地图中心距离比例），指数从 1 调到 1.1（`SLG_GEN.levelFalloffExp`）。配合上面两条改动，**实测**（500×500 网格采样 62,500 点）**52.8% 的格子达到 5 级以上**，与 500 人 × 人均上限 200 块 5 级+地的目标吻合（推导过程见 ADR-032）。worldsvc 27 个 e2e 测试文件（207 例）+ `@nw/shared` 单测（463 例）全绿，符号引用 `SLG_MAP_W/H/MAX_LEVEL` 未硬编码 300/5，无需改动测试断言。
 - **稀疏存储**：DB 只落被占领/被改动的格子；阻挡格、险地等静态地形由 `proceduralTile()` 程序化生成，不落库。
-- **程序化分布**（`SLG_GEN` 旋钮）：资源格/等级分布按现有 §14.10 U6 已定方案；阻挡地形（山脉/河流）约占 10–15%，形成若干连续地形带，创造自然通道；关隘/桥数量 DRAFT（约 20–40 处战略通道）嵌于阻挡带之间；险地稀疏分布于高战略价值位置。
-- **10 首府固定位置**（`CAPITAL_POSITIONS`）：硬编码于 `shared/slg.ts`，参考三国志战略版九宫布局；Voronoi 分区由首府坐标派生，deterministic。
+- **程序化分布**（`SLG_GEN` 旋钮）：阻挡地形（山脉/河流）约占 10–15%，形成若干连续地形带，创造自然通道；关隘/桥数量 DRAFT（约 20–40 处战略通道）嵌于阻挡带之间；险地稀疏分布于高战略价值位置。
+- **10 首府固定位置**（`CAPITAL_POSITIONS`）：硬编码于 `shared/slg.ts`，参考三国志战略版九宫布局；Voronoi 分区由首府坐标派生，deterministic。**⚠️ 待定**：用户希望改为"6 外围国 + 2 资源国（出关可达）+ 1 霸业（地图中心）"的三战式环带布局（9 国而非现在的 10 国，且等级需与"国家身份"绑定，不能只看距地图中心距离）——本轮 ADR-032 只定地图尺寸/等级分布参数，国家布局改造是下一步任务，不在本次范围内。
 - **视觉呈现（ADR-029）**：以上均为逻辑格数据模型（正交整数 `(x,y)`），不涉及渲染方式。客户端 `WorldMapScene.ts` 自 2026-07-02 起改为**等距菱形投影**渲染（纯客户端视觉层，见 `client/src/render/isoGrid.ts`），逻辑网格/寻路/契约仍是正交，不要把"格子"误读成屏幕上必是方形。
 
 ### 3.3 格子 = 玩家自定义关卡（SLG5）
@@ -392,6 +396,7 @@
   - **proto / gateway**：`transport.proto` 加 `NationMsg`（field 23）；`matchsvcClient.PushMsg` 加 `nation_msg`；`Gateway.toServerMsg` 加 `case 'nation_msg'`。
   - **错误码**：`api.ts` 加 `NOT_IN_WORLD`(403)——玩家未入驻该 world 时拒绝收发。
   - **gateway 掉线重连自动补订阅**：`gateway/redis.ts` 显式设 `autoResubscribe: true`（ioredis 默认已是，显式便于审计）+ 加 `ready` 事件 log；Redis 重连后自动重订 `GW_PUSH_REDIS_CHANNEL`，期间漏的 push 客户端 REST 拉 `/nation/channel` 历史补全。
+  - **fix（2026-07-04）**：世界频道发言人昵称曾显示成公开 ID——`nav/social.ts` 的 `playerName` 回调误读了 `PLAYER_PUBLIC_ID_KEY` 而非真实昵称，已改用 `ctx.playerName()`。同时给 `NationMessageDoc`/`NationMessageView`/`WorldChatMessage` 加 `senderPublicId`（`meta.getProfile` 落库快照），`worldChat.ts` 消息行现在可点击打开 `ProfilePopup`；`ProfilePopup` 的公开 ID 行加了点击复制到剪贴板。回归测试：`client/test/social-world-chat-playername.test.ts`（`playerName` 回调不再回退成公开 ID）+ `worldsvc/test/nation-channel.e2e.test.ts` 补 3 例（`sendMessage`/`getChannel` 携带 `senderPublicId` + 旧文档缺字段兜底空串）。
   - 验证：`shared` + `worldsvc` + `gateway` `tsc --noEmit` 全绿。
 
 **MVP 切片建议**：S8-0~3（地图+领地+兵力+围攻战，单服、无家族、无拍卖、无赛季重置）先验证「战斗接大地图」这条承重墙跑通，再叠加家族/拍卖/赛季。
@@ -428,7 +433,7 @@
 - 世界 = 一个赛季服（宗门）= 一张 2D 网格地图。坐标 `(worldId, x, y)`，`x/y` int32。
 - 确定性 id：`worldId`（如 `s{season}-{shard}`）、`tileId = "{worldId}:{x}:{y}"`。
 - **稀疏存储 + 程序化默认**：DB **只存被占领/被改动的格子**；未触碰的中立格由 `worldId` 派生的程序化函数即时算出（类型/资源/等级/默认防守），不落库。这是 scale 的关键。
-- **⚠️ P3 — 地图尺寸 + 程序化分布函数**：`mapW×mapH`（DRAFT，如 600×600）与"什么位置产什么资源/什么等级"的程序化规则未定（影响交易生态与开荒节奏）。
+- **P3 — 地图尺寸 + 程序化分布函数 ✅ 已定案且已实现（2026-07-04，ADR-032）**：见 §3.2。
 
 ### 14.3 Mongo 集合（worldsvc 库，权威）
 
@@ -544,8 +549,8 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 
 **A. 产品/经济拍板（2026-06-18 第三轮，全部已定）**
 
-- **U4 大区容量 ✅（2026-06-18 更新）**：**~1 万活跃玩家/单大区**（替代原 300-500 人/单服）。配套：march 风暴/视区推送扇出（U11）、A* 寻路计算量需节流；worldsvc 行军调度单点 ZSET 对该量级需压测确认（U12）。
-- **U2 地图尺寸 ✅（2026-06-18 更新）**：**1500×1500（~225 万格）**（替代原 300×300），对应 1 万玩家人均 ~150–225 格开发空间。稀疏存储只落被占格不影响存储。
+- **U4 大区容量 ✅（2026-07-04 复核，ADR-032 废止 2026-06-18 版本）**：**300–500 活跃玩家/单大区**（`SLG_WORLD_CAPACITY_MIN/TARGET/MAX`，与代码现状一致）。2026-06-18 曾拍板"~1 万玩家替代 300-500"，但从未落地实现（代码常量、e2e 测试、econ-sim 全部仍按 300-500 人假设跑），本次复核后正式废止该版本，改回并确认 300–500 为真实目标——不是"退回旧值"，是承认那次"升级"从未发生过。
+- **U2 地图尺寸 ✅ 已实现（2026-07-04 更新 + 落地，ADR-032）**：**500×500（25 万格）**（替代代码现状 300×300，**不是**从未落地的 1500×1500）。500 玩家 × 人均上限 200 块 5 级+地的目标，反推地图面积需求，详见 ADR-032 与 §3.2。稀疏存储只落被占格不影响存储。
 - **U6 程序化分布 ✅（原方案 + 扩展）**：在原 `proceduralTile()` 基础上扩展：增加阻挡地形（山脉/河流约 10–15% 格子，连续地形带）；险地（稀疏强 NPC 战略点）；关隘/桥嵌于阻挡带（约 20–40 处）；10 首府固定坐标（`CAPITAL_POSITIONS`）。
 - **U1 拍卖行计价币种 ✅（2026-06-18 定）**：充值 **coin**；**赛季资源（粮/铁/木）禁挂**，仅材料/装备可交易；系统抽 **10% 手续费**；免费玩家通过任务/活动/关卡赚 coin 参与（最低生活保障原则）。
 - **U3 赛季周期 + 大比形态 ✅（2026-06-18 定）**：赛季 **2 个月**；大比 = **大区内宗门占领首府数排名**（非跨服）；中原首府额外加权奖励；奖励材料/皮肤/称号（含连续赛季成就称号如「十冠王」）；运营活动叠加。
@@ -559,10 +564,10 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 **C. 实现期风险 / 细节（实现时处理，先记着）**
 - **U9 engineVersion 耦合**：引擎更新 → worldsvc 须重构建；赛季中途引擎升级如何 pin 版本，保录像/复算一致性（D0+P2 的代价）。
 - **U10 防守 config 旋钮接引擎 ✅（2026-06-18）**：三组新旋钮已完整落地——①**garrison（驻军单位）**：`LevelDefinition.garrison[]`（unitType/col/row），siege 模式下构造期在 Top 侧指定行列预置兵，首 tick `emitInitialEvents` 发 `unit_spawned`+`unit_move_start` 事件，单位随即按正常移动系统向 Bottom 行进；②**defenderBuildings（防守建筑）**：`LevelDefinition.defenderBuildings[]`（buildingType/col），放在 `TOP_BUILDING_ROW=17`，首 tick 发 `building_placed(owner=1)` 事件，ArrowTower/Barracks 即刻生效（射程攻击/生产单位）；③**defenderBaseLevel（基地强化）**：`LevelDefinition.defenderBaseLevel`（0–3），直接设 `topPlayer.upgradeLevel`（跳过 ink 消耗），影响 ink 回复加成。`levelSchema` 三字段全部验证（unitType/buildingType/lane 合法性 + baseLevel 范围 0–3）；**天梯红线不动**（仅在 siege 路径生效，pvp/netplay 无 level）；31 新单测全绿；265 全量回归全绿。
-- **U11 视区订阅推送扇出**：1 万人地图 `tile_update`/`march_update` 风暴，需节流/聚合（P9 订阅模型的规模化）；密集首府区域尤需注意。
-- **U12 worldsvc 单点 march 调度**：ZSET 到点消费是单点；1 万人规模需压测；多实例需选主/分片，前期单进程可接受。
+- **U11 视区订阅推送扇出**：300-500 人地图 `tile_update`/`march_update` 风暴，需节流/聚合（P9 订阅模型的规模化）；密集首府区域尤需注意。（原文按 1 万人量级写，已随 U4 复核降级，风险等级相应降低但机制仍需做）
+- **U12 worldsvc 单点 march 调度**：ZSET 到点消费是单点；300-500 人规模下压力显著小于原 1 万人估算，前期单进程可接受，暂不需要选主/分片。
 - **U13 多步原子性**：占地/丢地改 `yieldRate` 与读时惰性结算的并发（rev 守卫够不够）；拍卖成交（扣卖方挂存 + 给买方 + 抽税）的跨文档幂等与回滚；门主被打全宗门资源 -50% 的大规模写操作原子性。
-- **U14 A\* 寻路性能**：1500×1500 地图 A\* 最坏情况计算量，需评估是否要路径缓存或分块寻路（阻挡带连续则影响不大）。
+- **U14 A\* 寻路性能**：500×500 地图 A\* 最坏情况计算量，需评估是否要路径缓存或分块寻路（阻挡带连续则影响不大；规模远小于曾评估的 1500×1500，风险显著降低）。
 - **U15 Voronoi 分区计算**：首府坐标固定后，Voronoi 分区可预计算并缓存（或实时算），每格 tileId 的国家归属查询路径确定（worldsvc 内存缓存 + Mongo 按需）。
 
 ---
@@ -1473,6 +1478,18 @@ if (path.startsWith('/admin/world/')) {
 **影响文件**：`server/socialsvc/src/{db,familyService,httpApi}.ts`、`server/worldsvc/src/{db,socialsvcClient,prosperity,sectService,service}.ts`、`server/worldsvc/test/sect.e2e.test.ts`（fixture 改用内存假 socialsvc client）、`client/src/scenes/SectScene.ts` + `client/src/app/createAppCore.ts`（恢复 `fam.sectId` 读取路径）、`client/src/net/WorldApiClient.ts`（`FamilyView` 补 `sectId?`/`territoryCount?`）。
 
 **未变**：宗门本身（`SectDoc`/`sects`/`sectMessages` 集合）仍留在 worldsvc（SS6 不变）；家族身份/成员关系（谁在哪个家族）跨赛季保留在 socialsvc，不受 SLG 赛季重置影响。
+
+---
+
+## 23. 客户端「创建家族后未切换成员态」修复（2026-07-04）
+
+**背景**：§22 迁移后，`PlayerWorldDoc.familyId` 被明确定义为「入世界时一次性写入的只读镜像」（`territory.ts` `joinWorld()` 注释：subsequent family changes are not written back，客户端应改读 `/social/family/mine`）。但客户端三处仍直接读 `WorldApiClient.getMe(worldId)` 返回的 `familyId` 来判断「是否已加入家族」：`app/nav/social.ts` 的 `loadSLGStatus()`（好友页「家族」tab）、`FamilyScene.ts`（家族主界面）、`SectScene.ts`（宗门界面）。凡是「先进过 SLG 地图（已产生 `playerWorld` 文档）、后创建/加入家族」的玩家，镜像永不刷新，三处 UI 全部卡在「未加入任何家族」，即使 socialsvc 一侧家族已建成。
+
+**修复**：`WorldApiClient` 新增 `getMyFamily()`，直连 socialsvc `GET /social/family/mine`（权威实时数据，不经 worldsvc 镜像）；`listFamilies()` 改为委托它。上述三处调用点全部改用 `getMyFamily()` 判断家族状态，不再读 `getMe().familyId`。
+
+**测试**：`client/test/world-family-status.test.ts` 钉住该契约——`getMyFamily()`/`listFamilies()` 的请求/返回行为，以及一条回归用例：模拟「`/world/me` 镜像未更新但 `/social/family/mine` 已知晓」的场景，断言 `getMyFamily()` 全程不会调用 `/world/me`。
+
+**影响文件**：`client/src/net/WorldApiClient.ts`、`client/src/app/nav/social.ts`、`client/src/scenes/FamilyScene.ts`、`client/src/scenes/SectScene.ts`、`client/test/world-family-status.test.ts`（新增）。
 
 ---
 

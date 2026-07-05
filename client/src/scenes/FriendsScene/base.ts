@@ -143,6 +143,9 @@ export class FriendsSceneBase {
 
   // Shared HTML input (family/sect forms + world channel input box)
   protected hiddenInput: HTMLInputElement | null = null;
+  /** Blink state for whichever field openHiddenInput last opened — shared across all callers. */
+  protected caretOn = true;
+  protected caretTimer = 0;
 
   protected toastKey: TranslationKey | null = null;
   protected toastT = 0;
@@ -184,6 +187,10 @@ export class FriendsSceneBase {
     if (this.toastKey) {
       this.toastT -= dt;
       if (this.toastT <= 0) { this.toastKey = null; this.render(); }
+    }
+    if (this.familyActiveInput || this.sectActiveInput || this.worldChatActive) {
+      this.caretTimer += dt;
+      if (this.caretTimer >= 0.5) { this.caretTimer = 0; this.caretOn = !this.caretOn; this.render(); }
     }
   }
 
@@ -298,6 +305,8 @@ export class FriendsSceneBase {
     onEnter?(): void;
   }): void {
     this.clearHiddenInput();
+    this.caretOn = true;
+    this.caretTimer = 0;
     const inp = document.createElement('input');
     inp.type = 'text';
     inp.value = opts.value;

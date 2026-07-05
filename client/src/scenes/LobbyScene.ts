@@ -89,6 +89,10 @@ export interface LobbySceneCallbacks {
   worldLocked?: boolean;
   /** Open the shop (economy). Wired to the bottom-nav "shop" slot (S2-6). */
   onOpenShop(): void;
+  /** Tapping the header coin balance jumps straight to the shop's recharge (Coins) tab. Online only. */
+  onOpenRecharge?(): void;
+  /** Tapping the header rank badge jumps straight to the global leaderboard. Online only. */
+  onOpenLeaderboard?(): void;
   /** Open the collection center (cards codex + skins). Bottom-nav "cards" slot. */
   onOpenCards(): void;
   /** Open the stats / match-record screen. Bottom-nav "stats" slot. */
@@ -162,6 +166,10 @@ export class LobbyScene implements Scene {
   /** Hit rect for the top-right account chip (login when offline / logout when on). */
   private accountChipRect: Rect | null = null;
   private accountChipFn: (() => void) | null = null;
+  /** Hit rect for the header coin balance (opens the shop's recharge tab). Online only. */
+  private coinsChipRect: Rect | null = null;
+  /** Hit rect for the header rank badge (opens the leaderboard). Online only. */
+  private rankChipRect: Rect | null = null;
   /** Hit rect for the top-left profile chip (opens SettingsScene). */
   private profileChipRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
 
@@ -570,6 +578,18 @@ export class LobbyScene implements Scene {
       this.accountChipFn();
       return;
     }
+    const coinsChip = this.coinsChipRect;
+    if (coinsChip && this.cb.onOpenRecharge &&
+        x >= coinsChip.x && x <= coinsChip.x + coinsChip.w && y >= coinsChip.y && y <= coinsChip.y + coinsChip.h) {
+      this.cb.onOpenRecharge();
+      return;
+    }
+    const rankChip = this.rankChipRect;
+    if (rankChip && this.cb.onOpenLeaderboard &&
+        x >= rankChip.x && x <= rankChip.x + rankChip.w && y >= rankChip.y && y <= rankChip.y + rankChip.h) {
+      this.cb.onOpenLeaderboard();
+      return;
+    }
     // Bottom-nav center slot is now "home" (the lobby itself) — current page, no-op.
     // Shop + social slots are only drawn when online (offline omits them entirely),
     // so a zero-width rect here means the slot is absent — guard with w > 0.
@@ -703,6 +723,13 @@ export class LobbyScene implements Scene {
         coinIcon.x = Math.round(chipX - coinLbl.width - Math.round(h * 0.01) - ci);
         coinIcon.y = Math.round(coinsY - ci / 2);
         this.container.addChild(coinIcon);
+        if (this.cb.onOpenRecharge) {
+          const cpad = Math.round(h * 0.012);
+          this.coinsChipRect = {
+            x: coinIcon.x - cpad, y: coinsY - ci / 2 - cpad,
+            w: (chipX - coinIcon.x) + cpad, h: ci + 2 * cpad,
+          };
+        }
       }
 
       const rankName = t(('rank.' + pvp.rank) as TranslationKey);
@@ -710,6 +737,13 @@ export class LobbyScene implements Scene {
       const badgeLabel = txt(badge, Math.round(h * 0.022), C.light, true);
       badgeLabel.anchor.set(1, 0.5); badgeLabel.x = chipX; badgeLabel.y = rankY;
       this.container.addChild(badgeLabel);
+      if (this.cb.onOpenLeaderboard) {
+        const rpad = Math.round(h * 0.012);
+        this.rankChipRect = {
+          x: badgeLabel.x - badgeLabel.width - rpad, y: badgeLabel.y - badgeLabel.height / 2 - rpad,
+          w: badgeLabel.width + 2 * rpad, h: badgeLabel.height + 2 * rpad,
+        };
+      }
       if (this.cb.onLogout) {
         const out = txt(t('auth.logout'), Math.round(h * 0.016), C.mid);
         out.anchor.set(1, 0.5); out.x = chipX; out.y = outY;

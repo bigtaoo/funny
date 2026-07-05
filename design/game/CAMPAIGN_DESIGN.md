@@ -737,4 +737,6 @@ interface ChapterMap {
 5. ✅ **目录页 + 进度落点 + 翻页过场 + 章节小结仪式**（2026-06-19）：**目录页 landing**（6 章卡片：「第 N 章 · 场地」+ 通关进度 `{c}/{n} 关` + 累计星数；锁章盖**胶带**遮罩）；**进度落点**——进场停目录页随即自动翻到含「当前可打关」那一章（书自开）；**翻页过场**——横向 slide+fade（easeInOut 0.42s），目录↔章节、章节↔章节（左右翻页箭头，下一章须本章通关方亮），翻页中禁点击；**章节小结印章**——整章通关后标题旁盖旋转「第 N 章 · 通关」红章。回调接口 `CampaignMapCallbacks` 未改，`createAppCore` 接线 + `scenes.ui` 冒烟测试无需改动。i18n 补 `campaign.{notebookTitle,chapterStamp,chapterProgress,markerStart,markerBoss}`（zh/en/de）。验证：tsc + webpack 生产构建 + 273 单测 + 42 UI 测试全绿。
    - **§12 入口改造全部完成**：扁平列表彻底退场，战役正门 = 一本可翻的「战役笔记本」。
 
+6. ✅ **虚线路径穿圈修复**（2026-07-04）：`drawTrail` 此前按节点圆心到圆心画铅笔虚线，穿过节点圆圈本体。改为每段两端各按节点半径（`Math.round(h * 0.032)`，与 `drawNode` 一致）向内收缩后再画 dash，虚线止于圆圈边缘；线段过短（≤ 2 倍半径）时跳过整段。
+
 > 公平墙不破：章节地图纯属 campaign 前端表现层，不触碰 PvP 引擎 / `campaignProgress` 数据来源隔离（§3）。

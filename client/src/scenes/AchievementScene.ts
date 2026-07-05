@@ -3,7 +3,7 @@ import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren, marginLineX } from '../render/sketchUi';
 import { buildIcon, type IconKind } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
@@ -165,22 +165,27 @@ export class AchievementScene implements Scene {
     if (cats.length === 0) { this.drawCentered(tbH, t('achievement.empty')); this.drawToast(); return; }
     if (!cats.includes(this.activeCat)) this.activeCat = cats[0]!;
 
-    // Category tab row.
-    let y = tbH + Math.round(h * 0.025);
-    y = this.drawTabs(cats, y);
-    y += Math.round(h * 0.02);
+    const top = tbH + Math.round(h * 0.025);
+
+    // Category tabs: a vertical sidebar to the left of the notebook's red margin
+    // rule; the achievement content sits to its right (mirrors the page's own
+    // margin/body split instead of crossing it with a horizontal tab row).
+    this.drawSidebarTabs(cats, top);
 
     // Achievement cards for the current category.
-    const pad = Math.round(w * 0.06);
+    const contentX = marginLineX(w) + Math.round(w * 0.025);
+    const padRight = Math.round(w * 0.04);
+    const y0 = top;
+    let y = y0;
     const gap = Math.round(h * 0.02);
     const defs = this.data.defs.filter((d) => d.category === this.activeCat && !d.hidden);
 
     if (this.landscape) {
       // Landscape: two-column layout, each half the width
       const colGap = Math.round(w * 0.02);
-      const halfW = Math.round((w - pad * 2 - colGap) / 2);
-      const col1X = pad;
-      const col2X = pad + halfW + colGap;
+      const halfW = Math.round((w - contentX - padRight - colGap) / 2);
+      const col1X = contentX;
+      const col2X = contentX + halfW + colGap;
 
       let col = 0;
       let rowStartY = y;
@@ -199,9 +204,9 @@ export class AchievementScene implements Scene {
       }
     } else {
       // Portrait: single column
-      const cardW = w - pad * 2;
+      const cardW = w - contentX - padRight;
       for (const def of defs) {
-        y = this.drawCard(def, pad, y, cardW);
+        y = this.drawCard(def, contentX, y, cardW);
         y += gap;
       }
     }
@@ -215,14 +220,19 @@ export class AchievementScene implements Scene {
     this.container.addChild(m);
   }
 
-  private drawTabs(cats: Achievement['category'][], y: number): number {
+  /**
+   * Category tabs as a vertical sidebar left of the notebook's red margin rule
+   * (achievement content is drawn to its right, see `contentX` in render()).
+   * Icon-over-label, one bigger cell per category, stacked top to bottom.
+   */
+  private drawSidebarTabs(cats: Achievement['category'][], top: number): void {
     const { w, h } = this;
-    const pad = Math.round(w * 0.04);
-    const gap = Math.round(w * 0.02);
-    const tabW = Math.round((w - pad * 2 - gap * (cats.length - 1)) / cats.length);
-    const tabH = Math.round(h * 0.05);
+    const x = Math.round(w * 0.012);
+    const tabW = marginLineX(w) - x - Math.round(w * 0.012);
+    const tabH = Math.round(h * 0.11);
+    const gap = Math.round(h * 0.018);
     cats.forEach((cat, i) => {
-      const x = pad + i * (tabW + gap);
+      const y = top + i * (tabH + gap);
       const on = cat === this.activeCat;
       const box = sketchPanel(tabW, tabH, {
         fill: on ? C.accent : C.paper, border: on ? C.accent : C.line,
@@ -231,27 +241,26 @@ export class AchievementScene implements Scene {
       box.x = x; box.y = y;
       this.container.addChild(box);
 
-      // Category glyph + label, centred as a group.
-      const lbl = txt(t(('achievement.category.' + cat) as TranslationKey), Math.round(tabH * 0.42), on ? 0xffffff : C.dark, on);
-      const icS = Math.round(tabH * 0.52);
-      const iconGap = Math.round(tabW * 0.04);
-      const groupW = icS + iconGap + lbl.width;
-      const gx = x + (tabW - groupW) / 2;
+      // Category glyph on top, label below, centred as a stack (sidebar is narrow).
+      const icS = Math.round(tabH * 0.4);
+      const lbl = txt(t(('achievement.category.' + cat) as TranslationKey), Math.round(tabH * 0.2), on ? 0xffffff : C.dark, on);
+      const iconGap = Math.round(tabH * 0.06);
+      const groupH = icS + iconGap + lbl.height;
+      const gy = y + (tabH - groupH) / 2;
       const glyph = buildIcon(CATEGORY_ICON[cat], icS, on ? 0xffffff : C.dark);
-      glyph.x = gx; glyph.y = y + tabH / 2 - icS / 2;
+      glyph.x = x + (tabW - icS) / 2; glyph.y = gy;
       this.container.addChild(glyph);
-      lbl.anchor.set(0, 0.5); lbl.x = gx + icS + iconGap; lbl.y = y + tabH / 2;
+      lbl.anchor.set(0.5, 0); lbl.x = x + tabW / 2; lbl.y = gy + icS + iconGap;
       this.container.addChild(lbl);
 
       // Tab badge: shown when any achievement in this category is claimable.
       const hasDot = this.data!.defs.some(
         (d) => d.category === cat && !d.hidden && achievementClaimable(d, this.data!.stats, this.data!.achievements),
       );
-      if (hasDot) this.drawDot(x + tabW - Math.round(tabH * 0.22), y + Math.round(tabH * 0.22), Math.round(tabH * 0.16));
+      if (hasDot) this.drawDot(x + tabW - Math.round(tabH * 0.1), y + Math.round(tabH * 0.1), Math.round(tabH * 0.07));
 
       this.hits.push({ rect: { x, y, w: tabW, h: tabH }, fn: () => { this.activeCat = cat; this.render(); } });
     });
-    return y + tabH;
   }
 
   private drawCard(def: Achievement, x: number, y: number, w: number): number {

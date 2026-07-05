@@ -132,14 +132,18 @@ export class ProfilePopup {
 
     let yBottom = name.y + name.height;
 
-    // Public id line (display-only identifier).
+    // Public id line (display-only identifier) — tap to copy to clipboard.
     if (data.publicId) {
-      const idLine = new PIXI.Text(`${t('profile.id')}  #${data.publicId}`, {
+      const idText = `${t('profile.id')}  #${data.publicId}`;
+      const idLine = new PIXI.Text(idText, {
         fontSize: Math.round(cardH * 0.05), fill: palette.inkBlue, fontFamily: 'monospace',
       });
       idLine.anchor.set(0.5, 0);
       idLine.x = cardW / 2;
       idLine.y = yBottom + cardH * 0.03;
+      idLine.interactive = true;
+      idLine.cursor = 'pointer';
+      idLine.on('pointertap', () => this.copyId(idLine, data.publicId, idText));
       this.card.addChild(idLine);
       yBottom = idLine.y + idLine.height;
     }
@@ -230,6 +234,15 @@ export class ProfilePopup {
 
     this.open = true;
     this.container.visible = true;
+  }
+
+  /** Copy the public id to clipboard and briefly swap the line's text to confirm. */
+  private copyId(idLine: PIXI.Text, publicId: string, originalText: string): void {
+    try {
+      void (navigator as Navigator | undefined)?.clipboard?.writeText(publicId);
+      idLine.text = t('profile.copied');
+      setTimeout(() => { if (!idLine.destroyed) idLine.text = originalText; }, 1200);
+    } catch { /* clipboard unavailable — ignore */ }
   }
 
   hide(): void {

@@ -11,6 +11,7 @@ import { t, type TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
+import { caretDisplay } from '../render/inputDisplay';
 import type { WorldApiClient, AuctionView } from '../net/WorldApiClient';
 import { WorldApiError } from '../net/WorldApiClient';
 import type { SaveData, EquipmentInstance, CardInstance } from '../game/meta/SaveData';
@@ -80,6 +81,9 @@ export class AuctionScene implements Scene {
   private createBuyoutPrice = 0;   // auction buyout (0 = none)
   private createDuration: typeof DURATIONS[number] = 21600;
   private createBuyer = '';
+  private buyerActive = false;
+  private caretOn = true;
+  private caretTimer = 0;
   private createOpen = false;
 
   // Instance picker (scene-level overlay, reuses the body drag-scroll): non-null → show the picker
@@ -658,10 +662,10 @@ export class AuctionScene implements Scene {
     const bl0 = txt(t('auction.buyer') + ':', 11, C.dark);
     bl0.x = mx + 10; bl0.y = cy;
     ml.addChild(bl0);
-    const buyerField = sketchPanel(mw - 20, 26, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(cy, 0, mw - 20) });
+    const buyerField = sketchPanel(mw - 20, 26, { fill: 0xfaf9f5, border: this.buyerActive ? C.accent : C.mid, seed: seedFor(cy, 0, mw - 20) });
     buyerField.x = mx + 10; buyerField.y = cy + 16;
     ml.addChild(buyerField);
-    const bfl = txt(this.createBuyer || t('auction.buyerPlaceholder'), 11, this.createBuyer ? C.dark : C.mid);
+    const bfl = txt(caretDisplay(this.createBuyer, this.buyerActive && this.caretOn, t('auction.buyerPlaceholder')), 11, this.createBuyer ? C.dark : C.mid);
     bfl.x = mx + 16; bfl.y = cy + 23;
     ml.addChild(bfl);
     this.modalHits.push({ rect: { x: mx + 10, y: cy + 16, w: mw - 20, h: 26 }, action: () => this.openBuyerInput() });
@@ -729,6 +733,9 @@ export class AuctionScene implements Scene {
   // ── Actions ───────────────────────────────────────────────────────────────
 
   private openBuyerInput(): void {
+    this.buyerActive = true;
+    this.caretOn = true;
+    this.caretTimer = 0;
     const inp = document.createElement('input');
     inp.type = 'text';
     inp.value = this.createBuyer;
@@ -736,8 +743,12 @@ export class AuctionScene implements Scene {
     inp.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
     document.body.appendChild(inp);
     inp.focus();
-    inp.addEventListener('input', () => { this.createBuyer = inp.value.trim(); });
+    inp.addEventListener('input', () => {
+      this.createBuyer = inp.value.trim();
+      if (!this.destroyed && this.modalOpen) this.openCreateForm();
+    });
     inp.addEventListener('blur', () => {
+      this.buyerActive = false;
       document.body.removeChild(inp);
       if (this.hiddenInput === inp) this.hiddenInput = null;
       if (!this.destroyed && this.modalOpen) this.openCreateForm();
@@ -1033,6 +1044,10 @@ export class AuctionScene implements Scene {
     if (this.toastTimer > 0) {
       this.toastTimer -= dt * 1000;
       if (this.toastTimer <= 0) this.toastLayer.removeChildren();
+    }
+    if (this.buyerActive) {
+      this.caretTimer += dt;
+      if (this.caretTimer >= 0.5) { this.caretTimer = 0; this.caretOn = !this.caretOn; if (this.modalOpen) this.openCreateForm(); }
     }
   }
 

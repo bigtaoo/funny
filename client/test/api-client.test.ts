@@ -91,3 +91,76 @@ describe('ApiClient password auth (SA-1/SA-3)', () => {
     expect(calls[0]!.body).toEqual({ oldPassword: 'old1', newPassword: 'new12345' });
   });
 });
+
+describe('ApiClient card/equipment request bodies (CC-1/E3/E6)', () => {
+  // Regression: feedCards() used to send { targetCardId, materialCardIds } with no
+  // idempotencyKey — the server's openapi contract requires { targetId, materialIds,
+  // idempotencyKey }, so every feed call 400'd. Assert the wire body matches the contract
+  // field names verbatim, not just the client-side parameter names.
+  it('feedCards: POST /cards/feed with targetId/materialIds/idempotencyKey', async () => {
+    const calls = installFetch(() => ({ json: { ok: true, data: { save: {}, levelsGained: 1 } } }));
+    const api = new ApiClient('https://h/api');
+    await api.feedCards('card-target', ['card-mat-1', 'card-mat-2'], 'idem-1');
+    expect(calls[0]!.url).toBe('https://h/api/cards/feed');
+    expect(calls[0]!.method).toBe('POST');
+    expect(calls[0]!.body).toEqual({
+      targetId: 'card-target',
+      materialIds: ['card-mat-1', 'card-mat-2'],
+      idempotencyKey: 'idem-1',
+    });
+  });
+
+  it('reforgeEquipment: POST /equipment/reforge with targetId/materialId/idempotencyKey', async () => {
+    const calls = installFetch(() => ({ json: { ok: true, data: { instance: {}, save: {} } } }));
+    const api = new ApiClient('https://h/api');
+    await api.reforgeEquipment('eq-target', 'eq-mat', 'idem-2');
+    expect(calls[0]!.url).toBe('https://h/api/equipment/reforge');
+    expect(calls[0]!.body).toEqual({ targetId: 'eq-target', materialId: 'eq-mat', idempotencyKey: 'idem-2' });
+  });
+
+  it('craftEquipment: POST /equipment/craft with defId/idempotencyKey', async () => {
+    const calls = installFetch(() => ({ json: { ok: true, data: { save: {}, instance: {} } } }));
+    const api = new ApiClient('https://h/api');
+    await api.craftEquipment('def-1', 'idem-3');
+    expect(calls[0]!.url).toBe('https://h/api/equipment/craft');
+    expect(calls[0]!.body).toEqual({ defId: 'def-1', idempotencyKey: 'idem-3' });
+  });
+
+  it('enhanceEquipment: POST /equipment/enhance omits useProtect when not set, includes it when true', async () => {
+    const calls = installFetch(() => ({ json: { ok: true, data: { success: true, instance: {}, save: {} } } }));
+    const api = new ApiClient('https://h/api');
+    await api.enhanceEquipment('inst-1', 'idem-4');
+    expect(calls[0]!.body).toEqual({ instanceId: 'inst-1', idempotencyKey: 'idem-4' });
+
+    await api.enhanceEquipment('inst-1', 'idem-5', true);
+    expect(calls[1]!.body).toEqual({ instanceId: 'inst-1', idempotencyKey: 'idem-5', useProtect: true });
+  });
+
+  it('salvageEquipment: POST /equipment/salvage with instanceIds/idempotencyKey', async () => {
+    const calls = installFetch(() => ({ json: { ok: true, data: { refunded: {}, save: {} } } }));
+    const api = new ApiClient('https://h/api');
+    await api.salvageEquipment(['inst-1', 'inst-2'], 'idem-6');
+    expect(calls[0]!.url).toBe('https://h/api/equipment/salvage');
+    expect(calls[0]!.body).toEqual({ instanceIds: ['inst-1', 'inst-2'], idempotencyKey: 'idem-6' });
+  });
+
+  it('equipEquipment: POST /equipment/equip with slot/instanceId/cardInstanceId', async () => {
+    const calls = installFetch(() => ({ json: { ok: true, data: { save: {} } } }));
+    const api = new ApiClient('https://h/api');
+    await api.equipEquipment('weapon', null, 'card-1');
+    expect(calls[0]!.url).toBe('https://h/api/equipment/equip');
+    expect(calls[0]!.body).toEqual({ slot: 'weapon', instanceId: null, cardInstanceId: 'card-1' });
+  });
+
+  it('setCardLock: POST /cards/lock or /cards/unlock with cardInstanceId', async () => {
+    const calls = installFetch(() => ({ json: { ok: true, data: { save: {} } } }));
+    const api = new ApiClient('https://h/api');
+    await api.setCardLock('card-1', true);
+    expect(calls[0]!.url).toBe('https://h/api/cards/lock');
+    expect(calls[0]!.body).toEqual({ cardInstanceId: 'card-1' });
+
+    await api.setCardLock('card-1', false);
+    expect(calls[1]!.url).toBe('https://h/api/cards/unlock');
+    expect(calls[1]!.body).toEqual({ cardInstanceId: 'card-1' });
+  });
+});

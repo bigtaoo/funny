@@ -201,6 +201,7 @@
   - **架构延续**：与 P1 一致——「扩容/重排」落在导航层，不重写 875 行 EquipmentScene 等为内嵌内容；视觉资产打磨仍留 P3。
   - **tab 图标化**（2026-07-03，去 emoji 图标化批③）：`HubTab` 增可选 `icon?: IconKind`，`drawHubTabs` 在标签左侧绘同色手绘字形（选中白 / 未选 mid），`[图标][gap][标签]` 整体居中；无 `icon` 时退化纯文字居中（向后兼容）。作为分组 tab 的标准约定推下所有场景：商城组 商城→`tag`／盲盒→`capsule`／战令→`trophy`／充值→`coin`；养成组 卡牌花名册→`cards`／收藏→`book`／装备→`armor`。`EquipmentScene.peerTab` 增 `icon?`，由 `createAppCore` 按来源注入（collection→`book` / roster→`cards`）。新增字形 `tag`/`capsule`/`cards` 于 `render/icons.ts`，其余复用既有。
 - ✅ **P2**（完成 2026-06-28）：主页**右侧竖栏**图标条（每日/邮件/活动/成就）。
+- ✅ **顶栏金币/排位直达**（2026-07-04）：大厅顶栏金币数字点击直达商城**充值**tab（`ShopScene` 新增可选 `initialTab?:'shop'|'coins'`，仅 `rechargeCoins` 可用时才真正落 coins tab，否则退化 shop tab；`goShop(onBack?, initialTab?)` 参数化）；排位徽章（如「青铜·988」）点击直达 `LeaderboardScene`（`goLeaderboard(onBack?)` 参数化，默认回生涯页不变，大厅入口回大厅）。两个热区仅登录在线时命中（`LobbySceneCallbacks.onOpenRecharge?`/`onOpenLeaderboard?`），离线态两项本就是纯文字无回调，无需额外判断。
 
   **实现记录**（落代码细节，验收以此为准）：
   - **删除水平 engagement chip 行**：P3 右对齐每日/活动两个横向 chip 整行移除。

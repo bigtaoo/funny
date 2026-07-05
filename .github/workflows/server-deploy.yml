@@ -71,4 +71,7 @@ jobs:
              git reset --hard FETCH_HEAD; \
              cd server; \
              docker compose -f docker-compose.cloud.yml --env-file .env up -d --build; \
+             # caddy's config is a bind mount (content-only changes to Caddyfile don't alter its
+             # service definition), so \`up\` alone never recreates it — force a restart every deploy.
+             docker compose -f docker-compose.cloud.yml restart caddy; \
              docker compose -f docker-compose.cloud.yml ps"

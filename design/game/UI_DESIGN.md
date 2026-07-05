@@ -174,6 +174,7 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 - i18n：`shop.*`。
 - **充值码 overlay**：Canvas 画伪输入框，背后挂隐藏 `<input>` 捕获键盘。光标用 `|` 以 0.5s 交替闪烁；空输入时光标-on 显示 `|`、光标-off 显示 placeholder，确保聚焦即可见光标（不依赖已有字符才显示）。
 - **充值档位图标**：每档左侧画随金额升级的宝藏图标（`coin`→`coins`→`coinStack`→`coinSack`→`coinChest`，见 `render/icons.ts`），越贵越有料，替代千篇一律的 `◎` 文字提升转化诱惑。手绘 SketchPen 笔触 + 金币扁平淡金填充（守三笔风、无渐变），走 `buildIcon` 贴图缓存。
+- **光标约定是硬性契约，不是 ShopScene 专属实现**：任何「隐藏 `<input>` + canvas 画字段」的输入框都必须调用共享的 `caretDisplay()`（`render/inputDisplay.ts`）产出显示文本，禁止再手写 `text || ' '` / `text || placeholder`。2026-06-23 那次修复只顺手改了 ShopScene/SettingsScene/ChatScene 三处，遗漏了 FamilyScene/SectScene/FriendsScene（好友页内嵌的家族/宗门/世界频道输入框）/AuctionScene（指定买家字段，另外还漏了逐键刷新），2026-07-04 补齐。`test/ui/caretRegression.ui.ts` 对每个受影响输入框做了聚焦-闪烁回归断言；新增任何同类输入框必须在该文件补一组用例，而不是仅凭肉眼过一遍。
 
 ### 4.4 GachaScene（盲盒，S2）
 ```
@@ -268,6 +269,8 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 ### 4.9 ResultScene（结算，扩展现有）
 现状已有。**扩展**：评星动画（StarRow 逐颗点亮）、奖励发放（材料/物品 Toast）、解锁弹窗（新关/新皮肤 Modal）、（联机）胜负 + 段位变化。
 
+**胜利页边饰**（2026-07-04）：`addMoodDeco('win')` 撒 12 颗手绘五角星于左右留白边距（避开中间徽章/数据栏），每次进入用 `Math.random()` 重新随机 x/y/大小/透明度，非固定 seed。
+
 #### 4.9.1 按钮主次 + 图标 + 背景涂鸦（2026-06-27）
 结算页动作区重排为「一个主 CTA + 一行次要入口」，所有按钮配手绘图标：
 - **主按钮**：`再来一局`（胜利时文案换 `再战一场`）——大、`ui.gold` 金色填充、白色粗体、配 `swords`(交叉刀) 图标，视觉首位。
@@ -291,6 +294,7 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 - **BattlePassScene（战令）**：双轨奖励格由 `rewardCoins/rewardMaterial` 文案改为类型 glyph + `×N`——`coins`→`coin`、`material` 按 `id` 映射 `scrap/lead/binding`、`skin`→`brush`（皮肤为单件，仅 glyph 不带数量）。`drawCell` 的 reward 形参补 `id?`。
 - **EventScene（活动）**：兑换奖励条在原文字标签前加类型 glyph 前缀（coin/材料/brush，可映射时），保留文字名，信息不丢。
 - **AchievementScene（成就）**：分类 Tab 加类别字形（`pve`→`book` / `pvp`→`swords` / `collection`→`brush` / `progression`→`trophy`）；未达成档位的奖励由「reward N coins」文字改为 `coin` 字形 + 数字。
+- **AchievementScene 分类 Tab 布局改版（2026-07-04）**：原横排 Tab 条压在页面红色装订线上、Tab 偏小。改为竖排侧栏——三/四个分类 Tab 堆叠在红线**左侧**（图标在上、文字在下，因侧栏窄），每格更大；成就卡片内容整体移到红线**右侧**（`marginLineX(w)` 起算），呼应笔记本纸「装订线 + 正文」的既有分区，不再跨线压字。
 - **CollectionScene**：见 §4.5 属性行 chip。
 - 全部走 `buildIcon` 烘焙缓存共享纹理，销毁经各场景既有 `tearDownChildren`（Sprite 走 `{children:true}`、`texture:false` 不碰共享纹理，符合防泄漏契约）。验证：`tsc --noEmit` + `build:web` + `test:ui`（85 例）全绿。
 - **待批②（需新增图标定义或谨慎布局）**：CardScene/TeamsScene 无属性文字、装备槽缺 `trinket` 字形；CityScene/WorldMapScene 的 SLG 资源与 GachaScene 稀有度、`event/battlepass` 的 `pass_required` 🔒 均需新字形。
