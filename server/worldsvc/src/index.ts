@@ -7,6 +7,7 @@ import { WorldService } from './service';
 import { SectService } from './sectService';
 import { NationChannelService } from './nationChannelService';
 import { AuctionService } from './auctionService';
+import { MapTemplateService } from './mapTemplateService';
 import { startHttpApi } from './httpApi';
 import { startScheduler } from './scheduler';
 import { HttpWorldGatewayClient } from './gatewayClient';
@@ -84,6 +85,8 @@ async function main(): Promise<void> {
     now: () => Date.now(),
   });
 
+  const mapTemplateSvc = new MapTemplateService({ cols: mongo.collections, now: () => Date.now() });
+
   const scheduler = startScheduler(svc, auctionSvc);
 
   const server = startHttpApi(
@@ -93,6 +96,7 @@ async function main(): Promise<void> {
     nationChannelSvc,
     auctionSvc,
     socialsvc,
+    mapTemplateSvc,
   );
 
   const shutdown = async (): Promise<void> => {

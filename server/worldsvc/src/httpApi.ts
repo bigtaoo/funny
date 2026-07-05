@@ -22,6 +22,7 @@ import type { SectService } from './sectService';
 import type { NationChannelService } from './nationChannelService';
 import type { AuctionService } from './auctionService';
 import type { WorldSocialsvcClient } from './socialsvcClient';
+import type { MapTemplateService } from './mapTemplateService';
 
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
@@ -47,7 +48,7 @@ function send(res: ServerResponse, status: number, body: unknown): void {
     // Public-facing surface: CORS aligned with meta (fully open in dev, tightened by reverse proxy in production).
     'access-control-allow-origin': '*',
     'access-control-allow-headers': 'authorization,content-type,x-internal-key,x-internal-caller',
-    'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
+    'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
   });
   res.end(JSON.stringify(body));
 }
@@ -71,6 +72,7 @@ export function startHttpApi(
   nationChannelSvc: NationChannelService,
   auctionSvc: AuctionService,
   socialsvc: WorldSocialsvcClient,
+  mapTemplateSvc: MapTemplateService,
 ): Server {
   // Internal ops authentication (C4/§17.7): /admin/world/* uses X-Internal-Key, not player JWT.
   const internalAuth = loadInternalAuth(opts.internalKey);
@@ -98,6 +100,55 @@ export function startHttpApi(
           if (!internalAuth.verify(req.headers).ok) {
             return sendErr(res, ErrorCode.UNAUTHENTICATED, 'internal endpoint requires X-Internal-Key');
           }
+
+          // ── Map templates (§24 Layer A, admin map editor) — self-contained sub-branch, any method, no worldId gate. ──
+          if (aurl.pathname.startsWith('/admin/world/map-templates')) {
+            try {
+              if (method === 'GET' && aurl.pathname === '/admin/world/map-templates') {
+                return send(res, 200, ok(await mapTemplateSvc.listTemplates()));
+              }
+              if (method === 'POST' && aurl.pathname === '/admin/world/map-templates/generate') {
+                const body = await readJson(req);
+                const templateId = typeof body.templateId === 'string' ? body.templateId : '';
+                const summary = await mapTemplateSvc.generateTemplate(templateId, Number(body.width), Number(body.height));
+                return send(res, 200, ok(summary));
+              }
+              const tilesMatch = /^\/admin\/world\/map-templates\/([^/]+)\/tiles$/.exec(aurl.pathname);
+              if (tilesMatch) {
+                const templateId = decodeURIComponent(tilesMatch[1]!);
+                if (method === 'GET') {
+                  const tiles = await mapTemplateSvc.getTiles(
+                    templateId,
+                    numQ(aurl.searchParams.get('x'), 0),
+                    numQ(aurl.searchParams.get('y'), 0),
+                    numQ(aurl.searchParams.get('w'), 100),
+                    numQ(aurl.searchParams.get('h'), 100),
+                  );
+                  return send(res, 200, ok(tiles));
+                }
+                if (method === 'PUT') {
+                  const body = await readJson(req);
+                  const result = await mapTemplateSvc.saveTilesDiff(templateId, Array.isArray(body.tiles) ? (body.tiles as never[]) : []);
+                  return send(res, 200, ok(result));
+                }
+              }
+              const activateMatch = /^\/admin\/world\/map-templates\/([^/]+)\/activate$/.exec(aurl.pathname);
+              if (method === 'POST' && activateMatch) {
+                await mapTemplateSvc.setActiveTemplate(decodeURIComponent(activateMatch[1]!));
+                return send(res, 200, ok({}));
+              }
+              const deleteMatch = /^\/admin\/world\/map-templates\/([^/]+)$/.exec(aurl.pathname);
+              if (method === 'DELETE' && deleteMatch) {
+                await mapTemplateSvc.deleteTemplate(decodeURIComponent(deleteMatch[1]!));
+                return send(res, 200, ok({}));
+              }
+              return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
+            } catch (e) {
+              if (e instanceof SlgError) return sendErr(res, e.code, e.message);
+              return send(res, 500, err(ErrorCode.INTERNAL, (e as Error).message));
+            }
+          }
+
           // List summary of all regions (G7/§17.7 admin console).
           if (method === 'GET' && aurl.pathname === '/admin/world/list') {
             return send(res, 200, ok(await svc.listWorlds()));
@@ -133,6 +184,9 @@ export function startHttpApi(
           try {
             if (aurl.pathname === '/admin/world/open') {
               await svc.openSeason(worldId, Number(body.season ?? 1), Number(body.shard ?? 1), Number(body.capacity ?? 10000));
+              // §24: clone the active map template's tiles as this world's terrain baseline (copy, not a live reference).
+              // No-op if no template is marked active — behavior is unchanged (proceduralTile-only) until ops sets one.
+              await mapTemplateSvc.cloneActiveTemplateInto(worldId);
               return send(res, 200, ok({}));
             }
             if (aurl.pathname === '/admin/world/settle') {

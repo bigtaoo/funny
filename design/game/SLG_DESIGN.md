@@ -1513,6 +1513,17 @@ if (path.startsWith('/admin/world/')) {
 - **Endpoint 归属**：放 **admin** 后端（员工态工具面，非玩家态 meta REST），职责与 ops 后台一致。
 - **并发编辑冲突不做锁**：内部工具、使用人少，接受"后保存者覆盖"的风险，暂不上锁机制。
 
+**落地状态（2026-07-05，本节 endpoint 已实现）**：
+
+- **数据**：模板归属 worldsvc 自己的库（`mapTemplates` 元数据 + `mapTemplateTiles` 逐格），不归 admin 库——admin 只做代理+审计，与现有 season ops（`WorldMixin` 代理 `/admin/world/*`）同一套路。`mapBaselines`（按 `worldId` 克隆出的世界基线）也建在 worldsvc。
+- **worldsvc 内部 endpoint**（`X-Internal-Key`，`server/worldsvc/src/httpApi.ts` `/admin/world/map-templates/*` 分支，独立于 `worldId` 必填门禁）：`GET /admin/world/map-templates` 列表、`POST .../generate` 生成种子、`GET/PUT .../{id}/tiles` 读viewport/diff存、`POST .../{id}/activate` 设为创建新世界用、`DELETE .../{id}` 删除（激活中的拒绝）。业务逻辑在新增的 `server/worldsvc/src/mapTemplateService.ts`。
+- **克隆时机**：`/admin/world/open` 处理完 `svc.openSeason()` 后，立即调用 `mapTemplateSvc.cloneActiveTemplateInto(worldId)`——没有激活模板时是空操作，不改变现有行为。
+- **admin 代理**：`server/admin/src/service/mapTemplates.ts`（新 mixin，接入 `service.ts` 装配链）+ `httpApi.ts` 新增 `/admin/slg/map-templates/*` 路由（JWT + `slg.map.view`/`slg.map.manage` 两个新权限点，写操作全部走 `audit()`）。
+- **已知限制，非本次范围**：
+  1. `proceduralTile()` 目前仍硬编码 `SLG_MAP_W`×`SLG_MAP_H`（模块级 Voronoi 首府预计算），`generateTemplate()` 因此实际上只能正确生成当前固定尺寸；"多尺寸模板并存"在 schema/CRUD 层已经就位（`templateId`+`width`/`height`已入库），但要等 ADR-034 重写把 `proceduralTile` 参数化到任意尺寸后才能真正生成第二种尺寸。
+  2. `mapBaselines` 只是被写入，读取路径（TileDoc 未命中时 fallback 到这份基线而非 `proceduralTile()`）尚未接入——这部分属于 ADR-034 重写的读路径整合范畴，与本节 admin/worldsvc endpoint 无关，留给该任务。
+  3. 编辑器前端（真正的地图编辑 UI 工具）尚未开工，本节只完成它要调用的后端 API。
+
 ---
 
 *本文档为 SLG 设计基准，DRAFT 标注处随实现/调参细化；锁定决策（SLG1~13）非经重新拍板不改。*

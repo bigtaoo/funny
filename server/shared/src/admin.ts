@@ -32,6 +32,8 @@ export type AdminCapability =
   | 'slg.season.manage' // SLG season ops: open / settle / reset / close a region (G7/§17.7, high-risk)
   | 'slg.audit.view' // view auction anomaly scan + audit queue (G7 anti-RMT)
   | 'slg.audit.manage' // file / adjudicate anomalous-trade audit tickets (G7 anti-RMT)
+  | 'slg.map.view' // view map templates + open the map editor read-only (SLG_DESIGN §24)
+  | 'slg.map.manage' // generate/save/activate/delete map templates (SLG_DESIGN §24, high-risk: delete wipes a template's tiles)
   | 'config.manage' // feature flag master switch / targeted edit (FEATURE_FLAGS_DESIGN §5)
   | 'events.manage' // limited-time events (B6): create / edit / take offline (ADR-014)
   | 'gacha.pools.manage' // ops-authored custom gacha pools (GACHA_DESIGN §12): create / close festival pools
@@ -63,6 +65,8 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'slg.season.manage',
     'slg.audit.view',
     'slg.audit.manage',
+    'slg.map.view',
+    'slg.map.manage',
     'config.manage',
     'events.manage',
     'gacha.pools.manage',
@@ -84,6 +88,8 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'slg.season.view',
     'slg.audit.view',
     'slg.audit.manage',
+    'slg.map.view',
+    'slg.map.manage',
     'config.manage',
     'events.manage',
     'gacha.pools.manage',
@@ -96,7 +102,7 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'comp.view',
     'audit.view.self',
   ],
-  viewer: ['monitor.view', 'analytics.view', 'comp.view', 'audit.view.self', 'slg.season.view', 'slg.audit.view'],
+  viewer: ['monitor.view', 'analytics.view', 'comp.view', 'audit.view.self', 'slg.season.view', 'slg.audit.view', 'slg.map.view'],
 };
 
 export function capabilitiesForRole(role: AdminRole): AdminCapability[] {
@@ -283,6 +289,10 @@ export type AuditAction =
   | 'slg.season.close'
   | 'slg.audit.file'
   | 'slg.audit.resolve'
+  | 'slg.map.template.generate'
+  | 'slg.map.template.save'
+  | 'slg.map.template.activate'
+  | 'slg.map.template.delete'
   | 'config.update'
   | 'event.create'
   | 'event.update'
