@@ -7,7 +7,7 @@
 //   ② RESET_DELETE_BATCH=2000: clearance iterations + estimated time
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { WORLD_CAPACITY, RESET_DELETE_BATCH } from '@nw/shared';
+import { WORLD_CAPACITY, RESET_DELETE_BATCH, SLG_MAP_W, SLG_MAP_H, SLG_GEN } from '@nw/shared';
 
 function bar(s: string) { console.log('═'.repeat(78)); console.log(s); console.log('═'.repeat(78)); }
 const fmt = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 0 });
@@ -22,8 +22,8 @@ console.log('── ①  Document count at full shard (10,000 players) ───
 const CAP = WORLD_CAPACITY;
 
 // Map dimensions
-const MAP_W = 300, MAP_H = 300, MAP_TILES = MAP_W * MAP_H;
-const RESOURCE_DENSITY = 0.34;
+const MAP_W = SLG_MAP_W, MAP_H = SLG_MAP_H, MAP_TILES = MAP_W * MAP_H;
+const RESOURCE_DENSITY = SLG_GEN.resourceDensity;
 const RESOURCE_TILES = Math.round(MAP_TILES * RESOURCE_DENSITY);
 
 // Per-player doc estimates (based on SLG design §14 / worldsvc service.ts)

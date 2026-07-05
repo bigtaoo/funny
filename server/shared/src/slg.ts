@@ -143,12 +143,18 @@ export const SLG_GEN = {
   resourceDensity: 1.0,
   /** familyKeep noise threshold; higher = sparser. */
   keepThreshold: 0.86,
-  /** Minimum distance ratio from center for strategic points (prevents keeps from spawning too close to the center). */
+  /** Minimum distance ratio from a tile's own nearest capital for strategic points (ADR-032 follow-up: per-nation, not map-center — prevents keeps from spawning too close to ANY capital). */
   keepMinDistRatio: 0.12,
   /** Level noise frequency (higher = more fragmented patches). */
   levelFreq: 1 / 14,
-  /** Level falloff exponent applied to (1-dr) (ADR-032: 1 → 1.1, pushes more of the map above level 5 so ~50% of tiles reach level 5+ at 500 players × 200-tile target). */
-  levelFalloffExp: 1.1,
+  /**
+   * Level falloff exponent applied to (1-dr) (ADR-032: 1 → 1.1 under the original map-center `dr`; re-tuned to
+   * 1.9 for the ADR-032 follow-up's per-nation `dr` — with 10 capitals now covering the map instead of 1, most
+   * tiles sit much closer to SOME capital than they used to sit to the single geometric center, so the same 1.1
+   * exponent over-shot to ~81% of tiles at level 5+. 1.9 restores the ~50% level-5+ target empirically (see
+   * SLG_DESIGN.md §3.2).
+   */
+  levelFalloffExp: 1.9,
   /** Biome (resource type) noise frequency (lower = larger patches → large same-resource zones encourage specialization and trade). */
   biomeFreq: 1 / 40,
   /** Strategic point noise frequency. */
@@ -168,13 +174,22 @@ export const SLG_GEN = {
   // ── S8-6.6 blocking terrain + gates ──────────────────────────
   /** Obstacle terrain noise frequency (medium-scale continuous mountain/river zones). */
   obstacleFreq: 1 / 40,
-  /** Obstacle terrain noise threshold (above this → obstacle; ~12% of tiles). */
+  /** Obstacle terrain noise threshold (above this → obstacle; empirically ~2.7-2.9% of tiles within the eligible band, not the ~12% a naive uniform-noise assumption would suggest — see obstacleMinDistRatio note). */
   obstacleThreshold: 0.88,
   /**
-   * Obstacles only generate in regions where dr ≤ this ratio (outer plains remain obstacle-free, ensuring passability in player starting corners).
-   * Areas near corners (dr > obstacleMaxDr) are obstacle-free safe zones.
+   * Obstacles only generate where dr ≥ this ratio (ADR-032 follow-up: dr is now per-nation distance-to-own-nearest-capital,
+   * so this carves out a safe, obstacle-free zone around every capital and concentrates mountains/rivers toward each
+   * nation's border — the "must pass a gate to leave your nation" read on resource nations sitting between the hegemony
+   * center and the outer ring). Replaces the old obstacleMaxDr (which excluded only the map's far outer corners from a
+   * single map-wide center). 0.15 keeps ~92% of the map obstacle-eligible (only the ~25-tile ring right around each
+   * capital is protected), matching the old map-center formula's coverage (~96%) as closely as the new geometry allows.
+   * ⚠ Measured actual obstacle share (both old and new dr) is ~2.7-2.9% of all tiles, not the ~10-15% the old
+   * `obstacleThreshold` comment claimed — `valueNoise`'s bilinear+smoothstep interpolation compresses the noise
+   * distribution well below the naive "uniform [0,1], 12% above 0.88" assumption. Pre-existing miscalibration
+   * (present before this ADR-032 follow-up too); left as-is since re-tuning obstacle density is a separate
+   * balance task, not part of this nation-layout change.
    */
-  obstacleMaxDr: 0.87,
+  obstacleMinDistRatio: 0.15,
   /** Gate noise frequency (large-scale; sparse strategic corridors). */
   gateFreq: 1 / 60,
   /** Gate noise threshold: gates (strategic corridors) generate inside obstacle zones above this value; extremely sparse. */
@@ -191,7 +206,7 @@ export const SLG_GEN = {
    * sparse" intent deterministically. Higher = sparser.
    */
   strongholdThreshold: 0.997,
-  /** Minimum distance ratio from center for strongholds (prevents strongholds from spawning too close to center; preserves a safe zone for new players). */
+  /** Minimum distance ratio from a tile's own nearest capital for strongholds (ADR-032 follow-up: per-nation — prevents strongholds from spawning too close to ANY capital; preserves a safe zone for new players in every nation). */
   strongholdMinDistRatio: 0.25,
 } as const;
 
@@ -549,21 +564,38 @@ export const NATION_BONUS_PRODUCTION = 0.10;
 /** Nation bonus: defense combat bonus within the player's own Voronoi nation zone (fraction, 0.15 = +15%, §16.5 A7 decision). */
 export const NATION_BONUS_DEFENSE = 0.15;
 /**
+ * Nation kind by capitalIdx (ADR-032 follow-up, 2026-07-04): three-Kingdoms-style concentric ring layout,
+ * replacing the old 8-periphery + 1-inner + 1-center arrangement. 6 outer nations form a hexagon on the
+ * periphery ring; 3 resource nations form a triangle on a middle ring (reachable from the outer ring only
+ * through the mountain/river band that naturally forms along nation borders, §3.2); 1 hegemony nation sits
+ * at the map's geometric center (unchanged from before — still capitalIdx 9 / CENTER_CAPITAL_IDX).
+ */
+export type NationKind = 'outer' | 'resource' | 'hegemony';
+export const NATION_KIND_BY_IDX: readonly NationKind[] = [
+  'outer', 'outer', 'outer', 'outer', 'outer', 'outer', // 0-5: periphery hexagon (r=0.40)
+  'resource', 'resource', 'resource',                   // 6-8: middle triangle (r=0.20)
+  'hegemony',                                            // 9: map center
+];
+
+/**
  * Relative coordinates of the 10 capitals (fractions 0–1; multiply by mapW-1/mapH-1 to get actual tile coordinates).
- * Layout: 8 on the periphery (4 corners + 4 edge midpoints) + 1 interior offset + 1 central plains (map center).
- * Design doc §2.4: fixed coordinates, hardcoded in shared/slg.ts; Voronoi partitioning is derived from these.
+ * Layout (ADR-032 follow-up): 6 outer (hexagon, r=0.40 from center) + 3 resource (triangle, r=0.20, offset 30°
+ * from the outer vertices so the two rings interleave) + 1 hegemony (map center, r=0). Voronoi partitioning
+ * (nearestCapitalIdx) is derived from these; proceduralTile's level curve is now per-nation (distance to the
+ * tile's own nearest capital, §3.2), not distance to the map's geometric center.
+ * Design doc §2.4/§3.2: fixed coordinates, hardcoded in shared/slg.ts.
  */
 export const CAPITAL_FRACTIONS: readonly [number, number][] = [
-  [0.14, 0.14], // 0: northwest corner
-  [0.50, 0.10], // 1: due north
-  [0.86, 0.14], // 2: northeast corner
-  [0.10, 0.50], // 3: due west
-  [0.90, 0.50], // 4: due east
-  [0.14, 0.86], // 5: southwest corner
-  [0.50, 0.90], // 6: due south
-  [0.86, 0.86], // 7: southeast corner
-  [0.32, 0.32], // 8: inner-ring northwest (ordinary capital)
-  [0.50, 0.50], // 9: central plains capital (map center; season bonus objective)
+  [0.50, 0.10], // 0: outer — due north
+  [0.85, 0.30], // 1: outer — northeast
+  [0.85, 0.70], // 2: outer — southeast
+  [0.50, 0.90], // 3: outer — due south
+  [0.15, 0.70], // 4: outer — southwest
+  [0.15, 0.30], // 5: outer — northwest
+  [0.60, 0.33], // 6: resource — east-northeast (offset 30° from the outer ring)
+  [0.60, 0.67], // 7: resource — east-southeast
+  [0.30, 0.50], // 8: resource — west
+  [0.50, 0.50], // 9: hegemony — map center (season bonus objective; CENTER_CAPITAL_IDX)
 ] as const;
 
 /** Convert relative fractional coordinates to actual integer map coordinates. */
@@ -801,29 +833,59 @@ function biomeAt(x: number, y: number, seed: number): ResourceType {
 }
 
 /**
+ * Fixed capitals + a single normalization radius for generation purposes (module-scope: SLG_MAP_W/H are
+ * fixed constants, so this only needs computing once — ADR-032 follow-up).
+ *
+ * Every tile's `dr` is distance-to-its-own-nearest-capital, but normalized by ONE shared radius rather than
+ * `capitalNormRadii` (half-nearest-neighbor-capital-distance): that per-capital radius is only ~50-65 tiles
+ * here (10 capitals clustered within the inner 40% of a 500×500 map), while a Voronoi cell's actual extent
+ * reaches much farther — an outer-ring capital's cell stretches out to the map corners (~250+ tiles). Using
+ * the tiny inter-capital radius as the normalizer clamped almost the whole map to dr=1 (level 1), collapsing
+ * the level-5+ share from the ADR-032 target of ~50% down to ~17%. Sampling the map's actual farthest-from-any-capital
+ * distance gives a normalizer that matches each Voronoi cell's real size, restoring the intended level curve
+ * while still keying the peak to each tile's own nearest capital (not the map's single geometric center).
+ */
+const GEN_CAPITALS = capitalPositions(SLG_MAP_W, SLG_MAP_H);
+const GEN_MAX_CAP_DIST = (() => {
+  const step = Math.max(1, Math.floor(Math.min(SLG_MAP_W, SLG_MAP_H) / 150)); // coarse sample, ~150×150 grid
+  let maxD = 0;
+  for (let y = 0; y < SLG_MAP_H; y += step) {
+    for (let x = 0; x < SLG_MAP_W; x += step) {
+      const idx = nearestCapitalIdx(x, y, GEN_CAPITALS);
+      const [cx, cy] = GEN_CAPITALS[idx]!;
+      const d = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2);
+      if (d > maxD) maxD = d;
+    }
+  }
+  return maxD;
+})();
+
+/**
  * Computes the procedural default tile for (worldId, x, y). Pure function, deterministic, never persisted.
- * Distribution rules (U6 + S8-6.6): unique center tile at the map center; blocking terrain (mountains/rivers) + gates embedded in blocking zones;
- * level decreases from center to edge; sparse familyKeep strategic points; remaining tiles are classified as resource or neutral by density.
+ * Distribution rules (U6 + S8-6.6 + ADR-032 follow-up): unique tile at the map's geometric center (hegemony capital);
+ * every other tile's `dr` is now its distance to its OWN nearest capital (Voronoi, §2.4), normalized by
+ * GEN_MAX_CAP_DIST — level/keeps/strongholds peak near each nation's own capital and blocking terrain
+ * (mountains/rivers) + gates concentrate toward each nation's border, not just the map's single geometric center.
  */
 export function proceduralTile(world: string, x: number, y: number): ProceduralTile {
   const seed = worldSeed(world);
   const cx = SLG_MAP_W / 2;
   const cy = SLG_MAP_H / 2;
 
-  // world center (unique)
+  // world center (unique) — hegemony capital tile
   if (x === Math.floor(cx) && y === Math.floor(cy)) {
     return { type: 'center', level: SLG_MAP_MAX_LEVEL };
   }
 
-  const dx = x - cx;
-  const dy = y - cy;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  const maxDist = Math.sqrt(cx * cx + cy * cy);
-  const dr = dist / maxDist; // 0 = center .. 1 = corner
+  const capIdx = nearestCapitalIdx(x, y, GEN_CAPITALS);
+  const [capX, capY] = GEN_CAPITALS[capIdx]!;
+  const distToCap = Math.sqrt((x - capX) ** 2 + (y - capY) ** 2);
+  const dr = Math.min(1, distToCap / GEN_MAX_CAP_DIST); // 0 = own capital .. 1 = the map's farthest-from-any-capital point
 
-  // ── Blocking terrain + gates (S8-6.6) ────────────────────────────────
-  // Only generated in the central region where dr ≤ obstacleMaxDr; outer plains (corners) remain obstacle-free to ensure player starting zones are passable.
-  if (dr <= SLG_GEN.obstacleMaxDr) {
+  // ── Blocking terrain + gates (S8-6.6 + ADR-032 follow-up) ────────────────────────────────
+  // Only generated away from capitals (dr ≥ obstacleMinDistRatio) — carves a safe zone around every capital and
+  // concentrates mountains/rivers toward each nation's border.
+  if (dr >= SLG_GEN.obstacleMinDistRatio) {
     const obstNoise = valueNoise(x, y, SLG_GEN.obstacleFreq, seed ^ 0x0888);
     if (obstNoise > SLG_GEN.obstacleThreshold) {
       // Gate: high-peak location within the blocking zone (strategic corridor) — even sparser than obstacles.
@@ -835,7 +897,7 @@ export function proceduralTile(world: string, x: number, y: number): ProceduralT
     }
   }
 
-  // Level: high at center → low at edge (dominated by (1-dr)) + medium-frequency noise perturbation
+  // Level: high at own capital → low at own nation's border (dominated by (1-dr)) + medium-frequency noise perturbation
   const lvlNoise = valueNoise(x, y, SLG_GEN.levelFreq, seed ^ 0x0111);
   let level = Math.round(Math.pow(1 - dr, SLG_GEN.levelFalloffExp) * (SLG_MAP_MAX_LEVEL - 1) + 1 + (lvlNoise - 0.5) * 1.5);
   level = Math.max(1, Math.min(SLG_MAP_MAX_LEVEL, level));

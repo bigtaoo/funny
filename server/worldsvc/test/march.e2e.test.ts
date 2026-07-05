@@ -152,7 +152,7 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
 
   it('recall: return leg + troops refunded to pool on arrival', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
-    const target = findCoord((t) => t.type === 'neutral', 40, 40);
+    const target = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 40, 40);
     const mv = await svc.startMarch(W, 'a', 5, 5, target.x, target.y, 'occupy', OCCUPY_MIN_TROOPS);
 
     nowMs += Math.floor((mv.arriveAt - nowMs) / 2); // recall halfway through the march
@@ -181,7 +181,7 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
       code: 'TILE_OCCUPIED',
     });
     // Occupy with fewer troops than OCCUPY_MIN_TROOPS.
-    const free = findCoord((t) => t.type === 'neutral', 30, 30);
+    const free = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 30, 30);
     await expect(svc.startMarch(W, 'a', 5, 5, free.x, free.y, 'occupy', 10)).rejects.toMatchObject({
       code: 'NO_TROOPS',
     });
@@ -197,7 +197,7 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
 
   it('target already occupied by another player on arrival → refund troops (no capture, S8-3)', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
-    const target = findCoord((t) => t.type === 'neutral', 40, 40);
+    const target = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 40, 40);
     const mv2 = await svc.startMarch(W, 'a', 5, 5, target.x, target.y, 'occupy', OCCUPY_MIN_TROOPS);
 
     // While march is in transit, b directly occupies the tile (simulating protection period expired: write another player's territory directly).

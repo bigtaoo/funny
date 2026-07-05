@@ -54,10 +54,12 @@ export interface GachaSceneCallbacks {
   redeemFate(itemId: string): Promise<FateRedeemResult>;
   /**
    * Peer navigation within the shop group (LOBBY_IA_REDESIGN P1.5). Injected only
-   * in the "shop" group context; when present the top shows a [Shop|Gacha|BattlePass]
+   * in the "shop" group context; when present the top shows a [Shop|Coins|Gacha|BattlePass]
    * tab strip, otherwise the scene falls back to a plain back button.
    */
   openShop?(): void;
+  /** Navigate to the shop's Coins tab. Only injected when a real IAP recharge route is available. */
+  openCoins?(): void;
   openBattlePass?(): void;
 }
 
@@ -211,7 +213,7 @@ export class GachaScene implements Scene {
   }
 
   /**
-   * Shop group tab strip (LOBBY_IA_REDESIGN P1.5): [Shop|Gacha|BattlePass], Gacha active.
+   * Shop group tab strip (LOBBY_IA_REDESIGN P1.5): [Shop|Coins|Gacha|BattlePass], Gacha active.
    * Only drawn when in the group context (openShop injected); returns the body start y.
    * Otherwise returns tbH unchanged.
    */
@@ -219,15 +221,19 @@ export class GachaScene implements Scene {
     if (!this.cb.openShop) return tbH;
     const { w, h } = this;
     const stripH = hubTabsHeight(h);
-    const tabs: HubTab[] = [
-      { label: t('shop.title'), active: false, icon: 'tag' },
-      { label: t('gacha.title'), active: true, icon: 'capsule' },
-    ];
-    if (this.cb.openBattlePass) tabs.push({ label: t('battlepass.title'), active: false, icon: 'trophy' });
-    const hits = drawHubTabs(this.container, w, tbH, stripH, tabs, (i) => {
-      if (i === 0) this.cb.openShop?.();
-      else if (i === 2) this.cb.openBattlePass?.();
-    });
+    const tabs: HubTab[] = [{ label: t('shop.title'), active: false, icon: 'tag' }];
+    const actions: Array<() => void> = [() => this.cb.openShop?.()];
+    if (this.cb.openCoins) {
+      tabs.push({ label: t('shop.coinsTab'), active: false, icon: 'coin' });
+      actions.push(() => this.cb.openCoins?.());
+    }
+    tabs.push({ label: t('gacha.title'), active: true, icon: 'capsule' });
+    actions.push(() => {});
+    if (this.cb.openBattlePass) {
+      tabs.push({ label: t('battlepass.title'), active: false, icon: 'trophy' });
+      actions.push(() => this.cb.openBattlePass?.());
+    }
+    const hits = drawHubTabs(this.container, w, tbH, stripH, tabs, (i) => actions[i]?.());
     this.hits.push(...hits);
     return tbH + stripH;
   }

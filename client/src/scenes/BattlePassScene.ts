@@ -36,10 +36,12 @@ export interface BattlePassCallbacks {
   onClaim?(track: 'free' | 'paid', level: number): Promise<number>;
   /**
    * Direct navigation to sibling shop group tabs (LOBBY_IA_REDESIGN P1.5). Only injected in the
-   * "Shop" group context; when injected, a [Shop|Gacha|BattlePass] tab bar appears at the top,
+   * "Shop" group context; when injected, a [Shop|Coins|Gacha|BattlePass] tab bar appears at the top,
    * otherwise degrades to plain back button (standalone entry points like achievements).
    */
   openShop?(): void;
+  /** Navigate to the shop's Coins tab. Only injected when a real IAP recharge route is available. */
+  openCoins?(): void;
   openGacha?(): void;
 }
 
@@ -111,15 +113,17 @@ export class BattlePassScene implements Scene {
     if (!this.cb.openShop) return tbH;
     const { w, h } = this;
     const stripH = hubTabsHeight(h);
-    const tabs: HubTab[] = [
-      { label: t('shop.title'), active: false, icon: 'tag' },
-      { label: t('gacha.title'), active: false, icon: 'capsule' },
-      { label: t('battlepass.title'), active: true, icon: 'trophy' },
-    ];
-    const hits = drawHubTabs(this.container, w, tbH, stripH, tabs, (i) => {
-      if (i === 0) this.cb.openShop?.();
-      else if (i === 1) this.cb.openGacha?.();
-    });
+    const tabs: HubTab[] = [{ label: t('shop.title'), active: false, icon: 'tag' }];
+    const actions: Array<() => void> = [() => this.cb.openShop?.()];
+    if (this.cb.openCoins) {
+      tabs.push({ label: t('shop.coinsTab'), active: false, icon: 'coin' });
+      actions.push(() => this.cb.openCoins?.());
+    }
+    tabs.push({ label: t('gacha.title'), active: false, icon: 'capsule' });
+    actions.push(() => this.cb.openGacha?.());
+    tabs.push({ label: t('battlepass.title'), active: true, icon: 'trophy' });
+    actions.push(() => {});
+    const hits = drawHubTabs(this.container, w, tbH, stripH, tabs, (i) => actions[i]?.());
     this.hits.push(...hits);
     return tbH + stripH;
   }
@@ -138,7 +142,7 @@ export class BattlePassScene implements Scene {
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
-    // Shop group tab bar (LOBBY_IA_REDESIGN P1.5): [Shop|Gacha|BattlePass], battle pass active. Only drawn in group context.
+    // Shop group tab bar (LOBBY_IA_REDESIGN P1.5): [Shop|Coins|Gacha|BattlePass], battle pass active. Only drawn in group context.
     const top = this.drawGroupTabs(tbH);
 
     // ── Auth / offline guard ──────────────────────────────────────────────────

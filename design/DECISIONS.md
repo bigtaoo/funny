@@ -354,3 +354,39 @@
 - **实现**：`@nw/shared`（economy 加 YEAR_CARD_DAYS/IMMEDIATE_COINS/价格常量 + PRODUCT_YEAR_CARD；api 加 `ALREADY_ACTIVE`）；`commercial`（`monthlyCardBuy`/`yearCardBuy` 收敛到私有 `subscriptionCardBuy`：先占 orderId 槽→门控回滚→applySubscription，门控置于占槽之后以不误伤同 orderId 幂等重放；internalHttp 加 `/internal/year-card/buy`）；`metaserver`（commercialClient 加 `yearCardBuy`；service 加 `yearCardBuy` handler + `subscriptionErrCode` 把 `ALREADY_ACTIVE` 透传给客户端）；`openapi.yml` 加 `/year-card/buy`（重生 routes.gen + 客户端 openapi.ts）；客户端 ApiClient/createAppCore(`buyYearCard` + `ALREADY_ACTIVE`→`shop.cardActive`)/ShopScene 大改 + i18n 三语（`shop.yearCard`/`shop.cardActive`/`shop.save`）。
 - **为什么**：门控把月卡从「可囤积」改为「用完再买」，强化每日留存锚（月卡定位本就是留存而非性价比）；年卡九折给长线玩家一个更划算的锚，同时单卡门控避免年卡+月卡叠加把订阅收益一次性透支；图标卡网格提升付费诱惑并与全局 UI 统一。
 - **影响**：[`GACHA_DESIGN.md`](game/GACHA_DESIGN.md) §5/§5.1b + 实现小结；`@nw/shared` economy/api；`commercial` service/internalHttp（+e2e：门控 + 年卡用例，91 全绿）；`metaserver` commercialClient/service（+ routes.gen，293 全绿）；`openapi.yml`；客户端 ShopScene/ApiClient/createAppCore/i18n。真实 IAP 验单仍范围外。
+
+## ADR-033 SLG 国家版图三战式环带布局 + 等级/险地与「国家身份」绑定 — Superseded by ADR-034 — 2026-07-05
+
+> **⚠️ 已作废（2026-07-05，同日撤销）**：本 ADR 与另一条并行会话讨论出的 [ADR-034](#adr-034-slg-国家版图改为环形分层结构6-出生州3-资源州1-核心州--地形隔离城池体系拍板--accepted--2026-07-05) 撞了同一个编号且方向不同——本条是"10 首府改三层同心环几何位置 + 等级按最近首府距离衰减"（点+距离模型），ADR-034 是"6 出生州+3 资源州+1 核心州角度扇区 + 折痕岭/墨河/城池完整体系"（扇区+地形模型）。用户拍板**以 ADR-034 为准，本条（含已落地的代码 `CAPITAL_FRACTIONS`/`NATION_KIND_BY_IDX`/`GEN_MAX_CAP_DIST`/`proceduralTile`/`SLG_GEN.obstacleMinDistRatio`/10 个 e2e 测试文件）全部作废，需按 ADR-034 重写**。以下原文保留作历史记录，不代表当前状态。
+- **背景**：ADR-032 落地地图尺寸/等级上限/资源密度/等级曲线后，遗留一条「⚠️ 待定」：现有 10 首府对称布局（8 外围+1 内环+1 中心）与地块等级公式（`level = round((1-dr)^1.1×(MAX-1)+1+noise)`，`dr`=离地图**几何中心**的距离比例）完全脱钩于「国家身份」——不管站在哪个首府的地盘里，地块等级只看离地图正中心多远，10 个首府本身除了 idx9（地图中心，`CENTER_CAPITAL_IDX`）外，对地块生成毫无影响，与用户设想的「三战式一国一版图，各有肥沃/贫瘠」不符。用户拍板：保留 10 国（不是三战式常见的 9 国），布局改为 **6 外围国 + 3 资源国 + 1 霸业国**，且等级要按「离自己国家首府的距离」算，不能只看离地图中心的距离。
+- **决策**：
+  1. **10 首府布局改为三层同心环**（`CAPITAL_FRACTIONS`，`server/shared/src/slg.ts`）：外环 6 外围国（正六边形，半径 0.40，idx 0-5）+ 中环 3 资源国（正三角形，半径 0.20，与外环错开 30° 交错，idx 6-8）+ 中心 1 霸业国（地图正中心，idx 9，即原 `CENTER_CAPITAL_IDX`，行为不变）。新增 `NATION_KIND_BY_IDX` 常量标注每个 idx 的国家类型（供后续 UI/econ-sim 使用）。
+  2. **地块等级/据点/中立地生成全部改为「离自己最近首府的距离」**：`proceduralTile` 里的 `dr` 从"离地图几何中心距离/半对角线"改为"离最近首府距离/`GEN_MAX_CAP_DIST`"（`GEN_MAX_CAP_DIST` = 采样整张地图算出的"离最近首府最远的一点"到其首府的距离，模块加载时算一次）。地图中心格仍特判为唯一的 `type:'center'` 格（霸业国首府所在格）。
+  3. **等级曲线指数从 1.1 重新调到 1.9**：10 个首府比 1 个几何中心覆盖面积更大，同样的 1.1 指数会把 5 级以上占比从 ADR-032 的目标 ~50% 推到实测 ~81%；重新蒙特卡洛校准后 1.9 把该占比拉回 ~51%（详见 `SLG_DESIGN.md` §3.2）。
+  4. **阻挡地形改为「离最近首府越远越密」**：`obstacleMaxDr`（旧：只排除地图最外角，`dr≤0.87` 才生成）废止，改为 `obstacleMinDistRatio=0.15`（新：`dr≥0.15` 才生成）——天然把山脉/河流集中在每个国家的边境，而不是围绕地图单一几何中心，呼应"资源国出关可达"的读法（资源国夹在霸业国和外环国之间，边境天然险要）。keep/stronghold 的 `keepMinDistRatio`/`strongholdMinDistRatio` 语义同步从"离地图中心"变成"离最近首府"，数值不变。
+  5. **⚠️ 顺带发现并修正一处校准错误**：`obstacleThreshold=0.88` 的注释一直声称"约 12% 的格子变阻挡"，实测（新旧公式都测过）实际只有 ~2.7-2.9%——`valueNoise` 的双线性插值+平滑步进会把噪声值压缩，远小于"均匀分布、12% 超过 0.88"的朴素假设。这个校准错误在 ADR-032 之前就存在，本次未重新调阻挡密度本身（那是独立的数值平衡任务），只是把注释改成实测数字，`obstacleMinDistRatio` 按实测密度校准。
+- **为什么**：用户对三战版图节奏的核心诉求是"各国有各国的地盘和肥沃程度"，而不是"整张地图只有一个山巅"；10 国（不是 9 国）是因为用户更看重"外围 6+资源 3+霸业 1"这个数字对称性，胜过严格照搬三战的 9 国。
+- **影响**：
+  - [`SLG_DESIGN.md`](game/SLG_DESIGN.md) §2.4/§3.2 已按本决议改写（新增环带布局说明 + 等级/阻挡与首府绑定的机制描述 + 实测数字）。
+  - **本 ADR 是"拍板即实现"**：与 ADR-032（先拍板后实现，隔一轮）不同，这次设计讨论中直接把 `CAPITAL_FRACTIONS`/`proceduralTile`/`SLG_GEN` 一并改完，同批验证。
+  - 过程中发现并修复了一个**与本次改动无关、此前从未被真正跑过的回归**：`server/worldsvc` 的 e2e 测试此前一直通过本地 worktree 的 `node_modules/@nw/*` 符号链接指向主仓库的**未重建**产物在跑（worktree 约定的已知坑，见 [`claudedocs/worktrees.md`](../claudedocs/worktrees.md) 补充说明），导致 ADR-032 合并后测试从未真正验证过新地图常量；本次修好链接后跑出 27 个真实失败（`resourceDensity=1.0` 后 `'neutral'` 地块已绝迹、`(250,250)` 在 500×500 地图下变成地图正中心、以及若干测试用坐标恰好落入新地形分布的阻挡带），已在本 ADR 一并修复（10 个测试文件），修复后 worldsvc 210 例 + shared 463 例全绿。
+- **实现**：`server/shared/src/slg.ts`（`CAPITAL_FRACTIONS`/`NATION_KIND_BY_IDX`/`GEN_MAX_CAP_DIST`/`proceduralTile`/`SLG_GEN.levelFalloffExp`+`obstacleMinDistRatio`）；`server/worldsvc/test/*.e2e.test.ts`（10 个文件的坐标假设修复）。**⚠️ 该实现已被 ADR-034 判定作废，需重写，见下条。**
+
+## ADR-034 SLG 国家版图改为环形分层结构（6 出生州+3 资源州+1 核心州）+ 地形隔离/城池体系拍板 — Accepted — 2026-07-05
+
+- **背景**：与另一条并行会话独立进行的 ADR-033（10 首府三层同心环+距离衰减）撞了同一天、同一个"国家版图重构"题目，但走向了不同方案。本 ADR 是这条会话的产物：用户指出现有 10 首府点 Voronoi 分区有两个无法用调参解决的问题：① 随机生成的地形（`proceduralTile()`）不知道国界在哪，② 国家之间的隔离效果差（边界随机穿山、切资源带）。经讨论确认根因：地形生成与国家分区是两条互不感知的纯函数管线，纯参数化生成到此已到天花板，需要引入编辑器承载的人工修正手段（新工具见 [`design/tools/map-editor/DESIGN.md`](tools/map-editor/DESIGN.md)）。讨论中调研了三战（三国志战略版）的版图/城池机制作参考（[`SGZ_LAND_REFERENCE.md`](game/SGZ_LAND_REFERENCE.md) §5 环形结构、§8 城池系统），并借助一次性 HTML/JS 原型反复验证骨架后收敛。**发现与 ADR-033 冲突后，用户拍板以本 ADR 为准，ADR-033（含其已落地的代码）全部作废。**
+- **决策**：
+  1. **国家分区从"10 首府点 Voronoi"改为"角度扇区 + 半径分层"**：6 个出生州（外圈，各占 60°）+ 3 个资源州（中环，各占 120°，与出生州 2:1 对齐）+ 1 个核心州（中心圆域）。半径边界初始参考值：核心州半径比例 0.11、资源州外边界比例 0.39（相对地图半对角线），非最终锁死数字。
+  2. **新增两类天然隔离地形**：折痕岭（3 条山脉，= 出生州↔资源州环形边界本身，6 段两两分组）+ 墨河（2 条河流，全新横穿全图的独立层，噪声扰动弦线）；均完全不可通行，厚度 5–11 格随机。
+  3. **出生州之间新增支脉/支流隔离**：折痕岭/墨河从环形边界向地图边缘延伸出 6 条支脉（单双号交替山脉/河流类型），把 6 个出生州两两隔开；每条支脉按实际长度分配 1-2 座**关隘城池**（长的一半配 2 座，短的一半配 1 座），必须攻城才能通过——不设免费关隘。
+  4. **明确区分"关隘/桥"与"城池"两套机制**（三战调研的关键结论：城池是跟地块并列的独立节点，多驻军+城墙耐久一层，不能等价成关隘）：关隘/桥只出现在两条大环边界（出生州↔资源州、资源州↔核心州），免费通行，宽度 3–8 格随机；城池须攻城，出现在支脉/州府/世界中心。
+  5. **拍板城池体系的种类与数量**：州府（出生州 6 座 + 资源州 3 座）+ 关隘城池（支脉 6-9 座）+ 世界中心巨城（1 座，9×9 格实体，核心州争夺目标，本质也是城池只是更大）+ **出生州分级城池**（每出生州新增 9 座：2×3 级 + 2×4 级 + 2×5 级 + 1×6 级 + 1×7 级 + 1×8 级，全图共 54 座，呼应三战"州内多级城池梯度"但改为固定配额）。城池驻军/城墙耐久数值本次不拍板，留后续。
+  6. **拍板三层环各自的等级分布权重表**：出生州封顶 8 级且占比极低（~1%）；资源州 5 级+占比 ≥60%（含 ~5% 的 10 级）；核心州 10 级占比明显高于资源州（18% vs 5%）。完整权重表见 map-editor DESIGN.md §4。
+- **为什么**：用户对三战版图结构（环带分层+关隘严格对应层级）非常熟悉，希望复刻其"层级递进"的攻略节奏，同时解决现有 Voronoi 方案地形/国界两不相干的结构性缺陷；城池/关隘分离是三战调研澄清的关键差异，直接照抄"关隘=城池"会做错机制；本 ADR 优先于 ADR-033，是因为角度扇区+完整地形城池体系比"点+距离衰减"更彻底地解决了"地形不知道国界"的根因（扇区边界本身就是地形，不是事后套一层距离公式）。
+- **影响**：
+  - 新增/改写 [`design/tools/map-editor/DESIGN.md`](tools/map-editor/DESIGN.md)（§2-§4 地形骨架定稿，§6 编辑器需求，§7 原型迭代记录）。
+  - [`SLG_DESIGN.md`](game/SLG_DESIGN.md) §2.4（国家系统）、§3.2（地图尺寸与地形布局）已改写，指向本 ADR，并标注"代码现状仍是 ADR-033（已作废）实现，待重写"。
+  - **ADR-033 判定作废**：其已落地的代码（`server/shared/src/slg.ts` 的 `CAPITAL_FRACTIONS`/`NATION_KIND_BY_IDX`/`GEN_MAX_CAP_DIST`/`proceduralTile`/`SLG_GEN.obstacleMinDistRatio`/`levelFalloffExp`，以及 10 个 e2e 测试文件的坐标假设修复）需要按本 ADR 的角度扇区+地形城池模型整体重写，**尚未开始，是下一步任务**——涉及 `proceduralTile()` 重写、新增地形矢量路径/城池节点数据结构、`server/worldsvc` 相关 e2e 测试重新适配。
+  - `tools/map-editor` 工具尚未搭骨架。讨论期验证骨架用的 HTML/JS 原型未提交仓库。
+  - 城池驻军/耐久数值、资源州/核心州是否也要分级城池梯度、国民加成如何随分层结构调整，均留待后续 ADR。
+- **教训**：两条并行会话在同一天独立展开"国家版图重构"这个大改动，导致 ADR 编号撞车、代码方向冲突——已落地代码被判定作废意味着那批 e2e 测试修复工作也随之作废。后续如有多会话并行处理同一模块的结构性改动，应在开工前先检查是否有其他会话正在动同一处（如 `git log` 看最近的 daily 分支提交），或至少在长任务过程中定期 `git fetch`/查 worktree 列表交叉核对。

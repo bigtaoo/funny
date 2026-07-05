@@ -196,7 +196,7 @@ export function createShopNav(ctx: AppCtx): ShopNav {
   }
 
   /**
-   * Gacha / loot box (S2-6). When `group` is provided = shop-group context (top [Shop|Gacha|BattlePass]
+   * Gacha / loot box (S2-6). When `group` is provided = shop-group context (top [Shop|Coins|Gacha|BattlePass]
    * tab bar with peer navigation); omitted = standalone entry (back returns to the shop only).
    */
   function goGacha(group?: { shopBack?: () => void }): void {
@@ -207,9 +207,11 @@ export function createShopNav(ctx: AppCtx): ShopNav {
     const inGroup = !!group;
     const shopBack = group?.shopBack;
     const bpAvail = !state.offlineMode && !!platform.storage.getItem(TOKEN_KEY);
+    const coinsAvail = bpAvail && platform.iapKind() !== null;
     views.showGacha({
       onBack() { goShop(shopBack); },
       ...(inGroup ? { openShop: () => goShop(shopBack) } : {}),
+      ...(inGroup && coinsAvail ? { openCoins: () => goShop(shopBack, 'coins') } : {}),
       ...(inGroup && bpAvail ? { openBattlePass: () => goBattlePass({ shopBack }) } : {}),
       getCoins: () => saveManager.get().wallet.coins,
       getPity: (poolId) => saveManager.get().gacha.pity[poolId] ?? 0,
@@ -294,7 +296,7 @@ export function createShopNav(ctx: AppCtx): ShopNav {
   }
 
   /**
-   * Battle pass (SE-9). When `group` is provided = shop-group context (top [Shop|Gacha|BattlePass]
+   * Battle pass (SE-9). When `group` is provided = shop-group context (top [Shop|Coins|Gacha|BattlePass]
    * tab bar, back returns to the shop); omitted = standalone entry (back returns to the lobby).
    * After the IA redesign, this is entered from the "Shop" tab (LOBBY_IA_REDESIGN §3);
    * `back` determines where the user returns to.
@@ -306,9 +308,11 @@ export function createShopNav(ctx: AppCtx): ShopNav {
     const client = api;
     const inGroup = !!group;
     const shopBack = group?.shopBack;
+    const coinsAvail = loggedIn && platform.iapKind() !== null;
     views.showBattlePass({
       onBack: inGroup ? () => goShop(shopBack) : () => nav.goLobby(),
       ...(inGroup ? { openShop: () => goShop(shopBack), openGacha: () => goGacha({ shopBack }) } : {}),
+      ...(inGroup && coinsAvail ? { openCoins: () => goShop(shopBack, 'coins') } : {}),
       ...(loggedIn
         ? {
             getBattlePass: () => saveManager.get().battlePass,

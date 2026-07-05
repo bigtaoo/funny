@@ -12,6 +12,7 @@ import {
   VISION_WATCHTOWER_RADIUS,
   VISION_TERRITORY_RADIUS,
   WATCHTOWER_COST,
+  baseFootprintCells,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
 import { WorldService } from '../src/service';
@@ -55,7 +56,35 @@ function findCoord(
   }
   throw new Error('no matching tile found');
 }
-const NEUTRAL = (t: ReturnType<typeof proceduralTile>) => t.type === 'neutral';
+/** Any plain occupiable tile (resourceDensity is now 1.0, so 'neutral' tiles are effectively extinct — 'resource' is the real "plain occupiable" type). */
+const OCCUPIABLE = (t: ReturnType<typeof proceduralTile>) => t.type === 'resource' || t.type === 'neutral';
+
+/** Terrain types that block a capital's 3×3 footprint (mirrors TerritoryService.joinWorld / footprintFree). */
+const BLOCKS_CAPITAL = (t: ReturnType<typeof proceduralTile>) =>
+  t.type === 'center' || t.type === 'obstacle' || t.type === 'gate' || t.type === 'stronghold';
+
+/** Spiral search around (sx,sy) for the first coordinate whose whole 3×3 capital footprint (ADR-025) is
+ * clear of center/obstacle/gate/stronghold terrain — mirrors footprintFree's terrain check (DB is empty
+ * at test start, so no ownerId conflicts to check). */
+function findCapitalSite(sx: number, sy: number): { x: number; y: number } {
+  for (let r = 0; r < 60; r++) {
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dy = -r; dy <= r; dy++) {
+        const x = sx + dx;
+        const y = sy + dy;
+        if (x < 1 || y < 1 || x >= SLG_MAP_W - 1 || y >= SLG_MAP_H - 1) continue; // room for 3×3 footprint
+        if (Math.abs(x - CENTER_X) <= 1 && Math.abs(y - CENTER_Y) <= 1) continue; // avoid center footprint overlap
+        if (!OCCUPIABLE(proceduralTile(W, x, y))) continue;
+        if (baseFootprintCells(x, y).every((c) => !BLOCKS_CAPITAL(proceduralTile(W, c.x, c.y)))) return { x, y };
+      }
+    }
+  }
+  throw new Error('no matching capital site found');
+}
+
+/** Home base coordinate: (5,5) used to be a safe capital site before capitals moved to a ring layout with
+ * border-hugging obstacles; now find the nearest actual site whose whole 3×3 capital footprint is clear. */
+const HOME = findCapitalSite(5, 5);
 
 describe.skipIf(!mongo)('worldsvc watchtower e2e (§18 G5 V2)', () => {
   const m = mongo!;
@@ -77,8 +106,8 @@ describe.skipIf(!mongo)('worldsvc watchtower e2e (§18 G5 V2)', () => {
 
   /** Occupy a territory far from the home base and seed it with sufficient resources; returns the territory coordinates. */
   async function setupTerritoryWithResources(acct: string): Promise<{ x: number; y: number }> {
-    await svc.joinWorld(W, acct, 5, 5);
-    const terr = findCoord(NEUTRAL, 5, 60); // far from home base (outside base vision radius), to verify watchtower extends vision
+    await svc.joinWorld(W, acct, HOME.x, HOME.y);
+    const terr = findCoord(OCCUPIABLE, HOME.x, HOME.y + 55); // far from home base (outside base vision radius), to verify watchtower extends vision
     await svc.occupyTile(W, acct, terr.x, terr.y);
     // Starting resources are 0 (join gives emptyResources) → directly seed enough resources to build a watchtower (no yield accumulation needed).
     await m.collections.playerWorld.updateOne(
@@ -130,18 +159,18 @@ describe.skipIf(!mongo)('worldsvc watchtower e2e (§18 G5 V2)', () => {
 
   it('guard: non-own / unoccupied tile rejected (TILE_NOT_OWNED)', async () => {
     await setupTerritoryWithResources('a');
-    const empty = findCoord(NEUTRAL, 5, 80); // unoccupied
+    const empty = findCoord(OCCUPIABLE, HOME.x, HOME.y + 75); // unoccupied
     await expect(svc.buildWatchtower(W, 'a', empty.x, empty.y)).rejects.toMatchObject({ code: 'TILE_NOT_OWNED' });
   });
 
   it('guard: home base cannot have watchtower (BAD_REQUEST, home base has built-in vision)', async () => {
     await setupTerritoryWithResources('a');
-    await expect(svc.buildWatchtower(W, 'a', 5, 5)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    await expect(svc.buildWatchtower(W, 'a', HOME.x, HOME.y)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
   it('guard: insufficient resources rejected (INSUFFICIENT_RESOURCES), map unchanged', async () => {
-    await svc.joinWorld(W, 'a', 5, 5);
-    const terr = findCoord(NEUTRAL, 5, 60);
+    await svc.joinWorld(W, 'a', HOME.x, HOME.y);
+    const terr = findCoord(OCCUPIABLE, HOME.x, HOME.y + 55);
     await svc.occupyTile(W, 'a', terr.x, terr.y);
     // Insufficient resources (default 0) → rejected.
     await expect(svc.buildWatchtower(W, 'a', terr.x, terr.y)).rejects.toMatchObject({ code: 'INSUFFICIENT_RESOURCES' });

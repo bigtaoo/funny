@@ -26,13 +26,14 @@ import {
   SLG_MAP_W,
   SLG_MAP_H,
   SLG_MAP_MAX_LEVEL,
+  SLG_GEN,
 } from '@nw/shared';
 
 export const HOURS_PER_SEASON = SEASON_LENGTH_DAYS * 24;
 
 // ── ① Voronoi geometry (code-derived) ────────────────────────────────────────
 
-/** Exact tile count for each capital's Voronoi region on the live 300×300 map. */
+/** Exact tile count for each capital's Voronoi region on the live SLG_MAP_W×SLG_MAP_H map. */
 export function voronoiTileCounts(): number[] {
   const caps = capitalPositions(SLG_MAP_W, SLG_MAP_H);
   const counts = new Array<number>(NATION_COUNT).fill(0);
@@ -59,7 +60,7 @@ export function mapLevelStats(): MapLevelStats {
   return {
     avgMapLevel: (SLG_MAP_MAX_LEVEL + 1) / 2, // uniform-distribution midpoint for levels 1..max
     maxLevel: SLG_MAP_MAX_LEVEL,
-    resourceTileCount: Math.round(SLG_MAP_W * SLG_MAP_H * 0.34), // SLG_GEN.resourceDensity
+    resourceTileCount: Math.round(SLG_MAP_W * SLG_MAP_H * SLG_GEN.resourceDensity),
   };
 }
 
