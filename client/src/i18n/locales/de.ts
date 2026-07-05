@@ -766,6 +766,7 @@ export const de: Record<TranslationKey, string> = {
   'world.stronghold': 'Feste',
   'world.strongholdHint': 'Stark verteidigte NPC-Bastion – nur durch Belagerung einnehmbar; bei Erfolg wird sie dein Gebiet und bringt eine große Ressourcenbelohnung',
   'world.marchList': 'Märsche',
+  'world.marchMore': '+{n} weitere',
   'world.noMarches': 'Keine aktiven Märsche',
   'world.marchTo': '→ ({x},{y})',
   'world.marchArr': 'Ankunft',

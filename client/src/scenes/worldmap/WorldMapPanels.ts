@@ -29,15 +29,29 @@ export class WorldMapPanels {
     tearDownChildren(hud); // rebuilt every ~5s by the march poll → free resource-count Text textures
     const { w, h } = this.ctx;
 
-    // ── Bottom chat bar (§25: replaces the old text-heavy HUD strip; chat preview
-    // content — last message / unread count — is a follow-up, currently a static label) ──
+    // ── Bottom chat bar (§25): shows the latest world-chat message (sender + truncated
+    // body), polled alongside marches — plus an unread badge vs the local "last seen" mark ──
     const chatPanel = sketchPanel(w, HUD_H, { fill: C.paper, border: C.mid, seed: seedFor(0, 0, w) });
     chatPanel.y = h - HUD_H;
     hud.addChild(chatPanel);
-    const chatLbl = txt(t('world.chat'), 13, C.dark);
+    const latest = this.ctx.worldChatLatest;
+    const chatLbl = txt(
+      latest ? `${latest.senderName}: ${latest.body.slice(0, 28)}` : t('world.chat'),
+      13, latest ? C.dark : C.mid,
+    );
     chatLbl.anchor.set(0, 0.5);
     chatLbl.x = 14; chatLbl.y = h - HUD_H / 2;
     hud.addChild(chatLbl);
+    if (this.ctx.worldChatUnread > 0) {
+      const badgeLabel = this.ctx.worldChatUnread > 9 ? '9+' : String(this.ctx.worldChatUnread);
+      const badge = sketchPanel(22, 18, { fill: C.red, border: C.dark, width: 1, seed: seedFor(2, 1, 22) });
+      badge.x = 14 + chatLbl.width + 8; badge.y = h - HUD_H / 2 - 9;
+      hud.addChild(badge);
+      const badgeTxt = txt(badgeLabel, 11, C.light, true);
+      badgeTxt.anchor.set(0.5);
+      badgeTxt.x = badge.x + 11; badgeTxt.y = badge.y + 9;
+      hud.addChild(badgeTxt);
+    }
     this.ctx.chatBarRect = { x: 0, y: h - HUD_H, w, h: HUD_H };
 
     // ── Left column, top-left: Zoom → Auction, stacked directly under the floating
@@ -148,16 +162,19 @@ export class WorldMapPanels {
       if (this.ctx.marchesExpanded && myMarches.length > 0) {
         const MARCH_ROW_H = 22;
         const RECALL_W = 50;
+        const MAX_VISIBLE_MARCHES = 5;
+        const visibleMarches = myMarches.slice(0, MAX_VISIBLE_MARCHES);
+        const overflowCount = myMarches.length - visibleMarches.length;
         const now = Date.now();
         const MARCH_KIND_ICON: Record<string, IconKind> = {
           attack: 'swords', reinforce: 'armor', scout: 'scope', return: 'replay', occupy: 'flag',
         };
-        const listH = myMarches.length * MARCH_ROW_H + 6;
+        const listH = visibleMarches.length * MARCH_ROW_H + 6 + (overflowCount > 0 ? MARCH_ROW_H : 0);
         const listPanel = sketchPanel(rightW, listH, { fill: C.paper, border: C.mid, seed: seedFor(6, 2, rightW) });
         listPanel.x = rx; listPanel.y = ry;
         hud.addChild(listPanel);
-        for (let i = 0; i < myMarches.length; i++) {
-          const m = myMarches[i];
+        for (let i = 0; i < visibleMarches.length; i++) {
+          const m = visibleMarches[i];
           const [tx, ty] = this.ctx.parseTileId(m.toTile);
           const remaining = Math.max(0, Math.ceil((m.arriveAt - now) / 1000));
           const rowY = listPanel.y + 3 + i * MARCH_ROW_H;
@@ -192,6 +209,12 @@ export class WorldMapPanels {
               recallRect: null,
             });
           }
+        }
+        if (overflowCount > 0) {
+          const overflowY = listPanel.y + 3 + visibleMarches.length * MARCH_ROW_H;
+          const overflowLbl = txt(t('world.marchMore', { n: overflowCount }), 10, C.mid);
+          overflowLbl.x = rx + 6; overflowLbl.y = overflowY + 2;
+          hud.addChild(overflowLbl);
         }
         ry = listPanel.y + listH + 6;
       }

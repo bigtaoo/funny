@@ -194,6 +194,7 @@ export class WorldMapInput {
     // Bottom chat bar — opens the social overlay (also the entry point to family management)
     const cbr = this.ctx.chatBarRect;
     if (cbr.w > 0 && x >= cbr.x && x <= cbr.x + cbr.w && y >= cbr.y && y <= cbr.y + cbr.h) {
+      this.ctx.markWorldChatSeen();
       this.ctx.cb.onOpenChat();
       return;
     }

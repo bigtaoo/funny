@@ -776,6 +776,7 @@ export const zh = {
   'world.stronghold': '险地',
   'world.strongholdHint': '系统超强守军据点，须围攻攻克；得手占为领地并获大量资源',
   'world.marchList': '行军列表',
+  'world.marchMore': '还有 {n} 条',
   'world.noMarches': '暂无行军',
   'world.marchTo': '→ ({x},{y})',
   'world.marchArr': '到达',
