@@ -165,6 +165,26 @@
           <button id="btn-city-export">Export →</button>
           <button id="btn-city-import">← Import</button>
         </div>
+        <hr class="sep">
+        <div class="insp-title">Publish to Server (§24)</div>
+        <div id="publish-login" class="hint" style="display:flex; flex-direction:column; gap:6px;">
+          <label for="admin-base">Admin API base (empty = same-origin)</label>
+          <input type="text" id="admin-base" placeholder="http://localhost:18083">
+          <label for="admin-user">Username</label>
+          <input type="text" id="admin-user">
+          <label for="admin-pass">Password</label>
+          <input type="password" id="admin-pass">
+          <button id="btn-admin-login" class="primary">Login</button>
+        </div>
+        <div id="publish-panel" style="display:none; flex-direction:column; gap:6px;">
+          <div id="publish-whoami" class="hint"></div>
+          <label for="template-id">Template ID</label>
+          <input type="text" id="template-id" placeholder="same as World ID by default">
+          <button id="btn-template-generate">Generate Template (seed from proceduralTile)</button>
+          <button id="btn-publish" class="primary">Publish Edits → Template</button>
+          <button id="btn-admin-logout">Logout</button>
+        </div>
+        <div class="hint">栅格化路径/城池 → 只上发跟 proceduralTile() 基线不同的格子（diff-save，§24）。发布是单向"烘焙"：服务端模板不会反向生成回本地的河流/城池矢量图层，继续用上面的 Export/Import JSON 保存可编辑源数据。</div>
       </div>
     </div>
   </div>

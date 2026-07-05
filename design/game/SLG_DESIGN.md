@@ -1522,7 +1522,7 @@ if (path.startsWith('/admin/world/')) {
 - **已知限制，非本次范围**：
   1. `proceduralTile()` 目前仍硬编码 `SLG_MAP_W`×`SLG_MAP_H`（模块级 Voronoi 首府预计算），`generateTemplate()` 因此实际上只能正确生成当前固定尺寸；"多尺寸模板并存"在 schema/CRUD 层已经就位（`templateId`+`width`/`height`已入库），但要等 ADR-034 重写把 `proceduralTile` 参数化到任意尺寸后才能真正生成第二种尺寸。
   2. `mapBaselines` 只是被写入，读取路径（TileDoc 未命中时 fallback 到这份基线而非 `proceduralTile()`）尚未接入——这部分属于 ADR-034 重写的读路径整合范畴，与本节 admin/worldsvc endpoint 无关，留给该任务。
-  3. 编辑器前端（真正的地图编辑 UI 工具）尚未开工，本节只完成它要调用的后端 API。
+  3. ~~编辑器前端（真正的地图编辑 UI 工具）尚未开工~~——已接线（2026-07-05，见 [`design/tools/map-editor/DESIGN.md`](../tools/map-editor/DESIGN.md) §8"栅格化 + 发布到服务端模板"）：`tools/map-editor` 新增 `src/api.ts`（Bearer token 登录）调用本节列出的 6 个 endpoint 中的 4 个（login/me/generate/save-tiles-diff；activate/delete 已接方法但还没挂 UI 按钮）。编辑器侧的路径/城池矢量图层通过新的 `server/shared/src/slg/mapEdit.ts::rasterizeMapEdits()` 一次性栅格化成 tile diff 再发布——单向烘焙，不做"从模板读回矢量图层"的反向同步（模板存储不区分"原始生成值"和"编辑覆盖值"，物理上无法可靠反推）。
 
 ---
 
