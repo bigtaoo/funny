@@ -152,7 +152,7 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
 
   it('production bonus: occupy tile in own capital Voronoi region → yield ×(1+NATION_BONUS_PRODUCTION)', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
-    const r = findCoord((t) => t.type === 'resource', 6, 6);
+    const r = findCoord((t) => t.type === 'resource', 8, 8);
     const proc = proceduralTile(W, r.x, r.y);
     const rt = proc.resType as ResourceType;
     // a occupies the (5,5) main base and the capital region containing (r).
@@ -177,7 +177,7 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
 
   it('control — no national affiliation: occupying the same tile yields the raw value (no bonus)', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
-    const r = findCoord((t) => t.type === 'resource' && t.resType !== 'ink', 6, 6);
+    const r = findCoord((t) => t.type === 'resource' && t.resType !== 'ink', 8, 8);
     const proc = proceduralTile(W, r.x, r.y);
     const rt = proc.resType as ResourceType;
     await svc.occupyTile(W, 'a', r.x, r.y); // no capital occupied

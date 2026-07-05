@@ -52,7 +52,8 @@ function findCoord(
   }
   throw new Error('no matching tile found');
 }
-const NEUTRAL = (t: ReturnType<typeof proceduralTile>) => t.type === 'neutral';
+// ADR-032 follow-up: resourceDensity=1.0 means 'neutral' tiles no longer occur; any occupiable land is 'resource'.
+const NEUTRAL = (t: ReturnType<typeof proceduralTile>) => t.type === 'resource' || t.type === 'neutral';
 
 describe.skipIf(!mongo)('worldsvc scout march e2e (G5 V2)', () => {
   const m = mongo!;

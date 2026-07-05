@@ -97,7 +97,7 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
   });
 
   it('join world: create main base + shield + full troops + initial yield rate; idempotent', async () => {
-    const neutral = findCoord((t) => t.type === 'neutral');
+    const neutral = findCoord((t) => t.type === 'resource' || t.type === 'neutral');
     const me = await svc.joinWorld(W, 'a', neutral.x, neutral.y);
     expect(me).toMatchObject({
       joined: true,
@@ -159,7 +159,7 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
     const res = findCoord((t) => t.type === 'resource', 50, 50);
     await svc2.occupyTile(W, 'a', res.x, res.y); // one territory tile, should be retained after relocation
 
-    const dst = findCoord((t) => t.type === 'neutral', 80, 80);
+    const dst = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 80, 80);
     const me = await svc2.relocateBase(W, 'a', dst.x, dst.y);
 
     expect(spends).toEqual([{ accountId: 'a', amount: RELOCATE_COST }]);

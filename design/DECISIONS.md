@@ -354,3 +354,19 @@
 - **实现**：`@nw/shared`（economy 加 YEAR_CARD_DAYS/IMMEDIATE_COINS/价格常量 + PRODUCT_YEAR_CARD；api 加 `ALREADY_ACTIVE`）；`commercial`（`monthlyCardBuy`/`yearCardBuy` 收敛到私有 `subscriptionCardBuy`：先占 orderId 槽→门控回滚→applySubscription，门控置于占槽之后以不误伤同 orderId 幂等重放；internalHttp 加 `/internal/year-card/buy`）；`metaserver`（commercialClient 加 `yearCardBuy`；service 加 `yearCardBuy` handler + `subscriptionErrCode` 把 `ALREADY_ACTIVE` 透传给客户端）；`openapi.yml` 加 `/year-card/buy`（重生 routes.gen + 客户端 openapi.ts）；客户端 ApiClient/createAppCore(`buyYearCard` + `ALREADY_ACTIVE`→`shop.cardActive`)/ShopScene 大改 + i18n 三语（`shop.yearCard`/`shop.cardActive`/`shop.save`）。
 - **为什么**：门控把月卡从「可囤积」改为「用完再买」，强化每日留存锚（月卡定位本就是留存而非性价比）；年卡九折给长线玩家一个更划算的锚，同时单卡门控避免年卡+月卡叠加把订阅收益一次性透支；图标卡网格提升付费诱惑并与全局 UI 统一。
 - **影响**：[`GACHA_DESIGN.md`](game/GACHA_DESIGN.md) §5/§5.1b + 实现小结；`@nw/shared` economy/api；`commercial` service/internalHttp（+e2e：门控 + 年卡用例，91 全绿）；`metaserver` commercialClient/service（+ routes.gen，293 全绿）；`openapi.yml`；客户端 ShopScene/ApiClient/createAppCore/i18n。真实 IAP 验单仍范围外。
+
+## ADR-033 SLG 国家版图三战式环带布局 + 等级/险地与「国家身份」绑定 — Accepted — 2026-07-05
+
+- **背景**：ADR-032 落地地图尺寸/等级上限/资源密度/等级曲线后，遗留一条「⚠️ 待定」：现有 10 首府对称布局（8 外围+1 内环+1 中心）与地块等级公式（`level = round((1-dr)^1.1×(MAX-1)+1+noise)`，`dr`=离地图**几何中心**的距离比例）完全脱钩于「国家身份」——不管站在哪个首府的地盘里，地块等级只看离地图正中心多远，10 个首府本身除了 idx9（地图中心，`CENTER_CAPITAL_IDX`）外，对地块生成毫无影响，与用户设想的「三战式一国一版图，各有肥沃/贫瘠」不符。用户拍板：保留 10 国（不是三战式常见的 9 国），布局改为 **6 外围国 + 3 资源国 + 1 霸业国**，且等级要按「离自己国家首府的距离」算，不能只看离地图中心的距离。
+- **决策**：
+  1. **10 首府布局改为三层同心环**（`CAPITAL_FRACTIONS`，`server/shared/src/slg.ts`）：外环 6 外围国（正六边形，半径 0.40，idx 0-5）+ 中环 3 资源国（正三角形，半径 0.20，与外环错开 30° 交错，idx 6-8）+ 中心 1 霸业国（地图正中心，idx 9，即原 `CENTER_CAPITAL_IDX`，行为不变）。新增 `NATION_KIND_BY_IDX` 常量标注每个 idx 的国家类型（供后续 UI/econ-sim 使用）。
+  2. **地块等级/据点/中立地生成全部改为「离自己最近首府的距离」**：`proceduralTile` 里的 `dr` 从"离地图几何中心距离/半对角线"改为"离最近首府距离/`GEN_MAX_CAP_DIST`"（`GEN_MAX_CAP_DIST` = 采样整张地图算出的"离最近首府最远的一点"到其首府的距离，模块加载时算一次）。地图中心格仍特判为唯一的 `type:'center'` 格（霸业国首府所在格）。
+  3. **等级曲线指数从 1.1 重新调到 1.9**：10 个首府比 1 个几何中心覆盖面积更大，同样的 1.1 指数会把 5 级以上占比从 ADR-032 的目标 ~50% 推到实测 ~81%；重新蒙特卡洛校准后 1.9 把该占比拉回 ~51%（详见 `SLG_DESIGN.md` §3.2）。
+  4. **阻挡地形改为「离最近首府越远越密」**：`obstacleMaxDr`（旧：只排除地图最外角，`dr≤0.87` 才生成）废止，改为 `obstacleMinDistRatio=0.15`（新：`dr≥0.15` 才生成）——天然把山脉/河流集中在每个国家的边境，而不是围绕地图单一几何中心，呼应"资源国出关可达"的读法（资源国夹在霸业国和外环国之间，边境天然险要）。keep/stronghold 的 `keepMinDistRatio`/`strongholdMinDistRatio` 语义同步从"离地图中心"变成"离最近首府"，数值不变。
+  5. **⚠️ 顺带发现并修正一处校准错误**：`obstacleThreshold=0.88` 的注释一直声称"约 12% 的格子变阻挡"，实测（新旧公式都测过）实际只有 ~2.7-2.9%——`valueNoise` 的双线性插值+平滑步进会把噪声值压缩，远小于"均匀分布、12% 超过 0.88"的朴素假设。这个校准错误在 ADR-032 之前就存在，本次未重新调阻挡密度本身（那是独立的数值平衡任务），只是把注释改成实测数字，`obstacleMinDistRatio` 按实测密度校准。
+- **为什么**：用户对三战版图节奏的核心诉求是"各国有各国的地盘和肥沃程度"，而不是"整张地图只有一个山巅"；10 国（不是 9 国）是因为用户更看重"外围 6+资源 3+霸业 1"这个数字对称性，胜过严格照搬三战的 9 国。
+- **影响**：
+  - [`SLG_DESIGN.md`](game/SLG_DESIGN.md) §2.4/§3.2 已按本决议改写（新增环带布局说明 + 等级/阻挡与首府绑定的机制描述 + 实测数字）。
+  - **本 ADR 是"拍板即实现"**：与 ADR-032（先拍板后实现，隔一轮）不同，这次设计讨论中直接把 `CAPITAL_FRACTIONS`/`proceduralTile`/`SLG_GEN` 一并改完，同批验证。
+  - 过程中发现并修复了一个**与本次改动无关、此前从未被真正跑过的回归**：`server/worldsvc` 的 e2e 测试此前一直通过本地 worktree 的 `node_modules/@nw/*` 符号链接指向主仓库的**未重建**产物在跑（worktree 约定的已知坑，见 [`claudedocs/worktrees.md`](../claudedocs/worktrees.md) 补充说明），导致 ADR-032 合并后测试从未真正验证过新地图常量；本次修好链接后跑出 27 个真实失败（`resourceDensity=1.0` 后 `'neutral'` 地块已绝迹、`(250,250)` 在 500×500 地图下变成地图正中心、以及若干测试用坐标恰好落入新地形分布的阻挡带），已在本 ADR 一并修复（10 个测试文件），修复后 worldsvc 210 例 + shared 463 例全绿。
+- **实现**：`server/shared/src/slg.ts`（`CAPITAL_FRACTIONS`/`NATION_KIND_BY_IDX`/`GEN_MAX_CAP_DIST`/`proceduralTile`/`SLG_GEN.levelFalloffExp`+`obstacleMinDistRatio`）；`server/worldsvc/test/*.e2e.test.ts`（10 个文件的坐标假设修复）。
