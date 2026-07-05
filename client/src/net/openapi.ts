@@ -1144,6 +1144,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pvp/bot-result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Report the outcome of an AI-fallback (bot) match (matchmaking timed out waiting for a human opponent and the client played a local AI battle instead, MATCHSVC_DESIGN §match_bot_fallback). Always credits the 'pvp.match' daily task. Only moves ELO while the caller is below BOT_ELO_THRESHOLD (bot matches are onboarding calibration, not a substitute for ranked climbing once a player nears their real bracket); at/above the threshold the call still succeeds but ELO is unchanged. Rate-limited to one accepted result per ~15s per account to prevent scripted spam. */
+        post: operations["submitBotResult"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/battlepass/buy": {
         parameters: {
             query?: never;
@@ -2932,8 +2949,11 @@ export interface operations {
                             } | null;
                             defs: {
                                 rewards: {
-                                    kind: string;
+                                    /** @enum {string} */
+                                    kind: "coins" | "stamina" | "material" | "card" | "equipment";
                                     count: number;
+                                    /** @description Material id (scrap/lead/binding) */
+                                    id?: string;
                                 }[];
                                 tasks: {
                                     id: string;
@@ -2977,8 +2997,10 @@ export interface operations {
                             day: number;
                             reward: {
                                 /** @enum {string} */
-                                kind: "coins" | "stamina";
+                                kind: "coins" | "stamina" | "material" | "card" | "equipment";
                                 count: number;
+                                /** @description Material id (material) or the drawn defId (card/equipment) */
+                                id?: string;
                             };
                         };
                     };
@@ -4024,6 +4046,42 @@ export interface operations {
                                 elo: number;
                                 pvpRank: string;
                             };
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+        };
+    };
+    submitBotResult: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    won: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            elo: number;
+                            rank: string;
+                            /** @description ELO change actually applied this call (0 when at/above BOT_ELO_THRESHOLD or throttled) */
+                            delta: number;
                         };
                     };
                 };
