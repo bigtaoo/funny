@@ -282,10 +282,11 @@
 
 ## 9. 商城页 `ShopScene` 分组条改左侧竖排导航 + 兑换码搬到充值 tab（2026-07-05）
 
-> 状态：**已实现**（仅 `ShopScene`）。用户看到商城页截图后要求把 `[商店|充值|盲盒|战令]` 分组条从满宽水平条改成 §8 同款「贴红色装订线竖直堆叠」的侧栏；顺带把兑换码输入行从商店 tab 挪到充值 tab，盲盒页顶栏金币改「图标+数字」（去掉「金币：」文字），战令页顶栏补上金币显示。**`GachaScene`/`BattlePassScene` 自身的分组条本轮未跟进**（仍是 §7/P1.5 的水平 `drawHubTabs`），三场景当前混用两种样式——已在 §8 末尾标注，留作后续统一（已用 `spawn_task` 登记）。
+> 状态：**已实现**（覆盖 `ShopScene`/`GachaScene`/`BattlePassScene` 三场景）。用户看到商城页截图后要求把 `[商店|充值|盲盒|战令]` 分组条从满宽水平条改成 §8 同款「贴红色装订线竖直堆叠」的侧栏；顺带把兑换码输入行从商店 tab 挪到充值 tab，盲盒页顶栏金币改「图标+数字」（去掉「金币：」文字），战令页顶栏补上金币显示。`ShopScene` 本轮先落地，`GachaScene`/`BattlePassScene` 自身的分组条随后（同日）跟进统一，三场景不再混用两种样式。
 
 - **`ShopScene.ts`**：`drawGroupTabs(tbH)` 改调 `drawSidebarTabs`（侧栏宽 `marginLineX(w)`，起点 `(0, tbH)`），不再消耗垂直高度，返回值退化为 `tbH`；`gridMetrics()` 的 `listX` 从 `w*0.04` 改为 `marginLineX(w)+gap`，网格/促销行整体右移到装订线外侧。
 - **兑换码行**（B-PROMO）从 `drawShopGrid`（商店 tab）搬到 `drawCoinsGrid`（充值 tab），画在充值档位网格下方，逻辑不变（`onRedeem`/`promoCode`/`hiddenInput` 都在 scene 级，不随 tab 切换重置）。
 - **`GachaScene.ts`** 顶栏金币显示：`t('gacha.coins',{coins})`（"金币：{coins}" 文案）改成图标+数字（复用 `ShopScene.drawHeader` 的写法，`buildIcon('coin',...)` + `toLocaleString()`），删掉三语 `gacha.coins` 词条（已无引用）。
 - **`BattlePassScene.ts`** 顶栏新增金币显示（原来没有）：`BattlePassCallbacks` 新增必填 `getCoins(): number`，`createShopNav.goBattlePass` 注入 `() => saveManager.get().wallet.coins`（离线/未登录也能读到本地钱包，不额外判空）。
-- 已用 `tsc --noEmit` + `vitest run --config vitest.ui.config.ts`（`shopGroupTabs.ui.ts`/`scenes.ui.ts`/`caretRegression.ui.ts`，96 例全绿）+ `npm run build:web` 验证通过；未跑游戏截图（按仓库约定，视觉验收留给人工）。
+- **`GachaScene.ts`/`BattlePassScene.ts` 分组条统一**（同日跟进）：两场景的 `drawGroupTabs(tbH): number` 改名 `drawSidebar(tbH): void`，改调 `drawSidebarTabs`（不再消耗垂直空间，仅在 `openShop` 注入的分组语境下画；独立入口无 `openShop` 时跳过，同 §8 的 `showSidebar`/`showGroup` 降级逻辑）。新增 `contentBounds(): { x0, w }`：有分组语境时把正文列收窄到 `marginLineX(w)+gap` 到 `w-gap`（原来居中/靠左对齐整屏 `w` 的元素——盲盒 banner、奇率/保底进度条、抽卡按钮、命运点兑换；战令 XP 条、购买战令按钮、双轨奖励网格的 `pad`/`barW`/`freeX`/`paidX`——改用这个收窄后的列），否则占满全屏（`x0=0`）。`client/test/ui/shopGroupTabs.ui.ts` 未改动——该测试按渲染出的 tab 标签文字定位命中矩形，不依赖具体几何布局，侧栏化后 8 例照样全绿。
+- 已用 `tsc --noEmit` + `vitest run --config vitest.ui.config.ts`（170 例全绿，另有 13 条与本改动无关的 `.tao` 测试资产 unhandled-rejection 噪声）+ `npm run build:web` 验证通过；未跑游戏截图（按仓库约定，视觉验收留给人工）。
