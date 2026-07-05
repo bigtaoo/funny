@@ -111,6 +111,10 @@ let tool: Tool = 'select';
 const store = new PathStore();
 const cityStore = new CityStore();
 let draft: TilePoint[] | null = null;
+/** True while a river/mountain brush stroke is being dragged (mousedown → mouseup); see mousedown/mousemove/mouseup below. */
+let painting = false;
+/** Min cursor movement (in tiles) between two draft points while painting — keeps stroke polylines short without visibly chunking the curve. */
+const PAINT_MIN_SPACING = 0.4;
 let selectedPathId: string | null = null;
 let dragging: { pathId: string; pointIdx: number } | null = null;
 let selectedCityId: string | null = null;
@@ -182,7 +186,14 @@ function effectiveTile(worldId: string, x: number, y: number): { type: TileType;
 
 function renderBaseMap(worldId: string): void {
   const t0 = performance.now();
-  const diffs = rasterizeMapEdits(worldId, store.paths, cityStore.nodes);
+  // Live brush preview: while a river/mountain stroke is being dragged, rasterize the in-progress
+  // draft alongside the committed paths so terrain updates immediately as the user paints (matches
+  // tilemap-brush behavior) instead of waiting for mouseup to commit the path.
+  const liveStroke =
+    painting && draft && draft.length >= 1 && (tool === 'river' || tool === 'mountain')
+      ? [{ type: tool, points: draft, width: Math.max(1, Math.round(Number(widthInput.value) || 1)) }]
+      : [];
+  const diffs = rasterizeMapEdits(worldId, [...store.paths, ...liveStroke], cityStore.nodes);
   diffCache = new Map(diffs.map((d) => [`${d.x}:${d.y}`, d]));
 
   baseLayer.removeChildren().forEach((c) => c.destroy({ children: true }));
@@ -335,8 +346,11 @@ centerBtn.addEventListener('click', () => { centerView(); renderBaseMap(seedInpu
 
 // ── Tool switching ───────────────────────────────────────────────────────
 function cancelDraft(): void {
+  const wasPainting = painting;
   draft = null;
+  painting = false;
   redrawAll();
+  if (wasPainting) renderBaseMap(seedInput.value || 'preview');
 }
 
 function setTool(next: Tool): void {
@@ -410,6 +424,7 @@ function undoDraftPoint(): void {
   if (!draft) return;
   draft.pop();
   if (draft.length === 0) draft = null;
+  if (painting) renderBaseMap(seedInput.value || 'preview');
   redrawAll();
 }
 undoPointBtn.addEventListener('click', undoDraftPoint);
@@ -725,8 +740,11 @@ canvasEl().addEventListener('mousedown', (ev) => {
     return;
   }
 
-  if (!draft) draft = [t];
-  else draft.push(t);
+  // Start a brush stroke: duplicate the point so it's a zero-length segment (paints a dot even on a
+  // plain click, without needing to drag) — mousemove below extends this into a real polyline.
+  draft = [t, t];
+  painting = true;
+  renderBaseMap(seedInput.value || 'preview');
   redrawAll(t);
 });
 
@@ -764,7 +782,16 @@ canvasEl().addEventListener('mousemove', (ev) => {
     redrawAll();
     return;
   }
-  if (draft) redrawAll(pos);
+  if (painting && draft) {
+    // draft's last entry always tracks the live cursor exactly; once it has moved far enough from the
+    // last frozen anchor, that position is frozen too (a new duplicated tip is pushed to track further
+    // movement) — this is what turns individual mousemove samples into a clean, sparse polyline.
+    const anchor = draft[draft.length - 2]!;
+    draft[draft.length - 1] = pos;
+    if (Math.hypot(pos.x - anchor.x, pos.y - anchor.y) >= PAINT_MIN_SPACING) draft.push(pos);
+    renderBaseMap(seedInput.value || 'preview');
+    redrawAll(pos);
+  }
 });
 
 window.addEventListener('mouseup', () => {
@@ -787,18 +814,10 @@ window.addEventListener('mouseup', () => {
     renderBaseMap(seedInput.value || 'preview');
     redrawAll();
   }
-});
-
-canvasEl().addEventListener('dblclick', (ev) => {
-  if (tool !== 'river' && tool !== 'mountain') return;
-  if (!draft) return;
-  ev.preventDefault();
-  // The second click of the dblclick already pushed a duplicate point via mousedown; drop it.
-  if (draft.length >= 2) {
-    const [a, b] = draft.slice(-2);
-    if (a && b && a.x === b.x && a.y === b.y) draft.pop();
+  if (painting) {
+    painting = false;
+    finishDraft();
   }
-  finishDraft();
 });
 
 canvasEl().addEventListener('contextmenu', (ev) => {
