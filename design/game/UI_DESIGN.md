@@ -131,6 +131,7 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 - "战役"按钮改为跳 `CampaignMapScene`（替代当前直接 1-4 数字选关；旧选关可保留为 debug）。
 - 加「好友对战」入口 → `RoomScene`。
 - （S2 后）加「每日奖励」红点入口。
+- **匹配按钮氛围装饰（2026-07-05）**：右侧已有淡化交叉铅笔图腾（`heroMotif`，alpha 0.22）；左侧对称加一个随机角色剪影——`build()` 时从 6 个可战斗角色（infantry/archer/shieldbearer + max/lena/mara，复用 `render/UnitView.ts` 同款 `.tao` 骨骼动画包，池子见 `render/heroSilhouette.ts`）随机抽一个，用新增的 `StickmanRuntime.setSilhouette(color)`（`render/stickman/StickmanRuntime.ts`：把每根骨骼贴图的 RGB 乘成纯黑、只留原透明度）渲染成纯黑剪影，同样 alpha 0.22；`update(dt)` 里每 1.6–3.2 秒从该角色的 clip 列表随机切一个动作循环播放，纯装饰不影响任何交互/命中区。
 
 ### 4.2 RoomScene（好友房，S1）
 ```
@@ -269,7 +270,7 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 ### 4.9 ResultScene（结算，扩展现有）
 现状已有。**扩展**：评星动画（StarRow 逐颗点亮）、奖励发放（材料/物品 Toast）、解锁弹窗（新关/新皮肤 Modal）、（联机）胜负 + 段位变化。
 
-**胜利页边饰**（2026-07-04）：`addMoodDeco('win')` 撒 12 颗手绘五角星于左右留白边距（避开中间徽章/数据栏），每次进入用 `Math.random()` 重新随机 x/y/大小/透明度，非固定 seed。
+**胜利页边饰**（2026-07-05）：`addMoodDeco('win')` 撒 12 颗手绘五角星，随机范围放宽为全屏（上下左右各留 3%~5% 页边距，避免溢出画布），并加最小间距保底（拒绝采样，相邻星最小间距 = 屏幕短边 10%，最多重试 20 次防止死循环）避免扎堆。每次进入用 `Math.random()` 重新随机 x/y/大小/透明度，非固定 seed。此前（2026-07-03，见 4.18）为避开中间徽章列而限制在左右边距，实测挤在一起不好看，且中间列已不怕遮挡，故放开为全屏。
 
 #### 4.9.1 按钮主次 + 图标 + 背景涂鸦（2026-06-27）
 结算页动作区重排为「一个主 CTA + 一行次要入口」，所有按钮配手绘图标：
