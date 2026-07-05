@@ -108,3 +108,72 @@ export function drawHubTabs(
 
   return hits;
 }
+
+/** Height of one vertical sidebar nav cell (see {@link drawSidebarTabs}). */
+export function sidebarItemHeight(h: number): number {
+  return Math.round(h * 0.09);
+}
+
+/**
+ * Draw a vertical stack of nav cells inside the left notebook-margin gutter
+ * (width = `marginLineX(w)` from `render/sketchUi`) — a left-rail counterpart
+ * to {@link drawHubTabs} for groups where a horizontal strip would otherwise
+ * have to squeeze into that narrow gutter (CardScene/EquipmentScene sidebar
+ * nav; see LOBBY_IA_REDESIGN.md §8 sidebar addendum).
+ *
+ * Cells stack top-to-bottom starting at `y`, each `sidebarItemHeight(h)` tall
+ * with a small gap; icon-over-label layout mirrors the bottom lobby nav
+ * convention. Returns hit rects for inactive (tappable) cells plus the y just
+ * below the last cell, so callers can stack further sidebar content beneath
+ * (e.g. EquipmentScene's Inventory/Craft sub-tabs).
+ */
+export function drawSidebarTabs(
+  container: PIXI.Container,
+  sidebarW: number,
+  y: number,
+  h: number,
+  tabs: HubTab[],
+  onSelect: (index: number) => void,
+): { hits: Array<{ rect: Rect; fn: () => void }>; bottom: number } {
+  const hits: Array<{ rect: Rect; fn: () => void }> = [];
+  if (tabs.length === 0) return { hits, bottom: y };
+
+  const itemH = sidebarItemHeight(h);
+  const gap = Math.round(h * 0.015);
+  let cy = y;
+
+  tabs.forEach((tab, i) => {
+    const box = sketchPanel(sidebarW, itemH, {
+      fill: tab.active ? C.dark : C.paper,
+      border: tab.active ? C.accent : C.line,
+      width: tab.active ? 2.4 : 1.6,
+      seed: seedFor(0, cy, sidebarW),
+    });
+    box.x = 0; box.y = cy;
+    container.addChild(box);
+
+    const fg = tab.active ? 0xffffff : C.mid;
+    const lbl = txt(tab.label, Math.round(itemH * 0.24), fg, true);
+    lbl.anchor.set(0.5, 0.5);
+    lbl.x = sidebarW / 2;
+
+    if (tab.icon) {
+      const iconSize = Math.round(itemH * 0.34);
+      const icon = buildIcon(tab.icon, iconSize, fg);
+      icon.x = sidebarW / 2 - iconSize / 2;
+      icon.y = cy + itemH * 0.2;
+      container.addChild(icon);
+      lbl.y = cy + itemH * 0.72;
+    } else {
+      lbl.y = cy + itemH / 2;
+    }
+    container.addChild(lbl);
+
+    if (!tab.active) {
+      hits.push({ rect: { x: 0, y: cy, w: sidebarW, h: itemH }, fn: () => onSelect(i) });
+    }
+    cy += itemH + gap;
+  });
+
+  return { hits, bottom: cy - gap };
+}

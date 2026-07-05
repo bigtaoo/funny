@@ -24,7 +24,7 @@ import { buildDecorCLayer } from '../render/decorCLayer';
 import { buildIcon } from '../render/icons';
 import { UNIT_ART_URLS, getArtTexture } from '../render/cardArt';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
-import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
+import { drawSidebarTabs, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import type { SaveData, CardInstance, EquipSlot } from '../game/meta/SaveData';
 import type { CardSLGState } from '../net/WorldApiClient';
@@ -110,8 +110,8 @@ export class CardScene implements Scene {
   private detailId: string | null = null;
   private scrollY = 0;
   private dragStart: { x: number; y: number; scroll: number } | null = null;
-  /** Height of the [Cards|Equipment] group strip; >0 only when openEquipmentBag is injected. */
-  private readonly groupH: number;
+  /** Whether the [Cards|Equipment] sidebar nav is shown; only when openEquipmentBag is injected. */
+  private readonly showSidebar: boolean;
 
   private toastTimer = 0;
   private destroyed = false;
@@ -123,7 +123,7 @@ export class CardScene implements Scene {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.cb = cb;
-    this.groupH = cb.openEquipmentBag ? hubTabsHeight(this.h) : 0;
+    this.showSidebar = !!cb.openEquipmentBag;
     this.container = new PIXI.Container();
     this.build();
     this.render();
@@ -163,7 +163,7 @@ export class CardScene implements Scene {
     this.loadingLayer.removeChildren();
     this.hitRects.push({ rect: this.backRect, action: () => this.cb.onBack() });
 
-    this.renderGroupTabs();
+    this.renderSidebar();
     this.renderCapacityBar();
     this.renderList();
 
@@ -174,16 +174,18 @@ export class CardScene implements Scene {
   }
 
   /**
-   * Progression group tab strip [Cards|Equipment] (LOBBY_IA_REDESIGN): Cards is active; tapping
-   * Equipment opens the equipment bag (openEquipmentBag). Drawn only when injected (groupH>0).
+   * Progression group nav [Cards|Equipment] (LOBBY_IA_REDESIGN): a vertical rail stacked inside
+   * the left notebook-margin gutter (`marginLineX`), below the header. Cards is active; tapping
+   * Equipment opens the equipment bag (openEquipmentBag). Drawn only when injected (showSidebar).
    */
-  private renderGroupTabs(): void {
-    if (this.groupH <= 0) return;
+  private renderSidebar(): void {
+    if (!this.showSidebar) return;
+    const sidebarW = marginLineX(this.w);
     const tabs: HubTab[] = [
       { label: t('roster.title'), active: true, icon: 'cards' },
       { label: t('equip.title'), active: false, icon: 'armor' },
     ];
-    const hits = drawHubTabs(this.bodyLayer, this.w, HUD_H, this.groupH, tabs, (i) => {
+    const { hits } = drawSidebarTabs(this.bodyLayer, sidebarW, HUD_H, this.h, tabs, (i) => {
       if (i === 1) this.cb.openEquipmentBag?.();
     });
     for (const hit of hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
@@ -195,10 +197,11 @@ export class CardScene implements Scene {
     const count = Object.keys(save.cardInv ?? {}).length;
     const warn = count >= CARD_INV_WARN;
     const full = count >= CARD_INV_CAP;
-    const top = HUD_H + this.groupH;
+    const top = HUD_H;
+    const sidebarW = this.showSidebar ? marginLineX(w) : 0;
 
     const bg = new PIXI.Graphics();
-    bg.beginFill(0xf3f1ea).drawRect(0, top, w, RES_H).endFill();
+    bg.beginFill(0xf3f1ea).drawRect(sidebarW, top, w - sidebarW, RES_H).endFill();
     this.bodyLayer.addChild(bg);
 
     const capLbl = txt(
@@ -214,7 +217,7 @@ export class CardScene implements Scene {
     const save = this.cb.getSave();
     const cardState = this.cb.getCardState?.() ?? {};
     const cards = Object.values(save.cardInv ?? {});
-    const listY = HUD_H + this.groupH + RES_H;
+    const listY = HUD_H + RES_H;
     const listH = h - listY - 8;
 
     if (cards.length === 0) {

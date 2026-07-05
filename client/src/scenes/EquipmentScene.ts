@@ -14,7 +14,7 @@ import { t, type TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren, marginLineX } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
-import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
+import { drawSidebarTabs, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance, CardInstance } from '../game/meta/SaveData';
 import { CARD_DEFS, cardPower } from '../game/meta/cardDefs';
@@ -74,7 +74,6 @@ export interface EquipmentCallbacks {
 type EquipTab = 'inv' | 'craft';
 
 const HUD_H = 50;
-const TAB_H = 36;
 const RES_H = 30;       // resource bar (coins + three materials + inventory count)
 const RES_SCALE = 2;    // currency block is drawn 2x size, parked top-right of the right column
 const LOADOUT_H = 78;   // loadout strip at the top of the inventory tab (three slots)
@@ -132,11 +131,11 @@ export class EquipmentScene implements Scene {
 
   private activeTab: EquipTab = 'inv';
   /**
-   * Height of the group strip ([<peer>|Equipment] within a progression group);
-   * >0 only when peerTab is injected. All body content is offset down by HUD_H + groupH
-   * (LOBBY_IA_REDESIGN P1.5).
+   * Whether the group nav ([<peer>|Equipment] within a progression group) is shown; only when
+   * peerTab is injected (LOBBY_IA_REDESIGN P1.5). Lives in the left sidebar rail, stacked above
+   * the Inventory/Craft sub-tabs — see {@link renderSidebar}.
    */
-  private readonly groupH: number;
+  private readonly showGroup: boolean;
   /**
    * Bag "assign" sub-mode: active only in bag mode (no active card) after tapping Equip on an item.
    * While set, the inventory list is replaced by a card picker; choosing a card equips instId into slot.
@@ -174,7 +173,7 @@ export class EquipmentScene implements Scene {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.cb = cb;
-    this.groupH = cb.peerTab ? hubTabsHeight(this.h) : 0;
+    this.showGroup = !!cb.peerTab;
     this.container = new PIXI.Container();
     this.build();
     this.render();
@@ -217,14 +216,13 @@ export class EquipmentScene implements Scene {
     // While assigning, Back cancels the card picker rather than leaving the scene.
     this.hitRects.push({ rect: this.backRect, action: () => (this.assign ? this.cancelAssign() : this.cb.onBack()) });
 
-    const leftW = marginLineX(this.w);
-    this.renderGroupTabs(leftW);
+    this.renderSidebar();
     if (this.assign) {
       this.renderAssign(this.cb.getSave());
       if (this.bt.loadingVisible) drawLoadingOverlay(this.loadingLayer, this.w, this.h, this.bt.dots, t('common.processing'));
       return;
     }
-    const bodyTop = this.renderHeaderRow(leftW);
+    const bodyTop = this.renderHeaderRow();
     if (this.activeTab === 'inv') this.renderInventory(bodyTop);
     else this.renderCraft(bodyTop);
 
@@ -237,53 +235,54 @@ export class EquipmentScene implements Scene {
   }
 
   /**
-   * Progression group tab strip [<peer>|Equipment] (LOBBY_IA_REDESIGN P1.5): Equipment is active;
-   * tapping the peer returns to the sibling scene (Collection or Card roster).
-   * Drawn only in the group context (peerTab injected, groupH>0); rendered below the header and above the content tabs.
+   * Left sidebar rail, stacked inside the notebook-margin gutter (`marginLineX`) below the
+   * header: the progression group nav [<peer>|Equipment] (LOBBY_IA_REDESIGN P1.5, only when
+   * peerTab is injected) on top, then the Inventory/Craft sub-tabs always underneath (this
+   * used to be a horizontal strip in the header row's left column — moved here so it isn't
+   * squeezed into the same narrow gutter width as a wide strip; see LOBBY_IA_REDESIGN.md §8
+   * sidebar addendum).
    */
-  private renderGroupTabs(leftW: number): void {
-    if (this.groupH <= 0 || !this.cb.peerTab) return;
-    const tabs: HubTab[] = [
-      { label: t(this.cb.peerTab.labelKey), active: false, icon: this.cb.peerTab.icon },
-      { label: t('equip.title'), active: true, icon: 'armor' },
-    ];
-    const hits = drawHubTabs(this.bodyLayer, leftW, HUD_H, this.groupH, tabs, (i) => {
-      if (i === 0) this.cb.peerTab?.onSelect();
-    });
-    for (const hit of hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
-  }
+  private renderSidebar(): void {
+    const sidebarW = marginLineX(this.w);
+    let y = HUD_H;
 
-  /**
-   * Header row below the (peer-tab strip / header): left column gets the Inventory/Craft
-   * toggle stacked under the peer tabs, right column gets the 2x currency block (top-right
-   * corner) with the slot filter bar underneath (Inventory tab only). Both columns are capped
-   * left/right at the red margin rule so the header visually matches the bag-list vs item-grid
-   * split below it. Returns the y where body content (loadout / grid) should start.
-   */
-  private renderHeaderRow(leftW: number): number {
-    const { w } = this;
-    const top = HUD_H + this.groupH;
+    if (this.showGroup && this.cb.peerTab) {
+      const groupTabs: HubTab[] = [
+        { label: t(this.cb.peerTab.labelKey), active: false, icon: this.cb.peerTab.icon },
+        { label: t('equip.title'), active: true, icon: 'armor' },
+      ];
+      const group = drawSidebarTabs(this.bodyLayer, sidebarW, y, this.h, groupTabs, (i) => {
+        if (i === 0) this.cb.peerTab?.onSelect();
+      });
+      for (const hit of group.hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
+      y = group.bottom + Math.round(this.h * 0.03);
+    }
 
-    // ── Left column: Inventory / Craft toggle ──
-    const tabs: { key: EquipTab; label: TranslationKey }[] = [
+    const subTabs: { key: EquipTab; label: TranslationKey }[] = [
       { key: 'inv', label: 'equip.tabInv' },
       { key: 'craft', label: 'equip.tabCraft' },
     ];
-    const tw = leftW / tabs.length;
-    tabs.forEach((tab, i) => {
-      const active = tab.key === this.activeTab;
-      const tp = sketchPanel(tw, TAB_H, { fill: active ? C.paper : 0xddddcc, border: C.mid, seed: seedFor(i, 0, tw) });
-      tp.x = i * tw; tp.y = top;
-      this.bodyLayer.addChild(tp);
-      const tl = txt(t(tab.label), 11, active ? C.accent : C.dark, active);
-      tl.anchor.set(0.5, 0.5); tl.x = i * tw + tw / 2; tl.y = top + TAB_H / 2;
-      this.bodyLayer.addChild(tl);
-      this.hitRects.push({
-        rect: { x: i * tw, y: top, w: tw, h: TAB_H },
-        action: () => { if (this.activeTab !== tab.key) { this.activeTab = tab.key; this.scrollY = 0; this.render(); } },
-      });
-    });
-    const leftBottom = top + TAB_H;
+    const sub = drawSidebarTabs(
+      this.bodyLayer, sidebarW, y, this.h,
+      subTabs.map((tab) => ({ label: t(tab.label), active: tab.key === this.activeTab })),
+      (i) => {
+        const key = subTabs[i].key;
+        if (this.activeTab !== key) { this.activeTab = key; this.scrollY = 0; this.render(); }
+      },
+    );
+    for (const hit of sub.hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
+  }
+
+  /**
+   * Header row below the header/sidebar: the 2x currency block (top-right corner) with the
+   * slot filter bar underneath (Inventory tab only), capped left at the red margin rule so it
+   * lines up with the bag-list / item-grid split below it. Returns the y where body content
+   * (loadout / grid) should start.
+   */
+  private renderHeaderRow(): number {
+    const { w } = this;
+    const top = HUD_H;
+    const leftW = marginLineX(w);
 
     // ── Right column: 2x currency block (top-right) + slot filter ──
     const rightX = leftW;
@@ -324,7 +323,7 @@ export class EquipmentScene implements Scene {
       rightBottom += FILTER_H;
     }
 
-    return Math.max(leftBottom, rightBottom);
+    return rightBottom;
   }
 
   // ── Inventory tab ───────────────────────────────────────────────────────────
@@ -968,12 +967,13 @@ export class EquipmentScene implements Scene {
     if (!inst) { this.assign = null; this.render(); return; }
     const slot = this.assign.slot;
 
-    const top = HUD_H + this.groupH;
+    const sidebarW = marginLineX(w);
+    const top = HUD_H;
     const barBg = new PIXI.Graphics();
-    barBg.beginFill(0xf3f1ea).drawRect(0, top, w, RES_H).endFill();
+    barBg.beginFill(0xf3f1ea).drawRect(sidebarW, top, w - sidebarW, RES_H).endFill();
     this.bodyLayer.addChild(barBg);
     const title = txt(t('equip.assignTitle').replace('{name}', `${this.itemName(inst.defId)} +${inst.level}`), 12, C.dark, true);
-    title.anchor.set(0.5, 0.5); title.x = w / 2; title.y = top + RES_H / 2;
+    title.anchor.set(0.5, 0.5); title.x = sidebarW + (w - sidebarW) / 2; title.y = top + RES_H / 2;
     this.bodyLayer.addChild(title);
 
     const listY = top + RES_H;
@@ -981,7 +981,7 @@ export class EquipmentScene implements Scene {
     const cards = Object.values(save.cardInv ?? {});
     if (cards.length === 0) {
       const lbl = txt(t('equip.assignEmpty'), 13, C.mid);
-      lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = listY + listH / 2;
+      lbl.anchor.set(0.5, 0.5); lbl.x = sidebarW + (w - sidebarW) / 2; lbl.y = listY + listH / 2;
       this.bodyLayer.addChild(lbl);
       return;
     }
@@ -1004,22 +1004,24 @@ export class EquipmentScene implements Scene {
 
   private renderAssignRow(card: CardInstance, cy: number, slot: EquipSlot, save: SaveData): void {
     const { w } = this;
+    const left = marginLineX(w) + 6;
+    const rowW = w - left - 6;
     const def = CARD_DEFS[card.defId];
-    const row = sketchPanel(w - 12, ROW_H - 4, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(cy, 30, w) });
-    row.x = 6; row.y = cy;
+    const row = sketchPanel(rowW, ROW_H - 4, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(cy, 30, w) });
+    row.x = left; row.y = cy;
     this.bodyLayer.addChild(row);
 
     const factionColor = def?.faction === 'anna' ? 0xcc4466 : 0x4477cc;
     const dot = new PIXI.Graphics();
     dot.beginFill(factionColor).drawCircle(0, 0, 5).endFill();
-    dot.x = 18; dot.y = cy + 18;
+    dot.x = left + 12; dot.y = cy + 18;
     this.bodyLayer.addChild(dot);
 
     const nameLbl = txt(t(`card.${card.defId}.name` as TranslationKey), 13, C.dark, true);
-    nameLbl.x = 30; nameLbl.y = cy + 8;
+    nameLbl.x = left + 24; nameLbl.y = cy + 8;
     this.bodyLayer.addChild(nameLbl);
     const lvLbl = txt(`Lv.${card.level}`, 11, C.mid);
-    lvLbl.x = 30; lvLbl.y = cy + 26;
+    lvLbl.x = left + 24; lvLbl.y = cy + 26;
     this.bodyLayer.addChild(lvLbl);
 
     // Current occupant of the target slot (so the player knows an equip here will swap it out).
@@ -1033,7 +1035,7 @@ export class EquipmentScene implements Scene {
     this.bodyLayer.addChild(curLbl);
 
     const cardId = card.id;
-    this.hitRects.push({ rect: { x: 6, y: cy, w: w - 12, h: ROW_H - 4 }, action: () => void this.doEquipTo(cardId) });
+    this.hitRects.push({ rect: { x: left, y: cy, w: rowW, h: ROW_H - 4 }, action: () => void this.doEquipTo(cardId) });
   }
 
   /** Open the reforge material selection modal (the target item is already set in detailId). */
