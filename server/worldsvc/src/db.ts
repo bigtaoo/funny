@@ -361,6 +361,44 @@ export interface ShardAllocationDoc {
   createdAt: number;
 }
 
+/** Map template metadata (§24 Layer A). `_id` = templateId. At most one document has `active: true`. */
+export interface MapTemplateDoc {
+  _id: string;
+  width: number;
+  height: number;
+  version: number;
+  tileCount: number;
+  active: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** One tile of a map template (§24 Layer A — design-time, edited via the admin map editor, not runtime state). */
+export interface MapTemplateTileDoc {
+  _id: string; // `${templateId}:${x}:${y}`
+  templateId: string;
+  x: number;
+  y: number;
+  type: TileType;
+  level: number;
+  resType?: ResourceType;
+}
+
+/**
+ * Per-world terrain baseline, cloned (copied, not referenced) from a template's tiles at world-open time (§24).
+ * Read-path integration (falling back to this instead of proceduralTile for a tile with no TileDoc override) is
+ * part of the ADR-034 rewrite and not wired up yet — this collection is populated but not yet consumed.
+ */
+export interface MapBaselineTileDoc {
+  _id: string; // `${worldId}:${x}:${y}`
+  worldId: string;
+  x: number;
+  y: number;
+  type: TileType;
+  level: number;
+  resType?: ResourceType;
+}
+
 export interface WorldCollections {
   worlds: Collection<WorldDoc>;
   tiles: Collection<TileDoc>;
@@ -378,6 +416,9 @@ export interface WorldCollections {
   nations: Collection<NationDoc>;
   seasonResults: Collection<SeasonResultDoc>;
   shardAllocations: Collection<ShardAllocationDoc>;
+  mapTemplates: Collection<MapTemplateDoc>;
+  mapTemplateTiles: Collection<MapTemplateTileDoc>;
+  mapBaselines: Collection<MapBaselineTileDoc>;
 }
 
 export interface WorldMongo {
@@ -422,6 +463,9 @@ export async function createWorldMongo(
     nations: db.collection<NationDoc>('nations'),
     seasonResults: db.collection<SeasonResultDoc>('seasonResults'),
     shardAllocations: db.collection<ShardAllocationDoc>('shardAllocations'),
+    mapTemplates: db.collection<MapTemplateDoc>('mapTemplates'),
+    mapTemplateTiles: db.collection<MapTemplateTileDoc>('mapTemplateTiles'),
+    mapBaselines: db.collection<MapBaselineTileDoc>('mapBaselines'),
   };
 
   async function ensureIndexes(): Promise<void> {
@@ -467,6 +511,10 @@ export async function createWorldMongo(
     await collections.seasonResults.createIndex({ worldId: 1, season: -1 });
     // G6 multi-shard allocation (§20): retrieve this-season allocation table by season (join routing looks up familyShard).
     await collections.shardAllocations.createIndex({ season: 1 });
+    // Map templates (§24): viewport bbox reads scan by templateId + x/y range; active lookup for the "which template do new worlds clone" query.
+    await collections.mapTemplateTiles.createIndex({ templateId: 1, x: 1, y: 1 });
+    await collections.mapTemplates.createIndex({ active: 1 });
+    await collections.mapBaselines.createIndex({ worldId: 1, x: 1, y: 1 });
   }
 
   return {
