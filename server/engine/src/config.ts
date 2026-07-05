@@ -176,6 +176,7 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
     // 14 grid/s over a ≤2-cell range ≈ 0.15 s flight — visibly a shot, but fast
     // enough that it rarely whiffs except when the target dies/flees mid-air.
     projectile: { speed: 14, kind: 'arrow' },
+    canTargetFlying: true, // only unit type that can hit Harpy besides arrow towers (types.ts:22)
   },
   // ── Reused units (PvE waves + reused in the PvP pool via PVP_LOADOUT_DESIGN) ──
   // No progression cards (CARD_DEFS covers only the six heroes), so their siegeValue
