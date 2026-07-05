@@ -70,6 +70,8 @@
 > 定价锚点：$99.99（13,500 coins）= legendary 大保底精确对齐（90 抽 × 150 = 13,500）。
 > $19.99 标注"Best Value"角标，为主推档（≈ 1.7 次十连，开盒爽点密度最高）。
 
+> **图标（2026-07-05）**：五档 web 充值卡（$4.99–$99.99）的档位图标从程序绘制（`SketchPen`）升级为 AI 图位图——收入命脉页面，原程序绘制质感不够。资产分工延续 `art-direction.md §0`「简单装饰」例外（已有 equipment 图标先例）：AI 出图 → `client/scripts/prepare-coin-icons.mjs` 抠图/裁剪/打包成图集 → `client/src/assets/shop/coins.{png,json}` → `client/src/render/coinIconAtlas.ts` 懒加载 → `ShopScene.coinIcon()` 优先取图集贴图，图集未就绪或非充值档图标（如奖杯/年卡）继续走程序绘制兜底。
+
 **首充双倍（First Purchase Bonus）**
 - 触发：账号生命周期**第一次**成功 IAP，平台无关
 - 效果：当次到账 coins ×2（即双倍入账，不叠加其他活动）
