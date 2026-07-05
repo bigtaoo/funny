@@ -172,16 +172,16 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       });
     }
 
-    /** Section divider header ("Equipped" / "Bag"). */
+    /** Section divider header ("Equipped" / "Bag"). Bold + dark so it reads against the paper texture. */
     private renderSectionHeader(label: string, cy: number): void {
       const { w } = this;
-      const lbl = txt(label, 10, C.mid);
+      const lbl = txt(label, 12, C.dark, true);
       lbl.x = 14; lbl.y = cy + (SECTION_H - lbl.height) / 2;
       this.bodyLayer.addChild(lbl);
       const lineX = lbl.x + lbl.width + 6;
       const lineY = cy + SECTION_H / 2;
       const line = new PIXI.Graphics();
-      line.lineStyle(0.5, C.mid, 0.35).moveTo(lineX, lineY).lineTo(w - 14, lineY);
+      line.lineStyle(1, C.mid, 0.5).moveTo(lineX, lineY).lineTo(w - 14, lineY);
       this.bodyLayer.addChild(line);
     }
 
@@ -314,7 +314,8 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       const rar = txt(t(`equip.rarity.${inst.rarity}` as TranslationKey), 12, color, true);
       rar.x = ax; rar.y = ay; this.bodyLayer.addChild(rar); ay += 19;
       if (equipped) {
-        const e = txt(`[${t('equip.equipped')}]`, 11, C.green, true);
+        const slotLabel = t(`equip.slot.${slot}` as TranslationKey);
+        const e = txt(`[${t('equip.equipped')} · ${slotLabel}]`, 11, C.green, true);
         e.x = ax; e.y = ay; this.bodyLayer.addChild(e); ay += 18;
       }
       if (count > 1) {

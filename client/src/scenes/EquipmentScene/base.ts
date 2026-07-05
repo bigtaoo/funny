@@ -65,7 +65,7 @@ export const SECTION_H = 20;  // section divider (Equipped / Bag)
 // Inventory grid: icon-card cells (name top / glyph left / rarity+level right)
 // packed into columns sized to the wide (1920) landscape canvas.
 export const CELL_GAP = 12;
-export const EQUIP_CELL_H = 92;
+export const EQUIP_CELL_H = 118; // glyph frame = EQUIP_CELL_H - pad*2 - 24; 118 -> 78px frame (1.5x the old 52px)
 export const EQUIP_CELL_W_TARGET = 320;
 // Craft grid: same column sizing as the inventory grid, a bit taller to fit
 // the cost chips + craft button beneath the glyph.
