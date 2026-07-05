@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Notebook Wars — Map Editor</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #1a1a2e;
+      --surface: #242436;
+      --surface2: #2e2e46;
+      --border: #3a3a58;
+      --text: #cdd6f4;
+      --text-dim: #6e6e8a;
+      --accent: #89b4fa;
+      --ok: #a6e3a1;
+      --danger: #f38ba8;
+      --warn: #f9e2af;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 13px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .toolbar {
+      height: 46px; flex: 0 0 auto;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 8px; padding: 0 12px;
+    }
+    .toolbar .title { font-weight: 600; color: var(--accent); margin-right: 16px; }
+    .toolbar .spacer { flex: 1; }
+    .toolbar label { color: var(--text-dim); font-size: 12px; }
+    .toolbar input[type=text] {
+      background: #11111b; color: var(--text); border: 1px solid var(--border);
+      border-radius: 5px; padding: 5px 8px; font-size: 12px; width: 140px;
+    }
+
+    button {
+      background: var(--surface2); color: var(--text);
+      border: 1px solid var(--border); border-radius: 6px;
+      padding: 6px 12px; font-size: 13px; cursor: pointer;
+    }
+    button:hover { border-color: var(--accent); }
+    button.primary { background: var(--accent); color: #11111b; border-color: var(--accent); font-weight: 600; }
+
+    .main { flex: 1 1 auto; display: flex; min-height: 0; }
+
+    .canvas-wrap {
+      flex: 1 1 auto; overflow: auto; display: flex; align-items: flex-start;
+      justify-content: flex-start; background: #0c0c14; padding: 12px;
+    }
+    #map-canvas { image-rendering: pixelated; background: #11111b; cursor: crosshair; }
+
+    .col-insp {
+      flex: 0 0 260px; border-left: 1px solid var(--border); overflow-y: auto;
+      background: var(--surface); display: flex; flex-direction: column;
+    }
+    .insp-body { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+    .insp-title { font-weight: 600; color: var(--accent); }
+    .legend { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+    .legend .row { display: flex; align-items: center; gap: 8px; }
+    .legend i { display: inline-block; width: 13px; height: 13px; border-radius: 3px; flex: 0 0 auto; }
+    .hint { color: var(--text-dim); font-size: 11px; line-height: 1.5; }
+    #tile-info { font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 12px; white-space: pre-wrap; }
+
+    .status {
+      flex: 0 0 auto; height: 30px; background: var(--surface);
+      border-top: 1px solid var(--border); display: flex; align-items: center;
+      padding: 0 12px; font-size: 12px; color: var(--text-dim);
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <span class="title">Map Editor</span>
+    <label for="world-seed">World ID (seed)</label>
+    <input type="text" id="world-seed" value="preview">
+    <button id="btn-regen" class="primary">Regenerate</button>
+    <span class="spacer"></span>
+    <label for="zoom">Zoom</label>
+    <input type="range" id="zoom" min="1" max="4" step="1" value="1">
+  </div>
+
+  <div class="main">
+    <div class="canvas-wrap">
+      <canvas id="map-canvas" width="500" height="500"></canvas>
+    </div>
+    <div class="col-insp">
+      <div class="insp-body">
+        <div class="insp-title">Legend</div>
+        <div class="legend" id="legend"></div>
+        <div class="insp-title">Tile</div>
+        <div id="tile-info" class="hint">Hover the map to inspect a tile.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="status" id="status">Ready</div>
+</body>
+</html>
