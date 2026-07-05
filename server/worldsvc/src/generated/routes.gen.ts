@@ -3366,7 +3366,7 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "properties": {
                   "capitalIdx": {
                     "type": "integer",
-                    "description": "0~9, index into CAPITAL_FRACTIONS"
+                    "description": "0~9, province index (6 outer + 3 resource + 1 core, ADR-034 angle-sector ring layout)"
                   },
                   "x": {
                     "type": "integer"

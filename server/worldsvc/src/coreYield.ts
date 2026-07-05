@@ -7,7 +7,7 @@ import {
   resourceCapFor,
   buildingYieldMult,
   buildingSelfYield,
-  nearestCapitalIdx,
+  provinceIdxAt,
   RESOURCE_TYPES,
   NATION_BONUS_PRODUCTION,
   BP_YIELD_MULT,
@@ -55,7 +55,7 @@ export class WorldCoreYield extends WorldCoreKernel {
     hasBattlePassOverride?: boolean,
   ): Promise<Record<ResourceType, number>> {
     const owned = await this.deps.cols.tiles.find({ worldId, ownerId: accountId }).toArray();
-    // Nation production bonus (§2.4 / G1): capitals occupied by this player → own tiles within those capitals' Voronoi regions receive +NATION_BONUS_PRODUCTION.
+    // Nation production bonus (§2.4 / G1, ADR-034): capitals occupied by this player → own tiles within those capitals' provinces (angle-sector + ring) receive +NATION_BONUS_PRODUCTION.
     const ownedNations = await this.deps.cols.nations.find({ worldId, ownerId: accountId }).toArray();
     const ownedCapIdx = new Set(ownedNations.map((n) => n.capitalIdx));
     // Building levels (SLG_CITY_DESIGN): land resources get a global yield multiplier; sticker is self-produced by the stickerShop (民居模型).
@@ -73,7 +73,7 @@ export class WorldCoreYield extends WorldCoreKernel {
       // ADR-025: only the base anchor contributes yield; the 8 ring cells are type:'base' too and would
       // otherwise each add the base ink trickle (9× inflation), so skip them.
       if (tl.baseRing) continue;
-      const nationMult = ownedCapIdx.size > 0 && ownedCapIdx.has(nearestCapitalIdx(tl.x, tl.y, this.capitals))
+      const nationMult = ownedCapIdx.size > 0 && ownedCapIdx.has(provinceIdxAt(tl.x, tl.y))
         ? 1 + NATION_BONUS_PRODUCTION : 1;
       const y = tileYield(tl.type, tl.level, tl.resType);
       for (const rt of RESOURCE_TYPES) acc[rt] += (y[rt] ?? 0) * nationMult;

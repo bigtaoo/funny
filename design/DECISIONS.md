@@ -385,8 +385,8 @@
 - **为什么**：用户对三战版图结构（环带分层+关隘严格对应层级）非常熟悉，希望复刻其"层级递进"的攻略节奏，同时解决现有 Voronoi 方案地形/国界两不相干的结构性缺陷；城池/关隘分离是三战调研澄清的关键差异，直接照抄"关隘=城池"会做错机制；本 ADR 优先于 ADR-033，是因为角度扇区+完整地形城池体系比"点+距离衰减"更彻底地解决了"地形不知道国界"的根因（扇区边界本身就是地形，不是事后套一层距离公式）。
 - **影响**：
   - 新增/改写 [`design/tools/map-editor/DESIGN.md`](tools/map-editor/DESIGN.md)（§2-§4 地形骨架定稿，§6 编辑器需求，§7 原型迭代记录）。
-  - [`SLG_DESIGN.md`](game/SLG_DESIGN.md) §2.4（国家系统）、§3.2（地图尺寸与地形布局）已改写，指向本 ADR，并标注"代码现状仍是 ADR-033（已作废）实现，待重写"。
-  - **ADR-033 判定作废**：其已落地的代码（`server/shared/src/slg.ts` 的 `CAPITAL_FRACTIONS`/`NATION_KIND_BY_IDX`/`GEN_MAX_CAP_DIST`/`proceduralTile`/`SLG_GEN.obstacleMinDistRatio`/`levelFalloffExp`，以及 10 个 e2e 测试文件的坐标假设修复）需要按本 ADR 的角度扇区+地形城池模型整体重写，**尚未开始，是下一步任务**——涉及 `proceduralTile()` 重写、新增地形矢量路径/城池节点数据结构、`server/worldsvc` 相关 e2e 测试重新适配。
-  - `tools/map-editor` 工具尚未搭骨架。讨论期验证骨架用的 HTML/JS 原型未提交仓库。
+  - [`SLG_DESIGN.md`](game/SLG_DESIGN.md) §2.4（国家系统）、§3.2（地图尺寸与地形布局）已改写，指向本 ADR；§24 记录代码重写完成状态。
+  - **ADR-033 判定作废**：其已落地的代码已按本 ADR 整体重写完成（2026-07-05）——`server/shared/src/slg.ts` 新增 `provinceIdxAt()`（角度扇区+半径环归属，替代 `nearestCapitalIdx()` Voronoi）、`provinceCapitalPositions()`（州府位置按扇区+种子派生，替代固定表 `CAPITAL_FRACTIONS`）、环形地形带/墨河弦/支脉/城池节点（州府+世界中心 9×9+关隘城池+每出生州 9 座分级城池）、按环等级分布表；`NATION_KIND_BY_IDX` 的 `hegemony` 改名 `core`。城池落地为现有 `familyKeep`/`center` 类型而非独立 collection（驻军/耐久数值本条未拍板，故不新增 schema）。`server/worldsvc` 消费方（`coreKernel`/`coreNation`/`coreYield`/`combatSiege`）与受影响 e2e（`nation-bonus`/`season-ops`/`fog`/`service`/`httpApi`/`pathfinding`）已同步修完；`server/shared`/`server/worldsvc`/`server/tools/econ-sim` typecheck+test 全绿。
+  - `tools/map-editor` 工具仍未搭骨架，讨论期验证骨架用的 HTML/JS 原型未提交仓库——留后续任务。
   - 城池驻军/耐久数值、资源州/核心州是否也要分级城池梯度、国民加成如何随分层结构调整，均留待后续 ADR。
 - **教训**：两条并行会话在同一天独立展开"国家版图重构"这个大改动，导致 ADR 编号撞车、代码方向冲突——已落地代码被判定作废意味着那批 e2e 测试修复工作也随之作废。后续如有多会话并行处理同一模块的结构性改动，应在开工前先检查是否有其他会话正在动同一处（如 `git log` 看最近的 daily 分支提交），或至少在长任务过程中定期 `git fetch`/查 worktree 列表交叉核对。

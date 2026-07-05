@@ -6,7 +6,7 @@
 //   (Judgment criterion per §4: gap ≤ 20% → PASS)
 //
 // Three-part analysis:
-//   ① Voronoi geometry — code-derived, no assumptions. How large is each nation?
+//   ① Province geometry (ADR-034 angle-sector ring model) — code-derived, no assumptions. How large is each nation?
 //   ② Marginal break-even — at what foreign-tile average level does cross-expansion
 //      yield equal per-tile output to a home tile? (pure math, no assumption)
 //   ③ Strategy gap table — for combinations of home/foreign tile split and foreign
@@ -21,8 +21,7 @@ import {
   SEASON_LENGTH_DAYS,
   RESOURCE_YIELD_BASE,
   NATION_COUNT,
-  capitalPositions,
-  nearestCapitalIdx,
+  provinceIdxAt,
   SLG_MAP_W,
   SLG_MAP_H,
   SLG_MAP_MAX_LEVEL,
@@ -31,15 +30,14 @@ import {
 
 export const HOURS_PER_SEASON = SEASON_LENGTH_DAYS * 24;
 
-// ── ① Voronoi geometry (code-derived) ────────────────────────────────────────
+// ── ① Province geometry (code-derived, ADR-034 angle-sector ring model) ──────────────────
 
-/** Exact tile count for each capital's Voronoi region on the live SLG_MAP_W×SLG_MAP_H map. */
-export function voronoiTileCounts(): number[] {
-  const caps = capitalPositions(SLG_MAP_W, SLG_MAP_H);
+/** Exact tile count for each province's angle-sector+ring region on the live SLG_MAP_W×SLG_MAP_H map. */
+export function provinceTileCounts(): number[] {
   const counts = new Array<number>(NATION_COUNT).fill(0);
   for (let x = 0; x < SLG_MAP_W; x++) {
     for (let y = 0; y < SLG_MAP_H; y++) {
-      const idx = nearestCapitalIdx(x, y, caps);
+      const idx = provinceIdxAt(x, y);
       counts[idx] = (counts[idx] ?? 0) + 1;
     }
   }
@@ -82,7 +80,7 @@ export function breakEvenForeignLevel(homeAvgLevel: number): number {
  * A strategy scenario.
  *
  * Both "Home" and "Cross" strategies hold the same total tile count (tileCap).
- * - Home strategy: all tileCap tiles in own Voronoi nation → all get +NATION_BONUS_PRODUCTION.
+ * - Home strategy: all tileCap tiles in own province → all get +NATION_BONUS_PRODUCTION.
  * - Cross strategy: homeFrac × tileCap tiles in own nation (bonus) +
  *                  (1-homeFrac) × tileCap in foreign nations (no bonus, possibly different avg level).
  *

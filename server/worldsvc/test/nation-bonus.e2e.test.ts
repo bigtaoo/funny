@@ -1,5 +1,5 @@
-// worldsvc nation-bonus end-to-end (S8-6.5 / G1, §2.4): real Mongo + fake clock.
-//   Ownership determination v1: a tile falls within the Voronoi region of a capital occupied by the tile's owner → bonus applies.
+// worldsvc nation-bonus end-to-end (S8-6.5 / G1, §2.4, ADR-034): real Mongo + fake clock.
+//   Ownership determination v1: a tile falls within the province (angle-sector+ring) of a capital occupied by the tile's owner → bonus applies.
 //   ① Production bonus: tiles in own capital region yield ×(1+NATION_BONUS_PRODUCTION); no national affiliation → raw yield (control case).
 //   ② Defense bonus: garrison in own capital region → effective garrison ×(1+NATION_BONUS_DEFENSE), raising the conquest threshold (defender wins with equal attack);
 //      no national affiliation → same attack breaks through (control case, confirming the bonus comes from nationality).
@@ -9,8 +9,9 @@ import {
   proceduralTile,
   tileId,
   playerWorldId,
-  capitalPositions,
-  nearestCapitalIdx,
+  provinceCapitalPositions,
+  provinceIdxAt,
+  worldSeed,
   tileYield,
   RESOURCE_YIELD_BASE,
   NATION_BONUS_PRODUCTION,
@@ -41,7 +42,7 @@ if (!mongo) console.warn(`[worldsvc.nation.e2e] Mongo unreachable (${URI}) — s
 
 const CENTER_X = Math.floor(SLG_MAP_W / 2);
 const CENTER_Y = Math.floor(SLG_MAP_H / 2);
-const CAPS = capitalPositions(SLG_MAP_W, SLG_MAP_H);
+const CAPS = provinceCapitalPositions(SLG_MAP_W, SLG_MAP_H, worldSeed(W));
 
 function findCoord(
   predicate: (t: ReturnType<typeof proceduralTile>) => boolean,
@@ -156,8 +157,8 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
     const proc = proceduralTile(W, r.x, r.y);
     const rt = proc.resType as ResourceType;
     // a occupies the (5,5) main base and the capital region containing (r).
-    const baseCap = nearestCapitalIdx(5, 5, CAPS);
-    const rCap = nearestCapitalIdx(r.x, r.y, CAPS);
+    const baseCap = provinceIdxAt(5, 5);
+    const rCap = provinceIdxAt(r.x, r.y);
     await ownNation(baseCap, 'a');
     if (rCap !== baseCap) await ownNation(rCap, 'a');
     await svc.occupyTile(W, 'a', r.x, r.y);
@@ -192,7 +193,7 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const tgt = findCoord(NON_BLOCKING, 10, 5);
     await setupDefender('b', tgt.x, tgt.y, 500);
-    await ownNation(nearestCapitalIdx(tgt.x, tgt.y, CAPS), 'b');
+    await ownNation(provinceIdxAt(tgt.x, tgt.y), 'b');
 
     // Authoritative engine (G3-2b, §16 / ADR-026 siege-value tuning): 815 troops can defeat 500 defenders
     // (see control case below), but cannot defeat the nation-bonus-boosted floor(500*1.15)=575 effective

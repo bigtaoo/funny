@@ -39,9 +39,8 @@ describe('findMarchPath', () => {
   });
 
   it('horizontal path in obstacle-free area has length = Manhattan distance + 1', () => {
-    // Use map corners (large dr, outside obstacleMaxDr=0.87), which never generate obstacles.
-    // dr = sqrt((dx/half)²+(dy/half)²); dr is largest toward the center (0,0) to (24,24).
-    // To guarantee no obstacles, use tiles near the corners (dr > 0.87).
+    // Tiles near the real map's (0,0) corner (ADR-034: far outside both province rings and any
+    // terrain band for this seed) stay passable, so the shortest path is a straight horizontal line.
     const path = findMarchPath(W_OPEN, MAP_W, MAP_H, 1, 1, 6, 1, new Set());
     expect(path).not.toBeNull();
     // Path length = steps+1; straight horizontal path = Manhattan+1.
@@ -114,26 +113,30 @@ describe('marchDurationFromPath', () => {
 });
 
 describe('proceduralTile obstacle generation', () => {
-  // proceduralTile internally computes dr using the real SLG_MAP_W/H (300×300), independent of
-  // findMarchPath's mapW/mapH parameters — so real map dimensions must be used here; the 50×50 logic window above does not apply.
-  it('obstacles can exist near the map center (dr ≤ 0.87 zone)', () => {
-    // Scan a 30×30 area around the real center and count obstacle tiles; results vary by seed, only assert total ≥ 0.
+  // proceduralTile internally computes province/terrain geometry using the real SLG_MAP_W/H (500×500),
+  // independent of findMarchPath's mapW/mapH parameters — so real map dimensions must be used here;
+  // the 50×50 logic window above does not apply.
+  it('obstacles concentrate on the outer/resource province ring boundary (ADR-034 §2.2)', () => {
+    // Scan a band straddling the outer/resource ring boundary (radius ratio 0.39 of the map's half-diagonal,
+    // due east of center) — this is where the "折痕岭主环" terrain band lives, so a hit is near-guaranteed.
     const cx = Math.floor(SLG_MAP_W / 2);
     const cy = Math.floor(SLG_MAP_H / 2);
+    const halfDiag = Math.sqrt(cx ** 2 + cy ** 2);
+    const ringX = cx + Math.round(0.39 * halfDiag);
     let obstacleCnt = 0;
-    for (let x = cx - 15; x <= cx + 15; x++) {
+    for (let x = ringX - 15; x <= ringX + 15; x++) {
       for (let y = cy - 15; y <= cy + 15; y++) {
         const t = proceduralTile(W_OPEN, x, y);
         if (t.type === 'obstacle' || t.type === 'gate') obstacleCnt++;
       }
     }
-    // Only verify the types are valid; do not assert a specific count (noise function varies by seed).
-    expect(obstacleCnt).toBeGreaterThanOrEqual(0);
+    expect(obstacleCnt).toBeGreaterThan(0);
   });
 
-  it('corner areas (dr > 0.87) do not generate obstacles', () => {
-    // Real map corners (dr = √2/√2 = 1.0 > 0.87). Note: SLG_MAP_W/H must be used here —
-    // pseudo-corners of a 50×50 grid (e.g. (0,49)) have dr≈0.85 relative to the real center (150,150) and still fall within the obstacle band.
+  it('exact map corners do not generate obstacles (for this seed)', () => {
+    // Corners sit at the outer province's largest radius, far from the ring/river/branch terrain for this
+    // specific seed — unlike the old distance-only model, this isn't a structural "safe zone" guarantee
+    // (a branch could in principle graze a corner for a different seed), just an empirical fact for W_OPEN.
     const corners = [
       [0, 0],
       [0, SLG_MAP_H - 1],
