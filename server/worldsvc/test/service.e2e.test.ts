@@ -83,12 +83,13 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
     await m.close();
   });
 
-  it('getMap: procedural default + unique world center', async () => {
+  it('getMap: procedural default + unique world center (ADR-034 9×9 footprint)', async () => {
+    // A ±2 (5×5) window around the exact map center sits entirely inside the 9×9 world-center footprint.
     const view = await svc.getMap(W, 'a', CENTER_X, CENTER_Y, 2);
     expect(view.tiles).toHaveLength(25); // 5×5
     const centers = view.tiles.filter((t) => t.type === 'center');
-    expect(centers).toHaveLength(1);
-    expect(centers[0]).toMatchObject({ x: CENTER_X, y: CENTER_Y });
+    expect(centers).toHaveLength(25);
+    expect(view.tiles.find((t) => t.x === CENTER_X && t.y === CENTER_Y)).toMatchObject({ type: 'center' });
   });
 
   it('not joined: getMe joined=false', async () => {

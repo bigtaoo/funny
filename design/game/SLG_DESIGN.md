@@ -1494,9 +1494,9 @@ if (path.startsWith('/admin/world/')) {
 
 ---
 
-## 24. 地图模板与编辑器（2026-07-05 拍板，待实现）
+## 24. 地图模板与编辑器（2026-07-05 拍板；ADR-034 代码重写已完成 2026-07-05）
 
-**背景**：`server/shared/src/slg.ts` 当前仍是已作废的 ADR-033 版本（`CAPITAL_FRACTIONS`/`NATION_KIND_BY_IDX`/`proceduralTile()`/`nearestCapitalIdx()` 等），需整体重写为 ADR-034「角度扇区+地形+城池」模型，并修受影响的 worldsvc e2e。本节先把地图存储/编辑器架构定版，供该重写任务落地时遵循。**遗留任务，尚未开工，需另开 worktree。**
+**背景**：`server/shared/src/slg.ts` 已按 ADR-034「角度扇区+地形+城池」模型整体重写（`provinceIdxAt()`/`provinceCapitalPositions()`/环形地形带+墨河弦+支脉/州府+世界中心+关隘城池+分级城池节点/按环等级分布表，替换旧的 `CAPITAL_FRACTIONS`/`NATION_KIND_BY_IDX`(hegemony→core)/`proceduralTile()`/`nearestCapitalIdx()`），worldsvc 受影响的消费方（`coreKernel`/`coreNation`/`coreYield`/`combatSiege`）与 e2e 测试已同步修完，`server/shared`/`server/worldsvc`/`server/tools/econ-sim` typecheck+test 全绿。城池驻军/耐久数值、资源州/核心州分级城池梯度、`tools/map-editor` 编辑器工程本身仍是开放项，留后续任务（见 [`design/tools/map-editor/DESIGN.md`](../tools/map-editor/DESIGN.md) §5/§6）。本节继续记录地图存储/编辑器架构，供编辑器工程落地时遵循。
 
 **两层分离**：
 - **Layer A「地图模板」（设计期产物，低频改动）**：程序生成的原始地形/城池布局只是初稿，不一定符合要求，允许人工在编辑器里精修定稿——这是权威数据源，不是运行时状态。

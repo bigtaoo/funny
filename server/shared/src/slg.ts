@@ -143,18 +143,10 @@ export const SLG_GEN = {
   resourceDensity: 1.0,
   /** familyKeep noise threshold; higher = sparser. */
   keepThreshold: 0.86,
-  /** Minimum distance ratio from a tile's own nearest capital for strategic points (ADR-032 follow-up: per-nation, not map-center — prevents keeps from spawning too close to ANY capital). */
+  /** Minimum distance ratio from a tile's own province capital for strategic points (ADR-034: distance is now to the tile's own province's capital, angle-sector-derived — prevents keeps from spawning too close to any capital). */
   keepMinDistRatio: 0.12,
-  /** Level noise frequency (higher = more fragmented patches). */
+  /** Level noise frequency (higher = more fragmented patches; feeds the ADR-034 §4 per-ring cumulative-distribution level lookup, not a distance falloff). */
   levelFreq: 1 / 14,
-  /**
-   * Level falloff exponent applied to (1-dr) (ADR-032: 1 → 1.1 under the original map-center `dr`; re-tuned to
-   * 1.9 for the ADR-032 follow-up's per-nation `dr` — with 10 capitals now covering the map instead of 1, most
-   * tiles sit much closer to SOME capital than they used to sit to the single geometric center, so the same 1.1
-   * exponent over-shot to ~81% of tiles at level 5+. 1.9 restores the ~50% level-5+ target empirically (see
-   * SLG_DESIGN.md §3.2).
-   */
-  levelFalloffExp: 1.9,
   /** Biome (resource type) noise frequency (lower = larger patches → large same-resource zones encourage specialization and trade). */
   biomeFreq: 1 / 40,
   /** Strategic point noise frequency. */
@@ -171,29 +163,8 @@ export const SLG_GEN = {
   biomeGraphiteMax: 0.78,
   /** Level cap for neutral open land (keeps neutral tiles low-value). */
   neutralLevelCap: 2,
-  // ── S8-6.6 blocking terrain + gates ──────────────────────────
-  /** Obstacle terrain noise frequency (medium-scale continuous mountain/river zones). */
-  obstacleFreq: 1 / 40,
-  /** Obstacle terrain noise threshold (above this → obstacle; empirically ~2.7-2.9% of tiles within the eligible band, not the ~12% a naive uniform-noise assumption would suggest — see obstacleMinDistRatio note). */
-  obstacleThreshold: 0.88,
-  /**
-   * Obstacles only generate where dr ≥ this ratio (ADR-032 follow-up: dr is now per-nation distance-to-own-nearest-capital,
-   * so this carves out a safe, obstacle-free zone around every capital and concentrates mountains/rivers toward each
-   * nation's border — the "must pass a gate to leave your nation" read on resource nations sitting between the hegemony
-   * center and the outer ring). Replaces the old obstacleMaxDr (which excluded only the map's far outer corners from a
-   * single map-wide center). 0.15 keeps ~92% of the map obstacle-eligible (only the ~25-tile ring right around each
-   * capital is protected), matching the old map-center formula's coverage (~96%) as closely as the new geometry allows.
-   * ⚠ Measured actual obstacle share (both old and new dr) is ~2.7-2.9% of all tiles, not the ~10-15% the old
-   * `obstacleThreshold` comment claimed — `valueNoise`'s bilinear+smoothstep interpolation compresses the noise
-   * distribution well below the naive "uniform [0,1], 12% above 0.88" assumption. Pre-existing miscalibration
-   * (present before this ADR-032 follow-up too); left as-is since re-tuning obstacle density is a separate
-   * balance task, not part of this nation-layout change.
-   */
-  obstacleMinDistRatio: 0.15,
-  /** Gate noise frequency (large-scale; sparse strategic corridors). */
-  gateFreq: 1 / 60,
-  /** Gate noise threshold: gates (strategic corridors) generate inside obstacle zones above this value; extremely sparse. */
-  gateThreshold: 0.99,
+  // ── S8-6.6 blocking terrain + gates: obstacle/gate placement is now geometric (ring/river/branch bands,
+  // ADR-034 §2.2/§2.3, see TERRAIN_BAND_WIDTH_*/RING_GATE_*/RIVER_*/BRANCH_COUNT below), not noise-threshold-based.
   // ── G8 strongholds (§3.1) ──────────────────────────
   /**
    * Stronghold per-tile hash threshold (ECONOMY_NUMBERS §13-SLG-STRONGHOLD). Strongholds are isolated
@@ -206,7 +177,7 @@ export const SLG_GEN = {
    * sparse" intent deterministically. Higher = sparser.
    */
   strongholdThreshold: 0.997,
-  /** Minimum distance ratio from a tile's own nearest capital for strongholds (ADR-032 follow-up: per-nation — prevents strongholds from spawning too close to ANY capital; preserves a safe zone for new players in every nation). */
+  /** Minimum distance ratio from a tile's own province capital for strongholds (ADR-034: distance is now to the tile's own province's capital — preserves a safe zone for new players in every province). */
   strongholdMinDistRatio: 0.25,
 } as const;
 
@@ -556,70 +527,100 @@ export function academyBuff(buildings: Partial<Record<BuildingKey, number>> | un
   return { hp: lvl * ACADEMY_HP_STEP, damage: lvl * ACADEMY_DAMAGE_STEP, siege: lvl * ACADEMY_SIEGE_STEP };
 }
 
-// ── Nation system (S8-6.5, §2.4) ──────────────────────────────────
-/** Number of nations (10 capitals = 10 nations). */
+// ── Nation / province system (S8-6.5, §2.4; angle-sector ring layout ADR-034, 2026-07-05) ──────────────────────────────────
+/** Number of nations (6 outer + 3 resource + 1 core = 10 provinces, each with one representative capital). */
 export const NATION_COUNT = 10;
-/** Nation bonus: resource production bonus within the player's own Voronoi nation zone (fraction, 0.10 = +10%, §16.5 A7 decision). */
+/** Nation bonus: resource production bonus within the player's own province (fraction, 0.10 = +10%, §16.5 A7 decision). */
 export const NATION_BONUS_PRODUCTION = 0.10;
-/** Nation bonus: defense combat bonus within the player's own Voronoi nation zone (fraction, 0.15 = +15%, §16.5 A7 decision). */
+/** Nation bonus: defense combat bonus within the player's own province (fraction, 0.15 = +15%, §16.5 A7 decision). */
 export const NATION_BONUS_DEFENSE = 0.15;
 /**
- * Nation kind by capitalIdx (ADR-032 follow-up, 2026-07-04): three-Kingdoms-style concentric ring layout,
- * replacing the old 8-periphery + 1-inner + 1-center arrangement. 6 outer nations form a hexagon on the
- * periphery ring; 3 resource nations form a triangle on a middle ring (reachable from the outer ring only
- * through the mountain/river band that naturally forms along nation borders, §3.2); 1 hegemony nation sits
- * at the map's geometric center (unchanged from before — still capitalIdx 9 / CENTER_CAPITAL_IDX).
+ * Nation/province kind by capitalIdx (ADR-034, 2026-07-05): angle-sector ring layout, replacing the ADR-032/033
+ * Voronoi-from-10-fixed-capitals arrangement. 6 "birth" provinces each occupy a 60° angle sector on the outer
+ * ring; 3 "resource" provinces each occupy a 120° angle sector on a middle ring (angle-aligned so resource
+ * province i covers birth provinces 2i/2i+1); 1 "core" province is the center circle (still capitalIdx 9 /
+ * CENTER_CAPITAL_IDX — world-center city, the season's hegemony objective).
  */
-export type NationKind = 'outer' | 'resource' | 'hegemony';
+export type NationKind = 'outer' | 'resource' | 'core';
 export const NATION_KIND_BY_IDX: readonly NationKind[] = [
-  'outer', 'outer', 'outer', 'outer', 'outer', 'outer', // 0-5: periphery hexagon (r=0.40)
-  'resource', 'resource', 'resource',                   // 6-8: middle triangle (r=0.20)
-  'hegemony',                                            // 9: map center
+  'outer', 'outer', 'outer', 'outer', 'outer', 'outer', // 0-5: 6 birth provinces, 60° sectors
+  'resource', 'resource', 'resource',                   // 6-8: 3 resource provinces, 120° sectors
+  'core',                                                // 9: center circle (world-center city)
 ];
 
-/**
- * Relative coordinates of the 10 capitals (fractions 0–1; multiply by mapW-1/mapH-1 to get actual tile coordinates).
- * Layout (ADR-032 follow-up): 6 outer (hexagon, r=0.40 from center) + 3 resource (triangle, r=0.20, offset 30°
- * from the outer vertices so the two rings interleave) + 1 hegemony (map center, r=0). Voronoi partitioning
- * (nearestCapitalIdx) is derived from these; proceduralTile's level curve is now per-nation (distance to the
- * tile's own nearest capital, §3.2), not distance to the map's geometric center.
- * Design doc §2.4/§3.2: fixed coordinates, hardcoded in shared/slg.ts.
- */
-export const CAPITAL_FRACTIONS: readonly [number, number][] = [
-  [0.50, 0.10], // 0: outer — due north
-  [0.85, 0.30], // 1: outer — northeast
-  [0.85, 0.70], // 2: outer — southeast
-  [0.50, 0.90], // 3: outer — due south
-  [0.15, 0.70], // 4: outer — southwest
-  [0.15, 0.30], // 5: outer — northwest
-  [0.60, 0.33], // 6: resource — east-northeast (offset 30° from the outer ring)
-  [0.60, 0.67], // 7: resource — east-southeast
-  [0.30, 0.50], // 8: resource — west
-  [0.50, 0.50], // 9: hegemony — map center (season bonus objective; CENTER_CAPITAL_IDX)
-] as const;
+const _TWO_PI = Math.PI * 2;
+const _MAP_CX = SLG_MAP_W / 2;
+const _MAP_CY = SLG_MAP_H / 2;
+const _MAP_HALF_DIAGONAL = Math.sqrt(_MAP_CX ** 2 + _MAP_CY ** 2);
 
-/** Convert relative fractional coordinates to actual integer map coordinates. */
-export function capitalPositions(mapW: number, mapH: number): [number, number][] {
-  return CAPITAL_FRACTIONS.map(([fx, fy]) => [
-    Math.round(fx * (mapW - 1)),
-    Math.round(fy * (mapH - 1)),
-  ]);
+/** Core province radius (ADR-034 §2.1 DRAFT default), as a fraction of the map's half-diagonal. */
+export const PROVINCE_CORE_RADIUS_RATIO = 0.11;
+/** Resource-ring outer boundary radius (ADR-034 §2.1 DRAFT default), as a fraction of the map's half-diagonal; beyond this is the outer/birth ring. */
+export const PROVINCE_RESOURCE_OUTER_RADIUS_RATIO = 0.39;
+
+/** Angle (radians, [0, 2π)) of (x,y) around the map's geometric center; 0 = due east, increasing clockwise in screen coordinates. */
+function _angleOf(x: number, y: number): number {
+  let a = Math.atan2(y - _MAP_CY, x - _MAP_CX);
+  if (a < 0) a += _TWO_PI;
+  return a;
+}
+/** Distance of (x,y) from the map's geometric center, normalized by the map's half-diagonal (0 = center, ~1 = corner). */
+function _normRadius(x: number, y: number): number {
+  return Math.sqrt((x - _MAP_CX) ** 2 + (y - _MAP_CY) ** 2) / _MAP_HALF_DIAGONAL;
 }
 
-/** Returns the index of the nearest capital to (x,y) (Voronoi partition, Euclidean distance). */
-export function nearestCapitalIdx(
-  x: number,
-  y: number,
-  capitals: readonly [number, number][],
-): number {
-  let best = 0;
-  let bestD = Infinity;
-  for (let i = 0; i < capitals.length; i++) {
-    const [cx, cy] = capitals[i]!;
-    const d = (x - cx) ** 2 + (y - cy) ** 2;
-    if (d < bestD) { bestD = d; best = i; }
+/**
+ * Province membership by angle sector + radius ring (ADR-034 §2.1) — replaces the old Voronoi `nearestCapitalIdx`.
+ * Pure geometry, no capital lookup needed: core circle → 9; resource ring (120° sectors, angle-aligned so sector i
+ * covers outer sectors 2i/2i+1) → 6+i; outer ring (60° sectors) → i.
+ */
+export function provinceIdxAt(x: number, y: number): number {
+  const rNorm = _normRadius(x, y);
+  if (rNorm <= PROVINCE_CORE_RADIUS_RATIO) return CENTER_CAPITAL_IDX;
+  const angle = _angleOf(x, y);
+  if (rNorm <= PROVINCE_RESOURCE_OUTER_RADIUS_RATIO) {
+    return 6 + (Math.floor(angle / (_TWO_PI / 3)) % 3);
   }
-  return best;
+  return Math.floor(angle / (_TWO_PI / 6)) % 6;
+}
+
+const _provinceCapitalCache = new Map<number, readonly [number, number][]>();
+
+/**
+ * Deterministic capital (state-capital city) position per province, keyed by worldId seed (ADR-034 §3: state
+ * capitals sit at their sector's center angle ± jitter, at a random radius within their own ring band; the core
+ * province's "capital" is the exact map center — the world-center city). Replaces the old fixed CAPITAL_FRACTIONS
+ * table: positions are no longer universal constants because they now depend on the world's seed, not just map size.
+ */
+export function provinceCapitalPositions(mapW: number, mapH: number, seed: number): readonly [number, number][] {
+  const cacheKey = (seed >>> 0) ^ Math.imul(mapW, 0x1000003) ^ Math.imul(mapH, 0x100013);
+  const cached = _provinceCapitalCache.get(cacheKey);
+  if (cached) return cached;
+  const cx = mapW / 2;
+  const cy = mapH / 2;
+  const halfDiag = Math.sqrt(cx ** 2 + cy ** 2);
+  const out: [number, number][] = [];
+  for (let i = 0; i < NATION_COUNT; i++) {
+    if (i === CENTER_CAPITAL_IDX) {
+      out.push([Math.floor(cx), Math.floor(cy)]);
+      continue;
+    }
+    const isOuter = NATION_KIND_BY_IDX[i] === 'outer';
+    const sectorCount = isOuter ? 6 : 3;
+    const sectorIdx = isOuter ? i : i - 6;
+    const sectorWidth = _TWO_PI / sectorCount;
+    const jitter = (rand2(i, 0, seed ^ 0x0c11) - 0.5) * sectorWidth * 0.6; // stays inside own sector, margin from its boundary
+    const angle = sectorIdx * sectorWidth + sectorWidth / 2 + jitter;
+    const rMin = isOuter ? PROVINCE_RESOURCE_OUTER_RADIUS_RATIO + 0.04 : PROVINCE_CORE_RADIUS_RATIO + 0.03;
+    const rMax = isOuter ? 0.94 : PROVINCE_RESOURCE_OUTER_RADIUS_RATIO - 0.03;
+    const rNorm = rMin + rand2(i, 1, seed ^ 0x0c22) * Math.max(0.01, rMax - rMin);
+    const r = rNorm * halfDiag;
+    const x = Math.round(cx + Math.cos(angle) * r);
+    const y = Math.round(cy + Math.sin(angle) * r);
+    out.push([Math.max(0, Math.min(mapW - 1, x)), Math.max(0, Math.min(mapH - 1, y))]);
+  }
+  _provinceCapitalCache.set(cacheKey, out);
+  return out;
 }
 
 /** Returns the capital index if (x,y) is a capital location, or -1 if it is not a capital. */
@@ -832,93 +833,265 @@ function biomeAt(x: number, y: number, seed: number): ResourceType {
   return 'metal';
 }
 
+// ── Terrain (ADR-034 §2.2/§2.3): ring boundary bands + river chords + birth-province branches ──────────
+// All three are impassable ('obstacle') bands defined by distance-to-a-geometric-shape < width/2, with
+// organic noise-driven wobble/width — replacing the old noise-threshold-zone model. Ring boundaries (the
+// two province-ring radii) carry free-passage 'gate' arcs; branches carry none (siege-only, via city nodes in §City).
+/** Terrain band thickness range in tiles (ADR-034 §2.2 DRAFT default: 5–11, independently randomized per band/point). */
+export const TERRAIN_BAND_WIDTH_MIN = 5;
+export const TERRAIN_BAND_WIDTH_MAX = 11;
+/** Free-passage gate width range in tiles on the two main province rings (ADR-034 §2.4 DRAFT default: 3–8). */
+export const RING_GATE_WIDTH_MIN = 3;
+export const RING_GATE_WIDTH_MAX = 8;
+/** Number of free-passage gates per main ring (DRAFT — doc pins the width range but not an exact count; several per ring per §2.4 "每处独立随机偏移"). */
+export const RING_GATE_COUNT_PER_RING = 5;
+/** Number of ink-river chords crossing the whole map (ADR-034 §2.2: "墨河两条"). */
+export const RIVER_CHORD_COUNT = 2;
+/** Free-passage gates per river chord (DRAFT: doc doesn't specify, but a fully impassable chord with zero crossings would be unplayable). */
+export const RIVER_GATE_COUNT_PER_CHORD = 4;
+/** Number of branches separating the 6 birth provinces from each other (ADR-034 §2.3: one per outer-sector boundary). */
+export const BRANCH_COUNT = 6;
+
+/** Distance in tiles from the map center to the square map boundary along the given angle. */
+function _edgeDistanceAtAngle(angle: number, cx: number, cy: number): number {
+  const cosA = Math.cos(angle);
+  const sinA = Math.sin(angle);
+  const tx = Math.abs(cosA) > 1e-9 ? cx / Math.abs(cosA) : Infinity;
+  const ty = Math.abs(sinA) > 1e-9 ? cy / Math.abs(sinA) : Infinity;
+  return Math.min(tx, ty);
+}
+
 /**
- * Fixed capitals + a single normalization radius for generation purposes (module-scope: SLG_MAP_W/H are
- * fixed constants, so this only needs computing once — ADR-032 follow-up).
- *
- * Every tile's `dr` is distance-to-its-own-nearest-capital, but normalized by ONE shared radius rather than
- * `capitalNormRadii` (half-nearest-neighbor-capital-distance): that per-capital radius is only ~50-65 tiles
- * here (10 capitals clustered within the inner 40% of a 500×500 map), while a Voronoi cell's actual extent
- * reaches much farther — an outer-ring capital's cell stretches out to the map corners (~250+ tiles). Using
- * the tiny inter-capital radius as the normalizer clamped almost the whole map to dr=1 (level 1), collapsing
- * the level-5+ share from the ADR-032 target of ~50% down to ~17%. Sampling the map's actual farthest-from-any-capital
- * distance gives a normalizer that matches each Voronoi cell's real size, restoring the intended level curve
- * while still keying the peak to each tile's own nearest capital (not the map's single geometric center).
+ * Ring-boundary terrain (ADR-034 §2.1/§2.2 main ridge/river ring): the boundary circle at `ringRatio` (of the
+ * map half-diagonal) is a continuous impassable band, angle-wobbled and variable-width, broken by several
+ * free-passage gate arcs. Returns null off the band, 'gate' inside a gate arc, 'obstacle' otherwise.
  */
-const GEN_CAPITALS = capitalPositions(SLG_MAP_W, SLG_MAP_H);
-const GEN_MAX_CAP_DIST = (() => {
-  const step = Math.max(1, Math.floor(Math.min(SLG_MAP_W, SLG_MAP_H) / 150)); // coarse sample, ~150×150 grid
-  let maxD = 0;
-  for (let y = 0; y < SLG_MAP_H; y += step) {
-    for (let x = 0; x < SLG_MAP_W; x += step) {
-      const idx = nearestCapitalIdx(x, y, GEN_CAPITALS);
-      const [cx, cy] = GEN_CAPITALS[idx]!;
-      const d = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2);
-      if (d > maxD) maxD = d;
+function _ringTerrainAt(x: number, y: number, seed: number, ringRatio: number, salt: number): 'obstacle' | 'gate' | null {
+  const angle = _angleOf(x, y);
+  const rNorm = _normRadius(x, y);
+  const wobble = (valueNoise(Math.cos(angle) * 40, Math.sin(angle) * 40, 1, seed ^ salt) - 0.5) * 0.02;
+  const effRatio = ringRatio + wobble;
+  const widthNoise = valueNoise(Math.cos(angle) * 60, Math.sin(angle) * 60, 1, seed ^ salt ^ 0x01);
+  const widthTiles = TERRAIN_BAND_WIDTH_MIN + widthNoise * (TERRAIN_BAND_WIDTH_MAX - TERRAIN_BAND_WIDTH_MIN);
+  const halfWidthRatio = (widthTiles / 2) / _MAP_HALF_DIAGONAL;
+  if (Math.abs(rNorm - effRatio) > halfWidthRatio) return null;
+  const r = effRatio * _MAP_HALF_DIAGONAL;
+  for (let g = 0; g < RING_GATE_COUNT_PER_RING; g++) {
+    const gateAngle = rand2(g, salt, seed ^ 0x02) * _TWO_PI;
+    const gateWidthTiles = RING_GATE_WIDTH_MIN + rand2(g, salt + 1, seed ^ 0x03) * (RING_GATE_WIDTH_MAX - RING_GATE_WIDTH_MIN);
+    const gateHalfAngle = (gateWidthTiles / 2) / Math.max(1, r);
+    let da = Math.abs(angle - gateAngle);
+    if (da > Math.PI) da = _TWO_PI - da;
+    if (da <= gateHalfAngle) return 'gate';
+  }
+  return 'obstacle';
+}
+
+/**
+ * River-chord terrain (ADR-034 §2.2 "墨河"): a near-straight line crossing the whole map through a
+ * near-center offset point, wobbled along its length, with a few free-passage gates.
+ */
+function _riverChordAt(x: number, y: number, seed: number, chordIdx: number): 'obstacle' | 'gate' | null {
+  const dirAngle = rand2(chordIdx, 0, seed ^ 0x0d01) * Math.PI;
+  const offset = (rand2(chordIdx, 1, seed ^ 0x0d02) - 0.5) * _MAP_HALF_DIAGONAL * 0.3;
+  const nx = Math.cos(dirAngle + Math.PI / 2);
+  const ny = Math.sin(dirAngle + Math.PI / 2);
+  const px = _MAP_CX + nx * offset;
+  const py = _MAP_CY + ny * offset;
+  const dirX = Math.cos(dirAngle);
+  const dirY = Math.sin(dirAngle);
+  const dx = x - px;
+  const dy = y - py;
+  const dist = Math.abs(dx * -dirY + dy * dirX); // perpendicular distance to the chord's centerline
+  const t = dx * dirX + dy * dirY; // position along the chord (used to vary wobble/width/gates along its length)
+  const meander = (valueNoise(t, chordIdx * 1000 + 500, 1 / 80, seed ^ 0x0d04) - 0.5) * 6;
+  const widthNoise = valueNoise(t, chordIdx * 1000, 1 / 50, seed ^ 0x0d03);
+  const widthTiles = TERRAIN_BAND_WIDTH_MIN + widthNoise * (TERRAIN_BAND_WIDTH_MAX - TERRAIN_BAND_WIDTH_MIN);
+  if (Math.abs(dist - meander) > widthTiles / 2) return null;
+  for (let g = 0; g < RIVER_GATE_COUNT_PER_CHORD; g++) {
+    const gateT = (rand2(g, chordIdx, seed ^ 0x0d05) - 0.5) * _MAP_HALF_DIAGONAL * 2;
+    const gateWidth = RING_GATE_WIDTH_MIN + rand2(g, chordIdx + 10, seed ^ 0x0d06) * (RING_GATE_WIDTH_MAX - RING_GATE_WIDTH_MIN);
+    if (Math.abs(t - gateT) <= gateWidth / 2) return 'gate';
+  }
+  return 'obstacle';
+}
+
+/**
+ * Branch terrain (ADR-034 §2.3 "支脉/支流"): 6 branches, one per outer-province 60° sector boundary, running
+ * from the outer/resource ring boundary outward to the map's square edge — separating the 6 birth provinces
+ * from each other. No free gates (only the siege gate-city nodes in `_worldCityNodes`, checked separately).
+ */
+function _isOnBranch(x: number, y: number, seed: number): boolean {
+  const rNorm = _normRadius(x, y);
+  if (rNorm <= PROVINCE_RESOURCE_OUTER_RADIUS_RATIO) return false;
+  const angle = _angleOf(x, y);
+  const rTiles = rNorm * _MAP_HALF_DIAGONAL;
+  for (let k = 0; k < BRANCH_COUNT; k++) {
+    const branchAngle = k * (_TWO_PI / BRANCH_COUNT);
+    let da = Math.abs(angle - branchAngle);
+    if (da > Math.PI) da = _TWO_PI - da;
+    const distToLine = rTiles * Math.sin(da);
+    const widthNoise = valueNoise(rTiles, k * 1000, 1 / 30, seed ^ 0x0e01 ^ k);
+    const widthTiles = TERRAIN_BAND_WIDTH_MIN + widthNoise * (TERRAIN_BAND_WIDTH_MAX - TERRAIN_BAND_WIDTH_MIN);
+    if (Math.abs(distToLine) <= widthTiles / 2) return true;
+  }
+  return false;
+}
+
+// ── Cities (ADR-034 §3): point-node siege targets, layered on top of the procedural terrain ──────────
+// Province capitals (state capitals, §3 "州府") are handled via `provinceCapitalPositions`; this section
+// covers the other two node kinds. Kept as plain ProceduralTile classifications (familyKeep/center) rather
+// than a separate node schema — garrison/HP numbers for cities-as-distinct-entities are explicitly an open
+// question in the design doc (§5), not yet pinned down, so this is the faithful MVP of the "structure is
+// locked, numbers are DRAFT" part of ADR-034.
+/** World-center city footprint side length (ADR-034 §3: "9×9 格"实体, same family as BASE_FOOTPRINT but larger — the core province's contested objective). */
+export const WORLD_CENTER_FOOTPRINT = 9;
+/** Per-outer-province graded city level tiers (ADR-034 §3: 2×3 + 2×4 + 2×5 + 1×6 + 1×7 + 1×8 = 9 cities/province, 54 total). */
+const _OUTER_GRADED_CITY_TIERS: readonly number[] = [3, 3, 4, 4, 5, 5, 6, 7, 8];
+/** Gate-city level (DRAFT — §3/§5 leaves city garrison/level numbers open; reuses the old max-level-minus-1 convention for siege points). */
+export const GATE_CITY_LEVEL = Math.max(2, SLG_MAP_MAX_LEVEL - 1);
+/** State-capital city level (DRAFT, same convention as GATE_CITY_LEVEL but max — a province's capital is its strongest city). */
+export const PROVINCE_CAPITAL_LEVEL = SLG_MAP_MAX_LEVEL;
+
+interface _CityNode { x: number; y: number; level: number; }
+
+const _cityNodeCache = new Map<number, readonly _CityNode[]>();
+
+/** Graded cities (54, §3) + gate cities (6–9, §2.3/§3) for a world, cached by seed. Excludes state capitals / world center (handled separately). */
+function _worldCityNodes(mapW: number, mapH: number, seed: number): readonly _CityNode[] {
+  const cached = _cityNodeCache.get(seed);
+  if (cached) return cached;
+  const cx = mapW / 2;
+  const cy = mapH / 2;
+  const halfDiag = Math.sqrt(cx ** 2 + cy ** 2);
+  const nodes: _CityNode[] = [];
+
+  // 54 graded cities: 9 per outer (birth) province, scattered within its ring band with a margin from the sector edges (branches).
+  for (let p = 0; p < 6; p++) {
+    const sectorWidth = _TWO_PI / 6;
+    const angleLo = p * sectorWidth + sectorWidth * 0.12;
+    const angleHi = (p + 1) * sectorWidth - sectorWidth * 0.12;
+    for (let ci = 0; ci < _OUTER_GRADED_CITY_TIERS.length; ci++) {
+      const salt = seed ^ 0x0f00 ^ (p * 100 + ci);
+      const angle = angleLo + rand2(p, ci, salt) * (angleHi - angleLo);
+      const rNorm = PROVINCE_RESOURCE_OUTER_RADIUS_RATIO + 0.05
+        + rand2(p, ci + 50, salt ^ 0x01) * (0.88 - PROVINCE_RESOURCE_OUTER_RADIUS_RATIO - 0.05);
+      const r = rNorm * halfDiag;
+      const x = Math.max(0, Math.min(mapW - 1, Math.round(cx + Math.cos(angle) * r)));
+      const y = Math.max(0, Math.min(mapH - 1, Math.round(cy + Math.sin(angle) * r)));
+      nodes.push({ x, y, level: _OUTER_GRADED_CITY_TIERS[ci]! });
     }
   }
-  return maxD;
-})();
+
+  // Gate cities on the 6 branches: longest 3 branches get 2 each, shortest 3 get 1 (ADR-034 §2.3).
+  const branches = Array.from({ length: BRANCH_COUNT }, (_, k) => {
+    const angle = k * (_TWO_PI / BRANCH_COUNT);
+    const ringR = PROVINCE_RESOURCE_OUTER_RADIUS_RATIO * halfDiag;
+    const edgeR = _edgeDistanceAtAngle(angle, cx, cy);
+    return { k, angle, ringR, len: Math.max(0, edgeR - ringR) };
+  });
+  const longBranchIdx = new Set([...branches].sort((a, b) => b.len - a.len).slice(0, 3).map((b) => b.k));
+  for (const b of branches) {
+    const count = longBranchIdx.has(b.k) ? 2 : 1;
+    for (let g = 0; g < count; g++) {
+      const salt = seed ^ 0x0f10 ^ (b.k * 10 + g);
+      const frac = 0.15 + rand2(b.k, g, salt) * 0.7; // not centered — random offset along the branch
+      const r = b.ringR + frac * b.len;
+      const x = Math.max(0, Math.min(mapW - 1, Math.round(cx + Math.cos(b.angle) * r)));
+      const y = Math.max(0, Math.min(mapH - 1, Math.round(cy + Math.sin(b.angle) * r)));
+      nodes.push({ x, y, level: GATE_CITY_LEVEL });
+    }
+  }
+
+  _cityNodeCache.set(seed, nodes);
+  return nodes;
+}
+
+// ── Per-ring level distribution (ADR-034 §4) ────────────────────────────────
+// Percent-by-level tables (must each sum to 100); a smooth noise value is mapped through the cumulative
+// distribution so same-region levels stay spatially continuous rather than randomly scattered per tile.
+const _LEVEL_DIST_OUTER: readonly number[] = [34, 26, 16, 10, 6, 4, 3, 1, 0, 0];
+const _LEVEL_DIST_RESOURCE: readonly number[] = [14, 10, 7, 6, 16, 14, 12, 9, 7, 5];
+const _LEVEL_DIST_CORE: readonly number[] = [3, 5, 6, 8, 8, 10, 12, 14, 16, 18];
+
+function _levelDistFor(kind: NationKind): readonly number[] {
+  if (kind === 'outer') return _LEVEL_DIST_OUTER;
+  if (kind === 'resource') return _LEVEL_DIST_RESOURCE;
+  return _LEVEL_DIST_CORE;
+}
+
+/** Maps a smooth noise value [0,1) to a tile level 1..SLG_MAP_MAX_LEVEL via the per-ring cumulative percent table (ADR-034 §4). */
+function _levelFromRing(kind: NationKind, noise: number): number {
+  const dist = _levelDistFor(kind);
+  const target = Math.max(0, Math.min(99.999, noise * 100));
+  let cum = 0;
+  for (let lvl = 1; lvl <= dist.length; lvl++) {
+    cum += dist[lvl - 1]!;
+    if (target < cum) return lvl;
+  }
+  return dist.length;
+}
 
 /**
  * Computes the procedural default tile for (worldId, x, y). Pure function, deterministic, never persisted.
- * Distribution rules (U6 + S8-6.6 + ADR-032 follow-up): unique tile at the map's geometric center (hegemony capital);
- * every other tile's `dr` is now its distance to its OWN nearest capital (Voronoi, §2.4), normalized by
- * GEN_MAX_CAP_DIST — level/keeps/strongholds peak near each nation's own capital and blocking terrain
- * (mountains/rivers) + gates concentrate toward each nation's border, not just the map's single geometric center.
+ * Distribution rules (ADR-034, 2026-07-05): a 9×9 world-center footprint (core province's hegemony objective);
+ * province capitals + graded/gate city nodes (siege points); ring-boundary/river/branch terrain bands (impassable,
+ * with free gates only on the two main province rings); otherwise a per-ring (outer/resource/core) level
+ * distribution table (§4) + the existing biome/stronghold/keep mechanics, now gated by distance to the tile's
+ * own province capital rather than the old nearest-capital Voronoi `dr`.
  */
 export function proceduralTile(world: string, x: number, y: number): ProceduralTile {
   const seed = worldSeed(world);
-  const cx = SLG_MAP_W / 2;
-  const cy = SLG_MAP_H / 2;
+  const mapW = SLG_MAP_W;
+  const mapH = SLG_MAP_H;
 
-  // world center (unique) — hegemony capital tile
-  if (x === Math.floor(cx) && y === Math.floor(cy)) {
+  // World-center 9×9 footprint (unique) — core province's hegemony capital / city.
+  const wcx = Math.floor(mapW / 2);
+  const wcy = Math.floor(mapH / 2);
+  const wcR = (WORLD_CENTER_FOOTPRINT - 1) / 2;
+  if (Math.abs(x - wcx) <= wcR && Math.abs(y - wcy) <= wcR) {
     return { type: 'center', level: SLG_MAP_MAX_LEVEL };
   }
 
-  const capIdx = nearestCapitalIdx(x, y, GEN_CAPITALS);
-  const [capX, capY] = GEN_CAPITALS[capIdx]!;
-  const distToCap = Math.sqrt((x - capX) ** 2 + (y - capY) ** 2);
-  const dr = Math.min(1, distToCap / GEN_MAX_CAP_DIST); // 0 = own capital .. 1 = the map's farthest-from-any-capital point
+  const caps = provinceCapitalPositions(mapW, mapH, seed);
+  const capIdx = capitalIdxAt(x, y, caps);
+  if (capIdx >= 0) {
+    return { type: 'familyKeep', level: PROVINCE_CAPITAL_LEVEL, resType: biomeAt(x, y, seed) };
+  }
 
-  // ── Blocking terrain + gates (S8-6.6 + ADR-032 follow-up) ────────────────────────────────
-  // Only generated away from capitals (dr ≥ obstacleMinDistRatio) — carves a safe zone around every capital and
-  // concentrates mountains/rivers toward each nation's border.
-  if (dr >= SLG_GEN.obstacleMinDistRatio) {
-    const obstNoise = valueNoise(x, y, SLG_GEN.obstacleFreq, seed ^ 0x0888);
-    if (obstNoise > SLG_GEN.obstacleThreshold) {
-      // Gate: high-peak location within the blocking zone (strategic corridor) — even sparser than obstacles.
-      const gateNoise = valueNoise(x, y, SLG_GEN.gateFreq, seed ^ 0x0999);
-      if (gateNoise > SLG_GEN.gateThreshold) {
-        return { type: 'gate', level: Math.max(2, SLG_MAP_MAX_LEVEL - 1) };
-      }
-      return { type: 'obstacle', level: 1 };
+  for (const node of _worldCityNodes(mapW, mapH, seed)) {
+    if (node.x === x && node.y === y) {
+      return { type: 'familyKeep', level: node.level, resType: biomeAt(x, y, seed) };
     }
   }
 
-  // Level: high at own capital → low at own nation's border (dominated by (1-dr)) + medium-frequency noise perturbation
-  const lvlNoise = valueNoise(x, y, SLG_GEN.levelFreq, seed ^ 0x0111);
-  let level = Math.round(Math.pow(1 - dr, SLG_GEN.levelFalloffExp) * (SLG_MAP_MAX_LEVEL - 1) + 1 + (lvlNoise - 0.5) * 1.5);
-  level = Math.max(1, Math.min(SLG_MAP_MAX_LEVEL, level));
+  // Terrain: 2 main province rings, then river chords, then birth-province branches — first match wins.
+  const ring1 = _ringTerrainAt(x, y, seed, PROVINCE_RESOURCE_OUTER_RADIUS_RATIO, 0x0a01);
+  if (ring1) return ring1 === 'gate' ? { type: 'gate', level: Math.max(2, SLG_MAP_MAX_LEVEL - 1) } : { type: 'obstacle', level: 1 };
+  const ring0 = _ringTerrainAt(x, y, seed, PROVINCE_CORE_RADIUS_RATIO, 0x0a02);
+  if (ring0) return ring0 === 'gate' ? { type: 'gate', level: Math.max(2, SLG_MAP_MAX_LEVEL - 1) } : { type: 'obstacle', level: 1 };
+  for (let c = 0; c < RIVER_CHORD_COUNT; c++) {
+    const river = _riverChordAt(x, y, seed, c);
+    if (river) return river === 'gate' ? { type: 'gate', level: Math.max(2, SLG_MAP_MAX_LEVEL - 1) } : { type: 'obstacle', level: 1 };
+  }
+  if (_isOnBranch(x, y, seed)) return { type: 'obstacle', level: 1 }; // branches have no free gates — only the gate-city nodes checked above
 
-  // Stronghold (G8 §3.1): extremely sparse high-strategic-value PvE tiles, guarded by overwhelmingly powerful system NPCs, only beyond a minimum distance from the center.
-  // Sparser than familyKeep, always max level, has a resource type (rich yield after conquest). Evaluated before familyKeep (higher priority).
-  // Per-tile uniform hash gate (NOT smooth value-noise): a Bernoulli(1-strongholdThreshold) draw per cell so strongholds are ISOLATED points at a
-  // deterministic ~0.3% density instead of large seed-dependent blobs (see SLG_GEN.strongholdThreshold rationale / ECONOMY_NUMBERS §13-SLG-STRONGHOLD).
+  // Province + per-ring level distribution (ADR-034 §4).
+  const provIdx = provinceIdxAt(x, y);
+  const kind = NATION_KIND_BY_IDX[provIdx]!;
+  const lvlNoise = valueNoise(x, y, SLG_GEN.levelFreq, seed ^ 0x0111);
+  const level = _levelFromRing(kind, lvlNoise);
+
+  // Stronghold / familyKeep spacing (unchanged mechanics), now measured from the tile's own province capital.
+  const [capX, capY] = caps[provIdx]!;
+  const distToCap = Math.sqrt((x - capX) ** 2 + (y - capY) ** 2) / _MAP_HALF_DIAGONAL;
   const strongholdRand = rand2(x, y, seed ^ 0x0555);
-  if (strongholdRand > SLG_GEN.strongholdThreshold && dr > SLG_GEN.strongholdMinDistRatio) {
+  if (strongholdRand > SLG_GEN.strongholdThreshold && distToCap > SLG_GEN.strongholdMinDistRatio) {
     return { type: 'stronghold', level: SLG_MAP_MAX_LEVEL, resType: biomeAt(x, y, seed) };
   }
-
-  // Strategic point / family stronghold: sparse high-peak, only beyond a minimum distance from center
   const keepNoise = valueNoise(x, y, SLG_GEN.keepFreq, seed ^ 0x0222);
-  if (keepNoise > SLG_GEN.keepThreshold && dr > SLG_GEN.keepMinDistRatio) {
-    return {
-      type: 'familyKeep',
-      level: Math.max(level, SLG_MAP_MAX_LEVEL - 1),
-      resType: biomeAt(x, y, seed),
-    };
+  if (keepNoise > SLG_GEN.keepThreshold && distToCap > SLG_GEN.keepMinDistRatio) {
+    return { type: 'familyKeep', level: Math.max(level, SLG_MAP_MAX_LEVEL - 1), resType: biomeAt(x, y, seed) };
   }
 
   // Resource tile vs neutral open land

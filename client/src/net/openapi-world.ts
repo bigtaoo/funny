@@ -925,7 +925,7 @@ export interface components {
             needed: number;
         };
         NationView: {
-            /** @description 0~9, index into CAPITAL_FRACTIONS */
+            /** @description 0~9, province index (6 outer + 3 resource + 1 core, ADR-034 angle-sector ring layout) */
             capitalIdx: number;
             x: number;
             y: number;

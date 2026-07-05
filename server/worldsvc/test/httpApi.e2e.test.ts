@@ -111,7 +111,8 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     expect(body.error.code).toBe('UNAUTHENTICATED');
   });
 
-  it('GET /world/map: procedural viewport + unique center tile', async () => {
+  it('GET /world/map: procedural viewport + 9×9 world-center footprint (ADR-034)', async () => {
+    // A ±2 (5×5) window around the exact map center sits entirely inside the 9×9 world-center footprint.
     const r = await fetch(`${base}/world/map?worldId=${W}&cx=${CENTER_X}&cy=${CENTER_Y}&r=2`, {
       headers: auth,
     });
@@ -119,7 +120,7 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     const body = await r.json();
     expect(body.ok).toBe(true);
     expect(body.data.tiles).toHaveLength(25);
-    expect(body.data.tiles.filter((tl: { type: string }) => tl.type === 'center')).toHaveLength(1);
+    expect(body.data.tiles.filter((tl: { type: string }) => tl.type === 'center')).toHaveLength(25);
   });
 
   it('POST /world/join (server auto-places base, §3.4) → /world/me joined, /world/tile base', async () => {

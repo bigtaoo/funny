@@ -7,6 +7,8 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   proceduralTile,
   tileId,
+  baseFootprintCells,
+  baseFootprintInBounds,
   SLG_MAP_W,
   SLG_MAP_H,
   VISION_BASE_RADIUS,
@@ -123,6 +125,25 @@ function findCoord(
 // ADR-032 follow-up: resourceDensity=1.0 means 'neutral' tiles no longer occur; any occupiable land is 'resource'.
 const NEUTRAL = (t: ReturnType<typeof proceduralTile>) => t.type === 'resource' || t.type === 'neutral';
 
+/** Spiral-search for a spawnable 3×3 base anchor near (sx,sy): whole footprint in-bounds + free of center/obstacle/gate/stronghold (mirrors joinWorld's footprintFree). */
+function findBaseCoord(sx: number, sy: number): { x: number; y: number } {
+  for (let r = 0; r < 80; r++) {
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dy = -r; dy <= r; dy++) {
+        const x = sx + dx;
+        const y = sy + dy;
+        if (!baseFootprintInBounds(x, y, SLG_MAP_W, SLG_MAP_H)) continue;
+        const blocked = baseFootprintCells(x, y).some((c) => {
+          const t = proceduralTile(W, c.x, c.y);
+          return t.type === 'center' || t.type === 'obstacle' || t.type === 'gate' || t.type === 'stronghold';
+        });
+        if (!blocked) return { x, y };
+      }
+    }
+  }
+  throw new Error('no spawnable base anchor found');
+}
+
 describe.skipIf(!mongo)('worldsvc fog/vision e2e (G5)', () => {
   const m = mongo!;
   let nowMs = 1_000_000;
@@ -187,18 +208,20 @@ describe.skipIf(!mongo)('worldsvc fog/vision e2e (G5)', () => {
     const fam = 'fam-1';
     socialsvc.addFamily(fam, 'a', 'Fam', 'FM');
     socialsvc.addMember('mate', fam);
+    const matePos = findBaseCoord(400, 400); // distant, beyond a's base vision range
     await svc.joinWorld(W, 'a', 5, 5);
-    await svc.joinWorld(W, 'mate', 400, 400); // distant, beyond a's base vision range
+    await svc.joinWorld(W, 'mate', matePos.x, matePos.y);
 
-    const view = await svc.getMap(W, 'a', 400, 400, 2);
-    const mateBase = view.tiles.find((t) => t.x === 400 && t.y === 400)!;
+    const view = await svc.getMap(W, 'a', matePos.x, matePos.y, 2);
+    const mateBase = view.tiles.find((t) => t.x === matePos.x && t.y === matePos.y)!;
     expect(mateBase).toMatchObject({ type: 'base', occupied: true, visible: true, ally: true });
     expect(mateBase.mine).toBeUndefined(); // belongs to ally, not me (ally=true tells the client to use ally color instead of enemy color)
 
     // Control: non-family e (distant) is still fogged.
-    await svc.joinWorld(W, 'e', 280, 280);
-    const v2 = await svc.getMap(W, 'e', 400, 400, 2); // from e's perspective, mate's base → fog
-    expect(v2.tiles.find((t) => t.x === 400 && t.y === 400)!.visible).toBe(false);
+    const ePos = findBaseCoord(280, 280);
+    await svc.joinWorld(W, 'e', ePos.x, ePos.y);
+    const v2 = await svc.getMap(W, 'e', matePos.x, matePos.y, 2); // from e's perspective, mate's base → fog
+    expect(v2.tiles.find((t) => t.x === matePos.x && t.y === matePos.y)!.visible).toBe(false);
   });
 
   it('march in transit illuminates path: tiles near the mid-march position are visible even outside base vision', async () => {

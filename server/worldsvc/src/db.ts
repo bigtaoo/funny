@@ -315,8 +315,8 @@ export interface SiegeDamageDoc {
 export interface NationDoc {
   _id: string;            // `nation:{worldId}:{capitalIdx}`
   worldId: string;
-  capitalIdx: number;     // 0~9, index into CAPITAL_FRACTIONS
-  x: number;              // capital tile x (computed by capitalPositions, written at season open)
+  capitalIdx: number;     // 0~9, province index (6 outer + 3 resource + 1 core, ADR-034)
+  x: number;              // capital tile x (computed by provinceCapitalPositions, written at season open)
   y: number;
   ownerId?: string;       // occupying accountId
   familyId?: string;      // occupying family
