@@ -282,7 +282,10 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
     private renderInstanceCell(inst: EquipmentInstance, x: number, y: number, cellW: number, equipped: boolean, count = 1): void {
       const pad = 8;
       const color = RARITY_COLOR[inst.rarity];
-      const cell = sketchPanel(cellW, EQUIP_CELL_H, { fill: 0xfaf9f5, border: equipped ? color : C.mid, seed: seedFor(x, y, cellW) });
+      // Border always encodes rarity (equipped or not) so the color language is consistent
+      // across the Equipped strip and the Bag grid — it used to fall back to neutral grey
+      // for unequipped items, which made rarity only readable via the text label.
+      const cell = sketchPanel(cellW, EQUIP_CELL_H, { fill: 0xfaf9f5, border: color, seed: seedFor(x, y, cellW) });
       cell.x = x; cell.y = y;
       this.bodyLayer.addChild(cell);
 

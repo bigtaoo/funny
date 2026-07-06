@@ -65,8 +65,8 @@ export const SECTION_H = 20;  // section divider (Equipped / Bag)
 // Inventory grid: icon-card cells (name top / glyph left / rarity+level right)
 // packed into columns sized to the wide (1920) landscape canvas.
 export const CELL_GAP = 12;
-export const EQUIP_CELL_H = 118; // glyph frame = EQUIP_CELL_H - pad*2 - 24; 118 -> 78px frame (1.5x the old 52px)
-export const EQUIP_CELL_W_TARGET = 320;
+export const EQUIP_CELL_H = 177; // 1.5x the previous 118 (unified with CARD_CELL_H in CardScene.ts)
+export const EQUIP_CELL_W_TARGET = 480; // 1.5x the previous 320 (unified with CARD_CELL_W_TARGET in CardScene.ts)
 // Craft grid: same column sizing as the inventory grid, a bit taller to fit
 // the cost chips + craft button beneath the glyph.
 export const CRAFT_CELL_H = 116;
@@ -74,11 +74,16 @@ export const CRAFT_CELL_H = 116;
 export const SLOTS: readonly EquipSlot[] = ['weapon', 'armor', 'trinket'];
 export const TRACKED_MATERIALS = ['scrap', 'lead', 'binding'] as const;
 
-/** Rarity → accent color (shared visual language with gacha/collection; fine uses ink-blue). */
+/**
+ * Rarity → accent color (shared visual language with gacha/collection).
+ * Ascending grey → green → blue → purple so a higher tier always reads as
+ * "more important" than a lower one (previously rare was orange, which read
+ * louder/higher than epic's purple — inverted the intended hierarchy).
+ */
 export const RARITY_COLOR: Record<EquipRarity, number> = {
   common: 0x9aa0a6,
-  fine: 0x4477cc,
-  rare: 0xe08a2c,
+  fine: 0x4a9e4a,
+  rare: 0x4477cc,
   epic: 0xaa55cc,
 };
 
@@ -234,12 +239,13 @@ export class EquipmentSceneBase {
       icon: m,
       color: MAT_COLOR[m],
       amount: save.materials[m] ?? 0,
+      label: t(`material.${m}` as TranslationKey),
     }));
     const count = Object.keys(save.equipmentInv).length;
     drawHeaderCurrency(this.headerOverlayLayer, this.w, HUD_H, save.wallet.coins, chips, {
       text: `${count}/${EQUIPMENT_INV_CAP}`,
       color: count >= EQUIPMENT_INV_CAP ? C.red : C.mid,
-    });
+    }, 2);
   }
 
   /**

@@ -37,11 +37,11 @@
   | 稀有度 | 媒材皮 | 词条数（细化见 §7.2） | 体感 |
   |---|---|---|---|
   | 普通 Common | 铅笔（灰） | 1 | 关卡常掉 |
-  | 精良 Fine | 钢笔（蓝） | 1–2 | 中期 |
-  | 稀有 Rare | 马克笔（橙*） | 3 | 后期/Boss |
-  | 史诗 Epic | 荧光笔 / 烫金 | 3 + 特技 | 极稀有，鲸鱼向 |
+  | 精良 Fine | 钢笔（绿） | 1–2 | 中期 |
+  | 稀有 Rare | 马克笔（蓝） | 3 | 后期/Boss |
+  | 史诗 Epic | 荧光笔 / 烫金（紫） | 3 + 特技 | 极稀有，鲸鱼向 |
 
-  > \* 橙 = `legendary` 稀有度色 `#e08a2c`（见最近提交，稀有度色统一）。具体稀有度↔颜色取值由渲染层 `theme.ts` 定，本文不写死。
+  > 稀有度色改为灰→绿→蓝→紫的递进序（2026-07-06，见下方"稀有度配色+图标卡走查修复"）：此前 rare 用橙、epic 用紫，橙比紫更抓眼，读起来 rare 反而比 epic 更"高级"，与稀有度顺序相悖。具体取值见 `client/src/scenes/EquipmentScene/base.ts` 的 `RARITY_COLOR`，本文不写死。
 
 数值骨架（§6 的 9 级强化）与外壳解耦：文具只是它的"皮"。
 
@@ -474,7 +474,7 @@ buildSiegeBlueprints(levels, equipped, inv)
 落地 = `client/src/scenes/EquipmentScene.ts`（689 行，单场景双 Tab）+ `client/src/game/meta/equipmentDefs.ts`（目录/数值客户端镜像）+ 视图接线（`AppViews.showEquipment` / `app.ts` PixiAppViews / `createAppCore.goEquipment` / `HeadlessAppViews`）+ 入口（`CampaignMapScene` 顶栏「装备」按钮，仅在线）+ i18n 三语（zh/en/de，`equip.*` / `campaign.equipment` / `affix.*` / `rarity.fine`）。`platform/uuid.ts` 的 `genUuid` 导出供 idempotencyKey 生成。关键决策：
 
 1. **客户端目录镜像（不 import `@nw/shared`）**：客户端 webpack 只 alias `@nw/engine`（零依赖），`@nw/shared` 带 mongodb/jsonwebtoken 无法打包。故 UI 展示所需的「目录 EQUIPMENT_DEFS / 合成成本 craftCost / 强化成功率·成本 enhanceSuccessRate·enhanceCost / 分解返还 salvageRefund / 上限常量」在 `equipmentDefs.ts` 镜像一份（与 `SaveData.ts` 同纪律：**改字段三处同步** 本文件 ↔ `server/shared/src/equipment.ts`）。主词条放大系数 `ENHANCE_COEFF_PER_LEVEL` 直接从 `@nw/engine` 取，不重复。**服务器仍是唯一权威**：UI 据镜像**预览**成本/成功率，真实扣费/掷骰以回推 SaveData 为准。
-2. **单场景双 Tab（背包/锻造）**：仿 `AuctionScene` 结构——静态 header + `bodyLayer` 重绘 + 拖拽滚动 + modal 叠层 + toast + 错误码映射。背包 tab 顶部三槽 global loadout 带 + 实例列表（按稀有度色 §2/最近稀有度色统一：common 灰 / fine 墨蓝 / rare 橙 `#e08a2c` / epic 紫）；点实例开详情 modal（强化预览成功率+成本 / 穿戴·卸下 / 分解，受 +5·穿戴·锁定门控）。锻造 tab 列可合成 12 件中有 craftCost 者 + 成本 + 合成按钮（满仓/材料不足置灰）。
+2. **单场景双 Tab（背包/锻造）**：仿 `AuctionScene` 结构——静态 header + `bodyLayer` 重绘 + 拖拽滚动 + modal 叠层 + toast + 错误码映射。背包 tab 顶部三槽 global loadout 带 + 实例列表（按稀有度色 §2/2026-07-06 稀有度色统一：common 灰 / fine 绿 / rare 蓝 / epic 紫）；点实例开详情 modal（强化预览成功率+成本 / 穿戴·卸下 / 分解，受 +5·穿戴·锁定门控）。锻造 tab 列可合成 12 件中有 craftCost 者 + 成本 + 合成按钮（满仓/材料不足置灰）。
 3. **服务器权威贯穿（L2）**：场景只发意图、读回执；每动作后 `saveManager.adoptServer(save)` 重读重绘（被分解的实例自动关详情）。错误码 → i18n 全映射（INSUFFICIENT_MATERIALS/FUNDS、INVENTORY_FULL、ENHANCE_MAX_LEVEL、NOT_SALVAGEABLE、INVALID_SLOT、EQUIP_LOCKED、EQUIP_IN_USE → `equip.err.*`）。每个 craft/enhance/salvage 自生成 `genUuid()` idempotencyKey（穿戴 equip 纯状态无 key）。
 4. **入口门控 + 埋点**：从战役地图进入（装备是 PvE 成长线，§0），**仅 `api` 在线时挂入口**（强化掷骰/扣费/库存皆服务器权威，离线无意义）。埋点对齐 §19：`equip_craft`/`equip_enhance`（含 from_level/success）/`equip_salvage`/`equip_equip` + `screen_view`。
    - ⚠️ **本切片范围**：交付 E5 背包/锻造/强化/分解/穿戴 UI（单件分解；批量分解走同端点但 UI 暂单选）。**关卡掉落 faucet（E2 剩余）、E6 洗练 UI、E7 抽卡/保护道具、E8 SLG 接入、按兵种 loadout（§3.1 byUnit，UI 暂只 global）、装备 bone-slot 立绘叠加（§2/§11，占位文字）不在本切片**。验证：client `tsc --noEmit` + webpack 生产构建全绿。
@@ -490,6 +490,8 @@ buildSiegeBlueprints(levels, equipped, inv)
 **图标放大 + 已装备可读性修复**（2026-07-05 追加）：走查截图发现三处问题并修复：① 库存格图标偏小——`EQUIP_CELL_H` 92→118，图标框（`imgBox = EQUIP_CELL_H - pad*2 - 24`）随之从 52px 放大到 78px（1.5 倍），列数/列宽仍按常量动态算，无需改布局逻辑；② 「已装备/背包」分区标题字号 10px 浅灰在纸纹背景下辨识度太低，改 12px 加粗深色，分隔线加粗加深；③ 已装备格只显示 `[已装备]`，同名同稀有度的武器/护具/饰品并排时分不清各自槽位，改为 `[已装备 · 武器]` 等带槽位名。三处均在 `EquipmentScene/base.ts` + `EquipmentScene/inventory.ts`，`tsc --noEmit` 验证。
 
 **分区标题错位修复**（2026-07-06 追加）：`renderSectionHeader`（`EquipmentScene/inventory.ts`）此前把「已装备/背包」分区标题硬编码在 `x=14`，紧贴屏幕最左侧、压在侧栏导航上；改为与物品网格同一起点 `marginLineX(w) + CELL_GAP`，分区标题与其下的图标卡网格左对齐。`tsc --noEmit` 验证。
+
+**稀有度配色 + 图标卡放大 + 资源条加标签**（2026-07-06 追加）：走查截图发现四处问题并修复：① 稀有度色 `RARITY_COLOR`（`EquipmentScene/base.ts`）此前 rare 用橙 `#e08a2c`、epic 用紫，橙比紫更抓眼，读起来 rare 反而"高级感"超过 epic；改为灰→绿→蓝→紫的递进序（common 灰不变 / fine 绿 `#4a9e4a` / rare 蓝 `#4477cc` / epic 紫不变），恢复稀有度视觉层级；② 背包格 `renderInstanceCell` 此前只有已装备的格子描边用稀有度色，未装备格退回中性灰，同一套颜色语言在背包区断掉；改为描边始终用稀有度色；③ **图标卡尺寸统一+放大 1.5x**：装备格 `EQUIP_CELL_H/EQUIP_CELL_W_TARGET`（118×320）与角色卡 `CardScene` 的 `CARD_CELL_H/CARD_CELL_W_TARGET`（118×360）此前不一致，且都偏小；统一改为 177×480（=118×1.5，两个常量目标宽都取 480），背包材料格复用同一装备格组件，无需单改；④ **头部资源条加标签+放大 2x**：`drawHeaderCurrency`（`ui/widgets/SceneHeader.ts`）此前只有图标+裸数字，新玩家看不出图标含义；每个 chip（金币/碎屑/铅芯/装订线）加短文字标签，并给 Equipment/CardScene 两处调用传新增的 `scale=2` 参数把图标/字号/间距整体放大（栏高不变，仍在 50px 头部内居中；`FriendsScene` 等其余调用方 `scale` 默认 1，不受影响）。四处均 `tsc --noEmit` 验证，未起 preview 截图。
 
 #### E2 掉落 faucet + E6 洗练 实现记录（2026-06-22，✅）
 
