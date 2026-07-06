@@ -111,16 +111,14 @@
     <input type="text" id="world-seed" value="preview">
     <button id="btn-regen" class="primary" data-i18n="toolbar.regenerate">Regenerate</button>
     <span class="spacer"></span>
-    <button class="tool active" data-tool="select" id="tool-select" data-i18n="tool.select.label" data-i18n-title="tool.select.title" title="Click a point to drag it, click a path to select it">Select</button>
-    <button class="tool" data-tool="river" id="tool-river" data-i18n="tool.river.label" data-i18n-title="tool.river.title" title="Drag to paint terrain live (click for a single dot), Esc to cancel the stroke">River</button>
-    <button class="tool" data-tool="mountain" id="tool-mountain" data-i18n="tool.mountain.label" data-i18n-title="tool.mountain.title" title="Drag to paint terrain live (click for a single dot), Esc to cancel the stroke">Mountain</button>
+    <button class="tool active" data-tool="river" id="tool-river" data-i18n="tool.river.label" data-i18n-title="tool.river.title" title="Click or drag to paint river tiles under the brush">River</button>
+    <button class="tool" data-tool="mountain" id="tool-mountain" data-i18n="tool.mountain.label" data-i18n-title="tool.mountain.title" title="Click or drag to paint mountain tiles under the brush">Mountain</button>
+    <button class="tool" data-tool="eraser" id="tool-eraser" data-i18n="tool.eraser.label" data-i18n-title="tool.eraser.title" title="Click or drag to clear painted tiles back to procedural terrain">Eraser</button>
     <button class="tool" data-tool="city" id="tool-city" data-i18n="tool.city.label" data-i18n-title="tool.city.title" title="Drag a city marker to move it (footprint stays the same)">City</button>
     <button class="tool" data-tool="pan" id="tool-pan" data-i18n="tool.pan.label" data-i18n-title="tool.pan.title" title="Drag to pan the camera (also: middle-mouse-drag in any tool)">Pan</button>
     <label for="brush-width" data-i18n="toolbar.width">Brush Size</label>
     <input type="number" id="brush-width" min="1" max="20" value="8">
-    <button id="btn-undo-point" data-i18n="toolbar.undoPoint" data-i18n-title="toolbar.undoPoint.title" title="Remove the last point from the stroke being painted (Backspace)">Undo Point</button>
-    <button id="btn-delete-path" class="danger" disabled data-i18n="toolbar.deletePath" data-i18n-title="toolbar.deletePath.title" title="Delete selected path (Delete)">Delete Path</button>
-    <button id="btn-clear-paths" data-i18n="toolbar.clearAll" data-i18n-title="toolbar.clearAll.title" title="Remove all river/mountain paths">Clear All</button>
+    <button id="btn-clear-paths" data-i18n="toolbar.clearAll" data-i18n-title="toolbar.clearAll.title" title="Clear all painted terrain tiles">Clear All</button>
     <button id="btn-reset-cities" data-i18n="toolbar.resetCities" data-i18n-title="toolbar.resetCities.title" title="Reset all city positions back to the generated defaults">Reset Cities</button>
     <button id="btn-center" data-i18n="toolbar.centerView" data-i18n-title="toolbar.centerView.title" title="Re-center the camera on the map">Center View</button>
     <span class="spacer"></span>
@@ -139,10 +137,9 @@
         <div class="legend" id="legend"></div>
         <div class="insp-title" data-i18n="insp.tile">Tile</div>
         <div id="tile-info" class="hint" data-i18n="tile.hoverHint">Hover the map to inspect a tile.</div>
-        <div class="insp-title" id="paths-title">Paths (0)</div>
-        <div class="path-list" id="path-list"></div>
-        <div class="hint" data-i18n="hint.pathsAndPan">画河流/山脉：选中 River/Mountain 工具后在地图上点击加点，双击或回车结束路径，Esc 取消。Select 工具下拖动端点、点击路径选中后可删除。地图现在是真实贴图的等距相机视角（跟游戏内一样）：Pan 工具或任意工具下按住中键拖动可平移，滚轮/Zoom 滑块缩放。</div>
-        <div class="insp-title" data-i18n="insp.pathsJson">Paths — Export / Import JSON</div>
+        <div class="insp-title" id="paths-title">Painted Terrain (0 tiles)</div>
+        <div class="hint" data-i18n="hint.pathsAndPan">刷河流/山脉：选中 River/Mountain 工具，设置笔刷大小（格数），然后在地图上点击或拖动直接刷地形——跟图片编辑器的笔刷一样，刷到哪个格子哪个格子就立刻变成当前地形。Eraser 工具把刷过的格子清回程序化地形。地图是真实贴图的等距相机视角（跟游戏内一样）：Pan 工具或任意工具下按住中键拖动可平移，滚轮/Zoom 滑块缩放。</div>
+        <div class="insp-title" data-i18n="insp.pathsJson">Terrain — Export / Import JSON</div>
         <textarea id="json" spellcheck="false"></textarea>
         <div class="json-bar">
           <button id="btn-export" data-i18n="io.export">Export →</button>
