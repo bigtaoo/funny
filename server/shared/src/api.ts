@@ -76,6 +76,9 @@ export const ErrorCode = {
   // —— character card system (CC-5, CHARACTER_CARDS_DESIGN §11) ——
   CARD_NOT_FOUND: 'CARD_NOT_FOUND',                 // card instance not found in cardInv
   CARD_HAS_GEAR: 'CARD_HAS_GEAR',                   // card has equipped gear; must unequip before listing on auction
+  // —— skin trading (auction task2, AUCTION_DESIGN §2.1/§9) ——
+  SKIN_NOT_FOUND: 'SKIN_NOT_FOUND',                 // account does not own this skin id
+  SKIN_IN_USE: 'SKIN_IN_USE',                       // skin is currently equipped → may not be listed
   // —— PvE anti-cheat (S4-4) ——
   ACCOUNT_BANNED: 'ACCOUNT_BANNED',                 // replay re-computation rejected three times — account banned
   // —— compliance (C5) ——
@@ -171,6 +174,8 @@ export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.NOT_IN_WORLD]: 403,
   [ErrorCode.CARD_NOT_FOUND]: 404,
   [ErrorCode.CARD_HAS_GEAR]: 409,
+  [ErrorCode.SKIN_NOT_FOUND]: 404,
+  [ErrorCode.SKIN_IN_USE]: 409,
   [ErrorCode.POOL_UNAVAILABLE]: 404,
   [ErrorCode.FATE_INSUFFICIENT]: 402,
   [ErrorCode.FATE_INVALID_ITEM]: 400,

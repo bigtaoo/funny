@@ -11,7 +11,7 @@
 ## 0. TL;DR
 
 - **拍卖行 = 和角色卡/装备/材料/皮肤四类养成物品绑定的大区内全服市场**：与 SLG 的 worldId/赛季生命周期无关（2026-07-06 拍板定稿，详见 §9），单一机制覆盖「公开市场」与「点对点定向交易」（挂单时指定受拍人）。
-- **可交易品 = 材料 + 装备（A ✅）+ 角色卡（CC-5 ✅）+ 皮肤（设计中，见 §2.1/§9 任务2）**（PvE/SLG 统一养成材料 `scrap/lead/binding` + 锻造装备实例/角色卡实例/皮肤，整件托管转移）；**SLG 赛季资源（粮/铁/木）本就不在拍卖标的范围内**（那是大世界内政资源，随赛季重置，从未支持挂拍）。
+- **可交易品 = 材料 + 装备（A ✅）+ 角色卡（CC-5 ✅）+ 皮肤（meta 托管能力 ✅ 已实现，拍卖流程接入待 §9 任务4）**（PvE/SLG 统一养成材料 `scrap/lead/binding` + 锻造装备实例/角色卡实例/皮肤，整件托管转移）；**SLG 赛季资源（粮/铁/木）本就不在拍卖标的范围内**（那是大世界内政资源，随赛季重置，从未支持挂拍）。
 - **计价货币 = 金币（coins，跨季留存的 premium 货币）**；系统抽 **10% 手续费**；**禁止以赛季资源/局内 ink 计价**（防与天梯/付费体系串味）。
 - **承重墙**：拍卖行不碰战斗/地图，是纯经济子系统——挂存与发放走 **meta 材料库 + 装备库 + 角色卡库（+ 皮肤库，待建）**（幂等 orderId），扣款/收款走 **commercial 金币钱包**，状态机权威**目前**在 worldsvc `auctions` 集合，**拆分完成后**迁至独立服务 `auctionsvc`（见 §9）。
 - **反 RMT 是持续对抗**（R3）：10% 高税 + 并发挂单上限 + 每日限额（C ✅）+ 绑定材料禁挂（E ✅，清单暂空）+ 价格护栏动态滑窗（G ✅）+ 异常模式 admin 审计（D ✅ admin G7 已接，pull 式扫描）。
@@ -27,7 +27,7 @@
 |---|---|---|
 | 唯一交易机制 | 全游戏交易只走拍卖行；无独立「邮寄/转账/摆摊」系统 | 拍板 |
 | 点对点交易 | = 挂单时填 `designatedBuyerId`，仅该账号可拍下；无独立转移系统 | 拍板 |
-| 可交易品 | 材料（scrap/lead/binding）+ 装备 + 角色卡 + 皮肤（设计中，见 §2.1）；**SLG 赛季资源（粮/铁/木）从不在拍卖标的范围** | §2.1 |
+| 可交易品 | 材料（scrap/lead/binding）+ 装备 + 角色卡 + 皮肤（meta 托管能力已备，拍卖流程接入待任务4，见 §2.1）；**SLG 赛季资源（粮/铁/木）从不在拍卖标的范围** | §2.1 |
 | 计价 | 仅金币 coins（跨季 premium 货币）；禁赛季资源/ink 计价 | ECONOMY_BALANCE |
 | 手续费 | 成交价 10%（coin），系统回收（sink） | 拍板 |
 | 进程归属 | 拍卖是**独立服务 `auctionsvc`**（meta 层，全服单实例，欧美/中国各自部署一份）；扣发金币→commercial；挂发材料/装备/角色卡/皮肤→meta。**当前实现仍挂靠 worldsvc，迁移中，见 §9 任务3/4** | 2026-07-06 拍板 |
@@ -35,7 +35,7 @@
 
 **信任边界**：成交全在服务器权威（客户端只读挂单列表 + 发起意图）；价格/库存/扣发全服务器校验，伪造无效（§11 反作弊）。
 
-> **皮肤交易**：所需的托管能力目前不存在（metaserver 尚无 `escrowSkin`/`grantSkin`），见 §9 拍卖任务2；在其落地前 §2.1 的 `skin` 行仅为设计，不可用。
+> **皮肤交易**：metaserver 托管能力（`escrowSkin`/`grantSkin`）已实现（2026-07-06，§9 任务2）；但拍卖行 `auctionService` 尚未接入 `itemType='skin'` 分支，实际挂拍仍不可用，见 §9 任务4。
 
 ---
 
@@ -48,7 +48,7 @@
 | `material` | `{material: 'scrap'\|'lead'\|'binding'\|…}` | meta `deductMaterial(seller, mat, qty, orderId)` | 系统邮件附件 `{kind:'material', id, count}` | ✅ 实跑 |
 | `equipment` | 挂单入参 `{instanceId}`；存储 `{instance: 完整快照}`（qty 恒 1） | meta `escrowEquipment(seller, instanceId, orderId)`（移出库存回快照） | 系统邮件附件 `{kind:'equipment', instance}`（领取按 id 写回 `equipmentInv`） | ✅ 实跑（A） |
 | `card` | 挂单入参 `{instanceId}`；存储 `{instance: 完整快照}`（qty 恒 1） | meta `escrowCard(seller, instanceId, orderId)`（校验 gear 全空后移出 cardInv） | 系统邮件附件 `{kind:'card', instance}`（领取按 id 写回 `cardInv`） | ✅ 实跑（CC-5） |
-| `skin` | 挂单入参 `{skinId}`；存储 `{skinId}`（qty 恒 1，皮肤无等级/词条，无需实例快照） | meta `escrowSkin(seller, skinId, orderId)`（校验拥有且未装备中后 `$pull` 摘除） | 系统邮件附件 `{kind:'skin', skinId}`（领取按 id `$addToSet` 写回 `inventory.skins`） | ⚠️ 设计中，托管能力未建，见 §9 任务2 |
+| `skin` | 挂单入参 `{skinId}`；存储 `{skinId}`（qty 恒 1，皮肤无等级/词条，无需实例快照） | meta `escrowSkin(seller, skinId, orderId)`（校验拥有且未装备中后 `$pull` 摘除） | 系统邮件附件 `{kind:'skin', skinId}`（领取按 id `$addToSet` 写回 `inventory.skins`） | meta 托管能力 ✅ 已实现（2026-07-06，§9 任务2）；拍卖流程接入待 §9 任务4 |
 
 - **挂单即托管 + escrow-out 邮件出账**：挂单时立刻从卖方库存移出标的（托管在挂单文档里，拍卖期间背包不可见/不可用），避免「挂着卖但库存已被花掉」的超卖。**所有出账——成交发给买家、撤单/过期/季末退回卖家——一律通过系统邮件附件下发，收件人领取后才入库**（装备/卡附件携带完整实例快照）。金币侧（卖方收款、竞拍退款）仍直接走 commercial。设计依据见 EQUIPMENT_DESIGN §13。
 - **qty/price**：`price` = 每件单价（金币），`totalPrice = price × qty`；材料按堆叠数量挂，装备 v1 单件挂（qty=1，A 节细化）。
@@ -323,16 +323,17 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
   - 新增小节说明"皮肤交易需要的托管能力目前不存在，见任务2"。
 - **验收**：文档内部无残留 worldId/大区隔离/赛季结算相关表述；`grep -n worldId design/game/AUCTION_DESIGN.md` 应无命中（除本任务清单本身的历史说明性文字外）。
 
-### 拍卖任务2：metaserver 新增皮肤托管能力
+### 拍卖任务2：metaserver 新增皮肤托管能力 ✅（2026-07-06）
 
-- [ ] **依赖**：任务1 定稿（皮肤交易范围以任务1的 §2.1 为准）。
-- **主要文件**：新建 `server/metaserver/src/skin.ts`；`server/metaserver/src/internal/economyRoutes.ts`（或新建 `skinRoutes.ts`）；`server/shared/src/types.ts`（`SaveData.inventory.skins` 保持 `string[]`，不升级成实例，皮肤本身无等级/词条）。
-- **改动范围**：
-  - `escrowSkin(cols, accountId, skinId, orderId)`：校验 `skins` 数组包含该 id 且未装备中（`equipped` 里没有引用该 skinId）→ 原子 `$pull` 摘除 + 幂等表记录 orderId。
-  - `grantSkin(cols, accountId, skinId, orderId)`：`$addToSet` 写回（幂等，重放安全）。
-  - 新增内部路由 `POST /internal/skins/escrow`、`POST /internal/skins/grant`，鉴权复用现有 `x-internal-key` 模式（照抄 `economyRoutes.ts` 里 equipment 那两个 handler 的写法）。
-  - 错误码：`SKIN_IN_USE`（装备中禁挂）、`SKIN_NOT_FOUND`（未拥有）。
-- **验收**：metaserver e2e 新增皮肤 escrow/grant 用例（参照 `test/equipment.e2e.test.ts` 的结构）；全 metaserver 测试绿。
+- [x] **依赖**：任务1 定稿（皮肤交易范围以任务1的 §2.1 为准）。
+- **主要文件**：新建 `server/metaserver/src/skin.ts`；`server/metaserver/src/internal/economyRoutes.ts`；`server/shared/src/mongo.ts`（复用 `equipmentIdem` 集合，`op` 联合类型加 `'skin_escrow'`）；`server/shared/src/api.ts`（新增错误码）。`SaveData.inventory.skins` 未改动，仍是 `string[]`。
+- **实现**：
+  - `escrowSkin(cols, now, accountId, skinId, orderId)`：校验 `inventory.skins` 包含该 id 且未装备中（`equipped` 各槽值均不等于该 skinId）→ rev 守卫原子写回去掉该 id 的数组 + `equipmentIdem` 记录 `orderId`（`op:'skin_escrow'`）幂等，重放直接返回首次结果。
+  - `grantSkin(cols, now, accountId, skinId)`：已拥有则直接返回（`$addToSet` 等价的天然幂等），否则 rev 守卫原子追加。
+  - 新增内部路由 `POST /internal/skins/escrow`、`POST /internal/skins/grant`（`server/metaserver/src/internal/economyRoutes.ts`），鉴权复用 `x-internal-key`，照抄 equipment 两个 handler 的写法。
+  - 错误码：`SKIN_IN_USE`（409，装备中禁挂）、`SKIN_NOT_FOUND`（404，未拥有）。
+- **未做的**：幂等表复用已有 `equipmentIdem` 集合（未新建 `skinIdem`），因为其结构（`_id/accountId/op/result/expireAt` + TTL）与皮肤场景完全一致，新建纯属重复；不影响 §9 任务4 迁移（迁移时随其余 idem 表一起搬到 auctionsvc 库）。
+- **验收**：`server/metaserver/test/skin.e2e.test.ts` 新增 6 条用例（挂存移除/发放写回/两者幂等/未拥有 404/装备中 409）；`npm test --workspace @nw/metaserver` 全绿（41 files / 513 tests）。
 
 ### 拍卖任务3：新建 `server/auctionsvc/` 服务骨架
 

@@ -307,13 +307,14 @@ export interface CardIdemDoc {
 export interface EquipmentIdemDoc {
   _id: string; // idempotencyKey / orderId
   accountId: string;
-  op: 'craft' | 'escrow' | 'enhance' | 'salvage' | 'reforge';
+  op: 'craft' | 'escrow' | 'enhance' | 'salvage' | 'reforge' | 'skin_escrow';
   /**
    * Snapshot of the first execution result, replayed verbatim on retry:
-   *   craft   → produced instance (EquipmentInstance)
-   *   escrow  → snapshot of the escrowed instance
-   *   enhance → { success, instance } (dice roll result + enhanced instance, E3)
-   *   salvage → { refunded } (total materials returned, E3)
+   *   craft       → produced instance (EquipmentInstance)
+   *   escrow      → snapshot of the escrowed instance
+   *   enhance     → { success, instance } (dice roll result + enhanced instance, E3)
+   *   salvage     → { refunded } (total materials returned, E3)
+   *   skin_escrow → { skinId } (auction task2, AUCTION_DESIGN §2.1/§9)
    */
   result: unknown;
   expireAt: Date; // BSON Date, TTL anchor
