@@ -7,7 +7,13 @@ import { defineConfig } from 'vitest/config';
 // running (see server/dev-up.ps1 / docker compose). Named *.e2e.ts so the default
 // `npm test` (test/**/*.test.ts) never picks it up.
 export default defineConfig({
-  resolve: { alias: { '@nw/engine': path.resolve(__dirname, '../server/engine/src') } },
+  resolve: {
+    alias: {
+      '@nw/engine': path.resolve(__dirname, '../server/engine/src'),
+      // Auction full-link block imports shared auction constants (durations / tax rate).
+      '@nw/shared': path.resolve(__dirname, '../server/shared/src/index.ts'),
+    },
+  },
   test: {
     include: ['test/e2e/**/*.e2e.ts'],
     environment: 'node',

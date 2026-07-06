@@ -12,13 +12,40 @@
 //
 // Run: npm run test:e2e   (NOT part of `npm test`).
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { AUCTION_DURATIONS_SEC, AUCTION_TAX_RATE } from '@nw/shared';
 import { createAppCore } from '../../src/app/createAppCore';
 import { HeadlessPlatform } from '../harness/HeadlessPlatform';
 import { HeadlessAppViews } from '../harness/HeadlessAppViews';
 
 const API_BASE = process.env.NW_API_BASE ?? 'http://localhost:18080';
 const EXPECT_GATEWAY = process.env.NW_EXPECT_GATEWAY ?? 'ws://localhost:8086/gw';
+// Auction runs in its own service (auctionsvc, AUCTION_DESIGN §9). The client reaches /auction/*
+// through getWorldBaseUrl(), which reads globalThis.__NW_WORLD_BASE__ — the auction describe below
+// points it at auctionsvc for its duration. In dev-up.ps1 auctionsvc listens on 18086; in prod Caddy
+// proxies same-origin /auction → auctionsvc.
+const AUCTION_BASE = process.env.NW_AUCTION_BASE ?? 'http://127.0.0.1:18086';
+// Seeding a seller's material inventory needs meta's internal escrow-grant endpoint (a fresh account
+// owns nothing). Same X-Internal-Key the services share in dev (dev-up.ps1 → 'dev-internal-key').
+const META_INTERNAL_BASE = process.env.NW_META_INTERNAL_BASE ?? API_BASE;
+const INTERNAL_KEY = process.env.NW_INTERNAL_KEY ?? 'dev-internal-key';
+const AUCTION_DUR = AUCTION_DURATIONS_SEC[0]!;
+
+/** Probe: is auctionsvc up? The rest of the live stack is a hard prereq of this file, but auctionsvc
+ * is an extra process (dev-up.ps1 starts it); skip just the auction block with a warning if it's down. */
+async function auctionReachable(): Promise<boolean> {
+  try {
+    const ctrl = new AbortController();
+    const id = setTimeout(() => ctrl.abort(), 1500);
+    const res = await fetch(`${AUCTION_BASE}/health`, { signal: ctrl.signal });
+    clearTimeout(id);
+    return res.ok;
+  } catch { return false; }
+}
+const AUCTION_UP = await auctionReachable();
+if (!AUCTION_UP) {
+  console.warn(`[full-link.e2e] auctionsvc unreachable (${AUCTION_BASE}) — skipping auction full-link block.`);
+}
 
 interface Client {
   platform: HeadlessPlatform;
@@ -347,5 +374,91 @@ describe('full-link E2E (live stack)', () => {
     expect(a.views.shop!.getCoins()).toBe(0);
     const buy = await a.views.shop!.buy(items[0].id);
     expect(buy.ok, 'broke account should not be able to buy').toBe(false);
+  });
+});
+
+// ── Auction full-link (live auctionsvc) ───────────────────────────────────────────────────────────
+// The auctionsvc-local e2e (server/auctionsvc/test/auction-fulllink.e2e.test.ts) already drives the
+// real WorldApiClient against an ad-hoc auctionsvc with stubbed downstreams and a hand-signed JWT.
+// This block closes the last gap: the REAL app core (createAppCore → goAuctionFromLobby builds the
+// WorldApiClient from the signed-in platform.storage token) → real HTTP → the LIVE auctionsvc →
+// its real cross-service calls (commercial coins / meta materials / system mail). It proves the
+// production base-URL resolution + real login token + envelope/DTO contract all line up end-to-end.
+describe.skipIf(!AUCTION_UP)('auction full-link (real app core → live auctionsvc)', () => {
+  // Point the client's world/auction base at auctionsvc for this block only; restore after so the
+  // rest of the file (which never touches the world base) is unaffected.
+  let prevWorldBase: string | undefined;
+  beforeAll(() => {
+    const g = globalThis as { __NW_WORLD_BASE__?: string };
+    prevWorldBase = g.__NW_WORLD_BASE__;
+    g.__NW_WORLD_BASE__ = AUCTION_BASE;
+  });
+  afterAll(() => {
+    const g = globalThis as { __NW_WORLD_BASE__?: string };
+    if (prevWorldBase === undefined) delete g.__NW_WORLD_BASE__;
+    else g.__NW_WORLD_BASE__ = prevWorldBase;
+  });
+
+  /** Seed a seller's material inventory via meta's internal escrow-grant (fresh accounts own none). */
+  async function seedMaterial(accountId: string, material: string, qty: number): Promise<void> {
+    const res = await fetch(`${META_INTERNAL_BASE}/internal/materials/grant`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-internal-key': INTERNAL_KEY },
+      body: JSON.stringify({ accountId, material, qty, orderId: `e2e_seed_${uid()}` }),
+    });
+    if (!res.ok) throw new Error(`meta material grant failed (${res.status}) — is NW_INTERNAL_KEY correct?`);
+  }
+
+  /** Open the auction house from the lobby the way a player taps it; returns the captured live WorldApiClient. */
+  async function enterAuction(c: Client): Promise<import('../../src/net/WorldApiClient').WorldApiClient> {
+    // onOpenAuction is optional in the lobby callback type (only wired when online); asserted online in setup.
+    c.views.lobby!.onOpenAuction!();
+    await waitFor(() => c.views.screen === 'auction' && !!c.views.auction, 'auction scene + captured callbacks');
+    return c.views.auction!.worldApi;
+  }
+
+  it('material listing round-trips create → mine → list → buy through the real client core, and a bad request surfaces as a typed WorldApiError', async () => {
+    const seller = createClient();
+    const buyer = createClient();
+    await registerAndEnterLobby(seller, 'Auction Seller');
+    await registerAndEnterLobby(buyer, 'Auction Buyer');
+
+    // Seed the seller with materials to list (scrap ref=10 → guardrail band [5,20]).
+    const sellerAcct = seller.platform.storage.getItem('nw_account_id');
+    expect(sellerAcct, 'seller account id persisted after register').toBeTruthy();
+    await seedMaterial(sellerAcct!, 'scrap', 5);
+
+    // Buyer needs coins (auction buy deducts via commercial) — real dev top-up (grants 550).
+    buyer.views.lobby!.onOpenShop();
+    buyer.views.gacha!.openShop!();
+    await buyer.views.shop!.loadItems();
+    expect((await buyer.views.shop!.recharge!(`topup_${uid()}`)).ok, 'buyer recharge').toBe(true);
+    buyer.views.shop!.onBack();
+    await waitFor(() => buyer.views.screen === 'lobby', 'buyer back to lobby');
+
+    // Seller lists over the real wire (unit price 10 × qty 2 = 20).
+    const sellerApi = await enterAuction(seller);
+    const view = await sellerApi.createAuction('material', { material: 'scrap' }, 2, AUCTION_DUR, { price: 10 });
+    expect(view.auctionId).toBeTruthy();
+    expect(view.status).toBe('open');
+    expect(view.itemType).toBe('material');
+    expect(view.qty).toBe(2);
+    expect(view.totalPrice).toBe(20);
+    // seller's "mine" tab sees it; buyer's does not.
+    expect((await sellerApi.getMyListings()).some((a) => a.auctionId === view.auctionId)).toBe(true);
+
+    // Buyer sees it on the public market and buys it.
+    const buyerApi = await enterAuction(buyer);
+    expect((await buyerApi.listAuctions({ itemType: 'material' })).some((a) => a.auctionId === view.auctionId)).toBe(true);
+    expect(await buyerApi.getMyListings()).toHaveLength(0);
+    await buyerApi.buyAuction(view.auctionId); // resolves ⇒ coins deducted, seller paid net of tax, item mailed (all live)
+    void AUCTION_TAX_RATE; // (tax split asserted in the service-layer e2e; here we prove the wire round-trips)
+    // …and it's gone from the open market.
+    expect((await buyerApi.listAuctions({ itemType: 'material' })).some((a) => a.auctionId === view.auctionId)).toBe(false);
+
+    // Error envelope over the LIVE wire: buying your own listing → BAD_REQUEST mapped to a typed
+    // WorldApiError (regression guard for the task-9 { ok:false, error:{ code } } unwrap fix).
+    const v2 = await sellerApi.createAuction('material', { material: 'scrap' }, 1, AUCTION_DUR, { price: 10 });
+    await expect(sellerApi.buyAuction(v2.auctionId)).rejects.toMatchObject({ name: 'WorldApiError', code: 'BAD_REQUEST' });
   });
 });
