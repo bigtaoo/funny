@@ -387,7 +387,6 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
       new AuctionScene(createLayout(w, h), new InputManager(), {
         onBack() {},
         worldApi: stubWorldApi(),
-        worldId: 'world:1:0',
       }),
   },
   {

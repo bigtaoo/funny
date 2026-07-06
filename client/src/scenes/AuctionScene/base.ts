@@ -26,7 +26,6 @@ import { buildIcon, type IconKind } from '../../render/icons';
 export interface AuctionSceneCallbacks {
   onBack(): void;
   worldApi: WorldApiClient;
-  worldId: string;
   /**
    * Read the current authoritative save — source for the equipment/card listing picker
    * (equipmentInv / cardInv). Optional: without it, only material listing is offered.
@@ -166,8 +165,8 @@ export class AuctionSceneBase {
     this.render();
     try {
       const [all, mine] = await Promise.all([
-        this.cb.worldApi.listAuctions(this.cb.worldId, this.allFilter ? { itemType: this.allFilter } : undefined),
-        this.cb.worldApi.getMyListings(this.cb.worldId),
+        this.cb.worldApi.listAuctions(this.allFilter ? { itemType: this.allFilter } : undefined),
+        this.cb.worldApi.getMyListings(),
       ]);
       this.allAuctions = all;
       this.myListings = mine;

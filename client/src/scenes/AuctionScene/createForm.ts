@@ -193,7 +193,7 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
       this.closeModal();
       try {
         await this.cb.worldApi.createAuction(
-          this.cb.worldId, itemType, item, qty, AUCTION_DURATION_SEC,
+          itemType, item, qty, AUCTION_DURATION_SEC,
           auctionMode
             ? {
                 saleMode: 'auction',

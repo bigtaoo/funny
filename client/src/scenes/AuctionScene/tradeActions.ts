@@ -20,7 +20,7 @@ export function TradeActionsMixin<TBase extends AuctionSceneBaseCtor>(Base: TBas
     async doBuy(auctionId: string): Promise<void> {
       this.closeModal();
       try {
-        await this.cb.worldApi.buyAuction(auctionId, this.cb.worldId);
+        await this.cb.worldApi.buyAuction(auctionId);
         this.showToast(t('auction.bought'));
         await this.loadData();
       } catch (e) {
@@ -35,7 +35,7 @@ export function TradeActionsMixin<TBase extends AuctionSceneBaseCtor>(Base: TBas
     async doCancel(auctionId: string): Promise<void> {
       this.closeModal();
       try {
-        await this.cb.worldApi.cancelAuction(auctionId, this.cb.worldId);
+        await this.cb.worldApi.cancelAuction(auctionId);
         this.showToast(t('auction.cancelled'));
         await this.loadData();
       } catch (e) {

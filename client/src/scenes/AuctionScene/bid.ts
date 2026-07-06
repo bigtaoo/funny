@@ -91,7 +91,7 @@ export function BidMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBase
     async doBid(auctionId: string, amount: number): Promise<void> {
       this.closeBidModal();
       try {
-        await this.cb.worldApi.placeBid(auctionId, this.cb.worldId, amount);
+        await this.cb.worldApi.placeBid(auctionId, amount);
         this.showToast(t('auction.bidPlaced'));
         await this.loadData();
       } catch (e) {
