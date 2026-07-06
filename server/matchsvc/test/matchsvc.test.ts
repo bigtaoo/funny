@@ -196,7 +196,11 @@ describe('Matchsvc bot-fallback (feature flag match_bot_fallback)', () => {
       expect(bot.msg.seed).toBeGreaterThan(0);
       expect(bot.msg.opponentName).toBeTruthy();
       expect(bot.msg.elo).toBe(1000);
-      expect(bot.msg.difficulty).toBe('normal');
+      // elo 1000 < BOT_ELO_THRESHOLD (1200) → AI level rolled from the easier half (1-6).
+      const difficulty = Number(bot.msg.difficulty);
+      expect(Number.isInteger(difficulty)).toBe(true);
+      expect(difficulty).toBeGreaterThanOrEqual(1);
+      expect(difficulty).toBeLessThanOrEqual(6);
       expect(svc.stats().queue).toBe(0); // dequeued
     } finally {
       vi.useRealTimers();

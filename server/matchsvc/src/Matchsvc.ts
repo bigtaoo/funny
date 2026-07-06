@@ -14,7 +14,7 @@
 // **No database connections**: the ELO value needed for matchmaking is fetched by the gateway from
 // meta before enqueuing and passed in as the `elo` parameter to enqueue.
 import { randomUUID, randomInt } from 'crypto';
-import { signTicket, createLogger, defaultPvpDeck, type FeatureFlagCache, type TicketClaims } from '@nw/shared';
+import { signTicket, createLogger, defaultPvpDeck, pickBotDifficulty, type FeatureFlagCache, type TicketClaims } from '@nw/shared';
 import { Matchmaking, type QueueEntry } from './Matchmaking';
 import { GameRegistry } from './GameRegistry';
 
@@ -43,6 +43,9 @@ export type PushMsg =
   | { kind: 'room_state'; code: string; players: PlayerView[]; phase: number }
   | { kind: 'match_found'; gameUrl: string; ticket: string }
   // Match timeout fallback to AI (feature flag match_bot_fallback). Client opens a local AI match; no ticket/gameUrl.
+  // `difficulty` is the AI level 1–10 (engine AISystem.ts) encoded as a decimal string —
+  // kept as `string` on the wire (transport.proto field is string) to avoid a proto/codegen
+  // change; parse with Number(...) on the receiving end. Rolled by pickBotDifficulty(elo).
   | { kind: 'match_bot'; seed: number; opponentName: string; elo: number; difficulty: string }
   | { kind: 'room_error'; code: string; message: string };
 
@@ -178,8 +181,9 @@ export class Matchsvc {
     this.matchmaking.remove(entry.accountId);
     const seed = randomInt(1, 2 ** 48);
     const opponentName = BOT_NAMES[randomInt(0, BOT_NAMES.length)]!;
-    log.info('queue timeout: bot fallback ON → match_bot', { accountId: entry.accountId, elo: entry.elo, seed });
-    this.push(entry.accountId, { kind: 'match_bot', seed, opponentName, elo: entry.elo, difficulty: 'normal' });
+    const difficulty = pickBotDifficulty(entry.elo, (n) => randomInt(0, n));
+    log.info('queue timeout: bot fallback ON → match_bot', { accountId: entry.accountId, elo: entry.elo, seed, difficulty });
+    this.push(entry.accountId, { kind: 'match_bot', seed, opponentName, elo: entry.elo, difficulty: String(difficulty) });
   }
 
   /** Matchmaking pair found → start the match immediately (no ready / host step). */

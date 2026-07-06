@@ -12,6 +12,7 @@ import {
   LocalInputSource,
   OwnerId,
   RecordingInputSource,
+  type AIDifficulty,
   type GameMode,
   type Replay,
 } from '../game';
@@ -50,6 +51,11 @@ export interface LocalMatchOpts {
    * leak ELO-locked units (runner/splitter/…) into the bot-fallback match. Ignored when `level` is set.
    */
   decks?: { top: string[]; bottom: string[] };
+  /**
+   * AI skill level (1–10, engine AISystem.ts) for the PvP-vs-AI path. Omit → engine
+   * default (5). Ignored when `level` is set (PvE uses WaveDirector, not AISystem).
+   */
+  difficulty?: AIDifficulty;
 }
 
 export interface LocalMatch {
@@ -81,9 +87,10 @@ export function createLocalMatch(opts: LocalMatchOpts = {}): LocalMatch {
             ...(opts.cardInstances ? { cardInstances: opts.cardInstances } : {}),
             ...(opts.equipmentInv ? { equipmentInv: opts.equipmentInv } : {}),
           }
-        : opts.decks
-          ? { decks: opts.decks }
-          : {}),
+        : {
+            ...(opts.decks ? { decks: opts.decks } : {}),
+            ...(opts.difficulty !== undefined ? { difficulty: opts.difficulty } : {}),
+          }),
     },
     recorder,
   );

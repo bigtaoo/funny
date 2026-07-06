@@ -8,6 +8,7 @@ import {
   LevelDefinition,
   OwnerId,
   PlayerStats,
+  type AIDifficulty,
   type GameMode,
   type Replay,
 } from '../game';
@@ -63,6 +64,11 @@ export interface GameSceneOptions {
    */
   seed?: number;
   /**
+   * AI skill level (1–10, engine AISystem.ts) for the local PvP-vs-AI path. Omit for the
+   * engine default (5). Ignored when `level` or `engine` is set.
+   */
+  difficulty?: AIDifficulty;
+  /**
    * Hero Roster card instances (CC-1) for the PvE campaign path. Passed to the engine
    * so card level + per-card equipment buff the blueprints (hard wall, §5.2), and to the
    * renderer so worn gear is drawn on the units (§20.4). Omit for PvP.
@@ -110,6 +116,7 @@ export class GameScene implements Scene {
         ...(opts.equipmentInv ? { equipmentInv: opts.equipmentInv } : {}),
         ...(opts.decks ? { decks: opts.decks } : {}),
         ...(opts.seed !== undefined ? { seed: opts.seed } : {}),
+        ...(opts.difficulty !== undefined ? { difficulty: opts.difficulty } : {}),
       });
       engine = match.engine;
       buildReplay = match.buildReplay;
