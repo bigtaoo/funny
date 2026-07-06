@@ -647,61 +647,67 @@ export class ShopScene implements Scene {
 
     const pad = Math.round(cw * 0.06);
 
-    // Top-right corner badge (savings / best value).
+    // Right-side column: badge + price, right-aligned and never wrapped.
+    const hasRightInfo = !!(spec.badge || spec.coinAmount !== undefined || spec.yuanPrice !== undefined);
+    const rightColW = hasRightInfo ? Math.round(cw * 0.40) : 0;
+    const rightGap = hasRightInfo ? Math.round(cw * 0.03) : 0;
+    const rightX = x + cw - pad;
+    let ry = y + pad;
+
     if (spec.badge) {
       const badge = txt(spec.badge.text, Math.round(ch * 0.11), spec.badge.color, true);
-      badge.anchor.set(1, 0); badge.x = x + cw - pad; badge.y = y + pad;
+      badge.anchor.set(1, 0); badge.x = rightX; badge.y = ry;
       body.addChild(badge);
+      ry += badge.height + Math.round(ch * 0.03);
     }
 
-    // Title (auto-scaled to fit the width minus padding / badge).
-    const title = txt(spec.title, Math.round(ch * 0.15), C.dark, true);
-    title.anchor.set(0, 0);
-    title.x = x + pad; title.y = y + pad;
-    this.fitText(title, cw - pad * 2 - (spec.badge ? Math.round(cw * 0.22) : 0));
-    body.addChild(title);
-
-    // Icon (left).
-    const iconS = Math.round(ch * 0.32);
-    const iconX = x + pad;
-    const iconY = y + Math.round(ch * 0.30);
-    const icon = buildCoinIcon(spec.icon, iconS, spec.iconColor);
-    icon.x = iconX; icon.y = iconY;
-    body.addChild(icon);
-
-    // Info column (right of the icon).
-    const infoX = iconX + iconS + Math.round(cw * 0.05);
-    let iy = y + Math.round(ch * 0.30);
-    const lineH = Math.round(ch * 0.15);
-
     if (spec.coinAmount !== undefined) {
-      const cs = Math.round(ch * 0.22);
-      const ci = buildCoinIcon('coin', cs, C.gold);
-      ci.x = infoX; ci.y = iy;
-      body.addChild(ci);
-      const amt = txt(spec.coinAmount.toLocaleString(), Math.round(ch * 0.22), C.gold, true);
-      amt.anchor.set(0, 0.5); amt.x = infoX + cs + Math.round(cw * 0.02); amt.y = ci.y + cs / 2;
+      const cs = Math.round(ch * 0.20);
+      const amt = txt(spec.coinAmount.toLocaleString(), Math.round(ch * 0.20), C.gold, true);
+      amt.anchor.set(1, 0); amt.x = rightX; amt.y = ry;
       body.addChild(amt);
-      iy += Math.round(ch * 0.21);
+      const ci = buildCoinIcon('coin', cs, C.gold);
+      ci.x = rightX - amt.width - Math.round(cw * 0.02) - cs; ci.y = ry + (amt.height - cs) / 2;
+      body.addChild(ci);
+      ry += Math.max(amt.height, cs) + Math.round(ch * 0.03);
     }
 
     if (spec.yuanPrice !== undefined) {
       const price = txt(`¥${spec.yuanPrice}`, Math.round(ch * 0.18), C.gold, true);
-      price.anchor.set(0, 0); price.x = infoX; price.y = iy;
+      price.anchor.set(1, 0); price.x = rightX; price.y = ry;
       body.addChild(price);
       if (spec.yuanStrike !== undefined) {
         const strike = txt(`¥${spec.yuanStrike}`, Math.round(ch * 0.12), C.mid, false);
-        strike.anchor.set(0, 0.5);
-        strike.x = price.x + price.width + Math.round(cw * 0.03);
-        strike.y = iy + Math.round(ch * 0.09);
+        strike.anchor.set(1, 0.5);
+        strike.x = price.x - price.width - Math.round(cw * 0.03);
+        strike.y = ry + price.height / 2;
         body.addChild(strike);
         const line = new PIXI.Graphics();
         line.lineStyle(2, C.mid, 1);
-        line.moveTo(strike.x, strike.y).lineTo(strike.x + strike.width, strike.y);
+        line.moveTo(strike.x - strike.width, strike.y).lineTo(strike.x, strike.y);
         body.addChild(line);
       }
-      iy += lineH;
+      ry += price.height + Math.round(ch * 0.03);
     }
+
+    // Title (left; wraps to multiple lines rather than crowding the price column).
+    const titleMaxW = cw - pad * 2 - rightColW - rightGap;
+    const title = txt(spec.title, Math.round(ch * 0.15), C.dark, true, titleMaxW);
+    title.anchor.set(0, 0);
+    title.x = x + pad; title.y = y + pad;
+    body.addChild(title);
+
+    // Icon (left), positioned below the title even if it wrapped to multiple lines.
+    const iconS = Math.round(ch * 0.32);
+    const iconX = x + pad;
+    const iconY = Math.max(y + Math.round(ch * 0.30), title.y + title.height + Math.round(ch * 0.04));
+    const icon = buildCoinIcon(spec.icon, iconS, spec.iconColor);
+    icon.x = iconX; icon.y = iconY;
+    body.addChild(icon);
+
+    // Info column (right of the icon) — remaining status/bonus lines only.
+    const infoX = iconX + iconS + Math.round(cw * 0.05);
+    let iy = iconY;
 
     for (const ln of spec.lines ?? []) {
       const l = txt(ln.text, Math.round(ch * 0.12), ln.color, true);
@@ -735,11 +741,6 @@ export class ShopScene implements Scene {
     lbl.anchor.set(0.5, 0.5); lbl.x = x + w / 2; lbl.y = y + h / 2;
     body.addChild(lbl);
     if (b.enabled && b.fn) this.hits.push({ rect: { x, y, w, h }, fn: b.fn });
-  }
-
-  /** Scale a Text down (never up) so it fits within maxW. */
-  private fitText(node: PIXI.Text, maxW: number): void {
-    if (maxW > 0 && node.width > maxW) node.scale.set(maxW / node.width);
   }
 
   /** Promo-code row: full-width [text field showing code / placeholder] [Redeem button]. */

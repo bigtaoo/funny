@@ -53,10 +53,11 @@ export const ui = {
  * Plain text node. Font stays `monospace` until the hand-written font task lands;
  * centralised here so that swap is one edit across every scene.
  */
-export function txt(label: string, size: number, color: number, bold = false): PIXI.Text {
+export function txt(label: string, size: number, color: number, bold = false, wordWrapWidth?: number): PIXI.Text {
   return new PIXI.Text(label, {
     fontSize: size, fill: color, fontFamily: 'monospace',
     fontWeight: bold ? 'bold' : 'normal',
+    ...(wordWrapWidth !== undefined ? { wordWrap: true, wordWrapWidth, breakWords: true } : {}),
   });
 }
 
