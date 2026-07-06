@@ -1,4 +1,4 @@
-# Local "production-like" full-stack: 9 server processes + main client + 3 tools + mongo + redis, all in Docker.
+# Local "production-like" full-stack: 10 server processes + main client + 3 tools + mongo + redis, all in Docker.
 #
 # This file lives in docker/; all build contexts are relative to it (../ = repo root). Prefer ./docker/local-up.ps1.
 #   Start (rebuild from latest code):  docker compose -f docker/docker-compose.local.yml up -d --build
@@ -14,7 +14,7 @@
 #   http://localhost:9093   Ops admin frontend (cross-origin to admin backend at http://localhost:18083)
 #   http://localhost:18083  Admin backend (ops frontend only; not reachable by players)
 #
-# Nine server processes: metaserver / commercial / gateway / matchsvc / gameserver / worldsvc / admin / analyticsvc
+# Ten server processes: metaserver / commercial / gateway / matchsvc / gameserver / worldsvc / auctionsvc / socialsvc / admin / analyticsvc
 #   (analyticsvc is not reachable by players; events arrive via nginx /analytics, queries via admin internal endpoint).
 # worldsvc requires Redis (march scheduling / channels); mongo is a single-node replica set (transactions + change streams).
 #
@@ -171,6 +171,27 @@ services:
       commercial: { condition: service_started }
     restart: unless-stopped
 
+  # auctionsvc: auction house, decoupled from worldId (auction task5, AUCTION_DESIGN §9); proxied via nginx same-origin.
+  auctionsvc:
+    build: { context: ../server, dockerfile: Dockerfile }
+    image: nw-server:local
+    command: ["node", "auctionsvc/dist/index.js"]
+    environment:
+      NW_JWT_SECRET: ${NW_JWT_SECRET:-dev-jwt-secret-change-me}
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:-dev-internal-key}
+      NW_AUCTION_PORT: "18086"
+      NW_AUCTION_HOST: 0.0.0.0
+      NW_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_AUCTION_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_AUCTION_MONGO_DB: ${NW_AUCTION_MONGO_DB:-notebook_wars_auction}
+      NW_META_INTERNAL_URL: http://metaserver:8080
+      NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
+    depends_on:
+      mongo: { condition: service_healthy }
+      metaserver: { condition: service_healthy }
+      commercial: { condition: service_started }
+    restart: unless-stopped
+
   # socialsvc: social fifth public face (/social/*). Family / friends / mail / channels; proxied via nginx same-origin.
   # Pushes real-time events to gateway /gw/push; publicId reverse-lookup via meta /internal. Separate DB: nw_social.
   socialsvc:
@@ -230,6 +251,7 @@ services:
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
       NW_MATCHSVC_INTERNAL_URL: http://matchsvc:8091
       NW_ANALYTICS_BASE_URL: http://analyticsvc:18085
+      NW_AUCTION_INTERNAL_URL: http://auctionsvc:18086
     ports:
       - "${NW_ADMIN_PORT:-18083}:18083"
     depends_on:
@@ -255,6 +277,7 @@ services:
       - gateway
       - gameserver
       - worldsvc
+      - auctionsvc
       - socialsvc
       - analyticsvc
     restart: unless-stopped

@@ -1,6 +1,6 @@
 # Notebook Wars — 拍卖行设计（Auction House）
 
-> 状态：主干 ✅ + 反 RMT 闸门 C/E/G + 竞拍 B + **装备交易 A** + **异常审计 D（admin G7 已接）** 全 ✅；**双入口（大厅 + SLG 世界地图）已接**；**去 SLG/worldId 耦合 + 独立 auctionsvc 拆分中（见 §9，2026-07-06 拍板；任务1-4 已完成——业务逻辑已在 `auctionsvc` 落地并与 worldsvc 并存，任务5 接入部署后才切流量）** · 权威：本文（拍卖行**机制**单一来源） · 更新：2026-07-06
+> 状态：主干 ✅ + 反 RMT 闸门 C/E/G + 竞拍 B + **装备交易 A** + **异常审计 D（admin G7 已接，已切到 auctionsvc）** 全 ✅；**双入口（大厅 + SLG 世界地图）已接**；**去 SLG/worldId 耦合 + 独立 auctionsvc 拆分中（见 §9，2026-07-06 拍板；任务1-5 已完成——Caddy/compose/CI 接线就位，等下一次合并 main 触发 server-deploy 后 VPS 实际切到 auctionsvc，任务6 观察期满再瘦身 worldsvc）** · 权威：本文（拍卖行**机制**单一来源） · 更新：2026-07-06
 >
 > 配套阅读：[`COMMERCIAL_DESIGN.md`](COMMERCIAL_DESIGN.md)（金币钱包 spend/grant，拍卖结算走它）、[`ECONOMY_BALANCE.md`](ECONOMY_BALANCE.md)（货币政策/反通胀哲学）、[`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md)（数值演算）、[`SERVER_API.md`](SERVER_API.md)（接口契约）、[`OPS_DESIGN.md`](OPS_DESIGN.md)（反 RMT 审计工单复用）、[`EQUIPMENT_DESIGN.md`](EQUIPMENT_DESIGN.md)/[`CHARACTER_CARDS_DESIGN.md`](CHARACTER_CARDS_DESIGN.md)（装备/角色卡实例定义）、[`SLG_DESIGN.md`](SLG_DESIGN.md)（仅材料 `scrap/lead/binding` 的产出侧定义共享，拍卖机制本身与 SLG 世界/赛季生命周期无关，见 §9 拍板说明）。
 >
@@ -201,7 +201,7 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - `{designatedBuyerId}` — 定向收件
 - `{expireAt}` — **普通索引（非 TTL，故意）**，过期扫描器用
 
-### 5.2 REST 端点（独立服务 `auctionsvc` `/auction/*`，端口 18086，✅ 已落地；**worldsvc 公网第四面的旧路由仍并行存在，尚未切流量，见 §9 任务5/6**）
+### 5.2 REST 端点（独立服务 `auctionsvc` `/auction/*`，端口 18086，✅ 已落地；Caddy/compose 已切 `/auction*` → `auctionsvc:18086`（§9 任务5）；**worldsvc 侧的旧 `auctionService.ts` 代码仍在仓库里未删，等观察期满见 §9 任务6**）
 
 | 方法 | 路径 | 作用 |
 |---|---|---|
@@ -353,15 +353,21 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
   - 新增 `itemType='card'` 的 `meta.escrowCard`/`grantCard`（worldsvc 旧版已支持，一并迁移，非本任务新增能力）。
   - D/G7 异常审计 `scanAnomalies` 一并迁移，新增 `GET /internal/audit/anomalies`（X-Internal-Key 鉴权，无 worldId 参数）。**admin 后端 `clients.ts` 仍指向 worldsvc 的 `/admin/world/audit/anomalies`，未切换**——见下方遗留项。
   - `contracts/openapi-world.yml` **未改动**（`/auction/*` 段仍保留，供 worldsvc 旧服务与现有 client codegen 使用，避免 client 提前失联）；`contracts/openapi-auction.yml` 是全新自包含文件，与前者暂时并行，等任务5/7 切流量后再从 `openapi-world.yml` 删除、由 client 改指向新文件（任务7 范围）。
-- **遗留（不阻塞验收，留给后续任务）**：admin 的异常审计客户端尚未指向 auctionsvc（等任务5 部署落地后，admin 也需要新增 `NW_AUCTION_INTERNAL_URL` 之类的环境变量并切换调用目标——这不在任务4/5 的"主要文件"清单里，任务5 执行时需一并处理，否则 G7 审计会一直读 worldsvc 的旧数据）；client 端 `WorldApiClient`/`AuctionScene` 仍打 worldsvc（任务7 范围，符合"先双跑验证对等，再切流量"的既定顺序）。
+- **遗留（不阻塞验收，留给后续任务）**：~~admin 的异常审计客户端尚未指向 auctionsvc~~——已在任务5 一并处理（新增 `AuctionClient`/`HttpAuctionClient`/`NW_AUCTION_INTERNAL_URL`，`slgScanAnomalies` 改读 auctionsvc 全局扫描，`worldId` 参数保留仅为路由/前端签名兼容不再使用）；client 端 `WorldApiClient`/`AuctionScene` 仍打 worldsvc（任务7 范围，符合"先双跑验证对等，再切流量"的既定顺序）。
 - **验收**：`npm run build` + `npm run typecheck --workspace @nw/auctionsvc` 全绿；`npm test --workspace @nw/auctionsvc`（37 例，3 文件）全绿；`npm test --workspace @nw/worldsvc`（221 例）/`npm test --workspace @nw/metaserver`（513 例）/`npm test --workspace @nw/shared`（535 例）无回归；此时 worldsvc 和 auctionsvc 的 `/auction/*` **同时存在**，验证了新服务功能对等，下一步（任务5）再切流量。
 
-### 拍卖任务5：接入部署（Caddy + compose + CI）
+### 拍卖任务5：接入部署（Caddy + compose + CI）✅（2026-07-06）
 
-- [ ] **依赖**：任务4 验收通过。
-- **主要文件**：`server/Caddyfile`、本地/prod/cloud 三份 `docker-compose*.yml`（[[project_social_system]] 提过新进程要三处同步）、`.github/workflows/server-deploy.yml`。
-- **改动范围**：`Caddyfile` 的 `handle /auction* { reverse_proxy worldsvc:18084 }` 改成 `reverse_proxy auctionsvc:18086`；三份 compose 加 auctionsvc 服务块（含 `NW_META_INTERNAL_URL`/`NW_COMM_INTERNAL_URL`/`NW_INTERNAL_KEY` 等环境变量，照抄 worldsvc 现有配法）；CI 部署脚本加 auctionsvc 的 build/push/deploy 步骤。
-- **验收**：VPS 上 `docker ps` 能看到 auctionsvc 容器且健康；实际调用 `/auction/create` 走到新服务（可查 auctionsvc 日志确认，不再查 worldsvc 日志）。
+- [x] **依赖**：任务4 验收通过。
+- **主要文件**：`server/Caddyfile`、本地（`docker/docker-compose.local.yml` + `client/nginx.conf`）/`server/docker-compose.prod.yml`/`server/docker-compose.cloud.yml` 三份部署文件（[[project_social_system]] 提过新进程要三处同步）、`.github/workflows/ci.yml`（`server-deploy.yml` 本身是泛化的 `docker compose up -d --build`，不按服务列举，故不用改）。顺带处理了任务4遗留：`server/admin/src/{clients,config,index}.ts`/`src/service/base.ts`/`src/service/slgAudit.ts` + 对应测试。
+- **改动范围**：
+  - `Caddyfile`：`handle /auction* { reverse_proxy worldsvc:18084 }` 改成 `reverse_proxy auctionsvc:18086`。
+  - `docker/docker-compose.local.yml`：新增 `auctionsvc` 服务块（`NW_META_INTERNAL_URL`/`NW_COMMERCIAL_INTERNAL_URL`/`NW_INTERNAL_KEY` 等，照抄 worldsvc 配法，但不需要 Redis/gateway 依赖）；`nginx` 的 `depends_on` 加 `auctionsvc`；`admin` 加 `NW_AUCTION_INTERNAL_URL`。`client/nginx.conf` 的 `/auction` location 改代理到 `auctionsvc:18086`。
+  - `server/docker-compose.prod.yml` / `server/docker-compose.cloud.yml`：同样新增 `auctionsvc` 服务块（cloud 用 Atlas `NW_MONGO_URI`，prod 用本地 mongo 容器）；`caddy`/`nginx` 的 `depends_on` 加 `auctionsvc`；`admin` 加 `NW_AUCTION_INTERNAL_URL`。
+  - `.github/workflows/ci.yml`：`tsc -b` 包列表加 `auctionsvc`；新增 auctionsvc openapi codegen staleness check 步骤（`npm run gen:api:auction:check`，仿 worldsvc 的对应步骤）。
+  - **任务4遗留一并处理**：admin 新增独立 `AuctionClient`/`HttpAuctionClient`/`nullAuctionClient`（`clients.ts`），从 `WorldClient` 里移除 `listAuctionAnomalies`（该方法本就该跟着拍卖状态机搬家）；`slgScanAnomalies(worldId, windowSec?)` 签名不变（前端/路由不用改），但内部改调 `this.auction.scanAnomalies(windowSec)`——`worldId` 参数保留仅为签名兼容，auctionsvc 的扫描是全局的，不再按 worldId 过滤（ops 前端「输入 worldId」的框暂时留着但已不生效，属可接受的过渡期粗糙点，不阻塞验收）。
+  - 顺带发现但**不在本任务修**的预置 bug（已 spawn_task 跟踪）：三份部署文件里 admin 从未配过 `NW_WORLD_INTERNAL_URL`，意味着 admin 的 SLG 赛季运维/审计能力在所有环境下一直是 degraded 状态（`world.available=false`），与本次拍卖迁移无关，是更早遗留的独立问题。
+- **验收**：`docker compose -f <各文件> config -q`（注入占位环境变量）解析通过；`npx tsc -b shared engine metaserver gateway matchsvc gameserver commercial worldsvc auctionsvc admin analyticsvc` 全绿；`npm run gen:api:auction:check --workspace @nw/auctionsvc` 通过；`npm run typecheck --workspace @nw/admin` 通过。本地 Docker 环境是 Windows 容器模式，无法起 Linux mongo/redis 跑 e2e，故 admin `season-audit.e2e.test.ts`（已改用 `FakeAuction` 桩）未能在本机实跑，留给下次能起 Linux 容器的环境或 VPS 上验证；VPS 上 `docker ps` 能看到 auctionsvc 容器且健康、实际调用 `/auction/create` 走到新服务（查 auctionsvc 日志而非 worldsvc 日志）待下次 push 触发 `server-deploy.yml` 后确认。
 
 ### 拍卖任务6：worldsvc 瘦身
 

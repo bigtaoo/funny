@@ -1,19 +1,20 @@
-# Cloud deployment variant (externally-managed Mongo, e.g. MongoDB Atlas M0): VPS runs only 9 Node processes + redis + caddy,
+# Cloud deployment variant (externally-managed Mongo, e.g. MongoDB Atlas M0): VPS runs only 10 Node processes + redis + caddy,
 # Mongo is hosted in the cloud; no local mongo container.
 #
 # Only differences from docker-compose.prod.yml:
 #   · Removes the mongo service + all depends_on mongo (DB is in the cloud, no local mongo container).
 #   · All NW_*_MONGO_URI are injected from .env (NW_MONGO_URI, pointing to the Atlas mongodb+srv:// string).
-#     6 DB-connecting processes (meta/commercial/world/social/admin/analytics) share the same Atlas cluster with different DB names.
+#     7 DB-connecting processes (meta/commercial/world/auction/social/admin/analytics) share the same Atlas cluster with different DB names.
 #
 # Start the full stack with one command:
 #   docker compose -f docker-compose.cloud.yml --env-file .env up -d --build
 #
-# ⚠ Atlas M0 connection limit is 500: Mongo driver defaults to maxPoolSize=100 per process; 6 processes would hit the limit.
-#   Append &maxPoolSize=10 to NW_MONGO_URI (see .env.example notes), 6×10=60 well below the limit.
+# ⚠ Atlas M0 connection limit is 500: Mongo driver defaults to maxPoolSize=100 per process; 7 processes would hit the limit.
+#   Append &maxPoolSize=10 to NW_MONGO_URI (see .env.example notes), 7×10=70 well below the limit.
 #
 # Endpoints same as prod: https://{NW_DOMAIN}/api (REST), wss://.../gw (control-plane), wss://.../ws (data-plane),
-#             https://.../world|/auction (SLG REST), https://.../social (social fifth public face, including clan).
+#             https://.../world (SLG REST), https://.../auction (auction house, independent service auctionsvc, auction task5),
+#             https://.../social (social fifth public face, including clan).
 
 services:
   redis:
@@ -160,6 +161,27 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  # auctionsvc: auction house, decoupled from worldId (auction task5, AUCTION_DESIGN §9). Caddy /auction → this process.
+  auctionsvc:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nw-server:latest
+    command: ["node", "auctionsvc/dist/index.js"]
+    environment:
+      NW_JWT_SECRET: ${NW_JWT_SECRET:?set NW_JWT_SECRET in .env}
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:?set NW_INTERNAL_KEY in .env}
+      NW_AUCTION_PORT: "18086"
+      NW_AUCTION_HOST: 0.0.0.0
+      NW_AUCTION_MONGO_URI: ${NW_MONGO_URI:?set NW_MONGO_URI in .env}
+      NW_AUCTION_MONGO_DB: ${NW_AUCTION_MONGO_DB:-notebook_wars_auction}
+      NW_META_INTERNAL_URL: http://metaserver:8080
+      NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
+    depends_on:
+      commercial:
+        condition: service_started
+    restart: unless-stopped
+
   # socialsvc: social fifth public face (/social/*, including clan). Caddy /social → this process; missing it causes all social routes to 502.
   socialsvc:
     build:
@@ -198,6 +220,7 @@ services:
       NW_META_BASE_URL: http://metaserver:8080
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
       NW_MATCHSVC_INTERNAL_URL: http://matchsvc:8091
+      NW_AUCTION_INTERNAL_URL: http://auctionsvc:18086
     restart: unless-stopped
 
   analyticsvc:
@@ -235,6 +258,7 @@ services:
       - gateway
       - gameserver
       - worldsvc
+      - auctionsvc
       - socialsvc
       - admin
     restart: unless-stopped

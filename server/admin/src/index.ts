@@ -10,7 +10,7 @@ import { createAdminMongo } from './db';
 import { AdminService } from './service';
 import { startHttpApi } from './httpApi';
 import { seedSuperAdmin } from './seed';
-import { HttpAnalyticsClient, HttpAntiCheatClient, HttpEventsClient, HttpGachaPoolsClient, HttpLadderClient, HttpMailDispatcher, HttpMismatchClient, HttpPlayerClient, HttpPromoClient, HttpStatsClient, HttpSuspiciousPveClient, HttpWorldClient } from './clients';
+import { HttpAnalyticsClient, HttpAntiCheatClient, HttpAuctionClient, HttpEventsClient, HttpGachaPoolsClient, HttpLadderClient, HttpMailDispatcher, HttpMismatchClient, HttpPlayerClient, HttpPromoClient, HttpStatsClient, HttpSuspiciousPveClient, HttpWorldClient } from './clients';
 
 const log = createLogger('admin');
 
@@ -29,12 +29,13 @@ async function main(): Promise<void> {
   const mail = new HttpMailDispatcher(env.metaBaseUrl, env.internalKey);
   const analytics = new HttpAnalyticsClient(env.analyticsBaseUrl, env.internalKey);
   const world = new HttpWorldClient(env.worldInternalUrl, env.internalKey);
+  const auction = new HttpAuctionClient(env.auctionInternalUrl, env.internalKey);
   const ladder = new HttpLadderClient(env.metaBaseUrl, env.internalKey);
   const events = new HttpEventsClient(env.metaBaseUrl, env.internalKey);
   const gachaPools = new HttpGachaPoolsClient(env.metaBaseUrl, env.internalKey);
   const promo = new HttpPromoClient(env.metaBaseUrl, env.internalKey);
 
-  const svc = new AdminService({ cols: mongo.collections, stats, players, antiCheat, mismatches, suspiciousPve, mail, analytics, world, ladder, events, gachaPools, promo, now: () => Date.now() });
+  const svc = new AdminService({ cols: mongo.collections, stats, players, antiCheat, mismatches, suspiciousPve, mail, analytics, world, auction, ladder, events, gachaPools, promo, now: () => Date.now() });
 
   const jwt: JwtConfig = { secret: env.adminJwtSecret, expiresIn: env.adminJwtTtl };
   const server = startHttpApi(

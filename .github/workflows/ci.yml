@@ -27,7 +27,7 @@ jobs:
             client/package-lock.json
             server/package-lock.json
 
-      # —— Server: tsc -b across ten packages (including deterministic engine @nw/engine) ——
+      # —— Server: tsc -b across eleven packages (including deterministic engine @nw/engine) ——
       - name: server install
         working-directory: server
         run: npm ci
@@ -39,6 +39,10 @@ jobs:
       - name: server codegen check (worldsvc openapi)
         working-directory: server/worldsvc
         run: npm run gen:api:world:check
+      # auction task4: auctionsvc REST codegen staleness check (openapi-auction.yml, self-contained spec)
+      - name: server codegen check (auctionsvc openapi)
+        working-directory: server/auctionsvc
+        run: npm run gen:api:auction:check
       # ADR-023 P3: gateway + gameserver proto codegen staleness check
       - name: server codegen check (proto gateway+gameserver)
         working-directory: server
@@ -48,7 +52,7 @@ jobs:
           git diff --exit-code gateway/src/generated gameserver/src/generated
       - name: server typecheck (tsc -b)
         working-directory: server
-        run: npx tsc -b shared engine metaserver gateway matchsvc gameserver commercial worldsvc admin analyticsvc
+        run: npx tsc -b shared engine metaserver gateway matchsvc gameserver commercial worldsvc auctionsvc admin analyticsvc
 
       # —— Client: type-check + unit tests + web build ——
       - name: client install
