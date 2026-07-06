@@ -23,7 +23,7 @@ import {
 
 export type { AIDifficulty };
 
-interface DifficultyParams {
+export interface DifficultyParams {
   /** Decision pacing in integer ticks (lower = acts more often). Floor is 12 ticks
    *  (0.4 s) — a professional-player reaction cadence, never frame-perfect. */
   thinkIntervalTicks: number;
@@ -58,7 +58,7 @@ interface DifficultyParams {
  * human opponent would start noticing that kind of play — they don't appear as
  * a single "hard mode" cliff.
  */
-const DIFFICULTY: Record<AIDifficulty, DifficultyParams> = {
+export const DIFFICULTY: Record<AIDifficulty, DifficultyParams> = {
   1:  { thinkIntervalTicks: 75, dangerRow: 16, lowBaseHp: 20, useMeteor: false, useTowers: false, useBarracks: false, meteorOffenseCluster: 99, useHaste: false, useCounterPicking: false, useValueTrades: false, useThreatMemory: false },
   2:  { thinkIntervalTicks: 65, dangerRow: 15, lowBaseHp: 24, useMeteor: false, useTowers: true,  useBarracks: true,  meteorOffenseCluster: 99, useHaste: false, useCounterPicking: false, useValueTrades: false, useThreatMemory: false },
   3:  { thinkIntervalTicks: 55, dangerRow: 14, lowBaseHp: 30, useMeteor: true,  useTowers: true,  useBarracks: true,  meteorOffenseCluster: 5,  useHaste: false, useCounterPicking: false, useValueTrades: false, useThreatMemory: false },
@@ -121,7 +121,9 @@ export class AISystem {
     private readonly rng: Prng,
     readonly difficulty: AIDifficulty = 5,
   ) {
-    this.params = DIFFICULTY[difficulty];
+    const params = DIFFICULTY[difficulty];
+    if (!params) throw new Error(`AISystem: invalid difficulty level ${difficulty} (must be 1-10)`);
+    this.params = params;
   }
 
   decideTick(tick: number, state: GameState): PlayerCommand[] {
