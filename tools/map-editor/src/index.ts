@@ -7,7 +7,7 @@
 // publishing — the exact same function drives both, so "what you see" and "what gets published" can
 // never drift apart.
 import * as PIXI from 'pixi.js-legacy';
-import { MAP_TEMPLATE_SAVE_MAX_TILES, proceduralTile, rasterizeMapEdits, SLG_MAP_H, SLG_MAP_W, type MapTemplateSummary, type MapTemplateTile, type ResourceType, type TileType } from '@nw/shared/slg';
+import { BASE_FOOTPRINT, MAP_TEMPLATE_SAVE_MAX_TILES, proceduralTile, rasterizeMapEdits, SLG_MAP_H, SLG_MAP_W, type MapTemplateSummary, type MapTemplateTile, type ObstacleKind, type ResourceType, type TileType } from '@nw/shared/slg';
 import { randomDefaultWidth, TerrainGridStore, type TerrainKind, type TilePoint } from './state/terrainGrid';
 import { CityStore, type MapEditorCityNode } from './state/cities';
 import { Api, ApiError } from './api';
@@ -17,6 +17,7 @@ import { terrainTextureName } from './render/tileStyle';
 import { loadTerrainAtlas } from './render/terrainAtlasLoader';
 import { loadResAtlas } from './render/resAtlasLoader';
 import { loadBuildingAtlas } from './render/buildingAtlasLoader';
+import { loadCityAtlas, getCityTextureForLevel, isCityAtlasReady } from './render/cityAtlasLoader';
 import { getLocale, t, toggleLocale } from './i18n';
 
 const RESOURCE_LABELS: Record<ResourceType, string> = {
@@ -53,6 +54,10 @@ const VIEW_H = 620;
 const VIEW_PAD_FACTOR = 1.5;
 const ZOOM_MIN = 10;
 const ZOOM_MAX = 56;
+/** On-screen width of a base's city sprite in tile-widths — mirrors the game client's BASE_SPRITE_TILES
+ * (client/src/scenes/worldmap/constants.ts) so a 3×3 base's art lines up identically; larger cities scale
+ * proportionally by footprint (see refreshCitySprites). */
+const BASE_SPRITE_TILES = 3.2;
 
 const pixiRoot = document.getElementById('pixi-root')!;
 const app = new PIXI.Application({ width: VIEW_W, height: VIEW_H, backgroundColor: 0x11111b, antialias: true });
@@ -62,8 +67,13 @@ const worldLayer = new PIXI.Container();
 app.stage.addChild(worldLayer);
 const baseLayer = new PIXI.Container();
 baseLayer.sortableChildren = true;
+// City building sprites (per-level city_atlas art), between the ground tiles and the vector overlay chrome.
+// A child of worldLayer so pans translate it for free; only rebuilt when zoom/seed/city positions change
+// (NOT on every terrain-brush tick — cities don't move while painting), see refreshCitySprites().
+const citySpriteLayer = new PIXI.Container();
+citySpriteLayer.sortableChildren = true;
 const overlayLayer = new PIXI.Container();
-worldLayer.addChild(baseLayer, overlayLayer);
+worldLayer.addChild(baseLayer, citySpriteLayer, overlayLayer);
 
 const seedInput = document.getElementById('world-seed') as HTMLInputElement;
 const regenBtn = document.getElementById('btn-regen') as HTMLButtonElement;
@@ -184,7 +194,7 @@ function centerView(): void {
 }
 
 // ── Base map render (real atlas textures — DESIGN.md §6.3 art-parity) ─────
-function effectiveTile(worldId: string, x: number, y: number): { type: TileType; level: number; resType?: ResourceType } {
+function effectiveTile(worldId: string, x: number, y: number): { type: TileType; level: number; resType?: ResourceType; obstacleKind?: ObstacleKind } {
   return diffCache.get(`${x}:${y}`) ?? proceduralTile(worldId, x, y);
 }
 
@@ -196,10 +206,11 @@ function renderBaseMap(worldId: string): void {
   // state, so this is a straight Map copy rather than a re-rasterization).
   const cityDiffs = rasterizeMapEdits(worldId, [], cityStore.nodes);
   diffCache = new Map(cityDiffs.map((d) => [`${d.x}:${d.y}`, d]));
-  for (const key of store.cells.keys()) {
+  for (const [key, kind] of store.cells) {
     if (diffCache.has(key)) continue;
     const [xs, ys] = key.split(':');
-    diffCache.set(key, { x: Number(xs), y: Number(ys), type: 'obstacle', level: 1 });
+    // Keep the painted river/mountain art kind so the preview shows what was painted, not the hash flip.
+    diffCache.set(key, { x: Number(xs), y: Number(ys), type: 'obstacle', level: 1, obstacleKind: kind });
   }
 
   const padW = VIEW_W * VIEW_PAD_FACTOR;
@@ -221,8 +232,8 @@ function renderBaseMap(worldId: string): void {
       const key = `${tx}:${ty}`;
       nextKeys.add(key);
       const tile = effectiveTile(worldId, tx, ty);
-      const texName = terrainTextureName(tile.type, tx, ty);
-      const sig = `${tile.type}|${tile.level}|${tile.resType ?? ''}|${texName}|${tp}`;
+      const texName = terrainTextureName(tile.type, tx, ty, tile.obstacleKind);
+      const sig = `${tile.type}|${tile.level}|${tile.resType ?? ''}|${tile.obstacleKind ?? ''}|${texName}|${tp}`;
       const cached = tileGraphicsCache.get(key);
       if (cached && cached.sig === sig) {
         count++;
@@ -268,7 +279,34 @@ function loadCitiesAndRedraw(worldId: string): void {
   selectedCityId = null;
   cityInfoEl.textContent = t('city.hint');
   renderBaseMap(worldId);
+  refreshCitySprites();
   redrawAll();
+}
+
+/**
+ * Rebuilds the per-level city building sprites (city_atlas art) from cityStore.nodes — the same visuals the
+ * game renders (DESIGN.md §6.3 art-parity). Cheap (~70 nodes) and deliberately NOT called on every
+ * terrain-brush tick: cities don't move while painting, so this only runs on seed/zoom/city-position changes.
+ * Sprite width = footprint/BASE_FOOTPRINT × BASE_SPRITE_TILES tiles, so higher-tier (bigger footprint) cities
+ * draw larger, matching the game client's WorldMapRenderer city layer.
+ */
+function refreshCitySprites(): void {
+  citySpriteLayer.removeChildren().forEach((c) => c.destroy({ children: true }));
+  if (!isCityAtlasReady()) return;
+  for (const node of cityStore.nodes) {
+    const tex = getCityTextureForLevel(node.level);
+    if (!tex) continue;
+    const sp = new PIXI.Sprite(tex);
+    sp.anchor.set(0.5);
+    const s = tileToScreen(node.x, node.y, tp);
+    sp.x = s.x;
+    sp.y = s.y;
+    sp.zIndex = node.x + node.y;
+    const spriteTiles = (node.footprint / BASE_FOOTPRINT) * BASE_SPRITE_TILES;
+    sp.width = spriteTiles * tp;
+    sp.height = spriteTiles * tp;
+    citySpriteLayer.addChild(sp);
+  }
 }
 
 // ── Overlay (brush cursor / city markers — vector, not atlas art; see module header) ────
@@ -303,7 +341,11 @@ function drawBrushCursor(hoverTile?: TilePoint): void {
 }
 
 // ── City markers (footprint outline + selection ring — see module header) ─────────
+// Only shown while the City tool is active: the per-level city sprites (refreshCitySprites) now carry the
+// visual, so overlaying a translucent box on every city under every tool would just clutter the map. In
+// City mode the boxes mark the draggable footprints + selection.
 function drawCityMarkers(): void {
+  if (tool !== 'city') return;
   const g = new PIXI.Graphics();
   for (const node of cityStore.nodes) {
     const isSelected = node.id === selectedCityId;
@@ -370,6 +412,7 @@ function setZoom(nextTp: number, anchor?: { sx: number; sy: number }): void {
   panY = ay - s.y;
   clampPan();
   renderBaseMap(seedInput.value || 'preview');
+  refreshCitySprites();
   redrawAll();
 }
 
@@ -449,6 +492,7 @@ cityImportBtn.addEventListener('click', () => {
     cityStore.loadFromJSON(cityJsonEl.value);
     selectCity(null);
     renderBaseMap(seedInput.value || 'preview');
+    refreshCitySprites();
     setStatus(() => t('status.citiesImported', { cities: cityCountLabel(cityStore.nodes.length) }));
   } catch (err) {
     setStatus(() => t('status.importFailed', { msg: (err as Error).message }));
@@ -698,7 +742,8 @@ canvasEl().addEventListener('mousemove', (ev) => {
   const pos = tileFromClientXY(ev.clientX, ev.clientY);
   const tile = effectiveTile(seedInput.value || 'preview', pos.x, pos.y);
   const resLine = tile.resType ? `\n${t('tile.resource')}: ${RESOURCE_LABELS[tile.resType]}` : '';
-  tileInfoEl.textContent = `(${pos.x}, ${pos.y})\n${t('tile.type')}: ${tile.type}\n${t('tile.level')}: ${tile.level}${resLine}`;
+  const typeLabel = tile.obstacleKind ? `${tile.type} (${tile.obstacleKind})` : tile.type;
+  tileInfoEl.textContent = `(${pos.x}, ${pos.y})\n${t('tile.type')}: ${typeLabel}\n${t('tile.level')}: ${tile.level}${resLine}`;
   tileInfoShown = true;
 
   if (draggingCityId) {
@@ -738,6 +783,7 @@ window.addEventListener('mouseup', () => {
     draggingCityId = null;
     setStatus(() => t('status.cityMoved', { id: selectedCityId ?? '' }));
     renderBaseMap(seedInput.value || 'preview');
+    refreshCitySprites();
     redrawAll();
   }
   if (painting) {
@@ -799,7 +845,7 @@ applyStaticI18n();
 applyDynamicI18n();
 renderLegend();
 centerView();
-Promise.allSettled([loadTerrainAtlas(), loadResAtlas(), loadBuildingAtlas()]).then(() => {
+Promise.allSettled([loadTerrainAtlas(), loadResAtlas(), loadBuildingAtlas(), loadCityAtlas()]).then(() => {
   renderBaseMap(seedInput.value);
   loadCitiesAndRedraw(seedInput.value);
   redrawAll();

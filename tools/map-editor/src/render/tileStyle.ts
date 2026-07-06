@@ -2,7 +2,7 @@
 // client/src/scenes/worldmap/tileStyle.ts down to the parts the editor needs. The editor only
 // ever draws proceduralTile()/rasterizeMapEdits() output (no runtime ownership/fog state), so
 // the ownerTint/fog/mine/ally machinery from the client original is dropped entirely.
-import type { ResourceType, TileType } from '@nw/shared/slg';
+import type { ObstacleKind, ResourceType, TileType } from '@nw/shared/slg';
 import type { TerrainTextureName } from './terrainAtlasLoader';
 
 export const TERRAIN_COLORS: Record<string, number> = {
@@ -31,10 +31,12 @@ export function terrainFill(type: TileType, resType?: ResourceType): number {
   return TERRAIN_COLORS[type] ?? TERRAIN_COLORS.neutral!;
 }
 
-/** Hand-drawn ground texture for a tile type — identical mapping to tileStyle.ts's terrainTextureName(). */
-export function terrainTextureName(type: string, tx: number, ty: number): TerrainTextureName {
+/** Hand-drawn ground texture for a tile type — identical mapping to the game client's terrainTextureName(). */
+export function terrainTextureName(type: string, tx: number, ty: number, obstacleKind?: ObstacleKind): TerrainTextureName {
   switch (type) {
-    case 'obstacle':    return (tx * 31 + ty * 17) % 2 === 0 ? 'terrain_mountain' : 'terrain_river';
+    case 'obstacle':    return obstacleKind === 'river' ? 'terrain_river'
+                             : obstacleKind === 'mountain' ? 'terrain_mountain'
+                             : (tx * 31 + ty * 17) % 2 === 0 ? 'terrain_mountain' : 'terrain_river';
     case 'gate':        return 'terrain_gate';
     case 'familyKeep':  return 'terrain_keep';
     case 'center':      return 'terrain_center';
