@@ -12,6 +12,7 @@ import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawSidebarTabs, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { buildIcon } from '../render/icons';
+import { buildCoinIcon } from '../render/coinIconAtlas';
 import { getEquipDef } from '../game/meta/equipmentDefs';
 import { drawEquipmentGlyph } from '../render/equipmentGlyph';
 import { CARD_DEFS } from '../game/meta/cardDefs';
@@ -223,7 +224,7 @@ export class GachaScene implements Scene {
     balNum.anchor.set(1, 0.5); balNum.x = w - Math.round(w * 0.04); balNum.y = tbH / 2;
     this.container.addChild(balNum);
     const balIcon = Math.round(h * 0.036);
-    const bIcon = buildIcon('coin', balIcon, C.gold);
+    const bIcon = buildCoinIcon('coin', balIcon, C.gold);
     bIcon.x = balNum.x - balNum.width - balIcon - Math.round(w * 0.008);
     bIcon.y = tbH / 2 - balIcon / 2;
     this.container.addChild(bIcon);

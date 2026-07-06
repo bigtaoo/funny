@@ -5,6 +5,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay, tearDownChildren, marginLineX } from '../render/sketchUi';
 import { buildIcon, type IconKind } from '../render/icons';
+import { buildCoinIcon } from '../render/coinIconAtlas';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawSidebarTabs, type HubTab } from '../ui/widgets/HubTabs';
@@ -182,7 +183,7 @@ export class BattlePassScene implements Scene {
     balNum.anchor.set(1, 0.5); balNum.x = w - Math.round(w * 0.04); balNum.y = tbH / 2;
     this.container.addChild(balNum);
     const balIcon = Math.round(h * 0.036);
-    const bIcon = buildIcon('coin', balIcon, C.gold);
+    const bIcon = buildCoinIcon('coin', balIcon, C.gold);
     bIcon.x = balNum.x - balNum.width - balIcon - Math.round(w * 0.008);
     bIcon.y = tbH / 2 - balIcon / 2;
     this.container.addChild(bIcon);
@@ -415,7 +416,9 @@ export class BattlePassScene implements Scene {
       const rewardColor = state === 'claimed' ? C.mid : reward.kind === 'coins' ? C.gold : C.accent;
       const cy = y + h * 0.62;
       const ic = Math.round(h * 0.5);
-      const glyph = buildIcon(iconKind, ic, rewardColor);
+      const glyph = reward.kind === 'coins'
+        ? buildCoinIcon(iconKind, ic, rewardColor)
+        : buildIcon(iconKind, ic, rewardColor);
       if (reward.kind === 'skin') {
         // Skins are singletons — glyph alone, centred.
         glyph.x = x + w / 2 - ic / 2; glyph.y = cy - ic / 2;
