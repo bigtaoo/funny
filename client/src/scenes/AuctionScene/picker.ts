@@ -6,7 +6,12 @@ import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { t } from '../../i18n';
 import { buildIcon, type IconKind } from '../../render/icons';
 import type { EquipmentInstance, CardInstance, EquipRarity } from '../../game/meta/SaveData';
-import { HUD_H, ROW_H, MATERIALS, type Constructor, type AuctionSceneBaseCtor } from './base';
+import { HUD_H, MATERIALS, type Constructor, type AuctionSceneBaseCtor } from './base';
+
+// Icon-card grid metrics (mirrors EquipmentScene/inventory.ts's responsive column layout).
+const CARD_GAP = 10;
+const CARD_W_TARGET = 130;
+const CARD_H = 104;
 
 // Client tsconfig maps @nw/shared → server/shared/src/slg/index.ts only, so the server's per-rarity/per-card
 // auction reference prices (equipment.ts, not under slg/) aren't reachable here. These mirror the server's
@@ -134,34 +139,50 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
         return;
       }
 
-      const totalH = entries.length * ROW_H;
+      const pad = 12;
+      const avail = w - pad * 2;
+      const cols = Math.max(1, Math.floor((avail + CARD_GAP) / (CARD_W_TARGET + CARD_GAP)));
+      const cardW = (avail - CARD_GAP * (cols - 1)) / cols;
+      const rows = Math.ceil(entries.length / cols);
+      const totalH = rows * (CARD_H + CARD_GAP);
       this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
-      let cy = listY - this.scrollY;
-      for (const entry of entries) {
-        if (cy + ROW_H < listY || cy > listY + listH) { cy += ROW_H; continue; }
-        const row = sketchPanel(w - 12, ROW_H - 4, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(cy, 4, w) });
-        row.x = 6; row.y = cy;
-        this.bodyLayer.addChild(row);
 
-        const ic = buildIcon(entry.icon, 16, C.dark);
-        ic.x = 14; ic.y = cy + (ROW_H - 4) / 2 - 8;
-        this.bodyLayer.addChild(ic);
+      entries.forEach((entry, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const cx = pad + col * (cardW + CARD_GAP);
+        const cy = listY + row * (CARD_H + CARD_GAP) - this.scrollY;
+        if (cy + CARD_H < listY || cy > listY + listH) return;
+        this.renderPickCard(entry, cx, cy, cardW);
+      });
+    }
 
-        const nameLbl = txt(entry.label, 13, C.dark, true);
-        nameLbl.x = 36; nameLbl.y = cy + (ROW_H - 4) / 2 - 8;
-        this.bodyLayer.addChild(nameLbl);
-        if (entry.locked) {
-          const lk = buildIcon('lock', 14, C.mid);
-          lk.x = nameLbl.x + nameLbl.width + 6; lk.y = cy + (ROW_H - 4) / 2 - 9;
-          this.bodyLayer.addChild(lk);
-        }
-        const hint = txt(t('auction.pickHint'), 11, C.accent, true);
-        hint.anchor.set(1, 0.5); hint.x = w - 16; hint.y = cy + ROW_H / 2 - 2;
-        this.bodyLayer.addChild(hint);
+    /** Square-ish icon card: glyph centered top, name below, lock badge top-right, tap anywhere to pick. */
+    private renderPickCard(entry: PickEntry, x: number, y: number, cardW: number): void {
+      const card = sketchPanel(cardW, CARD_H, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(x, y, cardW) });
+      card.x = x; card.y = y;
+      this.bodyLayer.addChild(card);
 
-        this.hitRects.push({ rect: { x: 6, y: cy, w: w - 12, h: ROW_H - 4 }, action: entry.onPick });
-        cy += ROW_H;
+      if (entry.locked) {
+        const lk = buildIcon('lock', 13, C.mid);
+        lk.x = x + cardW - 8 - 13; lk.y = y + 6;
+        this.bodyLayer.addChild(lk);
       }
+
+      const ic = buildIcon(entry.icon, 26, C.dark);
+      ic.x = x + cardW / 2 - 13; ic.y = y + 12;
+      this.bodyLayer.addChild(ic);
+
+      const nameLbl = txt(entry.label, 12, C.dark, true);
+      nameLbl.anchor.set(0.5, 0); nameLbl.x = x + cardW / 2; nameLbl.y = y + 52;
+      if (nameLbl.width > cardW - 12) nameLbl.scale.set((cardW - 12) / nameLbl.width);
+      this.bodyLayer.addChild(nameLbl);
+
+      const hint = txt(t('auction.pickHint'), 10, C.accent, true);
+      hint.anchor.set(0.5, 1); hint.x = x + cardW / 2; hint.y = y + CARD_H - 8;
+      this.bodyLayer.addChild(hint);
+
+      this.hitRects.push({ rect: { x, y, w: cardW, h: CARD_H }, action: entry.onPick });
     }
   };
 }
