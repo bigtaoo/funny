@@ -344,8 +344,9 @@ export interface MapTemplateTileDoc {
 
 /**
  * Per-world terrain baseline, cloned (copied, not referenced) from a template's tiles at world-open time (§24).
- * Read-path integration (falling back to this instead of proceduralTile for a tile with no TileDoc override) is
- * part of the ADR-034 rewrite and not wired up yet — this collection is populated but not yet consumed.
+ * Consumed by the runtime read path (WorldCoreMap.getMap/getTile): for a tile with no TileDoc override, this
+ * baseline is the terrain, falling back to proceduralTile() only when no baseline row exists (no active template
+ * at world-open). Same shape as MapTemplateTile — carry any new terrain field added there through here too.
  */
 export interface MapBaselineTileDoc {
   _id: string; // `${worldId}:${x}:${y}`
