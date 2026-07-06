@@ -18,6 +18,13 @@ export function getResTexture(resType: string): PIXI.Texture | null {
   return sheet ? (sheet.textures[`res_${resType}`] ?? null) : null;
 }
 
+/** Exact-LEVEL frame (e.g. `res_ink_l7`), or null if that level's art doesn't exist yet. */
+export function getResLevelTexture(resType: string, level: number): PIXI.Texture | null {
+  if (!sheet) return null;
+  const lv = Math.max(1, Math.min(10, Math.round(level)));
+  return sheet.textures[`res_${resType}_l${lv}`] ?? null;
+}
+
 export async function loadResAtlas(): Promise<void> {
   if (sheet) return;
   if (loading) return loading;
