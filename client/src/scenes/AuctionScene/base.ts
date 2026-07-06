@@ -254,31 +254,36 @@ export class AuctionSceneBase {
     label: string,
     value: number,
     onChange: (v: number) => void,
+    scale = 1,
   ): void {
-    const lbl = txt(label, 12, C.dark);
-    lbl.x = mx + 10; lbl.y = y;
+    const btnSize = 24 * scale;
+    const gap = 8 * scale;
+    const half = btnSize / 2;
+
+    const lbl = txt(label, 12 * scale, C.dark);
+    lbl.x = mx + 10 * scale; lbl.y = y;
     layer.addChild(lbl);
 
-    const minusBtn = sketchPanel(24, 24, { fill: 0xeeeeee, border: C.mid, seed: seedFor(y, 0, 24) });
-    minusBtn.x = mx + 10 + lbl.width + 8; minusBtn.y = y - 2;
+    const minusBtn = sketchPanel(btnSize, btnSize, { fill: 0xeeeeee, border: C.mid, seed: seedFor(y, 0, btnSize) });
+    minusBtn.x = mx + 10 * scale + lbl.width + gap; minusBtn.y = y - 2 * scale;
     layer.addChild(minusBtn);
-    const ml = txt('−', 14, C.dark);
-    ml.anchor.set(0.5, 0.5); ml.x = minusBtn.x + 12; ml.y = y + 10;
+    const ml = txt('−', 14 * scale, C.dark);
+    ml.anchor.set(0.5, 0.5); ml.x = minusBtn.x + half; ml.y = y + 10 * scale;
     layer.addChild(ml);
-    this.modalHits.push({ rect: { x: minusBtn.x, y: minusBtn.y, w: 24, h: 24 }, action: () => onChange(value - 1) });
+    this.modalHits.push({ rect: { x: minusBtn.x, y: minusBtn.y, w: btnSize, h: btnSize }, action: () => onChange(value - 1) });
 
-    const valLbl = txt(String(value), 13, C.dark);
+    const valLbl = txt(String(value), 13 * scale, C.dark);
     valLbl.anchor.set(0, 0.5);
-    valLbl.x = minusBtn.x + 28; valLbl.y = y + 10;
+    valLbl.x = minusBtn.x + btnSize + gap; valLbl.y = y + 10 * scale;
     layer.addChild(valLbl);
 
-    const plusBtn = sketchPanel(24, 24, { fill: 0xeeeeee, border: C.mid, seed: seedFor(y, 1, 24) });
-    plusBtn.x = minusBtn.x + 28 + valLbl.width + 8; plusBtn.y = y - 2;
+    const plusBtn = sketchPanel(btnSize, btnSize, { fill: 0xeeeeee, border: C.mid, seed: seedFor(y, 1, btnSize) });
+    plusBtn.x = minusBtn.x + btnSize + gap + valLbl.width + gap; plusBtn.y = y - 2 * scale;
     layer.addChild(plusBtn);
-    const pl = txt('+', 14, C.dark);
-    pl.anchor.set(0.5, 0.5); pl.x = plusBtn.x + 12; pl.y = y + 10;
+    const pl = txt('+', 14 * scale, C.dark);
+    pl.anchor.set(0.5, 0.5); pl.x = plusBtn.x + half; pl.y = y + 10 * scale;
     layer.addChild(pl);
-    this.modalHits.push({ rect: { x: plusBtn.x, y: plusBtn.y, w: 24, h: 24 }, action: () => onChange(value + 1) });
+    this.modalHits.push({ rect: { x: plusBtn.x, y: plusBtn.y, w: btnSize, h: btnSize }, action: () => onChange(value + 1) });
   }
 
   // ── Modal / toast primitives ────────────────────────────────────────────────

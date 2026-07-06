@@ -13,7 +13,9 @@ export interface CreateFormHandlers {
   doCreate(): Promise<void>;
 }
 
-const ROW = 46;
+// Dialog is rendered 1.5x larger than the original design for legibility.
+const SCALE = 1.5;
+const ROW = 46 * SCALE;
 
 export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBase & Constructor<CreateFormHandlers> {
   return class extends Base {
@@ -26,10 +28,10 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
 
       const auctionMode = this.createSaleMode === 'auction';
       const isMaterial = this.createClass === 'material';
-      const mw = Math.min(360, w - 24);
+      const mw = Math.min(360 * SCALE, w - 24);
       const priceRowsH = auctionMode ? ROW * 2 : ROW; // auction: startPrice + buyout
       // item(field=48) + [qty only for material] + saleMode + price(s) + buyer(label+field=60) + info(26) + buttons(50) + pads(26)
-      const mh = 16 + 48 + ROW * (1 + (isMaterial ? 1 : 0)) + priceRowsH + 60 + 26 + 50 + 10;
+      const mh = (16 + 48 + 60 + 26 + 50 + 10) * SCALE + ROW * (1 + (isMaterial ? 1 : 0)) + priceRowsH;
       const mx = (w - mw) / 2;
       const my = Math.max(50 + 4, (h - mh) / 2);
 
@@ -41,37 +43,37 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
       panel.x = mx; panel.y = my;
       ml.addChild(panel);
 
-      let cy = my + 16;
+      let cy = my + 16 * SCALE;
 
       // Item — unified selector across material/equipment/card: tap opens a picker listing every sellable
       // item (materials always offered; equipment/card require getSave), sorted by estimated value descending.
-      const il0 = txt(t('auction.item') + ':', 13, C.dark);
-      il0.x = mx + 10; il0.y = cy;
+      const il0 = txt(t('auction.item') + ':', 13 * SCALE, C.dark);
+      il0.x = mx + 10 * SCALE; il0.y = cy;
       ml.addChild(il0);
       const selLabel = this.selectedItemLabel();
-      const field = sketchPanel(mw - 20, 30, { fill: 0xfaf9f5, border: selLabel ? C.accent : C.mid, seed: seedFor(cy, 2, mw - 20) });
-      field.x = mx + 10; field.y = cy + 18;
+      const field = sketchPanel(mw - 20 * SCALE, 30 * SCALE, { fill: 0xfaf9f5, border: selLabel ? C.accent : C.mid, seed: seedFor(cy, 2, mw - 20 * SCALE) });
+      field.x = mx + 10 * SCALE; field.y = cy + 18 * SCALE;
       ml.addChild(field);
-      const ic = buildIcon(this.itemKind(this.createClass, this.createMaterial), 16, selLabel ? C.dark : C.mid);
-      ic.x = mx + 16; ic.y = cy + 24;
+      const ic = buildIcon(this.itemKind(this.createClass, this.createMaterial), 16 * SCALE, selLabel ? C.dark : C.mid);
+      ic.x = mx + 16 * SCALE; ic.y = cy + 24 * SCALE;
       ml.addChild(ic);
-      const fl = txt(selLabel ?? t('auction.tapChoose'), 12, selLabel ? C.dark : C.mid);
-      fl.x = mx + 38; fl.y = cy + 25;
+      const fl = txt(selLabel ?? t('auction.tapChoose'), 12 * SCALE, selLabel ? C.dark : C.mid);
+      fl.x = mx + 38 * SCALE; fl.y = cy + 25 * SCALE;
       ml.addChild(fl);
-      this.modalHits.push({ rect: { x: mx + 10, y: cy + 18, w: mw - 20, h: 30 }, action: () => this.openItemPicker() });
-      cy += 48;
+      this.modalHits.push({ rect: { x: mx + 10 * SCALE, y: cy + 18 * SCALE, w: mw - 20 * SCALE, h: 30 * SCALE }, action: () => this.openItemPicker() });
+      cy += 48 * SCALE;
 
       // Qty (material only; equipment/card are unique instances, qty forced to 1 server-side).
       if (isMaterial) {
-        this.addNumInput(ml, mx, cy, t('auction.qty') + ':', this.createQty, (v) => { this.createQty = Math.max(1, v); this.openCreateForm(); });
+        this.addNumInput(ml, mx, cy, t('auction.qty') + ':', this.createQty, (v) => { this.createQty = Math.max(1, v); this.openCreateForm(); }, SCALE);
         cy += ROW;
       }
 
       // Sale mode toggle (fixed buy-now / auction)
-      const sm0 = txt(t('auction.saleMode') + ':', 13, C.dark);
-      sm0.x = mx + 10; sm0.y = cy;
+      const sm0 = txt(t('auction.saleMode') + ':', 13 * SCALE, C.dark);
+      sm0.x = mx + 10 * SCALE; sm0.y = cy;
       ml.addChild(sm0);
-      let sx = mx + 10 + sm0.width + 8;
+      let sx = mx + 10 * SCALE + sm0.width + 8 * SCALE;
       const modes: { key: 'fixed' | 'auction'; label: string }[] = [
         { key: 'fixed', label: t('auction.saleFixed') },
         { key: 'auction', label: t('auction.saleAuction') },
@@ -79,68 +81,70 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
       for (let i = 0; i < modes.length; i++) {
         const md = modes[i]!;
         const active = md.key === this.createSaleMode;
-        const btn = sketchPanel(80, 26, { fill: active ? C.dark : 0xeeeeee, border: active ? C.accent : C.mid, seed: seedFor(i, 5, 80) });
-        btn.x = sx; btn.y = cy - 2;
+        const btnW = 80 * SCALE, btnH = 26 * SCALE;
+        const btn = sketchPanel(btnW, btnH, { fill: active ? C.dark : 0xeeeeee, border: active ? C.accent : C.mid, seed: seedFor(i, 5, btnW) });
+        btn.x = sx; btn.y = cy - 2 * SCALE;
         ml.addChild(btn);
-        const mi = buildIcon(this.saleModeKind(md.key), 15, active ? C.light : C.dark);
-        mi.x = sx + 6; mi.y = cy + 3;
+        const mi = buildIcon(this.saleModeKind(md.key), 15 * SCALE, active ? C.light : C.dark);
+        mi.x = sx + 6 * SCALE; mi.y = cy + 3 * SCALE;
         ml.addChild(mi);
-        const bl = txt(md.label, 12, active ? C.light : C.dark);
-        bl.anchor.set(0.5, 0.5); bl.x = sx + 46; bl.y = cy + 11;
+        const bl = txt(md.label, 12 * SCALE, active ? C.light : C.dark);
+        bl.anchor.set(0.5, 0.5); bl.x = sx + 46 * SCALE; bl.y = cy + 11 * SCALE;
         ml.addChild(bl);
-        this.modalHits.push({ rect: { x: sx, y: cy - 2, w: 80, h: 26 }, action: () => { this.createSaleMode = md.key; this.openCreateForm(); } });
-        sx += 84;
+        this.modalHits.push({ rect: { x: sx, y: cy - 2 * SCALE, w: btnW, h: btnH }, action: () => { this.createSaleMode = md.key; this.openCreateForm(); } });
+        sx += 84 * SCALE;
       }
       cy += ROW;
 
       // Price(s) — fixed: single buy-now price; auction: startPrice + optional buyout
       if (auctionMode) {
-        this.addNumInput(ml, mx, cy, t('auction.startPrice') + ':', this.createStartPrice, (v) => { this.createStartPrice = Math.max(1, v); this.openCreateForm(); });
+        this.addNumInput(ml, mx, cy, t('auction.startPrice') + ':', this.createStartPrice, (v) => { this.createStartPrice = Math.max(1, v); this.openCreateForm(); }, SCALE);
         cy += ROW;
-        this.addNumInput(ml, mx, cy, t('auction.buyout') + ':', this.createBuyoutPrice, (v) => { this.createBuyoutPrice = Math.max(0, v); this.openCreateForm(); });
+        this.addNumInput(ml, mx, cy, t('auction.buyout') + ':', this.createBuyoutPrice, (v) => { this.createBuyoutPrice = Math.max(0, v); this.openCreateForm(); }, SCALE);
         cy += ROW;
       } else {
-        this.addNumInput(ml, mx, cy, t('auction.price') + ':', this.createPrice, (v) => { this.createPrice = Math.max(1, v); this.openCreateForm(); });
+        this.addNumInput(ml, mx, cy, t('auction.price') + ':', this.createPrice, (v) => { this.createPrice = Math.max(1, v); this.openCreateForm(); }, SCALE);
         cy += ROW;
       }
 
       // Designated buyer (optional) — private sale to a specific account.
-      const bl0 = txt(t('auction.buyer') + ':', 12, C.dark);
-      bl0.x = mx + 10; bl0.y = cy;
+      const bl0 = txt(t('auction.buyer') + ':', 12 * SCALE, C.dark);
+      bl0.x = mx + 10 * SCALE; bl0.y = cy;
       ml.addChild(bl0);
-      const buyerField = sketchPanel(mw - 20, 28, { fill: 0xfaf9f5, border: this.buyerActive ? C.accent : C.mid, seed: seedFor(cy, 0, mw - 20) });
-      buyerField.x = mx + 10; buyerField.y = cy + 18;
+      const buyerField = sketchPanel(mw - 20 * SCALE, 28 * SCALE, { fill: 0xfaf9f5, border: this.buyerActive ? C.accent : C.mid, seed: seedFor(cy, 0, mw - 20 * SCALE) });
+      buyerField.x = mx + 10 * SCALE; buyerField.y = cy + 18 * SCALE;
       ml.addChild(buyerField);
-      const bfl = txt(caretDisplay(this.createBuyer, this.buyerActive && this.caretOn, t('auction.buyerPlaceholder')), 12, this.createBuyer ? C.dark : C.mid);
-      bfl.x = mx + 16; bfl.y = cy + 25;
+      const bfl = txt(caretDisplay(this.createBuyer, this.buyerActive && this.caretOn, t('auction.buyerPlaceholder')), 12 * SCALE, this.createBuyer ? C.dark : C.mid);
+      bfl.x = mx + 16 * SCALE; bfl.y = cy + 25 * SCALE;
       ml.addChild(bfl);
-      this.modalHits.push({ rect: { x: mx + 10, y: cy + 18, w: mw - 20, h: 28 }, action: () => this.openBuyerInput() });
-      cy += 60;
+      this.modalHits.push({ rect: { x: mx + 10 * SCALE, y: cy + 18 * SCALE, w: mw - 20 * SCALE, h: 28 * SCALE }, action: () => this.openBuyerInput() });
+      cy += 60 * SCALE;
 
       // Tax info — estimate seller proceeds at the floor price (start/buy-now).
       const refPrice = auctionMode ? this.createStartPrice : this.createPrice;
       const youGet = refPrice - Math.floor(refPrice * 0.1);
-      const taxLbl = txt(`${t('auction.youGet')}: ${youGet}`, 12, C.mid);
-      taxLbl.x = mx + 10; taxLbl.y = cy;
+      const taxLbl = txt(`${t('auction.youGet')}: ${youGet}`, 12 * SCALE, C.mid);
+      taxLbl.x = mx + 10 * SCALE; taxLbl.y = cy;
       ml.addChild(taxLbl);
-      cy += 26;
+      cy += 26 * SCALE;
 
       // OK / Cancel
-      const okBtn = sketchPanel(90, 32, { fill: C.dark, border: C.accent, seed: seedFor(0, 0, 90) });
-      okBtn.x = mx + mw / 2 - 98; okBtn.y = cy;
+      const btnW = 90 * SCALE, btnH = 32 * SCALE;
+      const okBtn = sketchPanel(btnW, btnH, { fill: C.dark, border: C.accent, seed: seedFor(0, 0, btnW) });
+      okBtn.x = mx + mw / 2 - 98 * SCALE; okBtn.y = cy;
       ml.addChild(okBtn);
-      const ol = txt(t('auction.create'), 13, C.light);
-      ol.anchor.set(0.5, 0.5); ol.x = mx + mw / 2 - 53; ol.y = cy + 16;
+      const ol = txt(t('auction.create'), 13 * SCALE, C.light);
+      ol.anchor.set(0.5, 0.5); ol.x = mx + mw / 2 - 53 * SCALE; ol.y = cy + 16 * SCALE;
       ml.addChild(ol);
-      this.modalHits.push({ rect: { x: okBtn.x, y: okBtn.y, w: 90, h: 32 }, action: () => void this.doCreate() });
+      this.modalHits.push({ rect: { x: okBtn.x, y: okBtn.y, w: btnW, h: btnH }, action: () => void this.doCreate() });
 
-      const caBtn = sketchPanel(90, 32, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 1, 90) });
-      caBtn.x = mx + mw / 2 + 8; caBtn.y = cy;
+      const caBtn = sketchPanel(btnW, btnH, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 1, btnW) });
+      caBtn.x = mx + mw / 2 + 8 * SCALE; caBtn.y = cy;
       ml.addChild(caBtn);
-      const cl = buildIcon('close', 15, C.dark);
-      cl.x = mx + mw / 2 + 53 - 7; cl.y = cy + 16 - 7;
+      const cl = buildIcon('close', 15 * SCALE, C.dark);
+      cl.x = mx + mw / 2 + 53 * SCALE - 7 * SCALE; cl.y = cy + 16 * SCALE - 7 * SCALE;
       ml.addChild(cl);
-      this.modalHits.push({ rect: { x: caBtn.x, y: caBtn.y, w: 90, h: 32 }, action: () => this.closeModal() });
+      this.modalHits.push({ rect: { x: caBtn.x, y: caBtn.y, w: btnW, h: btnH }, action: () => this.closeModal() });
     }
 
     private openBuyerInput(): void {
