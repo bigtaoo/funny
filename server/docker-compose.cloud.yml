@@ -198,6 +198,7 @@ services:
       NW_META_BASE_URL: http://metaserver:8080
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
       NW_MATCHSVC_INTERNAL_URL: http://matchsvc:8091
+      NW_WORLD_INTERNAL_URL: http://worldsvc:18084
     restart: unless-stopped
 
   analyticsvc:
