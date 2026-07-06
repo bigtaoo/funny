@@ -172,11 +172,12 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       });
     }
 
-    /** Section divider header ("Equipped" / "Bag"). Bold + dark so it reads against the paper texture. */
+    /** Section divider header ("Equipped" / "Bag"), aligned with the item grid (right of the sidebar/margin rule). Bold + dark so it reads against the paper texture. */
     private renderSectionHeader(label: string, cy: number): void {
       const { w } = this;
+      const left = marginLineX(w) + CELL_GAP;
       const lbl = txt(label, 12, C.dark, true);
-      lbl.x = 14; lbl.y = cy + (SECTION_H - lbl.height) / 2;
+      lbl.x = left; lbl.y = cy + (SECTION_H - lbl.height) / 2;
       this.bodyLayer.addChild(lbl);
       const lineX = lbl.x + lbl.width + 6;
       const lineY = cy + SECTION_H / 2;
