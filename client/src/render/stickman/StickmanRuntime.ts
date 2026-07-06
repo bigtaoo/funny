@@ -200,6 +200,13 @@ export interface StickmanOptions {
    * (or pass 0) to fall back to the flat STICKMAN_SCALE.
    */
   targetHeight?: number;
+  /**
+   * Create the ground shadow sprite (when the .tao has a shadow attachment).
+   * Default true. Decorative floating figures (the lobby silhouette) pass false:
+   * there's no ground under them, and the shadow would otherwise inflate the
+   * bounds used to fit the figure to its box (see getRenderedLocalBounds).
+   */
+  showShadow?: boolean;
 }
 
 export class StickmanRuntime {
@@ -256,7 +263,7 @@ export class StickmanRuntime {
     // into the .tao spritesheet — the runtime draws it for any rig with a shadow
     // attachment point, so old bundles (which still carry a shadow frame) get the
     // same treatment once that frame is skipped at load.
-    if (asset.attachmentPoints.has('shadow')) {
+    if (options.showShadow !== false && asset.attachmentPoints.has('shadow')) {
       const shadowSprite = new PIXI.Sprite(getShadowTexture());
       shadowSprite.name  = 'shadow';
       shadowSprite.anchor.set(0.5, 0.5);
@@ -365,6 +372,58 @@ export class StickmanRuntime {
   setSilhouette(color: number | null): void {
     const tint = color ?? 0xffffff;
     for (const s of this.sprites.values()) s.tint = tint;
+  }
+
+  /**
+   * Union of the *rendered sprite* bounds — the actual drawn pixels — over the
+   * rest pose and every keyframe of every clip, in animator-local px (i.e. before
+   * the container's own scale/position).
+   *
+   * This is deliberately NOT asset.naturalHeight: that value measures skeleton
+   * *joint* extents, so head/foot/weapon art that overhangs the joints is invisible
+   * to it, and it differs from the on-screen silhouette by a per-rig amount. Callers
+   * that must size or centre the figure by what the eye actually sees — the
+   * decorative lobby silhouette, which fits the figure to a fixed fraction of its
+   * button and centres it — use this instead. Unioning over all keyframes gives a
+   * pose-stable box on the same basis for every rig, so all rigs come out the same
+   * height. Restores the live pose before returning.
+   *
+   * Excludes the shadow only when the figure was built with showShadow:false (the
+   * decorative case); gear/outline layers are empty or hidden so they don't count.
+   */
+  getRenderedLocalBounds(): { x: number; y: number; width: number; height: number } {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    const accumulate = (): void => {
+      const b = this.container.getLocalBounds();
+      if (b.width <= 0 || b.height <= 0) return;
+      if (b.x < minX) minX = b.x;
+      if (b.y < minY) minY = b.y;
+      if (b.x + b.width  > maxX) maxX = b.x + b.width;
+      if (b.y + b.height > maxY) maxY = b.y + b.height;
+    };
+
+    const savedClip = this.currentClip;
+    const savedName = this.currentClipName;
+    const savedTime = this.time;
+    for (const clip of this.asset.clips.values()) {
+      this.currentClip = clip;
+      for (const kf of clip.keyframes) {
+        this.time = kf.time;
+        this._applyPose();
+        accumulate();
+      }
+    }
+    // Restore the pose that was live before measuring.
+    this.currentClip     = savedClip;
+    this.currentClipName = savedName;
+    this.time            = savedTime;
+    if (savedClip) this._applyPose();
+
+    if (!Number.isFinite(minX)) {
+      const b = this.container.getLocalBounds();
+      return { x: b.x, y: b.y, width: b.width, height: b.height };
+    }
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
   }
 
   // ── Animation control ─────────────────────────────────────────────────────
