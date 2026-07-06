@@ -8,7 +8,7 @@ describe('rasterizeMapEdits', () => {
     expect(rasterizeMapEdits(worldId, [], [])).toEqual([]);
   });
 
-  it('rasterizes painted mountain/river tiles into obstacle tiles', () => {
+  it('rasterizes painted mountain/river tiles into obstacle tiles, preserving the painted art kind', () => {
     const tiles: { x: number; y: number; type: 'mountain' }[] = [];
     for (let x = 100; x <= 110; x++) tiles.push({ x, y: 100, type: 'mountain' });
     const diffs = rasterizeMapEdits(worldId, tiles, []);
@@ -17,9 +17,17 @@ describe('rasterizeMapEdits', () => {
       expect(d.type).toBe('obstacle');
       expect(d.level).toBe(1);
       expect(d.resType).toBeUndefined();
+      expect(d.obstacleKind).toBe('mountain');
     }
     // A tile that was never painted must not appear.
     expect(diffs.some((d) => d.x === 100 && d.y === 400)).toBe(false);
+  });
+
+  it('preserves river vs mountain art kind independently', () => {
+    const river = rasterizeMapEdits(worldId, [{ x: 120, y: 120, type: 'river' }], []);
+    expect(river.every((d) => d.obstacleKind === 'river')).toBe(true);
+    const mountain = rasterizeMapEdits(worldId, [{ x: 120, y: 120, type: 'mountain' }], []);
+    expect(mountain.every((d) => d.obstacleKind === 'mountain')).toBe(true);
   });
 
   it('ignores out-of-bounds painted tiles', () => {

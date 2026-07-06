@@ -4,7 +4,7 @@
 // via the existing §24 saveTilesDiff endpoint. One-way bake: the editor's own JSON export/import
 // round-trips the terrain grid for re-editing (see state/terrainGrid.ts/cities.ts) — this module never
 // needs to invert tiles back into grid cells/cities.
-import { SLG_MAP_H, SLG_MAP_W, type ResourceType, type TileType } from './core';
+import { SLG_MAP_H, SLG_MAP_W, type ObstacleKind, type ResourceType, type TileType } from './core';
 import { biomeAt, proceduralTile, type MapTemplateTile } from './mapgen';
 import { worldSeed } from './noise';
 
@@ -22,9 +22,6 @@ export interface MapEditCityInput {
   kind: 'capital' | 'gateCity' | 'worldCenter' | 'garrison';
 }
 
-/** Both river and mountain tiles rasterize to the same impassable terrain (DESIGN.md §2.2 "两者都是完全不可通行地形"). */
-const _TERRAIN_TILE: { type: TileType; level: number } = { type: 'obstacle', level: 1 };
-
 function _cityTileType(kind: MapEditCityInput['kind']): TileType {
   return kind === 'worldCenter' ? 'center' : 'familyKeep';
 }
@@ -33,6 +30,8 @@ interface _Override {
   type: TileType;
   level: number;
   resType?: ResourceType;
+  /** Preserved for obstacle overrides so a painted river/mountain keeps its art kind through publish (§2.2: same passability, distinct art). */
+  obstacleKind?: ObstacleKind;
 }
 
 /**
@@ -51,7 +50,9 @@ export function rasterizeMapEdits(
 
   for (const tile of tiles) {
     if (tile.x < 0 || tile.x >= SLG_MAP_W || tile.y < 0 || tile.y >= SLG_MAP_H) continue;
-    overrides.set(`${tile.x}:${tile.y}`, _TERRAIN_TILE);
+    // river/mountain share the same impassable 'obstacle' type + level 1 (§2.2), but keep the painted
+    // art kind so the tile renders as what the user actually painted rather than the position-hash flip.
+    overrides.set(`${tile.x}:${tile.y}`, { type: 'obstacle', level: 1, obstacleKind: tile.type });
   }
 
   for (const city of cities) {
@@ -73,8 +74,8 @@ export function rasterizeMapEdits(
     const x = Number(xs);
     const y = Number(ys);
     const base = proceduralTile(worldId, x, y);
-    if (base.type !== tile.type || base.level !== tile.level || base.resType !== tile.resType) {
-      diffs.push({ x, y, type: tile.type, level: tile.level, ...(tile.resType ? { resType: tile.resType } : {}) });
+    if (base.type !== tile.type || base.level !== tile.level || base.resType !== tile.resType || base.obstacleKind !== tile.obstacleKind) {
+      diffs.push({ x, y, type: tile.type, level: tile.level, ...(tile.resType ? { resType: tile.resType } : {}), ...(tile.obstacleKind ? { obstacleKind: tile.obstacleKind } : {}) });
     }
   }
   return diffs;

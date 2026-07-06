@@ -11,6 +11,7 @@
 
 import type { WorldTileView } from '../../net/WorldApiClient';
 import { proceduralTile } from '@nw/shared';
+import type { ObstacleKind } from '@nw/shared';
 import type { TerrainTextureName } from '../../render/terrainAtlasLoader';
 
 // Terrain base colors (unoccupied) — desaturated, paper-cohesive; specials stay distinct but muted.
@@ -64,13 +65,16 @@ export function terrainFill(tile: WorldTileView): number {
 
 /**
  * Hand-drawn ground texture for a tile type (design/product/slg-terrain-art.md §0/§3).
- * `obstacle` covers both mountain and river (SLG_DESIGN §3.1) — a deterministic per-tile
- * hash picks one of the two doodle variants so a contiguous obstacle band doesn't look
- * monotone, without introducing a third TileType into the data model.
+ * `obstacle` covers both mountain and river (SLG_DESIGN §3.1). When the tile carries an explicit
+ * {@link ObstacleKind} (painted in the editor, or set by proceduralTile for its ridge/river/branch
+ * bands) that art is used verbatim; otherwise a deterministic per-tile hash picks one of the two
+ * doodle variants so a legacy contiguous obstacle band doesn't look monotone.
  */
-export function terrainTextureName(type: string, tx: number, ty: number): TerrainTextureName {
+export function terrainTextureName(type: string, tx: number, ty: number, obstacleKind?: ObstacleKind): TerrainTextureName {
   switch (type) {
-    case 'obstacle':    return (tx * 31 + ty * 17) % 2 === 0 ? 'terrain_mountain' : 'terrain_river';
+    case 'obstacle':    return obstacleKind === 'river' ? 'terrain_river'
+                             : obstacleKind === 'mountain' ? 'terrain_mountain'
+                             : (tx * 31 + ty * 17) % 2 === 0 ? 'terrain_mountain' : 'terrain_river';
     case 'gate':        return 'terrain_gate';
     case 'familyKeep':  return 'terrain_keep';
     case 'center':      return 'terrain_center';
