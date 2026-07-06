@@ -384,6 +384,18 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - **未动**（有意，超出本任务范围）：`AuctionView` 类型仍从 `client/src/net/openapi-world.ts`（由未改动的 `server/contracts/openapi-world.yml` 生成）导入，而非任务4新建的 `openapi-auction.yml`——两者 schema 字段目前一致（`openapi-world.yml` 的 `/auction/*` 段本身也未删，见 §9 任务6 备注），故类型检查不受影响；但这意味着 client 尚未真正"改指向新文件"（任务4/5 遗留的最后一句表述）。若后续要彻底切断 client 对 `openapi-world.yml` 拍卖段的依赖，需要：① `client/scripts/gen-openapi.mjs` 新增 `openapi-auction.yml → openapi-auction.ts` 流水线，② `WorldApiClient.ts` 的 `AuctionView` 改从新文件导入，③ 确认无回归后再从 `openapi-world.yml` 删除 `/auction/*` 段并重新生成 `openapi-world.ts`/`server/worldsvc/src/generated/routes.gen.ts`（§9 任务6 里同样留白的那份）。不阻塞当前验收（功能已完全跑通 auctionsvc）。
 - **验收**：`npm run typecheck`（`tsc --noEmit -p tsconfig.test.json`）绿；`npm run build:web`（webpack production）绿；`npx vitest run --config vitest.ui.config.ts`（14 文件 185 例，含 `auctionScene.ui.ts` 23 例）全绿；大厅入口（`goAuctionFromLobby`）和 SLG 世界地图入口（`goAuctionHouse`）都能直接打开拍卖行，前者不再经过 `resolveWorldShard`。
 
+### 拍卖任务8：补 auctionsvc 测试覆盖 ✅（2026-07-06）
+
+- [x] **依赖**：任务4-7（服务已迁移落地）。纯补测试，零 `src/` 改动。
+- **背景**：任务4 迁移时 `auction.e2e.test.ts` 的 fakeMeta 把 `escrowCard` 桩成 `throw 'unused'`——**角色卡（CC-5）拍卖全链路无任何覆盖**（装备/皮肤各有整组，唯独已上线的角色卡漏测）；C 每日购买上限、B 竞拍防抢拍延时/未达买断价不结拍三处边界也缺用例。
+- **改动**（`server/auctionsvc/test/auction.e2e.test.ts`，+9 例 30→39，全文件 37→46）：
+  - **CC-5 角色卡 6 例**：给 fakeMeta 补真实 `cardInv` + `escrowCard`（校验 gear 全空→否则 `CARD_HAS_GEAR`；不存在→`CARD_NOT_FOUND`）/`grantCard`；覆盖挂单（escrow 移出库存 + 存实例快照 + qty 强制 1）/购买（实例经邮件发买家含 level·xp 快照 + 卖家税后到账）/取消退回/过期退回/带装备拒挂/未拥有拒挂。
+  - **C 每日购买上限 1 例**：买满 `AUCTION_DAILY_BUY_CAP`（30）后再买 → `AUCTION_LIMIT_REACHED`（镜像已有的每日挂单上限用例）。
+  - **B 竞拍边界 2 例**：防抢拍——到期前落在 `AUCTION_ANTI_SNIPE_WINDOW_SEC` 窗口内出价，`expireAt` 顺延一个窗口；未达买断价——出价 ≥ 起拍价但 < 买断价不立即结拍，单子保持 `open`。
+- **未覆盖（有意）**：`MATERIAL_NOT_TRADEABLE`（E 绑定材料禁挂）——`AUCTION_BANNED_MATERIALS` 当前是**空集**（无任何禁挂材料），该闸门为潜伏逻辑，无法在不改数值配置的前提下从真实 config 触发，故不加桩测。若将来往禁挂集里放材料，需同步补一条 `MATERIAL_NOT_TRADEABLE` 用例。
+- **验收**：`npm run typecheck --workspace @nw/auctionsvc`（`tsc --noEmit`）绿；`npm test --workspace @nw/auctionsvc`（3 文件 46 例）全绿。
+- **踩坑记**：主仓 `server/node_modules/@nw/shared` 被并行 worktree 污染成**过期物理副本**（缺 `SKIN_NOT_FOUND` 等新错误码），导致 `skin not owned` 用例在主仓 `code:undefined` 假失败；本任务全程在独立 worktree + `npm install` 干净依赖里做，`node -e require.resolve('@nw/shared')` 落地在 worktree 自己的 `shared/dist`。见 [[feedback_worktree]]。
+
 ---
 
 *本文为拍卖行机制权威，DRAFT/⚠️ 处随实现与拍板细化；数值以 `server/shared/src/slg.ts` 为准。*
