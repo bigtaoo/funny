@@ -1,37 +1,41 @@
 # Notebook Wars — 拍卖行设计（Auction House）
 
-> 状态：主干 ✅ + 反 RMT 闸门 C/E/G/F + 竞拍 B + **装备交易 A** + **异常审计 D（admin G7 已接）** 全 ✅；**双入口（大厅 + SLG 世界地图）已接** · 权威：本文（拍卖行**机制**单一来源） · 更新：2026-07-02
+> 状态：主干 ✅ + 反 RMT 闸门 C/E/G + 竞拍 B + **装备交易 A** + **异常审计 D（admin G7 已接）** 全 ✅；**双入口（大厅 + SLG 世界地图）已接**；**去 SLG/worldId 耦合 + 独立 auctionsvc 拆分中（见 §9，2026-07-06 拍板，本次为语义定稿，代码尚未迁移）** · 权威：本文（拍卖行**机制**单一来源） · 更新：2026-07-06
 >
-> 配套阅读：[`SLG_DESIGN.md`](SLG_DESIGN.md)（§7 经济与交易、§9 架构、§14 契约层——拍卖行是 SLG 大世界的交易子系统）、[`COMMERCIAL_DESIGN.md`](COMMERCIAL_DESIGN.md)（金币钱包 spend/grant，拍卖结算走它）、[`ECONOMY_BALANCE.md`](ECONOMY_BALANCE.md)（货币政策/反通胀哲学）、[`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md)（数值演算）、[`SERVER_API.md`](SERVER_API.md)（接口契约）、[`OPS_DESIGN.md`](OPS_DESIGN.md)（反 RMT 审计工单复用）。
+> 配套阅读：[`COMMERCIAL_DESIGN.md`](COMMERCIAL_DESIGN.md)（金币钱包 spend/grant，拍卖结算走它）、[`ECONOMY_BALANCE.md`](ECONOMY_BALANCE.md)（货币政策/反通胀哲学）、[`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md)（数值演算）、[`SERVER_API.md`](SERVER_API.md)（接口契约）、[`OPS_DESIGN.md`](OPS_DESIGN.md)（反 RMT 审计工单复用）、[`EQUIPMENT_DESIGN.md`](EQUIPMENT_DESIGN.md)/[`CHARACTER_CARDS_DESIGN.md`](CHARACTER_CARDS_DESIGN.md)（装备/角色卡实例定义）、[`SLG_DESIGN.md`](SLG_DESIGN.md)（仅材料 `scrap/lead/binding` 的产出侧定义共享，拍卖机制本身与 SLG 世界/赛季生命周期无关，见 §9 拍板说明）。
 >
-> **本文是从 `SLG_DESIGN §7.1 / §14` 抽出的拍卖行机制权威**：那两节保留指针，结论以本文为准。**数值不在本文定**——常量在 `server/shared/src/slg.ts`（`AUCTION_*`），本文只引用并注 DRAFT。
+> **本文是拍卖行机制权威**：数值不在本文定——常量在 `server/shared/src/slg.ts`（`AUCTION_*`），本文只引用并注 DRAFT。
 
 ---
 
 ## 0. TL;DR
 
-- **拍卖行 = SLG 大世界唯一交易机制**（SLG9）：单一机制覆盖「公开市场」与「点对点定向交易」（挂单时指定受拍人）。
-- **可交易品 = 材料 + 装备（A ✅）**（PvE/SLG 统一养成材料 `scrap/lead/binding` + 锻造装备实例，整件托管转移）；**赛季资源（粮/铁/木）禁挂**（季末清零、防套利、维持 biome 物产差异价值）。
+- **拍卖行 = 和角色卡/装备/材料/皮肤四类养成物品绑定的大区内全服市场**：与 SLG 的 worldId/赛季生命周期无关（2026-07-06 拍板定稿，详见 §9），单一机制覆盖「公开市场」与「点对点定向交易」（挂单时指定受拍人）。
+- **可交易品 = 材料 + 装备（A ✅）+ 角色卡（CC-5 ✅）+ 皮肤（设计中，见 §2.1/§9 任务2）**（PvE/SLG 统一养成材料 `scrap/lead/binding` + 锻造装备实例/角色卡实例/皮肤，整件托管转移）；**SLG 赛季资源（粮/铁/木）本就不在拍卖标的范围内**（那是大世界内政资源，随赛季重置，从未支持挂拍）。
 - **计价货币 = 金币（coins，跨季留存的 premium 货币）**；系统抽 **10% 手续费**；**禁止以赛季资源/局内 ink 计价**（防与天梯/付费体系串味）。
-- **承重墙**：拍卖行不碰战斗/地图，是纯经济子系统——挂存与发放走 **meta 材料库 + 装备库**（幂等 orderId），扣款/收款走 **commercial 金币钱包**，状态机权威在 **worldsvc `auctions` 集合**。
+- **承重墙**：拍卖行不碰战斗/地图，是纯经济子系统——挂存与发放走 **meta 材料库 + 装备库 + 角色卡库（+ 皮肤库，待建）**（幂等 orderId），扣款/收款走 **commercial 金币钱包**，状态机权威**目前**在 worldsvc `auctions` 集合，**拆分完成后**迁至独立服务 `auctionsvc`（见 §9）。
 - **反 RMT 是持续对抗**（R3）：10% 高税 + 并发挂单上限 + 每日限额（C ✅）+ 绑定材料禁挂（E ✅，清单暂空）+ 价格护栏动态滑窗（G ✅）+ 异常模式 admin 审计（D ✅ admin G7 已接，pull 式扫描）。
-- **当前状态**（2026-07-02 复核）：**A/B/C/D/E/F/G 七轨道全实跑** + 一口价主干（worldsvc `auctionService.ts` + 28 条 e2e；装备库存后端 meta `equipment.ts` + 12 条 e2e；异常审计 admin `service.ts` + `test/season-audit.e2e.test.ts`）；**客户端双入口已接**（大厅右侧功能条 + SLG 世界地图工具栏，均通向 `AuctionScene`，见 §6）。
+- **当前状态**（2026-07-06 复核）：**A/B/C/D/E/G 六轨道全实跑** + 一口价主干（worldsvc `auctionService.ts` + e2e；装备库存后端 meta `equipment.ts`；异常审计 admin `service.ts`）；**客户端双入口已接**（大厅右侧功能条 + SLG 世界地图工具栏，均通向 `AuctionScene`，见 §6）；**F（原"季末冻结/结算"）已废弃**，拍卖单只按自身 72h 到期正常流转，不受任何赛季事件影响；**去耦合拆分（§9）代码尚未开工**，当前实现仍挂靠 worldsvc、按 worldId 隔离，本文档已按目标架构定稿，实现落后于文档属预期状态（见 §9 各任务勾选进度）。
 
 ---
 
 ## 1. 定位与边界
 
+> **2026-07-06 拍板定位**：拍卖行不是「SLG 大世界的交易子系统」，而是和角色卡/装备/材料/皮肤四类**养成物品**绑定的**全服（大区内）市场**，性质上和 matchsvc 一样是全服行为，与 SLG 的 worldId/赛季生命周期无关。此前文档里"按 worldId 隔离""随赛季结算清算"等表述均属误定位，已随本次改写作废（详见 §9 拆分任务清单）。
+
 | 维度 | 决策 | 来源 |
 |---|---|---|
-| 唯一交易机制 | 全游戏交易只走拍卖行；无独立「邮寄/转账/摆摊」系统 | SLG9 |
-| 点对点交易 | = 挂单时填 `designatedBuyerId`，仅该账号可拍下；无独立转移系统 | SLG9 |
-| 可交易品 | 材料（scrap/lead/binding）+ 装备；**赛季资源禁挂** | §7.1 / U1 |
-| 计价 | 仅金币 coins（跨季 premium 货币）；禁赛季资源/ink 计价 | U1 / ECONOMY_BALANCE |
-| 手续费 | 成交价 10%（coin），系统回收（sink） | U1 |
-| 进程归属 | 状态机在 **worldsvc**（公网第四面 `/auction/*`）；扣发金币→commercial；挂发材料→meta | §14.1 P1 |
-| 跨大区 | 拍卖行**大区内隔离**（与地图/经济一致）；不跨大区流通 | SLG2 |
+| 唯一交易机制 | 全游戏交易只走拍卖行；无独立「邮寄/转账/摆摊」系统 | 拍板 |
+| 点对点交易 | = 挂单时填 `designatedBuyerId`，仅该账号可拍下；无独立转移系统 | 拍板 |
+| 可交易品 | 材料（scrap/lead/binding）+ 装备 + 角色卡 + 皮肤（设计中，见 §2.1）；**SLG 赛季资源（粮/铁/木）从不在拍卖标的范围** | §2.1 |
+| 计价 | 仅金币 coins（跨季 premium 货币）；禁赛季资源/ink 计价 | ECONOMY_BALANCE |
+| 手续费 | 成交价 10%（coin），系统回收（sink） | 拍板 |
+| 进程归属 | 拍卖是**独立服务 `auctionsvc`**（meta 层，全服单实例，欧美/中国各自部署一份）；扣发金币→commercial；挂发材料/装备/角色卡/皮肤→meta。**当前实现仍挂靠 worldsvc，迁移中，见 §9 任务3/4** | 2026-07-06 拍板 |
+| 大区范围 | 拍卖是**大区内全服市场**：与 worldId/SLG shard 无关，同一大区所有玩家自由流通，不跨大区；中国区是完全独立部署栈，物理隔离不属于本文档讨论范围（架构设计只需覆盖西方大区） | 2026-07-06 拍板 |
 
 **信任边界**：成交全在服务器权威（客户端只读挂单列表 + 发起意图）；价格/库存/扣发全服务器校验，伪造无效（§11 反作弊）。
+
+> **皮肤交易**：所需的托管能力目前不存在（metaserver 尚无 `escrowSkin`/`grantSkin`），见 §9 拍卖任务2；在其落地前 §2.1 的 `skin` 行仅为设计，不可用。
 
 ---
 
@@ -44,6 +48,7 @@
 | `material` | `{material: 'scrap'\|'lead'\|'binding'\|…}` | meta `deductMaterial(seller, mat, qty, orderId)` | 系统邮件附件 `{kind:'material', id, count}` | ✅ 实跑 |
 | `equipment` | 挂单入参 `{instanceId}`；存储 `{instance: 完整快照}`（qty 恒 1） | meta `escrowEquipment(seller, instanceId, orderId)`（移出库存回快照） | 系统邮件附件 `{kind:'equipment', instance}`（领取按 id 写回 `equipmentInv`） | ✅ 实跑（A） |
 | `card` | 挂单入参 `{instanceId}`；存储 `{instance: 完整快照}`（qty 恒 1） | meta `escrowCard(seller, instanceId, orderId)`（校验 gear 全空后移出 cardInv） | 系统邮件附件 `{kind:'card', instance}`（领取按 id 写回 `cardInv`） | ✅ 实跑（CC-5） |
+| `skin` | 挂单入参 `{skinId}`；存储 `{skinId}`（qty 恒 1，皮肤无等级/词条，无需实例快照） | meta `escrowSkin(seller, skinId, orderId)`（校验拥有且未装备中后 `$pull` 摘除） | 系统邮件附件 `{kind:'skin', skinId}`（领取按 id `$addToSet` 写回 `inventory.skins`） | ⚠️ 设计中，托管能力未建，见 §9 任务2 |
 
 - **挂单即托管 + escrow-out 邮件出账**：挂单时立刻从卖方库存移出标的（托管在挂单文档里，拍卖期间背包不可见/不可用），避免「挂着卖但库存已被花掉」的超卖。**所有出账——成交发给买家、撤单/过期/季末退回卖家——一律通过系统邮件附件下发，收件人领取后才入库**（装备/卡附件携带完整实例快照）。金币侧（卖方收款、竞拍退款）仍直接走 commercial。设计依据见 EQUIPMENT_DESIGN §13。
 - **qty/price**：`price` = 每件单价（金币），`totalPrice = price × qty`；材料按堆叠数量挂，装备 v1 单件挂（qty=1，A 节细化）。
@@ -94,7 +99,7 @@
 
 ## 4. A–G 缺口设计决策
 
-> 主干（挂/买/撤/过期/材料/金币/税/定向/并发）已实跑（§6）。以下七项是 SLG_DESIGN 承诺但未兑现的，本文给出**建议决策**；标 ⚠️ 的是需你拍板的产品/数值分叉，标 DRAFT 的是上线后调参。
+> 主干（挂/买/撤/过期/材料/金币/税/定向/并发）已实跑（§6）。以下各项本文给出**建议决策**；标 ⚠️ 的是需你拍板的产品/数值分叉，标 DRAFT 的是上线后调参。**F（原"季末冻结/结算"）已于 2026-07-06 整节废弃**，见 §9 拍板背景——拍卖与 SLG 赛季生命周期无关，不受任何赛季事件影响。
 
 ### A. 装备交易 ✅ 已实现（2026-06-21）
 
@@ -126,11 +131,11 @@
 - **反 RMT 加压**（竞拍是搬砖重灾区，与 §4.D 联动）：自买自抬（seller 关联账号出价抬价）、串拍进异常审计；出价计入每日限额（C）。
 - **优先级**：中（主干一口价已闭环；竞拍是体验增强 + §7.1 兑现，可独立切片）。
 
-### C. 每日限额（反搬砖）✅ 已实现（2026-06-21）
+### C. 每日限额（反搬砖）✅ 已实现（2026-06-21，2026-07-06 起 key 去 worldId）
 
-> 实现：`auctionDaily` 集合按 `${worldId}:${accountId}:${dayKey}`（UTC 日界）计数，`lists`/`buys` 两计数器，`expiresAt`（Date）TTL 自清（`AUCTION_DAILY_TTL_SEC`）。挂单占 `lists`、购买/出价占 `buys`，先占名额（超限回滚 + 抛 `AUCTION_LIMIT_REACHED`）。上限 `AUCTION_DAILY_LIST_CAP=30` / `AUCTION_DAILY_BUY_CAP=30`（DRAFT）。
+> 实现：`auctionDaily` 集合按 `${accountId}:${dayKey}`（UTC 日界，全服统一计数，不再按大区/worldId 拆分）计数，`lists`/`buys` 两计数器，`expiresAt`（Date）TTL 自清（`AUCTION_DAILY_TTL_SEC`）。挂单占 `lists`、购买/出价占 `buys`，先占名额（超限回滚 + 抛 `AUCTION_LIMIT_REACHED`）。上限 `AUCTION_DAILY_LIST_CAP=30` / `AUCTION_DAILY_BUY_CAP=30`（DRAFT）。
 
-- **现状**：只有并发上限 `AUCTION_MAX_LISTINGS=20`（同时 open 的挂单数），无「每日挂单/成交次数」上限。SLG9 明确要每日限额。
+- **现状**：只有并发上限 `AUCTION_MAX_LISTINGS=20`（同时 open 的挂单数），无「每日挂单/成交次数」上限。
 - **建议设计**：
   - 复用 `RETENTION_DESIGN` 的 `dayKey`（服务器日界）模式，按账号计数：
     - `AUCTION_DAILY_LIST_CAP`（每日新挂单数上限，DRAFT）
@@ -159,21 +164,13 @@
   - 与 A 的「绑定装备禁挂」同源——「绑定」是统一的不可交易标记。
 - **优先级**：低（先有机制位，禁挂清单随经济运营填）。
 
-### F. 季末冻结 / 结算 ✅ 已实现（2026-06-21）
+### F. ~~季末冻结 / 结算~~ ❌ 已废弃（2026-07-06，误定位）
 
-> 实现：(1) **冻结**——`createAuction` 校验 `world.status`，`settling`/`closed` 拒新挂单（`WORLD_CLOSED`）；`settleSeason` 置 `settling` 后即自动冻结。买/撤/结拍不受限。(2) **清算**——`/admin/world/reset` 先调 `auctionSvc.clearWorldOnReset`：批量 `open→cancelled` + 退还卖方标的 + 退还竞拍托管出价 + 清空该 world 价格滑窗（新赛季市场重启），再调 `svc.resetSeason` 清地图态。标的（材料/装备）属养成侧退回安全（SLG4）。
+> 本节此前把拍卖行当成 SLG 大世界赛季生命周期的附属物（随 `world.status='settling'` 冻结挂单、随 `/admin/world/reset` 强制清算所有 open 挂单）。**2026-07-06 拍板：这是误定位**——拍卖行与 SLG worldId/赛季无关，不应因任何赛季事件被冻结或清算。拍卖单只按自身 72h 到期正常流转（§3 状态机），赛季重置对拍卖行无任何影响。原实现里的 `assertWorldAcceptsListings`/`clearWorldOnReset` 调用随本次拆分作废，不迁移到新服务（见 §9 拍卖任务4）。
 
-- **现状**：§7.3 标 DRAFT；赛季切换（`settleSeason`/`resetSeason`）时拍卖行行为未定。
-- **建议设计**（赛季 2 个月，SLG4）：
-  1. **结算前 N 小时（DRAFT）冻结新挂单**：worldId `status` 进 `settling` → `createAuction` 拒收（`WORLD_CLOSED`），仅允许买/撤。
-  2. **赛季重置时强制清算所有 open 挂单**：批量 `open→cancelled` + 退还卖方标的（材料随养成跨季留存，装备实例跨季留存——退回安全）。
-  3. **已成交的金币收益跨季留存**（coins 是跨季货币，卖方所得不清）；税收回的金币消失（sink，无需迁移）。
-  - 与 SLG4 重置表一致：领地/兵力/赛季资源清，养成/coins/外观留——拍卖标的（材料/装备）属「养成」侧，退回即可。
-- **优先级**：中（首个赛季结算前必须有；MVP 单赛季可暂缓）。
+### G. 价格护栏 / 反通胀 ✅ 拍板：动态滑窗 · ✅ 已实现（2026-06-21，2026-07-06 起改按大区全局维护）
 
-### G. 价格护栏 / 反通胀 ✅ 拍板：动态滑窗 · ✅ 已实现（2026-06-21）
-
-> 实现：每品类（`material:{mat}`）滑窗存近 `AUCTION_PRICE_WINDOW_N=20` 笔成交单价于 `auctionPrices` 集合（`$push $slice`）；`refPrice` = 样本 ≥ `AUCTION_PRICE_WINDOW_MIN_SAMPLES=5` 时取**中位数**（抗极端值），否则回退 `AUCTION_STATIC_REF_PRICE`（scrap=10/lead=30/binding=80，DRAFT），都无则放行（冷启动不误杀）。挂单/出价单价须落 `[refPrice×0.5, refPrice×2.0]`（`AUCTION_PRICE_FLOOR_RATIO/CEIL_RATIO`），越界抛 `PRICE_OUT_OF_RANGE`。滑窗按 worldId 隔离，赛季重置随 `clearWorldOnReset` 清空。
+> 实现：每品类（`material:{mat}`）滑窗存近 `AUCTION_PRICE_WINDOW_N=20` 笔成交单价于 `auctionPrices` 集合（`$push $slice`）；`refPrice` = 样本 ≥ `AUCTION_PRICE_WINDOW_MIN_SAMPLES=5` 时取**中位数**（抗极端值），否则回退 `AUCTION_STATIC_REF_PRICE`（scrap=10/lead=30/binding=80，DRAFT），都无则放行（冷启动不误杀）。挂单/出价单价须落 `[refPrice×0.5, refPrice×2.0]`（`AUCTION_PRICE_FLOOR_RATIO/CEIL_RATIO`），越界抛 `PRICE_OUT_OF_RANGE`。滑窗**按大区全局维护**（同一大区所有玩家共享同一份 `refPrice`，不再按 worldId/shard 拆分；旧实现按 worldId 隔离 + 随 `clearWorldOnReset` 清空的做法随 F 一并作废）。
 
 - **现状**：`price > 0` 之外无任何区间限制，可挂任意天价/地板价 → 洗钱（高价定向）/倾销温床。
 - **拍板（2026-06-21）：用动态滑窗护栏**（随市场自适应，而非运营手调静态值）。
@@ -181,8 +178,8 @@
   - **每品类（材料种类 / 装备品类）维护近期成交均价**：滑动窗口取近 `PRICE_WINDOW_N` 笔成交（或近 `PRICE_WINDOW_SEC` 时间窗）的成交单价，算参考价 `refPrice`（DRAFT：算术均值或中位数抗极端值）。
   - **挂单/出价校验区间** `[refPrice × PRICE_FLOOR_RATIO, refPrice × PRICE_CEIL_RATIO]`（DRAFT 浮动带，如 ±50%）；越界抛 `PRICE_OUT_OF_RANGE`（新错误码）。
   - **冷启动**：某品类成交样本 < `PRICE_WINDOW_MIN_SAMPLES` 时回退到 ECONOMY_NUMBERS 静态估值区间（无历史不裸奔）。
-  - **存储**：每品类滑窗成交价 + `refPrice` 缓存（Redis HASH `auction:price:{worldId}:{category}` 或 worldsvc 内存 + Mongo 兜底），每笔 `sold` 更新窗口。
-  - **大区隔离**：refPrice 按 worldId 独立维护（各大区市场独立）。
+  - **存储**：每品类滑窗成交价 + `refPrice` 缓存（Redis HASH `auction:price:{category}` 或服务内存 + Mongo 兜底，key 不再带 worldId），每笔 `sold` 更新窗口。
+  - **大区全局**：refPrice 按大区维护一份（不按 worldId/shard 拆分），同大区市场共享同一参考价。
 - **与定向单**：定向受拍单仍受护栏约束（防「高价定向」洗钱通道，与 §4.D 异常审计互补）。
 - **优先级**：中高（反洗钱主力；冷启动回退静态值，可先上静态、滑窗增量接）。
 
@@ -190,21 +187,21 @@
 
 ## 5. 数据模型 / 契约（引用，权威在代码）
 
-### 5.1 Mongo 集合 `auctions`（worldsvc 库 `notebook_wars_world`）
+### 5.1 Mongo 集合 `auctions`（目标：auctionsvc 独立库 `notebook_wars_auction`；**当前实现仍在 worldsvc 库 `notebook_wars_world`，迁移见 §9 任务3/4**）
 
 ```
-_id: auctionId(worldId, sellerId, ts, seq)   // 进程内 seq 防同毫秒撞键
-worldId, sellerId, itemType, item, qty, price, currency('coins'),
+_id: auctionId(sellerId, ts, seq)   // 进程内 seq 防同毫秒撞键，不再含 worldId 分量
+sellerId, itemType, item, qty, price, currency('coins'),
 designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 ```
 
-索引（`db.ts ensureIndexes`，**实跑**）：
-- `{worldId, itemType, status}` — 浏览挂单
+索引（`db.ts ensureIndexes`，**当前实现仍带 worldId，随 §9 任务4 迁移时一并去掉**）：
+- `{itemType, status}` — 浏览挂单（原 `{worldId, itemType, status}`）
 - `{sellerId}` — 我的挂单
 - `{designatedBuyerId}` — 定向收件
 - `{expireAt}` — **普通索引（非 TTL，故意）**，过期扫描器用
 
-### 5.2 REST 端点（worldsvc 公网第四面 `/auction/*`，已实跑）
+### 5.2 REST 端点（目标：独立服务 `auctionsvc` `/auction/*`；**当前实现仍挂 worldsvc 公网第四面，迁移见 §9 任务3/4/5**）
 
 | 方法 | 路径 | 作用 |
 |---|---|---|
@@ -220,8 +217,8 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 ### 5.3 shared 常量 / 错误码（`shared/slg.ts`，数值权威）
 
 - 常量（DRAFT，均已落 `shared/slg.ts`）：`AUCTION_TAX_RATE=0.1`、`AUCTION_MAX_LISTINGS=20`、`AUCTION_DURATIONS_SEC=[72h]`（2026-07-05 起固定，客户端不再提供时长选择）；**C** `AUCTION_DAILY_LIST_CAP=30`/`AUCTION_DAILY_BUY_CAP=30`/`AUCTION_DAILY_TTL_SEC`；**E** `AUCTION_BANNED_MATERIALS`（空集）；**B** `AUCTION_MIN_INCREMENT_RATIO=0.05`/`AUCTION_ANTI_SNIPE_WINDOW_SEC=5min`；**G** `AUCTION_PRICE_WINDOW_N=20`/`AUCTION_PRICE_WINDOW_MIN_SAMPLES=5`/`AUCTION_PRICE_FLOOR_RATIO=0.5`/`AUCTION_PRICE_CEIL_RATIO=2.0`/`AUCTION_STATIC_REF_PRICE`。
-- 错误码（均已落 `shared/api.ts`）：`AUCTION_NOT_FOUND`、`AUCTION_CLOSED`、`NOT_DESIGNATED_BUYER`、`AUCTION_LIMIT_REACHED`、`NO_PERMISSION`、`INSUFFICIENT_RESOURCES`、`NOT_IMPLEMENTED`、`BAD_REQUEST`、`WORLD_CLOSED`（F）、`PRICE_OUT_OF_RANGE`（G）、`MATERIAL_NOT_TRADEABLE`（E）、`BID_TOO_LOW`（B）。
-- 新增集合：`auctionDaily`（C，TTL `{expiresAt}`）、`auctionPrices`（G，`_id=worldId:category`）；`auctions` 加 `saleMode/startPrice/buyoutPrice/topBid`（B）。
+- 错误码（均已落 `shared/api.ts`）：`AUCTION_NOT_FOUND`、`AUCTION_CLOSED`、`NOT_DESIGNATED_BUYER`、`AUCTION_LIMIT_REACHED`、`NO_PERMISSION`、`INSUFFICIENT_RESOURCES`、`NOT_IMPLEMENTED`、`BAD_REQUEST`、`PRICE_OUT_OF_RANGE`（G）、`MATERIAL_NOT_TRADEABLE`（E）、`BID_TOO_LOW`（B）。`WORLD_CLOSED` 随 F 废弃已不再用于拍卖行（2026-07-06）。
+- 新增集合：`auctionDaily`（C，TTL `{expiresAt}`，`_id`/key 为 `${accountId}:${dayKey}`，不带 worldId）、`auctionPrices`（G，`_id=category`，大区全局，不按 worldId 拆分）；`auctions` 加 `saleMode/startPrice/buyoutPrice/topBid`（B）。
 
 ---
 
@@ -298,6 +295,77 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - ~~**G 算法**：refPrice 用均值还是中位数、滑窗按笔数还是时间~~——已定：**中位数 + 按笔数（近 20 笔）**。
 - ~~**A 时序**：装备交易依赖 EQUIPMENT_DESIGN 库存系统落地节奏。~~——已实现（2026-06-21）：随本切片把装备库存后端 E2（合成 + 托管转移）一并建好。装备的**深度养成**（E3 强化/分解、E4 穿戴、E5 UI、关卡掉落 faucet）仍待做，但不阻塞拍卖交易闭环。
 - ~~**D 时序**：异常审计依赖 §15.1 G7「admin SLG 接入」。~~——已实现（2026-07-02）：admin G7 已接，pull 式离线扫描，见 §4.D / §6。
+
+---
+
+## 9. 拆分任务清单（去 SLG/worldId 耦合 + 独立服务，2026-07-06 拍板）
+
+> **拍板背景**：拍卖行的定位被之前的文档写错了——它不是"SLG 大世界的交易子系统"，而是和角色卡/装备/材料/皮肤四类**养成物品**绑定的**全服（大区内）市场**，和 SLG 的 worldId/赛季生命周期没有关系，性质上和 matchsvc 一样是全服行为。旧文档 §1/§4.F/§4.G 里所有"大区内按 worldId 隔离""赛季结算清算"的表述均为**误定位，本节起全部作废**。
+>
+> **执行约定**：`[ ]` 未开始 / `[~]` 进行中 / `[x]` 完成，按编号顺序做（任务2 依赖任务1 的语义定稿，任务4 依赖任务2/3，任务6/7 必须在任务4 上线后才能删旧代码——不能反过来，否则拍卖功能会中断）。新会话直接说「开始拍卖任务N」即可定位到本节对应条目。约定见 [`claudedocs/worktrees.md`](../../claudedocs/worktrees.md)：本清单每个任务在独立 worktree + 独立分支做。
+
+### 拍卖任务1：重写 AUCTION_DESIGN.md 语义（去耦合定稿）✅（2026-07-06）
+
+- [x] **依赖**：无（本次对话的拍板结论落笔）。
+- **主要文件**：`design/game/AUCTION_DESIGN.md`（本文件自身）。
+- **改动范围**：
+  - §1「定位与边界」：删除"跨大区隔离/不跨大区流通"表述为 SLG 属性的暗示，改写为——拍卖是**大区内全服市场**（与 worldId/SLG shard 无关，同大区玩家自由流通）；中国区是完全独立部署栈，物理隔离不属于本文档讨论范围（架构设计只需覆盖西方大区）。
+  - §2.1「标的」表：新增 `itemType='skin'`（依赖任务2 的皮肤托管能力落地才能转 ✅，本任务先写设计）。
+  - §4.F「季末冻结/结算」：整节删除（`clearWorldOnReset`/`assertWorldAcceptsListings` 逻辑作废，拍卖单只按自己 72h 到期正常流转，不受任何赛季事件影响）。
+  - §4.G「价格护栏」：滑窗范围从"按 worldId 独立维护"改为"按大区全局维护"（同一大区所有玩家共享同一份 refPrice，不再按 shard 拆分）。
+  - §4.C「每日限额」：key 从 `${worldId}:${accountId}:${dayKey}` 改为 `${accountId}:${dayKey}`。
+  - §5「数据模型」：`auctions` 集合定义去掉 `worldId` 字段，索引 `{worldId,itemType,status}` 改为 `{itemType,status}`；`auctionId` 生成函数去掉 worldId 分量。
+  - §1「进程归属」：改为"拍卖是独立服务 `auctionsvc`（meta 层，全服单实例，欧美/中国各自部署一份）"，不再挂靠 worldsvc。
+  - 新增小节说明"皮肤交易需要的托管能力目前不存在，见任务2"。
+- **验收**：文档内部无残留 worldId/大区隔离/赛季结算相关表述；`grep -n worldId design/game/AUCTION_DESIGN.md` 应无命中（除本任务清单本身的历史说明性文字外）。
+
+### 拍卖任务2：metaserver 新增皮肤托管能力
+
+- [ ] **依赖**：任务1 定稿（皮肤交易范围以任务1的 §2.1 为准）。
+- **主要文件**：新建 `server/metaserver/src/skin.ts`；`server/metaserver/src/internal/economyRoutes.ts`（或新建 `skinRoutes.ts`）；`server/shared/src/types.ts`（`SaveData.inventory.skins` 保持 `string[]`，不升级成实例，皮肤本身无等级/词条）。
+- **改动范围**：
+  - `escrowSkin(cols, accountId, skinId, orderId)`：校验 `skins` 数组包含该 id 且未装备中（`equipped` 里没有引用该 skinId）→ 原子 `$pull` 摘除 + 幂等表记录 orderId。
+  - `grantSkin(cols, accountId, skinId, orderId)`：`$addToSet` 写回（幂等，重放安全）。
+  - 新增内部路由 `POST /internal/skins/escrow`、`POST /internal/skins/grant`，鉴权复用现有 `x-internal-key` 模式（照抄 `economyRoutes.ts` 里 equipment 那两个 handler 的写法）。
+  - 错误码：`SKIN_IN_USE`（装备中禁挂）、`SKIN_NOT_FOUND`（未拥有）。
+- **验收**：metaserver e2e 新增皮肤 escrow/grant 用例（参照 `test/equipment.e2e.test.ts` 的结构）；全 metaserver 测试绿。
+
+### 拍卖任务3：新建 `server/auctionsvc/` 服务骨架
+
+- [ ] **依赖**：无（可与任务2 并行）。
+- **主要文件**：`server/auctionsvc/package.json`（`@nw/auctionsvc`）、`src/config.ts`（`NW_AUCTION_PORT`，默认 **18086**）、`src/index.ts`、`src/db.ts`（独立 Mongo 库，如 `notebook_wars_auction`，不再挂 `notebook_wars_world`）。
+- **改动范围**：照抄 `server/worldsvc` 的骨架结构（config/db/httpApi 分层），只搭空壳 + health check，不含业务逻辑（业务逻辑在任务4）。
+- **验收**：`npm run build` / `tsc --noEmit` 过；本地起服务 `/health` 返回 200。
+
+### 拍卖任务4：迁移拍卖业务逻辑到 auctionsvc
+
+- [ ] **依赖**：任务2（皮肤托管）+ 任务3（服务骨架）。
+- **主要文件**：`server/auctionsvc/src/auctionService.ts`（从 `server/worldsvc/src/auctionService.ts` 整体迁移改造）、`src/metaClient.ts`（从 worldsvc 同名文件迁移，去掉非拍卖用的方法，新增 `escrowSkin`/`grantSkin`）、`src/commercialClient.ts`（同样迁移）、`src/httpApi.ts`（`/auction/*` 路由）。
+- **改动范围**：
+  - 所有方法签名去掉 `worldId` 参数；`auctions`/`auctionDaily`/`auctionPrices` 集合搬到 auctionsvc 自己的库。
+  - 删除 `assertWorldAcceptsListings`、`clearWorldOnReset` 调用（季末清算逻辑随任务1 的文档定稿一起作废，不迁移）。
+  - 新增 `itemType='skin'` 分支：挂单调 `meta.escrowSkin`，成交/撤单/过期走系统邮件下发（复用现有 `WorldMailClient` 模式，`kind:'skin'`）。
+  - `contracts/openapi-world.yml` 里的 `/auction/*` 契约迁到新建的 `contracts/openapi-auction.yml`（或按现有习惯放独立文件，具体看 `npm run rest:gen` 现有生成脚本怎么按文件分包）。
+- **验收**：把 `server/worldsvc/test/auction*.e2e.test.ts` 迁到 `server/auctionsvc/test/` 并跑绿（含新增皮肤用例）；此时 worldsvc 和 auctionsvc 的 `/auction/*` **同时存在**（下一步再切流量），先在本地/测试环境验证新服务功能对等。
+
+### 拍卖任务5：接入部署（Caddy + compose + CI）
+
+- [ ] **依赖**：任务4 验收通过。
+- **主要文件**：`server/Caddyfile`、本地/prod/cloud 三份 `docker-compose*.yml`（[[project_social_system]] 提过新进程要三处同步）、`.github/workflows/server-deploy.yml`。
+- **改动范围**：`Caddyfile` 的 `handle /auction* { reverse_proxy worldsvc:18084 }` 改成 `reverse_proxy auctionsvc:18086`；三份 compose 加 auctionsvc 服务块（含 `NW_META_INTERNAL_URL`/`NW_COMM_INTERNAL_URL`/`NW_INTERNAL_KEY` 等环境变量，照抄 worldsvc 现有配法）；CI 部署脚本加 auctionsvc 的 build/push/deploy 步骤。
+- **验收**：VPS 上 `docker ps` 能看到 auctionsvc 容器且健康；实际调用 `/auction/create` 走到新服务（可查 auctionsvc 日志确认，不再查 worldsvc 日志）。
+
+### 拍卖任务6：worldsvc 瘦身
+
+- [ ] **依赖**：任务5 上线且稳定运行一段时间（**不要在切流量当天就删旧代码**，留几天观察期方便回滚）。
+- **主要文件**：`server/worldsvc/src/auctionService.ts`（删除）、`server/worldsvc/src/httpApi.ts`（删 `/auction/*` 路由块）、`server/worldsvc/src/metaClient.ts`/`commercialClient.ts`（删只给拍卖用的方法）、`server/worldsvc/test/auction*.e2e.test.ts`（删，已迁到任务4）、`world.status` 相关的 `settling` 拍卖专用分支。
+- **验收**：worldsvc 全测试绿；`grep -rn auction server/worldsvc/src` 应无命中。
+
+### 拍卖任务7：client 端清理
+
+- [ ] **依赖**：任务5 上线（client 改动和后端切流量应在同一次发布，避免旧客户端 + 新后端的过渡期兼容问题——反代路径不变，理论上无兼容问题，但 `worldId` 参数被服务端忽略时行为需确认）。
+- **主要文件**：`client/src/net/WorldApiClient.ts`（拍卖相关方法去掉 `worldId` 入参）、`client/src/scenes/AuctionScene/*`（`resolveWorldShard` 前置解析逻辑整段删除——大厅/SLG 双入口都不再需要先解析 shard 才能开拍卖行，直接进）。
+- **验收**：`tsc --noEmit` + webpack 构建绿；大厅入口和 SLG 世界地图入口都能直接打开拍卖行（无需先进大世界）。
 
 ---
 
