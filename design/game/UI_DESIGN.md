@@ -182,7 +182,8 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 - i18n：`shop.*`。
 - **充值码 overlay**：Canvas 画伪输入框，背后挂隐藏 `<input>` 捕获键盘。光标用 `|` 以 0.5s 交替闪烁；空输入时光标-on 显示 `|`、光标-off 显示 placeholder，确保聚焦即可见光标（不依赖已有字符才显示）。
 - **充值档位图标**：每档左侧画随金额升级的宝藏图标（`coin`→`coins`→`coinStack`→`coinSack`→`coinChest`，见 `render/icons.ts`），越贵越有料，替代千篇一律的 `◎` 文字提升转化诱惑。手绘 SketchPen 笔触 + 金币扁平淡金填充（守三笔风、无渐变），走 `buildIcon` 贴图缓存。
-- **充值档位金币数量字号**：卡片内「图标+金币数」是转化关键信息，字号从 `ch*0.16` 放大到 `ch*0.22`（`drawCard` 内 `coinAmount` 分支），图标与数字保持同一行水平排列、数字纵向居中对齐图标高度，赠送量（`+N`）等副行仍按原字号排在下方。
+- **充值档位金币数量字号**：卡片内「图标+金币数」是转化关键信息，字号 `ch*0.20`（`drawCard` 内 `coinAmount` 分支）；改版后随标题一起收进右上角「右对齐纵向列」（badge → 金币数+图标 → 元价），不再与标题同一行水平排列——标题改左侧、超宽自动换行（`txt()` 新增 `wordWrapWidth` 参数），避免长标题挤压价格列。赠送量（`+N`）等副行仍在下方 icon 右侧。
+- **卡片竖向布局改「按剩余空间反推」，杜绝 icon/文字压中按钮（2026-07-06）**：`drawCard` 曾用写死的 `ch` 比例摆放 icon 和加成文字行（`y+ch*0.30` 起、每行 `ch*0.14`），跟底部 Buy 按钮的位置无关；充值档位卡同时要塞标题+金额+icon+2 行加成文字（`+N` 与"首充双倍"——后者按 `ECONOMY_BALANCE.md` 规定所有档位常驻，非 bug），内容总高超过卡片高度，icon 和第二行文字会压进/被 Buy 按钮挡住。改法：先算按钮占的 `btnH/btnY`，再用 `midTop`（标题/右侧列结束处）到 `midBottom`（按钮上沿留白）之间的实际空隙反推 icon 尺寸与每行行高（`Math.min(理想值, 可用空间)`），几何上保证不会溢出到按钮；同时把 `gridMetrics()` 里 `cellH` 从 `h*0.22` 调到 `h*0.27` 给内容多留余量。
 - **光标约定是硬性契约，不是 ShopScene 专属实现**：任何「隐藏 `<input>` + canvas 画字段」的输入框都必须调用共享的 `caretDisplay()`（`render/inputDisplay.ts`）产出显示文本，禁止再手写 `text || ' '` / `text || placeholder`。2026-06-23 那次修复只顺手改了 ShopScene/SettingsScene/ChatScene 三处，遗漏了 FamilyScene/SectScene/FriendsScene（好友页内嵌的家族/宗门/世界频道输入框）/AuctionScene（指定买家字段，另外还漏了逐键刷新），2026-07-04 补齐。`test/ui/caretRegression.ui.ts` 对每个受影响输入框做了聚焦-闪烁回归断言；新增任何同类输入框必须在该文件补一组用例，而不是仅凭肉眼过一遍。
 
 ### 4.4 GachaScene（盲盒，S2）
@@ -283,10 +284,12 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 #### 4.9.1 按钮主次 + 图标 + 背景涂鸦（2026-06-27）
 结算页动作区重排为「一个主 CTA + 一行次要入口」，所有按钮配手绘图标：
 - **主按钮**：`再来一局`（胜利时文案换 `再战一场`）——大、`ui.gold` 金色填充、白色粗体、配 `swords`(交叉刀) 图标，视觉首位。
-- **次按钮**（底部横排一行，纸色幽灵风：描边 + 墨色字 + 小图标）：`观看回放`(`replay`) / `分享`(`share`) / `返回大厅`(`home`)。回放、分享条件性显示；返回大厅仅在「再来一局 ≠ 回大厅」时常驻（见下）。
-- **行为：天梯 PvP「再来一局」= 重进匹配**（旧实现里它其实回大厅）。`createAppCore.finishNet`：天梯局 `onPlayAgain = 关 session → goRoom({autoRanked})`（进排队 UI，可取消），并补 `onReturnToLobby = goLobby` 作为显式出口；好友/AI 局维持「再来一局 = 回大厅」，不显示返回大厅次按钮。
+- **次按钮**（底部横排一行，纸色幽灵风：描边 + 墨色字 + 小图标）：`观看回放`(`replay`) / `分享`(`share`)。均条件性显示。（原有的常驻「返回大厅」`home` 次按钮已于 2026-07-06 移除，见下——现在由左上角统一返回按钮覆盖同一出口。）
+- **行为：天梯 PvP「再来一局」= 重进匹配**（旧实现里它其实回大厅）。`createAppCore.finishNet`：天梯局 `onPlayAgain = 关 session → goRoom({autoRanked})`（进排队 UI，可取消），并传 `onReturnToLobby = goLobby` 给 `goResult`（不再渲染成次按钮，只喂左上角 `onBack` 闭包，见下）；好友/AI 局维持「再来一局 = 回大厅」。
 - **背景情绪涂鸦**（`addMoodDeco`，低 z 序藏在文字/按钮后）：胜利→暖金四角星点；失败→断铅笔 + 红笔划叉（呼应"红笔批改"美术母题）；平局→角落中性等号。
-- 新增图标：`icons.ts` 的 `swords/replay/share/home`（SketchPen 线稿，烘焙缓存）；i18n 新增 `result.toLobby` / `result.playAgainWin`（三语）。
+- 新增图标：`icons.ts` 的 `swords/replay/share/home`（SketchPen 线稿，烘焙缓存；`home` 现仅用于其他场景）；i18n 新增 `result.playAgainWin`（三语）。
+- **PvE-vs-AI「再来一局」= 直接重进对局（2026-07-06）**：`nav/game.ts` 的 `goGame().onGameEnd` 不再走默认的「play again = 回大厅」，改为 `onPlayAgain = () => goGame({ difficulty: pickPracticeDifficulty(elo) })`（复用大厅入口同一条难度公式，直接重开一局，跳过大厅）。`pickPracticeDifficulty` 从 `lobby.ts` 导出供 `game.ts` 复用。
+- **新增左上角返回按钮，删除重复的次按钮（2026-07-06）**：`ResultSceneCallbacks.onBack()`（必填）——固定回大厅，独立于「再来一局」逻辑（后者现在可能是重进对局而非回大厅）。视觉复用 `SceneHeader.ts` 的 `drawFloatingBackButton`（浮动返回胶囊，左上角同款样式，与其余 22 个场景对齐）；该 helper 只画视觉+返回命中矩形不接交互，`ResultScene` 自己叠一层透明命中区接 `pointertap`。`nav/result.ts` 的 `goResult` 里 `cb.onBack` 复用 `onReturnToLobby`（天梯局关 session）否则回退纯 `goLobby()`。原先天梯局专属的「返回大厅」次按钮是同一个出口的重复入口（天梯结算会同时看到左上角返回 + 底部返回大厅两个按钮），已删除——连同 `ResultSceneCallbacks.onReturnToLobby` 字段和 `result.toLobby` 三语 i18n key；`goResult` 的 `onReturnToLobby` 参数只保留给 `onBack` 闭包内部用，不再对外暴露成独立按钮。
 
 #### 4.9.2 结算页 deco 丰富（2026-06-30）
 结算页引入与大厅/对战一致的手绘涂鸦层，解决页面太空旷的问题：

@@ -11,6 +11,7 @@ import { buildDecorCLayer } from '../render/decorCLayer';
 import { getDecorTexture, isDecorReady, decorFrameNames } from '../render/decorAtlas';
 import { bake } from '../render/bake';
 import { Prng } from '../game/math/prng';
+import { drawFloatingBackButton } from '../ui/widgets/SceneHeader';
 
 /** Optional player identities for the result screen's tap-to-view profile popup. */
 export interface ResultProfiles {
@@ -102,17 +103,12 @@ function computeBadges(stats: PlayerStats): Badge[] {
 
 export interface ResultSceneCallbacks {
   onPlayAgain(): void;
+  /** Top-left back chip — always shown, always exits straight to the lobby regardless of what onPlayAgain does. */
+  onBack(): void;
   /** When set, a "watch replay" button is shown (locally-recorded matches, S1-RP). */
   onWatchReplay?(): void;
   /** When set, a "share this match" button is shown (state-stream sharing, REPLAY_SHARE_DESIGN §4.3). */
   onShare?(): void;
-  /**
-   * When set, a secondary "back to lobby" button is shown. Used when "play again"
-   * does something other than return to the lobby (e.g. ranked PvP re-queues), so
-   * the player still has an explicit exit. Omit it for modes where "play again"
-   * already returns to the lobby/map (the button would be a duplicate).
-   */
-  onReturnToLobby?(): void;
   /** Override the "play again" button label (e.g. campaign uses 'Back to Map'). */
   playAgainLabel?: string;
 }
@@ -219,6 +215,10 @@ export class ResultScene implements Scene {
 
     // Background — shared hand-drawn notebook page (baked per size).
     this.container.addChild(buildPaperBackground('resultbg', w, h));
+
+    // Top-left back chip — always exits straight to the lobby, independent of
+    // whatever the primary CTA below does (which may re-enter a match instead).
+    this.addBackButton(() => cb.onBack());
 
     // C-group scattered doodles across the full page (same atlas as lobby background).
     const cLayer = buildDecorCLayer(w, h);
@@ -361,7 +361,6 @@ export class ResultScene implements Scene {
     const secs: { label: string; icon: IconKind; tap: () => void }[] = [];
     if (cb.onWatchReplay)   secs.push({ label: t('result.watchReplay'), icon: 'replay', tap: () => cb.onWatchReplay!() });
     if (cb.onShare)         secs.push({ label: t('share.button'),       icon: 'share',  tap: () => cb.onShare!() });
-    if (cb.onReturnToLobby) secs.push({ label: t('result.toLobby'),     icon: 'home',   tap: () => cb.onReturnToLobby!() });
 
     if (secs.length > 0) {
       const gap   = Math.round(w * 0.018);
@@ -532,6 +531,25 @@ export class ResultScene implements Scene {
     label.y = y + h / 2;
 
     this.container.addChild(glyph, label);
+  }
+
+  /**
+   * Standalone top-left back chip (shared {@link drawFloatingBackButton} visuals).
+   * That helper only draws the chip and returns its hit rect — it does not wire
+   * up interactivity, since most callers (e.g. WorldMapRenderer) run their own
+   * manual hit-testing pipeline. This scene uses plain PIXI interactive/pointertap
+   * everywhere else, so lay a transparent hit-area graphic over the chip instead.
+   */
+  private addBackButton(onTap: () => void): void {
+    const { backRect } = drawFloatingBackButton(this.container, this.h);
+    const hit = new PIXI.Graphics();
+    hit.beginFill(0x000000, 0.001);
+    hit.drawRect(backRect.x, backRect.y, backRect.w, backRect.h);
+    hit.endFill();
+    hit.interactive = true;
+    hit.cursor = 'pointer';
+    hit.on('pointertap', onTap);
+    this.container.addChild(hit);
   }
 
   /** A-group doodles scattered in the left/right paper margins, mirroring the battle-scene look. */

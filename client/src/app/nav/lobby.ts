@@ -19,7 +19,7 @@ import { TOKEN_KEY, LAST_SEEN_SEASON_KEY, TUTORIAL_DONE_FLAG } from '../appConst
  * intentionally scopes to the SLG-only browser-safe slice (see @nw/shared alias comment
  * in webpack.config.js). Keep the threshold/split in sync with ladder.ts if either changes.
  */
-function pickPracticeDifficulty(elo: number): AIDifficulty {
+export function pickPracticeDifficulty(elo: number): AIDifficulty {
   const roll = elo < 1200 ? 1 + Math.floor(Math.random() * 6) : 5 + Math.floor(Math.random() * 6);
   return roll as AIDifficulty;
 }

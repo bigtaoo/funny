@@ -1,5 +1,5 @@
 # Notebook Wars server image (C-3 / S1-M).
-# Single image hosts metaserver / gateway / matchsvc / gameserver / commercial / worldsvc / admin / socialsvc / analyticsvc — all share @nw/shared, build once;
+# Single image hosts metaserver / gateway / matchsvc / gameserver / commercial / worldsvc / admin / socialsvc / analyticsvc / auctionsvc — all share @nw/shared, build once;
 # compose uses `command` to select which process to run (node <service>/dist/index.js).
 #
 # Multi-stage:
@@ -21,9 +21,10 @@ COPY worldsvc/package.json ./worldsvc/
 COPY admin/package.json ./admin/
 COPY analyticsvc/package.json ./analyticsvc/
 COPY socialsvc/package.json ./socialsvc/
+COPY auctionsvc/package.json ./auctionsvc/
 RUN npm ci
 COPY . .
-RUN npx tsc -b shared engine metaserver gateway matchsvc gameserver commercial worldsvc admin analyticsvc socialsvc
+RUN npx tsc -b shared engine metaserver gateway matchsvc gameserver commercial worldsvc admin analyticsvc socialsvc auctionsvc
 
 FROM node:20-alpine AS runtime
 WORKDIR /app
@@ -54,6 +55,8 @@ COPY --from=build /app/analyticsvc/package.json ./analyticsvc/package.json
 COPY --from=build /app/analyticsvc/dist ./analyticsvc/dist
 COPY --from=build /app/socialsvc/package.json ./socialsvc/package.json
 COPY --from=build /app/socialsvc/dist ./socialsvc/dist
+COPY --from=build /app/auctionsvc/package.json ./auctionsvc/package.json
+COPY --from=build /app/auctionsvc/dist ./auctionsvc/dist
 # meta reads contracts/openapi.yml; gateway/gameserver reads contracts/transport.proto at runtime (dist/*.js → /app/contracts).
 COPY --from=build /app/contracts ./contracts
 # Default: metaserver; gameserver overrides command in compose.

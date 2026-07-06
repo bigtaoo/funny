@@ -22,9 +22,22 @@ export function isResAtlasReady(): boolean {
   return sheet !== null;
 }
 
-/** Texture for a resource type frame (e.g. `res_ink`), or null if not ready/unknown. */
+/** Texture for a resource type's generic frame (e.g. `res_ink`), or null if not ready/unknown. */
 export function getResTexture(resType: string): PIXI.Texture | null {
   return sheet ? (sheet.textures[`res_${resType}`] ?? null) : null;
+}
+
+/**
+ * Texture for a resource type's exact-LEVEL frame (e.g. `res_ink_l7`), or null if that
+ * specific level's art hasn't been produced yet. Unlike `getResTexture`, this has no
+ * fallback — callers use the null to decide whether to fall back to the generic motif's
+ * count/alpha simulation instead. Lets per-level art drop in resType-by-resType,
+ * level-by-level with zero code change (mirrors cityAtlasLoader's getCityTextureForLevel).
+ */
+export function getResLevelTexture(resType: string, level: number): PIXI.Texture | null {
+  if (!sheet) return null;
+  const lv = Math.max(1, Math.min(10, Math.round(level)));
+  return sheet.textures[`res_${resType}_l${lv}`] ?? null;
 }
 
 /**

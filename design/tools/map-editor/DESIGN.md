@@ -46,6 +46,8 @@
   - **城池在两端都画真实精灵**：游戏 `WorldMapRenderer.refreshCityLayer` 现在除玩家主城外，也为 `allCityNodes`（州府/关隘城/分级城/世界中心）各放一个按 footprint 缩放的城池精灵（NPC 城是确定性地形，map-wide 可见、不受战争迷雾影响，与据点/险地贴图一致）。编辑器拷入 `city_atlas.{png,json}` + 新 `render/cityAtlasLoader.ts`（去 assetIO，仿 terrainAtlasLoader），新增 `citySpriteLayer` + `refreshCitySprites()` 用同函数同缩放画城——只在换种子/缩放/拖动城池后重建（不随笔刷每帧重建）；城池 footprint 方框只在 City 工具下作为可拖拽提示显示。**资源**早已用 `res_atlas` 真实图案（`drawResMotif`），本轮不动。
   - **验证**：`@nw/shared` `tsc` + 537 例单测 + dist build 全绿；`client`/`tools/map-editor` `tsc --noEmit` + `webpack --mode production` 均过。按 CLAUDE.md 约定用 tsc+webpack 验证，不启动游戏截图。
   - **已知限制（本轮不做，另起任务）**：编辑器"发布"的改动当前仍到不了运行中的游戏——`worldsvc` `getMap/getTile` 只读 `proceduralTile`，从不读世界创建时克隆进 `mapBaselines` 的模板 tile（管线半接线）。所以本轮做的是**"生成地图"的两端渲染对齐**（编辑器与游戏都从同一份 `proceduralTile`/`allCityNodes` 本地派生，故一致）；让**发布的编辑真正进入游戏**需把 `mapBaselines` 接进热读路径（含把 `obstacleKind` 带进 `MapBaselineTileDoc`），是另一条更重、碰地图读热路径的改动，已单列任务。
+- **资源格去掉红色危险角标 + 支持按等级真实出图（2026-07-06）**：用户反馈地图上"靠近城池处红色边框格密集"看起来像禁建区/领地标记，实际是 `drawResMotif` 里 lv≥8 的程序化红色危险角标装饰（`0xcc3333` 描边），跟领地/禁建无关（`worldsvc` 里目前没有任何禁建区/领地半径概念，唯一的半径机制是纯战争迷雾用的视野半径，见 `siege.ts` 的 `VISION_*_RADIUS`）；且该视觉规律的根因也不是"越靠近城池等级越高"——mapgen 的等级分布是**州（province）级**的（角度扇区+半径环，跟地图几何中心而非城池位置有关），州内所有格子共用同一张分布表，格子噪声只做区域内平滑，不含"到城池距离"信息（`mapgen.ts` `_levelFromRing`/`provinceIdxAt`）；该行为符合预期，未改。改动的是：① 删掉 lv≥8 红色危险角标（两端 `tileGraphics.ts` 的 `drawResMotif`），保留 lv4+/lv7+ 的棕色防御栅栏描边（跟"资源美术"是两回事，不动）；② 仿照城池 `getCityTextureForLevel` 的"每级一张图，缺则回退"模式，`resAtlasLoader.ts` 两端新增 `getResLevelTexture(resType, level)`：优先取 `res_{resType}_l{level}` 精确等级帧，画一张真实等级图（不再叠加 count/alpha 模拟），查不到才回退到现有的"单图×图标数量(1-4)×透明度"模拟——`res_atlas.json` 目前还没有任何 `_l{n}` 分级帧，所以在美术资产就位前视觉完全不变，跟城池那批"6 张就位、4 张待补"的过渡方式一致。
+  - **验证**：`client`、`tools/map-editor` `tsc --noEmit` 均过；渲染逻辑改动不启动游戏截图（按 CLAUDE.md 约定）。
 
 ## 1. 问题定义（现状，ADR-032 之前）
 
@@ -192,3 +194,9 @@ npm run start   # webpack dev server，端口 9095
 ```
 
 当前功能：PixiJS 等距视口渲染，贴图跟游戏客户端一致（切 world seed 输入框 + Regenerate 按钮，Pan 工具/中键拖动平移，滚轮/Zoom 滑块缩放，Center View 按钮回中）、hover 显示 tile 坐标/类型（阻挡格附带 river/mountain）/等级/资源、图例；河流/山脉格子笔刷（River/Mountain/Eraser 工具切换，点击或拖动直接把笔刷覆盖的格子改成当前地形/清回程序化地形——跟图片编辑器笔刷一样即点即变，无需先选起止点，笔刷大小可调，光标跟随一个笔刷大小的圆形描边，Clear All 清空、Export/Import JSON 支持导入旧版矢量路径 JSON 自动迁移；**河流画成河、山脉画成山**——不再是位置哈希随机选贴图，与游戏内一致）；城池（City 工具，拖动移动坐标、点击查看详情、Reset Cities、独立 Export/Import JSON）——**按等级渲染真实城池精灵**（`city_atlas`，每级取图、footprint 3/5/7/9 随等级变大），与游戏 `WorldMapRenderer` 城池层同款；地形格子/城池栅格化回地块+发布到服务端模板（Publish to Server 面板，含登录/模板生成/模板列表/Activate/Delete）均已实现。**资源**用 `res_atlas` 手绘图案显示。（发布进运行中世界的接线是另一条任务，见 §0"已知限制"。）
+
+### 排查记录：用户反馈"山/河笔刷画完不显示"（2026-07-06，结论：非代码缺陷）
+
+用户反馈用 River/Mountain 笔刷改地图后画面没变化。排查覆盖笔刷落格（`terrainGrid.ts`）→ 栅格化合并 diffCache（`index.ts` `renderBaseMap()`）→ 选贴图（`tileStyle.ts:terrainTextureName`）→ 绘制（`terrainAtlasLoader`/`tileGraphics.ts`）全链路的静态审查，并起 9095 服务用 preview 工具实机模拟落笔验证：落笔后 Tile 面板正确显示 `obstacle (mountain/river)`、Painted Terrain 计数正确递增、PIXI 场景图对应 Graphics 节点 `visible/renderable` 均为真、`terrain_atlas.png` 里 mountain/river 帧的美术内容确认与 grass 明显不同（岩石纹理 vs 波浪纹理）。曾怀疑 `drawBrushCursor()` 里 `TERRAIN_COLORS[tool]` 取不到 river/mountain 颜色，核实后是虚惊——`index.ts` 顶部本来就单独声明了一份 `Record<TerrainKind, number>` 的 `TERRAIN_COLORS`（专供笔刷光标用，和 `tileStyle.ts` 同名导出互不影响），取值正常。
+
+**未发现渲染链路缺陷。** 最可能的解释：`proceduralTile()` 生成的程序化底图本身就大量分布着 `obstacle` 类型格子，未标记 `obstacleKind` 时按 `(tx*31+ty*17)%2` 哈希在 mountain/river 贴图间随机选（`tileStyle.ts:39`）——默认 `preview` 世界早已铺满和笔刷画出来视觉上完全一样的纹理，若笔刷落在已有 obstacle 密集区，新画的地块会和周围融为一体，造成"没有生效"的错觉。下次复现建议：在明显是平原/资源的空地上测试笔刷，画完用 Export → 导出 JSON 核对数据是否真的写入。

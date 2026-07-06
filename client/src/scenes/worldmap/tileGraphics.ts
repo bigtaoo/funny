@@ -2,7 +2,7 @@
 // WorldMapScene; each takes a target Graphics + params, holds no scene state.
 import * as PIXI from 'pixi.js-legacy';
 import { ISO_RATIO, diamondPath, diamondVertices } from '../../render/isoGrid';
-import { getResTexture, isResAtlasReady } from '../../render/resAtlasLoader';
+import { getResLevelTexture, getResTexture, isResAtlasReady } from '../../render/resAtlasLoader';
 import { getTerrainTexture, isTerrainAtlasReady } from '../../render/terrainAtlasLoader';
 import { getBuildingTexture, isBuildingAtlasReady } from '../../render/buildingAtlasLoader';
 import { isCityAtlasReady } from '../../render/cityAtlasLoader';
@@ -300,12 +300,14 @@ export function drawCityIcon(g: PIXI.Graphics, mine: boolean, ally: boolean, lv:
 /**
  * Render resource motif sprites + hand-drawn defense frames onto a tile Graphics.
  *
- * Abundance axis: replicate the same motif sprite — 1 unit at lv1 growing to
- * 4 units at lv10, laid out in pre-defined scatter positions so clusters feel
- * organic rather than grid-aligned.
+ * Abundance axis: when a hand-drawn `res_{resType}_l{level}` frame exists, draw it
+ * as a single sprite (real per-level art). Otherwise fall back to replicating the
+ * generic motif sprite — 1 unit at lv1 growing to 4 units at lv10, laid out in
+ * pre-defined scatter positions — so per-level art can land resType-by-resType,
+ * level-by-level with zero code change (mirrors cityAtlasLoader's tier fallback).
  *
  * Defense axis (lv4+): pencil-stroke fence outline; lv7+ adds a heavier palisade
- * with arrow-tip markers; lv8–10 gets red danger corner accents.
+ * with arrow-tip markers.
  *
  * Falls back gracefully to color-only if the atlas hasn't decoded yet.
  */
@@ -364,28 +366,24 @@ export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, t
     }
   }
 
-  // Red danger corner accents for high-level defended tiles (lv8–10) — traced
-  // along the two edges meeting at each diamond vertex.
-  if (lv >= 8) {
-    const cs = 6;
-    g.lineStyle(1.5, 0xcc3333, 0.75);
-    const corners: [[number, number], [number, number], [number, number]][] = [
-      [v.left, v.top, v.right], [v.top, v.right, v.bottom], [v.right, v.bottom, v.left], [v.bottom, v.left, v.top],
-    ];
-    for (const [prev, vert, next] of corners) {
-      const d1 = Math.hypot(prev[0] - vert[0], prev[1] - vert[1]) || 1;
-      const d2 = Math.hypot(next[0] - vert[0], next[1] - vert[1]) || 1;
-      const p1: [number, number] = [vert[0] + ((prev[0] - vert[0]) / d1) * cs, vert[1] + ((prev[1] - vert[1]) / d1) * cs];
-      const p2: [number, number] = [vert[0] + ((next[0] - vert[0]) / d2) * cs, vert[1] + ((next[1] - vert[1]) / d2) * cs];
-      g.moveTo(p1[0], p1[1]); g.lineTo(vert[0], vert[1]); g.lineTo(p2[0], p2[1]);
-    }
-  }
-
   // ── Motif sprites (programmatic fallback when atlas not ready) ────────────
   if (!isResAtlasReady()) {
     drawResMotifFallback(g, resType, lv, tp);
     return;
   }
+
+  // Real per-level art, when it exists: draw it as a single sprite and skip the
+  // count/alpha abundance simulation entirely — the artwork itself carries the level.
+  const levelTex = getResLevelTexture(resType, lv);
+  if (levelTex) {
+    const sp = new PIXI.Sprite(levelTex);
+    sp.anchor.set(0.5, 0.5);
+    sp.scale.set((tp * 0.34) / Math.max(levelTex.width, levelTex.height));
+    [sp.x, sp.y] = toLocal(0.5, 0.52);
+    g.addChild(sp);
+    return;
+  }
+
   const tex = getResTexture(resType);
   if (!tex) return;
 

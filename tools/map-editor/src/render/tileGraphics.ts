@@ -6,7 +6,7 @@
 // ally-sect border, level dot.
 import * as PIXI from 'pixi.js-legacy';
 import { ISO_RATIO, diamondPath, diamondVertices } from './isoGrid';
-import { getResTexture, isResAtlasReady } from './resAtlasLoader';
+import { getResLevelTexture, getResTexture, isResAtlasReady } from './resAtlasLoader';
 import { getTerrainTexture, isTerrainAtlasReady } from './terrainAtlasLoader';
 import { getBuildingTexture, isBuildingAtlasReady } from './buildingAtlasLoader';
 import { terrainFill } from './tileStyle';
@@ -53,7 +53,7 @@ export function placeBuildingSprite(g: PIXI.Graphics, name: string, hh: number, 
   return true;
 }
 
-/** Resource-motif sprites + hand-drawn defense frames (lv4+/lv7+/lv8+), identical to the game client. */
+/** Resource-motif sprites (real per-level art when available, else count/alpha sim) + hand-drawn defense frames (lv4+/lv7+), identical to the game client. */
 export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, tp: number): void {
   const lv = Math.max(1, Math.min(10, level));
   const toLocal = (fx: number, fy: number): [number, number] => [(fx - 0.5) * tp, (fy - 0.5) * tp * 0.6];
@@ -81,22 +81,18 @@ export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, t
     }
   }
 
-  if (lv >= 8) {
-    const cs = 6;
-    g.lineStyle(1.5, 0xcc3333, 0.75);
-    const corners: [[number, number], [number, number], [number, number]][] = [
-      [v.left, v.top, v.right], [v.top, v.right, v.bottom], [v.right, v.bottom, v.left], [v.bottom, v.left, v.top],
-    ];
-    for (const [prev, vert, next] of corners) {
-      const d1 = Math.hypot(prev[0] - vert[0], prev[1] - vert[1]) || 1;
-      const d2 = Math.hypot(next[0] - vert[0], next[1] - vert[1]) || 1;
-      const p1: [number, number] = [vert[0] + ((prev[0] - vert[0]) / d1) * cs, vert[1] + ((prev[1] - vert[1]) / d1) * cs];
-      const p2: [number, number] = [vert[0] + ((next[0] - vert[0]) / d2) * cs, vert[1] + ((next[1] - vert[1]) / d2) * cs];
-      g.moveTo(p1[0], p1[1]); g.lineTo(vert[0], vert[1]); g.lineTo(p2[0], p2[1]);
-    }
+  if (!isResAtlasReady()) { drawResMotifFallback(g, resType, lv, tp); return; }
+
+  const levelTex = getResLevelTexture(resType, lv);
+  if (levelTex) {
+    const sp = new PIXI.Sprite(levelTex);
+    sp.anchor.set(0.5, 0.5);
+    sp.scale.set((tp * 0.34) / Math.max(levelTex.width, levelTex.height));
+    [sp.x, sp.y] = toLocal(0.5, 0.52);
+    g.addChild(sp);
+    return;
   }
 
-  if (!isResAtlasReady()) { drawResMotifFallback(g, resType, lv, tp); return; }
   const tex = getResTexture(resType);
   if (!tex) return;
 

@@ -357,3 +357,9 @@ POST /achievements/claim        (JWT) { achId, tier:1|2|3 }
 - **A-10 金币池校准**：`coin-pool.test.ts` 锁定当前一次性总池 = **2250**（5 条 ×3 阶：archer/guard/meteor 各 350、chapters 700、wins 500），护栏：单条满阶 ∈[350,700]、均值 ≤500、25 条投影落 8–12k 目标带。校准结论记 `ECONOMY_BALANCE §2.4`。
 
 > **成就系统全部落地**（S9-1~8 + 3b 全 ✅）。后续仅余可选打磨：L1 硬边界精确化（§6.2 待办，优先级因 L2 已补而降低）、运营扩条目（新 statKey 不回填语义 §10-2）、成就顶阶发称号（待 S10 称号系统）。任务跟踪见 `META_TASKS.md` S9。
+
+### 修复：成就图标重复绘制（2026-07-06）
+
+- **问题**：`StatsScene`（Career 页）左侧边栏「Achievements」入口图标被画了两遍——`stats.achievements` 三语言（en/de/zh）i18n 文案本身仍硬编码 `🏆` emoji 前缀（S9-5 时代遗留，入口彼时在顶栏），而 `StatsScene.ts` 早已随 `ui-design.md` v0.3.1（2026-06-27 大厅图标去 emoji）改为 `drawSidebarTabs` 传 `icon:'trophy'` 绘制 SketchPen 手绘图标——emoji 文字 + 手绘图标叠加显示成"两个奖杯"。「Titles」入口因文案本无 emoji 未受影响，成为对照组线索。
+- **修复**：`i18n/locales/{en,de,zh}.ts` 的 `stats.achievements` 去掉 `🏆` 前缀，只留纯文案，与 `stats.titles` 一致；图标职责单独交给 `icon:'trophy'`。
+- **备注**：§7 提到的入口位置描述（顶栏右上按钮）此文档 S9-5 记录也已过时——现实为左侧边栏（`marginLineX` gutter，CardScene/EquipmentScene 同款 sidebar 组件），未改动本次范围，留作后续文档校正。

@@ -302,3 +302,5 @@
 - 已用 `tsc --noEmit` + `vitest run --config vitest.ui.config.ts`（170 例全绿，另有 13 条与本改动无关的 `.tao` 测试资产 unhandled-rejection 噪声）+ `npm run build:web` 验证通过；未跑游戏截图（按仓库约定，视觉验收留给人工）。
 
 **`FamilyScene.ts` 补齐装订线规范**（2026-07-06 追加）：该场景此前完全没接入 `marginLineX`，Members/Family channel 两个 tab 及其内容（成员行、频道消息、发言输入框、底部 宗门/退出 按钮）全部从屏幕最左 `x=0` 起画，横跨红色装订线。改为统一从 `marginLineX(w)` 右侧起算（tab 栏、`renderMembers`、`renderChannel` 三处），底部居中按钮的中点也从 `w/2` 改成 `(marginLineX(w)+w)/2`，右侧留白/按钮位置不变。`tsc --noEmit` 验证。
+
+**金币图标来源勘误**（2026-07-06 追加）：§8.4 第 2 条「核实后确认只有一处来源」的结论已过时——`client/src/render/coinIconAtlas.ts` 后来新增了 `buildCoinIcon()`（AI 位图图集，`coin`/`coins`/`coinStack`/`coinSack`/`coinChest` 五档，`ShopScene`/`LobbyScene`/`EquipmentScene`/`CardScene`/`FriendsScene` 均已切过去，文件头注释自称"the single source of truth"），但 `GachaScene.ts`/`BattlePassScene.ts` 顶栏金币图标当时仍直接调 `buildIcon('coin',...)`（程序绘制矢量字形），两页因此显示的是与其它页不同的图标资产。修复：两场景顶栏改调 `buildCoinIcon('coin', balIcon, C.gold)`；`BattlePassScene.ts` 奖励行的金币阶梯图标（`coinIconTier` 返回值）同步改走 `buildCoinIcon`，材料类奖励（`brush`/`lead`/`binding`/`scrap`）仍用 `buildIcon`。`tsc --noEmit` + `webpack --mode development` 验证通过；未跑游戏截图。

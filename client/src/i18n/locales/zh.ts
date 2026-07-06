@@ -5,6 +5,9 @@ export const zh = {
   // External game name (proper noun — same across all locales).副标题 "Notebook
   // Wars" 只用于 HTML <title>；局内一律用主名。改名只改这一处。
   'game.title': 'Nivara',
+  // Lobby header shows the full brand lockup (main name + subtitle); same
+  // literal across locales since both halves are proper nouns.
+  'lobby.brandTitle': 'Nivara - Notebook Wars',
 
   // ── General ───────────────────────────────────────────────────────────────
   'common.networkTimeout': '网络超时，请重试',
@@ -129,7 +132,6 @@ export const zh = {
   'result.playAgainWin': '再战一场',
   'result.backToMap': '返回地图',
   'result.watchReplay': '观看回放',
-  'result.toLobby': '返回大厅',
   'result.eloDelta': 'ELO {delta} → {after}　段位 {rank}',
   'rank.unranked': '未定级',
   'rank.bronze': '青铜',
@@ -607,7 +609,7 @@ export const zh = {
   'stats.historyUnknownOpp': '对手',
   'stats.win': '胜',
   'stats.loss': '负',
-  'stats.achievements': '🏆 成就',
+  'stats.achievements': '成就',
   'stats.titles': '称号',
 
   // ── Achievement wall (S9-5) ───────────────────────────────────────────────────

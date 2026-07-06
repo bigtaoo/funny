@@ -222,6 +222,9 @@ export interface HeaderCurrencyChip {
   icon: IconKind;
   color: number;
   amount: number;
+  /** Short name drawn between the icon and the amount (e.g. "碎屑") — without it, an icon + bare
+   * number is unreadable to a player who hasn't memorized the material set. */
+  label?: string;
 }
 
 /**
@@ -237,31 +240,39 @@ export function drawHeaderCurrency(
   coins: number,
   chips: readonly HeaderCurrencyChip[] = [],
   capacity?: { text: string; color: number },
+  scale = 1,
 ): void {
   const midY = headerH / 2;
-  const iconSize = Math.round(headerH * 0.32);
-  const fontSize = Math.round(headerH * 0.26);
-  const capSize = Math.round(headerH * 0.2);
-  const gap = Math.round(headerH * 0.28);
+  const iconSize = Math.round(headerH * 0.32 * scale);
+  const fontSize = Math.round(headerH * 0.26 * scale);
+  const labelSize = Math.round(fontSize * 0.8);
+  const capSize = Math.round(headerH * 0.2 * scale);
+  const gap = Math.round(headerH * 0.28 * scale);
 
   const cluster = new PIXI.Container();
   let cx = 0;
 
-  const addChip = (icon: IconKind, color: number, amount: number): void => {
+  const addChip = (icon: IconKind, color: number, amount: number, label?: string): void => {
     // 'coin' goes through the shared atlas-backed glyph so this reads identically to the shop's
     // balance icon; other currency chips (materials, etc.) keep the procedural buildIcon draw.
     const ic = icon === 'coin' ? buildCoinIcon(icon, iconSize, color) : buildIcon(icon, iconSize, color);
     ic.x = cx; ic.y = -iconSize / 2;
     cluster.addChild(ic);
     cx += iconSize + 4;
+    if (label) {
+      const lb = txt(label, labelSize, C.mid);
+      lb.anchor.set(0, 0.5); lb.x = cx; lb.y = 0;
+      cluster.addChild(lb);
+      cx += lb.width + 4;
+    }
     const lbl = txt(`${amount}`, fontSize, C.dark);
     lbl.anchor.set(0, 0.5); lbl.x = cx; lbl.y = 0;
     cluster.addChild(lbl);
     cx += lbl.width + gap;
   };
 
-  addChip('coin', C.gold, coins);
-  for (const chip of chips) addChip(chip.icon, chip.color, chip.amount);
+  addChip('coin', C.gold, coins, t('equip.coins'));
+  for (const chip of chips) addChip(chip.icon, chip.color, chip.amount, chip.label);
 
   if (capacity) {
     const capLbl = txt(capacity.text, capSize, capacity.color);

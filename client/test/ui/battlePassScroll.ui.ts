@@ -100,3 +100,71 @@ describe('BattlePassScene — reward track drag-scroll', () => {
     scene.destroy();
   });
 });
+
+// Perf regression: handleMove used to call the scene's full render() (tearDownChildren +
+// rebuild all 30 hand-drawn reward cells) on every pointermove past the drag threshold,
+// which is what made dragging feel janky. The fix repositions the already-built
+// scrollContainer and recomputes hit rects from a cache instead of rebuilding graphics.
+describe('BattlePassScene — drag-scroll perf fast path', () => {
+  it('reuses the same scrollContainer instance across a drag move (no full rebuild)', () => {
+    const input = new InputManager();
+    const scene = buildBattlePass(input);
+    const s = scene as unknown as { scrollContainer: unknown };
+    const before = s.scrollContainer;
+    expect(before).not.toBeNull();
+
+    input._emitDown(700, 50);
+    input._emitMove(700, 50 - 40);
+
+    expect(s.scrollContainer).toBe(before);
+    scene.destroy();
+  });
+
+  it("moves the scrollContainer's y by exactly -dy on drag, without touching bodyTopY", () => {
+    const input = new InputManager();
+    const scene = buildBattlePass(input);
+    const s = scene as unknown as { scrollContainer: { y: number }; bodyTopY: number };
+    const y0 = s.scrollContainer.y;
+    const bodyTopY0 = s.bodyTopY;
+
+    input._emitDown(700, 50);
+    input._emitMove(700, 50 - 40);
+
+    expect(s.scrollContainer.y).toBe(y0 - 40);
+    expect(s.bodyTopY).toBe(bodyTopY0);
+    scene.destroy();
+  });
+
+  it('cached claim hit rects for cells beyond the initial viewport still fire onClaim once scrolled into view', () => {
+    const input = new InputManager();
+    const claimed: Array<[string, number]> = [];
+    // xp = 17999 -> level 30 (maxed), hasPass true, nothing claimed yet: every one of the
+    // 60 (free+paid) cells is claimable, including the ones far below the first screen.
+    const scene = buildBattlePass(input, {
+      getBattlePass: () => ({ seasonNo: 1, xp: 17999, level: 30, hasPass: true, claimedFree: [], claimedPaid: [] }),
+      onClaim: async (track, level) => { claimed.push([track, level]); return 0; },
+    });
+    const s = scene as unknown as {
+      scrollMax: number;
+      scrollCellDefs: Array<{ x: number; cellY: number; w: number; h: number; fn: () => void }>;
+      bodyTopY: number;
+    };
+    expect(s.scrollMax).toBeGreaterThan(0);
+    // A def for the last level must be cached even though it wasn't visible at initial render.
+    const lastRowDef = s.scrollCellDefs.reduce((a, b) => (b.cellY > a.cellY ? b : a));
+
+    // Scroll all the way down (drag far past scrollMax, which clamps) so the last row is
+    // now on-screen, then tap it directly via its recomputed absolute rect.
+    input._emitDown(700, 50);
+    input._emitMove(700, 50 - 1_000_000);
+    input._emitUp(700, 50 - 1_000_000);
+
+    const absY = s.bodyTopY - s.scrollMax + lastRowDef.cellY;
+    input._emitDown(lastRowDef.x + lastRowDef.w / 2, absY + lastRowDef.h / 2);
+    input._emitUp(lastRowDef.x + lastRowDef.w / 2, absY + lastRowDef.h / 2);
+
+    expect(claimed.length).toBe(1);
+    expect(claimed[0]![1]).toBe(30);
+    scene.destroy();
+  });
+});

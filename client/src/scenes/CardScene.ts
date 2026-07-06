@@ -64,8 +64,10 @@ const MODAL_DIM = 0x000000;
 // Roster grid: icon-card cells (name top / portrait left / attributes right)
 // packed into columns sized to the wide (1920) landscape canvas.
 const CELL_GAP = 12;
-const CARD_CELL_H = 118;
-const CARD_CELL_W_TARGET = 360;
+// Unified with EquipmentScene's EQUIP_CELL_H/EQUIP_CELL_W_TARGET (both 1.5x their prior size)
+// so hero/equipment/material icon cards all read as the same visual family across scenes.
+const CARD_CELL_H = 177;
+const CARD_CELL_W_TARGET = 480;
 
 interface Rect { x: number; y: number; w: number; h: number; }
 
@@ -211,7 +213,7 @@ export class CardScene implements Scene {
     drawHeaderCurrency(this.headerOverlayLayer, this.w, HUD_H, save.wallet.coins, [], {
       text: `${t('roster.capacity').replace('{cur}', String(count)).replace('{cap}', String(CARD_INV_CAP))}`,
       color: full ? C.red : warn ? C.gold : C.mid,
-    });
+    }, 2);
   }
 
   private renderList(): void {

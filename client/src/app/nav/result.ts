@@ -231,9 +231,12 @@ export function createResultNav(ctx: AppCtx): ResultNav {
       ...(outroText ? { outroText } : {}),
       cb: {
         onPlayAgain() { (onPlayAgain ?? (() => nav.goLobby()))(); },
+        // Top-left back chip always exits to the lobby, even when onPlayAgain re-enters a
+        // match instead. Reuses onReturnToLobby's session-teardown when the caller supplied
+        // one (e.g. ranked's session.close()); otherwise a plain lobby nav is correct.
+        onBack() { (onReturnToLobby ?? (() => nav.goLobby()))(); },
         ...(replay ? { onWatchReplay: () => goReplay(replay) } : {}),
         ...(api ? { onShare: () => void doShareReplay({ winner: winner ?? -1 }) } : {}),
-        ...(onReturnToLobby ? { onReturnToLobby } : {}),
         ...(playAgainLabel ? { playAgainLabel } : {}),
       },
     });
