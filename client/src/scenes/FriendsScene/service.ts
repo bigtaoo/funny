@@ -198,6 +198,8 @@ export function NetworkMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
         await this.cb.sendWorldChat(body, senderName);
         this.worldChatInput = '';
         this.toast('social.world.sent');
+        // Re-sync coins so the HUD reflects the server-side deduction (see refreshWallet doc).
+        await this.cb.refreshWallet?.();
         void this.loadWorldMessages();
       } catch {
         this.toast('social.world.sendFail');

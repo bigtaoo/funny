@@ -465,6 +465,8 @@ docker compose -f docker-compose.cloud.yml --env-file .env up -d
 
 **镜像在 VPS 本机构建**（与手动运维命令一致，2 核机 + 2G swap 扛得住）；`.env` 是 gitignore，`reset --hard` 不动它。同步用 `reset --hard origin/main`（非 `git pull`）以消除 VPS 工作区漂移（如之前 ops 改容器留下的本地变动）。
 
+> ⚠️ **新增/拆分后端服务必须同步 `server/Dockerfile`**（不止改三个 compose + Caddyfile）：共享镜像 `nw-server:latest` 里必须有该服务的 dist，否则容器 `MODULE_NOT_FOUND` 崩溃重启、Caddy 转发返回 502（浏览器表现为 CORS 头缺失，是副作用非根因）。三处都要加：build 阶段 `COPY <svc>/package.json`（`npm ci` 前）、`tsc -b` 列表加 `<svc>`、runtime 阶段 `COPY --from=build /app/<svc>/{package.json,dist}`。2026-07-06 auctionsvc 拆分即因漏改 Dockerfile 上线 502（PR #17 修复）。
+
 一次性配置：
 
 1. **专用 CI deploy SSH key**（与本机日常 `nivara_hetzner` 隔离，2026-06-24 生成）：

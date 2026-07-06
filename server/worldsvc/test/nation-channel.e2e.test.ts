@@ -5,7 +5,7 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createWorldMongo, type WorldMongo, type NationMessageDoc } from '../src/db';
 import { NationChannelService } from '../src/nationChannelService';
-import type { WorldCommercialClient } from '../src/commercialClient';
+import { nullWorldCommercialClient, type WorldCommercialClient } from '../src/commercialClient';
 import type { HttpWorldGatewayClient } from '../src/gatewayClient';
 import type { WorldMetaClient } from '../src/metaClient';
 
@@ -83,6 +83,34 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
     const history = await svc.getChannel(W, 'alice');
     expect(history).toHaveLength(1);
     expect(history[0].body).toBe('hello world');
+  });
+
+  // Regression: posting must ALWAYS charge WORLD_CHAT_COST coins. The old `if (commercial.available)`
+  // guard let posts through for free whenever worldsvc lacked NW_COMMERCIAL_INTERNAL_URL.
+  describe('regression: a world-chat post is never free', () => {
+    it('charges exactly WORLD_CHAT_COST (50) coins when commercial is available', async () => {
+      const svc = new NationChannelService({
+        cols: mongo!.collections,
+        gateway: fakeGateway,
+        commercial: fakeCommercial,
+        now: () => 1100,
+      });
+      await svc.sendMessage(W, 'alice', 'Alice', 'paid post');
+      expect(spends).toEqual([{ accountId: 'alice', amount: 50 }]);
+    });
+
+    it('rejects the post (throws) and persists nothing when commercial is unconfigured', async () => {
+      const svc = new NationChannelService({
+        cols: mongo!.collections,
+        gateway: fakeGateway,
+        commercial: nullWorldCommercialClient,
+        now: () => 1200,
+      });
+      await expect(svc.sendMessage(W, 'alice', 'Alice', 'free post?')).rejects.toThrow();
+      // No free message left behind.
+      const history = await svc.getChannel(W, 'alice');
+      expect(history).toHaveLength(0);
+    });
   });
 
   it('fromPublicId resolved from meta when available', async () => {

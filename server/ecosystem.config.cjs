@@ -1,6 +1,6 @@
 // pm2 process orchestration (C-3 / S1-M / A9, non-Docker path).
 // For running node directly on a VPS (mongod installed locally, caddy as a system service) instead of Docker:
-//   cd server && npm ci && npx tsc -b shared metaserver gateway matchsvc gameserver commercial worldsvc admin analyticsvc
+//   cd server && npm ci && npx tsc -b shared engine metaserver gateway matchsvc gameserver commercial worldsvc admin analyticsvc socialsvc auctionsvc
 //   NW_JWT_SECRET=... NW_INTERNAL_KEY=... pm2 start ecosystem.config.cjs && pm2 save
 //
 // metaserver is stateless and can run as multiple instances (cluster); gateway / matchsvc / gameserver each hold in-memory state and must run as a single instance.
@@ -114,7 +114,7 @@ module.exports = {
       },
     },
     {
-      // SLG open world (S8, 7th process, 4th public REST face: /world, /family, /auction).
+      // SLG open world (S8, 7th process, 4th public REST face: /world /sect /nation; /family moved to socialsvc, /auction moved to auctionsvc).
       name: 'nw-world',
       cwd: __dirname,
       script: 'worldsvc/dist/index.js',
@@ -176,6 +176,27 @@ module.exports = {
         NW_SOCIAL_MONGO_DB: process.env.NW_SOCIAL_MONGO_DB || 'nw_social',
         NW_GATEWAY_INTERNAL_URL: GW_INTERNAL,
         NW_META_INTERNAL_URL: META_BASE,
+      },
+    },
+    {
+      // Auction house (auction task5, AUCTION_DESIGN §9, 10th process, 6th public REST face: /auction/*).
+      // Decoupled from worldId; dedicated database notebook_wars_auction; calls meta (item escrow) + commercial (coins).
+      name: 'nw-auction',
+      cwd: __dirname,
+      script: 'auctionsvc/dist/index.js',
+      exec_mode: 'fork', // single instance: expiry scheduler timer + dedicated database
+      instances: 1,
+      env: {
+        ...common,
+        NW_AUCTION_PORT: process.env.NW_AUCTION_PORT || '18086',
+        NW_AUCTION_HOST: process.env.NW_AUCTION_HOST || '127.0.0.1',
+        NW_AUCTION_MONGO_URI:
+          process.env.NW_AUCTION_MONGO_URI ||
+          process.env.NW_MONGO_URI ||
+          'mongodb://127.0.0.1:27017/?replicaSet=rs0',
+        NW_AUCTION_MONGO_DB: process.env.NW_AUCTION_MONGO_DB || 'notebook_wars_auction',
+        NW_META_INTERNAL_URL: META_BASE, // material/equipment/card/skin escrow-grant + system mail
+        NW_COMMERCIAL_INTERNAL_URL: COMM_INTERNAL, // deduct buyer coins / pay seller
       },
     },
     {

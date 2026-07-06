@@ -27,6 +27,27 @@ import { FriendsScene } from '../../src/scenes/FriendsScene';
 import { AuctionScene } from '../../src/scenes/AuctionScene';
 import type { WorldApiClient } from '../../src/net/WorldApiClient';
 
+// Minimal DOM stub so openHiddenInput() (document.createElement / body.appendChild /
+// element.focus) runs under the plain-Node headless harness. Only the members the input
+// helper touches are provided.
+const gDoc = globalThis as unknown as { document?: unknown };
+if (!gDoc.document) {
+  gDoc.document = {
+    body: { appendChild(): void {} },
+    createElement(): Record<string, unknown> {
+      return {
+        type: '', value: '', maxLength: 0, placeholder: '', autocomplete: '',
+        style: { cssText: '' },
+        parentNode: null,
+        focus(): void {},
+        remove(): void {},
+        setAttribute(): void {},
+        addEventListener(): void {},
+      };
+    },
+  };
+}
+
 const memStore = (() => {
   const m = new Map<string, string>();
   return {
@@ -251,6 +272,27 @@ describe('FriendsScene — family/sect/world tab carets', () => {
     scene.worldChatActive = true;
     scene.worldChatInput = 'hello';
     expectBlinkingCaret(scene.container, (on) => { scene.caretOn = on; }, () => scene.render(), 'hello|');
+    scene.destroy();
+  });
+
+  // Regression (the real bug the manual-state tests above missed): tapping the field must
+  // LEAVE it active. openHiddenInput() used to call clearHiddenInput() as its first line,
+  // which reset the very flag the tap handler had just set → the caret never appeared in
+  // real use even though every manual-state assertion passed. Exercise the actual hit path.
+  it('tapping the world input keeps it active and shows the caret (openHiddenInput must not clear the flag)', () => {
+    const scene = build();
+    enterSlgTab(scene, 'world');
+    scene.render();
+    // The input hit is the wide field pinned bottom-left; the send button sits to its right.
+    const hits = scene.hits as Array<{ rect: { x: number; y: number; w: number; h: number }; fn: () => void }>;
+    const bottom = hits.filter((hh) => hh.rect.y > H * 0.8);
+    const inputHit = bottom.reduce((a, b) => (b.rect.x < a.rect.x ? b : a));
+    inputHit.fn(); // simulate the tap
+
+    expect(scene.worldChatActive).toBe(true);
+    scene.caretOn = true;
+    scene.render();
+    expect(collectTexts(scene.container)).toContain('|'); // empty field + blink-on → caret alone
     scene.destroy();
   });
 });

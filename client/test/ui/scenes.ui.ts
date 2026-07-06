@@ -336,7 +336,7 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         h,
         0,
         [zeroStats(0), zeroStats(1)],
-        { onPlayAgain() {}, onWatchReplay() {} },
+        { onPlayAgain() {}, onBack() {}, onWatchReplay() {} },
         0,
         { delta: 16, after: 1016, rankAfter: 'bronze' },
       ),
@@ -895,5 +895,51 @@ describe('EquipmentScene — mixin-split wiring', () => {
     await Promise.resolve();
     expect(calls.salvage).toEqual([['eqBagCommon']]);
     scene.destroy();
+  });
+});
+
+// ── ResultScene: top-left back chip ─────────────────────────────────────────
+// Regression for "Fight Again has no explicit way back to the lobby" (05.07.2026
+// UI pass): a permanent back chip was added at the top-left corner (shared
+// drawFloatingBackButton visuals, see src/ui/widgets/SceneHeader.ts), independent
+// of the primary "play again" CTA below it — which, since the PvE fix, may
+// re-enter a match instead of returning to the lobby (see also
+// test/game-nav-fight-again.test.ts / test/result-nav-onback.test.ts for the
+// nav-layer half of this contract).
+describe('ResultScene — top-left back chip', () => {
+  function findBackChipHit(scene: Scene): PIXI.DisplayObject {
+    const hit = scene.container.getChildByName('resultBackChip');
+    if (!hit) throw new Error('back-chip hit-area not found among ResultScene children');
+    return hit;
+  }
+
+  it('tapping the back chip calls cb.onBack(), independent of onPlayAgain', () => {
+    let backCalls = 0;
+    let playAgainCalls = 0;
+    const scene = new ResultScene(
+      PORTRAIT[0], PORTRAIT[1], 0,
+      [zeroStats(0), zeroStats(1)],
+      { onPlayAgain() { playAgainCalls++; }, onBack() { backCalls++; } },
+    );
+
+    (findBackChipHit(scene).emit as (event: string) => void)('pointertap');
+
+    expect(backCalls).toBe(1);
+    expect(playAgainCalls).toBe(0);
+    scene.destroy();
+  });
+
+  it('renders the back chip on every result (win, loss, and draw)', () => {
+    for (const winner of [0, 1, null] as const) {
+      let backCalls = 0;
+      const scene = new ResultScene(
+        PORTRAIT[0], PORTRAIT[1], winner,
+        [zeroStats(0), zeroStats(1)],
+        { onPlayAgain() {}, onBack() { backCalls++; } },
+      );
+      (findBackChipHit(scene).emit as (event: string) => void)('pointertap');
+      expect(backCalls).toBe(1);
+      scene.destroy();
+    }
   });
 });

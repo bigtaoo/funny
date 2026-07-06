@@ -80,9 +80,209 @@
         "h": 128
       }
     },
-    "res_sticker": {
+    "res_paper_l1": {
       "frame": {
         "x": 2,
+        "y": 385,
+        "w": 128,
+        "h": 82
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 82
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 82
+      }
+    },
+    "res_paper_l10": {
+      "frame": {
+        "x": 216,
+        "y": 132,
+        "w": 128,
+        "h": 125
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 125
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 125
+      }
+    },
+    "res_paper_l2": {
+      "frame": {
+        "x": 132,
+        "y": 385,
+        "w": 128,
+        "h": 82
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 82
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 82
+      }
+    },
+    "res_paper_l3": {
+      "frame": {
+        "x": 262,
+        "y": 385,
+        "w": 128,
+        "h": 82
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 82
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 82
+      }
+    },
+    "res_paper_l4": {
+      "frame": {
+        "x": 2,
+        "y": 262,
+        "w": 128,
+        "h": 121
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 121
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 121
+      }
+    },
+    "res_paper_l5": {
+      "frame": {
+        "x": 132,
+        "y": 262,
+        "w": 128,
+        "h": 121
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 121
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 121
+      }
+    },
+    "res_paper_l6": {
+      "frame": {
+        "x": 262,
+        "y": 262,
+        "w": 128,
+        "h": 108
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 108
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 108
+      }
+    },
+    "res_paper_l7": {
+      "frame": {
+        "x": 2,
+        "y": 469,
+        "w": 128,
+        "h": 78
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 78
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 78
+      }
+    },
+    "res_paper_l8": {
+      "frame": {
+        "x": 346,
+        "y": 132,
+        "w": 128,
+        "h": 124
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 124
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 124
+      }
+    },
+    "res_paper_l9": {
+      "frame": {
+        "x": 2,
+        "y": 132,
+        "w": 85,
+        "h": 128
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 85,
+        "h": 128
+      },
+      "sourceSize": {
+        "w": 85,
+        "h": 128
+      }
+    },
+    "res_sticker": {
+      "frame": {
+        "x": 89,
         "y": 132,
         "w": 125,
         "h": 128
@@ -107,7 +307,7 @@
     "format": "RGBA8888",
     "size": {
       "w": 512,
-      "h": 512
+      "h": 1024
     },
     "scale": "1"
   }
