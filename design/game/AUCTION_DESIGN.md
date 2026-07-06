@@ -396,6 +396,13 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - **验收**：`npm run typecheck --workspace @nw/auctionsvc`（`tsc --noEmit`）绿；`npm test --workspace @nw/auctionsvc`（3 文件 46 例）全绿。
 - **踩坑记**：主仓 `server/node_modules/@nw/shared` 被并行 worktree 污染成**过期物理副本**（缺 `SKIN_NOT_FOUND` 等新错误码），导致 `skin not owned` 用例在主仓 `code:undefined` 假失败；本任务全程在独立 worktree + `npm install` 干净依赖里做，`node -e require.resolve('@nw/shared')` 落地在 worktree 自己的 `shared/dist`。见 [[feedback_worktree]]。
 
+### 拍卖任务9：客户端→服务端全链路 e2e + 修错误信封 bug ✅（2026-07-06）
+
+- [x] **依赖**：任务4-8。背景：此前拍卖测试分两层各测各的——auctionsvc 直接 new `AuctionService` 调服务层（`auction.e2e.test.ts`），client 只 mock `WorldApiClient` 测 UI（`auctionScene.ui.ts`）；**没有任何测试把真实客户端网络层真实打到拍卖服务**，中间 HTTP + JWT + 信封 + DTO 契约那一段是空的。
+- **改动**（`server/auctionsvc/test/auction-fulllink.e2e.test.ts`，新建 5 例）：起真实 auctionsvc HTTP（`startHttpApi`，端口 0 取临时口）+ mongodb-memory-server，只桩下游 commercial/meta/mail；用**真实的 `client/src/net/WorldApiClient`**（设 `globalThis.__NW_WORLD_BASE__` 指向临时服务）跑 create→list→mine→buy 全流程、竞拍出价+买断、卖家取消退回、错误码映射、无 JWT→`UNAUTHENTICATED`。`WorldApiClient` 运行时只依赖纯函数 `./config`（DTO 是 type-only），跨包 import 干净；auctionsvc typecheck 只 include `src/**`，测试文件的跨包引用不进类型门。
+- **发现并修复的真 bug**（`client/src/net/WorldApiClient.ts`）：`req()` 读的是顶层 `json.code`/`json.message`，但 `@nw/shared` 的 `ApiResp` 错误信封是 `{ ok:false, error:{ code, message } }`（metaserver 的 `ApiClient` 读法正确，world 客户端当初抄漏了）。后果：**生产环境 worldsvc/auctionsvc/socialsvc 的所有错误码都被吞成 `UNKNOWN`**，`AuctionScene.errorMsg()` 那张 `PRICE_OUT_OF_RANGE`/`AUCTION_CLOSED`/`INSUFFICIENT_FUNDS`→本地化提示的码表在真机上全部走 fallback 形同虚设。UI 单测没抓到是因为它直接 `new WorldApiError('CODE',...)` 造码，不经过 `req`。改为读 `json.error?.code`。
+- **验收**：`npm test --workspace @nw/auctionsvc`（4 文件 51 例，含新增 5 例）全绿；auctionsvc `tsc --noEmit` 绿；client `tsc --noEmit` 绿；client `test:ui`（14 文件 185 例）无回归。
+
 ---
 
 *本文为拍卖行机制权威，DRAFT/⚠️ 处随实现与拍板细化；数值以 `server/shared/src/slg.ts` 为准。*

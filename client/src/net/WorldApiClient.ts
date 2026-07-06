@@ -196,9 +196,13 @@ export class WorldApiClient {
       clearTimeout(timer);
     }
 
-    const json = await res.json() as { ok: boolean; data?: T; code?: string; message?: string };
+    // Standard @nw/shared ApiResp envelope: { ok:false, error:{ code, message } }
+    // (same shape metaserver's ApiClient reads). NOT top-level code/message — reading
+    // json.code here silently collapsed every world/auction/social error to 'UNKNOWN',
+    // breaking the AuctionScene error-code→toast mapping. Kept tolerant of a missing error.
+    const json = await res.json() as { ok: boolean; data?: T; error?: { code?: string; message?: string } };
     if (!json.ok) {
-      throw new WorldApiError(json.code ?? 'UNKNOWN', json.message ?? 'world api error');
+      throw new WorldApiError(json.error?.code ?? 'UNKNOWN', json.error?.message ?? 'world api error');
     }
     return json.data as T;
   }
