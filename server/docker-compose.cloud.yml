@@ -221,6 +221,7 @@ services:
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
       NW_MATCHSVC_INTERNAL_URL: http://matchsvc:8091
       NW_AUCTION_INTERNAL_URL: http://auctionsvc:18086
+      NW_WORLD_INTERNAL_URL: http://worldsvc:18084
     restart: unless-stopped
 
   analyticsvc:
