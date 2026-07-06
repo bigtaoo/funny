@@ -457,7 +457,7 @@ export class ShopScene implements Scene {
     const targetW = Math.round(w * 0.30);
     const cols = Math.max(1, Math.floor((listW + gap) / (targetW + gap)));
     const cellW = Math.round((listW - gap * (cols - 1)) / cols);
-    const cellH = Math.round(h * 0.22);
+    const cellH = Math.round(h * 0.27);
     return { listX, listW, gap, cols, cellW, cellH };
   }
 
@@ -697,28 +697,39 @@ export class ShopScene implements Scene {
     title.x = x + pad; title.y = y + pad;
     body.addChild(title);
 
-    // Icon (left), positioned below the title even if it wrapped to multiple lines.
-    const iconS = Math.round(ch * 0.32);
+    // Action buttons at the bottom (1 = full width, 2 = split). Reserved first so the icon/lines
+    // block below can be clamped to whatever room is left above it — never overlap the buttons.
+    const btnH = Math.round(ch * 0.22);
+    const btnY = y + ch - pad - btnH;
+
+    // Icon + info block: fills the gap between the top content (title / right column) and the
+    // button row. Sized from that actual gap rather than fixed ch fractions, so it can never
+    // spill into the buttons regardless of how many bonus lines a card has.
+    const midTop = Math.max(y + Math.round(ch * 0.30), title.y + title.height + Math.round(ch * 0.04));
+    const midBottom = btnY - Math.round(ch * 0.02);
+    const midH = Math.max(0, midBottom - midTop);
+
+    const iconS = Math.min(Math.round(ch * 0.32), midH || Math.round(ch * 0.32));
     const iconX = x + pad;
-    const iconY = Math.max(y + Math.round(ch * 0.30), title.y + title.height + Math.round(ch * 0.04));
+    const iconY = midTop;
     const icon = buildCoinIcon(spec.icon, iconS, spec.iconColor);
     icon.x = iconX; icon.y = iconY;
     body.addChild(icon);
 
     // Info column (right of the icon) — remaining status/bonus lines only.
     const infoX = iconX + iconS + Math.round(cw * 0.05);
-    let iy = iconY;
-
-    for (const ln of spec.lines ?? []) {
-      const l = txt(ln.text, Math.round(ch * 0.12), ln.color, true);
-      l.anchor.set(0, 0); l.x = infoX; l.y = iy;
-      body.addChild(l);
-      iy += Math.round(ch * 0.14);
+    const lines = spec.lines ?? [];
+    if (lines.length > 0 && midH > 0) {
+      const lineH = Math.min(Math.round(ch * 0.14), Math.floor(midH / lines.length));
+      const fontSize = Math.max(9, Math.round(lineH * 0.78));
+      let iy = midTop;
+      for (const ln of lines) {
+        const l = txt(ln.text, fontSize, ln.color, true);
+        l.anchor.set(0, 0); l.x = infoX; l.y = iy;
+        body.addChild(l);
+        iy += lineH;
+      }
     }
-
-    // Action buttons at the bottom (1 = full width, 2 = split).
-    const btnH = Math.round(ch * 0.22);
-    const btnY = y + ch - pad - btnH;
     const n = spec.buttons.length;
     const totalW = cw - pad * 2;
     const bGap = Math.round(cw * 0.03);

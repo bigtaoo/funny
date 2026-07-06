@@ -182,7 +182,8 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 - i18n：`shop.*`。
 - **充值码 overlay**：Canvas 画伪输入框，背后挂隐藏 `<input>` 捕获键盘。光标用 `|` 以 0.5s 交替闪烁；空输入时光标-on 显示 `|`、光标-off 显示 placeholder，确保聚焦即可见光标（不依赖已有字符才显示）。
 - **充值档位图标**：每档左侧画随金额升级的宝藏图标（`coin`→`coins`→`coinStack`→`coinSack`→`coinChest`，见 `render/icons.ts`），越贵越有料，替代千篇一律的 `◎` 文字提升转化诱惑。手绘 SketchPen 笔触 + 金币扁平淡金填充（守三笔风、无渐变），走 `buildIcon` 贴图缓存。
-- **充值档位金币数量字号**：卡片内「图标+金币数」是转化关键信息，字号从 `ch*0.16` 放大到 `ch*0.22`（`drawCard` 内 `coinAmount` 分支），图标与数字保持同一行水平排列、数字纵向居中对齐图标高度，赠送量（`+N`）等副行仍按原字号排在下方。
+- **充值档位金币数量字号**：卡片内「图标+金币数」是转化关键信息，字号 `ch*0.20`（`drawCard` 内 `coinAmount` 分支）；改版后随标题一起收进右上角「右对齐纵向列」（badge → 金币数+图标 → 元价），不再与标题同一行水平排列——标题改左侧、超宽自动换行（`txt()` 新增 `wordWrapWidth` 参数），避免长标题挤压价格列。赠送量（`+N`）等副行仍在下方 icon 右侧。
+- **卡片竖向布局改「按剩余空间反推」，杜绝 icon/文字压中按钮（2026-07-06）**：`drawCard` 曾用写死的 `ch` 比例摆放 icon 和加成文字行（`y+ch*0.30` 起、每行 `ch*0.14`），跟底部 Buy 按钮的位置无关；充值档位卡同时要塞标题+金额+icon+2 行加成文字（`+N` 与"首充双倍"——后者按 `ECONOMY_BALANCE.md` 规定所有档位常驻，非 bug），内容总高超过卡片高度，icon 和第二行文字会压进/被 Buy 按钮挡住。改法：先算按钮占的 `btnH/btnY`，再用 `midTop`（标题/右侧列结束处）到 `midBottom`（按钮上沿留白）之间的实际空隙反推 icon 尺寸与每行行高（`Math.min(理想值, 可用空间)`），几何上保证不会溢出到按钮；同时把 `gridMetrics()` 里 `cellH` 从 `h*0.22` 调到 `h*0.27` 给内容多留余量。
 - **光标约定是硬性契约，不是 ShopScene 专属实现**：任何「隐藏 `<input>` + canvas 画字段」的输入框都必须调用共享的 `caretDisplay()`（`render/inputDisplay.ts`）产出显示文本，禁止再手写 `text || ' '` / `text || placeholder`。2026-06-23 那次修复只顺手改了 ShopScene/SettingsScene/ChatScene 三处，遗漏了 FamilyScene/SectScene/FriendsScene（好友页内嵌的家族/宗门/世界频道输入框）/AuctionScene（指定买家字段，另外还漏了逐键刷新），2026-07-04 补齐。`test/ui/caretRegression.ui.ts` 对每个受影响输入框做了聚焦-闪烁回归断言；新增任何同类输入框必须在该文件补一组用例，而不是仅凭肉眼过一遍。
 
 ### 4.4 GachaScene（盲盒，S2）
