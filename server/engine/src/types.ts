@@ -129,12 +129,21 @@ export function ownerToSide(owner: OwnerId): Side {
  */
 export type GameMode = 'pvp' | 'campaign' | 'netplay' | 'siege';
 
+/**
+ * AI skill level for `mode: 'pvp'` (AISystem.ts) — 1 (passive punching bag) to
+ * 10 (professional-level play). See AISystem.ts for the full difficulty curve
+ * and the fair-play invariant (public-state-only decisions, bounded reaction speed).
+ */
+export type AIDifficulty = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+
 export interface GameConfig {
   /** PRNG seed — determines card draws for both players. Required. */
   seed: number;
   players: [PlayerConfig, PlayerConfig];
   /** Defaults to 'pvp'. In 'campaign' the enemy is driven by a WaveDirector. */
   mode?: GameMode;
+  /** AI skill level for 'pvp' mode. Defaults to 5 (mid-curve). Ignored by campaign/siege (WaveDirector) and netplay (no AI). */
+  difficulty?: AIDifficulty;
   /** Campaign level — required when mode === 'campaign'. */
   level?: LevelDefinition;
   /**

@@ -2,7 +2,7 @@
 // collection, card roster, equipment, stats, leaderboard, achievements, titles, tutorial.
 // Extracted from createAppCore.
 import * as analytics from '../../analytics';
-import { getLevel, CAMPAIGN_LEVEL_ORDER, achievementStatDelta } from '../../game';
+import { getLevel, CAMPAIGN_LEVEL_ORDER, achievementStatDelta, type AIDifficulty } from '../../game';
 import { TUTORIAL_LEVEL_ID } from '@nw/engine';
 import { computeStars, remainingHpPct } from '../../game/meta/campaignRewards';
 import { t, type TranslationKey } from '../../i18n';
@@ -26,9 +26,11 @@ export function createGameNav(ctx: AppCtx): GameNav {
   /**
    * Local PvP-vs-AI match. `opts.fromBotFallback` = triggered by a matchmaking-timeout fallback
    * (feature flag match_bot_fallback): uses the server-supplied seed for determinism; analytics
-   * tags distinguish intentional practice from bot-fallback sessions.
+   * tags distinguish intentional practice from bot-fallback sessions. `opts.difficulty` (1–10,
+   * engine AISystem.ts) is rolled from ELO by the caller (matchsvc for bot-fallback, or the
+   * player's own saved ELO for a manually-started practice match) — omit for the engine default.
    */
-  function goGame(opts?: { seed?: number; fromBotFallback?: boolean }): void {
+  function goGame(opts?: { seed?: number; difficulty?: AIDifficulty; fromBotFallback?: boolean }): void {
     state.inLobby = false;
     platform.onGameplayStart();
     const mode = opts?.fromBotFallback ? 'pvp_bot_fallback' : 'pvp_ai';
@@ -66,6 +68,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
       // Without this the local engine draws from the full pool and leaks locked units (runner/splitter/…).
       decks: (() => { const d = resolvePvpDeck(); return { top: d, bottom: d }; })(),
       ...(opts?.seed !== undefined ? { seed: opts.seed } : {}),
+      ...(opts?.difficulty !== undefined ? { difficulty: opts.difficulty } : {}),
     });
   }
 

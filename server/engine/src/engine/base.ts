@@ -95,7 +95,7 @@ export class GameEngineBase {
     this.spell      = new SpellSystem();
     this.production = new BuildingProductionSystem();
     this.trait      = new TraitSystem();
-    this.ai         = new AISystem(new Prng(config.seed ^ 0xA1A1A1A1));
+    this.ai         = new AISystem(new Prng(config.seed ^ 0xA1A1A1A1), config.difficulty ?? 5);
 
     this.mode = config.mode ?? 'pvp';
 

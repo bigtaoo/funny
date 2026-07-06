@@ -2,7 +2,14 @@
 import * as analytics from '../../analytics';
 import type { RoomView } from '../AppViews';
 import type { AppCtx, Nav } from '../appCtx';
+import type { AIDifficulty } from '../../game';
 import { log } from '../appConstants';
+
+/** Parse the server's decimal-string AI level (1–10, see AISystem.ts), or undefined if malformed. */
+function parseAiDifficulty(raw: string): AIDifficulty | undefined {
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 1 && n <= 10 ? (n as AIDifficulty) : undefined;
+}
 
 export function createRoomNav(ctx: AppCtx): Pick<Nav, 'goRoom' | 'goDeckBuilder'> {
   const { api, saveManager, views, state, nav, getNetSession, resolvePvpDeck } = ctx;
@@ -60,11 +67,12 @@ export function createRoomNav(ctx: AppCtx): Pick<Nav, 'goRoom' | 'goDeckBuilder'
       session.handlers = {
         onMatchStart: (info) => nav.goGameNet(info),
         // Matchmaking timeout fallback to AI (feature flag match_bot_fallback): server pushes match_bot →
-        // exit the queue UI and start a local AI match (using the server-provided seed).
-        onMatchBot: (seed) => {
+        // exit the queue UI and start a local AI match (using the server-provided seed + AI level).
+        onMatchBot: (seed, _opponentName, _elo, difficulty) => {
           rankedQueued = false;
-          log.info('match_bot fallback → local AI match', { seed });
-          nav.goGame({ seed, fromBotFallback: true });
+          const level = parseAiDifficulty(difficulty);
+          log.info('match_bot fallback → local AI match', { seed, difficulty: level });
+          nav.goGame({ seed, ...(level !== undefined ? { difficulty: level } : {}), fromBotFallback: true });
         },
         onRoomState: (s) => view.applyRoomState(s),
         onRoomError: (e) => view.applyRoomError(e),

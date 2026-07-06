@@ -9,7 +9,7 @@ import type { SaveManager, ReplayStore } from '../game/meta';
 import type { FeatureFlags } from '../net/featureFlags';
 import type { NetSession } from '../net/NetSession';
 import type { WorldApiClient } from '../net/WorldApiClient';
-import type { Replay, OwnerId, PlayerStats, MatchStartInfo } from '../game';
+import type { Replay, OwnerId, PlayerStats, MatchStartInfo, AIDifficulty } from '../game';
 import type { EloResult } from '../scenes/ResultScene';
 import type { ProfileData } from '../render/ProfilePopup';
 
@@ -63,7 +63,7 @@ export interface Nav {
   goDaily(): void;
   goEvents(): void;
   goBattlePass(group?: { shopBack?: () => void }): void;
-  goGame(opts?: { seed?: number; fromBotFallback?: boolean }): void;
+  goGame(opts?: { seed?: number; difficulty?: AIDifficulty; fromBotFallback?: boolean }): void;
   goCampaignMap(): void;
   goLevelPrep(levelId: string): void;
   goCollection(back: () => void, initialTab?: 'cards' | 'skins'): void;

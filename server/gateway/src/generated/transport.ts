@@ -194,7 +194,7 @@ export interface MatchBot {
   opponentName: string;
   /** player ELO (AI difficulty / display reference) */
   elo: number;
-  /** AI difficulty tier (normal | …, DRAFT) */
+  /** AI level 1-10 (engine AISystem.ts), decimal string (e.g. "7"); rolled by pickBotDifficulty(elo) */
   difficulty: string;
 }
 

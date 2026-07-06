@@ -95,3 +95,19 @@ export function nextStreak(prev: number, won: boolean): number {
   if (won) return prev > 0 ? prev + 1 : 1;
   return prev < 0 ? prev - 1 : -1;
 }
+
+/**
+ * Roll an AI opponent difficulty (1–10, see engine AISystem.ts) for a bot-fallback
+ * match, scaled to the player's ELO. Below {@link BOT_ELO_THRESHOLD} draws from the
+ * easier half (1–6); at/above it draws from the harder half (5–10) — the 5–6
+ * overlap is an intentional transition band around the threshold rather than a
+ * hard cliff. `randInt(n)` returns a uniform integer in [0, n); defaults to
+ * `Math.random`-based (fine for client display rolls) — callers needing a CSPRNG
+ * (matchsvc) should inject `crypto.randomInt`.
+ */
+export function pickBotDifficulty(
+  elo: number,
+  randInt: (maxExclusive: number) => number = (n) => Math.floor(Math.random() * n),
+): number {
+  return elo < BOT_ELO_THRESHOLD ? 1 + randInt(6) : 5 + randInt(6);
+}
