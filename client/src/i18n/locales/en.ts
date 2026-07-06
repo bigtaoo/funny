@@ -4,6 +4,7 @@ import type { TranslationKey } from './zh';
 export const en: Record<TranslationKey, string> = {
   // ── Brand ─────────────────────────────────────────────────────────────────
   'game.title': 'Nivara',
+  'lobby.brandTitle': 'Nivara - Notebook Wars',
 
   // ── Common ────────────────────────────────────────────────────────────────
   'common.networkTimeout': 'Network timeout — please retry',

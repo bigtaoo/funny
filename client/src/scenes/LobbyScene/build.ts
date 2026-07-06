@@ -179,26 +179,27 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       titleBg.endFill();
       this.container.addChild(titleBg);
 
-      const title = txt(t('game.title'), Math.round(h * 0.05), 0xffffff, true);
+      const title = txt(t('lobby.brandTitle'), Math.round(h * 0.05), 0xffffff, true);
       title.anchor.set(0, 0.5);
-
-      const logoSize = Math.round(tbH * 0.62);
-      const logoGap = Math.round(w * 0.015);
-      const groupW = logoSize + logoGap + title.width;
-      const groupX0 = Math.round(w / 2 - groupW / 2);
-
-      const logo = PIXI.Sprite.from(logoUrl as string);
-      logo.anchor.set(0, 0.5);
-      logo.width = logoSize; logo.height = logoSize;
-      logo.x = groupX0; logo.y = tbH * 0.45;
-      this.container.addChild(logo);
-
-      title.x = groupX0 + logoSize + logoGap; title.y = tbH * 0.45;
-      this.container.addChild(title);
 
       const subtitle = txt(t('lobby.subtitle'), Math.round(h * 0.022), C.light);
       subtitle.anchor.set(0.5, 0.5); subtitle.x = w / 2; subtitle.y = tbH * 0.78;
       this.container.addChild(subtitle);
+
+      // Title's left edge lines up with the subtitle's left edge; the crest
+      // logo sits further left again, enlarged to read at header scale.
+      const logoSize = Math.round(tbH * 0.9);
+      const logoGap = Math.round(w * 0.015);
+      const titleX = Math.round(w / 2 - subtitle.width / 2);
+
+      const logo = PIXI.Sprite.from(logoUrl as string);
+      logo.anchor.set(1, 0.5);
+      logo.width = logoSize; logo.height = logoSize;
+      logo.x = titleX - logoGap; logo.y = tbH * 0.45;
+      this.container.addChild(logo);
+
+      title.x = titleX; title.y = tbH * 0.45;
+      this.container.addChild(title);
 
       // Top-left profile chip (avatar + name) — opens the personal settings screen.
       const av = Math.round(tbH * 0.46);
