@@ -39,7 +39,6 @@ describe.skipIf(!mongo)('worldsvc map template e2e (§24)', () => {
       {} as never,
       {} as never,
       {} as never,
-      {} as never,
       new MapTemplateService({ cols: m.collections, now: () => Date.now() }),
     );
     await new Promise<void>((res) => server.on('listening', res));

@@ -2,8 +2,7 @@
 // worlds: server-generated first draft (proceduralTile) → hand-tuned in the admin map editor → cloned
 // (copied, not referenced) into a world's own baseline at world-open time so later template edits never
 // retroactively affect a running world. Independent of WorldService/WorldCore — instantiated standalone in
-// index.ts and called directly from httpApi.ts's /admin/world/map-templates/* branch, the same way
-// AuctionService is wired.
+// index.ts and called directly from httpApi.ts's /admin/world/map-templates/* branch.
 import {
   proceduralTile,
   MAP_TEMPLATE_SAVE_MAX_TILES,

@@ -1,7 +1,7 @@
-// worldsvc public REST (S8-0, SLG_DESIGN §14.1 P1 / §14.6). Fourth public-facing surface: /world/* /auction/* (/family/* already migrated to socialsvc).
+// worldsvc public REST (S8-0, SLG_DESIGN §14.1 P1 / §14.6). Public-facing surface: /world/* (/family/* already migrated to socialsvc; /auction/* moved to auctionsvc, §9 任务6).
 // Auth: reuses the meta JWT; only verifyToken is called to extract accountId (no accounts DB connection, P1).
 // Uses node:http (worldsvc does not depend on fastify). Responses wrapped in @nw/shared ApiResp envelope; error codes → HTTP status via ERROR_HTTP_STATUS.
-// S8-0: map/player-state implemented; march/defense/troops/family/auction/season return NOT_IMPLEMENTED (S8-1~5).
+// S8-0: map/player-state implemented; march/defense/troops/family/season return NOT_IMPLEMENTED (S8-1~5).
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
 import {
   ErrorCode,
@@ -20,7 +20,6 @@ import type { WorldService } from './service';
 import type { TeamTemplate } from './db';
 import type { SectService } from './sectService';
 import type { NationChannelService } from './nationChannelService';
-import type { AuctionService } from './auctionService';
 import type { WorldSocialsvcClient } from './socialsvcClient';
 import type { MapTemplateService } from './mapTemplateService';
 
@@ -70,7 +69,6 @@ export function startHttpApi(
   svc: WorldService,
   sectSvc: SectService,
   nationChannelSvc: NationChannelService,
-  auctionSvc: AuctionService,
   socialsvc: WorldSocialsvcClient,
   mapTemplateSvc: MapTemplateService,
 ): Server {
@@ -157,14 +155,6 @@ export function startHttpApi(
           if (method === 'GET' && aurl.pathname === '/admin/world/patrol') {
             return send(res, 200, ok(await svc.patrolShardIsolation()));
           }
-          // Auction anomalous-transaction audit scan (D/G7/§17.7): aggregate recent sold pairs for the admin audit queue to pull.
-          if (method === 'GET' && aurl.pathname === '/admin/world/audit/anomalies') {
-            const wid = aurl.searchParams.get('worldId');
-            if (!wid) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
-            const winQ = aurl.searchParams.get('windowSec');
-            const windowSec = winQ != null && Number.isFinite(Number(winQ)) ? Number(winQ) : undefined;
-            return send(res, 200, ok(await auctionSvc.scanAnomalies(wid, windowSec)));
-          }
           if (method !== 'POST') return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
           const body = await readJson(req);
           // New-season region allocation (G6/§20): open N regions using snake-draft balancing based on last season's sect strength, no worldId required (checked before the worldId gate).
@@ -193,10 +183,8 @@ export function startHttpApi(
               return send(res, 200, ok(await svc.settleSeason(worldId)));
             }
             if (aurl.pathname === '/admin/world/reset') {
-              // F end-of-season settlement: first settle the auction house (refund seller escrow + refund bid escrow + clear price sliding window), then reset the map state.
-              const auctionCleared = await auctionSvc.clearWorldOnReset(worldId);
               const reset = await svc.resetSeason(worldId);
-              return send(res, 200, ok({ ...reset, auctionCleared }));
+              return send(res, 200, ok(reset));
             }
             if (aurl.pathname === '/admin/world/close') {
               await svc.closeSeason(worldId);
@@ -576,80 +564,6 @@ export function startHttpApi(
           return send(res, 200, ok(await nationChannelSvc.getChannel(worldId, accountId, before, limit)));
         }
 
-        // ── Auction (S8-5, implemented) ──────────────────────────────────────────
-        if (method === 'GET' && path === '/auction/list') {
-          const worldId = q.get('worldId');
-          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
-          const itemType = q.get('itemType') ?? undefined;
-          const limit = numQ(q.get('limit'), 20);
-          return send(res, 200, ok(await auctionSvc.listAuctions(worldId, itemType, limit)));
-        }
-        if (method === 'GET' && path === '/auction/mine') {
-          const worldId = q.get('worldId');
-          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
-          return send(res, 200, ok(await auctionSvc.getMyListings(worldId, accountId)));
-        }
-        if (method === 'POST' && path === '/auction/create') {
-          const body = await readJson(req);
-          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
-          const itemType = typeof body.itemType === 'string' ? body.itemType : null;
-          const item = typeof body.item === 'object' && body.item && !Array.isArray(body.item) ? body.item as Record<string, unknown> : null;
-          const qty = Number(body.qty);
-          const durationSec = Number(body.durationSec);
-          const designatedBuyerId = typeof body.designatedBuyerId === 'string' ? body.designatedBuyerId : undefined;
-          const saleMode = body.saleMode === 'auction' ? 'auction' : 'fixed';
-          if (!worldId || !itemType || !item || !Number.isFinite(qty) || !Number.isFinite(durationSec)) {
-            return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + itemType + item + qty + durationSec required');
-          }
-          // fixed → price required; auction → startPrice required, buyoutPrice optional
-          const price = body.price != null ? Number(body.price) : undefined;
-          const startPrice = body.startPrice != null ? Number(body.startPrice) : undefined;
-          const buyoutPrice = body.buyoutPrice != null ? Number(body.buyoutPrice) : undefined;
-          if (saleMode === 'fixed' && !Number.isFinite(price ?? NaN)) {
-            return sendErr(res, ErrorCode.BAD_REQUEST, 'price required for fixed sale');
-          }
-          if (saleMode === 'auction' && !Number.isFinite(startPrice ?? NaN)) {
-            return sendErr(res, ErrorCode.BAD_REQUEST, 'startPrice required for auction sale');
-          }
-          return send(res, 200, ok(await auctionSvc.createAuction({
-            worldId, sellerId: accountId, itemType: itemType as 'material' | 'equipment',
-            item, qty, durationSec, designatedBuyerId, saleMode,
-            ...(price != null ? { price } : {}),
-            ...(startPrice != null ? { startPrice } : {}),
-            ...(buyoutPrice != null ? { buyoutPrice } : {}),
-          })));
-        }
-        {
-          const m = /^\/auction\/([^/]+)\/bid$/.exec(path);
-          if (method === 'POST' && m) {
-            const body = await readJson(req);
-            const worldId = typeof body.worldId === 'string' ? body.worldId : null;
-            const amount = Number(body.amount);
-            if (!worldId || !Number.isFinite(amount)) {
-              return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + amount required');
-            }
-            return send(res, 200, ok(await auctionSvc.placeBid(worldId, accountId, decodeURIComponent(m[1]!), amount)));
-          }
-        }
-        {
-          const m = /^\/auction\/([^/]+)\/buy$/.exec(path);
-          if (method === 'POST' && m) {
-            const body = await readJson(req);
-            const worldId = typeof body.worldId === 'string' ? body.worldId : null;
-            if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
-            return send(res, 200, ok(await auctionSvc.buyAuction(worldId, accountId, decodeURIComponent(m[1]!))));
-          }
-        }
-        {
-          const m = /^\/auction\/([^/]+)\/cancel$/.exec(path);
-          if (method === 'POST' && m) {
-            const body = await readJson(req);
-            const worldId = typeof body.worldId === 'string' ? body.worldId : null;
-            if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
-            return send(res, 200, ok(await auctionSvc.cancelAuction(worldId, accountId, decodeURIComponent(m[1]!))));
-          }
-        }
-
         // ── Nation (S8-6.5, implemented) ──
         if (method === 'GET' && path === '/world/nations') {
           const worldId = q.get('worldId');
@@ -690,7 +604,6 @@ export function startHttpApi(
         }
 
         // Season management /admin/world/* has been moved out of the JWT branch to use X-Internal-Key (C4/§17.7, see internal branch above).
-        // F end-of-season settlement (auction clearWorldOnReset) has been merged into the /admin/world/reset handler above.
 
         return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
       } catch (e) {

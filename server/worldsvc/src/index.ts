@@ -1,12 +1,11 @@
 // worldsvc process bootstrap (S8-0 + S8-4 + S8-5): connect dedicated DB → optional Redis → services → public REST listen.
-// SLG_DESIGN §14.1 P1: worldsvc is the fourth public face (reverse proxy /world,/auction → this process).
+// SLG_DESIGN §14.1 P1: worldsvc is a public face (reverse proxy /world → this process; /auction moved to auctionsvc, §9 任务6).
 import { SLG_MAP_W, SLG_MAP_H, createLogger, startHeartbeat } from '@nw/shared';
 import { createWorldMongo } from './db';
 import { connectRedis } from './redis';
 import { WorldService } from './service';
 import { SectService } from './sectService';
 import { NationChannelService } from './nationChannelService';
-import { AuctionService } from './auctionService';
 import { MapTemplateService } from './mapTemplateService';
 import { startHttpApi } from './httpApi';
 import { startScheduler } from './scheduler';
@@ -77,24 +76,15 @@ async function main(): Promise<void> {
     now: () => Date.now(),
   });
 
-  const auctionSvc = new AuctionService({
-    cols: mongo.collections,
-    commercial,
-    meta,
-    mail,
-    now: () => Date.now(),
-  });
-
   const mapTemplateSvc = new MapTemplateService({ cols: mongo.collections, now: () => Date.now() });
 
-  const scheduler = startScheduler(svc, auctionSvc);
+  const scheduler = startScheduler(svc);
 
   const server = startHttpApi(
     { host: env.host, port: env.port, jwtSecret: env.jwtSecret, internalKey: env.internalKey },
     svc,
     sectSvc,
     nationChannelSvc,
-    auctionSvc,
     socialsvc,
     mapTemplateSvc,
   );

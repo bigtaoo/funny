@@ -1,5 +1,6 @@
 // worldsvc dedicated database factory (S8-0, SLG_DESIGN §14.3). Database name notebook_wars_world, physically isolated from meta/commercial/admin.
-// 8 collections: worlds / tiles / playerWorld / marches / auctions / sieges / sects / nations. Family identity/roster lives in socialsvc (see db.ts note above SectDoc).
+// 7 collections: worlds / tiles / playerWorld / marches / sieges / sects / nations. Family identity/roster lives in socialsvc (see db.ts note above SectDoc);
+// auction collections moved to auctionsvc's own database (§9 任务6).
 // Write pattern reuses single-document atomics + rev optimistic locking (META_DESIGN §6.3). Sparse storage: only occupied/modified tiles are persisted;
 // neutral tiles are computed on-the-fly by shared proceduralTile() and not stored (key to §14.2 scale).
 import { MongoClient, Db, Collection, type MongoClientOptions } from 'mongodb';
@@ -8,7 +9,6 @@ import type {
   ResourceType,
   MarchKind,
   WorldStatus,
-  AuctionStatus,
   SiegeOutcome,
   SettleTier,
   BuildingKey,
@@ -189,48 +189,6 @@ export interface SectDoc {
   rev: number;
 }
 
-export interface AuctionDoc {
-  _id: string; // auctionId
-  worldId: string;
-  sellerId: string;
-  itemType: string;
-  item: Record<string, unknown>;
-  qty: number;
-  price: number; // fixed-price: unit transaction price; auction: meaningless after bidding starts (use startPrice/topBid), retained for backward-compatible browse sorting
-  currency: string;
-  designatedBuyerId?: string;
-  expireAt: number; // ms (expiry settled by scanner: refund seller escrow / finalize auction bid; not TTL auto-delete, see ensureIndexes note)
-  status: AuctionStatus;
-  buyerId?: string;
-  /** Transaction timestamp ms (written when status→sold). Anomaly auditing (D/G7) windows by this; legacy documents fall back to parsing listing ts from _id. */
-  soldAt?: number;
-  // ── B Auction bidding (AUCTION_DESIGN §4.B). saleMode defaults to 'fixed' (backward-compatible with existing fixed-price listings) ──
-  saleMode?: 'fixed' | 'auction';
-  startPrice?: number;   // auction starting total price (whole batch, not per-unit)
-  buyoutPrice?: number;  // auction buyout total price (optional)
-  topBid?: { bidderId: string; amount: number; ts: number }; // current highest bid (total price, coins already escrowed)
-  rev: number;
-}
-
-/** C Daily quota counter (AUCTION_DESIGN §4.C). _id = `${worldId}:${accountId}:${dayKey}`, TTL auto-cleared. */
-export interface AuctionDailyDoc {
-  _id: string;
-  worldId: string;
-  accountId: string;
-  dayKey: string; // server UTC day boundary YYYY-MM-DD
-  lists: number;  // new listings created today
-  buys: number;   // purchases / bids placed today
-  expiresAt: Date; // BSON Date, TTL anchor field
-}
-
-/** G Price guardrail sliding window (AUCTION_DESIGN §4.G). _id = `${worldId}:${category}`, stores the last N transaction unit prices. */
-export interface AuctionPriceDoc {
-  _id: string;
-  worldId: string;
-  category: string; // material category (material:scrap…); equipment category pending A
-  prices: number[]; // last N transaction unit prices (newest at tail, length ≤ AUCTION_PRICE_WINDOW_N)
-}
-
 /**
  * Family channel message (S8-4).
  * ★ ts must be stored as BSON Date (not epoch number) — MongoDB TTL only works on Date fields.
@@ -408,9 +366,6 @@ export interface WorldCollections {
   sects: Collection<SectDoc>;
   sectMessages: Collection<SectMessageDoc>;
   nationMessages: Collection<NationMessageDoc>;
-  auctions: Collection<AuctionDoc>;
-  auctionDaily: Collection<AuctionDailyDoc>;
-  auctionPrices: Collection<AuctionPriceDoc>;
   sieges: Collection<SiegeDoc>;
   siegeDamage: Collection<SiegeDamageDoc>;
   nations: Collection<NationDoc>;
@@ -455,9 +410,6 @@ export async function createWorldMongo(
     sects: db.collection<SectDoc>('sects'),
     sectMessages: db.collection<SectMessageDoc>('sectMessages'),
     nationMessages: db.collection<NationMessageDoc>('nationMessages'),
-    auctions: db.collection<AuctionDoc>('auctions'),
-    auctionDaily: db.collection<AuctionDailyDoc>('auctionDaily'),
-    auctionPrices: db.collection<AuctionPriceDoc>('auctionPrices'),
     sieges: db.collection<SiegeDoc>('sieges'),
     siegeDamage: db.collection<SiegeDamageDoc>('siegeDamage'),
     nations: db.collection<NationDoc>('nations'),
@@ -490,15 +442,6 @@ export async function createWorldMongo(
     // Nation/world public channel (B7): paginated by worldId + time descending; same 7-day TTL as family/sect channels.
     await collections.nationMessages.createIndex({ worldId: 1, ts: -1 });
     await collections.nationMessages.createIndex({ ts: 1 }, { expireAfterSeconds: FAMILY_MSG_RETENTION_SEC });
-    await collections.auctions.createIndex({ worldId: 1, itemType: 1, status: 1 });
-    await collections.auctions.createIndex({ sellerId: 1 });
-    await collections.auctions.createIndex({ designatedBuyerId: 1 });
-    // Note: auctions.expireAt is intentionally NOT a TTL index — expiry requires settlement (refund seller escrow); handled by the scanner using this index;
-    // TTL auto-delete would discard escrowed goods before settlement (U13). The "TTL {expireAt}" entry in §14.3 is changed to a regular index per this implementation decision.
-    await collections.auctions.createIndex({ expireAt: 1 });
-    // C Daily quota: TTL auto-cleared (expiresAt is BSON Date; Mongo TTL only works on Date).
-    await collections.auctionDaily.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-    // G Price sliding window: _id = `${worldId}:${category}` direct lookup, no additional index needed (primary key sufficient).
     await collections.sieges.createIndex({ worldId: 1, ts: -1 });
     await collections.sieges.createIndex({ attackerId: 1 });
     // ADR-026: delayed building-HP settlement scan (mirrors marches.arriveAt: due-time polling; Redis ZSET optional later).
