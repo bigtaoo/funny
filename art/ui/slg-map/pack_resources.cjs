@@ -25,11 +25,66 @@ const LONG_EDGE = 128;  // map-resource motif target long edge (closely viewed +
 const PAD = 2;          // per-frame spacing inside the atlas
 const ATLAS_W = 512;    // atlas width (fixed)
 const ALPHA_TRIM = 16;  // alpha threshold for considering a pixel "has content" during crop
-const OUT_DIR = path.resolve(__dirname, '../../../client/src/assets/slg');
+const OUT_DIRS = [
+  path.resolve(__dirname, '../../../client/src/assets/slg'),
+  path.resolve(__dirname, '../../../tools/map-editor/src/assets/slg'),  // §5.8: keep both byte-identical
+];
+
+// ── Baked low-tier count frames (§5.4/§5.7) ───────────────────────────────────
+// l1–5 read the exact level by COUNTING motif tokens on a tray background (dice-pip
+// slots). We bake `res_<type>_l1..l5` here so getResLevelTexture() picks them up with
+// zero runtime code change (same path as the l6–10 real art). bgA covers l1–3, bgB l4–5.
+const TOKEN_FRAC = 0.40;  // token long edge as a fraction of the background long edge
+const BAKE = [
+  { type: 'paper', token: 'res_paper', bgA: 'resbg_paper_a', bgB: 'resbg_paper_b' },
+];
+// Dice-pip slot layouts, as (fx,fy) fractions of the background box. Count = level.
+// Slots sit inside the tray's interior; composited back-to-front (top rows first).
+// Left/right columns just clear the centre so each token stays countable; the two
+// vertical rows overlap slightly so a column reads as a small stack of sheets.
+const C = [0.51, 0.56];
+const TL = [0.30, 0.45], TR = [0.72, 0.45], BL = [0.30, 0.68], BR = [0.72, 0.68], BC = [0.51, 0.70];
+const DICE = {
+  1: [C],
+  2: [TL, BR],            // diagonal
+  3: [TL, TR, BC],        // triangle
+  4: [TL, TR, BL, BR],    // four corners
+  5: [TL, TR, BL, BR, C], // four corners + centre
+};
 
 const nextPow2 = (n) => { let p = 1; while (p < n) p <<= 1; return p; };
 
-async function loadSprite(file) {
+/**
+ * Make a line-art shape's interior opaque white (in-place, raw RGBA).
+ * Background removal leaves the body transparent (alpha≈0) and only the ink outline
+ * opaque, so stacked tokens would show through each other. We flood-fill the exterior
+ * from the borders through transparent pixels; any transparent pixel NOT reached is
+ * enclosed by the outline (the sheet's face) → paint it opaque white. Ink pixels stay.
+ * Result: a solid white card with a dark edge, so a pile of them reads as a real stack.
+ */
+function fillInteriorWhite(buf, w, h, thresh = 32) {
+  const ext = new Uint8Array(w * h);
+  const stack = [];
+  const push = (x, y) => {
+    if (x < 0 || y < 0 || x >= w || y >= h) return;
+    const idx = y * w + x;
+    if (ext[idx] || buf[idx * 4 + 3] > thresh) return;
+    ext[idx] = 1; stack.push(idx);
+  };
+  for (let x = 0; x < w; x++) { push(x, 0); push(x, h - 1); }
+  for (let y = 0; y < h; y++) { push(0, y); push(w - 1, y); }
+  while (stack.length) {
+    const idx = stack.pop(), x = idx % w, y = (idx / w) | 0;
+    push(x - 1, y); push(x + 1, y); push(x, y - 1); push(x, y + 1);
+  }
+  for (let i = 0; i < w * h; i++) {
+    if (!ext[i] && buf[i * 4 + 3] <= thresh) {
+      buf[i * 4] = 255; buf[i * 4 + 1] = 255; buf[i * 4 + 2] = 255; buf[i * 4 + 3] = 255;
+    }
+  }
+}
+
+async function processImage(file, longEdge, opts = {}) {
   const name = path.basename(file).replace(/\.(webp|png)$/i, '');
   const { data, info } = await sharp(file).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const { width: W, height: H, channels: ch } = info;
@@ -65,14 +120,55 @@ async function loadSprite(file) {
     }
   }
 
-  // Proportional scale: long edge = LONG_EDGE
-  const scale = LONG_EDGE / Math.max(cropW, cropH);
+  // Opaque-white the interior for baked count tokens (so stacked sheets occlude)
+  if (opts.fill) fillInteriorWhite(cropBuf, cropW, cropH);
+
+  // Proportional scale: long edge = longEdge
+  const scale = longEdge / Math.max(cropW, cropH);
   const newW = Math.max(1, Math.round(cropW * scale));
   const newH = Math.max(1, Math.round(cropH * scale));
   const buf = await sharp(cropBuf, { raw: { width: cropW, height: cropH, channels: 4 } })
     .resize(newW, newH, { fit: 'fill' }).png().toBuffer();
 
   return { name, buf, w: newW, h: newH };
+}
+
+const loadSprite = (file) => processImage(file, LONG_EDGE);
+
+/**
+ * Bake `res_<type>_l1..l5` count frames: composite N motif tokens (dice-pip slots)
+ * over the tray background. Returns sprite objects ready for the packer, or [] if
+ * this type's source images (token / backgrounds) aren't present.
+ */
+async function bakeCountFrames(cfg) {
+  const dir = __dirname;
+  const has = (f) => fs.existsSync(path.join(dir, f));
+  const src = (base) => ['.webp', '.png'].map((e) => base + e).find((f) => has(f));
+  const tokenSrc = src(cfg.token), bgASrc = src(cfg.bgA), bgBSrc = src(cfg.bgB);
+  if (!tokenSrc || !bgASrc || !bgBSrc) return [];  // TBD types skipped silently
+
+  const bgA = await loadSprite(path.join(dir, bgASrc));
+  const bgB = await loadSprite(path.join(dir, bgBSrc));
+  const tokLong = Math.round(LONG_EDGE * TOKEN_FRAC);
+  const tok = await processImage(path.join(dir, tokenSrc), tokLong, { fill: true });
+
+  const out = [];
+  for (let lv = 1; lv <= 5; lv++) {
+    const bg = lv <= 3 ? bgA : bgB;
+    const slots = [...DICE[lv]].sort((a, b) => a[1] - b[1]);  // back-to-front
+    const composites = [{ input: bg.buf, left: 0, top: 0 }];
+    for (const [fx, fy] of slots) {
+      let left = Math.round(fx * bg.w - tok.w / 2);
+      let top = Math.round(fy * bg.h - tok.h / 2);
+      left = Math.max(0, Math.min(bg.w - tok.w, left));
+      top = Math.max(0, Math.min(bg.h - tok.h, top));
+      composites.push({ input: tok.buf, left, top });
+    }
+    const buf = await sharp({ create: { width: bg.w, height: bg.h, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+      .composite(composites).png().toBuffer();
+    out.push({ name: `res_${cfg.type}_l${lv}`, buf, w: bg.w, h: bg.h });
+  }
+  return out;
 }
 
 async function main() {
@@ -83,6 +179,9 @@ async function main() {
 
   const sprites = [];
   for (const f of files) sprites.push(await loadSprite(path.join(__dirname, f)));
+
+  // Baked l1–5 count frames (motif tokens over tray backgrounds)
+  for (const cfg of BAKE) sprites.push(...await bakeCountFrames(cfg));
 
   // Shelf packing: sort by height descending, fill row by row
   sprites.sort((a, b) => b.h - a.h);
@@ -97,11 +196,9 @@ async function main() {
   const ATLAS_H = nextPow2(usedH);
 
   // Composite atlas (compressed PNG: palette + max effort)
-  const canvas = sharp({ create: { width: ATLAS_W, height: ATLAS_H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } });
   const composites = sprites.map((s) => ({ input: s.buf, left: s.x, top: s.y }));
-  fs.mkdirSync(OUT_DIR, { recursive: true });
-  const atlasPng = path.join(OUT_DIR, 'res_atlas.png');
-  await canvas.composite(composites).png({ palette: true, compressionLevel: 9, effort: 10 }).toFile(atlasPng);
+  const atlasBuf = await sharp({ create: { width: ATLAS_W, height: ATLAS_H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .composite(composites).png({ palette: true, compressionLevel: 9, effort: 10 }).toBuffer();
 
   // Export JSON (TexturePacker JSON-Hash) — frame names have no extension, for use as textures['res_ink']
   const frames = {};
@@ -117,10 +214,16 @@ async function main() {
     frames,
     meta: { app: 'pack_resources.cjs', image: 'res_atlas.png', format: 'RGBA8888', size: { w: ATLAS_W, h: ATLAS_H }, scale: '1' },
   };
-  fs.writeFileSync(path.join(OUT_DIR, 'res_atlas.json'), JSON.stringify(json, null, 2));
 
-  const kb = (fs.statSync(atlasPng).size / 1024).toFixed(1);
-  console.log(`✅ Packed ${sprites.length} frames → client/src/assets/slg/res_atlas.png (${ATLAS_W}×${ATLAS_H}, ${kb} KB) + res_atlas.json`);
+  // Write byte-identical copies to every consumer (§5.8: client + map-editor)
+  for (const dir of OUT_DIRS) {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'res_atlas.png'), atlasBuf);
+    fs.writeFileSync(path.join(dir, 'res_atlas.json'), JSON.stringify(json, null, 2));
+  }
+
+  const kb = (atlasBuf.length / 1024).toFixed(1);
+  console.log(`✅ Packed ${sprites.length} frames → res_atlas.png (${ATLAS_W}×${ATLAS_H}, ${kb} KB) + res_atlas.json → ${OUT_DIRS.length} dir(s)`);
   console.table(sprites.map((s) => ({ name: s.name, w: s.w, h: s.h, x: s.x, y: s.y })));
 }
 
