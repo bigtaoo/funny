@@ -292,3 +292,144 @@ describe('SaveManager.recordClear / upgrade / pending (§8)', () => {
     expect(new SaveManager({ store, api: fakeApi(makeNewSave('a', 1), true) }).online()).toBe(true);
   });
 });
+
+// ── Stamina-at-entry (A4, 2026-07-06): deducted on spendStaminaForLevel, not on clear; local-first, works offline ──
+describe('SaveManager.spendStaminaForLevel (A4)', () => {
+  /** Records pveEnter calls and optionally pushes back an authoritative stamina snapshot / throws. */
+  function staminaApi(opts: {
+    hasToken?: boolean;
+    onEnter?: (levelId: string) => { current: number; regenAt: number } | Error;
+  }) {
+    const calls: string[] = [];
+    const api = {
+      hasToken: () => opts.hasToken ?? true,
+      getSave: async () => ({ save: makeNewSave('a', 1) }),
+      pveEnter: async (levelId: string) => {
+        calls.push(levelId);
+        const r = opts.onEnter?.(levelId) ?? { current: 999, regenAt: 0 };
+        if (r instanceof Error) throw r;
+        return { stamina: r };
+      },
+    } as unknown as ApiClient;
+    return { api, calls };
+  }
+
+  it('online success: local optimistic value then server value once the async call resolves', async () => {
+    const store = new LocalSaveStore(new MemStorage());
+    store.saveLocal(makeNewSave('a', 1));
+    let resolveEnter!: (v: { current: number; regenAt: number }) => void;
+    const pending = new Promise<{ current: number; regenAt: number }>((res) => { resolveEnter = res; });
+    const api = {
+      hasToken: () => true,
+      getSave: async () => ({ save: makeNewSave('a', 1) }),
+      pveEnter: async () => ({ stamina: await pending }),
+    } as unknown as ApiClient;
+    const mgr = new SaveManager({ store, api });
+
+    const ok = mgr.spendStaminaForLevel('ch1_lv1', 10);
+    expect(ok).toBe(true);
+    // Deducted locally right away, before the server round-trip resolves.
+    expect(mgr.get().stamina?.current).toBe(110);
+
+    resolveEnter({ current: 108, regenAt: 555 }); // server's own authoritative view (e.g. concurrent device also spent stamina)
+    await Promise.resolve(); await Promise.resolve(); // let the .then() microtask run
+    expect(mgr.get().stamina).toEqual({ current: 108, regenAt: 555 });
+    expect(mgr.getPendingStaminaSpends()).toEqual([]); // resolved online, never queued
+  });
+
+  it('insufficient balance → false, nothing deducted', () => {
+    const store = new LocalSaveStore(new MemStorage());
+    const local = makeNewSave('a', 1);
+    local.stamina = { current: 5, regenAt: 0 };
+    store.saveLocal(local);
+    const { api, calls } = staminaApi({});
+    const mgr = new SaveManager({ store, api });
+
+    expect(mgr.spendStaminaForLevel('ch1_lv1', 10)).toBe(false);
+    expect(mgr.get().stamina?.current).toBe(5);
+    expect(calls).toEqual([]); // never even attempts the server call
+    expect(mgr.getPendingStaminaSpends()).toEqual([]);
+  });
+
+  it('offline: deducts the local mirror immediately (even with no network) and queues for later settlement', () => {
+    const mem = new MemStorage();
+    const store = new LocalSaveStore(mem);
+    store.saveLocal(makeNewSave('a', 1));
+    const { api, calls } = staminaApi({ hasToken: false });
+    const mgr = new SaveManager({ store, api });
+
+    expect(mgr.spendStaminaForLevel('ch1_lv1', 10)).toBe(true);
+    expect(mgr.get().stamina?.current).toBe(110); // deducted locally despite being offline
+    expect(calls).toEqual([]); // no request sent while offline
+    expect(mgr.getPendingStaminaSpends().map((p) => p.levelId)).toEqual(['ch1_lv1']);
+    // Persistence: a new instance restores both the deducted balance and the queue from storage.
+    const mgr2 = new SaveManager({ store: new LocalSaveStore(mem), api });
+    expect(mgr2.get().stamina?.current).toBe(110);
+    expect(mgr2.getPendingStaminaSpends().map((p) => p.levelId)).toEqual(['ch1_lv1']);
+  });
+
+  it('online request fails (network error) → still deducted locally, falls back to queue', async () => {
+    const store = new LocalSaveStore(new MemStorage());
+    store.saveLocal(makeNewSave('a', 1));
+    const { api } = staminaApi({ onEnter: () => new Error('network down') });
+    const mgr = new SaveManager({ store, api });
+
+    expect(mgr.spendStaminaForLevel('ch1_lv1', 10)).toBe(true);
+    expect(mgr.get().stamina?.current).toBe(110);
+    await Promise.resolve(); await Promise.resolve(); // let the rejected promise's .catch() run
+    expect(mgr.getPendingStaminaSpends().map((p) => p.levelId)).toEqual(['ch1_lv1']);
+  });
+
+  it('flush queue after bootstrap/refresh: settles each entry in order, adopts server stamina, clears queue', async () => {
+    const mem = new MemStorage();
+    const store = new LocalSaveStore(mem);
+    const local = makeNewSave('a', 1);
+    local.stamina = { current: 90, regenAt: 0 }; // simulates two offline spends already applied locally
+    store.saveLocal(local);
+    store.savePendingStamina([
+      { levelId: 'ch1_lv1', cost: 10, ts: 1 },
+      { levelId: 'ch1_lv2', cost: 10, ts: 2 },
+    ]);
+    const { api, calls } = staminaApi({ onEnter: () => ({ current: 80, regenAt: 999 }) });
+
+    const mgr = new SaveManager({ store, api });
+    expect(mgr.getPendingStaminaSpends()).toHaveLength(2);
+    await mgr.refresh(); // flushPendingStamina runs at the end of refresh
+
+    expect(calls).toEqual(['ch1_lv1', 'ch1_lv2']);
+    expect(mgr.getPendingStaminaSpends()).toEqual([]);
+    expect(store.loadPendingStamina()).toEqual([]); // also cleared on disk
+    expect(mgr.get().stamina).toEqual({ current: 80, regenAt: 999 }); // last server response wins
+  });
+
+  it('flush: business error (ApiError) discards the entry without blocking the queue; network error retains it', async () => {
+    const store = new LocalSaveStore(new MemStorage());
+    store.saveLocal(makeNewSave('a', 1));
+    store.savePendingStamina([
+      { levelId: 'bad', cost: 10, ts: 1 },   // business error → discard
+      { levelId: 'good', cost: 10, ts: 2 },  // network error → retain
+    ]);
+    const { api } = staminaApi({
+      onEnter: (levelId) =>
+        levelId === 'bad'
+          ? new ApiError('BAD_REQUEST', 'unknown level')
+          : new Error('network'),
+    });
+    const mgr = new SaveManager({ store, api });
+    await mgr.refresh();
+    expect(mgr.getPendingStaminaSpends().map((p) => p.levelId)).toEqual(['good']);
+  });
+
+  it('regen catch-up: elapsed regen ticks since the last spend are applied even when a spend is blocked by insufficient balance', () => {
+    const store = new LocalSaveStore(new MemStorage());
+    const local = makeNewSave('a', 1);
+    local.stamina = { current: 0, regenAt: Date.now() - 6 * 60 * 1000 }; // one regen tick (6 min) already elapsed
+    store.saveLocal(local);
+    const { api } = staminaApi({});
+    const mgr = new SaveManager({ store, api });
+
+    expect(mgr.spendStaminaForLevel('ch1_lv1', 10)).toBe(false); // a couple points regenerated, still far short of 10
+    expect(mgr.get().stamina?.current).toBeGreaterThanOrEqual(1);
+    expect(mgr.get().stamina?.current).toBeLessThan(10);
+  });
+});

@@ -20,6 +20,9 @@ const LEGACY_SEEN_INTRO_KEY = 'nw_seen_intro';
 /** Local key for the offline pending-settlement clear queue (PVE_INTEGRITY_PLAN §8.4, non-sync segment, not uploaded to cloud). */
 const PENDING_CLEARS_KEY = 'nw_pending_clears_v1';
 
+/** Local key for the offline pending stamina-spend queue (A4, 2026-07-06): entering a level deducts stamina locally immediately, even offline; queued here and settled with the server on reconnect. */
+const PENDING_STAMINA_KEY = 'nw_pending_stamina_v1';
+
 /** Offline pending-settlement clear record (flushed on reconnect → POST /pve/clear). */
 export interface PendingClear {
   levelId: string;
@@ -27,6 +30,13 @@ export interface PendingClear {
   ts: number;
   /** Local replay id (ReplayStore); retrieved and uploaded for re-verification when the flush is sampled by L1 (§8.6). */
   replayId?: string;
+}
+
+/** Offline pending stamina-spend record (flushed on reconnect → POST /pve/enter). The local stamina mirror is already deducted; this just settles the server's authoritative copy. */
+export interface PendingStaminaSpend {
+  levelId: string;
+  cost: number;
+  ts: number;
 }
 
 export interface SaveStore {
@@ -40,6 +50,10 @@ export interface SaveStore {
   loadPending(): PendingClear[];
   /** Write the offline pending-settlement clear queue. */
   savePending(list: PendingClear[]): void;
+  /** Read the offline pending stamina-spend queue (returns empty on corruption). */
+  loadPendingStamina(): PendingStaminaSpend[];
+  /** Write the offline pending stamina-spend queue. */
+  savePendingStamina(list: PendingStaminaSpend[]): void;
 }
 
 export class LocalSaveStore implements SaveStore {
@@ -93,6 +107,28 @@ export class LocalSaveStore implements SaveStore {
   savePending(list: PendingClear[]): void {
     if (list.length === 0) this.storage.removeItem(PENDING_CLEARS_KEY);
     else this.storage.setItem(PENDING_CLEARS_KEY, JSON.stringify(list));
+  }
+
+  loadPendingStamina(): PendingStaminaSpend[] {
+    const text = this.storage.getItem(PENDING_STAMINA_KEY);
+    if (!text) return [];
+    try {
+      const arr = JSON.parse(text);
+      if (!Array.isArray(arr)) return [];
+      return arr
+        .filter(
+          (e): e is PendingStaminaSpend =>
+            !!e && typeof e.levelId === 'string' && typeof e.cost === 'number',
+        )
+        .map((e) => ({ levelId: e.levelId, cost: e.cost, ts: typeof e.ts === 'number' ? e.ts : 0 }));
+    } catch {
+      return []; // corrupted → treat as empty queue
+    }
+  }
+
+  savePendingStamina(list: PendingStaminaSpend[]): void {
+    if (list.length === 0) this.storage.removeItem(PENDING_STAMINA_KEY);
+    else this.storage.setItem(PENDING_STAMINA_KEY, JSON.stringify(list));
   }
 
   /** Absorb legacy standalone keys into flags (only when the flag is not already set). */

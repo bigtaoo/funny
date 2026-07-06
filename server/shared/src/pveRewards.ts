@@ -26,7 +26,7 @@ export interface PveLevelConfig {
    * Only lv5 (chapter mid-elite) and lv10 (chapter Boss) have drops configured; other normal levels have none.
    */
   equipmentDrop?: EquipmentDropConfig;
-  /** Stamina cost (A4). Default = 1. Boss level (lv10) = 3, Elite level (lv5) = 2, normal level = 1. */
+  /** Stamina cost (A4), deducted at /pve/enter (not at clear). Default = 10 (flat rate, 2026-07-06); unset on all current levels. */
   staminaCost?: number;
 }
 

@@ -16,7 +16,12 @@ import {
 } from './SaveData';
 import { migrate } from './migrate';
 import { replayIdFor } from './ReplayStore';
-import type { PendingClear, SaveStore } from './SaveStore';
+import type { PendingClear, PendingStaminaSpend, SaveStore } from './SaveStore';
+
+// Stamina constants (A4) — mirrors server/metaserver/src/service/base.ts STAMINA_CAP/STAMINA_REGEN_MS,
+// needed here so entering a level can deduct correctly even fully offline (no server round-trip available).
+const STAMINA_CAP = 120;
+const STAMINA_REGEN_MS = 6 * 60 * 1000; // 6 min per point
 
 export interface SaveManagerOpts {
   store: SaveStore;
@@ -64,6 +69,7 @@ export class SaveManager {
   private pushing = false;
   private dirty = false; // local changes within the debounce window not yet uploaded
   private pending: PendingClear[]; // offline queue of clears awaiting settlement (PVE_INTEGRITY_PLAN §8.4)
+  private pendingStamina: PendingStaminaSpend[]; // offline queue of stamina spends awaiting server settlement (A4)
 
   constructor(opts: SaveManagerOpts) {
     this.store = opts.store;
@@ -78,6 +84,7 @@ export class SaveManager {
     this.clearTimer = opts.clearTimer ?? ((h) => (globalThis as typeof globalThis).clearTimeout(h as never));
     this.save = this.store.loadLocal();
     this.pending = this.store.loadPending();
+    this.pendingStamina = this.store.loadPendingStamina();
   }
 
   /** Current in-memory save (synchronously readable; UI balances etc. read from here and are refreshed by server push-back). */
@@ -147,6 +154,7 @@ export class SaveManager {
         gatewayUrl: auth.gatewayUrl ?? cloud.gatewayUrl,
       });
       await this.flushPending(); // settle clears that were queued offline
+      await this.flushPendingStamina(); // settle stamina spends that were queued offline
       return true;
     } catch {
       // Offline / server unreachable: stay on local data, no error thrown.
@@ -172,6 +180,7 @@ export class SaveManager {
         gatewayUrl: cloud.gatewayUrl,
       });
       await this.flushPending(); // settle clears queued offline after reconnection
+      await this.flushPendingStamina(); // settle stamina spends queued offline after reconnection
       return true;
     } catch {
       return false;
@@ -211,6 +220,80 @@ export class SaveManager {
   /** Offline queue of clears pending settlement (read-only copy for UI to display "pending" state). */
   getPendingClears(): PendingClear[] {
     return this.pending.slice();
+  }
+
+  /** Offline queue of stamina spends pending server settlement (read-only copy; mainly for tests/diagnostics). */
+  getPendingStaminaSpends(): PendingStaminaSpend[] {
+    return this.pendingStamina.slice();
+  }
+
+  /**
+   * Spend stamina to enter a level (A4, 2026-07-06): deducted the moment the player commits, not at clear,
+   * so retreating or losing mid-level does not refund it. Deducts the local mirror immediately and
+   * unconditionally — including fully offline, so the player sees the cost right away — then settles with
+   * the server in the background (online) or queues for settlement on reconnect (offline / request failed).
+   * Returns false without deducting anything when the (regen-adjusted) balance is below cost.
+   */
+  spendStaminaForLevel(levelId: string, cost: number): boolean {
+    const regen = this.regenStamina();
+    if (regen.current < cost) {
+      this.save.stamina = regen; // still persist the regen catch-up even when entry is blocked
+      this.store.saveLocal(this.save);
+      return false;
+    }
+    const current = regen.current - cost;
+    const regenAt = regen.regenAt !== 0 ? regen.regenAt : current < STAMINA_CAP ? Date.now() + STAMINA_REGEN_MS : 0;
+    this.save.stamina = { current, regenAt };
+    this.store.saveLocal(this.save);
+    if (this.online()) {
+      this.api!.pveEnter(levelId).then((res) => {
+        this.save.stamina = res.stamina;
+        this.store.saveLocal(this.save);
+      }).catch(() => this.enqueueStaminaSpend({ levelId, cost, ts: Date.now() }));
+    } else {
+      this.enqueueStaminaSpend({ levelId, cost, ts: Date.now() });
+    }
+    return true;
+  }
+
+  /** Apply natural regen to the local stamina mirror (same algorithm as server deductStamina/readStaminaSnapshot) without persisting; caller decides whether/how to save the result. */
+  private regenStamina(): { current: number; regenAt: number } {
+    const now = Date.now();
+    let { current, regenAt } = this.save.stamina ?? { current: STAMINA_CAP, regenAt: 0 };
+    if (current < STAMINA_CAP && regenAt > 0 && now >= regenAt) {
+      const ticks = Math.floor((now - regenAt) / STAMINA_REGEN_MS) + 1;
+      current = Math.min(STAMINA_CAP, current + ticks);
+      regenAt = current >= STAMINA_CAP ? 0 : regenAt + ticks * STAMINA_REGEN_MS;
+    }
+    return { current, regenAt };
+  }
+
+  private enqueueStaminaSpend(entry: PendingStaminaSpend): void {
+    this.pendingStamina.push(entry);
+    this.store.savePendingStamina(this.pendingStamina);
+  }
+
+  /** Flush the pending stamina-spend queue in order once back online: the local mirror is already deducted, so this only settles the server's authoritative copy (best-effort). */
+  private async flushPendingStamina(): Promise<void> {
+    if (!this.online()) return;
+    while (this.pendingStamina.length > 0) {
+      const head = this.pendingStamina[0]!;
+      try {
+        const res = await this.api!.pveEnter(head.levelId);
+        this.save.stamina = res.stamina;
+        this.store.saveLocal(this.save);
+        this.pendingStamina.shift();
+        this.store.savePendingStamina(this.pendingStamina);
+      } catch (e) {
+        if (e instanceof ApiError) {
+          // Business error (unknown level etc.): cannot be settled server-side; drop it rather than block the queue (local deduction already stands).
+          this.pendingStamina.shift();
+          this.store.savePendingStamina(this.pendingStamina);
+          continue;
+        }
+        break; // network error: keep queue, retry next time
+      }
+    }
   }
 
   /**

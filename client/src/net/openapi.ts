@@ -345,6 +345,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pve/enter": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** PvE level entry (A4): deducts stamina the moment the player commits to a level (no refund on retreat/loss); /pve/clear no longer touches stamina */
+        post: operations["pveEnter"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pve/clear": {
         parameters: {
             query?: never;
@@ -2389,6 +2406,45 @@ export interface operations {
                 };
             };
             400: components["responses"]["ErrorResp"];
+        };
+    };
+    pveEnter: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    levelId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            stamina: {
+                                current: number;
+                                regenAt: number;
+                            };
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            402: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
         };
     };
     pveClear: {
