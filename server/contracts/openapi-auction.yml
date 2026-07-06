@@ -1,0 +1,229 @@
+openapi: 3.1.0
+info:
+  title: Notebook Wars — auctionsvc REST API
+  version: "1.0"
+  description: >
+    Auction house (auctionsvc) REST contract (AUCTION_DESIGN §9). Standalone service, decoupled from
+    worldsvc/worldId — an account-scoped, 全服 market for materials/equipment/character cards/skins.
+    Self-contained spec (no cross-file $refs): mirrors the /auction/* section previously defined in
+    openapi-world.yml while the migration to auctionsvc is in progress (see AUCTION_DESIGN §9 task4-7).
+
+servers:
+  - url: '{auctionBase}'
+    variables:
+      auctionBase:
+        default: 'http://localhost:18086'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+
+    # ── Auction ────────────────────────────────────────────────────────────────
+
+    AuctionView:
+      type: object
+      required: [auctionId, sellerId, itemType, item, qty, price, status, expireAt, saleMode]
+      properties:
+        auctionId:
+          type: string
+        sellerId:
+          type: string
+        sellerName:
+          type: string
+        itemType:
+          type: string
+          enum: [material, equipment, card, skin]
+          description: "card = character card instance (qty always 1, gear must be empty before listing); skin = cosmetic skin (qty always 1, must not be equipped)"
+        item:
+          type: object
+          additionalProperties: true
+        qty:
+          type: integer
+        price:
+          type: number
+          description: Current effective unit price (fixed-price = sale unit price; auction = current highest bid unit price, or the starting price if no bids placed)
+        totalPrice:
+          type: number
+          description: Current effective unit price × qty
+        currency:
+          type: string
+          enum: [coins]
+        status:
+          type: string
+          enum: [open, sold, cancelled, expired]
+        expireAt:
+          type: number
+        designatedBuyerId:
+          type: string
+        taxPaid:
+          type: number
+        buyerId:
+          type: string
+        # ── B auction fields (saleMode defaults to 'fixed') ────────────────────────────────
+        saleMode:
+          type: string
+          enum: [fixed, auction]
+        startPrice:
+          type: number
+          description: Auction starting unit price
+        buyoutPrice:
+          type: number
+          description: Auction buyout unit price floor (optional)
+
+    OkResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+
+paths:
+
+  # ── Auction ────────────────────────────────────────────────────────────────
+
+  /auction/list:
+    get:
+      operationId: listAuctions
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: itemType, in: query, required: false, schema: { type: string } }
+        - { name: limit,    in: query, required: false, schema: { type: integer } }
+      responses:
+        '200':
+          description: Auction list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/AuctionView' }
+
+  /auction/mine:
+    get:
+      operationId: getMyAuctions
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: My listings
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/AuctionView' }
+
+  /auction/create:
+    post:
+      operationId: createAuction
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              # fixed → price required; auction → startPrice required (see saleMode)
+              required: [itemType, item, qty, durationSec]
+              properties:
+                itemType:
+                  type: string
+                  enum: [material, equipment, card, skin]
+                  description: "card: item.instanceId = CardInstance.id, gear must be empty; skin: item.skinId, must not be equipped; both qty ignored (always 1)"
+                item:
+                  type: object
+                  additionalProperties: true
+                qty: { type: integer }
+                durationSec: { type: integer }
+                designatedBuyerId: { type: string }
+                saleMode:
+                  type: string
+                  enum: [fixed, auction]
+                  description: Defaults to fixed (buy-now)
+                price:
+                  type: number
+                  description: Fixed-price buy-now unit price (required for fixed mode)
+                startPrice:
+                  type: number
+                  description: Auction starting unit price (required for auction mode)
+                buyoutPrice:
+                  type: number
+                  description: Auction buyout floor unit price (optional)
+      responses:
+        '200':
+          description: Auction created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AuctionView' }
+
+  /auction/{auctionId}/buy:
+    post:
+      operationId: buyAuction
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: auctionId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Bought
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /auction/{auctionId}/bid:
+    post:
+      operationId: placeBid
+      summary: Place a bid (saleMode='auction', B). amount = bid unit price; escrowed coins = amount × qty.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: auctionId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount: { type: number, description: Bid unit price (coins per item) }
+      responses:
+        '200':
+          description: Bid placed (returns the closed AuctionView when the bid meets or exceeds buyoutPrice)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AuctionView' }
+
+  /auction/{auctionId}/cancel:
+    post:
+      operationId: cancelAuction
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: auctionId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Cancelled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }

@@ -1,6 +1,6 @@
 # Notebook Wars — 拍卖行设计（Auction House）
 
-> 状态：主干 ✅ + 反 RMT 闸门 C/E/G + 竞拍 B + **装备交易 A** + **异常审计 D（admin G7 已接）** 全 ✅；**双入口（大厅 + SLG 世界地图）已接**；**去 SLG/worldId 耦合 + 独立 auctionsvc 拆分中（见 §9，2026-07-06 拍板，本次为语义定稿，代码尚未迁移）** · 权威：本文（拍卖行**机制**单一来源） · 更新：2026-07-06
+> 状态：主干 ✅ + 反 RMT 闸门 C/E/G + 竞拍 B + **装备交易 A** + **异常审计 D（admin G7 已接）** 全 ✅；**双入口（大厅 + SLG 世界地图）已接**；**去 SLG/worldId 耦合 + 独立 auctionsvc 拆分中（见 §9，2026-07-06 拍板；任务1-4 已完成——业务逻辑已在 `auctionsvc` 落地并与 worldsvc 并存，任务5 接入部署后才切流量）** · 权威：本文（拍卖行**机制**单一来源） · 更新：2026-07-06
 >
 > 配套阅读：[`COMMERCIAL_DESIGN.md`](COMMERCIAL_DESIGN.md)（金币钱包 spend/grant，拍卖结算走它）、[`ECONOMY_BALANCE.md`](ECONOMY_BALANCE.md)（货币政策/反通胀哲学）、[`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md)（数值演算）、[`SERVER_API.md`](SERVER_API.md)（接口契约）、[`OPS_DESIGN.md`](OPS_DESIGN.md)（反 RMT 审计工单复用）、[`EQUIPMENT_DESIGN.md`](EQUIPMENT_DESIGN.md)/[`CHARACTER_CARDS_DESIGN.md`](CHARACTER_CARDS_DESIGN.md)（装备/角色卡实例定义）、[`SLG_DESIGN.md`](SLG_DESIGN.md)（仅材料 `scrap/lead/binding` 的产出侧定义共享，拍卖机制本身与 SLG 世界/赛季生命周期无关，见 §9 拍板说明）。
 >
@@ -11,7 +11,7 @@
 ## 0. TL;DR
 
 - **拍卖行 = 和角色卡/装备/材料/皮肤四类养成物品绑定的大区内全服市场**：与 SLG 的 worldId/赛季生命周期无关（2026-07-06 拍板定稿，详见 §9），单一机制覆盖「公开市场」与「点对点定向交易」（挂单时指定受拍人）。
-- **可交易品 = 材料 + 装备（A ✅）+ 角色卡（CC-5 ✅）+ 皮肤（meta 托管能力 ✅ 已实现，拍卖流程接入待 §9 任务4）**（PvE/SLG 统一养成材料 `scrap/lead/binding` + 锻造装备实例/角色卡实例/皮肤，整件托管转移）；**SLG 赛季资源（粮/铁/木）本就不在拍卖标的范围内**（那是大世界内政资源，随赛季重置，从未支持挂拍）。
+- **可交易品 = 材料 + 装备（A ✅）+ 角色卡（CC-5 ✅）+ 皮肤（meta 托管能力 ✅ 已实现，`itemType='skin'` 拍卖流程已在 auctionsvc 接入，见 §9 任务4）**（PvE/SLG 统一养成材料 `scrap/lead/binding` + 锻造装备实例/角色卡实例/皮肤，整件托管转移）；**SLG 赛季资源（粮/铁/木）本就不在拍卖标的范围内**（那是大世界内政资源，随赛季重置，从未支持挂拍）。
 - **计价货币 = 金币（coins，跨季留存的 premium 货币）**；系统抽 **10% 手续费**；**禁止以赛季资源/局内 ink 计价**（防与天梯/付费体系串味）。
 - **承重墙**：拍卖行不碰战斗/地图，是纯经济子系统——挂存与发放走 **meta 材料库 + 装备库 + 角色卡库（+ 皮肤库，待建）**（幂等 orderId），扣款/收款走 **commercial 金币钱包**，状态机权威**目前**在 worldsvc `auctions` 集合，**拆分完成后**迁至独立服务 `auctionsvc`（见 §9）。
 - **反 RMT 是持续对抗**（R3）：10% 高税 + 并发挂单上限 + 每日限额（C ✅）+ 绑定材料禁挂（E ✅，清单暂空）+ 价格护栏动态滑窗（G ✅）+ 异常模式 admin 审计（D ✅ admin G7 已接，pull 式扫描）。
@@ -27,7 +27,7 @@
 |---|---|---|
 | 唯一交易机制 | 全游戏交易只走拍卖行；无独立「邮寄/转账/摆摊」系统 | 拍板 |
 | 点对点交易 | = 挂单时填 `designatedBuyerId`，仅该账号可拍下；无独立转移系统 | 拍板 |
-| 可交易品 | 材料（scrap/lead/binding）+ 装备 + 角色卡 + 皮肤（meta 托管能力已备，拍卖流程接入待任务4，见 §2.1）；**SLG 赛季资源（粮/铁/木）从不在拍卖标的范围** | §2.1 |
+| 可交易品 | 材料（scrap/lead/binding）+ 装备 + 角色卡 + 皮肤（拍卖流程已在 auctionsvc 接入，见 §2.1/§9 任务4）；**SLG 赛季资源（粮/铁/木）从不在拍卖标的范围** | §2.1 |
 | 计价 | 仅金币 coins（跨季 premium 货币）；禁赛季资源/ink 计价 | ECONOMY_BALANCE |
 | 手续费 | 成交价 10%（coin），系统回收（sink） | 拍板 |
 | 进程归属 | 拍卖是**独立服务 `auctionsvc`**（meta 层，全服单实例，欧美/中国各自部署一份）；扣发金币→commercial；挂发材料/装备/角色卡/皮肤→meta。**当前实现仍挂靠 worldsvc，迁移中，见 §9 任务3/4** | 2026-07-06 拍板 |
@@ -35,7 +35,7 @@
 
 **信任边界**：成交全在服务器权威（客户端只读挂单列表 + 发起意图）；价格/库存/扣发全服务器校验，伪造无效（§11 反作弊）。
 
-> **皮肤交易**：metaserver 托管能力（`escrowSkin`/`grantSkin`）已实现（2026-07-06，§9 任务2）；但拍卖行 `auctionService` 尚未接入 `itemType='skin'` 分支，实际挂拍仍不可用，见 §9 任务4。
+> **皮肤交易**：metaserver 托管能力（`escrowSkin`/`grantSkin`）已实现（2026-07-06，§9 任务2）；`auctionsvc` 的 `auctionService` 已接入 `itemType='skin'` 分支（§9 任务4，2026-07-06），worldsvc 旧实现未接入（不再补，随 §9 任务6 一并下线）。
 
 ---
 
@@ -48,7 +48,7 @@
 | `material` | `{material: 'scrap'\|'lead'\|'binding'\|…}` | meta `deductMaterial(seller, mat, qty, orderId)` | 系统邮件附件 `{kind:'material', id, count}` | ✅ 实跑 |
 | `equipment` | 挂单入参 `{instanceId}`；存储 `{instance: 完整快照}`（qty 恒 1） | meta `escrowEquipment(seller, instanceId, orderId)`（移出库存回快照） | 系统邮件附件 `{kind:'equipment', instance}`（领取按 id 写回 `equipmentInv`） | ✅ 实跑（A） |
 | `card` | 挂单入参 `{instanceId}`；存储 `{instance: 完整快照}`（qty 恒 1） | meta `escrowCard(seller, instanceId, orderId)`（校验 gear 全空后移出 cardInv） | 系统邮件附件 `{kind:'card', instance}`（领取按 id 写回 `cardInv`） | ✅ 实跑（CC-5） |
-| `skin` | 挂单入参 `{skinId}`；存储 `{skinId}`（qty 恒 1，皮肤无等级/词条，无需实例快照） | meta `escrowSkin(seller, skinId, orderId)`（校验拥有且未装备中后 `$pull` 摘除） | 系统邮件附件 `{kind:'skin', skinId}`（领取按 id `$addToSet` 写回 `inventory.skins`） | meta 托管能力 ✅ 已实现（2026-07-06，§9 任务2）；拍卖流程接入待 §9 任务4 |
+| `skin` | 挂单入参 `{skinId}`；存储 `{skinId}`（qty 恒 1，皮肤无等级/词条，无需实例快照） | meta `escrowSkin(seller, skinId, orderId)`（校验拥有且未装备中后 `$pull` 摘除） | 系统邮件附件 `{kind:'skin', skinId}`（领取按 id `$addToSet` 写回 `inventory.skins`） | meta 托管能力 ✅ 已实现（2026-07-06，§9 任务2）；auctionsvc 拍卖流程 ✅ 已接入（2026-07-06，§9 任务4） |
 
 - **挂单即托管 + escrow-out 邮件出账**：挂单时立刻从卖方库存移出标的（托管在挂单文档里，拍卖期间背包不可见/不可用），避免「挂着卖但库存已被花掉」的超卖。**所有出账——成交发给买家、撤单/过期/季末退回卖家——一律通过系统邮件附件下发，收件人领取后才入库**（装备/卡附件携带完整实例快照）。金币侧（卖方收款、竞拍退款）仍直接走 commercial。设计依据见 EQUIPMENT_DESIGN §13。
 - **qty/price**：`price` = 每件单价（金币），`totalPrice = price × qty`；材料按堆叠数量挂，装备 v1 单件挂（qty=1，A 节细化）。
@@ -187,7 +187,7 @@
 
 ## 5. 数据模型 / 契约（引用，权威在代码）
 
-### 5.1 Mongo 集合 `auctions`（目标：auctionsvc 独立库 `notebook_wars_auction`；**当前实现仍在 worldsvc 库 `notebook_wars_world`，迁移见 §9 任务3/4**）
+### 5.1 Mongo 集合 `auctions`（auctionsvc 独立库 `notebook_wars_auction` ✅ 已落地，§9 任务4；**worldsvc 库 `notebook_wars_world` 的旧集合仍并行存在，随 §9 任务6 worldsvc 瘦身一并下线**）
 
 ```
 _id: auctionId(sellerId, ts, seq)   // 进程内 seq 防同毫秒撞键，不再含 worldId 分量
@@ -195,13 +195,13 @@ sellerId, itemType, item, qty, price, currency('coins'),
 designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 ```
 
-索引（`db.ts ensureIndexes`，**当前实现仍带 worldId，随 §9 任务4 迁移时一并去掉**）：
+索引（`auctionsvc/src/db.ts ensureIndexes` ✅ 已去 worldId）：
 - `{itemType, status}` — 浏览挂单（原 `{worldId, itemType, status}`）
 - `{sellerId}` — 我的挂单
 - `{designatedBuyerId}` — 定向收件
 - `{expireAt}` — **普通索引（非 TTL，故意）**，过期扫描器用
 
-### 5.2 REST 端点（目标：独立服务 `auctionsvc` `/auction/*`；**当前实现仍挂 worldsvc 公网第四面，迁移见 §9 任务3/4/5**）
+### 5.2 REST 端点（独立服务 `auctionsvc` `/auction/*`，端口 18086，✅ 已落地；**worldsvc 公网第四面的旧路由仍并行存在，尚未切流量，见 §9 任务5/6**）
 
 | 方法 | 路径 | 作用 |
 |---|---|---|
@@ -342,16 +342,19 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - **改动范围**：照抄 `server/analyticsvc` 的轻量骨架结构（config/db/httpApi 三层分离，无 Redis/gateway 依赖，比 worldsvc 骨架更贴合"无业务逻辑的空壳"这一诉求），只搭空壳 + health check，不含业务逻辑（业务逻辑在任务4）。`server/package.json` workspaces 新增 `auctionsvc`（+ `dev:auction` 脚本）。
 - **验收**：`npm run build` / `tsc --noEmit` 过；`server/auctionsvc/test/skeleton.e2e.test.ts`（mongodb-memory-server 起独立 mongod，验证 db 连接 + `/health` 200，模式照抄 analyticsvc 的 e2e harness）全绿。
 
-### 拍卖任务4：迁移拍卖业务逻辑到 auctionsvc
+### 拍卖任务4：迁移拍卖业务逻辑到 auctionsvc ✅（2026-07-06）
 
-- [ ] **依赖**：任务2（皮肤托管）+ 任务3（服务骨架）。
-- **主要文件**：`server/auctionsvc/src/auctionService.ts`（从 `server/worldsvc/src/auctionService.ts` 整体迁移改造）、`src/metaClient.ts`（从 worldsvc 同名文件迁移，去掉非拍卖用的方法，新增 `escrowSkin`/`grantSkin`）、`src/commercialClient.ts`（同样迁移）、`src/httpApi.ts`（`/auction/*` 路由）。
+- [x] **依赖**：任务2（皮肤托管）+ 任务3（服务骨架）。
+- **主要文件**：新建 `server/auctionsvc/src/auctionService.ts`（从 `server/worldsvc/src/auctionService.ts` 整体迁移改造）、`src/metaClient.ts`/`src/commercialClient.ts`/`src/mailClient.ts`/`src/scheduler.ts`（同样迁移，接口改名 `Auction*Client`）、`src/httpApi.ts`（`/auction/*` 路由 + `/internal/audit/anomalies`）、`src/db.ts`（`AuctionDoc`/`AuctionDailyDoc`/`AuctionPriceDoc` 三集合落地，此前任务3只搭空壳）、`src/config.ts`（补 `metaInternalUrl`/`commercialInternalUrl`）、`src/index.ts`（接线）。`server/shared/src/internalAuth.ts` 的 `InternalCaller` 联合类型新增 `'auctionsvc'`。新建 `server/contracts/openapi-auction.yml` + `contracts/scripts/gen-openapi-auction.mjs`（照抄 `gen-openapi-world.mjs`，自包含 spec，不跨文件 `$ref`）+ `auctionsvc/package.json` 的 `gen:api:auction[:check]` 脚本。测试：新建 `server/auctionsvc/test/auction.e2e.test.ts`（30 例，含新增 skin 用例）+ `test/auction-audit.e2e.test.ts`（6 例，D/G7 审计迁移）；`test/skeleton.e2e.test.ts` 同步改造以适配新 `startHttpApi` 签名。
 - **改动范围**：
-  - 所有方法签名去掉 `worldId` 参数；`auctions`/`auctionDaily`/`auctionPrices` 集合搬到 auctionsvc 自己的库。
-  - 删除 `assertWorldAcceptsListings`、`clearWorldOnReset` 调用（季末清算逻辑随任务1 的文档定稿一起作废，不迁移）。
-  - 新增 `itemType='skin'` 分支：挂单调 `meta.escrowSkin`，成交/撤单/过期走系统邮件下发（复用现有 `WorldMailClient` 模式，`kind:'skin'`）。
-  - `contracts/openapi-world.yml` 里的 `/auction/*` 契约迁到新建的 `contracts/openapi-auction.yml`（或按现有习惯放独立文件，具体看 `npm run rest:gen` 现有生成脚本怎么按文件分包）。
-- **验收**：把 `server/worldsvc/test/auction*.e2e.test.ts` 迁到 `server/auctionsvc/test/` 并跑绿（含新增皮肤用例）；此时 worldsvc 和 auctionsvc 的 `/auction/*` **同时存在**（下一步再切流量），先在本地/测试环境验证新服务功能对等。
+  - 所有方法签名去掉 `worldId` 参数；`auctionId` 格式从 `a:{worldId}:{sellerId}:{ts}:{seq}` 改为 `a:{sellerId}:{ts}:{seq}`（auctionsvc 本地生成，不复用 `@nw/shared` 的 `auctionId()`——那个签名仍带 worldId，专供 worldsvc 旧实现用，任务6 随旧代码一并删除）；`auctionDaily` 的 `_id` 从 `${worldId}:${accountId}:${dayKey}` 改为 `${accountId}:${dayKey}`；`auctionPrices` 的 `_id` 从 `${worldId}:${category}` 改为 `${category}`。
+  - **未迁移**：`assertWorldAcceptsListings`/`clearWorldOnReset`（F 季末清算，任务1 定稿已判定作废，不迁移，也不在 auctionsvc 出现）。
+  - 新增 `itemType='skin'` 分支：挂单调 `meta.escrowSkin`，成交/撤单/过期走系统邮件下发（`kind:'skin'`，只带 `id`，无 `instance` 快照——皮肤无等级/词条）。
+  - 新增 `itemType='card'` 的 `meta.escrowCard`/`grantCard`（worldsvc 旧版已支持，一并迁移，非本任务新增能力）。
+  - D/G7 异常审计 `scanAnomalies` 一并迁移，新增 `GET /internal/audit/anomalies`（X-Internal-Key 鉴权，无 worldId 参数）。**admin 后端 `clients.ts` 仍指向 worldsvc 的 `/admin/world/audit/anomalies`，未切换**——见下方遗留项。
+  - `contracts/openapi-world.yml` **未改动**（`/auction/*` 段仍保留，供 worldsvc 旧服务与现有 client codegen 使用，避免 client 提前失联）；`contracts/openapi-auction.yml` 是全新自包含文件，与前者暂时并行，等任务5/7 切流量后再从 `openapi-world.yml` 删除、由 client 改指向新文件（任务7 范围）。
+- **遗留（不阻塞验收，留给后续任务）**：admin 的异常审计客户端尚未指向 auctionsvc（等任务5 部署落地后，admin 也需要新增 `NW_AUCTION_INTERNAL_URL` 之类的环境变量并切换调用目标——这不在任务4/5 的"主要文件"清单里，任务5 执行时需一并处理，否则 G7 审计会一直读 worldsvc 的旧数据）；client 端 `WorldApiClient`/`AuctionScene` 仍打 worldsvc（任务7 范围，符合"先双跑验证对等，再切流量"的既定顺序）。
+- **验收**：`npm run build` + `npm run typecheck --workspace @nw/auctionsvc` 全绿；`npm test --workspace @nw/auctionsvc`（37 例，3 文件）全绿；`npm test --workspace @nw/worldsvc`（221 例）/`npm test --workspace @nw/metaserver`（513 例）/`npm test --workspace @nw/shared`（535 例）无回归；此时 worldsvc 和 auctionsvc 的 `/auction/*` **同时存在**，验证了新服务功能对等，下一步（任务5）再切流量。
 
 ### 拍卖任务5：接入部署（Caddy + compose + CI）
 

@@ -30,7 +30,8 @@ export type InternalCaller =
   | 'worldsvc'
   | 'admin'
   | 'analyticsvc'
-  | 'socialsvc';
+  | 'socialsvc'
+  | 'auctionsvc';
 
 /** Timing-safe comparison of equal-length strings (returns false immediately on length mismatch, revealing no per-byte information beyond length). */
 function timingSafeEq(a: string, b: string): boolean {
