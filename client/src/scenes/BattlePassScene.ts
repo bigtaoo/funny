@@ -80,6 +80,15 @@ export class BattlePassScene implements Scene {
   private scrollMax = 0;
   private dragStart: { x: number; y: number; scroll: number } | null = null;
 
+  // Scroll-drag fast path (avoids full tearDownChildren+redraw of all 30 reward cells per
+  // pointermove — that was the dropped-frames cause). handleMove only repositions
+  // scrollContainer and recomputes hit rects from cached cell defs; render() still does the
+  // full rebuild for everything else (claim, buy, toast, data refresh).
+  private scrollContainer: PIXI.Container | null = null;
+  private bodyTopY = 0;
+  private staticHits: Hit[] = [];
+  private scrollCellDefs: Array<{ x: number; cellY: number; w: number; h: number; fn: () => void }> = [];
+
   constructor(layout: ILayout, input: InputManager, cb: BattlePassCallbacks) {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
@@ -115,8 +124,21 @@ export class BattlePassScene implements Scene {
     const dy = y - this.dragStart.y;
     if (Math.abs(dy) > 6) {
       this.scrollY = Math.max(0, Math.min(this.scrollMax, this.dragStart.scroll - dy));
-      this.render();
+      this.updateScrollPosition();
     }
+  }
+
+  /**
+   * Cheap per-move update: reposition the already-built scroll container and recompute hit
+   * rects from cached cell defs, without tearing down/redrawing the reward-cell graphics.
+   */
+  private updateScrollPosition(): void {
+    if (!this.scrollContainer) return;
+    const sy = Math.min(this.scrollY, this.scrollMax);
+    this.scrollContainer.y = this.bodyTopY - sy;
+    this.hits = this.staticHits.concat(
+      this.scrollCellDefs.map((d) => ({ rect: { x: d.x, y: this.bodyTopY - sy + d.cellY, w: d.w, h: d.h }, fn: d.fn })),
+    );
   }
 
   private handleUp(): void {
@@ -167,6 +189,8 @@ export class BattlePassScene implements Scene {
   private render(): void {
     tearDownChildren(this.container);
     this.hits = [];
+    this.scrollContainer = null;
+    this.scrollCellDefs = [];
     const { w, h } = this;
 
     this.container.addChild(buildPaperBackground('bpbg', w, h));
@@ -287,6 +311,7 @@ export class BattlePassScene implements Scene {
     }
 
     // ── Scrollable track grid ─────────────────────────────────────────────────
+    this.staticHits = this.hits.slice();
     const headerH = Math.round(h * 0.05);
     const cellH = Math.round(h * 0.075);
     const cellGap = Math.round(h * 0.008);
@@ -303,6 +328,9 @@ export class BattlePassScene implements Scene {
     const scrollContainer = new PIXI.Container();
     scrollContainer.x = 0;
     scrollContainer.y = bodyTopY - sy;
+    this.scrollContainer = scrollContainer;
+    this.bodyTopY = bodyTopY;
+    this.scrollCellDefs = [];
 
     // Column headers
     const freeHdr = txt(t('battlepass.free'), Math.round(headerH * 0.6), C.accent, true);
@@ -313,31 +341,28 @@ export class BattlePassScene implements Scene {
     paidHdr.anchor.set(0.5, 0.5); paidHdr.x = paidX + halfW / 2; paidHdr.y = headerH / 2;
     scrollContainer.addChild(paidHdr);
 
-    // Level rows
+    // Level rows. Cache every claimable cell's def regardless of whether it's within the
+    // *current* render's viewport — updateScrollPosition() re-derives absolute hit rects from
+    // this cache on every drag move without a full re-render, so a cell that scrolls into view
+    // later still needs an entry (off-screen taps are already rejected by handleDown's bounds
+    // check against the live pointer position, so caching unconditionally is safe).
     for (let i = 0; i < BATTLEPASS_MAX_LEVEL; i++) {
       const def = BATTLEPASS_DEFS[i]!;
       const lvl = def.level;
       const cellY = headerH + i * (cellH + cellGap);
-      const absY = bodyTopY - sy + cellY;
 
       // Free track
       const freeState = this.cellState('free', lvl, currentLevel, claimedFree, claimedPaid, hasPass, !!def.free);
       this.drawCell(scrollContainer, freeX, cellY, halfW, cellH, lvl, def.free ?? null, freeState);
-      if (absY + cellH > bodyTopY && absY < bodyTopY + scrollBodyH && this.cb.onClaim && freeState === 'claimable') {
-        this.hits.push({
-          rect: { x: freeX, y: absY, w: halfW, h: cellH },
-          fn: () => this.doClaim('free', lvl),
-        });
+      if (this.cb.onClaim && freeState === 'claimable') {
+        this.scrollCellDefs.push({ x: freeX, cellY, w: halfW, h: cellH, fn: () => this.doClaim('free', lvl) });
       }
 
       // Paid track
       const paidState = this.cellState('paid', lvl, currentLevel, claimedFree, claimedPaid, hasPass, !!def.paid);
       this.drawCell(scrollContainer, paidX, cellY, halfW, cellH, lvl, def.paid ?? null, paidState);
-      if (absY + cellH > bodyTopY && absY < bodyTopY + scrollBodyH && this.cb.onClaim && paidState === 'claimable') {
-        this.hits.push({
-          rect: { x: paidX, y: absY, w: halfW, h: cellH },
-          fn: () => this.doClaim('paid', lvl),
-        });
+      if (this.cb.onClaim && paidState === 'claimable') {
+        this.scrollCellDefs.push({ x: paidX, cellY, w: halfW, h: cellH, fn: () => this.doClaim('paid', lvl) });
       }
     }
 
@@ -347,6 +372,7 @@ export class BattlePassScene implements Scene {
     this.container.addChild(maskGfx);
     scrollContainer.mask = maskGfx;
     this.container.addChild(scrollContainer);
+    this.updateScrollPosition();
 
     this.renderToast();
     if (this.bt.loadingVisible) drawLoadingOverlay(this.container, w, h, this.bt.dots, t('common.processing'));
