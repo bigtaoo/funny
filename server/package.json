@@ -14,7 +14,8 @@
     "worldsvc",
     "admin",
     "analyticsvc",
-    "socialsvc"
+    "socialsvc",
+    "auctionsvc"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
@@ -28,6 +29,7 @@
     "dev:admin": "npm run dev --workspace @nw/admin",
     "dev:analytics": "npm run dev --workspace @nw/analyticsvc",
     "dev:social": "npm run dev --workspace @nw/socialsvc",
+    "dev:auction": "npm run dev --workspace @nw/auctionsvc",
     "dev:all": "powershell -NoProfile -ExecutionPolicy Bypass -File dev-up.ps1",
     "dev:health": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& { $checks = [ordered]@{ meta='http://127.0.0.1:18080/health'; gateway='http://127.0.0.1:8090/health'; matchsvc='http://127.0.0.1:8091/health'; game='http://127.0.0.1:8081/health'; commercial='http://127.0.0.1:18082/health'; world='http://127.0.0.1:18084/health'; admin='http://127.0.0.1:18083/health'; analytics='http://127.0.0.1:18085/health' }; foreach ($s in $checks.Keys) { $ok=$false; try { $r=Invoke-WebRequest -Uri $checks[$s] -UseBasicParsing -TimeoutSec 3 -EA Stop; $ok=($r.StatusCode -eq 200) } catch {}; if ($ok) { Write-Host ('  OK   '+$s) -FG Green } else { Write-Host ('  DOWN '+$s+' -> '+$checks[$s]) -FG Red } } }\"",
     "test": "npm run test --workspaces --if-present"

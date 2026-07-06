@@ -12,6 +12,7 @@ import {
   computeEloDelta,
   nextStreak,
   streakMultiplier,
+  pickBotDifficulty,
   type RankId,
 } from '../src/ladder';
 
@@ -141,6 +142,34 @@ describe('streakMultiplier', () => {
 
   it('BOT_ELO_THRESHOLD matches the gold-rank floor (RANK_TIERS)', () => {
     expect(RANK_TIERS.find((t) => t.id === 'gold')?.minElo).toBe(BOT_ELO_THRESHOLD);
+  });
+});
+
+// ── pickBotDifficulty ───────────────────────────────────────────────────────────
+
+describe('pickBotDifficulty', () => {
+  it('below BOT_ELO_THRESHOLD always rolls 1–6', () => {
+    for (let i = 0; i < 6; i++) {
+      expect(pickBotDifficulty(BOT_ELO_THRESHOLD - 1, () => i)).toBe(1 + i);
+    }
+  });
+
+  it('at/above BOT_ELO_THRESHOLD always rolls 5–10', () => {
+    for (let i = 0; i < 6; i++) {
+      expect(pickBotDifficulty(BOT_ELO_THRESHOLD, () => i)).toBe(5 + i);
+      expect(pickBotDifficulty(BOT_ELO_THRESHOLD + 500, () => i)).toBe(5 + i);
+    }
+  });
+
+  it('defaults to Math.random-backed rolls within the correct band when randInt is omitted', () => {
+    for (let i = 0; i < 50; i++) {
+      const lowRoll = pickBotDifficulty(0);
+      expect(lowRoll).toBeGreaterThanOrEqual(1);
+      expect(lowRoll).toBeLessThanOrEqual(6);
+      const highRoll = pickBotDifficulty(3000);
+      expect(highRoll).toBeGreaterThanOrEqual(5);
+      expect(highRoll).toBeLessThanOrEqual(10);
+    }
   });
 });
 

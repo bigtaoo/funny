@@ -42,6 +42,7 @@ export type {
   ReplayFrame,
   ReplayMeta,
   GameMode,
+  AIDifficulty,
 } from './types';
 
 export { ENGINE_VERSION } from './types';

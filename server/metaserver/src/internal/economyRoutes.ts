@@ -1,9 +1,10 @@
-// Material/equipment/card escrow-transfer + progression snapshot — called by worldsvc (auction + siege engine).
+// Material/equipment/card/skin escrow-transfer + progression snapshot — called by worldsvc (auction + siege engine).
 import type { FastifyInstance } from 'fastify';
 import type { SaveData, EquipmentInstance, CardInstance } from '@nw/shared';
 import { createLogger, ERROR_HTTP_STATUS } from '@nw/shared';
 import { escrowEquipment, grantEquipment } from '../equipment.js';
 import { grantCard } from '../cards.js';
+import { escrowSkin, grantSkin } from '../skin.js';
 import type { InternalCtx } from './context.js';
 
 const log = createLogger('meta:internal');
@@ -169,6 +170,43 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: InternalCtx): v
     const r = await grantEquipment(cols, now, accountId, instance);
     if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send({ ok: false, error: r.error, code: r.code });
     log.info('equipment granted', { accountId, instanceId: instance.id, orderId });
+    return reply.send({ ok: true });
+  });
+
+  // ── Skin escrow / grant (auction task2, called by worldsvc/auctionsvc auction skin transactions) ─────────
+  // POST /internal/skins/escrow  { accountId, skinId, orderId } → { skinId }
+  //   Listing escrow: verify owned + not equipped → remove from inventory.skins → orderId idempotent.
+  app.post('/internal/skins/escrow', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    const { accountId, skinId, orderId } = req.body as {
+      accountId?: string;
+      skinId?: string;
+      orderId?: string;
+    };
+    if (!accountId || !skinId || !orderId) {
+      return reply.code(400).send({ ok: false, error: 'accountId + skinId + orderId required' });
+    }
+    const r = await escrowSkin(cols, now, accountId, skinId, orderId);
+    if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send({ ok: false, error: r.error, code: r.code });
+    log.info('skin escrowed', { accountId, skinId, orderId });
+    return reply.send({ ok: true, skinId: r.skinId });
+  });
+
+  // POST /internal/skins/grant  { accountId, skinId, orderId } → { ok }
+  //   Sale transfer (to buyer) / cancellation·expiry return (to seller): adds skinId back into inventory.skins ($addToSet-equivalent, idempotent).
+  app.post('/internal/skins/grant', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    const { accountId, skinId, orderId } = req.body as {
+      accountId?: string;
+      skinId?: string;
+      orderId?: string;
+    };
+    if (!accountId || !skinId) {
+      return reply.code(400).send({ ok: false, error: 'accountId + skinId required' });
+    }
+    const r = await grantSkin(cols, now, accountId, skinId);
+    if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send({ ok: false, error: r.error, code: r.code });
+    log.info('skin granted', { accountId, skinId, orderId });
     return reply.send({ ok: true });
   });
 

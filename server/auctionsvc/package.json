@@ -1,0 +1,28 @@
+{
+  "name": "@nw/auctionsvc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone auction house service (AUCTION_DESIGN §9), decoupled from worldsvc/worldId",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "dev": "node --watch --import tsx src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "gen:api:auction": "node ../contracts/scripts/gen-openapi-auction.mjs",
+    "gen:api:auction:check": "node ../contracts/scripts/gen-openapi-auction.mjs --check"
+  },
+  "dependencies": {
+    "@nw/shared": "*",
+    "mongodb": "^6.10.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "js-yaml": "^4.1.0",
+    "mongodb-memory-server": "^11.2.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

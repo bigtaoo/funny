@@ -132,7 +132,7 @@ message MatchBot {
   uint64 seed         = 1;   // in-match RNG seed (used by the client-side local engine)
   string opponent_name = 2;  // AI opponent display name
   uint32 elo          = 3;   // player ELO (AI difficulty / display reference)
-  string difficulty   = 4;   // AI difficulty tier (normal | …, DRAFT)
+  string difficulty   = 4;   // AI level 1-10 (engine AISystem.ts), decimal string (e.g. "7"); rolled by pickBotDifficulty(elo)
 }
 
 message PeerDc { uint32 side = 1; uint32 grace_ms = 2; }

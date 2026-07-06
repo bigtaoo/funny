@@ -129,6 +129,16 @@ let panX = 0;
 let panY = 0;
 /** worldId → tile diff Map ("x:y" → override), refreshed by renderBaseMap(); reused by hover info. */
 let diffCache = new Map<string, MapTemplateTile>();
+/**
+ * Snapshot of rasterizeMapEdits(store.paths, cityStore.nodes) taken once at brush-stroke start (see
+ * mousedown below) and reused for the stroke's duration — committed paths/cities never change mid-stroke,
+ * so per-tick renderBaseMap only needs to re-rasterize the (short) live draft instead of rescanning every
+ * committed path on every mousemove. Cleared (null) once the stroke ends.
+ */
+let strokeBaseDiffCache: Map<string, MapTemplateTile> | null = null;
+/** tx:ty → last-drawn Graphics + a signature of the tile state it reflects; lets renderBaseMap() skip
+ * destroying/recreating tiles whose effective terrain hasn't actually changed since the last render. */
+const tileGraphicsCache = new Map<string, { g: PIXI.Graphics; sig: string }>();
 
 /** Point/segment/city hit-test radius, in on-screen px, converted to tile units at the current zoom. */
 const HIT_RADIUS_PX = 8;
@@ -193,10 +203,23 @@ function renderBaseMap(worldId: string): void {
     painting && draft && draft.length >= 1 && (tool === 'river' || tool === 'mountain')
       ? [{ type: tool, points: draft, width: Math.max(1, Math.round(Number(widthInput.value) || 1)) }]
       : [];
-  const diffs = rasterizeMapEdits(worldId, [...store.paths, ...liveStroke], cityStore.nodes);
-  diffCache = new Map(diffs.map((d) => [`${d.x}:${d.y}`, d]));
 
-  baseLayer.removeChildren().forEach((c) => c.destroy({ children: true }));
+  if (liveStroke.length && strokeBaseDiffCache) {
+    // Fast path: committed paths/cities are frozen for the stroke's duration (see strokeBaseDiffCache
+    // doc comment), so only the live stroke needs re-rasterizing this tick.
+    const liveDiffs = rasterizeMapEdits(worldId, liveStroke, []);
+    const merged = new Map(strokeBaseDiffCache);
+    for (const d of liveDiffs) {
+      const key = `${d.x}:${d.y}`;
+      const existing = strokeBaseDiffCache.get(key);
+      if (existing && (existing.type === 'center' || existing.type === 'familyKeep')) continue; // cities always win over path terrain
+      merged.set(key, d);
+    }
+    diffCache = merged;
+  } else {
+    const diffs = rasterizeMapEdits(worldId, [...store.paths, ...liveStroke], cityStore.nodes);
+    diffCache = new Map(diffs.map((d) => [`${d.x}:${d.y}`, d]));
+  }
 
   const padW = VIEW_W * VIEW_PAD_FACTOR;
   const padH = VIEW_H * VIEW_PAD_FACTOR;
@@ -206,18 +229,44 @@ function renderBaseMap(worldId: string): void {
   const y0 = Math.max(0, b.minTy);
   const y1 = Math.min(SLG_MAP_H - 1, b.maxTy);
 
+  // Only (re)create Graphics for tiles whose effective terrain actually changed since the last render —
+  // reusing everything else turns a brush tick's cost into O(tiles the stroke touched) instead of
+  // O(entire padded viewport), which is what made painting laggy (destroy+recreate every visible tile
+  // on every mousemove).
+  const nextKeys = new Set<string>();
   let count = 0;
   for (let ty = y0; ty <= y1; ty++) {
     for (let tx = x0; tx <= x1; tx++) {
+      const key = `${tx}:${ty}`;
+      nextKeys.add(key);
       const tile = effectiveTile(worldId, tx, ty);
+      const texName = terrainTextureName(tile.type, tx, ty);
+      const sig = `${tile.type}|${tile.level}|${tile.resType ?? ''}|${texName}|${tp}`;
+      const cached = tileGraphicsCache.get(key);
+      if (cached && cached.sig === sig) {
+        count++;
+        continue;
+      }
+      if (cached) {
+        baseLayer.removeChild(cached.g);
+        cached.g.destroy({ children: true });
+      }
       const g = new PIXI.Graphics();
       const s = tileToScreen(tx, ty, tp);
       g.x = s.x;
       g.y = s.y;
       g.zIndex = tx + ty;
-      drawEditorTile(g, tile, terrainTextureName(tile.type, tx, ty), tp);
+      drawEditorTile(g, tile, texName, tp);
       baseLayer.addChild(g);
+      tileGraphicsCache.set(key, { g, sig });
       count++;
+    }
+  }
+  for (const [key, entry] of tileGraphicsCache) {
+    if (!nextKeys.has(key)) {
+      baseLayer.removeChild(entry.g);
+      entry.g.destroy({ children: true });
+      tileGraphicsCache.delete(key);
     }
   }
   const ms = (performance.now() - t0).toFixed(0);
@@ -312,6 +361,29 @@ function redrawAll(hoverTile?: TilePoint): void {
   drawCityMarkers();
 }
 
+/**
+ * Coalesces render requests fired from high-frequency events (mousemove during a drag) down to at most
+ * one render per animation frame — without this, a stroke's cost scaled with raw mouse-event rate
+ * (which can far exceed the display's refresh rate) instead of frame rate.
+ */
+let renderScheduled = false;
+let pendingBaseRender = false;
+let pendingHoverTile: TilePoint | undefined;
+function scheduleRender(opts: { base: boolean; hover?: TilePoint }): void {
+  if (opts.base) pendingBaseRender = true;
+  pendingHoverTile = opts.hover;
+  if (renderScheduled) return;
+  renderScheduled = true;
+  requestAnimationFrame(() => {
+    renderScheduled = false;
+    if (pendingBaseRender) {
+      renderBaseMap(seedInput.value || 'preview');
+      pendingBaseRender = false;
+    }
+    redrawAll(pendingHoverTile);
+  });
+}
+
 // ── Zoom (tile px width; keeps the tile under the anchor point fixed) ─────────────
 function setZoom(nextTp: number, anchor?: { sx: number; sy: number }): void {
   nextTp = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(nextTp)));
@@ -349,6 +421,7 @@ function cancelDraft(): void {
   const wasPainting = painting;
   draft = null;
   painting = false;
+  strokeBaseDiffCache = null;
   redrawAll();
   if (wasPainting) renderBaseMap(seedInput.value || 'preview');
 }
@@ -744,6 +817,9 @@ canvasEl().addEventListener('mousedown', (ev) => {
   // plain click, without needing to drag) — mousemove below extends this into a real polyline.
   draft = [t, t];
   painting = true;
+  strokeBaseDiffCache = new Map(
+    rasterizeMapEdits(seedInput.value || 'preview', store.paths, cityStore.nodes).map((d) => [`${d.x}:${d.y}`, d]),
+  );
   renderBaseMap(seedInput.value || 'preview');
   redrawAll(t);
 });
@@ -773,13 +849,13 @@ canvasEl().addEventListener('mousemove', (ev) => {
       node.y = clamped.y;
       cityInfoEl.textContent = cityLabel(node);
     }
-    redrawAll();
+    scheduleRender({ base: false });
     return;
   }
   if (dragging) {
     const path = store.get(dragging.pathId);
     if (path) path.points[dragging.pointIdx] = pos;
-    redrawAll();
+    scheduleRender({ base: false });
     return;
   }
   if (painting && draft) {
@@ -789,8 +865,7 @@ canvasEl().addEventListener('mousemove', (ev) => {
     const anchor = draft[draft.length - 2]!;
     draft[draft.length - 1] = pos;
     if (Math.hypot(pos.x - anchor.x, pos.y - anchor.y) >= PAINT_MIN_SPACING) draft.push(pos);
-    renderBaseMap(seedInput.value || 'preview');
-    redrawAll(pos);
+    scheduleRender({ base: true, hover: pos });
   }
 });
 
@@ -816,6 +891,7 @@ window.addEventListener('mouseup', () => {
   }
   if (painting) {
     painting = false;
+    strokeBaseDiffCache = null;
     finishDraft();
   }
 });

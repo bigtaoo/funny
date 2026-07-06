@@ -8,7 +8,21 @@ import { WorldApiClient } from '../../net/WorldApiClient';
 import { getWorldBaseUrl } from '../../net/config';
 import type { LobbyView } from '../AppViews';
 import type { AppCtx, Nav } from '../appCtx';
+import type { AIDifficulty } from '../../game';
 import { TOKEN_KEY, LAST_SEEN_SEASON_KEY, TUTORIAL_DONE_FLAG } from '../appConstants';
+
+/**
+ * Roll an AI level (1–10, engine AISystem.ts) for a manually-started practice match,
+ * scaled to the player's own ladder ELO. Mirrors server/shared/src/ladder.ts's
+ * pickBotDifficulty(elo) / BOT_ELO_THRESHOLD (1200) — duplicated here (a 3-line formula)
+ * rather than importing @nw/shared's ladder module, which the client webpack alias
+ * intentionally scopes to the SLG-only browser-safe slice (see @nw/shared alias comment
+ * in webpack.config.js). Keep the threshold/split in sync with ladder.ts if either changes.
+ */
+function pickPracticeDifficulty(elo: number): AIDifficulty {
+  const roll = elo < 1200 ? 1 + Math.floor(Math.random() * 6) : 5 + Math.floor(Math.random() * 6);
+  return roll as AIDifficulty;
+}
 
 export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
   const { api, saveManager, platform, views, state, nav, getNetSession, playerName, avatarId } = ctx;
@@ -99,7 +113,11 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
       lobby.showFeatureGuide(titleKey, bodyKey, navFn);
     }
     const lobby = views.showLobby({
-      onStartGame(_opponentName: string) { withGuide('match', 'guide.match.title', 'guide.match.body', () => nav.goGame()); },
+      onStartGame(_opponentName: string) {
+        withGuide('match', 'guide.match.title', 'guide.match.body', () => {
+          nav.goGame({ difficulty: pickPracticeDifficulty(saveManager.get().pvp.elo) });
+        });
+      },
       onStartRanked() {
         // Below the first unlock tier the player's whole pool equals PVP_DECK_SIZE —
         // there is nothing to choose, so skip straight to matching instead of showing
