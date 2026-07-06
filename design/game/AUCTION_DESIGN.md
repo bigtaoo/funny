@@ -335,12 +335,12 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - **未做的**：幂等表复用已有 `equipmentIdem` 集合（未新建 `skinIdem`），因为其结构（`_id/accountId/op/result/expireAt` + TTL）与皮肤场景完全一致，新建纯属重复；不影响 §9 任务4 迁移（迁移时随其余 idem 表一起搬到 auctionsvc 库）。
 - **验收**：`server/metaserver/test/skin.e2e.test.ts` 新增 6 条用例（挂存移除/发放写回/两者幂等/未拥有 404/装备中 409）；`npm test --workspace @nw/metaserver` 全绿（41 files / 513 tests）。
 
-### 拍卖任务3：新建 `server/auctionsvc/` 服务骨架
+### 拍卖任务3：新建 `server/auctionsvc/` 服务骨架 ✅（2026-07-06）
 
-- [ ] **依赖**：无（可与任务2 并行）。
-- **主要文件**：`server/auctionsvc/package.json`（`@nw/auctionsvc`）、`src/config.ts`（`NW_AUCTION_PORT`，默认 **18086**）、`src/index.ts`、`src/db.ts`（独立 Mongo 库，如 `notebook_wars_auction`，不再挂 `notebook_wars_world`）。
-- **改动范围**：照抄 `server/worldsvc` 的骨架结构（config/db/httpApi 分层），只搭空壳 + health check，不含业务逻辑（业务逻辑在任务4）。
-- **验收**：`npm run build` / `tsc --noEmit` 过；本地起服务 `/health` 返回 200。
+- [x] **依赖**：无（可与任务2 并行）。
+- **主要文件**：`server/auctionsvc/package.json`（`@nw/auctionsvc`）、`src/config.ts`（`NW_AUCTION_PORT`，默认 **18086**）、`src/index.ts`、`src/db.ts`（独立 Mongo 库 `notebook_wars_auction`，不挂 `notebook_wars_world`）、`src/httpApi.ts`（仅 `/health`）。
+- **改动范围**：照抄 `server/analyticsvc` 的轻量骨架结构（config/db/httpApi 三层分离，无 Redis/gateway 依赖，比 worldsvc 骨架更贴合"无业务逻辑的空壳"这一诉求），只搭空壳 + health check，不含业务逻辑（业务逻辑在任务4）。`server/package.json` workspaces 新增 `auctionsvc`（+ `dev:auction` 脚本）。
+- **验收**：`npm run build` / `tsc --noEmit` 过；`server/auctionsvc/test/skeleton.e2e.test.ts`（mongodb-memory-server 起独立 mongod，验证 db 连接 + `/health` 200，模式照抄 analyticsvc 的 e2e harness）全绿。
 
 ### 拍卖任务4：迁移拍卖业务逻辑到 auctionsvc
 
