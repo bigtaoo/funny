@@ -192,3 +192,9 @@ npm run start   # webpack dev server，端口 9095
 ```
 
 当前功能：PixiJS 等距视口渲染，贴图跟游戏客户端一致（切 world seed 输入框 + Regenerate 按钮，Pan 工具/中键拖动平移，滚轮/Zoom 滑块缩放，Center View 按钮回中）、hover 显示 tile 坐标/类型（阻挡格附带 river/mountain）/等级/资源、图例；河流/山脉格子笔刷（River/Mountain/Eraser 工具切换，点击或拖动直接把笔刷覆盖的格子改成当前地形/清回程序化地形——跟图片编辑器笔刷一样即点即变，无需先选起止点，笔刷大小可调，光标跟随一个笔刷大小的圆形描边，Clear All 清空、Export/Import JSON 支持导入旧版矢量路径 JSON 自动迁移；**河流画成河、山脉画成山**——不再是位置哈希随机选贴图，与游戏内一致）；城池（City 工具，拖动移动坐标、点击查看详情、Reset Cities、独立 Export/Import JSON）——**按等级渲染真实城池精灵**（`city_atlas`，每级取图、footprint 3/5/7/9 随等级变大），与游戏 `WorldMapRenderer` 城池层同款；地形格子/城池栅格化回地块+发布到服务端模板（Publish to Server 面板，含登录/模板生成/模板列表/Activate/Delete）均已实现。**资源**用 `res_atlas` 手绘图案显示。（发布进运行中世界的接线是另一条任务，见 §0"已知限制"。）
+
+### 排查记录：用户反馈"山/河笔刷画完不显示"（2026-07-06，结论：非代码缺陷）
+
+用户反馈用 River/Mountain 笔刷改地图后画面没变化。排查覆盖笔刷落格（`terrainGrid.ts`）→ 栅格化合并 diffCache（`index.ts` `renderBaseMap()`）→ 选贴图（`tileStyle.ts:terrainTextureName`）→ 绘制（`terrainAtlasLoader`/`tileGraphics.ts`）全链路的静态审查，并起 9095 服务用 preview 工具实机模拟落笔验证：落笔后 Tile 面板正确显示 `obstacle (mountain/river)`、Painted Terrain 计数正确递增、PIXI 场景图对应 Graphics 节点 `visible/renderable` 均为真、`terrain_atlas.png` 里 mountain/river 帧的美术内容确认与 grass 明显不同（岩石纹理 vs 波浪纹理）。曾怀疑 `drawBrushCursor()` 里 `TERRAIN_COLORS[tool]` 取不到 river/mountain 颜色，核实后是虚惊——`index.ts` 顶部本来就单独声明了一份 `Record<TerrainKind, number>` 的 `TERRAIN_COLORS`（专供笔刷光标用，和 `tileStyle.ts` 同名导出互不影响），取值正常。
+
+**未发现渲染链路缺陷。** 最可能的解释：`proceduralTile()` 生成的程序化底图本身就大量分布着 `obstacle` 类型格子，未标记 `obstacleKind` 时按 `(tx*31+ty*17)%2` 哈希在 mountain/river 贴图间随机选（`tileStyle.ts:39`）——默认 `preview` 世界早已铺满和笔刷画出来视觉上完全一样的纹理，若笔刷落在已有 obstacle 密集区，新画的地块会和周围融为一体，造成"没有生效"的错觉。下次复现建议：在明显是平原/资源的空地上测试笔刷，画完用 Export → 导出 JSON 核对数据是否真的写入。
