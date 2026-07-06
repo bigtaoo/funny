@@ -489,6 +489,8 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 **图标放大 + 已装备可读性修复**（2026-07-05 追加）：走查截图发现三处问题并修复：① 库存格图标偏小——`EQUIP_CELL_H` 92→118，图标框（`imgBox = EQUIP_CELL_H - pad*2 - 24`）随之从 52px 放大到 78px（1.5 倍），列数/列宽仍按常量动态算，无需改布局逻辑；② 「已装备/背包」分区标题字号 10px 浅灰在纸纹背景下辨识度太低，改 12px 加粗深色，分隔线加粗加深；③ 已装备格只显示 `[已装备]`，同名同稀有度的武器/护具/饰品并排时分不清各自槽位，改为 `[已装备 · 武器]` 等带槽位名。三处均在 `EquipmentScene/base.ts` + `EquipmentScene/inventory.ts`，`tsc --noEmit` 验证。
 
+**分区标题错位修复**（2026-07-06 追加）：`renderSectionHeader`（`EquipmentScene/inventory.ts`）此前把「已装备/背包」分区标题硬编码在 `x=14`，紧贴屏幕最左侧、压在侧栏导航上；改为与物品网格同一起点 `marginLineX(w) + CELL_GAP`，分区标题与其下的图标卡网格左对齐。`tsc --noEmit` 验证。
+
 #### E2 掉落 faucet + E6 洗练 实现记录（2026-06-22，✅）
 
 **E2 关卡掉落 faucet**

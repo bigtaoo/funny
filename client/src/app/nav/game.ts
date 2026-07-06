@@ -96,15 +96,21 @@ export function createGameNav(ctx: AppCtx): GameNav {
       stars_before: saveManager.get().progress.stars[levelId] ?? 0,
     });
     analytics.track('screen_view', { scene: 'LevelPrepScene' });
+    // A4 stamina system: cost is deducted at entry (onStart), not on clear — no refund on retreat/loss.
+    const staminaCost = level.staminaCost ?? 10;
     views.showLevelPrep({
       onBack() { analytics.track('level_abandon', { level_id: levelId, phase: 'prep' }); goCampaignMap(); },
-      onStart() { analytics.track('screen_view', { scene: 'GameScene' }); goCampaign(levelId); },
+      onStart() {
+        // Deducts locally even offline; UI already blocks Start when insufficient, so this is a defensive no-op.
+        if (!saveManager.spendStaminaForLevel(levelId, staminaCost)) return;
+        analytics.track('screen_view', { scene: 'GameScene' });
+        goCampaign(levelId);
+      },
       levelNumber,
       objective: level.objective,
       ...(level.briefKey ? { brief: t(level.briefKey as TranslationKey) } : {}),
       ...(level.story?.introKey ? { intro: t(level.story.introKey as TranslationKey) } : {}),
-      // A4 stamina system
-      staminaCost: level.staminaCost ?? 1,
+      staminaCost,
       getStamina: () => saveManager.get().stamina ?? { current: 120, regenAt: 0 },
       onBuyStamina() {
         if (!api) return;

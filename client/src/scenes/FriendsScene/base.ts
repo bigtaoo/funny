@@ -364,6 +364,11 @@ export class FriendsSceneBase {
       else this.drawMailList();
     }
 
+    // drawFamilyTab/drawSectTab can synchronously navigate away (openFamilyHub/
+    // openSectHub) once a family/sect already exists, which destroys this scene
+    // (incl. popup.container) mid-render — re-adding it below would then throw.
+    if (this.dead) return;
+
     this.drawToast();
     this.container.addChild(this.popup.container);
   }
@@ -414,7 +419,10 @@ export class FriendsSceneBase {
 
   protected drawHeader(): void {
     const { w, h } = this;
-    const hdr = drawSceneHeader(this.container, w, h, t('friends.title'), { titleSize: Math.round(h * 0.04) });
+    const titleKey = `friends.tab.${this.tab}` as TranslationKey;
+    const hdr = drawSceneHeader(this.container, w, h, t(titleKey), {
+      variant: 'paper', titleSize: Math.round(h * 0.04),
+    });
     this.hits.push({ rect: hdr.backRect, fn: () => this.onBack() });
     // World channel posts cost coins — show the current balance top-right while on that tab.
     if (this.tab === 'world' && this.cb.getCoins) drawHeaderCurrency(this.container, w, hdr.headerH, this.cb.getCoins());

@@ -90,8 +90,8 @@ export interface LevelDefinition {
    */
   defenderBaseLevel?: number;
   /**
-   * Stamina cost to attempt this level (A4). Range 1–5 (default 1 when omitted).
-   * Deducted server-side on /pve/clear; client shows it in LevelPrepScene.
+   * Stamina cost to attempt this level (A4). Explicit override range 1–5 (default 10 when omitted).
+   * Deducted server-side on /pve/enter (level entry, not clear); client shows it in LevelPrepScene.
    */
   staminaCost?: number;
   /** Clear rewards: coins, exclusive skin, story unlock, star thresholds (§7). */

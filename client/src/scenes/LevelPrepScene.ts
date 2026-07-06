@@ -27,7 +27,7 @@ export interface LevelPrepCallbacks {
   brief?: string;
   /** Pre-translated story intro shown as a tap-through overlay when the player hits Start. */
   intro?: string;
-  /** Stamina cost to play this level (A4). Default = 1. */
+  /** Stamina cost to play this level (A4), deducted at Start (not at clear). Default = 10. */
   staminaCost: number;
   /** Current stamina snapshot (A4): { current, regenAt }. */
   getStamina(): { current: number; regenAt: number };

@@ -112,6 +112,7 @@ components:
           properties:
             fatePoints: { type: integer, minimum: 0, description: 'Fate Points balance (§7)' }
             subscriptionExpiry: { type: integer, description: 'monthly card end timestamp (ms); 0 = none (§5)' }
+            subscriptionLastClaimDay: { type: string, description: 'UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)' }
             starterUsed:
               type: array
               items: { type: string }
@@ -1280,6 +1281,46 @@ paths:
                     properties:
                       accepted: { type: integer }
         '400': { $ref: '#/components/responses/ErrorResp' }
+
+  /pve/enter:
+    post:
+      operationId: pveEnter
+      tags: [save]
+      summary: "PvE level entry (A4): deducts stamina the moment the player commits to a level (no refund on retreat/loss); /pve/clear no longer touches stamina"
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [levelId]
+              properties:
+                levelId: { type: string }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [stamina]
+                    properties:
+                      stamina:
+                        type: object
+                        required: [current, regenAt]
+                        properties:
+                          current: { type: integer }
+                          regenAt: { type: integer }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '402': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
 
   /pve/clear:
     post:

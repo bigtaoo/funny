@@ -1,0 +1,22 @@
+{
+  // SLG 地图编辑器 map-editor 的静态托管（Cloudflare Workers static assets），对外 slg.gamestao.com。
+  // 纯静态 SPA（无 Worker 脚本、无后端依赖）：webpack production 产出 tools/map-editor/dist，
+  // wrangler deploy -c wrangler/map-editor.jsonc 把 dist 作为静态资源发布。
+  //
+  // 构建 + 手动部署（从仓库根读本文件）：
+  //   cd tools/map-editor && npm ci && npm run build   ← 产出 tools/map-editor/dist
+  //   cd ../.. && npx wrangler deploy -c wrangler/map-editor.jsonc
+  //
+  // routes.custom_domain=true 会自动建 DNS + 边缘证书（橙云代理），首次 deploy 自动建好 slg.gamestao.com。
+  // 自动发布：.github/workflows/map-editor-deploy.yml。
+  // 设计：design/product/deploy-cloudflare.md §6、design/tools/map-editor/DESIGN.md
+  "name": "nivara-map-editor",
+  "compatibility_date": "2025-06-01",
+  "assets": {
+    "directory": "../tools/map-editor/dist",
+    "not_found_handling": "single-page-application"
+  },
+  "routes": [
+    { "pattern": "slg.gamestao.com", "custom_domain": true }
+  ]
+}

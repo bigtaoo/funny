@@ -60,8 +60,11 @@ export function BadgesMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBas
       this.rebuild();
     }
 
-    /** Full teardown + rebuild — needed when a layout element (strip item) appears or changes. */
-    private rebuild(): void {
+    /**
+     * Full teardown + rebuild — needed when a layout element (strip item) appears or
+     * changes, or when the coin-icon atlas finishes loading after the first draw (base.ts).
+     */
+    rebuild(): void {
       tearDownChildren(this.container);
       this.toastLayer = null;
       this.settlementLayer = null;

@@ -33,6 +33,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { getCachedDisplay } from './uiCache';
 import { buildIcon, type IconKind } from '../../render/icons';
+import { buildCoinIcon } from '../../render/coinIconAtlas';
 
 /**
  * Bar styling:
@@ -247,7 +248,9 @@ export function drawHeaderCurrency(
   let cx = 0;
 
   const addChip = (icon: IconKind, color: number, amount: number): void => {
-    const ic = buildIcon(icon, iconSize, color);
+    // 'coin' goes through the shared atlas-backed glyph so this reads identically to the shop's
+    // balance icon; other currency chips (materials, etc.) keep the procedural buildIcon draw.
+    const ic = icon === 'coin' ? buildCoinIcon(icon, iconSize, color) : buildIcon(icon, iconSize, color);
     ic.x = cx; ic.y = -iconSize / 2;
     cluster.addChild(ic);
     cx += iconSize + 4;

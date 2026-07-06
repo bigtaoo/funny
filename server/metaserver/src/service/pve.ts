@@ -34,7 +34,10 @@ import { nullMetaSocialsvcClient } from '../socialsvcClient.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
 import { accountIdOf, STAMINA_CAP, STAMINA_REGEN_MS, type Constructor, type MetaBaseCtor } from './base.js';
 
-type PveHandlers = Pick<MetaHandlers, 'purchaseStamina' | 'pveClear' | 'pveVerify' | 'pveUpgrade'>;
+type PveHandlers = Pick<MetaHandlers, 'purchaseStamina' | 'pveEnter' | 'pveClear' | 'pveVerify' | 'pveUpgrade'>;
+
+/** Default stamina cost per level (A4, flat rate 2026-07-06): overridable per-level via PveLevelConfig.staminaCost. */
+const DEFAULT_STAMINA_COST = 10;
 
 /** Normalize the upgrade map (remove zero-value entries + sort keys) for stable cross-source comparison (L0 blueprint anomaly detection). */
 function normUpgrades(u: Record<string, number>): Record<string, number> {
@@ -115,6 +118,35 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
       );
       if (!res) return { ok: false }; // lost concurrent race
       return { ok: true, current: res.current, regenAt: res.regenAt };
+    }
+
+    /**
+     * PvE level entry (A4, 2026-07-06): stamina is deducted the moment the player commits to a level,
+     * not at clear — retreating or losing mid-level does not refund it (pveClear no longer touches stamina).
+     * Same unlock/ban validation as pveClear.
+     */
+    async pveEnter(req: FastifyRequest, reply: FastifyReply) {
+      const accountId = accountIdOf(req);
+      const { cols, now } = this.deps;
+      const { levelId } = req.body as { levelId: string };
+      const level = findPveLevel(levelId);
+      if (!level) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'unknown level'));
+
+      if (await this.rejectIfBanned(cols, accountId, reply)) return;
+      const cur = await getOrCreateSave(cols, accountId, now());
+      if (cur.antiCheat?.pveBanned) {
+        return reply.code(403).send(err(ErrorCode.ACCOUNT_BANNED, 'account banned'));
+      }
+      if (level.requires && !cur.progress.cleared.includes(level.requires)) {
+        return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'level locked'));
+      }
+
+      const staminaCost = level.staminaCost ?? DEFAULT_STAMINA_COST;
+      const staminaResult = await this.deductStamina(accountId, staminaCost, now());
+      if (!staminaResult.ok) {
+        return reply.code(402).send(err(ErrorCode.INSUFFICIENT_STAMINA, 'not enough stamina'));
+      }
+      return ok({ stamina: { current: staminaResult.current, regenAt: staminaResult.regenAt } });
     }
 
     /** Purchase stamina (deducts coins via commercial; 60 stamina = 30 coins, §A4). */
@@ -305,12 +337,7 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
         return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'level locked'));
       }
 
-      // Stamina deduction (A4): deduct before settling to prevent settle-then-reject scenarios.
-      const staminaCost = level.staminaCost ?? 1;
-      const staminaResult = await this.deductStamina(accountId, staminaCost, now());
-      if (!staminaResult.ok) {
-        return reply.code(402).send(err(ErrorCode.INSUFFICIENT_STAMINA, 'not enough stamina'));
-      }
+      // Stamina is deducted at /pve/enter (A4, 2026-07-06), not here — clear settlement no longer touches it.
 
       // Exploitable reward = either material reward or unit card drop is non-empty (S12-C: cards are also a cheatable reward).
       const hasReward =
@@ -343,7 +370,7 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
             ...(clientStats ? { reportedStats: clientStats } : {}),
             ts: now(),
           });
-          const saveWithSt = { ...prog.save, stamina: { current: staminaResult.current, regenAt: staminaResult.regenAt } };
+          const saveWithSt = { ...prog.save, stamina: await this.readStaminaSnapshot(accountId, now()) };
           return ok({
             save: saveWithSt,
             granted: {},
@@ -371,7 +398,7 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
       const saveWithSt = {
         ...granted.save,
         ...(nextRetention !== granted.save.retention ? { retention: nextRetention } : {}),
-        stamina: { current: staminaResult.current, regenAt: staminaResult.regenAt },
+        stamina: await this.readStaminaSnapshot(accountId, now()),
       };
       return ok({
         save: saveWithSt,

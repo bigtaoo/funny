@@ -46,6 +46,7 @@
 | `scenes/RoomScene.ts` | 好友房 UI：idle→codeEntry→connecting→inRoom |
 | `render/sketch.ts` | `SketchPen`：确定性 Prng 抖动的手绘笔触 |
 | `render/sketchUi.ts` | 共享手绘 UI 原语（纸底/手绘按钮/面板/色板单一来源） |
+| `render/coinIconAtlas.ts` | **金币图标单一来源**：`buildCoinIcon(kind,size,color)`——AI 位图图集（`assets/shop/coins.{png,json}`）加载后返回贴图 Sprite，未加载/无对应 kind 时退回 `render/icons.ts` 的程序绘制 `buildIcon`。`loadCoinIconAtlas()` 幂等、模块级单例缓存，跨场景共享。所有「金币余额」展示（大厅头部 `LobbyScene/build.ts`、`ui/widgets/SceneHeader.ts` 的 `drawHeaderCurrency`、ShopScene 商城/充值页）**必须**走这个函数，不要直接 `buildIcon('coin',...)`——2026-07-06 修过一次大厅头部金币图标与商城不一致的问题（LobbyScene 首屏渲染时图集常未加载完，需在 `LobbyScene/base.ts` 构造函数里 `loadCoinIconAtlas().then(()=>this.rebuild())` 补一次重绘） |
 | `ui/GlobalToast.ts` | **全局兜底 toast**：浮在所有场景之上（挂 `app.stage` 屏幕坐标，不受 Contain 缩放/场景切换影响，跟随 resize），手绘风格梯形淡入淡出。专供漏网错误兜底，各场景仍用自身 `showToast`——「有提示则跳过、漏了才兜底」 |
 | `net/apiErrorMessage.ts` | `uncaughtErrorMessage(reason)`：未捕获 reason→玩家可读文案。duck-type（`err.name`+`err.code`，避免与 ApiClient 循环依赖）识别 `ApiError`/`WorldApiError`（按 code 映射 `common.err.*`，未知码→`common.actionFailed`）/ `TypeError`（fetch 网络失败→`common.networkError`）/ 超时；普通 JS 异常→`null`（不弹，不拿 bug 吓玩家） |
 | `net/log.ts` | 网络日志 + **全局错误兜底中枢**：`installGlobalErrorHandlers` 在 window `error`/`unhandledrejection` 把漏网错误经 `apiErrorMessage` 归类后弹 toast；`setToastSink`（app.ts 注入 `GlobalToast.show`）/ `showToastMessage`（定点本地化提示出口，供 SaveManager 云同步失败复用） |
