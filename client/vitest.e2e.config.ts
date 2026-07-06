@@ -11,6 +11,9 @@ export default defineConfig({
     alias: {
       '@nw/engine': path.resolve(__dirname, '../server/engine/src'),
       // Auction full-link block imports shared auction constants (durations / tax rate).
+      // Map the deep auction module BEFORE the barrel so the barrel's server-only
+      // re-exports (jwt.ts -> jsonwebtoken) are never pulled into the client test.
+      '@nw/shared/slg/auction': path.resolve(__dirname, '../server/shared/src/slg/auction.ts'),
       '@nw/shared': path.resolve(__dirname, '../server/shared/src/index.ts'),
     },
   },

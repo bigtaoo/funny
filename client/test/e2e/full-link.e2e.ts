@@ -13,7 +13,9 @@
 // Run: npm run test:e2e   (NOT part of `npm test`).
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { AUCTION_DURATIONS_SEC, AUCTION_TAX_RATE } from '@nw/shared';
+// Deep-import to avoid the @nw/shared barrel, which re-exports server-only jwt.ts
+// (needs `jsonwebtoken`, not installed in the client).
+import { AUCTION_DURATIONS_SEC, AUCTION_TAX_RATE } from '@nw/shared/slg/auction';
 import { createAppCore } from '../../src/app/createAppCore';
 import { HeadlessPlatform } from '../harness/HeadlessPlatform';
 import { HeadlessAppViews } from '../harness/HeadlessAppViews';
