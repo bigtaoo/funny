@@ -59,6 +59,25 @@ describe.skipIf(!mongo)('Auction full-link E2E (real WorldApiClient → real auc
   const grants: Array<{ account: string; amount: number; orderId: string }> = [];
   const materialDeducts: Array<{ account: string; material: string; qty: number }> = [];
   const mails: Array<{ account: string; dispatchKey: string; content: AuctionMailContent }> = [];
+  // Equipment + card simulated meta inventory (Map<account, Map<instanceId, instance>>), same
+  // seam the AuctionService unit e2e stubs. Escrow removes from the seller's map (and enforces
+  // the meta-side guards: EQUIP_LOCKED / CARD_HAS_GEAR); grant re-seeds the recipient's map.
+  const equipInv = new Map<string, Map<string, EquipmentInstance>>();
+  const cardInv = new Map<string, Map<string, CardInstance>>();
+  const seedEquip = (acct: string, inst: EquipmentInstance): void => {
+    if (!equipInv.has(acct)) equipInv.set(acct, new Map());
+    equipInv.get(acct)!.set(inst.id, inst);
+  };
+  const seedCard = (acct: string, inst: CardInstance): void => {
+    if (!cardInv.has(acct)) cardInv.set(acct, new Map());
+    cardInv.get(acct)!.set(inst.id, inst);
+  };
+  const mkEquip = (id: string, defId = 'wp_marker', extra: Partial<EquipmentInstance> = {}): EquipmentInstance => ({
+    id, defId, rarity: 'rare', level: 0, affixes: [{ id: 'm_atk', value: 8 }], ...extra,
+  });
+  const mkCard = (id: string, defId = 'lichuang', extra: Partial<CardInstance> = {}): CardInstance => ({
+    id, defId, level: 1, xp: 0, gear: {}, locked: false, ...extra,
+  });
 
   const commercial: AuctionCommercialClient = {
     available: true,
@@ -71,10 +90,24 @@ describe.skipIf(!mongo)('Auction full-link E2E (real WorldApiClient → real auc
     available: true,
     async deductMaterial(accountId, material, qty) { materialDeducts.push({ account: accountId, material, qty }); },
     async grantMaterial() { /* material delivery goes through mail (escrow-out), not direct grant */ },
-    async escrowEquipment(): Promise<EquipmentInstance> { return notNeeded('escrowEquipment'); },
-    async grantEquipment() { notNeeded('grantEquipment'); },
-    async escrowCard(): Promise<CardInstance> { return notNeeded('escrowCard'); },
-    async grantCard() { notNeeded('grantCard'); },
+    async escrowEquipment(accountId, instanceId) {
+      const inst = equipInv.get(accountId)?.get(instanceId);
+      if (!inst) throw new SlgError('EQUIP_NOT_FOUND');
+      if (inst.locked) throw new SlgError('EQUIP_LOCKED');
+      equipInv.get(accountId)!.delete(instanceId);
+      return inst;
+    },
+    async grantEquipment(accountId, instance) { seedEquip(accountId, instance); },
+    async escrowCard(accountId, instanceId) {
+      const inst = cardInv.get(accountId)?.get(instanceId);
+      if (!inst) throw new SlgError('CARD_NOT_FOUND');
+      if (Object.values(inst.gear).some((v) => v != null)) throw new SlgError('CARD_HAS_GEAR');
+      cardInv.get(accountId)!.delete(instanceId);
+      return inst;
+    },
+    async grantCard(accountId, instance) { seedCard(accountId, instance); },
+    // Skins have no client entry (AuctionScene ItemClass = material|equipment|card), so the real
+    // WorldApiClient can never list one — skin trading is server-only and out of full-link scope.
     async escrowSkin(): Promise<string> { return notNeeded('escrowSkin'); },
     async grantSkin() { notNeeded('grantSkin'); },
   };
@@ -118,6 +151,8 @@ describe.skipIf(!mongo)('Auction full-link E2E (real WorldApiClient → real auc
     grants.length = 0;
     materialDeducts.length = 0;
     mails.length = 0;
+    equipInv.clear();
+    cardInv.clear();
   });
 
   it('fixed listing round-trips create → list → mine → buy across the wire', async () => {
@@ -181,6 +216,79 @@ describe.skipIf(!mongo)('Auction full-link E2E (real WorldApiClient → real auc
     await seller.cancelAuction(view.auctionId);
     expect(mails.some((m) => m.account === 'seller1' && m.dispatchKey.startsWith('auction_cancel:'))).toBe(true);
     expect((await seller.listAuctions()).some((a) => a.auctionId === view.auctionId)).toBe(false);
+  });
+
+  it('equipment listing round-trips create → list → mine → buy across the wire (instance snapshot survives)', async () => {
+    const seller = clientFor('seller1');
+    const buyer = clientFor('buyer1');
+    // Seed a rare weapon (ref price 400) with a full affix snapshot in the seller's meta inventory.
+    seedEquip('seller1', mkEquip('eq1', 'wp_marker', { level: 3, affixes: [{ id: 'm_atk', value: 8 }, { id: 's_hp', value: 5 }] }));
+
+    // create: equipment is single-unit (qty coerced to 1); escrow removes it from the seller's inventory.
+    const view = await seller.createAuction('equipment', { instanceId: 'eq1' }, 1, DUR, { price: 400 });
+    expect(view.itemType).toBe('equipment');
+    expect(view.qty).toBe(1);
+    expect(view.totalPrice).toBe(400);
+    expect((view.item.instance as EquipmentInstance).id).toBe('eq1');
+    expect(equipInv.get('seller1')?.has('eq1')).toBe(false); // escrowed out of seller inventory
+
+    // list + mine over the wire
+    expect((await buyer.listAuctions({ itemType: 'equipment' })).some((a) => a.auctionId === view.auctionId)).toBe(true);
+    expect((await seller.getMyListings()).map((a) => a.auctionId)).toEqual([view.auctionId]);
+
+    // buy: buyer charged, seller paid net of tax, instance delivered to buyer via mail with its affix snapshot intact.
+    await buyer.buyAuction(view.auctionId);
+    expect(spends).toContainEqual(expect.objectContaining({ account: 'buyer1', amount: 400 }));
+    const tax = Math.floor(400 * AUCTION_TAX_RATE);
+    expect(grants).toContainEqual(expect.objectContaining({ account: 'seller1', amount: 400 - tax }));
+    const att = mails.find((m) => m.account === 'buyer1' && m.dispatchKey.startsWith('auction_buy:'))?.content.attachments?.[0];
+    expect(att?.kind).toBe('equipment');
+    expect(att?.instance as EquipmentInstance | undefined).toMatchObject({ id: 'eq1', level: 3 });
+    expect((att?.instance as EquipmentInstance | undefined)?.affixes).toHaveLength(2);
+    expect((await buyer.listAuctions({ itemType: 'equipment' })).some((a) => a.auctionId === view.auctionId)).toBe(false);
+  });
+
+  it('character-card listing round-trips create → buy across the wire (level/xp snapshot survives); seller cancel mails it back', async () => {
+    const seller = clientFor('seller1');
+    const buyer = clientFor('buyer1');
+    seedCard('seller1', mkCard('cd1', 'lichuang', { level: 5, xp: 42 }));
+
+    // create (cards have no price guardrail — cold-start pass-through; qty always 1)
+    const view = await seller.createAuction('card', { instanceId: 'cd1' }, 1, DUR, { price: 500 });
+    expect(view.itemType).toBe('card');
+    expect(view.qty).toBe(1);
+    expect((view.item.instance as CardInstance).id).toBe('cd1');
+    expect(cardInv.get('seller1')?.has('cd1')).toBe(false);
+
+    // buy: full level/xp snapshot delivered to buyer via mail; seller paid after tax.
+    await buyer.buyAuction(view.auctionId);
+    expect(spends).toContainEqual(expect.objectContaining({ account: 'buyer1', amount: 500 }));
+    const tax = Math.floor(500 * AUCTION_TAX_RATE);
+    expect(grants).toContainEqual(expect.objectContaining({ account: 'seller1', amount: 500 - tax }));
+    const att = mails.find((m) => m.account === 'buyer1' && m.dispatchKey.startsWith('auction_buy:'))?.content.attachments?.[0];
+    expect(att?.kind).toBe('card');
+    expect(att?.instance as CardInstance | undefined).toMatchObject({ id: 'cd1', defId: 'lichuang', level: 5, xp: 42 });
+
+    // cancel path (fresh listing): seller gets the card back via mail.
+    seedCard('seller1', mkCard('cd2'));
+    const v2 = await seller.createAuction('card', { instanceId: 'cd2' }, 1, DUR, { price: 500 });
+    await seller.cancelAuction(v2.auctionId);
+    expect(mails.some((m) => m.account === 'seller1' && m.dispatchKey.startsWith('auction_cancel:'))).toBe(true);
+  });
+
+  it('meta-side escrow rejections propagate as typed WorldApiError codes (EQUIP_LOCKED / CARD_HAS_GEAR)', async () => {
+    const seller = clientFor('seller1');
+    // Locked equipment → meta escrow throws EQUIP_LOCKED, surfaced through the { ok:false } envelope.
+    seedEquip('seller1', mkEquip('eqL', 'wp_marker', { locked: true }));
+    await expect(
+      seller.createAuction('equipment', { instanceId: 'eqL' }, 1, DUR, { price: 400 }),
+    ).rejects.toMatchObject({ name: 'WorldApiError', code: 'EQUIP_LOCKED' });
+
+    // Card with equipped gear → CARD_HAS_GEAR.
+    seedCard('seller1', mkCard('cdG', 'lichuang', { gear: { weapon: 'eq_geared' } }));
+    await expect(
+      seller.createAuction('card', { instanceId: 'cdG' }, 1, DUR, { price: 500 }),
+    ).rejects.toMatchObject({ name: 'WorldApiError', code: 'CARD_HAS_GEAR' });
   });
 
   it('server error codes surface as WorldApiError on the client', async () => {
