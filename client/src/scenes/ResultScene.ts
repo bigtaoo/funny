@@ -548,6 +548,7 @@ export class ResultScene implements Scene {
     hit.endFill();
     hit.interactive = true;
     hit.cursor = 'pointer';
+    hit.name = 'resultBackChip'; // test hook — see test/ui/scenes.ui.ts "top-left back chip"
     hit.on('pointertap', onTap);
     this.container.addChild(hit);
   }
