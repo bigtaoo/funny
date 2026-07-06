@@ -5,7 +5,7 @@
 import { proceduralTile, tileId, playerWorldId, isInVision } from '@nw/shared';
 import { WorldCoreVision } from './coreVision';
 import { siegeHpView } from './coreHelpers';
-import type { TileDoc } from './db';
+import type { TileDoc, MapBaselineTileDoc } from './db';
 import type { PlayerProfile } from './metaClient';
 import {
   MAP_VIEW_MAX_RADIUS,
@@ -36,6 +36,14 @@ export class WorldCoreMap extends WorldCoreVision {
       .toArray();
     const byKey = new Map(overrides.map((t) => [`${t.x}:${t.y}`, t]));
 
+    // §24 Layer A: batch-fetch the per-world terrain baseline for the viewport bbox (cloned from the active map
+    // template at world-open — carries admin map-editor edits). A tile with no baseline row falls back to
+    // proceduralTile(). Same viewport bbox shape as the tiles fetch above; keeps this off the per-tile query path.
+    const baselines = await cols.mapBaselines
+      .find({ worldId, x: { $gte: x0, $lte: x1 }, y: { $gte: y0, $lte: y1 } })
+      .toArray();
+    const baseByKey = new Map(baselines.map((b) => [`${b.x}:${b.y}`, b]));
+
     // G5 vision: compute the requester's currently visible tile set (own/family territory + capitals + in-transit marches), gate the dynamic layer per tile.
     const sources = await this.computeVisionSources(worldId, accountId, x0, x1, y0, y1);
     const vis = (x: number, y: number): boolean => isInVision(sources, x, y);
@@ -64,14 +72,14 @@ export class WorldCoreMap extends WorldCoreVision {
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
         if (!vis(x, y)) {
-          // Outside vision: return only procedural base terrain; all dynamic layers (including the "occupied" signal) are hidden.
-          tiles.push({ ...this.proceduralView(worldId, x, y), visible: false });
+          // Outside vision: return only the terrain baseline; all dynamic layers (including the "occupied" signal) are hidden.
+          tiles.push({ ...this.terrainView(worldId, x, y, baseByKey.get(`${x}:${y}`)), visible: false });
           continue;
         }
         const o = byKey.get(`${x}:${y}`);
         const ownerProfile = (o?.ownerId && o.ownerId !== accountId)
           ? profileMap.get(o.ownerId) : undefined;
-        const view = o ? this.tileDocView(o, accountId, ownerProfile) : this.proceduralView(worldId, x, y);
+        const view = o ? this.tileDocView(o, accountId, ownerProfile) : this.terrainView(worldId, x, y, baseByKey.get(`${x}:${y}`));
         const ally = !!o?.ownerId && o.ownerId !== accountId && family.has(o.ownerId);
         // Alliance tag: visible, not own tile, not family, belongs to an allied sect member (family ally takes priority; the two are mutually exclusive).
         const allied = !ally && !!o?.ownerId && o.ownerId !== accountId && allySect.has(o.ownerId);
@@ -136,12 +144,16 @@ export class WorldCoreMap extends WorldCoreVision {
     return { worldId, cx: Math.floor(cx), cy: Math.floor(cy), r: rad, lod, tiles };
   }
 
-  /** Single-tile details. DB override takes priority; otherwise falls back to procedural defaults. G5: outside vision, returns only procedural terrain (same as getMap, prevents getTile from bypassing the fog of war). */
+  /** Single-tile details. DB override takes priority; otherwise falls back to the §24 terrain baseline (then proceduralTile). G5: outside vision, returns only the terrain baseline (same as getMap, prevents getTile from bypassing the fog of war). */
   async getTile(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
-    const o = await this.deps.cols.tiles.findOne({ _id: tileId(worldId, x, y) });
-    if (!o) return this.proceduralView(worldId, x, y);
+    // Fetch the override and the §24 terrain baseline together (single-tile reads on both keyed by tileId).
+    const [o, baseline] = await Promise.all([
+      this.deps.cols.tiles.findOne({ _id: tileId(worldId, x, y) }),
+      this.deps.cols.mapBaselines.findOne({ _id: tileId(worldId, x, y) }),
+    ]);
+    if (!o) return this.terrainView(worldId, x, y, baseline);
     const sources = await this.computeVisionSources(worldId, accountId, x, x, y, y);
-    if (!isInVision(sources, x, y)) return { ...this.proceduralView(worldId, x, y), visible: false };
+    if (!isInVision(sources, x, y)) return { ...this.terrainView(worldId, x, y, baseline), visible: false };
     const ownerProfile = (o.ownerId && o.ownerId !== accountId && this.meta.available)
       ? await this.meta.getProfile(o.ownerId).catch(() => null) : undefined;
     return { ...this.tileDocView(o, accountId, ownerProfile ?? undefined), visible: true };
@@ -196,7 +208,16 @@ export class WorldCoreMap extends WorldCoreVision {
     };
   }
 
-  private proceduralView(worldId: string, x: number, y: number): WorldTileView {
+  /**
+   * Terrain baseline for a tile that has no TileDoc override. Prefers the per-world mapBaselines row (§24 Layer A,
+   * cloned from the active map template at world-open — carries admin map-editor edits: painted rivers/mountains,
+   * moved cities); falls back to proceduralTile() when there is no baseline row (no template was active at open time).
+   * Vision/fog gating is unchanged: terrain is never fog-gated, so callers add `visible` exactly as before.
+   */
+  private terrainView(worldId: string, x: number, y: number, baseline?: MapBaselineTileDoc | null): WorldTileView {
+    if (baseline) {
+      return { x, y, type: baseline.type, level: baseline.level, ...(baseline.resType ? { resType: baseline.resType } : {}) };
+    }
     const d = proceduralTile(worldId, x, y);
     return { x, y, type: d.type, level: d.level, ...(d.resType ? { resType: d.resType } : {}) };
   }
