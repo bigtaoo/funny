@@ -128,7 +128,6 @@ export const en: Record<TranslationKey, string> = {
   'result.playAgainWin': 'FIGHT AGAIN',
   'result.backToMap': 'BACK TO MAP',
   'result.watchReplay': 'WATCH REPLAY',
-  'result.toLobby': 'BACK TO LOBBY',
   'result.eloDelta': 'ELO {delta} → {after}　{rank}',
   'rank.unranked': 'Unranked',
   'rank.bronze': 'Bronze',
@@ -605,7 +604,7 @@ export const en: Record<TranslationKey, string> = {
   'stats.historyUnknownOpp': 'Opponent',
   'stats.win': 'Win',
   'stats.loss': 'Loss',
-  'stats.achievements': '🏆 Achievements',
+  'stats.achievements': 'Achievements',
   'stats.titles': 'Titles',
 
   // ── Achievement wall (S9-5) ──────────────────────────────────────────────────

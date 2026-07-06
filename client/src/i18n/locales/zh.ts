@@ -132,7 +132,6 @@ export const zh = {
   'result.playAgainWin': '再战一场',
   'result.backToMap': '返回地图',
   'result.watchReplay': '观看回放',
-  'result.toLobby': '返回大厅',
   'result.eloDelta': 'ELO {delta} → {after}　段位 {rank}',
   'rank.unranked': '未定级',
   'rank.bronze': '青铜',
@@ -610,7 +609,7 @@ export const zh = {
   'stats.historyUnknownOpp': '对手',
   'stats.win': '胜',
   'stats.loss': '负',
-  'stats.achievements': '🏆 成就',
+  'stats.achievements': '成就',
   'stats.titles': '称号',
 
   // ── Achievement wall (S9-5) ───────────────────────────────────────────────────

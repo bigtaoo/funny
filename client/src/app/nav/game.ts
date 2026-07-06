@@ -15,6 +15,7 @@ import { toEngineCardInstances } from '../../game/meta/cardDefs';
 import type { IconKind } from '../../render/icons';
 import type { AppCtx, Nav } from '../appCtx';
 import { PLAYER_PUBLIC_ID_KEY, PLAYER_NAME_KEY, TOKEN_KEY, TUTORIAL_DONE_FLAG } from '../appConstants';
+import { pickPracticeDifficulty } from './lobby';
 
 type GameNav = Pick<Nav,
   'goGame' | 'goCampaignMap' | 'goLevelPrep' | 'goCollection' | 'goCardRoster' | 'goEquipment' |
@@ -55,7 +56,13 @@ export function createGameNav(ctx: AppCtx): GameNav {
             // Best-effort: offline/expired-token failures don't block the result screen.
           });
         }
-        void nav.goResult(winner, stats, 0, keepReplay(replay));
+        // "Fight again" jumps straight back into a fresh practice match (re-rolls
+        // AI difficulty off the current ELO, same as the lobby's own entry point)
+        // instead of dropping the player back at the lobby first.
+        void nav.goResult(
+          winner, stats, 0, keepReplay(replay), undefined, undefined, undefined,
+          () => goGame({ difficulty: pickPracticeDifficulty(saveManager.get().pvp.elo) }),
+        );
       },
       onExitToLobby() {
         analytics.track('game_end', { mode, result: 'abandon', duration_ticks: 0 });

@@ -128,7 +128,6 @@ export const de: Record<TranslationKey, string> = {
   'result.playAgainWin': 'NOCHMAL KÄMPFEN',
   'result.backToMap': 'ZURÜCK ZUR KARTE',
   'result.watchReplay': 'WIEDERHOLUNG ANSEHEN',
-  'result.toLobby': 'ZURÜCK ZUR LOBBY',
   'result.eloDelta': 'ELO {delta} → {after}　{rank}',
   'rank.unranked': 'Unplatziert',
   'rank.bronze': 'Bronze',
@@ -605,7 +604,7 @@ export const de: Record<TranslationKey, string> = {
   'stats.historyUnknownOpp': 'Gegner',
   'stats.win': 'Sieg',
   'stats.loss': 'Niederlage',
-  'stats.achievements': '🏆 Erfolge',
+  'stats.achievements': 'Erfolge',
   'stats.titles': 'Titel',
 
   // ── Erfolgswand (S9-5) ───────────────────────────────────────────────────────

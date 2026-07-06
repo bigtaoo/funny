@@ -284,10 +284,12 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 #### 4.9.1 按钮主次 + 图标 + 背景涂鸦（2026-06-27）
 结算页动作区重排为「一个主 CTA + 一行次要入口」，所有按钮配手绘图标：
 - **主按钮**：`再来一局`（胜利时文案换 `再战一场`）——大、`ui.gold` 金色填充、白色粗体、配 `swords`(交叉刀) 图标，视觉首位。
-- **次按钮**（底部横排一行，纸色幽灵风：描边 + 墨色字 + 小图标）：`观看回放`(`replay`) / `分享`(`share`) / `返回大厅`(`home`)。回放、分享条件性显示；返回大厅仅在「再来一局 ≠ 回大厅」时常驻（见下）。
-- **行为：天梯 PvP「再来一局」= 重进匹配**（旧实现里它其实回大厅）。`createAppCore.finishNet`：天梯局 `onPlayAgain = 关 session → goRoom({autoRanked})`（进排队 UI，可取消），并补 `onReturnToLobby = goLobby` 作为显式出口；好友/AI 局维持「再来一局 = 回大厅」，不显示返回大厅次按钮。
+- **次按钮**（底部横排一行，纸色幽灵风：描边 + 墨色字 + 小图标）：`观看回放`(`replay`) / `分享`(`share`)。均条件性显示。（原有的常驻「返回大厅」`home` 次按钮已于 2026-07-06 移除，见下——现在由左上角统一返回按钮覆盖同一出口。）
+- **行为：天梯 PvP「再来一局」= 重进匹配**（旧实现里它其实回大厅）。`createAppCore.finishNet`：天梯局 `onPlayAgain = 关 session → goRoom({autoRanked})`（进排队 UI，可取消），并传 `onReturnToLobby = goLobby` 给 `goResult`（不再渲染成次按钮，只喂左上角 `onBack` 闭包，见下）；好友/AI 局维持「再来一局 = 回大厅」。
 - **背景情绪涂鸦**（`addMoodDeco`，低 z 序藏在文字/按钮后）：胜利→暖金四角星点；失败→断铅笔 + 红笔划叉（呼应"红笔批改"美术母题）；平局→角落中性等号。
-- 新增图标：`icons.ts` 的 `swords/replay/share/home`（SketchPen 线稿，烘焙缓存）；i18n 新增 `result.toLobby` / `result.playAgainWin`（三语）。
+- 新增图标：`icons.ts` 的 `swords/replay/share/home`（SketchPen 线稿，烘焙缓存；`home` 现仅用于其他场景）；i18n 新增 `result.playAgainWin`（三语）。
+- **PvE-vs-AI「再来一局」= 直接重进对局（2026-07-06）**：`nav/game.ts` 的 `goGame().onGameEnd` 不再走默认的「play again = 回大厅」，改为 `onPlayAgain = () => goGame({ difficulty: pickPracticeDifficulty(elo) })`（复用大厅入口同一条难度公式，直接重开一局，跳过大厅）。`pickPracticeDifficulty` 从 `lobby.ts` 导出供 `game.ts` 复用。
+- **新增左上角返回按钮，删除重复的次按钮（2026-07-06）**：`ResultSceneCallbacks.onBack()`（必填）——固定回大厅，独立于「再来一局」逻辑（后者现在可能是重进对局而非回大厅）。视觉复用 `SceneHeader.ts` 的 `drawFloatingBackButton`（浮动返回胶囊，左上角同款样式，与其余 22 个场景对齐）；该 helper 只画视觉+返回命中矩形不接交互，`ResultScene` 自己叠一层透明命中区接 `pointertap`。`nav/result.ts` 的 `goResult` 里 `cb.onBack` 复用 `onReturnToLobby`（天梯局关 session）否则回退纯 `goLobby()`。原先天梯局专属的「返回大厅」次按钮是同一个出口的重复入口（天梯结算会同时看到左上角返回 + 底部返回大厅两个按钮），已删除——连同 `ResultSceneCallbacks.onReturnToLobby` 字段和 `result.toLobby` 三语 i18n key；`goResult` 的 `onReturnToLobby` 参数只保留给 `onBack` 闭包内部用，不再对外暴露成独立按钮。
 
 #### 4.9.2 结算页 deco 丰富（2026-06-30）
 结算页引入与大厅/对战一致的手绘涂鸦层，解决页面太空旷的问题：
