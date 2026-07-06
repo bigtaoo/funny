@@ -6,7 +6,7 @@ import type { ILayout } from '../layout/ILayout';
 import type { InputManager } from '../inputSystem/InputManager';
 import type { Scene } from './SceneManager';
 import { t } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren, marginLineX } from '../render/sketchUi';
 import { buildIcon } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
@@ -249,19 +249,22 @@ export class FamilyScene implements Scene {
     if (!this.family) return;
     const { w, h } = this;
 
-    // Tab bar
+    // Tab bar — starts to the right of the notebook's red margin rule (marginLineX)
+    // so it doesn't sit on top of it, matching the EquipmentScene/GachaScene convention.
+    const left = marginLineX(w);
     const tabs: FamilyTab[] = ['members', 'channel'];
-    const tabW = w / tabs.length;
+    const tabW = (w - left) / tabs.length;
     for (let i = 0; i < tabs.length; i++) {
       const tab = tabs[i]!;
       const active = tab === this.activeTab;
+      const tx = left + i * tabW;
       const tp = sketchPanel(tabW, 36, { fill: active ? C.paper : 0xddddcc, border: C.mid, seed: seedFor(i, 0, tabW) });
-      tp.x = i * tabW; tp.y = HUD_H;
+      tp.x = tx; tp.y = HUD_H;
       this.bodyLayer.addChild(tp);
       const tl = txt(t(tab === 'members' ? 'family.tabMembers' : 'family.channel'), 13, active ? C.accent : C.dark);
-      tl.anchor.set(0.5, 0.5); tl.x = i * tabW + tabW / 2; tl.y = HUD_H + 18;
+      tl.anchor.set(0.5, 0.5); tl.x = tx + tabW / 2; tl.y = HUD_H + 18;
       this.bodyLayer.addChild(tl);
-      this.hitRects.push({ rect: { x: i * tabW, y: HUD_H, w: tabW, h: 36 }, action: () => { this.activeTab = tab; this.scrollY = 0; this.render(); } });
+      this.hitRects.push({ rect: { x: tx, y: HUD_H, w: tabW, h: 36 }, action: () => { this.activeTab = tab; this.scrollY = 0; this.render(); } });
     }
 
     const contentY = HUD_H + 36;
@@ -276,6 +279,7 @@ export class FamilyScene implements Scene {
 
   private renderMembers(y0: number, maxH: number): void {
     const { w } = this;
+    const left = marginLineX(w);
     const me = this.cb.myAccountId;
 
     const myRole = this.members.find(m => m.accountId === me)?.role ?? 'member';
@@ -289,14 +293,14 @@ export class FamilyScene implements Scene {
       if (cy + ROW_H < y0 || cy > y0 + maxH) { cy += ROW_H; continue; }
       const bar = new PIXI.Graphics();
       sketchAccentBar(bar, ROW_H - 4, mem.role === 'leader' ? C.accent : mem.role === 'elder' ? 0xd4a030 : C.mid);
-      bar.x = 6; bar.y = cy + 2;
+      bar.x = left + 6; bar.y = cy + 2;
       this.bodyLayer.addChild(bar);
 
       const roleLbl = txt(t(`family.${mem.role as 'leader' | 'member' | 'elder'}`), 10, C.mid);
-      roleLbl.x = 16; roleLbl.y = cy + 4;
+      roleLbl.x = left + 16; roleLbl.y = cy + 4;
       this.bodyLayer.addChild(roleLbl);
       const nameLbl = txt(mem.displayName ?? mem.publicId ?? '', 13, C.dark);
-      nameLbl.x = 16; nameLbl.y = cy + 18;
+      nameLbl.x = left + 16; nameLbl.y = cy + 18;
       this.bodyLayer.addChild(nameLbl);
 
       // Action buttons for leader (promote/demote elders + kick).
@@ -331,31 +335,33 @@ export class FamilyScene implements Scene {
     // Bottom bar: Sect hub entry (left) + Leave / Dissolve (right).
     const isLdr = myRole === 'leader';
     const barY = y0 + maxH - 36;
+    const midX = (left + w) / 2;
 
     const sectBtn = sketchPanel(110, 32, { fill: C.dark, border: C.accent, seed: seedFor(2, 0, 110) });
-    sectBtn.x = w / 2 - 120; sectBtn.y = barY;
+    sectBtn.x = midX - 120; sectBtn.y = barY;
     this.bodyLayer.addChild(sectBtn);
     const sbl = txt(t('family.sect'), 13, C.light);
-    sbl.anchor.set(0.5, 0.5); sbl.x = w / 2 - 65; sbl.y = barY + 16;
+    sbl.anchor.set(0.5, 0.5); sbl.x = midX - 65; sbl.y = barY + 16;
     this.bodyLayer.addChild(sbl);
-    this.hitRects.push({ rect: { x: w / 2 - 120, y: barY, w: 110, h: 32 }, action: () => this.cb.onOpenSect() });
+    this.hitRects.push({ rect: { x: midX - 120, y: barY, w: 110, h: 32 }, action: () => this.cb.onOpenSect() });
 
     const btnLabel = isLdr ? t('family.dissolve') : t('family.leave');
     const btnColor = isLdr ? C.red : C.accent;
     const btn = sketchPanel(110, 32, { fill: 0xf8f8f0, border: btnColor, seed: seedFor(0, 0, 110) });
-    btn.x = w / 2 + 10; btn.y = barY;
+    btn.x = midX + 10; btn.y = barY;
     this.bodyLayer.addChild(btn);
     const bl = txt(btnLabel, 13, btnColor);
-    bl.anchor.set(0.5, 0.5); bl.x = w / 2 + 65; bl.y = barY + 16;
+    bl.anchor.set(0.5, 0.5); bl.x = midX + 65; bl.y = barY + 16;
     this.bodyLayer.addChild(bl);
     this.hitRects.push({
-      rect: { x: w / 2 + 10, y: barY, w: 110, h: 32 },
+      rect: { x: midX + 10, y: barY, w: 110, h: 32 },
       action: () => isLdr ? this.confirmDissolve() : this.confirmLeave(),
     });
   }
 
   private renderChannel(y0: number, maxH: number): void {
     const { w } = this;
+    const left = marginLineX(w);
     const inputH = 44;
     const listH2 = maxH - inputH - 6;
 
@@ -367,23 +373,24 @@ export class FamilyScene implements Scene {
     for (const msg of this.messages) {
       if (cy + ROW_H < y0 || cy > y0 + listH2) { cy += ROW_H; continue; }
       const nameLbl = txt(msg.senderName ?? msg.senderId, 11, C.accent);
-      nameLbl.x = 12; nameLbl.y = cy + 4;
+      nameLbl.x = left + 12; nameLbl.y = cy + 4;
       this.bodyLayer.addChild(nameLbl);
       const bodyLbl = txt(msg.body, 12, C.dark);
-      bodyLbl.x = 12; bodyLbl.y = cy + 18;
+      bodyLbl.x = left + 12; bodyLbl.y = cy + 18;
       this.bodyLayer.addChild(bodyLbl);
       cy += ROW_H;
     }
 
     // Input area
     const inputY = y0 + listH2 + 4;
-    const field = sketchPanel(w - 80, 36, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(0, 0, w - 80) });
-    field.x = 6; field.y = inputY;
+    const fieldW = w - left - 80;
+    const field = sketchPanel(fieldW, 36, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(0, 0, fieldW) });
+    field.x = left + 6; field.y = inputY;
     this.bodyLayer.addChild(field);
     const fl = txt(t('family.msgPlaceholder'), 12, C.mid);
-    fl.x = 12; fl.y = inputY + 10;
+    fl.x = left + 12; fl.y = inputY + 10;
     this.bodyLayer.addChild(fl);
-    this.hitRects.push({ rect: { x: 6, y: inputY, w: w - 80, h: 36 }, action: () => this.openSendInput() });
+    this.hitRects.push({ rect: { x: left + 6, y: inputY, w: fieldW, h: 36 }, action: () => this.openSendInput() });
 
     const sendBtn = sketchPanel(66, 36, { fill: C.dark, border: C.accent, seed: seedFor(1, 0, 66) });
     sendBtn.x = w - 72; sendBtn.y = inputY;
