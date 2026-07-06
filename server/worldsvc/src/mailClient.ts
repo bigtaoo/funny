@@ -3,16 +3,13 @@
 // Direct delivery by accountId (meta single-send branch skips publicId resolution when accountId is provided, see internal.ts §17.5).
 // NW_META_INTERNAL_URL not configured → available=false → settlement does not send rewards (best-effort; does not block settlement).
 
-import { internalHeaders, type EquipmentInstance, type CardInstance } from '@nw/shared';
+import { internalHeaders } from '@nw/shared';
 
 export interface WorldMailAttachment {
   // 'material' → SaveData.materials unified progression pool (SLG8 season rewards); 'item' → inventory.items general bucket.
-  // 'equipment'/'card' → auction escrow-out delivery/return: carries the full instance snapshot, written back to
-  //   equipmentInv/cardInv by instance.id when the recipient claims the mail (AUCTION_DESIGN escrow-out model).
-  kind: 'coins' | 'skin' | 'item' | 'material' | 'equipment' | 'card';
+  kind: 'coins' | 'skin' | 'item' | 'material';
   id?: string;
   count?: number;
-  instance?: EquipmentInstance | CardInstance;
 }
 
 export interface WorldMailContent {

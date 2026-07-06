@@ -1,12 +1,12 @@
 // worldsvc environment variables (S8-0, seventh workspace + dedicated database).
-// SLG_DESIGN §14.1: worldsvc exposes a public REST API (fourth public face /world/* /auction/*),
+// SLG_DESIGN §14.1: worldsvc exposes a public REST API (/world/*; /auction/* moved to auctionsvc, §9 任务6),
 // reuses meta JWT for verifyToken signature verification only (does not connect to the accounts database).
 // Internal events are pushed back to clients via gateway /gw/push.
 // Note: /family/* routes have been migrated to socialsvc (fifth public face /social/*); worldsvc no longer proxies family requests.
 import { loadServerEnv, type ServerEnv } from '@nw/shared';
 
 export interface WorldsvcEnv extends ServerEnv {
-  /** Public REST port (reverse-proxied /world,/auction → this port). Default 18084 (avoids Windows reserved port range). */
+  /** Public REST port (reverse-proxied /world → this port). Default 18084 (avoids Windows reserved port range). */
   port: number;
   host: string;
   /** worldsvc dedicated MongoDB URI (defaults to the same instance as meta). */
@@ -17,9 +17,9 @@ export interface WorldsvcEnv extends ServerEnv {
   redisUrl: string | undefined;
   /** gateway internal HTTP base URL (worldsvc → /gw/push for real-time event delivery); if absent, no push (REST polling only). */
   gatewayInternalUrl: string | undefined;
-  /** commercial internal HTTP base URL (auction house S8-5: deduct buyer coins / pay seller); if absent, coin trading not supported. */
+  /** commercial internal HTTP base URL (SLG coin sinks: speedups / sect creation / world chat / relocation); if absent, coin spend not supported. */
   commercialInternalUrl: string | undefined;
-  /** meta internal HTTP base URL (auction house S8-5: material deduction / grant); if absent, material trading not supported. */
+  /** meta internal HTTP base URL (stronghold loot material grants / owner profiles / siege save-fields); if absent, those degrade. */
   metaInternalUrl: string | undefined;
   /** socialsvc internal HTTP base URL (channel push delegation); if absent, no delegation. */
   socialsvcInternalUrl: string | undefined;
