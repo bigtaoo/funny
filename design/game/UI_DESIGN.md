@@ -134,7 +134,7 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 - 加「好友对战」入口 → `RoomScene`。
 - （S2 后）加「每日奖励」红点入口。
 - **匹配按钮氛围装饰（2026-07-05）**：右侧已有淡化交叉铅笔图腾（`heroMotif`，alpha 0.22）；左侧对称加一个随机角色剪影——`build()` 时从 6 个可战斗角色（infantry/archer/shieldbearer + max/lena/mara，复用 `render/UnitView.ts` 同款 `.tao` 骨骼动画包，池子见 `render/heroSilhouette.ts`）随机抽一个，用新增的 `StickmanRuntime.setSilhouette(color)`（`render/stickman/StickmanRuntime.ts`：把每根骨骼贴图的 RGB 乘成纯黑、只留原透明度）渲染成纯黑剪影，同样 alpha 0.22；`update(dt)` 里每 1.6–3.2 秒从该角色的 clip 列表随机切一个动作循环播放，纯装饰不影响任何交互/命中区。
-  - **尺寸/位置修正（2026-07-05 追加）**：`targetHeight` 只按骨骼 FK 关节跨度换算缩放，实际画面（头发/武器/披风等）常画出关节包围盒之外，导致剪影比按钮高、上下溢出——改为创建后取 `getLocalBounds()` 实际高度再乘一次修正系数对齐到按钮内容高度。横向位置也从"贴左边"改为"按钮左边界 → 文字左边界"距离的 1/3 处，不再紧贴边缘。
+  - **尺寸/位置修正（2026-07-05 追加，2026-07-06 撤销重修）**：横向位置从"贴左边"改为"按钮左边界 → 文字左边界"距离的 1/3 处，不再紧贴边缘，此项保留。尺寸方面曾加过一版"创建后取 `getLocalBounds()` 实际高度再乘修正系数对齐按钮高度"的二次缩放，但各角色骨骼 bind pose 的包围盒差异很大（弓箭手张弓 vs 步兵持盾），按包围盒归一反而导致不同角色视觉大小不一致、位置也偏。2026-07-06 撤销该二次缩放，改回与战斗场景 `UnitView` 完全一致的做法：只用 `targetHeight / naturalHeight` 算 `baseScale`（`StickmanRuntime` 构造参数 `targetHeight`），不做额外拟合，六个角色因此固定同高。高度定为按钮高度的 95%（`heroFigureH = heroH * 0.95`），并以骨骼原点（在双脚处）为基准做垂直居中：`footY = 按钮纵向中心 + heroFigureH / 2`。
 
 ### 4.2 RoomScene（好友房，S1）
 ```

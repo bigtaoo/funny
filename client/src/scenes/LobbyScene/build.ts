@@ -361,25 +361,21 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       // or two after the rest of the button since the .tao bundle must be fetched.
       // Centred 1/3 of the way from the button's left edge to the label's left edge
       // (not flush against the edge) so it reads as a companion beside the text.
-      const heroFigureH    = Math.round(heroH * 0.88);
+      // Sized/scaled exactly like a battle unit (targetHeight → baseScale off
+      // naturalHeight, no post-hoc bounds refit) so every rig comes out the same
+      // fixed height instead of varying with each rig's bind-pose bounding box.
+      const heroFigureH    = Math.round(heroH * 0.95);
       const labelLeftEdge  = this.btnLabel.x - this.btnLabel.width / 2;
       const heroFigureX    = Math.round(contentX + (labelLeftEdge - contentX) / 3);
-      const heroFigureFootY = Math.round(heroY + heroH * 0.94);
+      // Rig origin is at the feet (y=0); centre the figure vertically in the button
+      // by placing the feet half a figure-height below the button's vertical centre.
+      const heroFigureFootY = Math.round(heroY + heroH / 2 + heroFigureH / 2);
       const heroFigureInsertAfter = heroMotif;
       StickmanRuntime.loadAsset(randomHeroAssetUrl(), heroFigureH).then(asset => {
         if (this.destroyed) return;
         const runtime = new StickmanRuntime(asset, { targetHeight: heroFigureH });
         runtime.setSilhouette(0x000000);
         runtime.container.alpha = 0.22;
-        // targetHeight normalizes to the rig's FK joint extents, but the drawn art
-        // (hair, weapon, cape…) can reach further — re-fit to the actual rendered
-        // bounds so the silhouette never overflows the hero button's height.
-        const rawBounds = runtime.container.getLocalBounds();
-        if (rawBounds.height > 0) {
-          const fit = heroFigureH / rawBounds.height;
-          runtime.container.scale.x *= fit;
-          runtime.container.scale.y *= fit;
-        }
         runtime.container.x = heroFigureX;
         runtime.container.y = heroFigureFootY;
         const idx = this.container.getChildIndex(heroFigureInsertAfter);
