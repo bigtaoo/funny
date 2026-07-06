@@ -14,6 +14,7 @@ import { BoilingSprite } from '../../render/boil';
 import { buildAvatar } from '../../render/avatar';
 import { StickmanRuntime } from '../../render/stickman/StickmanRuntime';
 import { randomHeroAssetUrl } from '../../render/heroSilhouette';
+import { fitContentToBox } from '../../render/fitToBox';
 import { Rect } from '../../layout/ILayout';
 import logoUrl from '../../assets/logo.png';
 import {
@@ -361,25 +362,37 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       // motif above): a random playable unit, flat-black + faded, cycling through
       // random animation clips (§ hero-decoration). Loads async — appears a frame
       // or two after the rest of the button since the .tao bundle must be fetched.
-      // Centred 1/3 of the way from the button's left edge to the label's left edge
-      // (not flush against the edge) so it reads as a companion beside the text.
-      // Sized/scaled exactly like a battle unit (targetHeight → baseScale off
-      // naturalHeight, no post-hoc bounds refit) so every rig comes out the same
-      // fixed height instead of varying with each rig's bind-pose bounding box.
-      const heroFigureH    = Math.round(heroH * 0.95);
+      // Centred horizontally 1/3 of the way from the button's left edge to the
+      // label's left edge (not flush against the edge) so it reads as a companion
+      // beside the text.
+      //
+      // Sizing must be by the RENDERED PIXELS, not asset.naturalHeight: that value
+      // is the skeleton *joint* extent, so head/foot/weapon art overhanging the
+      // joints is invisible to it and each rig ends up a different on-screen height,
+      // off-centre. Instead we measure the figure's true drawn bounds (unioned over
+      // all clips → pose-stable, same basis for every rig) and fit it to exactly
+      // 90% of the button height, centred on the button's centre. No ground shadow —
+      // it floats inside the button (showShadow:false).
+      const HERO_FIGURE_FRAC = 0.90;                            // silhouette height = 90% of button
+      const heroFigureH    = Math.round(heroH * HERO_FIGURE_FRAC);   // outline-calibration hint only
       const labelLeftEdge  = this.btnLabel.x - this.btnLabel.width / 2;
       const heroFigureX    = Math.round(contentX + (labelLeftEdge - contentX) / 3);
-      // Rig origin is at the feet (y=0); centre the figure vertically in the button
-      // by placing the feet half a figure-height below the button's vertical centre.
-      const heroFigureFootY = Math.round(heroY + heroH / 2 + heroFigureH / 2);
       const heroFigureInsertAfter = heroMotif;
       StickmanRuntime.loadAsset(randomHeroAssetUrl(), heroFigureH).then(asset => {
         if (this.destroyed) return;
-        const runtime = new StickmanRuntime(asset, { targetHeight: heroFigureH });
+        const runtime = new StickmanRuntime(asset, { showShadow: false });
         runtime.setSilhouette(0x000000);
         runtime.container.alpha = 0.22;
-        runtime.container.x = heroFigureX;
-        runtime.container.y = heroFigureFootY;
+        // Fit the true rendered extent to 90% of the button height, centred both
+        // axes (fitContentToBox — measured box, never an assumed origin).
+        const fit = fitContentToBox(
+          runtime.getRenderedLocalBounds(),
+          { top: heroY, height: heroH, centerX: heroFigureX },
+          HERO_FIGURE_FRAC,
+        );
+        runtime.container.scale.set(fit.scale, fit.scale);
+        runtime.container.x = fit.x;
+        runtime.container.y = fit.y;
         const idx = this.container.getChildIndex(heroFigureInsertAfter);
         this.container.addChildAt(runtime.container, idx + 1);
         this.heroFigureClips = [...asset.clips.keys()];

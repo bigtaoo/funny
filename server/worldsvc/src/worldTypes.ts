@@ -1,7 +1,7 @@
 // worldsvc shared view/response types + service dependency contract.
 // Extracted verbatim from service.ts (god-class split, 2026-07-03). No behavior change:
 // these are the REST response shapes returned by WorldService and the DI surface it is constructed with.
-import type { BuildingKey, TileType, ResourceType, MarchKind } from '@nw/shared';
+import type { BuildingKey, TileType, ResourceType, ObstacleKind, MarchKind } from '@nw/shared';
 import type { GarrisonEntry } from '@nw/engine';
 import type { WorldCollections, MarchDoc, CardSLGState } from './db';
 import type { WorldRedis } from './redis';
@@ -26,6 +26,12 @@ export interface WorldTileView {
   type: TileType;
   level: number;
   resType?: ResourceType;
+  /**
+   * §24: for type=obstacle only — river vs mountain art. Carried from the per-world terrain baseline
+   * (mapBaselines) or proceduralTile, so map-editor-painted rivers/mountains render correctly instead of
+   * the client re-deriving a possibly-different kind from proceduralTile locally.
+   */
+  obstacleKind?: ObstacleKind;
   /** Whether occupied by any player (neutral/unoccupied = false or omitted). */
   occupied?: boolean;
   /** Whether owned by the requester. */

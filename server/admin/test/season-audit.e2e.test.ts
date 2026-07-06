@@ -6,7 +6,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createAdminMongo, type AdminMongo } from '../src/db';
 import { AdminService, type Actor } from '../src/service';
 import { seedSuperAdmin } from '../src/seed';
-import type { MailDispatcher, MailSendReq, MailSendRes, MailPreviewReq, MailPreviewRes, PlayerClient, StatsClient, AnalyticsClient, WorldClient } from '../src/clients';
+import type { MailDispatcher, MailSendReq, MailSendRes, MailPreviewReq, MailPreviewRes, PlayerClient, StatsClient, AnalyticsClient, WorldClient, AuctionClient } from '../src/clients';
 import type { AuctionAnomaly, LiveStats, TradeAuditSnapshot } from '@nw/shared';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
@@ -40,7 +40,7 @@ class FakeMail implements MailDispatcher {
   async preview(_req: MailPreviewReq): Promise<MailPreviewRes> { return { ok: true, recipientCount: 1 }; }
 }
 
-// Fake worldsvc: scanning returns pre-configured anomalies.
+// Fake auctionsvc: scanning returns pre-configured anomalies (auction task5: scan moved off worldsvc, see slgAudit.ts).
 const sampleAnomalies: AuctionAnomaly[] = [
   { sellerId: 'rich', buyerId: 'mule', trades: 4, designatedTrades: 4, totalCoins: 80000, firstTs: 1, lastTs: 9, severity: 'high', reasons: ['designated', 'high_value'] },
 ];
@@ -51,7 +51,10 @@ class FakeWorld implements WorldClient {
   async settleWorld() { return {}; }
   async resetWorld() { return {}; }
   async closeWorld() {}
-  async listAuctionAnomalies(): Promise<AuctionAnomaly[]> { return sampleAnomalies; }
+}
+class FakeAuction implements AuctionClient {
+  available = true;
+  async scanAnomalies(): Promise<AuctionAnomaly[]> { return sampleAnomalies; }
 }
 
 const SNAP: TradeAuditSnapshot = {
@@ -73,7 +76,7 @@ describe.skipIf(!mongo)('admin SLG audit e2e', () => {
     await m.ensureIndexes(3600);
     svc = new AdminService({
       cols: m.collections, stats: stubStats, players: stubPlayer, mail: new FakeMail(),
-      analytics: stubAnalytics, world: new FakeWorld(), now,
+      analytics: stubAnalytics, world: new FakeWorld(), auction: new FakeAuction(), now,
     });
     await seedSuperAdmin(m.collections, 'root', 'rootpass', now);
   });

@@ -4,9 +4,9 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChild
 import { drawFloatingBackButton } from '../../ui/widgets/SceneHeader';
 import { buildIcon } from '../../render/icons';
 import { WorldApiError } from '../../net/WorldApiClient';
-import { proceduralTile } from '@nw/shared';
+import { proceduralTile, allCityNodes, BASE_FOOTPRINT, type MapEditorCityNode } from '@nw/shared';
 import { loadResAtlas, getResTexture, isResAtlasReady } from '../../render/resAtlasLoader';
-import { loadCityAtlas, getCityTexture, isCityAtlasReady } from '../../render/cityAtlasLoader';
+import { loadCityAtlas, getCityTextureForLevel, isCityAtlasReady } from '../../render/cityAtlasLoader';
 import { loadTerrainAtlas, getTerrainTexture, isTerrainAtlasReady } from '../../render/terrainAtlasLoader';
 import { loadBuildingAtlas, getBuildingTexture, isBuildingAtlasReady } from '../../render/buildingAtlasLoader';
 import { ISO_RATIO, tileToScreen, screenToTile, screenToTileF, diamondPath, diamondVertices, visibleTileBounds, clipConvexToRect } from '../../render/isoGrid';
@@ -275,7 +275,7 @@ export class WorldMapRenderer {
 
         const lv = tile.level ?? 1;
         const tier = lv <= 2 ? 1 : lv <= 5 ? 2 : lv <= 8 ? 3 : 4;
-        const tex = getCityTexture(tier as 1 | 2 | 3 | 4);
+        const tex = getCityTextureForLevel(lv);
         if (!tex) continue;
 
         // Reuse or create city container
@@ -336,6 +336,38 @@ export class WorldMapRenderer {
       }
     }
 
+    // Procedural NPC cities (ADR-034 §3: province capitals / graded / gate / world-center nodes). Unlike
+    // player bases (DB tiles, above), these are deterministic terrain features derived locally from the
+    // seed — so they render map-wide (no fog gate, like keeps/strongholds) with a per-LEVEL image sized to
+    // the city's footprint (3/5/7/9 by tier). Keyed 'node:<id>' so they never collide with base '<x>:<y>' keys.
+    for (const node of this.cityNodes()) {
+      if (node.x < x0 || node.x >= x0 + visW || node.y < y0 || node.y >= y0 + visH) continue;
+      const tex = getCityTextureForLevel(node.level);
+      if (!tex) continue;
+      const key = `node:${node.id}`;
+      seen.add(key);
+      let cityC = this.ctx.citySprites.get(key);
+      if (!cityC) {
+        const sprite = new PIXI.Sprite(tex);
+        sprite.name = 'img';
+        sprite.anchor.set(0.5);
+        cityC = new PIXI.Container();
+        cityC.addChild(sprite);
+        this.ctx.cityLayer.addChild(cityC);
+        this.ctx.citySprites.set(key, cityC);
+      }
+      const s = tileToScreen(node.x, node.y, tp);
+      cityC.x = this.ctx.panX + s.x;
+      cityC.y = this.ctx.panY + s.y;
+      cityC.zIndex = node.x + node.y;
+      const sprite = cityC.getChildByName('img') as PIXI.Sprite;
+      if (sprite.texture !== tex) sprite.texture = tex;
+      // Scale the BASE_SPRITE_TILES art up in proportion to how much bigger this city's footprint is than a base.
+      const spriteTiles = (node.footprint / BASE_FOOTPRINT) * BASE_SPRITE_TILES;
+      sprite.width = spriteTiles * tp;
+      sprite.height = spriteTiles * tp;
+    }
+
     // Destroy sprites that have scrolled off-screen
     for (const [key, cityC] of this.ctx.citySprites) {
       if (!seen.has(key)) {
@@ -344,6 +376,16 @@ export class WorldMapRenderer {
         this.ctx.citySprites.delete(key);
       }
     }
+  }
+
+  /** Deterministic NPC city nodes for the current world, memoized (they depend only on the seed). */
+  private _cityNodes: MapEditorCityNode[] | null = null;
+  private _cityNodesWorld = '';
+  private cityNodes(): MapEditorCityNode[] {
+    if (this._cityNodes && this._cityNodesWorld === this.ctx.cb.worldId) return this._cityNodes;
+    this._cityNodes = allCityNodes(this.ctx.cb.worldId);
+    this._cityNodesWorld = this.ctx.cb.worldId;
+    return this._cityNodes;
   }
 
   /** Redraw a single pool slot for the given map position. */
@@ -374,7 +416,14 @@ export class WorldMapRenderer {
 
     if (this.ctx.zoom === 1) {
       const isAnchor = tile?.type === 'base' && this.isBaseAnchor(tx, ty);
-      const texName = terrainTextureName(tile?.type ?? proc?.type ?? 'neutral', tx, ty);
+      const effType = tile?.type ?? proc?.type ?? 'neutral';
+      // River/mountain art kind: prefer the server tile's obstacleKind (§24 — carried from the per-world
+      // terrain baseline, so map-editor-painted rivers/mountains win); fall back to proceduralTile only for
+      // tiles the server didn't send a kind for (no baseline row → deterministic procedural terrain).
+      const obstacleKind = effType === 'obstacle'
+        ? (tile?.obstacleKind ?? (proc ?? proceduralTile(this.ctx.cb.worldId, tx, ty)).obstacleKind)
+        : undefined;
+      const texName = terrainTextureName(effType, tx, ty, obstacleKind);
       drawTileL1(g, tile ?? null, fill, owner, fogged, tp, isAnchor, texName, proc);
     } else {
       drawTileL2(g, fill, owner, fogged, tp);

@@ -1,17 +1,18 @@
 /**
  * cityAtlasLoader.ts — SLG city (main base) sprite atlas loader.
  *
- * Four hand-drawn city images at 256 px each, packed into
- * `assets/slg/city_atlas.{png,json}`:
- *   city_lv1 — camp (tier 1, lv 1-2)
- *   city_lv2 — wooden fort (tier 2, lv 3-5)
- *   city_lv3 — stone castle (tier 3, lv 6-8)
- *   city_lv4 — grand castle (tier 4, lv 9-10)
+ * Hand-drawn city images at 256 px each, packed into `assets/slg/city_atlas.{png,json}`
+ * (see art/ui/slg-building/pack_city_atlas.js):
+ *   Tier fallbacks — city_lv1 camp / city_lv2 wooden fort / city_lv3 stone castle / city_lv4 grand
+ *     citadel, spanning lv 1-2 / 3-5 / 6-8 / 9-10.
+ *   Per-level frames — city_l2/l4/l5/l7/l8/l10 give those levels their own art so adjacent levels
+ *     visibly progress; levels without a per-level frame (1/3/6/9) fall back to their tier frame.
  *
  * Used by WorldMapScene to render each base tile as a 3×3-tile sprite that
  * overrides the programmatic city icon once the atlas is decoded.
  */
 import * as PIXI from 'pixi.js-legacy';
+import { cityTier } from '@nw/shared';
 import { assetIO } from '../assets/assetIO';
 import atlasUrl from '../assets/slg/city_atlas.png';
 import atlasData from '../assets/slg/city_atlas.json';
@@ -33,6 +34,18 @@ export function isCityAtlasReady(): boolean {
  */
 export function getCityTexture(tier: 1 | 2 | 3 | 4): PIXI.Texture | null {
   return sheet ? (sheet.textures[`city_lv${tier}`] ?? null) : null;
+}
+
+/**
+ * Texture for a specific city LEVEL (1–10). Prefers a per-level frame `city_l{level}` (the 10-image art
+ * set) when the atlas provides it; otherwise falls back to the 4-tier frame `city_lv{tier}`. This lets the
+ * 6 not-yet-produced per-level images drop in later with zero code change — until then every level renders
+ * its tier image, exactly as before.
+ */
+export function getCityTextureForLevel(level: number): PIXI.Texture | null {
+  if (!sheet) return null;
+  const lv = Math.max(1, Math.min(10, Math.round(level)));
+  return sheet.textures[`city_l${lv}`] ?? sheet.textures[`city_lv${cityTier(lv)}`] ?? null;
 }
 
 /**

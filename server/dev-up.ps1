@@ -4,7 +4,7 @@
 
 .DESCRIPTION
   - shared: tsc -b --watch (rebuild on shared/src change so dependents restart)
-  - meta / gateway / matchsvc / game / commercial / world / admin (each uses node --watch)
+  - meta / gateway / matchsvc / game / commercial / world / auction / admin (each uses node --watch)
   - presets internal URLs + shared NW_INTERNAL_KEY
   Runs docker compose up -d for Mongo by default.
 
@@ -39,6 +39,7 @@ $procs = @(
   @{ name = 'game';       dir = 'gameserver'; env = @{ NW_MATCHSVC_INTERNAL_URL  = 'http://127.0.0.1:8091' } }
   @{ name = 'commercial'; dir = 'commercial'; env = @{} }
   @{ name = 'world';      dir = 'worldsvc';   env = @{ NW_WORLD_PORT = '18084'; NW_GATEWAY_INTERNAL_URL = 'http://127.0.0.1:8090'; NW_WORLD_REDIS_URL = 'redis://127.0.0.1:6379' } }
+  @{ name = 'auction';    dir = 'auctionsvc'; env = @{ NW_AUCTION_PORT = '18086'; NW_META_INTERNAL_URL = 'http://127.0.0.1:18080'; NW_COMMERCIAL_INTERNAL_URL = 'http://127.0.0.1:18082' } }
   @{ name = 'admin';      dir = 'admin';      env = @{ NW_GATEWAY_INTERNAL_URL = 'http://127.0.0.1:8090'; NW_MATCHSVC_INTERNAL_URL = 'http://127.0.0.1:8091'; NW_META_BASE_URL = 'http://127.0.0.1:18080'; NW_ADMIN_SEED_USER = 'root'; NW_ADMIN_SEED_PASS = 'rootpass'; NW_ANALYTICS_BASE_URL = 'http://127.0.0.1:18085' } }
   @{ name = 'analytics';  dir = 'analyticsvc'; env = @{ NW_ANALYTICS_PORT = '18085' } }
 )
@@ -104,6 +105,7 @@ if (-not $Only) {
     game       = 'http://127.0.0.1:8081/health'
     commercial = 'http://127.0.0.1:18082/health'
     world      = 'http://127.0.0.1:18084/health'
+    auction    = 'http://127.0.0.1:18086/health'
     admin      = 'http://127.0.0.1:18083/health'
     analytics  = 'http://127.0.0.1:18085/health'
   }

@@ -1,12 +1,14 @@
 // Map Editor entry point (DESIGN.md §6): PixiJS isometric viewport render (same atlases/projection
 // as the game client's WorldMapRenderer — DESIGN.md §6.3 art-parity requirement) + river/mountain
-// path brush + city drag + publish-to-server (§8, §24 admin map-template API). River/mountain paths
-// and city positions are rasterized (mapEdit.ts's rasterizeMapEdits) into a tile diff both for the
-// live WYSIWYG preview (baked into the base layer on every commit) and for publishing — the exact
-// same function drives both, so "what you see" and "what gets published" can never drift apart.
+// grid brush + city drag + publish-to-server (§8, §24 admin map-template API). Painting stamps tiles
+// directly into a persistent terrain grid (state/terrainGrid.ts) — no vector layer to reconstruct.
+// River/mountain tiles and city positions are rasterized (mapEdit.ts's rasterizeMapEdits) into a tile
+// diff both for the live WYSIWYG preview (baked into the base layer on every commit) and for
+// publishing — the exact same function drives both, so "what you see" and "what gets published" can
+// never drift apart.
 import * as PIXI from 'pixi.js-legacy';
-import { MAP_TEMPLATE_SAVE_MAX_TILES, proceduralTile, rasterizeMapEdits, SLG_MAP_H, SLG_MAP_W, type MapTemplateSummary, type MapTemplateTile, type ResourceType, type TileType } from '@nw/shared/slg';
-import { distToPath, PathStore, randomDefaultWidth, type PathKind, type TilePoint } from './state/paths';
+import { BASE_FOOTPRINT, MAP_TEMPLATE_SAVE_MAX_TILES, proceduralTile, rasterizeMapEdits, SLG_MAP_H, SLG_MAP_W, type MapTemplateSummary, type MapTemplateTile, type ObstacleKind, type ResourceType, type TileType } from '@nw/shared/slg';
+import { randomDefaultWidth, TerrainGridStore, type TerrainKind, type TilePoint } from './state/terrainGrid';
 import { CityStore, type MapEditorCityNode } from './state/cities';
 import { Api, ApiError } from './api';
 import { screenToTile, tileToScreen, visibleTileBounds } from './render/isoGrid';
@@ -15,6 +17,7 @@ import { terrainTextureName } from './render/tileStyle';
 import { loadTerrainAtlas } from './render/terrainAtlasLoader';
 import { loadResAtlas } from './render/resAtlasLoader';
 import { loadBuildingAtlas } from './render/buildingAtlasLoader';
+import { loadCityAtlas, getCityTextureForLevel, isCityAtlasReady } from './render/cityAtlasLoader';
 import { getLocale, t, toggleLocale } from './i18n';
 
 const RESOURCE_LABELS: Record<ResourceType, string> = {
@@ -25,8 +28,7 @@ const RESOURCE_LABELS: Record<ResourceType, string> = {
   sticker: '贴纸(sticker)',
 };
 
-const PATH_COLORS: Record<PathKind, number> = { river: 0x4fa8e0, mountain: 0xa0785a };
-const PATH_COLORS_CSS: Record<PathKind, string> = { river: '#4fa8e0', mountain: '#a0785a' };
+const TERRAIN_COLORS: Record<TerrainKind, number> = { river: 0x4fa8e0, mountain: 0xa0785a };
 const CITY_COLORS: Record<MapEditorCityNode['kind'], number> = {
   worldCenter: 0xff5c8a,
   capital: 0xffd166,
@@ -52,6 +54,10 @@ const VIEW_H = 620;
 const VIEW_PAD_FACTOR = 1.5;
 const ZOOM_MIN = 10;
 const ZOOM_MAX = 56;
+/** On-screen width of a base's city sprite in tile-widths — mirrors the game client's BASE_SPRITE_TILES
+ * (client/src/scenes/worldmap/constants.ts) so a 3×3 base's art lines up identically; larger cities scale
+ * proportionally by footprint (see refreshCitySprites). */
+const BASE_SPRITE_TILES = 3.2;
 
 const pixiRoot = document.getElementById('pixi-root')!;
 const app = new PIXI.Application({ width: VIEW_W, height: VIEW_H, backgroundColor: 0x11111b, antialias: true });
@@ -61,8 +67,13 @@ const worldLayer = new PIXI.Container();
 app.stage.addChild(worldLayer);
 const baseLayer = new PIXI.Container();
 baseLayer.sortableChildren = true;
+// City building sprites (per-level city_atlas art), between the ground tiles and the vector overlay chrome.
+// A child of worldLayer so pans translate it for free; only rebuilt when zoom/seed/city positions change
+// (NOT on every terrain-brush tick — cities don't move while painting), see refreshCitySprites().
+const citySpriteLayer = new PIXI.Container();
+citySpriteLayer.sortableChildren = true;
 const overlayLayer = new PIXI.Container();
-worldLayer.addChild(baseLayer, overlayLayer);
+worldLayer.addChild(baseLayer, citySpriteLayer, overlayLayer);
 
 const seedInput = document.getElementById('world-seed') as HTMLInputElement;
 const regenBtn = document.getElementById('btn-regen') as HTMLButtonElement;
@@ -72,12 +83,9 @@ const statusEl = document.getElementById('status')!;
 const tileInfoEl = document.getElementById('tile-info')!;
 const legendEl = document.getElementById('legend')!;
 const widthInput = document.getElementById('brush-width') as HTMLInputElement;
-const undoPointBtn = document.getElementById('btn-undo-point') as HTMLButtonElement;
-const deletePathBtn = document.getElementById('btn-delete-path') as HTMLButtonElement;
-const clearPathsBtn = document.getElementById('btn-clear-paths') as HTMLButtonElement;
+const clearTerrainBtn = document.getElementById('btn-clear-paths') as HTMLButtonElement;
 const resetCitiesBtn = document.getElementById('btn-reset-cities') as HTMLButtonElement;
-const pathListEl = document.getElementById('path-list')!;
-const pathsTitleEl = document.getElementById('paths-title')!;
+const terrainTitleEl = document.getElementById('paths-title')!;
 const jsonEl = document.getElementById('json') as HTMLTextAreaElement;
 const exportBtn = document.getElementById('btn-export') as HTMLButtonElement;
 const importBtn = document.getElementById('btn-import') as HTMLButtonElement;
@@ -106,17 +114,15 @@ const templateDeleteBtn = document.getElementById('btn-template-delete') as HTML
 const langBtn = document.getElementById('btn-lang') as HTMLButtonElement;
 
 // ── Editor state ─────────────────────────────────────────────────────────
-type Tool = 'select' | PathKind | 'city' | 'pan';
-let tool: Tool = 'select';
-const store = new PathStore();
+type Tool = TerrainKind | 'eraser' | 'city' | 'pan';
+let tool: Tool = 'river';
+const store = new TerrainGridStore();
 const cityStore = new CityStore();
-let draft: TilePoint[] | null = null;
-/** True while a river/mountain brush stroke is being dragged (mousedown → mouseup); see mousedown/mousemove/mouseup below. */
+/** True while a river/mountain/eraser brush stroke is being dragged (mousedown → mouseup). */
 let painting = false;
-/** Min cursor movement (in tiles) between two draft points while painting — keeps stroke polylines short without visibly chunking the curve. */
-const PAINT_MIN_SPACING = 0.4;
-let selectedPathId: string | null = null;
-let dragging: { pathId: string; pointIdx: number } | null = null;
+/** Last tile the brush stamped — mousemove strokes a line from here to the new cursor tile so a fast
+ * drag between two mousemove samples doesn't leave gaps (see TerrainGridStore.strokeCircle). */
+let lastPaintPos: TilePoint | null = null;
 let selectedCityId: string | null = null;
 let draggingCityId: string | null = null;
 let panning = false;
@@ -129,29 +135,23 @@ let panX = 0;
 let panY = 0;
 /** worldId → tile diff Map ("x:y" → override), refreshed by renderBaseMap(); reused by hover info. */
 let diffCache = new Map<string, MapTemplateTile>();
-/**
- * Snapshot of rasterizeMapEdits(store.paths, cityStore.nodes) taken once at brush-stroke start (see
- * mousedown below) and reused for the stroke's duration — committed paths/cities never change mid-stroke,
- * so per-tick renderBaseMap only needs to re-rasterize the (short) live draft instead of rescanning every
- * committed path on every mousemove. Cleared (null) once the stroke ends.
- */
-let strokeBaseDiffCache: Map<string, MapTemplateTile> | null = null;
 /** tx:ty → last-drawn Graphics + a signature of the tile state it reflects; lets renderBaseMap() skip
  * destroying/recreating tiles whose effective terrain hasn't actually changed since the last render. */
 const tileGraphicsCache = new Map<string, { g: PIXI.Graphics; sig: string }>();
 
-/** Point/segment/city hit-test radius, in on-screen px, converted to tile units at the current zoom. */
+/** City hit-test radius, in on-screen px, converted to tile units at the current zoom. */
 const HIT_RADIUS_PX = 8;
 function hitRadiusTiles(): number {
   return HIT_RADIUS_PX / tp;
 }
 
+function brushDiameter(): number {
+  return Math.max(1, Math.round(Number(widthInput.value) || 1));
+}
+
 /** "{n} tile(s)"/"{n} 个格子" — composed so both locales pluralize (or don't) correctly. */
 function tileCountLabel(n: number): string {
   return `${n} ${t(n === 1 ? 'unit.tile' : 'unit.tiles')}`;
-}
-function pathCountLabel(n: number): string {
-  return `${n} ${t(n === 1 ? 'unit.path' : 'unit.paths')}`;
 }
 function cityCountLabel(n: number): string {
   return `${n} ${t(n === 1 ? 'unit.city' : 'unit.cities')}`;
@@ -166,6 +166,10 @@ let lastStatusRender: (() => string) | null = null;
 function setStatus(render: () => string): void {
   lastStatusRender = render;
   statusEl.textContent = render();
+}
+
+function renderTerrainTitle(): void {
+  terrainTitleEl.textContent = t('insp.terrainTitle', { count: tileCountLabel(store.size) });
 }
 
 function clampPan(): void {
@@ -190,35 +194,23 @@ function centerView(): void {
 }
 
 // ── Base map render (real atlas textures — DESIGN.md §6.3 art-parity) ─────
-function effectiveTile(worldId: string, x: number, y: number): { type: TileType; level: number; resType?: ResourceType } {
+function effectiveTile(worldId: string, x: number, y: number): { type: TileType; level: number; resType?: ResourceType; obstacleKind?: ObstacleKind } {
   return diffCache.get(`${x}:${y}`) ?? proceduralTile(worldId, x, y);
 }
 
 function renderBaseMap(worldId: string): void {
   const t0 = performance.now();
-  // Live brush preview: while a river/mountain stroke is being dragged, rasterize the in-progress
-  // draft alongside the committed paths so terrain updates immediately as the user paints (matches
-  // tilemap-brush behavior) instead of waiting for mouseup to commit the path.
-  const liveStroke =
-    painting && draft && draft.length >= 1 && (tool === 'river' || tool === 'mountain')
-      ? [{ type: tool, points: draft, width: Math.max(1, Math.round(Number(widthInput.value) || 1)) }]
-      : [];
-
-  if (liveStroke.length && strokeBaseDiffCache) {
-    // Fast path: committed paths/cities are frozen for the stroke's duration (see strokeBaseDiffCache
-    // doc comment), so only the live stroke needs re-rasterizing this tick.
-    const liveDiffs = rasterizeMapEdits(worldId, liveStroke, []);
-    const merged = new Map(strokeBaseDiffCache);
-    for (const d of liveDiffs) {
-      const key = `${d.x}:${d.y}`;
-      const existing = strokeBaseDiffCache.get(key);
-      if (existing && (existing.type === 'center' || existing.type === 'familyKeep')) continue; // cities always win over path terrain
-      merged.set(key, d);
-    }
-    diffCache = merged;
-  } else {
-    const diffs = rasterizeMapEdits(worldId, [...store.paths, ...liveStroke], cityStore.nodes);
-    diffCache = new Map(diffs.map((d) => [`${d.x}:${d.y}`, d]));
+  // City footprints always win over painted terrain (DESIGN.md §6.2) — rasterize just the cities
+  // (cheap: bounded by total city footprint area, not the whole painted grid), then overlay the
+  // painted terrain grid directly (no distance/segment math needed — the grid already IS the tile
+  // state, so this is a straight Map copy rather than a re-rasterization).
+  const cityDiffs = rasterizeMapEdits(worldId, [], cityStore.nodes);
+  diffCache = new Map(cityDiffs.map((d) => [`${d.x}:${d.y}`, d]));
+  for (const [key, kind] of store.cells) {
+    if (diffCache.has(key)) continue;
+    const [xs, ys] = key.split(':');
+    // Keep the painted river/mountain art kind so the preview shows what was painted, not the hash flip.
+    diffCache.set(key, { x: Number(xs), y: Number(ys), type: 'obstacle', level: 1, obstacleKind: kind });
   }
 
   const padW = VIEW_W * VIEW_PAD_FACTOR;
@@ -240,8 +232,8 @@ function renderBaseMap(worldId: string): void {
       const key = `${tx}:${ty}`;
       nextKeys.add(key);
       const tile = effectiveTile(worldId, tx, ty);
-      const texName = terrainTextureName(tile.type, tx, ty);
-      const sig = `${tile.type}|${tile.level}|${tile.resType ?? ''}|${texName}|${tp}`;
+      const texName = terrainTextureName(tile.type, tx, ty, tile.obstacleKind);
+      const sig = `${tile.type}|${tile.level}|${tile.resType ?? ''}|${tile.obstacleKind ?? ''}|${texName}|${tp}`;
       const cached = tileGraphicsCache.get(key);
       if (cached && cached.sig === sig) {
         count++;
@@ -270,12 +262,13 @@ function renderBaseMap(worldId: string): void {
     }
   }
   const ms = (performance.now() - t0).toFixed(0);
+  renderTerrainTitle();
   setStatus(() =>
     t('status.rendered', {
       worldId,
       tiles: tileCountLabel(count),
       ms,
-      paths: pathCountLabel(store.paths.length),
+      painted: tileCountLabel(store.size),
       cities: cityCountLabel(cityStore.nodes.length),
     }),
   );
@@ -286,51 +279,73 @@ function loadCitiesAndRedraw(worldId: string): void {
   selectedCityId = null;
   cityInfoEl.textContent = t('city.hint');
   renderBaseMap(worldId);
+  refreshCitySprites();
   redrawAll();
 }
 
-// ── Overlay (draft/selection chrome — vector, not atlas art; see module header) ────
-function strokePolylineScreen(g: PIXI.Graphics, points: readonly TilePoint[], width: number, color: number, alpha: number): void {
-  if (points.length < 2) return;
-  g.lineStyle(Math.max(1, width * tp * 0.5), color, alpha);
-  const p0 = tileToScreen(points[0]!.x, points[0]!.y, tp);
-  g.moveTo(p0.x, p0.y);
-  for (let i = 1; i < points.length; i++) {
-    const p = tileToScreen(points[i]!.x, points[i]!.y, tp);
-    g.lineTo(p.x, p.y);
+/**
+ * Rebuilds the per-level city building sprites (city_atlas art) from cityStore.nodes — the same visuals the
+ * game renders (DESIGN.md §6.3 art-parity). Cheap (~70 nodes) and deliberately NOT called on every
+ * terrain-brush tick: cities don't move while painting, so this only runs on seed/zoom/city-position changes.
+ * Sprite width = footprint/BASE_FOOTPRINT × BASE_SPRITE_TILES tiles, so higher-tier (bigger footprint) cities
+ * draw larger, matching the game client's WorldMapRenderer city layer.
+ */
+function refreshCitySprites(): void {
+  citySpriteLayer.removeChildren().forEach((c) => c.destroy({ children: true }));
+  if (!isCityAtlasReady()) return;
+  for (const node of cityStore.nodes) {
+    const tex = getCityTextureForLevel(node.level);
+    if (!tex) continue;
+    const sp = new PIXI.Sprite(tex);
+    sp.anchor.set(0.5);
+    const s = tileToScreen(node.x, node.y, tp);
+    sp.x = s.x;
+    sp.y = s.y;
+    sp.zIndex = node.x + node.y;
+    const spriteTiles = (node.footprint / BASE_FOOTPRINT) * BASE_SPRITE_TILES;
+    sp.width = spriteTiles * tp;
+    sp.height = spriteTiles * tp;
+    citySpriteLayer.addChild(sp);
   }
 }
 
-function drawPointHandlesScreen(g: PIXI.Graphics, points: readonly TilePoint[], color: number): void {
-  const r = 4;
-  g.lineStyle(0);
-  g.beginFill(color);
-  for (const p of points) {
-    const s = tileToScreen(p.x, p.y, tp);
-    g.drawCircle(s.x, s.y, r);
+// ── Overlay (brush cursor / city markers — vector, not atlas art; see module header) ────
+/** Projects a tile-space circle (the brush footprint) into screen space, sampling points around its
+ * circumference — the iso transform is linear, so this yields the correct ellipse outline. */
+function brushOutlinePoints(cx: number, cy: number, r: number): number[] {
+  const SEGMENTS = 28;
+  const pts: number[] = [];
+  for (let i = 0; i < SEGMENTS; i++) {
+    const a = (i / SEGMENTS) * Math.PI * 2;
+    const s = tileToScreen(cx + Math.cos(a) * r, cy + Math.sin(a) * r, tp);
+    pts.push(s.x, s.y);
   }
-  g.endFill();
+  return pts;
 }
 
-function redrawOverlay(hoverTile?: TilePoint): void {
+function drawBrushCursor(hoverTile?: TilePoint): void {
+  if (!hoverTile || (tool !== 'river' && tool !== 'mountain' && tool !== 'eraser')) return;
   const g = new PIXI.Graphics();
-  for (const path of store.paths) {
-    const isSelected = path.id === selectedPathId;
-    if (isSelected) strokePolylineScreen(g, path.points, path.width + 3, 0xffffff, 0.25);
-    strokePolylineScreen(g, path.points, path.width, PATH_COLORS[path.type], 0.55);
-    if (tool === 'select') drawPointHandlesScreen(g, path.points, isSelected ? 0xffffff : PATH_COLORS[path.type]);
+  const r = brushDiameter() / 2;
+  const pts = brushOutlinePoints(hoverTile.x, hoverTile.y, r);
+  if (tool === 'eraser') {
+    g.lineStyle(1.5, 0xffffff, 0.9);
+  } else {
+    const color = TERRAIN_COLORS[tool];
+    g.lineStyle(1.5, color, 0.9);
+    g.beginFill(color, 0.18);
   }
-  if (draft) {
-    const kind = tool as PathKind;
-    const preview = hoverTile ? [...draft, hoverTile] : draft;
-    strokePolylineScreen(g, preview, Number(widthInput.value) || 1, PATH_COLORS[kind], 0.35);
-    drawPointHandlesScreen(g, draft, PATH_COLORS[kind]);
-  }
+  g.drawPolygon(pts);
+  if (tool !== 'eraser') g.endFill();
   overlayLayer.addChild(g);
 }
 
 // ── City markers (footprint outline + selection ring — see module header) ─────────
+// Only shown while the City tool is active: the per-level city sprites (refreshCitySprites) now carry the
+// visual, so overlaying a translucent box on every city under every tool would just clutter the map. In
+// City mode the boxes mark the draggable footprints + selection.
 function drawCityMarkers(): void {
+  if (tool !== 'city') return;
   const g = new PIXI.Graphics();
   for (const node of cityStore.nodes) {
     const isSelected = node.id === selectedCityId;
@@ -357,7 +372,7 @@ function drawCityMarkers(): void {
 
 function redrawAll(hoverTile?: TilePoint): void {
   overlayLayer.removeChildren().forEach((c) => c.destroy());
-  redrawOverlay(hoverTile);
+  drawBrushCursor(hoverTile);
   drawCityMarkers();
 }
 
@@ -397,6 +412,7 @@ function setZoom(nextTp: number, anchor?: { sx: number; sy: number }): void {
   panY = ay - s.y;
   clampPan();
   renderBaseMap(seedInput.value || 'preview');
+  refreshCitySprites();
   redrawAll();
 }
 
@@ -417,25 +433,10 @@ app.view.addEventListener?.('wheel', (ev: Event) => {
 centerBtn.addEventListener('click', () => { centerView(); renderBaseMap(seedInput.value || 'preview'); redrawAll(); });
 
 // ── Tool switching ───────────────────────────────────────────────────────
-function cancelDraft(): void {
-  const wasPainting = painting;
-  draft = null;
-  painting = false;
-  strokeBaseDiffCache = null;
-  redrawAll();
-  if (wasPainting) renderBaseMap(seedInput.value || 'preview');
-}
-
 function setTool(next: Tool): void {
-  if (tool !== next) cancelDraft();
   tool = next;
   for (const btn of toolButtons) btn.classList.toggle('active', btn.dataset.tool === tool);
-  canvasEl().style.cursor = tool === 'pan' ? 'grab' : tool === 'select' || tool === 'city' ? 'default' : 'crosshair';
-  if (tool !== 'select') {
-    selectedPathId = null;
-    deletePathBtn.disabled = true;
-    renderPathList();
-  }
+  canvasEl().style.cursor = tool === 'pan' ? 'grab' : tool === 'city' ? 'default' : 'crosshair';
   if (tool !== 'city') selectCity(null);
   redrawAll();
 }
@@ -444,72 +445,10 @@ for (const btn of toolButtons) {
   btn.addEventListener('click', () => setTool(btn.dataset.tool as Tool));
 }
 
-// ── Path list / inspector ───────────────────────────────────────────────
-function renderPathList(): void {
-  pathsTitleEl.textContent = t('insp.pathsTitle', { count: store.paths.length });
-  pathListEl.innerHTML = store.paths
-    .map(
-      (p, i) =>
-        `<div class="path-row${p.id === selectedPathId ? ' selected' : ''}" data-id="${p.id}">` +
-        `<i style="background:${PATH_COLORS_CSS[p.type]}"></i>${p.type} #${i + 1} — w${p.width}, ${p.points.length}pt</div>`,
-    )
-    .join('');
-  for (const row of Array.from(pathListEl.querySelectorAll<HTMLDivElement>('.path-row'))) {
-    row.addEventListener('click', () => selectPath(row.dataset.id!));
-  }
-}
-
-function selectPath(id: string | null): void {
-  selectedPathId = id;
-  deletePathBtn.disabled = id === null;
-  const path = id ? store.get(id) : undefined;
-  if (path) widthInput.value = String(path.width);
-  renderPathList();
-  redrawAll();
-}
-
-function deleteSelectedPath(): void {
-  if (!selectedPathId) return;
-  store.remove(selectedPathId);
-  selectPath(null);
-  renderBaseMap(seedInput.value || 'preview');
-}
-
-deletePathBtn.addEventListener('click', deleteSelectedPath);
-clearPathsBtn.addEventListener('click', () => {
+clearTerrainBtn.addEventListener('click', () => {
   store.clear();
-  selectPath(null);
   renderBaseMap(seedInput.value || 'preview');
 });
-
-widthInput.addEventListener('change', () => {
-  const w = Math.max(1, Math.round(Number(widthInput.value) || 1));
-  widthInput.value = String(w);
-  const path = selectedPathId ? store.get(selectedPathId) : undefined;
-  if (path) {
-    path.width = w;
-    renderPathList();
-    renderBaseMap(seedInput.value || 'preview');
-  }
-});
-
-function undoDraftPoint(): void {
-  if (!draft) return;
-  draft.pop();
-  if (draft.length === 0) draft = null;
-  if (painting) renderBaseMap(seedInput.value || 'preview');
-  redrawAll();
-}
-undoPointBtn.addEventListener('click', undoDraftPoint);
-
-function finishDraft(): void {
-  if (!draft || draft.length < 2) return;
-  store.add(tool as PathKind, draft, Math.max(1, Math.round(Number(widthInput.value) || 1)));
-  draft = null;
-  renderBaseMap(seedInput.value || 'preview');
-  renderPathList();
-  redrawAll();
-}
 
 // ── City inspector ───────────────────────────────────────────────────────
 function cityLabel(node: MapEditorCityNode): string {
@@ -532,14 +471,13 @@ resetCitiesBtn.addEventListener('click', () => loadCitiesAndRedraw(seedInput.val
 // ── Export / Import ──────────────────────────────────────────────────────
 exportBtn.addEventListener('click', () => {
   jsonEl.value = store.toJSON();
-  setStatus(() => t('status.pathsExported', { paths: pathCountLabel(store.paths.length) }));
+  setStatus(() => t('status.terrainExported', { tiles: tileCountLabel(store.size) }));
 });
 importBtn.addEventListener('click', () => {
   try {
     store.loadFromJSON(jsonEl.value);
-    selectPath(null);
     renderBaseMap(seedInput.value || 'preview');
-    setStatus(() => t('status.pathsImported', { paths: pathCountLabel(store.paths.length) }));
+    setStatus(() => t('status.terrainImported', { tiles: tileCountLabel(store.size) }));
   } catch (err) {
     setStatus(() => t('status.importFailed', { msg: (err as Error).message }));
   }
@@ -554,6 +492,7 @@ cityImportBtn.addEventListener('click', () => {
     cityStore.loadFromJSON(cityJsonEl.value);
     selectCity(null);
     renderBaseMap(seedInput.value || 'preview');
+    refreshCitySprites();
     setStatus(() => t('status.citiesImported', { cities: cityCountLabel(cityStore.nodes.length) }));
   } catch (err) {
     setStatus(() => t('status.importFailed', { msg: (err as Error).message }));
@@ -694,7 +633,7 @@ publishBtn.addEventListener('click', async () => {
   publishBtn.disabled = true;
   setStatus(() => t('status.rasterizing'));
   try {
-    const diffs: MapTemplateTile[] = rasterizeMapEdits(worldId, store.paths, cityStore.nodes);
+    const diffs: MapTemplateTile[] = rasterizeMapEdits(worldId, store.toTileInputs(), cityStore.nodes);
     if (diffs.length === 0) {
       setStatus(() => t('status.nothingToPublish'));
       return;
@@ -740,29 +679,6 @@ function tileFromClientXY(clientX: number, clientY: number): TilePoint {
   return { x: Math.max(0, Math.min(SLG_MAP_W - 1, t.x)), y: Math.max(0, Math.min(SLG_MAP_H - 1, t.y)) };
 }
 
-function findNearestPoint(t: TilePoint): { pathId: string; pointIdx: number } | null {
-  const rTiles = hitRadiusTiles();
-  let best: { pathId: string; pointIdx: number; dist: number } | null = null;
-  for (const path of store.paths) {
-    for (let idx = 0; idx < path.points.length; idx++) {
-      const p = path.points[idx]!;
-      const dist = Math.hypot(p.x - t.x, p.y - t.y);
-      if (dist <= rTiles && (!best || dist < best.dist)) best = { pathId: path.id, pointIdx: idx, dist };
-    }
-  }
-  return best ? { pathId: best.pathId, pointIdx: best.pointIdx } : null;
-}
-
-function findNearestPath(t: TilePoint): string | null {
-  const rTiles = hitRadiusTiles();
-  let best: { id: string; dist: number } | null = null;
-  for (const path of store.paths) {
-    const dist = distToPath(t.x, t.y, path) - path.width / 2;
-    if (dist <= rTiles && (!best || dist < best.dist)) best = { id: path.id, dist };
-  }
-  return best ? best.id : null;
-}
-
 /** Nearest city whose footprint box (or hit radius, for 1×1 nodes) contains/is near (x,y). */
 function findNearestCity(t: TilePoint): string | null {
   const rTiles = hitRadiusTiles();
@@ -802,24 +718,12 @@ canvasEl().addEventListener('mousedown', (ev) => {
     return;
   }
 
-  if (tool === 'select') {
-    const hit = findNearestPoint(t);
-    if (hit) {
-      dragging = hit;
-      selectPath(hit.pathId);
-      return;
-    }
-    selectPath(findNearestPath(t));
-    return;
-  }
-
-  // Start a brush stroke: duplicate the point so it's a zero-length segment (paints a dot even on a
-  // plain click, without needing to drag) — mousemove below extends this into a real polyline.
-  draft = [t, t];
+  // Start a brush stroke: stamp immediately at the click point, then mousemove strokes the grid as the
+  // cursor moves — a plain click already paints (no drag required), matching an image-editor brush.
+  if (tool === 'eraser') store.eraseCircle(t.x, t.y, brushDiameter());
+  else store.paintCircle(t.x, t.y, tool, brushDiameter());
   painting = true;
-  strokeBaseDiffCache = new Map(
-    rasterizeMapEdits(seedInput.value || 'preview', store.paths, cityStore.nodes).map((d) => [`${d.x}:${d.y}`, d]),
-  );
+  lastPaintPos = t;
   renderBaseMap(seedInput.value || 'preview');
   redrawAll(t);
 });
@@ -838,7 +742,8 @@ canvasEl().addEventListener('mousemove', (ev) => {
   const pos = tileFromClientXY(ev.clientX, ev.clientY);
   const tile = effectiveTile(seedInput.value || 'preview', pos.x, pos.y);
   const resLine = tile.resType ? `\n${t('tile.resource')}: ${RESOURCE_LABELS[tile.resType]}` : '';
-  tileInfoEl.textContent = `(${pos.x}, ${pos.y})\n${t('tile.type')}: ${tile.type}\n${t('tile.level')}: ${tile.level}${resLine}`;
+  const typeLabel = tile.obstacleKind ? `${tile.type} (${tile.obstacleKind})` : tile.type;
+  tileInfoEl.textContent = `(${pos.x}, ${pos.y})\n${t('tile.type')}: ${typeLabel}\n${t('tile.level')}: ${tile.level}${resLine}`;
   tileInfoShown = true;
 
   if (draggingCityId) {
@@ -849,31 +754,27 @@ canvasEl().addEventListener('mousemove', (ev) => {
       node.y = clamped.y;
       cityInfoEl.textContent = cityLabel(node);
     }
-    scheduleRender({ base: false });
+    scheduleRender({ base: false, hover: pos });
     return;
   }
-  if (dragging) {
-    const path = store.get(dragging.pathId);
-    if (path) path.points[dragging.pointIdx] = pos;
-    scheduleRender({ base: false });
-    return;
-  }
-  if (painting && draft) {
-    // draft's last entry always tracks the live cursor exactly; once it has moved far enough from the
-    // last frozen anchor, that position is frozen too (a new duplicated tip is pushed to track further
-    // movement) — this is what turns individual mousemove samples into a clean, sparse polyline.
-    const anchor = draft[draft.length - 2]!;
-    draft[draft.length - 1] = pos;
-    if (Math.hypot(pos.x - anchor.x, pos.y - anchor.y) >= PAINT_MIN_SPACING) draft.push(pos);
+
+  if (painting && lastPaintPos) {
+    const kind = tool === 'eraser' ? null : (tool as TerrainKind);
+    store.strokeCircle(lastPaintPos, pos, kind, brushDiameter());
+    lastPaintPos = pos;
     scheduleRender({ base: true, hover: pos });
+    return;
   }
+
+  // Keep the brush-size cursor tracking the hover tile even when not actively painting.
+  scheduleRender({ base: false, hover: pos });
 });
 
 window.addEventListener('mouseup', () => {
   if (panning) {
     panning = false;
     panLast = null;
-    canvasEl().style.cursor = tool === 'pan' ? 'grab' : tool === 'select' || tool === 'city' ? 'default' : 'crosshair';
+    canvasEl().style.cursor = tool === 'pan' ? 'grab' : tool === 'city' ? 'default' : 'crosshair';
     renderBaseMap(seedInput.value || 'preview');
     redrawAll();
     return;
@@ -882,47 +783,17 @@ window.addEventListener('mouseup', () => {
     draggingCityId = null;
     setStatus(() => t('status.cityMoved', { id: selectedCityId ?? '' }));
     renderBaseMap(seedInput.value || 'preview');
-    redrawAll();
-  }
-  if (dragging) {
-    dragging = null;
-    renderBaseMap(seedInput.value || 'preview');
+    refreshCitySprites();
     redrawAll();
   }
   if (painting) {
     painting = false;
-    strokeBaseDiffCache = null;
-    finishDraft();
+    lastPaintPos = null;
+    renderBaseMap(seedInput.value || 'preview');
   }
 });
 
-canvasEl().addEventListener('contextmenu', (ev) => {
-  ev.preventDefault();
-  if (tool === 'pan' || tool === 'city') return; // no delete-by-right-click for generated city nodes
-  if (tool === 'select') {
-    const t = tileFromClientXY(ev.clientX, ev.clientY);
-    const id = findNearestPath(t);
-    if (id) {
-      store.remove(id);
-      selectPath(null);
-      renderBaseMap(seedInput.value || 'preview');
-    }
-    return;
-  }
-  undoDraftPoint();
-});
-
-document.addEventListener('keydown', (ev) => {
-  const target = ev.target as HTMLElement;
-  if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
-  if (ev.key === 'Escape') cancelDraft();
-  else if (ev.key === 'Enter') finishDraft();
-  else if (ev.key === 'Backspace') {
-    ev.preventDefault();
-    if (draft) undoDraftPoint();
-    else deleteSelectedPath();
-  } else if (ev.key === 'Delete') deleteSelectedPath();
-});
+canvasEl().addEventListener('contextmenu', (ev) => ev.preventDefault());
 
 // ── Boot ─────────────────────────────────────────────────────────────────
 function renderLegend(): void {
@@ -951,7 +822,7 @@ function applyStaticI18n(): void {
 }
 
 function applyDynamicI18n(): void {
-  renderPathList();
+  renderTerrainTitle();
   renderTemplateList();
   selectCity(selectedCityId);
   if (!tileInfoShown) tileInfoEl.textContent = t('tile.hoverHint');
@@ -974,9 +845,9 @@ applyStaticI18n();
 applyDynamicI18n();
 renderLegend();
 centerView();
-Promise.allSettled([loadTerrainAtlas(), loadResAtlas(), loadBuildingAtlas()]).then(() => {
+Promise.allSettled([loadTerrainAtlas(), loadResAtlas(), loadBuildingAtlas(), loadCityAtlas()]).then(() => {
   renderBaseMap(seedInput.value);
   loadCitiesAndRedraw(seedInput.value);
   redrawAll();
 });
-renderPathList();
+renderTerrainTitle();

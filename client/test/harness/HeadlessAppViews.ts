@@ -216,7 +216,11 @@ export class HeadlessAppViews implements AppViews {
   }
   showFamily(_cb: FamilySceneCallbacks): void { this.screen = 'family'; }
   showSect(_cb: SectSceneCallbacks): SectSceneView { this.screen = 'sect'; return { applySectMsg() {} }; }
-  showAuction(_cb: AuctionSceneCallbacks): void { this.screen = 'auction'; }
+  // Capture the auction callbacks so a test can drive the real auction flow the way the
+  // AuctionScene would: cb.worldApi is the REAL WorldApiClient the app core built from the
+  // signed-in platform.storage token (full-link E2E hits the live auctionsvc through it).
+  auction?: AuctionSceneCallbacks;
+  showAuction(cb: AuctionSceneCallbacks): void { this.screen = 'auction'; this.auction = cb; }
   showDefenseEditor(_cb: DefenseEditorCallbacks): void { this.screen = 'defenseEditor'; }
   showTeams(_cb: TeamsCallbacks): void { this.screen = 'teams'; }
 

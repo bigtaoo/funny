@@ -1,7 +1,7 @@
 // SLG procedural map generation (core, §14.2 / U2 / U6 initial version; terrain ADR-034 §2.2/§2.3/§3) + map templates (§24).
 // Split out of slg.ts (god-file split, [[project_godfile_split_pattern]]).
 
-import { SLG_GEN, SLG_MAP_H, SLG_MAP_MAX_LEVEL, SLG_MAP_W, type ResourceType, type TileType } from './core';
+import { cityFootprint, SLG_GEN, SLG_MAP_H, SLG_MAP_MAX_LEVEL, SLG_MAP_W, type ObstacleKind, type ResourceType, type TileType } from './core';
 import { valueNoise, worldSeed } from './noise';
 import {
   _angleOf, _MAP_CX, _MAP_CY, _MAP_HALF_DIAGONAL, _normRadius, _TWO_PI,
@@ -17,6 +17,13 @@ export interface ProceduralTile {
   level: number;
   /** Resource type (only present for resource / familyKeep tiles). */
   resType?: ResourceType;
+  /** For `type:'obstacle'` only: which impassable-terrain art to draw (river vs mountain). Purely visual — see {@link ObstacleKind}. */
+  obstacleKind?: ObstacleKind;
+}
+
+/** Convenience: an impassable-terrain result tagged with its art kind (river/mountain). Level is always 1 (§4: obstacles have no level). */
+function _obstacle(kind: ObstacleKind): ProceduralTile {
+  return { type: 'obstacle', level: 1, obstacleKind: kind };
 }
 
 /**
@@ -120,9 +127,9 @@ function _riverChordAt(x: number, y: number, seed: number, chordIdx: number): 'o
  * from the outer/resource ring boundary outward to the map's square edge — separating the 6 birth provinces
  * from each other. No free gates (only the siege gate-city nodes in `_worldCityNodes`, checked separately).
  */
-function _isOnBranch(x: number, y: number, seed: number): boolean {
+function _branchKindAt(x: number, y: number, seed: number): ObstacleKind | null {
   const rNorm = _normRadius(x, y);
-  if (rNorm <= PROVINCE_RESOURCE_OUTER_RADIUS_RATIO) return false;
+  if (rNorm <= PROVINCE_RESOURCE_OUTER_RADIUS_RATIO) return null;
   const angle = _angleOf(x, y);
   const rTiles = rNorm * _MAP_HALF_DIAGONAL;
   for (let k = 0; k < BRANCH_COUNT; k++) {
@@ -132,9 +139,10 @@ function _isOnBranch(x: number, y: number, seed: number): boolean {
     const distToLine = rTiles * Math.sin(da);
     const widthNoise = valueNoise(rTiles, k * 1000, 1 / 30, seed ^ 0x0e01 ^ k);
     const widthTiles = TERRAIN_BAND_WIDTH_MIN + widthNoise * (TERRAIN_BAND_WIDTH_MAX - TERRAIN_BAND_WIDTH_MIN);
-    if (Math.abs(distToLine) <= widthTiles / 2) return true;
+    // §2.3: the 6 branches alternate mountain-spur / river-tributary by parity of the branch index.
+    if (Math.abs(distToLine) <= widthTiles / 2) return k % 2 === 0 ? 'mountain' : 'river';
   }
-  return false;
+  return null;
 }
 
 // ── Cities (ADR-034 §3): point-node siege targets, layered on top of the procedural terrain ──────────
@@ -215,7 +223,7 @@ export interface MapEditorCityNode {
   x: number;
   y: number;
   level: number;
-  /** Square footprint side length in tiles; 1 for all point nodes, `WORLD_CENTER_FOOTPRINT` for the world center. */
+  /** Square footprint side length in tiles, derived from level via {@link cityFootprint} (3/5/7/9 by tier); `WORLD_CENTER_FOOTPRINT` for the world center. */
   footprint: number;
 }
 
@@ -238,16 +246,16 @@ export function allCityNodes(worldId: string): MapEditorCityNode[] {
   const caps = provinceCapitalPositions(mapW, mapH, seed);
   caps.forEach(([x, y], provinceIdx) => {
     if (provinceIdx === CENTER_CAPITAL_IDX) return; // the core province's "capital" is the world center above
-    nodes.push({ id: `capital-${provinceIdx}`, kind: 'capital', provinceIdx, x, y, level: PROVINCE_CAPITAL_LEVEL, footprint: 1 });
+    nodes.push({ id: `capital-${provinceIdx}`, kind: 'capital', provinceIdx, x, y, level: PROVINCE_CAPITAL_LEVEL, footprint: cityFootprint(PROVINCE_CAPITAL_LEVEL) });
   });
 
   let garrisonIdx = 0;
   let gateIdx = 0;
   for (const node of _worldCityNodes(mapW, mapH, seed)) {
     if (node.kind === 'garrison') {
-      nodes.push({ id: `garrison-${garrisonIdx++}`, kind: 'garrison', provinceIdx: node.provinceIdx, x: node.x, y: node.y, level: node.level, footprint: 1 });
+      nodes.push({ id: `garrison-${garrisonIdx++}`, kind: 'garrison', provinceIdx: node.provinceIdx, x: node.x, y: node.y, level: node.level, footprint: cityFootprint(node.level) });
     } else {
-      nodes.push({ id: `gate-${gateIdx++}`, kind: 'gateCity', x: node.x, y: node.y, level: node.level, footprint: 1 });
+      nodes.push({ id: `gate-${gateIdx++}`, kind: 'gateCity', x: node.x, y: node.y, level: node.level, footprint: cityFootprint(node.level) });
     }
   }
   return nodes;
@@ -312,15 +320,18 @@ export function proceduralTile(world: string, x: number, y: number): ProceduralT
   }
 
   // Terrain: 2 main province rings, then river chords, then birth-province branches — first match wins.
+  // Ring boundaries are the 折痕岭 (creased ridges → mountain art); the two crossing chords are the 墨河
+  // (ink rivers → river art); branches alternate mountain-spur / river-tributary (see _branchKindAt).
   const ring1 = _ringTerrainAt(x, y, seed, PROVINCE_RESOURCE_OUTER_RADIUS_RATIO, 0x0a01);
-  if (ring1) return ring1 === 'gate' ? { type: 'gate', level: Math.max(2, SLG_MAP_MAX_LEVEL - 1) } : { type: 'obstacle', level: 1 };
+  if (ring1) return ring1 === 'gate' ? { type: 'gate', level: Math.max(2, SLG_MAP_MAX_LEVEL - 1) } : _obstacle('mountain');
   const ring0 = _ringTerrainAt(x, y, seed, PROVINCE_CORE_RADIUS_RATIO, 0x0a02);
-  if (ring0) return ring0 === 'gate' ? { type: 'gate', level: Math.max(2, SLG_MAP_MAX_LEVEL - 1) } : { type: 'obstacle', level: 1 };
+  if (ring0) return ring0 === 'gate' ? { type: 'gate', level: Math.max(2, SLG_MAP_MAX_LEVEL - 1) } : _obstacle('mountain');
   for (let c = 0; c < RIVER_CHORD_COUNT; c++) {
     const river = _riverChordAt(x, y, seed, c);
-    if (river) return river === 'gate' ? { type: 'gate', level: Math.max(2, SLG_MAP_MAX_LEVEL - 1) } : { type: 'obstacle', level: 1 };
+    if (river) return river === 'gate' ? { type: 'gate', level: Math.max(2, SLG_MAP_MAX_LEVEL - 1) } : _obstacle('river');
   }
-  if (_isOnBranch(x, y, seed)) return { type: 'obstacle', level: 1 }; // branches have no free gates — only the gate-city nodes checked above
+  const branchKind = _branchKindAt(x, y, seed);
+  if (branchKind) return _obstacle(branchKind); // branches have no free gates — only the gate-city nodes checked above
 
   // Province + per-ring level distribution (ADR-034 §4).
   const provIdx = provinceIdxAt(x, y);
@@ -360,6 +371,8 @@ export interface MapTemplateTile {
   type: TileType;
   level: number;
   resType?: ResourceType;
+  /** For `type:'obstacle'` only: river vs mountain art (see {@link ObstacleKind}). Round-trips through the editor's publish path. */
+  obstacleKind?: ObstacleKind;
 }
 
 /** Template metadata (no tile payload — used for the template-picker list in the editor). */

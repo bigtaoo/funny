@@ -2,8 +2,7 @@
 // worlds: server-generated first draft (proceduralTile) → hand-tuned in the admin map editor → cloned
 // (copied, not referenced) into a world's own baseline at world-open time so later template edits never
 // retroactively affect a running world. Independent of WorldService/WorldCore — instantiated standalone in
-// index.ts and called directly from httpApi.ts's /admin/world/map-templates/* branch, the same way
-// AuctionService is wired.
+// index.ts and called directly from httpApi.ts's /admin/world/map-templates/* branch.
 import {
   proceduralTile,
   MAP_TEMPLATE_SAVE_MAX_TILES,
@@ -66,7 +65,7 @@ export class MapTemplateService {
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const t = proceduralTile(templateId, x, y);
-        docs.push({ _id: `${templateId}:${x}:${y}`, templateId, x, y, type: t.type, level: t.level, ...(t.resType ? { resType: t.resType } : {}) });
+        docs.push({ _id: `${templateId}:${x}:${y}`, templateId, x, y, type: t.type, level: t.level, ...(t.resType ? { resType: t.resType } : {}), ...(t.obstacleKind ? { obstacleKind: t.obstacleKind } : {}) });
       }
     }
     await bulkChunked(docs, (chunk) => this.deps.cols.mapTemplateTiles.insertMany(chunk, { ordered: false }));
@@ -97,7 +96,7 @@ export class MapTemplateService {
     const docs = await this.deps.cols.mapTemplateTiles
       .find({ templateId, x: { $gte: x0, $lt: x0 + w }, y: { $gte: y0, $lt: y0 + h } })
       .toArray();
-    return docs.map((d) => ({ x: d.x, y: d.y, type: d.type, level: d.level, ...(d.resType ? { resType: d.resType } : {}) }));
+    return docs.map((d) => ({ x: d.x, y: d.y, type: d.type, level: d.level, ...(d.resType ? { resType: d.resType } : {}), ...(d.obstacleKind ? { obstacleKind: d.obstacleKind } : {}) }));
   }
 
   /** Diff-save (§24 "保存时只上发本次改动的格子") — upserts exactly the tiles the editor changed. No lock: last writer wins. */
@@ -119,7 +118,7 @@ export class MapTemplateService {
         chunk.map((t) => ({
           replaceOne: {
             filter: { _id: `${templateId}:${t.x}:${t.y}` },
-            replacement: { _id: `${templateId}:${t.x}:${t.y}`, templateId, x: t.x, y: t.y, type: t.type, level: t.level, ...(t.resType ? { resType: t.resType } : {}) },
+            replacement: { _id: `${templateId}:${t.x}:${t.y}`, templateId, x: t.x, y: t.y, type: t.type, level: t.level, ...(t.resType ? { resType: t.resType } : {}), ...(t.obstacleKind ? { obstacleKind: t.obstacleKind } : {}) },
             upsert: true,
           },
         })),
@@ -163,7 +162,7 @@ export class MapTemplateService {
       batch.push(t);
       if (batch.length >= BULK_CHUNK) {
         await this.deps.cols.mapBaselines.insertMany(
-          batch.map((t) => ({ _id: `${worldId}:${t.x}:${t.y}`, worldId, x: t.x, y: t.y, type: t.type, level: t.level, ...(t.resType ? { resType: t.resType } : {}) })),
+          batch.map((t) => ({ _id: `${worldId}:${t.x}:${t.y}`, worldId, x: t.x, y: t.y, type: t.type, level: t.level, ...(t.resType ? { resType: t.resType } : {}), ...(t.obstacleKind ? { obstacleKind: t.obstacleKind } : {}) })),
           { ordered: false },
         );
         cloned += batch.length;
@@ -172,7 +171,7 @@ export class MapTemplateService {
     }
     if (batch.length > 0) {
       await this.deps.cols.mapBaselines.insertMany(
-        batch.map((t) => ({ _id: `${worldId}:${t.x}:${t.y}`, worldId, x: t.x, y: t.y, type: t.type, level: t.level, ...(t.resType ? { resType: t.resType } : {}) })),
+        batch.map((t) => ({ _id: `${worldId}:${t.x}:${t.y}`, worldId, x: t.x, y: t.y, type: t.type, level: t.level, ...(t.resType ? { resType: t.resType } : {}), ...(t.obstacleKind ? { obstacleKind: t.obstacleKind } : {}) })),
         { ordered: false },
       );
       cloned += batch.length;

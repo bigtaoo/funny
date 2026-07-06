@@ -391,3 +391,14 @@
   - `tools/map-editor` 工具仍未搭骨架，讨论期验证骨架用的 HTML/JS 原型未提交仓库——留后续任务。
   - 城池驻军/耐久数值、资源州/核心州是否也要分级城池梯度、国民加成如何随分层结构调整，均留待后续 ADR。
 - **教训**：两条并行会话在同一天独立展开"国家版图重构"这个大改动，导致 ADR 编号撞车、代码方向冲突——已落地代码被判定作废意味着那批 e2e 测试修复工作也随之作废。后续如有多会话并行处理同一模块的结构性改动，应在开工前先检查是否有其他会话正在动同一处（如 `git log` 看最近的 daily 分支提交），或至少在长任务过程中定期 `git fetch`/查 worktree 列表交叉核对。
+
+## ADR-035 地图编辑器/游戏渲染对齐：河/山可分 + 城池按级出图与占地 — Accepted — 2026-07-06
+
+- **决策**（用户拍板，两问两答）：
+  1. **河流 vs 山脉端到端区分**：给瓦片加可选 `obstacleKind: 'river'|'mountain'`（`@nw/shared` `core.ts`），**类型仍是单一 `obstacle`**（寻路/占领/不可通行逻辑一字不改，纯美术标签）。`proceduralTile` 给自己生成的阻挡带打标（折痕岭=山、墨河=河、6 支脉按奇偶交替）；编辑器画笔的河/山经 `rasterizeMapEdits` 带进 `MapTemplateTile.obstacleKind`。渲染端 `terrainTextureName(…, obstacleKind?)` 有 kind 用对应贴图，否则回退旧位置哈希。这修正了旧行为——画一条河会被 `(tx*31+ty*17)%2` 哈希成半河半山。
+  2. **城池每级一张图 + 占地随级递增**：`cityFootprint(level)`=3/5/7/9（Lv1-2/3-5/6-8/9-10；世界中心 9×9=顶档），`allCityNodes` footprint 由它派生；`getCityTextureForLevel` 先取 `city_l{level}`（10 张一套）、回退旧 4 档 `city_lv{tier}`。游戏 `WorldMapRenderer.refreshCityLayer` 与编辑器 `refreshCitySprites` 用同函数同缩放，除玩家主城外也为 NPC 城池节点（州府/关隘城/分级城/世界中心）画按 footprint 缩放的城池精灵。
+- **范围（用户拍板"先做渲染对齐"）**：本轮只做**共享数据模型 + 两端渲染器**，不动世界 API/持久化。因此对齐的是**"生成地图"**（编辑器与游戏都从同一份 `proceduralTile`/`allCityNodes` 本地派生，天然一致）。
+- **影响文档**：[`design/tools/map-editor/DESIGN.md`](tools/map-editor/DESIGN.md) §0（2026-07-06 条）；[`SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.1（山/河渲染区分）、§3.4（每级出图+占地+NPC 城精灵）；[`design/product/city-image-prompts.md`](product/city-image-prompts.md)（改为每级 10 张 + 6 张新图 prompt）。
+- **美术缺口**：需新出 6 张城池图 `city_l2/l4/l5/l7/l8/l10`（未就位时按档自动回退，视觉不劣化）。
+- **已知遗留（另起任务）**：编辑器"发布"仍到不了运行中的世界——`worldsvc` `getMap/getTile` 只读 `proceduralTile`，从不读世界创建时克隆进 `mapBaselines` 的模板 tile。让发布真正生效需把 `mapBaselines` 接进热读路径（含 `obstacleKind` 带进 `MapBaselineTileDoc`），是 ADR-034/§24 遗留的独立改动。
+- **为什么是 `obstacleKind` 而非新 `TileType`**：全仓大量 `type === 'obstacle'` 判定（寻路、落城校验、占领）依赖单一类型；加子字段零风险，加新类型要改所有判定点。

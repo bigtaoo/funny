@@ -13,7 +13,7 @@ import {
   type AuditAction,
 } from '@nw/shared';
 import type { AdminCollections, AuditDoc } from '../db';
-import type { StatsClient, PlayerClient, AntiCheatClient, MismatchClient, SuspiciousPveClient, MailDispatcher, AnalyticsClient, WorldClient, LadderClient, EventsClient, GachaPoolsClient, PromoClient } from '../clients';
+import type { StatsClient, PlayerClient, AntiCheatClient, MismatchClient, SuspiciousPveClient, MailDispatcher, AnalyticsClient, WorldClient, AuctionClient, LadderClient, EventsClient, GachaPoolsClient, PromoClient } from '../clients';
 import { AdminError } from './errors';
 
 const log = createLogger('admin:service');
@@ -36,6 +36,7 @@ export interface AdminServiceDeps {
   mail: MailDispatcher;
   analytics: AnalyticsClient;
   world: WorldClient;
+  auction: AuctionClient;
   ladder: LadderClient;
   events: EventsClient;
   gachaPools: GachaPoolsClient;
@@ -74,6 +75,7 @@ export class AdminServiceBase {
   protected readonly mail: MailDispatcher;
   protected readonly analytics: AnalyticsClient;
   protected readonly world: WorldClient;
+  protected readonly auction: AuctionClient;
   protected readonly ladder: LadderClient;
   protected readonly events: EventsClient;
   protected readonly gachaPools: GachaPoolsClient;
@@ -95,6 +97,7 @@ export class AdminServiceBase {
     this.mail = deps.mail;
     this.analytics = deps.analytics;
     this.world = deps.world;
+    this.auction = deps.auction;
     this.ladder = deps.ladder;
     this.events = deps.events;
     this.gachaPools = deps.gachaPools;

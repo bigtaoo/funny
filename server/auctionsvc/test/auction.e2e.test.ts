@@ -1,7 +1,8 @@
 // auctionsvc AuctionService end-to-end (auction task 4, migrated from server/worldsvc/test/auction.e2e.test.ts).
 // Tests: listing / buying (deduct coins + deliver item + pay seller + 10% tax) / cancel (refund item) / expiry scan (refund item);
 // validation: equipment not implemented / invalid duration / listing cap / buying own auction / non-owner cancel / already sold / NOT_DESIGNATED_BUYER;
-// plus skin trading (§9 task4 new itemType).
+// plus skin trading (§9 task4 new itemType), character-card trading (CC-5), the C daily-purchase cap,
+// and B auction anti-snipe extension / below-buyout no-settle edge cases.
 // Requires `cd server && docker compose up -d` (or falls back to mongodb-memory-server via globalSetup).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -9,8 +10,11 @@ import {
   AUCTION_MAX_LISTINGS,
   AUCTION_TAX_RATE,
   AUCTION_DAILY_LIST_CAP,
+  AUCTION_DAILY_BUY_CAP,
+  AUCTION_ANTI_SNIPE_WINDOW_SEC,
   SlgError,
   type EquipmentInstance,
+  type CardInstance,
 } from '@nw/shared';
 import { createAuctionMongo, type AuctionMongo } from '../src/db';
 import { AuctionService } from '../src/auctionService';
@@ -52,6 +56,14 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
   const seedSkin = (acct: string, skinId: string): void => {
     if (!skinInv.has(acct)) skinInv.set(acct, new Set());
     skinInv.get(acct)!.add(skinId);
+  };
+  // Card (CC-5): simulated meta inventory (Map<account, Map<instanceId, CardInstance>>) + escrow/transfer log.
+  const cardInv = new Map<string, Map<string, CardInstance>>();
+  const cardEscrows: Array<{ account: string; instanceId: string }> = [];
+  const cardGrants: Array<{ account: string; instanceId: string }> = [];
+  const seedCard = (acct: string, inst: CardInstance): void => {
+    if (!cardInv.has(acct)) cardInv.set(acct, new Map());
+    cardInv.get(acct)!.set(inst.id, inst);
   };
 
   const commercial: AuctionCommercialClient = {
@@ -97,8 +109,20 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
       seedEquip(accountId, instance);
       equipGrants.push({ account: accountId, instanceId: instance.id, orderId: '' });
     },
-    async escrowCard() { throw new Error('unused'); },
-    async grantCard() { /* unused */ },
+    async escrowCard(accountId, instanceId) {
+      const inv = cardInv.get(accountId);
+      const inst = inv?.get(instanceId);
+      if (!inst) throw new SlgError('CARD_NOT_FOUND');
+      // Escrow guard mirrors meta: a card with any equipped gear may not be listed.
+      if (Object.values(inst.gear).some((v) => v != null)) throw new SlgError('CARD_HAS_GEAR');
+      inv!.delete(instanceId);
+      cardEscrows.push({ account: accountId, instanceId });
+      return inst;
+    },
+    async grantCard(accountId, instance) {
+      seedCard(accountId, instance);
+      cardGrants.push({ account: accountId, instanceId: instance.id });
+    },
     async escrowSkin(accountId, skinId) {
       const inv = skinInv.get(accountId);
       if (!inv?.has(skinId)) throw new SlgError('SKIN_NOT_FOUND');
@@ -125,6 +149,9 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     equipEscrows.length = 0;
     equipGrants.length = 0;
     skinInv.clear();
+    cardInv.clear();
+    cardEscrows.length = 0;
+    cardGrants.length = 0;
     mails.length = 0;
     nowMs = Date.now();
 
@@ -499,5 +526,132 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
       sellerId: 'alice', itemType: 'skin',
       item: { skinId: 'skin_never_owned' }, qty: 1, price: 500, durationSec: DUR,
     })).rejects.toMatchObject({ code: 'SKIN_NOT_FOUND' });
+  });
+
+  // ── CC-5 Character-card trading (CHARACTER_CARDS_DESIGN §11, no price guardrail — cold-start pass-through) ────
+  const mkCard = (id: string, defId = 'lichuang', extra: Partial<CardInstance> = {}): CardInstance => ({
+    id, defId, level: 1, xp: 0, gear: {}, locked: false, ...extra,
+  });
+
+  it('CC-5 card listing → escrow removes from cardInv + stores instance snapshot + qty always 1', async () => {
+    seedCard('alice', mkCard('cd1'));
+    const view = await svc.createAuction({
+      sellerId: 'alice', itemType: 'card',
+      item: { instanceId: 'cd1' }, qty: 99, price: 500, durationSec: DUR, // qty coerced to 1
+    });
+    expect(view.status).toBe('open');
+    expect(view.qty).toBe(1);
+    expect(view.itemType).toBe('card');
+    expect((view.item.instance as CardInstance).id).toBe('cd1');
+    expect(cardEscrows).toHaveLength(1);
+    expect(cardInv.get('alice')?.has('cd1')).toBe(false); // removed from seller inventory
+  });
+
+  it('CC-5 card buy → instance mailed to buyer (full level/xp snapshot) + seller paid after tax', async () => {
+    seedCard('alice', mkCard('cd1', 'lichuang', { level: 5, xp: 42 }));
+    const view = await svc.createAuction({
+      sellerId: 'alice', itemType: 'card',
+      item: { instanceId: 'cd1' }, qty: 1, price: 500, durationSec: DUR,
+    });
+    const bought = await svc.buyAuction('bob', view.auctionId);
+    expect(bought.status).toBe('sold');
+    expect(spends[0]).toMatchObject({ account: 'bob', amount: 500 });
+    // escrow-out: buyer receives the card instance via mail attachment (level/xp snapshot carried as-is)
+    const att = mailAtt('bob', 'auction_buy:');
+    expect(att?.kind).toBe('card');
+    expect(att?.instance as CardInstance | undefined).toMatchObject({ id: 'cd1', defId: 'lichuang', level: 5, xp: 42 });
+    const tax = Math.floor(500 * AUCTION_TAX_RATE);
+    expect(grants.find((g) => g.account === 'alice' && g.amount === 500 - tax)).toBeTruthy();
+  });
+
+  it('CC-5 card cancel → instance mailed back to seller', async () => {
+    seedCard('alice', mkCard('cd1'));
+    const view = await svc.createAuction({
+      sellerId: 'alice', itemType: 'card',
+      item: { instanceId: 'cd1' }, qty: 1, price: 500, durationSec: DUR,
+    });
+    await svc.cancelAuction('alice', view.auctionId);
+    // escrow-out: not returned directly to inventory; delivered via mail (claimed to re-enter cardInv)
+    expect(cardInv.get('alice')?.has('cd1')).toBe(false);
+    const att = mailAtt('alice', 'auction_cancel:');
+    expect(att?.kind).toBe('card');
+    expect((att?.instance as CardInstance | undefined)?.id).toBe('cd1');
+  });
+
+  it('CC-5 card expiry scan → instance mailed back to seller', async () => {
+    seedCard('alice', mkCard('cd1'));
+    const view = await svc.createAuction({
+      sellerId: 'alice', itemType: 'card',
+      item: { instanceId: 'cd1' }, qty: 1, price: 500, durationSec: DUR,
+    });
+    await mongo!.collections.auctions.updateOne({ _id: view.auctionId }, { $set: { expireAt: nowMs - 1000 } });
+    const count = await svc.processExpiredAuctions();
+    expect(count).toBe(1);
+    const att = mailAtt('alice', 'auction_expire:');
+    expect((att?.instance as CardInstance | undefined)?.id).toBe('cd1');
+  });
+
+  it('CC-5 card with equipped gear → CARD_HAS_GEAR (meta escrow rejection propagated)', async () => {
+    seedCard('alice', mkCard('cd1', 'lichuang', { gear: { weapon: 'eq_geared' } }));
+    await expect(svc.createAuction({
+      sellerId: 'alice', itemType: 'card',
+      item: { instanceId: 'cd1' }, qty: 1, price: 500, durationSec: DUR,
+    })).rejects.toMatchObject({ code: 'CARD_HAS_GEAR' });
+    // escrow rejected before the doc is written → no open listing created
+    expect(cardEscrows).toHaveLength(0);
+  });
+
+  it('CC-5 card not found → CARD_NOT_FOUND (meta escrow rejection propagated)', async () => {
+    await expect(svc.createAuction({
+      sellerId: 'alice', itemType: 'card',
+      item: { instanceId: 'cd_never_owned' }, qty: 1, price: 500, durationSec: DUR,
+    })).rejects.toMatchObject({ code: 'CARD_NOT_FOUND' });
+  });
+
+  // ── C Daily purchase cap (mirror of the daily listing-cap test) ───────────────────────────────────────
+  it('C daily purchases exceed AUCTION_DAILY_BUY_CAP → AUCTION_LIMIT_REACHED', async () => {
+    // Seed AUCTION_DAILY_BUY_CAP fixed-price listings from distinct sellers, buy each (consumes buyer daily-buy slots), then the next buy hits the cap.
+    const ids: string[] = [];
+    for (let i = 0; i < AUCTION_DAILY_BUY_CAP + 1; i++) {
+      const v = await svc.createAuction({
+        sellerId: `seller${i}`, itemType: 'material',
+        item: { material: 'scrap' }, qty: 1, price: 10, durationSec: DUR,
+      });
+      ids.push(v.auctionId);
+    }
+    for (let i = 0; i < AUCTION_DAILY_BUY_CAP; i++) {
+      await svc.buyAuction('greedy', ids[i]!);
+    }
+    await expect(svc.buyAuction('greedy', ids[AUCTION_DAILY_BUY_CAP]!))
+      .rejects.toMatchObject({ code: 'AUCTION_LIMIT_REACHED' });
+  });
+
+  // ── B Bidding edge cases (anti-snipe extension / below-buyout no-settle) ─────────────────────────────
+  it('B anti-snipe: a bid inside the window before expiry extends expireAt', async () => {
+    const v = await svc.createAuction({
+      sellerId: 'alice', itemType: 'material', saleMode: 'auction',
+      item: { material: 'scrap' }, qty: 1, startPrice: 10, durationSec: DUR,
+    });
+    // Push expiry to just inside the anti-snipe window (100s away, window is AUCTION_ANTI_SNIPE_WINDOW_SEC).
+    const nearExpiry = nowMs + 100 * 1000;
+    await mongo!.collections.auctions.updateOne({ _id: v.auctionId }, { $set: { expireAt: nearExpiry } });
+    const bid = await svc.placeBid('bob', v.auctionId, 12);
+    // Extended to now + full window (which is beyond the original near expiry).
+    const expectedExtended = nowMs + AUCTION_ANTI_SNIPE_WINDOW_SEC * 1000;
+    expect(bid.expireAt).toBe(expectedExtended);
+    expect(bid.expireAt).toBeGreaterThan(nearExpiry);
+  });
+
+  it('B bid at/above start but below buyout does NOT settle → stays open', async () => {
+    const v = await svc.createAuction({
+      sellerId: 'alice', itemType: 'material', saleMode: 'auction',
+      item: { material: 'scrap' }, qty: 1, startPrice: 10, buyoutPrice: 18, durationSec: DUR,
+    });
+    const bid = await svc.placeBid('bob', v.auctionId, 12); // 12 < 18 buyout
+    expect(bid.status).toBe('open');
+    expect(bid.topBid).toMatchObject({ bidderId: 'bob', amount: 12 });
+    expect(bid.buyerId).toBeUndefined();
+    // no settlement mail yet
+    expect(mailAtt('bob', 'auction_settle:')).toBeUndefined();
   });
 });

@@ -519,8 +519,6 @@ export interface WorldClient {
   settleWorld(worldId: string): Promise<unknown>;
   resetWorld(worldId: string): Promise<unknown>;
   closeWorld(worldId: string): Promise<void>;
-  /** Scan for anomalous auction transactions (G7 anti-RMT). worldsvc aggregates suspicious pairs offline; admin creates an audit ticket based on the results. */
-  listAuctionAnomalies(worldId: string, windowSec?: number): Promise<AuctionAnomaly[]>;
 
   // ── Map templates (§24 Layer A, admin map editor) ──
   listMapTemplates(): Promise<MapTemplateSummary[]>;
@@ -579,18 +577,6 @@ export class HttpWorldClient implements WorldClient {
     await this.post('/admin/world/close', { worldId });
   }
 
-  async listAuctionAnomalies(worldId: string, windowSec?: number): Promise<AuctionAnomaly[]> {
-    if (!this.baseUrl) return [];
-    const qs = new URLSearchParams({ worldId });
-    if (windowSec != null) qs.set('windowSec', String(windowSec));
-    const res = await fetch(`${this.baseUrl}/admin/world/audit/anomalies?${qs}`, {
-      headers: internalHeaders('admin', this.internalKey),
-    });
-    if (!res.ok) throw new Error(`listAuctionAnomalies failed: HTTP ${res.status}`);
-    const body = (await res.json()) as { ok?: boolean; data?: AuctionAnomaly[] };
-    return body.data ?? [];
-  }
-
   private async get(path: string): Promise<unknown> {
     if (!this.baseUrl) throw new Error('worldsvc not configured');
     const res = await fetch(`${this.baseUrl}${path}`, { headers: internalHeaders('admin', this.internalKey) });
@@ -646,13 +632,49 @@ export const nullWorldClient: WorldClient = {
   async settleWorld() { throw new Error('worldsvc not configured'); },
   async resetWorld() { throw new Error('worldsvc not configured'); },
   async closeWorld() { throw new Error('worldsvc not configured'); },
-  async listAuctionAnomalies() { return []; },
   async listMapTemplates() { return []; },
   async generateMapTemplate() { throw new Error('worldsvc not configured'); },
   async getMapTemplateTiles() { return []; },
   async saveMapTemplateTiles() { throw new Error('worldsvc not configured'); },
   async activateMapTemplate() { throw new Error('worldsvc not configured'); },
   async deleteMapTemplate() { throw new Error('worldsvc not configured'); },
+};
+
+// ── Auction anomaly scan (auctionsvc /internal/audit/anomalies, G7/§17.7) ──────────
+// Auction task5 (AUCTION_DESIGN §9): auctionsvc is now the sole owner of auction state, decoupled from
+// worldId — scanning is global (no worldId param), unlike the old worldsvc-scoped scan it replaces.
+export interface AuctionClient {
+  readonly available: boolean;
+  /** Scan for anomalous auction transactions (G7 anti-RMT), global (no worldId — auction market is decoupled from SLG worlds). */
+  scanAnomalies(windowSec?: number): Promise<AuctionAnomaly[]>;
+}
+
+export class HttpAuctionClient implements AuctionClient {
+  constructor(
+    private readonly baseUrl: string | null,
+    private readonly internalKey: string,
+  ) {}
+
+  get available(): boolean {
+    return this.baseUrl !== null;
+  }
+
+  async scanAnomalies(windowSec?: number): Promise<AuctionAnomaly[]> {
+    if (!this.baseUrl) return [];
+    const qs = new URLSearchParams();
+    if (windowSec != null) qs.set('windowSec', String(windowSec));
+    const res = await fetch(`${this.baseUrl}/internal/audit/anomalies?${qs}`, {
+      headers: internalHeaders('admin', this.internalKey),
+    });
+    if (!res.ok) throw new Error(`scanAnomalies failed: HTTP ${res.status}`);
+    const body = (await res.json()) as { ok?: boolean; data?: AuctionAnomaly[] };
+    return body.data ?? [];
+  }
+}
+
+export const nullAuctionClient: AuctionClient = {
+  available: false,
+  async scanAnomalies() { return []; },
 };
 
 // ── Ladder season (meta /admin/ladder/season/roll, SE-3) ─────────────────────

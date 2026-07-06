@@ -196,9 +196,13 @@ export class WorldApiClient {
       clearTimeout(timer);
     }
 
-    const json = await res.json() as { ok: boolean; data?: T; code?: string; message?: string };
+    // Standard @nw/shared ApiResp envelope: { ok:false, error:{ code, message } }
+    // (same shape metaserver's ApiClient reads). NOT top-level code/message — reading
+    // json.code here silently collapsed every world/auction/social error to 'UNKNOWN',
+    // breaking the AuctionScene error-code→toast mapping. Kept tolerant of a missing error.
+    const json = await res.json() as { ok: boolean; data?: T; error?: { code?: string; message?: string } };
     if (!json.ok) {
-      throw new WorldApiError(json.code ?? 'UNKNOWN', json.message ?? 'world api error');
+      throw new WorldApiError(json.error?.code ?? 'UNKNOWN', json.error?.message ?? 'world api error');
     }
     return json.data as T;
   }
@@ -417,17 +421,17 @@ export class WorldApiClient {
   // ── Auction ────────────────────────────────────────────────────────────────
 
   async listAuctions(
-    worldId: string,
     opts?: { itemType?: string; limit?: number },
   ): Promise<AuctionView[]> {
-    const params = new URLSearchParams({ worldId });
+    const params = new URLSearchParams();
     if (opts?.itemType) params.set('itemType', opts.itemType);
     if (opts?.limit) params.set('limit', String(opts.limit));
-    return this.req('GET', `/auction/list?${params}`);
+    const qs = params.toString() ? `?${params}` : '';
+    return this.req('GET', `/auction/list${qs}`);
   }
 
-  async getMyListings(worldId: string): Promise<AuctionView[]> {
-    return this.req('GET', `/auction/mine?worldId=${encodeURIComponent(worldId)}`);
+  async getMyListings(): Promise<AuctionView[]> {
+    return this.req('GET', '/auction/mine');
   }
 
   /**
@@ -435,7 +439,6 @@ export class WorldApiClient {
    * + optional buyoutPrice (buy-now floor unit price).
    */
   async createAuction(
-    worldId: string,
     itemType: 'material' | 'equipment' | 'card',
     item: Record<string, unknown>,
     qty: number,
@@ -449,7 +452,7 @@ export class WorldApiClient {
     },
   ): Promise<AuctionView> {
     return this.req('POST', '/auction/create', {
-      worldId, itemType, item, qty, durationSec,
+      itemType, item, qty, durationSec,
       saleMode: opts?.saleMode ?? 'fixed',
       ...(opts?.price != null ? { price: opts.price } : {}),
       ...(opts?.startPrice != null ? { startPrice: opts.startPrice } : {}),
@@ -458,17 +461,17 @@ export class WorldApiClient {
     });
   }
 
-  async buyAuction(auctionId: string, worldId: string): Promise<{ ok: true }> {
-    return this.req('POST', `/auction/${encodeURIComponent(auctionId)}/buy`, { worldId });
+  async buyAuction(auctionId: string): Promise<{ ok: true }> {
+    return this.req('POST', `/auction/${encodeURIComponent(auctionId)}/buy`, {});
   }
 
   /** Place a bid (saleMode='auction'). amount = bid unit price; reaching or exceeding buyoutPrice closes the auction immediately. */
-  async placeBid(auctionId: string, worldId: string, amount: number): Promise<AuctionView> {
-    return this.req('POST', `/auction/${encodeURIComponent(auctionId)}/bid`, { worldId, amount });
+  async placeBid(auctionId: string, amount: number): Promise<AuctionView> {
+    return this.req('POST', `/auction/${encodeURIComponent(auctionId)}/bid`, { amount });
   }
 
-  async cancelAuction(auctionId: string, worldId: string): Promise<{ ok: true }> {
-    return this.req('POST', `/auction/${encodeURIComponent(auctionId)}/cancel`, { worldId });
+  async cancelAuction(auctionId: string): Promise<{ ok: true }> {
+    return this.req('POST', `/auction/${encodeURIComponent(auctionId)}/cancel`, {});
   }
 
   // ── Sect (S8-4b) ────────────────────────────────────────────────────────

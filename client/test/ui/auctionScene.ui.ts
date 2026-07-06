@@ -67,7 +67,6 @@ function buildScene(cb: Record<string, unknown> = {}): any {
   return new AuctionScene(createLayout(W, H), new InputManager(), {
     onBack() {},
     worldApi: stubWorldApi(),
-    worldId: WORLD_ID,
     ...cb,
   });
 }
@@ -232,7 +231,7 @@ describe('AuctionScene — doCreate()', () => {
     await scene.doCreate();
 
     expect(worldApi.createAuction).toHaveBeenCalledWith(
-      WORLD_ID, 'material', { material: 'lead' }, 5, AUCTION_DURATION_SEC,
+      'material', { material: 'lead' }, 5, AUCTION_DURATION_SEC,
       { saleMode: 'fixed', price: 20, designatedBuyerId: 'acc_9' },
     );
     scene.destroy();
@@ -251,7 +250,7 @@ describe('AuctionScene — doCreate()', () => {
     await scene.doCreate();
 
     expect(worldApi.createAuction).toHaveBeenCalledWith(
-      WORLD_ID, 'equipment', { instanceId: 'eq_7' }, 1, AUCTION_DURATION_SEC,
+      'equipment', { instanceId: 'eq_7' }, 1, AUCTION_DURATION_SEC,
       { saleMode: 'auction', startPrice: 15, buyoutPrice: undefined, designatedBuyerId: undefined },
     );
     // Equipment/card listings escrow server-side — the picker selection is cleared and the save re-pulled.
@@ -271,7 +270,7 @@ describe('AuctionScene — doCreate()', () => {
     await scene.doCreate();
 
     expect(worldApi.createAuction).toHaveBeenCalledWith(
-      WORLD_ID, 'card', { instanceId: 'card_3' }, 1, AUCTION_DURATION_SEC,
+      'card', { instanceId: 'card_3' }, 1, AUCTION_DURATION_SEC,
       { saleMode: 'fixed', price: 500, designatedBuyerId: undefined },
     );
     scene.destroy();
@@ -363,12 +362,12 @@ describe('AuctionScene — sidebar tabs & filter chips', () => {
   it('picking a filter chip re-fetches the market list scoped to that item type', () => {
     const worldApi = stubWorldApi();
     const scene = buildScene({ worldApi });
-    expect(worldApi.listAuctions).toHaveBeenCalledWith(WORLD_ID, undefined);
+    expect(worldApi.listAuctions).toHaveBeenCalledWith(undefined);
 
     tapLabel(scene, scene.container, t('auction.filterEquipment'));
     expect(scene.allFilter).toBe('equipment');
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(2);
-    expect(worldApi.listAuctions).toHaveBeenLastCalledWith(WORLD_ID, { itemType: 'equipment' });
+    expect(worldApi.listAuctions).toHaveBeenLastCalledWith({ itemType: 'equipment' });
     scene.destroy();
   });
 

@@ -25,10 +25,14 @@ export function SlgAuditMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase &
   return class extends Base {
     // ───────────────── SLG anomalous trade audit (G7 anti-RMT, §17.7) ─────────────────
 
-    /** Fetch auction anomaly scan for a world (capability slg.audit.view). Returns empty if worldsvc is unreachable. */
+    /**
+     * Fetch auction anomaly scan (capability slg.audit.view). Returns empty if auctionsvc is unreachable.
+     * `worldId` param is kept for route/frontend back-compat but unused: auction task5 (AUCTION_DESIGN §9)
+     * moved this scan from the worldsvc worldId-scoped implementation to auctionsvc's global scan.
+     */
     async slgScanAnomalies(worldId: string, windowSec?: number): Promise<AuctionAnomaly[]> {
-      if (!this.world.available) return [];
-      return this.world.listAuctionAnomalies(worldId, windowSec);
+      if (!this.auction.available) return [];
+      return this.auction.scanAnomalies(windowSec);
     }
 
     /**

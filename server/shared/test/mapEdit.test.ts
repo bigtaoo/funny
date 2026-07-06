@@ -4,24 +4,34 @@ import { proceduralTile, rasterizeMapEdits } from '../src/slg';
 describe('rasterizeMapEdits', () => {
   const worldId = 'rasterize-test';
 
-  it('returns no diffs when there are no paths/cities', () => {
+  it('returns no diffs when there are no terrain tiles/cities', () => {
     expect(rasterizeMapEdits(worldId, [], [])).toEqual([]);
   });
 
-  it('rasterizes a mountain/river path into obstacle tiles along its width', () => {
-    const diffs = rasterizeMapEdits(
-      worldId,
-      [{ type: 'mountain', points: [{ x: 100, y: 100 }, { x: 110, y: 100 }], width: 5 }],
-      [],
-    );
+  it('rasterizes painted mountain/river tiles into obstacle tiles, preserving the painted art kind', () => {
+    const tiles: { x: number; y: number; type: 'mountain' }[] = [];
+    for (let x = 100; x <= 110; x++) tiles.push({ x, y: 100, type: 'mountain' });
+    const diffs = rasterizeMapEdits(worldId, tiles, []);
     expect(diffs.length).toBeGreaterThan(0);
     for (const d of diffs) {
       expect(d.type).toBe('obstacle');
       expect(d.level).toBe(1);
       expect(d.resType).toBeUndefined();
+      expect(d.obstacleKind).toBe('mountain');
     }
-    // A tile far from the path segment must not appear.
+    // A tile that was never painted must not appear.
     expect(diffs.some((d) => d.x === 100 && d.y === 400)).toBe(false);
+  });
+
+  it('preserves river vs mountain art kind independently', () => {
+    const river = rasterizeMapEdits(worldId, [{ x: 120, y: 120, type: 'river' }], []);
+    expect(river.every((d) => d.obstacleKind === 'river')).toBe(true);
+    const mountain = rasterizeMapEdits(worldId, [{ x: 120, y: 120, type: 'mountain' }], []);
+    expect(mountain.every((d) => d.obstacleKind === 'mountain')).toBe(true);
+  });
+
+  it('ignores out-of-bounds painted tiles', () => {
+    expect(rasterizeMapEdits(worldId, [{ x: -1, y: 5, type: 'river' }], [])).toEqual([]);
   });
 
   it('rasterizes a dragged city into its footprint, overriding whatever terrain is there', () => {
@@ -38,10 +48,10 @@ describe('rasterizeMapEdits', () => {
     expect(diffs).toEqual([{ x: 50, y: 50, type: 'center', level: 10 }]);
   });
 
-  it('city footprint takes precedence over an overlapping path', () => {
+  it('city footprint takes precedence over an overlapping painted tile', () => {
     const diffs = rasterizeMapEdits(
       worldId,
-      [{ type: 'river', points: [{ x: 300, y: 300 }, { x: 300, y: 310 }], width: 9 }],
+      [{ x: 300, y: 305, type: 'river' }],
       [{ x: 300, y: 305, level: 8, footprint: 3, kind: 'capital' }],
     );
     const center = diffs.find((d) => d.x === 300 && d.y === 305);

@@ -135,7 +135,10 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 - 加「好友对战」入口 → `RoomScene`。
 - （S2 后）加「每日奖励」红点入口。
 - **匹配按钮氛围装饰（2026-07-05）**：右侧已有淡化交叉铅笔图腾（`heroMotif`，alpha 0.22）；左侧对称加一个随机角色剪影——`build()` 时从 6 个可战斗角色（infantry/archer/shieldbearer + max/lena/mara，复用 `render/UnitView.ts` 同款 `.tao` 骨骼动画包，池子见 `render/heroSilhouette.ts`）随机抽一个，用新增的 `StickmanRuntime.setSilhouette(color)`（`render/stickman/StickmanRuntime.ts`：把每根骨骼贴图的 RGB 乘成纯黑、只留原透明度）渲染成纯黑剪影，同样 alpha 0.22；`update(dt)` 里每 1.6–3.2 秒从该角色的 clip 列表随机切一个动作循环播放，纯装饰不影响任何交互/命中区。
-  - **尺寸/位置修正（2026-07-05 追加，2026-07-06 撤销重修）**：横向位置从"贴左边"改为"按钮左边界 → 文字左边界"距离的 1/3 处，不再紧贴边缘，此项保留。尺寸方面曾加过一版"创建后取 `getLocalBounds()` 实际高度再乘修正系数对齐按钮高度"的二次缩放，但各角色骨骼 bind pose 的包围盒差异很大（弓箭手张弓 vs 步兵持盾），按包围盒归一反而导致不同角色视觉大小不一致、位置也偏。2026-07-06 撤销该二次缩放，改回与战斗场景 `UnitView` 完全一致的做法：只用 `targetHeight / naturalHeight` 算 `baseScale`（`StickmanRuntime` 构造参数 `targetHeight`），不做额外拟合，六个角色因此固定同高。高度定为按钮高度的 95%（`heroFigureH = heroH * 0.95`），并以骨骼原点（在双脚处）为基准做垂直居中：`footY = 按钮纵向中心 + heroFigureH / 2`。
+  - **尺寸/居中的三次迭代与最终方案（2026-07-06 定稿）**：横向位置从"贴左边"改为"按钮左边界 → 文字左边界"距离的 1/3 处，此项一直保留。尺寸与垂直居中前两次均失败，根因是**都没量到真正画在屏幕上的像素框**——
+    1. 第一次（`0d7f90df`）用 `getLocalBounds()` 二次缩放，方向对但：① 在 `new StickmanRuntime()` 之后立刻测量，此时构造函数只 `play('idle')` 设了动画指针、`_applyPose()` 尚未运行，所有 sprite 仍堆在原点，量出的是乱框；② 框里混进了 shadow；③ 只改缩放没重算居中，仍用"脚=原点"假设。看起来更乱，遂回退。
+    2. 第二次（`4cb446fb`）据此判定"`getLocalBounds` 不可靠"，退回纯 `targetHeight / naturalHeight`。但 `naturalHeight` 是**骨骼关节跨度**（`skeleton.ts` `computeNaturalHeight`，只看 FK 关节不看贴图），头/脚/武器超出关节的量每个 rig 都不同 → "六角色大小不一致" + "脚=原点居中"两个原始 bug 原样保留。
+    3. 最终方案（本次）：新增 `StickmanRuntime.getRenderedLocalBounds()`——**在姿势已应用、排除影子（新增构造参数 `showShadow:false`）、跨所有 clip 全部关键帧取并集**的前提下测量真实渲染像素框；再经纯函数 `render/fitToBox.ts` `fitContentToBox(bounds, box, 0.90)` 拟合：渲染高度 = 按钮高度的 **90%**，且缩放与居中**全部基于实测框、绝不假设原点**，故六角色同高且真正上下居中于黑色按钮框内。拟合数学有单测兜底 `test/fitToBox.test.ts`（含"原点两侧不对称溢出仍 90%+居中""不同框同高"两条针对上述回归的断言）；`getRenderedLocalBounds` 对真实 `.tao` 的测量需真 PIXI 渲染器，本项目 node 测试环境 mock 掉了 PIXI，故该半仅靠 webpack 构建 + 肉眼确认。
 
 ### 4.2 RoomScene（好友房，S1）
 ```

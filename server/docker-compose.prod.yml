@@ -3,7 +3,7 @@
 #   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
 #
 # Endpoints: https://{NW_DOMAIN}/api/...(REST), wss://{NW_DOMAIN}/gw (control-plane: room/matchmaking), wss://{NW_DOMAIN}/ws (data-plane: lockstep),
-#            https://{NW_DOMAIN}/world|/family|/auction (SLG overworld REST, S8).
+#            https://{NW_DOMAIN}/world (SLG overworld REST, S8), https://{NW_DOMAIN}/auction (auction house, independent service auctionsvc, auction task5).
 # Internal routing (S1-M5, matchsvc as standalone process; matchsvc not exposed to public):
 #           gateway fetches ELO via NW_META_BASE_URL=http://metaserver:8080;
 #           gateway → matchsvc commands: NW_MATCHSVC_INTERNAL_URL=http://matchsvc:8091;
@@ -199,6 +199,30 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  # Auction house (auction task5, AUCTION_DESIGN §9): independent service, decoupled from worldId; public REST /auction/*.
+  # Uses dedicated DB notebook_wars_auction; calls meta (material/equipment/card/skin escrow + system mail) + commercial (coin spend/grant).
+  auctionsvc:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nw-server:latest
+    command: ["node", "auctionsvc/dist/index.js"]
+    environment:
+      NW_JWT_SECRET: ${NW_JWT_SECRET:?set NW_JWT_SECRET in .env}
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:?set NW_INTERNAL_KEY in .env}
+      NW_AUCTION_PORT: "18086"
+      NW_AUCTION_HOST: 0.0.0.0
+      NW_AUCTION_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_AUCTION_MONGO_DB: ${NW_AUCTION_MONGO_DB:-notebook_wars_auction}
+      NW_META_INTERNAL_URL: http://metaserver:8080
+      NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
+    depends_on:
+      mongo:
+        condition: service_healthy
+      commercial:
+        condition: service_started
+    restart: unless-stopped
+
   # Ops admin backend (S7, OPS_DESIGN). Not player-reachable; caddy does not route to it (internal network/VPN/IP allowlist only);
   # uses dedicated DB notebook_wars_admin; calls meta(player/mail) + gateway/matchsvc(/internal/stats).
   admin:
@@ -220,6 +244,8 @@ services:
       NW_META_BASE_URL: http://metaserver:8080
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
       NW_MATCHSVC_INTERNAL_URL: http://matchsvc:8091
+      NW_AUCTION_INTERNAL_URL: http://auctionsvc:18086
+      NW_WORLD_INTERNAL_URL: http://worldsvc:18084
     depends_on:
       mongo:
         condition: service_healthy
@@ -283,6 +309,7 @@ services:
       - gateway
       - gameserver
       - worldsvc
+      - auctionsvc
       - socialsvc
     restart: unless-stopped
 

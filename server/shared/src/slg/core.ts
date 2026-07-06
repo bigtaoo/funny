@@ -44,6 +44,14 @@ export type TileType =
  * All five are season resources (cleared at season end, banned from the auction house); the only global currency is `coins` (ECONOMY_BALANCE).
  */
 export type ResourceType = 'ink' | 'paper' | 'graphite' | 'metal' | 'sticker';
+/**
+ * River vs mountain: both are fully impassable `obstacle` tiles (ADR-034 §2.2 "两者都是完全不可通行地形"),
+ * so this NEVER affects gameplay/pathfinding — it only tags which hand-drawn doodle (terrain_river vs
+ * terrain_mountain) the tile renders with, so a painted/generated river reads as a river instead of the
+ * old position-hash coin-flip between the two art variants. Optional: when absent, renderers fall back to
+ * the deterministic per-tile hash (procedurally-generated obstacles that predate this tag stay unchanged).
+ */
+export type ObstacleKind = 'river' | 'mountain';
 export type MarchKind = 'attack' | 'reinforce' | 'occupy' | 'sweep' | 'scout' | 'return';
 export type SiegeOutcome = 'attacker_win' | 'defender_win' | 'draw';
 export type FamilyRole = 'leader' | 'elder' | 'member';
@@ -134,6 +142,30 @@ export function baseFootprintCells(ax: number, ay: number): { x: number; y: numb
 export function baseFootprintInBounds(ax: number, ay: number, mapW: number, mapH: number): boolean {
   return ax - BASE_FOOTPRINT_R >= 0 && ay - BASE_FOOTPRINT_R >= 0
       && ax + BASE_FOOTPRINT_R < mapW && ay + BASE_FOOTPRINT_R < mapH;
+}
+
+// ── City size + art tiering (ADR-034 §3 + 2026-07-06 user decision) ─────────────
+// A city's LEVEL (1..10) drives two orthogonal things: how many tiles it occupies (footprint, a size
+// gradient) and which hand-drawn image it shows. Both the game client and the map editor derive city
+// visuals from these two pure functions so "what the editor shows" and "what the game renders" stay in lock-step.
+/**
+ * City footprint (square side length in tiles) by level: tier1 (lv1-2)=3×3, tier2 (lv3-5)=5×5,
+ * tier3 (lv6-8)=7×7, tier4 (lv9-10)=9×9 — higher-level cities read as physically bigger settlements.
+ * The top tier equals {@link WORLD_CENTER_FOOTPRINT} (9), so the world-center巨城 sits naturally at the max size.
+ */
+export function cityFootprint(level: number): number {
+  if (level <= 2) return 3;
+  if (level <= 5) return 5;
+  if (level <= 8) return 7;
+  return 9;
+}
+
+/** City art tier (1..4) by level — 4 tier bands span the 10 levels (design/product/city-image-prompts.md). */
+export function cityTier(level: number): 1 | 2 | 3 | 4 {
+  if (level <= 2) return 1;
+  if (level <= 5) return 2;
+  if (level <= 8) return 3;
+  return 4;
 }
 
 // ── Procedural distribution knobs (U6 initial DRAFT; centralized here for easy tuning) ────────

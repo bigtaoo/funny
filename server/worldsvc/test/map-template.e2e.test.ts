@@ -3,6 +3,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Server } from 'http';
 import type { AddressInfo } from 'net';
+import { proceduralTile } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
 import { WorldService } from '../src/service';
 import { MapTemplateService } from '../src/mapTemplateService';
@@ -27,16 +28,16 @@ describe.skipIf(!mongo)('worldsvc map template e2e (§24)', () => {
   const m = mongo!;
   let server: Server;
   let base: string;
+  let svc: WorldService;
   const headers = { 'content-type': 'application/json', 'x-internal-key': KEY, 'x-internal-caller': 'admin' };
 
   beforeAll(async () => {
     await m.db.dropDatabase();
     await m.ensureIndexes();
-    const svc = new WorldService({ cols: m.collections, redis: null, mapW: 20, mapH: 20, now: () => Date.now() });
+    svc = new WorldService({ cols: m.collections, redis: null, mapW: 20, mapH: 20, now: () => Date.now() });
     server = startHttpApi(
       { host: '127.0.0.1', port: 0, jwtSecret: 'secret', internalKey: KEY },
       svc,
-      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -134,5 +135,53 @@ describe.skipIf(!mongo)('worldsvc map template e2e (§24)', () => {
     });
     const stillCloned = await m.collections.mapBaselines.findOne({ _id: 's9-tpl:1:1' });
     expect(stillCloned?.type).not.toBe('gate');
+  });
+
+  it('a published template edit reaches the runtime map read via the per-world baseline (§24 read-path)', async () => {
+    // tpl-a is the active template (activated earlier). Publish a distinctive edit, then open a fresh world so the
+    // clone picks it up, and read the tile back through the runtime getMap/getTile path.
+    const wid = 's9-baseline';
+    // The edit carries obstacleKind (§24 art-parity): a painted river must round-trip through baseline → getMap.
+    await fetch(`${base}/admin/world/map-templates/tpl-a/tiles`, {
+      method: 'PUT', headers, body: JSON.stringify({ tiles: [{ x: 2, y: 3, type: 'obstacle', level: 9, obstacleKind: 'river' }] }),
+    });
+    const openRes = await fetch(`${base}/admin/world/open`, {
+      method: 'POST', headers, body: JSON.stringify({ worldId: wid, season: 9, shard: 2, capacity: 100 }),
+    });
+    expect(openRes.status).toBe(200);
+
+    // The clone carried the edit (incl. obstacleKind) into the world's baseline...
+    const baseline = await m.collections.mapBaselines.findOne({ _id: `${wid}:2:3` });
+    expect(baseline?.type).toBe('obstacle');
+    expect(baseline?.level).toBe(9);
+    expect(baseline?.obstacleKind).toBe('river');
+
+    // ...and getMap now surfaces that baseline (not proceduralTile) for the un-owned tile.
+    const view = await svc.getMap(wid, 'reader-acct', 2, 3, 2);
+    const tile = view.tiles.find((t) => t.x === 2 && t.y === 3)!;
+    expect(tile.type).toBe('obstacle');
+    expect(tile.level).toBe(9);
+    expect(tile.obstacleKind).toBe('river');
+    // Single-tile read path resolves the baseline the same way.
+    const single = await svc.getTile(wid, 'reader-acct', 2, 3);
+    expect(single.type).toBe('obstacle');
+    expect(single.level).toBe(9);
+    expect(single.obstacleKind).toBe('river');
+  });
+
+  it('a world with no baseline rows falls back to proceduralTile (fallback preserved)', async () => {
+    // Never opened/cloned → no mapBaselines rows for this worldId → runtime reads fall back to proceduralTile.
+    const wid = 'no-baseline-world';
+    expect(await m.collections.mapBaselines.countDocuments({ worldId: wid })).toBe(0);
+
+    const view = await svc.getMap(wid, 'reader-acct', 5, 5, 1);
+    const tile = view.tiles.find((t) => t.x === 5 && t.y === 5)!;
+    const proc = proceduralTile(wid, 5, 5);
+    expect(tile.type).toBe(proc.type);
+    expect(tile.level).toBe(proc.level);
+
+    const single = await svc.getTile(wid, 'reader-acct', 5, 5);
+    expect(single.type).toBe(proc.type);
+    expect(single.level).toBe(proc.level);
   });
 });
