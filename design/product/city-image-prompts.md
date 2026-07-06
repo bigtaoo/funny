@@ -136,6 +136,12 @@ detail layers, prominent gold accents on the tallest spires.
 
 ---
 
+## 打包现状（2026-07-06）
+
+6 张新图已就位并打包进图集，帧齐全：`city_atlas` 现含 `city_lv1..4`（档回退）+ `city_l2/l4/l5/l7/l8/l10`（每级图），共 10 帧，1024×768，调色板量化 ~287 KB。`png+json` 已写入 `client/src/assets/slg/` 与 `tools/map-editor/src/assets/slg/`（两份字节一致）。打包脚本 `art/ui/slg-building/pack_city_atlas.js` 已重写：区域生长 flood-fill 去背（兼容浅色方格纸 / 深色晕影 / 纯色 / 已抠图 4 类背景），10 帧网格，sharp 调色板压缩。源图已按帧名重命名（`city_l{n}.png` / `city_lv{n}.png` / `city_l10.webp`）。
+
+- **仍待补**：Lv1/3/6/9 无专属图，运行时回退到所属档的 `city_lv{tier}`。其中 Lv9 回退用的 `city_lv4`（0fe2fbb5 那张）源图自带一块**不透明方格纸底板**（非本次打包引入，旧版即如此），在地图上会显示为城池周围一圈浅色方块；根治办法是重出 `city_lv4`（或补 `city_l9`）无背景版。其余帧去背干净。
+
 ## 接入说明（已实现）
 
 代码已接入：`getCityTextureForLevel(level)`（`client/src/render/cityAtlasLoader.ts` + `tools/map-editor/src/render/cityAtlasLoader.ts`）按等级取 `city_l{level}`，回退 `city_lv{tier}`。

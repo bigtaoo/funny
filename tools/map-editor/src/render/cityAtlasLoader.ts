@@ -5,10 +5,10 @@
  * assetIO indirection dropped — the editor is web-only, so the atlas URL is used directly as a
  * PIXI.BaseTexture source (same simplification as terrainAtlasLoader.ts).
  *
- * The bundled atlas currently ships 4 tier frames (city_lv1..city_lv4, camp/fort/castle/citadel spanning
- * levels 1-2/3-5/6-8/9-10). getCityTextureForLevel() prefers a per-level frame `city_l{level}` when the
- * atlas provides it (the 10-image set) and otherwise falls back to the tier frame — so the 6 not-yet-drawn
- * per-level images can drop in later with zero code change.
+ * The bundled atlas ships 4 tier frames (city_lv1..city_lv4, camp/fort/castle/citadel spanning levels
+ * 1-2/3-5/6-8/9-10) plus per-level frames city_l2/l4/l5/l7/l8/l10. getCityTextureForLevel() prefers a
+ * per-level frame `city_l{level}` and otherwise falls back to the tier frame, so levels without their own
+ * art (1/3/6/9) still render their tier image. Repacked by art/ui/slg-building/pack_city_atlas.js.
  */
 import * as PIXI from 'pixi.js-legacy';
 import { cityTier } from '@nw/shared/slg';

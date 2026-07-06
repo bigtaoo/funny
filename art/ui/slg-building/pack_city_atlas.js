@@ -1,107 +1,172 @@
 #!/usr/bin/env node
-// pack_city_atlas.js — process 4 SLG city images into a PixiJS spritesheet atlas.
+// pack_city_atlas.js — process the SLG city images into a PixiJS spritesheet atlas.
+//
+// Frames (see design/product/city-image-prompts.md):
+//   city_lv1..city_lv4  — the original 4 tier images (fallback when a per-level frame is absent):
+//                         camp / wooden fort / stone castle / grand citadel (lv 1-2 / 3-5 / 6-8 / 9-10).
+//   city_l2/l4/l5/l7/l8/l10 — per-level art so adjacent levels visibly progress. getCityTextureForLevel()
+//                         prefers city_l{level} and falls back to city_lv{tier}, so missing levels
+//                         (1/3/6/9) still render their tier image.
+//
+// Backgrounds vary per source (light graph paper, dark vignette, solid blue-grey, already-cut webp).
+// We remove the background with a region-growing flood fill seeded from the image border: a pixel joins
+// the background if it is within TSTEP colour distance of an already-background neighbour. This follows
+// smooth backgrounds / vignette gradients and stops at the building's strong ink silhouette. Images that
+// already ship meaningful transparency (the webp) skip colour-keying and keep their alpha.
+//
 // Run: node art/ui/slg-building/pack_city_atlas.js
-const sharp = require('sharp');
+//   optional: node art/ui/slg-building/pack_city_atlas.js --debug   (also writes _debug_preview.png)
 const fs = require('fs');
 const path = require('path');
+let sharp;
+try { sharp = require('sharp'); }
+catch { sharp = require(path.resolve(__dirname, '../../../client/node_modules/sharp')); }
 
 const SRC_DIR = __dirname;
-const OUT_DIR = path.resolve(__dirname, '../../../client/src/assets/slg');
-
-const CELL = 256;
-const ATLAS_W = 512;
-const ATLAS_H = 512;
-
-// lv1=camp, lv2=wooden fort, lv3=stone castle, lv4=grand castle
-const FILES = [
-  { file: 'cff60e26-e8a7-4579-b462-fb975dd08ae3.png', name: 'city_lv1' },
-  { file: '694878ba-a838-491c-8745-b2fcea0f36b2.png', name: 'city_lv2' },
-  { file: 'b4347658-1cab-4ce1-b3fd-15390bdfe943.png', name: 'city_lv3' },
-  { file: '0fe2fbb5-2799-4b4d-a3e0-d5e595764977.png', name: 'city_lv4' },
+const OUT_DIRS = [
+  path.resolve(__dirname, '../../../client/src/assets/slg'),
+  path.resolve(__dirname, '../../../tools/map-editor/src/assets/slg'),
 ];
 
-async function getContentBbox(srcPath) {
-  const { data, info } = await sharp(srcPath).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  const { width, height } = info;
-  const channels = 4; // ensureAlpha
+const CELL = 256;
+const COLS = 4;
+const PAD_FRAC = 0.02;   // padding around cropped content, fraction of source width
+const TSTEP = 33;        // gradient step: neighbour joins bg if within this of its bg neighbour (follows vignettes)
+const TSEED = 72;        // absolute: neighbour also joins bg if within this of the sampled border colour
+                         // (bridges thin grid lines on light graph paper; ink silhouette keeps the building safe)
+const PRECUT_ALPHA_FRAC = 0.02; // if >2% pixels are already transparent, treat image as pre-cut
+const HALO_ALPHA = 110;         // in pre-cut images, alpha below this is treated as background halo
 
-  // Sample 4 corners (20x20 px each) to detect background type
-  const sampleCornerLuma = (sx, sy) => {
-    const sz = Math.min(20, Math.floor(width * 0.02));
-    let sum = 0;
-    const n = sz * sz;
-    for (let y = sy; y < sy + sz; y++) {
-      for (let x = sx; x < sx + sz; x++) {
-        const i = (y * width + x) * channels;
-        sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-      }
-    }
-    return sum / n;
+const FILES = [
+  { file: 'city_lv1.png',  name: 'city_lv1' },
+  { file: 'city_lv2.png',  name: 'city_lv2' },
+  { file: 'city_lv3.png',  name: 'city_lv3' },
+  { file: 'city_lv4.png',  name: 'city_lv4' },
+  { file: 'city_l2.png',   name: 'city_l2'  },
+  { file: 'city_l4.png',   name: 'city_l4'  },
+  { file: 'city_l5.png',   name: 'city_l5'  },
+  { file: 'city_l7.png',   name: 'city_l7'  },
+  { file: 'city_l8.png',   name: 'city_l8'  },
+  { file: 'city_l10.webp', name: 'city_l10' },
+];
+
+// Remove background in-place (set alpha=0) via region-growing flood fill from the border.
+// Returns the content bounding box of the surviving (opaque) pixels.
+function cutBackground(data, width, height) {
+  const N = width * height;
+  const bg = new Uint8Array(N);           // 1 = background
+  const stack = new Int32Array(N);        // pixel indices to visit
+  let sp = 0;
+
+  const push = (p) => { if (!bg[p]) { bg[p] = 1; stack[sp++] = p; } };
+
+  // Seed: entire border ring, and accumulate the average border colour as the reference background.
+  let sr = 0, sg = 0, sb = 0, sc = 0;
+  const seed = (p) => { const i = p * 4; sr += data[i]; sg += data[i + 1]; sb += data[i + 2]; sc++; push(p); };
+  for (let x = 0; x < width; x++) { seed(x); seed((height - 1) * width + x); }
+  for (let y = 0; y < height; y++) { seed(y * width); seed(y * width + width - 1); }
+  const seedR = sr / sc, seedG = sg / sc, seedB = sb / sc;
+
+  const dist = (a, b) => {
+    const ia = a * 4, ib = b * 4;
+    const dr = data[ia] - data[ib];
+    const dg = data[ia + 1] - data[ib + 1];
+    const db = data[ia + 2] - data[ib + 2];
+    return Math.sqrt(dr * dr + dg * dg + db * db);
   };
-  const sz20 = Math.min(20, Math.floor(width * 0.02));
-  const avgCorner = (
-    sampleCornerLuma(0, 0) +
-    sampleCornerLuma(width - sz20, 0) +
-    sampleCornerLuma(0, height - sz20) +
-    sampleCornerLuma(width - sz20, height - sz20)
-  ) / 4;
+  const distSeed = (a) => {
+    const ia = a * 4;
+    const dr = data[ia] - seedR, dg = data[ia + 1] - seedG, db = data[ia + 2] - seedB;
+    return Math.sqrt(dr * dr + dg * dg + db * db);
+  };
 
-  if (avgCorner > 210) {
-    // White background: crop to non-white content
-    let minX = width, maxX = 0, minY = height, maxY = 0;
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const i = (y * width + x) * channels;
-        const luma = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-        const alpha = data[i + 3];
-        if (luma < 228 && alpha > 20) {
-          if (x < minX) minX = x;
-          if (x > maxX) maxX = x;
-          if (y < minY) minY = y;
-          if (y > maxY) maxY = y;
-        }
-      }
-    }
-    if (minX < maxX && minY < maxY) {
-      const pad = Math.round(width * 0.025);
-      const left = Math.max(0, minX - pad);
-      const top = Math.max(0, minY - pad);
-      const right = Math.min(width, maxX + pad + 1);
-      const bottom = Math.min(height, maxY + pad + 1);
-      return { left, top, width: right - left, height: bottom - top };
-    }
+  // 8-connectivity so the fill can slip past thin diagonal barriers (flag poles, spire tips) and
+  // reach background pockets trapped between towers.
+  while (sp > 0) {
+    const p = stack[--sp];
+    const x = p % width;
+    const y = (p - x) / width;
+    const l = x > 0, r = x < width - 1, u = y > 0, d = y < height - 1;
+    const tryN = (n) => { if (!bg[n] && (dist(n, p) < TSTEP || distSeed(n) < TSEED)) push(n); };
+    if (l) tryN(p - 1);
+    if (r) tryN(p + 1);
+    if (u) tryN(p - width);
+    if (d) tryN(p + width);
+    if (l && u) tryN(p - width - 1);
+    if (r && u) tryN(p - width + 1);
+    if (l && d) tryN(p + width - 1);
+    if (r && d) tryN(p + width + 1);
   }
 
-  // Dark vignette background (grand castle): use full image
-  return { left: 0, top: 0, width, height };
+  let minX = width, maxX = -1, minY = height, maxY = -1;
+  for (let p = 0; p < N; p++) {
+    if (bg[p]) { data[p * 4 + 3] = 0; continue; }
+    const x = p % width;
+    const y = (p - x) / width;
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  return { minX, maxX, minY, maxY };
+}
+
+// Return a 256×256 RGBA buffer with the source's building cut out, cropped, and contain-fit.
+async function makeCell(srcPath) {
+  const { data, info } = await sharp(srcPath).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const { width, height } = info;
+  const N = width * height;
+
+  // Pre-cut detection: many already-transparent pixels → keep alpha, just crop.
+  let transparent = 0;
+  for (let p = 0; p < N; p++) if (data[p * 4 + 3] < 16) transparent++;
+  const preCut = transparent > N * PRECUT_ALPHA_FRAC;
+
+  let box;
+  if (preCut) {
+    // Drop faint semi-transparent halo/panel pixels some pre-cut sources bake in (e.g. city_lv4's
+    // graph-paper panel at alpha≈62); the real building is fully opaque. Then crop to what survives.
+    let minX = width, maxX = -1, minY = height, maxY = -1;
+    for (let p = 0; p < N; p++) {
+      if (data[p * 4 + 3] < HALO_ALPHA) { data[p * 4 + 3] = 0; continue; }
+      const x = p % width, y = (p - x) / width;
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+    }
+    box = { minX, maxX, minY, maxY };
+  } else {
+    box = cutBackground(data, width, height);
+  }
+
+  const pad = Math.round(width * PAD_FRAC);
+  const left = Math.max(0, box.minX - pad);
+  const top = Math.max(0, box.minY - pad);
+  const cw = Math.min(width, box.maxX + pad + 1) - left;
+  const ch = Math.min(height, box.maxY + pad + 1) - top;
+
+  return sharp(Buffer.from(data), { raw: { width, height, channels: 4 } })
+    .extract({ left, top, width: cw, height: ch })
+    .resize(CELL, CELL, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .png()
+    .toBuffer();
 }
 
 async function main() {
-  if (!fs.existsSync(OUT_DIR)) fs.mkdirSync(OUT_DIR, { recursive: true });
+  const debug = process.argv.includes('--debug');
+  const rows = Math.ceil(FILES.length / COLS);
+  const ATLAS_W = COLS * CELL;
+  const ATLAS_H = rows * CELL;
 
   const composites = [];
   const frames = {};
 
   for (let i = 0; i < FILES.length; i++) {
     const { file, name } = FILES[i];
-    const col = i % 2;
-    const row = Math.floor(i / 2);
-    const dx = col * CELL;
-    const dy = row * CELL;
-
-    const srcPath = path.join(SRC_DIR, file);
-    const bbox = await getContentBbox(srcPath);
-    console.log(`${name} (${file.slice(0, 8)}…): crop ${JSON.stringify(bbox)} → (${dx},${dy})`);
-
-    const cellBuf = await sharp(srcPath)
-      .extract(bbox)
-      .resize(CELL, CELL, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
-      .ensureAlpha()
-      .png()
-      .toBuffer();
-
+    const dx = (i % COLS) * CELL;
+    const dy = Math.floor(i / COLS) * CELL;
+    const cellBuf = await makeCell(path.join(SRC_DIR, file));
+    console.log(`${name.padEnd(9)} ← ${file.padEnd(14)} → (${dx},${dy})`);
     composites.push({ input: cellBuf, left: dx, top: dy });
-
     frames[name] = {
       frame: { x: dx, y: dy, w: CELL, h: CELL },
       rotated: false,
@@ -111,27 +176,34 @@ async function main() {
     };
   }
 
-  const outPng = path.join(OUT_DIR, 'city_atlas.png');
-  await sharp({
+  const atlasPng = await sharp({
     create: { width: ATLAS_W, height: ATLAS_H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
   })
     .composite(composites)
-    .png({ compressionLevel: 9, effort: 10 })
-    .toFile(outPng);
-  console.log(`✓ atlas PNG → ${outPng}`);
+    // Quantize to a palette for a much smaller PNG; the doodle art has few distinct colours.
+    .png({ palette: true, quality: 90, effort: 10, compressionLevel: 9 })
+    .toBuffer();
 
   const atlasJson = {
     frames,
-    meta: {
-      image: 'city_atlas.png',
-      format: 'RGBA8888',
-      size: { w: ATLAS_W, h: ATLAS_H },
-      scale: '1',
-    },
+    meta: { image: 'city_atlas.png', format: 'RGBA8888', size: { w: ATLAS_W, h: ATLAS_H }, scale: '1' },
   };
-  const outJson = path.join(OUT_DIR, 'city_atlas.json');
-  fs.writeFileSync(outJson, JSON.stringify(atlasJson, null, 2));
-  console.log(`✓ atlas JSON → ${outJson}`);
+
+  for (const dir of OUT_DIRS) {
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'city_atlas.png'), atlasPng);
+    fs.writeFileSync(path.join(dir, 'city_atlas.json'), JSON.stringify(atlasJson, null, 2));
+    console.log(`✓ ${path.relative(path.resolve(__dirname, '../../..'), dir)}/city_atlas.{png,json}  (${(atlasPng.length / 1024).toFixed(1)} KB)`);
+  }
+
+  if (debug) {
+    // Composite the atlas over magenta so transparency vs white halo is obvious when viewed.
+    const preview = await sharp({
+      create: { width: ATLAS_W, height: ATLAS_H, channels: 4, background: { r: 255, g: 0, b: 255, alpha: 1 } },
+    }).composite([{ input: atlasPng, left: 0, top: 0 }]).png().toBuffer();
+    fs.writeFileSync(path.join(SRC_DIR, '_debug_preview.png'), preview);
+    console.log('✓ _debug_preview.png (over magenta)');
+  }
 }
 
 main().catch(err => { console.error(err); process.exit(1); });
