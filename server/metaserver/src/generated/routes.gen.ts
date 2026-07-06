@@ -1775,6 +1775,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "type": "integer",
                       "description": "monthly card end timestamp (ms); 0 = none (§5)"
                     },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
+                    },
                     "starterUsed": {
                       "type": "array",
                       "items": {
@@ -2276,6 +2280,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "subscriptionExpiry": {
                       "type": "integer",
                       "description": "monthly card end timestamp (ms); 0 = none (§5)"
+                    },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
                     },
                     "starterUsed": {
                       "type": "array",
@@ -2785,6 +2793,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "type": "integer",
                       "description": "monthly card end timestamp (ms); 0 = none (§5)"
                     },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
+                    },
                     "starterUsed": {
                       "type": "array",
                       "items": {
@@ -3290,6 +3302,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "subscriptionExpiry": {
                   "type": "integer",
                   "description": "monthly card end timestamp (ms); 0 = none (§5)"
+                },
+                "subscriptionLastClaimDay": {
+                  "type": "string",
+                  "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
                 },
                 "starterUsed": {
                   "type": "array",
@@ -4229,6 +4245,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "type": "integer",
                       "description": "monthly card end timestamp (ms); 0 = none (§5)"
                     },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
+                    },
                     "starterUsed": {
                       "type": "array",
                       "items": {
@@ -4809,6 +4829,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "subscriptionExpiry": {
                       "type": "integer",
                       "description": "monthly card end timestamp (ms); 0 = none (§5)"
+                    },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
                     },
                     "starterUsed": {
                       "type": "array",
@@ -5423,6 +5447,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "type": "integer",
                       "description": "monthly card end timestamp (ms); 0 = none (§5)"
                     },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
+                    },
                     "starterUsed": {
                       "type": "array",
                       "items": {
@@ -5922,6 +5950,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "subscriptionExpiry": {
                       "type": "integer",
                       "description": "monthly card end timestamp (ms); 0 = none (§5)"
+                    },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
                     },
                     "starterUsed": {
                       "type": "array",
@@ -6534,6 +6566,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "type": "integer",
                       "description": "monthly card end timestamp (ms); 0 = none (§5)"
                     },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
+                    },
                     "starterUsed": {
                       "type": "array",
                       "items": {
@@ -7041,6 +7077,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "type": "integer",
                       "description": "monthly card end timestamp (ms); 0 = none (§5)"
                     },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
+                    },
                     "starterUsed": {
                       "type": "array",
                       "items": {
@@ -7539,6 +7579,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "subscriptionExpiry": {
                       "type": "integer",
                       "description": "monthly card end timestamp (ms); 0 = none (§5)"
+                    },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
                     },
                     "starterUsed": {
                       "type": "array",
@@ -8093,6 +8137,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "type": "integer",
                       "description": "monthly card end timestamp (ms); 0 = none (§5)"
                     },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
+                    },
                     "starterUsed": {
                       "type": "array",
                       "items": {
@@ -8639,6 +8687,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "subscriptionExpiry": {
                       "type": "integer",
                       "description": "monthly card end timestamp (ms); 0 = none (§5)"
+                    },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
                     },
                     "starterUsed": {
                       "type": "array",
@@ -9245,6 +9297,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "subscriptionExpiry": {
                       "type": "integer",
                       "description": "monthly card end timestamp (ms); 0 = none (§5)"
+                    },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
                     },
                     "starterUsed": {
                       "type": "array",
@@ -9896,6 +9952,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "type": "integer",
                       "description": "monthly card end timestamp (ms); 0 = none (§5)"
                     },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
+                    },
                     "starterUsed": {
                       "type": "array",
                       "items": {
@@ -10425,6 +10485,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "subscriptionExpiry": {
                       "type": "integer",
                       "description": "monthly card end timestamp (ms); 0 = none (§5)"
+                    },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
                     },
                     "starterUsed": {
                       "type": "array",
@@ -10979,6 +11043,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "subscriptionExpiry": {
                       "type": "integer",
                       "description": "monthly card end timestamp (ms); 0 = none (§5)"
+                    },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
                     },
                     "starterUsed": {
                       "type": "array",
@@ -11590,6 +11658,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "type": "integer",
                       "description": "monthly card end timestamp (ms); 0 = none (§5)"
                     },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
+                    },
                     "starterUsed": {
                       "type": "array",
                       "items": {
@@ -12133,6 +12205,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "type": "integer",
                       "description": "monthly card end timestamp (ms); 0 = none (§5)"
                     },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
+                    },
                     "starterUsed": {
                       "type": "array",
                       "items": {
@@ -12635,6 +12711,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "type": "integer",
                       "description": "monthly card end timestamp (ms); 0 = none (§5)"
                     },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
+                    },
                     "starterUsed": {
                       "type": "array",
                       "items": {
@@ -13133,6 +13213,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "subscriptionExpiry": {
                       "type": "integer",
                       "description": "monthly card end timestamp (ms); 0 = none (§5)"
+                    },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
                     },
                     "starterUsed": {
                       "type": "array",
@@ -13633,6 +13717,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "subscriptionExpiry": {
                       "type": "integer",
                       "description": "monthly card end timestamp (ms); 0 = none (§5)"
+                    },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
                     },
                     "starterUsed": {
                       "type": "array",
@@ -14137,6 +14225,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "subscriptionExpiry": {
                       "type": "integer",
                       "description": "monthly card end timestamp (ms); 0 = none (§5)"
+                    },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
                     },
                     "starterUsed": {
                       "type": "array",
@@ -14681,6 +14773,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "type": "integer",
                       "description": "monthly card end timestamp (ms); 0 = none (§5)"
                     },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
+                    },
                     "starterUsed": {
                       "type": "array",
                       "items": {
@@ -15183,6 +15279,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "subscriptionExpiry": {
                       "type": "integer",
                       "description": "monthly card end timestamp (ms); 0 = none (§5)"
+                    },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
                     },
                     "starterUsed": {
                       "type": "array",
@@ -16489,6 +16589,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "type": "integer",
                       "description": "monthly card end timestamp (ms); 0 = none (§5)"
                     },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
+                    },
                     "starterUsed": {
                       "type": "array",
                       "items": {
@@ -17598,6 +17702,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "subscriptionExpiry": {
                       "type": "integer",
                       "description": "monthly card end timestamp (ms); 0 = none (§5)"
+                    },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
                     },
                     "starterUsed": {
                       "type": "array",

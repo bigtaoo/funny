@@ -1320,6 +1320,8 @@ export interface components {
                 fatePoints: number;
                 /** @description monthly card end timestamp (ms); 0 = none (§5) */
                 subscriptionExpiry: number;
+                /** @description UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5) */
+                subscriptionLastClaimDay?: string;
                 /** @description one-off product ids already purchased (§6) */
                 starterUsed: string[];
             };

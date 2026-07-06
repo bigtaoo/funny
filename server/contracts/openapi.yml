@@ -112,6 +112,7 @@ components:
           properties:
             fatePoints: { type: integer, minimum: 0, description: 'Fate Points balance (§7)' }
             subscriptionExpiry: { type: integer, description: 'monthly card end timestamp (ms); 0 = none (§5)' }
+            subscriptionLastClaimDay: { type: string, description: 'UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)' }
             starterUsed:
               type: array
               items: { type: string }

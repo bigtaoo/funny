@@ -38,8 +38,31 @@ class FakeCommercial implements CommercialClient {
   bal(id: string): number {
     return this.coins.get(id) ?? 0;
   }
+  subscriptions = new Map<string, { expiry: number; lastClaimDayKey?: string }>();
   async getWallet(id: string) {
-    return { coins: this.bal(id), pity: this.pity.get(id) ?? {} };
+    const sub = this.subscriptions.get(id);
+    return {
+      coins: this.bal(id),
+      pity: this.pity.get(id) ?? {},
+      fatePoints: 0,
+      subscriptionExpiry: sub?.expiry ?? 0,
+      subscriptionLastClaimDay: sub?.lastClaimDayKey,
+      starterUsed: [],
+    };
+  }
+  async monthlyCardBuy(a: { accountId: string; orderId: string }) {
+    const expiry = Date.now() + 30 * 24 * 60 * 60 * 1000;
+    this.subscriptions.set(a.accountId, { ...this.subscriptions.get(a.accountId), expiry });
+    return { ok: true as const, coinsAfter: this.bal(a.accountId), subscriptionExpiry: expiry };
+  }
+  async monthlyCardClaim(a: { accountId: string; dayKey: string }) {
+    const sub = this.subscriptions.get(a.accountId);
+    if (!sub || sub.lastClaimDayKey === a.dayKey) {
+      return { ok: true as const, coinsAfter: this.bal(a.accountId), claimed: 0, subscriptionExpiry: sub?.expiry ?? 0 };
+    }
+    sub.lastClaimDayKey = a.dayKey;
+    this.coins.set(a.accountId, this.bal(a.accountId) + 20);
+    return { ok: true as const, coinsAfter: this.bal(a.accountId), claimed: 20, subscriptionExpiry: sub.expiry };
   }
   async shopCharge(a: { accountId: string; itemId: string; cost: number; orderId: string }) {
     const ex = this.orders.get(a.orderId);
@@ -234,6 +257,24 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     // GET /save again: no duplicate delivery (skin still only one copy).
     const r2 = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
     expect(r2.data.save.inventory.skins.filter((s: string) => s === 'skin_shop_r1')).toHaveLength(1);
+  });
+
+  it('monthly card claim: subscriptionLastClaimDay survives response serialization (regression — openapi.yml Monetization schema silently dropped this field, so Fastify\'s response schema stripped it even though the server computed it correctly; ShopScene.ts compared it to "today" and never showed the claimed state)', async () => {
+    await app.inject({ method: 'POST', url: '/monthly-card/buy', headers: auth() });
+    const dayKey = new Date(fakeNow).toISOString().slice(0, 10);
+
+    const r1 = body(await app.inject({ method: 'POST', url: '/monthly-card/claim', headers: auth() }));
+    expect(r1.data.claimed).toBeGreaterThan(0);
+    expect(r1.data.save.monetization.subscriptionLastClaimDay).toBe(dayKey);
+
+    // Second claim same day: server correctly reports claimed:0, but the mirrored save must still carry
+    // today's claim day — this is exactly the field a stale response schema would silently drop.
+    const r2 = body(await app.inject({ method: 'POST', url: '/monthly-card/claim', headers: auth() }));
+    expect(r2.data.claimed).toBe(0);
+    expect(r2.data.save.monetization.subscriptionLastClaimDay).toBe(dayKey);
+
+    const save = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    expect(save.data.save.monetization.subscriptionLastClaimDay).toBe(dayKey);
   });
 
   it('commercial not configured → economy endpoints 503', async () => {
