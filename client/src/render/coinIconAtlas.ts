@@ -14,8 +14,12 @@
  */
 import * as PIXI from 'pixi.js-legacy';
 import { assetIO } from '../assets/assetIO';
+import { buildIcon, type IconKind } from './icons';
 import atlasUrl from '../assets/shop/coins.png';
 import atlasData from '../assets/shop/coins.json';
+
+/** IconKinds with AI bitmap art in the atlas — matches the 5 ShopScene coin tiers. */
+const AI_COIN_ICON_KINDS = new Set<IconKind>(['coin', 'coins', 'coinStack', 'coinSack', 'coinChest']);
 
 let sheet: PIXI.Spritesheet | null = null;
 let loading: Promise<void> | null = null;
@@ -53,4 +57,23 @@ export async function loadCoinIconAtlas(): Promise<void> {
     sheet = ss;
   })();
   return loading;
+}
+
+/**
+ * The single source of truth for "what a coin looks like" everywhere in the
+ * client — the AI bitmap sprite once the atlas is loaded, falling back to the
+ * procedural `buildIcon` glyph otherwise (e.g. before {@link loadCoinIconAtlas}
+ * resolves, or for a kind with no AI art). Any header/balance display should
+ * go through this rather than calling `buildIcon('coin', …)` directly, so the
+ * lobby/shop/equipment/card/friends coin icons all stay visually identical.
+ */
+export function buildCoinIcon(kind: IconKind, size: number, color: number): PIXI.DisplayObject {
+  const tex = AI_COIN_ICON_KINDS.has(kind) ? getCoinIconTexture(kind) : null;
+  if (tex) {
+    const sprite = new PIXI.Sprite(tex);
+    sprite.width = size;
+    sprite.height = size;
+    return sprite;
+  }
+  return buildIcon(kind, size, color);
 }

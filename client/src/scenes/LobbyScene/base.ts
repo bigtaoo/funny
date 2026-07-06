@@ -14,6 +14,7 @@ import { bake } from '../../render/bake';
 import { IconKind } from '../../render/icons';
 import { BoilingSprite } from '../../render/boil';
 import { StickmanRuntime } from '../../render/stickman/StickmanRuntime';
+import { loadCoinIconAtlas } from '../../render/coinIconAtlas';
 
 export { fmtCoins } from './format';
 
@@ -295,6 +296,12 @@ export class LobbySceneBase {
     this.build();
 
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
+
+    // Header coin balance uses the shop's AI atlas glyph (buildCoinIcon); rebuild once it's
+    // decoded so the lobby doesn't stay stuck on the procedural fallback glyph.
+    loadCoinIconAtlas()
+      .catch((err) => console.warn('[LobbyScene] coin icon atlas load failed:', err))
+      .then(() => { if (!this.destroyed) this.rebuild(); });
   }
 
   // ── Scene interface ────────────────────────────────────────────────────────
@@ -359,6 +366,7 @@ export interface LobbySceneBase {
   drawAchievementBadge(): void;
   drawWorldOfflineBadge(): void;
   drawSideStripBadges(): void;
+  rebuild(): void;
   clearGuide(): void;
   clearSettlement(): void;
   clearToast(): void;

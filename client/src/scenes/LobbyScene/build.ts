@@ -7,6 +7,7 @@ import { t, TranslationKey } from '../../i18n';
 import { SketchPen } from '../../render/sketch';
 import { palette } from '../../render/theme';
 import { buildIcon, IconKind } from '../../render/icons';
+import { buildCoinIcon } from '../../render/coinIconAtlas';
 import { buildWearOverlay } from '../../render/wearOverlay';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { BoilingSprite } from '../../render/boil';
@@ -262,9 +263,10 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
           const coinLbl = txt(fmtCoins(this.cb.coins), Math.round(h * 0.022), C.gold, true);
           coinLbl.anchor.set(1, 0.5); coinLbl.x = chipX; coinLbl.y = coinsY;
           this.container.addChild(coinLbl);
-          // Hand-drawn coin icon to the left of the number (replaces the 🪙 glyph).
+          // Coin icon to the left of the number — same AI atlas glyph as the shop header (falls
+          // back to the procedural buildIcon draw until coinIconAtlas finishes loading).
           const ci = Math.round(h * 0.032);
-          const coinIcon = buildIcon('coin', ci, C.gold);
+          const coinIcon = buildCoinIcon('coin', ci, C.gold);
           coinIcon.x = Math.round(chipX - coinLbl.width - Math.round(h * 0.01) - ci);
           coinIcon.y = Math.round(coinsY - ci / 2);
           this.container.addChild(coinIcon);
