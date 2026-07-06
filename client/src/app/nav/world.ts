@@ -25,23 +25,20 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
   }
 
   // AUCTION_DESIGN dual-entry: reach the auction house straight from the lobby (the other entry is
-  // the world-map toolbar button). The market is season-global — no base required — so we just
-  // resolve the season's shard and open AuctionScene with a back-to-lobby handler.
+  // the world-map toolbar button). The market is account-scoped and worldId-free (§9 拍卖任务7) — no
+  // shard resolution needed, so we open AuctionScene directly with a back-to-lobby handler.
   function goAuctionFromLobby(): void {
     const token = platform.storage.getItem(TOKEN_KEY);
     if (!token) { analytics.track('login_gate_hit', { scene: 'AuctionScene' }); nav.goLogin(); return; }
     const worldApi = new WorldApiClient(platform.storage);
     state.inLobby = false;
     analytics.track('screen_view', { scene: 'AuctionScene' });
-    resolveWorldShard(worldApi, (worldId) => {
-      views.showAuction({
-        onBack() { nav.goLobby(); },
-        worldApi,
-        worldId,
-        getSave: () => saveManager.get(),
-        reloadSave: async () => { await saveManager.refresh(); },
-        myAccountId: platform.storage.getItem('nw_account_id') ?? '',
-      });
+    views.showAuction({
+      onBack() { nav.goLobby(); },
+      worldApi,
+      getSave: () => saveManager.get(),
+      reloadSave: async () => { await saveManager.refresh(); },
+      myAccountId: platform.storage.getItem('nw_account_id') ?? '',
     });
   }
 
@@ -195,7 +192,6 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
     views.showAuction({
       onBack() { goWorldMap(worldApi, worldId); },
       worldApi,
-      worldId,
       getSave: () => saveManager.get(),
       reloadSave: async () => { await saveManager.refresh(); },
       myAccountId: platform.storage.getItem('nw_account_id') ?? '',

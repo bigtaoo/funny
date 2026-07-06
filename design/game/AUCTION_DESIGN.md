@@ -1,6 +1,6 @@
 # Notebook Wars — 拍卖行设计（Auction House）
 
-> 状态：主干 ✅ + 反 RMT 闸门 C/E/G + 竞拍 B + **装备交易 A** + **异常审计 D（admin G7 已接，已切到 auctionsvc）** 全 ✅；**双入口（大厅 + SLG 世界地图）已接**；**去 SLG/worldId 耦合 + 独立 auctionsvc 拆分（见 §9，2026-07-06 拍板；任务1-6 已完成——Caddy/compose/CI 已切流量到 auctionsvc，worldsvc 旧拍卖代码已删；任务7 client 端清理待做）** · 权威：本文（拍卖行**机制**单一来源） · 更新：2026-07-06
+> 状态：主干 ✅ + 反 RMT 闸门 C/E/G + 竞拍 B + **装备交易 A** + **异常审计 D（admin G7 已接，已切到 auctionsvc）** 全 ✅；**双入口（大厅 + SLG 世界地图）已接**；**去 SLG/worldId 耦合 + 独立 auctionsvc 拆分（见 §9，2026-07-06 拍板；任务1-7 全部完成——Caddy/compose/CI 已切流量到 auctionsvc，worldsvc 旧拍卖代码已删，client 拍卖方法已去 `worldId` 依赖）** · 权威：本文（拍卖行**机制**单一来源） · 更新：2026-07-06
 >
 > 配套阅读：[`COMMERCIAL_DESIGN.md`](COMMERCIAL_DESIGN.md)（金币钱包 spend/grant，拍卖结算走它）、[`ECONOMY_BALANCE.md`](ECONOMY_BALANCE.md)（货币政策/反通胀哲学）、[`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md)（数值演算）、[`SERVER_API.md`](SERVER_API.md)（接口契约）、[`OPS_DESIGN.md`](OPS_DESIGN.md)（反 RMT 审计工单复用）、[`EQUIPMENT_DESIGN.md`](EQUIPMENT_DESIGN.md)/[`CHARACTER_CARDS_DESIGN.md`](CHARACTER_CARDS_DESIGN.md)（装备/角色卡实例定义）、[`SLG_DESIGN.md`](SLG_DESIGN.md)（仅材料 `scrap/lead/binding` 的产出侧定义共享，拍卖机制本身与 SLG 世界/赛季生命周期无关，见 §9 拍板说明）。
 >
@@ -15,7 +15,7 @@
 - **计价货币 = 金币（coins，跨季留存的 premium 货币）**；系统抽 **10% 手续费**；**禁止以赛季资源/局内 ink 计价**（防与天梯/付费体系串味）。
 - **承重墙**：拍卖行不碰战斗/地图，是纯经济子系统——挂存与发放走 **meta 材料库 + 装备库 + 角色卡库（+ 皮肤库，待建）**（幂等 orderId），扣款/收款走 **commercial 金币钱包**，状态机权威在独立服务 `auctionsvc`（见 §9）。
 - **反 RMT 是持续对抗**（R3）：10% 高税 + 并发挂单上限 + 每日限额（C ✅）+ 绑定材料禁挂（E ✅，清单暂空）+ 价格护栏动态滑窗（G ✅）+ 异常模式 admin 审计（D ✅ admin G7 已接，pull 式扫描）。
-- **当前状态**（2026-07-06 复核）：**A/B/C/D/E/G 六轨道全实跑** + 一口价主干（`auctionsvc` `auctionService.ts` + e2e；装备库存后端 meta `equipment.ts`；异常审计 admin `service.ts`）；**客户端双入口已接**（大厅右侧功能条 + SLG 世界地图工具栏，均通向 `AuctionScene`，见 §6）；**F（原"季末冻结/结算"）已废弃**，拍卖单只按自身 72h 到期正常流转，不受任何赛季事件影响；**去耦合拆分（§9）任务1-6 已完成**：独立服务 `auctionsvc` 已上线并接管全部流量，worldsvc 侧旧拍卖代码已删；仅任务7（client 端去 worldId 依赖）待做。
+- **当前状态**（2026-07-06 复核）：**A/B/C/D/E/G 六轨道全实跑** + 一口价主干（`auctionsvc` `auctionService.ts` + e2e；装备库存后端 meta `equipment.ts`；异常审计 admin `service.ts`）；**客户端双入口已接**（大厅右侧功能条 + SLG 世界地图工具栏，均通向 `AuctionScene`，见 §6）；**F（原"季末冻结/结算"）已废弃**，拍卖单只按自身 72h 到期正常流转，不受任何赛季事件影响；**去耦合拆分（§9）任务1-7 全部完成**：独立服务 `auctionsvc` 已上线并接管全部流量，worldsvc 侧旧拍卖代码已删，client 拍卖方法已去 `worldId` 依赖、大厅入口不再经过 `resolveWorldShard`。
 
 ---
 
@@ -377,11 +377,12 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - **踩坑**：worktree 建在 `main` 上时任务5的提交（daily branch `06.07.2026`）还没合并，导致 admin 侧任务5声称已做的 `AuctionClient` 迁移在 worktree 里完全不存在——本任务据此改建在 `06.07.2026` 分支上重跑（先 `git worktree add -b ... main` 再 `git rebase 06.07.2026`），之后确认 admin 侧确已正确指向 auctionsvc。**结论**：跨会话的多阶段任务链，若前序任务只在当日分支未合 main，续做的 worktree 必须基于当日分支而非 main，否则会静默丢失前序改动。
 - **验收**：`npx tsc -b shared engine metaserver gateway matchsvc gameserver commercial worldsvc auctionsvc admin analyticsvc socialsvc` 全绿；`npm test --workspace @nw/worldsvc`（188 例）、`npm test --workspace @nw/admin`（27 例）全绿；`grep -rn auction server/worldsvc/src`（排除 `generated/`）仅剩迁移说明注释，无业务代码命中。
 
-### 拍卖任务7：client 端清理
+### 拍卖任务7：client 端清理 ✅（2026-07-06）
 
-- [ ] **依赖**：任务5 上线（client 改动和后端切流量应在同一次发布，避免旧客户端 + 新后端的过渡期兼容问题——反代路径不变，理论上无兼容问题，但 `worldId` 参数被服务端忽略时行为需确认）。
-- **主要文件**：`client/src/net/WorldApiClient.ts`（拍卖相关方法去掉 `worldId` 入参）、`client/src/scenes/AuctionScene/*`（`resolveWorldShard` 前置解析逻辑整段删除——大厅/SLG 双入口都不再需要先解析 shard 才能开拍卖行，直接进）。
-- **验收**：`tsc --noEmit` + webpack 构建绿；大厅入口和 SLG 世界地图入口都能直接打开拍卖行（无需先进大世界）。
+- [x] **依赖**：任务5 上线（client 改动和后端切流量应在同一次发布，避免旧客户端 + 新后端的过渡期兼容问题——反代路径不变，理论上无兼容问题，但 `worldId` 参数被服务端忽略时行为需确认）。
+- **主要文件**：`client/src/net/WorldApiClient.ts`（`listAuctions`/`getMyListings`/`createAuction`/`buyAuction`/`placeBid`/`cancelAuction` 六个方法去掉 `worldId` 入参，请求体/查询串不再带 `worldId`）；`client/src/scenes/AuctionScene/base.ts`（`AuctionSceneCallbacks` 去掉 `worldId` 字段，`loadData()` 调用同步）、`bid.ts`/`tradeActions.ts`/`createForm.ts`（对应调用点去掉 `this.cb.worldId` 实参）；`client/src/app/nav/world.ts`（`goAuctionFromLobby` 整段删掉 `resolveWorldShard` 前置解析，直接 `views.showAuction`；`goAuctionHouse` 自身签名不变——从世界地图打开时仍需 `worldId` 供 `onBack` 返回同一张地图，只是不再把 `worldId` 转发进 `AuctionSceneCallbacks`）。测试同步：`test/ui/auctionScene.ui.ts`/`test/ui/caretRegression.ui.ts`/`test/ui/scenes.ui.ts` 里构造 `AuctionScene`/断言 `worldApi.*` 调用参数的地方去掉 `worldId`。
+- **未动**（有意，超出本任务范围）：`AuctionView` 类型仍从 `client/src/net/openapi-world.ts`（由未改动的 `server/contracts/openapi-world.yml` 生成）导入，而非任务4新建的 `openapi-auction.yml`——两者 schema 字段目前一致（`openapi-world.yml` 的 `/auction/*` 段本身也未删，见 §9 任务6 备注），故类型检查不受影响；但这意味着 client 尚未真正"改指向新文件"（任务4/5 遗留的最后一句表述）。若后续要彻底切断 client 对 `openapi-world.yml` 拍卖段的依赖，需要：① `client/scripts/gen-openapi.mjs` 新增 `openapi-auction.yml → openapi-auction.ts` 流水线，② `WorldApiClient.ts` 的 `AuctionView` 改从新文件导入，③ 确认无回归后再从 `openapi-world.yml` 删除 `/auction/*` 段并重新生成 `openapi-world.ts`/`server/worldsvc/src/generated/routes.gen.ts`（§9 任务6 里同样留白的那份）。不阻塞当前验收（功能已完全跑通 auctionsvc）。
+- **验收**：`npm run typecheck`（`tsc --noEmit -p tsconfig.test.json`）绿；`npm run build:web`（webpack production）绿；`npx vitest run --config vitest.ui.config.ts`（14 文件 185 例，含 `auctionScene.ui.ts` 23 例）全绿；大厅入口（`goAuctionFromLobby`）和 SLG 世界地图入口（`goAuctionHouse`）都能直接打开拍卖行，前者不再经过 `resolveWorldShard`。
 
 ---
 

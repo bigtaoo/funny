@@ -258,7 +258,7 @@ describe('FriendsScene — family/sect/world tab carets', () => {
 describe('AuctionScene — designated-buyer field caret', () => {
   function build(): any {
     return new AuctionScene(createLayout(W, H), new InputManager(), {
-      onBack() {}, worldApi: stubWorldApi(), worldId: 'world:1:0',
+      onBack() {}, worldApi: stubWorldApi(),
     });
   }
 
