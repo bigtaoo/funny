@@ -305,4 +305,75 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 
 ---
 
+## 9. 拆分任务清单（去 SLG/worldId 耦合 + 独立服务，2026-07-06 拍板）
+
+> **拍板背景**：拍卖行的定位被之前的文档写错了——它不是"SLG 大世界的交易子系统"，而是和角色卡/装备/材料/皮肤四类**养成物品**绑定的**全服（大区内）市场**，和 SLG 的 worldId/赛季生命周期没有关系，性质上和 matchsvc 一样是全服行为。旧文档 §1/§4.F/§4.G 里所有"大区内按 worldId 隔离""赛季结算清算"的表述均为**误定位，本节起全部作废**。
+>
+> **执行约定**：`[ ]` 未开始 / `[~]` 进行中 / `[x]` 完成，按编号顺序做（任务2 依赖任务1 的语义定稿，任务4 依赖任务2/3，任务6/7 必须在任务4 上线后才能删旧代码——不能反过来，否则拍卖功能会中断）。新会话直接说「开始拍卖任务N」即可定位到本节对应条目。约定见 [`claudedocs/worktrees.md`](../../claudedocs/worktrees.md)：本清单每个任务在独立 worktree + 独立分支做。
+
+### 拍卖任务1：重写 AUCTION_DESIGN.md 语义（去耦合定稿）
+
+- [ ] **依赖**：无（本次对话的拍板结论落笔）。
+- **主要文件**：`design/game/AUCTION_DESIGN.md`（本文件自身）。
+- **改动范围**：
+  - §1「定位与边界」：删除"跨大区隔离/不跨大区流通"表述为 SLG 属性的暗示，改写为——拍卖是**大区内全服市场**（与 worldId/SLG shard 无关，同大区玩家自由流通）；中国区是完全独立部署栈，物理隔离不属于本文档讨论范围（架构设计只需覆盖西方大区）。
+  - §2.1「标的」表：新增 `itemType='skin'`（依赖任务2 的皮肤托管能力落地才能转 ✅，本任务先写设计）。
+  - §4.F「季末冻结/结算」：整节删除（`clearWorldOnReset`/`assertWorldAcceptsListings` 逻辑作废，拍卖单只按自己 72h 到期正常流转，不受任何赛季事件影响）。
+  - §4.G「价格护栏」：滑窗范围从"按 worldId 独立维护"改为"按大区全局维护"（同一大区所有玩家共享同一份 refPrice，不再按 shard 拆分）。
+  - §4.C「每日限额」：key 从 `${worldId}:${accountId}:${dayKey}` 改为 `${accountId}:${dayKey}`。
+  - §5「数据模型」：`auctions` 集合定义去掉 `worldId` 字段，索引 `{worldId,itemType,status}` 改为 `{itemType,status}`；`auctionId` 生成函数去掉 worldId 分量。
+  - §1「进程归属」：改为"拍卖是独立服务 `auctionsvc`（meta 层，全服单实例，欧美/中国各自部署一份）"，不再挂靠 worldsvc。
+  - 新增小节说明"皮肤交易需要的托管能力目前不存在，见任务2"。
+- **验收**：文档内部无残留 worldId/大区隔离/赛季结算相关表述；`grep -n worldId design/game/AUCTION_DESIGN.md` 应无命中（除本任务清单本身的历史说明性文字外）。
+
+### 拍卖任务2：metaserver 新增皮肤托管能力
+
+- [ ] **依赖**：任务1 定稿（皮肤交易范围以任务1的 §2.1 为准）。
+- **主要文件**：新建 `server/metaserver/src/skin.ts`；`server/metaserver/src/internal/economyRoutes.ts`（或新建 `skinRoutes.ts`）；`server/shared/src/types.ts`（`SaveData.inventory.skins` 保持 `string[]`，不升级成实例，皮肤本身无等级/词条）。
+- **改动范围**：
+  - `escrowSkin(cols, accountId, skinId, orderId)`：校验 `skins` 数组包含该 id 且未装备中（`equipped` 里没有引用该 skinId）→ 原子 `$pull` 摘除 + 幂等表记录 orderId。
+  - `grantSkin(cols, accountId, skinId, orderId)`：`$addToSet` 写回（幂等，重放安全）。
+  - 新增内部路由 `POST /internal/skins/escrow`、`POST /internal/skins/grant`，鉴权复用现有 `x-internal-key` 模式（照抄 `economyRoutes.ts` 里 equipment 那两个 handler 的写法）。
+  - 错误码：`SKIN_IN_USE`（装备中禁挂）、`SKIN_NOT_FOUND`（未拥有）。
+- **验收**：metaserver e2e 新增皮肤 escrow/grant 用例（参照 `test/equipment.e2e.test.ts` 的结构）；全 metaserver 测试绿。
+
+### 拍卖任务3：新建 `server/auctionsvc/` 服务骨架
+
+- [ ] **依赖**：无（可与任务2 并行）。
+- **主要文件**：`server/auctionsvc/package.json`（`@nw/auctionsvc`）、`src/config.ts`（`NW_AUCTION_PORT`，默认 **18086**）、`src/index.ts`、`src/db.ts`（独立 Mongo 库，如 `notebook_wars_auction`，不再挂 `notebook_wars_world`）。
+- **改动范围**：照抄 `server/worldsvc` 的骨架结构（config/db/httpApi 分层），只搭空壳 + health check，不含业务逻辑（业务逻辑在任务4）。
+- **验收**：`npm run build` / `tsc --noEmit` 过；本地起服务 `/health` 返回 200。
+
+### 拍卖任务4：迁移拍卖业务逻辑到 auctionsvc
+
+- [ ] **依赖**：任务2（皮肤托管）+ 任务3（服务骨架）。
+- **主要文件**：`server/auctionsvc/src/auctionService.ts`（从 `server/worldsvc/src/auctionService.ts` 整体迁移改造）、`src/metaClient.ts`（从 worldsvc 同名文件迁移，去掉非拍卖用的方法，新增 `escrowSkin`/`grantSkin`）、`src/commercialClient.ts`（同样迁移）、`src/httpApi.ts`（`/auction/*` 路由）。
+- **改动范围**：
+  - 所有方法签名去掉 `worldId` 参数；`auctions`/`auctionDaily`/`auctionPrices` 集合搬到 auctionsvc 自己的库。
+  - 删除 `assertWorldAcceptsListings`、`clearWorldOnReset` 调用（季末清算逻辑随任务1 的文档定稿一起作废，不迁移）。
+  - 新增 `itemType='skin'` 分支：挂单调 `meta.escrowSkin`，成交/撤单/过期走系统邮件下发（复用现有 `WorldMailClient` 模式，`kind:'skin'`）。
+  - `contracts/openapi-world.yml` 里的 `/auction/*` 契约迁到新建的 `contracts/openapi-auction.yml`（或按现有习惯放独立文件，具体看 `npm run rest:gen` 现有生成脚本怎么按文件分包）。
+- **验收**：把 `server/worldsvc/test/auction*.e2e.test.ts` 迁到 `server/auctionsvc/test/` 并跑绿（含新增皮肤用例）；此时 worldsvc 和 auctionsvc 的 `/auction/*` **同时存在**（下一步再切流量），先在本地/测试环境验证新服务功能对等。
+
+### 拍卖任务5：接入部署（Caddy + compose + CI）
+
+- [ ] **依赖**：任务4 验收通过。
+- **主要文件**：`server/Caddyfile`、本地/prod/cloud 三份 `docker-compose*.yml`（[[project_social_system]] 提过新进程要三处同步）、`.github/workflows/server-deploy.yml`。
+- **改动范围**：`Caddyfile` 的 `handle /auction* { reverse_proxy worldsvc:18084 }` 改成 `reverse_proxy auctionsvc:18086`；三份 compose 加 auctionsvc 服务块（含 `NW_META_INTERNAL_URL`/`NW_COMM_INTERNAL_URL`/`NW_INTERNAL_KEY` 等环境变量，照抄 worldsvc 现有配法）；CI 部署脚本加 auctionsvc 的 build/push/deploy 步骤。
+- **验收**：VPS 上 `docker ps` 能看到 auctionsvc 容器且健康；实际调用 `/auction/create` 走到新服务（可查 auctionsvc 日志确认，不再查 worldsvc 日志）。
+
+### 拍卖任务6：worldsvc 瘦身
+
+- [ ] **依赖**：任务5 上线且稳定运行一段时间（**不要在切流量当天就删旧代码**，留几天观察期方便回滚）。
+- **主要文件**：`server/worldsvc/src/auctionService.ts`（删除）、`server/worldsvc/src/httpApi.ts`（删 `/auction/*` 路由块）、`server/worldsvc/src/metaClient.ts`/`commercialClient.ts`（删只给拍卖用的方法）、`server/worldsvc/test/auction*.e2e.test.ts`（删，已迁到任务4）、`world.status` 相关的 `settling` 拍卖专用分支。
+- **验收**：worldsvc 全测试绿；`grep -rn auction server/worldsvc/src` 应无命中。
+
+### 拍卖任务7：client 端清理
+
+- [ ] **依赖**：任务5 上线（client 改动和后端切流量应在同一次发布，避免旧客户端 + 新后端的过渡期兼容问题——反代路径不变，理论上无兼容问题，但 `worldId` 参数被服务端忽略时行为需确认）。
+- **主要文件**：`client/src/net/WorldApiClient.ts`（拍卖相关方法去掉 `worldId` 入参）、`client/src/scenes/AuctionScene/*`（`resolveWorldShard` 前置解析逻辑整段删除——大厅/SLG 双入口都不再需要先解析 shard 才能开拍卖行，直接进）。
+- **验收**：`tsc --noEmit` + webpack 构建绿；大厅入口和 SLG 世界地图入口都能直接打开拍卖行（无需先进大世界）。
+
+---
+
 *本文为拍卖行机制权威，DRAFT/⚠️ 处随实现与拍板细化；数值以 `server/shared/src/slg.ts` 为准。*
