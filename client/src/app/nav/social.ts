@@ -99,6 +99,12 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
         sendWorldChat: async (body, senderName) => { const wid = await ensureWorldId(); await worldApi.sendWorldChannelMessage(wid, body, senderName); },
         playerName: () => playerName(),
         getCoins: () => saveManager.get().wallet.coins,
+        // World-chat posts are charged in the commercial service by worldsvc; GET /save
+        // re-mirrors that authoritative balance so the HUD coin count reflects the spend.
+        refreshWallet: async () => {
+          const { save } = await client.getSave();
+          saveManager.adoptServer(save);
+        },
       } : {}),
     });
     // Live social pushes (presence / request / friend add-remove / chat / mail)

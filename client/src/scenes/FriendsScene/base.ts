@@ -78,6 +78,14 @@ export interface FriendsSceneCallbacks {
   playerName?(): string;
   /** Current coin balance — shown top-right on the world channel tab (each post costs coins). */
   getCoins?(): number;
+  /**
+   * Re-sync the authoritative wallet after a server-side coin spend (world-chat post).
+   * World-chat coins are debited in the commercial service by worldsvc, which never touches
+   * the metaserver save mirror the HUD reads — so without this the balance looks unchanged
+   * ("post didn't cost anything"). Calling this re-fetches the save (GET /save re-mirrors the
+   * live commercial balance) so getCoins() reflects the deduction.
+   */
+  refreshWallet?(): Promise<void>;
   /** Pre-select a tab on open — used by the lobby mail shortcut (mail) and the world-map chat bar (world). */
   defaultTab?: Tab;
 }
@@ -306,7 +314,12 @@ export class FriendsSceneBase {
     onBlur?(): void;
     onEnter?(): void;
   }): void {
-    this.clearHiddenInput();
+    // Tear down only the previous DOM element — NOT via clearHiddenInput(), which also
+    // resets the active-field flags (worldChatActive / family/sectActiveInput). Every
+    // caller sets its flag *before* calling openHiddenInput, so calling clearHiddenInput
+    // here would wipe the flag we just set → the field never shows its blinking caret
+    // (the blink loop in update() and caretDisplay() are both gated on that flag).
+    if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
     this.caretOn = true;
     this.caretTimer = 0;
     const inp = document.createElement('input');

@@ -62,10 +62,12 @@ export class NationChannelService {
 
     const ts = this.deps.now();
 
-    if (this.deps.commercial.available) {
-      const orderId = `world_chat:${worldId}:${accountId}:${ts}`;
-      await this.deps.commercial.spend(accountId, WORLD_CHAT_COST, orderId);
-    }
+    // Charge the post BEFORE persisting. This is intentionally unconditional (mirrors every
+    // other coin sink in worldsvc, e.g. city.ts speedup/recover): the old `if (commercial.available)`
+    // guard let posts through for free whenever worldsvc was started without NW_COMMERCIAL_INTERNAL_URL.
+    // If commercial is unconfigured, spend() throws → the message is rejected, never posted free.
+    const orderId = `world_chat:${worldId}:${accountId}:${ts}`;
+    await this.deps.commercial.spend(accountId, WORLD_CHAT_COST, orderId);
     const seq = ++msgSeq;
     const msgId = `nm:${worldId}:${ts}:${seq}`;
 
