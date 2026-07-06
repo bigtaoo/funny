@@ -183,14 +183,18 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       title.anchor.set(0, 0.5);
 
       const subtitle = txt(t('lobby.subtitle'), Math.round(h * 0.022), C.light);
-      subtitle.anchor.set(0.5, 0.5); subtitle.x = w / 2; subtitle.y = tbH * 0.78;
+      subtitle.anchor.set(0.5, 0.5); subtitle.y = tbH * 0.78;
       this.container.addChild(subtitle);
 
-      // Title's left edge lines up with the subtitle's left edge; the crest
-      // logo sits further left again, enlarged to read at header scale.
+      // Centre the whole logo+title lockup as one block on the bar's midline,
+      // then hang the subtitle under the title's own centre (not the bar's —
+      // the title is wider than the subtitle, so centring both on `w/2`
+      // independently left the lockup looking shifted right).
       const logoSize = Math.round(tbH * 0.9);
       const logoGap = Math.round(w * 0.015);
-      const titleX = Math.round(w / 2 - subtitle.width / 2);
+      const lockupW = logoSize + logoGap + title.width;
+      const lockupLeft = Math.round(w / 2 - lockupW / 2);
+      const titleX = lockupLeft + logoSize + logoGap;
 
       const logo = PIXI.Sprite.from(logoUrl as string);
       logo.anchor.set(1, 0.5);
@@ -200,6 +204,8 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
 
       title.x = titleX; title.y = tbH * 0.45;
       this.container.addChild(title);
+
+      subtitle.x = titleX + title.width / 2;
 
       // Top-left profile chip (avatar + name) — opens the personal settings screen.
       const av = Math.round(tbH * 0.46);
