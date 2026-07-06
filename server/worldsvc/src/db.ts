@@ -7,6 +7,7 @@ import { MongoClient, Db, Collection, type MongoClientOptions } from 'mongodb';
 import type {
   TileType,
   ResourceType,
+  ObstacleKind,
   MarchKind,
   WorldStatus,
   SiegeOutcome,
@@ -340,6 +341,8 @@ export interface MapTemplateTileDoc {
   type: TileType;
   level: number;
   resType?: ResourceType;
+  /** For type=obstacle only: river vs mountain art (§24 art-parity). Same optional field as MapTemplateTile. */
+  obstacleKind?: ObstacleKind;
 }
 
 /**
@@ -356,6 +359,8 @@ export interface MapBaselineTileDoc {
   type: TileType;
   level: number;
   resType?: ResourceType;
+  /** For type=obstacle only: river vs mountain art (§24 art-parity). Cloned from MapTemplateTileDoc.obstacleKind. */
+  obstacleKind?: ObstacleKind;
 }
 
 export interface WorldCollections {

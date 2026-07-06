@@ -216,9 +216,9 @@ export class WorldCoreMap extends WorldCoreVision {
    */
   private terrainView(worldId: string, x: number, y: number, baseline?: MapBaselineTileDoc | null): WorldTileView {
     if (baseline) {
-      return { x, y, type: baseline.type, level: baseline.level, ...(baseline.resType ? { resType: baseline.resType } : {}) };
+      return { x, y, type: baseline.type, level: baseline.level, ...(baseline.resType ? { resType: baseline.resType } : {}), ...(baseline.obstacleKind ? { obstacleKind: baseline.obstacleKind } : {}) };
     }
     const d = proceduralTile(worldId, x, y);
-    return { x, y, type: d.type, level: d.level, ...(d.resType ? { resType: d.resType } : {}) };
+    return { x, y, type: d.type, level: d.level, ...(d.resType ? { resType: d.resType } : {}), ...(d.obstacleKind ? { obstacleKind: d.obstacleKind } : {}) };
   }
 }

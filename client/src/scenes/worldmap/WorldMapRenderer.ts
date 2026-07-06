@@ -417,10 +417,11 @@ export class WorldMapRenderer {
     if (this.ctx.zoom === 1) {
       const isAnchor = tile?.type === 'base' && this.isBaseAnchor(tx, ty);
       const effType = tile?.type ?? proc?.type ?? 'neutral';
-      // Obstacles are always deterministic terrain (never a DB override), so the river/mountain art kind
-      // is authoritative from proceduralTile computed locally — no need to carry it over the world API.
+      // River/mountain art kind: prefer the server tile's obstacleKind (§24 — carried from the per-world
+      // terrain baseline, so map-editor-painted rivers/mountains win); fall back to proceduralTile only for
+      // tiles the server didn't send a kind for (no baseline row → deterministic procedural terrain).
       const obstacleKind = effType === 'obstacle'
-        ? (proc ?? proceduralTile(this.ctx.cb.worldId, tx, ty)).obstacleKind
+        ? (tile?.obstacleKind ?? (proc ?? proceduralTile(this.ctx.cb.worldId, tx, ty)).obstacleKind)
         : undefined;
       const texName = terrainTextureName(effType, tx, ty, obstacleKind);
       drawTileL1(g, tile ?? null, fill, owner, fogged, tp, isAnchor, texName, proc);

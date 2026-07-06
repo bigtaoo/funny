@@ -1132,6 +1132,14 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "sticker"
                         ]
                       },
+                      "obstacleKind": {
+                        "type": "string",
+                        "enum": [
+                          "river",
+                          "mountain"
+                        ],
+                        "description": "For type=obstacle only: river vs mountain art (§24). Carried from the per-world terrain baseline (mapBaselines, cloned from the active map template) or proceduralTile, so map-editor-painted rivers/mountains render correctly on the client instead of the client re-deriving a possibly-different kind locally."
+                      },
                       "occupied": {
                         "type": "boolean"
                       },
@@ -1353,6 +1361,14 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "metal",
                     "sticker"
                   ]
+                },
+                "obstacleKind": {
+                  "type": "string",
+                  "enum": [
+                    "river",
+                    "mountain"
+                  ],
+                  "description": "For type=obstacle only: river vs mountain art (§24). Carried from the per-world terrain baseline (mapBaselines, cloned from the active map template) or proceduralTile, so map-editor-painted rivers/mountains render correctly on the client instead of the client re-deriving a possibly-different kind locally."
                 },
                 "occupied": {
                   "type": "boolean"
@@ -2056,6 +2072,14 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "metal",
                     "sticker"
                   ]
+                },
+                "obstacleKind": {
+                  "type": "string",
+                  "enum": [
+                    "river",
+                    "mountain"
+                  ],
+                  "description": "For type=obstacle only: river vs mountain art (§24). Carried from the per-world terrain baseline (mapBaselines, cloned from the active map template) or proceduralTile, so map-editor-painted rivers/mountains render correctly on the client instead of the client re-deriving a possibly-different kind locally."
                 },
                 "occupied": {
                   "type": "boolean"

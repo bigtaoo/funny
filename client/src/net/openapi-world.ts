@@ -729,6 +729,11 @@ export interface components {
             level: number;
             /** @enum {string} */
             resType?: "ink" | "paper" | "graphite" | "metal" | "sticker";
+            /**
+             * @description For type=obstacle only: river vs mountain art (§24). Carried from the per-world terrain baseline (mapBaselines, cloned from the active map template) or proceduralTile, so map-editor-painted rivers/mountains render correctly on the client instead of the client re-deriving a possibly-different kind locally.
+             * @enum {string}
+             */
+            obstacleKind?: "river" | "mountain";
             occupied?: boolean;
             mine?: boolean;
             /** @description Occupier's 9-digit public id (populated when meta service is available) */

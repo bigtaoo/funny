@@ -141,28 +141,32 @@ describe.skipIf(!mongo)('worldsvc map template e2e (§24)', () => {
     // tpl-a is the active template (activated earlier). Publish a distinctive edit, then open a fresh world so the
     // clone picks it up, and read the tile back through the runtime getMap/getTile path.
     const wid = 's9-baseline';
+    // The edit carries obstacleKind (§24 art-parity): a painted river must round-trip through baseline → getMap.
     await fetch(`${base}/admin/world/map-templates/tpl-a/tiles`, {
-      method: 'PUT', headers, body: JSON.stringify({ tiles: [{ x: 2, y: 3, type: 'obstacle', level: 9 }] }),
+      method: 'PUT', headers, body: JSON.stringify({ tiles: [{ x: 2, y: 3, type: 'obstacle', level: 9, obstacleKind: 'river' }] }),
     });
     const openRes = await fetch(`${base}/admin/world/open`, {
       method: 'POST', headers, body: JSON.stringify({ worldId: wid, season: 9, shard: 2, capacity: 100 }),
     });
     expect(openRes.status).toBe(200);
 
-    // The clone carried the edit into the world's baseline...
+    // The clone carried the edit (incl. obstacleKind) into the world's baseline...
     const baseline = await m.collections.mapBaselines.findOne({ _id: `${wid}:2:3` });
     expect(baseline?.type).toBe('obstacle');
     expect(baseline?.level).toBe(9);
+    expect(baseline?.obstacleKind).toBe('river');
 
     // ...and getMap now surfaces that baseline (not proceduralTile) for the un-owned tile.
     const view = await svc.getMap(wid, 'reader-acct', 2, 3, 2);
     const tile = view.tiles.find((t) => t.x === 2 && t.y === 3)!;
     expect(tile.type).toBe('obstacle');
     expect(tile.level).toBe(9);
+    expect(tile.obstacleKind).toBe('river');
     // Single-tile read path resolves the baseline the same way.
     const single = await svc.getTile(wid, 'reader-acct', 2, 3);
     expect(single.type).toBe('obstacle');
     expect(single.level).toBe(9);
+    expect(single.obstacleKind).toBe('river');
   });
 
   it('a world with no baseline rows falls back to proceduralTile (fallback preserved)', async () => {
