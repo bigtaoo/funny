@@ -117,8 +117,9 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 > **补充（2026-07-05）**：返回文字底下新增一个**轻量圆角色块**（`buildBackChip`）——`dark` variant 用白色 12% 透明度，`paper` variant 用墨色 8% 透明度，让返回按钮读成一个「按钮」而不是浮在标题栏上的裸文字；不是 §7.5 那种手绘描边的实体按钮框，只是一个衬底色块。同一改动把 `WorldMapScene` 唯一的例外（原来是左下角 HUD 里 88×34 的手绘按钮框，i18n key 是 `world.back`）迁移成新增的 `drawFloatingBackButton(container, h)`：同款色块 + `common.back` 文案，挪到左上角、同一个 `x=10` 缩进，与其余 22 个场景位置对齐；`floating` variant 用不透明的纸色底（92%）以便在地图任意底色上都能看清。至此返回按钮**位置 + 样式**在全部场景统一，无遗留例外。
 > - `title` 传 `null` 时只画 chrome、不画标题（供有副标题需抬升标题的场景自绘，如 CampaignMap）；`opts.titleSize`/`opts.headerH` 用于保真个别场景的大标题/矮栏（如 Settings/Titles 0.042、Chat 0.11 栏高）。
 > - `opts.variant`（`'dark'` 默认 / `'paper'`）：`'paper'` = `sketchPanel` 纸面底（`C.paper` 填充 + `C.mid` 手绘边）+ 深色标题，供 SLG/编辑器场景（其正文坐在纸面背景上）使用；返回在左、标题居中，右侧留空可由调用方在 chrome 之上自绘控件（如 DefenseEditor 的基地等级 stepper）。`'dark'` = 实心深色底 + 白色标题。
-> - **已迁移（14 个标准深色顶栏菜单场景）**：Achievement / BattlePass / Collection / Gacha / Friends / Leaderboard / Stats / Shop / Settings / Titles / Room / LevelPrep / CampaignMap / Chat。统一新增 i18n `common.back`（原各场景 `xxx.back` 键保留未删，部分仍被未迁场景使用）。
+> - **已迁移（13 个标准深色顶栏菜单场景）**：Achievement / BattlePass / Collection / Gacha / Leaderboard / Stats / Shop / Settings / Titles / Room / LevelPrep / CampaignMap / Chat。统一新增 i18n `common.back`（原各场景 `xxx.back` 键保留未删，部分仍被未迁场景使用）。
 > - **已迁移（6 个 SLG/编辑器纸面顶栏场景，2026-06-25，variant `'paper'`）**：Auction / Equipment / Family / Sect / Teams / DefenseEditor。各自传自己固定的 `HUD_H`/`HEADER_H` 作 `opts.headerH`（正文布局沿用该常量不动）+ `titleSize`（15 / 14）。DefenseEditor 的基地 stepper 仍由场景自绘在 chrome 右侧之上。
+> - **补充改到 `'paper'`（2026-07-06）**：`FriendsScene`（Friends/Family/Sect/World/Mail 五 Tab 共用一个顶栏）原挂 `'dark'`（黑底白字），但 World Tab 右上角靠 `drawHeaderCurrency` 画金币余额——该函数的金额文字硬编码 `C.dark`（深色），叠在黑底顶栏上不可见。改挂 `variant: 'paper'` 后金额可读，且与其正文纸面背景一致（此前是黑条突兀浮在纸面上）。同一改动把标题从固定 `friends.title`（"好友"）改成按当前 Tab 动态取 `friends.tab.${tab}`（此前切到 World/Family/Sect/Mail 顶栏仍显示"好友"，与 Tab 高亮的活动项不一致）。
 > - **仍未迁**：底部 HUD 的 WorldMap（非顶栏）；无深色顶栏的纸面浮动返回（Daily / Event）；LoginScene（返回仅在 password/register 视图条件出现，属登录前流程）。
 
 ---
