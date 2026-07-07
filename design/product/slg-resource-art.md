@@ -1,6 +1,6 @@
 # SLG 地图资源 — AI 出图 prompt 表
 
-状态：母题 5 张 ✅ 已出图（2026-07-01）；**分级图改为每级一张；木材(paper) l1–l10 全就位并打包上线 ✅（2026-07-06）**——l6–l10 专属真图直接进 atlas，l1–l5 由脚本烘焙（母题 token 白底填实 + 骰子槽叠放）；ink/graphite/metal/铜钱待出图
+状态：母题 5 张 ✅ 已出图（2026-07-01）；**分级图改为每级一张；木材(paper) l1–l10 全就位并打包上线 ✅（2026-07-06）**——l6–l10 专属真图直接进 atlas，l1–l5 由脚本烘焙（母题 token 白底填实 + 骰子槽叠放）；**ink/graphite/metal/sticker 已上过渡态合成堆叠帧（高度台阶+色带，2026-07-07），专属手绘待出图**
 关联：资源命名定版见 [`design/game/SLG_DESIGN.md`](../game/SLG_DESIGN.md) §3.4；美术铁律 / decor 出图管线见 [`art-direction.md`](art-direction.md) §〇 / §6.2；分级出图规范见下方 **§5**
 
 > **⚠️ 决策变更（2026-07-06，用户拍板）**：推翻 2026-06-30「只出 5 张母题 + 程序合成」。改为**每级单独出一张真图**，照城池 `city_l{n}` 那套（代码钩子 `getResLevelTexture` 已就位：atlas 里出现 `res_{type}_l{level}` 帧即自动取用、跳过丰度模拟，零改代码；未出图的级继续回退母题模拟，不报错）。
@@ -105,6 +105,12 @@ background, notebook grid lines, ruled lines, drop shadow, ground line, baseline
 
 ## 5. 分级出图（每级一张，2026-07-06 改版 · 权威）
 
+> **2026-07-07 修订（地图缩放可辨性 · 覆盖下方部分口径）**：编辑器实测——整片资源格缩到 34% 格宽后，等级几乎读不出（l1/l2/l3 仅差 1/2/3 张白纸，缩放下全糊成白点；且当时只有 paper 有分级帧，其余 4 资源任何级都画同一张母题）。为在**不改渲染程序**的前提下让等级缩放可辨，`pack_resources.cjs` 新增两条**烘焙进 atlas** 的层级编码（§5.9）：
+> 1. **高度台阶**：每级帧固定 128 宽、目标高随等级单调递增（`ratioFor`/`targetH`），渲染按宽归一 → 高级 = 屏上更高更密。
+> 2. **色带**：按等级叠一层去饱和 multiply 色阶（l1–2 冷青 → l3–4 sage → l5–6 tan → l7–8 琥珀 → l9 rust → l10 金）。**这一条推翻了 §5.3 #1「分级图不上色 / 颜色只由程序 tint 加」的原口径**——色现在直接烘焙进 atlas 帧。paper 的 l6–10 专属手绘**豁免**（保留原墨色，靠剪影区分）；paper l1–5 托盘与其余 4 资源全部上色带。
+>
+> 同时 ink/graphite/metal/sticker 在专属手绘就位前，改由脚本从各自母题**合成 l1–10 堆叠帧**（`bakeHeapFrames`，母题 `fillInteriorWhite` 填实后按等级叠堆），作为过渡；将来出了专属手绘再替换。改动只动打包脚本，client + map-editor 两份 atlas 仍逐字节一致（见 `feedback_slg_map_editor_client_parity`）。
+
 ### 5.1 资源 ↔ 三战对应 + 出图数
 
 | 三战说法 | code enum | 文具名 | 母题（单体，l1–5 计数 token） | l6–10 专属 |
@@ -196,6 +202,7 @@ shadow, ground line, baseline
 
 ### 5.9 待定项
 
+- **过渡态已上线**（2026-07-07）：ink/graphite/metal/sticker 现由 `bakeHeapFrames` 从母题合成 l1–10 堆叠帧（高度台阶 + 色带，见 §5 修订）。这是**临时表现**，等各资源专属手绘（下方两条）出图后替换。当前 55 帧（5 母题 + paper l1–10 + 4 资源 ×10 堆叠），512×4096，~235 KB。
 - **背景已定**（2026-07-06）：每资源专属 2 张，用该资源生产建筑容器（`paperTray`/`inkPot`/`graphiteMill`/`metalForge`），按 `l1–3 / l4–5` 分。木材已出图+烘焙上线（§5.7/§5.8）；ink/graphite/metal 套同思路待出图。
 - ~~**l1–5 落地方式**~~：✅ 已定=**烘焙合成**（§5.8 步骤 3），token 走 `fillInteriorWhite` 填实后叠骰子槽。ink/graphite/metal 出图后复用同一 `bakeCountFrames`（往 `BAKE` 加一条即可）。
 - **铜钱(sticker)**：无地块，5 张映射哪 5 级、用在什么界面。
