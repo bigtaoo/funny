@@ -62,6 +62,9 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
   // remains the response contract (openapi.yml). Helper: count roster instances of a given defId.
   const defCount = (save: { cardInv: Record<string, { defId: string; level: number }> }, defId: string) =>
     Object.values(save.cardInv).filter((c) => c.defId === defId).length;
+  /** Count roster instances of a given defId at a specific level (used to isolate the level-2 chapter-clear card from the level-1 drops). */
+  const lvlCount = (save: { cardInv: Record<string, { defId: string; level: number }> }, defId: string, level: number) =>
+    Object.values(save.cardInv).filter((c) => c.defId === defId && c.level === level).length;
 
   it('level drops unit card (CC-2): first chapter level grants an infantry Hero-Roster card + grantedCards', async () => {
     const before = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
@@ -79,7 +82,37 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     ]);
     const r10 = body(await clear('ch1_lv10', 3));
     expect(r10.data.grantedCards).toEqual({ 'infantry:1': 2 });
-    expect(defCount(r10.data.save, 'lichuang')).toBe(4); // +2 from the double drop
+    // ch1_lv10 is the chapter-1 finale → first clear ALSO grants a level-2 anchor card (§4, lichuang);
+    // so lichuang = 2 (starter + earlier ch1_lv1 drop) + 2 (double lv10 drop, level 1) + 1 (chapter card, level 2) = 5.
+    expect(defCount(r10.data.save, 'lichuang')).toBe(5);
+  });
+
+  it('chapter clear exclusive reward (§4): first clear of a chapter finale grants a level-2 anchor card; replay does not re-grant', async () => {
+    // Unlock the chapter-1 finale (seed lv1..lv9), then clear it fresh.
+    await seedCleared(['ch1_lv1', 'ch1_lv2', 'ch1_lv3', 'ch1_lv4', 'ch1_lv5', 'ch1_lv6', 'ch1_lv7', 'ch1_lv8', 'ch1_lv9']);
+    const r = body(await clear('ch1_lv10', 3));
+    // ch1 anchor = lichuang (Tao, odd chapter): exactly one level-2 instance, distinct from the level-1 lv10 double drop.
+    expect(lvlCount(r.data.save, 'lichuang', 2)).toBe(1);
+    expect(r.data.save.stats['campaign.chaptersCleared']).toBe(1);
+    // Replay the finale: no new chapter clear → no additional level-2 card (level-1 drops still repeat, but the exclusive reward is one-time).
+    const r2 = body(await clear('ch1_lv10', 1));
+    expect(lvlCount(r2.data.save, 'lichuang', 2)).toBe(1);
+    expect(r2.data.save.stats['campaign.chaptersCleared']).toBe(1);
+  });
+
+  it('chapter clear exclusive reward (§4): even chapter grants the Anna-side anchor (ch2 → level-2 max)', async () => {
+    // Seed ch1 fully cleared + ch2 lv1..lv9 to unlock the ch2 finale.
+    const upto: string[] = [];
+    for (let l = 1; l <= 10; l++) upto.push(`ch1_lv${l}`);
+    for (let l = 1; l <= 9; l++) upto.push(`ch2_lv${l}`);
+    await seedCleared(upto);
+    const before = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    expect(defCount(before.data.save, 'max')).toBe(0); // Anna anchors are not onboarding starters
+    const r = body(await clear('ch2_lv10', 3));
+    // ch2 anchor = max (Anna, even chapter, §5.1): one level-2 instance (the ch2 level-1 drops are also 'max', hence the level filter).
+    expect(lvlCount(r.data.save, 'max', 2)).toBe(1);
+    // Stat is recomputed as the finale-count of cleared: ch1 finale (seeded) + ch2 finale (just cleared) = 2.
+    expect(r.data.save.stats['campaign.chaptersCleared']).toBe(2);
   });
 
   it('later chapter drops higher-tier card (CC-2): ch3 drops a shieldbearer card into the roster', async () => {
@@ -176,8 +209,11 @@ describe.skipIf(!mongo)('pve achievement feed (S9-3b) e2e', () => {
   const m = mongo!;
   let app: FastifyInstance;
   let token: string;
+  let accountId: string;
   const body = (r: { payload: string }) => JSON.parse(r.payload);
   const auth = () => ({ authorization: `Bearer ${token}` });
+  const seedCleared = (cleared: string[]) =>
+    m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.progress.cleared': cleared } });
   /** Mutable verdict: each test case sets `verdict` to configure the fake judge's return value (including statsJson). */
   let verdict: JudgeRes = { ok: true, stars: 3, statsJson: '{}' };
   const fakeGateway: GatewayClient = {
@@ -199,9 +235,24 @@ describe.skipIf(!mongo)('pve achievement feed (S9-3b) e2e', () => {
     app = await buildApp({ cols: m.collections, jwt, internalKey: 'k', gateway: fakeGateway });
     const r = body(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'pve-feed-1' } }));
     token = r.data.token;
+    accountId = r.data.accountId;
     await app.inject({ method: 'GET', url: '/save', headers: auth() });
   });
   afterAll(async () => { if (app) await app.close(); });
+
+  it('chapter clear exclusive reward (§4): granted on the spot-check path (needsReplay), not deferred to /pve/verify', async () => {
+    verdict = { ok: true, stars: 3, statsJson: '{}' };
+    // Seed ch1 lv1..lv9 so ch1_lv10 is a first clear (isFirstClear → always sampled with the fake judge available).
+    await seedCleared(['ch1_lv1', 'ch1_lv2', 'ch1_lv3', 'ch1_lv4', 'ch1_lv5', 'ch1_lv6', 'ch1_lv7', 'ch1_lv8', 'ch1_lv9']);
+    const c = body(await clear('ch1_lv10', 3));
+    expect(c.data.needsReplay).toBe(true);
+    expect(c.data.granted).toEqual({}); // farmable material reward withheld until re-simulation
+    // The one-time chapter card is delivered alongside progress (like campaign.chaptersCleared), not withheld:
+    const lv2 = Object.values(c.data.save.cardInv as Record<string, { defId: string; level: number }>)
+      .filter((x) => x.defId === 'lichuang' && x.level === 2).length;
+    expect(lv2).toBe(1);
+    expect(c.data.save.stats['campaign.chaptersCleared']).toBe(1);
+  });
 
   it('judge verified: kill/cast accumulated into lifetime stats + materials granted normally', async () => {
     verdict = { ok: true, stars: 3, statsJson: '{"kill.archer":4,"cast.meteor":2}' };
