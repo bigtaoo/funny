@@ -65,7 +65,7 @@ export type IconKind =
   // language: close (✕) / confirm tick (✓) / replay-triangle (▶).
   | 'close' | 'check' | 'play';
 
-const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number) => void> = {
+export const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number) => void> = {
   book:    drawBook,
   globe:   drawGlobe,
   coin:    drawCoin,
