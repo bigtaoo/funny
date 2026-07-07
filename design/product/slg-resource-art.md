@@ -1,6 +1,6 @@
 # SLG 地图资源 — AI 出图 prompt 表
 
-状态：母题 5 张 ✅ 已出图（2026-07-01）；**分级图改为每级一张；木材(paper) l1–l10 全就位并打包上线 ✅（2026-07-06）**——l6–l10 专属真图直接进 atlas，l1–l5 由脚本烘焙（母题 token 白底填实 + 骰子槽叠放）；**ink/graphite/metal/sticker 已上过渡态合成堆叠帧（高度台阶+色带，2026-07-07），专属手绘待出图**
+状态：母题 5 张 ✅ 已出图（2026-07-01）；**分级图改为每级一张；木材(paper) l1–l10 全就位并打包上线 ✅（2026-07-06）；粮草(ink) l1–l10 全就位并打包上线 ✅（2026-07-07）**——l6–l10 专属真图直接进 atlas，l1–l5 由脚本烘焙（母题 token 白底填实 + 骰子槽叠放）；**graphite/metal/sticker 仍为过渡态合成堆叠帧（高度台阶+色带，2026-07-07），专属手绘待出图**
 关联：资源命名定版见 [`design/game/SLG_DESIGN.md`](../game/SLG_DESIGN.md) §3.4；美术铁律 / decor 出图管线见 [`art-direction.md`](art-direction.md) §〇 / §6.2；分级出图规范见下方 **§5**
 
 > **⚠️ 决策变更（2026-07-06，用户拍板）**：推翻 2026-06-30「只出 5 张母题 + 程序合成」。改为**每级单独出一张真图**，照城池 `city_l{n}` 那套（代码钩子 `getResLevelTexture` 已就位：atlas 里出现 `res_{type}_l{level}` 帧即自动取用、跳过丰度模拟，零改代码；未出图的级继续回退母题模拟，不报错）。
@@ -105,6 +105,8 @@ background, notebook grid lines, ruled lines, drop shadow, ground line, baseline
 
 ## 5. 分级出图（每级一张，2026-07-06 改版 · 权威）
 
+> **2026-07-07 · 粮草(ink) 已跟进 paper 全流程**：`res_ink_l6..l10`（一对瓶→三瓶簇→木架囤→大墨罐→墨仓）+ 空容器 `resbg_ink_a/b`（墨水台）已出图；`pack_resources.cjs` 的 `BAKE` 加 ink 一条、`HEAP_TYPES` 删 ink、`tintLevelFrame` 色带豁免推广到 `res_(paper|ink)_`；重跑产 55 帧 / 512×4096 / ~257 KB，client + map-editor 两份字节一致。ink 的 l1–5 计数托盘走同一 `bakeCountFrames`（母题 `res_ink` 填实 + 骰子槽），l6–10 专属真图保原墨色。
+>
 > **2026-07-07 修订（地图缩放可辨性 · 覆盖下方部分口径）**：编辑器实测——整片资源格缩到 34% 格宽后，等级几乎读不出（l1/l2/l3 仅差 1/2/3 张白纸，缩放下全糊成白点；且当时只有 paper 有分级帧，其余 4 资源任何级都画同一张母题）。为在**不改渲染程序**的前提下让等级缩放可辨，`pack_resources.cjs` 新增两条**烘焙进 atlas** 的层级编码（§5.9）：
 > 1. **高度台阶**：每级帧固定 128 宽、目标高随等级单调递增（`ratioFor`/`targetH`），渲染按宽归一 → 高级 = 屏上更高更密。
 > 2. **色带**：按等级叠一层去饱和 multiply 色阶（l1–2 冷青 → l3–4 sage → l5–6 tan → l7–8 琥珀 → l9 rust → l10 金）。**这一条推翻了 §5.3 #1「分级图不上色 / 颜色只由程序 tint 加」的原口径**——色现在直接烘焙进 atlas 帧。paper 的 l6–10 专属手绘**豁免**（保留原墨色，靠剪影区分）；paper l1–5 托盘与其余 4 资源全部上色带。
@@ -115,8 +117,8 @@ background, notebook grid lines, ruled lines, drop shadow, ground line, baseline
 
 | 三战说法 | code enum | 文具名 | 母题（单体，l1–5 计数 token） | l6–10 专属 |
 |---|---|---|---|---|
-| 粮草 | `ink` | 墨水 | 一个小墨水瓶 | 5 张 |
-| 木材 | `paper` | 纸张 | 一张卷角的纸 | 5 张 **← 先出这个** |
+| 粮草 | `ink` | 墨水 | 一个小墨水瓶 | 5 张 ✅ 已上线（§5.7-ink） |
+| 木材 | `paper` | 纸张 | 一张卷角的纸 | 5 张 ✅ 已上线 |
 | 石料 | `graphite` | 石墨 | 一块带切面的石墨矿块 | 5 张 |
 | 铁矿 | `metal` | 金属 | 一个长尾夹 | 5 张 |
 | 铜钱 | `sticker` | 贴纸 | 一张翘角的星形贴纸 | 5（**无地块自产**，哪 5 级待定）|
@@ -185,6 +187,29 @@ shadow, ground line, baseline
 
 > 6–10 每条抽 3–5 张挑 1，都要读得出是「纸」（层叠矩形 / 圆柱纸卷），别糊成砖块石块。托盘背景抽图时确保**空**（sheets 由脚本叠），且托盘轮廓别和 token 的纸片糊在一起。
 
+### 5.7-ink 粮草 = `ink`（1–5 计数 + 6–10 专属）· 2026-07-07 出图
+
+> 套木材(§5.7)同一骨架：l1–5 复用已验收母题 `res_ink`（矮胖墨水瓶）当计数 token，脚本按骰子槽叠 N 个=等级到背景；l6–10 每级专属手绘，形态逐级跃迁。剪影主题=**玻璃墨水瓶 / 圆肚墨罐**（圆润容器），与纸(层叠扁矩形)、石墨(棱块)、金属(线圈夹)一眼区分。所有图守 §5.3 硬约束（单色墨线 + 纯白底，不上色不阴影）。
+
+**l1–5：母题计数 + 托盘背景**。token = 母题 `res_ink`（单个矮胖墨水瓶），骰子槽叠 **N 个 = 等级**。背景 = 收墨建筑 `inkPot` 的容器（墨水台/瓶架，与内政建筑呼应），**专属 2 张**，按 `l1–3 / l4–5` 分，画**空**容器（瓶由脚本叠上）：
+
+| 背景 | 覆盖级 | 主体 prompt（接 §5.5 前缀，画**空**容器） |
+|---|---|---|
+| `resbg_ink_a` | l1–3 | `an empty desk ink stand for inkwells: a simple low open rectangular holder with a couple of round empty wells / recesses on top, drawn at a gentle isometric angle, blank and empty, no bottles in it` |
+| `resbg_ink_b` | l4–5 | `an empty sturdier two-tier wooden ink stand / small open crate for ink bottles, slightly worn frame with round empty slots, drawn at a gentle isometric angle, blank and empty, no bottles in it` |
+
+**l6–10：每级专属手绘**（接 §5.5 共用前缀），形态逐级跃迁，剪影各异（一对瓶 → 三瓶簇 → 木架囤 → 大墨罐 → 墨仓）：
+
+| 级 | 帧名 | 形态 | 主体 prompt |
+|---|---|---|---|
+| l6 | `res_ink_l6` | 一对瓶 | `a pair of small glass inkwell bottles standing side by side, one slightly taller than the other, a couple of tiny ink drops near their rims` |
+| l7 | `res_ink_l7` | 三瓶簇 | `a small cluster of three glass inkwell bottles of slightly different sizes grouped closely together, one with its cork/lid off` |
+| l8 | `res_ink_l8` | 木架囤 | `a small wooden rack or open crate holding several glass inkwell bottles standing in a row, a couple more bottles resting beside its base` |
+| l9 | `res_ink_l9` | 大墨罐 | `one large bulbous round-bellied ink jug / demijohn standing tall with a short neck, with two or three small inkwell bottles clustered at its base` |
+| l10 | `res_ink_l10` | 墨仓 | `an overflowing store of ink: one big round-bellied ink vat / barrel with a little spout, many glass inkwell bottles crowded around it, a few ink drops spilling at the base — the richest, most imposing ink stockpile` |
+
+> 6–10 每条抽 3–5 张挑 1，都要读得出是「墨水/墨罐」（圆肚玻璃瓶 / 圆罐），别糊成方盒或和石墨棱堆撞。墨水台背景抽图时确保**空**（瓶由脚本叠），且台面轮廓别和 token 的瓶身糊在一起。剪影最容易撞的是 `ink` 圆瓶堆 vs `metal` 长尾夹——盯一下确保「圆肚容器」感 vs「三角夹+线圈」能一眼分开。
+
 ### 5.8 打包管线（沿用母题口径，加分级帧）
 
 **l6–10（专属图）**：
@@ -203,6 +228,7 @@ shadow, ground line, baseline
 ### 5.9 待定项
 
 - **过渡态已上线**（2026-07-07）：ink/graphite/metal/sticker 现由 `bakeHeapFrames` 从母题合成 l1–10 堆叠帧（高度台阶 + 色带，见 §5 修订）。这是**临时表现**，等各资源专属手绘（下方两条）出图后替换。当前 55 帧（5 母题 + paper l1–10 + 4 资源 ×10 堆叠），512×4096，~235 KB。
-- **背景已定**（2026-07-06）：每资源专属 2 张，用该资源生产建筑容器（`paperTray`/`inkPot`/`graphiteMill`/`metalForge`），按 `l1–3 / l4–5` 分。木材已出图+烘焙上线（§5.7/§5.8）；ink/graphite/metal 套同思路待出图。
+- **背景已定**（2026-07-06）：每资源专属 2 张，用该资源生产建筑容器（`paperTray`/`inkPot`/`graphiteMill`/`metalForge`），按 `l1–3 / l4–5` 分。木材已出图+烘焙上线（§5.7/§5.8）；**粮草(ink) prompt 已就位（§5.7-ink，2026-07-07）待出图**；graphite/metal 套同思路待出图。
+- **ink 出图后落地清单**（2026-07-07）：源图（`res_ink_l6..l10` + 空容器 `resbg_ink_a`/`resbg_ink_b`，白底 png/webp）放 `art/ui/slg-map/` → `pack_resources.cjs` 里 (a) `BAKE` 加一条 `{ type: 'ink', token: 'res_ink', bgA: 'resbg_ink_a', bgB: 'resbg_ink_b' }`，(b) 从 `HEAP_TYPES` 删掉 `ink`（专属帧接管，别再合成堆叠帧撞名），(c) `tintLevelFrame` 的 l6–10 免色带豁免从 `res_paper_` 推广到 ink（专属手绘保原墨色）→ 重跑脚本，client + map-editor 两份 atlas 逐字节一致。
 - ~~**l1–5 落地方式**~~：✅ 已定=**烘焙合成**（§5.8 步骤 3），token 走 `fillInteriorWhite` 填实后叠骰子槽。ink/graphite/metal 出图后复用同一 `bakeCountFrames`（往 `BAKE` 加一条即可）。
 - **铜钱(sticker)**：无地块，5 张映射哪 5 级、用在什么界面。
