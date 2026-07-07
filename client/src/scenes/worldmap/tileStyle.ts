@@ -43,10 +43,30 @@ export const RES_COLORS: Record<string, number> = {
  * recede into the paper instead of pulling the eye to the map edges, where impassable
  * bands tend to cluster. Any terrain not listed uses TERRAIN_TEX_ALPHA_DEFAULT.
  */
-export const TERRAIN_TEX_ALPHA_DEFAULT = 0.9;
+export const TERRAIN_TEX_ALPHA_DEFAULT = 0.85; // nudged down from 0.9 so the warm paper breathes through
 export const TERRAIN_TEX_ALPHA: Partial<Record<TerrainTextureName, number>> = {
   terrain_mountain: 0.5,
   terrain_river:    0.5,
+};
+
+/**
+ * Per-terrain color TINT for the L1 ground texture — PixiJS multiplies it into the texture fill.
+ * The terrain atlas is hand-drawn GREY PENCIL ON PALE PAPER, i.e. effectively a luminance mask:
+ * multiplying a light, paper-adjacent hue tints the open paper of each tile toward that hue while
+ * the darker pencil strokes stay dark — a faint "colored-pencil" wash that adds warmth and terrain
+ * legibility WITHOUT turning the map into saturated color blocks, preserving the hand-drawn notebook
+ * look (project_art_direction). Tints are deliberately high-luminance & desaturated; retune the whole
+ * map's palette by nudging these. 0xffffff (the default) = no tint = the raw grey art.
+ */
+export const TERRAIN_TEX_TINT_DEFAULT = 0xffffff;
+export const TERRAIN_TEX_TINT: Partial<Record<TerrainTextureName, number>> = {
+  terrain_grass:      0xe2ead4, // generic land / grass — faint warm sage
+  terrain_river:      0xcfe0ec, // river — faint cool blue (also drawn at 0.5 alpha → very soft)
+  terrain_mountain:   0xdccbb4, // mountain — faint warm taupe (also at 0.5 alpha)
+  terrain_gate:       0xe9dabb, // pass / bridge — soft tan
+  terrain_keep:       0xeeddb0, // chokepoint keep — warm amber
+  terrain_center:     0xf2e6ad, // world center — soft gold
+  terrain_stronghold: 0xcdb8a6, // NPC stronghold — muted stone brown
 };
 
 export const MINE_TINT      = 0xe69090; // own territory (light red ink)

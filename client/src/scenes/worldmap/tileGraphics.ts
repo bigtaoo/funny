@@ -6,7 +6,7 @@ import { getResLevelTexture, getResTexture, isResAtlasReady } from '../../render
 import { getTerrainTexture, isTerrainAtlasReady } from '../../render/terrainAtlasLoader';
 import { getBuildingTexture, isBuildingAtlasReady } from '../../render/buildingAtlasLoader';
 import { isCityAtlasReady } from '../../render/cityAtlasLoader';
-import { FOG_COLOR, ALLY_SECT_BORDER, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT } from './tileStyle';
+import { FOG_COLOR, ALLY_SECT_BORDER, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT } from './tileStyle';
 import type { TerrainTextureName } from '../../render/terrainAtlasLoader';
 import type { WorldTileView } from '../../net/WorldApiClient';
 import type { ProceduralTile } from '@nw/shared';
@@ -28,7 +28,9 @@ export function drawTileL1(
     // Dark, busy obstacle weaves (mountain/river) are pushed down so they recede into the
     // paper instead of dominating the map edges; other terrain stays near-opaque.
     const texAlpha = TERRAIN_TEX_ALPHA[texName] ?? TERRAIN_TEX_ALPHA_DEFAULT;
-    g.beginTextureFill({ texture: tex, matrix: m, alpha: texAlpha });
+    // Faint colored-pencil tint multiplied into the grey ground art (see TERRAIN_TEX_TINT).
+    const texTint = TERRAIN_TEX_TINT[texName] ?? TERRAIN_TEX_TINT_DEFAULT;
+    g.beginTextureFill({ texture: tex, matrix: m, alpha: texAlpha, color: texTint });
   } else {
     g.beginFill(fill, 0.7);
   }

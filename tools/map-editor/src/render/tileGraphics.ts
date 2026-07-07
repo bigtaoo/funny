@@ -9,7 +9,7 @@ import { ISO_RATIO, diamondPath, diamondVertices } from './isoGrid';
 import { getResLevelTexture, getResTexture, isResAtlasReady } from './resAtlasLoader';
 import { getTerrainTexture, isTerrainAtlasReady } from './terrainAtlasLoader';
 import { getBuildingTexture, isBuildingAtlasReady } from './buildingAtlasLoader';
-import { terrainFill } from './tileStyle';
+import { terrainFill, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT } from './tileStyle';
 import type { TerrainTextureName } from './terrainAtlasLoader';
 import type { ProceduralTile } from '@nw/shared/slg';
 
@@ -23,7 +23,9 @@ export function drawEditorTile(g: PIXI.Graphics, tile: ProceduralTile, texName: 
     const w = tp - 1;
     const h = w * ISO_RATIO;
     const m = new PIXI.Matrix(w / tex.width, 0, 0, h / tex.height, -w / 2, -h / 2);
-    g.beginTextureFill({ texture: tex, matrix: m, alpha: 0.9 });
+    const texAlpha = TERRAIN_TEX_ALPHA[texName] ?? TERRAIN_TEX_ALPHA_DEFAULT;
+    const texTint = TERRAIN_TEX_TINT[texName] ?? TERRAIN_TEX_TINT_DEFAULT;
+    g.beginTextureFill({ texture: tex, matrix: m, alpha: texAlpha, color: texTint });
   } else {
     g.beginFill(terrainFill(tile.type, tile.resType), 0.7);
   }
