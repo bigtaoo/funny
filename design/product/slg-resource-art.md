@@ -284,7 +284,7 @@ shadow, ground line, baseline
 1. ✅ 源图 5 张按丰度定级重命名进 `art/ui/slg-map/`：l6=`res_sticker_l6.webp`(短叠~4+2散) / l7=`res_sticker_l7`(一叠+8散,无卷) / l8=`res_sticker_l8`(单卷半展+3散) / l9=`res_sticker_l9`(卷+一高叠+~10散) / l10=`res_sticker_l10`(大卷+多高叠+满地散)。主扫描 `loadSprite` 自动收。
 2. ✅ `pack_resources.cjs`：从 `HEAP_TYPES` 删掉 `sticker`（专属帧接管）；未加 `BAKE`（无 l1–5 托盘）；`tintLevelFrame` 免色带正则保持 `res_(paper|ink|graphite)_`（**不含** sticker → 专属帧照上色带）。
 3. ✅ 重跑脚本 → **50 帧 / 512×2048 / ~290 KB**（sticker 由 10 堆叠帧降为 5 专属，净 −5 帧），client + map-editor 两份 atlas 逐字节一致；`res_sticker_l6..l10` 就位、无 l1–5。**零改运行时代码**（`getResLevelTexture('sticker',6..10)` 命中即画）。
-4. **前提依赖（worldsvc，仍待核）**：sticker/铜矿资源格必须只在等级 ≥6 的格子生成；否则 `getResLevelTexture('sticker',1..5)` 落空、回退母题模拟（虽不报错，但违反「铜矿只在高级地」的设计）。
+4. ✅ **worldsvc 生成门槛已落地**（2026-07-07）：`mapgen.ts` 新增 `resTypeFor(x,y,seed,level)`——resource 格在 `level ≥ SLG_GEN.copperMinLevel`(=6) 时按 `copperShare`(=0.3) 抽取覆盖为 `sticker`，否则四种生物群系陆地资源。plain resource 格才应用（stronghold/familyKeep/center 保生物群系资源、画建筑不画资源母题）。产出侧 `tileYield` 对任何 resType 通用（铜矿格自然产铜钱）。全图扫描验证：铜矿 =资源格 3.4%（≈≥6 格的 30%），**level<6 的 sticker = 0**；shared 544 + worldsvc 192 全绿。
 
 ### 5.8 打包管线（沿用母题口径，加分级帧）
 
@@ -307,4 +307,4 @@ shadow, ground line, baseline
 - **背景已定**（2026-07-06）：每资源专属 2 张，用该资源生产建筑容器（`paperTray`/`inkPot`/`graphiteMill`/`metalForge`），按 `l1–3 / l4–5` 分。木材/粮草/石料已出图+烘焙上线（§5.7 / §5.7-ink / §5.7-graphite）；metal 套同思路待出图。
 - **专属出图后落地清单**（paper/ink/graphite 已按此落地）：源图（`res_<type>_l6..l10` + 空容器 `resbg_<type>_a`/`resbg_<type>_b`，白底 png/webp）放 `art/ui/slg-map/` → `pack_resources.cjs` 里 (a) `BAKE` 加一条 `{ type, token: 'res_<type>', bgA, bgB }`，(b) 从 `HEAP_TYPES` 删掉该 type（专属帧接管，别再合成堆叠帧撞名），(c) `tintLevelFrame` 的 l6–10 免色带豁免正则加该 type（专属手绘保原墨色）→ 重跑脚本，client + map-editor 两份 atlas 逐字节一致。**metal 出图后照此加一条即可。**
 - ~~**l1–5 落地方式**~~：✅ 已定=**烘焙合成**（§5.8 步骤 3），token 走 `fillInteriorWhite` 填实后叠骰子槽。metal 出图后复用同一 `bakeCountFrames`（往 `BAKE` 加一条即可）。
-- **铜钱/铜矿(sticker)** ✅ 已出图上线（2026-07-07）：**上地图、只在等级 ≥6 生成**（回三战规则），l6–10 五张专属手绘已进 atlas、无 l1–5、无托盘背景、保留色带。见 §5.7-sticker。**仍待核 worldsvc 生成规则**（资源格只在 lvl≥6 铺 sticker，否则 l1–5 落空回退母题）。
+- **铜钱/铜矿(sticker)** ✅ 已全链路上线（2026-07-07）：美术 l6–10 五张专属进 atlas + worldsvc 生成门槛（`resTypeFor`：resource 格 lvl≥6 按 `copperShare` 覆盖为 sticker，`SLG_GEN.copperMinLevel/copperShare`）。全图扫描验证 level<6 无 sticker、铜矿占资源格 3.4%。见 §5.7-sticker。**经济侧 TBD**：家城 `stickerShop` 是否与地图铜矿并存产铜钱、copperShare 数值调参。

@@ -38,18 +38,24 @@ import {
 describe('biomeAt quad-partition (ADR-022: graphite is the 4th land resource)', () => {
   it('procedurally generates all four land resources across the map (graphite no longer absent)', () => {
     const seen = new Set<string>();
-    for (let x = 0; x < 120; x += 2) {
-      for (let y = 0; y < 120; y += 2) {
+    let stickerBelow6 = 0;
+    for (let x = 0; x < 300; x += 2) {
+      for (let y = 0; y < 300; y += 2) {
         const t = proceduralTile('s1-0', x, y);
-        if (t.resType) seen.add(t.resType);
+        if (t.resType) {
+          seen.add(t.resType);
+          if (t.resType === 'sticker' && t.level < 6) stickerBelow6++;
+        }
       }
     }
     expect(seen.has('ink')).toBe(true);
     expect(seen.has('paper')).toBe(true);
-    expect(seen.has('graphite')).toBe(true); // the fix: graphite now has a biome faucet
+    expect(seen.has('graphite')).toBe(true); // ADR-022: graphite now has a biome faucet
     expect(seen.has('metal')).toBe(true);
-    // sticker is never biome-generated (home-city self-produced)
-    expect(seen.has('sticker')).toBe(false);
+    // 铜矿: sticker IS on the map now, but ONLY on level ≥6 tiles (三战 rule, SGZ_LAND_REFERENCE §3).
+    // The art ships sticker frames l6–10 only, so a sub-l6 sticker tile would break the level gate.
+    expect(seen.has('sticker')).toBe(true);
+    expect(stickerBelow6).toBe(0);
   });
 });
 

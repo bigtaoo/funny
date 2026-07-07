@@ -40,7 +40,7 @@ export type TileType =
  * - paper:    basic building material (was `wood`).
  * - graphite: advanced building material (4th land resource; map faucet via biomeAt quad-partition, sink via high-level building upgrades, SLG_CITY_DESIGN / ADR-022).
  * - metal:    military / equipment forging (was `iron`).
- * - sticker:  universal flexible resource (copper-coin slot: recruit / tech / small instant actions). NOT a global currency — season-scoped, cleared at season end, non-auctionable, not directly purchasable. Faucet = home-city stickerShop self-production (民居模型); sink = building upgrades.
+ * - sticker:  universal flexible resource (copper-coin slot: recruit / tech / small instant actions). NOT a global currency — season-scoped, cleared at season end, non-auctionable, not directly purchasable. Faucet = level-gated 铜矿 map tiles (`resource` tiles at level ≥ SLG_GEN.copperMinLevel, 三战 rule) + home-city stickerShop self-production (民居模型); sink = building upgrades.
  * All five are season resources (cleared at season end, banned from the auction house); the only global currency is `coins` (ECONOMY_BALANCE).
  */
 export type ResourceType = 'ink' | 'paper' | 'graphite' | 'metal' | 'sticker';
@@ -185,13 +185,22 @@ export const SLG_GEN = {
   /**
    * Biome quad-partition thresholds (ink < t0 < paper < t1 < graphite < t2 < metal). Four "land-mined" resources are biome-generated
    * (SLG_CITY_DESIGN D-CITY-2, ADR-022): graphite is the 4th land resource, given a map faucet here so the building system can sink it.
-   * `sticker` (copper-coin slot) is NOT a land resource — it is self-produced by the home-city stickerShop (民居模型), so it has no biome threshold.
+   * `sticker` (copper-coin slot) is NOT a biome land resource so it has no biome threshold; instead it has a LEVEL-GATED 铜矿 map faucet (copperMinLevel/copperShare below) plus home-city stickerShop self-production.
    * ⚠ ADR-022 caveat: this changes the procedural map (unclaimed tiles only — claimed tiles persist resType in the DB). Pre-launch, so applied
    * globally; once a season is live, gate behind a season-version flag instead of mutating live maps. Thresholds are DRAFT, tune in the balance pass.
    */
   biomeInkMax: 0.30,
   biomePaperMax: 0.55,
   biomeGraphiteMax: 0.78,
+  /**
+   * 铜矿 (copper mine) = LEVEL-GATED `sticker` map faucet (三战 rule: 铜矿 only on 6级地及以上, see SGZ_LAND_REFERENCE §3 /
+   * SLG_DESIGN §3.4). On a `resource` tile at level ≥ copperMinLevel, a per-tile hash draw < copperShare overrides the
+   * biome land resource with `sticker`; below that level sticker never appears on the map (matches the art, which ships
+   * sticker frames l6–10 only — slg-resource-art §5.7-sticker). Coexists with the home-city stickerShop faucet.
+   * DRAFT — tune copperShare in the balance pass.
+   */
+  copperMinLevel: 6,
+  copperShare: 0.3,
   /** Level cap for neutral open land (keeps neutral tiles low-value). */
   neutralLevelCap: 2,
   // ── S8-6.6 blocking terrain + gates: obstacle/gate placement is now geometric (ring/river/branch bands,
