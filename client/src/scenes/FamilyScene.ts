@@ -9,7 +9,7 @@ import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren, marginLineX } from '../render/sketchUi';
 import { buildIcon } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
-import { drawSceneHeader } from '../ui/widgets/SceneHeader';
+import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import { caretDisplay } from '../render/inputDisplay';
 import type { WorldApiClient, FamilyView, FamilyDetailView, FamilyMemberView, FamilyMessageView } from '../net/WorldApiClient';
 import { WorldApiError } from '../net/WorldApiClient';
@@ -108,7 +108,7 @@ export class FamilyScene implements Scene {
   private renderHeader(): void {
     const { w } = this;
     const hdr = drawSceneHeader(this.container, w, this.h, t('family.title'), {
-      variant: 'paper', headerH: HUD_H, titleSize: 15,
+      variant: 'paper', headerH: HUD_H, titleSize: 15, accent: HEADER_ACCENT.slg,
     });
     this.hitRects.push({ rect: hdr.backRect, action: () => this.cb.onBack() });
   }

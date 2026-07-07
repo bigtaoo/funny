@@ -25,7 +25,7 @@ import { buildIcon } from '../render/icons';
 import { UNIT_ART_URLS, getArtTexture } from '../render/cardArt';
 import { drawEquipmentGlyph } from '../render/equipmentGlyph';
 import { getEquipIconTexture } from '../render/equipmentAtlas';
-import { drawSceneHeader, drawHeaderCurrency } from '../ui/widgets/SceneHeader';
+import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import { drawSidebarTabs, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import type { SaveData, CardInstance, EquipSlot } from '../game/meta/SaveData';
@@ -154,7 +154,7 @@ export class CardScene implements Scene {
     this.container.addChild(this.loadingLayer);
 
     const hdr = drawSceneHeader(this.container, w, h, t('roster.title'), {
-      variant: 'paper', headerH: HUD_H, titleSize: 15,
+      variant: 'paper', headerH: HUD_H, titleSize: 15, accent: HEADER_ACCENT.spend,
     });
     this.backRect = hdr.backRect;
 

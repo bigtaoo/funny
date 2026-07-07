@@ -11,7 +11,7 @@ import type { InputManager } from '../../inputSystem/InputManager';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { buildDecorCLayer } from '../../render/decorCLayer';
-import { drawSceneHeader } from '../../ui/widgets/SceneHeader';
+import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import type { WorldApiClient, AuctionView } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
 import type { SaveData, EquipmentInstance, CardInstance } from '../../game/meta/SaveData';
@@ -152,7 +152,7 @@ export class AuctionSceneBase {
 
     // Static header
     const hdr = drawSceneHeader(this.container, w, this.h, t('auction.title'), {
-      variant: 'paper', headerH: HUD_H, titleSize: 18,
+      variant: 'paper', headerH: HUD_H, titleSize: 18, accent: HEADER_ACCENT.slg,
     });
     this.hitRects.push({ rect: hdr.backRect, action: () => this.cb.onBack() });
   }

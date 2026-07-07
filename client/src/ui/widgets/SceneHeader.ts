@@ -36,17 +36,33 @@ import { buildIcon, type IconKind } from '../../render/icons';
 import { buildCoinIcon } from '../../render/coinIconAtlas';
 
 /**
- * Bar styling:
- *   - 'dark'  : solid dark fill, white title — the default for lobby-side menu
- *               scenes (Achievement, Shop, Gacha, …).
- *   - 'paper' : hand-drawn paper panel (paper fill + mid sketch border), dark
- *               title — matches the SLG / editor scenes (World, Family, Sect,
- *               Auction, Equipment, Teams, DefenseEditor) whose bodies sit on
- *               the paper background. The right side of the bar is left free, so
- *               callers may draw their own controls (e.g. a level stepper) on
- *               top of the baked chrome after this returns.
+ * Bar styling. As of the 07.07.2026 header-unification pass, **every** secondary
+ * scene uses `'paper'` — a hand-drawn paper panel (paper fill + mid sketch
+ * border) with a dark title, matching the notebook aesthetic and the paper body
+ * background all these scenes already sit on. Category is conveyed only by the
+ * thin accent rule along the bottom of the bar (see `opts.accent`), not by the
+ * fill colour, so the whole app reads as one consistent title row.
+ *
+ *   - 'paper' : the unified look (default). The right side of the bar is left
+ *               free, so callers may draw their own controls (a coin readout via
+ *               {@link drawHeaderCurrency}, or e.g. DefenseEditor's level stepper)
+ *               on top of the baked chrome after this returns.
+ *   - 'dark'  : legacy solid-dark fill + white title. Retained only so an
+ *               explicit `variant: 'dark'` still compiles; no scene ships it.
  */
 export type SceneHeaderVariant = 'dark' | 'paper';
+
+/**
+ * Category accent for the bottom rule of the bar. Blue = lobby / info / social
+ * (default), gold = spend / progression (shop, gacha, battle pass, equipment,
+ * roster), red = SLG / competitive (world, family, sect, teams, auction,
+ * defense). Keeps the fill uniform while giving a faint at-a-glance zone cue.
+ */
+export const HEADER_ACCENT = {
+  lobby: C.accent,
+  spend: C.gold,
+  slg: C.red,
+} as const;
 
 /** Hit-area width of the back button in design space (§3.1). */
 const BACK_HIT_W = 160;
@@ -119,14 +135,23 @@ function buildBackChip(label: string, size: number, ctx: BackChipContext): { chi
   return { chip, w, h };
 }
 
-/** Build the static bar chrome (fill + back chip) at local origin. */
+/** Build the static bar chrome (fill + accent rule + back chip) at local origin. */
 function buildChrome(
-  w: number, headerH: number, label: string, size: number, variant: SceneHeaderVariant,
+  w: number, headerH: number, label: string, size: number, variant: SceneHeaderVariant, accent: number,
 ): PIXI.Container {
   const c = new PIXI.Container();
 
   if (variant === 'paper') {
     c.addChild(sketchPanel(w, headerH, { fill: C.paper, border: C.mid, seed: seedFor(0, 0, w) }));
+    // Category accent: a thin rule hugging the bottom edge, doubling as the
+    // header/body divider. The only per-scene colour cue on an otherwise
+    // uniform paper bar (see HEADER_ACCENT).
+    const ruleH = Math.max(2, Math.round(headerH * 0.03));
+    const rule = new PIXI.Graphics();
+    rule.beginFill(accent);
+    rule.drawRect(0, headerH - ruleH, w, ruleH);
+    rule.endFill();
+    c.addChild(rule);
   } else {
     const bar = new PIXI.Graphics();
     bar.beginFill(C.dark);
@@ -155,20 +180,23 @@ function buildChrome(
  *   The SLG/editor scenes pass their own fixed bar height here so their body
  *   layout (laid out below a fixed `HUD_H`/`HEADER_H` constant) stays put.
  * @param opts.titleSize Override the title font size (defaults to 3.4% of height).
- * @param opts.variant Bar styling — see {@link SceneHeaderVariant} (default 'dark').
+ * @param opts.variant Bar styling — see {@link SceneHeaderVariant} (default 'paper').
+ * @param opts.accent Category accent colour for the bottom rule (defaults to the
+ *   blue lobby accent). Pass one of {@link HEADER_ACCENT}.
  */
 export function drawSceneHeader(
   container: PIXI.Container, w: number, h: number, title: string | null,
-  opts?: { headerH?: number; titleSize?: number; variant?: SceneHeaderVariant },
+  opts?: { headerH?: number; titleSize?: number; variant?: SceneHeaderVariant; accent?: number },
 ): SceneHeaderResult {
   const headerH = opts?.headerH ?? sceneHeaderHeight(h);
-  const variant = opts?.variant ?? 'dark';
+  const variant = opts?.variant ?? 'paper';
+  const accent = opts?.accent ?? HEADER_ACCENT.lobby;
   const size = backSize(h);
   const label = `← ${t('common.back')}`; // "← " + back
 
   const chrome = getCachedDisplay(
-    `hdr:${variant}:${Math.round(w)}x${headerH}:${size}:${label}`,
-    () => buildChrome(w, headerH, label, size, variant),
+    `hdr:${variant}:${accent}:${Math.round(w)}x${headerH}:${size}:${label}`,
+    () => buildChrome(w, headerH, label, size, variant, accent),
     w, headerH,
   );
   container.addChild(chrome);
@@ -252,7 +280,10 @@ export function drawHeaderCurrency(
   const cluster = new PIXI.Container();
   let cx = 0;
 
-  const addChip = (icon: IconKind, color: number, amount: number, label?: string): void => {
+  const addChip = (
+    icon: IconKind, color: number, amount: number, label?: string,
+    amountColor: number = C.dark, bold = false,
+  ): void => {
     // 'coin' goes through the shared atlas-backed glyph so this reads identically to the shop's
     // balance icon; other currency chips (materials, etc.) keep the procedural buildIcon draw.
     const ic = icon === 'coin' ? buildCoinIcon(icon, iconSize, color) : buildIcon(icon, iconSize, color);
@@ -265,13 +296,15 @@ export function drawHeaderCurrency(
       cluster.addChild(lb);
       cx += lb.width + 4;
     }
-    const lbl = txt(`${amount}`, fontSize, C.dark);
+    const lbl = txt(amount.toLocaleString(), fontSize, amountColor, bold);
     lbl.anchor.set(0, 0.5); lbl.x = cx; lbl.y = 0;
     cluster.addChild(lbl);
     cx += lbl.width + gap;
   };
 
-  addChip('coin', C.gold, coins, t('equip.coins'));
+  // Coin balance: gold bold number, no text label — the glyph is the unit. This is the single
+  // coin readout shared by every scene (shop / gacha / battle pass / equipment / roster / …).
+  addChip('coin', C.gold, coins, undefined, C.gold, true);
   for (const chip of chips) addChip(chip.icon, chip.color, chip.amount, chip.label);
 
   if (capacity) {

@@ -8,7 +8,7 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedF
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { type IconKind } from '../render/icons';
 import { loadCoinIconAtlas, buildCoinIcon } from '../render/coinIconAtlas';
-import { drawSceneHeader } from '../ui/widgets/SceneHeader';
+import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import { drawSidebarTabs, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 
@@ -394,19 +394,12 @@ export class ShopScene implements Scene {
   /** Header bar with title, back, and coin balance. Returns its height. */
   private drawHeader(): number {
     const { w, h } = this;
-    const hdr = drawSceneHeader(this.container, w, h, t('shop.title'));
+    const hdr = drawSceneHeader(this.container, w, h, t('shop.title'), { accent: HEADER_ACCENT.spend });
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
-    // Coin balance (top-right): coin glyph + number, no "金币：" text prefix — the icon is the unit.
-    const balNum = txt(this.cb.getCoins().toLocaleString(), Math.round(h * 0.028), C.gold, true);
-    balNum.anchor.set(1, 0.5); balNum.x = w - Math.round(w * 0.04); balNum.y = tbH / 2;
-    this.container.addChild(balNum);
-    const balIcon = Math.round(h * 0.036);
-    const bIcon = buildCoinIcon('coin', balIcon, C.gold);
-    bIcon.x = balNum.x - balNum.width - balIcon - Math.round(w * 0.008);
-    bIcon.y = tbH / 2 - balIcon / 2;
-    this.container.addChild(bIcon);
+    // Coin balance (top-right): shared header readout so it reads identically across every scene.
+    drawHeaderCurrency(this.container, w, tbH, this.cb.getCoins());
 
     return tbH;
   }
