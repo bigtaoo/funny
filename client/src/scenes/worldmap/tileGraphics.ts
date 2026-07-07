@@ -306,33 +306,29 @@ export function drawCityIcon(g: PIXI.Graphics, mine: boolean, ally: boolean, lv:
 }
 
 /**
- * Render resource motif sprites + hand-drawn defense frames onto a tile Graphics.
+ * Render a resource motif sprite onto a tile Graphics.
  *
- * Abundance axis: when a hand-drawn `res_{resType}_l{level}` frame exists, draw it
- * as a single sprite (real per-level art). Otherwise fall back to replicating the
- * generic motif sprite — 1 unit at lv1 growing to 4 units at lv10, laid out in
- * pre-defined scatter positions — so per-level art can land resType-by-resType,
- * level-by-level with zero code change (mirrors cityAtlasLoader's tier fallback).
+ * When a hand-drawn `res_{resType}_l{level}` frame exists, draw that real per-level art:
+ * the artwork alone carries level/abundance/defense — no programmatic count-replication or
+ * pencil defense frames are layered on (paper is fully done, l1–l10). resTypes without
+ * per-level art yet (ink/graphite/metal/sticker) fall back to a SINGLE generic `res_{resType}`
+ * sprite as a transitional placeholder until their per-level sets land — deliberately one
+ * sprite, no abundance scatter, so the map stays calm paper instead of an icon confetti.
  *
- * Defense axis (lv4+): pencil-stroke fence outline; lv7+ adds a heavier palisade
- * with arrow-tip markers.
- *
- * Falls back gracefully to color-only if the atlas hasn't decoded yet.
+ * Falls back to a single programmatic shape if the atlas hasn't decoded yet.
  */
 
 export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, tp: number, fogged = false): void {
   const lv = Math.max(1, Math.min(10, level));
-  // `g`'s local origin is the tile's diamond center (see drawTileL1); scatter
-  // fractions below are converted from the old "0..1 across the square" convention
-  // to center-relative offsets, with the y-offset flattened (×0.6) to keep sprites
-  // from poking past the shallower diamond edges near the tile's left/right tips.
+  // `g`'s local origin is the tile's diamond center (see drawTileL1); the motif sits
+  // centred and slightly low, y-offset flattened (×0.6) so it never pokes past the
+  // shallower diamond edges near the tile's left/right tips.
   const toLocal = (fx: number, fy: number): [number, number] => [(fx - 0.5) * tp, (fy - 0.5) * tp * 0.6];
 
-  // Outside vision: reveal the resource TYPE only — a single dimmed motif, no
-  // abundance count / defense frames / danger accents (those encode level detail,
+  // Outside vision: reveal the resource TYPE only — a single dimmed motif (no level detail,
   // which §18 keeps hidden under fog, same as the level dot).
   if (fogged) {
-    if (!isResAtlasReady()) { drawResMotifFallback(g, resType, 1, tp); return; }
+    if (!isResAtlasReady()) { drawResMotifFallback(g, resType, tp); return; }
     const ftex = getResTexture(resType);
     if (!ftex) return;
     const sp = new PIXI.Sprite(ftex);
@@ -344,110 +340,31 @@ export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, t
     return;
   }
 
-  const v = diamondVertices(tp - 1);
-  const edgeMid = (a: [number, number], b: [number, number]): [number, number] => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-
-  // ── Defense frames (drawn first so motif sprites sit on top) ──────────────
-  if (lv >= 4) {
-    const heavy = lv >= 7;
-    const lw = heavy ? 1.5 : 0.9;
-    const alpha = heavy ? 0.7 : 0.45;
-    g.lineStyle(lw, 0x3a2a18, alpha);
-    g.beginFill(0, 0);
-    g.drawPolygon(diamondPath(tp - 1, { inset: Math.min(0.35, 6 / tp) }));
-    g.endFill();
-
-    if (heavy) {
-      // Tick marks at each diamond edge's midpoint, poking outward (stylised palisade stakes).
-      const tk = 4;
-      g.lineStyle(1.2, 0x3a2a18, 0.65);
-      const edges: [[number, number], [number, number]][] = [
-        [v.top, v.right], [v.right, v.bottom], [v.bottom, v.left], [v.left, v.top],
-      ];
-      for (const [a, b] of edges) {
-        const mid = edgeMid(a, b);
-        const len = Math.hypot(mid[0], mid[1]) || 1;
-        const outX = mid[0] + (mid[0] / len) * tk;
-        const outY = mid[1] + (mid[1] / len) * tk;
-        g.moveTo(mid[0], mid[1]); g.lineTo(outX, outY);
-      }
-    }
-  }
-
-  // ── Motif sprites (programmatic fallback when atlas not ready) ────────────
+  // Programmatic fallback while the atlas is still decoding.
   if (!isResAtlasReady()) {
-    drawResMotifFallback(g, resType, lv, tp);
+    drawResMotifFallback(g, resType, tp);
     return;
   }
 
-  // Real per-level art, when it exists: draw it as a single sprite and skip the
-  // count/alpha abundance simulation entirely — the artwork itself carries the level.
-  const levelTex = getResLevelTexture(resType, lv);
-  if (levelTex) {
-    const sp = new PIXI.Sprite(levelTex);
-    sp.anchor.set(0.5, 0.5);
-    sp.scale.set((tp * 0.34) / Math.max(levelTex.width, levelTex.height));
-    [sp.x, sp.y] = toLocal(0.5, 0.52);
-    g.addChild(sp);
-    return;
-  }
-
-  const tex = getResTexture(resType);
+  // Real per-level art when it exists; otherwise a single generic placeholder sprite.
+  const tex = getResLevelTexture(resType, lv) ?? getResTexture(resType);
   if (!tex) return;
-
-  // Abundance: number of sprite instances keyed by level band.
-  const count = lv <= 3 ? 1 : lv <= 6 ? 2 : lv <= 9 ? 3 : 4;
-
-  // Pre-defined scatter positions (fraction of tp) for up to 4 sprites.
-  // Chosen to look organic and avoid overlapping the level-dot corner (top-right).
-  const POSITIONS: [number, number][] = [
-    [0.5,  0.52],   // 1 sprite: centred, slightly low
-    [0.32, 0.38], [0.65, 0.6],   // 2 sprites: upper-left + lower-right
-    [0.32, 0.35], [0.65, 0.35], [0.48, 0.65],  // 3 sprites: triangle
-    [0.28, 0.33], [0.62, 0.33], [0.28, 0.65], [0.65, 0.65], // 4 sprites: 2×2
-  ];
-  const offsets = POSITIONS.slice(
-    count === 1 ? 0 : count === 2 ? 1 : count === 3 ? 3 : 6,
-    count === 1 ? 1 : count === 2 ? 3 : count === 3 ? 6 : 10,
-  );
-
-  // Scale each sprite so the long edge is ~30% of the tile, shrinking slightly
-  // for higher counts to prevent overcrowding.
-  const targetPx = tp * (count <= 1 ? 0.34 : count === 2 ? 0.29 : 0.26);
-  const scale = targetPx / Math.max(tex.width, tex.height);
-
-  const alpha = lv <= 3 ? 0.6 : lv <= 6 ? 0.72 : lv <= 9 ? 0.82 : 0.92;
-
-  for (const [fx, fy] of offsets) {
-    const sp = new PIXI.Sprite(tex);
-    sp.anchor.set(0.5, 0.5);
-    sp.scale.set(scale);
-    sp.alpha = alpha;
-    [sp.x, sp.y] = toLocal(fx, fy);
-    g.addChild(sp);
-  }
+  const sp = new PIXI.Sprite(tex);
+  sp.anchor.set(0.5, 0.5);
+  sp.scale.set((tp * 0.34) / Math.max(tex.width, tex.height));
+  [sp.x, sp.y] = toLocal(0.5, 0.52);
+  g.addChild(sp);
 }
 
-/** Programmatic fallback icon when res_atlas is not yet loaded. Draws a small stationery-themed shape. */
+/** Single programmatic fallback icon when res_atlas is not yet loaded. Draws one small stationery-themed shape. */
 
-export function drawResMotifFallback(g: PIXI.Graphics, resType: string, lv: number, tp: number): void {
-  const count = lv <= 3 ? 1 : lv <= 6 ? 2 : lv <= 9 ? 3 : 4;
-  const alpha = lv <= 3 ? 0.55 : lv <= 6 ? 0.68 : lv <= 9 ? 0.80 : 0.90;
-  const POSITIONS: [number, number][] = [
-    [0.50, 0.52],
-    [0.32, 0.38], [0.65, 0.60],
-    [0.32, 0.35], [0.65, 0.35], [0.48, 0.65],
-    [0.28, 0.33], [0.62, 0.33], [0.28, 0.65], [0.65, 0.65],
-  ];
-  const offsets = POSITIONS.slice(
-    count === 1 ? 0 : count === 2 ? 1 : count === 3 ? 3 : 6,
-    count === 1 ? 1 : count === 2 ? 3 : count === 3 ? 6 : 10,
-  );
-  const r = tp * (count <= 1 ? 0.12 : 0.10);
-  // Center-relative, y flattened to match drawResMotif's diamond-safe scatter (`g`'s
+export function drawResMotifFallback(g: PIXI.Graphics, resType: string, tp: number): void {
+  const alpha = 0.6;
+  const r = tp * 0.12;
+  // Center-relative, y flattened to match drawResMotif's diamond-safe placement (`g`'s
   // local origin is the tile's diamond center, not the old square's top-left corner).
-  for (const [fx, fy] of offsets) {
-    const cx = (fx - 0.5) * tp, cy = (fy - 0.5) * tp * 0.6;
+  {
+    const cx = 0, cy = 0.02 * tp * 0.6;
     g.lineStyle(0);
     if (resType === 'ink') {
       // Ink drop: teardrop shape
