@@ -154,7 +154,7 @@ async function bakeHeapFrames(type, tokenFile) {
 // Synthetic per-level heaps for the single-motif types (paper keeps its bespoke trays + real art).
 const HEAP_TYPES = [
   { type: 'metal',    token: 'res_metal' },
-  { type: 'sticker',  token: 'res_sticker' },
+  // sticker/铜矿 = only l6–10 bespoke art (§5.7-sticker) — no synthetic heaps, no l1–5 (map only spawns it on lvl≥6).
 ];
 
 /**
