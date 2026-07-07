@@ -59,6 +59,8 @@ export class DailyScene implements Scene {
   private toastTimer = 0;
 
   private retention: RetentionView | null = null;
+  /** Set in destroy(); guards render() so a late async load() re-render can't paint into a torn-down container. */
+  private destroyed = false;
 
   constructor(layout: ILayout, input: InputManager, cb: DailyCallbacks) {
     this.container = new PIXI.Container();
@@ -79,7 +81,9 @@ export class DailyScene implements Scene {
   }
 
   destroy(): void {
+    this.destroyed = true;
     for (const unsub of this.unsubs) unsub();
+    this.container.destroy({ children: true });
   }
 
   private async load(): Promise<void> {
@@ -107,6 +111,7 @@ export class DailyScene implements Scene {
   }
 
   private render(): void {
+    if (this.destroyed) return;
     tearDownChildren(this.container);
     this.hits = [];
     const { w, h } = this;

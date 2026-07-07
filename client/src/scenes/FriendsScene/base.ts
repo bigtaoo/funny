@@ -209,6 +209,7 @@ export class FriendsSceneBase {
     this.clearHiddenInput();
     this.unsubs.forEach((u) => u());
     this.popup.destroy();
+    this.container.destroy({ children: true });
   }
 
   // ── Inbound pushes ────────────────────────────────────────────────────────────

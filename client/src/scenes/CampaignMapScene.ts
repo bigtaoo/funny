@@ -128,7 +128,13 @@ export class CampaignMapScene implements Scene {
     if (this.flip) this.advanceFlip(dt);
   }
 
-  destroy(): void { this.unsubs.forEach((u) => u()); }
+  destroy(): void {
+    this.unsubs.forEach((u) => u());
+    // Free the page tree (background + decor + current page, incl. any boiling-line
+    // Ticker.shared closures inside them) — previously only input was unsubscribed,
+    // leaking every child's shared-ticker tick across navigations.
+    this.container.destroy({ children: true });
+  }
 
   // ── Page lifecycle ────────────────────────────────────────────────────────────
 

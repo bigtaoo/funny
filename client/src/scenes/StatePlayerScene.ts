@@ -151,9 +151,14 @@ export class StatePlayerScene implements Scene {
   }
 
   destroy(): void {
+    // The rendering views own Ticker.shared fx closures (building destroy/spawn
+    // effects etc.); destroy each so no tick keeps poking a freed sprite's
+    // .angle/.scale after the scene is gone. Previously only vfx was torn down.
+    this.boardView.destroy();
+    this.unitView.destroy();
+    this.buildingView.destroy();
     this.vfx.destroy();
-    this.overlay.removeAllListeners();
-    this.container.removeAllListeners();
+    this.container.destroy({ children: true });
   }
 
   // ── Frame advance + interpolation ──────────────────────────────────────────────────────────

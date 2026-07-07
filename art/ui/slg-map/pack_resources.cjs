@@ -36,7 +36,9 @@ const OUT_DIRS = [
 // zero runtime code change (same path as the l6–10 real art). bgA covers l1–3, bgB l4–5.
 const TOKEN_FRAC = 0.40;  // token long edge as a fraction of the background long edge
 const BAKE = [
-  { type: 'paper', token: 'res_paper', bgA: 'resbg_paper_a', bgB: 'resbg_paper_b' },
+  { type: 'paper',    token: 'res_paper',    bgA: 'resbg_paper_a',    bgB: 'resbg_paper_b'    },
+  { type: 'ink',      token: 'res_ink',      bgA: 'resbg_ink_a',      bgB: 'resbg_ink_b'      },
+  { type: 'graphite', token: 'res_graphite', bgA: 'resbg_graphite_a', bgB: 'resbg_graphite_b' },
 ];
 // Dice-pip slot layouts, as (fx,fy) fractions of the background box. Count = level.
 // Slots sit inside the tray's interior; composited back-to-front (top rows first).
@@ -53,6 +55,107 @@ const DICE = {
 };
 
 const nextPow2 = (n) => { let p = 1; while (p < n) p <<= 1; return p; };
+
+// ── Per-level tier encoding (§5.9): height ramp + colour band ──────────────────
+// The map renderer draws a level frame width-normalised (on-screen width = const, height follows
+// the frame's aspect ratio — see client/src/render/tileGraphics.ts drawResMotif). So to make tier
+// legible when the whole map is zoomed out (where dice-pip counting fails) we bake TWO zoom-proof
+// cues straight into the frames, with zero renderer change:
+//   1. HEIGHT RAMP  — each level is emitted at a fixed 128 width and a target height that grows with
+//      level, filled by a taller/denser motif heap → higher tier reads as a physically taller icon.
+//   2. COLOUR BAND  — a desaturated per-band multiply (cool → warm → gold) so tier still separates by
+//      hue even at 1-tile-per-few-pixels, and even for adjacent levels of equal height.
+const FRAME_W = 128;
+const RATIO_MIN = 0.60, RATIO_MAX = 1.45;                 // frame height/width at l1 … l10
+const ratioFor = (lv) => RATIO_MIN + ((lv - 1) / 9) * (RATIO_MAX - RATIO_MIN);
+const targetH  = (lv) => Math.round(FRAME_W * ratioFor(lv));
+const HEAP_COUNT = [0, 1, 1, 2, 3, 4, 5, 6, 7, 8, 10];     // motif tokens per level (index = level)
+
+// Desaturated tier bands, paper-cohesive (low = cool slate → mid = tan → high = amber → l10 = gold).
+// Applied as a partial multiply so the pencil linework survives. [r,g,b] per level, index = level.
+const BAND = [
+  null,
+  [0x9f, 0xb2, 0xc6], [0x9f, 0xb2, 0xc6], // l1–2 cool slate-blue
+  [0xa6, 0xb8, 0x8c], [0xa6, 0xb8, 0x8c], // l3–4 sage
+  [0xd6, 0xc2, 0x8a], [0xd6, 0xc2, 0x8a], // l5–6 warm tan
+  [0xd8, 0x9f, 0x60], [0xd8, 0x9f, 0x60], // l7–8 amber
+  [0xcf, 0x78, 0x4d],                     // l9   rust
+  [0xe6, 0xb4, 0x22],                     // l10  gold
+];
+const BAND_STRENGTH = 0.72;
+
+/** Partial-multiply tier tint over the opaque pixels of a raw RGBA buffer (in place). */
+function applyBand(buf, w, h, lv) {
+  const c = BAND[lv];
+  if (!c) return;
+  const s = BAND_STRENGTH;
+  for (let i = 0; i < w * h; i++) {
+    if (buf[i * 4 + 3] === 0) continue;
+    for (let k = 0; k < 3; k++) {
+      const src = buf[i * 4 + k];
+      buf[i * 4 + k] = Math.round(src * (1 - s) + (src * c[k] / 255) * s);
+    }
+  }
+}
+
+/** Decode a packed level frame's PNG buffer, apply its tier band, re-encode. Returns a new sprite. */
+async function tintLevelFrame(sprite) {
+  const m = /_l(\d+)$/.exec(sprite.name);
+  if (!m) return sprite;
+  const lv = Number(m[1]);
+  // paper/ink/graphite l6–10 are bespoke hand-drawn art — keep their original colours (they read by
+  // silhouette, not band). Their l1–5 (baked count trays) still get the band: that's the low-tier hue cue.
+  if (/^res_(paper|ink|graphite)_/.test(sprite.name) && lv >= 6) return sprite;
+  const { data, info } = await sharp(sprite.buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  applyBand(data, info.width, info.height, lv);
+  const buf = await sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
+  return { ...sprite, buf };
+}
+
+/**
+ * Synthesize `res_<type>_l1..l10` for a type that has only a single motif (ink/graphite/metal/sticker —
+ * no bespoke per-level art like paper). Each level is a bottom-aligned heap of HEAP_COUNT[lv] motif
+ * tokens on a FRAME_W×targetH(lv) transparent frame, so height + density both ramp with tier.
+ */
+async function bakeHeapFrames(type, tokenFile) {
+  // fill: true → interiors opaque (like the paper sheets), so faint pencil motifs (graphite/sticker)
+  // stay visible at map zoom and the tier band lands on a real area, not just thin linework.
+  const tok = await processImage(tokenFile, Math.round(FRAME_W * 0.50), { fill: true }); // token long edge ≈ 64px
+  const out = [];
+  for (let lv = 1; lv <= 10; lv++) {
+    const H = targetH(lv);
+    const n = HEAP_COUNT[lv];
+    const step = tok.w * 0.72;                              // horizontal spacing (slight overlap)
+    const perRow = Math.max(1, Math.floor((FRAME_W - tok.w) / step) + 1);
+    const rowH = tok.h * 0.52;                              // vertical spacing (stack upward)
+    const composites = [];
+    let placed = 0, row = 0;
+    while (placed < n) {
+      const inRow = Math.min(perRow, n - placed);
+      const rowW = (inRow - 1) * step + tok.w;
+      const x0 = (FRAME_W - rowW) / 2;
+      const y = H - tok.h - row * rowH;
+      for (let c = 0; c < inRow; c++) {
+        const jitter = (((placed * 2654435761) >>> 0) % 7) - 3; // deterministic (no Math.random)
+        const left = Math.max(0, Math.min(FRAME_W - tok.w, Math.round(x0 + c * step + jitter)));
+        const top  = Math.max(0, Math.min(H - tok.h, Math.round(y)));
+        composites.push({ input: tok.buf, left, top });
+        placed++;
+      }
+      row++;
+    }
+    const buf = await sharp({ create: { width: FRAME_W, height: H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+      .composite(composites).png().toBuffer();
+    out.push({ name: `res_${type}_l${lv}`, buf, w: FRAME_W, h: H });
+  }
+  return out;
+}
+
+// Synthetic per-level heaps for the single-motif types (paper keeps its bespoke trays + real art).
+const HEAP_TYPES = [
+  { type: 'metal',    token: 'res_metal' },
+  // sticker/铜矿 = only l6–10 bespoke art (§5.7-sticker) — no synthetic heaps, no l1–5 (map only spawns it on lvl≥6).
+];
 
 /**
  * Make a line-art shape's interior opaque white (in-place, raw RGBA).
@@ -180,8 +283,17 @@ async function main() {
   const sprites = [];
   for (const f of files) sprites.push(await loadSprite(path.join(__dirname, f)));
 
-  // Baked l1–5 count frames (motif tokens over tray backgrounds)
+  // Baked paper l1–5 count frames (motif tokens over tray backgrounds); l6–10 are real art loaded above.
   for (const cfg of BAKE) sprites.push(...await bakeCountFrames(cfg));
+
+  // Synthetic l1–10 heaps for the single-motif types (ink/graphite/metal/sticker).
+  for (const cfg of HEAP_TYPES) {
+    const src = ['.webp', '.png'].map((e) => cfg.token + e).find((f) => fs.existsSync(path.join(__dirname, f)));
+    if (src) sprites.push(...await bakeHeapFrames(cfg.type, path.join(__dirname, src)));
+  }
+
+  // Tier colour band on every per-level frame (paper trays/art + all heaps) — the zoom-proof hue cue.
+  for (let i = 0; i < sprites.length; i++) sprites[i] = await tintLevelFrame(sprites[i]);
 
   // Shelf packing: sort by height descending, fill row by row
   sprites.sort((a, b) => b.h - a.h);

@@ -53,7 +53,12 @@ const VIEW_H = 620;
 /** Rendered tiles extend this far past the visible edge so short pans don't reveal blank space (§ live-drag tradeoff below). */
 const VIEW_PAD_FACTOR = 1.5;
 const ZOOM_MIN = 10;
-const ZOOM_MAX = 56;
+const ZOOM_MAX = 84;
+/** Default on-screen tile px = the game client's L1 (detail) density: it sizes tiles as
+ * floor(viewportWidth / 16) (client/src/scenes/worldmap/zoom.ts). Matching that divisor here
+ * makes the editor open with the SAME on-screen tile count the player sees at full zoom-in,
+ * instead of the old fixed 34 (~2× as many tiles). ZOOM_MAX leaves headroom to zoom in closer. */
+const DEFAULT_TP = Math.floor(VIEW_W / 16);
 /** On-screen width of a base's city sprite in tile-widths — mirrors the game client's BASE_SPRITE_TILES
  * (client/src/scenes/worldmap/constants.ts) so a 3×3 base's art lines up identically; larger cities scale
  * proportionally by footprint (see refreshCitySprites). */
@@ -115,7 +120,7 @@ const langBtn = document.getElementById('btn-lang') as HTMLButtonElement;
 
 // ── Editor state ─────────────────────────────────────────────────────────
 type Tool = TerrainKind | 'eraser' | 'city' | 'pan';
-let tool: Tool = 'river';
+let tool: Tool = 'pan';
 const store = new TerrainGridStore();
 const cityStore = new CityStore();
 /** True while a river/mountain/eraser brush stroke is being dragged (mousedown → mouseup). */
@@ -130,7 +135,9 @@ let panLast: { x: number; y: number } | null = null;
 /** Whether the Tile inspector panel has shown real hover data yet (vs. its initial hint text). */
 let tileInfoShown = false;
 
-let tp = 28; // on-screen tile width in px — the sole "zoom" knob (replaces the old CSS-scale slider)
+let tp = DEFAULT_TP; // on-screen tile width in px — the sole "zoom" knob (replaces the old CSS-scale slider).
+             // Visible cell count ∝ tp⁻²; default synced to the game client's L1 detail density
+             // (VIEW_W/16) so the editor's tile count matches what players see, not ~2× more.
 let panX = 0;
 let panY = 0;
 /** worldId → tile diff Map ("x:y" → override), refreshed by renderBaseMap(); reused by hover info. */
@@ -287,8 +294,9 @@ function loadCitiesAndRedraw(worldId: string): void {
  * Rebuilds the per-level city building sprites (city_atlas art) from cityStore.nodes — the same visuals the
  * game renders (DESIGN.md §6.3 art-parity). Cheap (~70 nodes) and deliberately NOT called on every
  * terrain-brush tick: cities don't move while painting, so this only runs on seed/zoom/city-position changes.
- * Sprite width = footprint/BASE_FOOTPRINT × BASE_SPRITE_TILES tiles, so higher-tier (bigger footprint) cities
- * draw larger, matching the game client's WorldMapRenderer city layer.
+ * Sprite width = √(footprint/BASE_FOOTPRINT) × BASE_SPRITE_TILES tiles — bigger-footprint cities still draw
+ * larger, but sub-linearly so the 9×9 world-center 巨城 doesn't balloon to ~9.6 tiles and swallow the map
+ * (a base at footprint 3 is unchanged: √1 = 1). Mirrors the game client's WorldMapRenderer city layer.
  */
 function refreshCitySprites(): void {
   citySpriteLayer.removeChildren().forEach((c) => c.destroy({ children: true }));
@@ -302,7 +310,7 @@ function refreshCitySprites(): void {
     sp.x = s.x;
     sp.y = s.y;
     sp.zIndex = node.x + node.y;
-    const spriteTiles = (node.footprint / BASE_FOOTPRINT) * BASE_SPRITE_TILES;
+    const spriteTiles = Math.sqrt(node.footprint / BASE_FOOTPRINT) * BASE_SPRITE_TILES;
     sp.width = spriteTiles * tp;
     sp.height = spriteTiles * tp;
     citySpriteLayer.addChild(sp);
@@ -844,6 +852,7 @@ widthInput.value = String(randomDefaultWidth());
 applyStaticI18n();
 applyDynamicI18n();
 renderLegend();
+canvasEl().style.cursor = 'grab'; // matches the default 'pan' tool
 centerView();
 Promise.allSettled([loadTerrainAtlas(), loadResAtlas(), loadBuildingAtlas(), loadCityAtlas()]).then(() => {
   renderBaseMap(seedInput.value);

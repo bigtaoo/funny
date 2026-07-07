@@ -29,7 +29,10 @@ export function makeZoomCfgs(w: number, h: number): [ZoomCfg, ZoomCfg, ZoomCfg] 
     const visH = b.maxTy - b.minTy;
     return { tile, visW, visH, poolW: visW + 2, poolH: visH + 2 };
   };
-  return [mk(Math.floor(w / 19)), mk(Math.floor(w / 37)), mk(27)];
+  // Divisor = tiles across screen width; smaller divisor = bigger tiles = fewer on screen.
+  // L1 19→16 and L2 37→31 cut on-screen tile count by ~1/3 (count ∝ divisor²) while
+  // preserving the ~2× step between the two detail levels. L3 overview left dense.
+  return [mk(Math.floor(w / 16)), mk(Math.floor(w / 31)), mk(27)];
 }
 
 /** A single pooled tile object — one PIXI.Graphics reused for many map positions. */

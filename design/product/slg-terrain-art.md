@@ -119,3 +119,19 @@ lines
 - **`terrain_stronghold` v2（2026-07-02，定稿）**：改为纯顶视的岩石团块（同 `terrain_mountain` 画法但密度更高更暗，几乎不留纸面空隙），穿插扁平 X 形路障标记，去掉立体桩子和骷髅骨头。已定稿为 `terrain_stronghold`。
 
 **7 张地形贴图全部定稿完成（2026-07-02）**：grass / mountain / river / gate / keep / center / stronghold。下一步进入 §4 出图后的管线（源图归档 `art/ui/slg-map/` → 打包图集 → 接入 `terrainAtlasLoader.ts`），尚未执行。
+
+---
+
+## 6. 渲染期调优记录
+
+- **地形贴图分级不透明度（2026-07-07）**：`drawTileL1` 铺地面贴图原先全部走统一 `alpha 0.9`。障碍地形（`terrain_mountain` / `terrain_river`）是全套里最深、排线最密的两张，且不可通行带常成片挤在地图边缘，导致视觉重量集中在四角、抢过中央可玩区与资源母题。改为按贴图名查表取 alpha：mountain/river 压到 `0.5` 退成背景，其余地形保持默认 `0.9`（后续被下一条降为 `0.85`）。配置在 [`tileStyle.ts`](../../client/src/scenes/worldmap/tileStyle.ts) 的 `TERRAIN_TEX_ALPHA` / `TERRAIN_TEX_ALPHA_DEFAULT`，渲染端在 [`tileGraphics.ts`](../../client/src/scenes/worldmap/tileGraphics.ts) `drawTileL1` 查表。归属水洗/迷雾/资源母题等叠加层不受影响。`stronghold` 地形色偏深但单点不成片，暂未压（如需按同一张表加 `terrain_stronghold` 即可）。
+
+- **彩色铅笔 tint 上色 + 网格密度下调（2026-07-07）**：反馈「整屏纸面偏纯白、且单屏格子太多」。
+  - **上色（渲染期 tint，不重烤图集）**：7 张地形贴图是「灰墨线画在浅纸面」，本质是一张明度蒙版；渲染期用 `beginTextureFill({ color })` 乘一个高明度、低饱和的地形色，即可把每格的空纸面染向该色、深墨笔触保持深色 —— 得到很淡的「彩色铅笔」质感，既解决纯白发平，又不破手绘笔记本铁律（[`art-direction.md`](art-direction.md)）。刻意选渲染期而非打包期烤色：色值放常量里可热更新反复调，且保持单张灰度图集（详见会话决策）。初始色板：grass `#e2ead4`(暖沙绿) / river `#cfe0ec`(淡蓝) / mountain `#dccbb4`(淡赭) / gate `#e9dabb`(软褐) / keep `#eeddb0`(暖琥珀) / center `#f2e6ad`(柔金) / stronghold `#cdb8a6`(石棕)。配置在 [`tileStyle.ts`](../../client/src/scenes/worldmap/tileStyle.ts) 的 `TERRAIN_TEX_TINT` / `TERRAIN_TEX_TINT_DEFAULT`（`0xffffff`=不染色）；默认 alpha 同时 `0.9→0.85` 让暖纸底透上来一点。**map-editor 同步**：[`tools/map-editor/src/render/tileStyle.ts`](../../tools/map-editor/src/render/tileStyle.ts) 镜像同一套常量，[`tileGraphics.ts`](../../tools/map-editor/src/render/tileGraphics.ts) `drawEditorTile` 接入（原来硬编码 `alpha 0.9`、无 tint），保证编辑器预览与游戏一致。
+  - **密度**：单屏格子数 ∝ 每屏横向格数²。[`zoom.ts`](../../client/src/scenes/worldmap/zoom.ts) `makeZoomCfgs` 的除数 L1 `19→16`、L2 `37→31`，两个细节层各减约 1/3 且保留 L1→L2 ~2× 步进；L3 总览层（固定 27px）不动。调这两个数即可再松/再紧。
+
+- **map-editor 母题/网格/城池同步 + 交互默认值（2026-07-07）**：反馈 map-editor 预览「满屏白色母题 confetti、网格线太重、中心城堡过大」。逐条根因与修法：
+  - **资源母题 confetti**：客户端 [`tileGraphics.ts`](../../client/src/scenes/worldmap/tileGraphics.ts) `drawResMotif` 已在 commit `2a85a917` 精简为「单张 per-level 图，去丰度复制/防御框」，但 **map-editor 的镜像副本漏改**，仍在按 lv 复制 1–4 个通用母题 + lv≥4 栅栏/lv≥7 尖桩 —— 编辑器一直渲染旧的 confetti。已把 [`tools/map-editor/src/render/tileGraphics.ts`](../../tools/map-editor/src/render/tileGraphics.ts) 的 `drawResMotif`/`drawResMotifFallback` 同步为客户端的单张实现（编辑器无迷雾路径），并删掉随之失效的 `diamondVertices` 导入。
+  - **网格线太重**：每格菱形描边 `lineStyle(0.7, 0xccbbaa, α)` 的 α `0.32→0.18`，客户端与 map-editor 两处同改，纸面网格转淡。
+  - **中心城堡过大**：world-center 是设计上的 9×9 巨城，NPC node 城池贴图原按 `footprint/BASE_FOOTPRINT × BASE_SPRITE_TILES` **线性**放大，9×9 → ~9.6 格几乎吞掉整屏。改为 **√（次线性）** `√(footprint/BASE_FOOTPRINT) × BASE_SPRITE_TILES`：基地（footprint 3，√1=1）不变，巨城收到 ~5.5 格，正好落在自己的 center 底格内。客户端 [`WorldMapRenderer/city.ts`](../../client/src/scenes/worldmap/WorldMapRenderer/city.ts) 与 map-editor `refreshCitySprites` 两处同改。`BASE_SPRITE_TILES`（3.2，补偿贴图 ~15% 透明边让基地填满 3×3）保持不变，避免回归基地填充。
+  - **编辑器默认值**：默认工具 `river→pan`（含高亮按钮 + 光标）；缩放旋钮 `tp 28→34`，单屏可见格数 ∝ tp⁻²，减约 1/3。

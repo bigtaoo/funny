@@ -132,12 +132,22 @@ function buildEquipCallbacks(activeCardInstanceId: string) {
   return { cb, calls, save };
 }
 
-/** Build → update twice → destroy. Asserts the container is real and nothing throws. */
+/**
+ * Build → update twice → destroy. Asserts the container is real, nothing throws, and —
+ * crucially — that destroy() actually tears the display tree down.
+ *
+ * Regression guard for the recurring "UI-switch freeze": scenes that only unsubscribed
+ * input in destroy() left every child (boiling-line titles, building/unit fx) alive with
+ * its `PIXI.Ticker.shared` closure still running, which accumulated across navigations and
+ * eventually stalled the app. A destroyed container has removed + destroyed all children,
+ * so `.destroyed === true` is the invariant every scene must uphold.
+ */
 function exercise(scene: Scene): void {
   expect(scene.container).toBeInstanceOf(PIXI.Container);
   scene.update(1 / 30);
   scene.update(1 / 30);
   scene.destroy();
+  expect(scene.container.destroyed).toBe(true);
 }
 
 // Each entry builds one scene for a given (w, h). Kept as factories so we can run the

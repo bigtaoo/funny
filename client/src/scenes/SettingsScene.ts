@@ -97,6 +97,8 @@ export class SettingsScene implements Scene {
 
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
+  /** Set in destroy(); guards render() against any late (caret/async) re-render into a torn-down container. */
+  private destroyed = false;
 
   // Rename overlay state.
   private renameOpen = false;
@@ -132,8 +134,10 @@ export class SettingsScene implements Scene {
   }
 
   destroy(): void {
+    this.destroyed = true;
     this.unsubs.forEach((u) => u());
     if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
+    this.container.destroy({ children: true });
   }
 
   private handleDown(x: number, y: number): void {
@@ -210,6 +214,7 @@ export class SettingsScene implements Scene {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   private render(): void {
+    if (this.destroyed) return;
     tearDownChildren(this.container); // caret blink (~2×/s) + per-keystroke rename field → free Text textures
     this.hits = [];
 

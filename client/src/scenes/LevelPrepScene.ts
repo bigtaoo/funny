@@ -45,6 +45,8 @@ export class LevelPrepScene implements Scene {
   private readonly cb: LevelPrepCallbacks;
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
+  /** Set in destroy(); guards render() against any late re-render into a torn-down container. */
+  private destroyed = false;
 
   // ── Intro story animation state ───────────────────────────────────────────
   private showingIntro = false;
@@ -74,7 +76,11 @@ export class LevelPrepScene implements Scene {
     }
   }
 
-  destroy(): void { this.unsubs.forEach((u) => u()); }
+  destroy(): void {
+    this.destroyed = true;
+    this.unsubs.forEach((u) => u());
+    this.container.destroy({ children: true });
+  }
 
   private handleDown(x: number, y: number): void {
     if (this.showingIntro) {
@@ -107,6 +113,7 @@ export class LevelPrepScene implements Scene {
   }
 
   private render(): void {
+    if (this.destroyed) return;
     tearDownChildren(this.container);
     this.hits = [];
     const { w, h } = this;

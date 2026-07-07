@@ -61,6 +61,8 @@ export class CollectionScene implements Scene {
   private readonly unsubs: Array<() => void> = [];
   /** Art urls whose async-load re-render hook is already attached (fire once each). */
   private readonly artHooked = new Set<string>();
+  /** Set in destroy(); guards render() so a late async re-render (fetch / texture 'loaded') can't paint into a torn-down container. */
+  private destroyed = false;
 
   // ── Scroll state ──────────────────────────────────────────────────────────────
   // Content (cards/skins/units) lives in `layer`, masked to the region below the
@@ -89,7 +91,11 @@ export class CollectionScene implements Scene {
   }
 
   update(): void { /* static */ }
-  destroy(): void { this.unsubs.forEach((u) => u()); }
+  destroy(): void {
+    this.destroyed = true;
+    this.unsubs.forEach((u) => u());
+    this.container.destroy({ children: true });
+  }
 
   private handleDown(x: number, y: number): void {
     this.pointerActive = true;
@@ -160,6 +166,7 @@ export class CollectionScene implements Scene {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   private render(): void {
+    if (this.destroyed) return;
     tearDownChildren(this.container);
     this.hits = [];
     const { w, h } = this;

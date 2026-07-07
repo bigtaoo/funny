@@ -84,6 +84,7 @@ export class IntroScene implements Scene {
 
   destroy(): void {
     this.unsubs.forEach((u) => u());
+    this.container.destroy({ children: true });
   }
 
   // ── Input ──────────────────────────────────────────────────────────────────

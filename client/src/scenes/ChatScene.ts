@@ -108,6 +108,7 @@ export class ChatScene implements Scene {
     this.dead = true;
     this.unsubs.forEach((u) => u());
     if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
+    this.container.destroy({ children: true });
   }
 
   // ── Inbound (app forwards control-plane chat_message push) ────────────────────

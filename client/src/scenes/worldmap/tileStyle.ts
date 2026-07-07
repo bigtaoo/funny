@@ -37,6 +37,52 @@ export const RES_COLORS: Record<string, number> = {
   sticker:  0xefe4ea, // faint warm rose-grey
 };
 
+/**
+ * Per-terrain opacity for the L1 ground texture fill. Most terrain draws near-opaque
+ * (DEFAULT), but the dark, busy obstacle weaves (mountain / river) are pushed down so they
+ * recede into the paper instead of pulling the eye to the map edges, where impassable
+ * bands tend to cluster. Any terrain not listed uses TERRAIN_TEX_ALPHA_DEFAULT.
+ */
+export const TERRAIN_TEX_ALPHA_DEFAULT = 0.85; // nudged down from 0.9 so the warm paper breathes through
+export const TERRAIN_TEX_ALPHA: Partial<Record<TerrainTextureName, number>> = {
+  terrain_mountain: 0.5,
+  terrain_river:    0.5,
+};
+
+/**
+ * Per-terrain color TINT for the L1 ground texture — PixiJS multiplies it into the texture fill.
+ * The terrain atlas is hand-drawn GREY PENCIL ON PALE PAPER, i.e. effectively a luminance mask:
+ * multiplying a light, paper-adjacent hue tints the open paper of each tile toward that hue while
+ * the darker pencil strokes stay dark — a faint "colored-pencil" wash that adds warmth and terrain
+ * legibility WITHOUT turning the map into saturated color blocks, preserving the hand-drawn notebook
+ * look (project_art_direction). Tints are deliberately high-luminance & desaturated; retune the whole
+ * map's palette by nudging these. 0xffffff (the default) = no tint = the raw grey art.
+ */
+// Per-resource biome tint for the ground texture of a plain `resource` tile. The resource motif
+// overlay was removed (see tileGraphics.drawTileL1) because resourceDensity=1.0 (ADR-032) made a motif
+// per tile carpet the whole map; the biome is now read straight off the tinted paper — each resource
+// washes its tiles a soft, distinct, still-paper-cohesive hue so paper / ink / graphite / metal /
+// sticker zones stay locatable. familyKeep/stronghold tiles keep their landmark terrain tint instead.
+// Must match the map-editor's tileStyle.ts (SLG map render parity).
+export const RES_TEX_TINT: Record<string, number> = {
+  paper:    0xf1e6c0, // warm straw
+  ink:      0xc6cfe8, // cool periwinkle
+  graphite: 0xd2d4d0, // neutral graphite grey
+  metal:    0xc7dccb, // steel mint
+  sticker:  0xf0cfe1, // soft rose
+};
+
+export const TERRAIN_TEX_TINT_DEFAULT = 0xffffff;
+export const TERRAIN_TEX_TINT: Partial<Record<TerrainTextureName, number>> = {
+  terrain_grass:      0xe2ead4, // generic land / grass — faint warm sage
+  terrain_river:      0xcfe0ec, // river — faint cool blue (also drawn at 0.5 alpha → very soft)
+  terrain_mountain:   0xdccbb4, // mountain — faint warm taupe (also at 0.5 alpha)
+  terrain_gate:       0xe9dabb, // pass / bridge — soft tan
+  terrain_keep:       0xeeddb0, // chokepoint keep — warm amber
+  terrain_center:     0xf2e6ad, // world center — soft gold
+  terrain_stronghold: 0xcdb8a6, // NPC stronghold — muted stone brown
+};
+
 export const MINE_TINT      = 0xe69090; // own territory (light red ink)
 export const MINE_BASE_TINT = 0xcc3333; // own capital (deep red ink)
 export const ENEMY_TINT     = 0x90a8e6; // enemy territory (light blue ink)

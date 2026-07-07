@@ -157,8 +157,8 @@ export class ResultScene implements Scene {
   update(_dt: number): void { /* static scene */ }
 
   destroy(): void {
-    this.container.removeAllListeners();
     this.popup.destroy();
+    this.container.destroy({ children: true });
   }
 
   /** Full-screen tap-through outro overlay; calls onDone to reveal the result. */

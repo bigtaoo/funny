@@ -103,6 +103,8 @@ export class CityScene implements Scene {
   private readonly bt = new BusyTracker();
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
+  /** Set in destroy(); guards render() so a late async load() re-render can't paint into a torn-down container. */
+  private destroyed = false;
 
   private me: PlayerWorldView | null = null;
   private selectedBuilding: BuildingKey | null = null;
@@ -131,7 +133,9 @@ export class CityScene implements Scene {
   }
 
   destroy(): void {
+    this.destroyed = true;
     for (const unsub of this.unsubs) unsub();
+    this.container.destroy({ children: true });
   }
 
   // ── Data loading ──────────────────────────────────────────────────────────
@@ -229,6 +233,7 @@ export class CityScene implements Scene {
   // ── Render ────────────────────────────────────────────────────────────────
 
   private render(): void {
+    if (this.destroyed) return;
     tearDownChildren(this.container);
     this.hits = [];
     const { w, h } = this;

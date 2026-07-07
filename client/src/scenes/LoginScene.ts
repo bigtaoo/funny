@@ -66,6 +66,8 @@ export class LoginScene implements Scene {
 
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
+  /** Set in destroy(); guards render() against any late (caret/async) re-render into a torn-down container. */
+  private destroyed = false;
 
   /** Active button press: grows the button, then fires its action when the pop ends. */
   private press: { key: string; t: number; fn: () => void } | null = null;
@@ -122,11 +124,13 @@ export class LoginScene implements Scene {
   }
 
   destroy(): void {
+    this.destroyed = true;
     this.unsubs.forEach((u) => u());
     if (this.hiddenInput) {
       this.hiddenInput.remove();
       this.hiddenInput = null;
     }
+    this.container.destroy({ children: true });
   }
 
   // ── Hidden input (text capture) ───────────────────────────────────────────────
@@ -262,6 +266,7 @@ export class LoginScene implements Scene {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   private render(): void {
+    if (this.destroyed) return;
     tearDownChildren(this.container); // free per-keystroke/caret Text textures; see sketchUi
 
     this.hits = [];

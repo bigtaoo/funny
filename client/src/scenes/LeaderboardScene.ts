@@ -54,6 +54,8 @@ export class LeaderboardScene implements Scene {
   private readonly cb: LeaderboardCallbacks;
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
+  /** Set in destroy(); guards render() so a late async fetchData() re-render can't paint into a torn-down container. */
+  private destroyed = false;
 
   private data: { seasonNo: number; entries: LeaderboardEntry[]; me?: LeaderboardMe } | null = null;
   private loading = false;
@@ -95,7 +97,11 @@ export class LeaderboardScene implements Scene {
 
   update(): void { /* static */ }
 
-  destroy(): void { this.unsubs.forEach((u) => u()); }
+  destroy(): void {
+    this.destroyed = true;
+    this.unsubs.forEach((u) => u());
+    this.container.destroy({ children: true });
+  }
 
   private onPointerDown(x: number, y: number): void {
     this.pointerActive = true;
@@ -127,6 +133,7 @@ export class LeaderboardScene implements Scene {
   }
 
   private render(): void {
+    if (this.destroyed) return;
     tearDownChildren(this.container);
     this.hits = [];
     this.scrollMax = 0;

@@ -67,6 +67,8 @@ export class EventScene implements Scene {
   private readonly cb: EventCallbacks;
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
+  /** Set in destroy(); guards render() so a late async load() re-render can't paint into a torn-down container. */
+  private destroyed = false;
 
   private readonly bt = new BusyTracker();
   private toast: string | null = null;
@@ -94,7 +96,9 @@ export class EventScene implements Scene {
   }
 
   destroy(): void {
+    this.destroyed = true;
     for (const unsub of this.unsubs) unsub();
+    this.container.destroy({ children: true });
   }
 
   private async load(): Promise<void> {
@@ -123,6 +127,7 @@ export class EventScene implements Scene {
   }
 
   private render(): void {
+    if (this.destroyed) return;
     tearDownChildren(this.container);
     this.hits = [];
     const { w, h } = this;
