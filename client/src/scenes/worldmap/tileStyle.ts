@@ -43,7 +43,7 @@ export const ENEMY_TINT     = 0x90a8e6; // enemy territory (light blue ink)
 export const ENEMY_BASE_TINT= 0x4477cc; // enemy capital (deep blue ink)
 export const ALLY_TINT      = 0x9cd6a4; // family-ally territory (light green ink — G5 friendly third color)
 export const ALLY_BASE_TINT = 0x46a85a; // family-ally capital (deep green ink)
-export const FOG_COLOR      = 0x6b6458; // fog of war (pencil grey, overlaid on terrain)
+export const FOG_COLOR      = 0xc9c2b2; // fog of war (light warm paper-grey, thin overlay on terrain)
 export const CLOUD_COLOR    = 0xcfc7b6; // off-map cloud/mist veil (warm paper-grey) — hides the blank paper beyond the map edge
 export const ALLY_SECT_BORDER = 0xe6a817; // allied-sect territory yellow border (amber gold, G5; marks without shared vision, §8.2)
 

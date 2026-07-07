@@ -1201,7 +1201,7 @@ if (path.startsWith('/admin/world/')) {
 
 | # | 决策 | 结论 |
 |---|---|---|
-| **V1 迷雾模型** | 永久黑雾 vs 战争迷雾 | **2a**：地形层（程序化、确定性）**全图始终可见**；动态层（归属/驻军/防守/保护罩/行军）仅当前视野内可见，视野外**退回 `proceduralTile` 底层地形**（连「已被占领」信号都不泄露——type 不返 `territory`/`base`）。不做持久化 explored-set 黑雾——地形不是秘密，机密是动态层。 |
+| **V1 迷雾模型** | 永久黑雾 vs 战争迷雾 | **2a**：地形层（程序化、确定性）**全图始终可见**；动态层（归属/驻军/防守/保护罩/行军）仅当前视野内可见，视野外**退回 `proceduralTile` 底层地形**（连「已被占领」信号都不泄露——type 不返 `territory`/`base`）。不做持久化 explored-set 黑雾——地形不是秘密，机密是动态层。**资源图案（含等级细节）归地形层，全图始终可见（2026-07-07 拍板，见 §18.6 客户端渲染条）——原「视野外只显资源类型、隐等级」的收窄已作废。** |
 | **V2 视野来源 + 共享** | 半径来源 / 共享到哪一级 | 己方领地半径 `VISION_TERRITORY_RADIUS=2` + 主城 `VISION_BASE_RADIUS=5` + 在途行军 `VISION_MARCH_RADIUS=2`（侦察行军价值）。**共享 = 家族级（≤30）**，复用 `sameFamily`/`familyMembers` 反查。**§8.2 字面「宗门级共享」降级为家族级**——宗门 900 人并集近乎整图，迷雾名存实亡；宗门/联盟只做领地颜色标记不并视野。`scout` 侦察行军 kind 已落地（§18.8，半径 `VISION_SCOUT_RADIUS=4`、不打不占自动回师）；瞭望塔建筑已落地（§18.9，`VISION_WATCHTOWER_RADIUS=8` 固定半径持久视野源）。 |
 | **V3 计算/存储** | 实时算 vs 落库 | **实时算 + 短 TTL 缓存（缓存留后续），vision 零落库**（避 U11 规模爆炸）。视区半径有 `MAP_VIEW_MAX_RADIUS=40` 上限，计算量有界；源领地查询复用 `{ownerId}` 索引。 |
 | **V4 推送门控** | 读路径门控 / 反向视野推送 | **v1 即做反向视野推送**（用户拍板，覆盖初版「仅读路径」建议）。工程化:反向查询**只在「行军发起 / 格易主」两个低频事件点做一次**（查路径沿途半径内有视野源的玩家 → 一次性推完整 `march_update`/`tile_update`，客户端在自己视野内的路径段渲染），**不逐 tick 反向扇出**（避 U11）。`under_attack` 仍无条件发防守方（§16 布阵预设=反应窗口）。→ G5-2。 |
@@ -1252,8 +1252,8 @@ if (path.startsWith('/admin/world/')) {
   - `MarchView.mine?:boolean` + `getMarches` 扩展：己方行军（mine:true）+ **视野内的非家族敌方在途行军**（mine:false，按 `marchInterpPos` 当前位置过 `isInVision`，视野源取全图 `computeVisionSources(0,mapW-1,0,mapH-1)`）。这是 G5-2 反向 `march_update` 推送在客户端「refetch-on-push」模型下真正显形的数据源。家族友军行军不计入（友方靠家族集）。
   - 契约 `openapi-world.yml`：`WorldTileView.ally` + `MarchView.mine`；`rest:gen` 重生。proto 无改动。
 - **client `WorldMapScene.ts`**：
-  - **灰雾**：`tile.visible===false` 的格画底层地形后罩一层 `FOG_COLOR=0x6b6458 @0.4` 铅笔灰（地形可见、局势看不清，对齐迷雾模型 2a）；视野外不画等级点/城池图标/瞭望塔/联盟描边等动态标记（不暴露细节）。
-  - **资源图案（terrain，非动态层）**：resType 属地形层，视野外**照常绘制**——`drawTileL1` 在灰雾早退前先画 `drawResMotif`；雾中传 `fogged=true` 只显**资源类型**（单个 @0.35 淡化图案，隐去 abundance 数量/防御框/危险角，与「不暴露等级细节」一致）。修复：此前灰雾块 `return` 早于资源图案绘制，导致全图雾区资源图片不显示。
+  - **灰雾（2026-07-07 调浅）**：`tile.visible===false` 的格画底层地形后罩一层 `FOG_COLOR=0xc9c2b2 @0.3` 浅暖纸灰（原 `0x6b6458 @0.4` 铅笔灰太深、进图几乎看不见，改浅色 + 30% 不透明的薄罩；地形可见、局势看不清，对齐迷雾模型 2a）；视野外不画等级点/城池图标/瞭望塔/联盟描边等动态标记（不暴露细节）。L1(`drawTileL1`)/L2(`drawTileL2`) 两级缩放同 α0.3；L3 远景仍走 `WorldMapRenderer` 内的底色变暗（另一路，未随此次调整）。
+  - **资源图案（terrain，非动态层）一直全绘 ✅（2026-07-07 拍板）**：resType 属地形层，**迷雾不改变资源美术的绘制**——`drawTileL1` 无论视野与否都以 `drawResMotif(..., fogged=false)` 画**完整**资源图案（含 abundance 数量/防御框/危险角等等级细节），浅灰雾罩画在 `Graphics` 自身多边形上、而资源图案是 `addChild` 的 sprite 子节点恒渲染其上，故雾罩不遮资源。**这偏离原迷雾模型 2a「视野外只显资源类型、隐等级细节」——2a 那条按用户拍板作废：资源（含等级）一直可见。** 历史：此前雾中传 `fogged=true` 只显单个 @0.35 淡化类型图案；更早还有灰雾块 `return` 早于资源绘制导致雾区资源不显。
   - **`parseTileId` tileId 格式**：tileId 全库为 `{worldId}:{x}:{y}`（`mainBaseTile`/`march.fromTile`/`toTile`/`tile_update.tile` 皆带 worldId 前缀，worldId 不含 `:`）→ **取末两段** 为 x/y。修复：此前 `split(':')` 取前两段，把 worldId 当成 x（→0），进图后地图中心落在 x≈0 而非主城 x → 视区整片在视野外（全灰雾、无主城、无资源），是「大地图不显示主城/资源」的根因（另配合上一条雾中资源渲染）。
   - **标记色**（沿用本场景既有「敌蓝我红」约定）：自己=红（`MINE_*`）、**家族盟友=绿（新 `ALLY_TINT/ALLY_BASE_TINT`，友方第三色）**、敌方=蓝（`ENEMY_*`）、中立=纸面。`tileColor` 加 `ally→绿` 分支（在 mine 之后、occupied 之前）。
   - **敌军行军**：march 箭头 `march.mine===false` → 统一敌色（蓝）+ 更粗描边 + 更大终点点，突出威胁；己方按 kind 上色。HUD 行军列表过滤为 `mine!==false`（敌方行军不可撤、不进列表）。
