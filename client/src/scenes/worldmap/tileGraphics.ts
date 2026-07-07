@@ -19,7 +19,7 @@ export function drawTileL1(
   const hh = (tp * ISO_RATIO) / 2;
   // Soft sketch grid, then the ground: hand-drawn texture fill once the atlas has
   // decoded, falling back to the flat desaturated color (see terrainFill) until then.
-  g.lineStyle(0.7, 0xccbbaa, 0.32);
+  g.lineStyle(0.7, 0xccbbaa, 0.18);
   const tex = isTerrainAtlasReady() ? getTerrainTexture(texName) : null;
   if (tex) {
     const w = tp - 1;
