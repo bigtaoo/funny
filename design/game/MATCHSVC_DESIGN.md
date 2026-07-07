@@ -2,7 +2,7 @@
 
 > 创建：2026-06-14。本文件设计 **matchsvc（私有匹配大脑）** + 配套的 **gameserver 瘦身** 与 **game→meta 局末结算**，并锚定整个 S1-M 拆分的迁移顺序。
 > 配套：`META_DESIGN.md`（§1.1/§6.1 决策 M16–M21 拓扑）、`GATEWAY_DESIGN.md`（控制面网关，matchsvc 的公开门面）、`SERVER_API.md`（§8 内部契约 / §3 数据面 WS）、`META_TASKS.md`（S1-M1~M4）。
-> 状态：**已实现（2026-06-14，S1-M1~M4）**。matchsvc 落地于 `server/gateway/src/matchsvc`，gameserver 瘦身于 `server/gameserver`，game→meta 结算于 `server/metaserver/src/internal.ts`。下文为设计依据，实现细节见 `CLAUDE.md`「gateway 控制面 + matchsvc」节。
+> 状态：**已实现（2026-06-14，S1-M1~M4）**。matchsvc 现为独立进程 `server/matchsvc`（订正 2026-07-07：早期曾寄于 `server/gateway/src/matchsvc`，现已独立），gameserver 瘦身于 `server/gameserver`，game→meta 结算于 `server/metaserver/src/internal.ts`。下文为设计依据，实现细节见 `CLAUDE.md`「gateway 控制面 + matchsvc」节。
 
 ---
 

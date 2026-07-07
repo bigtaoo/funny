@@ -194,8 +194,7 @@
 |---|---|
 | 体力上限 | **120** |
 | 自然恢复速率 | **1 点 / 6 分钟** |
-| 关卡消耗默认 | **1**（level JSON 未指定时） |
-| 关卡消耗范围 | 1–5（在 level JSON `staminaCost` 字段定义） |
+| 关卡消耗 | **统一 10 / 次**（定额，2026-07-06 拍板；数值权威见 `ECONOMY_NUMBERS.md §3`） |
 | 付费补充 | **30 金币 → +60 体力**（走 commercial.spend） |
 | 错误码 | `INSUFFICIENT_STAMINA`（HTTP 402）|
 

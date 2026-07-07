@@ -9,13 +9,13 @@
 ## 0. TL;DR
 
 - **SLG = 游戏的最后一块拼图，也是「赚钱区」**：率土之滨级的**共享大地图领土争霸**——一张地图容纳一整个赛季服的玩家，地图上铺满资源点与领地格子，玩家用有限兵力占领、驻守、行军、互攻；兵力守不住全部领地 → **必须加入家族（联盟）/ 宗门（赛季服）抱团** → 社交从「可选」变「刚需」。
-- **承重墙（一句话）**：**SLG 围攻战 = 跑确定性引擎打一份「玩家自定义关卡」式的防守 config，产出录像**。复用全部既有战斗基建（确定性引擎 / `ReplayInputSource` / `AISystem` / `buildXxxBlueprints` / `judgeRunner` 复算 / `matches` 归档），战斗内核**几乎零改动**。
+- **承重墙（一句话）**：**SLG 关键围攻 = 双方预布兵的确定性自动战斗，服务器进程内跑确定性引擎算权威结果即时落地**（`seed + 攻守双方布阵` 唯一确定，无手操 / 无复算 / 无录像，见 §16）。复用全部既有战斗基建（确定性引擎 / `AISystem` / `buildXxxBlueprints`），战斗内核**几乎零改动**。
 - **三定位互不污染**：天梯 PvP = 公平电竞（**永不卖战力**，硬墙单测守住）；PvE = 免费玩家出路；**SLG = 卖战力的赚钱区**（养成战力＝付费战力）。SLG 与天梯**分开匹配、分开榜**。
 - **养成统一、天梯隔离**：PvE 和 SLG **共用一棵养成树 + 统一产出**（PvE 攒的装备/材料直接是 SLG 战力，PvE 成 SLG 的免费 on-ramp）；唯一红线——**天梯 PvP 永远走 `buildPvpBlueprints()`（无养成参）**，养成对天梯零影响。
 - **第七进程 `worldsvc`**：有状态世界服，管地图状态机 + 行军调度 + 围攻触发；**状态权威在 Mongo，热态/空间索引/行军定时在 Redis**；资源产出**读时惰性结算**（不每格 active tick）。
 - **Redis 入场**：SLG 强制引入 Redis（gateway 横扩 account→实例路由 + 家族/宗门频道 pub/sub + 行军调度），兑现 `META_DESIGN §6.7 / M22` 那条 ADR 与 `SOCIAL_DESIGN SOC7 / S6-4`。
 - **交易全走拍卖行**：单一机制；个人交易 = 挂单时指定受拍人；高税 + 限额反 RMT。
-- **复算只算关键战斗**：占地/丢地/家族战/打真人驻军 = 必复算 + 留录像；扫荡自己领地 / 清中立 NPC / 碾压级目标 = 信任客户端 + 廉价结算（可抽检）。
+- **关键战斗服务器权威结算**：占地/丢地/家族战/打真人驻军 = worldsvc 进程内跑引擎、双方预布兵确定性自动战斗、权威结果即时落地（无手操 / 无复算 / 无录像，见 §16）；扫荡自己领地 / 清中立 NPC / 碾压级目标 = 廉价数值结算。
 
 ---
 
@@ -24,11 +24,11 @@
 | # | 决策 | 理由 |
 |---|---|---|
 | SLG1 | **走 Heavy 共享大地图**（率土之滨级），不走部落冲突式 Lite 无地图 | 用户拍板；最贴 fiction「版图争霸」；交易/领地/行军/家族连地的核心循环需要共享空间承载 |
-| SLG2 | **大区 = 赛季服 = 一张地图实例**（容量 ~1 万活跃玩家，超出则开新大区）；**宗门 = 大区内势力组织**（≤30 家族/≤900 人）；**国家 = 占领首府立国的概念疆域**（Voronoi 分区，10 首府）；**大比 = 大区内赛季结算，按宗门占国数排名** | 大区代替原「宗门服」概念；宗门降为大区内势力；国家系统新增为战略目标与 Voronoi 加成机制 |
-| SLG3 | **分赛季（2 个月）+ 周期性重置**：单大区 ~1 万活跃玩家；超出则并行开新大区；宗门由系统按综合实力（历史排名/规模/繁荣度）平衡分配大区，同宗门成员进同一大区 | 赛季制是变现发动机（重肝重充）；能力分组防止强队碾压生态 |
+| SLG2 | **大区 = 赛季服 = 一张地图实例**（单大区容量 ~500 活跃玩家，超出则开新大区）；**宗门 = 大区内势力组织**（≤30 家族/≤900 人）；**国家 = 占领州府立国的概念疆域**（版图归属已改 ADR-034 角度扇区，见 §2.4，非旧 Voronoi/10 首府）；**大比 = 大区内赛季结算，按宗门占国数排名** | 大区代替原「宗门服」概念；宗门降为大区内势力；国家系统新增为战略目标与加成机制（加成代码现仍按 Voronoi，版图模型待随 ADR-034 重写） |
+| SLG3 | **分赛季（2 个月）+ 周期性重置**：单大区 ~500 活跃玩家；超出则并行开新大区；宗门由系统按综合实力（历史排名/规模/繁荣度）平衡分配大区，同宗门成员进同一大区 | 赛季制是变现发动机（重肝重充）；能力分组防止强队碾压生态 |
 | SLG4 | **赛季重置粒度**：清「领地 / 兵力 / 地图态 / 赛季资源存量」；保「养成（装备/科技/材料）/ 外观皮肤 / 天梯段位 / 账号档案」 | 战略态归零保新鲜感与公平起跑，养成/付费资产跨季留存保护玩家投入与变现信任 |
 | SLG5 | **SLG 围攻战 = 确定性引擎打防守 config（玩家自定义关卡形态）+ 录像** | 复用全部既有战斗基建，战斗内核几乎零改动；防守方离线也能被打 |
-| SLG6 | **进攻双形态**：①真人手操（保留车道战术乐趣，差异化卖点）②自动扫荡（碾压级/自己领地，省时挂机） | 「攻城能手操的 SLG」是对率土系的差异化；扫荡满足挂机刚需 |
+| SLG6 | **关键围攻 = 双方预布兵的确定性自动战斗**（服务器跑引擎算权威结果，无手操）（原双形态「真人手操 + 自动扫荡」方案已被 §16 推翻，2026-06-20） | 攻守双方各自开局预布兵，`seed + 双方布阵` 唯一确定结果；防守方离线也能被打，无实时对抗 |
 | SLG7 | **养成 PvE+SLG 统一一棵树**，**天梯绝对隔离**（`buildPvpBlueprints` 无养成参，硬墙单测守住） | 用户拍板；PvE 自动成 SLG 免费 on-ramp + 转化钩子；电竞公平命根子不动 |
 | SLG8 | **统一产出复用既有 PvE 材料**（scrap/lead/binding 等）当 SLG 高阶养成材料，不另造养成货币 | 「产出统一」最省的兑现；S3 已有材料体系，SLG 直接接 |
 | SLG9 | **交易全走拍卖行**（单一机制）；个人交易 = 挂单指定受拍人；高税 + 每日限额 + 部分资源禁挂 反 RMT | 用户拍板；单机制简单、可审计；指定受拍人覆盖「点对点交易」需求；税/限额压住搬砖 |
@@ -44,14 +44,14 @@
 ### 2.1 组织层级（对齐 fiction）
 
 ```
-大区（赛季服 = 一张地图实例，~1 万活跃玩家）
+大区（赛季服 = 一张地图实例，~500 活跃玩家）
  └── 宗门（大区内势力组织，≤30 家族；可与最多 2 个其他宗门结盟）
       └── 家族（宗门内联盟，≤30 人；繁荣度达标后族长可立宗门/建国）
            └── 玩家（占领格子 + 有限兵力 + 国籍归属）
 宗门间大比 ── 大区内赛季结算，按宗门占领国家（首府）数排名
 ```
 
-- **大区**：技术上 = 一个赛季服实例 + 一张独立地图。容量 ~1 万活跃玩家；超出则开新大区；大区间完全隔离（经济/地图/战斗互不影响）。
+- **大区**：技术上 = 一个赛季服实例 + 一张独立地图。单大区容量 ~500 活跃玩家（地图 500×500，`SLG_WORLD_CAPACITY_MAX=500`）；超出则开新大区；大区间完全隔离（经济/地图/战斗互不影响）。
 - **宗门**：大区内由家族组建的势力，最多 30 个家族（≤900 人）。建立宗门需花费 **5000 coin** + 家族繁荣度达中等门槛。宗门可与至多 **2 个**其他宗门结盟（盟友禁止相互攻击夺地；视野不共享；地图上对盟友土地进行颜色标记）。
 - **家族**：宗门内自由组建/加入的小团体（≤30 人）。建立家族需花费 **500 coin**。
 - **国家**：占领 10 首府之一即可立国，给国家取名。国家是概念疆域（Voronoi 分区），为本国玩家提供战斗/产出加成；国家土地仍需玩家逐格占领。
@@ -60,7 +60,7 @@
 ### 2.2 分服与人口（SLG3）
 
 - 一个赛季开启 = 开一个或多个大区实例（地图）。
-- 单大区容量 **~1 万活跃玩家**；超出则并行开新大区。
+- 单大区容量 **~500 活跃玩家**（上限 500，`SLG_WORLD_CAPACITY_MAX=500`）；超出则并行开新大区。
 - **分配规则**：系统按宗门综合实力（历史排名 / 规模 / 繁荣度综合评分）平衡分配大区；同宗门所有成员进同一大区；强宗门与弱宗门尽量均衡搭配，避免一边倒。
 - 大区间完全隔离（经济/地图/战斗互不影响）。
 
@@ -97,9 +97,9 @@
 | 类型 | 说明 | 进攻形态 | 防守 |
 |---|---|---|---|
 | **中立资源点** | 产出某种资源，产率/类型随位置与等级分布；占领后归玩家持续产出 | 扫荡（PvE，NPC 防守，按等级默认布防） | 系统默认防守 config（按格子等级） |
-| **玩家领地** | 玩家占领并驻军的格子 | 围攻（关键战斗，真人手操或自动；服务器复算 + 录像） | 防守方自定义 config + 驻军 |
+| **玩家领地** | 玩家占领并驻军的格子 | 围攻（关键战斗，预布兵确定性自动战斗，服务器权威结算） | 防守方自定义 config + 驻军 |
 | **险地（Stronghold）** | NPC 极强的战略格，非常难攻占；占领后通常提供大幅资源或战略价值 | 围攻（高难 PvE，系统默认超强防守 config） | 系统超强默认防守（高等级 NPC） |
-| **首府（Capital）** | 10 个固定位置；占领即立国；Voronoi 分区给本国玩家提供加成；赛季终局争夺目标 | 围攻（关键战斗，服务器复算 + 录像） | 占领方自定义防守 config + 驻军 |
+| **州府（Capital）** | 占领即立国；实际地图以地图编辑器导出为主，归属按**角度扇区**（ADR-034，6 出生州+3 资源州+1 核心州），本州玩家获加成；赛季终局争夺目标（Voronoi/10 首府点旧模型已废，见 §2.4） | 围攻（关键战斗，预布兵确定性自动战斗，服务器权威结算） | 占领方自定义防守 config + 驻军 |
 | **关隘/桥（Gate/Bridge）** | 嵌于阻挡地形（山脉/河流）之间的唯一通道；可被占领；只有占领方及其盟友才能通过 | 围攻（占领通道） | 占领方驻军；未占领视为阻挡 |
 | **阻挡地形（Obstacle）** | 山脉/河流等完全不可通行格子（程序化分布，约占地图 10–15% DRAFT）；行军必须绕行或攻占关隘/桥 | 不可进攻 | — |
 
@@ -108,7 +108,7 @@
 
 ### 3.2 地图尺寸与地形布局
 
-- **地图尺寸 ✅ 已实现（ADR-032，2026-07-04 定案 + 落地，`shared/slg.ts`）**：**500×500（25 万格）**，对应大区容量 **300–500 玩家**（`SLG_WORLD_CAPACITY_MIN/TARGET/MAX`，见 §14.10 U4）。
+- **地图尺寸 ✅ 已实现（ADR-032，2026-07-04 定案 + 落地，`shared/slg.ts`）**：**500×500（25 万格）**，对应大区容量**上限 500 玩家**（`SLG_WORLD_CAPACITY_MAX=500`，见 §14.10 U4）。
   > **历史记录**（避免与旧数字混淆，仅留一条指针，其余口径已废止）：曾短暂拍板过 1500×1500/对应 1 万玩家（2026-06-18 "U2 ✅"），但从未真正实现——代码里 `SLG_MAP_W/H` 一直是 300，且 2026-06-30 的经济核验（`ECONOMY_NUMBERS.md` §13-SLG-NATION）仍是在未升级的 300×300 上跑的。500×500 是重新核实代码现状后的新定案，不是"恢复旧值"也不是"1500×1500 打折"，详见 ADR-032。
 - **地块等级 1–10 ✅ 已实现（ADR-032）**：`SLG_MAP_MAX_LEVEL=10`（对齐三国志战略版真实地块等级上限，调研见 [`SGZ_LAND_REFERENCE.md`](SGZ_LAND_REFERENCE.md)）。**不是** 5（旧代码实际值）也不是 9（与装备/武将卡的 `MAX_LEVEL=9` 混淆过一次，二者无关）。
 - **无纯空地 ✅ 已实现（ADR-032）**：取消"中立地不产出"的分级（`resourceDensity` 从 0.34 提到 **1.0**）——除阻挡地形/关隘/据点/首府外，所有格子都是某一等级的资源地，呼应"地图上没有真正空地，只是低级地没人要"的设计前提。
@@ -152,7 +152,7 @@
 
 > **✅ code rename 已落地（2026-06-30）**：`ResourceType` = `ink/paper/graphite/metal/sticker`（`shared/slg.ts`），`RESOURCE_TYPES`/`emptyResources`/`WATCHTOWER_COST`/`tileYield`/`biomeAt`/`TROOP_TRAIN_INK_COST` 同步；worldsvc（`service.ts`/`db.ts`/`auctionService.ts`）+ 契约 `openapi-world.yml` resType enum + 客户端（`WorldMapScene` 颜色/展示/训练、`openapi-world.ts`、i18n zh/de/en）全部更新；server typecheck + client tsc + web 构建全绿。
 >
-> **遗留（balance pass，方案已出 → [`SLG_CITY_DESIGN.md`](SLG_CITY_DESIGN.md)）**：graphite/sticker 目前**无地图产出 faucet 也无消耗 sink**——biome 仍三分仅产 ink/paper/metal，二者已注册进类型/存储/资源包/掠夺/拍卖禁挂/瞭望塔成本等全部泛化管道。**对齐三战「4 地块 + 1 铜币」的修正方案**：`graphite`（石料）本是**第 4 种地块资源**，应把 `biomeAt`（`slg.ts:587`）三分改四分补上（地图 faucet）；`sticker`（铜币位/通用）由主城 `stickerShop`（民居模型）**自产**（非地块 faucet）；两者 sink = 主城高级建筑升级消耗。随主城建筑系统（SLG_CITY_DESIGN P1）落地，数值经 [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md) 核验（§16.5 / ECONOMY_NUMBERS §13-SLG）。
+> **遗留（balance pass，方案已出 → [`SLG_CITY_DESIGN.md`](SLG_CITY_DESIGN.md)）**：五种赛季资源均已注册进类型/存储/资源包/掠夺/拍卖禁挂/瞭望塔成本等全部泛化管道。**对齐三战「4 地块 + 1 铜币」**：`graphite`（石料）是**第 4 种地块资源**，**已有地图 faucet**——`biomeAt` 已改四分产 ink/paper/graphite/metal（ADR-022 已落地，见 [`SLG_CITY_DESIGN.md`](SLG_CITY_DESIGN.md) §10）；`sticker`（铜币位/通用）由主城 `stickerShop`（民居模型）**自产**（非地块 faucet）；两者 sink = 主城高级建筑升级消耗。随主城建筑系统（SLG_CITY_DESIGN P1）落地，数值经 [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md) 核验（§16.5 / ECONOMY_NUMBERS §13-SLG）。
 
 ---
 
@@ -251,7 +251,7 @@
 ### 7.3 赛季经济
 
 - 赛季资源（粮/铁/木 + 赛季存量）季末清空，养成材料/金币/外观跨季留存（SLG4）。
-- 拍卖行季末结算/冻结策略 ✅（2026-06-21，AUCTION_DESIGN §4.F）：settling 世界拒新挂单，resetSeason 前 clearWorldOnReset 清算退还。
+- 拍卖行与赛季解耦，无季末冻结/清算（原「settling 拒挂 + clearWorldOnReset」策略已废弃 2026-07-06，拍卖行是全服养成物品市场，不受任何赛季事件影响，见 [`AUCTION_DESIGN.md`](AUCTION_DESIGN.md) §4.F）。
 
 ---
 
@@ -310,7 +310,8 @@
 | **gameserver** | **不参与 SLG（D0）**——围攻=单人打脚本，本地 PvE 跑法 + 录像上传，无锁步 |
 | **commercial** | SLG 全部变现（加速/资源包/科技直购/战令）走其钱包/充值 |
 | **admin** | SLG 运维（异常交易审计/补偿/赛季运营/监控），复用 OPS 基建 |
-| **worldsvc（新）** | 世界状态机 + 行军 + 围攻触发 + 复算编排 |
+| **worldsvc（新）** | 世界状态机 + 行军 + 围攻触发 + 权威围攻结算编排 |
+| **auctionsvc（新）** | 拍卖行独立服务（端口 18086，全服单实例），与 worldId/SLG shard **无关**；`auctions` 集合不含 worldId，机制权威见 [`AUCTION_DESIGN.md`](AUCTION_DESIGN.md) |
 
 ### 9.3 Redis 入场（兑现 M22）
 
@@ -381,7 +382,7 @@
 - **客户端 SLG 社交标签修复 ✅（2026-06-28）**：修复家族/宗门/世界标签「加载中」永不结束 + 生产环境 SLG 标签静默禁用两个 bug。
   - **`WorldApiClient.req` 超时**：原无 `AbortController`——worldsvc 接受 TCP 连接但内部卡住（如 MongoDB 慢查询）时 `fetch()` 永久挂起，`slgLoading=true` 永不清，标签永远转圈。现加 10s `AbortController`；超时后 abort 转 `TypeError`，被 `FriendsScene.loadSLGStatus` catch 捕获，`slgStatus=null`/`slgLoaded=true`，正常显示「暂不可用」。
   - **`worldApi` 空串判断**：`createAppCore.ts` 原写 `worldBaseUrl ? new WorldApiClient() : null`——生产/Docker 环境 `getWorldBaseUrl()` 返回 `''`（同源 nginx 反代，是合法基址但 falsy），导致 `worldApi=null`、`loadSLGStatus` 回调缺失、家族/宗门/世界三标签全部静默显示「无 SLG」。现改为无条件 `new WorldApiClient()`，`''` 基址走同源路由。
-- **S8-5 拍卖行**：材料挂单（赛季资源禁挂）/一口价 + 竞拍/指定受拍人/10% 手续费（coin）/每日限额/价格护栏滑窗/绑定禁挂机制/季末冻结清算 + **装备交易（A）** + **异常交易审计（D，反 RMT，§17.13）** 全 ✅（2026-06-21）。**机制权威见 [`AUCTION_DESIGN.md`](AUCTION_DESIGN.md)**。
+- **S8-5 拍卖行**：材料挂单（赛季资源禁挂）/一口价 + 竞拍/指定受拍人/10% 手续费（coin）/每日限额/价格护栏滑窗/绑定禁挂机制（拍卖行与赛季解耦，无季末冻结/清算——原策略已废弃 2026-07-06，见 AUCTION_DESIGN §4.F）+ **装备交易（A）** + **异常交易审计（D，反 RMT，§17.13）** 全 ✅（2026-06-21）。**机制权威见 [`AUCTION_DESIGN.md`](AUCTION_DESIGN.md)**。
 - **S8-6 养成统一**：`buildSiegeBlueprints` + PvE/SLG 材料统一 + 服务器权威扩展 + 战力单调性单测。
 - **S8-6.5 国家系统**：10 首府固定坐标写入 `shared/slg.ts`、Voronoi 分区计算、立国/灭国状态机、国民加成注入围攻蓝图。
 - **S8-6.6 关隘/桥 + A\* 寻路 ✅（2026-06-18）**：
@@ -449,11 +450,11 @@
 |---|---|---|---|
 | `worlds` | `worldId` | `season, shard, status(open/active/settling/closed), mapW, mapH, openAt, resetAt, capacity` | `{status:1}` |
 | `tiles` | `tileId` | `worldId, x, y, type, level, ownerId?, familyId?, defenseRef?, resType?, garrison?, protectedUntil?, rev` | `{worldId,x,y}`、`{ownerId}`、`{familyId}` |
-| `playerWorld` | `worldId:accountId` | `troops, troopCap, resources{food,iron,wood}, yieldRate{...}, lastTickAt, mainBaseTile, defenseRef, materials镜像?, familyId?, rev` | `{worldId,accountId}`、`{familyId}` |
+| `playerWorld` | `worldId:accountId` | `troops, troopCap, resources{ink,paper,graphite,metal,sticker}, yieldRate{...}, lastTickAt, mainBaseTile, defenseRef, materials镜像?, familyId?, rev` | `{worldId,accountId}`、`{familyId}` |
 | `marches` | `marchId` | `worldId, ownerId, fromTile, toTile, kind(attack/reinforce/occupy/sweep/return), troops, departAt, arriveAt, status, rev` | `{worldId,ownerId}`、`{arriveAt}` |
 | `families` | `familyId` | `worldId, name, tag, leaderId, memberCount, territoryCount, rev` | `{worldId,tag}` 唯一、`{worldId}` |
 | `familyMembers` | `worldId:accountId` | `familyId, role(leader/elder/member), joinedAt` | `{familyId}` |
-| `auctions` | `auctionId` | `worldId, sellerId, itemType, item, qty, price, currency, designatedBuyerId?, expireAt, status(open/sold/expired/cancelled), buyerId?, rev` | `{worldId,itemType,status}`、`{sellerId}`、`{designatedBuyerId}`、TTL `{expireAt}` |
+| `auctions`（在独立 `auctionsvc` 库，非 world 库） | `auctionId` | `sellerId, itemType, item, qty, price, currency, designatedBuyerId?, expireAt, status(open/sold/expired/cancelled), buyerId?, rev`（**不含 `worldId`**——拍卖与 SLG shard 无关） | `{itemType,status}`、`{sellerId}`、`{designatedBuyerId}`；过期由扫描器处理（**非 TTL**）。机制权威见 [`AUCTION_DESIGN.md`](AUCTION_DESIGN.md) |
 | `sieges` | `siegeId` | `worldId, attackerId, defenderId?, tile, outcome, replayRef?, recomputed, ts` | `{worldId,ts}`、`{attackerId}` |
 
 - **资源惰性结算**：`playerWorld` 存聚合 `yieldRate`（占领/丢地时更新）+ `lastTickAt`；读时 `resources += yieldRate × dt`，封顶 `RESOURCE_CAP`。**不逐格 tick**。
@@ -509,7 +510,7 @@ POST /family/{id}/join              申请/加入
 POST /family/{id}/leave             退出
 POST /family/{id}/donate            互助捐献
 GET  /family/{id}/channel?before    频道历史（若落库）
-# 拍卖行
+# 拍卖行（已迁至独立服务 auctionsvc，端口 18086，与 worldId/shard 无关；反代 /auction→auctionsvc，见 §14.1 P1 / AUCTION_DESIGN）
 GET  /auction?itemType&...          浏览挂单
 POST /auction                       挂单（可带 designatedBuyerId）
 POST /auction/{id}/buy              一口价/竞拍
@@ -522,7 +523,7 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 ### 14.7 shared 常量/枚举/ID/错误码（`shared/slg.ts`）
 
 - **ID**：`worldId(season,shard)`、`tileId(worldId,x,y)`、`marchId`、`familyId`、`auctionId`、`defenseRef`、`familyMemberId(worldId,accountId)`、`playerWorldId(worldId,accountId)`。
-- **枚举**：`TileType`(neutral/resource/territory/familyKeep/center/base)、`MarchKind`、`SiegeOutcome`、`FamilyRole`、`WorldStatus`、`AuctionStatus`、`ResourceType`(food/iron/wood)。
+- **枚举**：`TileType`(neutral/resource/territory/familyKeep/center/base/obstacle/gate/stronghold)、`MarchKind`、`SiegeOutcome`、`FamilyRole`、`WorldStatus`、`AuctionStatus`、`ResourceType`(ink/paper/graphite/metal/sticker，命名定版 2026-06-30，见 §3.4)。
 - **常量（DRAFT）**：`TROOP_CAP_BASE`、`MARCH_SPEED_PER_TILE`、`RESOURCE_CAP`、`RESOURCE_YIELD_BASE`、`PROTECTION_SEC`、`FAMILY_CAP`、`AUCTION_TAX_RATE`、`AUCTION_MAX_LISTINGS`、`AUCTION_DURATIONS`、`GARRISON_PER_TILE`、`SEASON_LENGTH_DAYS`。
 - **错误码**（接 `api.ts` + HTTP 映射）：`WORLD_FULL`、`WORLD_CLOSED`、`TILE_NOT_OWNED`、`TILE_OCCUPIED`、`OUT_OF_RANGE`、`NO_TROOPS`、`TROOP_CAP_REACHED`、`PROTECTED`、`MARCH_NOT_FOUND`、`FAMILY_FULL`、`NOT_IN_FAMILY`、`ALREADY_IN_FAMILY`、`AUCTION_NOT_FOUND`、`AUCTION_CLOSED`、`NOT_DESIGNATED_BUYER`、`INSUFFICIENT_RESOURCES`、`AUCTION_LIMIT_REACHED`。
 
@@ -539,7 +540,7 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 | # | 决策 | 落地约束 |
 |---|---|---|
 | **D0** | **围攻不经 gameserver**：单人打离线脚本 = 本地 PvE 跑法 + 录像上传 + worldsvc 复算关键战斗 | gameserver 不背 SLG 依赖；siege 流程 = 战役 PvE + S1-RP 录像 + judge 复算的组合 |
-| **P1** | **worldsvc 自暴露公网 REST**（第四公网面：`/world/*` `/family/*` `/auction/*`），复用 meta JWT（仅 `verifyToken` 验签，不连 accounts 库） | 反代加三组路由；拓扑原则更新为「客户端触达 meta + worldsvc(REST) + gateway + game(WS)」 |
+| **P1** | **worldsvc 自暴露公网 REST**（第四公网面：`/world/*` `/family/*`），复用 meta JWT（仅 `verifyToken` 验签，不连 accounts 库）。**拍卖 `/auction/*` 已迁出至独立 `auctionsvc`（端口 18086，全服单实例，与 worldId 无关），2026-07-06** | 反代加各组路由；拓扑原则更新为「客户端触达 meta + worldsvc(REST) + auctionsvc(REST) + gateway + game(WS)」 |
 | **P2** | **worldsvc import 确定性引擎 + `levelSchema`**（M12「裁判例外」延伸）：复算 + 防守 config 校验都走引擎侧 | 绑 `engineVersion`；worldsvc 随引擎版本重构建；防守 config 是引擎 `LevelDefinition` 的受限子集 |
 | **P4** | **新 `sieges` 集合（world 库）** + 自带录像存储（复用 `replayBlobs` 模式），客户端经 worldsvc 取回回放 | 不跨库依赖 meta `matches`；录像 opaque bytes，engineVersion 自校验 |
 | **P5** | **防守 config 内嵌**（`playerWorld.defense` 主城 / `tiles.defense` 领地），v1 不建独立 `defenseConfigs` 集合；多套模板留后 | §14.3 删 `defenseConfigs` 表，`defenseRef` 改内嵌结构 |
@@ -555,7 +556,7 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 
 **A. 产品/经济拍板（2026-06-18 第三轮，全部已定）**
 
-- **U4 大区容量 ✅（2026-07-04 复核，ADR-032 废止 2026-06-18 版本）**：**300–500 活跃玩家/单大区**（`SLG_WORLD_CAPACITY_MIN/TARGET/MAX`，与代码现状一致）。2026-06-18 曾拍板"~1 万玩家替代 300-500"，但从未落地实现（代码常量、e2e 测试、econ-sim 全部仍按 300-500 人假设跑），本次复核后正式废止该版本，改回并确认 300–500 为真实目标——不是"退回旧值"，是承认那次"升级"从未发生过。
+- **U4 大区容量 ✅（2026-07-04 复核，ADR-032 废止 2026-06-18 版本）**：**上限 500 活跃玩家/单大区**（`SLG_WORLD_CAPACITY_MAX=500`；`MIN/TARGET/MAX` 三档以 500 为封顶，与代码现状一致）。2026-06-18 曾拍板"~1 万玩家替代 300-500"，但从未落地实现（代码常量、e2e 测试、econ-sim 全部仍按 300-500 人假设跑），本次复核后正式废止该版本，改回并确认 300–500 为真实目标——不是"退回旧值"，是承认那次"升级"从未发生过。
 - **U2 地图尺寸 ✅ 已实现（2026-07-04 更新 + 落地，ADR-032）**：**500×500（25 万格）**（替代代码现状 300×300，**不是**从未落地的 1500×1500）。500 玩家 × 人均上限 200 块 5 级+地的目标，反推地图面积需求，详见 ADR-032 与 §3.2。稀疏存储只落被占格不影响存储。
 - **U6 程序化分布 ✅（原方案 + 扩展）**：在原 `proceduralTile()` 基础上扩展：增加阻挡地形（山脉/河流约 10–15% 格子，连续地形带）；险地（稀疏强 NPC 战略点）；关隘/桥嵌于阻挡带（约 20–40 处）；10 首府固定坐标（`CAPITAL_POSITIONS`）。
 - **U1 拍卖行计价币种 ✅（2026-06-18 定）**：充值 **coin**；**赛季资源（粮/铁/木）禁挂**，仅材料/装备可交易；系统抽 **10% 手续费**；免费玩家通过任务/活动/关卡赚 coin 参与（最低生活保障原则）。
@@ -602,7 +603,7 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 
 ### 15.3 第三档——DRAFT 数值 / 打磨
 
-- 拍卖行季末冻结/结算策略（DRAFT）；国民加成/繁荣度/碾压级廉价结算具体数值待调参（§14.10 U6）。
+- 拍卖行与赛季解耦，无季末冻结/清算（原策略已废弃 2026-07-06，见 AUCTION_DESIGN §4.F）；国民加成/繁荣度/碾压级廉价结算具体数值待调参（§14.10 U6）。
 - 首府改名服务端已校验 ownerId；商城金币余额展示已接 SaveData 镜像。
 
 ### 15.4 收尾优先级建议
@@ -1143,7 +1144,7 @@ if (path.startsWith('/admin/world/')) {
 ```
 1. 采集 SectStrength[]：每宗门 { sectId, lastSeasonRank(从上季 seasonResults.ranking 查 scope==='sect'),
                                  memberFamilyCount, prosperity(成员家族聚合) }
-2. shardCount = ceil(∑所有宗门成员人数 / WORLD_CAPACITY)   // WORLD_CAPACITY 默认 10000（openSeason capacity 参数）
+2. shardCount = ceil(∑所有宗门成员人数 / WORLD_CAPACITY)   // WORLD_CAPACITY 默认 500（openSeason capacity 参数）
 3. assignment = allocateSectsToShards(SectStrength[], shardCount)   // 蛇形均衡
 4. 同宗门成员随 sectId 进同一 shard；散家族/散人按家族强弱补位（次轮）
 5. 对每个 shardIndex 调 openSeason(`s{season}-{shardIndex}`, season, shardIndex, WORLD_CAPACITY)
@@ -1151,7 +1152,7 @@ if (path.startsWith('/admin/world/')) {
 
 **数据源缺口确认**（=天梯「战令依赖 RETENTION」同构）：在 `seasonResults` 落库（§17.5 ①）**之前**，G6 分配**无任何历史排名可读** → 首季所有宗门 `lastSeasonRank=undefined`（`sectStrengthScore` 给中位 500，纯按规模/繁荣度分配）；第二季起 `seasonResults` 提供历史。**这是为什么 §17.5 的排名落库是 G6 的硬前置**。
 
-**新常量** `WORLD_CAPACITY = 10000`（`shared/slg.ts`，替代 `openSeason` 硬编码 `10000` 默认）。
+**新常量** `WORLD_CAPACITY = 500`（`shared/slg.ts`，替代 `openSeason` 硬编码默认；上限即 `SLG_WORLD_CAPACITY_MAX=500`）。
 
 ### 17.9 engineVersion pin（C7 / U9）
 

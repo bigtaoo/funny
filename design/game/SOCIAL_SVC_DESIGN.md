@@ -296,8 +296,8 @@ socialsvc 收到后：从 Redis 查对应频道的在线成员列表，批量调
 ```
 公网入口（Cloudflare / Nginx 反代）
   /api/*        → metaserver:8080     账号 / 存档 / 经济 / PvE / 匹配上报
-  /world/*      → worldsvc:18084      SLG 地图 / 行军 / 拍卖
-  /auction/*    → worldsvc:18084      拍卖行
+  /world/*      → worldsvc:18084      SLG 地图 / 行军 / 占领
+  /auction/*    → auctionsvc:18086    拍卖行（订正 2026-07-07：已从 worldsvc 解耦为独立进程 auctionsvc）
   /social/*     → socialsvc:8085      好友 / 家族 / 邮件 / 频道（P1 起，家族 P4 已切直连）
   /admin/*      → admin:8083          运维后台
   /gw           → gateway:8082        控制面 WS

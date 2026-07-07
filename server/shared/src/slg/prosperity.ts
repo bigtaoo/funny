@@ -54,8 +54,12 @@ export const BP_SETTLE_EXTRA: Readonly<{ items: Record<string, number>; skins: s
 };
 
 // ── G6 multi-shard allocation (data foundation + pure algorithm; runtime deferred, §17.8) ─────
-/** Capacity per shard (default value for openSeason capacity; replaces hard-coded value). */
-export const WORLD_CAPACITY = 10000;
+/**
+ * Capacity per shard (default value for openSeason capacity; replaces hard-coded value).
+ * ADR-032: a 500×500 map holds ~500 active players per shard; a new shard opens past this.
+ * (Matches SLG_WORLD_CAPACITY_MAX in slg/core.ts; the former 10000 value was retired 2026-07-07.)
+ */
+export const WORLD_CAPACITY = 500;
 /** Batch size for bulk deletes during resetSeason (§17.6). */
 export const RESET_DELETE_BATCH = 2000;
 

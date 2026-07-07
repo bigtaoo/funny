@@ -43,6 +43,8 @@
 
   > 稀有度色改为灰→绿→蓝→紫的递进序（2026-07-06，见下方"稀有度配色+图标卡走查修复"）：此前 rare 用橙、epic 用紫，橙比紫更抓眼，读起来 rare 反而比 epic 更"高级"，与稀有度顺序相悖。具体取值见 `client/src/scenes/EquipmentScene/base.ts` 的 `RARITY_COLOR`，本文不写死。
 
+  > 注：**抽卡结果卡的展示稀有度另有一套映射**（有意的 jackpot 展示），装备 epic 在抽卡里展示为 legendary 金——见 `GACHA_DESIGN.md` §9.5 物品目录 / §11.2 展示稀有度映射（装备 fine→rare、rare→epic、epic→legendary）。此处装备系统本身的稀有度色（epic=紫）不受影响，两者并行，勿混淆。
+
 数值骨架（§6 的 9 级强化）与外壳解耦：文具只是它的"皮"。
 
 ---

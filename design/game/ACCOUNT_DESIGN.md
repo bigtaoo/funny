@@ -2,7 +2,7 @@
 
 > 创建：2026-06-14。本文件是**账号 / 登录 / 单机模式门槛**的设计基准。
 > 配套：`META_DESIGN.md`（§2 信任边界、§3.3 账号身份）、`SERVER_API.md`（§2.1 auth 端点）、`UI_DESIGN.md`（§4.6 ProfileScene）、`ACCOUNT_DESIGN.md`（本文）。
-> 状态：**设计稿，未实现**。任务编号见 `META_TASKS.md` SA-1~SA-4。
+> 状态：**已落地（SA-1~SA-4，2026-06-14/06-22）**（订正 2026-07-07：原标「设计稿，未实现」已滞后，与本文各实现备注一致）。任务编号见 `META_TASKS.md` SA-1~SA-4。
 
 ---
 
@@ -24,7 +24,7 @@
 | A2 | 四种登录方式并存（邮箱密码 / OAuth / 微信 / 匿名升级） | 覆盖 Web（密码/OAuth）+ 微信小游戏（wx.login）+ 试玩转正（匿名升级） |
 | A3 | accountId 与 identity 解耦：**一账号多凭证** | 同一玩家可邮箱+OAuth 同时绑；匿名升级 = 给现有 accountId 挂一个新凭证，不换号 |
 | A4 | 单机试玩 = **纯本地匿名**，不发任何网络请求 | 与现状「API 基址为 null 时纯本地」一致；试玩数据存本地，登录后可选合并 |
-| A5 | 密码存 **bcrypt/argon2 哈希**，绝不明文；JWT 仍是会话载体 | 自建账号体系的最低安全线 |
+| A5 | 密码存 **哈希**，绝不明文；JWT 仍是会话载体（订正 2026-07-07：实际用 Node `crypto.scrypt`，见 §6 / `shared/password.ts`，非原写 bcrypt/argon2） | 自建账号体系的最低安全线 |
 | A6 | 微信平台**跳过登录界面**，直接 wx.login 静默登录 | 小游戏环境天然有微信身份，强制登录界面是多余摩擦；其 `supportedLocales=['zh']` 同理是平台特化 |
 
 ---
@@ -171,7 +171,7 @@ initI18n
 
 ## 6. 安全要点
 
-- 密码：注册时 `argon2`（优先）或 `bcrypt` 哈希存储；登录时比对哈希。loginId 规范化（email 小写去空格 / username 大小写策略）。
+- 密码：注册时用 Node 内建 `crypto.scrypt` 哈希存储（订正 2026-07-07：实现为 `shared/password.ts`，自描述串 `scrypt$N$r$p$salt$hash`，零额外依赖、跨平台，非原设计所写 `argon2`/`bcrypt`）；登录时比对哈希。loginId 规范化（email 小写去空格 / username 大小写策略）。
 - 速率限制：`/auth/login`、`/auth/register` 加 IP/账号维度限流（防撞库）——后期接，先留位。
 - OAuth：标准授权码流，`state` 防 CSRF，服务端用 code 换 token 再取 `sub`，绝不信前端直传身份。
 - 内部信任：commercial/matchsvc 不解析玩家 JWT，只信 meta/gateway 传来的 accountId（§信任边界与 `META_DESIGN §1.1` 一致）。

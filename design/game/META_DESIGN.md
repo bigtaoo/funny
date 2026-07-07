@@ -67,7 +67,7 @@
 | 类别 | 字段 | 谁权威 | 写入方式 |
 |---|---|---|---|
 | **commercial 权威**（客户端只读，`saves` 里仅镜像） | `wallet.coins`、`gacha.pity` + 抽卡历史、充值票据、消费订单/流水 | **commercial**（独立库，M21） | 钱包**单文档原子更新**（`wallets`，§6.3）；meta 经内部 RPC 调用、据回执写 inventory + 镜像。详见 `COMMERCIAL_DESIGN.md` |
-| **meta 权威**（客户端只读） | `inventory`（皮肤/物品）、`pvp` 天梯（elo/rank/战绩） | metaserver | inventory 由 meta 收 commercial 发货回执后写；天梯由 meta 在收到 game 局末上报后结算写入（M19；S1 现实现是 gameserver 直写，待迁移） |
+| **meta 权威**（客户端只读） | `inventory`（皮肤/物品）、`pvp` 天梯（elo/rank/战绩） | metaserver | inventory 由 meta 收 commercial 发货回执后写；天梯由 meta 在收到 game 局末上报后结算写入（M19；订正 2026-07-07：已从 gameserver 迁至 meta，2026-06-14 落地，见 `MATCHSVC_DESIGN`） |
 | **客户端同步**（轻校验） | `progress`（通关/星级/记录）、PvE 材料 + `pveUpgrades`、设置 `flags`、`equipped`（皮肤选择） | 客户端 | 本地写 + 防抖上行；服务器做 sanity 校验（单调性 / 上界），但不强反作弊 |
 
 > 取舍：PvE 材料/升级被改 → 只是自己 PvE 变简单，**对 PvP 无影响**（硬墙），不值得上重型反作弊。真钱相关零容忍。
@@ -288,7 +288,7 @@ function buildCampaignBlueprints(save: SaveData): UnitBlueprints {
   - **追帧倍速**：`GameEngine.tick()` 按 `NetInputSource.confirmedLead`（播放头之后的已确认积压帧）选倍速——落后 >30s→5× / >10s→3× / >1s→2× / 否则 1×；缩短每步 `stepDt` 让暂停或最小化（rAF 停摆）后落后的客户端加速排帧追上水位线，追上自动落回 1×。只重定时 step、不改帧序，锁步确定性不受影响。
 - **断线（M10）**：in_match 掉线 → gameserver 停发该房间批次 + `peer_dc{grace_ms:60000}` 起 **60s**；`conn_resume` 续发续打；**超时掉线方判负**。
 - **局末（修订 M19）**：game 把 `{双方 hash, 双方 winner_side, 非空帧录像}` 打包 POST 给 **meta**；meta 比对查 desync（纯字符串比；非反作弊，是确定性回归探针）、判定胜负、归档、存录像。game 不连库、不判定。
-- **match 类型（M11）**：`friendly`（meta 仅写 `matches` 记结果）/ `ranked`（**meta** 收到 game 上报后结算 ELO 写 `pvp` 段，服务器权威；S1 现实现为 gameserver 直写，待迁移）。
+- **match 类型（M11）**：`friendly`（meta 仅写 `matches` 记结果）/ `ranked`（**meta** 收到 game 上报后结算 ELO 写 `pvp` 段，服务器权威；订正 2026-07-07：已从 gameserver 迁至 meta，2026-06-14 落地，见 `MATCHSVC_DESIGN`）。
 - **录像**：game 是帧序列唯一装配者 → 非空帧日志即录像，局末随结算上报交给 meta 落库（§6.6）。
 
 ### 6.3 数据库写型（避开多文档事务）

@@ -63,7 +63,7 @@
 
 ### 3.5 数据权利与删除账号
 - **Apple 5.1.1(v) 强制**：凡支持账号注册的 App，**必须提供应用内删除账号入口**（不能只让发邮件）。
-- 落地：`SettingsScene` 加「删除账号」→ 二次确认 → 调端点 `POST /account/delete`（meta 编排：删/匿名化 saves + 通知 commercial 处理钱包/交易留存 + analyticsvc 按 user_id 删事件 + social 解好友关系）。**契约见 [`SERVER_API.md §2.10`](SERVER_API.md)**。
+- 落地：`SettingsScene` 加「删除账号」→ 二次确认 → 调端点 `DELETE /account`（软删 `accounts.deletedAt`；meta 编排：删/匿名化 saves + 通知 commercial 处理钱包/交易留存 + analyticsvc 按 user_id 删事件 + social 解好友关系）。**契约见 [`SERVER_API.md §2.10`](SERVER_API.md)**。
 - GDPR 数据导出（DSAR）：测试期可走人工，正式期再做自助导出。
 
 ---
@@ -95,7 +95,9 @@
 
 ### 6.1 分级
 - **IARC 问卷**（Google Play / 多数 web 平台共用）+ **Apple 自有分级**。如实勾选：含**模拟赌博 / 随机付费道具（gacha）**、**用户互动（社交/私聊）**——这两项会拉高分级，但**漏报 = 下架风险**，必须如实。
-- 预期落点：**12+ / Teen 档**（含 gacha + 社交），具体以问卷结果为准。
+- 预期落点：**13+（与 §3.4 COPPA 定级一致），EU/PEGI 侧预计落 PEGI 16**，具体以问卷结果为准。
+  - ⚠️ **PEGI 2026-06 新规**：含「付费随机道具（loot box/gacha/卡包）」的游戏**默认 PEGI 16**（社交赌场类 PEGI 18）。除非把付费盲盒做成**默认关闭**（需家长/成年开启），否则 EU 侧拿不到 12。我们有真钱 gacha ⇒ 按 PEGI 16 预期，**不要再写 12+**。ESRB（美区）已声明不跟进 PEGI 该新规，美区预计 Teen（13+）。
+  - ⚠️ **COPPA 提醒**（2025-01 FTC 对 HoYoverse 罚 $20M）：即便自定 13+，若美术/营销**实际吸引 13 岁以下**，仍可能被 FTC 认定「面向儿童」触发 COPPA。手绘笔记本风需留意，勿在面向儿童的渠道/网红投放。
 
 ### 6.2 平台数据表（与 §3.2 数据清单对齐，别两处打架）
 - **iOS 隐私营养标签（Privacy Nutrition Label）** + 如有跨 App 跟踪需 **ATT 弹窗**（我们若不做定向广告跟踪，可声明「不跟踪」省掉 ATT）。

@@ -105,9 +105,11 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 
 > 全部 SLG 侧注入，**不碰** `buildPvpBlueprints`（D-CITY-6 红线）。新增纯函数落 `@nw/shared/slg.ts`（双端可算 + 可单测）。
 
+> **⚠️ 状态更新（2026-07-07）**：本节及下文多处「★P1 前置 / 现行三分 / 待补 graphite」是规划期语言。`biomeAt` 四分**已落地**（见 §10 实现进度：`ink<0.30<paper<0.55<graphite<0.78<metal`，代码 `shared/slg.ts` `biomeAt`），graphite 已有地图 faucet。下列「P1 前置」标记视为历史，不再是待办。
+
 | 注入点 | 现状 | 改动 |
 |---|---|---|
-| **`biomeAt`**（地图地块资源分区，`slg.ts:587`）★P1 前置 | 三分仅 `ink/paper/metal` | 改四分加入 `graphite`（粮木石铁四地块），让 graphite 有地图产出。阈值 §7 调参。 |
+| **`biomeAt`**（地图地块资源分区，`slg.ts:587`）✅ 已四分 | ~~三分仅 `ink/paper/metal`~~ → 已四分含 `graphite` | 已改四分加入 `graphite`（粮木石铁四地块），graphite 有地图产出。阈值见 §7。 |
 | **`recomputeYield`**（产率唯一出口，所有改产率路径已收口于此） | 聚合领地格 `tileYield` + 国民加成 | 末尾乘 `buildingYieldMult(buildings, rt)`（4 地块建筑 inkPot/paperTray/graphiteMill/metalForge）；加 `buildingSelfYield(buildings,'sticker')` 自产项（stickerShop=民居模型，sticker 非地块）。`Math.floor` 保整。 |
 | **`settleResources`**（惰性结算，cap=`RESOURCE_CAP`） | `min(settled, RESOURCE_CAP)` | cap 改 `resourceCap(buildings)` = `RESOURCE_CAP × (1+cabinet·step)`（文件柜提仓储上限）。 |
 | **`trainTroops` / `troopCap`** | `troopCap` 恒 `TROOP_CAP_BASE`；训练时长 `TROOP_TRAIN_TIME_SEC × battlePass` | `troopCap = troopCapFor(buildings)` = `TROOP_CAP_BASE + drillYard·step`；训练时长再乘 `drillTrainMult(drillYard)`；队列上限 `TROOP_TRAIN_QUEUE_MAX + drillYard 档`。 |

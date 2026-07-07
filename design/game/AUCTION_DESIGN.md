@@ -232,7 +232,7 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - 并发安全（原子状态转移 + rev + 买方失败退款）
 - 过期扫描器（scheduler 每 2s，非 TTL，退还卖方挂存 / 竞拍结拍）
 - 挂单上限 20、时长固定 72h
-- **C 每日限额**（auctionDaily TTL 计数）/ **E 绑定禁挂机制**（空清单）/ **G 价格护栏动态滑窗**（中位数 + 静态回退）/ **F 季末冻结+清算**（settling 拒挂 + clearWorldOnReset）/ **B 竞拍**（起拍/加价/托管/防狙击/买断/结拍）
+- **C 每日限额**（auctionDaily TTL 计数）/ **E 绑定禁挂机制**（空清单）/ **G 价格护栏动态滑窗**（中位数 + 静态回退）/ ~~**F 季末冻结+清算**~~ ❌ 已废弃（2026-07-06，拍卖与赛季无关；`settling 拒挂`/`clearWorldOnReset` 逻辑已删，见 §4.F）/ **B 竞拍**（起拍/加价/托管/防狙击/买断/结拍）
 - **A 装备交易**（2026-06-21）：先建装备库存后端（meta `equipment.ts`：`craftEquipment` 合成 + `escrowEquipment`/`grantEquipment` 托管转移 + `/internal/equipment/{escrow,grant}` + 玩家 `POST /equipment/craft`）→ worldsvc `auctionService` 装备分支（挂/买/竞拍结拍/撤/过期/季末退回全转移实例；按 `equip:{defId}` 稀有度价格护栏；穿戴中/locked 禁挂）。新增 `equipmentIdem` 集合（合成/托管幂等）。
 - 契约同步：`openapi-world.yml` + 客户端 `openapi-world.ts`/`WorldApiClient`（createAuction saleMode/placeBid）；meta `openapi.yml` 新增 `/equipment/craft`。
 

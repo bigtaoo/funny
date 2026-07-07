@@ -284,6 +284,8 @@ photorealistic, 3D, anime, cold expression, full armor, dark background, fantasy
 
 ### Aello ——「鬼鸟」（Harpy）
 
+> **澄清（2026-07-07）**：本条 **Aello（鹰翼女妖，HP 22 / 速 2.2）** 与 `MYTHOLOGY_DESIGN.md` §4.2 的 **PvP 折纸纸飞机飞行卡「哈耳庇厄 Harpy」（HP 45 / 速 1.4）** 是**两个不同实体**，形象/数值均不同，两者仅共用「哈耳庇厄／Harpy」这一神话名，无需对齐数值。
+
 **兵种**：飞行骚扰（PvE 敌方 / PvP 高费解锁牌）
 
 #### 神话来源

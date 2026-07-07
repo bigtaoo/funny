@@ -13,7 +13,7 @@
 - **钱包权威**：`SaveData.wallet.coins` 是只读镜像；商业操作经 commercial → meta 编排 → 回推
 - **PvE 服务器权威**：通关/升级走 `/pve/clear`、`/pve/upgrade` API；`SyncPatch` 只同步 `equipped`/`flags`
 
-## 9 个应用进程（+ mongo/redis 基础设施）+ 端口
+## 10 个应用进程（+ mongo/redis 基础设施）+ 端口
 
 | 进程 | 端口 | 说明 |
 |---|---|---|
@@ -22,10 +22,11 @@
 | matchsvc | 8091 (internal) | 私有匹配大脑，不连库 |
 | gameserver | 8081 | 数据面 WS，哑中继 |
 | commercial | 18082 | 钱包/交易，玩家不可达 |
-| admin | 18083 | 运维后台后端，玩家不可达 |
+| admin | 18083 dev / **8083** 容器 | 运维后台后端，玩家不可达（订正 2026-07-07：容器/部署端口=8083，见 compose `NW_ADMIN_PORT`/ecosystem/Caddy；dev 裸跑默认 18083，因 8083 曾被 Windows 保留） |
 | worldsvc | 18084 | SLG 大世界，公网第四面 |
 | analyticsvc | 18085 | 埋点分析，fire-and-forget |
 | socialsvc | 8085 | 社交第五面（家族/好友/邮件/频道/push路由） |
+| auctionsvc | 18086 | 拍卖行第六面（订正 2026-07-07：从 worldsvc 解耦为独立进程，连 `notebook_wars_auction`；已进 prod compose + ecosystem） |
 | mongo | 27017 | 副本集（单节点） |
 
 **Windows TCP 排除端口注意**：`netsh interface ipv4 show excludedportrange` 查被 WinNAT/Hyper-V 保留的端口段，撞上换端口（8082/8083 曾被保留，现用 8086）。
@@ -76,9 +77,9 @@ npm run dev:all             # 起全部进程（dev-up.ps1）
 | http://localhost:9093 | ops 运维后台（跨源调 admin :18083；种子账号 `admin`/`admin123`） |
 | http://localhost:18083 | admin 运维后端（仅 ops 前端访问） |
 
-nginx 同源反代（`client/nginx.conf`）：`/` SPA · `/api/`→metaserver:8080 · `/gw`→gateway WS · `/ws`→gameserver WS · `/world`,`/family`,`/auction`→worldsvc:18084（不剥前缀）· `/social`→socialsvc:8085 · `/analytics`→analyticsvc:18085。worldsvc 内部需 redis + gateway/commercial/meta 内网基址；socialsvc 内部需 gateway 内网基址；analyticsvc/worldsvc/socialsvc 不暴露宿主，仅经 nginx。
+nginx 同源反代（`client/nginx.conf`）：`/` SPA · `/api/`→metaserver:8080 · `/gw`→gateway WS · `/ws`→gameserver WS · `/world`→worldsvc:18084（不剥前缀）· `/auction`→auctionsvc:18086 · `/social`→socialsvc:8085（含已迁入的 `/family`）· `/analytics`→analyticsvc:18085（订正 2026-07-07：`/family` 已迁 socialsvc、`/auction` 已迁独立进程 auctionsvc）。worldsvc 内部需 redis + gateway/commercial/meta 内网基址；socialsvc 内部需 gateway 内网基址；analyticsvc/worldsvc/socialsvc 不暴露宿主，仅经 nginx。
 
-**容器内端口与 dev 不同**：镜像里各进程固定监听 metaserver:8080 / gateway:8082(内部 8090) / gameserver:8081 / commercial:8092 / matchsvc:8091 / worldsvc:18084 / admin:18083 / analyticsvc:18085（dev 裸跑的 18080/8086 等仅 webpack 注入默认值用）。
+**容器内端口与 dev 不同**：镜像里各进程固定监听 metaserver:8080 / gateway:8082(内部 8090) / gameserver:8081 / commercial:8092 / matchsvc:8091 / worldsvc:18084 / admin:8083 / analyticsvc:18085 / auctionsvc:18086（订正 2026-07-07：admin 容器端口=8083，非 18083；auctionsvc 补入。dev 裸跑的 18080/8086 等仅 webpack 注入默认值用）。
 
 **工具镜像**：animator/ops 自带上下文构建；level-editor 的 Dockerfile 用**仓库根**作上下文（webpack `@game` alias 引用 `client/src/game`，需把 client/src 拷进镜像）。
 
