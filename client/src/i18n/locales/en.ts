@@ -1246,7 +1246,6 @@ export const en: Record<TranslationKey, string> = {
 
   // ── Retention system (B5) ────────────────────────────────────────────────────
   'daily.title': 'Daily',
-  'daily.back': '← Back',
   'daily.loginRequired': 'Log in to check in',
   'daily.checkin.title': 'Monthly Check-in',
   'daily.checkin.day': 'Day {n}',

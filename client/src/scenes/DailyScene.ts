@@ -6,6 +6,7 @@ import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren, marginLineX } from '../render/sketchUi';
 import { buildIcon, type IconKind } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
+import { drawFloatingBackButton } from '../ui/widgets/SceneHeader';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import type { SaveData } from '../game/meta/SaveData';
 import type { RetentionView } from '../net/ApiClient';
@@ -120,13 +121,8 @@ export class DailyScene implements Scene {
     title.y = h * 0.03;
     this.container.addChild(title);
 
-    const backBtn = txt(t('daily.back'), Math.round(h * 0.032), C.mid);
-    backBtn.x = w * 0.05;
-    backBtn.y = h * 0.04;
-    backBtn.interactive = true;
-    backBtn.cursor = 'pointer';
-    backBtn.on('pointertap', () => this.cb.onBack());
-    this.container.addChild(backBtn);
+    const { backRect } = drawFloatingBackButton(this.container, h);
+    this.hits.push({ x: backRect.x, y: backRect.y, w: backRect.w, h: backRect.h, fn: () => this.cb.onBack() });
 
     const save = this.cb.getSave?.();
     if (!save) {
