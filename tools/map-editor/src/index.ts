@@ -53,7 +53,12 @@ const VIEW_H = 620;
 /** Rendered tiles extend this far past the visible edge so short pans don't reveal blank space (§ live-drag tradeoff below). */
 const VIEW_PAD_FACTOR = 1.5;
 const ZOOM_MIN = 10;
-const ZOOM_MAX = 56;
+const ZOOM_MAX = 84;
+/** Default on-screen tile px = the game client's L1 (detail) density: it sizes tiles as
+ * floor(viewportWidth / 16) (client/src/scenes/worldmap/zoom.ts). Matching that divisor here
+ * makes the editor open with the SAME on-screen tile count the player sees at full zoom-in,
+ * instead of the old fixed 34 (~2× as many tiles). ZOOM_MAX leaves headroom to zoom in closer. */
+const DEFAULT_TP = Math.floor(VIEW_W / 16);
 /** On-screen width of a base's city sprite in tile-widths — mirrors the game client's BASE_SPRITE_TILES
  * (client/src/scenes/worldmap/constants.ts) so a 3×3 base's art lines up identically; larger cities scale
  * proportionally by footprint (see refreshCitySprites). */
@@ -130,8 +135,9 @@ let panLast: { x: number; y: number } | null = null;
 /** Whether the Tile inspector panel has shown real hover data yet (vs. its initial hint text). */
 let tileInfoShown = false;
 
-let tp = 34; // on-screen tile width in px — the sole "zoom" knob (replaces the old CSS-scale slider).
-             // Visible cell count ∝ tp⁻²; bumped 28→34 to shed ~1/3 of on-screen tiles.
+let tp = DEFAULT_TP; // on-screen tile width in px — the sole "zoom" knob (replaces the old CSS-scale slider).
+             // Visible cell count ∝ tp⁻²; default synced to the game client's L1 detail density
+             // (VIEW_W/16) so the editor's tile count matches what players see, not ~2× more.
 let panX = 0;
 let panY = 0;
 /** worldId → tile diff Map ("x:y" → override), refreshed by renderBaseMap(); reused by hover info. */

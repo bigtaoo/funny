@@ -333,7 +333,9 @@ export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, t
     if (!ftex) return;
     const sp = new PIXI.Sprite(ftex);
     sp.anchor.set(0.5, 0.5);
-    sp.scale.set((tp * 0.34) / Math.max(ftex.width, ftex.height));
+    // Generic type frame (tall, w<h) — keep max(w,h) so it stays bounded; 0.55 matches the
+    // revealed per-level motif size below so the sprite doesn't jump size when fog clears.
+    sp.scale.set((tp * 0.55) / Math.max(ftex.width, ftex.height));
     sp.alpha = 0.35;
     [sp.x, sp.y] = toLocal(0.5, 0.52);
     g.addChild(sp);
@@ -347,11 +349,18 @@ export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, t
   }
 
   // Real per-level art when it exists; otherwise a single generic placeholder sprite.
-  const tex = getResLevelTexture(resType, lv) ?? getResTexture(resType);
+  const levelTex = getResLevelTexture(resType, lv);
+  const tex = levelTex ?? getResTexture(resType);
   if (!tex) return;
   const sp = new PIXI.Sprite(tex);
   sp.anchor.set(0.5, 0.5);
-  sp.scale.set((tp * 0.34) / Math.max(tex.width, tex.height));
+  // Per-level frames all share the same 128px WIDTH and encode the level in HEIGHT (higher
+  // level = taller/denser), so scale them by width — this keeps the per-level height
+  // difference instead of normalizing it away via max(w,h). The generic fallback frame
+  // (types without per-level art) is TALLER than wide, so it stays on max(w,h) to stay
+  // bounded. 0.55 (was 0.34) so l1..l10 read apart at on-screen tile sizes.
+  const denom = levelTex ? tex.width : Math.max(tex.width, tex.height);
+  sp.scale.set((tp * 0.55) / denom);
   [sp.x, sp.y] = toLocal(0.5, 0.52);
   g.addChild(sp);
 }
