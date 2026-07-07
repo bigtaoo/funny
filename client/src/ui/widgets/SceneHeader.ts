@@ -135,7 +135,40 @@ function buildBackChip(label: string, size: number, ctx: BackChipContext): { chi
   return { chip, w, h };
 }
 
-/** Build the static bar chrome (fill + accent rule + back chip) at local origin. */
+/** Faint guilloche alpha + strand count — approved 07.07.2026 (banknote texture on the paper bar). */
+const GUILLOCHE_ALPHA = 0.12;
+const GUILLOCHE_STRANDS = 6;
+
+/**
+ * Draw the banknote-style guilloche weave into `g`: two mirrored families of
+ * phase-shifted compound sine strands, tinted in the category `accent` at a
+ * faint alpha so it reads as a premium watermark under the title/back/coins,
+ * never competing with them. Amplitude (0.30·h from the mid-line) stays inside
+ * the bar, so no clip is needed. Baked once with the rest of the chrome via
+ * {@link getCachedDisplay}, so its cost is paid a single time per cache key.
+ * This is the exact curve math signed off in the interactive preview.
+ */
+function drawGuilloche(g: PIXI.Graphics, w: number, headerH: number, accent: number): void {
+  const mid = headerH / 2;
+  const f1 = (2 * Math.PI * 7) / w;
+  const f2 = (2 * Math.PI * 11) / w;
+  const a1 = headerH * 0.20;
+  const a2 = headerH * 0.10;
+  g.lineStyle(1, accent, GUILLOCHE_ALPHA);
+  for (let fam = 0; fam < 2; fam++) {
+    const dir = fam === 0 ? 1 : -1;
+    for (let s = 0; s < GUILLOCHE_STRANDS; s++) {
+      const ph = (s / GUILLOCHE_STRANDS) * 2 * Math.PI;
+      for (let x = 0; x <= w; x += 2) {
+        const y = mid + dir * (a1 * Math.sin(f1 * x + ph) + a2 * Math.sin(f2 * x + ph * 1.7));
+        if (x === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
+      }
+    }
+  }
+}
+
+/** Build the static bar chrome (fill + guilloche + accent rule + back chip) at local origin. */
 function buildChrome(
   w: number, headerH: number, label: string, size: number, variant: SceneHeaderVariant, accent: number,
 ): PIXI.Container {
@@ -143,6 +176,11 @@ function buildChrome(
 
   if (variant === 'paper') {
     c.addChild(sketchPanel(w, headerH, { fill: C.paper, border: C.mid, seed: seedFor(0, 0, w) }));
+    // Faint banknote guilloche watermark over the paper fill, tinted in the
+    // category accent — a premium texture that reads under the title/back/coins.
+    const weave = new PIXI.Graphics();
+    drawGuilloche(weave, w, headerH, accent);
+    c.addChild(weave);
     // Category accent: a thin rule hugging the bottom edge, doubling as the
     // header/body divider. The only per-scene colour cue on an otherwise
     // uniform paper bar (see HEADER_ACCENT).
