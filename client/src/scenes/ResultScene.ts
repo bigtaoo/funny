@@ -415,7 +415,9 @@ export class ResultScene implements Scene {
         }
         placed.push({ x: sx, y: sy });
         const sr = h * (0.028 + Math.random() * 0.034);
-        const sa = 0.6 + Math.random() * 0.35;
+        // Celebratory stars are faded to 38% opacity so they read as a soft
+        // backdrop behind the result text rather than competing with it.
+        const sa = (0.6 + Math.random() * 0.35) * 0.38;
         star(sx, sy, sr, sa);
       }
     } else if (mood === 'loss') {
