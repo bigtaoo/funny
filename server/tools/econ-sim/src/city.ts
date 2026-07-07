@@ -135,7 +135,8 @@ export function hourlyIncome(p: IncomeProfile): Partial<Record<ResourceType, num
   for (const rt of RESOURCE_TYPES) {
     const tiles = p.tiles[rt] ?? 0;
     if (rt === 'sticker') {
-      // sticker has NO map tile — faucet is stickerShop self-production only (mid-build level).
+      // sticker faucet = stickerShop self-production (modeled here) + map 铜矿 tiles (level-gated ≥6, NOT yet
+      // modeled — this sim only covers home-city economy; see mapgen.ts resTypeFor / SLG_GEN.copperShare).
       out[rt] = Math.round(STICKER_SELF_BASE * p.avgBuildingLevel * 0.5);
     } else {
       out[rt] = Math.round(tiles * RESOURCE_YIELD_BASE * p.avgTileLevel * midMult * nation);

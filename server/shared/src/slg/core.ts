@@ -196,11 +196,15 @@ export const SLG_GEN = {
    * 铜矿 (copper mine) = LEVEL-GATED `sticker` map faucet (三战 rule: 铜矿 only on 6级地及以上, see SGZ_LAND_REFERENCE §3 /
    * SLG_DESIGN §3.4). On a `resource` tile at level ≥ copperMinLevel, a per-tile hash draw < copperShare overrides the
    * biome land resource with `sticker`; below that level sticker never appears on the map (matches the art, which ships
-   * sticker frames l6–10 only — slg-resource-art §5.7-sticker). Coexists with the home-city stickerShop faucet.
-   * DRAFT — tune copperShare in the balance pass.
+   * sticker frames l6–10 only — slg-resource-art §5.7-sticker).
+   * COEXISTS with the home-city stickerShop faucet (2026-07-07 拍板): stickerShop (STICKER_SELF_BASE/h/level, city.ts) is
+   * the reliable BASELINE every player has and covers the building-upgrade sticker sink; map 铜矿 is a scarce EXPANSION
+   * BONUS gated behind contested ≥6 tiles. recomputeYield adds both faucets (additive, no double-count). Hence copperShare
+   * is kept low: 0.25 → 铜矿 ≈ 22% of ≥6 resource tiles ≈ 2.5% of all resource tiles (a clear minority even among high
+   * tiles — "special, must be fought for"). DRAFT — validate in the balance pass (econ-sim does not yet model the map faucet).
    */
   copperMinLevel: 6,
-  copperShare: 0.3,
+  copperShare: 0.25,
   /** Level cap for neutral open land (keeps neutral tiles low-value). */
   neutralLevelCap: 2,
   // ── S8-6.6 blocking terrain + gates: obstacle/gate placement is now geometric (ring/river/branch bands,
