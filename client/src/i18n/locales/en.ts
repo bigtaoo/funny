@@ -243,6 +243,7 @@ export const en: Record<TranslationKey, string> = {
   'room.connecting': 'Connecting',
   'room.creating': 'Creating room',
   'room.joining': 'Joining',
+  'room.rankedTitle': 'Ranked Match',
   'room.ranked': 'RANKED',
   'room.rankedDesc': 'Matched by skill; affects your rank',
   'room.searching': 'Searching',
