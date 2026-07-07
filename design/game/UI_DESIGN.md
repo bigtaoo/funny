@@ -116,11 +116,15 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 >
 > **补充（2026-07-05）**：返回文字底下新增一个**轻量圆角色块**（`buildBackChip`）——`dark` variant 用白色 12% 透明度，`paper` variant 用墨色 8% 透明度，让返回按钮读成一个「按钮」而不是浮在标题栏上的裸文字；不是 §7.5 那种手绘描边的实体按钮框，只是一个衬底色块。同一改动把 `WorldMapScene` 唯一的例外（原来是左下角 HUD 里 88×34 的手绘按钮框，i18n key 是 `world.back`）迁移成新增的 `drawFloatingBackButton(container, h)`：同款色块 + `common.back` 文案，挪到左上角、同一个 `x=10` 缩进，与其余 22 个场景位置对齐；`floating` variant 用不透明的纸色底（92%）以便在地图任意底色上都能看清。至此返回按钮**位置 + 样式**在全部场景统一，无遗留例外。
 > - `title` 传 `null` 时只画 chrome、不画标题（供有副标题需抬升标题的场景自绘，如 CampaignMap）；`opts.titleSize`/`opts.headerH` 用于保真个别场景的大标题/矮栏（如 Settings/Titles 0.042、Chat 0.11 栏高）。
-> - `opts.variant`（`'dark'` 默认 / `'paper'`）：`'paper'` = `sketchPanel` 纸面底（`C.paper` 填充 + `C.mid` 手绘边）+ 深色标题，供 SLG/编辑器场景（其正文坐在纸面背景上）使用；返回在左、标题居中，右侧留空可由调用方在 chrome 之上自绘控件（如 DefenseEditor 的基地等级 stepper）。`'dark'` = 实心深色底 + 白色标题。
-> - **已迁移（13 个标准深色顶栏菜单场景）**：Achievement / BattlePass / Collection / Gacha / Leaderboard / Stats / Shop / Settings / Titles / Room / LevelPrep / CampaignMap / Chat。统一新增 i18n `common.back`（原各场景 `xxx.back` 键保留未删，部分仍被未迁场景使用）。
-> - **已迁移（6 个 SLG/编辑器纸面顶栏场景，2026-06-25，variant `'paper'`）**：Auction / Equipment / Family / Sect / Teams / DefenseEditor。各自传自己固定的 `HUD_H`/`HEADER_H` 作 `opts.headerH`（正文布局沿用该常量不动）+ `titleSize`（15 / 14）。DefenseEditor 的基地 stepper 仍由场景自绘在 chrome 右侧之上。
-> - **补充改到 `'paper'`（2026-07-06）**：`FriendsScene`（Friends/Family/Sect/World/Mail 五 Tab 共用一个顶栏）原挂 `'dark'`（黑底白字），但 World Tab 右上角靠 `drawHeaderCurrency` 画金币余额——该函数的金额文字硬编码 `C.dark`（深色），叠在黑底顶栏上不可见。改挂 `variant: 'paper'` 后金额可读，且与其正文纸面背景一致（此前是黑条突兀浮在纸面上）。同一改动把标题从固定 `friends.title`（"好友"）改成按当前 Tab 动态取 `friends.tab.${tab}`（此前切到 World/Family/Sect/Mail 顶栏仍显示"好友"，与 Tab 高亮的活动项不一致）。
-> - **仍未迁**：底部 HUD 的 WorldMap（非顶栏）；无深色顶栏的纸面浮动返回（Daily / Event）；LoginScene（返回仅在 password/register 视图条件出现，属登录前流程）。
+> - `opts.variant`（`'paper'` 默认 / `'dark'`）：`'paper'` = `sketchPanel` 纸面底（`C.paper` 填充 + `C.mid` 手绘边）+ 深色标题；返回在左、标题居中，右侧留空可由调用方在 chrome 之上自绘控件（如 DefenseEditor 的基地等级 stepper、或 `drawHeaderCurrency` 金币条）。`'dark'`（实心深色底 + 白字）为遗留分支，**已无任何场景使用**，仅保留以防显式传参编译报错。
+>
+> **顶栏统一（2026-07-07，`feat/header-unify`）**：此前顶栏分「黑底白字」（13 个大厅系菜单，靠默认 `'dark'`）与「纸底深字」（8 个 SLG/编辑器，显式 `'paper'`）两套，观感割裂（玩家只感到"一会儿黑一会儿白"，感知不到当初的分界逻辑）。本次**全部收敛到 `'paper'`**——手绘笔记本风的本体，且这些场景正文本就全坐在 `buildPaperBackground` 纸面上，翻纸底无缝。做法：把 `drawSceneHeader` 默认 variant 从 `'dark'` 改成 `'paper'`，13 个靠默认值的场景**零改动**自动翻新（标题色随 variant 自动 `C.dark`）。
+> - **分区靠 accent 细线，不靠底色**：底一律纸面，只在顶栏底边加一条 2px 的 accent 细线（兼作顶栏/正文分隔线，**纯色不加纹**）。三档 `HEADER_ACCENT`：`lobby`=蓝（`C.accent`，默认，信息/社交/大厅系）/ `spend`=金（`C.gold`，花钱养成：Shop/Gacha/BattlePass/Equipment/Card）/ `slg`=红（`C.red`，SLG 对抗：Auction/Family/Sect/Teams/DefenseEditor）。accent 进缓存键。
+> - **纸币扭索纹（guilloche，2026-07-07）**：纸面填充之上叠一层极淡的钞票编织纹当水印，增加"官方账本"高级感（契合货币/笔记本主题）。两族镜像的相位错开复合正弦股（`drawGuilloche`），accent 同色染色，`alpha=0.12`、`6 股/族`（交互预览拍板值）；振幅 0.30·栏高、恒在栏内故无需 clip。压在返回/标题/金币之下，不抢读。**随 chrome 一起走 §2.1 `getCachedDisplay` 烘焙——每个 (variant, accent, 宽, 栏高) 只算一次 `PIXI.Graphics`，之后全场景复用同一 sprite，运行时零开销。**
+> - **金币读数统一走 `drawHeaderCurrency`**：Shop/Gacha/BattlePass 此前各自手绘「金图标+金数字」，Equipment/Card/Friends 走 `drawHeaderCurrency`（图标+"金币"标签+深色数字），两套不一致。现统一：`drawHeaderCurrency` 的金币金额改成**金色加粗、去掉"金币"文字标签**（图标即单位），三个消费场景删自绘块改调 `drawHeaderCurrency`。金币只挂在花钱/养成场景，纯信息场景（排行/统计/设置/成就等）不挂。材料 chip 仍保留标签+深色数字不变。
+> - **各场景 accent 归属**：金 = Shop/Gacha/BattlePass/Equipment/Card；红 = Auction/Family/Sect/Teams/DefenseEditor；其余（Achievement/Collection/Stats/Leaderboard/Titles/Settings/Room/Chat/Friends/DeckBuilder/CampaignMap/LevelPrep）走默认蓝。
+> - **DailyScene 迁移**：删掉自绘的裸返回文字（`daily.back`），改挂 `drawFloatingBackButton`（无顶栏的纸面浮动返回，与 Result/WorldMap 同款），位置与其余场景对齐。
+> - **仍未迁**：底部 HUD 的 WorldMap（非顶栏，用浮动返回）；LoginScene（返回仅在 password/register 视图条件出现，属登录前流程）。
 
 ---
 

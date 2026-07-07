@@ -19,6 +19,9 @@ import {
   sanitizePvpReportedStats,
   accrueStats,
   CARD_DEFS,
+  chapterOf,
+  chapterAnchorCard,
+  CHAPTER_ANCHOR_CARD_LEVEL,
   levelCardReward,
   parseCardKey,
   makeDropInstance,
@@ -181,9 +184,21 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
       return ok({ stamina: { current: newCurrent, regenAt: newRegenAt } });
     }
 
-    /** Write progress/stars (unlock + record stars, taking the max), without touching materials. */
-    private async writeClearProgress(accountId: string, levelId: string, stars: number) {
-      return this.mutateSave(accountId, (s) => {
+    /**
+     * Write progress/stars (unlock + record stars, taking the max), without touching materials.
+     * Also detects a first chapter clear and reports it via `newlyClearedChapter` (the `ch{N}` id) so the
+     * caller can grant the chapter-clear exclusive card (§4). Detection compares the chapter finale-count
+     * of prior vs new cleared inside the same rev-guarded transaction, so it fires exactly once per chapter
+     * (cleared is monotonic; a replay leaves cleared unchanged → no re-fire; a concurrent duplicate loses the
+     * rev race and re-reads a cleared that already contains the finale → no double-fire).
+     */
+    private async writeClearProgress(
+      accountId: string,
+      levelId: string,
+      stars: number,
+    ): Promise<{ save: SaveData; newlyClearedChapter?: string } | { error: string }> {
+      let newlyClearedChapter: string | undefined;
+      const out = await this.mutateSave(accountId, (s) => {
         const cleared = s.progress.cleared.includes(levelId)
           ? s.progress.cleared
           : [...s.progress.cleared, levelId];
@@ -197,12 +212,50 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
           chapters > prevChapters
             ? { ...(s.stats ?? {}), 'campaign.chaptersCleared': chapters }
             : s.stats;
+        // Chapter-clear exclusive card (CHARACTER_CARDS_DESIGN §4): a new chapter is cleared iff the finale-count
+        // rose relative to the *prior* cleared set. Compare cleared arrays directly (robust to lazy/seeded stats,
+        // which may lag). The finale just added is `levelId` → the newly cleared chapter is chapterOf(levelId).
+        newlyClearedChapter =
+          chapters > chaptersClearedCount(s.progress.cleared) ? chapterOf(levelId) : undefined;
         return {
           ...s,
           progress: { ...s.progress, cleared, stars: { ...s.progress.stars, [levelId]: stars2 } },
           ...(stats !== s.stats ? { stats } : {}),
         };
       });
+      if ('error' in out) return out;
+      return { save: out.save, newlyClearedChapter };
+    }
+
+    /**
+     * Chapter-clear exclusive reward (CHARACTER_CARDS_DESIGN §4): grant a level-2 instance of the chapter's
+     * anchor character card (§5.1 mapping) on the FIRST clear of that chapter's finale. Distinct from the
+     * per-level drop (level 1, {@link grantClearReward}) — this is a one-time chapter reward, not farmable.
+     * The caller invokes this only when {@link writeClearProgress} detected a new chapter clear, so it is
+     * idempotent by construction (fires once per chapter). Roster-full → coin compensation, best-effort via
+     * commercial (same path as gacha CC-5, economy.ts); the deterministic orderId also dedupes a retry.
+     * Best-effort: a rev conflict here does not roll back the already-written chapter clear. Returns the
+     * updated save when a card was granted (so the response can reflect it), else undefined.
+     */
+    private async grantChapterClearCard(accountId: string, chapterId: string): Promise<SaveData | undefined> {
+      const cardId = chapterAnchorCard(chapterId);
+      if (!cardId) return undefined;
+      const def = CARD_DEFS[cardId];
+      if (!def) return undefined;
+      const { cols, now, commercial } = this.deps;
+      const result = await grantCards(cols, now, accountId, [def], CHAPTER_ANCHOR_CARD_LEVEL);
+      if ('error' in result) return undefined;
+      if (result.compensatedCoins > 0 && commercial.available) {
+        await commercial
+          .grant({
+            accountId,
+            amount: result.compensatedCoins,
+            reason: 'chapter_card_inv_full',
+            orderId: `chapterCard:${accountId}:${chapterId}`,
+          })
+          .catch(() => { /* best-effort compensation; must not block the clear flow */ });
+      }
+      return result.save;
     }
 
     /**
@@ -356,6 +409,15 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
           // Write progress/stars (unlock proceeds normally) but do not deliver materials; record the spot-check and wait for the client to submit the replay for re-simulation.
           const prog = await this.writeClearProgress(accountId, levelId, stars);
           if ('error' in prog) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, prog.error));
+          // Chapter-clear exclusive card (§4): tied to the first-chapter-clear detection (same trigger as the
+          // campaign.chaptersCleared stat, which is also written here on the spot-check path) — it is a one-time,
+          // non-farmable reward, so it is granted alongside progress rather than deferred to /pve/verify (which
+          // withholds only the farmable material reward). Delivered on this path so it fires exactly once.
+          let progSave = prog.save;
+          if (prog.newlyClearedChapter) {
+            const s2 = await this.grantChapterClearCard(accountId, prog.newlyClearedChapter);
+            if (s2) progSave = s2;
+          }
           const verifyId = randomUUID();
           await cols.pveVerifications.insertOne({
             _id: verifyId,
@@ -370,7 +432,7 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
             ...(clientStats ? { reportedStats: clientStats } : {}),
             ts: now(),
           });
-          const saveWithSt = { ...prog.save, stamina: await this.readStaminaSnapshot(accountId, now()) };
+          const saveWithSt = { ...progSave, stamina: await this.readStaminaSnapshot(accountId, now()) };
           return ok({
             save: saveWithSt,
             granted: {},
@@ -385,6 +447,9 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
       // Normal clear: write progress/stars then deliver materials + unit cards (within the daily cap, S12-C).
       const prog = await this.writeClearProgress(accountId, levelId, stars);
       if ('error' in prog) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, prog.error));
+      // Chapter-clear exclusive card (§4), granted BEFORE grantClearReward so its subsequent re-read of the save
+      // reflects the level-2 anchor card in the returned snapshot. Fires once per chapter (first-clear detection).
+      if (prog.newlyClearedChapter) await this.grantChapterClearCard(accountId, prog.newlyClearedChapter);
       const granted = await this.grantClearReward(accountId, levelId, level.reward);
       if ('error' in granted) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, granted.error));
       // S9-3b: non-spot-check path — accept client-reported stats, pass through L1 caps, then write to achievement counters.

@@ -1246,7 +1246,6 @@ export const de: Record<TranslationKey, string> = {
 
   // ── Bindungssystem (B5) ─────────────────────────────────────────────────────
   'daily.title': 'Täglich',
-  'daily.back': '← Zurück',
   'daily.loginRequired': 'Anmelden zum Einchecken',
   'daily.checkin.title': 'Monats-Check-in',
   'daily.checkin.day': 'Tag {n}',

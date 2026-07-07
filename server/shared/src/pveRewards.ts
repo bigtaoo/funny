@@ -148,6 +148,41 @@ export function chaptersClearedCount(cleared: readonly string[]): number {
   return count;
 }
 
+// ── Chapter-clear exclusive reward: anchor character card (CHARACTER_CARDS_DESIGN §4, CHARACTER_DESIGN §5.1) ──
+// First clear of a chapter's finale (`ch{N}_lv{max}`) grants a **level-2** instance of that chapter's anchor
+// character card — a one-time reward, distinct from the per-level drop (level 1). Only triggered when
+// chaptersClearedCount increments (first clear; replays do not re-grant). See metaserver pve.ts grantChapterClearCard.
+
+/**
+ * Chapter id (`ch{N}`) → anchor character card def id (matches CARD_DEFS keys in @nw/shared cards.ts).
+ * Tao anchors on odd chapters, Anna variants on even chapters, paired by unit-type position
+ * (infantry / shieldbearer / archer): Ch1↔Ch2 (lichuang / max), Ch3↔Ch4 (chenshou / lena),
+ * Ch5↔Ch6 (suyuan / mara). §5.1 pins the even (Anna) chapters explicitly (Ch2 Max / Ch4 Lena / Ch6 Mara);
+ * the odd (Tao) chapters follow the same position pairing.
+ */
+export const CHAPTER_ANCHOR_CARD: Readonly<Record<string, string>> = {
+  ch1: 'lichuang',
+  ch2: 'max',
+  ch3: 'chenshou',
+  ch4: 'lena',
+  ch5: 'suyuan',
+  ch6: 'mara',
+};
+
+/** The chapter id (`ch{N}`) a level belongs to, or undefined for special levels without a `_lvN` suffix (e.g. `ch_stress`). */
+export function chapterOf(levelId: string): string | undefined {
+  const m = /^(ch\d+)_lv\d+$/.exec(levelId);
+  return m?.[1];
+}
+
+/** The anchor character card def id granted (at level 2) on first clear of the given chapter, or undefined if the chapter has no anchor. */
+export function chapterAnchorCard(chapterId: string): string | undefined {
+  return CHAPTER_ANCHOR_CARD[chapterId];
+}
+
+/** Card level of the chapter-clear exclusive reward (§4: "对应角色的 2 级卡"). Distinct from the per-level drop level (1). */
+export const CHAPTER_ANCHOR_CARD_LEVEL = 2;
+
 /** Daily cap on "material-rewarding clears" (excess clears still record progress/stars but grant no materials, §8 decision 3). DRAFT pending playtesting. */
 export const PVE_DAILY_CLEAR_REWARD_CAP = 20;
 

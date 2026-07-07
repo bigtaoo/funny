@@ -11,7 +11,7 @@ import type { Scene } from '../SceneManager';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren, marginLineX } from '../../render/sketchUi';
 import { buildDecorCLayer } from '../../render/decorCLayer';
-import { drawSceneHeader, drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
+import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { BusyTracker } from '../../ui/busyTracker';
 import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance } from '../../game/meta/SaveData';
 import { affixKind, EQUIPMENT_INV_CAP, type EnhanceCost } from '../../game/meta/equipmentDefs';
@@ -188,7 +188,7 @@ export class EquipmentSceneBase {
 
     // Static header (back + title); the back hit is (re)registered in render().
     const hdr = drawSceneHeader(this.container, w, h, t('equip.title'), {
-      variant: 'paper', headerH: HUD_H, titleSize: 15,
+      variant: 'paper', headerH: HUD_H, titleSize: 15, accent: HEADER_ACCENT.spend,
     });
     this.backRect = hdr.backRect;
 

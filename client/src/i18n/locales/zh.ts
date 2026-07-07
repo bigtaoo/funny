@@ -1258,7 +1258,6 @@ export const zh = {
 
   // ── Retention system (B5, RETENTION_DESIGN) ───────────────────────────────────
   'daily.title': '每日',
-  'daily.back': '← 返回',
   'daily.loginRequired': '登录后可签到',
   'daily.checkin.title': '签到月历',
   'daily.checkin.day': '第 {n} 天',

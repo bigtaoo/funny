@@ -24,7 +24,7 @@ import type { Scene } from './SceneManager';
 import { t, type TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
-import { drawSceneHeader } from '../ui/widgets/SceneHeader';
+import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import type { WorldApiClient, TeamTemplate, ArmyEntry } from '../net/WorldApiClient';
 import { WorldApiError } from '../net/WorldApiClient';
 import { ATTACK_LANES, BASE_COLS, CARD_DEFINITIONS, UNIT_BLUEPRINTS } from '../game/config';
@@ -294,7 +294,7 @@ export class DefenseEditorScene implements Scene {
         ? t('world.defense.titleBase')
         : t('world.defense.titleTile').replace('{tile}', this.cb.target.tileKey);
     const hdr = drawSceneHeader(this.bodyLayer, w, this.h, titleStr, {
-      variant: 'paper', headerH: HEADER_H, titleSize: 14,
+      variant: 'paper', headerH: HEADER_H, titleSize: 14, accent: HEADER_ACCENT.slg,
     });
     this.hits.push({ rect: hdr.backRect, action: () => this.cb.onBack() });
 

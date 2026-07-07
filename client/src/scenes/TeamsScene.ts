@@ -13,7 +13,7 @@ import type { Scene } from './SceneManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
-import { drawSceneHeader } from '../ui/widgets/SceneHeader';
+import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import { BusyTracker } from '../ui/busyTracker';
 import type { WorldApiClient, TeamTemplate, CardSLGState, PlayerWorldView } from '../net/WorldApiClient';
 import type { SaveData, CardInstance } from '../game/meta/SaveData';
@@ -125,7 +125,7 @@ export class TeamsScene implements Scene {
 
     // Header
     const hdr = drawSceneHeader(this.bodyLayer, w, h, t('world.team.title'), {
-      variant: 'paper', headerH: HEADER_H, titleSize: 14,
+      variant: 'paper', headerH: HEADER_H, titleSize: 14, accent: HEADER_ACCENT.slg,
     });
     this.hits.push({ rect: hdr.backRect, action: () => this.cb.onBack() });
 

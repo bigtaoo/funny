@@ -10,8 +10,13 @@ import {
   pveUpgradeCost,
   shouldSpotCheck,
   PVE_VERIFY_SAMPLE_RATE,
+  CHAPTER_ANCHOR_CARD,
+  CHAPTER_ANCHOR_CARD_LEVEL,
+  chapterOf,
+  chapterAnchorCard,
   type PveMaterial,
 } from '../src/pveRewards';
+import { CARD_DEFS } from '../src/cards';
 
 const MATERIALS: PveMaterial[] = ['scrap', 'lead', 'binding'];
 
@@ -93,6 +98,52 @@ describe('chaptersClearedCount', () => {
 
   it('is order-independent and dedups', () => {
     expect(chaptersClearedCount(['ch2_lv10', 'ch1_lv10', 'ch1_lv10'])).toBe(2);
+  });
+});
+
+// ── chapter-clear anchor card mapping (CHARACTER_CARDS_DESIGN §4) ───────────────────
+
+describe('chapterOf', () => {
+  it('extracts the chapter id from a level id', () => {
+    expect(chapterOf('ch1_lv1')).toBe('ch1');
+    expect(chapterOf('ch6_lv10')).toBe('ch6');
+  });
+
+  it('returns undefined for special levels without a _lvN suffix', () => {
+    expect(chapterOf('ch_stress')).toBeUndefined();
+    expect(chapterOf('nonsense')).toBeUndefined();
+  });
+});
+
+describe('CHAPTER_ANCHOR_CARD', () => {
+  it('every chapter maps Tao anchors to odd chapters and Anna variants to even chapters (§5.1)', () => {
+    expect(CHAPTER_ANCHOR_CARD).toEqual({
+      ch1: 'lichuang',
+      ch2: 'max',
+      ch3: 'chenshou',
+      ch4: 'lena',
+      ch5: 'suyuan',
+      ch6: 'mara',
+    });
+  });
+
+  it('every anchor id resolves to a real CardDef', () => {
+    for (const cardId of Object.values(CHAPTER_ANCHOR_CARD)) {
+      expect(CARD_DEFS[cardId]).toBeDefined();
+    }
+  });
+
+  it('every campaign chapter in PVE_LEVELS has an anchor card', () => {
+    const chapters = new Set(PVE_LEVELS.map((l) => chapterOf(l.id)).filter((c): c is string => !!c));
+    for (const ch of chapters) expect(chapterAnchorCard(ch)).toBeDefined();
+  });
+
+  it('chapterAnchorCard misses unknown chapters', () => {
+    expect(chapterAnchorCard('ch99')).toBeUndefined();
+  });
+
+  it('the exclusive reward is granted at level 2 (distinct from the level-1 per-level drop)', () => {
+    expect(CHAPTER_ANCHOR_CARD_LEVEL).toBe(2);
   });
 });
 

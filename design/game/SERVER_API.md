@@ -9,14 +9,16 @@
 
 ## 0. 总览
 
-> **架构现状（8 应用进程 + 4 公网面）**：服务端现为 **8 个应用进程**（外加包 `contracts`、`@nw/shared`、`@nw/engine`）。**公网面 = 4**：`meta`(REST 请求面) + `gateway`(WS 控制面) + `game`(WS 数据面) + `worldsvc`(SLG 大世界 REST 第四面，`/world` `/family` `/auction` `/sect` `/nation`)；**玩家不可达 = `matchsvc`/`commercial`/`admin`**（仅内网，反代不路由）；`analyticsvc` 的 ingest 两端点（`/analytics/config` `/analytics/events`）经反代公开、`/internal/query` 内网。早期「5 组件 + 三面分离」（`META_DESIGN.md §1.1/§6.1`）三面仍是 PvP 对战层骨架：玩家触达 meta + gateway + game，**matchsvc** 是玩家不可达的私有匹配大脑（gateway 当门面 / game 注册），开局走 matchsvc 签名 ticket、结算 game→meta 上报（M16–M20）。内部契约见 §8/§9。
+> **架构现状（10 应用进程 + 6 公网面）**（订正 2026-07-07：进程 8→10，补 `socialsvc`/`auctionsvc`）：服务端现为 **10 个应用进程**（外加包 `contracts`、`@nw/shared`、`@nw/engine`）。**公网面 = 6**：`meta`(REST 请求面) + `gateway`(WS 控制面) + `game`(WS 数据面) + `worldsvc`(SLG 大世界 REST 第四面，`/world` `/sect` `/nation`) + `socialsvc`(社交第五面，`/social/*`) + `auctionsvc`(拍卖行第六面，`/auction`)；`/family` 已迁 `socialsvc`、`/auction` 已迁独立进程 `auctionsvc`(端口 18086)；**玩家不可达 = `matchsvc`/`commercial`/`admin`**（仅内网，反代不路由）；`analyticsvc` 的 ingest 两端点（`/analytics/config` `/analytics/events`）经反代公开、`/internal/query` 内网。早期「5 组件 + 三面分离」（`META_DESIGN.md §1.1/§6.1`）三面仍是 PvP 对战层骨架：玩家触达 meta + gateway + game，**matchsvc** 是玩家不可达的私有匹配大脑（gateway 当门面 / game 注册），开局走 matchsvc 签名 ticket、结算 game→meta 上报（M16–M20）。内部契约见 §8/§9。
 
 | 通道（面） | 协议 | 服务 | 暴露 | 承载 |
 |---|---|---|---|---|
 | 账号 / 存档 / 经济（请求面） | **HTTPS REST（JSON）** | `metaserver`（无状态，可横扩） | 公网 `/api` | 登录、存档同步、商店、盲盒、广告、IAP、PvE/装备/活动养成、天梯/战令、称号（§2） |
 | 房间 / 匹配 / 在线 / 通知（控制面） | **WSS（双向实时）** | `gateway`（有状态连接层，M20） | 公网 `/gw` | 常驻连接：开始/取消匹配、friendly 建房/加入/ready/start、match-found+ticket 下发、在线状态、家族/宗门/国家频道扇出 |
 | 锁步对战（数据面） | **WSS（protobuf 二进制）** | `gameserver`（无状态哑中继，永不连库 M16） | 公网 `/ws` | 每局新建：ticket 握手 → 逐 tick 输入中继 / 重连 / 局末上报 meta |
-| **SLG 大世界（第四面）** | **HTTPS REST（JSON）** | `worldsvc`（连 `notebook_wars_world`，按赛季分服/shard） | 公网 `/world` `/family` `/auction` `/sect` `/nation` | 地图/行军/占领、家族、宗门、拍卖行、国家、赛季、围攻（§10；权威契约 `openapi-world.yml`） |
+| **SLG 大世界（第四面）** | **HTTPS REST（JSON）** | `worldsvc`（连 `notebook_wars_world`，按赛季分服/shard） | 公网 `/world` `/sect` `/nation` | 地图/行军/占领、宗门、国家、赛季、围攻（§10；权威契约 `openapi-world.yml`）（订正 2026-07-07：`/family` 已迁 socialsvc、`/auction` 已迁 auctionsvc） |
+| **社交（第五面）** | **HTTPS REST（JSON）** | `socialsvc`（连 `notebook_wars_social`） | 公网 `/social/*` | 家族/好友/邮件/频道（家族已从 worldsvc 迁入，去 worldId 全局持久；SOCIAL_SVC_DESIGN） |
+| **拍卖行（第六面）** | **HTTPS REST（JSON）** | `auctionsvc`（连 `notebook_wars_auction`，端口 18086） | 公网 `/auction` | 挂单/竞拍/买断/托管结算（从 worldsvc 解耦为独立进程，AUCTION_DESIGN §9） |
 | 埋点 ingest | HTTPS REST（JSON，fire-and-forget） | `analyticsvc`（连 `notebook_wars_analytics`，端口 18085） | 公网 `/analytics` | `GET /analytics/config`（拉采集配置）+ `POST /analytics/events`（批量上报，`w:0`）（§11） |
 | **内部：匹配 + 分配** | 内部 HTTP（gateway↔matchsvc）+ game 注册 | `matchsvc`（单点，玩家不可达 M17） | 仅内网 | 匹配队列、房间状态、game 注册表/分配、签 ticket（§8.1） |
 | **内部：钱包 / 交易** | 内部 HTTP（meta→commercial） | `commercial`（连 `notebook_wars_commercial`，玩家不可达 S5） | 仅内网 | 钱包/扣币/盲盒 RNG/充值/广告记账（§9） |
@@ -190,8 +192,10 @@ POST /events/redeem  { eventId, shopItemId }   → { save, granted } | INSUFFICI
 > Apple 5.1.1(v)：凡支持账号注册的 App **必须提供应用内删除账号入口**（不能只让发邮件）。
 
 ```
-POST /account/delete   (JWT) { confirm: true }   → { ok, scheduledPurgeAt? }
+DELETE /account   (JWT)   → { ok, data:{ confirmToken } }
 ```
+
+> 订正 2026-07-07：以代码为准，实现为 `DELETE /account`（openapi `deleteAccount` + auth.ts），**软删**——置 `accounts.deletedAt`，数据经 7 天宽限后异步清除（C5-b Apple 5.1.1(v)），与 `ACCOUNT_DESIGN §C5-b` 一致。旧文「`POST /account/delete { confirm } → { scheduledPurgeAt }`」为设计稿措辞，未落地。
 
 - meta 编排：删/匿名化 `saves` + `accounts`（移除 `openid`/`deviceId`/`loginId`/`displayName` 等 PII）+ 通知 commercial 处理钱包/交易留存（交易记录依税务/审计义务可保留必要最小集，但与身份解绑）+ analyticsvc 按 `user_id` 批删事件 + social 解好友关系/清私聊。
 - **二次确认**在客户端（`SettingsScene`），服务端要求 `confirm:true`；删除不可逆（或给短宽限 `scheduledPurgeAt` 后清除，按法务定）。
@@ -299,7 +303,7 @@ enum RoomPhase { WAITING = 0; READY = 1; COUNTDOWN = 2; IN_MATCH = 3; OVER = 4; 
 - 确定性保证：同 `seed` + 同帧序列 → 双端逐 tick 一致（`META_DESIGN.md §6`）。
 - **重连**：服务器留**非空帧**日志；`conn_resume{ last_frame }` → `conn_resync` 下发种子 + `last_frame` 之后的非空帧 + `cur_frame`，客户端快进追上。
 - **断线规则（M10）**：in_match 一端掉线 → 服务器**停发该房间帧** + 向在线方 `peer_dc{ grace_ms:60000 }` → 起 **60s**；掉线方 `conn_resume` 成功则续发续打；**超时则掉线方判负** `match_over{ reason:'disconnect' }`。
-- **结算（修订 M19）**：局末 game 把 `{hash×2, winner_side×2, 非空帧录像}` POST 给 **meta**（§8.3）；`friendly` meta 仅写 `matches`；`ranked` **meta** 算 ELO、写 `saves.pvp`（服务器权威）→ 把 `match_over.elo{delta,after,rank_after}` 经 game 转发给客户端。game 不连库、不判定。S1 现实现为 gameserver 直算直写，待迁移。
+- **结算（修订 M19）**：局末 game 把 `{hash×2, winner_side×2, 非空帧录像}` POST 给 **meta**（§8.3）；`friendly` meta 仅写 `matches`；`ranked` **meta** 算 ELO、写 `saves.pvp`（服务器权威）→ 把 `match_over.elo{delta,after,rank_after}` 经 game 转发给客户端。game 不连库、不判定。（订正 2026-07-07：ELO 结算已从 gameserver 迁至 meta，2026-06-14 落地，见 `MATCHSVC_DESIGN`；旧「S1 现实现为 gameserver 直算直写，待迁移」已过时。）
 - **ranked 匹配 / ELO（S1-R 已落地）**：
   - 入队：`room_create{mode:ranked}` → 服务器读 `saves.pvp.elo` 入匹配队列（需 Mongo，否则 `RANKED_UNAVAILABLE`）；按 ELO 邻近配对，等待越久可接受分差越宽（初值 `base 100 + 50/s`）；配对即建房直接开局（无 ready/房主环节）。`room_leave`（不在房内）= 取消匹配。
   - 胜负判定（**无服务器裁判**，S1-J 未做）：`match_result{ state_hash, winner_side }` 双方齐 → **hash 与 winner_side 均一致才认**该胜方、结算 ELO；任一不一致 → 作废（`mismatch`，不动 ELO）。掉线/认输 → 服务器权威判对手胜并结算。防一端谎报刷分。
@@ -383,7 +387,7 @@ message Replay {
 
 内部端口（commercial / matchsvc / gateway 内部面 / meta `/internal/*` / analyticsvc `/internal/query`）**玩家不可达**，三道纵深防御：
 
-1. **网络隔离（第一道，最重要）**：内部 HTTP 端口**不绑公网、不经反代暴露**——`docker-compose.local/prod` 内仅 docker 内网可达，`client/nginx.conf` 只反代 `/api /gw /ws /world /family /auction /analytics` 公网面。生产部署须保证内部端口（matchsvc 8091 / commercial 18082 / admin 18083 / analyticsvc 18085 / gateway 内部面）防火墙隔离，**玩家根本到不了**。`X-Internal-Key` 是第二道，不是唯一一道。
+1. **网络隔离（第一道，最重要）**：内部 HTTP 端口**不绑公网、不经反代暴露**——`docker-compose.local/prod` 内仅 docker 内网可达，`client/nginx.conf` 只反代 `/api /gw /ws /world /sect /nation /social /auction /analytics` 公网面（订正 2026-07-07：`/family` 已并入 `/social`(socialsvc)、`/auction` 走 auctionsvc）。生产部署须保证内部端口（matchsvc 8091 / commercial 18082 / admin 8083 / analyticsvc 18085 / gateway 内部面）防火墙隔离，**玩家根本到不了**。`X-Internal-Key` 是第二道，不是唯一一道。
 
 2. **玩家 / 服务密钥命名空间分离（不变量）**：内部路由**从不校验玩家 JWT**——只认 `X-Internal-Key`。玩家 JWT（`NW_JWT_SECRET` 签）与内部密钥（`NW_INTERNAL_KEY`/`NW_INTERNAL_KEYS`）天然不同命名空间，玩家把 JWT 放 `Authorization` 头也命不中 `X-Internal-Key` → **结构性 401**。admin 后台另用第三套 `NW_ADMIN_JWT_SECRET`，与玩家 JWT 严格隔离（§2.10 / OPS_DESIGN）。回归测试见 `metaserver/test/internal.test.ts`。
 
@@ -394,7 +398,7 @@ message Replay {
 
 > **与 ticket HMAC 解耦**：match ticket（§8.2，matchsvc 签 / gameserver 验）**永远只用 `NW_INTERNAL_KEY`**（双方须同一把），不走 per-caller 注册表。`NW_INTERNAL_KEYS` 仅作用于内部 HTTP 鉴权。
 >
-> **登记的调用方**（`InternalCaller`）：gateway / gameserver / matchsvc / meta / commercial / worldsvc / admin / analyticsvc。新增进程在 `internalAuth.ts` 登记并在 `NW_INTERNAL_KEYS` 给一把密钥。
+> **登记的调用方**（`InternalCaller`）：gateway / gameserver / matchsvc / meta / commercial / worldsvc / admin / analyticsvc / socialsvc / auctionsvc（订正 2026-07-07：补 socialsvc + auctionsvc，以 `internalAuth.ts` 为准）。新增进程在 `internalAuth.ts` 登记并在 `NW_INTERNAL_KEYS` 给一把密钥。
 
 ### 8.1 matchsvc（单点，M17）— 仅 gateway 调它 / game 注册它
 
@@ -534,7 +538,7 @@ POST /internal/ads/credit  { accountId, amount, dayKey } → { ok, coinsAfter }
 
 ## 10. worldsvc 公网接口（SLG 大世界，第四面）
 
-> SLG 大世界为**独立公网 REST 面**（与 meta 分离、不同 base URL，反代 `/world` `/family` `/auction` `/sect` `/nation` → worldsvc:18084 不剥前缀）。**机器契约单一来源 = `server/contracts/openapi-world.yml`**（客户端 `gen-openapi.mjs` 生成 `src/net/openapi-world.ts`）；设计权威见 **`SLG_DESIGN.md §14`（接口/进程/库归属）+ §14.6（REST 端点清单）**。所有玩家端点走 `Authorization: Bearer <JWT>`（与 meta 同 token），大多带 `worldId`（所在 shard）。下表为简明清单，字段/形态以 `openapi-world.yml` 为准，不在此重复 schema。
+> SLG 大世界为**独立公网 REST 面**（与 meta 分离、不同 base URL，反代 `/world` `/sect` `/nation` → worldsvc:18084 不剥前缀；订正 2026-07-07：`/family` 已迁 socialsvc、`/auction` 已迁 auctionsvc:18086）。**机器契约单一来源 = `server/contracts/openapi-world.yml`**（客户端 `gen-openapi.mjs` 生成 `src/net/openapi-world.ts`）；设计权威见 **`SLG_DESIGN.md §14`（接口/进程/库归属）+ §14.6（REST 端点清单）**。所有玩家端点走 `Authorization: Bearer <JWT>`（与 meta 同 token），大多带 `worldId`（所在 shard）。下表为简明清单，字段/形态以 `openapi-world.yml` 为准，不在此重复 schema。
 
 ### 10.1 World（地图 / 行军 / 养城）
 ```

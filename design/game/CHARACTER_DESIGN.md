@@ -117,15 +117,18 @@
 
 ### 5.1 章节→角色映射（已定 2026-06-21）
 
-Anna 三人随偶数章出场（[characters.md](../product/characters.md)：Ch2/Ch4/Ch6 从 Hartmann 视角），**通关该章即送对应角色**：
+Anna 三人随偶数章出场（[characters.md](../product/characters.md)：Ch2/Ch4/Ch6 从 Hartmann 视角），**通关该章即送对应角色**；陶三人对称地随奇数章（方家视角）发放，按**兵种位配对**（Ch1↔Ch2 剑士、Ch3↔Ch4 盾卫、Ch5↔Ch6 弓手）：
 
-| 章节 | 视角出场 | 通关送 |
-|---|---|---|
-| Ch2 | Hartmann | **Max** |
-| Ch4 | Hartmann | **Lena** |
-| Ch6 | Hartmann | **Mara** |
+| 章节 | 视角出场 | 通关送 | 兵种位 |
+|---|---|---|---|
+| Ch1 | 方家 | **李川** `lichuang` | 剑士/普通兵 |
+| Ch2 | Hartmann | **Max** `max` | 剑士（Max 变体） |
+| Ch3 | 方家 | **陈守** `chenshou` | 盾卫/盾兵 |
+| Ch4 | Hartmann | **Lena** `lena` | 盾卫（Lena 变体） |
+| Ch5 | 方家 | **苏远** `suyuan` | 弓手/弓箭兵 |
+| Ch6 | Hartmann | **Mara** `mara` | 弓手（Mara 变体） |
 
-> 落地写进 PvE 奖励真源 `server/shared/pveRewards.ts`（[PVE_INTEGRITY_PLAN](PVE_INTEGRITY_PLAN.md)）+ SLG 对应里程碑。
+> 落地写进 PvE 奖励真源 `server/shared/pveRewards.ts`（[PVE_INTEGRITY_PLAN](PVE_INTEGRITY_PLAN.md)）：映射 `CHAPTER_ANCHOR_CARD`，首通某章送**对应锚点角色 2 级卡 × 1**（`CHARACTER_CARDS_DESIGN §4`，CC-11 已实装 2026-07-07）+ SLG 对应里程碑。奇数章→陶侧锚点的配对（Ch1/Ch3/Ch5 → 李川/陈守/苏远）在本任务定稿，与偶数章 Anna 变体的兵种位一一对应。
 
 ---
 
@@ -171,9 +174,9 @@ Anna 三人随偶数章出场（[characters.md](../product/characters.md)：Ch2/
 
 - **Ch1/Ch2**：陶 / Anna 各自内部试炼（各自为战）
 - **Ch3/Ch4**：两家相遇（家族间比试）
-- **Ch5/Ch6**：宗门大比 + 结局，并肩作战——**留白**，等上线后再加新英雄/新故事，现阶段锁定不做
+- **Ch5/Ch6**：宗门大比 + 结局，剧情为方家 vs Hartmann 的**决赛对抗**（非并肩作战）；关卡玩法内容已完成、可玩，文案完整（见 `CAMPAIGN_STORY.md` §Ch5/Ch6、`world.md` 标「✅ 文案完整」）。因缺美术资源，暂**锁定不开放**。（订正 2026-07-07：原写「留白/锁定不做/并肩作战」与实际不符，玩法+文案均已完成，仅缺美术）
 
-现有 12 个角色（6 锚点 + Max/Lena/Mara + 本节 6 个复用兵）足够支撑 Ch1–Ch4 的内容需求，Ch5/Ch6 不在本次设计范围内。
+现有 12 个角色（6 锚点 + Max/Lena/Mara + 本节 6 个复用兵）足够支撑 Ch1–Ch6 全部内容需求。Ch5/Ch6 玩法与文案已完成，仅因缺美术资源暂锁定不开放。
 
 ### 7.4 视觉风格分工（承接 `art-direction.md` §4.1）
 

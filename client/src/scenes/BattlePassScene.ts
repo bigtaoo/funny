@@ -7,7 +7,7 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedF
 import { buildIcon, type IconKind } from '../render/icons';
 import { buildCoinIcon } from '../render/coinIconAtlas';
 import { buildDecorCLayer } from '../render/decorCLayer';
-import { drawSceneHeader } from '../ui/widgets/SceneHeader';
+import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import { drawSidebarTabs, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import type { SaveData } from '../game/meta/SaveData';
@@ -198,19 +198,12 @@ export class BattlePassScene implements Scene {
     if (decoC) this.container.addChild(decoC);
 
     // ── Title bar ────────────────────────────────────────────────────────────
-    const hdr = drawSceneHeader(this.container, w, h, t('battlepass.title'));
+    const hdr = drawSceneHeader(this.container, w, h, t('battlepass.title'), { accent: HEADER_ACCENT.spend });
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
-    // Coin balance (top-right): glyph + number, no "金币：" text prefix — matches ShopScene/GachaScene.
-    const balNum = txt(this.cb.getCoins().toLocaleString(), Math.round(h * 0.028), C.gold, true);
-    balNum.anchor.set(1, 0.5); balNum.x = w - Math.round(w * 0.04); balNum.y = tbH / 2;
-    this.container.addChild(balNum);
-    const balIcon = Math.round(h * 0.036);
-    const bIcon = buildCoinIcon('coin', balIcon, C.gold);
-    bIcon.x = balNum.x - balNum.width - balIcon - Math.round(w * 0.008);
-    bIcon.y = tbH / 2 - balIcon / 2;
-    this.container.addChild(bIcon);
+    // Coin balance (top-right): shared header readout — identical across every scene.
+    drawHeaderCurrency(this.container, w, tbH, this.cb.getCoins());
 
     // Shop group nav (LOBBY_IA_REDESIGN §9): [Shop|Coins|Gacha|BattlePass] sidebar rail, battle pass active. Only drawn in group context.
     this.drawSidebar(tbH);

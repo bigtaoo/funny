@@ -13,14 +13,14 @@
 | 资产名 | 描述 | 临时程序色 |
 |---|---|---|
 | ~~`tile_neutral.png`~~ | 空地（未占领）→ **走 `terrain_grass` 贴图**，非纯纸白（拍板 2026-07-03，见 §一脚注） | `#f5f0e8` 仅作贴图未加载时的兜底色块 |
-| `tile_food.png` | 食物资源格（麦穗/农田） | `#a8d870` 嫩草绿 |
-| `tile_wood.png` | 木材资源格（树林） | `#90b860` 深草绿 |
-| `tile_iron.png` | 铁矿资源格（矿石） | `#a0b8c8` 灰蓝 |
-| `tile_familyKeep.png` | 战略要点（险地，家族争夺） | `#ffd060` 琥珀黄 |
+| `tile_food.png` | 食物资源格（麦穗/农田）（旧命名，权威见 `slg.ts` `ResourceType`=ink/paper/graphite/metal/sticker） | `#a8d870` 嫩草绿 |
+| `tile_wood.png` | 木材资源格（树林）（旧命名，权威见 `slg.ts` `ResourceType`=ink/paper/graphite/metal/sticker） | `#90b860` 深草绿 |
+| `tile_iron.png` | 铁矿资源格（矿石）（旧命名，权威见 `slg.ts` `ResourceType`=ink/paper/graphite/metal/sticker） | `#a0b8c8` 灰蓝 |
+| `tile_familyKeep.png` | **家族要点（familyKeep）**——家族争夺的战略格（注意：非 stronghold） | `#ffd060` 琥珀黄 |
 | `tile_center.png` | 世界中心（唯一，全图标志性） | `#ffe88a` 浅金 |
 | `tile_obstacle.png` | 不可通行地形（山脉/河流） | `#9a9488` 石灰灰 |
 | `tile_gate.png` | 关隘/桥（可通行的地形节点） | `#c8a878` 沙棕 |
-| `tile_stronghold.png` | 险地 NPC 据点（攻克前为系统守备） | `#8a4a4a` 暗砖红 |
+| `tile_stronghold.png` | **NPC 据点（stronghold）**——攻克前为系统超强守备（注意：与 familyKeep 是两类，别混用「险地」一词） | `#8a4a4a` 暗砖红 |
 
 **要求**：
 - 手绘笔记本风，铅笔/钢笔线条感，轻微纹理，无卡通描边

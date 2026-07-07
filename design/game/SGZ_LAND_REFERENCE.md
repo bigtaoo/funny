@@ -98,7 +98,7 @@
 
 来源：[三国志战略版地图/州结构](https://www.gamersky.com/handbooksy/202303/1580885.shtml)、[知乎：新手攻略](https://zhuanlan.zhihu.com/p/506202375)、[9game 关卡等级](https://www.9game.cn/wenda/561839.html)
 
-> Notebook Wars 现状对照：现有 `CAPITAL_FRACTIONS`（[`slg.ts:553-564`](../../server/shared/src/slg.ts)）是 8 外围+1 内环+1 中心的对称 10 国布局，等级公式只看距地图中心距离、跟"属于哪个国家"完全无关。要复刻三战这套"环形分层+等级跟国家身份绑定"的结构，需要改国家数量（10→9）和等级公式（加入"国家身份"输入），这是比地图尺寸更大的结构改动，**尚未拍板**，见 `SLG_DESIGN.md` §3.2 待定项。
+> Notebook Wars 现状对照：现有 `CAPITAL_FRACTIONS`（[`slg.ts:553-564`](../../server/shared/src/slg.ts)）是 8 外围+1 内环+1 中心的对称 10 国布局，等级公式只看距地图中心距离、跟"属于哪个国家"完全无关。要复刻三战这套"环形分层+等级跟国家身份绑定"的结构，需要改国家数量（10→9）和等级公式（加入"国家身份"输入）。**已由 [ADR-034](../DECISIONS.md) 拍板（2026-07-05）并合 main**：改为**环形分层 + 角度扇区**归属（6 出生州+3 资源州+1 核心州），Voronoi/10 首府点旧模型已废，见 `SLG_DESIGN.md` §2.4。注：上文提到的 `CAPITAL_FRACTIONS`/距离衰减公式为 ADR-033 旧实现，代码待按 ADR-034 重写。
 
 ---
 

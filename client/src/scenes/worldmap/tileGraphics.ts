@@ -38,7 +38,10 @@ export function drawTileL1(
   // vision-gated). When fogged, drawResMotif reveals the resource TYPE only (single
   // dimmed motif, no abundance/defense detail), matching "地形可见、局势看不清".
   if (tile?.type === 'resource' && tile.resType) {
-    drawResMotif(g, tile.resType, tile.level ?? 1, tp, fogged);
+    // Fog is a pure overlay: it must not change how the map resource art is drawn, so the
+    // motif renders in full (fogged=false) regardless of vision — the light FOG_COLOR wash
+    // below still tints the tile, but the resource image stays fully legible.
+    drawResMotif(g, tile.resType, tile.level ?? 1, tp, false);
   } else if (!tile && proc && (proc.type === 'resource' || proc.type === 'familyKeep' || proc.type === 'stronghold') && proc.resType) {
     // Uncached tile: reveal its procedural resource TYPE (the terrain layer is always visible
     // map-wide, §18 V1 model 2a) so biome zones read as varied instead of uniform grass.
@@ -70,7 +73,7 @@ export function drawTileL1(
 
   if (fogged) {
     g.lineStyle(0);
-    g.beginFill(FOG_COLOR, 0.4);
+    g.beginFill(FOG_COLOR, 0.3);
     g.drawPolygon(diamondPath(tp - 1));
     g.endFill();
     return;  // dynamic markers (city icon, level dot, sect border, watchtower) stay hidden under fog
@@ -527,7 +530,7 @@ export function drawTileL2(g: PIXI.Graphics, fill: number, owner: number | null,
   }
   if (fogged) {
     g.lineStyle(0);
-    g.beginFill(FOG_COLOR, 0.38);
+    g.beginFill(FOG_COLOR, 0.3);
     g.drawPolygon(diamondPath(tp - 1));
     g.endFill();
   }

@@ -3,7 +3,7 @@
 //   (SLG_ECONOMY_CHECK §8).
 //   npx tsx src/capacityRun.ts
 // Validates:
-//   ① WORLD_CAPACITY=10000: doc count + key query complexity at full shard
+//   ① WORLD_CAPACITY (500, ADR-032): doc count + key query complexity at full shard
 //   ② RESET_DELETE_BATCH=2000: clearance iterations + estimated time
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -17,7 +17,7 @@ bar('SLG shard capacity estimation — F-track (SLG_ECONOMY_CHECK §8)');
 console.log(`WORLD_CAPACITY = ${WORLD_CAPACITY}   RESET_DELETE_BATCH = ${RESET_DELETE_BATCH}\n`);
 
 // ── ①  Document count estimation ─────────────────────────────────────────────
-console.log('── ①  Document count at full shard (10,000 players) ─────────────────────────\n');
+console.log(`── ①  Document count at full shard (${WORLD_CAPACITY.toLocaleString('en-US')} players) ─────────────────────────\n`);
 
 const CAP = WORLD_CAPACITY;
 
