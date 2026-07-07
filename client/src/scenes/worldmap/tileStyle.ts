@@ -37,6 +37,18 @@ export const RES_COLORS: Record<string, number> = {
   sticker:  0xefe4ea, // faint warm rose-grey
 };
 
+/**
+ * Per-terrain opacity for the L1 ground texture fill. Most terrain draws near-opaque
+ * (DEFAULT), but the dark, busy obstacle weaves (mountain / river) are pushed down so they
+ * recede into the paper instead of pulling the eye to the map edges, where impassable
+ * bands tend to cluster. Any terrain not listed uses TERRAIN_TEX_ALPHA_DEFAULT.
+ */
+export const TERRAIN_TEX_ALPHA_DEFAULT = 0.9;
+export const TERRAIN_TEX_ALPHA: Partial<Record<TerrainTextureName, number>> = {
+  terrain_mountain: 0.5,
+  terrain_river:    0.5,
+};
+
 export const MINE_TINT      = 0xe69090; // own territory (light red ink)
 export const MINE_BASE_TINT = 0xcc3333; // own capital (deep red ink)
 export const ENEMY_TINT     = 0x90a8e6; // enemy territory (light blue ink)

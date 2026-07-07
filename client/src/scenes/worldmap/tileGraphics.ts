@@ -6,7 +6,7 @@ import { getResLevelTexture, getResTexture, isResAtlasReady } from '../../render
 import { getTerrainTexture, isTerrainAtlasReady } from '../../render/terrainAtlasLoader';
 import { getBuildingTexture, isBuildingAtlasReady } from '../../render/buildingAtlasLoader';
 import { isCityAtlasReady } from '../../render/cityAtlasLoader';
-import { FOG_COLOR, ALLY_SECT_BORDER } from './tileStyle';
+import { FOG_COLOR, ALLY_SECT_BORDER, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT } from './tileStyle';
 import type { TerrainTextureName } from '../../render/terrainAtlasLoader';
 import type { WorldTileView } from '../../net/WorldApiClient';
 import type { ProceduralTile } from '@nw/shared';
@@ -25,7 +25,10 @@ export function drawTileL1(
     const w = tp - 1;
     const h = w * ISO_RATIO;
     const m = new PIXI.Matrix(w / tex.width, 0, 0, h / tex.height, -w / 2, -h / 2);
-    g.beginTextureFill({ texture: tex, matrix: m, alpha: 0.9 });
+    // Dark, busy obstacle weaves (mountain/river) are pushed down so they recede into the
+    // paper instead of dominating the map edges; other terrain stays near-opaque.
+    const texAlpha = TERRAIN_TEX_ALPHA[texName] ?? TERRAIN_TEX_ALPHA_DEFAULT;
+    g.beginTextureFill({ texture: tex, matrix: m, alpha: texAlpha });
   } else {
     g.beginFill(fill, 0.7);
   }
