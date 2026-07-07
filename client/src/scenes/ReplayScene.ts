@@ -121,8 +121,7 @@ export class ReplayScene implements Scene {
 
   destroy(): void {
     this.renderer?.destroy();
-    this.overlay.removeAllListeners();
-    this.container.removeAllListeners();
+    this.container.destroy({ children: true });
   }
 
   // ─── Overlay ─────────────────────────────────────────────────────────────────

@@ -350,6 +350,11 @@ export class LobbySceneBase {
     this.toastRect = null;
     this.settlementLayer = null;
     this.settlementDismissRect = null;
+    // Tear the page tree down too. titleBoil / heroFigure (the Ticker.shared-driven
+    // children) were destroyed explicitly above; this frees the remaining static
+    // children so nothing outlives the scene. All async repaint paths (badges /
+    // overlays / rebuild) already early-return on `this.destroyed`.
+    this.container.destroy({ children: true });
   }
 }
 

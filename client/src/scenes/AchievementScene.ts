@@ -55,6 +55,8 @@ export class AchievementScene implements Scene {
   private readonly cb: AchievementCallbacks;
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
+  /** Set in destroy(); guards render() so a late async fetch() re-render can't paint into a torn-down container. */
+  private destroyed = false;
 
   /** null = not yet fetched (loading); otherwise the fetched data. Only meaningful when loadAchievements is provided. */
   private data: AchievementsView | null = null;
@@ -97,7 +99,11 @@ export class AchievementScene implements Scene {
     }
   }
 
-  destroy(): void { this.unsubs.forEach((u) => u()); }
+  destroy(): void {
+    this.destroyed = true;
+    this.unsubs.forEach((u) => u());
+    this.container.destroy({ children: true });
+  }
 
   private handleDown(x: number, y: number): void {
     for (const hit of this.hits) {
@@ -144,6 +150,7 @@ export class AchievementScene implements Scene {
   // ── Render ─────────────────────────────────────────────────────────────────────
 
   private render(): void {
+    if (this.destroyed) return;
     tearDownChildren(this.container);
     this.hits = [];
     const { w, h } = this;

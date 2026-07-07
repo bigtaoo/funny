@@ -81,6 +81,8 @@ export class RoomScene implements Scene {
 
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
+  /** Set in destroy(); guards render() so a late inbound net push (applyRoomState/…) can't paint into a torn-down container. */
+  private destroyed = false;
 
   /** Tap-a-slot → view-profile overlay (persists across re-renders, drawn on top). */
   private readonly popup: ProfilePopup;
@@ -122,8 +124,10 @@ export class RoomScene implements Scene {
   }
 
   destroy(): void {
+    this.destroyed = true;
     this.unsubs.forEach((u) => u());
     this.popup.destroy();
+    this.container.destroy({ children: true });
   }
 
   // ── Inbound (app forwards NetSession events here) ─────────────────────────────
@@ -254,6 +258,7 @@ export class RoomScene implements Scene {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   private render(): void {
+    if (this.destroyed) return;
     this.container.removeChild(this.popup.container);
     tearDownChildren(this.container);
     this.hits = [];

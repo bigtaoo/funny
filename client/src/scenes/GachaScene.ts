@@ -102,6 +102,8 @@ export class GachaScene implements Scene {
 
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
+  /** Set in destroy(); guards render() so a late async loadPools()/draw() re-render can't paint into a torn-down container. */
+  private destroyed = false;
 
   constructor(layout: ILayout, input: InputManager, cb: GachaSceneCallbacks) {
     this.container = new PIXI.Container();
@@ -119,7 +121,9 @@ export class GachaScene implements Scene {
   }
 
   destroy(): void {
+    this.destroyed = true;
     this.unsubs.forEach((u) => u());
+    this.container.destroy({ children: true });
   }
 
   private async loadPools(): Promise<void> {
@@ -194,6 +198,7 @@ export class GachaScene implements Scene {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   private render(): void {
+    if (this.destroyed) return;
     tearDownChildren(this.container);
     this.hits = [];
 

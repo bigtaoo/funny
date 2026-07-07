@@ -73,6 +73,8 @@ export class StatsScene implements Scene {
   private readonly cb: StatsCallbacks;
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
+  /** Set in destroy(); guards render() so a late async fetchHistory()/fetchMyRank() re-render can't paint into a torn-down container. */
+  private destroyed = false;
   /** null = not fetched yet (loading); [] = fetched, empty. Only meaningful when loadHistory is provided. */
   private history: MatchHistoryEntry[] | null = null;
   /** undefined = not fetched yet; null = unranked / fetch failed; number = 1-based ladder position. */
@@ -112,7 +114,11 @@ export class StatsScene implements Scene {
   }
 
   update(): void { /* static */ }
-  destroy(): void { this.unsubs.forEach((u) => u()); }
+  destroy(): void {
+    this.destroyed = true;
+    this.unsubs.forEach((u) => u());
+    this.container.destroy({ children: true });
+  }
 
   private handleDown(x: number, y: number): void {
     for (const hit of this.hits) {
@@ -122,6 +128,7 @@ export class StatsScene implements Scene {
   }
 
   private render(): void {
+    if (this.destroyed) return;
     tearDownChildren(this.container);
     this.hits = [];
     const { w, h } = this;

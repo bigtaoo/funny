@@ -135,6 +135,8 @@ export class ShopScene implements Scene {
 
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
+  /** Set in destroy(); guards render() so a late async re-render can't paint into a torn-down container. */
+  private destroyed = false;
 
   // ── Scroll state (grid may overflow the body region) ──────────────────────
   private scrollY = 0;
@@ -170,11 +172,13 @@ export class ShopScene implements Scene {
   }
 
   destroy(): void {
+    this.destroyed = true;
     this.unsubs.forEach((u) => u());
     if (this.hiddenInput) {
       this.hiddenInput.remove();
       this.hiddenInput = null;
     }
+    this.container.destroy({ children: true });
   }
 
   // ── Hidden input (promo-code text capture) ────────────────────────────────
@@ -360,6 +364,7 @@ export class ShopScene implements Scene {
   // ── Render ────────────────────────────────────────────────────────────────
 
   private render(): void {
+    if (this.destroyed) return;
     tearDownChildren(this.container); // free Text textures on each rebuild
     this.hits = [];
 

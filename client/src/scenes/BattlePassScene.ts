@@ -72,6 +72,8 @@ export class BattlePassScene implements Scene {
   private readonly cb: BattlePassCallbacks;
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
+  /** Set in destroy(); guards render() so a late async re-render can't paint into a torn-down container. */
+  private destroyed = false;
 
   private readonly bt = new BusyTracker();
   private toast: string | null = null;
@@ -108,7 +110,11 @@ export class BattlePassScene implements Scene {
     if (this.bt.tick(dt)) this.render();
   }
 
-  destroy(): void { this.unsubs.forEach((u) => u()); }
+  destroy(): void {
+    this.destroyed = true;
+    this.unsubs.forEach((u) => u());
+    this.container.destroy({ children: true });
+  }
 
   private handleDown(x: number, y: number): void {
     if (this.bt.busy) return;
@@ -187,6 +193,7 @@ export class BattlePassScene implements Scene {
   }
 
   private render(): void {
+    if (this.destroyed) return;
     tearDownChildren(this.container);
     this.hits = [];
     this.scrollContainer = null;
