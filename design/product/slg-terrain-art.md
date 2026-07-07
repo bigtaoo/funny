@@ -119,3 +119,9 @@ lines
 - **`terrain_stronghold` v2（2026-07-02，定稿）**：改为纯顶视的岩石团块（同 `terrain_mountain` 画法但密度更高更暗，几乎不留纸面空隙），穿插扁平 X 形路障标记，去掉立体桩子和骷髅骨头。已定稿为 `terrain_stronghold`。
 
 **7 张地形贴图全部定稿完成（2026-07-02）**：grass / mountain / river / gate / keep / center / stronghold。下一步进入 §4 出图后的管线（源图归档 `art/ui/slg-map/` → 打包图集 → 接入 `terrainAtlasLoader.ts`），尚未执行。
+
+---
+
+## 6. 渲染期调优记录
+
+- **地形贴图分级不透明度（2026-07-07）**：`drawTileL1` 铺地面贴图原先全部走统一 `alpha 0.9`。障碍地形（`terrain_mountain` / `terrain_river`）是全套里最深、排线最密的两张，且不可通行带常成片挤在地图边缘，导致视觉重量集中在四角、抢过中央可玩区与资源母题。改为按贴图名查表取 alpha：mountain/river 压到 `0.5` 退成背景，其余地形保持默认 `0.9`。配置在 [`tileStyle.ts`](../../client/src/scenes/worldmap/tileStyle.ts) 的 `TERRAIN_TEX_ALPHA` / `TERRAIN_TEX_ALPHA_DEFAULT`，渲染端在 [`tileGraphics.ts`](../../client/src/scenes/worldmap/tileGraphics.ts) `drawTileL1` 查表。归属水洗/迷雾/资源母题等叠加层不受影响。`stronghold` 地形色偏深但单点不成片，暂未压（如需按同一张表加 `terrain_stronghold` 即可）。
