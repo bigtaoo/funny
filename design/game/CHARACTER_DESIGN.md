@@ -117,15 +117,18 @@
 
 ### 5.1 章节→角色映射（已定 2026-06-21）
 
-Anna 三人随偶数章出场（[characters.md](../product/characters.md)：Ch2/Ch4/Ch6 从 Hartmann 视角），**通关该章即送对应角色**：
+Anna 三人随偶数章出场（[characters.md](../product/characters.md)：Ch2/Ch4/Ch6 从 Hartmann 视角），**通关该章即送对应角色**；陶三人对称地随奇数章（方家视角）发放，按**兵种位配对**（Ch1↔Ch2 剑士、Ch3↔Ch4 盾卫、Ch5↔Ch6 弓手）：
 
-| 章节 | 视角出场 | 通关送 |
-|---|---|---|
-| Ch2 | Hartmann | **Max** |
-| Ch4 | Hartmann | **Lena** |
-| Ch6 | Hartmann | **Mara** |
+| 章节 | 视角出场 | 通关送 | 兵种位 |
+|---|---|---|---|
+| Ch1 | 方家 | **李川** `lichuang` | 剑士/普通兵 |
+| Ch2 | Hartmann | **Max** `max` | 剑士（Max 变体） |
+| Ch3 | 方家 | **陈守** `chenshou` | 盾卫/盾兵 |
+| Ch4 | Hartmann | **Lena** `lena` | 盾卫（Lena 变体） |
+| Ch5 | 方家 | **苏远** `suyuan` | 弓手/弓箭兵 |
+| Ch6 | Hartmann | **Mara** `mara` | 弓手（Mara 变体） |
 
-> 落地写进 PvE 奖励真源 `server/shared/pveRewards.ts`（[PVE_INTEGRITY_PLAN](PVE_INTEGRITY_PLAN.md)）+ SLG 对应里程碑。
+> 落地写进 PvE 奖励真源 `server/shared/pveRewards.ts`（[PVE_INTEGRITY_PLAN](PVE_INTEGRITY_PLAN.md)）：映射 `CHAPTER_ANCHOR_CARD`，首通某章送**对应锚点角色 2 级卡 × 1**（`CHARACTER_CARDS_DESIGN §4`，CC-11 已实装 2026-07-07）+ SLG 对应里程碑。奇数章→陶侧锚点的配对（Ch1/Ch3/Ch5 → 李川/陈守/苏远）在本任务定稿，与偶数章 Anna 变体的兵种位一一对应。
 
 ---
 
