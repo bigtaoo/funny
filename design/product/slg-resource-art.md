@@ -1,6 +1,6 @@
 # SLG 地图资源 — AI 出图 prompt 表
 
-状态：母题 5 张 ✅ 已出图（2026-07-01）；**分级图改为每级一张；木材(paper) l1–l10 全就位并打包上线 ✅（2026-07-06）；粮草(ink) l1–l10 全就位并打包上线 ✅（2026-07-07）**——l6–l10 专属真图直接进 atlas，l1–l5 由脚本烘焙（母题 token 白底填实 + 骰子槽叠放）；**graphite/metal/sticker 仍为过渡态合成堆叠帧（高度台阶+色带，2026-07-07），专属手绘待出图**
+状态：母题 5 张 ✅ 已出图（2026-07-01）；**分级图改为每级一张；木材(paper) l1–l10 全就位并打包上线 ✅（2026-07-06）；粮草(ink) / 石料(graphite) l1–l10 全就位并打包上线 ✅（2026-07-07）**——l6–l10 专属真图直接进 atlas，l1–l5 由脚本烘焙（母题 token 白底填实 + 骰子槽叠放）；**metal/sticker 仍为过渡态合成堆叠帧（高度台阶+色带，2026-07-07），专属手绘待出图**
 关联：资源命名定版见 [`design/game/SLG_DESIGN.md`](../game/SLG_DESIGN.md) §3.4；美术铁律 / decor 出图管线见 [`art-direction.md`](art-direction.md) §〇 / §6.2；分级出图规范见下方 **§5**
 
 > **⚠️ 决策变更（2026-07-06，用户拍板）**：推翻 2026-06-30「只出 5 张母题 + 程序合成」。改为**每级单独出一张真图**，照城池 `city_l{n}` 那套（代码钩子 `getResLevelTexture` 已就位：atlas 里出现 `res_{type}_l{level}` 帧即自动取用、跳过丰度模拟，零改代码；未出图的级继续回退母题模拟，不报错）。
@@ -119,11 +119,13 @@ background, notebook grid lines, ruled lines, drop shadow, ground line, baseline
 |---|---|---|---|---|
 | 粮草 | `ink` | 墨水 | 一个小墨水瓶 | 5 张 ✅ 已上线（§5.7-ink） |
 | 木材 | `paper` | 纸张 | 一张卷角的纸 | 5 张 ✅ 已上线 |
-| 石料 | `graphite` | 石墨 | 一块带切面的石墨矿块 | 5 张 |
+| 石料 | `graphite` | 石墨 | 一块带切面的石墨矿块 | 5 张 ✅ 已上线（§5.7-graphite） |
 | 铁矿 | `metal` | 金属 | 一个长尾夹 | 5 张 |
-| 铜钱 | `sticker` | 贴纸 | 一张翘角的星形贴纸 | 5（**无地块自产**，哪 5 级待定）|
+| 铜钱/铜矿 | `sticker` | 贴纸 | 一张翘角的星形贴纸 | **5 = l6–10**（上地图，只在 6 级地及以上）✅ prompt 就位（§5.7-sticker）|
 
-> 分级用 **低档计数 + 高档专属**（§5.4）：l1–5 复用母题 ×N 叠到托盘背景（每资源 2 张专属背景），l6–10 每资源每级专属手绘。合计新增手绘 **4×5 = 20 张专属图 + 4×2 = 8 张背景 = 28 张**，铜钱另议。铜钱(sticker) `无地块`（`stickerShop` 民居模型自产，见 `ECONOMY_NUMBERS §13`），地图上不铺资源格，故只需少量图标状态，等落到它的使用场景再定哪 5 级。
+> 分级用 **低档计数 + 高档专属**（§5.4）：l1–5 复用母题 ×N 叠到托盘背景（每资源 2 张专属背景），l6–10 每资源每级专属手绘。合计新增手绘 **4×5 = 20 张专属图 + 4×2 = 8 张背景 = 28 张**，加铜矿 5 张专属（无托盘）= **33 张**。
+>
+> **铜矿(sticker) 例外 = 只有 l6–10（2026-07-07 拍板）**：回到三战「铜矿是 6 级地及以上特例」（[SGZ_LAND_REFERENCE §49](../game/SGZ_LAND_REFERENCE.md)），铜矿**上地图**但只在等级 ≥6 的格子生成，产出铜钱（用于野外征兵等软操作）。推翻旧口径「贴纸=非地块/家城自产」（原 SLG_DESIGN §3.4 / SGZ_LAND_REFERENCE §52 已改）。因此铜矿**没有 l1–5**：无计数托盘、无 `resbg_sticker_*` 背景，只出 5 张专属手绘 `res_sticker_l6..l10`。prompt 见 §5.7-sticker。
 
 ### 5.2 关键反转：分级图要「画满丰度」（和母题相反）
 
@@ -210,6 +212,29 @@ shadow, ground line, baseline
 
 > 6–10 每条抽 3–5 张挑 1，都要读得出是「墨水/墨罐」（圆肚玻璃瓶 / 圆罐），别糊成方盒或和石墨棱堆撞。墨水台背景抽图时确保**空**（瓶由脚本叠），且台面轮廓别和 token 的瓶身糊在一起。剪影最容易撞的是 `ink` 圆瓶堆 vs `metal` 长尾夹——盯一下确保「圆肚容器」感 vs「三角夹+线圈」能一眼分开。
 
+### 5.7-graphite 石料 = `graphite`（1–5 计数 + 6–10 专属）· ✅ 已出图上线 2026-07-07
+
+> 套木材(§5.7)/粮草(§5.7-ink)同一骨架：l1–5 复用已验收母题 `res_graphite`（带切面矿块）当计数 token，脚本按骰子槽叠 N 个=等级到背景；l6–10 每级专属手绘，形态逐级跃迁。剪影主题=**带切面的棱角矿块 / 晶体块**（尖锐硬边 + 切面斜排线），与纸(层叠扁矩形)、墨水(圆肚瓶)、金属(线圈夹)一眼区分。所有图守 §5.3 硬约束（单色墨线 + 纯白底，不上色不阴影）。
+
+**l1–5：母题计数 + 托盘背景**。token = 母题 `res_graphite`（单块矿石），骰子槽叠 **N 块 = 等级**。背景 = 采矿容器（矿斗/矿车，与 `graphiteMill` 呼应），**专属 2 张**，按 `l1–3 / l4–5` 分，画**空**容器（矿石由脚本叠上）：
+
+| 背景 | 覆盖级 | 主体 prompt（接 §5.5 前缀，画**空**容器） |
+|---|---|---|
+| `resbg_graphite_a` | l1–3 | `an empty low open ore bin for mined stone: a simple open rectangular bin with low slightly slanted plank walls, drawn at a gentle isometric angle, blank and empty, nothing inside` |
+| `resbg_graphite_b` | l4–5 | `an empty sturdier wooden ore cart with two small wheels and low plank sides, slightly worn frame, drawn at a gentle isometric angle, blank and empty, nothing inside` |
+
+**l6–10：每级专属手绘**（接 §5.5 共用前缀），形态逐级跃迁，剪影各异（双块 → 小堆 → 矿车囤 → 巨石 → 矿仓）：
+
+| 级 | 帧名 | 形态 | 主体 prompt |
+|---|---|---|---|
+| l6 | `res_graphite_l6` | 双矿块 | `a pair of chunky angular graphite ore chunks resting side by side, sharp faceted crystal-like blocks, a few short hatching strokes on one facet of each` |
+| l7 | `res_graphite_l7` | 小矿堆 | `a small loose pile of three or four faceted graphite ore chunks of different sizes heaped together, short hatching strokes on the top facets` |
+| l8 | `res_graphite_l8` | 矿车囤 | `a small wooden ore cart heaped with faceted graphite ore chunks piled above its rim, a couple more chunks resting on the ground beside a wheel` |
+| l9 | `res_graphite_l9` | 巨矿石 | `one large boulder-sized faceted block of graphite ore standing tall, sharp angular facets with hatching, two or three smaller chunks clustered at its base` |
+| l10 | `res_graphite_l10` | 矿仓 | `an overflowing stockpile of mined graphite ore: one big faceted boulder, many angular ore chunks crowded and piled around it, a few small chunks spilling at the base — the richest, most imposing stone stockpile` |
+
+> 6–10 都要读成「带棱角的石块堆」（尖锐晶体切面 + 切面斜排线），别糊成平滑砖块或和纸堆撞。矿斗/矿车背景抽图时确保**空**（矿石由脚本叠）。
+
 ### 5.8 打包管线（沿用母题口径，加分级帧）
 
 **l6–10（专属图）**：
@@ -227,8 +252,8 @@ shadow, ground line, baseline
 
 ### 5.9 待定项
 
-- **过渡态已上线**（2026-07-07）：ink/graphite/metal/sticker 现由 `bakeHeapFrames` 从母题合成 l1–10 堆叠帧（高度台阶 + 色带，见 §5 修订）。这是**临时表现**，等各资源专属手绘（下方两条）出图后替换。当前 55 帧（5 母题 + paper l1–10 + 4 资源 ×10 堆叠），512×4096，~235 KB。
-- **背景已定**（2026-07-06）：每资源专属 2 张，用该资源生产建筑容器（`paperTray`/`inkPot`/`graphiteMill`/`metalForge`），按 `l1–3 / l4–5` 分。木材已出图+烘焙上线（§5.7/§5.8）；**粮草(ink) prompt 已就位（§5.7-ink，2026-07-07）待出图**；graphite/metal 套同思路待出图。
-- **ink 出图后落地清单**（2026-07-07）：源图（`res_ink_l6..l10` + 空容器 `resbg_ink_a`/`resbg_ink_b`，白底 png/webp）放 `art/ui/slg-map/` → `pack_resources.cjs` 里 (a) `BAKE` 加一条 `{ type: 'ink', token: 'res_ink', bgA: 'resbg_ink_a', bgB: 'resbg_ink_b' }`，(b) 从 `HEAP_TYPES` 删掉 `ink`（专属帧接管，别再合成堆叠帧撞名），(c) `tintLevelFrame` 的 l6–10 免色带豁免从 `res_paper_` 推广到 ink（专属手绘保原墨色）→ 重跑脚本，client + map-editor 两份 atlas 逐字节一致。
-- ~~**l1–5 落地方式**~~：✅ 已定=**烘焙合成**（§5.8 步骤 3），token 走 `fillInteriorWhite` 填实后叠骰子槽。ink/graphite/metal 出图后复用同一 `bakeCountFrames`（往 `BAKE` 加一条即可）。
+- **过渡态**（2026-07-07）：仅剩 metal/sticker 由 `bakeHeapFrames` 从母题合成 l1–10 堆叠帧（高度台阶 + 色带，见 §5 修订）。这是**临时表现**，等各资源专属手绘出图后替换。当前 55 帧（5 母题 + paper/ink/graphite 各 l1–10 专属 + metal/sticker ×10 堆叠），512×4096，~294 KB。
+- **背景已定**（2026-07-06）：每资源专属 2 张，用该资源生产建筑容器（`paperTray`/`inkPot`/`graphiteMill`/`metalForge`），按 `l1–3 / l4–5` 分。木材/粮草/石料已出图+烘焙上线（§5.7 / §5.7-ink / §5.7-graphite）；metal 套同思路待出图。
+- **专属出图后落地清单**（paper/ink/graphite 已按此落地）：源图（`res_<type>_l6..l10` + 空容器 `resbg_<type>_a`/`resbg_<type>_b`，白底 png/webp）放 `art/ui/slg-map/` → `pack_resources.cjs` 里 (a) `BAKE` 加一条 `{ type, token: 'res_<type>', bgA, bgB }`，(b) 从 `HEAP_TYPES` 删掉该 type（专属帧接管，别再合成堆叠帧撞名），(c) `tintLevelFrame` 的 l6–10 免色带豁免正则加该 type（专属手绘保原墨色）→ 重跑脚本，client + map-editor 两份 atlas 逐字节一致。**metal 出图后照此加一条即可。**
+- ~~**l1–5 落地方式**~~：✅ 已定=**烘焙合成**（§5.8 步骤 3），token 走 `fillInteriorWhite` 填实后叠骰子槽。metal 出图后复用同一 `bakeCountFrames`（往 `BAKE` 加一条即可）。
 - **铜钱(sticker)**：无地块，5 张映射哪 5 级、用在什么界面。
