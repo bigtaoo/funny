@@ -9,7 +9,7 @@ import { ISO_RATIO, diamondPath } from './isoGrid';
 import { getResLevelTexture, getResTexture, isResAtlasReady } from './resAtlasLoader';
 import { getTerrainTexture, isTerrainAtlasReady } from './terrainAtlasLoader';
 import { getBuildingTexture, isBuildingAtlasReady } from './buildingAtlasLoader';
-import { terrainFill, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT } from './tileStyle';
+import { terrainFill, RES_TEX_TINT, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT } from './tileStyle';
 import type { TerrainTextureName } from './terrainAtlasLoader';
 import type { ProceduralTile } from '@nw/shared/slg';
 
@@ -24,7 +24,11 @@ export function drawEditorTile(g: PIXI.Graphics, tile: ProceduralTile, texName: 
     const h = w * ISO_RATIO;
     const m = new PIXI.Matrix(w / tex.width, 0, 0, h / tex.height, -w / 2, -h / 2);
     const texAlpha = TERRAIN_TEX_ALPHA[texName] ?? TERRAIN_TEX_ALPHA_DEFAULT;
-    const texTint = TERRAIN_TEX_TINT[texName] ?? TERRAIN_TEX_TINT_DEFAULT;
+    // Plain resource tiles read their biome off the ground tint (motif overlay removed); other
+    // terrain uses its per-texture tint. keep/stronghold keep their landmark tint, not the biome hue.
+    const texTint = tile.type === 'resource' && tile.resType
+      ? RES_TEX_TINT[tile.resType] ?? TERRAIN_TEX_TINT_DEFAULT
+      : TERRAIN_TEX_TINT[texName] ?? TERRAIN_TEX_TINT_DEFAULT;
     g.beginTextureFill({ texture: tex, matrix: m, alpha: texAlpha, color: texTint });
   } else {
     g.beginFill(terrainFill(tile.type, tile.resType), 0.7);
@@ -32,9 +36,11 @@ export function drawEditorTile(g: PIXI.Graphics, tile: ProceduralTile, texName: 
   g.drawPolygon(diamondPath(tp - 1));
   g.endFill();
 
-  if ((tile.type === 'resource' || tile.type === 'familyKeep' || tile.type === 'stronghold') && tile.resType) {
-    drawResMotif(g, tile.resType, tile.level, tp);
-  }
+  // Resource motif overlay intentionally omitted: with resourceDensity=1.0 (ADR-032) every
+  // open tile is a resource tile, so painting a motif per tile carpeted the whole map with
+  // near-identical heaps ("太奇怪"). Tile info is carried by the terrain atlas image alone;
+  // the drawResMotif helper is kept below for a future per-biome ground-art pass. Must stay in
+  // lockstep with the game client's drawTileL1 (SLG map render parity).
 
   if (tile.type === 'familyKeep' || tile.type === 'stronghold') {
     placeBuildingSprite(g, tile.type === 'familyKeep' ? 'building_keep' : 'building_stronghold', hh, tp * 1.3);

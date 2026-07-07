@@ -35,6 +35,20 @@ export const TERRAIN_TEX_ALPHA: Partial<Record<TerrainTextureName, number>> = {
   terrain_river:    0.5,
 };
 
+// Per-resource biome tint for the ground texture of a plain `resource` tile. Since the resource
+// motif overlay was removed (see tileGraphics.drawEditorTile), the biome is now read straight off the
+// tinted paper: each resource washes its tiles a soft, distinct, still-paper-cohesive hue so paper /
+// ink / graphite / metal / sticker zones are locatable at a glance without the old motif carpet.
+// familyKeep/stronghold tiles are NOT tinted here — they keep their landmark terrain tint. Must match
+// the game client's tileStyle.ts (SLG map render parity).
+export const RES_TEX_TINT: Record<string, number> = {
+  paper:    0xf1e6c0, // warm straw
+  ink:      0xc6cfe8, // cool periwinkle
+  graphite: 0xd2d4d0, // neutral graphite grey
+  metal:    0xc7dccb, // steel mint
+  sticker:  0xf0cfe1, // soft rose
+};
+
 export const TERRAIN_TEX_TINT_DEFAULT = 0xffffff;
 export const TERRAIN_TEX_TINT: Partial<Record<TerrainTextureName, number>> = {
   terrain_grass:      0xe2ead4, // generic land / grass — faint warm sage

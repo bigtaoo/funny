@@ -6,7 +6,7 @@ import { getResLevelTexture, getResTexture, isResAtlasReady } from '../../render
 import { getTerrainTexture, isTerrainAtlasReady } from '../../render/terrainAtlasLoader';
 import { getBuildingTexture, isBuildingAtlasReady } from '../../render/buildingAtlasLoader';
 import { isCityAtlasReady } from '../../render/cityAtlasLoader';
-import { FOG_COLOR, ALLY_SECT_BORDER, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT } from './tileStyle';
+import { FOG_COLOR, ALLY_SECT_BORDER, RES_TEX_TINT, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT } from './tileStyle';
 import type { TerrainTextureName } from '../../render/terrainAtlasLoader';
 import type { WorldTileView } from '../../net/WorldApiClient';
 import type { ProceduralTile } from '@nw/shared';
@@ -28,8 +28,13 @@ export function drawTileL1(
     // Dark, busy obstacle weaves (mountain/river) are pushed down so they recede into the
     // paper instead of dominating the map edges; other terrain stays near-opaque.
     const texAlpha = TERRAIN_TEX_ALPHA[texName] ?? TERRAIN_TEX_ALPHA_DEFAULT;
-    // Faint colored-pencil tint multiplied into the grey ground art (see TERRAIN_TEX_TINT).
-    const texTint = TERRAIN_TEX_TINT[texName] ?? TERRAIN_TEX_TINT_DEFAULT;
+    // Faint colored-pencil tint multiplied into the grey ground art (see TERRAIN_TEX_TINT). Plain
+    // resource tiles instead read their biome off a per-resource tint (motif overlay removed);
+    // keep/stronghold keep their landmark terrain tint, so only type==='resource' picks the biome hue.
+    const resType = tile?.type === 'resource' ? tile.resType : (!tile && proc?.type === 'resource' ? proc.resType : undefined);
+    const texTint = resType
+      ? RES_TEX_TINT[resType] ?? TERRAIN_TEX_TINT_DEFAULT
+      : TERRAIN_TEX_TINT[texName] ?? TERRAIN_TEX_TINT_DEFAULT;
     g.beginTextureFill({ texture: tex, matrix: m, alpha: texAlpha, color: texTint });
   } else {
     g.beginFill(fill, 0.7);
@@ -37,21 +42,11 @@ export function drawTileL1(
   g.drawPolygon(diamondPath(tp - 1));
   g.endFill();
 
-  // Resource motif is TERRAIN, not a dynamic layer — it stays visible even under
-  // fog (§18 V1 model 2a: the procedural terrain layer is always visible map-wide;
-  // only the dynamic layer — ownership / base / garrison / level detail — is
-  // vision-gated). When fogged, drawResMotif reveals the resource TYPE only (single
-  // dimmed motif, no abundance/defense detail), matching "地形可见、局势看不清".
-  if (tile?.type === 'resource' && tile.resType) {
-    // Fog is a pure overlay: it must not change how the map resource art is drawn, so the
-    // motif renders in full (fogged=false) regardless of vision — the light FOG_COLOR wash
-    // below still tints the tile, but the resource image stays fully legible.
-    drawResMotif(g, tile.resType, tile.level ?? 1, tp, false);
-  } else if (!tile && proc && (proc.type === 'resource' || proc.type === 'familyKeep' || proc.type === 'stronghold') && proc.resType) {
-    // Uncached tile: reveal its procedural resource TYPE (the terrain layer is always visible
-    // map-wide, §18 V1 model 2a) so biome zones read as varied instead of uniform grass.
-    drawResMotif(g, proc.resType, proc.level, tp, false);
-  }
+  // Resource motif overlay intentionally omitted: with resourceDensity=1.0 (ADR-032) every
+  // open tile is a resource tile, so a motif per tile carpeted the whole map with near-identical
+  // heaps. Tile info is carried by the terrain atlas image alone; drawResMotif is kept below for a
+  // future per-biome ground-art pass. Must stay in lockstep with the map-editor's drawEditorTile
+  // (SLG map render parity).
 
   // Overlay landmark buildings for chokepoints / NPC strongholds. Like the ground texture,
   // these are TERRAIN features (their type is procedural, visible map-wide), so they draw
