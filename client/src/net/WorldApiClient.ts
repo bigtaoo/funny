@@ -435,6 +435,15 @@ export class WorldApiClient {
   }
 
   /**
+   * Price guardrail band for a listing category (e.g. `material:scrap`, `equip:<defId>`), used by the
+   * create-listing form to show the seller the acceptable range before submitting. Returns null when the
+   * category is unguarded / cold-start (any price allowed). floor/ceil match the server's PRICE_OUT_OF_RANGE check.
+   */
+  async getAuctionRefBand(category: string): Promise<{ ref: number; floor: number; ceil: number } | null> {
+    return this.req('GET', `/auction/refprice?category=${encodeURIComponent(category)}`);
+  }
+
+  /**
    * Create a listing. fixed mode: pass price (buy-now unit price); auction mode: pass saleMode='auction' + startPrice (opening unit price)
    * + optional buyoutPrice (buy-now floor unit price).
    */
