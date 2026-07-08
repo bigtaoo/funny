@@ -124,6 +124,7 @@ export class HeadlessAppViews implements AppViews {
     return {
       applySocialBadge: (n) => { this.lastSocialBadge = n; },
       applyAchievementBadge: () => {},
+      applyShopBadge: () => {},
       applyRetentionBadge: (c) => { this.lastRetentionBadge = c; },
       applyEventsAvailable: (a) => { this.lastEventsAvailable = a; },
       applyWorldAvailable: () => {},

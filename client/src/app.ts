@@ -110,6 +110,7 @@ class PixiAppViews implements AppViews {
     return {
       applySocialBadge: (n) => scene.applySocialBadge(n),
       applyAchievementBadge: (c) => scene.applyAchievementBadge(c),
+      applyShopBadge: (c) => scene.applyShopBadge(c),
       applyRetentionBadge: (c) => scene.applyRetentionBadge(c),
       applyEventsAvailable: (a) => scene.applyEventsAvailable(a),
       applyWorldAvailable: (ok) => scene.applyWorldAvailable(ok),

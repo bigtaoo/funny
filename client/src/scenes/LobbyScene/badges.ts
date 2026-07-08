@@ -9,11 +9,13 @@ import { C, txt, type Constructor, type LobbySceneBaseCtor } from './base';
 export interface BadgesHandlers {
   applySocialBadge(total: number): void;
   applyAchievementBadge(claimable: boolean): void;
+  applyShopBadge(claimable: boolean): void;
   applyRetentionBadge(claimable: boolean): void;
   applyEventsAvailable(available: boolean): void;
   applyWorldAvailable(ok: boolean): void;
   drawSocialBadge(): void;
   drawAchievementBadge(): void;
+  drawShopBadge(): void;
   drawWorldOfflineBadge(): void;
   drawSideStripBadges(): void;
 }
@@ -44,6 +46,18 @@ export function BadgesMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBas
       this.drawSideStripBadges();
     }
 
+    /**
+     * Mark whether the monthly/year card is active with today's daily reward still
+     * unclaimed. The core derives this from the mirrored monetization save on lobby
+     * entry (and after a claim); we redraw just the dot on the shop nav slot.
+     */
+    applyShopBadge(claimable: boolean): void {
+      if (this.destroyed) return;
+      if (this.shopBadge === claimable) return;
+      this.shopBadge = claimable;
+      this.drawShopBadge();
+    }
+
     /** B5: mark whether any retention reward is claimable → red dot on the daily strip item. */
     applyRetentionBadge(claimable: boolean): void {
       if (this.destroyed) return;
@@ -69,6 +83,7 @@ export function BadgesMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBas
       this.toastLayer = null;
       this.settlementLayer = null;
       this.achievementBadgeLayer = null;
+      this.shopBadgeLayer = null;
       this.socialBadgeLayer = null;
       this.sideStripBadgeLayer = null;
       this.titleBoil = null;
@@ -111,6 +126,29 @@ export function BadgesMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBas
       if (!this.achievementBadge) return;
 
       const s = this.statsNavRect;
+      const navH = s.h;
+      const dotR = Math.round(navH * 0.17);
+      const cx = s.x + s.w / 2 + dotR;
+      const cy = s.y + navH / 2 - Math.round(navH * 0.18) - dotR;
+      const r = Math.round(navH * 0.12);
+
+      const g = new PIXI.Graphics();
+      g.beginFill(C.red);
+      g.lineStyle(2, C.light, 0.9);
+      g.drawCircle(cx, cy, r);
+      g.endFill();
+      layer.addChild(g);
+    }
+
+    /** Draw (or clear) a small red dot at the top-right of the shop nav slot when the card's daily reward is claimable. */
+    drawShopBadge(): void {
+      const layer = this.shopBadgeLayer;
+      if (!layer) return;
+      layer.removeChildren();
+      if (!this.shopBadge) return;
+
+      const s = this.shopNavRect;
+      if (s.w <= 0) return;                            // shop slot greyed (offline) → no hit rect, no dot
       const navH = s.h;
       const dotR = Math.round(navH * 0.17);
       const cx = s.x + s.w / 2 + dotR;
