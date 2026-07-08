@@ -10,6 +10,7 @@ import {
   resolveSiege,
   npcGarrison,
   strongholdGarrison,
+  passageGarrison,
   STRONGHOLD_LOOT_PER_LEVEL,
   strongholdMaterialLoot,
   provinceIdxAt,
@@ -64,6 +65,12 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
         const proc = proceduralTile(m.worldId, this.core.coordX(m.toTile), this.core.coordY(m.toTile));
         if (proc.type === 'stronghold') {
           await this.applyStrongholdSiege(m, pw, t, proc);
+          return;
+        }
+        // Crossing PvE capture (bridge/plankway): fight the NPC garrison; victory captures it as an owned crossing
+        // (KEEPS its bridge/plankway type so it stays a passage), defeat retreats. Intercept before the miss/refund branch.
+        if (proc.type === 'bridge' || proc.type === 'plankway') {
+          await this.applyCrossingSiege(m, pw, t, proc);
           return;
         }
       }
@@ -398,6 +405,87 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
     }
 
     /**
+     * Crossing PvE siege capture (gate→bridge/plankway migration): an ownerless bridge/plankway tile guarded by an
+     * NPC garrison (passageGarrison, weaker than a stronghold). Victory → write the tile back as an OWNED crossing
+     * (KEEP its bridge/plankway type so it stays a passage; carry ownerId + familyId so `passableGateKeys` grants the
+     * owner & family passage) with survivors as garrison; no resource/material loot (crossings are strategic choke
+     * points, not resource tiles). Defeat → surviving attackers retreat and return. Defender is NPC throughout.
+     */
+    private async applyCrossingSiege(
+      m: MarchDoc,
+      pw: PlayerWorldDoc,
+      t: number,
+      proc: ProceduralTile,
+    ): Promise<void> {
+      const { cols } = this.core.deps;
+      const x = this.core.coordX(m.toTile);
+      const y = this.core.coordY(m.toTile);
+      // Re-validate on arrival: captured by someone (or self) in the meantime → skip NPC fight; refund troops as a miss.
+      const occ = await cols.tiles.findOne({ _id: m.toTile });
+      if (occ?.ownerId) {
+        await refundTroops(this.core, pw, m.troops, t);
+        void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
+        return;
+      }
+
+      const garrison = passageGarrison(proc.level);
+      const attackerArmy: GarrisonEntry[] =
+        m.army && m.army.length > 0 ? (m.army as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker');
+      const defenderConfig = { garrison: synthesizeArmy(garrison, 'defender') };
+      const tileLevel = proc.level;
+      const seed = siegeSeedFromId(m._id);
+
+      const attackerSave = await this.core.meta.getSaveFields(m.ownerId).catch(() => null);
+      const siegeEquip: EngineEquipmentInput | undefined =
+        attackerSave ? { gear: attackerSave.gear, inv: attackerSave.equipmentInv } : undefined;
+      let res: SiegeResolution;
+      let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
+      try {
+        res = runSiegeBattle({
+          attackerArmy, defenderConfig, tileLevel, seed,
+          pveUpgrades: attackerSave?.pveUpgrades,
+          unitLevels: attackerSave?.unitLevels,
+          equipment: siegeEquip,
+        });
+      } catch (err) {
+        console.error('[worldsvc] crossing siege engine failed — fallback to cheap resolve', {
+          tile: m.toTile,
+          err: (err as Error).message,
+        });
+        res = resolveSiege(m.troops, garrison);
+        replay = null;
+      }
+
+      if (res.outcome === 'attacker_win') {
+        const tileDoc: TileDoc = {
+          _id: m.toTile,
+          worldId: m.worldId,
+          x,
+          y,
+          type: proc.type, // KEEP bridge/plankway — a captured crossing stays a passage, it does not become plain territory
+          level: proc.level,
+          ownerId: m.ownerId,
+          ...(pw.familyId ? { familyId: pw.familyId } : {}), // family passage (passableGateKeys) needs the tile to carry familyId
+          garrison: res.attackerSurvivors,
+          rev: 0,
+        };
+        await cols.tiles.updateOne({ _id: m.toTile }, { $set: tileDoc }, { upsert: true });
+        void this.core.bumpFamilyActivity(m.worldId, pw.familyId, 1);
+        const siege = await this.recordSiege(m, undefined, res.outcome, t, replay);
+        void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'arrived' }));
+        void this.core.pushSiege(m.ownerId, siege, '');
+        void this.core.pushTile(m.ownerId, tileDoc);
+        await this.core.pushTileToObservers(tileDoc, new Set([m.ownerId]));
+      } else {
+        if (res.attackerSurvivors > 0) await refundTroops(this.core, pw, res.attackerSurvivors, t);
+        void this.core.bumpFamilyActivity(m.worldId, pw.familyId, 1);
+        const siege = await this.recordSiege(m, undefined, res.outcome, t, replay);
+        void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'arrived' }));
+        void this.core.pushSiege(m.ownerId, siege, '');
+      }
+    }
+
+    /**
      * Apply a single siege settlement result (G3-1 extraction, §16.4): write tile hand-off / loot / garrison / nation founding / passive relocation (attacker_win)
      * or defender garrison casualties (defender_win) according to res + record SiegeDoc + push march/siege/tile events.
      * Currently called immediately by `applySiege` (cheap settlement path unchanged); after G3-2 delayed settlement, both the judge re-computation confirmation and
@@ -428,11 +516,20 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
           await this.passiveRelocate(m.worldId, defenderId, t);
         } else {
           // Territory changes hands: survivors become the new garrison (troops were deducted on departure; do not modify the attacker pool again); both sides recompute yield.
+          // A captured crossing (bridge/plankway) KEEPS its type so it stays a passage, and carries the new owner's
+          // familyId so `passableGateKeys` grants the owner & family transit (plain territory captures set no familyId).
+          const isCrossing = target.type === 'bridge' || target.type === 'plankway';
           await cols.tiles.updateOne(
             { _id: m.toTile },
             {
-              $set: { type: 'territory', ownerId: m.ownerId, garrison: res.attackerSurvivors },
-              $unset: { protectedUntil: '' },
+              $set: {
+                type: isCrossing ? target.type : 'territory',
+                ownerId: m.ownerId,
+                garrison: res.attackerSurvivors,
+                ...(isCrossing && pw.familyId ? { familyId: pw.familyId } : {}),
+              },
+              // Clear stale family passage on a crossing captured by a familyless player, plus the protection shield.
+              $unset: { protectedUntil: '', ...(isCrossing && !pw.familyId ? { familyId: '' } : {}) },
               $inc: { rev: 1 },
             },
           );

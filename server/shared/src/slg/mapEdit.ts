@@ -4,14 +4,19 @@
 // via the existing §24 saveTilesDiff endpoint. One-way bake: the editor's own JSON export/import
 // round-trips the terrain grid for re-editing (see state/terrainGrid.ts/cities.ts) — this module never
 // needs to invert tiles back into grid cells/cities.
-import { SLG_MAP_H, SLG_MAP_W, type ObstacleKind, type ResourceType, type TileType } from './core';
+import { SLG_MAP_H, SLG_MAP_MAX_LEVEL, SLG_MAP_W, type ObstacleKind, type ResourceType, type TileType } from './core';
 import { biomeAt, proceduralTile, type MapTemplateTile } from './mapgen';
 import { worldSeed } from './noise';
 
+/**
+ * A painted terrain-grid cell. `river`/`mountain` bake to impassable `obstacle`; `neutral` carves a band
+ * open (obstacle → passable land, so designers can shrink a mountain/river); `bridge`/`plankway` place a
+ * capturable crossing building over a carved gap (siege-to-pass, gate→bridge/plankway migration).
+ */
 export interface MapEditTileInput {
   x: number;
   y: number;
-  type: 'river' | 'mountain';
+  type: 'river' | 'mountain' | 'neutral' | 'bridge' | 'plankway';
 }
 
 export interface MapEditCityInput {
@@ -19,11 +24,25 @@ export interface MapEditCityInput {
   y: number;
   level: number;
   footprint: number;
-  kind: 'capital' | 'gateCity' | 'worldCenter' | 'garrison';
+  kind: 'capital' | 'worldCenter' | 'garrison';
 }
+
+/** Level assigned to a hand-placed crossing building (matches the procedural auto-crossing level). */
+const CROSSING_TILE_LEVEL = Math.max(2, SLG_MAP_MAX_LEVEL - 1);
 
 function _cityTileType(kind: MapEditCityInput['kind']): TileType {
   return kind === 'worldCenter' ? 'center' : 'familyKeep';
+}
+
+/** Converts a painted terrain-grid cell into its tile override (type + level + optional obstacle art kind). */
+function _terrainOverride(type: MapEditTileInput['type']): _Override {
+  switch (type) {
+    case 'river':    return { type: 'obstacle', level: 1, obstacleKind: 'river' };
+    case 'mountain': return { type: 'obstacle', level: 1, obstacleKind: 'mountain' };
+    case 'neutral':  return { type: 'neutral', level: 1 };
+    case 'bridge':   return { type: 'bridge', level: CROSSING_TILE_LEVEL };
+    case 'plankway': return { type: 'plankway', level: CROSSING_TILE_LEVEL };
+  }
 }
 
 interface _Override {
@@ -50,9 +69,9 @@ export function rasterizeMapEdits(
 
   for (const tile of tiles) {
     if (tile.x < 0 || tile.x >= SLG_MAP_W || tile.y < 0 || tile.y >= SLG_MAP_H) continue;
-    // river/mountain share the same impassable 'obstacle' type + level 1 (§2.2), but keep the painted
-    // art kind so the tile renders as what the user actually painted rather than the position-hash flip.
-    overrides.set(`${tile.x}:${tile.y}`, { type: 'obstacle', level: 1, obstacleKind: tile.type });
+    // river/mountain bake to impassable obstacle (keeping the painted art kind); neutral carves a band open;
+    // bridge/plankway drop a capturable crossing building over a carved gap.
+    overrides.set(`${tile.x}:${tile.y}`, _terrainOverride(tile.type));
   }
 
   for (const city of cities) {

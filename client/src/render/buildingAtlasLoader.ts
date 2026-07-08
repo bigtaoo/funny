@@ -1,10 +1,12 @@
 /**
  * buildingAtlasLoader.ts — SLG map overlay-building atlas loader.
  *
- * Three hand-drawn structures that stand centered ON a map tile (distinct from the
+ * Hand-drawn structures that stand centered ON a map tile (distinct from the
  * ground-texture terrain atlas), packed into `assets/slg/building_atlas.{png,json}`:
  *   building_keep       — strategic chokepoint gatehouse (tile type `familyKeep`)
  *   building_stronghold — dark NPC fort (tile type `stronghold`)
+ *   building_bridge     — capturable river crossing 桥 (tile type `bridge`)
+ *   building_plankway   — capturable mountain crossing 栈道 (tile type `plankway`)
  *   icon_watchtower     — player-built lookout (tile.watchtower)
  *
  * Loading is fire-and-forget (called on WorldMapScene construction). A decode failure
@@ -25,7 +27,7 @@ export function isBuildingAtlasReady(): boolean {
   return sheet !== null;
 }
 
-/** Texture for a building frame (`building_keep` | `building_stronghold` | `icon_watchtower`), or null. */
+/** Texture for a building frame (`building_keep` | `building_stronghold` | `building_bridge` | `building_plankway` | `icon_watchtower`), or null. */
 export function getBuildingTexture(name: string): PIXI.Texture | null {
   return sheet ? (sheet.textures[name] ?? null) : null;
 }

@@ -31,7 +31,8 @@ export type TileType =
   | 'center' // world center (sect ownership contest point; unique)
   | 'base' // player home-city placement (written to DB at runtime)
   | 'obstacle' // blocking terrain (mountains/rivers; fully impassable, S8-6.6)
-  | 'gate' // pass/bridge (embedded in blocking zone; passable by occupying faction and allies; treated as obstacle if unoccupied, S8-6.6)
+  | 'bridge' // capturable river crossing (桥): passable by the occupying faction & allies, treated as obstacle if unoccupied; siege target with an NPC garrison (ADR gate→bridge/plankway migration)
+  | 'plankway' // capturable mountain crossing (栈道): same passage/siege semantics as `bridge` but spans mountain obstacle instead of river
   | 'stronghold'; // stronghold (G8 §3.1): high-strategic-value tile guarded by an overwhelmingly powerful system NPC; cannot be directly occupied — must be conquered via a siege attack
 
 /**
@@ -207,8 +208,9 @@ export const SLG_GEN = {
   copperShare: 0.25,
   /** Level cap for neutral open land (keeps neutral tiles low-value). */
   neutralLevelCap: 2,
-  // ── S8-6.6 blocking terrain + gates: obstacle/gate placement is now geometric (ring/river/branch bands,
-  // ADR-034 §2.2/§2.3, see TERRAIN_BAND_WIDTH_*/RING_GATE_*/RIVER_*/BRANCH_COUNT below), not noise-threshold-based.
+  // ── S8-6.6 blocking terrain + crossings: obstacle placement is geometric (ring/river/branch bands,
+  // ADR-034 §2.2/§2.3, see TERRAIN_BAND_WIDTH_*/*_CROSSING_*/BRANCH_COUNT below), not noise-threshold-based.
+  // Crossings over a band are capturable bridge/plankway tiles (gate→bridge/plankway migration).
   // ── G8 strongholds (§3.1) ──────────────────────────
   /**
    * Stronghold per-tile hash threshold (ECONOMY_NUMBERS §13-SLG-STRONGHOLD). Strongholds are isolated

@@ -103,7 +103,7 @@ describe.skipIf(!mongo)('ADR-026 base siege e2e', () => {
           if (x < 0 || y < 0 || x >= SLG_MAP_W || y >= SLG_MAP_H) continue;
           if (x === cx && y === cy) continue;
           const t = proceduralTile(W, x, y);
-          if (t.type !== 'obstacle' && t.type !== 'gate' && t.type !== 'center') return { x, y };
+          if (t.type !== 'obstacle' && t.type !== 'bridge' && t.type !== 'plankway' && t.type !== 'center') return { x, y };
         }
       }
     }

@@ -13,7 +13,6 @@ export type TerrainTextureName =
   | 'terrain_grass'
   | 'terrain_mountain'
   | 'terrain_river'
-  | 'terrain_gate'
   | 'terrain_keep'
   | 'terrain_center'
   | 'terrain_stronghold';

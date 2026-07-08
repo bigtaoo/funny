@@ -725,7 +725,7 @@ export interface components {
             x: number;
             y: number;
             /** @enum {string} */
-            type: "neutral" | "resource" | "territory" | "familyKeep" | "center" | "base" | "obstacle" | "gate" | "stronghold";
+            type: "neutral" | "resource" | "territory" | "familyKeep" | "center" | "base" | "obstacle" | "bridge" | "plankway" | "stronghold";
             level: number;
             /** @enum {string} */
             resType?: "ink" | "paper" | "graphite" | "metal" | "sticker";
@@ -768,7 +768,7 @@ export interface components {
             x: number;
             y: number;
             /** @enum {string} */
-            type: "neutral" | "resource" | "territory" | "familyKeep" | "center" | "base" | "obstacle" | "gate" | "stronghold";
+            type: "neutral" | "resource" | "territory" | "familyKeep" | "center" | "base" | "obstacle" | "bridge" | "plankway" | "stronghold";
             mine?: boolean;
             /** @description lod=mid: same-family ally */
             ally?: boolean;

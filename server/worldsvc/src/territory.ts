@@ -28,7 +28,7 @@ export class TerritoryService {
    * Spawn point (§3.4, decided 2026-06-24): **first entry uses system auto-placement** (prefer near family → fall back to outer newbie ring → whole-map fallback).
    * Players no longer choose coordinates — only paid relocation (`relocateBase`) / passive relocation after base destruction (`passiveRelocate`) can change position.
    * The optional `(x,y)` manual placement is retained for internal/test use only (public endpoints never pass coordinates; always auto-place).
-   * Validation: world open + not full (+ manual path: coordinates in bounds / not center/obstacle/gate/stronghold / unoccupied).
+   * Validation: world open + not full (+ manual path: coordinates in bounds / not center/obstacle/bridge/plankway/stronghold / unoccupied).
    * Effect: write base TileDoc (with newbie protection shield PROTECTION_SEC) + create playerWorld (full troops + initial yield).
    */
   async joinWorld(worldId: string, accountId: string, x?: number, y?: number): Promise<PlayerWorldView> {
@@ -56,7 +56,7 @@ export class TerritoryService {
       if (!this.core.inBounds(x, y)) throw new SlgError('OUT_OF_RANGE', 'Capital coordinates out of bounds');
       const proc = proceduralTile(worldId, x, y);
       if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'Cannot place capital at the world center');
-      if (proc.type === 'obstacle' || proc.type === 'gate') throw new SlgError('BAD_REQUEST', 'Cannot place capital on obstacle/gate terrain');
+      if (proc.type === 'obstacle' || proc.type === 'bridge' || proc.type === 'plankway') throw new SlgError('BAD_REQUEST', 'Cannot place capital on obstacle or crossing (bridge/plankway) terrain');
       if (proc.type === 'stronghold') throw new SlgError('BAD_REQUEST', 'Cannot place capital on stronghold terrain');
       const occ = await cols.tiles.findOne({ _id: tileId(worldId, x, y) });
       if (occ?.ownerId) throw new SlgError('TILE_OCCUPIED', 'This tile is already occupied');
@@ -220,7 +220,7 @@ export class TerritoryService {
 
   /**
    * Voluntary relocation (§3.4 / §8.2, available to all players): spend RELOCATE_COST coins to move the capital to a chosen legal empty tile.
-   * Validation: joined + target in bounds + not center/obstacle/gate + unoccupied by anyone. All territory is retained (only passive relocation loses territory).
+   * Validation: joined + target in bounds + not center/obstacle/bridge/plankway + unoccupied by anyone. All territory is retained (only passive relocation loses territory).
    * Effect: deduct coins → delete old base tile → write base tile at new location (carrying old garrison and remaining protection shield) → update mainBaseTile + recompute yield.
    */
   async relocateBase(worldId: string, accountId: string, x: number, y: number): Promise<PlayerWorldView> {
@@ -234,7 +234,7 @@ export class TerritoryService {
 
     const proc = proceduralTile(worldId, x, y);
     if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'Cannot place capital at the world center');
-    if (proc.type === 'obstacle' || proc.type === 'gate') throw new SlgError('BAD_REQUEST', 'Cannot place capital on obstacle/gate terrain');
+    if (proc.type === 'obstacle' || proc.type === 'bridge' || proc.type === 'plankway') throw new SlgError('BAD_REQUEST', 'Cannot place capital on obstacle or crossing (bridge/plankway) terrain');
     if (proc.type === 'stronghold') throw new SlgError('BAD_REQUEST', 'Cannot place capital on stronghold terrain');
     const occ = await cols.tiles.findOne({ _id: newTid });
     if (occ?.ownerId) throw new SlgError('TILE_OCCUPIED', 'This tile is already occupied');

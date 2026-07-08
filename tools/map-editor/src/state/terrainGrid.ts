@@ -4,7 +4,10 @@
 // holds/mutates state; rendering and input wiring live in index.ts.
 import { SLG_MAP_H, SLG_MAP_W, TERRAIN_BAND_WIDTH_MAX, TERRAIN_BAND_WIDTH_MIN } from '@nw/shared/slg';
 
-export type TerrainKind = 'river' | 'mountain';
+// Paintable overlay kinds. river/mountain bake to impassable obstacle; `neutral` carves a band open
+// (obstacle → passable land, so a designer can shrink a mountain/river); bridge/plankway drop a capturable
+// crossing building over a carved gap (gate→bridge/plankway migration). All map 1:1 to MapEditTileInput['type'].
+export type TerrainKind = 'river' | 'mountain' | 'neutral' | 'bridge' | 'plankway';
 
 export interface TilePoint {
   x: number;
@@ -98,9 +101,9 @@ export class TerrainGridStore {
         this._migrateLegacyPath(raw as unknown as LegacyPath);
         continue;
       }
-      if (raw.type !== 'river' && raw.type !== 'mountain') throw new Error(`invalid terrain type: ${String(raw.type)}`);
+      if (!['river', 'mountain', 'neutral', 'bridge', 'plankway'].includes(raw.type as string)) throw new Error(`invalid terrain type: ${String(raw.type)}`);
       if (typeof raw.x !== 'number' || typeof raw.y !== 'number') throw new Error('tile needs numeric x/y');
-      this.cells.set(`${raw.x}:${raw.y}`, raw.type);
+      this.cells.set(`${raw.x}:${raw.y}`, raw.type as TerrainKind);
     }
   }
 

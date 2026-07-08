@@ -61,7 +61,7 @@ const OCCUPIABLE = (t: ReturnType<typeof proceduralTile>) => t.type === 'resourc
 
 /** Terrain types that block a capital's 3×3 footprint (mirrors TerritoryService.joinWorld / footprintFree). */
 const BLOCKS_CAPITAL = (t: ReturnType<typeof proceduralTile>) =>
-  t.type === 'center' || t.type === 'obstacle' || t.type === 'gate' || t.type === 'stronghold';
+  t.type === 'center' || t.type === 'obstacle' || t.type === 'bridge' || t.type === 'plankway' || t.type === 'stronghold';
 
 /** Spiral search around (sx,sy) for the first coordinate whose whole 3×3 capital footprint (ADR-025) is
  * clear of center/obstacle/gate/stronghold terrain — mirrors footprintFree's terrain check (DB is empty

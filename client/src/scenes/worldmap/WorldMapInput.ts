@@ -127,8 +127,8 @@ export class WorldMapInput {
     }
     // Scout: send a scout to lift distant fog / reveal an unknown tile, then auto-return (no capture).
     buttons.push({ label: t('world.actScout'), action: () => void this.ctx.net.doScout(tx, ty) });
-    // Voluntary relocation (§3.4): if the player already has a capital and the target tile is placeable (not obstacle/gate), spend 500 coins to move the capital here.
-    const relocatable = this.ctx.me?.mainBaseTile && tile?.type !== 'obstacle' && tile?.type !== 'gate';
+    // Voluntary relocation (§3.4): if the player already has a capital and the target tile is placeable (not obstacle / bridge / plankway), spend 500 coins to move the capital here.
+    const relocatable = this.ctx.me?.mainBaseTile && tile?.type !== 'obstacle' && tile?.type !== 'bridge' && tile?.type !== 'plankway';
     if (relocatable) {
       buttons.push({ label: t('world.actRelocate'), action: () => this.ctx.net.confirmRelocate(tx, ty) });
     }

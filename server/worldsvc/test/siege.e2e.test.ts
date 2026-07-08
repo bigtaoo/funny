@@ -73,7 +73,7 @@ function findCoord(
  *  treats these as permanent blockers, and startMarch directly rejects obstacle targets).
  *  setupDefender overrides the tile type in DB, but pathfinding only sees the procedural layer. */
 const NON_BLOCKING = (t: ReturnType<typeof proceduralTile>): boolean =>
-  t.type !== 'obstacle' && t.type !== 'gate' && t.type !== 'center';
+  t.type !== 'obstacle' && t.type !== 'bridge' && t.type !== 'plankway' && t.type !== 'center';
 
 describe.skipIf(!mongo)('worldsvc siege e2e', () => {
   const m = mongo!;

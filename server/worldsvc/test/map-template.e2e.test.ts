@@ -131,10 +131,10 @@ describe.skipIf(!mongo)('worldsvc map template e2e (§24)', () => {
 
     // Editing the template afterwards must not retroactively change the already-cloned world baseline.
     await fetch(`${base}/admin/world/map-templates/tpl-a/tiles`, {
-      method: 'PUT', headers, body: JSON.stringify({ tiles: [{ x: 1, y: 1, type: 'gate', level: 9 }] }),
+      method: 'PUT', headers, body: JSON.stringify({ tiles: [{ x: 1, y: 1, type: 'bridge', level: 9 }] }),
     });
     const stillCloned = await m.collections.mapBaselines.findOne({ _id: 's9-tpl:1:1' });
-    expect(stillCloned?.type).not.toBe('gate');
+    expect(stillCloned?.type).not.toBe('bridge');
   });
 
   it('a published template edit reaches the runtime map read via the per-world baseline (§24 read-path)', async () => {

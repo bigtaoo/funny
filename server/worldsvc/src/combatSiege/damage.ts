@@ -81,11 +81,20 @@ export function SiegeDamageMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase
         await this.passiveRelocate(d.worldId, defenderId, t);
       } else {
         // Non-base building handed over: survivors become the new garrison; HP resets to full for the new owner.
+        // A captured crossing (bridge/plankway) KEEPS its type so it stays a passage and carries the new owner's
+        // familyId for `passableGateKeys` family transit (plain territory captures set no familyId).
+        const isCrossing = tile.type === 'bridge' || tile.type === 'plankway';
         await cols.tiles.updateOne(
           { _id: d.tile },
           {
-            $set: { type: 'territory', ownerId: d.attackerId, garrison: d.attackerSurvivors, hp: maxHp },
-            $unset: { protectedUntil: '' },
+            $set: {
+              type: isCrossing ? tile.type : 'territory',
+              ownerId: d.attackerId,
+              garrison: d.attackerSurvivors,
+              hp: maxHp,
+              ...(isCrossing && attacker?.familyId ? { familyId: attacker.familyId } : {}),
+            },
+            $unset: { protectedUntil: '', ...(isCrossing && !attacker?.familyId ? { familyId: '' } : {}) },
             $inc: { rev: 1 },
           },
         );

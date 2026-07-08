@@ -11,7 +11,8 @@ export const TERRAIN_COLORS: Record<string, number> = {
   familyKeep: 0xe8d29a,
   center:     0xf0dfa0,
   obstacle:   0xc4bdb0,
-  gate:       0xd8c2a0,
+  bridge:     0xb9c6d2, // river crossing (桥) — cool stone-blue
+  plankway:   0xb2967a, // mountain crossing (栈道) — warm timber brown
   stronghold: 0x9a7a6a,
   territory:  0xf5f0e8,
   base:       0xf5f0e8,
@@ -55,7 +56,6 @@ export const TERRAIN_TEX_TINT: Partial<Record<TerrainTextureName, number>> = {
   terrain_grass:      0xe2ead4, // generic land / grass — faint warm sage
   terrain_river:      0xcfe0ec, // river — faint cool blue (also at 0.68 alpha)
   terrain_mountain:   0xc9ccd0, // mountain — cool stone grey (2026-07-08: was warm taupe 0xdccbb4, skewed pink; also at 0.68 alpha)
-  terrain_gate:       0xe9dabb, // pass / bridge — soft tan
   terrain_keep:       0xeeddb0, // chokepoint keep — warm amber
   terrain_center:     0xf2e6ad, // world center — soft gold
   terrain_stronghold: 0xcdb8a6, // NPC stronghold — muted stone brown
@@ -73,7 +73,9 @@ export function terrainTextureName(type: string, tx: number, ty: number, obstacl
     case 'obstacle':    return obstacleKind === 'river' ? 'terrain_river'
                              : obstacleKind === 'mountain' ? 'terrain_mountain'
                              : (tx * 31 + ty * 17) % 2 === 0 ? 'terrain_mountain' : 'terrain_river';
-    case 'gate':        return 'terrain_gate';
+    // Crossings render the spanned terrain as ground; the bridge/plankway building draws on top (drawEditorTile).
+    case 'bridge':      return 'terrain_river';
+    case 'plankway':    return 'terrain_mountain';
     case 'familyKeep':  return 'terrain_keep';
     case 'center':      return 'terrain_center';
     case 'stronghold':  return 'terrain_stronghold';

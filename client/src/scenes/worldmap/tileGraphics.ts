@@ -56,8 +56,13 @@ export function drawTileL1(
   // these are TERRAIN features (their type is procedural, visible map-wide), so they draw
   // before the fog return, dimmed when fogged. Neutral ink — ownership is the wash below.
   const featType = tile?.type ?? proc?.type;
-  if (featType === 'familyKeep' || featType === 'stronghold') {
-    placeBuildingSprite(g, featType === 'familyKeep' ? 'building_keep' : 'building_stronghold', tp, hh, tp * 1.3, fogged);
+  const featBuilding = featType === 'familyKeep' ? 'building_keep'
+    : featType === 'stronghold' ? 'building_stronghold'
+    : featType === 'bridge' ? 'building_bridge'
+    : featType === 'plankway' ? 'building_plankway'
+    : null;
+  if (featBuilding) {
+    placeBuildingSprite(g, featBuilding, tp, hh, tp * 1.3, fogged);
   }
 
   // Ownership overlay (option-3): a light wash + colored border, not a full opaque fill —

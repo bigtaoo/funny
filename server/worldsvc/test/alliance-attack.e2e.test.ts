@@ -48,7 +48,7 @@ function findBaseCoord(sx: number, sy: number): { x: number; y: number } {
         if (!baseFootprintInBounds(x, y, SLG_MAP_W, SLG_MAP_H)) continue;
         const blocked = baseFootprintCells(x, y).some((c) => {
           const t = proceduralTile(W, c.x, c.y);
-          return t.type === 'center' || t.type === 'obstacle' || t.type === 'gate' || t.type === 'stronghold';
+          return t.type === 'center' || t.type === 'obstacle' || t.type === 'bridge' || t.type === 'plankway' || t.type === 'stronghold';
         });
         if (!blocked) return { x, y };
       }

@@ -21,7 +21,8 @@ export const TERRAIN_COLORS: Record<string, number> = {
   familyKeep: 0xe8d29a, // strategic point / chokepoint — muted warm amber
   center:     0xf0dfa0, // world center — soft gold
   obstacle:   0xc4bdb0, // impassable terrain (mountains/rivers) — muted stone grey
-  gate:       0xd8c2a0, // pass / bridge (corridor) — soft tan
+  bridge:     0xb9c6d2, // river crossing (桥) — cool stone-blue (reads as the river it spans)
+  plankway:   0xb2967a, // mountain crossing (栈道) — warm timber brown (reads as planks over rock)
   stronghold: 0x9a7a6a, // stronghold (G8): muted stone brown (was dark red — avoided clash with own-territory red)
   territory:  0xf5f0e8, // fallback (ownership is drawn as wash/border, not as the fill)
   base:       0xf5f0e8,
@@ -42,7 +43,7 @@ export const RES_COLORS: Record<string, number> = {
  * (DEFAULT); the busy obstacle weaves (mountain / river) draw a little softer so they still
  * recede into the paper rather than pulling the eye to the map edges where impassable bands
  * cluster. Nudged 0.5→0.68 (2026-07-08): 0.5 washed the hand-drawn rock/wave texture almost
- * flat — mountains read as a pale wash next to the crisp opaque gate/land tiles — so obstacles
+ * flat — mountains read as a pale wash next to the crisp opaque land tiles — so obstacles
  * now keep visible texture while staying below land. Any terrain not listed uses the DEFAULT.
  */
 export const TERRAIN_TEX_ALPHA_DEFAULT = 0.85; // nudged down from 0.9 so the warm paper breathes through
@@ -78,7 +79,6 @@ export const TERRAIN_TEX_TINT: Partial<Record<TerrainTextureName, number>> = {
   terrain_grass:      0xe2ead4, // generic land / grass — faint warm sage
   terrain_river:      0xcfe0ec, // river — faint cool blue (also drawn at 0.68 alpha → soft)
   terrain_mountain:   0xc9ccd0, // mountain — cool stone grey (2026-07-08: was warm taupe 0xdccbb4, which skewed pink on the warm paper and didn't read as rock; also at 0.68 alpha)
-  terrain_gate:       0xe9dabb, // pass / bridge — soft tan
   terrain_keep:       0xeeddb0, // chokepoint keep — warm amber
   terrain_center:     0xf2e6ad, // world center — soft gold
   terrain_stronghold: 0xcdb8a6, // NPC stronghold — muted stone brown
@@ -122,7 +122,10 @@ export function terrainTextureName(type: string, tx: number, ty: number, obstacl
     case 'obstacle':    return obstacleKind === 'river' ? 'terrain_river'
                              : obstacleKind === 'mountain' ? 'terrain_mountain'
                              : (tx * 31 + ty * 17) % 2 === 0 ? 'terrain_mountain' : 'terrain_river';
-    case 'gate':        return 'terrain_gate';
+    // Crossings render the terrain they span as the GROUND (river / mountain); the bridge/plankway
+    // building itself is drawn on top by the building-sprite layer (see tileGraphics/city rendering).
+    case 'bridge':      return 'terrain_river';
+    case 'plankway':    return 'terrain_mountain';
     case 'familyKeep':  return 'terrain_keep';
     case 'center':      return 'terrain_center';
     case 'stronghold':  return 'terrain_stronghold';

@@ -42,8 +42,13 @@ export function drawEditorTile(g: PIXI.Graphics, tile: ProceduralTile, texName: 
     drawResMotif(g, tile.resType, tile.level, tp);
   }
 
-  if (tile.type === 'familyKeep' || tile.type === 'stronghold') {
-    placeBuildingSprite(g, tile.type === 'familyKeep' ? 'building_keep' : 'building_stronghold', hh, tp * 1.3);
+  const featBuilding = tile.type === 'familyKeep' ? 'building_keep'
+    : tile.type === 'stronghold' ? 'building_stronghold'
+    : tile.type === 'bridge' ? 'building_bridge'
+    : tile.type === 'plankway' ? 'building_plankway'
+    : null;
+  if (featBuilding) {
+    placeBuildingSprite(g, featBuilding, hh, tp * 1.3);
   }
 }
 

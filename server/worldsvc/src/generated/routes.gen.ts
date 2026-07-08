@@ -1115,7 +1115,8 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "center",
                           "base",
                           "obstacle",
-                          "gate",
+                          "bridge",
+                          "plankway",
                           "stronghold"
                         ]
                       },
@@ -1275,7 +1276,8 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "center",
                           "base",
                           "obstacle",
-                          "gate",
+                          "bridge",
+                          "plankway",
                           "stronghold"
                         ]
                       },
@@ -1345,7 +1347,8 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "center",
                     "base",
                     "obstacle",
-                    "gate",
+                    "bridge",
+                    "plankway",
                     "stronghold"
                   ]
                 },
@@ -2056,7 +2059,8 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "center",
                     "base",
                     "obstacle",
-                    "gate",
+                    "bridge",
+                    "plankway",
                     "stronghold"
                   ]
                 },

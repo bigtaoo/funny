@@ -34,8 +34,9 @@ export function marchDurationSec(fx: number, fy: number, tx: number, ty: number)
 
 // ── A* march pathfinding (S8-6.6, §4 "march pathfinding") ──────────────────────────
 // 4-directional A* (up/down/left/right, no diagonals), Manhattan distance heuristic.
-// Obstacle tiles are impassable; unoccupied gates are treated as obstacles ("unoccupied = obstacle");
-// occupied gates are passable only by the occupying faction / allies (passableGateKeys is pre-fetched from the DB by the caller).
+// Obstacle tiles are impassable; unoccupied crossings (bridge/plankway) are treated as obstacles
+// ("unoccupied = obstacle"); occupied crossings are passable only by the occupying faction / allies
+// (passableGateKeys is pre-fetched from the DB by the caller).
 
 /** March path node. */
 export interface PathCell {
@@ -47,7 +48,7 @@ export interface PathCell {
  * A* pathfinding from (fx,fy) to (tx,ty).
  * - Returns the full path (including start and end); returns a single node [{fx,fy}] for same-tile.
  * - Returns null if the destination is unreachable (obstacle / no path / out of bounds).
- * - passableGateKeys: set of gate tile keys that can be traversed (format "x:y"); the destination gate itself is always reachable regardless of passage rights.
+ * - passableGateKeys: set of crossing (bridge/plankway) tile keys that can be traversed (format "x:y"); the destination crossing itself is always reachable regardless of passage rights.
  * - blockedBaseKeys (ADR-025): set of enemy/other main-base tile keys ("x:y") that block pathing —
  *   a player's 3×3 capital is a solid building others must route around ("封路"). The caller excludes
  *   the marcher's own base tiles from this set (owners march in/out freely). The destination itself is
@@ -75,7 +76,9 @@ export function findMarchPath(
     if (!isDest && blockedBaseKeys.has(`${x}:${y}`)) return false;
     const p = proceduralTile(world, x, y);
     if (p.type === 'obstacle') return false; // obstacles always block, including the destination tile
-    if (p.type === 'gate') return isDest || passableGateKeys.has(`${x}:${y}`);
+    // Crossings (bridge/plankway): passable only if the destination (so you can march on to besiege it)
+    // or occupied by the marcher's faction/allies; an unoccupied crossing blocks like an obstacle.
+    if (p.type === 'bridge' || p.type === 'plankway') return isDest || passableGateKeys.has(`${x}:${y}`);
     return true;
   };
 

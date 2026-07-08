@@ -7,7 +7,7 @@
 // publishing — the exact same function drives both, so "what you see" and "what gets published" can
 // never drift apart.
 import * as PIXI from 'pixi.js-legacy';
-import { BASE_FOOTPRINT, MAP_TEMPLATE_SAVE_MAX_TILES, proceduralTile, rasterizeMapEdits, SLG_MAP_H, SLG_MAP_W, type MapTemplateSummary, type MapTemplateTile, type ObstacleKind, type ResourceType, type TileType } from '@nw/shared/slg';
+import { BASE_FOOTPRINT, MAP_TEMPLATE_SAVE_MAX_TILES, proceduralTile, rasterizeMapEdits, SLG_MAP_H, SLG_MAP_MAX_LEVEL, SLG_MAP_W, type MapTemplateSummary, type MapTemplateTile, type ObstacleKind, type ResourceType, type TileType } from '@nw/shared/slg';
 import { randomDefaultWidth, TerrainGridStore, type TerrainKind, type TilePoint } from './state/terrainGrid';
 import { CityStore, type MapEditorCityNode } from './state/cities';
 import { Api, ApiError } from './api';
@@ -28,23 +28,26 @@ const RESOURCE_LABELS: Record<ResourceType, string> = {
   sticker: '贴纸(sticker)',
 };
 
-const TERRAIN_COLORS: Record<TerrainKind, number> = { river: 0x4fa8e0, mountain: 0xa0785a };
+const TERRAIN_COLORS: Record<TerrainKind, number> = {
+  river: 0x4fa8e0, mountain: 0xa0785a,
+  neutral: 0x9ccf7a, // carve: open a band back to passable land
+  bridge: 0x5c9fd6, // river crossing (桥)
+  plankway: 0xc08a52, // mountain crossing (栈道)
+};
 const CITY_COLORS: Record<MapEditorCityNode['kind'], number> = {
   worldCenter: 0xff5c8a,
   capital: 0xffd166,
-  gateCity: 0xef6c53,
   garrison: 0x4ce0c0,
 };
 const CITY_COLORS_CSS: Record<MapEditorCityNode['kind'], string> = {
   worldCenter: '#ff5c8a',
   capital: '#ffd166',
-  gateCity: '#ef6c53',
   garrison: '#4ce0c0',
 };
-const TERRAIN_LEGEND: TileType[] = ['neutral', 'resource', 'territory', 'familyKeep', 'center', 'obstacle', 'gate', 'stronghold'];
+const TERRAIN_LEGEND: TileType[] = ['neutral', 'resource', 'territory', 'familyKeep', 'center', 'obstacle', 'bridge', 'plankway', 'stronghold'];
 const TERRAIN_LEGEND_CSS: Record<TileType, string> = {
   neutral: '#f5f0e8', resource: '#f0ece0', territory: '#f5f0e8', familyKeep: '#e8d29a',
-  center: '#f0dfa0', base: '#f5f0e8', obstacle: '#c4bdb0', gate: '#d8c2a0', stronghold: '#9a7a6a',
+  center: '#f0dfa0', base: '#f5f0e8', obstacle: '#c4bdb0', bridge: '#b9c6d2', plankway: '#b2967a', stronghold: '#9a7a6a',
 };
 
 // ── Viewport (camera into the up-to-500×500 world; see DESIGN.md §6.3) ────────────
@@ -235,11 +238,20 @@ function renderBaseMap(worldId: string): void {
   // state, so this is a straight Map copy rather than a re-rasterization).
   const cityDiffs = rasterizeMapEdits(worldId, [], cityStore.nodes);
   diffCache = new Map(cityDiffs.map((d) => [`${d.x}:${d.y}`, d]));
+  const CROSSING_LEVEL = Math.max(2, SLG_MAP_MAX_LEVEL - 1);
   for (const [key, kind] of store.cells) {
     if (diffCache.has(key)) continue;
     const [xs, ys] = key.split(':');
-    // Keep the painted river/mountain art kind so the preview shows what was painted, not the hash flip.
-    diffCache.set(key, { x: Number(xs), y: Number(ys), type: 'obstacle', level: 1, obstacleKind: kind });
+    const x = Number(xs);
+    const y = Number(ys);
+    // Preview the painted cell as its baked tile: river/mountain keep their art kind; neutral carves the band
+    // open; bridge/plankway show the capturable crossing building over the spanned terrain.
+    const preview: MapTemplateTile =
+      kind === 'river' ? { x, y, type: 'obstacle', level: 1, obstacleKind: 'river' }
+      : kind === 'mountain' ? { x, y, type: 'obstacle', level: 1, obstacleKind: 'mountain' }
+      : kind === 'neutral' ? { x, y, type: 'neutral', level: 1 }
+      : { x, y, type: kind, level: CROSSING_LEVEL }; // bridge | plankway
+    diffCache.set(key, preview);
   }
 
   const padW = VIEW_W * VIEW_PAD_FACTOR;
@@ -354,7 +366,7 @@ function brushOutlinePoints(cx: number, cy: number, r: number): number[] {
 }
 
 function drawBrushCursor(hoverTile?: TilePoint): void {
-  if (!hoverTile || (tool !== 'river' && tool !== 'mountain' && tool !== 'eraser')) return;
+  if (!hoverTile || tool === 'city' || tool === 'pan') return;
   const g = new PIXI.Graphics();
   const r = brushDiameter() / 2;
   const pts = brushOutlinePoints(hoverTile.x, hoverTile.y, r);

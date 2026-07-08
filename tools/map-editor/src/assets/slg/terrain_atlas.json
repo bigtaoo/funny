@@ -20,29 +20,9 @@
         "h": 256
       }
     },
-    "terrain_gate": {
-      "frame": {
-        "x": 260,
-        "y": 2,
-        "w": 256,
-        "h": 256
-      },
-      "rotated": false,
-      "trimmed": false,
-      "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 256,
-        "h": 256
-      },
-      "sourceSize": {
-        "w": 256,
-        "h": 256
-      }
-    },
     "terrain_grass": {
       "frame": {
-        "x": 518,
+        "x": 260,
         "y": 2,
         "w": 256,
         "h": 256
@@ -62,8 +42,8 @@
     },
     "terrain_keep": {
       "frame": {
-        "x": 2,
-        "y": 260,
+        "x": 518,
+        "y": 2,
         "w": 256,
         "h": 256
       },
@@ -82,7 +62,7 @@
     },
     "terrain_mountain": {
       "frame": {
-        "x": 260,
+        "x": 2,
         "y": 260,
         "w": 256,
         "h": 256
@@ -102,7 +82,7 @@
     },
     "terrain_river": {
       "frame": {
-        "x": 518,
+        "x": 260,
         "y": 260,
         "w": 256,
         "h": 256
@@ -122,8 +102,8 @@
     },
     "terrain_stronghold": {
       "frame": {
-        "x": 2,
-        "y": 518,
+        "x": 518,
+        "y": 260,
         "w": 256,
         "h": 256
       },

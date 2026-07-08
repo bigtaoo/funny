@@ -1,0 +1,1 @@
+PLACEHOLDER: building_bridge.png / building_plankway.png are temporary copies of keep/stronghold — replace with real 桥/栈道 art.

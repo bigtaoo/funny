@@ -84,7 +84,7 @@
 
 - **环形分层结构**：放弃"首府点 + Voronoi/距离衰减"，改为**角度扇区 + 半径分层**：6 个"出生州"（外圈，各占 60°）+ 3 个"资源州"（中环，各占 120°，与出生州 2:1 对齐，资源州 i 正对出生州 2i/2i+1）+ 1 个"核心州"（中心圆域）。归属由角度扇区决定，不是最近点距离。
 - **地形天然隔离**：折痕岭（3 条山脉，= 出生州↔资源州环形边界本身）+ 墨河（2 条河流，横穿全图的独立层）负责大范围隔离；出生州之间另有 6 条支脉/支流（山脉/河流交替）逐个隔开相邻出生州。均完全不可通行。
-- **两套通道机制**：折痕岭/墨河主体上的关隘/桥**免费通行**（占领方及盟友可过）；出生州间支脉上没有免费关隘，只有**关隘城池**（须攻城才能通过）。
+- **统一通道机制（ADR gate→bridge/plankway 迁移，2026-07-08）**：地图只保留**山地/河流两种阻挡地形**；不再有"免费关隘"。穿越阻挡带的**唯一**方式是一座**可攻占的通行建筑**——跨河为**桥（bridge）**、跨山为**栈道（plankway）**，属建筑城池类，有 NPC 守军，**攻占后（本人及盟友）方可通行，未占领即封**。程序生成时每条阻挡带（折痕岭环 / 墨河 / 支脉）自动开 **1 处 1 格宽穿越**做连通兜底；设计师在地图编辑器里手动增删/挪动桥与栈道为主。
 - **立国 = 占领州府**：州府（出生州 6 座 + 资源州 3 座）对应旧模型里的"首府"；占领即立国，本州范围内玩家获战斗/产出加成（具体数值待定）。
 - **完整地形/城池骨架**（半径参考值、等级分布表、城池种类数量）见 [`design/tools/map-editor/DESIGN.md`](../tools/map-editor/DESIGN.md) §2-§4。
 
@@ -100,8 +100,8 @@
 | **玩家领地** | 玩家占领并驻军的格子 | 围攻（关键战斗，预布兵确定性自动战斗，服务器权威结算） | 防守方自定义 config + 驻军 |
 | **险地（Stronghold）** | NPC 极强的战略格，非常难攻占；占领后通常提供大幅资源或战略价值 | 围攻（高难 PvE，系统默认超强防守 config） | 系统超强默认防守（高等级 NPC） |
 | **州府（Capital）** | 占领即立国；实际地图以地图编辑器导出为主，归属按**角度扇区**（ADR-034，6 出生州+3 资源州+1 核心州），本州玩家获加成；赛季终局争夺目标（Voronoi/10 首府点旧模型已废，见 §2.4） | 围攻（关键战斗，预布兵确定性自动战斗，服务器权威结算） | 占领方自定义防守 config + 驻军 |
-| **关隘/桥（Gate/Bridge）** | 嵌于阻挡地形（山脉/河流）之间的唯一通道；可被占领；只有占领方及其盟友才能通过 | 围攻（占领通道） | 占领方驻军；未占领视为阻挡 |
-| **阻挡地形（Obstacle）** | 山脉/河流等完全不可通行格子（程序化分布，约占地图 10–15% DRAFT）；行军必须绕行或攻占关隘/桥 | 不可进攻 | — |
+| **桥 / 栈道（Bridge / Plankway）** | 嵌于阻挡带中的唯一通道建筑：跨河=桥、跨山=栈道；有 NPC 守军，须**攻城占领**方可通行，未占领视为阻挡；占领后**保留类型**（不变领地），并写入 `familyId` 使盟友也能通过 | 围攻（PvE 攻占 / 已占则围攻夺取） | 系统默认守军 `passageGarrison(level)`（介于普通格与险地之间）；占领方驻军 |
+| **阻挡地形（Obstacle）** | 山脉/河流等完全不可通行格子（程序化分布，约占地图 10–15% DRAFT）；行军必须绕行或攻占桥/栈道 | 不可进攻 | — |
 
 > **山/河渲染区分（2026-07-06）**：`obstacle` 仍是**单一不可通行类型**（寻路/占领逻辑不变），但瓦片可带可选 `obstacleKind: 'river'|'mountain'`（`@nw/shared` `core.ts`）纯做美术区分——`proceduralTile` 给折痕岭=山、墨河=河、支脉按奇偶交替；编辑器画笔画的河/山也带此标。渲染端 `terrainTextureName` 有 kind 就用对应贴图，否则回退旧位置哈希。地图编辑器与游戏客户端由此渲染一致，详见 [`design/tools/map-editor/DESIGN.md`](../tools/map-editor/DESIGN.md) §0（2026-07-06 条）。
 | **出生地 / 主城** | 玩家不可被永久夺取的本营（**首次进入=系统自动落城**，被打=掠夺资源 + 自动迁移 + 保护罩，不丢主城资格；只有付费迁城才可自选位置）。**真占 3×3=9 格实体**（锚点=中心格；九格一体不可分割；对非城主行军不可穿过=可封路；攻任一格=围攻整城；九格全计入领地/繁荣）——见 [DECISIONS ADR-025](../DECISIONS.md) | 围攻（掠夺；攻九格任一即结算同一场；**建筑血量+逐队守军波次+攻城值延迟结算见 [ADR-026](../DECISIONS.md)**） | 在城且未受伤的 `teams[]` 逐队上阵（t1→t5）；无守军直接判胜扣血 |
@@ -167,7 +167,7 @@
 - **兵力上限**：玩家可拥有的兵力有上限（训练队列消耗资源 + 时间，是主 sink + 变现加速点）。
 - **驻军占用**：每块领地需驻军才守得住；驻军占用兵力池。
 - **守不住全部** → 兵力 < 全部领地所需驻军 → **必然需要家族连地互守/增援** → 社交刚需化。
-- **行军寻路**：地图含阻挡格（山脉/河流，完全不可通行）和关隘/桥（可占领通道）。服务端用 **A\*** 算法计算行军路径（绕阻挡 + 检查关隘/桥归属）；行军时间 = 路径格数 × `MARCH_SPEED_SEC_PER_TILE`。未被己方或盟友控制的关隘/桥视为阻挡。
+- **行军寻路**：地图含阻挡格（山脉/河流，完全不可通行）和桥/栈道（可占领通道建筑）。服务端用 **A\*** 算法计算行军路径（绕阻挡 + 检查桥/栈道归属）；行军时间 = 路径格数 × `MARCH_SPEED_SEC_PER_TILE`。未被己方或盟友控制的桥/栈道视为阻挡（但始终可作为行军**目标**格抵达以发起攻城）。
 - **占领、增援、进攻都需行军**，有距离/时间成本（Redis 调度的定时事件）；家族抱团占**连续领地**才高效（连地加成 + 短行军距离 + 快速增援）。
 - **增援 / 代守 / 代打**：家族成员可向彼此领地派驻援军、被攻击时驰援（行军到达触发协防）。
 - **保护罩**：被打败后短时保护（防连续碾压），是变现/节奏旋钮。
@@ -395,6 +395,7 @@
   - **关隘通行规则**：`findMarchPath` 中关隘格逻辑——目标格始终可达（用于占领）；中途经过须在 `passableGateKeys` 中（己方已占领的关隘；盟友通行 S8-4 pending）；障碍格永远阻挡（含作为目标格）。
   - **worldsvc 接入**：`service.ts` 去掉 `marchDurationSec`，改用 `computeMarchPath()`（预取所有 `type:'gate'` TileDoc → 组装 `passableGateKeys` → 调 `findMarchPath`，无路 → `PATH_BLOCKED` 400）；`startMarch` 用 `marchDurationFromPath(path)*1000` 计算 `arriveAt`；`joinWorld`/`occupyTile`/`startMarch` 加障碍格/关隘格校验（`BAD_REQUEST`）。
   - **测试**：`worldsvc/test/pathfinding.test.ts`（纯单测：同格/越界/无障碍路径/4方向邻接/角落无障碍/marchDurationFromPath）；`march.e2e.test.ts` 全部 `marchDurationSec` 替换为 `mv.arriveAt` / `findMarchPath` 期望值，兼容 A* 曼哈顿距离。`siege.e2e.test.ts` 无需修改（横向路径 Manhattan=Euclidean）。
+  - **⚠️ 已被 gate→bridge/plankway 迁移取代（2026-07-08）**：`'gate'` 地形类型删除，拆为 `'bridge'`（跨河桥）/`'plankway'`（跨山栈道）两个**可攻占通行建筑**类型。要点：① `proceduralTile` 障碍带整条 obstacle，仅每带保留 1 处 1 格宽穿越（`RING_CROSSING_COUNT_PER_RING`/`RIVER_CROSSING_COUNT_PER_CHORD`=1、`CROSSING_WIDTH_TILES`=1）映射为 bridge/plankway；支脉也各开 1 处；旧 `_worldCityNodes` 的 `gateCity` 自动节点删除。② 通行规则不变（`findMarchPath` 未占领视障碍、目标格豁免；`passableGateKeys` 查询改 `type∈{bridge,plankway}`）。③ 新增守军 `passageGarrison(level)`（`siege.ts`）+ `arrival.ts` PvE 攻城分支：攻占**保留** bridge/plankway 类型并写 `ownerId+familyId`（修复旧 gate「占领后 `type:'gate'` 查不到」的隐藏 bug）。④ 手动放置：地图编辑器加 Carve/Bridge/Plankway 画笔（`mapEdit.ts` 支持 neutral/bridge/plankway 覆盖）。⑤ 资源：删 `terrain_gate.webp`，新增 `building_bridge`/`building_plankway`（暂用 keep/stronghold 占位图，待正式美术）。渲染 client/map-editor 双份镜像。测试 `worldsvc/test/passage.e2e.test.ts`。
   - 验证：`shared` + `worldsvc` 两包 `tsc --noEmit` 全绿（无 `marchDurationSec` 遗留引用）。
 - **S8-7 赛季**：大区分配（宗门强弱平衡匹配）/赛季开启/赛季重置（清领地/兵力/繁荣度/国家归属）/结算（按宗门占国数排名/奖励材料皮肤称号）。**→ 可编码实现规格见 §17**（赛季四段式现状盘点 + 7 处代码冲突修正 + settle 发奖/排名落库/reset 原子化/admin 鉴权/繁荣度评分/G6 分配算法）。
 - **S8-8 变现 + 运营**：加速/资源包/科技直购/战令（commercial）+ admin 赛季运维。
@@ -527,7 +528,7 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 ### 14.7 shared 常量/枚举/ID/错误码（`shared/slg.ts`）
 
 - **ID**：`worldId(season,shard)`、`tileId(worldId,x,y)`、`marchId`、`familyId`、`auctionId`、`defenseRef`、`familyMemberId(worldId,accountId)`、`playerWorldId(worldId,accountId)`。
-- **枚举**：`TileType`(neutral/resource/territory/familyKeep/center/base/obstacle/gate/stronghold)、`MarchKind`、`SiegeOutcome`、`FamilyRole`、`WorldStatus`、`AuctionStatus`、`ResourceType`(ink/paper/graphite/metal/sticker，命名定版 2026-06-30，见 §3.4)。
+- **枚举**：`TileType`(neutral/resource/territory/familyKeep/center/base/obstacle/bridge/plankway/stronghold；`gate` 已于 2026-07-08 拆为 bridge/plankway)、`MarchKind`、`SiegeOutcome`、`FamilyRole`、`WorldStatus`、`AuctionStatus`、`ResourceType`(ink/paper/graphite/metal/sticker，命名定版 2026-06-30，见 §3.4)。
 - **常量（DRAFT）**：`TROOP_CAP_BASE`、`MARCH_SPEED_PER_TILE`、`RESOURCE_CAP`、`RESOURCE_YIELD_BASE`、`PROTECTION_SEC`、`FAMILY_CAP`、`AUCTION_TAX_RATE`、`AUCTION_MAX_LISTINGS`、`AUCTION_DURATIONS`、`GARRISON_PER_TILE`、`SEASON_LENGTH_DAYS`。
 - **错误码**（接 `api.ts` + HTTP 映射）：`WORLD_FULL`、`WORLD_CLOSED`、`TILE_NOT_OWNED`、`TILE_OCCUPIED`、`OUT_OF_RANGE`、`NO_TROOPS`、`TROOP_CAP_REACHED`、`PROTECTED`、`MARCH_NOT_FOUND`、`FAMILY_FULL`、`NOT_IN_FAMILY`、`ALREADY_IN_FAMILY`、`AUCTION_NOT_FOUND`、`AUCTION_CLOSED`、`NOT_DESIGNATED_BUYER`、`INSUFFICIENT_RESOURCES`、`AUCTION_LIMIT_REACHED`。
 
@@ -562,7 +563,7 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 
 - **U4 大区容量 ✅（2026-07-04 复核，ADR-032 废止 2026-06-18 版本）**：**上限 500 活跃玩家/单大区**（`SLG_WORLD_CAPACITY_MAX=500`；`MIN/TARGET/MAX` 三档以 500 为封顶，与代码现状一致）。2026-06-18 曾拍板"~1 万玩家替代 300-500"，但从未落地实现（代码常量、e2e 测试、econ-sim 全部仍按 300-500 人假设跑），本次复核后正式废止该版本，改回并确认 300–500 为真实目标——不是"退回旧值"，是承认那次"升级"从未发生过。
 - **U2 地图尺寸 ✅ 已实现（2026-07-04 更新 + 落地，ADR-032）**：**500×500（25 万格）**（替代代码现状 300×300，**不是**从未落地的 1500×1500）。500 玩家 × 人均上限 200 块 5 级+地的目标，反推地图面积需求，详见 ADR-032 与 §3.2。稀疏存储只落被占格不影响存储。
-- **U6 程序化分布 ✅（原方案 + 扩展）**：在原 `proceduralTile()` 基础上扩展：增加阻挡地形（山脉/河流约 10–15% 格子，连续地形带）；险地（稀疏强 NPC 战略点）；关隘/桥嵌于阻挡带（约 20–40 处）；10 首府固定坐标（`CAPITAL_POSITIONS`）。
+- **U6 程序化分布 ✅（原方案 + 扩展）**：在原 `proceduralTile()` 基础上扩展：增加阻挡地形（山脉/河流约 10–15% 格子，连续地形带）；险地（稀疏强 NPC 战略点）；桥/栈道通行建筑嵌于阻挡带（gate→bridge/plankway 迁移后：每带 1 处自动兜底穿越，其余靠地图编辑器手动放置）；10 首府固定坐标（`CAPITAL_POSITIONS`）。
 - **U1 拍卖行计价币种 ✅（2026-06-18 定）**：充值 **coin**；**赛季资源（粮/铁/木）禁挂**，仅材料/装备可交易；系统抽 **10% 手续费**；免费玩家通过任务/活动/关卡赚 coin 参与（最低生活保障原则）。
 - **U3 赛季周期 + 大比形态 ✅（2026-06-18 定）**：赛季 **2 个月**；大比 = **大区内宗门占领首府数排名**（非跨服）；中原首府额外加权奖励；奖励材料/皮肤/称号（含连续赛季成就称号如「十冠王」）；运营活动叠加。
 - **U5 家族/宗门容量 + 权限 ✅（2026-06-18 定）**：家族 ≤30 人（建立 500 coin）；宗门 ≤30 家族（建立 5000 coin + 繁荣度中等门槛）；联盟 ≤3 宗门；门主换届需 2/3 族长投票 + 提名；门主主城被破 → 全宗门成员资源 -50% + 主城自动迁移。
