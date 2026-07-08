@@ -67,9 +67,9 @@ export const SECTION_H = 20;  // section divider (Equipped / Bag)
 export const CELL_GAP = 12;
 export const EQUIP_CELL_H = 177; // 1.5x the previous 118 (unified with CARD_CELL_H in CardScene.ts)
 export const EQUIP_CELL_W_TARGET = 480; // 1.5x the previous 320 (unified with CARD_CELL_W_TARGET in CardScene.ts)
-// Craft grid: same column sizing as the inventory grid, a bit taller to fit
-// the cost chips + craft button beneath the glyph.
-export const CRAFT_CELL_H = 116;
+// Craft grid: same column + cell sizing as the inventory grid so the icon
+// frames read at the same scale; cost chips + craft button sit beside the glyph.
+export const CRAFT_CELL_H = EQUIP_CELL_H;
 
 export const SLOTS: readonly EquipSlot[] = ['weapon', 'armor', 'trinket'];
 export const TRACKED_MATERIALS = ['scrap', 'lead', 'binding'] as const;

@@ -495,6 +495,8 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 **稀有度配色 + 图标卡放大 + 资源条加标签**（2026-07-06 追加）：走查截图发现四处问题并修复：① 稀有度色 `RARITY_COLOR`（`EquipmentScene/base.ts`）此前 rare 用橙 `#e08a2c`、epic 用紫，橙比紫更抓眼，读起来 rare 反而"高级感"超过 epic；改为灰→绿→蓝→紫的递进序（common 灰不变 / fine 绿 `#4a9e4a` / rare 蓝 `#4477cc` / epic 紫不变），恢复稀有度视觉层级；② 背包格 `renderInstanceCell` 此前只有已装备的格子描边用稀有度色，未装备格退回中性灰，同一套颜色语言在背包区断掉；改为描边始终用稀有度色；③ **图标卡尺寸统一+放大 1.5x**：装备格 `EQUIP_CELL_H/EQUIP_CELL_W_TARGET`（118×320）与角色卡 `CardScene` 的 `CARD_CELL_H/CARD_CELL_W_TARGET`（118×360）此前不一致，且都偏小；统一改为 177×480（=118×1.5，两个常量目标宽都取 480），背包材料格复用同一装备格组件，无需单改；④ **头部资源条加标签+放大 2x**：`drawHeaderCurrency`（`ui/widgets/SceneHeader.ts`）此前只有图标+裸数字，新玩家看不出图标含义；每个 chip（金币/碎屑/铅芯/装订线）加短文字标签，并给 Equipment/CardScene 两处调用传新增的 `scale=2` 参数把图标/字号/间距整体放大（栏高不变，仍在 50px 头部内居中；`FriendsScene` 等其余调用方 `scale` 默认 1，不受影响）。四处均 `tsc --noEmit` 验证，未起 preview 截图。
 
+**锻造图标卡对齐背包尺寸**（2026-07-08 追加）：上条把背包/角色卡格统一到 177 高，却漏了锻造格 `CRAFT_CELL_H` 仍停在 116，锻造 tab 的图标框（`imgBox = CRAFT_CELL_H - pad*2 - 22`）明显小于背包。改 `CRAFT_CELL_H = EQUIP_CELL_H`（177），锻造图标框随之从 78px 放大到 ~139px，与背包 ~137px 一致；成本 chips + 制作按钮布局按格高动态定位不变。`tsc --noEmit` 验证。
+
 #### E2 掉落 faucet + E6 洗练 实现记录（2026-06-22，✅）
 
 **E2 关卡掉落 faucet**
