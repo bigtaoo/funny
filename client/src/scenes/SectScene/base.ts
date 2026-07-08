@@ -47,7 +47,6 @@ export type SectTab = 'families' | 'channel';
 export type ViewMode = 'loading' | 'noSect' | 'create' | 'mySect';
 
 export const ROW_H = 48;
-export const HUD_H = 50;
 
 // ── Mixin plumbing ────────────────────────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -88,6 +87,8 @@ export class SectSceneBase {
 
   // Scroll
   protected scrollY = 0;
+  /** Title-bar height, set from the shared header — drives all body layout below it. */
+  protected headerH = 0;
   protected dragStart: { x: number; y: number; scroll: number } | null = null;
   protected dragMoved = false;
 
@@ -135,8 +136,9 @@ export class SectSceneBase {
   protected renderHeader(): void {
     const { w } = this;
     const hdr = drawSceneHeader(this.container, w, this.h, t('sect.title'), {
-      variant: 'paper', headerH: HUD_H, titleSize: 15, accent: HEADER_ACCENT.slg,
+      variant: 'paper', accent: HEADER_ACCENT.slg,
     });
+    this.headerH = hdr.headerH;
     this.hitRects.push({ rect: hdr.backRect, action: () => this.cb.onBack() });
   }
 

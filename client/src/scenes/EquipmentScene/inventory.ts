@@ -9,7 +9,7 @@ import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance } from '../../
 import { getEquipDef } from '../../game/meta/equipmentDefs';
 import {
   type Constructor, type EquipmentSceneBaseCtor, type EquipTab,
-  HUD_H, LOADOUT_H, FILTER_H, SECTION_H, CELL_GAP, EQUIP_CELL_H, EQUIP_CELL_W_TARGET,
+  LOADOUT_H, FILTER_H, SECTION_H, CELL_GAP, EQUIP_CELL_H, EQUIP_CELL_W_TARGET,
   SLOTS, RARITY_COLOR,
 } from './base';
 
@@ -35,7 +35,7 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
      */
     renderSidebar(): void {
       const sidebarW = marginLineX(this.w);
-      let y = HUD_H;
+      let y = this.headerH;
 
       if (this.showGroup && this.cb.peerTab) {
         const groupTabs: HubTab[] = [

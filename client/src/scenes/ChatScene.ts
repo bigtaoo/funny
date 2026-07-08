@@ -5,7 +5,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
-import { drawSceneHeader } from '../ui/widgets/SceneHeader';
+import { drawSceneHeader, sceneHeaderHeight } from '../ui/widgets/SceneHeader';
 import { caretDisplay } from '../render/inputDisplay';
 import type { ChatMessageView } from '../net/ApiClient';
 import type { ChatMessagePush } from '../net/proto/transport';
@@ -255,14 +255,14 @@ export class ChatScene implements Scene {
 
   private drawHeader(): void {
     const { w, h } = this;
-    const hdr = drawSceneHeader(this.container, w, h, this.cb.peerName || `#${this.cb.peerPublicId}`, { headerH: Math.round(h * 0.11) });
+    const hdr = drawSceneHeader(this.container, w, h, this.cb.peerName || `#${this.cb.peerPublicId}`);
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
   }
 
   private drawThread(): void {
     const { w, h } = this;
-    const tbH = Math.round(h * 0.11);
+    const tbH = sceneHeaderHeight(h);
     const composeH = Math.round(h * 0.10);
     this.regionTop = tbH + Math.round(h * 0.01);
     this.regionBottom = h - composeH - Math.round(h * 0.01);

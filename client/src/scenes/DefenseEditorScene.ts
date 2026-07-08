@@ -92,7 +92,6 @@ type GarrisonEntry = { unitType: UnitType; hp: number };
 
 // ── Caps / layout ────────────────────────────────────────────────────────────
 
-const HEADER_H = 46;
 const PALETTE_H = 54;
 const FOOTER_H = 58;
 const PAD = 10;
@@ -294,7 +293,7 @@ export class DefenseEditorScene implements Scene {
         ? t('world.defense.titleBase')
         : t('world.defense.titleTile').replace('{tile}', this.cb.target.tileKey);
     const hdr = drawSceneHeader(this.bodyLayer, w, this.h, titleStr, {
-      variant: 'paper', headerH: HEADER_H, titleSize: 14, accent: HEADER_ACCENT.slg,
+      variant: 'paper', accent: HEADER_ACCENT.slg,
     });
     this.hits.push({ rect: hdr.backRect, action: () => this.cb.onBack() });
 
@@ -302,10 +301,10 @@ export class DefenseEditorScene implements Scene {
     if (this.hasBuildingRow) this.renderBaseStepper(w - PAD, 8);
 
     // Palette
-    this.renderPalette(HEADER_H + 4);
+    this.renderPalette(hdr.headerH + 4);
 
     // Board grid
-    const gridTop = HEADER_H + 4 + PALETTE_H + 4;
+    const gridTop = hdr.headerH + 4 + PALETTE_H + 4;
     const gridBottom = h - FOOTER_H - 4;
     this.renderGrid(gridTop, gridBottom);
 

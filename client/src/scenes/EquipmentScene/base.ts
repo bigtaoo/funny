@@ -55,7 +55,6 @@ export interface EquipmentCallbacks {
 
 export type EquipTab = 'inv' | 'craft';
 
-export const HUD_H = 50;
 export const RES_H = 30;       // resource bar (coins + three materials + inventory count)
 export const LOADOUT_H = 78;   // loadout strip at the top of the inventory tab (three slots)
 export const ROW_H = 56;
@@ -134,6 +133,8 @@ export class EquipmentSceneBase {
   protected useProtectEnhance = false;
 
   protected backRect = { x: 0, y: 0, w: 0, h: 0 };
+  /** Title-bar height, set from the shared header in build() — drives all body layout below it. */
+  protected headerH = 0;
   protected bodyLayer!: PIXI.Container;
   protected modalLayer!: PIXI.Container;
   protected toastLayer!: PIXI.Container;
@@ -188,9 +189,10 @@ export class EquipmentSceneBase {
 
     // Static header (back + title); the back hit is (re)registered in render().
     const hdr = drawSceneHeader(this.container, w, h, t('equip.title'), {
-      variant: 'paper', headerH: HUD_H, titleSize: 15, accent: HEADER_ACCENT.spend,
+      variant: 'paper', accent: HEADER_ACCENT.spend,
     });
     this.backRect = hdr.backRect;
+    this.headerH = hdr.headerH;
 
     this.headerOverlayLayer = new PIXI.Container();
     this.container.addChild(this.headerOverlayLayer);
@@ -242,10 +244,13 @@ export class EquipmentSceneBase {
       label: t(`material.${m}` as TranslationKey),
     }));
     const count = Object.keys(save.equipmentInv).length;
-    drawHeaderCurrency(this.headerOverlayLayer, this.w, HUD_H, save.wallet.coins, chips, {
+    // Coin + three materials + capacity is a wide cluster; keep it at a compact absolute size
+    // (~2× a 50px bar) rather than letting it scale up with the taller unified header, so it
+    // never overflows the 1080-wide portrait bar.
+    drawHeaderCurrency(this.headerOverlayLayer, this.w, this.headerH, save.wallet.coins, chips, {
       text: `${count}/${EQUIPMENT_INV_CAP}`,
       color: count >= EQUIPMENT_INV_CAP ? C.red : C.mid,
-    }, 2);
+    }, 100 / this.headerH);
   }
 
   /**
@@ -255,7 +260,7 @@ export class EquipmentSceneBase {
    */
   protected renderHeaderRow(): number {
     const { w } = this;
-    const top = HUD_H;
+    const top = this.headerH;
     const leftW = marginLineX(w);
     const rightX = leftW;
     const rightW = w - leftW;
