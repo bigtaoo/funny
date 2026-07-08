@@ -36,6 +36,7 @@ function stubWorldApi(overrides: Partial<WorldApiClient> = {}): WorldApiClient {
   return {
     listAuctions: vi.fn(async () => [] as AuctionView[]),
     getMyListings: vi.fn(async () => [] as AuctionView[]),
+    getAuctionRefBand: vi.fn(async () => ({ ref: 10, floor: 5, ceil: 20 })),
     createAuction: vi.fn(async () => makeAuction()),
     buyAuction: vi.fn(async () => ({ ok: true as const })),
     cancelAuction: vi.fn(async () => ({ ok: true as const })),

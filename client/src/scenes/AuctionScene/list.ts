@@ -5,7 +5,7 @@ import { drawSidebarTabs, type HubTab } from '../../ui/widgets/HubTabs';
 import { t } from '../../i18n';
 import type { AuctionView } from '../../net/WorldApiClient';
 import { buildIcon, type IconKind } from '../../render/icons';
-import { HUD_H, FILTER_H, ROW_H, FILTERS, type AucFilter, type AucTab } from './base';
+import { FILTER_H, ROW_H, FILTERS, type AucFilter, type AucTab } from './base';
 import { type Constructor, type AuctionSceneBaseCtor } from './base';
 
 export interface ListHandlers {
@@ -40,7 +40,7 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
       };
       const icons: Record<AucTab, IconKind> = { all: 'tag', mine: 'cards', bids: 'hammer' };
       const hubTabs: HubTab[] = tabs.map((tab) => ({ label: t(labelKeys[tab]), active: tab === this.activeTab, icon: icons[tab] }));
-      const { hits } = drawSidebarTabs(this.bodyLayer, sidebarW, HUD_H, h, hubTabs, (i) => {
+      const { hits } = drawSidebarTabs(this.bodyLayer, sidebarW, this.headerH, h, hubTabs, (i) => {
         const tab = tabs[i]!;
         if (this.activeTab !== tab) { this.activeTab = tab; this.scrollY = 0; this.render(); }
       });
@@ -50,7 +50,7 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
 
     renderFilterBar(contentX: number): number {
       const { w } = this;
-      const y = HUD_H;
+      const y = this.headerH;
       const contentW = w - contentX;
       const chipW = contentW / FILTERS.length;
       const keys: Record<AucFilter, 'auction.filterAll' | 'auction.filterMaterial' | 'auction.filterEquipment' | 'auction.filterCard'> = {
@@ -82,7 +82,7 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
 
     renderList(auctions: AuctionView[], contentX: number, filterH = 0): void {
       const { w, h } = this;
-      const listY = HUD_H + filterH;
+      const listY = this.headerH + filterH;
       const createBtnH = 52;
       const listH = h - listY - createBtnH - 10;
       const contentW = w - contentX;

@@ -100,6 +100,10 @@ export function startHttpApi(
         if (method === 'GET' && path === '/auction/mine') {
           return send(res, 200, ok(await auctionSvc.getMyListings(accountId)));
         }
+        if (method === 'GET' && path === '/auction/refprice') {
+          const category = q.get('category');
+          return send(res, 200, ok(await auctionSvc.getRefBand(category)));
+        }
         if (method === 'POST' && path === '/auction/create') {
           const body = await readJson(req);
           const itemType = typeof body.itemType === 'string' ? body.itemType : null;

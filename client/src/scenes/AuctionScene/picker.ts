@@ -6,7 +6,7 @@ import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { t } from '../../i18n';
 import { buildIcon, type IconKind } from '../../render/icons';
 import type { EquipmentInstance, CardInstance, EquipRarity } from '../../game/meta/SaveData';
-import { HUD_H, MATERIALS, type Constructor, type AuctionSceneBaseCtor } from './base';
+import { MATERIALS, type Constructor, type AuctionSceneBaseCtor } from './base';
 
 // Icon-card grid metrics (mirrors EquipmentScene/inventory.ts's responsive column layout).
 const CARD_GAP = 10;
@@ -123,12 +123,12 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
 
     renderItemPicker(): void {
       const { w, h } = this;
-      const titleY = HUD_H + 8;
+      const titleY = this.headerH + 8;
       const title = txt(t('auction.pickItem'), 14, C.dark, true);
       title.x = 12; title.y = titleY;
       this.bodyLayer.addChild(title);
 
-      const listY = HUD_H + 40;
+      const listY = this.headerH + 40;
       const listH = h - listY - 10;
 
       const entries = this.buildPickEntries();
