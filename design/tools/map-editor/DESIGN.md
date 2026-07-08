@@ -206,3 +206,13 @@ npm run start   # webpack dev server，端口 9095
 用户反馈用 River/Mountain 笔刷改地图后画面没变化。排查覆盖笔刷落格（`terrainGrid.ts`）→ 栅格化合并 diffCache（`index.ts` `renderBaseMap()`）→ 选贴图（`tileStyle.ts:terrainTextureName`）→ 绘制（`terrainAtlasLoader`/`tileGraphics.ts`）全链路的静态审查，并起 9095 服务用 preview 工具实机模拟落笔验证：落笔后 Tile 面板正确显示 `obstacle (mountain/river)`、Painted Terrain 计数正确递增、PIXI 场景图对应 Graphics 节点 `visible/renderable` 均为真、`terrain_atlas.png` 里 mountain/river 帧的美术内容确认与 grass 明显不同（岩石纹理 vs 波浪纹理）。曾怀疑 `drawBrushCursor()` 里 `TERRAIN_COLORS[tool]` 取不到 river/mountain 颜色，核实后是虚惊——`index.ts` 顶部本来就单独声明了一份 `Record<TerrainKind, number>` 的 `TERRAIN_COLORS`（专供笔刷光标用，和 `tileStyle.ts` 同名导出互不影响），取值正常。
 
 **未发现渲染链路缺陷。** 最可能的解释：`proceduralTile()` 生成的程序化底图本身就大量分布着 `obstacle` 类型格子，未标记 `obstacleKind` 时按 `(tx*31+ty*17)%2` 哈希在 mountain/river 贴图间随机选（`tileStyle.ts:39`）——默认 `preview` 世界早已铺满和笔刷画出来视觉上完全一样的纹理，若笔刷落在已有 obstacle 密集区，新画的地块会和周围融为一体，造成"没有生效"的错觉。下次复现建议：在明显是平原/资源的空地上测试笔刷，画完用 Export → 导出 JSON 核对数据是否真的写入。
+
+### 真正的根因 + 修复：编辑器画布背景色破坏了 art parity（2026-07-08）
+
+上条排查的结论是**错的**。真正原因不在栅格化/选贴图/绘制链路（那些确实都对），而在**画布背景色**：
+
+- 地形图集是"灰铅笔画在浅纸上"，山/河是 `obstacle`，在 `tileStyle.ts` 里 `TERRAIN_TEX_ALPHA` 特意设成 **0.5**（其它地形 0.85），让阻挡纹理"沉进纸面"。这套设定**依赖瓦片背后是纸色底**。
+- 游戏客户端世界地图铺了 `buildPaperBackground('worldmap', …, {marginLine:false})`（米色纸 `palette.paper=0xf5f0e8` + 淡蓝格线 `ruleLine=0xb9cfe4`，见 `WorldMapRenderer/build.ts`），且客户端 `PIXI.Application` 背景色本就是 `0xf5f0e8`。所以 0.5 半透明的山/河透出纸色 → 正常"沉进纸面"。
+- 编辑器的 `PIXI.Application` 背景色曾是 **深色 `0x11111b`**，瓦片下也没有任何不透明纸底。0.5 半透明的障碍瓦片直接把深色背景透上来 → 手绘岩石/波浪纹理被压暗、对比度砍半，塌成一块近乎纯色的**暗块** → 用户看到的"山/河图片素材没显示"。草地/资源格是 0.85 近乎不透明，所以不受影响。
+
+**修复（`tools/map-editor/src/index.ts`，仅动编辑器、不动客户端）**：把 `PIXI.Application` 背景色改成 `0xf5f0e8`，并在 `worldLayer` 之下加一层屏幕固定的纸背景 Graphics（淡蓝横向格线 `0xb9cfe4`，行距 `round(VIEW_H/28)`，无红色左边线），复刻客户端 `buildPaperBackground(marginLine:false)`。实机验证（9095）：山块变浅暖 taupe 且岩石纹理可辨、河块变浅蓝且水波可辨，与游戏内一致。**教训**：SLG 地图 parity 不只是图集/投影，"瓦片背后铺什么底"同样是 parity 的一部分——半透明地形对背景色敏感。
