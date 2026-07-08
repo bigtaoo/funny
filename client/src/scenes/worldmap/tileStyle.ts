@@ -58,12 +58,11 @@ export const TERRAIN_TEX_ALPHA: Partial<Record<TerrainTextureName, number>> = {
  * look (project_art_direction). Tints are deliberately high-luminance & desaturated; retune the whole
  * map's palette by nudging these. 0xffffff (the default) = no tint = the raw grey art.
  */
-// Per-resource biome tint for the ground texture of a plain `resource` tile. The resource motif
-// overlay was removed (see tileGraphics.drawTileL1) because resourceDensity=1.0 (ADR-032) made a motif
-// per tile carpet the whole map; the biome is now read straight off the tinted paper — each resource
-// washes its tiles a soft, distinct, still-paper-cohesive hue so paper / ink / graphite / metal /
-// sticker zones stay locatable. familyKeep/stronghold tiles keep their landmark terrain tint instead.
-// Must match the map-editor's tileStyle.ts (SLG map render parity).
+// Per-resource biome tint for the ground of a `resource` tile. CURRENTLY UNUSED at L1: the biome
+// wash + the per-level motif sprite were double-encoding resource type and made the map read busy,
+// so drawTileL1 dropped the wash (resource type is carried entirely by the motif now) and the ground
+// stays the plain terrain tint. Palette kept here in case biome location is wanted back at the L2/L3
+// overview zoom (where no motif is drawn). If reused, must match the map-editor's tileStyle.ts (parity).
 export const RES_TEX_TINT: Record<string, number> = {
   paper:    0xf1e6c0, // warm straw
   ink:      0xc6cfe8, // cool periwinkle
