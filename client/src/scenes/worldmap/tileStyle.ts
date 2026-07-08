@@ -39,14 +39,16 @@ export const RES_COLORS: Record<string, number> = {
 
 /**
  * Per-terrain opacity for the L1 ground texture fill. Most terrain draws near-opaque
- * (DEFAULT), but the dark, busy obstacle weaves (mountain / river) are pushed down so they
- * recede into the paper instead of pulling the eye to the map edges, where impassable
- * bands tend to cluster. Any terrain not listed uses TERRAIN_TEX_ALPHA_DEFAULT.
+ * (DEFAULT); the busy obstacle weaves (mountain / river) draw a little softer so they still
+ * recede into the paper rather than pulling the eye to the map edges where impassable bands
+ * cluster. Nudged 0.5→0.68 (2026-07-08): 0.5 washed the hand-drawn rock/wave texture almost
+ * flat — mountains read as a pale wash next to the crisp opaque gate/land tiles — so obstacles
+ * now keep visible texture while staying below land. Any terrain not listed uses the DEFAULT.
  */
 export const TERRAIN_TEX_ALPHA_DEFAULT = 0.85; // nudged down from 0.9 so the warm paper breathes through
 export const TERRAIN_TEX_ALPHA: Partial<Record<TerrainTextureName, number>> = {
-  terrain_mountain: 0.5,
-  terrain_river:    0.5,
+  terrain_mountain: 0.68,
+  terrain_river:    0.68,
 };
 
 /**
@@ -74,8 +76,8 @@ export const RES_TEX_TINT: Record<string, number> = {
 export const TERRAIN_TEX_TINT_DEFAULT = 0xffffff;
 export const TERRAIN_TEX_TINT: Partial<Record<TerrainTextureName, number>> = {
   terrain_grass:      0xe2ead4, // generic land / grass — faint warm sage
-  terrain_river:      0xcfe0ec, // river — faint cool blue (also drawn at 0.5 alpha → very soft)
-  terrain_mountain:   0xdccbb4, // mountain — faint warm taupe (also at 0.5 alpha)
+  terrain_river:      0xcfe0ec, // river — faint cool blue (also drawn at 0.68 alpha → soft)
+  terrain_mountain:   0xc9ccd0, // mountain — cool stone grey (2026-07-08: was warm taupe 0xdccbb4, which skewed pink on the warm paper and didn't read as rock; also at 0.68 alpha)
   terrain_gate:       0xe9dabb, // pass / bridge — soft tan
   terrain_keep:       0xeeddb0, // chokepoint keep — warm amber
   terrain_center:     0xf2e6ad, // world center — soft gold

@@ -216,3 +216,5 @@ npm run start   # webpack dev server，端口 9095
 - 编辑器的 `PIXI.Application` 背景色曾是 **深色 `0x11111b`**，瓦片下也没有任何不透明纸底。0.5 半透明的障碍瓦片直接把深色背景透上来 → 手绘岩石/波浪纹理被压暗、对比度砍半，塌成一块近乎纯色的**暗块** → 用户看到的"山/河图片素材没显示"。草地/资源格是 0.85 近乎不透明，所以不受影响。
 
 **修复（`tools/map-editor/src/index.ts`，仅动编辑器、不动客户端）**：把 `PIXI.Application` 背景色改成 `0xf5f0e8`，并在 `worldLayer` 之下加一层屏幕固定的纸背景 Graphics（淡蓝横向格线 `0xb9cfe4`，行距 `round(VIEW_H/28)`，无红色左边线），复刻客户端 `buildPaperBackground(marginLine:false)`。实机验证（9095）：山块变浅暖 taupe 且岩石纹理可辨、河块变浅蓝且水波可辨，与游戏内一致。**教训**：SLG 地图 parity 不只是图集/投影，"瓦片背后铺什么底"同样是 parity 的一部分——半透明地形对背景色敏感。
+
+**后续调参：山/河透明度 0.5→0.68 + 山改冷石灰（2026-07-08）**：背景修好后山/河不再是暗块，但 0.5 透明把手绘纹理压得太平、且暖 taupe 在暖米纸上偏成粉色，读不出「石头」。用户拍板方向"提透明度+改冷石灰色"。改**共享 `tileStyle.ts`（客户端+编辑器两份同步，parity）**：`TERRAIN_TEX_ALPHA` mountain/river `0.5→0.68`（纹理读得出、仍比陆地软）；`TERRAIN_TEX_TINT` mountain `0xdccbb4`(暖 taupe)→`0xc9ccd0`(冷石灰)，river tint 保持冷蓝 `0xcfe0ec`。实机验证：山块变冷灰石色、岩石纹理清晰，与草地(绿)/关隘(棕)区分明显。

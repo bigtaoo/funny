@@ -31,8 +31,10 @@ export const RES_COLORS: Record<string, number> = {
 // dark; mountain/river also drop to 0.5 alpha so obstacle weaves recede into the paper.
 export const TERRAIN_TEX_ALPHA_DEFAULT = 0.85;
 export const TERRAIN_TEX_ALPHA: Partial<Record<TerrainTextureName, number>> = {
-  terrain_mountain: 0.5,
-  terrain_river:    0.5,
+  // 0.5→0.68 (2026-07-08): 0.5 washed the hand-drawn rock/wave texture almost flat; obstacles now
+  // keep visible texture while staying softer than land. Mirrors the game client's tileStyle.ts (parity).
+  terrain_mountain: 0.68,
+  terrain_river:    0.68,
 };
 
 // Per-resource biome tint for the ground of a `resource` tile. CURRENTLY UNUSED: the biome wash +
@@ -51,8 +53,8 @@ export const RES_TEX_TINT: Record<string, number> = {
 export const TERRAIN_TEX_TINT_DEFAULT = 0xffffff;
 export const TERRAIN_TEX_TINT: Partial<Record<TerrainTextureName, number>> = {
   terrain_grass:      0xe2ead4, // generic land / grass — faint warm sage
-  terrain_river:      0xcfe0ec, // river — faint cool blue (also at 0.5 alpha)
-  terrain_mountain:   0xdccbb4, // mountain — faint warm taupe (also at 0.5 alpha)
+  terrain_river:      0xcfe0ec, // river — faint cool blue (also at 0.68 alpha)
+  terrain_mountain:   0xc9ccd0, // mountain — cool stone grey (2026-07-08: was warm taupe 0xdccbb4, skewed pink; also at 0.68 alpha)
   terrain_gate:       0xe9dabb, // pass / bridge — soft tan
   terrain_keep:       0xeeddb0, // chokepoint keep — warm amber
   terrain_center:     0xf2e6ad, // world center — soft gold
