@@ -61,9 +61,14 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
 const [W, H] = [800, 1280];
 
 /** Minimal WorldApiClient stub. Any unlisted method throws synchronously if
- *  called, which the scenes' loadData() try/catch already tolerates. */
+ *  called, which the scenes' loadData() try/catch already tolerates. Exception:
+ *  the auction create-form's ref-band fetch (de5832ba) fires inside openCreateForm,
+ *  OUTSIDE loadData's try/catch, so getAuctionRefBand must be stubbed or the caret
+ *  test throws before it can assert (mirrors auctionScene.ui.ts's stub). */
 function stubWorldApi(): WorldApiClient {
-  return {} as unknown as WorldApiClient;
+  return {
+    getAuctionRefBand: async () => ({ ref: 10, floor: 5, ceil: 20 }),
+  } as unknown as WorldApiClient;
 }
 
 /** All PIXI.Text content currently in the display tree, recursing sub-containers. */
