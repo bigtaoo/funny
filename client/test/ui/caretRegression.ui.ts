@@ -283,9 +283,11 @@ describe('FriendsScene — family/sect/world tab carets', () => {
     const scene = build();
     enterSlgTab(scene, 'world');
     scene.render();
-    // The input hit is the wide field pinned bottom-left; the send button sits to its right.
+    // The input hit is the wide field pinned to the bottom of the content column; the send
+    // button sits to its right. Exclude the vertical tab rail (x === 0, left of the binding
+    // line) so "leftmost bottom hit" resolves to the input field, not a rail cell.
     const hits = scene.hits as Array<{ rect: { x: number; y: number; w: number; h: number }; fn: () => void }>;
-    const bottom = hits.filter((hh) => hh.rect.y > H * 0.8);
+    const bottom = hits.filter((hh) => hh.rect.y > H * 0.8 && hh.rect.x > 0);
     const inputHit = bottom.reduce((a, b) => (b.rect.x < a.rect.x ? b : a));
     inputHit.fn(); // simulate the tap
 
