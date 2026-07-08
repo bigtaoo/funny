@@ -6,7 +6,7 @@ import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
 import type { CardInstance } from '../../game/meta/SaveData';
 import { CARD_DEFS } from '../../game/meta/cardDefs';
-import { type Constructor, type CardSceneBaseCtor, HUD_H, MODAL_DIM } from './base';
+import { type Constructor, type CardSceneBaseCtor, MODAL_DIM } from './base';
 
 export interface FeedHandlers {
   openFeedSelect(target: CardInstance): void;
@@ -45,7 +45,7 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         const rowH = 44;
         const mh = Math.min(60 + candidates.length * rowH + 56, h - 60);
         const mx = (w - mw) / 2;
-        const my = Math.max(HUD_H + 4, (h - mh) / 2);
+        const my = Math.max(this.headerH + 4, (h - mh) / 2);
 
         const dim = new PIXI.Graphics();
         dim.beginFill(MODAL_DIM, 0.45).drawRect(0, 0, w, h).endFill();

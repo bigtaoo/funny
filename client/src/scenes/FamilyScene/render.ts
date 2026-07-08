@@ -4,7 +4,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor, marginLineX } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
 import { caretDisplay } from '../../render/inputDisplay';
-import { type Constructor, type FamilySceneBaseCtor, type FamilyTab, ROW_H, HUD_H } from './base';
+import { type Constructor, type FamilySceneBaseCtor, type FamilyTab, ROW_H } from './base';
 
 export interface RenderHandlers {
   renderLoading(): void;
@@ -50,48 +50,48 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       const { w, h } = this;
 
       const lbl1 = txt(t('family.name') + ':', 13, C.dark);
-      lbl1.x = 20; lbl1.y = HUD_H + 20;
+      lbl1.x = 20; lbl1.y = this.headerH + 20;
       this.bodyLayer.addChild(lbl1);
 
       const nameField = sketchPanel(w - 120, 32, { fill: 0xfaf9f5, border: this.createField === 'name' ? C.accent : C.mid, seed: seedFor(0, 0, w - 120) });
-      nameField.x = 100; nameField.y = HUD_H + 14;
+      nameField.x = 100; nameField.y = this.headerH + 14;
       this.bodyLayer.addChild(nameField);
       const nl = txt(caretDisplay(this.createName, this.createField === 'name' && this.caretOn, ' '), 13, C.dark);
-      nl.x = 108; nl.y = HUD_H + 22;
+      nl.x = 108; nl.y = this.headerH + 22;
       this.bodyLayer.addChild(nl);
-      this.hitRects.push({ rect: { x: 100, y: HUD_H + 14, w: w - 120, h: 32 }, action: () => this.openInputFor('name') });
+      this.hitRects.push({ rect: { x: 100, y: this.headerH + 14, w: w - 120, h: 32 }, action: () => this.openInputFor('name') });
 
       const lbl2 = txt(t('family.tag') + ':', 13, C.dark);
-      lbl2.x = 20; lbl2.y = HUD_H + 70;
+      lbl2.x = 20; lbl2.y = this.headerH + 70;
       this.bodyLayer.addChild(lbl2);
 
       const tagField = sketchPanel(100, 32, { fill: 0xfaf9f5, border: this.createField === 'tag' ? C.accent : C.mid, seed: seedFor(1, 0, 100) });
-      tagField.x = 100; tagField.y = HUD_H + 64;
+      tagField.x = 100; tagField.y = this.headerH + 64;
       this.bodyLayer.addChild(tagField);
       const tl = txt(caretDisplay(this.createTag, this.createField === 'tag' && this.caretOn, ' '), 13, C.dark);
-      tl.x = 108; tl.y = HUD_H + 72;
+      tl.x = 108; tl.y = this.headerH + 72;
       this.bodyLayer.addChild(tl);
-      this.hitRects.push({ rect: { x: 100, y: HUD_H + 64, w: 100, h: 32 }, action: () => this.openInputFor('tag') });
+      this.hitRects.push({ rect: { x: 100, y: this.headerH + 64, w: 100, h: 32 }, action: () => this.openInputFor('tag') });
 
       const hint = txt('[A-Z0-9] 2-5 chars', 11, C.mid);
-      hint.x = 210; hint.y = HUD_H + 72;
+      hint.x = 210; hint.y = this.headerH + 72;
       this.bodyLayer.addChild(hint);
 
       const okBtn = sketchPanel(100, 34, { fill: C.dark, border: C.accent, seed: seedFor(0, 0, 100) });
-      okBtn.x = w / 2 - 110; okBtn.y = HUD_H + 120;
+      okBtn.x = w / 2 - 110; okBtn.y = this.headerH + 120;
       this.bodyLayer.addChild(okBtn);
       const ok = txt(t('family.create'), 13, C.light);
-      ok.anchor.set(0.5, 0.5); ok.x = w / 2 - 60; ok.y = HUD_H + 137;
+      ok.anchor.set(0.5, 0.5); ok.x = w / 2 - 60; ok.y = this.headerH + 137;
       this.bodyLayer.addChild(ok);
-      this.hitRects.push({ rect: { x: w / 2 - 110, y: HUD_H + 120, w: 100, h: 34 }, action: () => void this.doCreate() });
+      this.hitRects.push({ rect: { x: w / 2 - 110, y: this.headerH + 120, w: 100, h: 34 }, action: () => void this.doCreate() });
 
       const cancelBtn = sketchPanel(100, 34, { fill: 0xeeeeee, border: C.mid, seed: seedFor(1, 0, 100) });
-      cancelBtn.x = w / 2 + 10; cancelBtn.y = HUD_H + 120;
+      cancelBtn.x = w / 2 + 10; cancelBtn.y = this.headerH + 120;
       this.bodyLayer.addChild(cancelBtn);
       const ca = buildIcon('close', 15, C.dark);
-      ca.x = w / 2 + 60 - 7.5; ca.y = HUD_H + 137 - 7.5;
+      ca.x = w / 2 + 60 - 7.5; ca.y = this.headerH + 137 - 7.5;
       this.bodyLayer.addChild(ca);
-      this.hitRects.push({ rect: { x: w / 2 + 10, y: HUD_H + 120, w: 100, h: 34 }, action: () => { this.mode = 'noFamily'; this.render(); } });
+      this.hitRects.push({ rect: { x: w / 2 + 10, y: this.headerH + 120, w: 100, h: 34 }, action: () => { this.mode = 'noFamily'; this.render(); } });
     }
 
     renderMyFamily(): void {
@@ -108,15 +108,15 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
         const active = tab === this.activeTab;
         const tx = left + i * tabW;
         const tp = sketchPanel(tabW, 36, { fill: active ? C.paper : 0xddddcc, border: C.mid, seed: seedFor(i, 0, tabW) });
-        tp.x = tx; tp.y = HUD_H;
+        tp.x = tx; tp.y = this.headerH;
         this.bodyLayer.addChild(tp);
         const tl = txt(t(tab === 'members' ? 'family.tabMembers' : 'family.channel'), 13, active ? C.accent : C.dark);
-        tl.anchor.set(0.5, 0.5); tl.x = tx + tabW / 2; tl.y = HUD_H + 18;
+        tl.anchor.set(0.5, 0.5); tl.x = tx + tabW / 2; tl.y = this.headerH + 18;
         this.bodyLayer.addChild(tl);
-        this.hitRects.push({ rect: { x: tx, y: HUD_H, w: tabW, h: 36 }, action: () => { this.activeTab = tab; this.scrollY = 0; this.render(); } });
+        this.hitRects.push({ rect: { x: tx, y: this.headerH, w: tabW, h: 36 }, action: () => { this.activeTab = tab; this.scrollY = 0; this.render(); } });
       }
 
-      const contentY = HUD_H + 36;
+      const contentY = this.headerH + 36;
       const contentH = h - contentY - 10;
 
       if (this.activeTab === 'members') {

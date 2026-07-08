@@ -6,7 +6,7 @@ import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor, marginLineX } from '../../render/sketchUi';
 import type { SaveData, EquipSlot, CardInstance } from '../../game/meta/SaveData';
 import { CARD_DEFS, cardPower } from '../../game/meta/cardDefs';
-import { type Constructor, type EquipmentSceneBaseCtor, HUD_H, RES_H, ROW_H, SLOTS } from './base';
+import { type Constructor, type EquipmentSceneBaseCtor, RES_H, ROW_H, SLOTS } from './base';
 
 export interface AssignHandlers {
   renderAssign(save: SaveData): void;
@@ -56,7 +56,7 @@ export function AssignMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       const slot = this.assign.slot;
 
       const sidebarW = marginLineX(w);
-      const top = HUD_H;
+      const top = this.headerH;
       const barBg = new PIXI.Graphics();
       barBg.beginFill(0xf3f1ea).drawRect(sidebarW, top, w - sidebarW, RES_H).endFill();
       this.bodyLayer.addChild(barBg);

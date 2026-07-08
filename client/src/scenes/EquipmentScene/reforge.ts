@@ -5,7 +5,7 @@ import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { withTimeout, TimeoutError } from '../../ui/busyTracker';
 import type { EquipmentInstance } from '../../game/meta/SaveData';
 import { getEquipDef, REFORGE_MATERIAL_RARITY } from '../../game/meta/equipmentDefs';
-import { type Constructor, type EquipmentSceneBaseCtor, HUD_H, RARITY_COLOR } from './base';
+import { type Constructor, type EquipmentSceneBaseCtor, RARITY_COLOR } from './base';
 
 export interface ReforgeHandlers {
   openReforgeSelect(target: EquipmentInstance): void;
@@ -35,7 +35,7 @@ export function ReforgeMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase):
       const rowH = 48;
       const mh = Math.min(60 + candidates.length * rowH + 40, h - 80);
       const mx = (w - mw) / 2;
-      const my = Math.max(HUD_H + 4, (h - mh) / 2);
+      const my = Math.max(this.headerH + 4, (h - mh) / 2);
 
       const dim = new PIXI.Graphics();
       dim.beginFill(0x000000, 0.45).drawRect(0, 0, w, h).endFill();

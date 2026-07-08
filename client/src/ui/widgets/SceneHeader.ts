@@ -214,9 +214,11 @@ function buildChrome(
  * @param title Already-translated scene title, or `null` when the scene draws
  *   its own title (e.g. a raised title above a subtitle) — only the bar +
  *   back glyph are rendered.
- * @param opts.headerH Override the bar height (rare; defaults to {@link sceneHeaderHeight}).
- *   The SLG/editor scenes pass their own fixed bar height here so their body
- *   layout (laid out below a fixed `HUD_H`/`HEADER_H` constant) stays put.
+ * @param opts.headerH Override the bar height (defaults to {@link sceneHeaderHeight}).
+ *   Retained as API but **no scene ships an override** as of the 07–08.07.2026
+ *   header-height-unification pass — every secondary scene uses the default so the
+ *   title row reads at one height app-wide (each lays its body out below the returned
+ *   `hdr.headerH`, no longer a per-scene fixed `HUD_H`/`HEADER_H` constant).
  * @param opts.titleSize Override the title font size (defaults to 3.4% of height).
  * @param opts.variant Bar styling — see {@link SceneHeaderVariant} (default 'paper').
  * @param opts.accent Category accent colour for the bottom rule (defaults to the

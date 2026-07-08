@@ -11,7 +11,7 @@ import {
   EQUIP_MAX_LEVEL, SALVAGE_MAX_LEVEL, REFORGE_MATERIAL_RARITY, PROTECT_ENHANCE_ITEM_ID,
 } from '../../game/meta/equipmentDefs';
 import { buildIcon, type IconKind } from '../../render/icons';
-import { type Constructor, type EquipmentSceneBaseCtor, HUD_H, RARITY_COLOR } from './base';
+import { type Constructor, type EquipmentSceneBaseCtor, RARITY_COLOR } from './base';
 
 /** Affix id (strip m_/s_/k_ prefix) → stat icon kind; returns null for unknown affixes. */
 function affixIconKind(affixId: string): IconKind | null {
@@ -51,7 +51,7 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       // Extra 22px for the protect-item row when not max level
       const mh = 64 + affixCount * 20 + (maxed ? 24 : 64 + 22) + 44 + 24;
       const mx = (w - mw) / 2;
-      const my = Math.max(HUD_H + 4, (h - mh) / 2);
+      const my = Math.max(this.headerH + 4, (h - mh) / 2);
 
       const dim = new PIXI.Graphics();
       dim.beginFill(0x000000, 0.45).drawRect(0, 0, w, h).endFill();
