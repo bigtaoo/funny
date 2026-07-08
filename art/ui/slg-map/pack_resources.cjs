@@ -39,6 +39,7 @@ const BAKE = [
   { type: 'paper',    token: 'res_paper',    bgA: 'resbg_paper_a',    bgB: 'resbg_paper_b'    },
   { type: 'ink',      token: 'res_ink',      bgA: 'resbg_ink_a',      bgB: 'resbg_ink_b'      },
   { type: 'graphite', token: 'res_graphite', bgA: 'resbg_graphite_a', bgB: 'resbg_graphite_b' },
+  { type: 'metal',    token: 'res_metal',    bgA: 'resbg_metal_a',    bgB: 'resbg_metal_b'    },
 ];
 // Dice-pip slot layouts, as (fx,fy) fractions of the background box. Count = level.
 // Slots sit inside the tray's interior; composited back-to-front (top rows first).
@@ -103,9 +104,9 @@ async function tintLevelFrame(sprite) {
   const m = /_l(\d+)$/.exec(sprite.name);
   if (!m) return sprite;
   const lv = Number(m[1]);
-  // paper/ink/graphite l6–10 are bespoke hand-drawn art — keep their original colours (they read by
+  // paper/ink/graphite/metal l6–10 are bespoke hand-drawn art — keep their original colours (they read by
   // silhouette, not band). Their l1–5 (baked count trays) still get the band: that's the low-tier hue cue.
-  if (/^res_(paper|ink|graphite)_/.test(sprite.name) && lv >= 6) return sprite;
+  if (/^res_(paper|ink|graphite|metal)_/.test(sprite.name) && lv >= 6) return sprite;
   const { data, info } = await sharp(sprite.buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   applyBand(data, info.width, info.height, lv);
   const buf = await sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
@@ -151,9 +152,8 @@ async function bakeHeapFrames(type, tokenFile) {
   return out;
 }
 
-// Synthetic per-level heaps for the single-motif types (paper keeps its bespoke trays + real art).
+// Synthetic per-level heaps for the single-motif types (paper/ink/graphite/metal all have bespoke trays + real art now).
 const HEAP_TYPES = [
-  { type: 'metal',    token: 'res_metal' },
   // sticker/铜矿 = only l6–10 bespoke art (§5.7-sticker) — no synthetic heaps, no l1–5 (map only spawns it on lvl≥6).
 ];
 
