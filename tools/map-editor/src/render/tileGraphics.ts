@@ -36,11 +36,13 @@ export function drawEditorTile(g: PIXI.Graphics, tile: ProceduralTile, texName: 
   g.drawPolygon(diamondPath(tp - 1));
   g.endFill();
 
-  // Resource motif overlay intentionally omitted: with resourceDensity=1.0 (ADR-032) every
-  // open tile is a resource tile, so painting a motif per tile carpeted the whole map with
-  // near-identical heaps ("太奇怪"). Tile info is carried by the terrain atlas image alone;
-  // the drawResMotif helper is kept below for a future per-biome ground-art pass. Must stay in
+  // Resource motif overlay: with resourceDensity=1.0 (ADR-032) every open tile is a resource
+  // tile, so this paints a per-level heap on every one of them — dense by design, so the freshly
+  // baked l1–l10 graded art (taller/denser = higher level) actually reads on the map. Must stay in
   // lockstep with the game client's drawTileL1 (SLG map render parity).
+  if (tile.type === 'resource' && tile.resType) {
+    drawResMotif(g, tile.resType, tile.level, tp);
+  }
 
   if (tile.type === 'familyKeep' || tile.type === 'stronghold') {
     placeBuildingSprite(g, tile.type === 'familyKeep' ? 'building_keep' : 'building_stronghold', hh, tp * 1.3);

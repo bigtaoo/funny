@@ -42,11 +42,17 @@ export function drawTileL1(
   g.drawPolygon(diamondPath(tp - 1));
   g.endFill();
 
-  // Resource motif overlay intentionally omitted: with resourceDensity=1.0 (ADR-032) every
-  // open tile is a resource tile, so a motif per tile carpeted the whole map with near-identical
-  // heaps. Tile info is carried by the terrain atlas image alone; drawResMotif is kept below for a
-  // future per-biome ground-art pass. Must stay in lockstep with the map-editor's drawEditorTile
-  // (SLG map render parity).
+  // Resource motif overlay: with resourceDensity=1.0 (ADR-032) every open tile is a resource tile,
+  // so this paints a per-level heap on every one — dense by design, so the l1–l10 graded art
+  // (taller/denser = higher level) reads on the map. Drawn BEFORE the fog return with fogged=false
+  // always: resType is terrain, and §18.6 keeps the full resource art (incl. level detail) visible
+  // even under fog (the "hide level outside vision" narrowing was abolished). The motif is an
+  // addChild sprite, so it renders above the fog wash drawn on this Graphics' own polygon.
+  // Must stay in lockstep with the map-editor's drawEditorTile (SLG map render parity).
+  const motifResType = tile?.type === 'resource' ? tile.resType : (!tile && proc?.type === 'resource' ? proc.resType : undefined);
+  if (motifResType) {
+    drawResMotif(g, motifResType, tile?.level ?? proc?.level ?? 1, tp, false);
+  }
 
   // Overlay landmark buildings for chokepoints / NPC strongholds. Like the ground texture,
   // these are TERRAIN features (their type is procedural, visible map-wide), so they draw
