@@ -29,7 +29,7 @@ function _obstacle(kind: ObstacleKind): ProceduralTile {
 /**
  * Biome: low-frequency noise divides the map into four large land-resource zones (ink/paper/graphite/metal), encouraging resource
  * specialization and cross-zone trade (geographic foundation for the U1 auction economy). graphite is the 4th land resource (ADR-022);
- * `sticker` is never biome-generated (home-city self-produced).
+ * `sticker` is never biome-generated here — it is placed as a level-gated 铜矿 override in {@link resTypeFor}.
  */
 export function biomeAt(x: number, y: number, seed: number): ResourceType {
   const n = valueNoise(x, y, SLG_GEN.biomeFreq, seed ^ 0x0444);
@@ -37,6 +37,19 @@ export function biomeAt(x: number, y: number, seed: number): ResourceType {
   if (n < SLG_GEN.biomePaperMax) return 'paper';
   if (n < SLG_GEN.biomeGraphiteMax) return 'graphite';
   return 'metal';
+}
+
+/**
+ * Resource type for a `resource` tile, with the 铜矿 (copper mine) level gate: `sticker` appears ONLY on tiles at
+ * level ≥ SLG_GEN.copperMinLevel (三战 rule: 铜矿 is a 6级地及以上 special, SGZ_LAND_REFERENCE §3). On an eligible
+ * tile a per-tile hash draw < copperShare overrides the biome land resource with `sticker`; otherwise the four biome
+ * land resources apply. The gate MUST hold — the art ships sticker frames l6–10 only (slg-resource-art §5.7-sticker),
+ * so a sub-l6 sticker tile would fall back to the raw motif. Applied to plain resource tiles only (strategic tiles —
+ * stronghold/familyKeep/center — keep their biome land resource and render as buildings, not resource motifs).
+ */
+export function resTypeFor(x: number, y: number, seed: number, level: number): ResourceType {
+  if (level >= SLG_GEN.copperMinLevel && rand2(x, y, seed ^ 0x0c0e) < SLG_GEN.copperShare) return 'sticker';
+  return biomeAt(x, y, seed);
 }
 
 // ── Terrain (ADR-034 §2.2/§2.3): ring boundary bands + river chords + birth-province branches ──────────
@@ -354,7 +367,7 @@ export function proceduralTile(world: string, x: number, y: number): ProceduralT
   // Resource tile vs neutral open land
   const occ = rand2(x, y, seed ^ 0x0333);
   if (occ < SLG_GEN.resourceDensity) {
-    return { type: 'resource', level, resType: biomeAt(x, y, seed) };
+    return { type: 'resource', level, resType: resTypeFor(x, y, seed, level) };
   }
   return { type: 'neutral', level: Math.min(level, SLG_GEN.neutralLevelCap) };
 }

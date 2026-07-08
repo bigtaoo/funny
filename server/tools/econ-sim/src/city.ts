@@ -46,6 +46,14 @@ import {
 
 const RESOURCE_TYPES: ResourceType[] = ['ink', 'paper', 'graphite', 'metal', 'sticker'];
 
+// Map 铜矿 (copper mine) faucet: the generator places `sticker` only on resource tiles at level ≥
+// SLG_GEN.copperMinLevel, on ~SLG_GEN.copperShare of those eligible high tiles (mapgen.ts resTypeFor).
+// Copper tiles yield sticker like any tile — RESOURCE_YIELD_BASE × level × (1 + nation bonus) — but get NO
+// resource-building multiplier (buildingYieldMult('sticker') === 1) and are ADDED to stickerShop self-production
+// (coreYield recomputeYield). avgCopperLevel is the mean of the ≥6 level band: weighted ~6.9 from the per-level
+// distribution (l6 most common → l10 rarest, full-map scan), constant here since copper is level-gated.
+const COPPER_AVG_LEVEL = 6.9;
+
 /** Sum of buildCost over every level step 2..max for one building (start level is always 1). */
 function totalCostToMax(key: BuildingKey, maxLevel: number): Partial<Record<ResourceType, number>> {
   const out: Partial<Record<ResourceType, number>> = {};
@@ -111,6 +119,7 @@ export function maxLevelEffects() {
     trainFloorBitesAtLevel: floorLevel,                       // levels beyond this give no speed
     queueAtMax: trainQueueMaxFor(maxed),                      // training queue slots
     stickerFaucetAtMax: STICKER_SELF_BASE * DESK_MAX_LEVEL,   // sticker/h at stickerShop max
+    copperTileYield: Math.round(RESOURCE_YIELD_BASE * COPPER_AVG_LEVEL * (1 + NATION_BONUS_PRODUCTION)), // sticker/h per held 铜矿 tile (avg ≥6 level, +nation)
   };
 }
 
@@ -126,6 +135,11 @@ export interface IncomeProfile {
   avgTileLevel: number;
   /** Average resource-building level during the grind (city is mid-built); drives buildingMult. */
   avgBuildingLevel: number;
+  /**
+   * Occupied map 铜矿 (sticker) tiles held — the ≥6 tiles that rolled copper (≈ held ≥6 tiles × SLG_GEN.copperShare).
+   * Level-gated at ≥ copperMinLevel, so low-avgTileLevel profiles hold ~none. Unpinned assumption, like `tiles`.
+   */
+  copperTiles?: number;
 }
 
 export function hourlyIncome(p: IncomeProfile): Partial<Record<ResourceType, number>> {
@@ -135,8 +149,11 @@ export function hourlyIncome(p: IncomeProfile): Partial<Record<ResourceType, num
   for (const rt of RESOURCE_TYPES) {
     const tiles = p.tiles[rt] ?? 0;
     if (rt === 'sticker') {
-      // sticker has NO map tile — faucet is stickerShop self-production only (mid-build level).
-      out[rt] = Math.round(STICKER_SELF_BASE * p.avgBuildingLevel * 0.5);
+      // sticker faucet = stickerShop self-production (baseline, mid-grind avg level) + map 铜矿 tiles.
+      // Copper tiles get nation bonus but NO building multiplier (buildingYieldMult('sticker')===1); additive.
+      const stickerShopSelf = STICKER_SELF_BASE * p.avgBuildingLevel * 0.5;
+      const copper = (p.copperTiles ?? 0) * RESOURCE_YIELD_BASE * COPPER_AVG_LEVEL * nation;
+      out[rt] = Math.round(stickerShopSelf + copper);
     } else {
       out[rt] = Math.round(tiles * RESOURCE_YIELD_BASE * p.avgTileLevel * midMult * nation);
     }
@@ -156,10 +173,13 @@ export function daysToMax(p: IncomeProfile, totals: CityTotals): Partial<Record<
   return out;
 }
 
+// copperTiles scales with how many ≥6 tiles the profile plausibly holds (copper is level-gated): casual works
+// low-level land near its capital → ~none; active pushes into a few ≥6 tiles → ~1; hardcore holds a real
+// high-tier footprint → ~4 (≈ its ≥6 tiles × copperShare). Unpinned assumptions, like the biome tile counts.
 export const INCOME_PROFILES: IncomeProfile[] = [
-  { label: 'casual',   tiles: { ink: 4, paper: 8,  graphite: 4, metal: 4 },  avgTileLevel: 2, avgBuildingLevel: 4 },
-  { label: 'active',   tiles: { ink: 6, paper: 14, graphite: 6, metal: 6 },  avgTileLevel: 4, avgBuildingLevel: 8 },
-  { label: 'hardcore', tiles: { ink: 8, paper: 25, graphite: 10, metal: 10 }, avgTileLevel: 6, avgBuildingLevel: 12 },
+  { label: 'casual',   tiles: { ink: 4, paper: 8,  graphite: 4, metal: 4 },  avgTileLevel: 2, avgBuildingLevel: 4,  copperTiles: 0 },
+  { label: 'active',   tiles: { ink: 6, paper: 14, graphite: 6, metal: 6 },  avgTileLevel: 4, avgBuildingLevel: 8,  copperTiles: 1 },
+  { label: 'hardcore', tiles: { ink: 8, paper: 25, graphite: 10, metal: 10 }, avgTileLevel: 6, avgBuildingLevel: 12, copperTiles: 4 },
 ];
 
 /** Army-training pacing: time + ink to fill the drillYard-max troop cap, and coin-to-skip. */
