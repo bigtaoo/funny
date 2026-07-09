@@ -149,11 +149,20 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
     });
   }
 
-  function goFamilyHub(worldApi: WorldApiClient, worldId: string): void {
+  // onExit is where the whole social hub (friends/family/sect/world/mail) returns to when the
+  // user backs all the way out — the scene that originally opened it (lobby / world map / ...).
+  // Defaults to the world map since that's the only entry point today that doesn't thread one
+  // through (e.g. a future direct "family" button on the map itself).
+  function goFamilyHub(worldApi: WorldApiClient, worldId: string, onExit: () => void = () => goWorldMap(worldApi, worldId)): void {
     const myAccountId = platform.storage.getItem('nw_account_id') ?? '';
     views.showFamily({
-      onBack() { goWorldMap(worldApi, worldId); },
-      onOpenSect() { goSectHub(worldApi, worldId); },
+      onBack: onExit,
+      onOpenSect() { goSectHub(worldApi, worldId, onExit); },
+      onNavTab(tab) {
+        if (tab === 'family') return;
+        if (tab === 'sect') { goSectHub(worldApi, worldId, onExit); return; }
+        nav.goFriends({ defaultTab: tab, onBack: onExit });
+      },
       worldApi,
       worldId,
       myAccountId,
@@ -161,10 +170,15 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
     });
   }
 
-  function goSectHub(worldApi: WorldApiClient, worldId: string): void {
+  function goSectHub(worldApi: WorldApiClient, worldId: string, onExit: () => void = () => goWorldMap(worldApi, worldId)): void {
     const myAccountId = platform.storage.getItem('nw_account_id') ?? '';
     const view = views.showSect({
-      onBack() { goFamilyHub(worldApi, worldId); },
+      onBack: onExit,
+      onNavTab(tab) {
+        if (tab === 'sect') return;
+        if (tab === 'family') { goFamilyHub(worldApi, worldId, onExit); return; }
+        nav.goFriends({ defaultTab: tab, onBack: onExit });
+      },
       worldApi,
       worldId,
       myAccountId,

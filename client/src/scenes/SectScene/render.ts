@@ -2,9 +2,10 @@
 // families + channel tabs) plus the small center-message / center-button / bottom-bar-button helpers.
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
-import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor, marginLineX } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
 import { caretDisplay } from '../../render/inputDisplay';
+import { drawSocialTabRail } from '../../render/socialTabRail';
 import { type Constructor, type SectSceneBaseCtor, type SectTab, ROW_H } from './base';
 
 export interface RenderHandlers {
@@ -104,19 +105,26 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       if (!this.sect) return;
       const { w, h } = this;
 
-      // Tab bar
+      // Social hub rail (friends/family/sect/world/mail) in the left margin gutter — keeps the
+      // other 4 tabs visible instead of them "vanishing" when this scene replaces FriendsScene.
+      const railHits = drawSocialTabRail(this.bodyLayer, w, h, this.headerH, 'sect', {}, (tab) => this.cb.onNavTab(tab));
+      this.hitRects.push(...railHits.map((hit) => ({ rect: hit.rect, action: hit.fn })));
+      const left = marginLineX(w);
+
+      // Tab bar — starts to the right of the rail, same convention as FamilyScene.
       const tabs: SectTab[] = ['families', 'channel'];
-      const tabW = w / tabs.length;
+      const tabW = (w - left) / tabs.length;
       for (let i = 0; i < tabs.length; i++) {
         const tab = tabs[i]!;
         const active = tab === this.activeTab;
+        const tx = left + i * tabW;
         const tp = sketchPanel(tabW, 36, { fill: active ? C.paper : 0xddddcc, border: C.mid, seed: seedFor(i, 0, tabW) });
-        tp.x = i * tabW; tp.y = this.headerH;
+        tp.x = tx; tp.y = this.headerH;
         this.bodyLayer.addChild(tp);
         const tl = txt(t(tab === 'families' ? 'sect.tabFamilies' : 'sect.tabChannel'), 13, active ? C.accent : C.dark);
-        tl.anchor.set(0.5, 0.5); tl.x = i * tabW + tabW / 2; tl.y = this.headerH + 18;
+        tl.anchor.set(0.5, 0.5); tl.x = tx + tabW / 2; tl.y = this.headerH + 18;
         this.bodyLayer.addChild(tl);
-        this.hitRects.push({ rect: { x: i * tabW, y: this.headerH, w: tabW, h: 36 }, action: () => { this.activeTab = tab; this.scrollY = 0; this.render(); } });
+        this.hitRects.push({ rect: { x: tx, y: this.headerH, w: tabW, h: 36 }, action: () => { this.activeTab = tab; this.scrollY = 0; this.render(); } });
       }
 
       const contentY = this.headerH + 36;
@@ -132,6 +140,7 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
     renderFamilies(y0: number, maxH: number): void {
       if (!this.sect) return;
       const { w } = this;
+      const left = marginLineX(w);
       const sect = this.sect;
 
       // Sect summary line (name [tag] · families · prosperity).
@@ -139,7 +148,7 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
         `[${sect.tag}] ${sect.name}   ${t('sect.families', { n: sect.memberFamilyCount })}   ${t('sect.prosperity', { n: sect.prosperity })}`,
         12, C.mid,
       );
-      summary.x = 12; summary.y = y0;
+      summary.x = left + 12; summary.y = y0;
       this.bodyLayer.addChild(summary);
 
       // Removal vote banner.
@@ -154,7 +163,7 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
           }),
           11, C.red,
         );
-        banner.x = 12; banner.y = listTop;
+        banner.x = left + 12; banner.y = listTop;
         this.bodyLayer.addChild(banner);
         listTop += 20;
       }
@@ -170,19 +179,19 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
           const isLeaderFam = fam.familyId === sect.leaderFamilyId;
           const bar = new PIXI.Graphics();
           sketchAccentBar(bar, ROW_H - 4, isLeaderFam ? C.accent : C.mid);
-          bar.x = 6; bar.y = cy + 2;
+          bar.x = left + 6; bar.y = cy + 2;
           this.bodyLayer.addChild(bar);
 
           if (isLeaderFam) {
             const ldr = txt(t('sect.leaderFamily'), 10, C.accent);
-            ldr.x = 16; ldr.y = cy + 4;
+            ldr.x = left + 16; ldr.y = cy + 4;
             this.bodyLayer.addChild(ldr);
           }
           const nameLbl = txt(`[${fam.tag}] ${fam.name}`, 13, C.dark);
-          nameLbl.x = 16; nameLbl.y = cy + 18;
+          nameLbl.x = left + 16; nameLbl.y = cy + 18;
           this.bodyLayer.addChild(nameLbl);
           const statLbl = txt(`${t('family.members', { n: fam.memberCount })} · ${t('sect.territory', { n: fam.territoryCount })}`, 10, C.mid);
-          statLbl.x = 16; statLbl.y = cy + 34;
+          statLbl.x = left + 16; statLbl.y = cy + 34;
           this.bodyLayer.addChild(statLbl);
 
           // Any family leader (except the current leader family) can launch / vote a removal.
@@ -206,24 +215,27 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
 
     renderBottomBar(y: number): void {
       const { w } = this;
+      const left = marginLineX(w);
+      const midX = (left + w) / 2;
       if (this.isSectLeader) {
         // Leader: dissolve / ally / manage allies.
-        this.addBarButton(t('sect.dissolve'), 6, y, C.red, () => this.confirmDissolve(), 0);
-        this.addBarButton(t('sect.ally'), w / 2 - 50, y, C.accent, () => void this.openAllyList(), 1);
+        this.addBarButton(t('sect.dissolve'), left + 6, y, C.red, () => this.confirmDissolve(), 0);
+        this.addBarButton(t('sect.ally'), midX - 50, y, C.accent, () => void this.openAllyList(), 1);
         this.addBarButton(t('sect.manageAllies'), w - 106, y, C.dark, () => void this.openManageAllies(), 2);
       } else if (this.isFamilyLeader) {
-        this.addBarButton(t('sect.leave'), w / 2 - 60, y, C.accent, () => this.confirmLeave(), 0);
+        this.addBarButton(t('sect.leave'), midX - 60, y, C.accent, () => this.confirmLeave(), 0);
       }
     }
 
     renderChannel(y0: number, maxH: number): void {
       const { w } = this;
+      const left = marginLineX(w);
       const inputH = 44;
       const listH2 = maxH - inputH - 6;
 
       if (this.messages.length === 0) {
         const empty = txt(t('sect.noMessages'), 12, C.mid);
-        empty.anchor.set(0.5, 0); empty.x = w / 2; empty.y = y0 + 8;
+        empty.anchor.set(0.5, 0); empty.x = (left + w) / 2; empty.y = y0 + 8;
         this.bodyLayer.addChild(empty);
       }
 
@@ -236,22 +248,23 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       for (const msg of ordered) {
         if (cy + ROW_H < y0 || cy > y0 + listH2) { cy += ROW_H; continue; }
         const nameLbl = txt(msg.senderName, 11, C.accent);
-        nameLbl.x = 12; nameLbl.y = cy + 4;
+        nameLbl.x = left + 12; nameLbl.y = cy + 4;
         this.bodyLayer.addChild(nameLbl);
         const bodyLbl = txt(msg.body, 12, C.dark);
-        bodyLbl.x = 12; bodyLbl.y = cy + 18;
+        bodyLbl.x = left + 12; bodyLbl.y = cy + 18;
         this.bodyLayer.addChild(bodyLbl);
         cy += ROW_H;
       }
 
       const inputY = y0 + listH2 + 4;
-      const field = sketchPanel(w - 80, 36, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(0, 0, w - 80) });
-      field.x = 6; field.y = inputY;
+      const fieldW = w - left - 80;
+      const field = sketchPanel(fieldW, 36, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(0, 0, fieldW) });
+      field.x = left + 6; field.y = inputY;
       this.bodyLayer.addChild(field);
       const fl = txt(t('sect.msgPlaceholder'), 12, C.mid);
-      fl.x = 12; fl.y = inputY + 10;
+      fl.x = left + 12; fl.y = inputY + 10;
       this.bodyLayer.addChild(fl);
-      this.hitRects.push({ rect: { x: 6, y: inputY, w: w - 80, h: 36 }, action: () => this.openSendInput() });
+      this.hitRects.push({ rect: { x: left + 6, y: inputY, w: fieldW, h: 36 }, action: () => this.openSendInput() });
 
       const sendBtn = sketchPanel(66, 36, { fill: C.dark, border: C.accent, seed: seedFor(1, 0, 66) });
       sendBtn.x = w - 72; sendBtn.y = inputY;

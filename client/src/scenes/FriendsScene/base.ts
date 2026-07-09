@@ -12,6 +12,7 @@ import { ProfilePopup } from '../../render/ProfilePopup';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren, marginLineX } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
 import { buildDecorCLayer } from '../../render/decorCLayer';
+import { drawSocialTabRail, type SocialTab } from '../../render/socialTabRail';
 import { drawSceneHeader, drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
 import type {
   FriendView,
@@ -90,7 +91,7 @@ export interface FriendsSceneCallbacks {
   defaultTab?: Tab;
 }
 
-export type Tab = 'friends' | 'family' | 'sect' | 'world' | 'mail';
+export type Tab = SocialTab;
 export type View = 'list' | 'search';
 
 export interface Hit { rect: Rect; fn: () => void; scroll?: boolean; }
@@ -413,46 +414,12 @@ export class FriendsSceneBase {
   // ── Tab rail (5 tabs, vertical, left of the binding line) ──────────────────────
 
   protected drawTabBar(): void {
-    const { h } = this;
-    const top = this.bodyTop;
-    const railW = this.railW;
-    const tabs: { id: Tab; key: TranslationKey; badge: number }[] = [
-      { id: 'friends', key: 'friends.tab.friends', badge: this.incoming.length },
-      { id: 'family',  key: 'friends.tab.family',  badge: 0 },
-      { id: 'sect',    key: 'friends.tab.sect',     badge: 0 },
-      { id: 'world',   key: 'friends.tab.world',    badge: 0 },
-      { id: 'mail',    key: 'friends.tab.mail',     badge: this.mailUnread },
-    ];
-    const cellH = Math.round((h - top) / tabs.length);
-    const fontSize = Math.round(railW * 0.16);
-    tabs.forEach((tabDef, i) => {
-      const ty = top + i * cellH;
-      const active = this.tab === tabDef.id;
-      const bg = new PIXI.Graphics();
-      bg.beginFill(active ? C.paper : C.dark, active ? 1 : 0.12);
-      bg.drawRect(0, ty, railW, cellH);
-      bg.endFill();
-      this.container.addChild(bg);
-      if (active) {
-        // Accent stripe on the inner edge (against the binding line) marks the active tab.
-        const marker = new PIXI.Graphics();
-        marker.beginFill(C.accent);
-        marker.drawRect(railW - 3, ty + cellH * 0.15, 3, cellH * 0.7);
-        marker.endFill();
-        this.container.addChild(marker);
-      }
-      const label = txt(t(tabDef.key), fontSize, active ? C.dark : C.mid, active);
-      label.anchor.set(0.5, 0.5); label.x = railW / 2; label.y = ty + cellH / 2;
-      this.container.addChild(label);
-      if (tabDef.badge > 0) {
-        const dot = new PIXI.Graphics();
-        dot.beginFill(C.red);
-        dot.drawCircle(railW - Math.round(railW * 0.16), ty + Math.round(cellH * 0.22), Math.round(railW * 0.09));
-        dot.endFill();
-        this.container.addChild(dot);
-      }
-      this.hits.push({ rect: { x: 0, y: ty, w: railW, h: cellH }, fn: () => this.switchTab(tabDef.id) });
-    });
+    const hits = drawSocialTabRail(
+      this.container, this.w, this.h, this.bodyTop, this.tab,
+      { friends: this.incoming.length, mail: this.mailUnread },
+      (tab) => this.switchTab(tab),
+    );
+    this.hits.push(...hits);
   }
 
   protected drawHeader(): void {

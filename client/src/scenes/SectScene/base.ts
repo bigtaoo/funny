@@ -27,9 +27,12 @@ import type {
   WorldApiClient, SectView, SectDetailView, SectMessageView,
 } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
+import type { SocialTab } from '../../render/socialTabRail';
 
 export interface SectSceneCallbacks {
   onBack(): void;
+  /** Rail click for one of the other 4 social tabs (friends/family/world/mail); 'sect' is a no-op. */
+  onNavTab(tab: SocialTab): void;
   worldApi: WorldApiClient;
   worldId: string;
   /** current player's accountId */
