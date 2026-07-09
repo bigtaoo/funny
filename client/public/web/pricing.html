@@ -243,27 +243,22 @@
 
     .notes a:hover { text-decoration: underline; }
 
-    /* ── Back link ── */
-    .back {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      margin-top: 32px;
+    /* ── Footer nav ── */
+    .footer-nav {
+      max-width: 900px;
+      margin: 32px auto 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 18px;
       font-family: 'Arial Narrow', Arial, sans-serif;
-      font-size: 0.82rem;
+      font-size: 0.8rem;
       font-weight: 700;
       letter-spacing: 0.06em;
       text-transform: uppercase;
-      color: var(--blue);
-      text-decoration: none;
-      max-width: 900px;
-      display: block;
-      margin-left: auto;
-      margin-right: auto;
-      max-width: 900px;
     }
 
-    .back:hover { text-decoration: underline; }
+    .footer-nav a { color: var(--ink-mid); text-decoration: none; }
+    .footer-nav a:hover { color: var(--blue); }
   </style>
 </head>
 <body>
@@ -358,12 +353,19 @@
 
   <ul class="notes">
     <li>Coins are virtual currency with no real-world value and cannot be exchanged for cash.</li>
-    <li>All purchases are final. See our <a href="/refunds.html">Refund Policy</a> for exceptions.</li>
+    <li>You can request a refund within 14 days of purchase — see our <a href="/refunds.html">Refund Policy</a>.</li>
     <li>Prices in USD. Local currency shown at checkout.</li>
     <li>Web payments processed by <a href="https://www.paddle.com" target="_blank" rel="noopener">Paddle</a>, our Merchant of Record.</li>
   </ul>
 
-  <a class="back" href="/">← Play Nivara</a>
+  <nav class="footer-nav">
+    <a href="/home.html">Home</a>
+    <a href="/pricing">Pricing</a>
+    <a href="/terms.html">Terms</a>
+    <a href="/privacy.html">Privacy</a>
+    <a href="/refunds.html">Refunds</a>
+    <a href="/">Play</a>
+  </nav>
 
 </body>
 </html>
