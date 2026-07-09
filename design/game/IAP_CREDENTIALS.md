@@ -55,6 +55,20 @@ Paddle 作为 merchant of record，审核商户域名时会爬取法务页，硬
 - **口径**：14 天内可申请退款（叠加法定权利）；数字商品在窗口外视为最终交付（除技术故障/重复扣款/未授权/法定权利）。
 - **审核回复前提**：确认 `https://nivara.gamestao.com/refunds.html` 线上已是新版（Paddle 会重爬域名核验），再回邮件。
 
+#### Paddle 支持的支付方式（收银台自动处理，无需单独接入）
+
+Paddle 作为 merchant of record，收银台内建以下支付方式；客户端只管调 checkout，选项由 Paddle 展示。
+
+| 类别 | 具体 |
+|---|---|
+| 信用卡 / 借记卡 | Visa、Mastercard、American Express、Discover |
+| PayPal | ✅（含部分渠道「先买后付」分 3–4 期） |
+| 数字钱包 | Apple Pay、Google Pay |
+| 本地方式 | iDEAL（荷兰）、Bancontact（比利时）、电汇等 20+ 区域性方式 |
+
+> **按买家动态展示**：Paddle 依据**交易币种 + 买家国家 + 设备**决定展示哪些方式，不是所有人都看到全部选项。Apple Pay 仅兼容 Apple 设备/浏览器；PayPal 仅在币种被 PayPal 支持时出现；iDEAL 仅对荷兰欧元交易展示。信用卡/借记卡为全球兜底方式。
+> 权威：[Paddle Help — payment methods](https://www.paddle.com/help/start/intro-to-paddle/which-payment-methods-do-you-support) / [Developer Docs](https://developer.paddle.com/concepts/payment-methods/overview)。
+
 ## 2. 广告验签凭据（激励视频，C2）
 
 | 平台 | 环境变量 | 说明 | 缺省行为 |
