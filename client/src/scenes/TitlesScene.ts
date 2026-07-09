@@ -3,9 +3,10 @@ import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren, marginLineX } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
+import { drawCareerTabs } from '../ui/widgets/CareerTabs';
 import { sortTitlesByWeight, getTitleKeys, formatLadderTitle } from '../game/meta/titles';
 
 // ── TitlesScene — title wall (S10, TITLE_DESIGN §7) ────────────────────────────
@@ -22,6 +23,15 @@ export interface TitlesSceneCallbacks {
   equippedTitle: string;
   /** Equip a new title → write equipped['title'] + PUT /save. */
   onEquip(titleId: string): void;
+  /**
+   * Career hub peer navigation (LOBBY_IA_REDESIGN P1.5): when both are present, a
+   * [生涯统计|称号|成就] strip is drawn in the left margin gutter, itself active. Omitted from
+   * standalone entry points that shouldn't advertise the sibling pages.
+   */
+  onOpenStats?(): void;
+  onOpenAchievements?(): void;
+  /** Red dot on the achievements peer tab when any tier is claimable. */
+  hasClaimableAchievement?: boolean;
 }
 
 interface Hit { rect: Rect; fn: () => void; }
@@ -65,7 +75,8 @@ export class TitlesScene implements Scene {
     this.hits = [];
 
     this.drawBackground();
-    this.drawHeader();
+    const tbH = this.drawHeader();
+    this.drawSidebar(tbH);
     this.drawTitleList();
   }
 
@@ -77,20 +88,40 @@ export class TitlesScene implements Scene {
     if (decoC) this.container.addChild(decoC);
   }
 
-  private drawHeader(): void {
+  private drawHeader(): number {
     const { w, h } = this;
     const hdr = drawSceneHeader(this.container, w, h, t('titles.title'), { titleSize: Math.round(h * 0.042) });
-    const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
+    return hdr.headerH;
+  }
+
+  /**
+   * Career hub peer strip [生涯统计|称号|成就] in the left margin gutter (see StatsScene /
+   * CareerTabs.ts); only drawn when the caller wired both sibling callbacks.
+   */
+  private drawSidebar(tbH: number): void {
+    if (!this.cb.onOpenStats || !this.cb.onOpenAchievements) return;
+    const { w, h } = this;
+    const sidebarW = marginLineX(w);
+    const sidebarTop = tbH + Math.round(h * 0.02);
+    const { hits } = drawCareerTabs(this.container, sidebarW, sidebarTop, h, 'titles', {
+      onOpenStats: this.cb.onOpenStats,
+      onOpenTitles: () => {},
+      onOpenAchievements: this.cb.onOpenAchievements,
+      hasClaimableAchievement: this.cb.hasClaimableAchievement,
+    });
+    this.hits.push(...hits);
   }
 
   private drawTitleList(): void {
     const { w, h } = this;
+    const hasSidebar = !!this.cb.onOpenStats && !!this.cb.onOpenAchievements;
     const tbH = Math.round(h * 0.12);
-    const padX = Math.round(w * 0.08);
+    const padX = hasSidebar ? marginLineX(w) + Math.round(w * 0.025) : Math.round(w * 0.08);
+    const padRight = hasSidebar ? Math.round(w * 0.04) : Math.round(w * 0.08);
     const rowH = Math.round(h * 0.1);
     const gap = Math.round(h * 0.016);
-    const rowW = w - 2 * padX;
+    const rowW = w - padX - padRight;
     const sorted = sortTitlesByWeight(this.cb.titles);
 
     if (sorted.length === 0) {

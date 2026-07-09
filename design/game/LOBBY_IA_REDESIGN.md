@@ -221,6 +221,11 @@
 - ✅ **商城场景内侧栏「商城」标签补红点**（2026-07-09）：上条只修了大厅底部导航的商城 slot；玩家点进商城后（`ShopScene` §9 已改左侧竖栏），左栏 `[商城|充值?|盲盒|战令?]` 里的「商城」格本身**没有任何红点**——已经进了商城还是看不出该点哪张卡（用户报的 bug：截图里月卡面板 `Claim` 按钮虽可点，但没有视觉引导）。修复：
   - **`HubTab.badge?: boolean`**（`ui/widgets/HubTabs.ts`）：`drawSidebarTabs` 新增红点绘制（格右上角，不管该格是否 `active`）；`drawHubTabs`（水平条）暂未跟进，留给 §8 提到的三场景统一样式时一起补。
   - **`ShopSceneBase.monthlyCardStatus()`**（`ShopScene/base.ts`）：抽出月卡 `active`/`claimedToday` 判定（与 §7 大厅红点同一套：`subscriptionExpiry>now` 且 `subscriptionLastClaimDay!==今日UTC key`），`drawGroupTabs()` 用它给「商城」标签算 `badge`；`ShopMixin.buildShopCards()`（`shop.ts`）改为调用同一方法，避免两处各算一遍产生偏差。
+- ✅ **生涯组（统计/称号/成就）补齐 P1.5 分组 tab**（2026-07-09）：「生涯」页（`StatsScene`）左栏原「称号」「成就」两格一直是纯 launcher——点开任一个整场景切换到 `TitlesScene`/`AchievementScene`，另一格随之从画面上消失，读不出「同一个生涯 hub 的并列 tab」（用户报的 bug，对照养成组 `[卡背包|装备]` 的标准表现）。补齐 P1.5 范式：
+  - **新增共享组件** `client/src/ui/widgets/CareerTabs.ts`：`drawCareerTabs(container,sidebarW,y,h,active,cb)` 画固定三格 `[生涯统计|称号|成就]`（复用 `HubTabs.drawSidebarTabs`，图标 `book`/`medal`/`trophy`），`active` 决定哪格不可点；`cb.hasClaimableAchievement` 透传到成就格的红点（`HubTab.badge`）。
+  - **三场景各自常驻绘制该条**，自身格 active、点其余格跨场景直达（不再是「跳走再 back 才能看见另一格」）：`StatsScene`（`stats.title` active）、`TitlesScene`（`titles.title` active，新增 `onOpenStats?`/`onOpenAchievements?`/`hasClaimableAchievement?` 到 `TitlesSceneCallbacks`，仅两者都注入才画条并把内容列表整体右移进 `marginLineX` 内容列）、`AchievementScene`（`achievement.title` active，新增 `onOpenStats?`/`onOpenTitles?` 到 `AchievementCallbacks`，条画在离线/加载/空状态判断**之前**，确保三态下侧栏都不消失）。
+  - **成就的三/四个分类 tab 降为二级 tab**：原 `AchievementScene` 私有 `drawSidebarTabs`（手写方框+图标+标签）删除，改为共享 `HubTabs.drawSidebarTabs(...,{sub:true})`，视觉与 Equipment 的「背包|锻造」二级 tab 统一，堆叠在生涯组一级条正下方。
+  - **导航编排** `app/nav/game.ts`：`goAchievements()`/`goTitles()` 新增 `onOpenStats`/互相的 `onOpenTitles`/`onOpenAchievements` 回调（`goStats`/`goTitles(goStats)`/`goAchievements`），`hasClaimableAchievement` 统一读 `state.achievementClaimable`。
 - ✅ **P3**（完成 2026-06-28）：视觉打磨三项：
   1. **底部 tab 图标化 + 加高**：高度 `h*0.08` → `h*0.105`，彩色圆点换手绘图标
      （养成=book / 商城=coin / 主页=home / 生涯=trophy / 社交=globe，复用 `icons.ts` 已有字形）；

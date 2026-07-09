@@ -369,6 +369,8 @@ export function createGameNav(ctx: AppCtx): GameNav {
     const client = api;
     views.showAchievements({
       onBack: () => goStats(),
+      onOpenStats: () => goStats(),
+      onOpenTitles: () => goTitles(goStats),
       // Fetch achievements and enable claiming only when logged in online;
       // offline / not logged in: the page shows a "log in to view" message.
       ...(client && loggedIn
@@ -395,6 +397,9 @@ export function createGameNav(ctx: AppCtx): GameNav {
       onEquip(titleId: string) {
         saveManager.update((d) => { d.equipped['title'] = titleId; });
       },
+      onOpenStats: () => goStats(),
+      onOpenAchievements: () => goAchievements(),
+      hasClaimableAchievement: state.achievementClaimable,
     });
   }
 
