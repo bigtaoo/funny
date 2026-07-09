@@ -64,7 +64,7 @@ function findCoord(
 }
 
 const NON_BLOCKING = (t: ReturnType<typeof proceduralTile>): boolean =>
-  t.type !== 'obstacle' && t.type !== 'gate' && t.type !== 'center';
+  t.type !== 'obstacle' && t.type !== 'bridge' && t.type !== 'plankway' && t.type !== 'center';
 
 describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
   const m = mongo!;

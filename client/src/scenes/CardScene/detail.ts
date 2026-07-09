@@ -10,7 +10,7 @@ import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData
 import { CARD_DEFS, xpToNextLevel, troopCap, cardPower } from '../../game/meta/cardDefs';
 import {
   type Constructor, type CardSceneBaseCtor,
-  HUD_H, MODAL_DIM, injuryCountdown,
+  MODAL_DIM, injuryCountdown,
 } from './base';
 
 export interface DetailHandlers {
@@ -51,7 +51,7 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
       const contentH = 12 + 26 + 106 + (isInjured ? 26 : 4) + 28 + 26 + 82 + 40;
       const mh = Math.min(contentH, h - 60);
       const mx = (w - mw) / 2;
-      const my = Math.max(HUD_H + 4, (h - mh) / 2);
+      const my = Math.max(this.headerH + 4, (h - mh) / 2);
 
       // Dim
       const dim = new PIXI.Graphics();

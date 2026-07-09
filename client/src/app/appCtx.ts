@@ -25,6 +25,8 @@ export interface AppState {
   socialBadgeTotal: number;
   /** Cached achievement-claimable flag, kept across lobby re-shows. */
   achievementClaimable: boolean;
+  /** Cached "monthly/year card active + today's daily reward unclaimed" flag → shop nav red dot. */
+  shopCardClaimable: boolean;
   /** Baseline set of reached achievement tiers (`achId#tier`) from the last refresh (S9-5b); null until first fetch. */
   achievementReached: Set<string> | null;
 }

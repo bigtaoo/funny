@@ -33,8 +33,8 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       }
 
       const s = this.slgStatus;
-      const px = Math.round(w * 0.06);
-      const panelW = w - px * 2;
+      const px = this.cX;
+      const panelW = this.cW;
       let cy = this.regionTop + Math.round(h * 0.03);
 
       if (s.familyId) {
@@ -44,7 +44,7 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       } else {
         if (this.familySubview === 'info') {
           const lbl = txt(t('social.family.none'), Math.round(h * 0.026), C.mid);
-          lbl.anchor.set(0.5, 0); lbl.x = w / 2; lbl.y = cy;
+          lbl.anchor.set(0.5, 0); lbl.x = this.cCX; lbl.y = cy;
           this.container.addChild(lbl);
           cy += Math.round(h * 0.06);
 
@@ -179,8 +179,8 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       }
 
       const s = this.slgStatus;
-      const px = Math.round(w * 0.06);
-      const panelW = w - px * 2;
+      const px = this.cX;
+      const panelW = this.cW;
       let cy = this.regionTop + Math.round(h * 0.03);
 
       if (!s.familyId) {
@@ -195,7 +195,7 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       } else {
         if (this.sectSubview === 'info') {
           const lbl = txt(t('social.sect.none'), Math.round(h * 0.026), C.mid);
-          lbl.anchor.set(0.5, 0); lbl.x = w / 2; lbl.y = cy;
+          lbl.anchor.set(0.5, 0); lbl.x = this.cCX; lbl.y = cy;
           this.container.addChild(lbl);
           cy += Math.round(h * 0.06);
 
@@ -210,7 +210,7 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
               () => { this.sectSubview = 'joinById'; this.render(); }, C.dark);
           } else {
             const hint = txt(t('social.sect.leaderOnly'), Math.round(h * 0.022), C.mid);
-            hint.anchor.set(0.5, 0); hint.x = w / 2; hint.y = cy;
+            hint.anchor.set(0.5, 0); hint.x = this.cCX; hint.y = cy;
             this.container.addChild(hint);
             cy += Math.round(h * 0.05);
             this.addButton(t('social.sect.joinById'), px, cy, panelW, bH, C.paper, C.line,

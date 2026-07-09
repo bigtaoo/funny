@@ -580,6 +580,11 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       navBg.addChild(this.achievementBadgeLayer);
       this.drawAchievementBadge();
 
+      // Monthly/year card daily-reward-claimable dot over the shop slot (its own layer for cheap refresh).
+      this.shopBadgeLayer = new PIXI.Container();
+      navBg.addChild(this.shopBadgeLayer);
+      this.drawShopBadge();
+
       // World-offline indicator over the world-map pillar (redrawn when applyWorldAvailable() is called).
       this.worldOfflineBadgeLayer = new PIXI.Container();
       this.container.addChild(this.worldOfflineBadgeLayer);

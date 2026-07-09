@@ -37,9 +37,9 @@ export function WorldChatMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase):
       // Input area pinned at the bottom
       const inputH = Math.round(h * 0.1);
       const inputY = h - inputH - Math.round(h * 0.01);
-      const px = Math.round(w * 0.04);
-      const sendBtnW = Math.round(w * 0.3);
-      const inputW = w - px * 2 - sendBtnW - Math.round(w * 0.02);
+      const px = this.cX;
+      const sendBtnW = Math.round(w * 0.24);
+      const inputW = this.cW - sendBtnW - Math.round(w * 0.02);
 
       const inputBg = sketchPanel(inputW, Math.round(inputH * 0.75), {
         fill: C.paper, border: this.worldChatActive ? C.accent : C.line, width: 2, seed: seedFor(px, inputY, inputW),
@@ -107,10 +107,10 @@ export function WorldChatMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase):
     }
 
     private drawWorldMsgRow(layer: PIXI.Container, m: WorldChatMessage, y: number): void {
-      const { w, h } = this;
+      const { h } = this;
       const rh = Math.round(h * 0.095);
-      const rx = Math.round(w * 0.04);
-      const rw = Math.round(w * 0.92);
+      const rx = this.cX;
+      const rw = this.cW;
       const bg = sketchPanel(rw, rh, { fill: C.paper, border: C.line, width: 1, seed: seedFor(rx, m.ts % 1000, rw) });
       bg.x = rx; bg.y = y;
       layer.addChild(bg);

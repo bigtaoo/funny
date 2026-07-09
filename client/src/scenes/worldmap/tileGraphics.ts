@@ -6,7 +6,7 @@ import { getResLevelTexture, getResTexture, isResAtlasReady } from '../../render
 import { getTerrainTexture, isTerrainAtlasReady } from '../../render/terrainAtlasLoader';
 import { getBuildingTexture, isBuildingAtlasReady } from '../../render/buildingAtlasLoader';
 import { isCityAtlasReady } from '../../render/cityAtlasLoader';
-import { FOG_COLOR, ALLY_SECT_BORDER, RES_TEX_TINT, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT } from './tileStyle';
+import { FOG_COLOR, ALLY_SECT_BORDER, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT } from './tileStyle';
 import type { TerrainTextureName } from '../../render/terrainAtlasLoader';
 import type { WorldTileView } from '../../net/WorldApiClient';
 import type { ProceduralTile } from '@nw/shared';
@@ -28,13 +28,11 @@ export function drawTileL1(
     // Dark, busy obstacle weaves (mountain/river) are pushed down so they recede into the
     // paper instead of dominating the map edges; other terrain stays near-opaque.
     const texAlpha = TERRAIN_TEX_ALPHA[texName] ?? TERRAIN_TEX_ALPHA_DEFAULT;
-    // Faint colored-pencil tint multiplied into the grey ground art (see TERRAIN_TEX_TINT). Plain
-    // resource tiles instead read their biome off a per-resource tint (motif overlay removed);
-    // keep/stronghold keep their landmark terrain tint, so only type==='resource' picks the biome hue.
-    const resType = tile?.type === 'resource' ? tile.resType : (!tile && proc?.type === 'resource' ? proc.resType : undefined);
-    const texTint = resType
-      ? RES_TEX_TINT[resType] ?? TERRAIN_TEX_TINT_DEFAULT
-      : TERRAIN_TEX_TINT[texName] ?? TERRAIN_TEX_TINT_DEFAULT;
+    // Faint colored-pencil tint multiplied into the grey ground art (see TERRAIN_TEX_TINT).
+    // Resource type is carried ENTIRELY by the motif sprite (drawResMotif) — the ground keeps
+    // its plain terrain tint with no per-biome wash, so the map reads calm and ownership stays
+    // the only strong color (tileStyle header). keep/stronghold keep their landmark terrain tint.
+    const texTint = TERRAIN_TEX_TINT[texName] ?? TERRAIN_TEX_TINT_DEFAULT;
     g.beginTextureFill({ texture: tex, matrix: m, alpha: texAlpha, color: texTint });
   } else {
     g.beginFill(fill, 0.7);
@@ -42,18 +40,29 @@ export function drawTileL1(
   g.drawPolygon(diamondPath(tp - 1));
   g.endFill();
 
-  // Resource motif overlay intentionally omitted: with resourceDensity=1.0 (ADR-032) every
-  // open tile is a resource tile, so a motif per tile carpeted the whole map with near-identical
-  // heaps. Tile info is carried by the terrain atlas image alone; drawResMotif is kept below for a
-  // future per-biome ground-art pass. Must stay in lockstep with the map-editor's drawEditorTile
-  // (SLG map render parity).
+  // Resource motif overlay: with resourceDensity=1.0 (ADR-032) every open tile is a resource tile,
+  // so this paints a per-level heap on every one — dense by design, so the l1–l10 graded art
+  // (taller/denser = higher level) reads on the map. Drawn BEFORE the fog return with fogged=false
+  // always: resType is terrain, and §18.6 keeps the full resource art (incl. level detail) visible
+  // even under fog (the "hide level outside vision" narrowing was abolished). The motif is an
+  // addChild sprite, so it renders above the fog wash drawn on this Graphics' own polygon.
+  // Must stay in lockstep with the map-editor's drawEditorTile (SLG map render parity).
+  const motifResType = tile?.type === 'resource' ? tile.resType : (!tile && proc?.type === 'resource' ? proc.resType : undefined);
+  if (motifResType) {
+    drawResMotif(g, motifResType, tile?.level ?? proc?.level ?? 1, tp, false);
+  }
 
   // Overlay landmark buildings for chokepoints / NPC strongholds. Like the ground texture,
   // these are TERRAIN features (their type is procedural, visible map-wide), so they draw
   // before the fog return, dimmed when fogged. Neutral ink — ownership is the wash below.
   const featType = tile?.type ?? proc?.type;
-  if (featType === 'familyKeep' || featType === 'stronghold') {
-    placeBuildingSprite(g, featType === 'familyKeep' ? 'building_keep' : 'building_stronghold', tp, hh, tp * 1.3, fogged);
+  const featBuilding = featType === 'familyKeep' ? 'building_keep'
+    : featType === 'stronghold' ? 'building_stronghold'
+    : featType === 'bridge' ? 'building_bridge'
+    : featType === 'plankway' ? 'building_plankway'
+    : null;
+  if (featBuilding) {
+    placeBuildingSprite(g, featBuilding, tp, hh, tp * 1.3, fogged);
   }
 
   // Ownership overlay (option-3): a light wash + colored border, not a full opaque fill —
@@ -328,9 +337,9 @@ export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, t
     if (!ftex) return;
     const sp = new PIXI.Sprite(ftex);
     sp.anchor.set(0.5, 0.5);
-    // Generic type frame (tall, w<h) — keep max(w,h) so it stays bounded; 0.55 matches the
+    // Generic type frame (tall, w<h) — keep max(w,h) so it stays bounded; 0.40 matches the
     // revealed per-level motif size below so the sprite doesn't jump size when fog clears.
-    sp.scale.set((tp * 0.55) / Math.max(ftex.width, ftex.height));
+    sp.scale.set((tp * 0.40) / Math.max(ftex.width, ftex.height));
     sp.alpha = 0.35;
     [sp.x, sp.y] = toLocal(0.5, 0.52);
     g.addChild(sp);
@@ -353,9 +362,10 @@ export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, t
   // level = taller/denser), so scale them by width — this keeps the per-level height
   // difference instead of normalizing it away via max(w,h). The generic fallback frame
   // (types without per-level art) is TALLER than wide, so it stays on max(w,h) to stay
-  // bounded. 0.55 (was 0.34) so l1..l10 read apart at on-screen tile sizes.
+  // bounded. 0.40: shrunk from 0.55→0.48→0.40 to leave clear gaps between adjacent tiles'
+  // motifs (resourceDensity=1.0 puts one on every tile), while l1..l10 still read apart.
   const denom = levelTex ? tex.width : Math.max(tex.width, tex.height);
-  sp.scale.set((tp * 0.55) / denom);
+  sp.scale.set((tp * 0.40) / denom);
   [sp.x, sp.y] = toLocal(0.5, 0.52);
   g.addChild(sp);
 }

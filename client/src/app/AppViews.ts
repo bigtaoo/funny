@@ -63,6 +63,8 @@ export interface LobbyView {
   applySocialBadge(total: number): void;
   /** Toggle the achievement-claimable red dot on the stats nav slot (ACHIEVEMENT_DESIGN §4.1). */
   applyAchievementBadge(claimable: boolean): void;
+  /** Toggle the monthly/year-card daily-reward-claimable red dot on the shop nav slot. */
+  applyShopBadge(claimable: boolean): void;
   /**
    * Called after a worldsvc /health ping resolves. Shows a "×" badge on the world-map
    * nav slot when ok=false so developers immediately see the service is down.

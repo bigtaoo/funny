@@ -30,9 +30,10 @@ export function makeZoomCfgs(w: number, h: number): [ZoomCfg, ZoomCfg, ZoomCfg] 
     return { tile, visW, visH, poolW: visW + 2, poolH: visH + 2 };
   };
   // Divisor = tiles across screen width; smaller divisor = bigger tiles = fewer on screen.
-  // L1 19→16 and L2 37→31 cut on-screen tile count by ~1/3 (count ∝ divisor²) while
-  // preserving the ~2× step between the two detail levels. L3 overview left dense.
-  return [mk(Math.floor(w / 16)), mk(Math.floor(w / 31)), mk(27)];
+  // L1 19→16→13→11 (each step cuts on-screen tile count, count ∝ divisor²) — the map read as an
+  // over-dense carpet at higher divisors. L2 left at 31 (step to L1 now ~2.8×, still fine); L3
+  // overview left dense. Editor's DEFAULT_TP mirrors this L1 divisor (tools/map-editor parity).
+  return [mk(Math.floor(w / 11)), mk(Math.floor(w / 31)), mk(27)];
 }
 
 /** A single pooled tile object — one PIXI.Graphics reused for many map positions. */

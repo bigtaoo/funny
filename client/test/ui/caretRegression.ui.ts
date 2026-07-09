@@ -61,9 +61,14 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
 const [W, H] = [800, 1280];
 
 /** Minimal WorldApiClient stub. Any unlisted method throws synchronously if
- *  called, which the scenes' loadData() try/catch already tolerates. */
+ *  called, which the scenes' loadData() try/catch already tolerates. Exception:
+ *  the auction create-form's ref-band fetch (de5832ba) fires inside openCreateForm,
+ *  OUTSIDE loadData's try/catch, so getAuctionRefBand must be stubbed or the caret
+ *  test throws before it can assert (mirrors auctionScene.ui.ts's stub). */
 function stubWorldApi(): WorldApiClient {
-  return {} as unknown as WorldApiClient;
+  return {
+    getAuctionRefBand: async () => ({ ref: 10, floor: 5, ceil: 20 }),
+  } as unknown as WorldApiClient;
 }
 
 /** All PIXI.Text content currently in the display tree, recursing sub-containers. */
@@ -283,9 +288,11 @@ describe('FriendsScene — family/sect/world tab carets', () => {
     const scene = build();
     enterSlgTab(scene, 'world');
     scene.render();
-    // The input hit is the wide field pinned bottom-left; the send button sits to its right.
+    // The input hit is the wide field pinned to the bottom of the content column; the send
+    // button sits to its right. Exclude the vertical tab rail (x === 0, left of the binding
+    // line) so "leftmost bottom hit" resolves to the input field, not a rail cell.
     const hits = scene.hits as Array<{ rect: { x: number; y: number; w: number; h: number }; fn: () => void }>;
-    const bottom = hits.filter((hh) => hh.rect.y > H * 0.8);
+    const bottom = hits.filter((hh) => hh.rect.y > H * 0.8 && hh.rect.x > 0);
     const inputHit = bottom.reduce((a, b) => (b.rect.x < a.rect.x ? b : a));
     inputHit.fn(); // simulate the tap
 

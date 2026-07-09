@@ -9,7 +9,7 @@ import { ILayout, Rect } from '../../layout/ILayout';
 import { InputManager } from '../../inputSystem/InputManager';
 import { t, TranslationKey } from '../../i18n';
 import { ProfilePopup } from '../../render/ProfilePopup';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren, marginLineX } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSceneHeader, drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
@@ -289,8 +289,31 @@ export class FriendsSceneBase {
     }
   }
 
+  // Body starts right under the header now that the tab bar is a vertical rail in
+  // the left margin (no horizontal tab band to reserve below the header).
   protected get bodyTop(): number {
-    return Math.round(this.h * 0.12) + Math.round(this.h * 0.07);
+    return Math.round(this.h * 0.12);
+  }
+
+  // ── Left navigation rail + content column geometry ─────────────────────────────
+  // The 5 tabs live in the narrow strip LEFT of the red binding line (marginLineX);
+  // all body content sits in the column to its right. Every drawer routes its x math
+  // through cX/cW/cCX so the tab rail and content never overlap.
+  /** Width of the vertical tab rail — the strip left of the notebook binding line. */
+  protected get railW(): number {
+    return marginLineX(this.w);
+  }
+  /** Left edge of the content column (just right of the binding line). */
+  protected get cX(): number {
+    return this.railW + Math.round(this.w * 0.02);
+  }
+  /** Width of the content column. */
+  protected get cW(): number {
+    return this.w - this.cX - Math.round(this.w * 0.03);
+  }
+  /** Horizontal center of the content column (replaces w/2 for centered content). */
+  protected get cCX(): number {
+    return this.cX + this.cW / 2;
   }
 
   protected toast(key: TranslationKey): void {
@@ -387,12 +410,12 @@ export class FriendsSceneBase {
     this.container.addChild(this.popup.container);
   }
 
-  // ── Tab bar (5 tabs) ──────────────────────────────────────────────────────────
+  // ── Tab rail (5 tabs, vertical, left of the binding line) ──────────────────────
 
   protected drawTabBar(): void {
-    const { w, h } = this;
-    const tbH = Math.round(h * 0.12);
-    const barH = Math.round(h * 0.07);
+    const { h } = this;
+    const top = this.bodyTop;
+    const railW = this.railW;
     const tabs: { id: Tab; key: TranslationKey; badge: number }[] = [
       { id: 'friends', key: 'friends.tab.friends', badge: this.incoming.length },
       { id: 'family',  key: 'friends.tab.family',  badge: 0 },
@@ -400,34 +423,35 @@ export class FriendsSceneBase {
       { id: 'world',   key: 'friends.tab.world',    badge: 0 },
       { id: 'mail',    key: 'friends.tab.mail',     badge: this.mailUnread },
     ];
-    const tw = Math.round(w / tabs.length);
-    const fontSize = Math.round(barH * 0.36);
+    const cellH = Math.round((h - top) / tabs.length);
+    const fontSize = Math.round(railW * 0.16);
     tabs.forEach((tabDef, i) => {
-      const tx = i * tw;
+      const ty = top + i * cellH;
       const active = this.tab === tabDef.id;
       const bg = new PIXI.Graphics();
       bg.beginFill(active ? C.paper : C.dark, active ? 1 : 0.12);
-      bg.drawRect(tx, tbH, tw, barH);
+      bg.drawRect(0, ty, railW, cellH);
       bg.endFill();
       this.container.addChild(bg);
       if (active) {
-        const underline = new PIXI.Graphics();
-        underline.beginFill(C.accent);
-        underline.drawRect(tx + tw * 0.18, tbH + barH - 3, tw * 0.64, 3);
-        underline.endFill();
-        this.container.addChild(underline);
+        // Accent stripe on the inner edge (against the binding line) marks the active tab.
+        const marker = new PIXI.Graphics();
+        marker.beginFill(C.accent);
+        marker.drawRect(railW - 3, ty + cellH * 0.15, 3, cellH * 0.7);
+        marker.endFill();
+        this.container.addChild(marker);
       }
       const label = txt(t(tabDef.key), fontSize, active ? C.dark : C.mid, active);
-      label.anchor.set(0.5, 0.5); label.x = tx + tw / 2; label.y = tbH + barH / 2;
+      label.anchor.set(0.5, 0.5); label.x = railW / 2; label.y = ty + cellH / 2;
       this.container.addChild(label);
       if (tabDef.badge > 0) {
         const dot = new PIXI.Graphics();
         dot.beginFill(C.red);
-        dot.drawCircle(tx + tw / 2 + label.width / 2 + Math.round(barH * 0.18), tbH + barH / 2 - Math.round(barH * 0.18), Math.round(barH * 0.14));
+        dot.drawCircle(railW - Math.round(railW * 0.16), ty + Math.round(cellH * 0.22), Math.round(railW * 0.09));
         dot.endFill();
         this.container.addChild(dot);
       }
-      this.hits.push({ rect: { x: tx, y: tbH, w: tw, h: barH }, fn: () => this.switchTab(tabDef.id) });
+      this.hits.push({ rect: { x: 0, y: ty, w: railW, h: cellH }, fn: () => this.switchTab(tabDef.id) });
     });
   }
 
@@ -465,7 +489,7 @@ export class FriendsSceneBase {
   protected centerLabelFixed(text: string): void {
     const regionH = this.regionBottom - this.regionTop;
     const lbl = txt(text, Math.round(this.h * 0.026), C.mid);
-    lbl.anchor.set(0.5, 0.5); lbl.x = this.w / 2; lbl.y = this.regionTop + regionH / 2;
+    lbl.anchor.set(0.5, 0.5); lbl.x = this.cCX; lbl.y = this.regionTop + regionH / 2;
     this.container.addChild(lbl);
   }
 
@@ -482,7 +506,7 @@ export class FriendsSceneBase {
 
   protected centerLabel(layer: PIXI.Container, key: TranslationKey, regionH: number): void {
     const l = txt(t(key), Math.round(this.h * 0.026), C.mid);
-    l.anchor.set(0.5, 0.5); l.x = this.w / 2; l.y = this.regionTop + regionH / 2;
+    l.anchor.set(0.5, 0.5); l.x = this.cCX; l.y = this.regionTop + regionH / 2;
     layer.addChild(l);
   }
 

@@ -40,7 +40,6 @@ export function teamSlotName(i: number): string {
   return t('world.team.slot').replace('{n}', String(i + 1));
 }
 
-const HEADER_H = 46;
 const PAD = 12;
 const ROW_H = 56;
 const ROW_GAP = 8;
@@ -125,7 +124,7 @@ export class TeamsScene implements Scene {
 
     // Header
     const hdr = drawSceneHeader(this.bodyLayer, w, h, t('world.team.title'), {
-      variant: 'paper', headerH: HEADER_H, titleSize: 14, accent: HEADER_ACCENT.slg,
+      variant: 'paper', accent: HEADER_ACCENT.slg,
     });
     this.hits.push({ rect: hdr.backRect, action: () => this.cb.onBack() });
 
@@ -136,7 +135,7 @@ export class TeamsScene implements Scene {
       return;
     }
 
-    let y = HEADER_H + PAD;
+    let y = hdr.headerH + PAD;
 
     // ── Fill-troops button ─────────────────────────────────────────────────
     this.renderFillTroopsBtn(y);

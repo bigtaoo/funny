@@ -50,6 +50,10 @@
   - **验证**：`client`、`tools/map-editor` `tsc --noEmit` 均过；渲染逻辑改动不启动游戏截图（按 CLAUDE.md 约定）。
 - **资源母题级差看不清 + 视口格子数没对齐游戏（2026-07-07）**：用户反馈两件事。① paper 现已补齐 `res_paper_l1..l10` 十级美术（`res_atlas.json`），满分辨率原图 l1↔l10 密度差一眼可辨，但在编辑器里几乎看不出——根因是 `drawResMotif`（两端 `tileGraphics.ts`）把母题缩到 `tp*0.34/max(w,h)`≈11px（tp=34 时），级差被压成一个几乎相同的小疙瘩；且用 `max(w,h)` 归一化恰好抵消了级别信号——十级图都是 **128px 宽、靠高度编码级别**（l1 高 82、l10 高 125），按 `max` 缩放会把"越高级越高/越密"的线索归一化掉。改法：系数 `0.34→0.55`（约 19px），并**改按宽度缩放**（`tp*0.55/tex.width`）让高度差保留；关键坑——只有 paper 有分级帧，ink/graphite/metal 无、回退到通用帧且那些是**竖长**的（w<h），故加分支：拿到分级帧才按宽度缩放，通用回退帧仍按 `max(w,h)` 防竖向溢出；client 雾遮路径同步到 0.55，揭雾时不跳变。② 编辑器视口"一直很多格子"（用户已自行 28→34 调过两次仍不对）——根因是编辑器写死 `tp=34`px，而游戏客户端 L1 详细视图把地块尺寸算成 `floor(视口宽/16)`（`client/src/scenes/worldmap/zoom.ts`），900px 视口下=56px/格，即编辑器比玩家最详细视图多约 2× 格子；`ZOOM_MAX` 本就=56（=900/16）说明当初就想让最大缩放≈客户端 L1，只是默认值没挪过去。改法：默认 `tp=Math.floor(VIEW_W/16)`（复用客户端同一除数，不写魔数），`ZOOM_MAX` 抬到 84 留往里放大余量。
   - **验证**：`client`、`tools/map-editor` `tsc --noEmit` + `tools/map-editor` `webpack --mode production` 均过；渲染逻辑改动不启动游戏截图（按 CLAUDE.md 约定）。
+- **资源图重新全绘（反转 `0f26b4a7`，2026-07-08）**：`0f26b4a7`（2026-07-07 17:23「去掉资源 motif，改用按生态染色的地表表达资源」）把两端 `drawTileL1`/`drawEditorTile` 里的 `drawResMotif` 调用注释掉，资源格只剩 `RES_TEX_TINT` 地表色调、无任何图标。但用户在该 commit 之后仍持续出 ink/sticker/metal 的 l1–l10 分级图（分级缩放专门做了高度台阶），意图已变成"要在地图上看到资源图"；用户拍板 **每格都画（接受密集）**——`resourceDensity=1.0`（[`core.ts`](../../../server/shared/src/slg/core.ts) 未改，仍每格皆资源），故整图铺满资源图案属预期。改动：两端 `tileGraphics.ts` 在地面填充后对 `type==='resource' && resType` 的格子重新调用 `drawResMotif`；客户端在地标建筑前调用、**恒传 `fogged=false`**（资源图含等级细节属地形层，§18.6 拍板雾中照样全绘，motif 是 `addChild` sprite 恒渲染于雾罩之上），编辑器无雾参数。保持"编辑器/客户端渲染 lockstep"铁律。
+  - **验证**：`client`、`tools/map-editor` `tsc --noEmit` + `tools/map-editor` `webpack --mode production` 均过；渲染逻辑改动不启动游戏截图（按 CLAUDE.md 约定）。
+- **去掉资源地表染色 + 图标缩小（2026-07-08）**：用户反馈地图"花里胡哨"。根因是资源**类型**被画了两遍——地表 `RES_TEX_TINT` 生态色调 + `drawResMotif` 每格图标，再叠归属色 wash，单格最多三种强弱色信号并存，违背 `tileStyle.ts` 开头"归属色是唯一强色、别让地图像彩色纸屑"的既定原则（`0f26b4a7` 当初加染色本是为**取代**图标，后 `2026-07-08` 图标又被加回，两层遂并存冗余）。拍板：**类型信号只留图标**（图标还带 l1–l10 等级/丰度信息，信息量更大），两端 `drawTileL1`/`drawEditorTile` 的 `texTint` 去掉 `RES_TEX_TINT` 分支，资源格地面回落到普通 `TERRAIN_TEX_TINT`（keep/stronghold 仍用各自地标 tint 不变）；`RES_TEX_TINT` 常量两端保留但标注 CURRENTLY UNUSED（留 L2/L3 overview 缩放可能复用）。同时缩小图标 `0.55→0.48→0.40`（两轮看图微调，client 雾遮路径同步）——拥挤感来自 `resourceDensity=1.0` 的每格皆图标，缩小给相邻格图标间留出明显空隙，l1–l10 高度台阶仍可辨。保持"编辑器/客户端渲染 lockstep"铁律。**外加**：图标留白够了之后，用户仍觉视口格子太多，分两轮把 L1 详细档格宽除数 `16→13→11`（`client/.../zoom.ts` + 编辑器 `DEFAULT_TP`，两处同步）——格数 ∝ 除数²，累计少约一半，每格更大；L2(31)/L3(27) 不动（L1↔L2 步进升到 ~2.8×，可接受）。除数到 11 后编辑器 `DEFAULT_TP`=900/11≈81 逼近旧 `ZOOM_MAX 84`，故把 `ZOOM_MAX 84→130` 抬高留出往里放大的余量（`ZOOM_MIN 10` 不变）。
+  - **验证**：`client`、`tools/map-editor` `tsc --noEmit` + `tools/map-editor` `webpack --mode production` 均过；渲染逻辑改动不启动游戏截图（按 CLAUDE.md 约定）。
 
 ## 1. 问题定义（现状，ADR-032 之前）
 
@@ -202,3 +206,15 @@ npm run start   # webpack dev server，端口 9095
 用户反馈用 River/Mountain 笔刷改地图后画面没变化。排查覆盖笔刷落格（`terrainGrid.ts`）→ 栅格化合并 diffCache（`index.ts` `renderBaseMap()`）→ 选贴图（`tileStyle.ts:terrainTextureName`）→ 绘制（`terrainAtlasLoader`/`tileGraphics.ts`）全链路的静态审查，并起 9095 服务用 preview 工具实机模拟落笔验证：落笔后 Tile 面板正确显示 `obstacle (mountain/river)`、Painted Terrain 计数正确递增、PIXI 场景图对应 Graphics 节点 `visible/renderable` 均为真、`terrain_atlas.png` 里 mountain/river 帧的美术内容确认与 grass 明显不同（岩石纹理 vs 波浪纹理）。曾怀疑 `drawBrushCursor()` 里 `TERRAIN_COLORS[tool]` 取不到 river/mountain 颜色，核实后是虚惊——`index.ts` 顶部本来就单独声明了一份 `Record<TerrainKind, number>` 的 `TERRAIN_COLORS`（专供笔刷光标用，和 `tileStyle.ts` 同名导出互不影响），取值正常。
 
 **未发现渲染链路缺陷。** 最可能的解释：`proceduralTile()` 生成的程序化底图本身就大量分布着 `obstacle` 类型格子，未标记 `obstacleKind` 时按 `(tx*31+ty*17)%2` 哈希在 mountain/river 贴图间随机选（`tileStyle.ts:39`）——默认 `preview` 世界早已铺满和笔刷画出来视觉上完全一样的纹理，若笔刷落在已有 obstacle 密集区，新画的地块会和周围融为一体，造成"没有生效"的错觉。下次复现建议：在明显是平原/资源的空地上测试笔刷，画完用 Export → 导出 JSON 核对数据是否真的写入。
+
+### 真正的根因 + 修复：编辑器画布背景色破坏了 art parity（2026-07-08）
+
+上条排查的结论是**错的**。真正原因不在栅格化/选贴图/绘制链路（那些确实都对），而在**画布背景色**：
+
+- 地形图集是"灰铅笔画在浅纸上"，山/河是 `obstacle`，在 `tileStyle.ts` 里 `TERRAIN_TEX_ALPHA` 特意设成 **0.5**（其它地形 0.85），让阻挡纹理"沉进纸面"。这套设定**依赖瓦片背后是纸色底**。
+- 游戏客户端世界地图铺了 `buildPaperBackground('worldmap', …, {marginLine:false})`（米色纸 `palette.paper=0xf5f0e8` + 淡蓝格线 `ruleLine=0xb9cfe4`，见 `WorldMapRenderer/build.ts`），且客户端 `PIXI.Application` 背景色本就是 `0xf5f0e8`。所以 0.5 半透明的山/河透出纸色 → 正常"沉进纸面"。
+- 编辑器的 `PIXI.Application` 背景色曾是 **深色 `0x11111b`**，瓦片下也没有任何不透明纸底。0.5 半透明的障碍瓦片直接把深色背景透上来 → 手绘岩石/波浪纹理被压暗、对比度砍半，塌成一块近乎纯色的**暗块** → 用户看到的"山/河图片素材没显示"。草地/资源格是 0.85 近乎不透明，所以不受影响。
+
+**修复（`tools/map-editor/src/index.ts`，仅动编辑器、不动客户端）**：把 `PIXI.Application` 背景色改成 `0xf5f0e8`，并在 `worldLayer` 之下加一层屏幕固定的纸背景 Graphics（淡蓝横向格线 `0xb9cfe4`，行距 `round(VIEW_H/28)`，无红色左边线），复刻客户端 `buildPaperBackground(marginLine:false)`。实机验证（9095）：山块变浅暖 taupe 且岩石纹理可辨、河块变浅蓝且水波可辨，与游戏内一致。**教训**：SLG 地图 parity 不只是图集/投影，"瓦片背后铺什么底"同样是 parity 的一部分——半透明地形对背景色敏感。
+
+**后续调参：山/河透明度 0.5→0.68 + 山改冷石灰（2026-07-08）**：背景修好后山/河不再是暗块，但 0.5 透明把手绘纹理压得太平、且暖 taupe 在暖米纸上偏成粉色，读不出「石头」。用户拍板方向"提透明度+改冷石灰色"。改**共享 `tileStyle.ts`（客户端+编辑器两份同步，parity）**：`TERRAIN_TEX_ALPHA` mountain/river `0.5→0.68`（纹理读得出、仍比陆地软）；`TERRAIN_TEX_TINT` mountain `0xdccbb4`(暖 taupe)→`0xc9ccd0`(冷石灰)，river tint 保持冷蓝 `0xcfe0ec`。实机验证：山块变冷灰石色、岩石纹理清晰，与草地(绿)/关隘(棕)区分明显。

@@ -53,21 +53,22 @@ export function resTypeFor(x: number, y: number, seed: number, level: number): R
 }
 
 // ── Terrain (ADR-034 §2.2/§2.3): ring boundary bands + river chords + birth-province branches ──────────
-// All three are impassable ('obstacle') bands defined by distance-to-a-geometric-shape < width/2, with
-// organic noise-driven wobble/width — replacing the old noise-threshold-zone model. Ring boundaries (the
-// two province-ring radii) carry free-passage 'gate' arcs; branches carry none (siege-only, via city nodes in §City).
+// All three are impassable ('obstacle') mountain/river bands defined by distance-to-a-geometric-shape < width/2,
+// with organic noise-driven wobble/width. Passage across a band is ONLY via a capturable crossing building
+// (bridge over a river / plankway over a mountain — gate→bridge/plankway migration): each band gets a minimal
+// auto-crossing fallback (1 per band, 1 tile wide, siege-to-pass) so a template-less world stays connected;
+// designers add/adjust further crossings by hand in the map editor.
 /** Terrain band thickness range in tiles (ADR-034 §2.2 DRAFT default: 5–11, independently randomized per band/point). */
 export const TERRAIN_BAND_WIDTH_MIN = 5;
 export const TERRAIN_BAND_WIDTH_MAX = 11;
-/** Free-passage gate width range in tiles on the two main province rings (ADR-034 §2.4 DRAFT default: 3–8). */
-export const RING_GATE_WIDTH_MIN = 3;
-export const RING_GATE_WIDTH_MAX = 8;
-/** Number of free-passage gates per main ring (DRAFT — doc pins the width range but not an exact count; several per ring per §2.4 "每处独立随机偏移"). */
-export const RING_GATE_COUNT_PER_RING = 5;
+/** Auto-crossing width in tiles (1 = a single-tile-wide passage the marcher cannot route around; the crossing spans the band's full radial thickness at its angle). */
+export const CROSSING_WIDTH_TILES = 1;
+/** Auto-crossing count per main province ring (minimal connectivity fallback; designers add more in the editor). */
+export const RING_CROSSING_COUNT_PER_RING = 1;
 /** Number of ink-river chords crossing the whole map (ADR-034 §2.2: "墨河两条"). */
 export const RIVER_CHORD_COUNT = 2;
-/** Free-passage gates per river chord (DRAFT: doc doesn't specify, but a fully impassable chord with zero crossings would be unplayable). */
-export const RIVER_GATE_COUNT_PER_CHORD = 4;
+/** Auto-crossing count per river chord (minimal connectivity fallback). */
+export const RIVER_CROSSING_COUNT_PER_CHORD = 1;
 /** Number of branches separating the 6 birth provinces from each other (ADR-034 §2.3: one per outer-sector boundary). */
 export const BRANCH_COUNT = 6;
 
@@ -82,10 +83,12 @@ function _edgeDistanceAtAngle(angle: number, cx: number, cy: number): number {
 
 /**
  * Ring-boundary terrain (ADR-034 §2.1/§2.2 main ridge/river ring): the boundary circle at `ringRatio` (of the
- * map half-diagonal) is a continuous impassable band, angle-wobbled and variable-width, broken by several
- * free-passage gate arcs. Returns null off the band, 'gate' inside a gate arc, 'obstacle' otherwise.
+ * map half-diagonal) is a continuous impassable band, angle-wobbled and variable-width, broken by a minimal
+ * set of 1-tile-wide crossings. Returns null off the band, 'crossing' inside a crossing (→ plankway/bridge
+ * building), 'obstacle' otherwise. A crossing arc spans the band's full radial thickness at its angle, so a
+ * single-tile-wide crossing genuinely bridges the whole band.
  */
-function _ringTerrainAt(x: number, y: number, seed: number, ringRatio: number, salt: number): 'obstacle' | 'gate' | null {
+function _ringTerrainAt(x: number, y: number, seed: number, ringRatio: number, salt: number): 'obstacle' | 'crossing' | null {
   const angle = _angleOf(x, y);
   const rNorm = _normRadius(x, y);
   const wobble = (valueNoise(Math.cos(angle) * 40, Math.sin(angle) * 40, 1, seed ^ salt) - 0.5) * 0.02;
@@ -95,22 +98,21 @@ function _ringTerrainAt(x: number, y: number, seed: number, ringRatio: number, s
   const halfWidthRatio = (widthTiles / 2) / _MAP_HALF_DIAGONAL;
   if (Math.abs(rNorm - effRatio) > halfWidthRatio) return null;
   const r = effRatio * _MAP_HALF_DIAGONAL;
-  for (let g = 0; g < RING_GATE_COUNT_PER_RING; g++) {
-    const gateAngle = rand2(g, salt, seed ^ 0x02) * _TWO_PI;
-    const gateWidthTiles = RING_GATE_WIDTH_MIN + rand2(g, salt + 1, seed ^ 0x03) * (RING_GATE_WIDTH_MAX - RING_GATE_WIDTH_MIN);
-    const gateHalfAngle = (gateWidthTiles / 2) / Math.max(1, r);
-    let da = Math.abs(angle - gateAngle);
+  for (let c = 0; c < RING_CROSSING_COUNT_PER_RING; c++) {
+    const crossingAngle = rand2(c, salt, seed ^ 0x02) * _TWO_PI;
+    const crossingHalfAngle = (CROSSING_WIDTH_TILES / 2) / Math.max(1, r);
+    let da = Math.abs(angle - crossingAngle);
     if (da > Math.PI) da = _TWO_PI - da;
-    if (da <= gateHalfAngle) return 'gate';
+    if (da <= crossingHalfAngle) return 'crossing';
   }
   return 'obstacle';
 }
 
 /**
  * River-chord terrain (ADR-034 §2.2 "墨河"): a near-straight line crossing the whole map through a
- * near-center offset point, wobbled along its length, with a few free-passage gates.
+ * near-center offset point, wobbled along its length, broken by a minimal set of 1-tile-wide crossings.
  */
-function _riverChordAt(x: number, y: number, seed: number, chordIdx: number): 'obstacle' | 'gate' | null {
+function _riverChordAt(x: number, y: number, seed: number, chordIdx: number): 'obstacle' | 'crossing' | null {
   const dirAngle = rand2(chordIdx, 0, seed ^ 0x0d01) * Math.PI;
   const offset = (rand2(chordIdx, 1, seed ^ 0x0d02) - 0.5) * _MAP_HALF_DIAGONAL * 0.3;
   const nx = Math.cos(dirAngle + Math.PI / 2);
@@ -127,10 +129,9 @@ function _riverChordAt(x: number, y: number, seed: number, chordIdx: number): 'o
   const widthNoise = valueNoise(t, chordIdx * 1000, 1 / 50, seed ^ 0x0d03);
   const widthTiles = TERRAIN_BAND_WIDTH_MIN + widthNoise * (TERRAIN_BAND_WIDTH_MAX - TERRAIN_BAND_WIDTH_MIN);
   if (Math.abs(dist - meander) > widthTiles / 2) return null;
-  for (let g = 0; g < RIVER_GATE_COUNT_PER_CHORD; g++) {
-    const gateT = (rand2(g, chordIdx, seed ^ 0x0d05) - 0.5) * _MAP_HALF_DIAGONAL * 2;
-    const gateWidth = RING_GATE_WIDTH_MIN + rand2(g, chordIdx + 10, seed ^ 0x0d06) * (RING_GATE_WIDTH_MAX - RING_GATE_WIDTH_MIN);
-    if (Math.abs(t - gateT) <= gateWidth / 2) return 'gate';
+  for (let c = 0; c < RIVER_CROSSING_COUNT_PER_CHORD; c++) {
+    const crossingT = (rand2(c, chordIdx, seed ^ 0x0d05) - 0.5) * _MAP_HALF_DIAGONAL * 2;
+    if (Math.abs(t - crossingT) <= CROSSING_WIDTH_TILES / 2) return 'crossing';
   }
   return 'obstacle';
 }
@@ -138,9 +139,11 @@ function _riverChordAt(x: number, y: number, seed: number, chordIdx: number): 'o
 /**
  * Branch terrain (ADR-034 §2.3 "支脉/支流"): 6 branches, one per outer-province 60° sector boundary, running
  * from the outer/resource ring boundary outward to the map's square edge — separating the 6 birth provinces
- * from each other. No free gates (only the siege gate-city nodes in `_worldCityNodes`, checked separately).
+ * from each other. Each branch carries a single 1-tile-wide auto-crossing (`crossing:true`) at its radial
+ * midpoint so adjacent provinces stay connected without a template; the rest of the branch is impassable
+ * `obstacle` of the branch's kind. `kind` picks the crossing building: mountain→plankway, river→bridge.
  */
-function _branchKindAt(x: number, y: number, seed: number): ObstacleKind | null {
+function _branchKindAt(x: number, y: number, seed: number): { kind: ObstacleKind; crossing: boolean } | null {
   const rNorm = _normRadius(x, y);
   if (rNorm <= PROVINCE_RESOURCE_OUTER_RADIUS_RATIO) return null;
   const angle = _angleOf(x, y);
@@ -153,9 +156,21 @@ function _branchKindAt(x: number, y: number, seed: number): ObstacleKind | null 
     const widthNoise = valueNoise(rTiles, k * 1000, 1 / 30, seed ^ 0x0e01 ^ k);
     const widthTiles = TERRAIN_BAND_WIDTH_MIN + widthNoise * (TERRAIN_BAND_WIDTH_MAX - TERRAIN_BAND_WIDTH_MIN);
     // §2.3: the 6 branches alternate mountain-spur / river-tributary by parity of the branch index.
-    if (Math.abs(distToLine) <= widthTiles / 2) return k % 2 === 0 ? 'mountain' : 'river';
+    if (Math.abs(distToLine) <= widthTiles / 2) {
+      const kind: ObstacleKind = k % 2 === 0 ? 'mountain' : 'river';
+      // Single crossing at the branch's radial midpoint (between the resource-ring boundary and the map edge).
+      const ringR = PROVINCE_RESOURCE_OUTER_RADIUS_RATIO * _MAP_HALF_DIAGONAL;
+      const edgeR = _edgeDistanceAtAngle(branchAngle, _MAP_CX, _MAP_CY);
+      const midR = (ringR + edgeR) / 2;
+      return { kind, crossing: Math.abs(rTiles - midR) <= CROSSING_WIDTH_TILES / 2 };
+    }
   }
   return null;
+}
+
+/** Crossing-building tile type for the given obstacle kind: river→bridge (桥), mountain→plankway (栈道). */
+function _crossingTile(kind: ObstacleKind): ProceduralTile {
+  return { type: kind === 'river' ? 'bridge' : 'plankway', level: Math.max(2, SLG_MAP_MAX_LEVEL - 1) };
 }
 
 // ── Cities (ADR-034 §3): point-node siege targets, layered on top of the procedural terrain ──────────
@@ -168,16 +183,17 @@ function _branchKindAt(x: number, y: number, seed: number): ObstacleKind | null 
 export const WORLD_CENTER_FOOTPRINT = 9;
 /** Per-outer-province graded city level tiers (ADR-034 §3: 2×3 + 2×4 + 2×5 + 1×6 + 1×7 + 1×8 = 9 cities/province, 54 total). */
 const _OUTER_GRADED_CITY_TIERS: readonly number[] = [3, 3, 4, 4, 5, 5, 6, 7, 8];
-/** Gate-city level (DRAFT — §3/§5 leaves city garrison/level numbers open; reuses the old max-level-minus-1 convention for siege points). */
-export const GATE_CITY_LEVEL = Math.max(2, SLG_MAP_MAX_LEVEL - 1);
-/** State-capital city level (DRAFT, same convention as GATE_CITY_LEVEL but max — a province's capital is its strongest city). */
+/** State-capital city level (DRAFT — a province's capital is its strongest city). */
 export const PROVINCE_CAPITAL_LEVEL = SLG_MAP_MAX_LEVEL;
 
-interface _CityNode { x: number; y: number; level: number; kind: 'garrison' | 'gateCity'; provinceIdx?: number; }
+interface _CityNode { x: number; y: number; level: number; kind: 'garrison'; provinceIdx?: number; }
 
 const _cityNodeCache = new Map<number, readonly _CityNode[]>();
 
-/** Graded cities (54, §3) + gate cities (6–9, §2.3/§3) for a world, cached by seed. Excludes state capitals / world center (handled separately). */
+// Note: crossings (passage across obstacle bands) are no longer city nodes — they are `bridge`/`plankway`
+// tiles emitted directly by the terrain functions above (gate→bridge/plankway migration). The old branch
+// gate-city nodes are gone; passage is carried entirely by those capturable crossing tiles.
+/** Graded cities (54, §3) for a world, cached by seed. Excludes state capitals / world center (handled separately). */
 function _worldCityNodes(mapW: number, mapH: number, seed: number): readonly _CityNode[] {
   const cached = _cityNodeCache.get(seed);
   if (cached) return cached;
@@ -203,26 +219,6 @@ function _worldCityNodes(mapW: number, mapH: number, seed: number): readonly _Ci
     }
   }
 
-  // Gate cities on the 6 branches: longest 3 branches get 2 each, shortest 3 get 1 (ADR-034 §2.3).
-  const branches = Array.from({ length: BRANCH_COUNT }, (_, k) => {
-    const angle = k * (_TWO_PI / BRANCH_COUNT);
-    const ringR = PROVINCE_RESOURCE_OUTER_RADIUS_RATIO * halfDiag;
-    const edgeR = _edgeDistanceAtAngle(angle, cx, cy);
-    return { k, angle, ringR, len: Math.max(0, edgeR - ringR) };
-  });
-  const longBranchIdx = new Set([...branches].sort((a, b) => b.len - a.len).slice(0, 3).map((b) => b.k));
-  for (const b of branches) {
-    const count = longBranchIdx.has(b.k) ? 2 : 1;
-    for (let g = 0; g < count; g++) {
-      const salt = seed ^ 0x0f10 ^ (b.k * 10 + g);
-      const frac = 0.15 + rand2(b.k, g, salt) * 0.7; // not centered — random offset along the branch
-      const r = b.ringR + frac * b.len;
-      const x = Math.max(0, Math.min(mapW - 1, Math.round(cx + Math.cos(b.angle) * r)));
-      const y = Math.max(0, Math.min(mapH - 1, Math.round(cy + Math.sin(b.angle) * r)));
-      nodes.push({ x, y, level: GATE_CITY_LEVEL, kind: 'gateCity' });
-    }
-  }
-
   _cityNodeCache.set(seed, nodes);
   return nodes;
 }
@@ -230,8 +226,8 @@ function _worldCityNodes(mapW: number, mapH: number, seed: number): readonly _Ci
 /** One siege-point node, for editor consumption (DESIGN.md §6.2 data form: point nodes, not tile coverage). */
 export interface MapEditorCityNode {
   id: string;
-  kind: 'capital' | 'gateCity' | 'worldCenter' | 'garrison';
-  /** Owning province index (§2.1), present for `capital`/`garrison` (their province is fixed by generation); absent for `gateCity` (straddles two provinces) and `worldCenter` (belongs to the core province by definition). */
+  kind: 'capital' | 'worldCenter' | 'garrison';
+  /** Owning province index (§2.1), present for `capital`/`garrison` (their province is fixed by generation); absent for `worldCenter` (belongs to the core province by definition). */
   provinceIdx?: number;
   x: number;
   y: number;
@@ -243,8 +239,9 @@ export interface MapEditorCityNode {
 /**
  * All siege-point nodes for a world (ADR-034 §3), flattened for the map editor's city-drag tool (§6.1):
  * world center (1) + province capitals (9, excludes the core province — its "capital" *is* the world
- * center) + graded/gate cities from `_worldCityNodes`. Editor-only — `proceduralTile()` above computes
- * these positions independently (not from this list) for the runtime tile classification.
+ * center) + graded cities from `_worldCityNodes`. Editor-only — `proceduralTile()` above computes
+ * these positions independently (not from this list) for the runtime tile classification. Crossings
+ * (bridge/plankway) are terrain tiles, not city nodes, so they are not listed here.
  */
 export function allCityNodes(worldId: string): MapEditorCityNode[] {
   const seed = worldSeed(worldId);
@@ -263,13 +260,8 @@ export function allCityNodes(worldId: string): MapEditorCityNode[] {
   });
 
   let garrisonIdx = 0;
-  let gateIdx = 0;
   for (const node of _worldCityNodes(mapW, mapH, seed)) {
-    if (node.kind === 'garrison') {
-      nodes.push({ id: `garrison-${garrisonIdx++}`, kind: 'garrison', provinceIdx: node.provinceIdx, x: node.x, y: node.y, level: node.level, footprint: cityFootprint(node.level) });
-    } else {
-      nodes.push({ id: `gate-${gateIdx++}`, kind: 'gateCity', x: node.x, y: node.y, level: node.level, footprint: cityFootprint(node.level) });
-    }
+    nodes.push({ id: `garrison-${garrisonIdx++}`, kind: 'garrison', provinceIdx: node.provinceIdx, x: node.x, y: node.y, level: node.level, footprint: cityFootprint(node.level) });
   }
   return nodes;
 }
@@ -333,18 +325,19 @@ export function proceduralTile(world: string, x: number, y: number): ProceduralT
   }
 
   // Terrain: 2 main province rings, then river chords, then birth-province branches — first match wins.
-  // Ring boundaries are the 折痕岭 (creased ridges → mountain art); the two crossing chords are the 墨河
-  // (ink rivers → river art); branches alternate mountain-spur / river-tributary (see _branchKindAt).
+  // Ring boundaries are the 折痕岭 (creased ridges → mountain art, crossings = 栈道/plankway); the two crossing
+  // chords are the 墨河 (ink rivers → river art, crossings = 桥/bridge); branches alternate mountain-spur /
+  // river-tributary (see _branchKindAt). A 'crossing' result is a capturable passage building (siege-to-pass).
   const ring1 = _ringTerrainAt(x, y, seed, PROVINCE_RESOURCE_OUTER_RADIUS_RATIO, 0x0a01);
-  if (ring1) return ring1 === 'gate' ? { type: 'gate', level: Math.max(2, SLG_MAP_MAX_LEVEL - 1) } : _obstacle('mountain');
+  if (ring1) return ring1 === 'crossing' ? _crossingTile('mountain') : _obstacle('mountain');
   const ring0 = _ringTerrainAt(x, y, seed, PROVINCE_CORE_RADIUS_RATIO, 0x0a02);
-  if (ring0) return ring0 === 'gate' ? { type: 'gate', level: Math.max(2, SLG_MAP_MAX_LEVEL - 1) } : _obstacle('mountain');
+  if (ring0) return ring0 === 'crossing' ? _crossingTile('mountain') : _obstacle('mountain');
   for (let c = 0; c < RIVER_CHORD_COUNT; c++) {
     const river = _riverChordAt(x, y, seed, c);
-    if (river) return river === 'gate' ? { type: 'gate', level: Math.max(2, SLG_MAP_MAX_LEVEL - 1) } : _obstacle('river');
+    if (river) return river === 'crossing' ? _crossingTile('river') : _obstacle('river');
   }
-  const branchKind = _branchKindAt(x, y, seed);
-  if (branchKind) return _obstacle(branchKind); // branches have no free gates — only the gate-city nodes checked above
+  const branch = _branchKindAt(x, y, seed);
+  if (branch) return branch.crossing ? _crossingTile(branch.kind) : _obstacle(branch.kind);
 
   // Province + per-ring level distribution (ADR-034 §4).
   const provIdx = provinceIdxAt(x, y);

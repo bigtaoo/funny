@@ -9,7 +9,7 @@ import { ISO_RATIO, diamondPath } from './isoGrid';
 import { getResLevelTexture, getResTexture, isResAtlasReady } from './resAtlasLoader';
 import { getTerrainTexture, isTerrainAtlasReady } from './terrainAtlasLoader';
 import { getBuildingTexture, isBuildingAtlasReady } from './buildingAtlasLoader';
-import { terrainFill, RES_TEX_TINT, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT } from './tileStyle';
+import { terrainFill, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT } from './tileStyle';
 import type { TerrainTextureName } from './terrainAtlasLoader';
 import type { ProceduralTile } from '@nw/shared/slg';
 
@@ -24,11 +24,9 @@ export function drawEditorTile(g: PIXI.Graphics, tile: ProceduralTile, texName: 
     const h = w * ISO_RATIO;
     const m = new PIXI.Matrix(w / tex.width, 0, 0, h / tex.height, -w / 2, -h / 2);
     const texAlpha = TERRAIN_TEX_ALPHA[texName] ?? TERRAIN_TEX_ALPHA_DEFAULT;
-    // Plain resource tiles read their biome off the ground tint (motif overlay removed); other
-    // terrain uses its per-texture tint. keep/stronghold keep their landmark tint, not the biome hue.
-    const texTint = tile.type === 'resource' && tile.resType
-      ? RES_TEX_TINT[tile.resType] ?? TERRAIN_TEX_TINT_DEFAULT
-      : TERRAIN_TEX_TINT[texName] ?? TERRAIN_TEX_TINT_DEFAULT;
+    // Resource type is carried entirely by the motif sprite — the ground keeps its plain terrain
+    // tint (no per-biome wash) so the map reads calm. Mirrors the game client's drawTileL1 (parity).
+    const texTint = TERRAIN_TEX_TINT[texName] ?? TERRAIN_TEX_TINT_DEFAULT;
     g.beginTextureFill({ texture: tex, matrix: m, alpha: texAlpha, color: texTint });
   } else {
     g.beginFill(terrainFill(tile.type, tile.resType), 0.7);
@@ -36,14 +34,21 @@ export function drawEditorTile(g: PIXI.Graphics, tile: ProceduralTile, texName: 
   g.drawPolygon(diamondPath(tp - 1));
   g.endFill();
 
-  // Resource motif overlay intentionally omitted: with resourceDensity=1.0 (ADR-032) every
-  // open tile is a resource tile, so painting a motif per tile carpeted the whole map with
-  // near-identical heaps ("太奇怪"). Tile info is carried by the terrain atlas image alone;
-  // the drawResMotif helper is kept below for a future per-biome ground-art pass. Must stay in
+  // Resource motif overlay: with resourceDensity=1.0 (ADR-032) every open tile is a resource
+  // tile, so this paints a per-level heap on every one of them — dense by design, so the freshly
+  // baked l1–l10 graded art (taller/denser = higher level) actually reads on the map. Must stay in
   // lockstep with the game client's drawTileL1 (SLG map render parity).
+  if (tile.type === 'resource' && tile.resType) {
+    drawResMotif(g, tile.resType, tile.level, tp);
+  }
 
-  if (tile.type === 'familyKeep' || tile.type === 'stronghold') {
-    placeBuildingSprite(g, tile.type === 'familyKeep' ? 'building_keep' : 'building_stronghold', hh, tp * 1.3);
+  const featBuilding = tile.type === 'familyKeep' ? 'building_keep'
+    : tile.type === 'stronghold' ? 'building_stronghold'
+    : tile.type === 'bridge' ? 'building_bridge'
+    : tile.type === 'plankway' ? 'building_plankway'
+    : null;
+  if (featBuilding) {
+    placeBuildingSprite(g, featBuilding, hh, tp * 1.3);
   }
 }
 
@@ -82,9 +87,10 @@ export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, t
   // level = taller/denser), so scale them by width — this keeps the per-level height
   // difference instead of normalizing it away via max(w,h). The generic fallback frame
   // (types without per-level art) is TALLER than wide, so it stays on max(w,h) to stay
-  // bounded. 0.55 (was 0.34) so l1..l10 read apart at on-screen tile sizes.
+  // bounded. 0.40: shrunk 0.55→0.48→0.40 for clear gaps between adjacent tiles' motifs
+  // (resourceDensity=1.0 puts one on every tile); mirrors the game client (parity).
   const denom = levelTex ? tex.width : Math.max(tex.width, tex.height);
-  sp.scale.set((tp * 0.55) / denom);
+  sp.scale.set((tp * 0.40) / denom);
   [sp.x, sp.y] = toLocal(0.5, 0.52);
   g.addChild(sp);
 }

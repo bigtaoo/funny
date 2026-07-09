@@ -25,7 +25,7 @@ export class CityStore {
     const parsed: unknown = JSON.parse(json);
     if (!Array.isArray(parsed)) throw new Error('expected an array of city nodes');
     for (const raw of parsed as MapEditorCityNode[]) {
-      if (!['capital', 'gateCity', 'worldCenter', 'garrison'].includes(raw.kind)) {
+      if (!['capital', 'worldCenter', 'garrison'].includes(raw.kind)) {
         throw new Error(`invalid city kind: ${String(raw.kind)}`);
       }
       if (typeof raw.x !== 'number' || typeof raw.y !== 'number') throw new Error('city node needs numeric x/y');

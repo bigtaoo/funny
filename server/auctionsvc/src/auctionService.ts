@@ -200,6 +200,20 @@ export class AuctionService {
     }
   }
 
+  /**
+   * Public read of the price guardrail band for a category, so the create-listing UI can show the seller
+   * the acceptable range *before* they submit (instead of only surfacing PRICE_OUT_OF_RANGE after the fact).
+   * Returns the authoritative reference unit price (dynamic median or static fallback) and the same
+   * [ref×FLOOR, ref×CEIL] bounds checkPriceGuard enforces, or null when the category is unguarded /
+   * cold-start pass-through (any price allowed).
+   */
+  async getRefBand(category: string | null): Promise<{ ref: number; floor: number; ceil: number } | null> {
+    if (!category) return null;
+    const ref = await this.refPrice(category);
+    if (ref == null) return null;
+    return { ref, floor: ref * AUCTION_PRICE_FLOOR_RATIO, ceil: ref * AUCTION_PRICE_CEIL_RATIO };
+  }
+
   /** After each sale, pushes the unit price into the category sliding window (retains the most recent N entries). */
   private async recordSoldPrice(category: string | null, unitPrice: number): Promise<void> {
     if (!category) return;

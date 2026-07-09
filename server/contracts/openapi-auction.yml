@@ -126,6 +126,31 @@ paths:
                         type: array
                         items: { $ref: '#/components/schemas/AuctionView' }
 
+  /auction/refprice:
+    get:
+      operationId: getAuctionRefBand
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: category, in: query, required: false, schema: { type: string }, description: "Listing category: material:{mat} or equip:{defId}" }
+      responses:
+        '200':
+          description: Price guardrail band for the category (null when unguarded / cold-start pass-through)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        nullable: true
+                        type: object
+                        required: [ref, floor, ceil]
+                        properties:
+                          ref:   { type: number, description: Reference unit price (dynamic median or static fallback) }
+                          floor: { type: number, description: ref × AUCTION_PRICE_FLOOR_RATIO }
+                          ceil:  { type: number, description: ref × AUCTION_PRICE_CEIL_RATIO }
+
   /auction/create:
     post:
       operationId: createAuction

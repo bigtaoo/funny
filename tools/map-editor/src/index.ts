@@ -7,7 +7,7 @@
 // publishing — the exact same function drives both, so "what you see" and "what gets published" can
 // never drift apart.
 import * as PIXI from 'pixi.js-legacy';
-import { BASE_FOOTPRINT, MAP_TEMPLATE_SAVE_MAX_TILES, proceduralTile, rasterizeMapEdits, SLG_MAP_H, SLG_MAP_W, type MapTemplateSummary, type MapTemplateTile, type ObstacleKind, type ResourceType, type TileType } from '@nw/shared/slg';
+import { BASE_FOOTPRINT, MAP_TEMPLATE_SAVE_MAX_TILES, proceduralTile, rasterizeMapEdits, SLG_MAP_H, SLG_MAP_MAX_LEVEL, SLG_MAP_W, type MapTemplateSummary, type MapTemplateTile, type ObstacleKind, type ResourceType, type TileType } from '@nw/shared/slg';
 import { randomDefaultWidth, TerrainGridStore, type TerrainKind, type TilePoint } from './state/terrainGrid';
 import { CityStore, type MapEditorCityNode } from './state/cities';
 import { Api, ApiError } from './api';
@@ -28,23 +28,26 @@ const RESOURCE_LABELS: Record<ResourceType, string> = {
   sticker: '贴纸(sticker)',
 };
 
-const TERRAIN_COLORS: Record<TerrainKind, number> = { river: 0x4fa8e0, mountain: 0xa0785a };
+const TERRAIN_COLORS: Record<TerrainKind, number> = {
+  river: 0x4fa8e0, mountain: 0xa0785a,
+  neutral: 0x9ccf7a, // carve: open a band back to passable land
+  bridge: 0x5c9fd6, // river crossing (桥)
+  plankway: 0xc08a52, // mountain crossing (栈道)
+};
 const CITY_COLORS: Record<MapEditorCityNode['kind'], number> = {
   worldCenter: 0xff5c8a,
   capital: 0xffd166,
-  gateCity: 0xef6c53,
   garrison: 0x4ce0c0,
 };
 const CITY_COLORS_CSS: Record<MapEditorCityNode['kind'], string> = {
   worldCenter: '#ff5c8a',
   capital: '#ffd166',
-  gateCity: '#ef6c53',
   garrison: '#4ce0c0',
 };
-const TERRAIN_LEGEND: TileType[] = ['neutral', 'resource', 'territory', 'familyKeep', 'center', 'obstacle', 'gate', 'stronghold'];
+const TERRAIN_LEGEND: TileType[] = ['neutral', 'resource', 'territory', 'familyKeep', 'center', 'obstacle', 'bridge', 'plankway', 'stronghold'];
 const TERRAIN_LEGEND_CSS: Record<TileType, string> = {
   neutral: '#f5f0e8', resource: '#f0ece0', territory: '#f5f0e8', familyKeep: '#e8d29a',
-  center: '#f0dfa0', base: '#f5f0e8', obstacle: '#c4bdb0', gate: '#d8c2a0', stronghold: '#9a7a6a',
+  center: '#f0dfa0', base: '#f5f0e8', obstacle: '#c4bdb0', bridge: '#b9c6d2', plankway: '#b2967a', stronghold: '#9a7a6a',
 };
 
 // ── Viewport (camera into the up-to-500×500 world; see DESIGN.md §6.3) ────────────
@@ -53,20 +56,42 @@ const VIEW_H = 620;
 /** Rendered tiles extend this far past the visible edge so short pans don't reveal blank space (§ live-drag tradeoff below). */
 const VIEW_PAD_FACTOR = 1.5;
 const ZOOM_MIN = 10;
-const ZOOM_MAX = 84;
+const ZOOM_MAX = 130; // raised 84→130: DEFAULT_TP (900/11≈81) sits near the old cap, so leave real zoom-in headroom
 /** Default on-screen tile px = the game client's L1 (detail) density: it sizes tiles as
- * floor(viewportWidth / 16) (client/src/scenes/worldmap/zoom.ts). Matching that divisor here
- * makes the editor open with the SAME on-screen tile count the player sees at full zoom-in,
- * instead of the old fixed 34 (~2× as many tiles). ZOOM_MAX leaves headroom to zoom in closer. */
-const DEFAULT_TP = Math.floor(VIEW_W / 16);
+ * floor(viewportWidth / 11) (client/src/scenes/worldmap/zoom.ts). Matching that divisor here
+ * makes the editor open with the SAME on-screen tile count the player sees at full zoom-in.
+ * (Divisor 16→13→11: the map read as an over-dense carpet at higher divisors.) */
+const DEFAULT_TP = Math.floor(VIEW_W / 11);
 /** On-screen width of a base's city sprite in tile-widths — mirrors the game client's BASE_SPRITE_TILES
  * (client/src/scenes/worldmap/constants.ts) so a 3×3 base's art lines up identically; larger cities scale
  * proportionally by footprint (see refreshCitySprites). */
 const BASE_SPRITE_TILES = 3.2;
 
 const pixiRoot = document.getElementById('pixi-root')!;
-const app = new PIXI.Application({ width: VIEW_W, height: VIEW_H, backgroundColor: 0x11111b, antialias: true });
+// Aged-paper page background (0xf5f0e8) — the SAME PIXI.Application backgroundColor the game client uses
+// (client/src/render/theme.ts palette.paper). This is load-bearing for art parity, NOT cosmetic: the
+// terrain atlas is grey pencil on pale paper and impassable tiles (mountain/river) draw at 0.5 alpha so
+// they "recede into the paper" (tileStyle.ts TERRAIN_TEX_ALPHA). Over the old dark 0x11111b canvas that
+// half-transparency let the dark background bleed through, collapsing the hand-drawn rock/wave art into a
+// flat dark blob — which read as "the mountain/river assets aren't showing". A cream page makes them
+// render identically to the game (DESIGN.md §6.3 art-parity).
+const app = new PIXI.Application({ width: VIEW_W, height: VIEW_H, backgroundColor: 0xf5f0e8, antialias: true });
 pixiRoot.appendChild(app.view as HTMLCanvasElement);
+
+// Screen-fixed ruled-paper backdrop, mirroring the game client's buildPaperBackground('worldmap', …,
+// { marginLine: false }) (client/src/scenes/worldmap/WorldMapRenderer/build.ts): faint blue notebook rule
+// lines (palette.ruleLine 0xb9cfe4) every ~h/28 px, no red left margin line on the SLG overworld. Added to
+// the stage BEFORE worldLayer so it stays fixed while the map pans over it, exactly like the game.
+const paperBg = new PIXI.Graphics();
+{
+  const lineGap = Math.round(VIEW_H / 28);
+  paperBg.lineStyle(1.1, 0xb9cfe4, 1);
+  for (let y = lineGap; y < VIEW_H; y += lineGap) {
+    paperBg.moveTo(0, y);
+    paperBg.lineTo(VIEW_W, y);
+  }
+}
+app.stage.addChild(paperBg);
 
 const worldLayer = new PIXI.Container();
 app.stage.addChild(worldLayer);
@@ -137,7 +162,7 @@ let tileInfoShown = false;
 
 let tp = DEFAULT_TP; // on-screen tile width in px — the sole "zoom" knob (replaces the old CSS-scale slider).
              // Visible cell count ∝ tp⁻²; default synced to the game client's L1 detail density
-             // (VIEW_W/16) so the editor's tile count matches what players see, not ~2× more.
+             // (VIEW_W/11) so the editor's tile count matches what players see, not ~2× more.
 let panX = 0;
 let panY = 0;
 /** worldId → tile diff Map ("x:y" → override), refreshed by renderBaseMap(); reused by hover info. */
@@ -213,11 +238,20 @@ function renderBaseMap(worldId: string): void {
   // state, so this is a straight Map copy rather than a re-rasterization).
   const cityDiffs = rasterizeMapEdits(worldId, [], cityStore.nodes);
   diffCache = new Map(cityDiffs.map((d) => [`${d.x}:${d.y}`, d]));
+  const CROSSING_LEVEL = Math.max(2, SLG_MAP_MAX_LEVEL - 1);
   for (const [key, kind] of store.cells) {
     if (diffCache.has(key)) continue;
     const [xs, ys] = key.split(':');
-    // Keep the painted river/mountain art kind so the preview shows what was painted, not the hash flip.
-    diffCache.set(key, { x: Number(xs), y: Number(ys), type: 'obstacle', level: 1, obstacleKind: kind });
+    const x = Number(xs);
+    const y = Number(ys);
+    // Preview the painted cell as its baked tile: river/mountain keep their art kind; neutral carves the band
+    // open; bridge/plankway show the capturable crossing building over the spanned terrain.
+    const preview: MapTemplateTile =
+      kind === 'river' ? { x, y, type: 'obstacle', level: 1, obstacleKind: 'river' }
+      : kind === 'mountain' ? { x, y, type: 'obstacle', level: 1, obstacleKind: 'mountain' }
+      : kind === 'neutral' ? { x, y, type: 'neutral', level: 1 }
+      : { x, y, type: kind, level: CROSSING_LEVEL }; // bridge | plankway
+    diffCache.set(key, preview);
   }
 
   const padW = VIEW_W * VIEW_PAD_FACTOR;
@@ -332,7 +366,7 @@ function brushOutlinePoints(cx: number, cy: number, r: number): number[] {
 }
 
 function drawBrushCursor(hoverTile?: TilePoint): void {
-  if (!hoverTile || (tool !== 'river' && tool !== 'mountain' && tool !== 'eraser')) return;
+  if (!hoverTile || tool === 'city' || tool === 'pan') return;
   const g = new PIXI.Graphics();
   const r = brushDiameter() / 2;
   const pts = brushOutlinePoints(hoverTile.x, hoverTile.y, r);

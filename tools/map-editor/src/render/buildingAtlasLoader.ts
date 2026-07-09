@@ -14,7 +14,7 @@ export function isBuildingAtlasReady(): boolean {
   return sheet !== null;
 }
 
-/** Texture for a building frame (`building_keep` | `building_stronghold` | `icon_watchtower`), or null. */
+/** Texture for a building frame (`building_keep` | `building_stronghold` | `building_bridge` | `building_plankway` | `icon_watchtower`), or null. */
 export function getBuildingTexture(name: string): PIXI.Texture | null {
   return sheet ? (sheet.textures[name] ?? null) : null;
 }

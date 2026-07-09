@@ -36,7 +36,8 @@ export class WorldCoreSpawn extends WorldCoreNation {
       if (
         proc.type === 'center' ||
         proc.type === 'obstacle' ||
-        proc.type === 'gate' ||
+        proc.type === 'bridge' ||
+        proc.type === 'plankway' ||
         proc.type === 'stronghold' // stronghold system strongpoint; cannot be used as a capital respawn location (G8)
       ) {
         continue;
@@ -76,7 +77,7 @@ export class WorldCoreSpawn extends WorldCoreNation {
   }
 
   /**
-   * Starting from (ox,oy), search ring by ring (Chebyshev distance 1..maxR) for the first legal empty tile (in bounds, not center/obstacle/gate/stronghold, unoccupied).
+   * Starting from (ox,oy), search ring by ring (Chebyshev distance 1..maxR) for the first legal empty tile (in bounds, not center/obstacle/bridge/plankway/stronghold, unoccupied).
    * Candidates within each ring are randomly shuffled so new family members don't line up in a fixed direction. Used by auto-spawn near family.
    */
   private async spiralFindEmpty(
@@ -96,7 +97,7 @@ export class WorldCoreSpawn extends WorldCoreNation {
       for (const [x, y] of this.shuffled(ring)) {
         if (!this.inBounds(x, y)) continue;
         const proc = proceduralTile(worldId, x, y);
-        if (proc.type === 'center' || proc.type === 'obstacle' || proc.type === 'gate' || proc.type === 'stronghold') {
+        if (proc.type === 'center' || proc.type === 'obstacle' || proc.type === 'bridge' || proc.type === 'plankway' || proc.type === 'stronghold') {
           continue;
         }
         // ADR-025: the candidate anchor must host the whole 3×3 footprint.
@@ -174,7 +175,7 @@ export class WorldCoreSpawn extends WorldCoreNation {
 
   /**
    * True iff the whole 3×3 block anchored at (ax,ay) can host a base: fully in bounds, no cell is a
-   * blocking/reserved procedural type (center/obstacle/gate/stronghold), and no cell is occupied by another
+   * blocking/reserved procedural type (center/obstacle/bridge/plankway/stronghold), and no cell is occupied by another
    * player. `ignoreOwnerId` excludes a player's own existing tiles (belt-and-suspenders for relocate).
    */
   async footprintFree(
@@ -189,7 +190,7 @@ export class WorldCoreSpawn extends WorldCoreNation {
     const cells = baseFootprintCells(ax, ay);
     for (const { x, y } of cells) {
       const proc = proceduralTile(worldId, x, y);
-      if (proc.type === 'center' || proc.type === 'obstacle' || proc.type === 'gate' || proc.type === 'stronghold') {
+      if (proc.type === 'center' || proc.type === 'obstacle' || proc.type === 'bridge' || proc.type === 'plankway' || proc.type === 'stronghold') {
         return false;
       }
     }

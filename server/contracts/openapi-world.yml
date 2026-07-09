@@ -33,7 +33,7 @@ components:
           type: integer
         type:
           type: string
-          enum: [neutral, resource, territory, familyKeep, center, base, obstacle, gate, stronghold]
+          enum: [neutral, resource, territory, familyKeep, center, base, obstacle, bridge, plankway, stronghold]
         level:
           type: integer
         resType:
@@ -117,7 +117,7 @@ components:
           type: integer
         type:
           type: string
-          enum: [neutral, resource, territory, familyKeep, center, base, obstacle, gate, stronghold]
+          enum: [neutral, resource, territory, familyKeep, center, base, obstacle, bridge, plankway, stronghold]
         mine:
           type: boolean
         ally:

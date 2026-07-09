@@ -320,6 +320,18 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     })).rejects.toMatchObject({ code: 'PRICE_OUT_OF_RANGE' });
   });
 
+  // ── G getRefBand — the band the create-listing UI displays; must match checkPriceGuard's bounds ──────
+  it('G getRefBand returns the static band for a guarded material (scrap ref=10 → [5,20])', async () => {
+    const band = await svc.getRefBand('material:scrap');
+    expect(band).toEqual({ ref: 10, floor: 5, ceil: 20 });
+  });
+
+  it('G getRefBand returns null for unguarded categories (card / unknown material / null)', async () => {
+    expect(await svc.getRefBand('card:whatever')).toBeNull();
+    expect(await svc.getRefBand('material:unknown')).toBeNull();
+    expect(await svc.getRefBand(null)).toBeNull();
+  });
+
   // ── C Daily listing cap ────────────────────────────────────────────────────────
   it('C daily listings exceed AUCTION_DAILY_LIST_CAP → AUCTION_LIMIT_REACHED', async () => {
     // List one and immediately cancel (does not consume an open slot), repeat to reach the daily cap; next listing hits the limit.

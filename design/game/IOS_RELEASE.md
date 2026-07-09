@@ -4,7 +4,25 @@
 > 关联：[`IAP_CREDENTIALS.md`](IAP_CREDENTIALS.md)（Apple 验单凭据）、[`../product/release/store-assets-checklist.md`](../product/release/store-assets-checklist.md)（上架素材）、[`COMMERCIAL_DESIGN.md`](COMMERCIAL_DESIGN.md)（IAP 客户端契约）。
 > 构建流水线：[`.github/workflows/release-ios.yml`](../../.github/workflows/release-ios.yml)。
 
-## 0. 架构（先读）
+## 0. 不可变身份（永久锁定，改了 = 新 App / 现有用户全丢）
+
+以下值一旦上架就**永久不能改**。App 的身份 = Bundle ID + Apple 账号（Team），与签名证书无关。
+
+| 项 | 值 | 说明 |
+|---|---|---|
+| **Bundle ID** | `com.gamestao.nivara` | App 唯一身份。改它 = 全新 App，老用户/存档/内购全断 |
+| **App 名** | `Nivara` | 对外名（内部代号 Notebook Wars） |
+| **设备族** | 通用（iPhone+iPad，`TARGETED_DEVICE_FAMILY = "1,2"`） | |
+| **IAP Product ID 前缀** | `com.gamestao.nivara.coins.<tier>` | 由 Bundle ID 派生，见 §4.1 |
+| **Apple 账号 / Team ID** | 你的 Developer 账号 | App 归属主体，守住账号 + 2FA 即可 |
+
+**心智模型（放宽心用）**：真正不可逆的只有"丢了 Apple 账号本身"。除此之外——
+- **签名证书 `.p12` / 描述文件 / ASC API Key `.p8`** 全部可**吊销后重新签发**，重签**不影响任何已发布版本和用户**（证书只是签章，不是身份）。
+- 重签后唯一要做的：更新对应 GitHub Secret，下次构建照常。已在商店里的旧包用旧证书签、Apple 已收下，永久有效，不用动。
+
+即：出任何证书/密钥事故 → 按 §2 重导一份就好，游戏还是那款游戏，无需额外担心。
+
+## 0.1 架构（先读）
 
 **一套 web 包 = 原生 App。** `webpack --env TARGET=mobile` 产出 `client/dist`，Capacitor 把它塞进 WKWebView 打包成原生 App。区别于 web 构建：
 

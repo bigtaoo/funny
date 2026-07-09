@@ -162,7 +162,7 @@ describe.skipIf(!mongo)('worldsvc auto-spawn e2e', () => {
     const { x, y } = parseTile(me.mainBaseTile!);
     // Spawn point is valid: not the center, not an obstacle/gate/stronghold tile.
     expect(x === CENTER_X && y === CENTER_Y).toBe(false);
-    expect(['center', 'obstacle', 'gate', 'stronghold']).not.toContain(proceduralTile(W, x, y).type);
+    expect(['center', 'obstacle', 'bridge', 'plankway', 'stronghold']).not.toContain(proceduralTile(W, x, y).type);
     // Spawned in outer-ring novice zone (far from the contested center).
     expect(dr(x, y)).toBeGreaterThan(SPAWN_OUTER_MIN_DR);
 

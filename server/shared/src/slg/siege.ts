@@ -40,6 +40,18 @@ export function strongholdGarrison(level: number): number {
 /** One-time resource reward on stronghold conquest (per tile level, per resource type; §3.1 "large resource yield"). */
 export const STRONGHOLD_LOOT_PER_LEVEL = 5000;
 
+// ── Crossing buildings (bridge / plankway) garrison (gate→bridge/plankway migration) ────────────
+/**
+ * NPC garrison per level for a crossing building (桥/栈道). A crossing is a strategic choke — harder than an
+ * ordinary tile (NPC_GARRISON_PER_LEVEL=120) but well below a stronghold (360), so an early player can force a
+ * passage but still needs a real army: a siege-to-pass gate, not a free arc. DRAFT — tune in the balance pass.
+ */
+export const CROSSING_GARRISON_PER_LEVEL = 200;
+/** Crossing-building (bridge/plankway) NPC garrison (linear by tile level). */
+export function passageGarrison(level: number): number {
+  return CROSSING_GARRISON_PER_LEVEL * Math.max(1, level);
+}
+
 /**
  * Additional progression material drop on stronghold conquest (§19.5 "unified with G4 progression material flow"): single rare material `binding`
  * (gates rare/epic equipment; scarce through normal map routes), linear by tile level, delivered to SaveData.materials unified progression pool

@@ -30,8 +30,10 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
       const isMaterial = this.createClass === 'material';
       const mw = Math.min(360 * SCALE, w - 24);
       const priceRowsH = auctionMode ? ROW * 2 : ROW; // auction: startPrice + buyout
-      // item(field=48) + [qty only for material] + saleMode + price(s) + buyer(label+field=60) + info(26) + buttons(50) + pads(26)
-      const mh = (16 + 48 + 60 + 26 + 50 + 10) * SCALE + ROW * (1 + (isMaterial ? 1 : 0)) + priceRowsH;
+      // Keep the price guardrail band for the current item in sync (fires one fetch per item selection).
+      this.ensureRefBand(this.currentListingCategory());
+      // item(field=48) + [qty only for material] + saleMode + price(s) + refBand(22) + buyer(label+field=60) + info(26) + buttons(50) + pads(26)
+      const mh = (16 + 48 + 60 + 26 + 22 + 50 + 10) * SCALE + ROW * (1 + (isMaterial ? 1 : 0)) + priceRowsH;
       const mx = (w - mw) / 2;
       const my = Math.max(50 + 4, (h - mh) / 2);
 
@@ -106,6 +108,30 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
         this.addNumInput(ml, mx, cy, t('auction.price') + ':', this.createPrice, (v) => { this.createPrice = Math.max(1, v); this.openCreateForm(); }, SCALE);
         cy += ROW;
       }
+
+      // Price guardrail hint — surfaces the acceptable range for the selected item so the seller sees it
+      // up front instead of only hitting PRICE_OUT_OF_RANGE on submit. The guarded unit price is the buy-now
+      // price (fixed) / start price (auction), matching the server's checkPriceGuard. Turns red when the
+      // current price falls outside the band; "no limit" for cards / cold-start categories.
+      const listPrice = auctionMode ? this.createStartPrice : this.createPrice;
+      let refText: string;
+      let refColor: number = C.mid;
+      if (this.refBandLoading) {
+        refText = t('auction.refLoading');
+      } else if (this.refBand) {
+        refText = t('auction.refRange', {
+          ref: Math.round(this.refBand.ref),
+          min: Math.ceil(this.refBand.floor),
+          max: Math.floor(this.refBand.ceil),
+        });
+        if (listPrice < this.refBand.floor || listPrice > this.refBand.ceil) refColor = C.red;
+      } else {
+        refText = t('auction.refUnrestricted');
+      }
+      const refLbl = txt(refText, 11 * SCALE, refColor);
+      refLbl.x = mx + 10 * SCALE; refLbl.y = cy;
+      ml.addChild(refLbl);
+      cy += 22 * SCALE;
 
       // Designated buyer (optional) — private sale to a specific account.
       const bl0 = txt(t('auction.buyer') + ':', 12 * SCALE, C.dark);

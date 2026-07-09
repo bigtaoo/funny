@@ -1,7 +1,7 @@
 /**
  * terrainAtlasLoader.ts — SLG map terrain ground tile atlas loader.
  *
- * Seven hand-drawn ground textures (grass / mountain / river / gate / keep / center /
+ * Six hand-drawn ground textures (grass / mountain / river / keep / center /
  * stronghold), each 256px square, packed into `assets/slg/terrain_atlas.{png,json}`.
  * Used by WorldMapScene.drawTileL1() to replace the flat-color terrain fill with a
  * sprite texture, clipped into the diamond tile shape at render time.
@@ -20,7 +20,6 @@ export type TerrainTextureName =
   | 'terrain_grass'
   | 'terrain_mountain'
   | 'terrain_river'
-  | 'terrain_gate'
   | 'terrain_keep'
   | 'terrain_center'
   | 'terrain_stronghold';

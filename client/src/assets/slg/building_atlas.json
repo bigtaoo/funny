@@ -1,5 +1,25 @@
 {
   "frames": {
+    "building_bridge": {
+      "frame": {
+        "x": 2,
+        "y": 518,
+        "w": 256,
+        "h": 168
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 168
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 168
+      }
+    },
     "building_keep": {
       "frame": {
         "x": 2,
@@ -20,9 +40,29 @@
         "h": 256
       }
     },
+    "building_plankway": {
+      "frame": {
+        "x": 233,
+        "y": 2,
+        "w": 216,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 216,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 216,
+        "h": 256
+      }
+    },
     "building_stronghold": {
       "frame": {
-        "x": 2,
+        "x": 90,
         "y": 260,
         "w": 256,
         "h": 195
@@ -42,8 +82,8 @@
     },
     "icon_watchtower": {
       "frame": {
-        "x": 233,
-        "y": 2,
+        "x": 2,
+        "y": 260,
         "w": 86,
         "h": 256
       },
@@ -67,7 +107,7 @@
     "format": "RGBA8888",
     "size": {
       "w": 512,
-      "h": 512
+      "h": 1024
     },
     "scale": "1"
   }

@@ -66,6 +66,27 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
     } catch { /* best-effort red dot — leave the cached value in place */ }
   }
 
+  /**
+   * Derive whether the monthly/year card is active with today's daily reward still
+   * unclaimed, straight from the mirrored (server-authoritative) monetization save —
+   * the same source ShopScene.buildShopCards reads, so the shop nav dot and the card's
+   * "领取" button agree. UTC day, matching the shop's todayKey. No network round-trip.
+   */
+  function computeShopCardClaimable(): boolean {
+    const m = saveManager.get().monetization;
+    if (!m) return false;
+    const active = (m.subscriptionExpiry ?? 0) > Date.now();
+    if (!active) return false;
+    const todayKey = new Date().toISOString().slice(0, 10);
+    return m.subscriptionLastClaimDay !== todayKey;
+  }
+
+  /** Recompute the card-claimable flag and push the shop nav red dot into the lobby. */
+  function refreshShopBadge(view: LobbyView): void {
+    state.shopCardClaimable = computeShopCardClaimable();
+    view.applyShopBadge(state.shopCardClaimable);
+  }
+
   /** Re-fetch retention claimable state and push the daily red dot into the lobby (B5, best-effort). */
   async function refreshRetentionBadge(view: LobbyView): Promise<void> {
     if (!api || state.offlineMode || !platform.storage.getItem(TOKEN_KEY)) { view.applyRetentionBadge(false); return; }
@@ -182,6 +203,7 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
     // rebuild without flicker; then refresh from the server (skip on resize).
     lobby.applySocialBadge(state.socialBadgeTotal);
     lobby.applyAchievementBadge(state.achievementClaimable);
+    lobby.applyShopBadge(state.shopCardClaimable);
     // Ping worldsvc so the world-map nav button shows a "×" badge immediately when
     // the service isn't running — visible feedback before the user clicks the button.
     if (getWorldBaseUrl()) {
@@ -207,9 +229,13 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
       if (!opts?.fromResize) void refreshAchievementBadge(lobby);
       if (!opts?.fromResize) void refreshRetentionBadge(lobby);
       if (!opts?.fromResize) void refreshEventsAvailable(lobby);
+      // Card daily-reward dot is derived from the local mirrored save (no fetch) — recompute
+      // on every entry so it clears the instant the user claims and returns to the lobby.
+      refreshShopBadge(lobby);
     } else {
       state.socialBadgeTotal = 0;
       state.achievementClaimable = false;
+      state.shopCardClaimable = false;
       state.achievementReached = null; // drop the unlock baseline so a later login re-seeds without a stale toast
     }
   }

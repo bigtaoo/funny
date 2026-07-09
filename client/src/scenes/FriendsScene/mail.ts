@@ -39,10 +39,10 @@ export function MailMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): TBas
     }
 
     private drawMailRow(layer: PIXI.Container, m: MailView, y: number): void {
-      const { w, h } = this;
+      const { h } = this;
       const rh = Math.round(h * 0.10);
-      const rx = Math.round(w * 0.04);
-      const rw = Math.round(w * 0.92);
+      const rx = this.cX;
+      const rw = this.cW;
       const hasAtt = !!m.attachments && m.attachments.length > 0;
       const unclaimed = hasAtt && !m.claimed;
       const accent = !m.read ? C.gold : unclaimed ? C.green : C.mid;
@@ -86,8 +86,8 @@ export function MailMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): TBas
     drawMailDetail(m: MailView): void {
       const { w, h } = this;
       const top = this.bodyTop + Math.round(h * 0.02);
-      const px = Math.round(w * 0.06);
-      const panelW = w - px * 2;
+      const px = this.cX;
+      const panelW = this.cW;
 
       const subj = txt(m.subject, Math.round(h * 0.034), C.dark, true);
       subj.anchor.set(0, 0); subj.x = px; subj.y = top;
@@ -121,7 +121,7 @@ export function MailMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): TBas
         const bH = Math.round(h * 0.08);
         if (m.claimed) {
           const done = txt(t('mail.claimed'), Math.round(h * 0.028), C.green, true);
-          done.anchor.set(0.5, 0.5); done.x = w / 2; done.y = cy + bH / 2;
+          done.anchor.set(0.5, 0.5); done.x = this.cCX; done.y = cy + bH / 2;
           this.container.addChild(done);
         } else {
           this.addButton(t('mail.claim'), px, cy, panelW, bH, C.green, C.green, () => void this.doClaim(m), 0xffffff);

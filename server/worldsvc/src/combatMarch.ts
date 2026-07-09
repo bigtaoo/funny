@@ -29,8 +29,8 @@ export class MarchService {
   ) {}
 
   /**
-   * A* pathfinding for marches: pre-fetch all occupied gate tiles, assemble passableGateKeys, then call findMarchPath.
-   * Gate passage rules (S8-4): gates occupied by the requester and gates occupied by members of the same family are passable
+   * A* pathfinding for marches: pre-fetch all occupied crossing (bridge/plankway) tiles, assemble passableGateKeys, then call findMarchPath.
+   * Crossing passage rules (S8-4): crossings occupied by the requester and crossings occupied by members of the same family are passable
    * (allied sect passage is S8-4+ with the alliance system pending; currently only within the same family).
    * No path found → throw PATH_BLOCKED (HTTP 400).
    */
@@ -42,13 +42,13 @@ export class MarchService {
     toY: number,
     requesterId: string,
   ): Promise<PathCell[]> {
-    // Retrieve the requester's current family (if any); gates occupied by fellow family members are also passable.
+    // Retrieve the requester's current family (if any); crossings occupied by fellow family members are also passable.
     const requesterPw = await this.core.deps.cols.playerWorld.findOne({ _id: playerWorldId(worldId, requesterId) });
     const allyFamilyId = requesterPw?.familyId;
 
-    // Gates are sparse (~20–40 across the whole map); fetch all at once and filter, to avoid async calls inside A*.
+    // Crossings (bridge/plankway) are sparse; fetch all occupied ones at once and filter, to avoid async calls inside A*.
     const gateTiles = await this.core.deps.cols.tiles
-      .find({ worldId, type: 'gate' })
+      .find({ worldId, type: { $in: ['bridge', 'plankway'] } })
       .project<{ _id: string; x: number; y: number; ownerId: string | undefined; familyId: string | undefined }>({
         _id: 1, x: 1, y: 1, ownerId: 1, familyId: 1,
       })
@@ -153,6 +153,10 @@ export class MarchService {
       if (proc.type === 'stronghold' && !toTile?.ownerId) {
         throw new SlgError('TILE_OCCUPIED', 'Strongholds cannot be directly occupied; use attack siege to capture');
       }
+      // Crossings (bridge/plankway): NPC-garrisoned choke buildings; cannot be directly occupied — must be captured via attack siege.
+      if ((proc.type === 'bridge' || proc.type === 'plankway') && !toTile?.ownerId) {
+        throw new SlgError('TILE_OCCUPIED', 'Bridges/plankways cannot be directly occupied; use attack siege to capture');
+      }
       if (toTile?.ownerId === accountId) throw new SlgError('TILE_OCCUPIED', 'This tile is already your territory (use reinforce)');
       if (toTile?.ownerId) {
         if (toTile.protectedUntil && toTile.protectedUntil > now()) {
@@ -166,9 +170,12 @@ export class MarchService {
       // Siege: target must be another player's territory/capital, or an ownerless stronghold (G8 PvE to defeat the system garrison). Use occupy/sweep for neutral ownerless tiles.
       if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'World center is contested by sects and cannot be sieged');
       if (!toTile?.ownerId) {
-        // No owner: only strongholds can be sieged (defeating the ultra-strong system NPC); all other ownerless tiles use occupy/sweep.
-        if (proc.type !== 'stronghold') throw new SlgError('TILE_NOT_OWNED', 'Siege target has no owner (use occupy/sweep)');
-        // Stronghold PvE: leave defenderId unset (NPC does not receive an under_attack warning).
+        // No owner: only strongholds and crossings (bridge/plankway) can be sieged (defeating the system NPC garrison);
+        // all other ownerless tiles use occupy/sweep.
+        if (proc.type !== 'stronghold' && proc.type !== 'bridge' && proc.type !== 'plankway') {
+          throw new SlgError('TILE_NOT_OWNED', 'Siege target has no owner (use occupy/sweep)');
+        }
+        // Stronghold / crossing PvE: leave defenderId unset (NPC does not receive an under_attack warning).
       } else {
         if (toTile.ownerId === accountId) throw new SlgError('TILE_OCCUPIED', 'Cannot siege your own territory');
         // R-3 (§8.2 / §18.7): friendly-fire block — cannot siege own family / same sect / allied sect territory.
@@ -189,6 +196,8 @@ export class MarchService {
       if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'Cannot sweep the world center');
       // Stronghold (G8): ultra-strong system garrison; cannot be swept for loot — must be captured via attack siege.
       if (proc.type === 'stronghold') throw new SlgError('TILE_OCCUPIED', 'Strongholds must be captured via attack siege; sweeping is not allowed');
+      // Crossings (bridge/plankway): garrisoned choke buildings; cannot be swept — must be captured via attack siege.
+      if (proc.type === 'bridge' || proc.type === 'plankway') throw new SlgError('TILE_OCCUPIED', 'Bridges/plankways must be captured via attack siege; sweeping is not allowed');
       if (toTile?.ownerId) throw new SlgError('TILE_OCCUPIED', 'Target is already occupied (use attack siege to take it)');
     }
 

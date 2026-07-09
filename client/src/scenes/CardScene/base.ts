@@ -49,7 +49,6 @@ export interface CardCallbacks {
   openEquipmentBag?(): void;
 }
 
-export const HUD_H = 50;
 export const MODAL_DIM = 0x000000;
 
 // Roster grid: icon-card cells (name top / portrait left / attributes right)
@@ -99,6 +98,8 @@ export class CardSceneBase {
   protected headerOverlayLayer!: PIXI.Container;
 
   protected backRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  /** Title-bar height, set from the shared header in build() — drives all body layout below it. */
+  protected headerH = 0;
   protected hitRects: { rect: Rect; action: () => void }[] = [];
   protected modalHits: { rect: Rect; action: () => void }[] = [];
   protected modalOpen = false;
@@ -145,9 +146,10 @@ export class CardSceneBase {
     this.container.addChild(this.loadingLayer);
 
     const hdr = drawSceneHeader(this.container, w, h, t('roster.title'), {
-      variant: 'paper', headerH: HUD_H, titleSize: 15, accent: HEADER_ACCENT.spend,
+      variant: 'paper', accent: HEADER_ACCENT.spend,
     });
     this.backRect = hdr.backRect;
+    this.headerH = hdr.headerH;
 
     this.headerOverlayLayer = new PIXI.Container();
     this.container.addChild(this.headerOverlayLayer);

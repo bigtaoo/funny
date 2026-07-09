@@ -253,6 +253,10 @@ export class LobbySceneBase {
   protected achievementBadge = false;
   /** Re-drawn layer for the achievement dot (cheap refresh, no nav rebuild). */
   protected achievementBadgeLayer: PIXI.Container | null = null;
+  /** Monthly/year card active with today's daily reward unclaimed → red dot on the shop nav slot. */
+  protected shopBadge = false;
+  /** Re-drawn layer for the shop dot (cheap refresh, no nav rebuild). */
+  protected shopBadgeLayer: PIXI.Container | null = null;
   /** Retention claimable (B5: checkin or daily reward) → red dot on the daily strip item. */
   protected retentionBadge = false;
   /** Hit rect for the daily strip item. */
@@ -369,6 +373,7 @@ export interface LobbySceneBase {
   matchFound(): void;
   drawSocialBadge(): void;
   drawAchievementBadge(): void;
+  drawShopBadge(): void;
   drawWorldOfflineBadge(): void;
   drawSideStripBadges(): void;
   rebuild(): void;

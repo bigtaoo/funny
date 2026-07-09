@@ -12,7 +12,7 @@ import type { CardSLGState } from '../../net/WorldApiClient';
 import { CARD_DEFS, CARD_INV_CAP, CARD_INV_WARN, troopCap, cardPower } from '../../game/meta/cardDefs';
 import {
   type Constructor, type CardSceneBaseCtor,
-  HUD_H, CELL_GAP, CARD_CELL_H, CARD_CELL_W_TARGET, sortCards, injuryCountdown,
+  CELL_GAP, CARD_CELL_H, CARD_CELL_W_TARGET, sortCards, injuryCountdown,
 } from './base';
 
 export interface ListHandlers {
@@ -36,7 +36,7 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         { label: t('roster.title'), active: true, icon: 'cards' },
         { label: t('equip.title'), active: false, icon: 'armor' },
       ];
-      const { hits } = drawSidebarTabs(this.bodyLayer, sidebarW, HUD_H, this.h, tabs, (i) => {
+      const { hits } = drawSidebarTabs(this.bodyLayer, sidebarW, this.headerH, this.h, tabs, (i) => {
         if (i === 1) this.cb.openEquipmentBag?.();
       });
       for (const hit of hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
@@ -53,10 +53,12 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       const count = Object.keys(save.cardInv ?? {}).length;
       const warn = count >= CARD_INV_WARN;
       const full = count >= CARD_INV_CAP;
-      drawHeaderCurrency(this.headerOverlayLayer, this.w, HUD_H, save.wallet.coins, [], {
+      // Keep the coin + capacity readout at a compact absolute size (matches EquipmentScene, its
+      // [Cards|Equipment] peer) rather than scaling it up with the taller unified header.
+      drawHeaderCurrency(this.headerOverlayLayer, this.w, this.headerH, save.wallet.coins, [], {
         text: `${t('roster.capacity').replace('{cur}', String(count)).replace('{cap}', String(CARD_INV_CAP))}`,
         color: full ? C.red : warn ? C.gold : C.mid,
-      }, 2);
+      }, 100 / this.headerH);
     }
 
     renderList(): void {
@@ -64,7 +66,7 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       const save = this.cb.getSave();
       const cardState = this.cb.getCardState?.() ?? {};
       const cards = Object.values(save.cardInv ?? {});
-      const listY = HUD_H;
+      const listY = this.headerH;
       const listH = h - listY - 8;
 
       if (cards.length === 0) {

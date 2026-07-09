@@ -1,5 +1,5 @@
 // S8-6.6 A* pathfinding unit tests (pure functions, no Mongo).
-// Coverage: straight path / obstacle detour / gate blocking / gate passage / no path / same tile / out-of-bounds / proceduralTile obstacle generation.
+// Coverage: straight path / obstacle detour / crossing (bridge/plankway) blocking + passage / no path / same tile / out-of-bounds / proceduralTile obstacle generation.
 import { describe, expect, it } from 'vitest';
 import {
   findMarchPath,
@@ -127,7 +127,7 @@ describe('proceduralTile obstacle generation', () => {
     for (let x = ringX - 15; x <= ringX + 15; x++) {
       for (let y = cy - 15; y <= cy + 15; y++) {
         const t = proceduralTile(W_OPEN, x, y);
-        if (t.type === 'obstacle' || t.type === 'gate') obstacleCnt++;
+        if (t.type === 'obstacle' || t.type === 'bridge' || t.type === 'plankway') obstacleCnt++;
       }
     }
     expect(obstacleCnt).toBeGreaterThan(0);
@@ -146,7 +146,68 @@ describe('proceduralTile obstacle generation', () => {
     for (const [x, y] of corners) {
       const t = proceduralTile(W_OPEN, x, y);
       expect(t.type).not.toBe('obstacle');
-      expect(t.type).not.toBe('gate');
+      expect(t.type).not.toBe('bridge');
+      expect(t.type).not.toBe('plankway');
     }
+  });
+});
+
+describe('crossing (bridge/plankway) transit rule', () => {
+  // gate→bridge/plankway migration: an unoccupied crossing blocks transit like an obstacle; it is passable
+  // mid-route only when its key is in passableGateKeys (occupied by the marcher/allies), and is always
+  // reachable AS A DESTINATION (so a marcher can reach it to besiege it). Crossings are a seed-derived terrain
+  // feature at arbitrary angles, so we scan a fixed pool of seeds for one whose perpendicular sides land on an
+  // axis (its L→R only 2-step route then runs straight through the crossing C — a clean, deterministic setup).
+  const SEEDS = ['open-world-no-obstacle', 's1-passage', 'pf-a', 'pf-b', 'pf-c', 'pf-d', 'pf-e', 'pf-f', 'pf-g', 'pf-h'];
+  const isOpen = (seed: string, x: number, y: number): boolean => {
+    if (x < 0 || y < 0 || x >= SLG_MAP_W || y >= SLG_MAP_H) return false;
+    const type = proceduralTile(seed, x, y).type;
+    return type !== 'obstacle' && type !== 'bridge' && type !== 'plankway';
+  };
+  /** First crossing (over the seed pool) with two opposite axis-aligned open sides (L,R). */
+  function findCrossingWithSides(): { seed: string; C: { x: number; y: number }; L: { x: number; y: number }; R: { x: number; y: number } } | null {
+    for (const seed of SEEDS) {
+      for (let y = 0; y < SLG_MAP_H; y++) {
+        for (let x = 0; x < SLG_MAP_W; x++) {
+          const t = proceduralTile(seed, x, y).type;
+          if (t !== 'bridge' && t !== 'plankway') continue;
+          for (const [dx, dy] of [[1, 0], [0, 1]] as const) {
+            if (isOpen(seed, x - dx, y - dy) && isOpen(seed, x + dx, y + dy)) {
+              return { seed, C: { x, y }, L: { x: x - dx, y: y - dy }, R: { x: x + dx, y: y + dy } };
+            }
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  const found = findCrossingWithSides();
+
+  it('at least one seed yields a crossing with open perpendicular sides (auto-crossing fallback carves the band open)', () => {
+    expect(found).not.toBeNull();
+  });
+
+  it('occupied crossing is passable mid-route; unoccupied crossing blocks transit; crossing is always reachable as a destination', () => {
+    if (!found) throw new Error('no crossing with axis-aligned open sides found in the seed pool');
+    const { seed, C, L, R } = found;
+    const cKey = `${C.x}:${C.y}`;
+
+    // Occupied (key present): the shortest L→R route is the 2-step run straight through the crossing.
+    const withKey = findMarchPath(seed, SLG_MAP_W, SLG_MAP_H, L.x, L.y, R.x, R.y, new Set([cKey]));
+    expect(withKey).not.toBeNull();
+    expect(withKey!.length).toBe(3);
+    expect(withKey![1]).toEqual(C);
+
+    // Unoccupied (empty keys): the crossing blocks — any route found must NOT step through it mid-path.
+    const withoutKey = findMarchPath(seed, SLG_MAP_W, SLG_MAP_H, L.x, L.y, R.x, R.y, new Set());
+    if (withoutKey) {
+      expect(withoutKey.some((p) => p.x === C.x && p.y === C.y)).toBe(false);
+    }
+
+    // Destination exemption: an unowned crossing is reachable as the march target (so you can march on to besiege it).
+    const toCrossing = findMarchPath(seed, SLG_MAP_W, SLG_MAP_H, L.x, L.y, C.x, C.y, new Set());
+    expect(toCrossing).not.toBeNull();
+    expect(toCrossing![toCrossing!.length - 1]).toEqual(C);
   });
 });

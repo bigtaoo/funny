@@ -11,7 +11,7 @@ import type { InputManager } from '../../inputSystem/InputManager';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { buildDecorCLayer } from '../../render/decorCLayer';
-import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
+import { drawSceneHeader, sceneHeaderHeight, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import type { WorldApiClient, AuctionView } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
 import type { SaveData, EquipmentInstance, CardInstance } from '../../game/meta/SaveData';
@@ -71,6 +71,11 @@ export class AuctionSceneBase {
   protected readonly h: number;
   protected readonly cb: AuctionSceneCallbacks;
 
+  // Title-bar height. Set in the constructor to the shared standard (sceneHeaderHeight, 12% of design
+  // height) so the auction bar matches every other secondary scene; drives all body layout below it
+  // (sidebar / filter bar / list / picker), replacing the old fixed HUD_H.
+  protected headerH = HUD_H;
+
   protected activeTab: AucTab = 'all';
   protected allFilter: AucFilter = '';
   protected allAuctions: AuctionView[] = [];
@@ -97,6 +102,14 @@ export class AuctionSceneBase {
   protected caretOn = true;
   protected caretTimer = 0;
   protected createOpen = false;
+
+  // Price guardrail band for the item currently selected in the create form, fetched from the server
+  // (GET /auction/refprice) so the seller sees the acceptable range before submitting. refBandCat is the
+  // category the current state corresponds to (null = unguarded item like a card); refBand is the loaded
+  // band (null = cold-start pass-through, any price allowed); refBandLoading gates the in-flight fetch.
+  protected refBandCat: string | null = null;
+  protected refBand: { ref: number; floor: number; ceil: number } | null = null;
+  protected refBandLoading = false;
 
   // Unified item picker (scene-level overlay, reuses the body drag-scroll): true → show the picker
   // list (materials + equipment + cards, sorted by value desc) instead of the market/mine list.
@@ -125,6 +138,7 @@ export class AuctionSceneBase {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.cb = cb;
+    this.headerH = sceneHeaderHeight(this.h);
     this.container = new PIXI.Container();
     this.build();
     void this.loadData();
@@ -150,10 +164,12 @@ export class AuctionSceneBase {
     this.toastLayer = new PIXI.Container();
     this.container.addChild(this.toastLayer);
 
-    // Static header
+    // Static header — shared standard height/title size (matches every other secondary scene); only the
+    // SLG-red accent rule distinguishes it. headerH drives the body layout below.
     const hdr = drawSceneHeader(this.container, w, this.h, t('auction.title'), {
-      variant: 'paper', headerH: HUD_H, titleSize: 18, accent: HEADER_ACCENT.slg,
+      variant: 'paper', accent: HEADER_ACCENT.slg,
     });
+    this.headerH = hdr.headerH;
     this.hitRects.push({ rect: hdr.backRect, action: () => this.cb.onBack() });
   }
 
@@ -185,12 +201,12 @@ export class AuctionSceneBase {
 
     // Item picker overlay: back button cancels the picker and returns to the create form.
     if (this.itemPickerOpen) {
-      this.hitRects.push({ rect: { x: 0, y: 0, w: 80, h: HUD_H }, action: () => this.cancelItemPicker() });
+      this.hitRects.push({ rect: { x: 0, y: 0, w: 80, h: this.headerH }, action: () => this.cancelItemPicker() });
       this.renderItemPicker();
       return;
     }
 
-    this.hitRects.push({ rect: { x: 0, y: 0, w: 80, h: HUD_H }, action: () => this.cb.onBack() });
+    this.hitRects.push({ rect: { x: 0, y: 0, w: 80, h: this.headerH }, action: () => this.cb.onBack() });
 
     const contentX = this.renderSidebar();
     const filterH = this.activeTab === 'all' ? this.renderFilterBar(contentX) : 0;
@@ -243,6 +259,39 @@ export class AuctionSceneBase {
     }
     const mat = (auc.item?.['material'] as string | undefined) ?? 'scrap';
     return `${t(`auction.${mat as 'scrap' | 'lead' | 'binding'}`)} ×${auc.qty}`;
+  }
+
+  // ── Price guardrail band (create-form reference price) ───────────────────────
+
+  /**
+   * Server price-guard category for the item currently selected in the create form
+   * (`material:<mat>` / `equip:<defId>`), or null for classes with no guardrail (cards). Mirrors the
+   * server's categoryOf so the band we fetch matches the band createAuction will enforce.
+   */
+  protected currentListingCategory(): string | null {
+    if (this.createClass === 'material') return `material:${this.createMaterial}`;
+    if (this.createClass === 'equipment') {
+      const inst = this.listableEquipment().find((e) => e.id === this.createEquipId);
+      return inst ? `equip:${inst.defId}` : null;
+    }
+    return null; // card: no price window (server passes through)
+  }
+
+  /**
+   * Fetch (once per category) the price guardrail band for the given category and cache it, then re-render
+   * the create form so the seller sees the acceptable range. Called from openCreateForm on every render;
+   * short-circuits when the category is already synced, so it fires exactly one request per item selection.
+   */
+  protected ensureRefBand(category: string | null): void {
+    if (category === this.refBandCat) return; // already loaded / loading for this category
+    this.refBandCat = category;
+    this.refBand = null;
+    this.refBandLoading = false;
+    if (category === null) return; // unguarded item (card): any price allowed
+    this.refBandLoading = true;
+    void this.cb.worldApi.getAuctionRefBand(category)
+      .then((band) => { if (!this.destroyed && this.refBandCat === category) { this.refBand = band; this.refBandLoading = false; if (this.modalOpen) this.openCreateForm(); } })
+      .catch(() => { if (!this.destroyed && this.refBandCat === category) { this.refBandLoading = false; if (this.modalOpen) this.openCreateForm(); } });
   }
 
   // ── Shared widgets ──────────────────────────────────────────────────────────

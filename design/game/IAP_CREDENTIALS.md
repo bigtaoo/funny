@@ -45,6 +45,16 @@ Web 端充值走 Paddle（非上面的 `/iap/verify`，而是 `metaserver/src/pa
 
 > **客户端 token 下发路径（本轮新增）**：`NW_PADDLE_CLIENT_TOKEN` 配置后，`metaserver.MetaService.bootstrap` 在 `GET /bootstrap` 响应里附带 `paddleClientToken`；web 客户端 `FeatureFlags` 缓存并交给 `ShopScene` 的 Paddle checkout。token 前缀 `test_` 时客户端自动切 Paddle sandbox 环境。详见 `COMMERCIAL_DESIGN.md §10`。
 
+#### Paddle 商户域名审核 — 法务页要求（2026-07-09）
+
+Paddle 作为 merchant of record，审核商户域名时会爬取法务页，硬性要求**退款政策体现 Buyer Terms 的 14 天最低退款窗口**。踩过的拦点：退款政策原写「final and non-refundable」（绝对不退），与 Paddle Buyer Terms 直接冲突 → 被打回。
+
+- **三份法务页**（webpack 从 `client/public/web/` COPY 进 `client/dist`，随 client 部署到 `nivara.gamestao.com`）：
+  - `refunds.html` — 首节即「14-Day Refund Window」，链接 `https://www.paddle.com/legal/checkout-buyer-terms`；不得再出现「非退款」绝对措辞。
+  - `terms.html` / `privacy.html` — 联系/GDPR 邮箱统一 `support@gamestao.com`（数据控制者仍具名 Tao Wang）。
+- **口径**：14 天内可申请退款（叠加法定权利）；数字商品在窗口外视为最终交付（除技术故障/重复扣款/未授权/法定权利）。
+- **审核回复前提**：确认 `https://nivara.gamestao.com/refunds.html` 线上已是新版（Paddle 会重爬域名核验），再回邮件。
+
 ## 2. 广告验签凭据（激励视频，C2）
 
 | 平台 | 环境变量 | 说明 | 缺省行为 |
