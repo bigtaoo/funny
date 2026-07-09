@@ -57,8 +57,8 @@ export interface Nav {
   goTeams(worldApi: WorldApiClient, worldId: string): void;
   goTeamEditor(worldApi: WorldApiClient, worldId: string, teamId: string, teamName: string): void;
   goCity(worldApi: WorldApiClient, worldId: string): void;
-  goFamilyHub(worldApi: WorldApiClient, worldId: string): void;
-  goSectHub(worldApi: WorldApiClient, worldId: string): void;
+  goFamilyHub(worldApi: WorldApiClient, worldId: string, onExit?: () => void): void;
+  goSectHub(worldApi: WorldApiClient, worldId: string, onExit?: () => void): void;
   goAuctionHouse(worldApi: WorldApiClient, worldId: string): void;
   goShop(onBack?: () => void, initialTab?: 'shop' | 'coins'): void;
   goGacha(group?: { shopBack?: () => void }): void;

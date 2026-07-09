@@ -18,11 +18,14 @@ import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import type { WorldApiClient, FamilyDetailView, FamilyMemberView, FamilyMessageView } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
+import type { SocialTab } from '../../render/socialTabRail';
 
 export interface FamilySceneCallbacks {
   onBack(): void;
   /** Open the sect hub (S8-4b) — sect = a family-of-families, rooted in the family UI. */
   onOpenSect(): void;
+  /** Rail click for one of the other 4 social tabs (friends/sect/world/mail); 'family' is a no-op. */
+  onNavTab(tab: SocialTab): void;
   worldApi: WorldApiClient;
   worldId: string;
   /** current player's accountId */

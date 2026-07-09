@@ -19,6 +19,9 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
     const restore = (): void => {
       if (session) session.handlers = { onMatchStart: (info) => nav.goGameNet(info) };
     };
+    // Where the whole social hub returns to when backed all the way out — reused by the
+    // family/sect auto-jump below so `onBack` isn't lost once FriendsScene is torn down.
+    const backTo = (): void => { restore(); (opts?.onBack ?? nav.goLobby)(); };
 
     // SLG world API — lazy worldId resolved on first SLG-tab visit.
     // getWorldBaseUrl() returns '' in Docker/prod (same-origin nginx proxy) — falsy
@@ -35,7 +38,7 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
     };
 
     const view: FriendsView = views.showFriends({
-      onBack() { restore(); (opts?.onBack ?? nav.goLobby)(); },
+      onBack: backTo,
       onOpenRoom() { nav.goRoom(); },
       ...(opts?.defaultTab ? { defaultTab: opts.defaultTab } : {}),
       loadFriends: () => client.getFriends(),
@@ -93,8 +96,8 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
         joinFamily:   async (familyId) => { await worldApi.joinFamily(familyId); },
         createSect:   async (name, tag) => { const wid = await ensureWorldId(); await worldApi.createSect(wid, name, tag); },
         joinSect:     async (sectId) => { const wid = await ensureWorldId(); await worldApi.joinSect(wid, sectId); },
-        openFamilyHub: () => { if (slgWorldId) nav.goFamilyHub(worldApi, slgWorldId); },
-        openSectHub:   () => { if (slgWorldId) nav.goSectHub(worldApi, slgWorldId); },
+        openFamilyHub: () => { if (slgWorldId) nav.goFamilyHub(worldApi, slgWorldId, backTo); },
+        openSectHub:   () => { if (slgWorldId) nav.goSectHub(worldApi, slgWorldId, backTo); },
         loadWorldChat: async (before) => { const wid = await ensureWorldId(); return worldApi.getWorldChannel(wid, { before }); },
         sendWorldChat: async (body, senderName) => { const wid = await ensureWorldId(); await worldApi.sendWorldChannelMessage(wid, body, senderName); },
         playerName: () => playerName(),
