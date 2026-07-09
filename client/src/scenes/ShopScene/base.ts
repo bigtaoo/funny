@@ -301,8 +301,11 @@ export class ShopSceneBase {
     const sidebarW = marginLineX(w);
     const showCoins = !!this.cb.rechargeCoins;
 
+    const { active, claimedToday } = this.monthlyCardStatus();
+    const monthlyClaimable = !!this.cb.claimMonthlyCard && active && !claimedToday;
+
     const tabs: HubTab[] = [
-      { label: t('shop.title'), active: this.tab === 'shop', icon: 'tag' },
+      { label: t('shop.title'), active: this.tab === 'shop', icon: 'tag', badge: monthlyClaimable },
     ];
     if (showCoins) tabs.push({ label: t('shop.coinsTab'), active: this.tab === 'coins', icon: 'coin' });
     tabs.push({ label: t('gacha.title'), active: false, icon: 'capsule' });
@@ -322,6 +325,15 @@ export class ShopSceneBase {
     });
     this.hits.push(...hits);
     return tbH;
+  }
+
+  /** Monthly/year card status derived from the mirrored monetization save (shared by the sidebar badge and the card itself). */
+  protected monthlyCardStatus(): { active: boolean; claimedToday: boolean } {
+    const mon = this.cb.getMonetization?.() ?? { subscriptionExpiry: 0, starterUsed: [] };
+    const active = mon.subscriptionExpiry > Date.now();
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const claimedToday = active && mon.subscriptionLastClaimDay === todayKey;
+    return { active, claimedToday };
   }
 
   // ── Grid layout ────────────────────────────────────────────────────────────

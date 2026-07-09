@@ -218,6 +218,9 @@
   - **`shopBadge` + `shopBadgeLayer`**（`LobbyScene/base.ts`）：独立重绘层，`applyShopBadge()` 只重画点不 `rebuild()`；`drawShopBadge()` 画在 `shopNavRect` 右上角（`shopNavRect.w<=0` 即离线灰置时早退不画）。
   - **可领判定**（`app/nav/lobby.ts` `computeShopCardClaimable()`）：直接读本地镜像存档 `monetization`（与 `ShopScene.buildShopCards` 同源，无需网络）——`subscriptionExpiry>now`（卡生效）且 `subscriptionLastClaimDay !== 今日 UTC key`。每次进大厅 `refreshShopBadge()` 重算，领奖返回大厅即清点；离线态强制 false。
   - **缓存**：`state.shopCardClaimable` 跨 resize 重建保红点不闪；`LobbyView.applyShopBadge` 贯穿 `AppViews`/`app.ts`/headless harness。
+- ✅ **商城场景内侧栏「商城」标签补红点**（2026-07-09）：上条只修了大厅底部导航的商城 slot；玩家点进商城后（`ShopScene` §9 已改左侧竖栏），左栏 `[商城|充值?|盲盒|战令?]` 里的「商城」格本身**没有任何红点**——已经进了商城还是看不出该点哪张卡（用户报的 bug：截图里月卡面板 `Claim` 按钮虽可点，但没有视觉引导）。修复：
+  - **`HubTab.badge?: boolean`**（`ui/widgets/HubTabs.ts`）：`drawSidebarTabs` 新增红点绘制（格右上角，不管该格是否 `active`）；`drawHubTabs`（水平条）暂未跟进，留给 §8 提到的三场景统一样式时一起补。
+  - **`ShopSceneBase.monthlyCardStatus()`**（`ShopScene/base.ts`）：抽出月卡 `active`/`claimedToday` 判定（与 §7 大厅红点同一套：`subscriptionExpiry>now` 且 `subscriptionLastClaimDay!==今日UTC key`），`drawGroupTabs()` 用它给「商城」标签算 `badge`；`ShopMixin.buildShopCards()`（`shop.ts`）改为调用同一方法，避免两处各算一遍产生偏差。
 - ✅ **P3**（完成 2026-06-28）：视觉打磨三项：
   1. **底部 tab 图标化 + 加高**：高度 `h*0.08` → `h*0.105`，彩色圆点换手绘图标
      （养成=book / 商城=coin / 主页=home / 生涯=trophy / 社交=globe，复用 `icons.ts` 已有字形）；

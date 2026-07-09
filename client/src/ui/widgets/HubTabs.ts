@@ -42,6 +42,8 @@ export interface HubTab {
    * label (white when active, mid when inactive).
    */
   icon?: IconKind;
+  /** Small red dot pinned to the cell's top-right corner — a claimable reward lives behind this tab. */
+  badge?: boolean;
 }
 
 /** Standard strip height — a prominent tab bar, roughly on par with the header. */
@@ -177,6 +179,16 @@ export function drawSidebarTabs(
       lbl.y = cy + itemH / 2;
     }
     container.addChild(lbl);
+
+    if (tab.badge) {
+      const r = Math.round(itemH * 0.1);
+      const dot = new PIXI.Graphics();
+      dot.beginFill(C.red);
+      dot.lineStyle(Math.max(1, Math.round(r * 0.5)), 0xffffff, 0.9);
+      dot.drawCircle(indent + cellW - r, cy + r, r);
+      dot.endFill();
+      container.addChild(dot);
+    }
 
     if (!tab.active) {
       hits.push({ rect: { x: indent, y: cy, w: cellW, h: itemH }, fn: () => onSelect(i) });
