@@ -290,23 +290,23 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       this.bodyLayer.addChild(cell);
 
       // Top: name +level (scaled down to fit if too wide).
-      const name = txt(`${this.itemName(inst.defId)} +${inst.level}`, 13, C.dark, true);
+      const name = txt(`${this.itemName(inst.defId)} +${inst.level}`, 20, C.dark, true);
       name.x = x + pad; name.y = y + pad;
-      if (name.width > cellW - pad * 2 - 16) name.scale.set(Math.min(1, cellW / (name.width + 32)));
+      if (name.width > cellW - pad * 2 - 20) name.scale.set(Math.min(1, cellW / (name.width + 40)));
       this.bodyLayer.addChild(name);
 
       // Lock badge (top-right).
       if (inst.locked) {
-        const l = buildIcon('lock', 14, C.mid);
-        l.x = x + cellW - pad - 14; l.y = y + pad;
+        const l = buildIcon('lock', 18, C.mid);
+        l.x = x + cellW - pad - 18; l.y = y + pad;
         this.bodyLayer.addChild(l);
       }
 
       // Left: glyph in a rarity-bordered frame.
       const slot = getEquipDef(inst.defId)?.slot ?? 'weapon';
-      const imgBox = EQUIP_CELL_H - (pad + 24) - pad;
+      const imgBox = EQUIP_CELL_H - (pad + 32) - pad;
       const imgX = x + pad;
-      const imgY = y + pad + 24;
+      const imgY = y + pad + 32;
       const frame = sketchPanel(imgBox, imgBox, { fill: 0xf0eee7, border: color, seed: seedFor(x, y, imgBox) });
       frame.x = imgX; frame.y = imgY;
       this.bodyLayer.addChild(frame);
@@ -315,20 +315,20 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       // Right: rarity / equipped tag / stack count.
       const ax = imgX + imgBox + 12;
       let ay = imgY;
-      const rar = txt(t(`equip.rarity.${inst.rarity}` as TranslationKey), 12, color, true);
-      rar.x = ax; rar.y = ay; this.bodyLayer.addChild(rar); ay += 19;
+      const rar = txt(t(`equip.rarity.${inst.rarity}` as TranslationKey), 16, color, true);
+      rar.x = ax; rar.y = ay; this.bodyLayer.addChild(rar); ay += 24;
       if (equipped) {
         const slotLabel = t(`equip.slot.${slot}` as TranslationKey);
-        const e = txt(`[${t('equip.equipped')} · ${slotLabel}]`, 11, C.green, true);
-        e.x = ax; e.y = ay; this.bodyLayer.addChild(e); ay += 18;
+        const e = txt(`[${t('equip.equipped')} · ${slotLabel}]`, 14, C.green, true);
+        e.x = ax; e.y = ay; this.bodyLayer.addChild(e); ay += 22;
       }
       if (count > 1) {
-        const badge = txt(`×${count}`, 12, C.mid);
+        const badge = txt(`×${count}`, 16, C.mid);
         badge.x = ax; badge.y = ay; this.bodyLayer.addChild(badge);
       }
 
       // Bottom-right action hint: "Equip ›" (accent) when unequipped, quiet "›" when equipped.
-      const hint = txt(equipped ? '›' : t('equip.hintEquip'), equipped ? 16 : 11, equipped ? C.mid : C.accent, !equipped);
+      const hint = txt(equipped ? '›' : t('equip.hintEquip'), equipped ? 20 : 15, equipped ? C.mid : C.accent, !equipped);
       hint.anchor.set(1, 1); hint.x = x + cellW - pad; hint.y = y + EQUIP_CELL_H - pad;
       this.bodyLayer.addChild(hint);
 

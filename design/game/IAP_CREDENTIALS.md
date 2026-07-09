@@ -49,11 +49,28 @@ Web 端充值走 Paddle（非上面的 `/iap/verify`，而是 `metaserver/src/pa
 
 Paddle 作为 merchant of record，审核商户域名时会爬取法务页，硬性要求**退款政策体现 Buyer Terms 的 14 天最低退款窗口**。踩过的拦点：退款政策原写「final and non-refundable」（绝对不退），与 Paddle Buyer Terms 直接冲突 → 被打回。
 
-- **三份法务页**（webpack 从 `client/public/web/` COPY 进 `client/dist`，随 client 部署到 `nivara.gamestao.com`）：
+- **五份静态页**（webpack 从 `client/public/web/` COPY 进 `client/dist`，随 client 部署到 `a.gamestao.com` / `nivara.gamestao.com`）：
+  - `home.html` — 产品介绍落地页（游戏 `/` 是纯 canvas，爬虫读不到内容 → Paddle 判「website inaccessible」被打回的**主因**）。含产品/玩法说明 + 免费+可选内购口径 + 交叉链接。**Paddle 后台提交的被审网址填 `a.gamestao.com/home.html`**。
+  - `pricing.html` — 定价页（`/pricing` 经 CF Workers assets `html_handling` 默认 auto-trailing-slash 命中 `pricing.html`，无需 .html 后缀）。7 档价格/金币取自 `@nw/shared` `IAP_TIERS_LIST`；备注去掉「All purchases are final」绝对措辞，改「14 天内可申请退款」。
   - `refunds.html` — 首节即「14-Day Refund Window」，链接 `https://www.paddle.com/legal/checkout-buyer-terms`；不得再出现「非退款」绝对措辞。
-  - `terms.html` / `privacy.html` — 联系/GDPR 邮箱统一 `support@gamestao.com`（数据控制者仍具名 Tao Wang）。
+  - `terms.html` / `privacy.html` — 联系/GDPR 邮箱统一 `support@gamestao.com`。**ToS §1 具名运营主体 Tao Wang（自然人 sole trader，未注册公司，德国）**以满足 Paddle「ToS must mention your company name」；privacy 数据控制者亦具名 Tao Wang。
 - **口径**：14 天内可申请退款（叠加法定权利）；数字商品在窗口外视为最终交付（除技术故障/重复扣款/未授权/法定权利）。
-- **审核回复前提**：确认 `https://nivara.gamestao.com/refunds.html` 线上已是新版（Paddle 会重爬域名核验），再回邮件。
+- **审核回复前提**：确认 `https://a.gamestao.com/home.html`（及 `/pricing` `/refunds.html`）线上已是新版（Paddle 会重爬域名核验），再回邮件。
+- **给 Paddle 的邮件口径**（模板套 B2B SaaS，游戏不适用项）：无 Enterprise plan；无人工服务，收入 100% 软件（游戏内购）。
+
+#### Paddle 支持的支付方式（收银台自动处理，无需单独接入）
+
+Paddle 作为 merchant of record，收银台内建以下支付方式；客户端只管调 checkout，选项由 Paddle 展示。
+
+| 类别 | 具体 |
+|---|---|
+| 信用卡 / 借记卡 | Visa、Mastercard、American Express、Discover |
+| PayPal | ✅（含部分渠道「先买后付」分 3–4 期） |
+| 数字钱包 | Apple Pay、Google Pay |
+| 本地方式 | iDEAL（荷兰）、Bancontact（比利时）、电汇等 20+ 区域性方式 |
+
+> **按买家动态展示**：Paddle 依据**交易币种 + 买家国家 + 设备**决定展示哪些方式，不是所有人都看到全部选项。Apple Pay 仅兼容 Apple 设备/浏览器；PayPal 仅在币种被 PayPal 支持时出现；iDEAL 仅对荷兰欧元交易展示。信用卡/借记卡为全球兜底方式。
+> 权威：[Paddle Help — payment methods](https://www.paddle.com/help/start/intro-to-paddle/which-payment-methods-do-you-support) / [Developer Docs](https://developer.paddle.com/concepts/payment-methods/overview)。
 
 ## 2. 广告验签凭据（激励视频，C2）
 

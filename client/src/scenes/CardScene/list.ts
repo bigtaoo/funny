@@ -132,26 +132,26 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       this.bodyLayer.addChild(dot);
 
       const cardName = t(`card.${card.defId}.name` as TranslationKey);
-      const nameLbl = txt(cardName, 14, C.dark, true);
+      const nameLbl = txt(cardName, 20, C.dark, true);
       nameLbl.x = x + pad + 16; nameLbl.y = y + pad;
       nameLbl.style.wordWrap = false;
-      if (nameLbl.width > cellW - pad * 2 - 20) {
-        const s = cellW / (nameLbl.width + 40);
+      if (nameLbl.width > cellW - pad * 2 - 28) {
+        const s = cellW / (nameLbl.width + 56);
         nameLbl.scale.set(Math.min(1, s));
       }
       this.bodyLayer.addChild(nameLbl);
 
       // Lock badge (top-right).
       if (card.locked) {
-        const lk = buildIcon('lock', 15, C.mid);
-        lk.x = x + cellW - pad - 15; lk.y = y + pad;
+        const lk = buildIcon('lock', 18, C.mid);
+        lk.x = x + cellW - pad - 18; lk.y = y + pad;
         this.bodyLayer.addChild(lk);
       }
 
       // ── Left: portrait in a light frame ──
-      const imgBox = CARD_CELL_H - (pad + 28) - pad; // square
+      const imgBox = CARD_CELL_H - (pad + 36) - pad; // square
       const imgX = x + pad;
-      const imgY = y + pad + 28;
+      const imgY = y + pad + 36;
       const frame = sketchPanel(imgBox, imgBox, { fill: 0xf0eee7, border: C.mid, seed: seedFor(x, y, imgBox) });
       frame.x = imgX; frame.y = imgY;
       this.bodyLayer.addChild(frame);
@@ -161,30 +161,30 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       // ── Right: stats column ──
       const ax = imgX + imgBox + 12;
       let ay = imgY;
-      const lvLbl = txt(`Lv.${card.level}`, 12, C.mid, true);
+      const lvLbl = txt(`Lv.${card.level}`, 16, C.mid, true);
       lvLbl.x = ax; lvLbl.y = ay; this.bodyLayer.addChild(lvLbl);
-      ay += 19;
+      ay += 24;
 
       const power = Math.round(cardPower(card, save.equipmentInv ?? {}));
-      const pwrLbl = txt(`${t('roster.power')} ${power}`, 12, C.dark);
+      const pwrLbl = txt(`${t('roster.power')} ${power}`, 16, C.dark);
       pwrLbl.x = ax; pwrLbl.y = ay; this.bodyLayer.addChild(pwrLbl);
-      ay += 19;
+      ay += 24;
 
       if (def && state !== undefined) {
         const cap = troopCap(card);
         const cur = state.currentTroops;
-        const troopLbl = txt(`${cur}/${cap}`, 12, cur >= cap ? C.gold : C.mid);
+        const troopLbl = txt(`${cur}/${cap}`, 16, cur >= cap ? C.gold : C.mid);
         troopLbl.x = ax; troopLbl.y = ay; this.bodyLayer.addChild(troopLbl);
-        ay += 19;
+        ay += 24;
       }
 
       // Status tag (deployed / injured).
       if (inTeam) {
-        const tag = txt(`[${t('roster.inTeam')}]`, 10, C.accent, true);
-        tag.x = ax; tag.y = ay; this.bodyLayer.addChild(tag); ay += 16;
+        const tag = txt(`[${t('roster.inTeam')}]`, 13, C.accent, true);
+        tag.x = ax; tag.y = ay; this.bodyLayer.addChild(tag); ay += 20;
       } else if (isInjured) {
-        const tag = txt(`[${t('roster.injured').replace('{time}', injuryCountdown(injuredUntil, now))}]`, 10, C.red);
-        tag.x = ax; tag.y = ay; this.bodyLayer.addChild(tag); ay += 16;
+        const tag = txt(`[${t('roster.injured').replace('{time}', injuryCountdown(injuredUntil, now))}]`, 13, C.red);
+        tag.x = ax; tag.y = ay; this.bodyLayer.addChild(tag); ay += 20;
       }
 
       // Gear slot indicators (3 dots: filled = has equipment) — bottom-right.

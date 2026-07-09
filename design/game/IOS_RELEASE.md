@@ -11,7 +11,7 @@
 | 项 | 值 | 说明 |
 |---|---|---|
 | **Bundle ID** | `com.gamestao.nivara` | App 唯一身份。改它 = 全新 App，老用户/存档/内购全断 |
-| **App 名** | `Nivara` | 对外名（内部代号 Notebook Wars） |
+| **App Store 名** | `Nivara: Notebook Wars` | ⚠️ 纯 `Nivara` 已被他人在 App Store Connect 占用（名称全局唯一、先到先得、与商标/是否发布无关），故商店标题加副标题规避。游戏内品牌名仍为 Nivara（内部代号 Notebook Wars）。≤30 字符（本名 21 字符 OK）。注：display name 本身其实可后改，此处锁的是"用哪个名"这一决策 |
 | **设备族** | 通用（iPhone+iPad，`TARGETED_DEVICE_FAMILY = "1,2"`） | |
 | **IAP Product ID 前缀** | `com.gamestao.nivara.coins.<tier>` | 由 Bundle ID 派生，见 §4.1 |
 | **Apple 账号 / Team ID** | 你的 Developer 账号 | App 归属主体，守住账号 + 2FA 即可 |
@@ -30,7 +30,7 @@
 - 入口 `src/entries/mobile.ts`：不做 `/version.json` 前台轮询重载（原生包随 App Store 更新，不能远程重载）。
 - **支付走 Apple IAP**：原生壳在 WKWebView 注入 `window.NWBilling`（`ios/App/App/AppDelegate.swift` 的 `NWBridgeViewController`），客户端 `WebPlatform.iapKind()` 检测到后把充值路由到 Apple（而非 web 的 Paddle）。收据 → `POST /iap/verify` → `server/commercial` 的 `appleVerify`（StoreKit 1 `verifyReceipt`，已实现）。
 
-**关键身份**：Bundle ID `com.gamestao.nivara`，App 名 `Nivara`，通用（iPhone+iPad，`TARGETED_DEVICE_FAMILY = "1,2"`）。
+**关键身份**：Bundle ID `com.gamestao.nivara`，App Store 名 `Nivara: Notebook Wars`（纯 `Nivara` 被占，见 §0），通用（iPhone+iPad，`TARGETED_DEVICE_FAMILY = "1,2"`）。
 
 ## 1. 前置准备（Apple Developer）
 

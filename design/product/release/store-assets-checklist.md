@@ -4,7 +4,7 @@
 > **本文是上架素材的单一清单**：逐项列出每个发布渠道所需的图标、截图、描述、分级问卷答案、隐私标签、健康忠告文案。
 > ⚠️ 隐私标签/数据安全表的答案必须与 [`privacy-policy.zh.md §2`](../legal/privacy-policy.zh.md) 及 [`COMPLIANCE_GLOBAL.md §3.2`](../../game/COMPLIANCE_GLOBAL.md) 的数据清单**逐项一致**（三处口径不得打架）。
 > 美术素材未就位的标 **「待美术」**；文案三语随附。
-> 对外产品名：**Nivara**（开发代号 Notebook Wars）。
+> 对外产品名：**Nivara**（开发代号 Notebook Wars）。⚠️ **商店标题**统一用 `Nivara: Notebook Wars`——纯 `Nivara` 已被他人在 App Store Connect 占用（名称全局唯一），iOS 起冲突；为跨渠道一致，四渠道商店标题都带副标题，游戏内 logo/品牌仍为 Nivara。
 
 ---
 
@@ -14,7 +14,7 @@
 
 | 字段 | 中文 | English | Deutsch |
 |---|---|---|---|
-| 名称 | Nivara | Nivara | Nivara |
+| 名称 | Nivara: Notebook Wars | Nivara: Notebook Wars | Nivara: Notebook Wars |
 | 副标题/一句话 | 笔记本里的回合策略战争 | Turn-based strategy in a notebook | Rundenstrategie im Notizbuch |
 | 简短描述 | 在手绘笔记本世界里排兵布阵，东西两本笔记的策略对决。战役 PvE + 实时联机 PvP + 大世界 SLG。 | Command armies in a hand-drawn notebook world — an East-meets-West strategy duel. Campaign PvE + real-time PvP + open-world SLG. | Befehlige Armeen in einer handgezeichneten Notizbuchwelt — ein Strategieduell zwischen Ost und West. Kampagne-PvE + Echtzeit-PvP + Open-World-SLG. |
 

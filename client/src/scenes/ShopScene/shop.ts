@@ -60,10 +60,7 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
       const specs: CardSpec[] = [];
       const busy = this.bt.busy;
       const mon = this.cb.getMonetization?.() ?? { subscriptionExpiry: 0, starterUsed: [] };
-      const active = mon.subscriptionExpiry > Date.now();
-      // Whether today's daily coins were already claimed. UTC day compared to the mirrored last-claim day (server authority).
-      const todayKey = new Date().toISOString().slice(0, 10);
-      const claimedToday = active && mon.subscriptionLastClaimDay === todayKey;
+      const { active, claimedToday } = this.monthlyCardStatus();
 
       // Monthly card: Buy (locked while a card is active) + daily Claim.
       if (this.cb.buyMonthlyCard) {
