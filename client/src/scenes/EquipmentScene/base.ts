@@ -399,6 +399,7 @@ export class EquipmentSceneBase {
     prefix = '×',
   ): number {
     let cx = x;
+    const labelSize = Math.round(size * 0.8);
     const item = (kind: IconKind | null, fallback: string, iconColor: number, n: number): void => {
       if (kind) {
         const ic = buildIcon(kind, size, iconColor);
@@ -406,12 +407,12 @@ export class EquipmentSceneBase {
         parent.addChild(ic);
         cx += size + 1;
       } else {
-        const fl = txt(fallback, 10, color);
+        const fl = txt(fallback, labelSize, color);
         fl.anchor.set(0, 0.5); fl.x = cx; fl.y = midY;
         parent.addChild(fl);
         cx += fl.width + 1;
       }
-      const lbl = txt(`${prefix}${n}`, 10, color);
+      const lbl = txt(`${prefix}${n}`, labelSize, color);
       lbl.anchor.set(0, 0.5); lbl.x = cx; lbl.y = midY;
       parent.addChild(lbl);
       cx += lbl.width + 9;

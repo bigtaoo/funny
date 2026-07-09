@@ -57,18 +57,18 @@ export function CraftMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): T
       this.bodyLayer.addChild(cell);
 
       // Top: name (scaled to fit) + rarity tag.
-      const name = txt(this.itemName(defId), 13, C.dark, true);
+      const name = txt(this.itemName(defId), 20, C.dark, true);
       name.x = x + pad; name.y = y + pad;
-      if (name.width > cellW - pad * 2 - 60) name.scale.set(Math.min(1, (cellW - pad * 2 - 60) / name.width));
+      if (name.width > cellW - pad * 2 - 80) name.scale.set(Math.min(1, (cellW - pad * 2 - 80) / name.width));
       this.bodyLayer.addChild(name);
-      const rar = txt(t(`equip.rarity.${def.rarity}` as import('../../i18n').TranslationKey), 11, color, true);
-      rar.anchor.set(1, 0); rar.x = x + cellW - pad; rar.y = y + pad + 1;
+      const rar = txt(t(`equip.rarity.${def.rarity}` as import('../../i18n').TranslationKey), 16, color, true);
+      rar.anchor.set(1, 0); rar.x = x + cellW - pad; rar.y = y + pad + 2;
       this.bodyLayer.addChild(rar);
 
       // Left: glyph in a rarity-bordered frame.
-      const imgBox = CRAFT_CELL_H - (pad + 22) - pad;
+      const imgBox = CRAFT_CELL_H - (pad + 32) - pad;
       const imgX = x + pad;
-      const imgY = y + pad + 22;
+      const imgY = y + pad + 32;
       const frame = sketchPanel(imgBox, imgBox, { fill: 0xf0eee7, border: color, seed: seedFor(x, y, imgBox) });
       frame.x = imgX; frame.y = imgY;
       this.bodyLayer.addChild(frame);
@@ -78,17 +78,17 @@ export function CraftMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): T
       const ax = imgX + imgBox + 12;
       const cost = def.craftCost ?? {};
       const affordable = this.canAffordMaterials(save, cost);
-      this.drawCostChips(this.bodyLayer, ax, imgY + 10, cost, null, affordable ? C.mid : C.red, 13);
+      this.drawCostChips(this.bodyLayer, ax, imgY + 14, cost, null, affordable ? C.mid : C.red, 20);
 
       const enabled = affordable && !full && !this.bt.busy;
-      const btnW = Math.min(80, x + cellW - pad - ax);
-      const btnH = 28;
+      const btnW = Math.min(104, x + cellW - pad - ax);
+      const btnH = 36;
       const btnX = x + cellW - pad - btnW;
       const btnY = y + CRAFT_CELL_H - pad - btnH;
       const btn = sketchPanel(btnW, btnH, { fill: enabled ? C.dark : C.btnOff, border: enabled ? C.accent : C.mid, seed: seedFor(x, y, btnW) });
       btn.x = btnX; btn.y = btnY;
       this.bodyLayer.addChild(btn);
-      const bl = txt(t('equip.craftBtn'), 12, enabled ? C.light : C.mid);
+      const bl = txt(t('equip.craftBtn'), 17, enabled ? C.light : C.mid);
       bl.anchor.set(0.5, 0.5); bl.x = btnX + btnW / 2; bl.y = btnY + btnH / 2;
       this.bodyLayer.addChild(bl);
       if (enabled) this.hitRects.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, action: () => void this.doCraft(defId) });
