@@ -245,7 +245,7 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
       new CampaignMapScene(createLayout(w, h), new InputManager(), {
         onBack() {},
         onSelectLevel() {},
-        onOpenCollection() {},
+        onOpenEquipment() {},
         getStars: () => ({}),
         getCleared: () => [],
         isOnline: () => true,
@@ -449,7 +449,7 @@ describe('CampaignMapScene — tap detection', () => {
     const scene = new CampaignMapScene(layout, input, {
       onBack() {},
       onSelectLevel,
-      onOpenCollection() {},
+      onOpenEquipment() {},
       getStars: () => ({}),
       getCleared: () => [],
       isOnline: () => true,
@@ -464,7 +464,7 @@ describe('CampaignMapScene — tap detection', () => {
     let hit: string | null = null;
     const { scene, input } = buildCampaign((id) => { hit = id; });
     const hits = (scene as any).hits as Array<{ rect: { x: number; y: number; w: number; h: number }; fn: () => void }>;
-    // hits[0] = back button, hits[1] = collection button (both in header).
+    // hits[0] = back button, hits[1] = equipment button (both in header).
     // Level node hits are below the header (rect.y >= tbH).
     const tbH = Math.round(dh * 0.12);
     const levelHit = hits.find(({ rect: r }) => r.y >= tbH);
@@ -502,7 +502,7 @@ describe('CampaignMapScene — tap detection', () => {
     const scene = new CampaignMapScene(layout, input, {
       onBack() {},
       onSelectLevel: (id) => { hit = id; },
-      onOpenCollection() {},
+      onOpenEquipment() {},
       getStars: () => ({}),
       getCleared: () => [],
       isOnline: () => true,
@@ -530,7 +530,7 @@ describe('CampaignMapScene — tap detection', () => {
     const scene = new CampaignMapScene(layout, input, {
       onBack() { backHits++; },
       onSelectLevel() {},
-      onOpenCollection() {},
+      onOpenEquipment() {},
       getStars: () => ({}),
       getCleared: () => [],
       isOnline: () => true,
@@ -560,7 +560,7 @@ describe('CampaignMapScene — tap detection', () => {
     const scene = new CampaignMapScene(layout, input, {
       onBack() {},
       onSelectLevel: (id) => { hit = id; },
-      onOpenCollection() {},
+      onOpenEquipment() {},
       getStars: () => ({}),
       getCleared: () => ch1Cleared,
       isOnline: () => true,

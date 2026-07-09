@@ -85,9 +85,15 @@ export function createGameNav(ctx: AppCtx): GameNav {
     views.showCampaignMap({
       onBack() { nav.goLobby(); },
       onSelectLevel(levelId) { goLevelPrep(levelId); },
-      onOpenCollection() { goCollection(goCampaignMap, 'skins'); },
-      // Equipment system is server-authoritative (enhancement rolls / coin deduction / inventory) → entry only available when logged in online (E5).
-      ...(api ? { onOpenEquipment: () => goEquipment() } : {}),
+      // Single growth-hub entry (LOBBY_IA_REDESIGN §9): lands directly on Equipment (peer-tab
+      // back to Collection) when the server-authoritative equipment system is reachable (E5);
+      // falls back to the Collection (skins) screen when offline/logged out, same gate `goCollection`
+      // uses for its own internal Equipment launcher.
+      onOpenEquipment() {
+        const equipLoggedIn = !state.offlineMode && !!platform.storage.getItem(TOKEN_KEY);
+        if (api && equipLoggedIn) { goEquipment(() => goCollection(goCampaignMap, 'skins'), 'collection'); return; }
+        goCollection(goCampaignMap, 'skins');
+      },
       getStars: () => saveManager.get().progress.stars,
       getCleared: () => saveManager.get().progress.cleared,
       // PvE is server-authoritative: clearing / unlocking new levels requires an online connection (§8 decision 4). Offline, only previously unlocked levels can be replayed; new unlocks are gated.
@@ -118,6 +124,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
       },
       levelNumber,
       objective: level.objective,
+      ...(level.rewards ? { rewards: level.rewards } : {}),
       ...(level.briefKey ? { brief: t(level.briefKey as TranslationKey) } : {}),
       ...(level.story?.introKey ? { intro: t(level.story.introKey as TranslationKey) } : {}),
       staminaCost,
