@@ -23,6 +23,7 @@ import { ShopScene } from '../../src/scenes/ShopScene';
 import { GachaScene } from '../../src/scenes/GachaScene';
 import { CampaignMapScene } from '../../src/scenes/CampaignMapScene';
 import { LevelPrepScene } from '../../src/scenes/LevelPrepScene';
+import { marginLineX } from '../../src/render/sketchUi';
 import { CollectionScene } from '../../src/scenes/CollectionScene';
 import { StatsScene } from '../../src/scenes/StatsScene';
 import { RoomScene, CODE_ALPHABET } from '../../src/scenes/RoomScene';
@@ -724,6 +725,24 @@ describe('LevelPrepScene — layout invariants', () => {
     return { scene, layout };
   }
 
+  /** Full-content build: brief + objective + rewards all present, so all three top panels render. */
+  function buildPrepFull(w: number, h: number) {
+    const layout = createLayout(w, h);
+    const input = new InputManager();
+    const scene = new LevelPrepScene(layout, input, {
+      onBack() {},
+      onStart() {},
+      levelNumber: 1,
+      objective: { kind: 'survive' },
+      brief: 'A match they should have won easily — they win, but badly.',
+      rewards: { coins: 100, materials: { scrap: 6, lead: 2 } },
+      staminaCost: 1,
+      getStamina: () => ({ current: 120, regenAt: 0 }),
+      onBuyStamina() {},
+    });
+    return { scene, layout };
+  }
+
   for (const [label, [w, h]] of [
     ['portrait', PORTRAIT],
     ['landscape', LANDSCAPE],
@@ -761,6 +780,50 @@ describe('LevelPrepScene — layout invariants', () => {
       for (const { rect: r } of hits) {
         expect(r.y + r.h).toBeLessThanOrEqual(dh);
       }
+      scene.destroy();
+    });
+
+    it(`renders with brief + objective + rewards without throwing, hits stay in bounds — ${label}`, () => {
+      const { scene, layout } = buildPrepFull(w, h);
+      const dw = layout.designWidth, dh = layout.designHeight;
+      const hits = (scene as any).hits as Array<{ rect: { x: number; y: number; w: number; h: number } }>;
+      expect(hits.length).toBeGreaterThan(0);
+      for (const { rect: r } of hits) {
+        expect(r.x).toBeGreaterThanOrEqual(0);
+        expect(r.y).toBeGreaterThanOrEqual(0);
+        expect(r.x + r.w).toBeLessThanOrEqual(dw);
+        expect(r.y + r.h).toBeLessThanOrEqual(dh);
+      }
+      scene.destroy();
+    });
+
+    // Regression: drawBrief/drawObjective/drawRewards used to left-pad panels at `w * 0.06`,
+    // which sits to the LEFT of the red notebook margin rule (`marginLineX(w) = w * 0.09`) — the
+    // panel background + its accent bar rendered on top of the margin line instead of beside it.
+    it(`brief / objective / rewards panels start at or right of the margin line — ${label}`, () => {
+      const { scene, layout } = buildPrep(w, h);
+      const dw = layout.designWidth;
+      const mx = marginLineX(dw);
+
+      const captureNewChildX = (fn: () => void): number => {
+        const before = (scene as any).container.children.length;
+        fn();
+        const added = (scene as any).container.children.slice(before);
+        expect(added.length).toBeGreaterThan(0);
+        return added[0].x;
+      };
+
+      const briefX = captureNewChildX(() => {
+        (scene as any).cb.brief = 'Some story brief text.';
+        (scene as any).drawBrief(100);
+      });
+      const objectiveX = captureNewChildX(() => (scene as any).drawObjective({ kind: 'survive' }, 200));
+      const rewardsX = captureNewChildX(() => (scene as any).drawRewards({ coins: 50, materials: { scrap: 3 } }, 300));
+
+      expect(briefX).toBeGreaterThanOrEqual(mx);
+      expect(objectiveX).toBeGreaterThanOrEqual(mx);
+      expect(rewardsX).toBeGreaterThanOrEqual(mx);
+
       scene.destroy();
     });
   }

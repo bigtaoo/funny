@@ -228,19 +228,19 @@ export const IAP_TIERS: Record<string, number> = {
   t9999: 13500,
 };
 
-/** Ordered list of tiers for UI display. `webOnly: false` means also on iOS/Android. */
+/** Ordered list of tiers for UI display. Omitting `mobileOnly` means the tier is sold everywhere (web + iOS/Android). */
 export interface IapTierDef {
   id: string;
   usdCents: number;   // price in cents for display ($4.99 → 499)
   coins: number;      // total coins including bonus
   base: number;       // base coins (without bonus)
   bestValue?: boolean;
-  webOnly?: boolean;  // true = Paddle web only (not on mobile app stores)
+  mobileOnly?: boolean;  // true = iOS/Android app stores only, NOT sold on Paddle web (fixed per-txn fee makes small tiers uneconomic)
 }
 
 export const IAP_TIERS_LIST: IapTierDef[] = [
-  { id: 't099',  usdCents:  99,  base: 100,   coins: 100,   webOnly: true  },
-  { id: 't199',  usdCents: 199,  base: 200,   coins: 210,   webOnly: true  },
+  { id: 't099',  usdCents:  99,  base: 100,   coins: 100,   mobileOnly: true },
+  { id: 't199',  usdCents: 199,  base: 200,   coins: 210,   mobileOnly: true },
   { id: 't499',  usdCents: 499,  base: 500,   coins: 550   },
   { id: 't999',  usdCents: 999,  base: 1000,  coins: 1150  },
   { id: 't1999', usdCents: 1999, base: 2000,  coins: 2400,  bestValue: true },
