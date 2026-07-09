@@ -374,6 +374,7 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
       new FamilyScene(createLayout(w, h), new InputManager(), {
         onBack() {},
         onOpenSect() {},
+        onNavTab() {},
         worldApi: stubWorldApi(),
         worldId: 'world:1:0',
         myAccountId: 'acc_test',
@@ -385,6 +386,7 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
     build: (w, h) =>
       new SectScene(createLayout(w, h), new InputManager(), {
         onBack() {},
+        onNavTab() {},
         worldApi: stubWorldApi(),
         worldId: 'world:1:0',
         myAccountId: 'acc_test',
