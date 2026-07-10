@@ -135,11 +135,13 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
     }
     const lobby = views.showLobby({
       onStartGame(_opponentName: string) {
+        analytics.click('lobby.practice');
         withGuide('match', 'guide.match.title', 'guide.match.body', () => {
           nav.goGame({ difficulty: pickPracticeDifficulty(saveManager.get().pvp.elo) });
         });
       },
       onStartRanked() {
+        analytics.click('lobby.ranked');
         // Below the first unlock tier the player's whole pool equals PVP_DECK_SIZE —
         // there is nothing to choose, so skip straight to matching instead of showing
         // an empty-looking builder with every card forced-selected.
@@ -158,25 +160,25 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
         }
       },
       online,
-      onOpenCampaign() { nav.goCampaignMap(); },
-      onOpenRoom() { nav.goRoom(); },
-      onOpenSocial() { withGuide('social', 'guide.social.title', 'guide.social.body', () => nav.goFriends()); },
+      onOpenCampaign() { analytics.click('lobby.campaign'); nav.goCampaignMap(); },
+      onOpenRoom() { analytics.click('lobby.room'); nav.goRoom(); },
+      onOpenSocial() { analytics.click('lobby.social'); withGuide('social', 'guide.social.title', 'guide.social.body', () => nav.goFriends()); },
       ...(online ? { onOpenMail: () => nav.goMail() } : {}),
-      onOpenShop() { withGuide('shop', 'guide.shop.title', 'guide.shop.body', () => nav.goGacha({})); },
+      onOpenShop() { analytics.click('lobby.shop'); withGuide('shop', 'guide.shop.title', 'guide.shop.body', () => nav.goGacha({})); },
       ...(online ? { onOpenRecharge: () => nav.goShop(goLobby, 'coins') } : {}),
       ...(online ? { onOpenLeaderboard: () => nav.goLeaderboard(goLobby) } : {}),
       // Lobby "cards" slot → Hero Roster (CHARACTER_CARDS_DESIGN §10). Roster mutations (feed/lock)
       // are server-authoritative, so logged-out / offline falls back to the offline-capable Collection
       // (card codex + skins wardrobe), which stays reachable from the campaign map too.
-      onOpenCards() { withGuide('cards', 'guide.cards.title', 'guide.cards.body', () => (api ? nav.goCardRoster(goLobby) : nav.goCollection(goLobby, 'cards'))); },
-      onOpenStats() { nav.goStats(); },
+      onOpenCards() { analytics.click('lobby.cards'); withGuide('cards', 'guide.cards.title', 'guide.cards.body', () => (api ? nav.goCardRoster(goLobby) : nav.goCollection(goLobby, 'cards'))); },
+      onOpenStats() { analytics.click('lobby.stats'); nav.goStats(); },
       ...(online ? { onOpenAchievements: () => nav.goAchievements() } : {}),
-      ...(online ? { onOpenDaily: () => withGuide('daily', 'guide.daily.title', 'guide.daily.body', () => nav.goDaily()), onOpenEvents: () => nav.goEvents() } : {}),
-      onOpenWorld() { withGuide('world', 'guide.world.title', 'guide.world.body', () => nav.goWorldEntry()); },
+      ...(online ? { onOpenDaily: () => { analytics.click('lobby.daily'); withGuide('daily', 'guide.daily.title', 'guide.daily.body', () => nav.goDaily()); }, onOpenEvents: () => { analytics.click('lobby.events'); nav.goEvents(); } } : {}),
+      onOpenWorld() { analytics.click('lobby.world'); withGuide('world', 'guide.world.title', 'guide.world.body', () => nav.goWorldEntry()); },
       ...(online ? { onOpenAuction: () => withGuide('auction', 'guide.auction.title', 'guide.auction.body', () => nav.goAuctionFromLobby()) } : {}),
       // SLG soft gate (ONBOARDING_DESIGN §4): grayed out with a tooltip bubble until the first chapter is cleared — the only feature gate.
       worldLocked: !isFirstChapterCleared(new Set(saveManager.get().progress.cleared)),
-      onOpenProfile() { nav.goSettings(); },
+      onOpenProfile() { analytics.click('lobby.profile'); nav.goSettings(); },
       playerName: playerName(),
       avatarId: avatarId(),
       pvp: { rank: pvp.rank, elo: pvp.elo },

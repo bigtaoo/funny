@@ -378,4 +378,75 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     expect(cohort?.d_rate[3]).toBe(0);
     expect(cohort?.d_rate[7]).toBeCloseTo(1 / 3);
   });
+
+  // ─── first-session / onboarding ────────────────────────────────────────────
+
+  it('queryFirstSession builds the onboarding funnel + action breakdown for new users only', async () => {
+    // Anchored in 2021 → isolated from the 2020 retention seed and the 2026 real-now DAU seed.
+    const ANCHOR = Date.UTC(2021, 5, 10); // cohort day-start
+    const DAY = 86400_000;
+    const ev = (sid: string, device: string, event: string, offsetMs: number, scene?: string) => ({
+      session_id: sid,
+      device_id: device,
+      platform: 'web',
+      os: 'test',
+      game_version: '1',
+      locale: 'en',
+      event,
+      props: scene ? { scene } : {},
+      ts: new Date(ANCHOR + offsetMs),
+    });
+
+    await mongo!.collections.events.insertMany([
+      // N1 — full graduation: reaches every funnel step, plus a shop_open action.
+      ev('fs-n1', 'fs-N1', 'session_start', 3600_000),
+      ev('fs-n1', 'fs-N1', 'screen_view', 3600_100, 'IntroScene'),
+      ev('fs-n1', 'fs-N1', 'tutorial_start', 3600_200),
+      ev('fs-n1', 'fs-N1', 'tutorial_complete', 3600_300),
+      ev('fs-n1', 'fs-N1', 'screen_view', 3600_400, 'LobbyScene'),
+      ev('fs-n1', 'fs-N1', 'game_start', 3600_500),
+      ev('fs-n1', 'fs-N1', 'level_complete', 3600_600),
+      ev('fs-n1', 'fs-N1', 'shop_open', 3600_700),
+      // N2 — drops out mid-tutorial: session_start → intro → tutorial_start, nothing more.
+      ev('fs-n2', 'fs-N2', 'session_start', 7200_000),
+      ev('fs-n2', 'fs-N2', 'screen_view', 7200_100, 'IntroScene'),
+      ev('fs-n2', 'fs-N2', 'tutorial_start', 7200_200),
+      // V1 — veteran: first session predates the window (5 days earlier) so must be excluded,
+      // even though it is also active in-window.
+      ev('fs-v1a', 'fs-V1', 'session_start', -5 * DAY),
+      ev('fs-v1b', 'fs-V1', 'session_start', 7200_000),
+      ev('fs-v1b', 'fs-V1', 'tutorial_complete', 7200_500),
+    ]);
+
+    const fsSvc = new AnalyticsService(mongo!.collections, () => ANCHOR + 12 * 3600_000);
+    const res = await fsSvc.queryFirstSession(1);
+
+    // Only N1 + N2 are new in-window; V1 is a returning veteran.
+    expect(res.cohort_size).toBe(2);
+
+    // Funnel is built from 100%-sampled events only (no screen_view-derived steps).
+    const step = (k: string) => res.funnel.find((f) => f.step === k);
+    expect(res.funnel.map((f) => f.step)).toEqual([
+      'session_start', 'tutorial_start', 'tutorial_complete', 'first_battle', 'first_clear',
+    ]);
+    expect(step('session_start')?.count).toBe(2);
+    expect(step('tutorial_start')?.count).toBe(2);
+    expect(step('tutorial_complete')?.count).toBe(1); // only N1 finished
+    expect(step('first_battle')?.count).toBe(1);
+    expect(step('first_clear')?.count).toBe(1);
+    // Tutorial completion rate = tutorial_complete / tutorial_start = 1/2.
+    expect(step('tutorial_complete')?.conversion_rate).toBeCloseTo(0.5);
+    expect(step('session_start')?.conversion_rate).toBeUndefined();
+
+    // Action/scene breakdown (distinct new-user devices).
+    const act = (k: string) => res.actions.find((a) => a.key === k);
+    expect(act('IntroScene')).toMatchObject({ kind: 'scene', devices: 2 });
+    expect(act('LobbyScene')).toMatchObject({ kind: 'scene', devices: 1 });
+    expect(act('tutorial_start')).toMatchObject({ kind: 'action', devices: 2 });
+    expect(act('shop_open')).toMatchObject({ kind: 'action', devices: 1 });
+    // Lifecycle noise is never reported as an action.
+    expect(act('session_start')).toBeUndefined();
+    // Sorted by reach descending.
+    expect(res.actions[0].devices).toBeGreaterThanOrEqual(res.actions[res.actions.length - 1].devices);
+  });
 });

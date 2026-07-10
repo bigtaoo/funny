@@ -144,6 +144,12 @@ export class Api {
       d: Partial<Record<1 | 2 | 3 | 4 | 5 | 6 | 7, number>>;
       d_rate: Partial<Record<1 | 2 | 3 | 4 | 5 | 6 | 7, number>>;
     }[];
+    first_session?: {
+      cohort_size: number;
+      window_days: number;
+      funnel: { step: string; count: number; conversion_rate?: number }[];
+      actions: { key: string; kind: 'scene' | 'action'; devices: number; rate: number }[];
+    };
   }> {
     const qs = new URLSearchParams({ type, days: String(days) });
     if (platform) qs.set('platform', platform);

@@ -9,13 +9,22 @@ export interface AnalyticsFunnelRow { date: string; platform: string; funnel_ste
 export interface AnalyticsRegionRow { locale: string; devices: number }
 export interface AnalyticsOsRow { os: string; devices: number }
 export interface AnalyticsLoginHourRow { hour: number; count: number }
+export type AnalyticsRetentionOffset = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 export interface AnalyticsRetentionRow {
   date: string;
   cohort_size: number;
-  d1?: number;
-  d7?: number;
-  d1_rate?: number;
-  d7_rate?: number;
+  d: Partial<Record<AnalyticsRetentionOffset, number>>;
+  d_rate: Partial<Record<AnalyticsRetentionOffset, number>>;
+}
+
+// First-session / onboarding analysis (A9-8).
+export interface AnalyticsOnboardingStepRow { step: string; count: number; conversion_rate?: number }
+export interface AnalyticsFirstSessionActionRow { key: string; kind: 'scene' | 'action'; devices: number; rate: number }
+export interface AnalyticsFirstSessionResult {
+  cohort_size: number;
+  window_days: number;
+  funnel: AnalyticsOnboardingStepRow[];
+  actions: AnalyticsFirstSessionActionRow[];
 }
 
 export interface AnalyticsQueryResult {
@@ -26,6 +35,7 @@ export interface AnalyticsQueryResult {
   os_dist?: AnalyticsOsRow[];
   login_hour?: AnalyticsLoginHourRow[];
   retention?: AnalyticsRetentionRow[];
+  first_session?: AnalyticsFirstSessionResult;
 }
 
 export interface AnalyticsClient {
@@ -62,6 +72,7 @@ export class HttpAnalyticsClient implements AnalyticsClient {
         os_dist?: AnalyticsOsRow[];
         login_hour?: AnalyticsLoginHourRow[];
         retention?: AnalyticsRetentionRow[];
+        first_session?: AnalyticsFirstSessionResult;
       };
       const body = (await res.json()) as { data: Payload };
       const p = body.data;
@@ -73,6 +84,7 @@ export class HttpAnalyticsClient implements AnalyticsClient {
       if (p.type === 'os_dist') return { os_dist: p.os_dist ?? [] };
       if (p.type === 'login_hour') return { login_hour: p.login_hour ?? [] };
       if (p.type === 'retention') return { retention: p.retention ?? [] };
+      if (p.type === 'first_session') return { first_session: p.first_session };
       return {};
     } catch (e) {
       log.warn('analytics query failed', { type, err: (e as Error).message });

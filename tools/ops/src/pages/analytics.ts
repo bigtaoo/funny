@@ -26,7 +26,7 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
     clear(body);
     const days = Number(daysSel.value);
 
-    const [summary, evCounts, dau, funnel, regions, osDist, loginHour, retention] = await Promise.allSettled([
+    const [summary, evCounts, dau, funnel, regions, osDist, loginHour, retention, firstSession] = await Promise.allSettled([
       api.analyticsSummary(),
       api.analyticsEvents('event_counts', days),
       api.analyticsEvents('dau', days),
@@ -35,6 +35,7 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
       api.analyticsEvents('os_dist', days),
       api.analyticsEvents('login_hour', days),
       api.analyticsEvents('retention', days),
+      api.analyticsEvents('first_session', days),
     ]);
 
     // Monitoring overview (self-collected metrics + tickets)
@@ -95,6 +96,55 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
           ));
         }
         body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `Retention cohorts (last ${days} days, D1–D7 return, — = insufficient data)`), t));
+      }
+    }
+
+    // First-session onboarding funnel + action breakdown (new users only)
+    if (firstSession.status === 'fulfilled' && firstSession.value.available && firstSession.value.first_session) {
+      const fs = firstSession.value.first_session;
+      if (fs.cohort_size > 0) {
+        // Onboarding drop-off funnel
+        const ft = h('table', {},
+          h('tr', {},
+            h('th', {}, 'Onboarding step'),
+            h('th', { style: 'text-align:right' }, 'Users'),
+            h('th', { style: 'text-align:right' }, 'Step conv.'),
+            h('th', { style: 'text-align:right' }, 'Of cohort'),
+            h('th', {}, ''),
+          ),
+        );
+        for (const step of fs.funnel) {
+          ft.append(h('tr', {},
+            h('td', {}, ONBOARDING_LABELS[step.step] ?? step.step),
+            h('td', { style: 'text-align:right' }, String(step.count)),
+            h('td', { style: 'text-align:right' }, step.conversion_rate !== undefined ? pct(step.conversion_rate) : '—'),
+            h('td', { style: 'text-align:right' }, pct(fs.cohort_size > 0 ? step.count / fs.cohort_size : 0)),
+            h('td', {}, barCell(step.count, fs.cohort_size)),
+          ));
+        }
+        body.append(h('div', { class: 'card' },
+          h('div', { class: 'muted' }, `Onboarding funnel — new users' first session (${fs.cohort_size} new devices, last ${days} days)`),
+          ft,
+        ));
+
+        // First-session action / scene breakdown
+        if (fs.actions.length > 0) {
+          const at = h('table', {},
+            h('tr', {}, h('th', {}, 'Scene / action'), h('th', {}, 'Type'), h('th', { style: 'text-align:right' }, 'Users'), h('th', {}, 'Reach')),
+          );
+          for (const a of fs.actions) {
+            at.append(h('tr', {},
+              h('td', {}, a.key),
+              h('td', {}, pill(a.kind, a.kind)),
+              h('td', { style: 'text-align:right' }, String(a.devices)),
+              h('td', {}, barCell(a.devices, fs.cohort_size)),
+            ));
+          }
+          body.append(h('div', { class: 'card' },
+            h('div', { class: 'muted' }, `First-session activity — which scenes & actions new users hit (share of ${fs.cohort_size} new devices; scene rows are screen_view-sampled, so under-counted)`),
+            at,
+          ));
+        }
       }
     }
 
@@ -197,6 +247,15 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
   daysSel.addEventListener('change', () => void reload());
   await reload();
 }
+
+// Human-readable labels for onboarding funnel step keys (must match ONBOARDING_STEPS in analyticsvc).
+const ONBOARDING_LABELS: Record<string, string> = {
+  session_start: 'Opened the game',
+  tutorial_start: 'Started tutorial',
+  tutorial_complete: 'Finished tutorial',
+  first_battle: 'Started first battle',
+  first_clear: 'Cleared first level',
+};
 
 function pct(rate: number): string {
   return (rate * 100).toFixed(1) + '%';
