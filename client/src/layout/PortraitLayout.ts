@@ -5,20 +5,34 @@ import { ILayout, Orientation, Rect } from './ILayout';
 // ── Design constants ──────────────────────────────────────────────────────────
 
 const DESIGN_W   = 1080;
-const DESIGN_H   = 1920;
 const CELL       = 84;
 const HUD_TOP_H  = 70;
 const HUD_BOT_H  = 70;
-const BOARD_X    = (DESIGN_W - BOARD_COLS * CELL) / 2;  // 36 — center the grid
-const BOARD_Y    = HUD_TOP_H;                           // 70
+const HAND_H     = 268;
 const BOARD_W    = BOARD_COLS * CELL;                   // 1008
 const BOARD_H    = BOARD_ROWS * CELL;                   // 1512
-const HUD_BOT_Y  = BOARD_Y + BOARD_H;                  // 1582
-const HAND_Y     = HUD_BOT_Y + HUD_BOT_H;              // 1652
-const HAND_H     = DESIGN_H - HAND_Y;                  // 268
+const BOARD_X    = (DESIGN_W - BOARD_W) / 2;            // 36 — center the grid horizontally
 
 /**
- * Portrait layout — design resolution 1080 × 1920.
+ * Classic 9:16 design height. On screens with exactly this aspect the layout is
+ * identical to the historical fixed 1080×1920 board. Taller screens (iPhone 13 =
+ * ~9:19.5, etc.) get a proportionally taller design space so the game fills the
+ * full height instead of being letterboxed with dead bands top and bottom.
+ */
+const REFERENCE_H = 1920;
+
+/**
+ * Portrait layout — design width fixed at 1080; design height follows the aspect
+ * of the *safe drawable area* (never shorter than 1920) so `ScalingManager`'s
+ * fit-to-width scaling leaves no letterbox. Safe-area insets are handled once, by
+ * ScalingManager offsetting the whole game layer inside the safe region — so this
+ * layout simply anchors to its own 0…designHeight edges and every scene (battle
+ * and menu) is protected uniformly.
+ *
+ * Vertical anchoring on the reclaimed space:
+ *   · top HUD           → anchored to the top edge
+ *   · hand + bottom HUD → anchored to the bottom edge
+ *   · board             → centered in the space between the two HUD strips
  *
  * Grid orientation:
  *   col increases left → right
@@ -29,20 +43,56 @@ export class PortraitLayout implements ILayout {
   readonly localSide:    Side;
   readonly cellSize    = CELL;
   readonly designWidth  = DESIGN_W;
-  readonly designHeight = DESIGN_H;
+  readonly designHeight: number;
 
-  readonly boardRect:          Rect = { x: BOARD_X, y: BOARD_Y, w: BOARD_W, h: BOARD_H };
-  readonly hudTopRect:         Rect = { x: 0, y: 0, w: DESIGN_W, h: HUD_TOP_H };
-  readonly hudBottomLeftRect:  Rect = { x: 0,               y: HUD_BOT_Y, w: 360,        h: HUD_BOT_H };
-  readonly hudBottomRightRect: Rect = { x: DESIGN_W - 360,  y: HUD_BOT_Y, w: 360,        h: HUD_BOT_H };
-  readonly handRect:           Rect = { x: 0, y: HAND_Y,    w: DESIGN_W,  h: HAND_H };
+  readonly boardRect:          Rect;
+  readonly hudTopRect:         Rect;
+  readonly hudBottomLeftRect:  Rect;
+  readonly hudBottomRightRect: Rect;
+  readonly handRect:           Rect;
 
   readonly cardWidth  = 155;
   readonly cardHeight = 190;
   readonly cardMargin = 8;
 
-  constructor(localSide: Side = Side.Bottom) {
+  // Board origin in design space (instance-level — depends on the dynamic height).
+  private readonly boardX: number;
+  private readonly boardY: number;
+
+  /**
+   * @param availW  Safe drawable area width  (CSS px) — viewport minus L/R insets.
+   * @param availH  Safe drawable area height (CSS px) — viewport minus T/B insets.
+   * @param localSide Which side is "mine" (bottom for SP/host, top for netplay joiner).
+   */
+  constructor(
+    availW: number,
+    availH: number,
+    localSide: Side = Side.Bottom,
+  ) {
     this.localSide = localSide;
+
+    // Design height matches the safe-area aspect (fit-to-width leaves no letterbox),
+    // clamped so a squat/near-square portrait still gets the classic 1920 height.
+    const aspectH = Math.round(DESIGN_W * (availH / Math.max(1, availW)));
+    this.designHeight = Math.max(REFERENCE_H, aspectH);
+
+    // Anchor HUD strips to the edges; ScalingManager keeps the whole layer inside
+    // the safe area, so 0…designHeight already maps to the notch-free region.
+    const hudTopY = 0;
+    const handY   = this.designHeight - HAND_H;
+    const hudBotY = handY - HUD_BOT_H;
+
+    // Center the board in the gap between the top HUD and the bottom HUD strip.
+    const gapTop = hudTopY + HUD_TOP_H;
+    const gapBot = hudBotY;
+    this.boardX = BOARD_X;
+    this.boardY = Math.round(gapTop + Math.max(0, (gapBot - gapTop - BOARD_H)) / 2);
+
+    this.hudTopRect         = { x: 0, y: hudTopY, w: DESIGN_W, h: HUD_TOP_H };
+    this.boardRect          = { x: this.boardX, y: this.boardY, w: BOARD_W, h: BOARD_H };
+    this.hudBottomLeftRect  = { x: 0,              y: hudBotY, w: 360, h: HUD_BOT_H };
+    this.hudBottomRightRect = { x: DESIGN_W - 360, y: hudBotY, w: 360, h: HUD_BOT_H };
+    this.handRect           = { x: 0, y: handY, w: DESIGN_W, h: HAND_H };
   }
 
   // ── Coordinate transforms ──────────────────────────────────────────────────
@@ -50,48 +100,48 @@ export class PortraitLayout implements ILayout {
   gridToScreen(col: number, row: number): { x: number; y: number } {
     if (this.localSide === Side.Bottom) {
       return {
-        x: BOARD_X + col * CELL + CELL / 2,
-        y: BOARD_Y + (BOARD_ROWS - 1 - row) * CELL + CELL / 2,
+        x: this.boardX + col * CELL + CELL / 2,
+        y: this.boardY + (BOARD_ROWS - 1 - row) * CELL + CELL / 2,
       };
     }
     // Player 1: 180° rotation (mirror both axes)
     return {
-      x: BOARD_X + (BOARD_COLS - 1 - col) * CELL + CELL / 2,
-      y: BOARD_Y + row * CELL + CELL / 2,
+      x: this.boardX + (BOARD_COLS - 1 - col) * CELL + CELL / 2,
+      y: this.boardY + row * CELL + CELL / 2,
     };
   }
 
   screenToCol(sx: number, _sy: number): number {
-    const raw = Math.floor((sx - BOARD_X) / CELL);
+    const raw = Math.floor((sx - this.boardX) / CELL);
     return this.localSide === Side.Bottom ? raw : BOARD_COLS - 1 - raw;
   }
 
   screenToRow(_sx: number, sy: number): number {
-    const raw = Math.floor((sy - BOARD_Y) / CELL);
+    const raw = Math.floor((sy - this.boardY) / CELL);
     return this.localSide === Side.Bottom
       ? BOARD_ROWS - 1 - raw
       : raw;
   }
 
   isOutsideBoard(sx: number, sy: number): boolean {
-    return sx < BOARD_X || sx > BOARD_X + BOARD_W
-        || sy < BOARD_Y || sy > BOARD_Y + BOARD_H;
+    return sx < this.boardX || sx > this.boardX + BOARD_W
+        || sy < this.boardY || sy > this.boardY + BOARD_H;
   }
 
   playerBaseRect(): Rect {
     if (this.localSide === Side.Bottom) {
       // Rows 0-1 appear at the bottom of the board
       return {
-        x: BOARD_X + BASE_COLS[0] * CELL,
-        y: BOARD_Y + (BOARD_ROWS - 2) * CELL,
+        x: this.boardX + BASE_COLS[0] * CELL,
+        y: this.boardY + (BOARD_ROWS - 2) * CELL,
         w: 2 * CELL,
         h: 2 * CELL,
       };
     }
     // Player 1: rows 16-17 appear at the top
     return {
-      x: BOARD_X + (BOARD_COLS - 1 - BASE_COLS[1]) * CELL,
-      y: BOARD_Y,
+      x: this.boardX + (BOARD_COLS - 1 - BASE_COLS[1]) * CELL,
+      y: this.boardY,
       w: 2 * CELL,
       h: 2 * CELL,
     };
@@ -101,16 +151,16 @@ export class PortraitLayout implements ILayout {
     if (this.localSide === Side.Bottom) {
       // Enemy rows 16-17 appear at the top of the board
       return {
-        x: BOARD_X + BASE_COLS[0] * CELL,
-        y: BOARD_Y,
+        x: this.boardX + BASE_COLS[0] * CELL,
+        y: this.boardY,
         w: 2 * CELL,
         h: 2 * CELL,
       };
     }
     // Player 1: enemy rows 0-1 appear at the bottom
     return {
-      x: BOARD_X + (BOARD_COLS - 1 - BASE_COLS[1]) * CELL,
-      y: BOARD_Y + (BOARD_ROWS - 2) * CELL,
+      x: this.boardX + (BOARD_COLS - 1 - BASE_COLS[1]) * CELL,
+      y: this.boardY + (BOARD_ROWS - 2) * CELL,
       w: 2 * CELL,
       h: 2 * CELL,
     };
