@@ -329,7 +329,10 @@ export class LoginScene implements Scene {
     this.addButton(t('auth.playOffline'), btnX, offY, btnW, btnH, C.paper, C.green,
       () => this.cb.onPlayOffline(), C.dark);
 
-    const hint = txt(t('auth.offlineHint'), Math.round(h * 0.020), C.mid);
+    // Wrap within the design width so long locales (EN/DE run wider than the 1080
+    // design width in monospace) stay on-screen instead of clipping both edges.
+    const hint = txt(t('auth.offlineHint'), Math.round(h * 0.020), C.mid, false, Math.round(w * 0.86));
+    hint.style.align = 'center';
     hint.anchor.set(0.5, 0); hint.x = w / 2; hint.y = offY + btnH + Math.round(h * 0.012);
     this.container.addChild(hint);
   }

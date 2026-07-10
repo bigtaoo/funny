@@ -28,11 +28,12 @@ export function createLayout(
   insets: SafeAreaInsets = { top: 0, right: 0, bottom: 0, left: 0 },
 ): ILayout {
   const orient = detectOrientation(screenW, screenH);
-  if (orient === 'landscape') return new LandscapeLayout(localSide);
-  // Portrait design height follows the *safe* drawable area so the game fills the
-  // notch-free region without letterbox (ScalingManager offsets the layer to match).
+  // Both layouts size their reclaimable axis to the *safe* drawable area so the
+  // game fills the notch-free region without letterbox (ScalingManager offsets the
+  // layer to match): portrait grows its height, landscape grows its width.
   const availW = Math.max(1, screenW - insets.left - insets.right);
   const availH = Math.max(1, screenH - insets.top - insets.bottom);
+  if (orient === 'landscape') return new LandscapeLayout(availW, availH, localSide);
   return new PortraitLayout(availW, availH, localSide);
 }
 
