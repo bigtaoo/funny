@@ -69,31 +69,32 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
       body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `DAU trend (last ${days} days)`), sparkline(pts.map((p) => p.dau)), t));
     }
 
-    // D1/D7 retention
+    // D1–D7 retention
     if (retention.status === 'fulfilled' && retention.value.available && retention.value.retention?.length) {
       const rows = retention.value.retention.filter((r) => r.cohort_size > 0);
       if (rows.length > 0) {
+        const offsets = [1, 2, 3, 4, 5, 6, 7] as const;
         const t = h('table', {},
           h('tr', {},
             h('th', {}, 'Date'),
             h('th', { style: 'text-align:right' }, 'Cohort'),
-            h('th', { style: 'text-align:right' }, 'D1 ret'),
-            h('th', { style: 'text-align:right' }, 'D1%'),
-            h('th', { style: 'text-align:right' }, 'D7 ret'),
-            h('th', { style: 'text-align:right' }, 'D7%'),
+            ...offsets.map((n) => h('th', { style: 'text-align:right' }, `D${n}%`)),
           ),
         );
         for (const r of rows) {
           t.append(h('tr', {},
             h('td', {}, r.date),
             h('td', { style: 'text-align:right' }, String(r.cohort_size)),
-            h('td', { style: 'text-align:right' }, r.d1 !== undefined ? String(r.d1) : '—'),
-            h('td', { style: 'text-align:right' }, r.d1_rate !== undefined ? pct(r.d1_rate) : '—'),
-            h('td', { style: 'text-align:right' }, r.d7 !== undefined ? String(r.d7) : '—'),
-            h('td', { style: 'text-align:right' }, r.d7_rate !== undefined ? pct(r.d7_rate) : '—'),
+            ...offsets.map((n) => {
+              const rate = r.d_rate?.[n];
+              const count = r.d?.[n];
+              // Show rate; hover reveals returning device count.
+              return h('td', { style: 'text-align:right', title: count !== undefined ? `${count} devices` : 'insufficient data' },
+                rate !== undefined ? pct(rate) : '—');
+            }),
           ));
         }
-        body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `Retention cohorts (last ${days} days, — = insufficient data)`), t));
+        body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `Retention cohorts (last ${days} days, D1–D7 return, — = insufficient data)`), t));
       }
     }
 

@@ -86,13 +86,17 @@ export interface DauRow {
 export interface RegionRow { locale: string; devices: number }
 export interface OsRow { os: string; devices: number }
 export interface LoginHourRow { hour: number; count: number }
+// Day offsets tracked for rolling retention (D1 = next-day return … D7 = seventh-day return).
+export const RETENTION_OFFSETS = [1, 2, 3, 4, 5, 6, 7] as const;
+export type RetentionOffset = (typeof RETENTION_OFFSETS)[number];
+
 export interface RetentionRow {
   date: string;
   cohort_size: number;
-  d1?: number;
-  d7?: number;
-  d1_rate?: number;
-  d7_rate?: number;
+  /** Returning device count per day offset, keyed by offset (e.g. d[1], d[7]); undefined = not enough data yet. */
+  d: Partial<Record<RetentionOffset, number>>;
+  /** Returning device fraction per day offset (d[n] / cohort_size). */
+  d_rate: Partial<Record<RetentionOffset, number>>;
 }
 
 export interface QueryResult {
@@ -286,11 +290,12 @@ export class AnalyticsService {
   }
 
   /**
-   * D1/D7 rolling retention: fraction of daily active devices in the last N days that are still active on day 1 / day 7.
-   * An extra 7-day data window is fetched to allow computing D7 for early cohorts.
+   * D1–D7 rolling retention: fraction of daily active devices in the last N days that are still
+   * active on day +1 (next-day return) through day +7 (seventh-day return).
+   * An extra 7-day data window is fetched so the later offsets can be computed for recent cohorts.
    */
   async queryRetention(days: number): Promise<RetentionRow[]> {
-    const extraDays = 7;
+    const extraDays = Math.max(...RETENTION_OFFSETS);
     const since = new Date(dayStart(this.now()) - (days - 1 + extraDays) * 86400_000);
 
     // Deduplicate (date, device) → list of distinct active devices per day
@@ -312,21 +317,20 @@ export class AnalyticsService {
       const date = toDateStr(dateMs);
       const cohort = byDate.get(date);
       if (!cohort || cohort.size === 0) {
-        result.push({ date, cohort_size: 0 });
+        result.push({ date, cohort_size: 0, d: {}, d_rate: {} });
         continue;
       }
-      const d1Set = byDate.get(toDateStr(dateMs + 86400_000));
-      const d7Set = byDate.get(toDateStr(dateMs + 7 * 86400_000));
-      const d1 = d1Set !== undefined ? [...cohort].filter((d) => d1Set.has(d)).length : undefined;
-      const d7 = d7Set !== undefined ? [...cohort].filter((d) => d7Set.has(d)).length : undefined;
-      result.push({
-        date,
-        cohort_size: cohort.size,
-        d1,
-        d7,
-        d1_rate: d1 !== undefined ? d1 / cohort.size : undefined,
-        d7_rate: d7 !== undefined ? d7 / cohort.size : undefined,
-      });
+      const cohortDevices = [...cohort];
+      const d: Partial<Record<RetentionOffset, number>> = {};
+      const d_rate: Partial<Record<RetentionOffset, number>> = {};
+      for (const offset of RETENTION_OFFSETS) {
+        const laterSet = byDate.get(toDateStr(dateMs + offset * 86400_000));
+        if (laterSet === undefined) continue;
+        const returned = cohortDevices.filter((dev) => laterSet.has(dev)).length;
+        d[offset] = returned;
+        d_rate[offset] = returned / cohort.size;
+      }
+      result.push({ date, cohort_size: cohort.size, d, d_rate });
     }
     return result;
   }

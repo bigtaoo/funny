@@ -309,7 +309,15 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       ok: boolean;
-      data: { type: string; retention: { date: string; cohort_size: number; d1?: number; d7?: number }[] };
+      data: {
+        type: string;
+        retention: {
+          date: string;
+          cohort_size: number;
+          d: Partial<Record<1 | 2 | 3 | 4 | 5 | 6 | 7, number>>;
+          d_rate: Partial<Record<1 | 2 | 3 | 4 | 5 | 6 | 7, number>>;
+        }[];
+      };
     };
     expect(body.ok).toBe(true);
     expect(body.data.type).toBe('retention');
@@ -318,7 +326,56 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     // Today's cohort has 2 devices
     const todayRow = body.data.retention.find((r) => r.date === TODAY);
     expect(todayRow?.cohort_size).toBe(2);
-    // D7 for today = undefined (future data does not exist yet)
-    expect(todayRow?.d7).toBeUndefined();
+    // Future offsets (D1–D7) are all undefined for today — that data does not exist yet
+    for (const n of [1, 2, 3, 4, 5, 6, 7] as const) {
+      expect(todayRow?.d[n]).toBeUndefined();
+      expect(todayRow?.d_rate[n]).toBeUndefined();
+    }
+  });
+
+  it('queryRetention computes each D1–D7 offset from a backdated cohort', async () => {
+    // Anchor far in the past so these events fall outside every other test's real-now window.
+    const ANCHOR = Date.UTC(2020, 0, 10); // cohort day-start (UTC midnight)
+    const DAY = 86400_000;
+    // Insert session_start events directly (acknowledged write concern, unlike ingestEvents' w:0)
+    // so they are durable before we query.
+    const seeds: { dayOffset: number; device: string }[] = [
+      { dayOffset: 0, device: 'ret-A' }, { dayOffset: 0, device: 'ret-B' }, { dayOffset: 0, device: 'ret-C' }, // cohort {A,B,C}
+      { dayOffset: 1, device: 'ret-A' }, { dayOffset: 1, device: 'ret-Z1' }, // D1: only A in cohort → 1
+      { dayOffset: 2, device: 'ret-A' }, { dayOffset: 2, device: 'ret-B' },  // D2: A + B → 2
+      { dayOffset: 3, device: 'ret-Z2' },                                    // D3: activity exists but no cohort member → 0
+      { dayOffset: 7, device: 'ret-C' },                                     // D7: C → 1
+      // Days +4/+5/+6 have no activity at all → those offsets stay undefined (insufficient data).
+    ];
+    await mongo!.collections.events.insertMany(
+      seeds.map((s) => ({
+        session_id: `ret-${s.device}-${s.dayOffset}`,
+        device_id: s.device,
+        platform: 'web',
+        os: 'test',
+        game_version: '1',
+        locale: 'en',
+        event: 'session_start',
+        props: {},
+        ts: new Date(ANCHOR + s.dayOffset * DAY + 3600_000),
+      })),
+    );
+
+    // Query with a clock pinned to the anchor day so the cohort day is the sole row.
+    const retSvc = new AnalyticsService(mongo!.collections, () => ANCHOR + 12 * 3600_000);
+    const rows = await retSvc.queryRetention(1);
+    const cohort = rows.find((r) => r.date === '2020-01-10');
+    expect(cohort?.cohort_size).toBe(3);
+    expect(cohort?.d[1]).toBe(1);
+    expect(cohort?.d[2]).toBe(2);
+    expect(cohort?.d[3]).toBe(0);
+    expect(cohort?.d[4]).toBeUndefined();
+    expect(cohort?.d[5]).toBeUndefined();
+    expect(cohort?.d[6]).toBeUndefined();
+    expect(cohort?.d[7]).toBe(1);
+    expect(cohort?.d_rate[1]).toBeCloseTo(1 / 3);
+    expect(cohort?.d_rate[2]).toBeCloseTo(2 / 3);
+    expect(cohort?.d_rate[3]).toBe(0);
+    expect(cohort?.d_rate[7]).toBeCloseTo(1 / 3);
   });
 });

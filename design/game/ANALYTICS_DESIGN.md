@@ -510,6 +510,23 @@ db.events.aggregate([
 ])
 ```
 
+### 9.5 滚动留存 D1–D7（`GET /internal/query?type=retention`）
+
+`AnalyticsService.queryRetention(days)` 计算过去 `days` 天每个「同期群（cohort）」的**次日到第 7 日回访率**——即某天的活跃设备中，在第 +1…+7 天仍有 `session_start` 的比例（设备口径，按 `(date, device_id)` 去重）。为让近期 cohort 也能算出后段偏移，多取 7 天数据窗口。
+
+- 偏移量集中定义在 `RETENTION_OFFSETS = [1,2,3,4,5,6,7]`（`service.ts`），改这一处即可增删跟踪的天数。
+- 返回行 `RetentionRow`：`{ date, cohort_size, d, d_rate }`，其中 `d`/`d_rate` 是以偏移量（1…7）为键的稀疏映射——回访设备数 / 回访率。
+- 某偏移日**尚无任何活跃数据**（未来日期或数据缺口）→ 该键**缺省**（`d[n]===undefined`）；该日有活动但 cohort 无人回访 → `d[n]===0`。ops 前端据此渲染 `—` vs `0%`。
+- ops 「Analytics」页 `pageAnalytics`（`tools/ops/src/pages/analytics.ts`）渲染 `D1%…D7%` 七列留存曲线，单元格 hover 显示回访设备数。
+
+```
+cohort（某日活跃设备）
+    ↓ session_start（+1 日）→ D1  次日留存
+    ↓ session_start（+2 日）→ D2
+    ↓ …
+    ↓ session_start（+7 日）→ D7  七日留存
+```
+
 ---
 
 ## §10 隐私合规
