@@ -3,7 +3,8 @@
 // the item onto that card.
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
-import { ui as C, txt, sketchPanel, seedFor, marginLineX } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import type { SaveData, EquipSlot, CardInstance } from '../../game/meta/SaveData';
 import { CARD_DEFS, cardPower } from '../../game/meta/cardDefs';
 import { type Constructor, type EquipmentSceneBaseCtor, RES_H, ROW_H, SLOTS } from './base';
@@ -55,12 +56,12 @@ export function AssignMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       if (!inst) { this.assign = null; this.render(); return; }
       const slot = this.assign.slot;
 
-      const sidebarW = marginLineX(w);
+      const sidebarW = sidebarNavW(w);
       const top = this.headerH;
       const barBg = new PIXI.Graphics();
       barBg.beginFill(0xf3f1ea).drawRect(sidebarW, top, w - sidebarW, RES_H).endFill();
       this.bodyLayer.addChild(barBg);
-      const title = txt(t('equip.assignTitle').replace('{name}', `${this.itemName(inst.defId)} +${inst.level}`), 12, C.dark, true);
+      const title = txt(t('equip.assignTitle').replace('{name}', `${this.itemName(inst.defId)} +${inst.level}`), 22, C.dark, true);
       title.anchor.set(0.5, 0.5); title.x = sidebarW + (w - sidebarW) / 2; title.y = top + RES_H / 2;
       this.bodyLayer.addChild(title);
 
@@ -68,7 +69,7 @@ export function AssignMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       const listH = h - listY - 8;
       const cards = Object.values(save.cardInv ?? {});
       if (cards.length === 0) {
-        const lbl = txt(t('equip.assignEmpty'), 13, C.mid);
+        const lbl = txt(t('equip.assignEmpty'), 28, C.mid);
         lbl.anchor.set(0.5, 0.5); lbl.x = sidebarW + (w - sidebarW) / 2; lbl.y = listY + listH / 2;
         this.bodyLayer.addChild(lbl);
         return;
@@ -92,7 +93,7 @@ export function AssignMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
 
     private renderAssignRow(card: CardInstance, cy: number, slot: EquipSlot, save: SaveData): void {
       const { w } = this;
-      const left = marginLineX(w) + 6;
+      const left = sidebarNavW(w) + 6;
       const rowW = w - left - 6;
       const def = CARD_DEFS[card.defId];
       const row = sketchPanel(rowW, ROW_H - 4, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(cy, 30, w) });

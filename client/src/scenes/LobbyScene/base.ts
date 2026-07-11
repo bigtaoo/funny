@@ -194,6 +194,8 @@ export class LobbySceneBase {
 
   protected readonly w: number;
   protected readonly h: number;
+  /** True in portrait; landscape keeps the original single-row header (see build()'s header block). */
+  protected readonly portrait: boolean;
   protected readonly cb: LobbySceneCallbacks;
 
   protected state:        LobbyState = 'idle';
@@ -296,6 +298,7 @@ export class LobbySceneBase {
     this.container = new PIXI.Container();
     this.w  = layout.designWidth;
     this.h  = layout.designHeight;
+    this.portrait = layout.orientation === 'portrait';
     this.cb = cb;
     this.build();
 

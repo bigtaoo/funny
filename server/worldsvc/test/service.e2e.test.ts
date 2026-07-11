@@ -243,7 +243,7 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
     });
   });
 
-  it('battle pass yield bonus (S8-8 产率加成档): hasBattlePass → yieldRate ×BP_YIELD_MULT after occupy', async () => {
+  it('battle pass yield bonus (S8-8 yield-bonus tier): hasBattlePass → yieldRate ×BP_YIELD_MULT after occupy', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const res = findCoord((t) => t.type === 'resource', 50, 50);
     const procRes = proceduralTile(W, res.x, res.y);

@@ -182,7 +182,7 @@ hudView.container        ← HUD（最顶层）
 |---|---|
 | `Barracks`（兵营） | `game_infantry_barracks.png` |
 | `ArrowTower`（箭塔） | `game_archer_barracks.png` |
-| 基地（双方） | `game_base.png`（0 级，L0 预载），敌方按朝向镜像（横屏左右翻、竖屏上下翻）。1/2 级升级贴图打包在 `assets/base_upgrade_atlas.{png,json}`（`base_lv1`=城池，`base_lv2`=宫殿，覆盖 upgradeLevel 2-3），懒加载见 `render/baseUpgradeAtlasLoader.ts`，源图+打包脚本在 `art/ui/game/pack_base_atlas.js` |
+| 基地（双方） | `game_base.png`（0 级，L0 预载），敌方按朝向镜像（横屏左右翻、竖屏上下翻）。1/2 级升级贴图打包在 `assets/base_upgrade_atlas.{png,json}`（`base_lv1`=城池 → upgradeLevel 1，`base_lv2`=宫殿 → upgradeLevel 2/最高级），懒加载见 `render/baseUpgradeAtlasLoader.ts`，源图+打包脚本在 `art/ui/game/pack_base_atlas.js` |
 
 ### 箭塔攻击范围
 
@@ -508,7 +508,7 @@ npm run test:watch
    - c) **肉盾拦截**：往威胁最高车道出兵，优先 ShieldBearer（最肉）。
 2. **升级规划**（仅当 `upgradeReachable` 且全场无威胁时）
    - 能升级就升级；接近升级费（≥ 60%）时攒钱、本 tick 不乱花。
-   - **`upgradeReachable` 守卫**：`nextUpgradeCost ≤ COIN_CAP` 才考虑。当前 `COIN_CAP=300` ≥ `BASE_UPGRADE_COSTS=[50,100,200]`，升级**可达**，AI 安全时会攒钱并升级。守卫仍保留为防御性代码：若日后把升级费调到超过金币上限，该分支会自动静默跳过、不会卡死。
+   - **`upgradeReachable` 守卫**：`nextUpgradeCost ≤ COIN_CAP` 才考虑。当前 `INK_CAP=100` ≥ `BASE_UPGRADE_COSTS=[30,50]`，升级**可达**，AI 安全时会攒钱并升级。守卫仍保留为防御性代码：若日后把升级费调到超过金币上限，该分支会自动静默跳过、不会卡死。
 3. **经济 / 进攻**
    - 早期在**安全车道**（威胁最低）补兵营，维持出兵流（上限 `MAX_BARRACKS=2`）。
    - 敌群够大（`meteorOffenseCluster`）时进攻性陨石。

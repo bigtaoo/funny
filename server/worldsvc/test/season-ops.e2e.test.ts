@@ -208,7 +208,7 @@ describe.skipIf(!mongo)('worldsvc season ops e2e', () => {
     expect(await m.collections.seasonResults.countDocuments({ worldId: W })).toBe(1);
   });
 
-  it('settle: battle pass holders receive extra reward mail (S8-8 额外结算奖励档)', async () => {
+  it('settle: battle pass holders receive extra reward mail (S8-8 extra-settlement-reward tier)', async () => {
     await seed('active');
     // Grant alice a battle pass; bob has none.
     await m.collections.playerWorld.updateOne(

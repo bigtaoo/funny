@@ -82,7 +82,7 @@ describe('base 3×3 footprint (ADR-025)', () => {
     expect(baseFootprintInBounds(MAP_W - 2, MAP_H - 2, MAP_W, MAP_H)).toBe(true); // fits flush
   });
 
-  it('an enemy base footprint blocks pathing (封路), forcing a detour', () => {
+  it('an enemy base footprint blocks pathing (path-blocking), forcing a detour', () => {
     // Wall off a full column x=4 (y=0..3) between start (2,1) and dest (6,1) as "enemy base" cells.
     const blocked = new Set(['4:0', '4:1', '4:2', '4:3']);
     const path = findMarchPath(W_OPEN, MAP_W, MAP_H, 2, 1, 6, 1, new Set(), blocked);
@@ -118,7 +118,7 @@ describe('proceduralTile obstacle generation', () => {
   // the 50×50 logic window above does not apply.
   it('obstacles concentrate on the outer/resource province ring boundary (ADR-034 §2.2)', () => {
     // Scan a band straddling the outer/resource ring boundary (radius ratio 0.39 of the map's half-diagonal,
-    // due east of center) — this is where the "折痕岭主环" terrain band lives, so a hit is near-guaranteed.
+    // due east of center) — this is where the "crease ridge main ring" terrain band lives, so a hit is near-guaranteed.
     const cx = Math.floor(SLG_MAP_W / 2);
     const cy = Math.floor(SLG_MAP_H / 2);
     const halfDiag = Math.sqrt(cx ** 2 + cy ** 2);

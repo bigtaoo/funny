@@ -1,7 +1,7 @@
 // auctionsvc MongoDB (auction task 4): auctions / auctionDaily / auctionPrices collections.
 // Dedicated database notebook_wars_auction, physically isolated from meta/commercial/world.
 // Migrated from server/worldsvc/src/db.ts — all documents drop the worldId field (AUCTION_DESIGN §9,
-// auction is an account-scoped全服 market, not tied to any SLG world/shard).
+// auction is an account-scoped, server-wide market, not tied to any SLG world/shard).
 import { MongoClient, type Collection, type Db, type MongoClientOptions } from 'mongodb';
 import type { AuctionStatus } from '@nw/shared';
 

@@ -44,7 +44,7 @@ export class MapTemplateService {
   }
 
   /**
-   * Generate a template's seed data by batch-running proceduralTile() over its full grid (§24 "首包生成走服务器端").
+   * Generate a template's seed data by batch-running proceduralTile() over its full grid (§24 "initial-package generation runs server-side").
    * proceduralTile is currently hardcoded to the fixed SLG_MAP_W/H map (module-scope Voronoi capital precompute);
    * multi-size support is blocked on the ADR-034 rewrite generalizing it — until then, generate only accepts the
    * current fixed size so every produced tile is actually correct rather than silently wrong for other sizes.
@@ -88,7 +88,7 @@ export class MapTemplateService {
     return docs.map((d) => this.toSummary(d));
   }
 
-  /** Viewport bbox read (§24 "每次打开从数据库取最新地形") — never dumps a whole 500×500 template in one response. */
+  /** Viewport bbox read (§24 "each open fetches the latest terrain from the database") — never dumps a whole 500×500 template in one response. */
   async getTiles(templateId: string, x0: number, y0: number, w: number, h: number): Promise<MapTemplateTile[]> {
     if (w * h > MAP_TEMPLATE_READ_MAX_TILES) {
       throw new SlgError('BAD_REQUEST', `viewport too large (${w}x${h}), max ${MAP_TEMPLATE_READ_MAX_TILES} tiles`);
@@ -99,7 +99,7 @@ export class MapTemplateService {
     return docs.map((d) => ({ x: d.x, y: d.y, type: d.type, level: d.level, ...(d.resType ? { resType: d.resType } : {}), ...(d.obstacleKind ? { obstacleKind: d.obstacleKind } : {}) }));
   }
 
-  /** Diff-save (§24 "保存时只上发本次改动的格子") — upserts exactly the tiles the editor changed. No lock: last writer wins. */
+  /** Diff-save (§24 "on save, only upload the tiles changed this time") — upserts exactly the tiles the editor changed. No lock: last writer wins. */
   async saveTilesDiff(templateId: string, tiles: MapTemplateTile[]): Promise<{ updated: number }> {
     if (tiles.length === 0) return { updated: 0 };
     if (tiles.length > MAP_TEMPLATE_SAVE_MAX_TILES) {
@@ -129,7 +129,7 @@ export class MapTemplateService {
     return { updated: tiles.length };
   }
 
-  /** §24 "不能删除当前被设为创建新世界用配置的 templateId" — historical world instances are unaffected either way (they hold a clone, not a reference). */
+  /** §24 "cannot delete the templateId currently set as the config for creating new worlds" — historical world instances are unaffected either way (they hold a clone, not a reference). */
   async deleteTemplate(templateId: string): Promise<void> {
     const template = await this.deps.cols.mapTemplates.findOne({ _id: templateId });
     if (!template) throw new SlgError('NOT_FOUND', `no such template: ${templateId}`);
@@ -147,7 +147,7 @@ export class MapTemplateService {
   }
 
   /**
-   * Clone (copy) the currently active template's tiles into `worldId`'s own baseline (§24 "世界创建时对模板是克隆而非实时引用").
+   * Clone (copy) the currently active template's tiles into `worldId`'s own baseline (§24 "on world creation, the template is cloned rather than referenced live").
    * No-op (returns null) when no template is marked active — callers should keep working exactly as before
    * (proceduralTile-only) in that case; this is intentionally additive and does not change existing world-open behavior.
    */

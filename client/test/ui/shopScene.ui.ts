@@ -157,7 +157,7 @@ describe('ShopScene — monthly card daily claim greys out once claimed today', 
     scene.destroy();
   });
 
-  it('claim button is enabled ("领取") while active and not yet claimed today, then greys out ("今日已领取") after a successful claim', async () => {
+  it('claim button is enabled ("claim") while active and not yet claimed today, then greys out ("claimed today") after a successful claim', async () => {
     // Mutable server-mirror stand-in: claimMonthlyCard mutates it exactly like the real
     // shop.ts wiring does via saveManager.adoptServer(save) — getMonetization always reads
     // the live object, so ShopScene's next render() picks up the change.
@@ -185,7 +185,7 @@ describe('ShopScene — monthly card daily claim greys out once claimed today', 
     scene.destroy();
   });
 
-  it('claim button stays greyed out ("今日已领取") across a second claim attempt that the server rejects as already-claimed', async () => {
+  it('claim button stays greyed out ("claimed today") across a second claim attempt that the server rejects as already-claimed', async () => {
     // Reproduces the already-claimed-today server response (claimed=0 → ok:false) arriving
     // for a card whose local mirror had not yet caught up — adoptServer-equivalent mutation
     // still lands via getMonetization, so the button must grey out even on the error path.

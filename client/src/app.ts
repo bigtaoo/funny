@@ -69,13 +69,21 @@ class PixiAppViews implements AppViews {
   /** Set by the shell to core.onResized(); fired after a lobby resize re-renders. */
   onResized: (() => void) | null = null;
 
+  /** True only while an onResize()-driven lobby rebuild is in flight, so that rebuild swaps instantly (no fade). */
+  private resizing = false;
+
   private readonly onResize = (): void => {
     const { width, height } = this.platform.getScreenSize();
     const insets = this.platform.getSafeAreaInsets?.();
     this.app.renderer.resize(width, height);
     this.layout = createLayout(width, height, Side.Bottom, insets);
     this.scaling.resize(width, height, this.layout, insets);
-    this.onResized?.();
+    this.resizing = true;
+    try {
+      this.onResized?.(); // synchronously rebuilds the lobby via showLobby()
+    } finally {
+      this.resizing = false;
+    }
   };
 
   constructor(
@@ -106,7 +114,7 @@ class PixiAppViews implements AppViews {
 
   showLobby(cb: LobbySceneCallbacks): LobbyView {
     const scene = new LobbyScene(this.layout, this.input, cb);
-    this.manager.goto(scene);
+    this.manager.goto(scene, { instant: this.resizing });
     window.addEventListener('resize', this.onResize);
     return {
       applySocialBadge: (n) => scene.applySocialBadge(n),
@@ -378,9 +386,11 @@ export async function startApp(platform: IPlatform): Promise<void> {
   const insets = platform.getSafeAreaInsets?.();
   const layout: ILayout = createLayout(screenW, screenH, Side.Bottom, insets);
   const scaling = new ScalingManager(app, layout, insets);
-  const manager = new SceneManager(app, scaling.gameLayer);
-
   const input = new InputManager();
+  // The manager freezes `input` for the span of each scene-fade: taps bypass Pixi (DOM-fed), so the
+  // fade's black cover can't block them, and a tap mid-fade would otherwise hit the outgoing scene's
+  // still-live hit-rects (LOBBY nav "Store"→"Career" mis-navigation).
+  const manager = new SceneManager(app, scaling.gameLayer, input);
   platform.setupInput(app, input, (sx, sy) => scaling.toDesignSpace(sx, sy));
 
   // ── L0 boot-tier preload gate (ASSET_PACKAGING §3) ──────────────────────────

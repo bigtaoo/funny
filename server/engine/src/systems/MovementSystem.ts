@@ -324,7 +324,7 @@ export class MovementSystem {
       const opponent      = state.getOpponent(unit.side);
       const attackerOwner = state.ownerOf(unit.side);
       const defenderOwner = state.ownerOf(opponent.side);
-      // 攻城值 (ADR-026): base damage on arrival is the unit's siege value, decoupled
+      // siege value (ADR-026): base damage on arrival is the unit's siege value, decoupled
       // from combat attack, so siege cost-efficiency is an independent balance lever.
       // Same in every mode (pvp/campaign/siege); PvP uses the read-only base constant.
       const damage        = unit.siegeValue;

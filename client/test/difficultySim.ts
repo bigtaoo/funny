@@ -105,7 +105,7 @@ export interface BaselineAiOptions {
   towerCap: number;
   /** Maximum number of barracks to maintain (passive unit stream). */
   barracksCap: number;
-  /** Target base upgrade level (0..3); upgrading increases ink regeneration rate. */
+  /** Target base upgrade level (0..2); upgrading increases ink regeneration rate. */
   upgradeToLevel: number;
   /** Actions per second available (token bucket, simulating human APM). 6 = tight but not superhuman. */
   actionsPerSecond: number;
@@ -118,7 +118,7 @@ export interface BaselineAiOptions {
 export const DEFAULT_AI: BaselineAiOptions = {
   towerCap: 6,
   barracksCap: 1,
-  upgradeToLevel: 3,
+  upgradeToLevel: 2,
   actionsPerSecond: 8,
   threatRows: 6,
   blockersPerLane: 2,

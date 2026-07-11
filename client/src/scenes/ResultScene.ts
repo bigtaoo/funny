@@ -400,7 +400,7 @@ export class ResultScene implements Scene {
       // Scattered anywhere on the page (margins kept clear so nothing bleeds
       // off-canvas). Position is re-rolled on every view; a minimum-distance
       // floor between picks keeps them from clumping into one bright patch.
-      const starCount = 12;
+      const starCount = 6;
       const marginX = w * 0.03;
       const marginY = h * 0.05;
       const minDist = Math.min(w, h) * 0.1;

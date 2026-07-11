@@ -1,6 +1,6 @@
 // SLG home-city building system (SLG_CITY_DESIGN, ADR-022; season-scoped, cleared on reset) — P1 + P2 (wall/academy/cabinet).
 // Split out of slg.ts (god-file split, [[project_godfile_split_pattern]]).
-// 主城内政: a single hub (desk) gates a row of stationery buildings. Buildings inject ONLY into SLG economy / troop paths
+// Home-city administration: a single hub (desk) gates a row of stationery buildings. Buildings inject ONLY into SLG economy / troop paths
 // (recomputeYield / settleResources cap / troopCap + training); they NEVER feed buildPvpBlueprints (ladder red line, D-CITY-6).
 // Pure data + pure functions (computable on either end, unit-testable). All numbers DRAFT — tune in the balance pass
 // (SLG_ECONOMY_CHECK), register figures in ECONOMY_NUMBERS §13-SLG-CITY.
@@ -13,7 +13,7 @@ export type BuildingKey =
   | 'paperTray'    // paper global yield multiplier
   | 'graphiteMill' // graphite global yield multiplier
   | 'metalForge'   // metal global yield multiplier
-  | 'stickerShop'  // sticker home-city self-production (民居模型; copper-coin faucet)
+  | 'stickerShop'  // sticker home-city self-production (residential-model; copper-coin faucet)
   | 'cabinet'      // storage cap (RESOURCE_CAP multiplier) + loot protection (P2)
   | 'drillYard'    // troopCap growth + training speed + training queue slots
   | 'wall'         // P2: home-city siege defense
@@ -33,7 +33,7 @@ export const BUILDING_YIELD_RES: Readonly<Partial<Record<BuildingKey, ResourceTy
 
 export const DESK_MAX_LEVEL = 20;              // hub total-level cap (aligned with Three-Kingdoms 20)
 export const BUILD_YIELD_STEP = 0.05;          // resource building: +5% land-resource yield per level
-export const STICKER_SELF_BASE = 200;          // stickerShop: sticker self-produced per hour per level (民居模型 faucet)
+export const STICKER_SELF_BASE = 200;          // stickerShop: sticker self-produced per hour per level (residential-model faucet)
 export const CABINET_CAP_STEP = 0.10;          // cabinet: +10% storage cap per level
 export const DRILL_TROOPCAP_STEP = 500;        // drillYard: +500 troopCap per level
 export const DRILL_TRAIN_SPEED_STEP = 0.04;    // drillYard: -4% training time per level (floored)

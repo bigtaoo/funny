@@ -58,7 +58,7 @@ export class WorldCoreYield extends WorldCoreKernel {
     // Nation production bonus (§2.4 / G1, ADR-034): capitals occupied by this player → own tiles within those capitals' provinces (angle-sector + ring) receive +NATION_BONUS_PRODUCTION.
     const ownedNations = await this.deps.cols.nations.find({ worldId, ownerId: accountId }).toArray();
     const ownedCapIdx = new Set(ownedNations.map((n) => n.capitalIdx));
-    // Building levels (SLG_CITY_DESIGN): land resources get a global yield multiplier; sticker is self-produced by the stickerShop (民居模型).
+    // Building levels (SLG_CITY_DESIGN): land resources get a global yield multiplier; sticker is self-produced by the stickerShop (residential-model).
     // buildingsOverride lets a build-completion path compute the post-upgrade rate before the new levels are persisted (avoids a write-then-read ordering hazard).
     let buildings: Partial<Record<BuildingKey, number>> | undefined = buildingsOverride;
     let hasBattlePass = hasBattlePassOverride ?? false;
@@ -81,7 +81,7 @@ export class WorldCoreYield extends WorldCoreKernel {
     for (const rt of RESOURCE_TYPES) {
       acc[rt] = Math.floor(acc[rt] * buildingYieldMult(buildings, rt) + buildingSelfYield(buildings, rt));
     }
-    // Battle pass production bonus (S8-8 产率加成档): +10% resource yield for holders.
+    // Battle pass production bonus (S8-8 yield-bonus tier): +10% resource yield for holders.
     if (hasBattlePass) {
       for (const rt of RESOURCE_TYPES) acc[rt] = Math.floor(acc[rt] * BP_YIELD_MULT);
     }

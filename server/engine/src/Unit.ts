@@ -41,7 +41,7 @@ export class Unit {
   readonly maxHp: number;
   readonly attack: number;
 
-  /** 攻城值 (ADR-026): base HP knocked off the enemy base on arrival. Decoupled from `attack`. */
+  /** siege value (ADR-026): base HP knocked off the enemy base on arrival. Decoupled from `attack`. */
   readonly siegeValue: number;
 
   /**

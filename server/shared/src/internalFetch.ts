@@ -4,7 +4,7 @@
 // the gateway fired ~20 enqueue POSTs at matchsvc, none consumed the response body,
 // the sockets stayed checked-out, the pool jammed, and every POST eventually failed
 // with `fetch failed` ~30s later — so no enqueue ever reached matchsvc. See
-// observability/README.md「排查口诀」and SERVER_API.md「内部认证模型」.
+// observability/README.md "troubleshooting checklist" and SERVER_API.md "internal authentication model".
 //
 // Three fixes, all applied here so callers can't forget them:
 //   1. ALWAYS drain/cancel the response body, even though these calls return their

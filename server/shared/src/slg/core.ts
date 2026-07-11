@@ -31,8 +31,8 @@ export type TileType =
   | 'center' // world center (sect ownership contest point; unique)
   | 'base' // player home-city placement (written to DB at runtime)
   | 'obstacle' // blocking terrain (mountains/rivers; fully impassable, S8-6.6)
-  | 'bridge' // capturable river crossing (桥): passable by the occupying faction & allies, treated as obstacle if unoccupied; siege target with an NPC garrison (ADR gate→bridge/plankway migration)
-  | 'plankway' // capturable mountain crossing (栈道): same passage/siege semantics as `bridge` but spans mountain obstacle instead of river
+  | 'bridge' // capturable river crossing (bridge): passable by the occupying faction & allies, treated as obstacle if unoccupied; siege target with an NPC garrison (ADR gate→bridge/plankway migration)
+  | 'plankway' // capturable mountain crossing (plankway): same passage/siege semantics as `bridge` but spans mountain obstacle instead of river
   | 'stronghold'; // stronghold (G8 §3.1): high-strategic-value tile guarded by an overwhelmingly powerful system NPC; cannot be directly occupied — must be conquered via a siege attack
 
 /**
@@ -41,12 +41,12 @@ export type TileType =
  * - paper:    basic building material (was `wood`).
  * - graphite: advanced building material (4th land resource; map faucet via biomeAt quad-partition, sink via high-level building upgrades, SLG_CITY_DESIGN / ADR-022).
  * - metal:    military / equipment forging (was `iron`).
- * - sticker:  universal flexible resource (copper-coin slot: recruit / tech / small instant actions). NOT a global currency — season-scoped, cleared at season end, non-auctionable, not directly purchasable. Faucet = level-gated 铜矿 map tiles (`resource` tiles at level ≥ SLG_GEN.copperMinLevel, 三战 rule) + home-city stickerShop self-production (民居模型); sink = building upgrades.
+ * - sticker:  universal flexible resource (copper-coin slot: recruit / tech / small instant actions). NOT a global currency — season-scoped, cleared at season end, non-auctionable, not directly purchasable. Faucet = level-gated copper-mine map tiles (`resource` tiles at level ≥ SLG_GEN.copperMinLevel, Three-Kingdoms-Strategy rule) + home-city stickerShop self-production (residential-model); sink = building upgrades.
  * All five are season resources (cleared at season end, banned from the auction house); the only global currency is `coins` (ECONOMY_BALANCE).
  */
 export type ResourceType = 'ink' | 'paper' | 'graphite' | 'metal' | 'sticker';
 /**
- * River vs mountain: both are fully impassable `obstacle` tiles (ADR-034 §2.2 "两者都是完全不可通行地形"),
+ * River vs mountain: both are fully impassable `obstacle` tiles (ADR-034 §2.2 "both are fully impassable terrain"),
  * so this NEVER affects gameplay/pathfinding — it only tags which hand-drawn doodle (terrain_river vs
  * terrain_mountain) the tile renders with, so a painted/generated river reads as a river instead of the
  * old position-hash coin-flip between the two art variants. Optional: when absent, renderers fall back to
@@ -152,7 +152,7 @@ export function baseFootprintInBounds(ax: number, ay: number, mapW: number, mapH
 /**
  * City footprint (square side length in tiles) by level: tier1 (lv1-2)=3×3, tier2 (lv3-5)=5×5,
  * tier3 (lv6-8)=7×7, tier4 (lv9-10)=9×9 — higher-level cities read as physically bigger settlements.
- * The top tier equals {@link WORLD_CENTER_FOOTPRINT} (9), so the world-center巨城 sits naturally at the max size.
+ * The top tier equals {@link WORLD_CENTER_FOOTPRINT} (9), so the world-center mega-city sits naturally at the max size.
  */
 export function cityFootprint(level: number): number {
   if (level <= 2) return 3;
@@ -186,7 +186,7 @@ export const SLG_GEN = {
   /**
    * Biome quad-partition thresholds (ink < t0 < paper < t1 < graphite < t2 < metal). Four "land-mined" resources are biome-generated
    * (SLG_CITY_DESIGN D-CITY-2, ADR-022): graphite is the 4th land resource, given a map faucet here so the building system can sink it.
-   * `sticker` (copper-coin slot) is NOT a biome land resource so it has no biome threshold; instead it has a LEVEL-GATED 铜矿 map faucet (copperMinLevel/copperShare below) plus home-city stickerShop self-production.
+   * `sticker` (copper-coin slot) is NOT a biome land resource so it has no biome threshold; instead it has a LEVEL-GATED copper-mine map faucet (copperMinLevel/copperShare below) plus home-city stickerShop self-production.
    * ⚠ ADR-022 caveat: this changes the procedural map (unclaimed tiles only — claimed tiles persist resType in the DB). Pre-launch, so applied
    * globally; once a season is live, gate behind a season-version flag instead of mutating live maps. Thresholds are DRAFT, tune in the balance pass.
    */
@@ -194,14 +194,14 @@ export const SLG_GEN = {
   biomePaperMax: 0.55,
   biomeGraphiteMax: 0.78,
   /**
-   * 铜矿 (copper mine) = LEVEL-GATED `sticker` map faucet (三战 rule: 铜矿 only on 6级地及以上, see SGZ_LAND_REFERENCE §3 /
+   * copper mine = LEVEL-GATED `sticker` map faucet (Three-Kingdoms-Strategy rule: copper mine only on level-6 tiles and above, see SGZ_LAND_REFERENCE §3 /
    * SLG_DESIGN §3.4). On a `resource` tile at level ≥ copperMinLevel, a per-tile hash draw < copperShare overrides the
    * biome land resource with `sticker`; below that level sticker never appears on the map (matches the art, which ships
    * sticker frames l6–10 only — slg-resource-art §5.7-sticker).
-   * COEXISTS with the home-city stickerShop faucet (2026-07-07 拍板): stickerShop (STICKER_SELF_BASE/h/level, city.ts) is
-   * the reliable BASELINE every player has and covers the building-upgrade sticker sink; map 铜矿 is a scarce EXPANSION
+   * COEXISTS with the home-city stickerShop faucet (decided 2026-07-07): stickerShop (STICKER_SELF_BASE/h/level, city.ts) is
+   * the reliable BASELINE every player has and covers the building-upgrade sticker sink; map copper mine is a scarce EXPANSION
    * BONUS gated behind contested ≥6 tiles. recomputeYield adds both faucets (additive, no double-count). Hence copperShare
-   * is kept low: 0.25 → 铜矿 ≈ 22% of ≥6 resource tiles ≈ 2.5% of all resource tiles (a clear minority even among high
+   * is kept low: 0.25 → copper mine ≈ 22% of ≥6 resource tiles ≈ 2.5% of all resource tiles (a clear minority even among high
    * tiles — "special, must be fought for"). DRAFT — validate in the balance pass (econ-sim does not yet model the map faucet).
    */
   copperMinLevel: 6,

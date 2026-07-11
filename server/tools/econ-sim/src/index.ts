@@ -65,9 +65,9 @@ function printResult(r: SimResult): void {
     );
   }
   console.log('');
-  console.log('  Server-wide season material (settle + 细水):');
+  console.log('  Server-wide season material (settle + trickle):');
   for (const mat of MATERIALS) {
-    console.log(`    ${mat.padEnd(8)} ${fmt(r.serverWideMaterial[mat])}  (细水 part ${fmt(r.trickleMaterial[mat])})`);
+    console.log(`    ${mat.padEnd(8)} ${fmt(r.serverWideMaterial[mat])}  (trickle part ${fmt(r.trickleMaterial[mat])})`);
   }
   console.log(`    Σ coin-eq = ${fmt(r.serverWideSeasonCoins)}/season = ${fmt(r.serverWideMonthlyCoins)}/mo`);
   console.log('');

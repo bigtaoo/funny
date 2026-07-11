@@ -45,13 +45,13 @@ function createCardSlot(): PIXI.Container {
   const art      = new PIXI.Sprite(PIXI.Texture.EMPTY); art.name = 'art';
   art.anchor.set(0.5);
   art.visible = false;
-  const typeText = new PIXI.Text('', { fontSize: 9,  fill: 0x888888 }); typeText.name = 'type';
+  const typeText = new PIXI.Text('', { fontSize: 13,  fill: 0x888888 }); typeText.name = 'type';
   typeText.x = 4; typeText.y = 2;
   const nameText = new PIXI.Text('', {
-    fontSize: 13, fill: 0x222222, wordWrap: true, align: 'center', fontWeight: 'bold',
+    fontSize: 19, fill: 0x222222, wordWrap: true, align: 'center', fontWeight: 'bold',
   }); nameText.name = 'name';
   const costBg   = new PIXI.Graphics(); costBg.name   = 'costBg';
-  const costText = new PIXI.Text('', { fontSize: 14, fill: 0xffffff, fontWeight: 'bold' });
+  const costText = new PIXI.Text('', { fontSize: 20, fill: 0xffffff, fontWeight: 'bold' });
   costText.name  = 'cost';
   const overlay  = new PIXI.Graphics(); overlay.name  = 'overlay';
   const bar      = new PIXI.Graphics(); bar.name      = 'bar';
@@ -333,8 +333,9 @@ export class HandView {
 
       const costText = c.getChildByName('cost') as PIXI.Text;
       costText.text = String(card.cost);
-      costText.x    = cardW  - 14 - costText.width  / 2;
-      costText.y    = cardH - 14 - costText.height / 2;
+      // Cost badge sits top-right so the (now larger) name can use the full bottom row.
+      costText.x    = cardW - 16 - costText.width  / 2;
+      costText.y    = 16 - costText.height / 2;
     } else {
       // Empty slot: clear every content-owned child so a reused slot shows nothing.
       (c.getChildByName('type') as PIXI.Text).text = '';
@@ -357,7 +358,7 @@ export class HandView {
     const costBg = c.getChildByName('costBg') as PIXI.Graphics;
     costBg.clear();
     costBg.beginFill(canAfford ? 0x2244aa : 0xaa4422);
-    costBg.drawCircle(cardW - 14, cardH - 14, 12);
+    costBg.drawCircle(cardW - 16, 16, 15);
     costBg.endFill();
 
     const overlay = c.getChildByName('overlay') as PIXI.Graphics;

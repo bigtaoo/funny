@@ -6,7 +6,7 @@ import { ui as C, txt, sketchPanel, seedFor, marginLineX } from '../../render/sk
 import { buildIcon } from '../../render/icons';
 import { UNIT_ART_URLS } from '../../render/cardArt';
 import { drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
-import { drawSidebarTabs, type HubTab } from '../../ui/widgets/HubTabs';
+import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
 import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
 import type { CardSLGState } from '../../net/WorldApiClient';
 import { CARD_DEFS, CARD_INV_CAP, CARD_INV_WARN, troopCap, cardPower } from '../../game/meta/cardDefs';
@@ -31,7 +31,7 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
      */
     renderSidebar(): void {
       if (!this.showSidebar) return;
-      const sidebarW = marginLineX(this.w);
+      const sidebarW = sidebarNavW(this.w);
       const tabs: HubTab[] = [
         { label: t('roster.title'), active: true, icon: 'cards' },
         { label: t('equip.title'), active: false, icon: 'armor' },
@@ -45,7 +45,7 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
     /**
      * Coin balance + card-capacity readout drawn into the header row itself (same treatment as
      * EquipmentScene's renderHeaderCurrency), so the currency HUD stays visible and aligned with
-     * the title when navigating between the 卡背包/装备 peer scenes instead of popping in/out.
+     * the title when navigating between the card-inventory/equipment peer scenes instead of popping in/out.
      */
     renderHeaderCurrency(): void {
       this.headerOverlayLayer.removeChildren();
@@ -70,7 +70,7 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       const listH = h - listY - 8;
 
       if (cards.length === 0) {
-        const lbl = txt(t('roster.empty'), 12, C.mid);
+        const lbl = txt(t('roster.empty'), 28, C.mid);
         lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = listY + listH / 2;
         lbl.style.wordWrap = true; lbl.style.wordWrapWidth = w - 32;
         this.bodyLayer.addChild(lbl);
@@ -78,8 +78,8 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       }
 
       const sorted = sortCards(cards, save.equipmentInv ?? {});
-      // Start the grid right of the red margin rule; right pad stays one CELL_GAP.
-      const left = marginLineX(w) + CELL_GAP;
+      // Start the grid right of the sidebar rail (when shown) or the red margin rule; right pad stays one CELL_GAP.
+      const left = (this.showSidebar ? sidebarNavW(w) : marginLineX(w)) + CELL_GAP;
       const avail = w - left - CELL_GAP;
       const cols = Math.max(1, Math.floor((avail + CELL_GAP) / (CARD_CELL_W_TARGET + CELL_GAP)));
       const cellW = (avail - CELL_GAP * (cols - 1)) / cols;

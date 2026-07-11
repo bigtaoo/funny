@@ -48,8 +48,16 @@ export class ConsentDialog implements Scene {
     dim.beginFill(0x000000, 0.45).drawRect(0, 0, w, h).endFill();
     this.container.addChild(dim);
 
-    const cardW = Math.min(Math.round(w * 0.86), 520);
-    const cardH = Math.round(Math.min(h * 0.7, 560));
+    // Orientation-aware sizing: landscape drives off 80% of the screen height,
+    // portrait off 90% of the width. No hard pixel cap — every inner element is
+    // computed from cardW/cardH, so the whole card scales together.
+    const landscape = w > h;
+    const cardH = landscape
+      ? Math.round(h * 0.8)
+      : Math.round(Math.min(h * 0.72, w * 0.9 * 1.15));
+    const cardW = landscape
+      ? Math.round(Math.min(cardH * 0.95, w * 0.7))
+      : Math.round(w * 0.9);
     const cardX = (w - cardW) / 2;
     const cardY = (h - cardH) / 2;
 

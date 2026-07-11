@@ -126,7 +126,7 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
     }
 
     /**
-     * Left category rail inside the notebook-margin gutter (全部/装备/角色卡/材料), mirrors the market
+     * Left category rail inside the notebook-margin gutter (All/Equipment/Character-cards/Materials), mirrors the market
      * tab's renderSidebar so the picker reads consistently with the rest of the auction scene. Returns
      * the x where the item grid should start.
      */

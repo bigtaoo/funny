@@ -46,7 +46,7 @@ export interface AchievementCallbacks {
   onClaim?(achId: string, tier: number): Promise<number>;
   /**
    * Career hub peer navigation (LOBBY_IA_REDESIGN P1.5): when both are present, a
-   * [生涯统计|称号|成就] strip is drawn above the category sub-tabs in the left margin gutter,
+   * [Stats|Titles|Achievements] strip is drawn above the category sub-tabs in the left margin gutter,
    * itself active. Omitted from standalone entry points that shouldn't advertise the sibling pages.
    */
   onOpenStats?(): void;
@@ -173,7 +173,7 @@ export class AchievementScene implements Scene {
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
-    // Career hub peer strip [生涯统计|称号|成就] (LOBBY_IA_REDESIGN P1.5, see CareerTabs.ts),
+    // Career hub peer strip [Stats|Titles|Achievements] (LOBBY_IA_REDESIGN P1.5, see CareerTabs.ts),
     // drawn above the category sub-tabs in the left margin gutter regardless of load state, so
     // the sibling pages never vanish while achievements are loading/offline/empty.
     let sidebarBottom = tbH + Math.round(h * 0.02);

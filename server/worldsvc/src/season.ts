@@ -265,7 +265,7 @@ export class SeasonService {
         }
       }
 
-      // Extra settlement reward for battle-pass holders (S8-8 额外结算奖励档): sent once per holder regardless of tier.
+      // Extra settlement reward for battle-pass holders (S8-8 extra-settlement-reward tier): sent once per holder regardless of tier.
       const bpPlayers = await cols.playerWorld
         .find({ worldId, hasBattlePass: true }, { projection: { accountId: 1 } })
         .toArray();

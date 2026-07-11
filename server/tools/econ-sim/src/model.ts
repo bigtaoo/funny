@@ -4,8 +4,8 @@
 // Per-head settle payout: rewards go to EVERY member of a ranked sect (per-head, the
 // pinned 2026-06-30 granularity), so `participant` head count dominates total volume.
 // We aggregate one SLG season server-wide across shards, both views:
-//   · per-head  (养成稀释 / head-tilt)
-//   · server-wide (全服通胀, against material faucet AND coin faucet)
+//   · per-head  (progression dilution / head-tilt)
+//   · server-wide (server-wide inflation, against material faucet AND coin faucet)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
@@ -41,7 +41,7 @@ export interface Scenario {
   topSectMembers: { champion: number; top3: number; top10: number };
   /** Fraction of a tier's heads whose sect holds the central capital (idx 9) -> ×CENTER_CAPITAL_MULT. */
   capitalHoldRate: Record<SettleTier, number>;
-  /** §0.1 细水: daily/event material per active player per day (small, but counted). */
+  /** §0.1 trickle: daily/event material per active player per day (small, but counted). */
   dailyMaterialPerActive: Partial<Record<MaterialKey, number>>;
   seasonDays: number;
 }
@@ -63,7 +63,7 @@ export interface SimResult {
   shardCount: number;
   seasonMonths: number;
   tiers: TierResult[];
-  // server-wide season totals (settle + 细水)
+  // server-wide season totals (settle + trickle)
   serverWideMaterial: Record<MaterialKey, number>;
   trickleMaterial: Record<MaterialKey, number>;
   serverWideSeasonCoins: number;
@@ -130,7 +130,7 @@ export function runScenario(s: Scenario): SimResult {
     });
   }
 
-  // §0.1 细水 (daily/event) — applies to all active players, counted in A-track.
+  // §0.1 trickle (daily/event) — applies to all active players, counted in A-track.
   const trickleMaterial = emptyMat();
   for (const mat of MATERIALS) {
     const perDay = s.dailyMaterialPerActive[mat] ?? 0;
@@ -191,11 +191,11 @@ export function judge(r: SimResult): Judgment[] {
   const part = r.tiers.find((t) => t.tier === 'participant')!;
   const champ = r.tiers.find((t) => t.tier === 'champion')!;
 
-  // 1. 人均稀释 (participant, material vs grind, same units)
+  // 1. per-capita dilution (participant, material vs grind, same units)
   const partMonthly = part.perHeadMonthlyCoins;
   const dilution = partMonthly / REGULAR_MONTHLY_MATERIAL_COINS;
   out.push({
-    key: '人均稀释 (participant)',
+    key: 'per-capita dilution (participant)',
     view: 'per-head',
     detail: `participant ${partMonthly.toFixed(0)} coin-eq/mo vs grind ${REGULAR_MONTHLY_MATERIAL_COINS.toFixed(0)}/mo = ${pct(dilution)}`,
     value: dilution,
@@ -203,10 +203,10 @@ export function judge(r: SimResult): Judgment[] {
     pass: dilution <= THRESHOLDS.perHeadDilution,
   });
 
-  // 1b. 人均稀释 (champion, worst case head)
+  // 1b. per-capita dilution (champion, worst case head)
   const champDilution = champ.perHeadMonthlyCoins / REGULAR_MONTHLY_MATERIAL_COINS;
   out.push({
-    key: '人均稀释 (champion, 最坏头)',
+    key: 'per-capita dilution (champion, worst-case head)',
     view: 'per-head',
     detail: `champion ${champ.perHeadMonthlyCoins.toFixed(0)} coin-eq/mo vs grind ${REGULAR_MONTHLY_MATERIAL_COINS.toFixed(0)}/mo = ${pct(champDilution)}`,
     value: champDilution,
@@ -214,10 +214,10 @@ export function judge(r: SimResult): Judgment[] {
     pass: champDilution <= THRESHOLDS.perHeadDilution,
   });
 
-  // 2. 全服通胀 — CORRECT denominator: material grind faucet (same units, fungible)
+  // 2. server-wide inflation — CORRECT denominator: material grind faucet (same units, fungible)
   const inflMat = r.serverWideMonthlyCoins / r.grindCoinsServerMonthly;
   out.push({
-    key: '全服通胀 (vs 材料龙头·正确口径)',
+    key: 'server-wide inflation (vs material faucet · correct measure)',
     view: 'server',
     detail: `settle ${(r.serverWideMonthlyCoins / 1e6).toFixed(2)}M coin-eq/mo vs material grind ${(r.grindCoinsServerMonthly / 1e6).toFixed(2)}M/mo = ${pct(inflMat)}`,
     value: inflMat,
@@ -225,38 +225,38 @@ export function judge(r: SimResult): Judgment[] {
     pass: inflMat <= THRESHOLDS.serverInflation,
   });
 
-  // 2b. 全服通胀 — literal §2.3 reading vs COIN faucet (flagged: category cross-ref, settle injects 0 coins)
+  // 2b. server-wide inflation — literal §2.3 reading vs COIN faucet (flagged: category cross-ref, settle injects 0 coins)
   const inflCoin = r.serverWideMonthlyCoins / r.coinFaucetServerMonthly;
   out.push({
-    key: '全服通胀 (vs 金币龙头·跨类参考)',
+    key: 'server-wide inflation (vs coin faucet · cross-category reference)',
     view: 'server',
-    detail: `settle ${(r.serverWideMonthlyCoins / 1e6).toFixed(2)}M coin-eq/mo vs coin faucet ${(r.coinFaucetServerMonthly / 1e6).toFixed(2)}M/mo = ${pct(inflCoin)} — settle 实发 coins=0, 此口径为名义换算 (见 §13-SLG 注)`,
+    detail: `settle ${(r.serverWideMonthlyCoins / 1e6).toFixed(2)}M coin-eq/mo vs coin faucet ${(r.coinFaucetServerMonthly / 1e6).toFixed(2)}M/mo = ${pct(inflCoin)} — settle actually issued coins=0, this measure is a nominal conversion (see §13-SLG note)`,
     value: inflCoin,
     threshold: THRESHOLDS.serverInflation,
     pass: inflCoin <= THRESHOLDS.serverInflation,
     informational: true,
   });
 
-  // 3. coin 子项 — every tier must keep coins = 0 (红线 1)
+  // 3. coin sub-item — every tier must keep coins = 0 (red line 1)
   const totalSettleCoins = TIERS.reduce((a, t) => a + (SETTLE_REWARDS[t].coins ?? 0), 0);
   out.push({
-    key: 'coin 子项',
+    key: 'coin sub-item',
     view: '—',
-    detail: `Σ SETTLE_REWARDS[*].coins = ${totalSettleCoins} (须 = 0 否则走 §2.4 签字)`,
+    detail: `Σ SETTLE_REWARDS[*].coins = ${totalSettleCoins} (must be 0, otherwise go through §2.4 sign-off)`,
     value: totalSettleCoins,
     threshold: 0,
     pass: totalSettleCoins === 0,
   });
 
-  // 4. 头部倾斜 (per-head): champion / participant — INFORMATIONAL (decided 2026-06-30).
+  // 4. head-tilt (per-head): champion / participant — INFORMATIONAL (decided 2026-06-30).
   // Downgraded to non-gating: per-head, the structural guardrail is champion ABSOLUTE
   // dilution (judgment 1b, <=15% PASS), not the gradient. The ratio is structurally large
   // because participant binding=0 while champion binding>0 — intended "winners get more".
   const tilt = part.perHeadSeasonCoins > 0 ? champ.perHeadSeasonCoins / part.perHeadSeasonCoins : Infinity;
   out.push({
-    key: '头部倾斜 (champion/participant 人均, 非门控)',
+    key: 'head-tilt (champion/participant per-head, non-gating)',
     view: 'per-head',
-    detail: `champion ${champ.perHeadSeasonCoins.toFixed(0)} / participant ${part.perHeadSeasonCoins.toFixed(0)} coin-eq = ${tilt.toFixed(1)}× — 护栏改由 champion 绝对稀释 (判据 1b) 承担, 梯度本身不设硬墙`,
+    detail: `champion ${champ.perHeadSeasonCoins.toFixed(0)} / participant ${part.perHeadSeasonCoins.toFixed(0)} coin-eq = ${tilt.toFixed(1)}× — guardrail now carried by champion absolute dilution (judgment 1b), the gradient itself has no hard wall`,
     value: tilt,
     threshold: THRESHOLDS.headTilt,
     pass: tilt <= THRESHOLDS.headTilt,

@@ -14,7 +14,8 @@ feat/<slug>                 ← 分支：提交真正存放处
 
 - **开会话靠「选文件夹」，不靠「切分支」。** 打开对应 worktree 文件夹，git 自动知道它在哪条分支。
 - **「Couldn't switch branches」不是 bug**：同一分支不能被两个工作目录同时检出；解法是开那个 worktree 的文件夹。
-- **生命周期**：建目录干活 → 提交到自己分支 → 干完把**分支合进 main** → 然后才 `git worktree remove` + `git branch -d`。合并之前，文件夹和分支都得留着。
+- **生命周期**：建目录干活 → 提交到自己分支 → 干完把**分支合进当日集成分支** → 然后才 `git worktree remove` + `git branch -d`。分支已推上远端后本地删了不丢东西；否则合并落地前文件夹和分支都得留着。
+- **集成走「当日分支」而非直接进 main**：feature 分支先 `--no-ff` 合进当日日期分支（命名 `DD.MM.YYYY`，如 `11.07.2026`），当日分支再开 PR 进 `main`（历史上如 PR #23/#24）。当日分支若已被 PR 合入 main，复用前先 `git branch -f <日期> origin/main` 快进到最新再合。
 
 ## 约定（规则）
 

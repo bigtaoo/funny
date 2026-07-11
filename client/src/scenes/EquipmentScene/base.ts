@@ -9,7 +9,8 @@ import type { ILayout } from '../../layout/ILayout';
 import type { InputManager } from '../../inputSystem/InputManager';
 import type { Scene } from '../SceneManager';
 import { t, type TranslationKey } from '../../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren, marginLineX } from '../../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../../render/sketchUi';
+import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { BusyTracker } from '../../ui/busyTracker';
@@ -58,7 +59,8 @@ export type EquipTab = 'inv' | 'craft';
 export const RES_H = 30;       // resource bar (coins + three materials + inventory count)
 export const LOADOUT_H = 78;   // loadout strip at the top of the inventory tab (three slots)
 export const ROW_H = 56;
-export const FILTER_H = 28;   // slot filter bar (All / Weapon / Armor / Trinket)
+export const FILTER_H = 48;   // slot filter bar (All / Weapon / Armor / Trinket)
+export const MAT_BAND_H = 52; // materials band (scrap / lead / binding) below the header
 export const SECTION_H = 20;  // section divider (Equipped / Bag)
 
 // Inventory grid: icon-card cells (name top / glyph left / rarity+level right)
@@ -189,7 +191,7 @@ export class EquipmentSceneBase {
 
     // Static header (back + title); the back hit is (re)registered in render().
     const hdr = drawSceneHeader(this.container, w, h, t('equip.title'), {
-      variant: 'paper', accent: HEADER_ACCENT.spend,
+      variant: 'paper', accent: HEADER_ACCENT.spend, titleAlign: 'left',
     });
     this.backRect = hdr.backRect;
     this.headerH = hdr.headerH;
@@ -230,27 +232,47 @@ export class EquipmentSceneBase {
 
   /**
    * Coin + material + capacity readout drawn into the header row itself (headerOverlayLayer sits
-   * on top of the static header chrome), so it lines up with the "装备" title instead of floating
+   * on top of the static header chrome), so it lines up with the "Equipment" title instead of floating
    * in its own band underneath. Called on every render(), independent of renderHeaderRow/assign
    * mode, so it stays visible even while the card-assign picker is open.
    */
   protected renderHeaderCurrency(): void {
     this.headerOverlayLayer.removeChildren();
     const save = this.cb.getSave();
-    const chips = TRACKED_MATERIALS.map((m) => ({
-      icon: m,
-      color: MAT_COLOR[m],
-      amount: save.materials[m] ?? 0,
-      label: t(`material.${m}` as TranslationKey),
-    }));
     const count = Object.keys(save.equipmentInv).length;
-    // Coin + three materials + capacity is a wide cluster; keep it at a compact absolute size
-    // (~2× a 50px bar) rather than letting it scale up with the taller unified header, so it
-    // never overflows the 1080-wide portrait bar.
-    drawHeaderCurrency(this.headerOverlayLayer, this.w, this.headerH, save.wallet.coins, chips, {
+    // Header carries only the coin balance + capacity — a compact right cluster that leaves room
+    // for the left-aligned title on the narrow portrait bar. The three crafting materials are too
+    // wide to fit here with readable labels, so they get their own body band (renderMaterialsBand).
+    drawHeaderCurrency(this.headerOverlayLayer, this.w, this.headerH, save.wallet.coins, [], {
       text: `${count}/${EQUIPMENT_INV_CAP}`,
       color: count >= EQUIPMENT_INV_CAP ? C.red : C.mid,
     }, 100 / this.headerH);
+  }
+
+  /**
+   * Slim materials band at the top of the body (right of the sidebar rail): the three crafting
+   * materials as icon + name + amount, at a readable size. Moved out of the header (see
+   * renderHeaderCurrency) so the labels no longer collide with the title on the narrow portrait bar.
+   */
+  protected renderMaterialsBand(x: number, y: number, w: number): void {
+    const save = this.cb.getSave();
+    const bg = new PIXI.Graphics();
+    bg.beginFill(0xf3f1ea).drawRect(x, y, w, MAT_BAND_H).endFill();
+    this.bodyLayer.addChild(bg);
+
+    const midY = y + MAT_BAND_H / 2;
+    const iconSize = Math.round(MAT_BAND_H * 0.44);
+    const fontSize = Math.round(MAT_BAND_H * 0.4);
+    const slotW = w / TRACKED_MATERIALS.length;
+    TRACKED_MATERIALS.forEach((m, i) => {
+      const cx = x + i * slotW + Math.round(slotW * 0.1);
+      const ic = buildIcon(matIconKind(m) ?? 'coin', iconSize, MAT_COLOR[m] ?? C.mid);
+      ic.x = cx; ic.y = midY - iconSize / 2;
+      this.bodyLayer.addChild(ic);
+      const lbl = txt(`${t(`material.${m}` as TranslationKey)} ${save.materials[m] ?? 0}`, fontSize, C.dark);
+      lbl.anchor.set(0, 0.5); lbl.x = cx + iconSize + 6; lbl.y = midY;
+      this.bodyLayer.addChild(lbl);
+    });
   }
 
   /**
@@ -261,11 +283,14 @@ export class EquipmentSceneBase {
   protected renderHeaderRow(): number {
     const { w } = this;
     const top = this.headerH;
-    const leftW = marginLineX(w);
+    const leftW = sidebarNavW(w);
     const rightX = leftW;
     const rightW = w - leftW;
 
     let rightBottom = top;
+    // Materials band (both tabs) — the three crafting materials, relocated out of the header.
+    this.renderMaterialsBand(rightX, rightBottom, rightW);
+    rightBottom += MAT_BAND_H;
     if (this.activeTab === 'inv') {
       this.renderSlotFilter(rightX, rightBottom, rightW);
       rightBottom += FILTER_H;

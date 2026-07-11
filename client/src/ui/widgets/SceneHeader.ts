@@ -223,10 +223,14 @@ function buildChrome(
  * @param opts.variant Bar styling — see {@link SceneHeaderVariant} (default 'paper').
  * @param opts.accent Category accent colour for the bottom rule (defaults to the
  *   blue lobby accent). Pass one of {@link HEADER_ACCENT}.
+ * @param opts.titleAlign 'center' (default) or 'left'. Left-aligns the title just
+ *   right of the back pill — use it on scenes that also draw a wide right-side
+ *   currency cluster (equipment/roster), where a centred title would collide with
+ *   it on the narrow portrait bar.
  */
 export function drawSceneHeader(
   container: PIXI.Container, w: number, h: number, title: string | null,
-  opts?: { headerH?: number; titleSize?: number; variant?: SceneHeaderVariant; accent?: number },
+  opts?: { headerH?: number; titleSize?: number; variant?: SceneHeaderVariant; accent?: number; titleAlign?: 'center' | 'left' },
 ): SceneHeaderResult {
   const headerH = opts?.headerH ?? sceneHeaderHeight(h);
   const variant = opts?.variant ?? 'paper';
@@ -244,8 +248,14 @@ export function drawSceneHeader(
   if (title !== null) {
     const titleColor = variant === 'paper' ? C.dark : 0xffffff;
     const titleNode = txt(title, opts?.titleSize ?? Math.round(h * 0.034), titleColor, true);
-    titleNode.anchor.set(0.5, 0.5);
-    titleNode.x = w / 2;
+    if (opts?.titleAlign === 'left') {
+      // Sit just right of the back pill so a right-aligned currency cluster has room.
+      titleNode.anchor.set(0, 0.5);
+      titleNode.x = BACK_X + backChipSize(label, size).w + Math.round(size * 0.6);
+    } else {
+      titleNode.anchor.set(0.5, 0.5);
+      titleNode.x = w / 2;
+    }
     titleNode.y = headerH / 2;
     container.addChild(titleNode);
   }
@@ -290,7 +300,7 @@ export interface HeaderCurrencyChip {
   icon: IconKind;
   color: number;
   amount: number;
-  /** Short name drawn between the icon and the amount (e.g. "碎屑") — without it, an icon + bare
+  /** Short name drawn between the icon and the amount (e.g. "crumbs") — without it, an icon + bare
    * number is unreadable to a player who hasn't memorized the material set. */
   label?: string;
 }
@@ -299,7 +309,7 @@ export interface HeaderCurrencyChip {
  * Right-aligned coin (+ optional material chips, + optional capacity readout) drawn
  * on top of an already-baked header bar so it reads as part of the title row instead
  * of a separate band underneath it (the two used to visually float apart — see the
- * "装备/卡背包" header-alignment fix). Draw into a per-render overlay layer added
+ * "equipment/card inventory" header-alignment fix). Draw into a per-render overlay layer added
  * *after* the cached header chrome, so the coin icon isn't hidden behind the bar.
  */
 export function drawHeaderCurrency(

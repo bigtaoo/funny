@@ -1,6 +1,6 @@
 // worldsvc dedicated database factory (S8-0, SLG_DESIGN §14.3). Database name notebook_wars_world, physically isolated from meta/commercial/admin.
 // 7 collections: worlds / tiles / playerWorld / marches / sieges / sects / nations. Family identity/roster lives in socialsvc (see db.ts note above SectDoc);
-// auction collections moved to auctionsvc's own database (§9 任务6).
+// auction collections moved to auctionsvc's own database (§9 task 6).
 // Write pattern reuses single-document atomics + rev optimistic locking (META_DESIGN §6.3). Sparse storage: only occupied/modified tiles are persisted;
 // neutral tiles are computed on-the-fly by shared proceduralTile() and not stored (key to §14.2 scale).
 import { MongoClient, Db, Collection, type MongoClientOptions } from 'mongodb';

@@ -6,7 +6,7 @@ import { getResLevelTexture, getResTexture, isResAtlasReady } from '../../render
 import { getTerrainTexture, isTerrainAtlasReady } from '../../render/terrainAtlasLoader';
 import { getBuildingTexture, isBuildingAtlasReady } from '../../render/buildingAtlasLoader';
 import { isCityAtlasReady } from '../../render/cityAtlasLoader';
-import { FOG_COLOR, ALLY_SECT_BORDER, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT } from './tileStyle';
+import { FOG_COLOR, ALLY_SECT_BORDER, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT, RES_TEX_TINT } from './tileStyle';
 import type { TerrainTextureName } from '../../render/terrainAtlasLoader';
 import type { WorldTileView } from '../../net/WorldApiClient';
 import type { ProceduralTile } from '@nw/shared';
@@ -17,6 +17,9 @@ export function drawTileL1(
   texName: TerrainTextureName, proc: ProceduralTile | null = null,
 ): void {
   const hh = (tp * ISO_RATIO) / 2;
+  // Resource type of this tile (from live tile state, else the uncached procedural value) — drives
+  // BOTH the biome ground wash below and the motif sprite, so they stay in agreement.
+  const motifResType = tile?.type === 'resource' ? tile.resType : (!tile && proc?.type === 'resource' ? proc.resType : undefined);
   // Soft sketch grid, then the ground: hand-drawn texture fill once the atlas has
   // decoded, falling back to the flat desaturated color (see terrainFill) until then.
   g.lineStyle(0.7, 0xccbbaa, 0.18);
@@ -29,10 +32,12 @@ export function drawTileL1(
     // paper instead of dominating the map edges; other terrain stays near-opaque.
     const texAlpha = TERRAIN_TEX_ALPHA[texName] ?? TERRAIN_TEX_ALPHA_DEFAULT;
     // Faint colored-pencil tint multiplied into the grey ground art (see TERRAIN_TEX_TINT).
-    // Resource type is carried ENTIRELY by the motif sprite (drawResMotif) — the ground keeps
-    // its plain terrain tint with no per-biome wash, so the map reads calm and ownership stays
-    // the only strong color (tileStyle header). keep/stronghold keep their landmark terrain tint.
-    const texTint = TERRAIN_TEX_TINT[texName] ?? TERRAIN_TEX_TINT_DEFAULT;
+    // Resource tiles wash the ground toward their biome hue (RES_TEX_TINT) so same-resource
+    // zones read as colored regions at a glance (三战-style terrain legibility); the tints are
+    // faint & paper-adjacent, so the map stays calm and ownership remains the only strong color.
+    // Non-resource terrain (land/obstacle/keep/…) keeps its per-texture tint. Must stay in
+    // lockstep with the map-editor's drawEditorTile (SLG map render parity).
+    const texTint = (motifResType && RES_TEX_TINT[motifResType]) ?? TERRAIN_TEX_TINT[texName] ?? TERRAIN_TEX_TINT_DEFAULT;
     g.beginTextureFill({ texture: tex, matrix: m, alpha: texAlpha, color: texTint });
   } else {
     g.beginFill(fill, 0.7);
@@ -47,7 +52,6 @@ export function drawTileL1(
   // even under fog (the "hide level outside vision" narrowing was abolished). The motif is an
   // addChild sprite, so it renders above the fog wash drawn on this Graphics' own polygon.
   // Must stay in lockstep with the map-editor's drawEditorTile (SLG map render parity).
-  const motifResType = tile?.type === 'resource' ? tile.resType : (!tile && proc?.type === 'resource' ? proc.resType : undefined);
   if (motifResType) {
     drawResMotif(g, motifResType, tile?.level ?? proc?.level ?? 1, tp, false);
   }
@@ -315,7 +319,7 @@ export function drawCityIcon(g: PIXI.Graphics, mine: boolean, ally: boolean, lv:
  * When a hand-drawn `res_{resType}_l{level}` frame exists, draw that real per-level art:
  * the artwork alone carries level/abundance/defense — no programmatic count-replication or
  * pencil defense frames are layered on. All map resTypes now have per-level frames in the atlas
- * (paper/ink/graphite l1–l10 bespoke, metal l1–l10 baked heaps, sticker/铜矿 l6–l10 bespoke — sticker
+ * (paper/ink/graphite l1–l10 bespoke, metal l1–l10 baked heaps, sticker/copper mine l6–l10 bespoke — sticker
  * only spawns at level ≥6, so it never needs l1–5). Any missing level falls back to the generic
  * `res_{resType}` sprite — deliberately one sprite, no abundance scatter, so the map stays calm.
  *
@@ -366,6 +370,11 @@ export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, t
   // motifs (resourceDensity=1.0 puts one on every tile), while l1..l10 still read apart.
   const denom = levelTex ? tex.width : Math.max(tex.width, tex.height);
   sp.scale.set((tp * 0.40) / denom);
+  // Value hierarchy by opacity: with resourceDensity=1.0 a heap sits on EVERY tile, so drawing
+  // them all at full strength reads as uniform confetti. Fading low-level heaps (and keeping
+  // high-level ones solid) lets the eye pick out the tiles worth fighting for — lv1≈0.4 → lv10=1.0.
+  // Must stay in lockstep with the map-editor's drawResMotif (SLG map render parity).
+  sp.alpha = 0.4 + 0.6 * ((lv - 1) / 9);
   [sp.x, sp.y] = toLocal(0.5, 0.52);
   g.addChild(sp);
 }

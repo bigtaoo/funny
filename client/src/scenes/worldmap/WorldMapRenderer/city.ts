@@ -3,7 +3,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { BASE_FOOTPRINT } from '@nw/shared';
 import { getCityTextureForLevel, isCityAtlasReady } from '../../../render/cityAtlasLoader';
-import { tileToScreen, visibleTileBounds } from '../../../render/isoGrid';
+import { tileToScreen, visibleTileBounds, ISO_RATIO } from '../../../render/isoGrid';
 import { HUD_H, BASE_SPRITE_TILES } from '../constants';
 import { type Constructor, type WorldMapRendererBaseCtor } from './base';
 
@@ -65,7 +65,7 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
           if (!cityC) {
             const sprite = new PIXI.Sprite(tex);
             sprite.name = 'img';
-            sprite.anchor.set(0.5);
+            sprite.anchor.set(0.5, 1); // bottom-center: the castle base rests on the plot, not centered on it
             const dotGfx = new PIXI.Graphics();
             dotGfx.name = 'dots';
             cityC = new PIXI.Container();
@@ -75,11 +75,19 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
             this.ctx.citySprites.set(cacheKey, cityC);
           }
 
-          // Position at tile diamond center; depth-sort so bases further back (smaller
-          // tx+ty) never overdraw ones nearer camera when their sprites overlap.
+          // Position bottom-center near the plot CENTER, not shoved to the front vertex. The atlas
+          // art's base is ~full sprite-width (BASE_SPRITE_TILES ≈ 3.2 tiles), so anchoring it at the
+          // diamond's front vertex made the wide base overhang the plot's front-left/right edges and
+          // cover adjacent RESOURCE tiles (a tile then showed both a resource icon and half a castle).
+          // Sitting the base near the diamond's center line — its widest span — keeps it inside the
+          // 3×3 footprint; the tall upper body rises up-and-back and only occludes BACK tiles, which
+          // is correct isometric depth. GROUND_FWD nudges the base 40% of the way toward the front
+          // vertex so it reads as planted (not floating at dead-center) without spilling forward —
+          // value verified against the widest-base atlas frames (lv4, l7). See design/tools/map-editor.
           const s = tileToScreen(tx, ty, tp);
+          const groundFwd = (BASE_FOOTPRINT * tp * ISO_RATIO) / 2 * 0.4; // 40% of center→front-vertex
           cityC.x = this.ctx.panX + s.x;
-          cityC.y = this.ctx.panY + s.y;
+          cityC.y = this.ctx.panY + s.y + groundFwd;
           cityC.zIndex = tx + ty;
 
           // Resize sprite: keep the atlas art's own square aspect (it already draws each
@@ -106,7 +114,7 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
             const gap   = dotR * 2.7;
             const totalW = maxInTier * gap - gap + 2 * dotR;
             const bx    = -totalW / 2 + dotR;
-            const by    = (BASE_SPRITE_TILES / 2) * tp + dotR;   // just below the sprite's bottom edge
+            const by    = dotR + Math.max(2, tp * 0.05);   // just below the sprite's bottom edge (bottom-anchored → edge at local y=0)
             dots.lineStyle(1, inkColor, 0.85);
             for (let d = 0; d < maxInTier; d++) {
               const cx = bx + d * gap;
@@ -132,20 +140,21 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
         if (!cityC) {
           const sprite = new PIXI.Sprite(tex);
           sprite.name = 'img';
-          sprite.anchor.set(0.5);
+          sprite.anchor.set(0.5, 1); // bottom-center: rest the city base on the plot
           cityC = new PIXI.Container();
           cityC.addChild(sprite);
           this.ctx.cityLayer.addChild(cityC);
           this.ctx.citySprites.set(key, cityC);
         }
         const s = tileToScreen(node.x, node.y, tp);
+        const groundFwd = (node.footprint * tp * ISO_RATIO) / 2 * 0.4; // 40% center→front-vertex (see base branch note)
         cityC.x = this.ctx.panX + s.x;
-        cityC.y = this.ctx.panY + s.y;
+        cityC.y = this.ctx.panY + s.y + groundFwd;
         cityC.zIndex = node.x + node.y;
         const sprite = cityC.getChildByName('img') as PIXI.Sprite;
         if (sprite.texture !== tex) sprite.texture = tex;
         // Scale the BASE_SPRITE_TILES art up sub-linearly with footprint (√), so higher-tier cities still
-        // read as bigger but the 9×9 world-center 巨城 doesn't balloon to ~9.6 tiles and swallow the map
+        // read as bigger but the 9×9 world-center mega-city doesn't balloon to ~9.6 tiles and swallow the map
         // (a base at footprint 3 is unchanged: √1 = 1).
         const spriteTiles = Math.sqrt(node.footprint / BASE_FOOTPRINT) * BASE_SPRITE_TILES;
         sprite.width = spriteTiles * tp;

@@ -15,7 +15,7 @@
 // Layout: products are icon-cards laid out in a responsive grid (mirrors CardScene/EquipmentScene). The group nav
 // [Shop|Coins|Gacha|BattlePass] is a vertical rail in the left notebook-margin gutter (marginLineX), so the grid
 // starts to its right and scrolls (drag) inside a masked body region while the header + rail stay fixed. Subscription
-// cards (monthly / year) are globally single-slot: while any card is active, both Buy buttons read "生效中" and are
+// cards (monthly / year) are globally single-slot: while any card is active, both Buy buttons read "active" and are
 // disabled (server enforces the same via ALREADY_ACTIVE). Promo-code redemption (B-PROMO) is a full-width row below
 // the Coins tab's tier grid; text entry uses the same hidden-<input> technique as LoginScene (works on both desktop
 // keyboards and mobile soft keyboards).

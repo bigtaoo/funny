@@ -20,7 +20,7 @@ import {
 // ── DailyScene — daily check-in + daily tasks (B5, RETENTION_DESIGN) ────────────
 //
 // Entry: LobbyScene "daily" button (onOpenDaily).
-// Tab layout (2026-07-05): 月历/每日任务 are a vertical sidebar left of the notebook's red
+// Tab layout (2026-07-05): Calendar/Daily-tasks are a vertical sidebar left of the notebook's red
 // margin rule (mirrors AchievementScene's category sidebar); content sits to its right and
 // shows only the active tab at a time, at full width, regardless of orientation.
 
@@ -166,7 +166,7 @@ export class DailyScene implements Scene {
   }
 
   /**
-   * 月历/每日任务 tabs stacked in the narrow strip left of the notebook's red margin rule
+   * Calendar/Daily-tasks tabs stacked in the narrow strip left of the notebook's red margin rule
    * (mirrors AchievementScene's category sidebar). Tapping a tab swaps the single content
    * pane on the right — only one tab's content is ever drawn at a time.
    */
@@ -330,8 +330,8 @@ export class DailyScene implements Scene {
       bg.x = PAD; bg.y = cy;
       this.container.addChild(bg);
 
-      // Label is wrapped and width-capped to the left ~62% of the card so long Chinese
-      // labels (e.g. "通关任意 PvE 关卡") can never grow into the right-aligned state text.
+      // Label is wrapped and width-capped to the left ~62% of the card so long
+      // labels (e.g. "Clear any PvE level") can never grow into the right-aligned state text.
       const label = new PIXI.Text(t(labelKey as TranslationKey), {
         fontSize: Math.round(cardH * 0.3), fill: 0x333333, fontFamily: 'monospace',
         wordWrap: true, wordWrapWidth: cardW * 0.6, breakWords: true,

@@ -25,7 +25,7 @@ export interface TitlesSceneCallbacks {
   onEquip(titleId: string): void;
   /**
    * Career hub peer navigation (LOBBY_IA_REDESIGN P1.5): when both are present, a
-   * [生涯统计|称号|成就] strip is drawn in the left margin gutter, itself active. Omitted from
+   * [Stats|Titles|Achievements] strip is drawn in the left margin gutter, itself active. Omitted from
    * standalone entry points that shouldn't advertise the sibling pages.
    */
   onOpenStats?(): void;
@@ -96,7 +96,7 @@ export class TitlesScene implements Scene {
   }
 
   /**
-   * Career hub peer strip [生涯统计|称号|成就] in the left margin gutter (see StatsScene /
+   * Career hub peer strip [Stats|Titles|Achievements] in the left margin gutter (see StatsScene /
    * CareerTabs.ts); only drawn when the caller wired both sibling callbacks.
    */
   private drawSidebar(tbH: number): void {

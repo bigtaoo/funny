@@ -8,7 +8,7 @@ import { type IconKind } from '../../render/icons';
 import { type Constructor, type ShopSceneBaseCtor, type CardSpec, type BtnSpec } from './base';
 
 // Subscription-card display prices (¥). Mirror of @nw/shared MONTHLY/YEAR_CARD_PRICE_YUAN — the real IAP charge is
-// server-authorized (no coins debited); these drive the strike-through + savings badge only. Year = 12×¥30 (¥360) at ~9折 → ¥298.
+// server-authorized (no coins debited); these drive the strike-through + savings badge only. Year = 12×¥30 (¥360) at ~10% off → ¥298.
 const MONTHLY_CARD_YUAN = 30;
 const YEAR_CARD_YUAN = 298;
 const YEAR_CARD_LIST_YUAN = 360;
@@ -87,7 +87,7 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
         });
       }
 
-      // Year card: 365-day, ~9折 vs 12 monthly cards. Same single-slot gate.
+      // Year card: 365-day, ~10% off vs 12 monthly cards. Same single-slot gate.
       if (this.cb.buyYearCard) {
         specs.push({
           icon: 'trophy', iconColor: C.gold, title: t('shop.yearCard'), highlight: true,
@@ -102,7 +102,7 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
         });
       }
 
-      // Starter packs: one card each, "已购" when already owned.
+      // Starter packs: one card each, "owned" when already owned.
       if (this.cb.buyStarter) {
         const packs: { id: 'starter_draw' | 'starter_growth'; label: TranslationKey; icon: IconKind }[] = [
           { id: 'starter_draw', label: 'shop.starterDraw', icon: 'capsule' },

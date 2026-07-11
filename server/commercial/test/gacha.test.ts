@@ -157,7 +157,7 @@ describe('buildLimitedPool', () => {
     expect(p.itemsByRarity.legendary).toContain('skin_limited_01');
   });
 
-  it('a legendary hit that is not the featured banner is a 歪 (off-banner)', () => {
+  it('a legendary hit that is not the featured banner is an off-banner miss', () => {
     const p = buildLimitedPool(cfg);
     // Featured occupies half the legendary slots; the fillers are the other half.
     const featuredSlots = p.itemsByRarity.legendary.filter((x) => x === 'skin_limited_01').length;

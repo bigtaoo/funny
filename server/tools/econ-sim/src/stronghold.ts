@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Stronghold track model (SLG_ECONOMY_CHECK §21.4 "险地 STRONGHOLD_* 密度/守军/奖励").
+// Stronghold track model (SLG_ECONOMY_CHECK §21.4 "stronghold STRONGHOLD_* density/garrison/rewards").
 //
 // Strongholds (G8 §3.1) are the ONE stronghold-related economy face the A-track
 // aggregation never counted: on capture, `applyStrongholdSiege` grants a PERSISTENT
@@ -8,7 +8,7 @@
 //     const matLoot = strongholdMaterialLoot(proc.level);          // binding, 4×level
 //     meta.grantMaterial(ownerId, matLoot.material, matLoot.qty, …) // -> SaveData.materials
 //
-// That is a persistent `binding` faucet outside SETTLE_REWARDS + 细水, so it belongs
+// That is a persistent `binding` faucet outside SETTLE_REWARDS + trickle, so it belongs
 // in the A-track dilution/inflation judgement. The season-resource loot (5000×level to
 // one resType) and the NPC garrison (360×level) are season-internal / battle concerns,
 // reported here for a one-pass sanity check.

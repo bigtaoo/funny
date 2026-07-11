@@ -29,7 +29,7 @@ function _obstacle(kind: ObstacleKind): ProceduralTile {
 /**
  * Biome: low-frequency noise divides the map into four large land-resource zones (ink/paper/graphite/metal), encouraging resource
  * specialization and cross-zone trade (geographic foundation for the U1 auction economy). graphite is the 4th land resource (ADR-022);
- * `sticker` is never biome-generated here — it is placed as a level-gated 铜矿 override in {@link resTypeFor}.
+ * `sticker` is never biome-generated here — it is placed as a level-gated copper-mine override in {@link resTypeFor}.
  */
 export function biomeAt(x: number, y: number, seed: number): ResourceType {
   const n = valueNoise(x, y, SLG_GEN.biomeFreq, seed ^ 0x0444);
@@ -40,8 +40,8 @@ export function biomeAt(x: number, y: number, seed: number): ResourceType {
 }
 
 /**
- * Resource type for a `resource` tile, with the 铜矿 (copper mine) level gate: `sticker` appears ONLY on tiles at
- * level ≥ SLG_GEN.copperMinLevel (三战 rule: 铜矿 is a 6级地及以上 special, SGZ_LAND_REFERENCE §3). On an eligible
+ * Resource type for a `resource` tile, with the copper-mine level gate: `sticker` appears ONLY on tiles at
+ * level ≥ SLG_GEN.copperMinLevel (Three-Kingdoms-Strategy rule: copper mine is a level-6-and-above special, SGZ_LAND_REFERENCE §3). On an eligible
  * tile a per-tile hash draw < copperShare overrides the biome land resource with `sticker`; otherwise the four biome
  * land resources apply. The gate MUST hold — the art ships sticker frames l6–10 only (slg-resource-art §5.7-sticker),
  * so a sub-l6 sticker tile would fall back to the raw motif. Applied to plain resource tiles only (strategic tiles —
@@ -65,7 +65,7 @@ export const TERRAIN_BAND_WIDTH_MAX = 11;
 export const CROSSING_WIDTH_TILES = 1;
 /** Auto-crossing count per main province ring (minimal connectivity fallback; designers add more in the editor). */
 export const RING_CROSSING_COUNT_PER_RING = 1;
-/** Number of ink-river chords crossing the whole map (ADR-034 §2.2: "墨河两条"). */
+/** Number of ink-river chords crossing the whole map (ADR-034 §2.2: "two ink rivers"). */
 export const RIVER_CHORD_COUNT = 2;
 /** Auto-crossing count per river chord (minimal connectivity fallback). */
 export const RIVER_CROSSING_COUNT_PER_CHORD = 1;
@@ -109,7 +109,7 @@ function _ringTerrainAt(x: number, y: number, seed: number, ringRatio: number, s
 }
 
 /**
- * River-chord terrain (ADR-034 §2.2 "墨河"): a near-straight line crossing the whole map through a
+ * River-chord terrain (ADR-034 §2.2 "ink river"): a near-straight line crossing the whole map through a
  * near-center offset point, wobbled along its length, broken by a minimal set of 1-tile-wide crossings.
  */
 function _riverChordAt(x: number, y: number, seed: number, chordIdx: number): 'obstacle' | 'crossing' | null {
@@ -137,7 +137,7 @@ function _riverChordAt(x: number, y: number, seed: number, chordIdx: number): 'o
 }
 
 /**
- * Branch terrain (ADR-034 §2.3 "支脉/支流"): 6 branches, one per outer-province 60° sector boundary, running
+ * Branch terrain (ADR-034 §2.3 "spur / branch"): 6 branches, one per outer-province 60° sector boundary, running
  * from the outer/resource ring boundary outward to the map's square edge — separating the 6 birth provinces
  * from each other. Each branch carries a single 1-tile-wide auto-crossing (`crossing:true`) at its radial
  * midpoint so adjacent provinces stay connected without a template; the rest of the branch is impassable
@@ -168,18 +168,18 @@ function _branchKindAt(x: number, y: number, seed: number): { kind: ObstacleKind
   return null;
 }
 
-/** Crossing-building tile type for the given obstacle kind: river→bridge (桥), mountain→plankway (栈道). */
+/** Crossing-building tile type for the given obstacle kind: river→bridge, mountain→plankway. */
 function _crossingTile(kind: ObstacleKind): ProceduralTile {
   return { type: kind === 'river' ? 'bridge' : 'plankway', level: Math.max(2, SLG_MAP_MAX_LEVEL - 1) };
 }
 
 // ── Cities (ADR-034 §3): point-node siege targets, layered on top of the procedural terrain ──────────
-// Province capitals (state capitals, §3 "州府") are handled via `provinceCapitalPositions`; this section
+// Province capitals (state capitals, §3 "province capital") are handled via `provinceCapitalPositions`; this section
 // covers the other two node kinds. Kept as plain ProceduralTile classifications (familyKeep/center) rather
 // than a separate node schema — garrison/HP numbers for cities-as-distinct-entities are explicitly an open
 // question in the design doc (§5), not yet pinned down, so this is the faithful MVP of the "structure is
 // locked, numbers are DRAFT" part of ADR-034.
-/** World-center city footprint side length (ADR-034 §3: "9×9 格"实体, same family as BASE_FOOTPRINT but larger — the core province's contested objective). */
+/** World-center city footprint side length (ADR-034 §3: a "9×9 tile" solid, same family as BASE_FOOTPRINT but larger — the core province's contested objective). */
 export const WORLD_CENTER_FOOTPRINT = 9;
 /** Per-outer-province graded city level tiers (ADR-034 §3: 2×3 + 2×4 + 2×5 + 1×6 + 1×7 + 1×8 = 9 cities/province, 54 total). */
 const _OUTER_GRADED_CITY_TIERS: readonly number[] = [3, 3, 4, 4, 5, 5, 6, 7, 8];
@@ -325,8 +325,8 @@ export function proceduralTile(world: string, x: number, y: number): ProceduralT
   }
 
   // Terrain: 2 main province rings, then river chords, then birth-province branches — first match wins.
-  // Ring boundaries are the 折痕岭 (creased ridges → mountain art, crossings = 栈道/plankway); the two crossing
-  // chords are the 墨河 (ink rivers → river art, crossings = 桥/bridge); branches alternate mountain-spur /
+  // Ring boundaries are the crease ridges (→ mountain art, crossings = plankway); the two crossing
+  // chords are the ink rivers (→ river art, crossings = bridge); branches alternate mountain-spur /
   // river-tributary (see _branchKindAt). A 'crossing' result is a capturable passage building (siege-to-pass).
   const ring1 = _ringTerrainAt(x, y, seed, PROVINCE_RESOURCE_OUTER_RADIUS_RATIO, 0x0a01);
   if (ring1) return ring1 === 'crossing' ? _crossingTile('mountain') : _obstacle('mountain');
@@ -389,13 +389,13 @@ export interface MapTemplateSummary {
   /** Bumped on regeneration; lets multiple generations of the same templateId size be told apart if ever reused. */
   version: number;
   tileCount: number;
-  /** Whether new worlds currently clone this template as their terrain baseline (§24 "创建新世界用"). At most one template is active at a time. */
+  /** Whether new worlds currently clone this template as their terrain baseline (§24 "used to create new worlds"). At most one template is active at a time. */
   active: boolean;
   createdAt: number;
   updatedAt: number;
 }
 
-/** Diff-save payload cap (§24 "只上发本次改动的格子"): guards against an editor bug accidentally re-uploading a whole map. */
+/** Diff-save payload cap (§24 "only upload the tiles changed this time"): guards against an editor bug accidentally re-uploading a whole map. */
 export const MAP_TEMPLATE_SAVE_MAX_TILES = 5000;
 /** Viewport read cap (editor opens a bbox, not the whole 500×500 template at once). */
 export const MAP_TEMPLATE_READ_MAX_TILES = 100_000;

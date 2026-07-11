@@ -70,7 +70,7 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
    * Derive whether the monthly/year card is active with today's daily reward still
    * unclaimed, straight from the mirrored (server-authoritative) monetization save —
    * the same source ShopScene.buildShopCards reads, so the shop nav dot and the card's
-   * "领取" button agree. UTC day, matching the shop's todayKey. No network round-trip.
+   * "claim" button agree. UTC day, matching the shop's todayKey. No network round-trip.
    */
   function computeShopCardClaimable(): boolean {
     const m = saveManager.get().monetization;

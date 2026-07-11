@@ -48,7 +48,7 @@ export interface CardDef {
    */
   powerWeights: { hp: number; atk: number };
   /**
-   * 攻城值 (siege value) base at card level 1 — a per-card attribute, same tier as attack / move-speed
+   * siege value base at card level 1 — a per-card attribute, same tier as attack / move-speed
    * (ADR-026, owner decision 2026-07-02). A team's siege value = sum of {@link cardSiegeValue} over its cards;
    * that value is the delayed building-HP hit dealt after the garrison is cleared. Differentiated by unit
    * role (wall-breaking tanks > dps > glass-cannon archers); catalogue average ≈ SLG_SIEGE_VALUE_PER_CARD so
@@ -64,7 +64,7 @@ export interface CardDef {
  * All numbers are DRAFT placeholders; authoritative values go in ECONOMY_NUMBERS §6.
  */
 export const CARD_DEFS: Record<string, CardDef> = {
-  // ── Tao faction (方家·东方) ─────────────────────────────────────────────────────────
+  // ── Tao faction (Fang family, East) ─────────────────────────────────────────────────────────
   // Tao three = named versions of existing units; stats are unchanged from UNIT_BLUEPRINTS (§1 rule 1).
   lichuang: {
     id: 'lichuang',
@@ -97,7 +97,7 @@ export const CARD_DEFS: Record<string, CardDef> = {
     siegeValueBase: 8, // archer: glass cannon, weakest at battering structures
   },
 
-  // ── Anna faction (Hartmann·西方) ──────────────────────────────────────────────────
+  // ── Anna faction (Hartmann, West) ──────────────────────────────────────────────────
   // Anna three = new designs with signature skills; stats deviate from Tao counterparts.
   // skillGrowth[level-1] = signature skill effect value at that level. [DRAFT]
   max: {
@@ -262,7 +262,7 @@ export function selectBestCard(
 
 // ── Siege value (ADR-026 §4) ────────────────────────────────────────────────────────────
 //
-// 攻城值 is a per-card attribute (same tier as attack / move-speed). A team's siege value is the
+// Siege value is a per-card attribute (same tier as attack / move-speed). A team's siege value is the
 // sum of cardSiegeValue() over its cards; teamSiegeValue() in slg.ts consumes it to compute the
 // delayed building-HP hit after a garrison is cleared. Numbers are DRAFT (economy pass pending);
 // only the formula shape is fixed here (README §0 iron rule #1).
@@ -271,7 +271,7 @@ export function selectBestCard(
 const SIEGE_VALUE_GROWTH_PER_LEVEL = 0.1;
 
 /**
- * A single card's 攻城值 at its current level: `round(siegeValueBase × (1 + 0.1 × (level − 1)))`.
+ * A single card's siege value at its current level: `round(siegeValueBase × (1 + 0.1 × (level − 1)))`.
  * Unknown defId → 0 (defensive; a real card always resolves). Level clamped to 1..9.
  */
 export function cardSiegeValue(card: CardInstance): number {

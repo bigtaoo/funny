@@ -85,7 +85,7 @@ export interface LevelDefinition {
   defenderBuildings?: DefenderBuildingEntry[];
   /**
    * SLG defense config (U10): defender's (Top side) base upgrade level pre-applied at
-   * game start. Range 0–3 matching BASE_UPGRADE_COSTS length. Affects ink regen and
+   * game start. Range 0..BASE_UPGRADE_COSTS.length (currently 0–2). Affects ink regen and
    * signals investment level. Valid for 'siege' mode; silently clamped in 'campaign'.
    */
   defenderBaseLevel?: number;

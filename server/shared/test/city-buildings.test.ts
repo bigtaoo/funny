@@ -52,7 +52,7 @@ describe('biomeAt quad-partition (ADR-022: graphite is the 4th land resource)', 
     expect(seen.has('paper')).toBe(true);
     expect(seen.has('graphite')).toBe(true); // ADR-022: graphite now has a biome faucet
     expect(seen.has('metal')).toBe(true);
-    // 铜矿: sticker IS on the map now, but ONLY on level ≥6 tiles (三战 rule, SGZ_LAND_REFERENCE §3).
+    // copper mine: sticker IS on the map now, but ONLY on level ≥6 tiles (Three-Kingdoms-Strategy rule, SGZ_LAND_REFERENCE §3).
     // The art ships sticker frames l6–10 only, so a sub-l6 sticker tile would break the level gate.
     expect(seen.has('sticker')).toBe(true);
     expect(stickerBelow6).toBe(0);
@@ -76,7 +76,7 @@ describe('resource building yield multiplier + sticker self-production', () => {
     expect(buildingYieldMult(b, 'paper')).toBe(1);   // no paperTray
     expect(buildingYieldMult(b, 'sticker')).toBe(1); // sticker is never a multiplier target
   });
-  it('stickerShop self-produces sticker (民居模型 faucet); other resources have no self-yield', () => {
+  it('stickerShop self-produces sticker (residential-model faucet); other resources have no self-yield', () => {
     expect(buildingSelfYield({ stickerShop: 3 }, 'sticker')).toBe(3 * STICKER_SELF_BASE);
     expect(buildingSelfYield({ stickerShop: 3 }, 'ink')).toBe(0);
     expect(buildingSelfYield(undefined, 'sticker')).toBe(0);

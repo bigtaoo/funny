@@ -84,7 +84,7 @@ export function GachaDrawMixin<TBase extends CommercialBaseCtor>(Base: TBase): T
         const roll = rollGacha(pool, args.count, prevPity, this.rng);
         results = roll.results;
         pityAfter = roll.pityAfter;
-        // Fate points (GACHA_DESIGN §7): in a limited pool, each legendary that is NOT the featured banner is a "歪" → +1.
+        // Fate points (GACHA_DESIGN §7): in a limited pool, each legendary that is NOT the featured banner is an off-banner miss → +1.
         fateGained =
           pool.limited && pool.featuredLegendary
             ? results.filter((r) => r.rarity === 'legendary' && r.itemId !== pool.featuredLegendary).length
