@@ -75,17 +75,17 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
             this.ctx.citySprites.set(cacheKey, cityC);
           }
 
-          // Position bottom-center near the plot CENTER, not shoved to the front vertex. The atlas
-          // art's base is ~full sprite-width (BASE_SPRITE_TILES ≈ 3.2 tiles), so anchoring it at the
-          // diamond's front vertex made the wide base overhang the plot's front-left/right edges and
-          // cover adjacent RESOURCE tiles (a tile then showed both a resource icon and half a castle).
-          // Sitting the base near the diamond's center line — its widest span — keeps it inside the
-          // 3×3 footprint; the tall upper body rises up-and-back and only occludes BACK tiles, which
-          // is correct isometric depth. GROUND_FWD nudges the base 40% of the way toward the front
-          // vertex so it reads as planted (not floating at dead-center) without spilling forward —
-          // value verified against the widest-base atlas frames (lv4, l7). See design/tools/map-editor.
+          // Position bottom-center between the plot CENTER and its front vertex. The atlas art is now
+          // bottom-aligned (pack_city_atlas.js sits every building's foot on the cell's bottom edge),
+          // so the bottom-center anchor lands the foot on the plot uniformly for every frame — no more
+          // per-frame float from centred art's variable bottom margin. GROUND_FWD nudges the foot 55%
+          // of the way toward the front vertex so the castle reads as planted on the plot with only a
+          // small forecourt apron, while the foot still stays back far enough that the wide base never
+          // covers the front RESOURCE tiles (the tall body rises up-and-back, occluding only BACK tiles
+          // — correct isometric depth). 0.55 verified in the Canvas2D A/B harness against the widest
+          // frames (lv4 grand citadel, lv2 wooden fort). See design/tools/map-editor.
           const s = tileToScreen(tx, ty, tp);
-          const groundFwd = (BASE_FOOTPRINT * tp * ISO_RATIO) / 2 * 0.4; // 40% of center→front-vertex
+          const groundFwd = (BASE_FOOTPRINT * tp * ISO_RATIO) / 2 * 0.55; // 55% of center→front-vertex
           cityC.x = this.ctx.panX + s.x;
           cityC.y = this.ctx.panY + s.y + groundFwd;
           cityC.zIndex = tx + ty;
@@ -147,16 +147,19 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
           this.ctx.citySprites.set(key, cityC);
         }
         const s = tileToScreen(node.x, node.y, tp);
-        const groundFwd = (node.footprint * tp * ISO_RATIO) / 2 * 0.4; // 40% center→front-vertex (see base branch note)
+        const groundFwd = (node.footprint * tp * ISO_RATIO) / 2 * 0.55; // 55% center→front-vertex (see base branch note)
         cityC.x = this.ctx.panX + s.x;
         cityC.y = this.ctx.panY + s.y + groundFwd;
         cityC.zIndex = node.x + node.y;
         const sprite = cityC.getChildByName('img') as PIXI.Sprite;
         if (sprite.texture !== tex) sprite.texture = tex;
-        // Scale the BASE_SPRITE_TILES art up sub-linearly with footprint (√), so higher-tier cities still
-        // read as bigger but the 9×9 world-center mega-city doesn't balloon to ~9.6 tiles and swallow the map
-        // (a base at footprint 3 is unchanged: √1 = 1).
-        const spriteTiles = Math.sqrt(node.footprint / BASE_FOOTPRINT) * BASE_SPRITE_TILES;
+        // Scale the sprite LINEARLY with footprint so every city fills its own plot the same way a player
+        // base fills its 3×3 (footprint 3 → 3.2 tiles, unchanged). Sub-linear √ scaling under-filled the big
+        // plots badly — a 9×9 world-center reached only √3×3.2 ≈ 5.5 tiles, leaving most of its 9×9 ground
+        // exposed as a big empty apron. The larger sprite still sits within its own (larger) footprint, so
+        // the earlier "don't let the mega-city balloon and swallow the map" worry doesn't apply — the plot
+        // really is that big.
+        const spriteTiles = (node.footprint / BASE_FOOTPRINT) * BASE_SPRITE_TILES;
         sprite.width = spriteTiles * tp;
         sprite.height = spriteTiles * tp;
       }
