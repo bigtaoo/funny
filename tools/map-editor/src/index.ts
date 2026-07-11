@@ -11,7 +11,7 @@ import { BASE_FOOTPRINT, MAP_TEMPLATE_SAVE_MAX_TILES, proceduralTile, rasterizeM
 import { randomDefaultWidth, TerrainGridStore, type TerrainKind, type TilePoint } from './state/terrainGrid';
 import { CityStore, type MapEditorCityNode } from './state/cities';
 import { Api, ApiError } from './api';
-import { screenToTile, tileToScreen, visibleTileBounds } from './render/isoGrid';
+import { screenToTile, tileToScreen, visibleTileBounds, ISO_RATIO } from './render/isoGrid';
 import { drawEditorTile } from './render/tileGraphics';
 import { terrainTextureName } from './render/tileStyle';
 import { loadTerrainAtlas } from './render/terrainAtlasLoader';
@@ -339,10 +339,13 @@ function refreshCitySprites(): void {
     const tex = getCityTextureForLevel(node.level);
     if (!tex) continue;
     const sp = new PIXI.Sprite(tex);
-    sp.anchor.set(0.5);
+    // Bottom-center anchor + front-vertex offset: the castle base sits ON the plot's front edge
+    // (matches the game client's WorldMapRenderer city layer) instead of being centered on the
+    // plot, which left a tall castle's lower half hanging past the diamond's bottom vertex.
+    sp.anchor.set(0.5, 1);
     const s = tileToScreen(node.x, node.y, tp);
     sp.x = s.x;
-    sp.y = s.y;
+    sp.y = s.y + (node.footprint * tp * ISO_RATIO) / 2;
     sp.zIndex = node.x + node.y;
     const spriteTiles = Math.sqrt(node.footprint / BASE_FOOTPRINT) * BASE_SPRITE_TILES;
     sp.width = spriteTiles * tp;
