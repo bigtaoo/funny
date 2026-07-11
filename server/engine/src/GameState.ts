@@ -6,7 +6,7 @@ import { resetBuildingIds } from './Building';
 import { EscortUnit, resetEscortIds } from './EscortUnit';
 import { Projectile, resetProjectileIds } from './Projectile';
 import { UNIT_BLUEPRINTS } from './config';
-import { ActiveSpell, GameEvent, GamePhase, OwnerId, PlayerStats, Side, SpellType, UnitType, UnitBlueprint, sideToOwner } from './types';
+import { ActiveSpell, GameEvent, GamePhase, MatchSummary, OwnerId, PlayerStats, Side, SpellType, UnitType, UnitBlueprint, sideToOwner } from './types';
 import type { HazardSpec } from './campaign/LevelDefinition';
 
 /** Mutable version of PlayerStats — accumulated throughout the game. */
@@ -155,6 +155,21 @@ export class GameState {
       { owner: 0, ...this.stats[0], killsByType: { ...this.stats[0].killsByType }, castsByType: { ...this.stats[0].castsByType } },
       { owner: 1, ...this.stats[1], killsByType: { ...this.stats[1].killsByType }, castsByType: { ...this.stats[1].castsByType } },
     ];
+  }
+
+  /**
+   * Match-level summary carried by the `game_stats` event for composite star scoring
+   * (STAR_SCORING.md). These are NOT per-player and deliberately kept out of PlayerStats
+   * so `matchStateHash` ({winner, stats}) stays unaffected. `escortMinHpPct` is the lowest
+   * survival ratio across escort units (null when the level has no escorts).
+   */
+  snapshotSummary(): MatchSummary {
+    let escortMinHpPct: number | null = null;
+    for (const e of this.escorts) {
+      const pct = e.maxHp > 0 ? (e.hp / e.maxHp) * 100 : 0;
+      if (escortMinHpPct === null || pct < escortMinHpPct) escortMinHpPct = pct;
+    }
+    return { elapsedTicks: this.elapsedTicks, enemyLeaks: this.enemyLeaks, escortMinHpPct };
   }
 
   // ─── Event queue ──────────────────────────────────────────────────────────

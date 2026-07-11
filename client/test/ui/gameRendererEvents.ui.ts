@@ -240,11 +240,12 @@ describe('GameRenderer EventMixin — settlement gate (render-side)', () => {
       renderer.onGameEnd = onGameEnd;
 
       const stats = engine.state.snapshotStats();
-      r.handleEvent({ type: 'game_stats', stats }, engine.state);
+      const summary = engine.state.snapshotSummary();
+      r.handleEvent({ type: 'game_stats', stats, summary }, engine.state);
       r.handleEvent({ type: 'game_over', winner: 0 }, engine.state);
       vi.advanceTimersByTime(2000);
       expect(onGameEnd).toHaveBeenCalledTimes(1);
-      expect(onGameEnd).toHaveBeenCalledWith(0, stats);
+      expect(onGameEnd).toHaveBeenCalledWith(0, stats, summary);
 
       // A lingering/duplicate game_over on a later frame (the exact hazard game-over-once.test.ts
       // documents at the engine level) must not fire onGameEnd a second time.

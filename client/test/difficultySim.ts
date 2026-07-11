@@ -32,7 +32,7 @@ import { ATTACK_LANES, UNIT_BLUEPRINTS } from '../src/game/config';
 import { PROGRESSABLE_UNITS } from '../src/game/balance/progression';
 import { fromFp } from '../src/game/math/fixed';
 import type { LevelDefinition } from '../src/game/campaign/LevelDefinition';
-import { computeStars } from '../src/game/meta/campaignRewards';
+import { computeStars, buildStarContext } from '../src/game/meta/campaignRewards';
 import { card } from './cardHelpers';
 import type { EngineCardInstance, EngineEquipInv, EngineSlotMap } from '../src/game/balance/equipment';
 
@@ -531,8 +531,17 @@ export function simulateLevel(levelOrId: string | LevelDefinition, opts: SimOpti
 
   const win = engine.state.winner === Side.Bottom;
   const finalBaseHp = engine.state.bottomPlayer.baseHp;
-  // Star rating: remaining base HP% == finalBaseHp (full HP is 100, no regen). 0 if not cleared.
-  const stars = win ? computeStars(level.rewards?.starThresholds, finalBaseHp) : 0;
+  // Composite star scoring (STAR_SCORING.md): build the same ctx the judge recomputes from.
+  const endStats = engine.state.snapshotStats();
+  const summary = engine.state.snapshotSummary();
+  const stars = win
+    ? computeStars(level.rewards?.starThresholds, buildStarContext(level, {
+        damageTakenByBase: endStats[0].damageTakenByBase,
+        elapsedTicks: summary.elapsedTicks,
+        enemyLeaks: summary.enemyLeaks,
+        escortMinHpPct: summary.escortMinHpPct,
+      }))
+    : 0;
 
   return {
     levelId,

@@ -380,7 +380,9 @@ export type GameEvent =
   // ── 结算统计 ──────────────────────────────────────
   | { type: 'game_stats';
       /** game_over / game_draw 同帧发出 */
-      stats: [PlayerStats, PlayerStats] }
+      stats: [PlayerStats, PlayerStats];
+      /** 比赛级摘要，供复合星级评分（STAR_SCORING.md）。不进 PlayerStats/matchStateHash */
+      summary: MatchSummary /* { elapsedTicks, enemyLeaks, escortMinHpPct } */ }
 ```
 
 ### 7.3 移动事件与客户端 tween 的协作

@@ -37,6 +37,7 @@ export type {
   GameEvent,
   OwnerId,
   PlayerStats,
+  MatchSummary,
   Vec2_fp,
   Replay,
   ReplayFrame,

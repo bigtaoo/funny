@@ -412,6 +412,21 @@ export interface PlayerStats {
   goldSpent: number;
 }
 
+/**
+ * Match-level summary carried alongside per-player stats in the `game_stats` event,
+ * for composite star scoring (STAR_SCORING.md). Deliberately separate from PlayerStats
+ * (and thus from `matchStateHash`, which hashes only {winner, stats}) since these are
+ * match-global, not per-side. Deterministic (same replay → same values).
+ */
+export interface MatchSummary {
+  /** Elapsed ticks at game over (clear-time axis for the speed sub-score). */
+  elapsedTicks: number;
+  /** Enemy units that reached the player's base (leak sub-score / leak_limit diagnostic). */
+  enemyLeaks: number;
+  /** Lowest survival ratio across escort units, 0..100; null when the level has no escorts. */
+  escortMinHpPct: number | null;
+}
+
 // ─── Public engine interface ──────────────────────────────────────────────────
 
 export interface IGameEngine {
@@ -544,7 +559,9 @@ export type GameEvent =
   // ── Game over ──────────────────────────────────────────────────────────────
   /** Emitted on the same frame as game_over or game_draw. */
   | { type: 'game_stats';
-      stats: [PlayerStats, PlayerStats] }
+      stats: [PlayerStats, PlayerStats];
+      /** Match-level summary for composite star scoring (STAR_SCORING.md). */
+      summary: MatchSummary }
 
   | { type: 'game_over';
       winner: OwnerId }

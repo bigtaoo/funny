@@ -10,6 +10,7 @@ import {
   PlayerStats,
   type AIDifficulty,
   type GameMode,
+  type MatchSummary,
   type Replay,
 } from '../game';
 import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
@@ -23,8 +24,10 @@ export interface GameSceneCallbacks {
    * `replay` is present for locally-simulated matches (campaign / PvP-vs-AI):
    * the confirmed input stream, recorded for playback (S1-RP). Absent for online
    * netplay (the server owns that recording).
+   * `summary` is the match-level end state (elapsed ticks / leaks / escort HP) used by
+   * campaign settlement for composite star scoring (STAR_SCORING.md); PvP callers ignore it.
    */
-  onGameEnd(winner: OwnerId | null, stats: [PlayerStats, PlayerStats], replay?: Replay): void;
+  onGameEnd(winner: OwnerId | null, stats: [PlayerStats, PlayerStats], replay?: Replay, summary?: MatchSummary): void;
   onExitToLobby(): void;
   /**
    * Online match ended by the *server* (opponent timed out / desync), not by
@@ -133,7 +136,7 @@ export class GameScene implements Scene {
     this.renderer = new GameRenderer(engine, layout, input, opts.net ?? false, false, opts.profiles ?? {}, opts.equippedSkin ?? null, opts.cardInstances ?? null, opts.equipmentInv ?? null, opts.tutorial ?? false, battleLabels);
     this.renderer.init();
     // Attach the recording (if any) to the end-of-game callback.
-    this.renderer.onGameEnd = (winner, stats) => this.cb.onGameEnd(winner, stats, buildReplay(winner));
+    this.renderer.onGameEnd = (winner, stats, summary) => this.cb.onGameEnd(winner, stats, buildReplay(winner), summary);
     this.renderer.onExitToLobby = cb.onExitToLobby;
 
     this.container = this.renderer.container;

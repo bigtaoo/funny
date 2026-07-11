@@ -9,6 +9,7 @@ import {
   IGameEngine,
   OwnerId,
   PlayerStats,
+  MatchSummary,
   GamePhase,
   GameState,
   Side,
@@ -50,7 +51,7 @@ export type GameRendererBaseCtor = Constructor<GameRendererBase>;
 export class GameRendererBase {
   readonly container: PIXI.Container;
 
-  onGameEnd:     ((winner: OwnerId | null, stats: [PlayerStats, PlayerStats]) => void) | null = null;
+  onGameEnd:     ((winner: OwnerId | null, stats: [PlayerStats, PlayerStats], summary: MatchSummary) => void) | null = null;
   onExitToLobby: (() => void) | null = null;
 
   // One-shot gate: after GameOver the engine's step() returns early without draining the event
@@ -214,7 +215,8 @@ export class GameRendererBase {
     this.cancelDrag(); this.cancelTapSelect();
     this.hudView.showGameOver(winner, this.localOwner);
     const stats = this.engine.state.snapshotStats();
-    setTimeout(() => { this.onGameEnd?.(winner, stats); }, 1500);
+    const summary = this.engine.state.snapshotSummary();
+    setTimeout(() => { this.onGameEnd?.(winner, stats, summary); }, 1500);
   }
 
   update(dt: number): void {

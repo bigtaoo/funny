@@ -17,7 +17,7 @@ import type { RoomState, RoomError } from '../../src/net/proto/transport';
 import type { NetState } from '../../src/net/NetClient';
 import { createLocalMatch } from '../../src/app/matchEngine';
 import { createGameEngine, getLevel, ReplayInputSource } from '../../src/game';
-import type { IGameEngine, OwnerId, PlayerStats, Replay } from '../../src/game';
+import type { IGameEngine, MatchSummary, OwnerId, PlayerStats, Replay } from '../../src/game';
 
 import type { IntroSceneCallbacks } from '../../src/scenes/IntroScene';
 import type { LobbySceneCallbacks } from '../../src/scenes/LobbyScene';
@@ -301,6 +301,7 @@ export class HeadlessAppViews implements AppViews {
     if (!m) return Promise.reject(new Error('no active match to drive'));
     const deadline = Date.now() + (opts?.maxSeconds ?? 120) * 1000;
     let stats: [PlayerStats, PlayerStats] | null = null;
+    let summary: MatchSummary | null = null;
 
     return new Promise<MatchResult>((resolve, reject) => {
       const step = (): void => {
@@ -309,10 +310,12 @@ export class HeadlessAppViews implements AppViews {
           for (const e of m.engine.state.events) {
             if (e.type === 'game_stats') {
               stats = e.stats;
+              summary = e.summary;
             } else if (e.type === 'game_over' || e.type === 'game_draw') {
               const winner: OwnerId | null = e.type === 'game_over' ? e.winner : null;
               const finalStats = stats ?? m.engine.state.snapshotStats();
-              m.cb.onGameEnd(winner, finalStats, m.buildReplay(winner));
+              const finalSummary = summary ?? m.engine.state.snapshotSummary();
+              m.cb.onGameEnd(winner, finalStats, m.buildReplay(winner), finalSummary);
               resolve({ winner, stats: finalStats });
               return;
             }

@@ -4,7 +4,7 @@
 import * as analytics from '../../analytics';
 import { getLevel, CAMPAIGN_LEVEL_ORDER, achievementStatDelta, type AIDifficulty } from '../../game';
 import { TUTORIAL_LEVEL_ID } from '@nw/engine';
-import { computeStars, remainingHpPct } from '../../game/meta/campaignRewards';
+import { computeStars, buildStarContext } from '../../game/meta/campaignRewards';
 import { t, type TranslationKey } from '../../i18n';
 import { ApiError } from '../../net/ApiClient';
 import { serverReplayToReplay } from '../../net/serverReplay';
@@ -418,14 +418,20 @@ export function createGameNav(ctx: AppCtx): GameNav {
     analytics.track('game_start', { mode: 'campaign', level_id: levelId });
     const campaignStartTs = Date.now();
     views.showGame({
-      onGameEnd(winner, stats, replay) {
+      onGameEnd(winner, stats, replay, summary) {
         // Persist the replay to disk first (once), serving both the result-screen playback and
         // potential L1 spot-check re-evaluation (§8.6).
         const kept = keepReplay(replay);
         const durationSec = Math.round((Date.now() - campaignStartTs) / 1000);
         if (winner === 0) {
-          const pct = remainingHpPct(stats[0].damageTakenByBase);
-          const stars = computeStars(level.rewards?.starThresholds, pct);
+          // Composite star scoring (STAR_SCORING.md): build the same ctx the judge recomputes from.
+          const ctx = buildStarContext(level, {
+            damageTakenByBase: stats[0].damageTakenByBase,
+            elapsedTicks: summary?.elapsedTicks ?? 0,
+            enemyLeaks: summary?.enemyLeaks ?? 0,
+            escortMinHpPct: summary?.escortMinHpPct ?? null,
+          });
+          const stars = computeStars(level.rewards?.starThresholds, ctx);
           analytics.track('level_complete', {
             level_id: levelId,
             stars,

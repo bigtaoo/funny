@@ -3,7 +3,7 @@
 // small sprite-pool helpers those reactions use. Chained onto GameRendererBase (./base.ts) — see
 // ../GameRenderer.ts.
 import * as PIXI from 'pixi.js-legacy';
-import { GameEvent, GameState, PlayerStats, SpellType } from '../../game';
+import { GameEvent, GameState, MatchSummary, PlayerStats, SpellType } from '../../game';
 import { fromFp } from '../../game';
 import { factionInk } from '../theme';
 import { stateRecorder } from '../../game/replay/StateRecorder';
@@ -43,6 +43,8 @@ export function EventMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
     vignetteAlpha  = 0;
 
     private pendingStats: [PlayerStats, PlayerStats] | null = null;
+    /** Match-level summary from the game_stats event, consumed on game_over/game_draw for star scoring. */
+    private pendingSummary: MatchSummary | null = null;
 
     // ── Event handling ─────────────────────────────────────────────────────────
 
@@ -135,6 +137,7 @@ export function EventMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
           break;
         case 'game_stats':
           this.pendingStats = event.stats;
+          this.pendingSummary = event.summary;
           break;
         case 'game_over': {
           // Never-lose guard (§3.5): before tutorial graduation, no engine win/loss is settled — director owns the endgame.
@@ -146,7 +149,8 @@ export function EventMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
           this.netStatus.clear();
           this.hudView.showGameOver(event.winner, this.localOwner);
           const s = this.pendingStats;
-          if (s) setTimeout(() => { this.onGameEnd?.(event.winner, s); }, 2000);
+          const summary = this.pendingSummary ?? this.engine.state.snapshotSummary();
+          if (s) setTimeout(() => { this.onGameEnd?.(event.winner, s, summary); }, 2000);
           break;
         }
         case 'game_draw': {
@@ -158,7 +162,8 @@ export function EventMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
           this.netStatus.clear();
           this.hudView.showGameOver(null, this.localOwner);
           const s = this.pendingStats;
-          if (s) setTimeout(() => { this.onGameEnd?.(null, s); }, 2000);
+          const summary = this.pendingSummary ?? this.engine.state.snapshotSummary();
+          if (s) setTimeout(() => { this.onGameEnd?.(null, s, summary); }, 2000);
           break;
         }
         case 'escort_spawned': {

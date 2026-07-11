@@ -4,9 +4,9 @@
   "seed": 60009,
   "objective": {
     "kind": "leak_limit",
-    "maxLeaks": 1
+    "maxLeaks": 2
   },
-  "inkRegenMult": 1.36,
+  "inkRegenMult": 1.65,
   "hazards": [
     {
       "col": 2,
@@ -287,9 +287,9 @@
   },
   "rewards": {
     "starThresholds": [
-      45,
-      75,
-      100
+      1,
+      50,
+      80
     ],
     "materials": {
       "scrap": 25,
@@ -299,9 +299,9 @@
   },
   "nameKey": "campaign.ch6.lv9.name",
   "briefKey": "campaign.ch6.lv9.brief",
-  "startInk": 26,
+  "startInk": 40,
   "enemyScale": {
-    "hp": 1.24,
-    "damage": 1.18
+    "hp": 1.14,
+    "damage": 1.1
   }
 }
