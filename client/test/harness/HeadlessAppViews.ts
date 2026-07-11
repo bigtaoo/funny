@@ -295,36 +295,55 @@ export class HeadlessAppViews implements AppViews {
    * Tick the active match engine until it reaches a decisive end, then fire its
    * onGameEnd (which on the net path triggers session.reportResult). Yields to the
    * event loop each step so incoming lockstep frame_batch WS messages are applied.
+   * `onBeforeTick` (if given) runs right before each `engine.tick()` — e.g. to drive a
+   * scripted or AI-controlled defense in a campaign match instead of playing no cards.
+   * `stepDelayMs` (default 2, matching prior behavior) is the real-time delay between macrotask
+   * yields; pass 0 for a single-process offline match with no WS traffic to coalesce.
+   * `ticksPerStep` (default 1, matching prior behavior) batches this many `engine.tick()` calls
+   * per macrotask before yielding — a single-tick-per-`setTimeout` cadence is right for netplay
+   * (yields for each incoming WS frame_batch) but pure per-call scheduling overhead dominates for
+   * an offline match with thousands of ticks to a clear (tens of real seconds for no benefit).
    */
-  driveToEnd(opts?: { maxSeconds?: number }): Promise<MatchResult> {
+  driveToEnd(opts?: {
+    maxSeconds?: number;
+    onBeforeTick?: (engine: IGameEngine, tick: number) => void;
+    stepDelayMs?: number;
+    ticksPerStep?: number;
+  }): Promise<MatchResult> {
     const m = this.match;
     if (!m) return Promise.reject(new Error('no active match to drive'));
     const deadline = Date.now() + (opts?.maxSeconds ?? 120) * 1000;
+    const stepDelayMs = opts?.stepDelayMs ?? 2;
+    const ticksPerStep = Math.max(1, opts?.ticksPerStep ?? 1);
     let stats: [PlayerStats, PlayerStats] | null = null;
     let summary: MatchSummary | null = null;
+    let tick = 0;
 
     return new Promise<MatchResult>((resolve, reject) => {
       const step = (): void => {
         try {
-          m.engine.tick(DT);
-          for (const e of m.engine.state.events) {
-            if (e.type === 'game_stats') {
-              stats = e.stats;
-              summary = e.summary;
-            } else if (e.type === 'game_over' || e.type === 'game_draw') {
-              const winner: OwnerId | null = e.type === 'game_over' ? e.winner : null;
-              const finalStats = stats ?? m.engine.state.snapshotStats();
-              const finalSummary = summary ?? m.engine.state.snapshotSummary();
-              m.cb.onGameEnd(winner, finalStats, m.buildReplay(winner), finalSummary);
-              resolve({ winner, stats: finalStats });
-              return;
+          for (let i = 0; i < ticksPerStep; i++) {
+            opts?.onBeforeTick?.(m.engine, tick++);
+            m.engine.tick(DT);
+            for (const e of m.engine.state.events) {
+              if (e.type === 'game_stats') {
+                stats = e.stats;
+                summary = e.summary;
+              } else if (e.type === 'game_over' || e.type === 'game_draw') {
+                const winner: OwnerId | null = e.type === 'game_over' ? e.winner : null;
+                const finalStats = stats ?? m.engine.state.snapshotStats();
+                const finalSummary = summary ?? m.engine.state.snapshotSummary();
+                m.cb.onGameEnd(winner, finalStats, m.buildReplay(winner), finalSummary);
+                resolve({ winner, stats: finalStats });
+                return;
+              }
             }
           }
           if (Date.now() > deadline) {
             reject(new Error('match did not reach a decisive end within the time budget'));
             return;
           }
-          setTimeout(step, 2);
+          setTimeout(step, stepDelayMs);
         } catch (err) {
           reject(err);
         }
