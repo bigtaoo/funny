@@ -104,7 +104,7 @@ function expectBlinkingCaret(
 describe('FamilyScene — create-form caret', () => {
   function build(): any {
     return new FamilyScene(createLayout(W, H), new InputManager(), {
-      onBack() {}, onOpenSect() {},
+      onBack() {}, onOpenSect() {}, onNavTab() {},
       worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: 'acc_test', playerName: 'Tester',
     });
   }
@@ -151,7 +151,7 @@ describe('FamilyScene — create-form caret', () => {
 describe('SectScene — create-form caret', () => {
   function build(): any {
     return new SectScene(createLayout(W, H), new InputManager(), {
-      onBack() {}, worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: 'acc_test', playerName: 'Tester',
+      onBack() {}, onNavTab() {}, worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: 'acc_test', playerName: 'Tester',
     });
   }
 

@@ -422,7 +422,6 @@ export const en: Record<TranslationKey, string> = {
   'campaign.locked': '🔒 Locked',
   'campaign.lockedOffline': '🔒 Online to unlock',
   'campaign.pending': 'Pending',
-  'campaign.collection': 'Collection',
   'campaign.equipment': 'Gear',
   'campaign.cleared': 'Cleared',
   'campaign.notebookTitle': 'Campaign Notebook',
@@ -452,6 +451,7 @@ export const en: Record<TranslationKey, string> = {
 
   // ── Level objective labels ────────────────────────────────────────────────
   'level.objective.label': 'Objective',
+  'level.rewards.label': 'Rewards',
   'level.objective.survive': 'Defeat all enemies',
   'level.objective.timedDefense': 'Survive until time runs out',
   'level.objective.destroyBase': 'Destroy the enemy base',

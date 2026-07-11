@@ -7,7 +7,7 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedF
 import { buildIcon, type IconKind } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
-import { drawSidebarTabs, sidebarItemHeight, type HubTab } from '../ui/widgets/HubTabs';
+import { drawCareerTabs } from '../ui/widgets/CareerTabs';
 import { MATERIAL_ORDER } from '../game/balance/pveUpgrades';
 import type { MatchHistoryEntry } from '../net/ApiClient';
 
@@ -142,32 +142,20 @@ export class StatsScene implements Scene {
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
-    // Left margin rail: 称号 (titles) + 成就 (achievements) shortcuts, stacked inside the
-    // notebook-margin gutter below the header (CardScene/EquipmentScene sidebar convention),
-    // so the stat panels start clear of the red margin rule instead of the rule cutting
-    // through them.
+    // Left margin rail: the Career hub peer strip [生涯统计|称号|成就] (LOBBY_IA_REDESIGN P1.5
+    // peer-tab convention, see CareerTabs.ts), stacked inside the notebook-margin gutter below
+    // the header (CardScene/EquipmentScene sidebar convention), so the stat panels start clear
+    // of the red margin rule instead of the rule cutting through them.
     const sidebarW = marginLineX(w);
-    const sidebarTabs: HubTab[] = [];
-    if (this.cb.onOpenTitles) sidebarTabs.push({ label: t('stats.titles'), active: false, icon: 'medal' });
-    if (this.cb.onOpenAchievements) sidebarTabs.push({ label: t('stats.achievements'), active: false, icon: 'trophy' });
     const sidebarTop = tbH + Math.round(h * 0.02);
-    if (sidebarTabs.length > 0) {
-      const { hits } = drawSidebarTabs(this.container, sidebarW, sidebarTop, h, sidebarTabs, (i) => {
-        if (sidebarTabs[i].icon === 'medal') this.cb.onOpenTitles!();
-        else this.cb.onOpenAchievements!();
+    if (this.cb.onOpenTitles && this.cb.onOpenAchievements) {
+      const { hits } = drawCareerTabs(this.container, sidebarW, sidebarTop, h, 'stats', {
+        onOpenStats: () => {},
+        onOpenTitles: this.cb.onOpenTitles,
+        onOpenAchievements: this.cb.onOpenAchievements,
+        hasClaimableAchievement: this.cb.hasClaimableAchievement,
       });
       this.hits.push(...hits);
-      if (this.cb.hasClaimableAchievement && this.cb.onOpenAchievements) {
-        const achIdx = sidebarTabs.findIndex((tab) => tab.icon === 'trophy');
-        const itemH = sidebarItemHeight(h);
-        const itemGap = Math.round(h * 0.015);
-        const cy = sidebarTop + achIdx * (itemH + itemGap);
-        const dot = new PIXI.Graphics();
-        const r = Math.round(h * 0.011);
-        dot.beginFill(0xee3333); dot.drawCircle(0, 0, r); dot.endFill();
-        dot.x = sidebarW - r; dot.y = cy + r;
-        this.container.addChild(dot);
-      }
     }
 
     const pad = Math.round(w * 0.04);

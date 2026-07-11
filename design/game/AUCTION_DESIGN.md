@@ -415,6 +415,12 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
   - **基础设施**：`server/dev-up.ps1` 加 `auction` 进程（`NW_AUCTION_PORT=18086` + meta/commercial internal URL）+ health 探测；`client/vitest.e2e.config.ts` 补 `@nw/shared` alias（引 `AUCTION_DURATIONS_SEC`/`AUCTION_TAX_RATE`）。
   - **验收**：client `tsc --noEmit -p tsconfig.test.json` 绿；`test:e2e -t "auction full-link"` 在本机（无 auctionsvc）按预期 skip 且文件加载无误。真·live-stack 全绿验证需 `npm run dev:all`（现已含 auctionsvc）后跑。
 
+### 出售物品选择页：左侧类目栏 + 图标卡放大 1.5x（2026-07-09）
+
+- **改动**（`client/src/scenes/AuctionScene/picker.ts`）：`PickEntry` 加 `cls` 字段（material/equipment/card），选择页装订线左侧新增全部/装备/角色卡/材料四个类目 tab（复用 `HubTabs.drawSidebarTabs`，与市场列表页 `renderSidebar` 同一视觉语言），点击按 `cls` 过滤右侧网格；网格改用 `marginLineX(w)` 让出左栏。图标卡尺寸/字号整体 ×1.5（`CARD_GAP` 10→15、`CARD_W_TARGET` 130→195、`CARD_H` 104→156，图标 26→39、名称字号 12→18、`Select ›` 提示 10→15）。
+- **状态**：新增 `AuctionSceneBase.pickerFilter`（`AucFilter`，复用市场页的类型），`openItemPicker()` 时重置为 `''`。
+- **验收**：`tsc --noEmit` 绿；`webpack --mode production` 绿。
+
 ---
 
 *本文为拍卖行机制权威，DRAFT/⚠️ 处随实现与拍板细化；数值以 `server/shared/src/slg.ts` 为准。*

@@ -221,6 +221,11 @@
 - ✅ **商城场景内侧栏「商城」标签补红点**（2026-07-09）：上条只修了大厅底部导航的商城 slot；玩家点进商城后（`ShopScene` §9 已改左侧竖栏），左栏 `[商城|充值?|盲盒|战令?]` 里的「商城」格本身**没有任何红点**——已经进了商城还是看不出该点哪张卡（用户报的 bug：截图里月卡面板 `Claim` 按钮虽可点，但没有视觉引导）。修复：
   - **`HubTab.badge?: boolean`**（`ui/widgets/HubTabs.ts`）：`drawSidebarTabs` 新增红点绘制（格右上角，不管该格是否 `active`）；`drawHubTabs`（水平条）暂未跟进，留给 §8 提到的三场景统一样式时一起补。
   - **`ShopSceneBase.monthlyCardStatus()`**（`ShopScene/base.ts`）：抽出月卡 `active`/`claimedToday` 判定（与 §7 大厅红点同一套：`subscriptionExpiry>now` 且 `subscriptionLastClaimDay!==今日UTC key`），`drawGroupTabs()` 用它给「商城」标签算 `badge`；`ShopMixin.buildShopCards()`（`shop.ts`）改为调用同一方法，避免两处各算一遍产生偏差。
+- ✅ **生涯组（统计/称号/成就）补齐 P1.5 分组 tab**（2026-07-09）：「生涯」页（`StatsScene`）左栏原「称号」「成就」两格一直是纯 launcher——点开任一个整场景切换到 `TitlesScene`/`AchievementScene`，另一格随之从画面上消失，读不出「同一个生涯 hub 的并列 tab」（用户报的 bug，对照养成组 `[卡背包|装备]` 的标准表现）。补齐 P1.5 范式：
+  - **新增共享组件** `client/src/ui/widgets/CareerTabs.ts`：`drawCareerTabs(container,sidebarW,y,h,active,cb)` 画固定三格 `[生涯统计|称号|成就]`（复用 `HubTabs.drawSidebarTabs`，图标 `book`/`medal`/`trophy`），`active` 决定哪格不可点；`cb.hasClaimableAchievement` 透传到成就格的红点（`HubTab.badge`）。
+  - **三场景各自常驻绘制该条**，自身格 active、点其余格跨场景直达（不再是「跳走再 back 才能看见另一格」）：`StatsScene`（`stats.title` active）、`TitlesScene`（`titles.title` active，新增 `onOpenStats?`/`onOpenAchievements?`/`hasClaimableAchievement?` 到 `TitlesSceneCallbacks`，仅两者都注入才画条并把内容列表整体右移进 `marginLineX` 内容列）、`AchievementScene`（`achievement.title` active，新增 `onOpenStats?`/`onOpenTitles?` 到 `AchievementCallbacks`，条画在离线/加载/空状态判断**之前**，确保三态下侧栏都不消失）。
+  - **成就的三/四个分类 tab 降为二级 tab**：原 `AchievementScene` 私有 `drawSidebarTabs`（手写方框+图标+标签）删除，改为共享 `HubTabs.drawSidebarTabs(...,{sub:true})`，视觉与 Equipment 的「背包|锻造」二级 tab 统一，堆叠在生涯组一级条正下方。
+  - **导航编排** `app/nav/game.ts`：`goAchievements()`/`goTitles()` 新增 `onOpenStats`/互相的 `onOpenTitles`/`onOpenAchievements` 回调（`goStats`/`goTitles(goStats)`/`goAchievements`），`hasClaimableAchievement` 统一读 `state.achievementClaimable`。
 - ✅ **P3**（完成 2026-06-28）：视觉打磨三项：
   1. **底部 tab 图标化 + 加高**：高度 `h*0.08` → `h*0.105`，彩色圆点换手绘图标
      （养成=book / 商城=coin / 主页=home / 生涯=trophy / 社交=globe，复用 `icons.ts` 已有字形）；
@@ -309,5 +314,18 @@
 - 已用 `tsc --noEmit` + `vitest run --config vitest.ui.config.ts`（170 例全绿，另有 13 条与本改动无关的 `.tao` 测试资产 unhandled-rejection 噪声）+ `npm run build:web` 验证通过；未跑游戏截图（按仓库约定，视觉验收留给人工）。
 
 **`FamilyScene.ts` 补齐装订线规范**（2026-07-06 追加）：该场景此前完全没接入 `marginLineX`，Members/Family channel 两个 tab 及其内容（成员行、频道消息、发言输入框、底部 宗门/退出 按钮）全部从屏幕最左 `x=0` 起画，横跨红色装订线。改为统一从 `marginLineX(w)` 右侧起算（tab 栏、`renderMembers`、`renderChannel` 三处），底部居中按钮的中点也从 `w/2` 改成 `(marginLineX(w)+w)/2`，右侧留白/按钮位置不变。`tsc --noEmit` 验证。
+
+---
+
+## 10. 战役地图头部「Gear」/「Collection」双入口合并为单一「装备」入口（2026-07-09）
+
+> 状态：**已实现**。用户看战役地图截图报了两个问题：① 头部标题白字在改成纸色底（`SceneHeader` 07.07.2026 统一为 `paper` 变体）后几乎不可读；② `CampaignMapScene` 头部同时挂了独立的「Collection」和「Gear」两个文字入口，而大厅侧「养成」组早已把 `CollectionScene`/`EquipmentScene` 用 `[收藏|装备]` peer-tab 统一成一屏可左右切换的体验（见 §8）——两条路都能到 `EquipmentScene`，framing 却不一样（一个带 peer-tab 能切回收藏，一个是裸页面直接退回战役地图），读起来不一致。
+
+- **白字修复**：`CampaignMapScene.buildHeader()` 自画的标题/副标题颜色从 `0xffffff`/`C.light` 改成 `C.dark`/`C.mid`，与 `SceneHeader.ts` 里 `paper` 变体的标题色（`variant === 'paper' ? C.dark : 0xffffff`）保持一致——这条自画标题路径（`title=null` 场景）在 07.07.2026 的 header 纸色统一改造里被漏掉了。
+- **入口合并**：删除头部单独的「Collection」文字链接，只保留一个「装备」（`campaign.equipment` 词条，原「Gear」文案，`campaign.collection` 词条随之删除——三语 zh/en/de 都已无其他引用）。`CampaignMapCallbacks.onOpenCollection()` + 可选 `onOpenEquipment?()` 合并为单一必填 `onOpenEquipment(): void`。
+- **导航行为**：`app/nav/game.ts` 的 `goCampaignMap()` 里，新 `onOpenEquipment` 复用 `goCollection` 内部给「装备」launcher 用的同一条登录判定（`!state.offlineMode && !!platform.storage.getItem(TOKEN_KEY)`）：在线已登录时直接 `goEquipment(() => goCollection(goCampaignMap,'skins'), 'collection')`——落地就在 Equipment 标签页，带 `[收藏|装备]` peer-tab，点收藏能切回去；离线/未登录时降级为 `goCollection(goCampaignMap,'skins')`（皮肤衣柜本地可用，不因为装备系统需要联网就连带不可达）。
+- `client/test/ui/scenes.ui.ts` 里 5 处 `CampaignMapScene` 测试夹具的 `onOpenCollection() {}` 同步改名为 `onOpenEquipment() {}`。
+- **新增回归测试** `client/test/headless-nav.test.ts`：离线场景下点战役地图「装备」入口，断言落地 `collection` 屏（不是卡死在不可达的 `equipment` 屏），且 `CollectionScene` 本身也不出现「装备」peer-tab launcher（同一条 `equipLoggedIn` 门槛两处一致）。在线直达 `EquipmentScene` 的分支未覆盖——该文件头部注释写明联网流程留给 `full-link.e2e.ts`（对接真实服务端），而该 e2e 目前没有任何 collection/equipment 覆盖，超出本次修复范围。
+- 已用 `tsc --noEmit` + `vitest run --config vitest.ui.config.ts -t CampaignMapScene`（8 例全绿）+ `vitest run test/headless-nav.test.ts`（5 例全绿）验证；未跑游戏截图。
 
 **金币图标来源勘误**（2026-07-06 追加）：§8.4 第 2 条「核实后确认只有一处来源」的结论已过时——`client/src/render/coinIconAtlas.ts` 后来新增了 `buildCoinIcon()`（AI 位图图集，`coin`/`coins`/`coinStack`/`coinSack`/`coinChest` 五档，`ShopScene`/`LobbyScene`/`EquipmentScene`/`CardScene`/`FriendsScene` 均已切过去，文件头注释自称"the single source of truth"），但 `GachaScene.ts`/`BattlePassScene.ts` 顶栏金币图标当时仍直接调 `buildIcon('coin',...)`（程序绘制矢量字形），两页因此显示的是与其它页不同的图标资产。修复：两场景顶栏改调 `buildCoinIcon('coin', balIcon, C.gold)`；`BattlePassScene.ts` 奖励行的金币阶梯图标（`coinIconTier` 返回值）同步改走 `buildCoinIcon`，材料类奖励（`brush`/`lead`/`binding`/`scrap`）仍用 `buildIcon`。`tsc --noEmit` + `webpack --mode development` 验证通过；未跑游戏截图。
