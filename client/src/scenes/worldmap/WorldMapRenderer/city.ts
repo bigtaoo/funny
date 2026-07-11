@@ -75,14 +75,19 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
             this.ctx.citySprites.set(cacheKey, cityC);
           }
 
-          // Position bottom-center on the plot's front (bottom) vertex so the castle base sits
-          // on the footprint diamond instead of floating with its lower half hanging past the
-          // front edge; depth-sort so bases further back (smaller tx+ty) never overdraw ones
-          // nearer camera when their sprites overlap.
+          // Position bottom-center near the plot CENTER, not shoved to the front vertex. The atlas
+          // art's base is ~full sprite-width (BASE_SPRITE_TILES ≈ 3.2 tiles), so anchoring it at the
+          // diamond's front vertex made the wide base overhang the plot's front-left/right edges and
+          // cover adjacent RESOURCE tiles (a tile then showed both a resource icon and half a castle).
+          // Sitting the base near the diamond's center line — its widest span — keeps it inside the
+          // 3×3 footprint; the tall upper body rises up-and-back and only occludes BACK tiles, which
+          // is correct isometric depth. GROUND_FWD nudges the base 40% of the way toward the front
+          // vertex so it reads as planted (not floating at dead-center) without spilling forward —
+          // value verified against the widest-base atlas frames (lv4, l7). See design/tools/map-editor.
           const s = tileToScreen(tx, ty, tp);
-          const frontVertexDy = (BASE_FOOTPRINT * tp * ISO_RATIO) / 2; // plot center → front vertex
+          const groundFwd = (BASE_FOOTPRINT * tp * ISO_RATIO) / 2 * 0.4; // 40% of center→front-vertex
           cityC.x = this.ctx.panX + s.x;
-          cityC.y = this.ctx.panY + s.y + frontVertexDy;
+          cityC.y = this.ctx.panY + s.y + groundFwd;
           cityC.zIndex = tx + ty;
 
           // Resize sprite: keep the atlas art's own square aspect (it already draws each
@@ -142,9 +147,9 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
           this.ctx.citySprites.set(key, cityC);
         }
         const s = tileToScreen(node.x, node.y, tp);
-        const frontVertexDy = (node.footprint * tp * ISO_RATIO) / 2; // plot center → front vertex
+        const groundFwd = (node.footprint * tp * ISO_RATIO) / 2 * 0.4; // 40% center→front-vertex (see base branch note)
         cityC.x = this.ctx.panX + s.x;
-        cityC.y = this.ctx.panY + s.y + frontVertexDy;
+        cityC.y = this.ctx.panY + s.y + groundFwd;
         cityC.zIndex = node.x + node.y;
         const sprite = cityC.getChildByName('img') as PIXI.Sprite;
         if (sprite.texture !== tex) sprite.texture = tex;
