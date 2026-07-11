@@ -78,3 +78,81 @@ describe('InputManager fault isolation', () => {
     expect(h).toHaveBeenCalledTimes(1);
   });
 });
+
+// Suppression + fade-abort gate.
+//
+// Background: pointer input bypasses PixiJS — WebAdapter feeds InputManager straight from DOM
+// pointer listeners. So the SceneManager's fade overlay ("nothing clickable mid-fade") can't block
+// taps; the manager must gate the input source directly. Without it, a tap during the ~280ms fade
+// reaches the outgoing scene's still-live hit-rects (the "Store → Career" mis-navigation). The gate
+// also lets the first tap ABORT the fade (via onSuppressedInput) so fast tapping isn't lost, with
+// swallowNextUp eating that tap's release so it can't land on the freshly-mounted scene.
+describe('InputManager suppression gate', () => {
+  it('drops every channel while suppressed, and restores on release', () => {
+    const input = new InputManager();
+    const down = vi.fn(), move = vi.fn(), up = vi.fn();
+    input.onDown(down); input.onMove(move); input.onUp(up);
+
+    input.suppress(true);
+    input._emitDown(1, 1); input._emitMove(1, 1); input._emitUp(1, 1);
+    expect(down).not.toHaveBeenCalled();
+    expect(move).not.toHaveBeenCalled();
+    expect(up).not.toHaveBeenCalled();
+
+    input.suppress(false);
+    input._emitDown(2, 2); input._emitMove(2, 2); input._emitUp(2, 2);
+    expect(down).toHaveBeenCalledWith(2, 2);
+    expect(move).toHaveBeenCalledWith(2, 2);
+    expect(up).toHaveBeenCalledWith(2, 2);
+  });
+
+  it('a suppressed pointer-down fires the abort hook and is NOT dispatched', () => {
+    const input = new InputManager();
+    const hook = vi.fn(), down = vi.fn();
+    input.onSuppressedInput(hook);
+    input.onDown(down);
+
+    input.suppress(true);
+    input._emitDown(5, 5);
+    expect(hook).toHaveBeenCalledTimes(1); // fade-abort trigger
+    expect(down).not.toHaveBeenCalled();   // the aborting down is consumed, never delivered to a scene
+  });
+
+  it('the abort hook is down-only — suppressed move/up never fire it', () => {
+    const input = new InputManager();
+    const hook = vi.fn();
+    input.onSuppressedInput(hook);
+    input.suppress(true);
+    input._emitMove(5, 5);
+    input._emitUp(5, 5);
+    expect(hook).not.toHaveBeenCalled();
+  });
+
+  it('swallowNextUp drops exactly one up, then dispatch resumes', () => {
+    const input = new InputManager();
+    const up = vi.fn();
+    input.onUp(up);
+
+    input.swallowNextUp();
+    input._emitUp(1, 1);
+    expect(up).not.toHaveBeenCalled(); // the swallowed release
+    input._emitUp(2, 2);
+    expect(up).toHaveBeenCalledTimes(1); // one-shot only
+  });
+
+  it('a swallow armed during suppression survives the release (the real abort sequence)', () => {
+    // Real flow: a tap during the fade aborts it — the hook arms swallowNextUp and lifts suppression,
+    // then the SAME gesture's pointer-up arrives. It must be eaten so it can't tap the new scene.
+    const input = new InputManager();
+    const up = vi.fn();
+    input.onUp(up);
+
+    input.suppress(true);
+    input.swallowNextUp();     // armed while still suppressed (as skipTransition does)
+    input.suppress(false);     // fade aborted → input live again
+    input._emitUp(9, 9);
+    expect(up).not.toHaveBeenCalled(); // the aborting tap's release, swallowed
+    input._emitUp(9, 9);
+    expect(up).toHaveBeenCalledTimes(1);
+  });
+});
