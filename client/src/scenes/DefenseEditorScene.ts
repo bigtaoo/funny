@@ -4,7 +4,7 @@
 //
 // ① Defense (mode='defense'): edit the defense config for the home base (tileKey='base') or
 //    allied/own territory (tileKey='{x}:{y}') = engine LevelDefinition restricted subset (U8/U10) —
-//    defender (Top) half garrison + building row defenderBuildings + defenderBaseLevel(0–3).
+//    defender (Top) half garrison + building row defenderBuildings + defenderBaseLevel(0..BASE_UPGRADE_COSTS.length).
 //    Save via setDefense (overwrite).
 //
 // ② Attack (mode='attack', G3-2c §16.2 / A7 §16.5): edit a pre-deployment attack team template —
@@ -27,8 +27,11 @@ import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import type { WorldApiClient, TeamTemplate, ArmyEntry } from '../net/WorldApiClient';
 import { WorldApiError } from '../net/WorldApiClient';
-import { ATTACK_LANES, BASE_COLS, CARD_DEFINITIONS, UNIT_BLUEPRINTS } from '../game/config';
+import { ATTACK_LANES, BASE_COLS, BASE_UPGRADE_COSTS, CARD_DEFINITIONS, UNIT_BLUEPRINTS } from '../game/config';
 import { CardType, UnitType, BuildingType } from '../game/types';
+
+/** Max defender base upgrade level the engine schema accepts (0..BASE_UPGRADE_COSTS.length). */
+const MAX_BASE_LEVEL = BASE_UPGRADE_COSTS.length;
 
 /** Edit target: defend a tile / edit an attack team (G3-2c). */
 export type DefenseEditorTarget =
@@ -230,7 +233,7 @@ export class DefenseEditorScene implements Scene {
       }
     }
     const lv = cfg.defenderBaseLevel;
-    this.baseLevel = typeof lv === 'number' ? Math.max(0, Math.min(3, Math.floor(lv))) : 0;
+    this.baseLevel = typeof lv === 'number' ? Math.max(0, Math.min(MAX_BASE_LEVEL, Math.floor(lv))) : 0;
   }
 
   /** Attacker army: each unit's initialHp = player-allocated troops (§16.5 slider 25%–100%). */
@@ -330,7 +333,7 @@ export class DefenseEditorScene implements Scene {
     plusLbl.x = plus.x + btnW / 2; plusLbl.y = plus.y + btnH / 2;
     this.bodyLayer.addChild(plusLbl);
     this.hits.push({ rect: { x: plus.x, y: plus.y, w: btnW, h: btnH }, action: () => {
-      this.baseLevel = Math.min(3, this.baseLevel + 1); this.render();
+      this.baseLevel = Math.min(MAX_BASE_LEVEL, this.baseLevel + 1); this.render();
     } });
 
     lbl.anchor.set(1, 0.5);

@@ -360,14 +360,14 @@ describe('levelSchema: defenderBaseLevel validation', () => {
     waves: SCHEMA_VALID_WAVES,
   };
 
-  it('accepts valid defenderBaseLevel values 0–3', () => {
-    for (const lvl of [0, 1, 2, 3]) {
+  it('accepts valid defenderBaseLevel values 0–2', () => {
+    for (const lvl of [0, 1, 2]) {
       expect(() => parseLevelDefinition({ ...validBase, defenderBaseLevel: lvl })).not.toThrow();
     }
   });
 
-  it('rejects defenderBaseLevel > 3', () => {
-    expect(() => parseLevelDefinition({ ...validBase, defenderBaseLevel: 4 })).toThrow('must be 0..');
+  it('rejects defenderBaseLevel > 2', () => {
+    expect(() => parseLevelDefinition({ ...validBase, defenderBaseLevel: 3 })).toThrow('must be 0..');
   });
 
   it('rejects negative defenderBaseLevel', () => {
