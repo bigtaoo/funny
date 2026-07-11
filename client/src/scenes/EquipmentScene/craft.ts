@@ -1,7 +1,8 @@
 // Craft tab: the craftable-equipment grid (icon-card cells with cost chips + Craft button) and the
 // craft action itself.
 import { t } from '../../i18n';
-import { ui as C, txt, sketchPanel, seedFor, marginLineX } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { withTimeout, TimeoutError } from '../../ui/busyTracker';
 import type { SaveData } from '../../game/meta/SaveData';
 import { craftableDefs, getEquipDef, EQUIPMENT_INV_CAP } from '../../game/meta/equipmentDefs';
@@ -24,8 +25,8 @@ export function CraftMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): T
       const listH = h - listY - 8;
       const full = Object.keys(save.equipmentInv).length >= EQUIPMENT_INV_CAP;
 
-      // Cells start right of the red margin rule; right pad stays one CELL_GAP.
-      const left = marginLineX(w) + CELL_GAP;
+      // Cells start right of the sidebar rail; right pad stays one CELL_GAP.
+      const left = sidebarNavW(w) + CELL_GAP;
       const avail = w - left - CELL_GAP;
       const cols = Math.max(1, Math.floor((avail + CELL_GAP) / (EQUIP_CELL_W_TARGET + CELL_GAP)));
       const cellW = (avail - CELL_GAP * (cols - 1)) / cols;

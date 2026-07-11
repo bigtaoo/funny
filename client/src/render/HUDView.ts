@@ -14,7 +14,7 @@ const SMALL_STYLE = { fontSize: 11, fill: 0x555555, fontFamily: 'monospace' } as
 const BTN_W       = 88;
 const BTN_H       = 30;
 // Bottom action buttons (upgrade / refresh) — larger, laid out inside hudBottomRightRect.
-const ACTION_LABEL_STYLE = { fontSize: 15, fill: 0x555555, fontFamily: 'monospace', fontWeight: 'bold' } as const;
+const ACTION_LABEL_STYLE = { fontSize: 30, fill: 0x555555, fontFamily: 'monospace', fontWeight: 'bold' } as const;
 
 const HP_CELLS    = 10;
 const HP_CELL_W   = 14;
@@ -229,7 +229,7 @@ export class HUDView {
     topBg.endFill();
 
     // Timer
-    this.timerText   = new PIXI.Text('0:00', { ...TEXT_STYLE, fontSize: 16 });
+    this.timerText   = new PIXI.Text('0:00', { ...TEXT_STYLE, fontSize: 34 });
     this.timerText.x = topR.x + 14;
     this.timerText.y = topR.y + (topR.h - this.timerText.height) / 2;
 
@@ -249,7 +249,7 @@ export class HUDView {
     this.drawSettingsBtn();
     this._settingsRect = { x: sBtnX, y: sBtnY, w: BTN_W, h: BTN_H };
 
-    const sLabel = new PIXI.Text('⚙', { fontSize: 18, fill: 0x333333 });
+    const sLabel = new PIXI.Text('⚙', { fontSize: 26, fill: 0x333333 });
     sLabel.anchor.set(0.5);
     sLabel.x = sBtnX + BTN_W / 2;
     sLabel.y = sBtnY + BTN_H / 2;
@@ -263,7 +263,7 @@ export class HUDView {
     this.backgroundContainer.addChild(botBg);
 
     // Ink
-    this.inkText   = new PIXI.Text('⬤ 0', TEXT_STYLE);
+    this.inkText   = new PIXI.Text('⬤ 0', { ...TEXT_STYLE, fontSize: 34 });
     this.inkText.x = bLR.x + 14;
 
     // Player HP bar
