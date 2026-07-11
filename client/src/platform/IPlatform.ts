@@ -2,6 +2,7 @@ import type * as PIXI from 'pixi.js-legacy';
 import type { InputManager } from '../inputSystem/InputManager';
 import type { Locale } from '../i18n';
 import type { IapKind } from './iap';
+import type { SafeAreaInsets } from '../layout/ILayout';
 
 /**
  * Outcome of {@link IPlatform.shareReplay}, so the caller can tell the player what happened:
@@ -26,6 +27,13 @@ export interface IPlatform {
 
   /** Screen dimensions in CSS pixels */
   getScreenSize(): { width: number; height: number };
+
+  /**
+   * Safe-area insets in CSS px (notch / Dynamic Island / home indicator / rounded
+   * corners). Optional — platforms without insets (or that letterbox) may omit it;
+   * the layout treats a missing value as all-zero. Web reads env(safe-area-inset-*).
+   */
+  getSafeAreaInsets?(): SafeAreaInsets;
 
   /**
    * Physical pixel ratio for the display.

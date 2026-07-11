@@ -45,7 +45,7 @@ import { CityScene, type CitySceneCallbacks } from './scenes/CityScene';
 import { DailyScene, type DailyCallbacks } from './scenes/DailyScene';
 import { EventScene, type EventCallbacks } from './scenes/EventScene';
 import { ConsentDialog, type ConsentCallbacks } from './render/ConsentDialog';
-import { OwnerId, ownerToSide } from './game';
+import { OwnerId, ownerToSide, Side } from './game';
 import type { Replay, LevelDefinition } from './game';
 import { ScalingManager, createLayout } from './layout/ScalingManager';
 import { InputManager } from './inputSystem/InputManager';
@@ -71,9 +71,10 @@ class PixiAppViews implements AppViews {
 
   private readonly onResize = (): void => {
     const { width, height } = this.platform.getScreenSize();
+    const insets = this.platform.getSafeAreaInsets?.();
     this.app.renderer.resize(width, height);
-    this.layout = createLayout(width, height);
-    this.scaling.resize(width, height, this.layout);
+    this.layout = createLayout(width, height, Side.Bottom, insets);
+    this.scaling.resize(width, height, this.layout, insets);
     this.onResized?.();
   };
 
@@ -317,7 +318,7 @@ class PixiAppViews implements AppViews {
     // hand / HUD at the bottom; the engine itself is fully owner-aware.
     const side = ownerToSide(localSide);
     const { width, height } = this.platform.getScreenSize();
-    const netLayout = createLayout(width, height, side);
+    const netLayout = createLayout(width, height, side, this.platform.getSafeAreaInsets?.());
     const scene = new GameScene(netLayout, this.input, cb, opts);
     this.manager.goto(scene);
     return {
@@ -374,8 +375,9 @@ export async function startApp(platform: IPlatform): Promise<void> {
   const globalToast = new GlobalToast(app);
   setToastSink((text, kind) => globalToast.show(text, kind === 'success' ? C.green : C.red));
 
-  const layout: ILayout = createLayout(screenW, screenH);
-  const scaling = new ScalingManager(app, layout);
+  const insets = platform.getSafeAreaInsets?.();
+  const layout: ILayout = createLayout(screenW, screenH, Side.Bottom, insets);
+  const scaling = new ScalingManager(app, layout, insets);
   const manager = new SceneManager(app, scaling.gameLayer);
 
   const input = new InputManager();

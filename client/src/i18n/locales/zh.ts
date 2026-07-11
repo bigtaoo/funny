@@ -426,7 +426,6 @@ export const zh = {
   'campaign.locked': '🔒 未解锁',
   'campaign.lockedOffline': '🔒 联网解锁',
   'campaign.pending': '待结算',
-  'campaign.collection': '收集册',
   'campaign.equipment': '装备',
   'campaign.cleared': '已通关',
   'campaign.notebookTitle': '战役笔记本',
@@ -456,6 +455,7 @@ export const zh = {
 
   // ── Level objective labels ────────────────────────────────────────────────
   'level.objective.label': '关卡目标',
+  'level.rewards.label': '通关奖励',
   'level.objective.survive': '消灭所有敌人',
   'level.objective.timedDefense': '坚守至时间结束',
   'level.objective.destroyBase': '摧毁敌方大本营',

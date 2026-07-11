@@ -143,6 +143,10 @@ export function startHttpApi(
           const retention = await svc.queryRetention(days);
           return send(res, 200, ok({ type, retention }));
         }
+        if (type === 'first_session') {
+          const first_session = await svc.queryFirstSession(days);
+          return send(res, 200, ok({ type, first_session }));
+        }
         return sendErr(res, ErrorCode.BAD_REQUEST, `unknown query type: ${type}`);
       }
 

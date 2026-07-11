@@ -33,10 +33,12 @@ export interface CampaignMapCallbacks {
   onBack(): void;
   /** Open the prep screen for a level id. */
   onSelectLevel(levelId: string): void;
-  /** Open the collection (wardrobe) scene. */
-  onOpenCollection(): void;
-  /** Open the equipment scene (E5). Absent when offline (server-authoritative). */
-  onOpenEquipment?(): void;
+  /**
+   * Open the growth hub (E5 + collection, LOBBY_IA_REDESIGN §9: merged into a single header
+   * entry). Server-authoritative equipment lands directly on the Equipment tab when online;
+   * the nav layer falls back to the Collection (skins) screen when offline/logged out.
+   */
+  onOpenEquipment(): void;
   /** Stars earned per level id (0..3); absent = 0. */
   getStars(): Record<string, 1 | 2 | 3>;
   /** Cleared level ids — drives the sequential unlock gate. */
@@ -207,13 +209,13 @@ export class CampaignMapScene implements Scene {
 
     // With a subtitle (chapter pages: notebook owner), the title rides slightly
     // above center so the dim owner line tucks beneath it; without one it centers.
-    const title = txt(titleStr, Math.round(h * 0.032), 0xffffff, true);
+    const title = txt(titleStr, Math.round(h * 0.032), C.dark, true);
     title.anchor.set(0.5, 0.5); title.x = w / 2;
     title.y = subtitleStr ? Math.round(tbH * 0.40) : tbH / 2;
     root.addChild(title);
 
     if (subtitleStr) {
-      const sub = txt(subtitleStr, Math.round(h * 0.020), C.light);
+      const sub = txt(subtitleStr, Math.round(h * 0.020), C.mid);
       sub.anchor.set(0.5, 0.5); sub.x = w / 2; sub.y = Math.round(tbH * 0.72);
       sub.alpha = 0.75;
       root.addChild(sub);
@@ -221,26 +223,15 @@ export class CampaignMapScene implements Scene {
 
     hits.push({ rect: hdr.backRect, fn: onBack });
 
-    const coll = txt(t('campaign.collection'), Math.round(h * 0.024), C.gold, true);
-    coll.anchor.set(1, 0.5); coll.x = w - Math.round(w * 0.04); coll.y = tbH / 2;
-    root.addChild(coll);
+    // Single growth-hub entry (LOBBY_IA_REDESIGN §9): merges the former separate
+    // Collection/Equipment header links, matching the lobby's unified [Collection|Equipment] tab.
+    const equip = txt(t('campaign.equipment'), Math.round(h * 0.024), C.gold, true);
+    equip.anchor.set(1, 0.5); equip.x = w - Math.round(w * 0.04); equip.y = tbH / 2;
+    root.addChild(equip);
     hits.push({
-      rect: { x: coll.x - coll.width - Math.round(w * 0.03), y: 0, w: coll.width + Math.round(w * 0.06), h: tbH },
-      fn: () => this.cb.onOpenCollection(),
+      rect: { x: equip.x - equip.width - Math.round(w * 0.03), y: 0, w: equip.width + Math.round(w * 0.06), h: tbH },
+      fn: () => this.cb.onOpenEquipment(),
     });
-
-    // Equipment entry (E5) — to the left of collection; only when online (server-authoritative).
-    if (this.cb.onOpenEquipment) {
-      const equip = txt(t('campaign.equipment'), Math.round(h * 0.024), C.accent, true);
-      equip.anchor.set(1, 0.5);
-      equip.x = coll.x - coll.width - Math.round(w * 0.05); equip.y = tbH / 2;
-      root.addChild(equip);
-      const open = this.cb.onOpenEquipment;
-      hits.push({
-        rect: { x: equip.x - equip.width - Math.round(w * 0.02), y: 0, w: equip.width + Math.round(w * 0.04), h: tbH },
-        fn: () => open(),
-      });
-    }
 
     return tbH;
   }

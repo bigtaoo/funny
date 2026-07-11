@@ -5,6 +5,7 @@ import { WebAdapter } from '../../inputSystem/WebAdapter';
 import { getOrCreateDeviceId } from '../uuid';
 import { BrowserGameSocket } from '../../net/BrowserGameSocket';
 import type { Locale } from '../../i18n';
+import type { SafeAreaInsets } from '../../layout/ILayout';
 import { getNativeBilling, type IapKind } from '../iap';
 
 // ── Paddle.js (web coin recharge) type shim ──────────────────────────────────
@@ -42,6 +43,36 @@ export class WebPlatform implements IPlatform {
     return {
       width: window.innerWidth,
       height: window.innerHeight,
+    };
+  }
+
+  /**
+   * Reads env(safe-area-inset-*) via a probe element. Values are 0 on displays
+   * without insets (desktop, non-notched phones) and when the page lacks
+   * viewport-fit=cover. Reused for every resize — the probe is created once.
+   */
+  private safeAreaProbe: HTMLDivElement | null = null;
+  getSafeAreaInsets(): SafeAreaInsets {
+    let probe = this.safeAreaProbe;
+    if (!probe) {
+      probe = document.createElement('div');
+      probe.style.cssText =
+        'position:fixed;top:0;left:0;width:0;height:0;visibility:hidden;pointer-events:none;' +
+        'padding-top:env(safe-area-inset-top);padding-right:env(safe-area-inset-right);' +
+        'padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left);';
+      document.body.appendChild(probe);
+      this.safeAreaProbe = probe;
+    }
+    const s = getComputedStyle(probe);
+    const px = (v: string): number => {
+      const n = parseFloat(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+    return {
+      top:    px(s.paddingTop),
+      right:  px(s.paddingRight),
+      bottom: px(s.paddingBottom),
+      left:   px(s.paddingLeft),
     };
   }
 

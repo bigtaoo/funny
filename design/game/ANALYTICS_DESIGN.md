@@ -198,8 +198,11 @@ function flushSync(batch: EventBatch): void {
 | 事件 | 必填属性 | 说明 |
 |---|---|---|
 | `screen_view` | `scene` | 每次切换场景 |
+| `ui_click` | `id, scene` | 控件点击（A9-8）；`id` 为稳定可读控件 id（如 `lobby.shop`），`scene` 自动附当前场景 |
 
 scene 取值：`IntroScene / LobbyScene / LoginScene / CampaignMapScene / LevelPrepScene / GameScene / ResultScene / ShopScene / GachaScene / RoomScene / FriendsScene / CollectionScene / StatsScene / SettingsScene`
+
+`ui_click.id` 是 `screen_view` 的细粒度补充：捕获**不切换场景**的点击、区分指向同一场景的多个按钮、以及被门控挡下的点击。经 `analytics.click(id)` 上报（`analytics/index.ts`）。首批接入首日关键的大厅主导航（`lobby.practice/ranked/campaign/room/social/shop/cards/stats/world/daily/events/profile`，见 `app/nav/lobby.ts`）；其余按钮按需在各自 handler 追加 `analytics.click('<scene>.<control>')` 即可扩展。
 
 ### 5.3 游戏层（Gameplay）
 
@@ -508,6 +511,42 @@ db.events.aggregate([
               'props.level_id': 'ch1_lv2' } },
   { $group: { _id: '$event', count: { $sum: 1 } } }
 ])
+```
+
+### 9.5 滚动留存 D1–D7（`GET /internal/query?type=retention`）
+
+`AnalyticsService.queryRetention(days)` 计算过去 `days` 天每个「同期群（cohort）」的**次日到第 7 日回访率**——即某天的活跃设备中，在第 +1…+7 天仍有 `session_start` 的比例（设备口径，按 `(date, device_id)` 去重）。为让近期 cohort 也能算出后段偏移，多取 7 天数据窗口。
+
+- 偏移量集中定义在 `RETENTION_OFFSETS = [1,2,3,4,5,6,7]`（`service.ts`），改这一处即可增删跟踪的天数。
+- 返回行 `RetentionRow`：`{ date, cohort_size, d, d_rate }`，其中 `d`/`d_rate` 是以偏移量（1…7）为键的稀疏映射——回访设备数 / 回访率。
+- 某偏移日**尚无任何活跃数据**（未来日期或数据缺口）→ 该键**缺省**（`d[n]===undefined`）；该日有活动但 cohort 无人回访 → `d[n]===0`。ops 前端据此渲染 `—` vs `0%`。
+- ops 「Analytics」页 `pageAnalytics`（`tools/ops/src/pages/analytics.ts`）渲染 `D1%…D7%` 七列留存曲线，单元格 hover 显示回访设备数。
+
+```
+cohort（某日活跃设备）
+    ↓ session_start（+1 日）→ D1  次日留存
+    ↓ session_start（+2 日）→ D2
+    ↓ …
+    ↓ session_start（+7 日）→ D7  七日留存
+```
+
+### 9.6 首次会话 / 新手引导分析（A9-8，`GET /internal/query?type=first_session`）
+
+回答「玩家**第一次进游戏**都做了什么、在哪一步流失、多少人过了新手引导」。`AnalyticsService.queryFirstSession(days)` 先取每个设备**最早的 `session_start`**，只保留其首次会话落在窗口 `[今起前 days 天, 今日结束]` 内的设备（= 新用户 cohort），随后所有统计**只看这一次首次会话**（按 `session_id` 关联，与老用户彻底隔离）。
+
+- **新手引导漏斗** `funnel`（有序、逐步转化）：`ONBOARDING_STEPS`（`service.ts`）= 打开 → 开始引导 → **完成引导** → 首战 → 首通。相邻步转化率定位首日流失点；`tutorial_complete ÷ tutorial_start` 即引导完成率。步骤判定基于首次会话的事件集合，改 `ONBOARDING_STEPS` 一处即可增删步骤。
+  - **采样一致性（关键）**：漏斗每步都取自 **100% 采样事件**（`session_start / tutorial_start / tutorial_complete / game_start / level_complete`，见 `DEFAULT_CONFIG`），各步计数才可直接相比。**故意不含** intro/进大厅这类 `screen_view` 派生里程碑——`screen_view` 只 5% 采样，混进来会把采样损耗误显示成流失悬崖。`tutorial_start/complete` 本来漏配、回落到 `defaultSample=0.1`，本次一并提到 1.0（否则引导完成率失真）。
+- **首会话行为分布** `actions`：首次会话里命中的场景（`screen_view` 的 scene，`kind:'scene'`）与语义动作（除 `session_start/session_end/screen_view/churn_signal` 外的全部事件名，含 `ui_click`，`kind:'action'`）各自的去重设备数 + 占 cohort 比例，按覆盖降序。回答「首日玩家都点了哪些功能」。
+  - action 行多为 100% 采样事件（`game_start/shop_buy/gacha_draw/tutorial_*/ui_click…`），可信；**scene 行来自 5% 采样的 `screen_view`，系统性欠采**（ops 卡片已标注）。因此「首日点了哪个按钮」主要看 `ui_click`（如 `lobby.shop`）与语义动作，而非 scene 行。
+- **口径注意**：「最早」仅在事件保留窗口内判定（events TTL=90 天）。真正首次会话早于保留期、却在窗口内回流的设备，不会被误判为新用户。
+- ops 「Analytics」页渲染两张卡：Onboarding funnel（步骤/人数/步转化/占 cohort/条形）+ First-session activity（场景与动作覆盖）。
+
+```
+新用户 cohort（首次 session_start 在窗口内的设备）
+    ↓ tutorial_start               开始引导
+    ↓ tutorial_complete            完成引导  ← 引导完成率
+    ↓ game_start                   首战（非引导局）
+    ↓ level_complete               首通（首个真实关卡）
 ```
 
 ---

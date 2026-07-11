@@ -115,6 +115,8 @@ export class AuctionSceneBase {
   // list (materials + equipment + cards, sorted by value desc) instead of the market/mine list.
   // Selecting an entry returns to the create form.
   protected itemPickerOpen = false;
+  // Category filter for the picker's item grid (mirrors the market tab's allFilter) — '' = all classes.
+  protected pickerFilter: AucFilter = '';
 
   // Bid form state (auction listings)
   protected bidAuction: AuctionView | null = null;

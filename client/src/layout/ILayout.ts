@@ -9,6 +9,14 @@ export interface Rect {
   readonly h: number;
 }
 
+/** Safe-area insets in CSS px (notch / Dynamic Island / home indicator). */
+export interface SafeAreaInsets {
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+  readonly left: number;
+}
+
 /**
  * ILayout — coordinate transform + layout geometry for one orientation/player combo.
  *

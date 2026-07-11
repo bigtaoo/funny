@@ -7,6 +7,8 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedF
 import { buildIcon, type IconKind } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
+import { drawCareerTabs } from '../ui/widgets/CareerTabs';
+import { drawSidebarTabs, type HubTab } from '../ui/widgets/HubTabs';
 import type { AchievementsView, Achievement } from '../net/ApiClient';
 import { tierState, achievementClaimable, type TierState } from '../game/meta/achievements';
 
@@ -42,6 +44,13 @@ export interface AchievementCallbacks {
    * The caller is responsible for updating the shared save (wallet). Omit when offline (claim button not shown).
    */
   onClaim?(achId: string, tier: number): Promise<number>;
+  /**
+   * Career hub peer navigation (LOBBY_IA_REDESIGN P1.5): when both are present, a
+   * [生涯统计|称号|成就] strip is drawn above the category sub-tabs in the left margin gutter,
+   * itself active. Omitted from standalone entry points that shouldn't advertise the sibling pages.
+   */
+  onOpenStats?(): void;
+  onOpenTitles?(): void;
 }
 
 interface Hit { rect: Rect; fn: () => void; }
@@ -164,6 +173,20 @@ export class AchievementScene implements Scene {
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
+    // Career hub peer strip [生涯统计|称号|成就] (LOBBY_IA_REDESIGN P1.5, see CareerTabs.ts),
+    // drawn above the category sub-tabs in the left margin gutter regardless of load state, so
+    // the sibling pages never vanish while achievements are loading/offline/empty.
+    let sidebarBottom = tbH + Math.round(h * 0.02);
+    if (this.cb.onOpenStats && this.cb.onOpenTitles) {
+      const { hits, bottom } = drawCareerTabs(this.container, marginLineX(w), sidebarBottom, h, 'achievements', {
+        onOpenStats: this.cb.onOpenStats,
+        onOpenTitles: this.cb.onOpenTitles,
+        onOpenAchievements: () => {},
+      });
+      this.hits.push(...hits);
+      sidebarBottom = bottom + Math.round(h * 0.03);
+    }
+
     // Offline / loading state.
     if (!this.cb.loadAchievements) { this.drawCentered(tbH, t('achievement.loginRequired')); return; }
     if (this.data === null) { this.drawCentered(tbH, t('achievement.loading')); return; }
@@ -174,10 +197,10 @@ export class AchievementScene implements Scene {
 
     const top = tbH + Math.round(h * 0.025);
 
-    // Category tabs: a vertical sidebar to the left of the notebook's red margin
-    // rule; the achievement content sits to its right (mirrors the page's own
-    // margin/body split instead of crossing it with a horizontal tab row).
-    this.drawSidebarTabs(cats, top);
+    // Category tabs: a second-tier sidebar nested under the Career hub peer strip (mirrors
+    // Equipment's Inventory/Craft sub-tabs, see HubTabs.drawSidebarTabs `sub` option), to the
+    // left of the notebook's red margin rule; the achievement content sits to its right.
+    this.drawCategoryTabs(cats, sidebarBottom);
 
     // Achievement cards for the current category.
     const contentX = marginLineX(w) + Math.round(w * 0.025);
@@ -228,46 +251,25 @@ export class AchievementScene implements Scene {
   }
 
   /**
-   * Category tabs as a vertical sidebar left of the notebook's red margin rule
-   * (achievement content is drawn to its right, see `contentX` in render()).
-   * Icon-over-label, one bigger cell per category, stacked top to bottom.
+   * Category tabs as a second-tier sidebar nested under the Career hub peer strip (LOBBY_IA_REDESIGN
+   * P1.5; see HubTabs.drawSidebarTabs `sub` option and Equipment's Inventory/Craft sub-tabs), left of
+   * the notebook's red margin rule — achievement content is drawn to its right, see `contentX` in render().
    */
-  private drawSidebarTabs(cats: Achievement['category'][], top: number): void {
-    const { w, h } = this;
-    const x = Math.round(w * 0.012);
-    const tabW = marginLineX(w) - x - Math.round(w * 0.012);
-    const tabH = Math.round(h * 0.11);
-    const gap = Math.round(h * 0.018);
-    cats.forEach((cat, i) => {
-      const y = top + i * (tabH + gap);
-      const on = cat === this.activeCat;
-      const box = sketchPanel(tabW, tabH, {
-        fill: on ? C.accent : C.paper, border: on ? C.accent : C.line,
-        width: on ? 2 : 1.4, seed: seedFor(x, y, tabW),
-      });
-      box.x = x; box.y = y;
-      this.container.addChild(box);
-
-      // Category glyph on top, label below, centred as a stack (sidebar is narrow).
-      const icS = Math.round(tabH * 0.4);
-      const lbl = txt(t(('achievement.category.' + cat) as TranslationKey), Math.round(tabH * 0.2), on ? 0xffffff : C.dark, on);
-      const iconGap = Math.round(tabH * 0.06);
-      const groupH = icS + iconGap + lbl.height;
-      const gy = y + (tabH - groupH) / 2;
-      const glyph = buildIcon(CATEGORY_ICON[cat], icS, on ? 0xffffff : C.dark);
-      glyph.x = x + (tabW - icS) / 2; glyph.y = gy;
-      this.container.addChild(glyph);
-      lbl.anchor.set(0.5, 0); lbl.x = x + tabW / 2; lbl.y = gy + icS + iconGap;
-      this.container.addChild(lbl);
-
+  private drawCategoryTabs(cats: Achievement['category'][], top: number): void {
+    const tabs: HubTab[] = cats.map((cat) => ({
+      label: t(('achievement.category.' + cat) as TranslationKey),
+      active: cat === this.activeCat,
+      icon: CATEGORY_ICON[cat],
       // Tab badge: shown when any achievement in this category is claimable.
-      const hasDot = this.data!.defs.some(
+      badge: this.data!.defs.some(
         (d) => d.category === cat && !d.hidden && achievementClaimable(d, this.data!.stats, this.data!.achievements),
-      );
-      if (hasDot) this.drawDot(x + tabW - Math.round(tabH * 0.1), y + Math.round(tabH * 0.1), Math.round(tabH * 0.07));
-
-      this.hits.push({ rect: { x, y, w: tabW, h: tabH }, fn: () => { this.activeCat = cat; this.render(); } });
-    });
+      ),
+    }));
+    const { hits } = drawSidebarTabs(this.container, marginLineX(this.w), top, this.h, tabs, (i) => {
+      this.activeCat = cats[i];
+      this.render();
+    }, { sub: true });
+    this.hits.push(...hits);
   }
 
   private drawCard(def: Achievement, x: number, y: number, w: number): number {

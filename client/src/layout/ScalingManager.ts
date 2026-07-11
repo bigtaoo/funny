@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js-legacy';
-import { ILayout } from './ILayout';
+import { ILayout, SafeAreaInsets } from './ILayout';
 import { PortraitLayout } from './PortraitLayout';
 import { LandscapeLayout } from './LandscapeLayout';
 import { Side } from '../game';
@@ -25,11 +25,16 @@ export function createLayout(
   screenW: number,
   screenH: number,
   localSide: Side = Side.Bottom,
+  insets: SafeAreaInsets = { top: 0, right: 0, bottom: 0, left: 0 },
 ): ILayout {
   const orient = detectOrientation(screenW, screenH);
-  return orient === 'landscape'
-    ? new LandscapeLayout(localSide)
-    : new PortraitLayout(localSide);
+  // Both layouts size their reclaimable axis to the *safe* drawable area so the
+  // game fills the notch-free region without letterbox (ScalingManager offsets the
+  // layer to match): portrait grows its height, landscape grows its width.
+  const availW = Math.max(1, screenW - insets.left - insets.right);
+  const availH = Math.max(1, screenH - insets.top - insets.bottom);
+  if (orient === 'landscape') return new LandscapeLayout(availW, availH, localSide);
+  return new PortraitLayout(availW, availH, localSide);
 }
 
 /**
@@ -51,12 +56,15 @@ export class ScalingManager {
   readonly gameLayer: PIXI.Container;
 
   private layout: ILayout;
+  private insets: SafeAreaInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 
   constructor(
     private readonly app: PIXI.Application,
     layout: ILayout,
+    insets: SafeAreaInsets = { top: 0, right: 0, bottom: 0, left: 0 },
   ) {
     this.layout    = layout;
+    this.insets    = insets;
     this.bgLayer   = new PIXI.Container();
     this.gameLayer = new PIXI.Container();
 
@@ -68,8 +76,9 @@ export class ScalingManager {
   }
 
   /** Update the layout and recalculate scaling. Call on orientation change or resize. */
-  resize(screenW: number, screenH: number, newLayout: ILayout): void {
+  resize(screenW: number, screenH: number, newLayout: ILayout, insets?: SafeAreaInsets): void {
     this.layout = newLayout;
+    if (insets) this.insets = insets;
     this.applyScaling(screenW, screenH);
   }
 
@@ -87,13 +96,23 @@ export class ScalingManager {
     const dw = this.layout.designWidth;
     const dh = this.layout.designHeight;
 
-    // Contain: fit the design space fully within the screen
-    const gameScale = Math.min(screenW / dw, screenH / dh);
-    this.gameLayer.scale.set(gameScale);
-    this.gameLayer.x = Math.round((screenW - dw * gameScale) / 2);
-    this.gameLayer.y = Math.round((screenH - dh * gameScale) / 2);
+    // Safe drawable area = screen minus notch / home-indicator insets. The game
+    // layer is contained within it, so no UI lands under the notch/home indicator.
+    const { top, right, bottom, left } = this.insets;
+    const availX = left;
+    const availY = top;
+    const availW = Math.max(1, screenW - left - right);
+    const availH = Math.max(1, screenH - top - bottom);
 
-    // Cover: fill the screen (may clip design edges)
+    // Contain within the safe area. Because the portrait design height tracks the
+    // safe-area aspect, this fits to width with no letterbox on tall phones.
+    const gameScale = Math.min(availW / dw, availH / dh);
+    this.gameLayer.scale.set(gameScale);
+    this.gameLayer.x = Math.round(availX + (availW - dw * gameScale) / 2);
+    this.gameLayer.y = Math.round(availY + (availH - dh * gameScale) / 2);
+
+    // Cover: fill the ENTIRE screen (including the inset bands) so the notch /
+    // home-indicator margins show background rather than a hard edge.
     const bgScale = Math.max(screenW / dw, screenH / dh);
     this.bgLayer.scale.set(bgScale);
     this.bgLayer.x = Math.round((screenW - dw * bgScale) / 2);

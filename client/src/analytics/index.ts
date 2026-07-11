@@ -132,6 +132,16 @@ function bindSessionLifecycle(): void {
   if (wx?.onShow) wx.onShow(() => { hiddenFired = false; });
 }
 
+/**
+ * Track a UI control click (button/tab/icon). `id` is a stable, human-readable control id
+ * (e.g. 'lobby.pvp', 'intro.start'); the current scene is attached automatically so first-day
+ * behaviour can be analysed per scene. Fine-grained companion to `screen_view` — captures taps
+ * that don't navigate, and the exact control identity within a scene.
+ */
+export function click(id: string, extra: Record<string, unknown> = {}): void {
+  track('ui_click', { id, scene: scenesVisited[scenesVisited.length - 1] ?? 'unknown', ...extra });
+}
+
 /** Track a named event with arbitrary props (synchronous, non-blocking). */
 export function track(event: string, props: Record<string, unknown> = {}): void {
   if (!consentGranted) return; // GDPR gate (L1-1): no telemetry before consent
