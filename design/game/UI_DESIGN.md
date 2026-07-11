@@ -11,7 +11,8 @@
 | 原则 | 说明 |
 |---|---|
 | **笔记本/手绘风** | 米色纸底 + 横线 + 红色页边线 + 等宽字体（monospace）。沿用 `LobbyScene` 的 `C` 调色板，不另起视觉体系 |
-| **设计空间 + Contain 缩放** | 所有坐标用设计空间：竖屏 1080×1920、横屏 1920×1080；`ScalingManager` 单比例映射到真机。场景内用 `layout.designWidth/Height` 的**百分比**布局（见 `LobbyScene.build()`） |
+| **设计空间 + Contain 缩放** | 所有坐标用设计空间；`ScalingManager` 单比例映射到真机。场景内用 `layout.designWidth/Height` 的**百分比**布局（见 `LobbyScene.build()`）。**竖屏设计高度是动态的**（2026-07 改）：宽度固定 1080，高度 = `round(1080 × 安全区高/安全区宽)`，下限 1920——即竖屏设计空间的**长宽比跟随设备安全区**，故 iPhone 13（~9:19.5）等高瘦屏用 fit-to-width 铺满、**不再上下留米色黑边**（此前固定 1080×1920 在高屏被 Contain 居中，上下各浪费 ~18%）。**横屏同理动态化**（2026-07 改）：高度固定 1080，宽度 = `round(1080 × 安全区宽/安全区高)`，下限 1920——即横屏长宽比也跟随安全区，高瘦屏横握用 fit-to-height 铺满、不再左右留黑边；棋盘水平居中，底部条左/右锚定、中间手牌区随宽度伸缩。详见 [`design/game/DESIGN.md` 渲染/布局节] 与 `layout/{PortraitLayout,LandscapeLayout}.ts` |
+| **安全区（刘海/灵动岛/Home 指示条）** | `IPlatform.getSafeAreaInsets()`（Web 读 `env(safe-area-inset-*)`，需 `viewport-fit=cover`）返回 CSS px 内边距；`createLayout` 用它缩小竖屏"可绘制区"来算设计高度，`ScalingManager` 把整个 `gameLayer` 平移进安全区内——**所有场景（战斗+菜单）统一避开刘海/指示条，无需各场景单独处理**。`bgLayer` 仍 Cover 铺满整屏（含安全区外的窄带），故边缘露的是背景纸而非硬边 |
 | **双朝向自适应** | 每个菜单场景都要在竖屏/横屏下成立：竖屏纵向堆叠、横屏左右分栏。用 `layout.orientation` 分支或纯百分比让其自然伸缩 |
 | **触屏优先** | 命中区够大（≥ 设计空间 ~80px 高）；列表用滚动而非密集排布；复用 `InputManager.onDown` |
 | **零硬编码文案** | 全走 `t(key)`，`zh.ts` 唯一来源，`en`/`de` 编译强制全翻 |
@@ -147,6 +148,9 @@ Collection  Stats     Lobby    Shop/Gacha    Room
     1. 第一次（`0d7f90df`）用 `getLocalBounds()` 二次缩放，方向对但：① 在 `new StickmanRuntime()` 之后立刻测量，此时构造函数只 `play('idle')` 设了动画指针、`_applyPose()` 尚未运行，所有 sprite 仍堆在原点，量出的是乱框；② 框里混进了 shadow；③ 只改缩放没重算居中，仍用"脚=原点"假设。看起来更乱，遂回退。
     2. 第二次（`4cb446fb`）据此判定"`getLocalBounds` 不可靠"，退回纯 `targetHeight / naturalHeight`。但 `naturalHeight` 是**骨骼关节跨度**（`skeleton.ts` `computeNaturalHeight`，只看 FK 关节不看贴图），头/脚/武器超出关节的量每个 rig 都不同 → "六角色大小不一致" + "脚=原点居中"两个原始 bug 原样保留。
     3. 最终方案（本次）：新增 `StickmanRuntime.getRenderedLocalBounds()`——**在姿势已应用、排除影子（新增构造参数 `showShadow:false`）、跨所有 clip 全部关键帧取并集**的前提下测量真实渲染像素框；再经纯函数 `render/fitToBox.ts` `fitContentToBox(bounds, box, 0.90)` 拟合：渲染高度 = 按钮高度的 **90%**，且缩放与居中**全部基于实测框、绝不假设原点**，故六角色同高且真正上下居中于黑色按钮框内。拟合数学有单测兜底 `test/fitToBox.test.ts`（含"原点两侧不对称溢出仍 90%+居中""不同框同高"两条针对上述回归的断言）；`getRenderedLocalBounds` 对真实 `.tao` 的测量需真 PIXI 渲染器，本项目 node 测试环境 mock 掉了 PIXI，故该半仅靠 webpack 构建 + 肉眼确认。
+
+- **标题栏改双行（2026-07-11）**：原单行标题栏把「左上头像 chip + 居中 logo+品牌标题 lockup + 右上登录/段位 chip」全挤在同一水平带，品牌 lockup 比左右两 chip 之间的空隙宽，在窄竖屏（1080 设计宽）下会左右裁切/压到两侧 chip——高瘦屏动态设计高度把按 `h` 缩放的字号进一步放大后更明显。改为上下两带：**上带 chipBandH=`h*0.16`**（头像 chip + 账号 chip，几何与旧单行完全一致）+ **下带 brandRowH=`h*0.09`**（居中 logo+品牌标题+副标题，独占一行不与 chip 争水平带）；品牌 lockup 只在超过宽度 90% 时才缩放（`title.scale`），故任意宽度都不裁边。深色标题栏背景高度 = 两带之和；下方主内容栈起点 `usableTop=tbH` 随之下移，用回竖屏多出来的纵向空间。见 `LobbyScene/build.ts`。
+- **LoginScene 离线提示换行（2026-07-11）**：`auth.offlineHint`（EN/DE 较长，monospace 下超 1080 设计宽）改用 `txt(..., wordWrapWidth=w*0.86)` + 居中对齐，两行排版，不再左右裁切。
 
 ### 4.2 RoomScene（好友房，S1）
 ```

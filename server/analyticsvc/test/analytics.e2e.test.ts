@@ -309,7 +309,15 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       ok: boolean;
-      data: { type: string; retention: { date: string; cohort_size: number; d1?: number; d7?: number }[] };
+      data: {
+        type: string;
+        retention: {
+          date: string;
+          cohort_size: number;
+          d: Partial<Record<1 | 2 | 3 | 4 | 5 | 6 | 7, number>>;
+          d_rate: Partial<Record<1 | 2 | 3 | 4 | 5 | 6 | 7, number>>;
+        }[];
+      };
     };
     expect(body.ok).toBe(true);
     expect(body.data.type).toBe('retention');
@@ -318,7 +326,127 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     // Today's cohort has 2 devices
     const todayRow = body.data.retention.find((r) => r.date === TODAY);
     expect(todayRow?.cohort_size).toBe(2);
-    // D7 for today = undefined (future data does not exist yet)
-    expect(todayRow?.d7).toBeUndefined();
+    // Future offsets (D1–D7) are all undefined for today — that data does not exist yet
+    for (const n of [1, 2, 3, 4, 5, 6, 7] as const) {
+      expect(todayRow?.d[n]).toBeUndefined();
+      expect(todayRow?.d_rate[n]).toBeUndefined();
+    }
+  });
+
+  it('queryRetention computes each D1–D7 offset from a backdated cohort', async () => {
+    // Anchor far in the past so these events fall outside every other test's real-now window.
+    const ANCHOR = Date.UTC(2020, 0, 10); // cohort day-start (UTC midnight)
+    const DAY = 86400_000;
+    // Insert session_start events directly (acknowledged write concern, unlike ingestEvents' w:0)
+    // so they are durable before we query.
+    const seeds: { dayOffset: number; device: string }[] = [
+      { dayOffset: 0, device: 'ret-A' }, { dayOffset: 0, device: 'ret-B' }, { dayOffset: 0, device: 'ret-C' }, // cohort {A,B,C}
+      { dayOffset: 1, device: 'ret-A' }, { dayOffset: 1, device: 'ret-Z1' }, // D1: only A in cohort → 1
+      { dayOffset: 2, device: 'ret-A' }, { dayOffset: 2, device: 'ret-B' },  // D2: A + B → 2
+      { dayOffset: 3, device: 'ret-Z2' },                                    // D3: activity exists but no cohort member → 0
+      { dayOffset: 7, device: 'ret-C' },                                     // D7: C → 1
+      // Days +4/+5/+6 have no activity at all → those offsets stay undefined (insufficient data).
+    ];
+    await mongo!.collections.events.insertMany(
+      seeds.map((s) => ({
+        session_id: `ret-${s.device}-${s.dayOffset}`,
+        device_id: s.device,
+        platform: 'web',
+        os: 'test',
+        game_version: '1',
+        locale: 'en',
+        event: 'session_start',
+        props: {},
+        ts: new Date(ANCHOR + s.dayOffset * DAY + 3600_000),
+      })),
+    );
+
+    // Query with a clock pinned to the anchor day so the cohort day is the sole row.
+    const retSvc = new AnalyticsService(mongo!.collections, () => ANCHOR + 12 * 3600_000);
+    const rows = await retSvc.queryRetention(1);
+    const cohort = rows.find((r) => r.date === '2020-01-10');
+    expect(cohort?.cohort_size).toBe(3);
+    expect(cohort?.d[1]).toBe(1);
+    expect(cohort?.d[2]).toBe(2);
+    expect(cohort?.d[3]).toBe(0);
+    expect(cohort?.d[4]).toBeUndefined();
+    expect(cohort?.d[5]).toBeUndefined();
+    expect(cohort?.d[6]).toBeUndefined();
+    expect(cohort?.d[7]).toBe(1);
+    expect(cohort?.d_rate[1]).toBeCloseTo(1 / 3);
+    expect(cohort?.d_rate[2]).toBeCloseTo(2 / 3);
+    expect(cohort?.d_rate[3]).toBe(0);
+    expect(cohort?.d_rate[7]).toBeCloseTo(1 / 3);
+  });
+
+  // ─── first-session / onboarding ────────────────────────────────────────────
+
+  it('queryFirstSession builds the onboarding funnel + action breakdown for new users only', async () => {
+    // Anchored in 2021 → isolated from the 2020 retention seed and the 2026 real-now DAU seed.
+    const ANCHOR = Date.UTC(2021, 5, 10); // cohort day-start
+    const DAY = 86400_000;
+    const ev = (sid: string, device: string, event: string, offsetMs: number, scene?: string) => ({
+      session_id: sid,
+      device_id: device,
+      platform: 'web',
+      os: 'test',
+      game_version: '1',
+      locale: 'en',
+      event,
+      props: scene ? { scene } : {},
+      ts: new Date(ANCHOR + offsetMs),
+    });
+
+    await mongo!.collections.events.insertMany([
+      // N1 — full graduation: reaches every funnel step, plus a shop_open action.
+      ev('fs-n1', 'fs-N1', 'session_start', 3600_000),
+      ev('fs-n1', 'fs-N1', 'screen_view', 3600_100, 'IntroScene'),
+      ev('fs-n1', 'fs-N1', 'tutorial_start', 3600_200),
+      ev('fs-n1', 'fs-N1', 'tutorial_complete', 3600_300),
+      ev('fs-n1', 'fs-N1', 'screen_view', 3600_400, 'LobbyScene'),
+      ev('fs-n1', 'fs-N1', 'game_start', 3600_500),
+      ev('fs-n1', 'fs-N1', 'level_complete', 3600_600),
+      ev('fs-n1', 'fs-N1', 'shop_open', 3600_700),
+      // N2 — drops out mid-tutorial: session_start → intro → tutorial_start, nothing more.
+      ev('fs-n2', 'fs-N2', 'session_start', 7200_000),
+      ev('fs-n2', 'fs-N2', 'screen_view', 7200_100, 'IntroScene'),
+      ev('fs-n2', 'fs-N2', 'tutorial_start', 7200_200),
+      // V1 — veteran: first session predates the window (5 days earlier) so must be excluded,
+      // even though it is also active in-window.
+      ev('fs-v1a', 'fs-V1', 'session_start', -5 * DAY),
+      ev('fs-v1b', 'fs-V1', 'session_start', 7200_000),
+      ev('fs-v1b', 'fs-V1', 'tutorial_complete', 7200_500),
+    ]);
+
+    const fsSvc = new AnalyticsService(mongo!.collections, () => ANCHOR + 12 * 3600_000);
+    const res = await fsSvc.queryFirstSession(1);
+
+    // Only N1 + N2 are new in-window; V1 is a returning veteran.
+    expect(res.cohort_size).toBe(2);
+
+    // Funnel is built from 100%-sampled events only (no screen_view-derived steps).
+    const step = (k: string) => res.funnel.find((f) => f.step === k);
+    expect(res.funnel.map((f) => f.step)).toEqual([
+      'session_start', 'tutorial_start', 'tutorial_complete', 'first_battle', 'first_clear',
+    ]);
+    expect(step('session_start')?.count).toBe(2);
+    expect(step('tutorial_start')?.count).toBe(2);
+    expect(step('tutorial_complete')?.count).toBe(1); // only N1 finished
+    expect(step('first_battle')?.count).toBe(1);
+    expect(step('first_clear')?.count).toBe(1);
+    // Tutorial completion rate = tutorial_complete / tutorial_start = 1/2.
+    expect(step('tutorial_complete')?.conversion_rate).toBeCloseTo(0.5);
+    expect(step('session_start')?.conversion_rate).toBeUndefined();
+
+    // Action/scene breakdown (distinct new-user devices).
+    const act = (k: string) => res.actions.find((a) => a.key === k);
+    expect(act('IntroScene')).toMatchObject({ kind: 'scene', devices: 2 });
+    expect(act('LobbyScene')).toMatchObject({ kind: 'scene', devices: 1 });
+    expect(act('tutorial_start')).toMatchObject({ kind: 'action', devices: 2 });
+    expect(act('shop_open')).toMatchObject({ kind: 'action', devices: 1 });
+    // Lifecycle noise is never reported as an action.
+    expect(act('session_start')).toBeUndefined();
+    // Sorted by reach descending.
+    expect(res.actions[0].devices).toBeGreaterThanOrEqual(res.actions[res.actions.length - 1].devices);
   });
 });

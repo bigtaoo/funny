@@ -169,10 +169,17 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       wear.alpha = 0.55;
       this.container.addChild(wear);
 
-      // Header block — sized up slightly (0.14 → 0.16) to fit the brand mark
-      // (shield-crest logo, ADR-027) alongside the "Nivara" title without
-      // crowding the tagline row.
-      const tbH = Math.round(h * 0.16);
+      // Header block — two stacked rows so the brand lockup never competes with
+      // the corner chips for the same horizontal band (the centered logo+title is
+      // wider than the gap between the left profile chip and the right account
+      // chip, so co-locating them clipped/overlapped on narrow portrait widths):
+      //   · chip band (top)  — profile chip (left) + account chip (right); its
+      //                        geometry is unchanged from the old single-row header.
+      //   · brand row (below) — centered shield-crest logo (ADR-027) + "Nivara"
+      //                        title + tagline, clear of both chips.
+      const chipBandH = Math.round(h * 0.16);
+      const brandRowH = Math.round(h * 0.09);
+      const tbH = chipBandH + brandRowH;
       const titleBg = new PIXI.Graphics();
       titleBg.beginFill(C.dark);
       titleBg.drawRect(0, 0, w, tbH);
@@ -183,15 +190,18 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       title.anchor.set(0, 0.5);
 
       const subtitle = txt(t('lobby.subtitle'), Math.round(h * 0.022), C.light);
-      subtitle.anchor.set(0.5, 0.5); subtitle.y = tbH * 0.78;
+      subtitle.anchor.set(0.5, 0.5); subtitle.y = chipBandH + Math.round(brandRowH * 0.82);
       this.container.addChild(subtitle);
 
-      // Centre the whole logo+title lockup as one block on the bar's midline,
-      // then hang the subtitle under the title's own centre (not the bar's —
-      // the title is wider than the subtitle, so centring both on `w/2`
-      // independently left the lockup looking shifted right).
-      const logoSize = Math.round(tbH * 0.9);
+      // Center the logo+title lockup on the brand row's midline. On its own row the
+      // lockup can use nearly the full width; scale the title down only if the
+      // lockup would still exceed ~90% of the width (so it never clips the edges —
+      // long brand strings run wide in monospace).
+      const brandMidY = chipBandH + Math.round(brandRowH * 0.34);
+      const logoSize = Math.round(brandRowH * 0.9);
       const logoGap = Math.round(w * 0.015);
+      const maxTitleW = Math.round(w * 0.9) - logoSize - logoGap;
+      if (title.width > maxTitleW) title.scale.set(maxTitleW / title.width);
       const lockupW = logoSize + logoGap + title.width;
       const lockupLeft = Math.round(w / 2 - lockupW / 2);
       const titleX = lockupLeft + logoSize + logoGap;
@@ -199,33 +209,34 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       const logo = PIXI.Sprite.from(logoUrl as string);
       logo.anchor.set(1, 0.5);
       logo.width = logoSize; logo.height = logoSize;
-      logo.x = titleX - logoGap; logo.y = tbH * 0.45;
+      logo.x = titleX - logoGap; logo.y = brandMidY;
       this.container.addChild(logo);
 
-      title.x = titleX; title.y = tbH * 0.45;
+      title.x = titleX; title.y = brandMidY;
       this.container.addChild(title);
 
       subtitle.x = titleX + title.width / 2;
 
       // Top-left profile chip (avatar + name) — opens the personal settings screen.
-      const av = Math.round(tbH * 0.46);
+      // Lives in the top chip band (geometry unchanged from the old single-row header).
+      const av = Math.round(chipBandH * 0.46);
       const avX = Math.round(w * 0.03);
-      const avY = Math.round(tbH * 0.5 - av / 2);
+      const avY = Math.round(chipBandH * 0.5 - av / 2);
       const avatar = buildAvatar(av, this.cb.playerName, 21, this.cb.avatarId);
       avatar.x = avX; avatar.y = avY;
       this.container.addChild(avatar);
 
       const nameGap = Math.round(w * 0.02);
-      const nameLabel = txt(this.cb.playerName, Math.round(tbH * 0.24), 0xffffff, true);
+      const nameLabel = txt(this.cb.playerName, Math.round(chipBandH * 0.24), 0xffffff, true);
       nameLabel.anchor.set(0, 0.5);
       nameLabel.x = avX + av + nameGap;
-      nameLabel.y = tbH * 0.5;
-      // Keep the chip clear of the centred title.
-      const nameMax = w * 0.36 - (av + nameGap);
+      nameLabel.y = chipBandH * 0.5;
+      // Keep the chip within its half of the band (the brand lockup is a row below now).
+      const nameMax = w * 0.5 - (av + nameGap);
       if (nameLabel.width > nameMax) nameLabel.scale.set(nameMax / nameLabel.width);
       this.container.addChild(nameLabel);
 
-      const pad = Math.round(tbH * 0.12);
+      const pad = Math.round(chipBandH * 0.12);
       this.profileChipRect = {
         x: avX - pad, y: avY - pad,
         w: av + nameGap + nameLabel.width + 2 * pad, h: av + 2 * pad,
@@ -234,7 +245,7 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       // Boiling-line title underline (art-direction §5.4) — a hand-drawn marker
       // stroke that subtly wobbles ~8fps. Cycles baked variants; near-zero cost.
       const ulW = Math.min(w * 0.6, title.width * 1.15);
-      const ulH = Math.round(h * 0.02);
+      const ulH = Math.round(h * 0.015);
       this.titleBoil = new BoilingSprite(ulW, ulH, (pen) => {
         pen.stroke(
           [{ x: 2, y: ulH * 0.5 }, { x: ulW - 2, y: ulH * 0.5 }],
@@ -242,7 +253,7 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
         );
       }, { tag: 'lobby-title', variants: 3, fps: 8 });
       this.titleBoil.x = title.x + title.width / 2 - ulW / 2;
-      this.titleBoil.y = tbH * 0.45 + title.height / 2;
+      this.titleBoil.y = brandMidY + title.height / 2;
       this.container.addChild(this.titleBoil);
 
       // Top-right account chip (SA-4): offline → login/register entry; online →
@@ -250,11 +261,11 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       const chipX = w - Math.round(w * 0.04);
       if (this.cb.offline) {
         const login = txt(t('auth.loginEntry'), Math.round(h * 0.024), C.gold, true);
-        login.anchor.set(1, 0.5); login.x = chipX; login.y = tbH * 0.5;
+        login.anchor.set(1, 0.5); login.x = chipX; login.y = chipBandH * 0.5;
         this.container.addChild(login);
         const pad = Math.round(h * 0.02);
         this.accountChipRect = {
-          x: login.x - login.width - pad, y: tbH * 0.5 - login.height / 2 - pad,
+          x: login.x - login.width - pad, y: chipBandH * 0.5 - login.height / 2 - pad,
           w: login.width + 2 * pad, h: login.height + 2 * pad,
         };
         this.accountChipFn = this.cb.onLogin ?? null;
@@ -262,9 +273,9 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
         const pvp = this.cb.pvp;
         // Three stacked lines in the header's right column: coins · rank · logout.
         const hasLogout = !!this.cb.onLogout;
-        const coinsY = tbH * 0.30;
-        const rankY  = hasLogout ? tbH * 0.55 : tbH * 0.45;
-        const outY   = tbH * 0.80;
+        const coinsY = chipBandH * 0.30;
+        const rankY  = hasLogout ? chipBandH * 0.55 : chipBandH * 0.45;
+        const outY   = chipBandH * 0.80;
 
         // Soft-currency balance (server-authoritative mirror) — only meaningful online.
         if (typeof this.cb.coins === 'number') {
