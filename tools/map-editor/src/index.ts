@@ -339,13 +339,17 @@ function refreshCitySprites(): void {
     const tex = getCityTextureForLevel(node.level);
     if (!tex) continue;
     const sp = new PIXI.Sprite(tex);
-    // Bottom-center anchor + front-vertex offset: the castle base sits ON the plot's front edge
-    // (matches the game client's WorldMapRenderer city layer) instead of being centered on the
-    // plot, which left a tall castle's lower half hanging past the diamond's bottom vertex.
+    // Bottom-center anchor near the plot CENTER (matches the game client's WorldMapRenderer city
+    // layer): the atlas art's base is ~full sprite-width, so anchoring it at the diamond's front
+    // vertex made the wide base overhang the plot's front edges and cover adjacent resource tiles.
+    // Sitting the base near the diamond's center line keeps it within the footprint; the tall body
+    // rises up-and-back, only occluding back tiles (correct isometric depth). groundFwd nudges it
+    // 40% toward the front vertex so it reads as planted without spilling forward.
     sp.anchor.set(0.5, 1);
     const s = tileToScreen(node.x, node.y, tp);
+    const groundFwd = (node.footprint * tp * ISO_RATIO) / 2 * 0.4;
     sp.x = s.x;
-    sp.y = s.y + (node.footprint * tp * ISO_RATIO) / 2;
+    sp.y = s.y + groundFwd;
     sp.zIndex = node.x + node.y;
     const spriteTiles = Math.sqrt(node.footprint / BASE_FOOTPRINT) * BASE_SPRITE_TILES;
     sp.width = spriteTiles * tp;
