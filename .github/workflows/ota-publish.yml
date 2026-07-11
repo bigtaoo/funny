@@ -1,0 +1,111 @@
+name: iOS OTA - Publish hot-update
+
+# Publishes a JS/asset hot-update bundle for the iOS shell (Capgo, IOS_RELEASE.md §11).
+# Does NOT touch the App Store — this ships web-layer changes only. Native changes go through
+# release-ios.yml (tag ios-v*) instead. No macOS runner needed (no native compile).
+#
+# Trigger: push a tag `ota-v<version>` (e.g. ota-v1.2.3) or run manually with an explicit version.
+# Flow: npm ci → build:mobile (NW_BUILD_VERSION baked from the tag) → zip dist → upload the zip and
+# a refreshed manifest.json to the R2 bucket served at ota.gamestao.com.
+#
+# ⚠️ Only publish when the change is JS/asset-only. Anything needing new native capability must
+# raise minNativeVersion (edit MIN_NATIVE below) and ship the matching shell via release-ios.yml
+# first, or old shells will pull a bundle they can't run.
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   CLOUDFLARE_API_TOKEN     token with R2 write on the bucket below
+#   CLOUDFLARE_ACCOUNT_ID    Cloudflare account id
+# Required repo variable (optional; defaults below):
+#   OTA_R2_BUCKET            R2 bucket name bound to ota.gamestao.com (default: nivara-ota)
+
+on:
+  push:
+    tags:
+      - 'ota-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Bundle version, e.g. 1.2.3 (must be > the running bundle to be picked up)'
+        required: true
+        type: string
+
+env:
+  # Bump this when a bundle starts depending on native capability shipped in a newer shell.
+  MIN_NATIVE: '1.0.0'
+  OTA_R2_BUCKET: ${{ vars.OTA_R2_BUCKET || 'nivara-ota' }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            V="${{ github.event.inputs.version }}"
+          else
+            V="${GITHUB_REF_NAME#ota-v}"
+          fi
+          if [ -z "$V" ] || [ "$V" = "$GITHUB_REF_NAME" ]; then
+            echo "Could not resolve a version (ref=$GITHUB_REF_NAME)"; exit 1
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Publishing OTA bundle version: $V"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install dependencies
+        working-directory: client
+        run: npm ci
+
+      # Same mobile target as the App Store build (backend baked to api.gamestao.com); the only
+      # difference is NW_BUILD_VERSION, which the running bundle compares against the manifest.
+      - name: Build mobile bundle
+        working-directory: client
+        env:
+          NW_BUILD_VERSION: ${{ steps.ver.outputs.version }}
+          NW_API_BASE: https://api.gamestao.com/api
+          NW_GATEWAY_WS: wss://api.gamestao.com/gw
+          NW_WORLD_BASE: https://api.gamestao.com
+          NW_SOCIAL_BASE: https://api.gamestao.com
+        run: npm run build:mobile
+
+      - name: Zip bundle
+        working-directory: client/dist
+        run: zip -r -q "../${{ steps.ver.outputs.version }}.zip" .
+
+      - name: Write manifest
+        working-directory: client
+        run: |
+          cat > manifest.json << EOF
+          {
+            "version": "${{ steps.ver.outputs.version }}",
+            "url": "https://ota.gamestao.com/${{ steps.ver.outputs.version }}.zip",
+            "minNativeVersion": "${{ env.MIN_NATIVE }}"
+          }
+          EOF
+          cat manifest.json
+
+      - name: Upload bundle to R2
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Versioned zip: immutable, long-cacheable.
+          command: r2 object put ${{ env.OTA_R2_BUCKET }}/${{ steps.ver.outputs.version }}.zip --file=client/${{ steps.ver.outputs.version }}.zip --content-type=application/zip --remote
+
+      - name: Publish manifest to R2 (last, so it only points at an already-uploaded zip)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # manifest must never be cached, or clients keep seeing the old version.
+          command: r2 object put ${{ env.OTA_R2_BUCKET }}/manifest.json --file=client/manifest.json --content-type=application/json --cache-control="no-cache, must-revalidate" --remote
