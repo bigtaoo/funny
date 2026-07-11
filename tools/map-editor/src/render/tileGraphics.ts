@@ -9,7 +9,7 @@ import { ISO_RATIO, diamondPath } from './isoGrid';
 import { getResLevelTexture, getResTexture, isResAtlasReady } from './resAtlasLoader';
 import { getTerrainTexture, isTerrainAtlasReady } from './terrainAtlasLoader';
 import { getBuildingTexture, isBuildingAtlasReady } from './buildingAtlasLoader';
-import { terrainFill, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT } from './tileStyle';
+import { terrainFill, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT, RES_TEX_TINT } from './tileStyle';
 import type { TerrainTextureName } from './terrainAtlasLoader';
 import type { ProceduralTile } from '@nw/shared/slg';
 
@@ -24,9 +24,11 @@ export function drawEditorTile(g: PIXI.Graphics, tile: ProceduralTile, texName: 
     const h = w * ISO_RATIO;
     const m = new PIXI.Matrix(w / tex.width, 0, 0, h / tex.height, -w / 2, -h / 2);
     const texAlpha = TERRAIN_TEX_ALPHA[texName] ?? TERRAIN_TEX_ALPHA_DEFAULT;
-    // Resource type is carried entirely by the motif sprite — the ground keeps its plain terrain
-    // tint (no per-biome wash) so the map reads calm. Mirrors the game client's drawTileL1 (parity).
-    const texTint = TERRAIN_TEX_TINT[texName] ?? TERRAIN_TEX_TINT_DEFAULT;
+    // Resource tiles wash the ground toward their biome hue (RES_TEX_TINT) so same-resource zones
+    // read as faint colored regions at a glance (三战-style terrain legibility); non-resource terrain
+    // keeps its per-texture tint. Mirrors the game client's drawTileL1 (SLG map render parity).
+    const resTint = tile.type === 'resource' && tile.resType ? RES_TEX_TINT[tile.resType] : undefined;
+    const texTint = resTint ?? TERRAIN_TEX_TINT[texName] ?? TERRAIN_TEX_TINT_DEFAULT;
     g.beginTextureFill({ texture: tex, matrix: m, alpha: texAlpha, color: texTint });
   } else {
     g.beginFill(terrainFill(tile.type, tile.resType), 0.7);
@@ -91,6 +93,10 @@ export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, t
   // (resourceDensity=1.0 puts one on every tile); mirrors the game client (parity).
   const denom = levelTex ? tex.width : Math.max(tex.width, tex.height);
   sp.scale.set((tp * 0.40) / denom);
+  // Value hierarchy by opacity: resourceDensity=1.0 puts a heap on EVERY tile, so full-strength
+  // everywhere reads as uniform confetti. Fade low-level heaps and keep high-level ones solid so
+  // the eye picks out valuable tiles — lv1≈0.4 → lv10=1.0. Mirrors the game client (parity).
+  sp.alpha = 0.4 + 0.6 * ((lv - 1) / 9);
   [sp.x, sp.y] = toLocal(0.5, 0.52);
   g.addChild(sp);
 }

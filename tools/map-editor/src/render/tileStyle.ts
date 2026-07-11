@@ -38,11 +38,10 @@ export const TERRAIN_TEX_ALPHA: Partial<Record<TerrainTextureName, number>> = {
   terrain_river:    0.68,
 };
 
-// Per-resource biome tint for the ground of a `resource` tile. CURRENTLY UNUSED: the biome wash +
-// the per-level motif sprite were double-encoding resource type and made the map read busy, so
-// drawEditorTile dropped the wash (resource type is carried entirely by the motif) and the ground
-// keeps its plain terrain tint. Palette kept for possible overview-zoom reuse; mirrors the game
-// client's tileStyle.ts (SLG map render parity).
+// Per-resource biome tint for the ground of a `resource` tile — applied by drawEditorTile so
+// same-resource zones read as faint colored regions (三战-style terrain legibility) beneath the
+// per-level motif. Deliberately high-luminance & paper-adjacent so the wash whispers the biome
+// without competing with the motif. Mirrors the game client's tileStyle.ts (SLG map render parity).
 export const RES_TEX_TINT: Record<string, number> = {
   paper:    0xf1e6c0, // warm straw
   ink:      0xc6cfe8, // cool periwinkle
