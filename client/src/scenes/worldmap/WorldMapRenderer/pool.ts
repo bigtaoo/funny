@@ -115,7 +115,7 @@ export function PoolMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
           ? (tile?.obstacleKind ?? (proc ?? proceduralTile(this.ctx.cb.worldId, tx, ty)).obstacleKind)
           : undefined;
         const texName = terrainTextureName(effType, tx, ty, obstacleKind);
-        drawTileL1(g, tile ?? null, fill, owner, fogged, tp, isAnchor, texName, proc);
+        drawTileL1(g, tile ?? null, fill, owner, fogged, tp, isAnchor, texName, proc, tx, ty, this.ctx.cb.worldId);
       } else {
         drawTileL2(g, fill, owner, fogged, tp);
       }

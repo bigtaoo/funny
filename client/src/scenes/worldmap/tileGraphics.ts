@@ -6,23 +6,32 @@ import { getResLevelTexture, getResTexture, isResAtlasReady } from '../../render
 import { getTerrainTexture, isTerrainAtlasReady } from '../../render/terrainAtlasLoader';
 import { getBuildingTexture, isBuildingAtlasReady } from '../../render/buildingAtlasLoader';
 import { isCityAtlasReady } from '../../render/cityAtlasLoader';
-import { FOG_COLOR, ALLY_SECT_BORDER, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT, RES_TEX_TINT } from './tileStyle';
+import { FOG_COLOR, ALLY_SECT_BORDER, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT, biomeGroundTint } from './tileStyle';
 import type { TerrainTextureName } from '../../render/terrainAtlasLoader';
 import type { WorldTileView } from '../../net/WorldApiClient';
-import type { ProceduralTile } from '@nw/shared';
+import { worldSeed, type ProceduralTile } from '@nw/shared';
 
 export function drawTileL1(
   g: PIXI.Graphics, tile: WorldTileView | null,
   fill: number, owner: number | null, fogged: boolean, tp: number, isAnchor: boolean,
   texName: TerrainTextureName, proc: ProceduralTile | null = null,
+  tx = 0, ty = 0, worldId = '',
 ): void {
   const hh = (tp * ISO_RATIO) / 2;
   // Resource type of this tile (from live tile state, else the uncached procedural value) — drives
-  // BOTH the biome ground wash below and the motif sprite, so they stay in agreement.
+  // the motif sprite. May be the level-gated copper-mine override ('sticker'), which is a scattered
+  // per-tile special, NOT a spatial zone — so it must NOT drive the ground wash (see groundResType).
   const motifResType = tile?.type === 'resource' ? tile.resType : (!tile && proc?.type === 'resource' ? proc.resType : undefined);
+  // Ground wash uses the PURE biome, blended across zone boundaries (ignores the copper override,
+  // which is a scattered per-tile special, not a zone) so same-biome land reads as one continuous,
+  // gradiented region even where copper/sticker tiles poke through as icons — decouples "what color
+  // is this land" from "what's the copper roll for this one tile" (2026-07-11 continuity pass; the
+  // ~10-tile blend itself is 2026-07-11's follow-up, see biomeGroundTint/biomeMixAt). Must stay in
+  // lockstep with the map-editor's drawEditorTile (SLG map render parity).
+  const groundTint = motifResType ? biomeGroundTint(tx, ty, worldSeed(worldId)) : undefined;
   // Soft sketch grid, then the ground: hand-drawn texture fill once the atlas has
   // decoded, falling back to the flat desaturated color (see terrainFill) until then.
-  g.lineStyle(0.7, 0xccbbaa, 0.18);
+  g.lineStyle(0.7, 0xccbbaa, 0.08); // 0.18→0.08 (2026-07-11): at map-wide scale the per-tile grid was the strongest repeating signal on screen, competing with the biome/motif legibility pass
   const tex = isTerrainAtlasReady() ? getTerrainTexture(texName) : null;
   if (tex) {
     const w = tp - 1;
@@ -32,12 +41,12 @@ export function drawTileL1(
     // paper instead of dominating the map edges; other terrain stays near-opaque.
     const texAlpha = TERRAIN_TEX_ALPHA[texName] ?? TERRAIN_TEX_ALPHA_DEFAULT;
     // Faint colored-pencil tint multiplied into the grey ground art (see TERRAIN_TEX_TINT).
-    // Resource tiles wash the ground toward their biome hue (RES_TEX_TINT) so same-resource
-    // zones read as colored regions at a glance (三战-style terrain legibility); the tints are
-    // faint & paper-adjacent, so the map stays calm and ownership remains the only strong color.
+    // Resource tiles wash the ground toward their biome hue (RES_TEX_TINT) so same-biome zones read
+    // as continuous colored regions at a glance (三战-style terrain legibility); the tints are faint
+    // & paper-adjacent, so the map stays calm and ownership remains the only strong color.
     // Non-resource terrain (land/obstacle/keep/…) keeps its per-texture tint. Must stay in
     // lockstep with the map-editor's drawEditorTile (SLG map render parity).
-    const texTint = (motifResType && RES_TEX_TINT[motifResType]) ?? TERRAIN_TEX_TINT[texName] ?? TERRAIN_TEX_TINT_DEFAULT;
+    const texTint = groundTint ?? TERRAIN_TEX_TINT[texName] ?? TERRAIN_TEX_TINT_DEFAULT;
     g.beginTextureFill({ texture: tex, matrix: m, alpha: texAlpha, color: texTint });
   } else {
     g.beginFill(fill, 0.7);
@@ -372,9 +381,11 @@ export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, t
   sp.scale.set((tp * 0.40) / denom);
   // Value hierarchy by opacity: with resourceDensity=1.0 a heap sits on EVERY tile, so drawing
   // them all at full strength reads as uniform confetti. Fading low-level heaps (and keeping
-  // high-level ones solid) lets the eye pick out the tiles worth fighting for — lv1≈0.4 → lv10=1.0.
-  // Must stay in lockstep with the map-editor's drawResMotif (SLG map render parity).
-  sp.alpha = 0.4 + 0.6 * ((lv - 1) / 9);
+  // high-level ones solid) lets the eye pick out the tiles worth fighting for — lv1≈0.65 → lv10=1.0.
+  // Floor raised 0.4→0.65 (2026-07-11 legibility pass): most tiles sit at low levels, so the old
+  // floor made the majority of motifs read as barely-there. Must stay in lockstep with the
+  // map-editor's drawResMotif (SLG map render parity).
+  sp.alpha = 0.65 + 0.35 * ((lv - 1) / 9);
   [sp.x, sp.y] = toLocal(0.5, 0.52);
   g.addChild(sp);
 }

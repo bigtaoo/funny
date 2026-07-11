@@ -7,7 +7,7 @@
 // publishing — the exact same function drives both, so "what you see" and "what gets published" can
 // never drift apart.
 import * as PIXI from 'pixi.js-legacy';
-import { BASE_FOOTPRINT, MAP_TEMPLATE_SAVE_MAX_TILES, proceduralTile, rasterizeMapEdits, SLG_MAP_H, SLG_MAP_MAX_LEVEL, SLG_MAP_W, type MapTemplateSummary, type MapTemplateTile, type ObstacleKind, type ResourceType, type TileType } from '@nw/shared/slg';
+import { BASE_FOOTPRINT, citySpriteTiles, cityGroundFwdPx, cityPlotMaskPoints, MAP_TEMPLATE_SAVE_MAX_TILES, proceduralTile, rasterizeMapEdits, SLG_MAP_H, SLG_MAP_MAX_LEVEL, SLG_MAP_W, type MapTemplateSummary, type MapTemplateTile, type ObstacleKind, type ResourceType, type TileType } from '@nw/shared/slg';
 import { randomDefaultWidth, TerrainGridStore, type TerrainKind, type TilePoint } from './state/terrainGrid';
 import { CityStore, type MapEditorCityNode } from './state/cities';
 import { Api, ApiError } from './api';
@@ -281,7 +281,7 @@ function renderBaseMap(worldId: string): void {
       g.x = s.x;
       g.y = s.y;
       g.zIndex = tx + ty;
-      drawEditorTile(g, tile, texName, tp);
+      drawEditorTile(g, tile, texName, tp, tx, ty, worldId);
       baseLayer.addChild(g);
       tileGraphicsCache.set(key, { g, sig });
       count++;
@@ -320,10 +320,10 @@ function loadCitiesAndRedraw(worldId: string): void {
  * Rebuilds the per-level city building sprites (city_atlas art) from cityStore.nodes — the same visuals the
  * game renders (DESIGN.md §6.3 art-parity). Cheap (~70 nodes) and deliberately NOT called on every
  * terrain-brush tick: cities don't move while painting, so this only runs on seed/zoom/city-position changes.
- * Sprite width = (footprint/BASE_FOOTPRINT) × BASE_SPRITE_TILES tiles — LINEAR in footprint so every city
- * fills its own plot the same way a player base fills its 3×3 (footprint 3 → 3.2 tiles, unchanged). Mirrors
- * the game client's WorldMapRenderer city layer. (Was √-scaled, which under-filled big plots — a 9×9 world
- * center reached only ~5.5 tiles and left most of its ground exposed.)
+ * Sprite width = citySpriteTiles(footprint, BASE_SPRITE_TILES) tiles — LINEAR in footprint so every city
+ * fills its own plot the same way a player base fills its 3×3 (footprint 3 → 3.2 tiles, unchanged).
+ * Placement math now lives in @nw/shared (citySpriteTiles / cityGroundFwdPx) — single source of truth
+ * shared with the game client's WorldMapRenderer city layer, so the two can't drift out of lockstep again.
  */
 function refreshCitySprites(): void {
   citySpriteLayer.removeChildren().forEach((c) => c.destroy({ children: true }));
@@ -332,22 +332,31 @@ function refreshCitySprites(): void {
     const tex = getCityTextureForLevel(node.level);
     if (!tex) continue;
     const sp = new PIXI.Sprite(tex);
-    // Bottom-center anchor between the plot CENTER and its front vertex (matches the game client's
-    // WorldMapRenderer city layer): the atlas art is now bottom-aligned (pack_city_atlas.js sits every
+    // Bottom-center anchor at the plot's own front vertex (cityGroundFwdPx — matches the game client's
+    // WorldMapRenderer city layer): the atlas art is bottom-aligned (pack_city_atlas.js sits every
     // building's foot on the cell's bottom edge), so the anchor lands the foot on the plot uniformly.
-    // groundFwd nudges it 55% toward the front vertex so it reads as planted with only a small
-    // forecourt apron, while staying back far enough that the wide base never covers front resource
-    // tiles (the tall body rises up-and-back, occluding only back tiles — correct isometric depth).
     sp.anchor.set(0.5, 1);
     const s = tileToScreen(node.x, node.y, tp);
-    const groundFwd = (node.footprint * tp * ISO_RATIO) / 2 * 0.55;
+    const groundFwd = cityGroundFwdPx(node.footprint, tp, ISO_RATIO);
     sp.x = s.x;
     sp.y = s.y + groundFwd;
     sp.zIndex = node.x + node.y;
-    const spriteTiles = (node.footprint / BASE_FOOTPRINT) * BASE_SPRITE_TILES;
+    const spriteTiles = citySpriteTiles(node.footprint, BASE_SPRITE_TILES);
     sp.width = spriteTiles * tp;
     sp.height = spriteTiles * tp;
-    citySpriteLayer.addChild(sp);
+
+    // Clip to the plot's own diamond (cityPlotMaskPoints, @nw/shared): the sprite is deliberately ~7%
+    // wider than the footprint and its own diamond tapers to a point at the front vertex, so without
+    // this mask the sprite bleeds onto a neighbouring resource tile — ambiguous to a player deciding
+    // whether that tile is still capturable. Matches the game client's WorldMapRenderer city layer.
+    const plotMask = new PIXI.Graphics();
+    plotMask.x = sp.x;
+    plotMask.y = sp.y;
+    plotMask.beginFill(0xffffff);
+    plotMask.drawPolygon(cityPlotMaskPoints(node.footprint, tp, ISO_RATIO, spriteTiles * tp));
+    plotMask.endFill();
+    sp.mask = plotMask;
+    citySpriteLayer.addChild(plotMask, sp);
   }
 }
 

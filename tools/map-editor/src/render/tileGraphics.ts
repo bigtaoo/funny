@@ -9,26 +9,28 @@ import { ISO_RATIO, diamondPath } from './isoGrid';
 import { getResLevelTexture, getResTexture, isResAtlasReady } from './resAtlasLoader';
 import { getTerrainTexture, isTerrainAtlasReady } from './terrainAtlasLoader';
 import { getBuildingTexture, isBuildingAtlasReady } from './buildingAtlasLoader';
-import { terrainFill, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT, RES_TEX_TINT } from './tileStyle';
+import { terrainFill, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT, biomeGroundTint } from './tileStyle';
 import type { TerrainTextureName } from './terrainAtlasLoader';
-import type { ProceduralTile } from '@nw/shared/slg';
+import { worldSeed, type ProceduralTile } from '@nw/shared/slg';
 
 /** Ground + motif + landmark for one tile. `g`'s local origin is the tile's diamond center. */
-export function drawEditorTile(g: PIXI.Graphics, tile: ProceduralTile, texName: TerrainTextureName, tp: number): void {
+export function drawEditorTile(g: PIXI.Graphics, tile: ProceduralTile, texName: TerrainTextureName, tp: number, tx = 0, ty = 0, worldId = ''): void {
   const hh = (tp * ISO_RATIO) / 2;
 
-  g.lineStyle(0.7, 0xccbbaa, 0.18);
+  g.lineStyle(0.7, 0xccbbaa, 0.08); // 0.18→0.08 (2026-07-11 legibility pass). Mirrors the game client (parity).
   const tex = isTerrainAtlasReady() ? getTerrainTexture(texName) : null;
   if (tex) {
     const w = tp - 1;
     const h = w * ISO_RATIO;
     const m = new PIXI.Matrix(w / tex.width, 0, 0, h / tex.height, -w / 2, -h / 2);
     const texAlpha = TERRAIN_TEX_ALPHA[texName] ?? TERRAIN_TEX_ALPHA_DEFAULT;
-    // Resource tiles wash the ground toward their biome hue (RES_TEX_TINT) so same-resource zones
-    // read as faint colored regions at a glance (三战-style terrain legibility); non-resource terrain
-    // keeps its per-texture tint. Mirrors the game client's drawTileL1 (SLG map render parity).
-    const resTint = tile.type === 'resource' && tile.resType ? RES_TEX_TINT[tile.resType] : undefined;
-    const texTint = resTint ?? TERRAIN_TEX_TINT[texName] ?? TERRAIN_TEX_TINT_DEFAULT;
+    // Resource tiles wash the ground toward their PURE biome hue, blended across zone boundaries
+    // (ignoring the level-gated copper/sticker override, which is a scattered per-tile special, not
+    // a zone) so same-biome zones read as one continuous gradiented region even where scattered
+    // copper tiles poke through as icons — mirrors the game client's drawTileL1 (SLG map render
+    // parity, 2026-07-11 continuity pass + 10-tile blend follow-up).
+    const groundTint = tile.type === 'resource' && tile.resType ? biomeGroundTint(tx, ty, worldSeed(worldId)) : undefined;
+    const texTint = groundTint ?? TERRAIN_TEX_TINT[texName] ?? TERRAIN_TEX_TINT_DEFAULT;
     g.beginTextureFill({ texture: tex, matrix: m, alpha: texAlpha, color: texTint });
   } else {
     g.beginFill(terrainFill(tile.type, tile.resType), 0.7);
@@ -95,8 +97,9 @@ export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, t
   sp.scale.set((tp * 0.40) / denom);
   // Value hierarchy by opacity: resourceDensity=1.0 puts a heap on EVERY tile, so full-strength
   // everywhere reads as uniform confetti. Fade low-level heaps and keep high-level ones solid so
-  // the eye picks out valuable tiles — lv1≈0.4 → lv10=1.0. Mirrors the game client (parity).
-  sp.alpha = 0.4 + 0.6 * ((lv - 1) / 9);
+  // the eye picks out valuable tiles — lv1≈0.65 → lv10=1.0. Floor raised 0.4→0.65 (2026-07-11
+  // legibility pass). Mirrors the game client (parity).
+  sp.alpha = 0.65 + 0.35 * ((lv - 1) / 9);
   [sp.x, sp.y] = toLocal(0.5, 0.52);
   g.addChild(sp);
 }
