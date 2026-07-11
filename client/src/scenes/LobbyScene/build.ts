@@ -21,6 +21,7 @@ import {
   C, txt, fmtCoins, sketchPanel, drawBtn, buildBackground, randomAiName,
   type Constructor, type LobbySceneBaseCtor,
 } from './base';
+import { headerMetrics } from './format';
 
 export interface BuildHandlers {
   build(): void;
@@ -169,17 +170,19 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       wear.alpha = 0.55;
       this.container.addChild(wear);
 
-      // Header block — two stacked rows so the brand lockup never competes with
-      // the corner chips for the same horizontal band (the centered logo+title is
-      // wider than the gap between the left profile chip and the right account
-      // chip, so co-locating them clipped/overlapped on narrow portrait widths):
-      //   · chip band (top)  — profile chip (left) + account chip (right); its
-      //                        geometry is unchanged from the old single-row header.
-      //   · brand row (below) — centered shield-crest logo (ADR-027) + "Nivara"
-      //                        title + tagline, clear of both chips.
-      const chipBandH = Math.round(h * 0.16);
-      const brandRowH = Math.round(h * 0.09);
-      const tbH = chipBandH + brandRowH;
+      // Header block. Two orientations, two shapes:
+      //   · Landscape (wide) — the classic SINGLE row: chips at the corners and the
+      //     centered logo+title lockup share one horizontal band. There is ample
+      //     width, so the lockup never reaches the chips.
+      //   · Portrait (narrow) — the lockup is wider than the gap between the two
+      //     corner chips, so it is dropped to its OWN row below the chip band; the
+      //     chip band keeps the same geometry as the landscape single row.
+      // `chipBandH` is the band whose vertical midline the corner chips center on;
+      // `brandMidY`/`logoSize` position the brand lockup; `tbH` is the total dark
+      // header height. In landscape chipBandH === tbH (one shared band). All the
+      // math lives in the PIXI-free headerMetrics() so it can be unit-tested.
+      const { chipBandH, tbH, brandMidY, logoSize, subtitleY, nameMaxFactor, ulH } =
+        headerMetrics(w, h, this.portrait);
       const titleBg = new PIXI.Graphics();
       titleBg.beginFill(C.dark);
       titleBg.drawRect(0, 0, w, tbH);
@@ -190,15 +193,12 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       title.anchor.set(0, 0.5);
 
       const subtitle = txt(t('lobby.subtitle'), Math.round(h * 0.022), C.light);
-      subtitle.anchor.set(0.5, 0.5); subtitle.y = chipBandH + Math.round(brandRowH * 0.82);
+      subtitle.anchor.set(0.5, 0.5); subtitle.y = subtitleY;
       this.container.addChild(subtitle);
 
-      // Center the logo+title lockup on the brand row's midline. On its own row the
-      // lockup can use nearly the full width; scale the title down only if the
-      // lockup would still exceed ~90% of the width (so it never clips the edges —
-      // long brand strings run wide in monospace).
-      const brandMidY = chipBandH + Math.round(brandRowH * 0.34);
-      const logoSize = Math.round(brandRowH * 0.9);
+      // Center the logo+title lockup on its midline. Scale the title down only if the
+      // lockup would exceed ~90% of the width (so it never clips the edges — long
+      // brand strings run wide in monospace).
       const logoGap = Math.round(w * 0.015);
       const maxTitleW = Math.round(w * 0.9) - logoSize - logoGap;
       if (title.width > maxTitleW) title.scale.set(maxTitleW / title.width);
@@ -231,8 +231,9 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       nameLabel.anchor.set(0, 0.5);
       nameLabel.x = avX + av + nameGap;
       nameLabel.y = chipBandH * 0.5;
-      // Keep the chip within its half of the band (the brand lockup is a row below now).
-      const nameMax = w * 0.5 - (av + nameGap);
+      // Keep the profile chip clear of the brand lockup (portrait: half the band;
+      // landscape: leave room for the centered lockup).
+      const nameMax = w * nameMaxFactor - (av + nameGap);
       if (nameLabel.width > nameMax) nameLabel.scale.set(nameMax / nameLabel.width);
       this.container.addChild(nameLabel);
 
@@ -245,7 +246,6 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       // Boiling-line title underline (art-direction §5.4) — a hand-drawn marker
       // stroke that subtly wobbles ~8fps. Cycles baked variants; near-zero cost.
       const ulW = Math.min(w * 0.6, title.width * 1.15);
-      const ulH = Math.round(h * 0.015);
       this.titleBoil = new BoilingSprite(ulW, ulH, (pen) => {
         pen.stroke(
           [{ x: 2, y: ulH * 0.5 }, { x: ulW - 2, y: ulH * 0.5 }],

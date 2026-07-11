@@ -150,6 +150,7 @@ Collection  Stats     Lobby    Shop/Gacha    Room
     3. 最终方案（本次）：新增 `StickmanRuntime.getRenderedLocalBounds()`——**在姿势已应用、排除影子（新增构造参数 `showShadow:false`）、跨所有 clip 全部关键帧取并集**的前提下测量真实渲染像素框；再经纯函数 `render/fitToBox.ts` `fitContentToBox(bounds, box, 0.90)` 拟合：渲染高度 = 按钮高度的 **90%**，且缩放与居中**全部基于实测框、绝不假设原点**，故六角色同高且真正上下居中于黑色按钮框内。拟合数学有单测兜底 `test/fitToBox.test.ts`（含"原点两侧不对称溢出仍 90%+居中""不同框同高"两条针对上述回归的断言）；`getRenderedLocalBounds` 对真实 `.tao` 的测量需真 PIXI 渲染器，本项目 node 测试环境 mock 掉了 PIXI，故该半仅靠 webpack 构建 + 肉眼确认。
 
 - **标题栏改双行（2026-07-11）**：原单行标题栏把「左上头像 chip + 居中 logo+品牌标题 lockup + 右上登录/段位 chip」全挤在同一水平带，品牌 lockup 比左右两 chip 之间的空隙宽，在窄竖屏（1080 设计宽）下会左右裁切/压到两侧 chip——高瘦屏动态设计高度把按 `h` 缩放的字号进一步放大后更明显。改为上下两带：**上带 chipBandH=`h*0.16`**（头像 chip + 账号 chip，几何与旧单行完全一致）+ **下带 brandRowH=`h*0.09`**（居中 logo+品牌标题+副标题，独占一行不与 chip 争水平带）；品牌 lockup 只在超过宽度 90% 时才缩放（`title.scale`），故任意宽度都不裁边。深色标题栏背景高度 = 两带之和；下方主内容栈起点 `usableTop=tbH` 随之下移，用回竖屏多出来的纵向空间。见 `LobbyScene/build.ts`。
+- **双行仅限竖屏（2026-07-11 修正）**：上述两带改造起初**无条件对所有朝向生效**，导致横屏（空间充裕、单行本就成立）也被套上两行——logo 从 `tbH*0.9` 缩到 `brandRowH*0.9`（约小 44%）、品牌带下沉、标题栏更高，属回归。现按 `layout.orientation` 分支：**横屏走原单行**（`chipBandH===tbH`、logo `tbH*0.9`、中线 `tbH*0.45`，与两带改造前逐值一致），**竖屏走两行**。几何计算抽成 PIXI-free 纯函数 `LobbyScene/format.ts` `headerMetrics(w,h,portrait)`，单测 `test/lobbyHeader.test.ts`（横屏单带、横屏还原大 logo、竖屏两带、竖屏取舍 4 例）。教训：竖屏专项修复必须按朝向分支，勿无条件套到横屏。
 - **LoginScene 离线提示换行（2026-07-11）**：`auth.offlineHint`（EN/DE 较长，monospace 下超 1080 设计宽）改用 `txt(..., wordWrapWidth=w*0.86)` + 居中对齐，两行排版，不再左右裁切。
 
 ### 4.2 RoomScene（好友房，S1）
