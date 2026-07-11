@@ -540,6 +540,7 @@ export function simulateLevel(levelOrId: string | LevelDefinition, opts: SimOpti
         elapsedTicks: summary.elapsedTicks,
         enemyLeaks: summary.enemyLeaks,
         escortMinHpPct: summary.escortMinHpPct,
+        unitsKilled: endStats[0].unitsKilled,
       }))
     : 0;
 

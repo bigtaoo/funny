@@ -23,13 +23,15 @@ const SPEED_FLOOR_MULT = 1.05;
 const SPEED_PAR_MULT = 1.6;
 
 /** Per-objective sub-score weights (each row sums to 1). See STAR_SCORING.md. */
-const WEIGHTS: Record<ObjectiveSpec['kind'], { hp: number; speed: number; leak: number }> = {
-  survive:       { hp: 0.5,  speed: 0.5,  leak: 0 },
-  destroy_base:  { hp: 0.35, speed: 0.65, leak: 0 },
-  boss:          { hp: 0.4,  speed: 0.6,  leak: 0 },
-  timed_defense: { hp: 1.0,  speed: 0,    leak: 0 }, // fixed duration → speed meaningless
-  leak_limit:    { hp: 0.4,  speed: 0,    leak: 0.6 },
-  escort:        { hp: 0.6,  speed: 0.4,  leak: 0 }, // hp = escort survival, not base
+const WEIGHTS: Record<ObjectiveSpec['kind'], { hp: number; speed: number; leak: number; kill: number }> = {
+  survive:       { hp: 0.5,  speed: 0.5,  leak: 0,   kill: 0 },
+  destroy_base:  { hp: 0.35, speed: 0.65, leak: 0,   kill: 0 },
+  boss:          { hp: 0.4,  speed: 0.6,  leak: 0,   kill: 0 },
+  // Fixed duration → speed is meaningless; the kill sub-score (share of the wave wiped out)
+  // separates a dominant clear from a barely-held turtle so the gradient survives.
+  timed_defense: { hp: 0.5,  speed: 0,    leak: 0,   kill: 0.5 },
+  leak_limit:    { hp: 0.4,  speed: 0,    leak: 0.6, kill: 0 },
+  escort:        { hp: 0.6,  speed: 0.4,  leak: 0,   kill: 0 }, // hp = escort survival, not base
 };
 
 /**
@@ -52,6 +54,10 @@ export interface StarContext {
   leakBudget: number;
   /** escort: lowest escort survival ratio 0..100; null when the level has no escorts. */
   escortHpPct: number | null;
+  /** timed_defense: enemy units the player destroyed (stats.unitsKilled). */
+  unitsKilled: number;
+  /** timed_defense: enemies spawnable within the objective window; kill ratio denominator (≥1 placeholder). */
+  totalEnemies: number;
 }
 
 const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
@@ -73,12 +79,29 @@ export function deriveParTicks(level: LevelDefinition): { floorTicks: number; pa
 }
 
 /**
+ * Count enemies the player is expected to face — the kill-ratio denominator for timed_defense.
+ * For timed_defense only units that spawn strictly before the timer expires count (a wave scripted
+ * past the timer never appears, so it must not deflate the ratio); other objectives sum every unit.
+ */
+export function countEnemies(level: LevelDefinition): number {
+  const cutoff = level.objective.kind === 'timed_defense' ? level.objective.durationTicks : Infinity;
+  let n = 0;
+  for (const w of level.waves.entries) {
+    const spacing = w.spacingTicks ?? 0;
+    for (let i = 0; i < w.count; i++) {
+      if (w.atTick + i * spacing < cutoff) n++;
+    }
+  }
+  return n;
+}
+
+/**
  * Assemble a StarContext from the level + match end state. Single source so client / judge / sim
  * never drift. `escortMinHpPct` is null for non-escort levels.
  */
 export function buildStarContext(
   level: LevelDefinition,
-  end: { damageTakenByBase: number; elapsedTicks: number; enemyLeaks: number; escortMinHpPct: number | null },
+  end: { damageTakenByBase: number; elapsedTicks: number; enemyLeaks: number; escortMinHpPct: number | null; unitsKilled: number },
 ): StarContext {
   const { floorTicks, parTicks } = deriveParTicks(level);
   const obj = level.objective;
@@ -91,6 +114,8 @@ export function buildStarContext(
     enemyLeaks: end.enemyLeaks,
     leakBudget: obj.kind === 'leak_limit' ? Math.max(1, obj.maxLeaks) : 1,
     escortHpPct: end.escortMinHpPct,
+    unitsKilled: end.unitsKilled,
+    totalEnemies: Math.max(1, countEnemies(level)),
   };
 }
 
@@ -107,7 +132,8 @@ export function computeStarScore(ctx: StarContext): number {
     ? clamp01((ctx.parTicks - ctx.elapsedTicks) / (ctx.parTicks - ctx.floorTicks))
     : 1;
   const leakScore = ctx.leakBudget > 0 ? clamp01(1 - ctx.enemyLeaks / ctx.leakBudget) : 1;
-  return w.hp * hpScore + w.speed * speedScore + w.leak * leakScore;
+  const killScore = ctx.totalEnemies > 0 ? clamp01(ctx.unitsKilled / ctx.totalEnemies) : 0;
+  return w.hp * hpScore + w.speed * speedScore + w.leak * leakScore + w.kill * killScore;
 }
 
 /**

@@ -3,6 +3,7 @@ import {
   computeStars,
   computeStarScore,
   deriveParTicks,
+  countEnemies,
   buildStarContext,
   remainingHpPct,
   type StarContext,
@@ -16,7 +17,7 @@ import type { LevelDefinition } from '@nw/engine';
 /** Build a StarContext with sensible defaults, overriding only the fields a case cares about. */
 function ctx(over: Partial<StarContext>): StarContext {
   return {
-    objectiveKind: 'timed_defense', // wHp=1 → score == hpScore, the simplest axis to reason about
+    objectiveKind: 'timed_defense',
     remainingHpPct: 100,
     elapsedTicks: 0,
     floorTicks: 100,
@@ -24,6 +25,8 @@ function ctx(over: Partial<StarContext>): StarContext {
     enemyLeaks: 0,
     leakBudget: 1,
     escortHpPct: null,
+    unitsKilled: 0,
+    totalEnemies: 1,
     ...over,
   };
 }
@@ -31,14 +34,16 @@ function ctx(over: Partial<StarContext>): StarContext {
 describe('computeStars — composite score → stars', () => {
   const THR: [number, number, number] = [1, 50, 80];
 
-  it('timed_defense (hp-only): remaining HP% maps straight to the score axis', () => {
-    expect(computeStars(THR, ctx({ remainingHpPct: 100 }))).toBe(3); // score 100 ≥ 80
-    expect(computeStars(THR, ctx({ remainingHpPct: 60 }))).toBe(2);  // score 60 ∈ [50,80)
-    expect(computeStars(THR, ctx({ remainingHpPct: 30 }))).toBe(1);  // score 30 ∈ [1,50)
+  it('timed_defense blends base HP + wipe-out ratio (no speed axis on a fixed timer)', () => {
+    // hp .5 + kill .5. Hold the line AND wipe the wave → 3★; barely hold (killed nothing) → 2★.
+    expect(computeStars(THR, ctx({ remainingHpPct: 100, unitsKilled: 10, totalEnemies: 10 }))).toBe(3); // 0.5+0.5=1.0
+    expect(computeStars(THR, ctx({ remainingHpPct: 100, unitsKilled: 0, totalEnemies: 10 }))).toBe(2);  // 0.5+0.0=0.5
+    expect(computeStars(THR, ctx({ remainingHpPct: 40, unitsKilled: 10, totalEnemies: 10 }))).toBe(2);  // 0.2+0.5=0.7
+    expect(computeStars(THR, ctx({ remainingHpPct: 40, unitsKilled: 0, totalEnemies: 10 }))).toBe(1);   // 0.2+0.0=0.2
   });
 
   it('floors any clear (base alive) to 1★ even below the first upgrade threshold', () => {
-    expect(computeStars(THR, ctx({ remainingHpPct: 5 }))).toBe(1);
+    expect(computeStars(THR, ctx({ remainingHpPct: 5, unitsKilled: 0, totalEnemies: 10 }))).toBe(1);
   });
 
   it('returns 0★ only when the base was destroyed (HP ≤ 0)', () => {
@@ -47,7 +52,7 @@ describe('computeStars — composite score → stars', () => {
   });
 
   it('falls back to 1★ on clear when no thresholds given', () => {
-    expect(computeStars(undefined, ctx({ remainingHpPct: 100 }))).toBe(1);
+    expect(computeStars(undefined, ctx({ remainingHpPct: 100, unitsKilled: 10, totalEnemies: 10 }))).toBe(1);
   });
 
   it('survive blends hp + speed: a flawless-defense clear still differentiates on clear speed', () => {
@@ -62,7 +67,6 @@ describe('computeStars — composite score → stars', () => {
   });
 
   it('destroy_base rewards rushing: clearing before the last spawn caps speed at 1.0', () => {
-    // elapsed < floor → speed clamps to 1; hp=100 → score 1.0 → 3★.
     expect(computeStars(THR, ctx({
       objectiveKind: 'destroy_base', remainingHpPct: 100, elapsedTicks: 40, floorTicks: 100, parTicks: 200,
     }))).toBe(3);
@@ -76,7 +80,6 @@ describe('computeStars — composite score → stars', () => {
   });
 
   it('escort scores on escort survival, not base HP', () => {
-    // base untouched but escort barely survived → low score.
     expect(computeStars(THR, ctx({
       objectiveKind: 'escort', remainingHpPct: 100, escortHpPct: 10, elapsedTicks: 200, floorTicks: 100, parTicks: 200,
     }))).toBe(1); // hp 0.1*0.6 + speed 0 = 0.06 → 1★ floor
@@ -86,22 +89,32 @@ describe('computeStars — composite score → stars', () => {
   });
 });
 
-describe('computeStarScore — speed sub-score window', () => {
-  it('clamps to [0,1] across the floor→par window', () => {
+describe('computeStarScore — sub-score windows', () => {
+  it('speed clamps to [0,1] across the floor→par window (survive)', () => {
     const mk = (elapsed: number) => computeStarScore(ctx({
       objectiveKind: 'survive', remainingHpPct: 0, elapsedTicks: elapsed, floorTicks: 100, parTicks: 200,
     }));
-    // hp=0 so score == 0.5 * speed. floor→1, mid→0.5, par→0.
-    expect(mk(100)).toBeCloseTo(0.5);   // speed 1
+    expect(mk(100)).toBeCloseTo(0.5);   // speed 1 → 0.5*1
     expect(mk(150)).toBeCloseTo(0.25);  // speed 0.5
     expect(mk(200)).toBeCloseTo(0);     // speed 0
     expect(mk(300)).toBeCloseTo(0);     // clamped
+  });
+
+  it('kill ratio clamps to [0,1] (timed_defense)', () => {
+    const mk = (killed: number) => computeStarScore(ctx({
+      objectiveKind: 'timed_defense', remainingHpPct: 0, unitsKilled: killed, totalEnemies: 20,
+    }));
+    expect(mk(0)).toBeCloseTo(0);      // 0.5*0
+    expect(mk(10)).toBeCloseTo(0.25);  // 0.5*0.5
+    expect(mk(20)).toBeCloseTo(0.5);   // 0.5*1
+    expect(mk(40)).toBeCloseTo(0.5);   // clamped
   });
 });
 
 describe('deriveParTicks — from wave script', () => {
   it('uses the last enemy spawn tick and relative multipliers', () => {
     const level = {
+      objective: { kind: 'survive' },
       waves: { entries: [
         { atTick: 120, unitType: 'max', col: 4, count: 2, spacingTicks: 24 },   // last @ 144
         { atTick: 600, unitType: 'max', col: 7, count: 3, spacingTicks: 30 },   // last @ 660
@@ -114,17 +127,45 @@ describe('deriveParTicks — from wave script', () => {
   });
 });
 
+describe('countEnemies — kill-ratio denominator', () => {
+  it('sums every unit for non-timed objectives', () => {
+    const level = {
+      objective: { kind: 'survive' },
+      waves: { entries: [
+        { atTick: 100, unitType: 'max', col: 1, count: 3, spacingTicks: 30 },
+        { atTick: 900, unitType: 'max', col: 2, count: 2 },
+      ] },
+    } as unknown as LevelDefinition;
+    expect(countEnemies(level)).toBe(5);
+  });
+
+  it('excludes units scripted past the timer for timed_defense', () => {
+    const level = {
+      objective: { kind: 'timed_defense', durationTicks: 200 },
+      waves: { entries: [
+        { atTick: 100, unitType: 'max', col: 1, count: 3, spacingTicks: 60 }, // @100,160,220 → 2 in window
+        { atTick: 900, unitType: 'max', col: 2, count: 5 },                    // all past 200 → 0
+      ] },
+    } as unknown as LevelDefinition;
+    expect(countEnemies(level)).toBe(2);
+  });
+});
+
 describe('buildStarContext', () => {
-  it('wires leak budget from the leak_limit objective and escort HP through', () => {
+  it('wires leak budget, kill denominator, and hp through', () => {
     const level = {
       objective: { kind: 'leak_limit', maxLeaks: 8 },
-      waves: { entries: [{ atTick: 300, unitType: 'max', col: 1, count: 1 }] },
+      waves: { entries: [{ atTick: 300, unitType: 'max', col: 1, count: 4 }] },
     } as unknown as LevelDefinition;
-    const c = buildStarContext(level, { damageTakenByBase: 40, elapsedTicks: 500, enemyLeaks: 3, escortMinHpPct: null });
+    const c = buildStarContext(level, {
+      damageTakenByBase: 40, elapsedTicks: 500, enemyLeaks: 3, escortMinHpPct: null, unitsKilled: 2,
+    });
     expect(c.objectiveKind).toBe('leak_limit');
     expect(c.remainingHpPct).toBe(60);
     expect(c.leakBudget).toBe(8);
     expect(c.enemyLeaks).toBe(3);
+    expect(c.unitsKilled).toBe(2);
+    expect(c.totalEnemies).toBe(4);
   });
 });
 

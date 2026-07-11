@@ -121,6 +121,7 @@ function runPveJudge(req: JudgeRequest): JudgeOutcome {
       elapsedTicks: summary.elapsedTicks,
       enemyLeaks: summary.enemyLeaks,
       escortMinHpPct: summary.escortMinHpPct,
+      unitsKilled: stats[0].unitsKilled,
     });
     const stars = computeStars(level.rewards?.starThresholds, ctx);
     // PvE feed (S9-3b): cleared (player owner 0 wins) → report the player's achievement stats for this match. Judge is authoritative; meta accumulates after L1 verification.

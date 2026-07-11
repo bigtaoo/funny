@@ -27,6 +27,12 @@
 | `hpScore` | `remainingHpPct / 100` | `stats[0].damageTakenByBase`（护送关改用护送单位残血% `escortHpPct`）|
 | `speedScore` | `clamp((parTicks − elapsedTicks) / (parTicks − floorTicks), 0, 1)` | `elapsedTicks` + 从 `waves` 推导的 par |
 | `leakScore` | `1 − clamp(enemyLeaks / leakBudget, 0, 1)` | `enemyLeaks` + `objective.maxLeaks` |
+| `killScore` | `clamp(unitsKilled / totalEnemies, 0, 1)` | `stats[0].unitsKilled` + `countEnemies(level)`（timed_defense 只算计时内应刷的敌人）|
+
+**为什么 timed_defense 需要 `killScore`**：这类关时长固定 → 用时恒 = `durationTicks`，speed 无意义；
+而基地不回血，所有 HP 类指标都塌成同一个「终局残血」→ 偏易时又是二极化。歼灭率（清掉整波的
+比例）是唯一能在「基地满血」时仍区分「压制清场 vs 勉强堵住」的技术轴，故 timed_defense 用
+hp + kill 各半。`unitsKilled` 已在 `PlayerStats`，三处调用点都拿得到，**无需额外引擎 plumbing**。
 
 ### par-time 推导（纯从 waves 推，无需 authored 字段）
 
@@ -44,14 +50,14 @@ parTicks      = lastSpawnTick * SPEED_PAR_MULT     // ≥ 此用时 → speedSco
 
 ### 按关型加权（权重和 = 1）
 
-| 关型 | wHp | wSpeed | wLeak | 说明 |
-|---|---|---|---|---|
-| `survive` | 0.5 | 0.5 | — | 守稳 + 清快 |
-| `destroy_base` | 0.35 | 0.65 | — | 主看多快攻破敌方本阵 |
-| `boss` | 0.4 | 0.6 | — | 速杀 boss |
-| `timed_defense` | 1.0 | — | — | 时长固定、速度无意义；靠少失血分档（难度上调后成活梯度）|
-| `leak_limit` | 0.4 | — | 0.6 | 漏得越少越高 |
-| `escort` | 0.6 | 0.4 | — | hp 分 = 护送单位残血%，再叠通关速度 |
+| 关型 | wHp | wSpeed | wLeak | wKill | 说明 |
+|---|---|---|---|---|---|
+| `survive` | 0.5 | 0.5 | — | — | 守稳 + 清快 |
+| `destroy_base` | 0.35 | 0.65 | — | — | 主看多快攻破敌方本阵 |
+| `boss` | 0.4 | 0.6 | — | — | 速杀 boss |
+| `timed_defense` | 0.5 | — | — | 0.5 | 时长固定、速度无意义；hp + 歼灭率各半，守稳且清场压制才 3★ |
+| `leak_limit` | 0.4 | — | 0.6 | — | 漏得越少越高 |
+| `escort` | 0.6 | 0.4 | — | — | hp 分 = 护送单位残血%，再叠通关速度 |
 
 ### 档位映射
 
@@ -81,6 +87,8 @@ interface StarContext {
   enemyLeaks: number;
   leakBudget: number;       // leak_limit → objective.maxLeaks，其余给一个非零占位
   escortHpPct: number | null; // escort 关：min(escort.hp/maxHp)*100；否则 null
+  unitsKilled: number;      // timed_defense 歼灭率分子（stats.unitsKilled）
+  totalEnemies: number;     // timed_defense 歼灭率分母（countEnemies(level)，计时内应刷敌人数）
 }
 ```
 

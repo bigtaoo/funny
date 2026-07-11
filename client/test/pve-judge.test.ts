@@ -50,6 +50,7 @@ function trueStars(engine: IGameEngine, level: LevelDefinition): number {
     elapsedTicks: summary.elapsedTicks,
     enemyLeaks: summary.enemyLeaks,
     escortMinHpPct: summary.escortMinHpPct,
+    unitsKilled: stats[0].unitsKilled,
   }));
 }
 

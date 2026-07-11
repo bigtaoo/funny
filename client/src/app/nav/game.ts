@@ -430,6 +430,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
             elapsedTicks: summary?.elapsedTicks ?? 0,
             enemyLeaks: summary?.enemyLeaks ?? 0,
             escortMinHpPct: summary?.escortMinHpPct ?? null,
+            unitsKilled: stats[0].unitsKilled,
           });
           const stars = computeStars(level.rewards?.starThresholds, ctx);
           analytics.track('level_complete', {
