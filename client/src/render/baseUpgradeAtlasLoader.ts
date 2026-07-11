@@ -4,7 +4,7 @@
  * Two hand-drawn images at 256px each, packed into
  * `assets/base_upgrade_atlas.{png,json}` (see `art/ui/game/pack_base_atlas.js`):
  *   base_lv1 — castle-town (walled settlement, upgradeLevel 1)
- *   base_lv2 — palace (grandest tier, upgradeLevel 2-3)
+ *   base_lv2 — palace (grandest tier, upgradeLevel 2 = max)
  *
  * Tier 0 (no upgrade) keeps using the original `assets/game_base.png`, loaded
  * synchronously at L0 boot — this atlas only covers the upgrade tiers, lazy-loaded

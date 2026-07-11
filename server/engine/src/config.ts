@@ -41,8 +41,8 @@ export const TOP_SPAWN_ROW = 16;
 // ─── Resource ─────────────────────────────────────────────────────────────────
 
 export const INK_REGEN_BASE = 2;      // ink / second (reference only)
-export const INK_CAP = 300;
-export const BASE_UPGRADE_COSTS = [50, 100, 200] as const;
+export const INK_CAP = 100;
+export const BASE_UPGRADE_COSTS = [30, 50] as const;
 export const BASE_UPGRADE_REGEN_BONUS = 1; // +1 ink/s per upgrade level
 
 /** Ink cost to manually refresh the whole hand (redraws all slots, like entry). */

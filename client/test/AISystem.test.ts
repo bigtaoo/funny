@@ -115,7 +115,7 @@ describe('AISystem — 10-level difficulty curve', () => {
 
   it('L5 upgrades the base when it is safe and affordable', () => {
     const state = freshState();
-    giveInk(state, 60); // ≥ first upgrade cost (50), now reachable (INK_CAP 300)
+    giveInk(state, 60); // ≥ first upgrade cost (30), now reachable (INK_CAP 100)
     state.topPlayer.hand.drawIntoSlot(0, SWORD, 900);
     // No enemies on the board → no threat → economy phase prioritises the upgrade.
 
