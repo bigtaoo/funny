@@ -61,7 +61,7 @@ export class MarchService {
         )
         .map((g) => `${g.x}:${g.y}`),
     );
-    // ADR-025: other players' 3×3 capitals are solid buildings that block pathing (封路); the marcher
+    // ADR-025: other players' 3×3 capitals are solid buildings that block pathing (path-blocking); the marcher
     // routes around them but can still march ONTO an enemy base tile to besiege it (findMarchPath exempts
     // the destination). The marcher's own base cells are excluded so owners march in/out freely.
     // When the destination IS an enemy base cell (a siege), also exclude THAT base's whole footprint so

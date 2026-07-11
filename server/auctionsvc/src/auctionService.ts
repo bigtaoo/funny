@@ -3,7 +3,7 @@
 // SLG season resources (ink/paper/graphite/metal/sticker) are NOT tradeable — they never went through the auction house.
 // Currency: coins (premium, charged/paid via commercial); tax rate 10% (AUCTION_TAX_RATE).
 // Expiry: expireAt plain index + scanner (not TTL auto-delete — requires settlement/refund to seller or auction close on expire).
-// AUCTION_DESIGN §9 (2026-07-06 拍板): auction is an account-scoped,全服 market — no worldId, no season lifecycle coupling.
+// AUCTION_DESIGN §9 (2026-07-06 ruling): auction is an account-scoped, server-wide market — no worldId, no season lifecycle coupling.
 // The end-of-season freeze/liquidation gate (F, formerly assertWorldAcceptsListings/clearWorldOnReset) has been dropped entirely.
 //
 // Anti-RMT gates (AUCTION_DESIGN §4):

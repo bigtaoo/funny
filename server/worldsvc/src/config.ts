@@ -1,5 +1,5 @@
 // worldsvc environment variables (S8-0, seventh workspace + dedicated database).
-// SLG_DESIGN §14.1: worldsvc exposes a public REST API (/world/*; /auction/* moved to auctionsvc, §9 任务6),
+// SLG_DESIGN §14.1: worldsvc exposes a public REST API (/world/*; /auction/* moved to auctionsvc, §9 task 6),
 // reuses meta JWT for verifyToken signature verification only (does not connect to the accounts database).
 // Internal events are pushed back to clients via gateway /gw/push.
 // Note: /family/* routes have been migrated to socialsvc (fifth public face /social/*); worldsvc no longer proxies family requests.

@@ -300,7 +300,7 @@ export interface HeaderCurrencyChip {
   icon: IconKind;
   color: number;
   amount: number;
-  /** Short name drawn between the icon and the amount (e.g. "碎屑") — without it, an icon + bare
+  /** Short name drawn between the icon and the amount (e.g. "crumbs") — without it, an icon + bare
    * number is unreadable to a player who hasn't memorized the material set. */
   label?: string;
 }
@@ -309,7 +309,7 @@ export interface HeaderCurrencyChip {
  * Right-aligned coin (+ optional material chips, + optional capacity readout) drawn
  * on top of an already-baked header bar so it reads as part of the title row instead
  * of a separate band underneath it (the two used to visually float apart — see the
- * "装备/卡背包" header-alignment fix). Draw into a per-render overlay layer added
+ * "equipment/card inventory" header-alignment fix). Draw into a per-render overlay layer added
  * *after* the cached header chrome, so the coin icon isn't hidden behind the bar.
  */
 export function drawHeaderCurrency(

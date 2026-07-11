@@ -142,7 +142,7 @@ export class StatsScene implements Scene {
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
-    // Left margin rail: the Career hub peer strip [生涯统计|称号|成就] (LOBBY_IA_REDESIGN P1.5
+    // Left margin rail: the Career hub peer strip [Stats|Titles|Achievements] (LOBBY_IA_REDESIGN P1.5
     // peer-tab convention, see CareerTabs.ts), stacked inside the notebook-margin gutter below
     // the header (CardScene/EquipmentScene sidebar convention), so the stat panels start clear
     // of the red margin rule instead of the rule cutting through them.

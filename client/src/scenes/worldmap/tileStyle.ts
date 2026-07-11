@@ -21,8 +21,8 @@ export const TERRAIN_COLORS: Record<string, number> = {
   familyKeep: 0xe8d29a, // strategic point / chokepoint — muted warm amber
   center:     0xf0dfa0, // world center — soft gold
   obstacle:   0xc4bdb0, // impassable terrain (mountains/rivers) — muted stone grey
-  bridge:     0xb9c6d2, // river crossing (桥) — cool stone-blue (reads as the river it spans)
-  plankway:   0xb2967a, // mountain crossing (栈道) — warm timber brown (reads as planks over rock)
+  bridge:     0xb9c6d2, // river crossing (bridge) — cool stone-blue (reads as the river it spans)
+  plankway:   0xb2967a, // mountain crossing (plankway) — warm timber brown (reads as planks over rock)
   stronghold: 0x9a7a6a, // stronghold (G8): muted stone brown (was dark red — avoided clash with own-territory red)
   territory:  0xf5f0e8, // fallback (ownership is drawn as wash/border, not as the fill)
   base:       0xf5f0e8,

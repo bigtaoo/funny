@@ -1,5 +1,5 @@
 /**
- * CareerTabs.ts — the [生涯统计|称号|成就] peer-tab strip shared by StatsScene, TitlesScene, and
+ * CareerTabs.ts — the [Stats|Titles|Achievements] peer-tab strip shared by StatsScene, TitlesScene, and
  * AchievementScene (the "Career" hub). Each member scene draws this same strip with itself marked
  * active, mirroring the EquipmentScene/CollectionScene peerTab convention documented in HubTabs.ts:
  * before this, Titles/Achievements were wired as plain launchers with no return strip, so opening

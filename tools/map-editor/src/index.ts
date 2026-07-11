@@ -20,19 +20,11 @@ import { loadBuildingAtlas } from './render/buildingAtlasLoader';
 import { loadCityAtlas, getCityTextureForLevel, isCityAtlasReady } from './render/cityAtlasLoader';
 import { getLocale, t, toggleLocale } from './i18n';
 
-const RESOURCE_LABELS: Record<ResourceType, string> = {
-  ink: '墨(ink)',
-  paper: '纸(paper)',
-  graphite: '碳(graphite)',
-  metal: '铁(metal)',
-  sticker: '贴纸(sticker)',
-};
-
 const TERRAIN_COLORS: Record<TerrainKind, number> = {
   river: 0x4fa8e0, mountain: 0xa0785a,
   neutral: 0x9ccf7a, // carve: open a band back to passable land
-  bridge: 0x5c9fd6, // river crossing (桥)
-  plankway: 0xc08a52, // mountain crossing (栈道)
+  bridge: 0x5c9fd6, // river crossing (bridge)
+  plankway: 0xc08a52, // mountain crossing (plankway)
 };
 const CITY_COLORS: Record<MapEditorCityNode['kind'], number> = {
   worldCenter: 0xff5c8a,
@@ -181,7 +173,7 @@ function brushDiameter(): number {
   return Math.max(1, Math.round(Number(widthInput.value) || 1));
 }
 
-/** "{n} tile(s)"/"{n} 个格子" — composed so both locales pluralize (or don't) correctly. */
+/** "{n} tile(s)" — composed so both locales pluralize (or don't) correctly. */
 function tileCountLabel(n: number): string {
   return `${n} ${t(n === 1 ? 'unit.tile' : 'unit.tiles')}`;
 }
@@ -329,7 +321,7 @@ function loadCitiesAndRedraw(worldId: string): void {
  * game renders (DESIGN.md §6.3 art-parity). Cheap (~70 nodes) and deliberately NOT called on every
  * terrain-brush tick: cities don't move while painting, so this only runs on seed/zoom/city-position changes.
  * Sprite width = √(footprint/BASE_FOOTPRINT) × BASE_SPRITE_TILES tiles — bigger-footprint cities still draw
- * larger, but sub-linearly so the 9×9 world-center 巨城 doesn't balloon to ~9.6 tiles and swallow the map
+ * larger, but sub-linearly so the 9×9 world-center mega-city doesn't balloon to ~9.6 tiles and swallow the map
  * (a base at footprint 3 is unchanged: √1 = 1). Mirrors the game client's WorldMapRenderer city layer.
  */
 function refreshCitySprites(): void {
@@ -786,7 +778,7 @@ canvasEl().addEventListener('mousemove', (ev) => {
   if (panning) return;
   const pos = tileFromClientXY(ev.clientX, ev.clientY);
   const tile = effectiveTile(seedInput.value || 'preview', pos.x, pos.y);
-  const resLine = tile.resType ? `\n${t('tile.resource')}: ${RESOURCE_LABELS[tile.resType]}` : '';
+  const resLine = tile.resType ? `\n${t('tile.resource')}: ${t(`resource.${tile.resType}`)}` : '';
   const typeLabel = tile.obstacleKind ? `${tile.type} (${tile.obstacleKind})` : tile.type;
   tileInfoEl.textContent = `(${pos.x}, ${pos.y})\n${t('tile.type')}: ${typeLabel}\n${t('tile.level')}: ${tile.level}${resLine}`;
   tileInfoShown = true;

@@ -1,4 +1,4 @@
-// Map editor rasterization (DESIGN.md §6.2 "两者都是覆盖在 proceduralTile() 之上的编辑层"): turns the
+// Map editor rasterization (DESIGN.md §6.2 "both are editing layers overlaid on top of proceduralTile()"): turns the
 // editor's overlays (river/mountain terrain-grid cells + city point nodes) into a flat MapTemplateTile
 // diff against the proceduralTile() baseline, so a "publish" action can push exactly the changed tiles
 // via the existing §24 saveTilesDiff endpoint. One-way bake: the editor's own JSON export/import
@@ -55,8 +55,8 @@ interface _Override {
 
 /**
  * Rasterizes the editor's terrain-grid + city overlays into a tile-level diff against `proceduralTile(worldId, ...)`.
- * Only returns tiles whose resulting type/level/resType actually differ from the baseline (§24 "只上发本次
- * 改动的格子") — untouched terrain is never included. City nodes are applied after terrain tiles so a
+ * Only returns tiles whose resulting type/level/resType actually differ from the baseline (§24 "only upload
+ * the tiles changed this time") — untouched terrain is never included. City nodes are applied after terrain tiles so a
  * dragged city footprint always wins over any terrain it now overlaps.
  */
 export function rasterizeMapEdits(

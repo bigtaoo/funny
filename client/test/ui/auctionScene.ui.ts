@@ -318,7 +318,7 @@ describe('AuctionScene — doCreate()', () => {
   });
 });
 
-// ── myBids() — "我的收购" tab: auctions where I'm currently the top bidder ─────────────────────
+// ── myBids() — "My Bids" tab: auctions where I'm currently the top bidder ─────────────────────
 
 describe('AuctionScene — myBids()', () => {
   it('keeps only auction-mode listings where I am the current top bidder', () => {

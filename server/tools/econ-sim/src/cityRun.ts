@@ -46,7 +46,7 @@ console.log(`  storage cap          : ${fmt(e.capBase)} -> ${fmt(e.capAtMax)}   
 console.log(`  troop cap            : ${fmt(e.troopCapBase)} -> ${fmt(e.troopCapAtMax)}   (DRILL_TROOPCAP_STEP)`);
 console.log(`  train-time mult      : 1.00x -> ${e.trainMultAtMax.toFixed(2)}x (floored; floor bites at drillYard L${e.trainFloorBitesAtLevel})`);
 console.log(`  training queue slots : -> ${e.queueAtMax}`);
-console.log(`  sticker faucet @max  : ${fmt(e.stickerFaucetAtMax)}/h (stickerShop) + ${fmt(e.copperTileYield)}/h per held 铜矿 tile (map, ≥6)\n`);
+console.log(`  sticker faucet @max  : ${fmt(e.stickerFaucetAtMax)}/h (stickerShop) + ${fmt(e.copperTileYield)}/h per held copper mine tile (map, ≥6)\n`);
 
 console.log('── 4. Days-to-max per resource by income profile (ASSUMPTION-driven) ──');
 console.log('   tile holdings are not pinned in design; profiles are explicit guesses, like A-track population.');

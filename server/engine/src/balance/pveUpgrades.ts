@@ -171,7 +171,7 @@ export function buildSiegeBlueprints(
     for (const unit of Object.values(bp) as UnitBlueprint[]) {
       if (siegeAcademy.hp > 0) unit.hp = Math.round(unit.hp * (1 + siegeAcademy.hp));
       if (siegeAcademy.damage > 0) unit.attack = Math.round(unit.attack * (1 + siegeAcademy.damage));
-      // Siege value gets its own academy channel (ADR-026 "待接"): mirrors attack, on the siege path only.
+      // Siege value gets its own academy channel (ADR-026 "pending"): mirrors attack, on the siege path only.
       if (siegeAcademy.siege > 0) unit.siegeValue = Math.round(unit.siegeValue * (1 + siegeAcademy.siege));
     }
   }

@@ -37,7 +37,7 @@ export interface AuctionSceneCallbacks {
    */
   reloadSave?(): Promise<void>;
   /**
-   * Current account id — used to derive "我的收购" (auctions I'm the current top bidder on)
+   * Current account id — used to derive "My Bids" (auctions I'm the current top bidder on)
    * client-side from the already-loaded market list. Optional; without it the tab is empty.
    */
   myAccountId?: string;

@@ -315,7 +315,7 @@ export function drawCityIcon(g: PIXI.Graphics, mine: boolean, ally: boolean, lv:
  * When a hand-drawn `res_{resType}_l{level}` frame exists, draw that real per-level art:
  * the artwork alone carries level/abundance/defense — no programmatic count-replication or
  * pencil defense frames are layered on. All map resTypes now have per-level frames in the atlas
- * (paper/ink/graphite l1–l10 bespoke, metal l1–l10 baked heaps, sticker/铜矿 l6–l10 bespoke — sticker
+ * (paper/ink/graphite l1–l10 bespoke, metal l1–l10 baked heaps, sticker/copper mine l6–l10 bespoke — sticker
  * only spawns at level ≥6, so it never needs l1–5). Any missing level falls back to the generic
  * `res_{resType}` sprite — deliberately one sprite, no abundance scatter, so the map stays calm.
  *

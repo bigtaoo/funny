@@ -5,8 +5,8 @@
  * ground-texture terrain atlas), packed into `assets/slg/building_atlas.{png,json}`:
  *   building_keep       — strategic chokepoint gatehouse (tile type `familyKeep`)
  *   building_stronghold — dark NPC fort (tile type `stronghold`)
- *   building_bridge     — capturable river crossing 桥 (tile type `bridge`)
- *   building_plankway   — capturable mountain crossing 栈道 (tile type `plankway`)
+ *   building_bridge     — capturable river crossing bridge (tile type `bridge`)
+ *   building_plankway   — capturable mountain crossing plankway (tile type `plankway`)
  *   icon_watchtower     — player-built lookout (tile.watchtower)
  *
  * Loading is fire-and-forget (called on WorldMapScene construction). A decode failure

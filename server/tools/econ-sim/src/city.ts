@@ -5,7 +5,7 @@
 // so nothing here feeds the §6.1 monthly coin budget. The question it answers is only:
 //
 //   "With season-resource income, do the SLG_CITY building/training DRAFT numbers put
-//    'max the city' and 'field a real army' inside a sensible 60-day '重肝' window —
+//    'max the city' and 'field a real army' inside a sensible 60-day 'heavy-grind' window —
 //    a sustained F2P grind (not trivial, not impossible) with coin speed-up as the
 //    time-compression monetization lever?"
 //
@@ -46,7 +46,7 @@ import {
 
 const RESOURCE_TYPES: ResourceType[] = ['ink', 'paper', 'graphite', 'metal', 'sticker'];
 
-// Map 铜矿 (copper mine) faucet: the generator places `sticker` only on resource tiles at level ≥
+// Map copper mine faucet: the generator places `sticker` only on resource tiles at level ≥
 // SLG_GEN.copperMinLevel, on ~SLG_GEN.copperShare of those eligible high tiles (mapgen.ts resTypeFor).
 // Copper tiles yield sticker like any tile — RESOURCE_YIELD_BASE × level × (1 + nation bonus) — but get NO
 // resource-building multiplier (buildingYieldMult('sticker') === 1) and are ADDED to stickerShop self-production
@@ -119,7 +119,7 @@ export function maxLevelEffects() {
     trainFloorBitesAtLevel: floorLevel,                       // levels beyond this give no speed
     queueAtMax: trainQueueMaxFor(maxed),                      // training queue slots
     stickerFaucetAtMax: STICKER_SELF_BASE * DESK_MAX_LEVEL,   // sticker/h at stickerShop max
-    copperTileYield: Math.round(RESOURCE_YIELD_BASE * COPPER_AVG_LEVEL * (1 + NATION_BONUS_PRODUCTION)), // sticker/h per held 铜矿 tile (avg ≥6 level, +nation)
+    copperTileYield: Math.round(RESOURCE_YIELD_BASE * COPPER_AVG_LEVEL * (1 + NATION_BONUS_PRODUCTION)), // sticker/h per held copper mine tile (avg ≥6 level, +nation)
   };
 }
 
@@ -136,7 +136,7 @@ export interface IncomeProfile {
   /** Average resource-building level during the grind (city is mid-built); drives buildingMult. */
   avgBuildingLevel: number;
   /**
-   * Occupied map 铜矿 (sticker) tiles held — the ≥6 tiles that rolled copper (≈ held ≥6 tiles × SLG_GEN.copperShare).
+   * Occupied map copper mine (sticker) tiles held — the ≥6 tiles that rolled copper (≈ held ≥6 tiles × SLG_GEN.copperShare).
    * Level-gated at ≥ copperMinLevel, so low-avgTileLevel profiles hold ~none. Unpinned assumption, like `tiles`.
    */
   copperTiles?: number;
@@ -149,7 +149,7 @@ export function hourlyIncome(p: IncomeProfile): Partial<Record<ResourceType, num
   for (const rt of RESOURCE_TYPES) {
     const tiles = p.tiles[rt] ?? 0;
     if (rt === 'sticker') {
-      // sticker faucet = stickerShop self-production (baseline, mid-grind avg level) + map 铜矿 tiles.
+      // sticker faucet = stickerShop self-production (baseline, mid-grind avg level) + map copper mine tiles.
       // Copper tiles get nation bonus but NO building multiplier (buildingYieldMult('sticker')===1); additive.
       const stickerShopSelf = STICKER_SELF_BASE * p.avgBuildingLevel * 0.5;
       const copper = (p.copperTiles ?? 0) * RESOURCE_YIELD_BASE * COPPER_AVG_LEVEL * nation;

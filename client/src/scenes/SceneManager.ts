@@ -203,7 +203,7 @@ export class SceneManager {
       // CRITICAL: this runs on app.ticker, ahead of PIXI's renderer listener. In
       // PIXI 7 a throw from any ticker listener aborts the update loop AND prevents
       // the next requestAnimationFrame from being scheduled — the whole canvas
-      // freezes permanently until a page reload (the "UI 切换卡死，只能刷新" report).
+      // freezes permanently until a page reload (the "UI switch freezes, only a reload recovers" report).
       // Contain it so the renderer still paints and the app stays interactive; the
       // player can navigate away (goto resets the flag). Log once per scene so a
       // per-frame re-throw doesn't flood the client-log ring buffer.

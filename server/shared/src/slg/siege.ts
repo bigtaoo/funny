@@ -42,7 +42,7 @@ export const STRONGHOLD_LOOT_PER_LEVEL = 5000;
 
 // ── Crossing buildings (bridge / plankway) garrison (gate→bridge/plankway migration) ────────────
 /**
- * NPC garrison per level for a crossing building (桥/栈道). A crossing is a strategic choke — harder than an
+ * NPC garrison per level for a crossing building (bridge/plankway). A crossing is a strategic choke — harder than an
  * ordinary tile (NPC_GARRISON_PER_LEVEL=120) but well below a stronghold (360), so an early player can force a
  * passage but still needs a real army: a siege-to-pass gate, not a free arc. DRAFT — tune in the balance pass.
  */
@@ -224,11 +224,11 @@ export const CARD_RECOVER_COIN_COST = 50;
 
 /** Fraction of training resources refunded when a card is removed from a team (CHARACTER_CARDS_DESIGN §6.3). */
 export const CARD_TROOP_REFUND_RATE = 0.8;
-/** Paper cost per card troop trained into baseTroopStock (粮, CHARACTER_CARDS_DESIGN §6). [DRAFT → ECONOMY_NUMBERS §6] */
+/** Paper cost per card troop trained into baseTroopStock (grain, CHARACTER_CARDS_DESIGN §6). [DRAFT → ECONOMY_NUMBERS §6] */
 export const CARD_TROOP_PAPER_COST = 2;
-/** Graphite cost per card troop (木材, CHARACTER_CARDS_DESIGN §6). [DRAFT → ECONOMY_NUMBERS §6] */
+/** Graphite cost per card troop (wood, CHARACTER_CARDS_DESIGN §6). [DRAFT → ECONOMY_NUMBERS §6] */
 export const CARD_TROOP_GRAPHITE_COST = 2;
-/** Metal cost per card troop (铁, CHARACTER_CARDS_DESIGN §6). [DRAFT → ECONOMY_NUMBERS §6] */
+/** Metal cost per card troop (iron, CHARACTER_CARDS_DESIGN §6). [DRAFT → ECONOMY_NUMBERS §6] */
 export const CARD_TROOP_METAL_COST = 1;
 
 // ── Per-unit troop slider (§16.5 A7 tuning) ────────────────────────────────────────────
@@ -254,8 +254,8 @@ export const SIEGE_UNIT_HP_STEPS = 4;
 export const SLG_BASE_HP_PER_LEVEL = 100;
 
 /**
- * 攻城值 (siege value) is a per-card attribute, same tier as attack / move-speed (owner decision 2026-07-02).
- * A team's siege value = sum of each of its cards' 攻城值 ({@link cardSiegeValue}, resolved from CARD_DEFS + level).
+ * siege value is a per-card attribute, same tier as attack / move-speed (owner decision 2026-07-02).
+ * A team's siege value = sum of each of its cards' siege value ({@link cardSiegeValue}, resolved from CARD_DEFS + level).
  * A real team always has cards → value is always > 0; the only "no building damage" case is the attacker being wiped,
  * which is already a defender win (no hit scheduled). This uniform constant is the FALLBACK for card-less entries
  * (legacy/synthesized armies used only in tests) and the catalogue average target for per-card tuning. [DRAFT]
@@ -274,7 +274,7 @@ export function buildingMaxHp(level: number): number {
 }
 
 /**
- * A team's siege value = sum of each card's 攻城值 attribute (ADR-026 §4; a per-card stat, same tier as attack/speed).
+ * A team's siege value = sum of each card's siege-value attribute (ADR-026 §4; a per-card stat, same tier as attack/speed).
  * Only entries with a cardInstanceId count. When `cardInv` is provided, each card's value is resolved per-card/per-level
  * via {@link cardSiegeValue}; a card whose instance is missing from `cardInv` (and any call omitting `cardInv`, e.g. legacy
  * tests) falls back to the uniform SLG_SIEGE_VALUE_PER_CARD. Real teams always contain cards → value is always > 0.

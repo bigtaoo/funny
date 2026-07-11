@@ -1,5 +1,5 @@
 // worldsvc alliance attack constraint end-to-end (R-3, SLG_DESIGN §8.2 / §18.7): real Mongo.
-//   §8.2 "盟友间禁止进攻/夺地" — startMarch's attack branch must reject sieging a *friendly* tile.
+//   §8.2 "allies may not attack or seize each other's tiles" — startMarch's attack branch must reject sieging a *friendly* tile.
 //   "Friendly" spans three tiers, all blocked with ALLY_TILE: own family (≤30) + own sect (all its families) + allied sects (sect.allySectIds).
 //   The friendly check sits BEFORE the protection check in startMarch, so a freshly-joined (protected) base yields:
 //     - allied/family/same-sect base → ALLY_TILE (friendly gate fires first)

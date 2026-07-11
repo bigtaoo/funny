@@ -50,6 +50,11 @@ const en: Dict = {
   'tile.type': 'type',
   'tile.level': 'level',
   'tile.resource': 'resource',
+  'resource.ink': 'Ink',
+  'resource.paper': 'Paper',
+  'resource.graphite': 'Graphite',
+  'resource.metal': 'Metal',
+  'resource.sticker': 'Sticker',
 
   'city.hint': 'Drag a city marker on the map while the City tool is active to move it (the World Center\'s 9×9 footprint keeps its shape when dragged). Click a marker to see its details.',
   'city.id': 'id',
@@ -157,6 +162,11 @@ const zh: Dict = {
   'tile.type': '类型',
   'tile.level': '等级',
   'tile.resource': '资源',
+  'resource.ink': '墨',
+  'resource.paper': '纸',
+  'resource.graphite': '碳',
+  'resource.metal': '铁',
+  'resource.sticker': '贴纸',
 
   'city.hint': 'City 工具下拖动地图上的城池标记即可移动坐标（世界中心 9×9 占地拖拽时保持形状）；点击标记查看详情。',
   'city.id': 'id',

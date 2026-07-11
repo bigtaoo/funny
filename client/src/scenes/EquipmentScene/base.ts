@@ -232,7 +232,7 @@ export class EquipmentSceneBase {
 
   /**
    * Coin + material + capacity readout drawn into the header row itself (headerOverlayLayer sits
-   * on top of the static header chrome), so it lines up with the "装备" title instead of floating
+   * on top of the static header chrome), so it lines up with the "Equipment" title instead of floating
    * in its own band underneath. Called on every render(), independent of renderHeaderRow/assign
    * mode, so it stays visible even while the card-assign picker is open.
    */

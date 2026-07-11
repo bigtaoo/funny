@@ -50,7 +50,7 @@ export interface PathCell {
  * - Returns null if the destination is unreachable (obstacle / no path / out of bounds).
  * - passableGateKeys: set of crossing (bridge/plankway) tile keys that can be traversed (format "x:y"); the destination crossing itself is always reachable regardless of passage rights.
  * - blockedBaseKeys (ADR-025): set of enemy/other main-base tile keys ("x:y") that block pathing —
- *   a player's 3×3 capital is a solid building others must route around ("封路"). The caller excludes
+ *   a player's 3×3 capital is a solid building others must route around ("path-blocking"). The caller excludes
  *   the marcher's own base tiles from this set (owners march in/out freely). The destination itself is
  *   always allowed (isDest), so sieging an enemy base tile stays reachable.
  * - MAX_NODES safety cap (prevents worst-case on very large maps).

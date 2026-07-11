@@ -58,7 +58,7 @@ describe('fitContentToBox', () => {
     expect(r.centerX).toBeCloseTo(BOX.centerX, 0);             // 500
   });
 
-  // The "六个大小不一致" complaint: rigs with very different measured boxes must
+  // The "six mismatched sizes" complaint: rigs with very different measured boxes must
   // all render at the SAME on-screen height. That holds iff height depends only on
   // fraction*box.height, never on the content's own height.
   it('gives every content box the same rendered height (size consistency)', () => {

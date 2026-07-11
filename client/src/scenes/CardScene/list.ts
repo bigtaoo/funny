@@ -45,7 +45,7 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
     /**
      * Coin balance + card-capacity readout drawn into the header row itself (same treatment as
      * EquipmentScene's renderHeaderCurrency), so the currency HUD stays visible and aligned with
-     * the title when navigating between the 卡背包/装备 peer scenes instead of popping in/out.
+     * the title when navigating between the card-inventory/equipment peer scenes instead of popping in/out.
      */
     renderHeaderCurrency(): void {
       this.headerOverlayLayer.removeChildren();

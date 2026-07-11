@@ -373,7 +373,7 @@ export const DEFAULT_LIMITED_FILLER_LEGENDARIES = ['skin_l1', 'wp_highlighter', 
 /**
  * Build a full GachaPoolDef from a limited-pool config (pure). Common/rare/epic tiers copy the standard pool;
  * the legendary tier is the featured banner (weighted to ~50% via slot repetition) plus off-banner fillers.
- * Hitting an off-banner legendary is the "歪" that awards a Fate Point (commercial.gachaDraw §7).
+ * Hitting an off-banner legendary is the "off-target" pull that awards a Fate Point (commercial.gachaDraw §7).
  */
 export function buildLimitedPool(cfg: LimitedPoolConfig): GachaPoolDef {
   const std = GACHA_POOLS[0]!; // standard pool = content template

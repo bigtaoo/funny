@@ -47,7 +47,7 @@ const binding = (count: number): BpReward => ({ kind: 'material', id: 'binding',
  *    few levels; every paid coin payout ≥ its free counterpart, and Lv30 is the single biggest payout.
  * Only 'coins' and 'material' kinds are used — these are the two the claim path grants (service.ts);
  * card/skin rewards are intentionally excluded (would enter PvP power / collide with skin monetization).
- * Numbers are [可调] — tune here + mirror in client/src/game/balance/battlepassDefs.ts + doc §13.3.
+ * Numbers are [tunable] — tune here + mirror in client/src/game/balance/battlepassDefs.ts + doc §13.3.
  */
 const REWARD_ROWS: Array<[free: BpReward, paid: BpReward]> = [
   /* Lv1  */ [scrap(2), coins(20)],

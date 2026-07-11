@@ -149,7 +149,7 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
         const sprite = cityC.getChildByName('img') as PIXI.Sprite;
         if (sprite.texture !== tex) sprite.texture = tex;
         // Scale the BASE_SPRITE_TILES art up sub-linearly with footprint (√), so higher-tier cities still
-        // read as bigger but the 9×9 world-center 巨城 doesn't balloon to ~9.6 tiles and swallow the map
+        // read as bigger but the 9×9 world-center mega-city doesn't balloon to ~9.6 tiles and swallow the map
         // (a base at footprint 3 is unchanged: √1 = 1).
         const spriteTiles = Math.sqrt(node.footprint / BASE_FOOTPRINT) * BASE_SPRITE_TILES;
         sprite.width = spriteTiles * tp;

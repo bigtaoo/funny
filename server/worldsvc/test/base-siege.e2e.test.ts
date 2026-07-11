@@ -176,7 +176,7 @@ describe.skipIf(!mongo)('ADR-026 base siege e2e', () => {
   it('no defenders + partial hit: HP reduced by team siege value, no capture, survivors refunded', async () => {
     const tgt = findCoord(20, 5);
     await setupBase(tgt.x, tgt.y, { hp: 100 }); // b has no teams → no defenders
-    const army = await setupAttacker(3);         // siege value = sum of per-card 攻城值 (3 × lichuang L1)
+    const army = await setupAttacker(3);         // siege value = sum of per-card siege value (3 × lichuang L1)
     // Expected damage = the team's real per-card siege value (ADR-026), computed the same way as production.
     const expectedDamage = teamSiegeValue(army, cardInvByAccount['a']);
 
@@ -203,7 +203,7 @@ describe.skipIf(!mongo)('ADR-026 base siege e2e', () => {
   });
 
   it('siege value is per-card: a shieldbearer team dents HP more than an archer team of equal size', async () => {
-    // ADR-026 §4: 攻城值 is a per-card attribute. chenshou (shieldbearer, wall-breaker) > suyuan (archer, glass cannon).
+    // ADR-026 §4: siege value is a per-card attribute. chenshou (shieldbearer, wall-breaker) > suyuan (archer, glass cannon).
     const tgt = findCoord(20, 5);
     await setupBase(tgt.x, tgt.y, { hp: 100 });
     const shieldArmy = await setupAttacker(3, 60, 'chenshou');

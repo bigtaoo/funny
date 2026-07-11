@@ -1,4 +1,4 @@
-// worldsvc public REST (S8-0, SLG_DESIGN §14.1 P1 / §14.6). Public-facing surface: /world/* (/family/* already migrated to socialsvc; /auction/* moved to auctionsvc, §9 任务6).
+// worldsvc public REST (S8-0, SLG_DESIGN §14.1 P1 / §14.6). Public-facing surface: /world/* (/family/* already migrated to socialsvc; /auction/* moved to auctionsvc, §9 task 6).
 // Auth: reuses the meta JWT; only verifyToken is called to extract accountId (no accounts DB connection, P1).
 // Uses node:http (worldsvc does not depend on fastify). Responses wrapped in @nw/shared ApiResp envelope; error codes → HTTP status via ERROR_HTTP_STATUS.
 // S8-0: map/player-state implemented; march/defense/troops/family/season return NOT_IMPLEMENTED (S8-1~5).

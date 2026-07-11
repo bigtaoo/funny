@@ -5,7 +5,7 @@
  * (server contracts, pathfinding, tile cache keys — untouched). Only the
  * *screen* projection is isometric: each tile renders as a diamond whose
  * screen-space width is `tileW` and height is `tileW * ISO_RATIO` (classic
- * 2:1 mobile-SLG diamond, e.g. 三国志战略版-style overworld maps).
+ * 2:1 mobile-SLG diamond, e.g. Three-Kingdoms-Strategy-style overworld maps).
  *
  * All screen-space helpers here are pan-relative — callers add `panX`/`panY`
  * themselves, matching the existing WorldMapScene convention of keeping pan

@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Stronghold-track runner — SLG_ECONOMY_CHECK §21.4 "险地 STRONGHOLD_* 密度/守军/奖励"
+// Stronghold-track runner — SLG_ECONOMY_CHECK §21.4 "stronghold STRONGHOLD_* density/garrison/rewards"
 //   npx tsx src/strongholdRun.ts
 //
 // The stronghold binding loot (strongholdMaterialLoot → meta.grantMaterial) is the one
@@ -69,7 +69,7 @@ console.log(`  (smooth value-noise > threshold produces contiguous regions, not 
 
 // ── ③ persistent binding faucet vs A-track dilution ──────────────────────────
 console.log('── ③  Persistent binding faucet vs A-track dilution (§2.3 threshold 15%) ──\n');
-console.log('  The A-track (index.ts) aggregates SETTLE_REWARDS + 细水 only. Stronghold binding');
+console.log('  The A-track (index.ts) aggregates SETTLE_REWARDS + trickle only. Stronghold binding');
 console.log('  (grantMaterial, persistent) is ON TOP. Judged with the same §2.3 15% per-capita rule.');
 console.log('  capture rate = fraction of a world\'s strongholds captured over the 60-day season');
 console.log('  (progression-gated: base 2000-troop armies "nearly always lose", slg.ts:1055).\n');

@@ -42,7 +42,7 @@ describe('PvP balance sim (P4)', () => {
     // yardstick, and its ~82–91% is the AOE-less-arena swarm artifact (identical in
     // kind to splitter's accepted 100% — the real counter is Meteor, which the arena
     // cannot model). Cost 4 is also foundational to the fragile lv1 economy
-    // (DIFFICULTY_SIM). Left unchanged by design (BALANCE.md §5.1 旁注).
+    // (DIFFICULTY_SIM). Left unchanged by design (BALANCE.md §5.1 side note).
   }, 120_000);
 
   it('harpy guardrail probe', () => {

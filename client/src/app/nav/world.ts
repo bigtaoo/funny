@@ -25,7 +25,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
   }
 
   // AUCTION_DESIGN dual-entry: reach the auction house straight from the lobby (the other entry is
-  // the world-map toolbar button). The market is account-scoped and worldId-free (§9 拍卖任务7) — no
+  // the world-map toolbar button). The market is account-scoped and worldId-free (§9 auction task 7) — no
   // shard resolution needed, so we open AuctionScene directly with a back-to-lobby handler.
   function goAuctionFromLobby(): void {
     const token = platform.storage.getItem(TOKEN_KEY);

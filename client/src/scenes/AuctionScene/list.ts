@@ -1,4 +1,4 @@
-// Market list tab: left sidebar (市场/我的拍卖/我的收购), the category filter bar, the auction row list,
+// Market list tab: left sidebar (Market/My Auctions/My Bids), the category filter bar, the auction row list,
 // and the bottom "create listing" button.
 import { ui as C, txt, sketchPanel, seedFor, marginLineX } from '../../render/sketchUi';
 import { drawSidebarTabs, type HubTab } from '../../ui/widgets/HubTabs';
@@ -18,7 +18,7 @@ export interface ListHandlers {
 
 export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBase & Constructor<ListHandlers> {
   return class extends Base {
-    /** Auctions where I'm currently the top bidder ("我的收购") — derived client-side from the open market list (no dedicated endpoint). */
+    /** Auctions where I'm currently the top bidder ("My Bids") — derived client-side from the open market list (no dedicated endpoint). */
     myBids(): AuctionView[] {
       const me = this.cb.myAccountId;
       if (!me) return [];
@@ -27,7 +27,7 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
 
     /**
      * Left nav rail, stacked inside the notebook-margin gutter (`marginLineX`) below the header:
-     * 市场 / 我的拍卖 / 我的收购. Moved off the old full-width horizontal strip so the red margin
+     * Market / My Auctions / My Bids. Moved off the old full-width horizontal strip so the red margin
      * rule no longer cuts through the tab bar (see StatsScene/EquipmentScene precedent). Returns
      * the x where the body content (filter bar / list / create button) should start.
      */
@@ -173,7 +173,7 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
           const aucId = auc.auctionId;
           this.hitRects.push({ rect: { x: contentX + contentW - 80, y: cy + 18, w: 68, h: 32 }, action: () => this.confirmCancel(aucId) });
         } else {
-          // 我的收购: informational only (leading bidder, not the owner) — no action button, just a status badge.
+          // My Bids: informational only (leading bidder, not the owner) — no action button, just a status badge.
           const badge = txt(t('auction.leading'), 14, C.accent, true);
           badge.anchor.set(1, 0.5); badge.x = contentX + contentW - 20; badge.y = cy + 34;
           this.bodyLayer.addChild(badge);

@@ -11,8 +11,8 @@ export const TERRAIN_COLORS: Record<string, number> = {
   familyKeep: 0xe8d29a,
   center:     0xf0dfa0,
   obstacle:   0xc4bdb0,
-  bridge:     0xb9c6d2, // river crossing (桥) — cool stone-blue
-  plankway:   0xb2967a, // mountain crossing (栈道) — warm timber brown
+  bridge:     0xb9c6d2, // river crossing (bridge) — cool stone-blue
+  plankway:   0xb2967a, // mountain crossing (plankway) — warm timber brown
   stronghold: 0x9a7a6a,
   territory:  0xf5f0e8,
   base:       0xf5f0e8,

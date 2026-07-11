@@ -180,7 +180,7 @@ export function chapterAnchorCard(chapterId: string): string | undefined {
   return CHAPTER_ANCHOR_CARD[chapterId];
 }
 
-/** Card level of the chapter-clear exclusive reward (§4: "对应角色的 2 级卡"). Distinct from the per-level drop level (1). */
+/** Card level of the chapter-clear exclusive reward (§4: "the level-2 card of the corresponding character"). Distinct from the per-level drop level (1). */
 export const CHAPTER_ANCHOR_CARD_LEVEL = 2;
 
 /** Daily cap on "material-rewarding clears" (excess clears still record progress/stars but grant no materials, §8 decision 3). DRAFT pending playtesting. */

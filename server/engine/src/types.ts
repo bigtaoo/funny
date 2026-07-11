@@ -293,7 +293,7 @@ export interface UnitBlueprint {
   /** Collision radius in pre-scaled fixed-point (e.g. 400 = 0.4 grid). */
   radius_fp: number;
   /**
-   * 攻城值 (siege value) — base HP a unit knocks off the enemy base when it reaches
+   * siege value — base HP a unit knocks off the enemy base when it reaches
    * it (MovementSystem). A first-class attribute at the same tier as attack / speed
    * (ADR-026, owner decision 2026-07-02): deliberately decoupled from `attack` (combat
    * DPS) so a unit's siege efficiency is an independent balance lever. PvP reads this

@@ -1,4 +1,4 @@
-// worldsvc scheduler loop (S8-2 march + training; auction expiry moved to auctionsvc, §9 任务6).
+// worldsvc scheduler loop (S8-2 march + training; auction expiry moved to auctionsvc, §9 task 6).
 // March: periodically calls WorldService.processDueArrivals to settle all arrivals (capture / reinforce / retreat).
 // Training: periodically calls WorldService.processCompletedTraining to convert completed batches into troop strength (S8-2).
 // Builds: periodically calls WorldService.processCompletedBuilds to apply completed home-city building upgrades (SLG_CITY_DESIGN P1).
