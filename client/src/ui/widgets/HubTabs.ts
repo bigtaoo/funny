@@ -117,6 +117,20 @@ export function sidebarItemHeight(h: number): number {
 }
 
 /**
+ * Width of the vertical sidebar nav rail (see {@link drawSidebarTabs}).
+ *
+ * The rail used to reuse the narrow notebook-margin gutter (`marginLineX`, 9% of
+ * width). At portrait scale (~0.35) that gutter is only ~34 CSS px, far too
+ * narrow for horizontal labels like "Hero Roster"/"Equipment" — they overflowed
+ * the cell and were clipped off the left screen edge. This widens the rail to a
+ * fifth of the width so the icon-over-label cells fit legibly; callers start body
+ * content at `sidebarNavW(w)` instead of `marginLineX(w)` when the rail is shown.
+ */
+export function sidebarNavW(w: number): number {
+  return Math.round(w * 0.2);
+}
+
+/**
  * Draw a vertical stack of nav cells inside the left notebook-margin gutter
  * (width = `marginLineX(w)` from `render/sketchUi`) — a left-rail counterpart
  * to {@link drawHubTabs} for groups where a horizontal strip would otherwise
@@ -167,6 +181,10 @@ export function drawSidebarTabs(
     const lbl = txt(tab.label, Math.round(itemH * (sub ? 0.28 : 0.24)), fg, true);
     lbl.anchor.set(0.5, 0.5);
     lbl.x = indent + cellW / 2;
+    // Never let a long label ("Hero Roster") spill past the cell and clip off the
+    // screen edge: shrink it to fit the cell width (with a small horizontal pad).
+    const maxLblW = cellW - Math.round(cellW * 0.14);
+    if (lbl.width > maxLblW) lbl.scale.set(maxLblW / lbl.width);
 
     if (tab.icon) {
       const iconSize = Math.round(itemH * 0.34);

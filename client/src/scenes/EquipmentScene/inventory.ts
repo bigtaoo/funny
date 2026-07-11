@@ -3,7 +3,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor, marginLineX } from '../../render/sketchUi';
-import { drawSidebarTabs, type HubTab } from '../../ui/widgets/HubTabs';
+import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
 import { buildIcon } from '../../render/icons';
 import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance } from '../../game/meta/SaveData';
 import { getEquipDef } from '../../game/meta/equipmentDefs';
@@ -34,7 +34,7 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
      * sidebar addendum).
      */
     renderSidebar(): void {
-      const sidebarW = marginLineX(this.w);
+      const sidebarW = sidebarNavW(this.w);
       let y = this.headerH;
 
       if (this.showGroup && this.cb.peerTab) {
@@ -79,7 +79,7 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
         : allInstances.filter(x => getEquipDef(x.defId)?.slot === this.filterSlot);
 
       if (instances.length === 0) {
-        const lbl = txt(t('equip.invEmpty'), 13, C.mid);
+        const lbl = txt(t('equip.invEmpty'), 28, C.mid);
         lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = listY + listH / 2;
         this.bodyLayer.addChild(lbl);
         return;
@@ -99,8 +99,8 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       });
 
       const entries = this.buildDisplayEntries(instances, equippedIds);
-      // Item cells start right of the red margin rule; right pad stays one CELL_GAP.
-      const left = marginLineX(w) + CELL_GAP;
+      // Item cells start right of the sidebar rail; right pad stays one CELL_GAP.
+      const left = sidebarNavW(w) + CELL_GAP;
       const avail = w - left - CELL_GAP;
       const cols = Math.max(1, Math.floor((avail + CELL_GAP) / (EQUIP_CELL_W_TARGET + CELL_GAP)));
       const cellW = (avail - CELL_GAP * (cols - 1)) / cols;
@@ -160,7 +160,7 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
           hlt.beginFill(0xfaf9f5).drawRoundedRect(fx + 3, y + 3, fw - 6, FILTER_H - 6, 3).endFill();
           this.bodyLayer.addChild(hlt);
         }
-        const lbl = txt(f.label, 11, active ? C.accent : C.dark, active);
+        const lbl = txt(f.label, 24, active ? C.accent : C.dark, active);
         lbl.anchor.set(0.5, 0.5); lbl.x = fx + fw / 2; lbl.y = y + FILTER_H / 2;
         this.bodyLayer.addChild(lbl);
         this.hitRects.push({
