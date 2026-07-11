@@ -41,7 +41,7 @@ claudedocs/      模块级快查文档（按需加载）
 ## 会话规则
 
 - **worktree**：所有任务在独立 worktree + 独立分支；微小文档订正可直接提 main。约定见 [`claudedocs/worktrees.md`](claudedocs/worktrees.md)。
-- **工作目录**：`C:\Users\TaoWang\Documents\funny`，用 Bash 工具，不要绕道 `wsl -d ubuntu`。
+- **工作目录**：仓库根目录（本机为 `D:\funny`）；用 Bash 工具，不要绕道 `wsl -d ubuntu`。
 - **权限**：所有命令直接执行，无需确认。
 - **验证**：`tsc --noEmit` + webpack 构建，不要启动游戏截图。
 - **记录改动**：先更新 `design/` 对应文档，再提交代码。
