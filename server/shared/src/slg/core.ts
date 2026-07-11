@@ -169,6 +169,56 @@ export function cityTier(level: number): 1 | 2 | 3 | 4 {
   return 4;
 }
 
+// ── City sprite placement geometry — single source of truth for client + map-editor. This math used to
+// be hand-copied across 4 call sites (client base-city / node-city branches × map-editor's own two
+// branches); a coefficient tweak in one left the other three stale, which is why the city-sprite
+// fill/overflow bug kept resurfacing across several "fixes" instead of converging. Both renderers must
+// call these instead of re-deriving the formula locally.
+/**
+ * On-screen sprite width, in tile-widths, for a city with this footprint — LINEAR so every city fills
+ * its own plot the same way a 3×3 base fills its `baseSpriteTiles`-wide sprite (footprint===BASE_FOOTPRINT
+ * → unchanged). Sub-linear (sqrt) scaling under-fills large plots badly.
+ */
+export function citySpriteTiles(footprint: number, baseSpriteTiles: number): number {
+  return (footprint / BASE_FOOTPRINT) * baseSpriteTiles;
+}
+
+/**
+ * Forward offset (screen px, along the plot's center→front-vertex axis) for a city sprite's bottom-center
+ * anchor. An isometric N×N plot narrows to a POINT at its front vertex — a roughly-rectangular building
+ * silhouette anchored short of that point (as a `< 1.0` fraction does) leaves a real, footprint-scaled gap
+ * of bare plot exposed in front of the building; anchoring past the plot's own vertex would spill the
+ * foot onto a neighbouring tile it doesn't own. 1.0 (exactly the front vertex) is therefore the only
+ * value that both fully plants the building on its own land and never bleeds onto a neighbour's — do not
+ * re-tune this to a fraction again without re-deriving the plot's actual vertex geometry (see
+ * design/tools/map-editor/DESIGN.md).
+ */
+export function cityGroundFwdPx(footprint: number, tp: number, isoRatio: number): number {
+  return (footprint * tp * isoRatio) / 2;
+}
+
+/**
+ * Clip polygon (flat [x,y,...] pairs, relative to the sprite's bottom-center anchor origin — i.e. the
+ * plot's own front vertex, since {@link cityGroundFwdPx} anchors there) that keeps a city sprite's
+ * silhouette from ever bleeding past its OWN plot into a neighbouring tile. A city sprite is
+ * `citySpriteTiles()` tiles wide — deliberately ~7% wider than the footprint so the art reads as filling
+ * its plot — but a rectangular sprite is wider than the plot's own N×N *diamond* everywhere except at its
+ * exact horizontal midline, so without clipping that extra width (plus the diamond's front-taper down to
+ * a point) shows up as the building visibly overlapping an adjacent resource tile, which reads to a player
+ * as "can I still capture that tile?" ambiguity. This polygon: tapers from the front tip (this function's
+ * origin) up to the plot's own left/right vertices (matching the diamond exactly, so nothing behind that
+ * edge is cut), then runs straight up at that fixed half-width for `tallPx` (comfortably taller than the
+ * tallest sprite) so upper storeys/towers are never clipped — only sideways bleed at or below the
+ * midline is. Above the plot's OWN back vertex a tall building legitimately overlaps tiles further back
+ * (normal isometric depth-occlusion, not ambiguous — see {@link cityGroundFwdPx} docs), so this
+ * deliberately does not taper the top back down to a point.
+ */
+export function cityPlotMaskPoints(footprint: number, tp: number, isoRatio: number, tallPx: number): number[] {
+  const half = (footprint * tp) / 2;
+  const gf = cityGroundFwdPx(footprint, tp, isoRatio);
+  return [0, 0, half, -gf, half, -tallPx, -half, -tallPx, -half, -gf];
+}
+
 // ── Procedural distribution knobs (U6 initial DRAFT; centralized here for easy tuning) ────────
 export const SLG_GEN = {
   /** Resource tile density: fraction of non-neutral tiles classified as resource tiles (ADR-032: raised to 1.0 — no pure no-yield neutral land; every non-blocking/keep/stronghold/center tile is some level of resource land). */

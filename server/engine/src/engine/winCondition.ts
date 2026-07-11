@@ -21,7 +21,7 @@ export function WinConditionMixin<TBase extends GameEngineBaseCtor & Constructor
       if (this.state.bottomPlayer.isDead) {
         this.state.phase  = GamePhase.GameOver;
         this.state.winner = Side.Top;
-        this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats() });
+        this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats(), summary: this.state.snapshotSummary() });
         this.state.pushEvent({ type: 'game_over', winner: 1 });
         return;
       }
@@ -41,14 +41,14 @@ export function WinConditionMixin<TBase extends GameEngineBaseCtor & Constructor
           if (arrived >= needed) {
             this.state.phase  = GamePhase.GameOver;
             this.state.winner = Side.Bottom;
-            this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats() });
+            this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats(), summary: this.state.snapshotSummary() });
             this.state.pushEvent({ type: 'game_over', winner: 0 });
             return;
           }
           if (total - dead < needed - arrived) {
             this.state.phase  = GamePhase.GameOver;
             this.state.winner = Side.Top;
-            this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats() });
+            this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats(), summary: this.state.snapshotSummary() });
             this.state.pushEvent({ type: 'game_over', winner: 1 });
             return;
           }
@@ -58,7 +58,7 @@ export function WinConditionMixin<TBase extends GameEngineBaseCtor & Constructor
         if (objective.kind === 'leak_limit' && this.state.enemyLeaks > objective.maxLeaks) {
           this.state.phase  = GamePhase.GameOver;
           this.state.winner = Side.Top;
-          this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats() });
+          this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats(), summary: this.state.snapshotSummary() });
           this.state.pushEvent({ type: 'game_over', winner: 1 });
           return;
         }
@@ -67,7 +67,7 @@ export function WinConditionMixin<TBase extends GameEngineBaseCtor & Constructor
         if (this.state.topPlayer.isDead) {
           this.state.phase  = GamePhase.GameOver;
           this.state.winner = Side.Bottom;
-          this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats() });
+          this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats(), summary: this.state.snapshotSummary() });
           this.state.pushEvent({ type: 'game_over', winner: 0 });
           return;
         }
@@ -80,7 +80,7 @@ export function WinConditionMixin<TBase extends GameEngineBaseCtor & Constructor
             this.state.elapsedTicks >= this.level!.battleTimeoutTicks) {
           this.state.phase  = GamePhase.GameOver;
           this.state.winner = Side.Top;
-          this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats() });
+          this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats(), summary: this.state.snapshotSummary() });
           this.state.pushEvent({ type: 'game_over', winner: 1 });
           return;
         }
@@ -106,7 +106,7 @@ export function WinConditionMixin<TBase extends GameEngineBaseCtor & Constructor
             this.state.elapsedTicks >= objective.durationTicks) {
           this.state.phase  = GamePhase.GameOver;
           this.state.winner = Side.Top;
-          this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats() });
+          this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats(), summary: this.state.snapshotSummary() });
           this.state.pushEvent({ type: 'game_over', winner: 1 });
           return;
         }
@@ -116,7 +116,7 @@ export function WinConditionMixin<TBase extends GameEngineBaseCtor & Constructor
         if (survived) {
           this.state.phase  = GamePhase.GameOver;
           this.state.winner = Side.Bottom;
-          this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats() });
+          this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats(), summary: this.state.snapshotSummary() });
           this.state.pushEvent({ type: 'game_over', winner: 0 });
         }
         // Campaign skips the PvP countdown / force-draw timers.
@@ -126,14 +126,14 @@ export function WinConditionMixin<TBase extends GameEngineBaseCtor & Constructor
       if (this.state.topPlayer.isDead) {
         this.state.phase  = GamePhase.GameOver;
         this.state.winner = Side.Bottom;
-        this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats() });
+        this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats(), summary: this.state.snapshotSummary() });
         this.state.pushEvent({ type: 'game_over', winner: 0 });
         return;
       }
 
       if (this.state.elapsedTicks >= FORCE_DRAW_THRESHOLD_TICKS) {
         this.state.phase = GamePhase.GameOver;
-        this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats() });
+        this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats(), summary: this.state.snapshotSummary() });
         this.state.pushEvent({ type: 'game_draw' });
         return;
       }

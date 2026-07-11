@@ -65,7 +65,7 @@
 | `scenes/LevelPrepScene.ts` | **关卡准备界面**（CAMPAIGN_DESIGN §10 P1）：故事摘要面板（`brief`，`breakWords:true` 支持 CJK 自动换行，面板高度自适应文字行数）+ 关卡目标条（`objective?: ObjectiveSpec`，金色 accent 条，支持 survive/boss/destroy_base/timed_defense/leak_limit/escort 6 种，中英德均译）+ 单位卡牌 2 列网格（6 张卡排 3 行×2 列，垂直占用减半，合成按钮 + T3/T6/T9 特质标签保留）+ 体力条 + 开打按钮。`LevelPrepCallbacks.objective` 由 `createAppCore.goLevelPrep` 从 `LevelDefinition.objective` 透传。 |
 | `scenes/CampaignMapScene.ts` | **战役笔记本**（PvE 正门，CAMPAIGN_DESIGN §12）：两类页——目录页（6 章卡片 + 进度/星数 + 锁章胶带遮罩）/ 章节页（节点按 `maps/chN.json` 归一化坐标摆放，`SketchPen` 铅笔虚线路径串联，已通关金圈星章 / 当前关蓝圈脉冲 / 未解锁淡铅笔轮廓 / decor 涂鸦）。进场落目录页→自动翻到「当前可打关」那章；翻页 = 横向 slide+fade（`update(dt)` 驱动，0.42s），左右箭头切章（下一章须通关方亮）；整章通关盖「第 N 章 · 通关」红章。章节页顶栏标题（「第 N 章 · 场地名」）下方补一行淡色叙事者归属「陶的笔记本 / Anna 的笔记本」（奇数章=陶/偶数章=Anna，对应 CAMPAIGN_STORY.md 框架表；`buildHeader` 的可选 `subtitleStr` 参数，TOC 页不传）。全程序绘制，零美术资产；回调 `CampaignMapCallbacks` 与旧扁平列表版同构。解锁/落点判断全走 `game/campaign/progress.ts`（不再内联） |
 | `game/campaign/progress.ts` | 战役进度纯逻辑（PIXI 无关，可单测）：`isLevelUnlocked`（前一关通关才解锁）/ `currentChapter`（第一个未通关关所在章）/ `currentLevelIdInChapter`（该章首个解锁未通关关=脉冲当前关）/ `parseLevelId`。节点 levelId 与 `CAMPAIGN_LEVEL_ORDER` 1:1 → 所见即所玩 |
-| `game/meta/campaignRewards.ts` | `computeStars(starThresholds, 剩余HP%)`：**通关保底 1★**（HP>0 即 ≥1★，门槛只升级 2★/3★；HP≤0=基地打爆=0★）+ `remainingHpPct`。客户端报星 + 裁判复算同口径。⚠️ 0★ 不算通关（不入账/不解锁）——故胜利必须保底 1★ |
+| `game/meta/campaignRewards.ts` | **复合评分轴**（`STAR_SCORING.md`）：`computeStars(starThresholds, ctx)` + `buildStarContext` + `deriveParTicks` + `computeStarScore`。hp/speed/leak 三子分按关型加权成综合分 S，对照 `starThresholds`（S×100 门槛）。**通关保底 1★**（基地未打爆），基地打爆=0★（不入账/不解锁）。客户端 + 裁判 + `difficultySim` 同口径（ctx 由 `snapshotSummary()`+`snapshotStats()` 组装）。速度子分从 `waves` 推 par，解决旧 HP% 轴「通关即 3★」无梯度 |
 
 ## 测试 harness（test/harness/）
 

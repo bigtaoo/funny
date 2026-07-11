@@ -1,7 +1,7 @@
 // City building sprites: player-base cities (DB tiles, fog-gated, level-within-tier dots) and
 // deterministic procedural NPC cities (seed-derived, map-wide), pooled and culled per viewport.
 import * as PIXI from 'pixi.js-legacy';
-import { BASE_FOOTPRINT } from '@nw/shared';
+import { BASE_FOOTPRINT, citySpriteTiles, cityGroundFwdPx, cityPlotMaskPoints } from '@nw/shared';
 import { getCityTextureForLevel, isCityAtlasReady } from '../../../render/cityAtlasLoader';
 import { tileToScreen, visibleTileBounds, ISO_RATIO } from '../../../render/isoGrid';
 import { HUD_H, BASE_SPRITE_TILES } from '../constants';
@@ -66,26 +66,25 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
             const sprite = new PIXI.Sprite(tex);
             sprite.name = 'img';
             sprite.anchor.set(0.5, 1); // bottom-center: the castle base rests on the plot, not centered on it
+            const plotMask = new PIXI.Graphics();
+            plotMask.name = 'plotMask';
+            sprite.mask = plotMask;
             const dotGfx = new PIXI.Graphics();
             dotGfx.name = 'dots';
             cityC = new PIXI.Container();
             cityC.addChild(sprite);
+            cityC.addChild(plotMask);
             cityC.addChild(dotGfx);
             this.ctx.cityLayer.addChild(cityC);
             this.ctx.citySprites.set(cacheKey, cityC);
           }
 
-          // Position bottom-center near the plot CENTER, not shoved to the front vertex. The atlas
-          // art's base is ~full sprite-width (BASE_SPRITE_TILES ≈ 3.2 tiles), so anchoring it at the
-          // diamond's front vertex made the wide base overhang the plot's front-left/right edges and
-          // cover adjacent RESOURCE tiles (a tile then showed both a resource icon and half a castle).
-          // Sitting the base near the diamond's center line — its widest span — keeps it inside the
-          // 3×3 footprint; the tall upper body rises up-and-back and only occludes BACK tiles, which
-          // is correct isometric depth. GROUND_FWD nudges the base 40% of the way toward the front
-          // vertex so it reads as planted (not floating at dead-center) without spilling forward —
-          // value verified against the widest-base atlas frames (lv4, l7). See design/tools/map-editor.
+          // Position bottom-center at the plot's own front vertex (see cityGroundFwdPx — single source
+          // of truth shared with the node-city branch below and with map-editor). The atlas art is
+          // bottom-aligned (pack_city_atlas.js sits every building's foot on the cell's bottom edge), so
+          // the bottom-center anchor lands the foot on the plot uniformly for every frame.
           const s = tileToScreen(tx, ty, tp);
-          const groundFwd = (BASE_FOOTPRINT * tp * ISO_RATIO) / 2 * 0.4; // 40% of center→front-vertex
+          const groundFwd = cityGroundFwdPx(BASE_FOOTPRINT, tp, ISO_RATIO);
           cityC.x = this.ctx.panX + s.x;
           cityC.y = this.ctx.panY + s.y + groundFwd;
           cityC.zIndex = tx + ty;
@@ -98,8 +97,19 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
           // this still reads well is a v1 question for the follow-up diamond-art pass.
           const sprite = cityC.getChildByName('img') as PIXI.Sprite;
           if (sprite.texture !== tex) sprite.texture = tex;
-          sprite.width  = BASE_SPRITE_TILES * tp;
-          sprite.height = BASE_SPRITE_TILES * tp;
+          const baseSpriteTiles = citySpriteTiles(BASE_FOOTPRINT, BASE_SPRITE_TILES);
+          sprite.width  = baseSpriteTiles * tp;
+          sprite.height = baseSpriteTiles * tp;
+
+          // Clip the sprite to its own plot (see cityPlotMaskPoints): a sprite this wide is ~7% wider
+          // than the plot's own diamond, and the diamond itself tapers to a point at the front vertex —
+          // without this mask that extra width and the un-tapered front corners visibly bleed onto
+          // neighbouring resource tiles, leaving players unsure whether that tile is still capturable.
+          const plotMask = cityC.getChildByName('plotMask') as PIXI.Graphics;
+          plotMask.clear();
+          plotMask.beginFill(0xffffff);
+          plotMask.drawPolygon(cityPlotMaskPoints(BASE_FOOTPRINT, tp, ISO_RATIO, baseSpriteTiles * tp));
+          plotMask.endFill();
 
           // Redraw level-within-tier dots
           const dots = cityC.getChildByName('dots') as PIXI.Graphics;
@@ -141,24 +151,32 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
           const sprite = new PIXI.Sprite(tex);
           sprite.name = 'img';
           sprite.anchor.set(0.5, 1); // bottom-center: rest the city base on the plot
+          const plotMask = new PIXI.Graphics();
+          plotMask.name = 'plotMask';
+          sprite.mask = plotMask;
           cityC = new PIXI.Container();
           cityC.addChild(sprite);
+          cityC.addChild(plotMask);
           this.ctx.cityLayer.addChild(cityC);
           this.ctx.citySprites.set(key, cityC);
         }
         const s = tileToScreen(node.x, node.y, tp);
-        const groundFwd = (node.footprint * tp * ISO_RATIO) / 2 * 0.4; // 40% center→front-vertex (see base branch note)
+        const groundFwd = cityGroundFwdPx(node.footprint, tp, ISO_RATIO);
         cityC.x = this.ctx.panX + s.x;
         cityC.y = this.ctx.panY + s.y + groundFwd;
         cityC.zIndex = node.x + node.y;
         const sprite = cityC.getChildByName('img') as PIXI.Sprite;
         if (sprite.texture !== tex) sprite.texture = tex;
-        // Scale the BASE_SPRITE_TILES art up sub-linearly with footprint (√), so higher-tier cities still
-        // read as bigger but the 9×9 world-center mega-city doesn't balloon to ~9.6 tiles and swallow the map
-        // (a base at footprint 3 is unchanged: √1 = 1).
-        const spriteTiles = Math.sqrt(node.footprint / BASE_FOOTPRINT) * BASE_SPRITE_TILES;
+        const spriteTiles = citySpriteTiles(node.footprint, BASE_SPRITE_TILES);
         sprite.width = spriteTiles * tp;
         sprite.height = spriteTiles * tp;
+
+        // Clip to the node's own plot — see the base-city branch note above (cityPlotMaskPoints).
+        const plotMask = cityC.getChildByName('plotMask') as PIXI.Graphics;
+        plotMask.clear();
+        plotMask.beginFill(0xffffff);
+        plotMask.drawPolygon(cityPlotMaskPoints(node.footprint, tp, ISO_RATIO, spriteTiles * tp));
+        plotMask.endFill();
       }
 
       // Destroy sprites that have scrolled off-screen

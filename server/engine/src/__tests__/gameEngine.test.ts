@@ -143,3 +143,54 @@ test('a scripted wave spawns via CampaignMixin and a leak past the base ends the
   assert.equal(outcome.engine.state.winner, Side.Top, 'a single leak past maxLeaks=0 loses the level');
   assert.equal(outcome.engine.state.enemyLeaks, 1);
 });
+
+// ── Match summary (GameState.snapshotSummary / game_stats event, STAR_SCORING.md) ──────
+
+test('game_stats carries a MatchSummary alongside stats, matching state at game over', () => {
+  const level: LevelDefinition = {
+    id: 'test_summary_leak',
+    chapter: 0,
+    seed: 5,
+    objective: { kind: 'leak_limit', maxLeaks: 0 },
+    waves: { entries: [{ atTick: 1, unitType: UnitType.Runner, col: ATTACK_LANES[0], count: 1 }] },
+    board: { laneLength: { [ATTACK_LANES[0]]: 17 } },
+  };
+  const config: GameConfig = { seed: 5, mode: 'campaign', players: [{ id: 0 }, { id: 1 }], level };
+  const outcome = runHeadless(config, new LocalInputSource(), 150);
+  assert.ok(outcome.ok);
+
+  const statsEvent = outcome.engine.state.events.find((e) => e.type === 'game_stats');
+  assert.ok(statsEvent && statsEvent.type === 'game_stats', 'the final tick emits a game_stats event');
+  const { summary } = statsEvent;
+  assert.equal(summary.elapsedTicks, outcome.engine.state.elapsedTicks, 'elapsedTicks matches state at game over');
+  assert.equal(summary.enemyLeaks, 1, 'enemyLeaks reflects the leak that ended the match');
+  assert.equal(summary.escortMinHpPct, null, 'no escorts on this level → null, not 0 or NaN');
+
+  // snapshotSummary() is independently callable and must agree with the event payload.
+  assert.deepEqual(outcome.engine.state.snapshotSummary(), summary);
+});
+
+test('snapshotSummary().escortMinHpPct is the lowest survival ratio across escorts (not the average)', () => {
+  const level: LevelDefinition = {
+    id: 'test_summary_escort',
+    chapter: 0,
+    seed: 6,
+    objective: { kind: 'escort', required: 'all' },
+    waves: { entries: [] },
+    escorts: [
+      { id: 'e1', hp: 100, speed: 0, startCol: ATTACK_LANES[0], startRow: 1 },
+      { id: 'e2', hp: 100, speed: 0, startCol: ATTACK_LANES[1], startRow: 1 },
+    ],
+  };
+  const config: GameConfig = { seed: 6, mode: 'campaign', players: [{ id: 0 }, { id: 1 }], level };
+  const engine = createGameEngine(config);
+  engine.step(0, []);
+
+  // Damage one escort but not the other — min must reflect the weaker one, not an average.
+  const [e1, e2] = engine.state.escorts;
+  e1!.takeDamage(90); // 100 -> 10 (10%)
+  e2!.takeDamage(20); // 100 -> 80 (80%)
+
+  const summary = engine.state.snapshotSummary();
+  assert.equal(summary.escortMinHpPct, 10, 'reports the lowest ratio (e1 at 10%), not e2\'s 80% or an average');
+});

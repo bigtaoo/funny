@@ -142,11 +142,24 @@ async function makeCell(srcPath) {
   const left = Math.max(0, box.minX - pad);
   const top = Math.max(0, box.minY - pad);
   const cw = Math.min(width, box.maxX + pad + 1) - left;
-  const ch = Math.min(height, box.maxY + pad + 1) - top;
+  // No bottom pad: the building's foot must be flush with the crop's bottom edge so that after the
+  // bottom-align composite below it lands on the cell's bottom edge.
+  const ch = Math.min(height, box.maxY + 1) - top;
 
-  return sharp(Buffer.from(data), { raw: { width, height, channels: 4 } })
+  // Fit the cropped building into the cell preserving aspect (fit: 'inside' touches one axis and never
+  // upscales past the cell), then composite it BOTTOM-CENTER onto a transparent CELL² canvas. Bottom-
+  // aligning makes every frame's building foot sit at the cell's bottom edge (base fraction ≈ 1.0 for
+  // all art), so the renderer's bottom-center anchor lands the foot on the plot uniformly. The old
+  // `fit: 'contain'` centred the art, leaving a variable empty margin below short/wide buildings
+  // (measured base fraction ranged 0.74–1.0) that made those cities float back off their plot.
+  const fitted = await sharp(Buffer.from(data), { raw: { width, height, channels: 4 } })
     .extract({ left, top, width: cw, height: ch })
-    .resize(CELL, CELL, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .resize(CELL, CELL, { fit: 'inside', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .png()
+    .toBuffer();
+  const fm = await sharp(fitted).metadata();
+  return sharp({ create: { width: CELL, height: CELL, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .composite([{ input: fitted, left: Math.round((CELL - (fm.width ?? CELL)) / 2), top: CELL - (fm.height ?? CELL) }])
     .png()
     .toBuffer();
 }

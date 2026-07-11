@@ -228,9 +228,9 @@
   },
   "rewards": {
     "starThresholds": [
+      1,
       50,
-      80,
-      100
+      80
     ],
     "materials": {
       "scrap": 10,

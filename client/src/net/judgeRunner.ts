@@ -24,7 +24,7 @@ import {
   type Replay,
   type ReplayFrame,
 } from '../game';
-import { computeStars, remainingHpPct } from '../game/meta/campaignRewards';
+import { computeStars, buildStarContext } from '../game/meta/campaignRewards';
 import { PlayerCommands, type PlayerCommand as ProtoPlayerCommand } from './proto/game';
 import type { JudgeRequest } from './proto/transport';
 
@@ -115,7 +115,15 @@ function runPveJudge(req: JudgeRequest): JudgeOutcome {
       return { ok: true, stateHash: '', winnerSide: winner ?? 0, stars: 0, statsJson: '' };
     }
     const stats = engine.state.snapshotStats();
-    const stars = computeStars(level.rewards?.starThresholds, remainingHpPct(stats[0].damageTakenByBase));
+    const summary = engine.state.snapshotSummary();
+    const ctx = buildStarContext(level, {
+      damageTakenByBase: stats[0].damageTakenByBase,
+      elapsedTicks: summary.elapsedTicks,
+      enemyLeaks: summary.enemyLeaks,
+      escortMinHpPct: summary.escortMinHpPct,
+      unitsKilled: stats[0].unitsKilled,
+    });
+    const stars = computeStars(level.rewards?.starThresholds, ctx);
     // PvE feed (S9-3b): cleared (player owner 0 wins) → report the player's achievement stats for this match. Judge is authoritative; meta accumulates after L1 verification.
     const statsJson = JSON.stringify(achievementStatDelta(stats[0]));
     return { ok: true, stateHash: '', winnerSide: 0, stars, statsJson };

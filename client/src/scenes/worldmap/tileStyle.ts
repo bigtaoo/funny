@@ -10,7 +10,7 @@
 //     own = red ink, enemy = blue ink, family-ally = green ink.
 
 import type { WorldTileView } from '../../net/WorldApiClient';
-import { proceduralTile } from '@nw/shared';
+import { proceduralTile, biomeMixAt } from '@nw/shared';
 import type { ObstacleKind } from '@nw/shared';
 import type { TerrainTextureName } from '../../render/terrainAtlasLoader';
 
@@ -46,10 +46,10 @@ export const RES_COLORS: Record<string, number> = {
  * flat — mountains read as a pale wash next to the crisp opaque land tiles — so obstacles
  * now keep visible texture while staying below land. Any terrain not listed uses the DEFAULT.
  */
-export const TERRAIN_TEX_ALPHA_DEFAULT = 0.85; // nudged down from 0.9 so the warm paper breathes through
+export const TERRAIN_TEX_ALPHA_DEFAULT = 0.95; // 0.85→0.95 (2026-07-11): land was too washed out against the pale paper — see legibility pass
 export const TERRAIN_TEX_ALPHA: Partial<Record<TerrainTextureName, number>> = {
-  terrain_mountain: 0.68,
-  terrain_river:    0.68,
+  terrain_mountain: 0.8, // 0.68→0.8 (2026-07-11): still softer than land, but strong enough to compete with biome tints
+  terrain_river:    0.8,
 };
 
 /**
@@ -66,6 +66,11 @@ export const TERRAIN_TEX_ALPHA: Partial<Record<TerrainTextureName, number>> = {
 // per-level motif. Deliberately high-luminance & paper-adjacent: the wash whispers the biome
 // without competing with the motif or masquerading as an ownership hue. Retune the biome palette
 // by nudging these. Must match the map-editor's tileStyle.ts RES_TEX_TINT (SLG map render parity).
+// Tried deepening these 2026-07-11 for the legibility pass, then reverted: resType is assigned
+// per-tile independently (no spatial clustering), so a strong per-type ground tint reads as
+// dense pink/blue-grey confetti rather than legible biome zones — the exact "地图像彩色纸屑"
+// problem the 2026-07-08 pass already fixed once (see DESIGN.md). Left faint; resource-type
+// legibility now comes from the motif icon's raised alpha floor instead (see drawResMotif).
 export const RES_TEX_TINT: Record<string, number> = {
   paper:    0xf1e6c0, // warm straw
   ink:      0xc6cfe8, // cool periwinkle
@@ -74,14 +79,31 @@ export const RES_TEX_TINT: Record<string, number> = {
   sticker:  0xf0cfe1, // soft rose
 };
 
+function lerpHexColor(c1: number, c2: number, t: number): number {
+  const r1 = (c1 >> 16) & 0xff, g1 = (c1 >> 8) & 0xff, b1 = c1 & 0xff;
+  const r2 = (c2 >> 16) & 0xff, g2 = (c2 >> 8) & 0xff, b2 = c2 & 0xff;
+  const r = Math.round(r1 + (r2 - r1) * t), g = Math.round(g1 + (g2 - g1) * t), b = Math.round(b1 + (b2 - b1) * t);
+  return (r << 16) | (g << 8) | b;
+}
+
+/**
+ * Ground tint for a resource tile at (x,y), blended across biome-zone boundaries instead of hard-cut
+ * (2026-07-11 continuity pass — see biomeMixAt in @nw/shared). Deep inside a zone this equals plain
+ * `RES_TEX_TINT[biomeAt(...)]`; near a boundary it fades to the neighboring zone's tint over ~10 tiles.
+ */
+export function biomeGroundTint(x: number, y: number, seed: number): number {
+  const mix = biomeMixAt(x, y, seed);
+  return mix.t === 0 ? RES_TEX_TINT[mix.a]! : lerpHexColor(RES_TEX_TINT[mix.a]!, RES_TEX_TINT[mix.b]!, mix.t);
+}
+
 export const TERRAIN_TEX_TINT_DEFAULT = 0xffffff;
 export const TERRAIN_TEX_TINT: Partial<Record<TerrainTextureName, number>> = {
-  terrain_grass:      0xe2ead4, // generic land / grass — faint warm sage
-  terrain_river:      0xcfe0ec, // river — faint cool blue (also drawn at 0.68 alpha → soft)
-  terrain_mountain:   0xc9ccd0, // mountain — cool stone grey (2026-07-08: was warm taupe 0xdccbb4, which skewed pink on the warm paper and didn't read as rock; also at 0.68 alpha)
-  terrain_keep:       0xeeddb0, // chokepoint keep — warm amber
-  terrain_center:     0xf2e6ad, // world center — soft gold
-  terrain_stronghold: 0xcdb8a6, // NPC stronghold — muted stone brown
+  terrain_grass:      0xc8dcb0, // generic land / grass — warm sage, deepened 2026-07-11 for zone legibility
+  terrain_river:      0xa9cbe0, // river — cool blue, deepened 2026-07-11 (also at 0.8 alpha)
+  terrain_mountain:   0xb3b7bd, // mountain — cool stone grey, deepened 2026-07-11 (was near-white 0xc9ccd0; also at 0.8 alpha)
+  terrain_keep:       0xe0c481, // chokepoint keep — warm amber, deepened 2026-07-11
+  terrain_center:     0xe6d377, // world center — soft gold, deepened 2026-07-11
+  terrain_stronghold: 0xba9a80, // NPC stronghold — muted stone brown, deepened 2026-07-11
 };
 
 export const MINE_TINT      = 0xe69090; // own territory (light red ink)

@@ -13,7 +13,8 @@ import { LocalInputSource } from '../src/game/net/InputSource';
 import { Side, GamePhase } from '../src/game/types';
 import type { GameConfig, IGameEngine, OwnerId } from '../src/game/types';
 import { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER } from '../src/game/campaign/levels';
-import { computeStars, remainingHpPct } from '../src/game/meta/campaignRewards';
+import { computeStars, buildStarContext } from '../src/game/meta/campaignRewards';
+import type { LevelDefinition } from '@nw/engine';
 import { runJudge } from '../src/net/judgeRunner';
 import { replayToUploadFrames } from '../src/net/replayUpload';
 import type { JudgeRequest } from '../src/net/proto/transport';
@@ -37,12 +38,20 @@ function driveToEnd(engine: IGameEngine, maxTicks: number, script: PlayScript): 
   return i;
 }
 
-/** Star count from the original run (same formula as runPveJudge): stars are awarded only if the player (owner 0) wins, otherwise 0. */
-function trueStars(engine: IGameEngine, thresholds: [number, number, number] | undefined): number {
+/** Star count from the original run (same ctx as runPveJudge): stars are awarded only if the player (owner 0) wins, otherwise 0. */
+function trueStars(engine: IGameEngine, level: LevelDefinition): number {
   const w = engine.state.winner;
   const winner: OwnerId | null = w === Side.Top ? 1 : w === Side.Bottom ? 0 : null;
   if (winner !== 0) return 0;
-  return computeStars(thresholds, remainingHpPct(engine.state.snapshotStats()[0].damageTakenByBase));
+  const stats = engine.state.snapshotStats();
+  const summary = engine.state.snapshotSummary();
+  return computeStars(level.rewards?.starThresholds, buildStarContext(level, {
+    damageTakenByBase: stats[0].damageTakenByBase,
+    elapsedTicks: summary.elapsedTicks,
+    enemyLeaks: summary.enemyLeaks,
+    escortMinHpPct: summary.escortMinHpPct,
+    unitsKilled: stats[0].unitsKilled,
+  }));
 }
 
 /** Upload frames (base64) → JudgeRequest frames (bytes), simulating gateway's decodeFrames. */
@@ -65,7 +74,7 @@ describe('judgeRunner — PvE spot-check re-verification', () => {
     const original = createGameEngine(cfg, rec);
     const ran = driveToEnd(original, 6000, script);
     expect(original.state.phase).toBe(GameOver); // level is deterministic and always produces a winner
-    const expectedStars = trueStars(original, level.rewards?.starThresholds);
+    const expectedStars = trueStars(original, level);
     const replay = rec.snapshot({ seed: level.seed, mode: 'campaign', configRef: level.id });
 
     // Encode upload frames → decode back into a JudgeRequest (owner 0 only).

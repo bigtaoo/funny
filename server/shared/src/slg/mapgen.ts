@@ -39,6 +39,43 @@ export function biomeAt(x: number, y: number, seed: number): ResourceType {
   return 'metal';
 }
 
+const _BIOME_ORDER: readonly ResourceType[] = ['ink', 'paper', 'graphite', 'metal'];
+
+/** Noise-value half-width of the biome blend band, tuned (map-editor screenshot A/B) to read as
+ * roughly a 10-tile-wide transition at {@link SLG_GEN.biomeFreq} — see {@link biomeMixAt}. */
+export const BIOME_BLEND_WIDTH = 0.11;
+
+function _smoothstep01(edge0: number, edge1: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+/** Two categories + a blend factor (a→b) for a smooth zone-boundary gradient. */
+export interface BiomeMix { a: ResourceType; b: ResourceType; t: number }
+
+/**
+ * Like {@link biomeAt}, but reports proximity to a zone boundary instead of hard-cutting it, so the
+ * ground render can blend `RES_TEX_TINT[a]`→`RES_TEX_TINT[b]` over `t` instead of jump-cutting at the
+ * threshold (2026-07-11: the map-wide biome noise is already smooth/continuous — the "abrupt" look the
+ * threshold-based biomeAt() produced was purely an artifact of the discrete step, not the noise itself).
+ * Deep inside a zone (n more than `w` from any threshold) returns `a === b`, `t === 0` (pure color).
+ */
+export function biomeMixAt(x: number, y: number, seed: number, w = BIOME_BLEND_WIDTH): BiomeMix {
+  const n = valueNoise(x, y, SLG_GEN.biomeFreq, seed ^ 0x0444);
+  const thresholds = [SLG_GEN.biomeInkMax, SLG_GEN.biomePaperMax, SLG_GEN.biomeGraphiteMax];
+  let idx = _BIOME_ORDER.length - 1;
+  for (let i = 0; i < thresholds.length; i++) { if (n < thresholds[i]!) { idx = i; break; } }
+  if (idx > 0) {
+    const t0 = thresholds[idx - 1]!;
+    if (n < t0 + w) return { a: _BIOME_ORDER[idx - 1]!, b: _BIOME_ORDER[idx]!, t: _smoothstep01(t0 - w, t0 + w, n) };
+  }
+  if (idx < thresholds.length) {
+    const t1 = thresholds[idx]!;
+    if (n > t1 - w) return { a: _BIOME_ORDER[idx]!, b: _BIOME_ORDER[idx + 1]!, t: _smoothstep01(t1 - w, t1 + w, n) };
+  }
+  return { a: _BIOME_ORDER[idx]!, b: _BIOME_ORDER[idx]!, t: 0 };
+}
+
 /**
  * Resource type for a `resource` tile, with the copper-mine level gate: `sticker` appears ONLY on tiles at
  * level ≥ SLG_GEN.copperMinLevel (Three-Kingdoms-Strategy rule: copper mine is a level-6-and-above special, SGZ_LAND_REFERENCE §3). On an eligible
@@ -185,6 +222,33 @@ export const WORLD_CENTER_FOOTPRINT = 9;
 const _OUTER_GRADED_CITY_TIERS: readonly number[] = [3, 3, 4, 4, 5, 5, 6, 7, 8];
 /** State-capital city level (DRAFT — a province's capital is its strongest city). */
 export const PROVINCE_CAPITAL_LEVEL = SLG_MAP_MAX_LEVEL;
+
+// ── Resource level cap behind a city (2026-07-11, placeholder tuning) ──────────────────────────
+// A city sprite is tall enough to visually occlude tiles behind it — in this iso projection (see
+// client isoGrid.ts tileToScreen) that's specifically the tiles toward -x ("up-left" on screen) and
+// toward -y ("up-right" on screen) from the city's own footprint, NOT the front/left/right sides
+// (those are already guaranteed clear by the sprite's plot-diamond mask, see WorldMapRenderer/city.ts).
+// Rather than solve "is this tile still capturable" with more rendering tricks, cap those two
+// occluded bands' resource level low enough that players don't care they can't see them clearly.
+// User-picked placeholder numbers, expected to be re-tuned by hand later — do not treat 5/5 as final.
+/** Max resource level allowed in a city's occluded back-bands (see {@link _inCityBackBands}). */
+const RESOURCE_LEVEL_CAP_NEAR_CITY = 5;
+/** How many tiles deep the occluded back-bands extend past the city's own footprint edge. */
+const RESOURCE_LEVEL_CAP_DEPTH = 5;
+
+/**
+ * True if (x,y) sits in one of the two tile-space bands a city's tall sprite visually occludes: the
+ * `RESOURCE_LEVEL_CAP_DEPTH`-tile-deep strip immediately behind the footprint's -x edge ("up-left" on
+ * screen) or -y edge ("up-right" on screen), spanning the footprint's own width on the perpendicular
+ * axis. The other two sides (+x/+y, i.e. front-left/front-right on screen) are unaffected — those are
+ * already fully visible (the sprite's own plot mask guarantees it never bleeds there).
+ */
+function _inCityBackBands(x: number, y: number, cityX: number, cityY: number, footprint: number): boolean {
+  const r = (footprint - 1) / 2;
+  const inUpLeft = x >= cityX - r - RESOURCE_LEVEL_CAP_DEPTH && x < cityX - r && y >= cityY - r && y <= cityY + r;
+  const inUpRight = y >= cityY - r - RESOURCE_LEVEL_CAP_DEPTH && y < cityY - r && x >= cityX - r && x <= cityX + r;
+  return inUpLeft || inUpRight;
+}
 
 interface _CityNode { x: number; y: number; level: number; kind: 'garrison'; provinceIdx?: number; }
 
@@ -343,7 +407,17 @@ export function proceduralTile(world: string, x: number, y: number): ProceduralT
   const provIdx = provinceIdxAt(x, y);
   const kind = NATION_KIND_BY_IDX[provIdx]!;
   const lvlNoise = valueNoise(x, y, SLG_GEN.levelFreq, seed ^ 0x0111);
-  const level = _levelFromRing(kind, lvlNoise);
+  let level = _levelFromRing(kind, lvlNoise);
+
+  // Cap resource level in a city's occluded back-bands (see RESOURCE_LEVEL_CAP_NEAR_CITY docs above) —
+  // world center, this tile's own province capital, and any graded/gate city node.
+  if (
+    _inCityBackBands(x, y, wcx, wcy, WORLD_CENTER_FOOTPRINT)
+    || caps.some(([cx, cy]) => _inCityBackBands(x, y, cx, cy, cityFootprint(PROVINCE_CAPITAL_LEVEL)))
+    || _worldCityNodes(mapW, mapH, seed).some((n) => _inCityBackBands(x, y, n.x, n.y, cityFootprint(n.level)))
+  ) {
+    level = Math.min(level, RESOURCE_LEVEL_CAP_NEAR_CITY);
+  }
 
   // Stronghold / familyKeep spacing (unchanged mechanics), now measured from the tile's own province capital.
   const [capX, capY] = caps[provIdx]!;
