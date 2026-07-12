@@ -24,16 +24,18 @@ export class InputManager {
   /**
    * While true, every emitted pointer event is dropped before dispatch. The SceneManager raises
    * this for the duration of a scene-switch fade: input here bypasses PixiJS entirely (WebAdapter
-   * feeds us straight from DOM pointer listeners), so the fade's black cover cannot block taps on
-   * its own. Without this gate, a tap during the ~280ms fade reaches BOTH the outgoing scene (still
+   * feeds us straight from DOM pointer listeners), so the fade's paper-tint cover cannot block taps
+   * on its own. Without this gate, a tap during the ~270ms fade reaches BOTH the outgoing scene (still
    * mounted + subscribed until the swap) and the already-constructed incoming scene, firing stale
-   * hit-rects and navigating somewhere the user never tapped.
+   * hit-rects and navigating somewhere the user never tapped. Only the handful of transitions the
+   * SceneManager fades (enter/exit match, enter/exit SLG) engage this gate at all — every instant
+   * (non-fade) goto leaves input live throughout.
    */
   private suppressed = false;
   /**
    * Fires on a pointer-DOWN that arrives while suppressed. The SceneManager uses it to abort the
    * fade on the first tap (skip straight to the target scene) so a hurried second tap isn't lost to
-   * the 280ms freeze. The down that triggers it is still consumed (never dispatched).
+   * the 270ms freeze. The down that triggers it is still consumed (never dispatched).
    */
   private suppressedDownHook: (() => void) | null = null;
   /** One-shot: eat the next pointer-UP without dispatching. Used to swallow the release of a fade-aborting tap. */
