@@ -210,6 +210,39 @@ function _crossingTile(kind: ObstacleKind): ProceduralTile {
   return { type: kind === 'river' ? 'bridge' : 'plankway', level: Math.max(2, SLG_MAP_MAX_LEVEL - 1) };
 }
 
+/** Neighbor offsets for {@link obstacleShoreAt}: orthogonal edges read as "closer" to the obstacle
+ * than diagonal corners, so they carry more shore-wash weight. */
+const _SHORE_NEIGHBORS: readonly [number, number, number][] = [
+  [1, 0, 0.45], [-1, 0, 0.45], [0, 1, 0.45], [0, -1, 0.45],
+  [1, 1, 0.25], [1, -1, 0.25], [-1, 1, 0.25], [-1, -1, 0.25],
+];
+
+/**
+ * "Shore" wash for a non-obstacle tile bordering a river/mountain band (2026-07-12 edge-blend pass):
+ * ring/river-chord/branch bands are rasterized as a hard per-tile boolean (obstacle vs not), which reads
+ * as an abrupt cut where the hand-drawn mountain/river art meets grass, even though the band's underlying
+ * boundary line already wobbles organically (see `_ringTerrainAt`/`_riverChordAt`). Rather than reworking
+ * the three band shapes to emit a fractional distance (they're geometrically distinct — circle/line/line —
+ * and none carry sub-tile resolution), this looks at the already-computed neighbor tiles and, for a tile
+ * touching an obstacle, returns that obstacle's art kind + a faded wash alpha so the render layer (tileGraphics
+ * drawTileL1 / map-editor drawEditorTile) can paint a soft "bank" fringe on the land side of the boundary
+ * instead of a hard texture swap. Returns null for obstacle tiles themselves (they render at full strength;
+ * see the ProceduralTile.type check at each call site) and for land tiles with no adjacent obstacle.
+ * Orthogonal neighbors weigh more than diagonal-only ones so a tile touching the band's flat edge reads
+ * stronger than one only grazing its corner. Must stay in lockstep with the map-editor's drawEditorTile
+ * (SLG map render parity).
+ */
+export function obstacleShoreAt(world: string, x: number, y: number): { kind: ObstacleKind; alpha: number } | null {
+  let best: ObstacleKind | null = null;
+  let bestW = 0;
+  for (const [dx, dy, w] of _SHORE_NEIGHBORS) {
+    if (w <= bestW) continue;
+    const n = proceduralTile(world, x + dx, y + dy);
+    if (n.type === 'obstacle' && n.obstacleKind) { best = n.obstacleKind; bestW = w; }
+  }
+  return best ? { kind: best, alpha: bestW } : null;
+}
+
 // ── Cities (ADR-034 §3): point-node siege targets, layered on top of the procedural terrain ──────────
 // Province capitals (state capitals, §3 "province capital") are handled via `provinceCapitalPositions`; this section
 // covers the other two node kinds. Kept as plain ProceduralTile classifications (familyKeep/center) rather
