@@ -63,7 +63,7 @@ export function drawEditorTile(g: PIXI.Graphics, tile: ProceduralTile, texName: 
   // baked l1–l10 graded art (taller/denser = higher level) actually reads on the map. Must stay in
   // lockstep with the game client's drawTileL1 (SLG map render parity).
   if (tile.type === 'resource' && tile.resType) {
-    drawResMotif(g, tile.resType, tile.level, tp);
+    drawResMotif(g, tile.resType, tile.level, tp, tx, ty);
   }
 
   const featBuilding = tile.type === 'familyKeep' ? 'building_keep'
@@ -96,9 +96,10 @@ export function placeBuildingSprite(g: PIXI.Graphics, name: string, hh: number, 
  * encodes abundance/defense, so the old count-copy + lv4+/lv7+ defense frames are gone — they just
  * flooded the paper with confetti). No fog path: templates are always fully revealed.
  */
-export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, tp: number): void {
+export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, tp: number, tx = 0, ty = 0): void {
   const lv = Math.max(1, Math.min(10, level));
   const toLocal = (fx: number, fy: number): [number, number] => [(fx - 0.5) * tp, (fy - 0.5) * tp * 0.6];
+  const jitter = motifJitter(tx, ty);
 
   if (!isResAtlasReady()) { drawResMotifFallback(g, resType, tp); return; }
 
@@ -114,14 +115,29 @@ export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, t
   // bounded. 0.40: shrunk 0.55→0.48→0.40 for clear gaps between adjacent tiles' motifs
   // (resourceDensity=1.0 puts one on every tile); mirrors the game client (parity).
   const denom = levelTex ? tex.width : Math.max(tex.width, tex.height);
-  sp.scale.set((tp * 0.40) / denom);
+  // Per-tile jitter (2026-07-12, resource-carpet pass) — mirrors the game client's
+  // drawResMotif/motifJitter (SLG map render parity): breaks the perfectly uniform grid look of
+  // identical same-biome frames repeating at real play zoom, without touching density/alpha tuning.
+  sp.scale.set((tp * 0.40) / denom * jitter.scale);
+  sp.rotation = jitter.rot;
   // Value hierarchy by opacity: resourceDensity=1.0 puts a heap on EVERY tile, so full-strength
   // everywhere reads as uniform confetti. Fade low-level heaps and keep high-level ones solid so
   // the eye picks out valuable tiles — lv1≈0.65 → lv10=1.0. Floor raised 0.4→0.65 (2026-07-11
   // legibility pass). Mirrors the game client (parity).
   sp.alpha = 0.65 + 0.35 * ((lv - 1) / 9);
   [sp.x, sp.y] = toLocal(0.5, 0.52);
+  sp.x += jitter.dx * tp; sp.y += jitter.dy * tp;
   g.addChild(sp);
+}
+
+/** Deterministic per-tile placement jitter — mirrors the game client's motifJitter (SLG map
+ * render parity). See the game client's tileGraphics.ts for the full rationale. */
+export function motifJitter(tx: number, ty: number): { dx: number; dy: number; rot: number; scale: number } {
+  const h1raw = Math.sin(tx * 12.9898 + ty * 78.233) * 43758.5453;
+  const h2raw = Math.sin(tx * 39.346 + ty * 11.135) * 24634.6345;
+  const h1 = h1raw - Math.floor(h1raw);
+  const h2 = h2raw - Math.floor(h2raw);
+  return { dx: (h1 - 0.5) * 0.26, dy: (h2 - 0.5) * 0.18, rot: (h1 - 0.5) * 0.7, scale: 0.85 + h2 * 0.3 };
 }
 
 /** Single programmatic fallback icon when res_atlas hasn't decoded yet — mirrors the game client. */
