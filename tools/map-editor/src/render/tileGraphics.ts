@@ -9,9 +9,9 @@ import { ISO_RATIO, diamondPath } from './isoGrid';
 import { getResLevelTexture, getResTexture, isResAtlasReady } from './resAtlasLoader';
 import { getTerrainTexture, isTerrainAtlasReady } from './terrainAtlasLoader';
 import { getBuildingTexture, isBuildingAtlasReady } from './buildingAtlasLoader';
-import { terrainFill, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT, biomeGroundTint } from './tileStyle';
+import { terrainFill, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT, biomeGroundTint, obstacleTextureName } from './tileStyle';
 import type { TerrainTextureName } from './terrainAtlasLoader';
-import { worldSeed, type ProceduralTile } from '@nw/shared/slg';
+import { worldSeed, obstacleShoreAt, type ProceduralTile } from '@nw/shared/slg';
 
 /** Ground + motif + landmark for one tile. `g`'s local origin is the tile's diamond center. */
 export function drawEditorTile(g: PIXI.Graphics, tile: ProceduralTile, texName: TerrainTextureName, tp: number, tx = 0, ty = 0, worldId = ''): void {
@@ -37,6 +37,26 @@ export function drawEditorTile(g: PIXI.Graphics, tile: ProceduralTile, texName: 
   }
   g.drawPolygon(diamondPath(tp - 1));
   g.endFill();
+
+  // Obstacle-edge "shore" wash (2026-07-12) — mirrors the game client's drawTileL1 (SLG map
+  // render parity). See obstacleShoreAt for why: the band shapes rasterize as a hard per-tile
+  // boolean, so a faded second texture pass on bordering tiles softens the cut into a ~1-tile
+  // "bank" fringe instead of an abrupt art swap.
+  if (tex && tile.type !== 'obstacle' && tile.type !== 'bridge' && tile.type !== 'plankway') {
+    const shore = obstacleShoreAt(worldId, tx, ty);
+    if (shore) {
+      const shoreTexName = obstacleTextureName(shore.kind);
+      const shoreTex = isTerrainAtlasReady() ? getTerrainTexture(shoreTexName) : null;
+      if (shoreTex) {
+        const w = tp - 1;
+        const h = w * ISO_RATIO;
+        const m = new PIXI.Matrix(w / shoreTex.width, 0, 0, h / shoreTex.height, -w / 2, -h / 2);
+        g.beginTextureFill({ texture: shoreTex, matrix: m, alpha: shore.alpha, color: TERRAIN_TEX_TINT[shoreTexName] ?? TERRAIN_TEX_TINT_DEFAULT });
+        g.drawPolygon(diamondPath(tp - 1));
+        g.endFill();
+      }
+    }
+  }
 
   // Resource motif overlay: with resourceDensity=1.0 (ADR-032) every open tile is a resource
   // tile, so this paints a per-level heap on every one of them — dense by design, so the freshly

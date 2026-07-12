@@ -6,10 +6,10 @@ import { getResLevelTexture, getResTexture, isResAtlasReady } from '../../render
 import { getTerrainTexture, isTerrainAtlasReady } from '../../render/terrainAtlasLoader';
 import { getBuildingTexture, isBuildingAtlasReady } from '../../render/buildingAtlasLoader';
 import { isCityAtlasReady } from '../../render/cityAtlasLoader';
-import { FOG_COLOR, ALLY_SECT_BORDER, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT, biomeGroundTint } from './tileStyle';
+import { FOG_COLOR, ALLY_SECT_BORDER, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT, biomeGroundTint, obstacleTextureName } from './tileStyle';
 import type { TerrainTextureName } from '../../render/terrainAtlasLoader';
 import type { WorldTileView } from '../../net/WorldApiClient';
-import { worldSeed, type ProceduralTile } from '@nw/shared';
+import { worldSeed, obstacleShoreAt, type ProceduralTile } from '@nw/shared';
 
 export function drawTileL1(
   g: PIXI.Graphics, tile: WorldTileView | null,
@@ -53,6 +53,31 @@ export function drawTileL1(
   }
   g.drawPolygon(diamondPath(tp - 1));
   g.endFill();
+
+  // Obstacle-edge "shore" wash (2026-07-12): river/mountain bands rasterize as a hard per-tile
+  // boolean, so the hand-drawn obstacle art meeting grass read as an abrupt cut even though the
+  // band's boundary line itself wobbles organically. A tile bordering an obstacle gets a faded
+  // second pass of that obstacle's texture (obstacleShoreAt), softening the cut into a ~1-tile
+  // "bank" fringe instead of reworking the band shapes for sub-tile resolution. Skipped on the
+  // obstacle tile itself (drawn at full strength above) and on bridge/plankway (crossing art
+  // already reads as the spanned terrain). Must stay in lockstep with the map-editor's
+  // drawEditorTile (SLG map render parity).
+  const featTypeForShore = tile?.type ?? proc?.type;
+  if (tex && featTypeForShore !== 'obstacle' && featTypeForShore !== 'bridge' && featTypeForShore !== 'plankway') {
+    const shore = obstacleShoreAt(worldId, tx, ty);
+    if (shore) {
+      const shoreTexName = obstacleTextureName(shore.kind);
+      const shoreTex = isTerrainAtlasReady() ? getTerrainTexture(shoreTexName) : null;
+      if (shoreTex) {
+        const w = tp - 1;
+        const h = w * ISO_RATIO;
+        const m = new PIXI.Matrix(w / shoreTex.width, 0, 0, h / shoreTex.height, -w / 2, -h / 2);
+        g.beginTextureFill({ texture: shoreTex, matrix: m, alpha: shore.alpha, color: TERRAIN_TEX_TINT[shoreTexName] ?? TERRAIN_TEX_TINT_DEFAULT });
+        g.drawPolygon(diamondPath(tp - 1));
+        g.endFill();
+      }
+    }
+  }
 
   // Resource motif overlay: with resourceDensity=1.0 (ADR-032) every open tile is a resource tile,
   // so this paints a per-level heap on every one — dense by design, so the l1–l10 graded art

@@ -139,6 +139,13 @@ export function terrainFill(tile: WorldTileView): number {
  * bands) that art is used verbatim; otherwise a deterministic per-tile hash picks one of the two
  * doodle variants so a legacy contiguous obstacle band doesn't look monotone.
  */
+/** Ground texture for a bare obstacle kind (river/mountain), no per-tile hash fallback needed since
+ * the caller (obstacleShoreAt) always knows the neighboring obstacle's exact kind. Used for the
+ * edge "shore" wash — see drawTileL1. Must stay in lockstep with the map-editor's tileStyle.ts. */
+export function obstacleTextureName(kind: ObstacleKind): TerrainTextureName {
+  return kind === 'river' ? 'terrain_river' : 'terrain_mountain';
+}
+
 export function terrainTextureName(type: string, tx: number, ty: number, obstacleKind?: ObstacleKind): TerrainTextureName {
   switch (type) {
     case 'obstacle':    return obstacleKind === 'river' ? 'terrain_river'

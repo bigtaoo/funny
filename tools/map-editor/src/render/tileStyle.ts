@@ -83,6 +83,12 @@ export function terrainFill(type: TileType, resType?: ResourceType): number {
   return TERRAIN_COLORS[type] ?? TERRAIN_COLORS.neutral!;
 }
 
+/** Ground texture for a bare obstacle kind — mirrors the game client's tileStyle.ts obstacleTextureName
+ * (SLG map render parity). Used for the edge "shore" wash — see drawEditorTile. */
+export function obstacleTextureName(kind: ObstacleKind): TerrainTextureName {
+  return kind === 'river' ? 'terrain_river' : 'terrain_mountain';
+}
+
 /** Hand-drawn ground texture for a tile type — identical mapping to the game client's terrainTextureName(). */
 export function terrainTextureName(type: string, tx: number, ty: number, obstacleKind?: ObstacleKind): TerrainTextureName {
   switch (type) {
