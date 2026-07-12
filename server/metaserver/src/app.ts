@@ -56,7 +56,12 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
   // Fastify's body-size gate must be ≥ the application-layer cap; otherwise a legitimate blob >1MB is rejected by
   // Fastify first with 413 (FST_ERR_CTP_BODY_TOO_LARGE) and the application's graceful 400 "replay too large" never fires.
   // Other endpoints have bodies well below this limit and are unaffected.
-  const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 4 * 1024 * 1024 });
+  // maxParamLength raised from find-my-way's default 100: /mail/:id/claim's id is socialsvc's `${dispatchKey}:${to}`
+  // mailId — for auction-returned/sold mail, dispatchKey embeds the full auctionId (itself `a:{sellerId-uuid}:{ts}:{n}`),
+  // so `${dispatchKey}:${to}` routinely exceeds 100 chars. Past that length find-my-way doesn't match the route at
+  // all (raw 404 "Route not found" from Fastify, never reaching claimMail) — surfaced to players as "claim failed"
+  // with no attachment ever really invalid. 200 gives ~2x headroom over the longest realistic mailId.
+  const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 4 * 1024 * 1024, routerOptions: { maxParamLength: 200 } });
   await app.register(cors, { origin: true });
 
   // Human-readable request/response log (for debugging, replacing pino JSON). One line per request on completion: method path status elapsed.

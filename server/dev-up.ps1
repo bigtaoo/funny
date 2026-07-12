@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Start all Notebook Wars dev server processes, each in its own window with hot reload.
 
@@ -33,11 +33,12 @@ $logDir = Join-Path $server 'logs'
 # Run node directly (not via npm) so the PowerShell WindowTitle we set is not
 # clobbered by nested `npm run` — each window stays titled `nw:<name>`.
 $procs = @(
-  @{ name = 'meta';       dir = 'metaserver'; env = @{ NW_COMMERCIAL_INTERNAL_URL = 'http://127.0.0.1:18082'; NW_GATEWAY_PUBLIC_WS_URL = 'ws://localhost:8086/gw' } }
+  @{ name = 'meta';       dir = 'metaserver'; env = @{ NW_COMMERCIAL_INTERNAL_URL = 'http://127.0.0.1:18082'; NW_GATEWAY_PUBLIC_WS_URL = 'ws://localhost:8086/gw'; NW_SOCIALSVC_INTERNAL_URL = 'http://127.0.0.1:8085' } }
   @{ name = 'gateway';    dir = 'gateway';    env = @{ NW_MATCHSVC_INTERNAL_URL  = 'http://127.0.0.1:8091'; NW_GW_PORT = '8086'; NW_META_BASE_URL = 'http://127.0.0.1:18080'; NW_GW_REDIS_URL = 'redis://127.0.0.1:6379' } }
   @{ name = 'matchsvc';   dir = 'matchsvc';   env = @{ NW_GATEWAY_INTERNAL_URL   = 'http://127.0.0.1:8090'; NW_GAME_PUBLIC_WS_URL = 'ws://127.0.0.1:8081/ws' } }
   @{ name = 'game';       dir = 'gameserver'; env = @{ NW_MATCHSVC_INTERNAL_URL  = 'http://127.0.0.1:8091' } }
   @{ name = 'commercial'; dir = 'commercial'; env = @{} }
+  @{ name = 'social';     dir = 'socialsvc';  env = @{ NW_SOCIAL_PORT = '8085'; NW_GATEWAY_INTERNAL_URL = 'http://127.0.0.1:8090'; NW_META_INTERNAL_URL = 'http://127.0.0.1:18080' } }
   @{ name = 'world';      dir = 'worldsvc';   env = @{ NW_WORLD_PORT = '18084'; NW_GATEWAY_INTERNAL_URL = 'http://127.0.0.1:8090'; NW_WORLD_REDIS_URL = 'redis://127.0.0.1:6379' } }
   @{ name = 'auction';    dir = 'auctionsvc'; env = @{ NW_AUCTION_PORT = '18086'; NW_META_INTERNAL_URL = 'http://127.0.0.1:18080'; NW_COMMERCIAL_INTERNAL_URL = 'http://127.0.0.1:18082' } }
   @{ name = 'admin';      dir = 'admin';      env = @{ NW_GATEWAY_INTERNAL_URL = 'http://127.0.0.1:8090'; NW_MATCHSVC_INTERNAL_URL = 'http://127.0.0.1:8091'; NW_META_BASE_URL = 'http://127.0.0.1:18080'; NW_ADMIN_SEED_USER = 'root'; NW_ADMIN_SEED_PASS = 'rootpass'; NW_ANALYTICS_BASE_URL = 'http://127.0.0.1:18085' } }
@@ -104,6 +105,7 @@ if (-not $Only) {
     matchsvc   = 'http://127.0.0.1:8091/health'   # internal listener
     game       = 'http://127.0.0.1:8081/health'
     commercial = 'http://127.0.0.1:18082/health'
+    social     = 'http://127.0.0.1:8085/health'
     world      = 'http://127.0.0.1:18084/health'
     auction    = 'http://127.0.0.1:18086/health'
     admin      = 'http://127.0.0.1:18083/health'
