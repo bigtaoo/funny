@@ -421,6 +421,12 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - **状态**：新增 `AuctionSceneBase.pickerFilter`（`AucFilter`，复用市场页的类型），`openItemPicker()` 时重置为 `''`。
 - **验收**：`tsc --noEmit` 绿；`webpack --mode production` 绿。
 
+### 修复：拍卖退回邮件标题/正文显示为原始 i18n key（2026-07-12）
+
+- **问题**：`auctionsvc.deliverItem()`（`server/auctionsvc/src/auctionService.ts`）按设计把 `subject`/`body` 发成 i18n key（如 `auction.mail.returned.subject`），注释写明"resolved client-side"，但 `client/src/scenes/FriendsScene/mail.ts` 的邮件列表行/详情页直接渲染 `m.subject`/`m.body` 原始字符串，从未过 `t()`，导致玩家看到裸 key 而非"拍卖物品退回"这类本地化文案。
+- **修复**：`mail.ts` 新增 `mailText(raw)` 辅助函数（复用文件里已有的 `defDisplayName` 同款"能查到就翻译、查不到就原样返回"模式）：`t(raw as TranslationKey)` 结果等于 key 本身则判定为玩家自撰的纯文本邮件（好友/家族消息），直接展示原文；否则展示译文。列表行 subject、详情页 subject 与 body 三处调用点均改用该函数。
+- **验收**：client `tsc --noEmit` 绿；dev server HMR 重编译无报错。未做登录态下的真实拍卖退回邮件截图验证（需要后端账号/拍卖数据造数据，超出本次修复范围）。
+
 ---
 
 *本文为拍卖行机制权威，DRAFT/⚠️ 处随实现与拍板细化；数值以 `server/shared/src/slg.ts` 为准。*
