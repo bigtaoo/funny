@@ -164,7 +164,7 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
       onOpenRoom() { analytics.click('lobby.room'); nav.goRoom(); },
       onOpenSocial() { analytics.click('lobby.social'); withGuide('social', 'guide.social.title', 'guide.social.body', () => nav.goFriends()); },
       ...(online ? { onOpenMail: () => nav.goMail() } : {}),
-      onOpenShop() { analytics.click('lobby.shop'); withGuide('shop', 'guide.shop.title', 'guide.shop.body', () => nav.goGacha({})); },
+      onOpenShop() { analytics.click('lobby.shop'); withGuide('shop', 'guide.shop.title', 'guide.shop.body', () => nav.goGacha({ shopBack: () => goLobby() })); },
       ...(online ? { onOpenRecharge: () => nav.goShop(goLobby, 'coins') } : {}),
       ...(online ? { onOpenLeaderboard: () => nav.goLeaderboard(goLobby) } : {}),
       // Lobby "cards" slot → Hero Roster (CHARACTER_CARDS_DESIGN §10). Roster mutations (feed/lock)
