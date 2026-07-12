@@ -3,10 +3,11 @@ import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren, marginLineX } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawCareerTabs } from '../ui/widgets/CareerTabs';
+import { sidebarNavW } from '../ui/widgets/HubTabs';
 import { sortTitlesByWeight, getTitleKeys, formatLadderTitle } from '../game/meta/titles';
 
 // ── TitlesScene — title wall (S10, TITLE_DESIGN §7) ────────────────────────────
@@ -42,6 +43,7 @@ export class TitlesScene implements Scene {
   private readonly w: number;
   private readonly h: number;
   private readonly cb: TitlesSceneCallbacks;
+  private readonly landscape: boolean;
 
   private hits: Hit[] = [];
 
@@ -50,6 +52,7 @@ export class TitlesScene implements Scene {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.cb = cb;
+    this.landscape = layout.orientation === 'landscape';
 
     input.onDown((x, y) => this.handleDown(x, y));
     this.render();
@@ -102,7 +105,7 @@ export class TitlesScene implements Scene {
   private drawSidebar(tbH: number): void {
     if (!this.cb.onOpenStats || !this.cb.onOpenAchievements) return;
     const { w, h } = this;
-    const sidebarW = marginLineX(w);
+    const sidebarW = sidebarNavW(w, h, this.landscape);
     const sidebarTop = tbH + Math.round(h * 0.02);
     const { hits } = drawCareerTabs(this.container, sidebarW, sidebarTop, h, 'titles', {
       onOpenStats: this.cb.onOpenStats,
@@ -117,7 +120,7 @@ export class TitlesScene implements Scene {
     const { w, h } = this;
     const hasSidebar = !!this.cb.onOpenStats && !!this.cb.onOpenAchievements;
     const tbH = Math.round(h * 0.12);
-    const padX = hasSidebar ? marginLineX(w) + Math.round(w * 0.025) : Math.round(w * 0.08);
+    const padX = hasSidebar ? sidebarNavW(w, h, this.landscape) + Math.round(w * 0.025) : Math.round(w * 0.08);
     const padRight = hasSidebar ? Math.round(w * 0.04) : Math.round(w * 0.08);
     const rowH = Math.round(h * 0.1);
     const gap = Math.round(h * 0.016);

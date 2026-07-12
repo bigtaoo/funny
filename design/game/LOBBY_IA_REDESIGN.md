@@ -353,3 +353,17 @@
 - **返回修复**：`app/nav/shop.ts` 的 `goGacha`/`goBattlePass` 的 `onBack` 改为直接调用 `shopBack?.()`（缺省兜底 `goShop()`/`nav.goLobby()`），不再经过 Shop 屏幕；`app/nav/lobby.ts` 的 `onOpenShop` 改为 `nav.goGacha({ shopBack: () => goLobby() })`，把真正的来源（大厅）显式穿透进去。
 - **新增回归测试**：`client/test/ui/shopGroupTabs.ui.ts` 补一条「`getShopBadge` 正确转发到 Gacha 侧栏 Shop tab」的用例（数 `PIXI.Graphics` 节点数佐证徽章确实画出来了）；新增 `client/test/shopNav-backNavigation.test.ts`（4 例，直接驱动真实 `createShopNav`，不经 PIXI/网络）覆盖：大厅直入 Gacha 后返回直连来源而非落在 Shop、从 Shop 打开 Gacha/BattlePass 后返回同样直连来源、`goBattlePass()` 单独调用时的兜底回大厅。`test/harness/HeadlessAppViews.ts` 的 `showBattlePass` 顺带补上和 `showShop`/`showGacha` 一致的回调捕获（之前直接丢弃回调，测试没法按它的返回按钮）。
 - 已用 `tsc --noEmit` + `webpack --mode=production` + 相关 UI/nav 测试（新增两批共 13 例）+ 全量 `vitest run`（68 文件 546 例）验证；纯导航/数据流改动，未跑游戏截图。
+
+---
+
+## 13. 统一全游戏左侧（装订线一侧）页签栏的宽度与高度（2026-07-12）
+
+> 状态：**已实现**。用户发现不同界面左侧纵向页签栏尺寸不统一，要求分析后统一宽度与格高。
+
+- **现状盘点**：全游戏左侧纵向页签栏当时有 4 套互不相通的实现——① `HubTabs.ts` 宽版（`sidebarNavW`=短边20%、`sidebarItemHeight`=h×9% 固定），覆盖 Cards/Equipment/Shop/Gacha/BattlePass/Auction；② Career hub（Stats/Titles/Achievements，经 `CareerTabs.ts`）调的是同一个 `drawSidebarTabs()`，但误传 `marginLineX(w)`（w×9%）当宽度——本节 §8/§11 加宽到 20% 的 `sidebarNavW` 从未migrate到这三个页面；③ `render/socialTabRail.ts` 是完全独立手写的实现（Friends/Family/Sect 五页签），宽度也用 `marginLineX(w)`，格高按 `(可用高度-top)/5` 撑满，不是固定值；④ `DailyScene` 内联手写，宽度、格高都是另一套独立公式。
+- **收敛方案**：把①的 `sidebarNavW`/`sidebarItemHeight` 定为唯一标准，②③④ 全部改接 `HubTabs.drawSidebarTabs()`：
+  - Career hub 三个场景（`StatsScene.ts`/`TitlesScene.ts`/`AchievementScene.ts`）把误传的 `marginLineX(w)` 改成 `sidebarNavW(w,h,landscape)`（`TitlesScene` 之前没有 `landscape` 字段，补上），紧跟着的 `contentX`/`padX` 内容偏移同步换算，成就页二级分类 sidebar（`sub:true`）同一处改。
+  - `render/socialTabRail.ts` 的 `drawSocialTabRail()` 重写为对 `HubTabs.drawSidebarTabs()` 的薄封装：新增 `landscape` 形参，宽度改 `sidebarNavW`，格高改用其内部固定的 `sidebarItemHeight(h)`；5 个页签叠起来后不再撑满剩余高度，栏位下方留白——这是本次统一确认接受的取舍（用户选定），不做二次拉伸处理。`FriendsScene/base.ts` 原有的 `railW` getter 直接改公式；`FamilyScene`/`SectScene` 原本没有集中的 rail 宽度 getter（`render.ts` 里散落多处 `marginLineX(w)`），仿照 `FriendsScene` 各自新增 `landscape` 字段 + `railW` getter 统一替换。
+  - `DailyScene.ts` 的私有手写 `drawSidebarTabs()`（两页签：签到/日常任务）删除，改成组装 `HubTab[]` 调共享的 `drawSidebarTabs()`。
+  - 视觉副作用（预期内）：社交 hub 的 active 页签样式从「纸色底+右侧强调条」变成和其它 hub 一致的「深色底+强调色描边」——这是统一到位后的应有结果。
+- **验证**：`tsc --noEmit` + `npm run build:web`（webpack production）通过。真人截图验证：临时在 `app.ts` 挂 `globalThis.__NW_DEBUG` 钩子暴露 `app`/场景类/`makeNewSave`（提交前已移除），在 390×844 竖屏视口下分别直接实例化 `EquipmentScene`（基线）、`AchievementScene`（Career hub + 二级分类嵌套）、`TitlesScene`、`FriendsScene`（社交 5 页签）、`DailyScene`，逐一渲染两遍后 `toDataURL` 截图核对：Career hub 三页签栏宽度与 Equipment 基线一致、二级分类正确内缩嵌套；社交 hub 五页签改为固定格高、栏位下方按预期留白、命中区域随新宽高正确更新；DailyScene 两页签栏同款对齐。未逐一截图横屏，但四个场景改动均直接复用已在 `sidebarNavW` 里验证过的横竖屏分支逻辑（见 §11），风险低。

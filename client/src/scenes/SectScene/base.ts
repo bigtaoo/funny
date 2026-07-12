@@ -23,6 +23,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, buildPaperBackground, tearDownChildren } from '../../render/sketchUi';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
+import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import type {
   WorldApiClient, SectView, SectDetailView, SectMessageView,
 } from '../../net/WorldApiClient';
@@ -61,6 +62,7 @@ export class SectSceneBase {
 
   protected readonly w: number;
   protected readonly h: number;
+  protected readonly landscape: boolean;
   protected readonly cb: SectSceneCallbacks;
 
   protected mode: ViewMode = 'loading';
@@ -107,6 +109,7 @@ export class SectSceneBase {
   constructor(layout: ILayout, input: InputManager, cb: SectSceneCallbacks) {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
+    this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
     this.container = new PIXI.Container();
     this.build();
@@ -115,6 +118,11 @@ export class SectSceneBase {
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
     this.unsubs.push(input.onUp((x, y) => this.handleUp(x, y)));
+  }
+
+  /** Width of the social hub rail left of the notebook binding line (matches every other left-edge tab rail). */
+  protected get railW(): number {
+    return sidebarNavW(this.w, this.h, this.landscape);
   }
 
   private build(): void {

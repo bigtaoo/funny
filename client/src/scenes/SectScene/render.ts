@@ -2,7 +2,7 @@
 // families + channel tabs) plus the small center-message / center-button / bottom-bar-button helpers.
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
-import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor, marginLineX } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
 import { caretDisplay } from '../../render/inputDisplay';
 import { drawSocialTabRail } from '../../render/socialTabRail';
@@ -107,9 +107,9 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
 
       // Social hub rail (friends/family/sect/world/mail) in the left margin gutter — keeps the
       // other 4 tabs visible instead of them "vanishing" when this scene replaces FriendsScene.
-      const railHits = drawSocialTabRail(this.bodyLayer, w, h, this.headerH, 'sect', {}, (tab) => this.cb.onNavTab(tab));
+      const railHits = drawSocialTabRail(this.bodyLayer, w, h, this.headerH, this.landscape, 'sect', {}, (tab) => this.cb.onNavTab(tab));
       this.hitRects.push(...railHits.map((hit) => ({ rect: hit.rect, action: hit.fn })));
-      const left = marginLineX(w);
+      const left = this.railW;
 
       // Tab bar — starts to the right of the rail, same convention as FamilyScene.
       const tabs: SectTab[] = ['families', 'channel'];
@@ -140,7 +140,7 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
     renderFamilies(y0: number, maxH: number): void {
       if (!this.sect) return;
       const { w } = this;
-      const left = marginLineX(w);
+      const left = this.railW;
       const sect = this.sect;
 
       // Sect summary line (name [tag] · families · prosperity).
@@ -215,7 +215,7 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
 
     renderBottomBar(y: number): void {
       const { w } = this;
-      const left = marginLineX(w);
+      const left = this.railW;
       const midX = (left + w) / 2;
       if (this.isSectLeader) {
         // Leader: dissolve / ally / manage allies.
@@ -229,7 +229,7 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
 
     renderChannel(y0: number, maxH: number): void {
       const { w } = this;
-      const left = marginLineX(w);
+      const left = this.railW;
       const inputH = 44;
       const listH2 = maxH - inputH - 6;
 

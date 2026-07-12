@@ -9,10 +9,11 @@ import { ILayout, Rect } from '../../layout/ILayout';
 import { InputManager } from '../../inputSystem/InputManager';
 import { t, TranslationKey } from '../../i18n';
 import { ProfilePopup } from '../../render/ProfilePopup';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren, marginLineX } from '../../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSocialTabRail, type SocialTab } from '../../render/socialTabRail';
+import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { drawSceneHeader, drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
 import type {
   FriendView,
@@ -108,6 +109,7 @@ export class FriendsSceneBase {
 
   protected readonly w: number;
   protected readonly h: number;
+  protected readonly landscape: boolean;
   protected readonly cb: FriendsSceneCallbacks;
 
   protected tab: Tab = 'friends';
@@ -180,6 +182,7 @@ export class FriendsSceneBase {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
     this.h = layout.designHeight;
+    this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
     if (cb.defaultTab) this.tab = cb.defaultTab;
     this.popup = new ProfilePopup(this.w, this.h);
@@ -297,12 +300,13 @@ export class FriendsSceneBase {
   }
 
   // ── Left navigation rail + content column geometry ─────────────────────────────
-  // The 5 tabs live in the narrow strip LEFT of the red binding line (marginLineX);
-  // all body content sits in the column to its right. Every drawer routes its x math
-  // through cX/cW/cCX so the tab rail and content never overlap.
-  /** Width of the vertical tab rail — the strip left of the notebook binding line. */
+  // The 5 tabs live in the sidebar-nav rail LEFT of the red binding line (sidebarNavW, matching
+  // every other left-edge tab rail in the game); all body content sits in the column to its
+  // right. Every drawer routes its x math through cX/cW/cCX so the tab rail and content never
+  // overlap.
+  /** Width of the vertical tab rail. */
   protected get railW(): number {
-    return marginLineX(this.w);
+    return sidebarNavW(this.w, this.h, this.landscape);
   }
   /** Left edge of the content column (just right of the binding line). */
   protected get cX(): number {
@@ -415,7 +419,7 @@ export class FriendsSceneBase {
 
   protected drawTabBar(): void {
     const hits = drawSocialTabRail(
-      this.container, this.w, this.h, this.bodyTop, this.tab,
+      this.container, this.w, this.h, this.bodyTop, this.landscape, this.tab,
       { friends: this.incoming.length, mail: this.mailUnread },
       (tab) => this.switchTab(tab),
     );
