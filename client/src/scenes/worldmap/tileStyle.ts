@@ -48,8 +48,14 @@ export const RES_COLORS: Record<string, number> = {
  */
 export const TERRAIN_TEX_ALPHA_DEFAULT = 0.95; // 0.85→0.95 (2026-07-11): land was too washed out against the pale paper — see legibility pass
 export const TERRAIN_TEX_ALPHA: Partial<Record<TerrainTextureName, number>> = {
-  terrain_mountain: 0.8, // 0.68→0.8 (2026-07-11): still softer than land, but strong enough to compete with biome tints
-  terrain_river:    0.8,
+  // 0.68→0.8→0.92 (2026-07-12): at the small on-screen tile sizes most zoom levels actually use,
+  // the fine pencil rock/wave linework anti-aliases down to near-flat before the paper-blend even
+  // applies — 0.8 then let another 20% of paper leak through on top of that, washing obstacle tiles
+  // to a flat color block indistinguishable from a plain fill (reported: "where's the river/mountain
+  // art, all I see is a color block"). 0.92 keeps a sliver of "recede into paper" softness vs land's
+  // 0.95 while recovering most of the contrast the paper-blend was eating.
+  terrain_mountain: 0.92,
+  terrain_river:    0.92,
 };
 
 /**
@@ -99,8 +105,8 @@ export function biomeGroundTint(x: number, y: number, seed: number): number {
 export const TERRAIN_TEX_TINT_DEFAULT = 0xffffff;
 export const TERRAIN_TEX_TINT: Partial<Record<TerrainTextureName, number>> = {
   terrain_grass:      0xc8dcb0, // generic land / grass — warm sage, deepened 2026-07-11 for zone legibility
-  terrain_river:      0xa9cbe0, // river — cool blue, deepened 2026-07-11 (also at 0.8 alpha)
-  terrain_mountain:   0xb3b7bd, // mountain — cool stone grey, deepened 2026-07-11 (was near-white 0xc9ccd0; also at 0.8 alpha)
+  terrain_river:      0x8fbadb, // river — cool blue, deepened 2026-07-12 (was 0xa9cbe0 at 0.8 alpha; paired with the 0.92 alpha bump so the wave art keeps some contrast against land)
+  terrain_mountain:   0xa2a7b0, // mountain — cool stone grey, deepened 2026-07-12 (was 0xb3b7bd at 0.8 alpha; paired with the 0.92 alpha bump)
   terrain_keep:       0xe0c481, // chokepoint keep — warm amber, deepened 2026-07-11
   terrain_center:     0xe6d377, // world center — soft gold, deepened 2026-07-11
   terrain_stronghold: 0xba9a80, // NPC stronghold — muted stone brown, deepened 2026-07-11
