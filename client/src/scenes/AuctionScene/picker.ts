@@ -2,8 +2,8 @@
 // field. Lists every sellable item across all three classes (materials + equipment + cards) in one scrollable
 // list, sorted by estimated value descending. Picking an entry returns to the create form.
 import { AUCTION_STATIC_REF_PRICE } from '@nw/shared';
-import { ui as C, txt, sketchPanel, seedFor, marginLineX } from '../../render/sketchUi';
-import { drawSidebarTabs, type HubTab } from '../../ui/widgets/HubTabs';
+import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
 import { t } from '../../i18n';
 import { buildIcon, type IconKind } from '../../render/icons';
 import type { EquipmentInstance, CardInstance, EquipRarity } from '../../game/meta/SaveData';
@@ -131,8 +131,8 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
      * the x where the item grid should start.
      */
     private renderPickerSidebar(): number {
-      const { h } = this;
-      const sidebarW = marginLineX(this.w);
+      const { w, h, landscape } = this;
+      const sidebarW = sidebarNavW(w, h, landscape);
       const y = this.headerH + 8;
       const keys: Record<AucFilter, 'auction.filterAll' | 'auction.filterEquipment' | 'auction.filterCard' | 'auction.filterMaterial'> = {
         '': 'auction.filterAll', equipment: 'auction.filterEquipment', card: 'auction.filterCard', material: 'auction.filterMaterial',

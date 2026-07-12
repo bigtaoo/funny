@@ -84,8 +84,12 @@ export class TitlesScene implements Scene {
   }
 
   private drawBackground(): void {
-    const { w, h } = this;
-    const bg = buildPaperBackground('titlesbg', w, h);
+    const { w, h, landscape } = this;
+    // Landscape only for now, and only when the Career hub peer strip is actually shown — see
+    // ShopScene.drawBackground / LOBBY_IA_REDESIGN §14.
+    const hasSidebar = !!(this.cb.onOpenStats && this.cb.onOpenAchievements);
+    const railX = landscape && hasSidebar ? sidebarNavW(w, h, true) : undefined;
+    const bg = buildPaperBackground('titlesbg', w, h, { railX });
     this.container.addChild(bg);
     const decoC = buildDecorCLayer(w, h);
     if (decoC) this.container.addChild(decoC);

@@ -1,7 +1,7 @@
 // Market list tab: left sidebar (Market/My Auctions/My Bids), the category filter bar, the auction row list,
 // and the bottom "create listing" button.
-import { ui as C, txt, sketchPanel, seedFor, marginLineX } from '../../render/sketchUi';
-import { drawSidebarTabs, type HubTab } from '../../ui/widgets/HubTabs';
+import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
 import { t } from '../../i18n';
 import type { AuctionView } from '../../net/WorldApiClient';
 import { buildIcon, type IconKind } from '../../render/icons';
@@ -26,14 +26,13 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
     }
 
     /**
-     * Left nav rail, stacked inside the notebook-margin gutter (`marginLineX`) below the header:
-     * Market / My Auctions / My Bids. Moved off the old full-width horizontal strip so the red margin
-     * rule no longer cuts through the tab bar (see StatsScene/EquipmentScene precedent). Returns
-     * the x where the body content (filter bar / list / create button) should start.
+     * Left nav rail (`sidebarNavW`, matching every other hub's left tab rail) below the header:
+     * Market / My Auctions / My Bids. Returns the x where the body content (filter bar / list /
+     * create button) should start.
      */
     renderSidebar(): number {
-      const { w, h } = this;
-      const sidebarW = marginLineX(w);
+      const { w, h, landscape } = this;
+      const sidebarW = sidebarNavW(w, h, landscape);
       const tabs: AucTab[] = ['all', 'mine', 'bids'];
       const labelKeys: Record<AucTab, 'auction.tabAll' | 'auction.tabMine' | 'auction.tabBids'> = {
         all: 'auction.tabAll', mine: 'auction.tabMine', bids: 'auction.tabBids',

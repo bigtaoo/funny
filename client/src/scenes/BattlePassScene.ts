@@ -3,12 +3,12 @@ import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay, tearDownChildren, marginLineX } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
 import { buildIcon, type IconKind } from '../render/icons';
 import { buildCoinIcon } from '../render/coinIconAtlas';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
-import { drawSidebarTabs, type HubTab } from '../ui/widgets/HubTabs';
+import { drawSidebarTabs, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import type { SaveData } from '../game/meta/SaveData';
 import {
@@ -69,6 +69,7 @@ export class BattlePassScene implements Scene {
   readonly container: PIXI.Container;
   private readonly w: number;
   private readonly h: number;
+  private readonly landscape: boolean;
   private readonly cb: BattlePassCallbacks;
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
@@ -95,6 +96,7 @@ export class BattlePassScene implements Scene {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
     this.h = layout.designHeight;
+    this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
@@ -159,13 +161,12 @@ export class BattlePassScene implements Scene {
 
   /**
    * Shop group nav [Shop|Coins|Gacha|BattlePass] (LOBBY_IA_REDESIGN §9), battle pass active: a
-   * vertical rail stacked inside the left notebook-margin gutter (`marginLineX`), mirroring the
-   * CardScene/EquipmentScene sidebar convention. Only drawn in group context (openShop injected).
-   * Consumes no vertical space — render() shifts body content start x instead.
+   * vertical rail (`sidebarNavW`, matching every other hub's left tab rail). Only drawn in group
+   * context (openShop injected). Consumes no vertical space — render() shifts body content start x instead.
    */
   private drawSidebar(tbH: number): void {
     if (!this.cb.openShop) return;
-    const { w, h } = this;
+    const { w, h, landscape } = this;
     const tabs: HubTab[] = [{ label: t('shop.title'), active: false, icon: 'tag' }];
     const actions: Array<() => void> = [() => this.cb.openShop?.()];
     if (this.cb.openCoins) {
@@ -176,7 +177,7 @@ export class BattlePassScene implements Scene {
     actions.push(() => this.cb.openGacha?.());
     tabs.push({ label: t('battlepass.title'), active: true, icon: 'trophy' });
     actions.push(() => {});
-    const sidebarW = marginLineX(w);
+    const sidebarW = sidebarNavW(w, h, landscape);
     const { hits } = drawSidebarTabs(this.container, sidebarW, tbH, h, tabs, (i) => actions[i]?.());
     this.hits.push(...hits);
   }
@@ -186,9 +187,9 @@ export class BattlePassScene implements Scene {
    * (else the standalone 5%-of-w pad); right edge always keeps the 5%-of-w pad.
    */
   private contentBounds(): { x0: number; w: number } {
-    const { w } = this;
+    const { w, h, landscape } = this;
     const rightPad = Math.round(w * 0.05);
-    const x0 = this.cb.openShop ? marginLineX(w) + Math.round(w * 0.02) : rightPad;
+    const x0 = this.cb.openShop ? sidebarNavW(w, h, landscape) + Math.round(w * 0.02) : rightPad;
     return { x0, w: w - x0 - rightPad };
   }
 
@@ -198,9 +199,11 @@ export class BattlePassScene implements Scene {
     this.hits = [];
     this.scrollContainer = null;
     this.scrollCellDefs = [];
-    const { w, h } = this;
+    const { w, h, landscape } = this;
 
-    this.container.addChild(buildPaperBackground('bpbg', w, h));
+    // Landscape only for now — see ShopScene.drawBackground / LOBBY_IA_REDESIGN §14.
+    const railX = landscape ? sidebarNavW(w, h, true) : undefined;
+    this.container.addChild(buildPaperBackground('bpbg', w, h, { railX }));
     const decoC = buildDecorCLayer(w, h);
     if (decoC) this.container.addChild(decoC);
 

@@ -177,8 +177,10 @@ export class EquipmentSceneBase {
   }
 
   protected build(): void {
-    const { w, h } = this;
-    this.container.addChild(buildPaperBackground('equipbg', w, h));
+    const { w, h, landscape } = this;
+    // Landscape only for now — see ShopScene.drawBackground / LOBBY_IA_REDESIGN §14.
+    const railX = landscape ? sidebarNavW(w, h, true) : undefined;
+    this.container.addChild(buildPaperBackground('equipbg', w, h, { railX }));
     const decoC = buildDecorCLayer(w, h);
     if (decoC) this.container.addChild(decoC);
 

@@ -22,6 +22,7 @@ import {
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { getArtTexture } from '../../render/cardArt';
 import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
+import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { BusyTracker } from '../../ui/busyTracker';
 import type { SaveData, CardInstance } from '../../game/meta/SaveData';
 import type { CardSLGState } from '../../net/WorldApiClient';
@@ -133,8 +134,11 @@ export class CardSceneBase {
   }
 
   private build(): void {
-    const { w, h } = this;
-    this.container.addChild(buildPaperBackground('cardbg', w, h));
+    const { w, h, landscape, showSidebar } = this;
+    // Landscape only for now, and only when the sidebar is actually shown — see
+    // ShopScene.drawBackground / LOBBY_IA_REDESIGN §14.
+    const railX = landscape && showSidebar ? sidebarNavW(w, h, true) : undefined;
+    this.container.addChild(buildPaperBackground('cardbg', w, h, { railX }));
     const decoC = buildDecorCLayer(w, h);
     if (decoC) this.container.addChild(decoC);
 
