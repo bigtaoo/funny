@@ -163,3 +163,40 @@ describe('GameRenderer InputMixin — tap-select to place', () => {
     renderer.destroy();
   });
 });
+
+describe('GameRenderer InputMixin — upgrade button (tap, no drag)', () => {
+  it('a plain tap on the upgrade button calls engine.upgradeBase() immediately', () => {
+    const { engine, renderer, input } = buildRenderer();
+    const upgradeBase = vi.spyOn(engine, 'upgradeBase');
+    const hudView = (renderer as any).hudView;
+
+    expect(hudView.upgradeEnabled).toBe(true); // ch1_lv1 startInk 40 >= level-1 cost 30
+    const rect = hudView.getUpgradeRect();
+    const x = rect.x + rect.w / 2;
+    const y = rect.y + rect.h / 2;
+
+    input._emitDown(x, y);
+    input._emitUp(x, y); // release at the SAME point — a tap, not a drag onto the base
+
+    expect(upgradeBase).toHaveBeenCalledTimes(1);
+    expect((renderer as any).drag).toBeNull();
+    renderer.destroy();
+  });
+
+  it('tapping the upgrade button while unaffordable does not call engine.upgradeBase()', () => {
+    const { engine, renderer, input } = buildRenderer();
+    const upgradeBase = vi.spyOn(engine, 'upgradeBase');
+    const hudView = (renderer as any).hudView;
+    hudView.upgradeEnabled = false; // simulate insufficient ink
+
+    const rect = hudView.getUpgradeRect();
+    const x = rect.x + rect.w / 2;
+    const y = rect.y + rect.h / 2;
+
+    input._emitDown(x, y);
+    input._emitUp(x, y);
+
+    expect(upgradeBase).not.toHaveBeenCalled();
+    renderer.destroy();
+  });
+});

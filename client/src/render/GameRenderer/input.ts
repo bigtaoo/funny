@@ -18,12 +18,7 @@ interface CardDragState {
   ghost: PIXI.Container;
 }
 
-interface UpgradeDragState {
-  kind: 'upgrade';
-  ghost: PIXI.Container;
-}
-
-export type DragState = CardDragState | UpgradeDragState;
+export type DragState = CardDragState;
 
 // ── Tap-select state ───────────────────────────────────────────────────────────
 
@@ -94,10 +89,10 @@ export function InputMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
         return;
       }
 
-      // Upgrade button
+      // Upgrade button — tap to upgrade immediately, no drag-onto-base needed.
       if (this.hudView.upgradeEnabled && this.overRect(x, y, this.hudView.getUpgradeRect())) {
         this.cancelTapSelect();
-        this.startUpgradeDrag(x, y);
+        if (this.localPlayer(this.engine.state).canUpgradeBase()) this.engine.upgradeBase();
         return;
       }
 
@@ -149,19 +144,14 @@ export function InputMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
         this.drag.ghost.x = x;
         this.drag.ghost.y = y;
 
-        if (this.drag.kind === 'card') {
-          const onBoard = !this.layout.isOutsideBoard(x, y);
-          const col = this.layout.screenToCol(x, y);
-          const row = this.layout.screenToRow(x, y);
-          if (col !== this.dragCol || row !== this.dragRow || onBoard !== this.dragOnBoard) {
-            this.dragCol     = col;
-            this.dragRow     = row;
-            this.dragOnBoard = onBoard;
-            this.updatePlacementHighlights(this.drag.cardType, this.drag.spellType, col, row, x, y);
-          }
-        } else {
-          const baseRect = this.boardView.getPlayerBaseRect();
-          this.boardView.showBaseUpgradeHighlight(this.overRect(x, y, baseRect));
+        const onBoard = !this.layout.isOutsideBoard(x, y);
+        const col = this.layout.screenToCol(x, y);
+        const row = this.layout.screenToRow(x, y);
+        if (col !== this.dragCol || row !== this.dragRow || onBoard !== this.dragOnBoard) {
+          this.dragCol     = col;
+          this.dragRow     = row;
+          this.dragOnBoard = onBoard;
+          this.updatePlacementHighlights(this.drag.cardType, this.drag.spellType, col, row, x, y);
         }
         return;
       }
@@ -194,12 +184,6 @@ export function InputMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
       }
 
       if (this.drag) {
-        if (this.drag.kind === 'upgrade') {
-          const baseRect = this.boardView.getPlayerBaseRect();
-          if (this.overRect(x, y, baseRect)) this.engine.upgradeBase();
-          this.cancelDrag();
-          return;
-        }
         // card drag
         if (this.layout.isOutsideBoard(x, y)) { this.cancelDrag(); return; }
         const col = this.layout.screenToCol(x, y);
@@ -341,19 +325,6 @@ export function InputMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
           break;
         }
       }
-    }
-
-    // ── Upgrade drag ───────────────────────────────────────────────────────────
-
-    private startUpgradeDrag(x: number, y: number): void {
-      const player = this.localPlayer(this.engine.state);
-      if (!player.canUpgradeBase()) return;
-      const ghost = this.buildDragGhost(t('hud.upgrade'), player.nextUpgradeCost!, 0xffcc00);
-      ghost.x = x;
-      ghost.y = y;
-      this.container.addChild(ghost);
-      this.drag = { kind: 'upgrade', ghost };
-      this.boardView.showBaseUpgradeHighlight(false);
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────────
