@@ -143,7 +143,7 @@ export class DailyScene implements Scene {
     const contentTop = hdr.headerH + h * 0.02;
     const availH = h - contentTop - h * 0.03;
 
-    this.drawSidebarTabs(contentTop);
+    this.drawSidebarTabs(contentTop, save, nowMs);
 
     const contentX = sidebarNavW(w, h, this.landscape) + Math.round(w * 0.025);
     const contentW = w - contentX - Math.round(w * 0.04);
@@ -171,11 +171,13 @@ export class DailyScene implements Scene {
    * convention as every other hub's left tab rail). Tapping a tab swaps the single content
    * pane on the right — only one tab's content is ever drawn at a time.
    */
-  private drawSidebarTabs(top: number): void {
+  private drawSidebarTabs(top: number, save: SaveData, nowMs: number): void {
     const { w, h } = this;
+    const checkinBadge = nextCheckinDay(save, nowMs) !== null;
+    const tasksBadge = dailyRewardClaimable(save, nowMs);
     const tabs: HubTab[] = [
-      { label: t('daily.checkin.title'), active: this.activeTab === 'checkin' },
-      { label: t('daily.tasks.title'), active: this.activeTab === 'tasks' },
+      { label: t('daily.checkin.title'), active: this.activeTab === 'checkin', badge: checkinBadge },
+      { label: t('daily.tasks.title'), active: this.activeTab === 'tasks', badge: tasksBadge },
     ];
     const keys: DailyTab[] = ['checkin', 'tasks'];
     const { hits } = drawSidebarTabsShared(this.container, sidebarNavW(w, h, this.landscape), top, h, tabs, (i) => {
