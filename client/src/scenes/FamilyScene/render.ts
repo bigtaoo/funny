@@ -1,7 +1,7 @@
 // Per-mode rendering for the family scene: loading / noFamily / create form / myFamily (members + channel).
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
-import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor, marginLineX } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
 import { caretDisplay } from '../../render/inputDisplay';
 import { drawSocialTabRail } from '../../render/socialTabRail';
@@ -101,12 +101,12 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
 
       // Social hub rail (friends/family/sect/world/mail) in the left margin gutter — keeps the
       // other 4 tabs visible instead of them "vanishing" when this scene replaces FriendsScene.
-      const railHits = drawSocialTabRail(this.bodyLayer, w, h, this.headerH, 'family', {}, (tab) => this.cb.onNavTab(tab));
+      const railHits = drawSocialTabRail(this.bodyLayer, w, h, this.headerH, this.landscape, 'family', {}, (tab) => this.cb.onNavTab(tab));
       this.hitRects.push(...railHits.map((hit) => ({ rect: hit.rect, action: hit.fn })));
 
-      // Tab bar — starts to the right of the notebook's red margin rule (marginLineX)
-      // so it doesn't sit on top of it, matching the EquipmentScene/GachaScene convention.
-      const left = marginLineX(w);
+      // Tab bar — starts to the right of the social hub rail so it doesn't sit on top of it,
+      // matching the EquipmentScene/GachaScene convention.
+      const left = this.railW;
       const tabs: FamilyTab[] = ['members', 'channel'];
       const tabW = (w - left) / tabs.length;
       for (let i = 0; i < tabs.length; i++) {
@@ -134,7 +134,7 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
 
     private renderMembers(y0: number, maxH: number): void {
       const { w } = this;
-      const left = marginLineX(w);
+      const left = this.railW;
       const me = this.cb.myAccountId;
 
       const myRole = this.members.find(m => m.accountId === me)?.role ?? 'member';
@@ -216,7 +216,7 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
 
     private renderChannel(y0: number, maxH: number): void {
       const { w } = this;
-      const left = marginLineX(w);
+      const left = this.railW;
       const inputH = 44;
       const listH2 = maxH - inputH - 6;
 

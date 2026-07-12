@@ -3,10 +3,11 @@ import { Scene } from './SceneManager';
 import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren, marginLineX } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
 import { buildIcon, type IconKind } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
+import { drawSidebarTabs as drawSidebarTabsShared, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import type { SaveData } from '../game/meta/SaveData';
 import type { RetentionView } from '../net/ApiClient';
@@ -62,10 +63,13 @@ export class DailyScene implements Scene {
   /** Set in destroy(); guards render() so a late async load() re-render can't paint into a torn-down container. */
   private destroyed = false;
 
+  private readonly landscape: boolean;
+
   constructor(layout: ILayout, input: InputManager, cb: DailyCallbacks) {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
     this.h = layout.designHeight;
+    this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.render();
@@ -137,9 +141,9 @@ export class DailyScene implements Scene {
     const contentTop = hdr.headerH + h * 0.02;
     const availH = h - contentTop - h * 0.03;
 
-    this.drawSidebarTabs(contentTop, availH);
+    this.drawSidebarTabs(contentTop);
 
-    const contentX = marginLineX(w) + Math.round(w * 0.025);
+    const contentX = sidebarNavW(w, h, this.landscape) + Math.round(w * 0.025);
     const contentW = w - contentX - Math.round(w * 0.04);
     if (this.activeTab === 'checkin') {
       this.renderCheckin(contentX, contentTop, contentW, availH, save, nowMs);
@@ -161,41 +165,24 @@ export class DailyScene implements Scene {
   }
 
   /**
-   * Calendar/Daily-tasks tabs stacked in the narrow strip left of the notebook's red margin rule
-   * (mirrors AchievementScene's category sidebar). Tapping a tab swaps the single content
+   * Calendar/Daily-tasks tabs in the left-edge sidebar rail (same HubTabs.drawSidebarTabs
+   * convention as every other hub's left tab rail). Tapping a tab swaps the single content
    * pane on the right — only one tab's content is ever drawn at a time.
    */
-  private drawSidebarTabs(top: number, availH: number): void {
-    const { w } = this;
-    const tabs: { key: DailyTab; labelKey: TranslationKey }[] = [
-      { key: 'checkin', labelKey: 'daily.checkin.title' },
-      { key: 'tasks', labelKey: 'daily.tasks.title' },
+  private drawSidebarTabs(top: number): void {
+    const { w, h } = this;
+    const tabs: HubTab[] = [
+      { label: t('daily.checkin.title'), active: this.activeTab === 'checkin' },
+      { label: t('daily.tasks.title'), active: this.activeTab === 'tasks' },
     ];
-    const x = Math.round(w * 0.012);
-    const tabW = marginLineX(w) - x - Math.round(w * 0.012);
-    const tabH = Math.round(availH * 0.16);
-    const gap = Math.round(availH * 0.03);
-
-    tabs.forEach((tab, i) => {
-      const y = top + i * (tabH + gap);
-      const on = tab.key === this.activeTab;
-      const box = sketchPanel(tabW, tabH, {
-        fill: on ? C.accent : C.paper, border: on ? C.accent : C.line,
-        width: on ? 2 : 1.2, seed: seedFor(x, y, i),
-      });
-      box.x = x; box.y = y;
-      this.container.addChild(box);
-
-      const lbl = new PIXI.Text(t(tab.labelKey), {
-        fontSize: Math.round(tabW * 0.24), fill: on ? 0xffffff : C.dark, fontFamily: 'monospace',
-        fontWeight: on ? 'bold' : 'normal', wordWrap: true, wordWrapWidth: tabW * 0.86, align: 'center',
-      });
-      lbl.anchor.set(0.5, 0.5);
-      lbl.x = x + tabW / 2; lbl.y = y + tabH / 2;
-      this.container.addChild(lbl);
-
-      this.hits.push({ x, y, w: tabW, h: tabH, fn: () => { this.activeTab = tab.key; this.render(); } });
+    const keys: DailyTab[] = ['checkin', 'tasks'];
+    const { hits } = drawSidebarTabsShared(this.container, sidebarNavW(w, h, this.landscape), top, h, tabs, (i) => {
+      this.activeTab = keys[i]!;
+      this.render();
     });
+    for (const hit of hits) {
+      this.hits.push({ x: hit.rect.x, y: hit.rect.y, w: hit.rect.w, h: hit.rect.h, fn: hit.fn });
+    }
   }
 
   private renderCheckin(areaX: number, top: number, areaW: number, areaH: number, save: SaveData, nowMs: number): void {

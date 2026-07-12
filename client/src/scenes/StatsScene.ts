@@ -3,11 +3,12 @@ import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren, marginLineX } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildIcon, type IconKind } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawCareerTabs } from '../ui/widgets/CareerTabs';
+import { sidebarNavW } from '../ui/widgets/HubTabs';
 import { MATERIAL_ORDER } from '../game/balance/pveUpgrades';
 import type { MatchHistoryEntry } from '../net/ApiClient';
 
@@ -146,7 +147,7 @@ export class StatsScene implements Scene {
     // peer-tab convention, see CareerTabs.ts), stacked inside the notebook-margin gutter below
     // the header (CardScene/EquipmentScene sidebar convention), so the stat panels start clear
     // of the red margin rule instead of the rule cutting through them.
-    const sidebarW = marginLineX(w);
+    const sidebarW = sidebarNavW(w, h, this.landscape);
     const sidebarTop = tbH + Math.round(h * 0.02);
     if (this.cb.onOpenTitles && this.cb.onOpenAchievements) {
       const { hits } = drawCareerTabs(this.container, sidebarW, sidebarTop, h, 'stats', {
