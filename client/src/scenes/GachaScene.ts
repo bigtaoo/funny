@@ -5,11 +5,11 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import type { Rarity } from '../game/meta/SaveData';
 import type { GachaPool, GachaResultEntry } from '../net/ApiClient';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren, marginLineX } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { gachaCardTexture, gachaFrameTexture, gachaBannerTexture, preloadGachaTextures } from '../render/gachaArt';
 import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
-import { drawSidebarTabs, type HubTab } from '../ui/widgets/HubTabs';
+import { drawSidebarTabs, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { buildIcon } from '../render/icons';
 import { buildCoinIcon } from '../render/coinIconAtlas';
@@ -82,6 +82,7 @@ export class GachaScene implements Scene {
 
   private readonly w: number;
   private readonly h: number;
+  private readonly landscape: boolean;
   private readonly cb: GachaSceneCallbacks;
 
   private pools: GachaPool[] = [];
@@ -111,6 +112,7 @@ export class GachaScene implements Scene {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
     this.h = layout.designHeight;
+    this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.render();
@@ -215,7 +217,9 @@ export class GachaScene implements Scene {
   }
 
   private drawBackground(): void {
-    this.container.addChild(buildPaperBackground('gachabg', this.w, this.h));
+    // Landscape only for now — see ShopScene.drawBackground / LOBBY_IA_REDESIGN §14.
+    const railX = this.landscape ? sidebarNavW(this.w, this.h, true) : undefined;
+    this.container.addChild(buildPaperBackground('gachabg', this.w, this.h, { railX }));
     const decoC = buildDecorCLayer(this.w, this.h);
     if (decoC) this.container.addChild(decoC);
   }
@@ -234,13 +238,12 @@ export class GachaScene implements Scene {
 
   /**
    * Shop group nav [Shop|Coins|Gacha|BattlePass] (LOBBY_IA_REDESIGN §9), Gacha active: a vertical
-   * rail stacked inside the left notebook-margin gutter (`marginLineX`), mirroring the
-   * CardScene/EquipmentScene sidebar convention. Only drawn when in the group context (openShop
-   * injected). Consumes no vertical space — drawBody shifts its content start x instead.
+   * rail (`sidebarNavW`, matching every other hub's left tab rail). Only drawn when in the group
+   * context (openShop injected). Consumes no vertical space — drawBody shifts its content start x instead.
    */
   private drawSidebar(tbH: number): void {
     if (!this.cb.openShop) return;
-    const { w, h } = this;
+    const { w, h, landscape } = this;
     const tabs: HubTab[] = [{ label: t('shop.title'), active: false, icon: 'tag', badge: this.cb.getShopBadge?.() ?? false }];
     const actions: Array<() => void> = [() => this.cb.openShop?.()];
     if (this.cb.openCoins) {
@@ -253,17 +256,17 @@ export class GachaScene implements Scene {
       tabs.push({ label: t('battlepass.title'), active: false, icon: 'trophy' });
       actions.push(() => this.cb.openBattlePass?.());
     }
-    const sidebarW = marginLineX(w);
+    const sidebarW = sidebarNavW(w, h, landscape);
     const { hits } = drawSidebarTabs(this.container, sidebarW, tbH, h, tabs, (i) => actions[i]?.());
     this.hits.push(...hits);
   }
 
   /** Content column bounds: shifted right of the sidebar rail when in the shop group, else full width. */
   private contentBounds(): { x0: number; w: number } {
-    const { w } = this;
+    const { w, h, landscape } = this;
     if (!this.cb.openShop) return { x0: 0, w };
     const gap = Math.round(w * 0.02);
-    const x0 = marginLineX(w) + gap;
+    const x0 = sidebarNavW(w, h, landscape) + gap;
     return { x0, w: w - x0 - gap };
   }
 

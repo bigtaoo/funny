@@ -23,6 +23,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, buildPaperBackground, tearDownChildren } from '../../render/sketchUi';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
+import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import type {
   WorldApiClient, SectView, SectDetailView, SectMessageView,
 } from '../../net/WorldApiClient';
@@ -61,6 +62,7 @@ export class SectSceneBase {
 
   protected readonly w: number;
   protected readonly h: number;
+  protected readonly landscape: boolean;
   protected readonly cb: SectSceneCallbacks;
 
   protected mode: ViewMode = 'loading';
@@ -107,6 +109,7 @@ export class SectSceneBase {
   constructor(layout: ILayout, input: InputManager, cb: SectSceneCallbacks) {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
+    this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
     this.container = new PIXI.Container();
     this.build();
@@ -117,9 +120,16 @@ export class SectSceneBase {
     this.unsubs.push(input.onUp((x, y) => this.handleUp(x, y)));
   }
 
+  /** Width of the social hub rail left of the notebook binding line (matches every other left-edge tab rail). */
+  protected get railW(): number {
+    return sidebarNavW(this.w, this.h, this.landscape);
+  }
+
   private build(): void {
-    const { w, h } = this;
-    const bg = buildPaperBackground('sect', w, h);
+    const { w, h, landscape } = this;
+    // Landscape only for now — see ShopScene.drawBackground / LOBBY_IA_REDESIGN §14.
+    const railX = landscape ? sidebarNavW(w, h, true) : undefined;
+    const bg = buildPaperBackground('sect', w, h, { railX });
     this.container.addChild(bg);
     const decoC = buildDecorCLayer(w, h);
     if (decoC) this.container.addChild(decoC);

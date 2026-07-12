@@ -112,9 +112,9 @@ export function marginLineX(w: number): number {
  * when no bake renderer is wired (headless tests).
  */
 export function buildPaperBackground(
-  tag: string, w: number, h: number, opts: { marginLine?: boolean } = {},
+  tag: string, w: number, h: number, opts: { marginLine?: boolean; railX?: number } = {},
 ): PIXI.DisplayObject {
-  const { marginLine = true } = opts;
+  const { marginLine = true, railX } = opts;
   const gfx = new PIXI.Graphics();
   gfx.beginFill(ui.bg);
   gfx.drawRect(0, 0, w, h);
@@ -128,12 +128,15 @@ export function buildPaperBackground(
   // The notebook's red margin rule. Suppressed on the SLG overworld (marginLine:false):
   // there the paper is a backdrop for a full-bleed isometric map, and a lone red vertical
   // stripe down the left read as a stray artifact rather than as notebook stationery.
+  // `railX` overrides the classic 9%-of-width position for screens whose left tab rail is wider
+  // than that (sidebarNavW, 20% of the short edge) — without it the line cuts through the middle
+  // of the rail instead of marking its edge.
   if (marginLine) {
-    const mx = marginLineX(w);
+    const mx = railX ?? marginLineX(w);
     pen.line(mx, 0, mx, h, { color: palette.inkRed, width: 2.2, jitter: 1.0, taper: 0.95 });
   }
 
-  const tex = bake(`${tag}:${Math.round(w)}x${Math.round(h)}`, gfx, w, h);
+  const tex = bake(`${tag}:${Math.round(w)}x${Math.round(h)}:${railX ?? ''}`, gfx, w, h);
   if (tex) {
     const s = new PIXI.Sprite(tex);
     gfx.destroy();

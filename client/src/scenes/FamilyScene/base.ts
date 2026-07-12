@@ -16,6 +16,7 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChild
 import { buildIcon } from '../../render/icons';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
+import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import type { WorldApiClient, FamilyDetailView, FamilyMemberView, FamilyMessageView } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
 import type { SocialTab } from '../../render/socialTabRail';
@@ -49,6 +50,7 @@ export class FamilySceneBase {
 
   protected readonly w: number;
   protected readonly h: number;
+  protected readonly landscape: boolean;
   protected readonly cb: FamilySceneCallbacks;
 
   protected mode: ViewMode = 'loading';
@@ -90,6 +92,7 @@ export class FamilySceneBase {
   constructor(layout: ILayout, input: InputManager, cb: FamilySceneCallbacks) {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
+    this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
     this.container = new PIXI.Container();
     this.build();
@@ -100,9 +103,16 @@ export class FamilySceneBase {
     this.unsubs.push(input.onUp((x, y) => this.handleUp(x, y)));
   }
 
+  /** Width of the social hub rail left of the notebook binding line (matches every other left-edge tab rail). */
+  protected get railW(): number {
+    return sidebarNavW(this.w, this.h, this.landscape);
+  }
+
   private build(): void {
-    const { w, h } = this;
-    const bg = buildPaperBackground('family', w, h);
+    const { w, h, landscape } = this;
+    // Landscape only for now — see ShopScene.drawBackground / LOBBY_IA_REDESIGN §14.
+    const railX = landscape ? sidebarNavW(w, h, true) : undefined;
+    const bg = buildPaperBackground('family', w, h, { railX });
     this.container.addChild(bg);
     const decoC = buildDecorCLayer(w, h);
     if (decoC) this.container.addChild(decoC);

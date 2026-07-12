@@ -1,8 +1,9 @@
 // Regression coverage for the 2026-07-05 ShopScene rework (see design/game/LOBBY_IA_REDESIGN.md §9):
 // the [Shop|Coins|Gacha|BattlePass] group nav moved from a full-width horizontal strip to a vertical
-// sidebar stacked inside the red notebook-margin gutter (`marginLineX`), and the promo-code redemption
-// row moved from the Shop tab to the Coins tab. This guards both behaviors so a future edit can't
-// silently squash the sidebar back into a horizontal strip or leave the promo row orphaned.
+// sidebar stacked inside the left tab rail (`sidebarNavW` — widened from the notebook-margin gutter
+// by 997d589b to match every other hub), and the promo-code redemption row moved from the Shop tab
+// to the Coins tab. This guards both behaviors so a future edit can't silently squash the sidebar
+// back into a horizontal strip or leave the promo row orphaned.
 //
 // Runs under the headless PIXI adapter (vitest.ui.config.ts setupFiles); tabs/fields are located by
 // their rendered label text, not by hit-array index, so a reorder doesn't mask a real regression.
@@ -12,7 +13,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
-import { marginLineX } from '../../src/render/sketchUi';
+import { sidebarNavW } from '../../src/ui/widgets/HubTabs';
 import { ShopScene, type ShopSceneCallbacks } from '../../src/scenes/ShopScene';
 
 const memStore = (() => {
@@ -92,12 +93,13 @@ describe('ShopScene — group nav is a left-gutter sidebar, not a horizontal str
     expect(gacha!.y).toBeGreaterThan(coins!.y);
     expect(battlepass!.y).toBeGreaterThan(gacha!.y);
 
-    // Confined to the red margin-line gutter, not spread across the full screen width (a horizontal
-    // strip would place the last tab's label near the right edge of the screen). Layout picks a
-    // fixed design resolution by orientation (independent of the W/H passed to createLayout), so
-    // read the scene's actual design width back off it rather than assuming it matches W.
-    const designW = (scene as unknown as { w: number }).w;
-    const gutter = marginLineX(designW);
+    // Confined to the left sidebar rail (sidebarNavW — see HubTabs.ts), not spread across the full
+    // screen width (a horizontal strip would place the last tab's label near the right edge of the
+    // screen). Layout picks a fixed design resolution by orientation (independent of the W/H passed
+    // to createLayout), so read the scene's actual design width/height/orientation back off it
+    // rather than assuming it matches W/H.
+    const { w: designW, h: designH, landscape } = scene as unknown as { w: number; h: number; landscape: boolean };
+    const gutter = sidebarNavW(designW, designH, landscape);
     expect(shop!.x).toBeLessThan(gutter);
     expect(coins!.x).toBeLessThan(gutter);
     expect(gacha!.x).toBeLessThan(gutter);

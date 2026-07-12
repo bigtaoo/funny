@@ -36,6 +36,11 @@ export function LifecycleMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBa
           this.ctx.panels.renderTrainPanel();
         }
       }
+      // March tokens ride the route between poll ticks — redraw every frame while any are in
+      // flight and visible, so their position advances smoothly instead of jumping on each ~5s poll.
+      if (this.ctx.marches.length > 0 && this.ctx.zoom < 3) {
+        this.renderOverlay();
+      }
     }
 
     /** Load the map atlases behind the loading cover, then reveal the map fully textured. */

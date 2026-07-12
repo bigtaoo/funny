@@ -3,11 +3,12 @@ import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren, marginLineX } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildIcon, type IconKind } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawCareerTabs } from '../ui/widgets/CareerTabs';
+import { sidebarNavW } from '../ui/widgets/HubTabs';
 import { MATERIAL_ORDER } from '../game/balance/pveUpgrades';
 import type { MatchHistoryEntry } from '../net/ApiClient';
 
@@ -131,10 +132,14 @@ export class StatsScene implements Scene {
     if (this.destroyed) return;
     tearDownChildren(this.container);
     this.hits = [];
-    const { w, h } = this;
+    const { w, h, landscape } = this;
     const s = this.cb.getStats();
 
-    this.container.addChild(buildPaperBackground('statsbg', w, h));
+    // Landscape only for now, and only when the Career hub peer strip is actually shown — see
+    // ShopScene.drawBackground / LOBBY_IA_REDESIGN §14.
+    const hasSidebar = !!(this.cb.onOpenTitles && this.cb.onOpenAchievements);
+    const railX = landscape && hasSidebar ? sidebarNavW(w, h, true) : undefined;
+    this.container.addChild(buildPaperBackground('statsbg', w, h, { railX }));
     const decoC = buildDecorCLayer(w, h);
     if (decoC) this.container.addChild(decoC);
 
@@ -146,7 +151,7 @@ export class StatsScene implements Scene {
     // peer-tab convention, see CareerTabs.ts), stacked inside the notebook-margin gutter below
     // the header (CardScene/EquipmentScene sidebar convention), so the stat panels start clear
     // of the red margin rule instead of the rule cutting through them.
-    const sidebarW = marginLineX(w);
+    const sidebarW = sidebarNavW(w, h, this.landscape);
     const sidebarTop = tbH + Math.round(h * 0.02);
     if (this.cb.onOpenTitles && this.cb.onOpenAchievements) {
       const { hits } = drawCareerTabs(this.container, sidebarW, sidebarTop, h, 'stats', {

@@ -427,6 +427,15 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - **修复**：`mail.ts` 新增 `mailText(raw)` 辅助函数（复用文件里已有的 `defDisplayName` 同款"能查到就翻译、查不到就原样返回"模式）：`t(raw as TranslationKey)` 结果等于 key 本身则判定为玩家自撰的纯文本邮件（好友/家族消息），直接展示原文；否则展示译文。列表行 subject、详情页 subject 与 body 三处调用点均改用该函数。
 - **验收**：client `tsc --noEmit` 绿；dev server HMR 重编译无报错。未做登录态下的真实拍卖退回邮件截图验证（需要后端账号/拍卖数据造数据，超出本次修复范围）。
 
+### 修复：拍卖退回/成交邮件领取报"Claim failed"（2026-07-12）
+
+- **问题**：玩家反馈拍卖过期退回的物品无法从邮件里领取，点 Claim 报通用失败提示。真机复现（起本机整套后端 + 真实 Mongo，走真实 `/auction/create` → `/auction/:id/cancel` → `/mail` → `/mail/:id/claim` 全链路，绕开任何 mock）定位：socialsvc 的 `mailId = ${dispatchKey}:${to}`；拍卖邮件的 `dispatchKey` 内嵌完整 `auctionId`（`a:{sellerId-uuid}:{ts}:{n}`），再拼上收件人 `to`（另一个 UUID）后，`mailId` 长度轻松超过 100 字符。Fastify 路由器（find-my-way）`:id` 参数默认 `maxParamLength=100`，超长直接在路由匹配这一步 404（"Route not found"，连 `claimMail` handler 都没进），前端只能吞成通用"Claim failed"，玩家/客服完全看不出问题出在 mailId 长度上。**成交邮件（`auction_buy`/`auction_settle`）用同一套 `deliverItem`，同样会踩坑**，不止退回。
+- **修复**：`server/metaserver/src/app.ts` 构造 Fastify 实例时加 `routerOptions: { maxParamLength: 200 }`（Fastify 5 起 `maxParamLength` 顶层字段已废弃，需放 `routerOptions` 下），200 对现实中最长的 mailId 有约 2 倍余量。
+- **顺带修复的环境问题**：
+  1. `server/dev-up.ps1` 从未把 `socialsvc` 纳入进程列表（`npm run dev:all` 因此永远不会启动它），且 meta 进程的 env 里也没配 `NW_SOCIALSVC_INTERNAL_URL`——P2 迁移后邮件全链路依赖 socialsvc，标准 dev 流程实际上从未真正跑起来过。已补上 `social` 进程条目 + `NW_SOCIALSVC_INTERNAL_URL`，并把 `social`/`auction` 加进健康检查列表（`dev-up.ps1` 和根 `package.json` 的 `dev:health` 都补了）。
+  2. `dev-up.ps1` 本身缺 UTF-8 BOM，文件里的全角箭头/破折号在本机 Windows PowerShell 5.1 + 代码页 850 下会被错误解码，导致整个脚本解析失败（"missing string terminator"），`npm run dev:all` 在本机此前一直连窗口都开不出来。已给文件加 BOM。
+- **验收**：`server/metaserver/test/mail-claim.e2e.test.ts`（真实 Mongo + 真实跨服务 HTTP，mailId 特意造到超 100 字符，card/equipment 各一例，回归前会 404，回归后 200）；metaserver 全量单测 42 files / 518 tests 绿；真实起满整套后端（含修复后的 dev-up.ps1）+ 真实 Mongo，走 `/auction/create` → `/auction/:id/cancel` → `/mail` → `/mail/:id/claim` 完整复现并确认修复生效（`{"ok":true}`，material 正确回背包）。
+
 ---
 
 *本文为拍卖行机制权威，DRAFT/⚠️ 处随实现与拍板细化；数值以 `server/shared/src/slg.ts` 为准。*

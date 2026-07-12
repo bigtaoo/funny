@@ -18,7 +18,7 @@ import { describe, it, expect } from 'vitest';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
-import { marginLineX } from '../../src/render/sketchUi';
+import { sidebarNavW, sidebarItemHeight } from '../../src/ui/widgets/HubTabs';
 
 import { FamilyScene } from '../../src/scenes/FamilyScene';
 import { SectScene } from '../../src/scenes/SectScene';
@@ -57,15 +57,23 @@ const SECT_FIXTURE: SectDetailView = {
 // through the scene's real input path (handleDown), same as a live pointer tap would.
 const TAB_ORDER: SocialTab[] = ['friends', 'family', 'sect', 'world', 'mail'];
 
+// Cells stack with a small gap (HubTabs.ts's `drawSidebarTabs`, not exported since it's an internal
+// layout constant) between fixed-height `sidebarItemHeight` cells — no longer a stretch-to-fill
+// `(h - top) / 5` split (see 09adf922, which switched the rail's cell layout to match every other
+// hub's fixed cell size, leaving the rail short of the full available height).
+function railCellPitch(h: number): number {
+  return sidebarItemHeight(h) + Math.round(h * 0.015);
+}
+
 /** FamilyScene/SectScene rail sits under their static full-width header (`headerH`) and
  *  dispatches clicks through `handleDown`. */
 function clickRailTab(scene: any, tab: SocialTab): void {
   const index = TAB_ORDER.indexOf(tab);
-  const railW = marginLineX(scene.w);
+  const railW = sidebarNavW(scene.w, scene.h, scene.landscape);
   const top = scene.headerH as number;
-  const cellH = Math.round((scene.h - top) / TAB_ORDER.length);
+  const pitch = railCellPitch(scene.h);
   const x = Math.round(railW / 2);
-  const y = top + index * cellH + Math.round(cellH / 2);
+  const y = top + index * pitch + Math.round(sidebarItemHeight(scene.h) / 2);
   scene.handleDown(x, y);
 }
 
@@ -73,11 +81,11 @@ function clickRailTab(scene: any, tab: SocialTab): void {
  *  through the pointer-down/up click path (`onPointerDown` + `onPointerUp`), not `handleDown`. */
 function clickFriendsRailTab(scene: any, tab: SocialTab): void {
   const index = TAB_ORDER.indexOf(tab);
-  const railW = marginLineX(scene.w);
+  const railW = sidebarNavW(scene.w, scene.h, scene.landscape);
   const top = scene.bodyTop as number;
-  const cellH = Math.round((scene.h - top) / TAB_ORDER.length);
+  const pitch = railCellPitch(scene.h);
   const x = Math.round(railW / 2);
-  const y = top + index * cellH + Math.round(cellH / 2);
+  const y = top + index * pitch + Math.round(sidebarItemHeight(scene.h) / 2);
   scene.onPointerDown(x, y);
   scene.onPointerUp(x, y);
 }
@@ -111,12 +119,15 @@ describe('FamilyScene — social tab rail (onNavTab wiring)', () => {
   it('the other 4 tabs are still drawn (rail hit rects exist) while family info is showing', () => {
     // Regression check for the actual reported bug: before this fix, FamilyScene had no
     // rail hit rects at all, so every one of these clicks would have been silent no-ops.
+    // 'family' itself is excluded: since 09adf922 moved the rail onto the shared
+    // drawSidebarTabs convention, the active cell gets no hit rect at all (matching every
+    // other hub's tab bar), so clicking it is a no-op rather than a redundant onNavTab call.
     const calls: SocialTab[] = [];
     const scene = build((tab) => calls.push(tab));
 
     for (const tab of TAB_ORDER) clickRailTab(scene, tab);
 
-    expect(calls).toEqual(TAB_ORDER);
+    expect(calls).toEqual(TAB_ORDER.filter((tab) => tab !== 'family'));
     scene.destroy();
   });
 });
@@ -134,20 +145,22 @@ describe('SectScene — social tab rail (onNavTab wiring)', () => {
   }
 
   it('clicking a rail tab calls onNavTab with that tab id', () => {
+    // 'sect' is the active tab here (see SectScene/render.ts), so — like FamilyScene's
+    // 'family' above — it gets no hit rect and is excluded from the expected calls.
     const calls: SocialTab[] = [];
     const scene = build((tab) => calls.push(tab));
 
     for (const tab of TAB_ORDER) clickRailTab(scene, tab);
 
-    expect(calls).toEqual(TAB_ORDER);
+    expect(calls).toEqual(TAB_ORDER.filter((tab) => tab !== 'sect'));
     scene.destroy();
   });
 
   it("the sect scene's own tab bar (families/channel) still lives to the right of the rail and is unaffected", () => {
     const scene = build(() => {});
-    // families/channel tab bar hit rects now start at `left` (marginLineX), not x=0 —
+    // families/channel tab bar hit rects now start at `left` (sidebarNavW), not x=0 —
     // clicking mid-rail (x well inside the rail) must not accidentally hit them.
-    scene.handleDown(Math.round(marginLineX(scene.w) / 2), scene.headerH + 10);
+    scene.handleDown(Math.round(sidebarNavW(scene.w, scene.h, scene.landscape) / 2), scene.headerH + 10);
     expect(scene.activeTab).toBe('families'); // unchanged — rail click, not the local tab bar
     scene.destroy();
   });

@@ -473,12 +473,27 @@ zoomInput.step = '2';
 zoomInput.value = String(tp);
 zoomInput.addEventListener('input', () => setZoom(Number(zoomInput.value)));
 
+// A single wheel gesture fires dozens of 'wheel' events (far above frame rate), and each one used to
+// trigger a synchronous full-viewport tile rebuild in setZoom(). Coalesce them down to one rebuild per
+// animation frame — same pattern as scheduleRender() above — so a sustained scroll (e.g. dragging from
+// default zoom to ZOOM_MAX) does at most ~60 rebuilds/sec instead of queuing one per wheel tick.
+let pendingZoomDelta = 0;
+let pendingZoomAnchor: { sx: number; sy: number } | undefined;
+let zoomRafScheduled = false;
 app.view.addEventListener?.('wheel', (ev: Event) => {
   const we = ev as WheelEvent;
   we.preventDefault();
   const rect = (app.view as HTMLCanvasElement).getBoundingClientRect();
-  setZoom(tp - Math.sign(we.deltaY) * 4, { sx: we.clientX - rect.left, sy: we.clientY - rect.top });
-  zoomInput.value = String(tp);
+  pendingZoomDelta += -Math.sign(we.deltaY) * 4;
+  pendingZoomAnchor = { sx: we.clientX - rect.left, sy: we.clientY - rect.top };
+  if (zoomRafScheduled) return;
+  zoomRafScheduled = true;
+  requestAnimationFrame(() => {
+    zoomRafScheduled = false;
+    setZoom(tp + pendingZoomDelta, pendingZoomAnchor);
+    pendingZoomDelta = 0;
+    zoomInput.value = String(tp);
+  });
 }, { passive: false });
 
 centerBtn.addEventListener('click', () => { centerView(); renderBaseMap(seedInput.value || 'preview'); redrawAll(); });

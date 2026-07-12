@@ -3,12 +3,12 @@ import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren, marginLineX } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildIcon, type IconKind } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawCareerTabs } from '../ui/widgets/CareerTabs';
-import { drawSidebarTabs, type HubTab } from '../ui/widgets/HubTabs';
+import { drawSidebarTabs, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
 import type { AchievementsView, Achievement } from '../net/ApiClient';
 import { tierState, achievementClaimable, type TierState } from '../game/meta/achievements';
 
@@ -162,9 +162,13 @@ export class AchievementScene implements Scene {
     if (this.destroyed) return;
     tearDownChildren(this.container);
     this.hits = [];
-    const { w, h } = this;
+    const { w, h, landscape } = this;
 
-    this.container.addChild(buildPaperBackground('achbg', w, h));
+    // Landscape only for now, and only when the Career hub peer strip is actually shown — see
+    // ShopScene.drawBackground / LOBBY_IA_REDESIGN §14.
+    const hasSidebar = !!(this.cb.onOpenStats && this.cb.onOpenTitles);
+    const railX = landscape && hasSidebar ? sidebarNavW(w, h, true) : undefined;
+    this.container.addChild(buildPaperBackground('achbg', w, h, { railX }));
     const decoC = buildDecorCLayer(w, h);
     if (decoC) this.container.addChild(decoC);
 
@@ -178,7 +182,7 @@ export class AchievementScene implements Scene {
     // the sibling pages never vanish while achievements are loading/offline/empty.
     let sidebarBottom = tbH + Math.round(h * 0.02);
     if (this.cb.onOpenStats && this.cb.onOpenTitles) {
-      const { hits, bottom } = drawCareerTabs(this.container, marginLineX(w), sidebarBottom, h, 'achievements', {
+      const { hits, bottom } = drawCareerTabs(this.container, sidebarNavW(w, h, this.landscape), sidebarBottom, h, 'achievements', {
         onOpenStats: this.cb.onOpenStats,
         onOpenTitles: this.cb.onOpenTitles,
         onOpenAchievements: () => {},
@@ -203,7 +207,7 @@ export class AchievementScene implements Scene {
     this.drawCategoryTabs(cats, sidebarBottom);
 
     // Achievement cards for the current category.
-    const contentX = marginLineX(w) + Math.round(w * 0.025);
+    const contentX = sidebarNavW(w, h, this.landscape) + Math.round(w * 0.025);
     const padRight = Math.round(w * 0.04);
     const y0 = top;
     let y = y0;
@@ -265,7 +269,7 @@ export class AchievementScene implements Scene {
         (d) => d.category === cat && !d.hidden && achievementClaimable(d, this.data!.stats, this.data!.achievements),
       ),
     }));
-    const { hits } = drawSidebarTabs(this.container, marginLineX(this.w), top, this.h, tabs, (i) => {
+    const { hits } = drawSidebarTabs(this.container, sidebarNavW(this.w, this.h, this.landscape), top, this.h, tabs, (i) => {
       this.activeCat = cats[i];
       this.render();
     }, { sub: true });

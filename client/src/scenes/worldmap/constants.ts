@@ -3,7 +3,7 @@
 export const DEFAULT_MAP_SIZE = 1500; // server default 1500×1500; actual value comes from getSeason
 export const HUD_H    = 56;   // bottom chat-bar height (§25 HUD relayout — status/marches moved to a floating top-right stack)
 export const MARGIN   = 4;    // margin inside modal
-export const CONFIRM_H = 140;
+export const CONFIRM_H = 280;
 
 // City sprite side length in tiles (ADR-025). The base now really occupies a 3×3 footprint; the
 // sprite is drawn slightly larger than 3 tiles to compensate the ~15% transparent margin baked into
