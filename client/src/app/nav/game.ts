@@ -492,6 +492,9 @@ export function createGameNav(ctx: AppCtx): GameNav {
         analytics.track('tutorial_skip', { step: 'tutorial' });
         nav.goLobby({ fade: true }); // exiting a match — one of the transitions that cross-fade
       },
+      onTutorialStep(stepKey) {
+        analytics.track('tutorial_step', { level_id: TUTORIAL_LEVEL_ID, step_key: stepKey });
+      },
     }, { level, tutorial: true });
   }
 

@@ -4,7 +4,6 @@ import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
 import { caretDisplay } from '../../render/inputDisplay';
-import { drawSocialTabRail } from '../../render/socialTabRail';
 import { type Constructor, type FamilySceneBaseCtor, type FamilyTab, ROW_H } from './base';
 
 export interface RenderHandlers {
@@ -99,10 +98,7 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       if (!this.family) return;
       const { w, h } = this;
 
-      // Social hub rail (friends/family/sect/world/mail) in the left margin gutter — keeps the
-      // other 4 tabs visible instead of them "vanishing" when this scene replaces FriendsScene.
-      const railHits = drawSocialTabRail(this.bodyLayer, w, h, this.headerH, this.landscape, 'family', {}, (tab) => this.cb.onNavTab(tab));
-      this.hitRects.push(...railHits.map((hit) => ({ rect: hit.rect, action: hit.fn })));
+      // Rail itself is now drawn unconditionally by the base render() dispatcher (see base.ts).
 
       // Tab bar — starts to the right of the social hub rail so it doesn't sit on top of it,
       // matching the EquipmentScene/GachaScene convention.

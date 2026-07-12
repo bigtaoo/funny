@@ -353,6 +353,12 @@
 - **返回修复**：`app/nav/shop.ts` 的 `goGacha`/`goBattlePass` 的 `onBack` 改为直接调用 `shopBack?.()`（缺省兜底 `goShop()`/`nav.goLobby()`），不再经过 Shop 屏幕；`app/nav/lobby.ts` 的 `onOpenShop` 改为 `nav.goGacha({ shopBack: () => goLobby() })`，把真正的来源（大厅）显式穿透进去。
 - **新增回归测试**：`client/test/ui/shopGroupTabs.ui.ts` 补一条「`getShopBadge` 正确转发到 Gacha 侧栏 Shop tab」的用例（数 `PIXI.Graphics` 节点数佐证徽章确实画出来了）；新增 `client/test/shopNav-backNavigation.test.ts`（4 例，直接驱动真实 `createShopNav`，不经 PIXI/网络）覆盖：大厅直入 Gacha 后返回直连来源而非落在 Shop、从 Shop 打开 Gacha/BattlePass 后返回同样直连来源、`goBattlePass()` 单独调用时的兜底回大厅。`test/harness/HeadlessAppViews.ts` 的 `showBattlePass` 顺带补上和 `showShop`/`showGacha` 一致的回调捕获（之前直接丢弃回调，测试没法按它的返回按钮）。
 - 已用 `tsc --noEmit` + `webpack --mode=production` + 相关 UI/nav 测试（新增两批共 13 例）+ 全量 `vitest run`（68 文件 546 例）验证；纯导航/数据流改动，未跑游戏截图。
+- **追记（2026-07-12）：BattlePass 方向仍缺红点，DailyScene 侧栏 Tab 漏洞排查带出的连锁修复**——排查 `DailyScene` 侧栏 Tab 从未接 `HubTab.badge` 的漏洞（见 `RETENTION_DESIGN.md`）时，顺带把本条修的 `getShopBadge` 模式推广到全部同组页签，发现同样的"字段存在但没接上"缺口还有两处：`BattlePassScene` 的 Shop 页签（`GachaScene` 早已正确接线，`BattlePassScene` 从未跟进）、以及 `ShopScene`/`GachaScene` 的 BattlePass 页签（战令有等级奖励可领时同样应该红点，但两边都从没算过这个状态）。
+  - 新增 `client/src/game/meta/battlepass.ts::hasBattlePassClaimable(bp)`（`achievements.ts` 同构的纯函数镜像）：判断"当前已达等级中，是否有免费档（或已购战令时的付费档）未领"。
+  - `app/nav/shop.ts` 内的月卡判定原来只在 `goGacha()` 里内联实现一份，现提成 `shopCardBadgeClaimable()` 共享；新增同构的 `battlePassBadgeClaimable()`；`goShop()`/`goGacha()`/`goBattlePass()` 三处都注入 `getShopBadge`/`getBattlePassBadge`（各自只注入"别人的"红点，自己的 tab 是 `active` 不需要）。
+  - `ShopSceneCallbacks`/`GachaSceneCallbacks`/`BattlePassCallbacks` 三个接口相应新增 `getBattlePassBadge?`/`getShopBadge?` 可选字段；三个场景各自的 `drawSidebar()`/`drawGroupTabs()` 把它们接到对应 `HubTab.badge`。
+  - **测试**：`client/test/battlepass.test.ts`（8 例，纯函数）+ `client/test/shopNav-peerBadges.test.ts`（8 例，`createShopNav` 导航层接线，验证三个场景互相看到的红点状态一致）+ `client/test/ui/shopGroupTabs.ui.ts` 追加 3 例（真实 PIXI 渲染树里数 `Graphics` 节点佐证红点确实画出）。
+  - 排查过其余同类页签（`CardScene`/`EquipmentScene` 的 Cards/Equipment、`CollectionScene` 的 Collection/Equipment 及 Cards/Skins、`AuctionScene` 各 Tab）：均无可领取/未读状态可接，非漏洞——`CollectionScene` 的 Collection/Equipment 分组条另外还在用不支持 `badge` 的水平 `drawHubTabs`（见 §7/§8），如果未来要给它加红点需要先给 `drawHubTabs` 补上绘制逻辑（`drawSidebarTabs` 早已支持，两者未同步）。
 
 ---
 

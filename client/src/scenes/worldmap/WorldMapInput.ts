@@ -3,7 +3,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
 import { WorldApiError } from '../../net/WorldApiClient';
-import { proceduralTile } from '@nw/shared';
+import { proceduralTile, baseFootprintCells, baseFootprintInBounds } from '@nw/shared';
 import { loadResAtlas, getResTexture, isResAtlasReady } from '../../render/resAtlasLoader';
 import { loadCityAtlas, getCityTexture, isCityAtlasReady } from '../../render/cityAtlasLoader';
 import { loadTerrainAtlas, getTerrainTexture, isTerrainAtlasReady } from '../../render/terrainAtlasLoader';
@@ -23,6 +23,22 @@ import type { WorldMapContext, WorldMapCallbacks, DeployKind } from './WorldMapC
 
 export class WorldMapInput {
   constructor(private readonly ctx: WorldMapContext) {}
+
+  /**
+   * Mirrors worldsvc's footprintFree (ADR-025): true iff the whole 3×3 block anchored at (ax,ay) can host
+   * a base — in bounds, no blocking procedural terrain, and no cell owned by someone else. Cells the
+   * viewport hasn't cached yet are optimistically treated as free (fog); the server has the final say.
+   */
+  private footprintFree(ax: number, ay: number): boolean {
+    if (!baseFootprintInBounds(ax, ay, this.ctx.mapW, this.ctx.mapH)) return false;
+    for (const { x, y } of baseFootprintCells(ax, ay)) {
+      const proc = proceduralTile(this.ctx.cb.worldId, x, y);
+      if (proc.type === 'center' || proc.type === 'obstacle' || proc.type === 'bridge' || proc.type === 'plankway' || proc.type === 'stronghold') return false;
+      const cached = this.ctx.tileCache.get(`${x}:${y}`);
+      if (cached?.occupied && !cached.mine) return false;
+    }
+    return true;
+  }
 
   onTileClick(tx: number, ty: number): void {
     if (tx < 0 || ty < 0 || tx >= this.ctx.mapW || ty >= this.ctx.mapH) return;
@@ -127,8 +143,11 @@ export class WorldMapInput {
     }
     // Scout: send a scout to lift distant fog / reveal an unknown tile, then auto-return (no capture).
     buttons.push({ label: t('world.actScout'), action: () => void this.ctx.net.doScout(tx, ty) });
-    // Voluntary relocation (§3.4): if the player already has a capital and the target tile is placeable (not obstacle / bridge / plankway), spend 500 coins to move the capital here.
-    const relocatable = this.ctx.me?.mainBaseTile && tile?.type !== 'obstacle' && tile?.type !== 'bridge' && tile?.type !== 'plankway';
+    // Voluntary relocation (§3.4): if the player already has a capital and the whole 3×3 footprint anchored
+    // here (ADR-025) is actually placeable — in bounds, no blocking terrain, no enemy-owned cell — spend 500
+    // coins to move the capital here. A single-tile check let the button appear for spots the server would
+    // then reject with a generic "occupied" error; checking the full footprint client-side avoids that dead end.
+    const relocatable = this.ctx.me?.mainBaseTile && this.footprintFree(tx, ty);
     if (relocatable) {
       buttons.push({ label: t('world.actRelocate'), action: () => this.ctx.net.confirmRelocate(tx, ty) });
     }

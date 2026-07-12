@@ -97,7 +97,7 @@ export class TitlesScene implements Scene {
 
   private drawHeader(): number {
     const { w, h } = this;
-    const hdr = drawSceneHeader(this.container, w, h, t('titles.title'), { titleSize: Math.round(h * 0.042) });
+    const hdr = drawSceneHeader(this.container, w, h, t('titles.title'));
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
     return hdr.headerH;
   }

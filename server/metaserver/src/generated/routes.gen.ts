@@ -1044,6 +1044,18 @@ const BODY_SCHEMAS: Record<string, unknown> = {
       "locale": {
         "type": "string"
       },
+      "ua": {
+        "type": "string"
+      },
+      "screen_w": {
+        "type": "integer"
+      },
+      "screen_h": {
+        "type": "integer"
+      },
+      "dpr": {
+        "type": "number"
+      },
       "events": {
         "type": "array",
         "maxItems": 100,

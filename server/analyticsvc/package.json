@@ -13,9 +13,11 @@
   },
   "dependencies": {
     "@nw/shared": "*",
+    "geoip-lite": "^2.0.3",
     "mongodb": "^6.10.0"
   },
   "devDependencies": {
+    "@types/geoip-lite": "^1.4.4",
     "@types/node": "^22.10.0",
     "mongodb-memory-server": "^11.2.0",
     "tsx": "^4.19.2",

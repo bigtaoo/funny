@@ -794,6 +794,7 @@ export const zh = {
   'world.err.worldFull': '世界已满员',
   'world.err.noTroops': '兵力不足',
   'world.err.occupied': '该地已被占领',
+  'world.err.footprintBlocked': '迁城需要连续的 3×3 空地，周边有格子被占用或不可用',
   'world.err.protected': '该地受保护，无法攻击',
   'world.err.allyTile': '这是盟友领地，无法进攻',
   'world.err.outOfRange': '超出地图边界',

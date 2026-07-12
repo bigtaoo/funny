@@ -25,6 +25,14 @@ let sessionStartTs = 0;
 let scenesVisited: string[] = [];
 
 /**
+ * Scene/page-level funnel gate (A9-9, ANALYTICS_DESIGN). The core new-user path — login → intro/
+ * tutorial gate → lobby → pick a level → prep → battle. screen_view itself is only 5%-sampled (see
+ * analyticsvc DEFAULT_CONFIG), too noisy for a reliable per-scene funnel, so track() additionally fires
+ * a 100%-sampled `nav_checkpoint` for exactly these scenes. Must match analyticsvc's SCENE_FUNNEL_SCENES.
+ */
+const NAV_CHECKPOINT_SCENES = new Set(['LoginScene', 'IntroScene', 'LobbyScene', 'CampaignMapScene', 'LevelPrepScene', 'GameScene']);
+
+/**
  * GDPR consent gate (C5-c, L1-1). Default `false`: NO telemetry leaves the device
  * until the player accepts the consent dialog. The core calls {@link setConsent}
  * with the persisted flag before init (returning consented users), and again on
@@ -80,6 +88,8 @@ export async function init(
 
   getToken = () => api?.getToken() ?? undefined;
 
+  const deviceFields = getDeviceFields();
+
   const getBatchMeta = (): BatchMeta => ({
     session_id: sessionId!,
     device_id: deviceId,
@@ -87,6 +97,7 @@ export async function init(
     os,
     game_version: gameVersion,
     locale: getLocale(),
+    ...deviceFields,
   });
 
   queue = new EventQueue({ analyticsBaseUrl: base, getToken, getBatchMeta });
@@ -152,6 +163,11 @@ export function track(event: string, props: Record<string, unknown> = {}): void 
     const scene = props['scene'] as string | undefined;
     if (scene) scenesVisited.push(scene);
     queue.checkpoint(); // flush before adding new screen event
+    // Fully-sampled companion event for the scene-level funnel (A9-9) — screen_view itself is
+    // 5%-sampled and too noisy to drive a reliable per-scene funnel.
+    if (scene && NAV_CHECKPOINT_SCENES.has(scene)) {
+      track('nav_checkpoint', { scene });
+    }
   }
 
   queue.push({ event, ts: Date.now(), props });
@@ -190,4 +206,31 @@ function getPlatformOs(platform: IPlatform): string {
 
 function getGameVersion(): string {
   return (globalThis as { __NW_BUILD_VERSION__?: string }).__NW_BUILD_VERSION__ ?? '0.0.0';
+}
+
+/**
+ * Real device fields for the ops device/browser dashboard (A9-9). Web: full `navigator.userAgent` +
+ * screen size/DPR (server derives browser/device_type from the UA — never trust a client-supplied
+ * browser name). WeChat: `wx.getSystemInfoSync()` already reports screen size/pixelRatio; no UA string
+ * exists there, so `ua` is left unset and the server buckets it as platform=wechat instead.
+ */
+function getDeviceFields(): { ua?: string; screen_w?: number; screen_h?: number; dpr?: number } {
+  const wx = (globalThis as unknown as {
+    wx?: { getSystemInfoSync?: () => { screenWidth?: number; screenHeight?: number; pixelRatio?: number } };
+  }).wx;
+  if (wx?.getSystemInfoSync) {
+    try {
+      const info = wx.getSystemInfoSync();
+      return { screen_w: info.screenWidth, screen_h: info.screenHeight, dpr: info.pixelRatio };
+    } catch { /* fall through to web path below */ }
+  }
+  if (typeof navigator !== 'undefined' && typeof window !== 'undefined') {
+    return {
+      ua: navigator.userAgent,
+      screen_w: window.screen?.width,
+      screen_h: window.screen?.height,
+      dpr: window.devicePixelRatio,
+    };
+  }
+  return {};
 }

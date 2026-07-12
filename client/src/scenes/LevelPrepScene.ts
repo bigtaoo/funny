@@ -131,7 +131,7 @@ export class LevelPrepScene implements Scene {
     if (decoC) this.container.addChild(decoC);
 
     // Header
-    const hdr = drawSceneHeader(this.container, w, h, t('campaign.levelLabel', { n: this.cb.levelNumber }), { titleSize: Math.round(h * 0.032) });
+    const hdr = drawSceneHeader(this.container, w, h, t('campaign.levelLabel', { n: this.cb.levelNumber }));
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 

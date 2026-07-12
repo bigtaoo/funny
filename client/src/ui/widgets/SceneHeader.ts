@@ -83,7 +83,7 @@ export interface SceneHeaderResult {
 
 /** Back-glyph font size — kept in one place so every scene's back reads alike. */
 function backSize(h: number): number {
-  return Math.round(h * 0.026);
+  return Math.round(h * 0.039); // 1.5x the original 0.026 — approved 12.07.2026 back-button enlargement.
 }
 
 /** Chip fill for the back-button pill, keyed by where it sits. */

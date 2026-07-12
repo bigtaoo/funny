@@ -247,7 +247,7 @@ export class SettingsScene implements Scene {
 
   private drawHeader(): number {
     const { w, h } = this;
-    const hdr = drawSceneHeader(this.container, w, h, t('settings.title'), { titleSize: Math.round(h * 0.042) });
+    const hdr = drawSceneHeader(this.container, w, h, t('settings.title'));
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 

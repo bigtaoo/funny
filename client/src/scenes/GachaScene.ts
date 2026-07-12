@@ -73,6 +73,8 @@ export interface GachaSceneCallbacks {
   openBattlePass?(): void;
   /** Whether the Shop peer tab has an unclaimed monthly-card reward (mirrors ShopScene's own Shop-tab badge, LOBBY_IA_REDESIGN P1.5). */
   getShopBadge?(): boolean;
+  /** Whether the BattlePass peer tab has a claimable level reward at the current XP (mirrors ShopScene's own peer-tab badges, LOBBY_IA_REDESIGN P1.5). */
+  getBattlePassBadge?(): boolean;
 }
 
 interface Hit { rect: Rect; fn: () => void; }
@@ -253,7 +255,7 @@ export class GachaScene implements Scene {
     tabs.push({ label: t('gacha.title'), active: true, icon: 'capsule' });
     actions.push(() => {});
     if (this.cb.openBattlePass) {
-      tabs.push({ label: t('battlepass.title'), active: false, icon: 'trophy' });
+      tabs.push({ label: t('battlepass.title'), active: false, icon: 'trophy', badge: this.cb.getBattlePassBadge?.() ?? false });
       actions.push(() => this.cb.openBattlePass?.());
     }
     const sidebarW = sidebarNavW(w, h, landscape);

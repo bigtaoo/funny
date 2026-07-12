@@ -28,7 +28,7 @@ import type {
   WorldApiClient, SectView, SectDetailView, SectMessageView,
 } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
-import type { SocialTab } from '../../render/socialTabRail';
+import { drawSocialTabRail, type SocialTab } from '../../render/socialTabRail';
 
 export interface SectSceneCallbacks {
   onBack(): void;
@@ -167,6 +167,12 @@ export class SectSceneBase {
     tearDownChildren(this.bodyLayer); // create-form input re-renders per keystroke → free Text textures
     this.hitRects = [];
     this.renderHeader();
+
+    // Draw the social hub rail in every mode (not just 'mySect') — otherwise the other 4 tabs
+    // vanish while this scene is still loading or has no sect yet, since it replaces FriendsScene
+    // wholesale on navigation.
+    const railHits = drawSocialTabRail(this.bodyLayer, this.w, this.h, this.headerH, this.landscape, 'sect', {}, (tab) => this.cb.onNavTab(tab));
+    this.hitRects.push(...railHits.map((hit) => ({ rect: hit.rect, action: hit.fn })));
 
     switch (this.mode) {
       case 'loading': this.renderLoading(); break;

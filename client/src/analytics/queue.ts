@@ -18,6 +18,11 @@ export interface BatchMeta {
   os: string;
   game_version: string;
   locale: string;
+  /** Raw device fields (A9-9), best-effort — absent where the runtime doesn't expose them. */
+  ua?: string;
+  screen_w?: number;
+  screen_h?: number;
+  dpr?: number;
 }
 
 const FLUSH_INTERVAL_MS = 30_000;

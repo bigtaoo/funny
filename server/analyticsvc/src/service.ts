@@ -46,6 +46,10 @@ export const DEFAULT_CONFIG: AnalyticsConfig = {
     tutorial_start:    { sample: 1.0 },
     tutorial_complete: { sample: 1.0 },
     tutorial_skip:  { sample: 1.0 },
+    // Fine-grained tutorial-step / nav funnels (A9-9): must be 100% sampled, same reasoning as
+    // tutorial_start/complete above — sampling them would distort the step-by-step drop-off.
+    tutorial_step:  { sample: 1.0 },
+    nav_checkpoint: { sample: 1.0 },
     login_gate_hit: { sample: 1.0 },
     churn_signal:   { sample: 1.0 },
     // Button-level clicks (A9-8). Fully sampled for now so first-day "which button" analysis is exact;
@@ -76,6 +80,45 @@ export interface EventBatch {
   events: RawEvent[];
   /** C5-c GDPR consent flag. Identified users (with a JWT) must set this to true before their events are recorded; anonymous users are exempt (no PII). */
   consent?: boolean;
+  /** Raw device fields (A9-9); web only, absent for wechat/crazygames. Browser/device_type are derived server-side from `ua`, never trusted from the client. */
+  ua?: string;
+  screen_w?: number;
+  screen_h?: number;
+  dpr?: number;
+}
+
+/**
+ * Request IP + server-resolved geo, attached by httpApi.ts. The raw IP is stored (account-protection:
+ * shared-IP abuse / multi-account detection, ban evasion) alongside the geoip-lite-derived country/
+ * region/city used for the ops distribution chart.
+ */
+export interface ResolvedGeo {
+  ip?: string;
+  country?: string;
+  region?: string;
+  city?: string;
+}
+
+// ─── Lightweight UA parsing (A9-9) ────────────────────────────────────────────
+// Intentionally hand-rolled (no ua-parser-js dependency) — analyticsvc is a plain node:http service with
+// no framework, and we only need coarse browser-name/device-type buckets for the ops dashboard, not exact
+// version parsing.
+export function parseUserAgent(ua: string | undefined): { browser: string; device_type: 'mobile' | 'tablet' | 'desktop' } {
+  const s = ua ?? '';
+  let browser = 'unknown';
+  if (/MicroMessenger/i.test(s)) browser = 'wechat';
+  else if (/QQBrowser/i.test(s)) browser = 'qqbrowser';
+  else if (/Edg\//i.test(s)) browser = 'edge';
+  else if (/OPR\/|Opera/i.test(s)) browser = 'opera';
+  else if (/Firefox\//i.test(s)) browser = 'firefox';
+  else if (/CriOS|Chrome\//i.test(s)) browser = 'chrome';
+  else if (/Safari\//i.test(s)) browser = 'safari';
+
+  let device_type: 'mobile' | 'tablet' | 'desktop' = 'desktop';
+  if (/iPad|Tablet(?!.*Mobile)/i.test(s)) device_type = 'tablet';
+  else if (/Mobi|Android|iPhone|iPod/i.test(s)) device_type = 'mobile';
+
+  return { browser, device_type };
 }
 
 // ─── Query result types (A9-6) ───────────────────────────────────────────────────────
@@ -112,10 +155,15 @@ export interface RetentionRow {
 // so it answers "what do brand-new players do the first time they enter the game" —
 // unlike the all-users funnel ETL / DAU / retention above.
 
-/** One ordered step of the new-user onboarding funnel. `reached` tests a first session's event/scene sets. */
+/**
+ * One ordered step of a cohort-based funnel. `reached` tests a session's accumulated signals:
+ * `events` = distinct event names seen, `scenes` = distinct `screen_view` scene names, `stepKeys` =
+ * distinct `tutorial_step` step keys (see TUTORIAL_STEPS). Steps that don't need a given set simply
+ * ignore that parameter (TS structural typing allows fewer-arg callbacks).
+ */
 export interface OnboardingStep {
   key: string;
-  reached: (events: Set<string>, scenes: Set<string>) => boolean;
+  reached: (events: Set<string>, scenes: Set<string>, stepKeys: Set<string>) => boolean;
 }
 
 /**
@@ -139,6 +187,64 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
 // Lifecycle/plumbing events excluded from the "which action did they take" breakdown (screen_view is
 // surfaced separately as scene rows). Everything else counts as a semantic action.
 const ACTION_NOISE = new Set(['session_start', 'session_end', 'screen_view', 'churn_signal']);
+
+// Shared placeholder for callers that don't track tutorial_step keys (e.g. ONBOARDING_STEPS reached()).
+const EMPTY_STEP_KEYS: Set<string> = new Set();
+
+// ─── Tutorial step-level funnel (A9-9) ────────────────────────────────────────
+// Fine-grained breakdown of *where inside the tutorial* a new player quits — as opposed to the coarse
+// tutorial_start/tutorial_complete pair in ONBOARDING_STEPS above. Driven by a `tutorial_step` event
+// (100% sampled, see DEFAULT_CONFIG) whose `props.step_key` matches one of the keys below in order;
+// emitted by client/src/render/TutorialDirector.ts via GameNav.goTutorial().
+export const TUTORIAL_ORDERED_KEYS = [
+  'tutorial_start',
+  'orientation_1', 'orientation_2', 'orientation_3', 'orientation_4', 'orientation_5', 'orientation_6', 'orientation_7',
+  'beat_unit', 'beat_building', 'beat_spell',
+  'freeplay',
+  'tutorial_complete',
+] as const;
+
+export const TUTORIAL_STEPS: OnboardingStep[] = TUTORIAL_ORDERED_KEYS.map((key) => {
+  if (key === 'tutorial_start') return { key, reached: (e: Set<string>) => e.has('tutorial_start') };
+  if (key === 'tutorial_complete') return { key, reached: (e: Set<string>) => e.has('tutorial_complete') };
+  return { key, reached: (_e: Set<string>, _s: Set<string>, stepKeys: Set<string>) => stepKeys.has(key) };
+});
+
+// ─── Scene/page-level funnel (A9-9) ───────────────────────────────────────────
+// The core new-user navigation path: login → intro/tutorial gate → lobby → pick a level → prep → battle.
+// Backed by a 100%-sampled `nav_checkpoint` event (screen_view itself stays at 5% sampling and is not
+// reliable enough for a per-scene funnel) fired by client/src/analytics/index.ts for exactly this scene
+// allowlist. Extend NAV_CHECKPOINT_SCENES client-side to add more gates.
+export const SCENE_FUNNEL_SCENES = ['LoginScene', 'IntroScene', 'LobbyScene', 'CampaignMapScene', 'LevelPrepScene', 'GameScene'] as const;
+
+export const SCENE_FUNNEL_STEPS: OnboardingStep[] = SCENE_FUNNEL_SCENES.map((scene) => ({
+  key: scene,
+  reached: (_e: Set<string>, scenes: Set<string>) => scenes.has(scene),
+}));
+
+export interface StepFunnelResult {
+  cohort_size: number;
+  window_days: number;
+  funnel: OnboardingStepRow[];
+}
+
+// ─── Per-level funnel (A9-9) ──────────────────────────────────────────────────
+// level_attempt/level_complete/level_abandon already carry props.level_id (client/src/app/nav/game.ts),
+// so this is a direct aggregation — no new client instrumentation needed. Each step is counted
+// independently (distinct devices per event per level), not as a same-session cohort chain: attempt and
+// complete for a given level_id are already causally linked by the level itself.
+export interface LevelFunnelRow {
+  level_id: string;
+  attempts: number;
+  completes: number;
+  abandons: number;
+  completion_rate?: number;
+}
+
+// ─── Device / geo distributions (A9-9) ────────────────────────────────────────
+export interface BrowserRow { browser: string; devices: number }
+export interface DeviceTypeRow { device_type: string; devices: number }
+export interface GeoRow { country: string; devices: number }
 
 export interface OnboardingStepRow {
   step: string;
@@ -172,6 +278,12 @@ export interface QueryResult {
   login_hour?: LoginHourRow[];
   retention?: RetentionRow[];
   first_session?: FirstSessionResult;
+  level_funnel?: LevelFunnelRow[];
+  tutorial_funnel?: StepFunnelResult;
+  scene_funnel?: StepFunnelResult;
+  browser_dist?: BrowserRow[];
+  device_type_dist?: DeviceTypeRow[];
+  geo_dist?: GeoRow[];
 }
 
 // Funnel step definitions (order defines the conversion chain; the ETL uses the same list when writing funnels_daily).
@@ -455,7 +567,7 @@ export class AnalyticsService {
           if (p.event === 'screen_view' && typeof p.scene === 'string' && p.scene) scenes.add(p.scene);
         }
         for (const step of ONBOARDING_STEPS) {
-          if (step.reached(events, scenes)) stepCounts.set(step.key, stepCounts.get(step.key)! + 1);
+          if (step.reached(events, scenes, EMPTY_STEP_KEYS)) stepCounts.set(step.key, stepCounts.get(step.key)! + 1);
         }
         for (const scene of scenes) sceneDevices.set(scene, (sceneDevices.get(scene) ?? 0) + 1);
         for (const ev of events) {
@@ -483,8 +595,176 @@ export class AnalyticsService {
     return { cohort_size: cohortSize, window_days: days, funnel, actions };
   }
 
-  async ingestEvents(batch: EventBatch, userId: string | undefined): Promise<void> {
+  /**
+   * Shared cohort-funnel engine for step-based funnels (tutorial, scene) that don't need the
+   * scene/action breakdown queryFirstSession also computes. Pulls each session's distinct
+   * (event, scene, tutorial step_key) signals in chunks, then evaluates `steps` in order.
+   */
+  private async computeStepFunnel(sids: string[], steps: OnboardingStep[]): Promise<OnboardingStepRow[]> {
+    const stepCounts = new Map<string, number>(steps.map((s) => [s.key, 0]));
+    const CHUNK = 500;
+    for (let i = 0; i < sids.length; i += CHUNK) {
+      const batch = sids.slice(i, i + CHUNK);
+      const sessions = await this.cols.events
+        .aggregate<{ _id: string; pairs: { event: string; scene?: string; step_key?: string }[] }>([
+          { $match: { session_id: { $in: batch } } },
+          { $group: { _id: '$session_id', pairs: { $addToSet: { event: '$event', scene: '$props.scene', step_key: '$props.step_key' } } } },
+        ])
+        .toArray();
+
+      for (const s of sessions) {
+        const events = new Set<string>();
+        const scenes = new Set<string>();
+        const stepKeys = new Set<string>();
+        for (const p of s.pairs) {
+          events.add(p.event);
+          if (p.event === 'screen_view' && typeof p.scene === 'string' && p.scene) scenes.add(p.scene);
+          if (p.event === 'nav_checkpoint' && typeof p.scene === 'string' && p.scene) scenes.add(p.scene);
+          if (p.event === 'tutorial_step' && typeof p.step_key === 'string' && p.step_key) stepKeys.add(p.step_key);
+        }
+        for (const step of steps) {
+          if (step.reached(events, scenes, stepKeys)) stepCounts.set(step.key, stepCounts.get(step.key)! + 1);
+        }
+      }
+    }
+
+    const funnel: OnboardingStepRow[] = [];
+    let prev: number | undefined;
+    for (const step of steps) {
+      const count = stepCounts.get(step.key)!;
+      funnel.push({ step: step.key, count, conversion_rate: prev !== undefined && prev > 0 ? count / prev : undefined });
+      prev = count;
+    }
+    return funnel;
+  }
+
+  /** Tutorial step-level funnel (A9-9): cohort = sessions with a tutorial_start in the window. */
+  async queryTutorialFunnel(days: number): Promise<StepFunnelResult> {
+    const since = new Date(dayStart(this.now()) - (days - 1) * 86400_000);
+    const rows = await this.cols.events
+      .aggregate<{ _id: string }>([
+        { $match: { event: 'tutorial_start', ts: { $gte: since } } },
+        { $group: { _id: '$session_id' } },
+      ])
+      .toArray();
+    const sids = rows.map((r) => r._id).filter((s) => s && s.length > 0);
+    if (sids.length === 0) {
+      return { cohort_size: 0, window_days: days, funnel: TUTORIAL_STEPS.map((s) => ({ step: s.key, count: 0 })) };
+    }
+    const funnel = await this.computeStepFunnel(sids, TUTORIAL_STEPS);
+    return { cohort_size: sids.length, window_days: days, funnel };
+  }
+
+  /** Scene/page-level funnel (A9-9): cohort = all sessions started in the window. */
+  async querySceneFunnel(days: number): Promise<StepFunnelResult> {
+    const since = new Date(dayStart(this.now()) - (days - 1) * 86400_000);
+    const rows = await this.cols.events
+      .aggregate<{ _id: string }>([
+        { $match: { event: 'session_start', ts: { $gte: since } } },
+        { $group: { _id: '$session_id' } },
+      ])
+      .toArray();
+    const sids = rows.map((r) => r._id).filter((s) => s && s.length > 0);
+    if (sids.length === 0) {
+      return { cohort_size: 0, window_days: days, funnel: SCENE_FUNNEL_STEPS.map((s) => ({ step: s.key, count: 0 })) };
+    }
+    const funnel = await this.computeStepFunnel(sids, SCENE_FUNNEL_STEPS);
+    return { cohort_size: sids.length, window_days: days, funnel };
+  }
+
+  /**
+   * Per-level funnel (A9-9): distinct-device attempts/completes/abandons per level_id, sorted by
+   * completion rate ascending so the levels players quit on most sit at the top.
+   */
+  async queryLevelFunnel(days: number, platform?: string): Promise<LevelFunnelRow[]> {
+    const since = new Date(dayStart(this.now()) - (days - 1) * 86400_000);
+    const match: Record<string, unknown> = {
+      ts: { $gte: since },
+      event: { $in: ['level_attempt', 'level_complete', 'level_abandon'] },
+      'props.level_id': { $exists: true, $ne: null },
+    };
+    if (platform) match['platform'] = platform;
+    const pipeline = [
+      { $match: match },
+      { $group: { _id: { level: '$props.level_id', event: '$event', device: '$device_id' } } },
+      { $group: { _id: { level: '$_id.level', event: '$_id.event' }, count: { $sum: 1 } } },
+    ];
+    const rows = await this.cols.events
+      .aggregate<{ _id: { level: unknown; event: string }; count: number }>(pipeline)
+      .toArray();
+
+    const byLevel = new Map<string, { attempts: number; completes: number; abandons: number }>();
+    for (const r of rows) {
+      const level = String(r._id.level);
+      if (!byLevel.has(level)) byLevel.set(level, { attempts: 0, completes: 0, abandons: 0 });
+      const entry = byLevel.get(level)!;
+      if (r._id.event === 'level_attempt') entry.attempts = r.count;
+      else if (r._id.event === 'level_complete') entry.completes = r.count;
+      else if (r._id.event === 'level_abandon') entry.abandons = r.count;
+    }
+    return [...byLevel.entries()]
+      .map(([level_id, v]) => ({
+        level_id,
+        ...v,
+        completion_rate: v.attempts > 0 ? v.completes / v.attempts : undefined,
+      }))
+      .sort((a, b) => (a.completion_rate ?? 1) - (b.completion_rate ?? 1));
+  }
+
+  /** Browser distribution (A9-9): unique device count by server-derived browser (from session_start). */
+  async queryBrowserDist(days: number): Promise<BrowserRow[]> {
+    const since = new Date(dayStart(this.now()) - (days - 1) * 86400_000);
+    const pipeline = [
+      { $match: { ts: { $gte: since }, event: 'session_start' } },
+      { $group: { _id: { browser: '$browser', device: '$device_id' } } },
+      { $group: { _id: '$_id.browser', devices: { $sum: 1 } } },
+      { $sort: { devices: -1 as const } },
+    ];
+    const rows = await this.cols.events.aggregate<{ _id: string; devices: number }>(pipeline).toArray();
+    return rows.map((r) => ({ browser: r._id || 'unknown', devices: r.devices }));
+  }
+
+  /** Device-type distribution (A9-9): mobile / tablet / desktop, server-derived from UA at ingest. */
+  async queryDeviceTypeDist(days: number): Promise<DeviceTypeRow[]> {
+    const since = new Date(dayStart(this.now()) - (days - 1) * 86400_000);
+    const pipeline = [
+      { $match: { ts: { $gte: since }, event: 'session_start' } },
+      { $group: { _id: { device_type: '$device_type', device: '$device_id' } } },
+      { $group: { _id: '$_id.device_type', devices: { $sum: 1 } } },
+      { $sort: { devices: -1 as const } },
+    ];
+    const rows = await this.cols.events.aggregate<{ _id: string; devices: number }>(pipeline).toArray();
+    return rows.map((r) => ({ device_type: r._id || 'unknown', devices: r.devices }));
+  }
+
+  /** Geo (country) distribution (A9-9): unique device count by IP-derived country. Raw IPs are never stored. */
+  async queryGeoDist(days: number): Promise<GeoRow[]> {
+    const since = new Date(dayStart(this.now()) - (days - 1) * 86400_000);
+    const pipeline = [
+      { $match: { ts: { $gte: since }, event: 'session_start' } },
+      { $group: { _id: { country: '$geo_country', device: '$device_id' } } },
+      { $group: { _id: '$_id.country', devices: { $sum: 1 } } },
+      { $sort: { devices: -1 as const } },
+    ];
+    const rows = await this.cols.events.aggregate<{ _id: string; devices: number }>(pipeline).toArray();
+    return rows.map((r) => ({ country: r._id || 'unknown', devices: r.devices }));
+  }
+
+  async ingestEvents(batch: EventBatch, userId: string | undefined, geo?: ResolvedGeo): Promise<void> {
     if (!batch.events || batch.events.length === 0) return;
+
+    const { browser, device_type } = parseUserAgent(batch.ua);
+    const deviceFields = {
+      ...(batch.ua ? { ua: batch.ua } : {}),
+      ...(typeof batch.screen_w === 'number' ? { screen_w: batch.screen_w } : {}),
+      ...(typeof batch.screen_h === 'number' ? { screen_h: batch.screen_h } : {}),
+      ...(typeof batch.dpr === 'number' ? { dpr: batch.dpr } : {}),
+      ...(batch.ua ? { browser, device_type } : {}),
+      ...(geo?.ip ? { ip: geo.ip } : {}),
+      ...(geo?.country ? { geo_country: geo.country } : {}),
+      ...(geo?.region ? { geo_region: geo.region } : {}),
+      ...(geo?.city ? { geo_city: geo.city } : {}),
+    };
 
     const docs: EventDoc[] = batch.events.map((e) => ({
       session_id: batch.session_id ?? '',
@@ -497,6 +777,7 @@ export class AnalyticsService {
       event: String(e.event),
       props: e.props ?? {},
       ts: new Date(typeof e.ts === 'number' ? e.ts : this.now()),
+      ...deviceFields,
     }));
 
     // fire-and-forget: w:0 does not wait for disk acknowledgement; a very small amount of event loss is acceptable for analytics data (A9-3 §7.3)
@@ -517,6 +798,7 @@ export class AnalyticsService {
             os: batch.os ?? '',
             started_at: new Date(typeof sessionStart.ts === 'number' ? sessionStart.ts : this.now()),
             scenes_visited: [],
+            ...deviceFields,
           },
           $inc: { events_count: batch.events.length },
         },

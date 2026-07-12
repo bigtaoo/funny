@@ -7,6 +7,7 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOv
 import { buildIcon, type IconKind } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
+import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 
 /** Map a reward's craft-material id to its hand-drawn icon (scrap / lead / binding), else null. */
 function materialIcon(id: string | undefined): IconKind | null {
@@ -136,19 +137,8 @@ export class EventScene implements Scene {
     const decoC = buildDecorCLayer(w, h);
     if (decoC) this.container.addChild(decoC);
 
-    const title = txt(t('event.title'), Math.round(h * 0.045), C.dark, true);
-    title.anchor.set(0.5, 0);
-    title.x = w / 2;
-    title.y = h * 0.03;
-    this.container.addChild(title);
-
-    const backBtn = txt(t('event.back'), Math.round(h * 0.032), C.mid);
-    backBtn.x = w * 0.05;
-    backBtn.y = h * 0.04;
-    backBtn.interactive = true;
-    backBtn.cursor = 'pointer';
-    backBtn.on('pointertap', () => this.cb.onBack());
-    this.container.addChild(backBtn);
+    const hdr = drawSceneHeader(this.container, w, h, t('event.title'));
+    this.hits.push({ ...hdr.backRect, fn: () => this.cb.onBack() });
 
     if (this.events.length === 0) {
       const empty = txt(t('event.noEvents'), Math.round(h * 0.035), C.mid);
