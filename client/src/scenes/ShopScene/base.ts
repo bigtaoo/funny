@@ -13,7 +13,7 @@
 // wallet via getCoins() and re-renders. Gacha lives in its own scene, reached via the capsule tab.
 //
 // Layout: products are icon-cards laid out in a responsive grid (mirrors CardScene/EquipmentScene). The group nav
-// [Shop|Coins|Gacha|BattlePass] is a vertical rail in the left notebook-margin gutter (marginLineX), so the grid
+// [Shop|Coins|Gacha|BattlePass] is a vertical rail (sidebarNavW, matching every other hub's left tab rail), so the grid
 // starts to its right and scrolls (drag) inside a masked body region while the header + rail stay fixed. Subscription
 // cards (monthly / year) are globally single-slot: while any card is active, both Buy buttons read "active" and are
 // disabled (server enforces the same via ALREADY_ACTIVE). Promo-code redemption (B-PROMO) is a full-width row below
@@ -24,12 +24,12 @@ import { ILayout, Rect } from '../../layout/ILayout';
 import { InputManager } from '../../inputSystem/InputManager';
 import { t, TranslationKey } from '../../i18n';
 import type { ShopItem } from '../../net/ApiClient';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay, tearDownChildren, marginLineX } from '../../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay, tearDownChildren } from '../../render/sketchUi';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { type IconKind } from '../../render/icons';
 import { loadCoinIconAtlas, buildCoinIcon } from '../../render/coinIconAtlas';
 import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
-import { drawSidebarTabs, type HubTab } from '../../ui/widgets/HubTabs';
+import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
 import { BusyTracker } from '../../ui/busyTracker';
 
 /** Outcome of a buy — ok, or a message key to surface as a toast. */
@@ -108,6 +108,7 @@ export class ShopSceneBase {
 
   protected readonly w: number;
   protected readonly h: number;
+  protected readonly landscape: boolean;
   protected readonly cb: ShopSceneCallbacks;
 
   protected items: ShopItem[] | null = null;
@@ -137,6 +138,7 @@ export class ShopSceneBase {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
     this.h = layout.designHeight;
+    this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
     this.tab = cb.initialTab === 'coins' && cb.rechargeCoins ? 'coins' : 'shop';
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
@@ -271,7 +273,12 @@ export class ShopSceneBase {
   }
 
   private drawBackground(): void {
-    this.container.addChild(buildPaperBackground('shopbg', this.w, this.h));
+    // Landscape only for now: the notebook's red margin rule is repositioned to the rail's actual
+    // edge (sidebarNavW) instead of the classic 9%-of-width line, which used to cut through the
+    // middle of this scene's (wider) rail. Portrait keeps the legacy line pending a separate
+    // decision on whether portrait should even keep a left-edge rail (LOBBY_IA_REDESIGN §14).
+    const railX = this.landscape ? sidebarNavW(this.w, this.h, true) : undefined;
+    this.container.addChild(buildPaperBackground('shopbg', this.w, this.h, { railX }));
     const decoC = buildDecorCLayer(this.w, this.h);
     if (decoC) this.container.addChild(decoC);
   }
@@ -291,14 +298,14 @@ export class ShopSceneBase {
 
   /**
    * Shop group nav (LOBBY_IA_REDESIGN P1.5): [Shop|Coins|Gacha|BattlePass] as a vertical rail
-   * stacked in the left notebook-margin gutter (`marginLineX`), below the header — same convention
+   * stacked in the left rail (`sidebarNavW`), below the header — same convention
    * as CardScene/EquipmentScene's sidebar nav. Coins tab only appears when rechargeCoins is provided
    * (logged in, web platform); BattlePass tab only when openBattlePass is provided. Returns the body
    * start y (just the header height — the rail occupies width, not height).
    */
   private drawGroupTabs(tbH: number): number {
-    const { w, h } = this;
-    const sidebarW = marginLineX(w);
+    const { w, h, landscape } = this;
+    const sidebarW = sidebarNavW(w, h, landscape);
     const showCoins = !!this.cb.rechargeCoins;
 
     const { active, claimedToday } = this.monthlyCardStatus();
@@ -340,9 +347,9 @@ export class ShopSceneBase {
 
   /** Responsive column count + cell width for the product grid (mirrors CardScene/EquipmentScene). */
   protected gridMetrics(): { listX: number; listW: number; gap: number; cols: number; cellW: number; cellH: number } {
-    const { w, h } = this;
+    const { w, h, landscape } = this;
     const gap = Math.round(w * 0.015);
-    const listX = marginLineX(w) + gap;
+    const listX = sidebarNavW(w, h, landscape) + gap;
     const listW = w - listX - Math.round(w * 0.04);
     const targetW = Math.round(w * 0.30);
     const cols = Math.max(1, Math.floor((listW + gap) / (targetW + gap)));

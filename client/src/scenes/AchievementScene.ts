@@ -162,9 +162,13 @@ export class AchievementScene implements Scene {
     if (this.destroyed) return;
     tearDownChildren(this.container);
     this.hits = [];
-    const { w, h } = this;
+    const { w, h, landscape } = this;
 
-    this.container.addChild(buildPaperBackground('achbg', w, h));
+    // Landscape only for now, and only when the Career hub peer strip is actually shown — see
+    // ShopScene.drawBackground / LOBBY_IA_REDESIGN §14.
+    const hasSidebar = !!(this.cb.onOpenStats && this.cb.onOpenTitles);
+    const railX = landscape && hasSidebar ? sidebarNavW(w, h, true) : undefined;
+    this.container.addChild(buildPaperBackground('achbg', w, h, { railX }));
     const decoC = buildDecorCLayer(w, h);
     if (decoC) this.container.addChild(decoC);
 

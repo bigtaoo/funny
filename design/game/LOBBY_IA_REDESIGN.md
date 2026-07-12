@@ -367,3 +367,18 @@
   - `DailyScene.ts` 的私有手写 `drawSidebarTabs()`（两页签：签到/日常任务）删除，改成组装 `HubTab[]` 调共享的 `drawSidebarTabs()`。
   - 视觉副作用（预期内）：社交 hub 的 active 页签样式从「纸色底+右侧强调条」变成和其它 hub 一致的「深色底+强调色描边」——这是统一到位后的应有结果。
 - **验证**：`tsc --noEmit` + `npm run build:web`（webpack production）通过。真人截图验证：临时在 `app.ts` 挂 `globalThis.__NW_DEBUG` 钩子暴露 `app`/场景类/`makeNewSave`（提交前已移除），在 390×844 竖屏视口下分别直接实例化 `EquipmentScene`（基线）、`AchievementScene`（Career hub + 二级分类嵌套）、`TitlesScene`、`FriendsScene`（社交 5 页签）、`DailyScene`，逐一渲染两遍后 `toDataURL` 截图核对：Career hub 三页签栏宽度与 Equipment 基线一致、二级分类正确内缩嵌套；社交 hub 五页签改为固定格高、栏位下方按预期留白、命中区域随新宽高正确更新；DailyScene 两页签栏同款对齐。未逐一截图横屏，但四个场景改动均直接复用已在 `sidebarNavW` 里验证过的横竖屏分支逻辑（见 §11），风险低。
+
+---
+
+## 14. 横屏下红色装订线改贴侧栏边缘 + 补齐 Shop/Gacha/BattlePass/Auction 的宽度 bug（2026-07-12）
+
+> 状态：**已实现（仅横屏）**。用户看 §13 的截图后发现红色装订线从中间穿过页签栏，追问是否要处理；确认这不是新引入的问题——`buildPaperBackground` 的红线固定画在 `marginLineX(w)`（9% 宽度），而 §8/§11 已经把 Equipment/Cards 等页面的侧栏宽度改到 `sidebarNavW`（短边 20%），红线从此卡在侧栏中间而非边缘，§13 统一宽度后这个现象从 2 个页面扩散到了 9 个页面。用户拍板：先只修横屏（该现象在横屏下因宽高比巧合而不明显，但并非设计上的对齐——见下），竖屏是否要整体换成底部导航栏另开一条讨论记录，不在本次处理。
+
+- **横屏"看起来没事"的真实原因（已用 `LandscapeLayout`/`PortraitLayout` 源码核实，非目测）**：`PortraitLayout.designWidth` 恒为 1080（短边钉死，不随设备拉伸），所以竖屏下 `marginLineX(1080)=97` vs `sidebarNavW(1080,...)=216`——红线永远卡在侧栏 45% 处，所有竖屏设备一致。`LandscapeLayout.designHeight` 恒为 1080（短边），但 `designWidth = max(1920, round(1080 * availW/availH))` 随设备宽高比拉伸：手机类横屏宽高比越极端（如 iPhone 类 ~2.16:1），`designWidth` 越大，`marginLineX(w)` 跟着变大，恰好逼近 `sidebarNavW` 的 216——两者只差几个单位，视觉上贴边；换成标准 16:9 设备（`designWidth` 钉在 1920），`marginLineX=173`，红线仍会卡在侧栏 80% 处，只是不如竖屏的 45% 夸张。即：横屏"没问题"是这台设备宽高比的巧合，不是两条公式设计上对齐。
+- **顺带发现的另一个宽度 bug**：核实 Shop/Gacha/BattlePass/Auction（`ShopScene/base.ts`、`GachaScene.ts`、`BattlePassScene.ts`、`AuctionScene/{list,picker}.ts`）时发现它们从未接入 §8/§11 的 `sidebarNavW`——`drawGroupTabs`/`drawSidebar`/`renderSidebar`/`renderPickerSidebar` 全部还在用 `marginLineX(w)`（9% 宽度），比 Equipment/Cards 等页面明显更窄，是同一个"忘记同步宽度"的 bug，只是分布在 §13 覆盖范围之外的另一批页面。这次一并修：4+2 处调用改 `sidebarNavW(w,h,landscape)`（`ShopScene`/`GachaScene`/`BattlePassScene`/`AuctionSceneBase` 原本都没有 `landscape` 字段，补上），依赖侧栏宽度的内容偏移（`ShopScene.gridMetrics()`、`GachaScene`/`BattlePassScene` 的 `contentBounds()`）同步换算。
+- **红线修复**：`render/sketchUi.ts` 的 `buildPaperBackground()` 新增可选 `railX?: number`，传入时覆盖默认的 `marginLineX(w)` 作为红线 x 坐标（`bake()` 缓存 key 带上 `railX` 避免不同取值串用同一张烘焙纹理）。全部 13 个带侧栏的场景（Cards/Equipment/Shop/Gacha/BattlePass/Auction/Stats/Titles/Achievements/Friends/Family/Sect/Daily）的背景绘制处，按 `landscape ? sidebarNavW(w,h,true) : undefined` 传入——**只在横屏生效**，竖屏保持旧的 `marginLineX` 位置不变（等待 §「竖屏是否改底部导航」的讨论结果，避免现在改了将来又要跟着重做）。侧栏并非恒定显示的场景（Career hub 的 `hasSidebar`、`CardScene` 的 `showSidebar`）额外判断是否真的画了侧栏，没画侧栏时红线维持默认位置。
+- **验证**：`tsc --noEmit` + `npm run build:web` 通过。真人截图（临时 `__NW_DEBUG` 钩子，验证后移除）：竖屏 390×844 下 `EquipmentScene` 与 §13 截图一致（红线仍穿过侧栏中间，未受影响）；横屏 844×390（`LandscapeLayout` 实际公式换算 `designWidth`，按 `availH/designHeight` 缩放渲染）下 `EquipmentScene`/`ShopScene` 的红线均贴到侧栏右边缘，`ShopScene` 侧栏宽度也从窄变宽、与 Equipment 对齐。
+
+### 待讨论：竖屏是否该把左侧页签栏换成底部导航
+
+用户提出：竖屏下侧栏绝对宽度局促（`design/game/portrait-issues` 一类记录已提过 Equipment 侧栏标签裁切风险），横屏因为空间富余暂时没这个问题；是否该在竖屏下把红色装订线画到底部、页签也挪到屏幕底部，而不是继续用左侧竖直侧栏？这涉及 Cards/Equipment/Shop/Gacha/BattlePass/Auction/Stats/Titles/Achievements/Friends/Family/Sect/Daily 十几个屏幕的布局范式，比本节的尺寸/红线修正大得多，**尚未实现，需要单独立项讨论**，本次只记录问题不动代码。

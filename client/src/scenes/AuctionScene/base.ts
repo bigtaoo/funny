@@ -12,6 +12,7 @@ import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSceneHeader, sceneHeaderHeight, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
+import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import type { WorldApiClient, AuctionView } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
 import type { SaveData, EquipmentInstance, CardInstance } from '../../game/meta/SaveData';
@@ -69,6 +70,7 @@ export class AuctionSceneBase {
 
   protected readonly w: number;
   protected readonly h: number;
+  protected readonly landscape: boolean;
   protected readonly cb: AuctionSceneCallbacks;
 
   // Title-bar height. Set in the constructor to the shared standard (sceneHeaderHeight, 12% of design
@@ -139,6 +141,7 @@ export class AuctionSceneBase {
   constructor(layout: ILayout, input: InputManager, cb: AuctionSceneCallbacks) {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
+    this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
     this.headerH = sceneHeaderHeight(this.h);
     this.container = new PIXI.Container();
@@ -151,8 +154,10 @@ export class AuctionSceneBase {
   }
 
   private build(): void {
-    const { w, h } = this;
-    const bg = buildPaperBackground('auction', w, h);
+    const { w, h, landscape } = this;
+    // Landscape only for now — see ShopScene.drawBackground / LOBBY_IA_REDESIGN §14.
+    const railX = landscape ? sidebarNavW(w, h, true) : undefined;
+    const bg = buildPaperBackground('auction', w, h, { railX });
     this.container.addChild(bg);
     const decoC = buildDecorCLayer(w, h);
     if (decoC) this.container.addChild(decoC);

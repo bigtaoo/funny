@@ -132,10 +132,14 @@ export class StatsScene implements Scene {
     if (this.destroyed) return;
     tearDownChildren(this.container);
     this.hits = [];
-    const { w, h } = this;
+    const { w, h, landscape } = this;
     const s = this.cb.getStats();
 
-    this.container.addChild(buildPaperBackground('statsbg', w, h));
+    // Landscape only for now, and only when the Career hub peer strip is actually shown — see
+    // ShopScene.drawBackground / LOBBY_IA_REDESIGN §14.
+    const hasSidebar = !!(this.cb.onOpenTitles && this.cb.onOpenAchievements);
+    const railX = landscape && hasSidebar ? sidebarNavW(w, h, true) : undefined;
+    this.container.addChild(buildPaperBackground('statsbg', w, h, { railX }));
     const decoC = buildDecorCLayer(w, h);
     if (decoC) this.container.addChild(decoC);
 

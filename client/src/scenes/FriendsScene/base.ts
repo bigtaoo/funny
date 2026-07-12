@@ -387,7 +387,9 @@ export class FriendsSceneBase {
     tearDownChildren(this.container);
     this.hits = [];
 
-    this.container.addChild(buildPaperBackground('friendsbg', this.w, this.h));
+    // Landscape only for now — see ShopScene.drawBackground / LOBBY_IA_REDESIGN §14.
+    const railX = this.landscape ? sidebarNavW(this.w, this.h, true) : undefined;
+    this.container.addChild(buildPaperBackground('friendsbg', this.w, this.h, { railX }));
     const decoC = buildDecorCLayer(this.w, this.h);
     if (decoC) this.container.addChild(decoC);
     this.drawHeader();

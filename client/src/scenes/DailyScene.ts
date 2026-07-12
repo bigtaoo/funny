@@ -118,9 +118,11 @@ export class DailyScene implements Scene {
     if (this.destroyed) return;
     tearDownChildren(this.container);
     this.hits = [];
-    const { w, h } = this;
+    const { w, h, landscape } = this;
 
-    this.container.addChild(buildPaperBackground('dailybg', w, h));
+    // Landscape only for now — see ShopScene.drawBackground / LOBBY_IA_REDESIGN §14.
+    const railX = landscape ? sidebarNavW(w, h, true) : undefined;
+    this.container.addChild(buildPaperBackground('dailybg', w, h, { railX }));
     const decoC = buildDecorCLayer(w, h);
     if (decoC) this.container.addChild(decoC);
 
