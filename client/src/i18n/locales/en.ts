@@ -782,6 +782,7 @@ export const en: Record<TranslationKey, string> = {
   'world.err.worldFull': 'World is full',
   'world.err.noTroops': 'Not enough troops',
   'world.err.occupied': 'Tile already occupied',
+  'world.err.footprintBlocked': 'The capital needs a clear 3×3 area — some of the surrounding tiles are blocked or owned by someone else',
   'world.err.protected': 'Tile is protected',
   'world.err.allyTile': 'This is friendly territory — you cannot attack it',
   'world.err.outOfRange': 'Out of map bounds',

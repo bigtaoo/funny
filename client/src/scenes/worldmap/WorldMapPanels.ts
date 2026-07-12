@@ -241,9 +241,26 @@ export class WorldMapPanels {
     ml.removeChildren();
 
     const { w, h } = this.ctx;
-    const mw = Math.min(600, w - 32);
-    const mh = CONFIRM_H;
+    // 1.5× the original footprint (600×280 panel, 26/24px text, 56px buttons) — the old fixed
+    // size clipped longer confirm copy (e.g. relocate cost text) since lines never wrapped.
+    const mw = Math.min(900, w - 32);
+    const textPad = 48;
+    const textW = mw - textPad * 2;
+    const topPad = 42;
+    const lineGap = 14;
+    const btnH = 84;
+    const btnGap = 30;
+    const modalMargin = MARGIN * 3;
     const mx = (w - mw) / 2;
+
+    // Pre-measure wrapped label heights so the panel sizes to content instead of clipping/overlapping.
+    const labels = lines.map((line) => {
+      const lbl = txt(line, 30, C.dark, false, textW);
+      lbl.anchor.set(0.5, 0);
+      return lbl;
+    });
+    const textH = labels.reduce((sum, lbl) => sum + lbl.height, 0) + lineGap * Math.max(0, labels.length - 1);
+    const mh = Math.max(CONFIRM_H * 1.5, topPad + textH + btnGap + btnH + btnGap);
     const my = (h - HUD_H - mh) / 2;
 
     // Dimmer
@@ -255,36 +272,33 @@ export class WorldMapPanels {
     panel.x = mx; panel.y = my;
     ml.addChild(panel);
 
-    let ly = my + 28;
-    for (const line of lines) {
-      const lbl = txt(line, 26, C.dark);
-      lbl.anchor.set(0.5, 0);
+    let ly = my + topPad;
+    for (const lbl of labels) {
       lbl.x = mx + mw / 2; lbl.y = ly;
       ml.addChild(lbl);
-      ly += 40;
+      ly += lbl.height + lineGap;
     }
 
     this.ctx.modalBtnRects = [];
-    const modalMargin = MARGIN * 2;
-    const btnW = Math.min(200, (mw - modalMargin * (buttons.length + 1)) / buttons.length);
+    const btnW = Math.min(300, (mw - modalMargin * (buttons.length + 1)) / buttons.length);
     let bx = mx + (mw - (btnW + modalMargin) * buttons.length + modalMargin) / 2;
-    const by = my + mh - 80;
+    const by = my + mh - btnH - 30;
     for (const btn of buttons) {
-      const bp = sketchPanel(btnW, 56, { fill: C.dark, border: C.accent, seed: seedFor(bx, by, btnW) });
+      const bp = sketchPanel(btnW, btnH, { fill: C.dark, border: C.accent, seed: seedFor(bx, by, btnW) });
       bp.x = bx; bp.y = by;
       ml.addChild(bp);
       // '✕' cancel buttons render the hand-drawn close glyph instead of the bare dingbat.
       if (btn.label === '✕') {
-        const ic = buildIcon('close', 32, C.light);
-        ic.x = bx + btnW / 2 - 16; ic.y = by + 12;
+        const ic = buildIcon('close', 48, C.light);
+        ic.x = bx + btnW / 2 - 24; ic.y = by + btnH / 2 - 24;
         ml.addChild(ic);
       } else {
-        const bl = txt(btn.label, 24, C.light);
+        const bl = txt(btn.label, 30, C.light);
         bl.anchor.set(0.5, 0.5);
-        bl.x = bx + btnW / 2; bl.y = by + 28;
+        bl.x = bx + btnW / 2; bl.y = by + btnH / 2;
         ml.addChild(bl);
       }
-      this.ctx.modalBtnRects.push({ rect: { x: bx, y: by, w: btnW, h: 56 }, action: btn.action });
+      this.ctx.modalBtnRects.push({ rect: { x: bx, y: by, w: btnW, h: btnH }, action: btn.action });
       bx += btnW + modalMargin;
     }
 
