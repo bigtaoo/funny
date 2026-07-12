@@ -87,8 +87,13 @@ export interface EventBatch {
   dpr?: number;
 }
 
-/** Server-resolved geo, attached by httpApi.ts from the request IP (geoip-lite). Never persists the raw IP. */
+/**
+ * Request IP + server-resolved geo, attached by httpApi.ts. The raw IP is stored (account-protection:
+ * shared-IP abuse / multi-account detection, ban evasion) alongside the geoip-lite-derived country/
+ * region/city used for the ops distribution chart.
+ */
 export interface ResolvedGeo {
+  ip?: string;
   country?: string;
   region?: string;
   city?: string;
@@ -755,6 +760,7 @@ export class AnalyticsService {
       ...(typeof batch.screen_h === 'number' ? { screen_h: batch.screen_h } : {}),
       ...(typeof batch.dpr === 'number' ? { dpr: batch.dpr } : {}),
       ...(batch.ua ? { browser, device_type } : {}),
+      ...(geo?.ip ? { ip: geo.ip } : {}),
       ...(geo?.country ? { geo_country: geo.country } : {}),
       ...(geo?.region ? { geo_region: geo.region } : {}),
       ...(geo?.city ? { geo_city: geo.city } : {}),

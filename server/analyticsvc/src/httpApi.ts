@@ -25,12 +25,14 @@ function clientIp(req: IncomingMessage): string | undefined {
   return req.socket.remoteAddress ?? undefined;
 }
 
-/** Resolve an IP to coarse geo via geoip-lite (offline lookup, no network call). Never persists the IP itself. */
+/**
+ * Resolve an IP to coarse geo via geoip-lite (offline lookup, no network call) and pass the IP itself
+ * through — stored for account-protection use (shared-IP abuse / multi-account detection).
+ */
 function resolveGeo(ip: string | undefined): ResolvedGeo | undefined {
   if (!ip) return undefined;
   const hit = geoip.lookup(ip);
-  if (!hit) return undefined;
-  return { country: hit.country || undefined, region: hit.region || undefined, city: hit.city || undefined };
+  return { ip, country: hit?.country || undefined, region: hit?.region || undefined, city: hit?.city || undefined };
 }
 
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {

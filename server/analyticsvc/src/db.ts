@@ -24,7 +24,10 @@ export interface EventDoc {
   /** Server-derived from `ua` at ingest time (never trust a client-supplied browser name). */
   browser?: string;
   device_type?: 'mobile' | 'tablet' | 'desktop';
-  /** Server-derived from the request IP via geoip-lite; raw IP is never stored. */
+  /** Request IP (X-Forwarded-For / socket) at ingest time — used for account-protection lookups
+   * (shared-IP abuse/multi-account detection) as well as the geo_* fields below. */
+  ip?: string;
+  /** Server-derived from `ip` via geoip-lite. */
   geo_country?: string;
   geo_region?: string;
   geo_city?: string;
@@ -48,6 +51,7 @@ export interface SessionDoc {
   dpr?: number;
   browser?: string;
   device_type?: 'mobile' | 'tablet' | 'desktop';
+  ip?: string;
   geo_country?: string;
   geo_region?: string;
   geo_city?: string;
@@ -104,9 +108,11 @@ export async function createAnalyticsMongo(uri: string, dbName: string): Promise
     await events.createIndex({ browser: 1, ts: -1 }, { sparse: true });
     await events.createIndex({ device_type: 1, ts: -1 }, { sparse: true });
     await events.createIndex({ geo_country: 1, ts: -1 }, { sparse: true });
+    await events.createIndex({ ip: 1, ts: -1 }, { sparse: true });
     // sessions
     await sessions.createIndex({ started_at: -1 });
     await sessions.createIndex({ device_id: 1, started_at: -1 });
+    await sessions.createIndex({ ip: 1, started_at: -1 }, { sparse: true }); // account-protection: find sessions sharing an IP
     // funnels_daily
     await funnels_daily.createIndex({ date: -1, platform: 1 });
   }
