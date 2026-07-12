@@ -5,6 +5,7 @@
 //   POST /analytics/events    optional JWT (attaches user_id if token present, otherwise anonymous)
 //   GET  /internal/query      X-Internal-Key (aggregation queries from ops back-end)
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
+import geoip from 'geoip-lite';
 import {
   extractBearer,
   verifyToken,
@@ -14,7 +15,23 @@ import {
   err,
   type InternalAuthVerifier,
 } from '@nw/shared';
-import type { AnalyticsService, EventBatch } from './service';
+import type { AnalyticsService, EventBatch, ResolvedGeo } from './service';
+
+/** Client IP from the Caddy-injected X-Forwarded-For (first hop) or the raw socket as a fallback. */
+function clientIp(req: IncomingMessage): string | undefined {
+  const xff = req.headers['x-forwarded-for'];
+  const first = Array.isArray(xff) ? xff[0] : xff;
+  if (first) return first.split(',')[0]!.trim();
+  return req.socket.remoteAddress ?? undefined;
+}
+
+/** Resolve an IP to coarse geo via geoip-lite (offline lookup, no network call). Never persists the IP itself. */
+function resolveGeo(ip: string | undefined): ResolvedGeo | undefined {
+  if (!ip) return undefined;
+  const hit = geoip.lookup(ip);
+  if (!hit) return undefined;
+  return { country: hit.country || undefined, region: hit.region || undefined, city: hit.city || undefined };
+}
 
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
@@ -100,8 +117,9 @@ export function startHttpApi(
         if (userId && !batch.consent) {
           return send(res, 200, ok(null)); // no consent: silently discard, do not return error (preserves user experience)
         }
+        const geo = resolveGeo(clientIp(req));
         // fire-and-forget: silently return 200 on ingestion failure (does not affect game experience)
-        svc.ingestEvents(batch, userId).catch(() => {/* silent */});
+        svc.ingestEvents(batch, userId, geo).catch(() => {/* silent */});
         return send(res, 200, ok(null));
       }
 
@@ -146,6 +164,30 @@ export function startHttpApi(
         if (type === 'first_session') {
           const first_session = await svc.queryFirstSession(days);
           return send(res, 200, ok({ type, first_session }));
+        }
+        if (type === 'level_funnel') {
+          const level_funnel = await svc.queryLevelFunnel(days, platform);
+          return send(res, 200, ok({ type, level_funnel }));
+        }
+        if (type === 'tutorial_funnel') {
+          const tutorial_funnel = await svc.queryTutorialFunnel(days);
+          return send(res, 200, ok({ type, tutorial_funnel }));
+        }
+        if (type === 'scene_funnel') {
+          const scene_funnel = await svc.querySceneFunnel(days);
+          return send(res, 200, ok({ type, scene_funnel }));
+        }
+        if (type === 'browser_dist') {
+          const browser_dist = await svc.queryBrowserDist(days);
+          return send(res, 200, ok({ type, browser_dist }));
+        }
+        if (type === 'device_type_dist') {
+          const device_type_dist = await svc.queryDeviceTypeDist(days);
+          return send(res, 200, ok({ type, device_type_dist }));
+        }
+        if (type === 'geo_dist') {
+          const geo_dist = await svc.queryGeoDist(days);
+          return send(res, 200, ok({ type, geo_dist }));
         }
         return sendErr(res, ErrorCode.BAD_REQUEST, `unknown query type: ${type}`);
       }

@@ -26,7 +26,10 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
     clear(body);
     const days = Number(daysSel.value);
 
-    const [summary, evCounts, dau, funnel, regions, osDist, loginHour, retention, firstSession] = await Promise.allSettled([
+    const [
+      summary, evCounts, dau, funnel, regions, osDist, loginHour, retention, firstSession,
+      levelFunnel, tutorialFunnel, sceneFunnel, browserDist, deviceTypeDist, geoDist,
+    ] = await Promise.allSettled([
       api.analyticsSummary(),
       api.analyticsEvents('event_counts', days),
       api.analyticsEvents('dau', days),
@@ -36,6 +39,12 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
       api.analyticsEvents('login_hour', days),
       api.analyticsEvents('retention', days),
       api.analyticsEvents('first_session', days),
+      api.analyticsEvents('level_funnel', days),
+      api.analyticsEvents('tutorial_funnel', days),
+      api.analyticsEvents('scene_funnel', days),
+      api.analyticsEvents('browser_dist', days),
+      api.analyticsEvents('device_type_dist', days),
+      api.analyticsEvents('geo_dist', days),
     ]);
 
     // Monitoring overview (self-collected metrics + tickets)
@@ -103,28 +112,9 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
     if (firstSession.status === 'fulfilled' && firstSession.value.available && firstSession.value.first_session) {
       const fs = firstSession.value.first_session;
       if (fs.cohort_size > 0) {
-        // Onboarding drop-off funnel
-        const ft = h('table', {},
-          h('tr', {},
-            h('th', {}, 'Onboarding step'),
-            h('th', { style: 'text-align:right' }, 'Users'),
-            h('th', { style: 'text-align:right' }, 'Step conv.'),
-            h('th', { style: 'text-align:right' }, 'Of cohort'),
-            h('th', {}, ''),
-          ),
-        );
-        for (const step of fs.funnel) {
-          ft.append(h('tr', {},
-            h('td', {}, ONBOARDING_LABELS[step.step] ?? step.step),
-            h('td', { style: 'text-align:right' }, String(step.count)),
-            h('td', { style: 'text-align:right' }, step.conversion_rate !== undefined ? pct(step.conversion_rate) : '—'),
-            h('td', { style: 'text-align:right' }, pct(fs.cohort_size > 0 ? step.count / fs.cohort_size : 0)),
-            h('td', {}, barCell(step.count, fs.cohort_size)),
-          ));
-        }
-        body.append(h('div', { class: 'card' },
-          h('div', { class: 'muted' }, `Onboarding funnel — new users' first session (${fs.cohort_size} new devices, last ${days} days)`),
-          ft,
+        body.append(renderStepFunnel(
+          `Onboarding funnel — new users' first session (${fs.cohort_size} new devices, last ${days} days)`,
+          fs.funnel, fs.cohort_size, ONBOARDING_LABELS,
         ));
 
         // First-session action / scene breakdown
@@ -148,12 +138,63 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
       }
     }
 
-    // Region distribution
+    // Tutorial step-level funnel — where inside the tutorial new players quit (A9-9)
+    if (tutorialFunnel.status === 'fulfilled' && tutorialFunnel.value.available && tutorialFunnel.value.tutorial_funnel) {
+      const tf = tutorialFunnel.value.tutorial_funnel;
+      if (tf.cohort_size > 0) {
+        body.append(renderStepFunnel(
+          `Tutorial step funnel — where players quit inside the tutorial (${tf.cohort_size} sessions, last ${days} days)`,
+          tf.funnel, tf.cohort_size, TUTORIAL_LABELS,
+        ));
+      }
+    }
+
+    // Scene/page-level funnel — login → intro/tutorial gate → lobby → pick level → prep → battle (A9-9)
+    if (sceneFunnel.status === 'fulfilled' && sceneFunnel.value.available && sceneFunnel.value.scene_funnel) {
+      const sf = sceneFunnel.value.scene_funnel;
+      if (sf.cohort_size > 0) {
+        body.append(renderStepFunnel(
+          `Scene funnel — core new-user navigation path (${sf.cohort_size} sessions, last ${days} days)`,
+          sf.funnel, sf.cohort_size,
+        ));
+      }
+    }
+
+    // Level funnel — which specific level players get stuck on / quit (A9-9)
+    if (levelFunnel.status === 'fulfilled' && levelFunnel.value.available && levelFunnel.value.level_funnel?.length) {
+      const rows = levelFunnel.value.level_funnel.slice(0, 20); // worst completion rate first; cap the list, see caption
+      const t = h('table', {},
+        h('tr', {},
+          h('th', {}, 'Level'),
+          h('th', { style: 'text-align:right' }, 'Attempts'),
+          h('th', { style: 'text-align:right' }, 'Completes'),
+          h('th', { style: 'text-align:right' }, 'Abandons'),
+          h('th', { style: 'text-align:right' }, 'Completion'),
+          h('th', {}, ''),
+        ),
+      );
+      for (const r of rows) {
+        t.append(h('tr', {},
+          h('td', {}, r.level_id),
+          h('td', { style: 'text-align:right' }, String(r.attempts)),
+          h('td', { style: 'text-align:right' }, String(r.completes)),
+          h('td', { style: 'text-align:right' }, String(r.abandons)),
+          h('td', { style: 'text-align:right' }, r.completion_rate !== undefined ? pct(r.completion_rate) : '—'),
+          h('td', {}, barCell(r.completion_rate ?? 0, 1)),
+        ));
+      }
+      body.append(h('div', { class: 'card' },
+        h('div', { class: 'muted' }, `Level funnel — 20 levels with the lowest completion rate (last ${days} days)`),
+        t,
+      ));
+    }
+
+    // Locale distribution (this is a language code, not a geographic region — see Geo distribution below for actual country)
     if (regions.status === 'fulfilled' && regions.value.available && regions.value.region_dist?.length) {
       const rows = regions.value.region_dist;
       const total = rows.reduce((s, r) => s + r.devices, 0);
       const t = h('table', {},
-        h('tr', {}, h('th', {}, 'Region'), h('th', { style: 'text-align:right' }, 'Devices'), h('th', {}, 'Share')),
+        h('tr', {}, h('th', {}, 'Locale'), h('th', { style: 'text-align:right' }, 'Devices'), h('th', {}, 'Share')),
       );
       for (const r of rows) {
         t.append(h('tr', {},
@@ -162,7 +203,24 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
           h('td', {}, barCell(r.devices, total)),
         ));
       }
-      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `Region distribution (last ${days} days)`), t));
+      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `Locale distribution (last ${days} days)`), t));
+    }
+
+    // Geo (country) distribution — server-derived from request IP via geoip-lite (A9-9); raw IPs are never stored
+    if (geoDist.status === 'fulfilled' && geoDist.value.available && geoDist.value.geo_dist?.length) {
+      const rows = geoDist.value.geo_dist;
+      const total = rows.reduce((s, r) => s + r.devices, 0);
+      const t = h('table', {},
+        h('tr', {}, h('th', {}, 'Country'), h('th', { style: 'text-align:right' }, 'Devices'), h('th', {}, 'Share')),
+      );
+      for (const r of rows) {
+        t.append(h('tr', {},
+          h('td', {}, r.country),
+          h('td', { style: 'text-align:right' }, String(r.devices)),
+          h('td', {}, barCell(r.devices, total)),
+        ));
+      }
+      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `Geo (country) distribution (last ${days} days, IP-derived)`), t));
     }
 
     // Device/OS distribution
@@ -180,6 +238,40 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
         ));
       }
       body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `OS distribution (last ${days} days, session_start)`), t));
+    }
+
+    // Browser distribution (server-derived from UA at ingest, A9-9)
+    if (browserDist.status === 'fulfilled' && browserDist.value.available && browserDist.value.browser_dist?.length) {
+      const rows = browserDist.value.browser_dist;
+      const total = rows.reduce((s, r) => s + r.devices, 0);
+      const t = h('table', {},
+        h('tr', {}, h('th', {}, 'Browser'), h('th', { style: 'text-align:right' }, 'Devices'), h('th', {}, 'Share')),
+      );
+      for (const r of rows) {
+        t.append(h('tr', {},
+          h('td', {}, r.browser),
+          h('td', { style: 'text-align:right' }, String(r.devices)),
+          h('td', {}, barCell(r.devices, total)),
+        ));
+      }
+      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `Browser distribution (last ${days} days, session_start)`), t));
+    }
+
+    // Device-type distribution: mobile / tablet / desktop (server-derived from UA at ingest, A9-9)
+    if (deviceTypeDist.status === 'fulfilled' && deviceTypeDist.value.available && deviceTypeDist.value.device_type_dist?.length) {
+      const rows = deviceTypeDist.value.device_type_dist;
+      const total = rows.reduce((s, r) => s + r.devices, 0);
+      const t = h('table', {},
+        h('tr', {}, h('th', {}, 'Device type'), h('th', { style: 'text-align:right' }, 'Devices'), h('th', {}, 'Share')),
+      );
+      for (const r of rows) {
+        t.append(h('tr', {},
+          h('td', {}, r.device_type),
+          h('td', { style: 'text-align:right' }, String(r.devices)),
+          h('td', {}, barCell(r.devices, total)),
+        ));
+      }
+      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `Device type distribution (last ${days} days, session_start)`), t));
     }
 
     // Login time distribution (UTC)
@@ -256,6 +348,45 @@ const ONBOARDING_LABELS: Record<string, string> = {
   first_battle: 'Started first battle',
   first_clear: 'Cleared first level',
 };
+
+// Human-readable labels for tutorial step-funnel keys (must match TUTORIAL_ORDERED_KEYS in analyticsvc).
+const TUTORIAL_LABELS: Record<string, string> = {
+  tutorial_start: 'Started tutorial',
+  orientation_1: 'Orientation O1', orientation_2: 'Orientation O2', orientation_3: 'Orientation O3',
+  orientation_4: 'Orientation O4', orientation_5: 'Orientation O5', orientation_6: 'Orientation O6',
+  orientation_7: 'Orientation O7',
+  beat_unit: 'Beat: deploy unit', beat_building: 'Beat: deploy building', beat_spell: 'Beat: cast spell',
+  freeplay: 'Free play',
+  tutorial_complete: 'Finished tutorial',
+};
+
+/** Shared renderer for cohort step-funnels (onboarding / tutorial / scene) — table + conversion bar per step. */
+function renderStepFunnel(
+  title: string,
+  funnel: { step: string; count: number; conversion_rate?: number }[],
+  cohortSize: number,
+  labels?: Record<string, string>,
+): HTMLElement {
+  const t = h('table', {},
+    h('tr', {},
+      h('th', {}, 'Step'),
+      h('th', { style: 'text-align:right' }, 'Reached'),
+      h('th', { style: 'text-align:right' }, 'Step conv.'),
+      h('th', { style: 'text-align:right' }, 'Of cohort'),
+      h('th', {}, ''),
+    ),
+  );
+  for (const step of funnel) {
+    t.append(h('tr', {},
+      h('td', {}, labels?.[step.step] ?? step.step),
+      h('td', { style: 'text-align:right' }, String(step.count)),
+      h('td', { style: 'text-align:right' }, step.conversion_rate !== undefined ? pct(step.conversion_rate) : '—'),
+      h('td', { style: 'text-align:right' }, pct(cohortSize > 0 ? step.count / cohortSize : 0)),
+      h('td', {}, barCell(step.count, cohortSize)),
+    ));
+  }
+  return h('div', { class: 'card' }, h('div', { class: 'muted' }, title), t);
+}
 
 function pct(rate: number): string {
   return (rate * 100).toFixed(1) + '%';

@@ -150,6 +150,20 @@ export class Api {
       funnel: { step: string; count: number; conversion_rate?: number }[];
       actions: { key: string; kind: 'scene' | 'action'; devices: number; rate: number }[];
     };
+    level_funnel?: { level_id: string; attempts: number; completes: number; abandons: number; completion_rate?: number }[];
+    tutorial_funnel?: {
+      cohort_size: number;
+      window_days: number;
+      funnel: { step: string; count: number; conversion_rate?: number }[];
+    };
+    scene_funnel?: {
+      cohort_size: number;
+      window_days: number;
+      funnel: { step: string; count: number; conversion_rate?: number }[];
+    };
+    browser_dist?: { browser: string; devices: number }[];
+    device_type_dist?: { device_type: string; devices: number }[];
+    geo_dist?: { country: string; devices: number }[];
   }> {
     const qs = new URLSearchParams({ type, days: String(days) });
     if (platform) qs.set('platform', platform);

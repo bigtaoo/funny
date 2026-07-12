@@ -42,6 +42,12 @@ export interface TutorialHost {
   forceVictory(): void;
   /** Skip tutorial: return to lobby (host is responsible for writing tutorial_done). */
   onSkip(): void;
+  /**
+   * Step-level analytics hook (A9-9): fired whenever the director advances to a new tutorial step, so
+   * the ops step-funnel can localise *where inside the tutorial* players quit (as opposed to the
+   * coarse tutorial_start/complete pair). `stepKey` matches analyticsvc's TUTORIAL_ORDERED_KEYS.
+   */
+  onStepChange?(stepKey: string): void;
 }
 
 type Phase = 'orientation' | 'beat' | 'freeplay' | 'done';
@@ -72,6 +78,13 @@ const BEATS: BeatSpec[] = [
   { cardId: 'tower_1',    cardType: CardType.Building,  col: 7, gateTick: 280, kind: 'building' },
   { cardId: 'meteor_1',   cardType: CardType.Spell,     col: 2, gateTick: 360, kind: 'spell', setupTick: 320 },
 ];
+
+// Beat kind → analytics step key (must match analyticsvc's TUTORIAL_ORDERED_KEYS).
+const BEAT_STEP_KEY: Record<BeatSpec['kind'], string> = {
+  unit: 'beat_unit',
+  building: 'beat_building',
+  spell: 'beat_spell',
+};
 
 const ORIENTATION_STEPS = 7; // O1–O7
 
@@ -127,6 +140,11 @@ export class TutorialDirector {
     host.container.addChild(this.root);
     this.buildLayers();
     this.renderOrientation();
+    this.emitStep('orientation_1');
+  }
+
+  private emitStep(key: string): void {
+    this.host.onStepChange?.(key);
   }
 
   get isFinished(): boolean { return this.phase === 'done'; }
@@ -216,6 +234,7 @@ export class TutorialDirector {
     this.orientStep++;
     if (this.orientStep < ORIENTATION_STEPS) {
       this.renderOrientation();
+      this.emitStep(`orientation_${this.orientStep + 1}`);
     } else {
       this.phase = 'beat';
       this.dim.visible = false;
@@ -237,6 +256,7 @@ export class TutorialDirector {
       this.engineFrozen = true;
     }
     this.renderBeatPrompt();
+    this.emitStep(BEAT_STEP_KEY[beat.kind]);
   }
 
   private startFreePlay(): void {
@@ -247,6 +267,7 @@ export class TutorialDirector {
     this.slotRing.visible = false;
     this.clusterRing.visible = false;
     this.renderFreePlay();
+    this.emitStep('freeplay');
   }
 
   private graduate(): void {

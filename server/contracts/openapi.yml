@@ -549,6 +549,12 @@ components:
         os:           { type: string }
         game_version: { type: string }
         locale:       { type: string }
+        # —— Device fields (A9-9); web only, absent for wechat/crazygames. Server derives
+        # browser/device_type from `ua` at ingest — never trusts a client-supplied browser name. ——
+        ua:           { type: string }
+        screen_w:     { type: integer }
+        screen_h:     { type: integer }
+        dpr:          { type: number }
         events:
           type: array
           maxItems: 100

@@ -53,6 +53,8 @@ export class GameRendererBase {
 
   onGameEnd:     ((winner: OwnerId | null, stats: [PlayerStats, PlayerStats], summary: MatchSummary) => void) | null = null;
   onExitToLobby: (() => void) | null = null;
+  /** Tutorial step-level analytics hook (A9-9); wired to TutorialDirector's onStepChange when tutorialEnabled. */
+  onTutorialStep: ((stepKey: string) => void) | null = null;
 
   // One-shot gate: after GameOver the engine's step() returns early without draining the event
   // queue (GameEngine §step), so game_over/game_draw events are re-consumed by update() every
@@ -197,6 +199,7 @@ export class GameRendererBase {
         },
         forceVictory: () => this.forceTutorialVictory(),
         onSkip: () => this.onExitToLobby?.(),
+        onStepChange: (stepKey) => this.onTutorialStep?.(stepKey),
       };
       this.tutorial = new TutorialDirector(host);
     }
