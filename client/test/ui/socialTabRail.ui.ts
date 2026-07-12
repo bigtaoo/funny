@@ -130,6 +130,25 @@ describe('FamilyScene — social tab rail (onNavTab wiring)', () => {
     expect(calls).toEqual(TAB_ORDER.filter((tab) => tab !== 'family'));
     scene.destroy();
   });
+
+  it('the other 4 tabs are still drawn while the player has no family yet (noFamily mode)', () => {
+    // Regression check for "点击sect/family页签时，其他页签消失了" (12.07.2026): the rail used
+    // to be drawn only from renderMyFamily(), so as soon as the scene landed in 'noFamily'
+    // (or stayed in 'loading') — which it does for any account without a family, or briefly
+    // for every account while loadData() is in flight — the rail vanished entirely, not just
+    // its own active cell. Fixed by moving the drawSocialTabRail() call into the shared
+    // render() dispatcher (base.ts) so it runs for every mode.
+    const calls: SocialTab[] = [];
+    const scene = build((tab) => calls.push(tab));
+    scene.mode = 'noFamily';
+    scene.family = null;
+    scene.render();
+
+    for (const tab of TAB_ORDER) clickRailTab(scene, tab);
+
+    expect(calls).toEqual(TAB_ORDER.filter((tab) => tab !== 'family'));
+    scene.destroy();
+  });
 });
 
 describe('SectScene — social tab rail (onNavTab wiring)', () => {
@@ -162,6 +181,25 @@ describe('SectScene — social tab rail (onNavTab wiring)', () => {
     // clicking mid-rail (x well inside the rail) must not accidentally hit them.
     scene.handleDown(Math.round(sidebarNavW(scene.w, scene.h, scene.landscape) / 2), scene.headerH + 10);
     expect(scene.activeTab).toBe('families'); // unchanged — rail click, not the local tab bar
+    scene.destroy();
+  });
+
+  it('the other 4 tabs are still drawn while the player has no sect yet (noSect mode)', () => {
+    // Regression check for "点击sect页签时，其他页签消失了" (12.07.2026): the rail used to be
+    // drawn only from renderMySect(), so any account without a sect — or any account while
+    // loadData() is still in flight — landed in a mode that rendered no rail at all. Fixed by
+    // moving the drawSocialTabRail() call into the shared render() dispatcher (base.ts).
+    const calls: SocialTab[] = [];
+    const scene = build((tab) => calls.push(tab));
+    scene.mode = 'noSect';
+    scene.sect = null;
+    scene.inFamily = true;
+    scene.myFamilyRole = 'leader';
+    scene.render();
+
+    for (const tab of TAB_ORDER) clickRailTab(scene, tab);
+
+    expect(calls).toEqual(TAB_ORDER.filter((tab) => tab !== 'sect'));
     scene.destroy();
   });
 });

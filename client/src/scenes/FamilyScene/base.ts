@@ -19,7 +19,7 @@ import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import type { WorldApiClient, FamilyDetailView, FamilyMemberView, FamilyMessageView } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
-import type { SocialTab } from '../../render/socialTabRail';
+import { drawSocialTabRail, type SocialTab } from '../../render/socialTabRail';
 
 export interface FamilySceneCallbacks {
   onBack(): void;
@@ -145,6 +145,12 @@ export class FamilySceneBase {
     tearDownChildren(this.bodyLayer); // create-form input re-renders per keystroke → free Text textures
     this.hitRects = [];
     this.renderHeader();
+
+    // Draw the social hub rail in every mode (not just 'myFamily') — otherwise the other 4 tabs
+    // vanish while this scene is still loading or has no family yet, since it replaces FriendsScene
+    // wholesale on navigation.
+    const railHits = drawSocialTabRail(this.bodyLayer, this.w, this.h, this.headerH, this.landscape, 'family', {}, (tab) => this.cb.onNavTab(tab));
+    this.hitRects.push(...railHits.map((hit) => ({ rect: hit.rect, action: hit.fn })));
 
     switch (this.mode) {
       case 'loading': this.renderLoading(); break;
