@@ -15,6 +15,10 @@ import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSocialTabRail, type SocialTab } from '../../render/socialTabRail';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { drawSceneHeader, drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
+import { netLog } from '../../net/log';
+
+// TEMP diagnostic logging (social-back-goes-to-career bug hunt, 2026-07-12) — remove once resolved.
+const navLog = netLog('nav-friendsscene');
 import type {
   FriendView,
   FriendRequestView,
@@ -271,6 +275,7 @@ export class FriendsSceneBase {
   protected onBack(): void {
     if (this.openMailItem) { this.openMailItem = null; this.render(); return; }
     if (this.view === 'search') { this.view = 'list'; this.render(); return; }
+    navLog.info('FriendsScene back button pressed', { tab: this.tab });
     this.cb.onBack();
   }
 
