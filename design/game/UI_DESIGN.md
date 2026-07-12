@@ -124,7 +124,8 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 > - **纸币扭索纹（guilloche，2026-07-07）**：纸面填充之上叠一层极淡的钞票编织纹当水印，增加"官方账本"高级感（契合货币/笔记本主题）。两族镜像的相位错开复合正弦股（`drawGuilloche`），accent 同色染色，`alpha=0.12`、`6 股/族`（交互预览拍板值）；振幅 0.30·栏高、恒在栏内故无需 clip。压在返回/标题/金币之下，不抢读。**随 chrome 一起走 §2.1 `getCachedDisplay` 烘焙——每个 (variant, accent, 宽, 栏高) 只算一次 `PIXI.Graphics`，之后全场景复用同一 sprite，运行时零开销。**
 > - **金币读数统一走 `drawHeaderCurrency`**：Shop/Gacha/BattlePass 此前各自手绘「金图标+金数字」，Equipment/Card/Friends 走 `drawHeaderCurrency`（图标+"金币"标签+深色数字），两套不一致。现统一：`drawHeaderCurrency` 的金币金额改成**金色加粗、去掉"金币"文字标签**（图标即单位），三个消费场景删自绘块改调 `drawHeaderCurrency`。金币只挂在花钱/养成场景，纯信息场景（排行/统计/设置/成就等）不挂。材料 chip 仍保留标签+深色数字不变。
 > - **各场景 accent 归属**：金 = Shop/Gacha/BattlePass/Equipment/Card；红 = Auction/Family/Sect/Teams/DefenseEditor；其余（Achievement/Collection/Stats/Leaderboard/Titles/Settings/Room/Chat/Friends/DeckBuilder/CampaignMap/LevelPrep）走默认蓝。
-> - **DailyScene 迁移**：删掉自绘的裸返回文字（`daily.back`），改挂 `drawFloatingBackButton`（无顶栏的纸面浮动返回，与 Result/WorldMap 同款），位置与其余场景对齐。
+> - **DailyScene 迁移（2026-07-07）**：删掉自绘的裸返回文字（`daily.back`），改挂 `drawFloatingBackButton`（无顶栏的纸面浮动返回，与 Result/WorldMap 同款），位置与其余场景对齐。
+> - **DailyScene 补齐标准顶栏（2026-07-12）**：浮动返回胶囊本身不带标题条底/分类强调线，与 Shop 等场景仍不一致（同一批反馈见下方 4.9.1 的 ResultScene 记录）。改为标准 `drawSceneHeader(this.container, w, h, t('daily.title'))`——标题回到顶栏里居中显示，不再单独手绘；正文区改从 `hdr.headerH + h*0.02` 起算（原固定 `h*0.12`）。
 > - **仍未迁**：底部 HUD 的 WorldMap（非顶栏，用浮动返回）；LoginScene（返回仅在 password/register 视图条件出现，属登录前流程）。
 >
 > **栏高统一（2026-07-08，`feat/header-height-unify`）**：顶栏 chrome 已在 07.07 统一成纸底，但**高度**仍两套——大厅系菜单走默认 `sceneHeaderHeight`（`h*0.12`，如 Shop/Gacha/Settings…），而养成/SLG 系（Card/Equipment/Family/Sect/Teams/DefenseEditor）与 Chat 各自传固定 `headerH`（46/50px）+ 小 `titleSize`（14/15），栏矮字又小，跨页观感割裂（玩家感到"顶部条一会儿高一会儿矮"）。本次把这些场景的 `headerH`/`titleSize` 覆盖**全部删掉**，回落默认——与 Shop **完全一致**（同栏高、同标题字号，只 accent 细线区分分区）。各场景正文布局改从 `drawSceneHeader` 返回的 `hdr.headerH`（存进 `this.headerH`）起算，不再引模块级 `HUD_H`/`HEADER_H` 常量（已删）。
@@ -305,7 +306,7 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 - **PvE-vs-AI「再来一局」= 直接重进对局（2026-07-06）**：`nav/game.ts` 的 `goGame().onGameEnd` 不再走默认的「play again = 回大厅」，改为 `onPlayAgain = () => goGame({ difficulty: pickPracticeDifficulty(elo) })`（复用大厅入口同一条难度公式，直接重开一局，跳过大厅）。`pickPracticeDifficulty` 从 `lobby.ts` 导出供 `game.ts` 复用。
 - **新增左上角返回按钮，删除重复的次按钮（2026-07-06）**：`ResultSceneCallbacks.onBack()`（必填）——固定回大厅，独立于「再来一局」逻辑（后者现在可能是重进对局而非回大厅）。视觉复用 `SceneHeader.ts` 的 `drawFloatingBackButton`（浮动返回胶囊，左上角同款样式，与其余 22 个场景对齐）；该 helper 只画视觉+返回命中矩形不接交互，`ResultScene` 自己叠一层透明命中区接 `pointertap`。`nav/result.ts` 的 `goResult` 里 `cb.onBack` 复用 `onReturnToLobby`（天梯局关 session）否则回退纯 `goLobby()`。原先天梯局专属的「返回大厅」次按钮是同一个出口的重复入口（天梯结算会同时看到左上角返回 + 底部返回大厅两个按钮），已删除——连同 `ResultSceneCallbacks.onReturnToLobby` 字段和 `result.toLobby` 三语 i18n key；`goResult` 的 `onReturnToLobby` 参数只保留给 `onBack` 闭包内部用，不再对外暴露成独立按钮。
 
-#### 4.9.2 结算页 deco 丰富（2026-06-30）
+- **改用标准顶栏，不再是浮动返回胶囊（2026-07-12）**：产品反馈胜利/失败页「缺标准顶栏，类似商店的顶部」——2026-07-06 那版只画了浮动返回胶囊，没有纸质顶栏本体（无标题条底、无分类强调线），与 Shop/Gacha/Equipment 等其余场景观感不一致。改为 `drawSceneHeader(this.container, w, h, null)`（`title=null`，因为页面中央已有大号 VICTORY/DEFEAT 大字当标题，复用 CampaignMapScene 的同一模式），拿到的 `hdr.headerH` 用于把大字标题下移（`hdr.headerH + h*0.02`，原来固定 `h*0.07` 会被新顶栏压住）。返回胶囊换成嵌在顶栏里的 back pill（原来悬浮胶囊的透明命中区叠加手法保留，`resultBackChip` 测试钩子不变）。
 结算页引入与大厅/对战一致的手绘涂鸦层，解决页面太空旷的问题：
 - **C-group 背景散点**（`buildDecorCLayer`）：与大厅 LobbyScene 完全相同的城堡/弹射器/纸飞机/墨迹图集，铺满全屏（alpha 0.25–0.38，bake 静态纹理）。
 - **A-group 边距涂鸦**（`buildMarginDeco`，新增私有方法）：左右各 11% 纸边放置对战同款小涂鸦（太阳/星/心等，alpha 0.30–0.50），seed `0xDEADBEEF`，bake key `result-margin:WxH`。

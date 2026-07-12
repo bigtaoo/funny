@@ -6,7 +6,7 @@ import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren, marginLineX } from '../render/sketchUi';
 import { buildIcon, type IconKind } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
-import { drawFloatingBackButton } from '../ui/widgets/SceneHeader';
+import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import type { SaveData } from '../game/meta/SaveData';
 import type { RetentionView } from '../net/ApiClient';
@@ -120,14 +120,9 @@ export class DailyScene implements Scene {
     const decoC = buildDecorCLayer(w, h);
     if (decoC) this.container.addChild(decoC);
 
-    const title = txt(t('daily.title'), Math.round(h * 0.045), C.dark, true);
-    title.anchor.set(0.5, 0);
-    title.x = w / 2;
-    title.y = h * 0.03;
-    this.container.addChild(title);
-
-    const { backRect } = drawFloatingBackButton(this.container, h);
-    this.hits.push({ x: backRect.x, y: backRect.y, w: backRect.w, h: backRect.h, fn: () => this.cb.onBack() });
+    // Title bar (unified SceneHeader: back top-left + cached chrome, UI_DESIGN §3.1/§2.1).
+    const hdr = drawSceneHeader(this.container, w, h, t('daily.title'));
+    this.hits.push({ x: hdr.backRect.x, y: hdr.backRect.y, w: hdr.backRect.w, h: hdr.backRect.h, fn: () => this.cb.onBack() });
 
     const save = this.cb.getSave?.();
     if (!save) {
@@ -139,7 +134,7 @@ export class DailyScene implements Scene {
     }
 
     const nowMs = Date.now();
-    const contentTop = h * 0.12;
+    const contentTop = hdr.headerH + h * 0.02;
     const availH = h - contentTop - h * 0.03;
 
     this.drawSidebarTabs(contentTop, availH);
