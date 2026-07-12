@@ -126,6 +126,16 @@ export interface NetGameView {
   applyMatchOver(m: MatchOver): void;
 }
 
+/**
+ * Shared opts for the handful of screens that can be entered/exited as a "world change"
+ * (match, SLG world map) — the only transitions that cross-fade (see SceneManager). Every other
+ * `show*` swaps instantly and takes no such opts.
+ */
+export interface FadeOpts {
+  /** Cross-fade through the paper-tint cover instead of an instant swap. Defaults to false. */
+  fade?: boolean;
+}
+
 /** ResultScene takes positional args, so the core hands the view a props bag. */
 export interface ResultViewProps {
   winner: OwnerId | null;
@@ -147,8 +157,11 @@ export interface AppViews {
   showIntro(cb: IntroSceneCallbacks): void;
   /** First-launch GDPR / privacy consent gate (C5-c, L1-1). Blocks until accepted. */
   showConsent(cb: ConsentCallbacks): void;
-  /** Lobby (home). Returns a handle so the core can push live social-badge updates. */
-  showLobby(cb: LobbySceneCallbacks): LobbyView;
+  /**
+   * Lobby (home). Returns a handle so the core can push live social-badge updates.
+   * `opts.fade` is set only when arriving here from exiting a match or the SLG world map.
+   */
+  showLobby(cb: LobbySceneCallbacks, opts?: FadeOpts): LobbyView;
   showSettings(cb: SettingsSceneCallbacks): void;
   showLogin(cb: LoginSceneCallbacks): void;
   showShop(cb: ShopSceneCallbacks): void;
@@ -180,7 +193,7 @@ export interface AppViews {
    */
   showStatePlayer(replay: StateReplay, cb: StatePlayerSceneCallbacks, encoded?: EncodedStateReplay): void;
 
-  /** Local / campaign match (scene builds its own engine via createLocalMatch). */
+  /** Local / campaign match (scene builds its own engine via createLocalMatch). Always cross-fades in — entering a match. */
   showGame(cb: GameSceneCallbacks, opts: GameSceneOptions): void;
 
   // Held-by-reference scenes return a handle the core pushes server events into.
@@ -189,7 +202,7 @@ export interface AppViews {
   showFriends(cb: FriendsSceneCallbacks): FriendsView;
   /** 1:1 chat window. The core pushes chat_message to the handle. */
   showChat(cb: ChatSceneCallbacks): ChatView;
-  /** SLG world map (S8). Returns a handle the core forwards live SLG pushes to. */
+  /** SLG world map (S8). Returns a handle the core forwards live SLG pushes to. Always cross-fades in — entering the SLG. */
   showWorldMap(cb: WorldMapCallbacks): WorldMapView;
   /** SLG family hub (S8-4). */
   showFamily(cb: FamilySceneCallbacks): void;
@@ -206,7 +219,7 @@ export interface AppViews {
   showCity(cb: CitySceneCallbacks): void;
   /**
    * Netplay match. The core passes the pre-built engine in `opts.engine` plus the
-   * local side; the view turns `localSide` into the side-flipped layout.
+   * local side; the view turns `localSide` into the side-flipped layout. Always cross-fades in — entering a match.
    */
   showGameNet(localSide: OwnerId, cb: GameSceneCallbacks, opts: GameSceneOptions): NetGameView;
 }

@@ -57,7 +57,7 @@ import { setBakeRenderer } from './render/bake';
 import { preloadBoot } from './assets/bootManifest';
 import { LoadingOverlay } from './render/LoadingOverlay';
 import { createAppCore } from './app/createAppCore';
-import type { AppViews, LobbyView, RoomView, FriendsView, ChatView, NetGameView, ResultViewProps } from './app/AppViews';
+import type { AppViews, LobbyView, RoomView, FriendsView, ChatView, NetGameView, ResultViewProps, FadeOpts } from './app/AppViews';
 
 /**
  * The PIXI implementation of AppViews: each show*() runs the same
@@ -112,9 +112,10 @@ class PixiAppViews implements AppViews {
     this.manager.goto(new ConsentDialog(this.layout.designWidth, this.layout.designHeight, cb));
   }
 
-  showLobby(cb: LobbySceneCallbacks): LobbyView {
+  showLobby(cb: LobbySceneCallbacks, opts?: FadeOpts): LobbyView {
     const scene = new LobbyScene(this.layout, this.input, cb);
-    this.manager.goto(scene, { instant: this.resizing });
+    // A resize-driven rebuild always swaps instantly, regardless of the caller's fade request.
+    this.manager.goto(scene, { fade: !this.resizing && !!opts?.fade });
     window.addEventListener('resize', this.onResize);
     return {
       applySocialBadge: (n) => scene.applySocialBadge(n),
@@ -236,7 +237,8 @@ class PixiAppViews implements AppViews {
 
   showGame(cb: GameSceneCallbacks, opts: GameSceneOptions): void {
     this.leaveLobby();
-    this.manager.goto(new GameScene(this.layout, this.input, cb, opts));
+    // Entering a match is one of the handful of transitions that cross-fade (see SceneManager).
+    this.manager.goto(new GameScene(this.layout, this.input, cb, opts), { fade: true });
   }
 
   showRoom(cb: RoomSceneCallbacks): RoomView {
@@ -274,7 +276,8 @@ class PixiAppViews implements AppViews {
   showWorldMap(cb: WorldMapCallbacks): WorldMapView {
     this.leaveLobby();
     const scene = new WorldMapScene(this.layout, this.input, cb);
-    this.manager.goto(scene);
+    // Entering the SLG is one of the handful of transitions that cross-fade (see SceneManager).
+    this.manager.goto(scene, { fade: true });
     return {
       applyMarchUpdate: (m) => scene.applyMarchUpdate(m),
       applyTileUpdate:  (tu) => scene.applyTileUpdate(tu),
@@ -328,7 +331,8 @@ class PixiAppViews implements AppViews {
     const { width, height } = this.platform.getScreenSize();
     const netLayout = createLayout(width, height, side, this.platform.getSafeAreaInsets?.());
     const scene = new GameScene(netLayout, this.input, cb, opts);
-    this.manager.goto(scene);
+    // Entering a match is one of the handful of transitions that cross-fade (see SceneManager).
+    this.manager.goto(scene, { fade: true });
     return {
       applyNetState:  (s) => scene.applyNetState(s),
       applyPeerDc:    (p) => scene.applyPeerDc(p),
@@ -388,8 +392,9 @@ export async function startApp(platform: IPlatform): Promise<void> {
   const scaling = new ScalingManager(app, layout, insets);
   const input = new InputManager();
   // The manager freezes `input` for the span of each scene-fade: taps bypass Pixi (DOM-fed), so the
-  // fade's black cover can't block them, and a tap mid-fade would otherwise hit the outgoing scene's
-  // still-live hit-rects (LOBBY nav "Store"→"Career" mis-navigation).
+  // fade's cover can't block them, and a tap mid-fade would otherwise hit the outgoing scene's
+  // still-live hit-rects. Only the explicitly-faded transitions (enter/exit match, enter/exit SLG)
+  // ever engage this — plain instant scene switches never freeze input.
   const manager = new SceneManager(app, scaling.gameLayer, input);
   platform.setupInput(app, input, (sx, sy) => scaling.toDesignSpace(sx, sy));
 
