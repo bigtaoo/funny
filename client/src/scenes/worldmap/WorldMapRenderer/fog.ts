@@ -140,6 +140,7 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
 
       // March arrows (L1/L2 only; L3 is too zoomed-out for detail).
       if (this.ctx.zoom < 3) {
+        const now = Date.now();
         for (const march of this.ctx.marches) {
           const fromXY = this.ctx.parseTileStrict(march.fromTile);
           const toXY = this.ctx.parseTileStrict(march.toTile);
@@ -159,16 +160,38 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
             : march.kind === 'reinforce'? 0x44aacc
             : march.kind === 'scout'    ? 0x9b59b6
             : 0xcc8844;
-          g.lineStyle(enemy ? 2.5 : 1.5, col, enemy ? 0.75 : 0.55);
+          // Faint full-length route trace, so the destination is still readable at a glance.
+          g.lineStyle(enemy ? 2.5 : 1.5, col, enemy ? 0.3 : 0.22);
           g.moveTo(fpx, fpy);
           g.lineTo(px, py);
-          // Directed chevron head at the destination (was a plain dot): a march has a heading
-          // (attack / return / …), so the tip should encode direction. Drawn slightly bolder and
-          // more opaque than the shaft so it reads at a glance. Zero-length march → ang=0 (harmless).
+          g.lineStyle(0);
+
+          // Progress along the path (§ real-time march animation): a march has no visible token
+          // until this shipped — departAt/arriveAt were only used for HUD countdown text before.
+          // Clamp guards a not-yet-departed or already-arrived march (poll lag) from drawing off-path.
+          const span = march.arriveAt - march.departAt;
+          const frac = span > 0 ? Math.min(1, Math.max(0, (now - march.departAt) / span)) : 1;
+          const hx = fpx + (px - fpx) * frac;
+          const hy = fpy + (py - fpy) * frac;
           const ang = Math.atan2(py - fpy, px - fpx);
+
+          // Troop token: a filled diamond riding the route, oriented in the travel direction.
+          const tokR = enemy ? 6 : 5;
+          g.lineStyle(enemy ? 2 : 1.5, col, 0.95);
+          g.beginFill(col, enemy ? 0.85 : 0.7);
+          g.drawPolygon([
+            hx + Math.cos(ang) * tokR,        hy + Math.sin(ang) * tokR,
+            hx + Math.cos(ang + 2.4) * tokR,  hy + Math.sin(ang + 2.4) * tokR,
+            hx + Math.cos(ang + Math.PI) * tokR * 0.5, hy + Math.sin(ang + Math.PI) * tokR * 0.5,
+            hx + Math.cos(ang - 2.4) * tokR,  hy + Math.sin(ang - 2.4) * tokR,
+          ]);
+          g.endFill();
+          g.lineStyle(0);
+
+          // Directed chevron head at the destination (kept as the route's endpoint marker).
           const headLen = enemy ? 11 : 9;
           const spread = 0.45; // radians off the shaft on each side
-          g.lineStyle(enemy ? 3 : 2, col, 0.9);
+          g.lineStyle(enemy ? 3 : 2, col, 0.5);
           g.moveTo(px - Math.cos(ang - spread) * headLen, py - Math.sin(ang - spread) * headLen);
           g.lineTo(px, py);
           g.lineTo(px - Math.cos(ang + spread) * headLen, py - Math.sin(ang + spread) * headLen);

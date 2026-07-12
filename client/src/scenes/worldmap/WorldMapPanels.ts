@@ -241,7 +241,7 @@ export class WorldMapPanels {
     ml.removeChildren();
 
     const { w, h } = this.ctx;
-    const mw = Math.min(300, w - 32);
+    const mw = Math.min(600, w - 32);
     const mh = CONFIRM_H;
     const mx = (w - mw) / 2;
     const my = (h - HUD_H - mh) / 2;
@@ -255,36 +255,37 @@ export class WorldMapPanels {
     panel.x = mx; panel.y = my;
     ml.addChild(panel);
 
-    let ly = my + 14;
+    let ly = my + 28;
     for (const line of lines) {
-      const lbl = txt(line, 13, C.dark);
+      const lbl = txt(line, 26, C.dark);
       lbl.anchor.set(0.5, 0);
       lbl.x = mx + mw / 2; lbl.y = ly;
       ml.addChild(lbl);
-      ly += 20;
+      ly += 40;
     }
 
     this.ctx.modalBtnRects = [];
-    const btnW = Math.min(100, (mw - MARGIN * (buttons.length + 1)) / buttons.length);
-    let bx = mx + (mw - (btnW + MARGIN) * buttons.length + MARGIN) / 2;
-    const by = my + mh - 40;
+    const modalMargin = MARGIN * 2;
+    const btnW = Math.min(200, (mw - modalMargin * (buttons.length + 1)) / buttons.length);
+    let bx = mx + (mw - (btnW + modalMargin) * buttons.length + modalMargin) / 2;
+    const by = my + mh - 80;
     for (const btn of buttons) {
-      const bp = sketchPanel(btnW, 28, { fill: C.dark, border: C.accent, seed: seedFor(bx, by, btnW) });
+      const bp = sketchPanel(btnW, 56, { fill: C.dark, border: C.accent, seed: seedFor(bx, by, btnW) });
       bp.x = bx; bp.y = by;
       ml.addChild(bp);
       // '✕' cancel buttons render the hand-drawn close glyph instead of the bare dingbat.
       if (btn.label === '✕') {
-        const ic = buildIcon('close', 16, C.light);
-        ic.x = bx + btnW / 2 - 8; ic.y = by + 6;
+        const ic = buildIcon('close', 32, C.light);
+        ic.x = bx + btnW / 2 - 16; ic.y = by + 12;
         ml.addChild(ic);
       } else {
-        const bl = txt(btn.label, 12, C.light);
+        const bl = txt(btn.label, 24, C.light);
         bl.anchor.set(0.5, 0.5);
-        bl.x = bx + btnW / 2; bl.y = by + 14;
+        bl.x = bx + btnW / 2; bl.y = by + 28;
         ml.addChild(bl);
       }
-      this.ctx.modalBtnRects.push({ rect: { x: bx, y: by, w: btnW, h: 28 }, action: btn.action });
-      bx += btnW + MARGIN;
+      this.ctx.modalBtnRects.push({ rect: { x: bx, y: by, w: btnW, h: 56 }, action: btn.action });
+      bx += btnW + modalMargin;
     }
 
     // Close on dim
