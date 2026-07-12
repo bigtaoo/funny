@@ -279,10 +279,10 @@ notebook_wars_analytics
 │          game_version, locale, event, props{}, ts: Date,
 │          ua?, screen_w?, screen_h?, dpr?,             ← 客户端上报（A9-9，web only）
 │          browser?, device_type?,                       ← 服务端由 ua 解析（A9-9）
-│          geo_country?, geo_region?, geo_city? }        ← 服务端由请求 IP 解析（A9-9，原始 IP 不落库）
+│          ip?, geo_country?, geo_region?, geo_city? }    ← ip 为请求 IP（A9-9 起落库，账号防护用途）；geo_* 由 ip 解析
 │       索引：{ ts: -1 } / { event: 1, ts: -1 } / { user_id: 1, ts: -1 } /
 │              { event: 1, 'props.level_id': 1, ts: -1 } / { session_id: 1 } /
-│              { browser: 1, ts: -1 } / { device_type: 1, ts: -1 } / { geo_country: 1, ts: -1 }
+│              { browser: 1, ts: -1 } / { device_type: 1, ts: -1 } / { geo_country: 1, ts: -1 } / { ip: 1, ts: -1 }
 │       TTL: expireAfterSeconds=0 on ts（配合 expireAt 字段）或 TTL index on ts 90天
 │
 ├── sessions       会话摘要（永久，每 session 一行）
@@ -290,8 +290,8 @@ notebook_wars_analytics
 │          started_at: Date, ended_at?: Date, duration_sec?,
 │          scenes_visited[], events_count,
 │          ua?, screen_w?, screen_h?, dpr?, browser?, device_type?,
-│          geo_country?, geo_region?, geo_city? }
-│       索引：{ started_at: -1 } / { device_id: 1, started_at: -1 }
+│          ip?, geo_country?, geo_region?, geo_city? }
+│       索引：{ started_at: -1 } / { device_id: 1, started_at: -1 } / { ip: 1, started_at: -1 }
 │
 └── funnels_daily  每日预聚合（永久，ETL job 每小时跑）
         { date, platform, funnel_step, count, conversion_rate? }
@@ -577,7 +577,7 @@ cohort（某日活跃设备）
 
 **真实设备信息**：此前 `os` 字段只是 `navigator.platform`（如 "Win32"），无法区分浏览器或移动端/桌面端。客户端新增上报 `ua`（完整 `navigator.userAgent`，微信小游戏侧不发，因为没有 UA 概念）、`screen_w/screen_h/dpr`（屏幕尺寸 + 像素比，微信侧用 `wx.getSystemInfoSync()` 取值）。服务端 `parseUserAgent()`（`analyticsvc/src/service.ts`）在入库时**由服务端解析** `browser`（chrome/safari/firefox/edge/wechat/qqbrowser/opera/…）与 `device_type`（mobile/tablet/desktop）——不信任客户端可能自报的浏览器名。`GET /internal/query?type=browser_dist|device_type_dist` 对应查询，ops 页面新增两张分布卡。
 
-**IP 地理定位**：`server/analyticsvc/src/httpApi.ts` 的 `POST /analytics/events` 从 `X-Forwarded-For`（Caddy 反代自动注入）取客户端 IP，用 `geoip-lite`（离线库，无外部网络调用）解析出 `geo_country/geo_region/geo_city`，仅存解析结果、**不落库原始 IP**。`GET /internal/query?type=geo_dist` 按国家分组，ops 新增「Geo (country) distribution」卡；原有的「Region distribution」卡实际统计的是 `locale`（语言码）而非地理位置，已改名为「Locale distribution」以免混淆。
+**IP 地理定位 + 账号防护**：`server/analyticsvc/src/httpApi.ts` 的 `POST /analytics/events` 从 `X-Forwarded-For`（Caddy 反代自动注入）取客户端 IP，存入 `EventDoc.ip`/`SessionDoc.ip`（`{ ip: 1, ts: -1 }` / `{ ip: 1, started_at: -1 }` 索引，供后续查「同一 IP 下有几个账号/设备」这类风控场景使用），并用 `geoip-lite`（离线库，无外部网络调用）解析出 `geo_country/geo_region/geo_city`。`GET /internal/query?type=geo_dist` 按国家分组，ops 新增「Geo (country) distribution」卡；原有的「Region distribution」卡实际统计的是 `locale`（语言码）而非地理位置，已改名为「Locale distribution」以免混淆。
 
 ---
 
@@ -585,11 +585,11 @@ cohort（某日活跃设备）
 
 | 原则 | 实现 |
 |---|---|
-| 不收集个人可识别信息 | 事件里无姓名/邮箱；user_id 是内部 accountId（不外泄） |
+| 不收集姓名/邮箱等强身份信息 | 事件里无姓名/邮箱；user_id 是内部 accountId（不外泄） |
 | 匿名设备 ID | `device_id` 是 client 本地生成的随机 UUID，不关联真实身份 |
 | 用户可撤回 | 顶层 `enabled` 开关；账号注销时可批量删 `user_id=xxx` 的事件（GDPR） |
 | 微信小游戏 | 不用 `wx.getUserInfo`，不要求隐私授权 |
-| IP 只用于解析、不落库（A9-9 更新） | analyticsvc 用请求 IP 做一次性 `geoip-lite` 查询得到粗粒度国家/地区/城市后即丢弃 IP 本身；`EventDoc`/`SessionDoc` 只存 `geo_country/geo_region/geo_city`，没有任何字段记录原始 IP |
+| 请求 IP 落库（A9-9 更新，产品拍板） | 出于账号安全目的（同 IP 多账号/共享设备检测、封禁规避排查）保留请求 IP，作为「合法利益」（legitimate interest）用途，不同于需要用户同意的营销类追踪；未额外做设备定位授权，只是记录连接方 IP 这一常规服务器日志信息 |
 
 ---
 
