@@ -31,7 +31,7 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
      */
     renderSidebar(): void {
       if (!this.showSidebar) return;
-      const sidebarW = sidebarNavW(this.w);
+      const sidebarW = sidebarNavW(this.w, this.h, this.landscape);
       const tabs: HubTab[] = [
         { label: t('roster.title'), active: true, icon: 'cards' },
         { label: t('equip.title'), active: false, icon: 'armor' },
@@ -79,7 +79,7 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
 
       const sorted = sortCards(cards, save.equipmentInv ?? {});
       // Start the grid right of the sidebar rail (when shown) or the red margin rule; right pad stays one CELL_GAP.
-      const left = (this.showSidebar ? sidebarNavW(w) : marginLineX(w)) + CELL_GAP;
+      const left = (this.showSidebar ? sidebarNavW(w, h, this.landscape) : marginLineX(w)) + CELL_GAP;
       const avail = w - left - CELL_GAP;
       const cols = Math.max(1, Math.floor((avail + CELL_GAP) / (CARD_CELL_W_TARGET + CELL_GAP)));
       const cellW = (avail - CELL_GAP * (cols - 1)) / cols;

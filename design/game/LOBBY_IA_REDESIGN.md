@@ -329,3 +329,16 @@
 - 已用 `tsc --noEmit` + `vitest run --config vitest.ui.config.ts -t CampaignMapScene`（8 例全绿）+ `vitest run test/headless-nav.test.ts`（5 例全绿）验证；未跑游戏截图。
 
 **金币图标来源勘误**（2026-07-06 追加）：§8.4 第 2 条「核实后确认只有一处来源」的结论已过时——`client/src/render/coinIconAtlas.ts` 后来新增了 `buildCoinIcon()`（AI 位图图集，`coin`/`coins`/`coinStack`/`coinSack`/`coinChest` 五档，`ShopScene`/`LobbyScene`/`EquipmentScene`/`CardScene`/`FriendsScene` 均已切过去，文件头注释自称"the single source of truth"），但 `GachaScene.ts`/`BattlePassScene.ts` 顶栏金币图标当时仍直接调 `buildIcon('coin',...)`（程序绘制矢量字形），两页因此显示的是与其它页不同的图标资产。修复：两场景顶栏改调 `buildCoinIcon('coin', balIcon, C.gold)`；`BattlePassScene.ts` 奖励行的金币阶梯图标（`coinIconTier` 返回值）同步改走 `buildCoinIcon`，材料类奖励（`brush`/`lead`/`binding`/`scrap`）仍用 `buildIcon`。`tsc --noEmit` + `webpack --mode development` 验证通过；未跑游戏截图。
+
+---
+
+## 11. 商店红点指向 Gacha 而非真正的月卡领取入口 + 分组页签返回绕经 Shop（2026-07-12）
+
+> 状态：**已实现**。用户报「领取月卡奖励后大厅商店入口红点仍在，点进去啥都没有」；紧接着又报「Shop 分组内任意页签点返回都会先落到 Shop 页签，而不是直接回大厅」。
+
+- **红点误指根因**：大厅商店导航图标 `onOpenShop`（`client/src/app/nav/lobby.ts`）判定红点用的是 `computeShopCardClaimable()`（月卡今日奖励是否可领），但点击后实际调用 `nav.goGacha({})` 跳转到 **GachaScene**（抽卡场景），并非真正挂着月卡领取卡片的 **ShopScene**。GachaScene 侧栏虽有一个可跳回 Shop 的「Shop」peer-tab，但该 tab 之前不携带红点——红点判定和红点落地的页面对不上，用户点进去自然看不到任何可领取内容。
+- **红点修复**：`GachaSceneCallbacks` 新增可选 `getShopBadge?(): boolean`；`GachaScene.drawSidebar()` 的 Shop tab 读它决定 `badge`（`client/src/scenes/GachaScene.ts`）。`app/nav/shop.ts` 的 `goGacha()` 在 `inGroup` 时按月卡状态（`subscriptionExpiry`/`subscriptionLastClaimDay`，与 `ShopScene.monthlyCardStatus()` 同一套字段）计算并注入该回调，红点从此跟着真正能领取的地方走。
+- **返回导航根因**：Shop/Coins/Gacha/BattlePass 是同一分组下的平级页签（peer tabs），不是导航栈，但 `goGacha()`/`goBattlePass()` 的物理返回按钮此前统一硬编码 `onBack() { goShop(shopBack); }` —— 不管当前在哪个 peer tab，返回都先跳回 ShopScene 的 Shop 页签，而不是分组的真正来源（大厅/关卡准备页）。且大厅入口 `nav.goGacha({})` 本身没有把来源（`shopBack`）传下去，即使返回按钮直连来源也无处可去。
+- **返回修复**：`app/nav/shop.ts` 的 `goGacha`/`goBattlePass` 的 `onBack` 改为直接调用 `shopBack?.()`（缺省兜底 `goShop()`/`nav.goLobby()`），不再经过 Shop 屏幕；`app/nav/lobby.ts` 的 `onOpenShop` 改为 `nav.goGacha({ shopBack: () => goLobby() })`，把真正的来源（大厅）显式穿透进去。
+- **新增回归测试**：`client/test/ui/shopGroupTabs.ui.ts` 补一条「`getShopBadge` 正确转发到 Gacha 侧栏 Shop tab」的用例（数 `PIXI.Graphics` 节点数佐证徽章确实画出来了）；新增 `client/test/shopNav-backNavigation.test.ts`（4 例，直接驱动真实 `createShopNav`，不经 PIXI/网络）覆盖：大厅直入 Gacha 后返回直连来源而非落在 Shop、从 Shop 打开 Gacha/BattlePass 后返回同样直连来源、`goBattlePass()` 单独调用时的兜底回大厅。`test/harness/HeadlessAppViews.ts` 的 `showBattlePass` 顺带补上和 `showShop`/`showGacha` 一致的回调捕获（之前直接丢弃回调，测试没法按它的返回按钮）。
+- 已用 `tsc --noEmit` + `webpack --mode=production` + 相关 UI/nav 测试（新增两批共 13 例）+ 全量 `vitest run`（68 文件 546 例）验证；纯导航/数据流改动，未跑游戏截图。

@@ -56,7 +56,7 @@ export function AssignMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       if (!inst) { this.assign = null; this.render(); return; }
       const slot = this.assign.slot;
 
-      const sidebarW = sidebarNavW(w);
+      const sidebarW = sidebarNavW(w, h, this.landscape);
       const top = this.headerH;
       const barBg = new PIXI.Graphics();
       barBg.beginFill(0xf3f1ea).drawRect(sidebarW, top, w - sidebarW, RES_H).endFill();
@@ -92,8 +92,8 @@ export function AssignMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
     }
 
     private renderAssignRow(card: CardInstance, cy: number, slot: EquipSlot, save: SaveData): void {
-      const { w } = this;
-      const left = sidebarNavW(w) + 6;
+      const { w, h } = this;
+      const left = sidebarNavW(w, h, this.landscape) + 6;
       const rowW = w - left - 6;
       const def = CARD_DEFS[card.defId];
       const row = sketchPanel(rowW, ROW_H - 4, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(cy, 30, w) });
