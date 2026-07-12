@@ -16,6 +16,18 @@ export interface EventDoc {
   props: Record<string, unknown>;
   /** BSON Date; the TTL index depends on this field (expireAfterSeconds=7776000, i.e. 90 days). */
   ts: Date;
+  /** Raw client-reported UA/screen fields (web only; absent for wechat/crazygames). */
+  ua?: string;
+  screen_w?: number;
+  screen_h?: number;
+  dpr?: number;
+  /** Server-derived from `ua` at ingest time (never trust a client-supplied browser name). */
+  browser?: string;
+  device_type?: 'mobile' | 'tablet' | 'desktop';
+  /** Server-derived from the request IP via geoip-lite; raw IP is never stored. */
+  geo_country?: string;
+  geo_region?: string;
+  geo_city?: string;
 }
 
 /** Session summary document (permanent). */
@@ -30,6 +42,15 @@ export interface SessionDoc {
   duration_sec?: number;
   scenes_visited: string[];
   events_count: number;
+  ua?: string;
+  screen_w?: number;
+  screen_h?: number;
+  dpr?: number;
+  browser?: string;
+  device_type?: 'mobile' | 'tablet' | 'desktop';
+  geo_country?: string;
+  geo_region?: string;
+  geo_city?: string;
 }
 
 /** Daily funnel pre-aggregation (permanent; ETL job runs every hour). */
@@ -78,6 +99,11 @@ export async function createAnalyticsMongo(uri: string, dbName: string): Promise
     await events.createIndex({ ts: 1 }, { expireAfterSeconds: 7776000 });
     await events.createIndex({ event: 1, ts: -1 });
     await events.createIndex({ user_id: 1, ts: -1 }, { sparse: true });
+    await events.createIndex({ event: 1, 'props.level_id': 1, ts: -1 });
+    await events.createIndex({ session_id: 1 });
+    await events.createIndex({ browser: 1, ts: -1 }, { sparse: true });
+    await events.createIndex({ device_type: 1, ts: -1 }, { sparse: true });
+    await events.createIndex({ geo_country: 1, ts: -1 }, { sparse: true });
     // sessions
     await sessions.createIndex({ started_at: -1 });
     await sessions.createIndex({ device_id: 1, started_at: -1 });

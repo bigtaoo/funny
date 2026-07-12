@@ -35,6 +35,8 @@ export interface GameSceneCallbacks {
    * here — the server already decided. Only fired in netplay.
    */
   onNetMatchOver?(winner: OwnerId | null, stats: [PlayerStats, PlayerStats], reason: string): void;
+  /** Tutorial step-level analytics hook (A9-9, `opts.tutorial` only) — fired on every TutorialDirector step advance. */
+  onTutorialStep?(stepKey: string): void;
 }
 
 export interface GameSceneOptions {
@@ -138,6 +140,7 @@ export class GameScene implements Scene {
     // Attach the recording (if any) to the end-of-game callback.
     this.renderer.onGameEnd = (winner, stats, summary) => this.cb.onGameEnd(winner, stats, buildReplay(winner), summary);
     this.renderer.onExitToLobby = cb.onExitToLobby;
+    if (cb.onTutorialStep) this.renderer.onTutorialStep = cb.onTutorialStep;
 
     this.container = this.renderer.container;
   }

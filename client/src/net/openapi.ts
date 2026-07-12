@@ -1657,6 +1657,10 @@ export interface components {
             os?: string;
             game_version?: string;
             locale?: string;
+            ua?: string;
+            screen_w?: number;
+            screen_h?: number;
+            dpr?: number;
             events: components["schemas"]["AnalyticsEvent"][];
         };
     };

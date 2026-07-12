@@ -27,6 +27,23 @@ export interface AnalyticsFirstSessionResult {
   actions: AnalyticsFirstSessionActionRow[];
 }
 
+// Fine-grained level/tutorial/scene funnels + device/geo distributions (A9-9).
+export interface AnalyticsLevelFunnelRow {
+  level_id: string;
+  attempts: number;
+  completes: number;
+  abandons: number;
+  completion_rate?: number;
+}
+export interface AnalyticsStepFunnelResult {
+  cohort_size: number;
+  window_days: number;
+  funnel: AnalyticsOnboardingStepRow[];
+}
+export interface AnalyticsBrowserRow { browser: string; devices: number }
+export interface AnalyticsDeviceTypeRow { device_type: string; devices: number }
+export interface AnalyticsGeoRow { country: string; devices: number }
+
 export interface AnalyticsQueryResult {
   event_counts?: AnalyticsEventCountRow[];
   dau?: AnalyticsDauRow[];
@@ -36,6 +53,12 @@ export interface AnalyticsQueryResult {
   login_hour?: AnalyticsLoginHourRow[];
   retention?: AnalyticsRetentionRow[];
   first_session?: AnalyticsFirstSessionResult;
+  level_funnel?: AnalyticsLevelFunnelRow[];
+  tutorial_funnel?: AnalyticsStepFunnelResult;
+  scene_funnel?: AnalyticsStepFunnelResult;
+  browser_dist?: AnalyticsBrowserRow[];
+  device_type_dist?: AnalyticsDeviceTypeRow[];
+  geo_dist?: AnalyticsGeoRow[];
 }
 
 export interface AnalyticsClient {
@@ -73,6 +96,12 @@ export class HttpAnalyticsClient implements AnalyticsClient {
         login_hour?: AnalyticsLoginHourRow[];
         retention?: AnalyticsRetentionRow[];
         first_session?: AnalyticsFirstSessionResult;
+        level_funnel?: AnalyticsLevelFunnelRow[];
+        tutorial_funnel?: AnalyticsStepFunnelResult;
+        scene_funnel?: AnalyticsStepFunnelResult;
+        browser_dist?: AnalyticsBrowserRow[];
+        device_type_dist?: AnalyticsDeviceTypeRow[];
+        geo_dist?: AnalyticsGeoRow[];
       };
       const body = (await res.json()) as { data: Payload };
       const p = body.data;
@@ -85,6 +114,12 @@ export class HttpAnalyticsClient implements AnalyticsClient {
       if (p.type === 'login_hour') return { login_hour: p.login_hour ?? [] };
       if (p.type === 'retention') return { retention: p.retention ?? [] };
       if (p.type === 'first_session') return { first_session: p.first_session };
+      if (p.type === 'level_funnel') return { level_funnel: p.level_funnel ?? [] };
+      if (p.type === 'tutorial_funnel') return { tutorial_funnel: p.tutorial_funnel };
+      if (p.type === 'scene_funnel') return { scene_funnel: p.scene_funnel };
+      if (p.type === 'browser_dist') return { browser_dist: p.browser_dist ?? [] };
+      if (p.type === 'device_type_dist') return { device_type_dist: p.device_type_dist ?? [] };
+      if (p.type === 'geo_dist') return { geo_dist: p.geo_dist ?? [] };
       return {};
     } catch (e) {
       log.warn('analytics query failed', { type, err: (e as Error).message });

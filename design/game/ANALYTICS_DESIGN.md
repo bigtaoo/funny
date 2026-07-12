@@ -238,7 +238,10 @@ scene 取值：`IntroScene / LobbyScene / LoginScene / CampaignMapScene / LevelP
 | 事件 | 必填属性 | 说明 |
 |---|---|---|
 | `churn_signal` | `reason, scene` | reason: background/explicit_exit/idle_10min |
+| `tutorial_start` / `tutorial_complete` | `level_id` | 开始/完成新手引导（§9.6 引导漏斗用） |
 | `tutorial_skip` | `step` | 跳过引导 |
+| `tutorial_step` | `level_id, phase, step_key, step_index` | 教程内部小步骤（§9.7 教程步骤漏斗用），`step_key` 见 `TUTORIAL_ORDERED_KEYS` |
+| `nav_checkpoint` | `scene` | 场景级漏斗用（§9.7），100% 采样，仅在 `screen_view` 命中场景白名单时自动补发 |
 | `login_gate_hit` | `scene` | 离线功能门控弹「需要登录」 |
 
 ### 5.7 成就漏斗（Achievement，S9-8）
@@ -273,20 +276,29 @@ scene 取值：`IntroScene / LobbyScene / LoginScene / CampaignMapScene / LevelP
 notebook_wars_analytics
 ├── events         原始事件（TTL 90 天）
 │       { _id, session_id, user_id?, device_id, platform, os,
-│          game_version, locale, event, props{}, ts: Date }
-│       索引：{ ts: -1 } / { event: 1, ts: -1 } / { user_id: 1, ts: -1 }
+│          game_version, locale, event, props{}, ts: Date,
+│          ua?, screen_w?, screen_h?, dpr?,             ← 客户端上报（A9-9，web only）
+│          browser?, device_type?,                       ← 服务端由 ua 解析（A9-9）
+│          geo_country?, geo_region?, geo_city? }        ← 服务端由请求 IP 解析（A9-9，原始 IP 不落库）
+│       索引：{ ts: -1 } / { event: 1, ts: -1 } / { user_id: 1, ts: -1 } /
+│              { event: 1, 'props.level_id': 1, ts: -1 } / { session_id: 1 } /
+│              { browser: 1, ts: -1 } / { device_type: 1, ts: -1 } / { geo_country: 1, ts: -1 }
 │       TTL: expireAfterSeconds=0 on ts（配合 expireAt 字段）或 TTL index on ts 90天
 │
 ├── sessions       会话摘要（永久，每 session 一行）
 │       { session_id, user_id?, device_id, platform, os,
 │          started_at: Date, ended_at?: Date, duration_sec?,
-│          scenes_visited[], events_count }
+│          scenes_visited[], events_count,
+│          ua?, screen_w?, screen_h?, dpr?, browser?, device_type?,
+│          geo_country?, geo_region?, geo_city? }
 │       索引：{ started_at: -1 } / { device_id: 1, started_at: -1 }
 │
 └── funnels_daily  每日预聚合（永久，ETL job 每小时跑）
         { date, platform, funnel_step, count, conversion_rate? }
         索引：{ date: -1, platform: 1 }
 ```
+
+关卡/教程/场景细粒度漏斗（§9.7）与设备/地理分布（§9.8）都是**实时聚合查询**（不经 ETL 预聚合），直接查 `events` 集合。
 
 ### 6.3 TTL 策略
 
@@ -549,17 +561,35 @@ cohort（某日活跃设备）
     ↓ level_complete               首通（首个真实关卡）
 ```
 
+### 9.7 细粒度流失漏斗（A9-9）
+
+在 9.1/9.6 的粗粒度漏斗之外，回答「具体卡在哪一关」「教程哪一小步流失」「哪个页面流失」。
+
+**关卡级漏斗** `GET /internal/query?type=level_funnel`：`AnalyticsService.queryLevelFunnel(days, platform?)` 直接对 `level_attempt/level_complete/level_abandon` 按 `props.level_id` 分组统计去重设备数（`attempts/completes/abandons`），按完成率**升序**返回（最容易流失的关卡排最前）。这三个事件早已带 `level_id`，无需新增客户端埋点。ops 页面只展示完成率最低的前 20 关（避免整表刷屏），标题注明截断。
+
+**教程步骤漏斗** `GET /internal/query?type=tutorial_funnel`：新增 100% 采样事件 `tutorial_step`（`props.step_key` ∈ `TUTORIAL_ORDERED_KEYS` = `tutorial_start → orientation_1..7 → beat_unit → beat_building → beat_spell → freeplay → tutorial_complete`），由 `client/src/render/TutorialDirector.ts` 在状态机推进的每一步调用 `TutorialHost.onStepChange`，经 `GameRenderer` → `GameScene` → `game.ts#goTutorial()` 转发为 `analytics.track('tutorial_step', {...})`。cohort = 窗口内出现过 `tutorial_start` 的 session；按 `TUTORIAL_STEPS` 顺序逐步判定 reached，与 9.6 的 cohort 方式一致（而非 9.4 的「各步独立计数」方式）。
+
+**场景/页面级漏斗** `GET /internal/query?type=scene_funnel`：`screen_view` 只 5% 采样（见 9.6 的采样告诫），不足以支撑可靠的按场景漏斗。因此新增 100% 采样事件 `nav_checkpoint`，由 `client/src/analytics/index.ts` 的 `track()` 在 `screen_view` 命中场景白名单 `NAV_CHECKPOINT_SCENES`（`LoginScene/IntroScene/LobbyScene/CampaignMapScene/LevelPrepScene/GameScene`，对应 analyticsvc 的 `SCENE_FUNNEL_SCENES`）时自动补发，覆盖「登录→引导→大厅→选关→备战→开战」核心新客路径。cohort = 窗口内所有 `session_start` 的 session（不限于首次会话）。
+
+三者共用同一套 cohort-funnel 引擎（`AnalyticsService.computeStepFunnel`），ops 页面共用 `renderStepFunnel()` 渲染函数。
+
+### 9.8 设备 / 地理分布（A9-9）
+
+**真实设备信息**：此前 `os` 字段只是 `navigator.platform`（如 "Win32"），无法区分浏览器或移动端/桌面端。客户端新增上报 `ua`（完整 `navigator.userAgent`，微信小游戏侧不发，因为没有 UA 概念）、`screen_w/screen_h/dpr`（屏幕尺寸 + 像素比，微信侧用 `wx.getSystemInfoSync()` 取值）。服务端 `parseUserAgent()`（`analyticsvc/src/service.ts`）在入库时**由服务端解析** `browser`（chrome/safari/firefox/edge/wechat/qqbrowser/opera/…）与 `device_type`（mobile/tablet/desktop）——不信任客户端可能自报的浏览器名。`GET /internal/query?type=browser_dist|device_type_dist` 对应查询，ops 页面新增两张分布卡。
+
+**IP 地理定位**：`server/analyticsvc/src/httpApi.ts` 的 `POST /analytics/events` 从 `X-Forwarded-For`（Caddy 反代自动注入）取客户端 IP，用 `geoip-lite`（离线库，无外部网络调用）解析出 `geo_country/geo_region/geo_city`，仅存解析结果、**不落库原始 IP**。`GET /internal/query?type=geo_dist` 按国家分组，ops 新增「Geo (country) distribution」卡；原有的「Region distribution」卡实际统计的是 `locale`（语言码）而非地理位置，已改名为「Locale distribution」以免混淆。
+
 ---
 
 ## §10 隐私合规
 
 | 原则 | 实现 |
 |---|---|
-| 不收集个人可识别信息 | 事件里无姓名/邮箱/IP；user_id 是内部 accountId（不外泄） |
+| 不收集个人可识别信息 | 事件里无姓名/邮箱；user_id 是内部 accountId（不外泄） |
 | 匿名设备 ID | `device_id` 是 client 本地生成的随机 UUID，不关联真实身份 |
 | 用户可撤回 | 顶层 `enabled` 开关；账号注销时可批量删 `user_id=xxx` 的事件（GDPR） |
 | 微信小游戏 | 不用 `wx.getUserInfo`，不要求隐私授权 |
-| IP 不落库 | analyticsvc 不记录请求 IP |
+| IP 只用于解析、不落库（A9-9 更新） | analyticsvc 用请求 IP 做一次性 `geoip-lite` 查询得到粗粒度国家/地区/城市后即丢弃 IP 本身；`EventDoc`/`SessionDoc` 只存 `geo_country/geo_region/geo_city`，没有任何字段记录原始 IP |
 
 ---
 
