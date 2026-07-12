@@ -84,6 +84,7 @@ export class HeadlessAppViews implements AppViews {
   login?: LoginSceneCallbacks;
   shop?: ShopSceneCallbacks;
   gacha?: GachaSceneCallbacks;
+  battlePass?: BattlePassCallbacks;
   campaignMap?: CampaignMapCallbacks;
   levelPrep?: LevelPrepCallbacks;
   collection?: CollectionCallbacks;
@@ -147,7 +148,7 @@ export class HeadlessAppViews implements AppViews {
   showStats(cb: StatsCallbacks): void { this.screen = 'stats'; this.stats = cb; }
   showAchievements(_cb: AchievementCallbacks): void { this.screen = 'achievements'; }
   showLeaderboard(_cb: LeaderboardCallbacks): void { this.screen = 'leaderboard'; }
-  showBattlePass(_cb: BattlePassCallbacks): void { this.screen = 'battlePass'; }
+  showBattlePass(cb: BattlePassCallbacks): void { this.screen = 'battlePass'; this.battlePass = cb; }
   showTitles(_cb: TitlesSceneCallbacks): void { this.screen = 'titles'; }
   showDaily(cb: DailyCallbacks): void { this.screen = 'daily'; this.daily = cb; }
   showEvents(cb: EventCallbacks): void { this.screen = 'events'; this.events = cb; }

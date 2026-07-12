@@ -159,7 +159,7 @@ export function createResultNav(ctx: AppCtx): ResultNav {
         ? () => { session.close(); state.netSession = null; nav.goRoom({ autoRanked: true }); }
         : undefined;
       const onReturnToLobby = isRanked
-        ? () => { session.close(); state.netSession = null; nav.goLobby(); }
+        ? () => { session.close(); state.netSession = null; nav.goLobby({ fade: true }); } // exiting a match
         : undefined;
       void nav.goResult(
         winner, stats, localOwner, keepReplay(replay), elo, profiles,
@@ -190,7 +190,7 @@ export function createResultNav(ctx: AppCtx): ResultNav {
       },
       onExitToLobby() {
         analytics.track('game_end', { mode: isRanked ? 'pvp_ranked' : 'pvp_friendly', result: 'abandon', duration_sec: Math.round((Date.now() - netGameStartTs) / 1000) });
-        session.close(); nav.goLobby();
+        session.close(); nav.goLobby({ fade: true }); // exiting a match — one of the transitions that cross-fade
       },
     }, { engine, net: true, profiles });
 
@@ -230,11 +230,13 @@ export function createResultNav(ctx: AppCtx): ResultNav {
       ...(profiles ? { profiles } : {}),
       ...(outroText ? { outroText } : {}),
       cb: {
-        onPlayAgain() { (onPlayAgain ?? (() => nav.goLobby()))(); },
+        // Falling through to the lobby (no dedicated "play again") is leaving the match — fades.
+        onPlayAgain() { (onPlayAgain ?? (() => nav.goLobby({ fade: true })))(); },
         // Top-left back chip always exits to the lobby, even when onPlayAgain re-enters a
         // match instead. Reuses onReturnToLobby's session-teardown when the caller supplied
-        // one (e.g. ranked's session.close()); otherwise a plain lobby nav is correct.
-        onBack() { (onReturnToLobby ?? (() => nav.goLobby()))(); },
+        // one (e.g. ranked's session.close()); otherwise a plain lobby nav is correct. Either
+        // way this leaves the match, so it fades.
+        onBack() { (onReturnToLobby ?? (() => nav.goLobby({ fade: true })))(); },
         ...(replay ? { onWatchReplay: () => goReplay(replay) } : {}),
         ...(api ? { onShare: () => void doShareReplay({ winner: winner ?? -1 }) } : {}),
         ...(playAgainLabel ? { playAgainLabel } : {}),

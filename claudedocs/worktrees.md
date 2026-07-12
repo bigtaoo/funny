@@ -21,7 +21,7 @@ feat/<slug>                 ← 分支：提交真正存放处
 
 1. **位置**：所有 worktree 放在 `C:\Users\TaoWang\Documents\funny\.claude\worktrees\<task-slug>\`，已在 `.gitignore` 忽略，不会污染 main。
 2. **命名**：目录名 `<task-slug>` 用短横线短名；对应分支统一 `feat/<task-slug>`（目录名与分支后缀一致，避免错配）。
-3. **主目录 `funny\` = 集成区**：钉在 `main`，用于 review / 合并 / 跑全量。各 feature 一律在自己的 worktree 里做。
+3. **主目录 `funny\` = 集成区**：钉在**当前当日分支**（如 `12.07.2026`），不是字面意义的 `main`；用于 review / 合并 / 跑全量。各 feature 一律在自己的 worktree 里做，不要直接在主目录改动。
 4. **公共依赖先合**：改 `server/contracts` / `@nw/shared` / `@nw/engine` 的分支**最先合 main**，其余分支立刻 `git fetch && git rebase origin/main` 跟上，降冲突。
 5. **干完即删**：`git worktree remove <path>`，分支合并后 `git branch -d feat/<slug>`。
 6. **自管自清**：每个会话管好自己的分支和 worktree，任务结束时自行合并并清理，无需维护全局索引。
@@ -29,8 +29,9 @@ feat/<slug>                 ← 分支：提交真正存放处
 ## 命令速查
 
 ```bash
-# 新建一条并行线（基于 main，分支不存在时一并创建）
-git worktree add -b feat/<slug> .claude/worktrees/<slug> main
+# 新建一条并行线（基于主目录当前钉住的当日分支，分支不存在时一并创建；
+# 把 <day-branch> 换成 `git -C funny branch --show-current` 的实际值，例如 12.07.2026）
+git worktree add -b feat/<slug> .claude/worktrees/<slug> <day-branch>
 
 # 已有分支，只挂目录
 git worktree add .claude/worktrees/<slug> feat/<slug>
@@ -47,5 +48,5 @@ git fetch origin && git rebase origin/main
 
 - worktree 共用同一个 `.git`，分支/历史/对象库全共享；磁盘只多一份工作文件。
 - **同一分支不能被两个 worktree 同时检出**（git 会拒绝）。
-- worktree 内 `npm install` 的 `node_modules` 各自独立（已 gitignore），首次进新 worktree 需各自装依赖。
+- worktree 内 `npm install` 的 `node_modules` 各自独立（已 gitignore）。**但不必每次都重新 `npm install`**：先 `grep "@nw/" <pkg>/package.json` 看该目录（如 `client/`）是不是纯第三方依赖、没有本地 workspace 包（`@nw/shared` 等）——没有的话直接 PowerShell `New-Item -ItemType Junction` 整个 `node_modules` 指到主目录同名目录即可，内容不随分支变化，省下一次完整安装。`server/` 之类含 `@nw/*` 的目录仍按下面陷阱说明单独处理。
 - **⚠️ 陷阱（2026-07-05 实测踩过）：图快用 Junction/符号链接整个 `node_modules` 目录会让 `@nw/*`（npm workspaces 本地包）解析回主仓库**。`server/node_modules/@nw/shared` 等条目本身就是指向主仓库 `server/shared` 的符号链接；如果为了省 `npm install` 直接把整个 `server/node_modules` 挂成 junction 指到主仓库，worktree 里 `import '@nw/shared'` 实际读到的是**主仓库未重建的 `dist/`**，跟 worktree 里改的 `.ts` 源码毫无关系——测试照样"全绿"，因为断言大多是符号引用（`SLG_MAP_W` 等），值对不对都能过，等于验证了个寂寞。正确做法：只把第三方依赖整体挂 junction（内容不随会话变化，挂哪份都一样），`@nw/*` 这几个 workspace 本地包必须单独用 `New-Item -ItemType Junction`（PowerShell；Git Bash 的 `ln -s` 对目录在无权限时会静默退化成一次性拷贝，不会跟着源码实时变，肉眼看不出区别）指向 worktree 自己的 `server/<pkg>`，且改完 `.ts` 后要 `npm run build` 生成新 `dist/`（多数包靠 `main`/`types` 指向编译产物解析，改源码不够）。验证方法：`node -e "console.log(require.resolve('@nw/shared'))"` 看落地路径，或直接 `echo probe > 目标目录/PROBE.txt` 测试链接是否实时生效。

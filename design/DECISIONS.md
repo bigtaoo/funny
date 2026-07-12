@@ -402,3 +402,14 @@
 - **美术缺口**：需新出 6 张城池图 `city_l2/l4/l5/l7/l8/l10`（未就位时按档自动回退，视觉不劣化）。
 - **已知遗留（另起任务）**：编辑器"发布"仍到不了运行中的世界——`worldsvc` `getMap/getTile` 只读 `proceduralTile`，从不读世界创建时克隆进 `mapBaselines` 的模板 tile。让发布真正生效需把 `mapBaselines` 接进热读路径（含 `obstacleKind` 带进 `MapBaselineTileDoc`），是 ADR-034/§24 遗留的独立改动。
 - **为什么是 `obstacleKind` 而非新 `TileType`**：全仓大量 `type === 'obstacle'` 判定（寻路、落城校验、占领）依赖单一类型；加子字段零风险，加新类型要改所有判定点。
+
+## ADR-036 场景切换动画收窄到「进出对局/进出 SLG」四处 + 遮罩改纸色调 — Accepted — 2026-07-12
+
+- **背景**：2026-07-11 为修「大厅 Store→Career 误跳」引入了 `SceneManager.goto()` 全屏黑幕 cross-fade，但**默认对每一次 `goto()` 都生效**——包括大厅各 tab、二级页面、返回按钮之类的普通导航。用户实测体验后反馈：①原黑幕 fade 效果本身不够好看；②不该所有界面切换都有动画，子标签之间也套了一层淡入淡出，观感怪异。参考同类项目 `D:\number`（另一相邻游戏，PixiJS 技术栈一致）的 `sceneCoordinator.ts`：用**暖色纸色调**遮罩（非黑幕）+ 快进慢出（80ms/150ms，线性）实现「闪一下」质感，而非逐场景都套的重手法。
+- **决策**：
+  1. **`SceneManager.goto(scene, opts?)` 默认改为同帧 instant 切换**（不传 `opts` 或 `opts.fade` 为空/false）；仅显式 `{fade:true}` 才走 cross-fade。原来的语义反过来了（原来默认 fade、`{instant:true}` 才跳过）。
+  2. **收窄到 4 个调用点**：`app.ts` 的 `showGame`/`showGameNet`（进入对局）、`showWorldMap`（进入 SLG）永远传 `{fade:true}`；`nav.goLobby({fade:true})` 仅在「离开对局」（对局放弃 `onExitToLobby`、教程完成/跳过、净斗放弃、结算页返回/默认再来一局落地大厅）与「离开 SLG」（`WorldMapScene.onBack`）这些调用点传。其余数十个 `nav.goLobby()` / `manager.goto()` 调用点（商店、装备、成就、排行榜等二级页面的进入/返回）保持不传 `fade`，即默认 instant。
+  3. **遮罩换色 + 缩短时长**：全屏遮罩色从纯黑 `0x000000` 改为纸色 `0xfaf6ee`（与 `sketchUi.ts` 的 `C.paper` 一致，呼应笔记本纸张基调），峰值不透明度从 1.0 降到 0.92（半透明感更轻）；耗时从 120ms/160ms 改为 90ms/180ms（fade-out 更快，fade-in 略慢让「定住」的感觉更足），easing 不变（`easeInOutQuad`）。
+  4. **输入冻结门控范围同步收窄**：`InputGate.suppress` 只在显式 `{fade:true}` 的转场里才启用；instant 切换完全不冻结输入（这是「默认改 instant」的自然推论，不是新增逻辑）。
+- **为什么这样收/为什么这个颜色**：只在「世界感」真的变了的四个转场（对局⇄大厅、SLG⇄大厅）保留过渡感，能让玩家感知"进入了不同的场域"；其余都是同一个大厅/同一套导航层级内的平移，不该有转场仪式感。纸色遮罩是因为游戏全局是手绘笔记本风格（`sketchUi.ts` 的 `C.paper` 背景色），黑幕在这种基调下显得突兀；参考项目证明"半透明色闪一下"比"纯黑全遮罩"更轻量、更贴风格。
+- **影响**：`client/src/scenes/SceneManager.ts`（`GotoOptions.instant`→`GotoOptions.fade`，默认反转，遮罩颜色/时长常量）、`client/src/app.ts`（4 处 `manager.goto(..., {fade:true})`；`showLobby` 新增 `opts?: FadeOpts` 透传）、`client/src/app/AppViews.ts`（新增 `FadeOpts`）、`client/src/app/appCtx.ts` + `client/src/app/nav/{lobby,game,result,world}.ts`（`goLobby` 的 `fade` 选项按上述 4 类调用点显式传 `true`）、`client/test/ui/sceneManager.ui.ts`（按新默认语义重写全部用例）。详见 [`claudedocs/client-modules.md`](../claudedocs/client-modules.md) 场景淡入淡出条目。

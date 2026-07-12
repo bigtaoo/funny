@@ -38,7 +38,8 @@ export interface AppState {
  */
 export interface Nav {
   goIntro(): void;
-  goLobby(opts?: { offline?: boolean; fromResize?: boolean }): void;
+  /** `fade`: cross-fade in — set only when returning here from exiting a match or the SLG world map. */
+  goLobby(opts?: { offline?: boolean; fromResize?: boolean; fade?: boolean }): void;
   goSettings(): void;
   goTitles(back?: () => void): void;
   goLogin(): void;

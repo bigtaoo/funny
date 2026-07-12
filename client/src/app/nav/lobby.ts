@@ -105,7 +105,7 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
     } catch { /* leave the entry hidden on failure */ }
   }
 
-  function goLobby(opts?: { offline?: boolean; fromResize?: boolean }): void {
+  function goLobby(opts?: { offline?: boolean; fromResize?: boolean; fade?: boolean }): void {
     // FTUE step ⑤: on the first lobby entry of this session, redirect to the dedicated tutorial
     // level if it has not been completed (ONBOARDING_DESIGN §2).
     // One-shot gate — subsequent returns to the lobby from child scenes do not re-trigger; resize redraws skip it too.
@@ -164,7 +164,7 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
       onOpenRoom() { analytics.click('lobby.room'); nav.goRoom(); },
       onOpenSocial() { analytics.click('lobby.social'); withGuide('social', 'guide.social.title', 'guide.social.body', () => nav.goFriends()); },
       ...(online ? { onOpenMail: () => nav.goMail() } : {}),
-      onOpenShop() { analytics.click('lobby.shop'); withGuide('shop', 'guide.shop.title', 'guide.shop.body', () => nav.goGacha({})); },
+      onOpenShop() { analytics.click('lobby.shop'); withGuide('shop', 'guide.shop.title', 'guide.shop.body', () => nav.goGacha({ shopBack: () => goLobby() })); },
       ...(online ? { onOpenRecharge: () => nav.goShop(goLobby, 'coins') } : {}),
       ...(online ? { onOpenLeaderboard: () => nav.goLeaderboard(goLobby) } : {}),
       // Lobby "cards" slot → Hero Roster (CHARACTER_CARDS_DESIGN §10). Roster mutations (feed/lock)
@@ -186,7 +186,7 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
       offline: state.offlineMode,
       onLogin: () => nav.goLogin(),
       onLogout: loggedIn ? () => nav.doLogout() : undefined,
-    });
+    }, { fade: opts?.fade });
 
     // Season settlement popup (SE-6): detect first lobby entry after a season transition.
     // Store and compare pvp.seasonNo in localStorage so it survives restarts.

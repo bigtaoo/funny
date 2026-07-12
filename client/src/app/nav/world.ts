@@ -45,7 +45,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
   function goWorldMap(worldApi: WorldApiClient, worldId: string): void {
     state.inLobby = false;
     const view = views.showWorldMap({
-      onBack() { nav.goLobby(); },
+      onBack() { nav.goLobby({ fade: true }); }, // exiting the SLG — one of the transitions that cross-fade
       // Social overlay (world chat tab) — also the entry point to family management,
       // since FriendsScene's family tab already delegates to goFamilyHub once the
       // player has joined a family (§25 HUD relayout: dropped the standalone Family button).

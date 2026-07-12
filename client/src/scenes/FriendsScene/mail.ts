@@ -66,7 +66,7 @@ export function MailMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): TBas
         layer.addChild(gi);
         subjX = tx + giftSz + Math.round(rw * 0.015);
       }
-      const subj = txt(m.subject, Math.round(rh * 0.3), C.dark, true);
+      const subj = txt(mailText(m.subject), Math.round(rh * 0.3), C.dark, true);
       subj.anchor.set(0, 0.5); subj.x = subjX; subj.y = y + rh * 0.34;
       layer.addChild(subj);
       const from = txt(m.fromName || (m.from === 'system' ? t('mail.system') : `#${m.from}`), Math.round(rh * 0.22), C.mid);
@@ -89,14 +89,14 @@ export function MailMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): TBas
       const px = this.cX;
       const panelW = this.cW;
 
-      const subj = txt(m.subject, Math.round(h * 0.034), C.dark, true);
+      const subj = txt(mailText(m.subject), Math.round(h * 0.034), C.dark, true);
       subj.anchor.set(0, 0); subj.x = px; subj.y = top;
       this.container.addChild(subj);
       const from = txt(m.fromName || (m.from === 'system' ? t('mail.system') : `#${m.from}`), Math.round(h * 0.024), C.mid);
       from.anchor.set(0, 0); from.x = px; from.y = top + Math.round(h * 0.05);
       this.container.addChild(from);
 
-      const bodyTxt = new PIXI.Text(m.body, {
+      const bodyTxt = new PIXI.Text(mailText(m.body), {
         fontSize: Math.round(h * 0.026), fill: C.dark, fontFamily: 'monospace',
         wordWrap: true, wordWrapWidth: panelW, breakWords: true,
       });
@@ -151,6 +151,14 @@ function attachmentLabel(a: MailAttachmentView): string {
     return t('mail.attCard', { name: defDisplayName('card', a.instance?.defId ?? ''), lvl: a.instance?.level ?? 0 });
   }
   return t('mail.attItem', { id: a.id ?? '', n });
+}
+
+/** System mail subject/body arrive as i18n keys (e.g. `auction.mail.returned.subject`); player-authored mail
+ *  (friend/family messages) arrives as plain text. Translate if it resolves to a known key, else show as-is. */
+function mailText(raw: string): string {
+  const key = raw as TranslationKey;
+  const s = t(key);
+  return s === key ? raw : s;
 }
 
 /** Localized def display name (`equip.<defId>.name` / `card.<defId>.name`); falls back to the raw defId. */

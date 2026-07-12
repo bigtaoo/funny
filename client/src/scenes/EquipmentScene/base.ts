@@ -114,6 +114,7 @@ export class EquipmentSceneBase {
 
   protected readonly w: number;
   protected readonly h: number;
+  protected readonly landscape: boolean;
   protected readonly cb: EquipmentCallbacks;
 
   protected activeTab: EquipTab = 'inv';
@@ -163,6 +164,7 @@ export class EquipmentSceneBase {
   constructor(layout: ILayout, input: InputManager, cb: EquipmentCallbacks) {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
+    this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
     this.showGroup = !!cb.peerTab;
     this.container = new PIXI.Container();
@@ -281,9 +283,9 @@ export class EquipmentSceneBase {
    * the y where body content (loadout / grid) should start.
    */
   protected renderHeaderRow(): number {
-    const { w } = this;
+    const { w, h, landscape } = this;
     const top = this.headerH;
-    const leftW = sidebarNavW(w);
+    const leftW = sidebarNavW(w, h, landscape);
     const rightX = leftW;
     const rightW = w - leftW;
 

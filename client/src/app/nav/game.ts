@@ -66,7 +66,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
       },
       onExitToLobby() {
         analytics.track('game_end', { mode, result: 'abandon', duration_ticks: 0 });
-        nav.goLobby();
+        nav.goLobby({ fade: true }); // exiting a match — one of the transitions that cross-fade
       },
     }, {
       equippedSkin: saveManager.get().equipped[EQUIP_SLOT] ?? null,
@@ -456,7 +456,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
       },
       onExitToLobby() {
         analytics.track('level_abandon', { level_id: levelId, phase: 'in_game' });
-        nav.goLobby();
+        nav.goLobby({ fade: true }); // exiting a match — one of the transitions that cross-fade
       },
     }, {
       level,
@@ -485,12 +485,12 @@ export function createGameNav(ctx: AppCtx): GameNav {
         saveManager.setFlag(TUTORIAL_DONE_FLAG, true);
         analytics.track('tutorial_complete', { level_id: TUTORIAL_LEVEL_ID });
         // §5 first-win hook: graduation = first win; the daily check-in is surfaced via the lobby red dot, so no additional coin source is added here.
-        nav.goLobby();
+        nav.goLobby({ fade: true }); // exiting a match — one of the transitions that cross-fade
       },
       onExitToLobby() {  // Skip tutorial
         saveManager.setFlag(TUTORIAL_DONE_FLAG, true);
         analytics.track('tutorial_skip', { step: 'tutorial' });
-        nav.goLobby();
+        nav.goLobby({ fade: true }); // exiting a match — one of the transitions that cross-fade
       },
     }, { level, tutorial: true });
   }

@@ -87,6 +87,7 @@ export class CardSceneBase {
 
   protected readonly w: number;
   protected readonly h: number;
+  protected readonly landscape: boolean;
   protected readonly cb: CardCallbacks;
   protected readonly bt = new BusyTracker();
 
@@ -119,6 +120,7 @@ export class CardSceneBase {
   constructor(layout: ILayout, input: InputManager, cb: CardCallbacks) {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
+    this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
     this.showSidebar = !!cb.openEquipmentBag;
     this.container = new PIXI.Container();

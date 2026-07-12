@@ -329,3 +329,27 @@
 - 已用 `tsc --noEmit` + `vitest run --config vitest.ui.config.ts -t CampaignMapScene`（8 例全绿）+ `vitest run test/headless-nav.test.ts`（5 例全绿）验证；未跑游戏截图。
 
 **金币图标来源勘误**（2026-07-06 追加）：§8.4 第 2 条「核实后确认只有一处来源」的结论已过时——`client/src/render/coinIconAtlas.ts` 后来新增了 `buildCoinIcon()`（AI 位图图集，`coin`/`coins`/`coinStack`/`coinSack`/`coinChest` 五档，`ShopScene`/`LobbyScene`/`EquipmentScene`/`CardScene`/`FriendsScene` 均已切过去，文件头注释自称"the single source of truth"），但 `GachaScene.ts`/`BattlePassScene.ts` 顶栏金币图标当时仍直接调 `buildIcon('coin',...)`（程序绘制矢量字形），两页因此显示的是与其它页不同的图标资产。修复：两场景顶栏改调 `buildCoinIcon('coin', balIcon, C.gold)`；`BattlePassScene.ts` 奖励行的金币阶梯图标（`coinIconTier` 返回值）同步改走 `buildCoinIcon`，材料类奖励（`brush`/`lead`/`binding`/`scrap`）仍用 `buildIcon`。`tsc --noEmit` + `webpack --mode development` 验证通过；未跑游戏截图。
+
+---
+
+## 11. 横屏下 `[卡背包|装备]` 侧栏尺寸修正（2026-07-12）
+
+> 状态：**已实现**。用户报「Develop」页（`CardScene`/`EquipmentScene`）横屏下左侧选项卡尺寸不对，并要求横竖屏分开处理、不要顾此失彼。
+
+- **根因**：`HubTabs.ts` 的 `sidebarNavW(w)` 一直是 `w*0.2` 的纯公式，没有任何朝向分支。`ILayout.designWidth`/`designHeight` 在竖屏是 1080×1920，横屏是 1920×1080（含义互换），所以同一条公式在竖屏算出 216px 侧栏，横屏却算出 384px——几乎是竖屏的两倍宽，侧栏占屏比例明显失衡，把正文区域挤窄。`CardSceneBase`/`EquipmentSceneBase` 此前也完全没有 `landscape` 字段（`CityScene`/`AchievementScene` 早就有 `this.landscape = layout.orientation === 'landscape'`，这两个场景没跟上）。
+- **修复**：`sidebarNavW` 改签名为 `(w, h, landscape)`，显式 `if/else` 分支——横屏时按 `h`（横屏下等于短边 1080）算 20%，竖屏时仍按 `w`（竖屏下同样是短边 1080）算 20%，两个分支结果都钉在「手机短边的 20%」，横屏不再借用长边算出双倍宽度；不是共享公式凑合，是两条显式分支分别落在正确的轴上。`CardSceneBase`/`EquipmentSceneBase` 补上 `this.landscape = layout.orientation === 'landscape'`，两者所有调用 `sidebarNavW` 的地方（`CardScene/list.ts`、`EquipmentScene/{base,inventory,craft,assign}.ts`，共 8 处）同步传入 `h`/`landscape`。
+- **验证**：`tsc --noEmit` 通过；另在浏览器里把真实 `CardScene` 单独实例化并渲染（临时在 `app.ts` 挂 `globalThis.__NW_*` 钩子，提交前已移除），分别截图横屏（844×390）与竖屏（390×844）「Hero Roster」页——竖屏截图与用户原始反馈截图一致（未受影响，侧栏 216px 未变），横屏截图侧栏收窄到与竖屏同等比例，`[Hero Roster|Equipment]` 两格都正常成框、不再又宽又扁。
+- **新增回归测试** `client/test/ui/sidebarRailOrientation.ui.ts`（`npm run test:ui`，5 例）：① `sidebarNavW` 纯函数在两种朝向下都钉在短边 20%；② 实例化真实 `CardScene`（`showSidebar` 注入），按渲染出的「Equipment」标签文字定位命中矩形（而非假设数组下标——同 `shopGroupTabs.ui.ts` 的 `findLabelPos`/命中矩形定位法），断言横竖屏下矩形宽度一致；③ 同法覆盖 `EquipmentScene` 的 `[<peer>|Equipment]` 分组栏。验证方法：临时把 `sidebarNavW` 改回旧的纯 `w*0.2` 公式重跑这份测试，4/5 例应声失败（验证测试真的在盯防这个回归，而非碰巧通过）后已还原。同时意外发现：`ILayout` 横屏下的 `designWidth` 并非恒定 1920，会按设备实际宽高比拉伸（只有 `designHeight`=1080 是钉死的短边）——这让"按短边计算"的修复思路比"按 1920 的 20% 硬编码"更正确，因为旧公式在宽高比越极端的设备上会算出比 384 更夸张的侧栏宽度。
+
+---
+
+## 12. 商店红点指向 Gacha 而非真正的月卡领取入口 + 分组页签返回绕经 Shop（2026-07-12）
+
+> 状态：**已实现**。用户报「领取月卡奖励后大厅商店入口红点仍在，点进去啥都没有」；紧接着又报「Shop 分组内任意页签点返回都会先落到 Shop 页签，而不是直接回大厅」。
+
+- **红点误指根因**：大厅商店导航图标 `onOpenShop`（`client/src/app/nav/lobby.ts`）判定红点用的是 `computeShopCardClaimable()`（月卡今日奖励是否可领，见 §? 的 `state.shopCardClaimable`），但点击后实际调用 `nav.goGacha({})` 跳转到 **GachaScene**（抽卡场景），并非真正挂着月卡领取卡片的 **ShopScene**。GachaScene 侧栏虽有一个可跳回 Shop 的「Shop」peer-tab，但该 tab 之前不携带红点——红点判定和红点落地的页面对不上，用户点进去自然看不到任何可领取内容。
+- **红点修复**：`GachaSceneCallbacks` 新增可选 `getShopBadge?(): boolean`；`GachaScene.drawSidebar()` 的 Shop tab 读它决定 `badge`（`client/src/scenes/GachaScene.ts`）。`app/nav/shop.ts` 的 `goGacha()` 在 `inGroup` 时按月卡状态（`subscriptionExpiry`/`subscriptionLastClaimDay`，与 `ShopScene.monthlyCardStatus()` 同一套字段）计算并注入该回调，红点从此跟着真正能领取的地方走。
+- **返回导航根因**：Shop/Coins/Gacha/BattlePass 是同一分组下的平级页签（peer tabs），不是导航栈，但 `goGacha()`/`goBattlePass()` 的物理返回按钮此前统一硬编码 `onBack() { goShop(shopBack); }` —— 不管当前在哪个 peer tab，返回都先跳回 ShopScene 的 Shop 页签，而不是分组的真正来源（大厅/关卡准备页）。且大厅入口 `nav.goGacha({})` 本身没有把来源（`shopBack`）传下去，即使返回按钮直连来源也无处可去。
+- **返回修复**：`app/nav/shop.ts` 的 `goGacha`/`goBattlePass` 的 `onBack` 改为直接调用 `shopBack?.()`（缺省兜底 `goShop()`/`nav.goLobby()`），不再经过 Shop 屏幕；`app/nav/lobby.ts` 的 `onOpenShop` 改为 `nav.goGacha({ shopBack: () => goLobby() })`，把真正的来源（大厅）显式穿透进去。
+- **新增回归测试**：`client/test/ui/shopGroupTabs.ui.ts` 补一条「`getShopBadge` 正确转发到 Gacha 侧栏 Shop tab」的用例（数 `PIXI.Graphics` 节点数佐证徽章确实画出来了）；新增 `client/test/shopNav-backNavigation.test.ts`（4 例，直接驱动真实 `createShopNav`，不经 PIXI/网络）覆盖：大厅直入 Gacha 后返回直连来源而非落在 Shop、从 Shop 打开 Gacha/BattlePass 后返回同样直连来源、`goBattlePass()` 单独调用时的兜底回大厅。`test/harness/HeadlessAppViews.ts` 的 `showBattlePass` 顺带补上和 `showShop`/`showGacha` 一致的回调捕获（之前直接丢弃回调，测试没法按它的返回按钮）。
+- 已用 `tsc --noEmit` + `webpack --mode=production` + 相关 UI/nav 测试（新增两批共 13 例）+ 全量 `vitest run`（68 文件 546 例）验证；纯导航/数据流改动，未跑游戏截图。

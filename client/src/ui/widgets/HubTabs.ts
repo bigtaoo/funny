@@ -124,10 +124,19 @@ export function sidebarItemHeight(h: number): number {
  * narrow for horizontal labels like "Hero Roster"/"Equipment" — they overflowed
  * the cell and were clipped off the left screen edge. This widens the rail to a
  * fifth of the width so the icon-over-label cells fit legibly; callers start body
- * content at `sidebarNavW(w)` instead of `marginLineX(w)` when the rail is shown.
+ * content at `sidebarNavW(w, h, landscape)` instead of `marginLineX(w)` when the
+ * rail is shown.
+ *
+ * `designWidth`/`designHeight` swap meaning between orientations (portrait:
+ * 1080x1920, landscape: 1920x1080 — see ILayout), so pegging the rail to a flat
+ * 20% of `w` made it 216px in portrait but 384px in landscape — nearly double
+ * width for the same two-line labels, crowding out the body content. The rail's
+ * ideal width is a property of the phone's physical short edge, not of whichever
+ * design axis currently happens to be called "width", so landscape must read off
+ * `h` (1080, the short edge there) instead of `w` (1920, the long edge).
  */
-export function sidebarNavW(w: number): number {
-  return Math.round(w * 0.2);
+export function sidebarNavW(w: number, h: number, landscape: boolean): number {
+  return landscape ? Math.round(h * 0.2) : Math.round(w * 0.2);
 }
 
 /**

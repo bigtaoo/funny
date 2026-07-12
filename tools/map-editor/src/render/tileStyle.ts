@@ -32,10 +32,11 @@ export const RES_COLORS: Record<string, number> = {
 // dark; mountain/river also drop to 0.5 alpha so obstacle weaves recede into the paper.
 export const TERRAIN_TEX_ALPHA_DEFAULT = 0.95; // 0.85→0.95 (2026-07-11 legibility pass). Mirrors the game client's tileStyle.ts (parity).
 export const TERRAIN_TEX_ALPHA: Partial<Record<TerrainTextureName, number>> = {
-  // 0.5→0.68→0.8 (2026-07-08, 2026-07-11): obstacles now keep visible texture while staying
-  // softer than land. Mirrors the game client's tileStyle.ts (parity).
-  terrain_mountain: 0.8,
-  terrain_river:    0.8,
+  // 0.5→0.68→0.8→0.92 (2026-07-08, 2026-07-11, 2026-07-12): the paper-blend at 0.8 ate the last of
+  // the contrast the already-downsampled rock/wave linework had left, washing obstacles to a flat
+  // color block. Mirrors the game client's tileStyle.ts (parity).
+  terrain_mountain: 0.92,
+  terrain_river:    0.92,
 };
 
 // Per-resource biome tint for the ground of a `resource` tile — applied by drawEditorTile so
@@ -70,8 +71,8 @@ export function biomeGroundTint(x: number, y: number, seed: number): number {
 export const TERRAIN_TEX_TINT_DEFAULT = 0xffffff;
 export const TERRAIN_TEX_TINT: Partial<Record<TerrainTextureName, number>> = {
   terrain_grass:      0xc8dcb0, // generic land / grass — warm sage, deepened 2026-07-11
-  terrain_river:      0xa9cbe0, // river — cool blue, deepened 2026-07-11 (also at 0.8 alpha)
-  terrain_mountain:   0xb3b7bd, // mountain — cool stone grey, deepened 2026-07-11 (also at 0.8 alpha)
+  terrain_river:      0x8fbadb, // river — cool blue, deepened 2026-07-12 (was 0xa9cbe0 at 0.8 alpha; paired with the 0.92 alpha bump)
+  terrain_mountain:   0xa2a7b0, // mountain — cool stone grey, deepened 2026-07-12 (was 0xb3b7bd at 0.8 alpha; paired with the 0.92 alpha bump)
   terrain_keep:       0xe0c481, // chokepoint keep — warm amber, deepened 2026-07-11
   terrain_center:     0xe6d377, // world center — soft gold, deepened 2026-07-11
   terrain_stronghold: 0xba9a80, // NPC stronghold — muted stone brown, deepened 2026-07-11
@@ -81,6 +82,12 @@ export const TERRAIN_TEX_TINT: Partial<Record<TerrainTextureName, number>> = {
 export function terrainFill(type: TileType, resType?: ResourceType): number {
   if (type === 'resource' && resType) return RES_COLORS[resType] ?? TERRAIN_COLORS.resource!;
   return TERRAIN_COLORS[type] ?? TERRAIN_COLORS.neutral!;
+}
+
+/** Ground texture for a bare obstacle kind — mirrors the game client's tileStyle.ts obstacleTextureName
+ * (SLG map render parity). Used for the edge "shore" wash — see drawEditorTile. */
+export function obstacleTextureName(kind: ObstacleKind): TerrainTextureName {
+  return kind === 'river' ? 'terrain_river' : 'terrain_mountain';
 }
 
 /** Hand-drawn ground texture for a tile type — identical mapping to the game client's terrainTextureName(). */

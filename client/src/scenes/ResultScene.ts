@@ -11,7 +11,7 @@ import { buildDecorCLayer } from '../render/decorCLayer';
 import { getDecorTexture, isDecorReady, decorFrameNames } from '../render/decorAtlas';
 import { bake } from '../render/bake';
 import { Prng } from '../game/math/prng';
-import { drawFloatingBackButton } from '../ui/widgets/SceneHeader';
+import { drawSceneHeader, type SceneHeaderResult } from '../ui/widgets/SceneHeader';
 
 /** Optional player identities for the result screen's tap-to-view profile popup. */
 export interface ResultProfiles {
@@ -216,9 +216,12 @@ export class ResultScene implements Scene {
     // Background — shared hand-drawn notebook page (baked per size).
     this.container.addChild(buildPaperBackground('resultbg', w, h));
 
-    // Top-left back chip — always exits straight to the lobby, independent of
-    // whatever the primary CTA below does (which may re-enter a match instead).
-    this.addBackButton(() => cb.onBack());
+    // Standard title bar (paper chrome + embedded back button), same as every
+    // other secondary scene (e.g. shop) — title is null since the big win/lose
+    // headline below is this scene's title. The back chip always exits straight
+    // to the lobby, independent of whatever the primary CTA below does (which
+    // may re-enter a match instead).
+    const hdr = this.addHeader(() => cb.onBack());
 
     // C-group scattered doodles across the full page (same atlas as lobby background).
     const cLayer = buildDecorCLayer(w, h);
@@ -247,7 +250,7 @@ export class ResultScene implements Scene {
     });
     title.anchor.set(0.5, 0);
     title.x = w / 2;
-    title.y = h * 0.07;
+    title.y = hdr.headerH + h * 0.02;
     this.container.addChild(title);
 
     // Ranked ELO result line (server-authoritative, ranked only).
@@ -536,23 +539,25 @@ export class ResultScene implements Scene {
   }
 
   /**
-   * Standalone top-left back chip (shared {@link drawFloatingBackButton} visuals).
-   * That helper only draws the chip and returns its hit rect — it does not wire
-   * up interactivity, since most callers (e.g. WorldMapRenderer) run their own
-   * manual hit-testing pipeline. This scene uses plain PIXI interactive/pointertap
+   * Standard title bar (shared {@link drawSceneHeader} chrome — paper fill,
+   * accent rule, embedded back pill), same as shop/gacha/equipment/etc. The
+   * helper only draws the chrome and returns the back button's hit rect — it
+   * does not wire up interactivity, since most callers run their own manual
+   * hit-testing pipeline. This scene uses plain PIXI interactive/pointertap
    * everywhere else, so lay a transparent hit-area graphic over the chip instead.
    */
-  private addBackButton(onTap: () => void): void {
-    const { backRect } = drawFloatingBackButton(this.container, this.h);
+  private addHeader(onTap: () => void): SceneHeaderResult {
+    const hdr = drawSceneHeader(this.container, this.w, this.h, null);
     const hit = new PIXI.Graphics();
     hit.beginFill(0x000000, 0.001);
-    hit.drawRect(backRect.x, backRect.y, backRect.w, backRect.h);
+    hit.drawRect(hdr.backRect.x, hdr.backRect.y, hdr.backRect.w, hdr.backRect.h);
     hit.endFill();
     hit.interactive = true;
     hit.cursor = 'pointer';
     hit.name = 'resultBackChip'; // test hook — see test/ui/scenes.ui.ts "top-left back chip"
     hit.on('pointertap', onTap);
     this.container.addChild(hit);
+    return hdr;
   }
 
   /** A-group doodles scattered in the left/right paper margins, mirroring the battle-scene look. */

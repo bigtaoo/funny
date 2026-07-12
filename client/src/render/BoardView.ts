@@ -261,10 +261,6 @@ export class BoardView {
     return this.layout.isOutsideBoard(sx, sy);
   }
 
-  getPlayerBaseRect(): Rect {
-    return this.layout.playerBaseRect();
-  }
-
   // ── Placement highlights ──────────────────────────────────────────────────
 
   /**
@@ -346,16 +342,6 @@ export class BoardView {
     this.highlightLayer.beginFill(HIGHLIGHT_METEOR, 0.30);
     this.highlightLayer.lineStyle(2, HIGHLIGHT_METEOR, 0.9);
     this.highlightLayer.drawRect(r.x, r.y, r.w, r.h);
-    this.highlightLayer.endFill();
-  }
-
-  showBaseUpgradeHighlight(active: boolean): void {
-    this.highlightLayer.clear();
-    if (!active) return;
-    const rect = this.layout.playerBaseRect();
-    this.highlightLayer.beginFill(fx.upgrade, 0.3);
-    this.highlightLayer.lineStyle(2, fx.upgrade, 0.8);
-    this.highlightLayer.drawRect(rect.x, rect.y, rect.w, rect.h);
     this.highlightLayer.endFill();
   }
 

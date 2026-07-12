@@ -26,7 +26,7 @@ export function CraftMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): T
       const full = Object.keys(save.equipmentInv).length >= EQUIPMENT_INV_CAP;
 
       // Cells start right of the sidebar rail; right pad stays one CELL_GAP.
-      const left = sidebarNavW(w) + CELL_GAP;
+      const left = sidebarNavW(w, h, this.landscape) + CELL_GAP;
       const avail = w - left - CELL_GAP;
       const cols = Math.max(1, Math.floor((avail + CELL_GAP) / (EQUIP_CELL_W_TARGET + CELL_GAP)));
       const cellW = (avail - CELL_GAP * (cols - 1)) / cols;

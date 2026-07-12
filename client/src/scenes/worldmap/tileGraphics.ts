@@ -6,10 +6,10 @@ import { getResLevelTexture, getResTexture, isResAtlasReady } from '../../render
 import { getTerrainTexture, isTerrainAtlasReady } from '../../render/terrainAtlasLoader';
 import { getBuildingTexture, isBuildingAtlasReady } from '../../render/buildingAtlasLoader';
 import { isCityAtlasReady } from '../../render/cityAtlasLoader';
-import { FOG_COLOR, ALLY_SECT_BORDER, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT, biomeGroundTint } from './tileStyle';
+import { FOG_COLOR, ALLY_SECT_BORDER, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT, biomeGroundTint, obstacleTextureName } from './tileStyle';
 import type { TerrainTextureName } from '../../render/terrainAtlasLoader';
 import type { WorldTileView } from '../../net/WorldApiClient';
-import { worldSeed, type ProceduralTile } from '@nw/shared';
+import { worldSeed, obstacleShoreAt, type ProceduralTile } from '@nw/shared';
 
 export function drawTileL1(
   g: PIXI.Graphics, tile: WorldTileView | null,
@@ -54,6 +54,31 @@ export function drawTileL1(
   g.drawPolygon(diamondPath(tp - 1));
   g.endFill();
 
+  // Obstacle-edge "shore" wash (2026-07-12): river/mountain bands rasterize as a hard per-tile
+  // boolean, so the hand-drawn obstacle art meeting grass read as an abrupt cut even though the
+  // band's boundary line itself wobbles organically. A tile bordering an obstacle gets a faded
+  // second pass of that obstacle's texture (obstacleShoreAt), softening the cut into a ~1-tile
+  // "bank" fringe instead of reworking the band shapes for sub-tile resolution. Skipped on the
+  // obstacle tile itself (drawn at full strength above) and on bridge/plankway (crossing art
+  // already reads as the spanned terrain). Must stay in lockstep with the map-editor's
+  // drawEditorTile (SLG map render parity).
+  const featTypeForShore = tile?.type ?? proc?.type;
+  if (tex && featTypeForShore !== 'obstacle' && featTypeForShore !== 'bridge' && featTypeForShore !== 'plankway') {
+    const shore = obstacleShoreAt(worldId, tx, ty);
+    if (shore) {
+      const shoreTexName = obstacleTextureName(shore.kind);
+      const shoreTex = isTerrainAtlasReady() ? getTerrainTexture(shoreTexName) : null;
+      if (shoreTex) {
+        const w = tp - 1;
+        const h = w * ISO_RATIO;
+        const m = new PIXI.Matrix(w / shoreTex.width, 0, 0, h / shoreTex.height, -w / 2, -h / 2);
+        g.beginTextureFill({ texture: shoreTex, matrix: m, alpha: shore.alpha, color: TERRAIN_TEX_TINT[shoreTexName] ?? TERRAIN_TEX_TINT_DEFAULT });
+        g.drawPolygon(diamondPath(tp - 1));
+        g.endFill();
+      }
+    }
+  }
+
   // Resource motif overlay: with resourceDensity=1.0 (ADR-032) every open tile is a resource tile,
   // so this paints a per-level heap on every one — dense by design, so the l1–l10 graded art
   // (taller/denser = higher level) reads on the map. Drawn BEFORE the fog return with fogged=false
@@ -62,7 +87,7 @@ export function drawTileL1(
   // addChild sprite, so it renders above the fog wash drawn on this Graphics' own polygon.
   // Must stay in lockstep with the map-editor's drawEditorTile (SLG map render parity).
   if (motifResType) {
-    drawResMotif(g, motifResType, tile?.level ?? proc?.level ?? 1, tp, false);
+    drawResMotif(g, motifResType, tile?.level ?? proc?.level ?? 1, tp, false, tx, ty);
   }
 
   // Overlay landmark buildings for chokepoints / NPC strongholds. Like the ground texture,
@@ -335,12 +360,13 @@ export function drawCityIcon(g: PIXI.Graphics, mine: boolean, ally: boolean, lv:
  * Falls back to a single programmatic shape if the atlas hasn't decoded yet.
  */
 
-export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, tp: number, fogged = false): void {
+export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, tp: number, fogged = false, tx = 0, ty = 0): void {
   const lv = Math.max(1, Math.min(10, level));
   // `g`'s local origin is the tile's diamond center (see drawTileL1); the motif sits
   // centred and slightly low, y-offset flattened (×0.6) so it never pokes past the
   // shallower diamond edges near the tile's left/right tips.
   const toLocal = (fx: number, fy: number): [number, number] => [(fx - 0.5) * tp, (fy - 0.5) * tp * 0.6];
+  const jitter = motifJitter(tx, ty);
 
   // Outside vision: reveal the resource TYPE only — a single dimmed motif (no level detail,
   // which §18 keeps hidden under fog, same as the level dot).
@@ -352,9 +378,11 @@ export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, t
     sp.anchor.set(0.5, 0.5);
     // Generic type frame (tall, w<h) — keep max(w,h) so it stays bounded; 0.40 matches the
     // revealed per-level motif size below so the sprite doesn't jump size when fog clears.
-    sp.scale.set((tp * 0.40) / Math.max(ftex.width, ftex.height));
+    sp.scale.set((tp * 0.40) / Math.max(ftex.width, ftex.height) * jitter.scale);
+    sp.rotation = jitter.rot;
     sp.alpha = 0.35;
     [sp.x, sp.y] = toLocal(0.5, 0.52);
+    sp.x += jitter.dx * tp; sp.y += jitter.dy * tp;
     g.addChild(sp);
     return;
   }
@@ -378,7 +406,17 @@ export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, t
   // bounded. 0.40: shrunk from 0.55→0.48→0.40 to leave clear gaps between adjacent tiles'
   // motifs (resourceDensity=1.0 puts one on every tile), while l1..l10 still read apart.
   const denom = levelTex ? tex.width : Math.max(tex.width, tex.height);
-  sp.scale.set((tp * 0.40) / denom);
+  // Per-tile jitter (2026-07-12, resource-carpet pass): resourceDensity=1.0 puts the SAME
+  // resType/level frame on every tile of a biome region, so at real play zoom (L1) identical
+  // icons tile in a perfectly uniform grid — reads as a printed stamp pattern, not hand-drawn
+  // placement (real-client screenshot at a plain resource patch confirmed this, distinct from
+  // the level-alpha "confetti" issue the 2026-07-11 passes already tuned). motifJitter() gives
+  // each tile a small deterministic (tx,ty)-hashed offset/rotation/scale, same technique as
+  // drawStar's per-vertex wobble — breaks the grid regularity without changing density/alpha/
+  // size tuning from those prior passes. Must stay in lockstep with the map-editor's
+  // drawResMotif (SLG map render parity).
+  sp.scale.set((tp * 0.40) / denom * jitter.scale);
+  sp.rotation = jitter.rot;
   // Value hierarchy by opacity: with resourceDensity=1.0 a heap sits on EVERY tile, so drawing
   // them all at full strength reads as uniform confetti. Fading low-level heaps (and keeping
   // high-level ones solid) lets the eye pick out the tiles worth fighting for — lv1≈0.65 → lv10=1.0.
@@ -387,7 +425,23 @@ export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, t
   // map-editor's drawResMotif (SLG map render parity).
   sp.alpha = 0.65 + 0.35 * ((lv - 1) / 9);
   [sp.x, sp.y] = toLocal(0.5, 0.52);
+  sp.x += jitter.dx * tp; sp.y += jitter.dy * tp;
   g.addChild(sp);
+}
+
+/**
+ * Deterministic per-tile placement jitter for resource motifs (2026-07-12) — same 2D-hash-of-
+ * coordinates technique as drawStar's per-vertex wobble, so identical (tx,ty) always jitters the
+ * same way (no shimmer on redraw/pan) without needing a stored seed. `dx`/`dy` are fractions of
+ * `tp` (small: ±8%/±6%), `rot` in radians (±~14°), `scale` a multiplier (0.88–1.12). Must stay in
+ * lockstep with the map-editor's identical helper (SLG map render parity).
+ */
+export function motifJitter(tx: number, ty: number): { dx: number; dy: number; rot: number; scale: number } {
+  const h1raw = Math.sin(tx * 12.9898 + ty * 78.233) * 43758.5453;
+  const h2raw = Math.sin(tx * 39.346 + ty * 11.135) * 24634.6345;
+  const h1 = h1raw - Math.floor(h1raw);
+  const h2 = h2raw - Math.floor(h2raw);
+  return { dx: (h1 - 0.5) * 0.26, dy: (h2 - 0.5) * 0.18, rot: (h1 - 0.5) * 0.7, scale: 0.85 + h2 * 0.3 };
 }
 
 /** Single programmatic fallback icon when res_atlas is not yet loaded. Draws one small stationery-themed shape. */

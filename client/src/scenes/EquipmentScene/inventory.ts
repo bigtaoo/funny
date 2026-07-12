@@ -34,7 +34,7 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
      * sidebar addendum).
      */
     renderSidebar(): void {
-      const sidebarW = sidebarNavW(this.w);
+      const sidebarW = sidebarNavW(this.w, this.h, this.landscape);
       let y = this.headerH;
 
       if (this.showGroup && this.cb.peerTab) {
@@ -100,7 +100,7 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
 
       const entries = this.buildDisplayEntries(instances, equippedIds);
       // Item cells start right of the sidebar rail; right pad stays one CELL_GAP.
-      const left = sidebarNavW(w) + CELL_GAP;
+      const left = sidebarNavW(w, h, this.landscape) + CELL_GAP;
       const avail = w - left - CELL_GAP;
       const cols = Math.max(1, Math.floor((avail + CELL_GAP) / (EQUIP_CELL_W_TARGET + CELL_GAP)));
       const cellW = (avail - CELL_GAP * (cols - 1)) / cols;

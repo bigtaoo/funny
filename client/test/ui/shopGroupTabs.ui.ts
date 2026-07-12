@@ -126,7 +126,31 @@ describe('GachaScene — shop-group tab bar Coins parity', () => {
     expect(findLabelPos(scene.container, BATTLEPASS)).toBeNull();
     scene.destroy();
   });
+
+  // Regression: the lobby's shop nav icon opens Gacha (not ShopScene), so its red dot was
+  // promising a claimable monthly-card reward that the landed screen had no way to show —
+  // the Shop peer tab here never carried the badge ShopScene itself draws for the same state.
+  it('forwards getShopBadge onto the Shop peer tab', () => {
+    const badgeDotCountBefore = (scene: GachaScene): number =>
+      countGraphics(scene.container);
+    const withBadge = buildGacha({ openShop() {}, getShopBadge: () => true });
+    const withoutBadge = buildGacha({ openShop() {}, getShopBadge: () => false });
+    expect(badgeDotCountBefore(withBadge)).toBeGreaterThan(badgeDotCountBefore(withoutBadge));
+    withBadge.destroy();
+    withoutBadge.destroy();
+  });
 });
+
+/** Rough proxy for "a badge dot got drawn": count PIXI.Graphics nodes in the tree. */
+function countGraphics(container: PIXI.Container): number {
+  let n = 0;
+  const walk = (node: PIXI.Container): void => {
+    if (node instanceof PIXI.Graphics) n++;
+    for (const c of node.children) walk(c as PIXI.Container);
+  };
+  walk(container);
+  return n;
+}
 
 describe('BattlePassScene — shop-group tab bar Coins parity', () => {
   it('shows a Coins tab and routes it to openCoins when wired', () => {

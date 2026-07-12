@@ -13,22 +13,33 @@ export interface Scene {
 
 // ── Transition tuning ──────────────────────────────────────────────────────────
 
-/** Fade-to-black (cover the outgoing scene). */
-const FADE_OUT_MS = 120;
-/** Fade-from-black (reveal the incoming scene). Slightly longer so the reveal reads as settling in. */
-const FADE_IN_MS = 160;
+/**
+ * Paper-tint cover color + peak alpha (translucent, not opaque black) — matches the
+ * notebook-paper look (`sketchUi.ts` C.paper) instead of a jarring hard cut to black.
+ */
+const OVERLAY_COLOR = 0xfaf6ee;
+const OVERLAY_PEAK_ALPHA = 0.92;
+/** Fade-to-cover (hide the outgoing scene). Fast — the cover appearing is the less noticeable half. */
+const FADE_OUT_MS = 90;
+/** Fade-from-cover (reveal the incoming scene). Slower so the reveal reads as settling in. */
+const FADE_IN_MS = 180;
 
 /** Options for a single {@link SceneManager.goto} call. */
 export interface GotoOptions {
-  /** Skip the fade and swap in the same frame. Use for cold start and resize-driven rebuilds. */
-  instant?: boolean;
+  /**
+   * Cross-fade through the paper-tint cover instead of swapping in the same frame. Reserved for
+   * the handful of top-level transitions where the screen genuinely changes "world" (entering/
+   * exiting a match, entering/exiting the SLG world map) — every other navigation (lobby tabs,
+   * sub-screens, back buttons) swaps instantly. Defaults to false.
+   */
+  fade?: boolean;
 }
 
 /**
  * The slice of InputManager the SceneManager needs to freeze pointer input during a fade.
- * Taps bypass PixiJS (fed straight from DOM listeners), so the fade's black cover can't block
- * them — the manager must gate the input source directly, or a tap mid-fade reaches the still-live
- * hit-rects of the outgoing (and pre-constructed incoming) scene and navigates unexpectedly.
+ * Taps bypass PixiJS (fed straight from DOM listeners), so the fade's paper-tint cover can't
+ * block them — the manager must gate the input source directly, or a tap mid-fade reaches the
+ * still-live hit-rects of the outgoing (and pre-constructed incoming) scene and navigates unexpectedly.
  */
 export interface InputGate {
   suppress(on: boolean): void;
@@ -50,8 +61,9 @@ function easeInOutQuad(t: number): number {
  * `app.stage`).  Pass `ScalingManager.gameLayer` as `targetStage` so that all
  * scene content goes through the Contain-scaled game layer.
  *
- * Switching between scenes fades through a full-screen black cover
- * (fade-out → swap → fade-in). This never keeps two scenes mounted at once, so
+ * Most scene switches swap in the same frame (no fade) — that's the default. Passing
+ * `{ fade: true }` cross-fades through a full-screen paper-tint cover instead
+ * (fade-out → swap → fade-in). Either way this never keeps two scenes mounted at once, so
  * the outgoing scene is still destroyed promptly and no scene pays a double
  * construct/render cost mid-transition.
  */
@@ -61,7 +73,7 @@ export class SceneManager {
   /** Set once the current scene's update() has thrown, so we log the fault once instead of every frame. */
   private updateFaulted = false;
 
-  /** Full-screen black cover, attached to `app.stage` (screen pixels) only while a fade is running. */
+  /** Full-screen paper-tint cover, attached to `app.stage` (screen pixels) only while a fade is running. */
   private overlay: PIXI.Graphics | null = null;
   /**
    * Active fade, or null when idle.
@@ -80,13 +92,15 @@ export class SceneManager {
   ) {
     this.targetStage = targetStage ?? app.stage;
     app.ticker.add(this.onTick, this);
-    // First tap during a fade skips it (see skipTransition) rather than being swallowed for the full 280ms.
+    // First tap during a fade skips it (see skipTransition) rather than being swallowed for the full ~270ms.
     this.inputGate?.onSuppressedInput(() => this.skipTransition());
   }
 
   goto(scene: Scene, opts?: GotoOptions): void {
-    // Cold start, or an explicit instant swap: no fade, keep the original semantics.
-    if (opts?.instant || (!this.current && !this.transition)) {
+    // Default (no fade requested), or cold start (nothing to cross-fade from): swap in the same
+    // frame. An instant goto also wins over any fade already in flight — it cancels it outright
+    // rather than queuing another cross-fade.
+    if (!opts?.fade || (!this.current && !this.transition)) {
       this.cancelTransition();
       this.swap(scene);
       this.hideOverlay();
@@ -117,7 +131,7 @@ export class SceneManager {
   private startTransition(incoming: Scene): void {
     this.transition = { phase: 'out', elapsedMs: 0, incoming };
     this.showOverlay(); // starts at alpha 0
-    this.inputGate?.suppress(true); // freeze taps until the fade settles — the black cover can't (input bypasses Pixi)
+    this.inputGate?.suppress(true); // freeze taps until the fade settles — the cover can't (input bypasses Pixi)
   }
 
   /**
@@ -173,7 +187,7 @@ export class SceneManager {
     if (this.queued) { this.destroyScene(this.queued); this.queued = null; }
   }
 
-  /** Create/resize the black cover and put it on top of `app.stage` at alpha 0. */
+  /** Create/resize the paper-tint cover and put it on top of `app.stage` at alpha 0. */
   private showOverlay(): void {
     const w = this.app.screen.width;
     const h = this.app.screen.height;
@@ -182,7 +196,7 @@ export class SceneManager {
       this.overlay.eventMode = 'static'; // swallow taps so nothing is clickable mid-fade
     }
     this.overlay.clear();
-    this.overlay.beginFill(0x000000).drawRect(0, 0, w, h).endFill();
+    this.overlay.beginFill(OVERLAY_COLOR).drawRect(0, 0, w, h).endFill();
     this.overlay.hitArea = new PIXI.Rectangle(0, 0, w, h);
     this.overlay.alpha = 0;
     this.app.stage.addChild(this.overlay); // addChild re-parents to the top each time
@@ -222,17 +236,17 @@ export class SceneManager {
       tr.elapsedMs += deltaMs;
       if (tr.phase === 'out') {
         const t = Math.min(1, tr.elapsedMs / FADE_OUT_MS);
-        this.overlay.alpha = easeInOutQuad(t);
+        this.overlay.alpha = OVERLAY_PEAK_ALPHA * easeInOutQuad(t);
         if (t >= 1) {
-          // Fully black — safe to tear down the old scene and mount the new one unseen.
+          // At peak cover — safe to tear down the old scene and mount the new one unseen.
           this.swap(tr.incoming);
           tr.phase = 'in';
           tr.elapsedMs = 0;
-          this.overlay.alpha = 1;
+          this.overlay.alpha = OVERLAY_PEAK_ALPHA;
         }
       } else {
         const t = Math.min(1, tr.elapsedMs / FADE_IN_MS);
-        this.overlay.alpha = 1 - easeInOutQuad(t);
+        this.overlay.alpha = OVERLAY_PEAK_ALPHA * (1 - easeInOutQuad(t));
         if (t >= 1) {
           this.overlay.alpha = 0;
           this.transition = null;

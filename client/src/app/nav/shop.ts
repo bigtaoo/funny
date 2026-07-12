@@ -209,8 +209,21 @@ export function createShopNav(ctx: AppCtx): ShopNav {
     const bpAvail = !state.offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     const coinsAvail = bpAvail && platform.iapKind() !== null;
     views.showGacha({
-      onBack() { goShop(shopBack); },
-      ...(inGroup ? { openShop: () => goShop(shopBack) } : {}),
+      // Back always leaves the shop group entirely (returns to the origin — lobby / level-prep),
+      // never hops through the Shop tab first: Shop/Coins/Gacha/BattlePass are peers, not a stack.
+      onBack() { if (shopBack) shopBack(); else goShop(); },
+      ...(inGroup ? {
+        openShop: () => goShop(shopBack),
+        // Mirrors ShopScene's own Shop-tab badge (LOBBY_IA_REDESIGN P1.5) so a user who lands in
+        // Gacha via the lobby's shop icon still sees the monthly-card claim indicator on the peer tab.
+        getShopBadge: () => {
+          const m = saveManager.get().monetization;
+          if (!m) return false;
+          if ((m.subscriptionExpiry ?? 0) <= Date.now()) return false;
+          const todayKey = new Date().toISOString().slice(0, 10);
+          return m.subscriptionLastClaimDay !== todayKey;
+        },
+      } : {}),
       ...(inGroup && coinsAvail ? { openCoins: () => goShop(shopBack, 'coins') } : {}),
       ...(inGroup && bpAvail ? { openBattlePass: () => goBattlePass({ shopBack }) } : {}),
       getCoins: () => saveManager.get().wallet.coins,
@@ -310,7 +323,8 @@ export function createShopNav(ctx: AppCtx): ShopNav {
     const shopBack = group?.shopBack;
     const coinsAvail = loggedIn && platform.iapKind() !== null;
     views.showBattlePass({
-      onBack: inGroup ? () => goShop(shopBack) : () => nav.goLobby(),
+      // Same peer-tab rule as Gacha's onBack above: leave the group directly, don't detour through Shop.
+      onBack: () => { if (shopBack) shopBack(); else nav.goLobby(); },
       getCoins: () => saveManager.get().wallet.coins,
       ...(inGroup ? { openShop: () => goShop(shopBack), openGacha: () => goGacha({ shopBack }) } : {}),
       ...(inGroup && coinsAvail ? { openCoins: () => goShop(shopBack, 'coins') } : {}),
