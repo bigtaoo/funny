@@ -70,6 +70,7 @@ function buildShopNav(): Harness {
 }
 
 const claimableMonetization: SaveData['monetization'] = {
+  fatePoints: 0,
   subscriptionExpiry: Date.now() + 1000 * 60 * 60 * 24,
   subscriptionLastClaimDay: '2000-01-01', // long ago → today's claim still pending
   starterUsed: [],
