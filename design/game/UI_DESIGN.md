@@ -116,7 +116,7 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 > - API：`drawSceneHeader(container, w, h, title, opts?)` → `{ headerH, backRect }`。顶栏 chrome（底 + 左上返回 glyph）作为**整块经 §2.1 缓存**（缓存键含 variant/朝向/语言，同类只烘焙一次复用）；标题为每场景动态文本，live 绘制。返回文案统一 `'← ' + t('common.back')`（色 `C.accent`），命中区固定 `{0,0,160,headerH}`。各场景保留自己的 hit 数组，只把 `hdr.backRect` push 进去（不强求统一 hit 结构）。
 >
 > **补充（2026-07-05）**：返回文字底下新增一个**轻量圆角色块**（`buildBackChip`）——`dark` variant 用白色 12% 透明度，`paper` variant 用墨色 8% 透明度，让返回按钮读成一个「按钮」而不是浮在标题栏上的裸文字；不是 §7.5 那种手绘描边的实体按钮框，只是一个衬底色块。同一改动把 `WorldMapScene` 唯一的例外（原来是左下角 HUD 里 88×34 的手绘按钮框，i18n key 是 `world.back`）迁移成新增的 `drawFloatingBackButton(container, h)`：同款色块 + `common.back` 文案，挪到左上角、同一个 `x=10` 缩进，与其余 22 个场景位置对齐；`floating` variant 用不透明的纸色底（92%）以便在地图任意底色上都能看清。至此返回按钮**位置 + 样式**在全部场景统一，无遗留例外。
-> - `title` 传 `null` 时只画 chrome、不画标题（供有副标题需抬升标题的场景自绘，如 CampaignMap）；`opts.titleSize` 用于个别场景的自定义标题字号（Settings/Titles 0.042、Room/Friends 0.04、LevelPrep 0.032）。`opts.headerH` 保留为 API，但**已无任何场景覆盖**（见下「栏高统一（2026-07-08）」），一律走默认 `sceneHeaderHeight`。
+> - `title` 传 `null` 时只画 chrome、不画标题（供有副标题需抬升标题的场景自绘，如 CampaignMap）；`opts.titleSize` 保留为 API，但**已无任何场景覆盖**（见下「标题字号统一（2026-07-12）」），一律走默认 `h*0.034`。`opts.headerH` 同理保留为 API 但**已无任何场景覆盖**（见下「栏高统一（2026-07-08）」），一律走默认 `sceneHeaderHeight`。
 > - `opts.variant`（`'paper'` 默认 / `'dark'`）：`'paper'` = `sketchPanel` 纸面底（`C.paper` 填充 + `C.mid` 手绘边）+ 深色标题；返回在左、标题居中，右侧留空可由调用方在 chrome 之上自绘控件（如 DefenseEditor 的基地等级 stepper、或 `drawHeaderCurrency` 金币条）。`'dark'`（实心深色底 + 白字）为遗留分支，**已无任何场景使用**，仅保留以防显式传参编译报错。
 >
 > **顶栏统一（2026-07-07，`feat/header-unify`）**：此前顶栏分「黑底白字」（13 个大厅系菜单，靠默认 `'dark'`）与「纸底深字」（8 个 SLG/编辑器，显式 `'paper'`）两套，观感割裂（玩家只感到"一会儿黑一会儿白"，感知不到当初的分界逻辑）。本次**全部收敛到 `'paper'`**——手绘笔记本风的本体，且这些场景正文本就全坐在 `buildPaperBackground` 纸面上，翻纸底无缝。做法：把 `drawSceneHeader` 默认 variant 从 `'dark'` 改成 `'paper'`，13 个靠默认值的场景**零改动**自动翻新（标题色随 variant 自动 `C.dark`）。
@@ -131,6 +131,12 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 > **栏高统一（2026-07-08，`feat/header-height-unify`）**：顶栏 chrome 已在 07.07 统一成纸底，但**高度**仍两套——大厅系菜单走默认 `sceneHeaderHeight`（`h*0.12`，如 Shop/Gacha/Settings…），而养成/SLG 系（Card/Equipment/Family/Sect/Teams/DefenseEditor）与 Chat 各自传固定 `headerH`（46/50px）+ 小 `titleSize`（14/15），栏矮字又小，跨页观感割裂（玩家感到"顶部条一会儿高一会儿矮"）。本次把这些场景的 `headerH`/`titleSize` 覆盖**全部删掉**，回落默认——与 Shop **完全一致**（同栏高、同标题字号，只 accent 细线区分分区）。各场景正文布局改从 `drawSceneHeader` 返回的 `hdr.headerH`（存进 `this.headerH`）起算，不再引模块级 `HUD_H`/`HEADER_H` 常量（已删）。
 > - **金币读数保紧凑**：Card/Equipment 的 `drawHeaderCurrency`（金币 + 材料 chip + 容量）用 `scale = 100/headerH` 保持与旧 50px 栏等价的绝对尺寸——栏变高但读数不随之放大，避免 4 个 chip 在 1080 宽竖屏溢出；两者互为 [卡牌|装备] 对开页，取同一 scale 以免切换时读数跳变。单币场景（Shop 等）仍用默认 scale=1。
 > - AuctionScene 已于 08.07 先行迁到默认高度（`sceneHeaderHeight`），本次不再重复。
+>
+> **返回按钮放大 1.5x + 标题字号统一（2026-07-12）**：
+> - **返回按钮放大**：`backSize(h)` 从 `h*0.026` 改为 `h*0.039`（1.5×），驱动 `drawSceneHeader`/`drawFloatingBackButton` 两条路径，全场景（含悬浮版）一次性放大，无需逐场景改。
+> - **标题字号统一**：此前 5 个场景显式传 `titleSize` 覆盖默认值——`Settings`/`Titles` 0.042、`Room`/`Friends` 0.04、`LevelPrep` 0.032——跨页字号不一致。本次删掉这 5 处覆盖，全部回落默认 `h*0.034`，与 Shop/Gacha/Equipment 等场景完全一致。
+> - **EventScene 补迁**：`EventScene` 此前完全绕开 `SceneHeader`，自绘标题（`h*0.045`）与返回文字（`h*0.032`，位置 `x=w*0.05,y=h*0.04`，私有 i18n key `event.back`），是唯一未接入共享组件的二级场景。本次改用 `drawSceneHeader(this.container, w, h, t('event.title'))`，回退按钮/标题/栏高与其余场景完全一致；`event.back` i18n key 不再使用（未删，供未来复用）。
+> - **未动**：Card/Equipment 的 `drawHeaderCurrency` 紧凑 scale（`100/headerH`，见上「栏高统一」条目）——两场景互为对开页且有明确的溢出规避理由，不属于本次"跨页不一致"的范畴，维持现状。
 
 ---
 

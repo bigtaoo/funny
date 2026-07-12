@@ -300,7 +300,7 @@ export class RoomScene implements Scene {
   private drawHeader(): void {
     const { w, h } = this;
     const titleKey = this.view === 'searching' ? 'room.rankedTitle' : 'room.title';
-    const hdr = drawSceneHeader(this.container, w, h, t(titleKey), { titleSize: Math.round(h * 0.04) });
+    const hdr = drawSceneHeader(this.container, w, h, t(titleKey));
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.onBack() });
   }
