@@ -5,11 +5,31 @@ import type { ShopActionResult } from '../../scenes/ShopScene';
 import { withTimeout, TimeoutError } from '../../ui/busyTracker';
 import type { AppCtx, Nav } from '../appCtx';
 import { log, TOKEN_KEY } from '../appConstants';
+import { hasBattlePassClaimable } from '../../game/meta/battlepass';
 
 type ShopNav = Pick<Nav, 'goShop' | 'goGacha' | 'goDaily' | 'goEvents' | 'goBattlePass'>;
 
 export function createShopNav(ctx: AppCtx): ShopNav {
   const { api, saveManager, platform, state, views, nav, featureFlags } = ctx;
+
+  /**
+   * Mirrors ShopScene's own Shop-tab badge (LOBBY_IA_REDESIGN P1.5): true when the monthly/year
+   * card is active and today's daily reward is still unclaimed. Shared by every peer tab
+   * (Gacha/BattlePass) so a user who lands there via the lobby's shop icon still sees the
+   * monthly-card claim indicator on the Shop tab, wherever they are in the group.
+   */
+  function shopCardBadgeClaimable(): boolean {
+    const m = saveManager.get().monetization;
+    if (!m) return false;
+    if ((m.subscriptionExpiry ?? 0) <= Date.now()) return false;
+    const todayKey = new Date().toISOString().slice(0, 10);
+    return m.subscriptionLastClaimDay !== todayKey;
+  }
+
+  /** Mirrors the Shop-tab badge helper above, for the BattlePass peer tab's claimable-level-reward dot. */
+  function battlePassBadgeClaimable(): boolean {
+    return hasBattlePassClaimable(saveManager.get().battlePass);
+  }
 
   /**
    * Real coin recharge (COMMERCIAL_DESIGN §IAP client). Branches on the platform store:
@@ -191,7 +211,7 @@ export function createShopNav(ctx: AppCtx): ShopNav {
       // Shop group peer tabs (LOBBY_IA_REDESIGN P1.5): gacha / battle pass promoted to top tabs;
       // threading shopBack lets all three pages navigate to each other and return to the same origin (lobby / level-prep).
       openGacha() { goGacha({ shopBack: onBack }); },
-      ...(shopLoggedIn ? { openBattlePass: () => goBattlePass({ shopBack: onBack }) } : {}),
+      ...(shopLoggedIn ? { openBattlePass: () => goBattlePass({ shopBack: onBack }), getBattlePassBadge: battlePassBadgeClaimable } : {}),
     });
   }
 
@@ -212,20 +232,9 @@ export function createShopNav(ctx: AppCtx): ShopNav {
       // Back always leaves the shop group entirely (returns to the origin — lobby / level-prep),
       // never hops through the Shop tab first: Shop/Coins/Gacha/BattlePass are peers, not a stack.
       onBack() { if (shopBack) shopBack(); else goShop(); },
-      ...(inGroup ? {
-        openShop: () => goShop(shopBack),
-        // Mirrors ShopScene's own Shop-tab badge (LOBBY_IA_REDESIGN P1.5) so a user who lands in
-        // Gacha via the lobby's shop icon still sees the monthly-card claim indicator on the peer tab.
-        getShopBadge: () => {
-          const m = saveManager.get().monetization;
-          if (!m) return false;
-          if ((m.subscriptionExpiry ?? 0) <= Date.now()) return false;
-          const todayKey = new Date().toISOString().slice(0, 10);
-          return m.subscriptionLastClaimDay !== todayKey;
-        },
-      } : {}),
+      ...(inGroup ? { openShop: () => goShop(shopBack), getShopBadge: shopCardBadgeClaimable } : {}),
       ...(inGroup && coinsAvail ? { openCoins: () => goShop(shopBack, 'coins') } : {}),
-      ...(inGroup && bpAvail ? { openBattlePass: () => goBattlePass({ shopBack }) } : {}),
+      ...(inGroup && bpAvail ? { openBattlePass: () => goBattlePass({ shopBack }), getBattlePassBadge: battlePassBadgeClaimable } : {}),
       getCoins: () => saveManager.get().wallet.coins,
       getPity: (poolId) => saveManager.get().gacha.pity[poolId] ?? 0,
       getFatePoints: () => saveManager.get().monetization?.fatePoints ?? 0,
@@ -326,7 +335,7 @@ export function createShopNav(ctx: AppCtx): ShopNav {
       // Same peer-tab rule as Gacha's onBack above: leave the group directly, don't detour through Shop.
       onBack: () => { if (shopBack) shopBack(); else nav.goLobby(); },
       getCoins: () => saveManager.get().wallet.coins,
-      ...(inGroup ? { openShop: () => goShop(shopBack), openGacha: () => goGacha({ shopBack }) } : {}),
+      ...(inGroup ? { openShop: () => goShop(shopBack), getShopBadge: shopCardBadgeClaimable, openGacha: () => goGacha({ shopBack }) } : {}),
       ...(inGroup && coinsAvail ? { openCoins: () => goShop(shopBack, 'coins') } : {}),
       ...(loggedIn
         ? {

@@ -46,6 +46,8 @@ export interface BattlePassCallbacks {
   /** Navigate to the shop's Coins tab. Only injected when a real IAP recharge route is available. */
   openCoins?(): void;
   openGacha?(): void;
+  /** Whether the Shop peer tab has an unclaimed monthly-card reward (mirrors ShopScene's own Shop-tab badge, LOBBY_IA_REDESIGN P1.5). */
+  getShopBadge?(): boolean;
 }
 
 interface Hit { rect: Rect; fn: () => void; }
@@ -167,7 +169,7 @@ export class BattlePassScene implements Scene {
   private drawSidebar(tbH: number): void {
     if (!this.cb.openShop) return;
     const { w, h, landscape } = this;
-    const tabs: HubTab[] = [{ label: t('shop.title'), active: false, icon: 'tag' }];
+    const tabs: HubTab[] = [{ label: t('shop.title'), active: false, icon: 'tag', badge: this.cb.getShopBadge?.() ?? false }];
     const actions: Array<() => void> = [() => this.cb.openShop?.()];
     if (this.cb.openCoins) {
       tabs.push({ label: t('shop.coinsTab'), active: false, icon: 'coin' });

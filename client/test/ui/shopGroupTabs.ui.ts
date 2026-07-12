@@ -17,6 +17,7 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { GachaScene, type GachaSceneCallbacks } from '../../src/scenes/GachaScene';
 import { BattlePassScene, type BattlePassCallbacks } from '../../src/scenes/BattlePassScene';
+import { ShopScene, type ShopSceneCallbacks } from '../../src/scenes/ShopScene';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -80,6 +81,18 @@ function buildBattlePass(cb: Partial<BattlePassCallbacks>): BattlePassScene {
   });
 }
 
+function buildShop(cb: Partial<ShopSceneCallbacks>): ShopScene {
+  return new ShopScene(createLayout(800, 1280), new InputManager(), {
+    onBack() {},
+    getCoins: () => 1000,
+    getOwnedSkins: () => [],
+    loadItems: async () => [],
+    buy: async () => ({ ok: true }),
+    openGacha() {},
+    ...cb,
+  });
+}
+
 describe('GachaScene — shop-group tab bar Coins parity', () => {
   it('shows a Coins tab and routes it to openCoins when wired', () => {
     let openedCoins = 0;
@@ -136,6 +149,17 @@ describe('GachaScene — shop-group tab bar Coins parity', () => {
     const withBadge = buildGacha({ openShop() {}, getShopBadge: () => true });
     const withoutBadge = buildGacha({ openShop() {}, getShopBadge: () => false });
     expect(badgeDotCountBefore(withBadge)).toBeGreaterThan(badgeDotCountBefore(withoutBadge));
+    withBadge.destroy();
+    withoutBadge.destroy();
+  });
+
+  // Regression (2026-07-12, found alongside the DailyScene sidebar-badge gap): the BattlePass
+  // peer tab here never read any badge at all — a claimable battle-pass level was invisible
+  // unless the user happened to already be standing in BattlePassScene itself.
+  it('forwards getBattlePassBadge onto the BattlePass peer tab', () => {
+    const withBadge = buildGacha({ openShop() {}, openBattlePass() {}, getBattlePassBadge: () => true });
+    const withoutBadge = buildGacha({ openShop() {}, openBattlePass() {}, getBattlePassBadge: () => false });
+    expect(countGraphics(withBadge.container)).toBeGreaterThan(countGraphics(withoutBadge.container));
     withBadge.destroy();
     withoutBadge.destroy();
   });
@@ -197,5 +221,28 @@ describe('BattlePassScene — shop-group tab bar Coins parity', () => {
     expect(findLabelPos(scene.container, SHOP)).toBeNull();
     expect(findLabelPos(scene.container, GACHA)).toBeNull();
     scene.destroy();
+  });
+
+  // Regression (2026-07-12): unlike GachaScene's Shop tab (which already forwards getShopBadge),
+  // BattlePassScene's own Shop tab never had a getShopBadge field at all — landing in BattlePass
+  // via the lobby's shop icon never showed the monthly-card claim indicator on the peer tab.
+  it('forwards getShopBadge onto the Shop peer tab', () => {
+    const withBadge = buildBattlePass({ openShop() {}, getShopBadge: () => true });
+    const withoutBadge = buildBattlePass({ openShop() {}, getShopBadge: () => false });
+    expect(countGraphics(withBadge.container)).toBeGreaterThan(countGraphics(withoutBadge.container));
+    withBadge.destroy();
+    withoutBadge.destroy();
+  });
+});
+
+describe('ShopScene — BattlePass peer tab badge', () => {
+  // Regression (2026-07-12): ShopScene's own [Shop|Coins|Gacha|BattlePass] sidebar never read
+  // any badge for the BattlePass tab either — same gap as GachaScene's, fixed together.
+  it('forwards getBattlePassBadge onto the BattlePass peer tab', () => {
+    const withBadge = buildShop({ openBattlePass() {}, getBattlePassBadge: () => true });
+    const withoutBadge = buildShop({ openBattlePass() {}, getBattlePassBadge: () => false });
+    expect(countGraphics(withBadge.container)).toBeGreaterThan(countGraphics(withoutBadge.container));
+    withBadge.destroy();
+    withoutBadge.destroy();
   });
 });

@@ -221,7 +221,7 @@ POST /retention/weekly/claim            (JWT) { tier:1|2|3 } → { save, granted
 - **返回按钮统一（2026-07-07）**：DailyScene 原自绘 `daily.back` 文本按钮换成全局统一的浮动返回胶囊（`drawFloatingBackButton`，`common.back`），置于左上角装订线左侧；`daily.back` i18n key 已删（中英德三份）。
 - **周常**（P1）：周活跃进度条 + 三档宝箱。
 - **红点**：入口 + 各层三级红点，源于任一 claimable（§4.1）。
-- **DailyScene 侧栏 Tab 红点补齐（2026-07-12）**：竖排 Tab 侧栏（月历/任务）此前只有大厅入口红点，两个 Tab 本身没有红点，玩到 3/3 任务点满但未领取时侧栏看不出还有奖励可领。`DailyScene.drawSidebarTabs` 现在把 `nextCheckinDay`/`dailyRewardClaimable` 结果传给 `HubTab.badge`（`HubTabs.ts` 早已支持该字段，只是没接上）。
+- **DailyScene 侧栏 Tab 红点补齐（2026-07-12）**：竖排 Tab 侧栏（月历/任务）此前只有大厅入口红点，两个 Tab 本身没有红点，玩到 3/3 任务点满但未领取时侧栏看不出还有奖励可领。`DailyScene.drawSidebarTabs` 现在把 `nextCheckinDay`/`dailyRewardClaimable` 结果传给 `HubTab.badge`（`HubTabs.ts` 早已支持该字段，只是没接上）。测试见 `client/test/retention.test.ts`。同组页签（Shop/Gacha/BattlePass）的同类漏洞排查见 [`LOBBY_IA_REDESIGN.md` §12 追记](LOBBY_IA_REDESIGN.md)。
 - **i18n**：新增 `retention.*`（签到/任务/周常/领取/已领/进度/大奖），中英双语；**禁韩文**（见 memory）。
 - 离线/未登录：显「登录后查看」（同 StatsScene 既有处理）。
 

@@ -56,6 +56,8 @@ export interface ShopSceneCallbacks {
    * Tapping navigates to BattlePassScene (back returns to the shop).
    */
   openBattlePass?(): void;
+  /** Whether the BattlePass peer tab has a claimable level reward at the current XP (mirrors GachaScene's own peer-tab badges, LOBBY_IA_REDESIGN P1.5). */
+  getBattlePassBadge?(): boolean;
   /**
    * Initiate a Paddle coin-recharge checkout for the given tier ID (e.g. 't499').
    * Implementation calls /shop/paddle/checkout to get a transactionId, then opens Paddle.js.
@@ -316,7 +318,9 @@ export class ShopSceneBase {
     ];
     if (showCoins) tabs.push({ label: t('shop.coinsTab'), active: this.tab === 'coins', icon: 'coin' });
     tabs.push({ label: t('gacha.title'), active: false, icon: 'capsule' });
-    if (this.cb.openBattlePass) tabs.push({ label: t('battlepass.title'), active: false, icon: 'trophy' });
+    if (this.cb.openBattlePass) {
+      tabs.push({ label: t('battlepass.title'), active: false, icon: 'trophy', badge: this.cb.getBattlePassBadge?.() ?? false });
+    }
 
     const switchTab = (tab: 'shop' | 'coins') => { this.tab = tab; this.scrollY = 0; this.render(); };
     const { hits } = drawSidebarTabs(this.container, sidebarW, tbH, h, tabs, (i) => {
