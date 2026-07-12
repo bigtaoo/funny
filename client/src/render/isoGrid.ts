@@ -24,8 +24,11 @@ export function tileToScreen(tx: number, ty: number, tileW: number): { x: number
 
 /**
  * Inverse of tileToScreen — exact fractional tile coordinates for a pan-relative screen point.
- * Because the projection is a linear (affine) map, `Math.floor` on both components of the
+ * Because the projection is a linear (affine) map, `Math.round` on both components of the
  * result gives the correct containing tile — no special diamond point-in-polygon test needed.
+ * (`tileToScreen` returns each tile's CENTER, so in this fractional space a tile's diamond
+ * covers the range `[tx-0.5, tx+0.5)` around its integer coordinate, not `[tx, tx+1)` — using
+ * `Math.floor` here would pick the tile half a cell away from the one actually clicked.)
  */
 export function screenToTileF(sx: number, sy: number, tileW: number): { x: number; y: number } {
   const hw = tileW / 2;
@@ -38,7 +41,7 @@ export function screenToTileF(sx: number, sy: number, tileW: number): { x: numbe
 /** Integer tile under a pan-relative screen point. */
 export function screenToTile(sx: number, sy: number, tileW: number): { x: number; y: number } {
   const f = screenToTileF(sx, sy, tileW);
-  return { x: Math.floor(f.x), y: Math.floor(f.y) };
+  return { x: Math.floor(f.x + 0.5), y: Math.floor(f.y + 0.5) };
 }
 
 /**
