@@ -34,7 +34,7 @@
     {
       "name": "ops",
       "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "npm", "run", "start", "--prefix", "D:\\funny\\.claude\\worktrees\\slg-shop-admin-config\\tools\\ops"],
+      "runtimeArgs": ["/c", "npm", "run", "start", "--prefix", "D:\\funny\\tools\\ops"],
       "port": 9093
     }
   ]
