@@ -1637,6 +1637,7 @@ if (path.startsWith('/admin/world/')) {
 - `WorldMapInput.ts`：开始拖拽 / 松手判定点击瓦片的两处 `y < h - HUD_H` 判断加上 `y > topInset` 下界，避免点在标题栏范围内的点按穿透到地图瓦片（原浮层返回按钮不挡地图交互，现在整条标题栏是不透明纸面，得同步收紧命中区）。
 - `WorldMapPanels.renderHud()`：右上角状态卡/行军角标/World-info 竖排原来固定从 `y=8` 起画，现在改成 `topInset + 8`——否则会被新标题栏整个盖住。左上 Zoom/Auction 竖排本来就用 `ctx.backRect.y + backRect.h` 接续，`drawSceneHeader` 返回的 `backRect.h` 现在是整条标题栏高度而非胶囊高度，天然接在标题栏下方，未改代码。
 - 验证：`tsc --noEmit -p tsconfig.test.json` + `webpack --mode production` 全绿；用临时调试钩子（`app.ts` 挂 `globalThis.__NW_APP`/`__NW_SceneHeader`/`__NW_WorldMapPanels`，验证后已移除）单独构造假 `ctx` 调 `drawSceneHeader`+`WorldMapPanels.renderHud()`，截图确认标题栏高度与关卡一致、右上状态卡/左上 Zoom-Auction 都清晰落在标题栏下方、无重叠。
+- 回归测试：`client/test/worldMapCameraTopInset.test.ts`（纯逻辑，走默认 `npm test`，`ViewportMixin` 混进一个不依赖 `@nw/shared` 的假 base 类以避开默认 vitest 配置的 game-logic-only 别名范围）5 例，覆盖 `clampPan`（小地图居中到 `[topInset, bottom]` 中点、大地图夹到 `[topInset, bottom]` 而非 `[0, bottom]`）、`centerAt`、`viewportCenter`、`setZoom` 四处相机数学在 `topInset` 变化时确实跟着变（而非被悄悄忽略）。`client/test/ui/worldMapHeaderInset.ui.ts`（PIXI headless，走 `test:ui`）7 例，覆盖 `WorldMapInput` 的拖拽起始/点击判定在标题栏范围内（`y<topInset`）不再穿透到地图、`WorldMapPanels.renderHud()` 右列状态卡随 `topInset` 等量下移。随 `npm test`（78 文件 603 例）+ `npm run test:ui`（20 文件 261 例）全绿一并跑通。
 
 ---
 
