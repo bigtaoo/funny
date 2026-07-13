@@ -27,8 +27,11 @@ import { BusyTracker } from '../../ui/busyTracker';
 import type { SaveData, CardInstance } from '../../game/meta/SaveData';
 import type { CardSLGState } from '../../net/WorldApiClient';
 import { cardPower } from '../../game/meta/cardDefs';
+import type { UnitType } from '../../game/types';
 
 export type CardActionResult = { ok: true } | { ok: false; key: TranslationKey };
+
+export type CardSceneTab = 'list' | 'skins';
 
 export interface CardCallbacks {
   onBack(): void;
@@ -41,13 +44,20 @@ export interface CardCallbacks {
   setCardLock(cardInstanceId: string, locked: boolean): Promise<CardActionResult>;
   /** Recover an injured card by spending coins. Only present when in SLG context. */
   recoverCard?(cardInstanceId: string): Promise<CardActionResult>;
-  /** Navigate to equipment scene for a specific card. */
+  /** Navigate to equipment scene for a specific card. Absent offline (E5 is server-authoritative). */
   openEquipment?(cardInstanceId: string): void;
   /**
    * Open the equipment bag as a peer of the roster (LOBBY_IA_REDESIGN). When injected, a
    * [Cards|Equipment] group tab strip is shown; tapping Equipment enters the bag (no active card).
+   * Absent offline.
    */
   openEquipmentBag?(): void;
+  /** Owned skin ids (server-authoritative inventory; readable offline from the local mirror). */
+  getOwnedSkins(): string[];
+  /** Currently equipped skin id for a character, or null for the default look (LOBBY_IA_REDESIGN §15). */
+  getEquippedSkin(unitType: UnitType): string | null;
+  /** Equip a skin on a character, or null to revert to the default look. */
+  equipSkin(unitType: UnitType, skinId: string | null): void;
 }
 
 export const MODAL_DIM = 0x000000;
@@ -109,8 +119,16 @@ export class CardSceneBase {
   protected detailId: string | null = null;
   protected scrollY = 0;
   protected dragStart: { x: number; y: number; scroll: number } | null = null;
-  /** Whether the [Cards|Equipment] sidebar nav is shown; only when openEquipmentBag is injected. */
-  protected readonly showSidebar: boolean;
+  /** [Cards|Equipment?|Skins] sidebar nav — always shown (Skins is always reachable, LOBBY_IA_REDESIGN §15). */
+  protected readonly showSidebar = true;
+  /** Active content tab: the card grid, or the skins wardrobe. */
+  protected tab: CardSceneTab = 'list';
+  /** Detail modal portrait flip state (front = art, back = lore) — tap the portrait to flip. */
+  protected detailFlipped = false;
+  /** Detail modal: whether the skin picker popover is open. */
+  protected skinPickerOpen = false;
+  /** Removes the in-flight portrait flip's PIXI.Ticker.shared listener, if any (avoids leaking it across re-renders/destroy). */
+  protected flipTickerCleanup: (() => void) | null = null;
 
   protected toastTimer = 0;
   protected destroyed = false;
@@ -123,7 +141,6 @@ export class CardSceneBase {
     this.h = layout.designHeight;
     this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
-    this.showSidebar = !!cb.openEquipmentBag;
     this.container = new PIXI.Container();
     this.build();
     this.render();
@@ -172,9 +189,10 @@ export class CardSceneBase {
 
     this.renderHeaderCurrency();
     this.renderSidebar();
-    this.renderList();
+    if (this.tab === 'skins') this.renderSkinsTab();
+    else this.renderList();
 
-    if (this.detailId) this.openDetail(this.detailId);
+    if (this.tab === 'list' && this.detailId) this.openDetail(this.detailId);
     else if (this.modalOpen) this.closeModal();
 
     if (this.bt.loadingVisible) drawLoadingOverlay(this.loadingLayer, this.w, this.h, this.bt.dots, t('common.processing'));
@@ -202,10 +220,14 @@ export class CardSceneBase {
 
   protected closeDetail(): void {
     this.detailId = null;
+    this.detailFlipped = false;
+    this.skinPickerOpen = false;
     this.closeModal();
   }
 
   protected closeModal(): void {
+    this.flipTickerCleanup?.();
+    this.flipTickerCleanup = null;
     this.modalLayer.removeChildren();
     this.modalHits = [];
     this.modalOpen = false;
@@ -273,6 +295,8 @@ export class CardSceneBase {
 
   destroy(): void {
     this.destroyed = true;
+    this.flipTickerCleanup?.();
+    this.flipTickerCleanup = null;
     for (const u of this.unsubs) u();
     this.unsubs.length = 0;
     this.container.destroy({ children: true });
@@ -295,4 +319,5 @@ export interface CardSceneBase {
   doFeed(targetId: string, materialIds: string[]): Promise<void>;
   doSetLock(cardId: string, locked: boolean): Promise<void>;
   doRecover(cardId: string): Promise<void>;
+  renderSkinsTab(): void;
 }

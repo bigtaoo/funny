@@ -27,7 +27,7 @@ import type { ShopSceneCallbacks } from '../../src/scenes/ShopScene';
 import type { GachaSceneCallbacks } from '../../src/scenes/GachaScene';
 import type { CampaignMapCallbacks } from '../../src/scenes/CampaignMapScene';
 import type { LevelPrepCallbacks } from '../../src/scenes/LevelPrepScene';
-import type { CollectionCallbacks } from '../../src/scenes/CollectionScene';
+import type { CardCodexCallbacks } from '../../src/scenes/CardCodexScene';
 import type { CardCallbacks } from '../../src/scenes/CardScene';
 import type { EquipmentCallbacks } from '../../src/scenes/EquipmentScene';
 import type { StatsCallbacks } from '../../src/scenes/StatsScene';
@@ -56,7 +56,7 @@ import type { CitySceneCallbacks } from '../../src/scenes/CityScene';
 
 export type ScreenName =
   | 'none' | 'intro' | 'lobby' | 'settings' | 'login' | 'shop' | 'gacha'
-  | 'campaignMap' | 'levelPrep' | 'collection' | 'cardRoster' | 'equipment' | 'stats' | 'achievements'
+  | 'campaignMap' | 'levelPrep' | 'cardCodex' | 'cardRoster' | 'equipment' | 'stats' | 'achievements'
   | 'leaderboard' | 'battlePass' | 'replay' | 'result' | 'room' | 'friends'
   | 'chat' | 'gameNet' | 'game' | 'worldMap' | 'family' | 'sect' | 'auction' | 'defenseEditor' | 'teams' | 'deckBuilder'
   | 'consent' | 'daily' | 'events' | 'statePlayer' | 'titles' | 'city';
@@ -87,7 +87,7 @@ export class HeadlessAppViews implements AppViews {
   battlePass?: BattlePassCallbacks;
   campaignMap?: CampaignMapCallbacks;
   levelPrep?: LevelPrepCallbacks;
-  collection?: CollectionCallbacks;
+  cardCodex?: CardCodexCallbacks;
   cardRoster?: CardCallbacks;
   equipment?: EquipmentCallbacks;
   stats?: StatsCallbacks;
@@ -142,7 +142,7 @@ export class HeadlessAppViews implements AppViews {
   showGacha(cb: GachaSceneCallbacks): void { this.screen = 'gacha'; this.gacha = cb; }
   showCampaignMap(cb: CampaignMapCallbacks): void { this.screen = 'campaignMap'; this.campaignMap = cb; }
   showLevelPrep(cb: LevelPrepCallbacks): void { this.screen = 'levelPrep'; this.levelPrep = cb; }
-  showCollection(cb: CollectionCallbacks): void { this.screen = 'collection'; this.collection = cb; }
+  showCardCodex(cb: CardCodexCallbacks): void { this.screen = 'cardCodex'; this.cardCodex = cb; }
   showCardRoster(cb: CardCallbacks): void { this.screen = 'cardRoster'; this.cardRoster = cb; }
   showEquipment(cb: EquipmentCallbacks): void { this.screen = 'equipment'; this.equipment = cb; }
   showStats(cb: StatsCallbacks): void { this.screen = 'stats'; this.stats = cb; }

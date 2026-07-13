@@ -36,11 +36,13 @@ const STICKMAN_ASSETS: Partial<Record<UnitType, string>> = {
 };
 
 /**
- * Skin → per-type .tao override (S3-4). The equipped skin (CollectionScene writes
- * SaveData.equipped) swaps ONLY the texture bundle — never stats — so a skin
- * carried into PvP changes nothing but the picture (hard wall, §5.2). Empty until
- * skin .tao bundles are authored; an unknown / unmapped skin falls back to the
- * default look in STICKMAN_ASSETS.
+ * Skin → per-type .tao override (S3-4). Each equipped skin (SaveData.equipped, one slot per
+ * character — game/meta/skinDefs.ts, LOBBY_IA_REDESIGN §15) swaps ONLY that character's texture
+ * bundle — never stats — so a skin carried into PvP changes nothing but the picture (hard wall,
+ * §5.2). Since a skin never targets more than one UnitType, several can be equipped at once
+ * (one per character) with no risk of one overriding another's entry. Empty until skin .tao
+ * bundles are authored; an unknown / unmapped skin falls back to the default look in
+ * STICKMAN_ASSETS.
  *
  * LAUNCH SKIN CATALOGUE (owner decision 2026-07-02, GACHA_DESIGN §9.5): one skin per
  * character, 6 total, each a full .tao (procedural recolor retired post-v0.4, see
@@ -55,10 +57,14 @@ const STICKMAN_ASSETS: Partial<Record<UnitType, string>> = {
  */
 const SKIN_ASSETS: Record<string, Partial<Record<UnitType, string>>> = {};
 
-/** Effective per-type asset URLs for an equipped skin (skin override ∪ default). */
-function resolveAssets(equippedSkin: string | null): Partial<Record<UnitType, string>> {
-  const skin = equippedSkin ? SKIN_ASSETS[equippedSkin] : undefined;
-  return skin ? { ...STICKMAN_ASSETS, ...skin } : STICKMAN_ASSETS;
+/** Effective per-type asset URLs for every currently-equipped skin (skin overrides ∪ default). */
+function resolveAssets(equippedSkins: readonly string[]): Partial<Record<UnitType, string>> {
+  let merged: Partial<Record<UnitType, string>> = STICKMAN_ASSETS;
+  for (const id of equippedSkins) {
+    const skin = SKIN_ASSETS[id];
+    if (skin) merged = { ...merged, ...skin };
+  }
+  return merged;
 }
 
 /**
@@ -255,7 +261,7 @@ export class UnitView {
   constructor(
     boardView: BoardView,
     localSide: Side = Side.Bottom,
-    equippedSkin: string | null = null,
+    equippedSkins: readonly string[] = [],
     cardInstances: EngineCardInstance[] | null = null,
     equipmentInv: EngineEquipInv | null = null,
   ) {
@@ -281,7 +287,7 @@ export class UnitView {
     // stickman-animated unit these Promises will normally be settled; until then
     // that unit falls back to the circle placeholder. The equipped skin (S3-4)
     // swaps the texture bundle per type; unmapped types use the default look.
-    for (const [type, url] of Object.entries(resolveAssets(equippedSkin)) as [UnitType, string][]) {
+    for (const [type, url] of Object.entries(resolveAssets(equippedSkins)) as [UnitType, string][]) {
       StickmanRuntime.loadAsset(url, targetScreenHeight(type))
         .then(asset => { this.assets.set(type, asset); })
         .catch(err  => { console.warn(`[UnitView] ${type} .tao failed to load:`, err); });

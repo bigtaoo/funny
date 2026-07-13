@@ -233,7 +233,7 @@ export class LobbySceneBase {
   protected socialNavRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Hit rect for the bottom-nav "shop" slot (opens ShopScene). */
   protected shopNavRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
-  /** Hit rect for the bottom-nav "cards" slot (opens CollectionScene). */
+  /** Hit rect for the bottom-nav "cards" slot (opens CardScene, the Hero Roster). */
   protected cardsNavRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Hit rect for the bottom-nav "stats" slot (opens StatsScene). */
   protected statsNavRect: Rect = { x: 0, y: 0, w: 0, h: 0 };

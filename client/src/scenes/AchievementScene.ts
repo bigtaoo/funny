@@ -51,6 +51,8 @@ export interface AchievementCallbacks {
    */
   onOpenStats?(): void;
   onOpenTitles?(): void;
+  /** Open the card codex (LOBBY_IA_REDESIGN §15, folded in from the retired CollectionScene). */
+  onOpenCodex?(): void;
 }
 
 interface Hit { rect: Rect; fn: () => void; }
@@ -166,7 +168,7 @@ export class AchievementScene implements Scene {
 
     // Landscape only for now, and only when the Career hub peer strip is actually shown — see
     // ShopScene.drawBackground / LOBBY_IA_REDESIGN §14.
-    const hasSidebar = !!(this.cb.onOpenStats && this.cb.onOpenTitles);
+    const hasSidebar = !!(this.cb.onOpenStats && this.cb.onOpenTitles && this.cb.onOpenCodex);
     const railX = landscape && hasSidebar ? sidebarNavW(w, h, true) : undefined;
     this.container.addChild(buildPaperBackground('achbg', w, h, { railX }));
     const decoC = buildDecorCLayer(w, h);
@@ -181,11 +183,12 @@ export class AchievementScene implements Scene {
     // drawn above the category sub-tabs in the left margin gutter regardless of load state, so
     // the sibling pages never vanish while achievements are loading/offline/empty.
     let sidebarBottom = tbH + Math.round(h * 0.02);
-    if (this.cb.onOpenStats && this.cb.onOpenTitles) {
+    if (this.cb.onOpenStats && this.cb.onOpenTitles && this.cb.onOpenCodex) {
       const { hits, bottom } = drawCareerTabs(this.container, sidebarNavW(w, h, this.landscape), sidebarBottom, h, 'achievements', {
         onOpenStats: this.cb.onOpenStats,
         onOpenTitles: this.cb.onOpenTitles,
         onOpenAchievements: () => {},
+        onOpenCodex: this.cb.onOpenCodex,
       });
       this.hits.push(...hits);
       sidebarBottom = bottom + Math.round(h * 0.03);

@@ -29,10 +29,13 @@ export const en: Record<TranslationKey, string> = {
   'card.archer.desc': 'A bow bent from a paperclip — precise shots from behind the grid lines.',
   'card.max.name': 'Max',
   'card.max.desc': "Anna's knight. When only one enemy remains, his resolve ignites — dealing double damage.",
+  'card.max.lore': "Anna's oldest friend — softer with words than with fists, and his fists are never soft.",
   'card.lena.name': 'Lena',
   'card.lena.desc': 'Disciplined elite. Heavy armour reduces every hit to its bare minimum.',
+  'card.lena.lore': 'Quietest in camp, hardest to move on the line.',
   'card.mara.name': 'Mara',
   'card.mara.desc': 'Sharpshooter. Her arrows leave a mark — and marked targets take extra damage from all sources.',
+  'card.mara.lore': "A hunter's patience, and a hunted man's grudge.",
   'card.barracks.name': 'Barracks',
   'card.barracks.desc': 'Keeps drawing new soldiers until someone erases it.',
   'card.tower.name': 'Arrow Tower',
@@ -557,16 +560,9 @@ export const en: Record<TranslationKey, string> = {
   'equip.tk_sticker.name': 'Sticker',
   'equip.tk_seal.name': 'Wax Seal',
   'collection.title': 'Collection',
-  'collection.back': '← Back',
-  'collection.empty': 'No skins yet — get some in the shop or gacha',
   'collection.equip': 'Equip',
   'collection.equipped': 'Equipped',
   'collection.default': 'Default look',
-  // Collection-center tabs + card codex
-  'collection.tab.cards': 'Cards',
-  'collection.tab.skins': 'Skins',
-  'collection.tab.units': 'Units',
-  'collection.tab.equipment': 'Gear',
   'collection.cardType.unit': 'Unit',
   'collection.cardType.building': 'Building',
   'collection.cardType.spell': 'Spell',
@@ -576,6 +572,7 @@ export const en: Record<TranslationKey, string> = {
   'collection.stat.range': 'Range',
   'collection.stat.spawn': 'Count',
   'collection.stat.interval': 'Atk spd',
+  'collection.locked': 'Locked',
 
   // Stats screen (IA redesign: now the "Career" hub)
   'stats.title': 'Career',
@@ -1420,11 +1417,16 @@ export const en: Record<TranslationKey, string> = {
   'roster.faction.tao': 'Tao',
   'roster.faction.anna': 'Anna',
   'roster.err.generic': 'Action failed, please retry',
+  'roster.err.offline': "Can't do that while offline — log in first",
+  'roster.tab.skins': 'Skins',
 
   // Character card names (Hero Roster tao-faction only; anna names are at the top of the file)
   'card.lichuang.name': 'Li Chuang',
+  'card.lichuang.lore': 'A doodle soldier from the notebook margin — cheap, sturdy, always first into battle.',
   'card.chenshou.name': 'Chen Shou',
+  'card.chenshou.lore': 'Carries a shield carved from an eraser. Slow, but blocks a whole page of attacks.',
   'card.suyuan.name': 'Su Yuan',
+  'card.suyuan.lore': 'A bow bent from a paperclip — precise shots from behind the grid lines.',
 
   // Teams scene (CC-4)
   'world.team.fillTroops': 'Fill All Troops',

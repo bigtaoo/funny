@@ -29,7 +29,7 @@ import type { ShopSceneCallbacks } from '../scenes/ShopScene';
 import type { GachaSceneCallbacks } from '../scenes/GachaScene';
 import type { CampaignMapCallbacks } from '../scenes/CampaignMapScene';
 import type { LevelPrepCallbacks } from '../scenes/LevelPrepScene';
-import type { CollectionCallbacks } from '../scenes/CollectionScene';
+import type { CardCodexCallbacks } from '../scenes/CardCodexScene';
 import type { CardCallbacks } from '../scenes/CardScene';
 import type { EquipmentCallbacks } from '../scenes/EquipmentScene';
 import type { StatsCallbacks } from '../scenes/StatsScene';
@@ -168,7 +168,8 @@ export interface AppViews {
   showGacha(cb: GachaSceneCallbacks): void;
   showCampaignMap(cb: CampaignMapCallbacks): void;
   showLevelPrep(cb: LevelPrepCallbacks): void;
-  showCollection(cb: CollectionCallbacks): void;
+  /** Read-only full card compendium, Career hub peer of Stats/Titles/Achievements (LOBBY_IA_REDESIGN §15). */
+  showCardCodex(cb: CardCodexCallbacks): void;
   /** Hero Roster (CC-6): owned card instances — level / troops / gear / feed / lock. Server-authoritative; requires login. Entry point per CHARACTER_CARDS_DESIGN §10. */
   showCardRoster(cb: CardCallbacks): void;
   /** Equipment system (E5): inventory / forging / enhancement / dismantling / equipping. Server-authoritative; requires login. */

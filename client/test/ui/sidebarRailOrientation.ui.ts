@@ -92,6 +92,9 @@ function buildCardScene(w: number, h: number): { scene: CardScene } {
     feedCards: async () => ({ ok: true }),
     setCardLock: async () => ({ ok: true }),
     openEquipmentBag() {},
+    getOwnedSkins: () => [],
+    getEquippedSkin: () => null,
+    equipSkin() {},
   };
   return { scene: new CardScene(createLayout(w, h), new InputManager(), cb) };
 }

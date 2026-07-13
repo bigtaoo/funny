@@ -121,7 +121,12 @@ export interface SaveData {
    * @deprecated S3-2 per-stat material upgrades. Kept for old-save compatibility; not used since the Hero Roster rework (CC-1).
    */
   pveUpgrades: Record<string, number>;
-  /** Cosmetic equipment (slot→skinId). Visual only; sent up with the sync section. */
+  /**
+   * Cosmetic equipment (slot→skinId). Visual only; sent up with the sync section.
+   * Two kinds of keys share this map: `title` (equipped title, TITLE_DESIGN §2) and
+   * `skin:<UnitType>` (equipped skin per character, one slot per character since a skin
+   * never targets more than one UnitType — see game/meta/skinDefs.ts, LOBBY_IA_REDESIGN §15).
+   */
   equipped: Record<string, string>;
   flags: Record<string, boolean>;
   /** PvP deck builder selection (P3, PVP_LOADOUT §8). Local-only; NOT in SyncPatch. */
@@ -154,7 +159,9 @@ export const SYNC_KEYS = ['equipped', 'flags'] as const;
 // v2 (2026-06-21): Added equipmentInv + gear (equipment system E0). See migrate.ts for v1→v2 migration.
 // v3 (2026-06-21): Unit progression rework (S12) — added unitLevels + cardInventory, pveUpgrades marked deprecated.
 // v4 (2026-07-01): Hero Roster (CC-1) — removed unitLevels + cardInventory + gear; added cardInv (CHARACTER_CARDS_DESIGN §2.3).
-export const SAVE_VERSION = 4;
+// v5 (2026-07-13): CollectionScene retirement (LOBBY_IA_REDESIGN §15) — skin equip moves from the single
+// global `equipped['unit']` slot to one slot per character (`equipped['skin:<UnitType>']`, skinDefs.ts).
+export const SAVE_VERSION = 5;
 
 /** Primary storage key for local saves (IPlatform.storage). */
 export const SAVE_STORAGE_KEY = 'nw_save_v1';

@@ -112,7 +112,7 @@ export class StatePlayerScene implements Scene {
     this.tickRate = Math.max(1, replay.header.tickRate);
 
     this.boardView = new BoardView(layout);
-    this.unitView = new UnitView(this.boardView, Side.Bottom, null);
+    this.unitView = new UnitView(this.boardView, Side.Bottom, []);
     this.buildingView = new BuildingView(this.boardView);
     this.vfx = new VFXSystem();
 

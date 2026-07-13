@@ -6,6 +6,7 @@
 
 
 import { makeNewSave, SAVE_VERSION, type SaveData } from './SaveData';
+import { SKIN_TARGET_UNIT, skinEquipKey } from './skinDefs';
 
 type AnyObj = Record<string, unknown>;
 
@@ -36,6 +37,22 @@ const MIGRATIONS: Array<(d: AnyObj) => AnyObj> = [
   // restarts per-card from L1). Just pin the version number so the chain length matches SAVE_VERSION.
   (d) => {
     d.version = 4;
+    return d;
+  },
+  // v4 → v5: CollectionScene retirement (LOBBY_IA_REDESIGN §15 / ADR-038). Skin equip moves from the
+  // single global slot `equipped['unit']` to one slot per character (`equipped['skin:<UnitType>']`,
+  // see skinDefs.ts). Carry forward whichever skin was previously equipped onto its own character's
+  // slot so an already-equipped skin doesn't silently vanish.
+  (d) => {
+    d.version = 5;
+    const equipped = (d.equipped ?? {}) as Record<string, string>;
+    const legacySkin = equipped.unit;
+    if (legacySkin) {
+      const unitType = SKIN_TARGET_UNIT[legacySkin];
+      if (unitType) equipped[skinEquipKey(unitType)] = legacySkin;
+      delete equipped.unit;
+    }
+    d.equipped = equipped;
     return d;
   },
 ];

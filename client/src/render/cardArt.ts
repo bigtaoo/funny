@@ -1,7 +1,7 @@
 /**
  * cardArt.ts — single source of truth for card / unit illustrations (png art).
  *
- * Battle hand (HandView) and the cultivation hub (CollectionScene) must show the
+ * Battle hand (HandView) and the card codex (CardCodexScene) must show the
  * SAME picture for the same card, or the player gets confused. So the url maps
  * and the card→key resolver live here and are imported by both. Spell art has
  * the marker-red highlight baked in (art-direction §3.3) — never tint it.
