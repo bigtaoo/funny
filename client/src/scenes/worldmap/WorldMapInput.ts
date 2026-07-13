@@ -170,6 +170,16 @@ export class WorldMapInput {
           return;
         }
       }
+      // Scrollable list body (world-info nations/shop tabs) — begin a drag-to-scroll
+      // gesture instead of closing the modal on a tap inside the list.
+      const sr = this.ctx.infoScrollRect;
+      if (sr && x >= sr.x && x <= sr.x + sr.w && y >= sr.y && y <= sr.y + sr.h) {
+        this.ctx.infoScrollDragging = true;
+        this.ctx.infoScrollDragMoved = false;
+        this.ctx.infoScrollDragStartY = y;
+        this.ctx.infoScrollDragStartScroll = this.ctx.infoScrollY;
+        return;
+      }
       this.ctx.panels.closeModal();
       return;
     }
@@ -245,6 +255,18 @@ export class WorldMapInput {
   }
 
   handleMove(x: number, y: number): void {
+    if (this.ctx.infoScrollDragging) {
+      const dy = y - this.ctx.infoScrollDragStartY;
+      if (Math.abs(dy) > 6) this.ctx.infoScrollDragMoved = true;
+      if (this.ctx.infoScrollDragMoved) {
+        const next = Math.max(0, Math.min(this.ctx.infoMaxScroll, this.ctx.infoScrollDragStartScroll - dy));
+        if (next !== this.ctx.infoScrollY) {
+          this.ctx.infoScrollY = next;
+          this.ctx.panels.renderInfoPanel();
+        }
+      }
+      return;
+    }
     if (!this.ctx.dragging) return;
     const dx = x - (this.ctx.dragStartX + this.ctx.panX);
     const dy = y - (this.ctx.dragStartY + this.ctx.panY);
@@ -266,6 +288,10 @@ export class WorldMapInput {
   }
 
   handleUp(x: number, y: number): void {
+    if (this.ctx.infoScrollDragging) {
+      this.ctx.infoScrollDragging = false;
+      return;
+    }
     if (!this.ctx.dragging) return;
     const wasDragging = this.ctx.dragMoved;
     this.ctx.dragging = false;
@@ -278,6 +304,17 @@ export class WorldMapInput {
       void this.ctx.net.loadMapViewport().then(() => {
         if (!this.ctx.destroyed) this.ctx.view.renderMap();
       });
+    }
+  }
+
+  /** Mouse-wheel scroll over the world-info panel's scrollable list (browser only). */
+  handleWheel(x: number, y: number, deltaY: number): void {
+    const sr = this.ctx.infoScrollRect;
+    if (!sr || x < sr.x || x > sr.x + sr.w || y < sr.y || y > sr.y + sr.h) return;
+    const next = Math.max(0, Math.min(this.ctx.infoMaxScroll, this.ctx.infoScrollY + deltaY));
+    if (next !== this.ctx.infoScrollY) {
+      this.ctx.infoScrollY = next;
+      this.ctx.panels.renderInfoPanel();
     }
   }
 }

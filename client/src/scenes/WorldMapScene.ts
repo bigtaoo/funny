@@ -38,6 +38,7 @@ export class WorldMapScene implements Scene {
     ctx.unsubs.push(input.onDown((x, y) => ctx.input.handleDown(x, y)));
     ctx.unsubs.push(input.onMove((x, y) => ctx.input.handleMove(x, y)));
     ctx.unsubs.push(input.onUp((x, y) => ctx.input.handleUp(x, y)));
+    ctx.unsubs.push(input.onWheel((x, y, deltaY) => ctx.input.handleWheel(x, y, deltaY)));
 
     // Center map on join initially; will be overridden once we know base location.
     ctx.view.centerAt(Math.floor(ctx.mapW / 2), Math.floor(ctx.mapH / 2));

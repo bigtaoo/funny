@@ -126,6 +126,16 @@ export class WorldMapContext {
   modalBtnRects: { rect: { x: number; y: number; w: number; h: number }; action: () => void }[] = [];
   modalDimRect: { x: number; y: number; w: number; h: number } | null = null;
 
+  // ── Info-panel list scroll (nations / shop tabs — see WorldMapPanels.renderInfoPanel) ──
+  /** Viewport rect of the scrollable list body; null when no scrollable list is on screen. */
+  infoScrollRect: { x: number; y: number; w: number; h: number } | null = null;
+  infoScrollY = 0;
+  infoMaxScroll = 0;
+  infoScrollDragging = false;
+  infoScrollDragMoved = false;
+  infoScrollDragStartY = 0;
+  infoScrollDragStartScroll = 0;
+
   // Collaborators (assigned by WorldMapScene right after construction).
   view!: WorldMapRenderer;
   panels!: WorldMapPanels;

@@ -310,6 +310,7 @@ export class WorldMapPanels {
     this.ctx.modalLayer.removeChildren();
     this.ctx.modalBtnRects = [];
     this.ctx.modalDimRect = null;
+    this.ctx.infoScrollRect = null;
     this.ctx.selectedTile = null;
     this.ctx.trainPanelOpen = false;
     this.ctx.view.renderMap();
@@ -373,6 +374,44 @@ export class WorldMapPanels {
     bl.anchor.set(0.5, 0.5);
     bl.x = x + bw / 2; bl.y = y + bh / 2;
     ml.addChild(bl);
+    this.ctx.modalBtnRects.push({ rect: { x, y, w: bw, h: bh }, action });
+  }
+
+  /**
+   * Start a masked, wheel/drag-scrollable list region inside the modal layer (world-info
+   * nations/shop tabs — see renderInfoPanel). Registers ctx.infoScrollRect/infoMaxScroll so
+   * WorldMapInput can route wheel + drag gestures here, and clamps the current scroll offset
+   * to the new content height (list length can change between renders, e.g. shop catalog load).
+   * Returns the container rows should be added to (already `.mask`ed to the viewport rect).
+   */
+
+  beginScrollList(x: number, y: number, w: number, h: number, contentH: number): PIXI.Container {
+    this.ctx.infoScrollRect = { x, y, w, h };
+    this.ctx.infoMaxScroll = Math.max(0, contentH - h);
+    this.ctx.infoScrollY = Math.max(0, Math.min(this.ctx.infoScrollY, this.ctx.infoMaxScroll));
+    const ml = this.ctx.modalLayer;
+    const mask = new PIXI.Graphics();
+    mask.beginFill(0xffffff).drawRect(x, y, w, h).endFill();
+    ml.addChild(mask);
+    const layer = new PIXI.Container();
+    layer.mask = mask;
+    ml.addChild(layer);
+    return layer;
+  }
+
+  /** Like {@link panelButton} but adds into a scroll-list's masked layer instead of the modal layer directly. */
+
+  panelButtonIn(
+    layer: PIXI.Container, label: string, x: number, y: number, bw: number, bh: number,
+    fill: number, action: () => void,
+  ): void {
+    const bp = sketchPanel(bw, bh, { fill, border: C.accent, seed: seedFor(x, y, bw) });
+    bp.x = x; bp.y = y;
+    layer.addChild(bp);
+    const bl = txt(label, 11, C.light);
+    bl.anchor.set(0.5, 0.5);
+    bl.x = x + bw / 2; bl.y = y + bh / 2;
+    layer.addChild(bl);
     this.ctx.modalBtnRects.push({ rect: { x, y, w: bw, h: bh }, action });
   }
 
@@ -513,6 +552,7 @@ export class WorldMapPanels {
 
   openInfoPanel(): void {
     this.ctx.trainPanelOpen = false;
+    this.ctx.infoScrollY = 0;
     this.renderInfoPanel();
     // Lazy-load shop catalog + fresh nations/season the first time.
     if (this.ctx.shopItems.length === 0) {
@@ -582,35 +622,44 @@ export class WorldMapPanels {
     for (const tab of tabs) {
       const active = this.ctx.infoTab === tab.id;
       this.panelButton(tab.label, tx, tabY, tabW, 26, active ? C.red : C.dark, () => {
-        this.ctx.infoTab = tab.id; this.renderInfoPanel();
+        this.ctx.infoTab = tab.id; this.ctx.infoScrollY = 0; this.renderInfoPanel();
       });
       tx += tabW + MARGIN;
     }
 
     let ly = tabY + 38;
     const bodyBottom = py + ph - 42;
+    this.ctx.infoScrollRect = null;
 
     if (this.ctx.infoTab === 'nations') {
       if (this.ctx.nations.length === 0) {
         addText(t('world.nationsEmpty'), px + 14, ly, 11, C.mid);
       } else {
+        const rowH = 24;
+        const listLayer = this.beginScrollList(px, ly, pw, bodyBottom - ly, this.ctx.nations.length * rowH);
+        let ry = ly - this.ctx.infoScrollY;
         for (const n of this.ctx.nations) {
-          if (ly > bodyBottom) break;
-          const name = n.nationName || t('world.nationCol').replace('{idx}', String(n.capitalIdx));
-          const mine = !!n.ownerId && n.ownerId === this.ctx.cb.accountId;
-          const nStar = buildIcon('star', 12, C.gold);
-          nStar.x = px + 14; nStar.y = ly - 1;
-          ml.addChild(nStar);
-          addText(`${name}  (${n.x},${n.y})`, px + 30, ly, 11);
-          if (mine) {
-            // Owner may rename their capital (server re-checks ownerId).
-            const bw = 54;
-            this.panelButton(t('world.nationRename'), px + pw - bw - 14, ly - 4, bw, 22, C.accent, () => this.openRenameInput(n.capitalIdx, name));
-          } else {
-            const status = n.ownerId ? t('world.nationOwned') : t('world.nationFree');
-            addText(status, px + pw - 14, ly, 11, n.ownerId ? C.red : C.mid, 1);
+          if (ry + rowH >= ly && ry <= bodyBottom) {
+            const name = n.nationName || t('world.nationCol').replace('{idx}', String(n.capitalIdx));
+            const mine = !!n.ownerId && n.ownerId === this.ctx.cb.accountId;
+            const nStar = buildIcon('star', 12, C.gold);
+            nStar.x = px + 14; nStar.y = ry - 1;
+            listLayer.addChild(nStar);
+            const nameLbl = txt(`${name}  (${n.x},${n.y})`, 11, C.dark);
+            nameLbl.x = px + 30; nameLbl.y = ry;
+            listLayer.addChild(nameLbl);
+            if (mine) {
+              // Owner may rename their capital (server re-checks ownerId).
+              const bw = 54;
+              this.panelButtonIn(listLayer, t('world.nationRename'), px + pw - bw - 14, ry - 4, bw, 22, C.accent, () => this.openRenameInput(n.capitalIdx, name));
+            } else {
+              const status = n.ownerId ? t('world.nationOwned') : t('world.nationFree');
+              const statusLbl = txt(status, 11, n.ownerId ? C.red : C.mid);
+              statusLbl.anchor.set(1, 0); statusLbl.x = px + pw - 14; statusLbl.y = ry;
+              listLayer.addChild(statusLbl);
+            }
           }
-          ly += 24;
+          ry += rowH;
         }
       }
     } else if (this.ctx.infoTab === 'season') {
@@ -633,14 +682,21 @@ export class WorldMapPanels {
         addText(t('world.shopBalance').replace('{coins}', String(this.ctx.cb.getCoins())), px + 14, ly, 11, C.accent);
         ly += 22;
       }
-      const rowH = 30;
+      const rowH = 32;
+      const listLayer = this.beginScrollList(px, ly, pw, bodyBottom - ly, this.ctx.shopItems.length * rowH);
+      let ry = ly - this.ctx.infoScrollY;
       for (const it of this.ctx.shopItems) {
-        if (ly + rowH > bodyBottom) break;
-        addText(this.shopLabel(it), px + 14, ly + 4, 11);
-        addText(t('world.shopCost').replace('{coins}', String(it.cost)), px + 14, ly + 18, 10, C.mid);
-        const bw = 56;
-        this.panelButton(t('world.shopBuy'), px + pw - bw - 14, ly + 2, bw, 24, C.accent, () => void this.ctx.net.doBuyShopItem(it.id));
-        ly += rowH + 2;
+        if (ry + rowH >= ly && ry <= bodyBottom) {
+          const nameLbl = txt(this.shopLabel(it), 11, C.dark);
+          nameLbl.x = px + 14; nameLbl.y = ry + 4;
+          listLayer.addChild(nameLbl);
+          const costLbl = txt(t('world.shopCost').replace('{coins}', String(it.cost)), 10, C.mid);
+          costLbl.x = px + 14; costLbl.y = ry + 18;
+          listLayer.addChild(costLbl);
+          const bw = 56;
+          this.panelButtonIn(listLayer, t('world.shopBuy'), px + pw - bw - 14, ry + 2, bw, 24, C.accent, () => void this.ctx.net.doBuyShopItem(it.id));
+        }
+        ry += rowH;
       }
     }
 

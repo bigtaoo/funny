@@ -1578,6 +1578,19 @@ if (path.startsWith('/admin/world/')) {
   - 聊天条接数据：`WorldMapNet.refreshWorldChat()`（新增，随 5s march 轮询一并调用，`worldApi.getWorldChannel(worldId, {limit: 20})`）把最新一条消息存到 `ctx.worldChatLatest`；未读数用客户端本地"已读水位"计算——`WorldMapContext.markWorldChatSeen()` 把 `worldChatLatest.ts` 写入 `localStorage`（key 按 `worldId+accountId` 隔离，避免多号共享已读位），点击聊天条（`WorldMapInput.ts`）时调用；`renderHud()` 显示 `发送者: 正文前28字` + 超过已读水位的条数角标（封顶 `9+`）。未走服务端已读接口，因为 worldsvc 目前没有为世界频道维护已读状态（对比 `mail.unread` 是服务端字段）——纯本地近似,足够 HUD 预览用途。
   - 行军列表数量上限：`renderHud()` 里加 `MAX_VISIBLE_MARCHES = 5`，超出部分显示 `+N more`（新 i18n key `world.marchMore`，zh/en/de 三语），面板高度按可见行数算，不再随行军数无上限增高。
 
+**World-info 弹层（国家/商城 Tab）列表滚动（2026-07-13）**：
+
+**背景**：`WorldMapPanels.renderInfoPanel()` 的国家 Tab（`ctx.nations`）和商城 Tab（`ctx.shopItems`）此前平铺渲染、面板高度写死，超出可视区的条目直接跳过渲染（`if (ly > bodyBottom) break`）——列表一长就看不到、也点不到后面的条目。
+
+**方案**：PIXI mask + 拖拽/滚轮双输入，未引入独立的可复用 `ScrollList` 组件（沿用本项目"每个场景各自实现"的惯例，参考 `FriendsSceneBase.scrollRegion()`/`AuctionScene` 的 `scrollY`+拖拽模式，但额外加了 mask 做像素级裁切，前两者都没有）：
+- `WorldMapPanels.beginScrollList(x, y, w, h, contentH)`：新增辅助方法，建一个 `PIXI.Graphics` 遮罩 + 一个 `mask` 过的 `PIXI.Container`，同时把可视区矩形写入 `ctx.infoScrollRect`、算出 `ctx.infoMaxScroll = max(0, contentH - h)` 并 clamp 当前 `ctx.infoScrollY`。国家/商城两个分支各自在这个 container 里画行（含 icon/文字/按钮），只渲染与可视区有重叠的行。
+- `WorldMapPanels.panelButtonIn(layer, ...)`：`panelButton()` 的变体，按钮画进传入的 scroll layer 而非直接进 `modalLayer`，命中矩形仍推入全局 `ctx.modalBtnRects`（与遮罩范围无关——如果一行按钮恰好卡在可视区上下边界被半裁切，其命中区域理论上仍可能有几像素落在裁切掉的空白处被点到；这跟 `AuctionScene`/`FriendsSceneBase` 现有列表的行为一致，未特殊处理，可接受）。
+- 切 Tab（`nations`/`season`/`shop`）、每次 `openInfoPanel()` 时都把 `ctx.infoScrollY` 重置为 0；`closeModal()` 里把 `ctx.infoScrollRect` 清空，避免关闭弹层后残留的命中矩形误吞下一次点击。
+- **拖拽输入**：`WorldMapContext` 新增 `infoScrollRect`/`infoScrollY`/`infoMaxScroll`/`infoScrollDragging`/`infoScrollDragMoved`/`infoScrollDragStartY`/`infoScrollDragStartScroll`。`WorldMapInput.handleDown()` 在 `modalDimRect` 分支里，命中 `modalBtnRects` 之后、`closeModal()` 之前，新增"落点在 `infoScrollRect` 内则开始拖拽"的判断（否则原逻辑——点弹层空白处关闭——保留）；`handleMove`/`handleUp` 顶部各加一段 `infoScrollDragging` 分支，按住上下拖动换算并 clamp 新的 `infoScrollY`，触发 `renderInfoPanel()` 重绘。
+- **滚轮输入**：项目里此前完全没有滚轮支持（`InputManager` 只有 down/move/up）。新增 `InputManager.onWheel`/`_emitWheel`，`WebAdapter` 监听 canvas 的原生 `wheel` 事件转发（微信小游戏没有鼠标滚轮，这条只在浏览器生效，触屏走上面的拖拽路径，两端都能用）。`WorldMapScene` 订阅 `input.onWheel` 转发到新增的 `WorldMapInput.handleWheel(x, y, deltaY)`，同样只在落点位于 `infoScrollRect` 内时生效。
+- 验证：`tsc --noEmit` + `webpack --mode production` 全绿；用临时调试钩子（`app.ts` 挂 `globalThis.__NW_WorldMapPanels`/`__NW_WorldMapInput`，验证后已移除）直接构造假 `ctx`（20 条国家 / 15 件商品）单测 `renderInfoPanel()`，截图确认顶部/底部裁切干净、无溢出面板；再直接调用真实的 `WorldMapInput.handleWheel()`/`handleDown+handleMove+handleUp` 驱动滚动，截图确认滚轮和拖拽都能正确改变 `infoScrollY` 并触发重绘。
+- 回归测试：`client/test/ui/worldMapInfoScroll.ui.ts`（`npm run test:ui`，PIXI headless）——手搭一个只含 `renderInfoPanel`/`handleDown/Move/Up/Wheel` 实际读取字段的假 `WorldMapContext`（不构造完整 `WorldMapScene`，省去 tile cache/net/zoom 依赖），覆盖：滚动区域随内容量的建立/不建立（国家 20 条 vs 2 条、商城 15 件、Season Tab 无滚动区）、内容变短后 `infoScrollY` 重新 clamp、滚轮在区域内/外的移动与双向 clamp、拖拽滚动 + 阈值内不触发、区域内点按不误关闭弹层 vs 区域外点按仍正常关闭（回归此前"点列表任意空白处关闭弹层"的旧行为）、`closeModal()` 清空 `infoScrollRect`、切 Tab 重置 `infoScrollY`。共 15 例，随 `npm run test:ui` 全绿一并跑通。**副带修复**：`test/ui/scenes.ui.ts` 此前在本机因 `@nw/shared` 桶文件（`index.ts`）连带引入 `jsonwebtoken`/`mongodb` 等仅服务端依赖而在 Vite 转换时报 "Failed to load url" 直接挂掉（[[client-run-and-visual-verify]] 已记录的已知环境缺口）；本次把 `server/node_modules` 第三方包（非 `@nw/*`）整体 junction 进 worktree、`@nw/shared`+`@nw/engine` 单独 junction 回 worktree 自身源码目录后一并修好，`scenes.ui.ts` 77 例、`test:ui` 全套 18 文件 241 例、默认 `npm test` 76 文件 594 例均转绿。
+
 ---
 
 *本文档为 SLG 设计基准，DRAFT 标注处随实现/调参细化；锁定决策（SLG1~13）非经重新拍板不改。*
