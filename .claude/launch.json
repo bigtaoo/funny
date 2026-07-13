@@ -8,6 +8,12 @@
       "port": 9090
     },
     {
+      "name": "game-public",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "set NW_API_BASE=https://api.gamestao.com/api&&set NW_GATEWAY_WS=wss://api.gamestao.com/gw&&set NW_WORLD_BASE=https://api.gamestao.com&&set NW_SOCIAL_BASE=https://api.gamestao.com&&npm run start --prefix D:\\funny\\client"],
+      "port": 9090
+    },
+    {
       "name": "animator",
       "runtimeExecutable": "cmd",
       "runtimeArgs": ["/c", "npm", "run", "start", "--prefix", "D:\\funny\\tools\\animator"],

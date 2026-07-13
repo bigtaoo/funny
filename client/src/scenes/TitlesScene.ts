@@ -46,6 +46,7 @@ export class TitlesScene implements Scene {
   private readonly landscape: boolean;
 
   private hits: Hit[] = [];
+  private readonly unsubs: Array<() => void> = [];
 
   constructor(layout: ILayout, input: InputManager, cb: TitlesSceneCallbacks) {
     this.container = new PIXI.Container();
@@ -54,13 +55,14 @@ export class TitlesScene implements Scene {
     this.cb = cb;
     this.landscape = layout.orientation === 'landscape';
 
-    input.onDown((x, y) => this.handleDown(x, y));
+    this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.render();
   }
 
   update(_dt: number): void {}
 
   destroy(): void {
+    this.unsubs.forEach((u) => u());
     tearDownChildren(this.container);
   }
 
