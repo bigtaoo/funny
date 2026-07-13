@@ -304,6 +304,14 @@ export const SECT_REMOVAL_VOTE_RATIO = 2 / 3;
 export const GARRISON_PER_TILE = 500;
 /** Minimum garrison required to occupy a tile (becomes that tile's garrison upon arrival; march is rejected if insufficient). */
 export const OCCUPY_MIN_TROOPS = GARRISON_PER_TILE;
+/**
+ * Occupation hold countdown (§5.4, ADR-037, DRAFT placeholder — tune after economy validation): after an occupy
+ * march wins its PvE battle against the target tile's system garrison, the surviving troops hold the tile for
+ * this many seconds before `TileDoc.ownerId` is actually written. Mirrors ADR-026's `SLG_SIEGE_DAMAGE_DELAY_MS`
+ * delayed-settlement pattern (same 5-minute placeholder, different semantics — that one deducts building HP,
+ * this one finalizes territory ownership). The tile can be expelled by another attack/occupy march during the hold.
+ */
+export const OCCUPY_HOLD_SEC = 5 * 60;
 export const SEASON_LENGTH_DAYS = 60; // U3: 2 months
 /** Coin cost to voluntarily relocate the home city (§3.4 / §8.2 home-city relocation: choose a new site + pay to move; applies to all players, not exclusive to the sect leader). */
 export const RELOCATE_COST = 500;

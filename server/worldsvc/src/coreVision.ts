@@ -78,8 +78,9 @@ export class WorldCoreVision extends WorldCoreSpawn {
   /**
    * G5: compute the set of vision sources for the requester within the given viewport (including the radius-padded border).
    * Sources = own + same-family members' territory (capital type:'base' gets large radius, other territory gets small radius) + own/family marches in transit
-   * (current position linearly interpolated from departAt/arriveAt). Family members are looked up via familyMembers (tile.familyId is not written on the occupy path
-   * and cannot be relied upon), ≤30 members. Vision is not persisted; computed fresh on each read (short-TTL cache deferred to G5 follow-up optimization).
+   * (current position linearly interpolated from departAt/arriveAt) + tiles own/family currently hold a pending occupation on (ADR-037 §5.4: `contestedBy`,
+   * so the holder keeps eyes on their own hold countdown even though the tile isn't owned yet). Family members are looked up via familyMembers (tile.familyId is
+   * not written on the occupy path and cannot be relied upon), ≤30 members. Vision is not persisted; computed fresh on each read (short-TTL cache deferred to G5 follow-up optimization).
    */
   async computeVisionSources(
     worldId: string,
@@ -99,7 +100,7 @@ export class WorldCoreVision extends WorldCoreSpawn {
     const srcTiles = await cols.tiles
       .find({
         worldId,
-        ownerId: { $in: ids },
+        $or: [{ ownerId: { $in: ids } }, { contestedBy: { $in: ids } }],
         x: { $gte: x0 - pad, $lte: x1 + pad },
         y: { $gte: y0 - pad, $lte: y1 + pad },
       })

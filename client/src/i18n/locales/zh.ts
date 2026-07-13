@@ -770,6 +770,8 @@ export const zh = {
   'world.marchTime': '旅途约 {sec} 秒',
   'world.myBase': '我的主城',
   'world.occupied': '已占领',
+  'world.occupying': '占领中（{sec}s 后结算）',
+  'world.occupyingMine': '我方占领中（{sec}s 后落地）',
   'world.mine': '我的领地',
   'world.protected': '保护中（剩 {sec}s）',
   'world.garrison': '驻军 {n}',

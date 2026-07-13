@@ -16,7 +16,7 @@ import {
   type PathCell,
   type MarchKind,
 } from '@nw/shared';
-import type { TileDoc, MarchDoc, ArmyEntry } from './db';
+import type { MarchDoc, ArmyEntry } from './db';
 import { WorldCore, MARCHABLE_KINDS } from './core';
 import type { MarchView } from './worldTypes';
 import { refundTroops } from './combatShared';
@@ -170,9 +170,14 @@ export class MarchService {
       // Siege: target must be another player's territory/capital, or an ownerless stronghold (G8 PvE to defeat the system garrison). Use occupy/sweep for neutral ownerless tiles.
       if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'World center is contested by sects and cannot be sieged');
       if (!toTile?.ownerId) {
-        // No owner: only strongholds and crossings (bridge/plankway) can be sieged (defeating the system NPC garrison);
-        // all other ownerless tiles use occupy/sweep.
-        if (proc.type !== 'stronghold' && proc.type !== 'bridge' && proc.type !== 'plankway') {
+        // ADR-037 (§5.4): no owner but mid occupation-hold (an occupy march already won its PvE battle and is
+        // waiting out the hold countdown) — this is a valid expulsion attack target; the pending occupier gets
+        // the under_attack warning just like a real owner would.
+        if (toTile?.contestedBy && (toTile.contestedUntil ?? 0) > now()) {
+          defenderId = toTile.contestedBy;
+        } else if (proc.type !== 'stronghold' && proc.type !== 'bridge' && proc.type !== 'plankway') {
+          // No owner, not mid-hold: only strongholds and crossings (bridge/plankway) can be sieged (defeating the
+          // system NPC garrison); all other ownerless tiles use occupy/sweep.
           throw new SlgError('TILE_NOT_OWNED', 'Siege target has no owner (use occupy/sweep)');
         }
         // Stronghold / crossing PvE: leave defenderId unset (NPC does not receive an under_attack warning).
@@ -368,47 +373,10 @@ export class MarchService {
     }
 
     if (m.kind === 'occupy') {
-      const proc = proceduralTile(m.worldId, this.core.coordX(m.toTile), this.core.coordY(m.toTile));
-      const occ = await cols.tiles.findOne({ _id: m.toTile });
-      const blocked =
-        proc.type === 'center' ||
-        (occ?.ownerId && occ.ownerId !== m.ownerId) ||
-        (occ?.ownerId === m.ownerId && occ.type !== 'base'); // already own territory (base is the exception, but the march would never reach here for base)
-      if (blocked) {
-        // Target is occupied or non-occupiable on arrival → troops refunded to the pool immediately (S8-3 could instead use a return march).
-        await refundTroops(this.core, pw, m.troops, t);
-        void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
-        return;
-      }
-      const x = this.core.coordX(m.toTile);
-      const y = this.core.coordY(m.toTile);
-      const tileDoc: TileDoc = {
-        _id: m.toTile,
-        worldId: m.worldId,
-        x,
-        y,
-        type: 'territory',
-        level: proc.level,
-        ...(proc.resType ? { resType: proc.resType } : {}),
-        ownerId: m.ownerId,
-        garrison: m.troops,
-        rev: 0,
-      };
-      await cols.tiles.updateOne({ _id: m.toTile }, { $set: tileDoc }, { upsert: true });
-      // Troops were already deducted on departure → do not modify the pool again; only update the yield rate.
-      const resources = this.core.settle(pw, t);
-      const yieldRate = await this.core.recomputeYield(m.worldId, m.ownerId);
-      await cols.playerWorld.updateOne(
-        { _id: pw._id },
-        { $set: { resources, yieldRate, lastTickAt: t }, $inc: { rev: 1 } },
-      );
-      void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'arrived' }));
-      void this.core.pushTile(m.ownerId, tileDoc);
-      await this.core.pushTileToObservers(tileDoc, new Set([m.ownerId])); // G5-2: occupation arrival is visible to observers
-      // Capital tile occupied → trigger nation founding (S8-6.5)
-      void this.core.applyNationChange(m.worldId, x, y, m.ownerId, pw.familyId);
-      // §17.4 activity increment: occupying new territory → occupier's family +1 (including prosperity refresh).
-      void this.core.bumpFamilyActivity(m.worldId, pw.familyId, 1);
+      // ADR-037 (§5.4): occupy arrival now fights the target's system garrison (or an in-progress occupier's held
+      // garrison, if expelling) via the same deterministic engine siege uses, and — on victory — starts a delayed
+      // occupation hold instead of writing ownership immediately. See combatSiege/occupation.ts.
+      await this.siege.applyOccupy(m, pw, t);
       return;
     }
 

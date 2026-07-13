@@ -30,6 +30,10 @@ export function startScheduler(svc: WorldService, tickMs = 2000): Scheduler {
       svc
         .processDueSiegeDamage()
         .catch((e) => console.error('[world-scheduler] processDueSiegeDamage failed:', (e as Error).message)),
+      // ADR-037 (§5.4): settle due occupation holds (occupy-march PvE win → 5-min hold → territory ownership).
+      svc
+        .processDueOccupations()
+        .catch((e) => console.error('[world-scheduler] processDueOccupations failed:', (e as Error).message)),
     ];
     void Promise.allSettled(tasks).finally(() => {
       running = false;

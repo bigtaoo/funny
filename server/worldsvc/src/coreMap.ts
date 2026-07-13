@@ -204,6 +204,8 @@ export class WorldCoreMap extends WorldCoreVision {
       ...(o.garrison ? { garrison: o.garrison } : {}),
       ...siegeHpView(o),
       ...(o.protectedUntil ? { protectedUntil: o.protectedUntil } : {}),
+      ...(o.contestedUntil ? { contestedUntil: o.contestedUntil } : {}),
+      ...(o.contestedBy === accountId ? { contestedByMe: true } : {}),
       ...(o.watchtower ? { watchtower: true } : {}),
     };
   }

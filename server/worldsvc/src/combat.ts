@@ -46,6 +46,10 @@ export class CombatService {
   processDueSiegeDamage(nowMs?: number): Promise<number> {
     return this.siege.processDueSiegeDamage(nowMs);
   }
+  // ADR-037 (§5.4): occupation-hold settlement (combatSiege/occupation.ts).
+  processDueOccupations(nowMs?: number): Promise<number> {
+    return this.siege.processDueOccupations(nowMs);
+  }
 
   // ── defense config + replay (combatDefense.ts) ───────────────
   setDefense(worldId: string, accountId: string, tileKey: string, defenseConfig: Record<string, unknown>): Promise<void> {
