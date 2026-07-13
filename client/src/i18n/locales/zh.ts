@@ -33,10 +33,13 @@ export const zh = {
   'card.archer.desc': '用回形针弯成的弓，在格线后方精准点射。',
   'card.max.name': '麦克斯',
   'card.max.desc': '安娜的骑士。当敌方只剩最后一人，他的斗志爆发，造成双倍伤害。',
+  'card.max.lore': '安娜最早的伙伴，说话比拳头软，但拳头从不软。',
   'card.lena.name': '莱娜',
   'card.lena.desc': '纪律严明的精锐。厚重铠甲把每一击伤害都压到最低。',
+  'card.lena.lore': '扎营时最安静的人，战线上最难被撼动的人。',
   'card.mara.name': '玛拉',
   'card.mara.desc': '神射手。箭矢留下标记，让后续所有攻击对目标造成额外伤害。',
+  'card.mara.lore': '带着猎人的耐心，和被猎过的人的执念。',
   'card.barracks.name': '兵营',
   'card.barracks.desc': '持续不断地画出新的士兵，直到被橡皮擦掉为止。',
   'card.tower.name': '箭塔',
@@ -562,16 +565,9 @@ export const zh = {
   'equip.tk_sticker.name': '贴纸',
   'equip.tk_seal.name': '火漆印',
   'collection.title': '收集册',
-  'collection.back': '← 返回',
-  'collection.empty': '暂无皮肤，去商店或盲盒获取',
   'collection.equip': '装备',
   'collection.equipped': '已装备',
   'collection.default': '默认外观',
-  // Collection hub tabs + card compendium
-  'collection.tab.cards': '卡牌',
-  'collection.tab.skins': '皮肤',
-  'collection.tab.units': '单位',
-  'collection.tab.equipment': '装备',
   'collection.cardType.unit': '士兵',
   'collection.cardType.building': '建筑',
   'collection.cardType.spell': '法术',
@@ -581,6 +577,7 @@ export const zh = {
   'collection.stat.range': '射程',
   'collection.stat.spawn': '数量',
   'collection.stat.interval': '攻速',
+  'collection.locked': '未解锁',
 
   // Match history / stats page (serves as the "Career" hub after IA redesign)
   'stats.title': '生涯',
@@ -1433,11 +1430,16 @@ export const zh = {
   'roster.faction.tao': '陶方',
   'roster.faction.anna': 'Anna方',
   'roster.err.generic': '操作失败，请重试',
+  'roster.err.offline': '离线状态下无法操作，请先登录',
+  'roster.tab.skins': '皮肤',
 
   // Character card names (Hero Roster tao-faction only; anna names are at the top of the file)
   'card.lichuang.name': '李川',
+  'card.lichuang.lore': '笔记本边角走出的涂鸦士兵——便宜耐用，永远冲在最前面。',
   'card.chenshou.name': '陈守',
+  'card.chenshou.lore': '举着橡皮削成的大盾——行动缓慢，却能挡下整页的攻击。',
   'card.suyuan.name': '苏远',
+  'card.suyuan.lore': '用回形针弯成的弓，在格线后方精准点射。',
 
   // Teams scene (CC-4)
   'world.team.fillTroops': '一键补满兵力',

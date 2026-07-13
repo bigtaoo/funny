@@ -167,10 +167,10 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
       onOpenShop() { analytics.click('lobby.shop'); withGuide('shop', 'guide.shop.title', 'guide.shop.body', () => nav.goGacha({ shopBack: () => goLobby() })); },
       ...(online ? { onOpenRecharge: () => nav.goShop(goLobby, 'coins') } : {}),
       ...(online ? { onOpenLeaderboard: () => nav.goLeaderboard(goLobby) } : {}),
-      // Lobby "cards" slot → Hero Roster (CHARACTER_CARDS_DESIGN §10). Roster mutations (feed/lock)
-      // are server-authoritative, so logged-out / offline falls back to the offline-capable Collection
-      // (card codex + skins wardrobe), which stays reachable from the campaign map too.
-      onOpenCards() { analytics.click('lobby.cards'); withGuide('cards', 'guide.cards.title', 'guide.cards.body', () => (api ? nav.goCardRoster(goLobby) : nav.goCollection(goLobby, 'cards'))); },
+      // Lobby "cards" slot → Hero Roster (CHARACTER_CARDS_DESIGN §10). Feed/lock/gear are
+      // server-authoritative, but the roster itself now works read-only offline (skins tab included,
+      // LOBBY_IA_REDESIGN §15) — no separate offline fallback screen needed anymore.
+      onOpenCards() { analytics.click('lobby.cards'); withGuide('cards', 'guide.cards.title', 'guide.cards.body', () => nav.goCardRoster(goLobby)); },
       onOpenStats() { analytics.click('lobby.stats'); nav.goStats(); },
       ...(online ? { onOpenAchievements: () => nav.goAchievements(goLobby) } : {}),
       ...(online ? { onOpenDaily: () => { analytics.click('lobby.daily'); withGuide('daily', 'guide.daily.title', 'guide.daily.body', () => nav.goDaily()); }, onOpenEvents: () => { analytics.click('lobby.events'); nav.goEvents(); } } : {}),

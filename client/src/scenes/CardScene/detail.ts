@@ -4,10 +4,13 @@ import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { UNIT_ART_URLS } from '../../render/cardArt';
+import { buildIcon } from '../../render/icons';
 import { drawEquipmentGlyph } from '../../render/equipmentGlyph';
 import { getEquipIconTexture } from '../../render/equipmentAtlas';
 import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
 import { CARD_DEFS, xpToNextLevel, troopCap, cardPower } from '../../game/meta/cardDefs';
+import { skinsForUnitType } from '../../game/meta/skinDefs';
+import type { UnitType } from '../../game/types';
 import {
   type Constructor, type CardSceneBaseCtor,
   MODAL_DIM, injuryCountdown,
@@ -76,7 +79,7 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
       ml.addChild(facLbl);
       cy += 26;
 
-      // ── Portrait (left) + stats column (right) ──
+      // ── Portrait (left, tap to flip → lore) + stats column (right) ──
       const portraitBox = 96;
       const portraitX = mx + 12;
       const portraitY = cy;
@@ -84,7 +87,34 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
       frame.x = portraitX; frame.y = portraitY;
       ml.addChild(frame);
       const artUrl = def ? UNIT_ART_URLS[def.unitType] : undefined;
-      if (artUrl) this.drawArtFit(artUrl, portraitX + 3, portraitY + 3, portraitBox - 6, ml);
+      const loreText = t(`card.${card.defId}.lore` as TranslationKey);
+      const faceLayer = new PIXI.Container();
+      faceLayer.position.set(portraitX + portraitBox / 2, portraitY + portraitBox / 2);
+      ml.addChild(faceLayer);
+      this.drawDetailFace(faceLayer, portraitBox, artUrl, loreText, this.detailFlipped);
+      this.modalHits.push({
+        rect: { x: portraitX, y: portraitY, w: portraitBox, h: portraitBox },
+        action: () => this.flipDetailPortrait(faceLayer, portraitBox, artUrl, loreText),
+      });
+
+      // Change-skin badge (bottom-right corner of the frame) — only for characters with ≥1 owned skin.
+      const unitType = def?.unitType as UnitType | undefined;
+      const ownedForChar = unitType ? skinsForUnitType(unitType, this.cb.getOwnedSkins()) : [];
+      if (unitType && ownedForChar.length > 0) {
+        const badgeSize = 22;
+        const badgeX = portraitX + portraitBox - badgeSize + 4;
+        const badgeY = portraitY + portraitBox - badgeSize + 4;
+        const badge = sketchPanel(badgeSize, badgeSize, { fill: C.dark, border: C.gold, seed: seedFor(badgeX, badgeY, badgeSize) });
+        badge.x = badgeX; badge.y = badgeY;
+        ml.addChild(badge);
+        const ic = buildIcon('brush', badgeSize - 8, C.gold);
+        ic.x = badgeX + 4; ic.y = badgeY + 4;
+        ml.addChild(ic);
+        this.modalHits.push({
+          rect: { x: badgeX, y: badgeY, w: badgeSize, h: badgeSize },
+          action: () => { this.skinPickerOpen = !this.skinPickerOpen; this.render(); },
+        });
+      }
 
       const statX = portraitX + portraitBox + 14;
       let statY = portraitY + 2;
@@ -205,9 +235,87 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
         if (b.on) this.modalHits.push({ rect: { x, y: btnY, w: bw, h: btnH }, action: b.fn });
       });
 
+      // Skin picker popover (change-skin badge tapped) — floats over the rest of the modal; a tap
+      // anywhere outside its rows closes the picker (not the whole modal — needs a second tap for that).
+      if (this.skinPickerOpen && unitType) {
+        const pW = mw - 24, pX = mx + 12, pY = my + 40;
+        const rowH = 26, rowGap = 4;
+        const options: Array<{ id: string | null; label: string }> = [
+          { id: null, label: t('collection.default') },
+          ...ownedForChar.map((id) => ({ id, label: id })),
+        ];
+        const pH = options.length * (rowH + rowGap) + 8;
+        const dim2 = new PIXI.Graphics();
+        dim2.beginFill(MODAL_DIM, 0.5).drawRect(0, 0, w, h).endFill();
+        ml.addChild(dim2);
+        const popup = sketchPanel(pW, pH, { fill: C.paper, border: C.gold, width: 2, seed: seedFor(pX, pY, pW) });
+        popup.x = pX; popup.y = pY;
+        ml.addChild(popup);
+        const equippedNow = this.cb.getEquippedSkin(unitType);
+        options.forEach((opt, i) => {
+          const ry = pY + 4 + i * (rowH + rowGap);
+          const isEq = opt.id === equippedNow;
+          const row = sketchPanel(pW - 8, rowH, { fill: isEq ? C.dark : 0xf5f0e8, border: isEq ? C.green : C.mid, seed: seedFor(i, ry, pW) });
+          row.x = pX + 4; row.y = ry;
+          ml.addChild(row);
+          const lbl = txt(opt.label, 11, isEq ? C.light : C.dark, true);
+          lbl.anchor.set(0.5, 0.5); lbl.x = pX + pW / 2; lbl.y = ry + rowH / 2;
+          ml.addChild(lbl);
+          if (!isEq) {
+            this.modalHits.push({
+              rect: { x: pX + 4, y: ry, w: pW - 8, h: rowH },
+              action: () => { this.cb.equipSkin(unitType, opt.id); this.skinPickerOpen = false; this.render(); },
+            });
+          }
+        });
+        this.modalHits.push({ rect: { x: 0, y: 0, w, h }, action: () => { this.skinPickerOpen = false; this.render(); } });
+      }
+
       // Tap outside to close
       this.modalHits.push({ rect: { x: mx, y: my, w: mw, h: mh }, action: () => {} });
       this.modalHits.push({ rect: { x: 0, y: 0, w, h }, action: () => this.closeDetail() });
+    }
+
+    /** Draw the portrait face: art (front) or word-wrapped lore text (back), centered on the container's local origin. */
+    drawDetailFace(container: PIXI.Container, box: number, artUrl: string | undefined, loreText: string, flipped: boolean): void {
+      container.removeChildren();
+      if (!flipped) {
+        if (artUrl) this.drawArtFit(artUrl, -box / 2, -box / 2, box, container);
+        return;
+      }
+      const bg = new PIXI.Graphics();
+      bg.beginFill(0xf0eee7).drawRect(-box / 2, -box / 2, box, box).endFill();
+      container.addChild(bg);
+      const lore = txt(loreText, 9, C.mid);
+      lore.style.wordWrap = true;
+      lore.style.wordWrapWidth = box - 10;
+      lore.x = -box / 2 + 5; lore.y = -box / 2 + 5;
+      container.addChild(lore);
+    }
+
+    /** Squash-flip the portrait face container (scaleX 1→0→1, swapping content at the midpoint) via PIXI.Ticker.shared. */
+    flipDetailPortrait(container: PIXI.Container, box: number, artUrl: string | undefined, loreText: string): void {
+      this.flipTickerCleanup?.();
+      const DUR_MS = 260;
+      let elapsed = 0;
+      let swapped = false;
+      const tick = () => {
+        elapsed += PIXI.Ticker.shared.deltaMS;
+        const t = Math.min(1, elapsed / DUR_MS);
+        if (!swapped && t >= 0.5) {
+          swapped = true;
+          this.detailFlipped = !this.detailFlipped;
+          this.drawDetailFace(container, box, artUrl, loreText, this.detailFlipped);
+        }
+        container.scale.x = Math.max(0.02, t < 0.5 ? 1 - t / 0.5 : (t - 0.5) / 0.5);
+        if (t >= 1) {
+          container.scale.x = 1;
+          PIXI.Ticker.shared.remove(tick);
+          this.flipTickerCleanup = null;
+        }
+      };
+      this.flipTickerCleanup = () => PIXI.Ticker.shared.remove(tick);
+      PIXI.Ticker.shared.add(tick);
     }
 
     /** Render 3 gear slot boxes (icon + level badge) inside the detail modal. */

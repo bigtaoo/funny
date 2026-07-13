@@ -31,6 +31,8 @@ export interface TitlesSceneCallbacks {
    */
   onOpenStats?(): void;
   onOpenAchievements?(): void;
+  /** Open the card codex (LOBBY_IA_REDESIGN §15, folded in from the retired CollectionScene). */
+  onOpenCodex?(): void;
   /** Red dot on the achievements peer tab when any tier is claimable. */
   hasClaimableAchievement?: boolean;
 }
@@ -89,7 +91,7 @@ export class TitlesScene implements Scene {
     const { w, h, landscape } = this;
     // Landscape only for now, and only when the Career hub peer strip is actually shown — see
     // ShopScene.drawBackground / LOBBY_IA_REDESIGN §14.
-    const hasSidebar = !!(this.cb.onOpenStats && this.cb.onOpenAchievements);
+    const hasSidebar = !!(this.cb.onOpenStats && this.cb.onOpenAchievements && this.cb.onOpenCodex);
     const railX = landscape && hasSidebar ? sidebarNavW(w, h, true) : undefined;
     const bg = buildPaperBackground('titlesbg', w, h, { railX });
     this.container.addChild(bg);
@@ -109,7 +111,7 @@ export class TitlesScene implements Scene {
    * CareerTabs.ts); only drawn when the caller wired both sibling callbacks.
    */
   private drawSidebar(tbH: number): void {
-    if (!this.cb.onOpenStats || !this.cb.onOpenAchievements) return;
+    if (!this.cb.onOpenStats || !this.cb.onOpenAchievements || !this.cb.onOpenCodex) return;
     const { w, h } = this;
     const sidebarW = sidebarNavW(w, h, this.landscape);
     const sidebarTop = tbH + Math.round(h * 0.02);
@@ -117,6 +119,7 @@ export class TitlesScene implements Scene {
       onOpenStats: this.cb.onOpenStats,
       onOpenTitles: () => {},
       onOpenAchievements: this.cb.onOpenAchievements,
+      onOpenCodex: this.cb.onOpenCodex,
       hasClaimableAchievement: this.cb.hasClaimableAchievement,
     });
     this.hits.push(...hits);
@@ -124,7 +127,7 @@ export class TitlesScene implements Scene {
 
   private drawTitleList(): void {
     const { w, h } = this;
-    const hasSidebar = !!this.cb.onOpenStats && !!this.cb.onOpenAchievements;
+    const hasSidebar = !!this.cb.onOpenStats && !!this.cb.onOpenAchievements && !!this.cb.onOpenCodex;
     const tbH = Math.round(h * 0.12);
     const padX = hasSidebar ? sidebarNavW(w, h, this.landscape) + Math.round(w * 0.025) : Math.round(w * 0.08);
     const padRight = hasSidebar ? Math.round(w * 0.04) : Math.round(w * 0.08);

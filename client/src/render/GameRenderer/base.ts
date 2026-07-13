@@ -84,8 +84,8 @@ export class GameRendererBase {
 
   protected boardView!:    BoardView;
   protected unitView!:     UnitView;
-  /** Equipped skin id (S3-4), passed to UnitView for the texture swap; null = default. */
-  protected readonly equippedSkin: string | null = null;
+  /** Equipped skin ids (one per character, LOBBY_IA_REDESIGN §15), passed to UnitView for the texture swap. */
+  protected readonly equippedSkins: readonly string[] = [];
   /** Hero Roster card instances (PvE/siege only) for the battle-render gear overlay (§20.4); null = none. */
   protected readonly cardInstances: EngineCardInstance[] | null = null;
   /** Equipment inventory for resolving worn gear slot ids in the overlay (§20.4); null = none. */
@@ -119,7 +119,7 @@ export class GameRendererBase {
     netEnabled = false,
     spectator = false,
     profiles: GameProfiles = {},
-    equippedSkin: string | null = null,
+    equippedSkins: readonly string[] = [],
     cardInstances: EngineCardInstance[] | null = null,
     equipmentInv: EngineEquipInv | null = null,
     tutorial = false,
@@ -128,7 +128,7 @@ export class GameRendererBase {
     this.engine     = engine;
     this.layout     = layout;
     this.netEnabled = netEnabled;
-    this.equippedSkin = equippedSkin;
+    this.equippedSkins = equippedSkins;
     this.cardInstances = cardInstances;
     this.equipmentInv  = equipmentInv;
     this.battleLabelCtx = battleLabels;
@@ -319,7 +319,7 @@ export class GameRendererBase {
     this.boardView.markNoBuildCells(this.engine.state.board.getNoBuildCells());
     this.boardView.markInactiveLanes(this.engine.state.board.getActiveLanes());
     this.boardView.markBlockedCells(this.engine.state.board.getBlockedCells());
-    this.unitView     = new UnitView(this.boardView, this.layout.localSide, this.equippedSkin, this.cardInstances, this.equipmentInv);
+    this.unitView     = new UnitView(this.boardView, this.layout.localSide, this.equippedSkins, this.cardInstances, this.equipmentInv);
     this.buildingView = new BuildingView(this.boardView);
     this.handView     = new HandView(this.layout);
     this.hudView      = new HUDView(this.layout);

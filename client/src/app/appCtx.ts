@@ -69,12 +69,12 @@ export interface Nav {
   goGame(opts?: { seed?: number; difficulty?: AIDifficulty; fromBotFallback?: boolean }): void;
   goCampaignMap(): void;
   goLevelPrep(levelId: string): void;
-  goCollection(back: () => void, initialTab?: 'cards' | 'skins'): void;
   goCardRoster(back?: () => void): void;
-  goEquipment(back?: () => void, group?: 'none' | 'collection' | 'roster', cardInstanceId?: string): void;
+  goEquipment(back?: () => void, group?: 'none' | 'roster', cardInstanceId?: string): void;
   goStats(back?: () => void): void;
   goLeaderboard(onBack?: () => void): void;
   goAchievements(back?: () => void): void;
+  goCodex(back?: () => void): void;
   goCampaign(levelId: string | undefined): void;
   goTutorial(): void;
   goReplay(replay: Replay, onExit?: () => void): void;

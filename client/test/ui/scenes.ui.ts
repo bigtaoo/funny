@@ -24,7 +24,7 @@ import { GachaScene } from '../../src/scenes/GachaScene';
 import { CampaignMapScene } from '../../src/scenes/CampaignMapScene';
 import { LevelPrepScene } from '../../src/scenes/LevelPrepScene';
 import { marginLineX } from '../../src/render/sketchUi';
-import { CollectionScene } from '../../src/scenes/CollectionScene';
+import { CardCodexScene } from '../../src/scenes/CardCodexScene';
 import { StatsScene } from '../../src/scenes/StatsScene';
 import { RoomScene, CODE_ALPHABET } from '../../src/scenes/RoomScene';
 import { FriendsScene } from '../../src/scenes/FriendsScene';
@@ -266,13 +266,11 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
       }),
   },
   {
-    name: 'CollectionScene',
+    name: 'CardCodexScene',
     build: (w, h) =>
-      new CollectionScene(createLayout(w, h), new InputManager(), {
+      new CardCodexScene(createLayout(w, h), new InputManager(), {
         onBack() {},
-        getSkins: () => [],
-        getEquipped: () => null,
-        equip() {},
+        getOwnedUnitTypes: () => new Set(),
       }),
   },
   {

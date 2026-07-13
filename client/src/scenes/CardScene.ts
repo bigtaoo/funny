@@ -12,13 +12,16 @@ import { ListMixin } from './CardScene/list';
 import { DetailMixin } from './CardScene/detail';
 import { FeedMixin } from './CardScene/feed';
 import { ActionsMixin } from './CardScene/actions';
+import { SkinsMixin } from './CardScene/skins';
 
 export type { CardCallbacks, CardActionResult } from './CardScene/base';
 
 const Assembled = ActionsMixin(
   FeedMixin(
     DetailMixin(
-      ListMixin(CardSceneBase),
+      SkinsMixin(
+        ListMixin(CardSceneBase),
+      ),
     ),
   ),
 );

@@ -58,6 +58,8 @@ export interface StatsCallbacks {
   playerName?: string;
   /** Open the titles wall (S10). Shown as a header button to the left of achievements. */
   onOpenTitles?(): void;
+  /** Open the card codex (LOBBY_IA_REDESIGN §15, folded in from the retired CollectionScene). */
+  onOpenCodex?(): void;
   /** Current season info for the banner (SE-6). */
   season?: { seasonNo: number; endAt: number };
 }
@@ -137,7 +139,7 @@ export class StatsScene implements Scene {
 
     // Landscape only for now, and only when the Career hub peer strip is actually shown — see
     // ShopScene.drawBackground / LOBBY_IA_REDESIGN §14.
-    const hasSidebar = !!(this.cb.onOpenTitles && this.cb.onOpenAchievements);
+    const hasSidebar = !!(this.cb.onOpenTitles && this.cb.onOpenAchievements && this.cb.onOpenCodex);
     const railX = landscape && hasSidebar ? sidebarNavW(w, h, true) : undefined;
     this.container.addChild(buildPaperBackground('statsbg', w, h, { railX }));
     const decoC = buildDecorCLayer(w, h);
@@ -153,11 +155,12 @@ export class StatsScene implements Scene {
     // of the red margin rule instead of the rule cutting through them.
     const sidebarW = sidebarNavW(w, h, this.landscape);
     const sidebarTop = tbH + Math.round(h * 0.02);
-    if (this.cb.onOpenTitles && this.cb.onOpenAchievements) {
+    if (this.cb.onOpenTitles && this.cb.onOpenAchievements && this.cb.onOpenCodex) {
       const { hits } = drawCareerTabs(this.container, sidebarW, sidebarTop, h, 'stats', {
         onOpenStats: () => {},
         onOpenTitles: this.cb.onOpenTitles,
         onOpenAchievements: this.cb.onOpenAchievements,
+        onOpenCodex: this.cb.onOpenCodex,
         hasClaimableAchievement: this.cb.hasClaimableAchievement,
       });
       this.hits.push(...hits);

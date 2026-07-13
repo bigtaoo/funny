@@ -8,18 +8,18 @@ import { computeStars, buildStarContext } from '../../game/meta/campaignRewards'
 import { t, type TranslationKey } from '../../i18n';
 import { ApiError } from '../../net/ApiClient';
 import { serverReplayToReplay } from '../../net/serverReplay';
-import { EQUIP_SLOT } from '../equipSlot';
+import { allEquippedSkins, skinEquipKey } from '../../game/meta/skinDefs';
 import { genUuid } from '../../platform/uuid';
 import type { EquipSlot } from '../../game/meta/SaveData';
-import { toEngineCardInstances } from '../../game/meta/cardDefs';
+import { toEngineCardInstances, CARD_DEFS } from '../../game/meta/cardDefs';
 import type { IconKind } from '../../render/icons';
 import type { AppCtx, Nav } from '../appCtx';
 import { PLAYER_PUBLIC_ID_KEY, PLAYER_NAME_KEY, TOKEN_KEY, TUTORIAL_DONE_FLAG } from '../appConstants';
 import { pickPracticeDifficulty } from './lobby';
 
 type GameNav = Pick<Nav,
-  'goGame' | 'goCampaignMap' | 'goLevelPrep' | 'goCollection' | 'goCardRoster' | 'goEquipment' |
-  'goStats' | 'goLeaderboard' | 'goAchievements' | 'goCampaign' | 'goTutorial' | 'goTitles'>;
+  'goGame' | 'goCampaignMap' | 'goLevelPrep' | 'goCardRoster' | 'goEquipment' |
+  'goStats' | 'goLeaderboard' | 'goAchievements' | 'goCampaign' | 'goTutorial' | 'goTitles' | 'goCodex'>;
 
 export function createGameNav(ctx: AppCtx): GameNav {
   const { api, saveManager, platform, state, views, nav, keepReplay, resolvePvpDeck } = ctx;
@@ -69,7 +69,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
         nav.goLobby({ fade: true }); // exiting a match — one of the transitions that cross-fade
       },
     }, {
-      equippedSkin: saveManager.get().equipped[EQUIP_SLOT] ?? null,
+      equippedSkins: allEquippedSkins(saveManager.get().equipped),
       // PvP-vs-AI must honour the same ELO card-unlock gate as online PvP (PVP_LOADOUT §3/§6.3):
       // filter both sides' draw pool to the player's current-elo-validated deck (mirror match).
       // Without this the local engine draws from the full pool and leaks locked units (runner/splitter/…).
@@ -85,14 +85,13 @@ export function createGameNav(ctx: AppCtx): GameNav {
     views.showCampaignMap({
       onBack() { nav.goLobby(); },
       onSelectLevel(levelId) { goLevelPrep(levelId); },
-      // Single growth-hub entry (LOBBY_IA_REDESIGN §9): lands directly on Equipment (peer-tab
-      // back to Collection) when the server-authoritative equipment system is reachable (E5);
-      // falls back to the Collection (skins) screen when offline/logged out, same gate `goCollection`
-      // uses for its own internal Equipment launcher.
+      // Single growth-hub entry (LOBBY_IA_REDESIGN §9/§15): lands directly on Equipment (peer-tab
+      // back to the roster) when the server-authoritative equipment system is reachable (E5);
+      // falls back to the roster itself when offline/logged out (CardScene now works read-only offline).
       onOpenEquipment() {
         const equipLoggedIn = !state.offlineMode && !!platform.storage.getItem(TOKEN_KEY);
-        if (api && equipLoggedIn) { goEquipment(() => goCollection(goCampaignMap, 'skins'), 'collection'); return; }
-        goCollection(goCampaignMap, 'skins');
+        if (api && equipLoggedIn) { goEquipment(() => goCardRoster(goCampaignMap), 'roster'); return; }
+        goCardRoster(goCampaignMap);
       },
       getStars: () => saveManager.get().progress.stars,
       getCleared: () => saveManager.get().progress.cleared,
@@ -143,44 +142,23 @@ export function createGameNav(ctx: AppCtx): GameNav {
     });
   }
 
-  function goCollection(back: () => void, initialTab: 'cards' | 'skins' = 'cards'): void {
-    state.inLobby = false;
-    analytics.track('screen_view', { scene: 'CollectionScene' });
-    // Equipment merged into the "Growth" section (LOBBY_IA_REDESIGN §3): the 4th "Equipment" tab
-    // is only active when logged in online; back from equipment returns to this collection page
-    // (preserving the active sub-tab).
-    const equipLoggedIn = !state.offlineMode && !!platform.storage.getItem(TOKEN_KEY);
-    views.showCollection({
-      onBack: back,
-      initialTab,
-      ...(api && equipLoggedIn ? { onOpenEquipment: () => goEquipment(() => goCollection(back, initialTab), 'collection') } : {}),
-      getSkins: () => saveManager.get().inventory.skins,
-      getEquipped: () => saveManager.get().equipped[EQUIP_SLOT] ?? null,
-      equip: (skinId) => {
-        saveManager.update((d) => {
-          if (skinId === null) delete d.equipped[EQUIP_SLOT];
-          else d.equipped[EQUIP_SLOT] = skinId;
-        });
-      },
-    });
-  }
-
   /**
-   * Hero Roster (CC-6): owned card instances — level / troops / gear / feed / lock.
-   * Server-authoritative (feed/lock mutate server-side; SaveData is a read-only mirror) → requires an
-   * online login; offline / not logged in falls back to `back`. Entered from the lobby "cards" nav slot
-   * (CHARACTER_CARDS_DESIGN §10). Per-card gear is edited by jumping to EquipmentScene with the card's
-   * instance id, returning here on back.
+   * Hero Roster (CC-6): owned card instances — level / troops / gear / feed / lock / skins.
+   * Feed/lock/gear are server-authoritative (require an online login); skins are a client-sync-section
+   * write and always work, including offline (LOBBY_IA_REDESIGN §15) — offline/never-logged-in players
+   * still get a read-only roster + working skins tab off the local save mirror instead of a dead end.
+   * Entered from the lobby "cards" nav slot (CHARACTER_CARDS_DESIGN §10).
    */
   function goCardRoster(back: () => void = () => nav.goLobby()): void {
-    if (!api) { back(); return; }
     const client = api;
+    const online = !!client;
     state.inLobby = false;
     analytics.track('screen_view', { scene: 'CardScene' });
     views.showCardRoster({
       onBack() { back(); },
       getSave: () => saveManager.get(),
       async feedCards(targetCardId, materialCardIds) {
+        if (!client) return { ok: false as const, key: 'roster.err.offline' as TranslationKey };
         try {
           const { save, levelsGained } = await client.feedCards(targetCardId, materialCardIds, genUuid());
           saveManager.adoptServer(save);
@@ -189,6 +167,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
         } catch { return { ok: false as const, key: 'roster.err.generic' as TranslationKey }; }
       },
       async setCardLock(cardInstanceId, locked) {
+        if (!client) return { ok: false as const, key: 'roster.err.offline' as TranslationKey };
         try {
           const { save } = await client.setCardLock(cardInstanceId, locked);
           saveManager.adoptServer(save);
@@ -196,10 +175,20 @@ export function createGameNav(ctx: AppCtx): GameNav {
           return { ok: true as const };
         } catch { return { ok: false as const, key: 'roster.err.generic' as TranslationKey }; }
       },
-      // Per-card gear editing (CC-1 flow: CardScene → EquipmentScene → back to roster).
-      openEquipment: (cardInstanceId: string) => goEquipment(() => goCardRoster(back), 'none', cardInstanceId),
-      // Standalone equipment bag as a roster peer (LOBBY_IA): [Cards|Equipment] group; no active card.
-      openEquipmentBag: () => goEquipment(() => goCardRoster(back), 'roster', ''),
+      // Per-card gear editing + the standalone equipment bag are server-authoritative — omitted offline.
+      ...(online ? {
+        openEquipment: (cardInstanceId: string) => goEquipment(() => goCardRoster(back), 'none', cardInstanceId),
+        openEquipmentBag: () => goEquipment(() => goCardRoster(back), 'roster', ''),
+      } : {}),
+      getOwnedSkins: () => saveManager.get().inventory.skins,
+      getEquippedSkin: (unitType) => saveManager.get().equipped[skinEquipKey(unitType)] ?? null,
+      equipSkin: (unitType, skinId) => {
+        saveManager.update((d) => {
+          const key = skinEquipKey(unitType);
+          if (skinId === null) delete d.equipped[key];
+          else d.equipped[key] = skinId;
+        });
+      },
     });
   }
 
@@ -224,22 +213,20 @@ export function createGameNav(ctx: AppCtx): GameNav {
 
   /**
    * Equipment system (E5). Server-authoritative; requires an online login. Can be entered from
-   * the campaign map (default back) or the "Growth" tab (LOBBY_IA_REDESIGN §3, back=collection page);
-   * `back` determines where the user returns to.
+   * the campaign map (default back) or the roster ("Develop" tab); `back` determines where the
+   * user returns to.
    */
-  function goEquipment(back: () => void = goCampaignMap, group: 'none' | 'collection' | 'roster' = 'none', cardInstanceId = ''): void {
+  function goEquipment(back: () => void = goCampaignMap, group: 'none' | 'roster' = 'none', cardInstanceId = ''): void {
     if (!api) { back(); return; }
     const client = api;
     state.inLobby = false;
     analytics.track('screen_view', { scene: 'EquipmentScene' });
-    // Growth group peer tabs (LOBBY_IA_REDESIGN P1.5): a top [<peer>|Equipment] strip is shown when
-    // entered from the collection page ([Collection|Equipment]) or the card roster ([Cards|Equipment]);
-    // tapping the peer navigates back (= back). Campaign / per-card entry does not inject this → plain back.
-    const peerTab = group === 'collection'
-      ? { labelKey: 'collection.title' as TranslationKey, icon: 'book' as IconKind, onSelect: () => back() }
-      : group === 'roster'
-        ? { labelKey: 'roster.title' as TranslationKey, icon: 'cards' as IconKind, onSelect: () => back() }
-        : undefined;
+    // Growth group peer tab (LOBBY_IA_REDESIGN P1.5/§15): a top [Cards|Equipment] strip is shown when
+    // entered from the card roster; tapping the peer navigates back (= back). Campaign / per-card
+    // entry does not inject this → plain back.
+    const peerTab = group === 'roster'
+      ? { labelKey: 'roster.title' as TranslationKey, icon: 'cards' as IconKind, onSelect: () => back() }
+      : undefined;
     views.showEquipment({
       onBack() { back(); },
       ...(peerTab ? { peerTab } : {}),
@@ -332,6 +319,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
       // Thread `back` through (not goStats) so switching tabs within the Career hub doesn't add a
       // hop: Titles' own back button should return straight to wherever Stats was entered from.
       ...(loggedIn ? { onOpenTitles: () => goTitles(back) } : {}),
+      ...(loggedIn ? { onOpenCodex: () => goCodex(back) } : {}),
       // Season banner: read from save pvp.seasonNo; endAt comes from the leaderboard cache or stays undefined (displays "ended").
       ...(pvp.seasonNo ? { season: { seasonNo: pvp.seasonNo, endAt: 0 } } : {}),
       getStats: () => {
@@ -380,6 +368,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
       onBack: () => back(),
       onOpenStats: () => goStats(back),
       onOpenTitles: () => goTitles(back),
+      onOpenCodex: () => goCodex(back),
       // Fetch achievements and enable claiming only when logged in online;
       // offline / not logged in: the page shows a "log in to view" message.
       ...(client && loggedIn
@@ -407,6 +396,32 @@ export function createGameNav(ctx: AppCtx): GameNav {
         saveManager.update((d) => { d.equipped['title'] = titleId; });
       },
       onOpenStats: () => goStats(back),
+      onOpenAchievements: () => goAchievements(back),
+      onOpenCodex: () => goCodex(back),
+      hasClaimableAchievement: state.achievementClaimable,
+    });
+  }
+
+  /**
+   * Read-only card compendium (LOBBY_IA_REDESIGN §15, folded in from the retired CollectionScene).
+   * Career hub peer of Stats/Titles/Achievements; entered the same way they are (back=goStats).
+   */
+  function goCodex(back: () => void = goStats): void {
+    state.inLobby = false;
+    analytics.track('screen_view', { scene: 'CardCodexScene' });
+    views.showCardCodex({
+      onBack() { back(); },
+      getOwnedUnitTypes: () => {
+        const save = saveManager.get();
+        const owned = new Set<string>();
+        for (const inst of Object.values(save.cardInv ?? {})) {
+          const def = CARD_DEFS[inst.defId];
+          if (def) owned.add(def.unitType);
+        }
+        return owned;
+      },
+      onOpenStats: () => goStats(back),
+      onOpenTitles: () => goTitles(back),
       onOpenAchievements: () => goAchievements(back),
       hasClaimableAchievement: state.achievementClaimable,
     });
@@ -462,7 +477,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
       },
     }, {
       level,
-      equippedSkin: saveManager.get().equipped[EQUIP_SLOT] ?? null,
+      equippedSkins: allEquippedSkins(saveManager.get().equipped),
       // Hero Roster → engine (card level + per-card equipment buff blueprints, §9) and to the
       // renderer (worn gear drawn on units, §20.4). PvE-only; PvP omits both (hard wall).
       cardInstances: toEngineCardInstances(saveManager.get().cardInv ?? {}),
@@ -501,7 +516,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
   }
 
   return {
-    goGame, goCampaignMap, goLevelPrep, goCollection, goCardRoster, goEquipment,
-    goStats, goLeaderboard, goAchievements, goCampaign, goTutorial, goTitles,
+    goGame, goCampaignMap, goLevelPrep, goCardRoster, goEquipment,
+    goStats, goLeaderboard, goAchievements, goCampaign, goTutorial, goTitles, goCodex,
   };
 }
