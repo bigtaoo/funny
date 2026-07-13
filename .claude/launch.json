@@ -4,14 +4,14 @@
     {
       "name": "game",
       "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "npm", "--prefix", "D:\\funny\\.claude\\worktrees\\occupy-march\\client", "run", "start", "--", "--port", "9190"],
-      "port": 9190
+      "runtimeArgs": ["/c", "npm", "--prefix", "D:\\funny\\client", "run", "start", "--", "--port", "9090"],
+      "port": 9090
     },
     {
       "name": "game-public",
       "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "set NW_API_BASE=https://api.gamestao.com/api&&set NW_GATEWAY_WS=wss://api.gamestao.com/gw&&set NW_WORLD_BASE=https://api.gamestao.com&&set NW_SOCIAL_BASE=https://api.gamestao.com&&npm --prefix D:\\funny\\.claude\\worktrees\\occupy-march\\client run start -- --port 9190"],
-      "port": 9190
+      "runtimeArgs": ["/c", "set NW_API_BASE=https://api.gamestao.com/api&&set NW_GATEWAY_WS=wss://api.gamestao.com/gw&&set NW_WORLD_BASE=https://api.gamestao.com&&set NW_SOCIAL_BASE=https://api.gamestao.com&&npm --prefix D:\\funny\\client run start -- --port 9090"],
+      "port": 9090
     },
     {
       "name": "animator",
