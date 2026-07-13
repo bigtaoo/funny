@@ -13,6 +13,7 @@ export interface ActionHandlers {
   confirmKick(targetId: string, name: string): void;
   doSetRole(targetId: string, role: 'elder' | 'member'): Promise<void>;
   doSendMsg(): Promise<void>;
+  submitMessage(body: string): Promise<void>;
 }
 
 export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBase & Constructor<ActionHandlers> {
@@ -156,8 +157,26 @@ export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TB
       }
     }
 
+    async submitMessage(body: string): Promise<void> {
+      if (!body || !this.family) return;
+      try {
+        await this.cb.worldApi.sendFamilyMessage(this.family.familyId, body, this.cb.playerName);
+        await this.loadChannel();
+        if (!this.destroyed) this.render();
+      } catch (err) {
+        this.showToast(this.errorMsg(err), C.red);
+      }
+    }
+
     async doSendMsg(): Promise<void> {
-      // Handled inline by openSendInput
+      if (this.sendInput) {
+        const body = this.sendInput.value.trim();
+        this.sendInput.remove();
+        this.sendInput = null;
+        await this.submitMessage(body);
+      } else {
+        this.openSendInput();
+      }
     }
   };
 }

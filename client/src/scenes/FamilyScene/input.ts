@@ -1,5 +1,4 @@
 // Hidden-input overlay for the family scene: text entry for the create form fields and channel send box.
-import { ui as C } from '../../render/sketchUi';
 import { type Constructor, type FamilySceneBaseCtor } from './base';
 
 export interface InputHandlers {
@@ -44,18 +43,12 @@ export function InputMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBas
         if (e.key === 'Enter') {
           const body = inp.value.trim();
           inp.remove();
-          if (body && this.family) {
-            try {
-              await this.cb.worldApi.sendFamilyMessage(this.family.familyId, body, this.cb.playerName);
-              await this.loadChannel();
-              if (!this.destroyed) this.render();
-            } catch (err) {
-              this.showToast(this.errorMsg(err), C.red);
-            }
-          }
+          this.sendInput = null;
+          await this.submitMessage(body);
         }
       });
-      inp.addEventListener('blur', () => { inp.remove(); });
+      inp.addEventListener('blur', () => { inp.remove(); this.sendInput = null; });
+      this.sendInput = inp;
     }
   };
 }
