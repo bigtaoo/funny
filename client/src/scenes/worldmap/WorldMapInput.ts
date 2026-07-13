@@ -132,11 +132,34 @@ export class WorldMapInput {
       return;
     }
 
-    // Neutral tile. NPC garrison present → offer sweep (march). Always offer
-    // direct occupy (S8-1, in-range; server rejects out-of-range).
+    // Neutral tile, mid occupation-hold (ADR-037 §5.4): the tile has no owner yet, but a pending occupier has
+    // already won the PvE battle and is waiting out the hold countdown before ownership lands.
+    if (tile?.contestedUntil) {
+      const secLeft = Math.max(0, Math.ceil((tile.contestedUntil - Date.now()) / 1000));
+      if (tile.contestedByMe) {
+        // My own pending hold — nothing to do but watch the countdown (no reinforcement in v1).
+        this.ctx.panels.showModal([t('world.occupyingMine').replace('{sec}', String(secLeft)), `(${tx}, ${ty})`], [
+          { label: '✕', action: () => this.ctx.panels.closeModal() },
+        ]);
+        return;
+      }
+      // Someone else is holding it — offer an expelling attack instead of occupy/sweep (occupying it directly
+      // would just bounce off the pending holder's contestedBy at arrival; use attack to fight their held garrison).
+      const holdButtons: { label: string; action: () => void }[] = [
+        { label: t('world.actAttack'), action: () => void this.ctx.net.showAttackTeamPicker(tx, ty) },
+        { label: t('world.actScout'), action: () => void this.ctx.net.doScout(tx, ty) },
+        { label: '✕', action: () => this.ctx.panels.closeModal() },
+      ];
+      this.ctx.panels.showModal([t('world.occupying').replace('{sec}', String(secLeft)), `(${tx}, ${ty})`], holdButtons);
+      return;
+    }
+
+    // Neutral tile. NPC garrison present → offer sweep (march). Occupy is now a march (ADR-037 §5.4: fights the
+    // tile's system garrison via the deterministic engine, then holds it for a countdown before ownership lands)
+    // — same troop-count dialog as sweep/reinforce, not an instant grab.
     const garrison = tile?.garrison ?? 0;
     const buttons: { label: string; action: () => void }[] = [
-      { label: t('world.actOccupy'), action: () => this.ctx.net.doOccupy(tx, ty) },
+      { label: t('world.actOccupy'), action: () => this.ctx.panels.showDeployDialog(tx, ty, 'occupy') },
     ];
     if (garrison > 0) {
       buttons.push({ label: t('world.actSweep'), action: () => this.ctx.panels.showDeployDialog(tx, ty, 'sweep') });

@@ -221,19 +221,6 @@ export class WorldMapNet {
     }
   }
 
-  async doOccupy(tx: number, ty: number): Promise<void> {
-    this.ctx.panels.closeModal();
-    try {
-      await this.ctx.cb.worldApi.occupyTile(this.ctx.cb.worldId, tx, ty);
-      this.ctx.me = await this.ctx.cb.worldApi.getMe(this.ctx.cb.worldId);
-      await this.loadMapViewport();
-      this.ctx.panels.showToast(t('world.occupied'));
-      this.ctx.view.renderMap(); this.ctx.panels.renderHud();
-    } catch (e) {
-      this.ctx.panels.showToast(this.errorMsg(e), C.red);
-    }
-  }
-
   async doRecall(marchId: string, worldId: string): Promise<void> {
     try {
       await this.ctx.cb.worldApi.recallMarch(marchId, worldId);

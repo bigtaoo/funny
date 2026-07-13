@@ -111,6 +111,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description ⚠ Internal/test-only since ADR-037 (§5.4): instant, no-combat occupation. The product client does not call this — occupying a tile is now `POST /world/march` with `kind:'occupy'`, which fights the target's system garrison and settles through a delayed occupation hold. Kept only for e2e test setup convenience. */
         post: operations["occupyTile"];
         delete?: never;
         options?: never;
@@ -747,6 +748,10 @@ export interface components {
             /** @description ADR-026 §1: building max HP = level × SLG_BASE_HP_PER_LEVEL. Client renders the HP bar as hp/maxHp. */
             maxHp?: number;
             protectedUntil?: number;
+            /** @description ADR-037 (§5.4): this tile is mid occupation-hold — an occupy march won its PvE battle against the system garrison but the hold countdown has not yet elapsed (no owner yet). ms epoch when the hold resolves into ownership, unless expelled first by another attack/occupy march. */
+            contestedUntil?: number;
+            /** @description ADR-037 (§5.4): the pending occupier is the requester themself ("I'm holding" vs. "someone else is holding"). */
+            contestedByMe?: boolean;
             /** @description §18 G5 V2：A watchtower has been built on this tile (large-radius persistent vision source). The client renders the tower marker. */
             watchtower?: boolean;
             /** @description G5 vision: whether this tile is within the requester's current field of view. true = dynamic layer returned as-is; false = outside vision range, only the procedurally-generated base terrain is returned (all dynamic-layer data hidden, including the "occupied" signal). Populated only for /world/map viewport reads. */
