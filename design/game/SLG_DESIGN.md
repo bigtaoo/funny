@@ -1627,6 +1627,17 @@ if (path.startsWith('/admin/world/')) {
 - 验证：`tsc --noEmit` + `webpack --mode production` 全绿；用临时调试钩子（`app.ts` 挂 `globalThis.__NW_WorldMapPanels`/`__NW_WorldMapInput`，验证后已移除）直接构造假 `ctx`（20 条国家 / 15 件商品）单测 `renderInfoPanel()`，截图确认顶部/底部裁切干净、无溢出面板；再直接调用真实的 `WorldMapInput.handleWheel()`/`handleDown+handleMove+handleUp` 驱动滚动，截图确认滚轮和拖拽都能正确改变 `infoScrollY` 并触发重绘。
 - 回归测试：`client/test/ui/worldMapInfoScroll.ui.ts`（`npm run test:ui`，PIXI headless）——手搭一个只含 `renderInfoPanel`/`handleDown/Move/Up/Wheel` 实际读取字段的假 `WorldMapContext`（不构造完整 `WorldMapScene`，省去 tile cache/net/zoom 依赖），覆盖：滚动区域随内容量的建立/不建立（国家 20 条 vs 2 条、商城 15 件、Season Tab 无滚动区）、内容变短后 `infoScrollY` 重新 clamp、滚轮在区域内/外的移动与双向 clamp、拖拽滚动 + 阈值内不触发、区域内点按不误关闭弹层 vs 区域外点按仍正常关闭（回归此前"点列表任意空白处关闭弹层"的旧行为）、`closeModal()` 清空 `infoScrollRect`、切 Tab 重置 `infoScrollY`。共 15 例，随 `npm run test:ui` 全绿一并跑通。**副带修复**：`test/ui/scenes.ui.ts` 此前在本机因 `@nw/shared` 桶文件（`index.ts`）连带引入 `jsonwebtoken`/`mongodb` 等仅服务端依赖而在 Vite 转换时报 "Failed to load url" 直接挂掉（[[client-run-and-visual-verify]] 已记录的已知环境缺口）；本次把 `server/node_modules` 第三方包（非 `@nw/*`）整体 junction 进 worktree、`@nw/shared`+`@nw/engine` 单独 junction 回 worktree 自身源码目录后一并修好，`scenes.ui.ts` 77 例、`test:ui` 全套 18 文件 241 例、默认 `npm test` 76 文件 594 例均转绿。
 
+**顶部改为完整 SceneHeader 标题栏（2026-07-13）**：
+
+**背景**：关卡（`CampaignMapScene`/`LevelPrepScene`）已用 `SceneHeader.drawSceneHeader()` 的完整标题栏（含默认 `sceneHeaderHeight(h)` 高度），SLG 世界地图之前只用最轻量的 `drawFloatingBackButton()`（裸返回按钮胶囊，无栏体/无标题），三个"也需要通用功能"的场景（对战/关卡/SLG）里关卡已经统一、SLG 还没有。战斗场景（`GameScene`/`HUDView`）交互模型是暂停/退出而非返回、顶部内容是实时倒计时/敌方血条而非静态货币快照，判定为继续保持自绘（不套 SceneHeader）。
+
+**改动**：
+- `WorldMapRenderer/build.ts`：`drawFloatingBackButton` 换成 `drawSceneHeader(topLayer, w, h, t('world.title'), { accent: HEADER_ACCENT.slg })`——标题栏高度用与关卡完全相同的 `sceneHeaderHeight(h)`（12% 屏高），accent 用已预留的 `HEADER_ACCENT.slg`（红色，SLG/竞技类目）。`WorldMapContext` 新增 `topInset` 字段记录这个高度。
+- 地图可视区、相机居中/夹取（`viewport.ts` 的 `viewportCenter`/`setZoom`/`centerAt`/`clampPan`）、地图裁切遮罩（`build.ts` 的 `mapClip.mask`）、Loading 遮罩转圈中心点全部从"从 y=0 到 h-HUD_H"改成"从 topInset 到 h-HUD_H"，否则相机会把地图内容居中/停靠到实际被标题栏遮住的那条带里。
+- `WorldMapInput.ts`：开始拖拽 / 松手判定点击瓦片的两处 `y < h - HUD_H` 判断加上 `y > topInset` 下界，避免点在标题栏范围内的点按穿透到地图瓦片（原浮层返回按钮不挡地图交互，现在整条标题栏是不透明纸面，得同步收紧命中区）。
+- `WorldMapPanels.renderHud()`：右上角状态卡/行军角标/World-info 竖排原来固定从 `y=8` 起画，现在改成 `topInset + 8`——否则会被新标题栏整个盖住。左上 Zoom/Auction 竖排本来就用 `ctx.backRect.y + backRect.h` 接续，`drawSceneHeader` 返回的 `backRect.h` 现在是整条标题栏高度而非胶囊高度，天然接在标题栏下方，未改代码。
+- 验证：`tsc --noEmit -p tsconfig.test.json` + `webpack --mode production` 全绿；用临时调试钩子（`app.ts` 挂 `globalThis.__NW_APP`/`__NW_SceneHeader`/`__NW_WorldMapPanels`，验证后已移除）单独构造假 `ctx` 调 `drawSceneHeader`+`WorldMapPanels.renderHud()`，截图确认标题栏高度与关卡一致、右上状态卡/左上 Zoom-Auction 都清晰落在标题栏下方、无重叠。
+
 ---
 
 *本文档为 SLG 设计基准，DRAFT 标注处随实现/调参细化；锁定决策（SLG1~13）非经重新拍板不改。*

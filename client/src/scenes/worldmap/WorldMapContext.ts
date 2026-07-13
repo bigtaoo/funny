@@ -88,8 +88,10 @@ export class WorldMapContext {
   fogGfx!: PIXI.Graphics;
   overlayGfx!: PIXI.Graphics;
   hudLayer!: PIXI.Container;
-  /** Top-left floating back button — static, drawn once (unlike hudLayer, which is torn down on every ~5s march-poll re-render). */
+  /** Title bar + back button — static, drawn once (unlike hudLayer, which is torn down on every ~5s march-poll re-render). */
   topLayer!: PIXI.Container;
+  /** Header bar height (SceneHeader, unified with every other scene) — the map viewport and top-anchored HUD reserve this much space. Set once in build(). */
+  topInset = 0;
   modalLayer!: PIXI.Container;
   toastLayer!: PIXI.Container;
   loadingLayer: PIXI.Container | null = null;

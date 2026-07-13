@@ -92,7 +92,7 @@ export class WorldMapPanels {
     // ── Right column, top-right: status card → marches badge → World/info (passive state) ──
     const rightW = 160;
     const rx = w - rightW - 8;
-    let ry = 8;
+    let ry = this.ctx.topInset + 8;
 
     if (this.ctx.me?.joined) {
       const cardH = 58;
