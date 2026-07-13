@@ -957,6 +957,9 @@ export const zh = {
   'family.err.notIn': '未加入家族',
   'family.err.badTag': '名称或标签格式错误',
   'family.sect': '宗门',
+  'family.prosperity': '繁荣度 {n}',
+  'family.memberCount': '成员 {n}/{cap}',
+  'family.vacancies': '还有 {n} 个空位',
   // ── Sect / guild (S8-4b) ─────────────────────────────────────────────────
   'sect.title': '宗门',
   'sect.back': '← 返回',
