@@ -38,14 +38,16 @@ export function drawSocialTabRail(
   active: SocialTab,
   badges: Partial<Record<SocialTab, number>>,
   onSelect: (tab: SocialTab) => void,
+  hidden: SocialTab[] = [],
 ): SocialTabRailHit[] {
   const railW = sidebarNavW(w, h, landscape);
-  const tabs: HubTab[] = TAB_DEFS.map((tabDef) => ({
+  const defs = TAB_DEFS.filter((tabDef) => !hidden.includes(tabDef.id));
+  const tabs: HubTab[] = defs.map((tabDef) => ({
     label: t(tabDef.key),
     active: active === tabDef.id,
     badge: (badges[tabDef.id] ?? 0) > 0,
   }));
 
-  const { hits } = drawSidebarTabs(container, railW, top, h, tabs, (i) => onSelect(TAB_DEFS[i]!.id));
+  const { hits } = drawSidebarTabs(container, railW, top, h, tabs, (i) => onSelect(defs[i]!.id));
   return hits;
 }

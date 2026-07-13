@@ -171,7 +171,11 @@ export class SectSceneBase {
     // Draw the social hub rail in every mode (not just 'mySect') — otherwise the other 4 tabs
     // vanish while this scene is still loading or has no sect yet, since it replaces FriendsScene
     // wholesale on navigation.
-    const railHits = drawSocialTabRail(this.bodyLayer, this.w, this.h, this.headerH, this.landscape, 'sect', {}, (tab) => this.cb.onNavTab(tab));
+    // Hide the sect tab itself once we know the player is neither a family leader nor already
+    // in a sect — same rule FriendsScene's rail applies, kept in sync so navigating between
+    // scenes doesn't flicker the tab in and out.
+    const hidden: SocialTab[] = !this.isFamilyLeader && !this.sect ? ['sect'] : [];
+    const railHits = drawSocialTabRail(this.bodyLayer, this.w, this.h, this.headerH, this.landscape, 'sect', {}, (tab) => this.cb.onNavTab(tab), hidden);
     this.hitRects.push(...railHits.map((hit) => ({ rect: hit.rect, action: hit.fn })));
 
     switch (this.mode) {

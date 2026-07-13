@@ -213,10 +213,11 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     expect(spends).toEqual([{ accountId: 'alice', amount: SECT_CREATE_COST }]);
   });
 
-  it('founding prosperity threshold: low-prosperity family → PROSPERITY_TOO_LOW (G2/§17.4)', async () => {
-    // Inserting a family with no activity → prosperity = memberCount*50 = 50 < 2000, should be blocked.
+  it('founding has no prosperity threshold: a zero-activity family leader can still found a sect', async () => {
+    // Prosperity gate was removed (family leaders may found a sect at any prosperity level).
     await insertFamily('poor', 'Poor', 'PR', 0);
-    await expect(sect.createSect(W, 'poor', 'Broke', 'BRK')).rejects.toMatchObject({ code: 'PROSPERITY_TOO_LOW' });
+    const detail = await sect.createSect(W, 'poor', 'Broke', 'BRK');
+    expect(detail.sectId).toBe(sectId(W, 'BRK'));
   });
 
   it('non-leader cannot found a sect → NO_PERMISSION', async () => {

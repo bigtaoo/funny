@@ -110,6 +110,10 @@ export class FamilySceneBase {
     return sidebarNavW(this.w, this.h, this.landscape);
   }
 
+  protected get isFamilyLeader(): boolean {
+    return this.family?.members?.find((m) => m.accountId === this.cb.myAccountId)?.role === 'leader';
+  }
+
   private build(): void {
     const { w, h, landscape } = this;
     // Landscape only for now — see ShopScene.drawBackground / LOBBY_IA_REDESIGN §14.
@@ -151,7 +155,10 @@ export class FamilySceneBase {
     // Draw the social hub rail in every mode (not just 'myFamily') — otherwise the other 4 tabs
     // vanish while this scene is still loading or has no family yet, since it replaces FriendsScene
     // wholesale on navigation.
-    const railHits = drawSocialTabRail(this.bodyLayer, this.w, this.h, this.headerH, this.landscape, 'family', {}, (tab) => this.cb.onNavTab(tab));
+    // Same sect-tab visibility rule as FriendsScene's rail: hide it unless this player is a
+    // family leader (who could found/join a sect) or their family is already in one.
+    const hidden: SocialTab[] = !this.isFamilyLeader && !this.family?.sectId ? ['sect'] : [];
+    const railHits = drawSocialTabRail(this.bodyLayer, this.w, this.h, this.headerH, this.landscape, 'family', {}, (tab) => this.cb.onNavTab(tab), hidden);
     this.hitRects.push(...railHits.map((hit) => ({ rect: hit.rect, action: hit.fn })));
 
     switch (this.mode) {
