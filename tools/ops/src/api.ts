@@ -22,6 +22,8 @@ import type {
   PlayerProfile,
   PlayerSummary,
   Session,
+  SlgShopItemOverrideDoc,
+  SlgShopItemRow,
   SlgWorldSummary,
   TradeAuditSnapshot,
   TradeAuditTicketView,
@@ -268,6 +270,16 @@ export class Api {
   async upsertFlag(key: string, input: { enabled: boolean; rollout?: FlagRollout; desc?: string }): Promise<FeatureFlagDoc> {
     const r = await this.req<{ flag: FeatureFlagDoc }>('PUT', `/admin/config/flags/${encodeURIComponent(key)}`, input);
     return r.flag;
+  }
+
+  // ── SLG shop price overrides (slg.shop.manage) ──
+  async slgShopItems(): Promise<SlgShopItemRow[]> {
+    const r = await this.req<{ items: SlgShopItemRow[] }>('GET', '/admin/config/slg-shop');
+    return r.items;
+  }
+  async upsertSlgShopItem(id: string, input: { cost?: number; effect?: Record<string, number | string> }): Promise<SlgShopItemOverrideDoc> {
+    const r = await this.req<{ item: SlgShopItemOverrideDoc }>('PUT', `/admin/config/slg-shop/${encodeURIComponent(id)}`, input);
+    return r.item;
   }
 
   // ── Timed event management (events.manage) ──

@@ -30,6 +30,12 @@
       "runtimeExecutable": "cmd",
       "runtimeArgs": ["/c", "npm", "run", "start", "--prefix", "D:\\funny\\tools\\map-editor"],
       "port": 9095
+    },
+    {
+      "name": "ops",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "npm", "run", "start", "--prefix", "D:\\funny\\.claude\\worktrees\\slg-shop-admin-config\\tools\\ops"],
+      "port": 9093
     }
   ]
 }

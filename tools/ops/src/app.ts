@@ -1,7 +1,7 @@
 // Ops admin frontend shell (OPS_DESIGN §7): login page → main shell renders navigation based on capabilities.
 import { Api, ApiError } from './api';
 import { clear, h } from './dom';
-import { pageAccounts, pageAnalytics, pageAudit, pageAuctionAudit, pageEvents, pageFlags, pageGachaPools, pageLadderSeason, pageMonitor, pagePlayer, pageSLGSeason, pageSuspicions, pageTickets } from './pages';
+import { pageAccounts, pageAnalytics, pageAudit, pageAuctionAudit, pageEvents, pageFlags, pageGachaPools, pageLadderSeason, pageMonitor, pagePlayer, pageSLGSeason, pageSlgShop, pageSuspicions, pageTickets } from './pages';
 import type { AdminCapability, Session } from './types';
 
 interface NavItem {
@@ -28,6 +28,7 @@ const NAV: NavItem[] = [
   { id: 'ladder', label: 'Ladder Season', cap: 'ladder.season.manage', render: pageLadderSeason },
   { id: 'events', label: 'Timed Events', cap: 'events.manage', render: pageEvents },
   { id: 'gacha-pools', label: 'Gacha Pools', cap: 'gacha.pools.manage', render: pageGachaPools },
+  { id: 'slg-shop', label: 'SLG Shop Prices', cap: 'slg.shop.manage', render: pageSlgShop },
   { id: 'flags', label: 'Feature Flags', cap: 'config.manage', render: pageFlags },
   { id: 'accounts', label: 'Account Mgmt', cap: 'admin.manage', render: pageAccounts },
 ];

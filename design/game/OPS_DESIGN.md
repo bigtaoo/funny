@@ -74,6 +74,7 @@ interface AdminAccountDoc {
 | `comp.view` 查看工单/已发邮件 | ✓ | ✓ | ✓ | ✓ |
 | `slg.audit.view` 看拍卖异常扫描+审计队列（G7 反 RMT） | ✓ | ✓ | – | ✓ |
 | `slg.audit.manage` 立/裁定异常交易审计工单（G7 反 RMT） | ✓ | ✓ | – | – |
+| `slg.shop.manage` SLG 商城商品价格/效果覆盖（G7，§8/S8-8） | ✓ | ✓ | – | – |
 | `audit.view.all` 看全部审计 | ✓ | – | – | – |
 | `audit.view.self` 看自己操作（登录即有） | ✓ | ✓ | ✓ | ✓ |
 | `events.manage` 限时活动创建/编辑/下线（B6，EVENTS_DESIGN §10） | ✓ | ✓ | – | – |
@@ -212,6 +213,12 @@ GET  /admin/slg/audit/tickets?status=                → { tickets: [...] }     
 POST /admin/slg/audit/tickets   { snapshot }         → { ticket }                      // slg.audit.manage（立单，pairKey 去重）
 POST /admin/slg/audit/tickets/{id}/resolve { disposition, note }  → { ticket }         // slg.audit.manage（dismissed|actioned）
 
+# SLG 商城价格覆盖（G7/§8/S8-8；slg.shop.manage）——DB 覆盖优先，无记录时 fallback 到代码默认（SLG_SHOP_ITEMS）
+GET  /admin/config/slg-shop                          → { items: [{ id, default, effective, doc }] }  // 9 件商品：3 加速/3 资源包/2 护盾/1 战令
+PUT  /admin/config/slg-shop/{id}  { cost?, effect? } → { item }                        // 只传要改的字段；写 auditLog（slg.shop.price.update）
+# 内部端点（X-Internal-Key，非 admin JWT）：worldsvc 不连 admin 库，轮询此端点拉原始覆盖记录，本地与 SLG_SHOP_ITEMS 合并
+GET  /admin/internal/slg-shop-prices                 → { items: [...] }                // 原样返回，worldsvc 30s 轮询 + 本地 resolveSlgShopItem 合并
+
 # 审计
 GET  /admin/audit?actor=&from=&to=                   → { entries: [...] }              // all=超管 / self=本人
 
@@ -229,6 +236,7 @@ POST   /admin/accounts/{id}/reset-password { password }
 | `adminAccounts` | 运维账号（§2.1） |
 | `compTickets` | 补偿工单（§3.1） |
 | `tradeAuditTickets` | SLG 拍卖异常交易审计工单（G7 反 RMT，SLG_DESIGN §17.13）：冻结异常快照 + pairKey 去重 + open→dismissed/actioned 单人裁定 |
+| `slgShopPrices` | SLG 商城商品价格/效果覆盖（G7/§8/S8-8）：`_id`=商品 id，仅存被 ops 覆盖过的商品；无记录 = 用代码默认 |
 | `auditLog` | 操作审计（actor/action/target/payload 摘要/ts/ip） |
 | `metricSnapshots` | 自采时序（`{ metric, ts, value, dims? }`，TTL 保留窗口可配） |
 
@@ -260,6 +268,7 @@ POST   /admin/accounts/{id}/reset-password { password }
 - 登录页 → 主框架按 `capabilities` 渲染导航：监控看板 / 数据分析 / 玩家查询 / 补偿工单 / 审计 / 账号管理。
 - 调 admin 后端 REST（fetch + Bearer admin token）。
 - 不持任何密钥、不连库、不直连业务服务——一切经 admin 后端。
+- **SLG 商城价格面板（`pageSlgShop`，slg.shop.manage，2026-07-13）**：9 件商品各一张卡片（3 加速/3 资源包/2 护盾/1 战令），可编辑 cost + 单个关键 effect 字段（duration_sec / each，战令仅 cost），保存即 `PUT /admin/config/slg-shop/{id}`；未覆盖显示"Not overridden, using default (cost N)"，已覆盖显示覆盖人+时间。
 - **构建版本标识（2026-06-24）**：header 右侧显示 `v <git short hash>`（hover 出构建时间 UTC），webpack `DefinePlugin` 在构建期注入 `__BUILD_VERSION__`/`__BUILD_TIME__`（取 `git rev-parse --short HEAD`）。用于排查"线上是否旧 bundle"——发布后比对该号与目标提交即可确认。
 
 ---
@@ -286,6 +295,16 @@ POST   /admin/accounts/{id}/reset-password { password }
 - **验证**：七包 `tsc -b` 全绿 + admin 15 e2e（登录/RBAC/发起≠审批/超额+全服走超管/**单超管自批例外+留痕**/**有第二 super 时恢复四眼**/**禁用的第二审批人不算数**/dry-run/幂等执行+重试/审计可见性/player.lookup/采样 trend/账号管理）+ gateway 10 / matchsvc 17 / meta 74 不破 + `tools/ops` tsc + webpack 构建。
 - **补偿 ↔ 邮件跨进程联调（2026-06-16）**：S6-3 邮件后端就绪，补全 `server/admin/test/comp-mail.e2e.test.ts`——admin 真实 `HttpMailDispatcher`/`HttpPlayerClient` 经 `fetch` 打真实 `app.listen({port:0})` 的 meta 进程（非 fastify inject），6 用例跑通：①单人补偿全链（发起→审批→真 HTTP 投递→玩家收件箱→领取附件→commercial 入账+钱包镜像）②`dispatchKey` 幂等（同 key 重发仅一封，meta `$setOnInsert`）③全服 fan-out + `preview` 命中人数 ④`player.lookup` 经真 `/internal/player` ⑤鉴权边界（错 `X-Internal-Key`→401→工单 failed、玩家无信）⑥收件人不存在→工单 failed。admin e2e 12→18，七包 `tsc -b` 全绿（meta dist 须先 `tsc -b`）。
 - **待办**：§9 开放问题（金币当量换算表、GlobalFilter 维度、TOTP 二次审批）。
+
+### SLG 商城价格可调配置（2026-07-13）
+
+原 `SLG_SHOP_ITEMS`（`server/shared/src/slg/shop.ts`）9 件商品价格/效果全硬编码常量，改价须改代码重新部署（SLG_DESIGN G7 已知缺口）。改造为「DB 覆盖优先，DB 无记录时 fallback 到代码默认」，照搬 feature-flags 的成熟模式（admin 是唯一写者 + 唯一内部原始数据源，DB-less 后端轮询合并）：
+
+- **`@nw/shared` 新增**（`slg/shop.ts`）：`SlgShopItemOverrideDoc`（`_id`=商品 id，`cost?`/`effect?`/`updatedAt`/`updatedBy`）、`resolveSlgShopItem`（默认值 + 覆盖合并）、`sanitizeSlgShopItemOverrideDoc`（容错清洗，脏数据静默降级不抛错）、`SlgShopPriceCache`（镜像 `FeatureFlagCache`：轮询 + TTL 30s + 断线保留旧缓存 + 冷启动 fallback 代码默认）。
+- **`server/admin`**：`service/shop.ts`（`ShopMixin`：`getShopConfig`/`getInternalShopPrices`/`upsertShopItem`，写入即审计 `slg.shop.price.update`）；`db.ts` 新增 `slgShopPrices` 集合（`_id`=商品 id，索引 `updatedAt`）；`httpApi.ts` 三个端点（`GET/PUT /admin/config/slg-shop*` 会话鉴权 + `GET /admin/internal/slg-shop-prices` 内部鉴权，见 §4.2）；新增能力 `slg.shop.manage`（super/ops，见 §2.2）。
+- **`server/worldsvc`**：`ShopService.buySlgShopItem`/`getSlgShopItems` 改为优先查 `WorldCore.shopPrices`（`SlgShopPriceCache`，未注入则用代码默认，不炸）；`index.ts` 起进程时构造该缓存，轮询 admin 内部端点（`NW_ADMIN_INTERNAL_URL` 未配置则永远走代码默认）。
+- **`tools/ops`**：`pageSlgShop` 面板（见上）+ `api.ts`/`types.ts` 对应方法与类型。
+- **验证**：`@nw/shared` 单测 12 例（合并语义/清洗容错/缓存降级）；`server/admin` e2e 6 例（真实 Mongo：列表/写入/校验/审计/角色能力）；`server/worldsvc` e2e 3 例（真实 Mongo：默认价扣费、覆盖后按新价扣费且 effect 一并生效、未知商品 id 拒绝）；七包 `tsc -b` + `tools/ops` tsc/webpack 全绿；ops 面板手动登录改价 → 直接查询 admin API 确认持久化 → 起 worldsvc 真实进程轮询该 admin 实例，`GET /world/shop/items` 确认新价即时生效（30s 内）。
 
 ### SLG 赛季运维 + 拍卖审计前端（2026-07-01）
 
