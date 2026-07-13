@@ -34,6 +34,7 @@ export type AdminCapability =
   | 'slg.audit.manage' // file / adjudicate anomalous-trade audit tickets (G7 anti-RMT)
   | 'slg.map.view' // view map templates + open the map editor read-only (SLG_DESIGN §24)
   | 'slg.map.manage' // generate/save/activate/delete map templates (SLG_DESIGN §24, high-risk: delete wipes a template's tiles)
+  | 'slg.shop.manage' // SLG shop item price/effect overrides (SLG_DESIGN §8/G7): ops-adjustable, DB overrides code defaults
   | 'config.manage' // feature flag master switch / targeted edit (FEATURE_FLAGS_DESIGN §5)
   | 'events.manage' // limited-time events (B6): create / edit / take offline (ADR-014)
   | 'gacha.pools.manage' // ops-authored custom gacha pools (GACHA_DESIGN §12): create / close festival pools
@@ -67,6 +68,7 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'slg.audit.manage',
     'slg.map.view',
     'slg.map.manage',
+    'slg.shop.manage',
     'config.manage',
     'events.manage',
     'gacha.pools.manage',
@@ -90,6 +92,7 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'slg.audit.manage',
     'slg.map.view',
     'slg.map.manage',
+    'slg.shop.manage',
     'config.manage',
     'events.manage',
     'gacha.pools.manage',
@@ -293,6 +296,7 @@ export type AuditAction =
   | 'slg.map.template.save'
   | 'slg.map.template.activate'
   | 'slg.map.template.delete'
+  | 'slg.shop.price.update'
   | 'config.update'
   | 'event.create'
   | 'event.update'

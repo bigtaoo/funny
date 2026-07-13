@@ -11,6 +11,7 @@ import type {
   CompTicketStatus,
   FeatureFlagDoc,
   MetricKey,
+  SlgShopItemOverrideDoc,
   TradeAuditSnapshot,
   TradeAuditTicketStatus,
 } from '@nw/shared';
@@ -100,6 +101,8 @@ export interface AdminCollections {
   metricSnapshots: Collection<MetricSnapshotDoc>;
   // Feature flag rules (FEATURE_FLAGS_DESIGN §2.2): _id = flag key; only flags overridden by ops are stored.
   featureFlags: Collection<FeatureFlagDoc>;
+  // SLG shop price/effect overrides (SLG_DESIGN §8/G7): _id = shop item id; only items overridden by ops are stored.
+  slgShopPrices: Collection<SlgShopItemOverrideDoc>;
 }
 
 export interface AdminMongo {
@@ -138,6 +141,7 @@ export async function createAdminMongo(
     auditLog: db.collection<AuditDoc>('auditLog'),
     metricSnapshots: db.collection<MetricSnapshotDoc>('metricSnapshots'),
     featureFlags: db.collection<FeatureFlagDoc>('featureFlags'),
+    slgShopPrices: db.collection<SlgShopItemOverrideDoc>('slgShopPrices'),
   };
 
   async function ensureIndexes(snapshotTtlSec: number): Promise<void> {
@@ -158,6 +162,8 @@ export async function createAdminMongo(
     );
     // Feature flags: indexed by most-recent update time (_id is the flag key, naturally unique — no extra unique index needed).
     await collections.featureFlags.createIndex({ updatedAt: -1 });
+    // SLG shop price overrides: indexed by most-recent update time (_id is the item id, naturally unique — no extra unique index needed).
+    await collections.slgShopPrices.createIndex({ updatedAt: -1 });
   }
 
   return {

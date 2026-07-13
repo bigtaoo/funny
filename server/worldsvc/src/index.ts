@@ -1,6 +1,6 @@
 // worldsvc process bootstrap (S8-0 + S8-4 + S8-5): connect dedicated DB → optional Redis → services → public REST listen.
 // SLG_DESIGN §14.1 P1: worldsvc is a public face (reverse proxy /world → this process; /auction moved to auctionsvc, §9 task 6).
-import { SLG_MAP_W, SLG_MAP_H, createLogger, startHeartbeat } from '@nw/shared';
+import { SLG_MAP_W, SLG_MAP_H, createLogger, startHeartbeat, SlgShopPriceCache, internalHeaders } from '@nw/shared';
 import { createWorldMongo } from './db';
 import { connectRedis } from './redis';
 import { WorldService } from './service';
@@ -45,6 +45,22 @@ async function main(): Promise<void> {
     ? new HttpWorldSocialsvcClient(env.socialsvcInternalUrl, env.internalKey)
     : nullWorldSocialsvcClient;
 
+  // SLG shop price/effect override cache: polls admin for raw overrides + resolves locally (no DB connection,
+  // refreshed every 30s; stale cache used when admin is unreachable, code defaults used if never fetched).
+  const shopPrices = new SlgShopPriceCache({
+    fetchAll: async () => {
+      if (!env.adminInternalUrl) return [];
+      const res = await fetch(`${env.adminInternalUrl}/admin/internal/slg-shop-prices`, {
+        headers: internalHeaders('worldsvc', env.internalKey),
+      });
+      if (!res.ok) throw new Error(`admin slg-shop-prices ${res.status}`);
+      const body = (await res.json()) as { items?: unknown[] };
+      return Array.isArray(body.items) ? body.items : [];
+    },
+    onError: (e) => console.warn('[worldsvc] shop price refresh failed (keeping cache)', (e as Error).message),
+  });
+  if (env.adminInternalUrl) void shopPrices.start();
+
   const svc = new WorldService({
     cols: mongo.collections,
     redis,
@@ -53,6 +69,7 @@ async function main(): Promise<void> {
     meta,
     mail,
     socialsvc,
+    shopPrices,
     mapW: SLG_MAP_W,
     mapH: SLG_MAP_H,
     now: () => Date.now(),

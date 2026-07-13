@@ -603,7 +603,7 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 |---|---|---|---|
 | **G5** | ~~**地图迷雾 / 侦察视野 / 宗门视野共享 / 盟友土地标记**~~ ✅ **四片全落地（2026-06-21，§18）** | G5-1 读路径门控 + G5-2 反向视野推送 + G5-3 客户端渲染（灰雾/友敌色/敌军显形）+ 联盟领地黄标（§18.7）全 ✅；共享降级为家族级（§18.1 V2）。scout 侦察行军（§18.8）+ 瞭望塔建筑（§18.9）全 ✅，V2 余项全部兑现 | §8.2 视野共享 + 盟友标记、§2.1 视野订阅核心战略玩法已兑现 |
 | **G6** | **多大区 + 赛季分配规则**（数据地基+纯算法 ✅ **2026-06-21，§17.8**；**多 shard 运行时调度 ✅ 2026-06-21，§20**） | 数据地基：`seasonResults` 落库宗门排名 + 繁荣度快照（C2 闭）；`sectStrengthScore`/`allocateSectsToShards`（蛇形均衡）纯函数 + 单测。运行时（§20）：`allocateNextSeason` 编排开 N 区 + 落 `shardAllocations.familyShard`；`joinSeason`/`resolveShardForJoin` 自动路由（粘性>家族查表>最空开区>溢出开新区）；`patrolShardIsolation` 跨区隔离巡检。**剩**赛季中主动转区/合区（运营专项）+ 赛季元数据下发（待 S11） | 规模化数据/算法地基 + 运行时调度兑现；赛季中迁移待专项 |
-| **G7** | **admin 运营后台 SLG 接入**（赛季运维 ✅ **2026-06-21，§17.7**；异常交易审计仍随 OPS 专项） | worldsvc `/admin/world/*` 迁出 JWT 改 X-Internal-Key（**C4 安全洞已堵**，任意玩家不再可清区）+ 新增 `GET /admin/world/list`；admin 后端加 `worldClient` + `POST /admin/slg/season/{open,settle,reset,close}` + `GET /admin/slg/worlds`（能力 `slg.season.view/manage`，reset 前必 settle 约束 + 审计）。**仍缺**异常交易审计工单（随 OPS 专项）+ 商品价格可调 + ops 前端 UI | S8-8 赛季运维侧兑现；反 RMT 审计待 OPS |
+| **G7** | **admin 运营后台 SLG 接入**（赛季运维 ✅ **2026-06-21，§17.7**；商品价格可调 ✅ **2026-07-13**） | worldsvc `/admin/world/*` 迁出 JWT 改 X-Internal-Key（**C4 安全洞已堵**，任意玩家不再可清区）+ 新增 `GET /admin/world/list`；admin 后端加 `worldClient` + `POST /admin/slg/season/{open,settle,reset,close}` + `GET /admin/slg/worlds`（能力 `slg.season.view/manage`，reset 前必 settle 约束 + 审计）。**商品价格可调**（能力 `slg.shop.manage`）：`slgShopPrices` 集合 DB 覆盖 + 代码默认 fallback，worldsvc 轮询 admin 内部端点合并生效，ops `pageSlgShop` 面板可编辑 9 件商品（详见 OPS_DESIGN §4.2/§8） | S8-8 赛季运维 + 商城定价均兑现 |
 | **G8** | ~~**险地（Stronghold）格子类型**~~ ✅ **已落地（2026-06-21，§19）** | 新增 `'stronghold'` TileType + `proceduralTile` 稀疏生成（~0.3%，比 familyKeep 稀疏 ~16×）+ `strongholdGarrison` 系统超强守军 + worldsvc `applyStrongholdSiege`（无主险地 PvE 围攻：权威引擎跑系统守军，攻克占为领地 + 一次性丰厚奖励，攻败残兵撤退）；occupy/sweep/落城/重生全拦截险地；契约 enum + 客户端渲染/交互/i18n。worldsvc 5 e2e | 高战略价值 PvE 格兑现（§3.1） |
 
 ### 15.3 第三档——DRAFT 数值 / 打磨
@@ -1463,7 +1463,7 @@ if (path.startsWith('/admin/world/')) {
 | **R-5** | 赛季中主动转区 / 合区（人口骤降合并低活 shard） | §20.8：当前只做 join 时一次性路由；赛季中迁移待规模化运营专项。 |
 | **R-6** | 赛季元数据下发 | §20.8：`CURRENT_SEASON` 暂客户端常量；待 S11 天梯赛季打通后由 metaserver 下发（SLG 赛季是否与天梯同步另议）。 |
 | **R-7** | 异常交易审计 ops 前端 + 自动处置 | §17.13 检测层 + admin 审计队列已落地；缺 ops 前端审计页 + 确认违规后的封禁/扣回外联。 |
-| **R-8** | 商品价格可调后台 | G7 余项：admin 侧 SLG 商品价格运营可调。 |
+| ~~**R-8**~~ | ~~商品价格可调后台~~ | ✅ **已落地（2026-07-13）**：G7，admin `slg.shop.manage` + ops `pageSlgShop`，见 G7 行 / OPS_DESIGN §4.2/§8。 |
 | **R-9** | `resolveShardForJoin` / march 调度单点 | §20.8：高并发开服经 worldsvc 单进程，规模化需选主/分片（U12 压测后）。 |
 
 ### 21.4 第四档——DRAFT 数值（待经济模拟统一过一遍）

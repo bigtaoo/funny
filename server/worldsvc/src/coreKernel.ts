@@ -3,7 +3,7 @@
 // sequences, cached capitals, bounds/coord primitives and the tiny marchView mapper
 // that every higher layer (yield / push / nation / spawn / vision / map) builds on.
 // No behavior change — methods copied verbatim from the original core.ts.
-import { provinceCapitalPositions, worldSeed } from '@nw/shared';
+import { provinceCapitalPositions, worldSeed, type SlgShopPriceCache } from '@nw/shared';
 import type { MarchDoc } from './db';
 import { nullWorldGatewayClient, type WorldGatewayClient } from './gatewayClient';
 import { nullWorldMetaClient, type WorldMetaClient } from './metaClient';
@@ -25,6 +25,8 @@ export class WorldCoreKernel {
   private _capitalsByWorld = new Map<string, readonly [number, number][]>();
 
   readonly socialsvc: WorldSocialsvcClient;
+  /** SLG shop price/effect override cache; undefined = always uses SLG_SHOP_ITEMS code defaults. */
+  readonly shopPrices: SlgShopPriceCache | undefined;
 
   constructor(readonly deps: WorldServiceDeps) {
     this.gateway = deps.gateway ?? nullWorldGatewayClient;
@@ -32,6 +34,7 @@ export class WorldCoreKernel {
     this.commercial = deps.commercial ?? nullWorldCommercialClient;
     this.mail = deps.mail ?? nullWorldMailClient;
     this.socialsvc = deps.socialsvc ?? nullWorldSocialsvcClient;
+    this.shopPrices = deps.shopPrices;
   }
 
   /** Province-capital coordinates for a given world (ADR-034: seed-derived, so keyed per worldId rather than a single map-wide cache). */

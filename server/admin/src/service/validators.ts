@@ -10,6 +10,7 @@ import {
   type FeatureFlagDoc,
   type FlagPlatform,
   type FlagRollout,
+  type SlgShopItemOverrideDoc,
   type TradeAuditSnapshot,
 } from '@nw/shared';
 import type { AdminAccountDoc } from '../db';
@@ -130,6 +131,42 @@ export function validateRollout(raw: unknown): FlagRollout | undefined {
   const allowPublicIds = strArr(o.allowPublicIds, 'allowPublicIds');
   if (allowPublicIds && allowPublicIds.length) out.allowPublicIds = allowPublicIds;
   return Object.keys(out).length ? out : undefined;
+}
+
+/** Validate a shop item price/effect override input (out-of-range / invalid values throw 400 directly). */
+export function validateShopItemInput(raw: {
+  cost?: unknown;
+  effect?: unknown;
+}): { cost?: number; effect?: Record<string, number | string> } {
+  const out: { cost?: number; effect?: Record<string, number | string> } = {};
+  if (raw.cost !== undefined) {
+    if (typeof raw.cost !== 'number' || !Number.isFinite(raw.cost) || raw.cost <= 0) {
+      throw new AdminError(400, 'bad_request', 'cost must be a positive number');
+    }
+    out.cost = Math.floor(raw.cost);
+  }
+  if (raw.effect !== undefined) {
+    if (typeof raw.effect !== 'object' || raw.effect === null || Array.isArray(raw.effect)) {
+      throw new AdminError(400, 'bad_request', 'effect must be an object');
+    }
+    const effect: Record<string, number | string> = {};
+    for (const [k, v] of Object.entries(raw.effect as Record<string, unknown>)) {
+      if (typeof v === 'number' && Number.isFinite(v)) effect[k] = v;
+      else if (typeof v === 'string') effect[k] = v;
+      else throw new AdminError(400, 'bad_request', `effect.${k} must be a number or string`);
+    }
+    out.effect = effect;
+  }
+  return out;
+}
+
+/** Audit summary: compact description of a shop item override (used for before/after comparison). */
+export function describeShopItem(doc: SlgShopItemOverrideDoc | null): string {
+  if (!doc) return 'default';
+  const parts: string[] = [];
+  if (doc.cost !== undefined) parts.push(`cost=${doc.cost}`);
+  if (doc.effect) parts.push(`effect=${JSON.stringify(doc.effect)}`);
+  return parts.length ? parts.join(',') : 'default';
 }
 
 /** Audit summary: compact description of a flag's state (used for before/after comparison). */
