@@ -6,6 +6,7 @@
 //   helpers.ts — recordSiege / transferLoot / applySectLeaderPenalty / passiveRelocate / buildDefenderConfig (leaf helpers shared by the other mixins)
 //   damage.ts  — processDueSiegeDamage / settleSiegeDamage (ADR-026 delayed building-HP settlement)
 //   arrival.ts — applySiege / applyBaseSiege / applyStrongholdSiege / landSiege / applySweep (siege / sweep arrival)
+//   occupation.ts — applyOccupy / applyOccupationExpulsion / processDueOccupations (ADR-037 §5.4 occupation-hold settlement)
 import type { WorldCore } from '../core';
 import type { SiegeReplayInputs } from '../worldTypes';
 import type { TileDoc, PlayerWorldDoc, MarchDoc, SiegeDoc } from '../db';
@@ -30,4 +31,5 @@ export interface SiegeServiceBase {
   applySectLeaderPenalty(worldId: string, defenderId: string, t: number): Promise<void>;
   passiveRelocate(worldId: string, defenderId: string, t: number): Promise<void>;
   buildDefenderConfig(target: TileDoc, effGarrison: number, inOwnNation: boolean): { garrison?: unknown; defenderBuildings?: unknown; defenderBaseLevel?: unknown } | null;
+  applyOccupationExpulsion(m: MarchDoc, pw: PlayerWorldDoc, tile: TileDoc, t: number): Promise<void>;
 }

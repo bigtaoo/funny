@@ -127,7 +127,14 @@ export class TerritoryService {
   }
 
   /**
-   * Occupy a tile (S8-1 direct occupation, no march travel; S8-2 switches to march occupy).
+   * Occupy a tile (S8-1 direct occupation, no march travel, no combat).
+   * ⚠ Internal/test-only since ADR-037 (§5.4): the product client no longer calls this — occupying a tile is now
+   * `startMarch(kind:'occupy')`, which fights the target's system garrison and settles through a delayed
+   * occupation hold (combatSiege/occupation.ts). This endpoint is kept only because a large number of existing
+   * e2e tests use it to cheaply set up "player already owns this tile" preconditions; its instant/no-combat
+   * behavior is not a bug relative to the new model — it coincides with the `garrison<=0` defensive fallback
+   * branch of applyOccupy (never hit in practice given resourceDensity=1.0, but kept consistent rather than
+   * contradictory). Do not wire this into any new client-facing occupy flow.
    * Validation: joined + coordinates in bounds + not center + enough troops for one garrison unit + target unoccupied by others.
    * Effect: settle resources first → deduct GARRISON_PER_TILE troops → write territory TileDoc (preserve resource type) → recompute yieldRate.
    */

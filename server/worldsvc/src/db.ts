@@ -95,6 +95,17 @@ export interface TileDoc {
   baseRing?: boolean;
   /** ADR-025: on ring cells only — the tileId of this base's anchor, so a siege landing on a ring cell resolves against the anchor's garrison/defense. Anchor omits this. */
   baseAnchor?: string;
+  /**
+   * ADR-037 (§5.4): set while this tile is mid occupation-hold — an occupy march won its PvE battle against the
+   * system garrison but the hold countdown has not yet elapsed, so `ownerId` is still absent. `contestedBy` is the
+   * pending occupier's accountId; `contestedUntil` (ms) is when `processDueOccupations` finalizes ownership;
+   * `contestedGarrison` is the surviving troops that will become the tile's garrison on settlement (also the
+   * strength an expelling attack/occupy march must beat). Cleared together on settlement or expulsion.
+   */
+  contestedBy?: string;
+  contestedUntil?: number;
+  contestedGarrison?: number;
+  contestedFamilyId?: string;
   rev: number;
 }
 
@@ -270,6 +281,28 @@ export interface SiegeDamageDoc {
   dueAt: number;        // ms; scheduler settles when now ≥ dueAt
 }
 
+/**
+ * ADR-037 (§5.4): pending occupation hold. Written when an occupy (or expelling attack/occupy) march wins its PvE
+ * battle against a neutral tile's system garrison; the scheduler finalizes ownership at `dueAt` (= win time +
+ * OCCUPY_HOLD_SEC*1000) via `processDueOccupations`. `_id` = the target tileId (mirrors the tile 1:1 — at most one
+ * pending hold per tile at a time; an expelling march deletes/replaces this doc atomically instead of stacking).
+ * Idempotency/race-safety mirrors SiegeDamageDoc: claimed via findOneAndDelete, re-validated against the tile's
+ * current `contestedBy` before writing ownership.
+ */
+export interface OccupationDoc {
+  _id: string;          // = tileId (one pending hold per tile)
+  worldId: string;
+  ownerId: string;       // pending occupier accountId
+  familyId?: string;
+  tile: string;          // same value as _id, kept for readability/parity with SiegeDamageDoc.tile
+  x: number;
+  y: number;
+  level: number;
+  resType?: ResourceType;
+  garrison: number;      // surviving troops; becomes the tile's garrison on settlement
+  dueAt: number;         // ms; scheduler settles when now >= dueAt
+}
+
 /** Nation document (S8-6.5). One record per capital; ownerId/nationName absent when unclaimed. */
 export interface NationDoc {
   _id: string;            // `nation:{worldId}:{capitalIdx}`
@@ -374,6 +407,7 @@ export interface WorldCollections {
   nationMessages: Collection<NationMessageDoc>;
   sieges: Collection<SiegeDoc>;
   siegeDamage: Collection<SiegeDamageDoc>;
+  occupations: Collection<OccupationDoc>;
   nations: Collection<NationDoc>;
   seasonResults: Collection<SeasonResultDoc>;
   shardAllocations: Collection<ShardAllocationDoc>;
@@ -418,6 +452,7 @@ export async function createWorldMongo(
     nationMessages: db.collection<NationMessageDoc>('nationMessages'),
     sieges: db.collection<SiegeDoc>('sieges'),
     siegeDamage: db.collection<SiegeDamageDoc>('siegeDamage'),
+    occupations: db.collection<OccupationDoc>('occupations'),
     nations: db.collection<NationDoc>('nations'),
     seasonResults: db.collection<SeasonResultDoc>('seasonResults'),
     shardAllocations: db.collection<ShardAllocationDoc>('shardAllocations'),
@@ -453,6 +488,8 @@ export async function createWorldMongo(
     // ADR-026: delayed building-HP settlement scan (mirrors marches.arriveAt: due-time polling; Redis ZSET optional later).
     await collections.siegeDamage.createIndex({ dueAt: 1 });
     await collections.siegeDamage.createIndex({ tile: 1 });
+    // ADR-037 (§5.4): occupation-hold settlement scan (mirrors siegeDamage.dueAt: due-time polling; Redis ZSET optional wake-up hint).
+    await collections.occupations.createIndex({ dueAt: 1 });
     // Nation: unique by capital index within worldId
     await collections.nations.createIndex({ worldId: 1, capitalIdx: 1 }, { unique: true });
     await collections.nations.createIndex({ ownerId: 1 });

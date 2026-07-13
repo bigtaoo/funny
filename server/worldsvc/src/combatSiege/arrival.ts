@@ -73,6 +73,13 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
           await this.applyCrossingSiege(m, pw, t, proc);
           return;
         }
+        // ADR-037 (§5.4): target has no owner but is mid occupation-hold (an occupy march already won its PvE
+        // battle and is waiting out the hold countdown) — this attack expels the pending occupier, fighting their
+        // held garrison (not a re-fetched NPC garrison). Intercept before the miss/refund branch below.
+        if (target?.contestedBy && (target.contestedUntil ?? 0) > t) {
+          await this.applyOccupationExpulsion(m, pw, target, t);
+          return;
+        }
       }
       // On arrival, target is no longer enemy-owned (abandoned / transferred to own / ownerless) or is now protected → treat as a miss; refund and return troops.
       if (

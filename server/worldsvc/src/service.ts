@@ -53,6 +53,10 @@ export class WorldService extends WorldCore {
   processDueSiegeDamage(nowMs?: number): Promise<number> {
     return this.combat.processDueSiegeDamage(nowMs);
   }
+  // ADR-037 (§5.4): occupation-hold settlement.
+  processDueOccupations(nowMs?: number): Promise<number> {
+    return this.combat.processDueOccupations(nowMs);
+  }
   setDefense(worldId: string, accountId: string, tileKey: string, defenseConfig: Record<string, unknown>): Promise<void> {
     return this.combat.setDefense(worldId, accountId, tileKey, defenseConfig);
   }
