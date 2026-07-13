@@ -13,12 +13,14 @@ import { netLog } from '../net/log';
 const log = netLog('input');
 
 type Handler = (x: number, y: number) => void;
+type WheelHandler = (x: number, y: number, deltaY: number) => void;
 type Unsub   = () => void;
 
 export class InputManager {
   private downs: Handler[] = [];
   private moves: Handler[] = [];
   private ups:   Handler[] = [];
+  private wheels: WheelHandler[] = [];
   /** Cap on contained-error logs so a handler that throws on every pointer-move can't flood the ring buffer. */
   private errLogged = 0;
   /**
@@ -65,6 +67,12 @@ export class InputManager {
     return () => { this.ups = this.ups.filter(f => f !== fn); };
   }
 
+  /** Mouse-wheel scroll (browser only — no WeChat equivalent; touch/drag covers that platform). */
+  onWheel(fn: WheelHandler): Unsub {
+    this.wheels.push(fn);
+    return () => { this.wheels = this.wheels.filter(f => f !== fn); };
+  }
+
   /**
    * Dispatch a pointer event to every subscriber. Iterates a SNAPSHOT (a handler
    * may unsubscribe mid-dispatch) and isolates each handler in a try/catch: one
@@ -101,5 +109,18 @@ export class InputManager {
     // fade-aborting tap doesn't land on the freshly-mounted scene as a real tap.
     if (this.swallowUp) { this.swallowUp = false; return; }
     this.dispatch(this.ups, x, y);
+  }
+  _emitWheel(x: number, y: number, deltaY: number): void {
+    if (this.suppressed) return;
+    for (const f of this.wheels.slice()) {
+      try {
+        f(x, y, deltaY);
+      } catch (e) {
+        if (this.errLogged < 8) {
+          this.errLogged++;
+          log.error('wheel handler threw (contained)', e instanceof Error ? (e.stack ?? e.message) : String(e));
+        }
+      }
+    }
   }
 }
