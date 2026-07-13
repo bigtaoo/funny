@@ -64,7 +64,10 @@ export class WorldMapInput {
     if (tile?.mine) {
       // My tile — reinforce (march from base) + abandon. Base itself: no actions.
       const [bx, by] = me.mainBaseTile ? this.ctx.parseTileId(me.mainBaseTile) : [-1, -1];
-      const isBase = bx === tx && by === ty;
+      // The base is an indivisible 3×3 block (ADR-025) — any cell inside its footprint counts as
+      // "the city", not just the exact center anchor tile, otherwise 8 of the 9 tiles fell through
+      // to the generic mine-tile menu (no Enter City / Train option) and looked like a dead click.
+      const isBase = me.mainBaseTile != null && baseFootprintCells(bx, by).some((c) => c.x === tx && c.y === ty);
       if (isBase) {
         // Main city — enter desk / defense / teams.
         this.ctx.panels.showModal(
