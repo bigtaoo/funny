@@ -17,7 +17,7 @@ export function DataMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBase
         // join-time-only mirror that never reflects a family created/joined afterward.
         const fam = await this.cb.worldApi.getMyFamily();
         if (fam) {
-          this.applyFamily(fam);
+          await this.applyFamily(fam);
         } else {
           this.mode = 'noFamily';
         }
@@ -29,7 +29,7 @@ export function DataMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBase
 
     async loadMyFamily(familyId: string): Promise<void> {
       const fam = await this.cb.worldApi.getFamily(familyId);
-      this.applyFamily(fam);
+      await this.applyFamily(fam);
     }
 
     private async applyFamily(fam: FamilyDetailView): Promise<void> {

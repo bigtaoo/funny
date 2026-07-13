@@ -945,6 +945,9 @@ export const en: Record<TranslationKey, string> = {
   'family.err.notIn': 'Not in a family',
   'family.err.badTag': 'Invalid name or tag format',
   'family.sect': 'Sect',
+  'family.prosperity': 'Prosperity {n}',
+  'family.memberCount': 'Members {n}/{cap}',
+  'family.vacancies': '{n} slots open',
   // Sect (S8-4b)
   'sect.title': 'Sect',
   'sect.back': '← Back',

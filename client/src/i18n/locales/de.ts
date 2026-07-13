@@ -945,6 +945,9 @@ export const de: Record<TranslationKey, string> = {
   'family.err.notIn': 'Nicht in einer Familie',
   'family.err.badTag': 'Ungültiger Name oder Tag',
   'family.sect': 'Sekte',
+  'family.prosperity': 'Wohlstand {n}',
+  'family.memberCount': 'Mitglieder {n}/{cap}',
+  'family.vacancies': '{n} freie Plätze',
   // Sekte (S8-4b)
   'sect.title': 'Sekte',
   'sect.back': '← Zurück',

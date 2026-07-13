@@ -74,11 +74,17 @@ export class FamilySceneBase {
   protected caretOn = true;
   protected caretTimer = 0;
 
-  // Scroll
+  // Scroll — `scrollY` is the roster/single-column scroll; `scrollYChannel` only comes into play
+  // in the landscape split view (see RenderMixin.renderSplitView), where the channel column
+  // scrolls independently alongside the roster column instead of sharing one tab's scroll state.
   protected scrollY = 0;
+  protected scrollYChannel = 0;
+  /** X boundary between the roster and channel columns in the landscape split view; used by
+   *  handleDown to route a drag to the right column's scroll state. Unused (0) in portrait. */
+  protected chatColX = 0;
   /** Title-bar height, set from the shared header — drives all body layout below it. */
   protected headerH = 0;
-  protected dragStart: { x: number; y: number; scroll: number } | null = null;
+  protected dragStart: { x: number; y: number; scroll: number; target: 'members' | 'channel' } | null = null;
   protected dragMoved = false;
 
   // Hit rects
@@ -254,7 +260,14 @@ export class FamilySceneBase {
         action(); return;
       }
     }
-    this.dragStart = { x, y, scroll: this.scrollY };
+    // Landscape split view has two independently-scrolling columns — route by which side of the
+    // divider the drag started on. Portrait's tab view has one column at a time, scrolled by
+    // whichever tab is active (members ↔ scrollY, channel ↔ scrollYChannel — see renderTabbedView).
+    const target: 'members' | 'channel' =
+      this.mode !== 'myFamily' ? 'members'
+      : this.landscape ? (x >= this.chatColX ? 'channel' : 'members')
+      : this.activeTab;
+    this.dragStart = { x, y, scroll: target === 'channel' ? this.scrollYChannel : this.scrollY, target };
     this.dragMoved = false;
   }
 
@@ -263,7 +276,9 @@ export class FamilySceneBase {
     const dy = y - this.dragStart.y;
     if (Math.abs(dy) > 6) {
       this.dragMoved = true;
-      this.scrollY = Math.max(0, this.dragStart.scroll - dy);
+      const next = Math.max(0, this.dragStart.scroll - dy);
+      if (this.dragStart.target === 'channel') this.scrollYChannel = next;
+      else this.scrollY = next;
       this.render();
     }
   }
