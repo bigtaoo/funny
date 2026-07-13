@@ -172,7 +172,7 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
       // (card codex + skins wardrobe), which stays reachable from the campaign map too.
       onOpenCards() { analytics.click('lobby.cards'); withGuide('cards', 'guide.cards.title', 'guide.cards.body', () => (api ? nav.goCardRoster(goLobby) : nav.goCollection(goLobby, 'cards'))); },
       onOpenStats() { analytics.click('lobby.stats'); nav.goStats(); },
-      ...(online ? { onOpenAchievements: () => nav.goAchievements() } : {}),
+      ...(online ? { onOpenAchievements: () => nav.goAchievements(goLobby) } : {}),
       ...(online ? { onOpenDaily: () => { analytics.click('lobby.daily'); withGuide('daily', 'guide.daily.title', 'guide.daily.body', () => nav.goDaily()); }, onOpenEvents: () => { analytics.click('lobby.events'); nav.goEvents(); } } : {}),
       onOpenWorld() { analytics.click('lobby.world'); withGuide('world', 'guide.world.title', 'guide.world.body', () => nav.goWorldEntry()); },
       ...(online ? { onOpenAuction: () => withGuide('auction', 'guide.auction.title', 'guide.auction.body', () => nav.goAuctionFromLobby()) } : {}),
