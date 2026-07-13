@@ -271,8 +271,8 @@ export class WorldMapInput {
       }
     }
 
-    // Begin drag
-    if (y < this.ctx.h - HUD_H) {
+    // Begin drag (only inside the map band — below the header bar, above the chat HUD)
+    if (y > this.ctx.topInset && y < this.ctx.h - HUD_H) {
       this.ctx.dragging = true;
       this.ctx.dragMoved = false;
       this.ctx.dragStartX = x - this.ctx.panX;
@@ -322,7 +322,7 @@ export class WorldMapInput {
     const wasDragging = this.ctx.dragMoved;
     this.ctx.dragging = false;
 
-    if (!wasDragging && y < this.ctx.h - HUD_H) {
+    if (!wasDragging && y > this.ctx.topInset && y < this.ctx.h - HUD_H) {
       const { x: tx, y: ty } = this.ctx.view.screenToTile(x, y);
       this.onTileClick(tx, ty);
     } else if (wasDragging) {

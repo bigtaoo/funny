@@ -4,7 +4,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../../i18n';
 import { buildPaperBackground } from '../../../render/sketchUi';
-import { drawFloatingBackButton } from '../../../ui/widgets/SceneHeader';
+import { drawSceneHeader, HEADER_ACCENT } from '../../../ui/widgets/SceneHeader';
 import { HUD_H } from '../constants';
 import { type Constructor, type WorldMapRendererBaseCtor } from './base';
 
@@ -23,10 +23,18 @@ export function BuildMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase):
       const bg = buildPaperBackground('worldmap', w, h, { marginLine: false });
       this.ctx.container.addChild(bg);
 
-      // Map area (clip to above-HUD area)
+      // Top-left back button + title bar — same SceneHeader every other scene uses, so the
+      // title-row height reads consistently app-wide. Drawn before the map so topInset is
+      // known when the map mask/loading overlay below are sized.
+      this.ctx.topLayer = new PIXI.Container();
+      const hdr = drawSceneHeader(this.ctx.topLayer, w, h, t('world.title'), { accent: HEADER_ACCENT.slg });
+      this.ctx.backRect = hdr.backRect;
+      this.ctx.topInset = hdr.headerH;
+
+      // Map area (clip to the band between the header and the bottom chat HUD)
       const mapClip = new PIXI.Container();
       const mask = new PIXI.Graphics();
-      mask.beginFill(0xffffff).drawRect(0, 0, w, h - HUD_H).endFill();
+      mask.beginFill(0xffffff).drawRect(0, this.ctx.topInset, w, h - HUD_H - this.ctx.topInset).endFill();
       mapClip.mask = mask;
       mapClip.addChild(mask);
       this.ctx.container.addChild(mapClip);
@@ -58,10 +66,8 @@ export function BuildMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase):
       this.ctx.hudLayer = new PIXI.Container();
       this.ctx.container.addChild(this.ctx.hudLayer);
 
-      // Top-left back button — static, on its own layer above the map/HUD.
-      this.ctx.topLayer = new PIXI.Container();
+      // Header bar (built above, before the map) sits above the map/HUD layers.
       this.ctx.container.addChild(this.ctx.topLayer);
-      this.ctx.backRect = drawFloatingBackButton(this.ctx.topLayer, h).backRect;
 
       this.ctx.modalLayer = new PIXI.Container();
       this.ctx.container.addChild(this.ctx.modalLayer);
@@ -91,7 +97,7 @@ export function BuildMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase):
       layer.addChild(sheet);
 
       const cx = w / 2;
-      const cy = (h - HUD_H) / 2;
+      const cy = (this.ctx.topInset + h - HUD_H) / 2;
 
       // Broken ink ring (open arc) — rotated each frame in update() while active.
       const spinner = new PIXI.Graphics();
