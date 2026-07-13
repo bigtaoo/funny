@@ -1,19 +1,14 @@
 // Social navigation: friends list, mail, direct chat (S6). Extracted from createAppCore.
 import * as analytics from '../../analytics';
 import { WorldApiClient } from '../../net/WorldApiClient';
-import { netLog } from '../../net/log';
 import type { FriendsView, ChatView } from '../AppViews';
 import type { AppCtx, Nav } from '../appCtx';
 import { FALLBACK_SEASON, PLAYER_PUBLIC_ID_KEY } from '../appConstants';
-
-// TEMP diagnostic logging (social-back-goes-to-career bug hunt, 2026-07-12) — remove once resolved.
-const navLog = netLog('nav-social');
 
 export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' | 'goChat'> {
   const { api, saveManager, platform, state, views, nav, getNetSession, playerName } = ctx;
 
   function goFriends(opts?: { defaultTab?: 'friends' | 'family' | 'sect' | 'world' | 'mail'; onBack?: () => void }): void {
-    navLog.info('goFriends() called', { defaultTab: opts?.defaultTab ?? null, hasCustomOnBack: !!opts?.onBack });
     // Social needs a server account; offline / no API → bounce to login.
     if (!api) { analytics.track('login_gate_hit', { scene: 'FriendsScene' }); nav.goLogin(); return; }
     analytics.track('screen_view', { scene: 'FriendsScene' });
@@ -27,7 +22,6 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
     // Where the whole social hub returns to when backed all the way out — reused by the
     // family/sect auto-jump below so `onBack` isn't lost once FriendsScene is torn down.
     const backTo = (): void => {
-      navLog.info('backTo() firing', { hasCustomOnBack: !!opts?.onBack, target: opts?.onBack ? 'custom' : 'nav.goLobby' });
       restore();
       (opts?.onBack ?? nav.goLobby)();
     };
@@ -105,8 +99,8 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
         joinFamily:   async (familyId) => { await worldApi.joinFamily(familyId); },
         createSect:   async (name, tag) => { const wid = await ensureWorldId(); await worldApi.createSect(wid, name, tag); },
         joinSect:     async (sectId) => { const wid = await ensureWorldId(); await worldApi.joinSect(wid, sectId); },
-        openFamilyHub: () => { navLog.info('openFamilyHub() auto-jump', { slgWorldId }); if (slgWorldId) nav.goFamilyHub(worldApi, slgWorldId, backTo); },
-        openSectHub:   () => { navLog.info('openSectHub() auto-jump', { slgWorldId }); if (slgWorldId) nav.goSectHub(worldApi, slgWorldId, backTo); },
+        openFamilyHub: () => { if (slgWorldId) nav.goFamilyHub(worldApi, slgWorldId, backTo); },
+        openSectHub:   () => { if (slgWorldId) nav.goSectHub(worldApi, slgWorldId, backTo); },
         loadWorldChat: async (before) => { const wid = await ensureWorldId(); return worldApi.getWorldChannel(wid, { before }); },
         sendWorldChat: async (body, senderName) => { const wid = await ensureWorldId(); await worldApi.sendWorldChannelMessage(wid, body, senderName); },
         playerName: () => playerName(),

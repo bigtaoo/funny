@@ -13,6 +13,7 @@ import {
   GARRISON_PER_TILE,
   OCCUPY_MIN_TROOPS,
   TROOP_CAP_BASE,
+  npcGarrison,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
 import { WorldService } from '../src/service';
@@ -92,18 +93,22 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
 
   it('occupy march: deduct troops on departure + travel time + write territory on arrival + yield rate increases + push', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
-    const target = findCoord((t) => t.type === 'resource', 30, 30);
+    // Low-level target + a comfortable troop margin over npcGarrison(level) (same convention as the siege e2e
+    // sweep test: `npc + 600`) so the ADR-037 PvE battle (real deterministic engine, not a linear formula) reliably favors the attacker.
+    const target = findCoord((t) => t.type === 'resource' && t.level <= 2, 30, 30);
     const procT = proceduralTile(W, target.x, target.y);
+    const npc = npcGarrison(procT.level);
+    const troops = npc + 600;
     const expectedPath = findMarchPath(W, SLG_MAP_W, SLG_MAP_H, 5, 5, target.x, target.y, new Set());
 
-    const mv = await svc.startMarch(W, 'a', 5, 5, target.x, target.y, 'occupy', OCCUPY_MIN_TROOPS);
-    expect(mv).toMatchObject({ kind: 'occupy', status: 'marching', troops: OCCUPY_MIN_TROOPS });
+    const mv = await svc.startMarch(W, 'a', 5, 5, target.x, target.y, 'occupy', troops);
+    expect(mv).toMatchObject({ kind: 'occupy', status: 'marching', troops });
     expect(mv.arriveAt).toBe(nowMs + (expectedPath!.length - 1) * MARCH_SPEED_SEC_PER_TILE * 1000);
     expect(mv.fromTile).toBe(tileId(W, 5, 5));
     expect(mv.toTile).toBe(tileId(W, target.x, target.y));
 
     // Troops deducted on departure (in transit).
-    expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - OCCUPY_MIN_TROOPS);
+    expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - troops);
     // march_update pushed immediately on departure.
     expect(pushes.some((p) => p.msg.kind === 'march_update' && p.msg.status === 'marching')).toBe(true);
 
@@ -112,16 +117,32 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
     expect(await svc.processDueArrivals()).toBe(0);
     expect((await svc.getTile(W, 'a', target.x, target.y)).mine).toBeUndefined();
 
-    // Arrived: occupation lands.
+    // Arrived: ADR-037 (§5.4) — occupy now fights the tile's system garrison (npcGarrison(level)) via the same
+    // deterministic engine as siege; victory starts an occupation hold rather than writing ownership immediately.
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
-    const tile = await svc.getTile(W, 'a', target.x, target.y);
-    expect(tile).toMatchObject({ type: 'territory', mine: true, occupied: true, garrison: OCCUPY_MIN_TROOPS });
+    const held = await svc.getTile(W, 'a', target.x, target.y);
+    expect(held.mine).toBeUndefined();
+    expect(held.occupied).toBeUndefined();
+    expect(held.contestedByMe).toBe(true);
+    expect(held.contestedUntil).toBeGreaterThan(nowMs);
 
-    const me = await svc.getMe(W, 'a');
+    // Committed troops (minus any battle casualties) are neither a garrison yet nor refunded — they're holding the tile.
+    let me = await svc.getMe(W, 'a');
+    expect(me.troops).toBe(TROOP_CAP_BASE - troops);
+
+    // Hold elapses: ownership is finalized with the battle's surviving troops as garrison.
+    nowMs = held.contestedUntil!;
+    expect(await svc.processDueOccupations()).toBe(1);
+    const tile = await svc.getTile(W, 'a', target.x, target.y);
+    expect(tile).toMatchObject({ type: 'territory', mine: true, occupied: true });
+    expect(tile.garrison).toBeGreaterThan(0);
+    expect(tile.garrison).toBeLessThanOrEqual(troops);
+
+    me = await svc.getMe(W, 'a');
     expect(me.territoryCount).toBe(10); // ADR-025: 9 base footprint cells + 1 marched-and-occupied tile
     // Troops converted to garrison; pool unchanged (still deducted).
-    expect(me.troops).toBe(TROOP_CAP_BASE - OCCUPY_MIN_TROOPS);
+    expect(me.troops).toBe(TROOP_CAP_BASE - troops);
     const rt = procT.resType!;
     expect(me.yieldRate?.[rt]).toBeGreaterThan(0);
 

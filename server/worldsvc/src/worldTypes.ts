@@ -1,7 +1,7 @@
 // worldsvc shared view/response types + service dependency contract.
 // Extracted verbatim from service.ts (god-class split, 2026-07-03). No behavior change:
 // these are the REST response shapes returned by WorldService and the DI surface it is constructed with.
-import type { BuildingKey, TileType, ResourceType, ObstacleKind, MarchKind } from '@nw/shared';
+import type { BuildingKey, TileType, ResourceType, ObstacleKind, MarchKind, SlgShopPriceCache } from '@nw/shared';
 import type { GarrisonEntry } from '@nw/engine';
 import type { WorldCollections, MarchDoc, CardSLGState } from './db';
 import type { WorldRedis } from './redis';
@@ -47,6 +47,13 @@ export interface WorldTileView {
   /** ADR-026 §1: building max HP = level × SLG_BASE_HP_PER_LEVEL. Client renders the HP bar as hp/maxHp. */
   maxHp?: number;
   protectedUntil?: number;
+  /**
+   * ADR-037 (§5.4): this tile is mid occupation-hold — an occupy march won its PvE battle but the hold countdown
+   * has not yet elapsed (no `ownerId` yet). ms epoch when the hold resolves into ownership (or is expelled first).
+   */
+  contestedUntil?: number;
+  /** ADR-037 (§5.4): the pending occupier (contestedBy) is the requester themself — client distinguishes "I'm holding" from "someone else is holding". */
+  contestedByMe?: boolean;
   /** §18 G5 V2: this tile has a watchtower (only exposed for tiles visible to the player) — large-radius persistent vision source; client renders the tower marker. */
   watchtower?: boolean;
   /**
@@ -164,4 +171,6 @@ export interface WorldServiceDeps {
   mail?: WorldMailClient;
   /** socialsvc internal client (SS7: syncs familyId read-only mirror on joinWorld); default = familyId not populated. */
   socialsvc?: WorldSocialsvcClient;
+  /** SLG shop price/effect override cache (polls admin, no DB connection; default = always uses SLG_SHOP_ITEMS code defaults). */
+  shopPrices?: SlgShopPriceCache;
 }

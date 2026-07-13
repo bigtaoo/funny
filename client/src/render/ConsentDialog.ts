@@ -113,7 +113,7 @@ export class ConsentDialog implements Scene {
     const bY = cardY + dyBtn;
     const btn = sketchPanel(bW, bH, { fill: C.green, border: C.dark, width: 2.4, seed: seedFor(bW, bH, 2) });
     btn.x = bX; btn.y = bY;
-    btn.interactive = true;
+    btn.eventMode = 'static';
     btn.cursor = 'pointer';
     btn.on('pointertap', () => this.cb.onAccept());
     this.container.addChild(btn);
@@ -127,7 +127,7 @@ export class ConsentDialog implements Scene {
   private addLink(label: string, cx: number, y: number, cardH: number, url: string): void {
     const link = txt('· ' + label, Math.round(cardH * 0.042), C.accent, true);
     link.anchor.set(0.5, 0); link.x = cx; link.y = y;
-    link.interactive = true;
+    link.eventMode = 'static';
     link.cursor = 'pointer';
     link.on('pointertap', () => {
       if (typeof window !== 'undefined') window.open(url, '_blank', 'noopener');

@@ -1172,6 +1172,14 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "protectedUntil": {
                         "type": "number"
                       },
+                      "contestedUntil": {
+                        "type": "number",
+                        "description": "ADR-037 (§5.4): this tile is mid occupation-hold — an occupy march won its PvE battle against the system garrison but the hold countdown has not yet elapsed (no owner yet). ms epoch when the hold resolves into ownership, unless expelled first by another attack/occupy march."
+                      },
+                      "contestedByMe": {
+                        "type": "boolean",
+                        "description": "ADR-037 (§5.4): the pending occupier is the requester themself (\"I'm holding\" vs. \"someone else is holding\")."
+                      },
                       "watchtower": {
                         "type": "boolean",
                         "description": "§18 G5 V2：A watchtower has been built on this tile (large-radius persistent vision source). The client renders the tower marker."
@@ -1403,6 +1411,14 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "protectedUntil": {
                   "type": "number"
+                },
+                "contestedUntil": {
+                  "type": "number",
+                  "description": "ADR-037 (§5.4): this tile is mid occupation-hold — an occupy march won its PvE battle against the system garrison but the hold countdown has not yet elapsed (no owner yet). ms epoch when the hold resolves into ownership, unless expelled first by another attack/occupy march."
+                },
+                "contestedByMe": {
+                  "type": "boolean",
+                  "description": "ADR-037 (§5.4): the pending occupier is the requester themself (\"I'm holding\" vs. \"someone else is holding\")."
                 },
                 "watchtower": {
                   "type": "boolean",
@@ -2115,6 +2131,14 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "protectedUntil": {
                   "type": "number"
+                },
+                "contestedUntil": {
+                  "type": "number",
+                  "description": "ADR-037 (§5.4): this tile is mid occupation-hold — an occupy march won its PvE battle against the system garrison but the hold countdown has not yet elapsed (no owner yet). ms epoch when the hold resolves into ownership, unless expelled first by another attack/occupy march."
+                },
+                "contestedByMe": {
+                  "type": "boolean",
+                  "description": "ADR-037 (§5.4): the pending occupier is the requester themself (\"I'm holding\" vs. \"someone else is holding\")."
                 },
                 "watchtower": {
                   "type": "boolean",

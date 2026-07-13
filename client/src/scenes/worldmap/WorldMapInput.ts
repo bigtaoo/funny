@@ -132,11 +132,34 @@ export class WorldMapInput {
       return;
     }
 
-    // Neutral tile. NPC garrison present → offer sweep (march). Always offer
-    // direct occupy (S8-1, in-range; server rejects out-of-range).
+    // Neutral tile, mid occupation-hold (ADR-037 §5.4): the tile has no owner yet, but a pending occupier has
+    // already won the PvE battle and is waiting out the hold countdown before ownership lands.
+    if (tile?.contestedUntil) {
+      const secLeft = Math.max(0, Math.ceil((tile.contestedUntil - Date.now()) / 1000));
+      if (tile.contestedByMe) {
+        // My own pending hold — nothing to do but watch the countdown (no reinforcement in v1).
+        this.ctx.panels.showModal([t('world.occupyingMine').replace('{sec}', String(secLeft)), `(${tx}, ${ty})`], [
+          { label: '✕', action: () => this.ctx.panels.closeModal() },
+        ]);
+        return;
+      }
+      // Someone else is holding it — offer an expelling attack instead of occupy/sweep (occupying it directly
+      // would just bounce off the pending holder's contestedBy at arrival; use attack to fight their held garrison).
+      const holdButtons: { label: string; action: () => void }[] = [
+        { label: t('world.actAttack'), action: () => void this.ctx.net.showAttackTeamPicker(tx, ty) },
+        { label: t('world.actScout'), action: () => void this.ctx.net.doScout(tx, ty) },
+        { label: '✕', action: () => this.ctx.panels.closeModal() },
+      ];
+      this.ctx.panels.showModal([t('world.occupying').replace('{sec}', String(secLeft)), `(${tx}, ${ty})`], holdButtons);
+      return;
+    }
+
+    // Neutral tile. NPC garrison present → offer sweep (march). Occupy is now a march (ADR-037 §5.4: fights the
+    // tile's system garrison via the deterministic engine, then holds it for a countdown before ownership lands)
+    // — same troop-count dialog as sweep/reinforce, not an instant grab.
     const garrison = tile?.garrison ?? 0;
     const buttons: { label: string; action: () => void }[] = [
-      { label: t('world.actOccupy'), action: () => this.ctx.net.doOccupy(tx, ty) },
+      { label: t('world.actOccupy'), action: () => this.ctx.panels.showDeployDialog(tx, ty, 'occupy') },
     ];
     if (garrison > 0) {
       buttons.push({ label: t('world.actSweep'), action: () => this.ctx.panels.showDeployDialog(tx, ty, 'sweep') });
@@ -169,6 +192,16 @@ export class WorldMapInput {
           action();
           return;
         }
+      }
+      // Scrollable list body (world-info nations/shop tabs) — begin a drag-to-scroll
+      // gesture instead of closing the modal on a tap inside the list.
+      const sr = this.ctx.infoScrollRect;
+      if (sr && x >= sr.x && x <= sr.x + sr.w && y >= sr.y && y <= sr.y + sr.h) {
+        this.ctx.infoScrollDragging = true;
+        this.ctx.infoScrollDragMoved = false;
+        this.ctx.infoScrollDragStartY = y;
+        this.ctx.infoScrollDragStartScroll = this.ctx.infoScrollY;
+        return;
       }
       this.ctx.panels.closeModal();
       return;
@@ -245,6 +278,18 @@ export class WorldMapInput {
   }
 
   handleMove(x: number, y: number): void {
+    if (this.ctx.infoScrollDragging) {
+      const dy = y - this.ctx.infoScrollDragStartY;
+      if (Math.abs(dy) > 6) this.ctx.infoScrollDragMoved = true;
+      if (this.ctx.infoScrollDragMoved) {
+        const next = Math.max(0, Math.min(this.ctx.infoMaxScroll, this.ctx.infoScrollDragStartScroll - dy));
+        if (next !== this.ctx.infoScrollY) {
+          this.ctx.infoScrollY = next;
+          this.ctx.panels.renderInfoPanel();
+        }
+      }
+      return;
+    }
     if (!this.ctx.dragging) return;
     const dx = x - (this.ctx.dragStartX + this.ctx.panX);
     const dy = y - (this.ctx.dragStartY + this.ctx.panY);
@@ -266,6 +311,10 @@ export class WorldMapInput {
   }
 
   handleUp(x: number, y: number): void {
+    if (this.ctx.infoScrollDragging) {
+      this.ctx.infoScrollDragging = false;
+      return;
+    }
     if (!this.ctx.dragging) return;
     const wasDragging = this.ctx.dragMoved;
     this.ctx.dragging = false;
@@ -278,6 +327,17 @@ export class WorldMapInput {
       void this.ctx.net.loadMapViewport().then(() => {
         if (!this.ctx.destroyed) this.ctx.view.renderMap();
       });
+    }
+  }
+
+  /** Mouse-wheel scroll over the world-info panel's scrollable list (browser only). */
+  handleWheel(x: number, y: number, deltaY: number): void {
+    const sr = this.ctx.infoScrollRect;
+    if (!sr || x < sr.x || x > sr.x + sr.w || y < sr.y || y > sr.y + sr.h) return;
+    const next = Math.max(0, Math.min(this.ctx.infoMaxScroll, this.ctx.infoScrollY + deltaY));
+    if (next !== this.ctx.infoScrollY) {
+      this.ctx.infoScrollY = next;
+      this.ctx.panels.renderInfoPanel();
     }
   }
 }

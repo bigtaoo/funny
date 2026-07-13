@@ -758,6 +758,8 @@ export const de: Record<TranslationKey, string> = {
   'world.marchTime': '~{sec}s Marsch',
   'world.myBase': 'Meine Basis',
   'world.occupied': 'Besetzt',
+  'world.occupying': 'Wird besetzt (noch {sec}s)',
+  'world.occupyingMine': 'Deine Besetzung hält (noch {sec}s bis Übernahme)',
   'world.mine': 'Mein Gebiet',
   'world.protected': 'Geschützt ({sec}s)',
   'world.garrison': 'Garnison {n}',

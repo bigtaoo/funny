@@ -1,13 +1,15 @@
 // SLG prosperity (G2 / §8.1 / SLG_DESIGN §17.1), season settlement rewards (§8.3), and G6 multi-shard allocation (§17.8).
 // Split out of slg.ts (god-file split, [[project_godfile_split_pattern]]).
 
-/** Prosperity score weights (DRAFT; register in ECONOMY_NUMBERS §13-SLG). */
+/** Prosperity score weights (verified: ECONOMY_NUMBERS §13-SLG-E, econ-sim E-track CLOSED 2026-06-30). */
 export const PROSPERITY_W_TERRITORY = 10;   // per territory tile
 export const PROSPERITY_W_MEMBER    = 50;   // per member
 export const PROSPERITY_W_ACTIVITY  = 5;    // per point of season activity (new occupations + battles, source §17.4)
 /** Inactivity decay: fraction decayed per calendar day (settled lazily at read time, analogous to resource yield). */
 export const PROSPERITY_DECAY_PER_DAY = 0.05; // 5%/day
-/** Minimum prosperity to found a sect (§8.2, §16.5 A7 decision): 30 members + 30 tiles = 1800 base, plus some activity required. */
+/** Minimum prosperity to found a sect (§8.2, §16.5 A7 decision): 30 members + 30 tiles = 1800 base, plus some activity required.
+ *  Reachability/decay verified via econ-sim E-track (server/tools/econ-sim/src/prosperityRun.ts) — ECONOMY_NUMBERS §13-SLG-E,
+ *  CLOSED 2026-06-30: active-median family (20 start members, 3.5 tiles/day, 4 activity/day) founds by day 9 (7–14 day window). */
 export const SECT_FOUND_PROSPERITY_MIN = 2000;
 
 /** Family prosperity pure function: unit-testable, computable on either end, integer result. activity = cumulative season activity points (§17.4). */
@@ -70,7 +72,8 @@ export interface SectStrength {
   memberFamilyCount: number;
   prosperity: number;        // current aggregated prosperity
 }
-/** Strength score (higher = stronger): primarily based on historical rank (lower rank number = stronger), with size/prosperity as secondary factors. DRAFT weights. */
+/** Strength score (higher = stronger): primarily based on historical rank (lower rank number = stronger), with size/prosperity as secondary factors.
+ *  Weight sensitivity verified: ECONOMY_NUMBERS §13-SLG-D, CLOSED 2026-06-30. */
 export function sectStrengthScore(s: SectStrength): number {
   const rankScore = s.lastSeasonRank ? Math.max(0, 100 - s.lastSeasonRank) * 100 : 500; // new sect gets median score
   return rankScore + s.memberFamilyCount * 50 + Math.floor(s.prosperity / 100);

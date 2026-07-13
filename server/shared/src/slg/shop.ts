@@ -26,3 +26,141 @@ export const SLG_SHOP_ITEMS: readonly SlgShopItem[] = [
   // season battle pass
   { id: 'slg_battle_pass', cost: 9800, kind: 'battle_pass', effect: { pass_season: 1 }, description: 'Season battle pass (valid for current season)' },
 ] as const;
+
+export type SlgShopItemId = (typeof SLG_SHOP_ITEMS)[number]['id'];
+
+export function isSlgShopItemId(v: unknown): v is SlgShopItemId {
+  return typeof v === 'string' && SLG_SHOP_ITEMS.some((i) => i.id === v);
+}
+
+export function slgShopItemDefault(id: SlgShopItemId): SlgShopItem {
+  // Non-null: id is only ever a valid SlgShopItemId (guarded by isSlgShopItemId at every call site).
+  return SLG_SHOP_ITEMS.find((i) => i.id === id)!;
+}
+
+// ── Admin-configurable price overrides (ops runs price adjustments without a redeploy) ──────────
+// Same shape as the feature-flags override pattern (see featureFlags.ts): admin owns the only
+// collection + writer; database-less backends (worldsvc) poll admin's internal endpoint for the
+// raw override docs and merge them onto the code defaults locally via resolveSlgShopItem.
+
+/** Price/effect override document (admin slgShopPrices collection; _id = shop item id). Only fields present here are overridden — everything else falls back to the SLG_SHOP_ITEMS default. */
+export interface SlgShopItemOverrideDoc {
+  _id: SlgShopItemId;
+  cost?: number;
+  effect?: Record<string, number | string>;
+  updatedAt: number;
+  updatedBy: string;
+}
+
+/** Merges an override doc onto the code-default item (doc fields, if present, win; everything else keeps the default). */
+export function resolveSlgShopItem(base: SlgShopItem, doc: SlgShopItemOverrideDoc | null | undefined): SlgShopItem {
+  if (!doc) return base;
+  return {
+    ...base,
+    ...(typeof doc.cost === 'number' ? { cost: doc.cost } : {}),
+    ...(doc.effect ? { effect: { ...base.effect, ...doc.effect } } : {}),
+  };
+}
+
+/**
+ * Validates and normalises a raw override document (from the admin internal endpoint / database).
+ * Fault-tolerance first, mirroring sanitizeFlagDoc: any missing/invalid field is silently dropped
+ * (no throw) so a dirty doc can never crash the shop purchase path — it just falls back to the default.
+ */
+export function sanitizeSlgShopItemOverrideDoc(raw: unknown): SlgShopItemOverrideDoc | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  if (!isSlgShopItemId(o._id)) return null;
+  let effect: Record<string, number | string> | undefined;
+  if (o.effect && typeof o.effect === 'object') {
+    const out: Record<string, number | string> = {};
+    for (const [k, v] of Object.entries(o.effect as Record<string, unknown>)) {
+      if (typeof v === 'number' && Number.isFinite(v)) out[k] = v;
+      else if (typeof v === 'string') out[k] = v;
+    }
+    if (Object.keys(out).length > 0) effect = out;
+  }
+  return {
+    _id: o._id,
+    ...(typeof o.cost === 'number' && Number.isFinite(o.cost) && o.cost > 0 ? { cost: Math.floor(o.cost) } : {}),
+    ...(effect ? { effect } : {}),
+    updatedAt: typeof o.updatedAt === 'number' ? o.updatedAt : 0,
+    updatedBy: typeof o.updatedBy === 'string' ? o.updatedBy : '',
+  };
+}
+
+export interface SlgShopPriceCacheOpts {
+  /** Function to fetch all raw override docs (typically polling admin GET /admin/internal/slg-shop-prices). */
+  fetchAll: () => Promise<unknown[]>;
+  /** Refresh interval in ms. Default 30000. */
+  ttlMs?: number;
+  /** Callback on refresh failure (defaults to silent — gracefully falls back to stale cache / code defaults). */
+  onError?: (err: unknown) => void;
+}
+
+/**
+ * Price-override cache for backends without DB access (mirrors FeatureFlagCache): triggers one
+ * refresh on start → refreshes every ttl → exposes resolveItem/resolveItems (merge doc onto default).
+ * Degradation strategy: admin unreachable → last cached value; never fetched on cold start → code defaults.
+ */
+export class SlgShopPriceCache {
+  private docs = new Map<SlgShopItemId, SlgShopItemOverrideDoc>();
+  private timer: NodeJS.Timeout | null = null;
+  private loadedOnce = false;
+  private readonly fetchAll: () => Promise<unknown[]>;
+  private readonly ttlMs: number;
+  private readonly onError?: (err: unknown) => void;
+
+  constructor(opts: SlgShopPriceCacheOpts) {
+    this.fetchAll = opts.fetchAll;
+    this.ttlMs = opts.ttlMs ?? 30_000;
+    if (opts.onError) this.onError = opts.onError;
+  }
+
+  async refresh(): Promise<void> {
+    try {
+      const raw = await this.fetchAll();
+      const next = new Map<SlgShopItemId, SlgShopItemOverrideDoc>();
+      for (const r of raw) {
+        const doc = sanitizeSlgShopItemOverrideDoc(r);
+        if (doc) next.set(doc._id, doc);
+      }
+      this.docs = next;
+      this.loadedOnce = true;
+    } catch (e) {
+      this.onError?.(e);
+      // Retain old cache, graceful degradation.
+    }
+  }
+
+  /** Starts periodic refresh (fetches once immediately, then on a timer). The timer is unref'd — it does not prevent process exit. */
+  async start(): Promise<void> {
+    await this.refresh();
+    if (!this.timer) {
+      this.timer = setInterval(() => void this.refresh(), this.ttlMs);
+      this.timer.unref?.();
+    }
+  }
+
+  stop(): void {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+  }
+
+  /** Resolved item for a single id (default merged with the cached override, if any). */
+  resolveItem(id: SlgShopItemId): SlgShopItem {
+    return resolveSlgShopItem(slgShopItemDefault(id), this.docs.get(id) ?? null);
+  }
+
+  /** Full resolved catalog, in SLG_SHOP_ITEMS order (for client display). */
+  resolveItems(): SlgShopItem[] {
+    return SLG_SHOP_ITEMS.map((item) => resolveSlgShopItem(item, this.docs.get(item.id) ?? null));
+  }
+
+  /** Whether at least one successful fetch has completed (false = still falling back to code defaults). */
+  get hasLoaded(): boolean {
+    return this.loadedOnce;
+  }
+}

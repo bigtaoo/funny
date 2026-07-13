@@ -49,6 +49,17 @@ export class WebAdapter {
     });
 
     add(canvas, 'contextmenu', e => { e.preventDefault(); });
+
+    const addWheel = (target: EventTarget, type: string, fn: (e: WheelEvent) => void) => {
+      const listener = fn as EventListener;
+      target.addEventListener(type, listener, { passive: false });
+      this.handlers.push({ target, type, fn: listener });
+    };
+    addWheel(canvas, 'wheel', e => {
+      e.preventDefault();
+      const r = toDesign(e.clientX, e.clientY);
+      input._emitWheel(r.x, r.y, e.deltaY);
+    });
   }
 
   destroy(): void {

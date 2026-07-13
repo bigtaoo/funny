@@ -49,6 +49,27 @@ export class WorldCorePush extends WorldCoreYield {
     }
   }
 
+  // ── ADR-037 (§5.4): occupation-hold settlement scheduling (best-effort ZSET, score=dueAt; Mongo dueAt scan is authoritative) ──
+  private occupationZsetKey(worldId: string): string {
+    return `world:${worldId}:occupation`;
+  }
+  async scheduleOccupation(worldId: string, id: string, dueAt: number): Promise<void> {
+    if (!this.deps.redis) return;
+    try {
+      await this.deps.redis.zadd(this.occupationZsetKey(worldId), dueAt, id);
+    } catch {
+      /* best-effort: failure only loses the precise wake-up; the Mongo dueAt scan still settles the hold */
+    }
+  }
+  async unscheduleOccupation(worldId: string, id: string): Promise<void> {
+    if (!this.deps.redis) return;
+    try {
+      await this.deps.redis.zrem(this.occupationZsetKey(worldId), id);
+    } catch {
+      /* best-effort */
+    }
+  }
+
   // ── Real-time push (best-effort, §14.5) ──
   async pushMarch(accountId: string, v: MarchView): Promise<void> {
     await this.gateway.push(accountId, {

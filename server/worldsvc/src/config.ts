@@ -23,6 +23,8 @@ export interface WorldsvcEnv extends ServerEnv {
   metaInternalUrl: string | undefined;
   /** socialsvc internal HTTP base URL (channel push delegation); if absent, no delegation. */
   socialsvcInternalUrl: string | undefined;
+  /** admin internal HTTP base URL (polls SLG shop price overrides; if absent, shop always uses SLG_SHOP_ITEMS code defaults). */
+  adminInternalUrl: string | undefined;
 }
 
 export function loadWorldsvcEnv(): WorldsvcEnv {
@@ -38,5 +40,6 @@ export function loadWorldsvcEnv(): WorldsvcEnv {
     commercialInternalUrl: process.env.NW_COMMERCIAL_INTERNAL_URL || undefined,
     metaInternalUrl: process.env.NW_META_INTERNAL_URL || undefined,
     socialsvcInternalUrl: process.env.NW_SOCIALSVC_INTERNAL_URL || undefined,
+    adminInternalUrl: process.env.NW_ADMIN_INTERNAL_URL || undefined,
   };
 }

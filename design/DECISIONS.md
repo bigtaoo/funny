@@ -413,3 +413,22 @@
   4. **输入冻结门控范围同步收窄**：`InputGate.suppress` 只在显式 `{fade:true}` 的转场里才启用；instant 切换完全不冻结输入（这是「默认改 instant」的自然推论，不是新增逻辑）。
 - **为什么这样收/为什么这个颜色**：只在「世界感」真的变了的四个转场（对局⇄大厅、SLG⇄大厅）保留过渡感，能让玩家感知"进入了不同的场域"；其余都是同一个大厅/同一套导航层级内的平移，不该有转场仪式感。纸色遮罩是因为游戏全局是手绘笔记本风格（`sketchUi.ts` 的 `C.paper` 背景色），黑幕在这种基调下显得突兀；参考项目证明"半透明色闪一下"比"纯黑全遮罩"更轻量、更贴风格。
 - **影响**：`client/src/scenes/SceneManager.ts`（`GotoOptions.instant`→`GotoOptions.fade`，默认反转，遮罩颜色/时长常量）、`client/src/app.ts`（4 处 `manager.goto(..., {fade:true})`；`showLobby` 新增 `opts?: FadeOpts` 透传）、`client/src/app/AppViews.ts`（新增 `FadeOpts`）、`client/src/app/appCtx.ts` + `client/src/app/nav/{lobby,game,result,world}.ts`（`goLobby` 的 `fade` 选项按上述 4 类调用点显式传 `true`）、`client/test/ui/sceneManager.ui.ts`（按新默认语义重写全部用例）。详见 [`claudedocs/client-modules.md`](../claudedocs/client-modules.md) 场景淡入淡出条目。
+
+## ADR-037 占领行军接入 PvE 战斗 + 占领倒计时（延迟落地，镜像 ADR-026） — Accepted — 2026-07-13
+
+- **决策**（本次任务拍板，`feat/occupy-march`）：`MarchKind='occupy'`（S8-2 起已存在，不是新增行军类型）到达时的结算，从「瞬间落地、不打仗」升级为「先打一场 PvE 战斗，胜后再挂一段占领倒计时，倒计时到点才正式写入 `TileDoc.ownerId`」。
+- **为什么现在做**：ADR-032 把 `resourceDensity` 提到 1.0 之后，地图上不再有真正的空地——§3.1 表格里每个中立/资源格都按等级有系统默认驻军（`npcGarrison(level)`），但 `combatMarch.ts` 的占领到达分支从未打过这份驻军，等价于让"占领"绕开了设计文档自己定义的攻防模型。本次改动把占领和扫荡/围攻统一到同一份"系统驻军按等级走"的权威来源上。
+- **核心规则**：
+  1. **驻军判定复用扫荡同源**：`npcGarrison(proc.level)`（`@nw/shared/slg/siege.ts`，扫荡 `applySweep` 已在用）——不新造第二套"中立格防御强度"函数。
+  2. **战斗复用围攻同一引擎**：`runSiegeBattle`/`synthesizeArmy`（`server/worldsvc/src/siegeEngine.ts`），`seed = siegeSeedFromId(marchId)`，与围攻同源、同样可回放；胜负记录复用既有 `recordSiege`/`pushSiege` 战报管线，不新增推送类型。
+  3. **占领倒计时（镜像 ADR-026 延迟结算范式）**：胜利不等于落地。新增集合 `occupations`（`OccupationDoc`，`_id`=目标 tileId，一格至多一份待结算记录），`dueAt = 胜利时刻 + OCCUPY_HOLD_SEC*1000`；`OCCUPY_HOLD_SEC = 5*60`（新增于 `shared/src/slg/core.ts`，**DRAFT** 占位值，与 ADR-026 `SLG_SIEGE_DAMAGE_DELAY_MS` 同为 5 分钟但语义不同——那是"扣血"，这是"落地"）。倒计时期间该格 `TileDoc` 写入 `contestedBy`/`contestedUntil`/`contestedGarrison`/`contestedFamilyId`（仍不写 `ownerId`），供客户端渲染倒计时；调度沿用 `WorldCorePush` 既有 Redis ZSET + Mongo `dueAt` 索引扫描双保险模式（新增 `scheduleOccupation`/`unscheduleOccupation`，接入 `scheduler.ts` 同一 2s tick 的 `processDueOccupations`）。
+  4. **倒计时期间可被驱逐**：另一支 `occupy` 行军，或一支 `attack` 行军（本次放宽：目标格处于占领倒计时中即使无主也允许发起攻击，`defenderId`=`contestedBy`）到达时，打的是 `TileDoc.contestedGarrison`（原占领方的真实存活部队，不是重新查 NPC 驻军）。驱逐成功 → 取消原倒计时（删旧 `OccupationDoc`+反调度），驱逐方立即开始自己的新占领倒计时；驱逐失败 → 原倒计时不受影响，驱逐方生还部队退回兵力池。v1 不处理链式驱逐的公平性，只保证原子认领（`findOneAndDelete`）下不重复结算/不崩溃。
+  5. **零驻军兜底**：`npcGarrison(level)>0` 恒成立（`Math.max(1,level)`），故"瞬间落地不打仗"的旧路径理论上是死代码，仅作防御性兜底保留（真出现 garrison≤0 才会命中）。
+  6. **旧端点 `TerritoryService.occupyTile()`（S8-1 瞬占，`territory.ts`）**：保留，但降级为内部/测试专用（客户端已改走 `startMarch(kind:'occupy')`，产品流程不再调用它）；不做移除/404，契约文档补充说明。
+- **影响**：
+  - `@nw/shared`（`slg/core.ts` 新增 `OCCUPY_HOLD_SEC`）。
+  - `worldsvc`：`db.ts` 新增 `OccupationDoc` 集合 + `TileDoc.contestedBy/contestedUntil/contestedGarrison/contestedFamilyId`；`corePush.ts` 新增 `scheduleOccupation`/`unscheduleOccupation`；`combatSiege/occupation.ts`（新文件，`applyOccupy`/`applyOccupationExpulsion`/`processDueOccupations`，接入 `combatSiege.ts` 装配链）；`combatMarch.ts` 的 `occupy` 到达分支改为委托 `this.siege.applyOccupy`；`combatSiege/arrival.ts` 的 `applySiege` 放宽"目标无主但处于占领倒计时中"分支；`combat.ts`/`service.ts`/`scheduler.ts` 新增 `processDueOccupations` 透传。
+  - 契约（`openapi-world.yml`）：`WorldTileView` 新增 `contestedUntil`/`contestedByMe`。
+  - `client`：`WorldMapInput.ts` 占领按钮改走 `startMarch(kind:'occupy')`；地图渲染/HUD 消费新增的 `contestedUntil` 字段渲染倒计时。
+  - 文档：[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §5.4（新增）。
+  - 测试：`server/worldsvc/test/occupy-march.e2e.test.ts`（新增）。

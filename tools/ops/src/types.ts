@@ -20,6 +20,7 @@ export type AdminCapability =
   | 'slg.season.manage'
   | 'slg.audit.view'
   | 'slg.audit.manage'
+  | 'slg.shop.manage'
   | 'config.manage'
   | 'events.manage'
   | 'gacha.pools.manage'
@@ -169,6 +170,29 @@ export interface FeatureFlagRow {
   desc: string;
   side: string;
   doc: FeatureFlagDoc | null;
+}
+
+// ── SLG shop price overrides (mirror of @nw/shared slg/shop.ts) ──
+export interface SlgShopItem {
+  id: string;
+  cost: number;
+  kind: 'troop_speedup' | 'resource_pack' | 'protection' | 'battle_pass';
+  effect: Record<string, number | string>;
+  description: string;
+}
+export interface SlgShopItemOverrideDoc {
+  _id: string;
+  cost?: number;
+  effect?: Record<string, number | string>;
+  updatedAt: number;
+  updatedBy: string;
+}
+/** GET /admin/config/slg-shop row: one of the 9 catalog items + its code default + current effective (default merged with override) + raw override doc (null = using the default). */
+export interface SlgShopItemRow {
+  id: string;
+  default: SlgShopItem;
+  effective: SlgShopItem;
+  doc: SlgShopItemOverrideDoc | null;
 }
 
 // ── SLG season ops (G7/§17.7, mirror of server/admin/src/clients.ts + @nw/shared) ──

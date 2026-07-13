@@ -758,6 +758,8 @@ export const en: Record<TranslationKey, string> = {
   'world.marchTime': '~{sec}s travel',
   'world.myBase': 'My Base',
   'world.occupied': 'Occupied',
+  'world.occupying': 'Being occupied ({sec}s left)',
+  'world.occupyingMine': 'Your occupation holds ({sec}s until it lands)',
   'world.mine': 'My Territory',
   'world.protected': 'Protected ({sec}s)',
   'world.garrison': 'Garrison {n}',

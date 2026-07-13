@@ -120,6 +120,25 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
         }
         return;
       }
+      // ── Internal endpoint: raw SLG shop price overrides (X-Internal-Key; worldsvc has no DB connection to admin) ──
+      // Same shape as the internal flags endpoint above: raw override docs only, worldsvc merges them onto
+      // SLG_SHOP_ITEMS locally via resolveSlgShopItem.
+      if (req.method === 'GET' && (req.url ?? '').split('?')[0] === '/admin/internal/slg-shop-prices') {
+        if (!internalAuth.verify(req.headers).ok) {
+          log.warn('internal slg-shop-prices request rejected: bad X-Internal-Key', {
+            caller: req.headers['x-internal-caller'],
+          });
+          send(res, 401, { ok: false, error: 'unauthorized' });
+          return;
+        }
+        try {
+          send(res, 200, { ok: true, items: await svc.getInternalShopPrices() });
+        } catch (e) {
+          log.error('internal slg-shop-prices fetch failed', { err: (e as Error).message });
+          send(res, 500, { ok: false, error: 'internal error' });
+        }
+        return;
+      }
 
       const url = new URL(req.url ?? '', `http://${req.headers.host ?? 'admin'}`);
       const path = url.pathname;
@@ -308,6 +327,23 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
             ...(typeof b.desc === 'string' ? { desc: b.desc } : {}),
           });
           return send(res, 200, { ok: true, flag });
+        }
+
+        // ── SLG shop price overrides (slg.shop.manage) ──
+        if (method === 'GET' && path === '/admin/config/slg-shop') {
+          requireCap(actor, 'slg.shop.manage');
+          return send(res, 200, { ok: true, items: await svc.getShopConfig() });
+        }
+        const shopPut = /^\/admin\/config\/slg-shop\/([^/]+)$/.exec(path);
+        if (method === 'PUT' && shopPut) {
+          requireCap(actor, 'slg.shop.manage');
+          const id = decodeURIComponent(shopPut[1]!);
+          const b = await readJson(req);
+          const item = await svc.upsertShopItem(actor, id, {
+            ...(b.cost !== undefined ? { cost: b.cost } : {}),
+            ...(b.effect !== undefined ? { effect: b.effect } : {}),
+          });
+          return send(res, 200, { ok: true, item });
         }
 
         // ── Account management (superadmin) ──

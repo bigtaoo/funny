@@ -15,3 +15,4 @@ export { pageEvents } from './pages/events';
 export { pageSLGSeason } from './pages/slgSeason';
 export { pageAuctionAudit } from './pages/auctionAudit';
 export { pageGachaPools } from './pages/gachaPools';
+export { pageSlgShop } from './pages/slgShop';

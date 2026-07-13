@@ -72,9 +72,9 @@ export interface Nav {
   goCollection(back: () => void, initialTab?: 'cards' | 'skins'): void;
   goCardRoster(back?: () => void): void;
   goEquipment(back?: () => void, group?: 'none' | 'collection' | 'roster', cardInstanceId?: string): void;
-  goStats(): void;
+  goStats(back?: () => void): void;
   goLeaderboard(onBack?: () => void): void;
-  goAchievements(): void;
+  goAchievements(back?: () => void): void;
   goCampaign(levelId: string | undefined): void;
   goTutorial(): void;
   goReplay(replay: Replay, onExit?: () => void): void;

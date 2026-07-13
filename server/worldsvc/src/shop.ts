@@ -1,6 +1,6 @@
 // worldsvc SLG shop domain (S8-8). Peeled out of the WorldService god-class (2026-07-03).
 // Depends only on WorldCore (shared state + settle + getMe). No behavior change.
-import { SLG_SHOP_ITEMS, SlgError, playerWorldId, RESOURCE_TYPES, RESOURCE_CAP } from '@nw/shared';
+import { SLG_SHOP_ITEMS, isSlgShopItemId, SlgError, playerWorldId, RESOURCE_TYPES, RESOURCE_CAP } from '@nw/shared';
 import type { WorldCore } from './core';
 import type { PlayerWorldView } from './worldTypes';
 
@@ -8,12 +8,12 @@ export class ShopService {
   constructor(private readonly core: WorldCore) {}
 
   /**
-   * SLG shop purchase (item definitions in SLG_SHOP_ITEMS).
+   * SLG shop purchase (item definitions in SLG_SHOP_ITEMS, DB-overridable via the admin shop price panel — §8/G7).
    * Deducts coins → takes effect immediately (speedup/resource pack/protection shield/battle pass written to playerWorld).
    */
   async buySlgShopItem(worldId: string, accountId: string, itemId: string): Promise<PlayerWorldView> {
-    const item = SLG_SHOP_ITEMS.find((i) => i.id === itemId);
-    if (!item) throw new SlgError('NOT_FOUND', 'Item not found');
+    if (!isSlgShopItemId(itemId)) throw new SlgError('NOT_FOUND', 'Item not found');
+    const item = this.core.shopPrices?.resolveItem(itemId) ?? SLG_SHOP_ITEMS.find((i) => i.id === itemId)!;
 
     const { cols, now } = this.core.deps;
     const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
@@ -84,8 +84,8 @@ export class ShopService {
     return this.core.getMe(worldId, accountId);
   }
 
-  /** SLG shop item list (for client display). */
-  getSlgShopItems(): typeof SLG_SHOP_ITEMS {
-    return SLG_SHOP_ITEMS;
+  /** SLG shop item list (for client display; reflects any admin price/effect overrides). */
+  getSlgShopItems(): readonly (typeof SLG_SHOP_ITEMS)[number][] {
+    return this.core.shopPrices?.resolveItems() ?? SLG_SHOP_ITEMS;
   }
 }

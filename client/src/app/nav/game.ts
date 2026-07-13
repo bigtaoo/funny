@@ -288,14 +288,14 @@ export function createGameNav(ctx: AppCtx): GameNav {
     });
   }
 
-  function goStats(): void {
+  function goStats(back: () => void = () => nav.goLobby()): void {
     state.inLobby = false;
     analytics.track('screen_view', { scene: 'StatsScene' });
     const loggedIn = !state.offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     const client = api;
     const pvp = saveManager.get().pvp;
     views.showStats({
-      onBack: () => nav.goLobby(),
+      onBack: () => back(),
       // Fetch server-side match history and enable replay viewing only when logged in online;
       // offline / not logged in: omit these (the page shows an offline notice).
       ...(client && loggedIn
@@ -311,7 +311,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
             },
           }
         : {}),
-      ...(client && loggedIn ? { onOpenAchievements: () => goAchievements(), hasClaimableAchievement: state.achievementClaimable } : {}),
+      ...(client && loggedIn ? { onOpenAchievements: () => goAchievements(back), hasClaimableAchievement: state.achievementClaimable } : {}),
       ...(client && loggedIn
         ? {
             onOpenLeaderboard: () => goLeaderboard(),
@@ -329,7 +329,9 @@ export function createGameNav(ctx: AppCtx): GameNav {
         : {}),
       ...(platform.storage.getItem(PLAYER_NAME_KEY) ? { playerName: platform.storage.getItem(PLAYER_NAME_KEY)! } : {}),
       // Titles merged into the "Career" top bar (LOBBY_IA_REDESIGN §3); battle pass has moved to the "Shop" tab and is no longer linked here.
-      ...(loggedIn ? { onOpenTitles: () => goTitles(goStats) } : {}),
+      // Thread `back` through (not goStats) so switching tabs within the Career hub doesn't add a
+      // hop: Titles' own back button should return straight to wherever Stats was entered from.
+      ...(loggedIn ? { onOpenTitles: () => goTitles(back) } : {}),
       // Season banner: read from save pvp.seasonNo; endAt comes from the leaderboard cache or stays undefined (displays "ended").
       ...(pvp.seasonNo ? { season: { seasonNo: pvp.seasonNo, endAt: 0 } } : {}),
       getStats: () => {
@@ -366,7 +368,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
     });
   }
 
-  function goAchievements(): void {
+  function goAchievements(back: () => void = () => goStats()): void {
     state.inLobby = false;
     analytics.track('screen_view', { scene: 'AchievementScene' });
     // Mid-funnel achievement step (S9-8, ANALYTICS_DESIGN §5.7): unlock toast → view wall → claim. Only counts as a valid funnel step when online.
@@ -375,9 +377,9 @@ export function createGameNav(ctx: AppCtx): GameNav {
     const loggedIn = !state.offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     const client = api;
     views.showAchievements({
-      onBack: () => goStats(),
-      onOpenStats: () => goStats(),
-      onOpenTitles: () => goTitles(goStats),
+      onBack: () => back(),
+      onOpenStats: () => goStats(back),
+      onOpenTitles: () => goTitles(back),
       // Fetch achievements and enable claiming only when logged in online;
       // offline / not logged in: the page shows a "log in to view" message.
       ...(client && loggedIn
@@ -404,8 +406,8 @@ export function createGameNav(ctx: AppCtx): GameNav {
       onEquip(titleId: string) {
         saveManager.update((d) => { d.equipped['title'] = titleId; });
       },
-      onOpenStats: () => goStats(),
-      onOpenAchievements: () => goAchievements(),
+      onOpenStats: () => goStats(back),
+      onOpenAchievements: () => goAchievements(back),
       hasClaimableAchievement: state.achievementClaimable,
     });
   }

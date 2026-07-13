@@ -394,7 +394,7 @@ export class StatePlayerScene implements Scene {
     const bg = sketchPanel(w, h, { fill: ui.dark, border: ui.btnOff, width: 2, fillAlpha: 0.9, seed: seedFor(x, y, w) });
     bg.x = x;
     bg.y = y;
-    bg.interactive = true;
+    bg.eventMode = 'static';
     bg.cursor = 'pointer';
     bg.on('pointertap', onTap);
 

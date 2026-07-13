@@ -211,6 +211,40 @@
 - **非关键（信任客户端 / 廉价数值结算，可抽检）**：扫荡自己领地、清中立 NPC、碾压级目标自动战。
 - 阈值（何为「碾压级」可跳过手操/可信任）后期调参。
 
+### 5.4 占领行军 = PvE 战斗 + 占领倒计时（2026-07-13，`feat/occupy-march`）
+
+> `MarchKind='occupy'` **一直存在**（S8-2 起）；本节升级的是它到达时的结算行为——从"直接判定未被占用即瞬间落地"改为"打一场 PvE 战斗，胜后再挂一段占领倒计时"，不是新增行军类型。
+
+- **动机**：ADR-032 把 `resourceDensity` 提到 1.0（§3.2）后，地图上已经没有真正的空地——每个非阻挡/非险地/非州府格都有等级即有 `npcGarrison(level)` 系统驻军（§3.1「中立点/NPC 格按等级有系统默认防守」）。旧的 `combatMarch.ts` 占领到达分支只检查"格子是否已被别人占"，从不打这份系统驻军，等于把 §3.1 表格里"扫荡（PvE，NPC 防守）"的进攻形态跳过了——占领和扫荡应该走同一套系统驻军判定，只是结局不同（扫荡=打完就走+一次性掠夺，占领=打完+长期驻扎）。
+
+- **新流程**：
+  ```
+  行军出发（复用 findMarchPath/marchDurationFromPath，同 §4）→ 到达目标格
+    → 重新校验：世界中心/已被他人占/已是自己领地 → 视为落空，退还部队（原有行为不变）
+    → 目标格当前被他人「占领倒计时中」（contestedBy≠自己）→ 5.4.3 驱逐战
+    → 否则：查 npcGarrison(proc.level)（与扫荡同一权威来源，§3.1）
+        garrison ≤ 0（理论上因 resourceDensity=1.0 不会出现，仅作防御性兜底）→ 直接瞬占，跳 5.4.2
+        garrison > 0 → 用 §16 同一套确定性引擎 `runSiegeBattle`（`synthesizeArmy` 生成双方阵型，`seed = siegeSeedFromId(marchId)`，与围攻同源可回放）：
+          攻方胜 → 生还部队（`attackerSurvivors`，§16.5「生还折回，阵亡永久损失」同规则）**不立即落地**，转入 5.4.2 占领倒计时
+          攻方败 → 生还部队退回兵力池（`refundTroops`，用生还数不是原始行军数，随 §16.5 常规败退处理一致）；格子仍为中立
+    → `recordSiege`/`pushSiege` 记一场战报（与扫荡/围攻共用同一战报管线，客户端战报列表/推送无需新增分支即可看到胜负）
+  ```
+
+- **5.4.1 数值占位**：`OCCUPY_HOLD_SEC = 5 * 60`（新增于 `shared/src/slg/core.ts`，紧邻 `PROTECTION_SEC`/`GARRISON_PER_TILE`），**DRAFT**，数值待经济核验/实机体验后调整。命名/时长与 ADR-026 的 `SLG_SIEGE_DAMAGE_DELAY_MS`（同为 5 分钟）呼应但语义不同：那是"攻城值到点扣血"，这是"占领到点正式落地"。
+
+- **5.4.2 占领倒计时（沿用 ADR-026 延迟结算范式）**：胜方**不会**立刻写 `TileDoc.ownerId`——参考 ADR-026「攻城值延迟结算」的架构：新增小集合 `occupations`（`OccupationDoc`，`_id`=目标 tileId，一格同时至多一份待结算记录），字段含 `ownerId`（待占领人）/`garrison`（生还驻军，占领落地后成为该格驻军）/`dueAt`（=胜利时刻 + `OCCUPY_HOLD_SEC*1000`）。同时把 `contestedBy`/`contestedUntil`/`contestedGarrison`/`contestedFamilyId` 写进该格 `TileDoc`（格子仍无 `ownerId`，只是"标了个待定占领人"），供 `WorldTileView` 下行渲染"占领中，倒计时 Xs"。调度沿用 `WorldCorePush` 既有 best-effort Redis ZSET + Mongo `dueAt` 索引扫描双保险模式（新增 `scheduleOccupation`/`unscheduleOccupation`，镜像 `scheduleSiegeDamage`/`unscheduleSiegeDamage`），接入 `scheduler.ts` 同一个 2s tick（新增 `processDueOccupations`，与 `processDueArrivals`/`processDueSiegeDamage` 同批 `Promise.allSettled`）。到点结算：原子 `findOneAndDelete` 认领 `OccupationDoc` → 校验该格 `TileDoc.contestedBy` 仍等于这份记录的 `ownerId`（防止与驱逐战的并发写竞态）→ 写 `TileDoc.ownerId`/`garrison`，清 `contested*` 字段，`recomputeYield`。
+
+- **5.4.3 倒计时期间被驱逐**：占领倒计时中的格子可以被**任何一方**（另一支 occupy 行军，或一支 attack 行军——见下）打断：
+  - `attack` 行军原本只能打"已被人占领"或险地/桥栈道 PvE 目标；本次放宽：`toTile` 当前处于 `contestedBy` 占领倒计时中（`ownerId` 仍为空但 `contestedUntil>now`）时，也允许发起 `attack`（`defenderId` 记为 `contestedBy`，沿途照常收到 `under_attack` 推送）。
+  - 到达时，攻击方打的是**该格已存活的驻军**（`TileDoc.contestedGarrison`），不是重新查一次 `npcGarrison`——因为原占领方已经用真实部队换下了系统 NPC。
+  - 打赢（驱逐成功）→ 取消原倒计时（删除旧 `OccupationDoc` + 反调度），驱逐方的生还部队立即开始**自己的新一轮**占领倒计时（复用 5.4.2 同一段逻辑）。
+  - 打输 → 原倒计时不受影响（继续跑到 `dueAt`），驱逐方生还部队退回兵力池。
+  - v1 不处理"链式无限驱逐"的极端边界（多支部队同时驱逐/再驱逐）——`OccupationDoc._id` 固定为 tileId（一格同时只有一份），`findOneAndDelete`/`findOneAndUpdate` 的原子认领保证并发下不会重复结算或崩溃，但没有对"驱逐链"做专门的公平性设计。
+
+- **旧版 `TerritoryService.occupyTile()`（S8-1 瞬间占领，`territory.ts`）如何处理**：**保留但标注为内部/测试专用，不再对外暴露真实产品流程**。理由：客户端 `WorldMapInput.ts` 的"占领"按钮已改为调用 `startMarch(kind:'occupy')`（见客户端小节）；生产环境下不再有调用方直接命中 `POST /world/tile/occupy`。保留该方法本体是因为①它是 e2e 测试里搭建"玩家已有领地"前置状态的最快方式（大量既有测试用它铺垫场景，删除会连带重写一批与本次改动无关的测试）；②它本身逻辑（无 NPC 驻军、瞬间落地）恰好对应 5.4「`garrison≤0` 防御性兜底」这一支线的语义，两者保持一致不产生行为矛盾。契约 `openapi.yml`/`openapi-world.yml` 对应端点文档补充一行"内部/测试用途，产品客户端请走 march occupy"的说明；不做 404/移除。
+
+- **契约改动**：`WorldTileView` 新增 `contestedUntil`（占领落地时刻，ms）+ `contestedByMe`（占领倒计时中且待定占领人是当前请求者本人，供客户端区分"我在占"还是"别人在占"）。`MarchView`/推送管线不新增字段——战斗胜负复用既有 `siege_result` 推送（`pushSiege`），占领中/占领完成的格子状态复用既有 `tile_update` 推送（`pushTile`）+ 下次 `getMap`/`getTile` 轮询即可看到 `contestedUntil` 倒计时，客户端不需要新的推送类型。
+
 ---
 
 ## 6. 养成统一与天梯红线（SLG7）
@@ -368,7 +402,7 @@
   - **S8-3b 客户端落地（C2，2026-06-19，叠加层 B）**：拍板 **B = 廉价结算仍为权威，复盘=反作弊对账层**（非「替代廉价结算」的全权威重构）。新增 `GET /world/siege/{id}/defense`（仅进攻方）返回可玩 `LevelDefinition`；`shared.buildSiegeLevel(config,tileLevel,seed)` 把防守 config 子集（garrison/defenderBuildings/defenderBaseLevel）规整为完整围攻关卡（objective=destroy_base、空波次；无自定义→按格等级派生象征基地防守），`siegeSeedFromId` 为 seed 单一来源——**两端逐字一致**才能确定性复算。客户端攻方在 `siege_result` 弹层点「复盘」→ `GameScene` siege 模式实打 → `resolveSiege` 上传录像。**同时修复** `resolveSiegeWithJudge`：原先把存储的防守子集直接当完整 `LevelDefinition` 传 judge（缺 objective/waves/seed → 复算必崩），现改用 `buildSiegeLevel` 同源构造 `defenseJson` + canonical seed。判负翻转仍未启用（B：仅 log mismatch）。
   - 验证：client tsc + **176 测试**（+7 `test/siege.test.ts`：养成单调性/红线/引擎确定性/judge 复算闭环）+ web 构建；八包 `tsc -b` + **worldsvc 29 e2e**（+6 siege +1 sweep httpApi）+ gateway 10 全绿。
 - **S8-4 家族 ✅（2026-06-19）**：家族 CRUD（创建/加入/退出/踢出/角色/解散）、家族频道（落库 + gateway 定向推 `family_msg`）、互助/盟友关隘通行、防守 config。拍板不做家族战（围攻复用 attack/siege）。
-- **S8-4b 宗门 ✅（2026-06-20）**：补齐「大区→宗门→家族」三级里此前缺失的宗门层。宗门以**家族**为成员单位，操作须族长代表；`sects`/`sectMessages` 集合 + `families.sectId`。功能：建宗门（5000 coin via commercial，TAG worldId 内唯一）/家族加入退出（≤30 家族）/解散/联盟（双向，各 ≤2 = 3 宗门联盟）/罢免换届（族长投票 ≥⌈家族数×2/3⌉ → 门主转移）/宗门频道（落库，TTL 7 天）。**门主被打惩罚**：门主主城被破 → 全宗门成员资源 -50%（§8.2；主城迁移暂缓）。**大比按宗门**：`settleSeason` 按「宗门→散家族→个人」聚合占国数排名（兑现 §2.1）。`/sect/*` REST + worldsvc 12 e2e。**待办**：繁荣度建宗门门槛数值；盟友视野标记 + 客户端 UI（S8-9 C6）。
+- **S8-4b 宗门 ✅（2026-06-20）**：补齐「大区→宗门→家族」三级里此前缺失的宗门层。宗门以**家族**为成员单位，操作须族长代表；`sects`/`sectMessages` 集合 + `families.sectId`。功能：建宗门（5000 coin via commercial，TAG worldId 内唯一）/家族加入退出（≤30 家族）/解散/联盟（双向，各 ≤2 = 3 宗门联盟）/罢免换届（族长投票 ≥⌈家族数×2/3⌉ → 门主转移）/宗门频道（落库，TTL 7 天）。**门主被打惩罚**：门主主城被破 → 全宗门成员资源 -50%（§8.2；主城迁移暂缓）。**大比按宗门**：`settleSeason` 按「宗门→散家族→个人」聚合占国数排名（兑现 §2.1）。`/sect/*` REST + worldsvc 12 e2e。**待办**：~~繁荣度建宗门门槛数值~~（✅ 已拍板 2026-06-22 §14.10 U6 + 已核验 ECONOMY_NUMBERS §13-SLG-E 2026-06-30 CLOSED）；盟友视野标记 + 客户端 UI（S8-9 C6）。
 - **S8-4c 宗门频道实时推送横扩 + 主城迁城 ✅（2026-06-20，服务端 + 客户端）**：
   - **宗门频道实时推送（横扩，SOC9 / §8.2 / §8.4）**：worldsvc `gatewayClient.broadcast(recipients, msg)`——Redis 可用 → publish 一条 `{recipients, msg}` 到 `GW_PUSH_REDIS_CHANNEL='nw:gw:push'`（`shared/slg.ts`），各 gateway 实例订阅（`gateway/redis.ts` `connectGatewaySubscriber`）后经 `Gateway.routeBroadcast` **只推本机在线收件人**；无 Redis → 降级逐个 HTTP push 兜底（≤900 人，避免 worldsvc O(n) 直推）。`sectService.sendMessage` 落库后扇出 `sect_msg`（排除发送者，本地回显靠 REST 回包），`sectMemberAccountIds` 跨成员家族汇总收件人去重。proto `SectBroadcast`→`SectMsg`（对齐 FamilyMsg：`sectId/fromPublicId/fromName/text/ts`）；新增 `family_msg`/`sect_msg` 两个 push 分支（gateway `proto.ts`/`matchsvcClient.PushMsg`/`toServerMsg` + worldsvc `SlgPushMsg`）。gateway 读 `NW_GW_REDIS_URL` 订阅（缺省降级，与 worldsvc 共用同一 Redis）。
   - **主城迁城（§3.4 / §8.2，所有玩家通用）**：
@@ -571,7 +605,7 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 - **U8 防守 config 可编辑范围 ✅（2026-06-18 定）**：可编辑内容 = 玩家已收集的单位和已有的建筑/机关（复用现有兵营/箭塔等），未收集的无法使用；不引入新元素，引擎现有组件即可。
 
 **B. 数值 DRAFT（先占位，上线后调参）**
-- **U6** §14.7 全部常量（兵力上限 / 行军速度 / 资源上限与产率 / 保护时长 / 驻军数）；国民加成具体数值（防御加成 % / 产出加成 %）；繁荣度建宗门具体阈值；碾压级廉价结算具体比值。
+- **U6** §14.7 全部常量（兵力上限 / 行军速度 / 资源上限与产率 / 保护时长 / 驻军数）；国民加成具体数值（防御加成 % / 产出加成 %）；碾压级廉价结算具体比值。（繁荣度建宗门具体阈值已移出本清单——已拍板+核验，见 §14.10 U6 表 / ECONOMY_NUMBERS §13-SLG-E）
 
 **C. 实现期风险 / 细节（实现时处理，先记着）**
 - **U9 engineVersion 耦合**：引擎更新 → worldsvc 须重构建；赛季中途引擎升级如何 pin 版本，保录像/复算一致性（D0+P2 的代价）。
@@ -603,12 +637,12 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 |---|---|---|---|
 | **G5** | ~~**地图迷雾 / 侦察视野 / 宗门视野共享 / 盟友土地标记**~~ ✅ **四片全落地（2026-06-21，§18）** | G5-1 读路径门控 + G5-2 反向视野推送 + G5-3 客户端渲染（灰雾/友敌色/敌军显形）+ 联盟领地黄标（§18.7）全 ✅；共享降级为家族级（§18.1 V2）。scout 侦察行军（§18.8）+ 瞭望塔建筑（§18.9）全 ✅，V2 余项全部兑现 | §8.2 视野共享 + 盟友标记、§2.1 视野订阅核心战略玩法已兑现 |
 | **G6** | **多大区 + 赛季分配规则**（数据地基+纯算法 ✅ **2026-06-21，§17.8**；**多 shard 运行时调度 ✅ 2026-06-21，§20**） | 数据地基：`seasonResults` 落库宗门排名 + 繁荣度快照（C2 闭）；`sectStrengthScore`/`allocateSectsToShards`（蛇形均衡）纯函数 + 单测。运行时（§20）：`allocateNextSeason` 编排开 N 区 + 落 `shardAllocations.familyShard`；`joinSeason`/`resolveShardForJoin` 自动路由（粘性>家族查表>最空开区>溢出开新区）；`patrolShardIsolation` 跨区隔离巡检。**剩**赛季中主动转区/合区（运营专项）+ 赛季元数据下发（待 S11） | 规模化数据/算法地基 + 运行时调度兑现；赛季中迁移待专项 |
-| **G7** | **admin 运营后台 SLG 接入**（赛季运维 ✅ **2026-06-21，§17.7**；异常交易审计仍随 OPS 专项） | worldsvc `/admin/world/*` 迁出 JWT 改 X-Internal-Key（**C4 安全洞已堵**，任意玩家不再可清区）+ 新增 `GET /admin/world/list`；admin 后端加 `worldClient` + `POST /admin/slg/season/{open,settle,reset,close}` + `GET /admin/slg/worlds`（能力 `slg.season.view/manage`，reset 前必 settle 约束 + 审计）。**仍缺**异常交易审计工单（随 OPS 专项）+ 商品价格可调 + ops 前端 UI | S8-8 赛季运维侧兑现；反 RMT 审计待 OPS |
+| **G7** | **admin 运营后台 SLG 接入**（赛季运维 ✅ **2026-06-21，§17.7**；商品价格可调 ✅ **2026-07-13**） | worldsvc `/admin/world/*` 迁出 JWT 改 X-Internal-Key（**C4 安全洞已堵**，任意玩家不再可清区）+ 新增 `GET /admin/world/list`；admin 后端加 `worldClient` + `POST /admin/slg/season/{open,settle,reset,close}` + `GET /admin/slg/worlds`（能力 `slg.season.view/manage`，reset 前必 settle 约束 + 审计）。**商品价格可调**（能力 `slg.shop.manage`）：`slgShopPrices` 集合 DB 覆盖 + 代码默认 fallback，worldsvc 轮询 admin 内部端点合并生效，ops `pageSlgShop` 面板可编辑 9 件商品（详见 OPS_DESIGN §4.2/§8） | S8-8 赛季运维 + 商城定价均兑现 |
 | **G8** | ~~**险地（Stronghold）格子类型**~~ ✅ **已落地（2026-06-21，§19）** | 新增 `'stronghold'` TileType + `proceduralTile` 稀疏生成（~0.3%，比 familyKeep 稀疏 ~16×）+ `strongholdGarrison` 系统超强守军 + worldsvc `applyStrongholdSiege`（无主险地 PvE 围攻：权威引擎跑系统守军，攻克占为领地 + 一次性丰厚奖励，攻败残兵撤退）；occupy/sweep/落城/重生全拦截险地；契约 enum + 客户端渲染/交互/i18n。worldsvc 5 e2e | 高战略价值 PvE 格兑现（§3.1） |
 
 ### 15.3 第三档——DRAFT 数值 / 打磨
 
-- 拍卖行与赛季解耦，无季末冻结/清算（原策略已废弃 2026-07-06，见 AUCTION_DESIGN §4.F）；国民加成/繁荣度/碾压级廉价结算具体数值待调参（§14.10 U6）。
+- 拍卖行与赛季解耦，无季末冻结/清算（原策略已废弃 2026-07-06，见 AUCTION_DESIGN §4.F）；国民加成/碾压级廉价结算具体数值待调参（§14.10 U6）。繁荣度建宗门阈值已拍板+核验（§14.10 U6 表 2026-06-22 拍板 / ECONOMY_NUMBERS §13-SLG-E 2026-06-30 核验闭环），不再计入本档待调参清单。
 - 首府改名服务端已校验 ownerId；商城金币余额展示已接 SaveData 镜像。
 
 ### 15.4 收尾优先级建议
@@ -872,13 +906,15 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 
 ```ts
 // ── 繁荣度（G2，§8.1）──────────────────────────────────────
-/** 繁荣度评分权重（DRAFT，→ ECONOMY_NUMBERS §13-SLG 登记）。 */
+/** 繁荣度评分权重（已核验：ECONOMY_NUMBERS §13-SLG-E，econ-sim E 轨 2026-06-30 CLOSED）。 */
 export const PROSPERITY_W_TERRITORY = 10;   // 每块领地
 export const PROSPERITY_W_MEMBER    = 50;   // 每个成员
 export const PROSPERITY_W_ACTIVITY  = 5;    // 每点赛季活跃（新占领数+战斗场次，§17.4 来源）
 /** 长期无活跃衰减：每自然日衰减比例（读时惰性结算，类比资源 yield）。 */
 export const PROSPERITY_DECAY_PER_DAY = 0.05; // 5%/日
-/** 建宗门繁荣度中等门槛（§8.2，U5 数值占位）。 */
+/** 建宗门繁荣度中等门槛（§8.2，§16.5 A7 拍板；2026-06-22 §14.10 U6 表定值）。
+ *  可达性/衰减已核验：econ-sim E 轨（server/tools/econ-sim/src/prosperityRun.ts）——ECONOMY_NUMBERS §13-SLG-E，
+ *  2026-06-30 CLOSED：活跃中位家族（20 起始成员、3.5 地/天、4 活跃/天）第 9 天建宗门（7–14 天窗口内）。 */
 export const SECT_FOUND_PROSPERITY_MIN = 2000;
 
 /** 家族繁荣度纯函数：可单测、双端可算、整数化。activity = 赛季累计活跃点（§17.4）。 */
@@ -934,7 +970,8 @@ export interface SectStrength {
   memberFamilyCount: number;
   prosperity: number;        // 当前繁荣度聚合
 }
-/** 实力评分（越高越强）：历史排名为主（名次越小越强），规模/繁荣度为辅。DRAFT 权重。 */
+/** 实力评分（越高越强）：历史排名为主（名次越小越强），规模/繁荣度为辅。
+ *  权重敏感性已核验：ECONOMY_NUMBERS §13-SLG-D，2026-06-30 CLOSED。 */
 export function sectStrengthScore(s: SectStrength): number {
   const rankScore = s.lastSeasonRank ? Math.max(0, 100 - s.lastSeasonRank) * 100 : 500; // 新宗门给中位
   return rankScore + s.memberFamilyCount * 50 + Math.floor(s.prosperity / 100);
@@ -1460,7 +1497,7 @@ if (path.startsWith('/admin/world/')) {
 | **R-5** | 赛季中主动转区 / 合区（人口骤降合并低活 shard） | §20.8：当前只做 join 时一次性路由；赛季中迁移待规模化运营专项。 |
 | **R-6** | 赛季元数据下发 | §20.8：`CURRENT_SEASON` 暂客户端常量；待 S11 天梯赛季打通后由 metaserver 下发（SLG 赛季是否与天梯同步另议）。 |
 | **R-7** | 异常交易审计 ops 前端 + 自动处置 | §17.13 检测层 + admin 审计队列已落地；缺 ops 前端审计页 + 确认违规后的封禁/扣回外联。 |
-| **R-8** | 商品价格可调后台 | G7 余项：admin 侧 SLG 商品价格运营可调。 |
+| ~~**R-8**~~ | ~~商品价格可调后台~~ | ✅ **已落地（2026-07-13）**：G7，admin `slg.shop.manage` + ops `pageSlgShop`，见 G7 行 / OPS_DESIGN §4.2/§8。 |
 | **R-9** | `resolveShardForJoin` / march 调度单点 | §20.8：高并发开服经 worldsvc 单进程，规模化需选主/分片（U12 压测后）。 |
 
 ### 21.4 第四档——DRAFT 数值（待经济模拟统一过一遍）
@@ -1574,6 +1611,19 @@ if (path.startsWith('/admin/world/')) {
 - **两个已知缺口已收尾（2026-07-05）**：
   - 聊天条接数据：`WorldMapNet.refreshWorldChat()`（新增，随 5s march 轮询一并调用，`worldApi.getWorldChannel(worldId, {limit: 20})`）把最新一条消息存到 `ctx.worldChatLatest`；未读数用客户端本地"已读水位"计算——`WorldMapContext.markWorldChatSeen()` 把 `worldChatLatest.ts` 写入 `localStorage`（key 按 `worldId+accountId` 隔离，避免多号共享已读位），点击聊天条（`WorldMapInput.ts`）时调用；`renderHud()` 显示 `发送者: 正文前28字` + 超过已读水位的条数角标（封顶 `9+`）。未走服务端已读接口，因为 worldsvc 目前没有为世界频道维护已读状态（对比 `mail.unread` 是服务端字段）——纯本地近似,足够 HUD 预览用途。
   - 行军列表数量上限：`renderHud()` 里加 `MAX_VISIBLE_MARCHES = 5`，超出部分显示 `+N more`（新 i18n key `world.marchMore`，zh/en/de 三语），面板高度按可见行数算，不再随行军数无上限增高。
+
+**World-info 弹层（国家/商城 Tab）列表滚动（2026-07-13）**：
+
+**背景**：`WorldMapPanels.renderInfoPanel()` 的国家 Tab（`ctx.nations`）和商城 Tab（`ctx.shopItems`）此前平铺渲染、面板高度写死，超出可视区的条目直接跳过渲染（`if (ly > bodyBottom) break`）——列表一长就看不到、也点不到后面的条目。
+
+**方案**：PIXI mask + 拖拽/滚轮双输入，未引入独立的可复用 `ScrollList` 组件（沿用本项目"每个场景各自实现"的惯例，参考 `FriendsSceneBase.scrollRegion()`/`AuctionScene` 的 `scrollY`+拖拽模式，但额外加了 mask 做像素级裁切，前两者都没有）：
+- `WorldMapPanels.beginScrollList(x, y, w, h, contentH)`：新增辅助方法，建一个 `PIXI.Graphics` 遮罩 + 一个 `mask` 过的 `PIXI.Container`，同时把可视区矩形写入 `ctx.infoScrollRect`、算出 `ctx.infoMaxScroll = max(0, contentH - h)` 并 clamp 当前 `ctx.infoScrollY`。国家/商城两个分支各自在这个 container 里画行（含 icon/文字/按钮），只渲染与可视区有重叠的行。
+- `WorldMapPanels.panelButtonIn(layer, ...)`：`panelButton()` 的变体，按钮画进传入的 scroll layer 而非直接进 `modalLayer`，命中矩形仍推入全局 `ctx.modalBtnRects`（与遮罩范围无关——如果一行按钮恰好卡在可视区上下边界被半裁切，其命中区域理论上仍可能有几像素落在裁切掉的空白处被点到；这跟 `AuctionScene`/`FriendsSceneBase` 现有列表的行为一致，未特殊处理，可接受）。
+- 切 Tab（`nations`/`season`/`shop`）、每次 `openInfoPanel()` 时都把 `ctx.infoScrollY` 重置为 0；`closeModal()` 里把 `ctx.infoScrollRect` 清空，避免关闭弹层后残留的命中矩形误吞下一次点击。
+- **拖拽输入**：`WorldMapContext` 新增 `infoScrollRect`/`infoScrollY`/`infoMaxScroll`/`infoScrollDragging`/`infoScrollDragMoved`/`infoScrollDragStartY`/`infoScrollDragStartScroll`。`WorldMapInput.handleDown()` 在 `modalDimRect` 分支里，命中 `modalBtnRects` 之后、`closeModal()` 之前，新增"落点在 `infoScrollRect` 内则开始拖拽"的判断（否则原逻辑——点弹层空白处关闭——保留）；`handleMove`/`handleUp` 顶部各加一段 `infoScrollDragging` 分支，按住上下拖动换算并 clamp 新的 `infoScrollY`，触发 `renderInfoPanel()` 重绘。
+- **滚轮输入**：项目里此前完全没有滚轮支持（`InputManager` 只有 down/move/up）。新增 `InputManager.onWheel`/`_emitWheel`，`WebAdapter` 监听 canvas 的原生 `wheel` 事件转发（微信小游戏没有鼠标滚轮，这条只在浏览器生效，触屏走上面的拖拽路径，两端都能用）。`WorldMapScene` 订阅 `input.onWheel` 转发到新增的 `WorldMapInput.handleWheel(x, y, deltaY)`，同样只在落点位于 `infoScrollRect` 内时生效。
+- 验证：`tsc --noEmit` + `webpack --mode production` 全绿；用临时调试钩子（`app.ts` 挂 `globalThis.__NW_WorldMapPanels`/`__NW_WorldMapInput`，验证后已移除）直接构造假 `ctx`（20 条国家 / 15 件商品）单测 `renderInfoPanel()`，截图确认顶部/底部裁切干净、无溢出面板；再直接调用真实的 `WorldMapInput.handleWheel()`/`handleDown+handleMove+handleUp` 驱动滚动，截图确认滚轮和拖拽都能正确改变 `infoScrollY` 并触发重绘。
+- 回归测试：`client/test/ui/worldMapInfoScroll.ui.ts`（`npm run test:ui`，PIXI headless）——手搭一个只含 `renderInfoPanel`/`handleDown/Move/Up/Wheel` 实际读取字段的假 `WorldMapContext`（不构造完整 `WorldMapScene`，省去 tile cache/net/zoom 依赖），覆盖：滚动区域随内容量的建立/不建立（国家 20 条 vs 2 条、商城 15 件、Season Tab 无滚动区）、内容变短后 `infoScrollY` 重新 clamp、滚轮在区域内/外的移动与双向 clamp、拖拽滚动 + 阈值内不触发、区域内点按不误关闭弹层 vs 区域外点按仍正常关闭（回归此前"点列表任意空白处关闭弹层"的旧行为）、`closeModal()` 清空 `infoScrollRect`、切 Tab 重置 `infoScrollY`。共 15 例，随 `npm run test:ui` 全绿一并跑通。**副带修复**：`test/ui/scenes.ui.ts` 此前在本机因 `@nw/shared` 桶文件（`index.ts`）连带引入 `jsonwebtoken`/`mongodb` 等仅服务端依赖而在 Vite 转换时报 "Failed to load url" 直接挂掉（[[client-run-and-visual-verify]] 已记录的已知环境缺口）；本次把 `server/node_modules` 第三方包（非 `@nw/*`）整体 junction 进 worktree、`@nw/shared`+`@nw/engine` 单独 junction 回 worktree 自身源码目录后一并修好，`scenes.ui.ts` 77 例、`test:ui` 全套 18 文件 241 例、默认 `npm test` 76 文件 594 例均转绿。
 
 ---
 

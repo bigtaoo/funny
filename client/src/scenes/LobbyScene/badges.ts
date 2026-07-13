@@ -79,6 +79,16 @@ export function BadgesMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBas
      * changes, or when the coin-icon atlas finishes loading after the first draw (base.ts).
      */
     rebuild(): void {
+      // titleBoil / heroFigure are Ticker.shared-driven and hold sprites that
+      // tearDownChildren() is about to destroy — destroy them explicitly first,
+      // same as the scene's own destroy(), so their next tick doesn't touch a
+      // dead PIXI object (that used to freeze the scene's update loop).
+      this.titleBoil?.destroy();
+      this.titleBoil = null;
+      this.heroFigure?.destroy();
+      this.heroFigure = null;
+      this.heroFigureClips = [];
+      this.heroFigureSwapTimer = 0;
       tearDownChildren(this.container);
       this.toastLayer = null;
       this.settlementLayer = null;
@@ -86,7 +96,6 @@ export function BadgesMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBas
       this.shopBadgeLayer = null;
       this.socialBadgeLayer = null;
       this.sideStripBadgeLayer = null;
-      this.titleBoil = null;
       this.build();
     }
 
