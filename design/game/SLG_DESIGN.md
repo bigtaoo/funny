@@ -211,6 +211,40 @@
 - **非关键（信任客户端 / 廉价数值结算，可抽检）**：扫荡自己领地、清中立 NPC、碾压级目标自动战。
 - 阈值（何为「碾压级」可跳过手操/可信任）后期调参。
 
+### 5.4 占领行军 = PvE 战斗 + 占领倒计时（2026-07-13，`feat/occupy-march`）
+
+> `MarchKind='occupy'` **一直存在**（S8-2 起）；本节升级的是它到达时的结算行为——从"直接判定未被占用即瞬间落地"改为"打一场 PvE 战斗，胜后再挂一段占领倒计时"，不是新增行军类型。
+
+- **动机**：ADR-032 把 `resourceDensity` 提到 1.0（§3.2）后，地图上已经没有真正的空地——每个非阻挡/非险地/非州府格都有等级即有 `npcGarrison(level)` 系统驻军（§3.1「中立点/NPC 格按等级有系统默认防守」）。旧的 `combatMarch.ts` 占领到达分支只检查"格子是否已被别人占"，从不打这份系统驻军，等于把 §3.1 表格里"扫荡（PvE，NPC 防守）"的进攻形态跳过了——占领和扫荡应该走同一套系统驻军判定，只是结局不同（扫荡=打完就走+一次性掠夺，占领=打完+长期驻扎）。
+
+- **新流程**：
+  ```
+  行军出发（复用 findMarchPath/marchDurationFromPath，同 §4）→ 到达目标格
+    → 重新校验：世界中心/已被他人占/已是自己领地 → 视为落空，退还部队（原有行为不变）
+    → 目标格当前被他人「占领倒计时中」（contestedBy≠自己）→ 5.4.3 驱逐战
+    → 否则：查 npcGarrison(proc.level)（与扫荡同一权威来源，§3.1）
+        garrison ≤ 0（理论上因 resourceDensity=1.0 不会出现，仅作防御性兜底）→ 直接瞬占，跳 5.4.2
+        garrison > 0 → 用 §16 同一套确定性引擎 `runSiegeBattle`（`synthesizeArmy` 生成双方阵型，`seed = siegeSeedFromId(marchId)`，与围攻同源可回放）：
+          攻方胜 → 生还部队（`attackerSurvivors`，§16.5「生还折回，阵亡永久损失」同规则）**不立即落地**，转入 5.4.2 占领倒计时
+          攻方败 → 生还部队退回兵力池（`refundTroops`，用生还数不是原始行军数，随 §16.5 常规败退处理一致）；格子仍为中立
+    → `recordSiege`/`pushSiege` 记一场战报（与扫荡/围攻共用同一战报管线，客户端战报列表/推送无需新增分支即可看到胜负）
+  ```
+
+- **5.4.1 数值占位**：`OCCUPY_HOLD_SEC = 5 * 60`（新增于 `shared/src/slg/core.ts`，紧邻 `PROTECTION_SEC`/`GARRISON_PER_TILE`），**DRAFT**，数值待经济核验/实机体验后调整。命名/时长与 ADR-026 的 `SLG_SIEGE_DAMAGE_DELAY_MS`（同为 5 分钟）呼应但语义不同：那是"攻城值到点扣血"，这是"占领到点正式落地"。
+
+- **5.4.2 占领倒计时（沿用 ADR-026 延迟结算范式）**：胜方**不会**立刻写 `TileDoc.ownerId`——参考 ADR-026「攻城值延迟结算」的架构：新增小集合 `occupations`（`OccupationDoc`，`_id`=目标 tileId，一格同时至多一份待结算记录），字段含 `ownerId`（待占领人）/`garrison`（生还驻军，占领落地后成为该格驻军）/`dueAt`（=胜利时刻 + `OCCUPY_HOLD_SEC*1000`）。同时把 `contestedBy`/`contestedUntil`/`contestedGarrison`/`contestedFamilyId` 写进该格 `TileDoc`（格子仍无 `ownerId`，只是"标了个待定占领人"），供 `WorldTileView` 下行渲染"占领中，倒计时 Xs"。调度沿用 `WorldCorePush` 既有 best-effort Redis ZSET + Mongo `dueAt` 索引扫描双保险模式（新增 `scheduleOccupation`/`unscheduleOccupation`，镜像 `scheduleSiegeDamage`/`unscheduleSiegeDamage`），接入 `scheduler.ts` 同一个 2s tick（新增 `processDueOccupations`，与 `processDueArrivals`/`processDueSiegeDamage` 同批 `Promise.allSettled`）。到点结算：原子 `findOneAndDelete` 认领 `OccupationDoc` → 校验该格 `TileDoc.contestedBy` 仍等于这份记录的 `ownerId`（防止与驱逐战的并发写竞态）→ 写 `TileDoc.ownerId`/`garrison`，清 `contested*` 字段，`recomputeYield`。
+
+- **5.4.3 倒计时期间被驱逐**：占领倒计时中的格子可以被**任何一方**（另一支 occupy 行军，或一支 attack 行军——见下）打断：
+  - `attack` 行军原本只能打"已被人占领"或险地/桥栈道 PvE 目标；本次放宽：`toTile` 当前处于 `contestedBy` 占领倒计时中（`ownerId` 仍为空但 `contestedUntil>now`）时，也允许发起 `attack`（`defenderId` 记为 `contestedBy`，沿途照常收到 `under_attack` 推送）。
+  - 到达时，攻击方打的是**该格已存活的驻军**（`TileDoc.contestedGarrison`），不是重新查一次 `npcGarrison`——因为原占领方已经用真实部队换下了系统 NPC。
+  - 打赢（驱逐成功）→ 取消原倒计时（删除旧 `OccupationDoc` + 反调度），驱逐方的生还部队立即开始**自己的新一轮**占领倒计时（复用 5.4.2 同一段逻辑）。
+  - 打输 → 原倒计时不受影响（继续跑到 `dueAt`），驱逐方生还部队退回兵力池。
+  - v1 不处理"链式无限驱逐"的极端边界（多支部队同时驱逐/再驱逐）——`OccupationDoc._id` 固定为 tileId（一格同时只有一份），`findOneAndDelete`/`findOneAndUpdate` 的原子认领保证并发下不会重复结算或崩溃，但没有对"驱逐链"做专门的公平性设计。
+
+- **旧版 `TerritoryService.occupyTile()`（S8-1 瞬间占领，`territory.ts`）如何处理**：**保留但标注为内部/测试专用，不再对外暴露真实产品流程**。理由：客户端 `WorldMapInput.ts` 的"占领"按钮已改为调用 `startMarch(kind:'occupy')`（见客户端小节）；生产环境下不再有调用方直接命中 `POST /world/tile/occupy`。保留该方法本体是因为①它是 e2e 测试里搭建"玩家已有领地"前置状态的最快方式（大量既有测试用它铺垫场景，删除会连带重写一批与本次改动无关的测试）；②它本身逻辑（无 NPC 驻军、瞬间落地）恰好对应 5.4「`garrison≤0` 防御性兜底」这一支线的语义，两者保持一致不产生行为矛盾。契约 `openapi.yml`/`openapi-world.yml` 对应端点文档补充一行"内部/测试用途，产品客户端请走 march occupy"的说明；不做 404/移除。
+
+- **契约改动**：`WorldTileView` 新增 `contestedUntil`（占领落地时刻，ms）+ `contestedByMe`（占领倒计时中且待定占领人是当前请求者本人，供客户端区分"我在占"还是"别人在占"）。`MarchView`/推送管线不新增字段——战斗胜负复用既有 `siege_result` 推送（`pushSiege`），占领中/占领完成的格子状态复用既有 `tile_update` 推送（`pushTile`）+ 下次 `getMap`/`getTile` 轮询即可看到 `contestedUntil` 倒计时，客户端不需要新的推送类型。
+
 ---
 
 ## 6. 养成统一与天梯红线（SLG7）
