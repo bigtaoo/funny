@@ -195,9 +195,9 @@ export class ResultScene implements Scene {
     hint.y = h - Math.round(h * 0.06);
     this.container.addChild(hint);
 
-    this.container.interactive = true;
+    this.container.eventMode = 'static';
     this.container.once('pointerdown', () => {
-      this.container.interactive = false;
+      this.container.eventMode = 'none';
       tearDownChildren(this.container);
       onDone();
     });
@@ -458,7 +458,7 @@ export class ResultScene implements Scene {
     line.anchor.set(0.5, 0);
     line.x = w / 2;
     line.y = top + h * 0.018;
-    line.interactive = true;
+    line.eventMode = 'static';
     line.cursor = 'pointer';
     line.on('pointertap', () => this.popup.show(data));
     this.container.addChild(line);
@@ -489,7 +489,7 @@ export class ResultScene implements Scene {
     const bg = sketchPanel(w, h, { fill: ui.gold, border: 0x6a5000, width: 2.6, seed: seedFor(x, y, w) });
     bg.x = x;
     bg.y = y;
-    bg.interactive = true;
+    bg.eventMode = 'static';
     bg.cursor = 'pointer';
     bg.on('pointertap', onTap);
     this.container.addChild(bg);
@@ -503,7 +503,7 @@ export class ResultScene implements Scene {
     const bg = sketchPanel(w, h, { fill: ui.paper, border: ui.line, width: 1.8, seed: seedFor(x, y, w) });
     bg.x = x;
     bg.y = y;
-    bg.interactive = true;
+    bg.eventMode = 'static';
     bg.cursor = 'pointer';
     bg.on('pointertap', onTap);
     this.container.addChild(bg);
@@ -552,7 +552,7 @@ export class ResultScene implements Scene {
     hit.beginFill(0x000000, 0.001);
     hit.drawRect(hdr.backRect.x, hdr.backRect.y, hdr.backRect.w, hdr.backRect.h);
     hit.endFill();
-    hit.interactive = true;
+    hit.eventMode = 'static';
     hit.cursor = 'pointer';
     hit.name = 'resultBackChip'; // test hook — see test/ui/scenes.ui.ts "top-left back chip"
     hit.on('pointertap', onTap);

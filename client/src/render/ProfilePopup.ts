@@ -69,14 +69,14 @@ export class ProfilePopup {
     dim.beginFill(0x000000, 0.55);
     dim.drawRect(0, 0, w, h);
     dim.endFill();
-    dim.interactive = true;
+    dim.eventMode = 'static';
     dim.cursor = 'default';
     dim.on('pointertap', () => this.hide());
     this.container.addChild(dim);
 
     this.card = new PIXI.Container();
     // Tapping the card body must NOT close (only the backdrop / close button).
-    this.card.interactive = true;
+    this.card.eventMode = 'static';
     this.container.addChild(this.card);
   }
 
@@ -141,7 +141,7 @@ export class ProfilePopup {
       idLine.anchor.set(0.5, 0);
       idLine.x = cardW / 2;
       idLine.y = yBottom + cardH * 0.03;
-      idLine.interactive = true;
+      idLine.eventMode = 'static';
       idLine.cursor = 'pointer';
       idLine.on('pointertap', () => this.copyId(idLine, data.publicId, idText));
       this.card.addChild(idLine);
@@ -200,7 +200,7 @@ export class ProfilePopup {
         ab.drawRoundedRect(0, 0, aW, aH, 8);
         ab.endFill();
         ab.x = ax; ab.y = aY;
-        ab.interactive = true;
+        ab.eventMode = 'static';
         ab.cursor = 'pointer';
         ab.on('pointertap', () => { this.hide(); act.fn(); });
         this.card.addChild(ab);
@@ -219,7 +219,7 @@ export class ProfilePopup {
     btn.drawRoundedRect(0, 0, bW, bH, 8);
     btn.endFill();
     btn.x = bX; btn.y = bY;
-    btn.interactive = true;
+    btn.eventMode = 'static';
     btn.cursor = 'pointer';
     btn.on('pointertap', () => this.hide());
     this.card.addChild(btn);
