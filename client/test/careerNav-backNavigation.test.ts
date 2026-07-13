@@ -127,6 +127,7 @@ describe('createGameNav — Career hub (Stats/Titles/Achievements) peer-tab back
     const achievements = getAchievements();
     if (!achievements) throw new Error('views.showAchievements was not called by goAchievements()');
 
+    if (!achievements.onOpenTitles) throw new Error('AchievementsScene was not wired with onOpenTitles');
     achievements.onOpenTitles();
     const titles = getTitles();
     if (!titles) throw new Error('views.showTitles was not called by onOpenTitles()');
