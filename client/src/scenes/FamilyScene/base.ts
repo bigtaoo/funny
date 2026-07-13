@@ -66,6 +66,8 @@ export class FamilySceneBase {
 
   // Input overlay for create form
   protected hiddenInput: HTMLInputElement | null = null;
+  // Input overlay for the channel send box — set while open so the Send button can read its value
+  protected sendInput: HTMLInputElement | null = null;
   protected createName = '';
   protected createTag = '';
   protected createField: 'name' | 'tag' | null = null;
@@ -286,6 +288,7 @@ export class FamilySceneBase {
     for (const u of this.unsubs) u();
     this.unsubs.length = 0;
     if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
+    if (this.sendInput) { this.sendInput.remove(); this.sendInput = null; }
     this.container.destroy({ children: true });
   }
 }
@@ -312,6 +315,7 @@ export interface FamilySceneBase {
   doCreate(): Promise<void>;
   openJoinList(): Promise<void>;
   doSendMsg(): Promise<void>;
+  submitMessage(body: string): Promise<void>;
   doSetRole(targetId: string, role: 'elder' | 'member'): Promise<void>;
   confirmKick(targetId: string, name: string): void;
   confirmDissolve(): void;
