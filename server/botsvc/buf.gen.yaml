@@ -1,0 +1,15 @@
+# proto → TypeScript codegen template (botsvc side, ts-proto).
+# Run: npm run proto:gen (see scripts/gen-proto.mjs). Commit the generated output.
+# ts-proto plugin is resolved from the server workspace root node_modules (hoisted by npm workspaces).
+version: v2
+plugins:
+  - local: ["node", "../node_modules/ts-proto/protoc-gen-ts_proto"]
+    out: src/generated
+    opt:
+      - outputServices=false
+      - outputClientImpl=false
+      - outputJsonMethods=false
+      - forceLong=number
+      - esModuleInterop=true
+      - useOptionals=messages
+      - snakeToCamel=true

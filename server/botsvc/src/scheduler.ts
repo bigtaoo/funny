@@ -70,6 +70,9 @@ export class Scheduler {
       // Family and SLG upkeep are cheap and infrequent enough to run every tick; real cadence tuning is a post-load-test knob.
       await session.tickFamily().catch(() => undefined);
       await session.tickSlg().catch(() => undefined);
+      // Fire-and-forget: a real match can run for minutes — awaiting it here would serialize every
+      // other bot's upkeep behind one match. tickBattle() only starts the match; it never awaits it.
+      session.tickBattle();
     }
   }
 

@@ -1,6 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { BotSession } from '../src/bot';
 import type { BotIdentity } from '../src/pool';
+import * as battleSession from '../src/battleSession';
+
+vi.mock('../src/battleSession', () => ({ playRankedMatch: vi.fn() }));
 
 const identity: BotIdentity = { deviceId: 'bot-0001', paymentTier: 'free' };
 
@@ -19,8 +22,10 @@ function fakeCommercial(): any {
   return { buyMonthlyCard: vi.fn(), buyStarterGrowth: vi.fn() };
 }
 
+const battleOpts = { gatewayWsUrl: 'ws://unused/gw', chancePerTick: 0 };
+
 async function loggedInSession(world: any): Promise<BotSession> {
-  const session = new BotSession(identity, fakeMeta(), fakeSocial(), fakeCommercial(), world);
+  const session = new BotSession(identity, fakeMeta(), fakeSocial(), fakeCommercial(), world, battleOpts);
   await session.login();
   return session;
 }
@@ -113,10 +118,74 @@ describe('BotSession.tickSlg', () => {
 
   it('does nothing before login (no token yet)', async () => {
     const world: any = { getActiveSeason: vi.fn(), joinSeason: vi.fn() };
-    const session = new BotSession(identity, fakeMeta(), fakeSocial(), fakeCommercial(), world);
+    const session = new BotSession(identity, fakeMeta(), fakeSocial(), fakeCommercial(), world, battleOpts);
 
     await session.tickSlg();
 
     expect(world.getActiveSeason).not.toHaveBeenCalled();
+  });
+});
+
+describe('BotSession.tickBattle', () => {
+  const world: any = {};
+
+  it('does nothing when not lobby_idle, not logged in, or the roll misses', async () => {
+    const offline = new BotSession(identity, fakeMeta(), fakeSocial(), fakeCommercial(), world, battleOpts);
+    offline.tickBattle(); // not logged in
+    expect(offline.state).toBe('offline');
+
+    const idleButUnlucky = new BotSession(identity, fakeMeta(), fakeSocial(), fakeCommercial(), world, {
+      gatewayWsUrl: 'ws://unused/gw',
+      chancePerTick: 0, // Math.random() >= 0 is always true -> never rolls in
+    });
+    await idleButUnlucky.login();
+    idleButUnlucky.tickBattle();
+    expect(idleButUnlucky.state).toBe('lobby_idle');
+    expect(battleSession.playRankedMatch).not.toHaveBeenCalled();
+  });
+
+  it('on a hit, transitions lobby_idle -> matchmaking -> in_battle -> lobby_idle and calls playRankedMatch with the bot deck/difficulty', async () => {
+    let resolveMatch!: (v: { won: boolean | null; stateHash: string }) => void;
+    (battleSession.playRankedMatch as any).mockImplementation(
+      (opts: any) =>
+        new Promise((resolve) => {
+          resolveMatch = resolve;
+          opts.onMatched?.();
+        }),
+    );
+
+    const session = new BotSession(identity, fakeMeta(), fakeSocial(), fakeCommercial(), world, {
+      gatewayWsUrl: 'ws://unused/gw',
+      chancePerTick: 1, // always rolls in
+    });
+    await session.login();
+
+    session.tickBattle();
+    expect(session.state).toBe('in_battle'); // onMatched fired synchronously in this mock
+    expect(battleSession.playRankedMatch).toHaveBeenCalledWith(
+      expect.objectContaining({ gatewayWsUrl: 'ws://unused/gw', jwt: 't', deck: [], difficulty: 5 }),
+    );
+
+    // A second roll mid-battle must not start a concurrent match.
+    session.tickBattle();
+    expect(battleSession.playRankedMatch).toHaveBeenCalledTimes(1);
+
+    resolveMatch({ won: true, stateHash: 'abc' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(session.state).toBe('lobby_idle');
+  });
+
+  it('falls back to lobby_idle when the match rejects (disconnect/timeout/matchmaking failure)', async () => {
+    (battleSession.playRankedMatch as any).mockRejectedValue(new Error('gateway unreachable'));
+
+    const session = new BotSession(identity, fakeMeta(), fakeSocial(), fakeCommercial(), world, {
+      gatewayWsUrl: 'ws://unused/gw',
+      chancePerTick: 1,
+    });
+    await session.login();
+
+    session.tickBattle();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(session.state).toBe('lobby_idle');
   });
 });

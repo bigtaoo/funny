@@ -1,12 +1,11 @@
-// Single bot session (BOTSVC_DESIGN §3.2). This increment wires the parts that are pure REST and safe to
-// drive headless today: login, family join/leave-on-low-activity, payment-tier bootstrap, and SLG city
-// actions (§3.2 slg_action: building upgrades + occasional siege marches). Matchmaking / battle (AISystem
-// over a real gateway+gameserver WS connection, §1 B3) is the remaining increment — left as an explicit
-// extension point rather than faked, see BOTSVC_DESIGN §8.
+// Single bot session (BOTSVC_DESIGN §3.2): login, family join/leave-on-low-activity, payment-tier
+// bootstrap, SLG city actions (§3.2 slg_action), and — this increment — ranked matchmaking + battle
+// over a real gateway+gameserver WS connection driven by @nw/engine's AISystem (§1 B3, §8).
 import { MetaClient } from './metaClient';
 import { SocialClient } from './socialClient';
 import { CommercialClient } from './commercialClient';
 import { WorldClient, type BuildingKey } from './worldClient';
+import { playRankedMatch } from './battleSession';
 import type { BotIdentity } from './pool';
 
 /** Below this prosperity, a bot looks for a livelier family instead (mirrors a real player ditching a dead guild). */
@@ -31,16 +30,29 @@ const SIEGE_TROOP_FRACTION = 0.3;
 /** Sparse-map scan radius around the bot's own base when looking for a siege target. */
 const SIEGE_SCAN_RADIUS = 5;
 
-export type BotState = 'offline' | 'logging_in' | 'lobby_idle' | 'family_task' | 'slg_action';
+/** Empty deck = server assigns defaultPvpDeck (RoomCreate.deck contract) — bots don't build loadouts. */
+const BOT_DECK: string[] = [];
+/** Mid-curve difficulty (AISystem.ts DIFFICULTY, L1-L10) — bots aren't meant to feel unbeatable or free wins. */
+const BOT_AI_DIFFICULTY = 5;
+
+export type BotState = 'offline' | 'logging_in' | 'lobby_idle' | 'family_task' | 'slg_action' | 'matchmaking' | 'in_battle';
+
+export interface BattleOptions {
+  gatewayWsUrl: string;
+  /** Probability of entering ranked matchmaking on any given lobby_idle tick. */
+  chancePerTick: number;
+}
 
 export class BotSession {
   state: BotState = 'offline';
   private token: string | undefined;
   private accountId: string | undefined;
+  private gatewayUrl: string | undefined;
   private paymentBootstrapped = false;
   private worldId: string | undefined;
   private slgTick = 0;
   private buildRotation = 0;
+  private battling = false;
 
   constructor(
     readonly identity: BotIdentity,
@@ -48,6 +60,7 @@ export class BotSession {
     private readonly social: SocialClient,
     private readonly commercial: CommercialClient,
     private readonly world: WorldClient,
+    private readonly battle: BattleOptions,
   ) {}
 
   async login(): Promise<void> {
@@ -55,6 +68,7 @@ export class BotSession {
     const login = await this.meta.deviceLogin(this.identity.deviceId);
     this.token = login.token;
     this.accountId = login.accountId;
+    this.gatewayUrl = login.gatewayUrl;
     if (!this.paymentBootstrapped) {
       await this.bootstrapPaymentTier();
       this.paymentBootstrapped = true;
@@ -65,7 +79,41 @@ export class BotSession {
   logout(): void {
     this.token = undefined;
     this.accountId = undefined;
+    this.gatewayUrl = undefined;
     this.state = 'offline';
+  }
+
+  /**
+   * One matchmaking roll (§3.2): from lobby_idle, a bot occasionally queues for a real ranked match
+   * and plays it out over the actual gateway/gameserver WS protocol. Fire-and-forget by design — a
+   * match can run for minutes, so this must never be awaited by the scheduler's tick loop (that would
+   * serialize every other bot's upkeep behind one match). Errors (disconnect, timeout, matchmaking
+   * failure) fall back to lobby_idle rather than crashing the session.
+   */
+  tickBattle(): void {
+    if (this.state !== 'lobby_idle' || this.battling || !this.token) return;
+    if (Math.random() >= this.battle.chancePerTick) return;
+    this.battling = true;
+    this.state = 'matchmaking';
+    void this.runBattle()
+      .catch(() => undefined)
+      .finally(() => {
+        this.battling = false;
+        if (this.state !== 'offline') this.state = 'lobby_idle';
+      });
+  }
+
+  private async runBattle(): Promise<void> {
+    const wsUrl = this.gatewayUrl || this.battle.gatewayWsUrl;
+    await playRankedMatch({
+      gatewayWsUrl: wsUrl,
+      jwt: this.token!,
+      deck: BOT_DECK,
+      difficulty: BOT_AI_DIFFICULTY,
+      onMatched: () => {
+        if (this.state === 'matchmaking') this.state = 'in_battle';
+      },
+    });
   }
 
   /** Idempotent: safe to call again on every login (commercial dedupes on orderId; a real card is never re-bought). */

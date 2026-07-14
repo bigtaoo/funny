@@ -38,5 +38,11 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "allowScripts": {
+    "@bufbuild/buf@1.71.0": true,
+    "esbuild@0.28.1": true,
+    "esbuild@0.21.5": true,
+    "mongodb-memory-server@11.2.0": true
   }
 }

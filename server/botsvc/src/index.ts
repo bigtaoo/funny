@@ -21,10 +21,11 @@ async function main(): Promise<void> {
   const social = new SocialClient(env.socialBaseUrl);
   const commercial = new CommercialClient(env.commercialInternalUrl, env.internalKey);
   const world = new WorldClient(env.worldBaseUrl);
-  const capacity = new CapacityClient(env.gatewayInternalUrl);
+  const capacity = new CapacityClient(env.gatewayInternalUrl, env.internalKey);
 
+  const battleOpts = { gatewayWsUrl: env.gatewayWsUrl, chancePerTick: env.battleChancePerTick };
   const pool = generateBotPool(env.poolSize).map(
-    (identity) => new BotSession(identity, meta, social, commercial, world),
+    (identity) => new BotSession(identity, meta, social, commercial, world, battleOpts),
   );
   const scheduler = new Scheduler(pool, capacity, {
     targetOnline: env.targetOnline,
