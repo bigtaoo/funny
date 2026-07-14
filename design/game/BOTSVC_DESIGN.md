@@ -161,5 +161,11 @@ const FAMILY_TASK_ACTION_MAP: Record<string, FamilyTaskAction> = {
   - **真实双 bot 排位对战 E2E 验证过程中揪出两个只有真实联调才会暴露的 bug**（headless 测试当时用了两个 bot 相同卡组/相同难度，恰好对称，把 bug 掩盖掉了）：
     1. `capacityClient.ts` 调 gateway `/internal/stats` 从未带 `X-Internal-Key` 头，导致 `Scheduler.tick()` 第一行就 401 抛错——bot 从来没能真正登录过。
     2. **（更关键）engineDriver 最初的实现把整个引擎按"自己永远是 Top"重新贴标签**（deck 和 owner 一起换），能让 AISystem 直接工作，但导致两个 bot 上报的 `winnerSide` 各自以为"我赢了"（哈希在两个 bot 卡组完全相同时又"碰巧"对得上，掩盖了问题，直到 `winnerSide` 不一致才在真实撮合里炸出来）；同时 deck 与引擎固定的 top/bottom 抽卡 PRNG 流（`config.seed` vs `config.seed^0xdeadbeef`）绑定方式也被这个整体重贴标签打乱，一旦两个真实账号的卡组内容不同就会真的模拟出不同的手牌。最终修复即上面的 `buildMirroredView()` 方案——engine 保持 wire-side 一致，只在喂给 AISystem 这一步做只读镜像。三场真实撮合验证 `reason=base hashOk=true`。
-- [ ] 3000 机器人满载压测（用户拍板：botsvc 做完后跑一次）——结果回填本节，用于校准 §4 阈值。
+- [x] **1000 机器人负载测试（3000 满载压测的第一档）已跑（2026-07-14）**：`server/metaserver`+`gateway`+`matchsvc`+`gameserver`+`commercial`+`socialsvc`+`worldsvc`+`botsvc`（`NW_BOT_POOL_SIZE=1000 NW_BOT_TARGET_ONLINE=1000`）全套真实起在主目录（非 worktree）。
+  - 爬坡到 1000/1000 在线后稳定运行，各服务日志零报错，全部 node 进程加起来内存约 1.8GB，CPU 轻松，机器完全扛得住这个量级。
+  - 排位撮合表现很好：matchsvc 日志显示机器人入队几乎从不排队等待（`queueSize` 几乎全程 0/1 之间），入队到配对通常 1-3 秒内完成。
+  - **过程中炸出一个严重 bug并修复**：`@nw/engine` 的编译产物（`dist/`）在这次操作的主目录里没有跟着 merge 重新构建（dist 被 gitignore，每个 checkout 各自需要 `tsc -b`）——第一场机器人对战触发 `new Prng(...)` 时用的是没有 `Prng`/`AISystem` 导出的旧 dist，直接 `TypeError` 崩溃，**把整个 1000-bot 进程全炸了**（不是单个 bot 会话失败）。重新构建 dist 后恢复。
+  - **顺带修的健壮性缺口**：`battleSession.ts` 的 `onMatchStart`/`onFrameBatch` 是同步 WS 消息回调，之前没有 try/catch——任何一局比赛里的偶发异常都会让整个 botsvc 进程崩溃、上千个 bot 全部掉线重来。已加防护（提交 `91e03904`），现在单局出错只会让那一局失败。
+  - 已知架构特点（非 bug，记录以免将来误判）：bot 只在真正打排位时才短暂连接 gateway WS，不像真人那样全程保持大厅连接——所以 gateway `/internal/stats` 的 online 数（§4 容量分层信号）不会把"已登录但空闲"的 bot 算进去，只会看到"正在打排位"的瞬时连接数。这意味着 §4 的分层降级阈值目前只对真人+正在战斗的 bot 的 WS 连接数生效，不覆盖"登录但空闲"的 bot 数量——如果这点重要，需要额外设计。
+  - 3000 满载压测（原计划的完整量级）仍未跑，结果回填本节，用于校准 §4 阈值。
 - [ ] 会话时长/上线间隔的具体分布参数（当前 §3.1 只给了量级），压测后按真实 CPU/内存曲线调整。
