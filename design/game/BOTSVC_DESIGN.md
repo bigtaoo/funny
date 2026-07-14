@@ -149,5 +149,7 @@ const FAMILY_TASK_ACTION_MAP: Record<string, FamilyTaskAction> = {
 
 ## 8. 开放问题 / 后续
 
+- [x] **SLG 基础节奏（§3.2 slg_action）已接入**（2026-07-14）：`server/botsvc/src/worldClient.ts` + `bot.ts#tickSlg`。首次 tick 调用 `/world/active-season` + `/world/season/join` 加入当季世界（服务器自动落城，不传坐标）；此后每 tick 按固定表轮转升级 P1 建筑（`/world/build/upgrade`），每 5 个 tick 尝试一次攻城（`/world/map/sparse` 扫描本城半径 5 内非己方 territory/base/stronghold 目标，`/world/march{kind:attack}` 出兵 30% 驻军）；找不到目标则退回升级建筑。不挂拍卖、不发社交聊天（B8 不变）。
+- [ ] 矩阵/战斗（AISystem over 真实 gateway+gameserver WS 连接，§1 B3）：调研已确认这是一次真正的子系统级工作量——botsvc 需要内嵌 `@nw/engine` 完整 `GameState`/`GameEngine` 做客户端无回滚 lockstep 模拟、自建 protobuf codegen（`ws` + `@bufbuild/protobuf`，仿 `server/gameserver/buf.gen.yaml`）、同时维护 gateway 控制面（`?token=`,`room_create{mode:RANKED}` 走 `matchsvc.enqueue`，非 `roomCreate` 房间语义）与 gameserver 数据面（`?ticket=`,纯转发 `frame_batch`，服务端不跑模拟）两条 WS 连接，胜负结算需要客户端自算 `matchStateHash`（`client/src/net/judgeRunner.ts` 同款 FNV-1a）后上报 `match_result`。留作独立后续任务，不在本次增量内。
 - [ ] 3000 机器人满载压测（用户拍板：botsvc 做完后跑一次）——结果回填本节，用于校准 §4 阈值。
 - [ ] 会话时长/上线间隔的具体分布参数（当前 §3.1 只给了量级），压测后按真实 CPU/内存曲线调整。
