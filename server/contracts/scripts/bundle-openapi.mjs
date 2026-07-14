@@ -18,84 +18,75 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
-const __dir = dirname(fileURLToPath(import.meta.url));
-// scripts/ lives at server/contracts/scripts/; go up one level to server/contracts/
-const contractsRoot = resolve(__dir, '../');
-const serverRoot = resolve(__dir, '../../');
-const fragmentsDir = resolve(contractsRoot, 'openapi');
-const outPath = resolve(contractsRoot, 'openapi.yml');
-const isCheck = process.argv.includes('--check');
-
-// Resolve js-yaml from metaserver's node_modules (where it is a declared dependency).
-const _require = createRequire(resolve(serverRoot, 'metaserver/package.json'));
-const yaml = _require('js-yaml');
-
-function loadYaml(relPath) {
-  const abs = resolve(fragmentsDir, relPath);
-  let raw;
-  try {
-    raw = readFileSync(abs, 'utf8');
-  } catch (e) {
-    console.error(`[bundle-openapi] cannot read ${abs}: ${e.message}`);
-    process.exit(1);
-  }
-  try {
-    return yaml.load(raw);
-  } catch (e) {
-    console.error(`[bundle-openapi] YAML parse error in ${relPath}:\n  ${e.message}`);
-    process.exit(1);
-  }
-}
-
-// ── 1. Root doc: openapi/info/servers/tags/components.securitySchemes ────────
-const root = loadYaml('_root.yml');
-if (!root || typeof root !== 'object') {
-  console.error('[bundle-openapi] _root.yml is not an object');
-  process.exit(1);
-}
-
-// ── 2. Shared component schemas + reusable responses (components.schemas / components.responses) ──
-const schemasDoc = loadYaml('schemas.yml');
-if (!schemasDoc?.schemas || typeof schemasDoc.schemas !== 'object') {
-  console.error('[bundle-openapi] schemas.yml missing top-level `schemas:` map');
-  process.exit(1);
-}
-
-// ── 3. Path fragments — one per MetaService domain mixin, fixed order so new domains ──
+// ── Path fragments — one per MetaService domain mixin, fixed order so new domains ──
 //    have an obvious place to be appended (keep in sync with server/metaserver/src/service.ts).
-const DOMAINS = [
+export const DOMAINS = [
   'auth', 'save', 'pve', 'economy', 'inventory', 'progression', 'liveops', 'social', 'telemetry',
 ];
 
-const paths = {};
-for (const domain of DOMAINS) {
-  const frag = loadYaml(`paths/${domain}.yml`);
-  if (!frag || typeof frag !== 'object') {
-    console.error(`[bundle-openapi] paths/${domain}.yml is not an object`);
-    process.exit(1);
-  }
-  for (const [path, pathItem] of Object.entries(frag)) {
-    if (Object.prototype.hasOwnProperty.call(paths, path)) {
-      console.error(`[bundle-openapi] duplicate path "${path}" — defined in both an earlier fragment and paths/${domain}.yml`);
-      process.exit(1);
+/**
+ * Pure merge: reads _root.yml + schemas.yml + paths/<domain>.yml from `fragmentsDir` and returns
+ * the assembled OpenAPI spec object (same shape gen-openapi-server.mjs already expects). Throws a
+ * plain Error (no process.exit) on any structural problem — callers decide how to report/exit,
+ * which also makes this unit-testable (see test/bundle-openapi.test.ts).
+ */
+export function bundleSpec(fragmentsDir, yaml) {
+  function loadYaml(relPath) {
+    const abs = resolve(fragmentsDir, relPath);
+    let raw;
+    try {
+      raw = readFileSync(abs, 'utf8');
+    } catch (e) {
+      throw new Error(`cannot read ${abs}: ${e.message}`);
     }
-    paths[path] = pathItem;
+    try {
+      return yaml.load(raw);
+    } catch (e) {
+      throw new Error(`YAML parse error in ${relPath}:\n  ${e.message}`);
+    }
   }
-}
 
-// ── 4. Assemble the full spec (same shape gen-openapi-server.mjs already expects) ──
-const spec = {
-  openapi: root.openapi,
-  info: root.info,
-  servers: root.servers,
-  tags: root.tags,
-  components: {
-    securitySchemes: root.components?.securitySchemes,
-    schemas: schemasDoc.schemas,
-    ...(schemasDoc.responses ? { responses: schemasDoc.responses } : {}),
-  },
-  paths,
-};
+  // ── 1. Root doc: openapi/info/servers/tags/components.securitySchemes ────────
+  const root = loadYaml('_root.yml');
+  if (!root || typeof root !== 'object') {
+    throw new Error('_root.yml is not an object');
+  }
+
+  // ── 2. Shared component schemas + reusable responses (components.schemas / components.responses) ──
+  const schemasDoc = loadYaml('schemas.yml');
+  if (!schemasDoc?.schemas || typeof schemasDoc.schemas !== 'object') {
+    throw new Error('schemas.yml missing top-level `schemas:` map');
+  }
+
+  // ── 3. Merge path fragments, rejecting any path defined in more than one domain ──
+  const paths = {};
+  for (const domain of DOMAINS) {
+    const frag = loadYaml(`paths/${domain}.yml`);
+    if (!frag || typeof frag !== 'object') {
+      throw new Error(`paths/${domain}.yml is not an object`);
+    }
+    for (const [path, pathItem] of Object.entries(frag)) {
+      if (Object.prototype.hasOwnProperty.call(paths, path)) {
+        throw new Error(`duplicate path "${path}" — defined in both an earlier fragment and paths/${domain}.yml`);
+      }
+      paths[path] = pathItem;
+    }
+  }
+
+  // ── 4. Assemble the full spec ──────────────────────────────────────────────
+  return {
+    openapi: root.openapi,
+    info: root.info,
+    servers: root.servers,
+    tags: root.tags,
+    components: {
+      securitySchemes: root.components?.securitySchemes,
+      schemas: schemasDoc.schemas,
+      ...(schemasDoc.responses ? { responses: schemasDoc.responses } : {}),
+    },
+    paths,
+  };
+}
 
 const HEADER = `\
 # AUTO-GENERATED by server/contracts/scripts/bundle-openapi.mjs — DO NOT EDIT.
@@ -108,21 +99,44 @@ const HEADER = `\
 # or server/contracts/openapi/schemas.yml for shared component schemas — not this file.
 `;
 
-const body = yaml.dump(spec, { lineWidth: -1, noRefs: true });
-const generated = HEADER + body;
+// ── CLI entrypoint — only runs when this file is executed directly (`node bundle-openapi.mjs`),
+//    not when bundleSpec is imported for tests.
+if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+  const __dir = dirname(fileURLToPath(import.meta.url));
+  // scripts/ lives at server/contracts/scripts/; go up one level to server/contracts/
+  const contractsRoot = resolve(__dir, '../');
+  const serverRoot = resolve(__dir, '../../');
+  const fragmentsDir = resolve(contractsRoot, 'openapi');
+  const outPath = resolve(contractsRoot, 'openapi.yml');
+  const isCheck = process.argv.includes('--check');
 
-// ── 5. Write or check ─────────────────────────────────────────────────────────
-if (isCheck) {
-  // Normalize CRLF → LF before comparing (committed file may be checked out as CRLF on Windows).
-  const existing = (existsSync(outPath) ? readFileSync(outPath, 'utf8') : '').replace(/\r\n/g, '\n');
-  if (existing === generated.replace(/\r\n/g, '\n')) {
-    console.log(`[bundle-openapi] check passed — ${Object.keys(paths).length} paths, ${Object.keys(schemasDoc.schemas).length} schemas`);
-  } else {
-    console.error('[bundle-openapi] check FAILED: committed openapi.yml is stale — run: npm run gen:api:contracts');
+  // Resolve js-yaml from metaserver's node_modules (where it is a declared dependency).
+  const _require = createRequire(resolve(serverRoot, 'metaserver/package.json'));
+  const yaml = _require('js-yaml');
+
+  let spec;
+  try {
+    spec = bundleSpec(fragmentsDir, yaml);
+  } catch (e) {
+    console.error(`[bundle-openapi] ${e.message}`);
     process.exit(1);
   }
-} else {
-  writeFileSync(outPath, generated, 'utf8');
-  console.log(`[bundle-openapi] written ${outPath}`);
-  console.log(`  ${Object.keys(paths).length} paths, ${Object.keys(schemasDoc.schemas).length} component schemas`);
+
+  const body = yaml.dump(spec, { lineWidth: -1, noRefs: true });
+  const generated = HEADER + body;
+
+  if (isCheck) {
+    // Normalize CRLF → LF before comparing (committed file may be checked out as CRLF on Windows).
+    const existing = (existsSync(outPath) ? readFileSync(outPath, 'utf8') : '').replace(/\r\n/g, '\n');
+    if (existing === generated.replace(/\r\n/g, '\n')) {
+      console.log(`[bundle-openapi] check passed — ${Object.keys(spec.paths).length} paths, ${Object.keys(spec.components.schemas).length} schemas`);
+    } else {
+      console.error('[bundle-openapi] check FAILED: committed openapi.yml is stale — run: npm run gen:api:contracts');
+      process.exit(1);
+    }
+  } else {
+    writeFileSync(outPath, generated, 'utf8');
+    console.log(`[bundle-openapi] written ${outPath}`);
+    console.log(`  ${Object.keys(spec.paths).length} paths, ${Object.keys(spec.components.schemas).length} component schemas`);
+  }
 }
