@@ -43,6 +43,7 @@ $procs = @(
   @{ name = 'auction';    dir = 'auctionsvc'; env = @{ NW_AUCTION_PORT = '18086'; NW_META_INTERNAL_URL = 'http://127.0.0.1:18080'; NW_COMMERCIAL_INTERNAL_URL = 'http://127.0.0.1:18082' } }
   @{ name = 'admin';      dir = 'admin';      env = @{ NW_GATEWAY_INTERNAL_URL = 'http://127.0.0.1:8090'; NW_MATCHSVC_INTERNAL_URL = 'http://127.0.0.1:8091'; NW_META_BASE_URL = 'http://127.0.0.1:18080'; NW_ADMIN_SEED_USER = 'root'; NW_ADMIN_SEED_PASS = 'rootpass'; NW_ANALYTICS_BASE_URL = 'http://127.0.0.1:18085' } }
   @{ name = 'analytics';  dir = 'analyticsvc'; env = @{ NW_ANALYTICS_PORT = '18085' } }
+  @{ name = 'botsvc';     dir = 'botsvc';     env = @{ NW_BOT_PORT = '18087'; NW_META_BASE_URL = 'http://127.0.0.1:18080'; NW_SOCIAL_BASE_URL = 'http://127.0.0.1:8085'; NW_WORLD_BASE_URL = 'http://127.0.0.1:18084'; NW_GATEWAY_INTERNAL_URL = 'http://127.0.0.1:8090'; NW_GATEWAY_WS_URL = 'ws://127.0.0.1:8086/gw'; NW_COMMERCIAL_INTERNAL_URL = 'http://127.0.0.1:18082' } }
 )
 
 if ($Only) {
@@ -110,6 +111,7 @@ if (-not $Only) {
     auction    = 'http://127.0.0.1:18086/health'
     admin      = 'http://127.0.0.1:18083/health'
     analytics  = 'http://127.0.0.1:18085/health'
+    botsvc     = 'http://127.0.0.1:18087/health'
   }
 
   $anyDown = $false

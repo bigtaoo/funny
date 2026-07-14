@@ -36,6 +36,7 @@ export type {
   OwnerId,
   PlayerStats,
   MatchSummary,
+  AIDifficulty,
   Vec2_fp,
   Replay,
   ReplayFrame,
@@ -68,6 +69,11 @@ export {
 // ── Fixed-point utilities ─────────────────────────────────────────────────────
 export { FP_SCALE, TICK_RATE, fromFp } from './math/fixed';
 export type { Fp } from './math/fixed';
+export { Prng } from './math/prng';
+
+// ── AI decision system (botsvc: headless bot driving a real netplay connection) ──
+export { AISystem, DIFFICULTY } from './systems/AISystem';
+export type { DifficultyParams } from './systems/AISystem';
 
 // ── Board / blueprint constants (worldsvc siege army synthesis, G3-2b) ────────
 // Exposed so the authoritative siege runner reads board geometry + unit HP caps

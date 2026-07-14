@@ -19,8 +19,12 @@ export interface BotsvcEnv {
   socialBaseUrl: string;
   worldBaseUrl: string;
   gatewayInternalUrl: string;
+  /** Gateway control-plane WS (`/gw`), used only when device-login doesn't return its own gatewayUrl. */
+  gatewayWsUrl: string;
   commercialInternalUrl: string;
   internalKey: string;
+  /** Probability a lobby_idle bot enters ranked matchmaking on any given scheduler tick (BOTSVC_DESIGN §3.2). */
+  battleChancePerTick: number;
 }
 
 function num(name: string, fallback: number): number {
@@ -41,7 +45,9 @@ export function loadBotsvcEnv(): BotsvcEnv {
     socialBaseUrl: process.env.NW_SOCIAL_BASE_URL || 'http://127.0.0.1:8085',
     worldBaseUrl: process.env.NW_WORLD_BASE_URL || 'http://127.0.0.1:18084',
     gatewayInternalUrl: process.env.NW_GATEWAY_INTERNAL_URL || 'http://127.0.0.1:8090',
+    gatewayWsUrl: process.env.NW_GATEWAY_WS_URL || 'ws://127.0.0.1:8086/gw',
     commercialInternalUrl: process.env.NW_COMMERCIAL_INTERNAL_URL || 'http://127.0.0.1:18082',
     internalKey: process.env.NW_INTERNAL_KEY || 'dev-insecure-internal-key-change-me',
+    battleChancePerTick: Number(process.env.NW_BOT_BATTLE_CHANCE ?? 0.05),
   };
 }

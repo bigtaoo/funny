@@ -139,7 +139,7 @@ const FAMILY_TASK_ACTION_MAP: Record<string, FamilyTaskAction> = {
 | 机器人账号/JWT | metaserver（复用现有 device-login） | 仅新增 `isBot` 字段 |
 | 机器人 WS 连接（控制面/数据面） | gateway/gameserver（复用现有协议） | 无需改动，机器人是"又一个客户端" |
 | 排位超时代打 `match_bot_fallback` | matchsvc（已实现，不变） | 与本系统并存，互不替代 |
-| 机器人战斗 AI | `@nw/engine` `AISystem`（已实现，复用） | 本设计只负责"把它接到真实连接上" |
+| 机器人战斗 AI | `@nw/engine` `AISystem`（已实现，复用） | 本设计只负责"把它接到真实连接上"；`AISystem`/`DIFFICULTY`/`Prng`/`AIDifficulty` 因此从引擎内部符号提升为公共出口（`src/index.ts`），botsvc 是第一个外部消费者 |
 | 机器人家族/家族任务 | socialsvc（复用现有 `/social/*`） | 仅 botsvc 侧加映射表，socialsvc 不改 |
 | 机器人 SLG 行为 | worldsvc（复用现有 `/world/*`） | 不挂拍卖（auctionsvc 不受影响） |
 | 充值模拟 | commercial（复用现有内部端点） | 不新增支付代码 |
@@ -150,6 +150,16 @@ const FAMILY_TASK_ACTION_MAP: Record<string, FamilyTaskAction> = {
 ## 8. 开放问题 / 后续
 
 - [x] **SLG 基础节奏（§3.2 slg_action）已接入**（2026-07-14）：`server/botsvc/src/worldClient.ts` + `bot.ts#tickSlg`。首次 tick 调用 `/world/active-season` + `/world/season/join` 加入当季世界（服务器自动落城，不传坐标）；此后每 tick 按固定表轮转升级 P1 建筑（`/world/build/upgrade`），每 5 个 tick 尝试一次攻城（`/world/map/sparse` 扫描本城半径 5 内非己方 territory/base/stronghold 目标，`/world/march{kind:attack}` 出兵 30% 驻军）；找不到目标则退回升级建筑。不挂拍卖、不发社交聊天（B8 不变）。
-- [ ] 矩阵/战斗（AISystem over 真实 gateway+gameserver WS 连接，§1 B3）：调研已确认这是一次真正的子系统级工作量——botsvc 需要内嵌 `@nw/engine` 完整 `GameState`/`GameEngine` 做客户端无回滚 lockstep 模拟、自建 protobuf codegen（`ws` + `@bufbuild/protobuf`，仿 `server/gameserver/buf.gen.yaml`）、同时维护 gateway 控制面（`?token=`,`room_create{mode:RANKED}` 走 `matchsvc.enqueue`，非 `roomCreate` 房间语义）与 gameserver 数据面（`?ticket=`,纯转发 `frame_batch`，服务端不跑模拟）两条 WS 连接，胜负结算需要客户端自算 `matchStateHash`（`client/src/net/judgeRunner.ts` 同款 FNV-1a）后上报 `match_result`。留作独立后续任务，不在本次增量内。
+- [x] **排位匹配 + 对战（AISystem over 真实 gateway+gameserver WS 连接，§1 B3）已接入**（2026-07-14）：
+  - `server/botsvc` 新增自己的 protobuf codegen（`buf.gen.yaml` + `scripts/gen-proto.mjs`，完全照抄 `server/gateway`/`server/gameserver` 的模板，产出 `src/generated/{transport,game,replay}.ts`），新增 `ws`/`@bufbuild/protobuf`/`@nw/engine` 依赖。
+  - `@nw/engine` 公共出口（`server/engine/src/index.ts`）新增导出 `AISystem`/`DIFFICULTY`/`Prng`/`AIDifficulty`——此前这些是内部符号，只被引擎自己的 `pvp` 模式内部调用；botsvc 是第一个从外部直接调用 `AISystem.decideTick` 的消费者，这是让本次增量成立所必需的最小公共 API 扩展。
+  - `src/gatewayClient.ts`（控制面 `wss://<gateway>/gw?token=`，发 `room_create{mode:RANKED}`，等 `match_found`）+ `src/gameServerClient.ts`（数据面 `?ticket=`，等 `match_start`，之后收发 `frame_batch`/`cmd_submit`/`match_result`）+ `src/envelopeSocket.ts`（两者共用的 Node `ws` 帧编解码壳，无重连——中途断线即视为本局失败，回退 `lobby_idle`，重连会破坏 lockstep 假设）。
+  - `src/engineDriver.ts`（`BattleEngine`）：以 `mode:'netplay'` 内嵌真实引擎模拟，**engine 本身严格 wire-side 一致**——`players`/`decks` 直接用 `MatchStart.topDeck/bottomDeck`，从不按"自己是谁"重新贴标签（`PlayerStats`/`matchStateHash` 是按 wire side 索引的契约，真实客户端从不做任何 relabel，botsvc 必须一致才能对上哈希）。`AISystem.decideTick` 硬编码只为引擎 Top side（owner=1，`state.topPlayer`）决策；当 bot 真实 wire side 是 Bottom（owner=0）时，不能直接把真实 state 喂给它（会读到对手的手牌、且方向几何是反的）——`buildMirroredView()` 构造一个只读镜像视图（`topPlayer`↔`bottomPlayer`互换、unit/building 的 `side` 翻转、`row` 按 `BOARD_ROWS-1-row` 翻转，列/攻击道不翻转，棋盘只在纵向对称），喂给 AISystem 后再把决策的 `row` 翻转回真实坐标、`owner` 改回真实 owner 才应用/上行。此外沿用真实客户端 `NetInputSource` 的 lockstep 语义——本地不做预测，自己刚决策的指令必须先 `cmd_submit` 上行、等服务器把它连同分配的 frame 一起用 `frame_batch` 回放回来才真正喂进 `engine.step()`。
+  - `src/battleSession.ts`（`playRankedMatch`）串起全流程；`bot.ts` 新增 `matchmaking`/`in_battle` 状态，`tickBattle()` 按概率触发、**必须是 fire-and-forget**（不能被 `scheduler.tick()` await，否则一局比赛会卡住其余所有 bot 的 15s 心跳），错误一律吞掉退回 `lobby_idle`。
+  - 测试：headless 双 `BattleEngine`（**故意用不同的 top/bottom 卡组**）互打（用内存 relay 模拟 gameserver 分帧广播）验证两端 `matchStateHash`/`winnerSide` 完全一致、恰好一方获胜（或都为平局）、且确定性可复现；`gatewayClient`/`gameServerClient` 针对真实 `ws` 假服务器验证编解码；`bot.ts` 状态机测试。
+  - `server/dev-up.ps1` 已加入 `botsvc` 进程 + `/health` 检查项（此前完全没有被拉起）。
+  - **真实双 bot 排位对战 E2E 验证过程中揪出两个只有真实联调才会暴露的 bug**（headless 测试当时用了两个 bot 相同卡组/相同难度，恰好对称，把 bug 掩盖掉了）：
+    1. `capacityClient.ts` 调 gateway `/internal/stats` 从未带 `X-Internal-Key` 头，导致 `Scheduler.tick()` 第一行就 401 抛错——bot 从来没能真正登录过。
+    2. **（更关键）engineDriver 最初的实现把整个引擎按"自己永远是 Top"重新贴标签**（deck 和 owner 一起换），能让 AISystem 直接工作，但导致两个 bot 上报的 `winnerSide` 各自以为"我赢了"（哈希在两个 bot 卡组完全相同时又"碰巧"对得上，掩盖了问题，直到 `winnerSide` 不一致才在真实撮合里炸出来）；同时 deck 与引擎固定的 top/bottom 抽卡 PRNG 流（`config.seed` vs `config.seed^0xdeadbeef`）绑定方式也被这个整体重贴标签打乱，一旦两个真实账号的卡组内容不同就会真的模拟出不同的手牌。最终修复即上面的 `buildMirroredView()` 方案——engine 保持 wire-side 一致，只在喂给 AISystem 这一步做只读镜像。三场真实撮合验证 `reason=base hashOk=true`。
 - [ ] 3000 机器人满载压测（用户拍板：botsvc 做完后跑一次）——结果回填本节，用于校准 §4 阈值。
 - [ ] 会话时长/上线间隔的具体分布参数（当前 §3.1 只给了量级），压测后按真实 CPU/内存曲线调整。

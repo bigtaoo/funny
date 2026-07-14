@@ -1,10 +1,15 @@
 // Capacity signal (BOTSVC_DESIGN §4): polls gateway's EXISTING GET /internal/stats (OPS_DESIGN §4.1/§8
 // admin monitoring endpoint) — no new gateway code needed, botsvc just reuses the same online-count.
 export class CapacityClient {
-  constructor(private readonly gatewayInternalUrl: string) {}
+  constructor(
+    private readonly gatewayInternalUrl: string,
+    private readonly internalKey: string,
+  ) {}
 
   async onlineCount(): Promise<number> {
-    const res = await fetch(`${this.gatewayInternalUrl}/internal/stats`);
+    const res = await fetch(`${this.gatewayInternalUrl}/internal/stats`, {
+      headers: { 'x-internal-key': this.internalKey },
+    });
     if (!res.ok) throw new Error(`gateway /internal/stats failed: ${res.status}`);
     const body = (await res.json()) as { online: number };
     return body.online;
