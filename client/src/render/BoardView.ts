@@ -1,6 +1,6 @@
 import * as PIXI from 'pixi.js-legacy';
 import { ATTACK_LANES, BOARD_COLS, BOARD_ROWS } from '../game/config';
-import { sideToOwner } from '../game';
+import { Side, sideToOwner } from '../game';
 import { ILayout, Rect } from '../layout/ILayout';
 import { ObjectPool } from '../cache/ObjectPool';
 import baseTexUrl from '../assets/game_base.png';
@@ -432,11 +432,15 @@ export class BoardView {
   private laneRect(gameCol: number): Rect {
     const r    = this.layout.boardRect;
     const cell = this.layout.cellSize;
+    // The joiner (Side.Top) has both grid axes mirrored in gridToScreen, so the
+    // lane band must mirror the col axis too — otherwise the highlight lands on the
+    // mirror-opposite band from where units actually render (empty-cell red bug).
+    const band = this.layout.localSide === Side.Bottom ? gameCol : (BOARD_COLS - 1 - gameCol);
     if (this.layout.orientation === 'portrait') {
-      return { x: r.x + gameCol * cell, y: r.y, w: cell, h: r.h };
+      return { x: r.x + band * cell, y: r.y, w: cell, h: r.h };
     }
     // In landscape, game col → screen Y band
-    return { x: r.x, y: r.y + gameCol * cell, w: r.w, h: cell };
+    return { x: r.x, y: r.y + band * cell, w: r.w, h: cell };
   }
 
   private drawBases(layout: ILayout): void {
