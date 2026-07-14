@@ -57,6 +57,9 @@ server/botsvc/          独立 npm workspace，端口 18087（仅内部管理面
   - 未在线的机器人按泊松间隔随机挑选上线（模拟真人陆续登录，不是 1000 个同时排队）。
   - 在线机器人有一个随机会话时长（例如 10–60 分钟，具体数值留实现时按压测结果调），到期正常走登出流程下线，模拟真人玩一会儿就退。
   - 调度器目标：**同时在线数在 `targetOnline` 附近波动**，不要求分毫不差。
+- **单次 tick 的纪律（2026-07-14 断线排查后加固）**：`scheduler.tick()` 由固定 `TICK_MS` 定时器无条件触发，而一次 pass 要遍历所有在线 bot 做家族/SLG 巡检——大机队下一次 pass 可能超过一个 tick 周期。因此：
+  - **防重入门闩**（`ticking` 标志）：上一 pass 未跑完时，新到的 tick 直接跳过并告警一次，绝不叠加。否则多个 tick 循环并发会成倍放大 REST/撮合负载，正是把事件循环周期性打爆、导致对局漏掉 gameserver 心跳的元凶之一。
+  - **巡检有界并发**（`NW_BOT_UPKEEP_CONCURRENCY`，默认 20）：把逐 bot 串行 `await tickFamily()/tickSlg()` 改成固定大小的 worker 池从共享游标取任务；单 bot 内 `tickFamily → tickSlg → tickBattle` 顺序不变，`tickBattle()` 仍 fire-and-forget。串行会让 pass 随机队线性膨胀，无界 `Promise.all` 又会一次性打出上千 REST——两者都要避免。
 
 ### 3.2 单个机器人的状态机
 
@@ -174,4 +177,8 @@ const FAMILY_TASK_ACTION_MAP: Record<string, FamilyTaskAction> = {
   - 测试结束已 `docker rm -f nw-botsvc` 停掉、删掉含密钥的临时 env 文件；写进 Atlas 的 ~1000 个 `isBot` 账号及对局/SLG 数据**尚未清理**（清理需另写走服务端的脚本，谨慎操作生产库）。
 - [ ] 会话时长/上线间隔的具体分布参数（当前 §3.1 只给了量级），压测后按真实 CPU/内存曲线调整。
 - [ ] **把 botsvc 正式纳入部署**（若要常态化压测）：补 `Dockerfile`（build 阶段 `COPY botsvc/package.json` + `tsc -b` 列表加 botsvc + runtime `COPY --from=build .../botsvc/dist`）+ `docker-compose.cloud.yml` 一个 `botsvc` 服务（`NW_BOTSVC_ENABLED` 开关、默认不常开），避免每次都手动 `node:20` 容器现编现跑。
-- [ ] **排查排位对战 `reason=disconnect` 高发**（见上条生产压测发现）。
+- [~] **排查排位对战 `reason=disconnect` 高发**（见上条生产压测发现）——**已诊断 + 单进程内缓解（2026-07-14）**：
+  - **根因不是数据面链路**：干净 `base` 局能完整走完 `CF→caddy→gameserver`（中位 78s）。决定性证据是"连接→上报耗时"：`base` 78s vs `disconnect` 188s（拖到 ~128s 才掉 + 60s 宽限），断线局被明显**拖长**——排除了 CF 固定空闲超时和收尾竞态。300 在线时机器很闲（load 2.4/2 核、botsvc 单核 41%）断线率仍 ~78%，也排除"持续 CPU 打满"。
+  - **真正机制**：上千对局全塞在 botsvc **单进程/单事件循环**里，gameserver 每 `BATCH_MS=100` 向每房间广播 `frame_batch`（`Room.ts`）→ 几百局的 batch 每 100ms 聚成一波同步 CPU；某 bot 一旦落后，`confirmedTo` 冲前、单次 `advance()` 一口气 step 一大堆帧，把自己更狠饿住 → 更落后（恶性循环）→ 漏掉 `HEARTBEAT_MS=30_000` 心跳（连续两次漏判死，`gameserver/index.ts`）→ terminate → `GRACE_MS=60_000` 宽限 → 判 `disconnect`；`mismatch` 是同一失同步的状态哈希分叉。真人各自独立进程，不受此争抢影响。
+  - **本次修复（单进程削峰，未做 worker/多进程）**：① `advance(maxFrames)` 单次步进封顶 + battleSession 用 `setImmediate` 分块 drain，掐断"落后→大爆发→更落后"循环，两块之间让出事件循环给 ping/pong 和其他对局；② scheduler 防重入门闩 + 巡检有界并发（见 §3.1）。改动全在 botsvc，不碰数据面契约（心跳/batch 常量）。单测覆盖：分块 drain 与不封顶 drain 字节级一致（不改变/不 desync 模拟）、防重入短路、并发封顶。
+  - **仍待办**：VPS 以 300 target 重跑压测，验证 `base:disconnect` 比例是否从 ~5:1 显著下降（用 `docker logs --tail N --timestamps`，`--since` 因时钟偏差不准）；若 1000 并发仍受限于单核吞吐，再评估 worker_threads/多进程（另开任务）。

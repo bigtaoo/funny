@@ -133,15 +133,24 @@ export class BattleEngine {
   }
 
   /**
-   * Steps the engine through every newly-confirmed frame, deciding (and returning, for the caller to
+   * Steps the engine through newly-confirmed frames, deciding (and returning, for the caller to
    * submit) a new bot command whenever AISystem.decideTick fires. Call after every ingestFrameBatch.
+   *
+   * `maxFrames` caps how many frames are stepped in this one synchronous call. When a bot falls behind
+   * (its own frame processing was starved, so many batches arrive at once and `confirmedTo` jumps far
+   * ahead), an uncapped loop would step the whole backlog in one blocking burst — starving the event
+   * loop further and snowballing into a missed heartbeat/disconnect (BOTSVC_DESIGN §3.1). The caller
+   * chunks the catch-up across macrotasks and re-checks `hasMore`. Default Infinity = step to `playTo`
+   * in one call (the netplay contract is unchanged; capping only defers playback slightly, never desyncs).
    */
-  advance(): { toSubmit: Uint8Array[]; events: GameEvent[] } {
+  advance(maxFrames = Infinity): { toSubmit: Uint8Array[]; events: GameEvent[]; hasMore: boolean } {
     const toSubmit: Uint8Array[] = [];
     const events: GameEvent[] = [];
     // Hold playback one batch behind the watermark (absorbs sub-batch jitter, same as NetInputSource).
     const playTo = Math.max(this.startFrame, this.confirmedTo - BUFFER_FRAMES);
-    while (!this.gameOver && this.nextTickToStep <= playTo) {
+    let stepped = 0;
+    while (!this.gameOver && this.nextTickToStep <= playTo && stepped < maxFrames) {
+      stepped++;
       const tick = this.nextTickToStep;
       const cmds = this.cmdsByFrame.get(tick) ?? [];
       const tickEvents = this.engine.step(tick, cmds);
@@ -165,7 +174,8 @@ export class BattleEngine {
       }
       this.nextTickToStep++;
     }
-    return { toSubmit, events };
+    const hasMore = !this.gameOver && this.nextTickToStep <= playTo;
+    return { toSubmit, events, hasMore };
   }
 
   private captureResult(winnerOwner: 0 | 1 | null): void {

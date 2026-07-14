@@ -32,6 +32,7 @@ async function main(): Promise<void> {
     shedStartAt: env.shedStartAt,
     shedFullAt: env.shedFullAt,
     batchSize: 10,
+    upkeepConcurrency: env.upkeepConcurrency,
   });
 
   const server = startInternalHttp(

@@ -102,3 +102,50 @@ describe('BattleEngine netplay contract', () => {
     expect(run1.a.getResult().stateHash).not.toBe(run2.a.getResult().stateHash);
   });
 });
+
+/** Drains an engine to a standstill, returning every submitted command (as plain arrays for deep-eq). */
+function drainToStandstill(engine: BattleEngine, maxFrames?: number): number[][] {
+  const submitted: number[][] = [];
+  let hasMore = true;
+  while (hasMore) {
+    const { toSubmit, hasMore: more } = engine.advance(maxFrames);
+    for (const bytes of toSubmit) submitted.push(Array.from(bytes));
+    hasMore = more;
+  }
+  return submitted;
+}
+
+describe('BattleEngine.advance frame cap (BOTSVC_DESIGN §3.1 event-loop relief)', () => {
+  // A behind bot's backlog: one batch confirms far ahead of nextTickToStep, so a single uncapped
+  // advance() would step the whole thing at once. battleSession instead drains in maxFrames chunks
+  // across setImmediate. Feeding both an identical large backlog must yield byte-identical play —
+  // capping only defers, it must never change or desync the simulation.
+  function backlogFed(seed: number): BattleEngine {
+    const engine = new BattleEngine(matchStart(seed, 1), 10);
+    engine.ingestFrameBatch({ toFrame: 20_000, frames: [] }); // huge confirmed watermark, no opponent cmds
+    return engine;
+  }
+
+  it('chunked drain (maxFrames=6) matches an uncapped drain byte-for-byte', () => {
+    const uncapped = backlogFed(7777);
+    const chunked = backlogFed(7777);
+
+    const uncappedCmds = drainToStandstill(uncapped);
+    const chunkedCmds = drainToStandstill(chunked, 6);
+
+    expect(chunkedCmds).toEqual(uncappedCmds);
+    expect(chunked.isGameOver()).toBe(uncapped.isGameOver());
+    if (uncapped.isGameOver()) {
+      expect(chunked.getResult().stateHash).toBe(uncapped.getResult().stateHash);
+      expect(chunked.getResult().winnerSide).toBe(uncapped.getResult().winnerSide);
+    }
+  });
+
+  it('reports hasMore while a backlog remains and clears it once caught up', () => {
+    const engine = backlogFed(7777);
+    const first = engine.advance(6);
+    expect(first.hasMore).toBe(true); // 20k-frame backlog can't clear in 6 frames
+    drainToStandstill(engine, 6);
+    expect(engine.advance(6).hasMore).toBe(false); // nothing left to play
+  });
+});
