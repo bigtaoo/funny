@@ -45,6 +45,7 @@ claudedocs/      模块级快查文档（按需加载）
 
 ## 会话规则
 
+- **⚠️ 会话语言（重点）**：与用户对话首选**中文**，其次**英语**，再次**德语**；**不要使用其他任何语言**。（注意区分：代码/注释/commit/PR 仍用英文，见 `MEMORY.md` 语言约定。）
 - **worktree**：所有任务在独立 worktree + 独立分支；微小文档订正可直接提 main。约定见 [`claudedocs/worktrees.md`](claudedocs/worktrees.md)。
 - **工作目录**：仓库根目录（本机为 `D:\funny`）；用 Bash 工具，不要绕道 `wsl -d ubuntu`。
 - **权限**：所有命令直接执行，无需确认。
