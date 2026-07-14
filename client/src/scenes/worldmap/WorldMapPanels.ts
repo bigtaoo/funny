@@ -364,13 +364,13 @@ export class WorldMapPanels {
 
   panelButton(
     label: string, x: number, y: number, bw: number, bh: number,
-    fill: number, action: () => void,
+    fill: number, action: () => void, fontSize = 11,
   ): void {
     const ml = this.ctx.modalLayer;
     const bp = sketchPanel(bw, bh, { fill, border: C.accent, seed: seedFor(x, y, bw) });
     bp.x = x; bp.y = y;
     ml.addChild(bp);
-    const bl = txt(label, 11, C.light);
+    const bl = txt(label, fontSize, C.light);
     bl.anchor.set(0.5, 0.5);
     bl.x = x + bw / 2; bl.y = y + bh / 2;
     ml.addChild(bl);
@@ -423,8 +423,9 @@ export class WorldMapPanels {
     this.ctx.modalBtnRects = [];
 
     const { w, h } = this.ctx;
-    const pw = Math.min(340, w - 24);
-    const ph = 300;
+    const S = 2; // train panel is rendered at 2x scale vs other modals
+    const pw = Math.min(340 * S, w - 24);
+    const ph = Math.min(300 * S, h - HUD_H - 16);
     const px = (w - pw) / 2;
     const py = (h - HUD_H - ph) / 2;
 
@@ -437,7 +438,7 @@ export class WorldMapPanels {
     panel.x = px; panel.y = py;
     ml.addChild(panel);
 
-    const addText = (s: string, ty: number, size = 12, color: number = C.dark, cx = px + 14, anchorX = 0): PIXI.Text => {
+    const addText = (s: string, ty: number, size = 12 * S, color: number = C.dark, cx = px + 14 * S, anchorX = 0): PIXI.Text => {
       const lbl = txt(s, size, color);
       lbl.anchor.set(anchorX, 0);
       lbl.x = cx; lbl.y = ty;
@@ -445,21 +446,21 @@ export class WorldMapPanels {
       return lbl;
     };
 
-    let ly = py + 12;
+    let ly = py + 12 * S;
     // Title
-    const title = txt(t('world.trainTitle'), 14, C.accent);
+    const title = txt(t('world.trainTitle'), 14 * S, C.accent);
     title.anchor.set(0.5, 0); title.x = px + pw / 2; title.y = ly;
     ml.addChild(title);
-    ly += 26;
+    ly += 26 * S;
 
     // Resources + yield — hand-drawn motif icon (res_atlas, reused from the map tiles) + count,
     // replacing the earlier emoji glyphs. Falls back to emoji while the atlas is still decoding.
     const res = me.resources ?? {};
     const yield_ = me.yieldRate ?? {};
     const RES_EMOJI: Record<string, string> = { ink: '🖋️', paper: '📄', graphite: '✏️', metal: '🔩', sticker: '⭐' };
-    const RES_ICON = 16;
+    const RES_ICON = 16 * S;
     const layoutResRow = (types: string[], rowY: number): void => {
-      let rx = px + 14;
+      let rx = px + 14 * S;
       for (const key of types) {
         const amt = Math.floor(res[key] ?? 0);
         const yr = yield_[key];
@@ -468,19 +469,19 @@ export class WorldMapPanels {
         if (tex) {
           const sp = new PIXI.Sprite(tex);
           sp.width = sp.height = RES_ICON;
-          sp.x = rx; sp.y = rowY - 3;
+          sp.x = rx; sp.y = rowY - 3 * S;
           ml.addChild(sp);
-          rx += RES_ICON + 2;
-          rx += addText(valStr, rowY, 11, C.dark, rx).width + 14;
+          rx += RES_ICON + 2 * S;
+          rx += addText(valStr, rowY, 11 * S, C.dark, rx).width + 14 * S;
         } else {
-          rx += addText(`${RES_EMOJI[key]}${valStr}`, rowY, 11, C.dark, rx).width + 14;
+          rx += addText(`${RES_EMOJI[key]}${valStr}`, rowY, 11 * S, C.dark, rx).width + 14 * S;
         }
       }
     };
     layoutResRow(['ink', 'paper', 'graphite'], ly);
-    ly += 18;
+    ly += 18 * S;
     layoutResRow(['metal', 'sticker'], ly);
-    ly += 20;
+    ly += 20 * S;
 
     // Troops
     const inQ = (me.trainingQueue ?? []).reduce((s, e) => s + e.qty, 0);
@@ -488,66 +489,69 @@ export class WorldMapPanels {
     const cap = Math.floor(me.troopCap ?? 0);
     let troopLine = `${t('world.troops')} ${troops}/${cap}`;
     if (inQ > 0) troopLine += `  ·  ${t('world.trainInQueue').replace('{n}', String(inQ))}`;
-    addText(troopLine, ly, 12, C.red);
-    ly += 24;
+    addText(troopLine, ly, 12 * S, C.red);
+    ly += 24 * S;
 
     // Recruit row
-    addText(t('world.trainNew'), ly, 12);
-    ly += 20;
+    addText(t('world.trainNew'), ly, 12 * S);
+    ly += 20 * S;
     const ink = Math.floor(res['ink'] ?? 0);
     const capLeft = Math.max(0, cap - troops - inQ);
     const queueFull = (me.trainingQueue ?? []).length >= 2;
-    const bw = (pw - 28 - MARGIN * 2) / 3;
-    let bx = px + 14;
+    const bw = (pw - 28 * S - MARGIN * S * 2) / 3;
+    let bx = px + 14 * S;
     for (const n of TRAIN_PRESETS) {
       const cost = n * TRAIN_INK_PER;
       const ok = !queueFull && capLeft >= n && ink >= cost;
       this.panelButton(
-        `+${n}`, bx, ly, bw, 30,
+        `+${n}`, bx, ly, bw, 30 * S,
         ok ? C.dark : C.mid,
         () => { if (ok) void this.ctx.net.doTrain(n); else this.showToast(queueFull ? t('world.err.queueFull') : (capLeft < n ? t('world.err.troopCap') : t('world.err.noInk')), C.red); },
+        11 * S,
       );
-      bx += bw + MARGIN;
+      bx += bw + MARGIN * S;
     }
     // Max preset = min(batch cap, capacity left, ink-affordable)
     const maxQty = Math.min(TRAIN_BATCH_MAX, capLeft, Math.floor(ink / TRAIN_INK_PER));
     const maxOk = !queueFull && maxQty >= 1;
     this.panelButton(
-      maxOk ? `${t('world.trainMax')} +${maxQty}` : t('world.trainMax'), bx, ly, bw, 30,
+      maxOk ? `${t('world.trainMax')} +${maxQty}` : t('world.trainMax'), bx, ly, bw, 30 * S,
       maxOk ? C.red : C.mid,
       () => { if (maxOk) void this.ctx.net.doTrain(maxQty); else this.showToast(queueFull ? t('world.err.queueFull') : (capLeft < 1 ? t('world.err.troopCap') : t('world.err.noInk')), C.red); },
+      11 * S,
     );
-    ly += 38;
+    ly += 38 * S;
 
     // Queue
-    addText(t('world.trainQueue'), ly, 12);
-    ly += 18;
+    addText(t('world.trainQueue'), ly, 12 * S);
+    ly += 18 * S;
     const queue = me.trainingQueue ?? [];
     if (queue.length === 0) {
-      addText(t('world.trainQueueEmpty'), ly, 11, C.mid);
-      ly += 18;
+      addText(t('world.trainQueueEmpty'), ly, 11 * S, C.mid);
+      ly += 18 * S;
     } else {
       const now = Date.now();
       for (const e of queue) {
         const sec = Math.max(0, Math.ceil((e.completeAt - now) / 1000));
-        addText(`• ${t('world.trainEntry').replace('{n}', String(e.qty)).replace('{sec}', String(sec))}`, ly, 11, C.dark);
-        ly += 18;
+        addText(`• ${t('world.trainEntry').replace('{n}', String(e.qty)).replace('{sec}', String(sec))}`, ly, 11 * S, C.dark);
+        ly += 18 * S;
       }
       // One-tap coin speedup: enough coins to clear the whole queue.
       const lastDone = queue[queue.length - 1]!.completeAt;
       const remainSec = Math.max(0, Math.ceil((lastDone - now) / 1000));
       const coins = Math.max(1, Math.ceil(remainSec / TRAIN_SPEEDUP_PER_COIN));
-      ly += 4;
+      ly += 4 * S;
       this.panelButton(
         t('world.speedup').replace('{coins}', String(coins)),
-        px + 14, ly, pw - 28, 28, C.accent,
+        px + 14 * S, ly, pw - 28 * S, 28 * S, C.accent,
         () => void this.ctx.net.doSpeedup(coins),
+        12 * S,
       );
-      ly += 34;
+      ly += 34 * S;
     }
 
     // Close
-    this.panelButton(t('world.close'), px + pw / 2 - 50, py + ph - 34, 100, 28, C.dark, () => this.closeModal());
+    this.panelButton(t('world.close'), px + pw / 2 - 50 * S, py + ph - 34 * S, 100 * S, 28 * S, C.dark, () => this.closeModal(), 12 * S);
   }
 
   openInfoPanel(): void {
