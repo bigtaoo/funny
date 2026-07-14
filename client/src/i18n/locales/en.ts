@@ -1031,6 +1031,10 @@ export const en: Record<TranslationKey, string> = {
   'auction.created': 'Listing created',
   'auction.bought': 'Purchase successful',
   'auction.cancelled': 'Listing cancelled',
+  // My-Listings row status badge (non-open history)
+  'auction.statusSold': 'Sold',
+  'auction.statusExpired': 'Expired · returned',
+  'auction.statusCancelled': 'Cancelled',
   'auction.err.closed': 'Auction already closed',
   'auction.err.selfBuy': 'Cannot buy your own listing',
   'auction.err.insufficientFunds': 'Not enough coins',

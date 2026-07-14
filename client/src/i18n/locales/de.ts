@@ -1031,6 +1031,10 @@ export const de: Record<TranslationKey, string> = {
   'auction.created': 'Angebot erstellt',
   'auction.bought': 'Kauf erfolgreich',
   'auction.cancelled': 'Angebot storniert',
+  // Statusabzeichen der Angebotszeile (abgeschlossene Historie)
+  'auction.statusSold': 'Verkauft',
+  'auction.statusExpired': 'Abgelaufen · zurück',
+  'auction.statusCancelled': 'Storniert',
   'auction.err.closed': 'Auktion bereits beendet',
   'auction.err.selfBuy': 'Eigenes Angebot nicht kaufbar',
   'auction.err.insufficientFunds': 'Nicht genug Münzen',

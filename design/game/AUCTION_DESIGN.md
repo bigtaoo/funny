@@ -94,6 +94,8 @@
 - **时长**：`AUCTION_DURATIONS_SEC = [72h]`（固定，2026-07-05 起客户端不再提供时长选择）；`expireAt = createAt + durationSec`。
 - **过期不走 Mongo TTL**：TTL 自删会在结算前丢掉托管物（U13）→ 故意用**普通索引 `{expireAt:1}` + scheduler 扫描器**（每 2s tick，每批 ≤50 条，原子 `open→expired` + 退还卖方）。`§14.3` 表里「TTL {expireAt}」按此实现期决定改为普通索引。
 - **并发**：所有终态转移走 `findOneAndUpdate({status:'open'})` 原子认领 + `rev` 自增，防双花/重复结算。
+- **终态时间戳 `closedAt`**（2026-07-14）：每次 `open→sold/cancelled/expired` 转移都写 `closedAt=now`（`sold` 另留 `soldAt` 供审计向后兼容）。用途见下「我的挂单历史保留」。
+- **「我的挂单」历史 + 保留清理**（2026-07-14）：`getMyListings` 返回该卖家**所有状态**的挂单（`open` 按 `expireAt` 倒序在前，其后是保留期内的已结束历史），拉取上限 `MY_LISTINGS_FETCH_LIMIT=100`（大于 open 上限 `AUCTION_MAX_LISTINGS=20`，给历史留位）。客户端「我的挂单」行：`open` 显示「取消」按钮；`sold/cancelled/expired` 改显状态徽标（已售/已取消/已过期·已退回），不显倒计时、无可点区域。已结束挂单超过保留期（`AUCTION_CLOSED_RETENTION_SEC=30d`，≥ `AUDIT_WINDOW_SEC=7d` 以免误删审计窗口内的成交单）由 scheduler 每 1h 一次 `purgeClosedListings` 物理删除（`status≠open` 且 `closedAt`——旧文档回退 `expireAt`——早于 cutoff），防列表无限增长。`open` 挂单永不清理（仍持托管物/活跃竞价）。
 
 ---
 

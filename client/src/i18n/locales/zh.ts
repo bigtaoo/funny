@@ -1043,6 +1043,10 @@ export const zh = {
   'auction.created': '拍卖已发布',
   'auction.bought': '购买成功',
   'auction.cancelled': '拍卖已取消',
+  // 我的挂单行状态徽标（已结束的历史记录）
+  'auction.statusSold': '已售出',
+  'auction.statusExpired': '已过期·已退回',
+  'auction.statusCancelled': '已取消',
   'auction.err.closed': '拍卖已结束',
   'auction.err.selfBuy': '不能购买自己的拍卖',
   'auction.err.insufficientFunds': '金币不足',
