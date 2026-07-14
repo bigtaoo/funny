@@ -59,6 +59,15 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
     async applySiege(m: MarchDoc, pw: PlayerWorldDoc, t: number): Promise<void> {
       const { cols } = this.core.deps;
       const target = await cols.tiles.findOne({ _id: m.toTile });
+      // ADR-039 territory connectivity: the attacker's sect territory can shift during transit (an intervening
+      // loss can strand the attacker), so re-validate here before any capture branch — treat like a miss (refund).
+      // Capitals check against their whole 3×3 footprint (targetFootprintCells), not just the landed cell.
+      const footprint = this.core.targetFootprintCells(target, this.core.coordX(m.toTile), this.core.coordY(m.toTile));
+      if (!(await this.core.isConnectedToSectTerritory(m.worldId, m.ownerId, footprint))) {
+        await refundTroops(this.core, pw, m.troops, t);
+        void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
+        return;
+      }
       // Stronghold PvE capture (G8 §3.1): target has no owner and procedural type is stronghold → fight the ultra-strong system NPC garrison;
       // victory captures it as territory + grants a one-time rich reward; defeat causes surviving attackers to retreat and return. Intercept before the "miss and refund" branch.
       if (!target?.ownerId) {

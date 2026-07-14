@@ -55,6 +55,23 @@ function findCoord(
 // ADR-032 follow-up: resourceDensity=1.0 means 'neutral' tiles no longer occur; any occupiable land is 'resource'.
 const NEUTRAL = (t: ReturnType<typeof proceduralTile>) => t.type === 'resource' || t.type === 'neutral';
 
+/**
+ * ADR-039 territory connectivity: give `accountId` an owned tile bordering `target` via the instant/test-only
+ * occupyTile so a march to a far-away target clears the new gate.
+ */
+async function connect(svc: WorldService, accountId: string, target: { x: number; y: number }): Promise<void> {
+  const deltas: [number, number][] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  for (const [dx, dy] of deltas) {
+    const nx = target.x + dx, ny = target.y + dy;
+    if (nx < 0 || ny < 0 || nx >= SLG_MAP_W || ny >= SLG_MAP_H) continue;
+    const t = proceduralTile(W, nx, ny);
+    if (t.type === 'obstacle' || t.type === 'center' || t.type === 'bridge' || t.type === 'plankway' || t.type === 'stronghold') continue;
+    await svc.occupyTile(W, accountId, nx, ny);
+    return;
+  }
+  throw new Error('no connector neighbor found');
+}
+
 describe.skipIf(!mongo)('worldsvc reverse-vision push e2e (G5-2)', () => {
   const m = mongo!;
   let nowMs = 1_000_000;
@@ -95,6 +112,8 @@ describe.skipIf(!mongo)('worldsvc reverse-vision push e2e (G5-2)', () => {
     await svc.joinWorld(W, 'far', 400, 400);
 
     const dst = findCoord(NEUTRAL, 5, 40);
+    await connect(svc, 'a', dst); // ADR-039: border the target before marching
+    pushes = []; // clear the connector occupy's own push(es) so assertions below only see the march start
     await svc.startMarch(W, 'a', 5, 5, dst.x, dst.y, 'occupy', OCCUPY_MIN_TROOPS);
 
     // The marching player themselves receives the push.
@@ -139,6 +158,7 @@ describe.skipIf(!mongo)('worldsvc reverse-vision push e2e (G5-2)', () => {
       { $set: { _id: `${W}:${tgt.x}:${tgt.y}`, worldId: W, x: tgt.x, y: tgt.y, type: 'territory', level: 1, ownerId: 'def', garrison: 1, rev: 0 } },
       { upsert: true },
     );
+    await connect(svc, 'a', tgt); // ADR-039: border the target before attacking
     pushes = [];
 
     const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 800);
@@ -157,12 +177,15 @@ describe.skipIf(!mongo)('worldsvc reverse-vision push e2e (G5-2)', () => {
 
     // a's own occupy march.
     const aDst = findCoord(NEUTRAL, 5, 9);
+    await connect(svc, 'a', aDst); // ADR-039: border the target before marching
     await svc.startMarch(W, 'a', 5, 5, aDst.x, aDst.y, 'occupy', OCCUPY_MIN_TROOPS);
     // e's march: departure point (8,8) is within a's vision → the march is visible at departure (interp≈(8,8)).
     const eDst = findCoord(NEUTRAL, 8, 12);
+    await connect(svc, 'e', eDst);
     await svc.startMarch(W, 'e', 8, 8, eDst.x, eDst.y, 'occupy', OCCUPY_MIN_TROOPS);
     // far's march: remote, outside a's vision range.
     const fDst = findCoord(NEUTRAL, 400, 405);
+    await connect(svc, 'far', fDst);
     await svc.startMarch(W, 'far', 400, 400, fDst.x, fDst.y, 'occupy', OCCUPY_MIN_TROOPS);
 
     const marches = await svc.getMarches(W, 'a');

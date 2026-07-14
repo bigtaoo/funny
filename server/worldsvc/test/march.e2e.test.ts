@@ -57,6 +57,25 @@ function findCoord(
   throw new Error('no matching tile found');
 }
 
+/**
+ * ADR-039 territory connectivity: give 'a' an owned tile bordering `target` via the instant/test-only
+ * occupyTile (kept for exactly this purpose, see ADR-037) so a march to a far-away target clears the new
+ * gate. Costs GARRISON_PER_TILE troops from 'a's pool — callers that assert exact troop counts must account
+ * for it.
+ */
+async function connect(svc: WorldService, accountId: string, target: { x: number; y: number }): Promise<void> {
+  const deltas: [number, number][] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  for (const [dx, dy] of deltas) {
+    const nx = target.x + dx, ny = target.y + dy;
+    if (nx < 0 || ny < 0 || nx >= SLG_MAP_W || ny >= SLG_MAP_H) continue;
+    const t = proceduralTile(W, nx, ny);
+    if (t.type === 'obstacle' || t.type === 'center' || t.type === 'bridge' || t.type === 'plankway' || t.type === 'stronghold') continue;
+    await svc.occupyTile(W, accountId, nx, ny);
+    return;
+  }
+  throw new Error('no connector neighbor found');
+}
+
 describe.skipIf(!mongo)('worldsvc march e2e', () => {
   const m = mongo!;
   let nowMs = 1_000_000;
@@ -100,6 +119,7 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
     const npc = npcGarrison(procT.level);
     const troops = npc + 600;
     const expectedPath = findMarchPath(W, SLG_MAP_W, SLG_MAP_H, 5, 5, target.x, target.y, new Set());
+    await connect(svc, 'a', target); // ADR-039: border the target before marching (costs GARRISON_PER_TILE)
 
     const mv = await svc.startMarch(W, 'a', 5, 5, target.x, target.y, 'occupy', troops);
     expect(mv).toMatchObject({ kind: 'occupy', status: 'marching', troops });
@@ -108,7 +128,7 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
     expect(mv.toTile).toBe(tileId(W, target.x, target.y));
 
     // Troops deducted on departure (in transit).
-    expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - troops);
+    expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - GARRISON_PER_TILE - troops);
     // march_update pushed immediately on departure.
     expect(pushes.some((p) => p.msg.kind === 'march_update' && p.msg.status === 'marching')).toBe(true);
 
@@ -129,7 +149,7 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
 
     // Committed troops (minus any battle casualties) are neither a garrison yet nor refunded — they're holding the tile.
     let me = await svc.getMe(W, 'a');
-    expect(me.troops).toBe(TROOP_CAP_BASE - troops);
+    expect(me.troops).toBe(TROOP_CAP_BASE - GARRISON_PER_TILE - troops);
 
     // Hold elapses: ownership is finalized with the battle's surviving troops as garrison.
     nowMs = held.contestedUntil!;
@@ -140,9 +160,9 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
     expect(tile.garrison).toBeLessThanOrEqual(troops);
 
     me = await svc.getMe(W, 'a');
-    expect(me.territoryCount).toBe(10); // ADR-025: 9 base footprint cells + 1 marched-and-occupied tile
+    expect(me.territoryCount).toBe(11); // ADR-025: 9 base footprint cells + 1 ADR-039 connector tile + 1 marched-and-occupied tile
     // Troops converted to garrison; pool unchanged (still deducted).
-    expect(me.troops).toBe(TROOP_CAP_BASE - troops);
+    expect(me.troops).toBe(TROOP_CAP_BASE - GARRISON_PER_TILE - troops);
     const rt = procT.resType!;
     expect(me.yieldRate?.[rt]).toBeGreaterThan(0);
 
@@ -174,6 +194,7 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
   it('recall: return leg + troops refunded to pool on arrival', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const target = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 40, 40);
+    await connect(svc, 'a', target); // ADR-039: border the target before marching (costs GARRISON_PER_TILE)
     const mv = await svc.startMarch(W, 'a', 5, 5, target.x, target.y, 'occupy', OCCUPY_MIN_TROOPS);
 
     nowMs += Math.floor((mv.arriveAt - nowMs) / 2); // recall halfway through the march
@@ -183,11 +204,11 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
     expect(back.toTile).toBe(mv.fromTile);
 
     // Return leg in transit: troops still en route.
-    expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - OCCUPY_MIN_TROOPS);
+    expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - GARRISON_PER_TILE - OCCUPY_MIN_TROOPS);
     nowMs = back.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
-    // Troops returned to pool; target tile not occupied.
-    expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE);
+    // Troops returned to pool (minus the permanent ADR-039 connector tile); target tile not occupied.
+    expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - GARRISON_PER_TILE);
     expect((await svc.getTile(W, 'a', target.x, target.y)).mine).toBeUndefined();
   });
 
@@ -219,6 +240,7 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
   it('target already occupied by another player on arrival → refund troops (no capture, S8-3)', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const target = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 40, 40);
+    await connect(svc, 'a', target); // ADR-039: border the target before marching (costs GARRISON_PER_TILE)
     const mv2 = await svc.startMarch(W, 'a', 5, 5, target.x, target.y, 'occupy', OCCUPY_MIN_TROOPS);
 
     // While march is in transit, b directly occupies the tile (simulating protection period expired: write another player's territory directly).
@@ -236,8 +258,8 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
 
     nowMs = mv2.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
-    // a failed to capture; troops returned to pool; tile still belongs to b.
-    expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE);
+    // a failed to capture; troops returned to pool (minus the permanent ADR-039 connector tile); tile still belongs to b.
+    expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - GARRISON_PER_TILE);
     expect((await svc.getTile(W, 'a', target.x, target.y)).mine).toBeUndefined();
   });
 });

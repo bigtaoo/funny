@@ -43,6 +43,15 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       const proc = proceduralTile(m.worldId, x, y);
       const occ = await cols.tiles.findOne({ _id: m.toTile });
 
+      // ADR-039 territory connectivity: the occupier's sect territory can shift during transit; re-validate
+      // here before any capture branch — treat like a miss (refund), same as the ownership recheck below.
+      // occupy never targets a capital, so a single cell (no footprint resolution needed).
+      if (!(await this.core.isConnectedToSectTerritory(m.worldId, m.ownerId, [{ x, y }]))) {
+        await refundTroops(this.core, pw, m.troops, t);
+        void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
+        return;
+      }
+
       const blocked =
         proc.type === 'center' ||
         (occ?.ownerId != null && occ.ownerId !== m.ownerId) ||

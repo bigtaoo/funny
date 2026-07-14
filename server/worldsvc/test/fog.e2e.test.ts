@@ -125,6 +125,23 @@ function findCoord(
 // ADR-032 follow-up: resourceDensity=1.0 means 'neutral' tiles no longer occur; any occupiable land is 'resource'.
 const NEUTRAL = (t: ReturnType<typeof proceduralTile>) => t.type === 'resource' || t.type === 'neutral';
 
+/**
+ * ADR-039 territory connectivity: give `accountId` an owned tile bordering `target` via the instant/test-only
+ * occupyTile so a march to a far-away target clears the new gate.
+ */
+async function connect(svc: WorldService, accountId: string, target: { x: number; y: number }): Promise<void> {
+  const deltas: [number, number][] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  for (const [dx, dy] of deltas) {
+    const nx = target.x + dx, ny = target.y + dy;
+    if (nx < 0 || ny < 0 || nx >= SLG_MAP_W || ny >= SLG_MAP_H) continue;
+    const t = proceduralTile(W, nx, ny);
+    if (t.type === 'obstacle' || t.type === 'center' || t.type === 'bridge' || t.type === 'plankway' || t.type === 'stronghold') continue;
+    await svc.occupyTile(W, accountId, nx, ny);
+    return;
+  }
+  throw new Error('no connector neighbor found');
+}
+
 /** Spiral-search for a spawnable 3×3 base anchor near (sx,sy): whole footprint in-bounds + free of center/obstacle/gate/stronghold (mirrors joinWorld's footprintFree). */
 function findBaseCoord(sx: number, sy: number): { x: number; y: number } {
   for (let r = 0; r < 80; r++) {
@@ -228,6 +245,7 @@ describe.skipIf(!mongo)('worldsvc fog/vision e2e (G5)', () => {
     await svc.joinWorld(W, 'a', 5, 5);
     // March south to a distant neutral tile (outside base vision radius).
     const dst = findCoord(NEUTRAL, 5, 40);
+    await connect(svc, 'a', dst); // ADR-039: border the target before marching
     const mv = await svc.startMarch(W, 'a', 5, 5, dst.x, dst.y, 'occupy', 500);
 
     // Advance to the midpoint of the march: interpolated position is far from the base (y well beyond 5+VISION_BASE_RADIUS).

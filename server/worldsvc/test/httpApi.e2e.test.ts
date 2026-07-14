@@ -171,6 +171,21 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
   it('POST /world/march → occupy march (marching)', async () => {
     // acct-1 has already auto-settled (baseX,baseY); sending an occupy march to a neighbouring free tile.
     const free = findFreeNear(baseX, baseY, baseX, baseY);
+    // ADR-039 territory connectivity: findFreeNear's search order can land on a tile only diagonally touching
+    // the base footprint (not 4-directionally adjacent) — border it first via /world/occupy (test-only instant
+    // occupy, ADR-037) so the march clears the new gate. Try all 4 neighbors; skip obstacle/center/inside-footprint.
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
+      const nx = free.x + dx, ny = free.y + dy;
+      if (Math.abs(nx - baseX) <= 1 && Math.abs(ny - baseY) <= 1) continue; // inside the 3×3 base footprint
+      const t = proceduralTile(W, nx, ny).type;
+      if (t !== 'resource' && t !== 'neutral') continue;
+      const cr = await fetch(`${base}/world/occupy`, {
+        method: 'POST',
+        headers: { ...auth, 'content-type': 'application/json' },
+        body: JSON.stringify({ worldId: W, x: nx, y: ny }),
+      });
+      if (cr.status === 200) break;
+    }
     const r = await fetch(`${base}/world/march`, {
       method: 'POST',
       headers: { ...auth, 'content-type': 'application/json' },

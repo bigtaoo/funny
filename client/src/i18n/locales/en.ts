@@ -789,6 +789,7 @@ export const en: Record<TranslationKey, string> = {
   'world.err.notOwner': 'Not your territory',
   'world.err.notImpl': 'Feature not available yet',
   'world.err.pathBlocked': 'No passable route (terrain blocks the way)',
+  'world.err.notConnected': 'Target must border your sect\'s territory',
   // Military actions / siege (C2)
   'world.actAttack': 'Siege',
   'world.actReinforce': 'Reinforce',

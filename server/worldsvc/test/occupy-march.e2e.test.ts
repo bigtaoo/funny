@@ -66,6 +66,32 @@ function findCoord(
   throw new Error('no matching tile found');
 }
 
+/**
+ * ADR-039 territory connectivity: give `accountId` an owned tile bordering `target` via the instant/test-only
+ * occupyTile so a march to a far-away target clears the new gate. `avoid` lets two different players each
+ * claim a distinct neighbor of the same target (occupyTile rejects an already-owned tile).
+ */
+async function connect(
+  svc: WorldService,
+  accountId: string,
+  target: { x: number; y: number },
+  avoid: Set<string> = new Set(),
+): Promise<void> {
+  const deltas: [number, number][] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  for (const [dx, dy] of deltas) {
+    const nx = target.x + dx, ny = target.y + dy;
+    const key = `${nx}:${ny}`;
+    if (avoid.has(key)) continue;
+    if (nx < 0 || ny < 0 || nx >= SLG_MAP_W || ny >= SLG_MAP_H) continue;
+    const t = proceduralTile(W, nx, ny);
+    if (t.type === 'obstacle' || t.type === 'center' || t.type === 'bridge' || t.type === 'plankway' || t.type === 'stronghold') continue;
+    await svc.occupyTile(W, accountId, nx, ny);
+    avoid.add(key);
+    return;
+  }
+  throw new Error('no connector neighbor found');
+}
+
 describe.skipIf(!mongo)('worldsvc occupy-march e2e (ADR-037 §5.4)', () => {
   const m = mongo!;
   let nowMs = 1_000_000;
@@ -106,6 +132,7 @@ describe.skipIf(!mongo)('worldsvc occupy-march e2e (ADR-037 §5.4)', () => {
     const proc = proceduralTile(W, target.x, target.y);
     const npc = npcGarrison(proc.level);
     const troops = npc + 600; // comfortable margin (mirrors the siege e2e sweep test convention)
+    await connect(svc, 'a', target); // ADR-039: border the target before marching
 
     const mv = await svc.startMarch(W, 'a', 10, 10, target.x, target.y, 'occupy', troops);
     nowMs = mv.arriveAt;
@@ -140,6 +167,7 @@ describe.skipIf(!mongo)('worldsvc occupy-march e2e (ADR-037 §5.4)', () => {
   it('loses the PvE battle with insufficient troops → survivors refunded, tile remains neutral (no hold)', async () => {
     await svc.joinWorld(W, 'a', 10, 10);
     const target = findCoord((t) => t.type === 'resource' && t.level >= 4, 30, 30);
+    await connect(svc, 'a', target); // ADR-039: border the target before marching
     const troopsBefore = (await svc.getMe(W, 'a')).troops!;
 
     // OCCUPY_MIN_TROOPS-sized force is far below a level≥4 tile's system garrison.
@@ -167,6 +195,11 @@ describe.skipIf(!mongo)('worldsvc occupy-march e2e (ADR-037 §5.4)', () => {
     const target = findCoord((t) => t.type === 'resource' && t.level <= 2, 30, 30);
     const proc = proceduralTile(W, target.x, target.y);
     const npc = npcGarrison(proc.level);
+    // ADR-039: both a and b need territory bordering the target — distinct neighbor cells so occupyTile
+    // doesn't collide (avoid tracks which neighbor is already claimed).
+    const claimed = new Set<string>();
+    await connect(svc, 'a', target, claimed);
+    await connect(svc, 'b', target, claimed);
 
     // a occupies and wins the PvE battle → starts a hold.
     const mvA = await svc.startMarch(W, 'a', 10, 10, target.x, target.y, 'occupy', npc + 600);
