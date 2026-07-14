@@ -70,8 +70,15 @@ export class BotSession {
     this.accountId = login.accountId;
     this.gatewayUrl = login.gatewayUrl;
     if (!this.paymentBootstrapped) {
-      await this.bootstrapPaymentTier();
-      this.paymentBootstrapped = true;
+      // A purchase failing must not keep the bot offline — the account is logged in and can still
+      // play. This also lets the fleet run against a backend whose internal commercial port isn't
+      // reachable (e.g. an external load-gen fleet dialing only the public API surface).
+      try {
+        await this.bootstrapPaymentTier();
+        this.paymentBootstrapped = true;
+      } catch {
+        /* purchase unavailable this login; retried next login */
+      }
     }
     this.state = 'lobby_idle';
   }

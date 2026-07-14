@@ -175,6 +175,12 @@ const FAMILY_TASK_ACTION_MAP: Record<string, FamilyTaskAction> = {
   - **结果：满员 online 1000/1000 达标，全程各服务 `ERROR=0`、无崩溃/重启。** 内存与 Atlas 全程无压力（可用内存始终 ≥1.8GB，swap 几乎为 0；担心的 M0 512MB 存储 / 500 连接上限**均未触发**，零连接错误）。**CPU 是唯一瓶颈**：集中登录+开局的爬坡瞬时 load 冲到 ~7（2 核，约 3.5×），但稳态（~940–1000 在线）load 回落到 ~3.3（1.6×），机器扛得住。各服务里 botsvc 自身最吃 CPU（~60%，半核多），其次 socialsvc/worldsvc/gameserver。充值模拟基本没触发（commercial 数分钟 0 次）。
   - **发现真实问题（待查，非容量问题）**：排位对战结算 `reason` 严重偏向 `disconnect`（base : disconnect : mismatch ≈ 1 : 8~9 : 少量），干净打完的极少——与本机那次全 `reason=base` 形成对比。差别在于生产数据面要走 `bot → wss://api.gamestao.com/ws → Cloudflare → caddy → gameserver` 这一跳（CF 100s 空闲超时/延迟），叠加 CPU 超载把 lockstep 帧节奏拖断。这是 botsvc/数据面链路问题，不影响"服务器能否扛 1000 在线"的结论，但要专门排查（考虑数据面 WS 走内部地址而非绕公网、或放宽 lockstep 超时）。
   - 测试结束已 `docker rm -f nw-botsvc` 停掉、删掉含密钥的临时 env 文件；写进 Atlas 的 ~1000 个 `isBot` 账号及对局/SLG 数据**尚未清理**（清理需另写走服务端的脚本，谨慎操作生产库）。
+- [x] **单服务器容量上限测试（bot 离机版，2026-07-14）**：为把 botsvc 自身 CPU 从被测机剥离，用**本地机器**跑 700 bot（`NW_BOT_DEVICE_OFFSET=1000` → `bot-1001..1700`，避开 VPS 现有 `bot-0001..1000`），全程只走公网面（`https://api.gamestao.com/api|/social|/world`、`wss://.../gw`、数据面 `wss://.../ws`），叠加 VPS 上原有 300 bot，测线上 2 vCPU / 4GB Hetzner。为让 botsvc 能以"外部纯客户端"身份对着公网面跑，加了三个开关（capacity 信号不可达时降级为不 shed、付费 bootstrap 失败不阻塞上线、deviceId 偏移），另加 `NW_BOT_SPAWN_BATCH` 加速爬坡。
+  - **容量曲线**（total online → 15min load / 纯服务端 CPU，占 2 核 200%）：300→~3.0/~50%；400→2.8/~58%；600→3.0/~62%；800→4.0/~58%；**1000→~2.5/~60-70%**。内存全程 ~1.8GB used / ~1.9GB available 纹丝不动，Atlas 换成本机 `nw-mongo` 后仍无压力；**全程各服务 `ERROR=0`、无崩溃/重启**。
+  - **结论：2 核 /4GB 单机轻松扛住 1000 同时在线 + 排位对局 + SLG/家族巡检，未饱和**（稳态 load ~2.5 ≈ 1.25×/核）。纯服务端 CPU 由 **worldsvc + socialsvc（bot 每 tick 的 SLG/家族 REST 巡检）+ caddy（WS 中继）+ gameserver（帧中继）** 主导；matchsvc/gateway/meta/mongo/redis 几乎可忽略。
+  - **对真人的外推**：真人客户端各自独立进程，被测机上**根本没有 botsvc**——所以真实容量比上面还高（把 botsvc 那 ~30-47% CPU 让出来）。首个瓶颈是 CPU（非 RAM/DB），若纯服务端 ~65% 对 1000 近似线性，2 核饱和大致落在 **~2000-3000 同时在线**量级（bot 巡检节奏比真人更均匀密集，真实值需专门加压确认）。
+  - 观测中的次要现象：被测机变忙时 VPS 上那个 300-bot botsvc 的 CPU 从 ~47% 被挤到 ~27%（宿主争抢下 bot 进程让路），与 §8 断线排查同源（单进程事件循环争抢），不影响服务端容量结论。
+  - 遗留：本地 700 个 `bot-1001..1700` 账号已写入生产库，**未清理**（同 §8 上一批 ~1000）。
 - [ ] 会话时长/上线间隔的具体分布参数（当前 §3.1 只给了量级），压测后按真实 CPU/内存曲线调整。
 - [ ] **把 botsvc 正式纳入部署**（若要常态化压测）：补 `Dockerfile`（build 阶段 `COPY botsvc/package.json` + `tsc -b` 列表加 botsvc + runtime `COPY --from=build .../botsvc/dist`）+ `docker-compose.cloud.yml` 一个 `botsvc` 服务（`NW_BOTSVC_ENABLED` 开关、默认不常开），避免每次都手动 `node:20` 容器现编现跑。
 - [~] **排查排位对战 `reason=disconnect` 高发**（见上条生产压测发现）——**已诊断 + 单进程内缓解（2026-07-14）**：

@@ -19,6 +19,8 @@ export class Scheduler {
   private currentTarget: number;
   /** Re-entrancy guard: the process fires tick() on a fixed interval regardless of whether the previous pass finished. */
   private ticking = false;
+  /** One-shot flag so a persistently-unavailable capacity signal warns once, not every tick. */
+  private capacityWarned = false;
 
   constructor(
     private readonly pool: BotSession[],
@@ -66,13 +68,27 @@ export class Scheduler {
         await this.drainAll();
         return;
       }
-      const gatewayOnline = await this.capacity.onlineCount();
-      this.currentTarget = shedTarget({
-        targetOnline: this.opts.targetOnline,
-        currentOnline: gatewayOnline,
-        shedStartAt: this.opts.shedStartAt,
-        shedFullAt: this.opts.shedFullAt,
-      });
+      // A missing capacity signal must not halt scheduling — degrade to "no shedding" (full target)
+      // rather than throwing away the whole pass. Also lets an external load-gen fleet run without
+      // reach to gateway's internal /internal/stats (public routing doesn't expose it).
+      let gatewayOnline: number | undefined;
+      try {
+        gatewayOnline = await this.capacity.onlineCount();
+      } catch (e) {
+        if (!this.capacityWarned) {
+          console.warn('botsvc scheduler: capacity signal unavailable, shedding disabled:', (e as Error).message);
+          this.capacityWarned = true;
+        }
+      }
+      this.currentTarget =
+        gatewayOnline === undefined
+          ? this.opts.targetOnline
+          : shedTarget({
+              targetOnline: this.opts.targetOnline,
+              currentOnline: gatewayOnline,
+              shedStartAt: this.opts.shedStartAt,
+              shedFullAt: this.opts.shedFullAt,
+            });
 
       if (this.online.size < this.currentTarget) {
         await this.spawnUpTo(this.currentTarget);

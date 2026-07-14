@@ -27,6 +27,10 @@ export interface BotsvcEnv {
   battleChancePerTick: number;
   /** Max concurrent per-session upkeep chains per scheduler tick (BOTSVC_DESIGN §3.1); bounds REST fan-out and event-loop bursts. */
   upkeepConcurrency: number;
+  /** deviceId numbering offset (bot-{i+offset}); lets an externally-run fleet avoid colliding with an in-cluster fleet's bot-0001.. accounts. */
+  deviceOffset: number;
+  /** Max sessions logged in/out per scheduler tick (Scheduler batchSize); raise it to ramp a load-gen fleet up faster. */
+  spawnBatch: number;
 }
 
 function num(name: string, fallback: number): number {
@@ -52,5 +56,7 @@ export function loadBotsvcEnv(): BotsvcEnv {
     internalKey: process.env.NW_INTERNAL_KEY || 'dev-insecure-internal-key-change-me',
     battleChancePerTick: Number(process.env.NW_BOT_BATTLE_CHANCE ?? 0.05),
     upkeepConcurrency: num('NW_BOT_UPKEEP_CONCURRENCY', 20),
+    deviceOffset: num('NW_BOT_DEVICE_OFFSET', 0),
+    spawnBatch: num('NW_BOT_SPAWN_BATCH', 10),
   };
 }
