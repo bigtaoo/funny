@@ -1,6 +1,7 @@
 // Overlay stack drawn above the tile pool: the L3 batched overview, the off-map cloud/mist veil,
 // and the interactive overlay (selected-tile highlight, capital stars, march arrows).
 import { ISO_RATIO, tileToScreen, diamondPath, visibleTileBounds, clipConvexToRect } from '../../../render/isoGrid';
+import { occupyFrontierCells } from '../occupyFrontier';
 import { HUD_H } from '../constants';
 import { ENEMY_BASE_TINT, CLOUD_COLOR, tileColor, proceduralTileColor } from '../tileStyle';
 import { drawStar } from '../tileGraphics';
@@ -9,6 +10,7 @@ import { type Constructor, type WorldMapRendererBaseCtor } from './base';
 export interface FogHandlers {
   renderMapL3(): void;
   renderFog(): void;
+  renderOccupyFrontier(): void;
   renderOverlay(): void;
   renderMap(): void;
 }
@@ -108,11 +110,60 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
       g.lineStyle(0);
     }
 
+    /**
+     * Outline the occupiable "连地" frontier: neutral, occupiable tiles that are 4-directionally adjacent
+     * to the player's own or same-family territory (the own capital's 3×3 footprint counts as guaranteed
+     * initial territory even if a ring cell lost its ownerId). Solo players see their own border; family
+     * players additionally see family-shared borders. Sibling-family (same sect) frontier isn't marked —
+     * the client can't distinguish those tiles — but this is additive guidance, not a gate, so an
+     * un-highlighted tile is never wrongly blocked (the Occupy button is still offered; server validates).
+     */
+    renderOccupyFrontier(): void {
+      const me = this.ctx.me;
+      if (!me?.joined || this.ctx.zoom >= 3) return; // L1/L2 only
+      const g = this.ctx.overlayGfx;
+      const tp = this.ctx.tp;
+      const { w, h, panX, panY } = this.ctx;
+      const mapH = h - HUD_H;
+
+      const cells = occupyFrontierCells({
+        worldId: this.ctx.cb.worldId,
+        mapW: this.ctx.mapW,
+        mapH: this.ctx.mapH,
+        bounds: visibleTileBounds(w, mapH, panX, panY, tp),
+        mainBaseTile: me.mainBaseTile,
+        tileCache: this.ctx.tileCache,
+        parseAnchor: (id) => this.ctx.parseTileStrict(id),
+      });
+      if (cells.length === 0) return;
+
+      const diamond = diamondPath(tp);
+      g.lineStyle(Math.max(2, tp * 0.08), 0x37d67a, 0.9);
+      g.beginFill(0x37d67a, 0.14);
+      for (const { x, y } of cells) {
+        const s = tileToScreen(x, y, tp);
+        const cx = panX + s.x, cy = panY + s.y;
+        const pts: number[] = new Array(diamond.length);
+        for (let k = 0; k < diamond.length; k += 2) { pts[k] = diamond[k]! + cx; pts[k + 1] = diamond[k + 1]! + cy; }
+        g.drawPolygon(pts);
+      }
+      g.endFill();
+      g.lineStyle(0);
+    }
+
     renderOverlay(): void {
       this.renderFog();
       const g = this.ctx.overlayGfx;
       g.clear();
       const tp = this.ctx.tp;
+
+      // Occupy frontier highlight (三战/率土-style, ADR-039 连地): outline the neutral tiles that border
+      // the player's own/family territory and are therefore occupiable, so "which tiles can I take" is
+      // shown up front instead of eyeballed off the isometric projection (a grid-diagonal tile renders
+      // directly N/S/E/W and *looks* adjacent even though it only touches at a corner — see occupyConnected).
+      // 4-directional (shared-edge) adjacency, matching worldsvc isConnectedToSectTerritory. Guidance only;
+      // drawn under everything else. L1/L2 only (L3 bird's-eye is too dense for per-tile outlines).
+      this.renderOccupyFrontier();
 
       // Selected tile highlight — diamond outline centered on the tile (was a square
       // anchored at its top-left corner; tileToScreen gives the diamond center instead).
