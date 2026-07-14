@@ -75,7 +75,7 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
       // SLG social tab (S6-4)
       ...(worldApi ? {
         async loadSLGStatus() {
-          const myAccountId = platform.storage.getItem('nw_account_id') ?? '';
+          const myAccountId = saveManager.get().accountId;
           // Family membership lives in socialsvc and never depends on worldId, so it's
           // fetched concurrently with the world-shard resolve instead of after it.
           const [wid, fam] = await Promise.all([
