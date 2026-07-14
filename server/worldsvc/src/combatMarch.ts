@@ -76,6 +76,15 @@ export class MarchService {
       .project<{ x: number; y: number }>({ x: 1, y: 1 })
       .toArray();
     const blockedBaseKeys = new Set<string>(blockedBaseTiles.map((b) => `${b.x}:${b.y}`));
+    // Always keep the requester's own capital footprint passable, derived from mainBaseTile rather than
+    // per-cell ownerId: a legacy base whose ring cells lost their ownerId would otherwise be treated as an
+    // enemy building (missing ownerId matches the $nin above) and wall the owner's army inside its own city.
+    if (requesterPw?.mainBaseTile) {
+      const bx = this.core.coordX(requesterPw.mainBaseTile), by = this.core.coordY(requesterPw.mainBaseTile);
+      if (Number.isFinite(bx) && Number.isFinite(by)) {
+        for (const c of baseFootprintCells(bx, by)) blockedBaseKeys.delete(`${c.x}:${c.y}`);
+      }
+    }
     const path = findMarchPath(
       worldId,
       this.core.deps.mapW,
