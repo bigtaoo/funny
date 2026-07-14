@@ -1,5 +1,5 @@
 # Notebook Wars server image (C-3 / S1-M).
-# Single image hosts metaserver / gateway / matchsvc / gameserver / commercial / worldsvc / admin / socialsvc / analyticsvc / auctionsvc — all share @nw/shared, build once;
+# Single image hosts metaserver / gateway / matchsvc / gameserver / commercial / worldsvc / admin / socialsvc / analyticsvc / auctionsvc / botsvc — all share @nw/shared, build once;
 # compose uses `command` to select which process to run (node <service>/dist/index.js).
 #
 # Multi-stage:
@@ -22,9 +22,11 @@ COPY admin/package.json ./admin/
 COPY analyticsvc/package.json ./analyticsvc/
 COPY socialsvc/package.json ./socialsvc/
 COPY auctionsvc/package.json ./auctionsvc/
+COPY botsvc/package.json ./botsvc/
 RUN npm ci
 COPY . .
-RUN npx tsc -b shared engine metaserver gateway matchsvc gameserver commercial worldsvc admin analyticsvc socialsvc auctionsvc
+# botsvc's generated protobuf (src/generated/*.ts) is committed, so no proto codegen is needed here — plain tsc -b.
+RUN npx tsc -b shared engine metaserver gateway matchsvc gameserver commercial worldsvc admin analyticsvc socialsvc auctionsvc botsvc
 
 FROM node:20-alpine AS runtime
 WORKDIR /app
@@ -57,6 +59,10 @@ COPY --from=build /app/socialsvc/package.json ./socialsvc/package.json
 COPY --from=build /app/socialsvc/dist ./socialsvc/dist
 COPY --from=build /app/auctionsvc/package.json ./auctionsvc/package.json
 COPY --from=build /app/auctionsvc/dist ./auctionsvc/dist
+# botsvc runtime deps (ws, @bufbuild/protobuf) live in the shared node_modules already copied above;
+# @nw/engine (AISystem) + @nw/shared dist are copied above too. Only botsvc's own dist is missing.
+COPY --from=build /app/botsvc/package.json ./botsvc/package.json
+COPY --from=build /app/botsvc/dist ./botsvc/dist
 # meta reads contracts/openapi.yml; gateway/gameserver reads contracts/transport.proto at runtime (dist/*.js → /app/contracts).
 COPY --from=build /app/contracts ./contracts
 # Default: metaserver; gameserver overrides command in compose.
