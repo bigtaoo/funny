@@ -159,9 +159,9 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
             : march.kind === 'attack'   ? 0xcc3333
             : march.kind === 'reinforce'? 0x44aacc
             : march.kind === 'scout'    ? 0x9b59b6
-            : 0xcc8844;
-          // Faint full-length route trace, so the destination is still readable at a glance.
-          g.lineStyle(enemy ? 2.5 : 1.5, col, enemy ? 0.3 : 0.22);
+            : 0x00b8f0; // occupy/sweep: azure — more blue-leaning than the earlier teal, distinct from reinforce's muted blue-gray
+          // Full-length route trace — bold and opaque enough to read at a glance (was 1.5-2.5px @ 0.22-0.3 alpha, nearly invisible).
+          g.lineStyle(enemy ? 8 : 5, col, enemy ? 0.85 : 0.8);
           g.moveTo(fpx, fpy);
           g.lineTo(px, py);
           g.lineStyle(0);
