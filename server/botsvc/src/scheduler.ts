@@ -67,8 +67,9 @@ export class Scheduler {
     }
 
     for (const session of this.online) {
-      // Family upkeep is cheap and infrequent enough to run every tick; real cadence tuning is a post-load-test knob.
+      // Family and SLG upkeep are cheap and infrequent enough to run every tick; real cadence tuning is a post-load-test knob.
       await session.tickFamily().catch(() => undefined);
+      await session.tickSlg().catch(() => undefined);
     }
   }
 

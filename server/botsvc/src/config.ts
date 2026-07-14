@@ -17,6 +17,7 @@ export interface BotsvcEnv {
   shedFullAt: number;
   metaBaseUrl: string;
   socialBaseUrl: string;
+  worldBaseUrl: string;
   gatewayInternalUrl: string;
   commercialInternalUrl: string;
   internalKey: string;
@@ -38,6 +39,7 @@ export function loadBotsvcEnv(): BotsvcEnv {
     shedFullAt: num('NW_BOT_SHED_FULL_AT', 2800),
     metaBaseUrl: process.env.NW_META_BASE_URL || 'http://127.0.0.1:18080',
     socialBaseUrl: process.env.NW_SOCIAL_BASE_URL || 'http://127.0.0.1:8085',
+    worldBaseUrl: process.env.NW_WORLD_BASE_URL || 'http://127.0.0.1:18084',
     gatewayInternalUrl: process.env.NW_GATEWAY_INTERNAL_URL || 'http://127.0.0.1:8090',
     commercialInternalUrl: process.env.NW_COMMERCIAL_INTERNAL_URL || 'http://127.0.0.1:18082',
     internalKey: process.env.NW_INTERNAL_KEY || 'dev-insecure-internal-key-change-me',
