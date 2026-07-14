@@ -75,6 +75,11 @@ export interface SettingsSceneCallbacks {
   // ── rename (online only; absent → no rename UI) ──
   /** Coin cost of a rename; presence enables the rename button. */
   renameCost?: number;
+  /**
+   * True when the player still holds their one-time free rename (their current name is a system-assigned
+   * default they never chose). While true the rename button is free and always enabled regardless of balance.
+   */
+  freeRename?: boolean;
   /** Current server-authoritative coin balance. */
   getCoins?(): number;
   /** Spend coins to change the display name. */
@@ -304,16 +309,20 @@ export class SettingsScene implements Scene {
       this.container.addChild(rank);
     }
 
-    // Rename button (online only). Shows the coin cost; disabled if balance < cost.
+    // Rename button (online only). Free first rename for players who never chose a name; otherwise
+    // shows the coin cost and is disabled if the balance is short.
     if (this.cb.onRename && this.cb.renameCost != null) {
       const cost = this.cb.renameCost;
+      const free = this.cb.freeRename === true;
       const coins = this.cb.getCoins?.() ?? 0;
-      const affordable = coins >= cost && !this.bt.busy;
+      const enabled = (free || coins >= cost) && !this.bt.busy;
       const btnY = cardY + av + Math.round(h * 0.02);
-      const label = t('settings.rename', { cost });
-      this.addButton(label, btnY, affordable ? C.accent : C.light, affordable ? () => this.openRename() : null, Math.round(w * 0.46));
+      const label = free ? t('settings.renameFree') : t('settings.rename', { cost });
+      this.addButton(label, btnY, enabled ? C.accent : C.light, enabled ? () => this.openRename() : null, Math.round(w * 0.46));
 
-      const bal = txt(t('settings.coins', { coins }), Math.round(h * 0.022), C.mid);
+      // Free rename: show a hint instead of the balance line.
+      const sub = free ? t('settings.renameFreeHint') : t('settings.coins', { coins });
+      const bal = txt(sub, Math.round(h * 0.022), C.mid);
       bal.anchor.set(0, 0.5); bal.x = cardX; bal.y = btnY + Math.round(h * 0.07) + Math.round(h * 0.022);
       this.container.addChild(bal);
     }

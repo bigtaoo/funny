@@ -62,6 +62,7 @@ interface AccountDoc {
   oauth?: { provider: string; sub: string }[];  // 多个第三方（provider+sub 唯一）
   // 资料
   displayName?: string;
+  nameChosen?: boolean;              // 玩家是否主动定过名（注册带名/改过名）；缺省=当前名是系统默认，享一次免费改名
   isAnonymous: boolean;              // 仅有 device、无可恢复凭证 → true
 }
 ```
@@ -69,6 +70,8 @@ interface AccountDoc {
 **索引**：`deviceId`(sparse,unique)、`openid`(sparse,unique)、`password.loginId`(sparse,unique)、`oauth.provider+oauth.sub`(unique)。
 
 > `displayName` 注册/设备登录时可选，多数账号（尤其游客）从不主动设置。`getDisplayName`/`getProfile`（`accounts.ts`）读取时会懒惰回填一个随机默认昵称（`ensureDisplayName`，与 `ensurePublicId` 同一套模式），避免对战历史、房间玩家列表等处永久退化成显示裸 id。默认昵称由 `@nw/shared` 的 `randomPlayerName()` 生成：从 `playerNamePool.ts`（约 290 个真实玩家昵称，取样自 Hypixel/Minecraft 公开昵称数据集 `FlorianCassayre/nicknames-datasets`，CeCILL-B，经机器+人工清洗去数字垃圾/乱码/脏话/政治词）里随机取一个，约 1/6 概率追加短数字后缀（模拟真人重名加数字，绝大多数名字无数字）。因此游客与 botsvc 机器人（同走设备登录）在词汇、大小写、数字分布上都与真人玩家一致，无法一眼区分；刻意不含 Cadet/Recruit/Scholar 这类 NPC 词。matchsvc 匹配超时回退的 AI 对手名也用同一生成器。
+
+> **改名与一次免费机会**：改名（`POST /profile/rename`）默认扣 `RENAME_COST`（500 金币）。但从未主动定过名的玩家（游客、微信/OAuth，以及注册时跳过昵称字段的密码用户——他们顶着系统懒回填的默认名）享**一次免费改名**。判定用 `nameChosen`：注册时显式传 `displayName`、或任意一次改名成功，都会置 `nameChosen=true`；`ensureDisplayName` 的懒回填**不**置位（它只是默认名）。`profileRename` 先查 `hasFreeRename`（=`!nameChosen`）：为真则走免费路径（不扣费、不需要 commercial 服务，改名后置 `nameChosen`），否则走原扣费路径。`GET /save` 与改名响应都带 `freeRename` 布尔，客户端据此把改名按钮显示为「免费改名」且不受余额限制（见 `SettingsScene`）。
 
 > `isAnonymous`：只挂 device identity = true；一旦绑定 password/oauth/wx = false。联机/商店/充值要求 `isAnonymous=false`。
 

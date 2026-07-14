@@ -181,6 +181,9 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
 
   it('rename: deduct 500 coins → write display name → mirror balance; GET /save returns new name', async () => {
     comm.coins.set(accountId, 700);
+    // The device account never chose a name, so its first rename is free — consume it so this exercises the paid path.
+    await app.inject({ method: 'POST', url: '/profile/rename', headers: auth(), payload: { displayName: 'FreeFirst' } });
+    expect(comm.bal(accountId)).toBe(700); // free rename did not deduct
     const r = body(await app.inject({ method: 'POST', url: '/profile/rename', headers: auth(), payload: { displayName: '  NewName  ' } }));
     expect(r.ok).toBe(true);
     expect(r.data.displayName).toBe('NewName'); // trimmed
@@ -191,11 +194,14 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
 
   it('rename: insufficient balance → 402, name unchanged', async () => {
     comm.coins.set(accountId, 100);
+    // Consume the free first rename so the next one takes the paid path.
+    await app.inject({ method: 'POST', url: '/profile/rename', headers: auth(), payload: { displayName: 'FreeFirst' } });
     const before = body(await app.inject({ method: 'GET', url: '/save', headers: auth() })).data.displayName;
+    expect(before).toBe('FreeFirst');
     const r = await app.inject({ method: 'POST', url: '/profile/rename', headers: auth(), payload: { displayName: 'Broke' } });
     expect(r.statusCode).toBe(402);
     const save = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
-    expect(save.data.displayName).toBe(before); // unchanged — GET /save lazily backfills a default the first time it's read, not 'Broke'
+    expect(save.data.displayName).toBe(before); // unchanged — paid rename rejected
   });
 
   it('rename: empty name → 400', async () => {

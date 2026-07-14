@@ -14,6 +14,7 @@ import {
   changePassword,
   ensurePublicId,
   exchangeWxCode,
+  hasFreeRename,
   loginWithPassword,
   registerWithPassword,
   resolveByDevice,
@@ -301,12 +302,12 @@ export function AuthMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
     }
 
     /**
-     * Change display name (costs RENAME_COST coins). First deducts from commercial (name unchanged if insufficient balance);
-     * on success, writes the new name + mirrors the wallet back into the authoritative save + returns the new displayName.
-     * Requires login + commercial service available.
+     * Change display name. The first rename for a player who never deliberately chose a name (guests,
+     * WeChat/OAuth, or password users who skipped the name field — their current name is a system-assigned
+     * default) is **free**; every rename after that costs RENAME_COST coins. Requires login; the paid path
+     * additionally requires the commercial service.
      */
     async profileRename(req: FastifyRequest, reply: FastifyReply) {
-      if (!this.ensureCommercial(reply)) return;
       const accountId = accountIdOf(req);
       const { displayName } = req.body as { displayName: string };
       const nameErr = validateDisplayName(displayName);
@@ -314,6 +315,15 @@ export function AuthMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
       const name = displayName.trim();
 
       const { cols, commercial, now } = this.deps;
+
+      // One-time free rename for players who still carry a default name (never chose one).
+      if (await hasFreeRename(cols, accountId)) {
+        await setDisplayName(cols, accountId, name); // also marks nameChosen → subsequent renames are paid
+        const save = await getOrCreateSave(cols, accountId, now());
+        return ok({ save, displayName: name, freeRename: false });
+      }
+
+      if (!this.ensureCommercial(reply)) return;
       const orderId = randomUUID();
       const charge = await commercial.spend({ accountId, amount: RENAME_COST, reason: 'rename', orderId });
       if (!charge.ok) {
@@ -324,7 +334,7 @@ export function AuthMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
       }
       await setDisplayName(cols, accountId, name);
       const save = await mirrorCoins(cols, accountId, charge.coinsAfter, now());
-      return ok({ save, displayName: name });
+      return ok({ save, displayName: name, freeRename: false });
     }
   };
 }

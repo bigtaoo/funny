@@ -35,7 +35,7 @@ export interface SaveManagerOpts {
    * Account profile returned from the cloud; called back after bootstrap/refresh pulls it. Used for client persistence / UI refresh / online connectivity.
    * `gatewayUrl`: the control-plane WS address delivered by the server (not hardcoded on the client; see ApiClient.AuthResult).
    */
-  onProfile?: (profile: { displayName?: string; publicId?: string; gatewayUrl?: string }) => void;
+  onProfile?: (profile: { displayName?: string; publicId?: string; gatewayUrl?: string; freeRename?: boolean }) => void;
   /** Retrieve a local replay (ReplayStore); during L1 spot-check, offline flush uses replayId to fetch and upload for server re-validation (§8.6). */
   loadReplay?: (id: string) => Replay | null;
   /** Inject timer functions (for testing); defaults to globalThis. */
@@ -56,7 +56,7 @@ export class SaveManager {
   private readonly store: SaveStore;
   private readonly api?: ApiClient;
   private readonly getCredential?: () => Promise<AuthCredential>;
-  private readonly onProfile?: (profile: { displayName?: string; publicId?: string; gatewayUrl?: string }) => void;
+  private readonly onProfile?: (profile: { displayName?: string; publicId?: string; gatewayUrl?: string; freeRename?: boolean }) => void;
   private readonly loadReplay?: (id: string) => Replay | null;
   private readonly onSyncError?: () => void;
   private syncFailStreak = 0;     // consecutive upload failure count
@@ -152,6 +152,7 @@ export class SaveManager {
         displayName: cloud.displayName,
         publicId: auth.publicId ?? cloud.publicId,
         gatewayUrl: auth.gatewayUrl ?? cloud.gatewayUrl,
+        freeRename: cloud.freeRename,
       });
       await this.flushPending(); // settle clears that were queued offline
       await this.flushPendingStamina(); // settle stamina spends that were queued offline
@@ -178,6 +179,7 @@ export class SaveManager {
         displayName: cloud.displayName,
         publicId: cloud.publicId,
         gatewayUrl: cloud.gatewayUrl,
+        freeRename: cloud.freeRename,
       });
       await this.flushPending(); // settle clears queued offline after reconnection
       await this.flushPendingStamina(); // settle stamina spends queued offline after reconnection

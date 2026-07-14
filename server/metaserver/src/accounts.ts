@@ -122,7 +122,8 @@ export async function registerWithPassword(
         _id: accountId,
         createdAt: now,
         password: { loginId: norm, hash },
-        ...(displayName ? { displayName } : {}),
+        // Explicit name at registration counts as a deliberate choice → no free rename later.
+        ...(displayName ? { displayName, nameChosen: true } : {}),
         ...(region !== 'global' ? { region } : {}),
       },
     },
@@ -287,13 +288,26 @@ export async function searchAccounts(
   }));
 }
 
-/** Update the display name (rename feature; called after coins have already been deducted). */
+/**
+ * Update the display name (rename feature; called after coins have already been deducted, or for the
+ * one-time free rename). Always marks the name as deliberately chosen, so any subsequent rename is paid.
+ */
 export async function setDisplayName(
   cols: Collections,
   accountId: string,
   displayName: string,
 ): Promise<void> {
-  await cols.accounts.updateOne({ _id: accountId }, { $set: { displayName } });
+  await cols.accounts.updateOne({ _id: accountId }, { $set: { displayName, nameChosen: true } });
+}
+
+/**
+ * Whether the account still has its free rename available: true when the player has never deliberately
+ * chosen a display name (current name is a system-assigned default, or none yet). Drives both the free
+ * rename in profileRename and the `freeRename` hint returned with GET /save.
+ */
+export async function hasFreeRename(cols: Collections, accountId: string): Promise<boolean> {
+  const doc = await cols.accounts.findOne({ _id: accountId }, { projection: { nameChosen: 1 } });
+  return !doc?.nameChosen;
 }
 
 // ── OAuth (SA-2) ────────────────────────────────────────────────────────────

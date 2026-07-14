@@ -25,6 +25,8 @@
                     publicId: { type: string }
                     # Public gateway WS address (optional); absent on token re-login since there is no auth response, fetch from here instead.
                     gatewayUrl: { type: string }
+                    # True when the player still holds their one-time free rename (current display name is a system-assigned default). Client shows a free rename button.
+                    freeRename: { type: boolean }
       '401': { $ref: '#/components/responses/ErrorResp' }
   put:
     operationId: putSave

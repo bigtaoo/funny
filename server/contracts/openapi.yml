@@ -1299,7 +1299,7 @@ paths:
       operationId: profileRename
       tags:
         - profile
-      summary: Change display name (consumes coins; writes name and pushes save after successful deduction)
+      summary: Change display name (first rename is free if the player never chose a name; otherwise consumes coins)
       security:
         - bearerAuth: []
       requestBody:
@@ -1340,6 +1340,8 @@ paths:
                         $ref: '#/components/schemas/SaveData'
                       displayName:
                         type: string
+                      freeRename:
+                        type: boolean
         '400':
           $ref: '#/components/responses/ErrorResp'
         '401':
@@ -1384,6 +1386,8 @@ paths:
                         type: string
                       gatewayUrl:
                         type: string
+                      freeRename:
+                        type: boolean
         '401':
           $ref: '#/components/responses/ErrorResp'
     put:

@@ -12,8 +12,8 @@ export interface AuthApi {
   changePassword(oldPassword: string, newPassword: string): Promise<void>;
   deleteAccount(): Promise<{ confirmToken: string }>;
   recordGdprConsent(consent: boolean): Promise<void>;
-  getSave(): Promise<{ save: SaveData; displayName?: string; publicId?: string; gatewayUrl?: string }>;
-  rename(displayName: string): Promise<{ save: SaveData; displayName: string }>;
+  getSave(): Promise<{ save: SaveData; displayName?: string; publicId?: string; gatewayUrl?: string; freeRename?: boolean }>;
+  rename(displayName: string): Promise<{ save: SaveData; displayName: string; freeRename?: boolean }>;
   putSave(rev: number, patch: SyncPatch): Promise<PushResult>;
 }
 
@@ -69,24 +69,30 @@ export function AuthMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase &
 
     // ── save (S0-7) ─────────────────────────────────────────
     /** Fetch the current account's cloud save (also returns the display name + public id + gateway URL for use in the profile / online play). */
-    async getSave(): Promise<{ save: SaveData; displayName?: string; publicId?: string; gatewayUrl?: string }> {
+    async getSave(): Promise<{ save: SaveData; displayName?: string; publicId?: string; gatewayUrl?: string; freeRename?: boolean }> {
       const data = await this.request<{
         save: SaveData;
         displayName?: string;
         publicId?: string;
         gatewayUrl?: string;
+        freeRename?: boolean;
       }>('GET', '/save');
       return {
         save: data.save,
         displayName: data.displayName,
         publicId: data.publicId,
         gatewayUrl: data.gatewayUrl,
+        freeRename: data.freeRename,
       };
     }
 
-    /** Rename (costs coins). Returns the authoritative save + new display name; insufficient balance → ApiError('INSUFFICIENT_FUNDS'). */
-    async rename(displayName: string): Promise<{ save: SaveData; displayName: string }> {
-      return this.post<{ save: SaveData; displayName: string }>('/profile/rename', { displayName });
+    /**
+     * Rename. The first rename for a player who never chose a name is free; afterwards it costs coins
+     * (insufficient balance → ApiError('INSUFFICIENT_FUNDS')). Returns the authoritative save, the new
+     * display name, and `freeRename` (always false after a successful rename — the free one is consumed).
+     */
+    async rename(displayName: string): Promise<{ save: SaveData; displayName: string; freeRename?: boolean }> {
+      return this.post<{ save: SaveData; displayName: string; freeRename?: boolean }>('/profile/rename', { displayName });
     }
 
     /**
