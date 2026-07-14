@@ -75,6 +75,22 @@ function findCoord(
 const NON_BLOCKING = (t: ReturnType<typeof proceduralTile>): boolean =>
   t.type !== 'obstacle' && t.type !== 'bridge' && t.type !== 'plankway' && t.type !== 'center';
 
+/**
+ * ADR-039 territory connectivity: give `accountId` an owned tile bordering `target` via the instant/test-only
+ * occupyTile so an attack march to a far-away target clears the new gate. Costs GARRISON_PER_TILE troops.
+ */
+async function connect(svc: WorldService, accountId: string, target: { x: number; y: number }): Promise<void> {
+  const deltas: [number, number][] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  for (const [dx, dy] of deltas) {
+    const nx = target.x + dx, ny = target.y + dy;
+    if (nx < 0 || ny < 0 || nx >= SLG_MAP_W || ny >= SLG_MAP_H) continue;
+    if (!NON_BLOCKING(proceduralTile(W, nx, ny))) continue;
+    await svc.occupyTile(W, accountId, nx, ny);
+    return;
+  }
+  throw new Error('no connector neighbor found');
+}
+
 describe.skipIf(!mongo)('worldsvc siege e2e', () => {
   const m = mongo!;
   let nowMs = 1_000_000;
@@ -153,6 +169,7 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const tgt = findCoord(NON_BLOCKING, 10, 5);
     await setupDefender('b', tgt.x, tgt.y, { type: 'territory', garrison: 500, ink: 1000 });
+    await connect(svc, 'a', tgt); // ADR-039: border the target before attacking
 
     const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 800);
     expect(mv).toMatchObject({ kind: 'attack', status: 'marching', troops: 800 });
@@ -170,7 +187,7 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     expect(tile).toMatchObject({ type: 'territory', mine: true });
     expect(tile.garrison).toBeGreaterThan(0);
     const me = await svc.getMe(W, 'a');
-    expect(me.territoryCount).toBe(10); // ADR-025: 9 base footprint cells + 1 captured territory tile
+    expect(me.territoryCount).toBe(11); // ADR-025: 9 base footprint cells + 1 ADR-039 connector tile + 1 captured territory tile
     // Loot 25%: a +250 ink, b -250 → 750.
     expect(me.resources?.ink).toBe(Math.floor(1000 * SIEGE_LOOT_RATE));
     const bRes = (await svc.getMe(W, 'b')).resources;
@@ -191,14 +208,15 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     // Defender garrison must be large enough that the engine leaves survivors after the attacker is destroyed
     // (attacker 500 = siege minimum vs garrison 1000 → defender wins with garrison reduced but >0).
     await setupDefender('b', tgt.x, tgt.y, { type: 'territory', garrison: 1000 });
+    await connect(svc, 'a', tgt); // ADR-039: border the target before attacking (costs GARRISON_PER_TILE)
 
     const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 500);
-    expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - 500); // troops deducted on march
+    expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - GARRISON_PER_TILE - 500); // troops deducted on march
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
     // Defender wins (attacker 500 < garrison 1000, troop disadvantage → fully destroyed, no return march): attacker committed not returned to pool, garrison reduced but >0, tile still belongs to b.
-    expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - 500);
+    expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - GARRISON_PER_TILE - 500);
     const tile = await svc.getTile(W, 'b', tgt.x, tgt.y);
     expect(tile.mine).toBe(true);
     expect(tile.garrison).toBeGreaterThan(0);

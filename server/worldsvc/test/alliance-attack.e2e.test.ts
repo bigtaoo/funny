@@ -238,6 +238,10 @@ describe.skipIf(!mongo)('worldsvc alliance attack constraint e2e (R-3 / §8.2)',
       { _id: { $in: baseFootprintCells(enemyPos.x, enemyPos.y).map((c) => tileId(W, c.x, c.y)) } },
       { $unset: { protectedUntil: '' } },
     );
+    // ADR-039 territory connectivity: 'a's only territory is its own (far-away) base — give it a tile bordering
+    // the enemy base via the instant/test-only occupyTile (ADR-037) so the attack march clears the new gate.
+    const conn = { x: enemyPos.x + 2, y: enemyPos.y }; // just outside the enemy's 3×3 footprint (ring at ±1)
+    await svc.occupyTile(W, 'a', conn.x, conn.y);
     expect(await attackCode(enemyPos)).toBe('OK');
   });
 

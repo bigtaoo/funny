@@ -135,6 +135,29 @@ describe.skipIf(!mongo)('ADR-026 base siege e2e', () => {
     await m.collections.playerWorld.updateOne({ _id: pw._id }, { $set: pw }, { upsert: true });
   }
 
+  /**
+   * ADR-039 territory connectivity: give 'a' an owned tile bordering the target base so the arrival-time
+   * connectivity re-check in applySiege passes. arriveAttack bypasses startMarch's departure gate (it inserts
+   * the arrived MarchDoc directly to isolate the siege mechanic), but the arrival re-check still applies —
+   * and it checks the WHOLE conceptual 3×3 footprint anchored at (toX,toY), not just the exact cell, so the
+   * connector must sit two cells out (offset ±1 would land inside the footprint itself, which the connectivity
+   * check deliberately excludes from its own neighbor set — see coreVision.ts targetFootprintCells).
+   * Uses the instant/test-only occupyTile (kept for exactly this purpose, see ADR-037) — costs GARRISON_PER_TILE
+   * troops from 'a's pool, irrelevant to these tests' card-army siege-value assertions.
+   */
+  async function connectAttacker(toX: number, toY: number): Promise<void> {
+    const deltas: [number, number][] = [[-2, 0], [2, 0], [0, -2], [0, 2]];
+    for (const [dx, dy] of deltas) {
+      const nx = toX + dx, ny = toY + dy;
+      if (nx < 0 || ny < 0 || nx >= SLG_MAP_W || ny >= SLG_MAP_H) continue;
+      const t = proceduralTile(W, nx, ny);
+      if (t.type === 'obstacle' || t.type === 'center' || t.type === 'bridge' || t.type === 'plankway' || t.type === 'stronghold') continue;
+      await svc.occupyTile(W, 'a', nx, ny);
+      return;
+    }
+    throw new Error('no connector neighbor found');
+  }
+
   /** Inserts an already-arrived attack march by 'a' carrying a card army, then settles arrivals. */
   async function arriveAttack(toX: number, toY: number, army: TeamTemplate['army'], teamId = 't1'): Promise<void> {
     const doc: MarchDoc = {
@@ -177,6 +200,7 @@ describe.skipIf(!mongo)('ADR-026 base siege e2e', () => {
     const tgt = findCoord(20, 5);
     await setupBase(tgt.x, tgt.y, { hp: 100 }); // b has no teams → no defenders
     const army = await setupAttacker(3);         // siege value = sum of per-card siege value (3 × lichuang L1)
+    await connectAttacker(tgt.x, tgt.y);
     // Expected damage = the team's real per-card siege value (ADR-026), computed the same way as production.
     const expectedDamage = teamSiegeValue(army, cardInvByAccount['a']);
 
@@ -207,6 +231,7 @@ describe.skipIf(!mongo)('ADR-026 base siege e2e', () => {
     const tgt = findCoord(20, 5);
     await setupBase(tgt.x, tgt.y, { hp: 100 });
     const shieldArmy = await setupAttacker(3, 60, 'chenshou');
+    await connectAttacker(tgt.x, tgt.y);
     const expected = teamSiegeValue(shieldArmy, cardInvByAccount['a']);
 
     await arriveAttack(tgt.x, tgt.y, shieldArmy);
@@ -232,6 +257,7 @@ describe.skipIf(!mongo)('ADR-026 base siege e2e', () => {
       { upsert: true },
     );
     const army = await setupAttacker(3);
+    await connectAttacker(tgt.x, tgt.y);
 
     await arriveAttack(tgt.x, tgt.y, army);
     nowMs += SLG_SIEGE_DAMAGE_DELAY_MS + 1;
@@ -264,6 +290,7 @@ describe.skipIf(!mongo)('ADR-026 base siege e2e', () => {
     await setupBase(tgt.x, tgt.y, { hp: 100, teams, cardState: d.state });
     // Overwhelming attacker (20 cards) clears both single-card waves (each wave = team + a minimal engine base).
     const army = await setupAttacker(20);
+    await connectAttacker(tgt.x, tgt.y);
 
     await arriveAttack(tgt.x, tgt.y, army);
 
@@ -283,6 +310,7 @@ describe.skipIf(!mongo)('ADR-026 base siege e2e', () => {
     await setupBase(tgt.x, tgt.y, { hp: 100, teams: [{ id: 't1', name: 'Wall', army: d.army }], cardState: d.state });
     // Weak attacker (single card).
     const army = await setupAttacker(1);
+    await connectAttacker(tgt.x, tgt.y);
 
     await arriveAttack(tgt.x, tgt.y, army);
 
@@ -311,6 +339,7 @@ describe.skipIf(!mongo)('ADR-026 base siege e2e', () => {
       kind: 'attack', troops: 60, teamId: 't1', departAt: nowMs, arriveAt: nowMs + 10_000_000, status: 'marching', rev: 0,
     });
     const army = await setupAttacker(3);
+    await connectAttacker(tgt.x, tgt.y);
 
     await arriveAttack(tgt.x, tgt.y, army);
 

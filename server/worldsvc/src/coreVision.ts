@@ -5,6 +5,7 @@ import {
   playerWorldId,
   isInVision,
   marchInterpPos,
+  baseFootprintCells,
   VISION_MAX_RADIUS,
   type VisionSource,
 } from '@nw/shared';
@@ -167,6 +168,81 @@ export class WorldCoreVision extends WorldCoreSpawn {
   async pushTileToObservers(t: TileDoc, exclude: ReadonlySet<string>): Promise<void> {
     const observers = await this.visionObservers(t.worldId, [{ x: t.x, y: t.y }], exclude);
     for (const acct of observers) void this.pushTile(acct, t);
+  }
+
+  /**
+   * ADR-039: familyIds of the player's own family plus every sibling family in the same sect
+   * (NOT allied sects — alliance is diplomatic only and does not merge territory for connectivity
+   * purposes, unlike friendlyAccountIds' friendly-fire check which does include allies). No family →
+   * empty set (caller falls back to the player's own tiles only).
+   */
+  private async ownSectFamilyIds(worldId: string, accountId: string): Promise<Set<string>> {
+    const { cols } = this.deps;
+    const result = new Set<string>();
+    const myPw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+    if (!myPw?.familyId) return result;
+    result.add(myPw.familyId);
+    const [myFam] = await this.socialsvc.getFamiliesByIds([myPw.familyId]);
+    if (myFam?.sectId) {
+      const sectFams = await this.socialsvc.getFamiliesBySect(myFam.sectId);
+      for (const f of sectFams) result.add(f.familyId);
+    }
+    return result;
+  }
+
+  /**
+   * ADR-039 helper: which cells connectivity should check adjacency against for a given target — the whole
+   * 3×3 base footprint if the target is a capital (anchor or ring cell; anchor coords are parsed straight out
+   * of `baseAnchor`'s tileId string, no extra DB round-trip), otherwise just the single target cell. A
+   * capital's anchor is only ever bordered by its own ring cells, so checking the anchor alone would make
+   * capitals structurally unattackable — the footprint's outer perimeter is what attacking territory can
+   * actually reach.
+   */
+  targetFootprintCells(tile: TileDoc | null | undefined, x: number, y: number): { x: number; y: number }[] {
+    if (tile?.type === 'base') return baseFootprintCells(x, y);
+    if (tile?.baseRing && tile.baseAnchor) {
+      return baseFootprintCells(this.coordX(tile.baseAnchor), this.coordY(tile.baseAnchor));
+    }
+    return [{ x, y }];
+  }
+
+  /**
+   * ADR-039 territory connectivity ("连地"): true if any cell of `targetCells` is 4-directionally adjacent
+   * to a tile owned by the player, or by any fellow member of the player's sect (own family ∪ sibling
+   * families in the same sect — allied sects do NOT count; an alliance is a non-aggression pact, not a
+   * merged frontier). No family/sect → checks the player's own tiles only. Gates both occupy and attack
+   * march departure (startMarch) and is re-checked on arrival (sect territory can shift mid-flight);
+   * applies uniformly to regular tiles, capitals, and bridges/plankways since they all funnel through the
+   * same march/siege path. `targetCells` is the single target cell for ordinary tiles, or the WHOLE 3×3
+   * footprint for a capital (ADR-025: a capital's anchor is only ever bordered by its own ring cells, so
+   * checking the anchor alone would make capitals structurally unattackable — the outer perimeter of the
+   * footprint is what an attacker's territory can actually reach); callers resolve which applies.
+   */
+  async isConnectedToSectTerritory(
+    worldId: string,
+    accountId: string,
+    targetCells: readonly { x: number; y: number }[],
+  ): Promise<boolean> {
+    const { cols } = this.deps;
+    const famIds = await this.ownSectFamilyIds(worldId, accountId);
+    const ownerIds = famIds.size > 0
+      ? (await cols.playerWorld
+          .find({ worldId, familyId: { $in: [...famIds] } })
+          .project<{ accountId: string }>({ accountId: 1 })
+          .toArray()
+        ).map((p) => p.accountId)
+      : [accountId];
+    const targetKeys = new Set(targetCells.map((c) => `${c.x}:${c.y}`));
+    const neighbors = targetCells.flatMap(({ x, y }) => [
+      { x: x - 1, y }, { x: x + 1, y }, { x, y: y - 1 }, { x, y: y + 1 },
+    ]).filter((c) => !targetKeys.has(`${c.x}:${c.y}`)); // a footprint's own cells never count as their own neighbor
+    if (neighbors.length === 0) return false;
+    const n = await cols.tiles.countDocuments({
+      worldId,
+      ownerId: { $in: ownerIds },
+      $or: neighbors,
+    });
+    return n > 0;
   }
 
   async sameFamily(worldId: string, a: string, b: string): Promise<boolean> {

@@ -55,6 +55,8 @@ export const ErrorCode = {
   NO_PERMISSION: 'NO_PERMISSION',
   // —— S8-6.6 A* pathfinding ——
   PATH_BLOCKED: 'PATH_BLOCKED',
+  // —— ADR-039 territory connectivity ——
+  TERRITORY_NOT_CONNECTED: 'TERRITORY_NOT_CONNECTED', // target tile is not adjacent to any tile owned by the requester's sect (or own tiles, if unaffiliated)
   // —— S8-4b Sect ——
   SECT_FULL: 'SECT_FULL',
   NOT_IN_SECT: 'NOT_IN_SECT',
@@ -155,6 +157,7 @@ export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.BID_TOO_LOW]: 400,
   [ErrorCode.NO_PERMISSION]: 403,
   [ErrorCode.PATH_BLOCKED]: 400,
+  [ErrorCode.TERRITORY_NOT_CONNECTED]: 400,
   [ErrorCode.SECT_FULL]: 409,
   [ErrorCode.NOT_IN_SECT]: 403,
   [ErrorCode.ALREADY_IN_SECT]: 409,

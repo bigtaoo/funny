@@ -66,6 +66,22 @@ function findCoord(
 const NON_BLOCKING = (t: ReturnType<typeof proceduralTile>): boolean =>
   t.type !== 'obstacle' && t.type !== 'bridge' && t.type !== 'plankway' && t.type !== 'center';
 
+/**
+ * ADR-039 territory connectivity: give `accountId` an owned tile bordering `target` via the instant/test-only
+ * occupyTile so an attack march to a far-away target clears the new gate. Costs GARRISON_PER_TILE troops.
+ */
+async function connect(svc: WorldService, accountId: string, target: { x: number; y: number }): Promise<void> {
+  const deltas: [number, number][] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  for (const [dx, dy] of deltas) {
+    const nx = target.x + dx, ny = target.y + dy;
+    if (nx < 0 || ny < 0 || nx >= SLG_MAP_W || ny >= SLG_MAP_H) continue;
+    if (!NON_BLOCKING(proceduralTile(W, nx, ny))) continue;
+    await svc.occupyTile(W, accountId, nx, ny);
+    return;
+  }
+  throw new Error('no connector neighbor found');
+}
+
 describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
   const m = mongo!;
   let nowMs = 1_000_000;
@@ -194,6 +210,7 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
     const tgt = findCoord(NON_BLOCKING, 10, 5);
     await setupDefender('b', tgt.x, tgt.y, 500);
     await ownNation(provinceIdxAt(tgt.x, tgt.y), 'b');
+    await connect(svc, 'a', tgt); // ADR-039: border the target before attacking
 
     // Authoritative engine (G3-2b, §16 / ADR-026 siege-value tuning): 815 troops can defeat 500 defenders
     // (see control case below), but cannot defeat the nation-bonus-boosted floor(500*1.15)=575 effective
@@ -211,6 +228,7 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const tgt = findCoord(NON_BLOCKING, 10, 5);
     await setupDefender('b', tgt.x, tgt.y, 500); // b is given no capital
+    await connect(svc, 'a', tgt); // ADR-039: border the target before attacking
 
     // Same 815 troops, same march seed, but defender has no nationality bonus (500) → tile conquered, disproving hypothesis that the prior defender win was unrelated to nationality.
     const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 815);

@@ -430,6 +430,22 @@
   - `worldsvc`：`db.ts` 新增 `OccupationDoc` 集合 + `TileDoc.contestedBy/contestedUntil/contestedGarrison/contestedFamilyId`；`corePush.ts` 新增 `scheduleOccupation`/`unscheduleOccupation`；`combatSiege/occupation.ts`（新文件，`applyOccupy`/`applyOccupationExpulsion`/`processDueOccupations`，接入 `combatSiege.ts` 装配链）；`combatMarch.ts` 的 `occupy` 到达分支改为委托 `this.siege.applyOccupy`；`combatSiege/arrival.ts` 的 `applySiege` 放宽"目标无主但处于占领倒计时中"分支；`combat.ts`/`service.ts`/`scheduler.ts` 新增 `processDueOccupations` 透传。
   - 契约（`openapi-world.yml`）：`WorldTileView` 新增 `contestedUntil`/`contestedByMe`。
 
+## ADR-039 SLG 连地占领硬性规则（宗门级判定，含首府/桥栈道）— Accepted — 2026-07-14
+
+- **决策**（用户拍板）：三战「连地」升级为硬性规则——占领（`occupy`）/围攻（`attack`）目标格必须与本宗门已占领地 4 方向相邻，否则拒绝发起。此前 §4 的"连地才高效"只是软性效率加成（短行军距离 + 快速增援），本次改为强制前置校验。**普通领地/资源点/险地/州府/桥栈道一视同仁**，均须连地——首府/桥栈道不豁免，否则规则本身可被绕过。扫荡（`sweep`）与侦查（`scout`）不占地，不受限。
+- **为什么**：用户认为连地是三战的核心规则之一，能强制形成清晰前线、把"抱团"从口号变成机制，并解释"为什么必须一格格打过去才能抢到关键城池"。与既有环形版图结构（ADR-034：出生州→资源州→核心州）天然契合——加上连地后，宗门必须逐层推进才能摸到中心州首府，正好兑现该结构想要的"层层推进"叙事。
+- **核心规则**：
+  1. **判定范围 = 宗门级（不是家族级）**：宗门内所有成员家族的领地并集共同构成连地前沿，任一成员家族挨着目标格即可，不要求发起人自己家族恰好相邻。未加入家族 → 只认自己的领地；已加入家族但宗门未成立 → 判定范围=家族全体领地并集。
+  2. **盟友宗门领地不计入判定**——结盟（§8.2，`sect.allySectIds`）只是互不攻伐 + 桥栈道通行，不合并版图，否则"结盟"会变相等价于"合并宗门"。
+  3. **服务端两处强制**：`startMarch`（`combatMarch.ts`）的 `occupy`/`attack` 分支在发起时校验；到达时 `applySiege`（`combatSiege/arrival.ts`）与 `applyOccupy`（`combatSiege/occupation.ts`）再校验一次（行军途中宗门领地可能因丢地而断连），断连按"扑空"处理——退还部队 + 推送 `recalled`，与既有的"目标已非敌方所有"重校验同一套模式。不满足 → 新错误码 `TERRITORY_NOT_CONNECTED`（400）。
+  4. **判定函数**：`WorldCoreVision.isConnectedToSectTerritory(worldId, accountId, x, y)`（`coreVision.ts`）——4 方向邻接查询 `TileDoc.ownerId ∈ 宗门成员家族的 accountId 并集`；私有辅助 `ownSectFamilyIds` 与既有 `friendlyAccountIds` 同构但**不含盟友宗门**（这是两者唯一的差异点，友军攻击豁免要盟友、连地判定不要）。
+- **已知取舍（接受）**：先手/占据资源密集区的宗门会滚雪球更快，弱势宗门可能被堵死在外圈无法扩张——但一个大区真正对抗的宗门通常只有两三个，规则逼着弱势方要么被兼并要么结盟，符合"明确前线"的设计目的，不视为需要修正的缺陷。
+- **影响**：
+  - `@nw/shared`（`api.ts` 新增 `ErrorCode.TERRITORY_NOT_CONNECTED` + `ERROR_HTTP_STATUS` 映射）。
+  - `worldsvc`：`coreVision.ts` 新增 `ownSectFamilyIds`/`isConnectedToSectTerritory`；`combatMarch.ts` 的 `startMarch` occupy/attack 分支新增校验；`combatSiege/arrival.ts` 的 `applySiege`、`combatSiege/occupation.ts` 的 `applyOccupy` 到达时新增重校验。
+  - 文档：[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.1（表格标注）+ §4.1（新增，规则细节）。
+  - 测试：既有大量 e2e（`march`/`siege`/`occupy-march`/`alliance-attack`/`passage`/`base-siege` 等）的攻击目标此前多为"跨图直接打远处敌方基地"，在硬性连地规则下会被拒绝——受影响用例需改用既有的内部/测试专用 `TerritoryService.occupyTile()`（瞬占，见 ADR-037 段）预先铺垫"发起方宗门已占领相邻格"的前置状态，而不是重写测试所验证的核心断言。新增 `territory-connectivity.e2e.test.ts` 覆盖判定本身。
+
 ## ADR-038 废弃 `CollectionScene`，皮肤装备关系从全局单槏位改为逐卡独立 — Accepted — 2026-07-13
 
 - **决策**（用户拍板）：`CollectionScene`（纯图鉴+皮肤衣柜页）整页删除，功能拆解并入养成组：图鉴全集→生涯组（`CareerTabs`）新增页签、皮肤衣柜→养成组（`CardScene`）新增页签、背景故事 lore→角色卡详情弹窗翻转展示。**皮肤的装备关系**从 `SaveData.equipped: Record<slot, skinId>`（账号级单一全局槏位）改为**逐角色卡独立槏位**——每张卡各自可换皮肤，换后该卡卡图用皮肤形象展示；皮肤的**拥有关系**（库存/购买/抽卡渠道）不变。
