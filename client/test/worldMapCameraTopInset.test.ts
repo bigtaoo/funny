@@ -28,10 +28,15 @@ class FakeRendererBase {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const Renderer = ViewportMixin(FakeRendererBase as any);
 
-/** Same override, but clampPan is a no-op — isolates centerAt/setZoom's own pan math
- *  from clampPan's separate (also topInset-aware, tested on its own below) clamping. */
-class NoClampRenderer extends Renderer {
-  clampPan(): void {}
+/** Same renderer, but clampPan is stubbed to a no-op — isolates centerAt/setZoom's own pan
+ *  math from clampPan's separate (also topInset-aware, tested on its own below) clamping.
+ *  A plain instance override (rather than a `class ... extends Renderer` subclass) sidesteps
+ *  a TS quirk where re-extending a mixin-produced intersection constructor type loses the
+ *  inherited methods' parameter types. */
+function newNoClampRenderer(ctx: WorldMapContext): InstanceType<typeof Renderer> {
+  const r = new Renderer(ctx);
+  r.clampPan = () => {};
+  return r;
 }
 
 function makeCtx(overrides: Partial<WorldMapContext> & { tp?: number } = {}): WorldMapContext {
@@ -58,7 +63,10 @@ function makeCtx(overrides: Partial<WorldMapContext> & { tp?: number } = {}): Wo
   // sizes differ, so a fixed `tp` (same value regardless of `this.ctx.zoom`) would make
   // that test pass trivially. Mirror the real per-zoom-level tile size instead.
   const ZOOM_TP: Record<number, number> = { 1: 20, 2: 10, 3: 5 };
-  return { ...base, get tp() { return ZOOM_TP[this.zoom]!; } } as unknown as WorldMapContext;
+  return {
+    ...base,
+    get tp(): number { return ZOOM_TP[(this as { zoom: number }).zoom]!; },
+  } as unknown as WorldMapContext;
 }
 
 const BOTTOM = 800 - HUD_H; // 744 — bottom of the visible band, unaffected by topInset
@@ -105,7 +113,7 @@ describe('WorldMapRenderer viewport — topInset-aware camera math', () => {
 
   it('centerAt places the target tile at the vertical midpoint of the reserved band', () => {
     const ctx = makeCtx({ topInset: 80 });
-    const r = new NoClampRenderer(ctx);
+    const r = newNoClampRenderer(ctx);
     r.centerAt(5, 5);
 
     const s = tileToScreen(5, 5, ctx.tp);
@@ -115,7 +123,7 @@ describe('WorldMapRenderer viewport — topInset-aware camera math', () => {
     // Same call with topInset=0 must land the tile higher on screen (no header reserved) —
     // guards against centerAt silently ignoring topInset.
     const ctxNoInset = makeCtx({ topInset: 0 });
-    const r2 = new NoClampRenderer(ctxNoInset);
+    const r2 = newNoClampRenderer(ctxNoInset);
     r2.centerAt(5, 5);
     expect(ctxNoInset.panY).toBeLessThan(ctx.panY);
   });
@@ -133,7 +141,7 @@ describe('WorldMapRenderer viewport — topInset-aware camera math', () => {
 
   it('setZoom re-centers using the reserved-band midpoint, not the full-screen midpoint', () => {
     const ctx = makeCtx({ zoom: 1, topInset: 80, panX: 0, panY: 0 });
-    const r = new NoClampRenderer(ctx);
+    const r = newNoClampRenderer(ctx);
     (r as unknown as { buildPool(): void }).buildPool = vi.fn();
     (r as unknown as { invalidatePool(): void }).invalidatePool = vi.fn();
     r.setZoom(2);
@@ -141,7 +149,7 @@ describe('WorldMapRenderer viewport — topInset-aware camera math', () => {
     expect(ctx.panels.renderHud).toHaveBeenCalled();
 
     const ctxNoInset = makeCtx({ zoom: 1, topInset: 0, panX: 0, panY: 0 });
-    const r2 = new NoClampRenderer(ctxNoInset);
+    const r2 = newNoClampRenderer(ctxNoInset);
     (r2 as unknown as { buildPool(): void }).buildPool = vi.fn();
     (r2 as unknown as { invalidatePool(): void }).invalidatePool = vi.fn();
     r2.setZoom(2);
