@@ -5,6 +5,7 @@ export * from './api';
 export * from './jwt';
 export * from './ticket';
 export * from './password';
+export * from './playerNames';
 export * from './mongo';
 export * from './roomRegistry';
 export * from './ladder';

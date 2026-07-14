@@ -68,7 +68,7 @@ interface AccountDoc {
 
 **索引**：`deviceId`(sparse,unique)、`openid`(sparse,unique)、`password.loginId`(sparse,unique)、`oauth.provider+oauth.sub`(unique)。
 
-> `displayName` 注册/设备登录时可选，多数账号（尤其游客）从不主动设置。`getDisplayName`/`getProfile`（`accounts.ts`）读取时会懒惰回填一个随机默认昵称（`ensureDisplayName`，与 `ensurePublicId` 同一套模式），避免对战历史、房间玩家列表等处永久退化成显示裸 id。
+> `displayName` 注册/设备登录时可选，多数账号（尤其游客）从不主动设置。`getDisplayName`/`getProfile`（`accounts.ts`）读取时会懒惰回填一个随机默认昵称（`ensureDisplayName`，与 `ensurePublicId` 同一套模式），避免对战历史、房间玩家列表等处永久退化成显示裸 id。默认昵称由 `@nw/shared` 的 `randomPlayerName()` 生成：从 `playerNamePool.ts`（约 290 个真实玩家昵称，取样自 Hypixel/Minecraft 公开昵称数据集 `FlorianCassayre/nicknames-datasets`，CeCILL-B，经机器+人工清洗去数字垃圾/乱码/脏话/政治词）里随机取一个，约 1/6 概率追加短数字后缀（模拟真人重名加数字，绝大多数名字无数字）。因此游客与 botsvc 机器人（同走设备登录）在词汇、大小写、数字分布上都与真人玩家一致，无法一眼区分；刻意不含 Cadet/Recruit/Scholar 这类 NPC 词。matchsvc 匹配超时回退的 AI 对手名也用同一生成器。
 
 > `isAnonymous`：只挂 device identity = true；一旦绑定 password/oauth/wx = false。联机/商店/充值要求 `isAnonymous=false`。
 
