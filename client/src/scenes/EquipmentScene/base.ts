@@ -156,6 +156,18 @@ export class EquipmentSceneBase {
   protected hitRects: { rect: Rect; action: () => void }[] = [];
   protected modalHits: { rect: Rect; action: () => void }[] = [];
   protected modalOpen = false;
+  /**
+   * Detail-modal scale transform (popup-scale-to-80pct fix, 2026-07-14): the whole modal panel is
+   * drawn in a local (unscaled) frame onto {@link modalPanelRoot}, then that container is scaled up
+   * to fill 80% of the constrained screen axis. modalHits for anything drawn onto modalPanelRoot must
+   * be converted to real screen space via {@link toModalScreen} — identity (scale 1, origin 0) when
+   * no modal is open.
+   */
+  protected modalScale = 1;
+  protected modalOriginX = 0;
+  protected modalOriginY = 0;
+  /** Container for modal-panel content that should scale/position as one unit — see {@link modalScale}. */
+  protected modalPanelRoot!: PIXI.Container;
 
   protected toastTimer = 0;
   protected destroyed = false;
@@ -213,7 +225,7 @@ export class EquipmentSceneBase {
     this.loadingLayer.removeChildren();
     // Back button (header is static art; its hit lives here so re-render keeps it).
     // While assigning, Back cancels the card picker rather than leaving the scene.
-    this.hitRects.push({ rect: this.backRect, action: () => (this.assign ? this.cancelAssign() : this.cb.onBack()) });
+    this.hitRects.push({ rect: this.backRect, action: () => this.backAction() });
 
     this.renderHeaderCurrency();
     this.renderSidebar();
@@ -232,6 +244,12 @@ export class EquipmentSceneBase {
     else if (this.modalOpen) this.closeModal();
 
     if (this.bt.loadingVisible) drawLoadingOverlay(this.loadingLayer, this.w, this.h, this.bt.dots, t('common.processing'));
+  }
+
+  /** Header Back button behavior: cancels the card picker while assigning, otherwise leaves the scene. */
+  protected backAction(): void {
+    if (this.assign) this.cancelAssign();
+    else this.cb.onBack();
   }
 
   /**
@@ -352,6 +370,19 @@ export class EquipmentSceneBase {
     this.modalLayer.removeChildren();
     this.modalHits = [];
     this.modalOpen = false;
+    this.modalScale = 1;
+    this.modalOriginX = 0;
+    this.modalOriginY = 0;
+  }
+
+  /** Convert a rect drawn in {@link modalPanelRoot}'s local (unscaled) space into real screen space. */
+  protected toModalScreen(r: Rect): Rect {
+    return {
+      x: this.modalOriginX + r.x * this.modalScale,
+      y: this.modalOriginY + r.y * this.modalScale,
+      w: r.w * this.modalScale,
+      h: r.h * this.modalScale,
+    };
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -485,6 +516,10 @@ export class EquipmentSceneBase {
   protected handleDown(x: number, y: number): void {
     if (this.bt.busy) return;
     if (this.modalOpen) {
+      // The header Back button must stay reachable even with a detail/craft modal open — otherwise
+      // a tap there falls through to the modal's own dim-to-close catch-all and just closes the modal
+      // instead of leaving the scene (LOBBY_IA_REDESIGN back-button-always-works fix, 2026-07-14).
+      if (this.inRect(x, y, this.backRect)) { this.backAction(); return; }
       for (const { rect, action } of this.modalHits) {
         if (this.inRect(x, y, rect)) { action(); return; }
       }

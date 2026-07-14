@@ -49,21 +49,39 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
       const xpNeeded = maxLevel ? 1 : xpToNextLevel(card.level);
       const xpFrac = maxLevel ? 1 : Math.min(1, card.xp / xpNeeded);
 
+      // Natural (unscaled) content size — everything below is laid out in this local frame.
       const mw = Math.min(380, w - 24);
       // Content height: pad(12) + name(26) + portrait row(106) + injury(26|4) + skill(28) + xp(26) + gear(82) + button row(40).
       const contentH = 12 + 26 + 106 + (isInjured ? 26 : 4) + 28 + 26 + 82 + 40;
       const mh = Math.min(contentH, h - 60);
-      const mx = (w - mw) / 2;
-      const my = Math.max(this.headerH + 4, (h - mh) / 2);
+      const mx = 0;
+      const my = 0;
 
-      // Dim
+      // Scale the whole panel to fill 80% of the constrained screen axis — landscape fills height,
+      // portrait fills width — while keeping its natural aspect ratio (popup-scale fix, 2026-07-14).
+      const scale = this.landscape ? (h * 0.8) / mh : (w * 0.8) / mw;
+      const screenW = mw * scale;
+      const screenH = mh * scale;
+      const screenX = (w - screenW) / 2;
+      const screenY = Math.max(this.headerH + 4, (h - screenH) / 2);
+      this.modalScale = scale;
+      this.modalOriginX = screenX;
+      this.modalOriginY = screenY;
+
+      // Dim (covers the real screen, not the scaled panel)
       const dim = new PIXI.Graphics();
       dim.beginFill(MODAL_DIM, 0.45).drawRect(0, 0, w, h).endFill();
       ml.addChild(dim);
 
+      const panelRoot = new PIXI.Container();
+      panelRoot.position.set(screenX, screenY);
+      panelRoot.scale.set(scale);
+      ml.addChild(panelRoot);
+      this.modalPanelRoot = panelRoot;
+
       const panel = sketchPanel(mw, mh, { fill: C.paper, border: isInjured ? C.red : C.accent, width: 2, seed: seedFor(0, 5, mw) });
       panel.x = mx; panel.y = my;
-      ml.addChild(panel);
+      panelRoot.addChild(panel);
 
       let cy = my + 12;
 
@@ -71,12 +89,12 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
       const factionColor = def?.faction === 'anna' ? 0xcc4466 : 0x4477cc;
       const nameLbl = txt(t(`card.${card.defId}.name` as TranslationKey), 16, C.dark, true);
       nameLbl.x = mx + 12; nameLbl.y = cy;
-      ml.addChild(nameLbl);
+      panelRoot.addChild(nameLbl);
 
       const facStr = def ? t(`roster.faction.${def.faction}` as TranslationKey) : '';
       const facLbl = txt(facStr, 10, factionColor);
       facLbl.anchor.set(1, 0); facLbl.x = mx + mw - 12; facLbl.y = cy + 3;
-      ml.addChild(facLbl);
+      panelRoot.addChild(facLbl);
       cy += 26;
 
       // ── Portrait (left, tap to flip → lore) + stats column (right) ──
@@ -85,15 +103,15 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
       const portraitY = cy;
       const frame = sketchPanel(portraitBox, portraitBox, { fill: 0xf0eee7, border: factionColor, seed: seedFor(portraitX, portraitY, portraitBox) });
       frame.x = portraitX; frame.y = portraitY;
-      ml.addChild(frame);
+      panelRoot.addChild(frame);
       const artUrl = def ? UNIT_ART_URLS[def.unitType] : undefined;
       const loreText = t(`card.${card.defId}.lore` as TranslationKey);
       const faceLayer = new PIXI.Container();
       faceLayer.position.set(portraitX + portraitBox / 2, portraitY + portraitBox / 2);
-      ml.addChild(faceLayer);
+      panelRoot.addChild(faceLayer);
       this.drawDetailFace(faceLayer, portraitBox, artUrl, loreText, this.detailFlipped);
       this.modalHits.push({
-        rect: { x: portraitX, y: portraitY, w: portraitBox, h: portraitBox },
+        rect: this.toModalScreen({ x: portraitX, y: portraitY, w: portraitBox, h: portraitBox }),
         action: () => this.flipDetailPortrait(faceLayer, portraitBox, artUrl, loreText),
       });
 
@@ -106,12 +124,12 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
         const badgeY = portraitY + portraitBox - badgeSize + 4;
         const badge = sketchPanel(badgeSize, badgeSize, { fill: C.dark, border: C.gold, seed: seedFor(badgeX, badgeY, badgeSize) });
         badge.x = badgeX; badge.y = badgeY;
-        ml.addChild(badge);
+        panelRoot.addChild(badge);
         const ic = buildIcon('brush', badgeSize - 8, C.gold);
         ic.x = badgeX + 4; ic.y = badgeY + 4;
-        ml.addChild(ic);
+        panelRoot.addChild(ic);
         this.modalHits.push({
-          rect: { x: badgeX, y: badgeY, w: badgeSize, h: badgeSize },
+          rect: this.toModalScreen({ x: badgeX, y: badgeY, w: badgeSize, h: badgeSize }),
           action: () => { this.skinPickerOpen = !this.skinPickerOpen; this.render(); },
         });
       }
@@ -120,12 +138,12 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
       let statY = portraitY + 2;
       const lvLine = txt(t('roster.level').replace('{lv}', String(card.level)), 13, C.mid, true);
       lvLine.x = statX; lvLine.y = statY;
-      ml.addChild(lvLine);
+      panelRoot.addChild(lvLine);
       statY += 20;
 
       const pwrLine = txt(`${t('roster.power')} ${power}`, 13, C.dark, true);
       pwrLine.x = statX; pwrLine.y = statY;
-      ml.addChild(pwrLine);
+      panelRoot.addChild(pwrLine);
       statY += 20;
 
       // Troop cap
@@ -134,13 +152,13 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
         : `${t('roster.troopCap')}: ${cap}`;
       const troopLine = txt(troopStr, 11, state !== undefined && state.currentTroops >= cap ? C.gold : C.dark);
       troopLine.x = statX; troopLine.y = statY;
-      ml.addChild(troopLine);
+      panelRoot.addChild(troopLine);
       statY += 18;
 
       if (inTeam) {
         const tag = txt(`[${t('roster.inTeam')}]`, 10, C.accent, true);
         tag.x = statX; tag.y = statY;
-        ml.addChild(tag);
+        panelRoot.addChild(tag);
         statY += 16;
       }
 
@@ -150,18 +168,18 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
       if (isInjured && state?.injuredUntil) {
         const injLine = txt(t('roster.injured').replace('{time}', injuryCountdown(state.injuredUntil, now)), 11, C.red);
         injLine.x = mx + 12; injLine.y = cy;
-        ml.addChild(injLine);
+        panelRoot.addChild(injLine);
 
         if (this.cb.recoverCard && !this.bt.busy) {
           const recBtnW = 110;
           const recBtn = sketchPanel(recBtnW, 22, { fill: 0xf0e0e0, border: C.red, seed: seedFor(cy, 3, recBtnW) });
           recBtn.x = mx + mw - 12 - recBtnW; recBtn.y = cy - 1;
-          ml.addChild(recBtn);
+          panelRoot.addChild(recBtn);
           const recLbl = txt(t('roster.recoverBtn'), 10, C.dark);
           recLbl.anchor.set(0.5, 0.5); recLbl.x = recBtn.x + recBtnW / 2; recLbl.y = recBtn.y + 11;
-          ml.addChild(recLbl);
+          panelRoot.addChild(recLbl);
           this.modalHits.push({
-            rect: { x: recBtn.x, y: recBtn.y, w: recBtnW, h: 22 },
+            rect: this.toModalScreen({ x: recBtn.x, y: recBtn.y, w: recBtnW, h: 22 }),
             action: () => void this.doRecover(card.id),
           });
         }
@@ -176,7 +194,7 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
       const skillLine = txt(`${t('roster.skill')}: ${t(skillKey)}`, 11, hasSkill ? C.accent : C.mid);
       skillLine.x = mx + 12; skillLine.y = cy;
       skillLine.style.wordWrap = true; skillLine.style.wordWrapWidth = mw - 24;
-      ml.addChild(skillLine);
+      panelRoot.addChild(skillLine);
       cy += 28;
 
       // XP progress bar
@@ -184,17 +202,17 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
       const barH = 10;
       const barBg = new PIXI.Graphics();
       barBg.beginFill(0xe0ddd4).drawRoundedRect(mx + 12, cy, barW, barH, 4).endFill();
-      ml.addChild(barBg);
+      panelRoot.addChild(barBg);
       if (!maxLevel && xpFrac > 0) {
         const barFill = new PIXI.Graphics();
         barFill.beginFill(C.accent).drawRoundedRect(mx + 12, cy, Math.max(4, barW * xpFrac), barH, 4).endFill();
-        ml.addChild(barFill);
+        panelRoot.addChild(barFill);
       }
       const xpLbl = maxLevel
         ? txt(t('roster.maxLevel'), 10, C.gold, true)
         : txt(`${card.xp} / ${xpNeeded} XP`, 10, C.mid);
       xpLbl.anchor.set(0.5, 0); xpLbl.x = mx + mw / 2; xpLbl.y = cy + 12;
-      ml.addChild(xpLbl);
+      panelRoot.addChild(xpLbl);
       cy += 26;
 
       // Gear slots (3 slots; tap each to open equipment scene)
@@ -228,11 +246,11 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
         const x = mx + 12 + i * (bw + gap);
         const g = sketchPanel(bw, btnH, { fill: b.on ? b.fill : C.btnOff, border: b.on ? b.stroke : C.mid, seed: seedFor(i, 6, bw) });
         g.x = x; g.y = btnY;
-        ml.addChild(g);
+        panelRoot.addChild(g);
         const lbl = txt(b.label, 11, b.on ? (b.fill === 0xeeeedd || b.fill === 0xf5f0e8 ? C.dark : C.light) : C.mid);
         lbl.anchor.set(0.5, 0.5); lbl.x = x + bw / 2; lbl.y = btnY + btnH / 2;
-        ml.addChild(lbl);
-        if (b.on) this.modalHits.push({ rect: { x, y: btnY, w: bw, h: btnH }, action: b.fn });
+        panelRoot.addChild(lbl);
+        if (b.on) this.modalHits.push({ rect: this.toModalScreen({ x, y: btnY, w: bw, h: btnH }), action: b.fn });
       });
 
       // Skin picker popover (change-skin badge tapped) — floats over the rest of the modal; a tap
@@ -245,25 +263,26 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
           ...ownedForChar.map((id) => ({ id, label: id })),
         ];
         const pH = options.length * (rowH + rowGap) + 8;
+        // Covers the real screen (not just the scaled panel), so the picker reads as fully modal.
         const dim2 = new PIXI.Graphics();
         dim2.beginFill(MODAL_DIM, 0.5).drawRect(0, 0, w, h).endFill();
         ml.addChild(dim2);
         const popup = sketchPanel(pW, pH, { fill: C.paper, border: C.gold, width: 2, seed: seedFor(pX, pY, pW) });
         popup.x = pX; popup.y = pY;
-        ml.addChild(popup);
+        panelRoot.addChild(popup);
         const equippedNow = this.cb.getEquippedSkin(unitType);
         options.forEach((opt, i) => {
           const ry = pY + 4 + i * (rowH + rowGap);
           const isEq = opt.id === equippedNow;
           const row = sketchPanel(pW - 8, rowH, { fill: isEq ? C.dark : 0xf5f0e8, border: isEq ? C.green : C.mid, seed: seedFor(i, ry, pW) });
           row.x = pX + 4; row.y = ry;
-          ml.addChild(row);
+          panelRoot.addChild(row);
           const lbl = txt(opt.label, 11, isEq ? C.light : C.dark, true);
           lbl.anchor.set(0.5, 0.5); lbl.x = pX + pW / 2; lbl.y = ry + rowH / 2;
-          ml.addChild(lbl);
+          panelRoot.addChild(lbl);
           if (!isEq) {
             this.modalHits.push({
-              rect: { x: pX + 4, y: ry, w: pW - 8, h: rowH },
+              rect: this.toModalScreen({ x: pX + 4, y: ry, w: pW - 8, h: rowH }),
               action: () => { this.cb.equipSkin(unitType, opt.id); this.skinPickerOpen = false; this.render(); },
             });
           }
@@ -272,7 +291,7 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
       }
 
       // Tap outside to close
-      this.modalHits.push({ rect: { x: mx, y: my, w: mw, h: mh }, action: () => {} });
+      this.modalHits.push({ rect: this.toModalScreen({ x: mx, y: my, w: mw, h: mh }), action: () => {} });
       this.modalHits.push({ rect: { x: 0, y: 0, w, h }, action: () => this.closeDetail() });
     }
 
@@ -324,6 +343,7 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
       const cellW = (mw - 24 - 8 * 2) / 3;
       const cellH = 74;
       const iconSize = Math.min(cellW, cellH) - 26;
+      const root = this.modalPanelRoot;
 
       EQUIP_SLOTS.forEach((slot, i) => {
         const x = mx + 12 + i * (cellW + 8);
@@ -331,7 +351,7 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
         const inst = instId ? save.equipmentInv?.[instId] : undefined;
         const cell = sketchPanel(cellW, cellH, { fill: 0xf0eeea, border: inst ? C.accent : C.mid, seed: seedFor(i, 8, cellW) });
         cell.x = x; cell.y = cy;
-        this.modalLayer.addChild(cell);
+        root.addChild(cell);
 
         const iconCx = x + cellW / 2;
         const iconCy = cy + 6 + iconSize / 2;
@@ -341,28 +361,28 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
           sp.anchor.set(0.5);
           sp.scale.set(iconSize / 128);
           sp.position.set(iconCx, iconCy);
-          this.modalLayer.addChild(sp);
+          root.addChild(sp);
         } else {
           const gfx = new PIXI.Graphics();
           drawEquipmentGlyph(gfx, slot, inst?.rarity ?? 'common', iconSize, seedFor(i, 8, cellW));
           gfx.position.set(iconCx, iconCy);
           gfx.alpha = inst ? 1 : 0.3;
-          this.modalLayer.addChild(gfx);
+          root.addChild(gfx);
         }
 
         const slotLbl = txt(t(`equip.slot.${slot}` as TranslationKey), 9, inst ? C.mid : C.light);
         slotLbl.anchor.set(0.5, 0); slotLbl.x = iconCx; slotLbl.y = cy + cellH - 16;
-        this.modalLayer.addChild(slotLbl);
+        root.addChild(slotLbl);
 
         if (inst) {
           const badge = txt(`+${inst.level}`, 10, C.dark, true);
           badge.anchor.set(1, 0); badge.x = x + cellW - 4; badge.y = cy + 4;
-          this.modalLayer.addChild(badge);
+          root.addChild(badge);
         }
 
         if (this.cb.openEquipment && !this.bt.busy) {
           this.modalHits.push({
-            rect: { x, y: cy, w: cellW, h: cellH },
+            rect: this.toModalScreen({ x, y: cy, w: cellW, h: cellH }),
             action: () => { this.closeModal(); this.cb.openEquipment!(card.id); },
           });
         }

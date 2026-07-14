@@ -45,29 +45,47 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       const maxed = inst.level >= EQUIP_MAX_LEVEL;
       const salvageable = inst.level <= SALVAGE_MAX_LEVEL && !equipped && !inst.locked;
 
+      // Natural (unscaled) content size — everything below is laid out in this local frame.
       const mw = Math.min(330, w - 24);
       const affixCount = inst.affixes.length;
       const protectCount = save.inventory?.items?.[PROTECT_ENHANCE_ITEM_ID] ?? 0;
       // Extra 22px for the protect-item row when not max level
       const mh = 64 + affixCount * 20 + (maxed ? 24 : 64 + 22) + 44 + 24;
-      const mx = (w - mw) / 2;
-      const my = Math.max(this.headerH + 4, (h - mh) / 2);
+      const mx = 0;
+      const my = 0;
+
+      // Scale the whole panel to fill 80% of the constrained screen axis — landscape fills height,
+      // portrait fills width — while keeping its natural aspect ratio (popup-scale fix, 2026-07-14).
+      const scale = this.landscape ? (h * 0.8) / mh : (w * 0.8) / mw;
+      const screenW = mw * scale;
+      const screenH = mh * scale;
+      const screenX = (w - screenW) / 2;
+      const screenY = Math.max(this.headerH + 4, (h - screenH) / 2);
+      this.modalScale = scale;
+      this.modalOriginX = screenX;
+      this.modalOriginY = screenY;
 
       const dim = new PIXI.Graphics();
       dim.beginFill(0x000000, 0.45).drawRect(0, 0, w, h).endFill();
       ml.addChild(dim);
 
+      const panelRoot = new PIXI.Container();
+      panelRoot.position.set(screenX, screenY);
+      panelRoot.scale.set(scale);
+      ml.addChild(panelRoot);
+      this.modalPanelRoot = panelRoot;
+
       const panel = sketchPanel(mw, mh, { fill: C.paper, border: color, width: 2.6, seed: seedFor(0, 9, mw) });
       panel.x = mx; panel.y = my;
-      ml.addChild(panel);
+      panelRoot.addChild(panel);
 
       let cy = my + 12;
       const title = txt(`${this.itemName(inst.defId)} +${inst.level}`, 14, C.dark, true);
       title.x = mx + 12; title.y = cy;
-      ml.addChild(title);
+      panelRoot.addChild(title);
       const rar = txt(t(`equip.rarity.${inst.rarity}` as TranslationKey), 11, color, true);
       rar.anchor.set(1, 0); rar.x = mx + mw - 12; rar.y = cy + 1;
-      ml.addChild(rar);
+      panelRoot.addChild(rar);
       cy += 26;
 
       // Affix lines (stat icon + text; main affixes highlighted in ink-blue).
@@ -78,12 +96,12 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
         if (kind) {
           const ic = buildIcon(kind, 15, col);
           ic.x = mx + 16; ic.y = cy - 1;
-          ml.addChild(ic);
+          panelRoot.addChild(ic);
           tx = mx + 16 + 19;
         }
         const line = txt(this.affixDesc(af.id, af.value, inst.level), 11, col);
         line.x = tx; line.y = cy;
-        ml.addChild(line);
+        panelRoot.addChild(line);
         cy += 20;
       }
       cy += 6;
@@ -92,21 +110,21 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       if (maxed) {
         const lbl = txt(t('equip.maxLevel'), 12, C.gold, true);
         lbl.x = mx + 12; lbl.y = cy;
-        ml.addChild(lbl);
+        panelRoot.addChild(lbl);
         cy += 24;
       } else {
         const rate = Math.round(enhanceSuccessRate(inst.level) * 100);
         const cost = enhanceCost(inst.level);
         const rateLbl = txt(t('equip.enhanceRate').replace('{rate}', String(rate)), 11, C.dark);
         rateLbl.x = mx + 12; rateLbl.y = cy;
-        ml.addChild(rateLbl);
+        panelRoot.addChild(rateLbl);
         cy += 18;
         const affordable = this.canAffordEnhance(save, cost);
         const costColor = affordable ? C.mid : C.red;
         const costLbl = txt(`${t('equip.cost')}:`, 10, costColor);
         costLbl.anchor.set(0, 0.5); costLbl.x = mx + 12; costLbl.y = cy + 7;
-        ml.addChild(costLbl);
-        this.drawCostChips(ml, costLbl.x + costLbl.width + 8, cy + 7, cost.materials, cost.coins, costColor, 13);
+        panelRoot.addChild(costLbl);
+        this.drawCostChips(panelRoot, costLbl.x + costLbl.width + 8, cy + 7, cost.materials, cost.coins, costColor, 13);
         cy += 18;
         // Protect-item row (E7): show quantity held + toggle switch.
         const canToggle = protectCount > 0;
@@ -117,18 +135,18 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
         const box = new PIXI.Graphics();
         box.lineStyle(1.5, protectColor, 1);
         box.drawRect(mx + 12, cy, boxSz, boxSz);
-        ml.addChild(box);
+        panelRoot.addChild(box);
         if (protecting) {
           const ck = buildIcon('check', boxSz, C.accent);
           ck.x = mx + 12; ck.y = cy;
-          ml.addChild(ck);
+          panelRoot.addChild(ck);
         }
         const protectLbl = txt(`${t('equip.protect')} ×${protectCount}`, 10, protectColor);
         protectLbl.x = mx + 12 + boxSz + 4; protectLbl.y = cy + 2;
-        ml.addChild(protectLbl);
+        panelRoot.addChild(protectLbl);
         if (canToggle && !this.bt.busy) {
           this.modalHits.push({
-            rect: { x: mx + 10, y: cy - 2, w: mw - 20, h: 18 },
+            rect: this.toModalScreen({ x: mx + 10, y: cy - 2, w: mw - 20, h: 18 }),
             action: () => { this.useProtectEnhance = !this.useProtectEnhance; this.render(); },
           });
         }
@@ -181,16 +199,16 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
         const x = mx + 12 + i * (bw + gap);
         const g = sketchPanel(bw, btnH, { fill: b.on ? b.fill : C.btnOff, border: b.on ? b.stroke : C.mid, seed: seedFor(i, 11, bw) });
         g.x = x; g.y = btnY;
-        ml.addChild(g);
+        panelRoot.addChild(g);
         const lbl = txt(b.label, 12, b.on ? (b.fill === 0xeeeeee || b.fill === 0xf0e0e0 ? C.dark : C.light) : C.mid, true);
         lbl.anchor.set(0.5, 0.5); lbl.x = x + bw / 2; lbl.y = btnY + btnH / 2;
-        ml.addChild(lbl);
-        if (b.on) this.modalHits.push({ rect: { x, y: btnY, w: bw, h: btnH }, action: b.fn });
+        panelRoot.addChild(lbl);
+        if (b.on) this.modalHits.push({ rect: this.toModalScreen({ x, y: btnY, w: bw, h: btnH }), action: b.fn });
       });
 
       // Hit priority is first-match: buttons (above) win, then panel-area is inert,
       // then a tap anywhere outside the panel closes the detail (added last = lowest).
-      this.modalHits.push({ rect: { x: mx, y: my, w: mw, h: mh }, action: () => {} });
+      this.modalHits.push({ rect: this.toModalScreen({ x: mx, y: my, w: mw, h: mh }), action: () => {} });
       this.modalHits.push({ rect: { x: 0, y: 0, w, h }, action: () => this.closeDetail() });
     }
 
