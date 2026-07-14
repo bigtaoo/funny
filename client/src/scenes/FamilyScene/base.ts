@@ -38,8 +38,6 @@ export interface FamilySceneCallbacks {
 export type FamilyTab = 'members' | 'channel';
 export type ViewMode = 'loading' | 'noFamily' | 'create' | 'myFamily';
 
-export const ROW_H = 48;
-
 // ── Mixin plumbing ────────────────────────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Constructor<T = object> = new (...args: any[]) => T;
@@ -114,6 +112,23 @@ export class FamilySceneBase {
   /** Width of the social hub rail left of the notebook binding line (matches every other left-edge tab rail). */
   protected get railW(): number {
     return sidebarNavW(this.w, this.h, this.landscape);
+  }
+
+  /** Font size as a fraction of design height. The family scene originally hardcoded 10–15px, which
+   *  renders tiny in the 1920×1080 / 1080×1920 design space — sizing off `h` matches FriendsScene and
+   *  the rest of the social hub so the text is legible instead of near-invisible. */
+  protected fs(frac: number): number {
+    return Math.round(this.h * frac);
+  }
+
+  /** Roster / channel list row height (was a fixed 48px — too short for legible two-line rows). */
+  protected get rowH(): number {
+    return Math.round(this.h * 0.062);
+  }
+
+  /** Height of the family identity band (name/count + prosperity + optional announcement rows). */
+  protected get infoBandH(): number {
+    return Math.round(this.h * 0.085);
   }
 
   protected get isFamilyLeader(): boolean {
