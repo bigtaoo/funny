@@ -5,6 +5,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
+import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import type { SaveData, EquipSlot, CardInstance } from '../../game/meta/SaveData';
 import { CARD_DEFS, cardPower } from '../../game/meta/cardDefs';
 import { type Constructor, type EquipmentSceneBaseCtor, RES_H, ROW_H, SLOTS } from './base';
@@ -89,6 +90,8 @@ export function AssignMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
         if (cy + ROW_H >= listY && cy <= listY + listH) this.renderAssignRow(card, cy, slot, save);
         cy += ROW_H;
       }
+
+      drawScrollIndicator(this.bodyLayer, { x: sidebarW, y: listY, w: w - sidebarW - 6, h: listH }, this.scrollY, Math.max(0, totalH - listH));
     }
 
     private renderAssignRow(card: CardInstance, cy: number, slot: EquipSlot, save: SaveData): void {

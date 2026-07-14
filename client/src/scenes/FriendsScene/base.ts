@@ -14,6 +14,7 @@ import { buildIcon } from '../../render/icons';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSocialTabRail, type SocialTab } from '../../render/socialTabRail';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
+import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { drawSceneHeader, drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
 import type {
   FriendView,
@@ -395,6 +396,9 @@ export class FriendsSceneBase {
     this.container.removeChild(this.popup.container);
     tearDownChildren(this.container);
     this.hits = [];
+    // Cleared each render; only a scroll panel (friends list / world chat / mail) sets it
+    // back > 0, so drawScrollbar() below is a no-op on the non-scrolling tabs.
+    this.maxScroll = 0;
 
     // Landscape only for now — see ShopScene.drawBackground / LOBBY_IA_REDESIGN §14.
     const railX = this.landscape ? sidebarNavW(this.w, this.h, true) : undefined;
@@ -422,8 +426,22 @@ export class FriendsSceneBase {
     // (incl. popup.container) mid-render — re-adding it below would then throw.
     if (this.dead) return;
 
+    this.drawScrollbar();
     this.drawToast();
     this.container.addChild(this.popup.container);
+  }
+
+  /**
+   * Shared scroll indicator for whichever panel set a scrollable region this render
+   * (friends list / world chat / mail all write regionTop/regionBottom + maxScroll).
+   * No-op when maxScroll is 0 (reset at the top of render()).
+   */
+  protected drawScrollbar(): void {
+    drawScrollIndicator(
+      this.container,
+      { x: 0, y: this.regionTop, w: this.w, h: this.regionBottom - this.regionTop },
+      this.scrollY, this.maxScroll,
+    );
   }
 
   // ── Tab rail (5 tabs, vertical, left of the binding line) ──────────────────────

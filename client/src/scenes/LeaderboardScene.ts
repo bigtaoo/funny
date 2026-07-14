@@ -6,6 +6,7 @@ import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
+import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { buildIcon } from '../render/icons';
 import { formatLadderTitle, getTitleKeys } from '../game/meta/titles';
 
@@ -235,6 +236,8 @@ export class LeaderboardScene implements Scene {
         });
       }
     });
+
+    drawScrollIndicator(this.container, { x: pad, y: listTop, w: listW, h: listH }, sy, this.scrollMax);
   }
 
   private drawRow(

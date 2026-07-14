@@ -1,6 +1,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
+import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { buildIcon } from '../../render/icons';
 import { WorldApiError } from '../../net/WorldApiClient';
 import { proceduralTile } from '@nw/shared';
@@ -441,6 +442,9 @@ export class WorldMapPanels {
     const layer = new PIXI.Container();
     layer.mask = mask;
     ml.addChild(layer);
+    // Position indicator on the list's right edge. Drawn into the modal layer above `layer`
+    // so it's never clipped by the mask; renderInfoPanel adds the close button after, on top.
+    drawScrollIndicator(ml, { x, y, w, h }, this.ctx.infoScrollY, this.ctx.infoMaxScroll);
     return layer;
   }
 

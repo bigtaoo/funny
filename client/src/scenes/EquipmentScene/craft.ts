@@ -3,6 +3,7 @@
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
+import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { withTimeout, TimeoutError } from '../../ui/busyTracker';
 import type { SaveData } from '../../game/meta/SaveData';
 import { craftableDefs, getEquipDef, EQUIPMENT_INV_CAP } from '../../game/meta/equipmentDefs';
@@ -42,6 +43,8 @@ export function CraftMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): T
         if (y + CRAFT_CELL_H < listY || y > listY + listH) return;
         this.renderCraftCell(def.defId, x, y, cellW, save, full);
       });
+
+      drawScrollIndicator(this.bodyLayer, { x: left, y: listY, w: avail, h: listH }, this.scrollY, Math.max(0, totalH - listH));
     }
 
     /**

@@ -2,6 +2,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
+import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { buildIcon } from '../../render/icons';
 import { caretDisplay } from '../../render/inputDisplay';
 import { FAMILY_CAP } from '@nw/shared';
@@ -354,6 +355,8 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
         vacLbl.x = x0 + 18; vacLbl.y = cy + Math.round(R * 0.2);
         this.bodyLayer.addChild(vacLbl);
       }
+
+      drawScrollIndicator(this.bodyLayer, { x: x0, y: y0, w: colW, h: maxH }, this[scrollKey], Math.max(0, listH - maxH));
     }
 
     /** Sect hub entry (left) + Leave / Dissolve (right) — shared by both the tabbed (portrait)
@@ -419,6 +422,8 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
         this.bodyLayer.addChild(bodyLbl);
         cy += R;
       }
+
+      drawScrollIndicator(this.bodyLayer, { x: x0, y: y0, w: colW, h: listH2 }, this[scrollKey], Math.max(0, msgH - listH2));
 
       if (this.messages.length === 0) {
         const emptyLbl = txt(t('family.noMessages'), this.fs(0.022), MUTED);

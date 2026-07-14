@@ -6,6 +6,7 @@ import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
 import { t } from '../../i18n';
 import { buildIcon, type IconKind } from '../../render/icons';
+import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import type { EquipmentInstance, CardInstance, EquipRarity } from '../../game/meta/SaveData';
 import { FILTERS, type AucFilter, MATERIALS, type Constructor, type AuctionSceneBaseCtor } from './base';
 
@@ -182,6 +183,8 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
         if (cy + CARD_H < listY || cy > listY + listH) return;
         this.renderPickCard(entry, cx, cy, cardW);
       });
+
+      drawScrollIndicator(this.bodyLayer, { x: contentX + pad, y: listY, w: avail, h: listH }, this.scrollY, Math.max(0, totalH - listH));
     }
 
     /** Square-ish icon card: glyph centered top, name below, lock badge top-right, tap anywhere to pick. */

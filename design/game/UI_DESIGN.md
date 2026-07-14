@@ -35,6 +35,7 @@
 | `Panel` | 纸卡（圆角 + 描边 + 左侧 accent 条） | 抽 `buildPlayerCard` 的卡片样式 |
 | `CurrencyBar` | 右上角货币余额（图标 + 数字 + "＋"跳转商店） | 全菜单常驻；只读 `SaveData.wallet`（服务器回推） |
 | `ScrollList` | 垂直滚动容器（clip + 拖拽/滚轮） | 参考 `tools/animator` TimelineView 的滚动实现 |
+| `ScrollIndicator` | 滚动位置指示条（右缘细圆角轨道 + 滑块，只读不吃指针） | **已落地（2026-07-14）**，见下方说明；所有可滚动页面统一接入 |
 | `Modal` | 半透明遮罩 + 居中卡 + 确认/取消 | 购买确认、解锁弹窗、错误提示 |
 | `Toast` | 顶部短暂浮条（领奖/错误/同步成功） | 自动淡出 |
 | `Spinner` | 加载圈 / "matching..." 点点 | 抽 LobbyScene 的 dots 动画 |
@@ -43,6 +44,8 @@
 | `NavBar` | 底部 5 槽导航 | 已在 LobbyScene，提取为共享组件（§3） |
 
 > 这些组件统一放 `client/src/ui/widgets/`。**已落地（2026-06-25）**：`uiCache.ts`（§2.1 缓存底座）+ `SceneHeader.ts`（§3.1 统一返回/标题栏）。其余组件（Button/Panel/CurrencyBar/…）随后续场景按需沉淀到此目录。
+
+> **ScrollIndicator（2026-07-14）**：`ui/widgets/ScrollIndicator.ts` 导出 `drawScrollIndicator(parent, view, scrollY, scrollMax, opts?)`——在视口 `view`（= 内容 mask 矩形）右缘画墨黑细圆角轨道 + 位置滑块（长≈视口/内容比、位置≈滚动进度），`scrollMax<=0` 或视口退化时返回 `null` 不画。**只是指示器、不吃指针**，各场景仍自管拖拽/滚轮。约定：在 `render()` 内容+mask 加完后调一行，画进**不随滚动位移**的容器（容器位移型场景用 `this.container`；无 mask 剔除重绘型用 `bodyLayer` 并以 `listY/listH` 局部量作视口）；有拖拽快速路径（BattlePass/CardCodex）的场景在快速路径里也重画一次。已接入全部可滚动页面：BattlePass、CardCodex、Leaderboard、DeckBuilder、Chat、Shop（商城/充值）、Friends（好友/世界/邮件）、Equipment（背包/装配/合成）、Card 花名册、Sect（名册/频道）、Family（名册/频道）、Auction（列表/物品选择）、WorldMap 世界信息面板。纯几何 `scrollThumbGeometry()` 拆出单测。
 
 ---
 

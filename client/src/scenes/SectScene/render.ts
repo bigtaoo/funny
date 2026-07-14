@@ -3,6 +3,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
+import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { buildIcon } from '../../render/icons';
 import { caretDisplay } from '../../render/inputDisplay';
 import { type Constructor, type SectSceneBaseCtor, type SectTab, ROW_H } from './base';
@@ -206,6 +207,8 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
         cy += ROW_H;
       }
 
+      drawScrollIndicator(this.bodyLayer, { x: left, y: listTop, w: w - left, h: viewH }, this.scrollY, Math.max(0, listH - viewH));
+
       this.renderBottomBar(y0 + maxH - bottomBarH);
     }
 
@@ -251,6 +254,8 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
         this.bodyLayer.addChild(bodyLbl);
         cy += ROW_H;
       }
+
+      drawScrollIndicator(this.bodyLayer, { x: left, y: y0, w: w - left, h: listH2 }, this.scrollY, Math.max(0, msgH - listH2));
 
       const inputY = y0 + listH2 + 4;
       const fieldW = w - left - 80;

@@ -4,6 +4,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor, marginLineX } from '../../render/sketchUi';
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
+import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { buildIcon } from '../../render/icons';
 import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance } from '../../game/meta/SaveData';
 import { getEquipDef } from '../../game/meta/equipmentDefs';
@@ -148,6 +149,8 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
         if (p.kind === 'header') this.renderSectionHeader(p.label, y);
         else this.renderInstanceCell(p.inst, p.x, y, cellW, p.isEquipped, p.count);
       }
+
+      drawScrollIndicator(this.bodyLayer, { x: left, y: listY, w: avail, h: listH }, this.scrollY, Math.max(0, totalH - listH));
     }
 
     /** Slot filter bar (All / Weapon / Armor / Trinket), confined to [x, x+w) — the right column. */

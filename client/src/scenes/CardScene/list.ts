@@ -7,6 +7,7 @@ import { buildIcon } from '../../render/icons';
 import { UNIT_ART_URLS } from '../../render/cardArt';
 import { drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
+import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
 import type { CardSLGState } from '../../net/WorldApiClient';
 import { CARD_DEFS, CARD_INV_CAP, CARD_INV_WARN, troopCap, cardPower } from '../../game/meta/cardDefs';
@@ -101,6 +102,8 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
           this.renderCardCell(card, x, y, cellW, cardState[card.id], now, save);
         }
       });
+
+      drawScrollIndicator(this.bodyLayer, { x: left, y: listY, w: avail, h: listH }, this.scrollY, Math.max(0, totalH - listH));
     }
 
     /**

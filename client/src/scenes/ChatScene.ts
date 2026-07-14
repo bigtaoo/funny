@@ -6,6 +6,7 @@ import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader, sceneHeaderHeight } from '../ui/widgets/SceneHeader';
+import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { caretDisplay } from '../render/inputDisplay';
 import type { ChatMessageView } from '../net/ApiClient';
 import type { ChatMessagePush } from '../net/proto/transport';
@@ -323,6 +324,8 @@ export class ChatScene implements Scene {
         this.hits.push({ rect: { x: w * 0.2, y: sy - 4, w: w * 0.6, h: b.hitH ?? Math.round(h * 0.04) }, scroll: true, fn: b.hitFn });
       }
     }
+
+    drawScrollIndicator(this.container, { x: 0, y: this.regionTop, w, h: regionH }, this.scrollY, this.maxScroll);
   }
 
   /** Build a message bubble container; returns it + its height (positioned later). */
