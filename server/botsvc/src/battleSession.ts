@@ -47,22 +47,35 @@ export async function playRankedMatch(opts: PlayRankedMatchOptions): Promise<Ran
       fn();
     };
 
+    // These fire synchronously from a WS 'message' event (see envelopeSocket.ts) — an uncaught throw
+    // here becomes an uncaughtException that kills the ENTIRE botsvc process, not just this one bot's
+    // match (found via the 2026-07-14 1000-bot load test: a stale @nw/engine build made `new Prng()`
+    // throw inside onMatchStart and took the whole fleet down). Every path must fail this one match,
+    // never the process.
     game
       .connect(gameUrl, ticket, {
         onMatchStart: (matchStart) => {
-          driver = new BattleEngine(matchStart, opts.difficulty ?? 5);
+          try {
+            driver = new BattleEngine(matchStart, opts.difficulty ?? 5);
+          } catch (err) {
+            finish(() => reject(err as Error));
+          }
         },
         onFrameBatch: (fb: FrameBatch) => {
           if (!driver || settled) return;
-          driver.ingestFrameBatch(fb);
-          const { toSubmit } = driver.advance();
-          for (const bytes of toSubmit) game.submitCmd(bytes);
-          if (driver.isGameOver()) {
-            const result = driver.getResult();
-            const won = driver.didIWin();
-            // `?? 0` matches client/src/app/nav/result.ts's own draw sentinel (winner ?? 0).
-            game.reportResult(result.stateHash, result.winnerSide ?? 0, '');
-            finish(() => resolve({ won, stateHash: result.stateHash }));
+          try {
+            driver.ingestFrameBatch(fb);
+            const { toSubmit } = driver.advance();
+            for (const bytes of toSubmit) game.submitCmd(bytes);
+            if (driver.isGameOver()) {
+              const result = driver.getResult();
+              const won = driver.didIWin();
+              // `?? 0` matches client/src/app/nav/result.ts's own draw sentinel (winner ?? 0).
+              game.reportResult(result.stateHash, result.winnerSide ?? 0, '');
+              finish(() => resolve({ won, stateHash: result.stateHash }));
+            }
+          } catch (err) {
+            finish(() => reject(err as Error));
           }
         },
         onDisconnect: (code) => {
