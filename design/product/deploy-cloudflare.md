@@ -380,27 +380,32 @@ CrazyGames 限制只在前端（禁站外支付/外链），账号层与 web 共
 > **踩坑记录**：Atlas 报 `tlsv1 alert internal error: SSL alert number 80` = **来源 IP 不在 Atlas Network Access 白名单**（不是 TLS/证书问题）。新机 IP 须加进 Atlas 白名单（测试期 `0.0.0.0/0`，上线收紧到 `<VPS_IP>/32`）。
 > **注意**：连接串含 `&`，写 `.env` 时**别用 `sed` 替换**（`&` 是 sed 特殊字符会被展开）；用 `grep -v` 删行后 `printf` 追加。
 
-#### SSH 密钥（已生成，2026-06-24）
+#### SSH 密钥
 
-专用 ed25519 密钥，**仅用于连 Hetzner VPS**：
+专用 ed25519 密钥，**仅用于连 Hetzner VPS**。
+
+> ⚠️ **2026-07-14 换钥**：原密钥（`nivara-hetzner-20260624`，指纹 `SHA256:I7/fC9ia…`，Hetzner 里名为 `funny-ssh`）在一次系统重装后**私钥丢失**，各备份（`D:\cloud`、`C:\backup\ssh`、`C:\backup\wnet-ssh`、`D:\Backup\TaoWang-rescue`）均只找到 wnet 项目的 key，无 nivara。已重新生成下表的新钥。Hetzner 里那条 `funny-ssh` 已成死条目（对应私钥没了），可留可删。
+
+**当前有效密钥（2026-07-14 生成）：**
 
 | 项 | 值 |
 |---|---|
-| 私钥（**保密，绝不进 git/聊天/截图**） | `C:\Users\TaoWang\.ssh\nivara_hetzner` |
-| 公钥（可公开，贴 Hetzner SSH keys 框） | `C:\Users\TaoWang\.ssh\nivara_hetzner.pub` |
-| 指纹 | `SHA256:I7/fC9iaEo7J5JaG3g3EdIachUGkFGc9JNDS/TF+aIc` |
-| 密码短语 | 无（方便自动化；如需加：`ssh-keygen -p -f ~/.ssh/nivara_hetzner`） |
+| 私钥（**保密，绝不进 git/聊天/截图**） | `D:\cloud\nivara_hetzner`（本机 `taowa` 用户；注意不是文档旧写的 `C:\Users\TaoWang\.ssh\`） |
+| 公钥 | `D:\cloud\nivara_hetzner.pub` |
+| 指纹 | `SHA256:pfV1ral7KA57wkUh3MvZxXjTgUC/quqYwfM0Wp1Ocwc`（MD5 `9e:9d:ee:79:cc:74:db:8b:0b:0e:8c:e7:fe:4d:4f:ed`，Hetzner 里名为 `nivara`） |
+| 密码短语 | 无 |
 
-公钥串（开机前贴进 Hetzner）：
+公钥串：
 ```
-ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOFe/cne++J7QxMMJWxtJbn+dhnesYbIcvPIYlRSyCZP nivara-hetzner-20260624
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBbskPHtk91w34e7Qp2CnYlBcUQ1hdKJHb4zxltvQAjY nivara-hetzner-20260714
 ```
 
-登录命令（`-i` 指定私钥）：
+登录命令：
 ```bash
-ssh -i ~/.ssh/nivara_hetzner root@<VPS_IP>
+ssh -i /d/cloud/nivara_hetzner root@128.140.41.98
 ```
-> 私钥丢失 = 重新生成并在 Hetzner 换公钥即可；私钥泄露 = 立即在 Console 删旧 key、换新 key。
+
+> **私钥又丢了怎么办（本次实操验证的恢复流程）**：Hetzner Cloud 现版 UI **没有**"运行中改 authorized_keys"的按钮，项目级 SSH keys 只对新建机器生效、加了对已跑的机器无效；用 **Rescue 模式**恢复——① 新公钥先加进 Security → SSH keys；② 服务器 Rescue 标签页 `Enable rescue & power cycle` 并在弹窗勾选该 key（会重启进救援系统，后端离线 1–2 分钟）；③ `ssh -i <新私钥> root@IP` 进救援系统，`mount /dev/sda1 /mnt` 挂真实根分区，把公钥 append 进 `/mnt/root/.ssh/authorized_keys`；④ Disable rescue 后在救援系统里 `reboot` 回本地磁盘。（Reset Root Password + Console 那条路在德语物理键盘上不可行——noVNC 键盘布局串码，`~`/`'`/`>>` 全打错。）
 
 > 新账号第一次开机偶尔卡「审核中」（几分钟到几小时，有时需回邮件补资料）——这是 Hetzner 防滥用的正常流程，不是出错。
 
