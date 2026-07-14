@@ -15,7 +15,7 @@ import type { GameConfig, GameEvent } from '../src/game/types';
 const TICK_DT = 1 / 30;
 
 function makeConfig(): GameConfig {
-  return { seed: 42, players: [{ id: 0 }, { id: 1 }], mode: 'skirmish' };
+  return { seed: 42, players: [{ id: 0 }, { id: 1 }], mode: 'pvp' };
 }
 
 /** Drive a few ticks, accumulating every event emitted across them. */
