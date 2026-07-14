@@ -2,13 +2,15 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
+import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { buildIcon } from '../../render/icons';
 import { caretDisplay } from '../../render/inputDisplay';
 import { FAMILY_CAP } from '@nw/shared';
-import { type Constructor, type FamilySceneBaseCtor, type FamilyTab, ROW_H } from './base';
+import { type Constructor, type FamilySceneBaseCtor, type FamilyTab } from './base';
 
-/** Height of the family info band (name/count row + prosperity row + optional announcement row). */
-const INFO_BAND_H = 54;
+/** Darker muted ink for secondary family-scene labels. C.mid (0x888888) rendered too faint on the
+ *  paper background — this keeps the visual hierarchy (a step below C.dark) while staying legible. */
+const MUTED = 0x5a574f;
 
 /** Re-instantiates `txt()` with progressively shorter text (ellipsis) until it fits `maxW`. Narrow
  *  portrait widths + a long family name would otherwise run the name into the member-count label. */
@@ -23,6 +25,22 @@ function truncateToWidth(label: string, size: number, color: number, maxW: numbe
   return node;
 }
 
+/** Largest font size ≤ `size` (down to 11px) at which `label` fits within `maxW`. Portrait pins
+ *  the width axis while h-relative sizing scales off the (much taller) height, so a fixed-box label
+ *  — tab titles, bottom-bar buttons — can outrun its box; this shrinks it to fit instead of clipping.
+ *  Locale-agnostic (zh / de labels differ in length). */
+function fitSize(label: string, size: number, maxW: number): number {
+  let s = size;
+  let node = txt(label, s, 0);
+  while (node.width > maxW && s > 11) {
+    node.destroy();
+    s -= 1;
+    node = txt(label, s, 0);
+  }
+  node.destroy();
+  return s;
+}
+
 export interface RenderHandlers {
   renderLoading(): void;
   renderNoFamily(): void;
@@ -33,7 +51,7 @@ export interface RenderHandlers {
 export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBase & Constructor<RenderHandlers> {
   return class extends Base {
     renderLoading(): void {
-      const lbl = txt(t('world.loading'), 14, C.dark);
+      const lbl = txt(t('world.loading'), this.fs(0.028), C.dark);
       lbl.anchor.set(0.5, 0.5);
       lbl.x = this.w / 2; lbl.y = this.h / 2;
       this.bodyLayer.addChild(lbl);
@@ -41,74 +59,88 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
 
     renderNoFamily(): void {
       const { w, h } = this;
-      const lbl = txt(t('family.noFamily'), 14, C.dark);
+      const lbl = txt(t('family.noFamily'), this.fs(0.028), C.dark);
       lbl.anchor.set(0.5, 0.5);
-      lbl.x = w / 2; lbl.y = h / 2 - 40;
+      lbl.x = w / 2; lbl.y = h / 2 - h * 0.06;
       this.bodyLayer.addChild(lbl);
 
-      const createBtn = sketchPanel(120, 36, { fill: C.dark, border: C.accent, seed: seedFor(0, 0, 120) });
-      createBtn.x = w / 2 - 130; createBtn.y = h / 2;
-      this.bodyLayer.addChild(createBtn);
-      const cl = txt(t('family.create'), 13, C.light);
-      cl.anchor.set(0.5, 0.5); cl.x = w / 2 - 70; cl.y = h / 2 + 18;
-      this.bodyLayer.addChild(cl);
-      this.hitRects.push({ rect: { x: w / 2 - 130, y: h / 2, w: 120, h: 36 }, action: () => { this.mode = 'create'; this.render(); } });
+      const bw = Math.round(h * 0.16);
+      const bh = Math.round(h * 0.055);
+      const gap = Math.round(w * 0.01);
 
-      const joinBtn = sketchPanel(120, 36, { fill: C.dark, border: C.accent, seed: seedFor(1, 0, 120) });
-      joinBtn.x = w / 2 + 10; joinBtn.y = h / 2;
+      const createBtn = sketchPanel(bw, bh, { fill: C.dark, border: C.accent, seed: seedFor(0, 0, bw) });
+      createBtn.x = w / 2 - bw - gap; createBtn.y = h / 2;
+      this.bodyLayer.addChild(createBtn);
+      const cl = txt(t('family.create'), this.fs(0.024), C.light);
+      cl.anchor.set(0.5, 0.5); cl.x = createBtn.x + bw / 2; cl.y = h / 2 + bh / 2;
+      this.bodyLayer.addChild(cl);
+      this.hitRects.push({ rect: { x: createBtn.x, y: h / 2, w: bw, h: bh }, action: () => { this.mode = 'create'; this.render(); } });
+
+      const joinBtn = sketchPanel(bw, bh, { fill: C.dark, border: C.accent, seed: seedFor(1, 0, bw) });
+      joinBtn.x = w / 2 + gap; joinBtn.y = h / 2;
       this.bodyLayer.addChild(joinBtn);
-      const jl = txt(t('family.listAll'), 13, C.light);
-      jl.anchor.set(0.5, 0.5); jl.x = w / 2 + 70; jl.y = h / 2 + 18;
+      const jl = txt(t('family.listAll'), this.fs(0.024), C.light);
+      jl.anchor.set(0.5, 0.5); jl.x = joinBtn.x + bw / 2; jl.y = h / 2 + bh / 2;
       this.bodyLayer.addChild(jl);
-      this.hitRects.push({ rect: { x: w / 2 + 10, y: h / 2, w: 120, h: 36 }, action: () => void this.openJoinList() });
+      this.hitRects.push({ rect: { x: joinBtn.x, y: h / 2, w: bw, h: bh }, action: () => void this.openJoinList() });
     }
 
     renderCreate(): void {
       const { w, h } = this;
+      const labelSize = this.fs(0.024);
+      const fieldH = Math.round(h * 0.045);
+      const fieldX = Math.round(w * 0.16);
+      const y1 = this.headerH + Math.round(h * 0.03);
+      const y2 = y1 + Math.round(h * 0.07);
+      const btnY = y2 + Math.round(h * 0.08);
 
-      const lbl1 = txt(t('family.name') + ':', 13, C.dark);
-      lbl1.x = 20; lbl1.y = this.headerH + 20;
+      const lbl1 = txt(t('family.name') + ':', labelSize, C.dark);
+      lbl1.x = 20; lbl1.y = y1 + fieldH / 2 - labelSize / 2;
       this.bodyLayer.addChild(lbl1);
 
-      const nameField = sketchPanel(w - 120, 32, { fill: 0xfaf9f5, border: this.createField === 'name' ? C.accent : C.mid, seed: seedFor(0, 0, w - 120) });
-      nameField.x = 100; nameField.y = this.headerH + 14;
+      const nameField = sketchPanel(w - fieldX - 20, fieldH, { fill: 0xfaf9f5, border: this.createField === 'name' ? C.accent : C.mid, seed: seedFor(0, 0, w - fieldX) });
+      nameField.x = fieldX; nameField.y = y1;
       this.bodyLayer.addChild(nameField);
-      const nl = txt(caretDisplay(this.createName, this.createField === 'name' && this.caretOn, ' '), 13, C.dark);
-      nl.x = 108; nl.y = this.headerH + 22;
+      const nl = txt(caretDisplay(this.createName, this.createField === 'name' && this.caretOn, ' '), this.fs(0.024), C.dark);
+      nl.x = fieldX + 8; nl.y = y1 + fieldH / 2 - nl.height / 2;
       this.bodyLayer.addChild(nl);
-      this.hitRects.push({ rect: { x: 100, y: this.headerH + 14, w: w - 120, h: 32 }, action: () => this.openInputFor('name') });
+      this.hitRects.push({ rect: { x: fieldX, y: y1, w: w - fieldX - 20, h: fieldH }, action: () => this.openInputFor('name') });
 
-      const lbl2 = txt(t('family.tag') + ':', 13, C.dark);
-      lbl2.x = 20; lbl2.y = this.headerH + 70;
+      const lbl2 = txt(t('family.tag') + ':', labelSize, C.dark);
+      lbl2.x = 20; lbl2.y = y2 + fieldH / 2 - labelSize / 2;
       this.bodyLayer.addChild(lbl2);
 
-      const tagField = sketchPanel(100, 32, { fill: 0xfaf9f5, border: this.createField === 'tag' ? C.accent : C.mid, seed: seedFor(1, 0, 100) });
-      tagField.x = 100; tagField.y = this.headerH + 64;
+      const tagW = Math.round(w * 0.14);
+      const tagField = sketchPanel(tagW, fieldH, { fill: 0xfaf9f5, border: this.createField === 'tag' ? C.accent : C.mid, seed: seedFor(1, 0, tagW) });
+      tagField.x = fieldX; tagField.y = y2;
       this.bodyLayer.addChild(tagField);
-      const tl = txt(caretDisplay(this.createTag, this.createField === 'tag' && this.caretOn, ' '), 13, C.dark);
-      tl.x = 108; tl.y = this.headerH + 72;
+      const tl = txt(caretDisplay(this.createTag, this.createField === 'tag' && this.caretOn, ' '), this.fs(0.024), C.dark);
+      tl.x = fieldX + 8; tl.y = y2 + fieldH / 2 - tl.height / 2;
       this.bodyLayer.addChild(tl);
-      this.hitRects.push({ rect: { x: 100, y: this.headerH + 64, w: 100, h: 32 }, action: () => this.openInputFor('tag') });
+      this.hitRects.push({ rect: { x: fieldX, y: y2, w: tagW, h: fieldH }, action: () => this.openInputFor('tag') });
 
-      const hint = txt('[A-Z0-9] 2-5 chars', 11, C.mid);
-      hint.x = 210; hint.y = this.headerH + 72;
+      const hint = txt('[A-Z0-9] 2-5 chars', this.fs(0.02), MUTED);
+      hint.x = fieldX + tagW + 12; hint.y = y2 + fieldH / 2 - hint.height / 2;
       this.bodyLayer.addChild(hint);
 
-      const okBtn = sketchPanel(100, 34, { fill: C.dark, border: C.accent, seed: seedFor(0, 0, 100) });
-      okBtn.x = w / 2 - 110; okBtn.y = this.headerH + 120;
+      const okW = Math.round(w * 0.13);
+      const btnH = Math.round(h * 0.05);
+      const okBtn = sketchPanel(okW, btnH, { fill: C.dark, border: C.accent, seed: seedFor(0, 0, okW) });
+      okBtn.x = w / 2 - okW - 10; okBtn.y = btnY;
       this.bodyLayer.addChild(okBtn);
-      const ok = txt(t('family.create'), 13, C.light);
-      ok.anchor.set(0.5, 0.5); ok.x = w / 2 - 60; ok.y = this.headerH + 137;
+      const ok = txt(t('family.create'), this.fs(0.024), C.light);
+      ok.anchor.set(0.5, 0.5); ok.x = okBtn.x + okW / 2; ok.y = btnY + btnH / 2;
       this.bodyLayer.addChild(ok);
-      this.hitRects.push({ rect: { x: w / 2 - 110, y: this.headerH + 120, w: 100, h: 34 }, action: () => void this.doCreate() });
+      this.hitRects.push({ rect: { x: okBtn.x, y: btnY, w: okW, h: btnH }, action: () => void this.doCreate() });
 
-      const cancelBtn = sketchPanel(100, 34, { fill: 0xeeeeee, border: C.mid, seed: seedFor(1, 0, 100) });
-      cancelBtn.x = w / 2 + 10; cancelBtn.y = this.headerH + 120;
+      const cancelBtn = sketchPanel(okW, btnH, { fill: 0xeeeeee, border: C.mid, seed: seedFor(1, 0, okW) });
+      cancelBtn.x = w / 2 + 10; cancelBtn.y = btnY;
       this.bodyLayer.addChild(cancelBtn);
-      const ca = buildIcon('close', 15, C.dark);
-      ca.x = w / 2 + 60 - 7.5; ca.y = this.headerH + 137 - 7.5;
+      const caSize = Math.round(btnH * 0.5);
+      const ca = buildIcon('close', caSize, C.dark);
+      ca.x = cancelBtn.x + okW / 2 - caSize / 2; ca.y = btnY + btnH / 2 - caSize / 2;
       this.bodyLayer.addChild(ca);
-      this.hitRects.push({ rect: { x: w / 2 + 10, y: this.headerH + 120, w: 100, h: 34 }, action: () => { this.mode = 'noFamily'; this.render(); } });
+      this.hitRects.push({ rect: { x: cancelBtn.x, y: btnY, w: okW, h: btnH }, action: () => { this.mode = 'noFamily'; this.render(); } });
     }
 
     renderMyFamily(): void {
@@ -133,26 +165,28 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       // Tab bar — starts to the right of the social hub rail so it doesn't sit on top of it,
       // matching the EquipmentScene/GachaScene convention.
       const left = this.railW;
+      const tabH = Math.round(h * 0.05);
       const tabs: FamilyTab[] = ['members', 'channel'];
       const tabW = (w - left) / tabs.length;
       for (let i = 0; i < tabs.length; i++) {
         const tab = tabs[i]!;
         const active = tab === this.activeTab;
         const tx = left + i * tabW;
-        const tp = sketchPanel(tabW, 36, { fill: active ? C.paper : 0xddddcc, border: C.mid, seed: seedFor(i, 0, tabW) });
+        const tp = sketchPanel(tabW, tabH, { fill: active ? C.paper : 0xddddcc, border: C.mid, seed: seedFor(i, 0, tabW) });
         tp.x = tx; tp.y = this.headerH;
         this.bodyLayer.addChild(tp);
-        const tl = txt(t(tab === 'members' ? 'family.tabMembers' : 'family.channel'), 13, active ? C.accent : C.dark);
-        tl.anchor.set(0.5, 0.5); tl.x = tx + tabW / 2; tl.y = this.headerH + 18;
+        const tabLabel = t(tab === 'members' ? 'family.tabMembers' : 'family.channel');
+        const tl = txt(tabLabel, fitSize(tabLabel, this.fs(0.024), tabW - 16), active ? C.accent : C.dark);
+        tl.anchor.set(0.5, 0.5); tl.x = tx + tabW / 2; tl.y = this.headerH + tabH / 2;
         this.bodyLayer.addChild(tl);
-        this.hitRects.push({ rect: { x: tx, y: this.headerH, w: tabW, h: 36 }, action: () => { this.activeTab = tab; this.scrollY = 0; this.render(); } });
+        this.hitRects.push({ rect: { x: tx, y: this.headerH, w: tabW, h: tabH }, action: () => { this.activeTab = tab; this.scrollY = 0; this.render(); } });
       }
 
-      const infoY = this.headerH + 36;
+      const infoY = this.headerH + tabH;
       this.renderInfoBand(infoY);
 
-      const contentY = infoY + INFO_BAND_H;
-      const barH = 44;
+      const contentY = infoY + this.infoBandH;
+      const barH = Math.round(h * 0.06);
       const contentH = h - contentY - barH - 6;
 
       if (this.activeTab === 'members') {
@@ -171,8 +205,10 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       const infoY = this.headerH + 8;
       this.renderInfoBand(infoY);
 
-      const barH = 44;
-      const contentY = infoY + INFO_BAND_H + 18;
+      const barH = Math.round(h * 0.06);
+      const colLblSize = this.fs(0.022);
+      const colLblGap = Math.round(colLblSize * 1.4);
+      const contentY = infoY + this.infoBandH + colLblGap;
       const contentH = h - contentY - barH - 6;
 
       const totalW = w - left;
@@ -181,16 +217,16 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       const chatW = w - chatX - 8;
       this.chatColX = chatX - 6;
 
-      const membersLbl = txt(t('family.tabMembers'), 12, C.mid);
-      membersLbl.x = left + 12; membersLbl.y = contentY - 18;
+      const membersLbl = txt(t('family.tabMembers'), colLblSize, MUTED);
+      membersLbl.x = left + 12; membersLbl.y = contentY - colLblGap;
       this.bodyLayer.addChild(membersLbl);
-      const channelLbl = txt(t('family.channel'), 12, C.mid);
-      channelLbl.x = chatX + 4; channelLbl.y = contentY - 18;
+      const channelLbl = txt(t('family.channel'), colLblSize, MUTED);
+      channelLbl.x = chatX + 4; channelLbl.y = contentY - colLblGap;
       this.bodyLayer.addChild(channelLbl);
 
       const divider = new PIXI.Graphics();
       divider.lineStyle(1, C.mid, 0.5);
-      divider.moveTo(this.chatColX, contentY - 22).lineTo(this.chatColX, contentY + contentH);
+      divider.moveTo(this.chatColX, contentY - colLblGap - 4).lineTo(this.chatColX, contentY + contentH);
       this.bodyLayer.addChild(divider);
 
       this.renderMembers(left, rosterW, contentY, contentH, 'scrollY');
@@ -206,26 +242,29 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       const { w } = this;
       const left = this.railW;
       const fam = this.family;
+      const B = this.infoBandH;
 
-      const countLbl = txt(t('family.memberCount', { n: fam.memberCount, cap: FAMILY_CAP }), 12, C.mid);
-      countLbl.anchor.set(1, 0); countLbl.x = w - 12; countLbl.y = y0 + 5;
+      const countLbl = txt(t('family.memberCount', { n: fam.memberCount, cap: FAMILY_CAP }), this.fs(0.022), MUTED);
+      countLbl.anchor.set(1, 0); countLbl.x = w - 12; countLbl.y = y0 + Math.round(B * 0.08);
       this.bodyLayer.addChild(countLbl);
 
       const maxNameW = Math.max(40, w - 12 - (left + 12) - countLbl.width - 16);
-      const nameLbl = truncateToWidth(`[${fam.tag}] ${fam.name}`, 15, C.dark, maxNameW);
-      nameLbl.x = left + 12; nameLbl.y = y0 + 4;
+      const nameLbl = truncateToWidth(`[${fam.tag}] ${fam.name}`, this.fs(0.03), C.dark, maxNameW);
+      nameLbl.x = left + 12; nameLbl.y = y0 + Math.round(B * 0.05);
       this.bodyLayer.addChild(nameLbl);
 
-      const star = buildIcon('star', 13, 0xd4a030);
-      star.x = left + 12; star.y = y0 + 22;
+      const starSize = this.fs(0.024);
+      const prosY = y0 + Math.round(B * 0.46);
+      const star = buildIcon('star', starSize, 0xd4a030);
+      star.x = left + 12; star.y = prosY;
       this.bodyLayer.addChild(star);
-      const prosLbl = txt(t('family.prosperity', { n: fam.prosperity }), 12, 0xb8881a);
-      prosLbl.x = left + 30; prosLbl.y = y0 + 21;
+      const prosLbl = txt(t('family.prosperity', { n: fam.prosperity }), this.fs(0.022), 0xa9750f);
+      prosLbl.x = left + 12 + starSize + 6; prosLbl.y = prosY - 2;
       this.bodyLayer.addChild(prosLbl);
 
       if (fam.announcement) {
-        const annLbl = txt(fam.announcement, 11, C.mid);
-        annLbl.x = left + 12; annLbl.y = y0 + 38;
+        const annLbl = truncateToWidth(fam.announcement, this.fs(0.02), MUTED, w - (left + 12) - 12);
+        annLbl.x = left + 12; annLbl.y = y0 + Math.round(B * 0.78);
         this.bodyLayer.addChild(annLbl);
       }
     }
@@ -236,66 +275,88 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
     private renderMembers(x0: number, colW: number, y0: number, maxH: number, scrollKey: 'scrollY' | 'scrollYChannel'): void {
       const right = x0 + colW;
       const me = this.cb.myAccountId;
+      const R = this.rowH;
 
       const myRole = this.members.find(m => m.accountId === me)?.role ?? 'member';
       const isLeader = myRole === 'leader';
 
-      const listH = this.members.length * ROW_H;
+      const listH = this.members.length * R;
       this[scrollKey] = Math.max(0, Math.min(this[scrollKey], Math.max(0, listH - maxH)));
+
+      const btnH = Math.round(R * 0.44);
+      // Buttons are sized to their (i18n-variable-length) label + padding rather than a fixed width,
+      // so "Promote to Elder" / "Demote to Member" no longer clip the way a fixed box would.
+      const padX = Math.round(this.h * 0.014);
+      const btnGap = Math.round(this.h * 0.01);
 
       let cy = y0 - this[scrollKey];
       for (const mem of this.members) {
-        if (cy + ROW_H < y0 || cy > y0 + maxH) { cy += ROW_H; continue; }
+        if (cy + R < y0 || cy > y0 + maxH) { cy += R; continue; }
         const bar = new PIXI.Graphics();
-        sketchAccentBar(bar, ROW_H - 4, mem.role === 'leader' ? C.accent : mem.role === 'elder' ? 0xd4a030 : C.mid);
+        sketchAccentBar(bar, R - 4, mem.role === 'leader' ? C.accent : mem.role === 'elder' ? 0xd4a030 : C.mid);
         bar.x = x0 + 6; bar.y = cy + 2;
         this.bodyLayer.addChild(bar);
 
-        const roleLbl = txt(t(`family.${mem.role as 'leader' | 'member' | 'elder'}`), 10, C.mid);
-        roleLbl.x = x0 + 16; roleLbl.y = cy + 4;
-        this.bodyLayer.addChild(roleLbl);
-        const nameLbl = txt(mem.displayName ?? mem.publicId ?? '', 13, C.dark);
-        nameLbl.x = x0 + 16; nameLbl.y = cy + 18;
-        this.bodyLayer.addChild(nameLbl);
+        // Action buttons for leader (promote/demote elders + kick). Laid out from the right edge
+        // inward: kick first, then the (wider) role toggle to its left. Build them first so the
+        // name can be truncated to stop before them (portrait rows are narrow — an untruncated
+        // long name would otherwise run under the buttons).
+        const showActions = isLeader && mem.accountId !== me;
+        const btnY = cy + Math.round((R - btnH) / 2);
+        let nameRight = right - 12; // where the name column must stop
 
-        // Action buttons for leader (promote/demote elders + kick).
-        if (isLeader && mem.accountId !== me) {
+        if (showActions) {
           const accId = mem.accountId;
+
+          const kl = txt(t('family.kick'), this.fs(0.019), C.red);
+          const kickW = Math.round(kl.width + padX * 2);
+          const kx = right - kickW - 8;
+          const kickBtn = sketchPanel(kickW, btnH, { fill: 0xf0e0e0, border: C.red, seed: seedFor(cy, 0, kickW) });
+          kickBtn.x = kx; kickBtn.y = btnY;
+          this.bodyLayer.addChild(kickBtn);
+          kl.anchor.set(0.5, 0.5); kl.x = kx + kickW / 2; kl.y = btnY + btnH / 2;
+          this.bodyLayer.addChild(kl);
+          this.hitRects.push({ rect: { x: kx, y: btnY, w: kickW, h: btnH }, action: () => this.confirmKick(accId, mem.displayName ?? mem.publicId ?? '') });
+          nameRight = kx - btnGap;
 
           // Role toggle: members → elder, elders → member. (Leader role only changes via transfer/dissolve.)
           if (mem.role !== 'leader') {
             const toElder = mem.role === 'member';
-            const roleBtn = sketchPanel(50, 22, { fill: 0xeef0e0, border: 0xd4a030, seed: seedFor(cy, 2, 50) });
-            roleBtn.x = right - 116; roleBtn.y = cy + 10;
+            const rl = txt(t(toElder ? 'family.setElder' : 'family.setMember'), this.fs(0.018), 0xa9750f);
+            const roleW = Math.round(rl.width + padX * 2);
+            const bx = kx - btnGap - roleW;
+            const roleBtn = sketchPanel(roleW, btnH, { fill: 0xeef0e0, border: 0xd4a030, seed: seedFor(cy, 2, roleW) });
+            roleBtn.x = bx; roleBtn.y = btnY;
             this.bodyLayer.addChild(roleBtn);
-            const rl = txt(t(toElder ? 'family.setElder' : 'family.setMember'), 10, 0xb8881a);
-            rl.anchor.set(0.5, 0.5); rl.x = right - 91; rl.y = cy + 21;
+            rl.anchor.set(0.5, 0.5); rl.x = bx + roleW / 2; rl.y = btnY + btnH / 2;
             this.bodyLayer.addChild(rl);
             const nextRole: 'elder' | 'member' = toElder ? 'elder' : 'member';
-            this.hitRects.push({ rect: { x: right - 116, y: cy + 10, w: 50, h: 22 }, action: () => void this.doSetRole(accId, nextRole) });
+            this.hitRects.push({ rect: { x: bx, y: btnY, w: roleW, h: btnH }, action: () => void this.doSetRole(accId, nextRole) });
+            nameRight = bx - btnGap;
           }
-
-          const kickBtn = sketchPanel(50, 22, { fill: 0xf0e0e0, border: C.red, seed: seedFor(cy, 0, 50) });
-          kickBtn.x = right - 60; kickBtn.y = cy + 10;
-          this.bodyLayer.addChild(kickBtn);
-          const kl = txt(t('family.kick'), 11, C.red);
-          kl.anchor.set(0.5, 0.5); kl.x = right - 35; kl.y = cy + 21;
-          this.bodyLayer.addChild(kl);
-          this.hitRects.push({ rect: { x: right - 60, y: cy + 10, w: 50, h: 22 }, action: () => this.confirmKick(accId, mem.displayName ?? mem.publicId ?? '') });
         }
 
-        cy += ROW_H;
+        const roleLbl = txt(t(`family.${mem.role as 'leader' | 'member' | 'elder'}`), this.fs(0.019), MUTED);
+        roleLbl.x = x0 + 18; roleLbl.y = cy + Math.round(R * 0.1);
+        this.bodyLayer.addChild(roleLbl);
+        const nameLbl = truncateToWidth(mem.displayName ?? mem.publicId ?? '', this.fs(0.026), C.dark, Math.max(40, nameRight - (x0 + 18)));
+        nameLbl.x = x0 + 18; nameLbl.y = cy + Math.round(R * 0.42);
+        this.bodyLayer.addChild(nameLbl);
+
+        cy += R;
       }
 
       // Vacancy hint: turns the leftover space below a small roster into information ("room to
       // grow") instead of dead whitespace, without implying an invite feature that doesn't exist yet.
       const vacancies = FAMILY_CAP - this.members.length;
       if (vacancies > 0 && cy + 20 < y0 + maxH) {
-        const vacLbl = txt(t('family.vacancies', { n: vacancies }), 12, C.mid);
-        vacLbl.alpha = 0.6;
-        vacLbl.x = x0 + 16; vacLbl.y = cy + 10;
+        const vacLbl = txt(t('family.vacancies', { n: vacancies }), this.fs(0.022), MUTED);
+        vacLbl.alpha = 0.75;
+        vacLbl.x = x0 + 18; vacLbl.y = cy + Math.round(R * 0.2);
         this.bodyLayer.addChild(vacLbl);
       }
+
+      drawScrollIndicator(this.bodyLayer, { x: x0, y: y0, w: colW, h: maxH }, this[scrollKey], Math.max(0, listH - maxH));
     }
 
     /** Sect hub entry (left) + Leave / Dissolve (right) — shared by both the tabbed (portrait)
@@ -305,25 +366,36 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       const myRole = this.members.find(m => m.accountId === me)?.role ?? 'member';
       const isLdr = myRole === 'leader';
       const midX = (left + w) / 2;
+      const bh = Math.round(this.h * 0.05);
+      const gap = Math.round(this.h * 0.012);
+      const fontSz = this.fs(0.024);
+      const padX = Math.round(this.h * 0.018);
 
-      const sectBtn = sketchPanel(110, 32, { fill: C.dark, border: C.accent, seed: seedFor(2, 0, 110) });
-      sectBtn.x = midX - 120; sectBtn.y = barY;
+      // Buttons sized to their (locale-variable) labels + padding, then the pair is centred —
+      // a fixed width clipped "Dissolve Family" in the taller portrait design space.
+      const sectLabel = t('family.sect');
+      const actLabel = isLdr ? t('family.dissolve') : t('family.leave');
+      const sblNode = txt(sectLabel, fontSz, C.light);
+      const blNode = txt(actLabel, fontSz, isLdr ? C.red : C.accent);
+      const sectW = Math.round(sblNode.width + padX * 2);
+      const actW = Math.round(blNode.width + padX * 2);
+      const pairX = midX - (sectW + gap * 2 + actW) / 2;
+
+      const sectBtn = sketchPanel(sectW, bh, { fill: C.dark, border: C.accent, seed: seedFor(2, 0, sectW) });
+      sectBtn.x = pairX; sectBtn.y = barY;
       this.bodyLayer.addChild(sectBtn);
-      const sbl = txt(t('family.sect'), 13, C.light);
-      sbl.anchor.set(0.5, 0.5); sbl.x = midX - 65; sbl.y = barY + 16;
-      this.bodyLayer.addChild(sbl);
-      this.hitRects.push({ rect: { x: midX - 120, y: barY, w: 110, h: 32 }, action: () => this.cb.onOpenSect() });
+      sblNode.anchor.set(0.5, 0.5); sblNode.x = pairX + sectW / 2; sblNode.y = barY + bh / 2;
+      this.bodyLayer.addChild(sblNode);
+      this.hitRects.push({ rect: { x: pairX, y: barY, w: sectW, h: bh }, action: () => this.cb.onOpenSect() });
 
-      const btnLabel = isLdr ? t('family.dissolve') : t('family.leave');
-      const btnColor = isLdr ? C.red : C.accent;
-      const btn = sketchPanel(110, 32, { fill: 0xf8f8f0, border: btnColor, seed: seedFor(0, 0, 110) });
-      btn.x = midX + 10; btn.y = barY;
+      const actX = pairX + sectW + gap * 2;
+      const btn = sketchPanel(actW, bh, { fill: 0xf8f8f0, border: isLdr ? C.red : C.accent, seed: seedFor(0, 0, actW) });
+      btn.x = actX; btn.y = barY;
       this.bodyLayer.addChild(btn);
-      const bl = txt(btnLabel, 13, btnColor);
-      bl.anchor.set(0.5, 0.5); bl.x = midX + 65; bl.y = barY + 16;
-      this.bodyLayer.addChild(bl);
+      blNode.anchor.set(0.5, 0.5); blNode.x = actX + actW / 2; blNode.y = barY + bh / 2;
+      this.bodyLayer.addChild(blNode);
       this.hitRects.push({
-        rect: { x: midX + 10, y: barY, w: 110, h: 32 },
+        rect: { x: actX, y: barY, w: actW, h: bh },
         action: () => isLdr ? this.confirmDissolve() : this.confirmLeave(),
       });
     }
@@ -331,50 +403,54 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
     /** Channel column. Same `x0`/`colW`/`scrollKey` parametrization as `renderMembers` — see there. */
     private renderChannel(x0: number, colW: number, y0: number, maxH: number, scrollKey: 'scrollY' | 'scrollYChannel'): void {
       const right = x0 + colW;
-      const inputH = 44;
+      const R = this.rowH;
+      const inputH = Math.round(this.h * 0.05);
       const listH2 = maxH - inputH - 6;
 
       // Message list
-      const msgH = this.messages.length * ROW_H;
+      const msgH = this.messages.length * R;
       this[scrollKey] = Math.max(0, Math.min(this[scrollKey], Math.max(0, msgH - listH2)));
 
       let cy = y0 - this[scrollKey];
       for (const msg of this.messages) {
-        if (cy + ROW_H < y0 || cy > y0 + listH2) { cy += ROW_H; continue; }
-        const nameLbl = txt(msg.senderName ?? msg.senderId, 11, C.accent);
-        nameLbl.x = x0 + 12; nameLbl.y = cy + 4;
+        if (cy + R < y0 || cy > y0 + listH2) { cy += R; continue; }
+        const nameLbl = txt(msg.senderName ?? msg.senderId, this.fs(0.02), C.accent);
+        nameLbl.x = x0 + 12; nameLbl.y = cy + Math.round(R * 0.1);
         this.bodyLayer.addChild(nameLbl);
-        const bodyLbl = txt(msg.body, 12, C.dark);
-        bodyLbl.x = x0 + 12; bodyLbl.y = cy + 18;
+        const bodyLbl = txt(msg.body, this.fs(0.024), C.dark);
+        bodyLbl.x = x0 + 12; bodyLbl.y = cy + Math.round(R * 0.44);
         this.bodyLayer.addChild(bodyLbl);
-        cy += ROW_H;
+        cy += R;
       }
 
+      drawScrollIndicator(this.bodyLayer, { x: x0, y: y0, w: colW, h: listH2 }, this[scrollKey], Math.max(0, msgH - listH2));
+
       if (this.messages.length === 0) {
-        const emptyLbl = txt(t('family.noMessages'), 12, C.mid);
-        emptyLbl.alpha = 0.6;
+        const emptyLbl = txt(t('family.noMessages'), this.fs(0.022), MUTED);
+        emptyLbl.alpha = 0.8;
         emptyLbl.x = x0 + 12; emptyLbl.y = y0 + 8;
         this.bodyLayer.addChild(emptyLbl);
       }
 
       // Input area
       const inputY = y0 + listH2 + 4;
-      const fieldW = right - x0 - 80;
-      const field = sketchPanel(fieldW, 36, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(0, 0, fieldW) });
+      const sendW = Math.round(this.h * 0.09);
+      const fieldW = right - x0 - sendW - 12;
+      const field = sketchPanel(fieldW, inputH, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(0, 0, fieldW) });
       field.x = x0 + 6; field.y = inputY;
       this.bodyLayer.addChild(field);
-      const fl = txt(t('family.msgPlaceholder'), 12, C.mid);
-      fl.x = x0 + 12; fl.y = inputY + 10;
+      const fl = txt(t('family.msgPlaceholder'), this.fs(0.022), MUTED);
+      fl.x = x0 + 12; fl.y = inputY + inputH / 2 - fl.height / 2;
       this.bodyLayer.addChild(fl);
-      this.hitRects.push({ rect: { x: x0 + 6, y: inputY, w: fieldW, h: 36 }, action: () => this.openSendInput() });
+      this.hitRects.push({ rect: { x: x0 + 6, y: inputY, w: fieldW, h: inputH }, action: () => this.openSendInput() });
 
-      const sendBtn = sketchPanel(66, 36, { fill: C.dark, border: C.accent, seed: seedFor(1, 0, 66) });
-      sendBtn.x = right - 72; sendBtn.y = inputY;
+      const sendBtn = sketchPanel(sendW, inputH, { fill: C.dark, border: C.accent, seed: seedFor(1, 0, sendW) });
+      sendBtn.x = right - sendW; sendBtn.y = inputY;
       this.bodyLayer.addChild(sendBtn);
-      const sl = txt(t('family.send'), 13, C.light);
-      sl.anchor.set(0.5, 0.5); sl.x = right - 39; sl.y = inputY + 18;
+      const sl = txt(t('family.send'), this.fs(0.024), C.light);
+      sl.anchor.set(0.5, 0.5); sl.x = right - sendW / 2; sl.y = inputY + inputH / 2;
       this.bodyLayer.addChild(sl);
-      this.hitRects.push({ rect: { x: right - 72, y: inputY, w: 66, h: 36 }, action: () => void this.doSendMsg() });
+      this.hitRects.push({ rect: { x: right - sendW, y: inputY, w: sendW, h: inputH }, action: () => void this.doSendMsg() });
     }
   };
 }

@@ -7,6 +7,7 @@ import { buildIcon } from '../../render/icons';
 import { UNIT_ART_URLS } from '../../render/cardArt';
 import { drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
+import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
 import type { CardSLGState } from '../../net/WorldApiClient';
 import { CARD_DEFS, CARD_INV_CAP, CARD_INV_WARN, troopCap, cardPower } from '../../game/meta/cardDefs';
@@ -101,12 +102,14 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
           this.renderCardCell(card, x, y, cellW, cardState[card.id], now, save);
         }
       });
+
+      drawScrollIndicator(this.bodyLayer, { x: left, y: listY, w: avail, h: listH }, this.scrollY, Math.max(0, totalH - listH));
     }
 
     /**
-     * Icon-card cell: name across the top, unit portrait on the left, stats
-     * (level / power / troops / gear) on the right. Border color encodes SLG
-     * state (injured = red, deployed = accent).
+     * Icon-card cell: a full-height unit portrait on the left, with every hero detail
+     * (name / level / power / troops / status / gear) stacked in a column immediately to
+     * its right. Border color encodes SLG state (injured = red, deployed = accent).
      */
     renderCardCell(
       card: CardInstance,
@@ -128,43 +131,45 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       cell.x = x; cell.y = y;
       this.bodyLayer.addChild(cell);
 
-      // ── Top: faction dot + name (name clipped so long names don't overrun) ──
+      // ── Left: full-height portrait in a light frame (portrait spans the whole cell height) ──
+      const imgH = CARD_CELL_H - pad * 2;
+      const imgW = Math.round(imgH * 0.72); // portrait-tall frame (unit art is taller than wide)
+      const imgX = x + pad;
+      const imgY = y + pad;
+      const frame = sketchPanel(imgW, imgH, { fill: 0xf0eee7, border: C.mid, seed: seedFor(x, y, imgW) });
+      frame.x = imgX; frame.y = imgY;
+      this.bodyLayer.addChild(frame);
+      const artUrl = def ? UNIT_ART_URLS[def.unitType] : undefined;
+      if (artUrl) this.drawArtFit(artUrl, imgX + 2, imgY + 2, imgW - 4, this.bodyLayer, imgH - 4);
+
+      // ── Right: info column (name at top, stats stacked below) ──
+      const ax = imgX + imgW + 12;
+      const rightW = x + cellW - pad - ax; // available text width to the right of the portrait
+
+      // Name row: faction dot + name (name clipped so long names don't overrun the column).
       const factionColor = def?.faction === 'anna' ? 0xcc4466 : 0x4477cc;
       const dot = new PIXI.Graphics();
       dot.beginFill(factionColor).drawCircle(0, 0, 5).endFill();
-      dot.x = x + pad + 5; dot.y = y + pad + 7;
+      dot.x = ax + 5; dot.y = y + pad + 7;
       this.bodyLayer.addChild(dot);
 
       const cardName = t(`card.${card.defId}.name` as TranslationKey);
       const nameLbl = txt(cardName, 20, C.dark, true);
-      nameLbl.x = x + pad + 16; nameLbl.y = y + pad;
+      nameLbl.x = ax + 16; nameLbl.y = y + pad;
       nameLbl.style.wordWrap = false;
-      if (nameLbl.width > cellW - pad * 2 - 28) {
-        const s = cellW / (nameLbl.width + 56);
-        nameLbl.scale.set(Math.min(1, s));
-      }
+      // Leave room for the lock badge on the name row when locked.
+      const nameMaxW = rightW - 16 - (card.locked ? 24 : 0);
+      if (nameLbl.width > nameMaxW) nameLbl.scale.set(Math.min(1, nameMaxW / nameLbl.width));
       this.bodyLayer.addChild(nameLbl);
 
-      // Lock badge (top-right).
+      // Lock badge (top-right of the info column).
       if (card.locked) {
         const lk = buildIcon('lock', 18, C.mid);
         lk.x = x + cellW - pad - 18; lk.y = y + pad;
         this.bodyLayer.addChild(lk);
       }
 
-      // ── Left: portrait in a light frame ──
-      const imgBox = CARD_CELL_H - (pad + 36) - pad; // square
-      const imgX = x + pad;
-      const imgY = y + pad + 36;
-      const frame = sketchPanel(imgBox, imgBox, { fill: 0xf0eee7, border: C.mid, seed: seedFor(x, y, imgBox) });
-      frame.x = imgX; frame.y = imgY;
-      this.bodyLayer.addChild(frame);
-      const artUrl = def ? UNIT_ART_URLS[def.unitType] : undefined;
-      if (artUrl) this.drawArtFit(artUrl, imgX + 2, imgY + 2, imgBox - 4);
-
-      // ── Right: stats column ──
-      const ax = imgX + imgBox + 12;
-      let ay = imgY;
+      let ay = y + pad + 34;
       const lvLbl = txt(`Lv.${card.level}`, 16, C.mid, true);
       lvLbl.x = ax; lvLbl.y = ay; this.bodyLayer.addChild(lvLbl);
       ay += 24;
@@ -191,7 +196,7 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         tag.x = ax; tag.y = ay; this.bodyLayer.addChild(tag); ay += 20;
       }
 
-      // Gear slot indicators (3 dots: filled = has equipment) — bottom-right.
+      // Gear slot indicators (3 dots: filled = has equipment) — bottom-right of the info column.
       const gearY = y + CARD_CELL_H - pad - 4;
       (['weapon', 'armor', 'trinket'] as EquipSlot[]).forEach((slot, i) => {
         const filled = !!(card.gear[slot]);

@@ -10,6 +10,7 @@ import { cardArtUrl, getArtTexture, preloadL1CardArtTextures } from '../render/c
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawCareerTabs, type CareerNavCallbacks } from '../ui/widgets/CareerTabs';
 import { sidebarNavW } from '../ui/widgets/HubTabs';
+import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { CARD_DEFINITIONS, UNIT_BLUEPRINTS, BUILDING_BLUEPRINTS } from '../game/config';
 import { CardType, type CardDefinition } from '../game/types';
 
@@ -58,6 +59,9 @@ export class CardCodexScene implements Scene {
   private scrollY = 0;
   private maxScroll = 0;
   private regionTop = 0;
+  /** Scroll viewport rect + indicator handle (redrawn in the drag fast-path). */
+  private scrollView: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  private scrollbar: PIXI.Graphics | null = null;
   private pointerActive = false;
   private dragging = false;
   private downX = 0;
@@ -108,6 +112,8 @@ export class CardCodexScene implements Scene {
     if (next !== this.scrollY) {
       this.scrollY = next;
       this.layer.y = -this.scrollY;
+      if (this.scrollbar) { this.scrollbar.destroy(); this.scrollbar = null; }
+      this.scrollbar = drawScrollIndicator(this.container, this.scrollView, this.scrollY, this.maxScroll);
     }
   }
 
@@ -189,6 +195,9 @@ export class CardCodexScene implements Scene {
     this.maxScroll = Math.max(0, bottom + bottomPad - h);
     this.scrollY = Math.max(0, Math.min(this.scrollY, this.maxScroll));
     layer.y = -this.scrollY;
+
+    this.scrollView = { x: contentX, y: contentTop, w: w - contentX, h: h - contentTop };
+    this.scrollbar = drawScrollIndicator(this.container, this.scrollView, this.scrollY, this.maxScroll);
   }
 
   // ── Cards codex ────────────────────────────────────────────────────────────────

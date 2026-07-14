@@ -40,6 +40,36 @@ export class WorldMapInput {
     return true;
   }
 
+  /**
+   * Client-side pre-check mirroring worldsvc's isConnectedToSectTerritory (ADR-039 "连地") for a single
+   * occupy target: an occupy is only accepted if the target 4-neighbours land the player's sect already
+   * holds — the player's own 3×3 capital footprint counts as guaranteed initial territory even before any
+   * expansion (SLG_DESIGN §4.1). Used only to grey out the Occupy button so it's not a click-then-reject.
+   *
+   * Restricted to SOLO players (no familyId) on purpose: the server counts own family ∪ sibling families
+   * in the same sect, but the client only tags its own family's tiles (`mine`; `ally` = same family) — a
+   * sibling family's territory carries no client flag, so for anyone in a family we cannot prove the
+   * target is unconnected and must NOT pre-disable (the server still validates on departure). A solo
+   * player's friendly set is exactly {self}, fully known here, so the check is safe. Returns true (=allow)
+   * whenever connectivity cannot be confidently disproven.
+   */
+  private occupyConnected(tx: number, ty: number): boolean {
+    const me = this.ctx.me;
+    if (me?.familyId) return true; // in a family / possibly a sect → sibling-family tiles are invisible to us; defer to the server
+    const baseCells = new Set<string>();
+    if (me?.mainBaseTile) {
+      const [bx, by] = this.ctx.parseTileId(me.mainBaseTile);
+      for (const c of baseFootprintCells(bx, by)) baseCells.add(`${c.x}:${c.y}`);
+    }
+    const neighbors = [{ x: tx - 1, y: ty }, { x: tx + 1, y: ty }, { x: tx, y: ty - 1 }, { x: tx, y: ty + 1 }];
+    for (const n of neighbors) {
+      if (n.x < 0 || n.y < 0 || n.x >= this.ctx.mapW || n.y >= this.ctx.mapH) continue;
+      if (baseCells.has(`${n.x}:${n.y}`)) return true;      // borders own capital footprint (initial territory)
+      if (this.ctx.tileCache.get(`${n.x}:${n.y}`)?.mine) return true; // borders own captured territory
+    }
+    return false;
+  }
+
   onTileClick(tx: number, ty: number): void {
     if (tx < 0 || ty < 0 || tx >= this.ctx.mapW || ty >= this.ctx.mapH) return;
     this.ctx.selectedTile = { x: tx, y: ty };
@@ -161,8 +191,18 @@ export class WorldMapInput {
     // tile's system garrison via the deterministic engine, then holds it for a countdown before ownership lands)
     // — same troop-count dialog as sweep/reinforce, not an instant grab.
     const garrison = tile?.garrison ?? 0;
-    const buttons: { label: string; action: () => void }[] = [
-      { label: t('world.actOccupy'), action: () => this.ctx.panels.showDeployDialog(tx, ty, 'occupy') },
+    // ADR-039 连地: grey out Occupy when the target doesn't border the player's territory (occupy would be
+    // rejected server-side with TERRITORY_NOT_CONNECTED). Tapping the disabled button explains why. Sweep is
+    // not gated — it has no connectivity requirement server-side.
+    const occupyConnected = this.occupyConnected(tx, ty);
+    const buttons: { label: string; action: () => void; disabled?: boolean }[] = [
+      {
+        label: t('world.actOccupy'),
+        disabled: !occupyConnected,
+        action: occupyConnected
+          ? () => this.ctx.panels.showDeployDialog(tx, ty, 'occupy')
+          : () => this.ctx.panels.showToast(t('world.err.notConnected'), C.red),
+      },
     ];
     if (garrison > 0) {
       buttons.push({ label: t('world.actSweep'), action: () => this.ctx.panels.showDeployDialog(tx, ty, 'sweep') });

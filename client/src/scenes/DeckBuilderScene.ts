@@ -15,6 +15,7 @@ import {
 } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
+import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { buildIcon } from '../render/icons';
 import { CARD_DEFINITIONS } from '../game/config';
 import {
@@ -265,5 +266,7 @@ export class DeckBuilderScene implements Scene {
       if (!unlocked.has(id)) return; // locked cards not tappable
       this.hits.push({ rect: { x: cx, y: absY, w: cardW, h: cardH }, fn: () => this.toggleCard(id) });
     });
+
+    drawScrollIndicator(this.container, { x: pad, y: listY, w: w - pad * 2, h: this.listH }, this.scrollY, this.scrollMax);
   }
 }
