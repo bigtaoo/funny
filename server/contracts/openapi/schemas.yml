@@ -1,0 +1,529 @@
+schemas:
+  Error:
+    type: object
+    required: [code, message]
+    properties:
+      code: { type: string }
+      message: { type: string }
+
+  Rarity:
+    type: string
+    enum: [common, rare, epic, legendary]
+
+  LevelRecord:
+    type: object
+    properties:
+      timeMs: { type: integer }
+      leaked: { type: integer }
+    additionalProperties: true
+
+  SaveData:
+    type: object
+    required:
+      - version
+      - accountId
+      - rev
+      - updatedAt
+      - wallet
+      - inventory
+      - gacha
+      - pvp
+      - progress
+      - materials
+      - pveUpgrades
+      - equipped
+      - flags
+    properties:
+      version: { type: integer }
+      accountId: { type: string }
+      rev: { type: integer }
+      updatedAt: { type: integer }
+      wallet:
+        type: object
+        required: [coins]
+        properties:
+          coins: { type: integer, minimum: 0 }
+      inventory:
+        type: object
+        required: [skins, items]
+        properties:
+          skins:
+            type: array
+            items: { type: string }
+          items:
+            type: object
+            additionalProperties: { type: integer }
+      gacha:
+        type: object
+        required: [pity]
+        properties:
+          pity:
+            type: object
+            additionalProperties: { type: integer }
+      # Monetization mirror (GACHA_DESIGN §5–§7): read-only mirror of commercial authority. Absent in legacy saves, so not required.
+      monetization:
+        type: object
+        required: [fatePoints, subscriptionExpiry, starterUsed]
+        properties:
+          fatePoints: { type: integer, minimum: 0, description: 'Fate Points balance (§7)' }
+          subscriptionExpiry: { type: integer, description: 'monthly card end timestamp (ms); 0 = none (§5)' }
+          subscriptionLastClaimDay: { type: string, description: 'UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)' }
+          starterUsed:
+            type: array
+            items: { type: string }
+            description: 'one-off product ids already purchased (§6)'
+      # Delivered purchase orders (commercial orderId); idempotent delivery ledger (S5-5). May be absent in legacy saves, so not required.
+      deliveredOrders:
+        type: array
+        items: { type: string }
+      pvp:
+        type: object
+        required: [elo, rank, wins, losses, streak]
+        properties:
+          elo: { type: integer }
+          rank: { type: string }
+          wins: { type: integer }
+          losses: { type: integer }
+          streak: { type: integer }
+          # —— S11 season fields (may be absent in legacy saves) ——
+          seasonNo: { type: integer, description: Current season number }
+          seasonPeakElo: { type: integer, description: Peak ELO for current season }
+          seasonPeakRank: { type: string, description: Peak rank for current season }
+          reachedRanks:
+            type: array
+            items: { type: string }
+            description: All-time first-reached rank list (lifetime ledger)
+      # —— Stamina (A4, server-authoritative; defaults to full current=120 if absent) ——
+      stamina:
+        type: object
+        required: [current, regenAt]
+        properties:
+          current: { type: integer, minimum: 0, maximum: 120, description: Current stamina }
+          regenAt: { type: integer, description: 'Timestamp (ms) when the next 1 stamina regenerates; 0 when full' }
+      # —— S10 titles (server-authoritative, lazily created; not writable via PUT /save) ——
+      titles:
+        type: array
+        items: { type: string }
+        description: Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)
+      # —— S11 battle pass ——
+      battlePass:
+        $ref: '#/components/schemas/BattlePassData'
+      progress:
+        type: object
+        required: [cleared, stars, best]
+        properties:
+          cleared:
+            type: array
+            items: { type: string }
+          stars:
+            type: object
+            additionalProperties: { type: integer, minimum: 1, maximum: 3 }
+          best:
+            type: object
+            additionalProperties: { $ref: '#/components/schemas/LevelRecord' }
+      materials:
+        type: object
+        additionalProperties: { type: integer }
+      # @deprecated S3-2 per-stat upgrades; from S12 onward unit progression switches to card-merging (see unitLevels/cardInventory).
+      pveUpgrades:
+        type: object
+        additionalProperties: { type: integer }
+      # @deprecated S12 collect-and-merge card inventory; superseded by Hero Roster (cardInv) in CC-1.
+      cardInventory:
+        type: object
+        additionalProperties: { type: integer, minimum: 0 }
+        description: Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup
+      # —— Hero Roster (CC-1/CC-2, CHARACTER_CARDS_DESIGN §2). Server-authoritative; not writable via PUT /save. Hard cap 150. ——
+      cardInv:
+        type: object
+        additionalProperties: { $ref: '#/components/schemas/CardInstance' }
+        description: Card instance inventory (instanceId→CardInstance); max 150 entries
+      equipped:
+        type: object
+        additionalProperties: { type: string }
+      flags:
+        type: object
+        additionalProperties: { type: boolean }
+      # —— Achievement system (server-authoritative, ACHIEVEMENT_DESIGN §3). Lazily created; may be absent in legacy saves, not required ——
+      stats:
+        type: object
+        additionalProperties: { type: integer }
+        description: Lifetime cumulative stats (StatKey→value), monotonically increasing, server-authoritative
+      achievements:
+        type: object
+        additionalProperties:
+          type: object
+          required: [claimedTiers]
+          properties:
+            claimedTiers:
+              type: array
+              items: { type: integer, minimum: 1, maximum: 3 }
+        description: achId→set of already-claimed tier numbers, idempotent to prevent double-claiming
+      # —— Equipment system (server-authoritative, EQUIPMENT_DESIGN §3.1). May be absent in legacy saves, not required ——
+      # Written only by /equipment/* endpoints; not writable via PUT /save (not in SyncPatch).
+      equipmentInv:
+        type: object
+        additionalProperties: { $ref: '#/components/schemas/EquipmentInstance' }
+      # —— Retention (B5, RETENTION_DESIGN §4). Server-authoritative, not uploaded via PUT /save; may be absent in legacy saves, not required.
+      # ⚠ Must be declared: otherwise response serialization strips retention (same +undefined regression as §10.1) → adoptServer
+      # overwrites local save.retention with undefined → check-in claimable always resets to slot 1 (stuck on day 1).
+      retention:
+        type: object
+        properties:
+          checkin:
+            type: object
+            required: [monthKey, claimedDays]
+            properties:
+              monthKey: { type: string }
+              claimedDays:
+                type: array
+                items: { type: integer }
+              lastClaimedDayKey: { type: string }
+          daily:
+            type: object
+            required: [dayKey, completedTasks, taskPoints, rewardClaimed]
+            properties:
+              dayKey: { type: string }
+              completedTasks:
+                type: object
+                additionalProperties: { type: integer }
+              taskPoints: { type: integer }
+              rewardClaimed: { type: boolean }
+
+  # Achievement definitions (hardcoded in @nw/shared, served by GET /achievements; clients use these + stats to compute tier locally).
+  Achievement:
+    type: object
+    required: [id, statKey, category, tiers]
+    properties:
+      id: { type: string }
+      statKey: { type: string }
+      category: { type: string, enum: [pve, pvp, collection, progression] }
+      titleId: { type: string }
+      hidden: { type: boolean }
+      tiers:
+        type: array
+        items:
+          type: object
+          required: [threshold, coins]
+          properties:
+            threshold: { type: integer }
+            coins: { type: integer }
+
+  EquipmentInstance:
+    type: object
+    required: [id, defId, rarity, level, affixes]
+    properties:
+      id: { type: string }
+      defId: { type: string }
+      rarity: { type: string, enum: [common, fine, rare, epic] }
+      level: { type: integer, minimum: 0, maximum: 9 }
+      affixes:
+        type: array
+        items:
+          type: object
+          required: [id, value]
+          properties:
+            id: { type: string }
+            value: { type: number }
+      locked: { type: boolean }
+
+  # —— Hero Roster card instance (CC-1/CC-2, CHARACTER_CARDS_DESIGN §2.2) ——
+  CardInstance:
+    type: object
+    required: [id, defId, level, xp, gear, locked]
+    properties:
+      id: { type: string, description: Unique instance id (e.g. 'card_a1b2c3') }
+      defId: { type: string, description: Card definition id (references CARD_DEFS) }
+      level: { type: integer, minimum: 1, maximum: 9 }
+      xp: { type: integer, minimum: 0, description: Accumulated XP within the current level }
+      gear:
+        type: object
+        additionalProperties: { type: string }
+        description: Per-slot equipped equipment instance ids (slot→equipmentInstanceId)
+      locked: { type: boolean, description: Locked cards cannot be used as feed material }
+
+  # —— Client sync patch (PUT /save only accepts these fields, §2.2) ——
+  # From PVE_INTEGRITY_PLAN §8 onward, progress/materials/pveUpgrades become server-authoritative
+  # (written only by /pve/* + ranked settlement); PUT /save is narrowed to equipped/flags only.
+  SyncPatch:
+    type: object
+    properties:
+      equipped: { $ref: '#/components/schemas/SaveData/properties/equipped' }
+      flags: { $ref: '#/components/schemas/SaveData/properties/flags' }
+
+  AuthResult:
+    type: object
+    required: [token, accountId, isNew, isAnonymous]
+    properties:
+      token: { type: string }
+      accountId: { type: string }
+      isNew: { type: boolean }
+      # Device-only, no recoverable credential (password/oauth/wx) → true. Online/shop/IAP requires false (SA-1).
+      isAnonymous: { type: boolean }
+      # Display name entered at registration (optional); used by client for profile display. Absent if not set.
+      displayName: { type: string }
+      # 9-digit numeric public ID (for player communication/support reports; accountId is internal to the server only).
+      publicId: { type: string }
+      # Public control-plane WS address for gateway (room/matchmaking). Client only hard-codes the meta address;
+      # gateway address is delivered in this response; game address is delivered in match_found. Absent if not configured.
+      gatewayUrl: { type: string }
+
+  MatchHistoryEntry:
+    type: object
+    required: [roomId, mode, result, ts]
+    properties:
+      roomId: { type: string }
+      mode: { type: string, description: 'friendly | ranked' }
+      result: { type: string, enum: [win, loss, unknown] }
+      opponentName: { type: string, description: Snapshot of the opponent's display name at archival time }
+      opponentPublicId: { type: string, description: "Opponent's 9-digit public id" }
+      eloDelta: { type: integer, description: 'ELO change for this ranked match (signed); absent for friendly' }
+      ts: { type: integer, description: Archival timestamp (epoch ms) }
+
+  MatchReplay:
+    type: object
+    required: [engineVersion, mode, seed, endFrame, frames]
+    description: Server-persisted match replay (non-empty frame log). Commands are game.proto opaque bytes (base64); the client decodes and plays back.
+    properties:
+      engineVersion: { type: integer, description: 'Always 0 on the server side (logic-agnostic); clients validate against their own ENGINE_VERSION at replay time' }
+      mode: { type: string }
+      seed: { type: string, description: uint64 decimal string }
+      endFrame: { type: integer }
+      frames:
+        type: array
+        items:
+          type: object
+          required: [frame, cmds]
+          properties:
+            frame: { type: integer }
+            cmds:
+              type: array
+              items:
+                type: object
+                required: [side, commands]
+                properties:
+                  side: { type: integer }
+                  commands: { type: string, description: 'PlayerCommands opaque bytes（base64）' }
+      meta:
+        type: object
+        properties:
+          recordedAt: { type: integer }
+          winner: { type: integer }
+
+  ShopItem:
+    type: object
+    required: [id, cost, kind]
+    properties:
+      id: { type: string }
+      cost: { type: integer }
+      kind: { type: string }
+      grants: { type: string }
+
+  GachaPool:
+    type: object
+    required: [id, costSingle, entries]
+    properties:
+      id: { type: string }
+      costSingle: { type: integer }
+      costTen: { type: integer }
+      pityThreshold: { type: integer }
+      dupePolicy: { type: string, enum: [shards, coins] }
+      # Limited pool banner metadata (GACHA_DESIGN §2.2); absent on static pools.
+      limited: { type: boolean, description: 'true = time-boxed limited pool' }
+      name: { type: string, description: 'limited pool banner title' }
+      featuredLegendary: { type: string, description: 'banner legendary itemId (off-banner legendary → Fate Point)' }
+      endAt: { type: integer, format: int64, description: 'limited pool close timestamp (ms)' }
+      entries:
+        type: array
+        items:
+          type: object
+          required: [itemId, weight, rarity, probability]
+          properties:
+            itemId: { type: string }
+            weight: { type: integer }
+            rarity: { $ref: '#/components/schemas/Rarity' }
+            probability: { type: number, description: 'Draw probability 0-1 (Apple 3.1.1 probability disclosure)' }
+
+  GachaResult:
+    type: object
+    required: [itemId, rarity, duplicate]
+    properties:
+      itemId: { type: string }
+      rarity: { $ref: '#/components/schemas/Rarity' }
+      duplicate: { type: boolean }
+      converted:
+        type: object
+        properties:
+          kind: { type: string, enum: [shards, coins] }
+          amount: { type: integer }
+
+  # —— Social (S6, SOCIAL_DESIGN §5) ——
+  ProfileView:
+    type: object
+    required: [publicId, displayName]
+    properties:
+      publicId: { type: string }
+      displayName: { type: string }
+      rank: { type: string }
+      equippedTitle: { type: string, description: "Currently equipped title id (empty string = no title)" }
+
+  FriendView:
+    type: object
+    required: [publicId, displayName, online]
+    properties:
+      publicId: { type: string }
+      displayName: { type: string }
+      online: { type: boolean }
+      rank: { type: string }
+      alias: { type: string, description: owner's private alias }
+
+  FriendRequestView:
+    type: object
+    required: [requestId, fromPublicId, fromName, toPublicId, createdAt]
+    properties:
+      requestId: { type: string }
+      fromPublicId: { type: string }
+      fromName: { type: string }
+      toPublicId: { type: string }
+      message: { type: string }
+      createdAt: { type: integer }
+
+  SocialBadges:
+    type: object
+    required: [friendRequests, chat, mail, total]
+    properties:
+      friendRequests: { type: integer }
+      chat: { type: integer }
+      mail: { type: integer }
+      total: { type: integer }
+
+  ConversationView:
+    type: object
+    required: [convId, peer, lastTs, unread]
+    properties:
+      convId: { type: string }
+      peer: { $ref: '#/components/schemas/ProfileView' }
+      lastBody: { type: string }
+      lastFrom: { type: string }
+      lastTs: { type: integer }
+      unread: { type: integer }
+
+  ChatMessageView:
+    type: object
+    required: [messageId, convId, fromPublicId, body, kind, ts]
+    properties:
+      messageId: { type: string }
+      convId: { type: string }
+      fromPublicId: { type: string }
+      body: { type: string }
+      kind: { type: string, enum: [text, system] }
+      ts: { type: integer }
+
+  MailAttachmentView:
+    type: object
+    required: [kind]
+    properties:
+      # equipment/card carry a full instance snapshot (auction escrow-out delivery/return); the client renders
+      # name/rarity/level from the attached instance and the claim writes it back to equipmentInv/cardInv by id.
+      kind: { type: string, enum: [coins, item, skin, material, equipment, card] }
+      id: { type: string }
+      count: { type: integer }
+      instance:
+        description: Present only for kind=equipment|card — the traded instance snapshot
+        oneOf:
+          - $ref: '#/components/schemas/EquipmentInstance'
+          - $ref: '#/components/schemas/CardInstance'
+
+  MailView:
+    type: object
+    required: [mailId, from, subject, body, createdAt, expireAt, read, claimed]
+    properties:
+      mailId: { type: string }
+      from: { type: string, description: "'system' or sender publicId" }
+      fromName: { type: string }
+      subject: { type: string }
+      body: { type: string }
+      attachments:
+        type: array
+        items: { $ref: '#/components/schemas/MailAttachmentView' }
+      createdAt: { type: integer }
+      expireAt: { type: integer }
+      read: { type: boolean }
+      claimed: { type: boolean }
+
+  # —— Analytics (A9-0) ——
+  AnalyticsEventConfig:
+    type: object
+    properties:
+      enabled: { type: boolean }
+      sample:  { type: number }
+
+  # —— S11 battle pass data (BattlePassData) ——
+  BattlePassData:
+    type: object
+    required: [seasonNo, xp, level, hasPass, claimedFree, claimedPaid]
+    properties:
+      seasonNo: { type: integer }
+      xp: { type: integer }
+      level: { type: integer, minimum: 0, maximum: 30 }
+      hasPass: { type: boolean }
+      claimedFree:
+        type: array
+        items: { type: integer }
+      claimedPaid:
+        type: array
+        items: { type: integer }
+
+  AnalyticsConfig:
+    type: object
+    properties:
+      enabled:       { type: boolean }
+      defaultSample: { type: number }
+      events:
+        type: object
+        additionalProperties:
+          $ref: '#/components/schemas/AnalyticsEventConfig'
+
+  AnalyticsEvent:
+    type: object
+    required: [event, ts]
+    properties:
+      event: { type: string }
+      ts:    { type: number, description: "Client unix ms" }
+      props:
+        type: object
+        additionalProperties: true
+
+  AnalyticsEventBatch:
+    type: object
+    required: [events]
+    properties:
+      session_id:   { type: string }
+      device_id:    { type: string }
+      platform:     { type: string, enum: [web, wechat, crazygames] }
+      os:           { type: string }
+      game_version: { type: string }
+      locale:       { type: string }
+      # —— Device fields (A9-9); web only, absent for wechat/crazygames. Server derives
+      # browser/device_type from `ua` at ingest — never trusts a client-supplied browser name. ——
+      ua:           { type: string }
+      screen_w:     { type: integer }
+      screen_h:     { type: integer }
+      dpr:          { type: number }
+      events:
+        type: array
+        maxItems: 100
+        items:
+          $ref: '#/components/schemas/AnalyticsEvent'
+
+responses:
+  ErrorResp:
+    description: Error envelope
+    content:
+      application/json:
+        schema:
+          type: object
+          required: [ok, error]
+          properties:
+            ok: { type: boolean, enum: [false] }
+            error: { $ref: '#/components/schemas/Error' }

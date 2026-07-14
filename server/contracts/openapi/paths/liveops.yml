@@ -1,0 +1,367 @@
+/achievements:
+  get:
+    operationId: getAchievements
+    tags: [save]
+    summary: Achievement definition table + my stats + claimed progress (client computes tier locally, ACHIEVEMENT_DESIGN §6)
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [defs, stats, achievements]
+                  properties:
+                    defs:
+                      type: array
+                      items: { $ref: '#/components/schemas/Achievement' }
+                    stats:
+                      type: object
+                      additionalProperties: { type: integer }
+                    achievements:
+                      $ref: '#/components/schemas/SaveData/properties/achievements'
+      '401': { $ref: '#/components/responses/ErrorResp' }
+
+/achievements/claim:
+  post:
+    operationId: claimAchievement
+    tags: [save]
+    summary: Claim coins for a specific achievement tier (server re-validates stat≥threshold + $addToSet for idempotent coin grant, §4.3)
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [achId, tier]
+            properties:
+              achId: { type: string }
+              tier: { type: integer, minimum: 1, maximum: 3 }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save, granted]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+                    granted: { type: integer, description: Coins granted this time }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '402': { $ref: '#/components/responses/ErrorResp' }
+      '409': { $ref: '#/components/responses/ErrorResp' }
+
+/retention:
+  get:
+    operationId: getRetention
+    tags: [save]
+    summary: Fetch retention state (check-in monthly calendar + daily task progress + definition table, B5 RETENTION_DESIGN)
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [defs, claimable]
+                  properties:
+                    checkin:
+                      type: object
+                      nullable: true
+                      properties:
+                        monthKey: { type: string }
+                        claimedDays: { type: array, items: { type: integer } }
+                        lastClaimedDayKey: { type: string }
+                    daily:
+                      type: object
+                      nullable: true
+                      properties:
+                        dayKey: { type: string }
+                        taskPoints: { type: integer }
+                        rewardClaimed: { type: boolean }
+                        completedTasks:
+                          type: object
+                          additionalProperties: { type: integer }
+                    defs:
+                      type: object
+                      required: [rewards, tasks, pointsThreshold, dailyCoinsReward]
+                      properties:
+                        rewards:
+                          type: array
+                          items:
+                            type: object
+                            required: [kind, count]
+                            properties:
+                              kind:  { type: string, enum: [coins, stamina, material, card, equipment] }
+                              count: { type: integer }
+                              id:    { type: string, description: Material id (scrap/lead/binding), set only when kind=material }
+                        tasks:
+                          type: array
+                          items:
+                            type: object
+                            required: [id, points]
+                            properties:
+                              id:     { type: string }
+                              points: { type: integer }
+                        pointsThreshold: { type: integer }
+                        dailyCoinsReward: { type: integer }
+                    claimable:
+                      type: object
+                      required: [checkin, daily]
+                      properties:
+                        checkin: { type: boolean }
+                        daily: { type: boolean }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+
+/retention/checkin:
+  post:
+    operationId: claimCheckin
+    tags: [save]
+    summary: Check in to claim the next slot reward for the current month (idempotent; 409 if already claimed today)
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save, day, reward]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+                    day: { type: integer, description: Slot number claimed this time (1-based) }
+                    reward:
+                      type: object
+                      required: [kind, count]
+                      properties:
+                        kind: { type: string, enum: [coins, stamina, material, card, equipment] }
+                        count: { type: integer }
+                        id:    { type: string, description: Material id (material) or the drawn defId (card/equipment) }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '409': { $ref: '#/components/responses/ErrorResp' }
+
+/retention/daily/claim:
+  post:
+    operationId: claimDailyReward
+    tags: [save]
+    summary: Claim the daily task full-points coin reward (idempotent; 400 if threshold not reached, 409 if already claimed)
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save, coins]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+                    coins: { type: integer, description: Coins granted this time }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '402': { $ref: '#/components/responses/ErrorResp' }
+      '409': { $ref: '#/components/responses/ErrorResp' }
+
+/events:
+  get:
+    operationId: getEvents
+    tags: [events]
+    summary: Fetch currently active event list (including this account's participation progress)
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Event list
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [events]
+                  properties:
+                    events:
+                      type: array
+                      items:
+                        type: object
+                        required: [eventId, title, windowStart, windowEnd, myPoints, tasks, rewards]
+                        properties:
+                          eventId:     { type: string }
+                          title:       { type: string }
+                          description: { type: string }
+                          windowStart: { type: integer }
+                          windowEnd:   { type: integer }
+                          myPoints:    { type: integer }
+                          tasks:
+                            type: array
+                            items:
+                              type: object
+                              required: [taskId, kind, target, points, progress, done]
+                              properties:
+                                taskId:   { type: string }
+                                kind:     { type: string }
+                                target:   { type: integer }
+                                points:   { type: integer }
+                                progress: { type: integer }
+                                done:     { type: boolean }
+                          rewards:
+                            type: array
+                            items:
+                              type: object
+                              required: [rewardId, cost, kind, claimedCount]
+                              properties:
+                                rewardId:     { type: string }
+                                cost:         { type: integer }
+                                kind:         { type: string }
+                                id:           { type: string }
+                                count:        { type: integer }
+                                maxClaims:    { type: integer }
+                                claimedCount: { type: integer }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+
+/events/claim:
+  post:
+    operationId: claimEventReward
+    tags: [events]
+    summary: Spend event points to redeem a reward
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [eventId, rewardId]
+            properties:
+              eventId:  { type: string }
+              rewardId: { type: string }
+    responses:
+      '200':
+        description: Redemption successful
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [pointsLeft, reward]
+                  properties:
+                    pointsLeft: { type: integer }
+                    reward:
+                      type: object
+                      required: [kind]
+                      properties:
+                        kind:  { type: string }
+                        id:    { type: string }
+                        count: { type: integer }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '402': { $ref: '#/components/responses/ErrorResp' }
+      '403': { $ref: '#/components/responses/ErrorResp' }
+      '404': { $ref: '#/components/responses/ErrorResp' }
+      '409': { $ref: '#/components/responses/ErrorResp' }
+
+# —— S10 titles (L2-2, TITLE_DESIGN): fetch granted titles + select the displayed title ——
+/titles:
+  get:
+    operationId: getTitles
+    tags: [save]
+    summary: All titles granted to the current account (including derived source/seasonNo) + currently equipped title
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [titles, equipped]
+                  properties:
+                    titles:
+                      type: array
+                      items:
+                        type: object
+                        required: [id, source]
+                        properties:
+                          id: { type: string, description: 'Title id (ladder.s{N}.{rank} / slg.s{N}.{key} / ach.{key} / event.{key})' }
+                          source: { type: string, enum: [ladder, slg, achievement, event] }
+                          seasonNo: { type: integer, description: Season number (only for ladder/slg type titles) }
+                    equipped:
+                      type: string
+                      nullable: true
+                      description: Currently equipped title id; null if none equipped
+      '401': { $ref: '#/components/responses/ErrorResp' }
+
+/title/equip:
+  put:
+    operationId: equipTitle
+    tags: [save]
+    summary: Select the currently displayed title (only titles already granted; empty string = unequip), writes equipped.title and pushes save
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [titleId]
+            properties:
+              titleId: { type: string, description: Title id to equip; empty string means unequip the displayed title }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '403': { $ref: '#/components/responses/ErrorResp' }
+

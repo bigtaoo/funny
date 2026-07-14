@@ -1,0 +1,363 @@
+/shop/items:
+  get:
+    operationId: getShopItems
+    tags: [shop]
+    summary: Shop item list
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items: { $ref: '#/components/schemas/ShopItem' }
+
+/shop/buy:
+  post:
+    operationId: shopBuy
+    tags: [shop]
+    summary: Direct purchase (deduct coins → deliver item → push save)
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [itemId]
+            properties:
+              itemId: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save, granted]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+                    granted: { type: string }
+      '402': { $ref: '#/components/responses/ErrorResp' }
+
+/gacha/pools:
+  get:
+    operationId: getGachaPools
+    tags: [gacha]
+    summary: Gacha pool list
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [pools]
+                  properties:
+                    pools:
+                      type: array
+                      items: { $ref: '#/components/schemas/GachaPool' }
+
+/gacha/draw:
+  post:
+    operationId: gachaDraw
+    tags: [gacha]
+    summary: Gacha draw (single/ten-pull, atomic, each draw persisted individually)
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [poolId, count]
+            properties:
+              poolId: { type: string }
+              count: { type: integer, enum: [1, 10] }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save, results]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+                    results:
+                      type: array
+                      items: { $ref: '#/components/schemas/GachaResult' }
+      '402': { $ref: '#/components/responses/ErrorResp' }
+      '404': { $ref: '#/components/responses/ErrorResp' }
+
+/fate/redeem:
+  post:
+    operationId: redeemFate
+    tags: [gacha]
+    summary: Redeem Fate Points for a chosen past-featured legendary (GACHA_DESIGN §7)
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [itemId]
+            properties:
+              itemId: { type: string, description: 'a (past-)featured limited legendary itemId' }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save, granted]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+                    granted: { type: string }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+      '402': { $ref: '#/components/responses/ErrorResp' }
+
+/monthly-card/buy:
+  post:
+    operationId: monthlyCardBuy
+    tags: [gacha]
+    summary: Buy the monthly card (GACHA_DESIGN §5; single-slot — 400 ALREADY_ACTIVE while a card is still running)
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+
+/year-card/buy:
+  post:
+    operationId: yearCardBuy
+    tags: [gacha]
+    summary: Buy the year card (GACHA_DESIGN §5; 365-day subscription, single-slot — 400 ALREADY_ACTIVE while a card is still running)
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+
+/monthly-card/claim:
+  post:
+    operationId: monthlyCardClaim
+    tags: [gacha]
+    summary: Claim the monthly card daily coins (once per UTC day, GACHA_DESIGN §5)
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save, claimed]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+                    claimed: { type: integer, description: 'coins claimed this call (0 = no active card or already claimed today)' }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+
+/starter/buy:
+  post:
+    operationId: starterBuy
+    tags: [gacha]
+    summary: Buy a one-off starter pack (GACHA_DESIGN §6)
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [productId]
+            properties:
+              productId: { type: string, enum: [starter_draw, starter_growth] }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save, results]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+                    results:
+                      type: array
+                      items: { $ref: '#/components/schemas/GachaResult' }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+      '403': { $ref: '#/components/responses/ErrorResp' }
+      '409': { $ref: '#/components/responses/ErrorResp' }
+
+/ads/reward:
+  post:
+    operationId: adsReward
+    tags: [ads]
+    summary: Ad reward verification (daily cap)
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [adToken]
+            properties:
+              adToken: { type: string }
+              platform: { type: string, enum: [dev, admob_client, wechat_client], description: Ad platform (C2) }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save, granted]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+                    granted: { type: integer }
+      '429': { $ref: '#/components/responses/ErrorResp' }
+
+/iap/verify:
+  post:
+    operationId: iapVerify
+    tags: [iap]
+    summary: IAP receipt verification (idempotent ticket)
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [platform, receipt]
+            properties:
+              platform: { type: string }
+              receipt: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save, granted]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+                    granted: { type: integer }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+
+# ════════════ Social (S6, SOCIAL_DESIGN §5) ════════════
+/promo/redeem:
+  post:
+    operationId: redeemPromoCode
+    tags: [shop]
+    summary: Player redeems a promo code (once per player per code)
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [code]
+            properties:
+              code: { type: string, description: Promo code (case-insensitive) }
+    responses:
+      '200':
+        description: Redemption successful
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [coinsAfter, coinsGranted]
+                  properties:
+                    coinsAfter: { type: integer }
+                    coinsGranted: { type: integer }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '404': { $ref: '#/components/responses/ErrorResp' }
+      '409': { $ref: '#/components/responses/ErrorResp' }
