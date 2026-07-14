@@ -115,6 +115,18 @@ export class CardSceneBase {
   protected hitRects: { rect: Rect; action: () => void }[] = [];
   protected modalHits: { rect: Rect; action: () => void }[] = [];
   protected modalOpen = false;
+  /**
+   * Detail-modal scale transform (popup-scale-to-80pct fix, 2026-07-14): the whole modal panel is
+   * drawn in a local (unscaled) frame onto {@link modalPanelRoot}, then that container is scaled up
+   * to fill 80% of the constrained screen axis. modalHits for anything drawn onto modalPanelRoot must
+   * be converted to real screen space via {@link toModalScreen} — identity (scale 1, origin 0) when
+   * no modal is open.
+   */
+  protected modalScale = 1;
+  protected modalOriginX = 0;
+  protected modalOriginY = 0;
+  /** Container for modal-panel content that should scale/position as one unit — see {@link modalScale}. */
+  protected modalPanelRoot!: PIXI.Container;
 
   protected detailId: string | null = null;
   protected scrollY = 0;
@@ -231,6 +243,19 @@ export class CardSceneBase {
     this.modalLayer.removeChildren();
     this.modalHits = [];
     this.modalOpen = false;
+    this.modalScale = 1;
+    this.modalOriginX = 0;
+    this.modalOriginY = 0;
+  }
+
+  /** Convert a rect drawn in {@link modalPanelRoot}'s local (unscaled) space into real screen space. */
+  protected toModalScreen(r: Rect): Rect {
+    return {
+      x: this.modalOriginX + r.x * this.modalScale,
+      y: this.modalOriginY + r.y * this.modalScale,
+      w: r.w * this.modalScale,
+      h: r.h * this.modalScale,
+    };
   }
 
   // ── Toast ─────────────────────────────────────────────────────────────────
@@ -257,6 +282,10 @@ export class CardSceneBase {
   private handleDown(x: number, y: number): void {
     if (this.bt.busy) return;
     if (this.modalOpen) {
+      // The header Back button must stay reachable even with the detail modal open — otherwise a
+      // tap there falls through to the modal's own dim-to-close catch-all and just closes the
+      // modal instead of leaving the scene (LOBBY_IA_REDESIGN back-button-always-works fix, 2026-07-14).
+      if (this.inRect(x, y, this.backRect)) { this.cb.onBack(); return; }
       for (const { rect, action } of this.modalHits) {
         if (this.inRect(x, y, rect)) { action(); return; }
       }
