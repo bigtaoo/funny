@@ -21,6 +21,13 @@ import { CardType, type CardDefinition } from '../game/types';
 // greyed out with a lock badge; buildings/spells have no roster-ownership concept and always show
 // unlocked. Lives in the Career hub (peer of Stats/Titles/Achievements) since it's a goals/collection
 // page, not an operation on the player's own roster (that's CardScene/"Develop").
+//
+// Tile layout (redesigned 14.07.2026): the illustration fills the full tile height on the left; the
+// card's info (name / type·cost / stat chips) sits in its own separately-drawn panel on the right.
+// Tapping an unlocked card's illustration plays a squash-flip (borrowed from CardScene/detail.ts's
+// flipDetailPortrait) that swaps the art for the card's story text in place; tapping again flips back.
+// The flip is driven by PIXI.Ticker.shared, and the per-tile flipped state lives in `flipped` so it
+// survives the full re-renders triggered by async art loads / resizes.
 
 export interface CardCodexCallbacks {
   onBack(): void;
@@ -56,6 +63,10 @@ export class CardCodexScene implements Scene {
   private downX = 0;
   private downY = 0;
   private dragStartScroll = 0;
+  /** Per-tile flip state (keyed by card.nameKey — the dedup key): art (false) ⇄ story text (true). */
+  private readonly flipped = new Set<string>();
+  /** Active flip animation cleanups, keyed by the same nameKey, so a re-render can cancel in-flight ticks. */
+  private readonly flipCleanups = new Map<string, () => void>();
 
   constructor(layout: ILayout, input: InputManager, cb: CardCodexCallbacks) {
     this.container = new PIXI.Container();
@@ -70,9 +81,10 @@ export class CardCodexScene implements Scene {
     void preloadL1CardArtTextures();
   }
 
-  update(): void { /* static */ }
+  update(): void { /* static — flip animation runs off PIXI.Ticker.shared */ }
   destroy(): void {
     this.destroyed = true;
+    this.cancelAllFlips();
     this.unsubs.forEach((u) => u());
     this.container.destroy({ children: true });
   }
@@ -111,7 +123,7 @@ export class CardCodexScene implements Scene {
     }
   }
 
-  private drawArtFit(url: string, x: number, y: number, box: number): void {
+  private drawArtFit(url: string, x: number, y: number, box: number, target: PIXI.Container = this.layer): void {
     const tex = getArtTexture(url);
     if (!tex.baseTexture.valid) {
       if (!this.artHooked.has(url)) {
@@ -125,11 +137,14 @@ export class CardCodexScene implements Scene {
     sp.anchor.set(0.5);
     sp.scale.set(scale);
     sp.position.set(x + box / 2, y + box / 2);
-    this.layer.addChild(sp);
+    target.addChild(sp);
   }
 
   private render(): void {
     if (this.destroyed) return;
+    // A re-render rebuilds every tile's faceLayer from scratch; cancel any in-flight flip tick first so
+    // it can't keep mutating a now-detached container. Settled flip state is preserved in `flipped`.
+    this.cancelAllFlips();
     tearDownChildren(this.container);
     this.hits = [];
     const { w, h } = this;
@@ -194,7 +209,7 @@ export class CardCodexScene implements Scene {
     const cols = 2;
     const gap = Math.round(avail * 0.045);
     const tileW = Math.round((avail - gap) / cols);
-    const tileH = Math.round(h * 0.155);
+    const tileH = Math.round(h * 0.19);
     const rowGap = Math.round(h * 0.022);
     let y = top;
 
@@ -207,60 +222,148 @@ export class CardCodexScene implements Scene {
     return y + tileH;
   }
 
-  /** A read-only codex tile: name + type·cost header, key stats, short blurb — greyed + locked if not yet unlocked. */
+  /**
+   * A read-only codex tile: a full-height illustration on the left (tap-to-flip → story text, when
+   * unlocked) and a separate info panel on the right (name + type·cost header, key stats). Locked
+   * entries grey out, show a lock over the art, and don't flip.
+   */
   private drawCardTile(entry: CodexEntry, x: number, y: number, w: number, h: number): void {
     const { card, locked } = entry;
-    const box = sketchPanel(w, h, { fill: locked ? 0xf0efe9 : C.paper, border: locked ? C.mid : C.line, width: 1.6, seed: seedFor(x, y, w) });
-    box.x = x; box.y = y;
     const accent = locked ? C.mid
       : card.cardType === CardType.Unit ? C.accent
       : card.cardType === CardType.Building ? C.gold : C.red;
-    sketchAccentBar(box, h, accent, seedFor(x, h, 6));
-    this.layer.addChild(box);
 
-    const icSize = Math.round(h * 0.30);
-    const icX = x + Math.round(w * 0.07), icY = y + Math.round(h * 0.10);
+    const key = card.nameKey;
     const art = cardArtUrl(card);
-    if (art) this.drawArtFit(art, icX, icY, icSize);
+    const story = this.storyText(card);
+
+    // ── Illustration (left, full tile height) ──
+    const imgBox = h;
+    const frame = sketchPanel(imgBox, h, { fill: locked ? 0xf0efe9 : 0xf7f5ee, border: locked ? C.mid : C.line, width: 1.6, seed: seedFor(x, y, imgBox) });
+    frame.x = x; frame.y = y;
+    this.layer.addChild(frame);
+
+    const inset = Math.round(imgBox * 0.06);
+    const faceBox = imgBox - inset * 2;
+    const face = new PIXI.Container();
+    face.position.set(x + imgBox / 2, y + h / 2);
+    this.layer.addChild(face);
+    this.drawTileFace(face, faceBox, card, art, story, !locked && this.flipped.has(key));
+
     if (locked) {
       const dim = new PIXI.Graphics();
-      dim.beginFill(0xf0efe9, 0.55).drawRect(icX, icY, icSize, icSize).endFill();
+      dim.beginFill(0xf0efe9, 0.55).drawRect(x + inset, y + inset, faceBox, faceBox).endFill();
       this.layer.addChild(dim);
-      const lkSize = Math.round(icSize * 0.4);
+      const lkSize = Math.round(imgBox * 0.28);
       const lk = buildIcon('lock', lkSize, C.mid);
-      lk.x = icX + (icSize - lkSize) / 2; lk.y = icY + (icSize - lkSize) / 2;
+      lk.x = x + (imgBox - lkSize) / 2; lk.y = y + (h - lkSize) / 2;
       this.layer.addChild(lk);
+    } else {
+      // Tap the illustration to flip between art and the card's story text.
+      this.hits.push({
+        scroll: true,
+        rect: { x, y, w: imgBox, h },
+        fn: () => this.flipTile(key, face, faceBox, card, art, story),
+      });
     }
-    const textX = icX + icSize + Math.round(w * 0.04);
+
+    // ── Info panel (right, its own separately-drawn background) ──
+    const infoGap = Math.round(w * 0.03);
+    const infoX = x + imgBox + infoGap;
+    const infoW = w - imgBox - infoGap;
+    const info = sketchPanel(infoW, h, { fill: locked ? 0xf0efe9 : C.paper, border: locked ? C.mid : C.line, width: 1.6, seed: seedFor(infoX, y, infoW) });
+    info.x = infoX; info.y = y;
+    sketchAccentBar(info, h, accent, seedFor(infoX, h, 6));
+    this.layer.addChild(info);
+
+    const pad = Math.round(infoW * 0.06);
+    const textX = infoX + pad;
 
     const name = txt(t(card.nameKey as TranslationKey), Math.round(h * 0.15), locked ? C.mid : C.dark, true);
-    name.anchor.set(0, 0); name.x = textX; name.y = y + Math.round(h * 0.10);
+    name.anchor.set(0, 0); name.x = textX; name.y = y + Math.round(h * 0.12);
     this.layer.addChild(name);
 
     const typeLabel = card.cardType === CardType.Unit ? t('collection.cardType.unit')
       : card.cardType === CardType.Building ? t('collection.cardType.building')
       : t('collection.cardType.spell');
     const sub = txt(`${typeLabel} · ${t('collection.stat.cost')} ${card.cost}`, Math.round(h * 0.12), accent, true);
-    sub.anchor.set(0, 0); sub.x = textX; sub.y = y + Math.round(h * 0.32);
+    sub.anchor.set(0, 0); sub.x = textX; sub.y = y + Math.round(h * 0.34);
     this.layer.addChild(sub);
 
     if (locked) {
       const lockedLbl = txt(t('collection.locked'), Math.round(h * 0.11), C.mid, true);
-      lockedLbl.anchor.set(0, 0); lockedLbl.x = x + Math.round(w * 0.07); lockedLbl.y = y + Math.round(h * 0.75);
+      lockedLbl.anchor.set(0, 0); lockedLbl.x = textX; lockedLbl.y = y + Math.round(h * 0.62);
       this.layer.addChild(lockedLbl);
       return;
     }
 
     const stats = this.cardStats(card);
     if (stats) {
-      this.drawStatChips(stats, x + Math.round(w * 0.07), y + Math.round(h * 0.55), w * 0.86, Math.round(h * 0.14));
+      this.drawStatChips(stats, textX, y + Math.round(h * 0.60), infoW - pad * 2, Math.round(h * 0.15));
     }
+  }
 
-    const desc = txt(t(card.descKey as TranslationKey), Math.round(h * 0.10), C.mid);
-    desc.anchor.set(0, 0); desc.x = x + Math.round(w * 0.07); desc.y = y + Math.round(h * 0.75);
-    const maxDescW = w * 0.86;
-    if (desc.width > maxDescW) desc.scale.set(maxDescW / desc.width);
-    this.layer.addChild(desc);
+  /** The card's story text for the flip's back face: the character lore when it exists, else the card blurb. */
+  private storyText(card: CardDefinition): string {
+    const loreKey = card.nameKey.replace(/\.name$/, '.lore');
+    const lore = t(loreKey as TranslationKey);
+    return lore !== loreKey ? lore : t(card.descKey as TranslationKey);
+  }
+
+  /** Draw the illustration face: art (front) or word-wrapped story text (back), centred on the container origin. */
+  private drawTileFace(container: PIXI.Container, box: number, card: CardDefinition, art: string | null, story: string, showStory: boolean): void {
+    container.removeChildren();
+    if (!showStory) {
+      if (art) { this.drawArtFit(art, -box / 2, -box / 2, box, container); return; }
+      // No illustration for this card yet — a faded monogram keeps the frame from reading as broken.
+      const initial = t(card.nameKey as TranslationKey).charAt(0).toUpperCase();
+      const mono = txt(initial, Math.round(box * 0.5), C.mid, true);
+      mono.anchor.set(0.5, 0.5); mono.alpha = 0.35;
+      container.addChild(mono);
+      return;
+    }
+    const bg = new PIXI.Graphics();
+    bg.beginFill(0xf7f5ee).drawRect(-box / 2, -box / 2, box, box).endFill();
+    container.addChild(bg);
+    const lore = txt(story, Math.round(box * 0.085), C.mid);
+    lore.style.wordWrap = true;
+    lore.style.wordWrapWidth = box - 12;
+    lore.x = -box / 2 + 6; lore.y = -box / 2 + 6;
+    container.addChild(lore);
+  }
+
+  /** Squash-flip a tile's illustration (scaleX 1→0→1, swapping art⇄story at the midpoint) via PIXI.Ticker.shared. */
+  private flipTile(key: string, container: PIXI.Container, box: number, card: CardDefinition, art: string | null, story: string): void {
+    this.cancelFlip(key);
+    const DUR_MS = 260;
+    let elapsed = 0;
+    let swapped = false;
+    const tick = (): void => {
+      elapsed += PIXI.Ticker.shared.deltaMS;
+      const p = Math.min(1, elapsed / DUR_MS);
+      if (!swapped && p >= 0.5) {
+        swapped = true;
+        if (this.flipped.has(key)) this.flipped.delete(key); else this.flipped.add(key);
+        this.drawTileFace(container, box, card, art, story, this.flipped.has(key));
+      }
+      container.scale.x = Math.max(0.02, p < 0.5 ? 1 - p / 0.5 : (p - 0.5) / 0.5);
+      if (p >= 1) {
+        container.scale.x = 1;
+        this.cancelFlip(key);
+      }
+    };
+    this.flipCleanups.set(key, () => PIXI.Ticker.shared.remove(tick));
+    PIXI.Ticker.shared.add(tick);
+  }
+
+  private cancelFlip(key: string): void {
+    const c = this.flipCleanups.get(key);
+    if (c) { c(); this.flipCleanups.delete(key); }
+  }
+
+  private cancelAllFlips(): void {
+    this.flipCleanups.forEach((c) => c());
+    this.flipCleanups.clear();
   }
 
   private cardStats(card: CardDefinition): { icon: IconKind | null; label: string; value: number }[] | null {

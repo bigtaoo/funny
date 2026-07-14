@@ -1,5 +1,5 @@
 /**
- * CareerTabs.ts — the [Stats|Titles|Achievements|Codex] peer-tab strip shared by StatsScene,
+ * CareerTabs.ts — the [Stats|Titles|Codex|Achievements] peer-tab strip shared by StatsScene,
  * TitlesScene, AchievementScene, and CardCodexScene (the "Career" hub). Each member scene draws this
  * same strip with itself marked active, mirroring the EquipmentScene/CollectionScene peerTab
  * convention documented in HubTabs.ts: before this, Titles/Achievements were wired as plain launchers
@@ -32,16 +32,20 @@ export function drawCareerTabs(
   active: CareerTabKey,
   cb: CareerNavCallbacks,
 ): { hits: Array<{ rect: Rect; fn: () => void }>; bottom: number } {
+  // Order note: Achievements sits LAST so its own category sub-tabs (pve/pvp/collection/progression,
+  // drawn by AchievementScene directly beneath this strip) read as nested under the Achievements cell.
+  // When Achievements was 3rd and Collection 4th, those sub-tabs appeared below the Collection cell and
+  // looked like they belonged to Collection instead (reported 14.07.2026).
   const tabs: HubTab[] = [
     { label: t('stats.title'), active: active === 'stats', icon: 'book' },
     { label: t('stats.titles'), active: active === 'titles', icon: 'medal' },
-    { label: t('stats.achievements'), active: active === 'achievements', icon: 'trophy', badge: !!cb.hasClaimableAchievement },
     { label: t('collection.title'), active: active === 'codex', icon: 'cards' },
+    { label: t('stats.achievements'), active: active === 'achievements', icon: 'trophy', badge: !!cb.hasClaimableAchievement },
   ];
   return drawSidebarTabs(container, sidebarW, y, h, tabs, (i) => {
     if (i === 0) cb.onOpenStats();
     else if (i === 1) cb.onOpenTitles();
-    else if (i === 2) cb.onOpenAchievements();
-    else cb.onOpenCodex();
+    else if (i === 2) cb.onOpenCodex();
+    else cb.onOpenAchievements();
   });
 }
