@@ -325,9 +325,10 @@ export class ResultScene implements Scene {
         const gap   = Math.round(w * 0.04);
         const rowW  = cellW * rest.length + gap * (rest.length - 1);
         const rowX  = (w - rowW) / 2;
-        const rowY  = heroDetail.y + heroDetail.height + h * 0.05;
+        const rowY  = heroDetail.y + heroDetail.height + h * 0.03;
         rest.forEach((badge, i) => {
           const medallion = this.buildBadgeMedallion(badge, playerStats);
+          medallion.scale.set(1.2);
           medallion.x = rowX + i * (cellW + gap) + cellW / 2; // medallion is centred at its origin
           medallion.y = rowY;
           this.container.addChild(medallion);
