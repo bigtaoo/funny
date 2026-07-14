@@ -30,25 +30,11 @@ export type OperationId =
   | "getReplayByShare"
   | "createStateReplayShare"
   | "getStateReplayShare"
-  | "bootstrap"
-  | "clientLog"
-  | "clientAnomaly"
   | "pveEnter"
   | "pveClear"
   | "pveVerify"
   | "purchaseStamina"
   | "pveUpgrade"
-  | "craftEquipment"
-  | "enhanceEquipment"
-  | "salvageEquipment"
-  | "equipEquipment"
-  | "reforgeEquipment"
-  | "cardsFeed"
-  | "getAchievements"
-  | "claimAchievement"
-  | "getRetention"
-  | "claimCheckin"
-  | "claimDailyReward"
   | "getShopItems"
   | "shopBuy"
   | "getGachaPools"
@@ -60,6 +46,26 @@ export type OperationId =
   | "starterBuy"
   | "adsReward"
   | "iapVerify"
+  | "redeemPromoCode"
+  | "craftEquipment"
+  | "enhanceEquipment"
+  | "salvageEquipment"
+  | "equipEquipment"
+  | "reforgeEquipment"
+  | "cardsFeed"
+  | "getLeaderboard"
+  | "submitBotResult"
+  | "buyBattlePass"
+  | "claimBattlePass"
+  | "getAchievements"
+  | "claimAchievement"
+  | "getRetention"
+  | "claimCheckin"
+  | "claimDailyReward"
+  | "getEvents"
+  | "claimEventReward"
+  | "getTitles"
+  | "equipTitle"
   | "getFriends"
   | "getFriendRequests"
   | "getSocialBadges"
@@ -78,17 +84,11 @@ export type OperationId =
   | "claimMail"
   | "deleteMail"
   | "sendMail"
+  | "bootstrap"
+  | "clientLog"
+  | "clientAnomaly"
   | "getAnalyticsConfig"
-  | "postAnalyticsEvents"
-  | "getLeaderboard"
-  | "submitBotResult"
-  | "buyBattlePass"
-  | "claimBattlePass"
-  | "getEvents"
-  | "claimEventReward"
-  | "getTitles"
-  | "equipTitle"
-  | "redeemPromoCode";
+  | "postAnalyticsEvents";
 
 // ── Handler interface — MetaService must structurally satisfy this ────────────
 // Missing or misnamed method in MetaService → tsc error (replaces glue's runtime 501).
@@ -111,25 +111,11 @@ export interface MetaHandlers {
   getReplayByShare(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
   createStateReplayShare(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
   getStateReplayShare(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
-  bootstrap(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
-  clientLog(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
-  clientAnomaly(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
   pveEnter(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
   pveClear(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
   pveVerify(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
   purchaseStamina(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
   pveUpgrade(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
-  craftEquipment(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
-  enhanceEquipment(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
-  salvageEquipment(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
-  equipEquipment(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
-  reforgeEquipment(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
-  cardsFeed(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
-  getAchievements(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
-  claimAchievement(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
-  getRetention(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
-  claimCheckin(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
-  claimDailyReward(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
   getShopItems(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
   shopBuy(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
   getGachaPools(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
@@ -141,6 +127,26 @@ export interface MetaHandlers {
   starterBuy(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
   adsReward(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
   iapVerify(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
+  redeemPromoCode(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
+  craftEquipment(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
+  enhanceEquipment(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
+  salvageEquipment(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
+  equipEquipment(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
+  reforgeEquipment(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
+  cardsFeed(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
+  getLeaderboard(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
+  submitBotResult(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
+  buyBattlePass(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
+  claimBattlePass(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
+  getAchievements(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
+  claimAchievement(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
+  getRetention(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
+  claimCheckin(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
+  claimDailyReward(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
+  getEvents(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
+  claimEventReward(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
+  getTitles(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
+  equipTitle(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
   getFriends(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
   getFriendRequests(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
   getSocialBadges(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
@@ -159,17 +165,11 @@ export interface MetaHandlers {
   claimMail(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
   deleteMail(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
   sendMail(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
+  bootstrap(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
+  clientLog(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
+  clientAnomaly(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
   getAnalyticsConfig(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
   postAnalyticsEvents(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
-  getLeaderboard(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
-  submitBotResult(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
-  buyBattlePass(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
-  claimBattlePass(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
-  getEvents(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
-  claimEventReward(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
-  getTitles(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
-  equipTitle(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
-  redeemPromoCode(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
 }
 
 // ── Security interface ────────────────────────────────────────────────────────
@@ -197,25 +197,11 @@ export const ROUTES = [
   { method: 'GET' as const, url: "/share/replay/:shareId", operationId: "getReplayByShare", security: [] },
   { method: 'POST' as const, url: "/replay/share", operationId: "createStateReplayShare", security: ["bearerAuth"] },
   { method: 'GET' as const, url: "/r/:shareCode", operationId: "getStateReplayShare", security: [] },
-  { method: 'GET' as const, url: "/bootstrap", operationId: "bootstrap", security: [] },
-  { method: 'POST' as const, url: "/client/log", operationId: "clientLog", security: [] },
-  { method: 'POST' as const, url: "/client/anomaly", operationId: "clientAnomaly", security: [] },
   { method: 'POST' as const, url: "/pve/enter", operationId: "pveEnter", security: ["bearerAuth"] },
   { method: 'POST' as const, url: "/pve/clear", operationId: "pveClear", security: ["bearerAuth"] },
   { method: 'POST' as const, url: "/pve/verify", operationId: "pveVerify", security: ["bearerAuth"] },
   { method: 'POST' as const, url: "/pve/stamina/purchase", operationId: "purchaseStamina", security: ["bearerAuth"] },
   { method: 'POST' as const, url: "/pve/upgrade", operationId: "pveUpgrade", security: ["bearerAuth"] },
-  { method: 'POST' as const, url: "/equipment/craft", operationId: "craftEquipment", security: ["bearerAuth"] },
-  { method: 'POST' as const, url: "/equipment/enhance", operationId: "enhanceEquipment", security: ["bearerAuth"] },
-  { method: 'POST' as const, url: "/equipment/salvage", operationId: "salvageEquipment", security: ["bearerAuth"] },
-  { method: 'POST' as const, url: "/equipment/equip", operationId: "equipEquipment", security: ["bearerAuth"] },
-  { method: 'POST' as const, url: "/equipment/reforge", operationId: "reforgeEquipment", security: ["bearerAuth"] },
-  { method: 'POST' as const, url: "/cards/feed", operationId: "cardsFeed", security: ["bearerAuth"] },
-  { method: 'GET' as const, url: "/achievements", operationId: "getAchievements", security: ["bearerAuth"] },
-  { method: 'POST' as const, url: "/achievements/claim", operationId: "claimAchievement", security: ["bearerAuth"] },
-  { method: 'GET' as const, url: "/retention", operationId: "getRetention", security: ["bearerAuth"] },
-  { method: 'POST' as const, url: "/retention/checkin", operationId: "claimCheckin", security: ["bearerAuth"] },
-  { method: 'POST' as const, url: "/retention/daily/claim", operationId: "claimDailyReward", security: ["bearerAuth"] },
   { method: 'GET' as const, url: "/shop/items", operationId: "getShopItems", security: ["bearerAuth"] },
   { method: 'POST' as const, url: "/shop/buy", operationId: "shopBuy", security: ["bearerAuth"] },
   { method: 'GET' as const, url: "/gacha/pools", operationId: "getGachaPools", security: ["bearerAuth"] },
@@ -227,6 +213,26 @@ export const ROUTES = [
   { method: 'POST' as const, url: "/starter/buy", operationId: "starterBuy", security: ["bearerAuth"] },
   { method: 'POST' as const, url: "/ads/reward", operationId: "adsReward", security: ["bearerAuth"] },
   { method: 'POST' as const, url: "/iap/verify", operationId: "iapVerify", security: ["bearerAuth"] },
+  { method: 'POST' as const, url: "/promo/redeem", operationId: "redeemPromoCode", security: ["bearerAuth"] },
+  { method: 'POST' as const, url: "/equipment/craft", operationId: "craftEquipment", security: ["bearerAuth"] },
+  { method: 'POST' as const, url: "/equipment/enhance", operationId: "enhanceEquipment", security: ["bearerAuth"] },
+  { method: 'POST' as const, url: "/equipment/salvage", operationId: "salvageEquipment", security: ["bearerAuth"] },
+  { method: 'POST' as const, url: "/equipment/equip", operationId: "equipEquipment", security: ["bearerAuth"] },
+  { method: 'POST' as const, url: "/equipment/reforge", operationId: "reforgeEquipment", security: ["bearerAuth"] },
+  { method: 'POST' as const, url: "/cards/feed", operationId: "cardsFeed", security: ["bearerAuth"] },
+  { method: 'GET' as const, url: "/leaderboard", operationId: "getLeaderboard", security: ["bearerAuth"] },
+  { method: 'POST' as const, url: "/pvp/bot-result", operationId: "submitBotResult", security: ["bearerAuth"] },
+  { method: 'POST' as const, url: "/battlepass/buy", operationId: "buyBattlePass", security: ["bearerAuth"] },
+  { method: 'POST' as const, url: "/battlepass/claim", operationId: "claimBattlePass", security: ["bearerAuth"] },
+  { method: 'GET' as const, url: "/achievements", operationId: "getAchievements", security: ["bearerAuth"] },
+  { method: 'POST' as const, url: "/achievements/claim", operationId: "claimAchievement", security: ["bearerAuth"] },
+  { method: 'GET' as const, url: "/retention", operationId: "getRetention", security: ["bearerAuth"] },
+  { method: 'POST' as const, url: "/retention/checkin", operationId: "claimCheckin", security: ["bearerAuth"] },
+  { method: 'POST' as const, url: "/retention/daily/claim", operationId: "claimDailyReward", security: ["bearerAuth"] },
+  { method: 'GET' as const, url: "/events", operationId: "getEvents", security: ["bearerAuth"] },
+  { method: 'POST' as const, url: "/events/claim", operationId: "claimEventReward", security: ["bearerAuth"] },
+  { method: 'GET' as const, url: "/titles", operationId: "getTitles", security: ["bearerAuth"] },
+  { method: 'PUT' as const, url: "/title/equip", operationId: "equipTitle", security: ["bearerAuth"] },
   { method: 'GET' as const, url: "/friends", operationId: "getFriends", security: ["bearerAuth"] },
   { method: 'GET' as const, url: "/friends/requests", operationId: "getFriendRequests", security: ["bearerAuth"] },
   { method: 'GET' as const, url: "/social/badges", operationId: "getSocialBadges", security: ["bearerAuth"] },
@@ -245,17 +251,11 @@ export const ROUTES = [
   { method: 'POST' as const, url: "/mail/:id/claim", operationId: "claimMail", security: ["bearerAuth"] },
   { method: 'DELETE' as const, url: "/mail/:id", operationId: "deleteMail", security: ["bearerAuth"] },
   { method: 'POST' as const, url: "/mail/send", operationId: "sendMail", security: ["bearerAuth"] },
+  { method: 'GET' as const, url: "/bootstrap", operationId: "bootstrap", security: [] },
+  { method: 'POST' as const, url: "/client/log", operationId: "clientLog", security: [] },
+  { method: 'POST' as const, url: "/client/anomaly", operationId: "clientAnomaly", security: [] },
   { method: 'GET' as const, url: "/analytics/config", operationId: "getAnalyticsConfig", security: [] },
   { method: 'POST' as const, url: "/analytics/events", operationId: "postAnalyticsEvents", security: [] },
-  { method: 'GET' as const, url: "/leaderboard", operationId: "getLeaderboard", security: ["bearerAuth"] },
-  { method: 'POST' as const, url: "/pvp/bot-result", operationId: "submitBotResult", security: ["bearerAuth"] },
-  { method: 'POST' as const, url: "/battlepass/buy", operationId: "buyBattlePass", security: ["bearerAuth"] },
-  { method: 'POST' as const, url: "/battlepass/claim", operationId: "claimBattlePass", security: ["bearerAuth"] },
-  { method: 'GET' as const, url: "/events", operationId: "getEvents", security: ["bearerAuth"] },
-  { method: 'POST' as const, url: "/events/claim", operationId: "claimEventReward", security: ["bearerAuth"] },
-  { method: 'GET' as const, url: "/titles", operationId: "getTitles", security: ["bearerAuth"] },
-  { method: 'PUT' as const, url: "/title/equip", operationId: "equipTitle", security: ["bearerAuth"] },
-  { method: 'POST' as const, url: "/promo/redeem", operationId: "redeemPromoCode", security: ["bearerAuth"] },
 ] as const;
 
 // ── Request body schemas — fully inlined (AJV request validation) ────────────
@@ -449,109 +449,6 @@ const BODY_SCHEMAS: Record<string, unknown> = {
       }
     }
   },
-  "clientLog": {
-    "type": "object",
-    "required": [
-      "publicId",
-      "logs"
-    ],
-    "properties": {
-      "publicId": {
-        "type": "string",
-        "description": "Reporter's 9-digit publicId (inline in Loki, for Grafana `| logfmt | publicId=\"...\"` queries)"
-      },
-      "platform": {
-        "type": "string",
-        "enum": [
-          "web",
-          "wechat",
-          "crazygames"
-        ]
-      },
-      "logs": {
-        "type": "array",
-        "description": "A batch of log entries (from the ring buffer at or above the match threshold); server takes at most the first 1000",
-        "items": {
-          "type": "object",
-          "required": [
-            "level",
-            "msg",
-            "ts"
-          ],
-          "properties": {
-            "level": {
-              "type": "string",
-              "enum": [
-                "error",
-                "warn",
-                "info",
-                "debug"
-              ]
-            },
-            "msg": {
-              "type": "string"
-            },
-            "ts": {
-              "type": "number",
-              "description": "epoch ms (client clock)"
-            },
-            "tag": {
-              "type": "string"
-            }
-          }
-        }
-      }
-    }
-  },
-  "clientAnomaly": {
-    "type": "object",
-    "required": [
-      "events"
-    ],
-    "properties": {
-      "publicId": {
-        "type": "string",
-        "description": "Reporter's 9-digit publicId (optional; anomalies before login are recorded as anon)"
-      },
-      "platform": {
-        "type": "string",
-        "enum": [
-          "web",
-          "wechat",
-          "crazygames"
-        ]
-      },
-      "events": {
-        "type": "array",
-        "description": "A batch of anomaly events; server takes at most the first 200",
-        "items": {
-          "type": "object",
-          "required": [
-            "type",
-            "msg",
-            "ts"
-          ],
-          "properties": {
-            "type": {
-              "type": "string",
-              "description": "Anomaly type (mem/cpu/webgl_lost/anr/jserror/crash; unknown falls back to other)"
-            },
-            "msg": {
-              "type": "string"
-            },
-            "ts": {
-              "type": "number",
-              "description": "epoch ms (client clock)"
-            },
-            "detail": {
-              "type": "string",
-              "description": "Structured supplement (already compressed into a single string and truncated on the client)"
-            }
-          }
-        }
-      }
-    }
-  },
   "pveEnter": {
     "type": "object",
     "required": [
@@ -674,6 +571,110 @@ const BODY_SCHEMAS: Record<string, unknown> = {
     "properties": {
       "upgradeId": {
         "type": "string"
+      }
+    }
+  },
+  "shopBuy": {
+    "type": "object",
+    "required": [
+      "itemId"
+    ],
+    "properties": {
+      "itemId": {
+        "type": "string"
+      }
+    }
+  },
+  "gachaDraw": {
+    "type": "object",
+    "required": [
+      "poolId",
+      "count"
+    ],
+    "properties": {
+      "poolId": {
+        "type": "string"
+      },
+      "count": {
+        "type": "integer",
+        "enum": [
+          1,
+          10
+        ]
+      }
+    }
+  },
+  "redeemFate": {
+    "type": "object",
+    "required": [
+      "itemId"
+    ],
+    "properties": {
+      "itemId": {
+        "type": "string",
+        "description": "a (past-)featured limited legendary itemId"
+      }
+    }
+  },
+  "starterBuy": {
+    "type": "object",
+    "required": [
+      "productId"
+    ],
+    "properties": {
+      "productId": {
+        "type": "string",
+        "enum": [
+          "starter_draw",
+          "starter_growth"
+        ]
+      }
+    }
+  },
+  "adsReward": {
+    "type": "object",
+    "required": [
+      "adToken"
+    ],
+    "properties": {
+      "adToken": {
+        "type": "string"
+      },
+      "platform": {
+        "type": "string",
+        "enum": [
+          "dev",
+          "admob_client",
+          "wechat_client"
+        ],
+        "description": "Ad platform (C2)"
+      }
+    }
+  },
+  "iapVerify": {
+    "type": "object",
+    "required": [
+      "platform",
+      "receipt"
+    ],
+    "properties": {
+      "platform": {
+        "type": "string"
+      },
+      "receipt": {
+        "type": "string"
+      }
+    }
+  },
+  "redeemPromoCode": {
+    "type": "object",
+    "required": [
+      "code"
+    ],
+    "properties": {
+      "code": {
+        "type": "string",
+        "description": "Promo code (case-insensitive)"
       }
     }
   },
@@ -810,6 +811,38 @@ const BODY_SCHEMAS: Record<string, unknown> = {
       }
     }
   },
+  "submitBotResult": {
+    "type": "object",
+    "required": [
+      "won"
+    ],
+    "properties": {
+      "won": {
+        "type": "boolean"
+      }
+    }
+  },
+  "claimBattlePass": {
+    "type": "object",
+    "required": [
+      "track",
+      "level"
+    ],
+    "properties": {
+      "track": {
+        "type": "string",
+        "enum": [
+          "free",
+          "paid"
+        ]
+      },
+      "level": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 30
+      }
+    }
+  },
   "claimAchievement": {
     "type": "object",
     "required": [
@@ -827,95 +860,30 @@ const BODY_SCHEMAS: Record<string, unknown> = {
       }
     }
   },
-  "shopBuy": {
+  "claimEventReward": {
     "type": "object",
     "required": [
-      "itemId"
+      "eventId",
+      "rewardId"
     ],
     "properties": {
-      "itemId": {
-        "type": "string"
-      }
-    }
-  },
-  "gachaDraw": {
-    "type": "object",
-    "required": [
-      "poolId",
-      "count"
-    ],
-    "properties": {
-      "poolId": {
+      "eventId": {
         "type": "string"
       },
-      "count": {
-        "type": "integer",
-        "enum": [
-          1,
-          10
-        ]
-      }
-    }
-  },
-  "redeemFate": {
-    "type": "object",
-    "required": [
-      "itemId"
-    ],
-    "properties": {
-      "itemId": {
-        "type": "string",
-        "description": "a (past-)featured limited legendary itemId"
-      }
-    }
-  },
-  "starterBuy": {
-    "type": "object",
-    "required": [
-      "productId"
-    ],
-    "properties": {
-      "productId": {
-        "type": "string",
-        "enum": [
-          "starter_draw",
-          "starter_growth"
-        ]
-      }
-    }
-  },
-  "adsReward": {
-    "type": "object",
-    "required": [
-      "adToken"
-    ],
-    "properties": {
-      "adToken": {
+      "rewardId": {
         "type": "string"
-      },
-      "platform": {
-        "type": "string",
-        "enum": [
-          "dev",
-          "admob_client",
-          "wechat_client"
-        ],
-        "description": "Ad platform (C2)"
       }
     }
   },
-  "iapVerify": {
+  "equipTitle": {
     "type": "object",
     "required": [
-      "platform",
-      "receipt"
+      "titleId"
     ],
     "properties": {
-      "platform": {
-        "type": "string"
-      },
-      "receipt": {
-        "type": "string"
+      "titleId": {
+        "type": "string",
+        "description": "Title id to equip; empty string means unequip the displayed title"
       }
     }
   },
@@ -1015,6 +983,109 @@ const BODY_SCHEMAS: Record<string, unknown> = {
       }
     }
   },
+  "clientLog": {
+    "type": "object",
+    "required": [
+      "publicId",
+      "logs"
+    ],
+    "properties": {
+      "publicId": {
+        "type": "string",
+        "description": "Reporter's 9-digit publicId (inline in Loki, for Grafana `| logfmt | publicId=\"...\"` queries)"
+      },
+      "platform": {
+        "type": "string",
+        "enum": [
+          "web",
+          "wechat",
+          "crazygames"
+        ]
+      },
+      "logs": {
+        "type": "array",
+        "description": "A batch of log entries (from the ring buffer at or above the match threshold); server takes at most the first 1000",
+        "items": {
+          "type": "object",
+          "required": [
+            "level",
+            "msg",
+            "ts"
+          ],
+          "properties": {
+            "level": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warn",
+                "info",
+                "debug"
+              ]
+            },
+            "msg": {
+              "type": "string"
+            },
+            "ts": {
+              "type": "number",
+              "description": "epoch ms (client clock)"
+            },
+            "tag": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "clientAnomaly": {
+    "type": "object",
+    "required": [
+      "events"
+    ],
+    "properties": {
+      "publicId": {
+        "type": "string",
+        "description": "Reporter's 9-digit publicId (optional; anomalies before login are recorded as anon)"
+      },
+      "platform": {
+        "type": "string",
+        "enum": [
+          "web",
+          "wechat",
+          "crazygames"
+        ]
+      },
+      "events": {
+        "type": "array",
+        "description": "A batch of anomaly events; server takes at most the first 200",
+        "items": {
+          "type": "object",
+          "required": [
+            "type",
+            "msg",
+            "ts"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "description": "Anomaly type (mem/cpu/webgl_lost/anr/jserror/crash; unknown falls back to other)"
+            },
+            "msg": {
+              "type": "string"
+            },
+            "ts": {
+              "type": "number",
+              "description": "epoch ms (client clock)"
+            },
+            "detail": {
+              "type": "string",
+              "description": "Structured supplement (already compressed into a single string and truncated on the client)"
+            }
+          }
+        }
+      }
+    }
+  },
   "postAnalyticsEvents": {
     "type": "object",
     "required": [
@@ -1082,77 +1153,6 @@ const BODY_SCHEMAS: Record<string, unknown> = {
       }
     }
   },
-  "submitBotResult": {
-    "type": "object",
-    "required": [
-      "won"
-    ],
-    "properties": {
-      "won": {
-        "type": "boolean"
-      }
-    }
-  },
-  "claimBattlePass": {
-    "type": "object",
-    "required": [
-      "track",
-      "level"
-    ],
-    "properties": {
-      "track": {
-        "type": "string",
-        "enum": [
-          "free",
-          "paid"
-        ]
-      },
-      "level": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 30
-      }
-    }
-  },
-  "claimEventReward": {
-    "type": "object",
-    "required": [
-      "eventId",
-      "rewardId"
-    ],
-    "properties": {
-      "eventId": {
-        "type": "string"
-      },
-      "rewardId": {
-        "type": "string"
-      }
-    }
-  },
-  "equipTitle": {
-    "type": "object",
-    "required": [
-      "titleId"
-    ],
-    "properties": {
-      "titleId": {
-        "type": "string",
-        "description": "Title id to equip; empty string means unequip the displayed title"
-      }
-    }
-  },
-  "redeemPromoCode": {
-    "type": "object",
-    "required": [
-      "code"
-    ],
-    "properties": {
-      "code": {
-        "type": "string",
-        "description": "Promo code (case-insensitive)"
-      }
-    }
-  },
 };
 
 // ── Querystring schemas — fully inlined (AJV validation) ─────────────────────
@@ -1165,6 +1165,20 @@ const QUERY_SCHEMAS: Record<string, unknown> = {
         "minimum": 1,
         "maximum": 50,
         "default": 20
+      }
+    }
+  },
+  "getMessages": {
+    "type": "object",
+    "properties": {
+      "before": {
+        "type": "integer"
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 50,
+        "default": 30
       }
     }
   },
@@ -1181,20 +1195,6 @@ const QUERY_SCHEMAS: Record<string, unknown> = {
       },
       "publicId": {
         "type": "string"
-      }
-    }
-  },
-  "getMessages": {
-    "type": "object",
-    "properties": {
-      "before": {
-        "type": "integer"
-      },
-      "limit": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 50,
-        "default": 30
       }
     }
   },
@@ -4067,94 +4067,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
       }
     }
   },
-  "bootstrap": {
-    "200": {
-      "type": "object",
-      "required": [
-        "ok",
-        "data"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "enum": [
-            true
-          ]
-        },
-        "data": {
-          "type": "object",
-          "required": [
-            "flags"
-          ],
-          "properties": {
-            "flags": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "boolean"
-              },
-              "description": "Contains only flags whose evaluated result differs from the default (key→bool); empty object for most players"
-            }
-          }
-        }
-      }
-    }
-  },
-  "clientLog": {
-    "200": {
-      "type": "object",
-      "required": [
-        "ok",
-        "data"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "enum": [
-            true
-          ]
-        },
-        "data": {
-          "type": "object",
-          "required": [
-            "accepted"
-          ],
-          "properties": {
-            "accepted": {
-              "type": "integer"
-            }
-          }
-        }
-      }
-    }
-  },
-  "clientAnomaly": {
-    "200": {
-      "type": "object",
-      "required": [
-        "ok",
-        "data"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "enum": [
-            true
-          ]
-        },
-        "data": {
-          "type": "object",
-          "required": [
-            "accepted"
-          ],
-          "properties": {
-            "accepted": {
-              "type": "integer"
-            }
-          }
-        }
-      }
-    }
-  },
   "pveEnter": {
     "200": {
       "type": "object",
@@ -5896,5049 +5808,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   }
                 }
               }
-            }
-          }
-        }
-      }
-    }
-  },
-  "craftEquipment": {
-    "200": {
-      "type": "object",
-      "required": [
-        "ok",
-        "data"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "enum": [
-            true
-          ]
-        },
-        "data": {
-          "type": "object",
-          "required": [
-            "save",
-            "instance"
-          ],
-          "properties": {
-            "save": {
-              "type": "object",
-              "required": [
-                "version",
-                "accountId",
-                "rev",
-                "updatedAt",
-                "wallet",
-                "inventory",
-                "gacha",
-                "pvp",
-                "progress",
-                "materials",
-                "pveUpgrades",
-                "equipped",
-                "flags"
-              ],
-              "properties": {
-                "version": {
-                  "type": "integer"
-                },
-                "accountId": {
-                  "type": "string"
-                },
-                "rev": {
-                  "type": "integer"
-                },
-                "updatedAt": {
-                  "type": "integer"
-                },
-                "wallet": {
-                  "type": "object",
-                  "required": [
-                    "coins"
-                  ],
-                  "properties": {
-                    "coins": {
-                      "type": "integer",
-                      "minimum": 0
-                    }
-                  }
-                },
-                "inventory": {
-                  "type": "object",
-                  "required": [
-                    "skins",
-                    "items"
-                  ],
-                  "properties": {
-                    "skins": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "items": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "gacha": {
-                  "type": "object",
-                  "required": [
-                    "pity"
-                  ],
-                  "properties": {
-                    "pity": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "monetization": {
-                  "type": "object",
-                  "required": [
-                    "fatePoints",
-                    "subscriptionExpiry",
-                    "starterUsed"
-                  ],
-                  "properties": {
-                    "fatePoints": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "description": "Fate Points balance (§7)"
-                    },
-                    "subscriptionExpiry": {
-                      "type": "integer",
-                      "description": "monthly card end timestamp (ms); 0 = none (§5)"
-                    },
-                    "subscriptionLastClaimDay": {
-                      "type": "string",
-                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
-                    },
-                    "starterUsed": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "one-off product ids already purchased (§6)"
-                    }
-                  }
-                },
-                "deliveredOrders": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                "pvp": {
-                  "type": "object",
-                  "required": [
-                    "elo",
-                    "rank",
-                    "wins",
-                    "losses",
-                    "streak"
-                  ],
-                  "properties": {
-                    "elo": {
-                      "type": "integer"
-                    },
-                    "rank": {
-                      "type": "string"
-                    },
-                    "wins": {
-                      "type": "integer"
-                    },
-                    "losses": {
-                      "type": "integer"
-                    },
-                    "streak": {
-                      "type": "integer"
-                    },
-                    "seasonNo": {
-                      "type": "integer",
-                      "description": "Current season number"
-                    },
-                    "seasonPeakElo": {
-                      "type": "integer",
-                      "description": "Peak ELO for current season"
-                    },
-                    "seasonPeakRank": {
-                      "type": "string",
-                      "description": "Peak rank for current season"
-                    },
-                    "reachedRanks": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "All-time first-reached rank list (lifetime ledger)"
-                    }
-                  }
-                },
-                "stamina": {
-                  "type": "object",
-                  "required": [
-                    "current",
-                    "regenAt"
-                  ],
-                  "properties": {
-                    "current": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 120,
-                      "description": "Current stamina"
-                    },
-                    "regenAt": {
-                      "type": "integer",
-                      "description": "Timestamp (ms) when the next 1 stamina regenerates; 0 when full"
-                    }
-                  }
-                },
-                "titles": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
-                },
-                "battlePass": {
-                  "type": "object",
-                  "required": [
-                    "seasonNo",
-                    "xp",
-                    "level",
-                    "hasPass",
-                    "claimedFree",
-                    "claimedPaid"
-                  ],
-                  "properties": {
-                    "seasonNo": {
-                      "type": "integer"
-                    },
-                    "xp": {
-                      "type": "integer"
-                    },
-                    "level": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 30
-                    },
-                    "hasPass": {
-                      "type": "boolean"
-                    },
-                    "claimedFree": {
-                      "type": "array",
-                      "items": {
-                        "type": "integer"
-                      }
-                    },
-                    "claimedPaid": {
-                      "type": "array",
-                      "items": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "progress": {
-                  "type": "object",
-                  "required": [
-                    "cleared",
-                    "stars",
-                    "best"
-                  ],
-                  "properties": {
-                    "cleared": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "stars": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 3
-                      }
-                    },
-                    "best": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "object",
-                        "properties": {
-                          "timeMs": {
-                            "type": "integer"
-                          },
-                          "leaked": {
-                            "type": "integer"
-                          }
-                        },
-                        "additionalProperties": true
-                      }
-                    }
-                  }
-                },
-                "materials": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  }
-                },
-                "pveUpgrades": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  }
-                },
-                "cardInventory": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "description": "Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup"
-                },
-                "cardInv": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "defId",
-                      "level",
-                      "xp",
-                      "gear",
-                      "locked"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string",
-                        "description": "Unique instance id (e.g. 'card_a1b2c3')"
-                      },
-                      "defId": {
-                        "type": "string",
-                        "description": "Card definition id (references CARD_DEFS)"
-                      },
-                      "level": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 9
-                      },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
-                      "gear": {
-                        "type": "object",
-                        "additionalProperties": {
-                          "type": "string"
-                        },
-                        "description": "Per-slot equipped equipment instance ids (slot→equipmentInstanceId)"
-                      },
-                      "locked": {
-                        "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
-                      }
-                    }
-                  },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
-                },
-                "equipped": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
-                },
-                "flags": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "boolean"
-                  }
-                },
-                "stats": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  },
-                  "description": "Lifetime cumulative stats (StatKey→value), monotonically increasing, server-authoritative"
-                },
-                "achievements": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "claimedTiers"
-                    ],
-                    "properties": {
-                      "claimedTiers": {
-                        "type": "array",
-                        "items": {
-                          "type": "integer",
-                          "minimum": 1,
-                          "maximum": 3
-                        }
-                      }
-                    }
-                  },
-                  "description": "achId→set of already-claimed tier numbers, idempotent to prevent double-claiming"
-                },
-                "equipmentInv": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "defId",
-                      "rarity",
-                      "level",
-                      "affixes"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string"
-                      },
-                      "defId": {
-                        "type": "string"
-                      },
-                      "rarity": {
-                        "type": "string",
-                        "enum": [
-                          "common",
-                          "fine",
-                          "rare",
-                          "epic"
-                        ]
-                      },
-                      "level": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 9
-                      },
-                      "affixes": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "required": [
-                            "id",
-                            "value"
-                          ],
-                          "properties": {
-                            "id": {
-                              "type": "string"
-                            },
-                            "value": {
-                              "type": "number"
-                            }
-                          }
-                        }
-                      },
-                      "locked": {
-                        "type": "boolean"
-                      }
-                    }
-                  }
-                },
-                "retention": {
-                  "type": "object",
-                  "properties": {
-                    "checkin": {
-                      "type": "object",
-                      "required": [
-                        "monthKey",
-                        "claimedDays"
-                      ],
-                      "properties": {
-                        "monthKey": {
-                          "type": "string"
-                        },
-                        "claimedDays": {
-                          "type": "array",
-                          "items": {
-                            "type": "integer"
-                          }
-                        },
-                        "lastClaimedDayKey": {
-                          "type": "string"
-                        }
-                      }
-                    },
-                    "daily": {
-                      "type": "object",
-                      "required": [
-                        "dayKey",
-                        "completedTasks",
-                        "taskPoints",
-                        "rewardClaimed"
-                      ],
-                      "properties": {
-                        "dayKey": {
-                          "type": "string"
-                        },
-                        "completedTasks": {
-                          "type": "object",
-                          "additionalProperties": {
-                            "type": "integer"
-                          }
-                        },
-                        "taskPoints": {
-                          "type": "integer"
-                        },
-                        "rewardClaimed": {
-                          "type": "boolean"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            },
-            "instance": {
-              "type": "object",
-              "required": [
-                "id",
-                "defId",
-                "rarity",
-                "level",
-                "affixes"
-              ],
-              "properties": {
-                "id": {
-                  "type": "string"
-                },
-                "defId": {
-                  "type": "string"
-                },
-                "rarity": {
-                  "type": "string",
-                  "enum": [
-                    "common",
-                    "fine",
-                    "rare",
-                    "epic"
-                  ]
-                },
-                "level": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9
-                },
-                "affixes": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "value"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string"
-                      },
-                      "value": {
-                        "type": "number"
-                      }
-                    }
-                  }
-                },
-                "locked": {
-                  "type": "boolean"
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  },
-  "enhanceEquipment": {
-    "200": {
-      "type": "object",
-      "required": [
-        "ok",
-        "data"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "enum": [
-            true
-          ]
-        },
-        "data": {
-          "type": "object",
-          "required": [
-            "success",
-            "instance",
-            "save"
-          ],
-          "properties": {
-            "success": {
-              "type": "boolean",
-              "description": "Whether this enhancement succeeded (success → instance.level+1)"
-            },
-            "instance": {
-              "type": "object",
-              "required": [
-                "id",
-                "defId",
-                "rarity",
-                "level",
-                "affixes"
-              ],
-              "properties": {
-                "id": {
-                  "type": "string"
-                },
-                "defId": {
-                  "type": "string"
-                },
-                "rarity": {
-                  "type": "string",
-                  "enum": [
-                    "common",
-                    "fine",
-                    "rare",
-                    "epic"
-                  ]
-                },
-                "level": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9
-                },
-                "affixes": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "value"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string"
-                      },
-                      "value": {
-                        "type": "number"
-                      }
-                    }
-                  }
-                },
-                "locked": {
-                  "type": "boolean"
-                }
-              }
-            },
-            "save": {
-              "type": "object",
-              "required": [
-                "version",
-                "accountId",
-                "rev",
-                "updatedAt",
-                "wallet",
-                "inventory",
-                "gacha",
-                "pvp",
-                "progress",
-                "materials",
-                "pveUpgrades",
-                "equipped",
-                "flags"
-              ],
-              "properties": {
-                "version": {
-                  "type": "integer"
-                },
-                "accountId": {
-                  "type": "string"
-                },
-                "rev": {
-                  "type": "integer"
-                },
-                "updatedAt": {
-                  "type": "integer"
-                },
-                "wallet": {
-                  "type": "object",
-                  "required": [
-                    "coins"
-                  ],
-                  "properties": {
-                    "coins": {
-                      "type": "integer",
-                      "minimum": 0
-                    }
-                  }
-                },
-                "inventory": {
-                  "type": "object",
-                  "required": [
-                    "skins",
-                    "items"
-                  ],
-                  "properties": {
-                    "skins": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "items": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "gacha": {
-                  "type": "object",
-                  "required": [
-                    "pity"
-                  ],
-                  "properties": {
-                    "pity": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "monetization": {
-                  "type": "object",
-                  "required": [
-                    "fatePoints",
-                    "subscriptionExpiry",
-                    "starterUsed"
-                  ],
-                  "properties": {
-                    "fatePoints": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "description": "Fate Points balance (§7)"
-                    },
-                    "subscriptionExpiry": {
-                      "type": "integer",
-                      "description": "monthly card end timestamp (ms); 0 = none (§5)"
-                    },
-                    "subscriptionLastClaimDay": {
-                      "type": "string",
-                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
-                    },
-                    "starterUsed": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "one-off product ids already purchased (§6)"
-                    }
-                  }
-                },
-                "deliveredOrders": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                "pvp": {
-                  "type": "object",
-                  "required": [
-                    "elo",
-                    "rank",
-                    "wins",
-                    "losses",
-                    "streak"
-                  ],
-                  "properties": {
-                    "elo": {
-                      "type": "integer"
-                    },
-                    "rank": {
-                      "type": "string"
-                    },
-                    "wins": {
-                      "type": "integer"
-                    },
-                    "losses": {
-                      "type": "integer"
-                    },
-                    "streak": {
-                      "type": "integer"
-                    },
-                    "seasonNo": {
-                      "type": "integer",
-                      "description": "Current season number"
-                    },
-                    "seasonPeakElo": {
-                      "type": "integer",
-                      "description": "Peak ELO for current season"
-                    },
-                    "seasonPeakRank": {
-                      "type": "string",
-                      "description": "Peak rank for current season"
-                    },
-                    "reachedRanks": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "All-time first-reached rank list (lifetime ledger)"
-                    }
-                  }
-                },
-                "stamina": {
-                  "type": "object",
-                  "required": [
-                    "current",
-                    "regenAt"
-                  ],
-                  "properties": {
-                    "current": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 120,
-                      "description": "Current stamina"
-                    },
-                    "regenAt": {
-                      "type": "integer",
-                      "description": "Timestamp (ms) when the next 1 stamina regenerates; 0 when full"
-                    }
-                  }
-                },
-                "titles": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
-                },
-                "battlePass": {
-                  "type": "object",
-                  "required": [
-                    "seasonNo",
-                    "xp",
-                    "level",
-                    "hasPass",
-                    "claimedFree",
-                    "claimedPaid"
-                  ],
-                  "properties": {
-                    "seasonNo": {
-                      "type": "integer"
-                    },
-                    "xp": {
-                      "type": "integer"
-                    },
-                    "level": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 30
-                    },
-                    "hasPass": {
-                      "type": "boolean"
-                    },
-                    "claimedFree": {
-                      "type": "array",
-                      "items": {
-                        "type": "integer"
-                      }
-                    },
-                    "claimedPaid": {
-                      "type": "array",
-                      "items": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "progress": {
-                  "type": "object",
-                  "required": [
-                    "cleared",
-                    "stars",
-                    "best"
-                  ],
-                  "properties": {
-                    "cleared": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "stars": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 3
-                      }
-                    },
-                    "best": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "object",
-                        "properties": {
-                          "timeMs": {
-                            "type": "integer"
-                          },
-                          "leaked": {
-                            "type": "integer"
-                          }
-                        },
-                        "additionalProperties": true
-                      }
-                    }
-                  }
-                },
-                "materials": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  }
-                },
-                "pveUpgrades": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  }
-                },
-                "cardInventory": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "description": "Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup"
-                },
-                "cardInv": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "defId",
-                      "level",
-                      "xp",
-                      "gear",
-                      "locked"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string",
-                        "description": "Unique instance id (e.g. 'card_a1b2c3')"
-                      },
-                      "defId": {
-                        "type": "string",
-                        "description": "Card definition id (references CARD_DEFS)"
-                      },
-                      "level": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 9
-                      },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
-                      "gear": {
-                        "type": "object",
-                        "additionalProperties": {
-                          "type": "string"
-                        },
-                        "description": "Per-slot equipped equipment instance ids (slot→equipmentInstanceId)"
-                      },
-                      "locked": {
-                        "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
-                      }
-                    }
-                  },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
-                },
-                "equipped": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
-                },
-                "flags": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "boolean"
-                  }
-                },
-                "stats": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  },
-                  "description": "Lifetime cumulative stats (StatKey→value), monotonically increasing, server-authoritative"
-                },
-                "achievements": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "claimedTiers"
-                    ],
-                    "properties": {
-                      "claimedTiers": {
-                        "type": "array",
-                        "items": {
-                          "type": "integer",
-                          "minimum": 1,
-                          "maximum": 3
-                        }
-                      }
-                    }
-                  },
-                  "description": "achId→set of already-claimed tier numbers, idempotent to prevent double-claiming"
-                },
-                "equipmentInv": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "defId",
-                      "rarity",
-                      "level",
-                      "affixes"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string"
-                      },
-                      "defId": {
-                        "type": "string"
-                      },
-                      "rarity": {
-                        "type": "string",
-                        "enum": [
-                          "common",
-                          "fine",
-                          "rare",
-                          "epic"
-                        ]
-                      },
-                      "level": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 9
-                      },
-                      "affixes": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "required": [
-                            "id",
-                            "value"
-                          ],
-                          "properties": {
-                            "id": {
-                              "type": "string"
-                            },
-                            "value": {
-                              "type": "number"
-                            }
-                          }
-                        }
-                      },
-                      "locked": {
-                        "type": "boolean"
-                      }
-                    }
-                  }
-                },
-                "retention": {
-                  "type": "object",
-                  "properties": {
-                    "checkin": {
-                      "type": "object",
-                      "required": [
-                        "monthKey",
-                        "claimedDays"
-                      ],
-                      "properties": {
-                        "monthKey": {
-                          "type": "string"
-                        },
-                        "claimedDays": {
-                          "type": "array",
-                          "items": {
-                            "type": "integer"
-                          }
-                        },
-                        "lastClaimedDayKey": {
-                          "type": "string"
-                        }
-                      }
-                    },
-                    "daily": {
-                      "type": "object",
-                      "required": [
-                        "dayKey",
-                        "completedTasks",
-                        "taskPoints",
-                        "rewardClaimed"
-                      ],
-                      "properties": {
-                        "dayKey": {
-                          "type": "string"
-                        },
-                        "completedTasks": {
-                          "type": "object",
-                          "additionalProperties": {
-                            "type": "integer"
-                          }
-                        },
-                        "taskPoints": {
-                          "type": "integer"
-                        },
-                        "rewardClaimed": {
-                          "type": "boolean"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  },
-  "salvageEquipment": {
-    "200": {
-      "type": "object",
-      "required": [
-        "ok",
-        "data"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "enum": [
-            true
-          ]
-        },
-        "data": {
-          "type": "object",
-          "required": [
-            "refunded",
-            "save"
-          ],
-          "properties": {
-            "refunded": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "integer"
-              },
-              "description": "Total materials refunded (material id→quantity)"
-            },
-            "save": {
-              "type": "object",
-              "required": [
-                "version",
-                "accountId",
-                "rev",
-                "updatedAt",
-                "wallet",
-                "inventory",
-                "gacha",
-                "pvp",
-                "progress",
-                "materials",
-                "pveUpgrades",
-                "equipped",
-                "flags"
-              ],
-              "properties": {
-                "version": {
-                  "type": "integer"
-                },
-                "accountId": {
-                  "type": "string"
-                },
-                "rev": {
-                  "type": "integer"
-                },
-                "updatedAt": {
-                  "type": "integer"
-                },
-                "wallet": {
-                  "type": "object",
-                  "required": [
-                    "coins"
-                  ],
-                  "properties": {
-                    "coins": {
-                      "type": "integer",
-                      "minimum": 0
-                    }
-                  }
-                },
-                "inventory": {
-                  "type": "object",
-                  "required": [
-                    "skins",
-                    "items"
-                  ],
-                  "properties": {
-                    "skins": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "items": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "gacha": {
-                  "type": "object",
-                  "required": [
-                    "pity"
-                  ],
-                  "properties": {
-                    "pity": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "monetization": {
-                  "type": "object",
-                  "required": [
-                    "fatePoints",
-                    "subscriptionExpiry",
-                    "starterUsed"
-                  ],
-                  "properties": {
-                    "fatePoints": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "description": "Fate Points balance (§7)"
-                    },
-                    "subscriptionExpiry": {
-                      "type": "integer",
-                      "description": "monthly card end timestamp (ms); 0 = none (§5)"
-                    },
-                    "subscriptionLastClaimDay": {
-                      "type": "string",
-                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
-                    },
-                    "starterUsed": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "one-off product ids already purchased (§6)"
-                    }
-                  }
-                },
-                "deliveredOrders": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                "pvp": {
-                  "type": "object",
-                  "required": [
-                    "elo",
-                    "rank",
-                    "wins",
-                    "losses",
-                    "streak"
-                  ],
-                  "properties": {
-                    "elo": {
-                      "type": "integer"
-                    },
-                    "rank": {
-                      "type": "string"
-                    },
-                    "wins": {
-                      "type": "integer"
-                    },
-                    "losses": {
-                      "type": "integer"
-                    },
-                    "streak": {
-                      "type": "integer"
-                    },
-                    "seasonNo": {
-                      "type": "integer",
-                      "description": "Current season number"
-                    },
-                    "seasonPeakElo": {
-                      "type": "integer",
-                      "description": "Peak ELO for current season"
-                    },
-                    "seasonPeakRank": {
-                      "type": "string",
-                      "description": "Peak rank for current season"
-                    },
-                    "reachedRanks": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "All-time first-reached rank list (lifetime ledger)"
-                    }
-                  }
-                },
-                "stamina": {
-                  "type": "object",
-                  "required": [
-                    "current",
-                    "regenAt"
-                  ],
-                  "properties": {
-                    "current": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 120,
-                      "description": "Current stamina"
-                    },
-                    "regenAt": {
-                      "type": "integer",
-                      "description": "Timestamp (ms) when the next 1 stamina regenerates; 0 when full"
-                    }
-                  }
-                },
-                "titles": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
-                },
-                "battlePass": {
-                  "type": "object",
-                  "required": [
-                    "seasonNo",
-                    "xp",
-                    "level",
-                    "hasPass",
-                    "claimedFree",
-                    "claimedPaid"
-                  ],
-                  "properties": {
-                    "seasonNo": {
-                      "type": "integer"
-                    },
-                    "xp": {
-                      "type": "integer"
-                    },
-                    "level": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 30
-                    },
-                    "hasPass": {
-                      "type": "boolean"
-                    },
-                    "claimedFree": {
-                      "type": "array",
-                      "items": {
-                        "type": "integer"
-                      }
-                    },
-                    "claimedPaid": {
-                      "type": "array",
-                      "items": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "progress": {
-                  "type": "object",
-                  "required": [
-                    "cleared",
-                    "stars",
-                    "best"
-                  ],
-                  "properties": {
-                    "cleared": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "stars": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 3
-                      }
-                    },
-                    "best": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "object",
-                        "properties": {
-                          "timeMs": {
-                            "type": "integer"
-                          },
-                          "leaked": {
-                            "type": "integer"
-                          }
-                        },
-                        "additionalProperties": true
-                      }
-                    }
-                  }
-                },
-                "materials": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  }
-                },
-                "pveUpgrades": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  }
-                },
-                "cardInventory": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "description": "Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup"
-                },
-                "cardInv": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "defId",
-                      "level",
-                      "xp",
-                      "gear",
-                      "locked"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string",
-                        "description": "Unique instance id (e.g. 'card_a1b2c3')"
-                      },
-                      "defId": {
-                        "type": "string",
-                        "description": "Card definition id (references CARD_DEFS)"
-                      },
-                      "level": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 9
-                      },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
-                      "gear": {
-                        "type": "object",
-                        "additionalProperties": {
-                          "type": "string"
-                        },
-                        "description": "Per-slot equipped equipment instance ids (slot→equipmentInstanceId)"
-                      },
-                      "locked": {
-                        "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
-                      }
-                    }
-                  },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
-                },
-                "equipped": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
-                },
-                "flags": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "boolean"
-                  }
-                },
-                "stats": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  },
-                  "description": "Lifetime cumulative stats (StatKey→value), monotonically increasing, server-authoritative"
-                },
-                "achievements": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "claimedTiers"
-                    ],
-                    "properties": {
-                      "claimedTiers": {
-                        "type": "array",
-                        "items": {
-                          "type": "integer",
-                          "minimum": 1,
-                          "maximum": 3
-                        }
-                      }
-                    }
-                  },
-                  "description": "achId→set of already-claimed tier numbers, idempotent to prevent double-claiming"
-                },
-                "equipmentInv": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "defId",
-                      "rarity",
-                      "level",
-                      "affixes"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string"
-                      },
-                      "defId": {
-                        "type": "string"
-                      },
-                      "rarity": {
-                        "type": "string",
-                        "enum": [
-                          "common",
-                          "fine",
-                          "rare",
-                          "epic"
-                        ]
-                      },
-                      "level": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 9
-                      },
-                      "affixes": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "required": [
-                            "id",
-                            "value"
-                          ],
-                          "properties": {
-                            "id": {
-                              "type": "string"
-                            },
-                            "value": {
-                              "type": "number"
-                            }
-                          }
-                        }
-                      },
-                      "locked": {
-                        "type": "boolean"
-                      }
-                    }
-                  }
-                },
-                "retention": {
-                  "type": "object",
-                  "properties": {
-                    "checkin": {
-                      "type": "object",
-                      "required": [
-                        "monthKey",
-                        "claimedDays"
-                      ],
-                      "properties": {
-                        "monthKey": {
-                          "type": "string"
-                        },
-                        "claimedDays": {
-                          "type": "array",
-                          "items": {
-                            "type": "integer"
-                          }
-                        },
-                        "lastClaimedDayKey": {
-                          "type": "string"
-                        }
-                      }
-                    },
-                    "daily": {
-                      "type": "object",
-                      "required": [
-                        "dayKey",
-                        "completedTasks",
-                        "taskPoints",
-                        "rewardClaimed"
-                      ],
-                      "properties": {
-                        "dayKey": {
-                          "type": "string"
-                        },
-                        "completedTasks": {
-                          "type": "object",
-                          "additionalProperties": {
-                            "type": "integer"
-                          }
-                        },
-                        "taskPoints": {
-                          "type": "integer"
-                        },
-                        "rewardClaimed": {
-                          "type": "boolean"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  },
-  "equipEquipment": {
-    "200": {
-      "type": "object",
-      "required": [
-        "ok",
-        "data"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "enum": [
-            true
-          ]
-        },
-        "data": {
-          "type": "object",
-          "required": [
-            "save"
-          ],
-          "properties": {
-            "save": {
-              "type": "object",
-              "required": [
-                "version",
-                "accountId",
-                "rev",
-                "updatedAt",
-                "wallet",
-                "inventory",
-                "gacha",
-                "pvp",
-                "progress",
-                "materials",
-                "pveUpgrades",
-                "equipped",
-                "flags"
-              ],
-              "properties": {
-                "version": {
-                  "type": "integer"
-                },
-                "accountId": {
-                  "type": "string"
-                },
-                "rev": {
-                  "type": "integer"
-                },
-                "updatedAt": {
-                  "type": "integer"
-                },
-                "wallet": {
-                  "type": "object",
-                  "required": [
-                    "coins"
-                  ],
-                  "properties": {
-                    "coins": {
-                      "type": "integer",
-                      "minimum": 0
-                    }
-                  }
-                },
-                "inventory": {
-                  "type": "object",
-                  "required": [
-                    "skins",
-                    "items"
-                  ],
-                  "properties": {
-                    "skins": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "items": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "gacha": {
-                  "type": "object",
-                  "required": [
-                    "pity"
-                  ],
-                  "properties": {
-                    "pity": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "monetization": {
-                  "type": "object",
-                  "required": [
-                    "fatePoints",
-                    "subscriptionExpiry",
-                    "starterUsed"
-                  ],
-                  "properties": {
-                    "fatePoints": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "description": "Fate Points balance (§7)"
-                    },
-                    "subscriptionExpiry": {
-                      "type": "integer",
-                      "description": "monthly card end timestamp (ms); 0 = none (§5)"
-                    },
-                    "subscriptionLastClaimDay": {
-                      "type": "string",
-                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
-                    },
-                    "starterUsed": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "one-off product ids already purchased (§6)"
-                    }
-                  }
-                },
-                "deliveredOrders": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                "pvp": {
-                  "type": "object",
-                  "required": [
-                    "elo",
-                    "rank",
-                    "wins",
-                    "losses",
-                    "streak"
-                  ],
-                  "properties": {
-                    "elo": {
-                      "type": "integer"
-                    },
-                    "rank": {
-                      "type": "string"
-                    },
-                    "wins": {
-                      "type": "integer"
-                    },
-                    "losses": {
-                      "type": "integer"
-                    },
-                    "streak": {
-                      "type": "integer"
-                    },
-                    "seasonNo": {
-                      "type": "integer",
-                      "description": "Current season number"
-                    },
-                    "seasonPeakElo": {
-                      "type": "integer",
-                      "description": "Peak ELO for current season"
-                    },
-                    "seasonPeakRank": {
-                      "type": "string",
-                      "description": "Peak rank for current season"
-                    },
-                    "reachedRanks": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "All-time first-reached rank list (lifetime ledger)"
-                    }
-                  }
-                },
-                "stamina": {
-                  "type": "object",
-                  "required": [
-                    "current",
-                    "regenAt"
-                  ],
-                  "properties": {
-                    "current": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 120,
-                      "description": "Current stamina"
-                    },
-                    "regenAt": {
-                      "type": "integer",
-                      "description": "Timestamp (ms) when the next 1 stamina regenerates; 0 when full"
-                    }
-                  }
-                },
-                "titles": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
-                },
-                "battlePass": {
-                  "type": "object",
-                  "required": [
-                    "seasonNo",
-                    "xp",
-                    "level",
-                    "hasPass",
-                    "claimedFree",
-                    "claimedPaid"
-                  ],
-                  "properties": {
-                    "seasonNo": {
-                      "type": "integer"
-                    },
-                    "xp": {
-                      "type": "integer"
-                    },
-                    "level": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 30
-                    },
-                    "hasPass": {
-                      "type": "boolean"
-                    },
-                    "claimedFree": {
-                      "type": "array",
-                      "items": {
-                        "type": "integer"
-                      }
-                    },
-                    "claimedPaid": {
-                      "type": "array",
-                      "items": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "progress": {
-                  "type": "object",
-                  "required": [
-                    "cleared",
-                    "stars",
-                    "best"
-                  ],
-                  "properties": {
-                    "cleared": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "stars": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 3
-                      }
-                    },
-                    "best": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "object",
-                        "properties": {
-                          "timeMs": {
-                            "type": "integer"
-                          },
-                          "leaked": {
-                            "type": "integer"
-                          }
-                        },
-                        "additionalProperties": true
-                      }
-                    }
-                  }
-                },
-                "materials": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  }
-                },
-                "pveUpgrades": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  }
-                },
-                "cardInventory": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "description": "Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup"
-                },
-                "cardInv": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "defId",
-                      "level",
-                      "xp",
-                      "gear",
-                      "locked"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string",
-                        "description": "Unique instance id (e.g. 'card_a1b2c3')"
-                      },
-                      "defId": {
-                        "type": "string",
-                        "description": "Card definition id (references CARD_DEFS)"
-                      },
-                      "level": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 9
-                      },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
-                      "gear": {
-                        "type": "object",
-                        "additionalProperties": {
-                          "type": "string"
-                        },
-                        "description": "Per-slot equipped equipment instance ids (slot→equipmentInstanceId)"
-                      },
-                      "locked": {
-                        "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
-                      }
-                    }
-                  },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
-                },
-                "equipped": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
-                },
-                "flags": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "boolean"
-                  }
-                },
-                "stats": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  },
-                  "description": "Lifetime cumulative stats (StatKey→value), monotonically increasing, server-authoritative"
-                },
-                "achievements": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "claimedTiers"
-                    ],
-                    "properties": {
-                      "claimedTiers": {
-                        "type": "array",
-                        "items": {
-                          "type": "integer",
-                          "minimum": 1,
-                          "maximum": 3
-                        }
-                      }
-                    }
-                  },
-                  "description": "achId→set of already-claimed tier numbers, idempotent to prevent double-claiming"
-                },
-                "equipmentInv": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "defId",
-                      "rarity",
-                      "level",
-                      "affixes"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string"
-                      },
-                      "defId": {
-                        "type": "string"
-                      },
-                      "rarity": {
-                        "type": "string",
-                        "enum": [
-                          "common",
-                          "fine",
-                          "rare",
-                          "epic"
-                        ]
-                      },
-                      "level": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 9
-                      },
-                      "affixes": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "required": [
-                            "id",
-                            "value"
-                          ],
-                          "properties": {
-                            "id": {
-                              "type": "string"
-                            },
-                            "value": {
-                              "type": "number"
-                            }
-                          }
-                        }
-                      },
-                      "locked": {
-                        "type": "boolean"
-                      }
-                    }
-                  }
-                },
-                "retention": {
-                  "type": "object",
-                  "properties": {
-                    "checkin": {
-                      "type": "object",
-                      "required": [
-                        "monthKey",
-                        "claimedDays"
-                      ],
-                      "properties": {
-                        "monthKey": {
-                          "type": "string"
-                        },
-                        "claimedDays": {
-                          "type": "array",
-                          "items": {
-                            "type": "integer"
-                          }
-                        },
-                        "lastClaimedDayKey": {
-                          "type": "string"
-                        }
-                      }
-                    },
-                    "daily": {
-                      "type": "object",
-                      "required": [
-                        "dayKey",
-                        "completedTasks",
-                        "taskPoints",
-                        "rewardClaimed"
-                      ],
-                      "properties": {
-                        "dayKey": {
-                          "type": "string"
-                        },
-                        "completedTasks": {
-                          "type": "object",
-                          "additionalProperties": {
-                            "type": "integer"
-                          }
-                        },
-                        "taskPoints": {
-                          "type": "integer"
-                        },
-                        "rewardClaimed": {
-                          "type": "boolean"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  },
-  "reforgeEquipment": {
-    "200": {
-      "type": "object",
-      "required": [
-        "ok",
-        "data"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "enum": [
-            true
-          ]
-        },
-        "data": {
-          "type": "object",
-          "required": [
-            "instance",
-            "save"
-          ],
-          "properties": {
-            "instance": {
-              "type": "object",
-              "required": [
-                "id",
-                "defId",
-                "rarity",
-                "level",
-                "affixes"
-              ],
-              "properties": {
-                "id": {
-                  "type": "string"
-                },
-                "defId": {
-                  "type": "string"
-                },
-                "rarity": {
-                  "type": "string",
-                  "enum": [
-                    "common",
-                    "fine",
-                    "rare",
-                    "epic"
-                  ]
-                },
-                "level": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9
-                },
-                "affixes": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "value"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string"
-                      },
-                      "value": {
-                        "type": "number"
-                      }
-                    }
-                  }
-                },
-                "locked": {
-                  "type": "boolean"
-                }
-              }
-            },
-            "save": {
-              "type": "object",
-              "required": [
-                "version",
-                "accountId",
-                "rev",
-                "updatedAt",
-                "wallet",
-                "inventory",
-                "gacha",
-                "pvp",
-                "progress",
-                "materials",
-                "pveUpgrades",
-                "equipped",
-                "flags"
-              ],
-              "properties": {
-                "version": {
-                  "type": "integer"
-                },
-                "accountId": {
-                  "type": "string"
-                },
-                "rev": {
-                  "type": "integer"
-                },
-                "updatedAt": {
-                  "type": "integer"
-                },
-                "wallet": {
-                  "type": "object",
-                  "required": [
-                    "coins"
-                  ],
-                  "properties": {
-                    "coins": {
-                      "type": "integer",
-                      "minimum": 0
-                    }
-                  }
-                },
-                "inventory": {
-                  "type": "object",
-                  "required": [
-                    "skins",
-                    "items"
-                  ],
-                  "properties": {
-                    "skins": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "items": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "gacha": {
-                  "type": "object",
-                  "required": [
-                    "pity"
-                  ],
-                  "properties": {
-                    "pity": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "monetization": {
-                  "type": "object",
-                  "required": [
-                    "fatePoints",
-                    "subscriptionExpiry",
-                    "starterUsed"
-                  ],
-                  "properties": {
-                    "fatePoints": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "description": "Fate Points balance (§7)"
-                    },
-                    "subscriptionExpiry": {
-                      "type": "integer",
-                      "description": "monthly card end timestamp (ms); 0 = none (§5)"
-                    },
-                    "subscriptionLastClaimDay": {
-                      "type": "string",
-                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
-                    },
-                    "starterUsed": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "one-off product ids already purchased (§6)"
-                    }
-                  }
-                },
-                "deliveredOrders": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                "pvp": {
-                  "type": "object",
-                  "required": [
-                    "elo",
-                    "rank",
-                    "wins",
-                    "losses",
-                    "streak"
-                  ],
-                  "properties": {
-                    "elo": {
-                      "type": "integer"
-                    },
-                    "rank": {
-                      "type": "string"
-                    },
-                    "wins": {
-                      "type": "integer"
-                    },
-                    "losses": {
-                      "type": "integer"
-                    },
-                    "streak": {
-                      "type": "integer"
-                    },
-                    "seasonNo": {
-                      "type": "integer",
-                      "description": "Current season number"
-                    },
-                    "seasonPeakElo": {
-                      "type": "integer",
-                      "description": "Peak ELO for current season"
-                    },
-                    "seasonPeakRank": {
-                      "type": "string",
-                      "description": "Peak rank for current season"
-                    },
-                    "reachedRanks": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "All-time first-reached rank list (lifetime ledger)"
-                    }
-                  }
-                },
-                "stamina": {
-                  "type": "object",
-                  "required": [
-                    "current",
-                    "regenAt"
-                  ],
-                  "properties": {
-                    "current": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 120,
-                      "description": "Current stamina"
-                    },
-                    "regenAt": {
-                      "type": "integer",
-                      "description": "Timestamp (ms) when the next 1 stamina regenerates; 0 when full"
-                    }
-                  }
-                },
-                "titles": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
-                },
-                "battlePass": {
-                  "type": "object",
-                  "required": [
-                    "seasonNo",
-                    "xp",
-                    "level",
-                    "hasPass",
-                    "claimedFree",
-                    "claimedPaid"
-                  ],
-                  "properties": {
-                    "seasonNo": {
-                      "type": "integer"
-                    },
-                    "xp": {
-                      "type": "integer"
-                    },
-                    "level": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 30
-                    },
-                    "hasPass": {
-                      "type": "boolean"
-                    },
-                    "claimedFree": {
-                      "type": "array",
-                      "items": {
-                        "type": "integer"
-                      }
-                    },
-                    "claimedPaid": {
-                      "type": "array",
-                      "items": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "progress": {
-                  "type": "object",
-                  "required": [
-                    "cleared",
-                    "stars",
-                    "best"
-                  ],
-                  "properties": {
-                    "cleared": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "stars": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 3
-                      }
-                    },
-                    "best": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "object",
-                        "properties": {
-                          "timeMs": {
-                            "type": "integer"
-                          },
-                          "leaked": {
-                            "type": "integer"
-                          }
-                        },
-                        "additionalProperties": true
-                      }
-                    }
-                  }
-                },
-                "materials": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  }
-                },
-                "pveUpgrades": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  }
-                },
-                "cardInventory": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "description": "Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup"
-                },
-                "cardInv": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "defId",
-                      "level",
-                      "xp",
-                      "gear",
-                      "locked"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string",
-                        "description": "Unique instance id (e.g. 'card_a1b2c3')"
-                      },
-                      "defId": {
-                        "type": "string",
-                        "description": "Card definition id (references CARD_DEFS)"
-                      },
-                      "level": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 9
-                      },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
-                      "gear": {
-                        "type": "object",
-                        "additionalProperties": {
-                          "type": "string"
-                        },
-                        "description": "Per-slot equipped equipment instance ids (slot→equipmentInstanceId)"
-                      },
-                      "locked": {
-                        "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
-                      }
-                    }
-                  },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
-                },
-                "equipped": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
-                },
-                "flags": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "boolean"
-                  }
-                },
-                "stats": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  },
-                  "description": "Lifetime cumulative stats (StatKey→value), monotonically increasing, server-authoritative"
-                },
-                "achievements": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "claimedTiers"
-                    ],
-                    "properties": {
-                      "claimedTiers": {
-                        "type": "array",
-                        "items": {
-                          "type": "integer",
-                          "minimum": 1,
-                          "maximum": 3
-                        }
-                      }
-                    }
-                  },
-                  "description": "achId→set of already-claimed tier numbers, idempotent to prevent double-claiming"
-                },
-                "equipmentInv": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "defId",
-                      "rarity",
-                      "level",
-                      "affixes"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string"
-                      },
-                      "defId": {
-                        "type": "string"
-                      },
-                      "rarity": {
-                        "type": "string",
-                        "enum": [
-                          "common",
-                          "fine",
-                          "rare",
-                          "epic"
-                        ]
-                      },
-                      "level": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 9
-                      },
-                      "affixes": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "required": [
-                            "id",
-                            "value"
-                          ],
-                          "properties": {
-                            "id": {
-                              "type": "string"
-                            },
-                            "value": {
-                              "type": "number"
-                            }
-                          }
-                        }
-                      },
-                      "locked": {
-                        "type": "boolean"
-                      }
-                    }
-                  }
-                },
-                "retention": {
-                  "type": "object",
-                  "properties": {
-                    "checkin": {
-                      "type": "object",
-                      "required": [
-                        "monthKey",
-                        "claimedDays"
-                      ],
-                      "properties": {
-                        "monthKey": {
-                          "type": "string"
-                        },
-                        "claimedDays": {
-                          "type": "array",
-                          "items": {
-                            "type": "integer"
-                          }
-                        },
-                        "lastClaimedDayKey": {
-                          "type": "string"
-                        }
-                      }
-                    },
-                    "daily": {
-                      "type": "object",
-                      "required": [
-                        "dayKey",
-                        "completedTasks",
-                        "taskPoints",
-                        "rewardClaimed"
-                      ],
-                      "properties": {
-                        "dayKey": {
-                          "type": "string"
-                        },
-                        "completedTasks": {
-                          "type": "object",
-                          "additionalProperties": {
-                            "type": "integer"
-                          }
-                        },
-                        "taskPoints": {
-                          "type": "integer"
-                        },
-                        "rewardClaimed": {
-                          "type": "boolean"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  },
-  "cardsFeed": {
-    "200": {
-      "type": "object",
-      "required": [
-        "ok",
-        "data"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "enum": [
-            true
-          ]
-        },
-        "data": {
-          "type": "object",
-          "required": [
-            "card",
-            "levelsGained",
-            "save"
-          ],
-          "properties": {
-            "card": {
-              "type": "object",
-              "required": [
-                "id",
-                "defId",
-                "level",
-                "xp",
-                "gear",
-                "locked"
-              ],
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "description": "Unique instance id (e.g. 'card_a1b2c3')"
-                },
-                "defId": {
-                  "type": "string",
-                  "description": "Card definition id (references CARD_DEFS)"
-                },
-                "level": {
-                  "type": "integer",
-                  "minimum": 1,
-                  "maximum": 9
-                },
-                "xp": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "description": "Accumulated XP within the current level"
-                },
-                "gear": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "description": "Per-slot equipped equipment instance ids (slot→equipmentInstanceId)"
-                },
-                "locked": {
-                  "type": "boolean",
-                  "description": "Locked cards cannot be used as feed material"
-                }
-              }
-            },
-            "levelsGained": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "save": {
-              "type": "object",
-              "required": [
-                "version",
-                "accountId",
-                "rev",
-                "updatedAt",
-                "wallet",
-                "inventory",
-                "gacha",
-                "pvp",
-                "progress",
-                "materials",
-                "pveUpgrades",
-                "equipped",
-                "flags"
-              ],
-              "properties": {
-                "version": {
-                  "type": "integer"
-                },
-                "accountId": {
-                  "type": "string"
-                },
-                "rev": {
-                  "type": "integer"
-                },
-                "updatedAt": {
-                  "type": "integer"
-                },
-                "wallet": {
-                  "type": "object",
-                  "required": [
-                    "coins"
-                  ],
-                  "properties": {
-                    "coins": {
-                      "type": "integer",
-                      "minimum": 0
-                    }
-                  }
-                },
-                "inventory": {
-                  "type": "object",
-                  "required": [
-                    "skins",
-                    "items"
-                  ],
-                  "properties": {
-                    "skins": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "items": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "gacha": {
-                  "type": "object",
-                  "required": [
-                    "pity"
-                  ],
-                  "properties": {
-                    "pity": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "monetization": {
-                  "type": "object",
-                  "required": [
-                    "fatePoints",
-                    "subscriptionExpiry",
-                    "starterUsed"
-                  ],
-                  "properties": {
-                    "fatePoints": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "description": "Fate Points balance (§7)"
-                    },
-                    "subscriptionExpiry": {
-                      "type": "integer",
-                      "description": "monthly card end timestamp (ms); 0 = none (§5)"
-                    },
-                    "subscriptionLastClaimDay": {
-                      "type": "string",
-                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
-                    },
-                    "starterUsed": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "one-off product ids already purchased (§6)"
-                    }
-                  }
-                },
-                "deliveredOrders": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                "pvp": {
-                  "type": "object",
-                  "required": [
-                    "elo",
-                    "rank",
-                    "wins",
-                    "losses",
-                    "streak"
-                  ],
-                  "properties": {
-                    "elo": {
-                      "type": "integer"
-                    },
-                    "rank": {
-                      "type": "string"
-                    },
-                    "wins": {
-                      "type": "integer"
-                    },
-                    "losses": {
-                      "type": "integer"
-                    },
-                    "streak": {
-                      "type": "integer"
-                    },
-                    "seasonNo": {
-                      "type": "integer",
-                      "description": "Current season number"
-                    },
-                    "seasonPeakElo": {
-                      "type": "integer",
-                      "description": "Peak ELO for current season"
-                    },
-                    "seasonPeakRank": {
-                      "type": "string",
-                      "description": "Peak rank for current season"
-                    },
-                    "reachedRanks": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "All-time first-reached rank list (lifetime ledger)"
-                    }
-                  }
-                },
-                "stamina": {
-                  "type": "object",
-                  "required": [
-                    "current",
-                    "regenAt"
-                  ],
-                  "properties": {
-                    "current": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 120,
-                      "description": "Current stamina"
-                    },
-                    "regenAt": {
-                      "type": "integer",
-                      "description": "Timestamp (ms) when the next 1 stamina regenerates; 0 when full"
-                    }
-                  }
-                },
-                "titles": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
-                },
-                "battlePass": {
-                  "type": "object",
-                  "required": [
-                    "seasonNo",
-                    "xp",
-                    "level",
-                    "hasPass",
-                    "claimedFree",
-                    "claimedPaid"
-                  ],
-                  "properties": {
-                    "seasonNo": {
-                      "type": "integer"
-                    },
-                    "xp": {
-                      "type": "integer"
-                    },
-                    "level": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 30
-                    },
-                    "hasPass": {
-                      "type": "boolean"
-                    },
-                    "claimedFree": {
-                      "type": "array",
-                      "items": {
-                        "type": "integer"
-                      }
-                    },
-                    "claimedPaid": {
-                      "type": "array",
-                      "items": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "progress": {
-                  "type": "object",
-                  "required": [
-                    "cleared",
-                    "stars",
-                    "best"
-                  ],
-                  "properties": {
-                    "cleared": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "stars": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 3
-                      }
-                    },
-                    "best": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "object",
-                        "properties": {
-                          "timeMs": {
-                            "type": "integer"
-                          },
-                          "leaked": {
-                            "type": "integer"
-                          }
-                        },
-                        "additionalProperties": true
-                      }
-                    }
-                  }
-                },
-                "materials": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  }
-                },
-                "pveUpgrades": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  }
-                },
-                "cardInventory": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "description": "Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup"
-                },
-                "cardInv": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "defId",
-                      "level",
-                      "xp",
-                      "gear",
-                      "locked"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string",
-                        "description": "Unique instance id (e.g. 'card_a1b2c3')"
-                      },
-                      "defId": {
-                        "type": "string",
-                        "description": "Card definition id (references CARD_DEFS)"
-                      },
-                      "level": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 9
-                      },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
-                      "gear": {
-                        "type": "object",
-                        "additionalProperties": {
-                          "type": "string"
-                        },
-                        "description": "Per-slot equipped equipment instance ids (slot→equipmentInstanceId)"
-                      },
-                      "locked": {
-                        "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
-                      }
-                    }
-                  },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
-                },
-                "equipped": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
-                },
-                "flags": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "boolean"
-                  }
-                },
-                "stats": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  },
-                  "description": "Lifetime cumulative stats (StatKey→value), monotonically increasing, server-authoritative"
-                },
-                "achievements": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "claimedTiers"
-                    ],
-                    "properties": {
-                      "claimedTiers": {
-                        "type": "array",
-                        "items": {
-                          "type": "integer",
-                          "minimum": 1,
-                          "maximum": 3
-                        }
-                      }
-                    }
-                  },
-                  "description": "achId→set of already-claimed tier numbers, idempotent to prevent double-claiming"
-                },
-                "equipmentInv": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "defId",
-                      "rarity",
-                      "level",
-                      "affixes"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string"
-                      },
-                      "defId": {
-                        "type": "string"
-                      },
-                      "rarity": {
-                        "type": "string",
-                        "enum": [
-                          "common",
-                          "fine",
-                          "rare",
-                          "epic"
-                        ]
-                      },
-                      "level": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 9
-                      },
-                      "affixes": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "required": [
-                            "id",
-                            "value"
-                          ],
-                          "properties": {
-                            "id": {
-                              "type": "string"
-                            },
-                            "value": {
-                              "type": "number"
-                            }
-                          }
-                        }
-                      },
-                      "locked": {
-                        "type": "boolean"
-                      }
-                    }
-                  }
-                },
-                "retention": {
-                  "type": "object",
-                  "properties": {
-                    "checkin": {
-                      "type": "object",
-                      "required": [
-                        "monthKey",
-                        "claimedDays"
-                      ],
-                      "properties": {
-                        "monthKey": {
-                          "type": "string"
-                        },
-                        "claimedDays": {
-                          "type": "array",
-                          "items": {
-                            "type": "integer"
-                          }
-                        },
-                        "lastClaimedDayKey": {
-                          "type": "string"
-                        }
-                      }
-                    },
-                    "daily": {
-                      "type": "object",
-                      "required": [
-                        "dayKey",
-                        "completedTasks",
-                        "taskPoints",
-                        "rewardClaimed"
-                      ],
-                      "properties": {
-                        "dayKey": {
-                          "type": "string"
-                        },
-                        "completedTasks": {
-                          "type": "object",
-                          "additionalProperties": {
-                            "type": "integer"
-                          }
-                        },
-                        "taskPoints": {
-                          "type": "integer"
-                        },
-                        "rewardClaimed": {
-                          "type": "boolean"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  },
-  "getAchievements": {
-    "200": {
-      "type": "object",
-      "required": [
-        "ok",
-        "data"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "enum": [
-            true
-          ]
-        },
-        "data": {
-          "type": "object",
-          "required": [
-            "defs",
-            "stats",
-            "achievements"
-          ],
-          "properties": {
-            "defs": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": [
-                  "id",
-                  "statKey",
-                  "category",
-                  "tiers"
-                ],
-                "properties": {
-                  "id": {
-                    "type": "string"
-                  },
-                  "statKey": {
-                    "type": "string"
-                  },
-                  "category": {
-                    "type": "string",
-                    "enum": [
-                      "pve",
-                      "pvp",
-                      "collection",
-                      "progression"
-                    ]
-                  },
-                  "titleId": {
-                    "type": "string"
-                  },
-                  "hidden": {
-                    "type": "boolean"
-                  },
-                  "tiers": {
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "required": [
-                        "threshold",
-                        "coins"
-                      ],
-                      "properties": {
-                        "threshold": {
-                          "type": "integer"
-                        },
-                        "coins": {
-                          "type": "integer"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            },
-            "stats": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "integer"
-              }
-            },
-            "achievements": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "object",
-                "required": [
-                  "claimedTiers"
-                ],
-                "properties": {
-                  "claimedTiers": {
-                    "type": "array",
-                    "items": {
-                      "type": "integer",
-                      "minimum": 1,
-                      "maximum": 3
-                    }
-                  }
-                }
-              },
-              "description": "achId→set of already-claimed tier numbers, idempotent to prevent double-claiming"
-            }
-          }
-        }
-      }
-    }
-  },
-  "claimAchievement": {
-    "200": {
-      "type": "object",
-      "required": [
-        "ok",
-        "data"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "enum": [
-            true
-          ]
-        },
-        "data": {
-          "type": "object",
-          "required": [
-            "save",
-            "granted"
-          ],
-          "properties": {
-            "save": {
-              "type": "object",
-              "required": [
-                "version",
-                "accountId",
-                "rev",
-                "updatedAt",
-                "wallet",
-                "inventory",
-                "gacha",
-                "pvp",
-                "progress",
-                "materials",
-                "pveUpgrades",
-                "equipped",
-                "flags"
-              ],
-              "properties": {
-                "version": {
-                  "type": "integer"
-                },
-                "accountId": {
-                  "type": "string"
-                },
-                "rev": {
-                  "type": "integer"
-                },
-                "updatedAt": {
-                  "type": "integer"
-                },
-                "wallet": {
-                  "type": "object",
-                  "required": [
-                    "coins"
-                  ],
-                  "properties": {
-                    "coins": {
-                      "type": "integer",
-                      "minimum": 0
-                    }
-                  }
-                },
-                "inventory": {
-                  "type": "object",
-                  "required": [
-                    "skins",
-                    "items"
-                  ],
-                  "properties": {
-                    "skins": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "items": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "gacha": {
-                  "type": "object",
-                  "required": [
-                    "pity"
-                  ],
-                  "properties": {
-                    "pity": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "monetization": {
-                  "type": "object",
-                  "required": [
-                    "fatePoints",
-                    "subscriptionExpiry",
-                    "starterUsed"
-                  ],
-                  "properties": {
-                    "fatePoints": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "description": "Fate Points balance (§7)"
-                    },
-                    "subscriptionExpiry": {
-                      "type": "integer",
-                      "description": "monthly card end timestamp (ms); 0 = none (§5)"
-                    },
-                    "subscriptionLastClaimDay": {
-                      "type": "string",
-                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
-                    },
-                    "starterUsed": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "one-off product ids already purchased (§6)"
-                    }
-                  }
-                },
-                "deliveredOrders": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                "pvp": {
-                  "type": "object",
-                  "required": [
-                    "elo",
-                    "rank",
-                    "wins",
-                    "losses",
-                    "streak"
-                  ],
-                  "properties": {
-                    "elo": {
-                      "type": "integer"
-                    },
-                    "rank": {
-                      "type": "string"
-                    },
-                    "wins": {
-                      "type": "integer"
-                    },
-                    "losses": {
-                      "type": "integer"
-                    },
-                    "streak": {
-                      "type": "integer"
-                    },
-                    "seasonNo": {
-                      "type": "integer",
-                      "description": "Current season number"
-                    },
-                    "seasonPeakElo": {
-                      "type": "integer",
-                      "description": "Peak ELO for current season"
-                    },
-                    "seasonPeakRank": {
-                      "type": "string",
-                      "description": "Peak rank for current season"
-                    },
-                    "reachedRanks": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "All-time first-reached rank list (lifetime ledger)"
-                    }
-                  }
-                },
-                "stamina": {
-                  "type": "object",
-                  "required": [
-                    "current",
-                    "regenAt"
-                  ],
-                  "properties": {
-                    "current": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 120,
-                      "description": "Current stamina"
-                    },
-                    "regenAt": {
-                      "type": "integer",
-                      "description": "Timestamp (ms) when the next 1 stamina regenerates; 0 when full"
-                    }
-                  }
-                },
-                "titles": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
-                },
-                "battlePass": {
-                  "type": "object",
-                  "required": [
-                    "seasonNo",
-                    "xp",
-                    "level",
-                    "hasPass",
-                    "claimedFree",
-                    "claimedPaid"
-                  ],
-                  "properties": {
-                    "seasonNo": {
-                      "type": "integer"
-                    },
-                    "xp": {
-                      "type": "integer"
-                    },
-                    "level": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 30
-                    },
-                    "hasPass": {
-                      "type": "boolean"
-                    },
-                    "claimedFree": {
-                      "type": "array",
-                      "items": {
-                        "type": "integer"
-                      }
-                    },
-                    "claimedPaid": {
-                      "type": "array",
-                      "items": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "progress": {
-                  "type": "object",
-                  "required": [
-                    "cleared",
-                    "stars",
-                    "best"
-                  ],
-                  "properties": {
-                    "cleared": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "stars": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 3
-                      }
-                    },
-                    "best": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "object",
-                        "properties": {
-                          "timeMs": {
-                            "type": "integer"
-                          },
-                          "leaked": {
-                            "type": "integer"
-                          }
-                        },
-                        "additionalProperties": true
-                      }
-                    }
-                  }
-                },
-                "materials": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  }
-                },
-                "pveUpgrades": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  }
-                },
-                "cardInventory": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "description": "Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup"
-                },
-                "cardInv": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "defId",
-                      "level",
-                      "xp",
-                      "gear",
-                      "locked"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string",
-                        "description": "Unique instance id (e.g. 'card_a1b2c3')"
-                      },
-                      "defId": {
-                        "type": "string",
-                        "description": "Card definition id (references CARD_DEFS)"
-                      },
-                      "level": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 9
-                      },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
-                      "gear": {
-                        "type": "object",
-                        "additionalProperties": {
-                          "type": "string"
-                        },
-                        "description": "Per-slot equipped equipment instance ids (slot→equipmentInstanceId)"
-                      },
-                      "locked": {
-                        "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
-                      }
-                    }
-                  },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
-                },
-                "equipped": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
-                },
-                "flags": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "boolean"
-                  }
-                },
-                "stats": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  },
-                  "description": "Lifetime cumulative stats (StatKey→value), monotonically increasing, server-authoritative"
-                },
-                "achievements": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "claimedTiers"
-                    ],
-                    "properties": {
-                      "claimedTiers": {
-                        "type": "array",
-                        "items": {
-                          "type": "integer",
-                          "minimum": 1,
-                          "maximum": 3
-                        }
-                      }
-                    }
-                  },
-                  "description": "achId→set of already-claimed tier numbers, idempotent to prevent double-claiming"
-                },
-                "equipmentInv": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "defId",
-                      "rarity",
-                      "level",
-                      "affixes"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string"
-                      },
-                      "defId": {
-                        "type": "string"
-                      },
-                      "rarity": {
-                        "type": "string",
-                        "enum": [
-                          "common",
-                          "fine",
-                          "rare",
-                          "epic"
-                        ]
-                      },
-                      "level": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 9
-                      },
-                      "affixes": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "required": [
-                            "id",
-                            "value"
-                          ],
-                          "properties": {
-                            "id": {
-                              "type": "string"
-                            },
-                            "value": {
-                              "type": "number"
-                            }
-                          }
-                        }
-                      },
-                      "locked": {
-                        "type": "boolean"
-                      }
-                    }
-                  }
-                },
-                "retention": {
-                  "type": "object",
-                  "properties": {
-                    "checkin": {
-                      "type": "object",
-                      "required": [
-                        "monthKey",
-                        "claimedDays"
-                      ],
-                      "properties": {
-                        "monthKey": {
-                          "type": "string"
-                        },
-                        "claimedDays": {
-                          "type": "array",
-                          "items": {
-                            "type": "integer"
-                          }
-                        },
-                        "lastClaimedDayKey": {
-                          "type": "string"
-                        }
-                      }
-                    },
-                    "daily": {
-                      "type": "object",
-                      "required": [
-                        "dayKey",
-                        "completedTasks",
-                        "taskPoints",
-                        "rewardClaimed"
-                      ],
-                      "properties": {
-                        "dayKey": {
-                          "type": "string"
-                        },
-                        "completedTasks": {
-                          "type": "object",
-                          "additionalProperties": {
-                            "type": "integer"
-                          }
-                        },
-                        "taskPoints": {
-                          "type": "integer"
-                        },
-                        "rewardClaimed": {
-                          "type": "boolean"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            },
-            "granted": {
-              "type": "integer",
-              "description": "Coins granted this time"
-            }
-          }
-        }
-      }
-    }
-  },
-  "getRetention": {
-    "200": {
-      "type": "object",
-      "required": [
-        "ok",
-        "data"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "enum": [
-            true
-          ]
-        },
-        "data": {
-          "type": "object",
-          "required": [
-            "defs",
-            "claimable"
-          ],
-          "properties": {
-            "checkin": {
-              "type": "object",
-              "nullable": true,
-              "properties": {
-                "monthKey": {
-                  "type": "string"
-                },
-                "claimedDays": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer"
-                  }
-                },
-                "lastClaimedDayKey": {
-                  "type": "string"
-                }
-              }
-            },
-            "daily": {
-              "type": "object",
-              "nullable": true,
-              "properties": {
-                "dayKey": {
-                  "type": "string"
-                },
-                "taskPoints": {
-                  "type": "integer"
-                },
-                "rewardClaimed": {
-                  "type": "boolean"
-                },
-                "completedTasks": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  }
-                }
-              }
-            },
-            "defs": {
-              "type": "object",
-              "required": [
-                "rewards",
-                "tasks",
-                "pointsThreshold",
-                "dailyCoinsReward"
-              ],
-              "properties": {
-                "rewards": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "required": [
-                      "kind",
-                      "count"
-                    ],
-                    "properties": {
-                      "kind": {
-                        "type": "string",
-                        "enum": [
-                          "coins",
-                          "stamina",
-                          "material",
-                          "card",
-                          "equipment"
-                        ]
-                      },
-                      "count": {
-                        "type": "integer"
-                      },
-                      "id": {
-                        "type": "string",
-                        "description": "Material id (scrap/lead/binding)",
-                        "set only when kind=material": null
-                      }
-                    }
-                  }
-                },
-                "tasks": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "points"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string"
-                      },
-                      "points": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "pointsThreshold": {
-                  "type": "integer"
-                },
-                "dailyCoinsReward": {
-                  "type": "integer"
-                }
-              }
-            },
-            "claimable": {
-              "type": "object",
-              "required": [
-                "checkin",
-                "daily"
-              ],
-              "properties": {
-                "checkin": {
-                  "type": "boolean"
-                },
-                "daily": {
-                  "type": "boolean"
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  },
-  "claimCheckin": {
-    "200": {
-      "type": "object",
-      "required": [
-        "ok",
-        "data"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "enum": [
-            true
-          ]
-        },
-        "data": {
-          "type": "object",
-          "required": [
-            "save",
-            "day",
-            "reward"
-          ],
-          "properties": {
-            "save": {
-              "type": "object",
-              "required": [
-                "version",
-                "accountId",
-                "rev",
-                "updatedAt",
-                "wallet",
-                "inventory",
-                "gacha",
-                "pvp",
-                "progress",
-                "materials",
-                "pveUpgrades",
-                "equipped",
-                "flags"
-              ],
-              "properties": {
-                "version": {
-                  "type": "integer"
-                },
-                "accountId": {
-                  "type": "string"
-                },
-                "rev": {
-                  "type": "integer"
-                },
-                "updatedAt": {
-                  "type": "integer"
-                },
-                "wallet": {
-                  "type": "object",
-                  "required": [
-                    "coins"
-                  ],
-                  "properties": {
-                    "coins": {
-                      "type": "integer",
-                      "minimum": 0
-                    }
-                  }
-                },
-                "inventory": {
-                  "type": "object",
-                  "required": [
-                    "skins",
-                    "items"
-                  ],
-                  "properties": {
-                    "skins": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "items": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "gacha": {
-                  "type": "object",
-                  "required": [
-                    "pity"
-                  ],
-                  "properties": {
-                    "pity": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "monetization": {
-                  "type": "object",
-                  "required": [
-                    "fatePoints",
-                    "subscriptionExpiry",
-                    "starterUsed"
-                  ],
-                  "properties": {
-                    "fatePoints": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "description": "Fate Points balance (§7)"
-                    },
-                    "subscriptionExpiry": {
-                      "type": "integer",
-                      "description": "monthly card end timestamp (ms); 0 = none (§5)"
-                    },
-                    "subscriptionLastClaimDay": {
-                      "type": "string",
-                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
-                    },
-                    "starterUsed": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "one-off product ids already purchased (§6)"
-                    }
-                  }
-                },
-                "deliveredOrders": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                "pvp": {
-                  "type": "object",
-                  "required": [
-                    "elo",
-                    "rank",
-                    "wins",
-                    "losses",
-                    "streak"
-                  ],
-                  "properties": {
-                    "elo": {
-                      "type": "integer"
-                    },
-                    "rank": {
-                      "type": "string"
-                    },
-                    "wins": {
-                      "type": "integer"
-                    },
-                    "losses": {
-                      "type": "integer"
-                    },
-                    "streak": {
-                      "type": "integer"
-                    },
-                    "seasonNo": {
-                      "type": "integer",
-                      "description": "Current season number"
-                    },
-                    "seasonPeakElo": {
-                      "type": "integer",
-                      "description": "Peak ELO for current season"
-                    },
-                    "seasonPeakRank": {
-                      "type": "string",
-                      "description": "Peak rank for current season"
-                    },
-                    "reachedRanks": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "All-time first-reached rank list (lifetime ledger)"
-                    }
-                  }
-                },
-                "stamina": {
-                  "type": "object",
-                  "required": [
-                    "current",
-                    "regenAt"
-                  ],
-                  "properties": {
-                    "current": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 120,
-                      "description": "Current stamina"
-                    },
-                    "regenAt": {
-                      "type": "integer",
-                      "description": "Timestamp (ms) when the next 1 stamina regenerates; 0 when full"
-                    }
-                  }
-                },
-                "titles": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
-                },
-                "battlePass": {
-                  "type": "object",
-                  "required": [
-                    "seasonNo",
-                    "xp",
-                    "level",
-                    "hasPass",
-                    "claimedFree",
-                    "claimedPaid"
-                  ],
-                  "properties": {
-                    "seasonNo": {
-                      "type": "integer"
-                    },
-                    "xp": {
-                      "type": "integer"
-                    },
-                    "level": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 30
-                    },
-                    "hasPass": {
-                      "type": "boolean"
-                    },
-                    "claimedFree": {
-                      "type": "array",
-                      "items": {
-                        "type": "integer"
-                      }
-                    },
-                    "claimedPaid": {
-                      "type": "array",
-                      "items": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "progress": {
-                  "type": "object",
-                  "required": [
-                    "cleared",
-                    "stars",
-                    "best"
-                  ],
-                  "properties": {
-                    "cleared": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "stars": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 3
-                      }
-                    },
-                    "best": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "object",
-                        "properties": {
-                          "timeMs": {
-                            "type": "integer"
-                          },
-                          "leaked": {
-                            "type": "integer"
-                          }
-                        },
-                        "additionalProperties": true
-                      }
-                    }
-                  }
-                },
-                "materials": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  }
-                },
-                "pveUpgrades": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  }
-                },
-                "cardInventory": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "description": "Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup"
-                },
-                "cardInv": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "defId",
-                      "level",
-                      "xp",
-                      "gear",
-                      "locked"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string",
-                        "description": "Unique instance id (e.g. 'card_a1b2c3')"
-                      },
-                      "defId": {
-                        "type": "string",
-                        "description": "Card definition id (references CARD_DEFS)"
-                      },
-                      "level": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 9
-                      },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
-                      "gear": {
-                        "type": "object",
-                        "additionalProperties": {
-                          "type": "string"
-                        },
-                        "description": "Per-slot equipped equipment instance ids (slot→equipmentInstanceId)"
-                      },
-                      "locked": {
-                        "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
-                      }
-                    }
-                  },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
-                },
-                "equipped": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
-                },
-                "flags": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "boolean"
-                  }
-                },
-                "stats": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  },
-                  "description": "Lifetime cumulative stats (StatKey→value), monotonically increasing, server-authoritative"
-                },
-                "achievements": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "claimedTiers"
-                    ],
-                    "properties": {
-                      "claimedTiers": {
-                        "type": "array",
-                        "items": {
-                          "type": "integer",
-                          "minimum": 1,
-                          "maximum": 3
-                        }
-                      }
-                    }
-                  },
-                  "description": "achId→set of already-claimed tier numbers, idempotent to prevent double-claiming"
-                },
-                "equipmentInv": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "defId",
-                      "rarity",
-                      "level",
-                      "affixes"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string"
-                      },
-                      "defId": {
-                        "type": "string"
-                      },
-                      "rarity": {
-                        "type": "string",
-                        "enum": [
-                          "common",
-                          "fine",
-                          "rare",
-                          "epic"
-                        ]
-                      },
-                      "level": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 9
-                      },
-                      "affixes": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "required": [
-                            "id",
-                            "value"
-                          ],
-                          "properties": {
-                            "id": {
-                              "type": "string"
-                            },
-                            "value": {
-                              "type": "number"
-                            }
-                          }
-                        }
-                      },
-                      "locked": {
-                        "type": "boolean"
-                      }
-                    }
-                  }
-                },
-                "retention": {
-                  "type": "object",
-                  "properties": {
-                    "checkin": {
-                      "type": "object",
-                      "required": [
-                        "monthKey",
-                        "claimedDays"
-                      ],
-                      "properties": {
-                        "monthKey": {
-                          "type": "string"
-                        },
-                        "claimedDays": {
-                          "type": "array",
-                          "items": {
-                            "type": "integer"
-                          }
-                        },
-                        "lastClaimedDayKey": {
-                          "type": "string"
-                        }
-                      }
-                    },
-                    "daily": {
-                      "type": "object",
-                      "required": [
-                        "dayKey",
-                        "completedTasks",
-                        "taskPoints",
-                        "rewardClaimed"
-                      ],
-                      "properties": {
-                        "dayKey": {
-                          "type": "string"
-                        },
-                        "completedTasks": {
-                          "type": "object",
-                          "additionalProperties": {
-                            "type": "integer"
-                          }
-                        },
-                        "taskPoints": {
-                          "type": "integer"
-                        },
-                        "rewardClaimed": {
-                          "type": "boolean"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            },
-            "day": {
-              "type": "integer",
-              "description": "Slot number claimed this time (1-based)"
-            },
-            "reward": {
-              "type": "object",
-              "required": [
-                "kind",
-                "count"
-              ],
-              "properties": {
-                "kind": {
-                  "type": "string",
-                  "enum": [
-                    "coins",
-                    "stamina",
-                    "material",
-                    "card",
-                    "equipment"
-                  ]
-                },
-                "count": {
-                  "type": "integer"
-                },
-                "id": {
-                  "type": "string",
-                  "description": "Material id (material) or the drawn defId (card/equipment)"
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  },
-  "claimDailyReward": {
-    "200": {
-      "type": "object",
-      "required": [
-        "ok",
-        "data"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "enum": [
-            true
-          ]
-        },
-        "data": {
-          "type": "object",
-          "required": [
-            "save",
-            "coins"
-          ],
-          "properties": {
-            "save": {
-              "type": "object",
-              "required": [
-                "version",
-                "accountId",
-                "rev",
-                "updatedAt",
-                "wallet",
-                "inventory",
-                "gacha",
-                "pvp",
-                "progress",
-                "materials",
-                "pveUpgrades",
-                "equipped",
-                "flags"
-              ],
-              "properties": {
-                "version": {
-                  "type": "integer"
-                },
-                "accountId": {
-                  "type": "string"
-                },
-                "rev": {
-                  "type": "integer"
-                },
-                "updatedAt": {
-                  "type": "integer"
-                },
-                "wallet": {
-                  "type": "object",
-                  "required": [
-                    "coins"
-                  ],
-                  "properties": {
-                    "coins": {
-                      "type": "integer",
-                      "minimum": 0
-                    }
-                  }
-                },
-                "inventory": {
-                  "type": "object",
-                  "required": [
-                    "skins",
-                    "items"
-                  ],
-                  "properties": {
-                    "skins": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "items": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "gacha": {
-                  "type": "object",
-                  "required": [
-                    "pity"
-                  ],
-                  "properties": {
-                    "pity": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "monetization": {
-                  "type": "object",
-                  "required": [
-                    "fatePoints",
-                    "subscriptionExpiry",
-                    "starterUsed"
-                  ],
-                  "properties": {
-                    "fatePoints": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "description": "Fate Points balance (§7)"
-                    },
-                    "subscriptionExpiry": {
-                      "type": "integer",
-                      "description": "monthly card end timestamp (ms); 0 = none (§5)"
-                    },
-                    "subscriptionLastClaimDay": {
-                      "type": "string",
-                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
-                    },
-                    "starterUsed": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "one-off product ids already purchased (§6)"
-                    }
-                  }
-                },
-                "deliveredOrders": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                "pvp": {
-                  "type": "object",
-                  "required": [
-                    "elo",
-                    "rank",
-                    "wins",
-                    "losses",
-                    "streak"
-                  ],
-                  "properties": {
-                    "elo": {
-                      "type": "integer"
-                    },
-                    "rank": {
-                      "type": "string"
-                    },
-                    "wins": {
-                      "type": "integer"
-                    },
-                    "losses": {
-                      "type": "integer"
-                    },
-                    "streak": {
-                      "type": "integer"
-                    },
-                    "seasonNo": {
-                      "type": "integer",
-                      "description": "Current season number"
-                    },
-                    "seasonPeakElo": {
-                      "type": "integer",
-                      "description": "Peak ELO for current season"
-                    },
-                    "seasonPeakRank": {
-                      "type": "string",
-                      "description": "Peak rank for current season"
-                    },
-                    "reachedRanks": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "All-time first-reached rank list (lifetime ledger)"
-                    }
-                  }
-                },
-                "stamina": {
-                  "type": "object",
-                  "required": [
-                    "current",
-                    "regenAt"
-                  ],
-                  "properties": {
-                    "current": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 120,
-                      "description": "Current stamina"
-                    },
-                    "regenAt": {
-                      "type": "integer",
-                      "description": "Timestamp (ms) when the next 1 stamina regenerates; 0 when full"
-                    }
-                  }
-                },
-                "titles": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
-                },
-                "battlePass": {
-                  "type": "object",
-                  "required": [
-                    "seasonNo",
-                    "xp",
-                    "level",
-                    "hasPass",
-                    "claimedFree",
-                    "claimedPaid"
-                  ],
-                  "properties": {
-                    "seasonNo": {
-                      "type": "integer"
-                    },
-                    "xp": {
-                      "type": "integer"
-                    },
-                    "level": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 30
-                    },
-                    "hasPass": {
-                      "type": "boolean"
-                    },
-                    "claimedFree": {
-                      "type": "array",
-                      "items": {
-                        "type": "integer"
-                      }
-                    },
-                    "claimedPaid": {
-                      "type": "array",
-                      "items": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "progress": {
-                  "type": "object",
-                  "required": [
-                    "cleared",
-                    "stars",
-                    "best"
-                  ],
-                  "properties": {
-                    "cleared": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "stars": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 3
-                      }
-                    },
-                    "best": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "object",
-                        "properties": {
-                          "timeMs": {
-                            "type": "integer"
-                          },
-                          "leaked": {
-                            "type": "integer"
-                          }
-                        },
-                        "additionalProperties": true
-                      }
-                    }
-                  }
-                },
-                "materials": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  }
-                },
-                "pveUpgrades": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  }
-                },
-                "cardInventory": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "description": "Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup"
-                },
-                "cardInv": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "defId",
-                      "level",
-                      "xp",
-                      "gear",
-                      "locked"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string",
-                        "description": "Unique instance id (e.g. 'card_a1b2c3')"
-                      },
-                      "defId": {
-                        "type": "string",
-                        "description": "Card definition id (references CARD_DEFS)"
-                      },
-                      "level": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 9
-                      },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
-                      "gear": {
-                        "type": "object",
-                        "additionalProperties": {
-                          "type": "string"
-                        },
-                        "description": "Per-slot equipped equipment instance ids (slot→equipmentInstanceId)"
-                      },
-                      "locked": {
-                        "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
-                      }
-                    }
-                  },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
-                },
-                "equipped": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
-                },
-                "flags": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "boolean"
-                  }
-                },
-                "stats": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  },
-                  "description": "Lifetime cumulative stats (StatKey→value), monotonically increasing, server-authoritative"
-                },
-                "achievements": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "claimedTiers"
-                    ],
-                    "properties": {
-                      "claimedTiers": {
-                        "type": "array",
-                        "items": {
-                          "type": "integer",
-                          "minimum": 1,
-                          "maximum": 3
-                        }
-                      }
-                    }
-                  },
-                  "description": "achId→set of already-claimed tier numbers, idempotent to prevent double-claiming"
-                },
-                "equipmentInv": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "defId",
-                      "rarity",
-                      "level",
-                      "affixes"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string"
-                      },
-                      "defId": {
-                        "type": "string"
-                      },
-                      "rarity": {
-                        "type": "string",
-                        "enum": [
-                          "common",
-                          "fine",
-                          "rare",
-                          "epic"
-                        ]
-                      },
-                      "level": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 9
-                      },
-                      "affixes": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "required": [
-                            "id",
-                            "value"
-                          ],
-                          "properties": {
-                            "id": {
-                              "type": "string"
-                            },
-                            "value": {
-                              "type": "number"
-                            }
-                          }
-                        }
-                      },
-                      "locked": {
-                        "type": "boolean"
-                      }
-                    }
-                  }
-                },
-                "retention": {
-                  "type": "object",
-                  "properties": {
-                    "checkin": {
-                      "type": "object",
-                      "required": [
-                        "monthKey",
-                        "claimedDays"
-                      ],
-                      "properties": {
-                        "monthKey": {
-                          "type": "string"
-                        },
-                        "claimedDays": {
-                          "type": "array",
-                          "items": {
-                            "type": "integer"
-                          }
-                        },
-                        "lastClaimedDayKey": {
-                          "type": "string"
-                        }
-                      }
-                    },
-                    "daily": {
-                      "type": "object",
-                      "required": [
-                        "dayKey",
-                        "completedTasks",
-                        "taskPoints",
-                        "rewardClaimed"
-                      ],
-                      "properties": {
-                        "dayKey": {
-                          "type": "string"
-                        },
-                        "completedTasks": {
-                          "type": "object",
-                          "additionalProperties": {
-                            "type": "integer"
-                          }
-                        },
-                        "taskPoints": {
-                          "type": "integer"
-                        },
-                        "rewardClaimed": {
-                          "type": "boolean"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            },
-            "coins": {
-              "type": "integer",
-              "description": "Coins granted this time"
             }
           }
         }
@@ -15738,6 +10607,6081 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
       }
     }
   },
+  "redeemPromoCode": {
+    "200": {
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "coinsAfter",
+            "coinsGranted"
+          ],
+          "properties": {
+            "coinsAfter": {
+              "type": "integer"
+            },
+            "coinsGranted": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    }
+  },
+  "craftEquipment": {
+    "200": {
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "save",
+            "instance"
+          ],
+          "properties": {
+            "save": {
+              "type": "object",
+              "required": [
+                "version",
+                "accountId",
+                "rev",
+                "updatedAt",
+                "wallet",
+                "inventory",
+                "gacha",
+                "pvp",
+                "progress",
+                "materials",
+                "pveUpgrades",
+                "equipped",
+                "flags"
+              ],
+              "properties": {
+                "version": {
+                  "type": "integer"
+                },
+                "accountId": {
+                  "type": "string"
+                },
+                "rev": {
+                  "type": "integer"
+                },
+                "updatedAt": {
+                  "type": "integer"
+                },
+                "wallet": {
+                  "type": "object",
+                  "required": [
+                    "coins"
+                  ],
+                  "properties": {
+                    "coins": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                },
+                "inventory": {
+                  "type": "object",
+                  "required": [
+                    "skins",
+                    "items"
+                  ],
+                  "properties": {
+                    "skins": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "gacha": {
+                  "type": "object",
+                  "required": [
+                    "pity"
+                  ],
+                  "properties": {
+                    "pity": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "monetization": {
+                  "type": "object",
+                  "required": [
+                    "fatePoints",
+                    "subscriptionExpiry",
+                    "starterUsed"
+                  ],
+                  "properties": {
+                    "fatePoints": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Fate Points balance (§7)"
+                    },
+                    "subscriptionExpiry": {
+                      "type": "integer",
+                      "description": "monthly card end timestamp (ms); 0 = none (§5)"
+                    },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
+                    },
+                    "starterUsed": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "one-off product ids already purchased (§6)"
+                    }
+                  }
+                },
+                "deliveredOrders": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "pvp": {
+                  "type": "object",
+                  "required": [
+                    "elo",
+                    "rank",
+                    "wins",
+                    "losses",
+                    "streak"
+                  ],
+                  "properties": {
+                    "elo": {
+                      "type": "integer"
+                    },
+                    "rank": {
+                      "type": "string"
+                    },
+                    "wins": {
+                      "type": "integer"
+                    },
+                    "losses": {
+                      "type": "integer"
+                    },
+                    "streak": {
+                      "type": "integer"
+                    },
+                    "seasonNo": {
+                      "type": "integer",
+                      "description": "Current season number"
+                    },
+                    "seasonPeakElo": {
+                      "type": "integer",
+                      "description": "Peak ELO for current season"
+                    },
+                    "seasonPeakRank": {
+                      "type": "string",
+                      "description": "Peak rank for current season"
+                    },
+                    "reachedRanks": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "All-time first-reached rank list (lifetime ledger)"
+                    }
+                  }
+                },
+                "stamina": {
+                  "type": "object",
+                  "required": [
+                    "current",
+                    "regenAt"
+                  ],
+                  "properties": {
+                    "current": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 120,
+                      "description": "Current stamina"
+                    },
+                    "regenAt": {
+                      "type": "integer",
+                      "description": "Timestamp (ms) when the next 1 stamina regenerates; 0 when full"
+                    }
+                  }
+                },
+                "titles": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                },
+                "battlePass": {
+                  "type": "object",
+                  "required": [
+                    "seasonNo",
+                    "xp",
+                    "level",
+                    "hasPass",
+                    "claimedFree",
+                    "claimedPaid"
+                  ],
+                  "properties": {
+                    "seasonNo": {
+                      "type": "integer"
+                    },
+                    "xp": {
+                      "type": "integer"
+                    },
+                    "level": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 30
+                    },
+                    "hasPass": {
+                      "type": "boolean"
+                    },
+                    "claimedFree": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
+                    "claimedPaid": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "progress": {
+                  "type": "object",
+                  "required": [
+                    "cleared",
+                    "stars",
+                    "best"
+                  ],
+                  "properties": {
+                    "cleared": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "stars": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 3
+                      }
+                    },
+                    "best": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "timeMs": {
+                            "type": "integer"
+                          },
+                          "leaked": {
+                            "type": "integer"
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                },
+                "materials": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "pveUpgrades": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "cardInventory": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "description": "Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup"
+                },
+                "cardInv": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "defId",
+                      "level",
+                      "xp",
+                      "gear",
+                      "locked"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "Unique instance id (e.g. 'card_a1b2c3')"
+                      },
+                      "defId": {
+                        "type": "string",
+                        "description": "Card definition id (references CARD_DEFS)"
+                      },
+                      "level": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9
+                      },
+                      "xp": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Accumulated XP within the current level"
+                      },
+                      "gear": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        },
+                        "description": "Per-slot equipped equipment instance ids (slot→equipmentInstanceId)"
+                      },
+                      "locked": {
+                        "type": "boolean",
+                        "description": "Locked cards cannot be used as feed material"
+                      }
+                    }
+                  },
+                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                },
+                "equipped": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "flags": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "boolean"
+                  }
+                },
+                "stats": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "Lifetime cumulative stats (StatKey→value), monotonically increasing, server-authoritative"
+                },
+                "achievements": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "claimedTiers"
+                    ],
+                    "properties": {
+                      "claimedTiers": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 3
+                        }
+                      }
+                    }
+                  },
+                  "description": "achId→set of already-claimed tier numbers, idempotent to prevent double-claiming"
+                },
+                "equipmentInv": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "defId",
+                      "rarity",
+                      "level",
+                      "affixes"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "defId": {
+                        "type": "string"
+                      },
+                      "rarity": {
+                        "type": "string",
+                        "enum": [
+                          "common",
+                          "fine",
+                          "rare",
+                          "epic"
+                        ]
+                      },
+                      "level": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9
+                      },
+                      "affixes": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "value"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "value": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      },
+                      "locked": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                },
+                "retention": {
+                  "type": "object",
+                  "properties": {
+                    "checkin": {
+                      "type": "object",
+                      "required": [
+                        "monthKey",
+                        "claimedDays"
+                      ],
+                      "properties": {
+                        "monthKey": {
+                          "type": "string"
+                        },
+                        "claimedDays": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "daily": {
+                      "type": "object",
+                      "required": [
+                        "dayKey",
+                        "completedTasks",
+                        "taskPoints",
+                        "rewardClaimed"
+                      ],
+                      "properties": {
+                        "dayKey": {
+                          "type": "string"
+                        },
+                        "completedTasks": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        },
+                        "taskPoints": {
+                          "type": "integer"
+                        },
+                        "rewardClaimed": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "instance": {
+              "type": "object",
+              "required": [
+                "id",
+                "defId",
+                "rarity",
+                "level",
+                "affixes"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "defId": {
+                  "type": "string"
+                },
+                "rarity": {
+                  "type": "string",
+                  "enum": [
+                    "common",
+                    "fine",
+                    "rare",
+                    "epic"
+                  ]
+                },
+                "level": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9
+                },
+                "affixes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "value"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                },
+                "locked": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "enhanceEquipment": {
+    "200": {
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "success",
+            "instance",
+            "save"
+          ],
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "description": "Whether this enhancement succeeded (success → instance.level+1)"
+            },
+            "instance": {
+              "type": "object",
+              "required": [
+                "id",
+                "defId",
+                "rarity",
+                "level",
+                "affixes"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "defId": {
+                  "type": "string"
+                },
+                "rarity": {
+                  "type": "string",
+                  "enum": [
+                    "common",
+                    "fine",
+                    "rare",
+                    "epic"
+                  ]
+                },
+                "level": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9
+                },
+                "affixes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "value"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                },
+                "locked": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "save": {
+              "type": "object",
+              "required": [
+                "version",
+                "accountId",
+                "rev",
+                "updatedAt",
+                "wallet",
+                "inventory",
+                "gacha",
+                "pvp",
+                "progress",
+                "materials",
+                "pveUpgrades",
+                "equipped",
+                "flags"
+              ],
+              "properties": {
+                "version": {
+                  "type": "integer"
+                },
+                "accountId": {
+                  "type": "string"
+                },
+                "rev": {
+                  "type": "integer"
+                },
+                "updatedAt": {
+                  "type": "integer"
+                },
+                "wallet": {
+                  "type": "object",
+                  "required": [
+                    "coins"
+                  ],
+                  "properties": {
+                    "coins": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                },
+                "inventory": {
+                  "type": "object",
+                  "required": [
+                    "skins",
+                    "items"
+                  ],
+                  "properties": {
+                    "skins": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "gacha": {
+                  "type": "object",
+                  "required": [
+                    "pity"
+                  ],
+                  "properties": {
+                    "pity": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "monetization": {
+                  "type": "object",
+                  "required": [
+                    "fatePoints",
+                    "subscriptionExpiry",
+                    "starterUsed"
+                  ],
+                  "properties": {
+                    "fatePoints": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Fate Points balance (§7)"
+                    },
+                    "subscriptionExpiry": {
+                      "type": "integer",
+                      "description": "monthly card end timestamp (ms); 0 = none (§5)"
+                    },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
+                    },
+                    "starterUsed": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "one-off product ids already purchased (§6)"
+                    }
+                  }
+                },
+                "deliveredOrders": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "pvp": {
+                  "type": "object",
+                  "required": [
+                    "elo",
+                    "rank",
+                    "wins",
+                    "losses",
+                    "streak"
+                  ],
+                  "properties": {
+                    "elo": {
+                      "type": "integer"
+                    },
+                    "rank": {
+                      "type": "string"
+                    },
+                    "wins": {
+                      "type": "integer"
+                    },
+                    "losses": {
+                      "type": "integer"
+                    },
+                    "streak": {
+                      "type": "integer"
+                    },
+                    "seasonNo": {
+                      "type": "integer",
+                      "description": "Current season number"
+                    },
+                    "seasonPeakElo": {
+                      "type": "integer",
+                      "description": "Peak ELO for current season"
+                    },
+                    "seasonPeakRank": {
+                      "type": "string",
+                      "description": "Peak rank for current season"
+                    },
+                    "reachedRanks": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "All-time first-reached rank list (lifetime ledger)"
+                    }
+                  }
+                },
+                "stamina": {
+                  "type": "object",
+                  "required": [
+                    "current",
+                    "regenAt"
+                  ],
+                  "properties": {
+                    "current": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 120,
+                      "description": "Current stamina"
+                    },
+                    "regenAt": {
+                      "type": "integer",
+                      "description": "Timestamp (ms) when the next 1 stamina regenerates; 0 when full"
+                    }
+                  }
+                },
+                "titles": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                },
+                "battlePass": {
+                  "type": "object",
+                  "required": [
+                    "seasonNo",
+                    "xp",
+                    "level",
+                    "hasPass",
+                    "claimedFree",
+                    "claimedPaid"
+                  ],
+                  "properties": {
+                    "seasonNo": {
+                      "type": "integer"
+                    },
+                    "xp": {
+                      "type": "integer"
+                    },
+                    "level": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 30
+                    },
+                    "hasPass": {
+                      "type": "boolean"
+                    },
+                    "claimedFree": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
+                    "claimedPaid": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "progress": {
+                  "type": "object",
+                  "required": [
+                    "cleared",
+                    "stars",
+                    "best"
+                  ],
+                  "properties": {
+                    "cleared": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "stars": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 3
+                      }
+                    },
+                    "best": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "timeMs": {
+                            "type": "integer"
+                          },
+                          "leaked": {
+                            "type": "integer"
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                },
+                "materials": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "pveUpgrades": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "cardInventory": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "description": "Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup"
+                },
+                "cardInv": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "defId",
+                      "level",
+                      "xp",
+                      "gear",
+                      "locked"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "Unique instance id (e.g. 'card_a1b2c3')"
+                      },
+                      "defId": {
+                        "type": "string",
+                        "description": "Card definition id (references CARD_DEFS)"
+                      },
+                      "level": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9
+                      },
+                      "xp": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Accumulated XP within the current level"
+                      },
+                      "gear": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        },
+                        "description": "Per-slot equipped equipment instance ids (slot→equipmentInstanceId)"
+                      },
+                      "locked": {
+                        "type": "boolean",
+                        "description": "Locked cards cannot be used as feed material"
+                      }
+                    }
+                  },
+                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                },
+                "equipped": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "flags": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "boolean"
+                  }
+                },
+                "stats": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "Lifetime cumulative stats (StatKey→value), monotonically increasing, server-authoritative"
+                },
+                "achievements": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "claimedTiers"
+                    ],
+                    "properties": {
+                      "claimedTiers": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 3
+                        }
+                      }
+                    }
+                  },
+                  "description": "achId→set of already-claimed tier numbers, idempotent to prevent double-claiming"
+                },
+                "equipmentInv": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "defId",
+                      "rarity",
+                      "level",
+                      "affixes"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "defId": {
+                        "type": "string"
+                      },
+                      "rarity": {
+                        "type": "string",
+                        "enum": [
+                          "common",
+                          "fine",
+                          "rare",
+                          "epic"
+                        ]
+                      },
+                      "level": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9
+                      },
+                      "affixes": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "value"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "value": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      },
+                      "locked": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                },
+                "retention": {
+                  "type": "object",
+                  "properties": {
+                    "checkin": {
+                      "type": "object",
+                      "required": [
+                        "monthKey",
+                        "claimedDays"
+                      ],
+                      "properties": {
+                        "monthKey": {
+                          "type": "string"
+                        },
+                        "claimedDays": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "daily": {
+                      "type": "object",
+                      "required": [
+                        "dayKey",
+                        "completedTasks",
+                        "taskPoints",
+                        "rewardClaimed"
+                      ],
+                      "properties": {
+                        "dayKey": {
+                          "type": "string"
+                        },
+                        "completedTasks": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        },
+                        "taskPoints": {
+                          "type": "integer"
+                        },
+                        "rewardClaimed": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "salvageEquipment": {
+    "200": {
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "refunded",
+            "save"
+          ],
+          "properties": {
+            "refunded": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer"
+              },
+              "description": "Total materials refunded (material id→quantity)"
+            },
+            "save": {
+              "type": "object",
+              "required": [
+                "version",
+                "accountId",
+                "rev",
+                "updatedAt",
+                "wallet",
+                "inventory",
+                "gacha",
+                "pvp",
+                "progress",
+                "materials",
+                "pveUpgrades",
+                "equipped",
+                "flags"
+              ],
+              "properties": {
+                "version": {
+                  "type": "integer"
+                },
+                "accountId": {
+                  "type": "string"
+                },
+                "rev": {
+                  "type": "integer"
+                },
+                "updatedAt": {
+                  "type": "integer"
+                },
+                "wallet": {
+                  "type": "object",
+                  "required": [
+                    "coins"
+                  ],
+                  "properties": {
+                    "coins": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                },
+                "inventory": {
+                  "type": "object",
+                  "required": [
+                    "skins",
+                    "items"
+                  ],
+                  "properties": {
+                    "skins": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "gacha": {
+                  "type": "object",
+                  "required": [
+                    "pity"
+                  ],
+                  "properties": {
+                    "pity": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "monetization": {
+                  "type": "object",
+                  "required": [
+                    "fatePoints",
+                    "subscriptionExpiry",
+                    "starterUsed"
+                  ],
+                  "properties": {
+                    "fatePoints": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Fate Points balance (§7)"
+                    },
+                    "subscriptionExpiry": {
+                      "type": "integer",
+                      "description": "monthly card end timestamp (ms); 0 = none (§5)"
+                    },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
+                    },
+                    "starterUsed": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "one-off product ids already purchased (§6)"
+                    }
+                  }
+                },
+                "deliveredOrders": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "pvp": {
+                  "type": "object",
+                  "required": [
+                    "elo",
+                    "rank",
+                    "wins",
+                    "losses",
+                    "streak"
+                  ],
+                  "properties": {
+                    "elo": {
+                      "type": "integer"
+                    },
+                    "rank": {
+                      "type": "string"
+                    },
+                    "wins": {
+                      "type": "integer"
+                    },
+                    "losses": {
+                      "type": "integer"
+                    },
+                    "streak": {
+                      "type": "integer"
+                    },
+                    "seasonNo": {
+                      "type": "integer",
+                      "description": "Current season number"
+                    },
+                    "seasonPeakElo": {
+                      "type": "integer",
+                      "description": "Peak ELO for current season"
+                    },
+                    "seasonPeakRank": {
+                      "type": "string",
+                      "description": "Peak rank for current season"
+                    },
+                    "reachedRanks": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "All-time first-reached rank list (lifetime ledger)"
+                    }
+                  }
+                },
+                "stamina": {
+                  "type": "object",
+                  "required": [
+                    "current",
+                    "regenAt"
+                  ],
+                  "properties": {
+                    "current": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 120,
+                      "description": "Current stamina"
+                    },
+                    "regenAt": {
+                      "type": "integer",
+                      "description": "Timestamp (ms) when the next 1 stamina regenerates; 0 when full"
+                    }
+                  }
+                },
+                "titles": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                },
+                "battlePass": {
+                  "type": "object",
+                  "required": [
+                    "seasonNo",
+                    "xp",
+                    "level",
+                    "hasPass",
+                    "claimedFree",
+                    "claimedPaid"
+                  ],
+                  "properties": {
+                    "seasonNo": {
+                      "type": "integer"
+                    },
+                    "xp": {
+                      "type": "integer"
+                    },
+                    "level": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 30
+                    },
+                    "hasPass": {
+                      "type": "boolean"
+                    },
+                    "claimedFree": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
+                    "claimedPaid": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "progress": {
+                  "type": "object",
+                  "required": [
+                    "cleared",
+                    "stars",
+                    "best"
+                  ],
+                  "properties": {
+                    "cleared": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "stars": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 3
+                      }
+                    },
+                    "best": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "timeMs": {
+                            "type": "integer"
+                          },
+                          "leaked": {
+                            "type": "integer"
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                },
+                "materials": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "pveUpgrades": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "cardInventory": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "description": "Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup"
+                },
+                "cardInv": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "defId",
+                      "level",
+                      "xp",
+                      "gear",
+                      "locked"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "Unique instance id (e.g. 'card_a1b2c3')"
+                      },
+                      "defId": {
+                        "type": "string",
+                        "description": "Card definition id (references CARD_DEFS)"
+                      },
+                      "level": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9
+                      },
+                      "xp": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Accumulated XP within the current level"
+                      },
+                      "gear": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        },
+                        "description": "Per-slot equipped equipment instance ids (slot→equipmentInstanceId)"
+                      },
+                      "locked": {
+                        "type": "boolean",
+                        "description": "Locked cards cannot be used as feed material"
+                      }
+                    }
+                  },
+                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                },
+                "equipped": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "flags": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "boolean"
+                  }
+                },
+                "stats": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "Lifetime cumulative stats (StatKey→value), monotonically increasing, server-authoritative"
+                },
+                "achievements": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "claimedTiers"
+                    ],
+                    "properties": {
+                      "claimedTiers": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 3
+                        }
+                      }
+                    }
+                  },
+                  "description": "achId→set of already-claimed tier numbers, idempotent to prevent double-claiming"
+                },
+                "equipmentInv": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "defId",
+                      "rarity",
+                      "level",
+                      "affixes"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "defId": {
+                        "type": "string"
+                      },
+                      "rarity": {
+                        "type": "string",
+                        "enum": [
+                          "common",
+                          "fine",
+                          "rare",
+                          "epic"
+                        ]
+                      },
+                      "level": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9
+                      },
+                      "affixes": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "value"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "value": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      },
+                      "locked": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                },
+                "retention": {
+                  "type": "object",
+                  "properties": {
+                    "checkin": {
+                      "type": "object",
+                      "required": [
+                        "monthKey",
+                        "claimedDays"
+                      ],
+                      "properties": {
+                        "monthKey": {
+                          "type": "string"
+                        },
+                        "claimedDays": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "daily": {
+                      "type": "object",
+                      "required": [
+                        "dayKey",
+                        "completedTasks",
+                        "taskPoints",
+                        "rewardClaimed"
+                      ],
+                      "properties": {
+                        "dayKey": {
+                          "type": "string"
+                        },
+                        "completedTasks": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        },
+                        "taskPoints": {
+                          "type": "integer"
+                        },
+                        "rewardClaimed": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "equipEquipment": {
+    "200": {
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "save"
+          ],
+          "properties": {
+            "save": {
+              "type": "object",
+              "required": [
+                "version",
+                "accountId",
+                "rev",
+                "updatedAt",
+                "wallet",
+                "inventory",
+                "gacha",
+                "pvp",
+                "progress",
+                "materials",
+                "pveUpgrades",
+                "equipped",
+                "flags"
+              ],
+              "properties": {
+                "version": {
+                  "type": "integer"
+                },
+                "accountId": {
+                  "type": "string"
+                },
+                "rev": {
+                  "type": "integer"
+                },
+                "updatedAt": {
+                  "type": "integer"
+                },
+                "wallet": {
+                  "type": "object",
+                  "required": [
+                    "coins"
+                  ],
+                  "properties": {
+                    "coins": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                },
+                "inventory": {
+                  "type": "object",
+                  "required": [
+                    "skins",
+                    "items"
+                  ],
+                  "properties": {
+                    "skins": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "gacha": {
+                  "type": "object",
+                  "required": [
+                    "pity"
+                  ],
+                  "properties": {
+                    "pity": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "monetization": {
+                  "type": "object",
+                  "required": [
+                    "fatePoints",
+                    "subscriptionExpiry",
+                    "starterUsed"
+                  ],
+                  "properties": {
+                    "fatePoints": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Fate Points balance (§7)"
+                    },
+                    "subscriptionExpiry": {
+                      "type": "integer",
+                      "description": "monthly card end timestamp (ms); 0 = none (§5)"
+                    },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
+                    },
+                    "starterUsed": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "one-off product ids already purchased (§6)"
+                    }
+                  }
+                },
+                "deliveredOrders": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "pvp": {
+                  "type": "object",
+                  "required": [
+                    "elo",
+                    "rank",
+                    "wins",
+                    "losses",
+                    "streak"
+                  ],
+                  "properties": {
+                    "elo": {
+                      "type": "integer"
+                    },
+                    "rank": {
+                      "type": "string"
+                    },
+                    "wins": {
+                      "type": "integer"
+                    },
+                    "losses": {
+                      "type": "integer"
+                    },
+                    "streak": {
+                      "type": "integer"
+                    },
+                    "seasonNo": {
+                      "type": "integer",
+                      "description": "Current season number"
+                    },
+                    "seasonPeakElo": {
+                      "type": "integer",
+                      "description": "Peak ELO for current season"
+                    },
+                    "seasonPeakRank": {
+                      "type": "string",
+                      "description": "Peak rank for current season"
+                    },
+                    "reachedRanks": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "All-time first-reached rank list (lifetime ledger)"
+                    }
+                  }
+                },
+                "stamina": {
+                  "type": "object",
+                  "required": [
+                    "current",
+                    "regenAt"
+                  ],
+                  "properties": {
+                    "current": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 120,
+                      "description": "Current stamina"
+                    },
+                    "regenAt": {
+                      "type": "integer",
+                      "description": "Timestamp (ms) when the next 1 stamina regenerates; 0 when full"
+                    }
+                  }
+                },
+                "titles": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                },
+                "battlePass": {
+                  "type": "object",
+                  "required": [
+                    "seasonNo",
+                    "xp",
+                    "level",
+                    "hasPass",
+                    "claimedFree",
+                    "claimedPaid"
+                  ],
+                  "properties": {
+                    "seasonNo": {
+                      "type": "integer"
+                    },
+                    "xp": {
+                      "type": "integer"
+                    },
+                    "level": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 30
+                    },
+                    "hasPass": {
+                      "type": "boolean"
+                    },
+                    "claimedFree": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
+                    "claimedPaid": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "progress": {
+                  "type": "object",
+                  "required": [
+                    "cleared",
+                    "stars",
+                    "best"
+                  ],
+                  "properties": {
+                    "cleared": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "stars": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 3
+                      }
+                    },
+                    "best": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "timeMs": {
+                            "type": "integer"
+                          },
+                          "leaked": {
+                            "type": "integer"
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                },
+                "materials": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "pveUpgrades": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "cardInventory": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "description": "Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup"
+                },
+                "cardInv": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "defId",
+                      "level",
+                      "xp",
+                      "gear",
+                      "locked"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "Unique instance id (e.g. 'card_a1b2c3')"
+                      },
+                      "defId": {
+                        "type": "string",
+                        "description": "Card definition id (references CARD_DEFS)"
+                      },
+                      "level": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9
+                      },
+                      "xp": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Accumulated XP within the current level"
+                      },
+                      "gear": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        },
+                        "description": "Per-slot equipped equipment instance ids (slot→equipmentInstanceId)"
+                      },
+                      "locked": {
+                        "type": "boolean",
+                        "description": "Locked cards cannot be used as feed material"
+                      }
+                    }
+                  },
+                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                },
+                "equipped": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "flags": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "boolean"
+                  }
+                },
+                "stats": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "Lifetime cumulative stats (StatKey→value), monotonically increasing, server-authoritative"
+                },
+                "achievements": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "claimedTiers"
+                    ],
+                    "properties": {
+                      "claimedTiers": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 3
+                        }
+                      }
+                    }
+                  },
+                  "description": "achId→set of already-claimed tier numbers, idempotent to prevent double-claiming"
+                },
+                "equipmentInv": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "defId",
+                      "rarity",
+                      "level",
+                      "affixes"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "defId": {
+                        "type": "string"
+                      },
+                      "rarity": {
+                        "type": "string",
+                        "enum": [
+                          "common",
+                          "fine",
+                          "rare",
+                          "epic"
+                        ]
+                      },
+                      "level": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9
+                      },
+                      "affixes": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "value"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "value": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      },
+                      "locked": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                },
+                "retention": {
+                  "type": "object",
+                  "properties": {
+                    "checkin": {
+                      "type": "object",
+                      "required": [
+                        "monthKey",
+                        "claimedDays"
+                      ],
+                      "properties": {
+                        "monthKey": {
+                          "type": "string"
+                        },
+                        "claimedDays": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "daily": {
+                      "type": "object",
+                      "required": [
+                        "dayKey",
+                        "completedTasks",
+                        "taskPoints",
+                        "rewardClaimed"
+                      ],
+                      "properties": {
+                        "dayKey": {
+                          "type": "string"
+                        },
+                        "completedTasks": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        },
+                        "taskPoints": {
+                          "type": "integer"
+                        },
+                        "rewardClaimed": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "reforgeEquipment": {
+    "200": {
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "instance",
+            "save"
+          ],
+          "properties": {
+            "instance": {
+              "type": "object",
+              "required": [
+                "id",
+                "defId",
+                "rarity",
+                "level",
+                "affixes"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "defId": {
+                  "type": "string"
+                },
+                "rarity": {
+                  "type": "string",
+                  "enum": [
+                    "common",
+                    "fine",
+                    "rare",
+                    "epic"
+                  ]
+                },
+                "level": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9
+                },
+                "affixes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "value"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                },
+                "locked": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "save": {
+              "type": "object",
+              "required": [
+                "version",
+                "accountId",
+                "rev",
+                "updatedAt",
+                "wallet",
+                "inventory",
+                "gacha",
+                "pvp",
+                "progress",
+                "materials",
+                "pveUpgrades",
+                "equipped",
+                "flags"
+              ],
+              "properties": {
+                "version": {
+                  "type": "integer"
+                },
+                "accountId": {
+                  "type": "string"
+                },
+                "rev": {
+                  "type": "integer"
+                },
+                "updatedAt": {
+                  "type": "integer"
+                },
+                "wallet": {
+                  "type": "object",
+                  "required": [
+                    "coins"
+                  ],
+                  "properties": {
+                    "coins": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                },
+                "inventory": {
+                  "type": "object",
+                  "required": [
+                    "skins",
+                    "items"
+                  ],
+                  "properties": {
+                    "skins": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "gacha": {
+                  "type": "object",
+                  "required": [
+                    "pity"
+                  ],
+                  "properties": {
+                    "pity": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "monetization": {
+                  "type": "object",
+                  "required": [
+                    "fatePoints",
+                    "subscriptionExpiry",
+                    "starterUsed"
+                  ],
+                  "properties": {
+                    "fatePoints": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Fate Points balance (§7)"
+                    },
+                    "subscriptionExpiry": {
+                      "type": "integer",
+                      "description": "monthly card end timestamp (ms); 0 = none (§5)"
+                    },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
+                    },
+                    "starterUsed": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "one-off product ids already purchased (§6)"
+                    }
+                  }
+                },
+                "deliveredOrders": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "pvp": {
+                  "type": "object",
+                  "required": [
+                    "elo",
+                    "rank",
+                    "wins",
+                    "losses",
+                    "streak"
+                  ],
+                  "properties": {
+                    "elo": {
+                      "type": "integer"
+                    },
+                    "rank": {
+                      "type": "string"
+                    },
+                    "wins": {
+                      "type": "integer"
+                    },
+                    "losses": {
+                      "type": "integer"
+                    },
+                    "streak": {
+                      "type": "integer"
+                    },
+                    "seasonNo": {
+                      "type": "integer",
+                      "description": "Current season number"
+                    },
+                    "seasonPeakElo": {
+                      "type": "integer",
+                      "description": "Peak ELO for current season"
+                    },
+                    "seasonPeakRank": {
+                      "type": "string",
+                      "description": "Peak rank for current season"
+                    },
+                    "reachedRanks": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "All-time first-reached rank list (lifetime ledger)"
+                    }
+                  }
+                },
+                "stamina": {
+                  "type": "object",
+                  "required": [
+                    "current",
+                    "regenAt"
+                  ],
+                  "properties": {
+                    "current": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 120,
+                      "description": "Current stamina"
+                    },
+                    "regenAt": {
+                      "type": "integer",
+                      "description": "Timestamp (ms) when the next 1 stamina regenerates; 0 when full"
+                    }
+                  }
+                },
+                "titles": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                },
+                "battlePass": {
+                  "type": "object",
+                  "required": [
+                    "seasonNo",
+                    "xp",
+                    "level",
+                    "hasPass",
+                    "claimedFree",
+                    "claimedPaid"
+                  ],
+                  "properties": {
+                    "seasonNo": {
+                      "type": "integer"
+                    },
+                    "xp": {
+                      "type": "integer"
+                    },
+                    "level": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 30
+                    },
+                    "hasPass": {
+                      "type": "boolean"
+                    },
+                    "claimedFree": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
+                    "claimedPaid": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "progress": {
+                  "type": "object",
+                  "required": [
+                    "cleared",
+                    "stars",
+                    "best"
+                  ],
+                  "properties": {
+                    "cleared": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "stars": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 3
+                      }
+                    },
+                    "best": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "timeMs": {
+                            "type": "integer"
+                          },
+                          "leaked": {
+                            "type": "integer"
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                },
+                "materials": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "pveUpgrades": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "cardInventory": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "description": "Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup"
+                },
+                "cardInv": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "defId",
+                      "level",
+                      "xp",
+                      "gear",
+                      "locked"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "Unique instance id (e.g. 'card_a1b2c3')"
+                      },
+                      "defId": {
+                        "type": "string",
+                        "description": "Card definition id (references CARD_DEFS)"
+                      },
+                      "level": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9
+                      },
+                      "xp": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Accumulated XP within the current level"
+                      },
+                      "gear": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        },
+                        "description": "Per-slot equipped equipment instance ids (slot→equipmentInstanceId)"
+                      },
+                      "locked": {
+                        "type": "boolean",
+                        "description": "Locked cards cannot be used as feed material"
+                      }
+                    }
+                  },
+                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                },
+                "equipped": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "flags": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "boolean"
+                  }
+                },
+                "stats": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "Lifetime cumulative stats (StatKey→value), monotonically increasing, server-authoritative"
+                },
+                "achievements": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "claimedTiers"
+                    ],
+                    "properties": {
+                      "claimedTiers": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 3
+                        }
+                      }
+                    }
+                  },
+                  "description": "achId→set of already-claimed tier numbers, idempotent to prevent double-claiming"
+                },
+                "equipmentInv": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "defId",
+                      "rarity",
+                      "level",
+                      "affixes"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "defId": {
+                        "type": "string"
+                      },
+                      "rarity": {
+                        "type": "string",
+                        "enum": [
+                          "common",
+                          "fine",
+                          "rare",
+                          "epic"
+                        ]
+                      },
+                      "level": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9
+                      },
+                      "affixes": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "value"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "value": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      },
+                      "locked": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                },
+                "retention": {
+                  "type": "object",
+                  "properties": {
+                    "checkin": {
+                      "type": "object",
+                      "required": [
+                        "monthKey",
+                        "claimedDays"
+                      ],
+                      "properties": {
+                        "monthKey": {
+                          "type": "string"
+                        },
+                        "claimedDays": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "daily": {
+                      "type": "object",
+                      "required": [
+                        "dayKey",
+                        "completedTasks",
+                        "taskPoints",
+                        "rewardClaimed"
+                      ],
+                      "properties": {
+                        "dayKey": {
+                          "type": "string"
+                        },
+                        "completedTasks": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        },
+                        "taskPoints": {
+                          "type": "integer"
+                        },
+                        "rewardClaimed": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "cardsFeed": {
+    "200": {
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "card",
+            "levelsGained",
+            "save"
+          ],
+          "properties": {
+            "card": {
+              "type": "object",
+              "required": [
+                "id",
+                "defId",
+                "level",
+                "xp",
+                "gear",
+                "locked"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Unique instance id (e.g. 'card_a1b2c3')"
+                },
+                "defId": {
+                  "type": "string",
+                  "description": "Card definition id (references CARD_DEFS)"
+                },
+                "level": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9
+                },
+                "xp": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Accumulated XP within the current level"
+                },
+                "gear": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "Per-slot equipped equipment instance ids (slot→equipmentInstanceId)"
+                },
+                "locked": {
+                  "type": "boolean",
+                  "description": "Locked cards cannot be used as feed material"
+                }
+              }
+            },
+            "levelsGained": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "save": {
+              "type": "object",
+              "required": [
+                "version",
+                "accountId",
+                "rev",
+                "updatedAt",
+                "wallet",
+                "inventory",
+                "gacha",
+                "pvp",
+                "progress",
+                "materials",
+                "pveUpgrades",
+                "equipped",
+                "flags"
+              ],
+              "properties": {
+                "version": {
+                  "type": "integer"
+                },
+                "accountId": {
+                  "type": "string"
+                },
+                "rev": {
+                  "type": "integer"
+                },
+                "updatedAt": {
+                  "type": "integer"
+                },
+                "wallet": {
+                  "type": "object",
+                  "required": [
+                    "coins"
+                  ],
+                  "properties": {
+                    "coins": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                },
+                "inventory": {
+                  "type": "object",
+                  "required": [
+                    "skins",
+                    "items"
+                  ],
+                  "properties": {
+                    "skins": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "gacha": {
+                  "type": "object",
+                  "required": [
+                    "pity"
+                  ],
+                  "properties": {
+                    "pity": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "monetization": {
+                  "type": "object",
+                  "required": [
+                    "fatePoints",
+                    "subscriptionExpiry",
+                    "starterUsed"
+                  ],
+                  "properties": {
+                    "fatePoints": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Fate Points balance (§7)"
+                    },
+                    "subscriptionExpiry": {
+                      "type": "integer",
+                      "description": "monthly card end timestamp (ms); 0 = none (§5)"
+                    },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
+                    },
+                    "starterUsed": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "one-off product ids already purchased (§6)"
+                    }
+                  }
+                },
+                "deliveredOrders": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "pvp": {
+                  "type": "object",
+                  "required": [
+                    "elo",
+                    "rank",
+                    "wins",
+                    "losses",
+                    "streak"
+                  ],
+                  "properties": {
+                    "elo": {
+                      "type": "integer"
+                    },
+                    "rank": {
+                      "type": "string"
+                    },
+                    "wins": {
+                      "type": "integer"
+                    },
+                    "losses": {
+                      "type": "integer"
+                    },
+                    "streak": {
+                      "type": "integer"
+                    },
+                    "seasonNo": {
+                      "type": "integer",
+                      "description": "Current season number"
+                    },
+                    "seasonPeakElo": {
+                      "type": "integer",
+                      "description": "Peak ELO for current season"
+                    },
+                    "seasonPeakRank": {
+                      "type": "string",
+                      "description": "Peak rank for current season"
+                    },
+                    "reachedRanks": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "All-time first-reached rank list (lifetime ledger)"
+                    }
+                  }
+                },
+                "stamina": {
+                  "type": "object",
+                  "required": [
+                    "current",
+                    "regenAt"
+                  ],
+                  "properties": {
+                    "current": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 120,
+                      "description": "Current stamina"
+                    },
+                    "regenAt": {
+                      "type": "integer",
+                      "description": "Timestamp (ms) when the next 1 stamina regenerates; 0 when full"
+                    }
+                  }
+                },
+                "titles": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                },
+                "battlePass": {
+                  "type": "object",
+                  "required": [
+                    "seasonNo",
+                    "xp",
+                    "level",
+                    "hasPass",
+                    "claimedFree",
+                    "claimedPaid"
+                  ],
+                  "properties": {
+                    "seasonNo": {
+                      "type": "integer"
+                    },
+                    "xp": {
+                      "type": "integer"
+                    },
+                    "level": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 30
+                    },
+                    "hasPass": {
+                      "type": "boolean"
+                    },
+                    "claimedFree": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
+                    "claimedPaid": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "progress": {
+                  "type": "object",
+                  "required": [
+                    "cleared",
+                    "stars",
+                    "best"
+                  ],
+                  "properties": {
+                    "cleared": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "stars": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 3
+                      }
+                    },
+                    "best": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "timeMs": {
+                            "type": "integer"
+                          },
+                          "leaked": {
+                            "type": "integer"
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                },
+                "materials": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "pveUpgrades": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "cardInventory": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "description": "Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup"
+                },
+                "cardInv": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "defId",
+                      "level",
+                      "xp",
+                      "gear",
+                      "locked"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "Unique instance id (e.g. 'card_a1b2c3')"
+                      },
+                      "defId": {
+                        "type": "string",
+                        "description": "Card definition id (references CARD_DEFS)"
+                      },
+                      "level": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9
+                      },
+                      "xp": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Accumulated XP within the current level"
+                      },
+                      "gear": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        },
+                        "description": "Per-slot equipped equipment instance ids (slot→equipmentInstanceId)"
+                      },
+                      "locked": {
+                        "type": "boolean",
+                        "description": "Locked cards cannot be used as feed material"
+                      }
+                    }
+                  },
+                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                },
+                "equipped": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "flags": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "boolean"
+                  }
+                },
+                "stats": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "Lifetime cumulative stats (StatKey→value), monotonically increasing, server-authoritative"
+                },
+                "achievements": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "claimedTiers"
+                    ],
+                    "properties": {
+                      "claimedTiers": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 3
+                        }
+                      }
+                    }
+                  },
+                  "description": "achId→set of already-claimed tier numbers, idempotent to prevent double-claiming"
+                },
+                "equipmentInv": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "defId",
+                      "rarity",
+                      "level",
+                      "affixes"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "defId": {
+                        "type": "string"
+                      },
+                      "rarity": {
+                        "type": "string",
+                        "enum": [
+                          "common",
+                          "fine",
+                          "rare",
+                          "epic"
+                        ]
+                      },
+                      "level": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9
+                      },
+                      "affixes": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "value"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "value": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      },
+                      "locked": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                },
+                "retention": {
+                  "type": "object",
+                  "properties": {
+                    "checkin": {
+                      "type": "object",
+                      "required": [
+                        "monthKey",
+                        "claimedDays"
+                      ],
+                      "properties": {
+                        "monthKey": {
+                          "type": "string"
+                        },
+                        "claimedDays": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "daily": {
+                      "type": "object",
+                      "required": [
+                        "dayKey",
+                        "completedTasks",
+                        "taskPoints",
+                        "rewardClaimed"
+                      ],
+                      "properties": {
+                        "dayKey": {
+                          "type": "string"
+                        },
+                        "completedTasks": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        },
+                        "taskPoints": {
+                          "type": "integer"
+                        },
+                        "rewardClaimed": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "getLeaderboard": {
+    "200": {
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "seasonNo",
+            "entries"
+          ],
+          "properties": {
+            "seasonNo": {
+              "type": "integer"
+            },
+            "entries": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "rank",
+                  "displayName",
+                  "publicId",
+                  "elo",
+                  "pvpRank"
+                ],
+                "properties": {
+                  "rank": {
+                    "type": "integer",
+                    "description": "Rank, 1-based"
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "publicId": {
+                    "type": "string"
+                  },
+                  "elo": {
+                    "type": "integer"
+                  },
+                  "pvpRank": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "me": {
+              "type": "object",
+              "description": "Caller's own standing this season (absent when they have not played a ranked match this season). Rank may exceed 100.",
+              "required": [
+                "rank",
+                "elo",
+                "pvpRank"
+              ],
+              "properties": {
+                "rank": {
+                  "type": "integer",
+                  "description": "Rank, 1-based"
+                },
+                "elo": {
+                  "type": "integer"
+                },
+                "pvpRank": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "submitBotResult": {
+    "200": {
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "elo",
+            "rank",
+            "delta"
+          ],
+          "properties": {
+            "elo": {
+              "type": "integer"
+            },
+            "rank": {
+              "type": "string"
+            },
+            "delta": {
+              "type": "integer",
+              "description": "ELO change actually applied this call (0 when at/above BOT_ELO_THRESHOLD or throttled)"
+            }
+          }
+        }
+      }
+    }
+  },
+  "buyBattlePass": {
+    "200": {
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "battlePass"
+          ],
+          "properties": {
+            "battlePass": {
+              "type": "object",
+              "required": [
+                "seasonNo",
+                "xp",
+                "level",
+                "hasPass",
+                "claimedFree",
+                "claimedPaid"
+              ],
+              "properties": {
+                "seasonNo": {
+                  "type": "integer"
+                },
+                "xp": {
+                  "type": "integer"
+                },
+                "level": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 30
+                },
+                "hasPass": {
+                  "type": "boolean"
+                },
+                "claimedFree": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                "claimedPaid": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "claimBattlePass": {
+    "200": {
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "battlePass",
+            "reward"
+          ],
+          "properties": {
+            "battlePass": {
+              "type": "object",
+              "required": [
+                "seasonNo",
+                "xp",
+                "level",
+                "hasPass",
+                "claimedFree",
+                "claimedPaid"
+              ],
+              "properties": {
+                "seasonNo": {
+                  "type": "integer"
+                },
+                "xp": {
+                  "type": "integer"
+                },
+                "level": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 30
+                },
+                "hasPass": {
+                  "type": "boolean"
+                },
+                "claimedFree": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                "claimedPaid": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                }
+              }
+            },
+            "reward": {
+              "type": "object",
+              "required": [
+                "kind",
+                "count"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "count": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "getAchievements": {
+    "200": {
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "defs",
+            "stats",
+            "achievements"
+          ],
+          "properties": {
+            "defs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "statKey",
+                  "category",
+                  "tiers"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "statKey": {
+                    "type": "string"
+                  },
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "pve",
+                      "pvp",
+                      "collection",
+                      "progression"
+                    ]
+                  },
+                  "titleId": {
+                    "type": "string"
+                  },
+                  "hidden": {
+                    "type": "boolean"
+                  },
+                  "tiers": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "threshold",
+                        "coins"
+                      ],
+                      "properties": {
+                        "threshold": {
+                          "type": "integer"
+                        },
+                        "coins": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "stats": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer"
+              }
+            },
+            "achievements": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "required": [
+                  "claimedTiers"
+                ],
+                "properties": {
+                  "claimedTiers": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 3
+                    }
+                  }
+                }
+              },
+              "description": "achId→set of already-claimed tier numbers, idempotent to prevent double-claiming"
+            }
+          }
+        }
+      }
+    }
+  },
+  "claimAchievement": {
+    "200": {
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "save",
+            "granted"
+          ],
+          "properties": {
+            "save": {
+              "type": "object",
+              "required": [
+                "version",
+                "accountId",
+                "rev",
+                "updatedAt",
+                "wallet",
+                "inventory",
+                "gacha",
+                "pvp",
+                "progress",
+                "materials",
+                "pveUpgrades",
+                "equipped",
+                "flags"
+              ],
+              "properties": {
+                "version": {
+                  "type": "integer"
+                },
+                "accountId": {
+                  "type": "string"
+                },
+                "rev": {
+                  "type": "integer"
+                },
+                "updatedAt": {
+                  "type": "integer"
+                },
+                "wallet": {
+                  "type": "object",
+                  "required": [
+                    "coins"
+                  ],
+                  "properties": {
+                    "coins": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                },
+                "inventory": {
+                  "type": "object",
+                  "required": [
+                    "skins",
+                    "items"
+                  ],
+                  "properties": {
+                    "skins": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "gacha": {
+                  "type": "object",
+                  "required": [
+                    "pity"
+                  ],
+                  "properties": {
+                    "pity": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "monetization": {
+                  "type": "object",
+                  "required": [
+                    "fatePoints",
+                    "subscriptionExpiry",
+                    "starterUsed"
+                  ],
+                  "properties": {
+                    "fatePoints": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Fate Points balance (§7)"
+                    },
+                    "subscriptionExpiry": {
+                      "type": "integer",
+                      "description": "monthly card end timestamp (ms); 0 = none (§5)"
+                    },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
+                    },
+                    "starterUsed": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "one-off product ids already purchased (§6)"
+                    }
+                  }
+                },
+                "deliveredOrders": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "pvp": {
+                  "type": "object",
+                  "required": [
+                    "elo",
+                    "rank",
+                    "wins",
+                    "losses",
+                    "streak"
+                  ],
+                  "properties": {
+                    "elo": {
+                      "type": "integer"
+                    },
+                    "rank": {
+                      "type": "string"
+                    },
+                    "wins": {
+                      "type": "integer"
+                    },
+                    "losses": {
+                      "type": "integer"
+                    },
+                    "streak": {
+                      "type": "integer"
+                    },
+                    "seasonNo": {
+                      "type": "integer",
+                      "description": "Current season number"
+                    },
+                    "seasonPeakElo": {
+                      "type": "integer",
+                      "description": "Peak ELO for current season"
+                    },
+                    "seasonPeakRank": {
+                      "type": "string",
+                      "description": "Peak rank for current season"
+                    },
+                    "reachedRanks": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "All-time first-reached rank list (lifetime ledger)"
+                    }
+                  }
+                },
+                "stamina": {
+                  "type": "object",
+                  "required": [
+                    "current",
+                    "regenAt"
+                  ],
+                  "properties": {
+                    "current": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 120,
+                      "description": "Current stamina"
+                    },
+                    "regenAt": {
+                      "type": "integer",
+                      "description": "Timestamp (ms) when the next 1 stamina regenerates; 0 when full"
+                    }
+                  }
+                },
+                "titles": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                },
+                "battlePass": {
+                  "type": "object",
+                  "required": [
+                    "seasonNo",
+                    "xp",
+                    "level",
+                    "hasPass",
+                    "claimedFree",
+                    "claimedPaid"
+                  ],
+                  "properties": {
+                    "seasonNo": {
+                      "type": "integer"
+                    },
+                    "xp": {
+                      "type": "integer"
+                    },
+                    "level": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 30
+                    },
+                    "hasPass": {
+                      "type": "boolean"
+                    },
+                    "claimedFree": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
+                    "claimedPaid": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "progress": {
+                  "type": "object",
+                  "required": [
+                    "cleared",
+                    "stars",
+                    "best"
+                  ],
+                  "properties": {
+                    "cleared": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "stars": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 3
+                      }
+                    },
+                    "best": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "timeMs": {
+                            "type": "integer"
+                          },
+                          "leaked": {
+                            "type": "integer"
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                },
+                "materials": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "pveUpgrades": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "cardInventory": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "description": "Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup"
+                },
+                "cardInv": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "defId",
+                      "level",
+                      "xp",
+                      "gear",
+                      "locked"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "Unique instance id (e.g. 'card_a1b2c3')"
+                      },
+                      "defId": {
+                        "type": "string",
+                        "description": "Card definition id (references CARD_DEFS)"
+                      },
+                      "level": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9
+                      },
+                      "xp": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Accumulated XP within the current level"
+                      },
+                      "gear": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        },
+                        "description": "Per-slot equipped equipment instance ids (slot→equipmentInstanceId)"
+                      },
+                      "locked": {
+                        "type": "boolean",
+                        "description": "Locked cards cannot be used as feed material"
+                      }
+                    }
+                  },
+                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                },
+                "equipped": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "flags": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "boolean"
+                  }
+                },
+                "stats": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "Lifetime cumulative stats (StatKey→value), monotonically increasing, server-authoritative"
+                },
+                "achievements": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "claimedTiers"
+                    ],
+                    "properties": {
+                      "claimedTiers": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 3
+                        }
+                      }
+                    }
+                  },
+                  "description": "achId→set of already-claimed tier numbers, idempotent to prevent double-claiming"
+                },
+                "equipmentInv": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "defId",
+                      "rarity",
+                      "level",
+                      "affixes"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "defId": {
+                        "type": "string"
+                      },
+                      "rarity": {
+                        "type": "string",
+                        "enum": [
+                          "common",
+                          "fine",
+                          "rare",
+                          "epic"
+                        ]
+                      },
+                      "level": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9
+                      },
+                      "affixes": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "value"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "value": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      },
+                      "locked": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                },
+                "retention": {
+                  "type": "object",
+                  "properties": {
+                    "checkin": {
+                      "type": "object",
+                      "required": [
+                        "monthKey",
+                        "claimedDays"
+                      ],
+                      "properties": {
+                        "monthKey": {
+                          "type": "string"
+                        },
+                        "claimedDays": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "daily": {
+                      "type": "object",
+                      "required": [
+                        "dayKey",
+                        "completedTasks",
+                        "taskPoints",
+                        "rewardClaimed"
+                      ],
+                      "properties": {
+                        "dayKey": {
+                          "type": "string"
+                        },
+                        "completedTasks": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        },
+                        "taskPoints": {
+                          "type": "integer"
+                        },
+                        "rewardClaimed": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "granted": {
+              "type": "integer",
+              "description": "Coins granted this time"
+            }
+          }
+        }
+      }
+    }
+  },
+  "getRetention": {
+    "200": {
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "defs",
+            "claimable"
+          ],
+          "properties": {
+            "checkin": {
+              "type": "object",
+              "nullable": true,
+              "properties": {
+                "monthKey": {
+                  "type": "string"
+                },
+                "claimedDays": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                "lastClaimedDayKey": {
+                  "type": "string"
+                }
+              }
+            },
+            "daily": {
+              "type": "object",
+              "nullable": true,
+              "properties": {
+                "dayKey": {
+                  "type": "string"
+                },
+                "taskPoints": {
+                  "type": "integer"
+                },
+                "rewardClaimed": {
+                  "type": "boolean"
+                },
+                "completedTasks": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                }
+              }
+            },
+            "defs": {
+              "type": "object",
+              "required": [
+                "rewards",
+                "tasks",
+                "pointsThreshold",
+                "dailyCoinsReward"
+              ],
+              "properties": {
+                "rewards": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "kind",
+                      "count"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "coins",
+                          "stamina",
+                          "material",
+                          "card",
+                          "equipment"
+                        ]
+                      },
+                      "count": {
+                        "type": "integer"
+                      },
+                      "id": {
+                        "type": "string",
+                        "description": "Material id (scrap/lead/binding)",
+                        "set only when kind=material": null
+                      }
+                    }
+                  }
+                },
+                "tasks": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "points"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "points": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "pointsThreshold": {
+                  "type": "integer"
+                },
+                "dailyCoinsReward": {
+                  "type": "integer"
+                }
+              }
+            },
+            "claimable": {
+              "type": "object",
+              "required": [
+                "checkin",
+                "daily"
+              ],
+              "properties": {
+                "checkin": {
+                  "type": "boolean"
+                },
+                "daily": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "claimCheckin": {
+    "200": {
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "save",
+            "day",
+            "reward"
+          ],
+          "properties": {
+            "save": {
+              "type": "object",
+              "required": [
+                "version",
+                "accountId",
+                "rev",
+                "updatedAt",
+                "wallet",
+                "inventory",
+                "gacha",
+                "pvp",
+                "progress",
+                "materials",
+                "pveUpgrades",
+                "equipped",
+                "flags"
+              ],
+              "properties": {
+                "version": {
+                  "type": "integer"
+                },
+                "accountId": {
+                  "type": "string"
+                },
+                "rev": {
+                  "type": "integer"
+                },
+                "updatedAt": {
+                  "type": "integer"
+                },
+                "wallet": {
+                  "type": "object",
+                  "required": [
+                    "coins"
+                  ],
+                  "properties": {
+                    "coins": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                },
+                "inventory": {
+                  "type": "object",
+                  "required": [
+                    "skins",
+                    "items"
+                  ],
+                  "properties": {
+                    "skins": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "gacha": {
+                  "type": "object",
+                  "required": [
+                    "pity"
+                  ],
+                  "properties": {
+                    "pity": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "monetization": {
+                  "type": "object",
+                  "required": [
+                    "fatePoints",
+                    "subscriptionExpiry",
+                    "starterUsed"
+                  ],
+                  "properties": {
+                    "fatePoints": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Fate Points balance (§7)"
+                    },
+                    "subscriptionExpiry": {
+                      "type": "integer",
+                      "description": "monthly card end timestamp (ms); 0 = none (§5)"
+                    },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
+                    },
+                    "starterUsed": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "one-off product ids already purchased (§6)"
+                    }
+                  }
+                },
+                "deliveredOrders": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "pvp": {
+                  "type": "object",
+                  "required": [
+                    "elo",
+                    "rank",
+                    "wins",
+                    "losses",
+                    "streak"
+                  ],
+                  "properties": {
+                    "elo": {
+                      "type": "integer"
+                    },
+                    "rank": {
+                      "type": "string"
+                    },
+                    "wins": {
+                      "type": "integer"
+                    },
+                    "losses": {
+                      "type": "integer"
+                    },
+                    "streak": {
+                      "type": "integer"
+                    },
+                    "seasonNo": {
+                      "type": "integer",
+                      "description": "Current season number"
+                    },
+                    "seasonPeakElo": {
+                      "type": "integer",
+                      "description": "Peak ELO for current season"
+                    },
+                    "seasonPeakRank": {
+                      "type": "string",
+                      "description": "Peak rank for current season"
+                    },
+                    "reachedRanks": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "All-time first-reached rank list (lifetime ledger)"
+                    }
+                  }
+                },
+                "stamina": {
+                  "type": "object",
+                  "required": [
+                    "current",
+                    "regenAt"
+                  ],
+                  "properties": {
+                    "current": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 120,
+                      "description": "Current stamina"
+                    },
+                    "regenAt": {
+                      "type": "integer",
+                      "description": "Timestamp (ms) when the next 1 stamina regenerates; 0 when full"
+                    }
+                  }
+                },
+                "titles": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                },
+                "battlePass": {
+                  "type": "object",
+                  "required": [
+                    "seasonNo",
+                    "xp",
+                    "level",
+                    "hasPass",
+                    "claimedFree",
+                    "claimedPaid"
+                  ],
+                  "properties": {
+                    "seasonNo": {
+                      "type": "integer"
+                    },
+                    "xp": {
+                      "type": "integer"
+                    },
+                    "level": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 30
+                    },
+                    "hasPass": {
+                      "type": "boolean"
+                    },
+                    "claimedFree": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
+                    "claimedPaid": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "progress": {
+                  "type": "object",
+                  "required": [
+                    "cleared",
+                    "stars",
+                    "best"
+                  ],
+                  "properties": {
+                    "cleared": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "stars": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 3
+                      }
+                    },
+                    "best": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "timeMs": {
+                            "type": "integer"
+                          },
+                          "leaked": {
+                            "type": "integer"
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                },
+                "materials": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "pveUpgrades": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "cardInventory": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "description": "Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup"
+                },
+                "cardInv": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "defId",
+                      "level",
+                      "xp",
+                      "gear",
+                      "locked"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "Unique instance id (e.g. 'card_a1b2c3')"
+                      },
+                      "defId": {
+                        "type": "string",
+                        "description": "Card definition id (references CARD_DEFS)"
+                      },
+                      "level": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9
+                      },
+                      "xp": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Accumulated XP within the current level"
+                      },
+                      "gear": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        },
+                        "description": "Per-slot equipped equipment instance ids (slot→equipmentInstanceId)"
+                      },
+                      "locked": {
+                        "type": "boolean",
+                        "description": "Locked cards cannot be used as feed material"
+                      }
+                    }
+                  },
+                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                },
+                "equipped": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "flags": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "boolean"
+                  }
+                },
+                "stats": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "Lifetime cumulative stats (StatKey→value), monotonically increasing, server-authoritative"
+                },
+                "achievements": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "claimedTiers"
+                    ],
+                    "properties": {
+                      "claimedTiers": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 3
+                        }
+                      }
+                    }
+                  },
+                  "description": "achId→set of already-claimed tier numbers, idempotent to prevent double-claiming"
+                },
+                "equipmentInv": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "defId",
+                      "rarity",
+                      "level",
+                      "affixes"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "defId": {
+                        "type": "string"
+                      },
+                      "rarity": {
+                        "type": "string",
+                        "enum": [
+                          "common",
+                          "fine",
+                          "rare",
+                          "epic"
+                        ]
+                      },
+                      "level": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9
+                      },
+                      "affixes": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "value"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "value": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      },
+                      "locked": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                },
+                "retention": {
+                  "type": "object",
+                  "properties": {
+                    "checkin": {
+                      "type": "object",
+                      "required": [
+                        "monthKey",
+                        "claimedDays"
+                      ],
+                      "properties": {
+                        "monthKey": {
+                          "type": "string"
+                        },
+                        "claimedDays": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "daily": {
+                      "type": "object",
+                      "required": [
+                        "dayKey",
+                        "completedTasks",
+                        "taskPoints",
+                        "rewardClaimed"
+                      ],
+                      "properties": {
+                        "dayKey": {
+                          "type": "string"
+                        },
+                        "completedTasks": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        },
+                        "taskPoints": {
+                          "type": "integer"
+                        },
+                        "rewardClaimed": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "day": {
+              "type": "integer",
+              "description": "Slot number claimed this time (1-based)"
+            },
+            "reward": {
+              "type": "object",
+              "required": [
+                "kind",
+                "count"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "coins",
+                    "stamina",
+                    "material",
+                    "card",
+                    "equipment"
+                  ]
+                },
+                "count": {
+                  "type": "integer"
+                },
+                "id": {
+                  "type": "string",
+                  "description": "Material id (material) or the drawn defId (card/equipment)"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "claimDailyReward": {
+    "200": {
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "save",
+            "coins"
+          ],
+          "properties": {
+            "save": {
+              "type": "object",
+              "required": [
+                "version",
+                "accountId",
+                "rev",
+                "updatedAt",
+                "wallet",
+                "inventory",
+                "gacha",
+                "pvp",
+                "progress",
+                "materials",
+                "pveUpgrades",
+                "equipped",
+                "flags"
+              ],
+              "properties": {
+                "version": {
+                  "type": "integer"
+                },
+                "accountId": {
+                  "type": "string"
+                },
+                "rev": {
+                  "type": "integer"
+                },
+                "updatedAt": {
+                  "type": "integer"
+                },
+                "wallet": {
+                  "type": "object",
+                  "required": [
+                    "coins"
+                  ],
+                  "properties": {
+                    "coins": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                },
+                "inventory": {
+                  "type": "object",
+                  "required": [
+                    "skins",
+                    "items"
+                  ],
+                  "properties": {
+                    "skins": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "gacha": {
+                  "type": "object",
+                  "required": [
+                    "pity"
+                  ],
+                  "properties": {
+                    "pity": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "monetization": {
+                  "type": "object",
+                  "required": [
+                    "fatePoints",
+                    "subscriptionExpiry",
+                    "starterUsed"
+                  ],
+                  "properties": {
+                    "fatePoints": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Fate Points balance (§7)"
+                    },
+                    "subscriptionExpiry": {
+                      "type": "integer",
+                      "description": "monthly card end timestamp (ms); 0 = none (§5)"
+                    },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
+                    },
+                    "starterUsed": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "one-off product ids already purchased (§6)"
+                    }
+                  }
+                },
+                "deliveredOrders": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "pvp": {
+                  "type": "object",
+                  "required": [
+                    "elo",
+                    "rank",
+                    "wins",
+                    "losses",
+                    "streak"
+                  ],
+                  "properties": {
+                    "elo": {
+                      "type": "integer"
+                    },
+                    "rank": {
+                      "type": "string"
+                    },
+                    "wins": {
+                      "type": "integer"
+                    },
+                    "losses": {
+                      "type": "integer"
+                    },
+                    "streak": {
+                      "type": "integer"
+                    },
+                    "seasonNo": {
+                      "type": "integer",
+                      "description": "Current season number"
+                    },
+                    "seasonPeakElo": {
+                      "type": "integer",
+                      "description": "Peak ELO for current season"
+                    },
+                    "seasonPeakRank": {
+                      "type": "string",
+                      "description": "Peak rank for current season"
+                    },
+                    "reachedRanks": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "All-time first-reached rank list (lifetime ledger)"
+                    }
+                  }
+                },
+                "stamina": {
+                  "type": "object",
+                  "required": [
+                    "current",
+                    "regenAt"
+                  ],
+                  "properties": {
+                    "current": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 120,
+                      "description": "Current stamina"
+                    },
+                    "regenAt": {
+                      "type": "integer",
+                      "description": "Timestamp (ms) when the next 1 stamina regenerates; 0 when full"
+                    }
+                  }
+                },
+                "titles": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                },
+                "battlePass": {
+                  "type": "object",
+                  "required": [
+                    "seasonNo",
+                    "xp",
+                    "level",
+                    "hasPass",
+                    "claimedFree",
+                    "claimedPaid"
+                  ],
+                  "properties": {
+                    "seasonNo": {
+                      "type": "integer"
+                    },
+                    "xp": {
+                      "type": "integer"
+                    },
+                    "level": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 30
+                    },
+                    "hasPass": {
+                      "type": "boolean"
+                    },
+                    "claimedFree": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
+                    "claimedPaid": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "progress": {
+                  "type": "object",
+                  "required": [
+                    "cleared",
+                    "stars",
+                    "best"
+                  ],
+                  "properties": {
+                    "cleared": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "stars": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 3
+                      }
+                    },
+                    "best": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "timeMs": {
+                            "type": "integer"
+                          },
+                          "leaked": {
+                            "type": "integer"
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                },
+                "materials": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "pveUpgrades": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "cardInventory": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "description": "Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup"
+                },
+                "cardInv": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "defId",
+                      "level",
+                      "xp",
+                      "gear",
+                      "locked"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "Unique instance id (e.g. 'card_a1b2c3')"
+                      },
+                      "defId": {
+                        "type": "string",
+                        "description": "Card definition id (references CARD_DEFS)"
+                      },
+                      "level": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9
+                      },
+                      "xp": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Accumulated XP within the current level"
+                      },
+                      "gear": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        },
+                        "description": "Per-slot equipped equipment instance ids (slot→equipmentInstanceId)"
+                      },
+                      "locked": {
+                        "type": "boolean",
+                        "description": "Locked cards cannot be used as feed material"
+                      }
+                    }
+                  },
+                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                },
+                "equipped": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "flags": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "boolean"
+                  }
+                },
+                "stats": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "Lifetime cumulative stats (StatKey→value), monotonically increasing, server-authoritative"
+                },
+                "achievements": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "claimedTiers"
+                    ],
+                    "properties": {
+                      "claimedTiers": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 3
+                        }
+                      }
+                    }
+                  },
+                  "description": "achId→set of already-claimed tier numbers, idempotent to prevent double-claiming"
+                },
+                "equipmentInv": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "defId",
+                      "rarity",
+                      "level",
+                      "affixes"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "defId": {
+                        "type": "string"
+                      },
+                      "rarity": {
+                        "type": "string",
+                        "enum": [
+                          "common",
+                          "fine",
+                          "rare",
+                          "epic"
+                        ]
+                      },
+                      "level": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9
+                      },
+                      "affixes": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "value"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "value": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      },
+                      "locked": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                },
+                "retention": {
+                  "type": "object",
+                  "properties": {
+                    "checkin": {
+                      "type": "object",
+                      "required": [
+                        "monthKey",
+                        "claimedDays"
+                      ],
+                      "properties": {
+                        "monthKey": {
+                          "type": "string"
+                        },
+                        "claimedDays": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "daily": {
+                      "type": "object",
+                      "required": [
+                        "dayKey",
+                        "completedTasks",
+                        "taskPoints",
+                        "rewardClaimed"
+                      ],
+                      "properties": {
+                        "dayKey": {
+                          "type": "string"
+                        },
+                        "completedTasks": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        },
+                        "taskPoints": {
+                          "type": "integer"
+                        },
+                        "rewardClaimed": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "coins": {
+              "type": "integer",
+              "description": "Coins granted this time"
+            }
+          }
+        }
+      }
+    }
+  },
+  "getEvents": {
+    "200": {
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "events"
+          ],
+          "properties": {
+            "events": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "eventId",
+                  "title",
+                  "windowStart",
+                  "windowEnd",
+                  "myPoints",
+                  "tasks",
+                  "rewards"
+                ],
+                "properties": {
+                  "eventId": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "windowStart": {
+                    "type": "integer"
+                  },
+                  "windowEnd": {
+                    "type": "integer"
+                  },
+                  "myPoints": {
+                    "type": "integer"
+                  },
+                  "tasks": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "taskId",
+                        "kind",
+                        "target",
+                        "points",
+                        "progress",
+                        "done"
+                      ],
+                      "properties": {
+                        "taskId": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string"
+                        },
+                        "target": {
+                          "type": "integer"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "progress": {
+                          "type": "integer"
+                        },
+                        "done": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  },
+                  "rewards": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "rewardId",
+                        "cost",
+                        "kind",
+                        "claimedCount"
+                      ],
+                      "properties": {
+                        "rewardId": {
+                          "type": "string"
+                        },
+                        "cost": {
+                          "type": "integer"
+                        },
+                        "kind": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "count": {
+                          "type": "integer"
+                        },
+                        "maxClaims": {
+                          "type": "integer"
+                        },
+                        "claimedCount": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "claimEventReward": {
+    "200": {
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "pointsLeft",
+            "reward"
+          ],
+          "properties": {
+            "pointsLeft": {
+              "type": "integer"
+            },
+            "reward": {
+              "type": "object",
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "count": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "getTitles": {
+    "200": {
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "titles",
+            "equipped"
+          ],
+          "properties": {
+            "titles": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "source"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "Title id (ladder.s{N}.{rank} / slg.s{N}.{key} / ach.{key} / event.{key})"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "ladder",
+                      "slg",
+                      "achievement",
+                      "event"
+                    ]
+                  },
+                  "seasonNo": {
+                    "type": "integer",
+                    "description": "Season number (only for ladder/slg type titles)"
+                  }
+                }
+              }
+            },
+            "equipped": {
+              "type": "string",
+              "nullable": true,
+              "description": "Currently equipped title id; null if none equipped"
+            }
+          }
+        }
+      }
+    }
+  },
+  "equipTitle": {
+    "200": {
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "save"
+          ],
+          "properties": {
+            "save": {
+              "type": "object",
+              "required": [
+                "version",
+                "accountId",
+                "rev",
+                "updatedAt",
+                "wallet",
+                "inventory",
+                "gacha",
+                "pvp",
+                "progress",
+                "materials",
+                "pveUpgrades",
+                "equipped",
+                "flags"
+              ],
+              "properties": {
+                "version": {
+                  "type": "integer"
+                },
+                "accountId": {
+                  "type": "string"
+                },
+                "rev": {
+                  "type": "integer"
+                },
+                "updatedAt": {
+                  "type": "integer"
+                },
+                "wallet": {
+                  "type": "object",
+                  "required": [
+                    "coins"
+                  ],
+                  "properties": {
+                    "coins": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                },
+                "inventory": {
+                  "type": "object",
+                  "required": [
+                    "skins",
+                    "items"
+                  ],
+                  "properties": {
+                    "skins": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "gacha": {
+                  "type": "object",
+                  "required": [
+                    "pity"
+                  ],
+                  "properties": {
+                    "pity": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "monetization": {
+                  "type": "object",
+                  "required": [
+                    "fatePoints",
+                    "subscriptionExpiry",
+                    "starterUsed"
+                  ],
+                  "properties": {
+                    "fatePoints": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Fate Points balance (§7)"
+                    },
+                    "subscriptionExpiry": {
+                      "type": "integer",
+                      "description": "monthly card end timestamp (ms); 0 = none (§5)"
+                    },
+                    "subscriptionLastClaimDay": {
+                      "type": "string",
+                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
+                    },
+                    "starterUsed": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "one-off product ids already purchased (§6)"
+                    }
+                  }
+                },
+                "deliveredOrders": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "pvp": {
+                  "type": "object",
+                  "required": [
+                    "elo",
+                    "rank",
+                    "wins",
+                    "losses",
+                    "streak"
+                  ],
+                  "properties": {
+                    "elo": {
+                      "type": "integer"
+                    },
+                    "rank": {
+                      "type": "string"
+                    },
+                    "wins": {
+                      "type": "integer"
+                    },
+                    "losses": {
+                      "type": "integer"
+                    },
+                    "streak": {
+                      "type": "integer"
+                    },
+                    "seasonNo": {
+                      "type": "integer",
+                      "description": "Current season number"
+                    },
+                    "seasonPeakElo": {
+                      "type": "integer",
+                      "description": "Peak ELO for current season"
+                    },
+                    "seasonPeakRank": {
+                      "type": "string",
+                      "description": "Peak rank for current season"
+                    },
+                    "reachedRanks": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "All-time first-reached rank list (lifetime ledger)"
+                    }
+                  }
+                },
+                "stamina": {
+                  "type": "object",
+                  "required": [
+                    "current",
+                    "regenAt"
+                  ],
+                  "properties": {
+                    "current": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 120,
+                      "description": "Current stamina"
+                    },
+                    "regenAt": {
+                      "type": "integer",
+                      "description": "Timestamp (ms) when the next 1 stamina regenerates; 0 when full"
+                    }
+                  }
+                },
+                "titles": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                },
+                "battlePass": {
+                  "type": "object",
+                  "required": [
+                    "seasonNo",
+                    "xp",
+                    "level",
+                    "hasPass",
+                    "claimedFree",
+                    "claimedPaid"
+                  ],
+                  "properties": {
+                    "seasonNo": {
+                      "type": "integer"
+                    },
+                    "xp": {
+                      "type": "integer"
+                    },
+                    "level": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 30
+                    },
+                    "hasPass": {
+                      "type": "boolean"
+                    },
+                    "claimedFree": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
+                    "claimedPaid": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "progress": {
+                  "type": "object",
+                  "required": [
+                    "cleared",
+                    "stars",
+                    "best"
+                  ],
+                  "properties": {
+                    "cleared": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "stars": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 3
+                      }
+                    },
+                    "best": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "timeMs": {
+                            "type": "integer"
+                          },
+                          "leaked": {
+                            "type": "integer"
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                },
+                "materials": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "pveUpgrades": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "cardInventory": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "description": "Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup"
+                },
+                "cardInv": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "defId",
+                      "level",
+                      "xp",
+                      "gear",
+                      "locked"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "Unique instance id (e.g. 'card_a1b2c3')"
+                      },
+                      "defId": {
+                        "type": "string",
+                        "description": "Card definition id (references CARD_DEFS)"
+                      },
+                      "level": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9
+                      },
+                      "xp": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Accumulated XP within the current level"
+                      },
+                      "gear": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        },
+                        "description": "Per-slot equipped equipment instance ids (slot→equipmentInstanceId)"
+                      },
+                      "locked": {
+                        "type": "boolean",
+                        "description": "Locked cards cannot be used as feed material"
+                      }
+                    }
+                  },
+                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                },
+                "equipped": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "flags": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "boolean"
+                  }
+                },
+                "stats": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "Lifetime cumulative stats (StatKey→value), monotonically increasing, server-authoritative"
+                },
+                "achievements": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "claimedTiers"
+                    ],
+                    "properties": {
+                      "claimedTiers": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 3
+                        }
+                      }
+                    }
+                  },
+                  "description": "achId→set of already-claimed tier numbers, idempotent to prevent double-claiming"
+                },
+                "equipmentInv": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "defId",
+                      "rarity",
+                      "level",
+                      "affixes"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "defId": {
+                        "type": "string"
+                      },
+                      "rarity": {
+                        "type": "string",
+                        "enum": [
+                          "common",
+                          "fine",
+                          "rare",
+                          "epic"
+                        ]
+                      },
+                      "level": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9
+                      },
+                      "affixes": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "value"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "value": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      },
+                      "locked": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                },
+                "retention": {
+                  "type": "object",
+                  "properties": {
+                    "checkin": {
+                      "type": "object",
+                      "required": [
+                        "monthKey",
+                        "claimedDays"
+                      ],
+                      "properties": {
+                        "monthKey": {
+                          "type": "string"
+                        },
+                        "claimedDays": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        },
+                        "lastClaimedDayKey": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "daily": {
+                      "type": "object",
+                      "required": [
+                        "dayKey",
+                        "completedTasks",
+                        "taskPoints",
+                        "rewardClaimed"
+                      ],
+                      "properties": {
+                        "dayKey": {
+                          "type": "string"
+                        },
+                        "completedTasks": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        },
+                        "taskPoints": {
+                          "type": "integer"
+                        },
+                        "rewardClaimed": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
   "getFriends": {
     "200": {
       "type": "object",
@@ -17100,6 +18044,94 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
       }
     }
   },
+  "bootstrap": {
+    "200": {
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "flags"
+          ],
+          "properties": {
+            "flags": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "boolean"
+              },
+              "description": "Contains only flags whose evaluated result differs from the default (key→bool); empty object for most players"
+            }
+          }
+        }
+      }
+    }
+  },
+  "clientLog": {
+    "200": {
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "accepted"
+          ],
+          "properties": {
+            "accepted": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    }
+  },
+  "clientAnomaly": {
+    "200": {
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "accepted"
+          ],
+          "properties": {
+            "accepted": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    }
+  },
   "getAnalyticsConfig": {
     "200": {
       "type": "object",
@@ -17154,1038 +18186,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
         },
         "data": {
           "nullable": true
-        }
-      }
-    }
-  },
-  "getLeaderboard": {
-    "200": {
-      "type": "object",
-      "required": [
-        "ok",
-        "data"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "enum": [
-            true
-          ]
-        },
-        "data": {
-          "type": "object",
-          "required": [
-            "seasonNo",
-            "entries"
-          ],
-          "properties": {
-            "seasonNo": {
-              "type": "integer"
-            },
-            "entries": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": [
-                  "rank",
-                  "displayName",
-                  "publicId",
-                  "elo",
-                  "pvpRank"
-                ],
-                "properties": {
-                  "rank": {
-                    "type": "integer",
-                    "description": "Rank, 1-based"
-                  },
-                  "displayName": {
-                    "type": "string"
-                  },
-                  "publicId": {
-                    "type": "string"
-                  },
-                  "elo": {
-                    "type": "integer"
-                  },
-                  "pvpRank": {
-                    "type": "string"
-                  }
-                }
-              }
-            },
-            "me": {
-              "type": "object",
-              "description": "Caller's own standing this season (absent when they have not played a ranked match this season). Rank may exceed 100.",
-              "required": [
-                "rank",
-                "elo",
-                "pvpRank"
-              ],
-              "properties": {
-                "rank": {
-                  "type": "integer",
-                  "description": "Rank, 1-based"
-                },
-                "elo": {
-                  "type": "integer"
-                },
-                "pvpRank": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  },
-  "submitBotResult": {
-    "200": {
-      "type": "object",
-      "required": [
-        "ok",
-        "data"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "enum": [
-            true
-          ]
-        },
-        "data": {
-          "type": "object",
-          "required": [
-            "elo",
-            "rank",
-            "delta"
-          ],
-          "properties": {
-            "elo": {
-              "type": "integer"
-            },
-            "rank": {
-              "type": "string"
-            },
-            "delta": {
-              "type": "integer",
-              "description": "ELO change actually applied this call (0 when at/above BOT_ELO_THRESHOLD or throttled)"
-            }
-          }
-        }
-      }
-    }
-  },
-  "buyBattlePass": {
-    "200": {
-      "type": "object",
-      "required": [
-        "ok",
-        "data"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "enum": [
-            true
-          ]
-        },
-        "data": {
-          "type": "object",
-          "required": [
-            "battlePass"
-          ],
-          "properties": {
-            "battlePass": {
-              "type": "object",
-              "required": [
-                "seasonNo",
-                "xp",
-                "level",
-                "hasPass",
-                "claimedFree",
-                "claimedPaid"
-              ],
-              "properties": {
-                "seasonNo": {
-                  "type": "integer"
-                },
-                "xp": {
-                  "type": "integer"
-                },
-                "level": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 30
-                },
-                "hasPass": {
-                  "type": "boolean"
-                },
-                "claimedFree": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer"
-                  }
-                },
-                "claimedPaid": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  },
-  "claimBattlePass": {
-    "200": {
-      "type": "object",
-      "required": [
-        "ok",
-        "data"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "enum": [
-            true
-          ]
-        },
-        "data": {
-          "type": "object",
-          "required": [
-            "battlePass",
-            "reward"
-          ],
-          "properties": {
-            "battlePass": {
-              "type": "object",
-              "required": [
-                "seasonNo",
-                "xp",
-                "level",
-                "hasPass",
-                "claimedFree",
-                "claimedPaid"
-              ],
-              "properties": {
-                "seasonNo": {
-                  "type": "integer"
-                },
-                "xp": {
-                  "type": "integer"
-                },
-                "level": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 30
-                },
-                "hasPass": {
-                  "type": "boolean"
-                },
-                "claimedFree": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer"
-                  }
-                },
-                "claimedPaid": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer"
-                  }
-                }
-              }
-            },
-            "reward": {
-              "type": "object",
-              "required": [
-                "kind",
-                "count"
-              ],
-              "properties": {
-                "kind": {
-                  "type": "string"
-                },
-                "count": {
-                  "type": "integer"
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  },
-  "getEvents": {
-    "200": {
-      "type": "object",
-      "required": [
-        "ok",
-        "data"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "enum": [
-            true
-          ]
-        },
-        "data": {
-          "type": "object",
-          "required": [
-            "events"
-          ],
-          "properties": {
-            "events": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": [
-                  "eventId",
-                  "title",
-                  "windowStart",
-                  "windowEnd",
-                  "myPoints",
-                  "tasks",
-                  "rewards"
-                ],
-                "properties": {
-                  "eventId": {
-                    "type": "string"
-                  },
-                  "title": {
-                    "type": "string"
-                  },
-                  "description": {
-                    "type": "string"
-                  },
-                  "windowStart": {
-                    "type": "integer"
-                  },
-                  "windowEnd": {
-                    "type": "integer"
-                  },
-                  "myPoints": {
-                    "type": "integer"
-                  },
-                  "tasks": {
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "required": [
-                        "taskId",
-                        "kind",
-                        "target",
-                        "points",
-                        "progress",
-                        "done"
-                      ],
-                      "properties": {
-                        "taskId": {
-                          "type": "string"
-                        },
-                        "kind": {
-                          "type": "string"
-                        },
-                        "target": {
-                          "type": "integer"
-                        },
-                        "points": {
-                          "type": "integer"
-                        },
-                        "progress": {
-                          "type": "integer"
-                        },
-                        "done": {
-                          "type": "boolean"
-                        }
-                      }
-                    }
-                  },
-                  "rewards": {
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "required": [
-                        "rewardId",
-                        "cost",
-                        "kind",
-                        "claimedCount"
-                      ],
-                      "properties": {
-                        "rewardId": {
-                          "type": "string"
-                        },
-                        "cost": {
-                          "type": "integer"
-                        },
-                        "kind": {
-                          "type": "string"
-                        },
-                        "id": {
-                          "type": "string"
-                        },
-                        "count": {
-                          "type": "integer"
-                        },
-                        "maxClaims": {
-                          "type": "integer"
-                        },
-                        "claimedCount": {
-                          "type": "integer"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  },
-  "claimEventReward": {
-    "200": {
-      "type": "object",
-      "required": [
-        "ok",
-        "data"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "enum": [
-            true
-          ]
-        },
-        "data": {
-          "type": "object",
-          "required": [
-            "pointsLeft",
-            "reward"
-          ],
-          "properties": {
-            "pointsLeft": {
-              "type": "integer"
-            },
-            "reward": {
-              "type": "object",
-              "required": [
-                "kind"
-              ],
-              "properties": {
-                "kind": {
-                  "type": "string"
-                },
-                "id": {
-                  "type": "string"
-                },
-                "count": {
-                  "type": "integer"
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  },
-  "getTitles": {
-    "200": {
-      "type": "object",
-      "required": [
-        "ok",
-        "data"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "enum": [
-            true
-          ]
-        },
-        "data": {
-          "type": "object",
-          "required": [
-            "titles",
-            "equipped"
-          ],
-          "properties": {
-            "titles": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": [
-                  "id",
-                  "source"
-                ],
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "description": "Title id (ladder.s{N}.{rank} / slg.s{N}.{key} / ach.{key} / event.{key})"
-                  },
-                  "source": {
-                    "type": "string",
-                    "enum": [
-                      "ladder",
-                      "slg",
-                      "achievement",
-                      "event"
-                    ]
-                  },
-                  "seasonNo": {
-                    "type": "integer",
-                    "description": "Season number (only for ladder/slg type titles)"
-                  }
-                }
-              }
-            },
-            "equipped": {
-              "type": "string",
-              "nullable": true,
-              "description": "Currently equipped title id; null if none equipped"
-            }
-          }
-        }
-      }
-    }
-  },
-  "equipTitle": {
-    "200": {
-      "type": "object",
-      "required": [
-        "ok",
-        "data"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "enum": [
-            true
-          ]
-        },
-        "data": {
-          "type": "object",
-          "required": [
-            "save"
-          ],
-          "properties": {
-            "save": {
-              "type": "object",
-              "required": [
-                "version",
-                "accountId",
-                "rev",
-                "updatedAt",
-                "wallet",
-                "inventory",
-                "gacha",
-                "pvp",
-                "progress",
-                "materials",
-                "pveUpgrades",
-                "equipped",
-                "flags"
-              ],
-              "properties": {
-                "version": {
-                  "type": "integer"
-                },
-                "accountId": {
-                  "type": "string"
-                },
-                "rev": {
-                  "type": "integer"
-                },
-                "updatedAt": {
-                  "type": "integer"
-                },
-                "wallet": {
-                  "type": "object",
-                  "required": [
-                    "coins"
-                  ],
-                  "properties": {
-                    "coins": {
-                      "type": "integer",
-                      "minimum": 0
-                    }
-                  }
-                },
-                "inventory": {
-                  "type": "object",
-                  "required": [
-                    "skins",
-                    "items"
-                  ],
-                  "properties": {
-                    "skins": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "items": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "gacha": {
-                  "type": "object",
-                  "required": [
-                    "pity"
-                  ],
-                  "properties": {
-                    "pity": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "monetization": {
-                  "type": "object",
-                  "required": [
-                    "fatePoints",
-                    "subscriptionExpiry",
-                    "starterUsed"
-                  ],
-                  "properties": {
-                    "fatePoints": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "description": "Fate Points balance (§7)"
-                    },
-                    "subscriptionExpiry": {
-                      "type": "integer",
-                      "description": "monthly card end timestamp (ms); 0 = none (§5)"
-                    },
-                    "subscriptionLastClaimDay": {
-                      "type": "string",
-                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
-                    },
-                    "starterUsed": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "one-off product ids already purchased (§6)"
-                    }
-                  }
-                },
-                "deliveredOrders": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                "pvp": {
-                  "type": "object",
-                  "required": [
-                    "elo",
-                    "rank",
-                    "wins",
-                    "losses",
-                    "streak"
-                  ],
-                  "properties": {
-                    "elo": {
-                      "type": "integer"
-                    },
-                    "rank": {
-                      "type": "string"
-                    },
-                    "wins": {
-                      "type": "integer"
-                    },
-                    "losses": {
-                      "type": "integer"
-                    },
-                    "streak": {
-                      "type": "integer"
-                    },
-                    "seasonNo": {
-                      "type": "integer",
-                      "description": "Current season number"
-                    },
-                    "seasonPeakElo": {
-                      "type": "integer",
-                      "description": "Peak ELO for current season"
-                    },
-                    "seasonPeakRank": {
-                      "type": "string",
-                      "description": "Peak rank for current season"
-                    },
-                    "reachedRanks": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "All-time first-reached rank list (lifetime ledger)"
-                    }
-                  }
-                },
-                "stamina": {
-                  "type": "object",
-                  "required": [
-                    "current",
-                    "regenAt"
-                  ],
-                  "properties": {
-                    "current": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 120,
-                      "description": "Current stamina"
-                    },
-                    "regenAt": {
-                      "type": "integer",
-                      "description": "Timestamp (ms) when the next 1 stamina regenerates; 0 when full"
-                    }
-                  }
-                },
-                "titles": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
-                },
-                "battlePass": {
-                  "type": "object",
-                  "required": [
-                    "seasonNo",
-                    "xp",
-                    "level",
-                    "hasPass",
-                    "claimedFree",
-                    "claimedPaid"
-                  ],
-                  "properties": {
-                    "seasonNo": {
-                      "type": "integer"
-                    },
-                    "xp": {
-                      "type": "integer"
-                    },
-                    "level": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 30
-                    },
-                    "hasPass": {
-                      "type": "boolean"
-                    },
-                    "claimedFree": {
-                      "type": "array",
-                      "items": {
-                        "type": "integer"
-                      }
-                    },
-                    "claimedPaid": {
-                      "type": "array",
-                      "items": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "progress": {
-                  "type": "object",
-                  "required": [
-                    "cleared",
-                    "stars",
-                    "best"
-                  ],
-                  "properties": {
-                    "cleared": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "stars": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 3
-                      }
-                    },
-                    "best": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "object",
-                        "properties": {
-                          "timeMs": {
-                            "type": "integer"
-                          },
-                          "leaked": {
-                            "type": "integer"
-                          }
-                        },
-                        "additionalProperties": true
-                      }
-                    }
-                  }
-                },
-                "materials": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  }
-                },
-                "pveUpgrades": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  }
-                },
-                "cardInventory": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "description": "Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup"
-                },
-                "cardInv": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "defId",
-                      "level",
-                      "xp",
-                      "gear",
-                      "locked"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string",
-                        "description": "Unique instance id (e.g. 'card_a1b2c3')"
-                      },
-                      "defId": {
-                        "type": "string",
-                        "description": "Card definition id (references CARD_DEFS)"
-                      },
-                      "level": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 9
-                      },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
-                      "gear": {
-                        "type": "object",
-                        "additionalProperties": {
-                          "type": "string"
-                        },
-                        "description": "Per-slot equipped equipment instance ids (slot→equipmentInstanceId)"
-                      },
-                      "locked": {
-                        "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
-                      }
-                    }
-                  },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
-                },
-                "equipped": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
-                },
-                "flags": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "boolean"
-                  }
-                },
-                "stats": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  },
-                  "description": "Lifetime cumulative stats (StatKey→value), monotonically increasing, server-authoritative"
-                },
-                "achievements": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "claimedTiers"
-                    ],
-                    "properties": {
-                      "claimedTiers": {
-                        "type": "array",
-                        "items": {
-                          "type": "integer",
-                          "minimum": 1,
-                          "maximum": 3
-                        }
-                      }
-                    }
-                  },
-                  "description": "achId→set of already-claimed tier numbers, idempotent to prevent double-claiming"
-                },
-                "equipmentInv": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "defId",
-                      "rarity",
-                      "level",
-                      "affixes"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string"
-                      },
-                      "defId": {
-                        "type": "string"
-                      },
-                      "rarity": {
-                        "type": "string",
-                        "enum": [
-                          "common",
-                          "fine",
-                          "rare",
-                          "epic"
-                        ]
-                      },
-                      "level": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 9
-                      },
-                      "affixes": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "required": [
-                            "id",
-                            "value"
-                          ],
-                          "properties": {
-                            "id": {
-                              "type": "string"
-                            },
-                            "value": {
-                              "type": "number"
-                            }
-                          }
-                        }
-                      },
-                      "locked": {
-                        "type": "boolean"
-                      }
-                    }
-                  }
-                },
-                "retention": {
-                  "type": "object",
-                  "properties": {
-                    "checkin": {
-                      "type": "object",
-                      "required": [
-                        "monthKey",
-                        "claimedDays"
-                      ],
-                      "properties": {
-                        "monthKey": {
-                          "type": "string"
-                        },
-                        "claimedDays": {
-                          "type": "array",
-                          "items": {
-                            "type": "integer"
-                          }
-                        },
-                        "lastClaimedDayKey": {
-                          "type": "string"
-                        }
-                      }
-                    },
-                    "daily": {
-                      "type": "object",
-                      "required": [
-                        "dayKey",
-                        "completedTasks",
-                        "taskPoints",
-                        "rewardClaimed"
-                      ],
-                      "properties": {
-                        "dayKey": {
-                          "type": "string"
-                        },
-                        "completedTasks": {
-                          "type": "object",
-                          "additionalProperties": {
-                            "type": "integer"
-                          }
-                        },
-                        "taskPoints": {
-                          "type": "integer"
-                        },
-                        "rewardClaimed": {
-                          "type": "boolean"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  },
-  "redeemPromoCode": {
-    "200": {
-      "type": "object",
-      "required": [
-        "ok",
-        "data"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "enum": [
-            true
-          ]
-        },
-        "data": {
-          "type": "object",
-          "required": [
-            "coinsAfter",
-            "coinsGranted"
-          ],
-          "properties": {
-            "coinsAfter": {
-              "type": "integer"
-            },
-            "coinsGranted": {
-              "type": "integer"
-            }
-          }
         }
       }
     }

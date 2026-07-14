@@ -1,0 +1,240 @@
+/pve/enter:
+  post:
+    operationId: pveEnter
+    tags: [save]
+    summary: "PvE level entry (A4): deducts stamina the moment the player commits to a level (no refund on retreat/loss); /pve/clear no longer touches stamina"
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [levelId]
+            properties:
+              levelId: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [stamina]
+                  properties:
+                    stamina:
+                      type: object
+                      required: [current, regenAt]
+                      properties:
+                        current: { type: integer }
+                        regenAt: { type: integer }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '402': { $ref: '#/components/responses/ErrorResp' }
+      '403': { $ref: '#/components/responses/ErrorResp' }
+
+/pve/clear:
+  post:
+    operationId: pveClear
+    tags: [save]
+    summary: "PvE level-clear settlement (server-authoritative: validates unlock → grants materials [daily cap] → writes progress/stars → pushes save)"
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [levelId, stars]
+            properties:
+              levelId: { type: string }
+              stars: { type: integer, minimum: 0, maximum: 3 }
+              replayRef: { type: string, description: 'Optional replay reference (for L1 spot-check re-simulation, deprecated)' }
+              pveUpgrades:
+                type: object
+                additionalProperties: { type: integer }
+                description: Client blueprint snapshot at match start (L0 anomaly check; mismatch with server-authoritative triggers spot-check)
+              stats:
+                type: object
+                additionalProperties: { type: integer }
+                description: Per-match achievement counters (kill.archer/kill.guard/cast.meteor; S9-3b, fed on normal clear, capped by L1)
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save, granted, capped]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+                    granted:
+                      type: object
+                      additionalProperties: { type: integer }
+                      description: Materials actually granted this time (empty when capped or held pending spot-check)
+                    grantedCards:
+                      type: object
+                      additionalProperties: { type: integer }
+                      description: Unit cards actually granted this time (cardKey→count, S12-C; empty when capped or held pending spot-check)
+                    grantedEquipment:
+                      $ref: '#/components/schemas/EquipmentInstance'
+                      description: Equipment instance dropped by this level (E2 §4; absent if nothing dropped or inventory full)
+                    capped: { type: boolean, description: Daily material-granting clear cap reached }
+                    needsReplay:
+                      type: boolean
+                      description: Selected by L1 spot-check — materials withheld; client must submit the replay to /pve/verify for re-simulation and crediting
+                    verifyId:
+                      type: string
+                      description: Spot-check record id (present when needsReplay is true); must be echoed back when submitting the replay
+      '400': { $ref: '#/components/responses/ErrorResp' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+
+/pve/verify:
+  post:
+    operationId: pveVerify
+    tags: [save]
+    summary: PvE L1 replay spot-check re-simulation (submit the selected replay → third-party headless re-simulation → materials granted only when re-simulated stars ≥ claimed)
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [verifyId, frames, endFrame]
+            properties:
+              verifyId: { type: string, description: Spot-check record id from the /pve/clear response }
+              endFrame: { type: integer, description: Total frame count of the replay (upper bound for re-simulation steps) }
+              frames:
+                type: array
+                description: Non-empty frames (command bytes base64, structurally identical to the judge pipeline)
+                items:
+                  type: object
+                  required: [frame, cmds]
+                  properties:
+                    frame: { type: integer }
+                    cmds:
+                      type: array
+                      items:
+                        type: object
+                        required: [side, commands]
+                        properties:
+                          side: { type: integer }
+                          commands: { type: string, description: base64 PlayerCommands }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save, granted, capped, verified]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+                    granted:
+                      type: object
+                      additionalProperties: { type: integer }
+                      description: Materials actually granted after re-simulation passes (empty when rejected or capped)
+                    grantedCards:
+                      type: object
+                      additionalProperties: { type: integer }
+                      description: Unit cards actually granted after re-simulation passes (cardKey→count, S12-C; empty when rejected or capped)
+                    grantedEquipment:
+                      $ref: '#/components/schemas/EquipmentInstance'
+                      description: Equipment instance dropped by this level after re-simulation passes (E2 §4; absent if nothing dropped or inventory full)
+                    capped: { type: boolean }
+                    verified:
+                      type: boolean
+                      description: Whether re-simulation passed (false = star count mismatch, deemed suspicious; materials not granted)
+      '400': { $ref: '#/components/responses/ErrorResp' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '404': { $ref: '#/components/responses/ErrorResp' }
+
+/pve/stamina/purchase:
+  post:
+    operationId: purchaseStamina
+    tags: [save]
+    summary: Replenish stamina (A4, spend 30 coins for 60 stamina; shop route)
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [amount]
+            properties:
+              amount: { type: integer, enum: [60], description: Replenish 60 per purchase (single tier only) }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [stamina]
+                  properties:
+                    stamina:
+                      type: object
+                      required: [current, regenAt]
+                      properties:
+                        current: { type: integer }
+                        regenAt: { type: integer }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '402': { $ref: '#/components/responses/ErrorResp' }
+
+/pve/upgrade:
+  post:
+    operationId: pveUpgrade
+    tags: [save]
+    summary: "PvE upgrade (server-authoritative: validates materials → deducts materials → pveUpgrades+1 → pushes save); online only"
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [upgradeId]
+            properties:
+              upgradeId: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '402': { $ref: '#/components/responses/ErrorResp' }
+

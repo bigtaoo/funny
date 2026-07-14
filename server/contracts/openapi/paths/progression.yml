@@ -1,0 +1,148 @@
+/leaderboard:
+  get:
+    operationId: getLeaderboard
+    tags: [ranked]
+    summary: Top-100 leaderboard (current season ELO descending)
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Leaderboard list
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [seasonNo, entries]
+                  properties:
+                    seasonNo: { type: integer }
+                    entries:
+                      type: array
+                      items:
+                        type: object
+                        required: [rank, displayName, publicId, elo, pvpRank]
+                        properties:
+                          rank: { type: integer, description: 'Rank, 1-based' }
+                          displayName: { type: string }
+                          publicId: { type: string }
+                          elo: { type: integer }
+                          pvpRank: { type: string }
+                    me:
+                      type: object
+                      description: "Caller's own standing this season (absent when they have not played a ranked match this season). Rank may exceed 100."
+                      required: [rank, elo, pvpRank]
+                      properties:
+                        rank: { type: integer, description: 'Rank, 1-based' }
+                        elo: { type: integer }
+                        pvpRank: { type: string }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+
+/pvp/bot-result:
+  post:
+    operationId: submitBotResult
+    tags: [ranked]
+    summary: >-
+      Report the outcome of an AI-fallback (bot) match (matchmaking timed out waiting for a human
+      opponent and the client played a local AI battle instead, MATCHSVC_DESIGN §match_bot_fallback).
+      Always credits the 'pvp.match' daily task. Only moves ELO while the caller is below
+      BOT_ELO_THRESHOLD (bot matches are onboarding calibration, not a substitute for ranked climbing
+      once a player nears their real bracket); at/above the threshold the call still succeeds but ELO
+      is unchanged. Rate-limited to one accepted result per ~15s per account to prevent scripted spam.
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [won]
+            properties:
+              won: { type: boolean }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [elo, rank, delta]
+                  properties:
+                    elo: { type: integer }
+                    rank: { type: string }
+                    delta:
+                      type: integer
+                      description: ELO change actually applied this call (0 when at/above BOT_ELO_THRESHOLD or throttled)
+      '401': { $ref: '#/components/responses/ErrorResp' }
+
+/battlepass/buy:
+  post:
+    operationId: buyBattlePass
+    tags: [battlepass]
+    summary: Purchase the current season battle pass (600 coins)
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Purchase successful
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [battlePass]
+                  properties:
+                    battlePass: { $ref: '#/components/schemas/BattlePassData' }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+
+/battlepass/claim:
+  post:
+    operationId: claimBattlePass
+    tags: [battlepass]
+    summary: Claim a battle pass reward (free or paid track, at a given level)
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [track, level]
+            properties:
+              track: { type: string, enum: [free, paid] }
+              level: { type: integer, minimum: 1, maximum: 30 }
+    responses:
+      '200':
+        description: Claim successful
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [battlePass, reward]
+                  properties:
+                    battlePass: { $ref: '#/components/schemas/BattlePassData' }
+                    reward:
+                      type: object
+                      required: [kind, count]
+                      properties:
+                        kind: { type: string }
+                        count: { type: integer }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+

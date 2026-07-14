@@ -1,0 +1,309 @@
+/auth/wx:
+  post:
+    operationId: authWx
+    tags: [auth]
+    summary: WeChat anonymous login (exchange code for openid)
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [code]
+            properties:
+              code: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data: { $ref: '#/components/schemas/AuthResult' }
+
+/auth/device:
+  post:
+    operationId: authDevice
+    tags: [auth]
+    summary: Device UUID anonymous login (Web / CrazyGames)
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [deviceId]
+            properties:
+              deviceId: { type: string, minLength: 8 }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data: { $ref: '#/components/schemas/AuthResult' }
+
+/auth/register:
+  post:
+    operationId: authRegister
+    tags: [auth]
+    summary: Password registration (email/username + password, creates a new account)
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [loginId, password]
+            properties:
+              loginId: { type: string, minLength: 3, maxLength: 64 }
+              # Password strength is validated by the handler and returns a dedicated WEAK_PASSWORD error (schema does not set minLength to avoid being preempted by generic validation).
+              password: { type: string }
+              displayName: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data: { $ref: '#/components/schemas/AuthResult' }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+      '409': { $ref: '#/components/responses/ErrorResp' }
+
+/auth/login:
+  post:
+    operationId: authLogin
+    tags: [auth]
+    summary: Password login
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [loginId, password]
+            properties:
+              loginId: { type: string }
+              password: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data: { $ref: '#/components/schemas/AuthResult' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+
+/auth/oauth:
+  post:
+    operationId: authOAuth
+    tags: [auth]
+    summary: OAuth third-party login (authorization code flow, initially supports google)
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [provider, code, redirectUri]
+            properties:
+              provider: { type: string, enum: [google] }
+              code: { type: string }
+              redirectUri: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data: { $ref: '#/components/schemas/AuthResult' }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+
+/auth/bind:
+  post:
+    operationId: authBind
+    tags: [auth]
+    summary: Bind credentials to the current account (upgrade anonymous to registered / bind multiple credentials)
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [method]
+            properties:
+              method:
+                type: string
+                enum: [oauth, password]
+              # OAuth binding
+              provider: { type: string, enum: [google] }
+              code: { type: string }
+              redirectUri: { type: string }
+              # Password binding
+              loginId: { type: string }
+              password: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [ok, isAnonymous]
+                  properties:
+                    ok: { type: boolean, enum: [true] }
+                    isAnonymous: { type: boolean }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+      '409': { $ref: '#/components/responses/ErrorResp' }
+
+/auth/password/change:
+  post:
+    operationId: authPasswordChange
+    tags: [auth]
+    summary: Change password (requires login; validates old password)
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [oldPassword, newPassword]
+            properties:
+              oldPassword: { type: string }
+              # Strength validated by the handler (WEAK_PASSWORD).
+              newPassword: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [ok]
+                  properties:
+                    ok: { type: boolean, enum: [true] }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+
+/account:
+  delete:
+    operationId: deleteAccount
+    tags: [auth]
+    summary: Soft-delete account (C5-b Apple 5.1.1(v)) — data purged asynchronously after 7-day grace period
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [confirmToken]
+                  properties:
+                    confirmToken: { type: string }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+
+/account/gdpr-consent:
+  post:
+    operationId: recordGdprConsent
+    tags: [auth]
+    summary: Record GDPR consent (C5-c) — sets flags.gdprConsent=true
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [consent]
+            properties:
+              consent: { type: boolean }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [ok]
+                  properties:
+                    ok: { type: boolean, enum: [true] }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+
+/profile/rename:
+  post:
+    operationId: profileRename
+    tags: [profile]
+    summary: Change display name (consumes coins; writes name and pushes save after successful deduction)
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [displayName]
+            properties:
+              displayName: { type: string, minLength: 1, maxLength: 24 }
+    responses:
+      '200':
+        description: Success — returns authoritative save + new display name
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save, displayName]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+                    displayName: { type: string }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '402': { $ref: '#/components/responses/ErrorResp' }
+      '503': { $ref: '#/components/responses/ErrorResp' }
+

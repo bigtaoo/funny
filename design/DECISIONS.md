@@ -454,3 +454,13 @@
   - `client`：`WorldMapInput.ts` 占领按钮改走 `startMarch(kind:'occupy')`；地图渲染/HUD 消费新增的 `contestedUntil` 字段渲染倒计时。
   - 文档：[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §5.4（新增）。
   - 测试：`server/worldsvc/test/occupy-march.e2e.test.ts`（新增）。
+
+## ADR-040 metaserver `openapi.yml` 按域拆分为 fragment，合并生成（服务不拆）— Accepted — 2026-07-14
+
+- **决策**：`server/contracts/openapi.yml`（此前单文件 3241 行，metaserver 全部 77 个 REST 操作）改为手写 `server/contracts/openapi/{_root.yml,schemas.yml,paths/<domain>.yml}` 9 个按域 fragment，一一对应 `MetaService` 现有的 mixin 划分（`server/metaserver/src/service/{auth,save,pve,economy,inventory,progression,liveops,social,telemetry}.ts`）；新增 `server/contracts/scripts/bundle-openapi.mjs` 把 fragment 合并回 `openapi.yml`（沿用 ADR-023 的"生成文件提交入库 + CI `--check` 防 stale"模式）。服务本身**不拆**——metaserver 代码是整合/路由为主，拆多个微服务的运维成本不划算；已有 mixin 划分已经是合理的域边界。
+- **为什么**：几乎所有玩家交互都经过 metaserver，单文件契约导致跨域改动时 diff/review 范围大、merge 冲突集中。openapi 自带的 `tags` 字段粒度不准（如 `tags:[save]` 混了 pve/inventory/progression 等多个 mixin 的操作），不能直接拿来分域；改为按"哪个 mixin 实现这个 operationId"分组，逐个核对全部 77 个 operationId 后确认可行（无遗漏、无跨 mixin 的同路径冲突）。
+- **影响**：
+  - `server/contracts/openapi.yml` 本身变成生成产物（文件头注明 `AUTO-GENERATED ... DO NOT EDIT`），后续改契约改 `openapi/paths/<domain>.yml` 或 `openapi/schemas.yml`，跑 `npm run gen:api:contracts`（在 `server/metaserver/`）重新生成。
+  - 下游消费者（`gen-openapi-server.mjs`→`routes.gen.ts`、`client/scripts/gen-openapi.mjs`→`client/src/net/openapi.ts`、`openapi-request-schema.test.ts`/`openapi-response-schema.test.ts`）均只读 `openapi.yml` 文件路径，**未改动**，已验证 tsc/vitest/client typecheck 全绿。
+  - CI：`.github/workflows/ci.yml` 新增 "server codegen check (metaserver openapi bundle)" 步骤（`npm run gen:api:contracts:check`），跑在既有 routes.gen.ts staleness check 之前。
+  - 范围明确不含 `openapi-world.yml`（worldsvc）/`openapi-auction.yml`（auctionsvc）——规模本身不是痛点，未来若需要可复用同一套 `bundle-openapi.mjs` 模式。
