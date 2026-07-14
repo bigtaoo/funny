@@ -5,6 +5,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { type IconKind } from '../../render/icons';
+import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { type Constructor, type ShopSceneBaseCtor, type CardSpec } from './base';
 
 interface CoinTierDef {
@@ -79,6 +80,8 @@ export function CoinsMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase 
         const py = bodyTop + gridH - this.scrollY;
         if (py + promoH >= top && py <= h) this.drawPromoRow(body, listX, py, listW, promoH);
       }
+
+      drawScrollIndicator(this.container, { x: listX, y: bodyTop, w: listW, h: viewH }, this.scrollY, Math.max(0, totalH - viewH));
     }
 
     /** Promo-code row: full-width [text field showing code / placeholder] [Redeem button]. */

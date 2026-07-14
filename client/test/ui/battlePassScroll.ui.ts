@@ -42,6 +42,14 @@ describe('BattlePassScene — reward track drag-scroll', () => {
     scene.destroy();
   });
 
+  it('draws the shared scroll indicator once content is scrollable', () => {
+    const scene = buildBattlePass(new InputManager());
+    const s = scene as unknown as { scrollMax: number; scrollbar: unknown };
+    expect(s.scrollMax).toBeGreaterThan(0);
+    expect(s.scrollbar).not.toBeNull(); // ScrollIndicator wired in render()/updateScrollPosition()
+    scene.destroy();
+  });
+
   it('dragging up moves scrollY forward, clamped to scrollMax', () => {
     const input = new InputManager();
     const scene = buildBattlePass(input);

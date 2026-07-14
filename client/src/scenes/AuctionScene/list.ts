@@ -5,6 +5,7 @@ import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubT
 import { t } from '../../i18n';
 import type { AuctionView } from '../../net/WorldApiClient';
 import { buildIcon, type IconKind } from '../../render/icons';
+import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { FILTER_H, ROW_H, FILTERS, type AucFilter, type AucTab } from './base';
 import { type Constructor, type AuctionSceneBaseCtor } from './base';
 
@@ -180,6 +181,8 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
 
         cy += ROW_H;
       }
+
+      drawScrollIndicator(this.bodyLayer, { x: contentX, y: listY, w: contentW, h: listH }, this.scrollY, Math.max(0, totalH - listH));
     }
 
     renderCreateButton(contentX: number): void {

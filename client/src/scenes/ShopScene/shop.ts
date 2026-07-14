@@ -5,6 +5,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { t, TranslationKey } from '../../i18n';
 import { ui as C, txt } from '../../render/sketchUi';
 import { type IconKind } from '../../render/icons';
+import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { type Constructor, type ShopSceneBaseCtor, type CardSpec, type BtnSpec } from './base';
 
 // Subscription-card display prices (¥). Mirror of @nw/shared MONTHLY/YEAR_CARD_PRICE_YUAN — the real IAP charge is
@@ -34,7 +35,7 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
       }
 
       const specs = this.buildShopCards();
-      const { listX, gap, cols, cellW, cellH } = this.gridMetrics();
+      const { listX, listW, gap, cols, cellW, cellH } = this.gridMetrics();
       const rows = Math.ceil(specs.length / cols);
       const totalH = rows > 0 ? rows * (cellH + gap) : 0;
       this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - viewH)));
@@ -53,6 +54,8 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
         const cy = bodyTop + row * (cellH + gap) - this.scrollY;
         if (cy + cellH >= top && cy <= h) this.drawCard(body, spec, cx, cy, cellW, cellH);
       });
+
+      drawScrollIndicator(this.container, { x: listX, y: bodyTop, w: listW, h: viewH }, this.scrollY, Math.max(0, totalH - viewH));
     }
 
     /** Assemble the shop tab's card specs in a fixed order: monthly · year · starter packs · skins. */

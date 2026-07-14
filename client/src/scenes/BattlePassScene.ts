@@ -9,6 +9,7 @@ import { buildCoinIcon } from '../render/coinIconAtlas';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
+import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import type { SaveData } from '../game/meta/SaveData';
 import {
@@ -93,6 +94,9 @@ export class BattlePassScene implements Scene {
   private bodyTopY = 0;
   private staticHits: Hit[] = [];
   private scrollCellDefs: Array<{ x: number; cellY: number; w: number; h: number; fn: () => void }> = [];
+  /** Scroll viewport rect (mask bounds), cached so the drag fast-path can redraw the indicator. */
+  private scrollView: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  private scrollbar: PIXI.Graphics | null = null;
 
   constructor(layout: ILayout, input: InputManager, cb: BattlePassCallbacks) {
     this.container = new PIXI.Container();
@@ -149,6 +153,8 @@ export class BattlePassScene implements Scene {
     this.hits = this.staticHits.concat(
       this.scrollCellDefs.map((d) => ({ rect: { x: d.x, y: this.bodyTopY - sy + d.cellY, w: d.w, h: d.h }, fn: d.fn })),
     );
+    if (this.scrollbar) { this.scrollbar.destroy(); this.scrollbar = null; }
+    this.scrollbar = drawScrollIndicator(this.container, this.scrollView, sy, this.scrollMax);
   }
 
   private handleUp(): void {
@@ -201,6 +207,7 @@ export class BattlePassScene implements Scene {
     this.hits = [];
     this.scrollContainer = null;
     this.scrollCellDefs = [];
+    this.scrollbar = null; // torn down with the container above; drop the stale ref
     const { w, h, landscape } = this;
 
     // Landscape only for now — see ShopScene.drawBackground / LOBBY_IA_REDESIGN §14.
@@ -328,6 +335,7 @@ export class BattlePassScene implements Scene {
     const totalContentH = headerH + BATTLEPASS_MAX_LEVEL * (cellH + cellGap);
     const scrollMax = Math.max(0, totalContentH - scrollBodyH);
     this.scrollMax = scrollMax;
+    this.scrollView = { x: pad, y: bodyTopY, w: barW, h: scrollBodyH };
     const sy = Math.min(this.scrollY, scrollMax);
 
     const scrollContainer = new PIXI.Container();
