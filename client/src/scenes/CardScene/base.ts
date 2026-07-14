@@ -68,13 +68,15 @@ export interface CardCallbacks {
 
 export const MODAL_DIM = 0x000000;
 
-// Roster grid: icon-card cells (name top / portrait left / attributes right)
-// packed into columns sized to the wide (1920) landscape canvas.
+// Roster grid: icon-card cells — a full-height portrait on the left with all the
+// hero info (name / level / power / troops / gear) stacked immediately to its right.
+// Narrower than the equipment cells so hero cards pack denser and don't read as empty.
 export const CELL_GAP = 12;
-// Unified with EquipmentScene's EQUIP_CELL_H/EQUIP_CELL_W_TARGET (both 1.5x their prior size)
-// so hero/equipment/material icon cards all read as the same visual family across scenes.
+// Height stays unified with EquipmentScene's EQUIP_CELL_H (icon-card visual family), but the
+// width is deliberately narrower: the portrait now spans the full cell height instead of
+// sitting in a square with a wide, mostly-empty stats column beside it.
 export const CARD_CELL_H = 177;
-export const CARD_CELL_W_TARGET = 480;
+export const CARD_CELL_W_TARGET = 300;
 
 export interface Rect { x: number; y: number; w: number; h: number; }
 
@@ -217,8 +219,12 @@ export class CardSceneBase {
     if (this.bt.loadingVisible) drawLoadingOverlay(this.loadingLayer, this.w, this.h, this.bt.dots, t('common.processing'));
   }
 
-  /** Draw a unit portrait, centered & fit into a box; re-render once the texture loads. */
-  protected drawArtFit(url: string, x: number, y: number, box: number, layer: PIXI.Container = this.bodyLayer): void {
+  /**
+   * Draw a unit portrait, centered & fit into a box; re-render once the texture loads.
+   * Pass `boxH` to fit into a (possibly non-square) rectangle — the portrait scales to
+   * whichever axis is tighter and stays centered, so tall cells never clip or stretch it.
+   */
+  protected drawArtFit(url: string, x: number, y: number, box: number, layer: PIXI.Container = this.bodyLayer, boxH?: number): void {
     const tex = getArtTexture(url);
     if (!tex.baseTexture.valid) {
       if (!this.artHooked.has(url)) {
@@ -227,11 +233,12 @@ export class CardSceneBase {
       }
       return;
     }
-    const scale = Math.min(box / tex.width, box / tex.height);
+    const bh = boxH ?? box;
+    const scale = Math.min(box / tex.width, bh / tex.height);
     const sp = new PIXI.Sprite(tex);
     sp.anchor.set(0.5);
     sp.scale.set(scale);
-    sp.position.set(x + box / 2, y + box / 2);
+    sp.position.set(x + box / 2, y + bh / 2);
     layer.addChild(sp);
   }
 
