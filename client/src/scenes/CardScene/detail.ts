@@ -383,7 +383,7 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
         if (this.cb.openEquipment && !this.bt.busy) {
           this.modalHits.push({
             rect: this.toModalScreen({ x, y: cy, w: cellW, h: cellH }),
-            action: () => { this.closeModal(); this.cb.openEquipment!(card.id); },
+            action: () => { this.closeModal(); this.cb.openEquipment!(card.id, slot); },
           });
         }
       });

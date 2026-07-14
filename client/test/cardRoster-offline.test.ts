@@ -11,14 +11,17 @@ import type { AppCtx, AppState, Nav } from '../src/app/appCtx';
 import type { AppViews } from '../src/app/AppViews';
 import type { ApiClient } from '../src/net/ApiClient';
 import type { CardCallbacks } from '../src/scenes/CardScene';
+import type { EquipmentCallbacks } from '../src/scenes/EquipmentScene';
 import { UnitType } from '../src/game/types';
 
 function buildCtx(opts: { online: boolean }): {
   ctx: AppCtx;
   getCardRoster: () => CardCallbacks | null;
+  getEquipment: () => EquipmentCallbacks | null;
   save: { equipped: Record<string, string>; cardInv: Record<string, unknown>; inventory: { skins: string[] } };
 } {
   let lastCardRoster: CardCallbacks | null = null;
+  let lastEquipment: EquipmentCallbacks | null = null;
   const save = {
     equipped: {} as Record<string, string>,
     cardInv: {} as Record<string, unknown>,
@@ -27,6 +30,7 @@ function buildCtx(opts: { online: boolean }): {
 
   const views = {
     showCardRoster: (cb: CardCallbacks) => { lastCardRoster = cb; },
+    showEquipment: (cb: EquipmentCallbacks) => { lastEquipment = cb; },
   } as unknown as AppViews;
 
   const nav: Partial<Nav> = { goLobby: () => {} };
@@ -54,7 +58,7 @@ function buildCtx(opts: { online: boolean }): {
     resolveWorldShard: () => {},
   };
 
-  return { ctx, getCardRoster: () => lastCardRoster, save };
+  return { ctx, getCardRoster: () => lastCardRoster, getEquipment: () => lastEquipment, save };
 }
 
 describe('createGameNav — goCardRoster offline', () => {
@@ -104,5 +108,32 @@ describe('createGameNav — goCardRoster offline', () => {
     const cb = getCardRoster()!;
     expect(cb.openEquipmentBag).toBeTypeOf('function');
     expect(cb.openEquipment).toBeTypeOf('function');
+  });
+
+  // A gear-slot tap in the card detail passes the tapped slot through openEquipment → goEquipment →
+  // EquipmentScene, so the equipment page opens already filtered to that slot's tab instead of "All".
+  it('online: openEquipment(cardId, slot) forwards the slot to EquipmentScene as initialFilterSlot', () => {
+    const { ctx, getCardRoster, getEquipment } = buildCtx({ online: true });
+    const { goCardRoster } = createGameNav(ctx);
+    goCardRoster();
+    const cb = getCardRoster()!;
+
+    cb.openEquipment!('card1', 'armor');
+    const equip = getEquipment();
+    expect(equip, 'views.showEquipment was not called by openEquipment').not.toBeNull();
+    expect(equip!.activeCardInstanceId).toBe('card1');
+    expect(equip!.initialFilterSlot).toBe('armor');
+  });
+
+  it('online: openEquipment(cardId) with no slot leaves initialFilterSlot unset (defaults to "All")', () => {
+    const { ctx, getCardRoster, getEquipment } = buildCtx({ online: true });
+    const { goCardRoster } = createGameNav(ctx);
+    goCardRoster();
+    const cb = getCardRoster()!;
+
+    cb.openEquipment!('card1');
+    const equip = getEquipment();
+    expect(equip).not.toBeNull();
+    expect(equip!.initialFilterSlot).toBeUndefined();
   });
 });

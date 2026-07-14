@@ -60,6 +60,8 @@ export interface EquipmentCallbacks {
   reforge(targetId: string, materialId: string): Promise<EquipResult>;
   /** The card instance whose gear this EquipmentScene is editing (CC-1 flow: CardScene → EquipmentScene). */
   readonly activeCardInstanceId: string;
+  /** Slot to pre-select in the inventory filter bar on entry (a specific gear-slot tap from CardScene); defaults to "All". */
+  readonly initialFilterSlot?: EquipSlot;
 }
 
 export type EquipTab = 'inv' | 'craft';
@@ -155,7 +157,7 @@ export class EquipmentSceneBase {
 
   /** Instance id of the currently open detail panel (null = none). Re-read from save on every repaint (closed if the item was salvaged). */
   protected detailId: string | null = null;
-  /** Inventory tab slot filter ('all' = no filter). */
+  /** Inventory tab slot filter ('all' = no filter); seeded from cb.initialFilterSlot in the constructor. */
   protected filterSlot: EquipSlot | 'all' = 'all';
 
   protected scrollY = 0;
@@ -186,6 +188,7 @@ export class EquipmentSceneBase {
     this.h = layout.designHeight;
     this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
+    if (cb.initialFilterSlot) this.filterSlot = cb.initialFilterSlot;
     this.showGroup = !!cb.peerTab;
     this.container = new PIXI.Container();
     this.build();
