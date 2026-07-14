@@ -106,6 +106,8 @@ export const zh = {
   'settings.playerId': 'ID #{id}',
   'settings.avatar': '头像',
   'settings.rename': '✎ 改名（{cost} 金币）',
+  'settings.renameFree': '✎ 免费改名',
+  'settings.renameFreeHint': '首次改名免费',
   'settings.renameTitle': '输入新名字',
   'settings.renamePlaceholder': '点此输入新名字',
   'settings.renameConfirm': '确认',

@@ -23,6 +23,8 @@ export const PLAYER_PUBLIC_ID_KEY = 'nw_player_public_id';
 export const PLAYER_AVATAR_KEY = 'nw_player_avatar';
 /** Coin cost to change the display name. Mirrors server RENAME_COST; server authoritative. */
 export const RENAME_COST = 500;
+/** Persisted '1'/'0' flag: the player still holds their one-time free rename (name is a system default). Server-authoritative, refreshed from GET /save. */
+export const FREE_RENAME_KEY = 'nw_free_rename';
 /** Fallback season number used when worldsvc is unreachable (dev/offline). */
 export const FALLBACK_SEASON = 1;
 

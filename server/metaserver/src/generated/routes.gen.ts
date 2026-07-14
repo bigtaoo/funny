@@ -2187,6 +2187,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
             },
             "displayName": {
               "type": "string"
+            },
+            "freeRename": {
+              "type": "boolean"
             }
           }
         }
@@ -2699,6 +2702,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
             },
             "gatewayUrl": {
               "type": "string"
+            },
+            "freeRename": {
+              "type": "boolean"
             }
           }
         }

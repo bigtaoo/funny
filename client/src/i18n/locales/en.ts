@@ -102,6 +102,8 @@ export const en: Record<TranslationKey, string> = {
   'settings.playerId': 'ID #{id}',
   'settings.avatar': 'Avatar',
   'settings.rename': '✎ Rename ({cost} coins)',
+  'settings.renameFree': '✎ Rename (free)',
+  'settings.renameFreeHint': 'Your first rename is free',
   'settings.renameTitle': 'Enter a new name',
   'settings.renamePlaceholder': 'Tap to type a new name',
   'settings.renameConfirm': 'Confirm',

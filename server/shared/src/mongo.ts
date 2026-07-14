@@ -28,6 +28,13 @@ export interface AccountDoc {
   oauth?: { provider: string; sub: string }[]; // third-party (provider+sub unique, SA-2)
   // —— Profile ——
   displayName?: string;
+  /**
+   * Whether the player has deliberately chosen their display name — set on password registration with an
+   * explicit name, or after any rename. Absent/false means the current `displayName` is a system-assigned
+   * default (lazy backfill via {@link ensureDisplayName}, or never set): the player is entitled to one
+   * **free** rename (see metaserver profileRename). Once true, renames cost RENAME_COST coins.
+   */
+  nameChosen?: boolean;
   /** 9-digit numeric public id (globally unique, used for player communication/reports). Lazily generated on first auth. */
   publicId?: string;
   /**

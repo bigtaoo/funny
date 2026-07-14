@@ -27,7 +27,7 @@ import * as analytics from '../analytics';
 import {
   clientPlatformName,
   SEEN_INTRO_FLAG, GDPR_CONSENT_FLAG, TOKEN_KEY, PLAYER_NAME_KEY, PLAYER_PUBLIC_ID_KEY,
-  PLAYER_AVATAR_KEY, FALLBACK_SEASON,
+  PLAYER_AVATAR_KEY, FALLBACK_SEASON, FREE_RENAME_KEY,
 } from './appConstants';
 import type { AppCtx, AppState, Nav } from './appCtx';
 import { createAuthNav } from './nav/auth';
@@ -82,8 +82,10 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     // Cloud save background sync persistently failing → show a one-time global fallback toast
     // (progress may not have reached the cloud).
     onSyncError: () => showToastMessage(t('common.syncFailed')),
-    onProfile: ({ displayName, publicId, gatewayUrl: gw }) => {
+    onProfile: ({ displayName, publicId, gatewayUrl: gw, freeRename }) => {
       applyGatewayUrl(gw);
+      // Cache the server-authoritative free-rename entitlement so the settings screen can render it offline.
+      if (freeRename !== undefined) platform.storage.setItem(FREE_RENAME_KEY, freeRename ? '1' : '0');
       if (publicId) {
         platform.storage.setItem(PLAYER_PUBLIC_ID_KEY, publicId);
         void featureFlags?.refresh(); // publicId received from save response → re-fetch bootstrap so targeted log capture takes effect immediately
