@@ -96,11 +96,11 @@
 
 | 类型 | 说明 | 进攻形态 | 防守 |
 |---|---|---|---|
-| **中立资源点** | 产出某种资源，产率/类型随位置与等级分布；占领后归玩家持续产出 | 扫荡（PvE，NPC 防守，按等级默认布防） | 系统默认防守 config（按格子等级） |
-| **玩家领地** | 玩家占领并驻军的格子 | 围攻（关键战斗，预布兵确定性自动战斗，服务器权威结算） | 防守方自定义 config + 驻军 |
-| **险地（Stronghold）** | NPC 极强的战略格，非常难攻占；占领后通常提供大幅资源或战略价值 | 围攻（高难 PvE，系统默认超强防守 config） | 系统超强默认防守（高等级 NPC） |
-| **州府（Capital）** | 占领即立国；实际地图以地图编辑器导出为主，归属按**角度扇区**（ADR-034，6 出生州+3 资源州+1 核心州），本州玩家获加成；赛季终局争夺目标（Voronoi/10 首府点旧模型已废，见 §2.4） | 围攻（关键战斗，预布兵确定性自动战斗，服务器权威结算） | 占领方自定义防守 config + 驻军 |
-| **桥 / 栈道（Bridge / Plankway）** | 嵌于阻挡带中的唯一通道建筑：跨河=桥、跨山=栈道；有 NPC 守军，须**攻城占领**方可通行，未占领视为阻挡；占领后**保留类型**（不变领地），并写入 `familyId` 使盟友也能通过 | 围攻（PvE 攻占 / 已占则围攻夺取） | 系统默认守军 `passageGarrison(level)`（介于普通格与险地之间）；占领方驻军 |
+| **中立资源点** | 产出某种资源，产率/类型随位置与等级分布；占领后归玩家持续产出 | 扫荡（PvE，NPC 防守，按等级默认布防，**不须连地**——扫荡不占地，见 §4.1）/ 占领须连地（ADR-039，见 §4.1） | 系统默认防守 config（按格子等级） |
+| **玩家领地** | 玩家占领并驻军的格子 | 围攻（关键战斗，预布兵确定性自动战斗，服务器权威结算）；**须连地（ADR-039，见 §4.1）** | 防守方自定义 config + 驻军 |
+| **险地（Stronghold）** | NPC 极强的战略格，非常难攻占；占领后通常提供大幅资源或战略价值 | 围攻（高难 PvE，系统默认超强防守 config）；**须连地（ADR-039，见 §4.1）** | 系统超强默认防守（高等级 NPC） |
+| **州府（Capital）** | 占领即立国；实际地图以地图编辑器导出为主，归属按**角度扇区**（ADR-034，6 出生州+3 资源州+1 核心州），本州玩家获加成；赛季终局争夺目标（Voronoi/10 首府点旧模型已废，见 §2.4） | 围攻（关键战斗，预布兵确定性自动战斗，服务器权威结算）；**须连地（ADR-039，见 §4.1）** | 占领方自定义防守 config + 驻军 |
+| **桥 / 栈道（Bridge / Plankway）** | 嵌于阻挡带中的唯一通道建筑：跨河=桥、跨山=栈道；有 NPC 守军，须**攻城占领**方可通行，未占领视为阻挡；占领后**保留类型**（不变领地），并写入 `familyId` 使盟友也能通过 | 围攻（PvE 攻占 / 已占则围攻夺取）；**须连地（ADR-039，见 §4.1）** | 系统默认守军 `passageGarrison(level)`（介于普通格与险地之间）；占领方驻军 |
 | **阻挡地形（Obstacle）** | 山脉/河流等完全不可通行格子（程序化分布，约占地图 10–15% DRAFT）；行军必须绕行或攻占桥/栈道 | 不可进攻 | — |
 
 > **山/河渲染区分（2026-07-06）**：`obstacle` 仍是**单一不可通行类型**（寻路/占领逻辑不变），但瓦片可带可选 `obstacleKind: 'river'|'mountain'`（`@nw/shared` `core.ts`）纯做美术区分——`proceduralTile` 给折痕岭=山、墨河=河、支脉按奇偶交替；编辑器画笔画的河/山也带此标。渲染端 `terrainTextureName` 有 kind 就用对应贴图，否则回退旧位置哈希。地图编辑器与游戏客户端由此渲染一致，详见 [`design/tools/map-editor/DESIGN.md`](../tools/map-editor/DESIGN.md) §0（2026-07-06 条）。
@@ -173,6 +173,18 @@
 - **占领、增援、进攻都需行军**，有距离/时间成本（Redis 调度的定时事件）；家族抱团占**连续领地**才高效（连地加成 + 短行军距离 + 快速增援）。
 - **增援 / 代守 / 代打**：家族成员可向彼此领地派驻援军、被攻击时驰援（行军到达触发协防）。
 - **保护罩**：被打败后短时保护（防连续碾压），是变现/节奏旋钮。
+
+### 4.1 连地占领（硬性规则，ADR-039，2026-07-14）
+
+> **用户拍板**：三战「连地」是核心规则之一，不是软性效率加成——**占领/围攻目标格必须与本宗门已占领地相邻**，否则无法发起。
+
+- **判定范围 = 宗门级，不是家族级**：宗门下所有成员家族的领地**并集**共同构成"连地前沿"——只要目标格与宗门内**任一**家族已占领的格子相邻（4 方向），任一成员就可以发起占领/围攻，不要求发起人自己的家族恰好挨着。理由：首府/桥栈道是宗门层面的战争目标，判定钉死到单个家族会让宗门内部协调变得没必要地繁琐；连地范围共享也让"抱团"从口号变成机制（呼应 §4 "为什么必须加家族"）。
+  - 未加入家族的玩家：只认自己已占领的格子（主城落地即视为初始领地，不存在"第一块地怎么占"的鸡生蛋问题）。
+  - 已加入家族但宗门未成立：连地范围=家族全体成员领地并集（不强制要求先建宗门才能连地扩张）。
+  - **盟友宗门的领地不计入连地判定**——结盟只是互不攻伐 + 桥栈道通行（§8.2），不合并版图；否则会让"结盟"变相等价于"合并宗门"，破坏宗门作为竞争单位的边界。
+- **适用目标一视同仁**：普通领地/资源点/险地/州府/桥栈道的占领与围攻均须满足连地判定（§3.1 各行已标注）——首府/桥栈道不豁免，否则"连地才有意义"这条规则本身就会被绕过（凭空跳打州府会让"为什么要一格格打过去"的前线叙事失效）。**扫荡（`sweep`，中立点一次性打劫不占地）与侦查（`scout`）不受限**——它们不改变领地归属，不涉及"抢地盘"。
+- **服务端强制点（`worldsvc`）**：`startMarch` 的 `occupy`/`attack` 分支在发起时校验（`WorldCoreVision.isConnectedToSectTerritory`，4 方向邻接查询，源集合 = 宗门全体成员家族的 `playerWorld.accountId` 并集拥有的 `TileDoc`）；到达时在 `applySiege`/`applyOccupy` 再校验一次（宗门领地可能在行军途中因丢地而断连，断连按"扑空"处理——退还部队 + 推送 `recalled`，与既有的"目标已非敌方所有"重校验同一套模式）。不满足 → `TERRITORY_NOT_CONNECTED`（400）。
+- **权衡（已知取舍，接受）**：先手/占据资源密集区的宗门扩张会更快滚雪球，弱势宗门可能被彻底堵死在外圈——但一个大区真正对抗的宗门通常只有两三个，连地规则逼着弱势方要么被兼并要么结盟，而不是绕开前线偷家，符合"明确前线 + 解释为何要夺关键城池"的设计目的。
 
 ---
 
@@ -1638,6 +1650,18 @@ if (path.startsWith('/admin/world/')) {
 - `WorldMapPanels.renderHud()`：右上角状态卡/行军角标/World-info 竖排原来固定从 `y=8` 起画，现在改成 `topInset + 8`——否则会被新标题栏整个盖住。左上 Zoom/Auction 竖排本来就用 `ctx.backRect.y + backRect.h` 接续，`drawSceneHeader` 返回的 `backRect.h` 现在是整条标题栏高度而非胶囊高度，天然接在标题栏下方，未改代码。
 - 验证：`tsc --noEmit -p tsconfig.test.json` + `webpack --mode production` 全绿；用临时调试钩子（`app.ts` 挂 `globalThis.__NW_APP`/`__NW_SceneHeader`/`__NW_WorldMapPanels`，验证后已移除）单独构造假 `ctx` 调 `drawSceneHeader`+`WorldMapPanels.renderHud()`，截图确认标题栏高度与关卡一致、右上状态卡/左上 Zoom-Auction 都清晰落在标题栏下方、无重叠。
 - 回归测试：`client/test/worldMapCameraTopInset.test.ts`（纯逻辑，走默认 `npm test`，`ViewportMixin` 混进一个不依赖 `@nw/shared` 的假 base 类以避开默认 vitest 配置的 game-logic-only 别名范围）5 例，覆盖 `clampPan`（小地图居中到 `[topInset, bottom]` 中点、大地图夹到 `[topInset, bottom]` 而非 `[0, bottom]`）、`centerAt`、`viewportCenter`、`setZoom` 四处相机数学在 `topInset` 变化时确实跟着变（而非被悄悄忽略）。`client/test/ui/worldMapHeaderInset.ui.ts`（PIXI headless，走 `test:ui`）7 例，覆盖 `WorldMapInput` 的拖拽起始/点击判定在标题栏范围内（`y<topInset`）不再穿透到地图、`WorldMapPanels.renderHud()` 右列状态卡随 `topInset` 等量下移。随 `npm test`（78 文件 603 例）+ `npm run test:ui`（20 文件 261 例）全绿一并跑通。
+
+**标题栏改为资源产量 + 拍卖行移至右上角（2026-07-14）**：
+
+**背景**：标题栏此前只显示静态的 `world.title`（"大世界"文案），信息密度低；拍卖行入口则挤在左上角 Zoom 下方的竖排里，跟"离开当前视图"心智模型（返回/缩放）语义不完全贴合——拍卖行是频繁访问的经济入口，更适合放在寸土寸金的标题栏本身。
+
+**改动**：
+- `WorldMapRenderer/build.ts`：`drawSceneHeader(topLayer, w, h, t('world.title'), …)` 的标题参数改传 `null`（不画标题文字，但保留栏体/纸纹/accent 底线/返回按钮胶囊）。新增 `ctx.headerHudLayer`——加在 `topLayer` 之后（渲染顺序在其上方，否则会被标题栏的不透明纸面遮住），专门承载"随数据刷新"的标题栏内容，区别于只画一次的 `topLayer` 静态栏体。
+- `WorldMapPanels.ts` 新增私有方法 `renderHeaderHud()`，随 `renderHud()`（原有的 ~5s 行军轮询节奏）一并 `tearDownChildren` + 重绘到 `ctx.headerHudLayer`：
+  - 拍卖行按钮：从原左上 Zoom 下方的竖排移除，改画在标题栏最右侧（`x = w - aucW - 10`，垂直居中于 `topInset` 高度内），复用同一个 `ctx.aucBtnRect` 命中矩形（`WorldMapInput.ts` 命中逻辑不用改，矩形坐标改了但读取方式没变）。左上竖排只剩 Zoom 一项。
+  - 资源产量：读 `ctx.me.yieldRate`（原本只在训练弹窗里显示过的"存量 (+产量/回合)"数据源，本次复用同一字段），五种资源 `ink/paper/graphite/metal/sticker` 各画一个 `res_atlas` 图标 + `+产量` 文字，水平居中在"返回按钮胶囊右侧"到"拍卖行按钮左侧"之间的空当，替代原来的标题文字。
+- 验证：`tsc --noEmit` + `webpack --mode development` 全绿；用临时调试分支（`entries/web.ts` 加 `?worldmap` 查询参数分支，直接 `new WorldMapScene(...)` + reject-fast 的 `WorldApiClient` Proxy 桩，跳过登录/后端，参考 [[worldmap-standalone-debug-render]] 的既有 recipe；额外踩坑：debug 分支里手搭的 `PIXI.Application` 没有走 `ScalingManager` 的 `gameLayer` 缩放变换，场景容器的 design-space 坐标会 1:1 落到物理画布上——标题栏最右侧的拍卖行按钮因此一度被误判"渲染缺失"，实际是设计坐标超出画布物理宽度；修复为手动 `scene.container.scale.set(w/layout.designWidth, h/layout.designHeight)` 复现真实 App 的缩放后，拍卖行按钮回到画布内可见），截图确认标题栏不再显示"大世界"文字、五个资源产量图标+数值居中显示、拍卖行按钮清晰落在标题栏右上角、返回按钮与左上 Zoom 不受影响；验证后临时分支已移除。
+- 回归测试：`client/test/ui/worldMapHeaderProduction.ui.ts`（PIXI headless，走 `test:ui`）7 例，手搭假 `WorldMapContext`（含新增的 `headerHudLayer`）单独驱动 `WorldMapPanels.renderHud()`：拍卖行按钮落在屏幕右半区、贴右边缘、垂直居中于 `topInset` 高度内（含 `topInset` 变化时按钮高度跟着变）；`ctx.me.yieldRate` 五个资源各生成一条 `+<rate>` 文本（含缺省值回退 `+0`）；产量读数水平居中在返回按钮和拍卖行按钮之间、不重叠任一方；`renderHud()` 反复调用（模拟 5s 轮询）不泄漏子节点。同时修了 `worldMapHeaderInset.ui.ts` 已有测试的假 ctx 缺 `headerHudLayer` 字段的问题（`renderHud()` 新调用 `renderHeaderHud()` 后会读到 `undefined.removeChildren`，两个测试文件现在都手搭这个字段）。随 `npm run test:ui`（29 文件 305 例）全绿一并跑通。
 
 ---
 

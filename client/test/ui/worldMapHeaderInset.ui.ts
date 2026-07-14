@@ -77,6 +77,7 @@ function buildHudHarness(topInset: number) {
     // renderHud's left column (Zoom/Auction) stacks directly under this.
     backRect: { x: 0, y: 0, w: 160, h: topInset },
     hudLayer: new PIXI.Container(),
+    headerHudLayer: new PIXI.Container(),
     worldChatLatest: null,
     worldChatUnread: 0,
     zoom: 1 as const,

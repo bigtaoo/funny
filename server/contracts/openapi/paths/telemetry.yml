@@ -1,0 +1,184 @@
+/bootstrap:
+  get:
+    operationId: bootstrap
+    tags: [config]
+    summary: >-
+      Public bootstrap config (FEATURE_FLAGS_DESIGN §9.3). Anonymous-callable (providing a token injects accountId for more precise evaluation);
+      platform / publicId are passed via query. The server evaluates every allowlist entry and **returns only flags that differ from their default** (most players receive an empty map).
+      Rules / allowlists are never sent — only boolean results. Targeted client log collection (client_log_*) uses this channel to deliver the matched log level.
+    parameters:
+      - name: platform
+        in: query
+        required: false
+        schema: { type: string, enum: [web, wechat, crazygames] }
+      - name: publicId
+        in: query
+        required: false
+        description: Player-visible 9-digit publicId (for targeted evaluation); omitted = anonymous evaluation
+        schema: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [flags]
+                  properties:
+                    flags:
+                      type: object
+                      additionalProperties: { type: boolean }
+                      description: Contains only flags whose evaluated result differs from the default (key→bool); empty object for most players
+
+/client/log:
+  post:
+    operationId: clientLog
+    tags: [config]
+    summary: >-
+      Targeted client log forwarding → Loki (FEATURE_FLAGS_DESIGN §9.4). Only called by publicIds targeted by client_log_*
+      (non-targeted clients receive an empty map on bootstrap and never report). The server re-validates targeting; unmatched logs are silently discarded. **Always returns 200** —
+      Loki unreachable or not targeted still has no player impact. Labels: {source=client, level} only; publicId/tag/msg go inline (logfmt).
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [publicId, logs]
+            properties:
+              publicId:
+                type: string
+                description: Reporter's 9-digit publicId (inline in Loki, for Grafana `| logfmt | publicId="..."` queries)
+              platform:
+                type: string
+                enum: [web, wechat, crazygames]
+              logs:
+                type: array
+                description: A batch of log entries (from the ring buffer at or above the match threshold); server takes at most the first 1000
+                items:
+                  type: object
+                  required: [level, msg, ts]
+                  properties:
+                    level: { type: string, enum: [error, warn, info, debug] }
+                    msg: { type: string }
+                    ts: { type: number, description: epoch ms (client clock) }
+                    tag: { type: string }
+    responses:
+      '200':
+        description: Accepted (accepted = actual forwarded count; 0 if not targeted or invalid)
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [accepted]
+                  properties:
+                    accepted: { type: integer }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+
+/client/anomaly:
+  post:
+    operationId: clientAnomaly
+    tags: [config]
+    summary: >-
+      Bulk client anomaly event reporting → Loki (complements the targeted collection of /client/log, **not subject to allowPublicIds constraints**).
+      Any client's memory overrun / sustained CPU saturation (cpu) / WebGL context loss (webgl_lost) / main-loop hang (anr) /
+      uncaught exception (jserror) / previous-session crash (crash) is reported directly, enabling in-the-wild anomaly diagnosis across all clients. Abuse protection: rate-limited per IP at 30 requests/60s
+      (excess silently dropped), max first 200 entries taken, fields truncated. **Always returns 200** — Loki unreachable or rate-limited still has no player impact.
+      Labels: {source=client, kind=anomaly} only; type/publicId/platform/detail/msg go inline (logfmt).
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [events]
+            properties:
+              publicId:
+                type: string
+                description: Reporter's 9-digit publicId (optional; anomalies before login are recorded as anon)
+              platform:
+                type: string
+                enum: [web, wechat, crazygames]
+              events:
+                type: array
+                description: A batch of anomaly events; server takes at most the first 200
+                items:
+                  type: object
+                  required: [type, msg, ts]
+                  properties:
+                    type:
+                      type: string
+                      description: Anomaly type (mem/cpu/webgl_lost/anr/jserror/crash; unknown falls back to other)
+                    msg: { type: string }
+                    ts: { type: number, description: epoch ms (client clock) }
+                    detail: { type: string, description: Structured supplement (already compressed into a single string and truncated on the client) }
+    responses:
+      '200':
+        description: Accepted (accepted = actual forwarded count; 0 if rate-limited or invalid)
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [accepted]
+                  properties:
+                    accepted: { type: integer }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+
+/analytics/config:
+  get:
+    tags: [analytics]
+    operationId: getAnalyticsConfig
+    summary: Deliver collection config (no auth required; fetched once on anonymous session start)
+    security: []
+    responses:
+      '200':
+        description: Collection config
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data: { $ref: '#/components/schemas/AnalyticsConfig' }
+
+/analytics/events:
+  post:
+    tags: [analytics]
+    operationId: postAnalyticsEvents
+    summary: Batch event reporting (JWT optional; attaches user_id when token present, otherwise anonymous)
+    security: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AnalyticsEventBatch'
+    responses:
+      '200':
+        description: Accepted (fire-and-forget, does not guarantee persistence)
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data: { nullable: true }
+
+# —— S11 ranked season / leaderboard / battle pass ——
+

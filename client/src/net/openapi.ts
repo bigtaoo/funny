@@ -294,57 +294,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/bootstrap": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Public bootstrap config (FEATURE_FLAGS_DESIGN §9.3). Anonymous-callable (providing a token injects accountId for more precise evaluation); platform / publicId are passed via query. The server evaluates every allowlist entry and **returns only flags that differ from their default** (most players receive an empty map). Rules / allowlists are never sent — only boolean results. Targeted client log collection (client_log_*) uses this channel to deliver the matched log level. */
-        get: operations["bootstrap"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/client/log": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Targeted client log forwarding → Loki (FEATURE_FLAGS_DESIGN §9.4). Only called by publicIds targeted by client_log_* (non-targeted clients receive an empty map on bootstrap and never report). The server re-validates targeting; unmatched logs are silently discarded. **Always returns 200** — Loki unreachable or not targeted still has no player impact. Labels: {source=client, level} only; publicId/tag/msg go inline (logfmt). */
-        post: operations["clientLog"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/client/anomaly": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Bulk client anomaly event reporting → Loki (complements the targeted collection of /client/log, **not subject to allowPublicIds constraints**). Any client's memory overrun / sustained CPU saturation (cpu) / WebGL context loss (webgl_lost) / main-loop hang (anr) / uncaught exception (jserror) / previous-session crash (crash) is reported directly, enabling in-the-wild anomaly diagnosis across all clients. Abuse protection: rate-limited per IP at 30 requests/60s (excess silently dropped), max first 200 entries taken, fields truncated. **Always returns 200** — Loki unreachable or rate-limited still has no player impact. Labels: {source=client, kind=anomaly} only; type/publicId/platform/detail/msg go inline (logfmt). */
-        post: operations["clientAnomaly"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/pve/enter": {
         parameters: {
             query?: never;
@@ -424,193 +373,6 @@ export interface paths {
         put?: never;
         /** PvE upgrade (server-authoritative: validates materials → deducts materials → pveUpgrades+1 → pushes save); online only */
         post: operations["pveUpgrade"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/equipment/craft": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Equipment crafting (E2, server-authoritative: deducts stationery materials → rolls one +0 base equipment → adds to inventory [300 cap]). idempotencyKey for idempotency */
-        post: operations["craftEquipment"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/equipment/enhance": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Equipment enhancement (E3, server rolls dice: success rate table → deducts materials + coins → success: level+1, failure: level unchanged). idempotencyKey for idempotency */
-        post: operations["enhanceEquipment"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/equipment/salvage": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Equipment salvage (E3, +0~4 returns 70% crafting materials and removes from inventory; +5/equipped/locked are rejected). Batch, idempotencyKey for idempotency */
-        post: operations["salvageEquipment"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/equipment/equip": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Equip/unequip (E4, validates slot match → writes CardInstance.gear[slot]). instanceId=null to unequip. Pure state mutation */
-        post: operations["equipEquipment"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/equipment/reforge": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Equipment reforging (E6, keeps the primary affix, re-rolls secondary affixes; consumes a same-slot lower-tier material piece). idempotencyKey for idempotency */
-        post: operations["reforgeEquipment"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cards/feed": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Feed material cards into a target card to gain XP and level up (CHARACTER_CARDS_DESIGN §3.3, CC-2). Same-faction required; locked materials rejected. idempotencyKey prevents double-consumption */
-        post: operations["cardsFeed"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/achievements": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Achievement definition table + my stats + claimed progress (client computes tier locally, ACHIEVEMENT_DESIGN §6) */
-        get: operations["getAchievements"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/achievements/claim": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Claim coins for a specific achievement tier (server re-validates stat≥threshold + $addToSet for idempotent coin grant, §4.3) */
-        post: operations["claimAchievement"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/retention": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Fetch retention state (check-in monthly calendar + daily task progress + definition table, B5 RETENTION_DESIGN) */
-        get: operations["getRetention"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/retention/checkin": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Check in to claim the next slot reward for the current month (idempotent; 409 if already claimed today) */
-        post: operations["claimCheckin"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/retention/daily/claim": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Claim the daily task full-points coin reward (idempotent; 400 if threshold not reached, 409 if already claimed) */
-        post: operations["claimDailyReward"];
         delete?: never;
         options?: never;
         head?: never;
@@ -798,6 +560,346 @@ export interface paths {
         put?: never;
         /** IAP receipt verification (idempotent ticket) */
         post: operations["iapVerify"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/promo/redeem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Player redeems a promo code (once per player per code) */
+        post: operations["redeemPromoCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/equipment/craft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Equipment crafting (E2, server-authoritative: deducts stationery materials → rolls one +0 base equipment → adds to inventory [300 cap]). idempotencyKey for idempotency */
+        post: operations["craftEquipment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/equipment/enhance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Equipment enhancement (E3, server rolls dice: success rate table → deducts materials + coins → success: level+1, failure: level unchanged). idempotencyKey for idempotency */
+        post: operations["enhanceEquipment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/equipment/salvage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Equipment salvage (E3, +0~4 returns 70% crafting materials and removes from inventory; +5/equipped/locked are rejected). Batch, idempotencyKey for idempotency */
+        post: operations["salvageEquipment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/equipment/equip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Equip/unequip (E4, validates slot match → writes CardInstance.gear[slot]). instanceId=null to unequip. Pure state mutation */
+        post: operations["equipEquipment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/equipment/reforge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Equipment reforging (E6, keeps the primary affix, re-rolls secondary affixes; consumes a same-slot lower-tier material piece). idempotencyKey for idempotency */
+        post: operations["reforgeEquipment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cards/feed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Feed material cards into a target card to gain XP and level up (CHARACTER_CARDS_DESIGN §3.3, CC-2). Same-faction required; locked materials rejected. idempotencyKey prevents double-consumption */
+        post: operations["cardsFeed"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/leaderboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Top-100 leaderboard (current season ELO descending) */
+        get: operations["getLeaderboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pvp/bot-result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Report the outcome of an AI-fallback (bot) match (matchmaking timed out waiting for a human opponent and the client played a local AI battle instead, MATCHSVC_DESIGN §match_bot_fallback). Always credits the 'pvp.match' daily task. Only moves ELO while the caller is below BOT_ELO_THRESHOLD (bot matches are onboarding calibration, not a substitute for ranked climbing once a player nears their real bracket); at/above the threshold the call still succeeds but ELO is unchanged. Rate-limited to one accepted result per ~15s per account to prevent scripted spam. */
+        post: operations["submitBotResult"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/battlepass/buy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Purchase the current season battle pass (600 coins) */
+        post: operations["buyBattlePass"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/battlepass/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Claim a battle pass reward (free or paid track, at a given level) */
+        post: operations["claimBattlePass"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/achievements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Achievement definition table + my stats + claimed progress (client computes tier locally, ACHIEVEMENT_DESIGN §6) */
+        get: operations["getAchievements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/achievements/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Claim coins for a specific achievement tier (server re-validates stat≥threshold + $addToSet for idempotent coin grant, §4.3) */
+        post: operations["claimAchievement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Fetch retention state (check-in monthly calendar + daily task progress + definition table, B5 RETENTION_DESIGN) */
+        get: operations["getRetention"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retention/checkin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Check in to claim the next slot reward for the current month (idempotent; 409 if already claimed today) */
+        post: operations["claimCheckin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retention/daily/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Claim the daily task full-points coin reward (idempotent; 400 if threshold not reached, 409 if already claimed) */
+        post: operations["claimDailyReward"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Fetch currently active event list (including this account's participation progress) */
+        get: operations["getEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/events/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Spend event points to redeem a reward */
+        post: operations["claimEventReward"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/titles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** All titles granted to the current account (including derived source/seasonNo) + currently equipped title */
+        get: operations["getTitles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/title/equip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Select the currently displayed title (only titles already granted; empty string = unequip), writes equipped.title and pushes save */
+        put: operations["equipTitle"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1110,6 +1212,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/bootstrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Public bootstrap config (FEATURE_FLAGS_DESIGN §9.3). Anonymous-callable (providing a token injects accountId for more precise evaluation); platform / publicId are passed via query. The server evaluates every allowlist entry and **returns only flags that differ from their default** (most players receive an empty map). Rules / allowlists are never sent — only boolean results. Targeted client log collection (client_log_*) uses this channel to deliver the matched log level. */
+        get: operations["bootstrap"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/client/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Targeted client log forwarding → Loki (FEATURE_FLAGS_DESIGN §9.4). Only called by publicIds targeted by client_log_* (non-targeted clients receive an empty map on bootstrap and never report). The server re-validates targeting; unmatched logs are silently discarded. **Always returns 200** — Loki unreachable or not targeted still has no player impact. Labels: {source=client, level} only; publicId/tag/msg go inline (logfmt). */
+        post: operations["clientLog"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/client/anomaly": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bulk client anomaly event reporting → Loki (complements the targeted collection of /client/log, **not subject to allowPublicIds constraints**). Any client's memory overrun / sustained CPU saturation (cpu) / WebGL context loss (webgl_lost) / main-loop hang (anr) / uncaught exception (jserror) / previous-session crash (crash) is reported directly, enabling in-the-wild anomaly diagnosis across all clients. Abuse protection: rate-limited per IP at 30 requests/60s (excess silently dropped), max first 200 entries taken, fields truncated. **Always returns 200** — Loki unreachable or rate-limited still has no player impact. Labels: {source=client, kind=anomaly} only; type/publicId/platform/detail/msg go inline (logfmt). */
+        post: operations["clientAnomaly"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/analytics/config": {
         parameters: {
             query?: never;
@@ -1138,159 +1291,6 @@ export interface paths {
         put?: never;
         /** Batch event reporting (JWT optional; attaches user_id when token present, otherwise anonymous) */
         post: operations["postAnalyticsEvents"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/leaderboard": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Top-100 leaderboard (current season ELO descending) */
-        get: operations["getLeaderboard"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/pvp/bot-result": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Report the outcome of an AI-fallback (bot) match (matchmaking timed out waiting for a human opponent and the client played a local AI battle instead, MATCHSVC_DESIGN §match_bot_fallback). Always credits the 'pvp.match' daily task. Only moves ELO while the caller is below BOT_ELO_THRESHOLD (bot matches are onboarding calibration, not a substitute for ranked climbing once a player nears their real bracket); at/above the threshold the call still succeeds but ELO is unchanged. Rate-limited to one accepted result per ~15s per account to prevent scripted spam. */
-        post: operations["submitBotResult"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/battlepass/buy": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Purchase the current season battle pass (600 coins) */
-        post: operations["buyBattlePass"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/battlepass/claim": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Claim a battle pass reward (free or paid track, at a given level) */
-        post: operations["claimBattlePass"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/events": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Fetch currently active event list (including this account's participation progress) */
-        get: operations["getEvents"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/events/claim": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Spend event points to redeem a reward */
-        post: operations["claimEventReward"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/titles": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** All titles granted to the current account (including derived source/seasonNo) + currently equipped title */
-        get: operations["getTitles"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/title/equip": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** Select the currently displayed title (only titles already granted; empty string = unequip), writes equipped.title and pushes save */
-        put: operations["equipTitle"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/promo/redeem": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Player redeems a promo code (once per player per code) */
-        post: operations["redeemPromoCode"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2290,130 +2290,6 @@ export interface operations {
             404: components["responses"]["ErrorResp"];
         };
     };
-    bootstrap: {
-        parameters: {
-            query?: {
-                platform?: "web" | "wechat" | "crazygames";
-                /** @description Player-visible 9-digit publicId (for targeted evaluation); omitted = anonymous evaluation */
-                publicId?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Success */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            /** @description Contains only flags whose evaluated result differs from the default (key→bool); empty object for most players */
-                            flags: {
-                                [key: string]: boolean;
-                            };
-                        };
-                    };
-                };
-            };
-        };
-    };
-    clientLog: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @description Reporter's 9-digit publicId (inline in Loki, for Grafana `| logfmt | publicId="..."` queries) */
-                    publicId: string;
-                    /** @enum {string} */
-                    platform?: "web" | "wechat" | "crazygames";
-                    /** @description A batch of log entries (from the ring buffer at or above the match threshold); server takes at most the first 1000 */
-                    logs: {
-                        /** @enum {string} */
-                        level: "error" | "warn" | "info" | "debug";
-                        msg: string;
-                        /** @description epoch ms (client clock) */
-                        ts: number;
-                        tag?: string;
-                    }[];
-                };
-            };
-        };
-        responses: {
-            /** @description Accepted (accepted = actual forwarded count; 0 if not targeted or invalid) */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            accepted: number;
-                        };
-                    };
-                };
-            };
-            400: components["responses"]["ErrorResp"];
-        };
-    };
-    clientAnomaly: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @description Reporter's 9-digit publicId (optional; anomalies before login are recorded as anon) */
-                    publicId?: string;
-                    /** @enum {string} */
-                    platform?: "web" | "wechat" | "crazygames";
-                    /** @description A batch of anomaly events; server takes at most the first 200 */
-                    events: {
-                        /** @description Anomaly type (mem/cpu/webgl_lost/anr/jserror/crash; unknown falls back to other) */
-                        type: string;
-                        msg: string;
-                        /** @description epoch ms (client clock) */
-                        ts: number;
-                        /** @description Structured supplement (already compressed into a single string and truncated on the client) */
-                        detail?: string;
-                    }[];
-                };
-            };
-        };
-        responses: {
-            /** @description Accepted (accepted = actual forwarded count; 0 if rate-limited or invalid) */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            accepted: number;
-                        };
-                    };
-                };
-            };
-            400: components["responses"]["ErrorResp"];
-        };
-    };
     pveEnter: {
         parameters: {
             query?: never;
@@ -2649,459 +2525,6 @@ export interface operations {
             400: components["responses"]["ErrorResp"];
             401: components["responses"]["ErrorResp"];
             402: components["responses"]["ErrorResp"];
-        };
-    };
-    craftEquipment: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @description Equipment definition id (EQUIPMENT_DEFS, determines slot/rarity/recipe) */
-                    defId: string;
-                    /** @description Client-generated idempotency key; replay returns the first result (no second deduction or roll) */
-                    idempotencyKey: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Success */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            save: components["schemas"]["SaveData"];
-                            instance: components["schemas"]["EquipmentInstance"];
-                        };
-                    };
-                };
-            };
-            400: components["responses"]["ErrorResp"];
-            401: components["responses"]["ErrorResp"];
-            402: components["responses"]["ErrorResp"];
-            409: components["responses"]["ErrorResp"];
-        };
-    };
-    enhanceEquipment: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @description Id of the equipment instance to enhance (within equipmentInv) */
-                    instanceId: string;
-                    /** @description Client-generated idempotency key; die roll and deduction are bound to this key; replay returns the first result */
-                    idempotencyKey: string;
-                    /** @description Whether to use a protection item (E7); when true and protect_enhance is in inventory, failure does not consume materials, uses 1 protection item */
-                    useProtect?: boolean;
-                };
-            };
-        };
-        responses: {
-            /** @description Success (success=false means the die roll failed; materials/coins consumed, level unchanged) */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            /** @description Whether this enhancement succeeded (success → instance.level+1) */
-                            success: boolean;
-                            instance: components["schemas"]["EquipmentInstance"];
-                            save: components["schemas"]["SaveData"];
-                        };
-                    };
-                };
-            };
-            400: components["responses"]["ErrorResp"];
-            401: components["responses"]["ErrorResp"];
-            402: components["responses"]["ErrorResp"];
-            404: components["responses"]["ErrorResp"];
-            409: components["responses"]["ErrorResp"];
-        };
-    };
-    salvageEquipment: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @description List of equipment instance ids to salvage (including +0 duplicates, supports batch) */
-                    instanceIds: string[];
-                    idempotencyKey: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Success */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            /** @description Total materials refunded (material id→quantity) */
-                            refunded: {
-                                [key: string]: number;
-                            };
-                            save: components["schemas"]["SaveData"];
-                        };
-                    };
-                };
-            };
-            400: components["responses"]["ErrorResp"];
-            401: components["responses"]["ErrorResp"];
-            404: components["responses"]["ErrorResp"];
-            409: components["responses"]["ErrorResp"];
-        };
-    };
-    equipEquipment: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /**
-                     * @description Target slot
-                     * @enum {string}
-                     */
-                    slot: "weapon" | "armor" | "trinket";
-                    /** @description Equipment instance id to equip; null to unequip the slot */
-                    instanceId: string | null;
-                    /** @description CardInstance id that owns the gear slot (Hero Roster, CC-2) */
-                    cardInstanceId: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Success */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            save: components["schemas"]["SaveData"];
-                        };
-                    };
-                };
-            };
-            400: components["responses"]["ErrorResp"];
-            401: components["responses"]["ErrorResp"];
-            404: components["responses"]["ErrorResp"];
-            409: components["responses"]["ErrorResp"];
-        };
-    };
-    reforgeEquipment: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @description Id of the equipment instance to reforge */
-                    targetId: string;
-                    /** @description Id of the material equipment instance to consume (same slot, one tier lower, e.g. rare → requires fine) */
-                    materialId: string;
-                    /** @description Client-generated idempotency key; re-roll is bound to this key; replay returns the first result */
-                    idempotencyKey: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Success (instance now contains the new secondary affixes) */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            instance: components["schemas"]["EquipmentInstance"];
-                            save: components["schemas"]["SaveData"];
-                        };
-                    };
-                };
-            };
-            400: components["responses"]["ErrorResp"];
-            401: components["responses"]["ErrorResp"];
-            404: components["responses"]["ErrorResp"];
-            409: components["responses"]["ErrorResp"];
-        };
-    };
-    cardsFeed: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @description CardInstance id of the card to level up */
-                    targetId: string;
-                    /** @description CardInstance ids to consume as feed material (same faction; must not be locked) */
-                    materialIds: string[];
-                    /** @description Client-generated idempotency key; prevents double-consumption on retry */
-                    idempotencyKey: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Success */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            card: components["schemas"]["CardInstance"];
-                            levelsGained: number;
-                            save: components["schemas"]["SaveData"];
-                        };
-                    };
-                };
-            };
-            400: components["responses"]["ErrorResp"];
-            401: components["responses"]["ErrorResp"];
-            404: components["responses"]["ErrorResp"];
-            409: components["responses"]["ErrorResp"];
-        };
-    };
-    getAchievements: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Success */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            defs: components["schemas"]["Achievement"][];
-                            stats: {
-                                [key: string]: number;
-                            };
-                            achievements: components["schemas"]["SaveData"]["achievements"];
-                        };
-                    };
-                };
-            };
-            401: components["responses"]["ErrorResp"];
-        };
-    };
-    claimAchievement: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    achId: string;
-                    tier: number;
-                };
-            };
-        };
-        responses: {
-            /** @description Success */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            save: components["schemas"]["SaveData"];
-                            /** @description Coins granted this time */
-                            granted: number;
-                        };
-                    };
-                };
-            };
-            400: components["responses"]["ErrorResp"];
-            401: components["responses"]["ErrorResp"];
-            402: components["responses"]["ErrorResp"];
-            409: components["responses"]["ErrorResp"];
-        };
-    };
-    getRetention: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Success */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            checkin?: {
-                                monthKey?: string;
-                                claimedDays?: number[];
-                                lastClaimedDayKey?: string;
-                            } | null;
-                            daily?: {
-                                dayKey?: string;
-                                taskPoints?: number;
-                                rewardClaimed?: boolean;
-                                completedTasks?: {
-                                    [key: string]: number;
-                                };
-                            } | null;
-                            defs: {
-                                rewards: {
-                                    /** @enum {string} */
-                                    kind: "coins" | "stamina" | "material" | "card" | "equipment";
-                                    count: number;
-                                    /** @description Material id (scrap/lead/binding) */
-                                    id?: string;
-                                }[];
-                                tasks: {
-                                    id: string;
-                                    points: number;
-                                }[];
-                                pointsThreshold: number;
-                                dailyCoinsReward: number;
-                            };
-                            claimable: {
-                                checkin: boolean;
-                                daily: boolean;
-                            };
-                        };
-                    };
-                };
-            };
-            401: components["responses"]["ErrorResp"];
-        };
-    };
-    claimCheckin: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Success */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            save: components["schemas"]["SaveData"];
-                            /** @description Slot number claimed this time (1-based) */
-                            day: number;
-                            reward: {
-                                /** @enum {string} */
-                                kind: "coins" | "stamina" | "material" | "card" | "equipment";
-                                count: number;
-                                /** @description Material id (material) or the drawn defId (card/equipment) */
-                                id?: string;
-                            };
-                        };
-                    };
-                };
-            };
-            401: components["responses"]["ErrorResp"];
-            409: components["responses"]["ErrorResp"];
-        };
-    };
-    claimDailyReward: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Success */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            save: components["schemas"]["SaveData"];
-                            /** @description Coins granted this time */
-                            coins: number;
-                        };
-                    };
-                };
-            };
-            400: components["responses"]["ErrorResp"];
-            401: components["responses"]["ErrorResp"];
-            402: components["responses"]["ErrorResp"];
-            409: components["responses"]["ErrorResp"];
         };
     };
     getShopItems: {
@@ -3455,6 +2878,809 @@ export interface operations {
                 };
             };
             400: components["responses"]["ErrorResp"];
+        };
+    };
+    redeemPromoCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Promo code (case-insensitive) */
+                    code: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Redemption successful */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            coinsAfter: number;
+                            coinsGranted: number;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+        };
+    };
+    craftEquipment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Equipment definition id (EQUIPMENT_DEFS, determines slot/rarity/recipe) */
+                    defId: string;
+                    /** @description Client-generated idempotency key; replay returns the first result (no second deduction or roll) */
+                    idempotencyKey: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                            instance: components["schemas"]["EquipmentInstance"];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            402: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+        };
+    };
+    enhanceEquipment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Id of the equipment instance to enhance (within equipmentInv) */
+                    instanceId: string;
+                    /** @description Client-generated idempotency key; die roll and deduction are bound to this key; replay returns the first result */
+                    idempotencyKey: string;
+                    /** @description Whether to use a protection item (E7); when true and protect_enhance is in inventory, failure does not consume materials, uses 1 protection item */
+                    useProtect?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Success (success=false means the die roll failed; materials/coins consumed, level unchanged) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            /** @description Whether this enhancement succeeded (success → instance.level+1) */
+                            success: boolean;
+                            instance: components["schemas"]["EquipmentInstance"];
+                            save: components["schemas"]["SaveData"];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            402: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+        };
+    };
+    salvageEquipment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description List of equipment instance ids to salvage (including +0 duplicates, supports batch) */
+                    instanceIds: string[];
+                    idempotencyKey: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            /** @description Total materials refunded (material id→quantity) */
+                            refunded: {
+                                [key: string]: number;
+                            };
+                            save: components["schemas"]["SaveData"];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+        };
+    };
+    equipEquipment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @description Target slot
+                     * @enum {string}
+                     */
+                    slot: "weapon" | "armor" | "trinket";
+                    /** @description Equipment instance id to equip; null to unequip the slot */
+                    instanceId: string | null;
+                    /** @description CardInstance id that owns the gear slot (Hero Roster, CC-2) */
+                    cardInstanceId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+        };
+    };
+    reforgeEquipment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Id of the equipment instance to reforge */
+                    targetId: string;
+                    /** @description Id of the material equipment instance to consume (same slot, one tier lower, e.g. rare → requires fine) */
+                    materialId: string;
+                    /** @description Client-generated idempotency key; re-roll is bound to this key; replay returns the first result */
+                    idempotencyKey: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success (instance now contains the new secondary affixes) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            instance: components["schemas"]["EquipmentInstance"];
+                            save: components["schemas"]["SaveData"];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+        };
+    };
+    cardsFeed: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description CardInstance id of the card to level up */
+                    targetId: string;
+                    /** @description CardInstance ids to consume as feed material (same faction; must not be locked) */
+                    materialIds: string[];
+                    /** @description Client-generated idempotency key; prevents double-consumption on retry */
+                    idempotencyKey: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            card: components["schemas"]["CardInstance"];
+                            levelsGained: number;
+                            save: components["schemas"]["SaveData"];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+        };
+    };
+    getLeaderboard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Leaderboard list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            seasonNo: number;
+                            entries: {
+                                /** @description Rank, 1-based */
+                                rank: number;
+                                displayName: string;
+                                publicId: string;
+                                elo: number;
+                                pvpRank: string;
+                            }[];
+                            /** @description Caller's own standing this season (absent when they have not played a ranked match this season). Rank may exceed 100. */
+                            me?: {
+                                /** @description Rank, 1-based */
+                                rank: number;
+                                elo: number;
+                                pvpRank: string;
+                            };
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+        };
+    };
+    submitBotResult: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    won: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            elo: number;
+                            rank: string;
+                            /** @description ELO change actually applied this call (0 when at/above BOT_ELO_THRESHOLD or throttled) */
+                            delta: number;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+        };
+    };
+    buyBattlePass: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Purchase successful */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            battlePass: components["schemas"]["BattlePassData"];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+        };
+    };
+    claimBattlePass: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    track: "free" | "paid";
+                    level: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Claim successful */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            battlePass: components["schemas"]["BattlePassData"];
+                            reward: {
+                                kind: string;
+                                count: number;
+                            };
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+        };
+    };
+    getAchievements: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            defs: components["schemas"]["Achievement"][];
+                            stats: {
+                                [key: string]: number;
+                            };
+                            achievements: components["schemas"]["SaveData"]["achievements"];
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+        };
+    };
+    claimAchievement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    achId: string;
+                    tier: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                            /** @description Coins granted this time */
+                            granted: number;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            402: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+        };
+    };
+    getRetention: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            checkin?: {
+                                monthKey?: string;
+                                claimedDays?: number[];
+                                lastClaimedDayKey?: string;
+                            } | null;
+                            daily?: {
+                                dayKey?: string;
+                                taskPoints?: number;
+                                rewardClaimed?: boolean;
+                                completedTasks?: {
+                                    [key: string]: number;
+                                };
+                            } | null;
+                            defs: {
+                                rewards: {
+                                    /** @enum {string} */
+                                    kind: "coins" | "stamina" | "material" | "card" | "equipment";
+                                    count: number;
+                                    /** @description Material id (scrap/lead/binding) */
+                                    id?: string;
+                                }[];
+                                tasks: {
+                                    id: string;
+                                    points: number;
+                                }[];
+                                pointsThreshold: number;
+                                dailyCoinsReward: number;
+                            };
+                            claimable: {
+                                checkin: boolean;
+                                daily: boolean;
+                            };
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+        };
+    };
+    claimCheckin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                            /** @description Slot number claimed this time (1-based) */
+                            day: number;
+                            reward: {
+                                /** @enum {string} */
+                                kind: "coins" | "stamina" | "material" | "card" | "equipment";
+                                count: number;
+                                /** @description Material id (material) or the drawn defId (card/equipment) */
+                                id?: string;
+                            };
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+        };
+    };
+    claimDailyReward: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                            /** @description Coins granted this time */
+                            coins: number;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            402: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+        };
+    };
+    getEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Event list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            events: {
+                                eventId: string;
+                                title: string;
+                                description?: string;
+                                windowStart: number;
+                                windowEnd: number;
+                                myPoints: number;
+                                tasks: {
+                                    taskId: string;
+                                    kind: string;
+                                    target: number;
+                                    points: number;
+                                    progress: number;
+                                    done: boolean;
+                                }[];
+                                rewards: {
+                                    rewardId: string;
+                                    cost: number;
+                                    kind: string;
+                                    id?: string;
+                                    count?: number;
+                                    maxClaims?: number;
+                                    claimedCount: number;
+                                }[];
+                            }[];
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+        };
+    };
+    claimEventReward: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    eventId: string;
+                    rewardId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Redemption successful */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            pointsLeft: number;
+                            reward: {
+                                kind: string;
+                                id?: string;
+                                count?: number;
+                            };
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            402: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+        };
+    };
+    getTitles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            titles: {
+                                /** @description Title id (ladder.s{N}.{rank} / slg.s{N}.{key} / ach.{key} / event.{key}) */
+                                id: string;
+                                /** @enum {string} */
+                                source: "ladder" | "slg" | "achievement" | "event";
+                                /** @description Season number (only for ladder/slg type titles) */
+                                seasonNo?: number;
+                            }[];
+                            /** @description Currently equipped title id; null if none equipped */
+                            equipped: string | null;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+        };
+    };
+    equipTitle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Title id to equip; empty string means unequip the displayed title */
+                    titleId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
         };
     };
     getFriends: {
@@ -4021,6 +4247,130 @@ export interface operations {
             403: components["responses"]["ErrorResp"];
         };
     };
+    bootstrap: {
+        parameters: {
+            query?: {
+                platform?: "web" | "wechat" | "crazygames";
+                /** @description Player-visible 9-digit publicId (for targeted evaluation); omitted = anonymous evaluation */
+                publicId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            /** @description Contains only flags whose evaluated result differs from the default (key→bool); empty object for most players */
+                            flags: {
+                                [key: string]: boolean;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+    };
+    clientLog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Reporter's 9-digit publicId (inline in Loki, for Grafana `| logfmt | publicId="..."` queries) */
+                    publicId: string;
+                    /** @enum {string} */
+                    platform?: "web" | "wechat" | "crazygames";
+                    /** @description A batch of log entries (from the ring buffer at or above the match threshold); server takes at most the first 1000 */
+                    logs: {
+                        /** @enum {string} */
+                        level: "error" | "warn" | "info" | "debug";
+                        msg: string;
+                        /** @description epoch ms (client clock) */
+                        ts: number;
+                        tag?: string;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description Accepted (accepted = actual forwarded count; 0 if not targeted or invalid) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            accepted: number;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+        };
+    };
+    clientAnomaly: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Reporter's 9-digit publicId (optional; anomalies before login are recorded as anon) */
+                    publicId?: string;
+                    /** @enum {string} */
+                    platform?: "web" | "wechat" | "crazygames";
+                    /** @description A batch of anomaly events; server takes at most the first 200 */
+                    events: {
+                        /** @description Anomaly type (mem/cpu/webgl_lost/anr/jserror/crash; unknown falls back to other) */
+                        type: string;
+                        msg: string;
+                        /** @description epoch ms (client clock) */
+                        ts: number;
+                        /** @description Structured supplement (already compressed into a single string and truncated on the client) */
+                        detail?: string;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description Accepted (accepted = actual forwarded count; 0 if rate-limited or invalid) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            accepted: number;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+        };
+    };
     getAnalyticsConfig: {
         parameters: {
             query?: never;
@@ -4071,356 +4421,6 @@ export interface operations {
                     };
                 };
             };
-        };
-    };
-    getLeaderboard: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Leaderboard list */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            seasonNo: number;
-                            entries: {
-                                /** @description Rank, 1-based */
-                                rank: number;
-                                displayName: string;
-                                publicId: string;
-                                elo: number;
-                                pvpRank: string;
-                            }[];
-                            /** @description Caller's own standing this season (absent when they have not played a ranked match this season). Rank may exceed 100. */
-                            me?: {
-                                /** @description Rank, 1-based */
-                                rank: number;
-                                elo: number;
-                                pvpRank: string;
-                            };
-                        };
-                    };
-                };
-            };
-            401: components["responses"]["ErrorResp"];
-        };
-    };
-    submitBotResult: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    won: boolean;
-                };
-            };
-        };
-        responses: {
-            /** @description Success */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            elo: number;
-                            rank: string;
-                            /** @description ELO change actually applied this call (0 when at/above BOT_ELO_THRESHOLD or throttled) */
-                            delta: number;
-                        };
-                    };
-                };
-            };
-            401: components["responses"]["ErrorResp"];
-        };
-    };
-    buyBattlePass: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Purchase successful */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            battlePass: components["schemas"]["BattlePassData"];
-                        };
-                    };
-                };
-            };
-            400: components["responses"]["ErrorResp"];
-            401: components["responses"]["ErrorResp"];
-        };
-    };
-    claimBattlePass: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @enum {string} */
-                    track: "free" | "paid";
-                    level: number;
-                };
-            };
-        };
-        responses: {
-            /** @description Claim successful */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            battlePass: components["schemas"]["BattlePassData"];
-                            reward: {
-                                kind: string;
-                                count: number;
-                            };
-                        };
-                    };
-                };
-            };
-            400: components["responses"]["ErrorResp"];
-            401: components["responses"]["ErrorResp"];
-        };
-    };
-    getEvents: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Event list */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            events: {
-                                eventId: string;
-                                title: string;
-                                description?: string;
-                                windowStart: number;
-                                windowEnd: number;
-                                myPoints: number;
-                                tasks: {
-                                    taskId: string;
-                                    kind: string;
-                                    target: number;
-                                    points: number;
-                                    progress: number;
-                                    done: boolean;
-                                }[];
-                                rewards: {
-                                    rewardId: string;
-                                    cost: number;
-                                    kind: string;
-                                    id?: string;
-                                    count?: number;
-                                    maxClaims?: number;
-                                    claimedCount: number;
-                                }[];
-                            }[];
-                        };
-                    };
-                };
-            };
-            401: components["responses"]["ErrorResp"];
-        };
-    };
-    claimEventReward: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    eventId: string;
-                    rewardId: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Redemption successful */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            pointsLeft: number;
-                            reward: {
-                                kind: string;
-                                id?: string;
-                                count?: number;
-                            };
-                        };
-                    };
-                };
-            };
-            400: components["responses"]["ErrorResp"];
-            401: components["responses"]["ErrorResp"];
-            402: components["responses"]["ErrorResp"];
-            403: components["responses"]["ErrorResp"];
-            404: components["responses"]["ErrorResp"];
-            409: components["responses"]["ErrorResp"];
-        };
-    };
-    getTitles: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Success */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            titles: {
-                                /** @description Title id (ladder.s{N}.{rank} / slg.s{N}.{key} / ach.{key} / event.{key}) */
-                                id: string;
-                                /** @enum {string} */
-                                source: "ladder" | "slg" | "achievement" | "event";
-                                /** @description Season number (only for ladder/slg type titles) */
-                                seasonNo?: number;
-                            }[];
-                            /** @description Currently equipped title id; null if none equipped */
-                            equipped: string | null;
-                        };
-                    };
-                };
-            };
-            401: components["responses"]["ErrorResp"];
-        };
-    };
-    equipTitle: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @description Title id to equip; empty string means unequip the displayed title */
-                    titleId: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Success */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            save: components["schemas"]["SaveData"];
-                        };
-                    };
-                };
-            };
-            401: components["responses"]["ErrorResp"];
-            403: components["responses"]["ErrorResp"];
-        };
-    };
-    redeemPromoCode: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @description Promo code (case-insensitive) */
-                    code: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Redemption successful */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            coinsAfter: number;
-                            coinsGranted: number;
-                        };
-                    };
-                };
-            };
-            400: components["responses"]["ErrorResp"];
-            401: components["responses"]["ErrorResp"];
-            404: components["responses"]["ErrorResp"];
-            409: components["responses"]["ErrorResp"];
         };
     };
 }

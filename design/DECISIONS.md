@@ -430,6 +430,22 @@
   - `worldsvc`：`db.ts` 新增 `OccupationDoc` 集合 + `TileDoc.contestedBy/contestedUntil/contestedGarrison/contestedFamilyId`；`corePush.ts` 新增 `scheduleOccupation`/`unscheduleOccupation`；`combatSiege/occupation.ts`（新文件，`applyOccupy`/`applyOccupationExpulsion`/`processDueOccupations`，接入 `combatSiege.ts` 装配链）；`combatMarch.ts` 的 `occupy` 到达分支改为委托 `this.siege.applyOccupy`；`combatSiege/arrival.ts` 的 `applySiege` 放宽"目标无主但处于占领倒计时中"分支；`combat.ts`/`service.ts`/`scheduler.ts` 新增 `processDueOccupations` 透传。
   - 契约（`openapi-world.yml`）：`WorldTileView` 新增 `contestedUntil`/`contestedByMe`。
 
+## ADR-039 SLG 连地占领硬性规则（宗门级判定，含首府/桥栈道）— Accepted — 2026-07-14
+
+- **决策**（用户拍板）：三战「连地」升级为硬性规则——占领（`occupy`）/围攻（`attack`）目标格必须与本宗门已占领地 4 方向相邻，否则拒绝发起。此前 §4 的"连地才高效"只是软性效率加成（短行军距离 + 快速增援），本次改为强制前置校验。**普通领地/资源点/险地/州府/桥栈道一视同仁**，均须连地——首府/桥栈道不豁免，否则规则本身可被绕过。扫荡（`sweep`）与侦查（`scout`）不占地，不受限。
+- **为什么**：用户认为连地是三战的核心规则之一，能强制形成清晰前线、把"抱团"从口号变成机制，并解释"为什么必须一格格打过去才能抢到关键城池"。与既有环形版图结构（ADR-034：出生州→资源州→核心州）天然契合——加上连地后，宗门必须逐层推进才能摸到中心州首府，正好兑现该结构想要的"层层推进"叙事。
+- **核心规则**：
+  1. **判定范围 = 宗门级（不是家族级）**：宗门内所有成员家族的领地并集共同构成连地前沿，任一成员家族挨着目标格即可，不要求发起人自己家族恰好相邻。未加入家族 → 只认自己的领地；已加入家族但宗门未成立 → 判定范围=家族全体领地并集。
+  2. **盟友宗门领地不计入判定**——结盟（§8.2，`sect.allySectIds`）只是互不攻伐 + 桥栈道通行，不合并版图，否则"结盟"会变相等价于"合并宗门"。
+  3. **服务端两处强制**：`startMarch`（`combatMarch.ts`）的 `occupy`/`attack` 分支在发起时校验；到达时 `applySiege`（`combatSiege/arrival.ts`）与 `applyOccupy`（`combatSiege/occupation.ts`）再校验一次（行军途中宗门领地可能因丢地而断连），断连按"扑空"处理——退还部队 + 推送 `recalled`，与既有的"目标已非敌方所有"重校验同一套模式。不满足 → 新错误码 `TERRITORY_NOT_CONNECTED`（400）。
+  4. **判定函数**：`WorldCoreVision.isConnectedToSectTerritory(worldId, accountId, x, y)`（`coreVision.ts`）——4 方向邻接查询 `TileDoc.ownerId ∈ 宗门成员家族的 accountId 并集`；私有辅助 `ownSectFamilyIds` 与既有 `friendlyAccountIds` 同构但**不含盟友宗门**（这是两者唯一的差异点，友军攻击豁免要盟友、连地判定不要）。
+- **已知取舍（接受）**：先手/占据资源密集区的宗门会滚雪球更快，弱势宗门可能被堵死在外圈无法扩张——但一个大区真正对抗的宗门通常只有两三个，规则逼着弱势方要么被兼并要么结盟，符合"明确前线"的设计目的，不视为需要修正的缺陷。
+- **影响**：
+  - `@nw/shared`（`api.ts` 新增 `ErrorCode.TERRITORY_NOT_CONNECTED` + `ERROR_HTTP_STATUS` 映射）。
+  - `worldsvc`：`coreVision.ts` 新增 `ownSectFamilyIds`/`isConnectedToSectTerritory`；`combatMarch.ts` 的 `startMarch` occupy/attack 分支新增校验；`combatSiege/arrival.ts` 的 `applySiege`、`combatSiege/occupation.ts` 的 `applyOccupy` 到达时新增重校验。
+  - 文档：[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.1（表格标注）+ §4.1（新增，规则细节）。
+  - 测试：既有大量 e2e（`march`/`siege`/`occupy-march`/`alliance-attack`/`passage`/`base-siege` 等）的攻击目标此前多为"跨图直接打远处敌方基地"，在硬性连地规则下会被拒绝——受影响用例需改用既有的内部/测试专用 `TerritoryService.occupyTile()`（瞬占，见 ADR-037 段）预先铺垫"发起方宗门已占领相邻格"的前置状态，而不是重写测试所验证的核心断言。新增 `territory-connectivity.e2e.test.ts` 覆盖判定本身。
+
 ## ADR-038 废弃 `CollectionScene`，皮肤装备关系从全局单槏位改为逐卡独立 — Accepted — 2026-07-13
 
 - **决策**（用户拍板）：`CollectionScene`（纯图鉴+皮肤衣柜页）整页删除，功能拆解并入养成组：图鉴全集→生涯组（`CareerTabs`）新增页签、皮肤衣柜→养成组（`CardScene`）新增页签、背景故事 lore→角色卡详情弹窗翻转展示。**皮肤的装备关系**从 `SaveData.equipped: Record<slot, skinId>`（账号级单一全局槏位）改为**逐角色卡独立槏位**——每张卡各自可换皮肤，换后该卡卡图用皮肤形象展示；皮肤的**拥有关系**（库存/购买/抽卡渠道）不变。
@@ -438,3 +454,13 @@
   - `client`：`WorldMapInput.ts` 占领按钮改走 `startMarch(kind:'occupy')`；地图渲染/HUD 消费新增的 `contestedUntil` 字段渲染倒计时。
   - 文档：[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §5.4（新增）。
   - 测试：`server/worldsvc/test/occupy-march.e2e.test.ts`（新增）。
+
+## ADR-040 metaserver `openapi.yml` 按域拆分为 fragment，合并生成（服务不拆）— Accepted — 2026-07-14
+
+- **决策**：`server/contracts/openapi.yml`（此前单文件 3241 行，metaserver 全部 77 个 REST 操作）改为手写 `server/contracts/openapi/{_root.yml,schemas.yml,paths/<domain>.yml}` 9 个按域 fragment，一一对应 `MetaService` 现有的 mixin 划分（`server/metaserver/src/service/{auth,save,pve,economy,inventory,progression,liveops,social,telemetry}.ts`）；新增 `server/contracts/scripts/bundle-openapi.mjs` 把 fragment 合并回 `openapi.yml`（沿用 ADR-023 的"生成文件提交入库 + CI `--check` 防 stale"模式）。服务本身**不拆**——metaserver 代码是整合/路由为主，拆多个微服务的运维成本不划算；已有 mixin 划分已经是合理的域边界。
+- **为什么**：几乎所有玩家交互都经过 metaserver，单文件契约导致跨域改动时 diff/review 范围大、merge 冲突集中。openapi 自带的 `tags` 字段粒度不准（如 `tags:[save]` 混了 pve/inventory/progression 等多个 mixin 的操作），不能直接拿来分域；改为按"哪个 mixin 实现这个 operationId"分组，逐个核对全部 77 个 operationId 后确认可行（无遗漏、无跨 mixin 的同路径冲突）。
+- **影响**：
+  - `server/contracts/openapi.yml` 本身变成生成产物（文件头注明 `AUTO-GENERATED ... DO NOT EDIT`），后续改契约改 `openapi/paths/<domain>.yml` 或 `openapi/schemas.yml`，跑 `npm run gen:api:contracts`（在 `server/metaserver/`）重新生成。
+  - 下游消费者（`gen-openapi-server.mjs`→`routes.gen.ts`、`client/scripts/gen-openapi.mjs`→`client/src/net/openapi.ts`、`openapi-request-schema.test.ts`/`openapi-response-schema.test.ts`）均只读 `openapi.yml` 文件路径，**未改动**，已验证 tsc/vitest/client typecheck 全绿。
+  - CI：`.github/workflows/ci.yml` 新增 "server codegen check (metaserver openapi bundle)" 步骤（`npm run gen:api:contracts:check`），跑在既有 routes.gen.ts staleness check 之前。
+  - 范围明确不含 `openapi-world.yml`（worldsvc）/`openapi-auction.yml`（auctionsvc）——规模本身不是痛点，未来若需要可复用同一套 `bundle-openapi.mjs` 模式。

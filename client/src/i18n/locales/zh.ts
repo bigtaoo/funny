@@ -430,6 +430,7 @@ export const zh = {
   'campaign.lockedOffline': '🔒 联网解锁',
   'campaign.pending': '待结算',
   'campaign.equipment': '装备',
+  'campaign.chapters': '章节',
   'campaign.cleared': '已通关',
   'campaign.notebookTitle': '战役笔记本',
   'campaign.notebookOwner.tao': '陶的笔记本',
@@ -800,6 +801,7 @@ export const zh = {
   'world.err.notOwner': '非己方领地',
   'world.err.notImpl': '功能暂未开放',
   'world.err.pathBlocked': '无可通行路线（地形阻挡）',
+  'world.err.notConnected': '目标地块须与本宗门已占领地相邻',
   // ── Military actions / siege (C2) ────────────────────────────────────────
   'world.actAttack': '围攻',
   'world.actReinforce': '增援',

@@ -1,0 +1,547 @@
+/friends:
+  get:
+    operationId: getFriends
+    tags: [friends]
+    summary: Friend list (including online status; meta queries presence from gateway)
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [friends]
+                  properties:
+                    friends:
+                      type: array
+                      items: { $ref: '#/components/schemas/FriendView' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+
+/friends/requests:
+  get:
+    operationId: getFriendRequests
+    tags: [friends]
+    summary: Pending friend requests (received + sent)
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [incoming, outgoing]
+                  properties:
+                    incoming:
+                      type: array
+                      items: { $ref: '#/components/schemas/FriendRequestView' }
+                    outgoing:
+                      type: array
+                      items: { $ref: '#/components/schemas/FriendRequestView' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+
+/social/badges:
+  get:
+    operationId: getSocialBadges
+    tags: [friends]
+    summary: Offline badge aggregation (pending requests / unread conversations / unread mail + total)
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data: { $ref: '#/components/schemas/SocialBadges' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+
+/friends/search:
+  post:
+    operationId: searchFriend
+    tags: [friends]
+    summary: Search for a player by 9-digit public id
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [publicId]
+            properties:
+              publicId: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [profile]
+                  properties:
+                    profile: { $ref: '#/components/schemas/ProfileView' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '404': { $ref: '#/components/responses/ErrorResp' }
+
+/friends/request:
+  post:
+    operationId: requestFriend
+    tags: [friends]
+    summary: Send a friend request (by publicId)
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [publicId]
+            properties:
+              publicId: { type: string }
+              message: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [requestId]
+                  properties:
+                    requestId: { type: string }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '403': { $ref: '#/components/responses/ErrorResp' }
+      '404': { $ref: '#/components/responses/ErrorResp' }
+      '409': { $ref: '#/components/responses/ErrorResp' }
+
+/friends/respond:
+  post:
+    operationId: respondFriend
+    tags: [friends]
+    summary: Accept / decline a friend request (accept → creates bidirectional edge + notifies both parties)
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [requestId, accept]
+            properties:
+              requestId: { type: string }
+              accept: { type: boolean }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [ok]
+                  properties:
+                    ok: { type: boolean }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '404': { $ref: '#/components/responses/ErrorResp' }
+      '409': { $ref: '#/components/responses/ErrorResp' }
+
+/friends/{publicId}:
+  delete:
+    operationId: removeFriend
+    tags: [friends]
+    summary: Remove friend (bidirectional)
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - name: publicId
+        in: path
+        required: true
+        schema: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [ok]
+                  properties:
+                    ok: { type: boolean }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+
+/friends/block:
+  post:
+    operationId: blockUser
+    tags: [friends]
+    summary: Block user (removes friend + blocks requests/chat)
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [publicId]
+            properties:
+              publicId: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [ok]
+                  properties:
+                    ok: { type: boolean }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '404': { $ref: '#/components/responses/ErrorResp' }
+
+/friends/block/{publicId}:
+  delete:
+    operationId: unblockUser
+    tags: [friends]
+    summary: Unblock user
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - name: publicId
+        in: path
+        required: true
+        schema: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [ok]
+                  properties:
+                    ok: { type: boolean }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+
+/chat/conversations:
+  get:
+    operationId: getConversations
+    tags: [chat]
+    summary: Conversation list (per-conversation unread count + last message preview)
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [conversations]
+                  properties:
+                    conversations:
+                      type: array
+                      items: { $ref: '#/components/schemas/ConversationView' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+
+/chat/{convId}/messages:
+  get:
+    operationId: getMessages
+    tags: [chat]
+    summary: Fetch conversation history (paginated in reverse chronological order)
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - name: convId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: before
+        in: query
+        required: false
+        schema: { type: integer }
+        description: Fetch messages before this timestamp (epoch ms) (pagination cursor)
+      - name: limit
+        in: query
+        required: false
+        schema: { type: integer, minimum: 1, maximum: 50, default: 30 }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [messages]
+                  properties:
+                    messages:
+                      type: array
+                      items: { $ref: '#/components/schemas/ChatMessageView' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+
+/chat/send:
+  post:
+    operationId: sendChat
+    tags: [chat]
+    summary: Send a private message (must be mutual friends and not blocked; rate-limited + sensitive-word filtering)
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [toPublicId, body]
+            properties:
+              toPublicId: { type: string }
+              body: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [messageId, ts]
+                  properties:
+                    messageId: { type: string }
+                    ts: { type: integer }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '403': { $ref: '#/components/responses/ErrorResp' }
+      '429': { $ref: '#/components/responses/ErrorResp' }
+
+/chat/read:
+  post:
+    operationId: readChat
+    tags: [chat]
+    summary: Mark conversation as read (clears unread count)
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [convId]
+            properties:
+              convId: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [ok]
+                  properties:
+                    ok: { type: boolean }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+
+/mail:
+  get:
+    operationId: getMail
+    tags: [mail]
+    summary: Inbox (unread count + mail list)
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [mail, unread]
+                  properties:
+                    mail:
+                      type: array
+                      items: { $ref: '#/components/schemas/MailView' }
+                    unread: { type: integer }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+
+/mail/{id}/read:
+  post:
+    operationId: readMail
+    tags: [mail]
+    summary: Mark mail as read
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [ok]
+                  properties:
+                    ok: { type: boolean }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '404': { $ref: '#/components/responses/ErrorResp' }
+
+/mail/{id}/claim:
+  post:
+    operationId: claimMail
+    tags: [mail]
+    summary: Claim mail attachment (coins/items dispatched via commercial, idempotent) → returns authoritative save
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '404': { $ref: '#/components/responses/ErrorResp' }
+      '409': { $ref: '#/components/responses/ErrorResp' }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+
+/mail/{id}:
+  delete:
+    operationId: deleteMail
+    tags: [mail]
+    summary: Delete mail
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [ok]
+                  properties:
+                    ok: { type: boolean }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+
+/mail/send:
+  post:
+    operationId: sendMail
+    tags: [mail]
+    summary: Send mail between players (friend-gated)
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [toPublicId, subject, body]
+            properties:
+              toPublicId: { type: string }
+              subject: { type: string }
+              body: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [mailId]
+                  properties:
+                    mailId: { type: string }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '403': { $ref: '#/components/responses/ErrorResp' }
+
+# —— Analytics（A9-0）——

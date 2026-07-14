@@ -54,6 +54,23 @@ function findCoord(sx: number, sy: number): { x: number; y: number } {
   throw new Error('no matching tile found');
 }
 
+/**
+ * ADR-039 territory connectivity: give `accountId` an owned tile bordering `target` via the instant/test-only
+ * occupyTile so an attack march to a far-away target clears the new gate.
+ */
+async function connect(svc: WorldService, accountId: string, target: { x: number; y: number }): Promise<void> {
+  const deltas: [number, number][] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  for (const [dx, dy] of deltas) {
+    const nx = target.x + dx, ny = target.y + dy;
+    if (nx < 0 || ny < 0 || nx >= SLG_MAP_W || ny >= SLG_MAP_H) continue;
+    const t = proceduralTile(W, nx, ny);
+    if (t.type === 'obstacle' || t.type === 'center' || t.type === 'bridge' || t.type === 'plankway' || t.type === 'stronghold') continue;
+    await svc.occupyTile(W, accountId, nx, ny);
+    return;
+  }
+  throw new Error('no connector neighbor found');
+}
+
 /** A valid attack formation: n infantry units spread across row 1 lanes, each allocated hp troops. */
 function army(n: number, hp: number): TeamTemplate['army'] {
   const lanes = [0, 1, 2, 3, 4, 7, 8, 9, 10, 11];
@@ -167,6 +184,7 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const tgt = findCoord(10, 5);
     await setupDefender('b', tgt.x, tgt.y, 400, 800);
+    await connect(svc, 'a', tgt); // ADR-039: border the target before attacking
 
     // 12 infantry (CARD_TEAM_MAX_SIZE cap) × 70 allotted = 840 committed troops (overrides body troops).
     // Combat HP per unit is clamped to the infantry blueprint cap (60), so effective assault ≈ 12×60 = 720,

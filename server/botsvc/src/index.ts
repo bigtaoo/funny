@@ -6,6 +6,7 @@ import { generateBotPool } from './pool';
 import { MetaClient } from './metaClient';
 import { SocialClient } from './socialClient';
 import { CommercialClient } from './commercialClient';
+import { WorldClient } from './worldClient';
 import { CapacityClient } from './capacityClient';
 import { BotSession } from './bot';
 import { Scheduler } from './scheduler';
@@ -19,9 +20,13 @@ async function main(): Promise<void> {
   const meta = new MetaClient(env.metaBaseUrl);
   const social = new SocialClient(env.socialBaseUrl);
   const commercial = new CommercialClient(env.commercialInternalUrl, env.internalKey);
-  const capacity = new CapacityClient(env.gatewayInternalUrl);
+  const world = new WorldClient(env.worldBaseUrl);
+  const capacity = new CapacityClient(env.gatewayInternalUrl, env.internalKey);
 
-  const pool = generateBotPool(env.poolSize).map((identity) => new BotSession(identity, meta, social, commercial));
+  const battleOpts = { gatewayWsUrl: env.gatewayWsUrl, chancePerTick: env.battleChancePerTick };
+  const pool = generateBotPool(env.poolSize).map(
+    (identity) => new BotSession(identity, meta, social, commercial, world, battleOpts),
+  );
   const scheduler = new Scheduler(pool, capacity, {
     targetOnline: env.targetOnline,
     shedStartAt: env.shedStartAt,

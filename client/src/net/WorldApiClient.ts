@@ -236,8 +236,8 @@ export class WorldApiClient {
   }
 
   /** Return the current active SLG season number from worldsvc (§20.8). No auth required. */
-  async getActiveSeason(): Promise<{ season: number }> {
-    return this.req('GET', '/world/active-season');
+  async getActiveSeason(timeoutMs = 10_000): Promise<{ season: number }> {
+    return this.req('GET', '/world/active-season', undefined, timeoutMs);
   }
 
   /**

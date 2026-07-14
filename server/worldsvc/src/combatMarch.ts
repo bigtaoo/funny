@@ -12,6 +12,7 @@ import {
   MARCH_MIN_TROOPS,
   isInVision,
   marchInterpPos,
+  baseFootprintCells,
   SlgError,
   type PathCell,
   type MarchKind,
@@ -164,6 +165,11 @@ export class MarchService {
         }
         throw new SlgError('TILE_OCCUPIED', 'This tile is already occupied (use attack siege to take it)');
       }
+      // ADR-039 territory connectivity ("连地"): the target must border land already held by the player's sect.
+      // occupy never targets a capital (bases are runtime-placed, not procedurally occupiable), so a single cell.
+      if (!(await this.core.isConnectedToSectTerritory(worldId, accountId, [{ x: toX, y: toY }]))) {
+        throw new SlgError('TERRITORY_NOT_CONNECTED', 'Target tile must be adjacent to your sect\'s territory');
+      }
     } else if (kind === 'reinforce') {
       if (!toTile || toTile.ownerId !== accountId) throw new SlgError('TILE_NOT_OWNED', 'Can only reinforce your own tile');
     } else if (kind === 'attack') {
@@ -191,6 +197,13 @@ export class MarchService {
           throw new SlgError('PROTECTED', 'Target tile is under protection');
         }
         defenderId = toTile.ownerId;
+      }
+      // ADR-039 territory connectivity ("连地"): applies uniformly to regular territory, capitals, and
+      // bridges/plankways — all siege targets funnel through this same branch. A capital's anchor is only
+      // ever bordered by its own ring cells, so a capital target checks against its whole 3×3 footprint
+      // (targetFootprintCells), not just the exact (toX,toY) cell.
+      if (!(await this.core.isConnectedToSectTerritory(worldId, accountId, this.core.targetFootprintCells(toTile, toX, toY)))) {
+        throw new SlgError('TERRITORY_NOT_CONNECTED', 'Target tile must be adjacent to your sect\'s territory');
       }
       if (troops < OCCUPY_MIN_TROOPS) throw new SlgError('NO_TROOPS', `Siege requires at least ${OCCUPY_MIN_TROOPS} troops`);
     } else if (kind === 'scout') {

@@ -34,7 +34,12 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
     const ensureWorldId = async (): Promise<string> => {
       if (slgWorldId) return slgWorldId;
       if (!worldApi) throw new Error('no world api');
-      const season = await worldApi.getActiveSeason().then((r) => r.season).catch(() => FALLBACK_SEASON);
+      // Short timeout: this call has a safe fallback (FALLBACK_SEASON), so it should
+      // never hold up world-tab loading waiting out the default 10s network timeout.
+      const season = await worldApi.getActiveSeason(4_000).then((r) => r.season).catch((e) => {
+        console.warn('[social] getActiveSeason failed, using fallback season', FALLBACK_SEASON, e);
+        return FALLBACK_SEASON;
+      });
       const w = await worldApi.resolveSeason(season);
       slgWorldId = w.worldId;
       return slgWorldId;
@@ -70,16 +75,18 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
       // SLG social tab (S6-4)
       ...(worldApi ? {
         async loadSLGStatus() {
-          const wid = await ensureWorldId();
           const myAccountId = platform.storage.getItem('nw_account_id') ?? '';
+          // Family membership lives in socialsvc and never depends on worldId, so it's
+          // fetched concurrently with the world-shard resolve instead of after it.
+          const [wid, fam] = await Promise.all([
+            ensureWorldId(),
+            worldApi.getMyFamily().catch(() => null),
+          ]);
           const status: import('../../scenes/FriendsScene').SLGSocialStatus = {
             worldId: wid,
             familyId: undefined,
             isLeader: false,
           };
-          // Family membership lives in socialsvc; worldsvc's playerWorld.familyId is a
-          // join-time-only mirror (SS7) that never reflects a family created/joined later.
-          const fam = await worldApi.getMyFamily().catch(() => null);
           if (fam) {
             status.familyId = fam.familyId;
             status.familyName = fam.name;

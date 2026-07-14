@@ -1,0 +1,44 @@
+openapi: 3.0.3
+info:
+  title: Notebook Wars metaserver REST API
+  version: 0.1.0
+  description: >
+    Single source of truth for the REST contract (design-first, M15). The metaserver uses fastify-openapi-glue to wire routes + validation by operationId; the client uses openapi-typescript + openapi-fetch to generate typed fetch. Unified response envelope ApiResp<T>. See SERVER_API.md.
+
+servers:
+  - url: /api
+
+tags:
+  - name: auth
+    description: Anonymous accounts (S0-4 / S0-7)
+  - name: save
+    description: Cloud save (save-service, S0-7)
+  - name: shop
+    description: Shop direct purchase (economy-service, S2-2)
+  - name: gacha
+    description: Gacha (economy-service, S2-3)
+  - name: ads
+    description: Ad rewards (economy-service, S2-4)
+  - name: iap
+    description: IAP receipt verification (iap-service, S4-1)
+  - name: friends
+    description: Friends (S6-1, SOCIAL_DESIGN §5.1)
+  - name: chat
+    description: Private chat (S6-2, SOCIAL_DESIGN §5.2)
+  - name: mail
+    description: Mail (S6-3, SOCIAL_DESIGN §5.3)
+  - name: ranked
+    description: Ranked leaderboard (S11, SEASON_DESIGN §5)
+  - name: battlepass
+    description: Battle pass (S11, SEASON_DESIGN §9)
+  - name: events
+    description: Limited-time events (B6, ADR-014)
+  - name: config
+    description: Public bootstrap config / feature flag delivery + targeted client log collection (FEATURE_FLAGS_DESIGN §9)
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

@@ -47,19 +47,34 @@ function hasText(container: PIXI.Container, text: string): boolean {
   return found;
 }
 
+// Walks accumulating each ancestor's translation + (uniform) scale, so this returns real
+// screen-space coordinates even for a label sitting inside a scaled subtree (the detail
+// modal's `modalPanelRoot`, popup-scale-to-80pct fix 2026-07-14) — `node.x`/`node.y` alone
+// would only be correct for unscaled ancestors.
 function findLabelPos(container: PIXI.Container, label: string): { x: number; y: number } | null {
   let found: { x: number; y: number } | null = null;
-  const walk = (node: PIXI.Container): void => {
+  const walk = (node: PIXI.Container, worldX: number, worldY: number, worldScale: number): void => {
     if (found) return;
-    if (node instanceof PIXI.Text && node.text === label) { found = { x: node.x, y: node.y }; return; }
-    for (const c of node.children) walk(c as PIXI.Container);
+    if (node instanceof PIXI.Text && node.text === label) { found = { x: worldX, y: worldY }; return; }
+    for (const c of node.children) {
+      const child = c as PIXI.Container;
+      walk(child, worldX + child.x * worldScale, worldY + child.y * worldScale, worldScale * child.scale.x);
+    }
   };
-  walk(container);
+  walk(container, 0, 0, 1);
   return found;
 }
 
-function bySize(hits: Hit[], w: number, h: number): Hit | undefined {
-  return hits.find((hit) => hit.rect.w === w && hit.rect.h === h);
+// Detail-modal hit rects are reported in real screen space (popup-scale-to-80pct fix,
+// 2026-07-14): a box that's `local` px in the modal's own unscaled layout comes out
+// `local * modalScale` px here, since `toModalScreen` bakes the panel's scale factor in.
+function bySize(hits: Hit[], local: number, modalScale: number): Hit | undefined {
+  const scaled = local * modalScale;
+  return hits.find((hit) => Math.abs(hit.rect.w - scaled) < 1e-6 && Math.abs(hit.rect.h - scaled) < 1e-6);
+}
+
+function modalScaleOf(scene: CardScene): number {
+  return (scene as unknown as { modalScale: number }).modalScale;
 }
 
 function buildScene(cb: CardCallbacks): CardScene {
@@ -109,8 +124,8 @@ describe('CardScene detail modal — portrait flip (art ⇄ lore)', () => {
     expect(hasText(scene.container, LENA_LORE)).toBe(false);
 
     const modalHits = (scene as unknown as { modalHits: Hit[] }).modalHits;
-    const flipHit = bySize(modalHits, 96, 96);
-    expect(flipHit, 'no 96×96 portrait-flip hit in the detail modal').toBeDefined();
+    const flipHit = bySize(modalHits, 96, modalScaleOf(scene));
+    expect(flipHit, 'no 96×96 (scaled) portrait-flip hit in the detail modal').toBeDefined();
 
     flipHit!.action();
     // Before the midpoint, content hasn't swapped yet.
@@ -134,7 +149,7 @@ describe('CardScene detail modal — portrait flip (art ⇄ lore)', () => {
     const scene = buildScene(baseCb({ getOwnedSkins: () => [] }));
     openDetail(scene, 'Lena');
     const modalHits = (scene as unknown as { modalHits: Hit[] }).modalHits;
-    expect(bySize(modalHits, 22, 22)).toBeUndefined();
+    expect(bySize(modalHits, 22, modalScaleOf(scene))).toBeUndefined();
   });
 });
 
@@ -149,8 +164,8 @@ describe('CardScene detail modal — change-skin picker', () => {
     }));
     openDetail(scene, 'Lena');
 
-    const badgeHit = bySize((scene as unknown as { modalHits: Hit[] }).modalHits, 22, 22);
-    expect(badgeHit, 'no 22×22 change-skin badge in the detail modal').toBeDefined();
+    const badgeHit = bySize((scene as unknown as { modalHits: Hit[] }).modalHits, 22, modalScaleOf(scene));
+    expect(badgeHit, 'no 22×22 (scaled) change-skin badge in the detail modal').toBeDefined();
     badgeHit!.action(); // toggles skinPickerOpen + re-renders the modal
 
     expect((scene as unknown as { skinPickerOpen: boolean }).skinPickerOpen).toBe(true);

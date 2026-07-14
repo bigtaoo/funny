@@ -10,6 +10,8 @@
     "dev": "node --watch --import tsx src/index.ts",
     "start": "node dist/index.js",
     "test": "tsc -b && vitest run",
+    "gen:api:contracts": "node ../contracts/scripts/bundle-openapi.mjs",
+    "gen:api:contracts:check": "node ../contracts/scripts/bundle-openapi.mjs --check",
     "gen:api:server": "node ../contracts/scripts/gen-openapi-server.mjs",
     "gen:api:server:check": "node ../contracts/scripts/gen-openapi-server.mjs --check"
   },

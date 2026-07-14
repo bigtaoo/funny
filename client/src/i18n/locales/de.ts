@@ -426,6 +426,7 @@ export const de: Record<TranslationKey, string> = {
   'campaign.lockedOffline': '🔒 Online freischalten',
   'campaign.pending': 'Ausstehend',
   'campaign.equipment': 'Ausrüstung',
+  'campaign.chapters': 'Kapitel',
   'campaign.cleared': 'Geschafft',
   'campaign.notebookTitle': 'Kampagnenheft',
   'campaign.notebookOwner.tao': 'Taos Notizbuch',
@@ -788,6 +789,7 @@ export const de: Record<TranslationKey, string> = {
   'world.err.notOwner': 'Nicht dein Gebiet',
   'world.err.notImpl': 'Funktion noch nicht verfügbar',
   'world.err.pathBlocked': 'Keine begehbare Route (Gelände blockiert)',
+  'world.err.notConnected': 'Das Ziel muss an das Gebiet deiner Sekte angrenzen',
   // Militäraktionen / Belagerung (C2)
   'world.actAttack': 'Belagern',
   'world.actReinforce': 'Verstärken',

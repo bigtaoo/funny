@@ -193,6 +193,7 @@ export class FriendsSceneBase {
 
     this.render();
     void this.refresh();
+    this.triggerTabLoads(this.tab);
   }
 
   // ── Scene interface ──────────────────────────────────────────────────────────
@@ -285,7 +286,15 @@ export class FriendsSceneBase {
     this.sectSubview = 'info';
     this.render();
     void this.refresh();
-    if ((tab === 'family' || tab === 'sect' || tab === 'world') && !this.slgLoaded && !this.slgLoading) {
+    this.triggerTabLoads(tab);
+  }
+
+  /** Kicks off whichever background loads a given tab needs, shared by the constructor's
+   * defaultTab entry path and switchTab() so neither can drift out of sync with the other.
+   * Family/sect status is unrelated to world chat (worldId resolution for chat happens
+   * transparently inside loadWorldChat/sendWorldChat) — only fetch it for those two tabs. */
+  protected triggerTabLoads(tab: Tab): void {
+    if ((tab === 'family' || tab === 'sect') && !this.slgLoaded && !this.slgLoading) {
       void this.loadSLGStatus();
     }
     if (tab === 'world' && !this.worldLoaded) {

@@ -1,7 +1,28 @@
-import { describe, it, expect } from 'vitest';
-import { shedTarget } from '../src/capacityClient';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { CapacityClient, shedTarget } from '../src/capacityClient';
 
 const base = { targetOnline: 100, shedStartAt: 2500, shedFullAt: 2800 };
+
+describe('CapacityClient.onlineCount', () => {
+  const originalFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('sends x-internal-key — gateway /internal/stats 401s without it', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ online: 7 }) });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new CapacityClient('http://gateway.internal', 'the-key');
+    const online = await client.onlineCount();
+
+    expect(online).toBe(7);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://gateway.internal/internal/stats',
+      expect.objectContaining({ headers: { 'x-internal-key': 'the-key' } }),
+    );
+  });
+});
 
 describe('shedTarget', () => {
   it('holds full target below the shed-start threshold', () => {

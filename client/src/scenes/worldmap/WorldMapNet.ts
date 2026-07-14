@@ -436,6 +436,7 @@ export class WorldMapNet {
         TROOP_CAP_REACHED:      t('world.err.troopCap'),
         INSUFFICIENT_RESOURCES: t('world.err.noInk'),
         PATH_BLOCKED:  t('world.err.pathBlocked'),
+        TERRITORY_NOT_CONNECTED: t('world.err.notConnected'),
       };
       return map[e.code] ?? e.message;
     }

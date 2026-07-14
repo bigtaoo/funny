@@ -1,0 +1,264 @@
+/save:
+  get:
+    operationId: getSave
+    tags: [save]
+    summary: Fetch the current account's save
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+                    # Account display name (optional); client uses this to restore the profile on token re-login.
+                    displayName: { type: string }
+                    # 9-digit numeric public ID; client uses this to restore the profile on token re-login.
+                    publicId: { type: string }
+                    # Public gateway WS address (optional); absent on token re-login since there is no auth response, fetch from here instead.
+                    gatewayUrl: { type: string }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+  put:
+    operationId: putSave
+    tags: [save]
+    summary: Push client sync patch (optimistic lock via If-Match rev)
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - name: If-Match
+        in: header
+        required: true
+        schema: { type: string }
+        description: The rev held by the client
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [save]
+            properties:
+              save: { $ref: '#/components/schemas/SyncPatch' }
+    responses:
+      '200':
+        description: Success — returns normalized save
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+      '409':
+        description: REV_CONFLICT, includes current server-side value
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, error]
+              properties:
+                ok: { type: boolean, enum: [false] }
+                error: { $ref: '#/components/schemas/Error' }
+                save: { $ref: '#/components/schemas/SaveData' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+
+/match/history:
+  get:
+    operationId: getMatchHistory
+    tags: [save]
+    summary: Recent match history for the current account (ranked / friendly, in reverse chronological order)
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - name: limit
+        in: query
+        required: false
+        schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        description: Maximum number of entries to return (default 20, max 50)
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [matches]
+                  properties:
+                    matches:
+                      type: array
+                      items: { $ref: '#/components/schemas/MatchHistoryEntry' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+
+/match/{roomId}/replay:
+  get:
+    operationId: getMatchReplay
+    tags: [save]
+    summary: Fetch a match replay (only matches the account participated in); server opaque frames, client decodes for playback
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - name: roomId
+        in: path
+        required: true
+        schema: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [replay]
+                  properties:
+                    replay: { $ref: '#/components/schemas/MatchReplay' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '404': { $ref: '#/components/responses/ErrorResp' }
+
+/match/{roomId}/replay/share:
+  post:
+    operationId: createReplayShare
+    tags: [save]
+    summary: Create a replay share link (S1-RP); only matches the account participated in can be shared; 7-day TTL
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - name: roomId
+        in: path
+        required: true
+        schema: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [shareId]
+                  properties:
+                    shareId:
+                      type: string
+                      description: Share id (UUID); client constructs /share/replay/{shareId} to distribute
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '404': { $ref: '#/components/responses/ErrorResp' }
+
+/share/replay/{shareId}:
+  get:
+    operationId: getReplayByShare
+    tags: [save]
+    summary: Fetch a replay via share link (S1-RP); no login required; returns 404 when expired
+    parameters:
+      - name: shareId
+        in: path
+        required: true
+        schema: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [replay]
+                  properties:
+                    replay: { $ref: '#/components/schemas/MatchReplay' }
+      '404': { $ref: '#/components/responses/ErrorResp' }
+
+/replay/share:
+  post:
+    operationId: createStateReplayShare
+    tags: [save]
+    summary: >-
+      State-stream replay out-of-game share — mint code (REPLAY_SHARE_DESIGN §3.1). The client-generated state-stream blob is uploaded with the request;
+      the server only stores the blob and issues an unguessable shareCode, never touching the engine or value tables.
+      The state stream is untrusted, for viewing only, and never fed into anti-cheat or settlement. Exceeding size limit / mint rate limit → 400 / 429.
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [blob]
+            properties:
+              blob:
+                type: string
+                description: gzip+base64-compressed delta state-stream replay (EncodedStateReplay); opaque compressed string, server does not decompress or interpret
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [shareCode]
+                  properties:
+                    shareCode:
+                      type: string
+                      description: Unguessable random share code; client constructs /r/{shareCode} to distribute
+      '400': { $ref: '#/components/responses/ErrorResp' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '429': { $ref: '#/components/responses/ErrorResp' }
+
+/r/{shareCode}:
+  get:
+    operationId: getStateReplayShare
+    tags: [save]
+    summary: Fetch public state-stream replay (REPLAY_SHARE_DESIGN §3.2); no login required; returns 404 when not found or expired
+    parameters:
+      - name: shareCode
+        in: path
+        required: true
+        schema: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [blob]
+                  properties:
+                    blob:
+                      type: string
+                      description: gzip+base64-compressed delta state-stream replay (EncodedStateReplay); client decompresses and plays back silently
+      '404': { $ref: '#/components/responses/ErrorResp' }
+
