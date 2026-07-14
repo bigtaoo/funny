@@ -19,6 +19,8 @@ export interface AuctionDoc {
   buyerId?: string;
   /** Transaction timestamp ms (written when status→sold). Anomaly auditing (D/G7) windows by this; legacy documents fall back to parsing listing ts from _id. */
   soldAt?: number;
+  /** Terminal-transition timestamp ms (written when status leaves 'open': sold/cancelled/expired). Retention purge of closed My-Listings history windows by this; legacy closed docs without it fall back to expireAt. */
+  closedAt?: number;
   // ── B Auction bidding (AUCTION_DESIGN §4.B). saleMode defaults to 'fixed' (backward-compatible with existing fixed-price listings) ──
   saleMode?: 'fixed' | 'auction';
   startPrice?: number;   // auction starting unit price

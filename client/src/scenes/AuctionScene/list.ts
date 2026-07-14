@@ -146,10 +146,14 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
           this.bodyLayer.addChild(boLbl);
         }
 
-        const remaining = Math.max(0, Math.ceil((auc.expireAt - now) / 60000));
-        const expLbl = txt(`${remaining}m`, 14, C.mid);
-        expLbl.x = contentX + contentW - 88; expLbl.y = cy + 8;
-        this.bodyLayer.addChild(expLbl);
+        // Countdown only makes sense for a live listing — closed history rows (sold/expired/cancelled) would
+        // otherwise all read "0m". Those show a status badge instead (My-Listings branch below).
+        if (auc.status === 'open') {
+          const remaining = Math.max(0, Math.ceil((auc.expireAt - now) / 60000));
+          const expLbl = txt(`${remaining}m`, 14, C.mid);
+          expLbl.x = contentX + contentW - 88; expLbl.y = cy + 8;
+          this.bodyLayer.addChild(expLbl);
+        }
 
         if (this.activeTab === 'all') {
           const aucId = auc.auctionId;
@@ -164,14 +168,27 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
             action: isAuction ? () => this.openBidForm(auc) : () => this.confirmBuy(aucId, auc.price),
           });
         } else if (this.activeTab === 'mine') {
-          const cancelBtn = sketchPanel(68, 32, { fill: 0xf0e0e0, border: C.red, seed: seedFor(cy, 1, 68) });
-          cancelBtn.x = contentX + contentW - 80; cancelBtn.y = cy + 18;
-          this.bodyLayer.addChild(cancelBtn);
-          const cl = txt(t('auction.cancel'), 15, C.red);
-          cl.anchor.set(0.5, 0.5); cl.x = contentX + contentW - 46; cl.y = cy + 34;
-          this.bodyLayer.addChild(cl);
-          const aucId = auc.auctionId;
-          this.hitRects.push({ rect: { x: contentX + contentW - 80, y: cy + 18, w: 68, h: 32 }, action: () => this.confirmCancel(aucId) });
+          if (auc.status === 'open') {
+            // Live listing → cancel action.
+            const cancelBtn = sketchPanel(68, 32, { fill: 0xf0e0e0, border: C.red, seed: seedFor(cy, 1, 68) });
+            cancelBtn.x = contentX + contentW - 80; cancelBtn.y = cy + 18;
+            this.bodyLayer.addChild(cancelBtn);
+            const cl = txt(t('auction.cancel'), 15, C.red);
+            cl.anchor.set(0.5, 0.5); cl.x = contentX + contentW - 46; cl.y = cy + 34;
+            this.bodyLayer.addChild(cl);
+            const aucId = auc.auctionId;
+            this.hitRects.push({ rect: { x: contentX + contentW - 80, y: cy + 18, w: 68, h: 32 }, action: () => this.confirmCancel(aucId) });
+          } else {
+            // Closed history row → status badge (sold = accent, expired/cancelled = muted), no action.
+            const statusKey = auc.status === 'sold'
+              ? 'auction.statusSold'
+              : auc.status === 'cancelled'
+                ? 'auction.statusCancelled'
+                : 'auction.statusExpired';
+            const badge = txt(t(statusKey), 14, auc.status === 'sold' ? C.accent : C.mid, true);
+            badge.anchor.set(1, 0.5); badge.x = contentX + contentW - 20; badge.y = cy + 34;
+            this.bodyLayer.addChild(badge);
+          }
         } else {
           // My Bids: informational only (leading bidder, not the owner) — no action button, just a status badge.
           const badge = txt(t('auction.leading'), 14, C.accent, true);
