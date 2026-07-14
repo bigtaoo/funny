@@ -157,6 +157,45 @@ export async function grantCards(
 }
 
 /**
+ * Toggle the lock flag on a single CardInstance (CC-4, CHARACTER_CARDS_DESIGN §3.3).
+ * Locked cards cannot be consumed as feed material (see feedCards CARD_LOCKED guard).
+ * Naturally idempotent: setting an already-matching flag still succeeds and returns the save.
+ * Uses the optimistic-lock rev guard + retries pattern (same as feedCards/grantCards).
+ */
+export async function setCardLock(
+  cols: Collections,
+  now: () => number,
+  accountId: string,
+  cardInstanceId: string,
+  locked: boolean,
+): Promise<{ save: SaveData } | CardError> {
+  if (!cardInstanceId) return { error: 'cardInstanceId required', code: 'BAD_REQUEST' };
+  for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
+    const doc = await cols.saves.findOne({ _id: accountId });
+    if (!doc) return { error: 'save not found', code: 'NOT_FOUND' };
+    const save = doc.save;
+    const card = save.cardInv?.[cardInstanceId];
+    if (!card) return { error: `card not found: ${cardInstanceId}`, code: 'CARD_NOT_FOUND' };
+
+    // No-op when already in the requested state (avoids a needless rev bump).
+    if (card.locked === locked) return { save };
+
+    const next: SaveData = {
+      ...save,
+      rev: save.rev + 1,
+      updatedAt: now(),
+      cardInv: { ...(save.cardInv ?? {}), [cardInstanceId]: { ...card, locked } },
+    };
+    const res = await cols.saves.findOneAndUpdate(
+      { _id: accountId, rev: doc.rev },
+      { $set: { save: next, rev: next.rev } },
+    );
+    if (res) return { save: next };
+  }
+  return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
+}
+
+/**
  * Feed material cards into a target card (CHARACTER_CARDS_DESIGN §3.3).
  *
  * Rules:

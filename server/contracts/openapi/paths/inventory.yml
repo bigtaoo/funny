@@ -241,3 +241,73 @@
       '404': { $ref: '#/components/responses/ErrorResp' }
       '409': { $ref: '#/components/responses/ErrorResp' }
 
+/cards/lock:
+  post:
+    operationId: cardsLock
+    tags: [save]
+    summary: "Lock a character card (CC-4). Locked cards cannot be consumed as feed material. Idempotent: locking an already-locked card succeeds"
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [cardInstanceId]
+            properties:
+              cardInstanceId: { type: string, description: CardInstance id to lock }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '404': { $ref: '#/components/responses/ErrorResp' }
+      '409': { $ref: '#/components/responses/ErrorResp' }
+
+/cards/unlock:
+  post:
+    operationId: cardsUnlock
+    tags: [save]
+    summary: "Unlock a character card (CC-4). Unlocked cards may again be consumed as feed material. Idempotent: unlocking an already-unlocked card succeeds"
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [cardInstanceId]
+            properties:
+              cardInstanceId: { type: string, description: CardInstance id to unlock }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '404': { $ref: '#/components/responses/ErrorResp' }
+      '409': { $ref: '#/components/responses/ErrorResp' }
+
