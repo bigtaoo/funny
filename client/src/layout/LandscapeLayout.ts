@@ -148,9 +148,12 @@ export class LandscapeLayout implements ILayout {
         h: 2 * CELL,
       };
     }
-    // Player 1: game rows 16-17 → rightmost X; game cols 5-6 → middle Y (mirrored)
+    // Player 1 (joiner): gridToScreen mirrors the row axis, so the local player's
+    // own base (game rows 16-17) renders at the LEFT — same near-side as the host
+    // sees theirs. Must match gridToScreen, or the base sprite / crack / hit
+    // outline lands on the wrong castle.
     return {
-      x: this.boardX + (BOARD_ROWS - 2) * CELL,
+      x: this.boardX,
       y: BOARD_Y + (BOARD_COLS - 1 - BASE_COLS[1]) * CELL,
       w: 2 * CELL,
       h: 2 * CELL,
@@ -167,9 +170,10 @@ export class LandscapeLayout implements ILayout {
         h: 2 * CELL,
       };
     }
-    // Player 1: enemy rows 0-1 → leftmost X
+    // Player 1 (joiner): mirrored, so the enemy base (game rows 0-1) renders at
+    // the RIGHT (far side). Mirror image of the player rect above.
     return {
-      x: this.boardX,
+      x: this.boardX + (BOARD_ROWS - 2) * CELL,
       y: BOARD_Y + (BOARD_COLS - 1 - BASE_COLS[1]) * CELL,
       w: 2 * CELL,
       h: 2 * CELL,

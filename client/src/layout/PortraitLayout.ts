@@ -138,10 +138,13 @@ export class PortraitLayout implements ILayout {
         h: 2 * CELL,
       };
     }
-    // Player 1: rows 16-17 appear at the top
+    // Player 1 (joiner): gridToScreen mirrors the row axis, so the local player's
+    // own base (game rows 16-17) renders at the BOTTOM — same near-side as the
+    // host sees theirs. Must match gridToScreen, or the base sprite / crack / hit
+    // outline lands on the wrong castle.
     return {
       x: this.boardX + (BOARD_COLS - 1 - BASE_COLS[1]) * CELL,
-      y: this.boardY,
+      y: this.boardY + (BOARD_ROWS - 2) * CELL,
       w: 2 * CELL,
       h: 2 * CELL,
     };
@@ -157,10 +160,11 @@ export class PortraitLayout implements ILayout {
         h: 2 * CELL,
       };
     }
-    // Player 1: enemy rows 0-1 appear at the bottom
+    // Player 1 (joiner): mirrored, so the enemy base (game rows 0-1) renders at
+    // the TOP (far side). Mirror image of the player rect above.
     return {
       x: this.boardX + (BOARD_COLS - 1 - BASE_COLS[1]) * CELL,
-      y: this.boardY + (BOARD_ROWS - 2) * CELL,
+      y: this.boardY,
       w: 2 * CELL,
       h: 2 * CELL,
     };

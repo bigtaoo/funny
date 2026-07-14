@@ -93,7 +93,12 @@ bgScale = max(screenW / designW, screenH / designH)
 | 玩家0（本地） | 己方在下，面朝上 | 己方在左，面朝右 |
 | 玩家1（本地） | 己方在下，面朝上（180° 旋转视图） | 己方在左，面朝右（180° 旋转视图） |
 
-MVP 阶段本地玩家永远是玩家0，镜像路径代码预留但不激活。
+> **镜像路径现已激活**：PvP 匹配（含 botsvc）会把真实加入方分配为玩家1（`Side.Top`），
+> 走 `createLayout(..., Side.Top)` 的 180° 镜像视图。此前该路径长期休眠，`LandscapeLayout`/
+> `PortraitLayout` 的 `playerBaseRect()`/`enemyBaseRect()` 在 Top 分支把己方/敌方基座贴图放反了
+> ——与 `gridToScreen`（兵种、出兵、战斗、裂纹/受击特效都走它）相反。表现为：**加入方打对方城堡，
+> 受击特效却画在自己基地上**。已修正：两个 layout 的 Top 分支现在与 `gridToScreen` 对齐
+> （单测锁定 `基座贴图中心 == gridToScreen(己方/敌方物理中心)`）。
 
 ---
 
