@@ -215,6 +215,25 @@ describe.skipIf(!mongo)('worldsvc territory connectivity e2e (ADR-039)', () => {
       .resolves.toMatchObject({ kind: 'occupy', status: 'marching' });
   });
 
+  it('capital footprint bootstraps connectivity even if the ring cells lost their ownerId (legacy base repair)', async () => {
+    // Regression: a base whose 8 ring TileDocs are missing `ownerId` (a pre-full-footprint / legacy
+    // capital) must still let the owner occupy land bordering the footprint. Before the mainBaseTile-based
+    // bootstrap, connectivity counted only ring TileDocs' ownerId, so such a base could occupy nothing at
+    // all beside itself ("连自己基地旁边的地都没法打"). The anchor is left owned (so joinWorld still treats
+    // the base as the player's), only the 8 ring cells are stripped.
+    const base = findBaseCoord(10, 10);
+    await svc.joinWorld(W, 'solo', base.x, base.y);
+    const anchorTid = tileId(W, base.x, base.y);
+    await m.collections.tiles.updateMany(
+      { worldId: W, ownerId: 'solo', baseRing: true, _id: { $ne: anchorTid } },
+      { $unset: { ownerId: '' } },
+    );
+
+    const adjacent = outsideFootprint(base);
+    await expect(svc.startMarch(W, 'solo', base.x, base.y, adjacent.x, adjacent.y, 'occupy', OCCUPY_MIN_TROOPS))
+      .resolves.toMatchObject({ kind: 'occupy', status: 'marching' });
+  });
+
   it('sect-wide judgment: a sibling family\'s territory (not the requester\'s own) satisfies connectivity', async () => {
     const sectA = `s:${W}:AAA`;
     const famA = `f:${W}:A`, famA2 = `f:${W}:A2`;
