@@ -24,14 +24,15 @@ async function main(): Promise<void> {
   const capacity = new CapacityClient(env.gatewayInternalUrl, env.internalKey);
 
   const battleOpts = { gatewayWsUrl: env.gatewayWsUrl, chancePerTick: env.battleChancePerTick };
-  const pool = generateBotPool(env.poolSize).map(
+  const pool = generateBotPool(env.poolSize, env.deviceOffset).map(
     (identity) => new BotSession(identity, meta, social, commercial, world, battleOpts),
   );
   const scheduler = new Scheduler(pool, capacity, {
     targetOnline: env.targetOnline,
     shedStartAt: env.shedStartAt,
     shedFullAt: env.shedFullAt,
-    batchSize: 10,
+    batchSize: env.spawnBatch,
+    upkeepConcurrency: env.upkeepConcurrency,
   });
 
   const server = startInternalHttp(

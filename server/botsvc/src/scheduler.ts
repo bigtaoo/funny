@@ -9,12 +9,18 @@ export interface SchedulerOptions {
   shedFullAt: number;
   /** Max sessions started/stopped per tick — avoids a login/logout stampede that would itself look unlike real traffic. */
   batchSize: number;
+  /** Max concurrent per-session upkeep chains (family+SLG) per tick — see the tick() note on why this is bounded, not serial and not unbounded. */
+  upkeepConcurrency: number;
 }
 
 export class Scheduler {
   private readonly online = new Set<BotSession>();
   private paused = false;
   private currentTarget: number;
+  /** Re-entrancy guard: the process fires tick() on a fixed interval regardless of whether the previous pass finished. */
+  private ticking = false;
+  /** One-shot flag so a persistently-unavailable capacity signal warns once, not every tick. */
+  private capacityWarned = false;
 
   constructor(
     private readonly pool: BotSession[],
@@ -48,32 +54,74 @@ export class Scheduler {
 
   /** One scheduling pass: recompute the shed-adjusted target, then log sessions in/out toward it. */
   async tick(): Promise<void> {
-    if (this.paused) {
-      await this.drainAll();
+    // At high fleet sizes a single pass can outlast the fixed tick interval (hundreds of REST
+    // round-trips + matchmaking). Without this guard the interval would stack overlapping ticks,
+    // multiplying REST/matchmaking load and the event-loop bursts that were causing bots to miss
+    // gameserver heartbeats mid-match (BOTSVC_DESIGN §3.1). Skip this pass; the next one will catch up.
+    if (this.ticking) {
+      console.warn('botsvc scheduler: previous tick still running, skipping this pass');
       return;
     }
-    const gatewayOnline = await this.capacity.onlineCount();
-    this.currentTarget = shedTarget({
-      targetOnline: this.opts.targetOnline,
-      currentOnline: gatewayOnline,
-      shedStartAt: this.opts.shedStartAt,
-      shedFullAt: this.opts.shedFullAt,
-    });
+    this.ticking = true;
+    try {
+      if (this.paused) {
+        await this.drainAll();
+        return;
+      }
+      // A missing capacity signal must not halt scheduling — degrade to "no shedding" (full target)
+      // rather than throwing away the whole pass. Also lets an external load-gen fleet run without
+      // reach to gateway's internal /internal/stats (public routing doesn't expose it).
+      let gatewayOnline: number | undefined;
+      try {
+        gatewayOnline = await this.capacity.onlineCount();
+      } catch (e) {
+        if (!this.capacityWarned) {
+          console.warn('botsvc scheduler: capacity signal unavailable, shedding disabled:', (e as Error).message);
+          this.capacityWarned = true;
+        }
+      }
+      this.currentTarget =
+        gatewayOnline === undefined
+          ? this.opts.targetOnline
+          : shedTarget({
+              targetOnline: this.opts.targetOnline,
+              currentOnline: gatewayOnline,
+              shedStartAt: this.opts.shedStartAt,
+              shedFullAt: this.opts.shedFullAt,
+            });
 
-    if (this.online.size < this.currentTarget) {
-      await this.spawnUpTo(this.currentTarget);
-    } else if (this.online.size > this.currentTarget) {
-      this.despawnDownTo(this.currentTarget);
-    }
+      if (this.online.size < this.currentTarget) {
+        await this.spawnUpTo(this.currentTarget);
+      } else if (this.online.size > this.currentTarget) {
+        this.despawnDownTo(this.currentTarget);
+      }
 
-    for (const session of this.online) {
-      // Family and SLG upkeep are cheap and infrequent enough to run every tick; real cadence tuning is a post-load-test knob.
-      await session.tickFamily().catch(() => undefined);
-      await session.tickSlg().catch(() => undefined);
-      // Fire-and-forget: a real match can run for minutes — awaiting it here would serialize every
-      // other bot's upkeep behind one match. tickBattle() only starts the match; it never awaits it.
-      session.tickBattle();
+      await this.runUpkeep();
+    } finally {
+      this.ticking = false;
     }
+  }
+
+  /**
+   * Family + SLG upkeep for every online session, at bounded concurrency. Serial awaits made one pass
+   * grow linearly with the fleet (a 1000-bot tick outran the interval); unbounded Promise.all would
+   * fire 1000 REST fan-outs at once. A fixed pool of workers pulling from a shared cursor keeps each
+   * session's tickFamily→tickSlg order intact while capping in-flight work. tickBattle() stays
+   * fire-and-forget: a match can run for minutes, so it must never be awaited here.
+   */
+  private async runUpkeep(): Promise<void> {
+    const sessions = [...this.online];
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      while (next < sessions.length) {
+        const session = sessions[next++]!;
+        await session.tickFamily().catch(() => undefined);
+        await session.tickSlg().catch(() => undefined);
+        session.tickBattle();
+      }
+    };
+    const workers = Math.max(1, Math.min(this.opts.upkeepConcurrency, sessions.length));
+    await Promise.all(Array.from({ length: workers }, () => worker()));
   }
 
   private async spawnUpTo(target: number): Promise<void> {
