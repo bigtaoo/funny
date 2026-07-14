@@ -90,7 +90,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
       // falls back to the roster itself when offline/logged out (CardScene now works read-only offline).
       onOpenEquipment() {
         const equipLoggedIn = !state.offlineMode && !!platform.storage.getItem(TOKEN_KEY);
-        if (api && equipLoggedIn) { goEquipment(() => goCardRoster(goCampaignMap), 'roster'); return; }
+        if (api && equipLoggedIn) { goEquipment(() => goCardRoster(goCampaignMap), 'roster', '', () => goCardRoster(goCampaignMap, 'skins')); return; }
         goCardRoster(goCampaignMap);
       },
       getStars: () => saveManager.get().progress.stars,
@@ -149,13 +149,14 @@ export function createGameNav(ctx: AppCtx): GameNav {
    * still get a read-only roster + working skins tab off the local save mirror instead of a dead end.
    * Entered from the lobby "cards" nav slot (CHARACTER_CARDS_DESIGN §10).
    */
-  function goCardRoster(back: () => void = () => nav.goLobby()): void {
+  function goCardRoster(back: () => void = () => nav.goLobby(), initialTab: 'list' | 'skins' = 'list'): void {
     const client = api;
     const online = !!client;
     state.inLobby = false;
     analytics.track('screen_view', { scene: 'CardScene' });
     views.showCardRoster({
       onBack() { back(); },
+      initialTab,
       getSave: () => saveManager.get(),
       async feedCards(targetCardId, materialCardIds) {
         if (!client) return { ok: false as const, key: 'roster.err.offline' as TranslationKey };
@@ -178,7 +179,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
       // Per-card gear editing + the standalone equipment bag are server-authoritative — omitted offline.
       ...(online ? {
         openEquipment: (cardInstanceId: string) => goEquipment(() => goCardRoster(back), 'none', cardInstanceId),
-        openEquipmentBag: () => goEquipment(() => goCardRoster(back), 'roster', ''),
+        openEquipmentBag: () => goEquipment(() => goCardRoster(back), 'roster', '', () => goCardRoster(back, 'skins')),
       } : {}),
       getOwnedSkins: () => saveManager.get().inventory.skins,
       getEquippedSkin: (unitType) => saveManager.get().equipped[skinEquipKey(unitType)] ?? null,
@@ -216,20 +217,30 @@ export function createGameNav(ctx: AppCtx): GameNav {
    * the campaign map (default back) or the roster ("Develop" tab); `back` determines where the
    * user returns to.
    */
-  function goEquipment(back: () => void = goCampaignMap, group: 'none' | 'roster' = 'none', cardInstanceId = ''): void {
+  function goEquipment(
+    back: () => void = goCampaignMap,
+    group: 'none' | 'roster' = 'none',
+    cardInstanceId = '',
+    onSkins?: () => void,
+  ): void {
     if (!api) { back(); return; }
     const client = api;
     state.inLobby = false;
     analytics.track('screen_view', { scene: 'EquipmentScene' });
-    // Growth group peer tab (LOBBY_IA_REDESIGN P1.5/§15): a top [Cards|Equipment] strip is shown when
-    // entered from the card roster; tapping the peer navigates back (= back). Campaign / per-card
-    // entry does not inject this → plain back.
+    // Growth group nav (LOBBY_IA_REDESIGN P1.5/§15): entered from the card roster, the sidebar rail is
+    // the full [Cards | Equipment | Skins] group. Cards leads (peerTab, above Equipment); Skins trails
+    // (trailingPeers, below Equipment's Inventory/Craft sub-tabs) so it stays visible instead of being
+    // dropped. Campaign / per-card entry injects neither → plain back, no rail.
     const peerTab = group === 'roster'
       ? { labelKey: 'roster.title' as TranslationKey, icon: 'cards' as IconKind, onSelect: () => back() }
+      : undefined;
+    const trailingPeers = group === 'roster' && onSkins
+      ? [{ labelKey: 'roster.tab.skins' as TranslationKey, icon: 'brush' as IconKind, onSelect: onSkins }]
       : undefined;
     views.showEquipment({
       onBack() { back(); },
       ...(peerTab ? { peerTab } : {}),
+      ...(trailingPeers ? { trailingPeers } : {}),
       activeCardInstanceId: cardInstanceId,
       getSave: () => saveManager.get(),
       async craft(defId: string) {
