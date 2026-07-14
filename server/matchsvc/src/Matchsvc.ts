@@ -14,7 +14,7 @@
 // **No database connections**: the ELO value needed for matchmaking is fetched by the gateway from
 // meta before enqueuing and passed in as the `elo` parameter to enqueue.
 import { randomUUID, randomInt } from 'crypto';
-import { signTicket, createLogger, defaultPvpDeck, pickBotDifficulty, type FeatureFlagCache, type TicketClaims } from '@nw/shared';
+import { signTicket, createLogger, defaultPvpDeck, pickBotDifficulty, randomPlayerName, type FeatureFlagCache, type TicketClaims } from '@nw/shared';
 import { Matchmaking, type QueueEntry } from './Matchmaking';
 import { GameRegistry } from './GameRegistry';
 
@@ -49,8 +49,6 @@ export type PushMsg =
   | { kind: 'match_bot'; seed: number; opponentName: string; elo: number; difficulty: string }
   | { kind: 'room_error'; code: string; message: string };
 
-/** Display names randomly picked for the AI opponent during bot-fallback (display only; narrative voice unified as the "red-pen corrector / imaginary rival" theme). */
-const BOT_NAMES = ['Red Pen Cadet', 'Draft Paper Recruit', 'Eraser Apprentice', 'Sticky Note Trainee', 'Correction Fluid Guard'];
 /**
  * Push callback. `roomId` is a cross-process correlation id — it is included in logs across
  * matchsvc / gateway / game / meta for the same match, so Grafana can reconstruct the full
@@ -180,7 +178,7 @@ export class Matchsvc {
     }
     this.matchmaking.remove(entry.accountId);
     const seed = randomInt(1, 2 ** 48);
-    const opponentName = BOT_NAMES[randomInt(0, BOT_NAMES.length)]!;
+    const opponentName = randomPlayerName((n) => randomInt(n));
     const difficulty = pickBotDifficulty(entry.elo, (n) => randomInt(0, n));
     log.info('queue timeout: bot fallback ON → match_bot', { accountId: entry.accountId, elo: entry.elo, seed, difficulty });
     this.push(entry.accountId, { kind: 'match_bot', seed, opponentName, elo: entry.elo, difficulty: String(difficulty) });

@@ -417,3 +417,15 @@
 - **`design/game/ECONOMY_NUMBERS.md` §7**：皮肤获取矩阵（拥有关系/定价）不变，不需要改数字，但装备关系的机制描述如果该文档有提及需要同步措辞。
 
 （实现记录留待落地后补充，本节先定方向。）
+
+## 16. 图鉴 tile 重构（整高卡图 + 独立信息面板 + 点击翻转看故事）与生涯组页签顺序修正（2026-07-14）
+
+> 状态：**已实现**。承 §15 图鉴落地后的首轮打磨。用户看图鉴（Collection）截图报了两点：① 成就页的二级分类页签视觉上跑到了「图鉴」格下面，读起来像归属图鉴；② 卡牌 tile 想要更像"卡牌"——卡图占满整高、信息独立成块、点击翻面看背景故事。
+
+- **生涯组页签顺序改为 `[生涯统计|称号|图鉴|成就]`**（成就挪到末位）。根因：`AchievementScene` 的二级分类 sidebar（pve/pvp/collection/progression，`sub:true`）紧跟 Career strip 下方绘制；成就原为第 3 格、图鉴第 4 格（最底），这些二级分类因此出现在「图鉴」格正下方，视觉上像归属图鉴而非成就。把成就移到 strip 末位后，其二级分类正确嵌套其下。改动集中在 `CareerTabs.ts`（`tabs` 数组与点击分支同步调序）；跨场景导航按**命名回调**分发而非数组下标，`careerNav-backNavigation`/`headless-nav` 回归测试不受影响。
+- **图鉴 tile 重构**（`CardCodexScene.drawCardTile`）：卡图占满整卡高度居左；名称 / 类型·费用 / 属性 chips 移入右侧**独立绘制**的信息面板（`sketchPanel` + 自带 `sketchAccentBar` 强调条，按卡类型着色）。未拥有卡灰显 + 卡图上锁图标；暂无插画的卡（PvP 池 runner/ironclad/berserker/… 及部分建筑/法术）显示淡化首字母占位，避免空框读成坏图。tile 高度从 `h*0.155` 提到 `h*0.19` 给整高卡图 + 属性行留出空间。
+- **点击翻转看故事**：点未解锁卡的卡图播放 squash-flip（`scaleX 1→0→1`，260ms，中点换面），把卡图就地替换为该卡故事文案，再点翻回。故事文案取舍：有 `*.lore` 词条的（Anna 三英雄 max/lena/mara）取 lore，否则回退到 `descKey` 简介（`t()` 缺键返回键名本身，据此判断词条是否存在）。复用 `CardScene/detail.ts` `flipDetailPortrait` 同款 `PIXI.Ticker.shared` 驱动；per-tile 翻转态存于 `flipped: Set<nameKey>`，跨（异步卡图加载 / resize 触发的）整屏 re-render 保持；`render()` 起始 `cancelAllFlips()` 取消在途 tick，避免它继续改已 detach 的容器。
+  - 注：§15 决策 3 原计划把 lore 翻转放进 `CardScene` 角色卡详情弹窗（已实现，见 `cardDetailFlipAndSkin.ui.ts`）；本次按用户要求在图鉴 tile 内也做了**等价的就地翻转**，两处独立并存，故事文案就地展示在原卡图位置。
+- **测试**：新增 `client/test/ui/cardCodexFlip.ui.ts`（2 例，`npm run test:ui`）——泵真实 `PIXI.Ticker.shared` 断言翻转前无故事文案、过中点后出现、settle 后保持、再点翻回消失；并断言锁定卡不注册翻转命中。翻转命中无独立标签，按目标卡所在行的正方形（`w===h`，即卡图框）命中矩形定位（同 `cardDetailFlipAndSkin.ui.ts` 的按尺寸/`findLabelPos` 定位法）。既有 `cardCodexScene.ui.ts`（锁定计数 + 属性 chips）保持绿。
+- **验证**：`tsc --noEmit -p tsconfig.test.json` 仅报一处**无关的既有未跟踪 WIP** 测试（`baseUpgradeEvent.test.ts` 的 `GameMode "skirmish"`），本次两文件干净；`npm run test:ui` 全绿（32 文件 / 317 例）。未做真人截图——该游戏为 WebGL/PIXI canvas 且本地无后端（`/bootstrap` 网络失败），in-app 浏览器无法抓取 canvas 画面，改以本仓既有 headless 场景图测试作为验证路径（同 §12/§13 的约定）。
+- **涉及文件**：`client/src/ui/widgets/CareerTabs.ts`、`client/src/scenes/CardCodexScene.ts`、`client/test/ui/cardCodexFlip.ui.ts`（新增）。

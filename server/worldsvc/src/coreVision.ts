@@ -225,18 +225,33 @@ export class WorldCoreVision extends WorldCoreSpawn {
   ): Promise<boolean> {
     const { cols } = this.deps;
     const famIds = await this.ownSectFamilyIds(worldId, accountId);
-    const ownerIds = famIds.size > 0
-      ? (await cols.playerWorld
-          .find({ worldId, familyId: { $in: [...famIds] } })
-          .project<{ accountId: string }>({ accountId: 1 })
-          .toArray()
-        ).map((p) => p.accountId)
-      : [accountId];
+    // Resolve the sect's member accounts *and* their capitals in one pass. A member's own capital
+    // footprint is treated as guaranteed initial territory (SLG_DESIGN §4.1 "主城落地即视为初始领地")
+    // regardless of whether every ring TileDoc still carries `ownerId` — so a player can always
+    // expand from land bordering their own base even if a footprint cell's ownership record is
+    // missing (a legacy/pre-full-footprint base whose ring cells were never stamped). Relying purely
+    // on the ring TileDocs' ownerId used to leave such bases unable to occupy any adjacent tile.
+    const memberDocs = await cols.playerWorld
+      .find(famIds.size > 0 ? { worldId, familyId: { $in: [...famIds] } } : { _id: playerWorldId(worldId, accountId) })
+      .project<{ accountId: string; mainBaseTile?: string }>({ accountId: 1, mainBaseTile: 1 })
+      .toArray();
+    const ownerIds = memberDocs.length > 0 ? memberDocs.map((p) => p.accountId) : [accountId];
+    // Cells always counted as sect territory: every member's 3×3 capital footprint.
+    const baseCells = new Set<string>();
+    for (const p of memberDocs) {
+      if (!p.mainBaseTile) continue;
+      const bx = this.coordX(p.mainBaseTile), by = this.coordY(p.mainBaseTile);
+      if (!Number.isFinite(bx) || !Number.isFinite(by)) continue;
+      for (const c of baseFootprintCells(bx, by)) baseCells.add(`${c.x}:${c.y}`);
+    }
     const targetKeys = new Set(targetCells.map((c) => `${c.x}:${c.y}`));
     const neighbors = targetCells.flatMap(({ x, y }) => [
       { x: x - 1, y }, { x: x + 1, y }, { x, y: y - 1 }, { x, y: y + 1 },
     ]).filter((c) => !targetKeys.has(`${c.x}:${c.y}`)); // a footprint's own cells never count as their own neighbor
     if (neighbors.length === 0) return false;
+    // Adjacent to a sect member's capital footprint → connected (the bootstrap invariant above).
+    if (neighbors.some((c) => baseCells.has(`${c.x}:${c.y}`))) return true;
+    // Otherwise fall back to any owned territory TileDoc (captured land beyond the capitals) adjacent to the target.
     const n = await cols.tiles.countDocuments({
       worldId,
       ownerId: { $in: ownerIds },

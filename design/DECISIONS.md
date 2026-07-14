@@ -439,10 +439,11 @@
   2. **盟友宗门领地不计入判定**——结盟（§8.2，`sect.allySectIds`）只是互不攻伐 + 桥栈道通行，不合并版图，否则"结盟"会变相等价于"合并宗门"。
   3. **服务端两处强制**：`startMarch`（`combatMarch.ts`）的 `occupy`/`attack` 分支在发起时校验；到达时 `applySiege`（`combatSiege/arrival.ts`）与 `applyOccupy`（`combatSiege/occupation.ts`）再校验一次（行军途中宗门领地可能因丢地而断连），断连按"扑空"处理——退还部队 + 推送 `recalled`，与既有的"目标已非敌方所有"重校验同一套模式。不满足 → 新错误码 `TERRITORY_NOT_CONNECTED`（400）。
   4. **判定函数**：`WorldCoreVision.isConnectedToSectTerritory(worldId, accountId, x, y)`（`coreVision.ts`）——4 方向邻接查询 `TileDoc.ownerId ∈ 宗门成员家族的 accountId 并集`；私有辅助 `ownSectFamilyIds` 与既有 `friendlyAccountIds` 同构但**不含盟友宗门**（这是两者唯一的差异点，友军攻击豁免要盟友、连地判定不要）。
+  5. **主城落地即初始领地（不依赖 ring 格 ownerId）** — 修订 2026-07-14：连地判定与行军寻路都额外把**每个宗门成员的主城 3×3 footprint**（由 `playerWorld.mainBaseTile` 推出）当作己方领地，而不是纯靠 8 个 ring `TileDoc` 是否带 `ownerId`。原因：早期版本 `baseTileDocs` 未给 ring 格写 `ownerId` 的**历史存档基地**（ring 格 `type:'base'` 但无 `ownerId`）会出现"连自己基地旁边的空地都占不了"——`isConnectedToSectTerritory` 数不到相邻己方格（只有 anchor 带 ownerId，而 anchor 的邻居正是自己的 ring 格，占领目标在 footprint 外一格，其邻居 ring 格无 ownerId → 判定失败）；且 `combatMarch.ts` 的寻路 `blockedBaseKeys` 会把无主 `type:'base'` 格当成敌方建筑（missing ownerId 命中 `$nin`）把守军堵死在城里。改为从 `mainBaseTile` 推 footprint 后，健康基地行为不变（ring 本来就带 ownerId，新旧路径一致），历史存档基地则**原地自愈**（无需触发 ADR-025 的 purge+随机重新落地那条破坏性路径）。
 - **已知取舍（接受）**：先手/占据资源密集区的宗门会滚雪球更快，弱势宗门可能被堵死在外圈无法扩张——但一个大区真正对抗的宗门通常只有两三个，规则逼着弱势方要么被兼并要么结盟，符合"明确前线"的设计目的，不视为需要修正的缺陷。
 - **影响**：
   - `@nw/shared`（`api.ts` 新增 `ErrorCode.TERRITORY_NOT_CONNECTED` + `ERROR_HTTP_STATUS` 映射）。
-  - `worldsvc`：`coreVision.ts` 新增 `ownSectFamilyIds`/`isConnectedToSectTerritory`；`combatMarch.ts` 的 `startMarch` occupy/attack 分支新增校验；`combatSiege/arrival.ts` 的 `applySiege`、`combatSiege/occupation.ts` 的 `applyOccupy` 到达时新增重校验。
+  - `worldsvc`：`coreVision.ts` 新增 `ownSectFamilyIds`/`isConnectedToSectTerritory`；`combatMarch.ts` 的 `startMarch` occupy/attack 分支新增校验；`combatSiege/arrival.ts` 的 `applySiege`、`combatSiege/occupation.ts` 的 `applyOccupy` 到达时新增重校验。2026-07-14 修订：`isConnectedToSectTerritory` 与 `computeMarchPath` 均改为从 `mainBaseTile` 推主城 footprint 作为己方领地（见核心规则 5），修历史存档基地无法从主城旁扩张的问题。
   - 文档：[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.1（表格标注）+ §4.1（新增，规则细节）。
   - 测试：既有大量 e2e（`march`/`siege`/`occupy-march`/`alliance-attack`/`passage`/`base-siege` 等）的攻击目标此前多为"跨图直接打远处敌方基地"，在硬性连地规则下会被拒绝——受影响用例需改用既有的内部/测试专用 `TerritoryService.occupyTile()`（瞬占，见 ADR-037 段）预先铺垫"发起方宗门已占领相邻格"的前置状态，而不是重写测试所验证的核心断言。新增 `territory-connectivity.e2e.test.ts` 覆盖判定本身。
 

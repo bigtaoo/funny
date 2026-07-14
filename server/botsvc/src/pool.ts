@@ -26,10 +26,12 @@ function tierForRatio(ratio: number): PaymentTier {
  * Deterministic pool generation: same size always yields the same deviceId→tier assignment (no RNG),
  * so restarting botsvc doesn't reshuffle who owns which purchase history.
  */
-export function generateBotPool(size: number): BotIdentity[] {
+export function generateBotPool(size: number, deviceOffset = 0): BotIdentity[] {
   const pool: BotIdentity[] = [];
   for (let i = 1; i <= size; i++) {
-    const deviceId = `bot-${String(i).padStart(4, '0')}`;
+    // Offset only shifts the deviceId (account identity); the tier split stays keyed to the in-pool
+    // index so a given slot keeps its purchase profile regardless of where the numbering starts.
+    const deviceId = `bot-${String(i + deviceOffset).padStart(4, '0')}`;
     const ratio = (i - 0.5) / size;
     pool.push({ deviceId, paymentTier: tierForRatio(ratio) });
   }

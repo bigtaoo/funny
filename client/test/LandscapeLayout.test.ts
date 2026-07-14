@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { LandscapeLayout } from '../src/layout/LandscapeLayout';
 import { createLayout } from '../src/layout/ScalingManager';
+import { Side } from '../src/game';
 
 // The landscape design height is fixed at 1080; the width follows the *safe
 // drawable area* aspect (never below the classic 1920) so fit-to-height scaling
@@ -65,6 +66,22 @@ describe('LandscapeLayout dynamic width', () => {
     // (844 − 47) × (390 − 21) → narrower design width than no-inset.
     expect(inset.designWidth).toBe(Math.round(1080 * (844 - 47) / (390 - 21)));
     expect(inset.designWidth).toBeLessThan(noInset.designWidth);
+  });
+
+  // Regression: the base *sprite* rect must sit exactly where gridToScreen renders
+  // that base's physical center, for BOTH host and joiner. gridToScreen mirrors the
+  // board for the joiner (Side.Top), so the sprite rects must mirror to match — else
+  // the castle art, upgrade tier, cracks and the under-attack hit outline all land on
+  // the WRONG castle (the joiner saw the enemy's damage flash on their own base).
+  // Physical base centers: cols 5-6 → 5.5; own rows 0-1 → 0.5 / rows 16-17 → 16.5.
+  it.each([
+    { side: Side.Bottom, ownRow: 0.5,  enemyRow: 16.5 },
+    { side: Side.Top,    ownRow: 16.5, enemyRow: 0.5  },
+  ])('anchors base sprite rects to gridToScreen for localSide=$side', ({ side, ownRow, enemyRow }) => {
+    const l = new LandscapeLayout(1920, 1080, side);
+    const center = (r: { x: number; y: number; w: number; h: number }) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 });
+    expect(center(l.playerBaseRect())).toEqual(l.gridToScreen(5.5, ownRow));
+    expect(center(l.enemyBaseRect())).toEqual(l.gridToScreen(5.5, enemyRow));
   });
 
   it('round-trips grid ↔ screen coordinates through the shifted board origin', () => {

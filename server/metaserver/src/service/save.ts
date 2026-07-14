@@ -8,7 +8,7 @@ import type { SyncPatch } from '@nw/shared';
 import { ErrorCode, err, ok } from '@nw/shared';
 import { getOrCreateSave, putSave, writeMigratedSave } from '../save.js';
 import { getCurrentSeason, migrateIfStale } from '../ladderSeason.js';
-import { getDisplayName, ensurePublicId } from '../accounts.js';
+import { getDisplayName, ensurePublicId, hasFreeRename } from '../accounts.js';
 import { mirrorWalletFrom, reconcileUndelivered } from '../economy.js';
 import { nullMetaSocialsvcClient } from '../socialsvcClient.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
@@ -86,7 +86,9 @@ export function SaveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
       save = { ...save, stamina };
       const displayName = await getDisplayName(cols, accountId);
       const publicId = await ensurePublicId(cols, accountId);
-      return ok({ save, publicId, ...(displayName ? { displayName } : {}), ...this.gatewayField });
+      // freeRename: the player still holds their one-time free rename (current name is a system default).
+      const freeRename = await hasFreeRename(cols, accountId);
+      return ok({ save, publicId, freeRename, ...(displayName ? { displayName } : {}), ...this.gatewayField });
     }
 
     async putSave(req: FastifyRequest, reply: FastifyReply) {

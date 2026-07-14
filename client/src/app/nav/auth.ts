@@ -7,6 +7,7 @@ import type { TranslationKey } from '../../i18n';
 import type { AppCtx, Nav } from '../appCtx';
 import {
   SEEN_INTRO_FLAG, TOKEN_KEY, PLAYER_NAME_KEY, PLAYER_PUBLIC_ID_KEY, PLAYER_AVATAR_KEY, RENAME_COST,
+  FREE_RENAME_KEY,
 } from '../appConstants';
 
 export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'doLogout' | 'resolveEntry' | 'goSettings'> {
@@ -45,6 +46,7 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
       ...(canRename
         ? {
             renameCost: RENAME_COST,
+            freeRename: platform.storage.getItem(FREE_RENAME_KEY) === '1',
             getCoins: () => saveManager.get().wallet.coins,
             onRename: doRename,
           }
@@ -82,9 +84,11 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
   async function doRename(name: string): Promise<RenameOutcome> {
     if (!api) return { ok: false, key: 'settings.renameFail' };
     try {
-      const { save, displayName } = await api.rename(name);
+      const { save, displayName, freeRename } = await api.rename(name);
       saveManager.adoptServer(save);
       platform.storage.setItem(PLAYER_NAME_KEY, displayName);
+      // Free rename is consumed on first success; server returns freeRename:false so the button reverts to the paid state.
+      if (freeRename !== undefined) platform.storage.setItem(FREE_RENAME_KEY, freeRename ? '1' : '0');
       return { ok: true, name: displayName };
     } catch (e) {
       console.error('[rename] failed', e);

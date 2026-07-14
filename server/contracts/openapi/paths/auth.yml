@@ -275,7 +275,7 @@
   post:
     operationId: profileRename
     tags: [profile]
-    summary: Change display name (consumes coins; writes name and pushes save after successful deduction)
+    summary: Change display name (first rename is free if the player never chose a name; otherwise consumes coins)
     security: [{ bearerAuth: [] }]
     requestBody:
       required: true
@@ -302,6 +302,8 @@
                   properties:
                     save: { $ref: '#/components/schemas/SaveData' }
                     displayName: { type: string }
+                    # False after any successful rename — the free rename (if any) has now been consumed.
+                    freeRename: { type: boolean }
       '400': { $ref: '#/components/responses/ErrorResp' }
       '401': { $ref: '#/components/responses/ErrorResp' }
       '402': { $ref: '#/components/responses/ErrorResp' }

@@ -1,6 +1,6 @@
 import * as PIXI from 'pixi.js-legacy';
 import { ATTACK_LANES, BOARD_COLS, BOARD_ROWS } from '../game/config';
-import { sideToOwner } from '../game';
+import { Side, sideToOwner } from '../game';
 import { ILayout, Rect } from '../layout/ILayout';
 import { ObjectPool } from '../cache/ObjectPool';
 import baseTexUrl from '../assets/game_base.png';
@@ -372,6 +372,54 @@ export class BoardView {
     PIXI.Ticker.shared.add(tick);
   }
 
+  /**
+   * One-shot celebratory "level-up" flash when a base upgrades (event-driven).
+   * The persistent tier texture is swapped separately by setBaseUpgradeLevel
+   * (state-reconciled each frame); this only plays the transient burst.
+   *
+   * Routes to the correct base via the same localSide-aware mapping as the crack
+   * effect. A hand-drawn gold outline is stamped ONCE (SketchPen jitter frozen),
+   * then expanded + faded via transform — no per-frame redraw (avoids wobble).
+   * A brief scale-pop of the whole base container punctuates the upgrade.
+   */
+  playBaseUpgradeEffect(owner: 0 | 1): void {
+    const localOwner = sideToOwner(this.layout.localSide);
+    const base = owner === localOwner ? this.playerBase : this.enemyBase;
+    if (!base) return;
+
+    // The base sprite/crack/pulse all live under one container centered on the base;
+    // popping it scales the whole castle. Fall back gracefully if unparented.
+    const con = base.sprite.parent as PIXI.Container | null;
+
+    const ring = new PIXI.Graphics();
+    const hw = base.rect.w / 2;
+    const hh = base.rect.h / 2;
+    const pen = new SketchPen(ring, (base.pulseSeed++ * 0x9e3779b1) >>> 0 || 1);
+    pen.rect(-hw - 4, -hh - 4, base.rect.w + 8, base.rect.h + 8, {
+      color: fx.upgrade, width: 3.5, jitter: 1.8,
+    });
+    (con ?? this.container).addChild(ring);
+
+    const DURATION = 0.6; // seconds
+    let elapsed = 0;
+    const tick = (): void => {
+      elapsed += PIXI.Ticker.shared.deltaMS / 1000;
+      const t = Math.min(elapsed / DURATION, 1);
+      ring.alpha = 1 - t;
+      ring.scale.set(1 + t * 0.5); // ring blooms outward as it fades
+      // Container pop: overshoot to +12% by 0.15s, settle back to 1 by 0.3s.
+      if (con) con.scale.set(1 + 0.12 * Math.sin(Math.min(elapsed / 0.3, 1) * Math.PI));
+      if (t >= 1) {
+        PIXI.Ticker.shared.remove(tick);
+        this.fxTicks.delete(tick);
+        if (con) con.scale.set(1);
+        ring.destroy();
+      }
+    };
+    this.fxTicks.add(tick);
+    PIXI.Ticker.shared.add(tick);
+  }
+
   // ── Private helpers ───────────────────────────────────────────────────────
 
   /**
@@ -384,11 +432,15 @@ export class BoardView {
   private laneRect(gameCol: number): Rect {
     const r    = this.layout.boardRect;
     const cell = this.layout.cellSize;
+    // The joiner (Side.Top) has both grid axes mirrored in gridToScreen, so the
+    // lane band must mirror the col axis too — otherwise the highlight lands on the
+    // mirror-opposite band from where units actually render (empty-cell red bug).
+    const band = this.layout.localSide === Side.Bottom ? gameCol : (BOARD_COLS - 1 - gameCol);
     if (this.layout.orientation === 'portrait') {
-      return { x: r.x + gameCol * cell, y: r.y, w: cell, h: r.h };
+      return { x: r.x + band * cell, y: r.y, w: cell, h: r.h };
     }
     // In landscape, game col → screen Y band
-    return { x: r.x, y: r.y + gameCol * cell, w: r.w, h: cell };
+    return { x: r.x, y: r.y + band * cell, w: r.w, h: cell };
   }
 
   private drawBases(layout: ILayout): void {
@@ -440,6 +492,13 @@ export class BoardView {
     const tex = tier === 0 ? PIXI.Texture.from(baseTexUrl as string) : getBaseUpgradeTexture(tier as 1 | 2);
     if (!tex) return; // atlas not decoded yet — try again next sync
     base.sprite.texture = tex;
+    // Re-fit to the base footprint: the upgrade-tier frames (256×256) have a
+    // different native size than game_base.png (324×256), so without re-applying
+    // width/height the retained scale would render the upgraded base squished
+    // (~79% width). PIXI's width/height setters preserve the sign of scale, so the
+    // enemy base's mirror flip (scale.x < 0) survives.
+    base.sprite.width  = base.rect.w;
+    base.sprite.height = base.rect.h;
     base.upgradeTier = tier;
   }
 

@@ -37,6 +37,14 @@ export interface EquipmentCallbacks {
    *   - from Card roster : { labelKey: 'roster.title', ... }      → [Cards|Equipment]
    */
   peerTab?: { labelKey: TranslationKey; icon?: IconKind; onSelect(): void };
+  /**
+   * Peers that sit *after* Equipment in the growth group and so must render below Equipment's own
+   * Inventory/Craft sub-tabs, not be dropped. The roster group is [Cards | Equipment | Skins]: the
+   * leading Cards peer comes in via {@link peerTab}, and Skins is injected here so it stays visible —
+   * shifted down under the sub-tabs — instead of vanishing when Equipment is the active scene
+   * (LOBBY_IA_REDESIGN §15). See the inventory mixin's renderSidebar.
+   */
+  trailingPeers?: { labelKey: TranslationKey; icon?: IconKind; onSelect(): void }[];
   /** Read the current authoritative save (server pushes after each action → adoptServer; this scene re-reads and redraws). */
   getSave(): SaveData;
   craft(defId: string): Promise<EquipResult>;

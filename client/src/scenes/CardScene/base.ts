@@ -58,6 +58,12 @@ export interface CardCallbacks {
   getEquippedSkin(unitType: UnitType): string | null;
   /** Equip a skin on a character, or null to revert to the default look. */
   equipSkin(unitType: UnitType, skinId: string | null): void;
+  /**
+   * Content tab to open on first paint; defaults to the roster grid ('list'). Lets a caller land
+   * directly on the Skins wardrobe — e.g. tapping the Skins peer from EquipmentScene's sidebar rail
+   * (the [Cards | Equipment | Skins] growth group, LOBBY_IA_REDESIGN §15).
+   */
+  initialTab?: CardSceneTab;
 }
 
 export const MODAL_DIM = 0x000000;
@@ -153,6 +159,7 @@ export class CardSceneBase {
     this.h = layout.designHeight;
     this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
+    this.tab = cb.initialTab ?? 'list';
     this.container = new PIXI.Container();
     this.build();
     this.render();

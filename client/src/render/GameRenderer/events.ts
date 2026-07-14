@@ -123,6 +123,11 @@ export function EventMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
             this.drawVignette();
           }
           break;
+        case 'base_upgraded':
+          // One-shot celebratory flash; the persistent tier texture is reconciled
+          // separately by BoardView.setBaseUpgradeLevel each frame.
+          this.boardView.playBaseUpgradeEffect(event.owner);
+          break;
         case 'spell_cast':
           if (event.spellType === SpellType.Meteor) {
             const row = Math.round(event.center.y_fp / 1000);

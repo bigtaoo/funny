@@ -6,6 +6,7 @@ import {
   hashPassword,
   isAnonymousAccount,
   normalizeLoginId,
+  randomPlayerName,
   verifyPassword,
 } from '@nw/shared';
 
@@ -121,7 +122,8 @@ export async function registerWithPassword(
         _id: accountId,
         createdAt: now,
         password: { loginId: norm, hash },
-        ...(displayName ? { displayName } : {}),
+        // Explicit name at registration counts as a deliberate choice → no free rename later.
+        ...(displayName ? { displayName, nameChosen: true } : {}),
         ...(region !== 'global' ? { region } : {}),
       },
     },
@@ -161,16 +163,6 @@ export async function getDisplayName(
   return ensureDisplayName(cols, accountId);
 }
 
-/** Adjective/noun pool for lazily-generated default nicknames (same narrative voice as Matchsvc's BOT_NAMES). */
-const DEFAULT_NAME_ADJECTIVES = ['Quiet', 'Restless', 'Ink-Stained', 'Dog-Eared', 'Margin', 'Doodle', 'Scribbled', 'Folded'];
-const DEFAULT_NAME_NOUNS = ['Scholar', 'Scribe', 'Notebook', 'Penpal', 'Sketcher', 'Wanderer', 'Author', 'Reader'];
-
-function randomDefaultDisplayName(): string {
-  const adj = DEFAULT_NAME_ADJECTIVES[randomInt(DEFAULT_NAME_ADJECTIVES.length)];
-  const noun = DEFAULT_NAME_NOUNS[randomInt(DEFAULT_NAME_NOUNS.length)];
-  return `${adj} ${noun} ${randomInt(1000, 9999)}`;
-}
-
 /**
  * Ensure the account has a display name: returns the existing one immediately, otherwise lazily
  * assigns and persists a random default. Mirrors {@link ensurePublicId}'s lazy-backfill pattern —
@@ -181,7 +173,7 @@ function randomDefaultDisplayName(): string {
 export async function ensureDisplayName(cols: Collections, accountId: string): Promise<string> {
   const existing = await cols.accounts.findOne({ _id: accountId }, { projection: { displayName: 1 } });
   if (existing?.displayName) return existing.displayName;
-  const candidate = randomDefaultDisplayName();
+  const candidate = randomPlayerName();
   const res = await cols.accounts.updateOne(
     { _id: accountId, displayName: { $exists: false } },
     { $set: { displayName: candidate } },
@@ -296,13 +288,26 @@ export async function searchAccounts(
   }));
 }
 
-/** Update the display name (rename feature; called after coins have already been deducted). */
+/**
+ * Update the display name (rename feature; called after coins have already been deducted, or for the
+ * one-time free rename). Always marks the name as deliberately chosen, so any subsequent rename is paid.
+ */
 export async function setDisplayName(
   cols: Collections,
   accountId: string,
   displayName: string,
 ): Promise<void> {
-  await cols.accounts.updateOne({ _id: accountId }, { $set: { displayName } });
+  await cols.accounts.updateOne({ _id: accountId }, { $set: { displayName, nameChosen: true } });
+}
+
+/**
+ * Whether the account still has its free rename available: true when the player has never deliberately
+ * chosen a display name (current name is a system-assigned default, or none yet). Drives both the free
+ * rename in profileRename and the `freeRename` hint returned with GET /save.
+ */
+export async function hasFreeRename(cols: Collections, accountId: string): Promise<boolean> {
+  const doc = await cols.accounts.findOne({ _id: accountId }, { projection: { nameChosen: 1 } });
+  return !doc?.nameChosen;
 }
 
 // ── OAuth (SA-2) ────────────────────────────────────────────────────────────

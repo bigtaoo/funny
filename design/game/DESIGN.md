@@ -167,6 +167,7 @@ hudView.container        ← HUD（最顶层）
 |---|---|
 | Alpha 脉冲（"呼吸"） | 0.65–1.0，周期 4s；双方基地相位差 1.2 rad |
 | 受击裂缝 | `base_hp_changed` 事件触发 `playBaseCrackEffect()`；HP > 85% 不显示；每次受击追加 1–2 条随机折线（3 段，铅笔灰 `#333`，`alpha 0.65`）；HP < 40% 每次追加 2 条 |
+| 升级瞬间闪光 | `base_upgraded` 事件触发 `playBaseUpgradeEffect()`：金色手绘描边框（`fx.upgrade` `#ffcc00`，`SketchPen` 一次性描边）绕基地占位、0.6s 内向外扩散 1.5×并淡出，同时整个基地容器弹跳一次（sin 曲线峰值 +12%，0.3s 归位）。**注意**：持久的升级贴图（tier）由 `setBaseUpgradeLevel` 每帧从 `player.upgradeLevel` 对账（见下方资源表），此事件仅负责这一次性庆祝闪光——与受击裂缝的分工一致（持久态轮询对账 / 瞬时特效走事件）。指令链路同 `upgrade_base`：引擎 `commands.ts` 升级成功后 `pushEvent({type:'base_upgraded', owner, level})`。因是新增事件、老录像回放会重新推导事件流，不影响确定性，无需 bump `ENGINE_VERSION`。 |
 
 ### 基地受击全屏晕影
 

@@ -535,6 +535,13 @@ export type GameEvent =
   | { type: 'base_hp_changed';
       owner: OwnerId; hp: number; maxHp: number }
 
+  /** Emitted once when a base upgrade succeeds. `level` is the new upgradeLevel.
+   *  The persistent tier texture is reconciled from `player.upgradeLevel` via
+   *  BoardView.setBaseUpgradeLevel each frame; this event only triggers the
+   *  one-shot celebratory "level-up" flash. */
+  | { type: 'base_upgraded';
+      owner: OwnerId; level: number }
+
   // ── Resources ──────────────────────────────────────────────────────────────
   | { type: 'resource_changed';
       owner: OwnerId; ink: number }

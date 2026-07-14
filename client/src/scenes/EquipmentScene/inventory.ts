@@ -63,6 +63,17 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
         { sub: true },
       );
       for (const hit of sub.hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
+
+      // Peers after Equipment in the growth group ([Cards | Equipment | Skins]) render *below* the
+      // Inventory/Craft sub-tabs, so the sub-tabs stay nested under Equipment and the trailing peer
+      // (Skins) shifts down instead of disappearing — see EquipmentCallbacks.trailingPeers.
+      const trailing = this.cb.trailingPeers ?? [];
+      if (trailing.length > 0) {
+        const ty = sub.bottom + Math.round(this.h * 0.03);
+        const peerTabs: HubTab[] = trailing.map((p) => ({ label: t(p.labelKey), active: false, icon: p.icon }));
+        const after = drawSidebarTabs(this.bodyLayer, sidebarW, ty, this.h, peerTabs, (i) => trailing[i]?.onSelect());
+        for (const hit of after.hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
+      }
     }
 
     renderInventory(bodyTop: number): void {

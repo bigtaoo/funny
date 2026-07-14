@@ -215,6 +215,67 @@ describe.skipIf(!mongo)('worldsvc territory connectivity e2e (ADR-039)', () => {
       .resolves.toMatchObject({ kind: 'occupy', status: 'marching' });
   });
 
+  it('capital footprint bootstraps connectivity even if the ring cells lost their ownerId (legacy base repair)', async () => {
+    // Regression: a base whose 8 ring TileDocs are missing `ownerId` (a pre-full-footprint / legacy
+    // capital) must still let the owner occupy land bordering the footprint. Before the mainBaseTile-based
+    // bootstrap, connectivity counted only ring TileDocs' ownerId, so such a base could occupy nothing at
+    // all beside itself ("连自己基地旁边的地都没法打"). The anchor is left owned (so joinWorld still treats
+    // the base as the player's), only the 8 ring cells are stripped.
+    const base = findBaseCoord(10, 10);
+    await svc.joinWorld(W, 'solo', base.x, base.y);
+    const anchorTid = tileId(W, base.x, base.y);
+    await m.collections.tiles.updateMany(
+      { worldId: W, ownerId: 'solo', baseRing: true, _id: { $ne: anchorTid } },
+      { $unset: { ownerId: '' } },
+    );
+
+    const adjacent = outsideFootprint(base);
+    await expect(svc.startMarch(W, 'solo', base.x, base.y, adjacent.x, adjacent.y, 'occupy', OCCUPY_MIN_TROOPS))
+      .resolves.toMatchObject({ kind: 'occupy', status: 'marching' });
+  });
+
+  it('legacy-base repair is sect-wide: a sibling\'s ownerId-stripped capital footprint still connects', async () => {
+    // Same repair as above, but the guaranteed-territory footprint belongs to a *sibling family* (a2), not
+    // the requester (a). Exercises the family branch of the mainBaseTile resolution: a2's capital footprint
+    // must count sect-wide even though its ring cells carry no ownerId.
+    const sectA = `s:${W}:AAA`;
+    const famA = `f:${W}:A`, famA2 = `f:${W}:A2`;
+    socialsvc.addFamily(famA, 'a', 'A', 'A', sectA);
+    socialsvc.addFamily(famA2, 'a2', 'A2', 'A2', sectA);
+    await m.collections.sects.insertOne({
+      _id: sectA, worldId: W, name: 'A', tag: 'AAA', leaderFamilyId: famA, leaderId: 'a',
+      memberFamilyCount: 2, allySectIds: [], prosperity: 0, rev: 1,
+    });
+    const aBase = findBaseCoord(10, 10);
+    const a2Base = findBaseCoord(60, 10);
+    await svc.joinWorld(W, 'a', aBase.x, aBase.y);
+    await svc.joinWorld(W, 'a2', a2Base.x, a2Base.y);
+    // Strip a2's ring ownership (legacy capital), so only its mainBaseTile-derived footprint can bootstrap it.
+    await m.collections.tiles.updateMany(
+      { worldId: W, ownerId: 'a2', baseRing: true, _id: { $ne: tileId(W, a2Base.x, a2Base.y) } },
+      { $unset: { ownerId: '' } },
+    );
+    const target = outsideFootprint(a2Base); // adjacent to a2's footprint, far from a's own territory
+    await expect(svc.startMarch(W, 'a', aBase.x, aBase.y, target.x, target.y, 'occupy', OCCUPY_MIN_TROOPS))
+      .resolves.toMatchObject({ kind: 'occupy', status: 'marching' });
+  });
+
+  it('pathfinding: a legacy base\'s army can still march out past its own ownerId-stripped ring', async () => {
+    // Isolates the computeMarchPath fix from connectivity. Sweep is NOT connectivity-gated (only occupy/attack
+    // claim land), so a successful far sweep proves the army escaped its own footprint — before the fix the
+    // un-owned ring cells (type:'base', no ownerId) matched the "enemy building" $nin filter and walled the
+    // army inside the city, throwing PATH_BLOCKED.
+    const base = findBaseCoord(10, 10);
+    await svc.joinWorld(W, 'solo', base.x, base.y);
+    await m.collections.tiles.updateMany(
+      { worldId: W, ownerId: 'solo', baseRing: true, _id: { $ne: tileId(W, base.x, base.y) } },
+      { $unset: { ownerId: '' } },
+    );
+    const far = findCoord((t) => t.type === 'resource', 60, 60);
+    await expect(svc.startMarch(W, 'solo', base.x, base.y, far.x, far.y, 'sweep', OCCUPY_MIN_TROOPS))
+      .resolves.toMatchObject({ kind: 'sweep', status: 'marching' });
+  });
+
   it('sect-wide judgment: a sibling family\'s territory (not the requester\'s own) satisfies connectivity', async () => {
     const sectA = `s:${W}:AAA`;
     const famA = `f:${W}:A`, famA2 = `f:${W}:A2`;

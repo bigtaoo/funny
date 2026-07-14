@@ -214,6 +214,127 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
     });
   });
 
+  // ── CC-4: Lock / unlock cards ───────────────────────────────────────────────
+  describe('POST /cards/lock and /cards/unlock', () => {
+    const lock = (cardInstanceId: string) =>
+      app.inject({ method: 'POST', url: '/cards/lock', headers: auth(), payload: { cardInstanceId } });
+    const unlock = (cardInstanceId: string) =>
+      app.inject({ method: 'POST', url: '/cards/unlock', headers: auth(), payload: { cardInstanceId } });
+
+    it('lock sets locked=true and returns the updated save', async () => {
+      const cardId = (await cardIds())[0]!;
+      const r = body(await lock(cardId));
+      expect(r.ok).toBe(true);
+      expect(r.data.save.cardInv[cardId].locked).toBe(true);
+      expect((await cardById(cardId))!.locked).toBe(true);
+    });
+
+    it('unlock sets locked=false', async () => {
+      const cardId = (await cardIds())[0]!;
+      await lock(cardId);
+      const r = body(await unlock(cardId));
+      expect(r.ok).toBe(true);
+      expect(r.data.save.cardInv[cardId].locked).toBe(false);
+      expect((await cardById(cardId))!.locked).toBe(false);
+    });
+
+    it('lock is idempotent (locking an already-locked card succeeds, no rev bump)', async () => {
+      const cardId = (await cardIds())[0]!;
+      await lock(cardId);
+      const revAfterFirst = (await readSave()).rev;
+      const r = body(await lock(cardId));
+      expect(r.ok).toBe(true);
+      expect(r.data.save.cardInv[cardId].locked).toBe(true);
+      expect((await readSave()).rev).toBe(revAfterFirst); // no-op did not bump rev
+    });
+
+    it('locked card is rejected as feed material → 400 CARD_LOCKED', async () => {
+      const save = await readSave();
+      const taoCards = Object.values(save.cardInv!).filter((c) => CARD_DEFS[c.defId]?.faction === 'tao');
+      const targetId = taoCards[0]!.id;
+      const materialId = taoCards[1]!.id;
+      await lock(materialId);
+      const res = await feed(targetId, [materialId], 'ik-lock-then-feed');
+      expect(res.statusCode).toBe(400);
+      expect(body(res).error.code).toBe('CARD_LOCKED');
+    });
+
+    it('lock non-existent card → 404 CARD_NOT_FOUND', async () => {
+      const res = await lock('card_does_not_exist');
+      expect(res.statusCode).toBe(404);
+      expect(body(res).error.code).toBe('CARD_NOT_FOUND');
+    });
+
+    it('lock without cardInstanceId → 400 BAD_REQUEST', async () => {
+      const res = await app.inject({ method: 'POST', url: '/cards/lock', headers: auth(), payload: {} });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('unlock is idempotent (unlocking an already-unlocked card succeeds, no rev bump)', async () => {
+      const cardId = (await cardIds())[0]!; // starter cards begin unlocked
+      const revBefore = (await readSave()).rev;
+      const r = body(await unlock(cardId));
+      expect(r.ok).toBe(true);
+      expect(r.data.save.cardInv[cardId].locked).toBe(false);
+      expect((await readSave()).rev).toBe(revBefore); // no-op did not bump rev
+    });
+
+    it('unlock non-existent card → 404 CARD_NOT_FOUND', async () => {
+      const res = await unlock('card_does_not_exist');
+      expect(res.statusCode).toBe(404);
+      expect(body(res).error.code).toBe('CARD_NOT_FOUND');
+    });
+
+    it('unlock without cardInstanceId → 400 BAD_REQUEST', async () => {
+      const res = await app.inject({ method: 'POST', url: '/cards/unlock', headers: auth(), payload: {} });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('lock bumps the save rev by exactly 1 when it changes state', async () => {
+      const cardId = (await cardIds())[0]!;
+      const revBefore = (await readSave()).rev;
+      const r = body(await lock(cardId));
+      expect(r.data.save.rev).toBe(revBefore + 1);
+      expect((await readSave()).rev).toBe(revBefore + 1);
+    });
+
+    it('lock preserves the card’s other fields and leaves sibling cards untouched', async () => {
+      const ids = await cardIds();
+      const [cardId, siblingId] = ids;
+      const before = (await cardById(cardId!))!;
+      const siblingBefore = (await cardById(siblingId!))!;
+      const r = body(await lock(cardId!));
+      const after = r.data.save.cardInv[cardId!];
+      // Only `locked` flips; level/xp/defId/gear are unchanged.
+      expect(after).toEqual({ ...before, locked: true });
+      // Sibling card is byte-for-byte identical.
+      expect(r.data.save.cardInv[siblingId!]).toEqual(siblingBefore);
+    });
+
+    it('full cycle: lock blocks feed → unlock re-enables it', async () => {
+      const save = await readSave();
+      const taoCards = Object.values(save.cardInv!).filter((c) => CARD_DEFS[c.defId]?.faction === 'tao');
+      const targetId = taoCards[0]!.id;
+      const materialId = taoCards[1]!.id;
+
+      await lock(materialId);
+      const blocked = await feed(targetId, [materialId], 'ik-cycle-blocked');
+      expect(blocked.statusCode).toBe(400);
+      expect(body(blocked).error.code).toBe('CARD_LOCKED');
+
+      await unlock(materialId);
+      const allowed = body(await feed(targetId, [materialId], 'ik-cycle-allowed'));
+      expect(allowed.ok).toBe(true);
+      expect(allowed.data.save.cardInv[materialId]).toBeUndefined(); // material consumed after unlock
+    });
+
+    it('lock requires authentication → 401 without a bearer token', async () => {
+      const cardId = (await cardIds())[0]!;
+      const res = await app.inject({ method: 'POST', url: '/cards/lock', payload: { cardInstanceId: cardId } });
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
   // ── CC-2 §3: Equip into CardInstance (verifying CC-1/CC-2 gear model) ──────
   describe('POST /equipment/equip (cardInstanceId)', () => {
     it('equip writes instanceId into card.gear[slot]', async () => {
