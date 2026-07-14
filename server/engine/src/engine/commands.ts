@@ -66,6 +66,7 @@ export function CommandsMixin<TBase extends GameEngineBaseCtor & Constructor<Hel
         const cost = player.nextUpgradeCost;
         if (player.upgradeBase()) {
           if (cost !== null) this.state.stats[cmd.owner].goldSpent += cost;
+          this.state.pushEvent({ type: 'base_upgraded', owner: cmd.owner, level: player.upgradeLevel });
           this.state.pushEvent({ type: 'resource_changed', owner: cmd.owner, ink: player.ink });
         }
         return;
