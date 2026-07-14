@@ -282,7 +282,7 @@ export class WorldMapPanels {
 
   // ── Hit rects ──────────────────────────────────────────────────────────────
 
-  showModal(lines: string[], buttons: { label: string; action: () => void }[]): void {
+  showModal(lines: string[], buttons: { label: string; action: () => void; disabled?: boolean }[]): void {
     const ml = this.ctx.modalLayer;
     ml.removeChildren();
 
@@ -330,7 +330,11 @@ export class WorldMapPanels {
     let bx = mx + (mw - (btnW + modalMargin) * buttons.length + modalMargin) / 2;
     const by = my + mh - btnH - 30;
     for (const btn of buttons) {
-      const bp = sketchPanel(btnW, btnH, { fill: C.dark, border: C.accent, seed: seedFor(bx, by, btnW) });
+      // Disabled buttons (e.g. Occupy on a tile not connected to the player's territory, ADR-039) use the
+      // shared pale-grey disabled styling; the action is still registered so tapping it surfaces a toast
+      // explaining why, rather than reading as a dead click.
+      const disabled = !!btn.disabled;
+      const bp = sketchPanel(btnW, btnH, { fill: disabled ? C.btnDis : C.dark, border: disabled ? C.btnOff : C.accent, seed: seedFor(bx, by, btnW) });
       bp.x = bx; bp.y = by;
       ml.addChild(bp);
       // '✕' cancel buttons render the hand-drawn close glyph instead of the bare dingbat.
@@ -339,7 +343,7 @@ export class WorldMapPanels {
         ic.x = bx + btnW / 2 - 24; ic.y = by + btnH / 2 - 24;
         ml.addChild(ic);
       } else {
-        const bl = txt(btn.label, 30, C.light);
+        const bl = txt(btn.label, 30, disabled ? C.mid : C.light);
         bl.anchor.set(0.5, 0.5);
         bl.x = bx + btnW / 2; bl.y = by + btnH / 2;
         ml.addChild(bl);
