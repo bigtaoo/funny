@@ -43,7 +43,7 @@ server/botsvc/          独立 npm workspace，端口 18087（仅内部管理面
 
 - **botsvc 对外表现 = 一堆客户端**：它不接收玩家请求，只作为 N 个并发"机器人会话"的宿主进程，每个会话内部是一个状态机（§3），通过公网协议主动去连 metaserver/gateway/gameserver/socialsvc/worldsvc。
 - 不连任何业务数据库；机器人的账号数据本来就落在 metaserver/socialsv/worldsvc 各自的库里（跟真人账号同库同表，靠 `isBot` 字段区分）。
-- 部署上与其余 9 个服务同级加入 `server/dev-up.ps1` 和 `docker-compose*.yml`；生产环境可选择性关闭（`NW_BOTSVC_ENABLED=false`），冷启动结束、真实 DAU 稳定后直接停掉整个进程，不需要动其余服务的代码。
+- 部署上与其余服务同级加入 `server/dev-up.ps1` 和 `docker-compose*.yml`（已落地，见 §8：生产 `docker-compose.cloud.yml`/`docker-compose.prod.yml` 各有一个 `botsvc` 服务，`restart: unless-stopped` 常驻 300）；要临时停掉整个进程用 `docker compose stop botsvc` 或 `POST /internal/bots/scale {targetOnline:0}`，不需要动其余服务的代码，也不需要 `NW_BOTSVC_ENABLED` 之类的代码开关（当初设想过、最终没做）。
 
 ---
 
@@ -182,7 +182,7 @@ const FAMILY_TASK_ACTION_MAP: Record<string, FamilyTaskAction> = {
   - 观测中的次要现象：被测机变忙时 VPS 上那个 300-bot botsvc 的 CPU 从 ~47% 被挤到 ~27%（宿主争抢下 bot 进程让路），与 §8 断线排查同源（单进程事件循环争抢），不影响服务端容量结论。
   - 遗留：本地 700 个 `bot-1001..1700` 账号已写入生产库，**未清理**（同 §8 上一批 ~1000）。
 - [ ] 会话时长/上线间隔的具体分布参数（当前 §3.1 只给了量级），压测后按真实 CPU/内存曲线调整。
-- [ ] **把 botsvc 正式纳入部署**（若要常态化压测）：补 `Dockerfile`（build 阶段 `COPY botsvc/package.json` + `tsc -b` 列表加 botsvc + runtime `COPY --from=build .../botsvc/dist`）+ `docker-compose.cloud.yml` 一个 `botsvc` 服务（`NW_BOTSVC_ENABLED` 开关、默认不常开），避免每次都手动 `node:20` 容器现编现跑。
+- [x] **把 botsvc 正式纳入部署（常驻 300，2026-07-14）**：不再手动 `node:20` 现编现跑。改动：`server/Dockerfile` build 阶段加 `COPY botsvc/package.json` + `tsc -b` 列表末尾加 `botsvc`（生成的 protobuf 已提交，无需 proto codegen），runtime 加 `COPY --from=build .../botsvc/{package.json,dist}`（`ws`/`@bufbuild/protobuf` 在共享 `node_modules`、`@nw/engine`/`@nw/shared` dist 已随其他服务拷入，只缺 botsvc 自己的 dist）；`docker-compose.cloud.yml` + `docker-compose.prod.yml` 各加一个 `botsvc` 服务，`restart: unless-stopped`（跟随重部署/重启自愈）、`NW_BOT_TARGET_ONLINE=300`（`.env` 可覆盖）、`NW_BOT_POOL_SIZE=1000`（复用 Atlas 里现有 `bot-0001..1000`）、按服务名连内部端口（`metaserver:8080`/`socialsvc:8085`/`worldsvc:18084`/`gateway:8090`/控制面 WS `gateway:8082/gw`/`commercial:8092`）。**与原计划的差异**：原设想 `NW_BOTSVC_ENABLED` 开关 + 默认不常开，实际按用户要求做成**默认常驻**（restart:unless-stopped），关停用 `docker compose stop botsvc` 或 `POST /internal/bots/scale {targetOnline:0}`，不需要改代码。botsvc 只有内部管理面 18087，不进 caddy 路由。验证：本机 `docker build` 通过（含 `tsc -b botsvc`），镜像内 `node botsvc/dist/index.js` 干净启动打印 `pool=1000; targetOnline=300` 无导入错误。**注意**：300 常驻会持续产生排位对局，`reason=disconnect` 高发问题（下条）在 300 规模仍部分存在，缓解补丁需确认已在部署分支上。
 - [~] **排查排位对战 `reason=disconnect` 高发**（见上条生产压测发现）——**已诊断 + 单进程内缓解（2026-07-14）**：
   - **根因不是数据面链路**：干净 `base` 局能完整走完 `CF→caddy→gameserver`（中位 78s）。决定性证据是"连接→上报耗时"：`base` 78s vs `disconnect` 188s（拖到 ~128s 才掉 + 60s 宽限），断线局被明显**拖长**——排除了 CF 固定空闲超时和收尾竞态。300 在线时机器很闲（load 2.4/2 核、botsvc 单核 41%）断线率仍 ~78%，也排除"持续 CPU 打满"。
   - **真正机制**：上千对局全塞在 botsvc **单进程/单事件循环**里，gameserver 每 `BATCH_MS=100` 向每房间广播 `frame_batch`（`Room.ts`）→ 几百局的 batch 每 100ms 聚成一波同步 CPU；某 bot 一旦落后，`confirmedTo` 冲前、单次 `advance()` 一口气 step 一大堆帧，把自己更狠饿住 → 更落后（恶性循环）→ 漏掉 `HEARTBEAT_MS=30_000` 心跳（连续两次漏判死，`gameserver/index.ts`）→ terminate → `GRACE_MS=60_000` 宽限 → 判 `disconnect`；`mismatch` 是同一失同步的状态哈希分叉。真人各自独立进程，不受此争抢影响。
