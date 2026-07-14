@@ -4,13 +4,14 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ErrorCode, ERROR_HTTP_STATUS, err, ok } from '@nw/shared';
 import { craftEquipment, enhanceEquipment, salvageEquipment, equipEquipment, reforgeEquipment } from '../equipment.js';
-import { feedCards } from '../cards.js';
+import { feedCards, setCardLock } from '../cards.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
 import { accountIdOf, type Constructor, type MetaBaseCtor } from './base.js';
 
 type InventoryHandlers = Pick<
   MetaHandlers,
-  | 'craftEquipment' | 'enhanceEquipment' | 'salvageEquipment' | 'equipEquipment' | 'reforgeEquipment' | 'cardsFeed'
+  | 'craftEquipment' | 'enhanceEquipment' | 'salvageEquipment' | 'equipEquipment' | 'reforgeEquipment'
+  | 'cardsFeed' | 'cardsLock' | 'cardsUnlock'
 >;
 
 export function InventoryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Constructor<InventoryHandlers> {
@@ -103,6 +104,32 @@ export function InventoryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
       const r = await feedCards(cols, now, accountId, targetId, materialIds, idempotencyKey);
       if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
       return ok({ card: r.card, levelsGained: r.levelsGained, save: r.save });
+    }
+
+    /**
+     * Lock a character card (CC-4): locked cards cannot be consumed as feed material.
+     * Idempotent — locking an already-locked card succeeds without bumping the save rev.
+     */
+    async cardsLock(req: FastifyRequest, reply: FastifyReply) {
+      const accountId = accountIdOf(req);
+      const { cardInstanceId } = req.body as { cardInstanceId: string };
+      const { cols, now } = this.deps;
+      const r = await setCardLock(cols, now, accountId, cardInstanceId, true);
+      if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
+      return ok({ save: r.save });
+    }
+
+    /**
+     * Unlock a character card (CC-4): unlocked cards may again be consumed as feed material.
+     * Idempotent — unlocking an already-unlocked card succeeds without bumping the save rev.
+     */
+    async cardsUnlock(req: FastifyRequest, reply: FastifyReply) {
+      const accountId = accountIdOf(req);
+      const { cardInstanceId } = req.body as { cardInstanceId: string };
+      const { cols, now } = this.deps;
+      const r = await setCardLock(cols, now, accountId, cardInstanceId, false);
+      if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
+      return ok({ save: r.save });
     }
   };
 }
