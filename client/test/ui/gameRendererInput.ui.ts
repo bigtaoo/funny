@@ -164,6 +164,37 @@ describe('GameRenderer InputMixin — tap-select to place', () => {
   });
 });
 
+describe('GameRenderer InputMixin — placement highlight stays in sync with board state', () => {
+  it('a lane blocked by an occupied spawn-row cell un-blocks on the next tick once the cell frees up, with no pointer movement', () => {
+    const { engine, layout, renderer } = buildRenderer();
+    const boardView = (renderer as any).boardView;
+    const spy = vi.spyOn(boardView, 'showUnitLaneHighlights');
+    const lane = 1;
+    const spawnRow = (renderer as any).localSpawnRow;
+    const unitGrid = (engine.state.board as any).unitGrid;
+
+    // Fake-occupy the spawn-row cell directly (equivalent to a unit currently standing there).
+    unitGrid[spawnRow][lane] = 12345;
+
+    const from = (renderer as any).handView.slotCenter(SLOT_UNIT_SHIELDBEARER);
+    const to   = layout.gridToScreen(lane, 1);
+    // handleDown/handleMove — same drag-start path as the "drag to place" tests above.
+    (renderer as any).handleDown(from.x, from.y);
+    (renderer as any).handleMove(to.x, to.y);
+
+    expect(spy).toHaveBeenLastCalledWith(expect.anything(), new Set([lane]), lane);
+
+    // The unit walks away from the spawn-row cell — board state changes, but the pointer doesn't move.
+    // The refresh is throttled to ~10Hz (see HIGHLIGHT_REFRESH_INTERVAL in input.ts), so advance
+    // past that window rather than a single frame.
+    unitGrid[spawnRow][lane] = null;
+    for (let i = 0; i < 5; i++) renderer.update(1 / 30);
+
+    expect(spy).toHaveBeenLastCalledWith(expect.anything(), new Set(), lane);
+    renderer.destroy();
+  });
+});
+
 describe('GameRenderer InputMixin — upgrade button (tap, no drag)', () => {
   it('a plain tap on the upgrade button calls engine.upgradeBase() immediately', () => {
     const { engine, renderer, input } = buildRenderer();

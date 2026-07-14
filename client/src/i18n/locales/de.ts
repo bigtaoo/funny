@@ -29,10 +29,13 @@ export const de: Record<TranslationKey, string> = {
   'card.archer.desc': 'Ein aus einer Büroklammer gebogener Bogen – präzise Schüsse hinter den Gitterlinien.',
   'card.max.name': 'Max',
   'card.max.desc': 'Annas Ritter. Ist nur noch ein Feind übrig, entfacht sein Wille die doppelte Stärke.',
+  'card.max.lore': 'Annas ältester Freund – sanfter in Worten als mit den Fäusten, und seine Fäuste sind niemals sanft.',
   'card.lena.name': 'Lena',
   'card.lena.desc': 'Disziplinierte Elite. Schwere Rüstung reduziert jeden Treffer auf das absolute Minimum.',
+  'card.lena.lore': 'Die Ruhigste im Lager, die Unbeugsamste an der Front.',
   'card.mara.name': 'Mara',
   'card.mara.desc': 'Scharfschützin. Ihre Pfeile hinterlassen ein Mal – markierte Ziele erleiden von allen Quellen zusätzlichen Schaden.',
+  'card.mara.lore': 'Die Geduld einer Jägerin und der Groll einer Gejagten.',
   'card.barracks.name': 'Kaserne',
   'card.barracks.desc': 'Zeichnet ununterbrochen neue Soldaten, bis sie jemand ausradiert.',
   'card.tower.name': 'Pfeilturm',
@@ -557,16 +560,9 @@ export const de: Record<TranslationKey, string> = {
   'equip.tk_sticker.name': 'Sticker',
   'equip.tk_seal.name': 'Wachssiegel',
   'collection.title': 'Sammlung',
-  'collection.back': '← Zurück',
-  'collection.empty': 'Noch keine Skins — im Shop oder Gacha holen',
   'collection.equip': 'Ausrüsten',
   'collection.equipped': 'Ausgerüstet',
   'collection.default': 'Standard-Look',
-  // Sammlungszentrum-Tabs + Kartenkompendium
-  'collection.tab.cards': 'Karten',
-  'collection.tab.skins': 'Skins',
-  'collection.tab.units': 'Einheiten',
-  'collection.tab.equipment': 'Ausrüstung',
   'collection.cardType.unit': 'Einheit',
   'collection.cardType.building': 'Gebäude',
   'collection.cardType.spell': 'Zauber',
@@ -576,6 +572,7 @@ export const de: Record<TranslationKey, string> = {
   'collection.stat.range': 'Reichw.',
   'collection.stat.spawn': 'Anzahl',
   'collection.stat.interval': 'Angr.tempo',
+  'collection.locked': 'Gesperrt',
 
   // Statistik-Bildschirm (IA-Redesign: jetzt die "Laufbahn"-Zentrale)
   'stats.title': 'Laufbahn',
@@ -945,6 +942,9 @@ export const de: Record<TranslationKey, string> = {
   'family.err.notIn': 'Nicht in einer Familie',
   'family.err.badTag': 'Ungültiger Name oder Tag',
   'family.sect': 'Sekte',
+  'family.prosperity': 'Wohlstand {n}',
+  'family.memberCount': 'Mitglieder {n}/{cap}',
+  'family.vacancies': '{n} freie Plätze',
   // Sekte (S8-4b)
   'sect.title': 'Sekte',
   'sect.back': '← Zurück',
@@ -1417,11 +1417,16 @@ export const de: Record<TranslationKey, string> = {
   'roster.faction.tao': 'Tao',
   'roster.faction.anna': 'Anna',
   'roster.err.generic': 'Aktion fehlgeschlagen, bitte nochmals versuchen',
+  'roster.err.offline': 'Offline nicht möglich – bitte zuerst anmelden',
+  'roster.tab.skins': 'Skins',
 
   // Character card names (Hero Roster tao-faction only; anna names are at the top of the file)
   'card.lichuang.name': 'Li Chuang',
+  'card.lichuang.lore': 'Ein Kritzel-Soldat vom Heftrand – billig, robust, immer als Erster im Kampf.',
   'card.chenshou.name': 'Chen Shou',
+  'card.chenshou.lore': 'Trägt einen aus einem Radiergummi geschnitzten Schild. Langsam, blockt aber eine ganze Seite Angriffe.',
   'card.suyuan.name': 'Su Yuan',
+  'card.suyuan.lore': 'Ein aus einer Büroklammer gebogener Bogen – präzise Schüsse hinter den Gitterlinien.',
 
   // Teams scene (CC-4)
   'world.team.fillTroops': 'Alle Truppen auffüllen',

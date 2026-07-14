@@ -154,7 +154,13 @@ export interface SaveData {
    * the Hero Roster (cardInv) in CC-1. Retained for save compatibility; will be retired after CC cleanup.
    */
   cardInventory: Record<string, number>;
-  /** Equipped cosmetics (slot → skinId). Purely visual, no combat effect, so still uploaded via the PUT /save sync section. */
+  /**
+   * Equipped cosmetics (slot → skinId). Purely visual, no combat effect, so still uploaded via the PUT
+   * /save sync section. Two kinds of keys share this opaque map: `title` (equipped title) and
+   * `skin:<UnitType>` (equipped skin per character — LOBBY_IA_REDESIGN §15 / ADR-038, client
+   * game/meta/skinDefs.ts). Server code only reads by value (skin.ts isSkinEquipped) or by the fixed
+   * `title` key, never enumerates skin keys, so no server-side change was needed for this rename.
+   */
   equipped: Record<string, string>;
   flags: Record<string, boolean>;
 

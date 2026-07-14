@@ -14,6 +14,7 @@
 //
 // Runs under the headless PIXI adapter (test/harness/pixiHeadless.ts via
 // vitest.ui.config.ts). Run: npm run test:ui
+import * as PIXI from 'pixi.js-legacy';
 import { describe, it, expect } from 'vitest';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
@@ -24,7 +25,7 @@ import { FamilyScene } from '../../src/scenes/FamilyScene';
 import { SectScene } from '../../src/scenes/SectScene';
 import { FriendsScene } from '../../src/scenes/FriendsScene';
 import type { WorldApiClient, FamilyDetailView, SectDetailView } from '../../src/net/WorldApiClient';
-import type { SocialTab } from '../../src/render/socialTabRail';
+import { drawSocialTabRail, type SocialTab } from '../../src/render/socialTabRail';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -44,7 +45,11 @@ function stubWorldApi(): WorldApiClient {
 
 const FAMILY_FIXTURE: FamilyDetailView = {
   familyId: 'fam_1', name: 'Ink Guard', tag: 'ABC', leaderId: 'acc_test',
-  memberCount: 1, prosperity: 0, members: [],
+  memberCount: 1, prosperity: 0,
+  // 'acc_test' (the scene's myAccountId below) is the leader — the sect tab is only shown to a
+  // family leader or a family already in a sect (see socialTabRail.ts's `hidden` param), so a
+  // fixture testing rail dispatch through the sect cell needs to actually satisfy that gate.
+  members: [{ accountId: 'acc_test', role: 'leader', joinedAt: 0 }],
 };
 
 const SECT_FIXTURE: SectDetailView = {
@@ -146,7 +151,9 @@ describe('FamilyScene — social tab rail (onNavTab wiring)', () => {
 
     for (const tab of TAB_ORDER) clickRailTab(scene, tab);
 
-    expect(calls).toEqual(TAB_ORDER.filter((tab) => tab !== 'family'));
+    // 'sect' is also excluded here: with no family at all, the player is neither a family
+    // leader nor already in a sect, so socialTabRail.ts's `hidden` gate drops the sect cell.
+    expect(calls).toEqual(TAB_ORDER.filter((tab) => tab !== 'family' && tab !== 'sect'));
     scene.destroy();
   });
 });
@@ -204,6 +211,41 @@ describe('SectScene — social tab rail (onNavTab wiring)', () => {
   });
 });
 
+// drawSocialTabRail's `hidden` param, tested directly rather than by simulating pixel clicks —
+// in SectScene the active tab is *always* 'sect' (see SectSceneBase.render()), so a hidden-vs-
+// active-but-visible cell can't be told apart through the rendered scene's click geometry alone
+// (both leave 'sect' un-clickable, and clicking-all-5-fixed-slots happens to land on the same
+// aggregate set of onNavTab calls either way — a hidden cell just closes the layout gap one slot
+// earlier). Calling the exported hits directly sidesteps that ambiguity entirely.
+describe('drawSocialTabRail — hidden param (13.07.2026: sect tab hidden for non-leader/no-sect)', () => {
+  /** Draws the rail once, clicks every returned hit in order, and returns the tab ids that fired. */
+  function clickableTabs(active: SocialTab, hidden: SocialTab[] = []): SocialTab[] {
+    const container = new PIXI.Container();
+    const selected: SocialTab[] = [];
+    const hits = drawSocialTabRail(container, W, H, 0, false, active, {}, (t) => selected.push(t), hidden);
+    hits.forEach((h) => h.fn());
+    return selected;
+  }
+
+  it('with nothing hidden, every tab except the active one is clickable', () => {
+    expect(clickableTabs('friends')).toEqual(['family', 'sect', 'world', 'mail']);
+  });
+
+  it('a hidden tab is entirely absent from the clickable set, even when it is not the active tab', () => {
+    expect(clickableTabs('friends', ['sect'])).toEqual(['family', 'world', 'mail']);
+  });
+
+  it('a hidden tab that also happens to be the active tab is not double-excluded', () => {
+    // SectScene's own case: active='sect' AND hidden=['sect'] together — must behave exactly
+    // like hiding it while some other tab is active, not remove an extra slot.
+    expect(clickableTabs('sect', ['sect'])).toEqual(['friends', 'family', 'world', 'mail']);
+  });
+
+  it('hiding multiple tabs at once removes both from the clickable set', () => {
+    expect(clickableTabs('friends', ['sect', 'world'])).toEqual(['family', 'mail']);
+  });
+});
+
 describe('FriendsScene — social tab rail still dispatches to switchTab after sharing drawSocialTabRail', () => {
   function build(): any {
     return new FriendsScene(createLayout(W, H), new InputManager(), {
@@ -235,6 +277,49 @@ describe('FriendsScene — social tab rail still dispatches to switchTab after s
       clickFriendsRailTab(scene, tab);
       expect(scene.tab).toBe(tab);
     }
+    scene.destroy();
+  });
+
+  it('sect tab is unclickable for a non-leader whose family has no sect (13.07.2026)', () => {
+    // The sect cell is entirely removed from the rail layout (not just left without a hit
+    // rect), so every other cell after it shifts up by one slot — clicking through all 5
+    // fixed rail positions can therefore never land on 'sect' itself, even though the clicks
+    // that used to hit 'sect'/'world' now hit whatever shifted into that slot instead.
+    const scene = build();
+    scene.slgStatus = { worldId: 'world:1:0', isLeader: false, familyId: 'fam_1' };
+    scene.render();
+
+    const seenTabs: string[] = [];
+    for (const tab of TAB_ORDER) {
+      clickFriendsRailTab(scene, tab);
+      seenTabs.push(scene.tab);
+    }
+
+    expect(seenTabs).not.toContain('sect');
+    // the other tabs remain reachable through the (shifted) rail.
+    expect(seenTabs).toContain('family');
+    expect(seenTabs).toContain('world');
+    expect(seenTabs).toContain('mail');
+    scene.destroy();
+  });
+
+  it('sect tab is clickable for a family leader, even with no sect yet', () => {
+    const scene = build();
+    scene.slgStatus = { worldId: 'world:1:0', isLeader: true, familyId: 'fam_1' };
+    scene.render();
+
+    clickFriendsRailTab(scene, 'sect');
+    expect(scene.tab).toBe('sect');
+    scene.destroy();
+  });
+
+  it('sect tab is clickable for a non-leader whose family already belongs to a sect', () => {
+    const scene = build();
+    scene.slgStatus = { worldId: 'world:1:0', isLeader: false, familyId: 'fam_1', sectId: 'sect_1' };
+    scene.render();
+
+    clickFriendsRailTab(scene, 'sect');
+    expect(scene.tab).toBe('sect');
     scene.destroy();
   });
 });

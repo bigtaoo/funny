@@ -73,7 +73,7 @@ describe('headless app core — offline navigation', () => {
     expect(views.screen).toBe('campaignMap');
   });
 
-  it('campaign map growth-hub entry falls back to Collection when offline (Equipment is server-authoritative)', async () => {
+  it('campaign map growth-hub entry falls back to the roster when offline (Equipment is server-authoritative)', async () => {
     const platform = new HeadlessPlatform(); // no nw_api_base → offline, no api client
     const views = new HeadlessAppViews();
     const core = createAppCore(platform, views);
@@ -85,15 +85,15 @@ describe('headless app core — offline navigation', () => {
     views.lobby!.onOpenCampaign();
     expect(views.screen).toBe('campaignMap');
 
-    // Single merged header entry (LOBBY_IA_REDESIGN §10): offline/no-api can't reach the
-    // server-authoritative EquipmentScene, so it degrades to the Collection (skins) screen
-    // instead of stranding the player on a dead button.
+    // Single merged header entry (LOBBY_IA_REDESIGN §10/§15): offline/no-api can't reach the
+    // server-authoritative EquipmentScene, so it degrades to the card roster (now read-only
+    // offline-capable, CollectionScene retired) instead of stranding the player on a dead button.
     views.campaignMap!.onOpenEquipment();
-    expect(views.screen).toBe('collection');
+    expect(views.screen).toBe('cardRoster');
 
-    // The Collection screen itself must not offer an Equipment peer-tab launcher while
-    // offline — matching the same equipLoggedIn gate onOpenEquipment fell back on above.
-    expect(views.collection!.onOpenEquipment).toBeUndefined();
+    // The roster itself must not offer an Equipment peer-tab launcher while offline — matching
+    // the same equipLoggedIn gate onOpenEquipment fell back on above.
+    expect(views.cardRoster!.openEquipmentBag).toBeUndefined();
   });
 
   it('lobby pushes a social badge through the returned view handle', async () => {

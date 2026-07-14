@@ -60,8 +60,8 @@ export interface GameSceneOptions {
   net?: boolean;
   /** Player identities for the in-battle profile popup (netplay only). */
   profiles?: GameProfiles;
-  /** Equipped skin id (S3-4) — swaps unit textures only; null/absent = default look. */
-  equippedSkin?: string | null;
+  /** Equipped skin ids (one per character, LOBBY_IA_REDESIGN §15) — swaps unit textures only; absent = default look. */
+  equippedSkins?: readonly string[];
   /**
    * Explicit RNG seed for the local PvP-vs-AI path (match-bot fallback). Lets the
    * server-chosen seed drive a deterministic local AI match. Ignored when `level`
@@ -135,7 +135,7 @@ export class GameScene implements Scene {
       : { start: true, boss: opts.level?.objective.kind === 'boss' };
 
     void preloadL1CardArtTextures();
-    this.renderer = new GameRenderer(engine, layout, input, opts.net ?? false, false, opts.profiles ?? {}, opts.equippedSkin ?? null, opts.cardInstances ?? null, opts.equipmentInv ?? null, opts.tutorial ?? false, battleLabels);
+    this.renderer = new GameRenderer(engine, layout, input, opts.net ?? false, false, opts.profiles ?? {}, opts.equippedSkins ?? [], opts.cardInstances ?? null, opts.equipmentInv ?? null, opts.tutorial ?? false, battleLabels);
     this.renderer.init();
     // Attach the recording (if any) to the end-of-game callback.
     this.renderer.onGameEnd = (winner, stats, summary) => this.cb.onGameEnd(winner, stats, buildReplay(winner), summary);

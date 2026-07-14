@@ -388,3 +388,32 @@
 ### 待讨论：竖屏是否该把左侧页签栏换成底部导航
 
 用户提出：竖屏下侧栏绝对宽度局促（`design/game/portrait-issues` 一类记录已提过 Equipment 侧栏标签裁切风险），横屏因为空间富余暂时没这个问题；是否该在竖屏下把红色装订线画到底部、页签也挪到屏幕底部，而不是继续用左侧竖直侧栏？这涉及 Cards/Equipment/Shop/Gacha/BattlePass/Auction/Stats/Titles/Achievements/Friends/Family/Sect/Daily 十几个屏幕的布局范式，比本节的尺寸/红线修正大得多，**尚未实现，需要单独立项讨论**，本次只记录问题不动代码。
+
+---
+
+## 15. 废弃 `CollectionScene`，图鉴/皮肤/背景故事并入养成组（角色卡）（2026-07-13）
+
+> 状态：**设计中**（先文档后实现，见 ADR-038）。用户看 `CollectionScene`（Cards/Skins 两 tab 的纯图鉴+衣柜页）截图后质疑「这个页面还有存在的必要吗，是否和 Develop 页面功能重复」。调研结论：**不重复但确实自成一套**——`CollectionScene` 是纯只读展示（图鉴全集 + 全局单槏位皮肤切换），真正的养成（升级/合成）在 `CardScene`（Hero Roster，§8 起已并入「养成」组 `[卡背包|装备]` 侧栏），二者视觉/布局风格不统一，容易读成"两个功能重复的页面"。用户拍板：整页废弃，功能拆解揈并进养成组。
+
+### 15.1 拍板方案
+
+1. **`CollectionScene` 整页删除**，不保留独立入口。原「养成」组侧栏 `[卡背包|装备]` 维持两格不变，功能改为分布进这两个已有场景：
+2. **图鉴全集 → `CareerScene`（生涯组）新增第 4 个侧栏页签**：`[生涯统计|称号|成就|图鉴]`（复用 §7 `CareerTabs.ts`）。展示全部 `CARD_DEFINITIONS`（含未拥有），**未拥有的卡改为灰显+锁图标占位**（`CollectionScene` 原版没有区分已获得/未获得，此次顺带补上，语义更像正经图鉴而非纯 wishlist）。选择放生涯组而非养成组：图鉴是"目标/收集进度"性质，与成就/称号同类，养成组留给"操作我已有的东西"。
+3. **背景故事（lore）→ 并入 `CardScene` 角色卡详情弹窗**：点击卡图播放翻转动画，背面展示 lore 文案（原 `CollectionScene` 的 `descKey` 简介），再点一下翻回卡图正面。`detail.ts` 现有的 `desc` 字段语义是"技能效果说明"（`skillGrowth` 驱动），**与 lore 是两个不同字段**，需新开一个展示位（卡背），不能复用现有槏位。
+4. **皮肤衣柜 → `CardScene`（养成组）新增第 3 个侧栏页签「皮肤」**：`[卡背包|装备|皮肤]`，展示玩家拥有的全部皮肤及当前装备情况（数据源仍是 `inventory.skins`）。
+5. **皮肤装备关系改为逐卡独立（架构变更，非纯 UI 重排）**：现状 `SaveData.equipped: Record<slot, skinId>` 是**账号级单一全局槏位**（`EQUIP_SLOT` 常量，见 `app/equipSlot.ts`），不区分是哪张角色卡。改为**每张角色卡各自的皮肤槏位**——角色卡详情弹窗若该卡有可替换皮肤，显示「更换皮肤」按钮，点击弹出可穿戴皮肤列表，确认后**该卡的卡图**改用皮肤形象展示（而不是影响一个与卡无关的全局展示位）。
+   - 存档结构：`equipped` 从 `Record<slot, skinId>` 改为按角色卡 id 索引（如 `Record<cardDefId, skinId>`），服务端装备校验接口同步跟进。
+   - 皮肤的**拥有关系不变**（仍是账号级库存 `inventory.skins`，购买/抽卡获取渠道不变，见 `ECONOMY_NUMBERS.md` §7），只有"装备到哪"这层关系从单槏位变成逐卡。
+6. **翻转动画为新组件**：项目基于 pixi.js-legacy，全仓搜索确认没有现成的 3D 透视翻转（`rotationY`）可复用（现有 "flip" 命中都是别的语义：`StickmanRuntime` 左右镜像、`CampaignMapScene` 横向 slide 翻页过渡），需要新写一个卡牌翻转动画组件。
+7. **离线兜底改为读缓存**：`CollectionScene` 原来承担"离线时的兜底展示页"角色（§6 决策 6：离线整 tab 灰显，但养成组读本地档正常可用）。废弃后，`CardScene`/`AchievementScene`(图鉴 tab) 离线时直接读本地缓存的 `save` 数据展示（不能操作，仅浏览）；首次登录、本地无缓存的新玩家展示空态，视为正常（无需特殊兜底文案）。
+
+### 15.2 影响范围（实现前盘点，供拉 worktree 时核对）
+
+- **删除**：`client/src/scenes/CollectionScene.ts` 及其测试/导航接线（`app/nav/*` 里的 `goCollection`/`onOpenCollection` 相关分支，含 §10 记录的战役地图头部「装备」入口降级路径——离线态原先降级到 `goCollection`，需要改指向新的养成组落地页）。
+- **`CardScene`**：新增「皮肤」侧栏页签；详情弹窗（`detail.ts`）新增翻转动画 + lore 展示位 + 「更换皮肤」按钮。
+- **`CareerTabs.ts` / `CareerScene` 三件套**（`StatsScene`/`TitlesScene`/`AchievementScene`）：`CareerTabKey` 联合类型新增 `'collection'`，`drawCareerTabs()` 数组与点击分支从 3 格扩到 4 格，三个场景的 callbacks 接口各自补 `onOpenCollection?()`；`app/nav/game.ts` 导航接线同步。
+- **存档结构**：`SaveData.equipped` 单槏位 → 逐卡映射（需要写档迁移逻辑，老存档的全局皮肤在迁移时落到哪张卡上需要定一个默认规则，未在本次拍板范围内，实现时另拍）。
+- **`design/game/CHARACTER_CARDS_DESIGN.md`**：需补一节角色卡皮肤/lore 字段的机制描述（现状该文档未提及皮肤，是空缺）。
+- **`design/game/ECONOMY_NUMBERS.md` §7**：皮肤获取矩阵（拥有关系/定价）不变，不需要改数字，但装备关系的机制描述如果该文档有提及需要同步措辞。
+
+（实现记录留待落地后补充，本节先定方向。）

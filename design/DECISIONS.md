@@ -1,6 +1,6 @@
 # 决策日志（ADR）
 
-> 状态：实现中 · 权威：本文 · 更新：2026-07-04
+> 状态：实现中 · 权威：本文 · 更新：2026-07-13
 
 记录**会造成文档间漂移**的关键拍板：改数值口径、改命名、改架构、废弃旧方案。
 每条 ADR 注明：日期、决策、影响的文档、为什么。新拍板追加在末尾，不改旧条目（要改就加一条新的 *Supersedes*）。
@@ -429,6 +429,12 @@
   - `@nw/shared`（`slg/core.ts` 新增 `OCCUPY_HOLD_SEC`）。
   - `worldsvc`：`db.ts` 新增 `OccupationDoc` 集合 + `TileDoc.contestedBy/contestedUntil/contestedGarrison/contestedFamilyId`；`corePush.ts` 新增 `scheduleOccupation`/`unscheduleOccupation`；`combatSiege/occupation.ts`（新文件，`applyOccupy`/`applyOccupationExpulsion`/`processDueOccupations`，接入 `combatSiege.ts` 装配链）；`combatMarch.ts` 的 `occupy` 到达分支改为委托 `this.siege.applyOccupy`；`combatSiege/arrival.ts` 的 `applySiege` 放宽"目标无主但处于占领倒计时中"分支；`combat.ts`/`service.ts`/`scheduler.ts` 新增 `processDueOccupations` 透传。
   - 契约（`openapi-world.yml`）：`WorldTileView` 新增 `contestedUntil`/`contestedByMe`。
+
+## ADR-038 废弃 `CollectionScene`，皮肤装备关系从全局单槏位改为逐卡独立 — Accepted — 2026-07-13
+
+- **决策**（用户拍板）：`CollectionScene`（纯图鉴+皮肤衣柜页）整页删除，功能拆解并入养成组：图鉴全集→生涯组（`CareerTabs`）新增页签、皮肤衣柜→养成组（`CardScene`）新增页签、背景故事 lore→角色卡详情弹窗翻转展示。**皮肤的装备关系**从 `SaveData.equipped: Record<slot, skinId>`（账号级单一全局槏位）改为**逐角色卡独立槏位**——每张卡各自可换皮肤，换后该卡卡图用皮肤形象展示；皮肤的**拥有关系**（库存/购买/抽卡渠道）不变。
+- **为什么**：用户质疑 `CollectionScene` 与养成/生涯页功能重复、UI 风格自成一套不统一；调研确认不是功能重复（`CollectionScene` 纯只读展示，真正升级/合成在 `CardScene`），但确实是布局孤岛。原全局单槏位皮肤模型无法支撑"点这张卡换这张卡的皮肤"的直觉交互，需要连带改数据模型。
+- **影响**：[`LOBBY_IA_REDESIGN.md`](game/LOBBY_IA_REDESIGN.md) §15 为方案细节；[`CHARACTER_CARDS_DESIGN.md`](game/CHARACTER_CARDS_DESIGN.md) 需补一节角色卡皮肤/lore 字段（现状空缺）；存档结构变更需要写老档迁移逻辑（默认规则未在本次拍板范围，实现时另拍）；`ECONOMY_NUMBERS.md` §7 皮肤获取矩阵数字不变。
   - `client`：`WorldMapInput.ts` 占领按钮改走 `startMarch(kind:'occupy')`；地图渲染/HUD 消费新增的 `contestedUntil` 字段渲染倒计时。
   - 文档：[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §5.4（新增）。
   - 测试：`server/worldsvc/test/occupy-march.e2e.test.ts`（新增）。

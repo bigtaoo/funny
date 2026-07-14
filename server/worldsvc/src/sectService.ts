@@ -21,11 +21,9 @@ import {
   SECT_ALLY_CAP,
   SECT_REMOVAL_VOTE_RATIO,
   FAMILY_MSG_BODY_MAX,
-  SECT_FOUND_PROSPERITY_MIN,
   SlgError,
 } from '@nw/shared';
 import type { WorldCollections, SectDoc, SectMessageDoc } from './db';
-import { refreshFamilyProsperity } from './prosperity';
 import type { WorldCommercialClient } from './commercialClient';
 import { nullWorldCommercialClient } from './commercialClient';
 import type { WorldGatewayClient } from './gatewayClient';
@@ -162,13 +160,6 @@ export class SectService {
     const tagUpper = tag.toUpperCase();
     if (!/^[A-Z0-9]{2,5}$/.test(tagUpper)) throw new SlgError('BAD_REQUEST', 'Tag must be 2–5 uppercase alphanumeric characters');
     if (!name || name.length < 2 || name.length > 20) throw new SlgError('BAD_REQUEST', 'Name must be 2–20 characters');
-
-    // Moderate prosperity threshold for founding a sect (G2/§17.4): refresh the founding family's prosperity first
-    // (freshly written, so no decay needed); reject if insufficient.
-    const prosperity = await refreshFamilyProsperity(cols, this.socialsvc, worldId, fam.familyId);
-    if (prosperity < SECT_FOUND_PROSPERITY_MIN) {
-      throw new SlgError('PROSPERITY_TOO_LOW', `Family prosperity is too low (requires ≥ ${SECT_FOUND_PROSPERITY_MIN}, current ${prosperity})`);
-    }
 
     const sid = makeSectId(worldId, tagUpper);
 

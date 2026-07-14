@@ -25,19 +25,23 @@ export interface ListHandlers {
 export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase & Constructor<ListHandlers> {
   return class extends Base {
     /**
-     * Progression group nav [Cards|Equipment] (LOBBY_IA_REDESIGN): a vertical rail stacked inside
-     * the left notebook-margin gutter (`marginLineX`), below the header. Cards is active; tapping
-     * Equipment opens the equipment bag (openEquipmentBag). Drawn only when injected (showSidebar).
+     * Progression group nav [Cards|Equipment?|Skins] (LOBBY_IA_REDESIGN §15): a vertical rail stacked
+     * inside the left notebook-margin gutter (`marginLineX`), below the header. Equipment only appears
+     * when injected (openEquipmentBag, server-authoritative → online-only); Cards/Skins are always
+     * reachable (including offline, reading the local save mirror).
      */
     renderSidebar(): void {
-      if (!this.showSidebar) return;
       const sidebarW = sidebarNavW(this.w, this.h, this.landscape);
+      const hasEquip = !!this.cb.openEquipmentBag;
       const tabs: HubTab[] = [
-        { label: t('roster.title'), active: true, icon: 'cards' },
-        { label: t('equip.title'), active: false, icon: 'armor' },
+        { label: t('roster.title'), active: this.tab === 'list', icon: 'cards' },
+        ...(hasEquip ? [{ label: t('equip.title'), active: false, icon: 'armor' as const }] : []),
+        { label: t('roster.tab.skins'), active: this.tab === 'skins', icon: 'brush' },
       ];
       const { hits } = drawSidebarTabs(this.bodyLayer, sidebarW, this.headerH, this.h, tabs, (i) => {
-        if (i === 1) this.cb.openEquipmentBag?.();
+        if (i === 0) { this.tab = 'list'; this.render(); return; }
+        if (hasEquip && i === 1) { this.cb.openEquipmentBag?.(); return; }
+        this.tab = 'skins'; this.render();
       });
       for (const hit of hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
     }

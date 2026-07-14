@@ -30,12 +30,18 @@ export interface TapSelectState {
 
 const DRAG_THRESHOLD = 8; // px in design space before a press becomes a drag
 
+// Throttle for the board-state-driven highlight refresh (see update() below) — this is a
+// display-only staleness fix (occupancy can change while the pointer holds still), not
+// something that needs per-frame precision, so recompute at ~10Hz instead of every tick.
+const HIGHLIGHT_REFRESH_INTERVAL = 0.1;
+
 export interface InputHandlers {
   handleDown(x: number, y: number): void;
   handleMove(x: number, y: number): void;
   handleUp(x: number, y: number): void;
   cancelDrag(): void;
   cancelTapSelect(): void;
+  refreshPlacementHighlights(): void;
 }
 
 export function InputMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBase & Constructor<InputHandlers> {
@@ -52,6 +58,25 @@ export function InputMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
     pendingCardDown: { x: number; y: number; handIndex: number } | null = null;
     private downX = 0;
     private downY = 0;
+
+    // Last pointer position while a drag/tap-select is active, so per-tick highlight
+    // refreshes (see update()) can recompute without a fresh pointer-move event.
+    private lastPointerX = 0;
+    private lastPointerY = 0;
+
+    private highlightRefreshAccum = 0;
+
+    // Board state (unit occupancy) changes every tick independent of pointer input,
+    // so the active placement highlight must be re-evaluated periodically too — see
+    // refreshPlacementHighlights() below for why.
+    update(dt: number): void {
+      super.update(dt);
+      this.highlightRefreshAccum += dt;
+      if (this.highlightRefreshAccum >= HIGHLIGHT_REFRESH_INTERVAL) {
+        this.highlightRefreshAccum = 0;
+        this.refreshPlacementHighlights();
+      }
+    }
 
     // ── Input handling (design-space coords) ─────────────────────────────────
 
@@ -140,6 +165,9 @@ export function InputMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
         }
       }
 
+      this.lastPointerX = x;
+      this.lastPointerY = y;
+
       if (this.drag) {
         this.drag.ghost.x = x;
         this.drag.ghost.y = y;
@@ -162,6 +190,36 @@ export function InputMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
           const col = this.layout.screenToCol(x, y);
           const row = this.layout.screenToRow(x, y);
           this.updatePlacementHighlights(CardType.Spell, SpellType.Meteor, col, row, x, y);
+        }
+      }
+    }
+
+    /**
+     * Re-evaluate the active drag/tap-select highlight against current board state.
+     * Occupancy (e.g. the spawn-row slot a lane is blocked on) can change every tick
+     * as units move/die, independent of pointer movement, so a highlight painted once
+     * at drag/select-start would otherwise go stale (still red after the slot frees up).
+     */
+    refreshPlacementHighlights(): void {
+      if (this.drag) {
+        this.updatePlacementHighlights(
+          this.drag.cardType, this.drag.spellType, this.dragCol, this.dragRow,
+          this.lastPointerX, this.lastPointerY,
+        );
+        return;
+      }
+      if (this.tapSelect) {
+        // Meteor's targeting reticle tracks the pointer even in tap-select mode;
+        // other card types don't use col/row here (see updatePlacementHighlights).
+        if (this.tapSelect.cardType === CardType.Spell && this.tapSelect.spellType === SpellType.Meteor) {
+          const col = this.layout.screenToCol(this.lastPointerX, this.lastPointerY);
+          const row = this.layout.screenToRow(this.lastPointerX, this.lastPointerY);
+          this.updatePlacementHighlights(
+            this.tapSelect.cardType, this.tapSelect.spellType, col, row,
+            this.lastPointerX, this.lastPointerY,
+          );
+        } else {
+          this.updatePlacementHighlights(this.tapSelect.cardType, this.tapSelect.spellType, -1, -1, 0, 0);
         }
       }
     }

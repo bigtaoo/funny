@@ -420,10 +420,16 @@ export class FriendsSceneBase {
   // ── Tab rail (5 tabs, vertical, left of the binding line) ──────────────────────
 
   protected drawTabBar(): void {
+    // Sect tab is only useful to a family leader (who can found/join one) or someone whose
+    // family already belongs to a sect (who can view it) — everyone else hits a dead end, so
+    // hide the tab rather than show a page that can only ever say "you can't do anything here".
+    const s = this.slgStatus;
+    const hidden: SocialTab[] = s && !s.isLeader && !s.sectId ? ['sect'] : [];
     const hits = drawSocialTabRail(
       this.container, this.w, this.h, this.bodyTop, this.landscape, this.tab,
       { friends: this.incoming.length, mail: this.mailUnread },
       (tab) => this.switchTab(tab),
+      hidden,
     );
     this.hits.push(...hits);
   }

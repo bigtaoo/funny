@@ -26,7 +26,7 @@ import type { StateReplay, EncodedStateReplay } from './game/replay/StateReplay'
 import { SettingsScene, type SettingsSceneCallbacks } from './scenes/SettingsScene';
 import { CampaignMapScene, type CampaignMapCallbacks } from './scenes/CampaignMapScene';
 import { LevelPrepScene, type LevelPrepCallbacks } from './scenes/LevelPrepScene';
-import { CollectionScene, type CollectionCallbacks } from './scenes/CollectionScene';
+import { CardCodexScene, type CardCodexCallbacks } from './scenes/CardCodexScene';
 import { CardScene, type CardCallbacks } from './scenes/CardScene';
 import { EquipmentScene, type EquipmentCallbacks } from './scenes/EquipmentScene';
 import { StatsScene, type StatsCallbacks } from './scenes/StatsScene';
@@ -160,9 +160,9 @@ class PixiAppViews implements AppViews {
     this.manager.goto(new LevelPrepScene(this.layout, this.input, cb));
   }
 
-  showCollection(cb: CollectionCallbacks): void {
+  showCardCodex(cb: CardCodexCallbacks): void {
     this.leaveLobby();
-    this.manager.goto(new CollectionScene(this.layout, this.input, cb));
+    this.manager.goto(new CardCodexScene(this.layout, this.input, cb));
   }
 
   showCardRoster(cb: CardCallbacks): void {

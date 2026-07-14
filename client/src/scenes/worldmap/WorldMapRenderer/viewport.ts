@@ -16,7 +16,7 @@ export function ViewportMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBas
   return class extends Base {
     viewportCenter(): { cx: number; cy: number; r: number } {
       const tp = this.ctx.tp;
-      const b = visibleTileBounds(this.ctx.w, this.ctx.h - HUD_H, this.ctx.panX, this.ctx.panY, tp);
+      const b = visibleTileBounds(this.ctx.w, this.ctx.h - HUD_H - this.ctx.topInset, this.ctx.panX, this.ctx.panY - this.ctx.topInset, tp);
       const cx = Math.floor((b.minTx + b.maxTx) / 2);
       const cy = Math.floor((b.minTy + b.maxTy) / 2);
       const r  = Math.ceil(Math.max(b.maxTx - b.minTx, b.maxTy - b.minTy) / 2) + 4;
@@ -30,7 +30,7 @@ export function ViewportMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBas
       // tile lands on screen center under the new tile size.
       const oldTp = this.ctx.tp;
       const screenCx = this.ctx.w / 2;
-      const screenCy = (this.ctx.h - HUD_H) / 2;
+      const screenCy = (this.ctx.topInset + this.ctx.h - HUD_H) / 2;
       const frac = screenToTileF(screenCx - this.ctx.panX, screenCy - this.ctx.panY, oldTp);
       this.ctx.zoom = z;
       const newCenterScreen = tileToScreen(frac.x, frac.y, this.ctx.tp);
@@ -48,7 +48,7 @@ export function ViewportMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBas
       const tp = this.ctx.tp;
       const s = tileToScreen(tx, ty, tp);
       this.ctx.panX = this.ctx.w / 2 - s.x;
-      this.ctx.panY = (this.ctx.h - HUD_H) / 2 - s.y;
+      this.ctx.panY = (this.ctx.topInset + this.ctx.h - HUD_H) / 2 - s.y;
       this.clampPan();
     }
 
@@ -60,7 +60,11 @@ export function ViewportMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBas
      */
     clampPan(): void {
       const tp = this.ctx.tp;
-      const mapViewH = this.ctx.h - HUD_H;
+      // Visible band is [topInset, h - HUD_H] — the header bar reserves topInset at the top,
+      // same as HUD_H at the bottom.
+      const top = this.ctx.topInset;
+      const bottom = this.ctx.h - HUD_H;
+      const bandH = bottom - top;
       const corners = [
         tileToScreen(0, 0, tp), tileToScreen(this.ctx.mapW, 0, tp),
         tileToScreen(0, this.ctx.mapH, tp), tileToScreen(this.ctx.mapW, this.ctx.mapH, tp),
@@ -77,10 +81,10 @@ export function ViewportMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBas
       } else {
         this.ctx.panX = Math.min(-minSx, Math.max(this.ctx.w - maxSx, this.ctx.panX));
       }
-      if (maxSy - minSy <= mapViewH) {
-        this.ctx.panY = mapViewH / 2 - (minSy + maxSy) / 2;
+      if (maxSy - minSy <= bandH) {
+        this.ctx.panY = top + bandH / 2 - (minSy + maxSy) / 2;
       } else {
-        this.ctx.panY = Math.min(-minSy, Math.max(mapViewH - maxSy, this.ctx.panY));
+        this.ctx.panY = Math.min(top - minSy, Math.max(bottom - maxSy, this.ctx.panY));
       }
     }
 
