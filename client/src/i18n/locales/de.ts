@@ -785,6 +785,7 @@ export const de: Record<TranslationKey, string> = {
   'world.err.noTroops': 'Nicht genug Truppen',
   'world.err.occupied': 'Feld bereits besetzt',
   'world.err.footprintBlocked': 'Die Hauptstadt braucht eine freie 3×3-Fläche — umliegende Felder sind blockiert oder belegt',
+  'world.err.relocateNeedSurround': 'Besetze zuerst dieses Feld und alle acht Nachbarfelder',
   'world.err.protected': 'Feld ist geschützt',
   'world.err.allyTile': 'Verbündetes Gebiet — Angriff nicht möglich',
   'world.err.outOfRange': 'Außerhalb der Karte',

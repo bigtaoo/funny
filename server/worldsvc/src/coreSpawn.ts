@@ -206,6 +206,33 @@ export class WorldCoreSpawn extends WorldCoreNation {
   }
 
   /**
+   * True iff EVERY cell of the 3×3 block anchored at (ax,ay) is currently owned by `ownerId` (block fully in
+   * bounds, no reserved/blocking procedural terrain). This is the relocate gate (§3.4): the capital may only
+   * move onto a 3×3 the player already fully holds — a cell that is unowned, neutral, or owned by anyone else
+   * disqualifies the block. Note it is the inverse of `footprintFree` (which wants the block *empty*).
+   */
+  async footprintOwnedBy(worldId: string, ax: number, ay: number, mapW: number, mapH: number, ownerId: string): Promise<boolean> {
+    if (!baseFootprintInBounds(ax, ay, mapW, mapH)) return false;
+    const cells = baseFootprintCells(ax, ay);
+    for (const { x, y } of cells) {
+      const proc = proceduralTile(worldId, x, y);
+      if (proc.type === 'center' || proc.type === 'obstacle' || proc.type === 'bridge' || proc.type === 'plankway' || proc.type === 'stronghold') {
+        return false;
+      }
+    }
+    const ids = cells.map(({ x, y }) => tileId(worldId, x, y));
+    const existing = await this.deps.cols.tiles
+      .find({ _id: { $in: ids } })
+      .project<{ ownerId?: string }>({ ownerId: 1 })
+      .toArray();
+    if (existing.length < cells.length) return false; // a cell with no tile doc is unowned
+    for (const e of existing) {
+      if (e.ownerId !== ownerId) return false;
+    }
+    return true;
+  }
+
+  /**
    * ADR-025 data integrity: is the capital anchored at `mainBaseTile` a complete, same-owner 3×3?
    * True iff all 9 footprint cells exist as `type:'base'` owned by `accountId` (anchor + 8 rings).
    * A player created by joinWorld/relocate/passiveRelocate always satisfies this; a stored base that

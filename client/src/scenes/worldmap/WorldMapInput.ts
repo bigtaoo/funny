@@ -3,7 +3,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
 import { WorldApiError } from '../../net/WorldApiClient';
-import { proceduralTile, baseFootprintCells, baseFootprintInBounds } from '@nw/shared';
+import { baseFootprintCells, baseFootprintInBounds } from '@nw/shared';
 import { loadResAtlas, getResTexture, isResAtlasReady } from '../../render/resAtlasLoader';
 import { loadCityAtlas, getCityTexture, isCityAtlasReady } from '../../render/cityAtlasLoader';
 import { loadTerrainAtlas, getTerrainTexture, isTerrainAtlasReady } from '../../render/terrainAtlasLoader';
@@ -25,17 +25,15 @@ export class WorldMapInput {
   constructor(private readonly ctx: WorldMapContext) {}
 
   /**
-   * Mirrors worldsvc's footprintFree (ADR-025): true iff the whole 3×3 block anchored at (ax,ay) can host
-   * a base — in bounds, no blocking procedural terrain, and no cell owned by someone else. Cells the
-   * viewport hasn't cached yet are optimistically treated as free (fog); the server has the final say.
+   * Mirrors worldsvc's footprintOwnedBy (§3.4): true iff the whole 3×3 block anchored at (ax,ay) is owned by
+   * the player right now — in bounds and every cell cached as `mine`. This is the relocate gate: the capital
+   * may only move onto a 3×3 the player already fully holds, so a cell that is neutral, enemy, or not yet
+   * revealed (uncached → not provably mine) disqualifies the block. The server re-validates on relocate.
    */
-  private footprintFree(ax: number, ay: number): boolean {
+  private footprintAllMine(ax: number, ay: number): boolean {
     if (!baseFootprintInBounds(ax, ay, this.ctx.mapW, this.ctx.mapH)) return false;
     for (const { x, y } of baseFootprintCells(ax, ay)) {
-      const proc = proceduralTile(this.ctx.cb.worldId, x, y);
-      if (proc.type === 'center' || proc.type === 'obstacle' || proc.type === 'bridge' || proc.type === 'plankway' || proc.type === 'stronghold') return false;
-      const cached = this.ctx.tileCache.get(`${x}:${y}`);
-      if (cached?.occupied && !cached.mine) return false;
+      if (!this.ctx.tileCache.get(`${x}:${y}`)?.mine) return false;
     }
     return true;
   }
@@ -113,13 +111,27 @@ export class WorldMapInput {
         return;
       }
       const tileKey = `${this.ctx.cb.worldId}:${tx}:${ty}`;
-      const myButtons: { label: string; action: () => void }[] = [
+      const myButtons: { label: string; action: () => void; disabled?: boolean }[] = [
         { label: t('world.actReinforce'), action: () => this.ctx.panels.showDeployDialog(tx, ty, 'reinforce') },
         { label: t('world.actDefense'), action: () => { this.ctx.panels.closeModal(); this.ctx.cb.onOpenDefense(tileKey); } },
       ];
       // Watchtower (§18 G5 V2): build a long-radius persistent vision source on an owned tile. If a tower already exists, show a status line instead of the build button.
       if (!tile.watchtower) {
         myButtons.push({ label: t('world.actWatchtower'), action: () => this.ctx.net.confirmWatchtower(tx, ty) });
+      }
+      // Relocate here (§3.4): the capital may only move onto a 3×3 block the player already fully owns —
+      // this clicked cell as centre plus all 8 neighbours. Offered on every owned tile so the intent is
+      // discoverable; when the surrounding ring isn't all mine the button is disabled and taps explain why
+      // ("occupy the surrounding tiles first"), mirroring the Occupy-connectivity gate below.
+      if (me.mainBaseTile) {
+        const canRelocate = this.footprintAllMine(tx, ty);
+        myButtons.push({
+          label: t('world.actRelocate'),
+          disabled: !canRelocate,
+          action: canRelocate
+            ? () => this.ctx.net.confirmRelocate(tx, ty)
+            : () => this.ctx.panels.showToast(t('world.err.relocateNeedSurround'), C.red),
+        });
       }
       myButtons.push({ label: t('world.actAbandon'), action: () => this.ctx.net.doAbandon(tx, ty) });
       myButtons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
@@ -209,14 +221,8 @@ export class WorldMapInput {
     }
     // Scout: send a scout to lift distant fog / reveal an unknown tile, then auto-return (no capture).
     buttons.push({ label: t('world.actScout'), action: () => void this.ctx.net.doScout(tx, ty) });
-    // Voluntary relocation (§3.4): if the player already has a capital and the whole 3×3 footprint anchored
-    // here (ADR-025) is actually placeable — in bounds, no blocking terrain, no enemy-owned cell — spend 500
-    // coins to move the capital here. A single-tile check let the button appear for spots the server would
-    // then reject with a generic "occupied" error; checking the full footprint client-side avoids that dead end.
-    const relocatable = this.ctx.me?.mainBaseTile && this.footprintFree(tx, ty);
-    if (relocatable) {
-      buttons.push({ label: t('world.actRelocate'), action: () => this.ctx.net.confirmRelocate(tx, ty) });
-    }
+    // (Relocate moved to the owned-tile branch: §3.4 now requires the target 3×3 to be already fully owned,
+    // so relocation is initiated by clicking your own centre tile, not a neutral one.)
     buttons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
     const head = garrison > 0 ? t('world.garrison').replace('{n}', String(garrison)) : t('world.actOccupy');
     this.ctx.panels.showModal([head, `(${tx}, ${ty})`], buttons);
