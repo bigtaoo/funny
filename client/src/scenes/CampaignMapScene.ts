@@ -199,7 +199,10 @@ export class CampaignMapScene implements Scene {
   // ── Shared header ───────────────────────────────────────────────────────────
 
   /** Draws the fixed top band into `root`; returns its height. Pushes its hits. */
-  private buildHeader(root: PIXI.Container, hits: Hit[], titleStr: string, onBack: () => void, subtitleStr?: string): number {
+  private buildHeader(
+    root: PIXI.Container, hits: Hit[], titleStr: string, onBack: () => void, subtitleStr?: string,
+    showChaptersButton?: boolean,
+  ): number {
     const { w, h } = this;
     // Top-bar chrome (dark strip + back button top-left) is handled by SceneHeader;
     // the title is drawn by this scene (when a subtitle is present the title rises slightly;
@@ -232,6 +235,20 @@ export class CampaignMapScene implements Scene {
       rect: { x: equip.x - equip.width - Math.round(w * 0.03), y: 0, w: equip.width + Math.round(w * 0.06), h: tbH },
       fn: () => this.cb.onOpenEquipment(),
     });
+
+    // Chapter-page-only shortcut to the notebook overview (TOC), since Back now exits to the lobby directly.
+    if (showChaptersButton) {
+      const gap = Math.round(w * 0.05);
+      const chapters = txt(t('campaign.chapters'), Math.round(h * 0.024), C.gold, true);
+      chapters.anchor.set(1, 0.5);
+      chapters.x = equip.x - equip.width - gap;
+      chapters.y = tbH / 2;
+      root.addChild(chapters);
+      hits.push({
+        rect: { x: chapters.x - chapters.width - Math.round(w * 0.03), y: 0, w: chapters.width + Math.round(w * 0.06), h: tbH },
+        fn: () => this.backToToc(),
+      });
+    }
 
     return tbH;
   }
@@ -329,7 +346,7 @@ export class CampaignMapScene implements Scene {
     // Narrator attribution: odd chapters are Tao's notebook, even are Anna's
     // (CAMPAIGN_STORY.md framework table — Ch1/3/5 Tao, Ch2/4/6 Anna).
     const ownerStr = t(ch % 2 === 1 ? 'campaign.notebookOwner.tao' : 'campaign.notebookOwner.anna');
-    const tbH = this.buildHeader(root, hits, titleStr, () => this.backToToc(), ownerStr);
+    const tbH = this.buildHeader(root, hits, titleStr, () => this.cb.onBack(), ownerStr, true);
 
     const stars = this.cb.getStars();
     const cleared = new Set(this.cb.getCleared());

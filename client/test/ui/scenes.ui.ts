@@ -520,10 +520,11 @@ describe('CampaignMapScene — tap detection', () => {
     scene.destroy();
   });
 
-  it('back-to-lobby works without any frame advance (ticker-stall resilience)', () => {
-    // The header "back" on the chapter page flips to the TOC, whose back calls
-    // onBack(). Both steps must work with zero update() calls — proving neither the
-    // level select nor the path back to the lobby depends on the flip settling.
+  it('chapter-page back returns to the lobby directly, without any frame advance', () => {
+    // The chapter page's header "back" used to flip to the TOC page first (see the
+    // "Chapters" button test below for that flow); it now calls onBack() straight
+    // away, so the player never gets stuck one level of navigation "deeper" than
+    // expected. Must work with zero update() calls — ticker-stall resilience.
     let backHits = 0;
     const input = new InputManager();
     const scene = new CampaignMapScene(layout, input, {
@@ -536,16 +537,53 @@ describe('CampaignMapScene — tap detection', () => {
       getPendingLevels: () => [],
     });
     const headerBack = () => (scene as any).hits.find((hh: any) => hh.rect.x === 0 && hh.rect.y === 0);
-    // 1) chapter page → tap back → flips toward TOC (no frame advance).
-    let b = headerBack(); expect(b).toBeDefined();
-    input._emitDown(b.rect.x + 2, b.rect.y + 2);
-    // The flip toward the TOC is now genuinely in progress (we never advanced it)…
-    expect((scene as any).flip).not.toBeNull();
-    // …yet hits must stay live (this.hits = incoming page's hits) so the TOC's back
-    // still calls onBack() — proving taps work MID-FLIP, not just after it settles.
-    b = headerBack(); expect(b).toBeDefined();
+    const b = headerBack(); expect(b).toBeDefined();
     input._emitDown(b.rect.x + 2, b.rect.y + 2);
     expect(backHits).toBe(1);
+    // No flip was started — the chapter page never routes through the TOC anymore.
+    expect((scene as any).flip).toBeNull();
+    scene.destroy();
+  });
+
+  it('"Chapters" header button flips the chapter page to the notebook overview (TOC)', () => {
+    // Since back now exits straight to the lobby, the chapter page needs its own
+    // way back to the TOC/notebook overview — the "Chapters" button next to Gear.
+    const { scene, input } = buildCampaign(() => {});
+    expect((scene as any).mode).toBe('chapter');
+    const headerHits = (scene as any).hits.filter((hh: any) => hh.rect.y === 0);
+    // back + equipment + chapters = 3 hits pinned to the header row on a chapter page.
+    expect(headerHits.length).toBe(3);
+    // Both text buttons are right-anchored; "Chapters" sits immediately left of "Gear"
+    // (buildHeader pushes equipment's hit before chapters', in right-to-left reading order).
+    const rightAnchored = headerHits.filter((hh: any) => hh.rect.x !== 0).sort((a: any, b: any) => b.rect.x - a.rect.x);
+    const chaptersHit = rightAnchored[1];
+    expect(chaptersHit).toBeDefined();
+    const { x, y, w, h } = chaptersHit.rect;
+    input._emitDown(x + w / 2, y + h / 2);
+    scene.update(1.0); // settle the flip (FLIP_DUR = 0.42s)
+    expect((scene as any).mode).toBe('toc');
+    scene.destroy();
+  });
+
+  it('the TOC/notebook-overview page itself has no "Chapters" button (nothing to flip to)', () => {
+    const input = new InputManager();
+    const scene = new CampaignMapScene(layout, input, {
+      onBack() {},
+      onSelectLevel() {},
+      onOpenEquipment() {},
+      getStars: () => ({}),
+      getCleared: () => [],
+      isOnline: () => true,
+      getPendingLevels: () => [],
+    });
+    // Force onto the TOC page: tap chapter-page back is now direct-to-lobby, so
+    // reach the TOC via the internal flip helper the "Chapters" button itself uses.
+    (scene as any).backToToc();
+    scene.update(1.0);
+    expect((scene as any).mode).toBe('toc');
+    const headerHits = (scene as any).hits.filter((hh: any) => hh.rect.y === 0);
+    // back + equipment only — no third "Chapters" hit on the TOC page.
+    expect(headerHits.length).toBe(2);
     scene.destroy();
   });
 

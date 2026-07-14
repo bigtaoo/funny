@@ -426,6 +426,7 @@ export const de: Record<TranslationKey, string> = {
   'campaign.lockedOffline': '🔒 Online freischalten',
   'campaign.pending': 'Ausstehend',
   'campaign.equipment': 'Ausrüstung',
+  'campaign.chapters': 'Kapitel',
   'campaign.cleared': 'Geschafft',
   'campaign.notebookTitle': 'Kampagnenheft',
   'campaign.notebookOwner.tao': 'Taos Notizbuch',

@@ -430,6 +430,7 @@ export const zh = {
   'campaign.lockedOffline': '🔒 联网解锁',
   'campaign.pending': '待结算',
   'campaign.equipment': '装备',
+  'campaign.chapters': '章节',
   'campaign.cleared': '已通关',
   'campaign.notebookTitle': '战役笔记本',
   'campaign.notebookOwner.tao': '陶的笔记本',

@@ -426,6 +426,7 @@ export const en: Record<TranslationKey, string> = {
   'campaign.lockedOffline': '🔒 Online to unlock',
   'campaign.pending': 'Pending',
   'campaign.equipment': 'Gear',
+  'campaign.chapters': 'Chapters',
   'campaign.cleared': 'Cleared',
   'campaign.notebookTitle': 'Campaign Notebook',
   'campaign.notebookOwner.tao': "Tao's notebook",
