@@ -1651,6 +1651,18 @@ if (path.startsWith('/admin/world/')) {
 - 验证：`tsc --noEmit -p tsconfig.test.json` + `webpack --mode production` 全绿；用临时调试钩子（`app.ts` 挂 `globalThis.__NW_APP`/`__NW_SceneHeader`/`__NW_WorldMapPanels`，验证后已移除）单独构造假 `ctx` 调 `drawSceneHeader`+`WorldMapPanels.renderHud()`，截图确认标题栏高度与关卡一致、右上状态卡/左上 Zoom-Auction 都清晰落在标题栏下方、无重叠。
 - 回归测试：`client/test/worldMapCameraTopInset.test.ts`（纯逻辑，走默认 `npm test`，`ViewportMixin` 混进一个不依赖 `@nw/shared` 的假 base 类以避开默认 vitest 配置的 game-logic-only 别名范围）5 例，覆盖 `clampPan`（小地图居中到 `[topInset, bottom]` 中点、大地图夹到 `[topInset, bottom]` 而非 `[0, bottom]`）、`centerAt`、`viewportCenter`、`setZoom` 四处相机数学在 `topInset` 变化时确实跟着变（而非被悄悄忽略）。`client/test/ui/worldMapHeaderInset.ui.ts`（PIXI headless，走 `test:ui`）7 例，覆盖 `WorldMapInput` 的拖拽起始/点击判定在标题栏范围内（`y<topInset`）不再穿透到地图、`WorldMapPanels.renderHud()` 右列状态卡随 `topInset` 等量下移。随 `npm test`（78 文件 603 例）+ `npm run test:ui`（20 文件 261 例）全绿一并跑通。
 
+**标题栏改为资源产量 + 拍卖行移至右上角（2026-07-14）**：
+
+**背景**：标题栏此前只显示静态的 `world.title`（"大世界"文案），信息密度低；拍卖行入口则挤在左上角 Zoom 下方的竖排里，跟"离开当前视图"心智模型（返回/缩放）语义不完全贴合——拍卖行是频繁访问的经济入口，更适合放在寸土寸金的标题栏本身。
+
+**改动**：
+- `WorldMapRenderer/build.ts`：`drawSceneHeader(topLayer, w, h, t('world.title'), …)` 的标题参数改传 `null`（不画标题文字，但保留栏体/纸纹/accent 底线/返回按钮胶囊）。新增 `ctx.headerHudLayer`——加在 `topLayer` 之后（渲染顺序在其上方，否则会被标题栏的不透明纸面遮住），专门承载"随数据刷新"的标题栏内容，区别于只画一次的 `topLayer` 静态栏体。
+- `WorldMapPanels.ts` 新增私有方法 `renderHeaderHud()`，随 `renderHud()`（原有的 ~5s 行军轮询节奏）一并 `tearDownChildren` + 重绘到 `ctx.headerHudLayer`：
+  - 拍卖行按钮：从原左上 Zoom 下方的竖排移除，改画在标题栏最右侧（`x = w - aucW - 10`，垂直居中于 `topInset` 高度内），复用同一个 `ctx.aucBtnRect` 命中矩形（`WorldMapInput.ts` 命中逻辑不用改，矩形坐标改了但读取方式没变）。左上竖排只剩 Zoom 一项。
+  - 资源产量：读 `ctx.me.yieldRate`（原本只在训练弹窗里显示过的"存量 (+产量/回合)"数据源，本次复用同一字段），五种资源 `ink/paper/graphite/metal/sticker` 各画一个 `res_atlas` 图标 + `+产量` 文字，水平居中在"返回按钮胶囊右侧"到"拍卖行按钮左侧"之间的空当，替代原来的标题文字。
+- 验证：`tsc --noEmit` + `webpack --mode development` 全绿；用临时调试分支（`entries/web.ts` 加 `?worldmap` 查询参数分支，直接 `new WorldMapScene(...)` + reject-fast 的 `WorldApiClient` Proxy 桩，跳过登录/后端，参考 [[worldmap-standalone-debug-render]] 的既有 recipe；额外踩坑：debug 分支里手搭的 `PIXI.Application` 没有走 `ScalingManager` 的 `gameLayer` 缩放变换，场景容器的 design-space 坐标会 1:1 落到物理画布上——标题栏最右侧的拍卖行按钮因此一度被误判"渲染缺失"，实际是设计坐标超出画布物理宽度；修复为手动 `scene.container.scale.set(w/layout.designWidth, h/layout.designHeight)` 复现真实 App 的缩放后，拍卖行按钮回到画布内可见），截图确认标题栏不再显示"大世界"文字、五个资源产量图标+数值居中显示、拍卖行按钮清晰落在标题栏右上角、返回按钮与左上 Zoom 不受影响；验证后临时分支已移除。
+- 回归测试：`client/test/ui/worldMapHeaderProduction.ui.ts`（PIXI headless，走 `test:ui`）7 例，手搭假 `WorldMapContext`（含新增的 `headerHudLayer`）单独驱动 `WorldMapPanels.renderHud()`：拍卖行按钮落在屏幕右半区、贴右边缘、垂直居中于 `topInset` 高度内（含 `topInset` 变化时按钮高度跟着变）；`ctx.me.yieldRate` 五个资源各生成一条 `+<rate>` 文本（含缺省值回退 `+0`）；产量读数水平居中在返回按钮和拍卖行按钮之间、不重叠任一方；`renderHud()` 反复调用（模拟 5s 轮询）不泄漏子节点。同时修了 `worldMapHeaderInset.ui.ts` 已有测试的假 ctx 缺 `headerHudLayer` 字段的问题（`renderHud()` 新调用 `renderHeaderHud()` 后会读到 `undefined.removeChildren`，两个测试文件现在都手搭这个字段）。随 `npm run test:ui`（29 文件 305 例）全绿一并跑通。
+
 ---
 
 *本文档为 SLG 设计基准，DRAFT 标注处随实现/调参细化；锁定决策（SLG1~13）非经重新拍板不改。*

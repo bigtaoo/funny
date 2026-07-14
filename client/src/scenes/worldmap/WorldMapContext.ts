@@ -90,6 +90,8 @@ export class WorldMapContext {
   hudLayer!: PIXI.Container;
   /** Title bar + back button — static, drawn once (unlike hudLayer, which is torn down on every ~5s march-poll re-render). */
   topLayer!: PIXI.Container;
+  /** Resource-production readout + auction button drawn on top of the header bar; torn down/rebuilt alongside hudLayer so production rates stay live. Sits above topLayer (added after it) so it isn't hidden by the header chrome. */
+  headerHudLayer!: PIXI.Container;
   /** Header bar height (SceneHeader, unified with every other scene) — the map viewport and top-anchored HUD reserve this much space. Set once in build(). */
   topInset = 0;
   modalLayer!: PIXI.Container;

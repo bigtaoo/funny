@@ -24,10 +24,69 @@ import type { WorldMapContext, WorldMapCallbacks, DeployKind } from './WorldMapC
 export class WorldMapPanels {
   constructor(private readonly ctx: WorldMapContext) {}
 
+  /**
+   * Header-bar content (drawn into ctx.headerHudLayer, above the static topLayer chrome):
+   * per-resource production rate centered in the bar, and the auction button pinned to its
+   * far right. Rebuilt alongside hudLayer on every ~5s march poll so production stays live.
+   */
+  private renderHeaderHud(): void {
+    const layer = this.ctx.headerHudLayer;
+    tearDownChildren(layer);
+    const { w } = this.ctx;
+    const headerH = this.ctx.topInset;
+
+    // Auction button — far right of the header bar.
+    const aucW = 78, aucH = Math.round(headerH * 0.7);
+    const aucBtn = sketchPanel(aucW, aucH, { fill: C.dark, border: C.accent, seed: seedFor(1, 0, aucW) });
+    aucBtn.x = w - aucW - 10; aucBtn.y = (headerH - aucH) / 2;
+    layer.addChild(aucBtn);
+    const aIconSize = Math.round(aucH * 0.4);
+    const aIcon = buildIcon('tag', aIconSize, C.light);
+    const aTxt = txt(t('world.auction'), Math.round(aucH * 0.34), C.light);
+    aTxt.anchor.set(0, 0.5);
+    const aGrpW = aIconSize + 4 + aTxt.width;
+    const aGx = aucBtn.x + (aucW - aGrpW) / 2;
+    aIcon.x = aGx; aIcon.y = aucBtn.y + (aucH - aIconSize) / 2;
+    aTxt.x = aGx + aIconSize + 4; aTxt.y = aucBtn.y + aucH / 2;
+    layer.addChild(aIcon); layer.addChild(aTxt);
+    this.ctx.aucBtnRect = { x: aucBtn.x, y: aucBtn.y, w: aucW, h: aucH };
+
+    // Per-resource production readout — centered between the back button and the auction
+    // button, replacing the old "World" title text.
+    const yieldRate = this.ctx.me?.yieldRate ?? {};
+    const iconSize = Math.round(headerH * 0.34);
+    const fontSize = Math.round(headerH * 0.26);
+    const gap = Math.round(headerH * 0.3);
+    const cluster = new PIXI.Container();
+    let cx = 0;
+    for (const rt of ['ink', 'paper', 'graphite', 'metal', 'sticker']) {
+      const rate = Math.round(yieldRate[rt] ?? 0);
+      const tex = getResTexture(rt);
+      if (tex) {
+        const sp = new PIXI.Sprite(tex);
+        sp.width = sp.height = iconSize;
+        sp.x = cx; sp.y = -iconSize / 2;
+        cluster.addChild(sp);
+        cx += iconSize + 3;
+      }
+      const lbl = txt(`+${rate}`, fontSize, C.dark);
+      lbl.anchor.set(0, 0.5); lbl.x = cx; lbl.y = 0;
+      cluster.addChild(lbl);
+      cx += lbl.width + gap;
+    }
+    cx -= gap;
+    const leftBound = this.ctx.backRect.x + this.ctx.backRect.w + 8;
+    const rightBound = aucBtn.x - 8;
+    cluster.x = leftBound + Math.max(0, (rightBound - leftBound - cx) / 2);
+    cluster.y = headerH / 2;
+    layer.addChild(cluster);
+  }
+
   renderHud(): void {
     const hud = this.ctx.hudLayer;
     tearDownChildren(hud); // rebuilt every ~5s by the march poll → free resource-count Text textures
     const { w, h } = this.ctx;
+    this.renderHeaderHud();
 
     // ── Bottom chat bar (§25): shows the latest world-chat message (sender + truncated
     // body), polled alongside marches — plus an unread badge vs the local "last seen" mark ──
@@ -54,12 +113,12 @@ export class WorldMapPanels {
     }
     this.ctx.chatBarRect = { x: 0, y: h - HUD_H, w, h: HUD_H };
 
-    // ── Left column, top-left: Zoom → Auction, stacked directly under the floating
-    // Back chip (drawn separately on ctx.topLayer — see WorldMapRenderer). Things that
-    // leave the current map view live on the left; passive state lives on the right. ──
+    // ── Left column, top-left: Zoom, stacked directly under the floating Back chip
+    // (drawn separately on ctx.topLayer — see WorldMapRenderer). The auction button now
+    // lives in the header bar itself (renderHeaderHud), far right. ──
     const colW = 88, colH = 34, colGap = 6;
     const colX = this.ctx.backRect.x || 8;
-    let ly = this.ctx.backRect.y + this.ctx.backRect.h + colGap || 8;
+    const ly = this.ctx.backRect.y + this.ctx.backRect.h + colGap || 8;
 
     const zoomLabels: Record<number, string> = { 1: '×1', 2: '×2', 3: '×3' };
     const zoomBtn = sketchPanel(colW, colH, { fill: C.dark, border: C.accent, seed: seedFor(4, 2, colW) });
@@ -74,20 +133,6 @@ export class WorldMapPanels {
     zTxt.x = zGx + 20; zTxt.y = zoomBtn.y + colH / 2;
     hud.addChild(zIcon); hud.addChild(zTxt);
     this.ctx.zoomBtnRect = { x: zoomBtn.x, y: zoomBtn.y, w: colW, h: colH };
-    ly += colH + colGap;
-
-    const aucBtn = sketchPanel(colW, colH, { fill: C.dark, border: C.accent, seed: seedFor(1, 0, colW) });
-    aucBtn.x = colX; aucBtn.y = ly;
-    hud.addChild(aucBtn);
-    const aIcon = buildIcon('tag', 14, C.light);
-    const aTxt = txt(t('world.auction'), 13, C.light);
-    aTxt.anchor.set(0, 0.5);
-    const aGrpW = 14 + 4 + aTxt.width;
-    const aGx = aucBtn.x + (colW - aGrpW) / 2;
-    aIcon.x = aGx; aIcon.y = aucBtn.y + (colH - 14) / 2;
-    aTxt.x = aGx + 18; aTxt.y = aucBtn.y + colH / 2;
-    hud.addChild(aIcon); hud.addChild(aTxt);
-    this.ctx.aucBtnRect = { x: aucBtn.x, y: aucBtn.y, w: colW, h: colH };
 
     // ── Right column, top-right: status card → marches badge → World/info (passive state) ──
     const rightW = 160;

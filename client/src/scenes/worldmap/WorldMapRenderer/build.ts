@@ -23,11 +23,13 @@ export function BuildMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase):
       const bg = buildPaperBackground('worldmap', w, h, { marginLine: false });
       this.ctx.container.addChild(bg);
 
-      // Top-left back button + title bar — same SceneHeader every other scene uses, so the
-      // title-row height reads consistently app-wide. Drawn before the map so topInset is
-      // known when the map mask/loading overlay below are sized.
+      // Top-left back button + bar chrome — same SceneHeader every other scene uses, so the
+      // title-row height reads consistently app-wide. No title text: the bar instead shows
+      // live per-resource production (see renderHeaderHud) with the auction button pinned to
+      // its far right. Drawn before the map so topInset is known when the map mask/loading
+      // overlay below are sized.
       this.ctx.topLayer = new PIXI.Container();
-      const hdr = drawSceneHeader(this.ctx.topLayer, w, h, t('world.title'), { accent: HEADER_ACCENT.slg });
+      const hdr = drawSceneHeader(this.ctx.topLayer, w, h, null, { accent: HEADER_ACCENT.slg });
       this.ctx.backRect = hdr.backRect;
       this.ctx.topInset = hdr.headerH;
 
@@ -68,6 +70,12 @@ export function BuildMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase):
 
       // Header bar (built above, before the map) sits above the map/HUD layers.
       this.ctx.container.addChild(this.ctx.topLayer);
+
+      // Production readout + auction button drawn on top of the header chrome; rebuilt
+      // alongside hudLayer (renderHud) so production stays live, but layered after topLayer
+      // so the header's paper fill doesn't hide it.
+      this.ctx.headerHudLayer = new PIXI.Container();
+      this.ctx.container.addChild(this.ctx.headerHudLayer);
 
       this.ctx.modalLayer = new PIXI.Container();
       this.ctx.container.addChild(this.ctx.modalLayer);
