@@ -17,6 +17,7 @@ import { buildIcon } from '../../render/icons';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
+import { FAMILY_CAP } from '@nw/shared';
 import type { WorldApiClient, FamilyDetailView, FamilyMemberView, FamilyMessageView } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
 import { drawSocialTabRail, type SocialTab } from '../../render/socialTabRail';
@@ -64,8 +65,11 @@ export class FamilySceneBase {
 
   // Input overlay for create form
   protected hiddenInput: HTMLInputElement | null = null;
-  // Input overlay for the channel send box — set while open so the Send button can read its value
+  // Input overlay for the channel send box — set while open so the Send button can read its value.
+  // `sendText` mirrors its value so the on-canvas field shows what's being typed (+ blinking caret),
+  // instead of staying stuck on the placeholder (the "can't type into chat" bug).
   protected sendInput: HTMLInputElement | null = null;
+  protected sendText = '';
   protected createName = '';
   protected createTag = '';
   protected createField: 'name' | 'tag' | null = null;
@@ -82,6 +86,10 @@ export class FamilySceneBase {
   protected chatColX = 0;
   /** Title-bar height, set from the shared header — drives all body layout below it. */
   protected headerH = 0;
+  /** Live header text nodes (title + landscape family identity), drawn on top of the cached header
+   *  chrome. Destroyed and rebuilt each renderHeader() so repeated renders (e.g. scroll drags) don't
+   *  stack duplicate Text nodes on the container. */
+  private headerExtras: PIXI.DisplayObject[] = [];
   protected dragStart: { x: number; y: number; scroll: number; target: 'members' | 'channel' } | null = null;
   protected dragMoved = false;
 
@@ -126,8 +134,11 @@ export class FamilySceneBase {
     return Math.round(this.h * 0.062);
   }
 
-  /** Height of the family identity band (name/count + prosperity + optional announcement rows). */
+  /** Height of the family identity band below the header. Portrait keeps the full name/count +
+   *  prosperity + announcement band; landscape lifts the identity into the header (see
+   *  drawHeaderTitle) and reserves the band only for an announcement, if any. */
   protected get infoBandH(): number {
+    if (this.landscape) return this.family?.announcement ? Math.round(this.h * 0.04) : 0;
     return Math.round(this.h * 0.085);
   }
 
@@ -158,11 +169,64 @@ export class FamilySceneBase {
 
   protected renderHeader(): void {
     const { w } = this;
-    const hdr = drawSceneHeader(this.container, w, this.h, t('family.title'), {
+    // Draw only the bar chrome + back button from the shared header; the title (and, in landscape,
+    // the family identity lifted out of the info band) are drawn live below so we control layout.
+    const hdr = drawSceneHeader(this.container, w, this.h, null, {
       variant: 'paper', accent: HEADER_ACCENT.slg,
     });
     this.headerH = hdr.headerH;
     this.hitRects.push({ rect: hdr.backRect, action: () => this.cb.onBack() });
+    this.drawHeaderTitle(hdr.headerH);
+  }
+
+  /** Muted secondary ink (a step below C.dark, still legible on paper) — matches RenderMixin's MUTED. */
+  private static readonly MUTED = 0x5a574f;
+
+  /** Header title row. Always shows the "Family" title just right of the back pill. In landscape
+   *  (where there's horizontal room) it also carries the family identity the info band used to hold:
+   *  `[TAG] Name` + prosperity on the left, member count pinned far-right. Portrait keeps that identity
+   *  in the info band below the header, since the narrow bar can't hold it all on one line. */
+  private drawHeaderTitle(headerH: number): void {
+    const { w, h } = this;
+    for (const n of this.headerExtras) n.destroy();
+    this.headerExtras = [];
+    const add = <T extends PIXI.DisplayObject>(node: T): T => {
+      this.headerExtras.push(node);
+      this.container.addChild(node);
+      return node;
+    };
+    const midY = headerH / 2;
+
+    // Left cluster begins just right of the back-button pill. Replicates SceneHeader's back-chip
+    // metrics (BACK_X=10, size=0.039·h, padX=0.7·size) so the title always clears the pill.
+    const backSize = Math.round(h * 0.039);
+    const backNode = txt(`← ${t('common.back')}`, backSize, C.accent);
+    const chipW = backNode.width + Math.round(backSize * 0.7) * 2;
+    backNode.destroy();
+    let x = 10 + chipW + Math.round(backSize * 0.6);
+
+    const titleNode = add(txt(t('family.title'), Math.round(h * 0.034), C.dark, true));
+    titleNode.anchor.set(0, 0.5); titleNode.x = x; titleNode.y = midY;
+
+    if (this.landscape && this.family && this.mode === 'myFamily') {
+      const fam = this.family;
+      const gap = Math.round(w * 0.02);
+      x += titleNode.width + gap;
+
+      const nameNode = add(txt(`[${fam.tag}] ${fam.name}`, Math.round(h * 0.03), C.dark));
+      nameNode.anchor.set(0, 0.5); nameNode.x = x; nameNode.y = midY;
+      x += nameNode.width + gap;
+
+      const starSize = Math.round(h * 0.026);
+      const star = add(buildIcon('star', starSize, 0xd4a030));
+      star.x = x; star.y = midY - starSize / 2;
+      x += starSize + 6;
+      const prosNode = add(txt(t('family.prosperity', { n: fam.prosperity }), Math.round(h * 0.024), 0xa9750f));
+      prosNode.anchor.set(0, 0.5); prosNode.x = x; prosNode.y = midY;
+
+      const countNode = add(txt(t('family.memberCount', { n: fam.memberCount, cap: FAMILY_CAP }), Math.round(h * 0.024), FamilySceneBase.MUTED));
+      countNode.anchor.set(1, 0.5); countNode.x = w - 16; countNode.y = midY;
+    }
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -314,7 +378,8 @@ export class FamilySceneBase {
       this.toastTimer -= dt * 1000;
       if (this.toastTimer <= 0) this.toastLayer.removeChildren();
     }
-    if (this.createField) {
+    // Blink the caret while either the create-form fields or the channel send box are focused.
+    if (this.createField || this.sendInput) {
       this.caretTimer += dt;
       if (this.caretTimer >= 0.5) { this.caretTimer = 0; this.caretOn = !this.caretOn; this.render(); }
     }

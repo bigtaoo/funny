@@ -186,15 +186,13 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       this.renderInfoBand(infoY);
 
       const contentY = infoY + this.infoBandH;
-      const barH = Math.round(h * 0.06);
-      const contentH = h - contentY - barH - 6;
+      const contentH = h - contentY - 6;
 
       if (this.activeTab === 'members') {
         this.renderMembers(left, w - left, contentY, contentH, 'scrollY');
       } else {
         this.renderChannel(left, w - left, contentY, contentH, 'scrollYChannel');
       }
-      this.renderBottomBar(left, w, contentY + contentH + 6);
     }
 
     /** Landscape: roster (left) + family channel (right) always visible side by side. */
@@ -205,11 +203,10 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       const infoY = this.headerH + 8;
       this.renderInfoBand(infoY);
 
-      const barH = Math.round(h * 0.06);
       const colLblSize = this.fs(0.022);
       const colLblGap = Math.round(colLblSize * 1.4);
       const contentY = infoY + this.infoBandH + colLblGap;
-      const contentH = h - contentY - barH - 6;
+      const contentH = h - contentY - 6;
 
       const totalW = w - left;
       const rosterW = Math.round(totalW * 0.42);
@@ -231,7 +228,6 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
 
       this.renderMembers(left, rosterW, contentY, contentH, 'scrollY');
       this.renderChannel(chatX, chatW, contentY, contentH, 'scrollYChannel');
-      this.renderBottomBar(left, w, contentY + contentH + 6);
     }
 
     /** Family identity band: `[TAG] Name` + member count on row 1, prosperity on row 2, optional
@@ -242,6 +238,18 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       const { w } = this;
       const left = this.railW;
       const fam = this.family;
+
+      // Landscape: the identity (name/prosperity/count) now lives in the header — here we only
+      // surface the announcement, if any, on a slim band below the bar.
+      if (this.landscape) {
+        if (fam.announcement) {
+          const annLbl = truncateToWidth(fam.announcement, this.fs(0.02), MUTED, w - (left + 12) - 12);
+          annLbl.x = left + 12; annLbl.y = y0 + 4;
+          this.bodyLayer.addChild(annLbl);
+        }
+        return;
+      }
+
       const B = this.infoBandH;
 
       const countLbl = txt(t('family.memberCount', { n: fam.memberCount, cap: FAMILY_CAP }), this.fs(0.022), MUTED);
@@ -292,16 +300,23 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       let cy = y0 - this[scrollKey];
       for (const mem of this.members) {
         if (cy + R < y0 || cy > y0 + maxH) { cy += R; continue; }
+        const isMe = mem.accountId === me;
+
+        // Per-member card background — my own row is tinted a touch warmer so it stands out.
+        const rowBg = sketchPanel(colW - 12, R - 4, { fill: isMe ? 0xefe9d8 : 0xf7f5ee, border: C.mid, seed: seedFor(cy, 5, colW) });
+        rowBg.x = x0 + 6; rowBg.y = cy + 2;
+        this.bodyLayer.addChild(rowBg);
+
         const bar = new PIXI.Graphics();
         sketchAccentBar(bar, R - 4, mem.role === 'leader' ? C.accent : mem.role === 'elder' ? 0xd4a030 : C.mid);
         bar.x = x0 + 6; bar.y = cy + 2;
         this.bodyLayer.addChild(bar);
 
-        // Action buttons for leader (promote/demote elders + kick). Laid out from the right edge
-        // inward: kick first, then the (wider) role toggle to its left. Build them first so the
-        // name can be truncated to stop before them (portrait rows are narrow — an untruncated
-        // long name would otherwise run under the buttons).
-        const showActions = isLeader && mem.accountId !== me;
+        // Right-edge buttons, laid out from the right inward, built first so the name can be
+        // truncated to stop before them. For other members (when I'm leader): kick + role toggle.
+        // For my own row: the Leave / Dissolve action (see below), so it sits at the far right of
+        // my name — replacing the old bottom bar.
+        const showActions = isLeader && !isMe;
         const btnY = cy + Math.round((R - btnH) / 2);
         let nameRight = right - 12; // where the name column must stop
 
@@ -334,14 +349,35 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
             this.hitRects.push({ rect: { x: bx, y: btnY, w: roleW, h: btnH }, action: () => void this.doSetRole(accId, nextRole) });
             nameRight = bx - btnGap;
           }
+        } else if (isMe) {
+          // Leave / Dissolve on my own row. A leader may only Dissolve, and only once they are the
+          // sole member — while others remain they can neither leave nor dissolve (must transfer or
+          // kick first). Everyone else gets Leave Family.
+          const alone = this.members.length === 1;
+          if (!isLeader || alone) {
+            const dissolve = isLeader && alone;
+            const al = txt(t(dissolve ? 'family.dissolve' : 'family.leave'), this.fs(0.019), dissolve ? C.red : C.accent);
+            const aw = Math.round(al.width + padX * 2);
+            const ax = right - aw - 8;
+            const aBtn = sketchPanel(aw, btnH, { fill: 0xf8f8f0, border: dissolve ? C.red : C.accent, seed: seedFor(cy, 3, aw) });
+            aBtn.x = ax; aBtn.y = btnY;
+            this.bodyLayer.addChild(aBtn);
+            al.anchor.set(0.5, 0.5); al.x = ax + aw / 2; al.y = btnY + btnH / 2;
+            this.bodyLayer.addChild(al);
+            this.hitRects.push({ rect: { x: ax, y: btnY, w: aw, h: btnH }, action: () => dissolve ? this.confirmDissolve() : this.confirmLeave() });
+            nameRight = ax - btnGap;
+          }
         }
 
-        const roleLbl = txt(t(`family.${mem.role as 'leader' | 'member' | 'elder'}`), this.fs(0.019), MUTED);
-        roleLbl.x = x0 + 18; roleLbl.y = cy + Math.round(R * 0.1);
-        this.bodyLayer.addChild(roleLbl);
-        const nameLbl = truncateToWidth(mem.displayName ?? mem.publicId ?? '', this.fs(0.026), C.dark, Math.max(40, nameRight - (x0 + 18)));
-        nameLbl.x = x0 + 18; nameLbl.y = cy + Math.round(R * 0.42);
+        // Name on the left, with the role label immediately to its right (was stacked above it).
+        const roleColor = mem.role === 'leader' ? C.accent : mem.role === 'elder' ? 0xd4a030 : MUTED;
+        const roleLbl = txt(t(`family.${mem.role as 'leader' | 'member' | 'elder'}`), this.fs(0.019), roleColor);
+        const nameMaxW = Math.max(40, nameRight - (x0 + 18) - roleLbl.width - 10);
+        const nameLbl = truncateToWidth(mem.displayName ?? mem.publicId ?? '', this.fs(0.026), C.dark, nameMaxW);
+        nameLbl.x = x0 + 18; nameLbl.y = cy + Math.round((R - nameLbl.height) / 2);
         this.bodyLayer.addChild(nameLbl);
+        roleLbl.x = nameLbl.x + nameLbl.width + 10; roleLbl.y = cy + Math.round((R - roleLbl.height) / 2);
+        this.bodyLayer.addChild(roleLbl);
 
         cy += R;
       }
@@ -357,47 +393,6 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       }
 
       drawScrollIndicator(this.bodyLayer, { x: x0, y: y0, w: colW, h: maxH }, this[scrollKey], Math.max(0, listH - maxH));
-    }
-
-    /** Sect hub entry (left) + Leave / Dissolve (right) — shared by both the tabbed (portrait)
-     *  and split (landscape) layouts, drawn once beneath whichever content is above it. */
-    private renderBottomBar(left: number, w: number, barY: number): void {
-      const me = this.cb.myAccountId;
-      const myRole = this.members.find(m => m.accountId === me)?.role ?? 'member';
-      const isLdr = myRole === 'leader';
-      const midX = (left + w) / 2;
-      const bh = Math.round(this.h * 0.05);
-      const gap = Math.round(this.h * 0.012);
-      const fontSz = this.fs(0.024);
-      const padX = Math.round(this.h * 0.018);
-
-      // Buttons sized to their (locale-variable) labels + padding, then the pair is centred —
-      // a fixed width clipped "Dissolve Family" in the taller portrait design space.
-      const sectLabel = t('family.sect');
-      const actLabel = isLdr ? t('family.dissolve') : t('family.leave');
-      const sblNode = txt(sectLabel, fontSz, C.light);
-      const blNode = txt(actLabel, fontSz, isLdr ? C.red : C.accent);
-      const sectW = Math.round(sblNode.width + padX * 2);
-      const actW = Math.round(blNode.width + padX * 2);
-      const pairX = midX - (sectW + gap * 2 + actW) / 2;
-
-      const sectBtn = sketchPanel(sectW, bh, { fill: C.dark, border: C.accent, seed: seedFor(2, 0, sectW) });
-      sectBtn.x = pairX; sectBtn.y = barY;
-      this.bodyLayer.addChild(sectBtn);
-      sblNode.anchor.set(0.5, 0.5); sblNode.x = pairX + sectW / 2; sblNode.y = barY + bh / 2;
-      this.bodyLayer.addChild(sblNode);
-      this.hitRects.push({ rect: { x: pairX, y: barY, w: sectW, h: bh }, action: () => this.cb.onOpenSect() });
-
-      const actX = pairX + sectW + gap * 2;
-      const btn = sketchPanel(actW, bh, { fill: 0xf8f8f0, border: isLdr ? C.red : C.accent, seed: seedFor(0, 0, actW) });
-      btn.x = actX; btn.y = barY;
-      this.bodyLayer.addChild(btn);
-      blNode.anchor.set(0.5, 0.5); blNode.x = actX + actW / 2; blNode.y = barY + bh / 2;
-      this.bodyLayer.addChild(blNode);
-      this.hitRects.push({
-        rect: { x: actX, y: barY, w: actW, h: bh },
-        action: () => isLdr ? this.confirmDissolve() : this.confirmLeave(),
-      });
     }
 
     /** Channel column. Same `x0`/`colW`/`scrollKey` parametrization as `renderMembers` — see there. */
@@ -436,10 +431,13 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       const inputY = y0 + listH2 + 4;
       const sendW = Math.round(this.h * 0.09);
       const fieldW = right - x0 - sendW - 12;
-      const field = sketchPanel(fieldW, inputH, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(0, 0, fieldW) });
+      const active = this.sendInput !== null;
+      const field = sketchPanel(fieldW, inputH, { fill: 0xfaf9f5, border: active ? C.accent : C.mid, seed: seedFor(0, 0, fieldW) });
       field.x = x0 + 6; field.y = inputY;
       this.bodyLayer.addChild(field);
-      const fl = txt(t('family.msgPlaceholder'), this.fs(0.022), MUTED);
+      // Show the typed text (+ blinking caret while focused); fall back to the placeholder when empty.
+      const hasText = this.sendText.length > 0;
+      const fl = txt(caretDisplay(this.sendText, active && this.caretOn, t('family.msgPlaceholder')), this.fs(0.022), hasText ? C.dark : MUTED);
       fl.x = x0 + 12; fl.y = inputY + inputH / 2 - fl.height / 2;
       this.bodyLayer.addChild(fl);
       this.hitRects.push({ rect: { x: x0 + 6, y: inputY, w: fieldW, h: inputH }, action: () => this.openSendInput() });

@@ -23,6 +23,7 @@ class FakeFamilySceneBase {
   family: { familyId: string } | null = { familyId: 'fam1' };
   members: unknown[] = [];
   sendInput: { value: string; remove: () => void } | null = null;
+  sendText = '';
   cb = {
     worldApi: { sendFamilyMessage: vi.fn().mockResolvedValue(undefined) },
     playerName: 'Tester',
@@ -38,6 +39,7 @@ interface TestScene {
   destroyed: boolean;
   family: { familyId: string } | null;
   sendInput: { value: string; remove: () => void } | null;
+  sendText: string;
   cb: FakeFamilySceneBase['cb'];
   render: FakeFamilySceneBase['render'];
   showToast: FakeFamilySceneBase['showToast'];
@@ -65,6 +67,20 @@ describe('FamilyScene Send button — doSendMsg()', () => {
     expect(scene.sendInput).toBeNull();
     expect(scene.loadChannel).toHaveBeenCalledTimes(1);
     expect(scene.render).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears the mirrored draft text (sendText) after sending, so the field resets', async () => {
+    // sendText mirrors the hidden input so the on-canvas field can show the typed draft (the
+    // "can't type into chat" fix). After a successful send it must reset, or the next time the
+    // field opens it would still show the just-sent message.
+    const scene = new FamilyWithActions() as unknown as TestScene;
+    scene.sendInput = { value: 'good game', remove: vi.fn() };
+    scene.sendText = 'good game';
+
+    await scene.doSendMsg();
+
+    expect(scene.cb.worldApi.sendFamilyMessage).toHaveBeenCalledWith('fam1', 'good game', 'Tester');
+    expect(scene.sendText).toBe('');
   });
 
   it('opens the send input instead of doing nothing when none is open yet', async () => {
