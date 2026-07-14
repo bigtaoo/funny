@@ -7,8 +7,9 @@
 ```
 client/          主游戏（TS + PixiJS，port 9090）
 tools/           animator(9091) / level-editor(9092) / ops(9093) / vfx-editor(9094) / map-editor(9095)
-server/          9 个 Node 服务 + engine/contracts/shared 包（npm workspaces）
-  contracts/     openapi.yml + openapi-world.yml + *.proto
+server/          11 个 Node 服务 + engine/contracts/shared 包（npm workspaces）
+  contracts/     openapi.yml（ADR-040 起由 openapi/ 分域片段生成，勿直接编辑）
+                 + openapi-world.yml + openapi-auction.yml + *.proto（game/replay/transport）
   shared/        @nw/shared
   metaserver/    REST 请求面
   gateway/       WS 控制面（/gw）
@@ -16,9 +17,11 @@ server/          9 个 Node 服务 + engine/contracts/shared 包（npm workspace
   gameserver/    WS 数据面（?ticket=，不连库）
   commercial/    钱包/交易
   admin/         运维后台后端
-  worldsvc/      SLG（/world /auction）
+  worldsvc/      SLG（/world）
   socialsvc/     社交（/social/*）
   analyticsvc/   埋点（18085）
+  auctionsvc/    拍卖行（/auction，独立库，18086）
+  botsvc/        机器人玩家服务（内部管理面 18087）
 art/             概念图
 design/          所有设计文档（game/tools/product）
 claudedocs/      模块级快查文档（按需加载）
@@ -29,7 +32,9 @@ claudedocs/      模块级快查文档（按需加载）
 | 模块 | 快查 | 设计 |
 |---|---|---|
 | 游戏主代码 | [`claudedocs/client-modules.md`](claudedocs/client-modules.md) | `design/game/` |
+| 客户端测试 | [`claudedocs/client-testing.md`](claudedocs/client-testing.md) | — |
 | 服务端 | [`claudedocs/server.md`](claudedocs/server.md) | `design/game/META_DESIGN.md` |
+| botsvc | — | `design/game/BOTSVC_DESIGN.md` |
 | animator | [`claudedocs/animator.md`](claudedocs/animator.md) | `design/tools/animator/` |
 | level-editor | — | `design/tools/level-editor/DESIGN.md` |
 | map-editor | — | `design/tools/map-editor/DESIGN.md` |
