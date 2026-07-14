@@ -285,7 +285,9 @@ export class FriendsSceneBase {
     this.sectSubview = 'info';
     this.render();
     void this.refresh();
-    if ((tab === 'family' || tab === 'sect' || tab === 'world') && !this.slgLoaded && !this.slgLoading) {
+    // Family/sect status is unrelated to world chat (worldId resolution for chat happens
+    // transparently inside loadWorldChat/sendWorldChat) — only fetch it for those two tabs.
+    if ((tab === 'family' || tab === 'sect') && !this.slgLoaded && !this.slgLoading) {
       void this.loadSLGStatus();
     }
     if (tab === 'world' && !this.worldLoaded) {

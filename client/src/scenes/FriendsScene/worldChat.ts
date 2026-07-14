@@ -17,18 +17,7 @@ export function WorldChatMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase):
     drawWorldTab(): void {
       const { w, h } = this;
 
-      if (!this.cb.loadSLGStatus || !this.cb.loadWorldChat) {
-        this.regionTop = this.bodyTop + Math.round(h * 0.01);
-        this.centerLabelFixed(t('social.noSlg'));
-        return;
-      }
-      if (!this.slgLoaded) {
-        this.regionTop = this.bodyTop + Math.round(h * 0.01);
-        if (!this.slgLoading) void this.loadSLGStatus();
-        this.centerLabelFixed(t('friends.loading'));
-        return;
-      }
-      if (!this.slgStatus) {
+      if (!this.cb.loadWorldChat) {
         this.regionTop = this.bodyTop + Math.round(h * 0.01);
         this.centerLabelFixed(t('social.noSlg'));
         return;
