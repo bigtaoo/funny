@@ -5,8 +5,8 @@ import type { RankId } from './ladder';
 
 export const RARITY_ORDER: Rarity[] = ['common', 'rare', 'epic', 'legendary'];
 
-/** Standard pool rarity weights (§4.1). Used as the pity/soft-pity fallback roll and, in the two-stage draw,
- *  as the within-category item weight for every category except skins (which use SKIN_TIER_WEIGHTS). */
+/** Rarity-tier weights (§4.1). Used as the soft-pity boosted-roll rarity split and by limited/starter pools'
+ *  flat rarity-tier roll; the standard pool's own base roll uses STANDARD_POOL_FIXED_ODDS instead (§2.1b). */
 export const RARITY_WEIGHTS: Record<Rarity, number> = {
   common: 700,
   rare: 230,
@@ -15,16 +15,18 @@ export const RARITY_WEIGHTS: Record<Rarity, number> = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Two-stage draw (GACHA_DESIGN §2.1a, owner decision 2026-07-03).
-// A base (non-pity) roll first picks an item *category* by CATEGORY_WEIGHTS, then a specific item within
-// that category weighted by the item's display rarity. This replaces the old flat rarity-tier roll on the
-// standard pool. The rarity axis is *retained*: each item still carries a display rarity (looked up from
-// itemsByRarity) that drives result-card colour, dupe refund, and the pity/soft-pity/ten-pull guarantees —
-// which still roll on the rarity axis. Only the standard pool opts in (sets `categories`); limited pools
-// (buildLimitedPool) and the starter pack keep the flat rarity roll.
+// Fixed-odds draw (GACHA_DESIGN §2.1b, owner decision 2026-07-15; retires the §2.1a two-stage
+// category×tier weighted draw below). The standard pool only has 21 items total — few enough that every
+// item carries an owner-specified fixed percentage (0..100) directly, with `mat_scrap` absorbing whatever's
+// left over (100 − Σ others) as the "remainder pool". The rarity axis is *retained*: each item still carries
+// a display rarity (looked up from itemsByRarity) that drives result-card colour and dupe refund — and the
+// pity/soft-pity/ten-pull picks now ALSO draw weighted by this same fixed-odds table (restricted to the
+// forced rarity tier) instead of uniformly, so the displayed odds equal the true long-run odds regardless of
+// pity (see gacha.ts pickItem). Only the standard pool opts in (sets `fixedOdds`/`remainderItemId`); limited
+// pools (buildLimitedPool) and the starter pack keep the flat uniform rarity roll.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Item categories for the two-stage draw. Order defines the stage-1 roll segments. */
+/** Item categories — used by the gacha catalogue/admin tooling grouping (gachaCatalog.ts), independent of the roll mechanism above. */
 export type GachaCategory = 'material' | 'card' | 'equip_t1' | 'equip_t2' | 'equip_t3' | 'skin';
 export const GACHA_CATEGORY_ORDER: GachaCategory[] = [
   'material',
@@ -36,55 +38,46 @@ export const GACHA_CATEGORY_ORDER: GachaCategory[] = [
 ];
 
 /**
- * Stage-1 category weights (owner reference 2026-07-03, DRAFT [adjustable]; sum = 1000). Materials are the bulk
- * faucet; character cards next; equipment splits into three tiers (t1=fine, t2=rare, t3=epic gear); skins are
- * the rarest jackpot. Shares ≈ 70.1/15/10/3/0.8/1.1 %.
- *
- * Tuned so the effective legendary-rarity rate ≈ 1% (owner target 2026-07-03), split across its three sources:
- *   equip_t3 (epic gear, 100% legendary) 0.80% + legendary cards 0.10% (down-weighted 150:1 within the card
- *   bucket, see CARD_TIER_WEIGHTS) + legendary skin 0.10% (skin 1.1% × 1/11). The card/skin buckets keep their
- *   ~15%/1% shares — only equip_t3 was nudged 1%→0.8% to leave headroom for the card & skin legendaries.
+ * Standard-pool base-roll odds (owner decision 2026-07-15, GACHA_DESIGN §2.1b). Percent 0..100 per itemId;
+ * `mat_scrap` is deliberately absent — it is the remainder pool (see STANDARD_POOL_REMAINDER_ITEM /
+ * fixedOddsTable), computed as 100 − Σ(this table) rather than hand-specified. Values below carry over the
+ * §2.1a-derived percentages for anything the owner hasn't re-specified yet; max/lena/mara + the three
+ * skins were repriced 2026-07-15.
  */
-export const CATEGORY_WEIGHTS: Record<GachaCategory, number> = {
-  material: 701,
-  card: 150,
-  equip_t1: 100,
-  equip_t2: 30,
-  equip_t3: 8,
-  skin: 11,
+export const STANDARD_POOL_FIXED_ODDS: Record<string, number> = {
+  mat_lead: 16.29,
+  mat_binding: 4.25,
+  lichuang: 4.97,
+  chenshou: 4.97,
+  suyuan: 4.97,
+  max: 0.8,
+  lena: 0.8,
+  mara: 0.8,
+  wp_pen: 3.33,
+  ar_cardstock: 3.33,
+  tk_bookmark: 3.33,
+  wp_marker: 1.0,
+  ar_leather: 1.0,
+  tk_sticker: 1.0,
+  wp_highlighter: 0.27,
+  ar_foil: 0.27,
+  tk_seal: 0.27,
+  skin_e1: 0.1, // Lena skin (epic)
+  skin_e2: 0.1, // Mara skin (epic)
+  skin_l1: 0.01, // Max skin (legendary, flagship)
 };
+
+/** The item that absorbs 100 − Σ(STANDARD_POOL_FIXED_ODDS) — the "remainder pool" (GACHA_DESIGN §2.1b). */
+export const STANDARD_POOL_REMAINDER_ITEM = 'mat_scrap';
 
 /**
- * Skin sub-tier weights (owner decision 2026-07-03): once the skin category is rolled, the specific skin is
- * drawn by these tier weights — a ladder distinct from the global RARITY_WEIGHTS. Tiers with no launch skins
- * (common/rare — see §9.5 catalogue) are renormalized out, so at launch skin pulls resolve to epic/legendary
- * skins only (skin_e1/skin_e2 ≈ 5:5, skin_l1 ≈ 1, i.e. the flagship legendary skin is ~1/6 of skin pulls).
+ * Full odds table for a fixed-odds pool: the explicit entries plus the remainder item filling whatever's
+ * left (percent 0..100, summing to ~100). Returns {} for pools that don't opt into fixed odds.
  */
-export const SKIN_TIER_WEIGHTS: Record<Rarity, number> = {
-  common: 79,
-  rare: 15,
-  epic: 5,
-  legendary: 1,
-};
-
-/**
- * Card sub-tier weights (owner decision 2026-07-03): the card bucket is large (~15%), so legendary Anna cards
- * (max/lena/mara) are deliberately down-weighted 150:1 vs epic cards — otherwise they alone would dominate the
- * legendary rate (~2.1%). At launch only epic/legendary card tiers are populated (common/rare renormalized out),
- * so per-card legendary ≈ 0.033% and the card bucket contributes ~0.10% legendary total.
- */
-export const CARD_TIER_WEIGHTS: Record<Rarity, number> = {
-  common: 600,
-  rare: 300,
-  epic: 150,
-  legendary: 1,
-};
-
-/** Within-category item weight: skins and cards use their own tier ladders; every other category weights by rarity. */
-export function withinCategoryWeight(category: GachaCategory, rarity: Rarity): number {
-  if (category === 'skin') return SKIN_TIER_WEIGHTS[rarity];
-  if (category === 'card') return CARD_TIER_WEIGHTS[rarity];
-  return RARITY_WEIGHTS[rarity];
+export function fixedOddsTable(pool: GachaPoolDef): Record<string, number> {
+  if (!pool.fixedOdds || !pool.remainderItemId) return {};
+  const sum = Object.values(pool.fixedOdds).reduce((a, b) => a + b, 0);
+  return { ...pool.fixedOdds, [pool.remainderItemId]: Math.max(0, 100 - sum) };
 }
 
 export interface GachaPoolDef {
@@ -95,10 +88,13 @@ export interface GachaPoolDef {
   tenFloor: Rarity; // ten-pull guaranteed minimum rarity (§4.2, at least 1 epic+ per 10 pulls)
   dupePolicy: 'shards' | 'coins'; // openapi top-level compatibility field; per-rarity breakdown see DUPE_*
   itemsByRarity: Record<Rarity, string[]>;
-  // ── Two-stage draw (GACHA_DESIGN §2.1a). When present, base (non-pity) rolls go category-first (see
-  //    CATEGORY_WEIGHTS). Every listed itemId MUST also appear in itemsByRarity (that map is the item's
-  //    display-rarity / dupe-refund source and backs the pity/soft-pity/ten-pull picks). Absent → flat rarity roll. ──
-  categories?: Partial<Record<GachaCategory, string[]>>;
+  // ── Fixed-odds draw (GACHA_DESIGN §2.1b). When present, base (non-pity) rolls AND the rarity-conditioned
+  //    pity/soft-pity/ten-pull picks all draw from this single explicit odds table (percent 0..100 per
+  //    itemId; see fixedOddsTable()). `remainderItemId` absorbs 100 − Σ(fixedOdds) and MUST NOT appear as a
+  //    key in fixedOdds itself. Every key (plus remainderItemId) MUST also appear in itemsByRarity (that map
+  //    remains the display-rarity / dupe-refund source). Absent → flat uniform rarity roll. ──
+  fixedOdds?: Record<string, number>;
+  remainderItemId?: string;
   // ── Soft pity (GACHA_DESIGN §3): starting at softPityStart cumulative pulls, legendary probability climbs
   //    each pull by softPityStep until the hard pity guarantees it. Absent = hard-cliff only. ──
   softPityStart?: number; // pity count at which the ramp begins (e.g. 70)
@@ -155,17 +151,10 @@ export const GACHA_POOLS: GachaPoolDef[] = [
       // legendary: 1 Anna skin (Max, flagship) + 3 epic equipment + 3 Anna character cards (DRAFT [adjustable] → ECONOMY_NUMBERS §6)
       legendary: ['skin_l1', 'wp_highlighter', 'ar_foil', 'tk_seal', 'max', 'lena', 'mara'],
     },
-    // Two-stage grouping of the SAME items above (GACHA_DESIGN §2.1a). Category picked by CATEGORY_WEIGHTS,
-    // then an item within it weighted by its display rarity (skins → SKIN_TIER_WEIGHTS). Equipment tiers map
-    // to the gear rarities: t1=fine (pen/cardstock/bookmark), t2=rare (marker/leather/sticker), t3=epic (highlighter/foil/seal).
-    categories: {
-      material: ['mat_scrap', 'mat_lead', 'mat_binding'],
-      card: ['lichuang', 'chenshou', 'suyuan', 'max', 'lena', 'mara'],
-      equip_t1: ['wp_pen', 'ar_cardstock', 'tk_bookmark'],
-      equip_t2: ['wp_marker', 'ar_leather', 'tk_sticker'],
-      equip_t3: ['wp_highlighter', 'ar_foil', 'tk_seal'],
-      skin: ['skin_e1', 'skin_e2', 'skin_l1'],
-    },
+    // Fixed-odds draw (GACHA_DESIGN §2.1b, owner decision 2026-07-15): every item's exact percentage,
+    // mat_scrap absorbing the remainder. See STANDARD_POOL_FIXED_ODDS for the per-item breakdown/history.
+    fixedOdds: STANDARD_POOL_FIXED_ODDS,
+    remainderItemId: STANDARD_POOL_REMAINDER_ITEM,
   },
   // NOTE: the separate unit-card gacha pool (`units`/UNIT_CARD_POOL_ID, S12-C) was removed on 2026-07-03 — it surfaced as a
   // duplicate second "standard" pool tab in the client. Unit-card progression now comes only from PvE level drops
@@ -305,12 +294,14 @@ export function itemRarityMap(pool: GachaPoolDef): Map<string, Rarity> {
 }
 
 /** Expand into openapi GachaPool.entries (per-item display probability, for the odds panel — Apple 3.1.1).
- *  Two-stage pools (standard) reflect P(category)·P(item|category); flat pools (limited) keep the old
- *  rarity-tier even split. Weights are scaled probabilities (÷ their sum by the caller = true probability). */
+ *  Fixed-odds pools (standard) reflect the owner-specified percentages verbatim (GACHA_DESIGN §2.1b); flat
+ *  pools (limited) keep the old rarity-tier even split. Weights are scaled probabilities (÷ their sum by the
+ *  caller = true probability) — and, because pity/soft-pity/ten-pull picks are ALSO weighted by this same
+ *  table (gacha.ts pickItem), these displayed odds equal the true long-run odds, not just the base-roll odds. */
 export function poolEntries(
   pool: GachaPoolDef,
 ): { itemId: string; weight: number; rarity: Rarity }[] {
-  if (pool.categories) return categoryPoolEntries(pool);
+  if (pool.fixedOdds && pool.remainderItemId) return fixedOddsPoolEntries(pool);
   const out: { itemId: string; weight: number; rarity: Rarity }[] = [];
   for (const rarity of RARITY_ORDER) {
     const items = pool.itemsByRarity[rarity];
@@ -323,32 +314,17 @@ export function poolEntries(
   return out;
 }
 
-/** Odds expansion for a two-stage pool: weight ∝ P(category)·P(item|category), scaled to integers. */
-function categoryPoolEntries(
+/** Odds expansion for a fixed-odds pool: weight = percent × 1000 (0.001%-resolution integers). */
+function fixedOddsPoolEntries(
   pool: GachaPoolDef,
 ): { itemId: string; weight: number; rarity: Rarity }[] {
   const rarityOf = itemRarityMap(pool);
-  const cats = pool.categories!;
-  // Only categories that actually contain items contribute to the stage-1 denominator.
-  const catTotal = GACHA_CATEGORY_ORDER.reduce(
-    (s, c) => s + ((cats[c]?.length ?? 0) > 0 ? CATEGORY_WEIGHTS[c] : 0),
-    0,
-  );
-  const out: { itemId: string; weight: number; rarity: Rarity }[] = [];
-  if (catTotal <= 0) return out;
-  for (const cat of GACHA_CATEGORY_ORDER) {
-    const items = cats[cat];
-    if (!items || items.length === 0) continue;
-    const w = items.map((id) => withinCategoryWeight(cat, rarityOf.get(id) ?? 'common'));
-    const wTotal = w.reduce((a, b) => a + b, 0);
-    if (wTotal <= 0) continue;
-    const catProb = CATEGORY_WEIGHTS[cat] / catTotal;
-    items.forEach((id, i) => {
-      const prob = catProb * (w[i]! / wTotal);
-      out.push({ itemId: id, weight: Math.round(prob * 100000), rarity: rarityOf.get(id) ?? 'common' });
-    });
-  }
-  return out;
+  const table = fixedOddsTable(pool);
+  return Object.entries(table).map(([itemId, pct]) => ({
+    itemId,
+    weight: Math.round(pct * 1000),
+    rarity: rarityOf.get(itemId) ?? 'common',
+  }));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

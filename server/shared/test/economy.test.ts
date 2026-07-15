@@ -16,6 +16,9 @@ import {
   findShopItem,
   gachaCost,
   poolEntries,
+  STANDARD_POOL_FIXED_ODDS,
+  STANDARD_POOL_REMAINDER_ITEM,
+  fixedOddsTable,
   buildLimitedPool,
   isLimitedPoolActive,
   DEFAULT_LIMITED_FILLER_LEGENDARIES,
@@ -61,6 +64,22 @@ describe('GACHA_POOLS', () => {
     }
   });
 
+  it('fixed-odds pools: every fixedOdds key + the remainder item appears in itemsByRarity (GACHA_DESIGN §2.1b invariant)', () => {
+    for (const pool of GACHA_POOLS) {
+      if (!pool.fixedOdds || !pool.remainderItemId) continue;
+      const allItems = new Set(RARITY_ORDER.flatMap((r) => pool.itemsByRarity[r]));
+      for (const itemId of Object.keys(pool.fixedOdds)) expect(allItems.has(itemId)).toBe(true);
+      expect(allItems.has(pool.remainderItemId)).toBe(true);
+    }
+  });
+
+  it('fixed-odds pools: the remainder item is not itself an explicit fixedOdds key (would double-count)', () => {
+    for (const pool of GACHA_POOLS) {
+      if (!pool.fixedOdds || !pool.remainderItemId) continue;
+      expect(Object.keys(pool.fixedOdds)).not.toContain(pool.remainderItemId);
+    }
+  });
+
   it('ten-pull is cheaper than ten singles (bulk discount)', () => {
     for (const pool of GACHA_POOLS) {
       expect(pool.costTen).toBeLessThan(pool.costSingle * 10);
@@ -92,26 +111,64 @@ describe('gachaCost', () => {
   });
 });
 
+// ── fixedOddsTable (GACHA_DESIGN §2.1b) ────────────────────────────────────────────
+
+describe('fixedOddsTable', () => {
+  it('returns {} for pools without fixedOdds/remainderItemId (limited/starter)', () => {
+    const limited = buildLimitedPool({ id: 'x', name: 'x', featuredLegendary: 'y', startAt: 0, endAt: 1 });
+    expect(fixedOddsTable(limited)).toEqual({});
+  });
+
+  it('sums to 100 (percent) for the standard pool', () => {
+    const table = fixedOddsTable(standard);
+    const sum = Object.values(table).reduce((a, b) => a + b, 0);
+    expect(sum).toBeCloseTo(100, 6);
+  });
+
+  it('the remainder item absorbs exactly 100 − Σ(explicit odds), never negative', () => {
+    const table = fixedOddsTable(standard);
+    const explicitSum = Object.values(STANDARD_POOL_FIXED_ODDS).reduce((a, b) => a + b, 0);
+    expect(table[STANDARD_POOL_REMAINDER_ITEM]).toBeCloseTo(100 - explicitSum, 6);
+    expect(table[STANDARD_POOL_REMAINDER_ITEM]!).toBeGreaterThan(0);
+  });
+
+  it('carries every explicit entry through unchanged', () => {
+    const table = fixedOddsTable(standard);
+    for (const [itemId, pct] of Object.entries(STANDARD_POOL_FIXED_ODDS)) {
+      expect(table[itemId]).toBe(pct);
+    }
+  });
+});
+
 // ── poolEntries (odds display) ────────────────────────────────────────────────────
 
 describe('poolEntries', () => {
   const entries = poolEntries(standard);
 
   it('lists each item once with its display rarity (mat_scrap is the only common)', () => {
-    // Two-stage pool: each catalogue item appears once; only mat_scrap carries the common display rarity.
+    // Fixed-odds pool (GACHA_DESIGN §2.1b): each catalogue item appears once; only mat_scrap (the
+    // remainder item) carries the common display rarity.
     const commons = entries.filter((e) => e.rarity === 'common');
     expect(commons).toHaveLength(1);
     expect(commons[0]!.itemId).toBe('mat_scrap');
   });
 
-  it('weights are scaled two-stage probabilities that normalize to 1', () => {
+  it('weights are the owner-specified fixed-odds percentages and normalize to 1', () => {
     const total = entries.reduce((s, e) => s + e.weight, 0);
     expect(total).toBeGreaterThan(0);
     expect(entries.reduce((s, e) => s + e.weight / total, 0)).toBeCloseTo(1, 5);
-    // Effective legendary-rarity share (epic-gear tier + legendary cards + legendary skin) is tuned to ~1%.
+    // Explicit entries match STANDARD_POOL_FIXED_ODDS exactly; mat_scrap absorbs the remainder.
+    for (const [itemId, pct] of Object.entries(STANDARD_POOL_FIXED_ODDS)) {
+      const e = entries.find((x) => x.itemId === itemId)!;
+      expect(e.weight / total).toBeCloseTo(pct / 100, 4);
+    }
+    const explicitSum = Object.values(STANDARD_POOL_FIXED_ODDS).reduce((a, b) => a + b, 0);
+    const scrap = entries.find((e) => e.itemId === 'mat_scrap')!;
+    expect(scrap.weight / total).toBeCloseTo((100 - explicitSum) / 100, 4);
+    // Legendary share (three 0.8% cards + equip_t3 + skin_l1) is now ~3.22%, up from the retired §2.1a ~1% target.
     const legShare = entries.filter((e) => e.rarity === 'legendary').reduce((s, e) => s + e.weight / total, 0);
-    expect(legShare).toBeGreaterThan(0.009);
-    expect(legShare).toBeLessThan(0.011);
+    expect(legShare).toBeGreaterThan(0.03);
+    expect(legShare).toBeLessThan(0.035);
   });
 
   it('tags every entry with its rarity', () => {
