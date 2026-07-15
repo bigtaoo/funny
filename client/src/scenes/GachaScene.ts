@@ -16,7 +16,9 @@ import { buildCoinIcon } from '../render/coinIconAtlas';
 import { getEquipDef } from '../game/meta/equipmentDefs';
 import { drawEquipmentGlyph } from '../render/equipmentGlyph';
 import { CARD_DEFS } from '../game/meta/cardDefs';
+import { SKIN_TARGET_UNIT } from '../game/meta/skinDefs';
 import { UNIT_ART_URLS, getArtTexture } from '../render/cardArt';
+import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 
 /** itemId prefix → material icon glyph (mat_scrap/mat_lead/mat_binding). */
 const MATERIAL_ICON: Record<string, 'scrap' | 'lead' | 'binding'> = {
@@ -104,6 +106,14 @@ export class GachaScene implements Scene {
   private reveal: GachaResultEntry[] | null = null;
   /** Odds-detail overlay open (L1-3, Apple 3.1.1): lists per-item probability + pity rule. */
   private oddsOpen = false;
+  /** Odds-grid scroll state — the grid shows every pool entry (no rarity grouping/paging), so it can
+   *  exceed the panel's height once a pool has more than ~20 items. */
+  private oddsScrollY = 0;
+  private oddsScrollMax = 0;
+  private oddsDragStart: { x: number; y: number; scroll: number; moved: boolean } | null = null;
+  /** Set by handleOddsMove instead of rendering inline — same throttle as CardScene's drag-scroll
+   *  (see scroll-drag-throttle-pattern memory: rendering per pointermove causes jank while dragging). */
+  private oddsScrollDirty = false;
 
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
@@ -117,12 +127,15 @@ export class GachaScene implements Scene {
     this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
+    this.unsubs.push(input.onMove((_x, y) => this.handleOddsMove(y)));
+    this.unsubs.push(input.onUp(() => this.handleOddsUp()));
     this.render();
     void this.loadPools();
     void preloadGachaTextures();
   }
 
   update(dt: number): void {
+    if (this.oddsScrollDirty) { this.oddsScrollDirty = false; this.render(); }
     if (this.bt.tick(dt)) this.render();
   }
 
@@ -193,12 +206,28 @@ export class GachaScene implements Scene {
     if (this.bt.busy) return;
     // While revealing, any tap continues.
     if (this.reveal) { this.dismissReveal(); return; }
-    // While showing the odds detail, any tap closes it (modal, no inner controls).
-    if (this.oddsOpen) { this.oddsOpen = false; this.render(); return; }
+    // While showing the odds detail, a tap closes it (modal, no inner controls) — but the grid also
+    // scrolls, so closing is deferred to handleOddsUp until we know the pointer didn't drag.
+    if (this.oddsOpen) { this.oddsDragStart = { x, y, scroll: this.oddsScrollY, moved: false }; return; }
     for (const hit of this.hits) {
       const r = hit.rect;
       if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); return; }
     }
+  }
+
+  private handleOddsMove(y: number): void {
+    if (!this.oddsDragStart) return;
+    const dy = y - this.oddsDragStart.y;
+    if (Math.abs(dy) > 6) {
+      this.oddsDragStart.moved = true;
+      this.oddsScrollY = Math.max(0, Math.min(this.oddsScrollMax, this.oddsDragStart.scroll - dy));
+      this.oddsScrollDirty = true;
+    }
+  }
+
+  private handleOddsUp(): void {
+    if (this.oddsDragStart && !this.oddsDragStart.moved) { this.oddsOpen = false; this.oddsScrollY = 0; this.render(); }
+    this.oddsDragStart = null;
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -567,40 +596,56 @@ export class GachaScene implements Scene {
     const cols = Math.min(7, Math.max(3, Math.round(Math.sqrt((n * gridW) / gridH))));
     const rows = Math.ceil(n / cols);
     const cellW = gridW / cols;
-    const cellH = Math.min(gridH / rows, cellW * 0.92);
-    // Cells may not fill the full grid height (short pools) — centre the block.
-    const gridYOffset = gridTop + Math.max(0, (gridH - cellH * rows) / 2);
+    // Fixed aspect ratio (not squished to fit gridH) — every entry gets a legible card; a pool with
+    // more rows than the panel can show scrolls instead (2026-07-15: was cramming all entries into one
+    // page, making small-probability items unreadable).
+    const cellH = cellW * 0.92;
     const gap = Math.round(cellW * 0.08);
+
+    const contentH = rows * cellH;
+    this.oddsScrollMax = Math.max(0, contentH - gridH);
+    this.oddsScrollY = Math.max(0, Math.min(this.oddsScrollY, this.oddsScrollMax));
+
+    // Grid lives in a masked layer so overscrolled cards never bleed into the header/pity text below.
+    const gridLayer = new PIXI.Container();
+    this.container.addChild(gridLayer);
+    const gridMask = new PIXI.Graphics();
+    gridMask.beginFill(0xffffff).drawRect(gridX, gridTop, gridW, gridH).endFill();
+    this.container.addChild(gridMask);
+    gridLayer.mask = gridMask;
 
     let total = 0;
     entries.forEach((e, i) => {
       const col = i % cols, row = Math.floor(i / cols);
       const cardW = cellW - gap, cardH = cellH - gap;
       const cardX = gridX + col * cellW + gap / 2;
-      const cardY = gridYOffset + row * cellH + gap / 2;
+      const cardY = gridTop + row * cellH + gap / 2 - this.oddsScrollY;
       total += e.probability;
+      if (cardY + cardH < gridTop || cardY > gridBottom) return; // off-screen — skip drawing, still counted above
 
       const card = sketchPanel(cardW, cardH, {
         fill: C.paper, border: RARITY_COLOR[e.rarity], width: 1.8, seed: seedFor(cardX, cardY, i + 1),
       });
       card.x = cardX; card.y = cardY;
-      this.container.addChild(card);
+      gridLayer.addChild(card);
 
       const picSz = Math.round(Math.min(cardW * 0.62, cardH * 0.42));
-      this.drawEntryPicture(e.itemId, e.rarity, cardX + cardW / 2, cardY + cardH * 0.10 + picSz / 2, picSz, i + 1);
+      this.drawEntryPicture(e.itemId, e.rarity, cardX + cardW / 2, cardY + cardH * 0.10 + picSz / 2, picSz, i + 1, gridLayer);
 
       const nameSize = Math.max(9, Math.round(cardH * 0.13));
-      const name = txt(e.itemId, nameSize, C.dark);
+      const name = txt(this.displayName(e.itemId), nameSize, C.dark);
       name.anchor.set(0.5, 0); name.x = cardX + cardW / 2; name.y = cardY + cardH * 0.52;
       const nameMax = cardW * 0.9;
       if (name.width > nameMax) name.scale.set(nameMax / name.width);
-      this.container.addChild(name);
+      gridLayer.addChild(name);
 
       const probSize = Math.max(10, Math.round(cardH * 0.17));
       const prob = txt(`${(e.probability * 100).toFixed(2)}%`, probSize, C.accent, true);
       prob.anchor.set(0.5, 1); prob.x = cardX + cardW / 2; prob.y = cardY + cardH * 0.94;
-      this.container.addChild(prob);
+      gridLayer.addChild(prob);
     });
+
+    drawScrollIndicator(this.container, { x: gridX, y: gridTop, w: gridW, h: gridH }, this.oddsScrollY, this.oddsScrollMax);
 
     // Total + pity rule + close hint.
     const totalLbl = txt(t('gacha.oddsDetail.total', { pct: (total * 100).toFixed(2) }), Math.round(h * 0.022), C.mid, true);
@@ -630,12 +675,15 @@ export class GachaScene implements Scene {
    * per-slot glyph (equipmentGlyph.ts), materials → their dedicated icon, skins →
    * the wardrobe brush glyph. Falls back to a rarity star for anything unrecognised.
    */
-  private drawEntryPicture(itemId: string, rarity: Rarity, cx: number, cy: number, size: number, seed: number): void {
+  private drawEntryPicture(
+    itemId: string, rarity: Rarity, cx: number, cy: number, size: number, seed: number,
+    parent: PIXI.Container = this.container,
+  ): void {
     const matKind = MATERIAL_ICON[itemId];
     if (matKind) {
       const icon = buildIcon(matKind, size, RARITY_COLOR[rarity]);
       icon.x = cx - size / 2; icon.y = cy - size / 2;
-      this.container.addChild(icon);
+      parent.addChild(icon);
       return;
     }
 
@@ -644,7 +692,7 @@ export class GachaScene implements Scene {
       const g = new PIXI.Graphics();
       drawEquipmentGlyph(g, equipDef.slot, equipDef.rarity, size, seed);
       g.x = cx; g.y = cy;
-      this.container.addChild(g);
+      parent.addChild(g);
       return;
     }
 
@@ -658,7 +706,7 @@ export class GachaScene implements Scene {
         sp.anchor.set(0.5);
         sp.scale.set(scale);
         sp.position.set(cx, cy);
-        this.container.addChild(sp);
+        parent.addChild(sp);
       } else if (!this.artHooked.has(artUrl)) {
         this.artHooked.add(artUrl);
         tex.baseTexture.once('loaded', () => this.render());
@@ -669,13 +717,36 @@ export class GachaScene implements Scene {
     if (itemId.startsWith('skin_')) {
       const icon = buildIcon('brush', size, RARITY_COLOR[rarity]);
       icon.x = cx - size / 2; icon.y = cy - size / 2;
-      this.container.addChild(icon);
+      parent.addChild(icon);
       return;
     }
 
     const star = buildIcon('star', size, RARITY_COLOR[rarity]);
     star.x = cx - size / 2; star.y = cy - size / 2;
-    this.container.addChild(star);
+    parent.addChild(star);
+  }
+
+  /**
+   * Resolve an itemId to its player-facing display name for the odds-detail grid (was showing raw
+   * itemIds like "mat_scrap" — not translated, unreadable). Mirrors drawEntryPicture's item-kind
+   * detection so every entry that gets a real picture also gets a real name.
+   */
+  private displayName(itemId: string): string {
+    const matKind = MATERIAL_ICON[itemId];
+    if (matKind) return t(('material.' + matKind) as TranslationKey);
+
+    if (getEquipDef(itemId)) return t((`equip.${itemId}.name`) as TranslationKey);
+
+    if (CARD_DEFS[itemId]) return t((`card.${itemId}.name`) as TranslationKey);
+
+    const skinUnit = SKIN_TARGET_UNIT[itemId];
+    if (skinUnit) {
+      const target = Object.values(CARD_DEFS).find((d) => d.unitType === skinUnit);
+      const base = target ? t((`card.${target.id}.name`) as TranslationKey) : itemId;
+      return `${base}·${t('shop.skinLabel')}`;
+    }
+
+    return itemId;
   }
 
   private addButton(
