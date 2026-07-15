@@ -150,6 +150,8 @@ export interface MarchView {
   status: MarchDoc['status'];
   /** G5: whether this is the requester's own march (getMarches distinguishes own vs. enemy marches in vision; not included in push payloads). */
   mine?: boolean;
+  /** ADR-026: which team slot ('t1'..'t5') this march deployed, if any (own marches only). */
+  teamId?: string;
 }
 
 /** Maximum viewport radius (prevents fetching too many tiles at once; hard cap before P9 viewport subscription model scales up). */

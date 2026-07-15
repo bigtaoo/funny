@@ -866,6 +866,7 @@ export const de: Record<TranslationKey, string> = {
   'world.team.noTeams': 'Noch keine Teams — erst eine Aufstellung anlegen',
   'world.team.manage': 'Teams verwalten',
   'world.team.emptyArmy': 'Dieses Team hat keine Aufstellung',
+  'world.team.busy': 'Im Marsch / bei der Besetzung',
   // Trainingswarteschlange / Ressourcen (C4)
   'world.train': 'Ausbilden',
   'world.trainTitle': 'Ausbildung · Ressourcen',

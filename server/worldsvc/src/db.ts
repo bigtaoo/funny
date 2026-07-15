@@ -303,6 +303,8 @@ export interface OccupationDoc {
   resType?: ResourceType;
   garrison: number;      // surviving troops; becomes the tile's garrison on settlement
   dueAt: number;         // ms; scheduler settles when now >= dueAt
+  /** ADR-026 §2 / idle-team gate (2026-07-15): team slot that won this hold, carried over from MarchDoc.teamId so the team stays "out" through the occupation countdown, not just in transit. */
+  teamId?: string;
 }
 
 /** Nation document (S8-6.5). One record per capital; ownerId/nationName absent when unclaimed. */

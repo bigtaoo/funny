@@ -746,6 +746,7 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 - **G3-2b worldsvc ✅（2026-06-21）**：承重墙合龙——worldsvc 直接 import `@nw/engine` headless 跑权威围攻。`applySiege` 关键战斗（攻领地/攻主城）改为「跑引擎 → 真实残存折兵力 → `landSiege`」即时落地；非关键 sweep/NPC 维持廉价 `resolveSiege`。详见 §16.8「实现记录」。
 - **G3-2c 客户端 ✅（2026-06-21）**：5 队伍布阵编辑器（攻）+ 领地布阵（守，盟军可布）+ 出征挂队 + `seed` 重播观战；i18n。四阶段全落地——Phase 1 服务端+契约 / Phase 2 客户端编辑器+队伍 UI / Phase 3 重播观战改造 / Phase 4 删 judge 死路径，详见 §16.9。
 - **删除 ✅（G3-2c Phase 4）**：S8-3b 的录像上传 / `getSiegeDefense` / `resolveSiegeWithJudge` / worldsvc→gateway `judge` 客户端复算路径（手操不再存在，引擎给真实残存）。
+- **空闲队伍校验修复 ✅（2026-07-15）**：玩家反馈——配置 5 支队伍后，出征仍固定挂第一支队伍，即使那支队伍已在行军/占领中也照样再派，等同"抢占"而非报错。根因：`combatMarch.ts` 的 `startMarch` 只校验 `teamId` 对应的队伍存在且非空，从未检查该队伍是否已挂在一个非 `recalled` 的行军单（`marches` 集合）或占领倒计时（`occupations` 集合，ADR-037 §5.4）上——两者都是队伍"外出中"的持久化标记（前者行军途中，march 到点即 `findOneAndDelete`；后者胜后进 5 分钟占领倒计时）。修复：新增 `TEAM_BUSY` 错误码，出征前并发查询这两个集合，命中即拒（`server/worldsvc/src/combatMarch.ts`，`teams.e2e.test.ts` 两个新用例覆盖"行军中二次出征被拒→落地后恢复空闲"与"占领倒计时中二次出征被拒→倒计时结束后恢复空闲"）。客户端 `showAttackTeamPicker`（出征选队弹窗，唯一已接线的队伍挑选入口）据同一 `marches`（新增 `MarchView.teamId` 字段随行军单下行）灰显忙碌队伍并提示"行军/占领中"，避免玩家点了也白点。**范围说明**：占地弹窗（`showDeployDialog(...,'occupy')`）仍是纯兵力输入，未接队伍选择（见上文"客户端 UI 待补"一节）——本次只治好了"选中忙碌队伍会怎样"，没有新增占地选队入口。
 
 ### 16.5 数值调参记录（A7，2026-06-22）
 

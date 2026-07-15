@@ -878,6 +878,7 @@ export const zh = {
   'world.team.noTeams': '尚无队伍，先去编辑布阵',
   'world.team.manage': '管理队伍',
   'world.team.emptyArmy': '该队伍未布阵',
+  'world.team.busy': '行军/占领中',
   // ── Training queue / resource panel (C4) ─────────────────────────────────
   'world.train': '练兵',
   'world.trainTitle': '练兵 · 资源',

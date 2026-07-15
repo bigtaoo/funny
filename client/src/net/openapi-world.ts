@@ -855,6 +855,8 @@ export interface components {
             status: "marching" | "returning" | "arrived";
             /** @description G5: whether this march belongs to the requester (false = enemy march within vision range) */
             mine?: boolean;
+            /** @description ADR-026: which team slot ('t1'..'t5') this march deployed, if any. Only present on the requester's own marches; used client-side to grey out busy teams in the team picker. */
+            teamId?: string;
         };
         AuctionView: {
             auctionId: string;

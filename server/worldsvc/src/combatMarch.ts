@@ -136,6 +136,17 @@ export class MarchService {
     if ((kind === 'attack' || kind === 'occupy') && teamId) {
       const team = (pw.teams ?? []).find((t) => t.id === teamId);
       if (!team || team.army.length === 0) throw new SlgError('BAD_REQUEST', 'Team does not exist or is empty');
+      // Idle-team gate (2026-07-15): a team already committed to an active (non-recalled) march must not accept
+      // a new order — same "out" predicate as the defender-skip check in combatSiege/arrival.ts (ADR-026 §2).
+      // Marches are deleted from the collection once processed (combatMarch.ts claim-and-delete), so "marching"
+      // covers transit; a won occupy/siege then hands the team off to an OccupationDoc for the hold countdown
+      // (combatSiege/occupation.ts) — check both so the team stays "out" end-to-end until the player recalls it
+      // (recall mid-hold is out of scope here; the hold simply has to run its course today).
+      const [busyMarch, busyHold] = await Promise.all([
+        cols.marches.findOne({ worldId, ownerId: accountId, teamId, status: { $ne: 'recalled' } }),
+        cols.occupations.findOne({ worldId, ownerId: accountId, teamId }),
+      ]);
+      if (busyMarch || busyHold) throw new SlgError('TEAM_BUSY', 'Team is already marching or occupying; recall it first');
       army = team.army;
       troops = team.army.reduce((s, e) => s + Math.max(1, Math.floor(e.initialHp ?? 0)), 0);
     }

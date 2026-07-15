@@ -2238,6 +2238,10 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   "mine": {
                     "type": "boolean",
                     "description": "G5: whether this march belongs to the requester (false = enemy march within vision range)"
+                  },
+                  "teamId": {
+                    "type": "string",
+                    "description": "ADR-026: which team slot ('t1'..'t5') this march deployed, if any. Only present on the requester's own marches; used client-side to grey out busy teams in the team picker."
                   }
                 }
               }
@@ -2320,6 +2324,10 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "mine": {
                   "type": "boolean",
                   "description": "G5: whether this march belongs to the requester (false = enemy march within vision range)"
+                },
+                "teamId": {
+                  "type": "string",
+                  "description": "ADR-026: which team slot ('t1'..'t5') this march deployed, if any. Only present on the requester's own marches; used client-side to grey out busy teams in the team picker."
                 }
               }
             }
@@ -2417,6 +2425,10 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "mine": {
                   "type": "boolean",
                   "description": "G5: whether this march belongs to the requester (false = enemy march within vision range)"
+                },
+                "teamId": {
+                  "type": "string",
+                  "description": "ADR-026: which team slot ('t1'..'t5') this march deployed, if any. Only present on the requester's own marches; used client-side to grey out busy teams in the team picker."
                 }
               }
             }

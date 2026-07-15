@@ -866,6 +866,7 @@ export const en: Record<TranslationKey, string> = {
   'world.team.noTeams': 'No teams yet — set up a formation first',
   'world.team.manage': 'Manage teams',
   'world.team.emptyArmy': 'This team has no formation',
+  'world.team.busy': 'Marching / occupying',
   // Training queue / resource panel (C4)
   'world.train': 'Train',
   'world.trainTitle': 'Train · Resources',

@@ -266,6 +266,7 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
         ...(proc.resType ? { resType: proc.resType } : {}),
         garrison: survivors,
         dueAt,
+        ...(m.teamId ? { teamId: m.teamId } : {}),
       };
       await cols.occupations.updateOne({ _id: m.toTile }, { $set: occDoc }, { upsert: true });
       await this.core.scheduleOccupation(m.worldId, m.toTile, dueAt);
