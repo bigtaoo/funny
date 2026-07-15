@@ -12,6 +12,8 @@
 
 VPS 上**不再跑 mongo 容器**——库托管到 Atlas。本机只剩 Node 进程、Redis、Caddy 反代。
 
+> ⚠ **VPS 上永远只用 `docker-compose.cloud.yml`**：`docker-compose.prod.yml` 是自带本地 mongo 副本集的变体（本地/集成测试用），如果在 VPS 上手动跑过它，会起一个 `nw-mongo` 容器长期占着 CPU/内存却完全没被任何服务连接（所有服务的 `NW_*_MONGO_URI` 只认 `.env` 里的 Atlas 串）——2026-07-15 就在生产上发现过这个漂移，排查见 `botsvc-loadtest` 相关记录。`server-deploy.yml` 已加 `--remove-orphans`，正常走 CI 自动部署不会再有孤儿容器；但如果手动在 VPS 上 `docker compose up`，务必显式带 `-f docker-compose.cloud.yml`。
+
 ## 2. 域名 / 子域规划（gamestao.com，托管在 Cloudflare DNS）
 
 | 子域 | 指向 | 用途 | CF 代理（云朵） |
