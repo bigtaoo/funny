@@ -265,6 +265,13 @@ export function startHttpApi(
           return send(res, 200, ok(await svc.getMarches(worldId, accountId)));
         }
 
+        // ── Occupation-hold list (2026-07-15, team management status + cancel) ──
+        if (method === 'GET' && path === '/world/occupations') {
+          const worldId = q.get('worldId');
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          return send(res, 200, ok(await svc.getOccupations(worldId, accountId)));
+        }
+
         // ── Resolve shard by season (G6/§20): resolve only, no base placement; client fetches worldId before entering the map ──
         if (method === 'POST' && path === '/world/season/resolve') {
           const body = await readJson(req);
@@ -344,6 +351,18 @@ export function startHttpApi(
             const worldId = typeof body.worldId === 'string' ? body.worldId : null;
             if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
             return send(res, 200, ok(await svc.recallMarch(worldId, accountId, decodeURIComponent(m[1]!))));
+          }
+        }
+
+        // ── Team management "取消指令" (2026-07-15): force an occupation-hold team back to idle ──
+        {
+          const m = /^\/world\/team\/([^/]+)\/cancel-occupation$/.exec(path);
+          if (method === 'POST' && m) {
+            const body = await readJson(req);
+            const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+            if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+            await svc.cancelOccupation(worldId, accountId, decodeURIComponent(m[1]!));
+            return send(res, 200, ok({}));
           }
         }
 

@@ -98,6 +98,7 @@ export const ErrorCode = {
   ALREADY_ACTIVE: 'ALREADY_ACTIVE',                 // monthly/year card still running — single-slot gate, buy again once it expires (§5)
   // —— SLG teams (2026-07-15): idle-team gate on march dispatch ——
   TEAM_BUSY: 'TEAM_BUSY',                           // team is already committed to an active (non-recalled) march; recall it first
+  OCCUPATION_NOT_FOUND: 'OCCUPATION_NOT_FOUND',     // no active occupation-hold for this team/tile (already settled, expelled, or never started)
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -188,4 +189,5 @@ export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.FATE_INVALID_ITEM]: 400,
   [ErrorCode.ALREADY_PURCHASED]: 409,
   [ErrorCode.TEAM_BUSY]: 409,
+  [ErrorCode.OCCUPATION_NOT_FOUND]: 404,
 };

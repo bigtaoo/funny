@@ -18,7 +18,7 @@ import { TerritoryService } from './territory';
 import { SeasonService } from './season';
 import { CityService } from './city';
 import { CombatService } from './combat';
-import type { PlayerWorldView, WorldTileView, MarchView } from './worldTypes';
+import type { PlayerWorldView, WorldTileView, MarchView, OccupationView } from './worldTypes';
 import type { SLG_SHOP_ITEMS, BuildingKey, MarchKind } from '@nw/shared';
 import type { TeamTemplate } from './db';
 
@@ -44,8 +44,14 @@ export class WorldService extends WorldCore {
   recallMarch(worldId: string, accountId: string, mid: string): Promise<MarchView> {
     return this.combat.recallMarch(worldId, accountId, mid);
   }
+  cancelOccupation(worldId: string, accountId: string, teamId: string): Promise<void> {
+    return this.combat.cancelOccupation(worldId, accountId, teamId);
+  }
   getMarches(worldId: string, accountId: string): Promise<MarchView[]> {
     return this.combat.getMarches(worldId, accountId);
+  }
+  getOccupations(worldId: string, accountId: string): Promise<OccupationView[]> {
+    return this.combat.getOccupations(worldId, accountId);
   }
   processDueArrivals(nowMs?: number): Promise<number> {
     return this.combat.processDueArrivals(nowMs);

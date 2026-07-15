@@ -37,6 +37,7 @@ export interface WorldMapSparseView {
 }
 export type PlayerWorldView = components['schemas']['PlayerWorldView'];
 export type MarchView = components['schemas']['MarchView'];
+export type OccupationView = components['schemas']['OccupationView'];
 
 // Family DTOs are NOT in openapi-world.yml: family moved to socialsvc (/social/family/*, no
 // openapi contract of its own). Shapes are hand-mirrored from server/socialsvc/src/familyService.ts —
@@ -230,6 +231,11 @@ export class WorldApiClient {
     return this.req('GET', `/world/march?worldId=${encodeURIComponent(worldId)}`);
   }
 
+  /** Own active occupation-holds (2026-07-15 team management: status + cancel affordance). */
+  async getOccupations(worldId: string): Promise<OccupationView[]> {
+    return this.req('GET', `/world/occupations?worldId=${encodeURIComponent(worldId)}`);
+  }
+
   /** Enter the world: the system automatically places the player's city (§3.4; prefers near family → outer-ring newcomer zone); spawn point is server-determined, player does not pass coordinates. */
   async joinWorld(worldId: string): Promise<PlayerWorldView> {
     return this.req('POST', '/world/join', { worldId });
@@ -289,6 +295,11 @@ export class WorldApiClient {
 
   async recallMarch(marchId: string, worldId: string): Promise<{ ok: true }> {
     return this.req('POST', `/world/march/${encodeURIComponent(marchId)}/recall`, { worldId });
+  }
+
+  /** Force a team stuck in an occupation-hold back to idle immediately (garrison forfeited, no refund). */
+  async cancelOccupation(teamId: string, worldId: string): Promise<{ ok: true }> {
+    return this.req('POST', `/world/team/${encodeURIComponent(teamId)}/cancel-occupation`, { worldId });
   }
 
   // ── Troops (training queue S8-2) ──────────────────────────────────────────────────

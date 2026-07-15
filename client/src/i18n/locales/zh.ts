@@ -1471,6 +1471,15 @@ export const zh = {
   'world.team.fillTroopsErr': '补满失败',
   'world.team.troopsStatus': '{cur}/{cap}',
   'world.team.injured': '受伤',
+
+  // Team management "取消指令" (2026-07-15): force a busy team back to idle
+  'world.team.marching': '行军中',
+  'world.team.occupying': '占领中 剩{time}',
+  'world.team.cancelOccupy': '放弃占领',
+  'world.team.cancelOccupyConfirm': '确认放弃?',
+  'world.team.cancelOccupyOk': '已放弃占领，队伍已空闲',
+  'world.team.cancelOccupyErr': '取消失败',
+  'world.team.recallErr': '撤军失败',
 };
 
 export type TranslationKey = keyof typeof zh;

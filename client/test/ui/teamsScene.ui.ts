@@ -66,6 +66,8 @@ function stubWorldApi(overrides: Partial<WorldApiClient> = {}): WorldApiClient {
     getTeams: async () => [],
     getMe: async () => ({ joined: true } as PlayerWorldView),
     distributeTroops: async () => ({ ok: true }),
+    getMarches: async () => [],
+    getOccupations: async () => [],
     ...overrides,
   } as unknown as WorldApiClient;
 }

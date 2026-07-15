@@ -7,7 +7,7 @@
 // CombatService re-exposes the exact same public API so WorldService (service.ts) composes it unchanged.
 // Depends on WorldCore for shared state, vision, spawn, push/schedule infra, settle/yield, and nations. No behavior change.
 import type { MarchKind } from '@nw/shared';
-import type { MarchView } from './worldTypes';
+import type { MarchView, OccupationView } from './worldTypes';
 import { WorldCore } from './core';
 import { SiegeService } from './combatSiege';
 import { MarchService } from './combatMarch';
@@ -49,6 +49,13 @@ export class CombatService {
   // ADR-037 (§5.4): occupation-hold settlement (combatSiege/occupation.ts).
   processDueOccupations(nowMs?: number): Promise<number> {
     return this.siege.processDueOccupations(nowMs);
+  }
+  // Player-initiated occupation-hold cancel (2026-07-15, team management "取消指令").
+  cancelOccupation(worldId: string, accountId: string, teamId: string): Promise<void> {
+    return this.siege.cancelOccupation(worldId, accountId, teamId);
+  }
+  getOccupations(worldId: string, accountId: string): Promise<OccupationView[]> {
+    return this.siege.getOccupations(worldId, accountId);
   }
 
   // ── defense config + replay (combatDefense.ts) ───────────────

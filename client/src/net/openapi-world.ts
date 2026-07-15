@@ -201,6 +201,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/world/occupations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getOccupations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/world/team/{teamId}/cancel-occupation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cancelOccupation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/world/sweep": {
         parameters: {
             query?: never;
@@ -858,6 +890,16 @@ export interface components {
             /** @description ADR-026: which team slot ('t1'..'t5') this march deployed, if any. Only present on the requester's own marches; used client-side to grey out busy teams in the team picker. */
             teamId?: string;
         };
+        OccupationView: {
+            tile: string;
+            x: number;
+            y: number;
+            level: number;
+            garrison: number;
+            dueAt: number;
+            /** @description Which team slot ('t1'..'t5') is tied up holding this tile, if the march was dispatched with one. */
+            teamId?: string;
+        };
         AuctionView: {
             auctionId: string;
             worldId: string;
@@ -1377,6 +1419,58 @@ export interface operations {
         };
         responses: {
             /** @description Recalled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+        };
+    };
+    getOccupations: {
+        parameters: {
+            query: {
+                worldId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Own active occupation-holds (2026-07-15 team management status + cancel) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["OccupationView"][];
+                    };
+                };
+            };
+        };
+    };
+    cancelOccupation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                teamId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    worldId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Occupation-hold cancelled; team is idle immediately, garrison forfeited */
             200: {
                 headers: {
                     [name: string]: unknown;

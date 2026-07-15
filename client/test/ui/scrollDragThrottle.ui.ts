@@ -51,7 +51,7 @@ const [W, H] = [800, 1280];
 function stubWorldApi(): WorldApiClient {
   const never = () => new Promise<never>(() => {});
   return {
-    getMe: never, getMap: never, getMapSparse: never, getTile: never, getMarches: never,
+    getMe: never, getMap: never, getMapSparse: never, getTile: never, getMarches: never, getOccupations: never,
     joinWorld: never, occupyTile: never, abandonTile: never,
     startMarch: never, recallMarch: never,
     listFamilies: never, getFamily: never, createFamily: never,
