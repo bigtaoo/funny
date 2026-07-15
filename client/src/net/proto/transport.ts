@@ -256,6 +256,12 @@ export interface JudgeRequest {
    * that spot-check re-simulations for highly-progressed players use the exact same blueprint as the original match, preventing false verdicts from a weaker blueprint).
    */
   unitLevels: { [key: string]: number };
+  /**
+   * Ranked PvP deck restriction (PVP_LOADOUT §6.2): same decks the two real match clients drew from via match_start.top_deck/bottom_deck.
+   * Required for a deterministic re-simulation when the original match applied deck-restricted draw filtering; empty on PvE/siege requests.
+   */
+  topDeck: string[];
+  bottomDeck: string[];
 }
 
 export interface JudgeRequest_PveUpgradesEntry {
@@ -2251,6 +2257,8 @@ function createBaseJudgeRequest(): JudgeRequest {
     pveUpgrades: {},
     defenseJson: "",
     unitLevels: {},
+    topDeck: [],
+    bottomDeck: [],
   };
 }
 
@@ -2283,6 +2291,12 @@ export const JudgeRequest: MessageFns<JudgeRequest> = {
     globalThis.Object.entries(message.unitLevels).forEach(([key, value]: [string, number]) => {
       JudgeRequest_UnitLevelsEntry.encode({ key: key as any, value }, writer.uint32(74).fork()).join();
     });
+    for (const v of message.topDeck) {
+      writer.uint32(82).string(v!);
+    }
+    for (const v of message.bottomDeck) {
+      writer.uint32(90).string(v!);
+    }
     return writer;
   },
 
@@ -2371,6 +2385,22 @@ export const JudgeRequest: MessageFns<JudgeRequest> = {
           }
           continue;
         }
+        case 10: {
+          if (tag !== 82) {
+            break;
+          }
+
+          message.topDeck.push(reader.string());
+          continue;
+        }
+        case 11: {
+          if (tag !== 90) {
+            break;
+          }
+
+          message.bottomDeck.push(reader.string());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -2410,6 +2440,8 @@ export const JudgeRequest: MessageFns<JudgeRequest> = {
       },
       {},
     );
+    message.topDeck = object.topDeck?.map((e) => e) || [];
+    message.bottomDeck = object.bottomDeck?.map((e) => e) || [];
     return message;
   },
 };

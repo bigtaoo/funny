@@ -59,7 +59,10 @@ function toProto(cmd: PlayerCommand) {
 }
 
 /** Script → JudgeRequest (each frame grouped by owner into SideCmd; commands encoded with game.proto). */
-function buildJudgeRequest(byFrame: Map<number, PlayerCommand[]>): JudgeRequest {
+function buildJudgeRequest(
+  byFrame: Map<number, PlayerCommand[]>,
+  decks?: { top: string[]; bottom: string[] },
+): JudgeRequest {
   const frames = [...byFrame.entries()]
     .sort((a, b) => a[0] - b[0])
     .map(([frame, cmds]) => {
@@ -75,13 +78,24 @@ function buildJudgeRequest(byFrame: Map<number, PlayerCommand[]>): JudgeRequest 
           })),
       };
     });
-  return { requestId: 'r1', seed: SEED, mode: 1, endFrame: END_FRAME, frames } as JudgeRequest;
+  return {
+    requestId: 'r1',
+    seed: SEED,
+    mode: 1,
+    endFrame: END_FRAME,
+    frames,
+    topDeck: decks?.top ?? [],
+    bottomDeck: decks?.bottom ?? [],
+  } as JudgeRequest;
 }
 
 /** Independent authoritative engine: runs the same command stream to the terminal state and computes the authoritative hash. */
-function authoritativeHash(byFrame: Map<number, PlayerCommand[]>): string {
+function authoritativeHash(
+  byFrame: Map<number, PlayerCommand[]>,
+  decks?: { top: string[]; bottom: string[] },
+): string {
   const engine = createGameEngine(
-    { seed: SEED, players: [{ id: 0 }, { id: 1 }], mode: 'netplay' },
+    { seed: SEED, players: [{ id: 0 }, { id: 1 }], mode: 'netplay', ...(decks ? { decks } : {}) },
     new ScriptedSource(byFrame),
   );
   let guard = 0;
@@ -117,5 +131,35 @@ describe('peer judge runner', () => {
     const req = buildJudgeRequest(authoredByFrame());
     const out = runJudge({ ...req, endFrame: 50 } as JudgeRequest);
     expect(out.ok).toBe(false);
+  });
+
+  // PVP_LOADOUT §6.2: ranked matches restrict each side's draw pool to the match's actual deck
+  // (match_start.top_deck/bottom_deck). The judge must rebuild the engine with that same restriction —
+  // otherwise it draws from the full pool and recomputes a hash that can never match either honest
+  // side's real hash, permanently breaking arbitration (or worse, convicting the honest player).
+  describe('deck-restricted ranked matches (PVP_LOADOUT §6.2)', () => {
+    // 'runner' is an ELO-locked PvP-unlock unit (PVP_LOADOUT_DESIGN §3) — exactly the kind of card
+    // that must never appear in a full-pool recompute of a deck-restricted match.
+    const decks = { top: ['runner'], bottom: ['runner'] };
+
+    it('recomputed hash matches the authoritative engine when the judge is given the real match decks', () => {
+      const byFrame = authoredByFrame();
+      const expected = authoritativeHash(byFrame, decks);
+
+      const out = runJudge(buildJudgeRequest(byFrame, decks));
+      expect(out.ok).toBe(true);
+      expect(out.stateHash).toBe(expected);
+    }, 30_000);
+
+    it('regression guard: recomputing without the match decks (the pre-fix bug) diverges from the real hash', () => {
+      const byFrame = authoredByFrame();
+      const expectedRestricted = authoritativeHash(byFrame, decks);
+
+      // Simulates the old judgeRunner.ts behaviour: same seed + same frame stream, but the judge
+      // rebuilds the engine off the full card pool instead of the match's restricted decks.
+      const outFullPool = runJudge(buildJudgeRequest(byFrame));
+      expect(outFullPool.ok).toBe(true);
+      expect(outFullPool.stateHash).not.toBe(expectedRestricted);
+    }, 30_000);
   });
 });

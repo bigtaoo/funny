@@ -57,7 +57,12 @@ export function runJudge(req: JudgeRequest): JudgeOutcome {
     const replay = buildReplay(req, 'netplay', req.seed);
     // endFrame + buffer: leaves slack after end-of-game to prevent corrupted replays from looping; a normal game will GameOver earlier.
     const { ok, engine } = runHeadless(
-      { seed: req.seed, players: [{ id: 0 }, { id: 1 }], mode: 'netplay' },
+      {
+        seed: req.seed,
+        players: [{ id: 0 }, { id: 1 }],
+        mode: 'netplay',
+        ...(replay.decks ? { decks: replay.decks } : {}),
+      },
       new ReplayInputSource(replay),
       req.endFrame + 600,
     );
@@ -191,6 +196,9 @@ function buildReplay(req: JudgeRequest, mode: GameMode, seed: number, levelId?: 
     frames,
     endFrame: req.endFrame,
     ...(levelId ? { configRef: levelId, meta: { levelId } } : {}),
+    ...((req.topDeck ?? []).length > 0 || (req.bottomDeck ?? []).length > 0
+      ? { decks: { top: req.topDeck, bottom: req.bottomDeck } }
+      : {}),
   };
 }
 
