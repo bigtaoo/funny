@@ -49,7 +49,13 @@ export async function loadResAtlas(): Promise<void> {
   if (sheet) return;
   if (loading) return loading;
   loading = (async () => {
-    const baseTex = new PIXI.BaseTexture(await assetIO().textureSource(atlasUrl as string));
+    // Explicit mipmap + linear filtering: these motifs are drawn at 128px on the atlas but
+    // displayed as tiny 15-34px HUD icons (~4-8x downscale), which without trilinear mipmap
+    // sampling reads as muddy/blurry line art instead of a crisp shrink.
+    const baseTex = new PIXI.BaseTexture(await assetIO().textureSource(atlasUrl as string), {
+      scaleMode: PIXI.SCALE_MODES.LINEAR,
+      mipmap: PIXI.MIPMAP_MODES.ON,
+    });
     await new Promise<void>((resolve, reject) => {
       if (baseTex.valid) { resolve(); return; }
       baseTex.once('loaded', () => resolve());

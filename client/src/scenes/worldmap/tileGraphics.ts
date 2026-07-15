@@ -22,11 +22,12 @@ export function drawTileL1(
   // the motif sprite. May be the level-gated copper-mine override ('sticker'), which is a scattered
   // per-tile special, NOT a spatial zone — so it must NOT drive the ground wash (see groundResType).
   const motifResType = tile?.type === 'resource' ? tile.resType : (!tile && proc?.type === 'resource' ? proc.resType : undefined);
-  // Ground wash uses the PURE biome, blended across zone boundaries (ignores the copper override,
-  // which is a scattered per-tile special, not a zone) so same-biome land reads as one continuous,
-  // gradiented region even where copper/sticker tiles poke through as icons — decouples "what color
-  // is this land" from "what's the copper roll for this one tile" (2026-07-11 continuity pass; the
-  // ~10-tile blend itself is 2026-07-11's follow-up, see biomeGroundTint/biomeMixAt). Must stay in
+  // Ground wash uses the tile's PROVINCE leaning type (ignores the copper override, which is a
+  // scattered per-tile special, not a province-level trait) so a whole province reads as one
+  // continuous region even where copper/sticker tiles poke through as icons, and even though the
+  // ACTUAL per-tile resType is independently mixed within that province (2026-07-15 rewrite) —
+  // decouples "which resource does this province lean toward" from "what's the copper roll for this
+  // one tile" (see biomeGroundTint/biomeMixAt/leaningResourceForProvince in @nw/shared). Must stay in
   // lockstep with the map-editor's drawEditorTile (SLG map render parity).
   const groundTint = motifResType ? biomeGroundTint(tx, ty, worldSeed(worldId)) : undefined;
   // Soft sketch grid, then the ground: hand-drawn texture fill once the atlas has

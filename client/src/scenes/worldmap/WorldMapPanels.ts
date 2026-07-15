@@ -37,10 +37,11 @@ export class WorldMapPanels {
     const { w } = this.ctx;
     const headerH = this.ctx.topInset;
 
-    // Auction button — far right of the header bar.
+    // Auction button — far right of the header bar. Extra right margin (30 vs the old 10)
+    // keeps it clear of the screen edge on narrow/notched viewports.
     const aucW = 78, aucH = Math.round(headerH * 0.7);
     const aucBtn = sketchPanel(aucW, aucH, { fill: C.dark, border: C.accent, seed: seedFor(1, 0, aucW) });
-    aucBtn.x = w - aucW - 10; aucBtn.y = (headerH - aucH) / 2;
+    aucBtn.x = w - aucW - 30; aucBtn.y = (headerH - aucH) / 2;
     layer.addChild(aucBtn);
     const aIconSize = Math.round(aucH * 0.4);
     const aIcon = buildIcon('tag', aIconSize, C.light);
@@ -81,6 +82,13 @@ export class WorldMapPanels {
     const rightBound = aucBtn.x - 8;
     cluster.x = leftBound + Math.max(0, (rightBound - leftBound - cx) / 2);
     cluster.y = headerH / 2;
+
+    // Independent background panel behind the resource cluster, distinguishing it from the
+    // shared header-bar chrome instead of floating directly on it.
+    const padX = 10, padY = Math.round(headerH * 0.14);
+    const bgPanel = sketchPanel(cx + padX * 2, headerH - padY * 2, { fill: C.paper, border: C.mid, seed: seedFor(2, 0, cx) });
+    bgPanel.x = cluster.x - padX; bgPanel.y = padY;
+    layer.addChild(bgPanel);
     layer.addChild(cluster);
   }
 
@@ -118,7 +126,7 @@ export class WorldMapPanels {
     // ── Left column, top-left: Zoom, stacked directly under the floating Back chip
     // (drawn separately on ctx.topLayer — see WorldMapRenderer). The auction button now
     // lives in the header bar itself (renderHeaderHud), far right. ──
-    const colW = 88, colH = 34, colGap = 6;
+    const colW = 176, colH = 68, colGap = 6; // 2x the original 88x34 footprint
     const colX = this.ctx.backRect.x || 8;
     const ly = this.ctx.backRect.y + this.ctx.backRect.h + colGap || 8;
 
@@ -126,23 +134,24 @@ export class WorldMapPanels {
     const zoomBtn = sketchPanel(colW, colH, { fill: C.dark, border: C.accent, seed: seedFor(4, 2, colW) });
     zoomBtn.x = colX; zoomBtn.y = ly;
     hud.addChild(zoomBtn);
-    const zIcon = buildIcon('zoom', 16, C.light);
-    const zTxt = txt(zoomLabels[this.ctx.zoom] ?? '', 13, C.light);
+    const zIcon = buildIcon('zoom', 32, C.light);
+    const zTxt = txt(zoomLabels[this.ctx.zoom] ?? '', 26, C.light);
     zTxt.anchor.set(0, 0.5);
-    const zGrpW = 16 + 4 + zTxt.width;
+    const zGrpW = 32 + 8 + zTxt.width;
     const zGx = zoomBtn.x + (colW - zGrpW) / 2;
-    zIcon.x = zGx; zIcon.y = zoomBtn.y + (colH - 16) / 2;
-    zTxt.x = zGx + 20; zTxt.y = zoomBtn.y + colH / 2;
+    zIcon.x = zGx; zIcon.y = zoomBtn.y + (colH - 32) / 2;
+    zTxt.x = zGx + 40; zTxt.y = zoomBtn.y + colH / 2;
     hud.addChild(zIcon); hud.addChild(zTxt);
     this.ctx.zoomBtnRect = { x: zoomBtn.x, y: zoomBtn.y, w: colW, h: colH };
 
     // ── Right column, top-right: status card → marches badge → World/info (passive state) ──
-    const rightW = 160;
-    const rx = w - rightW - 8;
-    let ry = this.ctx.topInset + 8;
+    // 2x the original 160-wide footprint (status card, marches badge/list, info button).
+    const rightW = 320;
+    const rx = w - rightW - 16;
+    let ry = this.ctx.topInset + 16;
 
     if (this.ctx.me?.joined) {
-      const cardH = 58;
+      const cardH = 116;
       const card = sketchPanel(rightW, cardH, { fill: C.paper, border: C.mid, seed: seedFor(2, 5, rightW) });
       card.x = rx; card.y = ry;
       hud.addChild(card);
@@ -151,8 +160,8 @@ export class WorldMapPanels {
       const troopCap = this.ctx.me.troopCap ?? 0;
       const territory = this.ctx.me.territoryCount ?? 0;
       const line1 = `${t('world.troops')} ${troops}/${troopCap}  ${t('world.territory')} ${territory}`;
-      const lbl1 = txt(line1, 10, C.dark);
-      lbl1.x = rx + 8; lbl1.y = ry + 6;
+      const lbl1 = txt(line1, 20, C.dark);
+      lbl1.x = rx + 16; lbl1.y = ry + 12;
       hud.addChild(lbl1);
 
       // Resource counts: hand-drawn motif icon (res_atlas, reused from the map tiles) + count,
@@ -160,30 +169,30 @@ export class WorldMapPanels {
       // emoji only while the atlas is still decoding (getResTexture null).
       const res = this.ctx.me.resources ?? {};
       const RES_EMOJI: Record<string, string> = { ink: '🖋️', paper: '📄', graphite: '✏️', metal: '🔩', sticker: '⭐' };
-      const RES_ICON = 15;
-      let ix = rx + 8;
-      const resRowY = ry + 32;
+      const RES_ICON = 30;
+      let ix = rx + 16;
+      const resRowY = ry + 64;
       for (const rt of ['ink', 'paper', 'graphite', 'metal', 'sticker']) {
         if (res[rt] === undefined) continue;
         const tex = getResTexture(rt);
         if (tex) {
           const sp = new PIXI.Sprite(tex);
           sp.width = sp.height = RES_ICON;
-          sp.x = ix; sp.y = resRowY - 3;
+          sp.x = ix; sp.y = resRowY - 6;
           hud.addChild(sp);
-          ix += RES_ICON + 1;
-          const cnt = txt(`${res[rt]}`, 10, C.dark);
+          ix += RES_ICON + 2;
+          const cnt = txt(`${res[rt]}`, 20, C.dark);
           cnt.x = ix; cnt.y = resRowY;
           hud.addChild(cnt);
-          ix += cnt.width + 8;
+          ix += cnt.width + 16;
         } else {
-          const lbl = txt(`${RES_EMOJI[rt]}${res[rt]}`, 10, C.dark);
+          const lbl = txt(`${RES_EMOJI[rt]}${res[rt]}`, 20, C.dark);
           lbl.x = ix; lbl.y = resRowY;
           hud.addChild(lbl);
-          ix += lbl.width + 8;
+          ix += lbl.width + 16;
         }
       }
-      ry += cardH + 6;
+      ry += cardH + 12;
     }
 
     // Marches badge — collapsed by default (flag glyph + count); tap toggles the expanded
@@ -192,23 +201,23 @@ export class WorldMapPanels {
     this.ctx.marchRowRects = [];
     const myMarches = this.ctx.marches.filter((m) => m.mine !== false);
     if (this.ctx.me?.joined) {
-      const badgeH = 32;
+      const badgeH = 64;
       const badge = sketchPanel(rightW, badgeH, { fill: C.dark, border: C.accent, seed: seedFor(6, 1, rightW) });
       badge.x = rx; badge.y = ry;
       hud.addChild(badge);
-      const bIcon = buildIcon('flag', 14, C.light);
-      bIcon.x = rx + 10; bIcon.y = ry + (badgeH - 14) / 2;
+      const bIcon = buildIcon('flag', 28, C.light);
+      bIcon.x = rx + 20; bIcon.y = ry + (badgeH - 28) / 2;
       hud.addChild(bIcon);
-      const bTxt = txt(myMarches.length > 0 ? `${t('world.marchList')} (${myMarches.length})` : t('world.marchList'), 11, C.light);
+      const bTxt = txt(myMarches.length > 0 ? `${t('world.marchList')} (${myMarches.length})` : t('world.marchList'), 22, C.light);
       bTxt.anchor.set(0, 0.5);
-      bTxt.x = rx + 30; bTxt.y = ry + badgeH / 2;
+      bTxt.x = rx + 60; bTxt.y = ry + badgeH / 2;
       hud.addChild(bTxt);
       this.ctx.marchBadgeRect = { x: badge.x, y: badge.y, w: rightW, h: badgeH };
-      ry += badgeH + 6;
+      ry += badgeH + 12;
 
       if (this.ctx.marchesExpanded && myMarches.length > 0) {
-        const MARCH_ROW_H = 22;
-        const RECALL_W = 50;
+        const MARCH_ROW_H = 44;
+        const RECALL_W = 100;
         const MAX_VISIBLE_MARCHES = 5;
         const visibleMarches = myMarches.slice(0, MAX_VISIBLE_MARCHES);
         const overflowCount = myMarches.length - visibleMarches.length;
@@ -216,7 +225,7 @@ export class WorldMapPanels {
         const MARCH_KIND_ICON: Record<string, IconKind> = {
           attack: 'swords', reinforce: 'armor', scout: 'scope', return: 'replay', occupy: 'flag',
         };
-        const listH = visibleMarches.length * MARCH_ROW_H + 6 + (overflowCount > 0 ? MARCH_ROW_H : 0);
+        const listH = visibleMarches.length * MARCH_ROW_H + 12 + (overflowCount > 0 ? MARCH_ROW_H : 0);
         const listPanel = sketchPanel(rightW, listH, { fill: C.paper, border: C.mid, seed: seedFor(6, 2, rightW) });
         listPanel.x = rx; listPanel.y = ry;
         hud.addChild(listPanel);
@@ -224,57 +233,57 @@ export class WorldMapPanels {
           const m = visibleMarches[i];
           const [tx, ty] = this.ctx.parseTileId(m.toTile);
           const remaining = Math.max(0, Math.ceil((m.arriveAt - now) / 1000));
-          const rowY = listPanel.y + 3 + i * MARCH_ROW_H;
-          const kindIc = buildIcon(MARCH_KIND_ICON[m.kind] ?? 'flag', 13, C.dark);
-          kindIc.x = rx + 6; kindIc.y = rowY + 1;
+          const rowY = listPanel.y + 6 + i * MARCH_ROW_H;
+          const kindIc = buildIcon(MARCH_KIND_ICON[m.kind] ?? 'flag', 26, C.dark);
+          kindIc.x = rx + 12; kindIc.y = rowY + 2;
           hud.addChild(kindIc);
-          const rowLbl = txt(`(${tx},${ty})  ${remaining}s`, 10, C.dark);
-          rowLbl.x = rx + 22; rowLbl.y = rowY + 2;
+          const rowLbl = txt(`(${tx},${ty})  ${remaining}s`, 20, C.dark);
+          rowLbl.x = rx + 44; rowLbl.y = rowY + 4;
           hud.addChild(rowLbl);
 
           if (m.kind !== 'return') {
-            const recallBtn = sketchPanel(RECALL_W, 18, { fill: C.accent, border: C.red, seed: seedFor(i, 99, RECALL_W) });
-            recallBtn.x = rx + rightW - RECALL_W - 4; recallBtn.y = rowY;
+            const recallBtn = sketchPanel(RECALL_W, 36, { fill: C.accent, border: C.red, seed: seedFor(i, 99, RECALL_W) });
+            recallBtn.x = rx + rightW - RECALL_W - 8; recallBtn.y = rowY;
             hud.addChild(recallBtn);
-            const recallLbl = txt(t('world.recall'), 9, C.light);
+            const recallLbl = txt(t('world.recall'), 18, C.light);
             recallLbl.anchor.set(0.5, 0.5);
-            recallLbl.x = recallBtn.x + RECALL_W / 2; recallLbl.y = recallBtn.y + 9;
+            recallLbl.x = recallBtn.x + RECALL_W / 2; recallLbl.y = recallBtn.y + 18;
             hud.addChild(recallLbl);
             this.ctx.marchRowRects.push({
               marchId: m.marchId,
               worldId: m.toTile.split(':')[2] ?? '',
               destX: tx, destY: ty,
-              rowRect: { x: rx, y: rowY, w: rightW - RECALL_W - 8, h: MARCH_ROW_H },
-              recallRect: { x: recallBtn.x, y: recallBtn.y, w: RECALL_W, h: 18 },
+              rowRect: { x: rx, y: rowY, w: rightW - RECALL_W - 16, h: MARCH_ROW_H },
+              recallRect: { x: recallBtn.x, y: recallBtn.y, w: RECALL_W, h: 36 },
             });
           } else {
             this.ctx.marchRowRects.push({
               marchId: m.marchId,
               worldId: m.toTile.split(':')[2] ?? '',
               destX: tx, destY: ty,
-              rowRect: { x: rx, y: rowY, w: rightW - 8, h: MARCH_ROW_H },
+              rowRect: { x: rx, y: rowY, w: rightW - 16, h: MARCH_ROW_H },
               recallRect: null,
             });
           }
         }
         if (overflowCount > 0) {
-          const overflowY = listPanel.y + 3 + visibleMarches.length * MARCH_ROW_H;
-          const overflowLbl = txt(t('world.marchMore', { n: overflowCount }), 10, C.mid);
-          overflowLbl.x = rx + 6; overflowLbl.y = overflowY + 2;
+          const overflowY = listPanel.y + 6 + visibleMarches.length * MARCH_ROW_H;
+          const overflowLbl = txt(t('world.marchMore', { n: overflowCount }), 20, C.mid);
+          overflowLbl.x = rx + 12; overflowLbl.y = overflowY + 4;
           hud.addChild(overflowLbl);
         }
-        ry = listPanel.y + listH + 6;
+        ry = listPanel.y + listH + 12;
       }
     } else {
       this.ctx.marchBadgeRect = { x: 0, y: 0, w: 0, h: 0 };
     }
 
     // World info button — nations / season / shop.
-    const infoH = 34;
+    const infoH = 68;
     const infoBtn = sketchPanel(rightW, infoH, { fill: C.dark, border: C.accent, seed: seedFor(3, 1, rightW) });
     infoBtn.x = rx; infoBtn.y = ry;
     hud.addChild(infoBtn);
-    const infoLbl = txt(t('world.info'), 13, C.light);
+    const infoLbl = txt(t('world.info'), 26, C.light);
     infoLbl.anchor.set(0.5, 0.5);
     infoLbl.x = infoBtn.x + rightW / 2; infoLbl.y = infoBtn.y + infoH / 2;
     hud.addChild(infoLbl);

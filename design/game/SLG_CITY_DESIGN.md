@@ -106,6 +106,8 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 > 全部 SLG 侧注入，**不碰** `buildPvpBlueprints`（D-CITY-6 红线）。新增纯函数落 `@nw/shared/slg.ts`（双端可算 + 可单测）。
 
 > **⚠️ 状态更新（2026-07-07）**：本节及下文多处「★P1 前置 / 现行三分 / 待补 graphite」是规划期语言。`biomeAt` 四分**已落地**（见 §10 实现进度：`ink<0.30<paper<0.55<graphite<0.78<metal`，代码 `shared/slg.ts` `biomeAt`），graphite 已有地图 faucet。下列「P1 前置」标记视为历史，不再是待办。
+>
+> **⚠️ 分布机制更新（2026-07-15）**：本节及下文「四分」「阈值 `ink<0.30<paper<0.55<graphite<0.78<metal`」描述的是**分布机制的历史版本**——当时 `biomeAt` 用低频噪声阈值把地图切成四块连续同资源区域。**该机制已重写**（见 [`map-editor/DESIGN.md`](../tools/map-editor/DESIGN.md) §8 2026-07-15 条目）：现在每个格子独立抽样四种地块资源，仅按所在省份的「偏向资源」（`leaningResourceForProvince`）小幅加权（`SLG_GEN.biomeProvinceBias=0.15`），不再有连续同资源区域。**graphite 是第 4 种地块资源、经 `biomeAt` 产出**这个决策本身（ADR-022）不变，变的只是"怎么在空间上分布"；下文提到的具体阈值常量（`biomeInkMax` 等）已随重写删除，不再存在于代码里。
 
 | 注入点 | 现状 | 改动 |
 |---|---|---|

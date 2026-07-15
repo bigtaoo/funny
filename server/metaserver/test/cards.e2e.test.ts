@@ -149,7 +149,7 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
 
     it('feed transfers XP and removes material card', async () => {
       const matCardBefore = (await readSave()).cardInv![materialId]!;
-      const expectedXp = Math.floor(feedXp(matCardBefore) * 0.70);
+      const expectedXp = feedXp(matCardBefore);
       const r = body(await feed(targetId, [materialId], 'ik-feed-1'));
       expect(r.ok).toBe(true);
       expect(r.data.card.id).toBe(targetId);
@@ -164,7 +164,7 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
         { _id: accountId },
         { $set: { [`save.cardInv.${materialId}.level`]: 2, [`save.cardInv.${materialId}.xp`]: 0 } },
       );
-      // feedXp of L2 card = LEVEL_CUMULATIVE_XP[2] = 5; 70% = floor(5*0.70) = 3
+      // feedXp of L2 card = floor(LEVEL_CUMULATIVE_XP[2] * 0.8) = floor(5*0.8) = 4
       const r = body(await feed(targetId, [materialId], 'ik-feed-lv'));
       expect(r.data.levelsGained).toBeGreaterThanOrEqual(0); // may or may not level up from 3xp
     });

@@ -26,7 +26,7 @@ export function InputMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBas
       });
       inp.addEventListener('blur', () => {
         this.createField = null;
-        document.body.removeChild(inp);
+        inp.remove();
         if (!this.destroyed) this.render();
       });
       this.hiddenInput = inp;

@@ -1,5 +1,5 @@
 // SLG home-city building system pure-function unit tests (SLG_CITY_DESIGN P1+P2, ADR-022).
-// Covers: biomeAt quad-partition (graphite now has a map faucet) + building yield/cap/troop/training helpers + desk gate + cost/time curves
+// Covers: biomeAt provincial-bias per-tile draw (graphite now has a map faucet) + building yield/cap/troop/training helpers + desk gate + cost/time curves
 //         + P2: wall defense mult / cabinet loot protect / academy buff.
 import { describe, it, expect } from 'vitest';
 import {
@@ -35,7 +35,7 @@ import {
   type BuildingKey,
 } from '../src/slg';
 
-describe('biomeAt quad-partition (ADR-022: graphite is the 4th land resource)', () => {
+describe('biomeAt provincial-bias per-tile draw (ADR-022: graphite is the 4th land resource)', () => {
   it('procedurally generates all four land resources across the map (graphite no longer absent)', () => {
     const seen = new Set<string>();
     let stickerBelow6 = 0;

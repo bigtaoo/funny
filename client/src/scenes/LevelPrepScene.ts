@@ -137,10 +137,6 @@ export class LevelPrepScene implements Scene {
 
     let y = tbH + Math.round(h * 0.02);
 
-    if (this.cb.brief) {
-      y = this.drawBrief(y);
-    }
-
     if (this.cb.objective) {
       y = this.drawObjective(this.cb.objective, y);
     }
@@ -148,7 +144,11 @@ export class LevelPrepScene implements Scene {
     if (this.cb.rewards && (this.cb.rewards.coins || this.cb.rewards.materials)) {
       y = this.drawRewards(this.cb.rewards, y);
     }
-    void y; // brief/objective/rewards flow top-down; stamina + Start are bottom-anchored below.
+
+    if (this.cb.brief) {
+      y = this.drawBrief(y);
+    }
+    void y; // objective/rewards/brief flow top-down; stamina + Start are bottom-anchored below.
 
     // —— Stamina bar (A4): cost + current balance, turns red when insufficient + refill button ——
     const stamina = this.cb.getStamina();
@@ -226,9 +226,27 @@ export class LevelPrepScene implements Scene {
     const { w, h } = this;
     const padX = marginLineX(w);
     const panW = w - padX - Math.round(w * 0.06);
-    const fs = Math.round(h * 0.022);
-    const padV = Math.round(h * 0.009);
-    const panH = fs + padV * 2;
+    const fs = Math.round(h * 0.044);
+    const innerPadX = Math.round(panW * 0.06);
+    const wrapWidth = panW - innerPadX * 2;
+    const padV = Math.round(h * 0.018);
+    const rowGap = Math.round(fs * 0.3);
+
+    const label = txt(t('level.objective.label'), fs, C.mid);
+    label.anchor.set(0, 0);
+
+    const desc = new PIXI.Text(this.objectiveText(obj), {
+      fontSize: fs,
+      fill: C.dark,
+      fontWeight: 'bold',
+      wordWrap: true,
+      wordWrapWidth: wrapWidth,
+      breakWords: true,
+      lineHeight: Math.round(fs * 1.3),
+    });
+    desc.anchor.set(0, 0);
+
+    const panH = label.height + rowGap + Math.ceil(desc.height) + padV * 2;
 
     const bg = sketchPanel(panW, panH, {
       fill: C.paper, border: C.line, width: 1.2, seed: seedFor(padX, y + 1, panW),
@@ -237,16 +255,12 @@ export class LevelPrepScene implements Scene {
     sketchAccentBar(bg, panH, C.gold, seedFor(padX, panH, 3));
     this.container.addChild(bg);
 
-    const label = txt(t('level.objective.label'), fs, C.mid);
-    label.anchor.set(0, 0.5);
-    label.x = padX + Math.round(panW * 0.06);
-    label.y = y + panH / 2;
+    label.x = padX + innerPadX;
+    label.y = y + padV;
     this.container.addChild(label);
 
-    const desc = txt(this.objectiveText(obj), fs, C.dark, true);
-    desc.anchor.set(0, 0.5);
-    desc.x = label.x + label.width + Math.round(w * 0.025);
-    desc.y = y + panH / 2;
+    desc.x = padX + innerPadX;
+    desc.y = label.y + label.height + rowGap;
     this.container.addChild(desc);
 
     return y + panH + Math.round(h * 0.01);
@@ -257,8 +271,8 @@ export class LevelPrepScene implements Scene {
     const { w, h } = this;
     const padX = marginLineX(w);
     const panW = w - padX - Math.round(w * 0.06);
-    const fs = Math.round(h * 0.022);
-    const padV = Math.round(h * 0.014);
+    const fs = Math.round(h * 0.033);
+    const padV = Math.round(h * 0.021);
     const panH = fs * 1.6 + padV * 2;
 
     const bg = sketchPanel(panW, panH, {
@@ -301,7 +315,7 @@ export class LevelPrepScene implements Scene {
     const { w, h } = this;
     const padX = marginLineX(w);
     const panW = w - padX - Math.round(w * 0.06);
-    const fontSize = Math.round(h * 0.022);
+    const fontSize = Math.round(h * 0.033);
     const innerPadX = Math.round(panW * 0.06);
     const wrapWidth = panW - innerPadX * 2;
     const padV = Math.round(h * 0.012);
