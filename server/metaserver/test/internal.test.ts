@@ -10,10 +10,13 @@ import type { CommercialClient } from '../src/commercialClient.js';
 const KEY = 'test-internal-key';
 
 /** Fake judge: configurable available flag + fixed verdict result (no real HTTP calls). */
-function fakeGateway(opts: { available?: boolean; res?: JudgeRes } = {}): GatewayClient {
+function fakeGateway(opts: { available?: boolean; res?: JudgeRes; onJudge?: (req: unknown) => void } = {}): GatewayClient {
   return {
     available: opts.available ?? false,
-    judge: async () => opts.res ?? { ok: false },
+    judge: async (req) => {
+      opts.onJudge?.(req);
+      return opts.res ?? { ok: false };
+    },
     push: async () => {},
     presence: async () => ({}),
     invalidateFriends: async () => {},
@@ -428,6 +431,44 @@ describe('internal routes', () => {
     const m = matches[0] as { winner: number; cheat?: { side: number; accountId: string; judgeAccountId?: string } };
     expect(m.cheat).toEqual({ side: 1, accountId: 'b', judgeAccountId: 'c' });
     expect(m.winner).toBe(0); // honest side
+    await app.close();
+  });
+
+  it('PVP_LOADOUT §6.2 regression: judgeMismatch() forwards the match\'s decks to gateway.judge()', async () => {
+    const a = makeNewSave('a');
+    const b = makeNewSave('b');
+    const { cols } = fakeCols({ a, b });
+    const decks = { top: ['runner'], bottom: ['infantry_1'] };
+    let seenReq: { decks?: { top: string[]; bottom: string[] } } | undefined;
+    const gateway = fakeGateway({
+      available: true,
+      res: { ok: true, stateHash: 'HONEST', winnerSide: 0, judgeAccountId: 'c' },
+      onJudge: (req) => { seenReq = req as typeof seenReq; },
+    });
+    const app = build(cols, gateway);
+    await app.inject({
+      method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY },
+      payload: { ...mismatchPayload, replay: { ...emptyReplay(), decks } },
+    });
+    expect(seenReq?.decks).toEqual(decks);
+    await app.close();
+  });
+
+  it('friendly-shaped replay without decks (PvE/siege or an unrestricted match) → judge called with no decks key', async () => {
+    const a = makeNewSave('a');
+    const b = makeNewSave('b');
+    const { cols } = fakeCols({ a, b });
+    let seenReq: { decks?: unknown } | undefined;
+    const gateway = fakeGateway({
+      available: true,
+      res: { ok: true, stateHash: 'HONEST', winnerSide: 0, judgeAccountId: 'c' },
+      onJudge: (req) => { seenReq = req as typeof seenReq; },
+    });
+    const app = build(cols, gateway);
+    await app.inject({
+      method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY }, payload: mismatchPayload,
+    });
+    expect(seenReq?.decks).toBeUndefined();
     await app.close();
   });
 

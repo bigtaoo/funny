@@ -251,6 +251,7 @@ async function judgeMismatch(
     endFrame: body.replay.endFrame,
     frames: body.replay.frames, // command bytes are already base64; passed through as-is
     exclude: body.players.map((p) => p.accountId),
+    ...(body.replay.decks ? { decks: body.replay.decks } : {}),
   });
   if (!verdict.ok || !verdict.stateHash) return null;
 

@@ -50,6 +50,8 @@ export interface JudgeArgs {
   unitLevels?: Record<string, number>;
   /** SLG siege defense config JSON string (S8-3b): if non-empty, the judge re-runs in siege mode. */
   defenseJson?: string;
+  /** Ranked PvP deck restriction (PVP_LOADOUT §6.2): the two real match clients' decks, needed for a deterministic re-simulation. */
+  decks?: { top: string[]; bottom: string[] };
 }
 /** Judge result (returned to meta). ok=false: no eligible candidate / timeout / re-computation failed. */
 export interface JudgeResult {
@@ -374,6 +376,8 @@ export class Gateway {
             levelId: args.levelId ?? '',
             pveUpgrades: args.pveUpgrades ?? {},
             unitLevels: args.unitLevels ?? {},
+            topDeck: args.decks?.top ?? [],
+            bottomDeck: args.decks?.bottom ?? [],
           }),
         );
       } catch {

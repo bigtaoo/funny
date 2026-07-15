@@ -171,6 +171,10 @@ message JudgeRequest {
   // S12 unit progression re-simulation: non-empty unit_levels → judge uses this level map to rebuild the blueprint (replaces pve_upgrades, ensures
   // that spot-check re-simulations for highly-progressed players use the exact same blueprint as the original match, preventing false verdicts from a weaker blueprint).
   map<string, uint32>    unit_levels  = 9;
+  // Ranked PvP deck restriction (PVP_LOADOUT §6.2): same decks the two real match clients drew from via match_start.top_deck/bottom_deck.
+  // Required for a deterministic re-simulation when the original match applied deck-restricted draw filtering; empty on PvE/siege requests.
+  repeated string        top_deck     = 10;
+  repeated string        bottom_deck  = 11;
 }
 
 // ── Social real-time push (S6, SOCIAL_DESIGN §4.2) ─────────────────

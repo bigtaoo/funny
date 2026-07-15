@@ -127,6 +127,67 @@ describe('Gateway peer judge', () => {
     void p;
   });
 
+  it('ranked PvP: transport top_deck/bottom_deck forwarded to judge (PVP_LOADOUT §6.2)', async () => {
+    const port = 19514;
+    const gw = startGateway(port);
+    const [a, b, c] = await Promise.all([
+      connect(port, 'a'),
+      connect(port, 'b'),
+      connect(port, 'c'),
+    ]);
+    c.send(encodeClient({ client_caps: { can_judge: true } }));
+
+    let seenReq: Record<string, unknown> | undefined;
+    c.on('message', (data: ArrayBuffer) => {
+      const srv = decodeServer(new Uint8Array(data));
+      const req = srv['judge_request'] as Record<string, unknown> | undefined;
+      if (!req) return;
+      seenReq = req;
+      c.send(
+        encodeClient({
+          judge_verdict: { request_id: req['request_id'], state_hash: 'HONEST', winner_side: 0, ok: true },
+        }),
+      );
+    });
+
+    await sleep(50);
+    const verdict = await gw.judge({
+      seed: 7, mode: 1, endFrame: 0, frames: [], exclude: ['a', 'b'],
+      decks: { top: ['runner'], bottom: ['infantry_1'] },
+    });
+    expect(verdict.ok).toBe(true);
+    // Judge received the real match's deck restriction, not an empty/omitted field.
+    expect(seenReq?.['top_deck']).toEqual(['runner']);
+    expect(seenReq?.['bottom_deck']).toEqual(['infantry_1']);
+    void a; void b;
+  });
+
+  it('no decks on the request (PvE/siege or a friendly match) → judge sees empty top_deck/bottom_deck, not undefined', async () => {
+    const port = 19515;
+    const gw = startGateway(port);
+    const [a, c] = await Promise.all([connect(port, 'a'), connect(port, 'c')]);
+    c.send(encodeClient({ client_caps: { can_judge: true } }));
+
+    let seenReq: Record<string, unknown> | undefined;
+    c.on('message', (data: ArrayBuffer) => {
+      const srv = decodeServer(new Uint8Array(data));
+      const req = srv['judge_request'] as Record<string, unknown> | undefined;
+      if (!req) return;
+      seenReq = req;
+      c.send(
+        encodeClient({
+          judge_verdict: { request_id: req['request_id'], state_hash: 'H', winner_side: 0, ok: true },
+        }),
+      );
+    });
+
+    await sleep(50);
+    const verdict = await gw.judge({ seed: 1, mode: 1, endFrame: 0, frames: [], exclude: ['a'] });
+    expect(verdict.ok).toBe(true);
+    expect(seenReq?.['top_deck'] ?? []).toEqual([]);
+    expect(seenReq?.['bottom_deck'] ?? []).toEqual([]);
+  });
+
   it('no eligible candidate (nobody reported canJudge) → {ok:false}', async () => {
     const port = 19511;
     const gw = startGateway(port);

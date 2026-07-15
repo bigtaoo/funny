@@ -25,6 +25,8 @@ export interface JudgeReq {
   levelId?: string;
   /** Server-authoritative blueprint snapshot (upgrade levels), ensures PvE re-computation is deterministic. */
   pveUpgrades?: Record<string, number>;
+  /** Ranked PvP deck restriction (PVP_LOADOUT §6.2): the two real match clients' decks, needed for a deterministic re-simulation. */
+  decks?: { top: string[]; bottom: string[] };
 }
 
 export interface JudgeRes {

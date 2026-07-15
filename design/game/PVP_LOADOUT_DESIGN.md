@@ -146,6 +146,20 @@
 
 回归测试：`client/test/pvp-ai-deck-gate.test.ts`（人机局镜像门禁 + 无 deck 时全卡池泄漏对照）、`matchsvc.test.ts`（空 deck→default / 提交 deck 透传）、`gateway-routing.test.ts`（好友房锁牌剔除 + join 透传）。
 
+### 6.5 录像/裁判重建同样必须带 `decks`（2026-07-15 补漏）
+
+> 起因：修录像分享 bug（`client/src/scenes/ReplayScene.ts` 重建引擎时漏传 `decks`，回放会从全卡池抽卡，ELO 锁定卡凭空出现）时发现同源漏洞——`client/src/net/judgeRunner.ts` 的 `runJudge()`（S1-J 对等裁判，见 §7.1 上文 META_TASKS.md S1-J）重建引擎复算终局哈希时同样没传 `decks`。ranked 局若启用了卡组限制，裁判复算天然全卡池，算出的哈希永远对不上双方真实哈希——裁判仲裁机制永久失效（或更糟，可能误判老实玩家作弊）。
+
+任何**重建/复算**引擎的路径都必须带上原局的 `decks`，不能只在录制路径修：
+
+| 路径 | 状态 |
+|---|---|
+| `client/src/scenes/ReplayScene.ts`（本地/分享录像重放） | ✅ 已修（`replay.decks` 传入引擎配置） |
+| `client/src/net/judgeRunner.ts` `runJudge()`（S1-J 裁判无头复算） | ✅ 已修：`transport.proto` `JudgeRequest` 加 `top_deck`/`bottom_deck`；`Gateway.ts`/`internalHttp.ts`/`gatewayClient.ts`/`matchReport.ts` 一路透传原局 `decks`；`judgeRunner.buildReplay()` 写回 `Replay.decks` 并传给 `runHeadless` 的 `GameConfig.decks` |
+| `client/src/net/judgeRunner.ts` `runPveJudge`/`runSiegeJudge` | 不适用（PvE/攻城走 `pveUpgrades`/`unitLevels` 蓝图，不经过 PvP `decks` 白名单） |
+
+回归测试：`client/test/judge-runner.test.ts`「deck-restricted ranked matches」组——裁判拿到真实 `decks` 时复算哈希与权威引擎一致；不传 `decks`（修复前行为）时哈希必然对不上，直接证明漏洞的现实后果。
+
 ---
 
 ## 7. 美术现实 & 遗留
