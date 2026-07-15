@@ -180,8 +180,8 @@
 
 **问题 1：占地（`kind:'occupy'`）从未接入真实卡牌军队。** `combatMarch.ts` 目前只在 `kind==='attack' && teamId` 时读取真实布阵（`resolveCardArmy`），占地 march 永远用 `synthesizeArmy(troops,'attacker')` 把兵力数字合成成通用步兵去打 `npcGarrison(level)`，与玩家真实卡牌等级/装备/兵种无关——三战式"高级队伍打低级地基本不掉血"这条效果因此从未在占地这个最高频场景上体现，只在打其他玩家/主城时体现。
 
-- **修复**：`startMarch` 允许 `kind==='occupy'` 也带 `teamId`（沿用 `pw.teams` 里已保存的布阵模板，校验逻辑与 `attack` 分支一致）；`occupation.ts` 的 `applyOccupy`/`applyOccupationExpulsion` 比照 `arrival.ts` 的 `hasCardArmy` 判断，卡牌布阵走 `resolveCardArmy` + 真实引擎战斗 + `cardInstances`/`equipmentInv` 注入（复用 §16.5 已有的 CC-3 管线），非卡牌布阵保留 `synthesizeArmy` 兜底。
-- 客户端出征选队 UI（`showAttackTeamPicker` 一类）随之对占地/驱逐分支开放选队入口，不再局限于攻击。
+- **服务端已修复（2026-07-15）**：`startMarch` 允许 `kind==='occupy'` 也带 `teamId`（沿用 `pw.teams` 里已保存的布阵模板，校验逻辑与 `attack` 分支一致）；`occupation.ts` 的 `applyOccupy`/`applyOccupationExpulsion` 比照 `arrival.ts` 的 `hasCardArmy` 判断，卡牌布阵走 `resolveCardArmy` + 真实引擎战斗 + `cardInstances`/`equipmentInv` 注入（复用 §16.5 已有的 CC-3 管线），非卡牌布阵保留 `synthesizeArmy` 兜底。e2e 已验证：12 卡满编队伍打 level≤1 地（`npcGarrison=120`）近乎不掉血。
+- **客户端 UI 待补（未在本次范围内）**：目前占地弹窗走的是 `showDeployDialog(tx,ty,'occupy')`（纯兵力数字输入），不是攻击用的 `showAttackTeamPicker` 选队流程——服务端接口已支持占地带 `teamId`，但客户端还没有暴露"用哪支队伍去占地"的入口，玩家实际操作层面暂时还摸不到这条新能力，需要后续一个单独的客户端任务把占地弹窗也接上选队 UI。
 
 **问题 2：卡牌布阵行军会同时扣/退地图兵力池，制造双重记账。** `startMarch` 对**任何**行军（不分卡牌队伍还是散兵）都会在出征时 `$inc:{troops:-troops}`（`troops`=队伍全部卡牌 HP 之和），到达/扑空/驱逐/围攻失败等分支又统一走 `refundTroops(pw, survivors)` 把存活值加回 `playerWorld.troops`；与此同时卡牌胜负结算（`computeCardStateUpdates`）**又单独**把同一批存活值写回 `cardState.{id}.currentTroops`。等于同一次战斗的存活兵力被记了两遍账（一份进地图池，一份留在卡上），且卡牌队伍出征凭空临时"占用"了一段与之无关的地图兵力池容量。
 

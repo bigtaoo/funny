@@ -128,10 +128,12 @@ export class MarchService {
     if (!this.core.inBounds(fromX, fromY) || !this.core.inBounds(toX, toY)) {
       throw new SlgError('OUT_OF_RANGE', 'Coordinates out of bounds');
     }
-    // Siege with a team (G3-2c): draw the army from the saved attack formation template; committed troops = sum of troops assigned to each unit.
-    // The team can be edited after departure without affecting the in-transit march (the army snapshot is persisted with MarchDoc). Not attack or no team → use flat troops.
+    // Siege with a team (G3-2c; occupy also since 2026-07-15 SLG_DESIGN §4.2): draw the army from the saved
+    // attack formation template; committed troops = sum of troops assigned to each unit. The team can be edited
+    // after departure without affecting the in-transit march (the army snapshot is persisted with MarchDoc).
+    // Neither attack nor occupy, or no team → use flat troops (synthesized generic units at combat time).
     let army: ArmyEntry[] | undefined;
-    if (kind === 'attack' && teamId) {
+    if ((kind === 'attack' || kind === 'occupy') && teamId) {
       const team = (pw.teams ?? []).find((t) => t.id === teamId);
       if (!team || team.army.length === 0) throw new SlgError('BAD_REQUEST', 'Team does not exist or is empty');
       army = team.army;
@@ -256,8 +258,8 @@ export class MarchService {
       kind,
       troops,
       ...(army && army.length > 0 ? { army } : {}),
-      // ADR-026: record the deployed team slot so it is skipped as a defender while out (only meaningful for team-based attacks).
-      ...(kind === 'attack' && teamId ? { teamId } : {}),
+      // ADR-026: record the deployed team slot so it is skipped as a defender while out (meaningful for both team-based attacks and, since 2026-07-15, occupy marches).
+      ...((kind === 'attack' || kind === 'occupy') && teamId ? { teamId } : {}),
       departAt,
       arriveAt,
       status: 'marching',
