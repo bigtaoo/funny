@@ -115,6 +115,11 @@ function main(): void {
   const heartbeat = setInterval(() => {
     for (const conn of conns()) {
       if (!conn.alive) {
+        log.warn('heartbeat missed 2 consecutive pongs -> terminating connection', {
+          accountId: conn.accountId,
+          roomId: conn.roomId,
+          side: conn.side,
+        });
         conn.ws.terminate();
         continue;
       }

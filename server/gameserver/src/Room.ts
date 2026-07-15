@@ -8,6 +8,7 @@
 // Tick rate: simulation 30Hz; network 10Hz, one frame_batch dispatched every 100ms (covering 3 sim frames).
 // cmd_submit lands on "the frame for the current window" = to_frame of the current batch;
 // multiple commands in the same frame are sorted deterministically by side in ascending order.
+import { createLogger } from '@nw/shared';
 import { Connection } from './Connection';
 import {
   MatchMode,
@@ -17,6 +18,8 @@ import {
   type PlayerSlotOut,
   type SideCmd,
 } from './proto/transport';
+
+const log = createLogger('game');
 
 const FRAMES_PER_BATCH = 3; // sim 30Hz ÷ net 10Hz
 const BATCH_MS = 100;
@@ -220,6 +223,7 @@ export class Room {
     if (!slot) return;
     if (this.phase === RoomPhase.IN_MATCH) {
       const peer = this.slots.find((s) => s.side !== side);
+      log.info('explicit leave -> forfeit', { roomId: this.roomId, accountId: slot.accountId, side, curFrame: this.curFrame });
       void this.endMatch({ winnerSide: peer ? peer.side : -1, reason: 'disconnect', hashOk: true });
       return;
     }
@@ -239,9 +243,22 @@ export class Room {
     }
     this.stopMetronome();
     const peer = this.slots.find((s) => s.side !== side && s.conn);
+    log.warn('WS closed mid-match -> grace period started', {
+      roomId: this.roomId,
+      accountId: slot.accountId,
+      side,
+      curFrame: this.curFrame,
+      graceMs: GRACE_MS,
+    });
     peer?.conn?.send({ case: 'peer_dc', side, graceMs: GRACE_MS });
     this.graceTimer = setTimeout(() => {
       this.graceTimer = null;
+      log.warn('grace period expired -> forfeit by disconnect', {
+        roomId: this.roomId,
+        accountId: slot.accountId,
+        side,
+        curFrame: this.curFrame,
+      });
       void this.endMatch({
         winnerSide: peer ? peer.side : -1,
         reason: 'disconnect',
