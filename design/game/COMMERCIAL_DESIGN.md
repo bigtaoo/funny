@@ -167,8 +167,11 @@ POST /internal/ads/credit
 ```
 客户端 ──POST /gacha/draw {poolId,count}──→ meta
   meta: 校验 JWT→accountId；orderId = uuid()
+  meta: getOrCreateSave(accountId) 与下面的 commercial 调用**并发发起**（互不依赖，2026-07-15 起）
   meta ──POST /internal/gacha/draw {accountId,poolId,count,orderId}──→ commercial
-     commercial(单文档原子):
+     commercial(2026-07-15 起并行化幂等前置读):
+        0) Promise.all[ orders.findOne(orderId) 幂等检查, resolvePool(poolId), ensureWallet(accountId) ]
+           （三者互不依赖；命中幂等重放时 resolvePool/ensureWallet 的结果被丢弃，代价换取非重放路径的两次 round-trip）
         1) wallets 扣币(coins>=cost 守卫) + 更新 pity        ┐ 一个 findOneAndUpdate
         2) crypto 真随机按 weight + 保底 → results           ┘ 同文档
         3) 写 ledger(delta=-cost, orderId) + gachaHistory + orders(status:'charged')
@@ -176,13 +179,22 @@ POST /internal/ads/credit
   meta:
         4) 据 results 把物品写进 saves.inventory（幂等：若 save 已记录该 orderId 已发则跳过）
         5) ──POST /internal/order/delivered {orderId}──→ commercial (orders.status:'delivered')
+           **fire-and-forget（2026-07-15 起）**：不 await，失败只记日志——是纯 bookkeeping，
+           丢单由下面的崩溃恢复对账兜底，不应卡住给客户端的响应
         6) save.wallet.coins = coinsAfter；save.gacha.pity = pityAfter（镜像）
+        7) bumpRetentionTask('gacha.draw') 同样 fire-and-forget（2026-07-15 起）：返回给客户端的
+           retention 字段由本地纯函数 accrueRetentionTask 计算，不依赖这次 DB 写落地
   客户端 ← { save: SaveData, results }（播开箱动画）
 ```
 
+> **2026-07-15 延迟重构**：原链路是 2 次同步跨服务 HTTP + 10-13 次串行 Mongo round-trip，在 2vCPU VPS 上叠加 CPU 争抢后感觉到 ~1s 延迟（诊断过程见 `gacha-draw-latency-2026-07-15` 记忆，排除了慢查询/缺索引/N+1）。本次只做上面三处并发化/异步化，**不改动 insert-first 占槽幂等模式本身**。回归覆盖：
+> - `commercial/test/service-idempotency.e2e.test.ts`「gachaDraw: concurrent duplicate orderId...」（已有，6 路并发同 orderId，断言只扣一次币）+ 新增「gachaDraw: N concurrent DISTINCT draws...」（10 路并发不同 orderId，断言各自扣款/各自入账，互不干扰）。
+> - `metaserver/test/economy.e2e.test.ts` 新增「gacha: fire-and-forget orderDelivered failure...」：模拟 delivered 回执失败，断言响应仍正常返回物品/扣款，订单留在 `charged` 可被下次 `GET /save` 对账补发、不重复发放。
+> - 已知与本次改动无关的既存竞态（未修，仅记录）：`wallet.gacha.pity` 用非原子 `$set`（基于扣币前读到的 `prevPity` 计算），同账号真并发的多笔**不同** orderId 抽卡可能丢失保底计数递增——这在并行化之前就存在（读 pity 本就发生在扣币之前），不在本次任务范围内。
+
 **崩溃恢复（对账）**：
 - meta 在第 3 步后、第 4 步前崩 → commercial 有 `status:'charged'` 但未 `delivered` 的订单。**对账兜底**：玩家下次 `GET /save` 时 meta 调 commercial 拉「该账号未发货订单」→ 补发物品 → 标 delivered。订单含完整 `result`，发货可重放且幂等。
-- 第 4 步成功、第 5 步失败 → 订单停在 `charged`，下次对账重发 delivered（meta 发货幂等，不会重复给物品）。
+- 第 4 步成功、第 5 步的 fire-and-forget 请求失败或丢失 → 订单停在 `charged`，下次对账重发 delivered（meta 发货幂等，不会重复给物品）——这与之前同步失败的兜底路径完全一致，只是现在这条路径更容易被触发（不再阻塞等待网络成功）。
 - commercial 扣币本身原子，**绝不会扣了币随机结果丢失**（结果在扣币同一次操作里生成并落库）。
 
 ### 6.2 充值（纯加币，无 meta 发货）

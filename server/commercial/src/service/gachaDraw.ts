@@ -46,7 +46,15 @@ export function GachaDrawMixin<TBase extends CommercialBaseCtor>(Base: TBase): T
         fatePointsAfter: number;
       }>
     > {
-      const existing = await this.cols.orders.findOne({ _id: args.orderId });
+      // These three reads are mutually independent (keyed by orderId / poolId / accountId respectively) — run them
+      // concurrently instead of serially. On the common (non-replay) path this saves two Mongo round-trips; on a
+      // replay it does a bit of unneeded work (resolvePool/ensureWallet are unused below), which is an acceptable
+      // trade since replays are the rare case (client retry of an already-completed draw).
+      const [existing, resolved, wallet] = await Promise.all([
+        this.cols.orders.findOne({ _id: args.orderId }),
+        this.resolvePool(args.poolId, this.now()),
+        this.ensureWallet(args.accountId),
+      ]);
       if (existing && existing.result.results) {
         const w = await this.cols.wallets.findOne({ _id: existing.accountId });
         return {
@@ -59,14 +67,12 @@ export function GachaDrawMixin<TBase extends CommercialBaseCtor>(Base: TBase): T
           fatePointsAfter: w?.fatePoints ?? 0,
         };
       }
-      const resolved = await this.resolvePool(args.poolId, this.now());
       if (!resolved || (args.count !== 1 && args.count !== 10)) {
         return { ok: false, error: resolved ? 'BAD_REQUEST' : 'POOL_UNAVAILABLE' };
       }
       const cost =
         resolved.kind === 'custom' ? customPoolCost(resolved.cfg, args.count) : gachaCost(resolved.pool, args.count);
 
-      const wallet = await this.ensureWallet(args.accountId);
       if (wallet.coins < cost) return { ok: false, error: 'INSUFFICIENT_FUNDS' };
 
       const prevPity = wallet.gacha.pity[args.poolId] ?? 0;

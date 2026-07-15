@@ -87,7 +87,10 @@ class FakeCommercial implements CommercialClient {
     this.orders.set(a.orderId, { accountId: a.accountId, kind: 'gacha', status: 'charged', result: { results, poolId: a.poolId } });
     return { ok: true as const, orderId: a.orderId, coinsAfter: this.bal(a.accountId), pityAfter: p, results };
   }
+  /** Simulates a network/commercial-side failure on the fire-and-forget orderDelivered call (2026-07-15 latency fix). */
+  failDelivered = false;
   async orderDelivered(a: { orderId: string; refundCoins?: number }) {
+    if (this.failDelivered) throw new Error('simulated orderDelivered failure');
     const o = this.orders.get(a.orderId);
     if (!o) return { ok: false as const, error: 'NOT_FOUND' };
     if (o.status === 'delivered') return { ok: true as const };
@@ -235,6 +238,25 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     const r2 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
     expect(r2.data.results[0].duplicate).toBe(true);
     expect(r2.data.save.inventory.skins.filter((s: string) => s === 'skin_l1')).toHaveLength(1);
+  });
+
+  it('gacha: fire-and-forget orderDelivered failure does not block the response, and the order stays reconcilable (2026-07-15 latency fix)', async () => {
+    comm.coins.set(accountId, 1000);
+    comm.nextResults = [{ itemId: 'skin_l1', rarity: 'legendary' }];
+    comm.failDelivered = true;
+    const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+    // The client still gets the delivered item + charged coins even though the delivered-marking call failed.
+    expect(r.data.results[0]).toMatchObject({ itemId: 'skin_l1', rarity: 'legendary', duplicate: false });
+    expect(r.data.save.inventory.skins).toContain('skin_l1');
+    expect(r.data.save.wallet.coins).toBe(850);
+    // Let the fire-and-forget orderDelivered call's rejection settle (it's not awaited by the handler).
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(await comm.undeliveredOrders(accountId)).toHaveLength(1); // order still 'charged', not 'delivered'
+    // Next login (GET /save) reconciles it: marks delivered, does not re-grant the skin a second time.
+    comm.failDelivered = false;
+    const r2 = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    expect(r2.data.save.inventory.skins.filter((s: string) => s === 'skin_l1')).toHaveLength(1);
+    expect(await comm.undeliveredOrders(accountId)).toHaveLength(0);
   });
 
   // (The separate `units` gacha pool + its cardInventory delivery/reconciliation were removed on 2026-07-03;
