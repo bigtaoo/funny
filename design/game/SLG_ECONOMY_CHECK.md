@@ -200,7 +200,8 @@ capitalMult(tier) = 该档玩家所属宗门持中原首府(CENTER_CAPITAL_IDX=9
 
 一批 SLG 数值「过经济核验」的完整定义：
 
-- [x] **A 轨已过核验（2026-06-30，CLOSED）**：econ-sim 三场景 **CORE 全 PASS**（§13-SLG.3）；材料→金币估值基准已确立并记录（§13-SLG.1，binding=400 保守上界）；细水已计入。**人均稀释 ✅**（participant 0.11% / champion 13.36%）+ **全服通胀 ✅**（vs 材料龙头 0.45–4.01%）+ **coins=0 ✅**。头部倾斜经经济负责人拍板**降级为 informational**（采纳方案 a，护栏改由 champion 绝对稀释承担，§13-SLG.4-2）。
+- [ ] **A 轨——2026-07-15 重跑发现场景配置过期，回归到 baseline/aggressive FAIL（ECONOMY_NUMBERS §13-SLG.6）**：根因是 `WORLD_CAPACITY` 2026-07-07 从 10000 降到 500（ADR-032）后，`server/tools/econ-sim/scenarios/*.json` 的 `topSectMembers` 没跟着按 shard 容量缩放，导致 `headsServerWide` 虚增 20×（aggressive 场景甚至冠军宗门人数超过全服总人口，物理不可能）。**不是 `SETTLE_REWARDS` 真的破防**，是场景校准 bug。修复：按 500/10000 比例重新缩放三场景 `topSectMembers`，重跑确认三场景恢复 CORE PASS 后再重新登记 CLOSED（下面这行 2026-06-30 的结论暂不作废，留作历史记录，当前状态以 §13-SLG.6 为准）：
+  - ~~**A 轨已过核验（2026-06-30，CLOSED）**：econ-sim 三场景 **CORE 全 PASS**（§13-SLG.3）；材料→金币估值基准已确立并记录（§13-SLG.1，binding=400 保守上界）；细水已计入。**人均稀释 ✅**（participant 0.11% / champion 13.36%）+ **全服通胀 ✅**（vs 材料龙头 0.45–4.01%）+ **coins=0 ✅**。头部倾斜经经济负责人拍板**降级为 informational**（采纳方案 a，护栏改由 champion 绝对稀释承担，§13-SLG.4-2）。**~~
 - [x] **A-coin**：`SETTLE_REWARDS.coins` = 0（econ-sim 校验 ✅）；若改 >0，须并入 §6.1 预算且经济负责人签字。
 - [x] **B 轨（全 ✅ CLOSED 2026-06-30）**：
   - **建造/练兵节奏 ✅**（econ-sim `city.ts`/`cityRun.ts`，结论 [§13-SLG-CITY](ECONOMY_NUMBERS.md)：资源门控数周肝、落 60 天窗口、乘子合理；informational：drillYard L13 提速触底 / sticker 自我门控）。
