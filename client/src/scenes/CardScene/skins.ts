@@ -24,12 +24,16 @@ export interface SkinsHandlers {
 
 // Wardrobe card grid constants — sized to sit alongside the roster grid's CARD_CELL_W_TARGET (300)
 // while being wide enough to hold a portrait + a row of skin tiles side by side.
-const CARD_W_TARGET = 620;
-const CARD_PAD = 14;
-const PORTRAIT_MAX_H = 150;
+// Cards are 1.5x taller than the original cut (2026-07-15 follow-up); CARD_W_TARGET is sized to fit
+// exactly a 2-tile row (default look + one skin, the common case) instead of a wide target that left
+// most of the card blank once the tile row wrapped.
+const CARD_W_TARGET = 440;
+const CARD_PAD = 18;
+const PORTRAIT_MAX_H = 225;
 const PORTRAIT_RATIO = 0.72; // matches the roster cell's tall-portrait framing (see roster-card-fullheight-portrait memory)
-const HEADER_H = 32;
-const TILE_W = 84, TILE_H = 84, TILE_GAP = 8;
+const PORTRAIT_TILE_GAP = 14;
+const HEADER_H = 44;
+const TILE_W = 108, TILE_H = 108, TILE_GAP = 10;
 
 export function SkinsMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase & Constructor<SkinsHandlers> {
   return class extends Base {
@@ -43,7 +47,10 @@ export function SkinsMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase 
       const owned = this.cb.getOwnedSkins();
       const defs = Object.values(CARD_DEFS);
       const cols = Math.max(1, Math.floor((avail + CELL_GAP) / (CARD_W_TARGET + CELL_GAP)));
-      const cellW = (avail - CELL_GAP * (cols - 1)) / cols;
+      // Clamp cellW near CARD_W_TARGET instead of stretching cards to fill the row —
+      // dividing avail evenly across cols left wide blank margins next to the (fixed-size)
+      // portrait + tile content once cardW exceeded what the content actually needed.
+      const cellW = Math.min((avail - CELL_GAP * (cols - 1)) / cols, CARD_W_TARGET * 1.15);
 
       // Masonry: each character card can be a different height (more skins → more tile rows), so
       // columns are packed independently — every card goes into whichever column is currently shortest.
@@ -81,8 +88,8 @@ export function SkinsMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase 
       ];
 
       const portraitW = Math.round(PORTRAIT_MAX_H * PORTRAIT_RATIO);
-      const tileAreaX = x + CARD_PAD + portraitW + 12;
-      const tileAreaW = cardW - CARD_PAD * 2 - portraitW - 12;
+      const tileAreaX = x + CARD_PAD + portraitW + PORTRAIT_TILE_GAP;
+      const tileAreaW = cardW - CARD_PAD * 2 - portraitW - PORTRAIT_TILE_GAP;
       const tilesPerRow = Math.max(1, Math.floor((tileAreaW + TILE_GAP) / (TILE_W + TILE_GAP)));
       const rows = Math.ceil(tiles.length / tilesPerRow);
       const tileAreaH = rows * (TILE_H + TILE_GAP) - TILE_GAP;
