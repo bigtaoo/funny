@@ -866,6 +866,7 @@ export const de: Record<TranslationKey, string> = {
   'world.team.noTeams': 'Noch keine Teams — erst eine Aufstellung anlegen',
   'world.team.manage': 'Teams verwalten',
   'world.team.emptyArmy': 'Dieses Team hat keine Aufstellung',
+  'world.team.busy': 'Im Marsch / bei der Besetzung',
   // Trainingswarteschlange / Ressourcen (C4)
   'world.train': 'Ausbilden',
   'world.trainTitle': 'Ausbildung · Ressourcen',
@@ -963,6 +964,9 @@ export const de: Record<TranslationKey, string> = {
   'sect.browse': 'Sekten durchsuchen',
   'sect.name': 'Sektenname',
   'sect.tag': 'Tag (2-5 Großbuchstaben/Ziffern)',
+  'sect.tagLabel': 'Tag',
+  'sect.tagHint': '2–5 Großbuchstaben oder Ziffern',
+  'sect.createTitle': 'Sekte gründen',
   'sect.createHint': 'Kostet Münzen; nur Familienoberhaupt',
   'sect.join': 'Beitreten',
   'sect.leave': 'Sekte verlassen',
@@ -1451,4 +1455,12 @@ export const de: Record<TranslationKey, string> = {
   'world.team.fillTroopsErr': 'Auffüllen fehlgeschlagen',
   'world.team.troopsStatus': '{cur}/{cap}',
   'world.team.injured': 'Verletzt',
+
+  'world.team.marching': 'Im Marsch',
+  'world.team.occupying': 'Besetzt, noch {time}',
+  'world.team.cancelOccupy': 'Aufgeben',
+  'world.team.cancelOccupyConfirm': 'Bestätigen?',
+  'world.team.cancelOccupyOk': 'Besetzung aufgegeben, Team ist frei',
+  'world.team.cancelOccupyErr': 'Abbruch fehlgeschlagen',
+  'world.team.recallErr': 'Rückruf fehlgeschlagen',
 };

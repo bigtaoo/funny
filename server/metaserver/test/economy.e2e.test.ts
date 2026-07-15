@@ -39,6 +39,7 @@ class FakeCommercial implements CommercialClient {
     return this.coins.get(id) ?? 0;
   }
   subscriptions = new Map<string, { expiry: number; lastClaimDayKey?: string }>();
+  starterUsed = new Map<string, string[]>();
   async getWallet(id: string) {
     const sub = this.subscriptions.get(id);
     return {
@@ -47,8 +48,21 @@ class FakeCommercial implements CommercialClient {
       fatePoints: 0,
       subscriptionExpiry: sub?.expiry ?? 0,
       subscriptionLastClaimDay: sub?.lastClaimDayKey,
-      starterUsed: [],
+      starterUsed: this.starterUsed.get(id) ?? [],
     };
+  }
+  async starterBuy(a: { accountId: string; productId: string; orderId: string }) {
+    const used = this.starterUsed.get(a.accountId) ?? [];
+    if (used.includes(a.productId)) return { ok: false as const, error: 'ALREADY_PURCHASED' };
+    this.starterUsed.set(a.accountId, [...used, a.productId]);
+    if (a.productId === 'starter_growth') {
+      const expiry = Date.now() + 7 * 24 * 60 * 60 * 1000;
+      this.subscriptions.set(a.accountId, { ...this.subscriptions.get(a.accountId), expiry });
+      this.coins.set(a.accountId, this.bal(a.accountId) + 3300);
+      return { ok: true as const, coinsAfter: this.bal(a.accountId), subscriptionExpiry: expiry, results: [] };
+    }
+    const results: GachaResultEntry[] = [{ itemId: 'skin_l1', rarity: 'legendary' }];
+    return { ok: true as const, coinsAfter: this.bal(a.accountId), subscriptionExpiry: this.subscriptions.get(a.accountId)?.expiry ?? 0, results };
   }
   async monthlyCardBuy(a: { accountId: string; orderId: string }) {
     const expiry = Date.now() + 30 * 24 * 60 * 60 * 1000;
@@ -227,6 +241,18 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(r.statusCode).toBe(402);
   });
 
+  it('shop direct purchase: kind="item" (protect_enhance) delivers to inventory.items, not inventory.skins (regression — shopBuy used to always route through the skin path)', async () => {
+    comm.coins.set(accountId, 1000);
+    const r = body(await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'protect_enhance' } }));
+    expect(r.data.granted).toBe('protect_enhance');
+    expect(r.data.save.inventory.items?.protect_enhance).toBe(1);
+    expect(r.data.save.inventory.skins).not.toContain('protect_enhance');
+    expect(r.data.save.wallet.coins).toBe(500); // 1000-500
+    // Buying a second one increments the stack instead of no-op'ing like a skin re-buy would.
+    const r2 = body(await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'protect_enhance' } }));
+    expect(r2.data.save.inventory.items?.protect_enhance).toBe(2);
+  });
+
   it('gacha: deduct coins → deliver new skin + mark duplicate + mirror pity', async () => {
     comm.coins.set(accountId, 1000);
     comm.nextResults = [{ itemId: 'skin_l1', rarity: 'legendary' }];
@@ -259,8 +285,15 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(await comm.undeliveredOrders(accountId)).toHaveLength(0);
   });
 
-  // (The separate `units` gacha pool + its cardInventory delivery/reconciliation were removed on 2026-07-03;
-  // unit cards now come only from PvE level drops — covered by pve.e2e.test.ts.)
+  it('gacha: standard-pool character card result lands in cardInv, not inventory.skins (regression — gachaDraw used to skip the loot-box category routing entirely)', async () => {
+    comm.coins.set(accountId, 1000);
+    comm.nextResults = [{ itemId: 'suyuan', rarity: 'epic' }];
+    const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+    expect(r.data.results[0]).toMatchObject({ itemId: 'suyuan', rarity: 'epic' });
+    const cards: Array<{ defId: string }> = Object.values(r.data.save.cardInv ?? {});
+    expect(cards.some((c) => c.defId === 'suyuan')).toBe(true);
+    expect(r.data.save.inventory.skins).not.toContain('suyuan');
+  });
 
   it('ad cap: more than 5 times → 429', async () => {
     for (let i = 0; i < 5; i++) {
@@ -303,6 +336,35 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
 
     const save = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
     expect(save.data.save.monetization.subscriptionLastClaimDay).toBe(dayKey);
+  });
+
+  it('starter growth: buy within the 7-day window succeeds and mirrors starterUsed + eligibility', async () => {
+    const r = body(await app.inject({ method: 'POST', url: '/starter/buy', headers: auth(), payload: { productId: 'starter_growth' } }));
+    expect(r.data.save.monetization.starterUsed).toContain('starter_growth');
+    expect(r.data.save.wallet.coins).toBe(3300);
+    // Already claimed — eligibility mirror is irrelevant now (client hides the card via starterUsed), but must not read false.
+    expect(r.data.save.monetization.starterGrowthEligible).not.toBe(false);
+  });
+
+  it('starter growth: window closed (account older than 7 days) → 403, card left unclaimed, eligibility mirrored false so the client can hide it (2026-07-15 fix — client used to keep showing a Buy button that always 403s)', async () => {
+    fakeNow += 8 * 24 * 60 * 60 * 1000; // account was created at the original fakeNow in beforeEach
+    const r = await app.inject({ method: 'POST', url: '/starter/buy', headers: auth(), payload: { productId: 'starter_growth' } });
+    expect(r.statusCode).toBe(403);
+    expect(comm.starterUsed.get(accountId)).toBeUndefined(); // never charged/claimed
+    const save = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    expect(save.data.save.monetization?.starterGrowthEligible).toBe(false);
+  });
+
+  it('starter draw: not gated by account age — still buyable after the growth pack window closes', async () => {
+    fakeNow += 8 * 24 * 60 * 60 * 1000;
+    const r = body(await app.inject({ method: 'POST', url: '/starter/buy', headers: auth(), payload: { productId: 'starter_draw' } }));
+    expect(r.data.save.monetization.starterUsed).toContain('starter_draw');
+  });
+
+  it('starter growth: already purchased → 409', async () => {
+    await app.inject({ method: 'POST', url: '/starter/buy', headers: auth(), payload: { productId: 'starter_growth' } });
+    const r = await app.inject({ method: 'POST', url: '/starter/buy', headers: auth(), payload: { productId: 'starter_growth' } });
+    expect(r.statusCode).toBe(409);
   });
 
   it('commercial not configured → economy endpoints 503', async () => {

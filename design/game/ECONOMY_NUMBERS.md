@@ -466,7 +466,7 @@ value(material) = DUPE_REFUND_COINS[该材料所在 gacha 稀有度档] / GACHA_
 | `SETTLE_REWARDS.participant.items` | scrap50/lead20/**binding0** | settle | 其余全部人头（主导项） |
 | `SETTLE_REWARDS.*.coins` | **0** | settle | 红线：保持 0 |
 | `CENTER_CAPITAL_MULT` / `CENTER_CAPITAL_IDX` | ×2 / 9 | settle | 持中原首府的宗门成员材料 ×2 |
-| `WORLD_CAPACITY` | **10000**（G6 多分片 shard 容量常量，与 U4 单大区目标 300–500 活跃玩家是两回事，二者曾被混记；2026-07-05 用新 500×500 地图重跑 §13-SLG-F 后确认工程可行性 ✅ PASS，见下） | 运维 | 单 shard 人口上限（触发开新 shard）→ shard 数 |
+| `WORLD_CAPACITY` | **500**（ADR-032，2026-07-07 起；此前本表长期记 10000 已过期未同步——`prosperity.ts` 早在 2026-07-07 就把常量从 10000 降到 500，本节 §13-SLG.3 的三场景 JSON 从未跟着重算，见 §13-SLG.6） | 运维 | 单 shard 人口上限（触发开新 shard）→ shard 数 |
 | 细水（日常/活动材料/人/日） | 场景输入 | settle | §0.1 计入 A 轨聚合 |
 
 繁荣度三参 `PROSPERITY_W_*`(10/50/5)、`PROSPERITY_DECAY_PER_DAY`(0.05)、`SECT_FOUND_PROSPERITY_MIN`(2000)、`sectStrengthScore` 权重、国民加成 0.10/0.15、碾压结算阈值**不在本节经济预算内**（分属 SLG_ECONOMY_CHECK B/C/D/E/F 轨，各自核验，登记见该文档）。
@@ -510,7 +510,19 @@ value(material) = DUPE_REFUND_COINS[该材料所在 gacha 稀有度档] / GACHA_
 - 皮肤限定件纯 cosmetic（ADR-003）；legendary 仍只走盲盒。
 - 数值是 DRAFT：终态判据 = 上线后 analyticsvc 实测（settle 实发总量 / participant 人头 / 首府持有率）对账，偏差回 SLG_ECONOMY_CHECK §10 重跑（惰性下季生效）。
 
-> 门控阈值 15%/10% 维持提案值（实测留足余量）；头部倾斜 10× 已弃用（降级 informational，见上）。**A 轨已过核验（2026-06-30）**——`SETTLE_REWARDS` / `CENTER_CAPITAL_MULT` 的 SLG_DESIGN §17/§21 `DRAFT` 可降级为「已过 A 轨核验（2026-06-30）」；其余参数（繁荣度/国民加成/分区/容量）待 B–F 轨各自核验（SLG_ECONOMY_CHECK §4–§8）。
+> 门控阈值 15%/10% 维持提案值（实测留足余量）；头部倾斜 10× 已弃用（降级 informational，见上）。**A 轨已过核验（2026-06-30）**——`SETTLE_REWARDS` / `CENTER_CAPITAL_MULT` 的 SLG_DESIGN §17/§21 `DRAFT` 可降级为「已过 A 轨核验（2026-06-30）」；其余参数（繁荣度/国民加成/分区/容量）待 B–F 轨各自核验（SLG_ECONOMY_CHECK §4–§8）。**⚠️ 2026-07-15 重跑发现回归，见 §13-SLG.6——上面 §13-SLG.3/.4 的「三场景全 PASS」结论已过期，勿直接引用，待 §13-SLG.6 修复后重新登记。**
+
+### 13-SLG.6 场景配置过期导致的回归 + 免费/满氪对比缺口（2026-07-15）
+
+**根因（场景 JSON 过期，不是数值真的破防）**：`server/tools/econ-sim/scenarios/{baseline,aggressive,conservative}.json` 从 `ad6ec80a`（首次建 econ-sim）之后**从未再改过**；`topSectMembers`（各档宗门的绝对人数）是按当时 `WORLD_CAPACITY=10000`（→人口/10000 个 shard）校准的绝对值。2026-07-07 `WORLD_CAPACITY` 改到 500 后（见上表订正），`shardCount = ceil(population / WORLD_CAPACITY)` 涨了 20×，但场景 JSON 里的 `topSectMembers` 没跟着按比例缩小——`headsServerWide = topSectMembers × shardCount` 因此被放大 20×：
+- `baseline`：champion 200 人/shard × 100 shard = 20,000 人头，占 5 万人口的 **40%**（不合理）
+- `aggressive`：champion 900 人/shard × 200 shard = 180,000 人头，**超过 10 万总人口**（物理不可能——赢家宗门比全服人还多）
+
+重跑 econ-sim（2026-07-15）验证了这个根因：`conservative`（topSectMembers 相对较小）仍 PASS，`baseline`/`aggressive`（未按比例缩放）CORE FAIL 在"全服通胀 vs 材料龙头"判据（10.4%/52.4%，阈值 10%）。**这是场景配置的校准 bug，不是 `SETTLE_REWARDS` 本身破防**——真实游戏里一个 shard 只有 500 人，champion 宗门绝不可能有 900 人。
+
+**修复**：把三个场景 JSON 的 `topSectMembers` 按新旧容量比 `500/10000 = 0.05` 重新缩放（baseline champion 200→10、top3 150→8、top10 80→4；aggressive champion 900→45、top3 700→35、top10 400→20；conservative 同比核对），使宗门人数重新落在单 shard 500 人的合理区间内，再重跑确认三场景恢复 CORE PASS，回填本节 §13-SLG.3。
+
+**免费玩家 vs 满氪玩家差距（本节此前从未量化，用户 2026-07-15 要求补）**：A 轨 econ-sim 只测「settle 结算奖励」这一条持久经济通路，不覆盖赛季内「练兵/建城节奏」这条真正被内购加速影响的通路——那条通路的核验在 B 轨（`cityRun.ts`，§13-SLG-CITY），目前只有 casual/active/hardcore 三档**活跃度**画像，没有对照"充值多少"。而 `SLG_SHOP_ITEMS`（`slg_speedup_*`/`slg_res_*`）在本次核验中发现**没有购买次数上限**（见 SLG_DESIGN.md §7.2 新增的购买频次限制），理论上满氪玩家可无限购买把 casual 画像下数天到一月的建造/练兵曲线压缩为瞬间完成，差距在补购买限制之前是无上界的。补丁：`cityRun.ts` 新增一个"满氪对照"输出——按 `SLG_SHOP_ITEMS` 现价 + 新增的每日购买上限，算出"每日最大氪金"能把 casual 画像的建造/练兵天数压缩到多少天，与免费天数并排列出，回填本节。
 
 ---
 
@@ -654,6 +666,7 @@ value(material) = DUPE_REFUND_COINS[该材料所在 gacha 稀有度档] / GACHA_
 2. **注记 a（informational）·drillYard 提速 L13 触底**：`DRILL_TRAIN_SPEED_STEP=0.04` × L13 = −52% 已撞 `_FLOOR=0.5`，**L13–20 七级不再提速**（只加 troopCap/队列）。非 bug，但高级 drillYard 的「提速」价值悬崖——后续若想让满级提速更顺，降 floor 或减小 step；当前可接受（高级靠 cap/队列出价值）。
 3. **注记 b（informational）·sticker 自我门控**：sticker 唯一 faucet = stickerShop 自产、且被 desk/cabinet/drillYard 当 sink 吃，低活跃档是第二慢资源（~20d）。设计意图内的 faucet/sink 张力，盯上线实测。
 4. **B 轨另一半「裸经济不破」✅ 已核（2026-06-30）**：`NATION_BONUS_PRODUCTION=0.10` 本国全占 vs 跨国扩张产出差最大 10%（≤ 判据阈值 20%），属国民加成、非城建数值，结论见 [§13-SLG-NATION](ECONOMY_NUMBERS.md)；SLG_ECONOMY_CHECK §9 B 轨已全打 ✅。
+5. **免费 vs 满氪节奏差距（2026-07-15 补，用户要求量化）**：给 `SLG_SHOP_ITEMS` 补每日购买上限后（SLG_DESIGN §7.2），`cityRun.ts` §4b 量化了"每天氪到封顶"能把 casual 档的建城天数压缩多少——每天最多买满 `slg_res_s/m/l` 各 5 次共 **21,500 coins/日**，换来**每种资源 +1,500,000/日**（叠加在免费产出上）。casual 档最慢的 paper（免费 30.5 天）压到 **1.0 天**；graphite/metal/sticker 全部压到 **≤0.2 天**。**这条差距本身不是"破防"**（赛季资源无持久沉淀，§0.1 红线不适用；花的是充值币不是白嫖），是"付费=省时间"设计意图的量化确认，量级合理（不是"1 分钱通关"级别的失控）。**未覆盖的口子**：`speedupTraining`/建造用 `BUILD_SPEEDUP_SECS_PER_COIN` 直接拿币换时间，这条**没有购买次数上限**（本次只加了 §7.2 的商品购买次数上限，没有改这条直接换算接口），理论上币多就能无限跳过训练/建造时间——留作后续（若要补，思路是给 `speedupTraining`/建筑加速也上每日总秒数上限，而不是每次购买次数）。
 
 ### 13-SLG-CITY.4 经济约束（红线复述）
 

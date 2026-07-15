@@ -21,13 +21,17 @@ import {
   proceduralTile,
   tileId,
   npcGarrison,
+  playerWorldId,
   SLG_MAP_W,
   SLG_MAP_H,
   TROOP_CAP_BASE,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
+import type { TeamTemplate, CardSLGState } from '../src/db';
 import { WorldService } from '../src/service';
 import type { WorldGatewayClient, SlgPushMsg } from '../src/gatewayClient';
+import type { WorldMetaClient } from '../src/metaClient';
+import type { CardInstance } from '@nw/shared';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_world_occupy_march_test';
@@ -106,11 +110,30 @@ describe.skipIf(!mongo)('worldsvc occupy-march e2e (ADR-037 §5.4)', () => {
     },
   };
 
+  // CC-3 card resolution (resolveCardArmy/toEngineCardInstances) needs a real cardInv from meta — worldsvc has
+  // no metaserver wired in these e2e tests (nullWorldMetaClient, available=false) by default, so this fake
+  // stands in ONLY for the one test below that needs it (kept out of the shared `svc` to avoid perturbing the
+  // async under_attack-push timing the other tests here happen to rely on).
+  let cardInv: Record<string, CardInstance>;
+  function makeMetaSvc(): WorldService {
+    const fakeMeta: WorldMetaClient = {
+      available: true,
+      async grantMaterial() { /* no-op */ },
+      async getProfile() { return null; },
+      async getSaveFields(accountId) {
+        return accountId === 'a' ? { pveUpgrades: {}, unitLevels: {}, gear: {}, equipmentInv: {}, cardInv } : null;
+      },
+      async grantTitle() { /* no-op */ },
+    };
+    return new WorldService({ cols: m.collections, redis: null, gateway: fakeGateway, meta: fakeMeta, mapW: SLG_MAP_W, mapH: SLG_MAP_H, now });
+  }
+
   beforeEach(async () => {
     await m.db.dropDatabase();
     await m.ensureIndexes();
     nowMs = 1_000_000;
     pushes = [];
+    cardInv = {};
     svc = new WorldService({
       cols: m.collections,
       redis: null,
@@ -245,6 +268,59 @@ describe.skipIf(!mongo)('worldsvc occupy-march e2e (ADR-037 §5.4)', () => {
     const finalTile = await svc.getTile(W, 'b', target.x, target.y);
     expect(finalTile).toMatchObject({ type: 'territory', mine: true, occupied: true });
     expect(finalTile.garrison).toBe(occDocB!.garrison);
+  });
+
+  it('occupy march with a real card team (2026-07-15, SLG_DESIGN §4.2): teamId now accepted for kind=occupy, card team overwhelms a weak garrison, playerWorld.troops untouched throughout', async () => {
+    const svc = makeMetaSvc(); // needs a real cardInv from meta, unlike the shared no-meta `svc` used by the other tests here
+    await svc.joinWorld(W, 'a', 10, 10);
+    const target = findCoord((t) => t.type === 'resource' && t.level <= 1, 30, 30);
+    const npc = npcGarrison(proceduralTile(W, target.x, target.y).level); // level<=1 → 120
+    await connect(svc, 'a', target); // ADR-039: border the target before marching (deducts GARRISON_PER_TILE from the pool)
+    const troopsBefore = (await svc.getMe(W, 'a')).troops!;
+
+    // 12 cards (CARD_TEAM_MAX_SIZE) at full-ish troops — each unit's HP is capped to the infantry blueprint max
+    // (60), so committed strength ≈ 12×60 = 720, the same magnitude as the flat-troop win above (npc+600) — a
+    // real card team, not a synthesized force.
+    const cardIds = Array.from({ length: 12 }, (_, i) => `card-occ-${i}`);
+    for (const id of cardIds) cardInv[id] = { id, defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false };
+    const cardStateSet: Record<string, CardSLGState> = {};
+    for (const id of cardIds) cardStateSet[id] = { currentTroops: 200, teamId: 't1' };
+    await m.collections.playerWorld.updateOne(
+      { _id: playerWorldId(W, 'a') },
+      { $set: Object.fromEntries(Object.entries(cardStateSet).map(([id, cs]) => [`cardState.${id}`, cs])) },
+    );
+    const lanes = [0, 1, 2, 3, 4, 7, 8, 9, 10, 11];
+    const teams: TeamTemplate[] = [{
+      id: 't1', name: 'Vanguard',
+      army: cardIds.map((id, i) => ({ cardInstanceId: id, unitType: 'infantry', col: lanes[i % lanes.length]!, row: 1 + Math.floor(i / lanes.length) })),
+    }];
+    await svc.setTeams(W, 'a', teams);
+
+    const mv = await svc.startMarch(W, 'a', 10, 10, target.x, target.y, 'occupy', 1, 't1');
+    // Card march: no deduction from the pool on departure.
+    expect((await svc.getMe(W, 'a')).troops).toBe(troopsBefore);
+
+    nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+
+    // Won the PvE battle → hold started; pool still untouched by the win.
+    expect((await svc.getMe(W, 'a')).troops).toBe(troopsBefore);
+    const held = await svc.getTile(W, 'a', target.x, target.y);
+    expect(held.contestedByMe).toBe(true);
+
+    // The cards' own ledgers reflect a near-lossless win (5-card team vs a trivial level<=1 garrison of 120).
+    const pw = await m.collections.playerWorld.findOne({ _id: playerWorldId(W, 'a') });
+    const survivingCardTroops = cardIds.reduce((s, id) => s + (pw?.cardState?.[id]?.currentTroops ?? 0), 0);
+    expect(survivingCardTroops).toBeGreaterThan(npc); // committed (~300) clears the garrison (120) with real HP to spare
+
+    // Hold elapses → tile ownership finalized with its own independent garrison stat (seeded from the same
+    // survivor count, but a different ledger from cardState — see SLG_DESIGN §4.2).
+    nowMs = held.contestedUntil!;
+    expect(await svc.processDueOccupations()).toBe(1);
+    const tile = await svc.getTile(W, 'a', target.x, target.y);
+    expect(tile).toMatchObject({ type: 'territory', mine: true, occupied: true });
+    expect(tile.garrison).toBeGreaterThan(0);
+    expect((await svc.getMe(W, 'a')).troops).toBe(troopsBefore); // still untouched after full settlement
   });
 
   it('legacy TerritoryService.occupyTile() (S8-1 instant, no combat) still works — kept internal/test-only per ADR-037', async () => {

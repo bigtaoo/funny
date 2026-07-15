@@ -75,11 +75,12 @@ export interface ClientAnomalyEvent {
 /** Allowlist of anomaly types accepted into Loki (prevents clients from injecting arbitrary types that inflate inline cardinality or mislead queries). */
 const ALLOWED_ANOMALY_TYPES = new Set(['mem', 'cpu', 'webgl_lost', 'anr', 'jserror', 'crash']);
 
-/** Build an anomaly logfmt line: type/publicId are mandatory, platform/detail are optional, msg comes last. */
-function buildAnomalyLine(publicId: string, platform: string | undefined, e: ClientAnomalyEvent): string {
+/** Build an anomaly logfmt line: type/publicId are mandatory, platform/buildVersion/detail are optional, msg comes last. */
+function buildAnomalyLine(publicId: string, platform: string | undefined, buildVersion: string | undefined, e: ClientAnomalyEvent): string {
   const type = ALLOWED_ANOMALY_TYPES.has(e.type) ? e.type : 'other';
   const parts = [`type=${logfmtValue(type)}`, `publicId=${logfmtValue(publicId)}`];
   if (platform) parts.push(`platform=${logfmtValue(platform)}`);
+  if (buildVersion) parts.push(`buildVersion=${logfmtValue(buildVersion)}`);
   if (e.detail) parts.push(`detail=${logfmtValue(e.detail)}`);
   parts.push(`msg=${logfmtValue(e.msg)}`);
   return parts.join(' ');
@@ -93,12 +94,13 @@ export function buildAnomalyLokiPayload(
   publicId: string,
   events: ClientAnomalyEvent[],
   platform: string | undefined,
+  buildVersion: string | undefined,
   fallbackNs: () => string,
 ): { streams: { stream: Record<string, string>; values: [string, string][] }[] } | null {
   const values: [string, string][] = [];
   for (const e of events) {
     const ns = Number.isFinite(e.ts) && e.ts > 0 ? (BigInt(Math.floor(e.ts)) * 1_000_000n).toString() : fallbackNs();
-    values.push([ns, buildAnomalyLine(publicId, platform, e)]);
+    values.push([ns, buildAnomalyLine(publicId, platform, buildVersion, e)]);
   }
   if (values.length === 0) return null;
   return { streams: [{ stream: { source: 'client', kind: 'anomaly' }, values }] };

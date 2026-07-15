@@ -24,7 +24,7 @@ import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { BusyTracker } from '../ui/busyTracker';
 import { UNIT_ART_URLS, getArtTexture } from '../render/cardArt';
-import type { WorldApiClient, TeamTemplate, CardSLGState, PlayerWorldView } from '../net/WorldApiClient';
+import type { WorldApiClient, TeamTemplate, CardSLGState, PlayerWorldView, MarchView, OccupationView } from '../net/WorldApiClient';
 import type { SaveData, CardInstance } from '../game/meta/SaveData';
 import type { UnitType } from '../game/types';
 import { CARD_DEFS, troopCap } from '../game/meta/cardDefs';
@@ -77,9 +77,14 @@ export class TeamsScene implements Scene {
 
   private teams: TeamTemplate[] = [];
   private worldView: PlayerWorldView | null = null;
+  private marches: MarchView[] = [];
+  private occupations: OccupationView[] = [];
   private loading = true;
   private destroyed = false;
   private toastTimer = 0;
+  /** Two-tap arm/confirm for "放弃占领" (forfeits the garrison, unlike march recall) — id of the team armed to cancel. */
+  private confirmCancelOccId: string | null = null;
+  private confirmCancelOccTimer = 0;
 
   private bodyLayer!: PIXI.Container;
   private toastLayer!: PIXI.Container;
@@ -119,17 +124,30 @@ export class TeamsScene implements Scene {
 
   private async load(): Promise<void> {
     try {
-      const [teams, worldView] = await Promise.all([
+      const [teams, worldView, marches, occupations] = await Promise.all([
         this.cb.worldApi.getTeams(this.cb.worldId),
         this.cb.worldApi.getMe(this.cb.worldId),
+        this.cb.worldApi.getMarches(this.cb.worldId),
+        this.cb.worldApi.getOccupations(this.cb.worldId),
       ]);
       if (!this.destroyed) {
         this.teams = teams;
         this.worldView = worldView;
+        this.marches = marches;
+        this.occupations = occupations;
       }
     } catch { /* offline — show empty slots */ }
     this.loading = false;
     if (!this.destroyed) this.render();
+  }
+
+  /** Current order tying up a team, if any — mirrors the server's own TEAM_BUSY predicate (combatMarch.ts). */
+  private teamOrder(teamId: string): { march: MarchView } | { occ: OccupationView } | null {
+    const march = this.marches.find((m) => m.mine !== false && m.teamId === teamId);
+    if (march) return { march };
+    const occ = this.occupations.find((o) => o.teamId === teamId);
+    if (occ) return { occ };
+    return null;
   }
 
   /** Total troops committed across all cards in a team (uses cardState if available). */
@@ -217,7 +235,8 @@ export class TeamsScene implements Scene {
     const injured = injuredUntil > now;
     const pad = 10;
 
-    const border = injured ? C.red : (filled ? C.accent : C.mid);
+    const order = this.teamOrder(id);
+    const border = injured ? C.red : (order ? C.gold : (filled ? C.accent : C.mid));
     const panel = sketchPanel(cardW, TEAM_CARD_H, {
       fill: filled ? 0xfaf9f5 : C.paper, border, width: filled ? 2.2 : 1.3,
       seed: seedFor(x, y, cardW),
@@ -239,19 +258,62 @@ export class TeamsScene implements Scene {
     editLbl.x = editBtn.x + editW / 2; editLbl.y = editBtn.y + editH / 2;
     this.bodyLayer.addChild(editLbl);
 
+    let tagY = y + pad + 20;
     if (injured) {
       const secsLeft = Math.ceil((injuredUntil - now) / 1000);
       const timeStr = secsLeft >= 60 ? `${Math.ceil(secsLeft / 60)}m` : `${secsLeft}s`;
       const tag = txt(`[${t('roster.injured').replace('{time}', timeStr)}]`, 10, C.red, true);
-      tag.x = x + pad; tag.y = y + pad + 20;
+      tag.x = x + pad; tag.y = tagY;
       this.bodyLayer.addChild(tag);
+      tagY += 20;
+    }
+
+    // Current order (2026-07-15 team management "取消指令"): a busy team shows its status + a way
+    // to force it back to idle — march recall (existing, refunds troops, returns over time) or
+    // occupation-hold cancel (new, instant, forfeits the garrison — see cancelOccupation memory).
+    if (order) {
+      const remaining = Math.max(0, Math.ceil((('march' in order ? order.march.arriveAt : order.occ.dueAt) - now) / 1000));
+      const timeStr = remaining >= 60 ? `${Math.ceil(remaining / 60)}m` : `${remaining}s`;
+      const label = 'march' in order
+        ? `[${t('world.team.marching')} ${timeStr}]`
+        : `[${t('world.team.occupying').replace('{time}', timeStr)}]`;
+      const tag = txt(label, 10, C.gold, true);
+      tag.x = x + pad; tag.y = tagY;
+      this.bodyLayer.addChild(tag);
+
+      const armed = !('march' in order) && this.confirmCancelOccId === id;
+      const btnLabel = 'march' in order
+        ? t('world.recall')
+        : (armed ? t('world.team.cancelOccupyConfirm') : t('world.team.cancelOccupy'));
+      const btnW = Math.min(cardW - pad * 2 - 60, Math.max(56, btnLabel.length * 9 + 14));
+      const btnH = 20;
+      const btn = sketchPanel(btnW, btnH, {
+        fill: armed ? C.red : C.accent, border: C.red, seed: seedFor(x, tagY, btnW),
+      });
+      btn.x = x + cardW - pad - btnW; btn.y = tagY - 3;
+      this.bodyLayer.addChild(btn);
+      const btnLbl = txt(btnLabel, 10, C.light, true);
+      btnLbl.anchor.set(0.5, 0.5);
+      if (btnLbl.width > btnW - 6) btnLbl.scale.set((btnW - 6) / btnLbl.width);
+      btnLbl.x = btn.x + btnW / 2; btnLbl.y = btn.y + btnH / 2;
+      this.bodyLayer.addChild(btnLbl);
+
+      const capturedOrder = order;
+      this.hits.push({
+        rect: { x: btn.x, y: btn.y, w: btnW, h: btnH },
+        action: () => {
+          if ('march' in capturedOrder) void this.doRecallMarch(capturedOrder.march.marchId);
+          else this.onTapCancelOccupy(id);
+        },
+      });
+      tagY += 20;
     }
 
     if (filled) {
       // Mini portrait strip: one small icon per deployed card (up to 6, then "+N").
       const entries = team!.army;
       const shown = entries.slice(0, 6);
-      const iconsY = y + pad + (injured ? 42 : 30);
+      const iconsY = Math.max(y + pad + 30, tagY);
       let ix = x + pad;
       for (const entry of shown) {
         const cardInst = entry.cardInstanceId ? save.cardInv?.[entry.cardInstanceId] : undefined;
@@ -487,6 +549,48 @@ export class TeamsScene implements Scene {
     }
   }
 
+  /** Recall an in-transit march (troops refunded, team frees up once the return leg arrives — see [[slg-team-idle-gate-fix]] memory). */
+  private async doRecallMarch(marchId: string): Promise<void> {
+    if (this.bt.busy) return;
+    this.bt.start(); this.render();
+    try {
+      await this.cb.worldApi.recallMarch(marchId, this.cb.worldId);
+      this.marches = await this.cb.worldApi.getMarches(this.cb.worldId);
+    } catch {
+      this.showToast(t('world.team.recallErr'), C.red);
+    } finally {
+      this.bt.stop();
+      this.render();
+    }
+  }
+
+  /** First tap arms the confirm (garrison forfeit is irreversible); second tap on the same team executes. */
+  private onTapCancelOccupy(teamId: string): void {
+    if (this.confirmCancelOccId === teamId) {
+      void this.doCancelOccupation(teamId);
+      return;
+    }
+    this.confirmCancelOccId = teamId;
+    this.confirmCancelOccTimer = 3000;
+    this.render();
+  }
+
+  private async doCancelOccupation(teamId: string): Promise<void> {
+    this.confirmCancelOccId = null;
+    if (this.bt.busy) return;
+    this.bt.start(); this.render();
+    try {
+      await this.cb.worldApi.cancelOccupation(teamId, this.cb.worldId);
+      this.occupations = await this.cb.worldApi.getOccupations(this.cb.worldId);
+      this.showToast(t('world.team.cancelOccupyOk'), C.green);
+    } catch {
+      this.showToast(t('world.team.cancelOccupyErr'), C.red);
+    } finally {
+      this.bt.stop();
+      this.render();
+    }
+  }
+
   // ── Toast ────────────────────────────────────────────────────────────────
 
   private showToast(msg: string, color: number): void {
@@ -541,6 +645,10 @@ export class TeamsScene implements Scene {
     if (this.toastTimer > 0) {
       this.toastTimer -= dt * 1000;
       if (this.toastTimer <= 0) this.toastLayer.removeChildren();
+    }
+    if (this.confirmCancelOccTimer > 0) {
+      this.confirmCancelOccTimer -= dt * 1000;
+      if (this.confirmCancelOccTimer <= 0) { this.confirmCancelOccId = null; this.render(); }
     }
   }
 

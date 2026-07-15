@@ -86,6 +86,7 @@ export interface SaveData {
     subscriptionExpiry: number; // monthly card end timestamp (ms); 0 = none (§5)
     subscriptionLastClaimDay?: string; // UTC day (YYYY-MM-DD) of last daily-coin claim; absent = never claimed (§5)
     starterUsed: string[]; // one-off product ids already bought (§6)
+    starterGrowthEligible?: boolean; // still inside the growth pack's first-N-days account-age window; absent = eligible (legacy saves) (§6)
   };
   // Fulfilled purchase orders (commercial orderId). Idempotent delivery ledger: redelivery uses $addToSet + $ne guard for deduplication (S5-5).
   deliveredOrders: string[];

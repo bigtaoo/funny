@@ -40,11 +40,12 @@ describe('buildLokiPayload', () => {
 
 // ── buildAnomalyLokiPayload (full anomaly reporting: single stream, low-cardinality labels, type/detail inlined) ──────────
 describe('buildAnomalyLokiPayload', () => {
-  it('single stream label={source,kind=anomaly}; type/publicId/detail/msg included inline (logfmt)', () => {
+  it('single stream label={source,kind=anomaly}; type/publicId/buildVersion/detail/msg included inline (logfmt)', () => {
     const p = buildAnomalyLokiPayload(
       '123456789',
       [{ type: 'webgl_lost', msg: 'context lost', ts: 1000, detail: '{"a":1}' }],
       'web',
+      '0861367',
       () => '0',
     )!;
     expect(p.streams).toHaveLength(1);
@@ -54,14 +55,15 @@ describe('buildAnomalyLokiPayload', () => {
     expect(line).toContain('type=webgl_lost');
     expect(line).toContain('publicId=123456789');
     expect(line).toContain('platform=web');
+    expect(line).toContain('buildVersion=0861367');
     expect(line).toContain('detail=');
     expect(line).toContain('msg="context lost"');
   });
 
   it('unknown type falls back to other; empty input → null', () => {
-    const p = buildAnomalyLokiPayload('1', [{ type: 'bogus', msg: 'x', ts: 5 }], undefined, () => '0')!;
+    const p = buildAnomalyLokiPayload('1', [{ type: 'bogus', msg: 'x', ts: 5 }], undefined, undefined, () => '0')!;
     expect(p.streams[0].values[0][1]).toContain('type=other');
-    expect(buildAnomalyLokiPayload('1', [], undefined, () => '0')).toBeNull();
+    expect(buildAnomalyLokiPayload('1', [], undefined, undefined, () => '0')).toBeNull();
   });
 });
 

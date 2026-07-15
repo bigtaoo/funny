@@ -4,7 +4,6 @@ import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
-import { buildIcon } from '../../render/icons';
 import { caretDisplay } from '../../render/inputDisplay';
 import { type Constructor, type SectSceneBaseCtor, type SectTab, ROW_H } from './base';
 
@@ -58,47 +57,107 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
     }
 
     renderCreate(): void {
-      const { w } = this;
+      const { w, h } = this;
 
-      const lbl1 = txt(t('sect.name') + ':', 13, C.dark);
-      lbl1.x = 20; lbl1.y = this.headerH + 20;
-      this.bodyLayer.addChild(lbl1);
+      // Everything lives inside a centered card in the region RIGHT of the social rail — the
+      // old absolute-x layout overlapped the rail (Family/Sect/World/Mail) and the header text.
+      const left = this.railW;
+      const availW = w - left;
+      const cardW = Math.min(720, availW * 0.82);
+      const cardX = left + (availW - cardW) / 2;
+      const pad = 36;
+      const cx = cardX + cardW / 2;      // card horizontal center (used for title + buttons)
+      const inX = cardX + pad;            // inner content left edge
+      const inW = cardW - pad * 2;        // inner content width
+      const fieldH = 48;
 
-      const nameField = sketchPanel(w - 120, 32, { fill: 0xfaf9f5, border: this.createField === 'name' ? C.accent : C.mid, seed: seedFor(0, 0, w - 120) });
-      nameField.x = 100; nameField.y = this.headerH + 14;
+      // Field metrics chosen up front so we can size the card to its content.
+      const titleH = 34, gapAfterTitle = 26;
+      const labelH = 26, gapLabelField = 8;
+      const gapAfterName = 30;
+      const tagLabelH = 24, tagHintH = 20;
+      const tagFieldW = Math.min(260, inW);
+      const gapAfterTag = 40;
+      const btnH = 48;
+
+      const cardH = pad
+        + titleH + gapAfterTitle
+        + labelH + gapLabelField + fieldH + gapAfterName
+        + tagLabelH + tagHintH + fieldH + gapAfterTag
+        + btnH
+        + pad;
+      const cardY = Math.max(this.headerH + 20, this.headerH + (h - this.headerH - cardH) / 2);
+
+      // Card background.
+      const card = sketchPanel(cardW, cardH, { fill: C.paper, border: C.mid, seed: seedFor(7, 0, cardW) });
+      card.x = cardX; card.y = cardY;
+      this.bodyLayer.addChild(card);
+
+      let y = cardY + pad;
+
+      // Title.
+      const title = txt(t('sect.createTitle'), 24, C.dark);
+      title.anchor.set(0.5, 0); title.x = cx; title.y = y;
+      this.bodyLayer.addChild(title);
+      y += titleH + gapAfterTitle;
+
+      // ── Sect name ──
+      const nameLbl = txt(t('sect.name'), 18, C.dark);
+      nameLbl.x = inX; nameLbl.y = y;
+      this.bodyLayer.addChild(nameLbl);
+      y += labelH + gapLabelField;
+
+      const nameFocused = this.createField === 'name';
+      const nameField = sketchPanel(inW, fieldH, { fill: 0xfaf9f5, border: nameFocused ? C.accent : C.mid, seed: seedFor(0, 0, inW) });
+      nameField.x = inX; nameField.y = y;
       this.bodyLayer.addChild(nameField);
-      const nl = txt(caretDisplay(this.createName, this.createField === 'name' && this.caretOn, ' '), 13, C.dark);
-      nl.x = 108; nl.y = this.headerH + 22;
+      const nameEmpty = this.createName.length === 0 && !nameFocused;
+      const nl = txt(nameEmpty ? t('social.sect.namePlaceholder') : caretDisplay(this.createName, nameFocused && this.caretOn, ' '), 20, nameEmpty ? C.mid : C.dark);
+      nl.anchor.set(0, 0.5); nl.x = inX + 12; nl.y = y + fieldH / 2;
       this.bodyLayer.addChild(nl);
-      this.hitRects.push({ rect: { x: 100, y: this.headerH + 14, w: w - 120, h: 32 }, action: () => this.openInputFor('name') });
+      this.hitRects.push({ rect: { x: inX, y, w: inW, h: fieldH }, action: () => this.openInputFor('name') });
+      y += fieldH + gapAfterName;
 
-      const lbl2 = txt(t('sect.tag') + ':', 13, C.dark);
-      lbl2.x = 20; lbl2.y = this.headerH + 70;
-      this.bodyLayer.addChild(lbl2);
+      // ── Tag (short label + hint line underneath) ──
+      const tagLbl = txt(t('sect.tagLabel'), 18, C.dark);
+      tagLbl.x = inX; tagLbl.y = y;
+      this.bodyLayer.addChild(tagLbl);
+      y += tagLabelH;
+      const tagHint = txt(t('sect.tagHint'), 12, C.mid);
+      tagHint.x = inX; tagHint.y = y;
+      this.bodyLayer.addChild(tagHint);
+      y += tagHintH;
 
-      const tagField = sketchPanel(100, 32, { fill: 0xfaf9f5, border: this.createField === 'tag' ? C.accent : C.mid, seed: seedFor(1, 0, 100) });
-      tagField.x = 100; tagField.y = this.headerH + 64;
+      const tagFocused = this.createField === 'tag';
+      const tagField = sketchPanel(tagFieldW, fieldH, { fill: 0xfaf9f5, border: tagFocused ? C.accent : C.mid, seed: seedFor(1, 0, tagFieldW) });
+      tagField.x = inX; tagField.y = y;
       this.bodyLayer.addChild(tagField);
-      const tl = txt(caretDisplay(this.createTag, this.createField === 'tag' && this.caretOn, ' '), 13, C.dark);
-      tl.x = 108; tl.y = this.headerH + 72;
+      const tl = txt(caretDisplay(this.createTag, tagFocused && this.caretOn, ' '), 20, C.dark);
+      tl.anchor.set(0, 0.5); tl.x = inX + 12; tl.y = y + fieldH / 2;
       this.bodyLayer.addChild(tl);
-      this.hitRects.push({ rect: { x: 100, y: this.headerH + 64, w: 100, h: 32 }, action: () => this.openInputFor('tag') });
+      this.hitRects.push({ rect: { x: inX, y, w: tagFieldW, h: fieldH }, action: () => this.openInputFor('tag') });
+      y += fieldH + gapAfterTag;
 
-      const okBtn = sketchPanel(100, 34, { fill: C.dark, border: C.accent, seed: seedFor(0, 0, 100) });
-      okBtn.x = w / 2 - 110; okBtn.y = this.headerH + 120;
+      // ── Buttons (create + cancel, side by side, centered under the fields) ──
+      const btnW = 150, btnGap = 24;
+      const okX = cx - btnW - btnGap / 2;
+      const cancelX = cx + btnGap / 2;
+
+      const okBtn = sketchPanel(btnW, btnH, { fill: C.dark, border: C.accent, seed: seedFor(0, 1, btnW) });
+      okBtn.x = okX; okBtn.y = y;
       this.bodyLayer.addChild(okBtn);
-      const ok = txt(t('sect.create'), 13, C.light);
-      ok.anchor.set(0.5, 0.5); ok.x = w / 2 - 60; ok.y = this.headerH + 137;
+      const ok = txt(t('sect.create'), 18, C.light);
+      ok.anchor.set(0.5, 0.5); ok.x = okX + btnW / 2; ok.y = y + btnH / 2;
       this.bodyLayer.addChild(ok);
-      this.hitRects.push({ rect: { x: w / 2 - 110, y: this.headerH + 120, w: 100, h: 34 }, action: () => void this.doCreate() });
+      this.hitRects.push({ rect: { x: okX, y, w: btnW, h: btnH }, action: () => void this.doCreate() });
 
-      const cancelBtn = sketchPanel(100, 34, { fill: 0xeeeeee, border: C.mid, seed: seedFor(1, 0, 100) });
-      cancelBtn.x = w / 2 + 10; cancelBtn.y = this.headerH + 120;
+      const cancelBtn = sketchPanel(btnW, btnH, { fill: 0xeeeeee, border: C.mid, seed: seedFor(1, 1, btnW) });
+      cancelBtn.x = cancelX; cancelBtn.y = y;
       this.bodyLayer.addChild(cancelBtn);
-      const ca = buildIcon('close', 15, C.dark);
-      ca.x = w / 2 + 60 - 7.5; ca.y = this.headerH + 137 - 7.5;
+      const ca = txt(t('social.sect.cancel'), 18, C.dark);
+      ca.anchor.set(0.5, 0.5); ca.x = cancelX + btnW / 2; ca.y = y + btnH / 2;
       this.bodyLayer.addChild(ca);
-      this.hitRects.push({ rect: { x: w / 2 + 10, y: this.headerH + 120, w: 100, h: 34 }, action: () => { this.mode = 'noSect'; this.render(); } });
+      this.hitRects.push({ rect: { x: cancelX, y, w: btnW, h: btnH }, action: () => { this.mode = 'noSect'; this.render(); } });
     }
 
     renderMySect(): void {

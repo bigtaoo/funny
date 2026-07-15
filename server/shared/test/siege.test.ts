@@ -146,15 +146,15 @@ describe('teamSiegeValue', () => {
 
 describe('buildSiegeLevel / buildSiegeBattle', () => {
   it('derives a symbolic defenderBaseLevel from tileLevel when no config is given', () => {
-    const level = buildSiegeLevel(null, 4, 123);
-    expect(level.defenderBaseLevel).toBe(3);
+    const level = buildSiegeLevel(null, 3, 123);
+    expect(level.defenderBaseLevel).toBe(2);
     expect(level.objective).toEqual({ kind: 'destroy_base' });
     expect(level.seed).toBe(123);
   });
 
-  it('clamps the derived defenderBaseLevel into [0,3]', () => {
+  it('clamps the derived defenderBaseLevel into [0,2]', () => {
     expect(buildSiegeLevel(null, 0, 1).defenderBaseLevel).toBe(0);
-    expect(buildSiegeLevel(null, 99, 1).defenderBaseLevel).toBe(3);
+    expect(buildSiegeLevel(null, 99, 1).defenderBaseLevel).toBe(2);
   });
 
   it('carries through explicit garrison/defenderBuildings/defenderBaseLevel when provided', () => {

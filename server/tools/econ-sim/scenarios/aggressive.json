@@ -1,8 +1,8 @@
 {
   "name": "aggressive",
-  "note": "High activity, near-max winning sects (<=900/sect), capital widely held, fatter 细水. Upper-bound stress.",
+  "note": "High activity, near-max winning sects (<=45/500-cap shard), capital widely held, fatter 细水. Upper-bound stress. topSectMembers rescaled 2026-07-15 (x0.05) to match WORLD_CAPACITY=500 (ADR-032, was 10000 when these numbers were first calibrated) -- the old values (900 champion members) exceeded a single shard's 500-player capacity.",
   "population": 100000,
-  "topSectMembers": { "champion": 900, "top3": 700, "top10": 400 },
+  "topSectMembers": { "champion": 45, "top3": 35, "top10": 20 },
   "capitalHoldRate": { "champion": 1.0, "top3": 0.7, "top10": 0.3, "participant": 0.05 },
   "dailyMaterialPerActive": { "scrap": 10, "lead": 2, "binding": 0.1 },
   "seasonDays": 60

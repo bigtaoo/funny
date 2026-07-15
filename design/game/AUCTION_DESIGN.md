@@ -286,6 +286,14 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - **「+ 发布」按钮放大 2x**：`renderCreateButton` 尺寸 200×44→400×88，字号 16→32；`renderList` 预留高度相应从 52 调到 100。
 - 验证：client `tsc --noEmit` 全绿。本机浏览器预览环境当次未能启动（应用停在启动画面，`document.title`/`globalThis` 探针均未执行，与本次改动无关的既有环境问题，未继续深挖），未能截图肉眼核对；改动仅限渲染层坐标/尺寸计算，逻辑迁移未改变。
 
+**分类栏/卡片 1.5x + 真实物品图 + 顶栏金币（2026-07-15）**：按用户截图反馈修五处——
+- **分类栏放大 1.5x**：`FILTER_H`（`base.ts`）44→66；`list.ts` 的 `renderFilterBar` 图标 20→30、字号 14→21；标签宽度超出格子时按比例缩小兜底（不再假设固定字号必然放得下）。
+- **卡片高度放大 1.5x**：`AUC_CELL_H`（`base.ts`）190→285；图片框上限收在 180px（不跟着整高线性放大），避免挤爆右侧文字列。
+- **物品显示真实图片**：新增 `list.ts` 私有方法 `renderItemPicture`（镜像 `GachaScene.drawEntryPicture` 的做法）——装备按 `defId` 取真实 slot/rarity 走 `drawEquipmentGlyph` 程序化图标，角色卡按 `defId→unitType` 取真实立绘 PNG（`cardArt.ts`），材料维持原有品类图标；此前三类物品在卡片左侧统一显示同一个「品类」占位图标（如所有装备都是同一个盾牌），现在装备/角色卡按具体物品区分。纹理未加载完成时挂 `artHooked` 一次性 `loaded` 回调触发重渲染（同 Gacha 模式）。
+- **文字不出框**：价格行、买断价行补上 `wordWrap`（品名行此前已有，价格/买断价此前没有，卡片变高后风险更明显）。
+- **顶栏右上角显示金币**：`base.ts` 新增 `headerOverlayLayer`（叠在静态 header chrome 之上）+ `renderHeaderCurrency()`，每次 `render()` 调用，走共享 `drawHeaderCurrency` 组件（与 Shop/Gacha/Equipment 同款），读 `cb.getSave().wallet.coins`；`doBuy` 成交后并行 `reloadSave()`，余额立即反映新扣款。
+- 验证：client `tsc --noEmit` 全绿。真机截图当次仍受本机既有 Browser-pane 渲染卡死问题阻塞（见「WorldMap standalone debug render」系列记忆），改走「无登录临时挂 `__NW_DEBUG` 钩子 + 手造 fixture + 直接 `new AuctionScene(...)` 挂载」的技术路线：走完整登录/世界解析链路太慢，用 PIXI 树内省核对——分类栏字号 21、卡片高度按倒计时 y 坐标反算确认 285、价格/买断价 `wordWrap` 宽度落在文字宽之外（无溢出）、顶栏金币文本 `"12,345"` 存在、角色卡出现真实立绘 `Sprite`（`.png` 纹理 URL 命中）而非占位图标，均核对通过。
+
 ---
 
 ## 7. 反 RMT 总览（持续对抗 R3）
@@ -442,6 +450,12 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
   1. `server/dev-up.ps1` 从未把 `socialsvc` 纳入进程列表（`npm run dev:all` 因此永远不会启动它），且 meta 进程的 env 里也没配 `NW_SOCIALSVC_INTERNAL_URL`——P2 迁移后邮件全链路依赖 socialsvc，标准 dev 流程实际上从未真正跑起来过。已补上 `social` 进程条目 + `NW_SOCIALSVC_INTERNAL_URL`，并把 `social`/`auction` 加进健康检查列表（`dev-up.ps1` 和根 `package.json` 的 `dev:health` 都补了）。
   2. `dev-up.ps1` 本身缺 UTF-8 BOM，文件里的全角箭头/破折号在本机 Windows PowerShell 5.1 + 代码页 850 下会被错误解码，导致整个脚本解析失败（"missing string terminator"），`npm run dev:all` 在本机此前一直连窗口都开不出来。已给文件加 BOM。
 - **验收**：`server/metaserver/test/mail-claim.e2e.test.ts`（真实 Mongo + 真实跨服务 HTTP，mailId 特意造到超 100 字符，card/equipment 各一例，回归前会 404，回归后 200）；metaserver 全量单测 42 files / 518 tests 绿；真实起满整套后端（含修复后的 dev-up.ps1）+ 真实 Mongo，走 `/auction/create` → `/auction/:id/cancel` → `/mail` → `/mail/:id/claim` 完整复现并确认修复生效（`{"ok":true}`，material 正确回背包）。
+
+### 修复：拍卖行返回按钮点在背景区无效（2026-07-15）
+
+- **问题**：玩家反馈拍卖行标题栏"← Back"看起来和其它场景一样宽，但点在返回文字右侧的"背景"上没反应。根因：`AuctionSceneBase.build()`（`client/src/scenes/AuctionScene/base.ts`）用共享组件 `drawSceneHeader()` 返回的标准返回热区（`hdr.backRect`，宽度是统一常量 `BACK_HIT_W=160`）建头部，但 `render()` 每次都会清空 `hitRects` 重建，重建时却硬编码了一个**只有一半宽（`w:80`）**的热区（item-picker 遮罩层同样硬编码）——视觉上和商店等场景一致的返回条，实际可点区域只有左半边。
+- **修复**：把 `hdr.backRect` 缓存到实例字段 `backRect`，`render()` 里两处硬编码的 `{w:80}` 都改成复用它，和 `ShopScene` 等场景的写法统一。
+- **验收**：`tsc --noEmit` 绿；headless 实例化 `AuctionScene` 读取渲染后的 `hitRects` 确认宽度恢复为 160；新增回归测试 `client/test/ui/auctionBackButtonHitWidth.ui.ts`（4 例：初始/多次 render 后宽度不变、右半区点击触发 onBack、item-picker 遮罩下右半区点击取消 picker）——摘掉修复重跑 4 例全部按预期失败，验证测试能真正捕获这个回归。
 
 ---
 

@@ -23,7 +23,19 @@ import { MailService } from '../../socialsvc/dist/mailService.js';
 import { createSocialMongo, type SocialMongo } from '../../socialsvc/dist/db.js';
 
 function makeFakeCommercial(): CommercialClient {
-  return { available: true, async getWallet() { return { coins: 0, pity: {} }; } } as unknown as CommercialClient;
+  const coins = new Map<string, number>();
+  const granted = new Set<string>();
+  return {
+    available: true,
+    async getWallet(id: string) { return { coins: coins.get(id) ?? 0, pity: {} }; },
+    async grant(a: { accountId: string; amount: number; reason: string; orderId: string }) {
+      if (granted.has(a.orderId)) return { ok: true as const, coinsAfter: coins.get(a.accountId) ?? 0 };
+      const next = (coins.get(a.accountId) ?? 0) + a.amount;
+      coins.set(a.accountId, next);
+      granted.add(a.orderId);
+      return { ok: true as const, coinsAfter: next };
+    },
+  } as unknown as CommercialClient;
 }
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
@@ -164,5 +176,38 @@ describe.skipIf(!meta || !social)('mail claim: real cross-service wire (metaserv
     expect(res.statusCode).toBe(200);
     const b = body(res);
     expect(b.data.save.equipmentInv[equipInstance.id]).toBeTruthy();
+  });
+
+  it('mail with coins + item + material + skin attachments in one claim: each lands in its own save field, not all dumped into inventory.skins', async () => {
+    const mailSvc = new MailService({
+      cols: s.collections,
+      gateway: { available: false, push: async () => {}, pushMany: async () => {}, presence: async () => ({}), invalidateFriends: async () => {} },
+      meta: { available: false, resolveByPublicId: async () => null, batchProfiles: async () => new Map() },
+      now: () => Date.now(),
+    });
+    const dispatchKey = `comp.mixed.${accountId}`;
+    await mailSvc.insertSystemMail(dispatchKey, accountId, {
+      subject: 'comp.mail.subject',
+      body: 'comp.mail.body',
+      attachments: [
+        { kind: 'coins', count: 500 },
+        { kind: 'item', id: 'protect_enhance', count: 2 },
+        { kind: 'material', id: 'scrap', count: 7 },
+        { kind: 'skin', id: 'skin_shop_c1' },
+      ],
+      expireDays: 30,
+    });
+
+    const mailId = `${dispatchKey}:${accountId}`;
+    const res = await app.inject({ method: 'POST', url: `/mail/${encodeURIComponent(mailId)}/claim`, headers: auth(), payload: {} });
+    expect(res.statusCode).toBe(200);
+    const b = body(res);
+    expect(b.data.save.wallet.coins).toBe(500);
+    expect(b.data.save.inventory.items?.protect_enhance).toBe(2);
+    expect(b.data.save.materials.scrap).toBe(7);
+    expect(b.data.save.inventory.skins).toContain('skin_shop_c1');
+    // None of the non-skin attachments leaked into the skin set.
+    expect(b.data.save.inventory.skins).not.toContain('protect_enhance');
+    expect(b.data.save.inventory.skins).not.toContain('scrap');
   });
 });

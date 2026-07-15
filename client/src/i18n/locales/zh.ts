@@ -878,6 +878,7 @@ export const zh = {
   'world.team.noTeams': '尚无队伍，先去编辑布阵',
   'world.team.manage': '管理队伍',
   'world.team.emptyArmy': '该队伍未布阵',
+  'world.team.busy': '行军/占领中',
   // ── Training queue / resource panel (C4) ─────────────────────────────────
   'world.train': '练兵',
   'world.trainTitle': '练兵 · 资源',
@@ -975,6 +976,9 @@ export const zh = {
   'sect.browse': '浏览宗门',
   'sect.name': '宗门名称',
   'sect.tag': '标签 (2-5位大写字母/数字)',
+  'sect.tagLabel': '标签',
+  'sect.tagHint': '2–5 位大写字母或数字',
+  'sect.createTitle': '创建宗门',
   'sect.createHint': '建门消耗金币，需为族长',
   'sect.join': '加入',
   'sect.leave': '退出宗门',
@@ -1467,6 +1471,15 @@ export const zh = {
   'world.team.fillTroopsErr': '补满失败',
   'world.team.troopsStatus': '{cur}/{cap}',
   'world.team.injured': '受伤',
+
+  // Team management "取消指令" (2026-07-15): force a busy team back to idle
+  'world.team.marching': '行军中',
+  'world.team.occupying': '占领中 剩{time}',
+  'world.team.cancelOccupy': '放弃占领',
+  'world.team.cancelOccupyConfirm': '确认放弃?',
+  'world.team.cancelOccupyOk': '已放弃占领，队伍已空闲',
+  'world.team.cancelOccupyErr': '取消失败',
+  'world.team.recallErr': '撤军失败',
 };
 
 export type TranslationKey = keyof typeof zh;

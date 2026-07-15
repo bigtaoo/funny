@@ -9,6 +9,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   proceduralTile,
   tileId,
+  npcGarrison,
   playerWorldId,
   SLG_MAP_W,
   SLG_MAP_H,
@@ -38,7 +39,11 @@ if (!mongo) console.warn(`[worldsvc.teams.e2e] Mongo unreachable (${URI}) — sk
 const CENTER_X = Math.floor(SLG_MAP_W / 2);
 const CENTER_Y = Math.floor(SLG_MAP_H / 2);
 
-function findCoord(sx: number, sy: number): { x: number; y: number } {
+function findCoord(
+  sx: number,
+  sy: number,
+  predicate?: (t: ReturnType<typeof proceduralTile>) => boolean,
+): { x: number; y: number } {
   for (let r = 0; r < 80; r++) {
     for (let dx = -r; dx <= r; dx++) {
       for (let dy = -r; dy <= r; dy++) {
@@ -47,7 +52,9 @@ function findCoord(sx: number, sy: number): { x: number; y: number } {
         if (x < 0 || y < 0 || x >= SLG_MAP_W || y >= SLG_MAP_H) continue;
         if (x === CENTER_X && y === CENTER_Y) continue;
         const t = proceduralTile(W, x, y);
-        if (t.type !== 'obstacle' && t.type !== 'bridge' && t.type !== 'plankway' && t.type !== 'center') return { x, y };
+        if (t.type === 'obstacle' || t.type === 'bridge' || t.type === 'plankway' || t.type === 'center') continue;
+        if (predicate && !predicate(t)) continue;
+        return { x, y };
       }
     }
   }
@@ -228,5 +235,99 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { troops: 50 } });
     await svc.setTeams(W, 'a', [{ id: 't1', name: 'Grand Army', army: army(10, 60) }]); // committed 600 > 50
     await expect(svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 1, 't1')).rejects.toThrow();
+  });
+
+  it('idle-team gate: a team en route to an attack rejects a second order (TEAM_BUSY)', async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    const tgt1 = findCoord(10, 5);
+    const tgt2 = findCoord(5, 10);
+    await setupDefender('b', tgt1.x, tgt1.y, 50);
+    await setupDefender('c', tgt2.x, tgt2.y, 50);
+    await connect(svc, 'a', tgt1);
+    await connect(svc, 'a', tgt2);
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Vanguard', army: army(10, 60) }]);
+    // enough pool to re-dispatch the same team's committed troops twice over (siege losses are not proportional
+    // to garrison strength) — the point of this test is idle-team gating, not troop economy.
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { troops: 5000 } });
+
+    const mv = await svc.startMarch(W, 'a', 5, 5, tgt1.x, tgt1.y, 'attack', 1, 't1');
+    expect(mv.status).toBe('marching');
+
+    // t1 is still en route → a second order onto the same team is rejected, not silently re-dispatched
+    // (this is the reported bug: the UI let a busy team's order get silently overridden by a new one).
+    await expect(svc.startMarch(W, 'a', 5, 5, tgt2.x, tgt2.y, 'attack', 1, 't1')).rejects.toThrow(/marching or occupying/i);
+
+    // once the attack lands (instant — no hold for an owned-territory siege), the team is free again.
+    nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+    await expect(svc.startMarch(W, 'a', 5, 5, tgt2.x, tgt2.y, 'attack', 1, 't1')).resolves.toBeTruthy();
+  });
+
+  it('idle-team gate: a team stays "out" through the occupation-hold countdown, not just in transit', async () => {
+    await svc.joinWorld(W, 'a', 10, 10);
+    const target = findCoord(30, 30, (t) => t.type === 'resource' && t.level <= 2);
+    const proc = proceduralTile(W, target.x, target.y);
+    const npc = npcGarrison(proc.level);
+    await connect(svc, 'a', target);
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { troops: 5000 } });
+
+    // enough troops per unit to overwhelm the NPC garrison comfortably.
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Vanguard', army: army(12, Math.ceil(npc / 8) + 100) }]);
+    const mv = await svc.startMarch(W, 'a', 10, 10, target.x, target.y, 'occupy', 1, 't1');
+    nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+
+    // won the PvE battle → occupation hold pending (tile not yet owned) → team is still "out" during the hold.
+    const held = await svc.getTile(W, 'a', target.x, target.y);
+    expect(held.contestedByMe).toBe(true);
+    const other = findCoord(5, 5);
+    await expect(svc.startMarch(W, 'a', 10, 10, other.x, other.y, 'attack', 1, 't1')).rejects.toThrow(/marching or occupying/i);
+
+    // hold elapses → ownership lands → team is free again.
+    nowMs = held.contestedUntil!;
+    expect(await svc.processDueOccupations()).toBe(1);
+    const target2 = findCoord(20, 40);
+    await setupDefender('d', target2.x, target2.y, 50);
+    await connect(svc, 'a', target2);
+    await expect(svc.startMarch(W, 'a', 10, 10, target2.x, target2.y, 'attack', 1, 't1')).resolves.toBeTruthy();
+  });
+
+  it('cancelOccupation: team management can force a mid-hold team back to idle instantly, no troop refund, tile reverts to unclaimed', async () => {
+    await svc.joinWorld(W, 'a', 10, 10);
+    const target = findCoord(30, 30, (t) => t.type === 'resource' && t.level <= 2);
+    const proc = proceduralTile(W, target.x, target.y);
+    const npc = npcGarrison(proc.level);
+    await connect(svc, 'a', target);
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { troops: 5000 } });
+
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Vanguard', army: army(12, Math.ceil(npc / 8) + 100) }]);
+    const mv = await svc.startMarch(W, 'a', 10, 10, target.x, target.y, 'occupy', 1, 't1');
+    nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+
+    const held = await svc.getTile(W, 'a', target.x, target.y);
+    expect(held.contestedByMe).toBe(true);
+    const poolBefore = (await svc.getMe(W, 'a')).troops;
+
+    // player cancels from Team Management, mid-hold (no need to wait out OCCUPY_HOLD_SEC).
+    await svc.cancelOccupation(W, 'a', 't1');
+    expect(await svc.getOccupations(W, 'a')).toHaveLength(0);
+
+    // garrison was forfeited, not refunded (unlike march recall) — troop pool unchanged by the cancel itself.
+    expect((await svc.getMe(W, 'a')).troops).toBe(poolBefore);
+
+    // team is idle right away — a brand-new order dispatches immediately, no TEAM_BUSY.
+    const other = findCoord(20, 40);
+    await setupDefender('d', other.x, other.y, 50);
+    await connect(svc, 'a', other);
+    await expect(svc.startMarch(W, 'a', 10, 10, other.x, other.y, 'attack', 1, 't1')).resolves.toBeTruthy();
+
+    // tile reverts to unclaimed (not settled to the canceller, not left mid-contest for anyone else).
+    const afterCancel = await svc.getTile(W, 'a', target.x, target.y);
+    expect(afterCancel.mine).toBeFalsy();
+    expect(afterCancel.contestedByMe).toBeFalsy();
+
+    // cancelling again (nothing left to cancel) is rejected.
+    await expect(svc.cancelOccupation(W, 'a', 't1')).rejects.toThrow();
   });
 });

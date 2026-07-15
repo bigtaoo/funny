@@ -12,20 +12,46 @@ import {
   resolveSiege,
   npcGarrison,
   OCCUPY_HOLD_SEC,
+  SlgError,
   type SiegeResolution,
   type ProceduralTile,
 } from '@nw/shared';
-import { runSiegeBattle, synthesizeArmy } from '../siegeEngine';
-import type { GarrisonEntry } from '@nw/engine';
+import { runSiegeBattle, synthesizeArmy, resolveCardArmy, toEngineCardInstances, computeCardStateUpdates } from '../siegeEngine';
+import type { GarrisonEntry, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import type { TileDoc, PlayerWorldDoc, MarchDoc, OccupationDoc } from '../db';
-import type { SiegeReplayInputs } from '../worldTypes';
+import type { SiegeReplayInputs, OccupationView } from '../worldTypes';
 import { refundTroops } from '../combatShared';
 import type { SiegeServiceBaseCtor, Constructor } from './base';
+import type { WorldCore } from '../core';
 
 export interface OccupationHandlers {
   applyOccupy(m: MarchDoc, pw: PlayerWorldDoc, t: number): Promise<void>;
   applyOccupationExpulsion(m: MarchDoc, pw: PlayerWorldDoc, tile: TileDoc, t: number): Promise<void>;
   processDueOccupations(nowMs?: number): Promise<number>;
+  cancelOccupation(worldId: string, accountId: string, teamId: string): Promise<void>;
+  getOccupations(worldId: string, accountId: string): Promise<OccupationView[]>;
+}
+
+/**
+ * Writes post-battle cardState (currentTroops + injuredUntil) for a card army's survivors on an occupy/expulsion
+ * march (§6.1 — the card keeps its own troops regardless of outcome). Never touches playerWorld.troops.
+ */
+async function writeOccupyCardState(
+  core: WorldCore,
+  m: MarchDoc,
+  pw: PlayerWorldDoc,
+  survivors: number,
+  t: number,
+): Promise<void> {
+  const cardUpdates = computeCardStateUpdates(m.army ?? [], pw.cardState ?? {}, survivors, t);
+  const cardStateSet: Record<string, unknown> = {};
+  for (const [id, update] of Object.entries(cardUpdates)) {
+    cardStateSet[`cardState.${id}.currentTroops`] = update.currentTroops;
+    cardStateSet[`cardState.${id}.injuredUntil`] = update.injuredUntil != null ? update.injuredUntil : null;
+  }
+  if (Object.keys(cardStateSet).length > 0) {
+    await core.deps.cols.playerWorld.updateOne({ _id: pw._id }, { $set: cardStateSet, $inc: { rev: 1 } });
+  }
 }
 
 export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase): TBase & Constructor<OccupationHandlers> {
@@ -38,6 +64,10 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
      */
     async applyOccupy(m: MarchDoc, pw: PlayerWorldDoc, t: number): Promise<void> {
       const { cols } = this.core.deps;
+      // CC-3 (2026-07-15, SLG_DESIGN §4.2): a card-army march's strength lives entirely in cardState.currentTroops,
+      // never in playerWorld.troops — every refund path below must skip the pool credit for such a march.
+      const rawArmy = m.army ?? [];
+      const hasCardArmy = rawArmy.some((e) => !!e.cardInstanceId);
       const x = this.core.coordX(m.toTile);
       const y = this.core.coordY(m.toTile);
       const proc = proceduralTile(m.worldId, x, y);
@@ -47,7 +77,7 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       // here before any capture branch — treat like a miss (refund), same as the ownership recheck below.
       // occupy never targets a capital, so a single cell (no footprint resolution needed).
       if (!(await this.core.isConnectedToSectTerritory(m.worldId, m.ownerId, [{ x, y }]))) {
-        await refundTroops(this.core, pw, m.troops, t);
+        if (!hasCardArmy) await refundTroops(this.core, pw, m.troops, t);
         void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
         return;
       }
@@ -57,7 +87,7 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
         (occ?.ownerId != null && occ.ownerId !== m.ownerId) ||
         (occ?.ownerId === m.ownerId && occ.type !== 'base');
       if (blocked) {
-        await refundTroops(this.core, pw, m.troops, t);
+        if (!hasCardArmy) await refundTroops(this.core, pw, m.troops, t);
         void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
         return;
       }
@@ -70,7 +100,7 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       // Our own pending hold already occupies this tile (race: a second occupy march from the same player) —
       // reinforcing an in-progress hold is out of scope for v1; treat as a miss and refund.
       if (occ?.contestedBy && occ.contestedBy === m.ownerId) {
-        await refundTroops(this.core, pw, m.troops, t);
+        if (!hasCardArmy) await refundTroops(this.core, pw, m.troops, t);
         void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
         return;
       }
@@ -82,15 +112,28 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
         return;
       }
 
+      // Real card team (2026-07-15, SLG_DESIGN §4.2) → resolve via cardState + blueprint injection, same as
+      // attack sieges (combatSiege/arrival.ts) — occupying land now reflects the player's actual army, not a
+      // generic synthesized force. Flat/legacy army or none → synthesize as before.
+      const attackerSave = hasCardArmy ? await this.core.meta.getSaveFields(m.ownerId).catch(() => null) : null;
       const attackerArmy: GarrisonEntry[] =
-        m.army && m.army.length > 0 ? (m.army as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker');
+        hasCardArmy
+          ? resolveCardArmy(rawArmy, pw.cardState ?? {}, attackerSave?.cardInv ?? {})
+          : (rawArmy.length > 0 ? (rawArmy as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker'));
+      let cardInstances: EngineCardInstance[] | undefined;
+      let cardEquipInv: EngineEquipInv | undefined;
+      if (hasCardArmy && attackerSave) {
+        const { cardInstances: ci, engEquipInv } = toEngineCardInstances(rawArmy, attackerSave.cardInv, attackerSave.equipmentInv);
+        cardInstances = ci;
+        cardEquipInv = engEquipInv;
+      }
       const defenderConfig = { garrison: synthesizeArmy(garrison, 'defender') };
       const tileLevel = proc.level;
       const seed = siegeSeedFromId(m._id);
       let res: SiegeResolution;
       let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
       try {
-        res = runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed });
+        res = runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv });
       } catch (err) {
         console.error('[worldsvc] occupy siege engine failed — fallback to cheap resolve', {
           tile: m.toTile,
@@ -101,9 +144,17 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       }
 
       if (res.outcome === 'attacker_win') {
+        // Card survivors also land on cardState (§6.1 — the card keeps its own troops) in addition to seeding
+        // the newly captured tile's independent garrison stat below (startOccupationHold); the two are unrelated
+        // ledgers, not a double-refund of the same pool (see SLG_DESIGN §4.2).
+        if (hasCardArmy) await writeOccupyCardState(this.core, m, pw, res.attackerSurvivors, t);
         await this.startOccupationHold(m, pw, proc, x, y, res.attackerSurvivors, t, replay);
       } else {
-        if (res.attackerSurvivors > 0) await refundTroops(this.core, pw, res.attackerSurvivors, t);
+        if (hasCardArmy) {
+          await writeOccupyCardState(this.core, m, pw, res.attackerSurvivors, t);
+        } else if (res.attackerSurvivors > 0) {
+          await refundTroops(this.core, pw, res.attackerSurvivors, t);
+        }
         void this.core.bumpFamilyActivity(m.worldId, pw.familyId, 1);
         const siege = await this.recordSiege(m, undefined, res.outcome, t, replay);
         void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'arrived' }));
@@ -120,16 +171,28 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
      */
     override async applyOccupationExpulsion(m: MarchDoc, pw: PlayerWorldDoc, tile: TileDoc, t: number): Promise<void> {
       const { cols } = this.core.deps;
+      const rawArmy = m.army ?? [];
+      const hasCardArmy = rawArmy.some((e) => !!e.cardInstanceId);
       const garrison = tile.contestedGarrison ?? 0;
+      const attackerSave = hasCardArmy ? await this.core.meta.getSaveFields(m.ownerId).catch(() => null) : null;
       const attackerArmy: GarrisonEntry[] =
-        m.army && m.army.length > 0 ? (m.army as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker');
+        hasCardArmy
+          ? resolveCardArmy(rawArmy, pw.cardState ?? {}, attackerSave?.cardInv ?? {})
+          : (rawArmy.length > 0 ? (rawArmy as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker'));
+      let cardInstances: EngineCardInstance[] | undefined;
+      let cardEquipInv: EngineEquipInv | undefined;
+      if (hasCardArmy && attackerSave) {
+        const { cardInstances: ci, engEquipInv } = toEngineCardInstances(rawArmy, attackerSave.cardInv, attackerSave.equipmentInv);
+        cardInstances = ci;
+        cardEquipInv = engEquipInv;
+      }
       const defenderConfig = { garrison: synthesizeArmy(garrison, 'defender') };
       const tileLevel = tile.level ?? 1;
       const seed = siegeSeedFromId(m._id);
       let res: SiegeResolution;
       let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
       try {
-        res = runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed });
+        res = runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv });
       } catch (err) {
         console.error('[worldsvc] occupation expulsion siege engine failed — fallback to cheap resolve', {
           tile: m.toTile,
@@ -145,10 +208,15 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
         // start our own hold on top of whatever ownership now stands, re-validated by the blocked check upstream).
         await cols.occupations.deleteOne({ _id: tile._id, ownerId: tile.contestedBy });
         await this.core.unscheduleOccupation(m.worldId, tile._id);
+        if (hasCardArmy) await writeOccupyCardState(this.core, m, pw, res.attackerSurvivors, t);
         const proc = proceduralTile(m.worldId, tile.x, tile.y);
         await this.startOccupationHold(m, pw, proc, tile.x, tile.y, res.attackerSurvivors, t, replay);
       } else {
-        if (res.attackerSurvivors > 0) await refundTroops(this.core, pw, res.attackerSurvivors, t);
+        if (hasCardArmy) {
+          await writeOccupyCardState(this.core, m, pw, res.attackerSurvivors, t);
+        } else if (res.attackerSurvivors > 0) {
+          await refundTroops(this.core, pw, res.attackerSurvivors, t);
+        }
         void this.core.bumpFamilyActivity(m.worldId, pw.familyId, 1);
         const siege = await this.recordSiege(m, tile.contestedBy, res.outcome, t, replay);
         void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'arrived' }));
@@ -201,6 +269,7 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
         ...(proc.resType ? { resType: proc.resType } : {}),
         garrison: survivors,
         dueAt,
+        ...(m.teamId ? { teamId: m.teamId } : {}),
       };
       await cols.occupations.updateOne({ _id: m.toTile }, { $set: occDoc }, { upsert: true });
       await this.core.scheduleOccupation(m.worldId, m.toTile, dueAt);
@@ -238,6 +307,45 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
         n++;
       }
       return n;
+    }
+
+    /**
+     * Player-initiated cancel of an in-progress occupation-hold (2026-07-15, team management "取消指令"): unlike
+     * recallMarch (combatMarch.ts), this is instant and forfeits the contested garrison — no travel-back leg and
+     * no troop refund, since there's nothing left to march home. The team is freed immediately: deleting the
+     * OccupationDoc is exactly what the TEAM_BUSY gate's `cols.occupations.findOne({..., teamId})` check looks
+     * for, so the next march/occupy dispatch sees the team as idle right away. The tile itself reverts to
+     * unclaimed (contested fields unset, mirrors settleOccupation's $unset) rather than being handed to anyone.
+     */
+    async cancelOccupation(worldId: string, accountId: string, teamId: string): Promise<void> {
+      const { cols } = this.core.deps;
+      const claimed = await cols.occupations.findOneAndDelete({ worldId, ownerId: accountId, teamId });
+      if (!claimed) throw new SlgError('OCCUPATION_NOT_FOUND', 'No active occupation-hold for this team');
+      await this.core.unscheduleOccupation(worldId, claimed._id);
+      await cols.tiles.updateOne(
+        { _id: claimed.tile },
+        { $unset: { contestedBy: '', contestedUntil: '', contestedGarrison: '', contestedFamilyId: '' } },
+      );
+      const after = await cols.tiles.findOne({ _id: claimed.tile });
+      if (after) {
+        void this.core.pushTile(accountId, after);
+        await this.core.pushTileToObservers(after, new Set([accountId]));
+      }
+    }
+
+    /** List the player's own active occupation-holds (2026-07-15 team management: status + cancel affordance). */
+    async getOccupations(worldId: string, accountId: string): Promise<OccupationView[]> {
+      const { cols } = this.core.deps;
+      const own = await cols.occupations.find({ worldId, ownerId: accountId }).toArray();
+      return own.map((d) => ({
+        tile: d.tile,
+        x: d.x,
+        y: d.y,
+        level: d.level,
+        garrison: d.garrison,
+        dueAt: d.dueAt,
+        ...(d.teamId ? { teamId: d.teamId } : {}),
+      }));
     }
 
     /** Finalize a settled OccupationDoc into real TileDoc ownership. Re-validates contestedBy to guard against a lost race. */

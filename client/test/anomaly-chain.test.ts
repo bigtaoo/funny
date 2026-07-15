@@ -135,7 +135,8 @@ describe('Full pipeline: client POST events through server buildAnomalyLokiPaylo
 
     // Take the body actually emitted by the client and feed it into the server's real Loki formatting function (what the handler does internally).
     const body = JSON.parse((cap.fetch.mock.calls[0] as [string, RequestInit])[1].body as string);
-    const payload = buildAnomalyLokiPayload(body.publicId, body.events, body.platform, () => '0')!;
+    expect(body.buildVersion).toBe('0.0.0'); // __NW_BUILD_VERSION__ unbaked in test env
+    const payload = buildAnomalyLokiPayload(body.publicId, body.events, body.platform, body.buildVersion, () => '0')!;
 
     expect(payload.streams).toHaveLength(1);
     expect(payload.streams[0].stream).toEqual({ source: 'client', kind: 'anomaly' });
@@ -143,6 +144,7 @@ describe('Full pipeline: client POST events through server buildAnomalyLokiPaylo
     expect(line).toContain('type=crash');
     expect(line).toContain(`publicId=${PUBLIC_ID}`);
     expect(line).toContain('platform=web');
+    expect(line).toContain('buildVersion=0.0.0');
     expect(line).toContain('detail=');
     expect(line).toContain('msg="previous session ended without clean exit"'); // contains spaces → logfmt quoting
   });
