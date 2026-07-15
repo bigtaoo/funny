@@ -22,6 +22,7 @@ import { palette } from './theme';
 import { t, type TranslationKey } from '../i18n';
 import { getTitleKeys, formatLadderTitle } from '../game/meta/titles';
 import { tearDownChildren } from './sketchUi';
+import { drawHudButton, hudButtonText } from './hudButton';
 
 export interface ProfileData {
   /** Display name (nickname). */
@@ -194,18 +195,16 @@ export class ProfilePopup {
       const aX0 = (cardW - (aW * actions.length + gap * (actions.length - 1))) / 2;
       actions.forEach((act, i) => {
         const ax = aX0 + i * (aW + gap);
+        const actVariant = act.danger ? 'danger' : 'secondary';
         const ab = new PIXI.Graphics();
-        ab.beginFill(act.danger ? 0xf6eceb : palette.paper);
-        ab.lineStyle(2, act.danger ? palette.inkRed : palette.inkBlue);
-        ab.drawRoundedRect(0, 0, aW, aH, 8);
-        ab.endFill();
+        drawHudButton(ab, aW, aH, actVariant, { radius: 8 });
         ab.x = ax; ab.y = aY;
         ab.eventMode = 'static';
         ab.cursor = 'pointer';
         ab.on('pointertap', () => { this.hide(); act.fn(); });
         this.card.addChild(ab);
         const al = new PIXI.Text(t(act.labelKey), {
-          fontSize: Math.round(aH * 0.4), fill: act.danger ? palette.inkRed : palette.inkBlue,
+          fontSize: Math.round(aH * 0.4), fill: hudButtonText(actVariant),
           fontWeight: 'bold', fontFamily: 'monospace',
         });
         al.anchor.set(0.5, 0.5);
@@ -214,10 +213,7 @@ export class ProfilePopup {
       });
     }
     const btn = new PIXI.Graphics();
-    btn.beginFill(0x2c2c2a);
-    btn.lineStyle(2, palette.pencil);
-    btn.drawRoundedRect(0, 0, bW, bH, 8);
-    btn.endFill();
+    drawHudButton(btn, bW, bH, 'primary', { radius: 8 });
     btn.x = bX; btn.y = bY;
     btn.eventMode = 'static';
     btn.cursor = 'pointer';
@@ -225,7 +221,7 @@ export class ProfilePopup {
     this.card.addChild(btn);
 
     const btnLabel = new PIXI.Text(t('profile.close'), {
-      fontSize: Math.round(bH * 0.42), fill: 0xffffff, fontWeight: 'bold', fontFamily: 'monospace',
+      fontSize: Math.round(bH * 0.42), fill: hudButtonText('primary'), fontWeight: 'bold', fontFamily: 'monospace',
     });
     btnLabel.anchor.set(0.5, 0.5);
     btnLabel.x = bX + bW / 2;

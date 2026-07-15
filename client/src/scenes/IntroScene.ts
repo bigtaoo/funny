@@ -3,7 +3,7 @@ import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
-import { buildPaperBackground } from '../render/sketchUi';
+import { buildPaperBackground, ui } from '../render/sketchUi';
 
 // ── First-launch intro (background story) ─────────────────────────────────────
 //
@@ -26,11 +26,6 @@ const STORY_LINE_KEYS: TranslationKey[] = [
 ];
 
 const FADE_DURATION = 0.8; // seconds per line fade-in
-
-const C = {
-  ink:    0x2c2c2a,
-  mid:    0x888888,
-};
 
 export interface IntroSceneCallbacks {
   /** @param skipped true when the player tapped the skip button instead of reading through. */
@@ -135,7 +130,7 @@ export class IntroScene implements Scene {
     STORY_LINE_KEYS.forEach((key, i) => {
       const text = new PIXI.Text(t(key), {
         fontSize,
-        fill: C.ink,
+        fill: ui.dark,
         fontFamily: 'serif',
         wordWrap: true,
         wordWrapWidth: w * 0.78,
@@ -153,7 +148,7 @@ export class IntroScene implements Scene {
     // Tap-to-continue hint
     this.hintText = new PIXI.Text(t('story.tapToContinue'), {
       fontSize: Math.round(h * 0.02),
-      fill: C.mid,
+      fill: ui.mid,
       fontFamily: 'monospace',
     });
     this.hintText.anchor.set(0.5, 1);
@@ -164,7 +159,7 @@ export class IntroScene implements Scene {
     // Skip button (top-right)
     const skipText = new PIXI.Text(t('story.skip'), {
       fontSize: Math.round(h * 0.022),
-      fill: C.mid,
+      fill: ui.mid,
       fontFamily: 'monospace',
     });
     skipText.anchor.set(1, 0);
