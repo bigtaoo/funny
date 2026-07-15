@@ -222,7 +222,7 @@ export class EquipmentSceneBase {
 
     // Static header (back + title); the back hit is (re)registered in render().
     const hdr = drawSceneHeader(this.container, w, h, t('equip.title'), {
-      variant: 'paper', accent: HEADER_ACCENT.spend, titleAlign: 'left',
+      variant: 'paper', accent: HEADER_ACCENT.spend,
     });
     this.backRect = hdr.backRect;
     this.headerH = hdr.headerH;

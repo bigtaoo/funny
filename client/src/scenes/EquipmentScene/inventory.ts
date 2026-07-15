@@ -80,9 +80,11 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
     renderInventory(bodyTop: number): void {
       const { w, h } = this;
       const save = this.cb.getSave();
+      // Item cells (and the loadout strip below) start right of the sidebar rail.
+      const left = sidebarNavW(w, h, this.landscape);
       // Bag mode (no active card) has no single-card loadout to show; the list starts right below the header row.
       let listY = bodyTop;
-      if (!this.bag) { this.renderLoadout(save, bodyTop); listY = bodyTop + LOADOUT_H; }
+      if (!this.bag) { this.renderLoadout(save, bodyTop, left); listY = bodyTop + LOADOUT_H; }
       const listH = h - listY - 8;
 
       const allInstances = Object.values(save.equipmentInv);
@@ -112,8 +114,8 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
 
       const entries = this.buildDisplayEntries(instances, equippedIds);
       // Item cells start right of the sidebar rail; right pad stays one CELL_GAP.
-      const left = sidebarNavW(w, h, this.landscape) + CELL_GAP;
-      const avail = w - left - CELL_GAP;
+      const gridLeft = left + CELL_GAP;
+      const avail = w - gridLeft - CELL_GAP;
       const cols = Math.max(1, Math.floor((avail + CELL_GAP) / (EQUIP_CELL_W_TARGET + CELL_GAP)));
       const cellW = (avail - CELL_GAP * (cols - 1)) / cols;
 
@@ -133,7 +135,7 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
           off += SECTION_H;
           continue;
         }
-        const x = left + col * (cellW + CELL_GAP);
+        const x = gridLeft + col * (cellW + CELL_GAP);
         placed.push({ kind: 'item', inst: entry.inst, isEquipped: entry.isEquipped, count: entry.count, x, off });
         col++;
         if (col >= cols) { col = 0; off += EQUIP_CELL_H + CELL_GAP; }
@@ -150,7 +152,7 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
         else this.renderInstanceCell(p.inst, p.x, y, cellW, p.isEquipped, p.count);
       }
 
-      drawScrollIndicator(this.bodyLayer, { x: left, y: listY, w: avail, h: listH }, this.scrollY, Math.max(0, totalH - listH));
+      drawScrollIndicator(this.bodyLayer, { x: gridLeft, y: listY, w: avail, h: listH }, this.scrollY, Math.max(0, totalH - listH));
     }
 
     /** Slot filter bar (All / Weapon / Armor / Trinket), confined to [x, x+w) — the right column. */
@@ -246,19 +248,20 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       return entries;
     }
 
-    private renderLoadout(save: SaveData, y: number): void {
+    /** Loadout strip (Weapon/Armor/Trinket preview cells), confined to the right column — right of the sidebar rail, mirroring the filter bar and item grid below it. */
+    private renderLoadout(save: SaveData, y: number, left: number): void {
       const { w } = this;
       const label = txt(t('equip.loadout'), 11, C.mid);
-      label.x = 10; label.y = y + 4;
+      label.x = left + 10; label.y = y + 4;
       this.bodyLayer.addChild(label);
 
       // CC-1: gear lives on the active card instance, not on a global loadout.
       const activeCard = save.cardInv?.[this.cb.activeCardInstanceId];
       const gear = activeCard?.gear ?? {};
-      const cellW = (w - 8 * 4) / 3;
+      const cellW = (w - left - 8 * 4) / 3;
       const cellH = LOADOUT_H - 28;
       SLOTS.forEach((slot, i) => {
-        const x = 8 + i * (cellW + 8);
+        const x = left + 8 + i * (cellW + 8);
         const cy = y + 22;
         const instId = gear[slot];
         const inst = instId ? save.equipmentInv[instId] : undefined;

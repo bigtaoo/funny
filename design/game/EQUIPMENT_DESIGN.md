@@ -499,6 +499,8 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 **从角色卡槽进入直接定位对应筛选页签**（2026-07-14 追加）：`EquipmentCallbacks` 新增可选 `initialFilterSlot?: EquipSlot`，`EquipmentSceneBase` 构造时若有则播种 `filterSlot`（否则仍默认 `'all'`）。链路：`CardScene` 卡详情点某装备槽 → `openEquipment(cardId, slot)` → `goEquipment(..., initialFilterSlot=slot)` → `showEquipment`。让「给角色穿某类装备」直接落到该类页签而非「全部」。不带 slot 的入口（大厅装备背包 `openEquipmentBag`）不受影响。测试：`scenes.ui.ts`（三槽播种 + 默认 all + 带筛选重渲染不抛错）+ `cardRoster-offline.test.ts`（nav 层 slot 透传断言）。
 
+**标题居中 + loadout 三槽条移过红边线**（2026-07-15 追加）：走查截图发现两处问题并修复：① 头部标题此前 `titleAlign:'left'`（避免与右侧资源条碰撞的历史遗留，但资源条早已瘦身到仅金币+容量，横屏/竖屏均有 ~100px+ 净空——用 `EquipmentScene` 独立实例验证过两种朝向的包围盒不重叠），改回默认 `'center'`，与其余场景标题一致。② §2026-07-04 记录里"loadout 三槽条仍整宽不受影响"是当时的遗留，实际视觉上三槽条（`renderLoadout`）从 `x=8` 起铺满整行，压在侧栏导航/红边线之上，与其上方已收进右栏的资源条/筛选条/物品网格不一致——`renderInventory` 新增 `left = sidebarNavW(w,h,landscape)` 并透传给 `renderLoadout(save,y,left)`，三槽条起点、格宽随之收进红边线右侧，与筛选条同一起点。用临时 `__NW_DEBUG` 钩子（见 `client-run-and-visual-verify` 记忆）直接 new 一个 `EquipmentScene` 读子节点坐标数值验证，未起 webpack 截图。`tsc --noEmit` 验证。
+
 #### E2 掉落 faucet + E6 洗练 实现记录（2026-06-22，✅）
 
 **E2 关卡掉落 faucet**
