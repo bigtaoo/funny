@@ -1,6 +1,6 @@
 // Unit tests for internal routes (S1-M3): /internal/elo fetch score + /internal/match/report ELO settlement/archival/idempotency.
 // ELO settlement logic migrated from gameserver (M19, meta is authoritative). Uses fastify inject + in-memory fake cols (no Mongo).
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { makeNewSave, type Collections, type SaveData, type SaveDoc } from '@nw/shared';
 import { registerInternalRoutes } from '../src/internal.js';
@@ -93,6 +93,8 @@ function build(
   gateway: GatewayClient = fakeGateway(),
   commercial: CommercialClient = fakeCommercial(false),
   internalKeys?: Record<string, string>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  redis?: any,
 ): FastifyInstance {
   const app = Fastify();
   registerInternalRoutes(app, {
@@ -102,6 +104,7 @@ function build(
     now: () => 1000,
     gateway,
     commercial,
+    ...(redis !== undefined ? { redis } : {}),
   });
   return app;
 }
@@ -485,6 +488,68 @@ describe('internal routes', () => {
       method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY }, payload: noMismatchPayload,
     });
     expect((matches[0] as { hashMismatch?: boolean }).hashMismatch).toBeUndefined();
+    await app.close();
+  });
+
+  // ── login-reconnect-prompt: match report clears the cached resume ticket for both sides ──
+  it('login-reconnect-prompt: match report clears activeMatch redis keys for both accountIds', async () => {
+    const a = makeNewSave('a');
+    const b = makeNewSave('b');
+    const { cols } = fakeCols({ a, b });
+    const redis = { del: vi.fn().mockResolvedValue(1) };
+    const app = build(cols, fakeGateway(), fakeCommercial(false), undefined, redis);
+    await app.inject({
+      method: 'POST',
+      url: '/internal/match/report',
+      headers: { 'x-internal-key': KEY },
+      payload: {
+        room_id: 'RM1', seed: '1', mode: 'ranked', reason: 'base', winner_side: 0, hash_ok: true,
+        players: [{ side: 0, accountId: 'a' }, { side: 1, accountId: 'b' }],
+        results: [{ side: 0, state_hash: 'H', winner_side: 0 }, { side: 1, state_hash: 'H', winner_side: 0 }],
+        replay: emptyReplay(),
+      },
+    });
+    await Promise.resolve(); // flush the fire-and-forget clearActiveMatch() microtask
+    expect(redis.del).toHaveBeenCalledWith('nw:activeMatch:a', 'nw:activeMatch:b');
+    await app.close();
+  });
+
+  it('login-reconnect-prompt: idempotent repeat report does not clear redis again', async () => {
+    const a = makeNewSave('a');
+    const b = makeNewSave('b');
+    const { cols } = fakeCols({ a, b });
+    const redis = { del: vi.fn().mockResolvedValue(1) };
+    const app = build(cols, fakeGateway(), fakeCommercial(false), undefined, redis);
+    const payload = {
+      room_id: 'RM2', seed: '1', mode: 'ranked', reason: 'base', winner_side: 0, hash_ok: true,
+      players: [{ side: 0, accountId: 'a' }, { side: 1, accountId: 'b' }],
+      results: [{ side: 0, state_hash: 'H', winner_side: 0 }, { side: 1, state_hash: 'H', winner_side: 0 }],
+      replay: emptyReplay(),
+    };
+    await app.inject({ method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY }, payload });
+    await app.inject({ method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY }, payload });
+    await Promise.resolve();
+    expect(redis.del).toHaveBeenCalledTimes(1);
+    await app.close();
+  });
+
+  it('login-reconnect-prompt: no redis configured → match report still succeeds (feature silently disabled)', async () => {
+    const a = makeNewSave('a');
+    const b = makeNewSave('b');
+    const { cols } = fakeCols({ a, b });
+    const app = build(cols); // no redis arg
+    const res = await app.inject({
+      method: 'POST',
+      url: '/internal/match/report',
+      headers: { 'x-internal-key': KEY },
+      payload: {
+        room_id: 'RM3', seed: '1', mode: 'friendly', reason: 'base', winner_side: -1, hash_ok: true,
+        players: [{ side: 0, accountId: 'a' }, { side: 1, accountId: 'b' }],
+        results: [{ side: 0, state_hash: 'H', winner_side: 0 }, { side: 1, state_hash: 'H', winner_side: 0 }],
+        replay: emptyReplay(),
+      },
+    });
+    expect(res.json()).toEqual({ ok: true });
     await app.close();
   });
 });

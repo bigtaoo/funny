@@ -27,6 +27,16 @@
                     gatewayUrl: { type: string }
                     # True when the player still holds their one-time free rename (current display name is a system-assigned default). Client shows a free rename button.
                     freeRename: { type: boolean }
+                    # Present when this account has a match still in progress (login-reconnect-prompt): the client offers to reconnect straight into it.
+                    # ticket is the original match-start ticket (gameserver's handshake ignores its exp, so it remains usable for the match's lifetime).
+                    activeMatch:
+                      type: object
+                      required: [roomId, gameUrl, ticket, mode]
+                      properties:
+                        roomId: { type: string }
+                        gameUrl: { type: string }
+                        ticket: { type: string }
+                        mode: { type: string, enum: [friendly, ranked] }
       '401': { $ref: '#/components/responses/ErrorResp' }
   put:
     operationId: putSave

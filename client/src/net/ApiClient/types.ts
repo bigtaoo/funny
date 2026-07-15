@@ -14,6 +14,10 @@ export type GachaResultEntry = Schemas['GachaResult'];
 /** One match history entry (from the perspective of the current account). */
 export type MatchHistoryEntry = Schemas['MatchHistoryEntry'];
 export type AuthResult = Schemas['AuthResult'];
+/** Cached ticket for a still-in-progress match (login-reconnect-prompt): GET /save surfaces this so the client can offer to reconnect. */
+export type ActiveMatchInfo = NonNullable<
+  operations['getSave']['responses']['200']['content']['application/json']['data']['activeMatch']
+>;
 // —— Social (S6-1 friends / S6-2 private chat / S6-3 mail) ——
 export type ProfileView = Schemas['ProfileView'];
 export type FriendView = Schemas['FriendView'];

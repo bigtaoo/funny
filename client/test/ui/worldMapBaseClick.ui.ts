@@ -34,7 +34,9 @@ const WORLD_ID = 'world:1:0';
 const ANCHOR = { x: 20, y: 20 };
 
 const CITY_MENU_LABELS = [t('world.actEnterCity'), t('world.train'), t('world.actDefense'), t('world.team.manage'), '✕'];
-const MINE_TILE_MENU_LABELS = [t('world.actReinforce'), t('world.actDefense'), t('world.actWatchtower'), t('world.actAbandon'), '✕'];
+const MINE_TILE_MENU_LABELS = [t('world.actReinforce'), t('world.actDefense'), t('world.actWatchtower'), t('world.actRelocate'), t('world.actAbandon'), '✕'];
+// Relocate is only offered when the player already has a main base (me.mainBaseTile set).
+const MINE_TILE_MENU_LABELS_NO_BASE = [t('world.actReinforce'), t('world.actDefense'), t('world.actWatchtower'), t('world.actAbandon'), '✕'];
 
 function makeMe(overrides: Partial<PlayerWorldView> = {}): PlayerWorldView {
   return {
@@ -145,6 +147,6 @@ describe('WorldMapInput.onTileClick — main city hit area (ADR-025 3×3 footpri
     input.onTileClick(7, 7);
     expect(showModal).toHaveBeenCalledTimes(1);
     const buttons = showModal.mock.calls[0][1] as { label: string; action: () => void }[];
-    expect(buttons.map((b) => b.label)).toEqual(MINE_TILE_MENU_LABELS);
+    expect(buttons.map((b) => b.label)).toEqual(MINE_TILE_MENU_LABELS_NO_BASE);
   });
 });

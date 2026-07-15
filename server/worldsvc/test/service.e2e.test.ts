@@ -59,6 +59,28 @@ function findCoord(
   throw new Error('no matching tile found');
 }
 
+/** Spiral search for a 3×3 anchor (cx,cy) whose whole footprint is occupiable (non-blocking terrain, in bounds, no world center) — a valid relocate destination once fully owned. */
+function findBlock(sx: number, sy: number): { x: number; y: number } {
+  const blocking = (x: number, y: number): boolean => {
+    if (x < 1 || y < 1 || x >= SLG_MAP_W - 1 || y >= SLG_MAP_H - 1) return true;
+    if (x === CENTER_X && y === CENTER_Y) return true;
+    const p = proceduralTile(W, x, y);
+    return p.type === 'center' || p.type === 'obstacle' || p.type === 'bridge' || p.type === 'plankway' || p.type === 'stronghold';
+  };
+  for (let r = 0; r < 60; r++) {
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dy = -r; dy <= r; dy++) {
+        const cx = sx + dx;
+        const cy = sy + dy;
+        let ok = true;
+        for (let ex = -1; ex <= 1 && ok; ex++) for (let ey = -1; ey <= 1 && ok; ey++) if (blocking(cx + ex, cy + ey)) ok = false;
+        if (ok) return { x: cx, y: cy };
+      }
+    }
+  }
+  throw new Error('no 3×3 block found');
+}
+
 describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
   const m = mongo!;
   let nowMs = 1_000_000;
@@ -144,7 +166,7 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
     expect(await m.collections.tiles.findOne({ _id: tileId(W, res.x, res.y) })).toBeNull();
   });
 
-  it('voluntary relocation: deduct RELOCATE_COST coins + old site reverts to neutral + new site becomes main base + territory retained', async () => {
+  it('voluntary relocation: only onto an already fully-owned 3×3 → deduct RELOCATE_COST + old site reverts to neutral + new site becomes main base + other territory retained', async () => {
     const spends: Array<{ accountId: string; amount: number }> = [];
     const commercial = {
       available: true,
@@ -158,20 +180,34 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
 
     await svc2.joinWorld(W, 'a', 5, 5);
     const res = findCoord((t) => t.type === 'resource', 50, 50);
-    await svc2.occupyTile(W, 'a', res.x, res.y); // one territory tile, should be retained after relocation
+    await svc2.occupyTile(W, 'a', res.x, res.y); // one extra territory tile, should be retained after relocation
 
-    const dst = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 80, 80);
+    // §3.4 (changed): relocation only onto a 3×3 the player ALREADY fully owns. Grant ownership of the whole
+    // destination footprint directly (occupyTile would run out of troops at 4 tiles: TROOP_CAP_BASE/GARRISON_PER_TILE).
+    const dst = findBlock(80, 80);
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const x = dst.x + dx;
+        const y = dst.y + dy;
+        await m.collections.tiles.updateOne(
+          { _id: tileId(W, x, y) },
+          { $set: { _id: tileId(W, x, y), worldId: W, x, y, type: 'territory', level: proceduralTile(W, x, y).level, ownerId: 'a', garrison: GARRISON_PER_TILE, rev: 0 } },
+          { upsert: true },
+        );
+      }
+    }
+
     const me = await svc2.relocateBase(W, 'a', dst.x, dst.y);
 
     expect(spends).toEqual([{ accountId: 'a', amount: RELOCATE_COST }]);
     expect(me.mainBaseTile).toBe(tileId(W, dst.x, dst.y));
-    expect(me.territoryCount).toBe(10); // 9 new base footprint cells + retained territory tile
+    expect(me.territoryCount).toBe(10); // 9 new base footprint cells + the retained res tile (old base's 9 released)
     // Old main base tile reverts to neutral (deleted).
     expect(await m.collections.tiles.findOne({ _id: tileId(W, 5, 5) })).toBeNull();
     // New site becomes main base.
     const newBase = await m.collections.tiles.findOne({ _id: tileId(W, dst.x, dst.y) });
     expect(newBase).toMatchObject({ type: 'base', ownerId: 'a' });
-    // Territory tile is still present.
+    // The extra territory tile is still present.
     expect(await m.collections.tiles.findOne({ _id: tileId(W, res.x, res.y), ownerId: 'a' })).not.toBeNull();
 
     // Relocating to the same spot = no-op (no duplicate charge).
@@ -179,7 +215,7 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
     expect(spends).toHaveLength(1);
   });
 
-  it('relocation validation: not joined / out of bounds / target occupied', async () => {
+  it('relocation validation: not joined / out of bounds / target not fully owned', async () => {
     const commercial = { available: true, async spend() {}, async grant() {} };
     const svc2 = new WorldService({
       cols: m.collections, redis: null, commercial,
@@ -188,9 +224,12 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
     await expect(svc2.relocateBase(W, 'ghost', 5, 5)).rejects.toMatchObject({ code: 'TILE_NOT_OWNED' });
     await svc2.joinWorld(W, 'a', 5, 5);
     await expect(svc2.relocateBase(W, 'a', -1, 0)).rejects.toMatchObject({ code: 'OUT_OF_RANGE' });
-    // Target occupied by another player (b's main base) → TILE_OCCUPIED.
+    // A free/unowned 3×3 is no longer a valid target (§3.4 requires the block to be already fully owned).
+    const free = findBlock(80, 80);
+    await expect(svc2.relocateBase(W, 'a', free.x, free.y)).rejects.toMatchObject({ code: 'TILE_NOT_OWNED' });
+    // A tile owned by another player is likewise rejected (not fully owned by 'a').
     await svc2.joinWorld(W, 'b', 200, 200);
-    await expect(svc2.relocateBase(W, 'a', 200, 200)).rejects.toMatchObject({ code: 'TILE_OCCUPIED' });
+    await expect(svc2.relocateBase(W, 'a', 200, 200)).rejects.toMatchObject({ code: 'TILE_NOT_OWNED' });
   });
 
   it('lazy resource settlement: catch-up calculation using yieldRate × dt', async () => {

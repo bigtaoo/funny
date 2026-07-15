@@ -24,7 +24,7 @@ import { getArtTexture } from '../../render/cardArt';
 import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { BusyTracker } from '../../ui/busyTracker';
-import type { SaveData, CardInstance } from '../../game/meta/SaveData';
+import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
 import type { CardSLGState } from '../../net/WorldApiClient';
 import { cardPower } from '../../game/meta/cardDefs';
 import type { UnitType } from '../../game/types';
@@ -44,8 +44,11 @@ export interface CardCallbacks {
   setCardLock(cardInstanceId: string, locked: boolean): Promise<CardActionResult>;
   /** Recover an injured card by spending coins. Only present when in SLG context. */
   recoverCard?(cardInstanceId: string): Promise<CardActionResult>;
-  /** Navigate to equipment scene for a specific card. Absent offline (E5 is server-authoritative). */
-  openEquipment?(cardInstanceId: string): void;
+  /**
+   * Navigate to equipment scene for a specific card. Absent offline (E5 is server-authoritative).
+   * `slot`, when given (a specific gear-slot tap), pre-selects the matching filter tab instead of "All".
+   */
+  openEquipment?(cardInstanceId: string, slot?: EquipSlot): void;
   /**
    * Open the equipment bag as a peer of the roster (LOBBY_IA_REDESIGN). When injected, a
    * [Cards|Equipment] group tab strip is shown; tapping Equipment enters the bag (no active card).
@@ -72,10 +75,10 @@ export const MODAL_DIM = 0x000000;
 // hero info (name / level / power / troops / gear) stacked immediately to its right.
 // Narrower than the equipment cells so hero cards pack denser and don't read as empty.
 export const CELL_GAP = 12;
-// Height stays unified with EquipmentScene's EQUIP_CELL_H (icon-card visual family), but the
-// width is deliberately narrower: the portrait now spans the full cell height instead of
-// sitting in a square with a wide, mostly-empty stats column beside it.
-export const CARD_CELL_H = 177;
+// Taller than EquipmentScene's EQUIP_CELL_H (they used to be unified at 177): hero cards carry a
+// full-height character portrait that reads better with more vertical room, so the roster grid is
+// deliberately taller. Width is still deliberately narrower so hero cards pack denser.
+export const CARD_CELL_H = 266; // 1.5x the previous 177 (taller hero cards)
 export const CARD_CELL_W_TARGET = 300;
 
 export interface Rect { x: number; y: number; w: number; h: number; }

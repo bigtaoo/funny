@@ -8,6 +8,7 @@ export * from './password';
 export * from './playerNames';
 export * from './mongo';
 export * from './roomRegistry';
+export * from './activeMatch';
 export * from './ladder';
 export * from './economy';
 export * from './gachaCatalog';

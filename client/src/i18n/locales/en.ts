@@ -785,6 +785,7 @@ export const en: Record<TranslationKey, string> = {
   'world.err.noTroops': 'Not enough troops',
   'world.err.occupied': 'Tile already occupied',
   'world.err.footprintBlocked': 'The capital needs a clear 3×3 area — some of the surrounding tiles are blocked or owned by someone else',
+  'world.err.relocateNeedSurround': 'Occupy this tile and all its surrounding tiles first',
   'world.err.protected': 'Tile is protected',
   'world.err.allyTile': 'This is friendly territory — you cannot attack it',
   'world.err.outOfRange': 'Out of map bounds',
@@ -1031,6 +1032,10 @@ export const en: Record<TranslationKey, string> = {
   'auction.created': 'Listing created',
   'auction.bought': 'Purchase successful',
   'auction.cancelled': 'Listing cancelled',
+  // My-Listings row status badge (non-open history)
+  'auction.statusSold': 'Sold',
+  'auction.statusExpired': 'Expired · returned',
+  'auction.statusCancelled': 'Cancelled',
   'auction.err.closed': 'Auction already closed',
   'auction.err.selfBuy': 'Cannot buy your own listing',
   'auction.err.insufficientFunds': 'Not enough coins',
@@ -1321,6 +1326,12 @@ export const en: Record<TranslationKey, string> = {
   'consent.privacyPolicy': 'Privacy Policy',
   'consent.terms': 'Terms of Service',
   'consent.accept': 'Accept & Continue',
+
+  // ── Login reconnect prompt (resume an in-progress match after re-login) ─────
+  'reconnect.title': 'Unfinished Match',
+  'reconnect.body': 'You have a match still in progress. Would you like to reconnect and continue?',
+  'reconnect.accept': 'Reconnect',
+  'reconnect.decline': 'Not Now',
 
   // ── Gacha odds disclosure (Apple 3.1.1, L1-3) ───────────────────────────────
   'gacha.oddsDetail.button': 'Odds',

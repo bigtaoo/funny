@@ -11,7 +11,23 @@ import {
 } from '../appConstants';
 
 export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'doLogout' | 'resolveEntry' | 'goSettings'> {
-  const { api, saveManager, platform, views, state, nav, playerName, avatarId, gateConsent, applyGatewayUrl, featureFlags } = ctx;
+  const { api, saveManager, platform, views, state, nav, playerName, avatarId, gateConsent, applyGatewayUrl, featureFlags, getNetSession } = ctx;
+
+  /**
+   * Login-reconnect-prompt: if SaveManager just picked up an activeMatch from GET /save, show the
+   * "resume your match?" dialog. `afterDecline` restores whatever screen the caller was on before this
+   * ran (a no-op for doAuth, which hasn't navigated yet; nav.goLobby() for the entry paths that already
+   * did). Returns true if the prompt was shown (caller should skip its own navigation).
+   */
+  function offerResume(afterDecline: () => void): boolean {
+    const m = saveManager.consumeActiveMatch();
+    if (!m) return false;
+    views.showReconnectPrompt({
+      onReconnect: () => getNetSession()?.rejoinMatch(m.gameUrl, m.ticket),
+      onDecline: afterDecline,
+    });
+    return true;
+  }
 
   function goIntro(): void {
     state.inLobby = false;
@@ -127,7 +143,7 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
       // takes effect without waiting for the next 120-second polling cycle (best-effort).
       void featureFlags?.refresh();
       await saveManager.adoptSession(res.accountId);
-      nav.goLobby({ offline: false });
+      if (!offerResume(() => nav.goLobby({ offline: false }))) nav.goLobby({ offline: false });
       return { ok: true };
     } catch (e) {
       console.error('[auth] request failed', e);
@@ -149,7 +165,10 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
     let cred: { kind: string } | null = null;
     try { cred = await platform.getAuthCredential(); } catch { cred = null; }
     if (cred?.kind === 'wx') {
-      void saveManager.bootstrap();
+      // Lobby shows immediately (no network wait); if the bootstrap pull later turns up an
+      // activeMatch, the resume prompt pops in over the lobby (same "arrives late" pattern as
+      // onProfile's `if (state.inLobby) nav.goLobby()` refresh).
+      void saveManager.bootstrap().then(() => offerResume(() => nav.goLobby({ offline: false })));
       nav.goLobby({ offline: false });
       return;
     }
@@ -157,7 +176,9 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
     const token = platform.storage.getItem(TOKEN_KEY);
     if (token) {
       api.setToken(token);
-      void saveManager.adoptSession(saveManager.get().accountId);
+      void saveManager
+        .adoptSession(saveManager.get().accountId)
+        .then(() => offerResume(() => nav.goLobby({ offline: false })));
       nav.goLobby({ offline: false });
       return;
     }

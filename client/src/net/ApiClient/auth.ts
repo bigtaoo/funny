@@ -3,7 +3,7 @@
 import type { AuthCredential } from '../../platform/IPlatform';
 import type { SaveData, SyncPatch } from '../../game/meta/SaveData';
 import { type Constructor, type ApiClientBaseCtor, ApiError } from './base';
-import type { AuthResult, ApiResp, PushResult } from './types';
+import type { AuthResult, ActiveMatchInfo, ApiResp, PushResult } from './types';
 
 export interface AuthApi {
   auth(cred: AuthCredential): Promise<AuthResult>;
@@ -12,7 +12,7 @@ export interface AuthApi {
   changePassword(oldPassword: string, newPassword: string): Promise<void>;
   deleteAccount(): Promise<{ confirmToken: string }>;
   recordGdprConsent(consent: boolean): Promise<void>;
-  getSave(): Promise<{ save: SaveData; displayName?: string; publicId?: string; gatewayUrl?: string; freeRename?: boolean }>;
+  getSave(): Promise<{ save: SaveData; displayName?: string; publicId?: string; gatewayUrl?: string; freeRename?: boolean; activeMatch?: ActiveMatchInfo }>;
   rename(displayName: string): Promise<{ save: SaveData; displayName: string; freeRename?: boolean }>;
   putSave(rev: number, patch: SyncPatch): Promise<PushResult>;
 }
@@ -69,13 +69,14 @@ export function AuthMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase &
 
     // ── save (S0-7) ─────────────────────────────────────────
     /** Fetch the current account's cloud save (also returns the display name + public id + gateway URL for use in the profile / online play). */
-    async getSave(): Promise<{ save: SaveData; displayName?: string; publicId?: string; gatewayUrl?: string; freeRename?: boolean }> {
+    async getSave(): Promise<{ save: SaveData; displayName?: string; publicId?: string; gatewayUrl?: string; freeRename?: boolean; activeMatch?: ActiveMatchInfo }> {
       const data = await this.request<{
         save: SaveData;
         displayName?: string;
         publicId?: string;
         gatewayUrl?: string;
         freeRename?: boolean;
+        activeMatch?: ActiveMatchInfo;
       }>('GET', '/save');
       return {
         save: data.save,
@@ -83,6 +84,7 @@ export function AuthMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase &
         publicId: data.publicId,
         gatewayUrl: data.gatewayUrl,
         freeRename: data.freeRename,
+        activeMatch: data.activeMatch,
       };
     }
 

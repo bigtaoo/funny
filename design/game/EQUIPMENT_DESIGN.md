@@ -497,6 +497,8 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 **锻造图标卡对齐背包尺寸**（2026-07-08 追加）：上条把背包/角色卡格统一到 177 高，却漏了锻造格 `CRAFT_CELL_H` 仍停在 116，锻造 tab 的图标框（`imgBox = CRAFT_CELL_H - pad*2 - 22`）明显小于背包。改 `CRAFT_CELL_H = EQUIP_CELL_H`（177），锻造图标框随之从 78px 放大到 ~139px，与背包 ~137px 一致；成本 chips + 制作按钮布局按格高动态定位不变。`tsc --noEmit` 验证。
 
+**从角色卡槽进入直接定位对应筛选页签**（2026-07-14 追加）：`EquipmentCallbacks` 新增可选 `initialFilterSlot?: EquipSlot`，`EquipmentSceneBase` 构造时若有则播种 `filterSlot`（否则仍默认 `'all'`）。链路：`CardScene` 卡详情点某装备槽 → `openEquipment(cardId, slot)` → `goEquipment(..., initialFilterSlot=slot)` → `showEquipment`。让「给角色穿某类装备」直接落到该类页签而非「全部」。不带 slot 的入口（大厅装备背包 `openEquipmentBag`）不受影响。测试：`scenes.ui.ts`（三槽播种 + 默认 all + 带筛选重渲染不抛错）+ `cardRoster-offline.test.ts`（nav 层 slot 透传断言）。
+
 #### E2 掉落 faucet + E6 洗练 实现记录（2026-06-22，✅）
 
 **E2 关卡掉落 faucet**

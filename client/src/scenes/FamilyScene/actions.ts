@@ -173,6 +173,7 @@ export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TB
         const body = this.sendInput.value.trim();
         this.sendInput.remove();
         this.sendInput = null;
+        this.sendText = '';
         await this.submitMessage(body);
       } else {
         this.openSendInput();

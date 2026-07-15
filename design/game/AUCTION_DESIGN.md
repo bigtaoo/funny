@@ -94,6 +94,8 @@
 - **时长**：`AUCTION_DURATIONS_SEC = [72h]`（固定，2026-07-05 起客户端不再提供时长选择）；`expireAt = createAt + durationSec`。
 - **过期不走 Mongo TTL**：TTL 自删会在结算前丢掉托管物（U13）→ 故意用**普通索引 `{expireAt:1}` + scheduler 扫描器**（每 2s tick，每批 ≤50 条，原子 `open→expired` + 退还卖方）。`§14.3` 表里「TTL {expireAt}」按此实现期决定改为普通索引。
 - **并发**：所有终态转移走 `findOneAndUpdate({status:'open'})` 原子认领 + `rev` 自增，防双花/重复结算。
+- **终态时间戳 `closedAt`**（2026-07-14）：每次 `open→sold/cancelled/expired` 转移都写 `closedAt=now`（`sold` 另留 `soldAt` 供审计向后兼容）。用途见下「我的挂单历史保留」。
+- **「我的挂单」历史 + 保留清理**（2026-07-14）：`getMyListings` 返回该卖家**所有状态**的挂单（`open` 按 `expireAt` 倒序在前，其后是保留期内的已结束历史），拉取上限 `MY_LISTINGS_FETCH_LIMIT=100`（大于 open 上限 `AUCTION_MAX_LISTINGS=20`，给历史留位）。客户端「我的挂单」行：`open` 显示「取消」按钮；`sold/cancelled/expired` 改显状态徽标（已售/已取消/已过期·已退回），不显倒计时、无可点区域。已结束挂单超过保留期（`AUCTION_CLOSED_RETENTION_SEC=30d`，≥ `AUDIT_WINDOW_SEC=7d` 以免误删审计窗口内的成交单）由 scheduler 每 1h 一次 `purgeClosedListings` 物理删除（`status≠open` 且 `closedAt`——旧文档回退 `expireAt`——早于 cutoff），防列表无限增长。`open` 挂单永不清理（仍持托管物/活跃竞价）。
 
 ---
 
@@ -278,6 +280,11 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 **挂单参考价前置展示 + 标题栏统一（2026-07-08）**：按用户反馈修两处——
 - **参考价带前置**：原先卖家只有在提交后撞 `PRICE_OUT_OF_RANGE` 才知道价格越界，看不到允许区间。新增后端只读端点 `GET /auction/refprice?category`（`auctionService.getRefBand` 复用 `refPrice`，返回 `{ ref, floor, ceil }`，floor/ceil=ref×0.5/×2.0 与 `checkPriceGuard` 同界；无护栏/冷启动放行→`null`）。客户端 `createForm.ts` 在价格输入下方展示一行参考价：加载中→`auction.refLoading`；有护栏→`auction.refRange`（当前价越界时整行转红，与服务端判定同式 `price<floor||price>ceil`）；角色卡/冷启动无护栏→`auction.refUnrestricted`。品类由 `base.currentListingCategory()` 按当前选品映射（镜像服务端 `categoryOf`：材料→`material:{mat}`、装备→`equip:{defId}`、角色卡→null），`ensureRefBand` 每次选品仅拉一次（按 category 去重缓存）。`WorldApiClient.getAuctionRefBand`；i18n 三语补 `refRange`/`refLoading`/`refUnrestricted`。
 - **标题栏统一**：拍卖行标题栏原用 `headerH: HUD_H(50) + titleSize:18`，比多数二级界面（`sceneHeaderHeight`=设计高 12%）矮一截、显得局促。改为不再覆写 `headerH`/`titleSize`，走 `drawSceneHeader` 标准高度与标题字号（仅保留 SLG 红 accent），与 Shop/Gacha/成就/排行榜等一致。`HUD_H` 常量降为默认占位，实际布局锚点改用实例字段 `this.headerH = sceneHeaderHeight(this.h)`（构造时取，`build()` 用返回值回填），`list.ts`/`picker.ts` 内所有 `HUD_H` 引用改 `this.headerH`。验证：client `tsc --noEmit` + webpack 生产构建全绿；auctionsvc e2e 41 例全绿（含 2 例新增 `getRefBand`）。
+
+**市场列表改卡片网格 + 发布按钮 2x（2026-07-15）**：按用户反馈修两处——
+- **市场/我的拍卖/我的收购列表改卡片式**：`list.ts` 的 `renderList` 从单列文字行（`ROW_H=76`）改成响应式卡片网格（`AUC_CELL_GAP=14`/`AUC_CELL_H=190`/`AUC_CELL_W_TARGET=340`，`base.ts`；列数按目标宽自适应，同 `CardScene`/`EquipmentScene` 既定的 gridMetrics 模式），新拆出 `renderAuctionCell` 渲染单张卡：左侧方形图标框（品类图标居中，右上角售卖方式徽标 tag/gavel）、右侧信息列（品名/价格/买断价/倒计时），卡片右下角固定操作按钮或状态徽标（原三档 all/mine/bids 的按钮·徽标逻辑原样迁入，未改变行为）。`ROW_H` 常量随之移除（仅 `list.ts` 引用，已确认无其他调用点）。
+- **「+ 发布」按钮放大 2x**：`renderCreateButton` 尺寸 200×44→400×88，字号 16→32；`renderList` 预留高度相应从 52 调到 100。
+- 验证：client `tsc --noEmit` 全绿。本机浏览器预览环境当次未能启动（应用停在启动画面，`document.title`/`globalThis` 探针均未执行，与本次改动无关的既有环境问题，未继续深挖），未能截图肉眼核对；改动仅限渲染层坐标/尺寸计算，逻辑迁移未改变。
 
 ---
 

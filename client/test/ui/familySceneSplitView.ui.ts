@@ -16,7 +16,7 @@
 // Runs under the headless PIXI adapter (test/harness/pixiHeadless.ts via
 // vitest.ui.config.ts). Run: npm run test:ui
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
@@ -100,6 +100,14 @@ async function flush(scene: any): Promise<void> {
 
 function textsOf(scene: any): string[] {
   return scene.bodyLayer.children
+    .filter((c: unknown) => c instanceof PIXI.Text)
+    .map((c: PIXI.Text) => c.text);
+}
+
+/** Header identity (title + landscape `[TAG] Name` / prosperity / count) is drawn on the scene
+ *  container, on top of the cached header chrome — not in bodyLayer. */
+function headerTextsOf(scene: any): string[] {
+  return scene.container.children
     .filter((c: unknown) => c instanceof PIXI.Text)
     .map((c: PIXI.Text) => c.text);
 }
@@ -204,7 +212,7 @@ describe('FamilyScene — portrait keeps the tab switch', () => {
   });
 });
 
-describe('FamilyScene — info band long-name handling', () => {
+describe('FamilyScene — portrait info band long-name handling', () => {
   it('truncates a long name with an ellipsis instead of colliding with the member count', async () => {
     const longFamily = makeFamily({
       name: 'Longwinded Scholars Guild', tag: 'LSGLD', memberCount: 1, prosperity: 123456,
@@ -225,14 +233,177 @@ describe('FamilyScene — info band long-name handling', () => {
     // No collision: the (possibly truncated) name must end before the right-anchored count label.
     expect(nameLbl!.x + nameLbl!.width).toBeLessThanOrEqual(countLbl!.x);
   });
+});
 
-  it('does not truncate a name that already fits', async () => {
-    const scene = buildScene(1200, 950, makeFamily({ name: 'Iron Quill', tag: 'IRQ' }), []);
+describe('FamilyScene — landscape lifts identity into the header', () => {
+  it('shows title + [TAG] Name + prosperity + member count in the header, not the body', async () => {
+    const scene = buildScene(1200, 950, makeFamily({ name: 'Iron Quill', tag: 'IRQ', memberCount: 3, members: makeMembers(3), prosperity: 480 }), []);
     await flush(scene);
     scene.render();
 
-    const children = scene.bodyLayer.children.filter((c: unknown) => c instanceof PIXI.Text) as PIXI.Text[];
-    const nameLbl = children.find((c) => c.text.startsWith('[IRQ]'));
-    expect(nameLbl!.text).toBe('[IRQ] Iron Quill');
+    const hdr = headerTextsOf(scene);
+    expect(hdr).toContain('Family');            // scene title
+    expect(hdr).toContain('[IRQ] Iron Quill');  // family name after the title
+    expect(hdr.some((s) => s.includes('Prosperity') && s.includes('480'))).toBe(true);
+    expect(hdr.some((s) => s.startsWith('Members '))).toBe(true); // Members 3/30 far-right
+
+    // The identity is NOT duplicated in the body.
+    expect(textsOf(scene).some((s) => s.startsWith('[IRQ]'))).toBe(false);
+  });
+
+  it('does not overlap the left identity cluster with the far-right member count', async () => {
+    // A long name + big prosperity is the worst case for the single-line header.
+    const scene = buildScene(1200, 760, makeFamily({
+      name: 'Longwinded Scholars Guild', tag: 'LSGLD', memberCount: 12, members: makeMembers(12), prosperity: 987654,
+    }), []);
+    await flush(scene);
+    scene.render();
+
+    const children = scene.container.children.filter((c: unknown) => c instanceof PIXI.Text) as PIXI.Text[];
+    const pros = children.find((c) => c.text.includes('Prosperity'));
+    const count = children.find((c) => c.text.startsWith('Members '));
+    expect(pros).toBeTruthy();
+    expect(count).toBeTruthy();
+    // Count is right-anchored (anchor.x=1): its left edge is count.x - count.width.
+    expect(pros!.x + pros!.width).toBeLessThan(count!.x - count!.width);
+  });
+});
+
+describe('FamilyScene — member rows & self action', () => {
+  it('removes the Sect button and shows Dissolve on a lone leaders own row', async () => {
+    const scene = buildScene(1200, 950, makeFamily({ memberCount: 1, members: makeMembers(1) }), []);
+    await flush(scene);
+    scene.render();
+
+    // The bottom-bar Sect button is gone. ('Sect' still legitimately appears as a left-rail nav tab
+    // for a leader — assert only that no Sect control exists outside the rail.)
+    const sectOutsideRail = (scene.bodyLayer.children as any[])
+      .filter((c) => c instanceof PIXI.Text && c.text === 'Sect')
+      .some((c) => c.x >= scene.railW);
+    expect(sectOutsideRail).toBe(false);
+
+    const texts = textsOf(scene);
+    expect(texts).toContain('Dissolve Family');     // sole leader → dissolve, on the roster row
+    expect(texts).not.toContain('Leave Family');
+  });
+
+  it('hides both Leave and Dissolve for a leader while other members remain', async () => {
+    const scene = buildScene(1200, 950, makeFamily({ memberCount: 3, members: makeMembers(3) }), []);
+    await flush(scene);
+    scene.render();
+
+    const texts = textsOf(scene);
+    expect(texts).not.toContain('Leave Family');
+    expect(texts).not.toContain('Dissolve Family');
+  });
+
+  it('shows Leave Family on a non-leaders own row', async () => {
+    // 'me' is a plain member here; the leader is someone else.
+    const members: FamilyMemberView[] = [
+      { accountId: 'boss', role: 'leader', joinedAt: 0, displayName: 'Boss', publicId: '1' },
+      { accountId: 'me', role: 'member', joinedAt: 0, displayName: 'tao', publicId: '2' },
+    ];
+    const scene = buildScene(1200, 950, makeFamily({ memberCount: 2, members, leaderId: 'boss' }), []);
+    await flush(scene);
+    scene.render();
+
+    const texts = textsOf(scene);
+    expect(texts).toContain('Leave Family');
+    expect(texts).not.toContain('Dissolve Family');
+  });
+
+  it('draws the role label to the right of the member name, vertically aligned (not stacked above)', async () => {
+    const scene = buildScene(1200, 950, makeFamily({ memberCount: 1, members: makeMembers(1) }), []);
+    await flush(scene);
+    scene.render();
+
+    const rows = scene.bodyLayer.children.filter((c: unknown) => c instanceof PIXI.Text) as PIXI.Text[];
+    const name = rows.find((c) => c.text === 'tao')!;
+    const role = rows.find((c) => c.text === 'Leader')!;
+    expect(name).toBeTruthy();
+    expect(role).toBeTruthy();
+    // Role starts after the name ends horizontally.
+    expect(role.x).toBeGreaterThanOrEqual(name.x + name.width);
+    // …and sits on roughly the same line (centres within a few px), not stacked above it.
+    const nameMid = name.y + name.height / 2;
+    const roleMid = role.y + role.height / 2;
+    expect(Math.abs(nameMid - roleMid)).toBeLessThan(scene.rowH * 0.25);
+  });
+
+  it('gives each visible member row a card background behind the text', async () => {
+    const scene = buildScene(1200, 950, makeFamily({ memberCount: 3, members: makeMembers(3) }), []);
+    await flush(scene);
+    scene.render();
+
+    // sketchPanel() row backgrounds are Containers (not Text/Graphics accent bars). There must be
+    // at least one background container per rendered member row.
+    const panels = scene.bodyLayer.children.filter(
+      (c: unknown) => c instanceof PIXI.Container && !(c instanceof PIXI.Text),
+    );
+    expect(panels.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('clicking Dissolve on a lone leaders row triggers confirmDissolve', async () => {
+    const scene = buildScene(1200, 950, makeFamily({ memberCount: 1, members: makeMembers(1) }), []);
+    await flush(scene);
+    scene.confirmDissolve = vi.fn();
+    scene.render();
+
+    const btn = (scene.bodyLayer.children as PIXI.Text[]).find(
+      (c) => c instanceof PIXI.Text && c.text === 'Dissolve Family',
+    )!;
+    // Label anchor is (0.5,0.5) so its x/y are the button centre — route a tap there.
+    scene.handleDown(btn.x, btn.y);
+    expect(scene.confirmDissolve).toHaveBeenCalledTimes(1);
+  });
+
+  it('clicking Leave on a non-leaders row triggers confirmLeave', async () => {
+    const members: FamilyMemberView[] = [
+      { accountId: 'boss', role: 'leader', joinedAt: 0, displayName: 'Boss', publicId: '1' },
+      { accountId: 'me', role: 'member', joinedAt: 0, displayName: 'tao', publicId: '2' },
+    ];
+    const scene = buildScene(1200, 950, makeFamily({ memberCount: 2, members, leaderId: 'boss' }), []);
+    await flush(scene);
+    scene.confirmLeave = vi.fn();
+    scene.render();
+
+    const btn = (scene.bodyLayer.children as PIXI.Text[]).find(
+      (c) => c instanceof PIXI.Text && c.text === 'Leave Family',
+    )!;
+    scene.handleDown(btn.x, btn.y);
+    expect(scene.confirmLeave).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('FamilyScene — channel send box shows the draft (input fix, render half)', () => {
+  it('renders the typed draft + blinking caret while the field is focused', async () => {
+    // Landscape shows the channel column permanently, so no tab switch is needed.
+    const scene = buildScene(1200, 950, makeFamily({ memberCount: 1, members: makeMembers(1) }), []);
+    await flush(scene);
+    scene.sendInput = {}; // truthy → the field is "focused/active"
+    scene.sendText = 'hello';
+
+    scene.caretOn = true;
+    scene.render();
+    expect(textsOf(scene)).toContain('hello|');
+
+    scene.caretOn = false;
+    scene.render();
+    const off = textsOf(scene);
+    expect(off).toContain('hello');
+    expect(off).not.toContain('hello|');
+  });
+
+  it('shows the placeholder (no caret) when the field is not focused', async () => {
+    const scene = buildScene(1200, 950, makeFamily({ memberCount: 1, members: makeMembers(1) }), []);
+    await flush(scene);
+    scene.sendInput = null;
+    scene.sendText = '';
+    scene.caretOn = true;
+    scene.render();
+
+    const texts = textsOf(scene);
+    expect(texts).toContain('Type a message…');
+    expect(texts).not.toContain('|');
   });
 });

@@ -240,14 +240,12 @@ export class TerritoryService {
     if (newTid === pw.mainBaseTile) return this.core.getMe(worldId, accountId); // relocating to the same tile = no-op, no charge
 
     const proc = proceduralTile(worldId, x, y);
-    if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'Cannot place capital at the world center');
-    if (proc.type === 'obstacle' || proc.type === 'bridge' || proc.type === 'plankway') throw new SlgError('BAD_REQUEST', 'Cannot place capital on obstacle or crossing (bridge/plankway) terrain');
-    if (proc.type === 'stronghold') throw new SlgError('BAD_REQUEST', 'Cannot place capital on stronghold terrain');
-    const occ = await cols.tiles.findOne({ _id: newTid });
-    if (occ?.ownerId) throw new SlgError('TILE_OCCUPIED', 'This tile is already occupied');
-    // ADR-025: the whole 3×3 footprint must fit + be free at the new anchor (ignore our own old base cells).
-    if (!(await this.core.footprintFree(worldId, x, y, this.core.deps.mapW, this.core.deps.mapH, { ignoreOwnerId: accountId }))) {
-      throw new SlgError('TILE_OCCUPIED', 'The 3×3 capital footprint does not fit / is occupied at the new location');
+    // Relocate rule (§3.4, changed): the capital may only move onto a 3×3 block the player ALREADY fully
+    // owns — occupy the centre tile *and all 8 surrounding tiles* first, then relocate onto the centre.
+    // (Previously any free/clear 3×3 was allowed.) The old base's 9 cells are released back to neutral by
+    // the deleteMany below, so relocating does surrender the former footprint.
+    if (!(await this.core.footprintOwnedBy(worldId, x, y, this.core.deps.mapW, this.core.deps.mapH, accountId))) {
+      throw new SlgError('TILE_NOT_OWNED', 'Relocation target must be a 3×3 block you already fully own — occupy the surrounding tiles first');
     }
 
     // Deduct coins first (failure throws INSUFFICIENT_FUNDS; map state is not modified).

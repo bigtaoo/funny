@@ -38,7 +38,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       worldApi,
       getSave: () => saveManager.get(),
       reloadSave: async () => { await saveManager.refresh(); },
-      myAccountId: platform.storage.getItem('nw_account_id') ?? '',
+      myAccountId: saveManager.get().accountId,
     });
   }
 
@@ -58,7 +58,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       worldApi,
       worldId,
       playerName: playerName(),
-      accountId: platform.storage.getItem('nw_account_id') ?? '',
+      accountId: saveManager.get().accountId,
       getCoins: () => saveManager.get().wallet.coins,
     });
     // Keep the gateway connected + forward SLG pushes into the live map handle
@@ -154,7 +154,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
   // Defaults to the world map since that's the only entry point today that doesn't thread one
   // through (e.g. a future direct "family" button on the map itself).
   function goFamilyHub(worldApi: WorldApiClient, worldId: string, onExit: () => void = () => goWorldMap(worldApi, worldId)): void {
-    const myAccountId = platform.storage.getItem('nw_account_id') ?? '';
+    const myAccountId = saveManager.get().accountId;
     views.showFamily({
       onBack: onExit,
       onOpenSect() { goSectHub(worldApi, worldId, onExit); },
@@ -171,7 +171,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
   }
 
   function goSectHub(worldApi: WorldApiClient, worldId: string, onExit: () => void = () => goWorldMap(worldApi, worldId)): void {
-    const myAccountId = platform.storage.getItem('nw_account_id') ?? '';
+    const myAccountId = saveManager.get().accountId;
     const view = views.showSect({
       onBack: onExit,
       onNavTab(tab) {
@@ -208,7 +208,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       worldApi,
       getSave: () => saveManager.get(),
       reloadSave: async () => { await saveManager.refresh(); },
-      myAccountId: platform.storage.getItem('nw_account_id') ?? '',
+      myAccountId: saveManager.get().accountId,
     });
   }
 

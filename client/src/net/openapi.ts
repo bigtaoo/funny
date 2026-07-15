@@ -166,7 +166,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Change display name (consumes coins; writes name and pushes save after successful deduction) */
+        /** Change display name (first rename is free if the player never chose a name; otherwise consumes coins) */
         post: operations["profileRename"];
         delete?: never;
         options?: never;
@@ -679,6 +679,40 @@ export interface paths {
         put?: never;
         /** Feed material cards into a target card to gain XP and level up (CHARACTER_CARDS_DESIGN §3.3, CC-2). Same-faction required; locked materials rejected. idempotencyKey prevents double-consumption */
         post: operations["cardsFeed"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cards/lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Lock a character card (CC-4). Locked cards cannot be consumed as feed material. Idempotent: locking an already-locked card succeeds */
+        post: operations["cardsLock"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cards/unlock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unlock a character card (CC-4). Unlocked cards may again be consumed as feed material. Idempotent: unlocking an already-unlocked card succeeds */
+        post: operations["cardsUnlock"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2013,6 +2047,7 @@ export interface operations {
                         data: {
                             save: components["schemas"]["SaveData"];
                             displayName: string;
+                            freeRename?: boolean;
                         };
                     };
                 };
@@ -2046,6 +2081,14 @@ export interface operations {
                             displayName?: string;
                             publicId?: string;
                             gatewayUrl?: string;
+                            freeRename?: boolean;
+                            activeMatch?: {
+                                roomId: string;
+                                gameUrl: string;
+                                ticket: string;
+                                /** @enum {string} */
+                                mode: "friendly" | "ranked";
+                            };
                         };
                     };
                 };
@@ -3163,6 +3206,80 @@ export interface operations {
                         data: {
                             card: components["schemas"]["CardInstance"];
                             levelsGained: number;
+                            save: components["schemas"]["SaveData"];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+        };
+    };
+    cardsLock: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description CardInstance id to lock */
+                    cardInstanceId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+        };
+    };
+    cardsUnlock: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description CardInstance id to unlock */
+                    cardInstanceId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
                             save: components["schemas"]["SaveData"];
                         };
                     };

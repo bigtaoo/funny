@@ -1388,6 +1388,25 @@ paths:
                         type: string
                       freeRename:
                         type: boolean
+                      activeMatch:
+                        type: object
+                        required:
+                          - roomId
+                          - gameUrl
+                          - ticket
+                          - mode
+                        properties:
+                          roomId:
+                            type: string
+                          gameUrl:
+                            type: string
+                          ticket:
+                            type: string
+                          mode:
+                            type: string
+                            enum:
+                              - friendly
+                              - ranked
         '401':
           $ref: '#/components/responses/ErrorResp'
     put:

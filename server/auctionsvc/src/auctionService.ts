@@ -74,6 +74,16 @@ export interface AuctionServiceDeps {
 /** System-mail retention for auction delivery/return items (days) — returned assets must not expire quickly. */
 const AUCTION_MAIL_EXPIRE_DAYS = 30;
 
+/**
+ * Retention window (seconds) for closed listings (sold/cancelled/expired) in a seller's My-Listings history
+ * before the scheduler purges them — keeps recent history visible but bounds unbounded list growth (~30 days).
+ * Must stay ≥ AUDIT_WINDOW_SEC (7d) so the anomaly audit never loses in-window sold docs to this purge.
+ */
+const AUCTION_CLOSED_RETENTION_SEC = 30 * 24 * 3600;
+
+/** Fetch cap for getMyListings — larger than AUCTION_MAX_LISTINGS (open cap) to leave room for retained closed history. */
+const MY_LISTINGS_FETCH_LIMIT = 100;
+
 /** In-process sequence counter to prevent key collisions when multiple listings are created within the same millisecond. */
 let auctionSeq = 0;
 
@@ -277,14 +287,32 @@ export class AuctionService {
     return docs.map(docToView);
   }
 
-  /** My listings (all statuses). */
+  /** My listings (all statuses; open first by expireAt desc, then recent closed history within the retention window). */
   async getMyListings(accountId: string): Promise<AuctionView[]> {
     const docs = await this.deps.cols.auctions
       .find({ sellerId: accountId })
       .sort({ expireAt: -1 })
-      .limit(AUCTION_MAX_LISTINGS)
+      .limit(MY_LISTINGS_FETCH_LIMIT)
       .toArray();
     return docs.map(docToView);
+  }
+
+  /**
+   * Purge closed listings (sold/cancelled/expired) older than the retention window from every seller's
+   * My-Listings history, so the list can't grow without bound. Open listings are never purged (they still
+   * hold escrowed goods / active bids). Anchor is closedAt; legacy closed docs written before closedAt
+   * existed fall back to expireAt. Called periodically by the scheduler. Returns the number deleted.
+   */
+  async purgeClosedListings(retentionSec: number = AUCTION_CLOSED_RETENTION_SEC): Promise<number> {
+    const cutoff = this.deps.now() - retentionSec * 1000;
+    const res = await this.deps.cols.auctions.deleteMany({
+      status: { $ne: 'open' },
+      $or: [
+        { closedAt: { $lt: cutoff } },
+        { closedAt: { $exists: false }, expireAt: { $lt: cutoff } },
+      ],
+    });
+    return res.deletedCount ?? 0;
   }
 
   /**
@@ -461,7 +489,7 @@ export class AuctionService {
     // 2. Atomic status open→sold (prevents concurrent double-purchase)
     const updated = await cols.auctions.findOneAndUpdate(
       { _id: auctionId, status: 'open' },
-      { $set: { status: 'sold', buyerId, soldAt: now(), rev: doc.rev + 1 } },
+      { $set: { status: 'sold', buyerId, soldAt: now(), closedAt: now(), rev: doc.rev + 1 } },
       { returnDocument: 'after' },
     );
     if (!updated) {
@@ -568,9 +596,10 @@ export class AuctionService {
     commercial: AuctionCommercialClient,
   ): Promise<AuctionView> {
     const top = doc.topBid!;
+    const now = this.deps.now();
     const updated = await this.deps.cols.auctions.findOneAndUpdate(
       { _id: doc._id, status: 'open' },
-      { $set: { status: 'sold', buyerId: top.bidderId, soldAt: this.deps.now(), rev: doc.rev + 1 } },
+      { $set: { status: 'sold', buyerId: top.bidderId, soldAt: now, closedAt: now, rev: doc.rev + 1 } },
       { returnDocument: 'after' },
     );
     if (!updated) {
@@ -609,7 +638,7 @@ export class AuctionService {
 
     const updated = await cols.auctions.findOneAndUpdate(
       { _id: auctionId, status: 'open' },
-      { $set: { status: 'cancelled', rev: doc.rev + 1 } },
+      { $set: { status: 'cancelled', closedAt: this.deps.now(), rev: doc.rev + 1 } },
       { returnDocument: 'after' },
     );
     if (!updated) throw new SlgError('AUCTION_CLOSED');
@@ -648,7 +677,7 @@ export class AuctionService {
       // Atomic open→expired (prevents concurrent double-processing)
       const res = await cols.auctions.findOneAndUpdate(
         { _id: doc._id, status: 'open' },
-        { $set: { status: 'expired', rev: doc.rev + 1 } },
+        { $set: { status: 'expired', closedAt: ts, rev: doc.rev + 1 } },
         { returnDocument: 'after' },
       );
       if (!res) continue; // concurrently claimed by another processor, skip

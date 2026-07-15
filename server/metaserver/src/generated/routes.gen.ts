@@ -2735,6 +2735,33 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
             },
             "freeRename": {
               "type": "boolean"
+            },
+            "activeMatch": {
+              "type": "object",
+              "required": [
+                "roomId",
+                "gameUrl",
+                "ticket",
+                "mode"
+              ],
+              "properties": {
+                "roomId": {
+                  "type": "string"
+                },
+                "gameUrl": {
+                  "type": "string"
+                },
+                "ticket": {
+                  "type": "string"
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "friendly",
+                    "ranked"
+                  ]
+                }
+              }
             }
           }
         }

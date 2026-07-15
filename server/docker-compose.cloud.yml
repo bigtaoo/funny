@@ -239,6 +239,38 @@ services:
       NW_ANALYTICS_MONGO_DB: ${NW_ANALYTICS_MONGO_DB:-notebook_wars_analytics}
     restart: unless-stopped
 
+  # botsvc: bot-player fleet keeping ~300 bots permanently online (BOTSVC_DESIGN §2/§8).
+  # Owns no database — it is itself a set of clients dialing the real public/internal faces. Internal admin API only (18087), not exposed via caddy.
+  # Reuses the existing bot-0001..1000 accounts in Atlas (pool 1000, target 300); restart:unless-stopped so a redeploy/reboot self-heals the fleet.
+  # To turn the fleet off without a code change: `docker compose -f docker-compose.cloud.yml stop botsvc` (or scale to 0 via POST /internal/bots/scale).
+  botsvc:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nw-server:latest
+    command: ["node", "botsvc/dist/index.js"]
+    environment:
+      NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:?set NW_INTERNAL_KEY in .env}
+      NW_BOT_PORT: "18087"
+      NW_BOT_HOST: 0.0.0.0
+      NW_BOT_POOL_SIZE: ${NW_BOT_POOL_SIZE:-1000}
+      NW_BOT_TARGET_ONLINE: ${NW_BOT_TARGET_ONLINE:-300}
+      # Bots reach every service by its internal name on server_default (same pattern the manual load-test runs used).
+      NW_META_BASE_URL: http://metaserver:8080
+      NW_SOCIAL_BASE_URL: http://socialsvc:8085
+      NW_WORLD_BASE_URL: http://worldsvc:18084
+      NW_GATEWAY_INTERNAL_URL: http://gateway:8090
+      # Control-plane WS fallback (used only when device-login doesn't hand back its own gatewayUrl); internal, not the public wss://.../gw.
+      NW_GATEWAY_WS_URL: ws://gateway:8082/gw
+      NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
+    depends_on:
+      - metaserver
+      - gateway
+      - socialsvc
+      - worldsvc
+      - commercial
+    restart: unless-stopped
+
   caddy:
     image: caddy:2
     container_name: nw-caddy

@@ -1007,6 +1007,27 @@ describe('EquipmentScene — mixin-split wiring', () => {
     expect(calls.salvage).toEqual([['eqBagCommon']]);
     scene.destroy();
   });
+
+  // initialFilterSlot (CardScene gear-slot tap → jump straight to that slot's filter tab, instead
+  // of landing on "All"). The seeding happens in EquipmentSceneBase's constructor: verify the
+  // default, that each slot value round-trips, and that render() honors the seeded filter without
+  // throwing (the full build+render already ran in the constructor).
+  it('initialFilterSlot: defaults to "all" when absent, and seeds filterSlot when provided', () => {
+    const { cb: defCb } = buildEquipCallbacks('card1');
+    const defScene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), defCb);
+    expect((defScene as any).filterSlot).toBe('all');
+    defScene.destroy();
+
+    for (const slot of ['weapon', 'armor', 'trinket'] as const) {
+      const { cb } = buildEquipCallbacks('card1');
+      const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), { ...cb, initialFilterSlot: slot });
+      expect((scene as any).filterSlot).toBe(slot);
+      // Re-render with the seeded filter live — proves it reaches renderInventory's filter path
+      // (the all-weapon fixture under an armor filter exercises the empty branch) without throwing.
+      expect(() => (scene as any).render()).not.toThrow();
+      scene.destroy();
+    }
+  });
 });
 
 // ── ResultScene: top-left back chip ─────────────────────────────────────────

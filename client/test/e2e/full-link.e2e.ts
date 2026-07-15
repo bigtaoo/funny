@@ -426,9 +426,12 @@ describe.skipIf(!AUCTION_UP)('auction full-link (real app core → live auctions
     await registerAndEnterLobby(buyer, 'Auction Buyer');
 
     // Seed the seller with materials to list (scrap ref=10 → guardrail band [5,20]).
-    const sellerAcct = seller.platform.storage.getItem('nw_account_id');
+    // accountId is the authoritative cloud-save identity persisted in the local save
+    // (nw_save_v1) — the same source the app itself reads via saveManager.get().accountId.
+    const sellerSave = seller.platform.storage.getItem('nw_save_v1');
+    const sellerAcct = sellerSave ? (JSON.parse(sellerSave).accountId as string) : '';
     expect(sellerAcct, 'seller account id persisted after register').toBeTruthy();
-    await seedMaterial(sellerAcct!, 'scrap', 5);
+    await seedMaterial(sellerAcct, 'scrap', 5);
 
     // Buyer needs coins (auction buy deducts via commercial) — real dev top-up (grants 550).
     buyer.views.lobby!.onOpenShop();

@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
-import type { Collections, JwtConfig, FeatureFlagCache } from '@nw/shared';
+import type { Collections, JwtConfig, FeatureFlagCache, RedisLike } from '@nw/shared';
 import { createLogger, internalKeysFromEnv } from '@nw/shared';
 import { MetaService } from './service.js';
 import { registerAdCallbackRoutes } from './ads.js';
@@ -49,6 +49,8 @@ export interface BuildAppOpts {
   /** socialsvc internal base URL (P2: friend/chat/mail routing proxy); null = metaserver handles these itself. */
   socialsvcUrl?: string | null;
   socialsvc?: import('./socialsvcClient.js').MetaSocialsvcClient;
+  /** Active-match Redis client (login-reconnect-prompt): getSave() surfaces a resume hint, /internal/match/report clears it. null/omitted = feature disabled. */
+  redis?: RedisLike | null;
 }
 
 export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
@@ -96,6 +98,7 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     opts.gateway ?? new HttpGatewayClient(opts.gatewayUrl ?? null, opts.internalKey);
   const socialsvc =
     opts.socialsvc ?? (opts.socialsvcUrl ? new HttpMetaSocialsvcClient(opts.socialsvcUrl, opts.internalKey) : nullMetaSocialsvcClient);
+  const redis = opts.redis ?? null;
   const service = new MetaService({
     cols: opts.cols,
     jwt: opts.jwt,
@@ -108,6 +111,7 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     region: opts.region ?? null,
     lokiPushUrl: opts.lokiPushUrl ?? null,
     socialsvc,
+    redis,
   });
 
   // Ad platform SSV callbacks (platform-initiated; no player authentication).
@@ -138,6 +142,7 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     gateway,
     commercial,
     socialsvc,
+    redis,
   });
 
   // Public REST routes — generated from openapi.yml at build time (ADR-023).

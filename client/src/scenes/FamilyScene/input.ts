@@ -36,18 +36,32 @@ export function InputMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBas
       const inp = document.createElement('input');
       inp.type = 'text';
       inp.maxLength = 200;
+      inp.value = this.sendText;
       inp.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
       document.body.appendChild(inp);
       inp.focus();
+      this.caretOn = true;
+      this.caretTimer = 0;
+      // Mirror the hidden field into `sendText` so the on-canvas field shows the typed text +
+      // caret. Without this the field stayed on the placeholder and typing looked like a no-op.
+      inp.addEventListener('input', () => {
+        this.sendText = inp.value;
+        if (!this.destroyed) this.render();
+      });
       inp.addEventListener('keydown', async (e) => {
         if (e.key === 'Enter') {
           const body = inp.value.trim();
           inp.remove();
           this.sendInput = null;
+          this.sendText = '';
           await this.submitMessage(body);
         }
       });
-      inp.addEventListener('blur', () => { inp.remove(); this.sendInput = null; });
+      inp.addEventListener('blur', () => {
+        inp.remove();
+        this.sendInput = null;
+        if (!this.destroyed) this.render();
+      });
       this.sendInput = inp;
     }
   };

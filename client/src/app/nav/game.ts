@@ -178,7 +178,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
       },
       // Per-card gear editing + the standalone equipment bag are server-authoritative — omitted offline.
       ...(online ? {
-        openEquipment: (cardInstanceId: string) => goEquipment(() => goCardRoster(back), 'none', cardInstanceId),
+        openEquipment: (cardInstanceId: string, slot?: EquipSlot) => goEquipment(() => goCardRoster(back), 'none', cardInstanceId, undefined, slot),
         openEquipmentBag: () => goEquipment(() => goCardRoster(back), 'roster', '', () => goCardRoster(back, 'skins')),
       } : {}),
       getOwnedSkins: () => saveManager.get().inventory.skins,
@@ -222,6 +222,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
     group: 'none' | 'roster' = 'none',
     cardInstanceId = '',
     onSkins?: () => void,
+    initialFilterSlot?: EquipSlot,
   ): void {
     if (!api) { back(); return; }
     const client = api;
@@ -242,6 +243,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
       ...(peerTab ? { peerTab } : {}),
       ...(trailingPeers ? { trailingPeers } : {}),
       activeCardInstanceId: cardInstanceId,
+      ...(initialFilterSlot ? { initialFilterSlot } : {}),
       getSave: () => saveManager.get(),
       async craft(defId: string) {
         try {

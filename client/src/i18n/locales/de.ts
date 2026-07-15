@@ -785,6 +785,7 @@ export const de: Record<TranslationKey, string> = {
   'world.err.noTroops': 'Nicht genug Truppen',
   'world.err.occupied': 'Feld bereits besetzt',
   'world.err.footprintBlocked': 'Die Hauptstadt braucht eine freie 3×3-Fläche — umliegende Felder sind blockiert oder belegt',
+  'world.err.relocateNeedSurround': 'Besetze zuerst dieses Feld und alle acht Nachbarfelder',
   'world.err.protected': 'Feld ist geschützt',
   'world.err.allyTile': 'Verbündetes Gebiet — Angriff nicht möglich',
   'world.err.outOfRange': 'Außerhalb der Karte',
@@ -1031,6 +1032,10 @@ export const de: Record<TranslationKey, string> = {
   'auction.created': 'Angebot erstellt',
   'auction.bought': 'Kauf erfolgreich',
   'auction.cancelled': 'Angebot storniert',
+  // Statusabzeichen der Angebotszeile (abgeschlossene Historie)
+  'auction.statusSold': 'Verkauft',
+  'auction.statusExpired': 'Abgelaufen · zurück',
+  'auction.statusCancelled': 'Storniert',
   'auction.err.closed': 'Auktion bereits beendet',
   'auction.err.selfBuy': 'Eigenes Angebot nicht kaufbar',
   'auction.err.insufficientFunds': 'Nicht genug Münzen',
@@ -1321,6 +1326,12 @@ export const de: Record<TranslationKey, string> = {
   'consent.privacyPolicy': 'Datenschutzerklärung',
   'consent.terms': 'Nutzungsbedingungen',
   'consent.accept': 'Zustimmen & Fortfahren',
+
+  // ── Wiederverbindungs-Hinweis nach Login (laufendes Match nach Re-Login fortsetzen) ──
+  'reconnect.title': 'Unbeendetes Match',
+  'reconnect.body': 'Du hast noch ein laufendes Match. Möchtest du dich wieder verbinden und fortsetzen?',
+  'reconnect.accept': 'Wieder verbinden',
+  'reconnect.decline': 'Nicht jetzt',
 
   // ── Gacha-Wahrscheinlichkeiten (Apple 3.1.1, L1-3) ──────────────────────────
   'gacha.oddsDetail.button': 'Chancen',

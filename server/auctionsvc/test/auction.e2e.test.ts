@@ -305,6 +305,53 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(other.length).toBe(0);
   });
 
+  // ── Closed-listing history retention (My-Listings badge + purge) ────────────────────────────────
+  it('cancel stamps closedAt and keeps the listing in My-Listings history (cancelled status)', async () => {
+    const view = await svc.createAuction({
+      sellerId: 'alice', itemType: 'material',
+      item: { material: 'scrap' }, qty: 1, price: 10, durationSec: DUR,
+    });
+    await svc.cancelAuction('alice', view.auctionId);
+    // Gone from the open market, still in the seller's history with the terminal status.
+    expect((await svc.listAuctions()).length).toBe(0);
+    const mine = await svc.getMyListings('alice');
+    expect(mine.length).toBe(1);
+    expect(mine[0]!.status).toBe('cancelled');
+    const doc = await mongo!.collections.auctions.findOne({ _id: view.auctionId });
+    expect(doc!.closedAt).toBe(nowMs);
+  });
+
+  it('purge removes closed listings past the retention window but keeps open + recently-closed ones', async () => {
+    // Open listing — must never be purged.
+    await svc.createAuction({
+      sellerId: 'alice', itemType: 'material',
+      item: { material: 'scrap' }, qty: 1, price: 10, durationSec: DUR,
+    });
+    // Recently closed (cancelled just now) — within retention, kept.
+    const recent = await svc.createAuction({
+      sellerId: 'alice', itemType: 'material',
+      item: { material: 'scrap' }, qty: 1, price: 10, durationSec: DUR,
+    });
+    await svc.cancelAuction('alice', recent.auctionId);
+    // Old closed — push its closedAt 31 days into the past.
+    const old = await svc.createAuction({
+      sellerId: 'alice', itemType: 'material',
+      item: { material: 'scrap' }, qty: 1, price: 10, durationSec: DUR,
+    });
+    await svc.cancelAuction('alice', old.auctionId);
+    await mongo!.collections.auctions.updateOne(
+      { _id: old.auctionId },
+      { $set: { closedAt: nowMs - 31 * 24 * 3600 * 1000 } },
+    );
+
+    const purged = await svc.purgeClosedListings();
+    expect(purged).toBe(1);
+    const mine = await svc.getMyListings('alice');
+    const ids = mine.map((m) => m.auctionId).sort();
+    expect(ids).not.toContain(old.auctionId);
+    expect(mine.length).toBe(2); // the open one + the recently-cancelled one
+  });
+
   // ── G Price guardrail (cold-start static reference price: scrap ref=10 → band [5,20]) ──────────────
   it('G overpriced listing → PRICE_OUT_OF_RANGE', async () => {
     await expect(svc.createAuction({

@@ -341,6 +341,46 @@ describe('AuctionScene — myBids()', () => {
   });
 });
 
+// ── My Listings rows — closed history shows a status badge (no Cancel action), open shows Cancel ──
+
+describe('AuctionScene — My Listings status badges', () => {
+  it('open listing shows Cancel; sold/expired/cancelled show a status badge instead', () => {
+    const scene = buildScene();
+    scene.myListings = [
+      makeAuction({ auctionId: 'open1', status: 'open' }),
+      makeAuction({ auctionId: 'sold1', status: 'sold' }),
+      makeAuction({ auctionId: 'exp1', status: 'expired' }),
+      makeAuction({ auctionId: 'can1', status: 'cancelled' }),
+    ];
+    scene.activeTab = 'mine';
+    scene.loading = false;
+    scene.render();
+
+    const texts = collectTexts(scene.container);
+    expect(texts).toContain(t('auction.cancel'));          // open row → cancel action
+    expect(texts).toContain(t('auction.statusSold'));      // closed rows → status badge
+    expect(texts).toContain(t('auction.statusExpired'));
+    expect(texts).toContain(t('auction.statusCancelled'));
+    scene.destroy();
+  });
+
+  it('a closed listing exposes no cancel hit rect (badge is informational only)', () => {
+    const scene = buildScene();
+    scene.myListings = [makeAuction({ auctionId: 'exp1', status: 'expired' })];
+    scene.activeTab = 'mine';
+    scene.loading = false;
+    scene.render();
+
+    // The status badge must not sit over any actionable hit rect.
+    const pos = findLabelPos(scene.container, t('auction.statusExpired'));
+    expect(pos).not.toBeNull();
+    const hits: Hit[] = scene.hitRects;
+    const hit = hits.find(({ rect: r }) => pos!.x >= r.x && pos!.x <= r.x + r.w && pos!.y >= r.y && pos!.y <= r.y + r.h);
+    expect(hit).toBeUndefined();
+    scene.destroy();
+  });
+});
+
 // ── Tab switching & filter chips — click wiring through the real hit-rect list ─────────────────
 
 describe('AuctionScene — sidebar tabs & filter chips', () => {

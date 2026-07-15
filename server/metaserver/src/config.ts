@@ -34,6 +34,8 @@ export interface MetaEnv extends ServerEnv {
    * loki (the observability stack runs on an isolated network — see observability/README.md "network pitfalls"). Unreachable → silently dropped, never affects players.
    */
   lokiPushUrl: string | null;
+  /** Redis URL for cross-login active-match tracking (login-reconnect-prompt). null = feature disabled (getSave never returns activeMatch). */
+  redisUrl: string | null;
 }
 
 export function loadMetaEnv(): MetaEnv {
@@ -52,5 +54,6 @@ export function loadMetaEnv(): MetaEnv {
     socialsvcInternalUrl: process.env.NW_SOCIALSVC_INTERNAL_URL ?? null,
     region: process.env.NW_REGION ?? null,
     lokiPushUrl: process.env.NW_LOKI_PUSH_URL ?? null,
+    redisUrl: process.env.NW_REDIS_URL ?? null,
   };
 }

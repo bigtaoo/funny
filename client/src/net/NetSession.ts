@@ -183,6 +183,16 @@ export class NetSession {
     return this.localSide;
   }
 
+  /**
+   * Login-reconnect-prompt: reconnect straight into a match found via GET /save's activeMatch
+   * (cached ticket from the original match_found — gameserver's handshake ignores ticket exp, so it
+   * remains usable for the match's lifetime). Goes through the same connectGame() path as a live
+   * match_found; handlers.onMatchStart fires once the server replies with match_start as usual.
+   */
+  rejoinMatch(gameUrl: string, ticket: string): void {
+    this.connectGame(gameUrl, ticket);
+  }
+
   // ── Routing ──────────────────────────────────────────────────────────────────
 
   /**

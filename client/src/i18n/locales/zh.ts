@@ -797,6 +797,7 @@ export const zh = {
   'world.err.noTroops': '兵力不足',
   'world.err.occupied': '该地已被占领',
   'world.err.footprintBlocked': '迁城需要连续的 3×3 空地，周边有格子被占用或不可用',
+  'world.err.relocateNeedSurround': '请先占领该地块周围地块',
   'world.err.protected': '该地受保护，无法攻击',
   'world.err.allyTile': '这是盟友领地，无法进攻',
   'world.err.outOfRange': '超出地图边界',
@@ -1043,6 +1044,10 @@ export const zh = {
   'auction.created': '拍卖已发布',
   'auction.bought': '购买成功',
   'auction.cancelled': '拍卖已取消',
+  // 我的挂单行状态徽标（已结束的历史记录）
+  'auction.statusSold': '已售出',
+  'auction.statusExpired': '已过期·已退回',
+  'auction.statusCancelled': '已取消',
   'auction.err.closed': '拍卖已结束',
   'auction.err.selfBuy': '不能购买自己的拍卖',
   'auction.err.insufficientFunds': '金币不足',
@@ -1335,6 +1340,12 @@ export const zh = {
   'consent.privacyPolicy': '隐私政策',
   'consent.terms': '用户协议',
   'consent.accept': '同意并继续',
+
+  // ── 登录断线重连提示（重新登录后恢复未完成的对局） ───────────────────────────
+  'reconnect.title': '未完成的对局',
+  'reconnect.body': '你还有一场对局尚未结束，是否重新连接并继续？',
+  'reconnect.accept': '返回对局',
+  'reconnect.decline': '暂不',
 
   // ── Gacha drop-rate disclosure (Apple 3.1.1, L1-3) ───────────────────────
   'gacha.oddsDetail.button': '概率详情',
