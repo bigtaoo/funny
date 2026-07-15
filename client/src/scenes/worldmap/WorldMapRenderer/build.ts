@@ -64,6 +64,10 @@ export function BuildMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase):
       this.ctx.overlayGfx = new PIXI.Graphics();
       mapClip.addChild(this.ctx.overlayGfx);
 
+      // March walk-cycle sprites (StickmanRuntime containers), above the route line/arrowhead.
+      this.ctx.marchTokenLayer = new PIXI.Container();
+      mapClip.addChild(this.ctx.marchTokenLayer);
+
       // HUD bar
       this.ctx.hudLayer = new PIXI.Container();
       this.ctx.container.addChild(this.ctx.hudLayer);

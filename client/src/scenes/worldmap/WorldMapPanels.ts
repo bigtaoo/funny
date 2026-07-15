@@ -21,6 +21,7 @@ import type { ProceduralTile } from '@nw/shared';
 import type { TerrainTextureName } from '../../render/terrainAtlasLoader';
 import type { ZoomCfg, PoolSlot } from './zoom';
 import type { WorldMapContext, WorldMapCallbacks, DeployKind } from './WorldMapContext';
+import { formatDuration } from './formatDuration';
 
 export class WorldMapPanels {
   constructor(private readonly ctx: WorldMapContext) {}
@@ -370,9 +371,9 @@ export class WorldMapPanels {
     const tl = this.ctx.toastLayer;
     tl.removeChildren();
     const { w, h } = this.ctx;
-    const lbl = txt(msg, 13, color);
+    const lbl = txt(msg, 26, color);
     lbl.anchor.set(0.5, 0);
-    lbl.x = w / 2; lbl.y = h - HUD_H - 50;
+    lbl.x = w / 2; lbl.y = h / 3;
     tl.addChild(lbl);
     this.ctx.toastTimer = 2500;
   }
@@ -586,7 +587,7 @@ export class WorldMapPanels {
       const now = Date.now();
       for (const e of queue) {
         const sec = Math.max(0, Math.ceil((e.completeAt - now) / 1000));
-        addText(`• ${t('world.trainEntry').replace('{n}', String(e.qty)).replace('{sec}', String(sec))}`, ly, 11 * S, C.dark);
+        addText(`• ${t('world.trainEntry').replace('{n}', String(e.qty)).replace('{time}', formatDuration(sec))}`, ly, 11 * S, C.dark);
         ly += 18 * S;
       }
       // One-tap coin speedup: enough coins to clear the whole queue.

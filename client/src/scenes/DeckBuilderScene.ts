@@ -74,6 +74,8 @@ export class DeckBuilderScene implements Scene {
   private listH = 0;
   private dragStartY: number | null = null;
   private dragScrollStart = 0;
+  /** Set by handleMove instead of rendering inline — see EquipmentSceneBase.scrollDirty for why. */
+  private scrollDirty = false;
 
   constructor(layout: ILayout, input: InputManager, cb: DeckBuilderCallbacks) {
     this.container = new PIXI.Container();
@@ -91,7 +93,9 @@ export class DeckBuilderScene implements Scene {
     this.render();
   }
 
-  update(): void { /* static */ }
+  update(): void {
+    if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
+  }
 
   destroy(): void {
     this.destroyed = true;
@@ -116,7 +120,7 @@ export class DeckBuilderScene implements Scene {
     if (this.dragStartY === null) return;
     const delta = this.dragStartY - y;
     this.scrollY = Math.max(0, Math.min(this.scrollMax, this.dragScrollStart + delta));
-    this.render();
+    this.scrollDirty = true;
   }
 
   private toggleCard(id: string): void {

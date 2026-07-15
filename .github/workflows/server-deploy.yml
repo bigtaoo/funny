@@ -70,7 +70,7 @@ jobs:
              git fetch origin main; \
              git reset --hard FETCH_HEAD; \
              cd server; \
-             docker compose -f docker-compose.cloud.yml --env-file .env up -d --build; \
+             docker compose -f docker-compose.cloud.yml --env-file .env up -d --build --remove-orphans; \
              # caddy's config is a bind mount (content-only changes to Caddyfile don't alter its
              # service definition), so \`up\` alone never recreates it — force a restart every deploy.
              docker compose -f docker-compose.cloud.yml restart caddy; \

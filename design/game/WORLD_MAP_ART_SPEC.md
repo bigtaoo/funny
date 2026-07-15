@@ -119,6 +119,15 @@
 >   且跨 ~5s 重绘与拖动不闪烁（不用 `Math.random`，用 `sin` 哈希）。
 > `overlay_*` 水洗（`drawTileL1` option-3 淡填充+墨色描边）已是最优解，无改动。
 
+> **行军令牌行走动画 — ✅ 已接入（2026-07-15，暂用战斗现有兵种素材，占位）**：
+> 原沿路线插值移动的纯 Graphics 菱形令牌（见上文行军箭头颜色对照）替换为真实的行走循环动画——
+> `WorldMapRenderer/fog.ts::syncMarchTokens()` 为每条在途行军挂一个 `StickmanRuntime`（战斗单位渲染同款,
+> `render/stickman/StickmanRuntime.ts`），播放 `walk` 循环，沿路线插值位置并按行进方向左右镜像朝向。
+> 兵种素材暂时二选一（`MARCH_TOKEN_ASSET`）：`kind==='attack'` 用盾兵 `shieldbearer.tao`（代表"攻城兵种"，
+> 目前没有专门的攻城兵种，盾兵是最接近"破城"定位的单位）；其余全部行军用普通兵 `infantry.tao`。
+> **TODO（美术）**：等专门的行军动画素材（含旗帜/头像等帮会标识）出图后替换 `MARCH_TOKEN_ASSET`；
+> 目前旗帜/头像暂不做，涉及帮会图标体系，留待后续。
+
 ---
 
 ## 六、资源图标（HUD 内显示）— ✅ 已接入（复用 `res_atlas`，无需单独出 24px 图）

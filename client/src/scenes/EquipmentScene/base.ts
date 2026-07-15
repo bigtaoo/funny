@@ -162,6 +162,10 @@ export class EquipmentSceneBase {
 
   protected scrollY = 0;
   protected dragStart: { x: number; y: number; scroll: number } | null = null;
+  /** Set by handleMove instead of rendering inline — pointermove can fire far faster than the
+   *  display refresh rate, and render() fully tears down/rebuilds the scene, so calling it per-event
+   *  caused visible jank while dragging. update() (ticker-gated, once per frame) drains this instead. */
+  private scrollDirty = false;
 
   protected hitRects: { rect: Rect; action: () => void }[] = [];
   protected modalHits: { rect: Rect; action: () => void }[] = [];
@@ -547,7 +551,7 @@ export class EquipmentSceneBase {
     const dy = y - this.dragStart.y;
     if (Math.abs(dy) > 6) {
       this.scrollY = Math.max(0, this.dragStart.scroll - dy);
-      this.render();
+      this.scrollDirty = true;
     }
   }
 
@@ -560,6 +564,7 @@ export class EquipmentSceneBase {
   }
 
   update(dt: number): void {
+    if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
     if (this.bt.tick(dt)) this.render();
     if (this.toastTimer > 0) {
       this.toastTimer -= dt * 1000;

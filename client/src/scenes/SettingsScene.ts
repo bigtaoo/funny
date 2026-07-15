@@ -5,7 +5,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, getLocale, setLocale, getSupportedLocales, Locale, TranslationKey } from '../i18n';
 import { SketchPen } from '../render/sketch';
 import { palette } from '../render/theme';
-import { sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
+import { sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren, ui as C } from '../render/sketchUi';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { caretDisplay } from '../render/inputDisplay';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
@@ -17,18 +17,6 @@ import { buildAvatar, AVATAR_COUNT } from '../render/avatar';
 // a render()-on-change tree with a flat hit-list, plus a hidden <input> for the
 // rename overlay. Shows the player's avatar + name, a rename action (spends coins,
 // online only), a language switcher, and an account action (log in / log out).
-
-const C = {
-  bg:     0xf5f0e8,
-  paper:  0xfaf6ee,
-  dark:   0x2c2c2a,
-  mid:    0x888888,
-  light:  0xdddddd,
-  accent: 0x4477cc,
-  gold:   0xcc9900,
-  green:  0x4a9e4a,
-  red:    0xcc3333,
-};
 
 const LOCALE_LABEL: Record<Locale, string> = { zh: '中文', en: 'English', de: 'Deutsch' };
 

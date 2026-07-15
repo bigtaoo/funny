@@ -34,6 +34,7 @@ import { WorldMapScene } from '../../src/scenes/WorldMapScene';
 import { FamilyScene } from '../../src/scenes/FamilyScene';
 import { SectScene } from '../../src/scenes/SectScene';
 import { AuctionScene } from '../../src/scenes/AuctionScene';
+import { CityScene } from '../../src/scenes/CityScene';
 import { EquipmentScene } from '../../src/scenes/EquipmentScene';
 import type { EquipmentCallbacks, EquipResult } from '../../src/scenes/EquipmentScene';
 import type { PlayerStats } from '../../src/game/types';
@@ -398,6 +399,15 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
       new AuctionScene(createLayout(w, h), new InputManager(), {
         onBack() {},
         worldApi: stubWorldApi(),
+      }),
+  },
+  {
+    name: 'CityScene',
+    build: (w, h) =>
+      new CityScene(createLayout(w, h), new InputManager(), {
+        onBack() {},
+        worldApi: stubWorldApi(),
+        worldId: 'world:1:0',
       }),
   },
   {

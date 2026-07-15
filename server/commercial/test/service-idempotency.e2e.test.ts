@@ -147,6 +147,25 @@ describe.skipIf(!mongo)('commercial service — idempotency / concurrency / boun
     expect(await m.collections.gachaHistory.countDocuments({ orderId: 'dup-gacha' })).toBe(1);
   });
 
+  // 2026-07-15 latency fix: gachaDraw's idempotency-check/resolvePool/ensureWallet reads now run via Promise.all
+  // instead of serially. Distinct concurrent draws (different orderIds, same account) are NOT deduped by the
+  // insert-first orderId slot — each must still debit its own cost exactly once and land its own history row,
+  // i.e. the parallel reads must not let one draw's in-flight wallet state leak into another's debit.
+  it('gachaDraw: N concurrent DISTINCT draws (different orderIds, same account) each debit exactly once, none lost or double-granted', async () => {
+    await fund('gcd', 10 * 150);
+    const orderIds = Array.from({ length: 10 }, (_, i) => `distinct-gacha-${i}`);
+    const calls = orderIds.map((orderId) =>
+      svc.gachaDraw({ accountId: 'gcd', poolId: 'standard', count: 1, orderId }),
+    );
+    const res = await Promise.all(calls);
+    expect(res.every((r) => r.ok)).toBe(true);
+    // Exactly 10 draws × 150 coins, no over- or under-charging from racing wallet reads.
+    expect((await svc.getWallet('gcd')).coins).toBe(0);
+    expect(await m.collections.orders.countDocuments({ accountId: 'gcd', kind: 'gacha' })).toBe(10);
+    expect((await ledgerOf('gcd')).filter((l) => l.reason === 'gacha').length).toBe(10);
+    expect(await m.collections.gachaHistory.countDocuments({ accountId: 'gcd' })).toBe(10);
+  });
+
   // ── rechargeVerify: receipt-id conflict + cross-account guard under concurrency ──
   it('rechargeVerify: concurrent calls with the same receiptId (same account) credit exactly once', async () => {
     const calls = Array.from({ length: 10 }, () =>
