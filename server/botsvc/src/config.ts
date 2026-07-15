@@ -23,7 +23,14 @@ export interface BotsvcEnv {
   gatewayWsUrl: string;
   commercialInternalUrl: string;
   internalKey: string;
-  /** Probability a lobby_idle bot enters ranked matchmaking on any given scheduler tick (BOTSVC_DESIGN §3.2). */
+  /**
+   * Probability a lobby_idle bot enters ranked matchmaking on any given scheduler tick (BOTSVC_DESIGN
+   * §3.2). Each bot's own client-side engine simulation (30Hz lockstep, see engineDriver.ts) runs on
+   * this box instead of a player's device, so concurrent-battle fraction is the real CPU driver, not
+   * the scheduler's family/SLG upkeep. Default 0.025 targets ~1/5 of the fleet in battle at once
+   * (steady-state fraction ≈ matchDuration/(matchDuration + 15s/chance); ~150s match ÷ (150+600s) ≈ 1/5)
+   * — tuned down from an earlier 0.05 (~1/3 concurrent) that left this 2vCPU box too CPU-tight.
+   */
   battleChancePerTick: number;
   /** Max concurrent per-session upkeep chains per scheduler tick (BOTSVC_DESIGN §3.1); bounds REST fan-out and event-loop bursts. */
   upkeepConcurrency: number;
@@ -54,7 +61,7 @@ export function loadBotsvcEnv(): BotsvcEnv {
     gatewayWsUrl: process.env.NW_GATEWAY_WS_URL || 'ws://127.0.0.1:8086/gw',
     commercialInternalUrl: process.env.NW_COMMERCIAL_INTERNAL_URL || 'http://127.0.0.1:18082',
     internalKey: process.env.NW_INTERNAL_KEY || 'dev-insecure-internal-key-change-me',
-    battleChancePerTick: Number(process.env.NW_BOT_BATTLE_CHANCE ?? 0.05),
+    battleChancePerTick: Number(process.env.NW_BOT_BATTLE_CHANCE ?? 0.025),
     upkeepConcurrency: num('NW_BOT_UPKEEP_CONCURRENCY', 20),
     deviceOffset: num('NW_BOT_DEVICE_OFFSET', 0),
     spawnBatch: num('NW_BOT_SPAWN_BATCH', 10),
