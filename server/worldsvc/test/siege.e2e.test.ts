@@ -180,6 +180,12 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
 
     // Advance to A* march arrival (use service-computed arriveAt to avoid Euclidean distance underestimating path length).
     nowMs = mv.arriveAt;
+    // Snapshot a's ink at the arrival instant BEFORE the siege/loot side-effect runs: the ADR-039
+    // connector tile is a real procedural resource tile (2026-07-15 rewrite — resType is now an
+    // independent per-tile draw, not a stable zone, so this connector may itself passively yield some
+    // ink over the march duration) — diffing against this snapshot isolates the loot's own
+    // contribution regardless of whatever incidental yield accrued while marching.
+    const preLootInk = (await svc.getMe(W, 'a')).resources?.ink ?? 0;
     expect(await svc.processDueArrivals()).toBe(1);
 
     // Tile ownership transferred: now belongs to a, garrison = engine survivors folded back (>0, attacker 800 troops vs defender 500).
@@ -188,8 +194,8 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     expect(tile.garrison).toBeGreaterThan(0);
     const me = await svc.getMe(W, 'a');
     expect(me.territoryCount).toBe(11); // ADR-025: 9 base footprint cells + 1 ADR-039 connector tile + 1 captured territory tile
-    // Loot 25%: a +250 ink, b -250 → 750.
-    expect(me.resources?.ink).toBe(Math.floor(1000 * SIEGE_LOOT_RATE));
+    // Loot 25%: a +250 ink on top of its pre-loot balance, b -250 → 750.
+    expect(me.resources?.ink).toBe(preLootInk + Math.floor(1000 * SIEGE_LOOT_RATE));
     const bRes = (await svc.getMe(W, 'b')).resources;
     expect(bRes?.ink).toBe(1000 - Math.floor(1000 * SIEGE_LOOT_RATE));
 
