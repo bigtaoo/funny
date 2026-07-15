@@ -443,6 +443,12 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
   2. `dev-up.ps1` 本身缺 UTF-8 BOM，文件里的全角箭头/破折号在本机 Windows PowerShell 5.1 + 代码页 850 下会被错误解码，导致整个脚本解析失败（"missing string terminator"），`npm run dev:all` 在本机此前一直连窗口都开不出来。已给文件加 BOM。
 - **验收**：`server/metaserver/test/mail-claim.e2e.test.ts`（真实 Mongo + 真实跨服务 HTTP，mailId 特意造到超 100 字符，card/equipment 各一例，回归前会 404，回归后 200）；metaserver 全量单测 42 files / 518 tests 绿；真实起满整套后端（含修复后的 dev-up.ps1）+ 真实 Mongo，走 `/auction/create` → `/auction/:id/cancel` → `/mail` → `/mail/:id/claim` 完整复现并确认修复生效（`{"ok":true}`，material 正确回背包）。
 
+### 修复：拍卖行返回按钮点在背景区无效（2026-07-15）
+
+- **问题**：玩家反馈拍卖行标题栏"← Back"看起来和其它场景一样宽，但点在返回文字右侧的"背景"上没反应。根因：`AuctionSceneBase.build()`（`client/src/scenes/AuctionScene/base.ts`）用共享组件 `drawSceneHeader()` 返回的标准返回热区（`hdr.backRect`，宽度是统一常量 `BACK_HIT_W=160`）建头部，但 `render()` 每次都会清空 `hitRects` 重建，重建时却硬编码了一个**只有一半宽（`w:80`）**的热区（item-picker 遮罩层同样硬编码）——视觉上和商店等场景一致的返回条，实际可点区域只有左半边。
+- **修复**：把 `hdr.backRect` 缓存到实例字段 `backRect`，`render()` 里两处硬编码的 `{w:80}` 都改成复用它，和 `ShopScene` 等场景的写法统一。
+- **验收**：`tsc --noEmit` 绿；headless 实例化 `AuctionScene` 读取渲染后的 `hitRects` 确认宽度恢复为 160；新增回归测试 `client/test/ui/auctionBackButtonHitWidth.ui.ts`（4 例：初始/多次 render 后宽度不变、右半区点击触发 onBack、item-picker 遮罩下右半区点击取消 picker）——摘掉修复重跑 4 例全部按预期失败，验证测试能真正捕获这个回归。
+
 ---
 
 *本文为拍卖行机制权威，DRAFT/⚠️ 处随实现与拍板细化；数值以 `server/shared/src/slg.ts` 为准。*

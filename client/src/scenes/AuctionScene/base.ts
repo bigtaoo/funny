@@ -82,6 +82,9 @@ export class AuctionSceneBase {
   // height) so the auction bar matches every other secondary scene; drives all body layout below it
   // (sidebar / filter bar / list / picker), replacing the old fixed HUD_H.
   protected headerH = HUD_H;
+  /** Back-button hit rect from the shared SceneHeader (BACK_HIT_W-wide) — cached here since render()
+   * rebuilds hitRects from scratch every call and must not narrow it. */
+  protected backRect = { x: 0, y: 0, w: 80, h: this.headerH };
 
   protected activeTab: AucTab = 'all';
   protected allFilter: AucFilter = '';
@@ -184,7 +187,8 @@ export class AuctionSceneBase {
       variant: 'paper', accent: HEADER_ACCENT.slg,
     });
     this.headerH = hdr.headerH;
-    this.hitRects.push({ rect: hdr.backRect, action: () => this.cb.onBack() });
+    this.backRect = hdr.backRect;
+    this.hitRects.push({ rect: this.backRect, action: () => this.cb.onBack() });
   }
 
   // ── Data ──────────────────────────────────────────────────────────────────
@@ -215,12 +219,12 @@ export class AuctionSceneBase {
 
     // Item picker overlay: back button cancels the picker and returns to the create form.
     if (this.itemPickerOpen) {
-      this.hitRects.push({ rect: { x: 0, y: 0, w: 80, h: this.headerH }, action: () => this.cancelItemPicker() });
+      this.hitRects.push({ rect: this.backRect, action: () => this.cancelItemPicker() });
       this.renderItemPicker();
       return;
     }
 
-    this.hitRects.push({ rect: { x: 0, y: 0, w: 80, h: this.headerH }, action: () => this.cb.onBack() });
+    this.hitRects.push({ rect: this.backRect, action: () => this.cb.onBack() });
 
     const contentX = this.renderSidebar();
     const filterH = this.activeTab === 'all' ? this.renderFilterBar(contentX) : 0;
