@@ -154,6 +154,8 @@ export interface PlayerWorldDoc {
   cardState?: Record<string, CardSLGState>;
   /** CC-3: base troop stock available to distribute to card instances. Initialised to BASE_TROOP_STOCK_INITIAL on joinWorld. */
   baseTroopStock?: number;
+  /** Per-shop-item daily purchase counter (SLG_DESIGN §7.2, 2026-07-15). day = UTC calendar day number (floor(ms / 86400000)); count resets whenever day advances. Absent = 0 purchases so far. */
+  shopPurchaseCounts?: Record<string, { day: number; count: number }>;
   rev: number;
 }
 

@@ -19,11 +19,21 @@ export class ShopService {
     const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
     if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
 
+    // Daily purchase cap (SLG_DESIGN §7.2, 2026-07-15 fix): undefined dailyLimit = unlimited (protection/battle_pass).
+    // day = UTC calendar day number; a stale counter (previous day) is treated as 0 and overwritten below.
+    const today = Math.floor(now() / 86400000);
+    const counter = pw.shopPurchaseCounts?.[itemId];
+    const countSoFar = counter && counter.day === today ? counter.count : 0;
+    if (item.dailyLimit != null && countSoFar >= item.dailyLimit) {
+      throw new SlgError('SHOP_LIMIT_REACHED', `Daily purchase limit reached for ${itemId} (${item.dailyLimit}/day)`);
+    }
+
     const orderId = `slg_shop:${worldId}:${accountId}:${itemId}:${now()}`;
     await this.core.commercial.spend(accountId, item.cost, orderId);
 
     const t = now();
     const resources = this.core.settle(pw, t);
+    const shopCountSet = { [`shopPurchaseCounts.${itemId}`]: { day: today, count: countSoFar + 1 } };
 
     if (item.kind === 'troop_speedup') {
       const secToSpeed = Number(item.effect['duration_sec'] ?? 0);
@@ -47,7 +57,7 @@ export class ShopService {
       const newTroops = Math.min(pw.troopCap, pw.troops + troopsReady);
       await cols.playerWorld.updateOne(
         { _id: pw._id },
-        { $set: { resources, troops: newTroops, trainingQueue: queue, lastTickAt: t }, $inc: { rev: 1 } },
+        { $set: { resources, troops: newTroops, trainingQueue: queue, lastTickAt: t, ...shopCountSet }, $inc: { rev: 1 } },
       );
     } else if (item.kind === 'resource_pack') {
       const each = Number(item.effect['each'] ?? 0);
@@ -56,7 +66,7 @@ export class ShopService {
       }
       await cols.playerWorld.updateOne(
         { _id: pw._id },
-        { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } },
+        { $set: { resources, lastTickAt: t, ...shopCountSet }, $inc: { rev: 1 } },
       );
     } else if (item.kind === 'protection') {
       const durSec = Number(item.effect['duration_sec'] ?? 0);
@@ -72,12 +82,12 @@ export class ShopService {
       }
       await cols.playerWorld.updateOne(
         { _id: pw._id },
-        { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } },
+        { $set: { resources, lastTickAt: t, ...shopCountSet }, $inc: { rev: 1 } },
       );
     } else if (item.kind === 'battle_pass') {
       await cols.playerWorld.updateOne(
         { _id: pw._id },
-        { $set: { resources, hasBattlePass: true, lastTickAt: t }, $inc: { rev: 1 } },
+        { $set: { resources, hasBattlePass: true, lastTickAt: t, ...shopCountSet }, $inc: { rev: 1 } },
       );
     }
 

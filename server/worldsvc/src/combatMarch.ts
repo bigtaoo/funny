@@ -128,21 +128,33 @@ export class MarchService {
     if (!this.core.inBounds(fromX, fromY) || !this.core.inBounds(toX, toY)) {
       throw new SlgError('OUT_OF_RANGE', 'Coordinates out of bounds');
     }
-    // Siege with a team (G3-2c): draw the army from the saved attack formation template; committed troops = sum of troops assigned to each unit.
-    // The team can be edited after departure without affecting the in-transit march (the army snapshot is persisted with MarchDoc). Not attack or no team → use flat troops.
+    // Siege with a team (G3-2c; occupy also since 2026-07-15 SLG_DESIGN §4.2): draw the army from the saved
+    // attack formation template; committed troops = sum of troops assigned to each unit. The team can be edited
+    // after departure without affecting the in-transit march (the army snapshot is persisted with MarchDoc).
+    // Neither attack nor occupy, or no team → use flat troops (synthesized generic units at combat time).
     let army: ArmyEntry[] | undefined;
-    if (kind === 'attack' && teamId) {
+    if ((kind === 'attack' || kind === 'occupy') && teamId) {
       const team = (pw.teams ?? []).find((t) => t.id === teamId);
       if (!team || team.army.length === 0) throw new SlgError('BAD_REQUEST', 'Team does not exist or is empty');
       army = team.army;
       troops = team.army.reduce((s, e) => s + Math.max(1, Math.floor(e.initialHp ?? 0)), 0);
     }
-    if (!Number.isFinite(troops) || troops < MARCH_MIN_TROOPS) {
-      throw new SlgError('NO_TROOPS', 'Invalid march troop count');
-    }
-    troops = Math.floor(troops);
-    if (kind === 'occupy' && troops < OCCUPY_MIN_TROOPS) {
-      throw new SlgError('NO_TROOPS', `Occupation requires at least ${OCCUPY_MIN_TROOPS} troops`);
+    // CC-3 card-based team (cardInstanceId entries): committed strength lives entirely in cardState.currentTroops
+    // (§6.1/§9 of CHARACTER_CARDS_DESIGN — a ledger fully independent of playerWorld.troops), so `troops` above
+    // is not a meaningful pool quantity for this march (it degenerates to "card count" since ArmyEntry carries no
+    // initialHp for card entries). §7.2 of that doc explicitly allows a 0-troop card to deploy (it just dies on
+    // contact) — there is no server-side minimum-troops gate for card armies, only the legacy flat-troop path below.
+    const hasCardArmy = !!army?.some((e) => !!e.cardInstanceId);
+    if (!hasCardArmy) {
+      if (!Number.isFinite(troops) || troops < MARCH_MIN_TROOPS) {
+        throw new SlgError('NO_TROOPS', 'Invalid march troop count');
+      }
+      troops = Math.floor(troops);
+      if (kind === 'occupy' && troops < OCCUPY_MIN_TROOPS) {
+        throw new SlgError('NO_TROOPS', `Occupation requires at least ${OCCUPY_MIN_TROOPS} troops`);
+      }
+    } else {
+      troops = Math.floor(Math.max(0, troops));
     }
 
     const fromTid = tileId(worldId, fromX, fromY);
@@ -214,7 +226,8 @@ export class MarchService {
       if (!(await this.core.isConnectedToSectTerritory(worldId, accountId, this.core.targetFootprintCells(toTile, toX, toY)))) {
         throw new SlgError('TERRITORY_NOT_CONNECTED', 'Target tile must be adjacent to your sect\'s territory');
       }
-      if (troops < OCCUPY_MIN_TROOPS) throw new SlgError('NO_TROOPS', `Siege requires at least ${OCCUPY_MIN_TROOPS} troops`);
+      // Card armies have no server-side minimum-troops gate (see hasCardArmy note above) — only the legacy flat-troop path checks this.
+      if (!hasCardArmy && troops < OCCUPY_MIN_TROOPS) throw new SlgError('NO_TROOPS', `Siege requires at least ${OCCUPY_MIN_TROOPS} troops`);
     } else if (kind === 'scout') {
       // Scout: no fighting or occupation; send a small force to any non-obstacle tile (including enemy/protected/neutral/center) to reveal vision, then auto-return.
       // No ownership/center/protection-period restriction — blocking obstacle terrain above is sufficient. No defenderId (no under_attack warning).
@@ -230,7 +243,7 @@ export class MarchService {
 
     const t = now();
     const resources = this.core.settle(pw, t);
-    if (pw.troops < troops) throw new SlgError('NO_TROOPS', 'Insufficient troops');
+    if (!hasCardArmy && pw.troops < troops) throw new SlgError('NO_TROOPS', 'Insufficient troops');
 
     const path = await this.computeMarchPath(worldId, fromX, fromY, toX, toY, accountId);
     const departAt = t;
@@ -245,18 +258,21 @@ export class MarchService {
       kind,
       troops,
       ...(army && army.length > 0 ? { army } : {}),
-      // ADR-026: record the deployed team slot so it is skipped as a defender while out (only meaningful for team-based attacks).
-      ...(kind === 'attack' && teamId ? { teamId } : {}),
+      // ADR-026: record the deployed team slot so it is skipped as a defender while out (meaningful for both team-based attacks and, since 2026-07-15, occupy marches).
+      ...((kind === 'attack' || kind === 'occupy') && teamId ? { teamId } : {}),
       departAt,
       arriveAt,
       status: 'marching',
       rev: 0,
     };
     await cols.marches.insertOne(doc);
-    // Deduct troops on departure (in-transit; not in the pool).
+    // Deduct troops on departure (in-transit; not in the pool) — skipped for card armies, whose strength
+    // already lives in cardState.currentTroops and never touches playerWorld.troops (see hasCardArmy above).
     await cols.playerWorld.updateOne(
       { _id: pw._id },
-      { $set: { resources, lastTickAt: t }, $inc: { troops: -troops, rev: 1 } },
+      hasCardArmy
+        ? { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } }
+        : { $set: { resources, lastTickAt: t }, $inc: { troops: -troops, rev: 1 } },
     );
     await this.core.scheduleMarch(worldId, mid, arriveAt);
     const view = this.core.marchView(doc);

@@ -40,6 +40,25 @@ function cardEntry(cardInstanceId: string, col = 0, row = 1): TeamTemplate['army
   return { cardInstanceId, unitType: 'infantry', col, row };
 }
 
+const CENTER_X = Math.floor(SLG_MAP_W / 2);
+const CENTER_Y = Math.floor(SLG_MAP_H / 2);
+
+function findCoord(sx: number, sy: number): { x: number; y: number } {
+  for (let r = 0; r < 80; r++) {
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dy = -r; dy <= r; dy++) {
+        const x = sx + dx;
+        const y = sy + dy;
+        if (x < 0 || y < 0 || x >= SLG_MAP_W || y >= SLG_MAP_H) continue;
+        if (x === CENTER_X && y === CENTER_Y) continue;
+        const t = proceduralTile(W, x, y);
+        if (t.type !== 'obstacle' && t.type !== 'bridge' && t.type !== 'plankway' && t.type !== 'center') return { x, y };
+      }
+    }
+  }
+  throw new Error('no matching tile found');
+}
+
 describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
   const m = mongo!;
   let nowMs = 1_000_000;
@@ -213,5 +232,84 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
       { $set: { 'cardState.card-ok': { currentTroops: 100, teamId: 't1' } as CardSLGState } },
     );
     await expect(svc.recoverCard(W, 'a', 'card-ok')).rejects.toThrow('not injured');
+  });
+
+  // ── Troop-pool boundary fix (2026-07-15, SLG_DESIGN §4.2 / CHARACTER_CARDS_DESIGN §6.1 compliance) ──
+  // A card-army march must NEVER touch playerWorld.troops: not on departure, not on any arrival outcome.
+  // Its committed strength lives entirely in cardState.currentTroops.
+  describe('card-army marches never touch playerWorld.troops (§6.1 boundary)', () => {
+    async function connectAndDefend(accountId: string, defenderId: string, garrison: number): Promise<{ x: number; y: number }> {
+      const tgt = findCoord(10, 5);
+      const proc = proceduralTile(W, tgt.x, tgt.y);
+      const tile: TileDoc = {
+        _id: tileId(W, tgt.x, tgt.y), worldId: W, x: tgt.x, y: tgt.y,
+        type: 'territory', level: proc.level, ownerId: defenderId, garrison, rev: 0,
+      };
+      await m.collections.tiles.updateOne({ _id: tile._id }, { $set: tile }, { upsert: true });
+      const defPw: PlayerWorldDoc = {
+        _id: playerWorldId(W, defenderId), worldId: W, accountId: defenderId,
+        troops: TROOP_CAP_BASE, troopCap: TROOP_CAP_BASE,
+        resources: { ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 },
+        yieldRate: { ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 },
+        lastTickAt: nowMs, mainBaseTile: tileId(W, tgt.x, tgt.y), rev: 0,
+      };
+      await m.collections.playerWorld.updateOne({ _id: defPw._id }, { $set: defPw }, { upsert: true });
+      // ADR-039: border the target with the instant/test-only occupyTile before attacking.
+      const deltas: [number, number][] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+      for (const [dx, dy] of deltas) {
+        const nx = tgt.x + dx, ny = tgt.y + dy;
+        const t = proceduralTile(W, nx, ny);
+        if (t.type === 'obstacle' || t.type === 'center' || t.type === 'bridge' || t.type === 'plankway' || t.type === 'stronghold') continue;
+        await svc.occupyTile(W, accountId, nx, ny);
+        break;
+      }
+      return tgt;
+    }
+
+    it('overwhelming card team wins: playerWorld.troops unchanged; survivors land in cardState.currentTroops', async () => {
+      await svc.joinWorld(W, 'a', 5, 5);
+      // troopsBefore is captured AFTER connectAndDefend, since bordering the target via the test-only occupyTile
+      // helper legitimately deducts GARRISON_PER_TILE from the pool (unrelated to the card-army fix under test).
+      const tgt = await connectAndDefend('a', 'b', 100); // weak defender — the card team should stomp it near-losslessly
+      const troopsBefore = (await svc.getMe(W, 'a')).troops;
+
+      await m.collections.playerWorld.updateOne(
+        { _id: playerWorldId(W, 'a') },
+        { $set: { 'cardState.card-atk-1': { currentTroops: 500, teamId: 't1' } as CardSLGState } },
+      );
+      await svc.setTeams(W, 'a', [{ id: 't1', name: 'Assault', army: [cardEntry('card-atk-1')] }]);
+
+      const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 1, 't1');
+      // A card march never deducts from the pool on departure.
+      expect((await svc.getMe(W, 'a')).troops).toBe(troopsBefore);
+
+      nowMs = mv.arriveAt;
+      expect(await svc.processDueArrivals()).toBe(1);
+
+      // Pool is still untouched after arrival/settlement — the win never refunds survivors into it.
+      expect((await svc.getMe(W, 'a')).troops).toBe(troopsBefore);
+      // The card's own ledger reflects the battle outcome instead.
+      const pw = await m.collections.playerWorld.findOne({ _id: playerWorldId(W, 'a') });
+      expect(pw?.cardState?.['card-atk-1']?.currentTroops).toBeGreaterThan(0);
+    });
+
+    it('overpowered card team loses: playerWorld.troops still unchanged (no phantom refund of the placeholder march.troops)', async () => {
+      await svc.joinWorld(W, 'a', 5, 5);
+      const tgt = await connectAndDefend('a', 'b', 50_000); // defender is unbeatable — attacker should be wiped
+      const troopsBefore = (await svc.getMe(W, 'a')).troops;
+
+      await m.collections.playerWorld.updateOne(
+        { _id: playerWorldId(W, 'a') },
+        { $set: { 'cardState.card-atk-2': { currentTroops: 10, teamId: 't1' } as CardSLGState } },
+      );
+      await svc.setTeams(W, 'a', [{ id: 't1', name: 'Doomed', army: [cardEntry('card-atk-2')] }]);
+      const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 1, 't1');
+
+      nowMs = mv.arriveAt;
+      expect(await svc.processDueArrivals()).toBe(1);
+
+      // Losing a card-army siege must not add anything to the pool either.
+      expect((await svc.getMe(W, 'a')).troops).toBe(troopsBefore);
+    });
   });
 });
