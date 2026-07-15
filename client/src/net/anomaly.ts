@@ -246,15 +246,29 @@ export function installAnomalyWatchers(opts: AnomalyWatchersOpts = {}): void {
 function installAnrWatchdog(): void {
   const WATCH_MS = 1_000;
   const STALL_MS = 4_000; // minimum freeze duration to count as an ANR (avoids false positives from GC jitter / background throttling)
+  const g = globalThis as typeof globalThis & { document?: { hidden?: boolean }; addEventListener?: (type: string, cb: () => void) => void };
+
+  // Latched (not sampled) hidden flag: a backgrounded tab has its timers throttled/suspended by the
+  // OS/browser, so a long "stall" is often just the tab being backgrounded the whole time — but by the
+  // time this interval's callback finally runs after the tab returns to foreground, `document.hidden`
+  // has ALREADY flipped back to false (visibilitychange fires before suspended timers resume), so a
+  // one-shot `document.hidden` check at fire time misses it and reports a false ANR. Latch it instead:
+  // remember if the page was hidden at ANY point since the last tick, not just at this instant.
+  let hiddenSinceLastTick = g.document?.hidden === true;
+  g.addEventListener?.('visibilitychange', () => {
+    if (g.document?.hidden) hiddenSinceLastTick = true;
+  });
+
   let expected = Date.now() + WATCH_MS;
   setInterval(() => {
     const now = Date.now();
     const drift = now - expected;
-    const hidden = (globalThis as { document?: { hidden?: boolean } }).document?.hidden === true;
-    if (!hidden && drift > STALL_MS) {
+    const wasHidden = hiddenSinceLastTick || g.document?.hidden === true;
+    if (!wasHidden && drift > STALL_MS) {
       reportAnomaly('anr', `main thread stalled ~${Math.round(drift)}ms`, { stallMs: Math.round(drift) });
       log.warn(`main thread stalled ~${Math.round(drift)}ms`);
     }
+    hiddenSinceLastTick = false;
     expected = now + WATCH_MS;
   }, WATCH_MS);
 }

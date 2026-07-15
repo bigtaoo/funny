@@ -194,6 +194,42 @@ describe('Exit beacon and cleanExit flag (Bug A regression)', () => {
   });
 });
 
+// ── ANR watchdog vs. backgrounded-tab throttling (regression: 2026-07-15 false-ANR-on-resume) ─────
+describe('ANR watchdog: backgrounded tab does not report a false stall (Bug: hidden sampled, not latched)', () => {
+  beforeEach(() => vi.useFakeTimers());
+
+  it('hidden the whole time, but resumes visible just before the delayed tick fires → no ANR reported', async () => {
+    const { mod, cap } = await freshAnomaly({ publicId: PUBLIC_ID });
+    mod.installAnomalyWatchers();
+    await vi.advanceTimersByTimeAsync(1000); // let the watchdog establish its baseline `expected`
+
+    cap.doc.hidden = true;
+    cap.fire('visibilitychange');
+    vi.setSystemTime(new Date(Date.now() + 20_000)); // jump the clock while hidden; timers stay suspended
+    cap.doc.hidden = false;
+    cap.fire('visibilitychange'); // tab foregrounded — hidden flips back to false BEFORE the suspended tick runs
+
+    await vi.advanceTimersByTimeAsync(1000); // the overdue interval tick finally executes
+    await vi.advanceTimersByTimeAsync(1500); // batch flush window, in case anything was queued
+
+    expect(cap.fetch).not.toHaveBeenCalled();
+  });
+
+  it('a genuine stall while the tab stayed visible throughout still reports an ANR', async () => {
+    const { mod, cap } = await freshAnomaly({ publicId: PUBLIC_ID });
+    mod.installAnomalyWatchers();
+    await vi.advanceTimersByTimeAsync(1000);
+
+    vi.setSystemTime(new Date(Date.now() + 20_000)); // tab stays visible; clock jumps as if the main thread froze
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(1500); // batch flush window
+
+    expect(cap.fetch).toHaveBeenCalledTimes(1);
+    const body = JSON.parse((cap.fetch.mock.calls[0] as [string, RequestInit])[1].body as string);
+    expect(body.events[0].type).toBe('anr');
+  });
+});
+
 // ── Crash sentinel catch-up report (regression: 2026-06-27 Bug B — immediate eager flush, no 1.5s batch wait) ────────────────
 describe('Crash sentinel immediate eager flush on catch-up report (Bug B regression)', () => {
   beforeEach(() => vi.useFakeTimers());

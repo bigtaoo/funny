@@ -362,3 +362,13 @@ client_log_debug: { default: false, desc: '客户端日志上报-debug', side: '
 - 下次复现据三数定性：`tex/baseTex` 增=纹理缓存无界、`nodes` 增=退场不 destroy 的场景图残留、`tickers` 增=`ticker.add` 漏 `remove` 的闭包钉死，定位后再做退场审计。
 
 **验证**：client `tsc --noEmit` 通过。
+
+### 2026-07-15 · ANR 看门狗「后台节流误报」修复（§9.7 anr）
+
+**动机**：同一台机器（publicId 233784986）当日贴出一整天的 `anr` 日志，`stallMs` 5000–57000 反复出现十几次，散布在 bootstrap/gateway 各种时刻，且早前 §9.7（2026-06-27）曾写下"ANR 看门狗 `!hidden` 才报，排除后台节流"——这个结论其实站不住：`installAnrWatchdog()` 只在 `setInterval` **回调触发的那一刻**采样一次 `document.hidden`，而不是"这段漂移窗口内是否曾经隐藏过"。真实场景：玩家切到后台（切 App / 锁屏），浏览器/系统把这个标签页的定时器整个挂起；玩家切回前台时，`visibilitychange` 先于被挂起的 `setInterval` 回调恢复执行——所以回调真正跑起来时 `document.hidden` 已经翻回 `false`，看门狗量出一个几十秒的"漂移"却误判成真卡死上报。
+
+**改动**（`client/src/net/anomaly.ts` `installAnrWatchdog()`）：把"读一次 `hidden`"换成"锁存"——挂一个 `visibilitychange` 监听器，只要期间出现过 `hidden===true` 就把 `hiddenSinceLastTick` 锁存为 `true`，每次 tick 判断完就清零。这样"整段窗口内曾经隐藏过"和"当前仍隐藏"都会正确抑制误报，而全程可见的真实卡死不受影响。
+
+**验证**：`client/test/anomaly-chain.test.ts` 新增 2 例（"隐藏整段时间但在挂起的 tick 执行前已切回前台→不报 ANR" + "全程可见的真实卡死仍然上报"，用 `vi.setSystemTime` 模拟时钟跳跃）；`tsc --noEmit` + 全量 vitest 通过。
+
+**遗留**：本次只修了"看门狗误报"这一层，不能排除同一玩家 2026-06-27 那次"1GB→4012MB/4 分钟"的量级更夸张的堆增长是另一个真实的纯 JS 保留型泄漏——本次顺带排查了 `GameRenderer/events.ts`（escort/projectile 事件回收 + `destroy()`）和 `StickmanRuntime`（`.tao` 资源按 url 缓存 + 对象池 `reset()`），均未发现明显泄漏，但未覆盖全部场景退场路径。若同一 publicId 再次出现快速堆增长（而非本次这种"整天散布的中等 stall"），需要继续查 `nodes`/`tex`/`baseTex` 哪个先涨来定位类别（`MemoryMonitor.dump()` 的 `gpu` 字段已经能区分）。

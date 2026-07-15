@@ -190,7 +190,7 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
       });
       inp.addEventListener('blur', () => {
         this.buyerActive = false;
-        document.body.removeChild(inp);
+        inp.remove();
         if (this.hiddenInput === inp) this.hiddenInput = null;
         if (!this.destroyed && this.modalOpen) this.openCreateForm();
       });

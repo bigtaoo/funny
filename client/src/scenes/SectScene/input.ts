@@ -27,7 +27,7 @@ export function InputMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase 
       });
       inp.addEventListener('blur', () => {
         this.createField = null;
-        document.body.removeChild(inp);
+        inp.remove();
         if (!this.destroyed) this.render();
       });
       this.hiddenInput = inp;
