@@ -107,16 +107,19 @@ docker compose -f docker-compose.cloud.yml --env-file .env up -d --build
 **加品牌域名（2026-07-03）**：`wrangler/client.jsonc` 的 `routes` 追加 `{ "pattern": "nivara.gamestao.com", "custom_domain": true }` → 重 deploy，同一 Worker 同时挂 `a.gamestao.com`（保留旧入口）+ `nivara.gamestao.com`（对外统一用这个）；两域名内容完全一致（同一份 `client/dist`）。触发原因：Paddle 商户域名审核期间希望用更规范的品牌域名对外，`a.gamestao.com` 那轮审核先用旧域名过，等确认无误再逐步把外部链接（ToS/Privacy/定价页等）切到 `nivara.gamestao.com`。
 
 ```bash
-# 1. 构建（地址烘焙到 api.gamestao.com）
+# 1. 构建（地址烘焙到 api.gamestao.com；NW_BUILD_VERSION 烘焙进 version.json + __NW_BUILD_VERSION__，
+#    手动部署时必须显式带上，否则回落 '0.0.0'，线上无法区分到底部署的是哪个 commit）
 cd client && NW_API_BASE=https://api.gamestao.com/api \
   NW_GATEWAY_WS=wss://api.gamestao.com/gw \
   NW_WORLD_BASE=https://api.gamestao.com \
-  NW_SOCIAL_BASE=https://api.gamestao.com npm run build:web
+  NW_SOCIAL_BASE=https://api.gamestao.com \
+  NW_BUILD_VERSION=$(git rev-parse --short HEAD) npm run build:web
 # 2. 部署（从仓库根，-c 指定 client 的配置）
 cd .. && npx wrangler deploy -c wrangler/client.jsonc
 ```
 
 > **首次需登录 CF**：`npx wrangler login`（浏览器 OAuth，写本机凭证）后再 deploy；或设 `CLOUDFLARE_API_TOKEN` 环境变量走非交互。
+> **版本追踪（2026-07-15 补）**：`client-deploy.yml` 的 CI 流水线此前只烘焙了 API/WS 地址，漏了 `NW_BUILD_VERSION`——线上 `version.json` 一直是兜底值 `0.0.0`，没法确认到底部署的是哪次 commit，`web.ts` 的"版本变化自动刷新"逻辑（判断 `!== '0.0.0'`）也因此在 web 端一直是 no-op。已在 CI 里补上（`git rev-parse --short HEAD` 作为版本号）；手动部署也要照上面命令带上 `NW_BUILD_VERSION`，否则又会退回 `0.0.0`。核对是否生效：访问 `https://a.gamestao.com/version.json`，应该看到 7 位 commit SHA 而不是 `0.0.0`。
 > `a.gamestao.com` 是**单层子域**，被免费 `*.gamestao.com` 通配证书覆盖（别用多层 `a.b.gamestao.com`）。
 > 数据面 WS（`/ws`）走 `match_found.game_url` 下发，缺省由 API base 自动推导 `/api`→`/ws`，前端无需单独配。
 
