@@ -132,6 +132,8 @@ export class AuctionSceneBase {
   // Scroll
   protected scrollY = 0;
   protected dragStart: { x: number; y: number; scroll: number } | null = null;
+  /** Set by handleMove instead of rendering inline — see EquipmentSceneBase.scrollDirty for why. */
+  private scrollDirty = false;
 
   // Hit rects
   protected hitRects: { rect: { x: number; y: number; w: number; h: number }; action: () => void }[] = [];
@@ -459,7 +461,7 @@ export class AuctionSceneBase {
     const dy = y - this.dragStart.y;
     if (Math.abs(dy) > 6) {
       this.scrollY = Math.max(0, this.dragStart.scroll - dy);
-      this.render();
+      this.scrollDirty = true;
     }
   }
 
@@ -468,6 +470,7 @@ export class AuctionSceneBase {
   }
 
   update(dt: number): void {
+    if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
     if (this.toastTimer > 0) {
       this.toastTimer -= dt * 1000;
       if (this.toastTimer <= 0) this.toastLayer.removeChildren();

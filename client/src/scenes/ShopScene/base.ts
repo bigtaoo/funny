@@ -129,6 +129,8 @@ export class ShopSceneBase {
   // ── Scroll state (grid may overflow the body region) ──────────────────────
   protected scrollY = 0;
   protected dragStart: { y: number; scroll: number } | null = null;
+  /** Set by handleMove instead of rendering inline — see EquipmentSceneBase.scrollDirty for why. */
+  private scrollDirty = false;
 
   // ── Promo-code state ──────────────────────────────────────────────────────
   protected promoCode = '';
@@ -157,6 +159,7 @@ export class ShopSceneBase {
   // ── Scene interface ───────────────────────────────────────────────────────
 
   update(dt: number): void {
+    if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
     if (this.bt.tick(dt)) this.render();
   }
 
@@ -237,7 +240,7 @@ export class ShopSceneBase {
     const dy = y - this.dragStart.y;
     if (Math.abs(dy) > 6) {
       this.scrollY = Math.max(0, this.dragStart.scroll - dy);
-      this.render();
+      this.scrollDirty = true;
     }
   }
 

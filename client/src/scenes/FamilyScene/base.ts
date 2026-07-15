@@ -92,6 +92,11 @@ export class FamilySceneBase {
   private headerExtras: PIXI.DisplayObject[] = [];
   protected dragStart: { x: number; y: number; scroll: number; target: 'members' | 'channel' } | null = null;
   protected dragMoved = false;
+  /** Set by handleMove instead of rendering inline — pointermove can fire far faster than the display
+   *  refresh rate, and render() fully tears down/rebuilds every Text/Graphics node in the roster and
+   *  channel lists, so calling it per-event caused visible jank while dragging. update() (ticker-gated,
+   *  once per frame) drains this instead. */
+  private scrollDirty = false;
 
   // Hit rects
   protected hitRects: { rect: { x: number; y: number; w: number; h: number }; action: () => void }[] = [];
@@ -365,7 +370,7 @@ export class FamilySceneBase {
       const next = Math.max(0, this.dragStart.scroll - dy);
       if (this.dragStart.target === 'channel') this.scrollYChannel = next;
       else this.scrollY = next;
-      this.render();
+      this.scrollDirty = true;
     }
   }
 
@@ -374,6 +379,7 @@ export class FamilySceneBase {
   }
 
   update(dt: number): void {
+    if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
     if (this.toastTimer > 0) {
       this.toastTimer -= dt * 1000;
       if (this.toastTimer <= 0) this.toastLayer.removeChildren();
