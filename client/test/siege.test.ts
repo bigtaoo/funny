@@ -151,6 +151,8 @@ describe('judgeRunner — siege re-verification closed loop', () => {
       pveUpgrades: {},
       unitLevels: {},
       defenseJson: JSON.stringify(lvl),
+      topDeck: [],
+      bottomDeck: [],
     };
 
     const out = runJudge(req);
@@ -170,6 +172,8 @@ describe('judgeRunner — siege re-verification closed loop', () => {
       pveUpgrades: {},
       unitLevels: {},
       defenseJson: '{not json',
+      topDeck: [],
+      bottomDeck: [],
     };
     expect(runJudge(req)).toEqual({ ok: false, stateHash: '', winnerSide: 0, stars: 0, statsJson: '' });
   });

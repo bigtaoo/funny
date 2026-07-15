@@ -91,6 +91,8 @@ describe('judgeRunner — PvE spot-check re-verification', () => {
       pveUpgrades: {}, // no upgrades (consistent with the recording)
       unitLevels: {},
       defenseJson: '',
+      topDeck: [],
+      bottomDeck: [],
     };
 
     const out = runJudge(req);
@@ -110,6 +112,8 @@ describe('judgeRunner — PvE spot-check re-verification', () => {
       pveUpgrades: {},
       unitLevels: {},
       defenseJson: '',
+      topDeck: [],
+      bottomDeck: [],
     };
     expect(runJudge(req)).toEqual({ ok: false, stateHash: '', winnerSide: 0, stars: 0, statsJson: '' });
   });
@@ -126,6 +130,8 @@ describe('judgeRunner — PvE spot-check re-verification', () => {
       pveUpgrades: {},
       unitLevels: {},
       defenseJson: '',
+      topDeck: [],
+      bottomDeck: [],
     };
     const out = runJudge(req);
     expect(out.stars).toBe(0);
