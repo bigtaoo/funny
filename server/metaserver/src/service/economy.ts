@@ -21,6 +21,7 @@ import {
   PRODUCT_STARTER_GROWTH,
   GROWTH_PACK_WINDOW_DAYS,
   accrueRetentionTask,
+  createLogger,
   type GachaPoolDef,
 } from '@nw/shared';
 import { getOrCreateSave } from '../save.js';
@@ -41,6 +42,8 @@ import {
 } from '../economy.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
 import { accountIdOf, type Constructor, type MetaBaseCtor } from './base.js';
+
+const log = createLogger('meta:economy');
 
 type EconomyHandlers = Pick<
   MetaHandlers,
@@ -172,6 +175,9 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
 
       const { cols, commercial, now } = this.deps;
       const orderId = randomUUID();
+      // getOrCreateSave doesn't depend on the draw result — kick it off alongside the commercial HTTP round-trip
+      // instead of waiting for the response first (was serialized, adding a full Mongo round-trip to the critical path).
+      const savePromise = getOrCreateSave(cols, accountId, now());
       const draw = await commercial.gachaDraw({ accountId, poolId, count, orderId });
       if (!draw.ok) {
         if (draw.error === 'INSUFFICIENT_FUNDS') {
@@ -185,7 +191,7 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       // Skin/standard pool delivery: new skins added to inventory.skins (idempotent); duplicate-to-coin conversion
       // deferred to S5 (see economy.ts comment). (The separate unit-card pool + its cardInventory delivery branch were
       // removed on 2026-07-03; unit cards now come only from PvE level drops.)
-      const cur = await getOrCreateSave(cols, accountId, now());
+      const cur = await savePromise;
       const { newSkins, marked } = markDuplicates(cur.inventory.skins, draw.results);
       const save = await deliverGrant(
         cols,
@@ -196,9 +202,18 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
         { [poolId]: draw.pityAfter },
         now(),
       );
-      await commercial.orderDelivered({ orderId });
-      // B5: record daily task "open gacha"; merge retention into the returned save so the client immediately sees task completion.
-      await this.bumpRetentionTask(accountId, 'gacha.draw');
+      // Bookkeeping-only (marks the order row 'delivered'); not on the critical path. If it fails, the order
+      // stays 'charged' and is reconciled on the account's next GET /save via commercial.undeliveredOrders.
+      void commercial.orderDelivered({ orderId }).catch((e) => {
+        log.warn('gachaDraw: fire-and-forget orderDelivered failed', {
+          orderId,
+          accountId,
+          error: (e as Error).message,
+        });
+      });
+      // B5: record daily task "open gacha" (best-effort, does not block the response — see bumpRetentionTask).
+      // The retention state merged into the response below is computed locally, independent of this write landing.
+      void this.bumpRetentionTask(accountId, 'gacha.draw');
       const nextRetention2 = accrueRetentionTask(save.retention, 'gacha.draw', now());
       let saveWithRet2 = nextRetention2 !== save.retention ? { ...save, retention: nextRetention2 } : save;
       // Fate points (§7): reflect the freshly-credited balance immediately (mirror catches up fully on next GET /save).
