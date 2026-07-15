@@ -143,6 +143,7 @@ describe('CardScene — Skins tab card grid layout', () => {
     // sit further right, past the portrait) — so this starts a drag instead of tapping a tile.
     input._emitDown(150, 150);
     input._emitMove(150, 150 - 100);
+    (scene as unknown as { update(dt: number): void }).update(1 / 60);
     expect(s.scrollY).toBeGreaterThan(0);
 
     const after = findLabelPos(scene.container, 'skin_shop_e1')!;
@@ -150,14 +151,17 @@ describe('CardScene — Skins tab card grid layout', () => {
 
     // Dragging far past the bottom must clamp, not scroll indefinitely.
     input._emitMove(150, 150 - 100000);
+    (scene as unknown as { update(dt: number): void }).update(1 / 60);
     const clampedScrollY = s.scrollY;
     input._emitMove(150, 150 - 200000);
+    (scene as unknown as { update(dt: number): void }).update(1 / 60);
     expect(s.scrollY).toBe(clampedScrollY);
     input._emitUp(150, 150 - 200000);
 
     // Dragging back up past the top must clamp to 0.
     input._emitDown(150, 150);
     input._emitMove(150, 150 + 100000);
+    (scene as unknown as { update(dt: number): void }).update(1 / 60);
     expect(s.scrollY).toBe(0);
     scene.destroy();
   });
@@ -165,10 +169,11 @@ describe('CardScene — Skins tab card grid layout', () => {
   it('does not scroll on a tall viewport where all cards already fit', () => {
     const input = new InputManager();
     const scene = buildSkinsScene(input, createLayout(1920, 1080));
-    const s = scene as unknown as { scrollY: number };
+    const s = scene as unknown as { scrollY: number; update(dt: number): void };
 
     input._emitDown(600, 400);
     input._emitMove(600, 400 - 1000);
+    s.update(1 / 60);
     expect(s.scrollY).toBe(0);
     scene.destroy();
   });
