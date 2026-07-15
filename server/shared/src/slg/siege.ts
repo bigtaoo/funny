@@ -184,8 +184,10 @@ export function siegeSeedFromId(sid: string): number {
   return h >>> 0;
 }
 
+// Keep in sync with MAX_BASE_LEVEL (= BASE_UPGRADE_COSTS.length) in server/engine/src/campaign/levelSchema.ts —
+// this package can't import @nw/engine, so the bound is duplicated here.
 function clampBaseLevel(n: number): number {
-  return Math.max(0, Math.min(3, Math.floor(n) || 0));
+  return Math.max(0, Math.min(2, Math.floor(n) || 0));
 }
 
 /**
