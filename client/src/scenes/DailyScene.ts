@@ -154,13 +154,14 @@ export class DailyScene implements Scene {
     }
 
     if (this.toast) {
+      const toastCy = h * (2 / 3);
       const toastBg = new PIXI.Graphics();
       toastBg.beginFill(0x1a1408, 0.85);
-      toastBg.drawRoundedRect(w * 0.15, h * 0.82, w * 0.7, h * 0.07, 8);
+      toastBg.drawRoundedRect(w * 0.15, toastCy - h * 0.035, w * 0.7, h * 0.07, 8);
       toastBg.endFill();
       const toastTxt = txt(this.toast, Math.round(h * 0.028), 0xffd88a);
       toastTxt.anchor.set(0.5, 0.5);
-      toastTxt.x = w / 2; toastTxt.y = h * 0.855;
+      toastTxt.x = w / 2; toastTxt.y = toastCy;
       this.container.addChild(toastBg, toastTxt);
     }
     if (this.bt.loadingVisible) drawLoadingOverlay(this.container, w, h, this.bt.dots, t('common.processing'));
