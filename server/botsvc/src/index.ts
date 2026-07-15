@@ -12,8 +12,6 @@ import { BotSession } from './bot';
 import { Scheduler } from './scheduler';
 import { startInternalHttp } from './internalHttp';
 
-const TICK_MS = 15_000;
-
 async function main(): Promise<void> {
   const env = loadBotsvcEnv();
 
@@ -33,6 +31,7 @@ async function main(): Promise<void> {
     shedFullAt: env.shedFullAt,
     batchSize: env.spawnBatch,
     upkeepConcurrency: env.upkeepConcurrency,
+    upkeepRotations: env.upkeepRotations,
   });
 
   const server = startInternalHttp(
@@ -42,7 +41,7 @@ async function main(): Promise<void> {
 
   const timer = setInterval(() => {
     scheduler.tick().catch((e) => console.error('botsvc tick failed:', e));
-  }, TICK_MS);
+  }, env.tickMs);
 
   const shutdown = (): void => {
     clearInterval(timer);

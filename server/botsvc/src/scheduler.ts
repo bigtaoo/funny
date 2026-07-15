@@ -11,6 +11,8 @@ export interface SchedulerOptions {
   batchSize: number;
   /** Max concurrent per-session upkeep chains (family+SLG) per tick — see the tick() note on why this is bounded, not serial and not unbounded. */
   upkeepConcurrency: number;
+  /** Ticks needed to cycle every online session through one upkeep pass (see runUpkeep()). */
+  upkeepRotations: number;
 }
 
 export class Scheduler {
@@ -19,6 +21,8 @@ export class Scheduler {
   private currentTarget: number;
   /** Re-entrancy guard: the process fires tick() on a fixed interval regardless of whether the previous pass finished. */
   private ticking = false;
+  /** Advances each tick so runUpkeep() covers a different rotation slice of the online set (round-robin). */
+  private upkeepRotation = 0;
   /** One-shot flag so a persistently-unavailable capacity signal warns once, not every tick. */
   private capacityWarned = false;
 
@@ -103,14 +107,26 @@ export class Scheduler {
   }
 
   /**
-   * Family + SLG upkeep for every online session, at bounded concurrency. Serial awaits made one pass
-   * grow linearly with the fleet (a 1000-bot tick outran the interval); unbounded Promise.all would
-   * fire 1000 REST fan-outs at once. A fixed pool of workers pulling from a shared cursor keeps each
-   * session's tickFamily→tickSlg order intact while capping in-flight work. tickBattle() stays
-   * fire-and-forget: a match can run for minutes, so it must never be awaited here.
+   * Family + SLG upkeep for one rotation slice of the online set, at bounded concurrency. Only
+   * 1/upkeepRotations of the fleet is touched per call — round-robin across ticks — so each bot still
+   * gets upkeep roughly once every (tickMs * upkeepRotations), same cadence as processing everyone
+   * every tick, but the per-tick burst is upkeepRotations times smaller. This trades one big fan-out
+   * per interval for several small ones, closer to how real players trickle their activity rather than
+   * all acting in lockstep. Serial awaits made one pass grow linearly with the fleet (a 1000-bot tick
+   * outran the interval); unbounded Promise.all would fire hundreds of REST fan-outs at once. A fixed
+   * pool of workers pulling from a shared cursor keeps each session's tickFamily→tickSlg order intact
+   * while capping in-flight work. tickBattle() stays fire-and-forget: a match can run for minutes, so
+   * it must never be awaited here.
    */
   private async runUpkeep(): Promise<void> {
-    const sessions = [...this.online];
+    const all = [...this.online];
+    if (all.length === 0) return;
+    const rotations = Math.max(1, this.opts.upkeepRotations);
+    const chunkSize = Math.ceil(all.length / rotations);
+    const start = (this.upkeepRotation % rotations) * chunkSize;
+    this.upkeepRotation = (this.upkeepRotation + 1) % rotations;
+    const sessions = all.slice(start, start + chunkSize);
+
     let next = 0;
     const worker = async (): Promise<void> => {
       while (next < sessions.length) {
