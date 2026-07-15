@@ -88,7 +88,14 @@ export function SaveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
       const publicId = await ensurePublicId(cols, accountId);
       // freeRename: the player still holds their one-time free rename (current name is a system default).
       const freeRename = await hasFreeRename(cols, accountId);
-      return ok({ save, publicId, freeRename, ...(displayName ? { displayName } : {}), ...this.gatewayField });
+      return ok({
+        save,
+        publicId,
+        freeRename,
+        ...(displayName ? { displayName } : {}),
+        ...this.gatewayField,
+        ...(await this.activeMatchFieldFor(accountId)),
+      });
     }
 
     async putSave(req: FastifyRequest, reply: FastifyReply) {

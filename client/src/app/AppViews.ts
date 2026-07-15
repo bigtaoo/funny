@@ -54,6 +54,7 @@ import type { TitlesSceneCallbacks } from '../scenes/TitlesScene';
 import type { DailyCallbacks } from '../scenes/DailyScene';
 import type { EventCallbacks } from '../scenes/EventScene';
 import type { ConsentCallbacks } from '../render/ConsentDialog';
+import type { ReconnectPromptCallbacks } from '../render/ReconnectPromptDialog';
 import type { DeckBuilderCallbacks } from '../scenes/DeckBuilderScene';
 import type { CitySceneCallbacks } from '../scenes/CityScene';
 
@@ -157,6 +158,8 @@ export interface AppViews {
   showIntro(cb: IntroSceneCallbacks): void;
   /** First-launch GDPR / privacy consent gate (C5-c, L1-1). Blocks until accepted. */
   showConsent(cb: ConsentCallbacks): void;
+  /** Login-reconnect-prompt: "resume your unfinished match?" shown when GET /save reports an activeMatch. */
+  showReconnectPrompt(cb: ReconnectPromptCallbacks): void;
   /**
    * Lobby (home). Returns a handle so the core can push live social-badge updates.
    * `opts.fade` is set only when arriving here from exiting a match or the SLG world map.

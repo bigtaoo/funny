@@ -1,6 +1,6 @@
 // metaserver process bootstrap: connect Mongo → buildApp → listen.
 // Reverse proxy forwards /api/* to this process (SERVER_API.md §0).
-import { createMongo, createLogger, startHeartbeat, FeatureFlagCache, internalHeaders, type JwtConfig } from '@nw/shared';
+import { createMongo, createLogger, startHeartbeat, FeatureFlagCache, internalHeaders, connectActiveMatchRedis, type JwtConfig } from '@nw/shared';
 import { loadMetaEnv } from './config.js';
 import { buildApp, SPEC_PATH } from './app.js';
 import { HttpGatewayClient } from './gatewayClient.js';
@@ -67,6 +67,8 @@ async function main() {
   });
   if (adminUrl) await flags.start();
 
+  const redis = await connectActiveMatchRedis(env.redisUrl);
+
   const app = await buildApp({
     cols: mongo.collections,
     jwt,
@@ -79,6 +81,7 @@ async function main() {
     region: env.region,
     lokiPushUrl: env.lokiPushUrl,
     socialsvcUrl: env.socialsvcInternalUrl,
+    redis,
     // Request logging goes through the readable onResponse hook inside buildApp (@nw/shared logger); not using pino JSON.
     logger: false,
   });
@@ -120,6 +123,7 @@ async function main() {
     commercial: env.commercialUrl ?? 'disabled',
     gateway: env.gatewayInternalUrl ?? 'disabled',
     gatewayPublic: env.gatewayPublicUrl ?? 'none',
+    activeMatchRedis: redis ? 'connected' : 'disabled',
   });
   startHeartbeat(log); // Liveness heartbeat: one info log every 5 minutes when idle
 }

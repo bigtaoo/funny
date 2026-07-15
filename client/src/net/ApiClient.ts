@@ -27,6 +27,7 @@ export type {
   GachaResultEntry,
   MatchHistoryEntry,
   AuthResult,
+  ActiveMatchInfo,
   ProfileView,
   FriendView,
   FriendRequestView,

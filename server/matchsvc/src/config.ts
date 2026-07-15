@@ -19,6 +19,8 @@ export interface MatchsvcEnv extends ServerEnv {
   region: string | null;
   /** If ranked matchmaking wait exceeds this many milliseconds, evaluate match_bot_fallback to decide whether to fall back to an AI opponent. Default 30000. */
   botFallbackMs: number;
+  /** Redis URL for cross-login active-match tracking (login-reconnect-prompt). null = feature disabled (no persistence, resume prompt never fires). */
+  redisUrl: string | null;
 }
 
 export function loadMatchsvcEnv(): MatchsvcEnv {
@@ -32,5 +34,6 @@ export function loadMatchsvcEnv(): MatchsvcEnv {
     adminInternalUrl: process.env.NW_ADMIN_INTERNAL_URL ?? null,
     region: process.env.NW_REGION ?? null,
     botFallbackMs: Number(process.env.NW_MM_BOT_FALLBACK_MS ?? 30000),
+    redisUrl: process.env.NW_REDIS_URL ?? null,
   };
 }

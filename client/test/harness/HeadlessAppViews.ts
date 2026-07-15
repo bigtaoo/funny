@@ -51,6 +51,7 @@ import type { WorldMapView } from '../../src/scenes/WorldMapScene';
 import type { DailyCallbacks } from '../../src/scenes/DailyScene';
 import type { EventCallbacks } from '../../src/scenes/EventScene';
 import type { ConsentCallbacks } from '../../src/render/ConsentDialog';
+import type { ReconnectPromptCallbacks } from '../../src/render/ReconnectPromptDialog';
 import type { TitlesSceneCallbacks } from '../../src/scenes/TitlesScene';
 import type { CitySceneCallbacks } from '../../src/scenes/CityScene';
 
@@ -59,7 +60,7 @@ export type ScreenName =
   | 'campaignMap' | 'levelPrep' | 'cardCodex' | 'cardRoster' | 'equipment' | 'stats' | 'achievements'
   | 'leaderboard' | 'battlePass' | 'replay' | 'result' | 'room' | 'friends'
   | 'chat' | 'gameNet' | 'game' | 'worldMap' | 'family' | 'sect' | 'auction' | 'defenseEditor' | 'teams' | 'deckBuilder'
-  | 'consent' | 'daily' | 'events' | 'statePlayer' | 'titles' | 'city';
+  | 'consent' | 'reconnectPrompt' | 'daily' | 'events' | 'statePlayer' | 'titles' | 'city';
 
 interface ActiveMatch {
   engine: IGameEngine;
@@ -92,6 +93,7 @@ export class HeadlessAppViews implements AppViews {
   equipment?: EquipmentCallbacks;
   stats?: StatsCallbacks;
   consent?: ConsentCallbacks;
+  reconnectPrompt?: ReconnectPromptCallbacks;
   daily?: DailyCallbacks;
   events?: EventCallbacks;
   /** Last daily-reward-claimable badge the core pushed into the lobby handle. */
@@ -117,6 +119,7 @@ export class HeadlessAppViews implements AppViews {
 
   showIntro(cb: IntroSceneCallbacks): void { this.screen = 'intro'; this.intro = cb; }
   showConsent(cb: ConsentCallbacks): void { this.screen = 'consent'; this.consent = cb; }
+  showReconnectPrompt(cb: ReconnectPromptCallbacks): void { this.screen = 'reconnectPrompt'; this.reconnectPrompt = cb; }
   showLobby(cb: LobbySceneCallbacks): LobbyView {
     this.screen = 'lobby';
     this.lobby = cb;

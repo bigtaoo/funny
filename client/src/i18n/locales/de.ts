@@ -1327,6 +1327,12 @@ export const de: Record<TranslationKey, string> = {
   'consent.terms': 'Nutzungsbedingungen',
   'consent.accept': 'Zustimmen & Fortfahren',
 
+  // ── Wiederverbindungs-Hinweis nach Login (laufendes Match nach Re-Login fortsetzen) ──
+  'reconnect.title': 'Unbeendetes Match',
+  'reconnect.body': 'Du hast noch ein laufendes Match. Möchtest du dich wieder verbinden und fortsetzen?',
+  'reconnect.accept': 'Wieder verbinden',
+  'reconnect.decline': 'Nicht jetzt',
+
   // ── Gacha-Wahrscheinlichkeiten (Apple 3.1.1, L1-3) ──────────────────────────
   'gacha.oddsDetail.button': 'Chancen',
   'gacha.oddsDetail.title': 'Offenlegung der Droprate',

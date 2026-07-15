@@ -45,6 +45,7 @@ import { CityScene, type CitySceneCallbacks } from './scenes/CityScene';
 import { DailyScene, type DailyCallbacks } from './scenes/DailyScene';
 import { EventScene, type EventCallbacks } from './scenes/EventScene';
 import { ConsentDialog, type ConsentCallbacks } from './render/ConsentDialog';
+import { ReconnectPromptDialog, type ReconnectPromptCallbacks } from './render/ReconnectPromptDialog';
 import { OwnerId, ownerToSide, Side } from './game';
 import type { Replay, LevelDefinition } from './game';
 import { ScalingManager, createLayout } from './layout/ScalingManager';
@@ -110,6 +111,11 @@ class PixiAppViews implements AppViews {
   showConsent(cb: ConsentCallbacks): void {
     this.leaveLobby();
     this.manager.goto(new ConsentDialog(this.layout.designWidth, this.layout.designHeight, cb));
+  }
+
+  showReconnectPrompt(cb: ReconnectPromptCallbacks): void {
+    this.leaveLobby();
+    this.manager.goto(new ReconnectPromptDialog(this.layout.designWidth, this.layout.designHeight, cb));
   }
 
   showLobby(cb: LobbySceneCallbacks, opts?: FadeOpts): LobbyView {

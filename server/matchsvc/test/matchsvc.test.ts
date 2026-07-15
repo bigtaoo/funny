@@ -144,6 +144,46 @@ describe('Matchsvc friendly', () => {
     expect(pushed.length).toBeGreaterThan(before);
     expect(last('a', 'room_state')).toBeDefined();
   });
+
+  it('login-reconnect-prompt: startMatch caches each side\'s activeMatch record in Redis', async () => {
+    // setActiveMatch is fire-and-forget inside startMatch (must not block/fail matchmaking on Redis
+    // hiccups) — flush a microtask so the write lands before asserting.
+    const redis = { set: vi.fn().mockResolvedValue('OK') };
+    const games = new GameRegistry(() => 0, GAME_URL);
+    const pushed: { acc: string; msg: PushMsg }[] = [];
+    const svc = new Matchsvc((acc, msg) => pushed.push({ acc, msg }), games, KEY, { autoTick: false, redis });
+    svc.roomCreate('a', 'Alice', '100000001');
+    const rs = pushed.find((p) => p.acc === 'a' && p.msg.kind === 'room_state');
+    if (rs?.msg.kind !== 'room_state') throw new Error();
+    svc.roomJoin('b', 'Bob', '100000002', rs.msg.code);
+    svc.roomReady('a', true);
+    svc.roomReady('b', true);
+    svc.roomStart('a');
+    await Promise.resolve(); // flush the fire-and-forget setActiveMatch() microtask
+
+    const fa = pushed.find((p) => p.acc === 'a' && p.msg.kind === 'match_found');
+    if (fa?.msg.kind !== 'match_found') throw new Error('no match_found');
+
+    expect(redis.set).toHaveBeenCalledTimes(2);
+    const [keyA, payloadA, exFlag, ttl] = redis.set.mock.calls.find((c) => c[0] === 'nw:activeMatch:a')!;
+    expect(keyA).toBe('nw:activeMatch:a');
+    expect(exFlag).toBe('EX');
+    expect(ttl).toBeGreaterThan(0);
+    expect(JSON.parse(payloadA)).toMatchObject({ gameUrl: GAME_URL, ticket: fa.msg.ticket, mode: 'friendly' });
+    expect(redis.set.mock.calls.some((c) => c[0] === 'nw:activeMatch:b')).toBe(true);
+  });
+
+  it('login-reconnect-prompt: no redis configured → startMatch still succeeds (feature silently disabled)', () => {
+    const { svc, last } = setup(); // setup() passes no redis opt
+    svc.roomCreate('a', 'Alice', '100000001');
+    const rs = last('a', 'room_state');
+    if (rs?.kind !== 'room_state') throw new Error();
+    svc.roomJoin('b', 'Bob', '100000002', rs.code);
+    svc.roomReady('a', true);
+    svc.roomReady('b', true);
+    svc.roomStart('a');
+    expect(last('a', 'match_found')).toBeDefined();
+  });
 });
 
 describe('Matchsvc ranked', () => {

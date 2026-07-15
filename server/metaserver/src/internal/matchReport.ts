@@ -19,6 +19,7 @@ import {
   BP_XP_PER_RANKED_LOSS,
   xpToLevel,
   accrueRetentionTask,
+  clearActiveMatch,
   type StatKey,
   type RankId,
 } from '@nw/shared';
@@ -63,7 +64,7 @@ interface ReportBody {
 }
 
 export function registerMatchReportRoutes(app: FastifyInstance, ctx: InternalCtx): void {
-  const { cols, authed, now, gateway, commercial, socialsvc } = ctx;
+  const { cols, authed, now, gateway, commercial, socialsvc, redis } = ctx;
 
   // ── POST /internal/match/report ───────────────────────────────────────
   app.post('/internal/match/report', async (req, reply) => {
@@ -83,6 +84,13 @@ export function registerMatchReportRoutes(app: FastifyInstance, ctx: InternalCtx
     // Idempotent: if the same room_id has already been archived, return ok immediately (resends do not re-settle).
     const existing = await cols.matches.findOne({ roomId: body.room_id });
     if (existing) return reply.send({ ok: true });
+
+    // Login-reconnect-prompt: the match is over one way or another (base/disconnect/mismatch) — clear
+    // the cached resume ticket for every side so a later re-login no longer offers to resume it.
+    // Best-effort: a failed clear just means a stale (TTL-bounded) entry lingers, not a broken report.
+    void clearActiveMatch(redis, ...body.players.map((p) => p.accountId)).catch((e) =>
+      log.warn('clearActiveMatch failed', { roomId: body.room_id, err: (e as Error).message }),
+    );
 
     // ranked + has a winner + not voided (base/disconnect) → server-authoritative ELO settlement.
     const settleRanked =

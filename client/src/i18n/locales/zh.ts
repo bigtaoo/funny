@@ -1341,6 +1341,12 @@ export const zh = {
   'consent.terms': '用户协议',
   'consent.accept': '同意并继续',
 
+  // ── 登录断线重连提示（重新登录后恢复未完成的对局） ───────────────────────────
+  'reconnect.title': '未完成的对局',
+  'reconnect.body': '你还有一场对局尚未结束，是否重新连接并继续？',
+  'reconnect.accept': '返回对局',
+  'reconnect.decline': '暂不',
+
   // ── Gacha drop-rate disclosure (Apple 3.1.1, L1-3) ───────────────────────
   'gacha.oddsDetail.button': '概率详情',
   'gacha.oddsDetail.title': '掉落概率公示',
