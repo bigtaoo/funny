@@ -2,7 +2,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
-import type { FamilyView } from '../../net/WorldApiClient';
+import type { FamilyView, FamilyMessageView } from '../../net/WorldApiClient';
 import { type Constructor, type FamilySceneBaseCtor } from './base';
 
 export interface ActionHandlers {
@@ -159,13 +159,29 @@ export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TB
 
     async submitMessage(body: string): Promise<void> {
       if (!body || !this.family) return;
+      // Optimistic echo: show the sender's own message instantly instead of blocking on
+      // POST + full channel refetch (two sequential round-trips ≈ 2–3s of frozen UI — the
+      // "Send does nothing" complaint). The channel is newest-first (server sorts ts desc),
+      // so prepend and reset the channel scroll to the top so the new line is in view.
+      const optimistic: FamilyMessageView = {
+        id: `pending-${body.length}-${this.messages.length}`,
+        senderId: this.cb.myAccountId,
+        senderName: this.cb.playerName,
+        body,
+        ts: Number.MAX_SAFE_INTEGER,
+      };
+      this.messages = [optimistic, ...this.messages];
+      this.scrollYChannel = 0;
+      if (!this.destroyed) this.render();
       try {
         await this.cb.worldApi.sendFamilyMessage(this.family.familyId, body, this.cb.playerName);
-        await this.loadChannel();
-        if (!this.destroyed) this.render();
+        await this.loadChannel(); // replaces the optimistic echo with the authoritative list
       } catch (err) {
+        // Roll back the echo and surface the error.
+        this.messages = this.messages.filter((m) => m !== optimistic);
         this.showToast(this.errorMsg(err), C.red);
       }
+      if (!this.destroyed) this.render();
     }
 
     async doSendMsg(): Promise<void> {

@@ -36,6 +36,10 @@ export function DataMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBase
       this.family = fam;
       this.members = fam.members ?? [];
       this.mode = 'myFamily';
+      // Paint the roster/identity as soon as the family is known — the channel is a second
+      // round-trip, so don't hold the whole scene blank on it. loadData()/doJoin() render again
+      // once loadChannel() lands, filling the message list in.
+      if (!this.destroyed) this.render();
       await this.loadChannel();
     }
 

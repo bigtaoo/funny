@@ -11,25 +11,37 @@
  *   sending ("点Send没有任何反应"). Fixed by sourcing the body from `this.sendText` instead —
  *   it mirrors the input's value on every keystroke (see input.ts's 'input' listener) and stays
  *   correct regardless of the hidden input's DOM focus state.
+ * - 2026-07-15 (latency): submitMessage() blocked the whole repaint on POST + full channel
+ *   refetch (two sequential round-trips ≈ 2-3s), so Send felt frozen / like nothing happened.
+ *   Now it optimistically prepends the sender's own message (newest-first) and repaints
+ *   immediately, then reconciles in the background — rolling the echo back on failure.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { ActionsMixin } from '../src/scenes/FamilyScene/actions';
 import type { FamilySceneBaseCtor } from '../src/scenes/FamilyScene/base';
 
 /** Bare-bones stand-in for FamilySceneBase — only the fields doSendMsg()/submitMessage() touch. */
+interface Msg { id: string; senderId: string; senderName: string; body: string; ts: number }
+
+/** Bare-bones stand-in for FamilySceneBase — only the fields doSendMsg()/submitMessage() touch. */
 class FakeFamilySceneBase {
   destroyed = false;
   family: { familyId: string } | null = { familyId: 'fam1' };
   members: unknown[] = [];
+  messages: Msg[] = [];
+  scrollYChannel = 0;
   sendInput: { value: string; remove: () => void } | null = null;
   sendText = '';
   cb = {
     worldApi: { sendFamilyMessage: vi.fn().mockResolvedValue(undefined) },
     playerName: 'Tester',
+    myAccountId: 'me',
   };
   render = vi.fn();
   showToast = vi.fn();
   errorMsg = (e: unknown): string => String(e);
+  // loadChannel replaces `messages` wholesale in production; the mock leaves it as-is so tests can
+  // observe the optimistic echo the reconcile would otherwise overwrite.
   loadChannel = vi.fn().mockResolvedValue(undefined);
   openSendInput = vi.fn();
 }
@@ -37,6 +49,8 @@ class FakeFamilySceneBase {
 interface TestScene {
   destroyed: boolean;
   family: { familyId: string } | null;
+  messages: Msg[];
+  scrollYChannel: number;
   sendInput: { value: string; remove: () => void } | null;
   sendText: string;
   cb: FakeFamilySceneBase['cb'];
@@ -65,7 +79,8 @@ describe('FamilyScene Send button — doSendMsg()', () => {
     expect(scene.sendInput).toBeNull();
     expect(scene.sendText).toBe('');
     expect(scene.loadChannel).toHaveBeenCalledTimes(1);
-    expect(scene.render).toHaveBeenCalledTimes(1);
+    // Two repaints: the optimistic echo (before the network) + the post-reconcile paint.
+    expect(scene.render).toHaveBeenCalledTimes(2);
   });
 
   it('regression: sends via sendText even when sendInput was already nulled by blur', async () => {
@@ -115,5 +130,61 @@ describe('FamilyScene Send button — doSendMsg()', () => {
 
     expect(scene.showToast).toHaveBeenCalledTimes(1);
     expect(scene.loadChannel).not.toHaveBeenCalled();
+  });
+});
+
+describe('FamilyScene channel — submitMessage() optimistic echo (2026-07-15 latency fix)', () => {
+  it('prepends the sender echo and repaints BEFORE the network round-trips resolve', async () => {
+    const scene = new FamilyWithActions() as unknown as TestScene;
+    scene.messages = [{ id: 'prev', senderId: 'other', senderName: 'Bob', body: 'earlier', ts: 1 }];
+    scene.scrollYChannel = 500;
+
+    // Hold the POST pending so we can observe the state between the optimistic paint and reconcile.
+    let resolvePost!: () => void;
+    scene.cb.worldApi.sendFamilyMessage.mockReturnValueOnce(
+      new Promise<{ id: string }>((r) => { resolvePost = () => r({ id: 's1' }); }),
+    );
+
+    const pending = scene.submitMessage('hello family');
+
+    // Synchronously (POST still in flight): echo is already at the top, scroll reset, one paint,
+    // and the refetch has NOT run yet — this is what kills the 2-3s "frozen" feel.
+    expect(scene.messages).toHaveLength(2);
+    expect(scene.messages[0]).toMatchObject({ body: 'hello family', senderId: 'me', senderName: 'Tester' });
+    expect(scene.messages[1]!.id).toBe('prev');
+    expect(scene.scrollYChannel).toBe(0);
+    expect(scene.render).toHaveBeenCalledTimes(1);
+    expect(scene.loadChannel).not.toHaveBeenCalled();
+
+    resolvePost();
+    await pending;
+
+    expect(scene.loadChannel).toHaveBeenCalledTimes(1);
+    expect(scene.render).toHaveBeenCalledTimes(2);
+  });
+
+  it('rolls the optimistic echo back (and keeps prior messages) when the send fails', async () => {
+    const scene = new FamilyWithActions() as unknown as TestScene;
+    scene.messages = [{ id: 'prev', senderId: 'other', senderName: 'Bob', body: 'earlier', ts: 1 }];
+    scene.cb.worldApi.sendFamilyMessage.mockRejectedValueOnce(new Error('network down'));
+
+    await scene.submitMessage('doomed');
+
+    expect(scene.messages).toHaveLength(1);
+    expect(scene.messages[0]!.id).toBe('prev');
+    expect(scene.showToast).toHaveBeenCalledTimes(1);
+    expect(scene.loadChannel).not.toHaveBeenCalled();
+  });
+
+  it('ignores an empty body and a missing family (no echo, no network)', async () => {
+    const scene = new FamilyWithActions() as unknown as TestScene;
+    await scene.submitMessage('');
+    expect(scene.messages).toHaveLength(0);
+    expect(scene.cb.worldApi.sendFamilyMessage).not.toHaveBeenCalled();
+
+    scene.family = null;
+    await scene.submitMessage('hi');
+    expect(scene.messages).toHaveLength(0);
+    expect(scene.cb.worldApi.sendFamilyMessage).not.toHaveBeenCalled();
   });
 });
