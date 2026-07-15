@@ -115,6 +115,10 @@ export class FamilySceneBase {
     this.cb = cb;
     this.container = new PIXI.Container();
     this.build();
+    // Paint the rail + loading state on the same frame the scene mounts, so switching to the
+    // family tab shows the chrome instantly instead of a blank body while loadData()'s network
+    // round-trips are in flight (the "tab switch takes several seconds" complaint).
+    this.render();
     void this.loadData();
 
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));

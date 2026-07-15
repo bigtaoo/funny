@@ -6,7 +6,7 @@
 
 import {
   cityTotals, costByBuilding, maxLevelEffects, armyPacing,
-  INCOME_PROFILES, hourlyIncome, daysToMax,
+  INCOME_PROFILES, hourlyIncome, daysToMax, daysToMaxWithWhaleSpend, whaleResourcePackDailyMax,
   type CityTotals,
 } from './city';
 import { RESOURCE_CAP, TROOP_CAP_BASE } from '@nw/shared';
@@ -61,6 +61,20 @@ for (const p of INCOME_PROFILES) {
   console.log('  ' + p.label.padEnd(9) + RES.map((r) => (fmt((inc as any)[r] ?? 0) + '/h').padStart(12)).join(''));
 }
 console.log('');
+
+console.log('── 4b. F2P vs daily-capped whale spend (2026-07-15, SLG_DESIGN §7.2 purchase caps) ──');
+const whale = whaleResourcePackDailyMax();
+console.log(`  max resource-pack spend/day = ${fmt(whale.coinsPerDay)} coins -> +${fmt(whale.extraPerResourcePerDay)} to EVERY resource/day (stacked on free income)`);
+console.log('  days-to-max per resource, free vs +daily-capped whale spend:');
+console.log('income'.padEnd(11) + RES.map((r) => r.padStart(10)).join('') + '   (days, free -> +whale)');
+for (const p of INCOME_PROFILES) {
+  const free = daysToMax(p, totals);
+  const whaled = daysToMaxWithWhaleSpend(p, totals);
+  console.log(p.label.padEnd(11) + RES.map((r) => `${f1((free as any)[r] ?? 0)}->${f1((whaled as any)[r] ?? 0)}`.padStart(10)).join(''));
+}
+console.log('  NOTE: does not cover speedupTraining / build-time coin-skip (BUILD_SPEEDUP_SECS_PER_COIN) — those');
+console.log('  convert coins directly to time with NO purchase-count cap, only bounded by how many coins a player');
+console.log('  has. That remains an open gap (ECONOMY_NUMBERS §13-SLG.6), not fixed in this pass.\n');
 
 console.log('── 5. Army training pacing (drillYard-max troop cap) ──');
 const a = armyPacing();

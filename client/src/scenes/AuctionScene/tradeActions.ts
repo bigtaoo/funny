@@ -22,7 +22,7 @@ export function TradeActionsMixin<TBase extends AuctionSceneBaseCtor>(Base: TBas
       try {
         await this.cb.worldApi.buyAuction(auctionId);
         this.showToast(t('auction.bought'));
-        await this.loadData();
+        await Promise.all([this.loadData(), this.cb.reloadSave?.()]);
       } catch (e) {
         this.showToast(this.errorMsg(e), C.red);
       }

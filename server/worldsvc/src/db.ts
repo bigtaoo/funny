@@ -154,6 +154,8 @@ export interface PlayerWorldDoc {
   cardState?: Record<string, CardSLGState>;
   /** CC-3: base troop stock available to distribute to card instances. Initialised to BASE_TROOP_STOCK_INITIAL on joinWorld. */
   baseTroopStock?: number;
+  /** Per-shop-item daily purchase counter (SLG_DESIGN §7.2, 2026-07-15). day = UTC calendar day number (floor(ms / 86400000)); count resets whenever day advances. Absent = 0 purchases so far. */
+  shopPurchaseCounts?: Record<string, { day: number; count: number }>;
   rev: number;
 }
 
@@ -301,6 +303,8 @@ export interface OccupationDoc {
   resType?: ResourceType;
   garrison: number;      // surviving troops; becomes the tile's garrison on settlement
   dueAt: number;         // ms; scheduler settles when now >= dueAt
+  /** ADR-026 §2 / idle-team gate (2026-07-15): team slot that won this hold, carried over from MarchDoc.teamId so the team stays "out" through the occupation countdown, not just in transit. */
+  teamId?: string;
 }
 
 /** Nation document (S8-6.5). One record per capital; ownerId/nationName absent when unclaimed. */

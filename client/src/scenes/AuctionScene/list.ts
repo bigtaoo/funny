@@ -1,11 +1,17 @@
 // Market list tab: left sidebar (Market/My Auctions/My Bids), the category filter bar, the auction row list,
 // and the bottom "create listing" button.
+import * as PIXI from 'pixi.js-legacy';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
 import { t } from '../../i18n';
 import type { AuctionView } from '../../net/WorldApiClient';
+import type { EquipmentInstance, CardInstance } from '../../game/meta/SaveData';
 import { buildIcon, type IconKind } from '../../render/icons';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
+import { getEquipDef } from '../../game/meta/equipmentDefs';
+import { drawEquipmentGlyph } from '../../render/equipmentGlyph';
+import { CARD_DEFS } from '../../game/meta/cardDefs';
+import { UNIT_ART_URLS, getArtTexture } from '../../render/cardArt';
 import { FILTER_H, AUC_CELL_GAP, AUC_CELL_H, AUC_CELL_W_TARGET, FILTERS, type AucFilter, type AucTab } from './base';
 import { type Constructor, type AuctionSceneBaseCtor } from './base';
 
@@ -57,24 +63,36 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
       const keys: Record<AucFilter, 'auction.filterAll' | 'auction.filterMaterial' | 'auction.filterEquipment' | 'auction.filterCard'> = {
         '': 'auction.filterAll', material: 'auction.filterMaterial', equipment: 'auction.filterEquipment', card: 'auction.filterCard',
       };
+      // 1.5x the original chip metrics (padding/icon/font) — approved 15.07.2026 category-bar
+      // enlargement pass. Chip width itself is unchanged (still contentW / FILTERS.length), so the
+      // label is measured and scaled down if it would otherwise overflow the chip (see maxLblW below).
+      const pad = 9;
+      const iconSize = 30;
+      const fontSize = 21;
       for (let i = 0; i < FILTERS.length; i++) {
         const f = FILTERS[i]!;
         const active = f === this.allFilter;
-        const chip = sketchPanel(chipW - 6, FILTER_H - 8, { fill: active ? C.dark : 0xeeeeee, border: active ? C.accent : C.mid, seed: seedFor(i, 3, chipW) });
-        chip.x = contentX + i * chipW + 3; chip.y = y + 2;
+        const chip = sketchPanel(chipW - pad, FILTER_H - 12, { fill: active ? C.dark : 0xeeeeee, border: active ? C.accent : C.mid, seed: seedFor(i, 3, chipW) });
+        chip.x = contentX + i * chipW + pad / 2; chip.y = y + 3;
         this.bodyLayer.addChild(chip);
-        const midY = y + 2 + (FILTER_H - 8) / 2;
+        const midY = y + 3 + (FILTER_H - 12) / 2;
+        const hasIcon = f !== '';
+        const iconGap = hasIcon ? iconSize + 8 : 0;
         // Category glyph prefix (the 'all' filter stays text-only).
-        if (f !== '') {
-          const fi = buildIcon(this.itemKind(f), 20, active ? C.light : C.dark);
-          fi.x = contentX + i * chipW + 9; fi.y = midY - 10;
+        if (hasIcon) {
+          const fi = buildIcon(this.itemKind(f), iconSize, active ? C.light : C.dark);
+          fi.x = contentX + i * chipW + pad / 2 + 12; fi.y = midY - iconSize / 2;
           this.bodyLayer.addChild(fi);
         }
-        const lbl = txt(t(keys[f]), 14, active ? C.light : C.dark);
-        lbl.anchor.set(0.5, 0.5); lbl.x = contentX + i * chipW + chipW / 2 + (f !== '' ? 10 : 0); lbl.y = midY;
+        const lbl = txt(t(keys[f]), fontSize, active ? C.light : C.dark);
+        const maxLblW = chipW - pad - 20 - iconGap;
+        if (lbl.width > maxLblW) lbl.scale.set(Math.max(0.5, maxLblW / lbl.width));
+        lbl.anchor.set(0.5, 0.5);
+        lbl.x = contentX + i * chipW + pad / 2 + 12 + iconGap + maxLblW / 2;
+        lbl.y = midY;
         this.bodyLayer.addChild(lbl);
         this.hitRects.push({
-          rect: { x: contentX + i * chipW + 3, y: y + 2, w: chipW - 6, h: FILTER_H - 8 },
+          rect: { x: contentX + i * chipW + pad / 2, y: y + 3, w: chipW - pad, h: FILTER_H - 12 },
           action: () => { if (this.allFilter !== f) { this.allFilter = f; this.scrollY = 0; void this.loadData(); } },
         });
       }
@@ -140,16 +158,14 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
       cell.x = x; cell.y = y;
       this.bodyLayer.addChild(cell);
 
-      // ── Left: framed item-class glyph (square, spans the cell's inner height) ──
-      const imgSize = AUC_CELL_H - pad * 2;
-      const imgX = x + pad; const imgY = y + pad;
+      // ── Left: framed item picture (square, capped so a tall cell doesn't crowd out the text
+      // column to its right — see renderItemPicture for the real per-item art). ──
+      const imgSize = Math.min(AUC_CELL_H - pad * 2, 180);
+      const imgX = x + pad; const imgY = y + (AUC_CELL_H - imgSize) / 2;
       const frame = sketchPanel(imgSize, imgSize, { fill: 0xf0eee7, border: C.mid, seed: seedFor(x, y, imgSize) });
       frame.x = imgX; frame.y = imgY;
       this.bodyLayer.addChild(frame);
-      const iconSize = Math.round(imgSize * 0.55);
-      const clsIcon = buildIcon(this.itemKind(auc.itemType, auc.item?.['material'] as string | undefined), iconSize, C.dark);
-      clsIcon.x = imgX + (imgSize - iconSize) / 2; clsIcon.y = imgY + (imgSize - iconSize) / 2;
-      this.bodyLayer.addChild(clsIcon);
+      this.renderItemPicture(auc, imgX + imgSize / 2, imgY + imgSize / 2, Math.round(imgSize * 0.62), seedFor(x, y, imgSize));
 
       // Sale-mode glyph badge, top-right corner of the frame (tag = buy-now, gavel = auction).
       const modeIcon = buildIcon(this.saleModeKind(isAuction ? 'auction' : 'fixed'), 22, isAuction ? C.red : C.mid);
@@ -173,12 +189,14 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
         : `${t('auction.price')}: ${auc.price}`;
       const priceLbl = txt(priceText, 17, C.accent, true);
       priceLbl.x = ax; priceLbl.y = ay;
+      priceLbl.style.wordWrap = true; priceLbl.style.wordWrapWidth = Math.max(20, rightW);
       this.bodyLayer.addChild(priceLbl);
-      ay += 26;
+      ay += Math.max(26, priceLbl.height + 8);
 
       if (isAuction && auc.buyoutPrice) {
         const boLbl = txt(t('auction.buyoutAt').replace('{price}', String(auc.buyoutPrice)), 14, C.mid);
         boLbl.x = ax; boLbl.y = ay;
+        boLbl.style.wordWrap = true; boLbl.style.wordWrapWidth = Math.max(20, rightW);
         this.bodyLayer.addChild(boLbl);
       }
 
@@ -235,6 +253,49 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
         badge.anchor.set(1, 0.5); badge.x = x + cellW - pad; badge.y = btnY + btnH / 2;
         this.bodyLayer.addChild(badge);
       }
+    }
+
+    /**
+     * Real per-item picture for a market cell (mirrors GachaScene.drawEntryPicture): equipment gets
+     * its per-slot/rarity procedural glyph, cards get the real unit art PNG, materials keep their
+     * dedicated icon glyph. Centered at (cx, cy) in a `size`×`size` box.
+     */
+    private renderItemPicture(auc: AuctionView, cx: number, cy: number, size: number, seed: number): void {
+      if (auc.itemType === 'equipment') {
+        const inst = auc.item?.['instance'] as EquipmentInstance | undefined;
+        const def = inst ? getEquipDef(inst.defId) : undefined;
+        if (def) {
+          const g = new PIXI.Graphics();
+          drawEquipmentGlyph(g, def.slot, def.rarity, size, seed);
+          g.x = cx; g.y = cy;
+          this.bodyLayer.addChild(g);
+          return;
+        }
+      } else if (auc.itemType === 'card') {
+        const inst = auc.item?.['instance'] as CardInstance | undefined;
+        const cardDef = inst ? CARD_DEFS[inst.defId] : undefined;
+        const artUrl = cardDef ? UNIT_ART_URLS[cardDef.unitType] : undefined;
+        if (artUrl) {
+          const tex = getArtTexture(artUrl);
+          if (tex.baseTexture.valid) {
+            const scale = Math.min(size / tex.width, size / tex.height);
+            const sp = new PIXI.Sprite(tex);
+            sp.anchor.set(0.5);
+            sp.scale.set(scale);
+            sp.position.set(cx, cy);
+            this.bodyLayer.addChild(sp);
+            return;
+          }
+          if (!this.artHooked.has(artUrl)) {
+            this.artHooked.add(artUrl);
+            tex.baseTexture.once('loaded', () => this.render());
+          }
+        }
+      }
+      // Material listing (or an equipment/card def that vanished) → dedicated icon glyph fallback.
+      const icon = buildIcon(this.itemKind(auc.itemType, auc.item?.['material'] as string | undefined), size, C.dark);
+      icon.x = cx - size / 2; icon.y = cy - size / 2;
+      this.bodyLayer.addChild(icon);
     }
 
     renderCreateButton(contentX: number): void {

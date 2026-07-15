@@ -30,7 +30,7 @@ import { verifyAdPlatformToken } from '../ads.js';
 import type { GachaPoolView } from '../commercialClient.js';
 import {
   markDuplicates,
-  deliverGrant,
+  deliverLootBox,
   deliverOrder,
   mirrorCoins,
   mirrorWalletFrom,
@@ -155,11 +155,12 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
         }
         return reply.code(400).send(err(ErrorCode.BAD_REQUEST, charge.error));
       }
-      // Delivery: idempotently add skin to inventory + mark as delivered + mirror wallet.
-      const cur = await getOrCreateSave(cols, accountId, now());
-      const newSkins = cur.inventory.skins.includes(def.grants) ? [] : [def.grants];
-      const save = await deliverGrant(cols, accountId, orderId, newSkins, charge.coinsAfter, null, now());
-      await commercial.orderDelivered({ orderId });
+      // Delivery: route by the item's declared kind (skin vs. inventory.items) + mark delivered + mirror wallet.
+      const save = await deliverOrder(
+        cols, commercial, accountId,
+        { _id: orderId, kind: 'shop', result: { itemId: def.grants } },
+        charge.coinsAfter, null, now(),
+      );
       return ok({ save, granted: def.grants });
     }
 
@@ -188,16 +189,19 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
         }
         return reply.code(400).send(err(ErrorCode.BAD_REQUEST, draw.error));
       }
-      // Skin/standard pool delivery: new skins added to inventory.skins (idempotent); duplicate-to-coin conversion
-      // deferred to S5 (see economy.ts comment). (The separate unit-card pool + its cardInventory delivery branch were
-      // removed on 2026-07-03; unit cards now come only from PvE level drops.)
+      // Route each result: mat_* → materials, equipment defId → equipment instance, character card
+      // defId → hero card grant (save.cardInv via grantHeroCards), everything else → skin (idempotent
+      // inventory.skins add; duplicate-to-coin conversion deferred to S5, see economy.ts comment).
+      // `marked` (new/duplicate badges for the reveal UI) stays based on the full raw result list —
+      // only the actual delivery routing changed.
       const cur = await savePromise;
-      const { newSkins, marked } = markDuplicates(cur.inventory.skins, draw.results);
-      const save = await deliverGrant(
+      const { marked } = markDuplicates(cur.inventory.skins, draw.results);
+      const save = await deliverLootBox(
         cols,
+        commercial,
         accountId,
         orderId,
-        newSkins,
+        draw.results,
         draw.coinsAfter,
         { [poolId]: draw.pityAfter },
         now(),

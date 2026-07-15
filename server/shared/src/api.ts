@@ -38,6 +38,7 @@ export const ErrorCode = {
   OUT_OF_RANGE: 'OUT_OF_RANGE',
   NO_TROOPS: 'NO_TROOPS',
   TROOP_CAP_REACHED: 'TROOP_CAP_REACHED',
+  SHOP_LIMIT_REACHED: 'SHOP_LIMIT_REACHED',
   PROTECTED: 'PROTECTED',
   MARCH_NOT_FOUND: 'MARCH_NOT_FOUND',
   FAMILY_FULL: 'FAMILY_FULL',
@@ -95,6 +96,8 @@ export const ErrorCode = {
   FATE_INVALID_ITEM: 'FATE_INVALID_ITEM',           // fate redemption target is not a (past-)featured limited legendary
   ALREADY_PURCHASED: 'ALREADY_PURCHASED',           // one-off starter pack already bought (§6)
   ALREADY_ACTIVE: 'ALREADY_ACTIVE',                 // monthly/year card still running — single-slot gate, buy again once it expires (§5)
+  // —— SLG teams (2026-07-15): idle-team gate on march dispatch ——
+  TEAM_BUSY: 'TEAM_BUSY',                           // team is already committed to an active (non-recalled) march; recall it first
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -142,6 +145,7 @@ export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.OUT_OF_RANGE]: 400,
   [ErrorCode.NO_TROOPS]: 409,
   [ErrorCode.TROOP_CAP_REACHED]: 409,
+  [ErrorCode.SHOP_LIMIT_REACHED]: 409,
   [ErrorCode.PROTECTED]: 403,
   [ErrorCode.MARCH_NOT_FOUND]: 404,
   [ErrorCode.FAMILY_FULL]: 409,
@@ -183,4 +187,5 @@ export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.FATE_INSUFFICIENT]: 402,
   [ErrorCode.FATE_INVALID_ITEM]: 400,
   [ErrorCode.ALREADY_PURCHASED]: 409,
+  [ErrorCode.TEAM_BUSY]: 409,
 };

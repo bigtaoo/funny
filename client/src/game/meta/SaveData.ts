@@ -72,6 +72,7 @@ export interface SaveData {
     subscriptionExpiry: number; // monthly card end timestamp (ms); 0 = none (§5)
     subscriptionLastClaimDay?: string; // UTC day (YYYY-MM-DD) of last daily-coin claim; absent = never claimed (§5)
     starterUsed: string[]; // one-off product ids already purchased (§6)
+    starterGrowthEligible?: boolean; // still inside the growth pack's first-N-days account-age window; absent = eligible (§6)
   };
   // Delivered purchase orders (commercial orderId); server-authoritative, client read-only (S5-5).
   deliveredOrders: string[];

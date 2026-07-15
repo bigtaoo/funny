@@ -66,7 +66,12 @@ export interface ShopSceneCallbacks {
   rechargeCoins?(tierId: string): Promise<ShopActionResult>;
   // ── Monetization deals (GACHA_DESIGN §5–§6). All optional; absent = section not shown (offline / not logged in). ──
   /** Monthly/year card + starter state (subscription end ms, purchased one-off product ids). */
-  getMonetization?(): { subscriptionExpiry: number; subscriptionLastClaimDay?: string; starterUsed: string[] };
+  getMonetization?(): {
+    subscriptionExpiry: number;
+    subscriptionLastClaimDay?: string;
+    starterUsed: string[];
+    starterGrowthEligible?: boolean;
+  };
   buyMonthlyCard?(): Promise<ShopActionResult>;
   /** Buy the year card (365-day subscription). Absent = year card not shown. */
   buyYearCard?(): Promise<ShopActionResult>;

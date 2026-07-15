@@ -1375,6 +1375,8 @@ export interface components {
                 subscriptionLastClaimDay?: string;
                 /** @description one-off product ids already purchased (§6) */
                 starterUsed: string[];
+                /** @description still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6) */
+                starterGrowthEligible?: boolean;
             };
             deliveredOrders?: string[];
             pvp: {
@@ -3433,6 +3435,7 @@ export interface operations {
                             reward: {
                                 kind: string;
                                 count: number;
+                                id?: string;
                             };
                         };
                     };
@@ -4461,6 +4464,8 @@ export interface operations {
                     publicId?: string;
                     /** @enum {string} */
                     platform?: "web" | "wechat" | "crazygames";
+                    /** @description Client build version (__NW_BUILD_VERSION__, short commit hash; '0.0.0' if unbaked). Lets a recurring anomaly be attributed to a specific deploy, e.g. to rule out a long-open tab still running pre-fix code. */
+                    buildVersion?: string;
                     /** @description A batch of anomaly events; server takes at most the first 200 */
                     events: {
                         /** @description Anomaly type (mem/cpu/webgl_lost/anr/jserror/crash; unknown falls back to other) */

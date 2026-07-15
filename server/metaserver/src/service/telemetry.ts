@@ -118,7 +118,7 @@ export function TelemetryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
      * **Always returns 200** (Loki unreachable / rate-limited / invalid input also does not affect players).
      */
     async clientAnomaly(req: FastifyRequest, reply: FastifyReply) {
-      const body = (req.body ?? {}) as { publicId?: unknown; platform?: unknown; events?: unknown };
+      const body = (req.body ?? {}) as { publicId?: unknown; platform?: unknown; buildVersion?: unknown; events?: unknown };
       if (!Array.isArray(body.events)) {
         return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing events'));
       }
@@ -128,6 +128,7 @@ export function TelemetryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
       // publicId is optional (anomalies can occur before login); defaults to 'anon' and is still reported to enable statistics on anonymous anomalies.
       const publicId = typeof body.publicId === 'string' && body.publicId ? body.publicId : 'anon';
       const platform = typeof body.platform === 'string' ? body.platform : undefined;
+      const buildVersion = typeof body.buildVersion === 'string' && body.buildVersion ? body.buildVersion.slice(0, 32) : undefined;
       const events: ClientAnomalyEvent[] = (body.events as unknown[]).slice(0, 200).flatMap((raw) => {
         if (!raw || typeof raw !== 'object') return [];
         const o = raw as Record<string, unknown>;
@@ -143,7 +144,7 @@ export function TelemetryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
         return [e];
       });
 
-      const payload = buildAnomalyLokiPayload(publicId, events, platform, () =>
+      const payload = buildAnomalyLokiPayload(publicId, events, platform, buildVersion, () =>
         (BigInt(this.deps.now()) * 1_000_000n).toString(),
       );
       if (payload) void pushToLoki(this.deps.lokiPushUrl, payload);

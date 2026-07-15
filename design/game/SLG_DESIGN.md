@@ -174,6 +174,21 @@
 - **增援 / 代守 / 代打**：家族成员可向彼此领地派驻援军、被攻击时驰援（行军到达触发协防）。
 - **保护罩**：被打败后短时保护（防连续碾压），是变现/节奏旋钮。
 
+### 4.2 卡牌部队 vs 地图兵力池——边界修复 + 占地真实战斗（2026-07-15）
+
+> 用户核验后拍板三处修复，均围绕同一条已有但被违反的设计铁律：`CHARACTER_CARDS_DESIGN.md` §6.1/§9 早已明文「卡牌兵力（`cardState.currentTroops`）是与地图兵力池（`playerWorld.troops`）完全独立的第二套账本，PvE/卡牌结算不计入全局兵力池」。
+
+**问题 1：占地（`kind:'occupy'`）从未接入真实卡牌军队。** `combatMarch.ts` 目前只在 `kind==='attack' && teamId` 时读取真实布阵（`resolveCardArmy`），占地 march 永远用 `synthesizeArmy(troops,'attacker')` 把兵力数字合成成通用步兵去打 `npcGarrison(level)`，与玩家真实卡牌等级/装备/兵种无关——三战式"高级队伍打低级地基本不掉血"这条效果因此从未在占地这个最高频场景上体现，只在打其他玩家/主城时体现。
+
+- **服务端已修复（2026-07-15）**：`startMarch` 允许 `kind==='occupy'` 也带 `teamId`（沿用 `pw.teams` 里已保存的布阵模板，校验逻辑与 `attack` 分支一致）；`occupation.ts` 的 `applyOccupy`/`applyOccupationExpulsion` 比照 `arrival.ts` 的 `hasCardArmy` 判断，卡牌布阵走 `resolveCardArmy` + 真实引擎战斗 + `cardInstances`/`equipmentInv` 注入（复用 §16.5 已有的 CC-3 管线），非卡牌布阵保留 `synthesizeArmy` 兜底。e2e 已验证：12 卡满编队伍打 level≤1 地（`npcGarrison=120`）近乎不掉血。
+- **客户端 UI 待补（未在本次范围内）**：目前占地弹窗走的是 `showDeployDialog(tx,ty,'occupy')`（纯兵力数字输入），不是攻击用的 `showAttackTeamPicker` 选队流程——服务端接口已支持占地带 `teamId`，但客户端还没有暴露"用哪支队伍去占地"的入口，玩家实际操作层面暂时还摸不到这条新能力，需要后续一个单独的客户端任务把占地弹窗也接上选队 UI。
+
+**问题 2：卡牌布阵行军会同时扣/退地图兵力池，制造双重记账。** `startMarch` 对**任何**行军（不分卡牌队伍还是散兵）都会在出征时 `$inc:{troops:-troops}`（`troops`=队伍全部卡牌 HP 之和），到达/扑空/驱逐/围攻失败等分支又统一走 `refundTroops(pw, survivors)` 把存活值加回 `playerWorld.troops`；与此同时卡牌胜负结算（`computeCardStateUpdates`）**又单独**把同一批存活值写回 `cardState.{id}.currentTroops`。等于同一次战斗的存活兵力被记了两遍账（一份进地图池，一份留在卡上），且卡牌队伍出征凭空临时"占用"了一段与之无关的地图兵力池容量。
+
+- **修复（拍板规则）**：卡牌布阵（`army` 含 `cardInstanceId` 的行军）**全程不触碰 `playerWorld.troops`**——出征不扣、到达不管输赢/扑空一律不退。卡牌的兵力只活在 `cardState.currentTroops` 这一份账本里：分配（`distributeTroops`，从 `baseTroopStock` 转入）→ 出战消耗/结算存活（`computeCardStateUpdates`）→ 移出队伍销毁 + 退 80% 训练资源（`setTeams`，已有行为不变）。**分配给某张卡的兵力永远不会回到 `playerWorld.troops` 这个地图兵力池，唯一的"释放"路径是把该卡移出队伍**（销毁兵力、退部分训练资源，不是退兵）。
+- 非卡牌行军（散兵占地/增援/扫荡/侦查、以及无布阵的裸攻击）行为不变，继续用现有的 `playerWorld.troops` 扣/退模型。
+- 受影响文件：`combatMarch.ts`（出征扣减按 `hasCardArmy` 分支跳过）、`combatSiege/arrival.ts` + `combatSiege/occupation.ts`（所有 `refundTroops` 调用按 `hasCardArmy` 分支跳过，含扑空/驱逐早退分支）；`combatShared.ts` 的 `refundTroops` 函数本身不变（继续服务非卡牌路径）。
+
 ### 4.1 连地占领（硬性规则，ADR-039，2026-07-14）
 
 > **用户拍板**：三战「连地」是核心规则之一，不是软性效率加成——**占领/围攻目标格必须与本宗门已占领地相邻**，否则无法发起。
@@ -302,6 +317,7 @@
 - **sink**：练兵（粮）、建筑升级（铁/木）、养成（材料）、行军/加速、拍卖税。
 - **变现点**（SLG = 赚钱区）：建造/练兵队列加速、资源包、养成科技直购、家族特权、保护罩/迁城道具、赛季战令。全部走 `commercial` 钱包/充值。
 - 铁律延续：金币产出/消耗严控防通胀；SLG 资源是赛季性的（季末清），与跨季金币/养成分层管理。
+- **购买频次限制（2026-07-15 拍板，修复缺口）**：核验发现 `SLG_SHOP_ITEMS`（`slg_speedup_*`/`slg_res_*`/`slg_shield_*`）此前**没有任何购买次数上限**——只要币够可无限次购买，等价于满氪玩家可把 §4 econ-sim 城建/练兵节奏（B 轨，免费玩家数天到一月不等）无限压缩为"充值瞬间完成"，差距无上界。补**每日购买次数上限**（`SLG_SHOP_ITEMS[i].dailyLimit`，DRAFT 值：`speedup` 类 10/日、`resource_pack` 类 5/日、`protection`/`battle_pass` 不限——保护罩本身受时长挤占抵消无限购买价值、战令一季只需一次），按 `playerWorld` 内按 UTC 天计数的 `shopPurchaseCounts: Record<itemId, {day:number, count:number}>` 追踪，`buySlgShopItem` 超限抛 `SHOP_LIMIT_REACHED`。**科技直购**（设计里提到的变现点）目前尚未实现为具体商品，暂不在此次修复范围内，留待后续商品定义时一并加限购字段。
 
 ### 7.3 赛季经济
 
@@ -632,7 +648,7 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 
 **C. 实现期风险 / 细节（实现时处理，先记着）**
 - **U9 engineVersion 耦合**：引擎更新 → worldsvc 须重构建；赛季中途引擎升级如何 pin 版本，保录像/复算一致性（D0+P2 的代价）。
-- **U10 防守 config 旋钮接引擎 ✅（2026-06-18）**：三组新旋钮已完整落地——①**garrison（驻军单位）**：`LevelDefinition.garrison[]`（unitType/col/row），siege 模式下构造期在 Top 侧指定行列预置兵，首 tick `emitInitialEvents` 发 `unit_spawned`+`unit_move_start` 事件，单位随即按正常移动系统向 Bottom 行进；②**defenderBuildings（防守建筑）**：`LevelDefinition.defenderBuildings[]`（buildingType/col），放在 `TOP_BUILDING_ROW=17`，首 tick 发 `building_placed(owner=1)` 事件，ArrowTower/Barracks 即刻生效（射程攻击/生产单位）；③**defenderBaseLevel（基地强化）**：`LevelDefinition.defenderBaseLevel`（`0..BASE_UPGRADE_COSTS.length`，2026-07-11 天梯改动后为 0–2），直接设 `topPlayer.upgradeLevel`（跳过 ink 消耗），影响 ink 回复加成。`levelSchema` 三字段全部验证（unitType/buildingType/lane 合法性 + baseLevel 范围随 `BASE_UPGRADE_COSTS.length` 联动）；**天梯红线不动**（仅在 siege 路径生效，pvp/netplay 无 level）；31 新单测全绿；265 全量回归全绿。
+- **U10 防守 config 旋钮接引擎 ✅（2026-06-18）**：三组新旋钮已完整落地——①**garrison（驻军单位）**：`LevelDefinition.garrison[]`（unitType/col/row），siege 模式下构造期在 Top 侧指定行列预置兵，首 tick `emitInitialEvents` 发 `unit_spawned`+`unit_move_start` 事件，单位随即按正常移动系统向 Bottom 行进；②**defenderBuildings（防守建筑）**：`LevelDefinition.defenderBuildings[]`（buildingType/col），放在 `TOP_BUILDING_ROW=17`，首 tick 发 `building_placed(owner=1)` 事件，ArrowTower/Barracks 即刻生效（射程攻击/生产单位）；③**defenderBaseLevel（基地强化）**：`LevelDefinition.defenderBaseLevel`（`0..BASE_UPGRADE_COSTS.length`，2026-07-11 天梯改动后为 0–2），直接设 `topPlayer.upgradeLevel`（跳过 ink 消耗），影响 ink 回复加成。`levelSchema` 三字段全部验证（unitType/buildingType/lane 合法性 + baseLevel 范围随 `BASE_UPGRADE_COSTS.length` 联动）；**天梯红线不动**（仅在 siege 路径生效，pvp/netplay 无 level）；31 新单测全绿；265 全量回归全绿。**遗留一致性修复（2026-07-15）**：`shared/src/slg/siege.ts` 的 `clampBaseLevel()` 在 2026-07-11 那次改动（4级砍3级）后仍硬编码 `Math.min(3,…)`，未跟随 `BASE_UPGRADE_COSTS.length`（=2）同步，导致 tileLevel≥4 的高等级据点攻城会派生非法 `defenderBaseLevel=3` 被 `levelSchema` 拒绝；已改为硬编码 `2` 并加注释标注需与 `engine/campaign/levelSchema.ts` 的 `MAX_BASE_LEVEL` 保持同步（两包无跨包依赖，无法直接 import 常量）。
 - **U11 视区订阅推送扇出**：300-500 人地图 `tile_update`/`march_update` 风暴，需节流/聚合（P9 订阅模型的规模化）；密集首府区域尤需注意。（原文按 1 万人量级写，已随 U4 复核降级，风险等级相应降低但机制仍需做）
 - **U12 worldsvc 单点 march 调度**：ZSET 到点消费是单点；300-500 人规模下压力显著小于原 1 万人估算，前期单进程可接受，暂不需要选主/分片。
 - **U13 多步原子性**：占地/丢地改 `yieldRate` 与读时惰性结算的并发（rev 守卫够不够）；拍卖成交（扣卖方挂存 + 给买方 + 抽税）的跨文档幂等与回滚；门主被打全宗门资源 -50% 的大规模写操作原子性。
@@ -730,6 +746,7 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 - **G3-2b worldsvc ✅（2026-06-21）**：承重墙合龙——worldsvc 直接 import `@nw/engine` headless 跑权威围攻。`applySiege` 关键战斗（攻领地/攻主城）改为「跑引擎 → 真实残存折兵力 → `landSiege`」即时落地；非关键 sweep/NPC 维持廉价 `resolveSiege`。详见 §16.8「实现记录」。
 - **G3-2c 客户端 ✅（2026-06-21）**：5 队伍布阵编辑器（攻）+ 领地布阵（守，盟军可布）+ 出征挂队 + `seed` 重播观战；i18n。四阶段全落地——Phase 1 服务端+契约 / Phase 2 客户端编辑器+队伍 UI / Phase 3 重播观战改造 / Phase 4 删 judge 死路径，详见 §16.9。
 - **删除 ✅（G3-2c Phase 4）**：S8-3b 的录像上传 / `getSiegeDefense` / `resolveSiegeWithJudge` / worldsvc→gateway `judge` 客户端复算路径（手操不再存在，引擎给真实残存）。
+- **空闲队伍校验修复 ✅（2026-07-15）**：玩家反馈——配置 5 支队伍后，出征仍固定挂第一支队伍，即使那支队伍已在行军/占领中也照样再派，等同"抢占"而非报错。根因：`combatMarch.ts` 的 `startMarch` 只校验 `teamId` 对应的队伍存在且非空，从未检查该队伍是否已挂在一个非 `recalled` 的行军单（`marches` 集合）或占领倒计时（`occupations` 集合，ADR-037 §5.4）上——两者都是队伍"外出中"的持久化标记（前者行军途中，march 到点即 `findOneAndDelete`；后者胜后进 5 分钟占领倒计时）。修复：新增 `TEAM_BUSY` 错误码，出征前并发查询这两个集合，命中即拒（`server/worldsvc/src/combatMarch.ts`，`teams.e2e.test.ts` 两个新用例覆盖"行军中二次出征被拒→落地后恢复空闲"与"占领倒计时中二次出征被拒→倒计时结束后恢复空闲"）。客户端 `showAttackTeamPicker`（出征选队弹窗，唯一已接线的队伍挑选入口）据同一 `marches`（新增 `MarchView.teamId` 字段随行军单下行）灰显忙碌队伍并提示"行军/占领中"，避免玩家点了也白点。**范围说明**：占地弹窗（`showDeployDialog(...,'occupy')`）仍是纯兵力输入，未接队伍选择（见上文"客户端 UI 待补"一节）——本次只治好了"选中忙碌队伍会怎样"，没有新增占地选队入口。
 
 ### 16.5 数值调参记录（A7，2026-06-22）
 

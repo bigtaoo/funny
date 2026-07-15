@@ -129,12 +129,19 @@ export class WorldMapNet {
       teams = await this.ctx.cb.worldApi.getTeams(this.ctx.cb.worldId);
     } catch { /* offline — treat as empty */ }
     const usable = teams.filter((tm) => tm.army.length > 0);
-    const buttons: { label: string; action: () => void }[] = [];
+    // Idle-team gate (2026-07-15): a team already committed to an active (non-recalled) march — marching or
+    // holding a captured tile — must not accept a new order (mirrors the server-side TEAM_BUSY check in
+    // combatMarch.ts). Grey it out here instead of silently letting the picker resubmit onto a busy team.
+    const busyTeamIds = new Set(this.ctx.marches.filter((m) => m.mine && m.status !== 'returning' && m.teamId).map((m) => m.teamId));
+    const buttons: { label: string; action: () => void; disabled?: boolean }[] = [];
     for (const tm of usable) {
+      const busy = busyTeamIds.has(tm.id);
       const committed = tm.army.reduce((s, e) => s + Math.max(0, Math.floor(e.initialHp ?? 0)), 0);
+      const status = busy ? ` · ${t('world.team.busy')}` : ` · ${t('world.team.committed').replace('{n}', String(committed))}`;
       buttons.push({
-        label: `${tm.name} · ${t('world.team.committed').replace('{n}', String(committed))}`,
-        action: () => void this.doMarchTeam(tx, ty, tm.id),
+        label: `${tm.name}${status}`,
+        disabled: busy,
+        action: busy ? () => this.ctx.panels.showToast(t('world.team.busy'), C.red) : () => void this.doMarchTeam(tx, ty, tm.id),
       });
     }
     buttons.push({ label: t('world.team.manage'), action: () => this.ctx.cb.onOpenTeams() });
@@ -437,6 +444,7 @@ export class WorldMapNet {
         INSUFFICIENT_RESOURCES: t('world.err.noInk'),
         PATH_BLOCKED:  t('world.err.pathBlocked'),
         TERRITORY_NOT_CONNECTED: t('world.err.notConnected'),
+        TEAM_BUSY:     t('world.team.busy'),
       };
       return map[e.code] ?? e.message;
     }

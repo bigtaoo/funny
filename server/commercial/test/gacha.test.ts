@@ -1,12 +1,12 @@
 // Gacha RNG + pity system unit tests (S5-3). Inject deterministic random sources to reproduce: weight mapping, hard pity hit, ten-pull floor, pity counter reset.
 import { describe, it, expect } from 'vitest';
-import { GACHA_POOLS, poolEntries } from '@nw/shared';
+import { GACHA_POOLS, poolEntries, STANDARD_POOL_FIXED_ODDS } from '@nw/shared';
 import { buildLimitedPool } from '@nw/shared';
 import { rollGacha, rollStarterPack, softPityLegendaryProb, type RandInt } from '../src/gacha';
 
-const pool = GACHA_POOLS[0]!; // standard: single 150 / ten 1350 / pity 90 / tenFloor epic, soft pity 70@+5%, two-stage categories
+const pool = GACHA_POOLS[0]!; // standard: single 150 / ten 1350 / pity 90 / tenFloor epic, soft pity 70@+5%, fixed-odds base roll (§2.1b)
 
-/** Random source that always returns 0 → category 'material', first item (mat_scrap, common). */
+/** Random source that always returns 0 → the first item in whatever weight table is being rolled. */
 const zero: RandInt = () => 0;
 
 /** Random source that feeds a preset sequence of values (returns 0 when exhausted). */
@@ -15,13 +15,53 @@ function seq(values: number[]): RandInt {
   return () => values[i++] ?? 0;
 }
 
-describe('rollGacha', () => {
-  it('rng=0 → material category, first item (mat_scrap, common)', () => {
+// Fixed-odds base roll (GACHA_DESIGN §2.1b): a single flat weighted pick across the pool's odds table
+// (STANDARD_POOL_FIXED_ODDS + mat_scrap absorbing the remainder), scaled ×1000 into integer cumulative
+// buckets by rollGacha/pickItem. These thresholds are derived straight from the odds table so the tests
+// stay correct if individual percentages move (only the boundary numbers below would need updating).
+describe('fixed-odds base roll', () => {
+  it('rng=0 → material category is gone; first table entry (mat_lead, rare) wins the [0, 16290) bucket', () => {
     const { results, pityAfter } = rollGacha(pool, 1, 0, zero);
     expect(results).toHaveLength(1);
-    expect(results[0]!.rarity).toBe('common');
-    expect(results[0]!.itemId).toBe('mat_scrap'); // category material, rarity-weighted → scrap (common) first
-    expect(pityAfter).toBe(1); // common does not reset pity
+    expect(results[0]!.itemId).toBe('mat_lead');
+    expect(results[0]!.rarity).toBe('rare');
+    expect(pityAfter).toBe(1); // rare does not reset pity
+  });
+
+  it('a roll landing in the remainder bucket picks mat_scrap (common)', () => {
+    // mat_scrap's bucket starts once every explicit odds entry is exhausted (Σ others × 1000 = 51860).
+    const { results } = rollGacha(pool, 1, 0, seq([99999]));
+    expect(results[0]).toEqual({ itemId: 'mat_scrap', rarity: 'common' });
+  });
+
+  it('max/lena/mara each occupy an 800-wide bucket (0.8% each, owner decision 2026-07-15)', () => {
+    const max = rollGacha(pool, 1, 0, seq([35500]));
+    expect(max.results[0]).toEqual({ itemId: 'max', rarity: 'legendary' });
+    expect(max.pityAfter).toBe(0); // legendary resets pity
+
+    const lena = rollGacha(pool, 1, 0, seq([36300]));
+    expect(lena.results[0]).toEqual({ itemId: 'lena', rarity: 'legendary' });
+
+    const mara = rollGacha(pool, 1, 0, seq([37100]));
+    expect(mara.results[0]).toEqual({ itemId: 'mara', rarity: 'legendary' });
+  });
+
+  it('skin_l1 (Max skin, flagship legendary) sits in a narrow 10-wide bucket (0.01%)', () => {
+    const { results, pityAfter } = rollGacha(pool, 1, 0, seq([51855]));
+    expect(results[0]).toEqual({ itemId: 'skin_l1', rarity: 'legendary' });
+    expect(pityAfter).toBe(0);
+  });
+
+  it('equip_t3 gear (wp_highlighter) displays as legendary and resets pity', () => {
+    const { results, pityAfter } = rollGacha(pool, 1, 0, seq([50900]));
+    expect(results[0]).toEqual({ itemId: 'wp_highlighter', rarity: 'legendary' });
+    expect(pityAfter).toBe(0);
+  });
+
+  it('a non-legendary hit (wp_pen, rare) does not reset pity', () => {
+    const { results, pityAfter } = rollGacha(pool, 1, 5, seq([38000]));
+    expect(results[0]).toEqual({ itemId: 'wp_pen', rarity: 'rare' });
+    expect(pityAfter).toBe(6);
   });
 
   it('hard pity: prevPity = threshold-1, next pull guaranteed legendary and counter reset', () => {
@@ -30,75 +70,95 @@ describe('rollGacha', () => {
     expect(pityAfter).toBe(0);
   });
 
-  it('ten-pull floor: no epic+ throughout (rng=0 all common material) → last pull promoted to epic', () => {
-    const { results } = rollGacha(pool, 10, 0, zero);
+  it('ten-pull floor: no epic+ throughout (rng always in the mat_scrap bucket) → last pull promoted to epic', () => {
+    const { results } = rollGacha(pool, 10, 0, seq(Array(10).fill(99999)));
     expect(results).toHaveLength(10);
     expect(results.slice(0, 9).every((r) => r.rarity === 'common')).toBe(true);
-    expect(results[9]!.rarity).toBe('epic'); // tenFloor (rarity axis, picks from itemsByRarity.epic)
+    expect(results[9]!.rarity).toBe('epic'); // tenFloor (rarity axis, weighted pick from itemsByRarity.epic)
   });
 
   it('ten-pull already contains epic+: floor promotion not triggered', () => {
-    // First pull: category roll 990 lands in the skin segment [989,1000); within-skin roll 0 → skin_e1 (epic).
-    // Remaining pulls rng=0 → material/common. An epic is already present, so no floor promotion.
-    const { results } = rollGacha(pool, 10, 0, seq([990, 0]));
+    // First pull rolls 20600 → lands in the lichuang bucket [20540, 25510) (epic). Remaining pulls land in
+    // the mat_scrap remainder bucket (common). An epic is already present, so no floor promotion.
+    const { results } = rollGacha(pool, 10, 0, seq([20600, ...Array(9).fill(99999)]));
     expect(results[0]!.rarity).toBe('epic');
-    expect(results[0]!.itemId).toBe('skin_e1');
+    expect(results[0]!.itemId).toBe('lichuang');
     expect(results[9]!.rarity).toBe('common'); // last pull is not promoted
   });
 });
 
-// Two-stage base roll (GACHA_DESIGN §2.1a): category picked by CATEGORY_WEIGHTS (sum 1000), then an item within it
-// weighted by display rarity. Category segments: material[0,701) card[701,851) equip_t1[851,951) equip_t2[951,981) equip_t3[981,989) skin[989,1000).
-describe('two-stage base roll', () => {
-  it('category roll picks the skin bucket, then the within-skin tier ladder', () => {
-    // Category roll 990 → skin. Within-skin weights [skin_e1:5, skin_e2:5, skin_l1:1] (SKIN_TIER_WEIGHTS), total 11.
-    // Within roll 0 → skin_e1 (epic); roll 10 → skin_l1 (legendary, and pity resets).
-    const epicSkin = rollGacha(pool, 1, 0, seq([990, 0]));
-    expect(epicSkin.results[0]).toEqual({ itemId: 'skin_e1', rarity: 'epic' });
-    expect(epicSkin.pityAfter).toBe(1); // epic does not reset pity
+// Pity-path weighting fix (GACHA_DESIGN §2.1b): before this fix, a hard/soft-pity legendary hit picked
+// uniformly from the 7 legendary items (1/7 each), completely ignoring the odds table — so a card set to
+// 0.03% base odds actually landed ~5x more often in the long run than displayed. pickItem now weights the
+// forced-rarity pick by the SAME fixedOdds table, so these boundaries (within the legendary tier only —
+// skin_l1[0,10) wp_highlighter[10,280) ar_foil[280,550) tk_seal[550,820) max[820,1620) lena[1620,2420)
+// mara[2420,3220), total 3220) mirror the exact ratios of skin_l1/wp_highlighter/ar_foil/tk_seal/max/lena/mara
+// in STANDARD_POOL_FIXED_ODDS (0.01/0.27/0.27/0.27/0.8/0.8/0.8), not a uniform 1/7 split.
+describe('pity-path weighting (§2.1b fix: pity is no longer uniform among legendaries)', () => {
+  const hardPity = (roll: number) => rollGacha(pool, 1, pool.pityThreshold - 1, seq([roll])).results[0]!;
 
-    const legSkin = rollGacha(pool, 1, 0, seq([990, 10]));
-    expect(legSkin.results[0]).toEqual({ itemId: 'skin_l1', rarity: 'legendary' });
-    expect(legSkin.pityAfter).toBe(0); // legendary skin resets pity
+  it('hard pity respects the odds-table ratio between legendary items, not a uniform 1/7', () => {
+    expect(hardPity(0)).toEqual({ itemId: 'skin_l1', rarity: 'legendary' }); // 0.01% → tiny [0,10) bucket
+    expect(hardPity(9)).toEqual({ itemId: 'skin_l1', rarity: 'legendary' });
+    expect(hardPity(10)).toEqual({ itemId: 'wp_highlighter', rarity: 'legendary' }); // 0.27% → [10,280)
+    expect(hardPity(279)).toEqual({ itemId: 'wp_highlighter', rarity: 'legendary' });
+    expect(hardPity(280)).toEqual({ itemId: 'ar_foil', rarity: 'legendary' }); // [280,550)
+    expect(hardPity(550)).toEqual({ itemId: 'tk_seal', rarity: 'legendary' }); // [550,820)
+    expect(hardPity(820)).toEqual({ itemId: 'max', rarity: 'legendary' }); // 0.8% → [820,1620), 80x wider than skin_l1's
+    expect(hardPity(1619)).toEqual({ itemId: 'max', rarity: 'legendary' });
+    expect(hardPity(1620)).toEqual({ itemId: 'lena', rarity: 'legendary' }); // [1620,2420)
+    expect(hardPity(2420)).toEqual({ itemId: 'mara', rarity: 'legendary' }); // [2420,3220)
+    expect(hardPity(3219)).toEqual({ itemId: 'mara', rarity: 'legendary' });
   });
 
-  it('a legendary character card from the card category resets pity', () => {
-    // Category roll 800 → card [701,851). Within-card weights [lichuang/chenshou/suyuan:150(epic), max/lena/mara:1(legendary)]
-    // (CARD_TIER_WEIGHTS, legendary down-weighted 150:1), total 453. Within roll 450 → index 3 (max, legendary).
-    const { results, pityAfter } = rollGacha(pool, 1, 5, seq([800, 450]));
-    expect(results[0]).toEqual({ itemId: 'max', rarity: 'legendary' });
-    expect(pityAfter).toBe(0);
-  });
-
-  it('equipment tiers map to gear rarities (t1=fine→rare display, t3=epic→legendary display)', () => {
-    // t1 [851,951): first fine weapon wp_pen, displayed as rare.
-    const t1 = rollGacha(pool, 1, 0, seq([851, 0]));
-    expect(t1.results[0]).toEqual({ itemId: 'wp_pen', rarity: 'rare' });
-    // t3 [981,989): first epic gear wp_highlighter, displayed as legendary → resets pity.
-    const t3 = rollGacha(pool, 1, 0, seq([981, 0]));
-    expect(t3.results[0]).toEqual({ itemId: 'wp_highlighter', rarity: 'legendary' });
-    expect(t3.pityAfter).toBe(0);
+  it('ten-pull epic floor promotion respects the odds-table ratio between epic items', () => {
+    // 9 base rolls in the mat_scrap bucket (common, no epic+) force the tenFloor promotion on pull 10,
+    // which consumes an 11th rng call weighted across itemsByRarity.epic. skin_e1[0,100) skin_e2[100,200)
+    // mat_binding[200,4450) wp_marker[4450,5450) ar_leather[5450,6450) tk_sticker[6450,7450)
+    // lichuang[7450,12420) chenshou[12420,17390) suyuan[17390,22360).
+    const floorItem = (roll: number) =>
+      rollGacha(pool, 10, 0, seq([...Array(10).fill(99999), roll])).results[9]!;
+    expect(floorItem(50)).toEqual({ itemId: 'skin_e1', rarity: 'epic' });
+    expect(floorItem(150)).toEqual({ itemId: 'skin_e2', rarity: 'epic' });
+    expect(floorItem(300)).toEqual({ itemId: 'mat_binding', rarity: 'epic' }); // 4.25% → by far the widest epic bucket
+    expect(floorItem(8000)).toEqual({ itemId: 'lichuang', rarity: 'epic' });
   });
 });
 
-// Odds panel expansion (Apple 3.1.1): two-stage per-item probabilities must sum to ~1 and carry display rarity.
-describe('poolEntries (two-stage)', () => {
-  it('per-item probabilities sum to 1 and match the two-stage math', () => {
+// Odds panel expansion (Apple 3.1.1): fixed-odds percentages must match the owner-specified table exactly,
+// mat_scrap absorbs the remainder, and pity/soft-pity picks are weighted by this SAME table (gacha.ts
+// pickItem) so the displayed odds equal the true long-run odds, not just the base-roll odds.
+describe('poolEntries (fixed odds)', () => {
+  it('per-item probabilities match STANDARD_POOL_FIXED_ODDS exactly, and mat_scrap absorbs the rest', () => {
     const entries = poolEntries(pool);
     const total = entries.reduce((s, e) => s + e.weight, 0);
-    // skin_l1 = P(skin 11/1000) · P(l1 | skin = 1/11) = 1/1000 ; the flagship legendary skin is ~0.10%.
-    const l1 = entries.find((e) => e.itemId === 'skin_l1')!;
-    expect(l1.rarity).toBe('legendary');
-    expect(l1.weight / total).toBeCloseTo((11 / 1000) * (1 / 11), 4);
-    // mat_scrap = P(material 701/1000) · P(scrap | material = 700/990) ≈ 49.6%.
-    const scrap = entries.find((e) => e.itemId === 'mat_scrap')!;
-    expect(scrap.weight / total).toBeCloseTo((701 / 1000) * (700 / 990), 3);
-    // Effective legendary rate is tuned to ~1%.
-    const legShare = entries.filter((e) => e.rarity === 'legendary').reduce((s, e) => s + e.weight / total, 0);
-    expect(legShare).toBeGreaterThan(0.009);
-    expect(legShare).toBeLessThan(0.011);
+    const prob = (id: string) => entries.find((e) => e.itemId === id)!.weight / total;
+
+    expect(prob('max')).toBeCloseTo(0.008, 4);
+    expect(prob('lena')).toBeCloseTo(0.008, 4);
+    expect(prob('mara')).toBeCloseTo(0.008, 4);
+    expect(prob('skin_e1')).toBeCloseTo(0.001, 4); // Lena skin, repriced 0.50%→0.10% (2026-07-15)
+    expect(prob('skin_e2')).toBeCloseTo(0.001, 4); // Mara skin
+    expect(prob('skin_l1')).toBeCloseTo(0.0001, 4); // Max skin (flagship), repriced 0.10%→0.01%
+
+    const explicitSum = Object.values(STANDARD_POOL_FIXED_ODDS).reduce((a, b) => a + b, 0);
+    expect(prob('mat_scrap')).toBeCloseTo((100 - explicitSum) / 100, 4);
+
     // Probabilities normalize to 1.
     expect(entries.reduce((s, e) => s + e.weight / total, 0)).toBeCloseTo(1, 5);
+  });
+
+  it('legendary share is now ~3.22% (up from the old ~1% target — three 0.8% cards dominate it)', () => {
+    const entries = poolEntries(pool);
+    const total = entries.reduce((s, e) => s + e.weight, 0);
+    const legShare = entries.filter((e) => e.rarity === 'legendary').reduce((s, e) => s + e.weight / total, 0);
+    expect(legShare).toBeGreaterThan(0.03);
+    expect(legShare).toBeLessThan(0.035);
+  });
+
+  it('tags every entry with its rarity', () => {
+    const entries = poolEntries(pool);
+    for (const e of entries) expect(['common', 'rare', 'epic', 'legendary']).toContain(e.rarity);
   });
 });
 
@@ -122,9 +182,9 @@ describe('soft pity', () => {
     expect(miss.results[0]!.rarity).not.toBe('legendary');
   });
 
-  it('below the soft-pity start the base roll is the two-stage category draw, not the flat table', () => {
-    // pity 5 (< 70): no soft-pity boost → category roll. Category 800 → card, within 450 → max (legendary card).
-    const { results } = rollGacha(pool, 1, 5, seq([800, 450]));
+  it('below the soft-pity start the base roll is the fixed-odds draw, not the flat table', () => {
+    // pity 5 (< 70): no soft-pity boost → fixed-odds draw. Roll 35500 lands in the max bucket.
+    const { results } = rollGacha(pool, 1, 5, seq([35500]));
     expect(results[0]).toEqual({ itemId: 'max', rarity: 'legendary' });
   });
 });
@@ -146,6 +206,7 @@ describe('rollStarterPack', () => {
 });
 
 // Limited pool (GACHA_DESIGN §2.2): built from the standard pool with a featured banner legendary.
+// Limited pools do NOT carry fixedOdds/remainderItemId — they keep the flat uniform rarity roll.
 describe('buildLimitedPool', () => {
   const cfg = { id: 'limited_01', name: 'Test Banner', featuredLegendary: 'skin_limited_01', startAt: 0, endAt: 100 };
 
@@ -153,6 +214,7 @@ describe('buildLimitedPool', () => {
     const p = buildLimitedPool(cfg);
     expect(p.limited).toBe(true);
     expect(p.featuredLegendary).toBe('skin_limited_01');
+    expect(p.fixedOdds).toBeUndefined();
     expect(p.itemsByRarity.common).toEqual(pool.itemsByRarity.common);
     expect(p.itemsByRarity.legendary).toContain('skin_limited_01');
   });

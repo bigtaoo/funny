@@ -9,21 +9,28 @@ export interface SlgShopItem {
   /** Effect parameters (duration_sec / resource_each / pass_season). */
   effect: Record<string, number | string>;
   description: string;
+  /**
+   * Max purchases per UTC calendar day (SLG_DESIGN §7.2, 2026-07-15 fix — previously unlimited, letting a
+   * paying player compress the B-track city/army pacing (ECONOMY_NUMBERS §13-SLG-CITY) to zero with no cap
+   * on spend). Undefined = unlimited (battle_pass is once-per-season already; protection's value is
+   * self-limiting via stacked duration, so neither needs a count cap).
+   */
+  dailyLimit?: number;
 }
 
 export const SLG_SHOP_ITEMS: readonly SlgShopItem[] = [
   // training speed-ups
-  { id: 'slg_speedup_1h',    cost: 200,   kind: 'troop_speedup', effect: { duration_sec: 3600 },  description: 'Speed up training by 1 hour' },
-  { id: 'slg_speedup_8h',    cost: 1400,  kind: 'troop_speedup', effect: { duration_sec: 28800 }, description: 'Speed up training by 8 hours' },
-  { id: 'slg_speedup_24h',   cost: 3600,  kind: 'troop_speedup', effect: { duration_sec: 86400 }, description: 'Speed up training by 24 hours' },
+  { id: 'slg_speedup_1h',    cost: 200,   kind: 'troop_speedup', effect: { duration_sec: 3600 },  description: 'Speed up training by 1 hour', dailyLimit: 10 },
+  { id: 'slg_speedup_8h',    cost: 1400,  kind: 'troop_speedup', effect: { duration_sec: 28800 }, description: 'Speed up training by 8 hours', dailyLimit: 10 },
+  { id: 'slg_speedup_24h',   cost: 3600,  kind: 'troop_speedup', effect: { duration_sec: 86400 }, description: 'Speed up training by 24 hours', dailyLimit: 10 },
   // resource packs (equal amounts of every season resource)
-  { id: 'slg_res_s',  cost: 300,   kind: 'resource_pack', effect: { each: 20000 },  description: 'Small resource pack (20k each)' },
-  { id: 'slg_res_m',  cost: 1000,  kind: 'resource_pack', effect: { each: 80000 },  description: 'Medium resource pack (80k each)' },
-  { id: 'slg_res_l',  cost: 3000,  kind: 'resource_pack', effect: { each: 200000 }, description: 'Large resource pack (200k each)' },
-  // protection shields
+  { id: 'slg_res_s',  cost: 300,   kind: 'resource_pack', effect: { each: 20000 },  description: 'Small resource pack (20k each)', dailyLimit: 5 },
+  { id: 'slg_res_m',  cost: 1000,  kind: 'resource_pack', effect: { each: 80000 },  description: 'Medium resource pack (80k each)', dailyLimit: 5 },
+  { id: 'slg_res_l',  cost: 3000,  kind: 'resource_pack', effect: { each: 200000 }, description: 'Large resource pack (200k each)', dailyLimit: 5 },
+  // protection shields (no count cap: value is self-limiting via stacked duration)
   { id: 'slg_shield_8h',  cost: 500,  kind: 'protection', effect: { duration_sec: 28800 }, description: 'Capital protection shield 8 hours' },
   { id: 'slg_shield_24h', cost: 1200, kind: 'protection', effect: { duration_sec: 86400 }, description: 'Capital protection shield 24 hours' },
-  // season battle pass
+  // season battle pass (no count cap: already once-per-season in practice)
   { id: 'slg_battle_pass', cost: 9800, kind: 'battle_pass', effect: { pass_season: 1 }, description: 'Season battle pass (valid for current season)' },
 ] as const;
 

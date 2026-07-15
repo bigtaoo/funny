@@ -866,6 +866,7 @@ export const en: Record<TranslationKey, string> = {
   'world.team.noTeams': 'No teams yet — set up a formation first',
   'world.team.manage': 'Manage teams',
   'world.team.emptyArmy': 'This team has no formation',
+  'world.team.busy': 'Marching / occupying',
   // Training queue / resource panel (C4)
   'world.train': 'Train',
   'world.trainTitle': 'Train · Resources',
@@ -963,6 +964,9 @@ export const en: Record<TranslationKey, string> = {
   'sect.browse': 'Browse Sects',
   'sect.name': 'Sect Name',
   'sect.tag': 'Tag (2-5 uppercase letters/digits)',
+  'sect.tagLabel': 'Tag',
+  'sect.tagHint': '2–5 uppercase letters or digits',
+  'sect.createTitle': 'Create Sect',
   'sect.createHint': 'Costs coins; must be a family leader',
   'sect.join': 'Join',
   'sect.leave': 'Leave Sect',

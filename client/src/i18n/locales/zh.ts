@@ -878,6 +878,7 @@ export const zh = {
   'world.team.noTeams': '尚无队伍，先去编辑布阵',
   'world.team.manage': '管理队伍',
   'world.team.emptyArmy': '该队伍未布阵',
+  'world.team.busy': '行军/占领中',
   // ── Training queue / resource panel (C4) ─────────────────────────────────
   'world.train': '练兵',
   'world.trainTitle': '练兵 · 资源',
@@ -975,6 +976,9 @@ export const zh = {
   'sect.browse': '浏览宗门',
   'sect.name': '宗门名称',
   'sect.tag': '标签 (2-5位大写字母/数字)',
+  'sect.tagLabel': '标签',
+  'sect.tagHint': '2–5 位大写字母或数字',
+  'sect.createTitle': '创建宗门',
   'sect.createHint': '建门消耗金币，需为族长',
   'sect.join': '加入',
   'sect.leave': '退出宗门',
