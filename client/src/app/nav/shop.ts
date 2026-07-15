@@ -162,7 +162,12 @@ export function createShopNav(ctx: AppCtx): ShopNav {
       ...(shopLoggedIn ? {
         getMonetization: () => {
           const m = saveManager.get().monetization;
-          return { subscriptionExpiry: m?.subscriptionExpiry ?? 0, subscriptionLastClaimDay: m?.subscriptionLastClaimDay, starterUsed: m?.starterUsed ?? [] };
+          return {
+            subscriptionExpiry: m?.subscriptionExpiry ?? 0,
+            subscriptionLastClaimDay: m?.subscriptionLastClaimDay,
+            starterUsed: m?.starterUsed ?? [],
+            starterGrowthEligible: m?.starterGrowthEligible,
+          };
         },
         async buyMonthlyCard() {
           try {

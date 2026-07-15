@@ -10,7 +10,7 @@
 //    in commercial is already prepared.
 import { createHash } from 'node:crypto';
 import type { Collections, SaveData, Rarity, EquipmentInstance } from '@nw/shared';
-import { EQUIPMENT_DEFS, GACHA_MATERIAL_GRANTS, makeGachaEquipInstance, EQUIPMENT_INV_CAP, equipmentInvCount, CARD_DEFS, type CardDef } from '@nw/shared';
+import { EQUIPMENT_DEFS, GACHA_MATERIAL_GRANTS, makeGachaEquipInstance, EQUIPMENT_INV_CAP, equipmentInvCount, CARD_DEFS, type CardDef, PRODUCT_STARTER_GROWTH, GROWTH_PACK_WINDOW_DAYS } from '@nw/shared';
 import { grantCards as grantHeroCards } from './cards.js';
 import type { CommercialClient, GachaResultEntry, WalletView } from './commercialClient.js';
 
@@ -145,6 +145,13 @@ export async function mirrorWalletFrom(
   wallet: WalletView,
   now: number,
 ): Promise<SaveData> {
+  // Growth pack's first-N-days window (GACHA_DESIGN §6) is account-age gated; mirror the eligibility
+  // so the client can hide the card once it's closed instead of showing a Buy button that always 403s.
+  let starterGrowthEligible = true;
+  if (!wallet.starterUsed.includes(PRODUCT_STARTER_GROWTH)) {
+    const acct = await cols.accounts.findOne({ _id: accountId }, { projection: { createdAt: 1 } });
+    starterGrowthEligible = !acct || now - acct.createdAt <= GROWTH_PACK_WINDOW_DAYS * 86400000;
+  }
   const res = await cols.saves.findOneAndUpdate(
     { _id: accountId },
     {
@@ -157,6 +164,7 @@ export async function mirrorWalletFrom(
           subscriptionExpiry: wallet.subscriptionExpiry,
           subscriptionLastClaimDay: wallet.subscriptionLastClaimDay,
           starterUsed: wallet.starterUsed,
+          starterGrowthEligible,
         },
         'save.updatedAt': now,
       },

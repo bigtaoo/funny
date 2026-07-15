@@ -1841,6 +1841,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -2350,6 +2354,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -2892,6 +2900,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -3402,6 +3414,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "type": "string"
                   },
                   "description": "one-off product ids already purchased (§6)"
+                },
+                "starterGrowthEligible": {
+                  "type": "boolean",
+                  "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                 }
               }
             },
@@ -4340,6 +4356,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -4925,6 +4945,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -5542,6 +5566,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -6096,6 +6124,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -6710,6 +6742,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -7257,6 +7293,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -7763,6 +7803,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -8266,6 +8310,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -8770,6 +8818,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -9278,6 +9330,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -9825,6 +9881,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -10332,6 +10392,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -10871,6 +10935,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -11486,6 +11554,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -11997,6 +12069,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -12500,6 +12576,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -13057,6 +13137,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -13608,6 +13692,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -14111,6 +14199,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -14614,6 +14706,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -15486,6 +15582,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -16140,6 +16240,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -16674,6 +16778,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -17416,6 +17524,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },
@@ -18722,6 +18834,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "one-off product ids already purchased (§6)"
+                    },
+                    "starterGrowthEligible": {
+                      "type": "boolean",
+                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
                     }
                   }
                 },

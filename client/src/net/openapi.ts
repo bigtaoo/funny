@@ -1375,6 +1375,8 @@ export interface components {
                 subscriptionLastClaimDay?: string;
                 /** @description one-off product ids already purchased (§6) */
                 starterUsed: string[];
+                /** @description still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6) */
+                starterGrowthEligible?: boolean;
             };
             deliveredOrders?: string[];
             pvp: {

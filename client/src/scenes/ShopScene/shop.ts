@@ -114,6 +114,7 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
         ];
         for (const pk of packs) {
           if (mon.starterUsed.includes(pk.id)) continue;
+          if (pk.id === 'starter_growth' && mon.starterGrowthEligible === false) continue;
           specs.push({
             icon: pk.icon, iconColor: C.gold, title: t(pk.label),
             lines: [{ text: t('shop.free'), color: C.green }],

@@ -242,6 +242,16 @@ describe('ShopScene — starter packs show "Free" and disappear once claimed', (
     scene.destroy();
   });
 
+  it('hides the growth pack once starterGrowthEligible is false, instead of a Buy button that always 403s', async () => {
+    const scene = buildShop({
+      getMonetization: () => ({ subscriptionExpiry: 0, starterUsed: [], starterGrowthEligible: false }),
+      buyStarter: async () => ({ ok: true }),
+    });
+    await flush();
+    expect(findLabelPos(scene.container, STARTER_GROWTH)).toBeNull();
+    scene.destroy();
+  });
+
   it('claiming the pack makes the card disappear on the next render', async () => {
     const state = { subscriptionExpiry: 0, starterUsed: [] as string[] };
     const scene = buildShop({

@@ -151,6 +151,9 @@ components:
               items:
                 type: string
               description: one-off product ids already purchased (§6)
+            starterGrowthEligible:
+              type: boolean
+              description: still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)
         deliveredOrders:
           type: array
           items:
