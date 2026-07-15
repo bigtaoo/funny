@@ -256,9 +256,9 @@ client_log_debug: { default: false, desc: '客户端日志上报-debug', side: '
 > **2026-06-27 两处健壮性修正**（修「iPad 注册崩溃 Grafana 无记录」时发现）：
 > - **`cleanExit` 误判**：原 `visibilitychange→hidden` 也调 `markCleanExit()`，但 hidden（切后台/弹软键盘/切 App）≠ 退出——iOS 恰在转后台时最易被内存压力杀标签页，于是「后台被杀」会被下次启动误判成正常退出、永不补报。已拆开：只有 `pagehide`（确凿卸载）标 `cleanExit`；`hidden` 只抢发不标。
 > - **补报卡 1.5s 合批**：崩溃常成串（重载后又崩），原补报走普通队列 1.5s 后才 fetch，若本次也在 1.5s 内崩则永远发不出。已改为补报后立即 beacon。
-- **传输**：客户端 `POST /client/anomaly`（body `{ publicId?, platform, events:[{type,msg,ts,detail?}] }`）；合批与离场急发一律走**无凭据 `fetch`（`keepalive:true, credentials:'omit'`）**。无 baseUrl / Loki 不可达 → 静默丢弃，绝不影响玩家。
+- **传输**：客户端 `POST /client/anomaly`（body `{ publicId?, platform, buildVersion, events:[{type,msg,ts,detail?}] }`）；合批与离场急发一律走**无凭据 `fetch`（`keepalive:true, credentials:'omit'`）**。无 baseUrl / Loki 不可达 → 静默丢弃，绝不影响玩家。`buildVersion`（2026-07-15 加，见 §8）取自编译期烘焙的 `__NW_BUILD_VERSION__`（短 commit hash，未烘焙则 `'0.0.0'`）——同一 publicId 反复出现同一异常时，先比对 `buildVersion` 与部署时间线，排除「部署前就开着、之后一直没刷新的旧 tab 仍在跑修复前代码」这类混淆。
   - **为何弃用 `navigator.sendBeacon`**（2026-07-01 修）：sendBeacon 强制带凭据（cookie），浏览器遂要求跨域响应含 `Access-Control-Allow-Credentials: true`。本 API 用 Bearer token 认证、不下发任何 cookie，metaserver CORS 是 `origin:true` 反射来源但**不**带 ACAC——于是跨域（`api.gamestao.com` ≠ 游戏来源）的信标被浏览器直接拦截，崩溃/离场补报永远发不出（现象即 `/client/anomaly` 报 CORS 错）。改用无凭据 keepalive fetch：同样存活于页面卸载（fetch 规范），跨域默认不带 cookie，`credentials:'omit'` 明示意图。埋点本就无需认证（`publicId` 在 body 里）。服务端 CORS 一字未改，不引入任何新增攻击面。
-- **入 Loki 约定**：单 stream，**label 仅 `{source="client", kind="anomaly"}`**（低基数），`type/publicId/platform/detail/msg` 一律放**行内**（logfmt）。Grafana：`{source="client",kind="anomaly"} | logfmt | type="webgl_lost"`。
+- **入 Loki 约定**：单 stream，**label 仅 `{source="client", kind="anomaly"}`**（低基数），`type/publicId/platform/buildVersion/detail/msg` 一律放**行内**（logfmt）。Grafana：`{source="client",kind="anomaly"} | logfmt | type="webgl_lost"`。
 - **Grafana 面板**：`observability/grafana/dashboards/client-anomaly.json`（uid `nw-client-anomaly`）——按 type 堆叠的事件速率 + crash 计数 + 事件总数 + 受影响玩家数 + 明细日志；模板变量 type/platform（custom 枚举，因 type 在行内非 label）/publicId/关键字。
 - **防滥用四闸**：① 客户端每类冷却（mem/cpu 60s、anr 30s、jserror 10s 合一）② 单会话总量上限 50 ③ 单条 detail 截断 800 字符 ④ 服务端**按 IP 60s/30 次限流**（`SlidingRateLimiter`，超限静默丢弃）+ 最多取前 200 条 + 各字段截断。`POST /client/anomaly` **永远回 200**。
 - **与定向采集的关系**：`mem` 同时仍走 §9.4（被定向玩家可在 Loki 看到带完整池占用上下文的 warn 行）；本通道是「全网粗粒度异常计数 + 崩溃发现」，两者不冲突。
@@ -372,3 +372,13 @@ client_log_debug: { default: false, desc: '客户端日志上报-debug', side: '
 **验证**：`client/test/anomaly-chain.test.ts` 新增 2 例（"隐藏整段时间但在挂起的 tick 执行前已切回前台→不报 ANR" + "全程可见的真实卡死仍然上报"，用 `vi.setSystemTime` 模拟时钟跳跃）；`tsc --noEmit` + 全量 vitest 通过。
 
 **遗留**：本次只修了"看门狗误报"这一层，不能排除同一玩家 2026-06-27 那次"1GB→4012MB/4 分钟"的量级更夸张的堆增长是另一个真实的纯 JS 保留型泄漏——本次顺带排查了 `GameRenderer/events.ts`（escort/projectile 事件回收 + `destroy()`）和 `StickmanRuntime`（`.tao` 资源按 url 缓存 + 对象池 `reset()`），均未发现明显泄漏，但未覆盖全部场景退场路径。若同一 publicId 再次出现快速堆增长（而非本次这种"整天散布的中等 stall"），需要继续查 `nodes`/`tex`/`baseTex` 哪个先涨来定位类别（`MemoryMonitor.dump()` 的 `gpu` 字段已经能区分）。
+
+### 2026-07-15（续）· anomaly 事件补 `buildVersion` 字段（§9.7 传输）
+
+**动机**：同一 publicId 233784986 在上面的修复部署（`0861367`，18:59:44）之后仍贴出一批 `anr`（20-56s）+ 逐字重复的 pre-fix `blur`/`removeChild` 报错文本。搜了当前代码库确认所有 blur 处理器早已改成幂等 `.remove()`，不可能再抛这个错——唯一站得住的解释是这个玩家的标签页在部署**之前**就已经打开、之后一直没刷新，跑的是内存里的旧 JS（含未锁存的旧看门狗 + 旧 blur 竞态）。但当时的 anomaly 事件完全不带客户端版本号，只能靠"部署时间线 vs 日志时间戳"去推断，无法在 Grafana 里直接确认。
+
+**改动**：`client/src/net/anomaly.ts` 新增 `readBuildVersion()`（复用 `client/src/analytics/index.ts` 已有的 `__NW_BUILD_VERSION__` 读取模式），`buildVersion` 随 `publicId`/`platform` 一起放进 `POST /client/anomaly` body 顶层（非逐条 event，同一会话共享一个值，省字节）。契约 `server/contracts/openapi/paths/telemetry.yml` 加了这个可选字段（`gen:api:contracts` + `gen:api:server` 重新生成）；`server/metaserver/src/clientLog.ts` `buildAnomalyLine`/`buildAnomalyLokiPayload` 新增 `buildVersion` 形参，写入 Loki 行内字段；`service/telemetry.ts` 的 `clientAnomaly` handler 从 body 读取、截断 32 字符后透传。
+
+**验证**：`client/test/anomaly-chain.test.ts` 全链路接缝测试断言 body 里的 `buildVersion` 能一路传到 Loki 行（`buildVersion=0.0.0`，测试环境未烘焙）；`server/metaserver/test/clientLog.test.ts` 断言非空值写入行内（`buildVersion=0861367`）；client + metaserver `tsc --noEmit` 均通过，两处 vitest 全绿。
+
+**用法**：以后同一 publicId 反复出现同一异常时，先用 Grafana `{source="client",kind="anomaly"} | logfmt | publicId="..."` 拉出 `buildVersion`，跟部署时间线对一下——版本落后于最近一次相关修复的部署时间，就是"旧 tab 没刷新"，不必再当新 bug 查。

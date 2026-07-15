@@ -1085,6 +1085,10 @@ const BODY_SCHEMAS: Record<string, unknown> = {
           "crazygames"
         ]
       },
+      "buildVersion": {
+        "type": "string",
+        "description": "Client build version (__NW_BUILD_VERSION__, short commit hash; '0.0.0' if unbaked). Lets a recurring anomaly be attributed to a specific deploy, e.g. to rule out a long-open tab still running pre-fix code."
+      },
       "events": {
         "type": "array",
         "description": "A batch of anomaly events; server takes at most the first 200",

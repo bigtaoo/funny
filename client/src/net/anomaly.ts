@@ -58,6 +58,11 @@ function readPublicId(): string | null {
   try { return globalThis.localStorage?.getItem('nw_player_public_id') ?? null; } catch { return null; }
 }
 
+/** Build version baked in at compile time (short commit hash; '0.0.0' if unbaked). Attributes a recurring anomaly to a specific deploy — e.g. to rule out a long-open tab still running pre-fix code. */
+function readBuildVersion(): string {
+  return (globalThis as { __NW_BUILD_VERSION__?: string }).__NW_BUILD_VERSION__ ?? '0.0.0';
+}
+
 const clip = (s: string, n: number): string => (s.length > n ? s.slice(0, n) + '…' : s);
 
 function stringifyDetail(detail: Record<string, unknown>): string {
@@ -99,7 +104,7 @@ class AnomalyReporter {
       await fetch(`${base}${ENDPOINT}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ publicId: readPublicId() ?? undefined, platform: platformName(), events }),
+        body: JSON.stringify({ publicId: readPublicId() ?? undefined, platform: platformName(), buildVersion: readBuildVersion(), events }),
         keepalive: true,
         credentials: 'omit', // telemetry is unauthenticated (publicId in body); no cookies → cross-origin CORS needs no ACAC
       });
@@ -127,7 +132,7 @@ class AnomalyReporter {
     }));
     const events = this.queue.splice(0, this.queue.length).concat(crumbs);
     this.sent += events.length;
-    const body = JSON.stringify({ publicId: readPublicId() ?? undefined, platform: platformName(), events });
+    const body = JSON.stringify({ publicId: readPublicId() ?? undefined, platform: platformName(), buildVersion: readBuildVersion(), events });
     const url = `${base}${ENDPOINT}`;
     try { void fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body, keepalive: true, credentials: 'omit' }); } catch { /* swallow */ }
   }
