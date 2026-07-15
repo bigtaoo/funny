@@ -1,12 +1,19 @@
-// Skins wardrobe tab (LOBBY_IA_REDESIGN §15): folded in from the retired CollectionScene. One section
-// per character (the 6 CARD_DEFS entries, 1:1 with the skin catalogue — skinDefs.ts), each showing the
-// default look plus every owned skin for that character; tapping a tile equips it (works offline, it's
-// a client-sync-section write, not a server call).
+// Skins wardrobe tab (LOBBY_IA_REDESIGN §15): folded in from the retired CollectionScene. One card
+// per character (the 6 CARD_DEFS entries, 1:1 with the skin catalogue — skinDefs.ts), each showing a
+// portrait plus every owned look (default + skins) for that character; tapping a tile equips it (works
+// offline, it's a client-sync-section write, not a server call).
+//
+// Layout (2026-07-15 redesign): cards packed into a scrolling multi-column masonry grid — mirrors the
+// roster grid's full-height-portrait cell language (CardScene/list.ts, CARD_CELL_H/CARD_CELL_W_TARGET)
+// instead of the old single-column "one row per character" list that left most of the screen width empty.
+import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
+import { UNIT_ART_URLS } from '../../render/cardArt';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
-import { CARD_DEFS } from '../../game/meta/cardDefs';
+import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
+import { CARD_DEFS, type CardDef } from '../../game/meta/cardDefs';
 import { skinsForUnitType } from '../../game/meta/skinDefs';
 import type { UnitType } from '../../game/types';
 import { type Constructor, type CardSceneBaseCtor, CELL_GAP } from './base';
@@ -15,54 +22,115 @@ export interface SkinsHandlers {
   renderSkinsTab(): void;
 }
 
+// Wardrobe card grid constants — sized to sit alongside the roster grid's CARD_CELL_W_TARGET (300)
+// while being wide enough to hold a portrait + a row of skin tiles side by side.
+const CARD_W_TARGET = 620;
+const CARD_PAD = 14;
+const PORTRAIT_MAX_H = 150;
+const PORTRAIT_RATIO = 0.72; // matches the roster cell's tall-portrait framing (see roster-card-fullheight-portrait memory)
+const HEADER_H = 32;
+const TILE_W = 84, TILE_H = 84, TILE_GAP = 8;
+
 export function SkinsMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase & Constructor<SkinsHandlers> {
   return class extends Base {
     renderSkinsTab(): void {
       const { w, h } = this;
       const left = sidebarNavW(w, h, this.landscape) + CELL_GAP;
-      const top = this.headerH + Math.round(h * 0.02);
-      const owned = this.cb.getOwnedSkins();
+      const listY = this.headerH;
+      const listH = h - listY - 8;
+      const avail = w - left - CELL_GAP;
 
-      let y = top;
-      for (const def of Object.values(CARD_DEFS)) {
-        y = this.renderSkinCharacterSection(def, left, y, w - left - CELL_GAP, owned);
-        y += Math.round(h * 0.025);
+      const owned = this.cb.getOwnedSkins();
+      const defs = Object.values(CARD_DEFS);
+      const cols = Math.max(1, Math.floor((avail + CELL_GAP) / (CARD_W_TARGET + CELL_GAP)));
+      const cellW = (avail - CELL_GAP * (cols - 1)) / cols;
+
+      // Masonry: each character card can be a different height (more skins → more tile rows), so
+      // columns are packed independently — every card goes into whichever column is currently shortest.
+      const colY = new Array(cols).fill(listY + CELL_GAP);
+
+      for (const def of defs) {
+        const col = colY.indexOf(Math.min(...colY));
+        const x = left + col * (cellW + CELL_GAP);
+        const y = colY[col];
+        const cardH = this.renderSkinCard(def, x, y, cellW, owned, listY, listH);
+        colY[col] = y + cardH + CELL_GAP;
       }
+
+      const totalH = Math.max(...colY) - listY;
+      this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
+      drawScrollIndicator(this.bodyLayer, { x: left, y: listY, w: avail, h: listH }, this.scrollY, Math.max(0, totalH - listH));
     }
 
-    /** One character's section: name/portrait header + a row of look tiles (default + owned skins). Returns the y past this section. */
-    private renderSkinCharacterSection(
-      def: { id: string; unitType: string },
+    /** One character's wardrobe card: portrait + name on the left header, skin tiles wrapped to the right. Returns the card's height. */
+    private renderSkinCard(
+      def: CardDef,
       x: number,
-      y: number,
-      avail: number,
+      yUnscrolled: number,
+      cardW: number,
       owned: string[],
+      viewTop: number,
+      viewH: number,
     ): number {
       const unitType = def.unitType as UnitType;
       const equipped = this.cb.getEquippedSkin(unitType);
       const skins = skinsForUnitType(unitType, owned);
-
-      const headerH = 28;
-      const nameLbl = txt(t(`card.${def.id}.name` as TranslationKey), 16, C.dark, true);
-      nameLbl.x = x; nameLbl.y = y;
-      this.bodyLayer.addChild(nameLbl);
-
-      const tileW = 96, tileH = 96, gap = 10;
       const tiles: Array<{ id: string | null; label: string }> = [
         { id: null, label: t('collection.default') },
         ...skins.map((id) => ({ id, label: id })),
       ];
-      const cols = Math.max(1, Math.floor((avail + gap) / (tileW + gap)));
-      const rows = Math.ceil(tiles.length / cols);
-      const rowY = y + headerH;
 
+      const portraitW = Math.round(PORTRAIT_MAX_H * PORTRAIT_RATIO);
+      const tileAreaX = x + CARD_PAD + portraitW + 12;
+      const tileAreaW = cardW - CARD_PAD * 2 - portraitW - 12;
+      const tilesPerRow = Math.max(1, Math.floor((tileAreaW + TILE_GAP) / (TILE_W + TILE_GAP)));
+      const rows = Math.ceil(tiles.length / tilesPerRow);
+      const tileAreaH = rows * (TILE_H + TILE_GAP) - TILE_GAP;
+      const cardH = Math.max(PORTRAIT_MAX_H, HEADER_H + tileAreaH) + CARD_PAD * 2;
+
+      const y = yUnscrolled - this.scrollY;
+      // Skip drawing entirely when scrolled fully off-screen — same "no mask, just skip" pattern as renderList.
+      if (y + cardH < viewTop || y > viewTop + viewH) return cardH;
+
+      const factionColor = def.faction === 'anna' ? 0xcc4466 : 0x4477cc;
+      const card = sketchPanel(cardW, cardH, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(x, y, cardW) });
+      card.x = x; card.y = y;
+      this.bodyLayer.addChild(card);
+
+      // ── Left: portrait (capped height so a many-skin card doesn't stretch the art) ──
+      const portraitH = Math.min(cardH - CARD_PAD * 2, PORTRAIT_MAX_H);
+      const frame = sketchPanel(portraitW, portraitH, { fill: 0xf0eee7, border: C.mid, seed: seedFor(x, y, portraitW) });
+      frame.x = x + CARD_PAD; frame.y = y + CARD_PAD;
+      this.bodyLayer.addChild(frame);
+      const artUrl = UNIT_ART_URLS[def.unitType as UnitType];
+      if (artUrl) this.drawArtFit(artUrl, x + CARD_PAD + 2, y + CARD_PAD + 2, portraitW - 4, this.bodyLayer, portraitH - 4);
+
+      // ── Right: name header + wrapped skin tile grid ──
+      const dot = new PIXI.Graphics();
+      dot.beginFill(factionColor).drawCircle(0, 0, 5).endFill();
+      dot.x = tileAreaX + 5; dot.y = y + CARD_PAD + 9;
+      this.bodyLayer.addChild(dot);
+
+      const nameLbl = txt(t(`card.${def.id}.name` as TranslationKey), 18, C.dark, true);
+      nameLbl.x = tileAreaX + 16; nameLbl.y = y + CARD_PAD;
+      if (nameLbl.width > tileAreaW - 16) nameLbl.scale.set((tileAreaW - 16) / nameLbl.width);
+      this.bodyLayer.addChild(nameLbl);
+
+      const tileTop = y + CARD_PAD + HEADER_H;
       tiles.forEach((tile, i) => {
-        const col = i % cols;
-        const row = Math.floor(i / cols);
-        this.renderSkinTile(tile, x + col * (tileW + gap), rowY + row * (tileH + gap), tileW, tileH, tile.id === equipped, unitType);
+        const col = i % tilesPerRow;
+        const row = Math.floor(i / tilesPerRow);
+        this.renderSkinTile(
+          tile,
+          tileAreaX + col * (TILE_W + TILE_GAP),
+          tileTop + row * (TILE_H + TILE_GAP),
+          TILE_W, TILE_H,
+          tile.id === equipped,
+          unitType,
+        );
       });
 
-      return rowY + rows * (tileH + gap);
+      return cardH;
     }
 
     private renderSkinTile(
