@@ -39,7 +39,7 @@ export type TileType =
  * SLG season resources (SLG_DESIGN §3.4, naming locked 2026-06-30; stationery theme, aligned with Three-Kingdoms grain/wood/stone/iron/copper).
  * - ink:      sustain — troop training / troop cap / march upkeep (was `food`). Shares the "ink is life" world-symbol with battle `ink` but is a fully separate pool.
  * - paper:    basic building material (was `wood`).
- * - graphite: advanced building material (4th land resource; map faucet via biomeAt quad-partition, sink via high-level building upgrades, SLG_CITY_DESIGN / ADR-022).
+ * - graphite: advanced building material (4th land resource; map faucet via biomeAt's provincial-bias per-tile draw, sink via high-level building upgrades, SLG_CITY_DESIGN / ADR-022).
  * - metal:    military / equipment forging (was `iron`).
  * - sticker:  universal flexible resource (copper-coin slot: recruit / tech / small instant actions). NOT a global currency — season-scoped, cleared at season end, non-auctionable, not directly purchasable. Faucet = level-gated copper-mine map tiles (`resource` tiles at level ≥ SLG_GEN.copperMinLevel, Three-Kingdoms-Strategy rule) + home-city stickerShop self-production (residential-model); sink = building upgrades.
  * All five are season resources (cleared at season end, banned from the auction house); the only global currency is `coins` (ECONOMY_BALANCE).
@@ -229,20 +229,20 @@ export const SLG_GEN = {
   keepMinDistRatio: 0.12,
   /** Level noise frequency (higher = more fragmented patches; feeds the ADR-034 §4 per-ring cumulative-distribution level lookup, not a distance falloff). */
   levelFreq: 1 / 14,
-  /** Biome (resource type) noise frequency (lower = larger patches → large same-resource zones encourage specialization and trade). */
-  biomeFreq: 1 / 40,
   /** Strategic point noise frequency. */
   keepFreq: 1 / 22,
   /**
-   * Biome quad-partition thresholds (ink < t0 < paper < t1 < graphite < t2 < metal). Four "land-mined" resources are biome-generated
-   * (SLG_CITY_DESIGN D-CITY-2, ADR-022): graphite is the 4th land resource, given a map faucet here so the building system can sink it.
-   * `sticker` (copper-coin slot) is NOT a biome land resource so it has no biome threshold; instead it has a LEVEL-GATED copper-mine map faucet (copperMinLevel/copperShare below) plus home-city stickerShop self-production.
+   * Provincial bias for the per-tile land-resource draw (ADR-022 provincial-bias model, rewritten
+   * 2026-07-15 — see {@link ../mapgen.ts#biomeAt}). Every resource tile independently draws one of the
+   * four land resources (ink/paper/graphite/metal) — NOT a spatial zone noise field — with its own
+   * province's `leaning` type favored by this fraction over the uniform 1/4 baseline: e.g. 0.15 →
+   * leaning type ≈ 40% of that province's tiles, the other three ≈ 20% each. `sticker` (copper-coin
+   * slot) is NOT a biome land resource so it has no bias here; instead it has a LEVEL-GATED copper-mine
+   * map faucet (copperMinLevel/copperShare below) plus home-city stickerShop self-production.
    * ⚠ ADR-022 caveat: this changes the procedural map (unclaimed tiles only — claimed tiles persist resType in the DB). Pre-launch, so applied
-   * globally; once a season is live, gate behind a season-version flag instead of mutating live maps. Thresholds are DRAFT, tune in the balance pass.
+   * globally; once a season is live, gate behind a season-version flag instead of mutating live maps. DRAFT — tune in the balance pass.
    */
-  biomeInkMax: 0.30,
-  biomePaperMax: 0.55,
-  biomeGraphiteMax: 0.78,
+  biomeProvinceBias: 0.15,
   /**
    * copper mine = LEVEL-GATED `sticker` map faucet (Three-Kingdoms-Strategy rule: copper mine only on level-6 tiles and above, see SGZ_LAND_REFERENCE §3 /
    * SLG_DESIGN §3.4). On a `resource` tile at level ≥ copperMinLevel, a per-tile hash draw < copperShare overrides the

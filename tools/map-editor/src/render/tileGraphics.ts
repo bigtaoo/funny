@@ -24,11 +24,11 @@ export function drawEditorTile(g: PIXI.Graphics, tile: ProceduralTile, texName: 
     const h = w * ISO_RATIO;
     const m = new PIXI.Matrix(w / tex.width, 0, 0, h / tex.height, -w / 2, -h / 2);
     const texAlpha = TERRAIN_TEX_ALPHA[texName] ?? TERRAIN_TEX_ALPHA_DEFAULT;
-    // Resource tiles wash the ground toward their PURE biome hue, blended across zone boundaries
-    // (ignoring the level-gated copper/sticker override, which is a scattered per-tile special, not
-    // a zone) so same-biome zones read as one continuous gradiented region even where scattered
-    // copper tiles poke through as icons — mirrors the game client's drawTileL1 (SLG map render
-    // parity, 2026-07-11 continuity pass + 10-tile blend follow-up).
+    // Resource tiles wash the ground toward their PROVINCE's leaning resource hue (ignoring the
+    // level-gated copper/sticker override, which is a scattered per-tile special, not a province-level
+    // trait) so a whole province reads as one continuous region even where scattered copper tiles
+    // poke through as icons and even though the ACTUAL per-tile resType is independently mixed within
+    // that province — mirrors the game client's drawTileL1 (SLG map render parity, 2026-07-15 rewrite).
     const groundTint = tile.type === 'resource' && tile.resType ? biomeGroundTint(tx, ty, worldSeed(worldId)) : undefined;
     const texTint = groundTint ?? TERRAIN_TEX_TINT[texName] ?? TERRAIN_TEX_TINT_DEFAULT;
     g.beginTextureFill({ texture: tex, matrix: m, alpha: texAlpha, color: texTint });

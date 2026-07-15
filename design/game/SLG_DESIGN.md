@@ -158,7 +158,7 @@
 
 > **✅ code rename 已落地（2026-06-30）**：`ResourceType` = `ink/paper/graphite/metal/sticker`（`shared/slg.ts`），`RESOURCE_TYPES`/`emptyResources`/`WATCHTOWER_COST`/`tileYield`/`biomeAt`/`TROOP_TRAIN_INK_COST` 同步；worldsvc（`service.ts`/`db.ts`/`auctionService.ts`）+ 契约 `openapi-world.yml` resType enum + 客户端（`WorldMapScene` 颜色/展示/训练、`openapi-world.ts`、i18n zh/de/en）全部更新；server typecheck + client tsc + web 构建全绿。
 >
-> **遗留（balance pass，方案已出 → [`SLG_CITY_DESIGN.md`](SLG_CITY_DESIGN.md)）**：五种赛季资源均已注册进类型/存储/资源包/掠夺/拍卖禁挂/瞭望塔成本等全部泛化管道。**对齐三战「4 地块 + 1 铜币」**：`graphite`（石料）是**第 4 种地块资源**，**已有地图 faucet**——`biomeAt` 已改四分产 ink/paper/graphite/metal（ADR-022 已落地，见 [`SLG_CITY_DESIGN.md`](SLG_CITY_DESIGN.md) §10）；`sticker`（铜币位/通用）由主城 `stickerShop`（民居模型）**自产**（非地块 faucet）；两者 sink = 主城高级建筑升级消耗。随主城建筑系统（SLG_CITY_DESIGN P1）落地，数值经 [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md) 核验（§16.5 / ECONOMY_NUMBERS §13-SLG）。
+> **遗留（balance pass，方案已出 → [`SLG_CITY_DESIGN.md`](SLG_CITY_DESIGN.md)）**：五种赛季资源均已注册进类型/存储/资源包/掠夺/拍卖禁挂/瞭望塔成本等全部泛化管道。**对齐三战「4 地块 + 1 铜币」**：`graphite`（石料）是**第 4 种地块资源**，**已有地图 faucet**——`biomeAt` 产 ink/paper/graphite/metal（ADR-022 已落地，见 [`SLG_CITY_DESIGN.md`](SLG_CITY_DESIGN.md) §10；⚠ `biomeAt` 的空间分布机制 2026-07-15 从"低频噪声四分区"重写为"逐格独立混合 + 省份偏向"，见 [`map-editor/DESIGN.md`](../tools/map-editor/DESIGN.md) §8，四种资源类型本身不变）；`sticker`（铜币位/通用）由主城 `stickerShop`（民居模型）**自产**（非地块 faucet）；两者 sink = 主城高级建筑升级消耗。随主城建筑系统（SLG_CITY_DESIGN P1）落地，数值经 [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md) 核验（§16.5 / ECONOMY_NUMBERS §13-SLG）。
 
 ---
 
