@@ -273,6 +273,26 @@ components:
           type: string
           description: "ADR-026: which team slot ('t1'..'t5') this march deployed, if any. Only present on the requester's own marches; used client-side to grey out busy teams in the team picker."
 
+    OccupationView:
+      type: object
+      required: [tile, x, y, level, garrison, dueAt]
+      properties:
+        tile:
+          type: string
+        x:
+          type: integer
+        y:
+          type: integer
+        level:
+          type: integer
+        garrison:
+          type: integer
+        dueAt:
+          type: number
+        teamId:
+          type: string
+          description: "Which team slot ('t1'..'t5') is tied up holding this tile, if the march was dispatched with one."
+
     # ── Auction ────────────────────────────────────────────────────────────────
 
     AuctionView:
@@ -876,6 +896,48 @@ paths:
       responses:
         '200':
           description: Recalled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /world/occupations:
+    get:
+      operationId: getOccupations
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: worldId, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: "Own active occupation-holds (2026-07-15 team management status + cancel)"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/OccupationView' }
+
+  /world/team/{teamId}/cancel-occupation:
+    post:
+      operationId: cancelOccupation
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: teamId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId]
+              properties:
+                worldId: { type: string }
+      responses:
+        '200':
+          description: Occupation-hold cancelled; team is idle immediately, garrison forfeited
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }

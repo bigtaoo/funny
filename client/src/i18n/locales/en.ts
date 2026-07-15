@@ -1455,4 +1455,12 @@ export const en: Record<TranslationKey, string> = {
   'world.team.fillTroopsErr': 'Fill failed',
   'world.team.troopsStatus': '{cur}/{cap}',
   'world.team.injured': 'Injured',
+
+  'world.team.marching': 'Marching',
+  'world.team.occupying': 'Occupying, {time} left',
+  'world.team.cancelOccupy': 'Abandon',
+  'world.team.cancelOccupyConfirm': 'Confirm?',
+  'world.team.cancelOccupyOk': 'Occupation abandoned, team is idle',
+  'world.team.cancelOccupyErr': 'Cancel failed',
+  'world.team.recallErr': 'Recall failed',
 };

@@ -95,7 +95,12 @@ export class WorldMapNet {
   async refreshMarches(): Promise<void> {
     if (this.ctx.destroyed) return;
     try {
-      this.ctx.marches = await this.ctx.cb.worldApi.getMarches(this.ctx.cb.worldId);
+      const [marches, occupations] = await Promise.all([
+        this.ctx.cb.worldApi.getMarches(this.ctx.cb.worldId),
+        this.ctx.cb.worldApi.getOccupations(this.ctx.cb.worldId),
+      ]);
+      this.ctx.marches = marches;
+      this.ctx.occupations = occupations;
       if (!this.ctx.destroyed) { this.ctx.panels.renderHud(); this.ctx.view.renderMap(); }
     } catch { /* offline */ }
   }
@@ -131,8 +136,12 @@ export class WorldMapNet {
     const usable = teams.filter((tm) => tm.army.length > 0);
     // Idle-team gate (2026-07-15): a team already committed to an active (non-recalled) march — marching or
     // holding a captured tile — must not accept a new order (mirrors the server-side TEAM_BUSY check in
-    // combatMarch.ts). Grey it out here instead of silently letting the picker resubmit onto a busy team.
-    const busyTeamIds = new Set(this.ctx.marches.filter((m) => m.mine && m.status !== 'returning' && m.teamId).map((m) => m.teamId));
+    // combatMarch.ts, which checks both `marches` and `occupations`). Grey it out here instead of silently
+    // letting the picker resubmit onto a busy team.
+    const busyTeamIds = new Set([
+      ...this.ctx.marches.filter((m) => m.mine && m.teamId).map((m) => m.teamId),
+      ...this.ctx.occupations.filter((o) => o.teamId).map((o) => o.teamId),
+    ]);
     const buttons: { label: string; action: () => void; disabled?: boolean }[] = [];
     for (const tm of usable) {
       const busy = busyTeamIds.has(tm.id);

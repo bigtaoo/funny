@@ -154,6 +154,18 @@ export interface MarchView {
   teamId?: string;
 }
 
+/** Occupation-hold view (REST response — own holds only; 2026-07-15 team-management cancel feature). */
+export interface OccupationView {
+  tile: string;
+  x: number;
+  y: number;
+  level: number;
+  garrison: number;
+  dueAt: number;
+  /** Which team slot ('t1'..'t5') is tied up holding this tile, if the march was dispatched with one. */
+  teamId?: string;
+}
+
 /** Maximum viewport radius (prevents fetching too many tiles at once; hard cap before P9 viewport subscription model scales up). */
 export const MAP_VIEW_MAX_RADIUS = 40;
 

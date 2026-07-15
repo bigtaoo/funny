@@ -12,13 +12,14 @@ import {
   resolveSiege,
   npcGarrison,
   OCCUPY_HOLD_SEC,
+  SlgError,
   type SiegeResolution,
   type ProceduralTile,
 } from '@nw/shared';
 import { runSiegeBattle, synthesizeArmy, resolveCardArmy, toEngineCardInstances, computeCardStateUpdates } from '../siegeEngine';
 import type { GarrisonEntry, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import type { TileDoc, PlayerWorldDoc, MarchDoc, OccupationDoc } from '../db';
-import type { SiegeReplayInputs } from '../worldTypes';
+import type { SiegeReplayInputs, OccupationView } from '../worldTypes';
 import { refundTroops } from '../combatShared';
 import type { SiegeServiceBaseCtor, Constructor } from './base';
 import type { WorldCore } from '../core';
@@ -27,6 +28,8 @@ export interface OccupationHandlers {
   applyOccupy(m: MarchDoc, pw: PlayerWorldDoc, t: number): Promise<void>;
   applyOccupationExpulsion(m: MarchDoc, pw: PlayerWorldDoc, tile: TileDoc, t: number): Promise<void>;
   processDueOccupations(nowMs?: number): Promise<number>;
+  cancelOccupation(worldId: string, accountId: string, teamId: string): Promise<void>;
+  getOccupations(worldId: string, accountId: string): Promise<OccupationView[]>;
 }
 
 /**
@@ -304,6 +307,45 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
         n++;
       }
       return n;
+    }
+
+    /**
+     * Player-initiated cancel of an in-progress occupation-hold (2026-07-15, team management "取消指令"): unlike
+     * recallMarch (combatMarch.ts), this is instant and forfeits the contested garrison — no travel-back leg and
+     * no troop refund, since there's nothing left to march home. The team is freed immediately: deleting the
+     * OccupationDoc is exactly what the TEAM_BUSY gate's `cols.occupations.findOne({..., teamId})` check looks
+     * for, so the next march/occupy dispatch sees the team as idle right away. The tile itself reverts to
+     * unclaimed (contested fields unset, mirrors settleOccupation's $unset) rather than being handed to anyone.
+     */
+    async cancelOccupation(worldId: string, accountId: string, teamId: string): Promise<void> {
+      const { cols } = this.core.deps;
+      const claimed = await cols.occupations.findOneAndDelete({ worldId, ownerId: accountId, teamId });
+      if (!claimed) throw new SlgError('OCCUPATION_NOT_FOUND', 'No active occupation-hold for this team');
+      await this.core.unscheduleOccupation(worldId, claimed._id);
+      await cols.tiles.updateOne(
+        { _id: claimed.tile },
+        { $unset: { contestedBy: '', contestedUntil: '', contestedGarrison: '', contestedFamilyId: '' } },
+      );
+      const after = await cols.tiles.findOne({ _id: claimed.tile });
+      if (after) {
+        void this.core.pushTile(accountId, after);
+        await this.core.pushTileToObservers(after, new Set([accountId]));
+      }
+    }
+
+    /** List the player's own active occupation-holds (2026-07-15 team management: status + cancel affordance). */
+    async getOccupations(worldId: string, accountId: string): Promise<OccupationView[]> {
+      const { cols } = this.core.deps;
+      const own = await cols.occupations.find({ worldId, ownerId: accountId }).toArray();
+      return own.map((d) => ({
+        tile: d.tile,
+        x: d.x,
+        y: d.y,
+        level: d.level,
+        garrison: d.garrison,
+        dueAt: d.dueAt,
+        ...(d.teamId ? { teamId: d.teamId } : {}),
+      }));
     }
 
     /** Finalize a settled OccupationDoc into real TileDoc ownership. Re-validates contestedBy to guard against a lost race. */

@@ -6,7 +6,7 @@ import { makeZoomCfgs } from './zoom';
 import { DEFAULT_MAP_SIZE } from './constants';
 import type { ILayout } from '../../layout/ILayout';
 import type { ZoomCfg, PoolSlot } from './zoom';
-import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, NationView, SeasonView, SlgShopItemView, WorldChatMessage } from '../../net/WorldApiClient';
+import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, OccupationView, NationView, SeasonView, SlgShopItemView, WorldChatMessage } from '../../net/WorldApiClient';
 import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult } from '../../net/proto/transport';
 import type { WorldMapRenderer } from './WorldMapRenderer';
 import type { WorldMapPanels } from './WorldMapPanels';
@@ -71,6 +71,8 @@ export class WorldMapContext {
   tileCache: Map<string, WorldTileView> = new Map();
   me: PlayerWorldView | null = null;
   marches: MarchView[] = [];
+  /** Own active occupation-holds (2026-07-15) — used alongside marches for the team-picker busy gate. */
+  occupations: OccupationView[] = [];
   nations: NationView[] = [];
   season: SeasonView | null = null;
   shopItems: SlgShopItemView[] = [];
