@@ -2,6 +2,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { CardType, SpellType, GameState } from '../game';
 import { ILayout, Rect } from '../layout/ILayout';
 import { t, type TranslationKey } from '../i18n';
+import { drawHudButton, hudButtonText } from './hudButton';
 
 /**
  * TutorialDirector — presentation-layer orchestrator for the tutorial level `ch0_tutorial` (ONBOARDING_DESIGN §3.4).
@@ -372,10 +373,11 @@ export class TutorialDirector {
     const by = Math.round(bh * 0.6);
     this.skipBtnRect = { x: bx, y: by, w: bw, h: bh };
     const g = new PIXI.Graphics();
-    g.beginFill(C_DARK, 0.78).drawRoundedRect(bx, by, bw, bh, bh * 0.3).endFill();
+    drawHudButton(g, bw, bh, 'primary', { radius: bh * 0.3, fillAlpha: 0.78 });
+    g.x = bx; g.y = by;
     this.root.addChild(g);
     const lbl = new PIXI.Text(t('tutorial.skip' as TranslationKey), {
-      fontFamily: 'monospace', fontSize: Math.round(bh * 0.42), fill: 0xffffff,
+      fontFamily: 'monospace', fontSize: Math.round(bh * 0.42), fill: hudButtonText('primary'),
     });
     lbl.anchor.set(0.5);
     lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
@@ -423,10 +425,11 @@ export class TutorialDirector {
       const bx = px + pw - bw - 16;
       const by = py + ph - bh - 14;
       const btn = new PIXI.Graphics();
-      btn.beginFill(C_BLUE).drawRoundedRect(bx, by, bw, bh, bh * 0.3).endFill();
+      drawHudButton(btn, bw, bh, 'accent', { radius: bh * 0.3 });
+      btn.x = bx; btn.y = by;
       this.cardPanel.addChild(btn);
       const bl = new PIXI.Text(btnLabel!, {
-        fontFamily: 'monospace', fontSize: Math.round(bh * 0.46), fontWeight: 'bold', fill: 0xffffff,
+        fontFamily: 'monospace', fontSize: Math.round(bh * 0.46), fontWeight: 'bold', fill: hudButtonText('accent'),
       });
       bl.anchor.set(0.5);
       bl.x = bx + bw / 2; bl.y = by + bh / 2;

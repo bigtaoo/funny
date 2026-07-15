@@ -5,6 +5,7 @@ import { OwnerId } from '../game/types';
 import { ILayout, Rect } from '../layout/ILayout';
 import { t } from '../i18n';
 import { getLabelTexture } from './labelDecor';
+import { drawHudButton, hudButtonText, HudButtonVariant } from './hudButton';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -164,8 +165,8 @@ export class HUDView {
     const y2  = y1 + bH + gap;
     const bX  = (dw - bW) / 2;
 
-    overlay.addChild(this.makeBtn(bX, y1, bW, bH, 0x2c2c2a, t('hud.resume'),      0xffffff));
-    overlay.addChild(this.makeBtn(bX, y2, bW, bH, 0xf0ece0, t('hud.exitToLobby'), 0x444444, 0x888888));
+    overlay.addChild(this.makeBtn(bX, y1, bW, bH, 'primary',   t('hud.resume')));
+    overlay.addChild(this.makeBtn(bX, y2, bW, bH, 'secondary', t('hud.exitToLobby')));
 
     this._pauseResumeRect = { x: bX, y: y1, w: bW, h: bH };
     this._pauseExitRect   = { x: bX, y: y2, w: bW, h: bH };
@@ -343,16 +344,13 @@ export class HUDView {
 
   private makeBtn(
     x: number, y: number, w: number, h: number,
-    bgColor: number, label: string, textColor: number, borderColor = 0x333333,
+    variant: HudButtonVariant, label: string,
   ): PIXI.Container {
     const c = new PIXI.Container();
     const bg = new PIXI.Graphics();
-    bg.beginFill(bgColor);
-    bg.lineStyle(1, borderColor);
-    bg.drawRoundedRect(0, 0, w, h, 6);
-    bg.endFill();
+    drawHudButton(bg, w, h, variant, { radius: 6 });
     const txt = new PIXI.Text(label, {
-      fontSize: Math.round(h * 0.42), fill: textColor, fontWeight: 'bold', fontFamily: 'monospace',
+      fontSize: Math.round(h * 0.42), fill: hudButtonText(variant), fontWeight: 'bold', fontFamily: 'monospace',
     });
     txt.anchor.set(0.5, 0.5);
     txt.x = w / 2; txt.y = h / 2;
@@ -376,28 +374,21 @@ export class HUDView {
 
   private drawSettingsBtn(): void {
     this.settingsBtnBg.clear();
-    this.settingsBtnBg.beginFill(0xf0ece0);
-    this.settingsBtnBg.lineStyle(1, 0xaaaaaa);
-    this.settingsBtnBg.drawRoundedRect(0, 0, BTN_W, BTN_H, 4);
-    this.settingsBtnBg.endFill();
+    drawHudButton(this.settingsBtnBg, BTN_W, BTN_H, 'secondary', { radius: 4 });
   }
 
   private setUpgradeBtnStyle(enabled: boolean): void {
+    const variant: HudButtonVariant = enabled ? 'primary' : 'disabled';
     this.upgradeBtnBg.clear();
-    this.upgradeBtnBg.beginFill(enabled ? 0x2c2c2a : 0x999999);
-    this.upgradeBtnBg.lineStyle(1, 0x333333);
-    this.upgradeBtnBg.drawRoundedRect(0, 0, this.actionBtnW, this.actionBtnH, 6);
-    this.upgradeBtnBg.endFill();
-    this.upgradeBtnLabel.style.fill = enabled ? 0xffffff : 0xdddddd;
+    drawHudButton(this.upgradeBtnBg, this.actionBtnW, this.actionBtnH, variant, { radius: 6 });
+    this.upgradeBtnLabel.style.fill = hudButtonText(variant);
   }
 
   private setRefreshBtnStyle(enabled: boolean): void {
+    const variant: HudButtonVariant = enabled ? 'accent' : 'disabled';
     this.refreshBtnBg.clear();
-    this.refreshBtnBg.beginFill(enabled ? 0x3a6ea5 : 0x999999);
-    this.refreshBtnBg.lineStyle(1, 0x333333);
-    this.refreshBtnBg.drawRoundedRect(0, 0, this.actionBtnW, this.actionBtnH, 6);
-    this.refreshBtnBg.endFill();
-    this.refreshBtnLabel.style.fill = enabled ? 0xffffff : 0xdddddd;
+    drawHudButton(this.refreshBtnBg, this.actionBtnW, this.actionBtnH, variant, { radius: 6 });
+    this.refreshBtnLabel.style.fill = hudButtonText(variant);
   }
 
   private formatTime(seconds: number): string {
