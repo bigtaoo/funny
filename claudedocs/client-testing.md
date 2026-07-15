@@ -29,6 +29,7 @@ vitest 走 esbuild、webpack 也不做类型检查，且 `client/tsconfig.json` 
 - `scenes.ui.ts` —— 几乎所有菜单/弹层场景（Intro/Login/Lobby/Settings/Shop/Gacha/Campaign/LevelPrep/Collection/Stats/Room/Friends/Chat/Result/World/Family/Sect/Auction），横竖屏各跑「建得起 / update 不炸 / destroy 不炸」+ 一批命中矩形回归。
 - `gameScenes.ui.ts` —— **对战场景 GameScene / ReplayScene**（缺口 A，见下）。
 - `statsScene.ui.ts` / `textTeardown.ui.ts` —— 专项回归（Text 释放、共享 bake 纹理保留等）。
+- `cardFeedPaging.ui.ts` —— `CardScene/feed.ts` 喂养素材弹窗分页专项回归：素材溢出六行时 Confirm/Cancel 仍在屏幕内、翻页箭头正确 disable/enable（读 `this.feedScrollIdx` 而非猜测命中矩形），素材不溢出时不出现翻页箭头。
 
 ## 缺口 A（已补）：GameScene / ReplayScene 冒烟
 

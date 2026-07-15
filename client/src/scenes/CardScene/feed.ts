@@ -4,6 +4,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
+import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import type { CardInstance } from '../../game/meta/SaveData';
 import { CARD_DEFS } from '../../game/meta/cardDefs';
 import { type Constructor, type CardSceneBaseCtor, MODAL_DIM } from './base';
@@ -37,6 +38,10 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       this.modalOpen = true;
 
       const selected = new Set<string>();
+      // Paged (not free-scroll) list: avoids fighting the modal's fire-on-pointerdown row
+      // taps with a drag-to-scroll gesture over the same rows. this.feedScrollIdx is the index
+      // of the first visible candidate; clamped to fit whenever the panel redraws.
+      this.feedScrollIdx = 0;
       const drawFeedPanel = (): void => {
         ml.removeChildren();
         this.modalHits = [];
@@ -46,9 +51,18 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         const S = 3;
         const mw = Math.min(320 * S, w - 24);
         const rowH = 44 * S;
-        const mh = Math.min(60 * S + candidates.length * rowH + 56 * S, h - 60);
+        const headerBlockH = 44 * S; // title + hint
+        const footerBlockH = 56 * S; // confirm/cancel row + margin
+        // Panel must fit strictly below the scene's own header bar and above the screen edge — a
+        // naive `h - 60` cap (ignoring this.headerH) let a tall header push the panel's bottom
+        // (Confirm/Cancel) off-screen even though the panel's own height looked clamped.
+        const topLimit = this.headerH + 4;
+        const bottomLimit = h - 8;
+        const availH = Math.max(0, bottomLimit - topLimit);
+        // Panel height shows up to 6 rows before paging kicks in, still clamped to the screen.
+        const mh = Math.min(headerBlockH + Math.min(Math.max(candidates.length, 1), 6) * rowH + footerBlockH, availH);
         const mx = (w - mw) / 2;
-        const my = Math.max(this.headerH + 4, (h - mh) / 2);
+        const my = topLimit + (availH - mh) / 2;
 
         const dim = new PIXI.Graphics();
         dim.beginFill(MODAL_DIM, 0.45).drawRect(0, 0, w, h).endFill();
@@ -66,17 +80,28 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         hintLbl.anchor.set(0.5, 0); hintLbl.x = mx + mw / 2; hintLbl.y = my + 26 * S;
         ml.addChild(hintLbl);
 
-        let cy = my + 44 * S;
+        const listY = my + headerBlockH;
+        const listH = mh - headerBlockH - footerBlockH;
+
         if (candidates.length === 0) {
           const empty = txt(t('roster.feedEmpty'), 12 * S, C.mid);
-          empty.anchor.set(0.5, 0.5); empty.x = mx + mw / 2; empty.y = my + mh / 2 - 20 * S;
+          empty.anchor.set(0.5, 0.5); empty.x = mx + mw / 2; empty.y = listY + listH / 2;
           ml.addChild(empty);
         }
 
-        for (const mat of candidates) {
+        const maxVisible = Math.max(1, Math.floor(listH / rowH));
+        const scrollMax = Math.max(0, candidates.length - maxVisible);
+        this.feedScrollIdx = Math.max(0, Math.min(this.feedScrollIdx, scrollMax));
+        // Reserve a paging column on the right of the rows when the list overflows the panel.
+        const pagerW = scrollMax > 0 ? 28 * S : 0;
+        const rowW = mw - 16 * S - pagerW;
+
+        let cy = listY;
+        const visible = candidates.slice(this.feedScrollIdx, this.feedScrollIdx + maxVisible);
+        for (const mat of visible) {
           const isSelected = selected.has(mat.id);
           const matDef = CARD_DEFS[mat.defId];
-          const rowBg = sketchPanel(mw - 16 * S, rowH - 4 * S, { fill: isSelected ? 0xfaf0d4 : 0xf5f3ec, border: isSelected ? C.gold : C.mid, seed: seedFor(cy, 19, mw) });
+          const rowBg = sketchPanel(rowW, rowH - 4 * S, { fill: isSelected ? 0xfaf0d4 : 0xf5f3ec, border: isSelected ? C.gold : C.mid, seed: seedFor(cy, 19, mw) });
           rowBg.x = mx + 8 * S; rowBg.y = cy;
           ml.addChild(rowBg);
 
@@ -103,7 +128,7 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
 
           const matId = mat.id;
           this.modalHits.push({
-            rect: { x: mx + 8 * S, y: cy, w: mw - 16 * S, h: rowH - 4 * S },
+            rect: { x: mx + 8 * S, y: cy, w: rowW, h: rowH - 4 * S },
             action: () => {
               if (selected.has(matId)) selected.delete(matId);
               else selected.add(matId);
@@ -111,6 +136,45 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
             },
           });
           cy += rowH;
+        }
+
+        if (scrollMax > 0) {
+          const pagerX = mx + mw - 8 * S - pagerW;
+          const arrowSz = pagerW - 6 * S;
+          const drawArrow = (ax: number, ay: number, pointUp: boolean, enabled: boolean): void => {
+            const g = new PIXI.Graphics();
+            g.beginFill(enabled ? C.dark : C.mid, enabled ? 0.85 : 0.4);
+            if (pointUp) g.drawPolygon([ax, ay + arrowSz, ax + arrowSz / 2, ay, ax + arrowSz, ay + arrowSz]);
+            else g.drawPolygon([ax, ay, ax + arrowSz, ay, ax + arrowSz / 2, ay + arrowSz]);
+            g.endFill();
+            ml.addChild(g);
+          };
+
+          const upEnabled = this.feedScrollIdx > 0;
+          drawArrow(pagerX, listY, true, upEnabled);
+          if (upEnabled) {
+            this.modalHits.push({
+              rect: { x: pagerX, y: listY, w: arrowSz, h: arrowSz },
+              action: () => { this.feedScrollIdx = Math.max(0, this.feedScrollIdx - maxVisible); drawFeedPanel(); },
+            });
+          }
+
+          const downY = listY + listH - arrowSz;
+          const downEnabled = this.feedScrollIdx < scrollMax;
+          drawArrow(pagerX, downY, false, downEnabled);
+          if (downEnabled) {
+            this.modalHits.push({
+              rect: { x: pagerX, y: downY, w: arrowSz, h: arrowSz },
+              action: () => { this.feedScrollIdx = Math.min(scrollMax, this.feedScrollIdx + maxVisible); drawFeedPanel(); },
+            });
+          }
+
+          drawScrollIndicator(
+            ml,
+            { x: pagerX, y: listY + arrowSz + 4 * S, w: arrowSz, h: listH - 2 * arrowSz - 8 * S },
+            this.feedScrollIdx * rowH,
+            scrollMax * rowH,
+          );
         }
 
         // Confirm button

@@ -142,6 +142,8 @@ export class CardSceneBase {
   protected detailId: string | null = null;
   protected scrollY = 0;
   protected dragStart: { x: number; y: number; scroll: number } | null = null;
+  /** Set by handleMove instead of rendering inline — see EquipmentSceneBase.scrollDirty for why. */
+  private scrollDirty = false;
   /** [Cards|Equipment?|Skins] sidebar nav — always shown (Skins is always reachable, LOBBY_IA_REDESIGN §15). */
   protected readonly showSidebar = true;
   /** Active content tab: the card grid, or the skins wardrobe. */
@@ -150,6 +152,8 @@ export class CardSceneBase {
   protected detailFlipped = false;
   /** Detail modal: whether the skin picker popover is open. */
   protected skinPickerOpen = false;
+  /** Feed-select modal: index of the first visible material row (paged list, not free-scroll). */
+  protected feedScrollIdx = 0;
   /** Removes the in-flight portrait flip's PIXI.Ticker.shared listener, if any (avoids leaking it across re-renders/destroy). */
   protected flipTickerCleanup: (() => void) | null = null;
 
@@ -319,7 +323,7 @@ export class CardSceneBase {
     const dy = y - this.dragStart.y;
     if (Math.abs(dy) > 6) {
       this.scrollY = Math.max(0, this.dragStart.scroll - dy);
-      this.render();
+      this.scrollDirty = true;
     }
   }
 
@@ -332,6 +336,7 @@ export class CardSceneBase {
   }
 
   update(dt: number): void {
+    if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
     if (this.bt.tick(dt)) this.render();
     if (this.toastTimer > 0) {
       this.toastTimer -= dt * 1000;
