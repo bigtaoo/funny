@@ -58,13 +58,17 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
      */
     async applySiege(m: MarchDoc, pw: PlayerWorldDoc, t: number): Promise<void> {
       const { cols } = this.core.deps;
+      // CC-3: a card-army march's committed strength lives entirely in cardState.currentTroops, never in
+      // playerWorld.troops (CHARACTER_CARDS_DESIGN §6.1/§9) — every refund path below must skip the pool credit
+      // for such a march (nothing was ever deducted from the pool for it; see combatMarch.ts's matching guard).
+      const hasCardArmy = !!m.army?.some((e) => !!e.cardInstanceId);
       const target = await cols.tiles.findOne({ _id: m.toTile });
       // ADR-039 territory connectivity: the attacker's sect territory can shift during transit (an intervening
       // loss can strand the attacker), so re-validate here before any capture branch — treat like a miss (refund).
       // Capitals check against their whole 3×3 footprint (targetFootprintCells), not just the landed cell.
       const footprint = this.core.targetFootprintCells(target, this.core.coordX(m.toTile), this.core.coordY(m.toTile));
       if (!(await this.core.isConnectedToSectTerritory(m.worldId, m.ownerId, footprint))) {
-        await refundTroops(this.core, pw, m.troops, t);
+        if (!hasCardArmy) await refundTroops(this.core, pw, m.troops, t);
         void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
         return;
       }
@@ -96,7 +100,7 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
         target.ownerId === m.ownerId ||
         (target.protectedUntil && target.protectedUntil > t)
       ) {
-        await refundTroops(this.core, pw, m.troops, t);
+        if (!hasCardArmy) await refundTroops(this.core, pw, m.troops, t);
         void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
         return;
       }
@@ -120,7 +124,7 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       // Attacker formation (G3-2c): marched with a team → use the real formation snapshot (m.army); otherwise synthesize from flat troop count as fallback (v1 bridge).
       // CC-3: when army entries carry cardInstanceId, resolve to engine GarrisonEntry[] via cardState.currentTroops + CARD_DEFS.unitType.
       const rawArmy = m.army ?? [];
-      const hasCardArmy = rawArmy.some((e) => !!e.cardInstanceId);
+      // hasCardArmy already computed at the top of applySiege (miss/recall branches need it before we get here).
       const attackerArmy: GarrisonEntry[] =
         hasCardArmy
           ? resolveCardArmy(rawArmy, pw.cardState ?? {}, attackerSave?.cardInv ?? {})
@@ -275,9 +279,11 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       const replay = replays.length > 0 ? (replays[replays.length - 1] ?? null) : null;
       const siege = await this.recordSiege(m, defenderId, outcome, t, replay);
 
-      // CC-3: attacker card post-battle state (uniform survival over the whole siege).
+      // CC-3: attacker card post-battle state (uniform survival over the whole siege). Card-army survivors are
+      // written ONLY to cardState.currentTroops here — never to playerWorld.troops (see the `else` branch below).
       const attackArmy = m.army ?? [];
-      if (attackArmy.some((e) => !!e.cardInstanceId)) {
+      const hasCardArmy = attackArmy.some((e) => !!e.cardInstanceId);
+      if (hasCardArmy) {
         const cardUpdates = computeCardStateUpdates(attackArmy, pw.cardState ?? {}, attackerSurvivors, t);
         const cardStateSet: Record<string, unknown> = {};
         for (const [id, update] of Object.entries(cardUpdates)) {
@@ -307,9 +313,10 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
         };
         await cols.siegeDamage.updateOne({ _id: dmg._id }, { $setOnInsert: dmg }, { upsert: true });
         await this.core.scheduleSiegeDamage(m.worldId, dmg._id, dmg.dueAt);
-      } else {
-        // Attacker repelled: survivors retreat and return to the troop pool immediately.
-        if (attackerSurvivors > 0) await refundTroops(this.core, pw, attackerSurvivors, t);
+      } else if (attackerSurvivors > 0) {
+        // Attacker repelled: survivors retreat and return to the troop pool immediately (flat/legacy armies
+        // only — a card army's survivors were already written to cardState above, not the pool).
+        if (!hasCardArmy) await refundTroops(this.core, pw, attackerSurvivors, t);
       }
 
       // Activity + battle-report push (loot only happens at capture, in settleSiegeDamage → empty here).
@@ -336,26 +343,40 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       const { cols } = this.core.deps;
       const x = this.core.coordX(m.toTile);
       const y = this.core.coordY(m.toTile);
+      // CC-3: a card army's committed strength lives in cardState.currentTroops, not playerWorld.troops (see applySiege).
+      const rawArmy = m.army ?? [];
+      const hasCardArmy = rawArmy.some((e) => !!e.cardInstanceId);
       // Re-validate on arrival: already occupied by another player or self (including simultaneous captures) → skip NPC fight; refund troops as a miss.
       const occ = await cols.tiles.findOne({ _id: m.toTile });
       if (occ?.ownerId) {
-        await refundTroops(this.core, pw, m.troops, t);
+        if (!hasCardArmy) await refundTroops(this.core, pw, m.troops, t);
         void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
         return;
       }
 
       const garrison = strongholdGarrison(proc.level);
+      // E8/CC-3: fetch attacker's progression snapshot (equipment for the legacy path; cardInv+equipmentInv for a real card army).
+      const attackerSave = await this.core.meta.getSaveFields(m.ownerId).catch(() => null);
       const attackerArmy: GarrisonEntry[] =
-        m.army && m.army.length > 0 ? (m.army as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker');
+        hasCardArmy
+          ? resolveCardArmy(rawArmy, pw.cardState ?? {}, attackerSave?.cardInv ?? {})
+          : (rawArmy.length > 0 ? (rawArmy as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker'));
+      let cardInstances: EngineCardInstance[] | undefined;
+      let cardEquipInv: EngineEquipInv | undefined;
+      if (hasCardArmy && attackerSave) {
+        const { cardInstances: ci, engEquipInv } = toEngineCardInstances(rawArmy, attackerSave.cardInv, attackerSave.equipmentInv);
+        cardInstances = ci;
+        cardEquipInv = engEquipInv;
+      }
       // System ultra-strong default garrison + elevated base (defenderBaseLevel is derived and clamped by buildSiegeLevel from tileLevel).
       const defenderConfig = { garrison: synthesizeArmy(garrison, 'defender') };
       const tileLevel = proc.level;
       const seed = siegeSeedFromId(m._id);
 
-      // E8: stronghold is also a PvE-like siege; attacker equipment applies in the same way.
-      const attackerSave = await this.core.meta.getSaveFields(m.ownerId).catch(() => null);
+      // E8: stronghold is also a PvE-like siege; attacker equipment applies in the same way (legacy path only — a
+      // card army's gear is already folded into cardInstances/cardEquipInv above).
       const siegeEquip: EngineEquipmentInput | undefined =
-        attackerSave ? { gear: attackerSave.gear, inv: attackerSave.equipmentInv } : undefined;
+        !hasCardArmy && attackerSave ? { gear: attackerSave.gear, inv: attackerSave.equipmentInv } : undefined;
       let res: SiegeResolution;
       let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
       try {
@@ -364,6 +385,7 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
           pveUpgrades: attackerSave?.pveUpgrades,
           unitLevels: attackerSave?.unitLevels,
           equipment: siegeEquip,
+          cardInstances, equipmentInv: cardEquipInv,
         });
       } catch (err) {
         console.error('[worldsvc] stronghold siege engine failed — fallback to cheap resolve', {
@@ -372,6 +394,17 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
         });
         res = resolveSiege(m.troops, garrison);
         replay = null;
+      }
+      if (hasCardArmy) {
+        const cardUpdates = computeCardStateUpdates(rawArmy, pw.cardState ?? {}, res.attackerSurvivors, t);
+        const cardStateSet: Record<string, unknown> = {};
+        for (const [id, update] of Object.entries(cardUpdates)) {
+          cardStateSet[`cardState.${id}.currentTroops`] = update.currentTroops;
+          cardStateSet[`cardState.${id}.injuredUntil`] = update.injuredUntil != null ? update.injuredUntil : null;
+        }
+        if (Object.keys(cardStateSet).length > 0) {
+          await cols.playerWorld.updateOne({ _id: pw._id }, { $set: cardStateSet, $inc: { rev: 1 } });
+        }
       }
 
       if (res.outcome === 'attacker_win') {
@@ -411,8 +444,9 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
         void this.core.pushTile(m.ownerId, tileDoc);
         await this.core.pushTileToObservers(tileDoc, new Set([m.ownerId])); // G5-2: stronghold capture arrival is visible to observers
       } else {
-        // Capture failed: surviving attacker troops retreat and return to the troop pool (troops were deducted on departure; casualties are a permanent loss). NPC garrison is not persisted; no casualty write.
-        if (res.attackerSurvivors > 0) await refundTroops(this.core, pw, res.attackerSurvivors, t);
+        // Capture failed: surviving attacker troops retreat and return to the troop pool (flat/legacy armies only —
+        // a card army's survivors were already written to cardState above). NPC garrison is not persisted; no casualty write.
+        if (!hasCardArmy && res.attackerSurvivors > 0) await refundTroops(this.core, pw, res.attackerSurvivors, t);
         void this.core.bumpFamilyActivity(m.worldId, pw.familyId, 1);
         const siege = await this.recordSiege(m, undefined, res.outcome, t, replay);
         void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'arrived' }));
@@ -436,24 +470,36 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       const { cols } = this.core.deps;
       const x = this.core.coordX(m.toTile);
       const y = this.core.coordY(m.toTile);
+      // CC-3: a card army's committed strength lives in cardState.currentTroops, not playerWorld.troops (see applySiege).
+      const rawArmy = m.army ?? [];
+      const hasCardArmy = rawArmy.some((e) => !!e.cardInstanceId);
       // Re-validate on arrival: captured by someone (or self) in the meantime → skip NPC fight; refund troops as a miss.
       const occ = await cols.tiles.findOne({ _id: m.toTile });
       if (occ?.ownerId) {
-        await refundTroops(this.core, pw, m.troops, t);
+        if (!hasCardArmy) await refundTroops(this.core, pw, m.troops, t);
         void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
         return;
       }
 
       const garrison = passageGarrison(proc.level);
+      const attackerSave = await this.core.meta.getSaveFields(m.ownerId).catch(() => null);
       const attackerArmy: GarrisonEntry[] =
-        m.army && m.army.length > 0 ? (m.army as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker');
+        hasCardArmy
+          ? resolveCardArmy(rawArmy, pw.cardState ?? {}, attackerSave?.cardInv ?? {})
+          : (rawArmy.length > 0 ? (rawArmy as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker'));
+      let cardInstances: EngineCardInstance[] | undefined;
+      let cardEquipInv: EngineEquipInv | undefined;
+      if (hasCardArmy && attackerSave) {
+        const { cardInstances: ci, engEquipInv } = toEngineCardInstances(rawArmy, attackerSave.cardInv, attackerSave.equipmentInv);
+        cardInstances = ci;
+        cardEquipInv = engEquipInv;
+      }
       const defenderConfig = { garrison: synthesizeArmy(garrison, 'defender') };
       const tileLevel = proc.level;
       const seed = siegeSeedFromId(m._id);
 
-      const attackerSave = await this.core.meta.getSaveFields(m.ownerId).catch(() => null);
       const siegeEquip: EngineEquipmentInput | undefined =
-        attackerSave ? { gear: attackerSave.gear, inv: attackerSave.equipmentInv } : undefined;
+        !hasCardArmy && attackerSave ? { gear: attackerSave.gear, inv: attackerSave.equipmentInv } : undefined;
       let res: SiegeResolution;
       let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
       try {
@@ -462,6 +508,7 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
           pveUpgrades: attackerSave?.pveUpgrades,
           unitLevels: attackerSave?.unitLevels,
           equipment: siegeEquip,
+          cardInstances, equipmentInv: cardEquipInv,
         });
       } catch (err) {
         console.error('[worldsvc] crossing siege engine failed — fallback to cheap resolve', {
@@ -470,6 +517,17 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
         });
         res = resolveSiege(m.troops, garrison);
         replay = null;
+      }
+      if (hasCardArmy) {
+        const cardUpdates = computeCardStateUpdates(rawArmy, pw.cardState ?? {}, res.attackerSurvivors, t);
+        const cardStateSet: Record<string, unknown> = {};
+        for (const [id, update] of Object.entries(cardUpdates)) {
+          cardStateSet[`cardState.${id}.currentTroops`] = update.currentTroops;
+          cardStateSet[`cardState.${id}.injuredUntil`] = update.injuredUntil != null ? update.injuredUntil : null;
+        }
+        if (Object.keys(cardStateSet).length > 0) {
+          await cols.playerWorld.updateOne({ _id: pw._id }, { $set: cardStateSet, $inc: { rev: 1 } });
+        }
       }
 
       if (res.outcome === 'attacker_win') {
@@ -493,7 +551,7 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
         void this.core.pushTile(m.ownerId, tileDoc);
         await this.core.pushTileToObservers(tileDoc, new Set([m.ownerId]));
       } else {
-        if (res.attackerSurvivors > 0) await refundTroops(this.core, pw, res.attackerSurvivors, t);
+        if (!hasCardArmy && res.attackerSurvivors > 0) await refundTroops(this.core, pw, res.attackerSurvivors, t);
         void this.core.bumpFamilyActivity(m.worldId, pw.familyId, 1);
         const siege = await this.recordSiege(m, undefined, res.outcome, t, replay);
         void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'arrived' }));
@@ -519,15 +577,17 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
     ): Promise<void> {
       const { cols } = this.core.deps;
       let loot = emptyResources();
+      // CC-3: a card army's survivors are written to cardState.currentTroops below, never to playerWorld.troops.
+      const hasCardArmy = !!m.army?.some((e) => !!e.cardInstanceId);
 
       if (res.outcome === 'attacker_win') {
         // Loot the defeated player's resources (transfer a proportion from defender to attacker).
         if (defender) loot = await this.transferLoot(defender, pw, t);
         if (target.type === 'base') {
           // The capital cannot be permanently taken, but being defeated triggers passive relocation (§3.4/§8.2, applies to all players):
-          //   1) attacker survivors return to the troop pool; 2) if the defender is a sect leader, all sect members lose 50% of resources (§8.2 major penalty);
+          //   1) attacker survivors return to the troop pool (flat/legacy armies only); 2) if the defender is a sect leader, all sect members lose 50% of resources (§8.2 major penalty);
           //   3) defender's capital is randomly relocated to a new empty tile + all currently occupied territory is lost (passiveRelocate).
-          await refundTroops(this.core, pw, res.attackerSurvivors, t);
+          if (!hasCardArmy) await refundTroops(this.core, pw, res.attackerSurvivors, t);
           await this.applySectLeaderPenalty(m.worldId, defenderId, t);
           await this.passiveRelocate(m.worldId, defenderId, t);
         } else {
@@ -569,14 +629,14 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
           { _id: m.toTile },
           { $set: { garrison: res.defenderSurvivors }, $inc: { rev: 1 } },
         );
-        if (res.attackerSurvivors > 0) await refundTroops(this.core, pw, res.attackerSurvivors, t);
+        if (!hasCardArmy && res.attackerSurvivors > 0) await refundTroops(this.core, pw, res.attackerSurvivors, t);
       }
 
       const siege = await this.recordSiege(m, defenderId, res.outcome, t, replay);
 
       // CC-3: write post-battle cardState (currentTroops + injuredUntil) for attacker card army.
       const attackArmy = m.army ?? [];
-      if (attackArmy.some((e) => !!e.cardInstanceId)) {
+      if (hasCardArmy) {
         const cardUpdates = computeCardStateUpdates(attackArmy, pw.cardState ?? {}, res.attackerSurvivors, t);
         const cardStateSet: Record<string, unknown> = {};
         for (const [id, update] of Object.entries(cardUpdates)) {
