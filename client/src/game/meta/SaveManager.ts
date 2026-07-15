@@ -6,7 +6,7 @@
 // Network unavailable / ApiClient not configured → silently degrade to local-only (no error thrown to caller).
 
 import type { AuthCredential } from '../../platform/IPlatform';
-import { ApiError, type ApiClient } from '../../net/ApiClient';
+import { ApiError, type ApiClient, type ActiveMatchInfo } from '../../net/ApiClient';
 import { replayToUploadFrames } from '../../net/replayUpload';
 import type { Replay } from '../types';
 import {
@@ -59,6 +59,13 @@ export class SaveManager {
   private readonly onProfile?: (profile: { displayName?: string; publicId?: string; gatewayUrl?: string; freeRename?: boolean }) => void;
   private readonly loadReplay?: (id: string) => Replay | null;
   private readonly onSyncError?: () => void;
+  /**
+   * Login-reconnect-prompt: the most recent activeMatch seen from a getSave() response, or null if the
+   * last check found none. Read-and-clear via consumeActiveMatch() so only the login entry points (which
+   * call it once, right after bootstrap()/adoptSession()) act on it — other refresh() callers (e.g. the
+   * post-match ELO refresh) don't accidentally retrigger the resume prompt.
+   */
+  private pendingActiveMatch: ActiveMatchInfo | null = null;
   private syncFailStreak = 0;     // consecutive upload failure count
   private syncErrorNotified = false; // whether the player has already been notified in the current failure streak (to avoid spamming)
   private readonly debounceMs: number;
@@ -148,6 +155,7 @@ export class SaveManager {
 
       const cloud = await this.api.getSave();
       this.reconcile(cloud.save);
+      this.pendingActiveMatch = cloud.activeMatch ?? null;
       this.onProfile?.({
         displayName: cloud.displayName,
         publicId: auth.publicId ?? cloud.publicId,
@@ -175,6 +183,7 @@ export class SaveManager {
     try {
       const cloud = await this.api.getSave();
       this.reconcile(cloud.save);
+      this.pendingActiveMatch = cloud.activeMatch ?? null;
       this.onProfile?.({
         displayName: cloud.displayName,
         publicId: cloud.publicId,
@@ -187,6 +196,17 @@ export class SaveManager {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Login-reconnect-prompt: read-and-clear the most recent activeMatch signal (or null if none).
+   * Call this once right after bootstrap()/adoptSession() resolves — not after every refresh() — so the
+   * "resume your match?" prompt only surfaces at login, not on unrelated mid-session save refreshes.
+   */
+  consumeActiveMatch(): ActiveMatchInfo | null {
+    const m = this.pendingActiveMatch;
+    this.pendingActiveMatch = null;
+    return m;
   }
 
   /**

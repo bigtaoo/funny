@@ -9,12 +9,13 @@ import { Matchsvc } from './Matchsvc';
 import { GameRegistry } from './GameRegistry';
 import { GatewayClient } from './gatewayClient';
 import { startInternalHttp } from './internalHttp';
-import { createLogger, startHeartbeat, FeatureFlagCache, internalHeaders, loadInternalAuth } from '@nw/shared';
+import { createLogger, startHeartbeat, FeatureFlagCache, internalHeaders, loadInternalAuth, connectActiveMatchRedis } from '@nw/shared';
 
 const log = createLogger('matchsvc:flags');
 
-function main(): void {
+async function main(): Promise<void> {
   const env = loadMatchsvcEnv();
+  const redis = await connectActiveMatchRedis(env.redisUrl);
 
   // Feature flag cache: polls admin for raw rules + evaluates locally (no DB connection, refreshed every 30s; stale cache used when admin is unreachable).
   const adminUrl = env.adminInternalUrl;
@@ -39,6 +40,7 @@ function main(): void {
     ticketTtlSec: env.ticketTtlSec,
     flags,
     botFallbackMs: env.botFallbackMs,
+    redis,
   });
 
   const internal = startInternalHttp(
@@ -62,7 +64,8 @@ function main(): void {
     `feature flags: ${adminUrl ? `poll ${adminUrl} (region=${env.region ?? 'none'})` : 'disabled (all default)'}; ` +
       `bot-fallback after ${env.botFallbackMs}ms`,
   );
+  console.log(`active-match redis: ${redis ? 'connected' : 'disabled (resume-prompt data not persisted)'}`);
   startHeartbeat(createLogger('matchsvc')); // Liveness heartbeat: one info log every 5 minutes when idle
 }
 
-main();
+void main();

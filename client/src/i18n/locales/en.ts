@@ -1327,6 +1327,12 @@ export const en: Record<TranslationKey, string> = {
   'consent.terms': 'Terms of Service',
   'consent.accept': 'Accept & Continue',
 
+  // ── Login reconnect prompt (resume an in-progress match after re-login) ─────
+  'reconnect.title': 'Unfinished Match',
+  'reconnect.body': 'You have a match still in progress. Would you like to reconnect and continue?',
+  'reconnect.accept': 'Reconnect',
+  'reconnect.decline': 'Not Now',
+
   // ── Gacha odds disclosure (Apple 3.1.1, L1-3) ───────────────────────────────
   'gacha.oddsDetail.button': 'Odds',
   'gacha.oddsDetail.title': 'Drop Rate Disclosure',

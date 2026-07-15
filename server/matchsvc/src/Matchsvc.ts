@@ -14,7 +14,7 @@
 // **No database connections**: the ELO value needed for matchmaking is fetched by the gateway from
 // meta before enqueuing and passed in as the `elo` parameter to enqueue.
 import { randomUUID, randomInt } from 'crypto';
-import { signTicket, createLogger, defaultPvpDeck, pickBotDifficulty, randomPlayerName, type FeatureFlagCache, type TicketClaims } from '@nw/shared';
+import { signTicket, createLogger, defaultPvpDeck, pickBotDifficulty, randomPlayerName, setActiveMatch, type FeatureFlagCache, type RedisLike, type TicketClaims } from '@nw/shared';
 import { Matchmaking, type QueueEntry } from './Matchmaking';
 import { GameRegistry } from './GameRegistry';
 
@@ -94,6 +94,8 @@ export interface MatchsvcOpts {
   flags?: FeatureFlagCache;
   /** If a player has been queued for longer than this many milliseconds, evaluate match_bot_fallback to decide whether to fall back to an AI match. Defaults to 30000. */
   botFallbackMs?: number;
+  /** Active-match Redis client (login-reconnect-prompt), or null when unconfigured — resume prompt is then unavailable but matchmaking is unaffected. */
+  redis?: RedisLike | null;
 }
 
 export class Matchsvc {
@@ -105,6 +107,7 @@ export class Matchsvc {
   private readonly ticketTtlSec: number;
   private readonly now: () => number;
   private readonly flags?: FeatureFlagCache;
+  private readonly redis: RedisLike | null;
 
   constructor(
     private readonly push: Push,
@@ -115,6 +118,7 @@ export class Matchsvc {
     this.internalKey = internalKey;
     this.ticketTtlSec = opts.ticketTtlSec ?? 30;
     this.now = opts.now ?? Date.now;
+    this.redis = opts.redis ?? null;
     if (opts.flags) this.flags = opts.flags;
     this.matchmaking = new Matchmaking((a, b) => this.onPair(a, b), {
       now: opts.now,
@@ -389,8 +393,22 @@ export class Matchsvc {
       return signTicket(claims, { key: this.internalKey, ttlSec: this.ticketTtlSec });
     };
 
-    this.push(a.accountId, { kind: 'match_found', gameUrl, ticket: sign(a, b, 0) }, roomId);
-    this.push(b.accountId, { kind: 'match_found', gameUrl, ticket: sign(b, a, 1) }, roomId);
+    const ticketA = sign(a, b, 0);
+    const ticketB = sign(b, a, 1);
+
+    // Cache both tickets under accountId so a later re-login can offer "resume this match?" and
+    // reconnect straight into the room — gameserver's initial handshake ignores ticket exp (M16),
+    // so these remain usable for the whole match, not just the 30s matchmaking handshake window.
+    // Best-effort: matchmaking must not fail if Redis is unavailable.
+    void setActiveMatch(this.redis, a.accountId, { roomId, gameUrl, ticket: ticketA, mode }).catch((e) =>
+      log.warn('setActiveMatch failed', { accountId: a.accountId, roomId, err: (e as Error).message }),
+    );
+    void setActiveMatch(this.redis, b.accountId, { roomId, gameUrl, ticket: ticketB, mode }).catch((e) =>
+      log.warn('setActiveMatch failed', { accountId: b.accountId, roomId, err: (e as Error).message }),
+    );
+
+    this.push(a.accountId, { kind: 'match_found', gameUrl, ticket: ticketA }, roomId);
+    this.push(b.accountId, { kind: 'match_found', gameUrl, ticket: ticketB }, roomId);
   }
 
   // ───────────────────────── Internal ─────────────────────────

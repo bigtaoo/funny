@@ -3,8 +3,8 @@
 // mixin; each business domain lives in its own sibling file as an `XMixin(Base)` and is chained
 // together into the final MetaService. Domain-local state/helpers stay in their own mixin file.
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { Collections, JwtConfig, SaveData, FeatureFlagCache } from '@nw/shared';
-import { ErrorCode, err, accrueRetentionTask } from '@nw/shared';
+import type { Collections, JwtConfig, SaveData, FeatureFlagCache, RedisLike } from '@nw/shared';
+import { ErrorCode, err, accrueRetentionTask, getActiveMatch } from '@nw/shared';
 import { getOrCreateSave } from '../save.js';
 import type { CommercialClient } from '../commercialClient.js';
 import type { GatewayClient } from '../gatewayClient.js';
@@ -28,6 +28,8 @@ export interface ServiceDeps {
   lokiPushUrl: string | null;
   /** Internal socialsvc client (P2): friend/chat/mail routing proxy + atomic mail claim. null = routing is handled by metaserver itself. */
   socialsvc: import('../socialsvcClient.js').MetaSocialsvcClient | null;
+  /** Active-match Redis client (login-reconnect-prompt): getSave() reads it to surface a "resume your match?" hint. null = feature disabled. */
+  redis: RedisLike | null;
 }
 
 // ── Mixin plumbing ────────────────────────────────────────────────────────────
@@ -76,6 +78,16 @@ export class MetaServiceBase {
   /** Public WebSocket address of the gateway (only sent if configured). Clients use this to connect to the control plane without hardcoding the gateway address. */
   protected get gatewayField(): { gatewayUrl?: string } {
     return this.deps.gatewayPublicUrl ? { gatewayUrl: this.deps.gatewayPublicUrl } : {};
+  }
+
+  /**
+   * Login-reconnect-prompt: surfaces the cached "resume this match?" ticket for an account, if any
+   * (written by matchsvc at match start, cleared by /internal/match/report at match end). Absent when
+   * Redis is unconfigured or there is no active match for this account.
+   */
+  protected async activeMatchFieldFor(accountId: string): Promise<{ activeMatch?: import('@nw/shared').ActiveMatchRecord }> {
+    const record = await getActiveMatch(this.deps.redis, accountId);
+    return record ? { activeMatch: record } : {};
   }
 
   /** Economy endpoints are unavailable when commercial is not configured (503). */

@@ -7,7 +7,7 @@
 // Route registration is split by domain under ./internal/* (accounts, mail, match report, economy transfers,
 // ladder/season, event admin, promo+gacha admin) — this file only wires up the shared context and composes them.
 import type { FastifyInstance } from 'fastify';
-import type { Collections } from '@nw/shared';
+import type { Collections, RedisLike } from '@nw/shared';
 import { createInternalAuth } from '@nw/shared';
 import type { GatewayClient } from './gatewayClient.js';
 import type { CommercialClient } from './commercialClient.js';
@@ -34,18 +34,21 @@ export interface InternalDeps {
   commercial: CommercialClient;
   /** socialsvc client (P2): sole mail write authority — system mail (comp tickets/season/event rewards) is written there, not in meta's own DB. */
   socialsvc?: MetaSocialsvcClient;
+  /** Active-match Redis client (login-reconnect-prompt): cleared here when gameserver reports a match as finished. null = feature disabled. */
+  redis?: RedisLike | null;
 }
 
 export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps): void {
   const { cols, internalKey, internalKeys, now, gateway, commercial } = deps;
   const socialsvc = deps.socialsvc ?? nullMetaSocialsvcClient;
+  const redis = deps.redis ?? null;
 
   // Centralized verifier: timing-safe + strict per-caller (NW_INTERNAL_KEYS) + single shared-key fallback.
   const auth = createInternalAuth({ keys: internalKeys, legacyKey: internalKey });
   const authed = (key: unknown): boolean =>
     auth.verify({ 'x-internal-key': typeof key === 'string' ? key : undefined }).ok;
 
-  const ctx: InternalCtx = { cols, now, gateway, commercial, socialsvc, authed };
+  const ctx: InternalCtx = { cols, now, gateway, commercial, socialsvc, authed, redis };
 
   registerAccountRoutes(app, ctx);
   registerMailRoutes(app, ctx);
