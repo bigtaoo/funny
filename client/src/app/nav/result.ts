@@ -134,6 +134,7 @@ export function createResultNav(ctx: AppCtx): ResultNav {
       recorder.snapshot({
         seed: info.seed,
         mode: 'netplay',
+        ...(info.decks ? { decks: { top: info.decks.top, bottom: info.decks.bottom } } : {}),
         meta: { recordedAt: Date.now(), winner: winner ?? -1 },
       });
 

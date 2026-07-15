@@ -105,18 +105,20 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
         });
       }
 
-      // Starter packs: one card each, "owned" when already owned.
+      // Starter packs: free one-time grants. Drop the card entirely once claimed — a disabled
+      // "Owned" tile sitting in the grid forever reads as a broken purchase, not a claimed reward.
       if (this.cb.buyStarter) {
         const packs: { id: 'starter_draw' | 'starter_growth'; label: TranslationKey; icon: IconKind }[] = [
           { id: 'starter_draw', label: 'shop.starterDraw', icon: 'capsule' },
           { id: 'starter_growth', label: 'shop.starterGrowth', icon: 'gift' },
         ];
         for (const pk of packs) {
-          const used = mon.starterUsed.includes(pk.id);
+          if (mon.starterUsed.includes(pk.id)) continue;
           specs.push({
             icon: pk.icon, iconColor: C.gold, title: t(pk.label),
+            lines: [{ text: t('shop.free'), color: C.green }],
             buttons: [{
-              label: used ? t('shop.owned') : t('shop.buy'), enabled: !used && !busy, primary: true,
+              label: t('shop.buy'), enabled: !busy, primary: true,
               fn: () => void this.runDeal(() => this.cb.buyStarter!(pk.id), 'shop.bought'),
             }],
           });

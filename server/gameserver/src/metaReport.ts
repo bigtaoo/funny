@@ -55,6 +55,7 @@ export class MetaReporter {
           cmds: f.cmds.map((c) => ({ side: c.side, commands: Buffer.from(c.commands).toString('base64') })),
         })),
         meta: r.replay.meta,
+        ...(r.replay.decks ? { decks: r.replay.decks } : {}),
       },
     };
     if (!this.baseUrl) return null;

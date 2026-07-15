@@ -3938,6 +3938,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "type": "integer"
                     }
                   }
+                },
+                "decks": {
+                  "type": "object",
+                  "description": "Deck loadouts the match was built with (PVP_LOADOUT_DESIGN §6.2); omitted for matches with no loadout gating",
+                  "required": [
+                    "top",
+                    "bottom"
+                  ],
+                  "properties": {
+                    "top": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "bottom": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -4062,6 +4084,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     },
                     "winner": {
                       "type": "integer"
+                    }
+                  }
+                },
+                "decks": {
+                  "type": "object",
+                  "description": "Deck loadouts the match was built with (PVP_LOADOUT_DESIGN §6.2); omitted for matches with no loadout gating",
+                  "required": [
+                    "top",
+                    "bottom"
+                  ],
+                  "properties": {
+                    "top": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "bottom": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     }
                   }
                 }

@@ -80,7 +80,7 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       panelRoot.addChild(panel);
 
       let cy = my + 12;
-      const title = txt(`${this.itemName(inst.defId)} +${inst.level}`, 14, C.dark, true);
+      const title = txt(this.itemLabel(inst.defId, inst.level), 14, C.dark, true);
       title.x = mx + 12; title.y = cy;
       panelRoot.addChild(title);
       const rar = txt(t(`equip.rarity.${inst.rarity}` as TranslationKey), 11, color, true);
@@ -141,7 +141,7 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
           ck.x = mx + 12; ck.y = cy;
           panelRoot.addChild(ck);
         }
-        const protectLbl = txt(`${t('equip.protect')} ×${protectCount}`, 10, protectColor);
+        const protectLbl = txt(t('equip.protect').replace('{n}', String(protectCount)), 10, protectColor);
         protectLbl.x = mx + 12 + boxSz + 4; protectLbl.y = cy + 2;
         panelRoot.addChild(protectLbl);
         if (canToggle && !this.bt.busy) {

@@ -35,6 +35,8 @@ export interface ReplaySnapshotOptions {
   seed: number;
   mode: GameMode;
   configRef?: string;
+  /** Deck loadouts the match was built with (PVP_LOADOUT_DESIGN §6.2) — carried into the Replay so playback rebuilds the same restricted draw pool. */
+  decks?: { top: string[]; bottom: string[] };
   meta?: ReplayMeta;
 }
 
@@ -84,6 +86,7 @@ export class RecordingInputSource implements InputSource {
       mode: opts.mode,
       seed: opts.seed,
       ...(opts.configRef !== undefined ? { configRef: opts.configRef } : {}),
+      ...(opts.decks !== undefined ? { decks: opts.decks } : {}),
       frames: this.frames.map((f) => ({ tick: f.tick, commands: f.commands.map(cloneCommand) })),
       endFrame: this.lastFrame + 1,
       ...(opts.meta !== undefined ? { meta: opts.meta } : {}),

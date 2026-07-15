@@ -57,9 +57,10 @@ server/botsvc/          独立 npm workspace，端口 18087（仅内部管理面
   - 未在线的机器人按泊松间隔随机挑选上线（模拟真人陆续登录，不是 1000 个同时排队）。
   - 在线机器人有一个随机会话时长（例如 10–60 分钟，具体数值留实现时按压测结果调），到期正常走登出流程下线，模拟真人玩一会儿就退。
   - 调度器目标：**同时在线数在 `targetOnline` 附近波动**，不要求分毫不差。
-- **单次 tick 的纪律（2026-07-14 断线排查后加固）**：`scheduler.tick()` 由固定 `TICK_MS` 定时器无条件触发，而一次 pass 要遍历所有在线 bot 做家族/SLG 巡检——大机队下一次 pass 可能超过一个 tick 周期。因此：
+- **单次 tick 的纪律（2026-07-14 断线排查后加固）**：`scheduler.tick()` 由固定 `NW_BOT_TICK_MS` 定时器（默认 5s）无条件触发，而一次 pass 要遍历一个轮转分片的在线 bot 做家族/SLG 巡检——大机队下一次 pass 可能超过一个 tick 周期。因此：
   - **防重入门闩**（`ticking` 标志）：上一 pass 未跑完时，新到的 tick 直接跳过并告警一次，绝不叠加。否则多个 tick 循环并发会成倍放大 REST/撮合负载，正是把事件循环周期性打爆、导致对局漏掉 gameserver 心跳的元凶之一。
   - **巡检有界并发**（`NW_BOT_UPKEEP_CONCURRENCY`，默认 20）：把逐 bot 串行 `await tickFamily()/tickSlg()` 改成固定大小的 worker 池从共享游标取任务；单 bot 内 `tickFamily → tickSlg → tickBattle` 顺序不变，`tickBattle()` 仍 fire-and-forget。串行会让 pass 随机队线性膨胀，无界 `Promise.all` 又会一次性打出上千 REST——两者都要避免。
+  - **巡检轮转分片（2026-07-15 加固，削峰）**：`runUpkeep()` 不再是"每 tick 遍历全部在线 bot"，而是把在线集合按 `NW_BOT_UPKEEP_ROTATIONS`（默认 3）等分成若干片，每次 tick 只处理其中一片，按游标轮转覆盖全部。单个 bot 的巡检节奏近似不变（约每 `tickMs × upkeepRotations` 巡检一次，默认 5s×3=15s，和旧版 `TICK_MS=15s` 全量一次等价），但把原本"每 15s 一次性打出全部在线 bot 的 REST 请求"拆成"每 5s 打出 1/3"，worldsvc/socialsvc 的 CPU 尖峰更矮更密，而不是每 15s 一次陡峰——更接近真实玩家陆续行动的分布，2 vCPU 小机上也更不容易瞬时打满。
 
 ### 3.2 单个机器人的状态机
 

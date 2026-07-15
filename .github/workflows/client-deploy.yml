@@ -42,6 +42,13 @@ jobs:
         working-directory: client
         run: npm ci
 
+      # Short commit SHA as the web build's version (parallels the OTA workflow's git-tag version,
+      # so version.json / __NW_BUILD_VERSION__ actually identifies which commit is live instead of
+      # always reading the '0.0.0' fallback).
+      - name: resolve build version
+        id: ver
+        run: echo "version=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
       # Outputs client/dist; production addresses are baked to api.gamestao.com (consistent with manual deploy commands).
       - name: client build (web)
         working-directory: client
@@ -52,6 +59,7 @@ jobs:
           # Must be set explicitly: getSocialBaseUrl() otherwise derives host:8085 from NW_WORLD_BASE
           # (a dev-only direct port not exposed in prod), breaking family/sect/world social calls.
           NW_SOCIAL_BASE: https://api.gamestao.com
+          NW_BUILD_VERSION: ${{ steps.ver.outputs.version }}
         run: npm run build:web
 
       # Run from repo root using -c to specify the client config (assets point to ./client/dist, no Worker script).

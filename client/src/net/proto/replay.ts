@@ -35,7 +35,15 @@ export interface Replay {
   frames: FrameCmds[];
   /** total frame count (empty frames are not stored; this field marks the end boundary) */
   endFrame: number;
-  meta?: ReplayMeta | undefined;
+  meta?:
+    | ReplayMeta
+    | undefined;
+  /**
+   * Deck loadouts the match was built with (PVP_LOADOUT_DESIGN §6.2). Omitting this makes playback
+   * rebuild the engine against the full CARD_DEFINITIONS pool, leaking ELO-locked cards into the replay.
+   */
+  topDeck: string[];
+  bottomDeck: string[];
 }
 
 function createBaseReplayMeta(): ReplayMeta {
@@ -109,7 +117,17 @@ export const ReplayMeta: MessageFns<ReplayMeta> = {
 };
 
 function createBaseReplay(): Replay {
-  return { engineVersion: 0, mode: "", seed: 0, configRef: "", frames: [], endFrame: 0, meta: undefined };
+  return {
+    engineVersion: 0,
+    mode: "",
+    seed: 0,
+    configRef: "",
+    frames: [],
+    endFrame: 0,
+    meta: undefined,
+    topDeck: [],
+    bottomDeck: [],
+  };
 }
 
 export const Replay: MessageFns<Replay> = {
@@ -134,6 +152,12 @@ export const Replay: MessageFns<Replay> = {
     }
     if (message.meta !== undefined) {
       ReplayMeta.encode(message.meta, writer.uint32(58).fork()).join();
+    }
+    for (const v of message.topDeck) {
+      writer.uint32(66).string(v!);
+    }
+    for (const v of message.bottomDeck) {
+      writer.uint32(74).string(v!);
     }
     return writer;
   },
@@ -201,6 +225,22 @@ export const Replay: MessageFns<Replay> = {
           message.meta = ReplayMeta.decode(reader, reader.uint32());
           continue;
         }
+        case 8: {
+          if (tag !== 66) {
+            break;
+          }
+
+          message.topDeck.push(reader.string());
+          continue;
+        }
+        case 9: {
+          if (tag !== 74) {
+            break;
+          }
+
+          message.bottomDeck.push(reader.string());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -224,6 +264,8 @@ export const Replay: MessageFns<Replay> = {
     message.meta = (object.meta !== undefined && object.meta !== null)
       ? ReplayMeta.fromPartial(object.meta)
       : undefined;
+    message.topDeck = object.topDeck?.map((e) => e) || [];
+    message.bottomDeck = object.bottomDeck?.map((e) => e) || [];
     return message;
   },
 };

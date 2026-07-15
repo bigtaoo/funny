@@ -43,18 +43,18 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
         return;
       }
 
-      const lbl = txt(t('sect.noSect'), 14, C.dark);
+      const lbl = txt(t('sect.noSect'), 28, C.dark);
       lbl.anchor.set(0.5, 0.5);
-      lbl.x = w / 2; lbl.y = h / 2 - 50;
+      lbl.x = w / 2; lbl.y = h / 2 - 100;
       this.bodyLayer.addChild(lbl);
 
-      const hint = txt(t('sect.createHint'), 11, C.mid);
+      const hint = txt(t('sect.createHint'), 22, C.mid);
       hint.anchor.set(0.5, 0.5);
-      hint.x = w / 2; hint.y = h / 2 - 28;
+      hint.x = w / 2; hint.y = h / 2 - 56;
       this.bodyLayer.addChild(hint);
 
-      this.addCenterButton(t('sect.create'), w / 2 - 130, h / 2, () => { this.mode = 'create'; this.render(); }, 0);
-      this.addCenterButton(t('sect.browse'), w / 2 + 10, h / 2, () => void this.openBrowseList(), 1);
+      this.addCenterButton(t('sect.create'), w / 2 - 260, h / 2, () => { this.mode = 'create'; this.render(); }, 0);
+      this.addCenterButton(t('sect.browse'), w / 2 + 20, h / 2, () => void this.openBrowseList(), 1);
     }
 
     renderCreate(): void {
@@ -286,13 +286,13 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
     }
 
     addCenterButton(label: string, x: number, y: number, action: () => void, seed: number): void {
-      const btn = sketchPanel(120, 36, { fill: C.dark, border: C.accent, seed: seedFor(seed, 0, 120) });
+      const btn = sketchPanel(240, 72, { fill: C.dark, border: C.accent, seed: seedFor(seed, 0, 240) });
       btn.x = x; btn.y = y;
       this.bodyLayer.addChild(btn);
-      const lbl = txt(label, 13, C.light);
-      lbl.anchor.set(0.5, 0.5); lbl.x = x + 60; lbl.y = y + 18;
+      const lbl = txt(label, 26, C.light);
+      lbl.anchor.set(0.5, 0.5); lbl.x = x + 120; lbl.y = y + 36;
       this.bodyLayer.addChild(lbl);
-      this.hitRects.push({ rect: { x, y, w: 120, h: 36 }, action });
+      this.hitRects.push({ rect: { x, y, w: 240, h: 72 }, action });
     }
 
     addBarButton(label: string, x: number, y: number, color: number, action: () => void, seed: number): void {

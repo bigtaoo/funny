@@ -85,6 +85,7 @@ export class ReplayScene implements Scene {
           players: [{ id: 0 }, { id: 1 }],
           mode: replay.mode,
           ...(level ? { level } : {}),
+          ...(replay.decks ? { decks: replay.decks } : {}),
         },
         src,
       );

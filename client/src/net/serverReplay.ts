@@ -59,5 +59,6 @@ export function serverReplayToReplay(sr: ServerReplay): Replay {
     seed: Number(sr.seed),
     frames,
     endFrame: sr.endFrame,
+    ...(sr.decks ? { decks: sr.decks } : {}),
   };
 }

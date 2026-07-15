@@ -34,6 +34,15 @@ export interface BotsvcEnv {
   battleChancePerTick: number;
   /** Max concurrent per-session upkeep chains per scheduler tick (BOTSVC_DESIGN §3.1); bounds REST fan-out and event-loop bursts. */
   upkeepConcurrency: number;
+  /** Scheduler tick interval (ms): how often the process wakes to spawn/despawn + run one upkeep rotation slice. */
+  tickMs: number;
+  /**
+   * Number of ticks it takes to cycle every online session through one family+SLG upkeep pass. Each
+   * bot is still touched roughly once per (tickMs * upkeepRotations) — same per-bot cadence as before —
+   * but a shorter tickMs with a matching rotation count splits that work into smaller, more frequent
+   * slices instead of one big burst, spreading CPU more evenly (closer to how real players trickle in).
+   */
+  upkeepRotations: number;
   /** deviceId numbering offset (bot-{i+offset}); lets an externally-run fleet avoid colliding with an in-cluster fleet's bot-0001.. accounts. */
   deviceOffset: number;
   /** Max sessions logged in/out per scheduler tick (Scheduler batchSize); raise it to ramp a load-gen fleet up faster. */
@@ -63,6 +72,8 @@ export function loadBotsvcEnv(): BotsvcEnv {
     internalKey: process.env.NW_INTERNAL_KEY || 'dev-insecure-internal-key-change-me',
     battleChancePerTick: Number(process.env.NW_BOT_BATTLE_CHANCE ?? 0.025),
     upkeepConcurrency: num('NW_BOT_UPKEEP_CONCURRENCY', 20),
+    tickMs: num('NW_BOT_TICK_MS', 5_000),
+    upkeepRotations: num('NW_BOT_UPKEEP_ROTATIONS', 3),
     deviceOffset: num('NW_BOT_DEVICE_OFFSET', 0),
     spawnBatch: num('NW_BOT_SPAWN_BATCH', 10),
   };

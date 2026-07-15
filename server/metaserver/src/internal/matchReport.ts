@@ -60,6 +60,7 @@ interface ReportBody {
     endFrame: number;
     frames: { frame: number; cmds: { side: number; commands: string }[] }[];
     meta: { recordedAt: number; winner: number };
+    decks?: { top: string[]; bottom: string[] };
   };
 }
 
@@ -159,6 +160,7 @@ export function registerMatchReportRoutes(app: FastifyInstance, ctx: InternalCtx
       endFrame: body.replay.endFrame,
       frames: body.replay.frames, // cmds[].commands are base64 opaque (not decoded — M12)
       meta: body.replay.meta,
+      ...(body.replay.decks ? { decks: body.replay.decks } : {}),
     };
     const replayBytes = JSON.stringify(replayDoc.frames).length;
     const inline = replayBytes <= REPLAY_INLINE_MAX_BYTES;
@@ -249,6 +251,7 @@ async function judgeMismatch(
     endFrame: body.replay.endFrame,
     frames: body.replay.frames, // command bytes are already base64; passed through as-is
     exclude: body.players.map((p) => p.accountId),
+    ...(body.replay.decks ? { decks: body.replay.decks } : {}),
   });
   if (!verdict.ok || !verdict.stateHash) return null;
 

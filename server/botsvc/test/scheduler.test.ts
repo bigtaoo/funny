@@ -14,6 +14,7 @@ const OPTS: SchedulerOptions = {
   shedFullAt: 2800,
   batchSize: 10,
   upkeepConcurrency: 3,
+  upkeepRotations: 1,
 };
 
 function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
@@ -157,5 +158,29 @@ describe('Scheduler bounded-concurrency upkeep', () => {
       expect(order.indexOf(`f${i}`)).toBeLessThan(order.indexOf(`s${i}`));
       expect(order.indexOf(`s${i}`)).toBeLessThan(order.indexOf(`b${i}`));
     }
+  });
+});
+
+describe('Scheduler upkeep rotation', () => {
+  it('spreads upkeep across upkeepRotations ticks instead of touching everyone every tick', async () => {
+    const pool = Array.from({ length: 9 }, (_, i) => fakeSession(i));
+    const scheduler = new Scheduler(
+      pool.map((f) => f.session),
+      fakeCapacity(async () => 10),
+      { ...OPTS, upkeepRotations: 3 },
+    );
+
+    await scheduler.tick(); // slice 1: sessions 0-2
+    await scheduler.tick(); // slice 2: sessions 3-5
+    await scheduler.tick(); // slice 3: sessions 6-8
+    for (const f of pool) {
+      expect(f.familyCalls).toBe(1);
+      expect(f.slgCalls).toBe(1);
+      expect(f.battleCalls).toBe(1);
+    }
+
+    await scheduler.tick(); // wraps back to slice 1
+    expect(pool[0]!.familyCalls).toBe(2);
+    expect(pool[8]!.familyCalls).toBe(1); // untouched this round
   });
 });

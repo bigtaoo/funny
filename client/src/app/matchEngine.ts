@@ -99,6 +99,7 @@ export function createLocalMatch(opts: LocalMatchOpts = {}): LocalMatch {
       seed,
       mode,
       ...(recordLevelId ? { configRef: recordLevelId } : {}),
+      ...(opts.decks ? { decks: opts.decks } : {}),
       meta: {
         recordedAt: Date.now(),
         winner: winner ?? -1,

@@ -26,6 +26,8 @@ interface JudgeReqBody {
   unitLevels?: Record<string, number>;
   /** SLG siege defense config JSON string (S8-3b, sent by worldsvc). */
   defenseJson?: string;
+  /** Ranked PvP deck restriction (PVP_LOADOUT §6.2). */
+  decks?: { top: string[]; bottom: string[] };
 }
 
 /** Decode base64 frames → gateway-internal FrameCmdsOut (commands decoded back to Uint8Array). */
@@ -122,6 +124,7 @@ export function startInternalHttp(
             ...(b.pveUpgrades ? { pveUpgrades: b.pveUpgrades } : {}),
             ...(b.unitLevels ? { unitLevels: b.unitLevels } : {}),
             ...(b.defenseJson ? { defenseJson: b.defenseJson } : {}),
+            ...(b.decks ? { decks: b.decks } : {}),
           };
           // Returns JudgeResult directly (ok = whether the verdict succeeded; meta uses it to convict or void the match).
           const result = await gateway.judge(args);

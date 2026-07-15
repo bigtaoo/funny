@@ -1,17 +1,16 @@
 /**
- * familySendButton.test.ts — regression test for the FamilyScene "Send" button being a
- * silent no-op, fixed 2026-07-13.
+ * familySendButton.test.ts — regression tests for the FamilyScene "Send" button.
  *
- * Background: after the FamilyScene mixin split, render.ts kept binding the visible
- * Send button's hit rect to doSendMsg() (actions.ts), but doSendMsg() had been left
- * as an empty stub — only pressing Enter inside the hidden channel-input overlay
- * (input.ts's openSendInput()) actually called worldApi.sendFamilyMessage(). Clicking
- * the Send button itself did nothing, so players who typed a message and clicked
- * Send (instead of pressing Enter) could never speak in the family channel.
- *
- * Fix: extracted the send call into submitMessage(body), shared by both the Enter-key
- * handler and doSendMsg(), which now reads the open input's value (or opens one if
- * none is open) instead of doing nothing.
+ * History:
+ * - 2026-07-13: doSendMsg() was left as an empty stub after the mixin split — clicking Send did
+ *   nothing at all. Fixed by extracting submitMessage(body), shared with the Enter-key handler.
+ * - 2026-07-15: doSendMsg() read the body from `this.sendInput.value`. Clicking Send blurs the
+ *   focused hidden <input> first — its own 'blur' handler (input.ts) nulls `this.sendInput`
+ *   *before* the click's hit-test handler runs — so doSendMsg() saw `sendInput === null` even
+ *   though the user had typed a message, and silently reopened an empty input instead of
+ *   sending ("点Send没有任何反应"). Fixed by sourcing the body from `this.sendText` instead —
+ *   it mirrors the input's value on every keystroke (see input.ts's 'input' listener) and stays
+ *   correct regardless of the hidden input's DOM focus state.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { ActionsMixin } from '../src/scenes/FamilyScene/actions';
@@ -52,40 +51,43 @@ interface TestScene {
 const FamilyWithActions = ActionsMixin(FakeFamilySceneBase as unknown as FamilySceneBaseCtor);
 
 describe('FamilyScene Send button — doSendMsg()', () => {
-  it('sends the open input\'s value and clears it (the fixed behavior)', async () => {
+  it('sends the mirrored draft (sendText) and clears it', async () => {
     const scene = new FamilyWithActions() as unknown as TestScene;
     const removeSpy = vi.fn();
     scene.sendInput = { value: '  hello family  ', remove: removeSpy };
+    scene.sendText = '  hello family  ';
 
     await scene.doSendMsg();
 
-    // Regression: the old doSendMsg() was `async doSendMsg() {}` — this would fail
-    // against that code since sendFamilyMessage was never called.
     expect(scene.cb.worldApi.sendFamilyMessage).toHaveBeenCalledTimes(1);
     expect(scene.cb.worldApi.sendFamilyMessage).toHaveBeenCalledWith('fam1', 'hello family', 'Tester');
     expect(removeSpy).toHaveBeenCalledTimes(1);
     expect(scene.sendInput).toBeNull();
+    expect(scene.sendText).toBe('');
     expect(scene.loadChannel).toHaveBeenCalledTimes(1);
     expect(scene.render).toHaveBeenCalledTimes(1);
   });
 
-  it('clears the mirrored draft text (sendText) after sending, so the field resets', async () => {
-    // sendText mirrors the hidden input so the on-canvas field can show the typed draft (the
-    // "can't type into chat" fix). After a successful send it must reset, or the next time the
-    // field opens it would still show the just-sent message.
+  it('regression: sends via sendText even when sendInput was already nulled by blur', async () => {
+    // Reproduces the exact state doSendMsg() sees when a real click blurs the hidden input
+    // (input.ts's blur handler runs first and sets sendInput = null) before the Send button's
+    // own click handler fires — sendInput is gone, but sendText still holds the typed draft.
     const scene = new FamilyWithActions() as unknown as TestScene;
-    scene.sendInput = { value: 'good game', remove: vi.fn() };
-    scene.sendText = 'good game';
+    scene.sendInput = null;
+    scene.sendText = '顶顶顶顶';
 
     await scene.doSendMsg();
 
-    expect(scene.cb.worldApi.sendFamilyMessage).toHaveBeenCalledWith('fam1', 'good game', 'Tester');
+    expect(scene.cb.worldApi.sendFamilyMessage).toHaveBeenCalledTimes(1);
+    expect(scene.cb.worldApi.sendFamilyMessage).toHaveBeenCalledWith('fam1', '顶顶顶顶', 'Tester');
+    expect(scene.openSendInput).not.toHaveBeenCalled();
     expect(scene.sendText).toBe('');
   });
 
-  it('opens the send input instead of doing nothing when none is open yet', async () => {
+  it('opens the send input instead of doing nothing when there is no draft yet', async () => {
     const scene = new FamilyWithActions() as unknown as TestScene;
     scene.sendInput = null;
+    scene.sendText = '';
 
     await scene.doSendMsg();
 
@@ -93,9 +95,10 @@ describe('FamilyScene Send button — doSendMsg()', () => {
     expect(scene.cb.worldApi.sendFamilyMessage).not.toHaveBeenCalled();
   });
 
-  it('does not call the API for a blank/whitespace-only message', async () => {
+  it('does not call the API for a blank/whitespace-only draft', async () => {
     const scene = new FamilyWithActions() as unknown as TestScene;
     scene.sendInput = { value: '   ', remove: vi.fn() };
+    scene.sendText = '   ';
 
     await scene.doSendMsg();
 
@@ -106,6 +109,7 @@ describe('FamilyScene Send button — doSendMsg()', () => {
     const scene = new FamilyWithActions() as unknown as TestScene;
     scene.cb.worldApi.sendFamilyMessage.mockRejectedValueOnce(new Error('network down'));
     scene.sendInput = { value: 'hi', remove: vi.fn() };
+    scene.sendText = 'hi';
 
     await scene.doSendMsg();
 

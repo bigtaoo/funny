@@ -222,7 +222,7 @@ export class EquipmentSceneBase {
 
     // Static header (back + title); the back hit is (re)registered in render().
     const hdr = drawSceneHeader(this.container, w, h, t('equip.title'), {
-      variant: 'paper', accent: HEADER_ACCENT.spend, titleAlign: 'left',
+      variant: 'paper', accent: HEADER_ACCENT.spend,
     });
     this.backRect = hdr.backRect;
     this.headerH = hdr.headerH;
@@ -441,6 +441,11 @@ export class EquipmentSceneBase {
     const key = `equip.${defId}.name` as TranslationKey;
     const s = t(key);
     return s === key ? defId : s;
+  }
+
+  /** Item name + enhance level, e.g. "Marker +3" — omits the "+0" suffix (the vast majority of items sit at level 0, and printing it everywhere is pure noise). */
+  protected itemLabel(defId: string, level: number): string {
+    return level > 0 ? `${this.itemName(defId)} +${level}` : this.itemName(defId);
   }
 
   /** Affix description: i18n `affix.<id>` template with {v}; main affixes are scaled up by level. */

@@ -70,6 +70,8 @@ export type ServerMsg =
       levelId: string;
       pveUpgrades: Record<string, number>;
       unitLevels: Record<string, number>;
+      topDeck: string[];
+      bottomDeck: string[];
     }
   | { case: 'friend_presence'; publicId: string; online: boolean }
   | { case: 'friend_request'; requestId: string; fromPublicId: string; fromName: string; message: string }
@@ -187,6 +189,8 @@ export function encodeServer(msg: ServerMsg): Uint8Array {
           pveUpgrades: msg.pveUpgrades,
           unitLevels: msg.unitLevels,
           defenseJson: '',
+          topDeck: msg.topDeck,
+          bottomDeck: msg.bottomDeck,
         },
       };
       break;
