@@ -371,9 +371,9 @@ export class WorldMapPanels {
     const tl = this.ctx.toastLayer;
     tl.removeChildren();
     const { w, h } = this.ctx;
-    const lbl = txt(msg, 13, color);
+    const lbl = txt(msg, 26, color);
     lbl.anchor.set(0.5, 0);
-    lbl.x = w / 2; lbl.y = h - HUD_H - 50;
+    lbl.x = w / 2; lbl.y = h / 3;
     tl.addChild(lbl);
     this.ctx.toastTimer = 2500;
   }
