@@ -6,13 +6,14 @@ import { t } from '../../i18n';
 import type { AuctionView } from '../../net/WorldApiClient';
 import { buildIcon, type IconKind } from '../../render/icons';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
-import { FILTER_H, ROW_H, FILTERS, type AucFilter, type AucTab } from './base';
+import { FILTER_H, AUC_CELL_GAP, AUC_CELL_H, AUC_CELL_W_TARGET, FILTERS, type AucFilter, type AucTab } from './base';
 import { type Constructor, type AuctionSceneBaseCtor } from './base';
 
 export interface ListHandlers {
   renderSidebar(): number;
   renderFilterBar(contentX: number): number;
   renderList(auctions: AuctionView[], contentX: number, filterH?: number): void;
+  renderAuctionCell(auc: AuctionView, x: number, y: number, cellW: number, now: number): void;
   renderCreateButton(contentX: number): void;
   myBids(): AuctionView[];
 }
@@ -83,7 +84,7 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
     renderList(auctions: AuctionView[], contentX: number, filterH = 0): void {
       const { w, h } = this;
       const listY = this.headerH + filterH;
-      const createBtnH = 52;
+      const createBtnH = 100; // reserves room for the 2x "+ List Item" button below
       const listH = h - listY - createBtnH - 10;
       const contentW = w - contentX;
       const emptyKeys: Record<AucTab, 'auction.empty' | 'auction.myEmpty' | 'auction.bidsEmpty'> = {
@@ -104,115 +105,151 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
         return;
       }
 
-      const totalH = auctions.length * ROW_H;
+      // Card grid (mirrors CardScene's roster grid): as many columns as fit AUC_CELL_W_TARGET, wrapping rows.
+      const left = contentX + AUC_CELL_GAP;
+      const avail = contentW - AUC_CELL_GAP * 2;
+      const cols = Math.max(1, Math.floor((avail + AUC_CELL_GAP) / (AUC_CELL_W_TARGET + AUC_CELL_GAP)));
+      const cellW = (avail - AUC_CELL_GAP * (cols - 1)) / cols;
+      const rows = Math.ceil(auctions.length / cols);
+      const totalH = rows * (AUC_CELL_H + AUC_CELL_GAP) + AUC_CELL_GAP;
       this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
 
       const now = Date.now();
-      let cy = listY - this.scrollY;
-      for (const auc of auctions) {
-        if (cy + ROW_H < listY || cy > listY + listH) { cy += ROW_H; continue; }
-
-        const row = sketchPanel(contentW - 12, ROW_H - 4, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(cy, 0, contentW) });
-        row.x = contentX + 6; row.y = cy;
-        this.bodyLayer.addChild(row);
-
-        const isAuction = auc.saleMode === 'auction';
-
-        // Item-class glyph (equipment/card/material) at the row's left edge.
-        const clsIcon = buildIcon(this.itemKind(auc.itemType, auc.item?.['material'] as string | undefined), 30, C.dark);
-        clsIcon.x = contentX + 14; clsIcon.y = cy + 10;
-        this.bodyLayer.addChild(clsIcon);
-
-        const itemLbl = txt(this.auctionLabel(auc), 17, C.dark);
-        itemLbl.x = contentX + 52; itemLbl.y = cy + 8;
-        this.bodyLayer.addChild(itemLbl);
-
-        // Sale-mode glyph after the label (tag = buy-now, gavel = auction).
-        const modeIcon = buildIcon(this.saleModeKind(isAuction ? 'auction' : 'fixed'), 20, isAuction ? C.red : C.mid);
-        modeIcon.x = itemLbl.x + itemLbl.width + 8; modeIcon.y = cy + 7;
-        this.bodyLayer.addChild(modeIcon);
-
-        // Fixed-price: show the unit sale price; auction: show the current bid (or the starting price when no bids).
-        const priceText = isAuction
-          ? `${t(auc.topBid ? 'auction.currentBid' : 'auction.startPrice')}: ${auc.price}`
-          : `${t('auction.price')}: ${auc.price}`;
-        const priceLbl = txt(priceText, 15, C.accent);
-        priceLbl.x = contentX + 52; priceLbl.y = cy + 32;
-        this.bodyLayer.addChild(priceLbl);
-
-        if (isAuction && auc.buyoutPrice) {
-          const boLbl = txt(t('auction.buyoutAt').replace('{price}', String(auc.buyoutPrice)), 13, C.mid);
-          boLbl.x = contentX + 52; boLbl.y = cy + 54;
-          this.bodyLayer.addChild(boLbl);
+      auctions.forEach((auc, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const x = left + col * (cellW + AUC_CELL_GAP);
+        const y = listY + AUC_CELL_GAP + row * (AUC_CELL_H + AUC_CELL_GAP) - this.scrollY;
+        if (y + AUC_CELL_H >= listY && y <= listY + listH) {
+          this.renderAuctionCell(auc, x, y, cellW, now);
         }
+      });
 
-        // Countdown only makes sense for a live listing — closed history rows (sold/expired/cancelled) would
-        // otherwise all read "0m". Those show a status badge instead (My-Listings branch below).
-        if (auc.status === 'open') {
-          const remaining = Math.max(0, Math.ceil((auc.expireAt - now) / 60000));
-          const expLbl = txt(`${remaining}m`, 14, C.mid);
-          expLbl.x = contentX + contentW - 88; expLbl.y = cy + 8;
-          this.bodyLayer.addChild(expLbl);
-        }
+      drawScrollIndicator(this.bodyLayer, { x: left, y: listY, w: avail, h: listH }, this.scrollY, Math.max(0, totalH - listH));
+    }
 
-        if (this.activeTab === 'all') {
-          const aucId = auc.auctionId;
-          const btn = sketchPanel(68, 32, { fill: C.dark, border: C.accent, seed: seedFor(cy, 0, 68) });
-          btn.x = contentX + contentW - 80; btn.y = cy + 18;
-          this.bodyLayer.addChild(btn);
-          const bl = txt(isAuction ? t('auction.bid') : t('auction.buy'), 15, C.light);
-          bl.anchor.set(0.5, 0.5); bl.x = contentX + contentW - 46; bl.y = cy + 34;
-          this.bodyLayer.addChild(bl);
-          this.hitRects.push({
-            rect: { x: contentX + contentW - 80, y: cy + 18, w: 68, h: 32 },
-            action: isAuction ? () => this.openBidForm(auc) : () => this.confirmBuy(aucId, auc.price),
-          });
-        } else if (this.activeTab === 'mine') {
-          if (auc.status === 'open') {
-            // Live listing → cancel action.
-            const cancelBtn = sketchPanel(68, 32, { fill: 0xf0e0e0, border: C.red, seed: seedFor(cy, 1, 68) });
-            cancelBtn.x = contentX + contentW - 80; cancelBtn.y = cy + 18;
-            this.bodyLayer.addChild(cancelBtn);
-            const cl = txt(t('auction.cancel'), 15, C.red);
-            cl.anchor.set(0.5, 0.5); cl.x = contentX + contentW - 46; cl.y = cy + 34;
-            this.bodyLayer.addChild(cl);
-            const aucId = auc.auctionId;
-            this.hitRects.push({ rect: { x: contentX + contentW - 80, y: cy + 18, w: 68, h: 32 }, action: () => this.confirmCancel(aucId) });
-          } else {
-            // Closed history row → status badge (sold = accent, expired/cancelled = muted), no action.
-            const statusKey = auc.status === 'sold'
-              ? 'auction.statusSold'
-              : auc.status === 'cancelled'
-                ? 'auction.statusCancelled'
-                : 'auction.statusExpired';
-            const badge = txt(t(statusKey), 14, auc.status === 'sold' ? C.accent : C.mid, true);
-            badge.anchor.set(1, 0.5); badge.x = contentX + contentW - 20; badge.y = cy + 34;
-            this.bodyLayer.addChild(badge);
-          }
-        } else {
-          // My Bids: informational only (leading bidder, not the owner) — no action button, just a status badge.
-          const badge = txt(t('auction.leading'), 14, C.accent, true);
-          badge.anchor.set(1, 0.5); badge.x = contentX + contentW - 20; badge.y = cy + 34;
-          this.bodyLayer.addChild(badge);
-        }
+    /**
+     * Auction card cell: a framed item-class glyph on the left (CardScene roster-card treatment),
+     * with name/price/status stacked to its right and the row action pinned bottom-right.
+     */
+    renderAuctionCell(auc: AuctionView, x: number, y: number, cellW: number, now: number): void {
+      const pad = 14;
+      const isAuction = auc.saleMode === 'auction';
 
-        cy += ROW_H;
+      const cell = sketchPanel(cellW, AUC_CELL_H, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(x, y, cellW) });
+      cell.x = x; cell.y = y;
+      this.bodyLayer.addChild(cell);
+
+      // ── Left: framed item-class glyph (square, spans the cell's inner height) ──
+      const imgSize = AUC_CELL_H - pad * 2;
+      const imgX = x + pad; const imgY = y + pad;
+      const frame = sketchPanel(imgSize, imgSize, { fill: 0xf0eee7, border: C.mid, seed: seedFor(x, y, imgSize) });
+      frame.x = imgX; frame.y = imgY;
+      this.bodyLayer.addChild(frame);
+      const iconSize = Math.round(imgSize * 0.55);
+      const clsIcon = buildIcon(this.itemKind(auc.itemType, auc.item?.['material'] as string | undefined), iconSize, C.dark);
+      clsIcon.x = imgX + (imgSize - iconSize) / 2; clsIcon.y = imgY + (imgSize - iconSize) / 2;
+      this.bodyLayer.addChild(clsIcon);
+
+      // Sale-mode glyph badge, top-right corner of the frame (tag = buy-now, gavel = auction).
+      const modeIcon = buildIcon(this.saleModeKind(isAuction ? 'auction' : 'fixed'), 22, isAuction ? C.red : C.mid);
+      modeIcon.x = imgX + imgSize - 22; modeIcon.y = imgY;
+      this.bodyLayer.addChild(modeIcon);
+
+      // ── Right: info column (name, price, buyout, countdown) ──
+      const ax = imgX + imgSize + 16;
+      const rightW = x + cellW - pad - ax;
+
+      const itemLbl = txt(this.auctionLabel(auc), 19, C.dark, true);
+      itemLbl.x = ax; itemLbl.y = y + pad;
+      itemLbl.style.wordWrap = true; itemLbl.style.wordWrapWidth = Math.max(20, rightW);
+      this.bodyLayer.addChild(itemLbl);
+
+      let ay = y + pad + Math.max(28, itemLbl.height + 8);
+
+      // Fixed-price: show the unit sale price; auction: show the current bid (or the starting price when no bids).
+      const priceText = isAuction
+        ? `${t(auc.topBid ? 'auction.currentBid' : 'auction.startPrice')}: ${auc.price}`
+        : `${t('auction.price')}: ${auc.price}`;
+      const priceLbl = txt(priceText, 17, C.accent, true);
+      priceLbl.x = ax; priceLbl.y = ay;
+      this.bodyLayer.addChild(priceLbl);
+      ay += 26;
+
+      if (isAuction && auc.buyoutPrice) {
+        const boLbl = txt(t('auction.buyoutAt').replace('{price}', String(auc.buyoutPrice)), 14, C.mid);
+        boLbl.x = ax; boLbl.y = ay;
+        this.bodyLayer.addChild(boLbl);
       }
 
-      drawScrollIndicator(this.bodyLayer, { x: contentX, y: listY, w: contentW, h: listH }, this.scrollY, Math.max(0, totalH - listH));
+      // Countdown only makes sense for a live listing — closed history cells (sold/expired/cancelled) would
+      // otherwise all read "0m". Those show a status badge instead (My-Listings branch below).
+      if (auc.status === 'open') {
+        const remaining = Math.max(0, Math.ceil((auc.expireAt - now) / 60000));
+        const expLbl = txt(`${remaining}m`, 14, C.mid);
+        expLbl.x = ax; expLbl.y = y + AUC_CELL_H - pad - 18;
+        this.bodyLayer.addChild(expLbl);
+      }
+
+      // ── Bottom-right: action button / status badge ──
+      const btnW = 96; const btnH = 40;
+      const btnX = x + cellW - pad - btnW; const btnY = y + AUC_CELL_H - pad - btnH;
+
+      if (this.activeTab === 'all') {
+        const aucId = auc.auctionId;
+        const btn = sketchPanel(btnW, btnH, { fill: C.dark, border: C.accent, seed: seedFor(y, 0, btnW) });
+        btn.x = btnX; btn.y = btnY;
+        this.bodyLayer.addChild(btn);
+        const bl = txt(isAuction ? t('auction.bid') : t('auction.buy'), 16, C.light);
+        bl.anchor.set(0.5, 0.5); bl.x = btnX + btnW / 2; bl.y = btnY + btnH / 2;
+        this.bodyLayer.addChild(bl);
+        this.hitRects.push({
+          rect: { x: btnX, y: btnY, w: btnW, h: btnH },
+          action: isAuction ? () => this.openBidForm(auc) : () => this.confirmBuy(aucId, auc.price),
+        });
+      } else if (this.activeTab === 'mine') {
+        if (auc.status === 'open') {
+          // Live listing → cancel action.
+          const cancelBtn = sketchPanel(btnW, btnH, { fill: 0xf0e0e0, border: C.red, seed: seedFor(y, 1, btnW) });
+          cancelBtn.x = btnX; cancelBtn.y = btnY;
+          this.bodyLayer.addChild(cancelBtn);
+          const cl = txt(t('auction.cancel'), 16, C.red);
+          cl.anchor.set(0.5, 0.5); cl.x = btnX + btnW / 2; cl.y = btnY + btnH / 2;
+          this.bodyLayer.addChild(cl);
+          const aucId = auc.auctionId;
+          this.hitRects.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, action: () => this.confirmCancel(aucId) });
+        } else {
+          // Closed history cell → status badge (sold = accent, expired/cancelled = muted), no action.
+          const statusKey = auc.status === 'sold'
+            ? 'auction.statusSold'
+            : auc.status === 'cancelled'
+              ? 'auction.statusCancelled'
+              : 'auction.statusExpired';
+          const badge = txt(t(statusKey), 15, auc.status === 'sold' ? C.accent : C.mid, true);
+          badge.anchor.set(1, 0.5); badge.x = x + cellW - pad; badge.y = btnY + btnH / 2;
+          this.bodyLayer.addChild(badge);
+        }
+      } else {
+        // My Bids: informational only (leading bidder, not the owner) — no action button, just a status badge.
+        const badge = txt(t('auction.leading'), 15, C.accent, true);
+        badge.anchor.set(1, 0.5); badge.x = x + cellW - pad; badge.y = btnY + btnH / 2;
+        this.bodyLayer.addChild(badge);
+      }
     }
 
     renderCreateButton(contentX: number): void {
       const { w, h } = this;
       const contentW = w - contentX;
-      const btnY = h - 56;
-      const btn = sketchPanel(200, 44, { fill: C.dark, border: C.accent, seed: seedFor(0, 0, 200) });
-      btn.x = contentX + contentW / 2 - 100; btn.y = btnY;
+      // 2x the previous 200x44 button.
+      const btnW = 400; const btnH = 88;
+      const btnY = h - btnH - 12;
+      const btn = sketchPanel(btnW, btnH, { fill: C.dark, border: C.accent, seed: seedFor(0, 0, btnW) });
+      btn.x = contentX + contentW / 2 - btnW / 2; btn.y = btnY;
       this.bodyLayer.addChild(btn);
-      const bl = txt(`+ ${t('auction.create')}`, 16, C.light);
-      bl.anchor.set(0.5, 0.5); bl.x = contentX + contentW / 2; bl.y = btnY + 22;
+      const bl = txt(`+ ${t('auction.create')}`, 32, C.light);
+      bl.anchor.set(0.5, 0.5); bl.x = contentX + contentW / 2; bl.y = btnY + btnH / 2;
       this.bodyLayer.addChild(bl);
-      this.hitRects.push({ rect: { x: contentX + contentW / 2 - 100, y: btnY, w: 200, h: 44 }, action: () => this.openCreateForm() });
+      this.hitRects.push({ rect: { x: contentX + contentW / 2 - btnW / 2, y: btnY, w: btnW, h: btnH }, action: () => this.openCreateForm() });
     }
   };
 }

@@ -47,9 +47,14 @@ export interface AuctionSceneCallbacks {
 export type AucTab = 'all' | 'mine' | 'bids';
 export type ItemClass = 'material' | 'equipment' | 'card';
 
-export const ROW_H = 76;
 export const HUD_H = 50;
 export const FILTER_H = 44;
+
+// Auction market grid: card cells (mirrors CardScene's roster-card treatment — a framed item glyph
+// on the left, info stacked to the right) instead of thin list rows.
+export const AUC_CELL_GAP = 14;
+export const AUC_CELL_H = 190;
+export const AUC_CELL_W_TARGET = 340;
 
 // Material types available for auction
 export const MATERIALS = ['scrap', 'lead', 'binding'] as const;
@@ -493,6 +498,7 @@ export interface AuctionSceneBase {
   renderSidebar(): number;
   renderFilterBar(contentX: number): number;
   renderList(auctions: AuctionView[], contentX: number, filterH?: number): void;
+  renderAuctionCell(auc: AuctionView, x: number, y: number, cellW: number, now: number): void;
   renderCreateButton(contentX: number): void;
   myBids(): AuctionView[];
   // picker.ts
