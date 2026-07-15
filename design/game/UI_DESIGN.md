@@ -283,6 +283,8 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 - 关卡目标摘要、关前 loadout（若关卡限定卡池）、PvE 养成等级预览、`[开打]`。
 - 进 `GameScene`（campaign 模式）。
 
+**内容区排版 + 字号（2026-07-15）**：三个面板自上而下依次为 **Objective**（2× 字号，label+desc 改为上下堆叠 + `wordWrap`，避免长文案如 `leak_limit` 溢出面板）→ **Rewards**（1.5× 字号）→ 故事简介 `brief`（1.5× 字号，原有 wordWrap 不变）。三者仍是单向 flow-down、无滚动，下方 stamina 条位置固定不随内容高度变化——已核对现有关卡数据，`leak_limit`（多行 objective）与长 `brief`（最长 700 字）不会同时出现在同一关，暂不需要滚动兜底。
+
 ### 4.10 StatsScene（生涯/战绩）
 
 **朝向自适应布局（2026-06-28）**：用 `layout.orientation` 分支。
