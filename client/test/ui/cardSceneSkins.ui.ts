@@ -94,11 +94,13 @@ describe('CardScene — Skins tab card grid layout', () => {
     return new CardScene(layout, input, cb);
   }
 
-  it('packs characters into 2 columns, alternating column per character in CARD_DEFS order', () => {
+  it('packs characters into 3 columns, row-major in CARD_DEFS order', () => {
     const scene = buildSkinsScene(new InputManager());
     // CARD_DEFS order: lichuang, chenshou, suyuan, max, lena, mara (client/src/game/meta/cardDefs.ts).
-    // Masonry ties resolve to the lowest column index first, so with all-equal card heights this
-    // alternates col0/col1/col0/col1/col0/col1 — matching the reviewed screenshot's 2x3 layout.
+    // At the 1920x1080 landscape design width, the content-natural cellW cap (2026-07-15 "kill blank
+    // width" follow-up, CARD_W_TARGET=440) fits 3 cards per row instead of 2 — masonry ties resolve to
+    // the lowest column index first, so with all-equal card heights this fills col0/col1/col2 row-major:
+    // row 0 = lichuang/chenshou/suyuan, row 1 = max/lena/mara.
     const lichuang = findLabelPos(scene.container, 'skin_shop_c1')!;
     const chenshou = findLabelPos(scene.container, 'skin_shop_e1')!;
     const suyuan = findLabelPos(scene.container, 'skin_shop_r1')!;
@@ -107,18 +109,16 @@ describe('CardScene — Skins tab card grid layout', () => {
     const mara = findLabelPos(scene.container, 'skin_e2')!;
     for (const p of [lichuang, chenshou, suyuan, max, lena, mara]) expect(p).not.toBeNull();
 
-    // Column 0: lichuang/suyuan/lena share an x; column 1: chenshou/max/mara share a different x.
-    expect(lichuang.x).toBe(suyuan.x);
-    expect(suyuan.x).toBe(lena.x);
-    expect(chenshou.x).toBe(max.x);
-    expect(max.x).toBe(mara.x);
-    expect(lichuang.x).not.toBe(chenshou.x);
+    // Column 0: lichuang/max; column 1: chenshou/lena; column 2: suyuan/mara — three distinct x's.
+    expect(lichuang.x).toBe(max.x);
+    expect(chenshou.x).toBe(lena.x);
+    expect(suyuan.x).toBe(mara.x);
+    expect(new Set([lichuang.x, chenshou.x, suyuan.x]).size).toBe(3);
 
     // Row order within each column follows CARD_DEFS order (top to bottom).
-    expect(lichuang.y).toBeLessThan(suyuan.y);
-    expect(suyuan.y).toBeLessThan(lena.y);
-    expect(chenshou.y).toBeLessThan(max.y);
-    expect(max.y).toBeLessThan(mara.y);
+    expect(lichuang.y).toBeLessThan(max.y);
+    expect(chenshou.y).toBeLessThan(lena.y);
+    expect(suyuan.y).toBeLessThan(mara.y);
     scene.destroy();
   });
 
@@ -127,8 +127,8 @@ describe('CardScene — Skins tab card grid layout', () => {
     // createLayout() floors landscape designWidth/Height at a large reference size (1920x1080),
     // so no real screen size can be made short enough to overflow this fixed 6-character catalogue.
     // A plain ILayout object (same pattern as familySceneSplitView.ui.ts) sidesteps that floor to
-    // exercise the actual overflow/scroll path: at designHeight=400 the 3-row-deep (2-col) masonry
-    // grid (~562px tall) doesn't fit the ~344px content area.
+    // exercise the actual overflow/scroll path: at designHeight=400 the 2-row-deep (3-col) masonry
+    // grid doesn't fit the ~344px content area.
     const layout = { designWidth: 1920, designHeight: 400, orientation: 'landscape' } as unknown as
       Parameters<typeof buildSkinsScene>[1];
     const scene = buildSkinsScene(input, layout);
