@@ -1672,6 +1672,17 @@ if (path.startsWith('/admin/world/')) {
 - 验证：`tsc --noEmit` + `webpack --mode development` 全绿；用临时调试分支（`entries/web.ts` 加 `?worldmap` 查询参数分支，直接 `new WorldMapScene(...)` + reject-fast 的 `WorldApiClient` Proxy 桩，跳过登录/后端，参考 [[worldmap-standalone-debug-render]] 的既有 recipe；额外踩坑：debug 分支里手搭的 `PIXI.Application` 没有走 `ScalingManager` 的 `gameLayer` 缩放变换，场景容器的 design-space 坐标会 1:1 落到物理画布上——标题栏最右侧的拍卖行按钮因此一度被误判"渲染缺失"，实际是设计坐标超出画布物理宽度；修复为手动 `scene.container.scale.set(w/layout.designWidth, h/layout.designHeight)` 复现真实 App 的缩放后，拍卖行按钮回到画布内可见），截图确认标题栏不再显示"大世界"文字、五个资源产量图标+数值居中显示、拍卖行按钮清晰落在标题栏右上角、返回按钮与左上 Zoom 不受影响；验证后临时分支已移除。
 - 回归测试：`client/test/ui/worldMapHeaderProduction.ui.ts`（PIXI headless，走 `test:ui`）7 例，手搭假 `WorldMapContext`（含新增的 `headerHudLayer`）单独驱动 `WorldMapPanels.renderHud()`：拍卖行按钮落在屏幕右半区、贴右边缘、垂直居中于 `topInset` 高度内（含 `topInset` 变化时按钮高度跟着变）；`ctx.me.yieldRate` 五个资源各生成一条 `+<rate>` 文本（含缺省值回退 `+0`）；产量读数水平居中在返回按钮和拍卖行按钮之间、不重叠任一方；`renderHud()` 反复调用（模拟 5s 轮询）不泄漏子节点。同时修了 `worldMapHeaderInset.ui.ts` 已有测试的假 ctx 缺 `headerHudLayer` 字段的问题（`renderHud()` 新调用 `renderHeaderHud()` 后会读到 `undefined.removeChildren`，两个测试文件现在都手搭这个字段）。随 `npm run test:ui`（29 文件 305 例）全绿一并跑通。
 
+**标题栏/右上信息栏可读性微调（2026-07-15）**：
+
+**背景**：用户截图标注反馈五处问题——资源产量条无背景直接浮在标题栏纸面上，不易辨认；`res_atlas` 图标在头部/状态卡里显示得发糊；拍卖行按钮贴右边缘太紧、在窄屏上容易被裁掉；左上 Zoom 按钮和右上部队/领地/行军竖排整体偏小。
+
+**改动**：
+- `WorldMapPanels.renderHeaderHud()`：资源产量簇新增独立背景 `sketchPanel`（`C.paper`/`C.mid`，按簇实际宽度 + 10px 内边距动态量），插在簇本身下方，与标题栏共享的纸面区分开。
+- `resAtlasLoader.ts`：`res_atlas` 的 `BaseTexture` 构造显式传 `scaleMode: LINEAR` + `mipmap: ON`——图集 128px 长边在头部/状态卡里被缩到 15-34px 显示（约 4-8 倍降采样），没有显式 trilinear 采样时线稿发糊；这是最可能的成因，受限于本机后端服务当次会话未起，没能截图肉眼复核，后续实机确认。
+- `renderHeaderHud()`：拍卖行按钮右边距从 10 增到 30，避免窄屏/贴边裁切；`tag` 图标本来就有，一并确认可见。
+- `renderHud()`：左上 Zoom 按钮 88×34 → 176×68（图标/文字同比放大）；右上部队/领地状态卡 + 行军角标/列表 + World-info 按钮整个右列宽度 160 → 320，所有子元素（字号、图标、召回按钮、行高）同步 2 倍缩放。
+- 验证：`tsc --noEmit` + `webpack --mode production` 全绿；未能起本机后端跑通完整登录→世界地图流程做截图核对（`/bootstrap` 网络失败，是已知未解决的本机开发环境问题，非本次改动引入），代码改动本身逻辑清晰、走查过一遍无遗漏，但视觉效果待后续实机确认。
+
 ---
 
 *本文档为 SLG 设计基准，DRAFT 标注处随实现/调参细化；锁定决策（SLG1~13）非经重新拍板不改。*
