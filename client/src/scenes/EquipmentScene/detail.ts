@@ -80,7 +80,7 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       panelRoot.addChild(panel);
 
       let cy = my + 12;
-      const title = txt(`${this.itemName(inst.defId)} +${inst.level}`, 14, C.dark, true);
+      const title = txt(this.itemLabel(inst.defId, inst.level), 14, C.dark, true);
       title.x = mx + 12; title.y = cy;
       panelRoot.addChild(title);
       const rar = txt(t(`equip.rarity.${inst.rarity}` as TranslationKey), 11, color, true);

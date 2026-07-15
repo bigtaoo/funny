@@ -536,6 +536,7 @@ export const en: Record<TranslationKey, string> = {
   'equip.sectionEquipped': 'Equipped',
   'equip.sectionBag': 'Backpack',
   'equip.hintEquip': 'Equip ›',
+  'equip.viewDetails': 'View details',
   'equip.reforge': 'Reforge',
   'equip.reforged': 'Reforged! Sub-stats updated.',
   'equip.reforgeSelectTitle': 'Select material ({rarity})',

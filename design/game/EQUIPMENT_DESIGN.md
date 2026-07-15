@@ -501,6 +501,8 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 **标题居中 + loadout 三槽条移过红边线**（2026-07-15 追加）：走查截图发现两处问题并修复：① 头部标题此前 `titleAlign:'left'`（避免与右侧资源条碰撞的历史遗留，但资源条早已瘦身到仅金币+容量，横屏/竖屏均有 ~100px+ 净空——用 `EquipmentScene` 独立实例验证过两种朝向的包围盒不重叠），改回默认 `'center'`，与其余场景标题一致。② §2026-07-04 记录里"loadout 三槽条仍整宽不受影响"是当时的遗留，实际视觉上三槽条（`renderLoadout`）从 `x=8` 起铺满整行，压在侧栏导航/红边线之上，与其上方已收进右栏的资源条/筛选条/物品网格不一致——`renderInventory` 新增 `left = sidebarNavW(w,h,landscape)` 并透传给 `renderLoadout(save,y,left)`，三槽条起点、格宽随之收进红边线右侧，与筛选条同一起点。用临时 `__NW_DEBUG` 钩子（见 `client-run-and-visual-verify` 记忆）直接 new 一个 `EquipmentScene` 读子节点坐标数值验证，未起 webpack 截图。`tsc --noEmit` 验证。
 
+**"+0" 噪音清理 + 背包格空白填充 + Equip/详情视觉分级**（2026-07-15 追加）：真人吐槽走查（真实账号，dev server 指向正式服 `api.gamestao.com` 实测，见 `client-run-and-visual-verify` 记忆新增的"指向正式服 VPS 实测"用法）发现三处问题并修复：① 几乎所有未强化过的装备标题都带一个没有信息量的 `+0`（`Marker +0`/`Pencil +0`…），只有 `Foil Cover +6` 这种真正强化过的才有意义——`EquipmentSceneBase` 新增共享方法 `itemLabel(defId, level)`（`level>0` 才拼 `+N`），替换掉 `inventory.ts`/`detail.ts`/`assign.ts`/`reforge.ts` 五处硬编码的 `` `${itemName} +${level}` ``，全场景统一生效。② 背包格 `renderInstanceCell` 右侧列此前只有稀有度一行文字，格子下半区大片空白——稀有度/已装备标签/堆叠数字字号统一放大（16/14/16→18/16/18）+ 行距拉开，并新增底部满宽的操作区。③ 该操作区顺带解决"箭头 vs Equip 按钮权重分不清"：未装备格给一个真正的按钮外观（`sketchPanel` 描边填充 + 居中文案，取代原来贴在右下角的小字提示），已装备格保留安静的 `› 查看详情`（新 i18n key `equip.viewDetails`，三语言都加了）——两者其实都是同一个"打开详情"点击（整格命中区不变），但视觉上现在清楚区分"这是主操作"和"这只是查看"。原先怀疑的头部 `42/300` 容量数字截断问题实测**未复现**（1280px/1568px 均完整显示），代码里 `drawHeaderCurrency` 本就是量出总宽度后从右边界反推起点，结构上不会裁字，判断是旧版本或更窄分辨率下的截图，未做改动。`tsc --noEmit` + 生产 webpack 构建全绿，真实账号截图逐项核对过。
+
 #### E2 掉落 faucet + E6 洗练 实现记录（2026-06-22，✅）
 
 **E2 关卡掉落 faucet**

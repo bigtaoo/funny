@@ -71,7 +71,7 @@ export function ReforgeMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase):
         const rowBg = sketchPanel(mw - 16, rowH - 4, { fill: 0xf8f4e8, border: color, seed: seedFor(cy, 21, mw) });
         rowBg.x = mx + 8; rowBg.y = cy;
         panelRoot.addChild(rowBg);
-        const nameLbl = txt(`${this.itemName(mat.defId)} +${mat.level}`, 12, C.dark, true);
+        const nameLbl = txt(this.itemLabel(mat.defId, mat.level), 12, C.dark, true);
         nameLbl.x = mx + 18; nameLbl.y = cy + 6;
         panelRoot.addChild(nameLbl);
         const rarLbl = txt(t(`equip.rarity.${mat.rarity}` as import('../../i18n').TranslationKey), 10, color);
@@ -104,7 +104,7 @@ export function ReforgeMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase):
       if (!mat) return;
       const msg = t('equip.confirmReforge')
         .replace('{target}', this.itemName(target.defId))
-        .replace('{material}', `${this.itemName(mat.defId)} +${mat.level}`);
+        .replace('{material}', this.itemLabel(mat.defId, mat.level));
       this.showConfirm(msg, () => void this.doReforge(target.id, materialId));
     }
 

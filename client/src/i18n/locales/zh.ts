@@ -539,6 +539,7 @@ export const zh = {
   'equip.sectionEquipped': '已装备',
   'equip.sectionBag': '背包',
   'equip.hintEquip': '装备 ›',
+  'equip.viewDetails': '查看详情',
   'equip.reforge': '洗练',
   'equip.reforged': '洗练完成，词条已更新',
   'equip.reforgeSelectTitle': '选择素材（{rarity}）',

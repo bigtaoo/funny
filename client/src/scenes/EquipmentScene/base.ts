@@ -443,6 +443,11 @@ export class EquipmentSceneBase {
     return s === key ? defId : s;
   }
 
+  /** Item name + enhance level, e.g. "Marker +3" — omits the "+0" suffix (the vast majority of items sit at level 0, and printing it everywhere is pure noise). */
+  protected itemLabel(defId: string, level: number): string {
+    return level > 0 ? `${this.itemName(defId)} +${level}` : this.itemName(defId);
+  }
+
   /** Affix description: i18n `affix.<id>` template with {v}; main affixes are scaled up by level. */
   protected affixDesc(id: string, value: number, level: number): string {
     const shown = affixKind(id) === 'main'

@@ -536,6 +536,7 @@ export const de: Record<TranslationKey, string> = {
   'equip.sectionEquipped': 'Ausgerüstet',
   'equip.sectionBag': 'Rucksack',
   'equip.hintEquip': 'Ausrüsten ›',
+  'equip.viewDetails': 'Details ansehen',
   'equip.reforge': 'Umschmieden',
   'equip.reforged': 'Umgeschmiedet! Nebenattribute aktualisiert.',
   'equip.reforgeSelectTitle': 'Material auswählen ({rarity})',

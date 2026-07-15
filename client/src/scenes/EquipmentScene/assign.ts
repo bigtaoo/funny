@@ -62,7 +62,7 @@ export function AssignMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       const barBg = new PIXI.Graphics();
       barBg.beginFill(0xf3f1ea).drawRect(sidebarW, top, w - sidebarW, RES_H).endFill();
       this.bodyLayer.addChild(barBg);
-      const title = txt(t('equip.assignTitle').replace('{name}', `${this.itemName(inst.defId)} +${inst.level}`), 22, C.dark, true);
+      const title = txt(t('equip.assignTitle').replace('{name}', this.itemLabel(inst.defId, inst.level)), 22, C.dark, true);
       title.anchor.set(0.5, 0.5); title.x = sidebarW + (w - sidebarW) / 2; title.y = top + RES_H / 2;
       this.bodyLayer.addChild(title);
 
@@ -120,7 +120,7 @@ export function AssignMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       const curId = card.gear[slot];
       const cur = curId ? save.equipmentInv[curId] : undefined;
       const curLbl = txt(
-        cur ? t('equip.assignCurrent').replace('{name}', `${this.itemName(cur.defId)} +${cur.level}`) : t('equip.assignSlotFree'),
+        cur ? t('equip.assignCurrent').replace('{name}', this.itemLabel(cur.defId, cur.level)) : t('equip.assignSlotFree'),
         10, cur ? C.gold : C.mid,
       );
       curLbl.anchor.set(1, 0.5); curLbl.x = w - 18; curLbl.y = cy + ROW_H / 2 - 2;
