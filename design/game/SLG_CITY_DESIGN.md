@@ -164,6 +164,16 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
   - **练兵入口并入此处**（三战练兵在校场）：点 `drillYard` → 练兵面板（数量滑杆 + 队列 + 加速），复用现有 `trainTroops`/`speedupTraining` API。
 - 返回大地图。i18n 三语（zh/en/de），key 前缀 `city.*`。
 
+### 8.1 卡片网格重设计（2026-07-15）
+
+`CityScene` 是 P1 UI 落地之后唯一一个没并入全局 UI 规范的场景——独立手搓 title/back，10 个建筑挤成固定 4 列小格（10-11px 字号），点击后详情卡贴在屏幕角落，没有滚动指示。对齐 Roster/Skins/Teams 等场景已用的卡片网格语言，重做为：
+
+- **头部**：统一走 `drawSceneHeader`（`HEADER_ACCENT.slg` 红色下划线），废弃自绘 title/back（连带删掉此前仅本场景使用的 `city.back` i18n key）。
+- **建筑网格**：从固定 4 列表格改为动态列数卡片网格（目标卡宽 148px，参照 Skins 衣橱 `CARD_W_TARGET` 的算法），卡片放大到 148×128，图标放大到 40px；超出视口时可拖拽滚动 + `drawScrollIndicator`（滚动状态走 `scrollDirty` 标记在 `update()` 里延迟渲染，避免每次 pointermove 都重绘造成卡顿，参见 `client-run-and-visual-verify` 同类教训）。
+- **详情卡改为弹窗**：复用 Roster/Equipment 详情卡的「弹窗缩放到屏幕 80%」惯例（横屏按高、竖屏按宽缩放），点击背景空白处关闭；**弹窗打开时清空建筑格/建造队列的旧命中区**，只保留 Back + 弹窗自身命中——否则暗化背景下露出的卡片仍可点中，会在关闭弹窗前意外切换到另一栋建筑。
+- **建造队列倒计时**：从裸秒数改用 `formatDuration`（worldmap 车队计时器已用的 mm:ss / h:mm:ss 格式），i18n `city.queueEntry` 模板同步去掉多余的尾随 `s`。
+- 验证：`tsc --noEmit` + `webpack build:web` 全绿；headless 注入 `CityScene` 实例（假 `ILayout`/`InputManager`/`WorldApiClient`）在真实 1080×1920（竖）与 1920×1080（横）设计分辨率下截图核对，含建筑网格、建造队列、详情弹窗三态。
+
 ---
 
 ## 9. 契约 / 端点（→ SERVER_API + openapi-world）

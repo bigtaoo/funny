@@ -1364,12 +1364,11 @@ export const zh = {
 
   // ── City / Home Desk (SLG_CITY_DESIGN P1) ────────────────────────────────
   'city.title': '主城·书桌',
-  'city.back': '返回地图',
   'city.buildings': '建筑',
   'city.resources': '资源',
   'city.buildQueue': '建造队列',
   'city.queueEmpty': '无建造任务',
-  'city.queueEntry': '{name} Lv.{to} · 剩 {sec}s',
+  'city.queueEntry': '{name} Lv.{to} · 剩 {sec}',
   'city.speedup': '加速（{coins} 金币）',
   'city.speedupDone': '已加速',
   'city.upgrade': '升级',

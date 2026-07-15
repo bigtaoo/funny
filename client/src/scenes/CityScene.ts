@@ -1,10 +1,10 @@
 // CityScene — Home-city management (SLG_CITY_DESIGN P1).
 // Entry: WorldMapScene taps own base tile → "Enter Desk".
-// Layout: paper background + top resource bar (5 resources) +
-//   building grid (P1 keys) + detail panel (tap a building) +
-//   build queue strip + back button.
-// Troop training is surfaced via the drillYard detail panel (replaces
-// the WorldMapScene train button for users who enter city).
+// Layout: shared SceneHeader (title + back) + resource bar + build-queue strip +
+//   scrollable building card grid (matches the Roster/Skins/Teams card-grid
+//   language) + tap-to-open detail modal (popup-scale-to-80% convention).
+// Troop training is surfaced via the drillYard detail modal (replaces the
+// WorldMapScene train button for users who enter city).
 
 import * as PIXI from 'pixi.js-legacy';
 import type { Scene } from './SceneManager';
@@ -14,6 +14,9 @@ import { t } from '../i18n';
 import {
   ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren,
 } from '../render/sketchUi';
+import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
+import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
+import { formatDuration } from './worldmap/formatDuration';
 import type { WorldApiClient, PlayerWorldView, BuildingKey } from '../net/WorldApiClient';
 import {
   BUILDING_KEYS,
@@ -21,7 +24,6 @@ import {
   DESK_MAX_LEVEL,
   BUILD_SPEEDUP_SECS_PER_COIN,
   buildingLevel,
-  deskLevel,
   buildCost,
   buildTimeSec,
   buildGateReason,
@@ -29,7 +31,6 @@ import {
   buildingSelfYield,
   resourceCapFor,
   troopCapFor,
-  drillTrainMult,
   trainQueueMaxFor,
   type ResourceType,
 } from '@nw/shared';
@@ -89,6 +90,13 @@ const BLD_GLYPH: Partial<Record<BuildingKey, IconKind>> = {
   desk: 'desk', cabinet: 'cabinet', drillYard: 'swords', wall: 'castle', academy: 'book',
 };
 
+// Card-grid sizing — matches the CardScene/Skins wardrobe language (dynamic
+// column count from a target width, rather than CityScene's old fixed 4-col table).
+const CARD_GAP = 12;
+const CARD_W_TARGET = 148;
+const CARD_H = 128;
+const GRID_PAD = 8;
+
 // ── CityScene ────────────────────────────────────────────────────────────────
 
 interface Hit { x: number; y: number; w: number; h: number; fn: () => void }
@@ -112,6 +120,13 @@ export class CityScene implements Scene {
   private toastColor: number = C.red;
   private toastTimer = 0;
 
+  // Building-grid scroll state (drag-to-scroll, matches the CardScene/TeamsScene pattern).
+  private scrollY = 0;
+  private scrollMax = 0;
+  private dragStart: { y: number; scroll: number } | null = null;
+  /** Set by handleMove instead of rendering inline — avoids a render() per pointermove (jank). */
+  private scrollDirty = false;
+
   constructor(layout: ILayout, input: InputManager, cb: CitySceneCallbacks) {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
@@ -119,11 +134,14 @@ export class CityScene implements Scene {
     this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
+    this.unsubs.push(input.onMove((_x, y) => this.handleMove(y)));
+    this.unsubs.push(input.onUp(() => this.handleUp()));
     this.render();
     void this.load();
   }
 
   update(dt: number): void {
+    if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
     // Refresh countdown display for build queue every second
     if (this.toast !== null) {
       this.toastTimer -= dt;
@@ -146,7 +164,7 @@ export class CityScene implements Scene {
     try {
       this.me = await this.cb.worldApi.getMe(this.cb.worldId);
     } catch {
-      /* use null — shows loading skeleton */
+      /* use null — shows loading state */
     }
     this.render();
   }
@@ -228,6 +246,20 @@ export class CityScene implements Scene {
         return;
       }
     }
+    if (!this.selectedBuilding) this.dragStart = { y: py, scroll: this.scrollY };
+  }
+
+  private handleMove(py: number): void {
+    if (!this.dragStart || this.selectedBuilding) return;
+    const dy = py - this.dragStart.y;
+    if (Math.abs(dy) > 6) {
+      this.scrollY = Math.max(0, Math.min(this.scrollMax, this.dragStart.scroll - dy));
+      this.scrollDirty = true;
+    }
+  }
+
+  private handleUp(): void {
+    this.dragStart = null;
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -237,29 +269,18 @@ export class CityScene implements Scene {
     tearDownChildren(this.container);
     this.hits = [];
     const { w, h } = this;
-    const bld = this.me?.buildings;
 
     this.container.addChild(buildPaperBackground('citybg', w, h));
     const decoC = buildDecorCLayer(w, h);
     if (decoC) this.container.addChild(decoC);
 
-    // Red margin line (art direction)
-    const mg = new PIXI.Graphics();
-    mg.lineStyle(2, C.margin, 1);
-    mg.moveTo(48, 0).lineTo(48, h);
-    this.container.addChild(mg);
+    const hdr = drawSceneHeader(this.container, w, h, t('city.title'), {
+      variant: 'paper', accent: HEADER_ACCENT.slg,
+    });
+    const backHit: Hit = { x: hdr.backRect.x, y: hdr.backRect.y, w: hdr.backRect.w, h: hdr.backRect.h, fn: () => this.cb.onBack() };
+    this.hits.push(backHit);
 
-    let y = 12;
-
-    // Title
-    const titleTxt = txt(t('city.title'), 18, C.dark, true);
-    titleTxt.x = 56;
-    titleTxt.y = y;
-    this.container.addChild(titleTxt);
-
-    // Back button
-    this.addBtn(w - 80, y, 68, 26, t('city.back'), C.dark, C.paper, () => this.cb.onBack());
-    y += 38;
+    let y = hdr.headerH + 8;
 
     // Resource bar
     y = this.renderResourceBar(y);
@@ -269,16 +290,15 @@ export class CityScene implements Scene {
     y = this.renderBuildQueue(y);
     y += 8;
 
-    // Building grid
-    const gridBottom = this.renderBuildingGrid(y);
+    // Building card grid (scrollable)
+    this.renderBuildingGrid(y);
 
-    // Detail panel (right side in landscape, bottom in portrait)
+    // Detail modal (popup-scale-to-80% convention, tap-outside-to-close). The grid/queue
+    // sit dimmed underneath — drop their hits (keeping only Back) so a tap there can't
+    // silently switch buildings or trigger speedup instead of dismissing the modal.
     if (this.selectedBuilding) {
-      if (this.landscape) {
-        this.renderDetailPanel(Math.floor(w * 0.55), 100, Math.floor(w * 0.42), h - 110);
-      } else {
-        this.renderDetailPanel(8, gridBottom + 8, w - 16, h - gridBottom - 16);
-      }
+      this.hits = [backHit];
+      this.renderDetailModal(this.selectedBuilding);
     }
 
     // Busy overlay
@@ -315,7 +335,7 @@ export class CityScene implements Scene {
     const bld = this.me?.buildings;
     const resources = this.me?.resources as Partial<Record<ResourceType, number>> | undefined;
 
-    const panH = 58;
+    const panH = 72;
     const pg = sketchPanel(w - 16, panH, { fill: C.paper, border: C.line, width: 1, seed: seedFor(w, panH, 3) });
     pg.x = 8;
     pg.y = startY;
@@ -331,31 +351,31 @@ export class CityScene implements Scene {
 
       // Color accent bar
       const ab = new PIXI.Graphics();
-      ab.beginFill(RES_COLORS[rt], 0.4);
-      ab.drawRect(cx + 4, startY + 2, cellW - 8, 6);
+      ab.beginFill(RES_COLORS[rt], 0.45);
+      ab.drawRect(cx + 6, startY + 4, cellW - 12, 7);
       ab.endFill();
       this.container.addChild(ab);
 
-      const icon = this.resIcon(rt, 16);
-      icon.x = cx + 6;
-      icon.y = startY + 9;
+      const icon = this.resIcon(rt, 22);
+      icon.x = cx + 8;
+      icon.y = startY + 15;
       this.container.addChild(icon);
 
-      const curLbl = txt(this.fmtNum(cur), 11, C.dark, true);
-      curLbl.x = cx + 6;
-      curLbl.y = startY + 26;
+      const curLbl = txt(this.fmtNum(cur), 15, C.dark, true);
+      curLbl.x = cx + 34;
+      curLbl.y = startY + 15;
       this.container.addChild(curLbl);
 
-      const capLbl = txt(`/${this.fmtNum(cap)}`, 9, C.mid);
-      capLbl.x = cx + 6;
+      const capLbl = txt(`/${this.fmtNum(cap)}`, 10, C.mid);
+      capLbl.x = cx + 8;
       capLbl.y = startY + 40;
       this.container.addChild(capLbl);
 
       const yldPct = Math.round(yld * 100);
       const yldStr = self > 0 ? `+${self}/h` : `×${yldPct}%`;
-      const yldLbl = txt(yldStr, 9, C.mid);
-      yldLbl.x = cx + 6;
-      yldLbl.y = startY + 50;
+      const yldLbl = txt(yldStr, 10, C.mid);
+      yldLbl.x = cx + 8;
+      yldLbl.y = startY + 54;
       this.container.addChild(yldLbl);
     });
 
@@ -369,21 +389,21 @@ export class CityScene implements Scene {
     const queue = this.me?.buildQueue ?? [];
     const now = Date.now();
 
-    const panH = queue.length > 0 ? 44 : 32;
+    const panH = queue.length > 0 ? 48 : 34;
     const pg = sketchPanel(w - 16, panH, { fill: C.paper, border: C.line, width: 1, seed: seedFor(w, panH, 5) });
     pg.x = 8;
     pg.y = startY;
     this.container.addChild(pg);
 
-    const hdr = txt(t('city.buildQueue'), 11, C.mid);
+    const hdr = txt(t('city.buildQueue'), 12, C.mid, true);
     hdr.x = 16;
-    hdr.y = startY + 8;
+    hdr.y = startY + 9;
     this.container.addChild(hdr);
 
     if (queue.length === 0) {
-      const empty = txt(t('city.queueEmpty'), 11, C.mid);
-      empty.x = 120;
-      empty.y = startY + 8;
+      const empty = txt(t('city.queueEmpty'), 12, C.mid);
+      empty.x = 130;
+      empty.y = startY + 9;
       this.container.addChild(empty);
     } else {
       const entry = queue[0]!;
@@ -392,17 +412,17 @@ export class CityScene implements Scene {
       const label = t('city.queueEntry')
         .replace('{name}', name)
         .replace('{to}', String(entry.toLevel))
-        .replace('{sec}', String(secsLeft));
+        .replace('{sec}', formatDuration(secsLeft));
 
-      const entryLbl = txt(label, 12, C.dark);
-      entryLbl.x = 120;
-      entryLbl.y = startY + 8;
+      const entryLbl = txt(label, 13, C.dark, true);
+      entryLbl.x = 130;
+      entryLbl.y = startY + 9;
       this.container.addChild(entryLbl);
 
       if (secsLeft > 0) {
         const coins = Math.ceil(secsLeft / BUILD_SPEEDUP_SECS_PER_COIN);
         const speedLabel = t('city.speedup').replace('{coins}', String(coins));
-        this.addBtn(w - 150, startY + 4, 138, 24, speedLabel, 0xffffff, C.gold, () => void this.doSpeedup(entry.key));
+        this.addBtn(w - 166, startY + 6, 152, 30, speedLabel, 0xffffff, C.gold, () => void this.doSpeedup(entry.key));
       }
     }
 
@@ -411,79 +431,90 @@ export class CityScene implements Scene {
 
   // ── Building grid ─────────────────────────────────────────────────────────
 
-  private renderBuildingGrid(startY: number): number {
-    const { w, landscape } = this;
+  private renderBuildingGrid(startY: number): void {
+    const { w, h } = this;
     const bld = this.me?.buildings;
     const keys = BUILDING_KEYS;
 
-    const cols = landscape ? 4 : 4;
-    const cellW = landscape ? Math.floor(w * 0.52 / cols) : Math.floor((w - 16) / cols);
-    const cellH = 72;
-    const gridW = cellW * cols;
-    const gridX = 8;
-
+    const availW = w - GRID_PAD * 2;
+    const cols = Math.max(1, Math.floor((availW + CARD_GAP) / (CARD_W_TARGET + CARD_GAP)));
+    const cellW = Math.floor((availW - (cols - 1) * CARD_GAP) / cols);
     const rows = Math.ceil(keys.length / cols);
+    const contentH = rows * CARD_H + (rows - 1) * CARD_GAP;
+
+    const viewY = startY;
+    const viewH = Math.max(0, h - viewY - GRID_PAD);
+    this.scrollMax = Math.max(0, contentH - viewH);
+    if (this.scrollY > this.scrollMax) this.scrollY = this.scrollMax;
+
+    const gridLayer = new PIXI.Container();
+    gridLayer.y = viewY - this.scrollY;
+    const maskG = new PIXI.Graphics();
+    maskG.beginFill(0xffffff).drawRect(0, viewY, w, viewH).endFill();
+    this.container.addChild(maskG);
+    gridLayer.mask = maskG;
+    this.container.addChild(gridLayer);
 
     keys.forEach((key, i) => {
       const col = i % cols;
       const row = Math.floor(i / cols);
-      const cx = gridX + col * cellW;
-      const cy = startY + row * cellH;
+      const cx = GRID_PAD + col * (cellW + CARD_GAP);
+      // Local to gridLayer (which is itself offset by viewY - scrollY), so this is NOT absolute screen space.
+      const cy = row * (CARD_H + CARD_GAP);
 
-      const isSelected = this.selectedBuilding === key;
       const lvl = buildingLevel(bld, key);
       const inQueue = (this.me?.buildQueue ?? []).some(q => q.key === key);
 
-      const bg = sketchPanel(cellW - 4, cellH - 4, {
-        fill: isSelected ? C.accent : C.paper,
-        fillAlpha: isSelected ? 0.15 : 1,
-        border: isSelected ? C.accent : C.line,
-        width: isSelected ? 2 : 1,
+      const bg = sketchPanel(cellW, CARD_H, {
+        fill: C.paper,
+        border: inQueue ? C.gold : C.line,
+        width: inQueue ? 2 : 1,
         seed: seedFor(cx, cy, i),
       });
-      bg.x = cx + 2;
-      bg.y = cy + 2;
-      this.container.addChild(bg);
+      bg.x = cx;
+      bg.y = cy;
+      gridLayer.addChild(bg);
 
-      const icon = this.bldIcon(key, 22, isSelected ? C.accent : C.dark);
-      icon.x = cx + 8;
-      icon.y = cy + 6;
-      this.container.addChild(icon);
+      const icon = this.bldIcon(key, 40, C.dark);
+      icon.x = cx + (cellW - 40) / 2;
+      icon.y = cy + 12;
+      gridLayer.addChild(icon);
 
-      const nameLbl = txt(t(`city.bld.${key}` as 'city.bld.desk'), 10, isSelected ? C.accent : C.dark, isSelected);
-      nameLbl.x = cx + 8;
-      nameLbl.y = cy + 34;
-      this.container.addChild(nameLbl);
+      const nameLbl = txt(t(`city.bld.${key}` as 'city.bld.desk'), 12, C.dark, true, cellW - 12);
+      nameLbl.x = cx + 6;
+      nameLbl.y = cy + 60;
+      gridLayer.addChild(nameLbl);
 
-      const lvlLbl = txt(t('city.lvlLabel').replace('{lvl}', String(lvl)), 10, C.mid);
-      lvlLbl.x = cx + 8;
-      lvlLbl.y = cy + 48;
-      this.container.addChild(lvlLbl);
+      const lvlLbl = txt(t('city.lvlLabel').replace('{lvl}', String(lvl)), 11, C.mid);
+      lvlLbl.x = cx + 6;
+      lvlLbl.y = cy + CARD_H - 22;
+      gridLayer.addChild(lvlLbl);
 
       if (inQueue) {
-        const qDot = buildIcon('hammer', 14, C.gold);
+        const qDot = buildIcon('hammer', 16, C.gold);
         qDot.x = cx + cellW - 24;
-        qDot.y = cy + 5;
-        this.container.addChild(qDot);
+        qDot.y = cy + 8;
+        gridLayer.addChild(qDot);
       }
 
-      this.hits.push({
-        x: cx, y: cy, w: cellW, h: cellH,
-        fn: () => {
-          this.selectedBuilding = this.selectedBuilding === key ? null : key;
-          this.render();
-        },
-      });
+      // Hit rect in absolute screen space (gridLayer's local `cy` + its own viewY/scroll offset) —
+      // only reachable while the card is actually within the visible viewport.
+      const screenY = viewY - this.scrollY + cy;
+      if (screenY + CARD_H > viewY && screenY < viewY + viewH) {
+        this.hits.push({
+          x: cx, y: screenY, w: cellW, h: CARD_H,
+          fn: () => { this.selectedBuilding = key; this.render(); },
+        });
+      }
     });
 
-    return startY + rows * cellH + 4;
+    drawScrollIndicator(this.container, { x: 0, y: viewY, w, h: viewH }, this.scrollY, this.scrollMax);
   }
 
-  // ── Detail panel ──────────────────────────────────────────────────────────
+  // ── Detail modal ──────────────────────────────────────────────────────────
 
-  private renderDetailPanel(px: number, py: number, panW: number, panH: number): void {
-    const key = this.selectedBuilding;
-    if (!key) return;
+  private renderDetailModal(key: BuildingKey): void {
+    const { w, h } = this;
     const bld = this.me?.buildings;
     const resources = this.me?.resources as Partial<Record<ResourceType, number>> | undefined;
 
@@ -492,121 +523,153 @@ export class CityScene implements Scene {
     const gateReason = buildGateReason(bld, key, toLevel);
     const cost = buildCost(key, toLevel);
     const timeSec = buildTimeSec(key, toLevel);
-    const deskLvl = deskLevel(bld);
     const inQueue = (this.me?.buildQueue ?? []).some(q => q.key === key);
     const canAfford = !gateReason && Object.entries(cost).every(
       ([rt, need]) => (resources?.[rt as ResourceType] ?? 0) >= (need ?? 0)
     );
+    const atMax = lvl >= DESK_MAX_LEVEL && key === 'desk';
 
-    const pg = sketchPanel(panW, panH, { fill: C.paper, border: C.line, width: 1, seed: seedFor(px, py, 9) });
-    pg.x = px;
-    pg.y = py;
-    this.container.addChild(pg);
+    // Natural (unscaled) content size — laid out in a local frame, then scaled to
+    // fill 80% of the constrained screen axis (popup-scale-to-80% convention).
+    const bonusLines = this.buildingBonusLines(key, bld);
+    const mw = Math.min(340, w - 24);
+    const costEntries = RESOURCE_TYPES.map((rt) => ({ rt, need: cost[rt] ?? 0 })).filter((e) => e.need > 0);
+    const contentH = 12 + 28 + bonusLines.length * 16 + 4
+      + (atMax ? 20 : (16 + (costEntries.length > 0 ? 16 : 0) + 24 + 36))
+      + (key === 'drillYard' ? 24 : 0)
+      + 12;
+    const mh = Math.min(contentH, h - 16);
 
-    let iy = py + 10;
+    const scale = this.landscape ? (h * 0.8) / mh : (w * 0.8) / mw;
+    const screenW = mw * scale;
+    const screenH = mh * scale;
+    const screenX = (w - screenW) / 2;
+    const screenY = Math.max(8, (h - screenH) / 2);
+
+    // Dim covers the full screen; tapping it (outside interactive rects) closes the modal.
+    const dim = new PIXI.Graphics();
+    dim.beginFill(0x000000, 0.45).drawRect(0, 0, w, h).endFill();
+    this.container.addChild(dim);
+
+    const panelRoot = new PIXI.Container();
+    panelRoot.position.set(screenX, screenY);
+    panelRoot.scale.set(scale);
+    this.container.addChild(panelRoot);
+
+    const panel = sketchPanel(mw, mh, { fill: C.paper, border: C.accent, width: 2, seed: seedFor(0, 5, mw) });
+    panelRoot.addChild(panel);
+
+    let iy = 12;
 
     // Header — building glyph + name + level.
-    const hIcon = this.bldIcon(key, 18, C.dark);
-    hIcon.x = px + 10;
-    hIcon.y = iy - 1;
-    this.container.addChild(hIcon);
-    const hdr = txt(`${t(`city.bld.${key}` as 'city.bld.desk')} ${t('city.lvlLabel').replace('{lvl}', String(lvl))}`, 14, C.dark, true);
-    hdr.x = px + 32;
-    hdr.y = iy;
-    this.container.addChild(hdr);
-    iy += 22;
+    const hIcon = this.bldIcon(key, 22, C.dark);
+    hIcon.x = 10;
+    hIcon.y = iy - 2;
+    panelRoot.addChild(hIcon);
+    const hdrTxt = txt(`${t(`city.bld.${key}` as 'city.bld.desk')} ${t('city.lvlLabel').replace('{lvl}', String(lvl))}`, 16, C.dark, true);
+    hdrTxt.x = 38;
+    hdrTxt.y = iy;
+    panelRoot.addChild(hdrTxt);
+    iy += 28;
 
-    // Bonus description
-    const bonusLines = this.buildingBonusLines(key, bld);
     for (const line of bonusLines) {
-      const bl = txt(line, 11, C.mid);
-      bl.x = px + 10;
+      const bl = txt(line, 12, C.mid);
+      bl.x = 10;
       bl.y = iy;
-      this.container.addChild(bl);
+      panelRoot.addChild(bl);
       iy += 16;
     }
     iy += 4;
 
-    if (lvl >= DESK_MAX_LEVEL && key === 'desk') {
-      const ml = txt(t('city.maxLevel'), 12, C.mid);
-      ml.x = px + 10;
+    if (atMax) {
+      const ml = txt(t('city.maxLevel'), 13, C.mid, true);
+      ml.x = 10;
       ml.y = iy;
-      this.container.addChild(ml);
-      return;
-    }
-
-    // Next level header
-    const nextHdr = txt(`→ Lv.${toLevel}`, 11, C.mid);
-    nextHdr.x = px + 10;
-    nextHdr.y = iy;
-    this.container.addChild(nextHdr);
-    iy += 16;
-
-    // Cost — label, then each resource as a mini motif + amount (red when short).
-    const costEntries = RESOURCE_TYPES
-      .map((rt) => ({ rt, need: cost[rt] ?? 0 }))
-      .filter((e) => e.need > 0);
-    if (costEntries.length > 0) {
-      const costLbl = txt(t('city.costLabel'), 11, C.dark);
-      costLbl.x = px + 10;
-      costLbl.y = iy;
-      this.container.addChild(costLbl);
-      let cxp = px + 10 + costLbl.width + 6;
-      for (const { rt, need } of costEntries) {
-        const ok = (resources?.[rt] ?? 0) >= need;
-        const mi = this.resIcon(rt, 14);
-        mi.x = cxp;
-        mi.y = iy - 1;
-        this.container.addChild(mi);
-        cxp += 16;
-        const nl = txt(this.fmtNum(need), 11, ok ? C.dark : C.red);
-        nl.x = cxp;
-        nl.y = iy;
-        this.container.addChild(nl);
-        cxp += nl.width + 8;
-      }
-      iy += 16;
-    }
-
-    // Time
-    const timeLbl = txt(t('city.timeLabel') + this.fmtSec(timeSec), 11, C.mid);
-    timeLbl.x = px + 10;
-    timeLbl.y = iy;
-    this.container.addChild(timeLbl);
-    iy += 20;
-
-    // Gate reason or upgrade button
-    if (gateReason?.includes('desk')) {
-      const gl = txt(t('city.deskGate').replace('{lvl}', String(toLevel)), 11, C.red);
-      gl.x = px + 10;
-      gl.y = iy;
-      this.container.addChild(gl);
-    } else if (inQueue) {
-      const ql = txt(t('city.upgrading'), 12, C.gold);
-      ql.x = px + 10;
-      ql.y = iy;
-      this.container.addChild(ql);
+      panelRoot.addChild(ml);
     } else {
-      this.addBtn(
-        px + 10, iy, panW - 20, 28,
-        t('city.upgrade'),
-        canAfford ? C.dark : C.mid,
-        canAfford ? C.paper : C.btnDis,
-        canAfford ? () => void this.doUpgrade(key) : () => this.showToast(t('city.err.noResources'), C.red),
-      );
-      iy += 32;
+      const nextHdr = txt(`→ Lv.${toLevel}`, 12, C.mid);
+      nextHdr.x = 10;
+      nextHdr.y = iy;
+      panelRoot.addChild(nextHdr);
+      iy += 16;
+
+      if (costEntries.length > 0) {
+        const costLbl = txt(t('city.costLabel'), 12, C.dark);
+        costLbl.x = 10;
+        costLbl.y = iy;
+        panelRoot.addChild(costLbl);
+        let cxp = 10 + costLbl.width + 6;
+        for (const { rt, need } of costEntries) {
+          const ok = (resources?.[rt] ?? 0) >= need;
+          const mi = this.resIcon(rt, 15);
+          mi.x = cxp;
+          mi.y = iy - 1;
+          panelRoot.addChild(mi);
+          cxp += 17;
+          const nl = txt(this.fmtNum(need), 12, ok ? C.dark : C.red);
+          nl.x = cxp;
+          nl.y = iy;
+          panelRoot.addChild(nl);
+          cxp += nl.width + 8;
+        }
+        iy += 16;
+      }
+
+      const timeLbl = txt(t('city.timeLabel') + formatDuration(timeSec), 12, C.mid);
+      timeLbl.x = 10;
+      timeLbl.y = iy;
+      panelRoot.addChild(timeLbl);
+      iy += 24;
+
+      if (gateReason?.includes('desk')) {
+        const gl = txt(t('city.deskGate').replace('{lvl}', String(toLevel)), 12, C.red);
+        gl.x = 10;
+        gl.y = iy;
+        panelRoot.addChild(gl);
+      } else if (inQueue) {
+        const ql = txt(t('city.upgrading'), 13, C.gold, true);
+        ql.x = 10;
+        ql.y = iy;
+        panelRoot.addChild(ql);
+      } else {
+        const btnRectLocal = { x: 10, y: iy, w: mw - 20, h: 32 };
+        const g = sketchPanel(btnRectLocal.w, btnRectLocal.h, {
+          fill: canAfford ? C.paper : C.btnDis, border: C.line, width: 1, seed: seedFor(btnRectLocal.x, btnRectLocal.y, btnRectLocal.w),
+        });
+        g.x = btnRectLocal.x;
+        g.y = btnRectLocal.y;
+        panelRoot.addChild(g);
+        const lbl = txt(t('city.upgrade'), 13, canAfford ? C.dark : C.mid, true);
+        lbl.x = btnRectLocal.x + 8;
+        lbl.y = btnRectLocal.y + (btnRectLocal.h - 16) / 2;
+        panelRoot.addChild(lbl);
+
+        const screenRect = this.toScreen(btnRectLocal, screenX, screenY, scale);
+        this.hits.push({
+          x: screenRect.x, y: screenRect.y, w: screenRect.w, h: screenRect.h,
+          fn: canAfford ? () => void this.doUpgrade(key) : () => this.showToast(t('city.err.noResources'), C.red),
+        });
+        iy += 36;
+      }
     }
 
     // DrillYard special: show troop cap info
     if (key === 'drillYard') {
-      iy += 8;
       const tc = troopCapFor(bld);
       const ts = this.me?.troops ?? 0;
-      const troopLbl = txt(t('city.troopCap').replace('{cur}', String(ts)).replace('{cap}', String(tc)), 11, C.mid);
-      troopLbl.x = px + 10;
+      const troopLbl = txt(t('city.troopCap').replace('{cur}', String(ts)).replace('{cap}', String(tc)), 12, C.mid);
+      troopLbl.x = 10;
       troopLbl.y = iy;
-      this.container.addChild(troopLbl);
+      panelRoot.addChild(troopLbl);
     }
+
+    // Close on tap-outside — pushed LAST so panel buttons above take priority.
+    this.hits.push({ x: 0, y: 0, w, h, fn: () => { this.selectedBuilding = null; this.render(); } });
+  }
+
+  /** Convert a rect drawn in the modal's local (unscaled) frame into real screen space. */
+  private toScreen(r: { x: number; y: number; w: number; h: number }, originX: number, originY: number, scale: number): { x: number; y: number; w: number; h: number } {
+    return { x: originX + r.x * scale, y: originY + r.y * scale, w: r.w * scale, h: r.h * scale };
   }
 
   // ── Building bonus description lines ─────────────────────────────────────
@@ -672,9 +735,9 @@ export class CityScene implements Scene {
     g.x = x;
     g.y = y;
     this.container.addChild(g);
-    const lbl = txt(label, 11, textColor);
-    lbl.x = x + 6;
-    lbl.y = y + (h - 14) / 2;
+    const lbl = txt(label, 12, textColor, true);
+    lbl.x = x + 8;
+    lbl.y = y + (h - 15) / 2;
     this.container.addChild(lbl);
     this.hits.push({ x, y, w, h, fn });
   }
@@ -683,11 +746,5 @@ export class CityScene implements Scene {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
     if (n >= 1_000) return `${Math.floor(n / 1_000)}k`;
     return String(Math.floor(n));
-  }
-
-  private fmtSec(sec: number): string {
-    if (sec < 60) return `${sec}s`;
-    if (sec < 3600) return `${Math.floor(sec / 60)}m`;
-    return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`;
   }
 }

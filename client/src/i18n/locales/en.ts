@@ -1350,12 +1350,11 @@ export const en: Record<TranslationKey, string> = {
 
   // ── City / Home Desk (SLG_CITY_DESIGN P1) ────────────────────────────────
   'city.title': 'Home Desk',
-  'city.back': 'Back to Map',
   'city.buildings': 'Buildings',
   'city.resources': 'Resources',
   'city.buildQueue': 'Build Queue',
   'city.queueEmpty': 'No active builds',
-  'city.queueEntry': '{name} Lv.{to} · {sec}s left',
+  'city.queueEntry': '{name} Lv.{to} · {sec} left',
   'city.speedup': 'Speed Up ({coins} coins)',
   'city.speedupDone': 'Sped up',
   'city.upgrade': 'Upgrade',
