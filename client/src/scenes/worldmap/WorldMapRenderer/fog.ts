@@ -5,13 +5,27 @@ import { occupyFrontierCells } from '../occupyFrontier';
 import { HUD_H } from '../constants';
 import { ENEMY_BASE_TINT, CLOUD_COLOR, tileColor, proceduralTileColor } from '../tileStyle';
 import { drawStar } from '../tileGraphics';
+import { StickmanRuntime } from '../../../render/stickman/StickmanRuntime';
+import { UnitType } from '../../../game/types';
+import { targetScreenHeight } from '../../../render/unitSize';
+import infantryTaoUrl from '../../../assets/infantry.tao';
+import shieldBearerTaoUrl from '../../../assets/shieldbearer.tao';
 import { type Constructor, type WorldMapRendererBaseCtor } from './base';
+
+/** March-token art (art-direction TODO: replace with dedicated march-sprite assets — see design/game/ART_DIRECTION.md).
+ * Battle's normal-troop rig stands for every march except attack, which borrows the shield-bearer
+ * rig as the closest thing to a "siege" identity (no distinct siege UnitType exists yet). */
+const MARCH_TOKEN_ASSET: Record<'normal' | 'siege', { url: string; type: UnitType }> = {
+  normal: { url: infantryTaoUrl as unknown as string, type: UnitType.Infantry },
+  siege:  { url: shieldBearerTaoUrl as unknown as string, type: UnitType.ShieldBearer },
+};
 
 export interface FogHandlers {
   renderMapL3(): void;
   renderFog(): void;
   renderOccupyFrontier(): void;
-  renderOverlay(): void;
+  renderOverlay(dt?: number): void;
+  syncMarchTokens(dt: number): void;
   renderMap(): void;
 }
 
@@ -151,7 +165,7 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
       g.lineStyle(0);
     }
 
-    renderOverlay(): void {
+    renderOverlay(dt = 0): void {
       this.renderFog();
       const g = this.ctx.overlayGfx;
       g.clear();
@@ -191,7 +205,6 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
 
       // March arrows (L1/L2 only; L3 is too zoomed-out for detail).
       if (this.ctx.zoom < 3) {
-        const now = Date.now();
         for (const march of this.ctx.marches) {
           const fromXY = this.ctx.parseTileStrict(march.fromTile);
           const toXY = this.ctx.parseTileStrict(march.toTile);
@@ -217,27 +230,7 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
           g.lineTo(px, py);
           g.lineStyle(0);
 
-          // Progress along the path (§ real-time march animation): a march has no visible token
-          // until this shipped — departAt/arriveAt were only used for HUD countdown text before.
-          // Clamp guards a not-yet-departed or already-arrived march (poll lag) from drawing off-path.
-          const span = march.arriveAt - march.departAt;
-          const frac = span > 0 ? Math.min(1, Math.max(0, (now - march.departAt) / span)) : 1;
-          const hx = fpx + (px - fpx) * frac;
-          const hy = fpy + (py - fpy) * frac;
           const ang = Math.atan2(py - fpy, px - fpx);
-
-          // Troop token: a filled diamond riding the route, oriented in the travel direction.
-          const tokR = enemy ? 6 : 5;
-          g.lineStyle(enemy ? 2 : 1.5, col, 0.95);
-          g.beginFill(col, enemy ? 0.85 : 0.7);
-          g.drawPolygon([
-            hx + Math.cos(ang) * tokR,        hy + Math.sin(ang) * tokR,
-            hx + Math.cos(ang + 2.4) * tokR,  hy + Math.sin(ang + 2.4) * tokR,
-            hx + Math.cos(ang + Math.PI) * tokR * 0.5, hy + Math.sin(ang + Math.PI) * tokR * 0.5,
-            hx + Math.cos(ang - 2.4) * tokR,  hy + Math.sin(ang - 2.4) * tokR,
-          ]);
-          g.endFill();
-          g.lineStyle(0);
 
           // Directed chevron head at the destination (kept as the route's endpoint marker).
           const headLen = enemy ? 11 : 9;
@@ -248,6 +241,77 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
           g.lineTo(px - Math.cos(ang + spread) * headLen, py - Math.sin(ang + spread) * headLen);
           g.lineStyle(0);
         }
+      }
+
+      this.syncMarchTokens(dt);
+    }
+
+    /**
+     * Walk-cycle sprite riding each visible march's route (replaces the earlier plain diamond
+     * token — art-direction TODO: swap MARCH_TOKEN_ASSET for dedicated march-sprite assets once
+     * authored). One pooled StickmanRuntime per in-flight march, keyed by marchId; runtimes for
+     * marches no longer present (arrived, cancelled, or scrolled past zoom<3) are torn down.
+     */
+    syncMarchTokens(dt: number): void {
+      const live = new Set<string>();
+      if (this.ctx.zoom < 3) {
+        const now = Date.now();
+        const tp = this.ctx.tp;
+        for (const march of this.ctx.marches) {
+          const fromXY = this.ctx.parseTileStrict(march.fromTile);
+          const toXY = this.ctx.parseTileStrict(march.toTile);
+          if (!fromXY || !toXY) continue;
+          const [fx, fy] = fromXY;
+          const [tx2, ty2] = toXY;
+          const from = tileToScreen(fx, fy, tp);
+          const to = tileToScreen(tx2, ty2, tp);
+          const fpx = this.ctx.panX + from.x;
+          const fpy = this.ctx.panY + from.y;
+          const px  = this.ctx.panX + to.x;
+          const py  = this.ctx.panY + to.y;
+
+          const span = march.arriveAt - march.departAt;
+          const frac = span > 0 ? Math.min(1, Math.max(0, (now - march.departAt) / span)) : 1;
+          const hx = fpx + (px - fpx) * frac;
+          const hy = fpy + (py - fpy) * frac;
+          const mirrorX = px < fpx;
+
+          live.add(march.marchId);
+          const kind = march.kind === 'attack' ? 'siege' : 'normal';
+          let entry = this.ctx.marchTokenRuntimes.get(march.marchId);
+          if (entry && entry.kind !== kind) {
+            entry.runtime?.destroy();
+            this.ctx.marchTokenRuntimes.delete(march.marchId);
+            entry = undefined;
+          }
+          if (!entry) {
+            // Placeholder while the (cached-after-first-use) .tao asset loads — the runtime
+            // itself needs a resolved TaoAsset, so it's built async and starts absent/invisible.
+            entry = { runtime: null, kind };
+            this.ctx.marchTokenRuntimes.set(march.marchId, entry);
+            const { url, type } = MARCH_TOKEN_ASSET[kind];
+            const target = tp * 1.1;
+            StickmanRuntime.loadAsset(url, targetScreenHeight(type)).then((asset) => {
+              const current = this.ctx.marchTokenRuntimes.get(march.marchId);
+              if (!current || current !== entry) return; // march ended or asset swapped meanwhile
+              const runtime = new StickmanRuntime(asset, { targetHeight: target, mirrorX, showShadow: false });
+              this.ctx.marchTokenLayer.addChild(runtime.container);
+              current.runtime = runtime;
+            }).catch(err => { console.warn(`[WorldMap] march token .tao failed to load (${kind}):`, err); });
+          }
+          if (entry.runtime) {
+            entry.runtime.syncState('moving');
+            entry.runtime.update(dt);
+            entry.runtime.container.position.set(hx, hy);
+            const baseScaleX = Math.abs(entry.runtime.container.scale.x);
+            entry.runtime.container.scale.x = mirrorX ? -baseScaleX : baseScaleX;
+          }
+        }
+      }
+      for (const [id, entry] of this.ctx.marchTokenRuntimes) {
+        if (live.has(id)) continue;
+        entry.runtime?.destroy();
+        this.ctx.marchTokenRuntimes.delete(id);
       }
     }
 

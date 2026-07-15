@@ -37,9 +37,14 @@ export function LifecycleMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBa
         }
       }
       // March tokens ride the route between poll ticks — redraw every frame while any are in
-      // flight and visible, so their position advances smoothly instead of jumping on each ~5s poll.
-      if (this.ctx.marches.length > 0 && this.ctx.zoom < 3) {
-        this.renderOverlay();
+      // flight, so their position advances smoothly instead of jumping on each ~5s poll. Also
+      // fires with zero live marches but leftover pooled runtimes (all marches just arrived/were
+      // recalled, or the camera zoomed out to L3) so syncMarchTokens' cleanup pass actually tears
+      // the orphans down — otherwise their sprites would linger forever, since nothing would ever
+      // call renderOverlay again to reach that cleanup loop. renderOverlay/syncMarchTokens already
+      // gate their zoom<3-only drawing internally, so no zoom check is needed here.
+      if (this.ctx.marches.length > 0 || this.ctx.marchTokenRuntimes.size > 0) {
+        this.renderOverlay(dt);
       }
     }
 
@@ -69,6 +74,8 @@ export function LifecycleMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBa
       this.ctx.pool = [];
       for (const c of this.ctx.citySprites.values()) c.destroy({ children: true });
       this.ctx.citySprites.clear();
+      for (const { runtime } of this.ctx.marchTokenRuntimes.values()) runtime?.destroy();
+      this.ctx.marchTokenRuntimes.clear();
     }
   };
 }

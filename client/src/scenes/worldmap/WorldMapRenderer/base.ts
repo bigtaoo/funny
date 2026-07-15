@@ -37,7 +37,7 @@ export class WorldMapRendererBase {
 export interface WorldMapRendererBase {
   buildPool(): void;
   invalidatePool(): void;
-  renderOverlay(): void;
+  renderOverlay(dt?: number): void;
   refreshCityLayer(): void;
   isBaseAnchor(tx: number, ty: number): boolean;
   renderMap(): void;

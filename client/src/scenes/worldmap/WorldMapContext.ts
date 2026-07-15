@@ -12,6 +12,7 @@ import type { WorldMapRenderer } from './WorldMapRenderer';
 import type { WorldMapPanels } from './WorldMapPanels';
 import type { WorldMapNet } from './WorldMapNet';
 import type { WorldMapInput } from './WorldMapInput';
+import type { StickmanRuntime } from '../../render/stickman/StickmanRuntime';
 
 // ── Public callbacks ────────────────────────────────────────────────────────
 export interface WorldMapCallbacks {
@@ -87,6 +88,11 @@ export class WorldMapContext {
   citySprites: Map<string, PIXI.Container> = new Map();
   fogGfx!: PIXI.Graphics;
   overlayGfx!: PIXI.Graphics;
+  /** March walk-cycle sprites, above overlayGfx so they read on top of the route line/arrowhead. */
+  marchTokenLayer!: PIXI.Container;
+  /** marchId → live StickmanRuntime riding that march's route (fog.ts syncMarchTokens). `runtime` is
+   * null while the (cached-after-first-use) .tao asset is still loading. */
+  marchTokenRuntimes: Map<string, { runtime: StickmanRuntime | null; kind: string }> = new Map();
   hudLayer!: PIXI.Container;
   /** Title bar + back button — static, drawn once (unlike hudLayer, which is torn down on every ~5s march-poll re-render). */
   topLayer!: PIXI.Container;
