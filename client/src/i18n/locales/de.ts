@@ -1351,12 +1351,11 @@ export const de: Record<TranslationKey, string> = {
 
   // ── Heimatstadt / Schreibtisch (SLG_CITY_DESIGN P1) ──────────────────────
   'city.title': 'Heimatstadt · Schreibtisch',
-  'city.back': 'Zurück zur Karte',
   'city.buildings': 'Gebäude',
   'city.resources': 'Ressourcen',
   'city.buildQueue': 'Bauwarteschlange',
   'city.queueEmpty': 'Keine aktiven Bauten',
-  'city.queueEntry': '{name} Lv.{to} · noch {sec}s',
+  'city.queueEntry': '{name} Lv.{to} · noch {sec}',
   'city.speedup': 'Beschleunigen ({coins} Münzen)',
   'city.speedupDone': 'Beschleunigt',
   'city.upgrade': 'Aufwerten',

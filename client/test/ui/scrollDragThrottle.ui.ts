@@ -28,6 +28,7 @@ import { EquipmentScene } from '../../src/scenes/EquipmentScene';
 import type { EquipmentCallbacks } from '../../src/scenes/EquipmentScene';
 import { CardScene } from '../../src/scenes/CardScene';
 import { AuctionScene } from '../../src/scenes/AuctionScene';
+import { CityScene } from '../../src/scenes/CityScene';
 import { ShopScene } from '../../src/scenes/ShopScene';
 import { DeckBuilderScene } from '../../src/scenes/DeckBuilderScene';
 import type { WorldApiClient } from '../../src/net/WorldApiClient';
@@ -117,6 +118,33 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
       onBack() {}, worldApi: stubWorldApi(),
     }) as any;
     assertScrollDragThrottled(scene, input);
+  });
+
+  it('CityScene: drag-scroll renders once per frame, not once per pointermove', () => {
+    const input = new InputManager();
+    const scene = new CityScene(createLayout(W, H), input, {
+      onBack() {},
+      worldApi: {
+        getMe: () => new Promise(() => {}),
+        upgradeBuilding: () => new Promise(() => {}),
+        speedupBuild: () => new Promise(() => {}),
+      } as unknown as WorldApiClient,
+      worldId: 'world:1:0',
+    }) as any;
+    // Start the drag well below the (short, 10-building) card grid — an empty decorative
+    // area, not a building card — so the gesture scrolls instead of opening a detail modal.
+    const y = scene.h - 20;
+    const renderSpy = vi.spyOn(scene, 'render');
+    input._emitDown(W / 2, y);
+    input._emitMove(W / 2, y - 20);
+    input._emitMove(W / 2, y - 40);
+    input._emitMove(W / 2, y - 60);
+    expect(renderSpy).not.toHaveBeenCalled();
+    scene.update(1 / 60);
+    expect(renderSpy).toHaveBeenCalledTimes(1);
+    scene.update(1 / 60);
+    expect(renderSpy).toHaveBeenCalledTimes(1);
+    scene.destroy();
   });
 
   it('ShopScene: drag-scroll renders once per frame, not once per pointermove', () => {
