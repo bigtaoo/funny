@@ -854,6 +854,7 @@ export const de: Record<TranslationKey, string> = {
   'world.team.title': 'Angriffsteams',
   'world.team.slot': 'Team {n}',
   'world.team.empty': '(leer)',
+  'world.team.tapToBuild': 'Zum Aufstellen tippen',
   'world.team.committed': 'Truppen {n}',
   'world.team.editTitle': '{name} bearbeiten',
   'world.team.frontRow': 'Einsatz',

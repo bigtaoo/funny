@@ -866,6 +866,7 @@ export const zh = {
   'world.team.title': '进攻队伍',
   'world.team.slot': '队伍 {n}',
   'world.team.empty': '（空）',
+  'world.team.tapToBuild': '点击编队',
   'world.team.committed': '兵力 {n}',
   'world.team.editTitle': '编辑 {name}',
   'world.team.frontRow': '出兵',

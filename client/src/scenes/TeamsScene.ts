@@ -5,6 +5,13 @@
 // CC-4: palette changes from unit-type list to card roster (CHARACTER_CARDS_DESIGN §8).
 //   - Shows each deployed card's troop count + injury status from worldsvc cardState.
 //   - "Fill All Troops" button distributes baseTroopStock evenly by troopCap priority.
+//
+// Layout (2026-07-15 redesign): the 5 formation slots became a 2-column card grid (portrait
+// strip preview of the deployed cards + committed troops, dashed "+ tap to build" empty state)
+// instead of a thin single-column list — mirrors the roster/skins card-grid language elsewhere
+// in the game (see roster-card-fullheight-portrait / skins-tab-card-grid memories). The card
+// roster underneath moved from a flat cut-off list to a scrollable portrait-card grid so it no
+// longer silently truncates when the inventory overflows the screen.
 
 import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../layout/ILayout';
@@ -14,9 +21,12 @@ import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
+import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { BusyTracker } from '../ui/busyTracker';
+import { UNIT_ART_URLS, getArtTexture } from '../render/cardArt';
 import type { WorldApiClient, TeamTemplate, CardSLGState, PlayerWorldView } from '../net/WorldApiClient';
 import type { SaveData, CardInstance } from '../game/meta/SaveData';
+import type { UnitType } from '../game/types';
 import { CARD_DEFS, troopCap } from '../game/meta/cardDefs';
 
 /** Team slot cap (UI constant; the server's SIEGE_TEAM_CAP is authoritative). */
@@ -41,13 +51,21 @@ export function teamSlotName(i: number): string {
 }
 
 const PAD = 12;
-const ROW_H = 56;
-const ROW_GAP = 8;
 const FILL_BTN_H = 38;
 const FILL_BTN_GAP = 10;
-const CARD_ROW_H = 40;
-const CARD_ROW_GAP = 4;
 const SECTION_LABEL_H = 22;
+
+// ── Formation slot grid (5 teams → 2-col card grid) ─────────────────────────
+const TEAM_COLS = 2;
+const TEAM_GAP = 10;
+const TEAM_CARD_H = 132;
+const MINI_ICON = 34;
+const MINI_ICON_GAP = 4;
+
+// ── Card roster grid (scrollable, portrait cell) ────────────────────────────
+const ROSTER_CELL_W_TARGET = 260;
+const ROSTER_CELL_H = 108;
+const ROSTER_GAP = 10;
 
 export class TeamsScene implements Scene {
   readonly container: PIXI.Container;
@@ -68,6 +86,16 @@ export class TeamsScene implements Scene {
   private hits: { rect: { x: number; y: number; w: number; h: number }; action: () => void }[] = [];
   private readonly unsubs: (() => void)[] = [];
 
+  // Roster grid drag-scroll (see scroll-drag-throttle-pattern memory: never render() inline from
+  // handleMove — a burst of pointermove events would rebuild the whole scene per event).
+  private scrollY = 0;
+  private scrollMax = 0;
+  private dragStart: { x: number; y: number; scroll: number } | null = null;
+  private scrollDirty = false;
+  private rosterTop = 0;
+  /** Portrait urls whose texture we've hooked for a one-shot re-render on load. */
+  private readonly artHooked = new Set<string>();
+
   constructor(layout: ILayout, input: InputManager, cb: TeamsCallbacks) {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
@@ -83,6 +111,8 @@ export class TeamsScene implements Scene {
     this.container.addChild(this.toastLayer);
 
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
+    this.unsubs.push(input.onMove((_x, y) => this.handleMove(y)));
+    this.unsubs.push(input.onUp(() => this.handleUp()));
     this.render();
     void this.load();
   }
@@ -141,69 +171,124 @@ export class TeamsScene implements Scene {
     this.renderFillTroopsBtn(y);
     y += FILL_BTN_H + FILL_BTN_GAP;
 
-    // ── Team slot rows ─────────────────────────────────────────────────────
+    // ── Team slot grid (2-col cards) ────────────────────────────────────────
+    y = this.renderTeamGrid(y);
+
+    // ── Card roster palette (scrollable) ────────────────────────────────────
+    y += 6;
+    this.rosterTop = y;
+    this.renderCardRoster(y);
+  }
+
+  /** 2-column card grid of the 5 formation slots. Returns the y just past the grid's bottom row. */
+  private renderTeamGrid(startY: number): number {
+    const { w } = this;
+    const avail = w - PAD * 2;
+    const cellW = (avail - TEAM_GAP * (TEAM_COLS - 1)) / TEAM_COLS;
+    const rows = Math.ceil(TEAM_CAP / TEAM_COLS);
     const nowTeams = Date.now();
     const teamState = this.worldView?.teamState ?? {};
+    const save = this.cb.getSave();
+
     for (let i = 0; i < TEAM_CAP; i++) {
-      const id = teamSlotId(i);
-      const team = this.teams.find((tm) => tm.id === id);
-      const filled = !!team && team.army.length > 0;
-      // ADR-026 §5: a team that lost a defensive wave is injury-locked and cannot defend until healed.
-      const teamInjuredUntil = teamState[id]?.injuredUntil ?? 0;
-      const teamInjured = teamInjuredUntil > nowTeams;
-      const rowW = w - PAD * 2;
-      const panel = sketchPanel(rowW, ROW_H, {
-        fill: C.paper, border: teamInjured ? C.red : (filled ? C.accent : C.mid), width: filled ? 2 : 1.3,
-        seed: seedFor(PAD, y, rowW),
-      });
-      panel.x = PAD; panel.y = y;
-      this.bodyLayer.addChild(panel);
+      const col = i % TEAM_COLS;
+      const row = Math.floor(i / TEAM_COLS);
+      const x = PAD + col * (cellW + TEAM_GAP);
+      const y = startY + row * (TEAM_CARD_H + TEAM_GAP);
+      this.renderTeamCard(i, x, y, cellW, teamState, nowTeams, save);
+    }
+    return startY + rows * (TEAM_CARD_H + TEAM_GAP);
+  }
 
-      const name = txt(team?.name || teamSlotName(i), 14, C.dark, true);
-      name.x = PAD + 12; name.y = y + 10;
-      this.bodyLayer.addChild(name);
+  private renderTeamCard(
+    i: number,
+    x: number,
+    y: number,
+    cardW: number,
+    teamState: Record<string, { injuredUntil?: number | null }>,
+    now: number,
+    save: SaveData,
+  ): void {
+    const id = teamSlotId(i);
+    const team = this.teams.find((tm) => tm.id === id);
+    const filled = !!team && team.army.length > 0;
+    // ADR-026 §5: a team that lost a defensive wave is injury-locked and cannot defend until healed.
+    const injuredUntil = teamState[id]?.injuredUntil ?? 0;
+    const injured = injuredUntil > now;
+    const pad = 10;
 
-      if (teamInjured) {
-        const secsLeft = Math.ceil((teamInjuredUntil - nowTeams) / 1000);
-        const timeStr = secsLeft >= 60 ? `${Math.ceil(secsLeft / 60)}m` : `${secsLeft}s`;
-        const tag = txt(`[${t('roster.injured').replace('{time}', timeStr)}]`, 10, C.red, true);
-        tag.x = name.x + name.width + 8; tag.y = y + 12;
-        this.bodyLayer.addChild(tag);
-      }
+    const border = injured ? C.red : (filled ? C.accent : C.mid);
+    const panel = sketchPanel(cardW, TEAM_CARD_H, {
+      fill: filled ? 0xfaf9f5 : C.paper, border, width: filled ? 2.2 : 1.3,
+      seed: seedFor(x, y, cardW),
+    });
+    panel.x = x; panel.y = y;
+    this.bodyLayer.addChild(panel);
 
-      if (filled) {
-        const committed = this.committedTroops(team!.army);
-        const sub = `${t('world.defense.garrison').replace('{n}', String(team!.army.length))}   ${t('world.team.committed').replace('{n}', String(committed))}`;
-        const subLbl = txt(sub, 11, C.mid);
-        subLbl.x = PAD + 12; subLbl.y = y + 30;
-        this.bodyLayer.addChild(subLbl);
-      } else {
-        const subLbl = txt(t('world.team.empty'), 11, C.light);
-        subLbl.x = PAD + 12; subLbl.y = y + 30;
-        this.bodyLayer.addChild(subLbl);
-      }
+    const name = txt(team?.name || teamSlotName(i), 15, C.dark, true);
+    name.x = x + pad; name.y = y + pad;
+    this.bodyLayer.addChild(name);
 
-      // Edit button (right)
-      const btnW = 64, btnH = 30;
-      const btn = sketchPanel(btnW, btnH, { fill: C.dark, border: C.gold, seed: seedFor(w, y, btnW) });
-      btn.x = w - PAD - btnW - 8; btn.y = y + (ROW_H - btnH) / 2;
-      this.bodyLayer.addChild(btn);
-      const btnLbl = txt(t('world.team.edit'), 12, C.light, true);
-      btnLbl.anchor.set(0.5, 0.5);
-      btnLbl.x = btn.x + btnW / 2; btnLbl.y = btn.y + btnH / 2;
-      this.bodyLayer.addChild(btnLbl);
+    // Edit chip (top-right) — whole card is also tappable, this is just an explicit affordance.
+    const editW = 46, editH = 22;
+    const editBtn = sketchPanel(editW, editH, { fill: C.dark, border: C.gold, seed: seedFor(x + cardW, y, editW) });
+    editBtn.x = x + cardW - pad - editW; editBtn.y = y + pad - 3;
+    this.bodyLayer.addChild(editBtn);
+    const editLbl = txt(t('world.team.edit'), 10, C.light, true);
+    editLbl.anchor.set(0.5, 0.5);
+    editLbl.x = editBtn.x + editW / 2; editLbl.y = editBtn.y + editH / 2;
+    this.bodyLayer.addChild(editLbl);
 
-      const name2 = team?.name || teamSlotName(i);
-      this.hits.push({
-        rect: { x: PAD, y, w: rowW, h: ROW_H },
-        action: () => this.cb.onEditTeam(id, name2),
-      });
-      y += ROW_H + ROW_GAP;
+    if (injured) {
+      const secsLeft = Math.ceil((injuredUntil - now) / 1000);
+      const timeStr = secsLeft >= 60 ? `${Math.ceil(secsLeft / 60)}m` : `${secsLeft}s`;
+      const tag = txt(`[${t('roster.injured').replace('{time}', timeStr)}]`, 10, C.red, true);
+      tag.x = x + pad; tag.y = y + pad + 20;
+      this.bodyLayer.addChild(tag);
     }
 
-    // ── Card roster palette ────────────────────────────────────────────────
-    y += 6;
-    this.renderCardRoster(y);
+    if (filled) {
+      // Mini portrait strip: one small icon per deployed card (up to 6, then "+N").
+      const entries = team!.army;
+      const shown = entries.slice(0, 6);
+      const iconsY = y + pad + (injured ? 42 : 30);
+      let ix = x + pad;
+      for (const entry of shown) {
+        const cardInst = entry.cardInstanceId ? save.cardInv?.[entry.cardInstanceId] : undefined;
+        const def = cardInst ? CARD_DEFS[cardInst.defId] : undefined;
+        const unitType = (def?.unitType ?? entry.unitType) as UnitType | undefined;
+        const artUrl = unitType ? UNIT_ART_URLS[unitType] : undefined;
+        const frame = sketchPanel(MINI_ICON, MINI_ICON, { fill: 0xf0eee7, border: C.mid, seed: seedFor(ix, iconsY, MINI_ICON) });
+        frame.x = ix; frame.y = iconsY;
+        this.bodyLayer.addChild(frame);
+        if (artUrl) this.drawArtFit(artUrl, ix + 1, iconsY + 1, MINI_ICON - 2, MINI_ICON - 2);
+        ix += MINI_ICON + MINI_ICON_GAP;
+      }
+      if (entries.length > shown.length) {
+        const more = txt(`+${entries.length - shown.length}`, 12, C.mid, true);
+        more.x = ix + 2; more.y = iconsY + MINI_ICON / 2 - 7;
+        this.bodyLayer.addChild(more);
+      }
+
+      const committed = this.committedTroops(team!.army);
+      const sub = `${t('world.defense.garrison').replace('{n}', String(team!.army.length))}   ${t('world.team.committed').replace('{n}', String(committed))}`;
+      const subLbl = txt(sub, 11, C.mid);
+      subLbl.x = x + pad; subLbl.y = y + TEAM_CARD_H - pad - 14;
+      this.bodyLayer.addChild(subLbl);
+    } else {
+      const plus = txt('+', 30, C.light, true);
+      plus.anchor.set(0.5, 0.5); plus.x = x + cardW / 2; plus.y = y + TEAM_CARD_H / 2 - 10;
+      this.bodyLayer.addChild(plus);
+      const hint = txt(t('world.team.tapToBuild'), 11, C.light);
+      hint.anchor.set(0.5, 0.5); hint.x = x + cardW / 2; hint.y = y + TEAM_CARD_H / 2 + 18;
+      this.bodyLayer.addChild(hint);
+    }
+
+    const name2 = team?.name || teamSlotName(i);
+    this.hits.push({
+      rect: { x, y, w: cardW, h: TEAM_CARD_H },
+      action: () => this.cb.onEditTeam(id, name2),
+    });
   }
 
   private renderFillTroopsBtn(y: number): void {
@@ -234,7 +319,7 @@ export class TeamsScene implements Scene {
     }
   }
 
-  /** Card roster section: lists all cards from cardInv with their troop / injury status. */
+  /** Card roster section: scrollable portrait-card grid of all cards in cardInv with troop / injury status. */
   private renderCardRoster(startY: number): void {
     const { w, h } = this;
     const save = this.cb.getSave();
@@ -247,63 +332,108 @@ export class TeamsScene implements Scene {
     const sectionLbl = txt(t('roster.title'), 11, C.mid);
     sectionLbl.x = PAD; sectionLbl.y = startY + 2;
     this.bodyLayer.addChild(sectionLbl);
-    let y = startY + SECTION_LABEL_H;
-    const now = Date.now();
 
-    for (const card of cards) {
-      if (y + CARD_ROW_H > h - 8) break; // stop before clipping off screen
-      this.renderCardRosterRow(card, y, cardState[card.id], now);
-      y += CARD_ROW_H + CARD_ROW_GAP;
-    }
+    const listY = startY + SECTION_LABEL_H;
+    const listH = h - listY - 8;
+    const avail = w - PAD * 2;
+    const cols = Math.max(1, Math.floor((avail + ROSTER_GAP) / (ROSTER_CELL_W_TARGET + ROSTER_GAP)));
+    const cellW = (avail - ROSTER_GAP * (cols - 1)) / cols;
+    const rows = Math.ceil(cards.length / cols);
+    const totalH = rows * (ROSTER_CELL_H + ROSTER_GAP) + ROSTER_GAP;
+    this.scrollMax = Math.max(0, totalH - listH);
+    this.scrollY = Math.max(0, Math.min(this.scrollY, this.scrollMax));
+
+    const now = Date.now();
+    cards.forEach((card, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = PAD + col * (cellW + ROSTER_GAP);
+      const y = listY + ROSTER_GAP + row * (ROSTER_CELL_H + ROSTER_GAP) - this.scrollY;
+      if (y + ROSTER_CELL_H >= listY && y <= listY + listH) {
+        this.renderCardRosterCell(card, x, y, cellW, cardState[card.id], now);
+      }
+    });
+
+    drawScrollIndicator(this.bodyLayer, { x: PAD, y: listY, w: avail, h: listH }, this.scrollY, this.scrollMax);
   }
 
-  private renderCardRosterRow(
+  private renderCardRosterCell(
     card: CardInstance,
+    x: number,
     y: number,
+    cellW: number,
     state: CardSLGState | undefined,
     now: number,
   ): void {
-    const { w } = this;
     const def = CARD_DEFS[card.defId];
     const cap = def ? troopCap(card) : 0;
     const current = state?.currentTroops ?? 0;
     const injuredUntil = state?.injuredUntil ?? 0;
     const isInjured = injuredUntil > now;
     const teamId = state?.teamId;
+    const pad = 8;
 
-    const rowW = w - PAD * 2;
     const border = isInjured ? C.red : (teamId ? C.accent : C.mid);
-    const row = sketchPanel(rowW, CARD_ROW_H - 2, { fill: 0xfaf9f5, border, seed: seedFor(y, 0, rowW) });
-    row.x = PAD; row.y = y;
-    this.bodyLayer.addChild(row);
+    const cell = sketchPanel(cellW, ROSTER_CELL_H, { fill: 0xfaf9f5, border, seed: seedFor(x, y, cellW) });
+    cell.x = x; cell.y = y;
+    this.bodyLayer.addChild(cell);
 
-    // Card name
+    // Portrait (spans the cell height, left side).
+    const imgH = ROSTER_CELL_H - pad * 2;
+    const imgW = Math.round(imgH * 0.72);
+    const frame = sketchPanel(imgW, imgH, { fill: 0xf0eee7, border: C.mid, seed: seedFor(x, y, imgW) });
+    frame.x = x + pad; frame.y = y + pad;
+    this.bodyLayer.addChild(frame);
+    const artUrl = def ? UNIT_ART_URLS[def.unitType] : undefined;
+    if (artUrl) this.drawArtFit(artUrl, x + pad + 1, y + pad + 1, imgW - 2, imgH - 2);
+
+    // Info column.
+    const ax = x + pad + imgW + 10;
+    const rightW = x + cellW - pad - ax;
     const cardName = t(`card.${card.defId}.name` as import('../i18n').TranslationKey);
-    const nameLbl = txt(`${cardName} Lv.${card.level}`, 12, C.dark, true);
-    nameLbl.x = PAD + 10; nameLbl.y = y + 5;
+    const nameLbl = txt(`${cardName} Lv.${card.level}`, 13, C.dark, true);
+    nameLbl.x = ax; nameLbl.y = y + pad;
+    if (nameLbl.width > rightW) nameLbl.scale.set(rightW / nameLbl.width);
     this.bodyLayer.addChild(nameLbl);
 
-    // Status tags: teamId / injured
-    let tagX = nameLbl.x + nameLbl.width + 8;
-    if (teamId) {
-      const tag = txt(`[${t('roster.inTeam')}]`, 10, C.accent, true);
-      tag.x = tagX; tag.y = y + 7; this.bodyLayer.addChild(tag); tagX += tag.width + 6;
-    }
-    if (isInjured) {
-      const secsLeft = Math.ceil((injuredUntil - now) / 1000);
-      const timeStr = secsLeft >= 60 ? `${Math.ceil(secsLeft / 60)}m` : `${secsLeft}s`;
-      const tag = txt(`[${t('roster.injured').replace('{time}', timeStr)}]`, 10, C.red);
-      tag.x = tagX; tag.y = y + 7; this.bodyLayer.addChild(tag);
-    }
-
-    // Troop count (right side)
     const troopLbl = txt(
       `${current}/${cap}`,
-      11,
+      13,
       current >= cap ? C.gold : (current === 0 ? C.mid : C.dark),
     );
-    troopLbl.anchor.set(1, 0.5); troopLbl.x = PAD + rowW - 10; troopLbl.y = y + (CARD_ROW_H - 2) / 2;
+    troopLbl.x = ax; troopLbl.y = y + pad + 24;
     this.bodyLayer.addChild(troopLbl);
+
+    if (teamId) {
+      const tag = txt(`[${t('roster.inTeam')}]`, 11, C.accent, true);
+      tag.x = ax; tag.y = y + pad + 46; this.bodyLayer.addChild(tag);
+    } else if (isInjured) {
+      const secsLeft = Math.ceil((injuredUntil - now) / 1000);
+      const timeStr = secsLeft >= 60 ? `${Math.ceil(secsLeft / 60)}m` : `${secsLeft}s`;
+      const tag = txt(`[${t('roster.injured').replace('{time}', timeStr)}]`, 11, C.red);
+      tag.x = ax; tag.y = y + pad + 46; this.bodyLayer.addChild(tag);
+    }
+  }
+
+  /**
+   * Draw a unit portrait, centered & fit into a box; re-render once the texture loads.
+   * Scales to whichever axis is tighter so it never clips or stretches (mirrors CardScene's helper).
+   */
+  private drawArtFit(url: string, x: number, y: number, boxW: number, boxH: number): void {
+    const tex = getArtTexture(url);
+    if (!tex.baseTexture.valid) {
+      if (!this.artHooked.has(url)) {
+        this.artHooked.add(url);
+        tex.baseTexture.once('loaded', () => { if (!this.destroyed) this.render(); });
+      }
+      return;
+    }
+    const scale = Math.min(boxW / tex.width, boxH / tex.height);
+    const sp = new PIXI.Sprite(tex);
+    sp.anchor.set(0.5);
+    sp.scale.set(scale);
+    sp.position.set(x + boxW / 2, y + boxH / 2);
+    this.bodyLayer.addChild(sp);
   }
 
   // ── Actions ─────────────────────────────────────────────────────────────
@@ -385,9 +515,28 @@ export class TeamsScene implements Scene {
         return;
       }
     }
+    // No hit (e.g. pressed in the roster grid) — could be the start of a drag-scroll.
+    if (y >= this.rosterTop) this.dragStart = { x, y, scroll: this.scrollY };
+  }
+
+  private handleMove(y: number): void {
+    if (!this.dragStart) return;
+    const dy = y - this.dragStart.y;
+    if (Math.abs(dy) > 6) {
+      this.scrollY = Math.max(0, Math.min(this.scrollMax, this.dragStart.scroll - dy));
+      this.scrollDirty = true;
+    }
+  }
+
+  private handleUp(): void {
+    this.dragStart = null;
   }
 
   update(dt: number): void {
+    // Drain the drag-scroll flag once per frame instead of rendering inline from handleMove
+    // (see scroll-drag-throttle-pattern memory — a pointermove burst would otherwise rebuild
+    // the whole scene per event).
+    if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
     if (this.bt.tick(dt)) this.render();
     if (this.toastTimer > 0) {
       this.toastTimer -= dt * 1000;
