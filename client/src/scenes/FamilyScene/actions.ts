@@ -169,11 +169,15 @@ export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TB
     }
 
     async doSendMsg(): Promise<void> {
-      if (this.sendInput) {
-        const body = this.sendInput.value.trim();
-        this.sendInput.remove();
-        this.sendInput = null;
-        this.sendText = '';
+      // Source the body from this.sendText, not this.sendInput.value — clicking Send blurs the
+      // hidden DOM input first (its 'blur' handler already nulled this.sendInput by the time this
+      // click handler runs), so sendInput can be null here even though the user has typed text.
+      // sendText mirrors the input's value on every keystroke, so it's always current regardless
+      // of DOM focus state.
+      const body = this.sendText.trim();
+      if (this.sendInput) { this.sendInput.remove(); this.sendInput = null; }
+      this.sendText = '';
+      if (body) {
         await this.submitMessage(body);
       } else {
         this.openSendInput();

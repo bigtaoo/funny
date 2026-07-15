@@ -202,34 +202,55 @@ export class FamilySceneBase {
     };
     const midY = headerH / 2;
 
-    // Left cluster begins just right of the back-button pill. Replicates SceneHeader's back-chip
+    // Left cluster must clear the back-button pill. Replicates SceneHeader's back-chip
     // metrics (BACK_X=10, size=0.039·h, padX=0.7·size) so the title always clears the pill.
     const backSize = Math.round(h * 0.039);
     const backNode = txt(`← ${t('common.back')}`, backSize, C.accent);
     const chipW = backNode.width + Math.round(backSize * 0.7) * 2;
     backNode.destroy();
-    let x = 10 + chipW + Math.round(backSize * 0.6);
+    const leftBound = 10 + chipW + Math.round(backSize * 0.6);
 
+    const showIdentity = this.landscape && this.family && this.mode === 'myFamily';
+    const gap = Math.round(w * 0.02);
+    const fam = showIdentity ? this.family! : null;
+
+    // Build every node up front (unpositioned) so we can measure the whole cluster's width and
+    // center it in the space between the back pill and the member count, instead of it always
+    // starting flush against the back button — which read lopsided once the identity was moved
+    // into the landscape header.
     const titleNode = add(txt(t('family.title'), Math.round(h * 0.034), C.dark, true));
+    let clusterW = titleNode.width;
+
+    let nameNode: PIXI.Text | null = null;
+    let star: PIXI.DisplayObject | null = null;
+    let starSize = 0;
+    let prosNode: PIXI.Text | null = null;
+    let countNode: PIXI.Text | null = null;
+    if (fam) {
+      nameNode = add(txt(`[${fam.tag}] ${fam.name}`, Math.round(h * 0.03), C.dark));
+      starSize = Math.round(h * 0.026);
+      star = add(buildIcon('star', starSize, 0xd4a030));
+      prosNode = add(txt(t('family.prosperity', { n: fam.prosperity }), Math.round(h * 0.024), 0xa9750f));
+      countNode = add(txt(t('family.memberCount', { n: fam.memberCount, cap: FAMILY_CAP }), Math.round(h * 0.024), FamilySceneBase.MUTED));
+      clusterW += gap + nameNode.width + gap + starSize + 6 + prosNode.width;
+    }
+
+    const rightBound = countNode ? w - 16 - countNode.width - gap : w - 16;
+    const available = rightBound - leftBound;
+    let x = leftBound + Math.max(0, (available - clusterW) / 2);
+
     titleNode.anchor.set(0, 0.5); titleNode.x = x; titleNode.y = midY;
+    x += titleNode.width;
 
-    if (this.landscape && this.family && this.mode === 'myFamily') {
-      const fam = this.family;
-      const gap = Math.round(w * 0.02);
-      x += titleNode.width + gap;
-
-      const nameNode = add(txt(`[${fam.tag}] ${fam.name}`, Math.round(h * 0.03), C.dark));
+    if (fam && nameNode && star && prosNode && countNode) {
+      x += gap;
       nameNode.anchor.set(0, 0.5); nameNode.x = x; nameNode.y = midY;
       x += nameNode.width + gap;
 
-      const starSize = Math.round(h * 0.026);
-      const star = add(buildIcon('star', starSize, 0xd4a030));
       star.x = x; star.y = midY - starSize / 2;
       x += starSize + 6;
-      const prosNode = add(txt(t('family.prosperity', { n: fam.prosperity }), Math.round(h * 0.024), 0xa9750f));
       prosNode.anchor.set(0, 0.5); prosNode.x = x; prosNode.y = midY;
 
-      const countNode = add(txt(t('family.memberCount', { n: fam.memberCount, cap: FAMILY_CAP }), Math.round(h * 0.024), FamilySceneBase.MUTED));
       countNode.anchor.set(1, 0.5); countNode.x = w - 16; countNode.y = midY;
     }
   }
