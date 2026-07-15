@@ -46,7 +46,7 @@ function fakeViews() {
     triggerLogin(id: string, pw: string) { loginCb!.onLogin(id, pw); },
     showReconnectPrompt: vi.fn((cb: ReconnectPromptCallbacks) => { calls.showReconnectPrompt.push(cb); }),
     showSettings: vi.fn(),
-  } as unknown as { showLogin: (cb: any) => void; showReconnectPrompt: (cb: ReconnectPromptCallbacks) => void };
+  };
 }
 
 function buildCtx(opts: {
