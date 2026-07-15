@@ -872,7 +872,7 @@ export const en: Record<TranslationKey, string> = {
   'world.trainCost': '({ink} ink)',
   'world.trainQueue': 'Training queue',
   'world.trainQueueEmpty': 'No training',
-  'world.trainEntry': '{n} troops · {sec}s left',
+  'world.trainEntry': '{n} troops · {time} left',
   'world.trainInQueue': 'Training {n}',
   'world.speedup': 'Speed up ({coins} coins)',
   'world.trained': 'Queued for training',

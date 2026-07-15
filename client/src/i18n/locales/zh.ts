@@ -884,7 +884,7 @@ export const zh = {
   'world.trainCost': '（耗墨 {ink}）',
   'world.trainQueue': '训练队列',
   'world.trainQueueEmpty': '暂无训练',
-  'world.trainEntry': '{n} 兵 · 剩 {sec}s',
+  'world.trainEntry': '{n} 兵 · 剩 {time}',
   'world.trainInQueue': '训练中 {n}',
   'world.speedup': '加速 ({coins} 金币)',
   'world.trained': '已入队训练',
