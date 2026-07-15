@@ -103,7 +103,9 @@ export class BotSession {
     this.battling = true;
     this.state = 'matchmaking';
     void this.runBattle()
-      .catch(() => undefined)
+      .catch((e) => {
+        console.warn(`bot ${this.identity.deviceId} battle aborted (${this.state}):`, (e as Error).message);
+      })
       .finally(() => {
         this.battling = false;
         if (this.state !== 'offline') this.state = 'lobby_idle';
