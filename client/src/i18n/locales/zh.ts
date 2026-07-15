@@ -351,6 +351,7 @@ export const zh = {
   'shop.coins': '金币：{coins}',
   'shop.buy': '购买',
   'shop.owned': '已拥有',
+  'shop.free': '免费',
   'shop.bought': '购买成功',
   'shop.insufficient': '金币不足',
   'shop.error': '购买失败，请重试',

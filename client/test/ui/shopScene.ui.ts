@@ -216,6 +216,53 @@ describe('ShopScene — monthly card daily claim greys out once claimed today', 
   });
 });
 
+describe('ShopScene — starter packs show "Free" and disappear once claimed', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+  const STARTER_GROWTH = t('shop.starterGrowth');
+  const FREE = t('shop.free');
+
+  it('shows the Free label and a tappable Buy button before claiming', async () => {
+    const scene = buildShop({
+      getMonetization: () => ({ subscriptionExpiry: 0, starterUsed: [] }),
+      buyStarter: async () => ({ ok: true }),
+    });
+    await flush();
+    expect(findLabelPos(scene.container, STARTER_GROWTH)).not.toBeNull();
+    expect(findLabelPos(scene.container, FREE)).not.toBeNull();
+    scene.destroy();
+  });
+
+  it('removes the card entirely once starterUsed includes its id, instead of leaving a disabled "Owned" tile', async () => {
+    const scene = buildShop({
+      getMonetization: () => ({ subscriptionExpiry: 0, starterUsed: ['starter_growth'] }),
+      buyStarter: async () => ({ ok: true }),
+    });
+    await flush();
+    expect(findLabelPos(scene.container, STARTER_GROWTH)).toBeNull();
+    scene.destroy();
+  });
+
+  it('claiming the pack makes the card disappear on the next render', async () => {
+    const state = { subscriptionExpiry: 0, starterUsed: [] as string[] };
+    const scene = buildShop({
+      getMonetization: () => ({ ...state }),
+      buyStarter: async () => {
+        state.starterUsed.push('starter_growth');
+        return { ok: true };
+      },
+    });
+    await flush();
+    expect(findLabelPos(scene.container, STARTER_GROWTH)).not.toBeNull();
+
+    tapLabel(scene, t('shop.buy'));
+    await flush();
+    await flush();
+
+    expect(findLabelPos(scene.container, STARTER_GROWTH)).toBeNull();
+    scene.destroy();
+  });
+});
+
 describe('ShopScene — promo-code redemption lives on the Coins tab', () => {
   it('does not show the promo field on the Shop tab', () => {
     const scene = buildShop({
