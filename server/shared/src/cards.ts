@@ -176,14 +176,17 @@ export const LEVEL_CUMULATIVE_XP: readonly number[] = [
 ];
 
 /**
- * Total "feed value" of a card instance: the XP cost that went into this card (its accumulated investment).
- * Used by the feed system: receiverXp += feedXp(material) × 0.70 (same-faction 70% efficiency; CHARACTER_CARDS_DESIGN §3.3).
- *
- * feedXp(card) = LEVEL_CUMULATIVE_XP[card.level] + card.xp
+ * Total "feed value" of a card instance, used directly as receiverXp += feedXp(material)
+ * (CHARACTER_CARDS_DESIGN §3.3). Level 1 is the base currency unit and always feeds its
+ * full value (1 + card.xp) with no loss; level 2+ cards feed at 80% of their accumulated
+ * investment (LEVEL_CUMULATIVE_XP[level] + card.xp), which discourages melting down
+ * already-leveled cards without zeroing out fresh level-1 duplicates.
  */
 export function feedXp(card: CardInstance): number {
   const level = Math.max(1, Math.min(Math.floor(card.level), 9));
-  return (LEVEL_CUMULATIVE_XP[level] ?? 0) + Math.max(0, card.xp);
+  const xp = Math.max(0, card.xp);
+  if (level <= 1) return 1 + xp;
+  return Math.floor(((LEVEL_CUMULATIVE_XP[level] ?? 0) + xp) * 0.8);
 }
 
 // ── Power scoring (CHARACTER_CARDS_DESIGN §2.4) ─────────────────────────────────────────

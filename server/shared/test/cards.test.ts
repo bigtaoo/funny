@@ -94,36 +94,36 @@ describe('LEVEL_CUMULATIVE_XP', () => {
 // ── feedXp ───────────────────────────────────────────────────────────────────────
 
 describe('feedXp', () => {
-  it('level 1, xp=0 → 0 (zero investment)', () => {
-    expect(feedXp(makeCard('lichuang', 1, 0))).toBe(0);
+  it('level 1, xp=0 → 1 (base currency unit, no loss)', () => {
+    expect(feedXp(makeCard('lichuang', 1, 0))).toBe(1);
   });
 
-  it('level 1, xp=3 → 3 (partial XP progress, no level cost yet)', () => {
-    expect(feedXp(makeCard('lichuang', 1, 3))).toBe(3);
+  it('level 1, xp=3 → 4 (base + partial XP progress, no loss)', () => {
+    expect(feedXp(makeCard('lichuang', 1, 3))).toBe(4);
   });
 
-  it('level 2, xp=0 → 5 (exactly the cost of L1→L2)', () => {
-    expect(feedXp(makeCard('lichuang', 2, 0))).toBe(5);
+  it('level 2, xp=0 → 4 (cost of L1→L2 = 5, at 80% efficiency)', () => {
+    expect(feedXp(makeCard('lichuang', 2, 0))).toBe(4);
   });
 
-  it('level 2, xp=10 → 15 (level cost + partial progress)', () => {
-    expect(feedXp(makeCard('lichuang', 2, 10))).toBe(15);
+  it('level 2, xp=10 → 12 (level cost + partial progress, at 80% efficiency)', () => {
+    expect(feedXp(makeCard('lichuang', 2, 10))).toBe(12);
   });
 
-  it('level 9, xp=0 → 488280 (full max investment)', () => {
-    expect(feedXp(makeCard('lichuang', 9, 0))).toBe(488280);
+  it('level 9, xp=0 → 390624 (full max investment, at 80% efficiency)', () => {
+    expect(feedXp(makeCard('lichuang', 9, 0))).toBe(390624);
   });
 
   it('clamps level below 1 to 1', () => {
-    expect(feedXp(makeCard('lichuang', 0, 0))).toBe(0); // level clamped to 1, xp 0 → 0
+    expect(feedXp(makeCard('lichuang', 0, 0))).toBe(1); // level clamped to 1, xp 0 → base value 1
   });
 
   it('clamps level above 9 to 9', () => {
-    expect(feedXp(makeCard('lichuang', 10, 0))).toBe(488280);
+    expect(feedXp(makeCard('lichuang', 10, 0))).toBe(390624);
   });
 
   it('ignores negative xp (treated as 0)', () => {
-    expect(feedXp(makeCard('lichuang', 1, -5))).toBe(0);
+    expect(feedXp(makeCard('lichuang', 1, -5))).toBe(1);
   });
 });
 

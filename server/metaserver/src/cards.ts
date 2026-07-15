@@ -4,6 +4,8 @@
 //             compensation (caller delivers coins via commercial if compensatedCoins > 0).
 // feedCards:  consume material cards to gain XP, level-up with overflow carry; same-faction
 //             required; locked materials rejected; idempotencyKey prevents double-consumption.
+//             Per-material XP transfer is feedXp(material) itself (efficiency loss for level 2+
+//             material is baked into feedXp; level 1 material feeds its full value, no loss).
 //
 // Both functions use the optimistic-lock rev guard + retries pattern (same as equipment.ts).
 // Shared pure math (feedXp, LEVEL_CUMULATIVE_XP) lives in @nw/shared/cards.
@@ -201,7 +203,7 @@ export async function setCardLock(
  * Rules:
  *   · Same faction only (tao→tao or anna→anna); cross-faction rejected with WRONG_FACTION.
  *   · Material cards must not be locked; locked materials rejected with CARD_LOCKED.
- *   · XP transferred per material = floor(feedXp(material) × 0.70).
+ *   · XP transferred per material = feedXp(material) (level 1 feeds full value; level 2+ at 80%).
  *   · Level-up is computed in a loop; overflow XP carries forward; max level is 9.
  *   · All material cards are removed from cardInv atomically with the XP write.
  *
@@ -257,7 +259,7 @@ export async function feedCards(
 
   // Pre-compute levelsGained for idem doc (from current save; may differ from actual if concurrent feed)
   let previewXp = 0;
-  for (const matId of ids) previewXp += Math.floor(feedXp(cur.cardInv![matId]!) * 0.70);
+  for (const matId of ids) previewXp += feedXp(cur.cardInv![matId]!);
   const { levelsGained: previewLevels } = applyFeedXp(curTarget, previewXp);
 
   // Claim idempotency key (dup = concurrent retry → replay path)
@@ -317,7 +319,7 @@ export async function feedCards(
         await cols.cardIdem.deleteOne({ _id: idempotencyKey });
         return { error: `faction mismatch for material: ${matId}`, code: 'WRONG_FACTION' };
       }
-      gainedXp += Math.floor(feedXp(mat) * 0.70);
+      gainedXp += feedXp(mat);
     }
 
     const { card: updatedTarget, levelsGained } = applyFeedXp(target, gainedXp);
