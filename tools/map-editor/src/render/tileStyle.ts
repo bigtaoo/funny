@@ -39,13 +39,13 @@ export const TERRAIN_TEX_ALPHA: Partial<Record<TerrainTextureName, number>> = {
   terrain_river:    0.92,
 };
 
-// Per-resource biome tint for the ground of a `resource` tile — applied by drawEditorTile so
-// same-resource zones read as faint colored regions (三战-style terrain legibility) beneath the
-// per-level motif. Deliberately high-luminance & paper-adjacent so the wash whispers the biome
-// without competing with the motif. Mirrors the game client's tileStyle.ts (SLG map render parity).
-// Tried deepening these 2026-07-11, then reverted: resType is per-tile random (no spatial
-// clustering), so a strong tint reads as confetti, not biome zones. Left faint — see the game
-// client's tileStyle.ts for the full note. Mirrors the game client (parity).
+// Per-resource biome tint for the ground of a `resource` tile — applied by drawEditorTile so each
+// province's leaning resource reads as a faint colored region (三战-style terrain legibility)
+// beneath the per-level motif. Deliberately high-luminance & paper-adjacent so the wash whispers
+// the province's leaning without competing with the motif. Mirrors the game client's tileStyle.ts
+// (SLG map render parity). Left faint by design — see the game client's tileStyle.ts for the full
+// history/rationale note (2026-07-15 rewrite: resType is genuinely per-tile independent now, ground
+// tint keys off the tile's PROVINCE leaning instead — see biomeGroundTint below).
 export const RES_TEX_TINT: Record<string, number> = {
   paper:    0xf1e6c0, // warm straw
   ink:      0xc6cfe8, // cool periwinkle
@@ -61,8 +61,9 @@ function lerpHexColor(c1: number, c2: number, t: number): number {
   return (r << 16) | (g << 8) | b;
 }
 
-/** Ground tint blended across biome-zone boundaries (2026-07-11 continuity pass). Mirrors the game
- * client's tileStyle.ts biomeGroundTint (SLG map render parity). */
+/** Solid ground tint keyed off the tile's own province's leaning resource type (2026-07-15 rewrite —
+ * see leaningResourceForProvince in @nw/shared). Mirrors the game client's tileStyle.ts
+ * biomeGroundTint (SLG map render parity). */
 export function biomeGroundTint(x: number, y: number, seed: number): number {
   const mix = biomeMixAt(x, y, seed);
   return mix.t === 0 ? RES_TEX_TINT[mix.a]! : lerpHexColor(RES_TEX_TINT[mix.a]!, RES_TEX_TINT[mix.b]!, mix.t);

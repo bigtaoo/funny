@@ -68,15 +68,20 @@ export const TERRAIN_TEX_ALPHA: Partial<Record<TerrainTextureName, number>> = {
  * map's palette by nudging these. 0xffffff (the default) = no tint = the raw grey art.
  */
 // Per-resource biome tint for the ground of a `resource` tile — applied at L1 by drawTileL1 so
-// same-resource zones read as faint colored regions (三战-style terrain legibility) beneath the
-// per-level motif. Deliberately high-luminance & paper-adjacent: the wash whispers the biome
-// without competing with the motif or masquerading as an ownership hue. Retune the biome palette
-// by nudging these. Must match the map-editor's tileStyle.ts RES_TEX_TINT (SLG map render parity).
-// Tried deepening these 2026-07-11 for the legibility pass, then reverted: resType is assigned
-// per-tile independently (no spatial clustering), so a strong per-type ground tint reads as
-// dense pink/blue-grey confetti rather than legible biome zones — the exact "地图像彩色纸屑"
-// problem the 2026-07-08 pass already fixed once (see DESIGN.md). Left faint; resource-type
-// legibility now comes from the motif icon's raised alpha floor instead (see drawResMotif).
+// each province's leaning resource reads as a faint colored region (三战-style terrain legibility)
+// beneath the per-level motif. Deliberately high-luminance & paper-adjacent: the wash whispers the
+// province's leaning without competing with the motif or masquerading as an ownership hue. Retune
+// the biome palette by nudging these. Must match the map-editor's tileStyle.ts RES_TEX_TINT (SLG
+// map render parity).
+// Tried deepening these 2026-07-11 for the legibility pass, then reverted: at the time resType was
+// (incorrectly) believed to already be per-tile independent with no spatial clustering, so a strong
+// per-type ground tint would've read as dense pink/blue-grey confetti — the exact "地图像彩色纸屑"
+// problem the 2026-07-08 pass already fixed once (see DESIGN.md). resType genuinely became per-tile
+// independent (2026-07-15 rewrite, see @nw/shared mapgen.ts biomeAt) — the ground tint now keys off
+// the tile's PROVINCE leaning type instead (see biomeGroundTint), a coarser and stable grouping, so
+// this stays faint on its own merits (kept calm, ownership stays the one strong color) rather than
+// because per-tile tinting would be noisy. Resource-type legibility for the SPECIFIC tile still comes
+// from the motif icon (see drawResMotif), which is unaffected by this province-level wash.
 export const RES_TEX_TINT: Record<string, number> = {
   paper:    0xf1e6c0, // warm straw
   ink:      0xc6cfe8, // cool periwinkle
@@ -93,9 +98,14 @@ function lerpHexColor(c1: number, c2: number, t: number): number {
 }
 
 /**
- * Ground tint for a resource tile at (x,y), blended across biome-zone boundaries instead of hard-cut
- * (2026-07-11 continuity pass — see biomeMixAt in @nw/shared). Deep inside a zone this equals plain
- * `RES_TEX_TINT[biomeAt(...)]`; near a boundary it fades to the neighboring zone's tint over ~10 tiles.
+ * Ground tint for a resource tile at (x,y): a solid wash of the tile's own PROVINCE's leaning
+ * resource type (2026-07-15 rewrite — see biomeMixAt/leaningResourceForProvince in @nw/shared).
+ * The tile's actual resType is drawn independently per-tile (see biomeAt) and is carried entirely
+ * by the motif icon, not this wash — this only communicates "which land resource does this whole
+ * province lean toward", so it changes at the province's own border (already a hard political line,
+ * ADR-034), not at some separate resource-zone boundary. biomeMixAt always returns t=0 now (no
+ * cross-fade needed), so lerpHexColor's second branch is effectively dead but kept for the type/shape
+ * so this call site doesn't need to change again if a future pass reintroduces blending.
  */
 export function biomeGroundTint(x: number, y: number, seed: number): number {
   const mix = biomeMixAt(x, y, seed);

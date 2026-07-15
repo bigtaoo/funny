@@ -26,54 +26,60 @@ function _obstacle(kind: ObstacleKind): ProceduralTile {
   return { type: 'obstacle', level: 1, obstacleKind: kind };
 }
 
-/**
- * Biome: low-frequency noise divides the map into four large land-resource zones (ink/paper/graphite/metal), encouraging resource
- * specialization and cross-zone trade (geographic foundation for the U1 auction economy). graphite is the 4th land resource (ADR-022);
- * `sticker` is never biome-generated here — it is placed as a level-gated copper-mine override in {@link resTypeFor}.
- */
-export function biomeAt(x: number, y: number, seed: number): ResourceType {
-  const n = valueNoise(x, y, SLG_GEN.biomeFreq, seed ^ 0x0444);
-  if (n < SLG_GEN.biomeInkMax) return 'ink';
-  if (n < SLG_GEN.biomePaperMax) return 'paper';
-  if (n < SLG_GEN.biomeGraphiteMax) return 'graphite';
-  return 'metal';
-}
-
 const _BIOME_ORDER: readonly ResourceType[] = ['ink', 'paper', 'graphite', 'metal'];
 
-/** Noise-value half-width of the biome blend band, tuned (map-editor screenshot A/B) to read as
- * roughly a 10-tile-wide transition at {@link SLG_GEN.biomeFreq} — see {@link biomeMixAt}. */
-export const BIOME_BLEND_WIDTH = 0.11;
-
-function _smoothstep01(edge0: number, edge1: number, x: number): number {
-  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
-  return t * t * (3 - 2 * t);
+/**
+ * The land-resource type a given province leans toward (ADR-022 provincial-bias model, rewritten
+ * 2026-07-15 — see design/game/SLG_DESIGN.md resource-distribution section). One deterministic draw
+ * per (provinceIdx, worldId): this is NOT the province's only resource — see {@link biomeAt}, which
+ * still draws every tile independently — it only skews that per-tile draw's odds toward this type.
+ */
+export function leaningResourceForProvince(provinceIdx: number, seed: number): ResourceType {
+  const n = rand2(provinceIdx, 0, seed ^ 0x0d55);
+  return _BIOME_ORDER[Math.floor(n * _BIOME_ORDER.length) % _BIOME_ORDER.length]!;
 }
 
-/** Two categories + a blend factor (a→b) for a smooth zone-boundary gradient. */
+/** Two categories + a blend factor (a→b); kept for {@link biomeGroundTint} call-site compatibility
+ * (client/map-editor tileStyle.ts) — see {@link biomeMixAt}. */
 export interface BiomeMix { a: ResourceType; b: ResourceType; t: number }
 
 /**
- * Like {@link biomeAt}, but reports proximity to a zone boundary instead of hard-cutting it, so the
- * ground render can blend `RES_TEX_TINT[a]`→`RES_TEX_TINT[b]` over `t` instead of jump-cutting at the
- * threshold (2026-07-11: the map-wide biome noise is already smooth/continuous — the "abrupt" look the
- * threshold-based biomeAt() produced was purely an artifact of the discrete step, not the noise itself).
- * Deep inside a zone (n more than `w` from any threshold) returns `a === b`, `t === 0` (pure color).
+ * Land-resource type for a tile (ADR-022 provincial-bias model, rewritten 2026-07-15): every resource
+ * tile independently draws one of the four land resources (ink/paper/graphite/metal) — resource types
+ * are meant to be MIXED within a province, not partitioned into large single-resource zones — with a
+ * mild bias toward the tile's own province's {@link leaningResourceForProvince} (`SLG_GEN.biomeProvinceBias`,
+ * e.g. 0.15 → the leaning type is drawn ~40% of the time, the other three ~20% each).
+ *
+ * Replaces the previous low-frequency-noise quad-partition (large contiguous same-resource zones cut
+ * by fixed noise thresholds), which read as abrupt hard-edged regions unrelated to province borders
+ * and didn't match the intended "mostly mixed, one type only mildly favored" design (map-editor
+ * DESIGN.md §8, 2026-07-15 entry).
  */
-export function biomeMixAt(x: number, y: number, seed: number, w = BIOME_BLEND_WIDTH): BiomeMix {
-  const n = valueNoise(x, y, SLG_GEN.biomeFreq, seed ^ 0x0444);
-  const thresholds = [SLG_GEN.biomeInkMax, SLG_GEN.biomePaperMax, SLG_GEN.biomeGraphiteMax];
-  let idx = _BIOME_ORDER.length - 1;
-  for (let i = 0; i < thresholds.length; i++) { if (n < thresholds[i]!) { idx = i; break; } }
-  if (idx > 0) {
-    const t0 = thresholds[idx - 1]!;
-    if (n < t0 + w) return { a: _BIOME_ORDER[idx - 1]!, b: _BIOME_ORDER[idx]!, t: _smoothstep01(t0 - w, t0 + w, n) };
+export function biomeAt(x: number, y: number, seed: number): ResourceType {
+  const leaning = leaningResourceForProvince(provinceIdxAt(x, y), seed);
+  const base = 1 / _BIOME_ORDER.length;
+  const leaningWeight = base + SLG_GEN.biomeProvinceBias;
+  const otherWeight = (1 - leaningWeight) / (_BIOME_ORDER.length - 1);
+  const roll = rand2(x, y, seed ^ 0x0444);
+  let acc = 0;
+  for (const t of _BIOME_ORDER) {
+    acc += t === leaning ? leaningWeight : otherWeight;
+    if (roll < acc) return t;
   }
-  if (idx < thresholds.length) {
-    const t1 = thresholds[idx]!;
-    if (n > t1 - w) return { a: _BIOME_ORDER[idx]!, b: _BIOME_ORDER[idx + 1]!, t: _smoothstep01(t1 - w, t1 + w, n) };
-  }
-  return { a: _BIOME_ORDER[idx]!, b: _BIOME_ORDER[idx]!, t: 0 };
+  return _BIOME_ORDER[_BIOME_ORDER.length - 1]!;
+}
+
+/**
+ * Ground-tint helper for {@link biomeGroundTint} (client/map-editor tileStyle.ts): resource types are
+ * now drawn per-tile (see {@link biomeAt}), so there is no resource-zone boundary left to blend across
+ * — the only region boundary left on the map is the province's own border, which is already a hard
+ * political line (ADR-034) and is fine to render as a hard tint change. Always returns `a === b`,
+ * `t === 0` (solid tint = the tile's own province's leaning type); the `w` param is accepted only for
+ * call-site compatibility and is unused.
+ */
+export function biomeMixAt(x: number, y: number, seed: number, _w?: number): BiomeMix {
+  const leaning = leaningResourceForProvince(provinceIdxAt(x, y), seed);
+  return { a: leaning, b: leaning, t: 0 };
 }
 
 /**
