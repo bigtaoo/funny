@@ -11,7 +11,7 @@ import type { InputManager } from '../../inputSystem/InputManager';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { buildDecorCLayer } from '../../render/decorCLayer';
-import { drawSceneHeader, sceneHeaderHeight, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
+import { drawSceneHeader, sceneHeaderHeight, HEADER_ACCENT, drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import type { WorldApiClient, AuctionView } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
@@ -48,12 +48,14 @@ export type AucTab = 'all' | 'mine' | 'bids';
 export type ItemClass = 'material' | 'equipment' | 'card';
 
 export const HUD_H = 50;
-export const FILTER_H = 44;
+// 1.5x the original 44 — approved 15.07.2026 category-bar enlargement pass.
+export const FILTER_H = 66;
 
 // Auction market grid: card cells (mirrors CardScene's roster-card treatment — a framed item glyph
 // on the left, info stacked to the right) instead of thin list rows.
 export const AUC_CELL_GAP = 14;
-export const AUC_CELL_H = 190;
+// 1.5x the original 190 — approved 15.07.2026 card-height enlargement pass.
+export const AUC_CELL_H = 285;
 export const AUC_CELL_W_TARGET = 340;
 
 // Material types available for auction
@@ -96,6 +98,11 @@ export class AuctionSceneBase {
   protected bodyLayer!: PIXI.Container;
   protected modalLayer!: PIXI.Container;
   protected toastLayer!: PIXI.Container;
+  /** Coin balance readout, drawn over the static header chrome and refreshed every render(). */
+  protected headerOverlayLayer!: PIXI.Container;
+
+  /** Async card-art texture URLs already hooked for a re-render on load (avoids double-subscribing). */
+  protected readonly artHooked = new Set<string>();
 
   // Create form state
   protected createClass: ItemClass = 'material';
@@ -189,6 +196,17 @@ export class AuctionSceneBase {
     this.headerH = hdr.headerH;
     this.backRect = hdr.backRect;
     this.hitRects.push({ rect: this.backRect, action: () => this.cb.onBack() });
+
+    this.headerOverlayLayer = new PIXI.Container();
+    this.container.addChild(this.headerOverlayLayer);
+  }
+
+  /** Coin balance (top-right), drawn on top of the static header chrome; called every render() so a
+   * buy/bid immediately reflects the new balance without rebuilding the whole header. */
+  protected renderHeaderCurrency(): void {
+    this.headerOverlayLayer.removeChildren();
+    const coins = this.cb.getSave?.()?.wallet.coins ?? 0;
+    drawHeaderCurrency(this.headerOverlayLayer, this.w, this.headerH, coins);
   }
 
   // ── Data ──────────────────────────────────────────────────────────────────
@@ -216,6 +234,7 @@ export class AuctionSceneBase {
     tearDownChildren(this.bodyLayer);
     // Keep static header; only rebuild body hits (not back button)
     this.hitRects = [];
+    this.renderHeaderCurrency();
 
     // Item picker overlay: back button cancels the picker and returns to the create form.
     if (this.itemPickerOpen) {
