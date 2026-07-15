@@ -483,7 +483,7 @@ export class GachaScene implements Scene {
       const row = Math.floor(i / cols);
       const cx = startX + col * (cellW + gapX);
       const cy = startY + row * (cellH + gapY);
-      this.drawResultCard(r, cx, cy, cellW, cellH);
+      this.drawResultCard(r, cx, cy, cellW, cellH, i + 1);
     });
 
     const hint = txt(t('gacha.tapContinue'), Math.round(h * 0.022), C.light);
@@ -491,21 +491,35 @@ export class GachaScene implements Scene {
     this.container.addChild(hint);
   }
 
-  private drawResultCard(r: GachaResultEntry, x: number, y: number, w: number, h: number): void {
-    // Card background texture (rarity-specific).
+  private drawResultCard(r: GachaResultEntry, x: number, y: number, w: number, h: number, seed: number): void {
+    // Card background texture (rarity-specific — epic/legendary art is a dark
+    // purple/gold wash that swallows dark ink text, so the id/badge sit on
+    // their own paper-coloured plate rather than directly on the art).
     const cardSpr = new PIXI.Sprite(gachaCardTexture(r.rarity));
     cardSpr.x = x; cardSpr.y = y;
     cardSpr.width = w; cardSpr.height = h;
     this.container.addChild(cardSpr);
 
+    // Item picture — same per-item representation used in the odds-detail grid
+    // (material icon / equipment glyph / real unit art / skin brush / rarity
+    // star fallback), so a glance shows *what* was drawn, not just its id string.
+    const picSize = Math.round(Math.min(w, h) * 0.46);
+    this.drawEntryPicture(r.itemId, r.rarity, x + w / 2, y + h * 0.34, picSize, seed);
+
+    const plateY = y + h * 0.54;
+    const plateH = h * 0.38;
+    const plate = new PIXI.Graphics();
+    plate.beginFill(C.paper, 0.92); plate.drawRect(x, plateY, w, plateH); plate.endFill();
+    this.container.addChild(plate);
+
     // Item id.
-    const idLbl = txt(r.itemId, Math.round(h * 0.10), C.dark);
-    idLbl.anchor.set(0.5, 0.5); idLbl.x = x + w / 2; idLbl.y = y + h * 0.58;
+    const idLbl = txt(r.itemId, Math.round(h * 0.075), C.dark);
+    idLbl.anchor.set(0.5, 0.5); idLbl.x = x + w / 2; idLbl.y = y + h * 0.63;
     this.container.addChild(idLbl);
 
     // NEW / duplicate badge.
     const badge = txt(r.duplicate ? t('gacha.duplicate') : t('gacha.new'),
-      Math.round(h * 0.11), r.duplicate ? C.mid : C.green, true);
+      Math.round(h * 0.10), r.duplicate ? C.mid : C.green, true);
     badge.anchor.set(0.5, 0.5); badge.x = x + w / 2; badge.y = y + h * 0.85;
     this.container.addChild(badge);
 
