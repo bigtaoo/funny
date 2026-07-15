@@ -70,6 +70,8 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
   const m = mongo!;
   let app: FastifyInstance;
   let token: string;
+  // Fixed to a 31-day month so 30 sequential daily claims never roll into the next monthKey.
+  let fakeNow = new Date('2026-01-01T12:00:00Z').getTime();
 
   const body = (r: { payload: string }) => JSON.parse(r.payload);
   const auth = () => ({ authorization: `Bearer ${token}` });
@@ -78,7 +80,8 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
     await m.db.dropDatabase();
     await m.ensureIndexes();
     if (app) await app.close();
-    app = await buildApp({ cols: m.collections, jwt, internalKey: 'k', commercial: new FakeCommercial() });
+    fakeNow = new Date('2026-01-01T12:00:00Z').getTime();
+    app = await buildApp({ cols: m.collections, jwt, internalKey: 'k', commercial: new FakeCommercial(), now: () => fakeNow });
     const r = body(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'dev-ret-1' } }));
     token = r.data.token;
     await app.inject({ method: 'GET', url: '/save', headers: auth() }); // create save record
@@ -117,5 +120,47 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
     expect(typeof r.data.defs.dailyCoinsReward).toBe('number');
     expect(r.data.claimable).toHaveProperty('checkin');
     expect(r.data.claimable).toHaveProperty('daily');
+  });
+
+  it('POST /retention/checkin: material milestone (day 4) lands in save.materials, not inventory.skins', async () => {
+    for (let day = 1; day <= 3; day++) {
+      await app.inject({ method: 'POST', url: '/retention/checkin', headers: auth() });
+      fakeNow += 25 * 3600 * 1000;
+    }
+    const r = body(await app.inject({ method: 'POST', url: '/retention/checkin', headers: auth() }));
+    expect(r.data.day).toBe(4);
+    expect(r.data.reward).toMatchObject({ kind: 'material', id: 'scrap', count: 3 });
+    expect(r.data.save.materials.scrap).toBe(3);
+    expect(r.data.save.inventory.skins).not.toContain('scrap');
+  });
+
+  it('POST /retention/checkin: day-14 card milestone lands in save.cardInv, day-30 equipment milestone lands in save.equipmentInv (regression class — same "wrong bucket" bug fixed in gachaDraw/shopBuy)', async () => {
+    let last: ReturnType<typeof body> | undefined;
+    for (let day = 1; day <= 30; day++) {
+      last = body(await app.inject({ method: 'POST', url: '/retention/checkin', headers: auth() }));
+      expect(last.ok).toBe(true);
+      expect(last.data.day).toBe(day);
+      if (day === 14) {
+        expect(last.data.reward.kind).toBe('card');
+        expect(typeof last.data.reward.id).toBe('string');
+        const cards: Array<{ defId: string }> = Object.values(last.data.save.cardInv ?? {});
+        expect(cards.some((c) => c.defId === last!.data.reward.id)).toBe(true);
+        expect(last.data.save.inventory.skins).not.toContain(last.data.reward.id);
+      }
+      if (day === 30) {
+        expect(last.data.reward.kind).toBe('equipment');
+        expect(typeof last.data.reward.id).toBe('string');
+        const equips: Array<{ defId: string }> = Object.values(last.data.save.equipmentInv ?? {});
+        expect(equips.some((e) => e.defId === last!.data.reward.id)).toBe(true);
+        expect(last.data.save.inventory.skins).not.toContain(last.data.reward.id);
+      }
+      fakeNow += 25 * 3600 * 1000; // advance to the next calendar day, still inside January
+    }
+  });
+
+  it('POST /retention/checkin: same day twice → 409 ALREADY_CLAIMED', async () => {
+    await app.inject({ method: 'POST', url: '/retention/checkin', headers: auth() });
+    const r = await app.inject({ method: 'POST', url: '/retention/checkin', headers: auth() });
+    expect(r.statusCode).toBe(409);
   });
 });

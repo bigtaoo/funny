@@ -10,7 +10,7 @@
 //    in commercial is already prepared.
 import { createHash } from 'node:crypto';
 import type { Collections, SaveData, Rarity, EquipmentInstance } from '@nw/shared';
-import { EQUIPMENT_DEFS, GACHA_MATERIAL_GRANTS, makeGachaEquipInstance, EQUIPMENT_INV_CAP, equipmentInvCount, CARD_DEFS, type CardDef, PRODUCT_STARTER_GROWTH, GROWTH_PACK_WINDOW_DAYS } from '@nw/shared';
+import { EQUIPMENT_DEFS, GACHA_MATERIAL_GRANTS, makeGachaEquipInstance, EQUIPMENT_INV_CAP, equipmentInvCount, CARD_DEFS, type CardDef, PRODUCT_STARTER_GROWTH, GROWTH_PACK_WINDOW_DAYS, findShopItem } from '@nw/shared';
 import { grantCards as grantHeroCards } from './cards.js';
 import type { CommercialClient, GachaResultEntry, WalletView } from './commercialClient.js';
 
@@ -177,6 +177,76 @@ export async function mirrorWalletFrom(
   return cur.save;
 }
 
+/**
+ * Route + deliver one loot-box result set: mat_* → materials, equipment defId → equipment
+ * instance, character card defId → hero card grant (grantHeroCards/save.cardInv), everything
+ * else → skin. Shared by deliverOrder's loot-box branch (shop/mail/reconcile replay) and
+ * gachaDraw (which delivers standard-pool draws directly, without going through the
+ * commercial order-replay path). Does not mark the order delivered — callers do that
+ * themselves (gachaDraw does it fire-and-forget to keep it off the response critical path).
+ */
+export async function deliverLootBox(
+  cols: Collections,
+  commercial: CommercialClient,
+  accountId: string,
+  orderId: string,
+  results: GachaResultEntry[],
+  coinsAfter: number,
+  pityPatch: Record<string, number> | null,
+  now: number,
+): Promise<SaveData> {
+  const cur = await cols.saves.findOne({ _id: accountId });
+  const owned = cur?.save.inventory.skins ?? [];
+  const invCount = equipmentInvCount(cur?.save.equipmentInv);
+
+  const skinResults: GachaResultEntry[] = [];
+  const materialInc: Record<string, number> = {};
+  const equipInstances: Record<string, EquipmentInstance> = {};
+  const cardDefs: CardDef[] = [];
+
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i]!;
+    const matGrant = GACHA_MATERIAL_GRANTS[r.itemId];
+    if (matGrant) {
+      for (const [mat, qty] of Object.entries(matGrant)) materialInc[mat] = (materialInc[mat] ?? 0) + qty;
+    } else if (EQUIPMENT_DEFS[r.itemId]) {
+      // Skip if inventory full (300 cap, silently skipped; full-inventory compensation via §13 to be done later)
+      if (invCount + Object.keys(equipInstances).length < EQUIPMENT_INV_CAP) {
+        const instanceId = `eq_gacha_${orderId}_${i}`;
+        equipInstances[instanceId] = makeGachaEquipInstance(r.itemId, instanceId) as EquipmentInstance;
+      }
+    } else if (CARD_DEFS[r.itemId]) {
+      cardDefs.push(CARD_DEFS[r.itemId]!);
+    } else {
+      skinResults.push(r);
+    }
+  }
+
+  const { newSkins } = markDuplicates(owned, skinResults);
+  const hasMixed = Object.keys(materialInc).length > 0 || Object.keys(equipInstances).length > 0;
+  const save = await deliverGrant(
+    cols, accountId, orderId, newSkins, coinsAfter, pityPatch, now,
+    hasMixed ? materialInc : undefined,
+    hasMixed ? equipInstances : undefined,
+  );
+
+  // Character card delivery (CC-5): grant hero cards after the skin/material/equipment grant lands.
+  // If the roster is full, compensatedCoins are credited immediately (best-effort).
+  if (cardDefs.length > 0) {
+    const cardResult = await grantHeroCards(cols, () => now, accountId, cardDefs);
+    if (!('error' in cardResult) && cardResult.compensatedCoins > 0 && commercial.available) {
+      await commercial.grant({
+        accountId,
+        amount: cardResult.compensatedCoins,
+        reason: 'card_inv_full',
+        orderId: `${orderId}:card_comp`,
+      }).catch(() => { /* best-effort */ });
+    }
+  }
+
+  return save;
+}
+
 /** Complete the delivery loop for one order (skins idempotent + mark delivered). Shared by reconciliation + fate/starter handlers. */
 export async function deliverOrder(
   cols: Collections,
@@ -203,82 +273,28 @@ export async function deliverOrder(
 
   const cur = await cols.saves.findOne({ _id: accountId });
   const owned = cur?.save.inventory.skins ?? [];
-  const invCount = equipmentInvCount(cur?.save.equipmentInv);
 
-  // Direct shop purchase: kind='item' → inventory.items; kind='skin' → skins (existing path).
+  // Direct shop purchase: route by the catalog's declared kind (SHOP_ITEMS), not by itemId pattern —
+  // kind='item' → inventory.items (consumables such as protect_enhance, E7); kind='skin' → skins.
   if (order.kind === 'shop' && order.result.itemId) {
     const itemId = order.result.itemId;
-    if (itemId.startsWith('mat_') && GACHA_MATERIAL_GRANTS[itemId]) {
-      // Shop material (future extension); no such category yet, fall through to skin path
-    } else if (EQUIPMENT_DEFS[itemId]) {
-      // Shop equipment (future extension)
-    } else if (!owned.includes(itemId)) {
-      // Direct purchase of a regular skin
-      const save = await deliverGrant(cols, accountId, order._id, [itemId], coinsAfter, pityPatch, now);
-      await commercial.orderDelivered({ orderId: order._id });
-      return save;
-    } else {
-      const save = await deliverGrant(cols, accountId, order._id, [], coinsAfter, pityPatch, now);
+    const shopDef = findShopItem(itemId);
+    if (shopDef?.kind === 'item') {
+      const itemInc: Record<string, number> = { [itemId]: 1 };
+      const save = await deliverMailGrant(cols, accountId, order._id, [], itemInc, coinsAfter, now);
       await commercial.orderDelivered({ orderId: order._id });
       return save;
     }
-    // kind='item': write to inventory.items (consumables such as guard items, E7).
-    const itemInc: Record<string, number> = { [itemId]: 1 };
-    const save = await deliverMailGrant(cols, accountId, order._id, [], itemInc, coinsAfter, now);
+    const newSkins = owned.includes(itemId) ? [] : [itemId];
+    const save = await deliverGrant(cols, accountId, order._id, newSkins, coinsAfter, pityPatch, now);
     await commercial.orderDelivered({ orderId: order._id });
     return save;
   }
 
   // Loot box: route each result itemId — mat_* → materials, equipment defId → equipment instance, character card defId → card grant, everything else → skin.
   const results = order.result.results ?? [];
-  const skinResults: GachaResultEntry[] = [];
-  const materialInc: Record<string, number> = {};
-  const equipInstances: Record<string, EquipmentInstance> = {};
-  const cardDefs: CardDef[] = [];
-
-  for (let i = 0; i < results.length; i++) {
-    const r = results[i]!;
-    const matGrant = GACHA_MATERIAL_GRANTS[r.itemId];
-    if (matGrant) {
-      // Material slot
-      for (const [mat, qty] of Object.entries(matGrant)) materialInc[mat] = (materialInc[mat] ?? 0) + qty;
-    } else if (EQUIPMENT_DEFS[r.itemId]) {
-      // Equipment slot: skip if inventory full (300 cap, silently skipped; full-inventory compensation via §13 to be done later)
-      if (invCount + Object.keys(equipInstances).length < EQUIPMENT_INV_CAP) {
-        const instanceId = `eq_gacha_${order._id}_${i}`;
-        equipInstances[instanceId] = makeGachaEquipInstance(r.itemId, instanceId) as EquipmentInstance;
-      }
-    } else if (CARD_DEFS[r.itemId]) {
-      // Character card slot (CC-5): accumulate defs; granted after skins/materials are marked delivered.
-      cardDefs.push(CARD_DEFS[r.itemId]!);
-    } else {
-      skinResults.push(r);
-    }
-  }
-
-  const { newSkins } = markDuplicates(owned, skinResults);
-  const hasMixed = Object.keys(materialInc).length > 0 || Object.keys(equipInstances).length > 0;
-  const save = await deliverGrant(
-    cols, accountId, order._id, newSkins, coinsAfter, pityPatch, now,
-    hasMixed ? materialInc : undefined,
-    hasMixed ? equipInstances : undefined,
-  );
+  const save = await deliverLootBox(cols, commercial, accountId, order._id, results, coinsAfter, pityPatch, now);
   await commercial.orderDelivered({ orderId: order._id });
-
-  // Character card delivery (CC-5): grant hero cards after the order is marked delivered.
-  // If the roster is full, compensatedCoins are credited immediately (best-effort).
-  if (cardDefs.length > 0) {
-    const cardResult = await grantHeroCards(cols, () => now, accountId, cardDefs);
-    if (!('error' in cardResult) && cardResult.compensatedCoins > 0 && commercial.available) {
-      await commercial.grant({
-        accountId,
-        amount: cardResult.compensatedCoins,
-        reason: 'card_inv_full',
-        orderId: `${order._id}:card_comp`,
-      }).catch(() => { /* best-effort */ });
-    }
-  }
-
   return save;
 }
 

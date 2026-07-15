@@ -15343,6 +15343,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "count": {
                   "type": "integer"
+                },
+                "id": {
+                  "type": "string"
                 }
               }
             }
