@@ -41,6 +41,8 @@ export interface MatchReplay {
   endFrame: number;
   frames: { frame: number; cmds: { side: number; commands: Uint8Array }[] }[];
   meta: { recordedAt: number; winner: number };
+  /** Deck loadouts the match was built with (PVP_LOADOUT §6.2) — without this, playback rebuilds against the full card pool. */
+  decks?: { top: string[]; bottom: string[] };
 }
 
 /** Per-side ELO settlement result (returned by meta to game, forwarded as match_over.elo). */
@@ -387,6 +389,8 @@ export class Room {
   }
 
   private buildReplay(winnerSide: number): MatchReplay {
+    // Decks are identical across both slots (same ticket payload); use whichever slot has them.
+    const decks = this.slots.find((s) => s.decks)?.decks;
     return {
       engineVersion: 0,
       mode: 'netplay',
@@ -397,6 +401,7 @@ export class Room {
         cmds: fc.cmds.map((sc) => ({ side: sc.side, commands: Buffer.from(sc.commands) })),
       })),
       meta: { recordedAt: Date.now(), winner: winnerSide },
+      ...(decks ? { decks } : {}),
     };
   }
 

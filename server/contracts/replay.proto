@@ -40,4 +40,8 @@ message Replay {
   repeated nw.transport.FrameCmds frames = 5;  // non-empty frames only
   uint32 end_frame      = 6;  // total frame count (empty frames are not stored; this field marks the end boundary)
   ReplayMeta meta       = 7;
+  // Deck loadouts the match was built with (PVP_LOADOUT_DESIGN §6.2). Omitting this makes playback
+  // rebuild the engine against the full CARD_DEFINITIONS pool, leaking ELO-locked cards into the replay.
+  repeated string top_deck    = 8;
+  repeated string bottom_deck = 9;
 }

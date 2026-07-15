@@ -1546,6 +1546,11 @@ export interface components {
                 recordedAt?: number;
                 winner?: number;
             };
+            /** @description Deck loadouts the match was built with (PVP_LOADOUT_DESIGN §6.2); omitted for matches with no loadout gating */
+            decks?: {
+                top: string[];
+                bottom: string[];
+            };
         };
         ShopItem: {
             id: string;

@@ -186,6 +186,29 @@ describe('Room', () => {
     expect(rep.frames[0]!.cmds[0]!.commands[0]).toBe(7);
   });
 
+  /**
+   * Regression coverage (2026-07-15): the embedded replay used to drop the ticket's deck loadout
+   * (PVP_LOADOUT_DESIGN §6.2) entirely — playback would then rebuild the engine against the full
+   * card pool, leaking ELO-locked cards into a replay of a match that never actually drew them.
+   */
+  it('embedded replay carries the ticket decks through (PVP_LOADOUT_DESIGN §6.2)', () => {
+    const decks = { top: ['infantry_2', 'archer_2'], bottom: ['infantry_1', 'archer_1', 'tower_1'] };
+    room.addPlayer(asConn(c0), 'n0', '', '', decks);
+    room.addPlayer(asConn(c1), 'n1', '', '', decks);
+    room.reportResult(0, 'H', 0);
+    room.reportResult(1, 'H', 0);
+
+    expect(reports[0]!.replay.decks).toEqual(decks);
+  });
+
+  it('embedded replay omits decks when the match had no loadout gating', () => {
+    startMatch(); // addPlayer with no decks arg
+    room.reportResult(0, 'H', 0);
+    room.reportResult(1, 'H', 0);
+
+    expect(reports[0]!.replay.decks).toBeUndefined();
+  });
+
   it('disconnect past grace period → online player wins + report disconnect', () => {
     startMatch();
     room.onDisconnect(1, asConn(c1));

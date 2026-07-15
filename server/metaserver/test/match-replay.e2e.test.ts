@@ -22,7 +22,13 @@ async function tryConnect(): Promise<MongoHandle | null> {
 const mongo = await tryConnect();
 if (!mongo) console.warn(`[match-replay.e2e] Mongo unreachable (${URI}) — skipping.`);
 
-function reportPayload(roomId: string, a: string, b: string, frames: unknown[]) {
+function reportPayload(
+  roomId: string,
+  a: string,
+  b: string,
+  frames: unknown[],
+  decks?: { top: string[]; bottom: string[] },
+) {
   return {
     room_id: roomId,
     seed: '42',
@@ -35,7 +41,15 @@ function reportPayload(roomId: string, a: string, b: string, frames: unknown[]) 
       { side: 0, state_hash: 'H', winner_side: 0 },
       { side: 1, state_hash: 'H', winner_side: 0 },
     ],
-    replay: { engineVersion: 0, mode: 'netplay', seed: '42', endFrame: 3, frames, meta: { recordedAt: 1, winner: 0 } },
+    replay: {
+      engineVersion: 0,
+      mode: 'netplay',
+      seed: '42',
+      endFrame: 3,
+      frames,
+      meta: { recordedAt: 1, winner: 0 },
+      ...(decks ? { decks } : {}),
+    },
   };
 }
 
@@ -67,6 +81,19 @@ describe.skipIf(!mongo)('match replay fetch e2e', () => {
     const r = body(res);
     expect(r.data.replay.endFrame).toBe(3);
     expect(r.data.replay.frames[0].cmds[0].commands).toBe('AAA=');
+  });
+
+  /**
+   * Regression coverage (2026-07-15): the archived replay used to drop the match's deck loadout
+   * (PVP_LOADOUT_DESIGN §6.2) entirely — playback would then rebuild the engine against the full
+   * card pool, leaking ELO-locked cards into a replay of a match that never actually drew them.
+   */
+  it('participant retrieves the archived deck loadout alongside the replay', async () => {
+    const decks = { top: ['infantry_2', 'archer_2'], bottom: ['infantry_1', 'archer_1', 'tower_1'] };
+    await app.inject({ method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY }, payload: reportPayload('RR4', idA, idB, oneFrame, decks) });
+    const res = await app.inject({ method: 'GET', url: '/match/RR4/replay', headers: { authorization: `Bearer ${tokenA}` } });
+    expect(res.statusCode).toBe(200);
+    expect(body(res).data.replay.decks).toEqual(decks);
   });
 
   it('non-participant gets 404', async () => {

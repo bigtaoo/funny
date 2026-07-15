@@ -243,6 +243,12 @@ export interface Replay {
   seed: number;
   /** Config provenance (PvE = levelId; PvP = roster version). Optional. */
   configRef?: string;
+  /**
+   * PvP/netplay deck loadouts the match was actually built with (PVP_LOADOUT_DESIGN §6.2).
+   * Must be captured at record time and replayed with — omitting it makes playback rebuild the
+   * engine against the full CARD_DEFINITIONS pool, leaking ELO-locked cards into the replay.
+   */
+  decks?: { top: string[]; bottom: string[] };
   /** Non-empty ticks only, ascending by `tick`. */
   frames: ReplayFrame[];
   /** Total frame count (last executed tick + 1) — bounds playback; empty tail frames are not stored. */

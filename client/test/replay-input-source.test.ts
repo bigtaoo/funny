@@ -152,6 +152,65 @@ describe('RecordingInputSource — capture', () => {
     const replay = rec.snapshot({ seed: 1, mode: 'pvp' });
     expect(replay.frames[0]!.commands[0]).toMatchObject({ col: 1 });
   });
+
+  it('carries decks through snapshot() when provided, omits the key when not', () => {
+    const rec = new RecordingInputSource(new LocalInputSource());
+    const decks = { top: ['infantry_2', 'archer_2'], bottom: ['infantry_1', 'archer_1', 'tower_1'] };
+    const withDecks = rec.snapshot({ seed: 1, mode: 'pvp', decks });
+    expect(withDecks.decks).toEqual(decks);
+
+    const withoutDecks = rec.snapshot({ seed: 1, mode: 'pvp' });
+    expect(withoutDecks.decks).toBeUndefined();
+  });
+});
+
+// ── decks (PVP_LOADOUT_DESIGN §6.2): record → replay must carry the deck loadout through ──────
+//
+// Regression coverage for the 2026-07-15 replay-share bug: a shared/watched replay's engine
+// reconstruction (client/src/scenes/ReplayScene.ts) used to omit `decks`, so playback drew from
+// the full CARD_DEFINITIONS pool and ELO-locked cards (runner/splitter/…) could appear in a
+// replay of a match that never actually drew them.
+describe('record → replay carries decks through (PVP_LOADOUT_DESIGN §6.2)', () => {
+  const SEED = 42;
+  const bottomDeck = ['infantry_1', 'archer_1', 'tower_1'];
+  const topDeck = ['infantry_2', 'archer_2'];
+  const decks = { bottom: bottomDeck, top: topDeck };
+
+  function recordRestrictedMatch(): Replay {
+    const rec = new RecordingInputSource(new LocalInputSource());
+    const original = createGameEngine({ ...pvpConfig(SEED), decks }, rec);
+    drive(original, 300, { plays: { 50: [0, 1] } });
+    // JSON round-trip: exercises the same (de)serialisation a real share/fetch does.
+    return JSON.parse(JSON.stringify(rec.snapshot({ seed: SEED, mode: 'pvp', decks })));
+  }
+
+  it('replay.decks matches what the match was recorded with', () => {
+    const replay = recordRestrictedMatch();
+    expect(replay.decks).toEqual(decks);
+  });
+
+  it('reconstructing the engine with replay.decks (as ReplayScene.ts now does) keeps draws within the recorded deck', () => {
+    const replay = recordRestrictedMatch();
+    const replayed = createGameEngine({ ...pvpConfig(SEED), decks: replay.decks }, new ReplayInputSource(replay));
+
+    for (let i = 0; i < 100; i++) {
+      expect(bottomDeck).toContain(replayed.state.bottomPlayer.drawPolicy.draw().id);
+    }
+    for (let i = 0; i < 100; i++) {
+      expect(topDeck).toContain(replayed.state.topPlayer.drawPolicy.draw().id);
+    }
+  });
+
+  it('regression guard: reconstructing without decks (the pre-fix bug) leaks cards outside the recorded deck', () => {
+    const replay = recordRestrictedMatch();
+    // Simulates the old ReplayScene.ts behaviour: rebuild the engine without threading replay.decks through.
+    const replayedBuggy = createGameEngine(pvpConfig(SEED), new ReplayInputSource(replay));
+
+    const seen = new Set<string>();
+    for (let i = 0; i < 200; i++) seen.add(replayedBuggy.state.bottomPlayer.drawPolicy.draw().id);
+    const leaked = [...seen].some((id) => !bottomDeck.includes(id));
+    expect(leaked).toBe(true);
+  });
 });
 
 // ── Integration: record a run, replay it, assert identical evolution ──────────

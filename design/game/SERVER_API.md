@@ -346,10 +346,14 @@ message Replay {
   repeated FrameCmds frames = 5;   // 只存非空帧；commands 仍是 protobuf bytes
   uint32 end_frame = 6;       // 总帧数（空帧不存，靠它界定终点）
   ReplayMeta meta = 7;
+  repeated string top_deck = 8;    // PvP/netplay 卡组过滤（PVP_LOADOUT_DESIGN §6.2），无过滤则不设
+  repeated string bottom_deck = 9;
 }
 ```
 
 > **稀疏存储**：空帧（仅帧号）不写录像；回放时逐 tick 推进，遇到有对应 `frame` 的内容帧就应用、否则空推进，到 `end_frame` 结束。
+
+> **修订（2026-07-15）**：新增 `decks`（=top_deck/bottom_deck）——此前录像只存 seed+指令流，回放重建引擎时没有卡组过滤，会退化成"全卡池抽卡"，导致 ELO 锁定的高级卡（runner/splitter 等）凭空出现在回放里。现在录制（`matchEngine.ts`/`ReplayInputSource.snapshot`/`Room.buildReplay`）与回放重建（`ReplayScene.ts`/`serverReplayToReplay`）都携带 `decks`；对应 `MatchReplay`（`openapi/schemas.yml`）同步加了可选 `decks{top,bottom}` 字段。
 
 - **PvP**：`gameserver` 为重连保留的非空帧日志**即录像**，局末零成本持久化——小局直接内嵌 `matches.replay`（`engineVersion=0`，服务器逻辑无关、客户端回放自校验；`cmds[].commands` 为 BSON binary opaque），大局转对象存储 `matches.replayRef`（待办）。
 - **PvE**：客户端本地录制（只记玩家指令；敌方 `WaveDirector` 回放时由 seed+level 重算），可选上传分享。
