@@ -666,6 +666,7 @@ value(material) = DUPE_REFUND_COINS[该材料所在 gacha 稀有度档] / GACHA_
 2. **注记 a（informational）·drillYard 提速 L13 触底**：`DRILL_TRAIN_SPEED_STEP=0.04` × L13 = −52% 已撞 `_FLOOR=0.5`，**L13–20 七级不再提速**（只加 troopCap/队列）。非 bug，但高级 drillYard 的「提速」价值悬崖——后续若想让满级提速更顺，降 floor 或减小 step；当前可接受（高级靠 cap/队列出价值）。
 3. **注记 b（informational）·sticker 自我门控**：sticker 唯一 faucet = stickerShop 自产、且被 desk/cabinet/drillYard 当 sink 吃，低活跃档是第二慢资源（~20d）。设计意图内的 faucet/sink 张力，盯上线实测。
 4. **B 轨另一半「裸经济不破」✅ 已核（2026-06-30）**：`NATION_BONUS_PRODUCTION=0.10` 本国全占 vs 跨国扩张产出差最大 10%（≤ 判据阈值 20%），属国民加成、非城建数值，结论见 [§13-SLG-NATION](ECONOMY_NUMBERS.md)；SLG_ECONOMY_CHECK §9 B 轨已全打 ✅。
+5. **免费 vs 满氪节奏差距（2026-07-15 补，用户要求量化）**：给 `SLG_SHOP_ITEMS` 补每日购买上限后（SLG_DESIGN §7.2），`cityRun.ts` §4b 量化了"每天氪到封顶"能把 casual 档的建城天数压缩多少——每天最多买满 `slg_res_s/m/l` 各 5 次共 **21,500 coins/日**，换来**每种资源 +1,500,000/日**（叠加在免费产出上）。casual 档最慢的 paper（免费 30.5 天）压到 **1.0 天**；graphite/metal/sticker 全部压到 **≤0.2 天**。**这条差距本身不是"破防"**（赛季资源无持久沉淀，§0.1 红线不适用；花的是充值币不是白嫖），是"付费=省时间"设计意图的量化确认，量级合理（不是"1 分钱通关"级别的失控）。**未覆盖的口子**：`speedupTraining`/建造用 `BUILD_SPEEDUP_SECS_PER_COIN` 直接拿币换时间，这条**没有购买次数上限**（本次只加了 §7.2 的商品购买次数上限，没有改这条直接换算接口），理论上币多就能无限跳过训练/建造时间——留作后续（若要补，思路是给 `speedupTraining`/建筑加速也上每日总秒数上限，而不是每次购买次数）。
 
 ### 13-SLG-CITY.4 经济约束（红线复述）
 

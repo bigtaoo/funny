@@ -40,6 +40,7 @@ import {
   TROOP_CAP_BASE,
   TROOP_TRAIN_INK_COST,
   TROOP_TRAIN_TIME_SEC,
+  SLG_SHOP_ITEMS,
   type BuildingKey,
   type ResourceType,
 } from '@nw/shared';
@@ -181,6 +182,40 @@ export const INCOME_PROFILES: IncomeProfile[] = [
   { label: 'active',   tiles: { ink: 6, paper: 14, graphite: 6, metal: 6 },  avgTileLevel: 4, avgBuildingLevel: 8,  copperTiles: 1 },
   { label: 'hardcore', tiles: { ink: 8, paper: 25, graphite: 10, metal: 10 }, avgTileLevel: 6, avgBuildingLevel: 12, copperTiles: 4 },
 ];
+
+/**
+ * F2P-vs-whale pacing gap (2026-07-15, user-requested): with the SLG_DESIGN §7.2 daily purchase caps now in
+ * place on `slg_res_*` (resource packs), this is the max extra resource income/day a fully-paying player can
+ * buy — bounded by count, not by how many coins they have. Uses the code-default SLG_SHOP_ITEMS (admin price
+ * overrides not modeled here, same as the rest of B-track). NOTE: this does NOT cover `speedupTraining` /
+ * the raw build-time-skip coin conversion (BUILD_SPEEDUP_SECS_PER_COIN) — those are direct coin->time
+ * conversions with no purchase-count cap, only bounded by how many coins the player has, and remain an
+ * open gap (flagged in ECONOMY_NUMBERS §13-SLG.6, not fixed in this pass).
+ */
+export function whaleResourcePackDailyMax(): { coinsPerDay: number; extraPerResourcePerDay: number } {
+  const packs = SLG_SHOP_ITEMS.filter((i) => i.kind === 'resource_pack');
+  let coinsPerDay = 0;
+  let extraPerResourcePerDay = 0;
+  for (const p of packs) {
+    const limit = p.dailyLimit ?? 0;
+    coinsPerDay += p.cost * limit;
+    extraPerResourcePerDay += Number(p.effect['each'] ?? 0) * limit;
+  }
+  return { coinsPerDay, extraPerResourcePerDay };
+}
+
+/** Days to earn the max-city cost of each resource for a profile, WITH the daily-capped resource-pack max stacked on top of free income (income-gated only, ignores RESOURCE_CAP clamping — assumes spend keeps pace with income, same simplification as daysToMax). */
+export function daysToMaxWithWhaleSpend(p: IncomeProfile, totals: CityTotals): Partial<Record<ResourceType, number>> {
+  const inc = hourlyIncome(p);
+  const { extraPerResourcePerDay } = whaleResourcePackDailyMax();
+  const out: Partial<Record<ResourceType, number>> = {};
+  for (const rt of RESOURCE_TYPES) {
+    const need = totals.cost[rt] ?? 0;
+    const perDay = (inc[rt] ?? 0) * 24 + extraPerResourcePerDay;
+    out[rt] = perDay > 0 ? need / perDay : Infinity;
+  }
+  return out;
+}
 
 /** Army-training pacing: time + ink to fill the drillYard-max troop cap, and coin-to-skip. */
 export function armyPacing() {

@@ -92,4 +92,30 @@ describe.skipIf(!mongo)('worldsvc SLG shop e2e', () => {
     await svc.joinWorld(W, 'a', 10, 10);
     await expect(svc.buySlgShopItem(W, 'a', 'made_up')).rejects.toThrow('Item not found');
   });
+
+  it('daily purchase cap: buying past dailyLimit throws SHOP_LIMIT_REACHED, resets the next UTC day', async () => {
+    const svc = new WorldService({ cols: m.collections, redis: null, commercial: fakeCommercial, mapW: SLG_MAP_W, mapH: SLG_MAP_H, now });
+    await svc.joinWorld(W, 'a', 10, 10);
+    const item = SLG_SHOP_ITEMS.find((i) => i.id === 'slg_res_s')!;
+    expect(item.dailyLimit).toBe(5);
+
+    for (let i = 0; i < item.dailyLimit!; i++) await svc.buySlgShopItem(W, 'a', 'slg_res_s');
+    expect(spent.length).toBe(item.dailyLimit);
+    await expect(svc.buySlgShopItem(W, 'a', 'slg_res_s')).rejects.toThrow('Daily purchase limit reached');
+    expect(spent.length).toBe(item.dailyLimit); // the rejected attempt never reached commercial.spend
+
+    // Advance past midnight UTC → counter resets, purchase succeeds again.
+    nowMs += 86_400_000;
+    await svc.buySlgShopItem(W, 'a', 'slg_res_s');
+    expect(spent.length).toBe(item.dailyLimit! + 1);
+  });
+
+  it('items with no dailyLimit (protection/battle_pass) are unbounded', async () => {
+    const svc = new WorldService({ cols: m.collections, redis: null, commercial: fakeCommercial, mapW: SLG_MAP_W, mapH: SLG_MAP_H, now });
+    await svc.joinWorld(W, 'a', 10, 10);
+    const item = SLG_SHOP_ITEMS.find((i) => i.id === 'slg_shield_8h')!;
+    expect(item.dailyLimit).toBeUndefined();
+    for (let i = 0; i < 20; i++) await svc.buySlgShopItem(W, 'a', 'slg_shield_8h');
+    expect(spent.length).toBe(20);
+  });
 });
