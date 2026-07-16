@@ -33,26 +33,6 @@ import {
  */
 const MAX_CATCHUP_TICKS = 5;
 
-/**
- * Backlog (in sim ticks, *beyond* the jitter buffer) above which we catch up at
- * 3×. Without this floor the ladder below only starts draining at
- * 1 s of backlog, so any hitch that banks less than a second (a brief tab
- * background, a GC pause, a bunched-up batch delivery) leaves playback stuck
- * that far behind the server *for the rest of the match* — the metronome runs
- * at the same rate we do, so a sub-second lead neither grows nor shrinks at 1×.
- *
- * `confirmedLead` already subtracts `bufferFrames` (the 100 ms jitter cushion,
- * which is the hard minimum lag — playback can never be closer than that to the
- * server), so any positive lead is real backlog *past* that cushion. 3 ≈ one
- * 100 ms batch: it drains accumulated backlog back to essentially just the
- * cushion (~0.1 s total lag) while staying above normal single-batch delivery
- * (a batch lands 3 frames at once, so lead peaks at 3 and falls back to 0 at 1×)
- * — so steady 1× playback never trips the catch-up, but a bunched double-batch
- * (lead 6) is drained promptly. Do NOT lower below one batch: catching up on
- * every normal batch would fight the metronome and reintroduce micro-stutter.
- */
-const CATCHUP_MIN_LEAD = 3;
-
 type LoopDeps = HelpersHandlers & CampaignHandlers & CommandsHandlers & WinConditionHandlers;
 
 /** See helpers.ts HelpersHandlers doc comment for why this is exported. */
@@ -70,26 +50,18 @@ export function LoopMixin<TBase extends GameEngineBaseCtor & Constructor<LoopDep
      * the confirmed watermark has outrun our playback head. A client that paused
      * (minimized tab → rAF halts) or stalled keeps receiving frame_batches, so on
      * resume the backlog can be huge; draining it at 1× would never sync. Speed up
-     * aggressively with the backlog so we converge fast, then settle back to 1×.
-     * Latency here is not cosmetic: while playback lags, a placed card isn't shown
-     * (or resolved) in real time, which can lose the match — so we favour catching
-     * up hard over a smooth speed ramp.
+     * proportionally to the backlog so we converge, then settle back to 1×.
      *
-     *   backlog > 3 s → 10×   |   > 1 s → 5×   |   > ~0.1 s → 3×   |   else 1×
-     *
-     * The 3× floor (see {@link CATCHUP_MIN_LEAD}) is what keeps sub-second backlog
-     * from becoming a permanent offset: without it the metronome runs at our rate
-     * so a sub-second lead never shrinks. It drains back to essentially just the
-     * 100 ms jitter buffer so a placed card shows up ~0.1 s later, not ~1.1 s.
+     *   backlog > 30 s → 5×   |   > 10 s → 3×   |   > 1 s → 2×   |   else 1×
      *
      * Only re-times step() calls — never changes which frames run or their order,
      * so lockstep determinism is unaffected.
      */
     private catchUpSpeed(): number {
       const lead = this.input.confirmedLead?.(this.currentTick) ?? 0;
-      if (lead > 3 * TICK_RATE) return 10;
-      if (lead > 1 * TICK_RATE) return 5;
-      if (lead > CATCHUP_MIN_LEAD) return 3;
+      if (lead > 30 * TICK_RATE) return 5;
+      if (lead > 10 * TICK_RATE) return 3;
+      if (lead > 1 * TICK_RATE) return 2;
       return 1;
     }
 

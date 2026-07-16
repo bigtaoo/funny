@@ -338,7 +338,7 @@ describe('NetInputSource — two-client lockstep determinism', () => {
   // The lockstep buffer can pile up when a tab is backgrounded/minimised (rAF
   // halts so the engine stops draining) or after a long stall resolves. Catch-up
   // speeds the sim up proportionally to that backlog so it re-syncs, then settles.
-  it('scales catch-up speed with the confirmed backlog (1×/3×/5×/10×)', () => {
+  it('scales catch-up speed with the confirmed backlog (1×/2×/3×/5×)', () => {
     const SEED = 99;
     // Drive F render-frames while continuously topping the watermark so the
     // backlog stays pinned at ~targetLead (and thus one speed tier the whole
@@ -361,10 +361,10 @@ describe('NetInputSource — two-client lockstep determinism', () => {
       return total;
     };
 
-    expect(ticksAtLead(3)).toBe(F); //                        lead 3   (≤ buffer)      → 1× (exact)
-    expect(Math.abs(ticksAtLead(15) - 3 * F)).toBeLessThanOrEqual(2);  // (>0.2 s, ≤1 s) → 3×
-    expect(Math.abs(ticksAtLead(60) - 5 * F)).toBeLessThanOrEqual(2);  // (>1 s, ≤3 s)   → 5×
-    expect(Math.abs(ticksAtLead(150) - 10 * F)).toBeLessThanOrEqual(2); // (>3 s)        → 10×
+    expect(ticksAtLead(15)).toBe(F); //                      lead 15   (≤1 s)        → 1× (exact)
+    expect(Math.abs(ticksAtLead(100) - 2 * F)).toBeLessThanOrEqual(2); // (>1 s, ≤10 s) → 2×
+    expect(Math.abs(ticksAtLead(500) - 3 * F)).toBeLessThanOrEqual(2); // (>10 s, ≤30 s)→ 3×
+    expect(Math.abs(ticksAtLead(1200) - 5 * F)).toBeLessThanOrEqual(2); // (>30 s)      → 5×
   });
 
   it('catches up a 30 s+ backlog and settles back to 1× once synced', () => {
@@ -376,17 +376,16 @@ describe('NetInputSource — two-client lockstep determinism', () => {
 
     // elapsedTicks == the engine's internal currentTick (both ++ per step).
     let renderFrames = 0;
-    while (ni.confirmedLead(eng.state.elapsedTicks) > 3 && renderFrames < 2000) {
+    while (ni.confirmedLead(eng.state.elapsedTicks) > 1 * 30 && renderFrames < 2000) {
       eng.tick(TICK_DT);
       renderFrames++;
     }
-    // Converged well under the wall (at 1× it would take ~1200 frames; the
-    // 10×/5×/3× tiers cut that to a couple hundred), draining all the way down to
-    // the jitter buffer (≤ CATCHUP_MIN_LEAD) rather than sticking ~1 s behind.
+    // Converged well under the wall (at 1× it would take ~1200 frames; the 5×/3×/2×
+    // tiers cut that to a few hundred), and the head is now within the 1 s cushion.
     expect(renderFrames).toBeLessThan(2000);
-    expect(ni.confirmedLead(eng.state.elapsedTicks)).toBeLessThanOrEqual(3);
+    expect(ni.confirmedLead(eng.state.elapsedTicks)).toBeLessThanOrEqual(30);
 
-    // Back inside the buffer ⇒ 1× again: a single render frame advances at most one tick.
+    // Back inside 1 s ⇒ 1× again: a single render frame advances at most one tick.
     const before = eng.state.elapsedTicks;
     eng.tick(TICK_DT);
     expect(eng.state.elapsedTicks - before).toBeLessThanOrEqual(1);
