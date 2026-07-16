@@ -20,6 +20,7 @@
 // vitest.ui.config.ts). Run: npm run test:ui
 
 import { describe, it, expect } from 'vitest';
+import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
@@ -54,6 +55,19 @@ type CitySceneInternals = {
 
 function internals(scene: CityScene): CitySceneInternals {
   return scene as unknown as CitySceneInternals;
+}
+
+/** All PIXI.Text content currently in the display tree, recursing sub-containers. */
+function collectTexts(root: PIXI.Container): string[] {
+  const out: string[] = [];
+  const walk = (c: PIXI.Container): void => {
+    for (const ch of c.children) {
+      if (ch instanceof PIXI.Text) out.push(ch.text);
+      else if (ch instanceof PIXI.Container) walk(ch);
+    }
+  };
+  walk(root);
+  return out;
 }
 
 /** getMe() never resolves — enough for the grid/modal to sit in its default
@@ -201,43 +215,118 @@ describe('CityScene page tabs (D-CITY-11 dual-screen split, 2026-07-16)', () => 
 });
 
 describe('CityScene military page team panel (D-CITY-10, 2026-07-16)', () => {
+  type TeamsFixture = {
+    me?: Partial<PlayerWorldView>;
+    teams?: { id: string; name: string; army: { cardInstanceId?: string; initialHp?: number }[] }[];
+    marches?: { marchId: string; mine?: boolean; teamId: string; arriveAt: number }[];
+    occupations?: { teamId: string; dueAt: number }[];
+  };
+
   /** Unlike stubWorldApi(), resolves getMe/getTeams/getMarches/getOccupations so the team
-   *  panel has real data to render (one marching team, one injured, one idle, two empty). */
-  function stubWorldApiWithTeams(): WorldApiClient {
+   *  panel has real data to render. */
+  function stubWorldApiWithTeams(fx: TeamsFixture): WorldApiClient {
     const me = {
       resources: {}, buildings: {}, buildQueue: [],
-      cardState: { c1: { currentTroops: 400 } },
-      teamState: { t2: { injuredUntil: Date.now() + 60_000 } },
+      cardState: {}, teamState: {},
+      ...fx.me,
     } as unknown as PlayerWorldView;
     return {
       getMe: () => Promise.resolve(me),
-      getTeams: () => Promise.resolve([
-        { id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] },
-        { id: 't2', name: 'Bravo', army: [{ cardInstanceId: 'c1' }] },
-      ]),
-      getMarches: () => Promise.resolve([{ marchId: 'm1', mine: true, teamId: 't1', arriveAt: Date.now() + 30_000 }]),
-      getOccupations: () => Promise.resolve([]),
+      getTeams: () => Promise.resolve(fx.teams ?? []),
+      getMarches: () => Promise.resolve(fx.marches ?? []),
+      getOccupations: () => Promise.resolve(fx.occupations ?? []),
       upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
       speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
     } as unknown as WorldApiClient;
   }
 
-  it('renders team cards without leaking hit rects (read-only — editing stays in TeamsScene)', async () => {
+  /** Builds a scene, waits for the async load() to resolve, and switches to the military page. */
+  async function buildOnMilitaryPage(fx: TeamsFixture): Promise<{ scene: CityScene; inner: CitySceneInternals }> {
     const input = new InputManager();
     const cb: CitySceneCallbacks = {
       onBack: () => {},
-      worldApi: stubWorldApiWithTeams(),
+      worldApi: stubWorldApiWithTeams(fx),
       worldId: 'world:1:0',
     };
     const scene = new CityScene(createLayout(...PORTRAIT), input, cb);
     await new Promise((r) => setTimeout(r, 0));
     const inner = internals(scene);
-
     const militaryTab = inner.hits[2]!;
     inner.handleDown(militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
     expect(inner.page).toBe('military');
+    return { scene, inner };
+  }
+
+  it('renders team cards without leaking hit rects (read-only — editing stays in TeamsScene)', async () => {
+    const { scene, inner } = await buildOnMilitaryPage({
+      teams: [
+        { id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] },
+        { id: 't2', name: 'Bravo', army: [{ cardInstanceId: 'c1' }] },
+      ],
+      marches: [{ marchId: 'm1', mine: true, teamId: 't1', arriveAt: Date.now() + 30_000 }],
+      me: { cardState: { c1: { currentTroops: 400 } }, teamState: { t2: { injuredUntil: Date.now() + 60_000 } } },
+    });
     // Only Back + the 2 page tabs — the team cards are display-only, no card hits pushed.
     expect(inner.hits.length).toBe(3);
+    scene.destroy();
+  });
+
+  it('shows the section header and, for a filled idle team, garrison + committed troops and the idle tag', async () => {
+    const { scene, inner } = await buildOnMilitaryPage({
+      teams: [{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] }],
+      me: { cardState: { c1: { currentTroops: 400 } } },
+    });
+    const texts = collectTexts(scene.container);
+    expect(texts).toContain(t('city.military.teams'));
+    expect(texts).toContain(t('city.military.teamIdle'));
+    // Garrison count + committed troops render as one combined sub-label, not separate nodes.
+    const sub = `${t('world.defense.garrison').replace('{n}', '1')}   ${t('world.team.committed').replace('{n}', '400')}`;
+    expect(texts).toContain(sub);
+    scene.destroy();
+  });
+
+  it('shows the marching tag for a team with an active march', async () => {
+    const { scene, inner } = await buildOnMilitaryPage({
+      teams: [{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] }],
+      marches: [{ marchId: 'm1', mine: true, teamId: 't1', arriveAt: Date.now() + 30_000 }],
+      me: { cardState: { c1: { currentTroops: 400 } } },
+    });
+    const texts = collectTexts(scene.container);
+    expect(texts).toContain(t('world.team.marching'));
+    scene.destroy();
+  });
+
+  it('shows the occupying tag for a team holding an occupation', async () => {
+    const { scene, inner } = await buildOnMilitaryPage({
+      teams: [{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] }],
+      occupations: [{ teamId: 't1', dueAt: Date.now() + 90_000 }],
+      me: { cardState: { c1: { currentTroops: 400 } } },
+    });
+    const texts = collectTexts(scene.container);
+    expect(texts.some(s => s.includes(t('world.team.occupying').split('{time}')[0]!))).toBe(true);
+    scene.destroy();
+  });
+
+  it('an injured team shows the injured tag, not the marching tag, even while also on an active march', async () => {
+    const { scene, inner } = await buildOnMilitaryPage({
+      teams: [{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] }],
+      marches: [{ marchId: 'm1', mine: true, teamId: 't1', arriveAt: Date.now() + 30_000 }],
+      me: {
+        cardState: { c1: { currentTroops: 400 } },
+        teamState: { t1: { injuredUntil: Date.now() + 60_000 } },
+      },
+    });
+    const texts = collectTexts(scene.container);
+    expect(texts.some(s => s.includes(t('roster.injured').split('{time}')[0]!))).toBe(true);
+    expect(texts).not.toContain(t('world.team.marching'));
+    scene.destroy();
+  });
+
+  it('shows the empty-slot tag for unfilled team slots', async () => {
+    const { scene, inner } = await buildOnMilitaryPage({ teams: [] });
+    const texts = collectTexts(scene.container);
+    // TEAM_CAP=5, all unfilled — the empty tag should appear once per slot.
+    expect(texts.filter(s => s === t('world.team.empty')).length).toBe(5);
     scene.destroy();
   });
 });
