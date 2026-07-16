@@ -183,6 +183,8 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       worldId,
       myAccountId,
       playerName: playerName(),
+      getCoins: () => saveManager.get().wallet.coins,
+      refreshWallet: async () => { await saveManager.refresh(); },
     });
     // Keep the gateway connected + forward live sect-channel messages into the scene
     // (S8-4b: worldsvc → Redis pub/sub → gateway → here). Offline → REST history poll.

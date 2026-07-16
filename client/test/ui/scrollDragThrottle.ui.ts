@@ -108,6 +108,7 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
     const scene = new SectScene(createLayout(W, H), input, {
       onBack() {}, onNavTab() {},
       worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: 'acc_test', playerName: 'Tester',
+      getCoins: () => 100000, refreshWallet: async () => {},
     }) as any;
     assertScrollDragThrottled(scene, input);
   });

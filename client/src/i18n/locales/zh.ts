@@ -983,7 +983,7 @@ export const zh = {
   'sect.tagLabel': '标签',
   'sect.tagHint': '2–5 位大写字母或数字',
   'sect.createTitle': '创建宗门',
-  'sect.createHint': '建门消耗金币，需为族长',
+  'sect.createHint': '建门消耗 {n} 金币，需为族长',
   'sect.join': '加入',
   'sect.leave': '退出宗门',
   'sect.dissolve': '解散宗门',

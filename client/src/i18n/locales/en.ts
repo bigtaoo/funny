@@ -971,7 +971,7 @@ export const en: Record<TranslationKey, string> = {
   'sect.tagLabel': 'Tag',
   'sect.tagHint': '2–5 uppercase letters or digits',
   'sect.createTitle': 'Create Sect',
-  'sect.createHint': 'Costs coins; must be a family leader',
+  'sect.createHint': 'Costs {n} coins; must be a family leader',
   'sect.join': 'Join',
   'sect.leave': 'Leave Sect',
   'sect.dissolve': 'Dissolve Sect',

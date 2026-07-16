@@ -971,7 +971,7 @@ export const de: Record<TranslationKey, string> = {
   'sect.tagLabel': 'Tag',
   'sect.tagHint': '2–5 Großbuchstaben oder Ziffern',
   'sect.createTitle': 'Sekte gründen',
-  'sect.createHint': 'Kostet Münzen; nur Familienoberhaupt',
+  'sect.createHint': 'Kostet {n} Münzen; nur Familienoberhaupt',
   'sect.join': 'Beitreten',
   'sect.leave': 'Sekte verlassen',
   'sect.dissolve': 'Sekte auflösen',

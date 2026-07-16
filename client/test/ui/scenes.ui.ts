@@ -391,6 +391,8 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         worldId: 'world:1:0',
         myAccountId: 'acc_test',
         playerName: 'Tester',
+        getCoins: () => 100000,
+        refreshWallet: async () => {},
       }),
   },
   {

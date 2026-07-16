@@ -40,6 +40,10 @@ export interface SectSceneCallbacks {
   myAccountId: string;
   /** display name used as senderName for channel messages */
   playerName: string;
+  /** current player's coin balance — drives the create-sect afford check */
+  getCoins(): number;
+  /** Re-syncs the local wallet cache after a spend the commercial service applied server-side (createSect). */
+  refreshWallet(): Promise<void>;
 }
 
 /** Handle returned by showSect so the core can push live sect-channel messages in. */

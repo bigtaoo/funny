@@ -35,6 +35,9 @@ export function ActionsMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBas
         this.mode = 'mySect';
         this.activeTab = 'families';
         this.render();
+        // SECT_CREATE_COST was spent server-side (commercial service, off the createSect
+        // response) — pull the deducted balance back into the local wallet cache.
+        await this.cb.refreshWallet();
       } catch (e) {
         this.showToast(this.errorMsg(e), C.red);
       }
