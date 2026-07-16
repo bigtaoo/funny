@@ -28,8 +28,16 @@ export interface InventoryHandlers {
 
 export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): TBase & Constructor<InventoryHandlers> {
   return class extends Base {
-    /** Section headers (Equipped / Bag) tapped closed by the player; collapsed sections hide their item cells but keep the header visible. */
-    private collapsedSections = new Set<SectionKey>();
+    /**
+     * Section headers (Equipped / Bag) tapped closed by the player; collapsed sections hide their
+     * item cells but keep the header visible. Lazily initialized via the getter below — the base
+     * class constructor calls render() before this mixin's own field initializers run, so a plain
+     * field initializer here would be undefined on first render.
+     */
+    private _collapsedSections?: Set<SectionKey>;
+    private get collapsedSections(): Set<SectionKey> {
+      return (this._collapsedSections ??= new Set<SectionKey>());
+    }
     /**
      * Left sidebar rail, stacked inside the notebook-margin gutter (`marginLineX`) below the
      * header: the progression group nav [<peer>|Equipment] (LOBBY_IA_REDESIGN P1.5, only when
