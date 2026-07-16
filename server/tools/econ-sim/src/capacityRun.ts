@@ -250,4 +250,4 @@ console.log('  Pressure-test before going live: run a full-shard seed (10k synth
 console.log('  staging and measure actual explain() latency for the queries above.');
 console.log('');
 console.log('  ✅ F-TRACK CLOSED (estimated; to be confirmed by pre-launch pressure test)');
-console.log('\nRegister conclusions → ECONOMY_NUMBERS.md §13-SLG-F');
+console.log('\nRegister conclusions → ECONOMY_VERIFICATION_LOG.md §13-SLG-F');

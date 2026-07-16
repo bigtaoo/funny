@@ -1,7 +1,7 @@
 # Notebook Wars — 角色卡系统设计（CHARACTER_CARDS_DESIGN）
 
 > 创建：2026-07-01。本文是角色卡**实例系统**的设计基准，取代 `CHARACTER_DESIGN.md` 中的养成/获取章节（角色外观与机制定义仍见 `CHARACTER_DESIGN.md`）。
-> 配套阅读：`EQUIPMENT_DESIGN.md`（装备词条/强化）、`SLG_DESIGN.md §16`（布阵/队伍）、`ECONOMY_NUMBERS.md §15`（数值权威）、`GACHA_DESIGN.md`（卡池）。
+> 配套阅读：`EQUIPMENT_DESIGN.md`（装备词条/强化）、`SLG_DESIGN_LOG.md §16`（布阵/队伍）、`ECONOMY_NUMBERS.md §15`（数值权威）、`GACHA_DESIGN.md`（卡池）。
 > 拍板日期：2026-07-01。
 
 ---

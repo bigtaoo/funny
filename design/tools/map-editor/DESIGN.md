@@ -1,7 +1,7 @@
 # Notebook Wars — SLG 地图编辑器设计文档
 
 > 创建：2026-07-04。地形骨架已拍板（2026-07-05，见 [DECISIONS.md ADR-034](../../DECISIONS.md)），代码重写已完成（2026-07-05），编辑器工程骨架+城池拖拽+栅格化发布到服务端模板+等距贴图美术对齐游戏客户端+中英文切换已搭（2026-07-05，见 §8）；河流/山脉笔刷最初是矢量路径模型，2026-07-06 改为直接格子笔刷（见 §8"矢量路径笔刷改为直接格子笔刷"）。
-> 配套阅读：`../../game/SLG_DESIGN.md`（§2.4 国家系统 / §3.2 地图规格 / **§24 地图模板与编辑器**——本节的服务端持久化就是接到 §24 已实现的 admin 模板 API，不是新建一套）、`../../DECISIONS.md`（ADR-032 地图尺寸/等级、ADR-034 环形地形骨架，**注意**：曾短暂存在一版同日的 ADR-033"10 首府三层同心环"方案，与本文档方向不同，当天即被撤销/作废，本文档只跟 ADR-034 对应）、`../../game/SGZ_LAND_REFERENCE.md`（三战地块/城池调研，§5 环形结构 / §8 城池系统）、`server/shared/src/slg/`（已按本文档重写，god-file split 后拆成 `province.ts`/`mapgen.ts`/`mapEdit.ts` 等：`provinceIdxAt()`/`provinceCapitalPositions()` 替代 `nearestCapitalIdx()`/`CAPITAL_FRACTIONS`，新增地形带+城池节点+按环等级分布表+编辑层栅格化）、`../level-editor/DESIGN.md`（工程化参照）、根 `../../../CLAUDE.md`。
+> 配套阅读：`../../game/SLG_DESIGN.md`（§2.4 国家系统 / §3.2 地图规格）、`../../game/SLG_DESIGN_LOG.md`（**§24 地图模板与编辑器**——本节的服务端持久化就是接到 §24 已实现的 admin 模板 API，不是新建一套）、`../../DECISIONS.md`（ADR-032 地图尺寸/等级、ADR-034 环形地形骨架，**注意**：曾短暂存在一版同日的 ADR-033"10 首府三层同心环"方案，与本文档方向不同，当天即被撤销/作废，本文档只跟 ADR-034 对应）、`../../game/SGZ_LAND_REFERENCE.md`（三战地块/城池调研，§5 环形结构 / §8 城池系统）、`server/shared/src/slg/`（已按本文档重写，god-file split 后拆成 `province.ts`/`mapgen.ts`/`mapEdit.ts` 等：`provinceIdxAt()`/`provinceCapitalPositions()` 替代 `nearestCapitalIdx()`/`CAPITAL_FRACTIONS`，新增地形带+城池节点+按环等级分布表+编辑层栅格化）、`../level-editor/DESIGN.md`（工程化参照）、根 `../../../CLAUDE.md`。
 > 讨论期用一次性 HTML/JS 原型（Artifact，未提交仓库）快速试错定稿，迭代记录见 §7；正式编辑器工具（`tools/map-editor`）§8 为工程现状，§6 是其需求清单（编辑交互尚未实现）。
 
 ---

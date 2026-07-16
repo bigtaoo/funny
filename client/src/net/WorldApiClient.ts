@@ -236,7 +236,7 @@ export class WorldApiClient {
     return this.req('GET', `/world/occupations?worldId=${encodeURIComponent(worldId)}`);
   }
 
-  /** Full list of owned tiles (territory + captured stronghold; excludes the 3×3 capital footprint). Backs the Territory Overview panel (SLG_DESIGN.md §26). */
+  /** Full list of owned tiles (territory + captured stronghold; excludes the 3×3 capital footprint). Backs the Territory Overview panel (SLG_DESIGN_LOG.md §26). */
   async getTerritories(worldId: string): Promise<WorldTileView[]> {
     return this.req('GET', `/world/territories?worldId=${encodeURIComponent(worldId)}`);
   }

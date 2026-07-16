@@ -899,7 +899,7 @@ export const zh = {
   'world.spedup': '已加速',
   'world.resYield': '产出',
   'world.close': '关闭',
-  // ── Territory Overview panel (2026-07-16, SLG_DESIGN.md §26) ─────────────
+  // ── Territory Overview panel (2026-07-16, SLG_DESIGN_LOG.md §26) ─────────────
   'world.territoryTitle': '领地总览',
   'world.territoryTabOverview': '总览',
   'world.territoryTabList': '领地列表',

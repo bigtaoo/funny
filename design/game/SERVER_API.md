@@ -599,7 +599,7 @@ GET  /sect/channel  ?worldId&before?&limit?         → SectMessageView[]
 ```
 
 > **国家/世界公频**（`nation_msg`，§3.2）经 worldsvc Redis pub/sub → gateway 扇出给同 world 在线玩家；REST 拉历史端点（如 `/nation/channel`）随 SLG 频道收尾落地，以 `openapi-world.yml` 实际为准。
-> **内部/admin 端点**（`/admin/world/{open,settle,reset,close}`、`/admin/world/audit/anomalies`，X-Internal-Key 门控）玩家不可达，不入 openapi-world，见 `SLG_DESIGN.md §17.7 / §20.6`。
+> **内部/admin 端点**（`/admin/world/{open,settle,reset,close}`、`/admin/world/audit/anomalies`，X-Internal-Key 门控）玩家不可达，不入 openapi-world，见 `SLG_DESIGN_LOG.md §17.7 / §20.6`。
 
 ---
 

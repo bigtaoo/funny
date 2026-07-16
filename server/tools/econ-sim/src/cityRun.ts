@@ -83,4 +83,4 @@ console.log(`  fill it: ${fmt(a.inkToFill)} ink, ${f1(a.totalTrainHours)} h cont
 console.log(`  season window = ${a.seasonDays} days\n`);
 
 bar('VERDICT');
-console.log('See ECONOMY_NUMBERS.md §13-SLG-CITY for the registered conclusion.');
+console.log('See ECONOMY_VERIFICATION_LOG.md §13-SLG-CITY for the registered conclusion.');

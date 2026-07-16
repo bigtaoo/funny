@@ -1484,7 +1484,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Full list of tiles owned by the requester (territory + captured stronghold; excludes the 3×3 capital footprint). Backs the Territory Overview panel (SLG_DESIGN.md §26) — `territoryCount` on PlayerWorldView is only an aggregate count, this returns the rows for jump/abandon actions. */
+            /** @description Full list of tiles owned by the requester (territory + captured stronghold; excludes the 3×3 capital footprint). Backs the Territory Overview panel (SLG_DESIGN_LOG.md §26) — `territoryCount` on PlayerWorldView is only an aggregate count, this returns the rows for jump/abandon actions. */
             200: {
                 headers: {
                     [name: string]: unknown;
