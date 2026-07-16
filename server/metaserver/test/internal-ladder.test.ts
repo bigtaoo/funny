@@ -129,7 +129,8 @@ describe('POST /admin/grant-title', () => {
       payload: { accountId: 'a', titleId: 'ops.special' },
     });
     expect(res2.statusCode).toBe(200);
-    expect((saves.docs.get('a')!.save as { titles?: string[] }).titles).toEqual(['ops.special']);
+    // makeNewSave seeds the newbie starter title; the admin grant appends ops.special (idempotent).
+    expect((saves.docs.get('a')!.save as { titles?: string[] }).titles).toEqual(['event.newbie', 'ops.special']);
   });
 });
 

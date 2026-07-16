@@ -79,7 +79,7 @@ meta 内部单点 `grantTitle(accountId, titleId)`：
 
 - 获得**更高等级**称号时自动换上，玩家无感即享炫耀；仍可在资料页手动改回任意已拥有称号。
 - 「最高」= `weight` 最大；并列取**最新获得**（§6.1）。
-- 新号默认无佩戴（`equipped.title` 缺省），或给一枚 `event.newbie` 起步称号（实现期定）。
+- 新号**默认佩戴 `event.newbie` 起步称号**（2026-07-16 落地）：`makeNewSave` 建档即 `titles: ['event.newbie']` + `equipped.title = 'event.newbie'`；老号在 `GET /save` 惰性幂等补发（`grantTitleToPlayer`），故所有账号上线即拥有。`event.newbie` 为 T1（weight 1300），永远不会顶掉玩家已挣得的更高称号。
 
 ### 6.1 跨来源等级序（`weight` 数据驱动，2026-06-21 定）
 
@@ -162,6 +162,11 @@ grant(t):
   - `@nw/shared/src/titles.ts`：新增 `parseTitleId(titleId) → {source, seasonNo?}`（纯函数，服务端/客户端可共用）。
   - `openapi.yml` 登记两端点（operationId `getTitles`/`equipTitle`），客户端 codegen 重生（顺带修复了此前累积的 codegen 漂移，使 `openapi.ts` 与 spec 完全同步）。
   - 存储仍复用 `save.titles[]` / `save.equipped.title`（服务器权威，PUT /save 不可写此二字段），未引入新存储。测试 `metaserver/test/titles.test.ts`。
+- [x] **新手起步称号自动发放（2026-07-16）**：设计早已定「新号给一枚 `event.newbie` 起步称号」但 grant 一直「实现期定」未接线，导致所有账号称号墙全空（`event.newbie` 只在 `TITLE_DEFS` 有定义，无任何调用发放）。本次补齐：
+  - `@nw/shared/src/titles.ts` 新增 `STARTER_TITLE = 'event.newbie'` 常量（单一来源）。
+  - `@nw/shared/src/types.ts` `makeNewSave`：建档即 `titles: [STARTER_TITLE]` + `equipped: { title: STARTER_TITLE }`（新号，零额外 DB 开销，原子）。
+  - `server/metaserver/src/service/save.ts` `getSave`：在权威读取前 `grantTitleToPlayer(cols, accountId, STARTER_TITLE, now())` 惰性幂等补发（老号，自愈，无需运维脚本；沿用与 `migrateIfStale` 相同的「读时惰性」模式）。补发用 `grantTitle` 纯函数的自动佩戴算法，只在「未佩戴任何称号」时才自动戴上，绝不顶掉玩家已挣得的更高称号（king 等）。
+  - 测试：`server/metaserver/test/starter-title.e2e.test.ts`（新号拥有+佩戴、老号补发+自动戴、不抢已挣称号、幂等 4 例）；更新 `titles.test.ts`（新号断言）、`internal-ladder.test.ts`（admin 授予后 titles 含 newbie）。**founder 仍走 admin 手动发放（运营活动），不自动发**。
 - [x] **称号墙全目录展示（2026-07-16）**：`TitlesScene` 由"只列已获得"改为展示全部固定称号（`TITLE_DEFS` 4 条，含 event/achievement）+ 已获得的赛季称号；未获得的固定称号灰显 + "未获得"角标、不可点击。是否展示称号完全由玩家决定：点未获得称号无反应，点已获得未佩戴称号→佩戴，再点已佩戴称号→取消佩戴（允许不展示任何称号）。赛季（ladder/slg）未获得的档位不枚举穷举（无固定目录、且跨赛季组合会爆炸），只展示玩家已获得的动态称号。纯客户端改动：`client/src/game/meta/titles.ts`（新增 `allTitleIds`）+ `client/src/scenes/TitlesScene.ts` + i18n `titles.locked`/`titles.tapUnequip`；未触碰 `GET/PUT /titles` 端点或 `save.titles`/`save.equipped` 存储（`TitlesScene` 走 `saveManager` 本地状态，不走该 REST 端点）。展示形式由整行列表改为图标卡网格（勋章 glyph + 短/全称 + 状态角标，每行按可用宽度自适应列数），复用 Equipment/Achievement 等页已有的 icon-card 网格排布手法，纯 `TitlesScene.ts` 内部改动。
 - [ ] 社交消息 sender 前缀（`[称号]`）— 待 S6 social 消息体扩展
 - [ ] SLG 赛季称号授予 — 待 worldsvc SLG 赛季结算落地
