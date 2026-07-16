@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BASE_DURABILITY_BASE,
+  BASE_DURABILITY_REGEN_PER_HOUR,
+  BASE_DURABILITY_WALL_STEP,
   NATION_BONUS_DEFENSE,
   SLG_BASE_HP_PER_LEVEL,
   SLG_SIEGE_VALUE_PER_CARD,
+  baseDurabilityMax,
   buildSiegeBattle,
   buildSiegeLevel,
   buildingMaxHp,
@@ -10,6 +14,7 @@ import {
   marchInterpPos,
   nationDefenseStrength,
   npcGarrison,
+  regenDurability,
   resolveSiege,
   siegeSeedFromId,
   strongholdGarrison,
@@ -120,6 +125,36 @@ describe('buildingMaxHp', () => {
   it('floors at SLG_BASE_HP_PER_LEVEL for level 0 or negative', () => {
     expect(buildingMaxHp(0)).toBe(SLG_BASE_HP_PER_LEVEL);
     expect(buildingMaxHp(-5)).toBe(SLG_BASE_HP_PER_LEVEL);
+  });
+});
+
+describe('baseDurabilityMax (D-CITY-8)', () => {
+  it('no wall → BASE_DURABILITY_BASE; each wall level adds BASE_DURABILITY_WALL_STEP', () => {
+    expect(baseDurabilityMax(0)).toBe(BASE_DURABILITY_BASE);
+    expect(baseDurabilityMax(1)).toBe(BASE_DURABILITY_BASE + BASE_DURABILITY_WALL_STEP);
+    expect(baseDurabilityMax(10)).toBe(BASE_DURABILITY_BASE + 10 * BASE_DURABILITY_WALL_STEP);
+  });
+
+  it('floors negative/fractional levels at 0', () => {
+    expect(baseDurabilityMax(-3)).toBe(BASE_DURABILITY_BASE);
+    expect(baseDurabilityMax(2.9)).toBe(BASE_DURABILITY_BASE + 2 * BASE_DURABILITY_WALL_STEP);
+  });
+});
+
+describe('regenDurability (D-CITY-8)', () => {
+  it('heals BASE_DURABILITY_REGEN_PER_HOUR per elapsed hour, clamped to max', () => {
+    const max = 1000;
+    const now = 10_000_000;
+    expect(regenDurability(500, max, now - 3_600_000, now)).toBe(500 + BASE_DURABILITY_REGEN_PER_HOUR);
+    expect(regenDurability(500, max, now - 2 * 3_600_000, now)).toBe(500 + 2 * BASE_DURABILITY_REGEN_PER_HOUR);
+  });
+
+  it('already at or above max → returns max unchanged, ignoring elapsed time', () => {
+    expect(regenDurability(1000, 1000, 0, 999_999_999)).toBe(1000);
+  });
+
+  it('negative elapsed time (clock skew) is clamped to zero regen', () => {
+    expect(regenDurability(500, 1000, 10_000, 5_000)).toBe(500);
   });
 });
 

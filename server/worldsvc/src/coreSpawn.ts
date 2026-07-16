@@ -6,6 +6,7 @@ import {
   tileId,
   playerWorldId,
   buildingMaxHp,
+  baseDurabilityMax,
   baseFootprintCells,
   baseFootprintInBounds,
   GARRISON_PER_TILE,
@@ -130,9 +131,23 @@ export class WorldCoreSpawn extends WorldCoreNation {
     ax: number,
     ay: number,
     ownerId: string,
-    opts: { garrison?: number; level: number; resType?: ResourceType; protectedUntil?: number; familyId?: string },
+    opts: {
+      garrison?: number;
+      level: number;
+      resType?: ResourceType;
+      protectedUntil?: number;
+      familyId?: string;
+      /** D-CITY-8: account's current `wall` building level, drives the anchor's durabilityMax. Defaults to 0 (no wall). */
+      wallLevel?: number;
+      /** D-CITY-8: current durability to carry over (e.g. voluntary relocate keeps damage taken); defaults to full. */
+      durability?: number;
+      /** D-CITY-8: regen anchor timestamp to carry over alongside `durability`; defaults to `now` (caller-supplied). */
+      durabilityRegenAt?: number;
+      now: number;
+    },
   ): TileDoc[] {
     const anchorTid = tileId(worldId, ax, ay);
+    const durabilityMax = baseDurabilityMax(opts.wallLevel ?? 0);
     const docs: TileDoc[] = [];
     for (const { x, y } of baseFootprintCells(ax, ay)) {
       const isAnchor = x === ax && y === ay;
@@ -150,6 +165,10 @@ export class WorldCoreSpawn extends WorldCoreNation {
           garrison: opts.garrison ?? GARRISON_PER_TILE,
           // ADR-026: the anchor holds the whole capital's building HP (= level × SLG_BASE_HP_PER_LEVEL).
           hp: buildingMaxHp(opts.level),
+          // D-CITY-8: the anchor's durability, capped by the wall-level-derived durabilityMax (replaces hp for base sieges).
+          durability: Math.min(opts.durability ?? durabilityMax, durabilityMax),
+          durabilityMax,
+          durabilityRegenAt: opts.durabilityRegenAt ?? opts.now,
           ...(opts.protectedUntil ? { protectedUntil: opts.protectedUntil } : {}),
           rev: 0,
         });

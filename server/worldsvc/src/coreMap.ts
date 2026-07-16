@@ -44,6 +44,7 @@ export class WorldCoreMap extends WorldCoreVision {
       .toArray();
     const baseByKey = new Map(baselines.map((b) => [`${b.x}:${b.y}`, b]));
 
+    const now = this.deps.now(); // D-CITY-8: shared `now` for lazy durability regen across the whole viewport batch
     // G5 vision: compute the requester's currently visible tile set (own/family territory + capitals + in-transit marches), gate the dynamic layer per tile.
     const sources = await this.computeVisionSources(worldId, accountId, x0, x1, y0, y1);
     const vis = (x: number, y: number): boolean => isInVision(sources, x, y);
@@ -79,7 +80,7 @@ export class WorldCoreMap extends WorldCoreVision {
         const o = byKey.get(`${x}:${y}`);
         const ownerProfile = (o?.ownerId && o.ownerId !== accountId)
           ? profileMap.get(o.ownerId) : undefined;
-        const view = o ? this.tileDocView(o, accountId, ownerProfile) : this.terrainView(worldId, x, y, baseByKey.get(`${x}:${y}`));
+        const view = o ? this.tileDocView(o, accountId, ownerProfile, now) : this.terrainView(worldId, x, y, baseByKey.get(`${x}:${y}`));
         const ally = !!o?.ownerId && o.ownerId !== accountId && family.has(o.ownerId);
         // Alliance tag: visible, not own tile, not family, belongs to an allied sect member (family ally takes priority; the two are mutually exclusive).
         const allied = !ally && !!o?.ownerId && o.ownerId !== accountId && allySect.has(o.ownerId);
@@ -189,7 +190,7 @@ export class WorldCoreMap extends WorldCoreVision {
     };
   }
 
-  tileDocView(o: TileDoc, accountId: string, ownerProfile?: PlayerProfile): WorldTileView {
+  tileDocView(o: TileDoc, accountId: string, ownerProfile?: PlayerProfile, now: number = this.deps.now()): WorldTileView {
     return {
       x: o.x,
       y: o.y,
@@ -202,7 +203,7 @@ export class WorldCoreMap extends WorldCoreVision {
       ...(ownerProfile?.displayName ? { ownerName: ownerProfile.displayName } : {}),
       ...(o.familyId ? { familyId: o.familyId } : {}),
       ...(o.garrison ? { garrison: o.garrison } : {}),
-      ...siegeHpView(o),
+      ...siegeHpView(o, now),
       ...(o.protectedUntil ? { protectedUntil: o.protectedUntil } : {}),
       ...(o.contestedUntil ? { contestedUntil: o.contestedUntil } : {}),
       ...(o.contestedBy === accountId ? { contestedByMe: true } : {}),

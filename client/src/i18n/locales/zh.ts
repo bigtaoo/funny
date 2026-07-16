@@ -1393,7 +1393,7 @@ export const zh = {
   'city.bonusTrainSpeed': '训练提速 {pct}%',
   'city.bonusQueueSlots': '队列槽 {n}',
   'city.bonusGateMaster': '门控所有建筑等级',
-  'city.bonusWallHp': '主城守军HP +{pct}%（主城被围）',
+  'city.bonusWallHp': '主城耐久上限：{n}（随时间自愈）',
   'city.bonusAcademyHp': '出征单位HP +{pct}%',
   'city.bonusAcademyDmg': '出征单位伤害 +{pct}%',
   'city.bonusSatchel': '单队出征携带兵力上限 {n}',

@@ -12,6 +12,7 @@ import {
   WATCHTOWER_COST,
   RESOURCE_TYPES,
   SlgError,
+  buildingLevel,
   type ResourceType,
   type BuildingKey,
 } from '@nw/shared';
@@ -100,6 +101,7 @@ export class TerritoryService {
       ...(spawn.resType ? { resType: spawn.resType } : {}),
       protectedUntil: t + PROTECTION_SEC * 1000,
       ...(familyId ? { familyId } : {}),
+      now: t, // fresh capital: no buildings yet → wallLevel 0 → full base-durability
     });
     await Promise.all(
       baseDocs.map((d) => cols.tiles.updateOne({ _id: d._id }, { $setOnInsert: d }, { upsert: true })),
@@ -265,6 +267,11 @@ export class TerritoryService {
       ...(proc.resType ? { resType: proc.resType } : {}),
       ...(carryProtect ? { protectedUntil: carryProtect } : {}),
       ...(pw.familyId ? { familyId: pw.familyId } : {}),
+      // D-CITY-8: voluntary relocation carries over durability/damage taken (like garrison), not a free heal.
+      wallLevel: buildingLevel(pw.buildings, 'wall'),
+      ...(oldBase?.durability != null ? { durability: oldBase.durability } : {}),
+      ...(oldBase?.durabilityRegenAt != null ? { durabilityRegenAt: oldBase.durabilityRegenAt } : {}),
+      now: t,
     });
     await Promise.all(
       baseDocs.map((d) => cols.tiles.updateOne({ _id: d._id }, { $set: d }, { upsert: true })),

@@ -4,6 +4,7 @@
 // so existing `import { ... } from './core'` call sites keep working unchanged.
 import {
   buildingMaxHp,
+  regenDurability,
   RESOURCE_TYPES,
   VISION_SCOUT_RADIUS,
   VISION_MARCH_RADIUS,
@@ -25,11 +26,20 @@ export const SPAWN_OUTER_MIN_DR = 0.6;
 const HP_BEARING_TILE_TYPES: ReadonlySet<TileType> = new Set(['base', 'territory', 'stronghold'] as TileType[]);
 
 /**
- * ADR-026 §1: HP-bar fields for a tile view. Emits maxHp (= buildingMaxHp(level)) and current hp for HP-bearing
- * building types only; hp defaults to full when TileDoc.hp is unset. Non-building tiles get no HP fields.
+ * ADR-026 §1 / D-CITY-8: HP-bar fields for a tile view. Non-base HP-bearing types (territory/stronghold) emit
+ * maxHp (= buildingMaxHp(level)) and current hp, unchanged. Base tiles instead surface `durability`/`durabilityMax`
+ * (wall-level-derived, persistent, self-regenerating — see baseDurabilityMax/regenDurability in shared/src/slg/siege.ts)
+ * under the same `hp`/`maxHp` view field names, so the client contract is unchanged; the regen is computed live for
+ * display only (pure function of stored fields + `now`) and is never persisted here — only an actual siege hit or
+ * wall upgrade persists a new value (see settleSiegeDamage / applyDueBuilds). Non-HP-bearing tiles get no HP fields.
  */
-export function siegeHpView(o: TileDoc): { hp?: number; maxHp?: number } {
+export function siegeHpView(o: TileDoc, now: number): { hp?: number; maxHp?: number } {
   if (!HP_BEARING_TILE_TYPES.has(o.type)) return {};
+  if (o.type === 'base') {
+    const maxHp = o.durabilityMax ?? buildingMaxHp(o.level);
+    const hp = regenDurability(o.durability ?? maxHp, maxHp, o.durabilityRegenAt ?? now, now);
+    return { maxHp, hp };
+  }
   const maxHp = buildingMaxHp(o.level);
   return { maxHp, hp: o.hp ?? maxHp };
 }

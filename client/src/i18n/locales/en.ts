@@ -1379,7 +1379,7 @@ export const en: Record<TranslationKey, string> = {
   'city.bonusTrainSpeed': 'Training speed +{pct}%',
   'city.bonusQueueSlots': 'Queue slots: {n}',
   'city.bonusGateMaster': 'Gates all building levels',
-  'city.bonusWallHp': 'Base garrison HP +{pct}% (base sieges)',
+  'city.bonusWallHp': 'Base durability cap: {n} (self-heals over time)',
   'city.bonusAcademyHp': 'Attack HP +{pct}%',
   'city.bonusAcademyDmg': 'Attack damage +{pct}%',
   'city.bonusSatchel': 'Per-march troop-carry cap: {n}',

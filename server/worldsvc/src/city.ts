@@ -24,6 +24,8 @@ import {
   CARD_TROOP_METAL_COST,
   CARD_TROOP_REFUND_RATE,
   CARD_RECOVER_COIN_COST,
+  baseDurabilityMax,
+  regenDurability,
   type BuildingKey,
 } from '@nw/shared';
 import { validateAttackerArmy } from './siegeEngine';
@@ -314,6 +316,23 @@ export class CityService {
         $inc: { rev: 1 },
       },
     );
+    // D-CITY-8: a completed `wall` upgrade raises durabilityMax — regen up to now, then apply the delta
+    // (preserves absolute damage already taken instead of resetting to full), and rebase the regen anchor.
+    if (done.some((e) => e.key === 'wall') && fresh.mainBaseTile) {
+      const oldMax = baseDurabilityMax(buildingLevel(fresh.buildings, 'wall'));
+      const newMax = baseDurabilityMax(buildingLevel(next, 'wall'));
+      if (newMax !== oldMax) {
+        const tile = await cols.tiles.findOne({ _id: fresh.mainBaseTile });
+        if (tile) {
+          const regened = regenDurability(tile.durability ?? oldMax, oldMax, tile.durabilityRegenAt ?? t, t);
+          const durability = Math.min(newMax, regened + (newMax - oldMax));
+          await cols.tiles.updateOne(
+            { _id: fresh.mainBaseTile },
+            { $set: { durability, durabilityMax: newMax, durabilityRegenAt: t }, $inc: { rev: 1 } },
+          );
+        }
+      }
+    }
     return done.length;
   }
 

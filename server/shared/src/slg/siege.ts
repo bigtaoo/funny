@@ -275,6 +275,32 @@ export function buildingMaxHp(level: number): number {
   return Math.max(1, Math.floor((Math.max(0, Math.floor(level)) || 0) * SLG_BASE_HP_PER_LEVEL) || SLG_BASE_HP_PER_LEVEL);
 }
 
+// ── D-CITY-8: main-base durability (SLG_CITY_DESIGN §8.2, 锁定 2026-07-15) ─────────────────────────
+// Replaces the old "wall temporarily buffs garrison HP during battle" mechanic (former WALL_DEFENSE_STEP/
+// wallDefenseMult in city.ts, now removed): the main base's durability cap is instead driven persistently
+// by the `wall` building level (not tile.level, unlike buildingMaxHp above), drained by siege value on the
+// same delayed-hit path as ordinary building HP, and slowly self-heals between attacks. Numbers below are
+// DRAFT placeholders pending an economy pass (doc's own admission, §8.2 "未决").
+
+/** Durability floor for a main base with wall level 0. [DRAFT] */
+export const BASE_DURABILITY_BASE = 300;
+/** Durability added per `wall` building level. [DRAFT] */
+export const BASE_DURABILITY_WALL_STEP = 200;
+/** Passive durability regen, flat amount per hour, independent of max. [DRAFT] */
+export const BASE_DURABILITY_REGEN_PER_HOUR = 50;
+
+/** Main-base durability cap from the account's `wall` building level (D-CITY-8). */
+export function baseDurabilityMax(wallLevel: number): number {
+  return BASE_DURABILITY_BASE + Math.max(0, Math.floor(wallLevel) || 0) * BASE_DURABILITY_WALL_STEP;
+}
+
+/** Lazy linear-time regen: `current` healed by elapsed hours since `regenAt`, clamped to `max`. Pure — no I/O, no persistence. */
+export function regenDurability(current: number, max: number, regenAt: number, now: number): number {
+  if (current >= max) return max;
+  const elapsedHours = Math.max(0, now - regenAt) / 3_600_000;
+  return Math.min(max, current + elapsedHours * BASE_DURABILITY_REGEN_PER_HOUR);
+}
+
 /**
  * A team's siege value = sum of each card's siege-value attribute (ADR-026 §4; a per-card stat, same tier as attack/speed).
  * Only entries with a cardInstanceId count. When `cardInv` is provided, each card's value is resolved per-card/per-level
