@@ -17,6 +17,7 @@ import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { buildIcon } from '../render/icons';
+import { FS } from '../render/fontScale';
 import { CARD_DEFINITIONS } from '../game/config';
 import {
   PVP_DECK_SIZE,
@@ -174,20 +175,20 @@ export class DeckBuilderScene implements Scene {
     const btnPanel = sketchPanel(btnW, btnH, { fill: C.accent, border: C.dark, width: 2, seed: strHash('db_confirm') });
     btnPanel.x = btnX; btnPanel.y = btnY;
     this.container.addChild(btnPanel);
-    const btnLabel = txt(t('pvp.confirmDeck' as TranslationKey), Math.round(h * 0.028), C.dark);
+    const btnLabel = txt(t('pvp.confirmDeck' as TranslationKey), FS.title, C.dark);
     btnLabel.anchor.set(0.5, 0.5); btnLabel.x = btnX + btnW / 2; btnLabel.y = btnY + btnH / 2;
     this.container.addChild(btnLabel);
     this.hits.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, fn: () => this.confirm() });
 
     // Card counter
     const count = this.selected.size;
-    const counterLabel = txt(`${count} / ${PVP_DECK_SIZE}`, Math.round(h * 0.032), count === PVP_DECK_SIZE ? C.dark : C.mid);
+    const counterLabel = txt(`${count} / ${PVP_DECK_SIZE}`, FS.title, count === PVP_DECK_SIZE ? C.dark : C.mid);
     counterLabel.anchor.set(0, 0.5); counterLabel.x = pad; counterLabel.y = footerY + footerH / 2;
     this.container.addChild(counterLabel);
 
     // Error message
     if (this.errorMsg) {
-      const errTxt = txt(this.errorMsg, Math.round(h * 0.022), 0xe05555);
+      const errTxt = txt(this.errorMsg, FS.label, 0xe05555);
       errTxt.anchor.set(0, 1); errTxt.x = pad; errTxt.y = footerY - Math.round(h * 0.01);
       this.container.addChild(errTxt);
     }
@@ -229,7 +230,7 @@ export class DeckBuilderScene implements Scene {
       listContainer.addChild(panel);
 
       // Card name
-      const name = txt(cardDisplayName(id), Math.round(h * 0.025), isSelected && isUnlocked ? C.paper : C.dark, true);
+      const name = txt(cardDisplayName(id), FS.heading, isSelected && isUnlocked ? C.paper : C.dark, true);
       name.anchor.set(0.5, 0.5); name.x = cx + cardW / 2; name.y = cy + cardH / 2;
       listContainer.addChild(name);
 

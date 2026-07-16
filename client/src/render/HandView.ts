@@ -8,6 +8,7 @@ import { TICK_RATE } from '../game/math/fixed';
 import { SketchPen } from './sketch';
 import { palette } from './theme';
 import { CARD_ART_URLS, cardArtKey } from './cardArt';
+import { FS } from './fontScale';
 
 const CARD_BG              = 0xfaf6ee;
 const CARD_BORDER          = 0x333333;
@@ -45,13 +46,13 @@ function createCardSlot(): PIXI.Container {
   const art      = new PIXI.Sprite(PIXI.Texture.EMPTY); art.name = 'art';
   art.anchor.set(0.5);
   art.visible = false;
-  const typeText = new PIXI.Text('', { fontSize: 13,  fill: 0x888888 }); typeText.name = 'type';
+  const typeText = new PIXI.Text('', { fontSize: FS.tiny,  fill: 0x888888 }); typeText.name = 'type';
   typeText.x = 4; typeText.y = 2;
   const nameText = new PIXI.Text('', {
-    fontSize: 19, fill: 0x222222, wordWrap: true, align: 'center', fontWeight: 'bold',
+    fontSize: FS.bodyLg, fill: 0x222222, wordWrap: true, align: 'center', fontWeight: 'bold',
   }); nameText.name = 'name';
   const costBg   = new PIXI.Graphics(); costBg.name   = 'costBg';
-  const costText = new PIXI.Text('', { fontSize: 20, fill: 0xffffff, fontWeight: 'bold' });
+  const costText = new PIXI.Text('', { fontSize: FS.bodyLg, fill: 0xffffff, fontWeight: 'bold' });
   costText.name  = 'cost';
   const overlay  = new PIXI.Graphics(); overlay.name  = 'overlay';
   const bar      = new PIXI.Graphics(); bar.name      = 'bar';

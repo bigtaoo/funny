@@ -10,6 +10,7 @@ import { InputManager } from '../../inputSystem/InputManager';
 import { t, TranslationKey } from '../../i18n';
 import { ProfilePopup } from '../../render/ProfilePopup';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../../render/sketchUi';
+import { FS, snapFont } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSocialTabRail, type SocialTab } from '../../render/socialTabRail';
@@ -475,7 +476,7 @@ export class FriendsSceneBase {
   protected drawToast(): void {
     if (!this.toastKey) return;
     const { w, h } = this;
-    const label = txt(t(this.toastKey), Math.round(h * 0.026), 0xffffff, true);
+    const label = txt(t(this.toastKey), FS.heading, 0xffffff, true);
     const padX = Math.round(w * 0.04);
     const padY = Math.round(h * 0.018);
     const bw = label.width + padX * 2;
@@ -492,7 +493,7 @@ export class FriendsSceneBase {
   /** Center label (fixed position, not in the scroll layer). */
   protected centerLabelFixed(text: string): void {
     const regionH = this.regionBottom - this.regionTop;
-    const lbl = txt(text, Math.round(this.h * 0.026), C.mid);
+    const lbl = txt(text, FS.heading, C.mid);
     lbl.anchor.set(0.5, 0.5); lbl.x = this.cCX; lbl.y = this.regionTop + regionH / 2;
     this.container.addChild(lbl);
   }
@@ -509,7 +510,7 @@ export class FriendsSceneBase {
   }
 
   protected centerLabel(layer: PIXI.Container, key: TranslationKey, regionH: number): void {
-    const l = txt(t(key), Math.round(this.h * 0.026), C.mid);
+    const l = txt(t(key), FS.heading, C.mid);
     l.anchor.set(0.5, 0.5); l.x = this.cCX; l.y = this.regionTop + regionH / 2;
     layer.addChild(l);
   }
@@ -531,7 +532,7 @@ export class FriendsSceneBase {
       ic.x = x + (w - sz) / 2; ic.y = y + (h - sz) / 2;
       target.addChild(ic);
     } else {
-      const tl = txt(label, fontSize ?? Math.round(h * 0.36), textColor, true);
+      const tl = txt(label, fontSize ?? snapFont(Math.round(h * 0.36)), textColor, true);
       tl.anchor.set(0.5, 0.5); tl.x = x + w / 2; tl.y = y + h / 2;
       target.addChild(tl);
     }

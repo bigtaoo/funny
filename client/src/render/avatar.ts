@@ -12,6 +12,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { SketchPen } from './sketch';
 import { palette } from './theme';
 import { buildIcon, IconKind } from './icons';
+import { snapFont } from './fontScale';
 
 /** First visible glyph of a name, uppercased (handles CJK + latin). */
 function initial(name: string): string {
@@ -66,7 +67,7 @@ export function buildAvatar(size: number, name: string, seed = 7, avatarId?: str
     c.addChild(icon);
   } else {
     const letter = new PIXI.Text(initial(name), {
-      fontSize: Math.round(size * 0.5),
+      fontSize: snapFont(Math.round(size * 0.5)),
       fill: palette.paper,
       fontFamily: 'monospace',
       fontWeight: 'bold',

@@ -5,6 +5,7 @@ import { ui as C, txt, sketchPanel, sketchButton, seedFor } from '../../render/s
 import { buildIcon } from '../../render/icons';
 import type { SectView } from '../../net/WorldApiClient';
 import { type Constructor, type SectSceneBaseCtor } from './base';
+import { FS } from '../../render/fontScale';
 
 export interface ModalsHandlers {
   showSectPickModal(sects: SectView[], onPick: (sectId: string) => void, emptyKey: 'sect.noSects' | 'sect.noAllies'): void;
@@ -35,7 +36,7 @@ export function ModalsMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       ml.addChild(panel);
 
       if (sects.length === 0) {
-        const lbl = txt(t(emptyKey), 13, C.dark);
+        const lbl = txt(t(emptyKey), FS.tiny, C.dark);
         lbl.anchor.set(0.5, 0.5); lbl.x = mx + mw / 2; lbl.y = my + mh / 2;
         ml.addChild(lbl);
         return;
@@ -46,7 +47,7 @@ export function ModalsMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
         const row = sketchPanel(mw - 16, 36, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(cy, 0, mw - 16) });
         row.x = mx + 8; row.y = cy;
         ml.addChild(row);
-        const lbl = txt(`[${s.tag}] ${s.name} (${s.memberFamilyCount})`, 12, C.dark);
+        const lbl = txt(`[${s.tag}] ${s.name} (${s.memberFamilyCount})`, FS.tiny, C.dark);
         lbl.x = mx + 14; lbl.y = cy + 10;
         ml.addChild(lbl);
         const sid = s.sectId;
@@ -75,7 +76,7 @@ export function ModalsMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       panel.x = mx; panel.y = my;
       ml.addChild(panel);
 
-      const lbl = txt(msg, 13, C.dark);
+      const lbl = txt(msg, FS.tiny, C.dark);
       lbl.anchor.set(0.5, 0); lbl.x = mx + mw / 2; lbl.y = my + 16;
       (lbl.style as PIXI.TextStyle).wordWrap = true;
       (lbl.style as PIXI.TextStyle).wordWrapWidth = mw - 24;
@@ -85,7 +86,7 @@ export function ModalsMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       const okBtn = sketchButton(80, 28, seedFor(0, 1, 80));
       okBtn.x = mx + mw / 2 - 88; okBtn.y = my + mh - 36;
       ml.addChild(okBtn);
-      const ol = txt('OK', 13, C.light);
+      const ol = txt('OK', FS.tiny, C.light);
       ol.anchor.set(0.5, 0.5); ol.x = mx + mw / 2 - 48; ol.y = my + mh - 22;
       ml.addChild(ol);
       this.modalHits.push({ rect: { x: okBtn.x, y: okBtn.y, w: 80, h: 28 }, action: onOk });

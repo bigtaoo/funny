@@ -10,6 +10,7 @@ import type { InputManager } from '../../inputSystem/InputManager';
 import type { Scene } from '../SceneManager';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchButton, seedFor, drawLoadingOverlay, tearDownChildren } from '../../render/sketchUi';
+import { FS, snapFont } from '../../render/fontScale';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
@@ -299,7 +300,7 @@ export class EquipmentSceneBase {
 
     const midY = y + MAT_BAND_H / 2;
     const iconSize = Math.round(MAT_BAND_H * 0.44);
-    const fontSize = Math.round(MAT_BAND_H * 0.4);
+    const fontSize = snapFont(Math.round(MAT_BAND_H * 0.4));
     const slotW = w / TRACKED_MATERIALS.length;
     TRACKED_MATERIALS.forEach((m, i) => {
       const cx = x + i * slotW + Math.round(slotW * 0.1);
@@ -358,7 +359,7 @@ export class EquipmentSceneBase {
     panel.x = mx; panel.y = my;
     ml.addChild(panel);
 
-    const lbl = txt(msg, 12, C.dark);
+    const lbl = txt(msg, FS.tiny, C.dark);
     lbl.anchor.set(0.5, 0); lbl.x = mx + mw / 2; lbl.y = my + 16;
     lbl.style.wordWrap = true; lbl.style.wordWrapWidth = mw - 24; lbl.style.align = 'center';
     ml.addChild(lbl);
@@ -366,7 +367,7 @@ export class EquipmentSceneBase {
     const okBtn = sketchButton(84, 28, seedFor(0, 13, 84));
     okBtn.x = mx + mw / 2 - 92; okBtn.y = my + mh - 36;
     ml.addChild(okBtn);
-    const ol = txt(t('equip.ok'), 12, C.light, true);
+    const ol = txt(t('equip.ok'), FS.tiny, C.light, true);
     ol.anchor.set(0.5, 0.5); ol.x = okBtn.x + 42; ol.y = okBtn.y + 14;
     ml.addChild(ol);
     this.modalHits.push({ rect: { x: okBtn.x, y: okBtn.y, w: 84, h: 28 }, action: onOk });
@@ -374,7 +375,7 @@ export class EquipmentSceneBase {
     const caBtn = sketchPanel(84, 28, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 14, 84) });
     caBtn.x = mx + mw / 2 + 8; caBtn.y = my + mh - 36;
     ml.addChild(caBtn);
-    const cl = txt(t('equip.cancel'), 12, C.dark);
+    const cl = txt(t('equip.cancel'), FS.tiny, C.dark);
     cl.anchor.set(0.5, 0.5); cl.x = caBtn.x + 42; cl.y = caBtn.y + 14;
     ml.addChild(cl);
     // Cancel re-opens the detail (detailId still set) via render().
@@ -479,7 +480,7 @@ export class EquipmentSceneBase {
     prefix = '×',
   ): number {
     let cx = x;
-    const labelSize = Math.round(size * 0.8);
+    const labelSize = snapFont(Math.round(size * 0.8));
     const item = (kind: IconKind | null, fallback: string, iconColor: number, n: number): void => {
       if (kind) {
         const ic = buildIcon(kind, size, iconColor);
@@ -517,7 +518,7 @@ export class EquipmentSceneBase {
   protected showToast(msg: string, color: number = C.dark): void {
     const tl = this.toastLayer;
     tl.removeChildren();
-    const lbl = txt(msg, 26, 0xffffff, true);
+    const lbl = txt(msg, FS.heading, 0xffffff, true);
     const padX = 28, padY = 16;
     const bw = lbl.width + padX * 2;
     const bh = lbl.height + padY * 2;

@@ -8,6 +8,7 @@ import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader, sceneHeaderHeight } from '../ui/widgets/SceneHeader';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { caretDisplay } from '../render/inputDisplay';
+import { FS, snapFont } from '../render/fontScale';
 import type { ChatMessageView } from '../net/ApiClient';
 import type { ChatMessagePush } from '../net/proto/transport';
 
@@ -277,7 +278,7 @@ export class ChatScene implements Scene {
     this.container.addChild(layer);
 
     if (this.loading) {
-      const l = txt(t('chat.loading'), Math.round(h * 0.028), C.mid);
+      const l = txt(t('chat.loading'), FS.title, C.mid);
       l.anchor.set(0.5, 0.5); l.x = w / 2; l.y = this.regionTop + regionH / 2;
       layer.addChild(l);
       this.maxScroll = 0;
@@ -290,14 +291,14 @@ export class ChatScene implements Scene {
     let cy = Math.round(h * 0.012);
 
     if (this.hasMore) {
-      const lbl = txt(t('chat.loadEarlier'), Math.round(h * 0.024), C.accent, true);
+      const lbl = txt(t('chat.loadEarlier'), FS.heading, C.accent, true);
       lbl.anchor.set(0.5, 0);
       built.push({ node: lbl, cy, hitFn: () => void this.loadEarlier(), hitH: Math.round(h * 0.04) });
       cy += Math.round(h * 0.05);
     }
 
     if (this.messages.length === 0) {
-      const e = txt(t('chat.empty'), Math.round(h * 0.026), C.mid);
+      const e = txt(t('chat.empty'), FS.heading, C.mid);
       e.anchor.set(0.5, 0);
       built.push({ node: e, cy: cy + Math.round(h * 0.04) });
       cy += Math.round(h * 0.1);
@@ -336,7 +337,7 @@ export class ChatScene implements Scene {
     const padX = Math.round(w * 0.03);
     const padY = Math.round(this.h * 0.012);
     const body = new PIXI.Text(m.body, {
-      fontSize: Math.round(this.h * 0.026), fill: mine ? 0xffffff : C.dark,
+      fontSize: FS.heading, fill: mine ? 0xffffff : C.dark,
       fontFamily: 'monospace', wordWrap: true, wordWrapWidth: maxW - padX * 2, breakWords: true,
     });
     const bw = Math.min(maxW, Math.ceil(body.width) + padX * 2);
@@ -372,7 +373,7 @@ export class ChatScene implements Scene {
     field.x = fieldX; field.y = fieldY;
     this.container.addChild(field);
     const display = caretDisplay(this.draft, this.composeFocused ? this.caretOn : false, t('chat.placeholder'));
-    const ft = txt(display, Math.round(fieldH * 0.4), (this.draft || this.composeFocused) ? C.dark : C.mid);
+    const ft = txt(display, snapFont(Math.round(fieldH * 0.4)), (this.draft || this.composeFocused) ? C.dark : C.mid);
     ft.anchor.set(0, 0.5); ft.x = fieldX + Math.round(w * 0.025); ft.y = fieldY + fieldH / 2;
     this.container.addChild(ft);
     this.hits.push({ rect: { x: fieldX, y: fieldY, w: fieldW, h: fieldH }, fn: () => this.focusCompose() });
@@ -382,7 +383,7 @@ export class ChatScene implements Scene {
     const sb = sketchPanel(sendW, fieldH, { fill: enabled ? C.dark : C.btnOff, border: enabled ? C.accent : C.light, width: 2, seed: seedFor(sx, 1, sendW) });
     sb.x = sx; sb.y = fieldY;
     this.container.addChild(sb);
-    const sl = txt(t('chat.send'), Math.round(fieldH * 0.4), 0xffffff, true);
+    const sl = txt(t('chat.send'), snapFont(Math.round(fieldH * 0.4)), 0xffffff, true);
     sl.anchor.set(0.5, 0.5); sl.x = sx + sendW / 2; sl.y = fieldY + fieldH / 2;
     this.container.addChild(sl);
     this.hits.push({ rect: { x: sx, y: fieldY, w: sendW, h: fieldH }, fn: () => { if (enabled) void this.doSend(); } });
@@ -391,7 +392,7 @@ export class ChatScene implements Scene {
   private drawToast(): void {
     if (!this.toastKey) return;
     const { w, h } = this;
-    const label = txt(t(this.toastKey), Math.round(h * 0.026), 0xffffff, true);
+    const label = txt(t(this.toastKey), FS.heading, 0xffffff, true);
     const bw = label.width + Math.round(w * 0.08);
     const bh = label.height + Math.round(h * 0.036);
     const bx = (w - bw) / 2;

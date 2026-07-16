@@ -7,6 +7,7 @@ import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { type IconKind } from '../../render/icons';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { type Constructor, type ShopSceneBaseCtor, type CardSpec } from './base';
+import { snapFont } from '../../render/fontScale';
 
 interface CoinTierDef {
   id: string;
@@ -101,13 +102,13 @@ export function CoinsMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase 
 
       const display = this.promoCode || t('shop.promoPlaceholder');
       const isPlaceholder = !this.promoCode;
-      const fieldTxt = txt(display, Math.round(h * 0.30), isPlaceholder ? C.mid : C.dark, true);
+      const fieldTxt = txt(display, snapFont(Math.round(h * 0.30)), isPlaceholder ? C.mid : C.dark, true);
       fieldTxt.anchor.set(0, 0.5); fieldTxt.x = x + Math.round(fieldW * 0.04); fieldTxt.y = y + h / 2;
       body.addChild(fieldTxt);
 
       // Blinking caret when focused.
       if (focused) {
-        const caret = txt('|', Math.round(h * 0.34), C.accent, true);
+        const caret = txt('|', snapFont(Math.round(h * 0.34)), C.accent, true);
         caret.anchor.set(0, 0.5);
         caret.x = fieldTxt.x + fieldTxt.width + 2;
         caret.y = y + h / 2;
@@ -127,7 +128,7 @@ export function CoinsMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase 
       btn.x = bx; btn.y = y;
       body.addChild(btn);
 
-      const blabel = txt(t('shop.promoRedeem'), Math.round(h * 0.30), canRedeem ? 0xffffff : C.mid, true);
+      const blabel = txt(t('shop.promoRedeem'), snapFont(Math.round(h * 0.30)), canRedeem ? 0xffffff : C.mid, true);
       blabel.anchor.set(0.5, 0.5); blabel.x = bx + btnW / 2; blabel.y = y + h / 2;
       body.addChild(blabel);
 

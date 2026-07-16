@@ -3,6 +3,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { snapFont } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import type { CardInstance } from '../../game/meta/SaveData';
@@ -72,11 +73,11 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         panel.x = mx; panel.y = my;
         ml.addChild(panel);
 
-        const titleLbl = txt(t('roster.feedTitle'), 13 * S, C.dark, true);
+        const titleLbl = txt(t('roster.feedTitle'), snapFont(13 * S), C.dark, true);
         titleLbl.anchor.set(0.5, 0); titleLbl.x = mx + mw / 2; titleLbl.y = my + 10 * S;
         ml.addChild(titleLbl);
 
-        const hintLbl = txt(t('roster.feedHint'), 10 * S, C.mid);
+        const hintLbl = txt(t('roster.feedHint'), snapFont(10 * S), C.mid);
         hintLbl.anchor.set(0.5, 0); hintLbl.x = mx + mw / 2; hintLbl.y = my + 26 * S;
         ml.addChild(hintLbl);
 
@@ -84,7 +85,7 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         const listH = mh - headerBlockH - footerBlockH;
 
         if (candidates.length === 0) {
-          const empty = txt(t('roster.feedEmpty'), 12 * S, C.mid);
+          const empty = txt(t('roster.feedEmpty'), snapFont(12 * S), C.mid);
           empty.anchor.set(0.5, 0.5); empty.x = mx + mw / 2; empty.y = listY + listH / 2;
           ml.addChild(empty);
         }
@@ -118,11 +119,11 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
           }
 
           const matName = t(`card.${mat.defId}.name` as TranslationKey);
-          const nameLbl = txt(`${matName} Lv.${mat.level}`, 12 * S, C.dark, true);
+          const nameLbl = txt(`${matName} Lv.${mat.level}`, snapFont(12 * S), C.dark, true);
           nameLbl.x = mx + 36 * S; nameLbl.y = cy + 6 * S;
           ml.addChild(nameLbl);
 
-          const facLbl = txt(matDef ? t(`roster.faction.${matDef.faction}` as TranslationKey) : '', 10 * S, matDef?.faction === 'anna' ? 0xcc4466 : 0x4477cc);
+          const facLbl = txt(matDef ? t(`roster.faction.${matDef.faction}` as TranslationKey) : '', snapFont(10 * S), matDef?.faction === 'anna' ? 0xcc4466 : 0x4477cc);
           facLbl.x = mx + 36 * S; facLbl.y = cy + 22 * S;
           ml.addChild(facLbl);
 
@@ -187,7 +188,7 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         });
         confirmBtn.x = mx + mw / 2 - confirmBtnW - 4 * S; confirmBtn.y = my + mh - 36 * S;
         ml.addChild(confirmBtn);
-        const confirmLbl = txt(`${t('roster.feedBtn')} (${selected.size})`, 11 * S, confirmOn ? C.light : C.mid);
+        const confirmLbl = txt(`${t('roster.feedBtn')} (${selected.size})`, snapFont(11 * S), confirmOn ? C.light : C.mid);
         confirmLbl.anchor.set(0.5, 0.5); confirmLbl.x = confirmBtn.x + confirmBtnW / 2; confirmLbl.y = confirmBtn.y + btnH / 2;
         ml.addChild(confirmLbl);
         if (confirmOn) {
@@ -202,7 +203,7 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         const cancelBtn = sketchPanel(cancelBtnW, btnH, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 21, cancelBtnW) });
         cancelBtn.x = mx + mw / 2 + 4 * S; cancelBtn.y = my + mh - 36 * S;
         ml.addChild(cancelBtn);
-        const cancelLbl = txt(t('equip.cancel'), 11 * S, C.dark);
+        const cancelLbl = txt(t('equip.cancel'), snapFont(11 * S), C.dark);
         cancelLbl.anchor.set(0.5, 0.5); cancelLbl.x = cancelBtn.x + cancelBtnW / 2; cancelLbl.y = cancelBtn.y + btnH / 2;
         ml.addChild(cancelLbl);
         this.modalHits.push({ rect: { x: cancelBtn.x, y: cancelBtn.y, w: cancelBtnW, h: btnH }, action: () => { this.closeModal(); this.render(); } });

@@ -1,6 +1,7 @@
 // Search subview: the numeric-keypad publicId search screen (openSearch entry + drawSearch render).
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
+import { FS, snapFont } from '../../render/fontScale';
 import { rankLabel, type Constructor, type FriendsSceneBaseCtor } from './base';
 
 export interface SearchHandlers {
@@ -26,7 +27,7 @@ export function SearchMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): TB
       const { w, h } = this;
       const tbH = Math.round(h * 0.12);
 
-      const prompt = txt(t('friends.searchTitle'), Math.round(h * 0.028), C.dark, true);
+      const prompt = txt(t('friends.searchTitle'), FS.title, C.dark, true);
       prompt.anchor.set(0.5, 0.5); prompt.x = w / 2; prompt.y = tbH + Math.round(h * 0.05);
       this.container.addChild(prompt);
 
@@ -40,7 +41,7 @@ export function SearchMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): TB
       field.x = fX; field.y = fY;
       this.container.addChild(field);
       const shown = this.searchDigits.length ? this.searchDigits.join('') : t('friends.searchPlaceholder');
-      const fTxt = txt(shown, Math.round(fH * 0.45), this.searchDigits.length ? C.dark : C.mid, true);
+      const fTxt = txt(shown, snapFont(Math.round(fH * 0.45)), this.searchDigits.length ? C.dark : C.mid, true);
       fTxt.anchor.set(0.5, 0.5); fTxt.x = w / 2; fTxt.y = fY + fH / 2;
       this.container.addChild(fTxt);
 
@@ -63,7 +64,7 @@ export function SearchMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): TB
           this.searchResult = null;
           this.searchMsgKey = null;
           this.render();
-        }, C.dark, Math.round(kH * 0.4));
+        }, C.dark, snapFont(Math.round(kH * 0.4)));
       });
 
       const kRows = Math.ceil(keys.length / perRow);
@@ -82,18 +83,18 @@ export function SearchMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): TB
         bg.x = rx; bg.y = ry;
         sketchAccentBar(bg, rh, C.accent, seedFor(rx, ry, 3));
         this.container.addChild(bg);
-        const nm = txt(res.displayName, Math.round(rh * 0.3), C.dark, true);
+        const nm = txt(res.displayName, snapFont(Math.round(rh * 0.3)), C.dark, true);
         nm.anchor.set(0, 0.5); nm.x = rx + Math.round(fW * 0.06); nm.y = ry + rh * 0.36;
         this.container.addChild(nm);
-        const sub = txt(`#${res.publicId}${res.rank ? '  ·  ' + rankLabel(res.rank) : ''}`, Math.round(rh * 0.2), C.mid);
+        const sub = txt(`#${res.publicId}${res.rank ? '  ·  ' + rankLabel(res.rank) : ''}`, snapFont(Math.round(rh * 0.2)), C.mid);
         sub.anchor.set(0, 0.5); sub.x = rx + Math.round(fW * 0.06); sub.y = ry + rh * 0.68;
         this.container.addChild(sub);
         const bW = Math.round(fW * 0.26);
         const bH = Math.round(rh * 0.52);
         this.addButton(t('friends.add'), rx + fW - bW - Math.round(fW * 0.04), ry + (rh - bH) / 2, bW, bH,
-          C.green, C.green, () => void this.doAdd(res.publicId), 0xffffff, Math.round(bH * 0.4));
+          C.green, C.green, () => void this.doAdd(res.publicId), 0xffffff, snapFont(Math.round(bH * 0.4)));
       } else if (this.searchMsgKey) {
-        const msg = txt(t(this.searchMsgKey), Math.round(h * 0.024), C.mid);
+        const msg = txt(t(this.searchMsgKey), FS.heading, C.mid);
         msg.anchor.set(0.5, 0); msg.x = w / 2; msg.y = ry;
         this.container.addChild(msg);
       }

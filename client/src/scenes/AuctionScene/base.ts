@@ -10,6 +10,7 @@ import type { ILayout } from '../../layout/ILayout';
 import type { InputManager } from '../../inputSystem/InputManager';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchButton, seedFor, tearDownChildren } from '../../render/sketchUi';
+import { FS, snapFont } from '../../render/fontScale';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSceneHeader, sceneHeaderHeight, HEADER_ACCENT, drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
@@ -353,14 +354,14 @@ export class AuctionSceneBase {
     const gap = 8 * scale;
     const half = btnSize / 2;
 
-    const lbl = txt(label, 12 * scale, C.dark);
+    const lbl = txt(label, snapFont(12 * scale), C.dark);
     lbl.x = mx + 10 * scale; lbl.y = y;
     layer.addChild(lbl);
 
     const minusBtn = sketchPanel(btnSize, btnSize, { fill: 0xeeeeee, border: C.mid, seed: seedFor(y, 0, btnSize) });
     minusBtn.x = mx + 10 * scale + lbl.width + gap; minusBtn.y = y - 2 * scale;
     layer.addChild(minusBtn);
-    const ml = txt('−', 14 * scale, C.dark);
+    const ml = txt('−', snapFont(14 * scale), C.dark);
     ml.anchor.set(0.5, 0.5); ml.x = minusBtn.x + half; ml.y = y + 10 * scale;
     layer.addChild(ml);
     this.modalHits.push({ rect: { x: minusBtn.x, y: minusBtn.y, w: btnSize, h: btnSize }, action: () => onChange(value - 1) });
@@ -374,7 +375,7 @@ export class AuctionSceneBase {
       const field = sketchPanel(fieldW, fieldH, { fill: 0xfaf9f5, border: editing ? C.accent : C.mid, seed: seedFor(y, 2, fieldW) });
       field.x = fieldX; field.y = y - 2 * scale;
       layer.addChild(field);
-      const valLbl = txt(caretDisplay(String(value), editing && this.caretOn, String(value)), 13 * scale, C.dark);
+      const valLbl = txt(caretDisplay(String(value), editing && this.caretOn, String(value)), snapFont(13 * scale), C.dark);
       valLbl.anchor.set(0.5, 0.5); valLbl.x = fieldX + fieldW / 2; valLbl.y = y + 10 * scale;
       layer.addChild(valLbl);
       this.modalHits.push({ rect: { x: fieldX, y: field.y, w: fieldW, h: fieldH }, action: () => this.openNumInput(opts.editKey!, value, onChange, opts.clamp) });
@@ -382,14 +383,14 @@ export class AuctionSceneBase {
       const plusBtn = sketchPanel(btnSize, btnSize, { fill: 0xeeeeee, border: C.mid, seed: seedFor(y, 1, btnSize) });
       plusBtn.x = fieldX + fieldW + gap; plusBtn.y = y - 2 * scale;
       layer.addChild(plusBtn);
-      const pl = txt('+', 14 * scale, C.dark);
+      const pl = txt('+', snapFont(14 * scale), C.dark);
       pl.anchor.set(0.5, 0.5); pl.x = plusBtn.x + half; pl.y = y + 10 * scale;
       layer.addChild(pl);
       this.modalHits.push({ rect: { x: plusBtn.x, y: plusBtn.y, w: btnSize, h: btnSize }, action: () => onChange(value + 1) });
       return;
     }
 
-    const valLbl = txt(String(value), 13 * scale, C.dark);
+    const valLbl = txt(String(value), snapFont(13 * scale), C.dark);
     valLbl.anchor.set(0, 0.5);
     valLbl.x = minusBtn.x + btnSize + gap; valLbl.y = y + 10 * scale;
     layer.addChild(valLbl);
@@ -397,7 +398,7 @@ export class AuctionSceneBase {
     const plusBtn = sketchPanel(btnSize, btnSize, { fill: 0xeeeeee, border: C.mid, seed: seedFor(y, 1, btnSize) });
     plusBtn.x = minusBtn.x + btnSize + gap + valLbl.width + gap; plusBtn.y = y - 2 * scale;
     layer.addChild(plusBtn);
-    const pl = txt('+', 14 * scale, C.dark);
+    const pl = txt('+', snapFont(14 * scale), C.dark);
     pl.anchor.set(0.5, 0.5); pl.x = plusBtn.x + half; pl.y = y + 10 * scale;
     layer.addChild(pl);
     this.modalHits.push({ rect: { x: plusBtn.x, y: plusBtn.y, w: btnSize, h: btnSize }, action: () => onChange(value + 1) });
@@ -459,14 +460,14 @@ export class AuctionSceneBase {
     panel.x = mx; panel.y = my;
     ml.addChild(panel);
 
-    const lbl = txt(msg, 13, C.dark);
+    const lbl = txt(msg, FS.tiny, C.dark);
     lbl.anchor.set(0.5, 0); lbl.x = mx + mw / 2; lbl.y = my + 14;
     ml.addChild(lbl);
 
     const okBtn = sketchButton(80, 28, seedFor(0, 1, 80));
     okBtn.x = mx + mw / 2 - 88; okBtn.y = my + mh - 36;
     ml.addChild(okBtn);
-    const ol = txt('OK', 12, C.light);
+    const ol = txt('OK', FS.tiny, C.light);
     ol.anchor.set(0.5, 0.5); ol.x = mx + mw / 2 - 48; ol.y = my + mh - 22;
     ml.addChild(ol);
     this.modalHits.push({ rect: { x: okBtn.x, y: okBtn.y, w: 80, h: 28 }, action: onOk });
@@ -491,7 +492,7 @@ export class AuctionSceneBase {
   protected showToast(msg: string, color: number = C.dark): void {
     const tl = this.toastLayer;
     tl.removeChildren();
-    const lbl = txt(msg, 26, color);
+    const lbl = txt(msg, FS.heading, color);
     lbl.anchor.set(0.5, 0.5);
     lbl.x = this.w / 2; lbl.y = Math.round(this.h * 2 / 3);
     tl.addChild(lbl);

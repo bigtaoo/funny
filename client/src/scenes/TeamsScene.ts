@@ -28,6 +28,7 @@ import type { WorldApiClient, TeamTemplate, CardSLGState, PlayerWorldView, March
 import type { SaveData, CardInstance } from '../game/meta/SaveData';
 import type { UnitType } from '../game/types';
 import { CARD_DEFS, troopCap } from '../game/meta/cardDefs';
+import { FS } from '../render/fontScale';
 
 /** Team slot cap (UI constant; the server's SIEGE_TEAM_CAP is authoritative). */
 export const TEAM_CAP = 5;
@@ -177,7 +178,7 @@ export class TeamsScene implements Scene {
     this.hits.push({ rect: hdr.backRect, action: () => this.cb.onBack() });
 
     if (this.loading) {
-      const lbl = txt(t('world.loading'), 13, C.mid);
+      const lbl = txt(t('world.loading'), FS.tiny, C.mid);
       lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = h / 2;
       this.bodyLayer.addChild(lbl);
       return;
@@ -244,7 +245,7 @@ export class TeamsScene implements Scene {
     panel.x = x; panel.y = y;
     this.bodyLayer.addChild(panel);
 
-    const name = txt(team?.name || teamSlotName(i), 15, C.dark, true);
+    const name = txt(team?.name || teamSlotName(i), FS.small, C.dark, true);
     name.x = x + pad; name.y = y + pad;
     this.bodyLayer.addChild(name);
 
@@ -253,7 +254,7 @@ export class TeamsScene implements Scene {
     const editBtn = sketchPanel(editW, editH, { fill: C.dark, border: C.gold, seed: seedFor(x + cardW, y, editW) });
     editBtn.x = x + cardW - pad - editW; editBtn.y = y + pad - 3;
     this.bodyLayer.addChild(editBtn);
-    const editLbl = txt(t('world.team.edit'), 10, C.light, true);
+    const editLbl = txt(t('world.team.edit'), FS.micro, C.light, true);
     editLbl.anchor.set(0.5, 0.5);
     editLbl.x = editBtn.x + editW / 2; editLbl.y = editBtn.y + editH / 2;
     this.bodyLayer.addChild(editLbl);
@@ -262,7 +263,7 @@ export class TeamsScene implements Scene {
     if (injured) {
       const secsLeft = Math.ceil((injuredUntil - now) / 1000);
       const timeStr = secsLeft >= 60 ? `${Math.ceil(secsLeft / 60)}m` : `${secsLeft}s`;
-      const tag = txt(`[${t('roster.injured').replace('{time}', timeStr)}]`, 10, C.red, true);
+      const tag = txt(`[${t('roster.injured').replace('{time}', timeStr)}]`, FS.micro, C.red, true);
       tag.x = x + pad; tag.y = tagY;
       this.bodyLayer.addChild(tag);
       tagY += 20;
@@ -277,7 +278,7 @@ export class TeamsScene implements Scene {
       const label = 'march' in order
         ? `[${t('world.team.marching')} ${timeStr}]`
         : `[${t('world.team.occupying').replace('{time}', timeStr)}]`;
-      const tag = txt(label, 10, C.gold, true);
+      const tag = txt(label, FS.micro, C.gold, true);
       tag.x = x + pad; tag.y = tagY;
       this.bodyLayer.addChild(tag);
 
@@ -292,7 +293,7 @@ export class TeamsScene implements Scene {
       });
       btn.x = x + cardW - pad - btnW; btn.y = tagY - 3;
       this.bodyLayer.addChild(btn);
-      const btnLbl = txt(btnLabel, 10, C.light, true);
+      const btnLbl = txt(btnLabel, FS.micro, C.light, true);
       btnLbl.anchor.set(0.5, 0.5);
       if (btnLbl.width > btnW - 6) btnLbl.scale.set((btnW - 6) / btnLbl.width);
       btnLbl.x = btn.x + btnW / 2; btnLbl.y = btn.y + btnH / 2;
@@ -327,21 +328,21 @@ export class TeamsScene implements Scene {
         ix += MINI_ICON + MINI_ICON_GAP;
       }
       if (entries.length > shown.length) {
-        const more = txt(`+${entries.length - shown.length}`, 12, C.mid, true);
+        const more = txt(`+${entries.length - shown.length}`, FS.tiny, C.mid, true);
         more.x = ix + 2; more.y = iconsY + MINI_ICON / 2 - 7;
         this.bodyLayer.addChild(more);
       }
 
       const committed = this.committedTroops(team!.army);
       const sub = `${t('world.defense.garrison').replace('{n}', String(team!.army.length))}   ${t('world.team.committed').replace('{n}', String(committed))}`;
-      const subLbl = txt(sub, 11, C.mid);
+      const subLbl = txt(sub, FS.micro, C.mid);
       subLbl.x = x + pad; subLbl.y = y + TEAM_CARD_H - pad - 14;
       this.bodyLayer.addChild(subLbl);
     } else {
-      const plus = txt('+', 30, C.light, true);
+      const plus = txt('+', FS.title, C.light, true);
       plus.anchor.set(0.5, 0.5); plus.x = x + cardW / 2; plus.y = y + TEAM_CARD_H / 2 - 10;
       this.bodyLayer.addChild(plus);
-      const hint = txt(t('world.team.tapToBuild'), 11, C.light);
+      const hint = txt(t('world.team.tapToBuild'), FS.micro, C.light);
       hint.anchor.set(0.5, 0.5); hint.x = x + cardW / 2; hint.y = y + TEAM_CARD_H / 2 + 18;
       this.bodyLayer.addChild(hint);
     }
@@ -368,7 +369,7 @@ export class TeamsScene implements Scene {
 
     const label = txt(
       `${t('world.team.fillTroops')}  (${stock} ${t('world.troops')})`,
-      13, enabled ? C.light : C.mid, true,
+      FS.tiny, enabled ? C.light : C.mid, true,
     );
     label.anchor.set(0.5, 0.5); label.x = PAD + btnW / 2; label.y = y + FILL_BTN_H / 2;
     this.bodyLayer.addChild(label);
@@ -391,7 +392,7 @@ export class TeamsScene implements Scene {
 
     if (cards.length === 0) return;
 
-    const sectionLbl = txt(t('roster.title'), 11, C.mid);
+    const sectionLbl = txt(t('roster.title'), FS.micro, C.mid);
     sectionLbl.x = PAD; sectionLbl.y = startY + 2;
     this.bodyLayer.addChild(sectionLbl);
 
@@ -453,26 +454,26 @@ export class TeamsScene implements Scene {
     const ax = x + pad + imgW + 10;
     const rightW = x + cellW - pad - ax;
     const cardName = t(`card.${card.defId}.name` as import('../i18n').TranslationKey);
-    const nameLbl = txt(`${cardName} Lv.${card.level}`, 13, C.dark, true);
+    const nameLbl = txt(`${cardName} Lv.${card.level}`, FS.tiny, C.dark, true);
     nameLbl.x = ax; nameLbl.y = y + pad;
     if (nameLbl.width > rightW) nameLbl.scale.set(rightW / nameLbl.width);
     this.bodyLayer.addChild(nameLbl);
 
     const troopLbl = txt(
       `${current}/${cap}`,
-      13,
+      FS.tiny,
       current >= cap ? C.gold : (current === 0 ? C.mid : C.dark),
     );
     troopLbl.x = ax; troopLbl.y = y + pad + 24;
     this.bodyLayer.addChild(troopLbl);
 
     if (teamId) {
-      const tag = txt(`[${t('roster.inTeam')}]`, 11, C.accent, true);
+      const tag = txt(`[${t('roster.inTeam')}]`, FS.micro, C.accent, true);
       tag.x = ax; tag.y = y + pad + 46; this.bodyLayer.addChild(tag);
     } else if (isInjured) {
       const secsLeft = Math.ceil((injuredUntil - now) / 1000);
       const timeStr = secsLeft >= 60 ? `${Math.ceil(secsLeft / 60)}m` : `${secsLeft}s`;
-      const tag = txt(`[${t('roster.injured').replace('{time}', timeStr)}]`, 11, C.red);
+      const tag = txt(`[${t('roster.injured').replace('{time}', timeStr)}]`, FS.micro, C.red);
       tag.x = ax; tag.y = y + pad + 46; this.bodyLayer.addChild(tag);
     }
   }
@@ -596,7 +597,7 @@ export class TeamsScene implements Scene {
   private showToast(msg: string, color: number): void {
     const tl = this.toastLayer;
     tl.removeChildren();
-    const lbl = txt(msg, 26, 0xffffff, true);
+    const lbl = txt(msg, FS.heading, 0xffffff, true);
     const padX = 28, padY = 16;
     const bw = lbl.width + padX * 2;
     const bh = lbl.height + padY * 2;

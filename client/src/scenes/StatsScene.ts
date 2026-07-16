@@ -5,6 +5,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildIcon, type IconKind } from '../render/icons';
+import { snapFont } from '../render/fontScale';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawCareerTabs } from '../ui/widgets/CareerTabs';
@@ -277,14 +278,14 @@ export class StatsScene implements Scene {
     sketchAccentBar(box, panelH, accent, seedFor(x, panelH, 7));
     this.container.addChild(box);
 
-    const titleLbl = txt(t('stats.history'), Math.round(titleH * 0.7), accent, true);
+    const titleLbl = txt(t('stats.history'), snapFont(Math.round(titleH * 0.7)), accent, true);
     titleLbl.anchor.set(0, 0); titleLbl.x = x + Math.round(w * 0.05); titleLbl.y = y + padV;
     this.container.addChild(titleLbl);
 
     const bodyTop = y + padV + titleH;
 
     if (notice) {
-      const n = txt(notice, Math.round(entryH * 0.5), C.mid);
+      const n = txt(notice, snapFont(Math.round(entryH * 0.5)), C.mid);
       n.anchor.set(0.5, 0.5); n.x = x + w / 2; n.y = bodyTop + entryH / 2;
       this.container.addChild(n);
       return y + panelH;
@@ -316,7 +317,7 @@ export class StatsScene implements Scene {
       // with the result chip on the right.
       const opp = m.opponentName || (m.opponentPublicId ? `#${m.opponentPublicId}` : t('stats.historyUnknownOpp'));
       const matchup = `${this.truncate(me, 10)} vs ${this.truncate(opp, 12)}`;
-      const mt = txt(matchup, Math.round(entryH * 0.42), C.dark);
+      const mt = txt(matchup, snapFont(Math.round(entryH * 0.42)), C.dark);
       mt.anchor.set(0, 0.5); mt.x = matchupX; mt.y = ry + entryH / 2;
       this.container.addChild(mt);
 
@@ -324,7 +325,7 @@ export class StatsScene implements Scene {
       const res = m.result === 'win' ? t('stats.win') : m.result === 'loss' ? t('stats.loss') : '—';
       const elo = m.eloDelta !== undefined ? `  ${m.eloDelta >= 0 ? '+' : ''}${m.eloDelta}` : '';
       const resColor = m.result === 'win' ? C.green : m.result === 'loss' ? C.red : C.mid;
-      const rt = txt(res + elo, Math.round(entryH * 0.44), resColor, true);
+      const rt = txt(res + elo, snapFont(Math.round(entryH * 0.44)), resColor, true);
       rt.anchor.set(1, 0.5); rt.x = valRight; rt.y = ry + entryH / 2;
       this.container.addChild(rt);
 
@@ -357,18 +358,18 @@ export class StatsScene implements Scene {
     sketchAccentBar(box, panelH, accent, seedFor(x, panelH, 6));
     this.container.addChild(box);
 
-    const titleLbl = txt(title, Math.round(titleH * 0.7), accent, true);
+    const titleLbl = txt(title, snapFont(Math.round(titleH * 0.7)), accent, true);
     titleLbl.anchor.set(0, 0); titleLbl.x = x + Math.round(w * 0.05); titleLbl.y = y + padV;
     this.container.addChild(titleLbl);
 
     let ry = y + padV + titleH;
     for (const row of rows) {
       if (row.label) {
-        const lbl = txt(row.label, Math.round(rowH * 0.62), C.mid);
+        const lbl = txt(row.label, snapFont(Math.round(rowH * 0.62)), C.mid);
         lbl.anchor.set(0, 0.5); lbl.x = x + Math.round(w * 0.07); lbl.y = ry + rowH / 2;
         this.container.addChild(lbl);
       }
-      const val = txt(row.value, Math.round(rowH * 0.66), row.valueColor ?? C.dark, true);
+      const val = txt(row.value, snapFont(Math.round(rowH * 0.66)), row.valueColor ?? C.dark, true);
       const valRight = x + w - Math.round(w * 0.05);
       val.anchor.set(1, 0.5); val.x = valRight; val.y = ry + rowH / 2;
       this.container.addChild(val);

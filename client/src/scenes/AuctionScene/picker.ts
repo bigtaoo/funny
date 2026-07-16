@@ -4,6 +4,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { AUCTION_STATIC_REF_PRICE } from '@nw/shared';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { FS } from '../../render/fontScale';
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
 import { t } from '../../i18n';
 import { buildIcon, type IconKind } from '../../render/icons';
@@ -186,7 +187,7 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
     renderItemPicker(): void {
       const { w, h } = this;
       const titleY = this.headerH + 8;
-      const title = txt(t('auction.pickItem'), 14, C.dark, true);
+      const title = txt(t('auction.pickItem'), FS.tiny, C.dark, true);
       title.x = 12; title.y = titleY;
       this.bodyLayer.addChild(title);
 
@@ -196,7 +197,7 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
 
       const entries = this.buildPickEntries().filter((e) => this.pickerFilter === '' || e.cls === this.pickerFilter);
       if (entries.length === 0) {
-        const lbl = txt(t('auction.noItems'), 13, C.dark);
+        const lbl = txt(t('auction.noItems'), FS.tiny, C.dark);
         lbl.anchor.set(0.5, 0.5); lbl.x = contentX + (w - contentX) / 2; lbl.y = listY + listH / 2;
         this.bodyLayer.addChild(lbl);
         return;
@@ -277,12 +278,12 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
 
       this.renderPickIcon(entry, x + cardW / 2, y + 18 + 19.5, 39, seedFor(x, y, cardW));
 
-      const nameLbl = txt(entry.label, 18, C.dark, true);
+      const nameLbl = txt(entry.label, FS.body, C.dark, true);
       nameLbl.anchor.set(0.5, 0); nameLbl.x = x + cardW / 2; nameLbl.y = y + 78;
       if (nameLbl.width > cardW - 18) nameLbl.scale.set((cardW - 18) / nameLbl.width);
       this.bodyLayer.addChild(nameLbl);
 
-      const hint = txt(t('auction.pickHint'), 15, C.accent, true);
+      const hint = txt(t('auction.pickHint'), FS.small, C.accent, true);
       hint.anchor.set(0.5, 1); hint.x = x + cardW / 2; hint.y = y + CARD_H - 8;
       this.bodyLayer.addChild(hint);
 

@@ -1,6 +1,7 @@
 // Family + Sect tabs: near-identical mirror render methods (info panel + create/join forms).
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { FS, snapFont } from '../../render/fontScale';
 import { caretDisplay } from '../../render/inputDisplay';
 import { type Constructor, type FriendsSceneBaseCtor } from './base';
 
@@ -43,7 +44,7 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
         return;
       } else {
         if (this.familySubview === 'info') {
-          const lbl = txt(t('social.family.none'), Math.round(h * 0.026), C.mid);
+          const lbl = txt(t('social.family.none'), FS.heading, C.mid);
           lbl.anchor.set(0.5, 0); lbl.x = this.cCX; lbl.y = cy;
           this.container.addChild(lbl);
           cy += Math.round(h * 0.06);
@@ -69,7 +70,7 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       const gap = Math.round(h * 0.02);
       let cy = startY;
 
-      const nameLbl = txt(t('social.family.namePlaceholder'), Math.round(h * 0.024), C.mid);
+      const nameLbl = txt(t('social.family.namePlaceholder'), FS.heading, C.mid);
       nameLbl.anchor.set(0, 0.5); nameLbl.x = px; nameLbl.y = cy + fH / 2;
       this.container.addChild(nameLbl);
       cy += fH + gap;
@@ -77,7 +78,7 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       const nameBg = sketchPanel(panelW, fH, { fill: C.paper, border: this.familyActiveInput === 'name' ? C.accent : C.line, width: 2, seed: seedFor(px, cy, panelW) });
       nameBg.x = px; nameBg.y = cy;
       this.container.addChild(nameBg);
-      const nameVal = txt(caretDisplay(this.familyCreateName, this.familyActiveInput === 'name' && this.caretOn, ' '), Math.round(fH * 0.4), C.dark);
+      const nameVal = txt(caretDisplay(this.familyCreateName, this.familyActiveInput === 'name' && this.caretOn, ' '), snapFont(Math.round(fH * 0.4)), C.dark);
       nameVal.anchor.set(0, 0.5); nameVal.x = px + Math.round(panelW * 0.04); nameVal.y = cy + fH / 2;
       this.container.addChild(nameVal);
       this.hits.push({ rect: { x: px, y: cy, w: panelW, h: fH }, fn: () => {
@@ -91,7 +92,7 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       }});
       cy += fH + gap;
 
-      const tagLbl = txt(t('social.family.tagPlaceholder'), Math.round(h * 0.024), C.mid);
+      const tagLbl = txt(t('social.family.tagPlaceholder'), FS.heading, C.mid);
       tagLbl.anchor.set(0, 0.5); tagLbl.x = px; tagLbl.y = cy + fH / 2;
       this.container.addChild(tagLbl);
       cy += fH + gap;
@@ -99,7 +100,7 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       const tagBg = sketchPanel(panelW, fH, { fill: C.paper, border: this.familyActiveInput === 'tag' ? C.accent : C.line, width: 2, seed: seedFor(px, cy + 1, panelW) });
       tagBg.x = px; tagBg.y = cy;
       this.container.addChild(tagBg);
-      const tagVal = txt(caretDisplay(this.familyCreateTag, this.familyActiveInput === 'tag' && this.caretOn, ' '), Math.round(fH * 0.4), C.dark);
+      const tagVal = txt(caretDisplay(this.familyCreateTag, this.familyActiveInput === 'tag' && this.caretOn, ' '), snapFont(Math.round(fH * 0.4)), C.dark);
       tagVal.anchor.set(0, 0.5); tagVal.x = px + Math.round(panelW * 0.04); tagVal.y = cy + fH / 2;
       this.container.addChild(tagVal);
       this.hits.push({ rect: { x: px, y: cy, w: panelW, h: fH }, fn: () => {
@@ -127,7 +128,7 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       const gap = Math.round(h * 0.02);
       let cy = startY;
 
-      const lbl = txt(t('social.family.idPlaceholder'), Math.round(h * 0.024), C.mid);
+      const lbl = txt(t('social.family.idPlaceholder'), FS.heading, C.mid);
       lbl.anchor.set(0, 0.5); lbl.x = px; lbl.y = cy + fH / 2;
       this.container.addChild(lbl);
       cy += fH + gap;
@@ -135,7 +136,7 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       const idBg = sketchPanel(panelW, fH, { fill: C.paper, border: this.familyActiveInput === 'id' ? C.accent : C.line, width: 2, seed: seedFor(px, cy, panelW) });
       idBg.x = px; idBg.y = cy;
       this.container.addChild(idBg);
-      const idVal = txt(caretDisplay(this.familyJoinId, this.familyActiveInput === 'id' && this.caretOn, ' '), Math.round(fH * 0.4), C.dark);
+      const idVal = txt(caretDisplay(this.familyJoinId, this.familyActiveInput === 'id' && this.caretOn, ' '), snapFont(Math.round(fH * 0.4)), C.dark);
       idVal.anchor.set(0, 0.5); idVal.x = px + Math.round(panelW * 0.04); idVal.y = cy + fH / 2;
       this.container.addChild(idVal);
       this.hits.push({ rect: { x: px, y: cy, w: panelW, h: fH }, fn: () => {
@@ -194,7 +195,7 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
         return;
       } else {
         if (this.sectSubview === 'info') {
-          const lbl = txt(t('social.sect.none'), Math.round(h * 0.026), C.mid);
+          const lbl = txt(t('social.sect.none'), FS.heading, C.mid);
           lbl.anchor.set(0.5, 0); lbl.x = this.cCX; lbl.y = cy;
           this.container.addChild(lbl);
           cy += Math.round(h * 0.06);
@@ -209,7 +210,7 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
             this.addButton(t('social.sect.joinById'), px + bW + bGap, cy, bW, bH, C.paper, C.line,
               () => { this.sectSubview = 'joinById'; this.render(); }, C.dark);
           } else {
-            const hint = txt(t('social.sect.leaderOnly'), Math.round(h * 0.022), C.mid);
+            const hint = txt(t('social.sect.leaderOnly'), FS.label, C.mid);
             hint.anchor.set(0.5, 0); hint.x = this.cCX; hint.y = cy;
             this.container.addChild(hint);
             cy += Math.round(h * 0.05);
@@ -230,7 +231,7 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       const gap = Math.round(h * 0.02);
       let cy = startY;
 
-      const nameLbl = txt(t('social.sect.namePlaceholder'), Math.round(h * 0.024), C.mid);
+      const nameLbl = txt(t('social.sect.namePlaceholder'), FS.heading, C.mid);
       nameLbl.anchor.set(0, 0.5); nameLbl.x = px; nameLbl.y = cy + fH / 2;
       this.container.addChild(nameLbl);
       cy += fH + gap;
@@ -238,7 +239,7 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       const nameBg = sketchPanel(panelW, fH, { fill: C.paper, border: this.sectActiveInput === 'name' ? C.accent : C.line, width: 2, seed: seedFor(px, cy, panelW) });
       nameBg.x = px; nameBg.y = cy;
       this.container.addChild(nameBg);
-      const nameVal = txt(caretDisplay(this.sectCreateName, this.sectActiveInput === 'name' && this.caretOn, ' '), Math.round(fH * 0.4), C.dark);
+      const nameVal = txt(caretDisplay(this.sectCreateName, this.sectActiveInput === 'name' && this.caretOn, ' '), snapFont(Math.round(fH * 0.4)), C.dark);
       nameVal.anchor.set(0, 0.5); nameVal.x = px + Math.round(panelW * 0.04); nameVal.y = cy + fH / 2;
       this.container.addChild(nameVal);
       this.hits.push({ rect: { x: px, y: cy, w: panelW, h: fH }, fn: () => {
@@ -252,7 +253,7 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       }});
       cy += fH + gap;
 
-      const tagLbl = txt(t('social.sect.tagPlaceholder'), Math.round(h * 0.024), C.mid);
+      const tagLbl = txt(t('social.sect.tagPlaceholder'), FS.heading, C.mid);
       tagLbl.anchor.set(0, 0.5); tagLbl.x = px; tagLbl.y = cy + fH / 2;
       this.container.addChild(tagLbl);
       cy += fH + gap;
@@ -260,7 +261,7 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       const tagBg = sketchPanel(panelW, fH, { fill: C.paper, border: this.sectActiveInput === 'tag' ? C.accent : C.line, width: 2, seed: seedFor(px, cy + 1, panelW) });
       tagBg.x = px; tagBg.y = cy;
       this.container.addChild(tagBg);
-      const tagVal = txt(caretDisplay(this.sectCreateTag, this.sectActiveInput === 'tag' && this.caretOn, ' '), Math.round(fH * 0.4), C.dark);
+      const tagVal = txt(caretDisplay(this.sectCreateTag, this.sectActiveInput === 'tag' && this.caretOn, ' '), snapFont(Math.round(fH * 0.4)), C.dark);
       tagVal.anchor.set(0, 0.5); tagVal.x = px + Math.round(panelW * 0.04); tagVal.y = cy + fH / 2;
       this.container.addChild(tagVal);
       this.hits.push({ rect: { x: px, y: cy, w: panelW, h: fH }, fn: () => {
@@ -288,7 +289,7 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       const gap = Math.round(h * 0.02);
       let cy = startY;
 
-      const lbl = txt(t('social.sect.idPlaceholder'), Math.round(h * 0.024), C.mid);
+      const lbl = txt(t('social.sect.idPlaceholder'), FS.heading, C.mid);
       lbl.anchor.set(0, 0.5); lbl.x = px; lbl.y = cy + fH / 2;
       this.container.addChild(lbl);
       cy += fH + gap;
@@ -296,7 +297,7 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       const idBg = sketchPanel(panelW, fH, { fill: C.paper, border: this.sectActiveInput === 'id' ? C.accent : C.line, width: 2, seed: seedFor(px, cy, panelW) });
       idBg.x = px; idBg.y = cy;
       this.container.addChild(idBg);
-      const idVal = txt(caretDisplay(this.sectJoinId, this.sectActiveInput === 'id' && this.caretOn, ' '), Math.round(fH * 0.4), C.dark);
+      const idVal = txt(caretDisplay(this.sectJoinId, this.sectActiveInput === 'id' && this.caretOn, ' '), snapFont(Math.round(fH * 0.4)), C.dark);
       idVal.anchor.set(0, 0.5); idVal.x = px + Math.round(panelW * 0.04); idVal.y = cy + fH / 2;
       this.container.addChild(idVal);
       this.hits.push({ rect: { x: px, y: cy, w: panelW, h: fH }, fn: () => {

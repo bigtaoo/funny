@@ -22,6 +22,7 @@ import { palette } from './theme';
 import { t, type TranslationKey } from '../i18n';
 import { getTitleKeys, formatLadderTitle } from '../game/meta/titles';
 import { tearDownChildren } from './sketchUi';
+import { snapFont } from './fontScale';
 import { drawHudButton, hudButtonText } from './hudButton';
 
 export interface ProfileData {
@@ -105,7 +106,7 @@ export class ProfilePopup {
 
     // Title bar.
     const title = new PIXI.Text(t('profile.title'), {
-      fontSize: Math.round(cardH * 0.075), fill: palette.pencil,
+      fontSize: snapFont(Math.round(cardH * 0.075)), fill: palette.pencil,
       fontWeight: 'bold', fontFamily: 'monospace',
     });
     title.anchor.set(0.5, 0);
@@ -123,7 +124,7 @@ export class ProfilePopup {
     // Name (+ "you" tag).
     const nameStr = data.name + (data.isSelf ? ' ' + t('profile.you') : '');
     const name = new PIXI.Text(nameStr || '?', {
-      fontSize: Math.round(cardH * 0.085), fill: palette.pencil,
+      fontSize: snapFont(Math.round(cardH * 0.085)), fill: palette.pencil,
       fontWeight: 'bold', fontFamily: 'monospace',
     });
     name.anchor.set(0.5, 0);
@@ -137,7 +138,7 @@ export class ProfilePopup {
     if (data.publicId) {
       const idText = `${t('profile.id')}  #${data.publicId}`;
       const idLine = new PIXI.Text(idText, {
-        fontSize: Math.round(cardH * 0.05), fill: palette.inkBlue, fontFamily: 'monospace',
+        fontSize: snapFont(Math.round(cardH * 0.05)), fill: palette.inkBlue, fontFamily: 'monospace',
       });
       idLine.anchor.set(0.5, 0);
       idLine.x = cardW / 2;
@@ -156,7 +157,7 @@ export class ProfilePopup {
         ? t(keys.shortKey as TranslationKey) || formatLadderTitle(data.equippedTitle)
         : formatLadderTitle(data.equippedTitle);
       const titleLine = new PIXI.Text(`「${titleLabel}」`, {
-        fontSize: Math.round(cardH * 0.048), fill: palette.inkBlue,
+        fontSize: snapFont(Math.round(cardH * 0.048)), fill: palette.inkBlue,
         fontFamily: 'monospace',
       });
       titleLine.anchor.set(0.5, 0);
@@ -171,7 +172,7 @@ export class ProfilePopup {
       const rankName = t(('rank.' + data.rankKey.replace(/^rank\./, '')) as TranslationKey);
       const eloPart = data.elo !== undefined ? `  ·  ELO ${data.elo}` : '';
       const rankLine = new PIXI.Text(`${t('profile.rank')}  ${rankName}${eloPart}`, {
-        fontSize: Math.round(cardH * 0.05), fill: palette.pencil, fontFamily: 'monospace',
+        fontSize: snapFont(Math.round(cardH * 0.05)), fill: palette.pencil, fontFamily: 'monospace',
       });
       rankLine.anchor.set(0.5, 0);
       rankLine.x = cardW / 2;
@@ -204,7 +205,7 @@ export class ProfilePopup {
         ab.on('pointertap', () => { this.hide(); act.fn(); });
         this.card.addChild(ab);
         const al = new PIXI.Text(t(act.labelKey), {
-          fontSize: Math.round(aH * 0.4), fill: hudButtonText(actVariant),
+          fontSize: snapFont(Math.round(aH * 0.4)), fill: hudButtonText(actVariant),
           fontWeight: 'bold', fontFamily: 'monospace',
         });
         al.anchor.set(0.5, 0.5);
@@ -221,7 +222,7 @@ export class ProfilePopup {
     this.card.addChild(btn);
 
     const btnLabel = new PIXI.Text(t('profile.close'), {
-      fontSize: Math.round(bH * 0.42), fill: hudButtonText('primary'), fontWeight: 'bold', fontFamily: 'monospace',
+      fontSize: snapFont(Math.round(bH * 0.42)), fill: hudButtonText('primary'), fontWeight: 'bold', fontFamily: 'monospace',
     });
     btnLabel.anchor.set(0.5, 0.5);
     btnLabel.x = bX + bW / 2;

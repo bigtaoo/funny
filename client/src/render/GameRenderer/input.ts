@@ -7,6 +7,7 @@ import { CardType, SpellType } from '../../game';
 import { Rect } from '../../layout/ILayout';
 import { t, type TranslationKey } from '../../i18n';
 import type { Constructor, GameRendererBaseCtor } from './base';
+import { FS } from '../fontScale';
 
 // ── Drag state ─────────────────────────────────────────────────────────────────
 
@@ -411,11 +412,11 @@ export function InputMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
       gfx.drawRoundedRect(-32, -42, 64, 84, 6);
       gfx.endFill();
 
-      const nameText = new PIXI.Text(label, { fontSize: 11, fill: 0x222222, align: 'center' });
+      const nameText = new PIXI.Text(label, { fontSize: FS.micro, fill: 0x222222, align: 'center' });
       nameText.anchor.set(0.5, 0.5);
       nameText.y = -10;
 
-      const costText = new PIXI.Text(String(cost), { fontSize: 14, fill: accentColor, fontWeight: 'bold' });
+      const costText = new PIXI.Text(String(cost), { fontSize: FS.tiny, fill: accentColor, fontWeight: 'bold' });
       costText.anchor.set(0.5, 0.5);
       costText.y = 18;
 

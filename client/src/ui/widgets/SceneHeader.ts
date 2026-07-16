@@ -34,6 +34,7 @@ import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { getCachedDisplay } from './uiCache';
 import { buildIcon, type IconKind } from '../../render/icons';
 import { buildCoinIcon } from '../../render/coinIconAtlas';
+import { FS, snapFont } from '../../render/fontScale';
 
 /**
  * Bar styling. As of the 07.07.2026 header-unification pass, **every** secondary
@@ -83,7 +84,7 @@ export interface SceneHeaderResult {
 
 /** Back-glyph font size — kept in one place so every scene's back reads alike. */
 function backSize(h: number): number {
-  return Math.round(h * 0.039); // 1.5x the original 0.026 — approved 12.07.2026 back-button enlargement.
+  return FS.headline; // 1.5x the original 0.026 — approved 12.07.2026 back-button enlargement.
 }
 
 /** Chip fill for the back-button pill, keyed by where it sits. */
@@ -247,7 +248,7 @@ export function drawSceneHeader(
 
   if (title !== null) {
     const titleColor = variant === 'paper' ? C.dark : 0xffffff;
-    const titleNode = txt(title, opts?.titleSize ?? Math.round(h * 0.034), titleColor, true);
+    const titleNode = txt(title, opts?.titleSize ?? FS.headline, titleColor, true);
     if (opts?.titleAlign === 'left') {
       // Sit just right of the back pill so a right-aligned currency cluster has room.
       titleNode.anchor.set(0, 0.5);
@@ -322,9 +323,9 @@ export function drawHeaderCurrency(
 ): void {
   const midY = headerH / 2;
   const iconSize = Math.round(headerH * 0.32 * scale);
-  const fontSize = Math.round(headerH * 0.26 * scale);
-  const labelSize = Math.round(fontSize * 0.8);
-  const capSize = Math.round(headerH * 0.2 * scale);
+  const fontSize = snapFont(Math.round(headerH * 0.26 * scale));
+  const labelSize = snapFont(Math.round(fontSize * 0.8));
+  const capSize = snapFont(Math.round(headerH * 0.2 * scale));
   const gap = Math.round(headerH * 0.28 * scale);
 
   const cluster = new PIXI.Container();

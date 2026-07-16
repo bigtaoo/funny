@@ -9,6 +9,7 @@ import { Side, UnitType, UnitState, BuildingType, ownerToSide, type OwnerId } fr
 import { t } from '../i18n';
 import { ui, sketchPanel, seedFor } from '../render/sketchUi';
 import { buildIcon } from '../render/icons';
+import { FS, snapFont } from '../render/fontScale';
 import { stateRecorder } from '../game/replay/StateRecorder';
 import type {
   StateReplay,
@@ -277,7 +278,7 @@ export class StatePlayerScene implements Scene {
 
   private buildPlayerLabels(replay: StateReplay): void {
     const { designWidth: w, designHeight: h } = this.layout;
-    const fs = Math.max(11, Math.round(h * 0.024));
+    const fs = FS.heading;
     for (const p of replay.header.players) {
       const name = p.name || (p.side === 0 ? t('stateplayer.you') : t('stateplayer.opponent'));
       const label = new PIXI.Text(name, {
@@ -310,7 +311,7 @@ export class StatePlayerScene implements Scene {
     tagIc.x = Math.round(w * 0.04); tagIc.y = this.barY - 2;
     this.overlay.addChild(tagIc);
     const tag = new PIXI.Text(t('stateplayer.tag'), {
-      fontSize: tagSz,
+      fontSize: snapFont(tagSz),
       fill: 0x2244aa,
       fontWeight: 'bold',
       fontFamily: 'monospace',
@@ -353,7 +354,7 @@ export class StatePlayerScene implements Scene {
           ? t('stateplayer.bottomWon')
           : t('stateplayer.topWon');
     const banner = new PIXI.Text(headline, {
-      fontSize: Math.round(h * 0.05),
+      fontSize: FS.display,
       fill: 0x2c2c2a,
       fontWeight: 'bold',
       fontFamily: 'serif',
@@ -399,7 +400,7 @@ export class StatePlayerScene implements Scene {
     bg.on('pointertap', onTap);
 
     const label = new PIXI.Text(text, {
-      fontSize: Math.round(h * 0.42),
+      fontSize: snapFont(Math.round(h * 0.42)),
       fill: 0xffffff,
       fontWeight: 'bold',
       fontFamily: 'monospace',

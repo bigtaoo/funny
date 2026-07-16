@@ -5,6 +5,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
+import { snapFont } from '../render/fontScale';
 import { buildIcon, type IconKind } from '../render/icons';
 import { cardArtUrl, getArtTexture, preloadL1CardArtTextures } from '../render/cardArt';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
@@ -288,19 +289,19 @@ export class CardCodexScene implements Scene {
     const pad = Math.round(infoW * 0.06);
     const textX = infoX + pad;
 
-    const name = txt(t(card.nameKey as TranslationKey), Math.round(h * 0.15), locked ? C.mid : C.dark, true);
+    const name = txt(t(card.nameKey as TranslationKey), snapFont(Math.round(h * 0.15)), locked ? C.mid : C.dark, true);
     name.anchor.set(0, 0); name.x = textX; name.y = y + Math.round(h * 0.12);
     this.layer.addChild(name);
 
     const typeLabel = card.cardType === CardType.Unit ? t('collection.cardType.unit')
       : card.cardType === CardType.Building ? t('collection.cardType.building')
       : t('collection.cardType.spell');
-    const sub = txt(`${typeLabel} · ${t('collection.stat.cost')} ${card.cost}`, Math.round(h * 0.12), accent, true);
+    const sub = txt(`${typeLabel} · ${t('collection.stat.cost')} ${card.cost}`, snapFont(Math.round(h * 0.12)), accent, true);
     sub.anchor.set(0, 0); sub.x = textX; sub.y = y + Math.round(h * 0.34);
     this.layer.addChild(sub);
 
     if (locked) {
-      const lockedLbl = txt(t('collection.locked'), Math.round(h * 0.11), C.mid, true);
+      const lockedLbl = txt(t('collection.locked'), snapFont(Math.round(h * 0.11)), C.mid, true);
       lockedLbl.anchor.set(0, 0); lockedLbl.x = textX; lockedLbl.y = y + Math.round(h * 0.62);
       this.layer.addChild(lockedLbl);
       return;
@@ -326,7 +327,7 @@ export class CardCodexScene implements Scene {
       if (art) { this.drawArtFit(art, -box / 2, -box / 2, box, container); return; }
       // No illustration for this card yet — a faded monogram keeps the frame from reading as broken.
       const initial = t(card.nameKey as TranslationKey).charAt(0).toUpperCase();
-      const mono = txt(initial, Math.round(box * 0.5), C.mid, true);
+      const mono = txt(initial, snapFont(Math.round(box * 0.5)), C.mid, true);
       mono.anchor.set(0.5, 0.5); mono.alpha = 0.35;
       container.addChild(mono);
       return;
@@ -334,7 +335,7 @@ export class CardCodexScene implements Scene {
     const bg = new PIXI.Graphics();
     bg.beginFill(0xf7f5ee).drawRect(-box / 2, -box / 2, box, box).endFill();
     container.addChild(bg);
-    const lore = txt(story, Math.round(box * 0.085), C.mid);
+    const lore = txt(story, snapFont(Math.round(box * 0.085)), C.mid);
     lore.style.wordWrap = true;
     lore.style.wordWrapWidth = box - 12;
     lore.x = -box / 2 + 6; lore.y = -box / 2 + 6;
@@ -405,7 +406,7 @@ export class CardCodexScene implements Scene {
     const row = new PIXI.Container();
     const gap = Math.round(size * 0.28);
     const chipGap = Math.round(size * 0.75);
-    const valSize = Math.round(size * 0.74);
+    const valSize = snapFont(Math.round(size * 0.74));
     let cx = 0;
     stats.forEach((s, i) => {
       if (i > 0) cx += chipGap;

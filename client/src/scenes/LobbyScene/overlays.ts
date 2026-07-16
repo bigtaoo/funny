@@ -6,6 +6,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { t, TranslationKey } from '../../i18n';
 import { buildIcon, IconKind } from '../../render/icons';
 import { C, txt, sketchPanel, type Constructor, type LobbySceneBaseCtor } from './base';
+import { snapFont } from '../../render/fontScale';
 
 export interface OverlaysHandlers {
   showSeasonSettlement(oldNo: number, peakRank: string, newNo: number): void;
@@ -40,19 +41,19 @@ export function OverlaysMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TB
       card.beginFill(C.paper).drawRoundedRect(cx, cy, cw, ch, 12).endFill();
       layer.addChild(card);
 
-      const titleLbl = txt(t('season.settlement.title', { no: String(oldNo) }), Math.round(ch * 0.13), C.dark, true);
+      const titleLbl = txt(t('season.settlement.title', { no: String(oldNo) }), snapFont(Math.round(ch * 0.13)), C.dark, true);
       titleLbl.anchor.set(0.5, 0); titleLbl.x = w / 2; titleLbl.y = cy + Math.round(ch * 0.08);
       layer.addChild(titleLbl);
 
-      const peakLbl = txt(t('season.settlement.peak'), Math.round(ch * 0.1), C.mid);
+      const peakLbl = txt(t('season.settlement.peak'), snapFont(Math.round(ch * 0.1)), C.mid);
       peakLbl.anchor.set(0.5, 0); peakLbl.x = w / 2; peakLbl.y = cy + Math.round(ch * 0.27);
       layer.addChild(peakLbl);
 
-      const peakVal = txt(peakRank, Math.round(ch * 0.14), C.gold, true);
+      const peakVal = txt(peakRank, snapFont(Math.round(ch * 0.14)), C.gold, true);
       peakVal.anchor.set(0.5, 0); peakVal.x = w / 2; peakVal.y = cy + Math.round(ch * 0.38);
       layer.addChild(peakVal);
 
-      const newSeasonLbl = txt(t('season.settlement.newSeason', { no: String(newNo) }), Math.round(ch * 0.09), C.accent);
+      const newSeasonLbl = txt(t('season.settlement.newSeason', { no: String(newNo) }), snapFont(Math.round(ch * 0.09)), C.accent);
       newSeasonLbl.anchor.set(0.5, 0); newSeasonLbl.x = w / 2; newSeasonLbl.y = cy + Math.round(ch * 0.56);
       layer.addChild(newSeasonLbl);
 
@@ -64,7 +65,7 @@ export function OverlaysMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TB
       const btn = new PIXI.Graphics();
       btn.beginFill(C.dark).drawRoundedRect(btnX, btnY, btnW, btnH, Math.round(btnH * 0.3)).endFill();
       layer.addChild(btn);
-      const btnLbl = txt(t('season.settlement.close'), Math.round(btnH * 0.5), 0xffffff, true);
+      const btnLbl = txt(t('season.settlement.close'), snapFont(Math.round(btnH * 0.5)), 0xffffff, true);
       btnLbl.anchor.set(0.5, 0.5); btnLbl.x = w / 2; btnLbl.y = btnY + btnH / 2;
       layer.addChild(btnLbl);
 
@@ -100,12 +101,12 @@ export function OverlaysMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TB
       card.x = cx; card.y = cy;
       layer.addChild(card);
 
-      const titleLbl = txt(t(titleKey), Math.round(ch * 0.13), C.dark, true);
+      const titleLbl = txt(t(titleKey), snapFont(Math.round(ch * 0.13)), C.dark, true);
       titleLbl.anchor.set(0.5, 0); titleLbl.x = w / 2; titleLbl.y = cy + Math.round(ch * 0.1);
       layer.addChild(titleLbl);
 
       const bodyLbl = new PIXI.Text(t(bodyKey), {
-        fontSize: Math.round(ch * 0.092), fill: C.mid, fontFamily: 'monospace',
+        fontSize: snapFont(Math.round(ch * 0.092)), fill: C.mid, fontFamily: 'monospace',
         wordWrap: true, wordWrapWidth: cw - Math.round(cw * 0.12), align: 'center',
       });
       bodyLbl.anchor.set(0.5, 0); bodyLbl.x = w / 2; bodyLbl.y = cy + Math.round(ch * 0.32);
@@ -118,7 +119,7 @@ export function OverlaysMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TB
       const btn = new PIXI.Graphics();
       btn.beginFill(C.dark).drawRoundedRect(btnX, btnY, btnW, btnH, Math.round(btnH * 0.3)).endFill();
       layer.addChild(btn);
-      const btnLbl = txt(t('guide.gotIt'), Math.round(btnH * 0.46), 0xffffff, true);
+      const btnLbl = txt(t('guide.gotIt'), snapFont(Math.round(btnH * 0.46)), 0xffffff, true);
       btnLbl.anchor.set(0.5, 0.5); btnLbl.x = w / 2; btnLbl.y = btnY + btnH / 2;
       layer.addChild(btnLbl);
 
@@ -156,7 +157,7 @@ export function OverlaysMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TB
       // Hand-drawn trophy icon + label, centred as a group (replaces the 🏆 glyph).
       const ti = Math.round(bh * 0.58);
       const gap = Math.round(bh * 0.2);
-      const lbl = txt(text, Math.round(bh * 0.34), 0xffffff, true);
+      const lbl = txt(text, snapFont(Math.round(bh * 0.34)), 0xffffff, true);
       lbl.anchor.set(0, 0.5);
       const maxLblW = bw * 0.92 - ti - gap;
       if (lbl.width > maxLblW) lbl.scale.set(maxLblW / lbl.width);

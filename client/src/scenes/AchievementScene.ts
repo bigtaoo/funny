@@ -5,6 +5,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildIcon, type IconKind } from '../render/icons';
+import { FS, snapFont } from '../render/fontScale';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawCareerTabs } from '../ui/widgets/CareerTabs';
@@ -252,7 +253,7 @@ export class AchievementScene implements Scene {
   }
 
   private drawCentered(tbH: number, msg: string): void {
-    const m = txt(msg, Math.round(this.h * 0.028), C.mid);
+    const m = txt(msg, FS.title, C.mid);
     m.anchor.set(0.5, 0.5); m.x = this.w / 2; m.y = tbH + (this.h - tbH) / 2;
     this.container.addChild(m);
   }
@@ -300,13 +301,13 @@ export class AchievementScene implements Scene {
     const innerX = x + Math.round(w * 0.05);
 
     // Achievement name + card-level red dot.
-    const name = txt(t(('achievement.' + def.id + '.name') as TranslationKey), Math.round(titleH * 0.74), C.dark, true);
+    const name = txt(t(('achievement.' + def.id + '.name') as TranslationKey), snapFont(Math.round(titleH * 0.74)), C.dark, true);
     name.anchor.set(0, 0); name.x = innerX; name.y = y + padV;
     this.container.addChild(name);
     if (claimable) this.drawDot(innerX + name.width + Math.round(h * 0.012), y + padV + titleH * 0.32, Math.round(h * 0.008));
 
     // Description.
-    const desc = txt(t(('achievement.' + def.id + '.desc') as TranslationKey), Math.round(descH * 0.62), C.mid);
+    const desc = txt(t(('achievement.' + def.id + '.desc') as TranslationKey), snapFont(Math.round(descH * 0.62)), C.mid);
     desc.anchor.set(0, 0); desc.x = innerX; desc.y = y + padV + titleH;
     this.container.addChild(desc);
 
@@ -323,7 +324,7 @@ export class AchievementScene implements Scene {
     const cy = y + rowH / 2;
 
     // Tier badge label.
-    const tierLbl = txt(TIER_LABELS[s.tier - 1] ?? String(s.tier), Math.round(rowH * 0.4), s.reached ? C.gold : C.mid, true);
+    const tierLbl = txt(TIER_LABELS[s.tier - 1] ?? String(s.tier), snapFont(Math.round(rowH * 0.4)), s.reached ? C.gold : C.mid, true);
     tierLbl.anchor.set(0, 0.5); tierLbl.x = x; tierLbl.y = cy;
     this.container.addChild(tierLbl);
 
@@ -342,7 +343,7 @@ export class AchievementScene implements Scene {
     }
     this.container.addChild(bg);
 
-    const prog = txt(`${Math.min(cur, s.threshold)}/${s.threshold}`, Math.round(rowH * 0.3), C.mid);
+    const prog = txt(`${Math.min(cur, s.threshold)}/${s.threshold}`, snapFont(Math.round(rowH * 0.3)), C.mid);
     prog.anchor.set(0, 0.5); prog.x = barX; prog.y = barY - Math.round(rowH * 0.24);
     this.container.addChild(prog);
 
@@ -355,17 +356,17 @@ export class AchievementScene implements Scene {
       const btn = sketchPanel(bw, bh, { fill: C.gold, border: C.gold, width: 1.6, seed: seedFor(bx, by, bw) });
       btn.x = bx; btn.y = by;
       this.container.addChild(btn);
-      const lbl = txt(t('achievement.claim', { coins: s.coins }), Math.round(bh * 0.42), 0xffffff, true);
+      const lbl = txt(t('achievement.claim', { coins: s.coins }), snapFont(Math.round(bh * 0.42)), 0xffffff, true);
       lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
       this.container.addChild(lbl);
       this.hits.push({ rect: { x: bx, y: by, w: bw, h: bh }, fn: () => void this.claim(def.id, s.tier) });
     } else if (s.claimed) {
-      const st = txt(t('achievement.claimed'), Math.round(rowH * 0.34), C.green, true);
+      const st = txt(t('achievement.claimed'), snapFont(Math.round(rowH * 0.34)), C.green, true);
       st.anchor.set(1, 0.5); st.x = rightX; st.y = cy;
       this.container.addChild(st);
     } else {
       // Not yet reached: coin glyph + reward amount (replaces "reward N coins" text).
-      const amt = txt(String(s.coins), Math.round(rowH * 0.34), C.mid);
+      const amt = txt(String(s.coins), snapFont(Math.round(rowH * 0.34)), C.mid);
       amt.anchor.set(1, 0.5); amt.x = rightX; amt.y = cy;
       this.container.addChild(amt);
       const icS = Math.round(rowH * 0.4);
@@ -391,7 +392,7 @@ export class AchievementScene implements Scene {
     const box = sketchPanel(tw, th, { fill: C.dark, border: C.dark, width: 1.6, seed: seedFor(tx, ty, tw) });
     box.x = tx; box.y = ty;
     this.container.addChild(box);
-    const lbl = txt(this.toast, Math.round(th * 0.34), 0xffffff, true);
+    const lbl = txt(this.toast, snapFont(Math.round(th * 0.34)), 0xffffff, true);
     lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = ty + th / 2;
     this.container.addChild(lbl);
   }

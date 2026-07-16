@@ -5,6 +5,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
 import { buildIcon, type IconKind } from '../render/icons';
+import { FS, snapFont } from '../render/fontScale';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawSidebarTabs as drawSidebarTabsShared, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
@@ -132,7 +133,7 @@ export class DailyScene implements Scene {
 
     const save = this.cb.getSave?.();
     if (!save) {
-      const msg = txt(t('daily.loginRequired'), Math.round(h * 0.032), C.mid);
+      const msg = txt(t('daily.loginRequired'), FS.title, C.mid);
       msg.anchor.set(0.5, 0.5);
       msg.x = w / 2; msg.y = h / 2;
       this.container.addChild(msg);
@@ -159,7 +160,7 @@ export class DailyScene implements Scene {
       toastBg.beginFill(0x1a1408, 0.85);
       toastBg.drawRoundedRect(w * 0.15, toastCy - h * 0.07, w * 0.7, h * 0.14, 8);
       toastBg.endFill();
-      const toastTxt = txt(this.toast, Math.round(h * 0.056), 0xffd88a);
+      const toastTxt = txt(this.toast, FS.display, 0xffd88a);
       toastTxt.anchor.set(0.5, 0.5);
       toastTxt.x = w / 2; toastTxt.y = toastCy;
       this.container.addChild(toastBg, toastTxt);
@@ -192,7 +193,7 @@ export class DailyScene implements Scene {
 
   private renderCheckin(areaX: number, top: number, areaW: number, areaH: number, save: SaveData, nowMs: number): void {
     const { h } = this;
-    const sec = txt(t('daily.checkin.title'), Math.round(h * 0.03), C.dark, true);
+    const sec = txt(t('daily.checkin.title'), FS.title, C.dark, true);
     sec.x = areaX + areaW * 0.05; sec.y = top;
     this.container.addChild(sec);
 
@@ -235,7 +236,7 @@ export class DailyScene implements Scene {
       bg.x = x; bg.y = y;
       this.container.addChild(bg);
 
-      const numTxt = txt(String(day), Math.round(ch * 0.32), isClaimed ? 0x999999 : isLocked ? 0xaaaaaa : 0x333333);
+      const numTxt = txt(String(day), snapFont(Math.round(ch * 0.32)), isClaimed ? 0x999999 : isLocked ? 0xaaaaaa : 0x333333);
       numTxt.anchor.set(0.5, 0);
       numTxt.x = cx; numTxt.y = y + ch * 0.06;
       this.container.addChild(numTxt);
@@ -254,7 +255,7 @@ export class DailyScene implements Scene {
             ic.x = cx - rc / 2; ic.y = baseY - rc;
             this.container.addChild(ic);
           } else {
-            const rt = txt(`+${reward.count}`, Math.round(ch * 0.24), reward.kind === 'coins' ? 0x8a7020 : 0x336644);
+            const rt = txt(`+${reward.count}`, snapFont(Math.round(ch * 0.24)), reward.kind === 'coins' ? 0x8a7020 : 0x336644);
             const groupW = rc + Math.round(ch * 0.03) + rt.width;
             const gx = cx - groupW / 2;
             ic.x = gx; ic.y = baseY - rc;
@@ -263,7 +264,7 @@ export class DailyScene implements Scene {
             this.container.addChild(ic, rt);
           }
         } else {
-          const rt = txt(`+${reward.count}`, Math.round(ch * 0.24), 0x336644);
+          const rt = txt(`+${reward.count}`, snapFont(Math.round(ch * 0.24)), 0x336644);
           rt.anchor.set(0.5, 1);
           rt.x = cx; rt.y = baseY;
           this.container.addChild(rt);
@@ -287,7 +288,7 @@ export class DailyScene implements Scene {
 
   private renderDailyTasks(areaX: number, top: number, areaW: number, areaH: number, save: SaveData, nowMs: number): void {
     const { h } = this;
-    const sec = txt(t('daily.tasks.title'), Math.round(h * 0.03), C.dark, true);
+    const sec = txt(t('daily.tasks.title'), FS.title, C.dark, true);
     sec.x = areaX + areaW * 0.05; sec.y = top;
     this.container.addChild(sec);
 
@@ -320,7 +321,7 @@ export class DailyScene implements Scene {
       // Label is wrapped and width-capped to the left ~62% of the card so long
       // labels (e.g. "Clear any PvE level") can never grow into the right-aligned state text.
       const label = new PIXI.Text(t(labelKey as TranslationKey), {
-        fontSize: Math.round(cardH * 0.3), fill: 0x333333, fontFamily: 'monospace',
+        fontSize: snapFont(Math.round(cardH * 0.3)), fill: 0x333333, fontFamily: 'monospace',
         wordWrap: true, wordWrapWidth: cardW * 0.6, breakWords: true,
       });
       label.anchor.set(0, 0.5);
@@ -328,7 +329,7 @@ export class DailyScene implements Scene {
       label.y = cy + cardH * 0.5;
       this.container.addChild(label);
 
-      const state = txt(done ? t('daily.tasks.done') : t('daily.tasks.pending'), Math.round(cardH * 0.3), done ? 0x336644 : 0x888888);
+      const state = txt(done ? t('daily.tasks.done') : t('daily.tasks.pending'), snapFont(Math.round(cardH * 0.3)), done ? 0x336644 : 0x888888);
       state.anchor.set(1, 0.5);
       state.x = PAD + cardW * 0.96;
       state.y = cy + cardH * 0.5;
@@ -336,7 +337,7 @@ export class DailyScene implements Scene {
     });
 
     const summaryY = cardY0 + taskLabels.length * (cardH + h * 0.008) + h * 0.01;
-    const ptTxt = txt(`${taskPoints} / 3`, Math.round(h * 0.03), taskPoints >= 3 ? 0x226622 : C.mid);
+    const ptTxt = txt(`${taskPoints} / 3`, FS.title, taskPoints >= 3 ? 0x226622 : C.mid);
     ptTxt.anchor.set(0, 0.5);
     ptTxt.x = PAD; ptTxt.y = summaryY + cardH * 0.5;
     this.container.addChild(ptTxt);
@@ -352,7 +353,7 @@ export class DailyScene implements Scene {
       const coinsReward = this.retention?.defs?.dailyCoinsReward ?? 2;
       const btnLabel = txt(
         isClaimed ? t('daily.tasks.rewardClaimed') : t('daily.tasks.rewardCoins', { n: coinsReward }),
-        Math.round(btnH * 0.36), 0xffffff,
+        snapFont(Math.round(btnH * 0.36)), 0xffffff,
       );
       btnLabel.anchor.set(0.5, 0.5);
       btnLabel.x = btnX + btnW / 2; btnLabel.y = btnY + btnH / 2;

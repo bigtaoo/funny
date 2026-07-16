@@ -12,6 +12,7 @@ import { getDecorTexture, isDecorReady, decorFrameNames } from '../render/decorA
 import { bake } from '../render/bake';
 import { Prng } from '../game/math/prng';
 import { drawSceneHeader, type SceneHeaderResult } from '../ui/widgets/SceneHeader';
+import { FS, snapFont } from '../render/fontScale';
 
 /** Optional player identities for the result screen's tap-to-view profile popup. */
 export interface ResultProfiles {
@@ -170,7 +171,7 @@ export class ResultScene implements Scene {
     this.container.addChild(bg);
 
     const margin = Math.round(w * 0.08);
-    const fontSize = Math.round(h * 0.026);
+    const fontSize = FS.heading;
     const body = new PIXI.Text(text, {
       fontSize,
       fill: 0xe8dfc0,
@@ -186,7 +187,7 @@ export class ResultScene implements Scene {
     this.container.addChild(body);
 
     const hint = new PIXI.Text(t('story.tapToContinue'), {
-      fontSize: Math.round(h * 0.022),
+      fontSize: FS.label,
       fill: 0x8a7a60,
       fontFamily: 'monospace',
     });
@@ -243,7 +244,7 @@ export class ResultScene implements Scene {
     this.addMoodDeco(isDraw ? 'draw' : (isWin ? 'win' : 'loss'));
 
     const title = new PIXI.Text(headline, {
-      fontSize: Math.round(h * 0.1),
+      fontSize: FS.display,
       fill: headlineColor,
       fontWeight: 'bold',
       fontFamily: 'serif',
@@ -261,7 +262,7 @@ export class ResultScene implements Scene {
       const eloLine = new PIXI.Text(
         t('result.eloDelta', { delta: `${sign}${this.elo.delta}`, after: this.elo.after, rank: rankName }),
         {
-          fontSize: Math.round(h * 0.032),
+          fontSize: FS.title,
           fill: this.elo.delta >= 0 ? 0x226622 : 0xaa2222,
           fontWeight: 'bold',
           fontFamily: 'monospace',
@@ -299,7 +300,7 @@ export class ResultScene implements Scene {
       this.container.addChild(glyph);
 
       const heroText = new PIXI.Text(hero.title(), {
-        fontSize: Math.round(h * 0.045),
+        fontSize: FS.display,
         fill: 0x222222,
         fontWeight: 'bold',
       });
@@ -309,7 +310,7 @@ export class ResultScene implements Scene {
       this.container.addChild(heroText);
 
       const heroDetail = new PIXI.Text(`「${hero.detail(playerStats)}」`, {
-        fontSize: Math.round(h * 0.028),
+        fontSize: FS.title,
         fill: 0x444444,
         fontStyle: 'italic',
       });
@@ -337,7 +338,7 @@ export class ResultScene implements Scene {
     } else {
       // No notable stats
       const no = new PIXI.Text(t('result.keepGoing'), {
-        fontSize: Math.round(h * 0.035),
+        fontSize: FS.headline,
         fill: 0x888888,
         fontFamily: 'monospace',
       });
@@ -451,7 +452,7 @@ export class ResultScene implements Scene {
   private addProfileLine(label: string, top: number, data: ProfileData, color: number): number {
     const { w, h } = this;
     const line = new PIXI.Text(label, {
-      fontSize: Math.round(h * 0.03),
+      fontSize: FS.title,
       fill: color,
       fontFamily: 'monospace',
       fontWeight: 'bold',
@@ -470,7 +471,7 @@ export class ResultScene implements Scene {
         ? t(keys.shortKey as TranslationKey) || formatLadderTitle(data.equippedTitle)
         : formatLadderTitle(data.equippedTitle);
       const sub = new PIXI.Text(`「${titleLabel}」`, {
-        fontSize: Math.round(h * 0.022),
+        fontSize: FS.label,
         fill: 0x8a7020,
         fontFamily: 'monospace',
       });
@@ -494,7 +495,7 @@ export class ResultScene implements Scene {
     bg.cursor = 'pointer';
     bg.on('pointertap', onTap);
     this.container.addChild(bg);
-    this.addIconLabel(x, y, w, h, text, icon, 0xfffdf4, Math.round(h * 0.40), true);
+    this.addIconLabel(x, y, w, h, text, icon, 0xfffdf4, snapFont(Math.round(h * 0.40)), true);
   }
 
   /** Quieter secondary entry: paper-fill ghost panel, ink line border + ink label/icon. */
@@ -508,7 +509,7 @@ export class ResultScene implements Scene {
     bg.cursor = 'pointer';
     bg.on('pointertap', onTap);
     this.container.addChild(bg);
-    this.addIconLabel(x, y, w, h, text, icon, 0x444444, Math.round(h * 0.34), false);
+    this.addIconLabel(x, y, w, h, text, icon, 0x444444, snapFont(Math.round(h * 0.34)), false);
   }
 
   /** Centre an icon + label pair inside the button box. */
@@ -624,7 +625,7 @@ export class ResultScene implements Scene {
     c.addChild(glyph);
 
     const title = new PIXI.Text(badge.title(), {
-      fontSize: Math.round(h * 0.024),
+      fontSize: FS.heading,
       fill: 0x555555,
       fontFamily: 'monospace',
     });
@@ -634,7 +635,7 @@ export class ResultScene implements Scene {
     c.addChild(title);
 
     const value = new PIXI.Text(badge.value(stats), {
-      fontSize: Math.round(h * 0.03),
+      fontSize: FS.title,
       fill: 0x222222,
       fontWeight: 'bold',
       fontFamily: 'monospace',
