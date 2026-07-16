@@ -42,11 +42,14 @@ describe('LandscapeLayout dynamic width', () => {
     // Top HUD spans the full (widened) width.
     expect(l.hudTopRect.x).toBe(0);
     expect(l.hudTopRect.w).toBe(l.designWidth);
-    // Bottom-left strip stays flush left; bottom-right strip stays flush right.
-    expect(l.hudBottomLeftRect.x).toBe(0);
-    expect(l.hudBottomRightRect.x + l.hudBottomRightRect.w).toBe(l.designWidth);
+    // Bottom-left/right strips are pulled inward by however far the board's edge
+    // moved past its reference position, so they stay near the board on
+    // ultra-wide screens instead of stranding at the far screen edges.
+    const inset = l.boardRect.x - 330;
+    expect(l.hudBottomLeftRect.x).toBe(inset);
+    expect(l.hudBottomRightRect.x + l.hudBottomRightRect.w).toBe(l.designWidth - inset);
     // Hand fills the reclaimed middle between the two bottom strips.
-    expect(l.handRect.x).toBe(l.hudBottomLeftRect.w);
+    expect(l.handRect.x).toBe(l.hudBottomLeftRect.x + l.hudBottomLeftRect.w);
     expect(l.handRect.x + l.handRect.w).toBe(l.hudBottomRightRect.x);
     // Board stays centered in the widened space.
     expect(l.boardRect.x).toBe(Math.round((l.designWidth - l.boardRect.w) / 2));

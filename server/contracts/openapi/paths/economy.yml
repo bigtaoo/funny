@@ -325,6 +325,13 @@
                     granted: { type: integer }
       '400': { $ref: '#/components/responses/ErrorResp' }
 
+# NOTE: POST /shop/paddle/checkout and POST /paddle/webhook (server/metaserver/src/paddle.ts) are
+# deliberately NOT declared here. Like the /ads/callback/* routes in ads.ts, they're registered
+# outside the codegen'd MetaHandlers dispatch because they need non-standard request handling this
+# contract system can't express: the webhook needs its own raw-body content-type-parser scope for
+# HMAC verification, and checkout uses a custom auth extractor instead of the generic bearerAuth
+# preHandler. Documented instead in design/game/COMMERCIAL_DESIGN.md §10 and IAP_CREDENTIALS.md §1.1.
+
 # ════════════ Social (S6, SOCIAL_DESIGN §5) ════════════
 /promo/redeem:
   post:

@@ -126,7 +126,15 @@ export class WorldMapNet {
 
   /** Returns the tile coordinate of the viewport center + a radius to fetch. */
 
-  async showAttackTeamPicker(tx: number, ty: number): Promise<void> {
+  /**
+   * Team picker for a team-based march. kind='attack' (siege a real player / stronghold) or 'occupy'
+   * (grab neutral land, §4.2): both attach an attack-formation team so the committed troops belong to the
+   * team's cards (cardState.currentTroops), not the flat pool — survivors are retained on the cards and the
+   * team can march on after its occupation hold, instead of the pool troops being consumed as garrison.
+   * For occupy we also keep the legacy "散兵占领" flat-pool option, so early players with no card team can
+   * still grab land the old way.
+   */
+  async showTeamPicker(tx: number, ty: number, kind: 'attack' | 'occupy' = 'attack'): Promise<void> {
     const me = this.ctx.me;
     if (!me?.joined || !me.mainBaseTile) { this.ctx.panels.showToast(t('world.needBase'), C.red); return; }
     let teams: { id: string; name: string; army: { initialHp?: number }[] }[] = [];
@@ -150,24 +158,30 @@ export class WorldMapNet {
       buttons.push({
         label: `${tm.name}${status}`,
         disabled: busy,
-        action: busy ? () => this.ctx.panels.showToast(t('world.team.busy'), C.red) : () => void this.doMarchTeam(tx, ty, tm.id),
+        action: busy ? () => this.ctx.panels.showToast(t('world.team.busy'), C.red) : () => void this.doMarchTeam(tx, ty, tm.id, kind),
       });
+    }
+    // Occupy retains the flat-pool path (散兵占领) — the committed troops become the tile garrison the old way.
+    if (kind === 'occupy') {
+      buttons.push({ label: t('world.team.flatOccupy'), action: () => this.ctx.panels.showDeployDialog(tx, ty, 'occupy') });
     }
     buttons.push({ label: t('world.team.manage'), action: () => this.ctx.cb.onOpenTeams() });
     buttons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
-    const head = usable.length > 0 ? t('world.team.pickTitle') : t('world.team.noTeams');
+    const head = usable.length > 0
+      ? (kind === 'occupy' ? t('world.team.pickTitleOccupy') : t('world.team.pickTitle'))
+      : (kind === 'occupy' ? t('world.team.noTeamsOccupy') : t('world.team.noTeams'));
     this.ctx.panels.showModal([head, `(${tx}, ${ty})`], buttons);
   }
 
-  async doMarchTeam(tx: number, ty: number, teamId: string): Promise<void> {
+  async doMarchTeam(tx: number, ty: number, teamId: string, kind: 'attack' | 'occupy' = 'attack'): Promise<void> {
     this.ctx.panels.closeModal();
     const me = this.ctx.me;
     if (!me?.mainBaseTile) { this.ctx.panels.showToast(t('world.needBase'), C.red); return; }
     const [fx, fy] = this.ctx.parseTileId(me.mainBaseTile);
     try {
       // troops=1 is a placeholder; the server overwrites it with the team's committed troop count (§16.2).
-      const march = await this.ctx.cb.worldApi.startMarch(this.ctx.cb.worldId, fx, fy, tx, ty, 'attack', 1, teamId);
-      this.ctx.myAttackTiles.add(march.toTile);
+      const march = await this.ctx.cb.worldApi.startMarch(this.ctx.cb.worldId, fx, fy, tx, ty, kind, 1, teamId);
+      if (kind === 'attack') this.ctx.myAttackTiles.add(march.toTile);
       this.ctx.marches = await this.ctx.cb.worldApi.getMarches(this.ctx.cb.worldId);
       this.ctx.me = await this.ctx.cb.worldApi.getMe(this.ctx.cb.worldId);
       this.ctx.panels.showToast(t('world.dispatched'));
@@ -384,7 +398,7 @@ export class WorldMapNet {
       await this.ctx.cb.worldApi.buyShopItem(this.ctx.cb.worldId, itemId);
       this.ctx.panels.showToast(t('world.shopBought'));
       await this.refreshMe();
-      if (this.ctx.modalDimRect && !this.ctx.trainPanelOpen) this.ctx.panels.renderInfoPanel();
+      if (this.ctx.territoryPanelOpen && this.ctx.territoryTab === 'world' && !this.ctx.trainPanelOpen) this.ctx.panels.renderTerritoryPanel();
     } catch (e) {
       this.ctx.panels.showToast(this.errorMsg(e), C.red);
     }
@@ -400,7 +414,7 @@ export class WorldMapNet {
       await this.ctx.cb.worldApi.setNationName(this.ctx.cb.worldId, capitalIdx, name);
       const n = this.ctx.nations.find(x => x.capitalIdx === capitalIdx);
       if (n) n.nationName = name;
-      if (this.ctx.modalDimRect && !this.ctx.trainPanelOpen) this.ctx.panels.renderInfoPanel();
+      if (this.ctx.territoryPanelOpen && this.ctx.territoryTab === 'world' && !this.ctx.trainPanelOpen) this.ctx.panels.renderTerritoryPanel();
     } catch (e) {
       this.ctx.panels.showToast(this.errorMsg(e), C.red);
     }

@@ -77,6 +77,14 @@ export function startInternalHttp(
           const pools = active ? await svc.listActiveLimitedPools(nowMs) : await svc.listLimitedPools();
           return send(res, 200, { ok: true, pools });
         }
+        if (req.method === 'GET' && url.pathname === '/internal/paddle/events') {
+          const events = await svc.listPaddleEvents({
+            accountId: url.searchParams.get('accountId') ?? undefined,
+            transactionId: url.searchParams.get('transactionId') ?? undefined,
+            limit: Number(url.searchParams.get('limit')) || undefined,
+          });
+          return send(res, 200, { ok: true, events });
+        }
 
         if (req.method !== 'POST') return send(res, 404, { ok: false, error: 'not found' });
         const b = await readJson(req);
@@ -201,6 +209,15 @@ export function startInternalHttp(
                 coins: num(b.coins, 0),
               }),
             );
+          case '/internal/paddle/event':
+            await svc.recordPaddleEvent({
+              transactionId: str(b.transactionId),
+              eventType: str(b.eventType),
+              status: typeof b.status === 'string' ? b.status : undefined,
+              accountId: typeof b.accountId === 'string' ? b.accountId : undefined,
+              rawEvent: str(b.rawEvent),
+            });
+            return send(res, 200, { ok: true });
           case '/internal/gacha/pool': {
             const cfg = (b.config ?? {}) as Record<string, unknown>;
             return send(

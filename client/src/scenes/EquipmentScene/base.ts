@@ -9,7 +9,7 @@ import type { ILayout } from '../../layout/ILayout';
 import type { InputManager } from '../../inputSystem/InputManager';
 import type { Scene } from '../SceneManager';
 import { t, type TranslationKey } from '../../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchButton, seedFor, drawLoadingOverlay, tearDownChildren } from '../../render/sketchUi';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
@@ -75,7 +75,7 @@ export const SECTION_H = 36;  // section divider (Equipped / Bag) — clickable 
 
 // Inventory grid: icon-card cells (name top / glyph left / rarity+level right)
 // packed into columns sized to the wide (1920) landscape canvas.
-export const CELL_GAP = 12;
+export const CELL_GAP = 36;
 export const EQUIP_CELL_H = 266; // +50% atop the previous 177 (2026-07-16 inventory legibility pass)
 export const EQUIP_CELL_W_TARGET = 480; // 1.5x the previous 320 (unified with CARD_CELL_W_TARGET in CardScene.ts)
 // Craft grid: same column + cell sizing as the inventory grid so the icon
@@ -363,7 +363,7 @@ export class EquipmentSceneBase {
     lbl.style.wordWrap = true; lbl.style.wordWrapWidth = mw - 24; lbl.style.align = 'center';
     ml.addChild(lbl);
 
-    const okBtn = sketchPanel(84, 28, { fill: C.dark, border: C.accent, seed: seedFor(0, 13, 84) });
+    const okBtn = sketchButton(84, 28, seedFor(0, 13, 84));
     okBtn.x = mx + mw / 2 - 92; okBtn.y = my + mh - 36;
     ml.addChild(okBtn);
     const ol = txt(t('equip.ok'), 12, C.light, true);

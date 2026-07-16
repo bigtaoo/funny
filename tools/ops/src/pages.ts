@@ -8,6 +8,7 @@ export { pagePlayer } from './pages/player';
 export { pageSuspicions } from './pages/suspicions';
 export { pageTickets } from './pages/tickets';
 export { pageAudit } from './pages/audit';
+export { pagePaddleEvents } from './pages/paddleEvents';
 export { pageAccounts } from './pages/accounts';
 export { pageLadderSeason } from './pages/ladder';
 export { pageFlags } from './pages/flags';

@@ -148,7 +148,7 @@ export class WorldMapInput {
       const buttons: { label: string; action: () => void }[] = [];
       const protectedNow = (tile.protectedUntil ?? 0) > Date.now();
       if (!protectedNow) {
-        buttons.push({ label: t('world.actAttack'), action: () => void this.ctx.net.showAttackTeamPicker(tx, ty) });
+        buttons.push({ label: t('world.actAttack'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'attack') });
       }
       // Scout: no attack, no capture — send a scout to reveal enemy info / defenses then auto-return (scouting is also allowed during a protection window).
       buttons.push({ label: t('world.actScout'), action: () => void this.ctx.net.doScout(tx, ty) });
@@ -169,7 +169,7 @@ export class WorldMapInput {
       this.ctx.panels.showModal(
         [t('world.stronghold'), t('world.strongholdHint'), `(${tx}, ${ty})`],
         [
-          { label: t('world.actAttack'), action: () => void this.ctx.net.showAttackTeamPicker(tx, ty) },
+          { label: t('world.actAttack'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'attack') },
           { label: t('world.actScout'), action: () => void this.ctx.net.doScout(tx, ty) },
           { label: '✕', action: () => this.ctx.panels.closeModal() },
         ],
@@ -191,7 +191,7 @@ export class WorldMapInput {
       // Someone else is holding it — offer an expelling attack instead of occupy/sweep (occupying it directly
       // would just bounce off the pending holder's contestedBy at arrival; use attack to fight their held garrison).
       const holdButtons: { label: string; action: () => void }[] = [
-        { label: t('world.actAttack'), action: () => void this.ctx.net.showAttackTeamPicker(tx, ty) },
+        { label: t('world.actAttack'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'attack') },
         { label: t('world.actScout'), action: () => void this.ctx.net.doScout(tx, ty) },
         { label: '✕', action: () => this.ctx.panels.closeModal() },
       ];
@@ -211,8 +211,10 @@ export class WorldMapInput {
       {
         label: t('world.actOccupy'),
         disabled: !occupyConnected,
+        // §4.2: occupy now offers the team picker (troops belong to the card team, retained across battles),
+        // with a flat "散兵占领" fallback inside the picker. Old flat-only dialog is reachable via that button.
         action: occupyConnected
-          ? () => this.ctx.panels.showDeployDialog(tx, ty, 'occupy')
+          ? () => void this.ctx.net.showTeamPicker(tx, ty, 'occupy')
           : () => this.ctx.panels.showToast(t('world.err.notConnected'), C.red),
       },
     ];
@@ -263,13 +265,6 @@ export class WorldMapInput {
       return;
     }
 
-    // World info button (floats top-right over the map)
-    const ib = this.ctx.infoBtnRect;
-    if (ib.w > 0 && x >= ib.x && x <= ib.x + ib.w && y >= ib.y && y <= ib.y + ib.h) {
-      this.ctx.panels.openInfoPanel();
-      return;
-    }
-
     // Header resource cluster — opens the Territory Overview panel (SLG_DESIGN_LOG.md §26)
     const rc = this.ctx.resClusterRect;
     if (rc.w > 0 && x >= rc.x && x <= rc.x + rc.w && y >= rc.y && y <= rc.y + rc.h) {
@@ -296,6 +291,13 @@ export class WorldMapInput {
     if (mb.w > 0 && x >= mb.x && x <= mb.x + mb.w && y >= mb.y && y <= mb.y + mb.h) {
       this.ctx.marchesExpanded = !this.ctx.marchesExpanded;
       this.ctx.panels.renderHud();
+      return;
+    }
+
+    // Battle-replays badge (right column, below marches) — opens the last-100 replay browser
+    const rb = this.ctx.replayBadgeRect;
+    if (rb.w > 0 && x >= rb.x && x <= rb.x + rb.w && y >= rb.y && y <= rb.y + rb.h) {
+      this.ctx.panels.openReplayPanel();
       return;
     }
 

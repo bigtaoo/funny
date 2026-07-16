@@ -1,6 +1,8 @@
 // Regression coverage for the Territory Overview panel (SLG_DESIGN_LOG.md §26): tapping the header
-// resource cluster opens a 2-tab modal — Overview (production/storage/troops/territory count/season)
-// and Territory (level-filter checkbox grid + scrollable list of owned tiles with Jump/Abandon).
+// resource cluster opens a 3-tab modal — Overview (production/storage/troops/territory count/season),
+// Territory (level-filter checkbox grid + scrollable list of owned tiles with Jump/Abandon), and World
+// (the nations/season/shop sub-tabs folded in from the old standalone world-info button — covered by
+// worldMapInfoScroll.ui.ts). This file exercises the Overview and Territory tabs.
 //
 // Mirrors the "hand-rolled minimal WorldMapContext" pattern used by worldMapInfoScroll.ui.ts /
 // worldMapHeaderProduction.ui.ts — only the fields the code under test actually reads are populated.
@@ -36,7 +38,7 @@ function makeTerritories(): WorldTileView[] {
 }
 
 function buildHarness(opts: {
-  territoryTab?: 'overview' | 'list';
+  territoryTab?: 'overview' | 'list' | 'world';
   territories?: WorldTileView[];
   joined?: boolean;
   refreshTerritories?: () => Promise<void>;
@@ -84,10 +86,10 @@ function buildHarness(opts: {
     dragging: false, dragMoved: false, dragStartX: 0, dragStartY: 0, panX: 0, panY: 0,
     resClusterRect: { x: 0, y: 0, w: 0, h: 0 },
     zoomBtnRect: { x: 0, y: 0, w: 0, h: 0 },
-    infoBtnRect: { x: 0, y: 0, w: 0, h: 0 },
     backRect: { x: 0, y: 0, w: 0, h: 0 },
     aucBtnRect: { x: 0, y: 0, w: 0, h: 0 },
     marchBadgeRect: { x: 0, y: 0, w: 0, h: 0 },
+    replayBadgeRect: { x: 0, y: 0, w: 0, h: 0 },
     chatBarRect: { x: 0, y: 0, w: 0, h: 0 },
     marchRowRects: [],
   } as unknown as WorldMapContext;
@@ -138,48 +140,48 @@ describe('WorldMapPanels.renderTerritoryPanel — Territory (list) tab', () => {
   it('renders one Jump + one Abandon button per visible row, plus tab/checkbox/close buttons', () => {
     const { ctx, panels } = buildHarness({ territoryTab: 'list', territories: makeTerritories() });
     panels.renderTerritoryPanel();
-    // 2 tabs + 2 level checkboxes (levels 1,2) + 3 rows × 2 buttons + 1 close = 11
-    expect(ctx.modalBtnRects).toHaveLength(11);
+    // 3 tabs (overview/list/world) + 2 level checkboxes (levels 1,2) + 3 rows × 2 buttons + 1 close = 12
+    expect(ctx.modalBtnRects).toHaveLength(12);
   });
 
   it('an empty territory list shows the empty-state text instead of any row buttons', () => {
     const { ctx, panels } = buildHarness({ territoryTab: 'list', territories: [] });
     panels.renderTerritoryPanel();
-    // 2 tabs + 0 checkboxes (no levels present) + 0 rows + 1 close
-    expect(ctx.modalBtnRects).toHaveLength(3);
+    // 3 tabs + 0 checkboxes (no levels present) + 0 rows + 1 close
+    expect(ctx.modalBtnRects).toHaveLength(4);
   });
 
   it('unchecking a level filters its rows out of the list (button count drops accordingly)', () => {
     const { ctx, panels } = buildHarness({ territoryTab: 'list', territories: makeTerritories() });
     panels.renderTerritoryPanel();
-    expect(ctx.modalBtnRects).toHaveLength(11);
+    expect(ctx.modalBtnRects).toHaveLength(12);
 
-    // Checkbox buttons are pushed right after the 2 tab buttons: index 2 = Lv.1, index 3 = Lv.2.
-    const lvl1Checkbox = ctx.modalBtnRects[2]?.action;
+    // Checkbox buttons are pushed right after the 3 tab buttons: index 3 = Lv.1, index 4 = Lv.2.
+    const lvl1Checkbox = ctx.modalBtnRects[3]?.action;
     expect(lvl1Checkbox).toBeTruthy();
     lvl1Checkbox!();
 
     expect(ctx.territoryHiddenLevels.has(1)).toBe(true);
-    // Re-rendered internally: 2 tabs + 2 checkboxes + 1 remaining row (level 2) × 2 + 1 close = 7.
-    expect(ctx.modalBtnRects).toHaveLength(7);
+    // Re-rendered internally: 3 tabs + 2 checkboxes + 1 remaining row (level 2) × 2 + 1 close = 8.
+    expect(ctx.modalBtnRects).toHaveLength(8);
   });
 
   it('re-checking a hidden level brings its rows back', () => {
     const { ctx, panels } = buildHarness({ territoryTab: 'list', territories: makeTerritories() });
     panels.renderTerritoryPanel();
-    ctx.modalBtnRects[2]!.action(); // hide level 1
-    expect(ctx.modalBtnRects).toHaveLength(7);
-    ctx.modalBtnRects[2]!.action(); // toggle level 1 again (still at index 2 post re-render)
+    ctx.modalBtnRects[3]!.action(); // hide level 1
+    expect(ctx.modalBtnRects).toHaveLength(8);
+    ctx.modalBtnRects[3]!.action(); // toggle level 1 again (still at index 3 post re-render)
     expect(ctx.territoryHiddenLevels.has(1)).toBe(false);
-    expect(ctx.modalBtnRects).toHaveLength(11);
+    expect(ctx.modalBtnRects).toHaveLength(12);
   });
 
   it('Jump centers the map on that tile and closes the modal', () => {
     const single = [{ x: 9, y: 4, type: 'territory' as const, level: 1, garrison: 3 }];
     const { ctx, panels, centerAt, renderMap } = buildHarness({ territoryTab: 'list', territories: single });
     panels.renderTerritoryPanel();
-    // 2 tabs + 1 checkbox (single level) + 1 row (jump, abandon) + 1 close = index 3 is Jump.
-    const jumpAction = ctx.modalBtnRects[3]?.action;
+    // 3 tabs + 1 checkbox (single level) + 1 row (jump, abandon) + 1 close = index 4 is Jump.
+    const jumpAction = ctx.modalBtnRects[4]?.action;
     expect(jumpAction).toBeTruthy();
     jumpAction!();
     expect(centerAt).toHaveBeenCalledWith(9, 4);
@@ -192,8 +194,8 @@ describe('WorldMapPanels.renderTerritoryPanel — Territory (list) tab', () => {
     const single = [{ x: 9, y: 4, type: 'territory' as const, level: 1, garrison: 3 }];
     const { ctx, panels, doAbandonFromList } = buildHarness({ territoryTab: 'list', territories: single });
     panels.renderTerritoryPanel();
-    // index 4 is Abandon (right after Jump at index 3).
-    const abandonAction = ctx.modalBtnRects[4]?.action;
+    // index 5 is Abandon (right after Jump at index 4).
+    const abandonAction = ctx.modalBtnRects[5]?.action;
     expect(abandonAction).toBeTruthy();
     abandonAction!();
     expect(doAbandonFromList).toHaveBeenCalledWith(9, 4);

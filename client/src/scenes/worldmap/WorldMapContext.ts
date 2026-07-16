@@ -6,7 +6,7 @@ import { makeZoomCfgs } from './zoom';
 import { DEFAULT_MAP_SIZE } from './constants';
 import type { ILayout } from '../../layout/ILayout';
 import type { ZoomCfg, PoolSlot } from './zoom';
-import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, OccupationView, NationView, SeasonView, SlgShopItemView, WorldChatMessage } from '../../net/WorldApiClient';
+import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, OccupationView, NationView, SeasonView, SlgShopItemView, WorldChatMessage, SiegeSummaryView } from '../../net/WorldApiClient';
 import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult } from '../../net/proto/transport';
 import type { WorldMapRenderer } from './WorldMapRenderer';
 import type { WorldMapPanels } from './WorldMapPanels';
@@ -79,7 +79,7 @@ export class WorldMapContext {
   infoTab: 'nations' | 'season' | 'shop' = 'nations';
   /** Territory Overview panel (SLG_DESIGN_LOG.md §26): opened by tapping the header resource cluster. */
   territoryPanelOpen = false;
-  territoryTab: 'overview' | 'list' = 'overview';
+  territoryTab: 'overview' | 'list' | 'world' = 'overview';
   /** Full list of owned tiles — fetched lazily (WorldMapNet.refreshTerritories) when the list tab is opened, not on every ~5s poll (can be 200-300 rows). */
   territories: WorldTileView[] = [];
   /** Levels unchecked in the list-tab filter grid; empty = show all levels. */
@@ -136,9 +136,14 @@ export class WorldMapContext {
   marchesExpanded = false;
   backRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   aucBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
-  infoBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   zoomBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   marchBadgeRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
+  /** Top-right "battle replays" badge (below the marches badge) — tapping it opens the last-100 replay browser. */
+  replayBadgeRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
+  /** Whether the replay-browser list modal is open. */
+  replayPanelOpen = false;
+  /** Cached recent siege reports (fetched when the replay browser opens). */
+  sieges: SiegeSummaryView[] = [];
   chatBarRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   /** Header-bar resource production cluster (renderHeaderHud) — tapping it opens the Territory Overview panel. */
   resClusterRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
@@ -156,7 +161,7 @@ export class WorldMapContext {
   modalBtnRects: { rect: { x: number; y: number; w: number; h: number }; action: () => void }[] = [];
   modalDimRect: { x: number; y: number; w: number; h: number } | null = null;
 
-  // ── Info-panel list scroll (nations / shop tabs — see WorldMapPanels.renderInfoPanel) ──
+  // ── Info-panel list scroll (Territory Overview list/world tabs — see WorldMapPanels.renderTerritoryPanel) ──
   /** Viewport rect of the scrollable list body; null when no scrollable list is on screen. */
   infoScrollRect: { x: number; y: number; w: number; h: number } | null = null;
   infoScrollY = 0;
@@ -165,7 +170,7 @@ export class WorldMapContext {
   infoScrollDragMoved = false;
   infoScrollDragStartY = 0;
   infoScrollDragStartScroll = 0;
-  /** Which panel's scroll list is currently active — WorldMapInput calls this instead of hardcoding renderInfoPanel, so any modal (world-info, Territory Overview) can host a beginScrollList region. Set by beginScrollList, cleared by closeModal. */
+  /** Which panel's scroll list is currently active — WorldMapInput calls this instead of hardcoding a render method, so any modal hosting a beginScrollList region re-renders correctly. Set by beginScrollList, cleared by closeModal. */
   infoScrollRerender: (() => void) | null = null;
 
   // Collaborators (assigned by WorldMapScene right after construction).

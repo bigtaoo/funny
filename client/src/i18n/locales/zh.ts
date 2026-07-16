@@ -117,9 +117,10 @@ export const zh = {
   'settings.renameInsufficient': '金币不足',
 
   // ── In-game HUD ───────────────────────────────────────────────────────────
-  'hud.paused': '已暂停',
-  'hud.resume': '继续游戏',
-  'hud.exitToLobby': '退出对局',
+  'hud.surrender': '投降',
+  'hud.surrenderTitle': '确定要投降吗？',
+  'hud.surrenderCancel': '取消',
+  'hud.surrenderConfirm': '确定投降',
   'hud.upgradeMax': '已满级',
   'hud.upgradeCost': '↑ {cost}g',
   'hud.upgrade': '↑ 升级',
@@ -883,6 +884,19 @@ export const zh = {
   'world.team.manage': '管理队伍',
   'world.team.emptyArmy': '该队伍未布阵',
   'world.team.busy': '行军/占领中',
+  'world.team.pickTitleOccupy': '选择占领队伍',
+  'world.team.noTeamsOccupy': '尚无队伍，可用散兵占领或先去编辑布阵',
+  'world.team.flatOccupy': '散兵占领（兵力池）',
+  // ── SLG battle replay browser (last-100) ─────────────────────────────────
+  'world.replays': '战斗录像',
+  'world.replaysTitle': '战斗录像（最近 100 场）',
+  'world.replaysEmpty': '暂无战斗记录',
+  'world.replay.win': '胜',
+  'world.replay.loss': '负',
+  'world.replay.draw': '平',
+  'world.replay.atk': '攻',
+  'world.replay.def': '守',
+  'world.replay.none': '无录像',
   // ── Training queue / resource panel (C4) ─────────────────────────────────
   'world.train': '练兵',
   'world.trainTitle': '练兵 · 资源',
@@ -1322,6 +1336,8 @@ export const zh = {
   'titles.back': '← 返回',
   'titles.empty': '暂无称号',
   'titles.equipped': '已佩戴',
+  'titles.tapUnequip': '（轻触取消）',
+  'titles.locked': '未获得',
   // Title names (TITLE_DESIGN §6).
   'title.event.newbie.full': '新手上路',
   'title.event.newbie.short': '新手',

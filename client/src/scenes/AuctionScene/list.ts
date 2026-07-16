@@ -1,7 +1,7 @@
 // Market list tab: left sidebar (Market/My Auctions/My Bids), the category filter bar, the auction row list,
 // and the bottom "create listing" button.
 import * as PIXI from 'pixi.js-legacy';
-import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, sketchButton, seedFor } from '../../render/sketchUi';
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
 import { t } from '../../i18n';
 import type { AuctionView } from '../../net/WorldApiClient';
@@ -224,7 +224,7 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
 
       if (this.activeTab === 'all') {
         const aucId = auc.auctionId;
-        const btn = sketchPanel(btnW, btnH, { fill: C.dark, border: C.accent, seed: seedFor(y, 0, btnW) });
+        const btn = sketchButton(btnW, btnH, seedFor(y, 0, btnW));
         btn.x = btnX; btn.y = btnY;
         this.bodyLayer.addChild(btn);
         const bl = txt(isAuction ? t('auction.bid') : t('auction.buy'), 16, C.light);
@@ -313,7 +313,7 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
       // 2x the previous 200x44 button.
       const btnW = 400; const btnH = 88;
       const btnY = h - btnH - 12;
-      const btn = sketchPanel(btnW, btnH, { fill: C.dark, border: C.accent, seed: seedFor(0, 0, btnW) });
+      const btn = sketchButton(btnW, btnH, seedFor(0, 0, btnW));
       btn.x = contentX + contentW / 2 - btnW / 2; btn.y = btnY;
       this.bodyLayer.addChild(btn);
       const bl = txt(`+ ${t('auction.create')}`, 32, C.light);

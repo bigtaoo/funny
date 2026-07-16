@@ -1,6 +1,6 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchButton, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { buildIcon } from '../../render/icons';
 import { WorldApiError } from '../../net/WorldApiClient';
@@ -37,17 +37,18 @@ export class WorldMapPanels {
     const { w } = this.ctx;
     const headerH = this.ctx.topInset;
 
-    // Auction button — far right of the header bar. Extra right margin (30 vs the old 10)
-    // keeps it clear of the screen edge on narrow/notched viewports.
-    const aucW = 78, aucH = Math.round(headerH * 0.7);
-    const aucBtn = sketchPanel(aucW, aucH, { fill: C.dark, border: C.accent, seed: seedFor(1, 0, aucW) });
-    aucBtn.x = w - aucW - 30; aucBtn.y = (headerH - aucH) / 2;
-    layer.addChild(aucBtn);
+    // Auction button — far right of the header bar. Width auto-fits the icon+label so the
+    // text never clips, and the larger right margin (56) pulls it clear of the screen edge.
+    const aucH = Math.round(headerH * 0.7);
     const aIconSize = Math.round(aucH * 0.4);
     const aIcon = buildIcon('tag', aIconSize, C.light);
     const aTxt = txt(t('world.auction'), Math.round(aucH * 0.34), C.light);
     aTxt.anchor.set(0, 0.5);
     const aGrpW = aIconSize + 4 + aTxt.width;
+    const aucW = Math.ceil(aGrpW) + 24; // horizontal padding around the content group
+    const aucBtn = sketchButton(aucW, aucH, seedFor(1, 0, aucW));
+    aucBtn.x = w - aucW - 56; aucBtn.y = (headerH - aucH) / 2;
+    layer.addChild(aucBtn);
     const aGx = aucBtn.x + (aucW - aGrpW) / 2;
     aIcon.x = aGx; aIcon.y = aucBtn.y + (aucH - aIconSize) / 2;
     aTxt.x = aGx + aIconSize + 4; aTxt.y = aucBtn.y + aucH / 2;
@@ -133,7 +134,7 @@ export class WorldMapPanels {
     const ly = this.ctx.backRect.y + this.ctx.backRect.h + colGap || 8;
 
     const zoomLabels: Record<number, string> = { 1: '×1', 2: '×2', 3: '×3' };
-    const zoomBtn = sketchPanel(colW, colH, { fill: C.dark, border: C.accent, seed: seedFor(4, 2, colW) });
+    const zoomBtn = sketchButton(colW, colH, seedFor(4, 2, colW));
     zoomBtn.x = colX; zoomBtn.y = ly;
     hud.addChild(zoomBtn);
     const zIcon = buildIcon('zoom', 32, C.light);
@@ -204,7 +205,7 @@ export class WorldMapPanels {
     const myMarches = this.ctx.marches.filter((m) => m.mine !== false);
     if (this.ctx.me?.joined) {
       const badgeH = 64;
-      const badge = sketchPanel(rightW, badgeH, { fill: C.dark, border: C.accent, seed: seedFor(6, 1, rightW) });
+      const badge = sketchButton(rightW, badgeH, seedFor(6, 1, rightW));
       badge.x = rx; badge.y = ry;
       hud.addChild(badge);
       const bIcon = buildIcon('flag', 28, C.light);
@@ -276,20 +277,25 @@ export class WorldMapPanels {
         }
         ry = listPanel.y + listH + 12;
       }
+
+      // Battle-replays badge — sits directly below the marches badge; tapping opens the last-100 replay browser.
+      const repH = 64;
+      const repBadge = sketchPanel(rightW, repH, { fill: C.paper, border: C.mid, seed: seedFor(6, 3, rightW) });
+      repBadge.x = rx; repBadge.y = ry;
+      hud.addChild(repBadge);
+      const repIcon = buildIcon('replay', 28, C.dark);
+      repIcon.x = rx + 20; repIcon.y = ry + (repH - 28) / 2;
+      hud.addChild(repIcon);
+      const repTxt = txt(t('world.replays'), 22, C.dark);
+      repTxt.anchor.set(0, 0.5);
+      repTxt.x = rx + 60; repTxt.y = ry + repH / 2;
+      hud.addChild(repTxt);
+      this.ctx.replayBadgeRect = { x: repBadge.x, y: repBadge.y, w: rightW, h: repH };
+      ry += repH + 12;
     } else {
       this.ctx.marchBadgeRect = { x: 0, y: 0, w: 0, h: 0 };
+      this.ctx.replayBadgeRect = { x: 0, y: 0, w: 0, h: 0 };
     }
-
-    // World info button — nations / season / shop.
-    const infoH = 68;
-    const infoBtn = sketchPanel(rightW, infoH, { fill: C.dark, border: C.accent, seed: seedFor(3, 1, rightW) });
-    infoBtn.x = rx; infoBtn.y = ry;
-    hud.addChild(infoBtn);
-    const infoLbl = txt(t('world.info'), 26, C.light);
-    infoLbl.anchor.set(0.5, 0.5);
-    infoLbl.x = infoBtn.x + rightW / 2; infoLbl.y = infoBtn.y + infoH / 2;
-    hud.addChild(infoLbl);
-    this.ctx.infoBtnRect = { x: infoBtn.x, y: infoBtn.y, w: rightW, h: infoH };
   }
 
   // ── Hit rects ──────────────────────────────────────────────────────────────
@@ -377,6 +383,7 @@ export class WorldMapPanels {
     this.ctx.selectedTile = null;
     this.ctx.trainPanelOpen = false;
     this.ctx.territoryPanelOpen = false;
+    this.ctx.replayPanelOpen = false;
     this.ctx.view.renderMap();
   }
 
@@ -442,14 +449,15 @@ export class WorldMapPanels {
   }
 
   /**
-   * Start a masked, wheel/drag-scrollable list region inside the modal layer (world-info
-   * nations/shop tabs — see renderInfoPanel). Registers ctx.infoScrollRect/infoMaxScroll so
-   * WorldMapInput can route wheel + drag gestures here, and clamps the current scroll offset
-   * to the new content height (list length can change between renders, e.g. shop catalog load).
-   * Returns the container rows should be added to (already `.mask`ed to the viewport rect).
+   * Start a masked, wheel/drag-scrollable list region inside the modal layer (Territory
+   * Overview's list/world tabs — see renderTerritoryPanel/renderWorldTabBody). Registers
+   * ctx.infoScrollRect/infoMaxScroll so WorldMapInput can route wheel + drag gestures here, and
+   * clamps the current scroll offset to the new content height (list length can change between
+   * renders, e.g. shop catalog load). Returns the container rows should be added to (already
+   * `.mask`ed to the viewport rect).
    */
 
-  beginScrollList(x: number, y: number, w: number, h: number, contentH: number, rerender: () => void = () => this.renderInfoPanel()): PIXI.Container {
+  beginScrollList(x: number, y: number, w: number, h: number, contentH: number, rerender: () => void = () => this.renderTerritoryPanel()): PIXI.Container {
     this.ctx.infoScrollRect = { x, y, w, h };
     this.ctx.infoMaxScroll = Math.max(0, contentH - h);
     this.ctx.infoScrollY = Math.max(0, Math.min(this.ctx.infoScrollY, this.ctx.infoMaxScroll));
@@ -462,7 +470,7 @@ export class WorldMapPanels {
     layer.mask = mask;
     ml.addChild(layer);
     // Position indicator on the list's right edge. Drawn into the modal layer above `layer`
-    // so it's never clipped by the mask; renderInfoPanel adds the close button after, on top.
+    // so it's never clipped by the mask; renderTerritoryPanel adds the close button after, on top.
     drawScrollIndicator(ml, { x, y, w, h }, this.ctx.infoScrollY, this.ctx.infoMaxScroll);
     return layer;
   }
@@ -622,14 +630,16 @@ export class WorldMapPanels {
     this.panelButton(t('world.close'), px + pw / 2 - 50 * S, py + ph - 34 * S, 100 * S, 28 * S, C.dark, () => this.closeModal(), 12 * S);
   }
 
-  openInfoPanel(): void {
-    this.ctx.trainPanelOpen = false;
-    this.ctx.infoScrollY = 0;
-    this.renderInfoPanel();
-    // Lazy-load shop catalog + fresh nations/season the first time.
+  /** Lazy-load the world-info data (nations/shop catalog) the first time the 'world' tab of
+   * the Territory Overview panel is opened — mirrors the old standalone world-info button. */
+
+  loadWorldTabData(): void {
     if (this.ctx.shopItems.length === 0) {
       void this.ctx.cb.worldApi.getShopItems()
-        .then((items) => { this.ctx.shopItems = items; if (this.ctx.modalDimRect && !this.ctx.trainPanelOpen) this.renderInfoPanel(); })
+        .then((items) => {
+          this.ctx.shopItems = items;
+          if (this.ctx.territoryPanelOpen && this.ctx.territoryTab === 'world' && !this.ctx.trainPanelOpen) this.renderTerritoryPanel();
+        })
         .catch(() => { /* offline */ });
     }
     void this.ctx.cb.worldApi.getNations(this.ctx.cb.worldId)
@@ -650,26 +660,13 @@ export class WorldMapPanels {
     }
   }
 
-  renderInfoPanel(): void {
+  /** Nations / season / shop sub-tabs — the 'world' tab body of the Territory Overview panel
+   * (folded in from the old standalone world-info button/modal). Draws into the panel region
+   * already set up by renderTerritoryPanel (px/pw for the panel, ly the current cursor y, and
+   * bodyBottom the panel's content-area bottom). */
+
+  private renderWorldTabBody(px: number, pw: number, ly: number, bodyBottom: number): void {
     const ml = this.ctx.modalLayer;
-    ml.removeChildren();
-    this.ctx.modalBtnRects = [];
-
-    const { w, h } = this.ctx;
-    const pw = Math.min(360, w - 20);
-    const ph = Math.min(380, h - HUD_H - 16);
-    const px = (w - pw) / 2;
-    const py = (h - HUD_H - ph) / 2;
-
-    const dim = new PIXI.Graphics();
-    dim.beginFill(0x000000, 0.35).drawRect(0, 0, w, h).endFill();
-    ml.addChild(dim);
-    this.ctx.modalDimRect = { x: 0, y: 0, w, h };
-
-    const panel = sketchPanel(pw, ph, { fill: C.paper, border: C.dark, seed: seedFor(9, 9, pw) });
-    panel.x = px; panel.y = py;
-    ml.addChild(panel);
-
     const addText = (s: string, tx2: number, ty: number, size = 12, color: number = C.dark, anchorX = 0): void => {
       const lbl = txt(s, size, color);
       lbl.anchor.set(anchorX, 0);
@@ -677,12 +674,7 @@ export class WorldMapPanels {
       ml.addChild(lbl);
     };
 
-    // Title
-    const title = txt(t('world.infoTitle'), 14, C.accent);
-    title.anchor.set(0.5, 0); title.x = px + pw / 2; title.y = py + 10;
-    ml.addChild(title);
-
-    // Tabs
+    // Sub-tabs
     const tabs: { id: 'nations' | 'season' | 'shop'; label: string }[] = [
       { id: 'nations', label: t('world.tabNations') },
       { id: 'season',  label: t('world.tabSeason') },
@@ -690,28 +682,26 @@ export class WorldMapPanels {
     ];
     const tabW = (pw - 28 - MARGIN * 2) / 3;
     let tx = px + 14;
-    const tabY = py + 34;
     for (const tab of tabs) {
       const active = this.ctx.infoTab === tab.id;
-      this.panelButton(tab.label, tx, tabY, tabW, 26, active ? C.red : C.dark, () => {
-        this.ctx.infoTab = tab.id; this.ctx.infoScrollY = 0; this.renderInfoPanel();
+      this.panelButton(tab.label, tx, ly, tabW, 26, active ? C.red : C.dark, () => {
+        this.ctx.infoTab = tab.id; this.ctx.infoScrollY = 0; this.renderTerritoryPanel();
       });
       tx += tabW + MARGIN;
     }
 
-    let ly = tabY + 38;
-    const bodyBottom = py + ph - 42;
+    let cy = ly + 34;
     this.ctx.infoScrollRect = null;
 
     if (this.ctx.infoTab === 'nations') {
       if (this.ctx.nations.length === 0) {
-        addText(t('world.nationsEmpty'), px + 14, ly, 11, C.mid);
+        addText(t('world.nationsEmpty'), px + 14, cy, 11, C.mid);
       } else {
         const rowH = 24;
-        const listLayer = this.beginScrollList(px, ly, pw, bodyBottom - ly, this.ctx.nations.length * rowH);
-        let ry = ly - this.ctx.infoScrollY;
+        const listLayer = this.beginScrollList(px, cy, pw, bodyBottom - cy, this.ctx.nations.length * rowH, () => this.renderTerritoryPanel());
+        let ry = cy - this.ctx.infoScrollY;
         for (const n of this.ctx.nations) {
-          if (ry + rowH >= ly && ry <= bodyBottom) {
+          if (ry + rowH >= cy && ry <= bodyBottom) {
             const name = n.nationName || t('world.nationCol').replace('{idx}', String(n.capitalIdx));
             const mine = !!n.ownerId && n.ownerId === this.ctx.cb.accountId;
             const nStar = buildIcon('star', 12, C.gold);
@@ -737,28 +727,28 @@ export class WorldMapPanels {
     } else if (this.ctx.infoTab === 'season') {
       const s = this.ctx.season;
       if (!s) {
-        addText('—', px + 14, ly, 11, C.mid);
+        addText('—', px + 14, cy, 11, C.mid);
       } else {
-        addText(t('world.seasonNo').replace('{n}', String(s.season)), px + 14, ly, 13, C.red); ly += 22;
+        addText(t('world.seasonNo').replace('{n}', String(s.season)), px + 14, cy, 13, C.red); cy += 22;
         const statusKey = `world.season.${s.status}`;
-        addText(t(statusKey as Parameters<typeof t>[0]), px + 14, ly, 11); ly += 18;
-        addText(t('world.seasonPop').replace('{pop}', String(s.population)).replace('{cap}', String(s.capacity)), px + 14, ly, 11); ly += 18;
+        addText(t(statusKey as Parameters<typeof t>[0]), px + 14, cy, 11); cy += 18;
+        addText(t('world.seasonPop').replace('{pop}', String(s.population)).replace('{cap}', String(s.capacity)), px + 14, cy, 11); cy += 18;
         if (s.resetAt) {
           const days = Math.max(0, Math.ceil((s.resetAt - Date.now()) / 86400000));
-          addText(t('world.seasonReset').replace('{d}', String(days)), px + 14, ly, 11); ly += 18;
+          addText(t('world.seasonReset').replace('{d}', String(days)), px + 14, cy, 11); cy += 18;
         }
       }
     } else {
       // Shop — show current coin balance (SaveData mirror) above the catalog.
       if (this.ctx.cb.getCoins) {
-        addText(t('world.shopBalance').replace('{coins}', String(this.ctx.cb.getCoins())), px + 14, ly, 11, C.accent);
-        ly += 22;
+        addText(t('world.shopBalance').replace('{coins}', String(this.ctx.cb.getCoins())), px + 14, cy, 11, C.accent);
+        cy += 22;
       }
       const rowH = 32;
-      const listLayer = this.beginScrollList(px, ly, pw, bodyBottom - ly, this.ctx.shopItems.length * rowH);
-      let ry = ly - this.ctx.infoScrollY;
+      const listLayer = this.beginScrollList(px, cy, pw, bodyBottom - cy, this.ctx.shopItems.length * rowH, () => this.renderTerritoryPanel());
+      let ry = cy - this.ctx.infoScrollY;
       for (const it of this.ctx.shopItems) {
-        if (ry + rowH >= ly && ry <= bodyBottom) {
+        if (ry + rowH >= cy && ry <= bodyBottom) {
           const nameLbl = txt(this.shopLabel(it), 11, C.dark);
           nameLbl.x = px + 14; nameLbl.y = ry + 4;
           listLayer.addChild(nameLbl);
@@ -771,9 +761,6 @@ export class WorldMapPanels {
         ry += rowH;
       }
     }
-
-    // Close
-    this.panelButton(t('world.close'), px + pw / 2 - 50, py + ph - 34, 100, 28, C.dark, () => this.closeModal());
   }
 
   // ── Territory Overview panel (SLG_DESIGN_LOG.md §26) ────────────────────────────
@@ -790,7 +777,7 @@ export class WorldMapPanels {
     this.renderTerritoryPanel();
   }
 
-  private switchTerritoryTab(tab: 'overview' | 'list'): void {
+  private switchTerritoryTab(tab: 'overview' | 'list' | 'world'): void {
     this.ctx.territoryTab = tab;
     this.ctx.infoScrollY = 0;
     this.renderTerritoryPanel();
@@ -798,6 +785,8 @@ export class WorldMapPanels {
       void this.ctx.net.refreshTerritories().then(() => {
         if (this.ctx.territoryPanelOpen && this.ctx.territoryTab === 'list') this.renderTerritoryPanel();
       });
+    } else if (tab === 'world') {
+      this.loadWorldTabData();
     }
   }
 
@@ -810,7 +799,8 @@ export class WorldMapPanels {
 
     const { w, h } = this.ctx;
     const pw = Math.min(420, w - 20);
-    const ph = Math.min(460, h - HUD_H - 16);
+    // Panel height is 80% of the page height (capped so it never overlaps the HUD).
+    const ph = Math.min(h * 0.8, h - HUD_H - 16);
     const px = (w - pw) / 2;
     const py = (h - HUD_H - ph) / 2;
 
@@ -834,11 +824,12 @@ export class WorldMapPanels {
     ml.addChild(title);
 
     // Tabs
-    const tabs: { id: 'overview' | 'list'; label: string }[] = [
+    const tabs: { id: 'overview' | 'list' | 'world'; label: string }[] = [
       { id: 'overview', label: t('world.territoryTabOverview') },
       { id: 'list', label: t('world.territoryTabList') },
+      { id: 'world', label: t('world.info') },
     ];
-    const tabW = (pw - 28 - MARGIN) / 2;
+    const tabW = (pw - 28 - MARGIN * 2) / 3;
     let tabX = px + 14;
     const tabY = py + 34;
     for (const tab of tabs) {
@@ -871,6 +862,8 @@ export class WorldMapPanels {
         addText(t('world.seasonNo').replace('{n}', String(s.season)), px + 14, ly, 12, C.mid); ly += 18;
         addText(t('world.seasonPop').replace('{pop}', String(s.population)).replace('{cap}', String(s.capacity)), px + 14, ly, 12, C.mid); ly += 18;
       }
+    } else if (this.ctx.territoryTab === 'world') {
+      this.renderWorldTabBody(px, pw, ly, bodyBottom);
     } else {
       // Level-filter checkbox grid, two rows — split evenly across the levels actually present.
       const levels = Array.from(new Set(this.ctx.territories.map((tv) => tv.level))).sort((a, b) => a - b);
@@ -918,6 +911,98 @@ export class WorldMapPanels {
 
     // Close
     this.panelButton(t('world.close'), px + pw / 2 - 50, py + ph - 34, 100, 28, C.dark, () => this.closeModal());
+  }
+
+  // ── Battle replay browser (last-100 sieges) ─────────────────────────────────────
+
+  /** Open the replay browser: fetch the recent sieges, then render the list (repaints once the fetch lands). */
+  openReplayPanel(): void {
+    if (!this.ctx.me?.joined) { this.showToast(t('world.needBase'), C.red); return; }
+    this.ctx.replayPanelOpen = true;
+    this.ctx.infoScrollY = 0;
+    this.renderReplayPanel();
+    void this.ctx.cb.worldApi.listSieges(this.ctx.cb.worldId)
+      .then((rows) => { this.ctx.sieges = rows; if (this.ctx.replayPanelOpen) this.renderReplayPanel(); })
+      .catch(() => { /* offline — keep whatever is cached */ });
+  }
+
+  /** Render the recent-sieges list as a scrollable modal; each replayable row opens the existing siege replay. */
+  renderReplayPanel(): void {
+    if (!this.ctx.me?.joined) { this.closeModal(); return; }
+    const ml = this.ctx.modalLayer;
+    ml.removeChildren();
+    this.ctx.modalBtnRects = [];
+
+    const { w, h } = this.ctx;
+    const pw = Math.min(440, w - 20);
+    const ph = Math.min(h * 0.8, h - HUD_H - 16);
+    const px = (w - pw) / 2;
+    const py = (h - HUD_H - ph) / 2;
+
+    const dim = new PIXI.Graphics();
+    dim.beginFill(0x000000, 0.35).drawRect(0, 0, w, h).endFill();
+    ml.addChild(dim);
+    this.ctx.modalDimRect = { x: 0, y: 0, w, h };
+
+    const panel = sketchPanel(pw, ph, { fill: C.paper, border: C.dark, seed: seedFor(12, 12, pw) });
+    panel.x = px; panel.y = py;
+    ml.addChild(panel);
+
+    const title = txt(t('world.replaysTitle'), 14, C.accent);
+    title.anchor.set(0.5, 0); title.x = px + pw / 2; title.y = py + 10;
+    ml.addChild(title);
+
+    const ly = py + 44;
+    const bodyBottom = py + ph - 42;
+    this.ctx.infoScrollRect = null;
+
+    const rows = this.ctx.sieges;
+    if (rows.length === 0) {
+      const empty = txt(t('world.replaysEmpty'), 12, C.mid);
+      empty.x = px + 16; empty.y = ly;
+      ml.addChild(empty);
+    } else {
+      const rowH = 40;
+      const now = Date.now();
+      const listLayer = this.beginScrollList(px, ly, pw, bodyBottom - ly, rows.length * rowH, () => this.renderReplayPanel());
+      let ry = ly - this.ctx.infoScrollY;
+      for (const s of rows) {
+        if (ry + rowH >= ly && ry <= bodyBottom) {
+          const [, sx, sy] = s.tile.split(':');
+          const roleTxt = s.role === 'attacker' ? t('world.replay.atk') : t('world.replay.def');
+          const outTxt = s.outcome === 'attacker_win' ? t('world.replay.win')
+            : s.outcome === 'defender_win' ? t('world.replay.loss') : t('world.replay.draw');
+          // Win/loss is relative to the requester's role: attacker_win is a win for the attacker but a loss for the defender.
+          const won = (s.role === 'attacker') === (s.outcome === 'attacker_win');
+          const lvlTxt = s.tileLevel ? `Lv.${s.tileLevel}` : '';
+          const label = `(${sx},${sy}) ${lvlTxt}  ${roleTxt}·${outTxt}  ${this.agoText(now - s.ts)}`;
+          const rowLbl = txt(label, 12, won ? C.dark : C.red);
+          rowLbl.x = px + 14; rowLbl.y = ry + 6;
+          listLayer.addChild(rowLbl);
+          const btnW = 72;
+          if (s.hasReplay) {
+            this.panelButtonIn(listLayer, t('world.replaySiege'), px + pw - btnW - 14, ry + 2, btnW, 28,
+              C.accent, () => { this.closeModal(); this.ctx.cb.onReplaySiege(s.siegeId); });
+          } else {
+            const noRep = txt(t('world.replay.none'), 11, C.mid);
+            noRep.x = px + pw - btnW - 8; noRep.y = ry + 8;
+            listLayer.addChild(noRep);
+          }
+        }
+        ry += rowH;
+      }
+    }
+
+    this.panelButton(t('world.close'), px + pw / 2 - 50, py + ph - 34, 100, 28, C.dark, () => this.closeModal());
+  }
+
+  /** Compact "how long ago" label from a millisecond delta (m/h/d), for battle-report rows. */
+  private agoText(deltaMs: number): string {
+    const min = Math.max(0, Math.floor(deltaMs / 60000));
+    if (min < 60) return `${min}m`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}h`;
+    return `${Math.floor(hr / 24)}d`;
   }
 
   /** Open a hidden text input to rename an owned capital, then PATCH via worldsvc. */

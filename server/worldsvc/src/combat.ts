@@ -68,4 +68,7 @@ export class CombatService {
   getSiegeReplay(worldId: string, accountId: string, sid: string): ReturnType<DefenseService['getSiegeReplay']> {
     return this.defense.getSiegeReplay(worldId, accountId, sid);
   }
+  listSieges(worldId: string, accountId: string, limit?: number): ReturnType<DefenseService['listSieges']> {
+    return this.defense.listSieges(worldId, accountId, limit);
+  }
 }

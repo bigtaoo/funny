@@ -93,24 +93,23 @@ export function InputMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
       // close tap; swallow the manual hit-test so nothing behind it fires.
       if (this.profilePopup?.isOpen) return;
 
-      // Pause overlay intercepts all input
+      // Surrender confirmation overlay intercepts all input
       if (this.hudView.isPaused) {
-        const resume = this.hudView.getPauseResumeRect();
-        const exit   = this.hudView.getPauseExitRect();
-        if (resume && this.overRect(x, y, resume)) {
-          this.hudView.hidePause();
-        } else if (exit && this.overRect(x, y, exit)) {
-          this.hudView.hidePause();
+        const cancel  = this.hudView.getSurrenderCancelRect();
+        const confirm = this.hudView.getSurrenderConfirmRect();
+        if (cancel && this.overRect(x, y, cancel)) {
+          this.hudView.hideSurrenderConfirm();
+        } else if (confirm && this.overRect(x, y, confirm)) {
+          this.hudView.hideSurrenderConfirm();
           this.onExitToLobby?.();
         }
         return;
       }
 
-      // Settings button
-      if (this.overRect(x, y, this.hudView.getSettingsRect())) {
+      // Surrender button — opens the confirmation overlay above.
+      if (this.overRect(x, y, this.hudView.getSurrenderRect())) {
         this.cancelTapSelect();
-        this.hudView.onExitToLobby = () => this.onExitToLobby?.();
-        this.hudView.showPause();
+        this.hudView.showSurrenderConfirm();
         return;
       }
 

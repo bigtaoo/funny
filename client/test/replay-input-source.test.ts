@@ -13,7 +13,7 @@ import {
   ReplayInputSource,
   ReplayVersionError,
 } from '../src/game/net/ReplayInputSource';
-import { LocalInputSource } from '../src/game/net/InputSource';
+import { LocalInputSource, type InputSource } from '../src/game/net/InputSource';
 import { ENGINE_VERSION } from '../src/game/types';
 import type { GameConfig, IGameEngine, Replay } from '../src/game/types';
 import { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER } from '../src/game/campaign/levels';
@@ -141,6 +141,25 @@ describe('RecordingInputSource — capture', () => {
       { tick: 1, commands: [{ type: 'upgrade_base', owner: 0, tick: 1 }] },
       { tick: 3, commands: [{ type: 'play_card', owner: 0, tick: 3, handIndex: 0, col: 4 }] },
     ]);
+  });
+
+  it('forwards confirmedLead so the engine catch-up ladder still sees the net backlog', () => {
+    // Regression: nav/result.ts wraps the live NetInputSource in a RecordingInputSource,
+    // so if the recorder drops confirmedLead the engine reads 0 and catch-up is pinned at
+    // 1× for the whole online match — a backgrounded-tab hitch then never drains.
+    const inner: InputSource = {
+      submit() {},
+      take: () => [],
+      confirmedLead: (frame) => 900 - frame, // 30 s backlog at 30 Hz, shrinking toward the head
+    };
+    const rec = new RecordingInputSource(inner);
+    expect(rec.confirmedLead(0)).toBe(900);
+    expect(rec.confirmedLead(900)).toBe(0);
+  });
+
+  it('reports 0 lead when the inner source has no confirmedLead (LocalInputSource → always 1×)', () => {
+    const rec = new RecordingInputSource(new LocalInputSource());
+    expect(rec.confirmedLead(0)).toBe(0);
   });
 
   it('deep-clones captured commands (later mutation cannot corrupt the recording)', () => {

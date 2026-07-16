@@ -2,13 +2,16 @@
 // floating back chip became a full SceneHeader bar (opaque paper fill), reserving
 // `ctx.topInset` at the top of the screen exactly like `HUD_H` is already reserved at the
 // bottom. Two things had to move in lockstep with that or the new bar either gets tapped
-// through to the map underneath, or the right-column HUD (status/marches/world-info) draws
-// on top of / behind it:
+// through to the map underneath, or the right-column HUD (status card / marches / replays)
+// draws on top of / behind it:
 //
 //  1. WorldMapInput.handleDown/handleUp's map-drag/tile-click gate only checked `y < h - HUD_H`
 //     (bottom bound) — taps inside [0, topInset] used to fall straight through to the map.
 //  2. WorldMapPanels.renderHud()'s right column started at a fixed y=8, which now sits under
-//     the opaque header instead of below it.
+//     the opaque header instead of below it. (The old standalone world-info button that used
+//     to anchor this assertion was folded into the Territory Overview panel — SLG_DESIGN_LOG.md
+//     §26 — so the marches badge is now the first tappable right-column element below the
+//     status card, and is what must track topInset.)
 //
 // Runs under the headless PIXI adapter (vitest.ui.config.ts setupFiles) — both WorldMapInput
 // and WorldMapPanels import pixi.js-legacy.
@@ -50,10 +53,10 @@ function buildInputHarness(topInset = TOP_INSET) {
     modalBtnRects: [],
     infoScrollRect: null,
     zoomBtnRect: zeroRect(),
-    infoBtnRect: zeroRect(),
     backRect: zeroRect(),
     aucBtnRect: zeroRect(),
     marchBadgeRect: zeroRect(),
+    replayBadgeRect: zeroRect(),
     chatBarRect: zeroRect(),
     resClusterRect: zeroRect(),
     marchRowRects: [],
@@ -137,10 +140,10 @@ describe('WorldMapInput — map drag/tap gated below the header bar (not just ab
 });
 
 describe('WorldMapPanels.renderHud — right column HUD moves with topInset', () => {
-  it('the world-info button sits below the header bar, not at the old fixed y=8', () => {
+  it('the first right-column badge (marches) sits below the header bar, not at the old fixed y=8', () => {
     const { ctx, panels } = buildHudHarness(TOP_INSET);
     panels.renderHud();
-    expect(ctx.infoBtnRect.y).toBeGreaterThan(TOP_INSET);
+    expect(ctx.marchBadgeRect.y).toBeGreaterThan(TOP_INSET);
   });
 
   it('a taller header pushes the whole right column down by exactly the difference', () => {
@@ -148,6 +151,6 @@ describe('WorldMapPanels.renderHud — right column HUD moves with topInset', ()
     short.panels.renderHud();
     const tall = buildHudHarness(120);
     tall.panels.renderHud();
-    expect(tall.ctx.infoBtnRect.y - short.ctx.infoBtnRect.y).toBe(60);
+    expect(tall.ctx.marchBadgeRect.y - short.ctx.marchBadgeRect.y).toBe(60);
   });
 });

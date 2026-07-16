@@ -99,3 +99,15 @@ export function highestTitle(titles: string[]): string | undefined {
 export function sortTitlesByWeight(titles: string[]): string[] {
   return [...titles].sort((a, b) => titleWeight(b) - titleWeight(a));
 }
+
+/**
+ * Full title-wall catalog: every fixed title (event/achievement, always shown so the
+ * player can see what's ungained and how to earn it) plus any owned dynamic
+ * (ladder/slg seasonal) titles, deduped. Seasonal titles the player never earned
+ * aren't enumerated — there's no fixed catalog for past/future seasons.
+ */
+export function allTitleIds(owned: string[]): string[] {
+  const fixed = Object.keys(TITLE_DEFS);
+  const dynamicOwned = owned.filter((id) => !(id in TITLE_DEFS));
+  return [...fixed, ...dynamicOwned];
+}

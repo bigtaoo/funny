@@ -15,6 +15,13 @@ on:
     branches: [main]
     paths:
       - 'client/**'
+      # The web bundle inlines the deterministic engine + SLG shared code via the
+      # webpack alias @nw/engine → server/engine/src (and server/shared/src/slg).
+      # An engine-only change (e.g. the lockstep catch-up fix) still ships to
+      # players ONLY through this client bundle, so it must retrigger the deploy —
+      # otherwise the fix sits on main while prod keeps serving the old engine.
+      - 'server/engine/src/**'
+      - 'server/shared/src/slg/**'
       - 'wrangler/client.jsonc'
       - '.github/workflows/client-deploy.yml'
   workflow_dispatch: {}

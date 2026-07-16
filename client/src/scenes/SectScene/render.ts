@@ -3,7 +3,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { SECT_CREATE_COST } from '@nw/shared';
 import { t } from '../../i18n';
-import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, sketchButton, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { caretDisplay } from '../../render/inputDisplay';
 import { type Constructor, type SectSceneBaseCtor, type SectTab, ROW_H } from './base';
@@ -149,7 +149,7 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       const okX = cx - btnW - btnGap / 2;
       const cancelX = cx + btnGap / 2;
 
-      const okBtn = sketchPanel(btnW, btnH, { fill: C.dark, border: C.accent, seed: seedFor(0, 1, btnW) });
+      const okBtn = sketchButton(btnW, btnH, seedFor(0, 1, btnW));
       okBtn.x = okX; okBtn.y = y;
       this.bodyLayer.addChild(okBtn);
       const ok = txt(t('sect.create'), 18, C.light);
@@ -332,7 +332,7 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       this.bodyLayer.addChild(fl);
       this.hitRects.push({ rect: { x: left + 6, y: inputY, w: fieldW, h: 36 }, action: () => this.openSendInput() });
 
-      const sendBtn = sketchPanel(66, 36, { fill: C.dark, border: C.accent, seed: seedFor(1, 0, 66) });
+      const sendBtn = sketchButton(66, 36, seedFor(1, 0, 66));
       sendBtn.x = w - 72; sendBtn.y = inputY;
       this.bodyLayer.addChild(sendBtn);
       const sl = txt(t('sect.send'), 13, C.light);

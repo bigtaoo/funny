@@ -12,7 +12,7 @@ import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../../layout/ILayout';
 import type { InputManager } from '../../inputSystem/InputManager';
 import { t } from '../../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchButton, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
@@ -310,7 +310,7 @@ export class FamilySceneBase {
     lbl.anchor.set(0.5, 0); lbl.x = mx + mw / 2; lbl.y = my + 14;
     ml.addChild(lbl);
 
-    const okBtn = sketchPanel(80, 28, { fill: C.dark, border: C.accent, seed: seedFor(0, 1, 80) });
+    const okBtn = sketchButton(80, 28, seedFor(0, 1, 80));
     okBtn.x = mx + mw / 2 - 88; okBtn.y = my + mh - 36;
     ml.addChild(okBtn);
     const ol = txt('OK', 13, C.light);

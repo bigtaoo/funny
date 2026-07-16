@@ -1,7 +1,7 @@
 // Per-mode rendering for the family scene: loading / noFamily / create form / myFamily (members + channel).
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
-import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, sketchButton, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { buildIcon } from '../../render/icons';
 import { caretDisplay } from '../../render/inputDisplay';
@@ -68,7 +68,7 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       const bh = Math.round(h * 0.055);
       const gap = Math.round(w * 0.01);
 
-      const createBtn = sketchPanel(bw, bh, { fill: C.dark, border: C.accent, seed: seedFor(0, 0, bw) });
+      const createBtn = sketchButton(bw, bh, seedFor(0, 0, bw));
       createBtn.x = w / 2 - bw - gap; createBtn.y = h / 2;
       this.bodyLayer.addChild(createBtn);
       const cl = txt(t('family.create'), this.fs(0.024), C.light);
@@ -76,7 +76,7 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       this.bodyLayer.addChild(cl);
       this.hitRects.push({ rect: { x: createBtn.x, y: h / 2, w: bw, h: bh }, action: () => { this.mode = 'create'; this.render(); } });
 
-      const joinBtn = sketchPanel(bw, bh, { fill: C.dark, border: C.accent, seed: seedFor(1, 0, bw) });
+      const joinBtn = sketchButton(bw, bh, seedFor(1, 0, bw));
       joinBtn.x = w / 2 + gap; joinBtn.y = h / 2;
       this.bodyLayer.addChild(joinBtn);
       const jl = txt(t('family.listAll'), this.fs(0.024), C.light);
@@ -125,7 +125,7 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
 
       const okW = Math.round(w * 0.13);
       const btnH = Math.round(h * 0.05);
-      const okBtn = sketchPanel(okW, btnH, { fill: C.dark, border: C.accent, seed: seedFor(0, 0, okW) });
+      const okBtn = sketchButton(okW, btnH, seedFor(0, 0, okW));
       okBtn.x = w / 2 - okW - 10; okBtn.y = btnY;
       this.bodyLayer.addChild(okBtn);
       const ok = txt(t('family.create'), this.fs(0.024), C.light);
@@ -442,7 +442,7 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       this.bodyLayer.addChild(fl);
       this.hitRects.push({ rect: { x: x0 + 6, y: inputY, w: fieldW, h: inputH }, action: () => this.openSendInput() });
 
-      const sendBtn = sketchPanel(sendW, inputH, { fill: C.dark, border: C.accent, seed: seedFor(1, 0, sendW) });
+      const sendBtn = sketchButton(sendW, inputH, seedFor(1, 0, sendW));
       sendBtn.x = right - sendW; sendBtn.y = inputY;
       this.bodyLayer.addChild(sendBtn);
       const sl = txt(t('family.send'), this.fs(0.024), C.light);

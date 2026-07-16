@@ -74,6 +74,20 @@ export class RecordingInputSource implements InputSource {
     return cmds;
   }
 
+  /**
+   * Forward the inner source's playback backlog so the engine's catch-up ladder
+   * still sees how far behind the confirmed watermark it is. Without this the
+   * recorder (which wraps *every* live match — see nav/result.ts) swallowed
+   * `confirmedLead`, leaving `catchUpSpeed()` permanently at 1× in online netplay:
+   * any hitch (backgrounded tab, GC, bunched batch) banked a lag that never
+   * drained, so a placed card only surfaced seconds later. Delegates with `?.`
+   * so wrapping a source without a backlog (LocalInputSource) reports 0 = the
+   * "always 1×" semantics that source already had.
+   */
+  confirmedLead(frame: number): number {
+    return this.inner.confirmedLead?.(frame) ?? 0;
+  }
+
   /** Number of ticks executed so far (last executed frame + 1). */
   get frameCount(): number {
     return this.lastFrame + 1;
