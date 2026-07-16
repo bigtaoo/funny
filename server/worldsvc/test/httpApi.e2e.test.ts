@@ -7,7 +7,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Server } from 'http';
 import type { AddressInfo } from 'net';
-import { signToken, proceduralTile, SLG_MAP_W, SLG_MAP_H } from '@nw/shared';
+import { signToken, proceduralTile, playerWorldId, SLG_MAP_W, SLG_MAP_H } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
 import { WorldService } from '../src/service';
 import { startHttpApi } from '../src/httpApi';
@@ -243,6 +243,43 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
 
     const nf = await fetch(`${base}/world/nope`, { headers: auth });
     expect(nf.status).toBe(404);
+  });
+
+  it('POST /world/build/upgrade accepts P2 buildings (wall/academy, SLG_CITY_DESIGN P2 closed 2026-06-30)', async () => {
+    // Separate accounts per key: the build queue only holds BUILD_QUEUE_SLOTS(1), so reusing
+    // acct-1 across both upgrades in this single-queue-slot setup would 400 the second call regardless of the fix.
+    for (const key of ['wall', 'academy']) {
+      const acctId = `acct-p2-${key}`;
+      const acctToken = signToken(acctId, { secret: SECRET });
+      const acctAuth = { authorization: `Bearer ${acctToken}` };
+      await fetch(`${base}/world/join`, {
+        method: 'POST',
+        headers: { ...acctAuth, 'content-type': 'application/json' },
+        body: JSON.stringify({ worldId: W }),
+      });
+      await m.collections.playerWorld.updateOne(
+        { _id: playerWorldId(W, acctId) },
+        { $set: { resources: { ink: 1_000_000, paper: 1_000_000, graphite: 1_000_000, metal: 1_000_000, sticker: 1_000_000 } } },
+      );
+      const r = await fetch(`${base}/world/build/upgrade`, {
+        method: 'POST',
+        headers: { ...acctAuth, 'content-type': 'application/json' },
+        body: JSON.stringify({ worldId: W, key }),
+      });
+      expect(r.status).toBe(200);
+      const body = await r.json();
+      expect(body.ok).toBe(true);
+      expect(body.data.buildQueue.some((q: { key: string }) => q.key === key)).toBe(true);
+    }
+  });
+
+  it('POST /world/build/upgrade rejects an unknown building key → 400', async () => {
+    const r = await fetch(`${base}/world/build/upgrade`, {
+      method: 'POST',
+      headers: { ...auth, 'content-type': 'application/json' },
+      body: JSON.stringify({ worldId: W, key: 'notARealBuilding' }),
+    });
+    expect(r.status).toBe(400);
   });
 
   it('sweep endpoint (S8-3): missing coordinates → 400', async () => {

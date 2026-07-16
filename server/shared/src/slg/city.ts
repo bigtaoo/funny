@@ -23,8 +23,9 @@ export type BuildingKey =
 export const BUILDING_KEYS: readonly BuildingKey[] = [
   'desk', 'inkPot', 'paperTray', 'graphiteMill', 'metalForge', 'stickerShop', 'cabinet', 'drillYard', 'wall', 'academy', 'satchel',
 ];
-/** Buildable-via-live-endpoint keys (`/world/build/upgrade` gate, httpApi.ts) — wall/academy remain P2 placeholders
- *  not yet wired to that endpoint (pure-function-only today); satchel (P3, D-CITY-9) joins P1's buildable set. */
+/** P1(+satchel, D-CITY-9) subset of BUILDING_KEYS — historical grouping only. The `/world/build/upgrade`
+ *  endpoint gate (httpApi.ts) uses the full BUILDING_KEYS: wall/academy have been real-buildable since P2
+ *  closed 2026-06-30 (patched 2026-07-16 after the endpoint gate was found still checking this P1 subset). */
 export const BUILDING_KEYS_P1: readonly BuildingKey[] = [
   'desk', 'inkPot', 'paperTray', 'graphiteMill', 'metalForge', 'stickerShop', 'cabinet', 'drillYard', 'satchel',
 ];
