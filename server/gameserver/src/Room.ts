@@ -243,6 +243,14 @@ export class Room {
       this.removeSlot(side);
       return;
     }
+    // This side already reported its own result before closing — a normal same-tick finish racing
+    // its own socket teardown, not an abnormal drop. reportResult() will settle the match itself
+    // (immediately if the peer already reported too, or once the peer catches up and reports) — no
+    // grace timer/forfeit needed, and no false "mid-match disconnect" warning.
+    if (this.results.has(side)) {
+      this.removeSlot(side);
+      return;
+    }
     this.stopMetronome();
     const peer = this.slots.find((s) => s.side !== side && s.conn);
     log.warn('WS closed mid-match -> grace period started', {
