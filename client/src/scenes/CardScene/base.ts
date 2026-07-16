@@ -293,12 +293,12 @@ export class CardSceneBase {
   protected showToast(msg: string, color: number = C.dark): void {
     const tl = this.toastLayer;
     tl.removeChildren();
-    const lbl = txt(msg, 13, 0xffffff, true);
-    const padX = 14, padY = 8;
+    const lbl = txt(msg, 26, 0xffffff, true);
+    const padX = 28, padY = 16;
     const bw = lbl.width + padX * 2;
     const bh = lbl.height + padY * 2;
     const bx = (this.w - bw) / 2;
-    const by = this.h - 92;
+    const by = Math.round(this.h * 2 / 3 - bh / 2);
     const bg = sketchPanel(bw, bh, { fill: color, fillAlpha: 0.96, border: color, seed: seedFor(bw, bh, 3) });
     bg.x = bx; bg.y = by;
     tl.addChild(bg);

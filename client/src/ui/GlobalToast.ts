@@ -30,13 +30,13 @@ export class GlobalToast {
   show(text: string, color: number = C.red): void {
     this.clear();
     const { width: w, height: h } = this.app.screen;
-    const lbl = txt(text, Math.round(h * 0.026), 0xffffff, true);
-    const padX = Math.round(w * 0.04);
-    const padY = Math.round(h * 0.012);
+    const lbl = txt(text, Math.round(h * 0.052), 0xffffff, true);
+    const padX = Math.round(w * 0.08);
+    const padY = Math.round(h * 0.024);
     const bw = lbl.width + padX * 2;
     const bh = lbl.height + padY * 2;
     const bx = (w - bw) / 2;
-    const by = Math.round(h * 0.86);
+    const by = Math.round(h * 2 / 3 - bh / 2);
     const bg = sketchPanel(bw, bh, {
       fill: color, fillAlpha: 0.95, border: color, width: 2, seed: seedFor(bw, bh, 2),
     });

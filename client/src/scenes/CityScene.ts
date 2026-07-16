@@ -359,14 +359,15 @@ export class CityScene implements Scene {
 
     // Toast
     if (this.toast !== null) {
-      const tw = Math.min(w - 40, 320);
-      const tg = sketchPanel(tw, 36, { fill: C.dark, fillAlpha: 0.88, border: this.toastColor, width: 1, seed: 7 });
+      const tw = Math.min(w - 40, 640);
+      const th = 72;
+      const tg = sketchPanel(tw, th, { fill: C.dark, fillAlpha: 0.88, border: this.toastColor, width: 1, seed: 7 });
       tg.x = (w - tw) / 2;
-      tg.y = h - 60;
+      tg.y = Math.round(h * 2 / 3 - th / 2);
       this.container.addChild(tg);
-      const tl = txt(this.toast, 13, 0xffffff);
-      tl.x = tg.x + 10;
-      tl.y = tg.y + 10;
+      const tl = txt(this.toast, 26, 0xffffff);
+      tl.x = tg.x + 20;
+      tl.y = tg.y + 20;
       this.container.addChild(tl);
     }
   }
