@@ -130,8 +130,9 @@ export function MailMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): TBas
       }
 
       const dH = Math.round(h * 0.07);
-      this.addButton(t('mail.delete'), px, h - dH - Math.round(h * 0.03), panelW, dH, C.paper, C.red,
-        () => void this.doMailDelete(m), C.red);
+      const deleteBlocked = hasAtt && !m.claimed;
+      this.addButton(t('mail.delete'), px, h - dH - Math.round(h * 0.03), panelW, dH, C.paper, deleteBlocked ? C.mid : C.red,
+        () => deleteBlocked ? this.toast('mail.deleteBlockedAttachment') : void this.doMailDelete(m), deleteBlocked ? C.mid : C.red);
     }
   };
 }

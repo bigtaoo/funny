@@ -125,8 +125,21 @@ describe.skipIf(!mongo)('socialsvc MailService e2e', () => {
     await svc.insertSystemMail('d1', 'a', { subject: 'x', body: 'b', expireDays: 30 });
     await svc.deleteMail('b', 'd1:a'); // wrong owner → no-op
     expect(await m.collections.mails.countDocuments({ _id: 'd1:a' })).toBe(1);
-    await svc.deleteMail('a', 'd1:a');
+    expect(await svc.deleteMail('a', 'd1:a')).toEqual({ ok: true });
     expect(await m.collections.mails.countDocuments({ _id: 'd1:a' })).toBe(0);
+  });
+
+  it('deleteMail: rejects mail with an unclaimed attachment; allowed once claimed', async () => {
+    await svc.insertSystemMail('gift', 'a', {
+      subject: 'Loot', body: 'grab it', expireDays: 30,
+      attachments: [{ kind: 'coins', count: 100 } satisfies MailAttachmentDoc],
+    });
+    expect(await svc.deleteMail('a', 'gift:a')).toMatchObject({ error: 'HAS_UNCLAIMED_ATTACHMENT' });
+    expect(await m.collections.mails.countDocuments({ _id: 'gift:a' })).toBe(1);
+
+    await svc.claimMailAtomic('a', 'gift:a', 'order-1');
+    expect(await svc.deleteMail('a', 'gift:a')).toEqual({ ok: true });
+    expect(await m.collections.mails.countDocuments({ _id: 'gift:a' })).toBe(0);
   });
 
   // ── Atomic attachment claim ──────────────────────────────────────────────────

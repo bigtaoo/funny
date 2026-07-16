@@ -734,6 +734,7 @@ export const de: Record<TranslationKey, string> = {
   'mail.claimFail': 'Abholen fehlgeschlagen',
   'mail.alreadyClaimed': 'Bereits abgeholt',
   'mail.delete': 'Löschen',
+  'mail.deleteBlockedAttachment': 'Anhang zuerst abholen, bevor diese Mail gelöscht wird',
   // SLG-Welt (S8)
   'world.title': 'Welt',
   'world.troops': 'Truppen',
