@@ -85,6 +85,12 @@ export class BattlePassScene implements Scene {
   private scrollY = 0;
   private scrollMax = 0;
   private dragStart: { x: number; y: number; scroll: number } | null = null;
+  /**
+   * One-shot flag: on the first render that has battle-pass data we auto-scroll so the current
+   * level lands on the 3rd visible reward row (two earned rows above it as context). Subsequent
+   * renders (claim / toast / manual drag) must not snap back, so this only runs once.
+   */
+  private scrolledToCurrent = false;
 
   // Scroll-drag fast path (avoids full tearDownChildren+redraw of all 30 reward cells per
   // pointermove — that was the dropped-frames cause). handleMove only repositions
@@ -150,8 +156,15 @@ export class BattlePassScene implements Scene {
     if (!this.scrollContainer) return;
     const sy = Math.min(this.scrollY, this.scrollMax);
     this.scrollContainer.y = this.bodyTopY - sy;
+    // Cell hit rects are pure math, not clipped by the scroll mask — so a cell scrolled *out* of
+    // the viewport (above bodyTopY, or below the bottom edge) still has a live rect that could
+    // steal a tap meant for the header/XP bar. Keep only cells whose rect intersects the viewport.
+    const vTop = this.scrollView.y;
+    const vBot = this.scrollView.y + this.scrollView.h;
     this.hits = this.staticHits.concat(
-      this.scrollCellDefs.map((d) => ({ rect: { x: d.x, y: this.bodyTopY - sy + d.cellY, w: d.w, h: d.h }, fn: d.fn })),
+      this.scrollCellDefs
+        .map((d) => ({ rect: { x: d.x, y: this.bodyTopY - sy + d.cellY, w: d.w, h: d.h }, fn: d.fn }))
+        .filter((hit) => hit.rect.y + hit.rect.h > vTop && hit.rect.y < vBot),
     );
     if (this.scrollbar) { this.scrollbar.destroy(); this.scrollbar = null; }
     this.scrollbar = drawScrollIndicator(this.container, this.scrollView, sy, this.scrollMax);
@@ -336,6 +349,18 @@ export class BattlePassScene implements Scene {
     const scrollMax = Math.max(0, totalContentH - scrollBodyH);
     this.scrollMax = scrollMax;
     this.scrollView = { x: pad, y: bodyTopY, w: barW, h: scrollBodyH };
+
+    // First open: drop the current level onto the 3rd reward row (rows for currentLevel-2 and
+    // currentLevel-1 sit above it). cellY(level) = headerH + (level-1)*(cellH+cellGap); to place it
+    // two rows down from the viewport top we subtract two row heights. Clamped to the scroll range,
+    // so early levels (where the target is negative) stay pinned at the top.
+    if (!this.scrolledToCurrent) {
+      const rowStride = cellH + cellGap;
+      const target = headerH + (currentLevel - 3) * rowStride;
+      this.scrollY = Math.max(0, Math.min(scrollMax, target));
+      this.scrolledToCurrent = true;
+    }
+
     const sy = Math.min(this.scrollY, scrollMax);
 
     const scrollContainer = new PIXI.Container();
