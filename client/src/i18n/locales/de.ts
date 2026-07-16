@@ -113,9 +113,10 @@ export const de: Record<TranslationKey, string> = {
   'settings.renameInsufficient': 'Nicht genug Münzen',
 
   // ── In-Game-HUD ───────────────────────────────────────────────────────────
-  'hud.paused': 'PAUSE',
-  'hud.resume': 'FORTSETZEN',
-  'hud.exitToLobby': 'ZUR LOBBY',
+  'hud.surrender': 'AUFGEBEN',
+  'hud.surrenderTitle': 'Wirklich aufgeben?',
+  'hud.surrenderCancel': 'ABBRECHEN',
+  'hud.surrenderConfirm': 'AUFGEBEN',
   'hud.upgradeMax': 'MAX',
   'hud.upgradeCost': '↑ {cost}g',
   'hud.upgrade': '↑ Ausbau',

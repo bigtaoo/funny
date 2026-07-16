@@ -11,8 +11,8 @@ import { drawHudButton, hudButtonText, HudButtonVariant } from './hudButton';
 
 const TEXT_STYLE  = { fontSize: 14, fill: 0x222222, fontFamily: 'monospace' } as const;
 const SMALL_STYLE = { fontSize: 11, fill: 0x555555, fontFamily: 'monospace' } as const;
-// Settings (gear) button — top strip.
-const BTN_W       = 88;
+// Surrender button — top strip.
+const BTN_W       = 100;
 const BTN_H       = 30;
 // Bottom action buttons (upgrade / refresh) — larger, laid out inside hudBottomRightRect.
 const ACTION_LABEL_STYLE = { fontSize: 30, fill: 0x555555, fontFamily: 'monospace', fontWeight: 'bold' } as const;
@@ -37,10 +37,7 @@ export class HUDView {
   /** Bottom-strip background — must be rendered BEHIND the hand cards. */
   readonly backgroundContainer: PIXI.Container;
 
-  /** Fired by GameRenderer when settings button is tapped. */
-  onExitToLobby: (() => void) | null = null;
-
-  private pauseOverlay:    PIXI.Container | null = null;
+  private surrenderOverlay: PIXI.Container | null = null;
   private gameOverOverlay: PIXI.Container | null = null;
 
   private timerText!:       PIXI.Text;
@@ -51,7 +48,7 @@ export class HUDView {
   private upgradeBtnLabel!: PIXI.Text;
   private refreshBtnBg!:    PIXI.Graphics;
   private refreshBtnLabel!: PIXI.Text;
-  private settingsBtnBg!:   PIXI.Graphics;
+  private surrenderBtnBg!:  PIXI.Graphics;
 
   /** Pixel size of the bottom action buttons (set in build, per orientation). */
   private actionBtnW = 0;
@@ -60,11 +57,11 @@ export class HUDView {
   private readonly layout: ILayout;
 
   // ── Hit rects (design space) ──────────────────────────────────────────────
-  private _settingsRect:    Rect = { x: 0, y: 0, w: 0, h: 0 };
-  private _upgradeRect:     Rect = { x: 0, y: 0, w: 0, h: 0 };
-  private _refreshRect:     Rect = { x: 0, y: 0, w: 0, h: 0 };
-  private _pauseResumeRect: Rect | null = null;
-  private _pauseExitRect:   Rect | null = null;
+  private _surrenderRect:        Rect = { x: 0, y: 0, w: 0, h: 0 };
+  private _upgradeRect:          Rect = { x: 0, y: 0, w: 0, h: 0 };
+  private _refreshRect:          Rect = { x: 0, y: 0, w: 0, h: 0 };
+  private _surrenderCancelRect:  Rect | null = null;
+  private _surrenderConfirmRect: Rect | null = null;
   /** Opponent info area (top strip, left of the settings button) — profile tap (S1 net). */
   private _enemyInfoRect:   Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Local player info area (bottom strip, left) — profile tap (S1 net). */
@@ -84,13 +81,13 @@ export class HUDView {
 
   // ── Hit rect accessors ────────────────────────────────────────────────────
 
-  getSettingsRect():    Rect        { return this._settingsRect; }
-  getUpgradeRect():     Rect        { return this._upgradeRect; }
-  getRefreshRect():     Rect        { return this._refreshRect; }
-  getPauseResumeRect(): Rect | null { return this._pauseResumeRect; }
-  getPauseExitRect():   Rect | null { return this._pauseExitRect; }
-  getEnemyInfoRect():   Rect        { return this._enemyInfoRect; }
-  getPlayerInfoRect():  Rect        { return this._playerInfoRect; }
+  getSurrenderRect():        Rect        { return this._surrenderRect; }
+  getUpgradeRect():          Rect        { return this._upgradeRect; }
+  getRefreshRect():          Rect        { return this._refreshRect; }
+  getSurrenderCancelRect():  Rect | null { return this._surrenderCancelRect; }
+  getSurrenderConfirmRect(): Rect | null { return this._surrenderConfirmRect; }
+  getEnemyInfoRect():        Rect        { return this._enemyInfoRect; }
+  getPlayerInfoRect():       Rect        { return this._playerInfoRect; }
 
   // ── Per-frame sync ─────────────────────────────────────────────────────────
 
@@ -123,10 +120,10 @@ export class HUDView {
     this.setRefreshBtnStyle(canRefresh);
   }
 
-  // ── Pause overlay ──────────────────────────────────────────────────────────
+  // ── Surrender confirmation overlay ────────────────────────────────────────
 
-  showPause(): void {
-    if (this.pauseOverlay) return;
+  showSurrenderConfirm(): void {
+    if (this.surrenderOverlay) return;
     const dw = this.layout.designWidth;
     const dh = this.layout.designHeight;
     const overlay = new PIXI.Container();
@@ -149,7 +146,7 @@ export class HUDView {
     panel.endFill();
     overlay.addChild(panel);
 
-    const title = new PIXI.Text(t('hud.paused'), {
+    const title = new PIXI.Text(t('hud.surrenderTitle'), {
       fontSize: Math.round(pH * 0.18), fill: 0x222222,
       fontWeight: 'bold', fontFamily: 'monospace',
     });
@@ -165,26 +162,26 @@ export class HUDView {
     const y2  = y1 + bH + gap;
     const bX  = (dw - bW) / 2;
 
-    overlay.addChild(this.makeBtn(bX, y1, bW, bH, 'primary',   t('hud.resume')));
-    overlay.addChild(this.makeBtn(bX, y2, bW, bH, 'secondary', t('hud.exitToLobby')));
+    overlay.addChild(this.makeBtn(bX, y1, bW, bH, 'secondary', t('hud.surrenderCancel')));
+    overlay.addChild(this.makeBtn(bX, y2, bW, bH, 'primary',   t('hud.surrenderConfirm')));
 
-    this._pauseResumeRect = { x: bX, y: y1, w: bW, h: bH };
-    this._pauseExitRect   = { x: bX, y: y2, w: bW, h: bH };
+    this._surrenderCancelRect  = { x: bX, y: y1, w: bW, h: bH };
+    this._surrenderConfirmRect = { x: bX, y: y2, w: bW, h: bH };
 
     this.container.addChild(overlay);
-    this.pauseOverlay = overlay;
+    this.surrenderOverlay = overlay;
   }
 
-  hidePause(): void {
-    if (!this.pauseOverlay) return;
-    this.container.removeChild(this.pauseOverlay);
-    this.pauseOverlay.destroy({ children: true });
-    this.pauseOverlay    = null;
-    this._pauseResumeRect = null;
-    this._pauseExitRect   = null;
+  hideSurrenderConfirm(): void {
+    if (!this.surrenderOverlay) return;
+    this.container.removeChild(this.surrenderOverlay);
+    this.surrenderOverlay.destroy({ children: true });
+    this.surrenderOverlay      = null;
+    this._surrenderCancelRect  = null;
+    this._surrenderConfirmRect = null;
   }
 
-  get isPaused(): boolean { return this.pauseOverlay !== null; }
+  get isPaused(): boolean { return this.surrenderOverlay !== null; }
 
   showGameOver(winner: OwnerId | null, localOwner: OwnerId = 0): void {
     if (this.gameOverOverlay) return;
@@ -229,9 +226,18 @@ export class HUDView {
     topBg.drawRect(topR.x, topR.y, topR.w, topR.h);
     topBg.endFill();
 
+    // On ultra-wide screens the board is centered in a design space wider than the
+    // classic 1920 reference, leaving the bottom-strip side columns (whose x anchors
+    // hudBottomLeftRect/hudBottomRightRect already pull inward toward that same
+    // center — see LandscapeLayout/PortraitLayout) stranded near the screen edges.
+    // Mirror the same inward pull for the top strip's timer/surrender button so all
+    // four HUD corners move together instead of only two of them. `inset` is 0 at
+    // the reference aspect (bLR.x === 0), so this is a no-op there.
+    const inset = bLR.x;
+
     // Timer
     this.timerText   = new PIXI.Text('0:00', { ...TEXT_STYLE, fontSize: 34 });
-    this.timerText.x = topR.x + 14;
+    this.timerText.x = topR.x + 14 + inset;
     this.timerText.y = topR.y + (topR.h - this.timerText.height) / 2;
 
     // Enemy HP bar
@@ -241,16 +247,16 @@ export class HUDView {
       ? topR.x + (topR.w - HP_BAR_W) / 2
       : this.baseCenterX() - HP_BAR_W / 2;
 
-    // Settings button — visual only, no interactive
-    this.settingsBtnBg = new PIXI.Graphics();
-    const sBtnX = topR.x + topR.w - BTN_W - 8;
+    // Surrender button — visual only, no interactive
+    this.surrenderBtnBg = new PIXI.Graphics();
+    const sBtnX = topR.x + topR.w - BTN_W - 8 - inset;
     const sBtnY = topR.y + (topR.h - BTN_H) / 2;
-    this.settingsBtnBg.x = sBtnX;
-    this.settingsBtnBg.y = sBtnY;
-    this.drawSettingsBtn();
-    this._settingsRect = { x: sBtnX, y: sBtnY, w: BTN_W, h: BTN_H };
+    this.surrenderBtnBg.x = sBtnX;
+    this.surrenderBtnBg.y = sBtnY;
+    this.drawSurrenderBtn();
+    this._surrenderRect = { x: sBtnX, y: sBtnY, w: BTN_W, h: BTN_H };
 
-    const sLabel = new PIXI.Text('⚙', { fontSize: 26, fill: 0x333333 });
+    const sLabel = new PIXI.Text(t('hud.surrender'), { fontSize: 15, fill: 0x333333, fontWeight: 'bold', fontFamily: 'monospace' });
     sLabel.anchor.set(0.5);
     sLabel.x = sBtnX + BTN_W / 2;
     sLabel.y = sBtnY + BTN_H / 2;
@@ -264,22 +270,28 @@ export class HUDView {
     this.backgroundContainer.addChild(botBg);
 
     // Ink
-    this.inkText   = new PIXI.Text('⬤ 0', { ...TEXT_STYLE, fontSize: 34 });
-    this.inkText.x = bLR.x + 14;
+    this.inkText = new PIXI.Text('⬤ 0', { ...TEXT_STYLE, fontSize: 34 });
 
     // Player HP bar
     this.playerHpGfx = new PIXI.Graphics();
     if (isLandscape) {
+      // Right-anchored within the column (its inner edge, bordering the hand
+      // strip) rather than the column's outer/screen edge — the column itself
+      // already moves inward via `inset` above, but that's wasted unless the
+      // content inside it hugs the near side instead of the far side.
+      this.inkText.anchor.set(1, 0);
+      this.inkText.x       = bLR.x + bLR.w - 14;
       this.inkText.y       = bLR.y + bLR.h * 0.22;
-      this.playerHpGfx.x   = bLR.x + 14;
+      this.playerHpGfx.x   = bLR.x + bLR.w - HP_BAR_W - 14;
       this.playerHpGfx.y   = bLR.y + bLR.h * 0.58;
     } else {
+      this.inkText.x       = bLR.x + 14;
       this.inkText.y       = bLR.y + (bLR.h - this.inkText.height) / 2;
       this.playerHpGfx.x   = this.baseCenterX() - HP_BAR_W / 2;
       this.playerHpGfx.y   = bLR.y + (bLR.h - HP_CELL_H) / 2;
     }
 
-    // Bottom action buttons (refresh + upgrade) — larger than the gear button,
+    // Bottom action buttons (refresh + upgrade) — larger than the surrender button,
     // laid out inside the bottom-right rect. Portrait: side by side (wide, short
     // rect); landscape: stacked (narrow, tall rect).
     const MARGIN = 12;
@@ -325,12 +337,12 @@ export class HUDView {
     this.setUpgradeBtnStyle(false);
 
     // Profile-tap regions (used only in netplay, GameRenderer gates on netEnabled):
-    // opponent = top strip up to the settings button; local = bottom-left info column.
+    // opponent = top strip up to the surrender button; local = bottom-left info column.
     this._enemyInfoRect  = { x: topR.x, y: topR.y, w: Math.max(0, sBtnX - topR.x), h: topR.h };
     this._playerInfoRect = { x: bLR.x, y: bLR.y, w: Math.round(this.layout.designWidth * 0.34), h: bLR.h };
 
     this.container.addChild(
-      topBg, this.timerText, this.enemyHpGfx, this.settingsBtnBg, sLabel,
+      topBg, this.timerText, this.enemyHpGfx, this.surrenderBtnBg, sLabel,
       this.inkText,  this.playerHpGfx,
       this.refreshBtnBg, this.refreshBtnLabel,
       this.upgradeBtnBg, this.upgradeBtnLabel,
@@ -372,9 +384,9 @@ export class HUDView {
     }
   }
 
-  private drawSettingsBtn(): void {
-    this.settingsBtnBg.clear();
-    drawHudButton(this.settingsBtnBg, BTN_W, BTN_H, 'secondary', { radius: 4 });
+  private drawSurrenderBtn(): void {
+    this.surrenderBtnBg.clear();
+    drawHudButton(this.surrenderBtnBg, BTN_W, BTN_H, 'secondary', { radius: 4 });
   }
 
   private setUpgradeBtnStyle(enabled: boolean): void {

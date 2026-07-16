@@ -113,9 +113,10 @@ export const en: Record<TranslationKey, string> = {
   'settings.renameInsufficient': 'Not enough coins',
 
   // ── In-game HUD ───────────────────────────────────────────────────────────
-  'hud.paused': 'PAUSED',
-  'hud.resume': 'RESUME',
-  'hud.exitToLobby': 'EXIT TO LOBBY',
+  'hud.surrender': 'SURRENDER',
+  'hud.surrenderTitle': 'Surrender the match?',
+  'hud.surrenderCancel': 'CANCEL',
+  'hud.surrenderConfirm': 'SURRENDER',
   'hud.upgradeMax': 'MAX',
   'hud.upgradeCost': '↑ {cost}g',
   'hud.upgrade': '↑ Upgrade',

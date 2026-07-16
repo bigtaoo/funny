@@ -100,11 +100,21 @@ export class LandscapeLayout implements ILayout {
     // vertical layout is unchanged — height is fixed, only width is reclaimed.
     this.boardX = Math.round((this.designWidth - BOARD_W) / 2);
 
+    // On screens wider than the classic 16:9 reference, the bottom-strip side
+    // columns (ink/HP on the left, refresh+upgrade on the right) would otherwise
+    // stay pinned to the far screen edges while the board/hand stay centered —
+    // stranding them far from the rest of the HUD. Pull both columns inward by
+    // the same amount the board's edge has moved past its reference position;
+    // this is 0 at/under the reference width, so the classic 1920×1080 layout is
+    // unaffected. The hand region (between the two columns) shrinks to match so
+    // nothing overlaps — HandView already centers cards within it.
+    const inset = Math.max(0, this.boardX - Math.round((REFERENCE_W - BOARD_W) / 2));
+
     this.boardRect          = { x: this.boardX, y: BOARD_Y, w: BOARD_W, h: BOARD_H };
     this.hudTopRect         = { x: 0, y: 0, w: this.designWidth, h: HUD_TOP_H };
-    this.hudBottomLeftRect  = { x: 0, y: BOT_Y, w: BOT_LEFT_W, h: BOT_H };
-    this.hudBottomRightRect = { x: this.designWidth - BOT_RIGHT_W, y: BOT_Y, w: BOT_RIGHT_W, h: BOT_H };
-    this.handRect           = { x: BOT_LEFT_W, y: BOT_Y, w: this.designWidth - BOT_LEFT_W - BOT_RIGHT_W, h: BOT_H };
+    this.hudBottomLeftRect  = { x: inset, y: BOT_Y, w: BOT_LEFT_W, h: BOT_H };
+    this.hudBottomRightRect = { x: this.designWidth - BOT_RIGHT_W - inset, y: BOT_Y, w: BOT_RIGHT_W, h: BOT_H };
+    this.handRect           = { x: BOT_LEFT_W + inset, y: BOT_Y, w: this.designWidth - BOT_LEFT_W - BOT_RIGHT_W - 2 * inset, h: BOT_H };
   }
 
   // ── Coordinate transforms ──────────────────────────────────────────────────

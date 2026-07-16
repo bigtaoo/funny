@@ -117,9 +117,10 @@ export const zh = {
   'settings.renameInsufficient': '金币不足',
 
   // ── In-game HUD ───────────────────────────────────────────────────────────
-  'hud.paused': '已暂停',
-  'hud.resume': '继续游戏',
-  'hud.exitToLobby': '退出对局',
+  'hud.surrender': '投降',
+  'hud.surrenderTitle': '确定要投降吗？',
+  'hud.surrenderCancel': '取消',
+  'hud.surrenderConfirm': '确定投降',
   'hud.upgradeMax': '已满级',
   'hud.upgradeCost': '↑ {cost}g',
   'hud.upgrade': '↑ 升级',
