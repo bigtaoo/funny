@@ -162,7 +162,7 @@ grant(t):
   - `@nw/shared/src/titles.ts`：新增 `parseTitleId(titleId) → {source, seasonNo?}`（纯函数，服务端/客户端可共用）。
   - `openapi.yml` 登记两端点（operationId `getTitles`/`equipTitle`），客户端 codegen 重生（顺带修复了此前累积的 codegen 漂移，使 `openapi.ts` 与 spec 完全同步）。
   - 存储仍复用 `save.titles[]` / `save.equipped.title`（服务器权威，PUT /save 不可写此二字段），未引入新存储。测试 `metaserver/test/titles.test.ts`。
-- [x] **称号墙全目录展示（2026-07-16）**：`TitlesScene` 由"只列已获得"改为展示全部固定称号（`TITLE_DEFS` 4 条，含 event/achievement）+ 已获得的赛季称号；未获得的固定称号灰显 + "未获得"角标、不可点击。是否展示称号完全由玩家决定：点未获得称号无反应，点已获得未佩戴称号→佩戴，再点已佩戴称号→取消佩戴（允许不展示任何称号）。赛季（ladder/slg）未获得的档位不枚举穷举（无固定目录、且跨赛季组合会爆炸），只展示玩家已获得的动态称号。纯客户端改动：`client/src/game/meta/titles.ts`（新增 `allTitleIds`）+ `client/src/scenes/TitlesScene.ts` + i18n `titles.locked`/`titles.tapUnequip`；未触碰 `GET/PUT /titles` 端点或 `save.titles`/`save.equipped` 存储（`TitlesScene` 走 `saveManager` 本地状态，不走该 REST 端点）。
+- [x] **称号墙全目录展示（2026-07-16）**：`TitlesScene` 由"只列已获得"改为展示全部固定称号（`TITLE_DEFS` 4 条，含 event/achievement）+ 已获得的赛季称号；未获得的固定称号灰显 + "未获得"角标、不可点击。是否展示称号完全由玩家决定：点未获得称号无反应，点已获得未佩戴称号→佩戴，再点已佩戴称号→取消佩戴（允许不展示任何称号）。赛季（ladder/slg）未获得的档位不枚举穷举（无固定目录、且跨赛季组合会爆炸），只展示玩家已获得的动态称号。纯客户端改动：`client/src/game/meta/titles.ts`（新增 `allTitleIds`）+ `client/src/scenes/TitlesScene.ts` + i18n `titles.locked`/`titles.tapUnequip`；未触碰 `GET/PUT /titles` 端点或 `save.titles`/`save.equipped` 存储（`TitlesScene` 走 `saveManager` 本地状态，不走该 REST 端点）。展示形式由整行列表改为图标卡网格（勋章 glyph + 短/全称 + 状态角标，每行按可用宽度自适应列数），复用 Equipment/Achievement 等页已有的 icon-card 网格排布手法，纯 `TitlesScene.ts` 内部改动。
 - [ ] 社交消息 sender 前缀（`[称号]`）— 待 S6 social 消息体扩展
 - [ ] SLG 赛季称号授予 — 待 worldsvc SLG 赛季结算落地
 - [ ] `equipped.title` 短标签限长 UI 截断（建议 ≤ 4 字，前端展示截断即可）

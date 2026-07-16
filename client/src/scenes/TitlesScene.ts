@@ -4,6 +4,7 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
+import { buildIcon } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawCareerTabs } from '../ui/widgets/CareerTabs';
@@ -128,15 +129,16 @@ export class TitlesScene implements Scene {
     this.hits.push(...hits);
   }
 
+  /** Icon-card grid, packed left-to-right/top-to-bottom into as many columns as fit — mirrors the
+   *  Equipment/Roster/Auction card-grid convention used elsewhere in the Career hub. */
   private drawTitleList(): void {
     const { w, h } = this;
     const hasSidebar = !!this.cb.onOpenStats && !!this.cb.onOpenAchievements && !!this.cb.onOpenCodex;
     const tbH = Math.round(h * 0.12);
     const padX = hasSidebar ? sidebarNavW(w, h, this.landscape) + Math.round(w * 0.025) : Math.round(w * 0.08);
     const padRight = hasSidebar ? Math.round(w * 0.04) : Math.round(w * 0.08);
-    const rowH = Math.round(h * 0.1);
-    const gap = Math.round(h * 0.016);
-    const rowW = w - padX - padRight;
+    const gridTop = tbH + Math.round(h * 0.04);
+    const gridW = w - padX - padRight;
     const owned = new Set(this.cb.titles);
     const sorted = sortTitlesByWeight(allTitleIds(this.cb.titles));
 
@@ -147,55 +149,88 @@ export class TitlesScene implements Scene {
       return;
     }
 
+    const gap = Math.round(h * 0.03);
+    const cellWTarget = Math.round(w * 0.17);
+    const cellH = Math.round(h * 0.32);
+    const cols = Math.max(1, Math.floor((gridW + gap) / (cellWTarget + gap)));
+    const cellW = Math.min(cellWTarget, (gridW - gap * (cols - 1)) / cols);
+
     sorted.forEach((titleId, i) => {
-      const rowY = tbH + Math.round(h * 0.04) + i * (rowH + gap);
-      const isOwned = owned.has(titleId);
-      const equipped = titleId === this.cb.equippedTitle;
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = padX + col * (cellW + gap);
+      const y = gridTop + row * (cellH + gap);
+      this.drawTitleCard(titleId, x, y, cellW, cellH, owned.has(titleId));
+    });
+  }
 
-      const row = sketchPanel(rowW, rowH, {
-        fill: equipped ? 0xfef8e0 : C.paper,
-        border: equipped ? C.gold : isOwned ? C.line : C.btnOff,
-        width: equipped ? 2.5 : 1.5,
-        seed: seedFor(padX, rowY + i, rowW),
-      });
-      row.x = padX; row.y = rowY;
-      row.alpha = isOwned ? 1 : 0.5;
-      this.container.addChild(row);
+  /**
+   * One title as an icon card: medal glyph on top, short/full labels below, status badge at the
+   * bottom. Locked cards are greyed + non-interactive; owned cards are always tappable —
+   * unequipped → equip, equipped → tap again to unequip (blank display is allowed).
+   */
+  private drawTitleCard(titleId: string, x: number, y: number, cellW: number, cellH: number, isOwned: boolean): void {
+    const equipped = titleId === this.cb.equippedTitle;
+    const color = equipped ? C.gold : isOwned ? C.dark : C.mid;
 
-      const keys = getTitleKeys(titleId);
-      const shortLabel = keys
-        ? (t(keys.shortKey as import('../i18n').TranslationKey) || formatLadderTitle(titleId))
-        : formatLadderTitle(titleId);
-      const fullLabel = keys
-        ? (t(keys.fullKey as import('../i18n').TranslationKey) || shortLabel)
-        : shortLabel;
+    const card = sketchPanel(cellW, cellH, {
+      fill: equipped ? 0xfef8e0 : C.paper,
+      border: equipped ? C.gold : isOwned ? C.line : C.btnOff,
+      width: equipped ? 2.5 : 1.5,
+      seed: seedFor(x, y, cellW),
+    });
+    card.x = x; card.y = y;
+    card.alpha = isOwned ? 1 : 0.5;
+    this.container.addChild(card);
 
-      const nameLbl = txt(`「${shortLabel}」  ${fullLabel}`, Math.round(rowH * 0.38), equipped ? C.gold : isOwned ? C.dark : C.mid, equipped);
-      nameLbl.anchor.set(0, 0.5); nameLbl.x = padX + Math.round(rowW * 0.04); nameLbl.y = rowY + rowH / 2;
-      nameLbl.alpha = isOwned ? 1 : 0.7;
-      this.container.addChild(nameLbl);
+    const iconS = Math.round(cellH * 0.3);
+    const icon = buildIcon('medal', iconS, color);
+    icon.x = x + cellW / 2 - iconS / 2; icon.y = y + Math.round(cellH * 0.1);
+    icon.alpha = isOwned ? 1 : 0.6;
+    this.container.addChild(icon);
 
-      if (!isOwned) {
-        const badge = txt(t('titles.locked'), Math.round(rowH * 0.3), C.mid);
-        badge.anchor.set(1, 0.5); badge.x = padX + rowW - Math.round(rowW * 0.04); badge.y = rowY + rowH / 2;
-        this.container.addChild(badge);
-        return;
-      }
+    const keys = getTitleKeys(titleId);
+    const shortLabel = keys
+      ? (t(keys.shortKey as import('../i18n').TranslationKey) || formatLadderTitle(titleId))
+      : formatLadderTitle(titleId);
+    const fullLabel = keys
+      ? (t(keys.fullKey as import('../i18n').TranslationKey) || shortLabel)
+      : shortLabel;
 
-      if (equipped) {
-        const badge = txt(`${t('titles.equipped')} ${t('titles.tapUnequip')}`, Math.round(rowH * 0.3), C.gold, true);
-        badge.anchor.set(1, 0.5); badge.x = padX + rowW - Math.round(rowW * 0.04); badge.y = rowY + rowH / 2;
-        this.container.addChild(badge);
-      }
+    const shortY = y + Math.round(cellH * 0.1) + iconS + Math.round(cellH * 0.05);
+    const shortLbl = txt(`「${shortLabel}」`, Math.round(cellH * 0.11), color, equipped);
+    shortLbl.anchor.set(0.5, 0); shortLbl.x = x + cellW / 2; shortLbl.y = shortY;
+    if (shortLbl.width > cellW * 0.88) shortLbl.scale.set((cellW * 0.88) / shortLbl.width);
+    shortLbl.alpha = isOwned ? 1 : 0.7;
+    this.container.addChild(shortLbl);
 
-      // Owned rows are always tappable: unequipped → equip; equipped → tap again to unequip (blank display is allowed).
-      this.hits.push({
-        rect: { x: padX, y: rowY, w: rowW, h: rowH },
-        fn: () => {
-          this.cb.onEquip(equipped ? '' : titleId);
-          this.render();
-        },
-      });
+    const fullLbl = txt(fullLabel, Math.round(cellH * 0.07), isOwned ? C.dark : C.mid, false, Math.round(cellW * 0.85));
+    fullLbl.anchor.set(0.5, 0); fullLbl.x = x + cellW / 2; fullLbl.y = shortY + Math.round(cellH * 0.15);
+    fullLbl.alpha = isOwned ? 0.85 : 0.65;
+    this.container.addChild(fullLbl);
+
+    if (!isOwned) {
+      const badge = txt(t('titles.locked'), Math.round(cellH * 0.08), C.mid);
+      badge.anchor.set(0.5, 1); badge.x = x + cellW / 2; badge.y = y + cellH - Math.round(cellH * 0.06);
+      this.container.addChild(badge);
+      return;
+    }
+
+    if (equipped) {
+      const badge = txt(t('titles.equipped'), Math.round(cellH * 0.08), C.gold, true);
+      badge.anchor.set(0.5, 1); badge.x = x + cellW / 2; badge.y = y + cellH - Math.round(cellH * 0.14);
+      this.container.addChild(badge);
+      const hint = txt(t('titles.tapUnequip'), Math.round(cellH * 0.06), C.mid);
+      hint.anchor.set(0.5, 1); hint.x = x + cellW / 2; hint.y = y + cellH - Math.round(cellH * 0.06);
+      this.container.addChild(hint);
+    }
+
+    this.hits.push({
+      rect: { x, y, w: cellW, h: cellH },
+      fn: () => {
+        this.cb.onEquip(equipped ? '' : titleId);
+        this.render();
+      },
     });
   }
 }
