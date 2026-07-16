@@ -1365,6 +1365,7 @@ export const en: Record<TranslationKey, string> = {
   'city.tab.domestic': 'Domestic',
   'city.tab.military': 'Military',
   'city.military.techTree': 'Tech Tree',
+  'city.military.durability': 'Base Durability',
   'city.military.teams': 'Teams',
   'city.military.teamIdle': 'Garrisoned',
   'city.buildings': 'Buildings',

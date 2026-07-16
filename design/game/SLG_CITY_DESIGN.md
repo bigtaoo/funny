@@ -265,7 +265,7 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
   - `CityScene` 双屏拆分（内政/军事可切换 tab，军事页为占位容器）— **已实现**（D-CITY-11，2026-07-16，`client/src/scenes/CityScene.ts`）
   - 队伍面板（5 队 t1-t5，兵力/状态展示，纯 UI 露出既有数据模型）— **已实现**（D-CITY-10，2026-07-16，落进 D-CITY-11 军事页容器，只读展示，编辑仍走 `TeamsScene`）
   - 科技树（`academy`）独立面板 — **已实现**（D-CITY-12，2026-07-16，`client/src/scenes/CityScene.ts`）：`academy` 从内政页建筑网格移出（`DOMESTIC_BUILDING_KEYS` 排除 academy），军事页新增独立可点面板（`renderTechTreePanel`，图标+等级+HP/伤害加成行），点击复用既有 `renderDetailModal` 打开升级弹窗（升级注入逻辑 `buildSiegeBlueprints` 不变，纯 UI 呈现独立）。团队面板占位 `city.military.comingSoon` 文案同步收窄为仅剩耐久展示。
-  - 世界地图基地血条 + 全屏泛红特效 — 待实现（客户端，D-CITY-8 表现层；军事页耐久状态展示同样待做，需先给 `PlayerWorldView` 契约补上主城 `hp`/`maxHp` 字段，与此项一并规划）
+  - 世界地图基地血条 + 全屏泛红特效 — **已实现**（D-CITY-8 表现层，2026-07-16）：契约无需改动——`siegeHpView`（`worldsvc/src/coreHelpers.ts`）已把主城 anchor 的 `durability`/`durabilityMax` 映射进既有 `WorldTileView.hp`/`maxHp` 字段（对 `mine` 无特殊处理），世界地图既有的通用 `drawHpBar`（`client/src/scenes/worldmap/tileGraphics.ts`）因此对受损的自家主城原样生效，无需改客户端。全屏泛红特效为新增：`WorldMapRenderer/vignette.ts`（移植自战斗场景 `GameRenderer/events.ts` 的 base-damage vignette，同一套分层描边算法）+ `WorldMapNet.applyTileUpdate` 对比推送前后自家主城 tileCache 的 `hp` 判断是否被扣耐久（`TileUpdate` 本身不带 hp 字段，见 `transport.proto`），命中即调用 `flashDamageVignette()`。军事页耐久状态展示（D-CITY-12 旁支）仍待做。
   - **验收标准待定**：军事页耐久状态展示尚未进入实现/契约设计（D-CITY-10/12 均已收口）。
 
 ---

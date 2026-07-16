@@ -868,6 +868,10 @@ export interface components {
             teamState?: {
                 [key: string]: components["schemas"]["TeamSLGState"];
             };
+            /** @description D-CITY-8: own main base's current persistent durability, same field name/semantics as WorldTileView.hp (wall-level-derived cap, self-regenerating). Absent when the player has no resolved main base yet. */
+            hp?: number;
+            /** @description D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp. */
+            maxHp?: number;
         };
         /**
          * @description Home-city building identifier (SLG_CITY_DESIGN). P1 buildable: desk/inkPot/paperTray/graphiteMill/metalForge/stickerShop/cabinet/drillYard; wall/academy are P2.

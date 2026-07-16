@@ -407,11 +407,11 @@ export class CityScene implements Scene {
   }
 
   // ── Military page (D-CITY-11 tab container) ──────────────────────────────────
-  // Tech-tree panel (D-CITY-12) and team panel (D-CITY-10) are both implemented
-  // below; durability status (pending a PlayerWorldView hp/maxHp contract
-  // addition, see D-CITY-8/D-CITY-11 design notes) still lands here later.
+  // Durability panel (D-CITY-8), tech-tree panel (D-CITY-12) and team panel
+  // (D-CITY-10) are all implemented below.
 
   private renderMilitaryPage(startY: number): void {
+    startY = this.renderDurabilityPanel(startY);
     startY = this.renderTechTreePanel(startY);
 
     const sectionLbl = txt(t('city.military.teams'), 13, C.mid, true);
@@ -419,6 +419,62 @@ export class CityScene implements Scene {
     sectionLbl.y = startY;
     this.container.addChild(sectionLbl);
     this.renderTeamPanel(startY + 20);
+  }
+
+  // D-CITY-8: main-base durability panel — a persistent, self-healing HP bar for the
+  // player's own base, capped by the `wall` building's level (baseDurabilityMax). Reads
+  // `me.hp`/`me.maxHp` (same field names/semantics as WorldMapView's tile HP bar); falls
+  // back to a full bar derived from the current wall level when the server hasn't resolved
+  // a main-base anchor yet (e.g. brand-new account mid-joinWorld race).
+  private renderDurabilityPanel(startY: number): number {
+    const { w } = this;
+    const bld = this.me?.buildings;
+    const maxHp = this.me?.maxHp ?? baseDurabilityMax(buildingLevel(bld, 'wall'));
+    const hp = this.me?.hp ?? maxHp;
+    const ratio = maxHp > 0 ? Math.max(0, Math.min(1, hp / maxHp)) : 1;
+
+    const panH = 56;
+    const pg = sketchPanel(w - 16, panH, { fill: C.paper, border: C.line, width: 1, seed: seedFor(w, panH, 11) });
+    pg.x = 8;
+    pg.y = startY;
+    this.container.addChild(pg);
+
+    const icon = this.bldIcon('wall', 28, C.dark);
+    icon.x = 16;
+    icon.y = startY + (panH - 28) / 2;
+    this.container.addChild(icon);
+
+    const titleLbl = txt(t('city.military.durability'), 14, C.dark, true);
+    titleLbl.x = 56;
+    titleLbl.y = startY + 9;
+    this.container.addChild(titleLbl);
+
+    const valLbl = txt(`${this.fmtNum(hp)} / ${this.fmtNum(maxHp)}`, 12, C.mid);
+    valLbl.x = 56;
+    valLbl.y = startY + 30;
+    this.container.addChild(valLbl);
+
+    const barX = 56 + Math.max(90, valLbl.width + 16);
+    const barW = Math.max(20, w - barX - 16);
+    const barH = 10;
+    const barY = startY + (panH - barH) / 2;
+
+    const track = new PIXI.Graphics();
+    track.beginFill(0x2a1e12, 0.15);
+    track.drawRoundedRect(barX, barY, barW, barH, 3);
+    track.endFill();
+    this.container.addChild(track);
+
+    // Green (healthy) → amber (mid) → red (low) — mirrors the world-map tile HP bar
+    // (worldmap/tileGraphics.ts drawHpBar) so the color language is consistent everywhere.
+    const fillColor = ratio > 0.5 ? 0x3aa03a : (ratio > 0.25 ? 0xd8a520 : 0xcc2222);
+    const fill = new PIXI.Graphics();
+    fill.beginFill(fillColor, 0.9);
+    fill.drawRoundedRect(barX, barY, Math.max(2, barW * ratio), barH, 3);
+    fill.endFill();
+    this.container.addChild(fill);
+
+    return startY + panH + 8;
   }
 
   /** Current order tying up a team, if any — mirrors TeamsScene.teamOrder (server's TEAM_BUSY predicate). */

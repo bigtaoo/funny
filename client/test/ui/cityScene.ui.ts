@@ -306,6 +306,59 @@ describe('CityScene tech-tree panel (D-CITY-12, 2026-07-16)', () => {
   });
 });
 
+describe('CityScene military page durability panel (D-CITY-8, 2026-07-16)', () => {
+  /** Resolves getMe with an explicit hp/maxHp pair so the panel has real data to render. */
+  function stubWorldApiWithDurability(hp: number, maxHp: number): WorldApiClient {
+    const me = {
+      resources: {}, buildings: {}, buildQueue: [], cardState: {}, teamState: {}, hp, maxHp,
+    } as unknown as PlayerWorldView;
+    return {
+      getMe: () => Promise.resolve(me),
+      getTeams: () => Promise.resolve([]),
+      getMarches: () => Promise.resolve([]),
+      getOccupations: () => Promise.resolve([]),
+      upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
+      speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
+    } as unknown as WorldApiClient;
+  }
+
+  async function buildOnMilitaryPageWithDurability(hp: number, maxHp: number): Promise<{ scene: CityScene; inner: CitySceneInternals }> {
+    const input = new InputManager();
+    const cb: CitySceneCallbacks = {
+      onBack: () => {},
+      worldApi: stubWorldApiWithDurability(hp, maxHp),
+      worldId: 'world:1:0',
+    };
+    const scene = new CityScene(createLayout(...PORTRAIT), input, cb);
+    await new Promise((r) => setTimeout(r, 0));
+    const inner = internals(scene);
+    const militaryTab = inner.hits[2]!;
+    inner.handleDown(militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
+    expect(inner.page).toBe('military');
+    return { scene, inner };
+  }
+
+  it('renders the durability title and current/max value from PlayerWorldView.hp/maxHp', async () => {
+    const { scene, inner } = await buildOnMilitaryPageWithDurability(3200, 8000);
+    const texts = collectTexts(scene.container);
+    expect(texts).toContain(t('city.military.durability'));
+    // fmtNum floors to the nearest 'k' — 3200/8000 renders as "3k / 8k".
+    expect(texts).toContain('3k / 8k');
+    // Panel doesn't register a hit (display-only) — hit count/indices for the tech-tree
+    // panel and team panel below it must stay unaffected by adding this panel above them.
+    expect(inner.hits.length).toBe(4);
+    expect(inner.hits[3]!.y).toBeGreaterThan(0);
+    scene.destroy();
+  });
+
+  it('falls back to a full bar derived from the wall level when hp/maxHp is absent (no resolved anchor yet)', async () => {
+    const { scene } = await buildOnMilitaryPageWithDurability(undefined as unknown as number, undefined as unknown as number);
+    const texts = collectTexts(scene.container);
+    expect(texts).toContain(t('city.military.durability'));
+    scene.destroy();
+  });
+});
+
 describe('CityScene military page team panel (D-CITY-10, 2026-07-16)', () => {
   type TeamsFixture = {
     me?: Partial<PlayerWorldView>;

@@ -167,6 +167,15 @@ export class WorldCoreMap extends WorldCoreVision {
     });
     if (!doc) return { joined: false, worldId };
     const resources = this.settle(doc, this.deps.now());
+    // D-CITY-8: surface the main base's persistent durability under the same hp/maxHp field
+    // names as WorldTileView (siegeHpView), so CityScene's military-page durability panel and
+    // WorldMapScene's tile HP bar read the identical contract. Best-effort: a missing/racing
+    // anchor tile (e.g. mid-relocate) just omits hp/maxHp rather than failing the whole getMe().
+    const baseAnchor = doc.mainBaseTile
+      ? await this.deps.cols.tiles.findOne({
+          _id: tileId(worldId, this.coordX(doc.mainBaseTile), this.coordY(doc.mainBaseTile)),
+        })
+      : null;
     return {
       joined: true,
       worldId, // G6 (§20 R3): the shard worldId resolved by join-season is returned to the client for map entry
@@ -176,6 +185,7 @@ export class WorldCoreMap extends WorldCoreVision {
       yieldRate: doc.yieldRate,
       territoryCount: await this.deps.cols.tiles.countDocuments({ worldId, ownerId: accountId }),
       ...(doc.mainBaseTile ? { mainBaseTile: doc.mainBaseTile } : {}),
+      ...(baseAnchor ? siegeHpView(baseAnchor, this.deps.now()) : {}),
       ...(doc.familyId ? { familyId: doc.familyId } : {}),
       ...(doc.trainingQueue && doc.trainingQueue.length > 0
         ? { trainingQueue: doc.trainingQueue.map((e) => ({ qty: e.qty, startAt: e.startAt, completeAt: e.completeAt })) }

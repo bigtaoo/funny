@@ -238,6 +238,14 @@ components:
           additionalProperties:
             $ref: '#/components/schemas/TeamSLGState'
           description: Map of teamId (t1..t5) → TeamSLGState. Present only for teams with active state.
+        hp:
+          type: integer
+          description: >-
+            D-CITY-8: own main base's current persistent durability, same field name/semantics as WorldTileView.hp
+            (wall-level-derived cap, self-regenerating). Absent when the player has no resolved main base yet.
+        maxHp:
+          type: integer
+          description: "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
 
     BuildingKey:
       type: string

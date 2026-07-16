@@ -136,6 +136,10 @@ export interface PlayerWorldView {
   baseTroopStock?: number;
   /** ADR-026 §5: per-team injury state (team granularity). Present only for teams with active state; client renders an injury countdown in the team menu. */
   teamState?: Record<string, { injuredUntil?: number }>;
+  /** D-CITY-8: own main base's current persistent durability, same field name/semantics as WorldTileView.hp (wall-level-derived cap, self-regenerating). Absent when mainBaseTile hasn't resolved to a stored tile doc yet. */
+  hp?: number;
+  /** D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp, same contract as WorldTileView. */
+  maxHp?: number;
 }
 
 /** March view (REST response / push payload source). */
