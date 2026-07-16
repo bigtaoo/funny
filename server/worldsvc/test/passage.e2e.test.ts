@@ -205,4 +205,24 @@ describe.skipIf(!mongo)('worldsvc crossing (bridge/plankway) e2e', () => {
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
     expect(siege?.outcome).toBe('defender_win');
   });
+
+  it('overwhelming synthesized army (12,000 troops, beyond synthesizeArmy board capacity of 9,600) still resolves attacker_win via the cheap fallback — not the flaky congested-engine path', async () => {
+    await svc.joinWorld(W, 'a', base.x, base.y);
+    // Same board-overflow guard as the stronghold test: 12,000 = the max satchel/troopCap a maxed drillYard+satchel
+    // allows (D-CITY-9), well past synthesizeArmy's 10 lanes × 16 rows × 60hp = 9,600 troop placement capacity.
+    await setTroops('a', 12_000);
+    const mv = await svc.startMarch(W, 'a', base.x, base.y, bridge.x, bridge.y, 'attack', 12_000);
+    nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+
+    const raw = await m.collections.tiles.findOne({ _id: tileId(W, bridge.x, bridge.y) });
+    expect(raw?.type).toBe('bridge');
+    expect(raw?.ownerId).toBe('a');
+
+    const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
+    expect(siege?.outcome).toBe('attacker_win');
+    // No replay fields persisted → confirms the cheap linear path ran, not the congested real engine.
+    expect(siege?.seed).toBeUndefined();
+    expect(siege?.attackerArmy).toBeUndefined();
+  });
 });

@@ -30,7 +30,7 @@ import {
   type SiegeResolution,
   type ProceduralTile,
 } from '@nw/shared';
-import { runSiegeBattle, synthesizeArmy, scaleArmyHp, scaleArmyByRatio, sumArmyHp, toDefenderFormation, resolveCardArmy, toEngineCardInstances, computeCardStateUpdates } from '../siegeEngine';
+import { runSiegeBattle, synthesizeArmy, scaleArmyHp, scaleArmyByRatio, sumArmyHp, toDefenderFormation, resolveCardArmy, toEngineCardInstances, computeCardStateUpdates, shouldUseCheapSiege } from '../siegeEngine';
 import type { GarrisonEntry, EngineEquipmentInput, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import { ENGINE_VERSION } from '@nw/engine';
 import type { TileDoc, PlayerWorldDoc, MarchDoc, SiegeDamageDoc } from '../db';
@@ -155,9 +155,13 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       // footprint cells lands here with target.type==='base' (anchor resolution already done above); territory tiles keep
       // the pre-ADR-026 single-battle instant path below.
       if (target.type === 'base') {
+        // Attacker synthesized iff neither a card army nor a real (team-authored) rawArmy was marched with — a
+        // synthesized army beyond board capacity clogs lanes (see SIEGE_SYNTH_ARMY_MAX_TROOPS) and must never
+        // reach the per-wave engine below.
+        const attackerSynthesized = !hasCardArmy && rawArmy.length === 0;
         await this.applyBaseSiege(
           m, pw, baseTile, defenderId, defender, inOwnNation,
-          attackerArmy, cardInstances, cardEquipInv, siegeAcademy, attackerSave?.cardInv ?? {}, t,
+          attackerArmy, cardInstances, cardEquipInv, siegeAcademy, attackerSave?.cardInv ?? {}, attackerSynthesized, t,
         );
         return;
       }
@@ -167,15 +171,28 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       const tileLevel = baseTile.level ?? 1;
       const seed = siegeSeedFromId(m._id);
 
-      // Bad formation / engine error → fall back to cheap resolveSiege; a single siege must never stall a march.
+      // Attacker synthesized iff neither a card army nor a real (team-authored) rawArmy was marched with.
+      const attackerSynthesized = !hasCardArmy && rawArmy.length === 0;
+      // Defender synthesized iff the tile has no custom formation (buildDefenderConfig fell back to synthesizeArmy).
+      const defenderCustomGarrison = (baseTile.defense as { garrison?: unknown } | undefined)?.garrison;
+      const defenderSynthesized = !(Array.isArray(defenderCustomGarrison) && defenderCustomGarrison.length > 0);
+
+      // Overwhelming ratio (SIEGE_CHEAP_RATIO) or synthesized-army board overflow → skip the engine outright
+      // (a synthesized army beyond board capacity clogs lanes and can spuriously time out to a defender win
+      // regardless of true strength); bad formation / engine error also falls back — a siege must never stall a march.
       let res: SiegeResolution;
       let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
-      try {
-        res = runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv, siegeAcademy });
-      } catch (err) {
-        console.error('[worldsvc] siege engine failed — fallback to cheap resolve', { tile: m.toTile, err: (err as Error).message });
+      if (shouldUseCheapSiege({ attackerTroops: m.troops, defenderTroops: effGarrison, attackerSynthesized, defenderSynthesized })) {
         res = resolveSiege(m.troops, effGarrison);
-        replay = null; // cheap fallback result is inconsistent with engine replay → do not store replay inputs (replay button degrades to hidden).
+        replay = null;
+      } else {
+        try {
+          res = runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv, siegeAcademy });
+        } catch (err) {
+          console.error('[worldsvc] siege engine failed — fallback to cheap resolve', { tile: m.toTile, err: (err as Error).message });
+          res = resolveSiege(m.troops, effGarrison);
+          replay = null; // cheap fallback result is inconsistent with engine replay → do not store replay inputs (replay button degrades to hidden).
+        }
       }
       // Replay inputs: persisted to SiegeDoc; the client uses seed + both sides' formations to replay the battle locally for spectating (§16.3).
       await this.landSiege(m, pw, target, defenderId, defender, res, t, replay);
@@ -201,6 +218,7 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       cardEquipInv: EngineEquipInv | undefined,
       siegeAcademy: { hp: number; damage: number; siege: number } | undefined,
       attackerCardInv: Record<string, CardInstance>,
+      attackerSynthesized: boolean,
       t: number,
     ): Promise<void> {
       const { cols } = this.core.deps;
@@ -248,11 +266,17 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
         const seed = waveSeed(m._id, i);
         const deployedHp = sumArmyHp(survivorArmy);
         let res: SiegeResolution;
-        try {
-          res = runSiegeBattle({ attackerArmy: survivorArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv, siegeAcademy });
-        } catch (err) {
-          console.error('[worldsvc] base wave siege engine failed — cheap fallback', { tile: baseTile._id, wave: i, err: (err as Error).message });
+        // A synthesized attacker army beyond board capacity clogs lanes and must never reach the engine (defender
+        // teams are always real, level-schema-validated formations — never synthesized, so no symmetric check needed).
+        if (shouldUseCheapSiege({ attackerTroops: deployedHp, defenderTroops: sumArmyHp(defArmy), attackerSynthesized, defenderSynthesized: false })) {
           res = resolveSiege(deployedHp, sumArmyHp(defArmy));
+        } else {
+          try {
+            res = runSiegeBattle({ attackerArmy: survivorArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv, siegeAcademy });
+          } catch (err) {
+            console.error('[worldsvc] base wave siege engine failed — cheap fallback', { tile: baseTile._id, wave: i, err: (err as Error).message });
+            res = resolveSiege(deployedHp, sumArmyHp(defArmy));
+          }
         }
         replays.push({ seed, attackerArmy: survivorArmy, defenderConfig, tileLevel });
         attackerSurvivors = res.attackerSurvivors;
@@ -376,23 +400,31 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       // card army's gear is already folded into cardInstances/cardEquipInv above).
       const siegeEquip: EngineEquipmentInput | undefined =
         !hasCardArmy && attackerSave ? { gear: attackerSave.gear, inv: attackerSave.equipmentInv } : undefined;
+      // Attacker synthesized iff neither a card army nor a real (team-authored) rawArmy was marched with; the NPC
+      // garrison (`defenderConfig`) is always synthesized via synthesizeArmy.
+      const attackerSynthesized = !hasCardArmy && rawArmy.length === 0;
       let res: SiegeResolution;
       let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
-      try {
-        res = runSiegeBattle({
-          attackerArmy, defenderConfig, tileLevel, seed,
-          pveUpgrades: attackerSave?.pveUpgrades,
-          unitLevels: attackerSave?.unitLevels,
-          equipment: siegeEquip,
-          cardInstances, equipmentInv: cardEquipInv,
-        });
-      } catch (err) {
-        console.error('[worldsvc] stronghold siege engine failed — fallback to cheap resolve', {
-          tile: m.toTile,
-          err: (err as Error).message,
-        });
+      if (shouldUseCheapSiege({ attackerTroops: m.troops, defenderTroops: garrison, attackerSynthesized, defenderSynthesized: true })) {
         res = resolveSiege(m.troops, garrison);
         replay = null;
+      } else {
+        try {
+          res = runSiegeBattle({
+            attackerArmy, defenderConfig, tileLevel, seed,
+            pveUpgrades: attackerSave?.pveUpgrades,
+            unitLevels: attackerSave?.unitLevels,
+            equipment: siegeEquip,
+            cardInstances, equipmentInv: cardEquipInv,
+          });
+        } catch (err) {
+          console.error('[worldsvc] stronghold siege engine failed — fallback to cheap resolve', {
+            tile: m.toTile,
+            err: (err as Error).message,
+          });
+          res = resolveSiege(m.troops, garrison);
+          replay = null;
+        }
       }
       if (hasCardArmy) {
         const cardUpdates = computeCardStateUpdates(rawArmy, pw.cardState ?? {}, res.attackerSurvivors, t);
@@ -499,23 +531,31 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
 
       const siegeEquip: EngineEquipmentInput | undefined =
         !hasCardArmy && attackerSave ? { gear: attackerSave.gear, inv: attackerSave.equipmentInv } : undefined;
+      // Attacker synthesized iff neither a card army nor a real (team-authored) rawArmy was marched with; the NPC
+      // garrison (`defenderConfig`) is always synthesized via synthesizeArmy.
+      const attackerSynthesized = !hasCardArmy && rawArmy.length === 0;
       let res: SiegeResolution;
       let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
-      try {
-        res = runSiegeBattle({
-          attackerArmy, defenderConfig, tileLevel, seed,
-          pveUpgrades: attackerSave?.pveUpgrades,
-          unitLevels: attackerSave?.unitLevels,
-          equipment: siegeEquip,
-          cardInstances, equipmentInv: cardEquipInv,
-        });
-      } catch (err) {
-        console.error('[worldsvc] crossing siege engine failed — fallback to cheap resolve', {
-          tile: m.toTile,
-          err: (err as Error).message,
-        });
+      if (shouldUseCheapSiege({ attackerTroops: m.troops, defenderTroops: garrison, attackerSynthesized, defenderSynthesized: true })) {
         res = resolveSiege(m.troops, garrison);
         replay = null;
+      } else {
+        try {
+          res = runSiegeBattle({
+            attackerArmy, defenderConfig, tileLevel, seed,
+            pveUpgrades: attackerSave?.pveUpgrades,
+            unitLevels: attackerSave?.unitLevels,
+            equipment: siegeEquip,
+            cardInstances, equipmentInv: cardEquipInv,
+          });
+        } catch (err) {
+          console.error('[worldsvc] crossing siege engine failed — fallback to cheap resolve', {
+            tile: m.toTile,
+            err: (err as Error).message,
+          });
+          res = resolveSiege(m.troops, garrison);
+          replay = null;
+        }
       }
       if (hasCardArmy) {
         const cardUpdates = computeCardStateUpdates(rawArmy, pw.cardState ?? {}, res.attackerSurvivors, t);

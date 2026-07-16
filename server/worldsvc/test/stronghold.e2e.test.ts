@@ -230,4 +230,25 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
     // Attack lost → no material loot.
     expect(matGrants).toHaveLength(0);
   });
+
+  it('overwhelming synthesized army (12,000 troops, beyond synthesizeArmy board capacity of 9,600) still resolves attacker_win via the cheap fallback — not the flaky congested-engine path', async () => {
+    await svc.joinWorld(W, 'a', base.x, base.y);
+    // 12,000 = the max satchel/troopCap a maxed drillYard+satchel allows (D-CITY-9); well past the 10×10 lane×row
+    // ×60hp = 9,600 troop board capacity that used to make the real engine congest and time out (defender wins
+    // regardless of true strength). Without the SIEGE_CHEAP_RATIO/overflow guard this was non-monotonic
+    // (9,000 loses, 9,600 wins, 10,000 loses again); with it, any troop count this large must deterministically win.
+    await setTroops('a', 12_000);
+    const mv = await svc.startMarch(W, 'a', base.x, base.y, sh.x, sh.y, 'attack', 12_000);
+    nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+
+    const tile = await svc.getTile(W, 'a', sh.x, sh.y);
+    expect(tile).toMatchObject({ type: 'territory', mine: true });
+
+    const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
+    expect(siege?.outcome).toBe('attacker_win');
+    // No replay fields persisted → confirms the cheap linear path ran, not the congested real engine.
+    expect(siege?.seed).toBeUndefined();
+    expect(siege?.attackerArmy).toBeUndefined();
+  });
 });
