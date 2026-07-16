@@ -184,4 +184,63 @@ describe.skipIf(!mongo)('worldsvc G6 shard transfer/merge e2e (§27)', () => {
     await svc.openSeason('s33-0', 33, 0, 100);
     await expect(svc.mergeShard(a, 's33-0')).rejects.toMatchObject({ code: 'TRANSFER_TARGET_INVALID' });
   });
+
+  it('rejects transfer for an account that never joined the source shard', async () => {
+    const [a, b] = await twoShards(34);
+    await expect(svc.transferShard('ghost', a, b)).rejects.toMatchObject({ code: 'NOT_IN_WORLD' });
+  });
+
+  it('an in-flight march/occupation in an UNRELATED world does not block transfer (busy check is scoped to fromWorldId)', async () => {
+    const [a, b] = await twoShards(35);
+    await svc.openSeason('s35-9', 35, 9, 100);
+    await svc.joinWorld(a, 'p1');
+    const marchElsewhere: MarchDoc = {
+      _id: 'm-elsewhere', worldId: 's35-9', ownerId: 'p1', fromTile: 's35-9:1:1', toTile: 's35-9:2:2',
+      kind: 'occupy', troops: 10, departAt: 1, arriveAt: 999_999_999_999, status: 'marching', rev: 0,
+    };
+    await m.collections.marches.insertOne(marchElsewhere);
+    await expect(svc.transferShard('p1', a, b)).resolves.toBeTruthy();
+  });
+
+  it('cooldown is scoped per-account: a different account can transfer even right after the first one did', async () => {
+    const [a, b] = await twoShards(36);
+    await svc.joinWorld(a, 'p1');
+    await svc.joinWorld(a, 'p2');
+    await svc.transferShard('p1', a, b);
+    await expect(svc.transferShard('p2', a, b)).resolves.toBeTruthy();
+  });
+
+  it('proceeds when the source WorldDoc is missing (dev/test without seeded world docs) — season/cooldown checks degrade gracefully', async () => {
+    const [, b] = await twoShards(37);
+    // Join without ever calling openSeason for 'a' (no WorldDoc for the source) — joinWorld itself allows this
+    // (capacity guard only enforced when the doc exists); transferShard must not hard-require a fromWorld doc.
+    await svc.joinWorld('s37-unseeded', 'p1');
+    await expect(svc.transferShard('p1', 's37-unseeded', b)).resolves.toBeTruthy();
+  });
+
+  describe('listTransferTargets', () => {
+    it('empty when the current world has no seeded WorldDoc', async () => {
+      expect(await svc.listTransferTargets('s38-unseeded')).toEqual([]);
+    });
+
+    it('lists same-season open/active shards with room, excluding the current shard and full ones', async () => {
+      const a = 's39-0', b = 's39-1', c = 's39-2';
+      await svc.openSeason(a, 39, 0, 100);
+      await svc.openSeason(b, 39, 1, 1); // will be full
+      await svc.openSeason(c, 39, 2, 100);
+      await svc.joinWorld(b, 'filler'); // fills b to capacity
+      await svc.openSeason('s40-0', 40, 0, 100); // different season, must not appear
+
+      const targets = await svc.listTransferTargets(a);
+      expect(targets.map((t) => t.worldId).sort()).toEqual([c]); // b excluded (full), a excluded (self), s40-0 excluded (different season)
+    });
+
+    it('excludes closed shards', async () => {
+      const a = 's41-0', b = 's41-1';
+      await svc.openSeason(a, 41, 0, 100);
+      await svc.openSeason(b, 41, 1, 100);
+      await svc.closeSeason(b);
+      expect(await svc.listTransferTargets(a)).toEqual([]);
+    });
+  });
 });
