@@ -2,18 +2,28 @@ import { toFp, TICK_RATE } from './math/fixed';
 import { BUILDING_BLUEPRINTS } from './config';
 import { BuildingBlueprint, BuildingType, Side, Vec2_fp } from './types';
 
-// Buildings are few (capped by board cells, well under 1000) so they take the
-// low id range starting at 0. Units start at 1000, so the namespaces never collide
-// no matter how long the game runs.
-let nextId = 0;
+// Real match placements get their id from the owning GameState's per-instance counter
+// (GameState.allocBuildingId, range 0+). This module-level counter is ONLY a fallback
+// for standalone construction that has no owning GameState — i.e. unit tests / tools.
+//
+// ⚠️ It must NOT be shared as the live-match id source: a second GameState built
+// mid-match (e.g. judgeRunner's hash-recompute) used to reset a shared global back to
+// 0, so the live engine's next placement (a player dropping an Arrow Tower) reused a
+// still-live id and clobbered it in board.buildings (Map keyed by id — see
+// Board.addBuilding). The overwritten building vanished from the Map that
+// BuildingProductionSystem/CombatSystem iterate but stayed stamped in buildingGrid,
+// leaving an orphaned "ghost" building: never ticked, yet still blocking its cell.
+// Hence the counter now lives on GameState, per instance.
+//
+// The fallback starts well above the per-instance range (but still <1000) so a test
+// that mixes standalone buildings with GameState-placed buildings on one board can
+// never collide. Buildings keep the low id range (<1000, capped by board cells);
+// units take the upper range (≥1000), so the two namespaces never overlap.
+let nextId = 500;
 
-/**
- * Reset the building id counter. Called once per game (GameState constructor) so that
- * entity ids are reproducible across engine instances — required for deterministic
- * replay verification (same seed ⇒ identical id stream).
- */
+/** Reset the standalone/test-only building id fallback (see above). Not used by real matches. */
 export function resetBuildingIds(): void {
-  nextId = 0;
+  nextId = 500;
 }
 
 export class Building {
@@ -58,8 +68,11 @@ export class Building {
     col: number,
     row: number,
     blueprint: BuildingBlueprint = BUILDING_BLUEPRINTS[buildingType],
+    // Explicit id from the owning GameState (GameState.allocBuildingId). Omitted only by
+    // standalone construction (tests/tools), which falls back to the module counter.
+    id?: number,
   ) {
-    this.id           = nextId++;
+    this.id           = id ?? nextId++;
     this.buildingType = buildingType;
     this.side         = side;
     this.col          = col;

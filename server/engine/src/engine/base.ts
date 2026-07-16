@@ -219,7 +219,7 @@ export class GameEngineBase {
       // Tracked in defenderBuildingList[] for emitInitialEvents() event emission.
       if (config.level.defenderBuildings) {
         for (const entry of config.level.defenderBuildings) {
-          const building = new Building(entry.buildingType, Side.Top, entry.col, TOP_BUILDING_ROW);
+          const building = new Building(entry.buildingType, Side.Top, entry.col, TOP_BUILDING_ROW, undefined, this.state.allocBuildingId());
           this.state.board.addBuilding(building);
           this.defenderBuildingList.push(building);
         }

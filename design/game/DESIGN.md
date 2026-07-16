@@ -487,9 +487,11 @@ npm run test:watch
 >
 > ⚠️ **为什么必须每实例**：曾用模块级全局 `nextId` 且由 `GameState` 构造函数 `resetUnitIds()` 归零。联机对战中 `judgeRunner` 会在**对局进行中**新建第二个 `GameState`（hash 争议重算），把共享计数器重置回 1000 —— 主引擎下一个出兵**复用了仍存活的 ID**，`Board.units`（`Map<id,Unit>`）里 `addUnit` 直接**覆盖**旧单位；旧单位从 `board.units` 消失却仍留在 `columnUnits`，`MovementSystem` 遍历 `board.units.values()` 再也碰不到它 —— 成了一个**看不见、冻结、永久挡路的"幽灵兵"**，后面出的兵全堆在它身后 `waiting`（前方无可见敌人）。回归测试见 `__tests__/unit-id-per-instance.test.ts`。
 >
-> **ID 命名空间**：**building 从 0 起、unit 从 1000 起**。建筑数量受棋盘格子数（12×18=216）封顶，永远到不了 1000；单位是高频增长方，取上段。两个命名空间无论对局多长都不会冲突。渲染层按事件类型（`unit_spawned` / `building_placed`）分池管理 view，不依赖 ID 区间。
+> **building ID 同样改为每实例（2026-07-16，unit 修复的姊妹项）**：building ID 现由 `GameState` 实例字段 `_nextBuildingId`（从 0 起）经 `allocBuildingId()` 分配，两个真实放置点（`commands.ts` 出建筑牌、`engine/base.ts` defenderBuildings）都走它。`Building.ts` 保留的模块级 `nextId` 仅作独立构造（单测/工具）的兜底，基址抬到 **500**（仍 <1000）与每实例区间（0+）隔离，避免同一 board 上混用时撞号。回归测试见 `__tests__/building-id-per-instance.test.ts`。修复前同 unit：`judgeRunner` 对局中重算新建第二个 `GameState` 会把共享全局重置回 0，主引擎下一次放塔复用仍存活的 ID，在 `Board.buildings`（`Map<id,Building>`，见 `addBuilding`）里覆盖旧建筑 —— 旧建筑从 Map 消失（`BuildingProductionSystem`/`CombatSystem` 遍历 `board.buildings.values()` 再也碰不到）却仍留在 `buildingGrid` 占格，成了不再 tick、却仍挡位的"幽灵建筑"。
 >
-> ⚠️ **遗留同类隐患（未修）**：`Building` 仍用模块级全局 `nextId` + `resetBuildingIds()`（`GameState` 构造函数调用），与 unit 修复前同款footgun —— 玩家在对局中放塔时，若期间发生 judge 重算，理论上同样会在 `Board.buildings`（同为 `Map<id>`）里覆盖出幽灵建筑。已单列后续任务跟进。`EscortUnit`/`Projectile` 存于数组（push 序，非 id-keyed Map），撞号仅事件歧义、不产生覆盖幽灵，暂不处理。
+> **ID 命名空间**：**building 从 0 起（模块兜底 500，均 <1000）、unit 从 1000 起**。建筑数量受棋盘格子数（12×18=216）封顶，永远到不了 1000；单位是高频增长方，取上段。两个命名空间无论对局多长都不会冲突。渲染层按事件类型（`unit_spawned` / `building_placed`）分池管理 view，不依赖 ID 区间。
+>
+> ⚠️ **仍未处理（判定为良性）**：`EscortUnit`/`Projectile` 仍用模块级全局 `nextId`，但它们存于数组（push 序，非 id-keyed Map），撞号仅造成事件歧义、不产生覆盖幽灵，暂不处理。
 
 ---
 

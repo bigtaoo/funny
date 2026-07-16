@@ -146,7 +146,7 @@ export function CommandsMixin<TBase extends GameEngineBaseCtor & Constructor<Hel
 
           const buildingType = card.buildingType;
           this.consumeCardSlot(player, cmd.owner, cmd.handIndex, card, () => {
-            const building = new Building(buildingType, side, col, buildingRow);
+            const building = new Building(buildingType, side, col, buildingRow, undefined, this.state.allocBuildingId());
             this.state.board.addBuilding(building);
             this.state.pushEvent({
               type:         'building_placed',
