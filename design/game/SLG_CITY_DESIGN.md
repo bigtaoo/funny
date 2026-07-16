@@ -48,6 +48,12 @@
 | **D-CITY-4** | 主城本体命名 | **书桌（Desk）** 作内政中枢隐喻（文具摆桌上）。显示名 DRAFT，最终皮由 [`art-direction`](../product/art-direction.md) 定。 | DRAFT |
 | **D-CITY-5** | 建筑升级是否吃 coin | **否**（coin 是唯一货币、跨季、严控通胀；不靠建筑印也不靠建筑烧）。升级吃 5 赛季资源 + 时间；**coin 只用于加速**（变现）。 | 锁定 |
 | **D-CITY-6** | 红线 | 建筑**永不**进 `buildPvpBlueprints()`（天梯）。建筑注入只走 SLG 路径（`recomputeYield`/`trainTroops`/主城 `buildSiegeBattle`）。 | 锁定（不可破） |
+| **D-CITY-7** | `desk` 等级上限 | **20 → 10（2026-07-15 拍板，修正早先错案）**：早先 `DESK_MAX_LEVEL=20` 的注释「aligned with Three-Kingdoms 20」未经查证，网络核实三战主城（君王殿）实际满级为 **10 级**（[来源](http://m.7724.com/sggame/news/23083.html)）。改为 10 级对齐。**代码变更待做**：`server/shared/src/slg/city.ts` 的 `DESK_MAX_LEVEL` 常量 + 所有建筑每级加成曲线需重新过 `econ-sim` 数值模拟（不是改个数字就完事）。 | 锁定（待实现 + 待重新过数值模拟） |
+| **D-CITY-8** | 城池耐久（durability）机制 | **新增持久化状态**（此前不存在）。上限由 `wall`（城墙）等级决定（不采用三战「君王殿本身给耐久」的路数，我们刻意偏离参考，城墙专职耐久）。攻城结算：**先打赢驻军战斗 → 胜利后 5 分钟宽限期 → 按攻方**攻城值**（与地图上攻占城池同一套规则）扣减耐久**。耐久随时间**缓慢自愈**（tick 恢复，具体速率待数值模拟）。**耐久归零 → 城池被摧毁 → 玩家丢失全部领地 → 服务端强制迁城**（区别于现有玩家主动发起的 `relocate` 流程，需要服务端新增「清空领地 + 找新落脚点 + 系统邮件通知」的自动路径）。世界地图上，耐久不满时在基地图块上方显示血条；被围攻/耐久被扣时客户端触发全屏泛红特效。 | 锁定（待实现，新机制，工作量较大） |
+| **D-CITY-9** | 队伍出征携带兵力上限 | 新建筑（`satchel`，书包，隐喻文具书包能装多少东西）：**只管单支队伍出征时最多携带多少兵**，与 `drillYard`（总兵力上限 + 训练速度 + 训练队列上限）是两个独立维度，不合并。同样受 `desk` 门控。 | 锁定 |
+| **D-CITY-10** | 队伍面板（5 队 t1-t5） | `CityScene` 新增队伍信息栏：5 支队伍（复用现有 `SIEGE_TEAM_CAP=5` / `t1..t5` 数据模型），每队显示当前兵力（`cardState.currentTroops`）/ 状态（驻军在家 / 出征中 / 受伤冷却 `teamState.injuredUntil`）。未指派 march 的队伍 = 驻军，血量与兵力信息同样在这里查看。**委任（角色派进建筑）维持 P1 已拍板的 DROPPED，不恢复**。 | 锁定 |
+| **D-CITY-11** | 双屏拆分 | 内容扩容后单屏挤不下，拆两屏、玩家可切换：**屏 1（内政）** = 资源条 + 现有建筑网格（含新 `satchel`）；**屏 2（军事）** = 队伍面板（D-CITY-10）+ 科技树独立面板（`academy` 从建筑网格挪出，见下）+ 耐久状态展示。 | 锁定 |
+| **D-CITY-12** | 科技树面板 | `academy` 从「建筑网格里普通一栋楼」升级为**军事屏内独立面板**，给赛季内蓝图 buff 投入应有的仪式感；底层注入逻辑（`buildSiegeBlueprints` 叠加层）不变，只是 UI 呈现独立出来。 | 锁定 |
 
 ---
 
@@ -64,9 +70,10 @@
 | `metalForge` | 金属铸坊 | 资源 | **metal 全局产率乘数** | `recomputeYield` | P1 |
 | `stickerShop` | 贴纸铺 | 资源（民居模型） | **sticker 主城自产**（铜币位/通用资源 faucet，非地块）→ **激活 sticker faucet**；绝不产 coin | `recomputeYield` 自产项 | P1 |
 | `cabinet` | 文件柜 | 仓储 | 提 `RESOURCE_CAP`（仓储上限）+ 被掠夺时保护一部分（三战仓库护粮） | `settleResources` cap + `applySiege` loot | P1 |
-| `drillYard` | 练兵场 | 军事 | 提 `troopCap` + 训练速度（`trainTroops` 时长）+ 训练队列上限（`TROOP_TRAIN_QUEUE_MAX`）+ 解锁更高兵种训练 | `trainTroops` / `troopCap` | P1 |
-| `wall` | 城墙 | 城防 | **仅主城那格**：被围攻时提基地耐久 / 守军 HP | 主城 `buildSiegeBattle` + `landSiege` | P2 |
-| `academy` | 书院 | 科技 | **SLG 赛季内**蓝图 buff（HP/伤害/速度），季末清 | `buildSiegeBlueprints` 赛季叠加层 | P2 |
+| `drillYard` | 练兵场 | 军事 | 提 `troopCap`（**总兵力上限**）+ 训练速度（`trainTroops` 时长）+ 训练队列上限（`TROOP_TRAIN_QUEUE_MAX`）+ 解锁更高兵种训练 | `trainTroops` / `troopCap` | P1 |
+| `satchel` | 书包 | 军事 | 提**单支队伍出征携带兵力上限**（与 `drillYard` 的总兵力上限是两个独立维度，D-CITY-9） | march 出征校验（新注入点，待实现） | P3 |
+| `wall` | 城墙 | 城防 | **主城耐久（durability）上限来源**（D-CITY-8，2026-07-15 由"围攻时临时给守军加 HP"升级为持久化耐久值）：被围攻战斗获胜后 5 分钟宽限期，按攻方攻城值扣耐久；耐久随时间自愈；归零 = 城池摧毁 + 丢失全部领地 + 强制迁城 | 主城 `buildSiegeBattle` + 新增耐久 tick/扣减/自愈逻辑（待实现） | P2（耐久化改造 P3） |
+| `academy` | 书院 | 科技 | **SLG 赛季内**蓝图 buff（HP/伤害/速度），季末清；UI 独立成军事屏的科技树面板（D-CITY-12） | `buildSiegeBlueprints` 赛季叠加层 | P2 |
 | ~~（委任）~~ | ~~内政官~~ | ~~加成~~ | ~~派角色卡进建筑，按角色属性给该建筑额外加成~~ | ~~各建筑乘数~~ | **DROPPED** |
 
 **faucet/sink 闭环（激活 graphite/sticker）**：
@@ -176,6 +183,23 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 - **建造队列倒计时**：从裸秒数改用 `formatDuration`（worldmap 车队计时器已用的 mm:ss / h:mm:ss 格式），i18n `city.queueEntry` 模板同步去掉多余的尾随 `s`。
 - 验证：`tsc --noEmit` + `webpack build:web` 全绿；headless 注入 `CityScene` 实例（假 `ILayout`/`InputManager`/`WorldApiClient`）在真实 1080×1920（竖）与 1920×1080（横）设计分辨率下截图核对，含建筑网格、建造队列、详情弹窗三态。
 
+### 8.2 P3 扩容：军事屏 + 耐久系统（2026-07-15 讨论，DRAFT，待实现）
+
+> 讨论背景：用户对照三战重新审视这屏承载的功能，结论是当前 `CityScene` 只做了"建筑管理"，缺一整块"主城军事状态仪表盘"。决策见 D-CITY-7~12。
+
+- **双屏拆分**：`CityScene` 拆为可切换的两页——**内政页**（现有资源条 + 建筑网格，含新增 `satchel`）与**军事页**（新增，队伍面板 + 科技树面板 + 耐久状态）。切换方式待 UI 布局阶段定（tab / 左右滑动均可）。
+- **队伍面板**（军事页）：5 支队伍（t1-t5）卡片，每卡显示当前兵力（`cardState.currentTroops`）+ 状态（驻军在家 / 出征中 / 受伤冷却）。数据模型已存在（`SIEGE_TEAM_CAP`/`cardState`/`teamState`），本次只是**首次给它一个统一的展示位**，此前分散在出征弹窗里。
+- **科技树面板**（军事页）：`academy` 从建筑网格挪出，独立呈现，注入逻辑不变。
+- **耐久（durability）系统**（新机制，D-CITY-8）：
+  - 持久化字段（新增，目前不存在）：主城耐久当前值 + 上限（`wall` 等级决定上限）。
+  - 结算流程：驻军战斗胜负照旧 → 攻方获胜后 **5 分钟宽限期** → 按攻方**攻城值**（复用地图占城同一套规则）扣耐久。
+  - 自愈：随时间 tick 缓慢恢复（速率待数值模拟）。
+  - 归零：城池摧毁 → 玩家丢失全部领地 → **服务端强制迁城**（新流程，区别于玩家主动发起的 `relocate`：需清空领地 + 选新落脚点 + 系统邮件通知）。
+  - 表现：世界地图基地图块上方常驻血条（耐久不满时显示）；被围攻/耐久被扣时客户端全屏泛红特效。
+- **`satchel`（书包）建筑**（新增，D-CITY-9）：单队出征携带兵力上限，独立于 `drillYard` 的总兵力上限，受 `desk` 门控。
+- **`desk` 等级上限改 10**（D-CITY-7）：需重新过 `econ-sim` 数值模拟，本次讨论只定方向，具体曲线延后。
+- **未决**：耐久扣减/自愈的具体数值、`satchel` 携带量曲线、双屏切换的具体交互，均待后续数值模拟 + UI 布局阶段细化。
+
 ---
 
 ## 9. 契约 / 端点（→ SERVER_API + openapi-world）
@@ -230,7 +254,15 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 > - 验证：shared/engine `tsc -b` 全绿；worldsvc `tsc -b` 全绿；client `tsc --noEmit` 零错误。数值仍 DRAFT（终态判据=上线后实测）。
 
 - **P2 ✅ CLOSED（2026-06-30）** — `wall` 注入主城围攻 + `cabinet` 护掠夺 + `academy` 赛季蓝图 buff（独立注入口，守红线）。
-- ~~**P3 — 委任内政官**：角色卡派进建筑加成（角色养成接入 SLG 内政），数值按角色属性。~~ **DROPPED**：卡池仅 8 张，无"多余英雄"消耗问题；最优解唯一，决策退化为一次性设置；建筑乘数链在 P2 已自洽，无需此层。
+- ~~**P3（原案）— 委任内政官**：角色卡派进建筑加成（角色养成接入 SLG 内政），数值按角色属性。~~ **DROPPED**：卡池仅 8 张，无"多余英雄"消耗问题；最优解唯一，决策退化为一次性设置；建筑乘数链在 P2 已自洽，无需此层。
+- **P3（新，2026-07-15 讨论，DRAFT，未开工）— 军事屏 + 耐久系统**（详见 §8.2）：
+  - 队伍面板（5 队 t1-t5，兵力/状态展示，纯 UI 露出既有数据模型）
+  - `satchel`（书包）建筑：单队出征携带兵力上限
+  - 耐久系统：`wall` 决定上限，攻城值扣减 + 自愈 tick + 归零摧毁强制迁城，新增持久化字段 + 服务端自动迁城流程
+  - 世界地图基地血条 + 全屏泛红特效
+  - 科技树（`academy`）独立面板
+  - `desk` 等级上限 20→10（需重新过数值模拟）
+  - **验收标准待定**：本阶段仅完成范围拍板，尚未进入实现/契约设计。
 
 ---
 
