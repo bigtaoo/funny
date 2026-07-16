@@ -150,6 +150,9 @@ export class WorldService extends WorldCore {
   abandonTile(worldId: string, accountId: string, x: number, y: number): Promise<PlayerWorldView> {
     return this.territory.abandonTile(worldId, accountId, x, y);
   }
+  listTerritories(worldId: string, accountId: string): Promise<WorldTileView[]> {
+    return this.territory.listTerritories(worldId, accountId);
+  }
   relocateBase(worldId: string, accountId: string, x: number, y: number): Promise<PlayerWorldView> {
     return this.territory.relocateBase(worldId, accountId, x, y);
   }

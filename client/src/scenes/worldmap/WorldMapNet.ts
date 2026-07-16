@@ -321,6 +321,30 @@ export class WorldMapNet {
     }
   }
 
+  /** Full list of owned tiles (Territory Overview panel, SLG_DESIGN.md §26). Fetched on demand
+   * (list tab opened), not on the ~5s poll — can be 200-300 rows. */
+  async refreshTerritories(): Promise<void> {
+    if (this.ctx.destroyed) return;
+    try {
+      this.ctx.territories = await this.ctx.cb.worldApi.getTerritories(this.ctx.cb.worldId);
+    } catch { /* offline */ }
+  }
+
+  /** Same as doAbandon but for a row in the Territory Overview list: keeps the panel open and
+   * refreshes the list in place instead of closing the modal. */
+  async doAbandonFromList(tx: number, ty: number): Promise<void> {
+    try {
+      await this.ctx.cb.worldApi.abandonTile(this.ctx.cb.worldId, tx, ty);
+      this.ctx.me = await this.ctx.cb.worldApi.getMe(this.ctx.cb.worldId);
+      this.ctx.tileCache.delete(`${tx}:${ty}`);
+      await Promise.all([this.loadMapViewport(), this.refreshTerritories()]);
+      this.ctx.view.renderMap(); this.ctx.panels.renderHud();
+      if (this.ctx.territoryPanelOpen) this.ctx.panels.renderTerritoryPanel();
+    } catch (e) {
+      this.ctx.panels.showToast(this.errorMsg(e), C.red);
+    }
+  }
+
   // ── Train / resource panel (C4) ─────────────────────────────────────────────
   // A richer modal than showModal: full resources + yield, recruit presets, the
   // live training queue (countdown), and a one-tap coin speedup. Rendered into

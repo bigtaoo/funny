@@ -236,6 +236,11 @@ export class WorldApiClient {
     return this.req('GET', `/world/occupations?worldId=${encodeURIComponent(worldId)}`);
   }
 
+  /** Full list of owned tiles (territory + captured stronghold; excludes the 3×3 capital footprint). Backs the Territory Overview panel (SLG_DESIGN.md §26). */
+  async getTerritories(worldId: string): Promise<WorldTileView[]> {
+    return this.req('GET', `/world/territories?worldId=${encodeURIComponent(worldId)}`);
+  }
+
   /** Enter the world: the system automatically places the player's city (§3.4; prefers near family → outer-ring newcomer zone); spawn point is server-determined, player does not pass coordinates. */
   async joinWorld(worldId: string): Promise<PlayerWorldView> {
     return this.req('POST', '/world/join', { worldId });

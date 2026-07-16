@@ -272,6 +272,13 @@ export function startHttpApi(
           return send(res, 200, ok(await svc.getOccupations(worldId, accountId)));
         }
 
+        // ── Territory Overview panel (2026-07-16, SLG_DESIGN.md §26): full list of owned tiles ──
+        if (method === 'GET' && path === '/world/territories') {
+          const worldId = q.get('worldId');
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          return send(res, 200, ok(await svc.listTerritories(worldId, accountId)));
+        }
+
         // ── Resolve shard by season (G6/§20): resolve only, no base placement; client fetches worldId before entering the map ──
         if (method === 'POST' && path === '/world/season/resolve') {
           const body = await readJson(req);

@@ -887,6 +887,12 @@ export const de: Record<TranslationKey, string> = {
   'world.spedup': 'Beschleunigt',
   'world.resYield': 'Ertrag',
   'world.close': 'Schließen',
+  // ── Territory Overview panel (2026-07-16, SLG_DESIGN.md §26) ─────────────
+  'world.territoryTitle': 'Gebietsübersicht',
+  'world.territoryTabOverview': 'Übersicht',
+  'world.territoryTabList': 'Gebiete',
+  'world.territoryEmpty': 'Noch kein Gebiet',
+  'world.territoryJump': 'Springen',
   'world.err.troopCap': 'Truppenlimit erreicht',
   'world.err.noInk': 'Nicht genug Tinte',
   'world.err.queueFull': 'Warteschlange voll',

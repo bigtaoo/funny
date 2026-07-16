@@ -55,6 +55,7 @@ function buildInputHarness(topInset = TOP_INSET) {
     aucBtnRect: zeroRect(),
     marchBadgeRect: zeroRect(),
     chatBarRect: zeroRect(),
+    resClusterRect: zeroRect(),
     marchRowRects: [],
     mapW: 500, mapH: 500,
     me: { joined: true, mainBaseTile: undefined },

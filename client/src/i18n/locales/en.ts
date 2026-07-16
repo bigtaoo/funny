@@ -887,6 +887,12 @@ export const en: Record<TranslationKey, string> = {
   'world.spedup': 'Sped up',
   'world.resYield': 'Yield',
   'world.close': 'Close',
+  // ── Territory Overview panel (2026-07-16, SLG_DESIGN.md §26) ─────────────
+  'world.territoryTitle': 'Territory Overview',
+  'world.territoryTabOverview': 'Overview',
+  'world.territoryTabList': 'Territory',
+  'world.territoryEmpty': 'No territory yet',
+  'world.territoryJump': 'Jump',
   'world.err.troopCap': 'Troop cap reached',
   'world.err.noInk': 'Not enough ink',
   'world.err.queueFull': 'Training queue full',

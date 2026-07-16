@@ -90,6 +90,8 @@ export class WorldMapPanels {
     bgPanel.x = cluster.x - padX; bgPanel.y = padY;
     layer.addChild(bgPanel);
     layer.addChild(cluster);
+    // Tappable: opens the Territory Overview panel (SLG_DESIGN.md §26).
+    this.ctx.resClusterRect = { x: bgPanel.x, y: bgPanel.y, w: cx + padX * 2, h: headerH - padY * 2 };
   }
 
   renderHud(): void {
@@ -371,8 +373,10 @@ export class WorldMapPanels {
     this.ctx.modalBtnRects = [];
     this.ctx.modalDimRect = null;
     this.ctx.infoScrollRect = null;
+    this.ctx.infoScrollRerender = null;
     this.ctx.selectedTile = null;
     this.ctx.trainPanelOpen = false;
+    this.ctx.territoryPanelOpen = false;
     this.ctx.view.renderMap();
   }
 
@@ -445,10 +449,11 @@ export class WorldMapPanels {
    * Returns the container rows should be added to (already `.mask`ed to the viewport rect).
    */
 
-  beginScrollList(x: number, y: number, w: number, h: number, contentH: number): PIXI.Container {
+  beginScrollList(x: number, y: number, w: number, h: number, contentH: number, rerender: () => void = () => this.renderInfoPanel()): PIXI.Container {
     this.ctx.infoScrollRect = { x, y, w, h };
     this.ctx.infoMaxScroll = Math.max(0, contentH - h);
     this.ctx.infoScrollY = Math.max(0, Math.min(this.ctx.infoScrollY, this.ctx.infoMaxScroll));
+    this.ctx.infoScrollRerender = rerender;
     const ml = this.ctx.modalLayer;
     const mask = new PIXI.Graphics();
     mask.beginFill(0xffffff).drawRect(x, y, w, h).endFill();
@@ -764,6 +769,150 @@ export class WorldMapPanels {
           this.panelButtonIn(listLayer, t('world.shopBuy'), px + pw - bw - 14, ry + 2, bw, 24, C.accent, () => void this.ctx.net.doBuyShopItem(it.id));
         }
         ry += rowH;
+      }
+    }
+
+    // Close
+    this.panelButton(t('world.close'), px + pw / 2 - 50, py + ph - 34, 100, 28, C.dark, () => this.closeModal());
+  }
+
+  // ── Territory Overview panel (SLG_DESIGN.md §26) ────────────────────────────
+  // Opened by tapping the header resource cluster. Overview tab: production/storage +
+  // troops + territory count (all already in ctx.me, no extra fetch). List tab: every
+  // owned tile (can be 200-300) with a level-filter checkbox grid + jump/abandon per row —
+  // fetched lazily (WorldMapNet.refreshTerritories) only when this tab is opened.
+
+  openTerritoryPanel(): void {
+    if (!this.ctx.me?.joined) { this.showToast(t('world.needBase'), C.red); return; }
+    this.ctx.territoryPanelOpen = true;
+    this.ctx.territoryTab = 'overview';
+    this.ctx.infoScrollY = 0;
+    this.renderTerritoryPanel();
+  }
+
+  private switchTerritoryTab(tab: 'overview' | 'list'): void {
+    this.ctx.territoryTab = tab;
+    this.ctx.infoScrollY = 0;
+    this.renderTerritoryPanel();
+    if (tab === 'list') {
+      void this.ctx.net.refreshTerritories().then(() => {
+        if (this.ctx.territoryPanelOpen && this.ctx.territoryTab === 'list') this.renderTerritoryPanel();
+      });
+    }
+  }
+
+  renderTerritoryPanel(): void {
+    const me = this.ctx.me;
+    if (!me?.joined) { this.closeModal(); return; }
+    const ml = this.ctx.modalLayer;
+    ml.removeChildren();
+    this.ctx.modalBtnRects = [];
+
+    const { w, h } = this.ctx;
+    const pw = Math.min(420, w - 20);
+    const ph = Math.min(460, h - HUD_H - 16);
+    const px = (w - pw) / 2;
+    const py = (h - HUD_H - ph) / 2;
+
+    const dim = new PIXI.Graphics();
+    dim.beginFill(0x000000, 0.35).drawRect(0, 0, w, h).endFill();
+    ml.addChild(dim);
+    this.ctx.modalDimRect = { x: 0, y: 0, w, h };
+
+    const panel = sketchPanel(pw, ph, { fill: C.paper, border: C.dark, seed: seedFor(11, 11, pw) });
+    panel.x = px; panel.y = py;
+    ml.addChild(panel);
+
+    const addText = (s: string, tx2: number, ty: number, size = 12, color: number = C.dark): void => {
+      const lbl = txt(s, size, color);
+      lbl.x = tx2; lbl.y = ty;
+      ml.addChild(lbl);
+    };
+
+    const title = txt(t('world.territoryTitle'), 14, C.accent);
+    title.anchor.set(0.5, 0); title.x = px + pw / 2; title.y = py + 10;
+    ml.addChild(title);
+
+    // Tabs
+    const tabs: { id: 'overview' | 'list'; label: string }[] = [
+      { id: 'overview', label: t('world.territoryTabOverview') },
+      { id: 'list', label: t('world.territoryTabList') },
+    ];
+    const tabW = (pw - 28 - MARGIN) / 2;
+    let tabX = px + 14;
+    const tabY = py + 34;
+    for (const tab of tabs) {
+      const active = this.ctx.territoryTab === tab.id;
+      this.panelButton(tab.label, tabX, tabY, tabW, 26, active ? C.red : C.dark, () => this.switchTerritoryTab(tab.id));
+      tabX += tabW + MARGIN;
+    }
+
+    let ly = tabY + 38;
+    const bodyBottom = py + ph - 42;
+    this.ctx.infoScrollRect = null;
+
+    if (this.ctx.territoryTab === 'overview') {
+      const res = me.resources ?? {};
+      const yieldRate = me.yieldRate ?? {};
+      const RES_LABEL: Record<string, string> = { ink: t('world.ink'), paper: t('world.paper'), graphite: t('world.graphite'), metal: t('world.metal'), sticker: t('world.sticker') };
+      for (const rt of ['ink', 'paper', 'graphite', 'metal', 'sticker']) {
+        const amt = Math.floor(res[rt] ?? 0);
+        const yr = Math.round(yieldRate[rt] ?? 0);
+        addText(`${RES_LABEL[rt]}  ${amt}  (+${yr}/${t('world.resYield')})`, px + 14, ly, 12, C.dark);
+        ly += 20;
+      }
+      ly += 8;
+      addText(`${t('world.troops')} ${Math.floor(me.troops ?? 0)}/${Math.floor(me.troopCap ?? 0)}`, px + 14, ly, 13, C.red);
+      ly += 22;
+      addText(`${t('world.territory')} ${me.territoryCount ?? 0}`, px + 14, ly, 13, C.red);
+      ly += 26;
+      const s = this.ctx.season;
+      if (s) {
+        addText(t('world.seasonNo').replace('{n}', String(s.season)), px + 14, ly, 12, C.mid); ly += 18;
+        addText(t('world.seasonPop').replace('{pop}', String(s.population)).replace('{cap}', String(s.capacity)), px + 14, ly, 12, C.mid); ly += 18;
+      }
+    } else {
+      // Level-filter checkbox grid, two rows — split evenly across the levels actually present.
+      const levels = Array.from(new Set(this.ctx.territories.map((tv) => tv.level))).sort((a, b) => a - b);
+      if (levels.length > 0) {
+        const perRow = Math.ceil(levels.length / 2);
+        const chkW = (pw - 28 - MARGIN * (perRow - 1)) / perRow;
+        for (let i = 0; i < levels.length; i++) {
+          const lvl = levels[i]!;
+          const row = i < perRow ? 0 : 1;
+          const col = i < perRow ? i : i - perRow;
+          const hidden = this.ctx.territoryHiddenLevels.has(lvl);
+          const cx3 = px + 14 + col * (chkW + MARGIN);
+          const cy3 = ly + row * 28;
+          this.panelButton(`Lv.${lvl}`, cx3, cy3, chkW, 24, hidden ? C.mid : C.red, () => {
+            if (hidden) this.ctx.territoryHiddenLevels.delete(lvl); else this.ctx.territoryHiddenLevels.add(lvl);
+            this.renderTerritoryPanel();
+          }, 10);
+        }
+        ly += 2 * 28 + 8;
+      }
+
+      const filtered = this.ctx.territories.filter((tv) => !this.ctx.territoryHiddenLevels.has(tv.level));
+      if (filtered.length === 0) {
+        addText(t('world.territoryEmpty'), px + 14, ly, 11, C.mid);
+      } else {
+        const rowH = 34;
+        const listLayer = this.beginScrollList(px, ly, pw, bodyBottom - ly, filtered.length * rowH, () => this.renderTerritoryPanel());
+        let ry = ly - this.ctx.infoScrollY;
+        for (const tv of filtered) {
+          if (ry + rowH >= ly && ry <= bodyBottom) {
+            const label = `(${tv.x},${tv.y})  Lv.${tv.level}  ${t('world.garrison').replace('{n}', String(tv.garrison ?? 0))}`;
+            const nameLbl = txt(label, 11, C.dark);
+            nameLbl.x = px + 14; nameLbl.y = ry + 8;
+            listLayer.addChild(nameLbl);
+            const btnW = 56;
+            this.panelButtonIn(listLayer, t('world.territoryJump'), px + pw - btnW * 2 - 22, ry + 2, btnW, 26,
+              C.accent, () => { this.ctx.view.centerAt(tv.x, tv.y); this.ctx.view.renderMap(); this.closeModal(); });
+            this.panelButtonIn(listLayer, t('world.actAbandon'), px + pw - btnW - 14, ry + 2, btnW, 26,
+              C.red, () => void this.ctx.net.doAbandonFromList(tv.x, tv.y));
+          }
+          ry += rowH;
+        }
       }
     }
 
