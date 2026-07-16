@@ -57,6 +57,12 @@ services:
       # loki is connected to the main stack network (server_default) via observability/docker-compose.obs.yml (alias nw-loki), reachable by container name.
       # Safe if obs is down: fails to resolve → silently drops. Can override via .env.
       NW_LOKI_PUSH_URL: ${NW_LOKI_PUSH_URL:-http://nw-loki:3100/loki/api/v1/push}
+      # Paddle web recharge (metaserver/src/paddle.ts). Leave empty → web recharge disabled (IAP_CREDENTIALS.md §1.1).
+      NW_PADDLE_API_KEY: ${NW_PADDLE_API_KEY:-}
+      NW_PADDLE_WEBHOOK_SECRET: ${NW_PADDLE_WEBHOOK_SECRET:-}
+      NW_PADDLE_CLIENT_TOKEN: ${NW_PADDLE_CLIENT_TOKEN:-}
+      NW_PADDLE_PRICE_IDS: ${NW_PADDLE_PRICE_IDS:-}
+      NW_PADDLE_SANDBOX: ${NW_PADDLE_SANDBOX:-}
     depends_on:
       commercial:
         condition: service_started
