@@ -526,6 +526,17 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true, ...result });
         }
 
+        // ── Paddle webhook event log (support/CS lookup, paddle.events.view) ──
+        if (method === 'GET' && path === '/admin/paddle/events') {
+          requireCap(actor, 'paddle.events.view');
+          const events = await svc.listPaddleEvents({
+            accountId: url.searchParams.get('accountId') ?? undefined,
+            transactionId: url.searchParams.get('transactionId') ?? undefined,
+            limit: numOpt(url.searchParams.get('limit')),
+          });
+          return send(res, 200, { ok: true, events });
+        }
+
         // ── Limited-time event management (B6, events.manage) ──
         if (method === 'GET' && path === '/admin/events') {
           requireCap(actor, 'events.manage');

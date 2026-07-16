@@ -2,6 +2,7 @@
 // bonus CAS + cross-account receipt guard. claimFirstPurchaseBonus is recharge-only (kept private here).
 import { FIRST_PURCHASE_BONUS_MULTIPLIER } from '@nw/shared';
 import type { CommercialBaseCtor, Constructor, Result } from './base';
+import type { PaddleEventDoc } from '../db';
 
 export interface RechargeHandlers {
   rechargeVerify(args: {
@@ -15,6 +16,17 @@ export interface RechargeHandlers {
     transactionId: string;
     coins: number;
   }): Promise<Result<{ coinsAfter: number; coinsGranted: number }>>;
+  /** Record any Paddle webhook event (support/CS lookup — "why didn't this payment go through"). Upserts on
+   * `transactionId:eventType` so Paddle's at-least-once redelivery doesn't create duplicate log rows. */
+  recordPaddleEvent(args: {
+    transactionId: string;
+    eventType: string;
+    status?: string;
+    accountId?: string;
+    rawEvent: string;
+  }): Promise<void>;
+  /** List logged Paddle events for support lookup, filtered by accountId and/or transactionId. */
+  listPaddleEvents(args: { accountId?: string; transactionId?: string; limit?: number }): Promise<PaddleEventDoc[]>;
 }
 
 export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase & Constructor<RechargeHandlers> {
@@ -133,6 +145,46 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
         receiptId,
       });
       return { ok: true, coinsAfter, coinsGranted };
+    }
+
+    async recordPaddleEvent(args: {
+      transactionId: string;
+      eventType: string;
+      status?: string;
+      accountId?: string;
+      rawEvent: string;
+    }): Promise<void> {
+      const _id = `${args.transactionId}:${args.eventType}`;
+      await this.cols.paddleEvents.updateOne(
+        { _id },
+        {
+          $set: {
+            _id,
+            transactionId: args.transactionId,
+            eventType: args.eventType,
+            status: args.status,
+            accountId: args.accountId,
+            rawEvent: args.rawEvent,
+            ts: this.now(),
+          },
+        },
+        { upsert: true },
+      );
+    }
+
+    async listPaddleEvents(args: {
+      accountId?: string;
+      transactionId?: string;
+      limit?: number;
+    }): Promise<PaddleEventDoc[]> {
+      const filter: Partial<Record<'accountId' | 'transactionId', string>> = {};
+      if (args.accountId) filter.accountId = args.accountId;
+      if (args.transactionId) filter.transactionId = args.transactionId;
+      return this.cols.paddleEvents
+        .find(filter)
+        .sort({ ts: -1 })
+        .limit(Math.min(args.limit ?? 100, 500))
+        .toArray();
     }
   };
 }

@@ -151,6 +151,24 @@ export interface CommercialClient {
     transactionId: string;
     coins: number;
   }): Promise<Body<{ coinsAfter: number; coinsGranted: number }>>;
+  /** Log a non-`transaction.completed` Paddle webhook event for support/CS lookup (ADMIN-facing, COMMERCIAL_DESIGN §10.4). */
+  recordPaddleEvent(args: {
+    transactionId: string;
+    eventType: string;
+    status?: string;
+    accountId?: string;
+    rawEvent: string;
+  }): Promise<void>;
+  listPaddleEvents(args: { accountId?: string; transactionId?: string; limit?: number }): Promise<PaddleEventView[]>;
+}
+
+export interface PaddleEventView {
+  transactionId: string;
+  eventType: string;
+  status?: string;
+  accountId?: string;
+  rawEvent: string;
+  ts: number;
 }
 
 export interface PromoCodeView {
@@ -354,5 +372,31 @@ export class HttpCommercialClient implements CommercialClient {
       '/internal/paddle/complete',
       args,
     );
+  }
+
+  async recordPaddleEvent(args: {
+    transactionId: string;
+    eventType: string;
+    status?: string;
+    accountId?: string;
+    rawEvent: string;
+  }): Promise<void> {
+    if (!this.baseUrl) return;
+    await this.post('/internal/paddle/event', args);
+  }
+
+  async listPaddleEvents(args: {
+    accountId?: string;
+    transactionId?: string;
+    limit?: number;
+  }): Promise<PaddleEventView[]> {
+    if (!this.baseUrl) return [];
+    const q = new URLSearchParams();
+    if (args.accountId) q.set('accountId', args.accountId);
+    if (args.transactionId) q.set('transactionId', args.transactionId);
+    if (args.limit) q.set('limit', String(args.limit));
+    const res = await fetch(`${this.baseUrl}/internal/paddle/events?${q}`, { headers: this.headers() });
+    const b = (await res.json()) as Body<{ events: PaddleEventView[] }>;
+    return b.ok ? b.events : [];
   }
 }

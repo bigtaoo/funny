@@ -222,13 +222,24 @@ export function registerPaddleRoutes(app: FastifyInstance, deps: PaddleDeps): vo
         }
 
         const event = req.body as PaddleWebhookEvent;
+        const txData = event.data;
 
-        // Only process transaction.completed events.
+        // Only transaction.completed credits coins; every other transaction.* event (payment_failed,
+        // canceled, past_due, …) is logged for support/CS lookup ("why didn't this payment go through")
+        // instead of being silently dropped (COMMERCIAL_DESIGN.md §10.4).
         if (event.event_type !== 'transaction.completed') {
+          if (event.event_type?.startsWith('transaction.') && txData?.id) {
+            await deps.commercial.recordPaddleEvent({
+              transactionId: txData.id,
+              eventType: event.event_type,
+              status: txData.status,
+              accountId: txData.custom_data?.accountId,
+              rawEvent: rawBody,
+            });
+          }
           return reply.code(200).send('ignored');
         }
 
-        const txData = event.data;
         const transactionId = txData?.id;
         const status = txData?.status;
         const accountId = txData?.custom_data?.accountId;

@@ -39,6 +39,7 @@ export type AdminCapability =
   | 'events.manage' // limited-time events (B6): create / edit / take offline (ADR-014)
   | 'gacha.pools.manage' // ops-authored custom gacha pools (GACHA_DESIGN §12): create / close festival pools
   | 'promo.manage' // promo-code create / view (B-PROMO)
+  | 'paddle.events.view' // Paddle webhook event log lookup (support/CS: "why didn't this payment go through", COMMERCIAL_DESIGN §10.4)
   | 'admin.manage'; // account / role management
 
 /**
@@ -73,6 +74,7 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'events.manage',
     'gacha.pools.manage',
     'promo.manage',
+    'paddle.events.view',
     'admin.manage',
   ],
   ops: [
@@ -97,6 +99,7 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'events.manage',
     'gacha.pools.manage',
     'promo.manage',
+    'paddle.events.view',
   ],
   support: [
     'monitor.view',
@@ -104,6 +107,7 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'comp.initiate.single',
     'comp.view',
     'audit.view.self',
+    'paddle.events.view',
   ],
   viewer: ['monitor.view', 'analytics.view', 'comp.view', 'audit.view.self', 'slg.season.view', 'slg.audit.view', 'slg.map.view'],
 };
