@@ -2,7 +2,7 @@
 // Three zoom levels cycled via a button:
 //   L1 detail   25×≈14 tiles, 76px/tile (1920px design width) — full markers (level dots / watchtowers / sect borders)
 //   L2 medium   50×≈27 tiles, 38px/tile — occupation color + capital stars + march arrows only
-//   L3 overview ~96×≈50 tiles, 20px/tile — batched color-block rendering, coarsest, for situational awareness
+//   L3 overview ~96×≈50 tiles, 27px/tile — batched color-block rendering, coarsest, for situational awareness
 // TILE_PX is computed dynamically from designWidth to keep visible tile counts consistent across resolutions.
 
 import * as PIXI from 'pixi.js-legacy';

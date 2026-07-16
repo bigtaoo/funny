@@ -45,7 +45,7 @@ export function PoolMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
 
     /** Mark all pool slots stale and refresh — called after data changes. */
     invalidatePool(): void {
-      if (this.ctx.zoom === 3) { this.ctx.l3Dirty = true; this.renderOverlay(); return; }
+      if (this.ctx.zoom === 3) { this.ctx.l3Dirty = true; this.refreshCityLayer(); this.renderOverlay(); return; }
       for (const s of this.ctx.pool) { s.tx = -999999; s.ty = -999999; }
       this.refreshPool();
       this.renderOverlay();

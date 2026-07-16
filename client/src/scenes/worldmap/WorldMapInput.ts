@@ -354,6 +354,11 @@ export class WorldMapInput {
         this.ctx.view.renderOverlay();
       } else {
         this.ctx.l3Dirty = true;
+        // refreshPool() short-circuits the tile pool at L3 but still repositions city
+        // sprites (refreshCityLayer) — without this, city sprites keep whatever screen
+        // position they were last drawn at and appear to drift with the camera instead
+        // of tracking the map while panning at L3.
+        this.ctx.view.refreshCityLayer();
         this.ctx.view.renderOverlay();
       }
     }

@@ -35,8 +35,7 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
       this.ctx.l3Dirty = false;
       const g = this.ctx.mapGfxL3;
       g.clear();
-      const tp = 20;
-      const { w, h, panX, panY } = this.ctx;
+      const { w, h, panX, panY, tp } = this.ctx;
       const mapH = h - HUD_H;
       const b = visibleTileBounds(w, mapH, panX, panY, tp);
 
