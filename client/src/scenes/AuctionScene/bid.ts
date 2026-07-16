@@ -1,6 +1,6 @@
 // Bid modal for auction-mode listings: min-bid computation, the bid form, and placing the bid.
 import * as PIXI from 'pixi.js-legacy';
-import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, sketchButton, seedFor } from '../../render/sketchUi';
 import { t } from '../../i18n';
 import { buildIcon } from '../../render/icons';
 import type { AuctionView } from '../../net/WorldApiClient';
@@ -65,7 +65,7 @@ export function BidMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBase
 
       this.addNumInput(ml, mx, cy + 6, t('auction.bid') + ':', this.bidAmount, (v) => { this.bidAmount = Math.max(minBid, v); this.openBidForm(auc); });
 
-      const okBtn = sketchPanel(80, 28, { fill: C.dark, border: C.accent, seed: seedFor(0, 3, 80) });
+      const okBtn = sketchButton(80, 28, seedFor(0, 3, 80));
       okBtn.x = mx + mw / 2 - 88; okBtn.y = my + mh - 36;
       ml.addChild(okBtn);
       const ol = txt(t('auction.bid'), 12, C.light);

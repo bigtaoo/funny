@@ -1,6 +1,6 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchButton, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { buildIcon } from '../../render/icons';
 import { WorldApiError } from '../../net/WorldApiClient';
@@ -37,17 +37,18 @@ export class WorldMapPanels {
     const { w } = this.ctx;
     const headerH = this.ctx.topInset;
 
-    // Auction button — far right of the header bar. Extra right margin (30 vs the old 10)
-    // keeps it clear of the screen edge on narrow/notched viewports.
-    const aucW = 78, aucH = Math.round(headerH * 0.7);
-    const aucBtn = sketchPanel(aucW, aucH, { fill: C.dark, border: C.accent, seed: seedFor(1, 0, aucW) });
-    aucBtn.x = w - aucW - 30; aucBtn.y = (headerH - aucH) / 2;
-    layer.addChild(aucBtn);
+    // Auction button — far right of the header bar. Width auto-fits the icon+label so the
+    // text never clips, and the larger right margin (56) pulls it clear of the screen edge.
+    const aucH = Math.round(headerH * 0.7);
     const aIconSize = Math.round(aucH * 0.4);
     const aIcon = buildIcon('tag', aIconSize, C.light);
     const aTxt = txt(t('world.auction'), Math.round(aucH * 0.34), C.light);
     aTxt.anchor.set(0, 0.5);
     const aGrpW = aIconSize + 4 + aTxt.width;
+    const aucW = Math.ceil(aGrpW) + 24; // horizontal padding around the content group
+    const aucBtn = sketchButton(aucW, aucH, seedFor(1, 0, aucW));
+    aucBtn.x = w - aucW - 56; aucBtn.y = (headerH - aucH) / 2;
+    layer.addChild(aucBtn);
     const aGx = aucBtn.x + (aucW - aGrpW) / 2;
     aIcon.x = aGx; aIcon.y = aucBtn.y + (aucH - aIconSize) / 2;
     aTxt.x = aGx + aIconSize + 4; aTxt.y = aucBtn.y + aucH / 2;
@@ -133,7 +134,7 @@ export class WorldMapPanels {
     const ly = this.ctx.backRect.y + this.ctx.backRect.h + colGap || 8;
 
     const zoomLabels: Record<number, string> = { 1: '×1', 2: '×2', 3: '×3' };
-    const zoomBtn = sketchPanel(colW, colH, { fill: C.dark, border: C.accent, seed: seedFor(4, 2, colW) });
+    const zoomBtn = sketchButton(colW, colH, seedFor(4, 2, colW));
     zoomBtn.x = colX; zoomBtn.y = ly;
     hud.addChild(zoomBtn);
     const zIcon = buildIcon('zoom', 32, C.light);
@@ -204,7 +205,7 @@ export class WorldMapPanels {
     const myMarches = this.ctx.marches.filter((m) => m.mine !== false);
     if (this.ctx.me?.joined) {
       const badgeH = 64;
-      const badge = sketchPanel(rightW, badgeH, { fill: C.dark, border: C.accent, seed: seedFor(6, 1, rightW) });
+      const badge = sketchButton(rightW, badgeH, seedFor(6, 1, rightW));
       badge.x = rx; badge.y = ry;
       hud.addChild(badge);
       const bIcon = buildIcon('flag', 28, C.light);
@@ -282,7 +283,7 @@ export class WorldMapPanels {
 
     // World info button — nations / season / shop.
     const infoH = 68;
-    const infoBtn = sketchPanel(rightW, infoH, { fill: C.dark, border: C.accent, seed: seedFor(3, 1, rightW) });
+    const infoBtn = sketchButton(rightW, infoH, seedFor(3, 1, rightW));
     infoBtn.x = rx; infoBtn.y = ry;
     hud.addChild(infoBtn);
     const infoLbl = txt(t('world.info'), 26, C.light);

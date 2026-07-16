@@ -2,7 +2,7 @@
 // toggle, qty/price(s) inputs, designated-buyer field, and the submit that calls createAuction.
 // Listing duration is fixed (AUCTION_DURATION_SEC, currently 72h) and no longer user-selectable.
 import * as PIXI from 'pixi.js-legacy';
-import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, sketchButton, seedFor } from '../../render/sketchUi';
 import { t } from '../../i18n';
 import { buildIcon } from '../../render/icons';
 import { caretDisplay } from '../../render/inputDisplay';
@@ -156,7 +156,7 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
 
       // OK / Cancel
       const btnW = 90 * SCALE, btnH = 32 * SCALE;
-      const okBtn = sketchPanel(btnW, btnH, { fill: C.dark, border: C.accent, seed: seedFor(0, 0, btnW) });
+      const okBtn = sketchButton(btnW, btnH, seedFor(0, 0, btnW));
       okBtn.x = mx + mw / 2 - 98 * SCALE; okBtn.y = cy;
       ml.addChild(okBtn);
       const ol = txt(t('auction.create'), 13 * SCALE, C.light);

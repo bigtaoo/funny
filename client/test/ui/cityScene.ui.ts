@@ -25,6 +25,7 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { CityScene, type CitySceneCallbacks } from '../../src/scenes/CityScene';
+import { teamSlotId, teamSlotName, TEAM_CAP } from '../../src/scenes/TeamsScene';
 import { formatDuration } from '../../src/scenes/worldmap/formatDuration';
 import type { WorldApiClient, PlayerWorldView } from '../../src/net/WorldApiClient';
 
@@ -385,13 +386,18 @@ describe('CityScene military page team panel (D-CITY-10, 2026-07-16)', () => {
     } as unknown as WorldApiClient;
   }
 
-  /** Builds a scene, waits for the async load() to resolve, and switches to the military page. */
-  async function buildOnMilitaryPage(fx: TeamsFixture): Promise<{ scene: CityScene; inner: CitySceneInternals }> {
+  /** Builds a scene, waits for the async load() to resolve, and switches to the military page.
+   *  Pass onEditTeam to wire the team-card tap-through (D-CITY-10). */
+  async function buildOnMilitaryPage(
+    fx: TeamsFixture,
+    onEditTeam?: (teamId: string, teamName: string) => void,
+  ): Promise<{ scene: CityScene; inner: CitySceneInternals }> {
     const input = new InputManager();
     const cb: CitySceneCallbacks = {
       onBack: () => {},
       worldApi: stubWorldApiWithTeams(fx),
       worldId: 'world:1:0',
+      onEditTeam,
     };
     const scene = new CityScene(createLayout(...PORTRAIT), input, cb);
     await new Promise((r) => setTimeout(r, 0));
@@ -402,7 +408,7 @@ describe('CityScene military page team panel (D-CITY-10, 2026-07-16)', () => {
     return { scene, inner };
   }
 
-  it('renders team cards without leaking hit rects (read-only — editing stays in TeamsScene)', async () => {
+  it('registers no team-card hits when no onEditTeam handler is wired (display-only fallback)', async () => {
     const { scene, inner } = await buildOnMilitaryPage({
       teams: [
         { id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] },
@@ -411,8 +417,8 @@ describe('CityScene military page team panel (D-CITY-10, 2026-07-16)', () => {
       marches: [{ marchId: 'm1', mine: true, teamId: 't1', arriveAt: Date.now() + 30_000 }],
       me: { cardState: { c1: { currentTroops: 400 } }, teamState: { t2: { injuredUntil: Date.now() + 60_000 } } },
     });
-    // Back + the 2 page tabs + the D-CITY-12 tech-tree panel — the team cards
-    // themselves are display-only, no card hits pushed.
+    // Back + the 2 page tabs + the D-CITY-12 tech-tree panel. Without a handler the cards
+    // stay display-only, so no card hits are pushed.
     expect(inner.hits.length).toBe(4);
     scene.destroy();
   });
@@ -473,6 +479,72 @@ describe('CityScene military page team panel (D-CITY-10, 2026-07-16)', () => {
     const texts = collectTexts(scene.container);
     // TEAM_CAP=5, all unfilled — the empty tag should appear once per slot.
     expect(texts.filter(s => s === t('world.team.empty')).length).toBe(5);
+    scene.destroy();
+  });
+
+  // ── Tap-to-edit (D-CITY-10 team card → formation editor, 2026-07-16) ──────────
+  // The team cards used to be inert (the bug: tapping a card did nothing). They now
+  // register a hit that opens that team's formation editor via the onEditTeam callback.
+
+  it('registers one hit per visible team slot when onEditTeam is wired', async () => {
+    const { scene, inner } = await buildOnMilitaryPage({ teams: [] }, () => {});
+    // Back + 2 page tabs + tech-tree panel + one hit for each of the TEAM_CAP slots.
+    expect(inner.hits.length).toBe(4 + TEAM_CAP);
+    scene.destroy();
+  });
+
+  it('tapping a filled team card opens that team via onEditTeam with its id and name', async () => {
+    const opened: Array<{ teamId: string; teamName: string }> = [];
+    const { scene, inner } = await buildOnMilitaryPage(
+      { teams: [{ id: teamSlotId(0), name: 'Alpha', army: [{ cardInstanceId: 'c1' }] }], me: { cardState: { c1: { currentTroops: 400 } } } },
+      (teamId, teamName) => { opened.push({ teamId, teamName }); },
+    );
+    const teamHit = inner.hits[4]!; // first team card, past Back + 2 tabs + tech-tree panel
+    inner.handleDown(teamHit.x + teamHit.w / 2, teamHit.y + teamHit.h / 2);
+    expect(opened).toEqual([{ teamId: teamSlotId(0), teamName: 'Alpha' }]);
+    scene.destroy();
+  });
+
+  it('tapping an empty team slot still opens the editor, with the default slot id and name', async () => {
+    const opened: Array<{ teamId: string; teamName: string }> = [];
+    const { scene, inner } = await buildOnMilitaryPage(
+      { teams: [] },
+      (teamId, teamName) => { opened.push({ teamId, teamName }); },
+    );
+    const firstSlotHit = inner.hits[4]!;
+    inner.handleDown(firstSlotHit.x + firstSlotHit.w / 2, firstSlotHit.y + firstSlotHit.h / 2);
+    expect(opened).toEqual([{ teamId: teamSlotId(0), teamName: teamSlotName(0) }]);
+    scene.destroy();
+  });
+
+  it('team-card hits land within the screen, below the page tabs, and do not overlap each other', async () => {
+    const { scene, inner } = await buildOnMilitaryPage({ teams: [] }, () => {});
+    const tabsHit = inner.hits[2]!; // military tab — y-reference for "below the tabs"
+    const teamHits = inner.hits.slice(4);
+    expect(teamHits.length).toBe(TEAM_CAP);
+    for (const th of teamHits) {
+      expect(th.x).toBeGreaterThanOrEqual(0);
+      expect(th.y).toBeGreaterThan(tabsHit.y + tabsHit.h);
+      expect(th.x + th.w).toBeLessThanOrEqual(inner.w + 1e-6);
+      expect(th.y + th.h).toBeLessThanOrEqual(inner.h + 1e-6);
+    }
+    for (let i = 0; i < teamHits.length; i++) {
+      for (let j = i + 1; j < teamHits.length; j++) {
+        expect(rectsOverlap(teamHits[i]!, teamHits[j]!)).toBe(false);
+      }
+    }
+    scene.destroy();
+  });
+
+  it('switching back to the domestic page drops the team-card hits (no leak across pages)', async () => {
+    const { scene, inner } = await buildOnMilitaryPage({ teams: [] }, () => {});
+    expect(inner.hits.length).toBe(4 + TEAM_CAP);
+    const domesticTab = inner.hits[1]!;
+    inner.handleDown(domesticTab.x + domesticTab.w / 2, domesticTab.y + domesticTab.h / 2);
+    expect(inner.page).toBe('domestic');
+    // Back + 2 page tabs + 10 building cards — no team hits survive on the domestic page,
+    // so the id-based tap-through can't misfire there.
+    expect(inner.hits.length).toBe(13);
     scene.destroy();
   });
 });

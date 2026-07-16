@@ -1,7 +1,7 @@
 // Modal overlays: the sect picker (browse / ally / manage-allies) and the generic OK/cancel confirm.
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
-import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, sketchButton, seedFor } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
 import type { SectView } from '../../net/WorldApiClient';
 import { type Constructor, type SectSceneBaseCtor } from './base';
@@ -82,7 +82,7 @@ export function ModalsMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       (lbl.style as PIXI.TextStyle).align = 'center';
       ml.addChild(lbl);
 
-      const okBtn = sketchPanel(80, 28, { fill: C.dark, border: C.accent, seed: seedFor(0, 1, 80) });
+      const okBtn = sketchButton(80, 28, seedFor(0, 1, 80));
       okBtn.x = mx + mw / 2 - 88; okBtn.y = my + mh - 36;
       ml.addChild(okBtn);
       const ol = txt('OK', 13, C.light);

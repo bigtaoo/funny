@@ -173,6 +173,17 @@ export function sketchPanel(w: number, h: number, opts: PanelOpts): PIXI.Graphic
 }
 
 /**
+ * The one true primary-button background, shared across every full-screen scene
+ * (Auction, Equipment, Sect, Family, WorldMap, …): a `sketchPanel` with the
+ * ink-dark fill + blue accent border. Callers pass their own `seed` so each
+ * instance keeps its distinct hand-drawn jitter; omit it to hash from the size.
+ * Re-skinning every primary button in the game is now a single edit here.
+ */
+export function sketchButton(w: number, h: number, seed?: number): PIXI.Graphics {
+  return sketchPanel(w, h, { fill: ui.dark, border: ui.accent, seed });
+}
+
+/**
  * A hand-drawn left-edge ink accent stroke (replaces the flat `drawRect` accent
  * bar on list rows / player slots). Draws into `g` in its local coords.
  */

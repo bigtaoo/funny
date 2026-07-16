@@ -61,6 +61,8 @@ export interface CitySceneCallbacks {
   onTrainTroops?(qty: number): Promise<PlayerWorldView>;
   onSpeedupTraining?(coins: number): Promise<PlayerWorldView>;
   getCoins?(): number;
+  /** Tapping a team card on the military page opens that team's formation editor (D-CITY-10). */
+  onEditTeam?(teamId: string, teamName: string): void;
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -114,7 +116,7 @@ const GRID_PAD = 8;
 // standalone tech-tree panel on the military page (see renderMilitaryPage).
 const DOMESTIC_BUILDING_KEYS: readonly BuildingKey[] = BUILDING_KEYS.filter((k) => k !== 'academy');
 
-// Team panel (D-CITY-10) — 2-col card grid, read-only display (editing stays in TeamsScene).
+// Team panel (D-CITY-10) — 2-col card grid; tapping a card opens that team's formation editor.
 const TEAM_COLS = 2;
 const TEAM_CARD_H = 96;
 
@@ -498,7 +500,7 @@ export class CityScene implements Scene {
     return total;
   }
 
-  /** Read-only 2-col grid of the 5 team slots (editing stays in TeamsScene, reachable from the map). */
+  /** 2-col grid of the 5 team slots; each card taps through to the team formation editor. */
   private renderTeamPanel(startY: number): void {
     const { w, h } = this;
     const availW = w - GRID_PAD * 2;
@@ -525,13 +527,13 @@ export class CityScene implements Scene {
       const row = Math.floor(i / TEAM_COLS);
       const cx = GRID_PAD + col * (cellW + CARD_GAP);
       const cy = row * (TEAM_CARD_H + CARD_GAP);
-      this.renderTeamCard(i, cx, cy, cellW, gridLayer, now);
+      this.renderTeamCard(i, cx, cy, cellW, gridLayer, now, viewY, viewH);
     }
 
     drawScrollIndicator(this.container, { x: 0, y: viewY, w, h: viewH }, this.scrollY, this.scrollMax);
   }
 
-  private renderTeamCard(i: number, x: number, y: number, cardW: number, layer: PIXI.Container, now: number): void {
+  private renderTeamCard(i: number, x: number, y: number, cardW: number, layer: PIXI.Container, now: number, viewY: number, viewH: number): void {
     const id = teamSlotId(i);
     const team = this.teams.find(tm => tm.id === id);
     const filled = !!team && team.army.length > 0;
@@ -586,6 +588,18 @@ export class CityScene implements Scene {
       subLbl.x = x + pad;
       subLbl.y = y + TEAM_CARD_H - pad - 14;
       layer.addChild(subLbl);
+    }
+
+    // Tap-to-edit: the card lives inside gridLayer (offset by viewY - scrollY), so the hit rect
+    // is in absolute screen space and only registered while the card is within the viewport —
+    // same convention as the building grid. Editing itself lives in the team formation editor.
+    const screenY = viewY - this.scrollY + y;
+    if (this.cb.onEditTeam && screenY + TEAM_CARD_H > viewY && screenY < viewY + viewH) {
+      const teamName = team?.name || teamSlotName(i);
+      this.hits.push({
+        x, y: screenY, w: cardW, h: TEAM_CARD_H,
+        fn: () => this.cb.onEditTeam!(id, teamName),
+      });
     }
   }
 
