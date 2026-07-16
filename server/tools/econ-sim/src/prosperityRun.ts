@@ -209,4 +209,4 @@ console.log(`  ④ Weekly-active player: score grows week-over-week; weekend off
 console.log(`     temporary (score recomputed fresh on Mon activity) → ✅ no net decay`);
 console.log('');
 console.log('  ✅ E-TRACK CLOSED');
-console.log('\nRegister conclusions → ECONOMY_NUMBERS.md §13-SLG-E');
+console.log('\nRegister conclusions → ECONOMY_VERIFICATION_LOG.md §13-SLG-E');

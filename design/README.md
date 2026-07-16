@@ -33,6 +33,7 @@
 | [BALANCE.md](game/BALANCE.md) | **战斗数值快照（镜像 config.ts）— 文档侧唯一数值参考** | 实现中 |
 | [ECONOMY_BALANCE.md](game/ECONOMY_BALANCE.md) | 经济**哲学/政策**（faucet/sink、鲸鱼天花板、反通胀） | 实现中 |
 | [ECONOMY_NUMBERS.md](game/ECONOMY_NUMBERS.md) | **经济/养成数值演算表（数字权威：体力/合成/护甲/金币/皮肤）** | 设计中 |
+| [ECONOMY_VERIFICATION_LOG.md](game/ECONOMY_VERIFICATION_LOG.md) | econ-sim 各轨（NATION/CITY/C/D/E/F/STRONGHOLD）核验过程与结论（已 CLOSED，非数值权威） | 已完成 |
 | [CHARACTER_CARDS_DESIGN.md](game/CHARACTER_CARDS_DESIGN.md) | **角色卡实例系统（Hero Roster/喂卡升级/兵力/受伤/布阵对接；数字→ECONOMY_NUMBERS §6）** | 设计中 |
 | [EQUIPMENT_DESIGN.md](game/EQUIPMENT_DESIGN.md) | **装备系统机制基准（槽位/获取/强化/洗练/引擎注入；数字→ECONOMY_NUMBERS §5）** | 已实现（`shared/equipment.ts` craft/enhance+0..9/reforge/salvage+e2e）；⚠️洗练当前不扣金币 |
 | [ACHIEVEMENT_DESIGN.md](game/ACHIEVEMENT_DESIGN.md) | **成就系统机制基准（统计里程碑→一次性金币；服务器权威/领取；数字→ECONOMY_BALANCE §2.4）** | 已实现（`shared/achievements.ts` StatKey/分阶/反作弊L1+测试） |
@@ -71,9 +72,10 @@
 | [COMPLIANCE_CN.md](game/COMPLIANCE_CN.md) | **中国大陆合规（版号/实名/未成年人防沉迷限时/分龄充值限额/PIPL；跟版号走，海外测试不阻断）** | 设计中 |
 | [AUDIO_DESIGN.md](game/AUDIO_DESIGN.md) | **音频系统（资产/触发表/播放层/混音/设置/平台约束；美学仍归 art-direction）** | 设计中 |
 | [ONBOARDING_DESIGN.md](game/ONBOARDING_DESIGN.md) | **新手引导/FTUE 编排（首会话动线/专属教学关 ch0_tutorial 三阶段编排/首次功能引导/功能开放策略；合规已移出归 COMPLIANCE，不重述故事/关卡）** | 设计中 |
-| [SLG_DESIGN.md](game/SLG_DESIGN.md) | SLG 大世界（worldsvc:18084；§21 剩余工作总览） | 实现中 |
+| [SLG_DESIGN.md](game/SLG_DESIGN.md) | SLG 大世界核心设计（§0–14：世界结构/地图/战斗接入/契约） | 实现中 |
+| [SLG_DESIGN_LOG.md](game/SLG_DESIGN_LOG.md) | SLG 大世界实现记录（§15 起：收尾清单/功能落地/bug 修复，worldsvc:18084；§21 剩余工作总览） | 实现中 |
 | [SGZ_LAND_REFERENCE.md](game/SGZ_LAND_REFERENCE.md) | **参考资料**：三国志战略版地块/资源/建筑/版图机制调研（非本项目设计基准，供 SLG 地块系统设计对照） | 参考 |
-| [SLG_CITY_DESIGN.md](game/SLG_CITY_DESIGN.md) | **SLG 主城内政/建筑系统机制基准（仿三战书桌内政：资源建筑/练兵/城防/科技；激活 graphite/sticker faucet+sink；数字→ECONOMY_NUMBERS §13-SLG-CITY，红线不喂天梯）** | P1+P2 已实现（e2e 8/8 实测）·数值 DRAFT |
+| [SLG_CITY_DESIGN.md](game/SLG_CITY_DESIGN.md) | **SLG 主城内政/建筑系统机制基准（仿三战书桌内政：资源建筑/练兵/城防/科技；激活 graphite/sticker faucet+sink；数字→ECONOMY_VERIFICATION_LOG §13-SLG-CITY，红线不喂天梯）** | P1+P2 已实现（e2e 8/8 实测）·数值 DRAFT |
 | [SLG_ECONOMY_CHECK.md](game/SLG_ECONOMY_CHECK.md) | **SLG DRAFT 数值的经济性核验方法（6 条轨道分流：持久经济聚合/赛季资源/围攻/分区公平/节奏/运维；判据+流程+登记口径；数字仍→ECONOMY_NUMBERS §13-SLG）** | 设计中 |
 | [WORLD_MAP_ART_SPEC.md](game/WORLD_MAP_ART_SPEC.md) | 大世界地图美术资产规格书（待替换的程序占位色块清单；权威=WorldMapScene.ts/SLG_DESIGN） | 实现中 |
 | [AUCTION_DESIGN.md](game/AUCTION_DESIGN.md) | **拍卖行机制基准（交易模型/状态机/反 RMT；从 SLG §7/§14 抽出；数字→server/shared/src/slg.ts）** | 实现中 |

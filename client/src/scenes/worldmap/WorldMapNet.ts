@@ -321,7 +321,7 @@ export class WorldMapNet {
     }
   }
 
-  /** Full list of owned tiles (Territory Overview panel, SLG_DESIGN.md §26). Fetched on demand
+  /** Full list of owned tiles (Territory Overview panel, SLG_DESIGN_LOG.md §26). Fetched on demand
    * (list tab opened), not on the ~5s poll — can be 200-300 rows. */
   async refreshTerritories(): Promise<void> {
     if (this.ctx.destroyed) return;

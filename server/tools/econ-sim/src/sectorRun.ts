@@ -197,4 +197,4 @@ console.log('    strong historical sects; members/prosperity are secondary tie-b
 console.log('\n  Conclusion: allocateSectsToShards produces shard strength extremum spread ≤ strongest-sect');
 console.log('  score across all tested configurations. Fairness criterion MET.\n');
 console.log(allPass ? '  ✅ D-TRACK CLOSED' : '  ❌ D-TRACK HAS FAILURES');
-console.log('\nRegister conclusions → ECONOMY_NUMBERS.md §13-SLG-D');
+console.log('\nRegister conclusions → ECONOMY_VERIFICATION_LOG.md §13-SLG-D');

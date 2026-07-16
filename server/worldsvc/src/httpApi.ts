@@ -272,7 +272,7 @@ export function startHttpApi(
           return send(res, 200, ok(await svc.getOccupations(worldId, accountId)));
         }
 
-        // ── Territory Overview panel (2026-07-16, SLG_DESIGN.md §26): full list of owned tiles ──
+        // ── Territory Overview panel (2026-07-16, SLG_DESIGN_LOG.md §26): full list of owned tiles ──
         if (method === 'GET' && path === '/world/territories') {
           const worldId = q.get('worldId');
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');

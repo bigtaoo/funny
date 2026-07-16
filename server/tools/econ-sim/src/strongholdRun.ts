@@ -128,4 +128,4 @@ if (!densityOnTarget || !varianceOk || !isolated) {
 } else {
   console.log('  ✅ STRONGHOLD TRACK CLOSED');
 }
-console.log('\nRegister conclusions → ECONOMY_NUMBERS.md §13-SLG-STRONGHOLD');
+console.log('\nRegister conclusions → ECONOMY_VERIFICATION_LOG.md §13-SLG-STRONGHOLD');

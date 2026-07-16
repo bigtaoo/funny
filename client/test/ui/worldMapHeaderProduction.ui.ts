@@ -1,7 +1,7 @@
 // Regression coverage for the 2026-07-14 change: the SLG world-map header bar dropped its
 // static "World" title and now shows a live per-resource production readout instead, with the
 // auction button moved out of the left column (Zoom/Auction stack) to the header bar's own far
-// right corner. See design/game/SLG_DESIGN.md §25 "标题栏改为资源产量 + 拍卖行移至右上角".
+// right corner. See design/game/SLG_DESIGN_LOG.md §25 "标题栏改为资源产量 + 拍卖行移至右上角".
 //
 // Runs under the headless PIXI adapter (vitest.ui.config.ts setupFiles) — WorldMapPanels
 // imports pixi.js-legacy.

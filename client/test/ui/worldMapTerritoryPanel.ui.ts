@@ -1,4 +1,4 @@
-// Regression coverage for the Territory Overview panel (SLG_DESIGN.md §26): tapping the header
+// Regression coverage for the Territory Overview panel (SLG_DESIGN_LOG.md §26): tapping the header
 // resource cluster opens a 2-tab modal — Overview (production/storage/troops/territory count/season)
 // and Territory (level-filter checkbox grid + scrollable list of owned tiles with Jump/Abandon).
 //

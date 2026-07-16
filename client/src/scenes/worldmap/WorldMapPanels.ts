@@ -90,7 +90,7 @@ export class WorldMapPanels {
     bgPanel.x = cluster.x - padX; bgPanel.y = padY;
     layer.addChild(bgPanel);
     layer.addChild(cluster);
-    // Tappable: opens the Territory Overview panel (SLG_DESIGN.md §26).
+    // Tappable: opens the Territory Overview panel (SLG_DESIGN_LOG.md §26).
     this.ctx.resClusterRect = { x: bgPanel.x, y: bgPanel.y, w: cx + padX * 2, h: headerH - padY * 2 };
   }
 
@@ -776,7 +776,7 @@ export class WorldMapPanels {
     this.panelButton(t('world.close'), px + pw / 2 - 50, py + ph - 34, 100, 28, C.dark, () => this.closeModal());
   }
 
-  // ── Territory Overview panel (SLG_DESIGN.md §26) ────────────────────────────
+  // ── Territory Overview panel (SLG_DESIGN_LOG.md §26) ────────────────────────────
   // Opened by tapping the header resource cluster. Overview tab: production/storage +
   // troops + territory count (all already in ctx.me, no extra fetch). List tab: every
   // owned tile (can be 200-300) with a level-filter checkbox grid + jump/abandon per row —

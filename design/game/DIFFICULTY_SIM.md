@@ -1,7 +1,8 @@
 # 关卡难度模拟器（PvE Balance Tool）
 
 > 用真实确定性战斗引擎 + 一个基线玩家 AI，量化战役关卡难度。
-> 代码：`client/test/difficultySim.ts`（核心）/ `difficulty.test.ts`（难度矩阵+回归守卫）/
+> 代码：`client/test/difficultySim.ts`（核心）/ `test/difficulty/`（难度矩阵+回归守卫，
+> `core.test.ts` 确定性+单调性 / `chapterReport.ts` 共享 + `ch1..ch6.test.ts` 每章一个文件）/
 > `experiment.test.ts`（关卡调参 A/B）/ `diag.test.ts`（单关逐秒时间线检视）。
 >
 > **PvP 平衡用另一支模拟器**（本工具不适用 PvP——单防守 AI 无进攻 macro，镜像必平局）：
@@ -33,14 +34,20 @@
 
 ```bash
 cd client
-npx vitest run difficulty    # 难度矩阵（全部 6 章 61 关 × 养成预设）+ 确定性/单调性守卫，约 2 分钟
-npx vitest run experiment    # ch1_lv1 各下调方案对比
-npx vitest run diag          # 单关逐秒时间线（改 diag.test.ts 顶部 LEVEL_ID/PRESET 可指向任意关卡）
+npx vitest run test/difficulty        # 难度矩阵（全部 6 章 61 关 × 养成预设）+ 确定性/单调性守卫
+npx vitest run test/difficulty/ch3    # 只跑第 3 章（10 关），迭代单章调参时更快
+npx vitest run experiment              # ch1_lv1 各下调方案对比
+npx vitest run diag                    # 单关逐秒时间线（改 diag.test.ts 顶部 LEVEL_ID/PRESET 可指向任意关卡）
 ```
 
-`difficulty.test.ts` 的 report 用例现在跑 `CAMPAIGN_LEVEL_ORDER` 全量（排除纯压测用的
-`ch_stress`），一次性输出全部章节的矩阵表；不需要单独按章节跑。61 关 × 6 档 × 5 种子
-体量下单次约 100–120s，属于按需手动跑的量级，不建议塞进快速预提交检查。
+**CI 提速（2026-07-16）**：`difficulty.test.ts` 原来把 61 关 × 6 档 × 5 种子的 report
+用例塞进一个 `it()`，单线程跑要 ~150s，是 `npm test` 步骤的绝对瓶颈（也是 CI 一次跑
+近 6 分钟的主因）。现在拆成 `test/difficulty/`：`core.test.ts`（确定性+单调性，几毫秒）
++ 每章一个文件（`chapterReport.ts` 共享 `describeChapterDifficulty()`，`ch1..ch6.test.ts`
+各自只跑自己章节的 10 关）。vitest 按文件分发到独立 worker 线程，6 章从串行 150s
+变成并发跑，本机（22 核）全量 `npx vitest run` 从 152s 降到 ~60s；CI runner 核数更少，
+增益会小一些，但仍显著优于单文件串行。**若要新增关卡/章节，别把 report 用例塞回
+一个大 `it()`——按章节（或更细）拆文件才能吃到 vitest 的文件级并行。**
 
 ## 复合评分轴切换 + ch6 收尾修复（✅ 已应用 2026-07-11）
 

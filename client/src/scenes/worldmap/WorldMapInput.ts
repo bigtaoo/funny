@@ -270,7 +270,7 @@ export class WorldMapInput {
       return;
     }
 
-    // Header resource cluster — opens the Territory Overview panel (SLG_DESIGN.md §26)
+    // Header resource cluster — opens the Territory Overview panel (SLG_DESIGN_LOG.md §26)
     const rc = this.ctx.resClusterRect;
     if (rc.w > 0 && x >= rc.x && x <= rc.x + rc.w && y >= rc.y && y <= rc.y + rc.h) {
       this.ctx.panels.openTerritoryPanel();
