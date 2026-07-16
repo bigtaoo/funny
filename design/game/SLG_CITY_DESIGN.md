@@ -51,8 +51,8 @@
 | **D-CITY-7** | `desk` 等级上限 | **20 → 10（2026-07-15 拍板，修正早先错案，已实现）**：早先 `DESK_MAX_LEVEL=20` 的注释「aligned with Three-Kingdoms 20」未经查证，网络核实三战主城（君王殿）实际满级为 **10 级**（[来源](http://m.7724.com/sggame/news/23083.html)）。改为 10 级对齐。`server/shared/src/slg/city.ts`：`DESK_MAX_LEVEL=10`；所有每级加成 STEP 常量（`BUILD_YIELD_STEP`/`CABINET_CAP_STEP`/`DRILL_TROOPCAP_STEP`/`DRILL_TRAIN_SPEED_STEP`/`WALL_DEFENSE_STEP`/`ACADEMY_*_STEP`/`CABINET_PROTECT_STEP`）翻倍、`STICKER_SELF_BASE` 翻倍，使满级总加成与旧 L20 一致；`BUILD_COST_BASE`/`BUILD_TIME_BASE_SEC` 统一 ×4（sum₂..₂₀lvl / sum₂..₁₀lvl ≈3.87，取整 4×）使总投入量级不变。已用 `econ-sim`（`cityRun.ts`）核对：满级倍率/上限与旧数值一致，总花费/耗时/各画像天数与旧基线同量级，休闲档仍在 60 天赛季窗口内。 | **已实现**（`server/shared/src/slg/city.ts`；econ-sim 核对通过） |
 | **D-CITY-8** | 城池耐久（durability）机制 | **新增持久化状态（2026-07-16 服务端已实现）**。上限由 `wall`（城墙）等级决定（`baseDurabilityMax(wallLevel) = BASE_DURABILITY_BASE + wallLevel×BASE_DURABILITY_WALL_STEP`；不采用三战「君王殿本身给耐久」的路数，我们刻意偏离参考，城墙专职耐久；wall 原先「围攻时临时给守军加HP」的 `wallDefenseMult` 机制已移除，全部改走耐久）。攻城结算：**先打赢驻军战斗 → 胜利后 5 分钟宽限期 → 按攻方攻城值（与地图上攻占城池同一套规则）扣减耐久**（`settleSiegeDamage`，`durability`/`durabilityMax` 落在主城 anchor `TileDoc` 上，替代原先复用的 `hp`/`buildingMaxHp(level)`）。耐久随时间**缓慢自愈**（`regenDurability`，`BASE_DURABILITY_REGEN_PER_HOUR` 每小时定量恢复，具体速率待数值模拟；读路径惰性计算展示值、不落库，只有真实结算/城墙升级完成才落库，同 `yieldRate` 的惰性结算风格）。**耐久归零 → 城池被摧毁 → 玩家丢失全部领地 → 服务端强制迁城**（复用既有 `passiveRelocate`，新增系统邮件 `slg.city.durabilityBreached.{subject,body}`，此前玩家对该结果**没有任何通知**）。城墙升级完成时按差值调整 `durabilityMax`（保留已损伤的绝对值，不重置满血）；玩家主动 `relocate` 同样保留已损伤耐久（不是免费回血）。**世界地图 HP 血条 + 被围攻全屏泛红特效仍是 DRAFT，客户端未实现**（服务端 view 字段沿用既有 `hp`/`maxHp` 命名，契约不变，客户端可直接接线）。 | **已实现（服务端）**，`server/shared/src/slg/siege.ts` + `worldsvc/src/combatSiege/{damage,helpers,arrival}.ts` + `city.ts`/`coreSpawn.ts`/`coreHelpers.ts`；客户端血条/泛红特效待后续 |
 | **D-CITY-9** | 队伍出征携带兵力上限 | 新建筑（`satchel`，书包，隐喻文具书包能装多少东西，**已实现**）：**只管单支队伍出征时最多携带多少兵**，与 `drillYard`（总兵力上限 + 训练速度 + 训练队列上限）是两个独立维度，不合并。同样受 `desk` 门控。 | **已实现**（`server/shared/src/slg/city.ts` + `combatMarch.ts` 出征校验） |
-| **D-CITY-10** | 队伍面板（5 队 t1-t5） | `CityScene` 新增队伍信息栏：5 支队伍（复用现有 `SIEGE_TEAM_CAP=5` / `t1..t5` 数据模型），每队显示当前兵力（`cardState.currentTroops`）/ 状态（驻军在家 / 出征中 / 受伤冷却 `teamState.injuredUntil`）。未指派 march 的队伍 = 驻军，血量与兵力信息同样在这里查看。**委任（角色派进建筑）维持 P1 已拍板的 DROPPED，不恢复**。 | 锁定 |
-| **D-CITY-11** | 双屏拆分 | 内容扩容后单屏挤不下，拆两屏、玩家可切换：**屏 1（内政）** = 资源条 + 现有建筑网格（含新 `satchel`）；**屏 2（军事）** = 队伍面板（D-CITY-10）+ 科技树独立面板（`academy` 从建筑网格挪出，见下）+ 耐久状态展示。**切换机制已实现**（`CityScene` 头部下方双 tab，内政/军事）；军事页目前是占位容器（"队伍面板、科技树面板开发中"），队伍面板/科技树面板/耐久状态展示随 D-CITY-10/12 分别落地。 | **已实现（切换机制）**，`client/src/scenes/CityScene.ts` |
+| **D-CITY-10** | 队伍面板（5 队 t1-t5） | `CityScene` 新增队伍信息栏：5 支队伍（复用现有 `SIEGE_TEAM_CAP=5` / `t1..t5` 数据模型），每队显示当前兵力（`cardState.currentTroops`）/ 状态（驻军在家 / 出征中 / 受伤冷却 `teamState.injuredUntil`）。未指派 march 的队伍 = 驻军，血量与兵力信息同样在这里查看。**委任（角色派进建筑）维持 P1 已拍板的 DROPPED，不恢复**。**已实现（2026-07-16）**：军事页 2 列卡片网格，只读展示（编辑仍走地图入口的 `TeamsScene`），复用其 `teamOrder`/`committedTroops` 判定逻辑；状态优先级 受伤>行军/占领>驻军在家>空。 | **已实现**，`client/src/scenes/CityScene.ts`（`renderTeamPanel`/`renderTeamCard`） |
+| **D-CITY-11** | 双屏拆分 | 内容扩容后单屏挤不下，拆两屏、玩家可切换：**屏 1（内政）** = 资源条 + 现有建筑网格（含新 `satchel`）；**屏 2（军事）** = 队伍面板（D-CITY-10）+ 科技树独立面板（`academy` 从建筑网格挪出，见下）+ 耐久状态展示。**切换机制已实现**（`CityScene` 头部下方双 tab，内政/军事）；队伍面板已随 D-CITY-10 落地，科技树面板/耐久状态展示仍是占位。 | **已实现（切换机制 + 队伍面板）**，`client/src/scenes/CityScene.ts` |
 | **D-CITY-12** | 科技树面板 | `academy` 从「建筑网格里普通一栋楼」升级为**军事屏内独立面板**，给赛季内蓝图 buff 投入应有的仪式感；底层注入逻辑（`buildSiegeBlueprints` 叠加层）不变，只是 UI 呈现独立出来。 | 锁定 |
 
 ---
@@ -263,10 +263,10 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
   - 耐久系统：`wall` 决定上限，攻城值扣减 + 自愈（惰性结算）+ 归零摧毁强制迁城 + 系统邮件，新增持久化字段 + 服务端自动迁城流程 — **已实现（服务端）**（D-CITY-8，2026-07-16）
   - `satchel`（书包）建筑：单队出征携带兵力上限 — **已实现**（D-CITY-9）
   - `CityScene` 双屏拆分（内政/军事可切换 tab，军事页为占位容器）— **已实现**（D-CITY-11，2026-07-16，`client/src/scenes/CityScene.ts`）
-  - 队伍面板（5 队 t1-t5，兵力/状态展示，纯 UI 露出既有数据模型）— 待实现（D-CITY-10，落进 D-CITY-11 已建好的军事页容器）
+  - 队伍面板（5 队 t1-t5，兵力/状态展示，纯 UI 露出既有数据模型）— **已实现**（D-CITY-10，2026-07-16，落进 D-CITY-11 军事页容器，只读展示，编辑仍走 `TeamsScene`）
   - 科技树（`academy`）独立面板 — 待实现（D-CITY-12，同样落进军事页容器）
   - 世界地图基地血条 + 全屏泛红特效 — 待实现（客户端，D-CITY-8 表现层；军事页耐久状态展示同样待做，需先给 `PlayerWorldView` 契约补上主城 `hp`/`maxHp` 字段，与此项一并规划）
-  - **验收标准待定**：D-CITY-10/12 尚未进入实现/契约设计。
+  - **验收标准待定**：D-CITY-12 尚未进入实现/契约设计。
 
 ---
 
