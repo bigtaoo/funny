@@ -8,7 +8,8 @@
       "Bash(git worktree *)",
       "Bash(git -C .claude/worktrees/auction-mail-return reset --hard main)",
       "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\(JSON.stringify\\(p.scripts,null,2\\)\\); console.log\\('workspaces:',JSON.stringify\\(p.workspaces\\)\\)\")",
-      "Bash(git -C D:/funny branch --show-current)"
+      "Bash(git -C D:/funny branch --show-current)",
+      "Bash(git -C D:/funny checkout -b 16.07.2026 main)"
     ],
     "defaultMode": "bypassPermissions"
   }

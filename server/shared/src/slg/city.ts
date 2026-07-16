@@ -22,7 +22,7 @@ export type BuildingKey =
 export const BUILDING_KEYS: readonly BuildingKey[] = [
   'desk', 'inkPot', 'paperTray', 'graphiteMill', 'metalForge', 'stickerShop', 'cabinet', 'drillYard', 'wall', 'academy',
 ];
-/** P1-implemented building keys (wall/academy are P2 placeholders, not yet buildable). */
+/** P1 subset of BUILDING_KEYS (wall/academy are P2, real-buildable since 2026-06-30 — see BUILDING_KEYS for the full set). */
 export const BUILDING_KEYS_P1: readonly BuildingKey[] = [
   'desk', 'inkPot', 'paperTray', 'graphiteMill', 'metalForge', 'stickerShop', 'cabinet', 'drillYard',
 ];
