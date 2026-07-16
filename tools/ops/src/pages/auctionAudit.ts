@@ -12,7 +12,7 @@ export async function pageAuctionAudit(ctx: Ctx): Promise<void> {
     h('h2', {}, 'SLG Auction anomaly audit'),
     h('div', { class: 'muted', style: 'margin-bottom:8px' },
       'Anti-RMT: scan for suspicious seller→buyer pairs, file audit tickets, then adjudicate (dismiss = false positive; action = confirmed violation). ' +
-      'Enforcement (ban/clawback) follows the external liaison process.'),
+      'Actioning a ticket automatically bans both parties (best-effort); the result is shown per ticket below.'),
   );
 
   // ── Anomaly scanner ──
@@ -196,6 +196,11 @@ function auditTicketRow(ctx: Ctx, tk: TradeAuditTicketView, onRefresh: () => Pro
     const resolvedBy = tk.resolvedByName ?? (tk.resolvedBy ? tk.resolvedBy.slice(0, 8) : '—');
     buttons.push(h('span', { class: 'muted', style: 'font-size:12px' }, `by ${resolvedBy}${tk.resolvedAt ? ` · ${fmtTime(tk.resolvedAt)}` : ''}`));
     if (tk.note) buttons.push(h('div', { class: 'muted', style: 'font-size:12px' }, tk.note));
+    if (tk.enforcement) {
+      const { sellerBanned, buyerBanned } = tk.enforcement;
+      buttons.push(h('div', { class: 'muted', style: 'font-size:12px' },
+        `Enforcement: seller ${sellerBanned ? 'banned' : 'ban failed'}, buyer ${buyerBanned ? 'banned' : 'ban failed'}`));
+    }
   }
 
   const snap = tk.snapshot;

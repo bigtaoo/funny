@@ -247,6 +247,7 @@ export interface TradeAuditTicketView {
   resolvedBy?: string;
   resolvedByName?: string;
   resolvedAt?: number;
+  enforcement?: { sellerBanned: boolean; buyerBanned: boolean };
 }
 
 // ── Timed events (B6, mirror of @nw/shared events.ts) ──

@@ -69,6 +69,8 @@ export interface TradeAuditTicketDoc {
   note?: string;
   resolvedBy?: string;
   resolvedAt?: number;
+  /** Auto-disposition result, set only when resolved as 'actioned' (best-effort ban of both parties via metaserver). */
+  enforcement?: { sellerBanned: boolean; buyerBanned: boolean };
 }
 
 /** Operation audit record (§4.3). */
