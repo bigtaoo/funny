@@ -194,6 +194,28 @@
 
 > `[待铺]` 数值待与盲盒/皮肤定价一起过一次经济模拟（§9 / ECONOMY_BALANCE §6 反通胀预算）后再拍。**改这些数值须同步 [ADR-030](DECISIONS.md) 与各落点文档。**
 
+### 5.4 `protect_enhance` 保护道具定价核算（2026-07-16，价格维持 500 不变）
+
+商城 `SHOP_ITEMS`（`server/shared/src/economy.ts`）里 `protect_enhance` 定价 **500 coins**（flat，不分等级）。用途：用在下一次强化上，若该次**失败**则不损耗材料（**金币仍照扣**，见 EQUIPMENT_DESIGN §E7）。价格本身用户已拍板维持不变，本节只补上核算，供后续调参时对照，而不是重新定价的提案。
+
+用 `server/tools/econ-sim`（D-track，`npx tsx src/enhanceProtectRun.ts` 或 `npm run enhance-protect`）按 A-track 同一套材料估值基准（`valuation.ts`：scrap=1 / lead≈16.67 / binding=400 coin-eq，见 §13-SLG）逐级算出"保一次失败"实际值多少：
+
+| 强化步 | 成功率 | 期望尝试次数 | 单次材料 coin-eq | 单次金币成本 | 爬到该级的期望材料损耗 coin-eq |
+|---|---|---|---|---|---|
+| +0→1 | 90% | 1.11 | 4 | 40 | 0 |
+| +1→2 | 80% | 1.25 | 6 | 80 | 2 |
+| +2→3 | 70% | 1.43 | 8 | 120 | 3 |
+| +3→4 | 60% | 1.67 | 27 | 160 | 18 |
+| +4→5 | 50% | 2.00 | 45 | 200 | 45 |
+| +5→6 | 40% | 2.50 | 64 | 240 | 96 |
+| +6→7 | 30% | 3.33 | 483 | 280 | 1,126 |
+| +7→8 | 20% | 5.00 | 901 | 320 | 3,605 |
+| +8→9 | 10% | 10.00 | **1,320** | 360 | **11,880** |
+
+**结论**：500 的 flat 价只在 **+7 及以上**才"划算"（单次失败材料损耗 ≥ 500）；+8→9 这一档单次价值 1,320 coin-eq，是挂牌价的 **2.6 倍**——这正是它作为"鲸鱼向深水保险"的定位（EQUIPMENT_DESIGN §6.2）：低级用亏（+0~+6 单次材料损耗远低于 500，性价比差），高级用赚（尤其 +8→9，长线爬满套的核心痛点正好被覆盖）。这是**有意的不对称**，不是 bug——一个 flat 价本来就没法同时贴合 9 个数量级不同的材料损耗，若要更精细可以按 `enhanceCost(fromLevel).coins` 分级定价（比如挂钩 5-10 倍单次强化金币成本），但这是后续调参项，不在本次范围内。
+
+数值口径：见 [`server/tools/econ-sim/src/enhanceProtect.ts`](../../server/tools/econ-sim/src/enhanceProtect.ts)（`protectValueByLevel()` / `breakEvenLevels()`），跑法见 [`server/tools/econ-sim/src/enhanceProtectRun.ts`](../../server/tools/econ-sim/src/enhanceProtectRun.ts)。
+
 ---
 
 ## 6. 金币（coins）

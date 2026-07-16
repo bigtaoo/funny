@@ -542,6 +542,8 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 **共享修复**：`server/shared/src/mongo.ts` `EquipmentIdemDoc.op` 联合类型补 `'reforge'`（E6 遗留 tsc 报错，E7 顺手修）。
 
+**商城卡片文案补漏（2026-07-16）**：`ShopScene`（`client/src/scenes/ShopScene/shop.ts` `buildShopCards`）此前把 `SHOP_ITEMS` 里所有条目都当皮肤画（`brush` 图标 + `"皮肤 · {id}"` 标题 + 皮肤 owned 判定），`protect_enhance`（`kind='item'`）因此显示成裸 id、无说明文案，且错误复用了皮肤的"已拥有"判定（消耗品应可反复购买）。改为按 `item.kind` 分支：`kind==='item'` 走 `armor` 图标 + 专属 i18n 名称/说明（`shop.item.protect_enhance.{name,desc}`）+ 恒可购买（无 owned 态）；`kind==='skin'` 保持原逻辑不变。新增回归测试 [shopScene.ui.ts](../../client/test/ui/shopScene.ui.ts)。
+
 #### E8 SLG 接入 实现记录（2026-06-22，✅）
 
 落地 = `server/engine/src/index.ts`（导出 `EngineEquipmentInput` 类型，供 worldsvc 引用）+ `server/metaserver/src/internal.ts`（新增 `GET /internal/save-fields?accountId=`，返回 `pveUpgrades/unitLevels/gear/equipmentInv`；账号不存在返回空默认，不 404，避免冻结行军）+ `server/worldsvc/src/metaClient.ts`（新增 `SaveFields` 接口 + `getSaveFields()` 方法，失败返回 `null` 降级）+ `server/worldsvc/src/siegeEngine.ts`（`SiegeBattleInput` 扩展 `pveUpgrades?/unitLevels?/equipment?`，传入 `runHeadless` config）+ `server/worldsvc/src/service.ts`（`applySiege` + `applyStrongholdSiege` 两处 `runSiegeBattle` 前调 `meta.getSaveFields(m.ownerId)`，组装 `EngineEquipmentInput`，传入 `runSiegeBattle`）+ `server/worldsvc/src/auctionService.ts`（清理装备挂单过期 TODO 注释，E2.5 时已实现）。关键决策：

@@ -273,6 +273,31 @@ describe('ShopScene — starter packs show "Free" and disappear once claimed', (
   });
 });
 
+describe('ShopScene — consumable items (kind="item") render their own name/desc, not the raw id', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it('shows the translated name for a known item id instead of "Item · protect_enhance"', async () => {
+    const scene = buildShop({
+      loadItems: async () => [{ id: 'protect_enhance', cost: 500, kind: 'item', grants: 'protect_enhance' }],
+    });
+    await flush();
+    expect(findLabelPos(scene.container, t('shop.item.protect_enhance.name'))).not.toBeNull();
+    expect(findLabelPos(scene.container, t('shop.item.protect_enhance.desc'))).not.toBeNull();
+    scene.destroy();
+  });
+
+  it('stays buyable every time (no "Owned" state) since it is a consumable, not a skin', async () => {
+    const scene = buildShop({
+      getOwnedSkins: () => ['protect_enhance'], // even if this id somehow appeared in owned skins
+      loadItems: async () => [{ id: 'protect_enhance', cost: 500, kind: 'item', grants: 'protect_enhance' }],
+    });
+    await flush();
+    expect(findLabelPos(scene.container, t('shop.owned'))).toBeNull();
+    expect(findLabelPos(scene.container, t('shop.buy'))).not.toBeNull();
+    scene.destroy();
+  });
+});
+
 describe('ShopScene — promo-code redemption lives on the Coins tab', () => {
   it('does not show the promo field on the Shop tab', () => {
     const scene = buildShop({
