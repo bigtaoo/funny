@@ -1,8 +1,9 @@
-// CityScene — Home-city management (SLG_CITY_DESIGN P1).
+// CityScene — Home-city management (SLG_CITY_DESIGN P1 + P3 D-CITY-11).
 // Entry: WorldMapScene taps own base tile → "Enter Desk".
-// Layout: shared SceneHeader (title + back) + resource bar + build-queue strip +
-//   scrollable building card grid (matches the Roster/Skins/Teams card-grid
-//   language) + tap-to-open detail modal (popup-scale-to-80% convention).
+// Two switchable pages (D-CITY-11): 内政 (resource bar + build-queue strip +
+//   scrollable building card grid, matches the Roster/Skins/Teams card-grid
+//   language, tap-to-open detail modal) and 军事 (placeholder — team panel
+//   D-CITY-10 and tech-tree panel D-CITY-12 land here later).
 // Troop training is surfaced via the drillYard detail modal (replaces the
 // WorldMapScene train button for users who enter city).
 
@@ -110,6 +111,8 @@ const GRID_PAD = 8;
 
 interface Hit { x: number; y: number; w: number; h: number; fn: () => void }
 
+type CityPage = 'domestic' | 'military';
+
 export class CityScene implements Scene {
   readonly container: PIXI.Container;
   private readonly w: number;
@@ -124,6 +127,7 @@ export class CityScene implements Scene {
   private destroyed = false;
 
   private me: PlayerWorldView | null = null;
+  private page: CityPage = 'domestic';
   private selectedBuilding: BuildingKey | null = null;
   private toast: string | null = null;
   private toastColor: number = C.red;
@@ -283,31 +287,37 @@ export class CityScene implements Scene {
     const decoC = buildDecorCLayer(w, h);
     if (decoC) this.container.addChild(decoC);
 
-    const hdr = drawSceneHeader(this.container, w, h, t('city.title'), {
+    const hdr = drawSceneHeader(this.container, w, h, t(`city.page.${this.page}` as 'city.page.domestic'), {
       variant: 'paper', accent: HEADER_ACCENT.slg,
     });
     const backHit: Hit = { x: hdr.backRect.x, y: hdr.backRect.y, w: hdr.backRect.w, h: hdr.backRect.h, fn: () => this.cb.onBack() };
     this.hits.push(backHit);
 
     let y = hdr.headerH + 8;
+    y = this.renderPageTabs(y);
 
-    // Resource bar
-    y = this.renderResourceBar(y);
-    y += 8;
+    if (this.page === 'domestic') {
+      // Resource bar
+      y = this.renderResourceBar(y);
+      y += 8;
 
-    // Build queue strip
-    y = this.renderBuildQueue(y);
-    y += 8;
+      // Build queue strip
+      y = this.renderBuildQueue(y);
+      y += 8;
 
-    // Building card grid (scrollable)
-    this.renderBuildingGrid(y);
+      // Building card grid (scrollable)
+      this.renderBuildingGrid(y);
 
-    // Detail modal (popup-scale-to-80% convention, tap-outside-to-close). The grid/queue
-    // sit dimmed underneath — drop their hits (keeping only Back) so a tap there can't
-    // silently switch buildings or trigger speedup instead of dismissing the modal.
-    if (this.selectedBuilding) {
-      this.hits = [backHit];
-      this.renderDetailModal(this.selectedBuilding);
+      // Detail modal (popup-scale-to-80% convention, tap-outside-to-close). The grid/queue
+      // sit dimmed underneath — drop their hits (keeping only Back) so a tap there can't
+      // silently switch buildings or trigger speedup instead of dismissing the modal.
+      if (this.selectedBuilding) {
+        this.hits = [backHit];
+        this.renderDetailModal(this.selectedBuilding);
+      }
+    } else {
+      this.scrollMax = 0;
+      this.renderMilitaryPage(y);
     }
 
     // Busy overlay
@@ -335,6 +345,64 @@ export class CityScene implements Scene {
       tl.y = tg.y + 10;
       this.container.addChild(tl);
     }
+  }
+
+  // ── Page tabs (D-CITY-11: 内政 / 军事 switch) ────────────────────────────────
+
+  private switchPage(page: CityPage): void {
+    if (this.page === page) return;
+    this.page = page;
+    this.scrollY = 0;
+    this.render();
+  }
+
+  private renderPageTabs(startY: number): number {
+    const { w } = this;
+    const tabH = 36;
+    const pages: CityPage[] = ['domestic', 'military'];
+    const tabW = Math.floor((w - 16) / pages.length);
+
+    pages.forEach((page, i) => {
+      const tx = 8 + i * tabW;
+      const active = this.page === page;
+      const g = sketchPanel(tabW - (i > 0 ? 2 : 0), tabH, {
+        fill: active ? C.accent : C.paper,
+        border: C.line, width: 1, seed: seedFor(tx, startY, i + 1),
+      });
+      g.x = tx;
+      g.y = startY;
+      this.container.addChild(g);
+      const lbl = txt(t(`city.tab.${page}` as 'city.tab.domestic'), 14, active ? 0xffffff : C.dark, true);
+      lbl.x = tx + (tabW - lbl.width) / 2;
+      lbl.y = startY + (tabH - 16) / 2;
+      this.container.addChild(lbl);
+      this.hits.push({ x: tx, y: startY, w: tabW, h: tabH, fn: () => this.switchPage(page) });
+    });
+
+    return startY + tabH + 8;
+  }
+
+  // ── Military page (D-CITY-11 placeholder — team panel D-CITY-10 and tech-tree ─
+  //    panel D-CITY-12 land here in follow-up tasks; durability status pending
+  //    a contract change to expose the base's hp/maxHp on PlayerWorldView) ──────
+
+  private renderMilitaryPage(startY: number): void {
+    const { w, h } = this;
+    const panH = h - startY - GRID_PAD;
+    const pg = sketchPanel(w - 16, panH, { fill: C.paper, border: C.line, width: 1, seed: seedFor(w, panH, 9) });
+    pg.x = 8;
+    pg.y = startY;
+    this.container.addChild(pg);
+
+    const icon = buildIcon('swords', 40, C.mid);
+    icon.x = w / 2 - 20;
+    icon.y = startY + panH / 2 - 60;
+    this.container.addChild(icon);
+
+    const lbl = txt(t('city.military.comingSoon'), 14, C.mid, true, w - 64);
+    lbl.x = (w - lbl.width) / 2;
+    lbl.y = startY + panH / 2 - 10;
+    this.container.addChild(lbl);
   }
 
   // ── Resource bar ──────────────────────────────────────────────────────────

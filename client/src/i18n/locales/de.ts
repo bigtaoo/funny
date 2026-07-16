@@ -1357,7 +1357,11 @@ export const de: Record<TranslationKey, string> = {
   'settings.deleteAccount.failed': 'Löschen fehlgeschlagen — bitte erneut versuchen',
 
   // ── Heimatstadt / Schreibtisch (SLG_CITY_DESIGN P1) ──────────────────────
-  'city.title': 'Heimatstadt · Schreibtisch',
+  'city.page.domestic': 'Heimatstadt · Schreibtisch',
+  'city.page.military': 'Heimatstadt · Militär',
+  'city.tab.domestic': 'Inneres',
+  'city.tab.military': 'Militär',
+  'city.military.comingSoon': 'Teamübersicht & Technologiebaum folgen bald',
   'city.buildings': 'Gebäude',
   'city.resources': 'Ressourcen',
   'city.buildQueue': 'Bauwarteschlange',

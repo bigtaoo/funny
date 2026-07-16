@@ -47,6 +47,7 @@ type CitySceneInternals = {
   w: number; h: number;
   hits: Hit[];
   selectedBuilding: string | null;
+  page: 'domestic' | 'military';
   handleDown(x: number, y: number): void;
   render(): void;
 };
@@ -84,12 +85,13 @@ function rectsOverlap(a: Rect, b: Rect): boolean {
 
 for (const [label, [w, h]] of [['portrait', PORTRAIT], ['landscape', LANDSCAPE]] as const) {
   describe(`CityScene building grid — ${label} ${w}x${h}`, () => {
-    it('all 10 building cards land fully within the screen and do not overlap each other', () => {
+    it('all 11 building cards land fully within the screen and do not overlap each other', () => {
       const { scene } = buildScene(w, h);
       const inner = internals(scene);
-      // hits[0] is the header Back button; the rest (10 buildings) are the grid cards.
-      const cards = inner.hits.slice(1);
-      expect(cards.length).toBe(10);
+      // hits[0] is the header Back button, hits[1..2] are the D-CITY-11 page tabs
+      // (内政/军事); the rest (BUILDING_KEYS.length, 11 incl. satchel/D-CITY-9) are the grid cards.
+      const cards = inner.hits.slice(3);
+      expect(cards.length).toBe(11);
 
       for (const c of cards) {
         expect(c.x).toBeGreaterThanOrEqual(0);
@@ -110,7 +112,7 @@ for (const [label, [w, h]] of [['portrait', PORTRAIT], ['landscape', LANDSCAPE]]
     it('tapping a building card opens its detail modal (selectedBuilding set)', () => {
       const { scene } = buildScene(w, h);
       const inner = internals(scene);
-      const card = inner.hits[1]!; // first building card ('desk')
+      const card = inner.hits[3]!; // first building card ('desk'), past Back + 2 page tabs
       inner.handleDown(card.x + card.w / 2, card.y + card.h / 2);
       expect(inner.selectedBuilding).not.toBeNull();
       scene.destroy();
@@ -123,8 +125,8 @@ describe('CityScene detail modal — hit gating (2026-07-15 modal-hit-leak fix)'
     const { scene } = buildScene(...PORTRAIT);
     const inner = internals(scene);
 
-    const firstCard = inner.hits[1]!; // 'desk'
-    const secondCard = inner.hits[2]!; // 'inkPot' — distinct coordinates from the first
+    const firstCard = inner.hits[3]!; // 'desk', past Back + 2 page tabs
+    const secondCard = inner.hits[4]!; // 'inkPot' — distinct coordinates from the first
     expect(rectsOverlap(firstCard, secondCard)).toBe(false);
 
     inner.handleDown(firstCard.x + firstCard.w / 2, firstCard.y + firstCard.h / 2);
@@ -144,7 +146,7 @@ describe('CityScene detail modal — hit gating (2026-07-15 modal-hit-leak fix)'
     const inner = internals(scene);
     const backHit = inner.hits[0]!;
 
-    const card = inner.hits[1]!;
+    const card = inner.hits[3]!;
     inner.handleDown(card.x + card.w / 2, card.y + card.h / 2);
     expect(inner.selectedBuilding).not.toBeNull();
 
@@ -156,12 +158,44 @@ describe('CityScene detail modal — hit gating (2026-07-15 modal-hit-leak fix)'
   it('tapping far outside the (centered, narrower) modal panel closes it', () => {
     const { scene } = buildScene(...PORTRAIT);
     const inner = internals(scene);
-    const card = inner.hits[1]!;
+    const card = inner.hits[3]!;
     inner.handleDown(card.x + card.w / 2, card.y + card.h / 2);
     expect(inner.selectedBuilding).not.toBeNull();
 
     inner.handleDown(inner.w - 2, inner.h - 2);
     expect(inner.selectedBuilding).toBeNull();
+    scene.destroy();
+  });
+});
+
+describe('CityScene page tabs (D-CITY-11 dual-screen split, 2026-07-16)', () => {
+  it('starts on the domestic page and switches to the military page via hits[1]/hits[2]', () => {
+    const { scene } = buildScene(...PORTRAIT);
+    const inner = internals(scene);
+    expect(inner.page).toBe('domestic');
+
+    const militaryTab = inner.hits[2]!;
+    inner.handleDown(militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
+    expect(inner.page).toBe('military');
+    // Building-grid card hits must not leak into the military page's hit list.
+    expect(inner.hits.length).toBe(3);
+
+    const domesticTab = inner.hits[1]!;
+    inner.handleDown(domesticTab.x + domesticTab.w / 2, domesticTab.y + domesticTab.h / 2);
+    expect(inner.page).toBe('domestic');
+    scene.destroy();
+  });
+
+  it('the Back button stays reachable on the military page', () => {
+    const { scene, calls } = buildScene(...PORTRAIT);
+    const inner = internals(scene);
+    const militaryTab = inner.hits[2]!;
+    inner.handleDown(militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
+    expect(inner.page).toBe('military');
+
+    const backHit = inner.hits[0]!;
+    inner.handleDown(backHit.x + backHit.w / 2, backHit.y + backHit.h / 2);
+    expect(calls.back).toBe(1);
     scene.destroy();
   });
 });
