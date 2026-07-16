@@ -49,6 +49,8 @@ function buildHarness(opts: { me?: PlayerWorldView } = {}) {
   const showModal = vi.fn();
   const showToast = vi.fn();
   const showDeployDialog = vi.fn();
+  // Occupy now routes through the team picker (§4.2), not the flat deploy dialog.
+  const showTeamPicker = vi.fn(async () => {});
 
   const ctx = {
     mapW: 500,
@@ -63,11 +65,11 @@ function buildHarness(opts: { me?: PlayerWorldView } = {}) {
     view: { renderMap: () => {} },
     cb: { worldId: WORLD_ID },
     panels: { showModal, showToast, showDeployDialog, closeModal: vi.fn() },
-    net: { doScout: vi.fn(), confirmRelocate: vi.fn() },
+    net: { doScout: vi.fn(), confirmRelocate: vi.fn(), showTeamPicker },
   } as unknown as WorldMapContext;
 
   const input = new WorldMapInput(ctx);
-  return { ctx, input, showModal, showToast, showDeployDialog };
+  return { ctx, input, showModal, showToast, showDeployDialog, showTeamPicker };
 }
 
 /** Click a neutral tile and return its Occupy button from the shown menu. */
@@ -92,12 +94,12 @@ describe('WorldMapInput occupy connectivity pre-filter (ADR-039)', () => {
     expect(occupy.disabled).toBe(true);
   });
 
-  it('tapping the disabled Occupy surfaces the "not connected" toast instead of opening the deploy dialog', () => {
-    const { occupy, showToast, showDeployDialog } = occupyBtnFor(ANCHOR.x, ANCHOR.y + 3);
+  it('tapping the disabled Occupy surfaces the "not connected" toast instead of opening the team picker', () => {
+    const { occupy, showToast, showTeamPicker } = occupyBtnFor(ANCHOR.x, ANCHOR.y + 3);
     occupy.action();
     expect(showToast).toHaveBeenCalledTimes(1);
     expect(showToast.mock.calls[0][0]).toBe(t('world.err.notConnected'));
-    expect(showDeployDialog).not.toHaveBeenCalled();
+    expect(showTeamPicker).not.toHaveBeenCalled();
   });
 
   it('enables Occupy on a tile 4-adjacent to the capital footprint (initial territory, before any expansion)', () => {
@@ -107,10 +109,10 @@ describe('WorldMapInput occupy connectivity pre-filter (ADR-039)', () => {
     }
   });
 
-  it('tapping an enabled Occupy opens the deploy dialog', () => {
-    const { occupy, showDeployDialog, showToast } = occupyBtnFor(ANCHOR.x, ANCHOR.y + 2);
+  it('tapping an enabled Occupy opens the team picker', () => {
+    const { occupy, showTeamPicker, showToast } = occupyBtnFor(ANCHOR.x, ANCHOR.y + 2);
     occupy.action();
-    expect(showDeployDialog).toHaveBeenCalledWith(ANCHOR.x, ANCHOR.y + 2, 'occupy');
+    expect(showTeamPicker).toHaveBeenCalledWith(ANCHOR.x, ANCHOR.y + 2, 'occupy');
     expect(showToast).not.toHaveBeenCalled();
   });
 
