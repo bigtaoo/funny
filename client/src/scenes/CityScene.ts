@@ -18,7 +18,10 @@ import {
 import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { formatDuration } from './worldmap/formatDuration';
-import type { WorldApiClient, PlayerWorldView, BuildingKey } from '../net/WorldApiClient';
+import type {
+  WorldApiClient, PlayerWorldView, BuildingKey, TeamTemplate, MarchView, OccupationView,
+} from '../net/WorldApiClient';
+import { teamSlotId, teamSlotName, TEAM_CAP } from './TeamsScene';
 import {
   BUILDING_KEYS,
   RESOURCE_TYPES,
@@ -111,6 +114,10 @@ const GRID_PAD = 8;
 // standalone tech-tree panel on the military page (see renderMilitaryPage).
 const DOMESTIC_BUILDING_KEYS: readonly BuildingKey[] = BUILDING_KEYS.filter((k) => k !== 'academy');
 
+// Team panel (D-CITY-10) — 2-col card grid, read-only display (editing stays in TeamsScene).
+const TEAM_COLS = 2;
+const TEAM_CARD_H = 96;
+
 // ── CityScene ────────────────────────────────────────────────────────────────
 
 interface Hit { x: number; y: number; w: number; h: number; fn: () => void }
@@ -131,6 +138,9 @@ export class CityScene implements Scene {
   private destroyed = false;
 
   private me: PlayerWorldView | null = null;
+  private teams: TeamTemplate[] = [];
+  private marches: MarchView[] = [];
+  private occupations: OccupationView[] = [];
   private page: CityPage = 'domestic';
   private selectedBuilding: BuildingKey | null = null;
   private toast: string | null = null;
@@ -179,9 +189,18 @@ export class CityScene implements Scene {
     // Resource / producer-building glyphs reuse the res_atlas motifs; re-render once decoded.
     void loadResAtlas().then(() => this.render()).catch(() => { /* color/emoji fallback */ });
     try {
-      this.me = await this.cb.worldApi.getMe(this.cb.worldId);
+      const [me, teams, marches, occupations] = await Promise.all([
+        this.cb.worldApi.getMe(this.cb.worldId),
+        this.cb.worldApi.getTeams(this.cb.worldId),
+        this.cb.worldApi.getMarches(this.cb.worldId),
+        this.cb.worldApi.getOccupations(this.cb.worldId),
+      ]);
+      this.me = me;
+      this.teams = teams;
+      this.marches = marches;
+      this.occupations = occupations;
     } catch {
-      /* use null — shows loading state */
+      /* use null/empty — shows loading state */
     }
     this.render();
   }
@@ -387,31 +406,130 @@ export class CityScene implements Scene {
     return startY + tabH + 8;
   }
 
-  // ── Military page (D-CITY-11 tab; D-CITY-12 tech-tree panel below; team panel
-  //    D-CITY-10 and durability status still land here in follow-up tasks — the
-  //    latter pending a contract change to expose the base's hp/maxHp on
-  //    PlayerWorldView) ─────────────────────────────────────────────────────────
+  // ── Military page (D-CITY-11 tab container) ──────────────────────────────────
+  // Tech-tree panel (D-CITY-12) and team panel (D-CITY-10) are both implemented
+  // below; durability status (pending a PlayerWorldView hp/maxHp contract
+  // addition, see D-CITY-8/D-CITY-11 design notes) still lands here later.
 
   private renderMilitaryPage(startY: number): void {
-    const { w, h } = this;
     startY = this.renderTechTreePanel(startY);
 
-    const panH = h - startY - GRID_PAD;
-    if (panH <= 0) return;
-    const pg = sketchPanel(w - 16, panH, { fill: C.paper, border: C.line, width: 1, seed: seedFor(w, panH, 9) });
-    pg.x = 8;
-    pg.y = startY;
-    this.container.addChild(pg);
+    const sectionLbl = txt(t('city.military.teams'), 13, C.mid, true);
+    sectionLbl.x = 12;
+    sectionLbl.y = startY;
+    this.container.addChild(sectionLbl);
+    this.renderTeamPanel(startY + 20);
+  }
 
-    const icon = buildIcon('swords', 40, C.mid);
-    icon.x = w / 2 - 20;
-    icon.y = startY + panH / 2 - 60;
-    this.container.addChild(icon);
+  /** Current order tying up a team, if any — mirrors TeamsScene.teamOrder (server's TEAM_BUSY predicate). */
+  private teamOrder(teamId: string): { march: MarchView } | { occ: OccupationView } | null {
+    const march = this.marches.find(m => m.mine !== false && m.teamId === teamId);
+    if (march) return { march };
+    const occ = this.occupations.find(o => o.teamId === teamId);
+    if (occ) return { occ };
+    return null;
+  }
 
-    const lbl = txt(t('city.military.comingSoon'), 14, C.mid, true, w - 64);
-    lbl.x = (w - lbl.width) / 2;
-    lbl.y = startY + panH / 2 - 10;
-    this.container.addChild(lbl);
+  /** Total troops committed across a team's cards — mirrors TeamsScene.committedTroops. */
+  private committedTroops(army: TeamTemplate['army']): number {
+    const cardState = this.me?.cardState ?? {};
+    let total = 0;
+    for (const entry of army) {
+      const cid = entry.cardInstanceId;
+      total += cid ? (cardState[cid]?.currentTroops ?? 0) : Math.max(0, Math.floor(entry.initialHp ?? 0));
+    }
+    return total;
+  }
+
+  /** Read-only 2-col grid of the 5 team slots (editing stays in TeamsScene, reachable from the map). */
+  private renderTeamPanel(startY: number): void {
+    const { w, h } = this;
+    const availW = w - GRID_PAD * 2;
+    const cellW = Math.floor((availW - (TEAM_COLS - 1) * CARD_GAP) / TEAM_COLS);
+    const rows = Math.ceil(TEAM_CAP / TEAM_COLS);
+    const contentH = rows * TEAM_CARD_H + (rows - 1) * CARD_GAP;
+
+    const viewY = startY;
+    const viewH = Math.max(0, h - viewY - GRID_PAD);
+    this.scrollMax = Math.max(0, contentH - viewH);
+    if (this.scrollY > this.scrollMax) this.scrollY = this.scrollMax;
+
+    const gridLayer = new PIXI.Container();
+    gridLayer.y = viewY - this.scrollY;
+    const maskG = new PIXI.Graphics();
+    maskG.beginFill(0xffffff).drawRect(0, viewY, w, viewH).endFill();
+    this.container.addChild(maskG);
+    gridLayer.mask = maskG;
+    this.container.addChild(gridLayer);
+
+    const now = Date.now();
+    for (let i = 0; i < TEAM_CAP; i++) {
+      const col = i % TEAM_COLS;
+      const row = Math.floor(i / TEAM_COLS);
+      const cx = GRID_PAD + col * (cellW + CARD_GAP);
+      const cy = row * (TEAM_CARD_H + CARD_GAP);
+      this.renderTeamCard(i, cx, cy, cellW, gridLayer, now);
+    }
+
+    drawScrollIndicator(this.container, { x: 0, y: viewY, w, h: viewH }, this.scrollY, this.scrollMax);
+  }
+
+  private renderTeamCard(i: number, x: number, y: number, cardW: number, layer: PIXI.Container, now: number): void {
+    const id = teamSlotId(i);
+    const team = this.teams.find(tm => tm.id === id);
+    const filled = !!team && team.army.length > 0;
+    const injuredUntil = this.me?.teamState?.[id]?.injuredUntil ?? 0;
+    const injured = injuredUntil > now;
+    const order = this.teamOrder(id);
+    const pad = 8;
+
+    const border = injured ? C.red : (order ? C.gold : (filled ? C.accent : C.mid));
+    const panel = sketchPanel(cardW, TEAM_CARD_H, {
+      fill: filled ? 0xfaf9f5 : C.paper, border, width: filled ? 2 : 1.2, seed: seedFor(x, y, cardW),
+    });
+    panel.x = x;
+    panel.y = y;
+    layer.addChild(panel);
+
+    const name = txt(team?.name || teamSlotName(i), 13, C.dark, true);
+    name.x = x + pad;
+    name.y = y + pad;
+    layer.addChild(name);
+
+    let statusLbl: string;
+    let statusColor: number;
+    if (injured) {
+      const secsLeft = Math.ceil((injuredUntil - now) / 1000);
+      const timeStr = secsLeft >= 60 ? `${Math.ceil(secsLeft / 60)}m` : `${secsLeft}s`;
+      statusLbl = t('roster.injured').replace('{time}', timeStr);
+      statusColor = C.red as number;
+    } else if (order) {
+      const remaining = Math.max(0, Math.ceil((('march' in order ? order.march.arriveAt : order.occ.dueAt) - now) / 1000));
+      const timeStr = remaining >= 60 ? `${Math.ceil(remaining / 60)}m` : `${remaining}s`;
+      statusLbl = 'march' in order
+        ? t('world.team.marching')
+        : t('world.team.occupying').replace('{time}', timeStr);
+      statusColor = C.gold as number;
+    } else if (filled) {
+      statusLbl = t('city.military.teamIdle');
+      statusColor = C.accent as number;
+    } else {
+      statusLbl = t('world.team.empty');
+      statusColor = C.mid as number;
+    }
+    const statusTag = txt(statusLbl, 11, statusColor, true);
+    statusTag.x = x + pad;
+    statusTag.y = y + pad + 20;
+    layer.addChild(statusTag);
+
+    if (filled) {
+      const committed = this.committedTroops(team!.army);
+      const sub = `${t('world.defense.garrison').replace('{n}', String(team!.army.length))}   ${t('world.team.committed').replace('{n}', String(committed))}`;
+      const subLbl = txt(sub, 11, C.mid, false, cardW - pad * 2);
+      subLbl.x = x + pad;
+      subLbl.y = y + TEAM_CARD_H - pad - 14;
+      layer.addChild(subLbl);
+    }
   }
 
   // D-CITY-12: academy promoted from an ordinary building-grid card to its own standalone

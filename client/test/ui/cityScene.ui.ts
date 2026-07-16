@@ -292,6 +292,49 @@ describe('CityScene tech-tree panel (D-CITY-12, 2026-07-16)', () => {
   });
 });
 
+describe('CityScene military page team panel (D-CITY-10, 2026-07-16)', () => {
+  /** Unlike stubWorldApi(), resolves getMe/getTeams/getMarches/getOccupations so the team
+   *  panel has real data to render (one marching team, one injured, one idle, two empty). */
+  function stubWorldApiWithTeams(): WorldApiClient {
+    const me = {
+      resources: {}, buildings: {}, buildQueue: [],
+      cardState: { c1: { currentTroops: 400 } },
+      teamState: { t2: { injuredUntil: Date.now() + 60_000 } },
+    } as unknown as PlayerWorldView;
+    return {
+      getMe: () => Promise.resolve(me),
+      getTeams: () => Promise.resolve([
+        { id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] },
+        { id: 't2', name: 'Bravo', army: [{ cardInstanceId: 'c1' }] },
+      ]),
+      getMarches: () => Promise.resolve([{ marchId: 'm1', mine: true, teamId: 't1', arriveAt: Date.now() + 30_000 }]),
+      getOccupations: () => Promise.resolve([]),
+      upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
+      speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
+    } as unknown as WorldApiClient;
+  }
+
+  it('renders team cards without leaking hit rects (read-only — editing stays in TeamsScene)', async () => {
+    const input = new InputManager();
+    const cb: CitySceneCallbacks = {
+      onBack: () => {},
+      worldApi: stubWorldApiWithTeams(),
+      worldId: 'world:1:0',
+    };
+    const scene = new CityScene(createLayout(...PORTRAIT), input, cb);
+    await new Promise((r) => setTimeout(r, 0));
+    const inner = internals(scene);
+
+    const militaryTab = inner.hits[2]!;
+    inner.handleDown(militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
+    expect(inner.page).toBe('military');
+    // Back + the 2 page tabs + the D-CITY-12 tech-tree panel — the team cards
+    // themselves are display-only, no card hits pushed.
+    expect(inner.hits.length).toBe(4);
+    scene.destroy();
+  });
+});
+
 describe('CityScene build-queue countdown label (2026-07-15 formatDuration fix)', () => {
   it('formats as mm:ss, not a raw-seconds count with a stray trailing "s"', () => {
     const secsLeft = 95; // 1:35

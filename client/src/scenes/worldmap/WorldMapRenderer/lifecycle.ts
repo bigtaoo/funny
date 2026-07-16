@@ -24,6 +24,7 @@ export function LifecycleMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBa
         this.ctx.toastTimer -= dt * 1000;
         if (this.ctx.toastTimer <= 0) this.ctx.toastLayer.removeChildren();
       }
+      this.updateVignette(dt);
       // L3 overview: flush dirty flag at most once per frame (60fps cap).
       if (this.ctx.l3Dirty && this.ctx.zoom === 3) {
         this.renderMapL3();
