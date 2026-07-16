@@ -1084,6 +1084,8 @@ if (path.startsWith('/admin/world/')) {
 
 **World-info 合并进第三 Tab + 面板加高（2026-07-16）**：用户截图标注反馈两点——右上角单独的 World 按钮/弹层和领地总览面板功能重叠，应合并；面板偏矮，内容常需要滚动。改动：`renderHud()` 删除原独立的 World 按钮渲染块与 `ctx.infoBtnRect` 命中矩形，`WorldMapInput.ts` 对应的点击分支一并移除；`renderTerritoryPanel()` 的 Tab 数组新增第三项 `world`（`territoryTab` 类型相应扩为 `'overview' | 'list' | 'world'`），点击后渲染原 `renderInfoPanel()` 的 nations/season/shop 三个二级 Tab——抽成新的私有方法 `renderWorldTabBody()`，直接画进总览面板已有的弹层区域（不再单独起 dim/panel/title/关闭按钮）；`openInfoPanel()` 整个方法删除，原先「首次打开时懒加载 shop 目录 + nations」的逻辑搬进新增的 `loadWorldTabData()`，由 `switchTerritoryTab('world')` 触发；`doBuyShopItem`/`doRename`（`WorldMapNet.ts`）刷新面板的判断条件相应改成 `territoryPanelOpen && territoryTab === 'world'`。面板高度从固定 `min(460, …)` 改为页面高度的 80%（`h * 0.8`，仍 cap 到不遮挡底部 HUD）。验证：`tsc --noEmit` + `webpack --mode development` 全绿；用临时 `__NW_WorldMapPanels` 调试钩子（挂在 `app.ts`，验证后已移除）在真实 dev server 里手搭最小 ctx 直接调 `renderTerritoryPanel()`，截图确认三个 Tab（总览/领地/World）+ World Tab 下 nations/season/shop 二级 Tab 正常显示、面板高度明显变高。
 
+**总览可读性放大（2026-07-16）**：用户反馈资源界面偏窄偏小。`renderTerritoryPanel()` 面板宽度上限从 `min(420, w-20)` 提到 `min(840, w-20)`（窄屏仍钳到 `w-20`，真机不溢出）；总览页文字约 2×——资源行/赛季·人口行用 `FS.label`（24）、强调的兵力/领地行用 `FS.heading`（28），行距同步加倍（20→40、22→44、26→52、18→36）以免重叠。仅影响总览 Tab；列表/World 两个 Tab 共用同一 `pw` 会一起变宽，内部字号未动。验证：`tsc --noEmit` 绿；临时 `?terrpanel` 调试入口（构造真实 `WorldMapScene` + 假数据，`forceCanvas` 抓图，验证后已移除）截图确认字号翻倍、面板加宽、无重叠裁切。
+
 ---
 
 ## 27. 险地/关隘战力模拟补测（2026-07-16，DRAFT 数值收尾）

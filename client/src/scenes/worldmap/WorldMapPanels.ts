@@ -799,7 +799,9 @@ export class WorldMapPanels {
     this.ctx.modalBtnRects = [];
 
     const { w, h } = this.ctx;
-    const pw = Math.min(420, w - 20);
+    // Width doubled (420→840, still clamped to the viewport) so the enlarged
+    // overview text has room to breathe.
+    const pw = Math.min(840, w - 20);
     // Panel height is 80% of the page height (capped so it never overlaps the HUD).
     const ph = Math.min(h * 0.8, h - HUD_H - 16);
     const px = (w - pw) / 2;
@@ -847,21 +849,23 @@ export class WorldMapPanels {
       const res = me.resources ?? {};
       const yieldRate = me.yieldRate ?? {};
       const RES_LABEL: Record<string, string> = { ink: t('world.ink'), paper: t('world.paper'), graphite: t('world.graphite'), metal: t('world.metal'), sticker: t('world.sticker') };
+      // Overview text enlarged ~2x per request: resource/season rows at FS.label,
+      // the emphasized troops/territory lines at FS.heading; line spacing doubled to match.
       for (const rt of ['ink', 'paper', 'graphite', 'metal', 'sticker']) {
         const amt = Math.floor(res[rt] ?? 0);
         const yr = Math.round(yieldRate[rt] ?? 0);
-        addText(`${RES_LABEL[rt]}  ${amt}  (+${yr}/${t('world.resYield')})`, px + 14, ly, 12, C.dark);
-        ly += 20;
+        addText(`${RES_LABEL[rt]}  ${amt}  (+${yr}/${t('world.resYield')})`, px + 14, ly, FS.label, C.dark);
+        ly += 40;
       }
-      ly += 8;
-      addText(`${t('world.troops')} ${Math.floor(me.troops ?? 0)}/${Math.floor(me.troopCap ?? 0)}`, px + 14, ly, 13, C.red);
-      ly += 22;
-      addText(`${t('world.territory')} ${me.territoryCount ?? 0}`, px + 14, ly, 13, C.red);
-      ly += 26;
+      ly += 16;
+      addText(`${t('world.troops')} ${Math.floor(me.troops ?? 0)}/${Math.floor(me.troopCap ?? 0)}`, px + 14, ly, FS.heading, C.red);
+      ly += 44;
+      addText(`${t('world.territory')} ${me.territoryCount ?? 0}`, px + 14, ly, FS.heading, C.red);
+      ly += 52;
       const s = this.ctx.season;
       if (s) {
-        addText(t('world.seasonNo').replace('{n}', String(s.season)), px + 14, ly, 12, C.mid); ly += 18;
-        addText(t('world.seasonPop').replace('{pop}', String(s.population)).replace('{cap}', String(s.capacity)), px + 14, ly, 12, C.mid); ly += 18;
+        addText(t('world.seasonNo').replace('{n}', String(s.season)), px + 14, ly, FS.label, C.mid); ly += 36;
+        addText(t('world.seasonPop').replace('{pop}', String(s.population)).replace('{cap}', String(s.capacity)), px + 14, ly, FS.label, C.mid); ly += 36;
       }
     } else if (this.ctx.territoryTab === 'world') {
       this.renderWorldTabBody(px, pw, ly, bodyBottom);
