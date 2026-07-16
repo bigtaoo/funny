@@ -761,7 +761,7 @@ if (path.startsWith('/admin/world/')) {
 
 ### 19.5 DRAFT / 后续
 
-- 数值调参：`STRONGHOLD_GARRISON_PER_LEVEL`/`STRONGHOLD_LOOT_PER_LEVEL`/`STRONGHOLD_LOOT_MATERIAL_PER_LEVEL` 待战力模拟细化（§16.5 同批）；生成密度已定案（见下）。**✅ 生成密度已修复 CLOSED（2026-07-02，econ-sim 险地轨）**：原 `strongholdFreq=1/70` value-noise 在 300×300 图上只 ~18 格点，险地数种子间 **0→6,436**（CV 1.02，14% 零险地，聚成 blob 均值 862 格），占领发的持久 `binding` 在高数量种子破 A 轨 15% 稀释判据。**修复**：生成层换逐格哈希 `rand2(x,y,seed^0x0555) > 0.997`（`shared/slg.ts`，merge-first 已合 main），删 `strongholdFreq`。**修复后实测**：236 中位（197→282，CV 0.07、0% 零险地、0.26% 命中意图）、平均 blob 1.0 格（孤立点）、binding 稀释 max 世界×100% 占领仅 2.8% ≪ 15%——①②③全 PASS。守军/掠夺量本身 sane。详见 [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md) §9 险地轨 + [`ECONOMY_VERIFICATION_LOG.md`](ECONOMY_VERIFICATION_LOG.md) §13-SLG-STRONGHOLD。
+- ~~数值调参：`STRONGHOLD_GARRISON_PER_LEVEL`/`STRONGHOLD_LOOT_PER_LEVEL`/`STRONGHOLD_LOOT_MATERIAL_PER_LEVEL` 待战力模拟细化~~ **✅ 战力模拟已补测 CLOSED（2026-07-16）**：见 §27。生成密度已定案（见下）。**✅ 生成密度已修复 CLOSED（2026-07-02，econ-sim 险地轨）**：原 `strongholdFreq=1/70` value-noise 在 300×300 图上只 ~18 格点，险地数种子间 **0→6,436**（CV 1.02，14% 零险地，聚成 blob 均值 862 格），占领发的持久 `binding` 在高数量种子破 A 轨 15% 稀释判据。**修复**：生成层换逐格哈希 `rand2(x,y,seed^0x0555) > 0.997`（`shared/slg.ts`，merge-first 已合 main），删 `strongholdFreq`。**修复后实测**：236 中位（197→282，CV 0.07、0% 零险地、0.26% 命中意图）、平均 blob 1.0 格（孤立点）、binding 稀释 max 世界×100% 占领仅 2.8% ≪ 15%——①②③全 PASS。守军/掠夺量本身 sane。详见 [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md) §9 险地轨 + [`ECONOMY_VERIFICATION_LOG.md`](ECONOMY_VERIFICATION_LOG.md) §13-SLG-STRONGHOLD。
 - **攻克奖励材料 ✅（2026-06-21，随 G4 §15.6 落地）**：除单资源即时入袋，额外掉落养成材料 `binding`（`strongholdMaterialLoot(level)` 按等级线性，**DRAFT** `STRONGHOLD_LOOT_MATERIAL_PER_LEVEL=4`）——攻克胜经 `meta.grantMaterial` 发到 `SaveData.materials` 养成统一池（跨进程 best-effort，orderId=`stronghold_loot:{worldId}:{toTile}:{arriveAt}` 幂等），攻克败不掉。复用 G4 打通的材料通道，险地养成价值兑现。装备掉落仍待装备库 E2~E4。worldsvc `stronghold.e2e` 加掉落断言（胜掉/败不掉/orderId 幂等键）。
 - 险地系统守军当前为合成步兵；后续可换更强兵种/自定义系统布阵 config（§16.5 满血容量表/兵种当量调参后）。
 
@@ -1072,3 +1072,18 @@ if (path.startsWith('/admin/world/')) {
 - 服务端：`TerritoryService.listTerritories()`（`territory.ts`）复用 `coreYield.ts` 已有的 `cols.tiles.find({worldId, ownerId, type:{$ne:'base'}})` 查询模式，经 `service.ts` 委托、`httpApi.ts` `GET /world/territories` 暴露；`openapi-world.yml` 新增端点定义（复用既有 `WorldTileView` schema，未新建 schema），`gen:api:world` + `gen:api:contracts` + 客户端 `rest:gen` 三步codegen 全部重跑同步。
 - 客户端：`WorldMapContext` 新增 `territoryPanelOpen`/`territoryTab`/`territories`/`territoryHiddenLevels`/`resClusterRect`；`beginScrollList()` 顺带泛化出 `ctx.infoScrollRerender` 回调（原先滚动拖拽/滚轮硬编码调 `renderInfoPanel()`，现在按打开的是哪个面板调用对应的渲染函数，World-info 和 Territory Overview 两个弹层共用同一套滚动输入代码不用分叉）；等级过滤 checkbox 直接注册为普通 `modalBtnRects` 项（勾选即 toggle + 重渲染），不需要新的命中判定分支；跳转复用 `centerAt` 并额外 `closeModal()`（列表在弹层里，跳转后应看地图）；放弃改走新增的 `WorldMapNet.doAbandonFromList()`（区别于原 `doAbandon()`：不 `closeModal()`，放弃后原地刷新列表，不打断玩家继续处理其他行）。
 - 测试：`server/worldsvc/test/territories.e2e.test.ts`（5 例，真实 Mongo）——未入世界拒绝、已加入无领地返回空、领地行字段正确且排除 3×3 主城 footprint、跨玩家隔离、放弃后从列表消失。`client/test/ui/worldMapTerritoryPanel.ui.ts`（12 例，PIXI headless）——开面板守卫（未入世界→toast 不开面板）、总览页无滚动区、切到列表 Tab 触发一次性拉取、等级 checkbox 勾选/取消的行数变化（按 `modalBtnRects` 长度断言，不深入渲染内容）、跳转关闭弹层+居中地图、放弃调用 `net.doAbandonFromList` 且不关弹层。另修了 `worldMapHeaderInset.ui.ts` 手搭假 ctx 缺 `resClusterRect` 字段导致的 3 例失败（`zeroRect()` 补齐）。`tsc --noEmit` + `webpack --mode production` + worldsvc 全套（31 文件 235 例）+ client `test:ui` 全套（52 文件 490 例）均绿；浏览器截图人工核对总览/列表/过滤/跳转/放弃交互，细节见会话记录。
+
+---
+
+## 27. 险地/关隘战力模拟补测（2026-07-16，DRAFT 数值收尾）
+
+> 背景：项目体检发现 `STRONGHOLD_GARRISON_PER_LEVEL`/`STRONGHOLD_LOOT_PER_LEVEL`/`STRONGHOLD_LOOT_MATERIAL_PER_LEVEL`/`CROSSING_GARRISON_PER_LEVEL` 四个常量仍带 DRAFT 标记（§15.3/§19.5）。前三者中，`STRONGHOLD_LOOT_PER_LEVEL`/`STRONGHOLD_LOOT_MATERIAL_PER_LEVEL` 的经济面早已被 `strongholdRun.ts`（§13-SLG-STRONGHOLD.2-4）核验过，只是源码注释没跟着更新；真正从未验证过的是「这些守军数值到底能不能打下来」——原注释只是一段手估 HP 对比，没有真跑过引擎。
+
+**新增战力模拟脚本**（`server/tools/econ-sim/src/strongholdCombat.ts` + `strongholdCombatRun.ts`，`npx tsx src/strongholdCombatRun.ts`）：复用真实 `@nw/engine` 攻城引擎（自成一体，标准同 `client/test/pvpSim.ts`——独立于 worldsvc 直接调用 `@nw/engine` 原语，而非 import worldsvc 内部模块，因为后者会把 `tsc --noEmit` 的 rootDir 拉出包边界）。
+
+**关键发现**：
+1. **险地/关隘实际等级是固定值，不是文档暗示的 1..5 区间**：险地恒生成于 `SLG_MAP_MAX_LEVEL`（现 10，ADR-032 起从 5 涨上来的）→ 守军恒 3,600 兵；自动关隘恒生成于 `max(2, SLG_MAP_MAX_LEVEL-1)`（现 9）→ 守军恒 1,800 兵。`siege.ts` 旧注释仍写"满级 5→1800"，是地图上限上调后没跟着改的过时描述，本轮已订正。
+2. **战力校验通过**：险地——新手（troopCap=2000）0% 胜率，小额投入（troopCap≈4500，练兵场约 3 级）100% 胜率；关隘——新手 0%，练兵场仅 1 级（troopCap=3000）即 100%（比险地更早开放，符合"较轻关卡"设计意图）。两个常量**均保持不变**，DRAFT 标记已从 `shared/src/slg/siege.ts` 源码注释移除，换成本次核验依据（详见 `ECONOMY_VERIFICATION_LOG.md` §13-SLG-STRONGHOLD.5）。
+3. **⚠️ 新发现的独立 gap（非本轮数值范围）**：单次出征兵力超过约 9,600（= 10 攻击车道 × 16 可生成行 × 60 血/兵，棋盘纵深耗尽）时，`synthesizeArmy` 轮转铺兵会让胜负变得非单调（例如 9,000 兵败、9,600 兵胜、10,000 兵又败），根源是兵力在车道内拥堵导致战斗超时，与守军强度无关。`SIEGE_CHEAP_RATIO`（`shared/slg/siege.ts`）本该把这种悬殊对局挡在真实引擎之外，但 `combatSiege/arrival.ts` 的险地/关隘围攻从未做这个比率检查，无条件跑 `runSiegeBattle`——满练兵场+满行囊（satchel，均可堆到 12,000）玩家单次出征在生产环境就可能撞上这个问题。这是路由/工程缺口，不是「调大调小某个常量」能解决的，已登记为独立后续任务（不在本轮范围内处理）。
+
+**结论**：`STRONGHOLD_GARRISON_PER_LEVEL=360`、`CROSSING_GARRISON_PER_LEVEL=200`、`STRONGHOLD_LOOT_MATERIAL_PER_LEVEL=4` 三处 DRAFT 标记均已清除（前者战力实测通过，后者经济稀释早已通过只是注释未同步）；`STRONGHOLD_LOOT_PER_LEVEL=5000` 本就非 DRAFT（季内一次性、已有 sanity check）。四项收尾完成，SLG 待调参数值清单清空。
