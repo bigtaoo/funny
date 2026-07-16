@@ -11,6 +11,7 @@ import {
   PROTECTION_SEC,
   NATION_BONUS_DEFENSE,
   cabinetLootProtect,
+  buildingLevel,
   SECT_LEADER_PENALTY_RATE,
   type ResourceType,
   type SiegeOutcome,
@@ -151,6 +152,7 @@ export function SiegeHelpersMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
      * Passive relocation (§3.4/§8.2): after the capital is destroyed, the defender's capital is randomly relocated to a new empty tile, and **all currently occupied territory is lost**.
      * Delete all of the player's own tiles (old capital + territory) → randomly pick a legal empty tile and write a new capital (with a protection shield) → update mainBaseTile +
      * recompute yield (only the new capital remains at this point). Garrison troops in lost territory are not refunded (losing territory means losing those troops — a severe penalty).
+     * D-CITY-8: also sends the defender a system mail — this is the one durability-depletion outcome that previously had no player notification.
      */
     override async passiveRelocate(worldId: string, defenderId: string, t: number): Promise<void> {
       const { cols } = this.core.deps;
@@ -168,17 +170,25 @@ export function SiegeHelpersMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
           { _id: pw._id },
           { $set: { yieldRate, lastTickAt: t }, $unset: { mainBaseTile: '' }, $inc: { rev: 1 } },
         );
+        void this.core.mail.sendSystemMail(defenderId, `slg-durability-relocate:${worldId}:${defenderId}:${t}`, {
+          subject: 'slg.city.durabilityBreached.subject',
+          body: 'slg.city.durabilityBreached.body',
+          expireDays: 14,
+        });
         return;
       }
 
       const newTid = tileId(worldId, spot.x, spot.y);
       // ADR-025: write the full 3×3 footprint (anchor garrison:0 + protection shield); ring cells carry the same shield.
+      // D-CITY-8: fresh capital → full durability at the wall-level-derived cap (a clean slate, unlike voluntary relocation).
       const baseDocs = this.core.baseTileDocs(worldId, spot.x, spot.y, defenderId, {
         garrison: 0,
         level: spot.level,
         ...(spot.resType ? { resType: spot.resType } : {}),
         protectedUntil: t + PROTECTION_SEC * 1000, // relocated to safety: apply protection shield
         ...(pw.familyId ? { familyId: pw.familyId } : {}),
+        wallLevel: buildingLevel(pw.buildings, 'wall'),
+        now: t,
       });
       await Promise.all(
         baseDocs.map((d) => cols.tiles.updateOne({ _id: d._id }, { $set: d }, { upsert: true })),
@@ -194,6 +204,11 @@ export function SiegeHelpersMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
         void this.core.pushTile(defenderId, after);
         await this.core.pushTileToObservers(after, new Set([defenderId])); // G5-2: new capital after passive relocation is visible to observers
       }
+      void this.core.mail.sendSystemMail(defenderId, `slg-durability-relocate:${worldId}:${defenderId}:${t}`, {
+        subject: 'slg.city.durabilityBreached.subject',
+        body: 'slg.city.durabilityBreached.body',
+        expireDays: 14,
+      });
     }
   };
 }

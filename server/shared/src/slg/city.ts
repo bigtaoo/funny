@@ -147,9 +147,9 @@ export function buildGateReason(
   return null;
 }
 
-// ── P2 building functions (wall / academy / cabinet loot-protect) ───────────────────────────────
-/** DRAFT: wall building → +10% garrison HP per level on the defender's main base (step doubled for DESK_MAX_LEVEL=10, D-CITY-7). */
-export const WALL_DEFENSE_STEP = 0.10;
+// ── P2 building functions (academy / cabinet loot-protect) ──────────────────────────────────────
+// wall's effect on base siege moved from a battle-time garrison-HP multiplier to persistent durability
+// (D-CITY-8, 2026-07-15) — see baseDurabilityMax()/regenDurability() in shared/src/slg/siege.ts.
 /** DRAFT: academy building → attacker siege-blueprint HP buff per level (step doubled for DESK_MAX_LEVEL=10, D-CITY-7). */
 export const ACADEMY_HP_STEP = 0.04;
 /** DRAFT: academy building → attacker siege-blueprint damage buff per level (step doubled for DESK_MAX_LEVEL=10, D-CITY-7). */
@@ -159,10 +159,6 @@ export const ACADEMY_SIEGE_STEP = 0.03;
 /** DRAFT: cabinet building → loot protection rate per level (stacks up to 40% at max; step doubled for DESK_MAX_LEVEL=10, D-CITY-7). */
 export const CABINET_PROTECT_STEP = 0.04;
 
-/** Multiplier applied to defender garrison HP when the defender's main base (type:'base') is besieged (P2, SLG_CITY_DESIGN §5). */
-export function wallDefenseMult(buildings: Partial<Record<BuildingKey, number>> | undefined): number {
-  return 1 + buildingLevel(buildings, 'wall') * WALL_DEFENSE_STEP;
-}
 /** Fraction of looted resources the cabinet protects (cabinetLootProtect × loot = protected, not transferred). */
 export function cabinetLootProtect(buildings: Partial<Record<BuildingKey, number>> | undefined): number {
   return Math.min(0.8, buildingLevel(buildings, 'cabinet') * CABINET_PROTECT_STEP);

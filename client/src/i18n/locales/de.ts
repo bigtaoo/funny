@@ -1379,7 +1379,7 @@ export const de: Record<TranslationKey, string> = {
   'city.bonusTrainSpeed': 'Ausbildung +{pct}% schneller',
   'city.bonusQueueSlots': 'Warteschlange: {n} Slots',
   'city.bonusGateMaster': 'Begrenzt alle Gebäudestufen',
-  'city.bonusWallHp': 'Garnisonstruppstärke +{pct}% (bei Belagerung)',
+  'city.bonusWallHp': 'Haltbarkeitsobergrenze der Hauptstadt: {n} (regeneriert mit der Zeit)',
   'city.bonusAcademyHp': 'Angriffseinheiten HP +{pct}%',
   'city.bonusAcademyDmg': 'Angriffseinheiten Schaden +{pct}%',
   'city.bonusSatchel': 'Truppenobergrenze pro Marsch: {n}',

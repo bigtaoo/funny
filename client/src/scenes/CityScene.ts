@@ -26,7 +26,7 @@ import {
   CABINET_CAP_STEP,
   DRILL_TROOPCAP_STEP,
   DRILL_TRAIN_SPEED_STEP,
-  WALL_DEFENSE_STEP,
+  baseDurabilityMax,
   ACADEMY_HP_STEP,
   ACADEMY_DAMAGE_STEP,
   SATCHEL_CARRY_STEP,
@@ -718,8 +718,8 @@ export class CityScene implements Scene {
         lines.push(t('city.bonusQueueSlots').replace('{n}', String(trainQueueMaxFor(bld))));
         break;
       case 'wall': {
-        const wallPct = Math.round(lvl * WALL_DEFENSE_STEP * 100);
-        lines.push(t('city.bonusWallHp').replace('{pct}', String(wallPct)));
+        // D-CITY-8: wall no longer buffs battle-time garrison HP — it caps the base's persistent, self-healing durability instead.
+        lines.push(t('city.bonusWallHp').replace('{n}', String(baseDurabilityMax(lvl))));
         break;
       }
       case 'academy': {
