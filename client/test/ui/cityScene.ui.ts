@@ -89,9 +89,10 @@ for (const [label, [w, h]] of [['portrait', PORTRAIT], ['landscape', LANDSCAPE]]
       const { scene } = buildScene(w, h);
       const inner = internals(scene);
       // hits[0] is the header Back button, hits[1..2] are the D-CITY-11 page tabs
-      // (内政/军事); the rest (BUILDING_KEYS.length, 11 incl. satchel/D-CITY-9) are the grid cards.
+      // (内政/军事); the rest are the grid cards — BUILDING_KEYS.length (11, incl.
+      // satchel/D-CITY-9) minus academy, which D-CITY-12 moved to its own military-page panel.
       const cards = inner.hits.slice(3);
-      expect(cards.length).toBe(11);
+      expect(cards.length).toBe(10);
 
       for (const c of cards) {
         expect(c.x).toBeGreaterThanOrEqual(0);
@@ -177,8 +178,9 @@ describe('CityScene page tabs (D-CITY-11 dual-screen split, 2026-07-16)', () => 
     const militaryTab = inner.hits[2]!;
     inner.handleDown(militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
     expect(inner.page).toBe('military');
-    // Building-grid card hits must not leak into the military page's hit list.
-    expect(inner.hits.length).toBe(3);
+    // Building-grid card hits must not leak into the military page's hit list; hits[3] is
+    // the D-CITY-12 tech-tree panel (academy), the only card left there.
+    expect(inner.hits.length).toBe(4);
 
     const domesticTab = inner.hits[1]!;
     inner.handleDown(domesticTab.x + domesticTab.w / 2, domesticTab.y + domesticTab.h / 2);
@@ -196,6 +198,29 @@ describe('CityScene page tabs (D-CITY-11 dual-screen split, 2026-07-16)', () => 
     const backHit = inner.hits[0]!;
     inner.handleDown(backHit.x + backHit.w / 2, backHit.y + backHit.h / 2);
     expect(calls.back).toBe(1);
+    scene.destroy();
+  });
+});
+
+describe('CityScene tech-tree panel (D-CITY-12, 2026-07-16)', () => {
+  it('tapping the military page tech-tree panel opens the academy detail modal', () => {
+    const { scene } = buildScene(...PORTRAIT);
+    const inner = internals(scene);
+    const militaryTab = inner.hits[2]!;
+    inner.handleDown(militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
+    expect(inner.page).toBe('military');
+
+    const techTreeHit = inner.hits[3]!;
+    inner.handleDown(techTreeHit.x + techTreeHit.w / 2, techTreeHit.y + techTreeHit.h / 2);
+    expect(inner.selectedBuilding).toBe('academy');
+    scene.destroy();
+  });
+
+  it('academy no longer appears as a card in the domestic building grid', () => {
+    const { scene } = buildScene(...PORTRAIT);
+    const inner = internals(scene);
+    // 10 cards now (11 BUILDING_KEYS minus academy), past Back + 2 page tabs.
+    expect(inner.hits.slice(3).length).toBe(10);
     scene.destroy();
   });
 });

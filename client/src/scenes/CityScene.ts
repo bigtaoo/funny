@@ -1,9 +1,9 @@
-// CityScene — Home-city management (SLG_CITY_DESIGN P1 + P3 D-CITY-11).
+// CityScene — Home-city management (SLG_CITY_DESIGN P1 + P3 D-CITY-11/12).
 // Entry: WorldMapScene taps own base tile → "Enter Desk".
 // Two switchable pages (D-CITY-11): 内政 (resource bar + build-queue strip +
 //   scrollable building card grid, matches the Roster/Skins/Teams card-grid
-//   language, tap-to-open detail modal) and 军事 (placeholder — team panel
-//   D-CITY-10 and tech-tree panel D-CITY-12 land here later).
+//   language, tap-to-open detail modal) and 军事 (tech-tree panel for `academy`,
+//   D-CITY-12; team panel D-CITY-10 still a placeholder below it).
 // Troop training is surfaced via the drillYard detail modal (replaces the
 // WorldMapScene train button for users who enter city).
 
@@ -106,6 +106,10 @@ const CARD_GAP = 12;
 const CARD_W_TARGET = 148;
 const CARD_H = 128;
 const GRID_PAD = 8;
+
+// D-CITY-12: academy is pulled out of the domestic building grid into its own
+// standalone tech-tree panel on the military page (see renderMilitaryPage).
+const DOMESTIC_BUILDING_KEYS: readonly BuildingKey[] = BUILDING_KEYS.filter((k) => k !== 'academy');
 
 // ── CityScene ────────────────────────────────────────────────────────────────
 
@@ -307,17 +311,18 @@ export class CityScene implements Scene {
 
       // Building card grid (scrollable)
       this.renderBuildingGrid(y);
-
-      // Detail modal (popup-scale-to-80% convention, tap-outside-to-close). The grid/queue
-      // sit dimmed underneath — drop their hits (keeping only Back) so a tap there can't
-      // silently switch buildings or trigger speedup instead of dismissing the modal.
-      if (this.selectedBuilding) {
-        this.hits = [backHit];
-        this.renderDetailModal(this.selectedBuilding);
-      }
     } else {
       this.scrollMax = 0;
       this.renderMilitaryPage(y);
+    }
+
+    // Detail modal (popup-scale-to-80% convention, tap-outside-to-close). The page content
+    // sits dimmed underneath — drop its hits (keeping only Back) so a tap there can't
+    // silently switch buildings or trigger speedup instead of dismissing the modal. Shared
+    // across both pages: the military page's tech-tree panel (academy) opens it too.
+    if (this.selectedBuilding) {
+      this.hits = [backHit];
+      this.renderDetailModal(this.selectedBuilding);
     }
 
     // Busy overlay
@@ -382,13 +387,17 @@ export class CityScene implements Scene {
     return startY + tabH + 8;
   }
 
-  // ── Military page (D-CITY-11 placeholder — team panel D-CITY-10 and tech-tree ─
-  //    panel D-CITY-12 land here in follow-up tasks; durability status pending
-  //    a contract change to expose the base's hp/maxHp on PlayerWorldView) ──────
+  // ── Military page (D-CITY-11 tab; D-CITY-12 tech-tree panel below; team panel
+  //    D-CITY-10 and durability status still land here in follow-up tasks — the
+  //    latter pending a contract change to expose the base's hp/maxHp on
+  //    PlayerWorldView) ─────────────────────────────────────────────────────────
 
   private renderMilitaryPage(startY: number): void {
     const { w, h } = this;
+    startY = this.renderTechTreePanel(startY);
+
     const panH = h - startY - GRID_PAD;
+    if (panH <= 0) return;
     const pg = sketchPanel(w - 16, panH, { fill: C.paper, border: C.line, width: 1, seed: seedFor(w, panH, 9) });
     pg.x = 8;
     pg.y = startY;
@@ -403,6 +412,63 @@ export class CityScene implements Scene {
     lbl.x = (w - lbl.width) / 2;
     lbl.y = startY + panH / 2 - 10;
     this.container.addChild(lbl);
+  }
+
+  // D-CITY-12: academy promoted from an ordinary building-grid card to its own standalone
+  // panel — a season-scoped blueprint buff deserves more ceremony than a generic card.
+  // Injection logic (buildSiegeBlueprints) is unchanged; only the UI presentation moved.
+  private renderTechTreePanel(startY: number): number {
+    const { w } = this;
+    const bld = this.me?.buildings;
+    const lvl = buildingLevel(bld, 'academy');
+    const inQueue = (this.me?.buildQueue ?? []).some(q => q.key === 'academy');
+    const bonusLines = this.buildingBonusLines('academy', bld);
+
+    const panH = 96;
+    const pg = sketchPanel(w - 16, panH, {
+      fill: C.paper, border: inQueue ? C.gold : C.line, width: inQueue ? 2 : 1, seed: seedFor(w, panH, 10),
+    });
+    pg.x = 8;
+    pg.y = startY;
+    this.container.addChild(pg);
+
+    const icon = this.bldIcon('academy', 36, C.dark);
+    icon.x = 20;
+    icon.y = startY + (panH - 36) / 2;
+    this.container.addChild(icon);
+
+    const titleLbl = txt(t('city.military.techTree'), 16, C.dark, true);
+    titleLbl.x = 68;
+    titleLbl.y = startY + 12;
+    this.container.addChild(titleLbl);
+
+    const lvlLbl = txt(t('city.lvlLabel').replace('{lvl}', String(lvl)), 12, C.mid);
+    lvlLbl.x = 68 + titleLbl.width + 10;
+    lvlLbl.y = startY + 14;
+    this.container.addChild(lvlLbl);
+
+    let bly = startY + 34;
+    for (const line of bonusLines) {
+      const bl = txt(line, 12, C.mid, false, w - 96);
+      bl.x = 68;
+      bl.y = bly;
+      this.container.addChild(bl);
+      bly += 16;
+    }
+
+    if (inQueue) {
+      const qDot = buildIcon('hammer', 18, C.gold);
+      qDot.x = w - 40;
+      qDot.y = startY + 12;
+      this.container.addChild(qDot);
+    }
+
+    this.hits.push({
+      x: 8, y: startY, w: w - 16, h: panH,
+      fn: () => { this.selectedBuilding = 'academy'; this.render(); },
+    });
+
+    return startY + panH + 8;
   }
 
   // ── Resource bar ──────────────────────────────────────────────────────────
@@ -511,7 +577,7 @@ export class CityScene implements Scene {
   private renderBuildingGrid(startY: number): void {
     const { w, h } = this;
     const bld = this.me?.buildings;
-    const keys = BUILDING_KEYS;
+    const keys = DOMESTIC_BUILDING_KEYS;
 
     const availW = w - GRID_PAD * 2;
     const cols = Math.max(1, Math.floor((availW + CARD_GAP) / (CARD_W_TARGET + CARD_GAP)));
