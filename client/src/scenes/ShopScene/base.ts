@@ -28,6 +28,7 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedF
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { type IconKind } from '../../render/icons';
 import { loadCoinIconAtlas, buildCoinIcon } from '../../render/coinIconAtlas';
+import { getArtTexture } from '../../render/cardArt';
 import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
 import { BusyTracker } from '../../ui/busyTracker';
@@ -132,6 +133,8 @@ export class ShopSceneBase {
   protected toast: { text: string; color: number } | null = null;
 
   protected hits: Hit[] = [];
+  /** URLs whose texture-load re-render has already been hooked (mirrors CardScene.drawArtFit). */
+  private readonly artHooked = new Set<string>();
   protected readonly unsubs: Array<() => void> = [];
   /** Set in destroy(); guards render() so a late async re-render can't paint into a torn-down container. */
   protected destroyed = false;
@@ -457,10 +460,19 @@ export class ShopSceneBase {
     const iconX = x + pad;
     const iconY = midTop;
     if (spec.artUrl) {
-      const art = PIXI.Sprite.from(spec.artUrl);
-      art.width = iconS; art.height = iconS;
-      art.x = iconX; art.y = iconY;
-      body.addChild(art);
+      // Wait for the texture to finish loading before sizing the sprite — setting width/height
+      // against an unloaded (0/1px) baseTexture yields a garbage scale and the art never appears.
+      // Re-render once loaded (mirrors CardScene.drawArtFit).
+      const tex = getArtTexture(spec.artUrl);
+      if (tex.baseTexture.valid) {
+        const art = new PIXI.Sprite(tex);
+        art.width = iconS; art.height = iconS;
+        art.x = iconX; art.y = iconY;
+        body.addChild(art);
+      } else if (!this.artHooked.has(spec.artUrl)) {
+        this.artHooked.add(spec.artUrl);
+        tex.baseTexture.once('loaded', () => this.render());
+      }
     } else {
       const icon = buildCoinIcon(spec.icon, iconS, spec.iconColor);
       icon.x = iconX; icon.y = iconY;
