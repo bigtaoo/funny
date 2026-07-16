@@ -1,4 +1,4 @@
-// Admin backend client for publishing map-template edits (SLG_DESIGN.md §24). Same Bearer-token/localStorage
+// Admin backend client for publishing map-template edits (SLG_DESIGN_LOG.md §24). Same Bearer-token/localStorage
 // pattern as tools/ops/src/api.ts (the only other tool with an admin client) — no shared package exists between
 // tools, so this is a deliberately small, scoped-down copy: only the map-template endpoints this tool needs.
 import type { MapTemplateSummary, MapTemplateTile } from '@nw/shared/slg';

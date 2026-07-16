@@ -201,7 +201,7 @@ export class TerritoryService {
   /**
    * List all tiles the player currently owns (territory + captured stronghold; excludes the 3×3 capital
    * footprint, which is managed via relocate, not jump/abandon). Backs the client Territory Overview panel
-   * (design/game/SLG_DESIGN.md §26) — the HUD's `territoryCount` is only an aggregate, this returns the rows.
+   * (design/game/SLG_DESIGN_LOG.md §26) — the HUD's `territoryCount` is only an aggregate, this returns the rows.
    */
   async listTerritories(worldId: string, accountId: string): Promise<WorldTileView[]> {
     const { cols } = this.core.deps;

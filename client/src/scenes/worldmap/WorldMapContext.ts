@@ -77,7 +77,7 @@ export class WorldMapContext {
   season: SeasonView | null = null;
   shopItems: SlgShopItemView[] = [];
   infoTab: 'nations' | 'season' | 'shop' = 'nations';
-  /** Territory Overview panel (SLG_DESIGN.md §26): opened by tapping the header resource cluster. */
+  /** Territory Overview panel (SLG_DESIGN_LOG.md §26): opened by tapping the header resource cluster. */
   territoryPanelOpen = false;
   territoryTab: 'overview' | 'list' = 'overview';
   /** Full list of owned tiles — fetched lazily (WorldMapNet.refreshTerritories) when the list tab is opened, not on every ~5s poll (can be 200-300 rows). */

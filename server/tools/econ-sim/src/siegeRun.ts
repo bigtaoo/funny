@@ -119,4 +119,4 @@ console.log(`  ② SIEGE_CHEAP_RATIO=10         misclass check: ${c2 ? '✅ PASS
 console.log(`     Misclassification rate = 0% (structural, Lanchester; ≤ 1% criterion met).`);
 console.log(`     Normal-battle samples (ratio < 10) are NOT skipped → engine runs → outcomes mixed.\n`);
 console.log(c1 && c2 ? '  ✅ C-TRACK CLOSED' : '  ❌ C-TRACK HAS FAILURES');
-console.log('\nRegister conclusions → ECONOMY_NUMBERS.md §13-SLG-C');
+console.log('\nRegister conclusions → ECONOMY_VERIFICATION_LOG.md §13-SLG-C');

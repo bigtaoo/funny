@@ -887,7 +887,7 @@ export const en: Record<TranslationKey, string> = {
   'world.spedup': 'Sped up',
   'world.resYield': 'Yield',
   'world.close': 'Close',
-  // ── Territory Overview panel (2026-07-16, SLG_DESIGN.md §26) ─────────────
+  // ── Territory Overview panel (2026-07-16, SLG_DESIGN_LOG.md §26) ─────────────
   'world.territoryTitle': 'Territory Overview',
   'world.territoryTabOverview': 'Overview',
   'world.territoryTabList': 'Territory',

@@ -425,6 +425,12 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           await svc.slgCloseSeason(actor.adminId, str(b.worldId));
           return send(res, 200, { ok: true });
         }
+        if (method === 'POST' && path === '/admin/slg/season/merge') {
+          requireCap(actor, 'slg.season.manage');
+          const b = await readJson(req);
+          const result = await svc.slgMergeShard(actor.adminId, str(b.worldId), str(b.targetWorldId));
+          return send(res, 200, { ok: true, result });
+        }
 
         // ── SLG anomalous transaction audit (G7 anti-RMT, §17.7) ──
         if (method === 'GET' && path === '/admin/slg/audit/anomalies') {

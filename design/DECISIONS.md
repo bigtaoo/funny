@@ -46,7 +46,7 @@
 
 - **决策**：放弃手操；关键围攻 = 双方预布兵的确定性自动战斗，**服务器跑引擎算权威结果即时落地**，客户端凭 `seed + 双方布阵`本地重播观战。
 - **作废**：上一版「廉价线性结算为权威 + judge 复算反作弊对账 + 手操复盘」（S8-3/S8-3b）。`judgeRunner` siege 路径、录像上传、peer 复算、`siegeLandingFromVerdict` 全删。
-- **影响**：[`SLG_DESIGN.md`](game/SLG_DESIGN.md) §16 为现行基准；§8-3/§8-3b/§11 的旧描述已加"已被 §16 取代"指针。
+- **影响**：[`SLG_DESIGN_LOG.md`](game/SLG_DESIGN_LOG.md) §16 为现行基准；§8-3/§8-3b/§11 的旧描述已加"已被 §16 取代"指针。
 
 ## ADR-009 经济/养成体系：体力 + 合成树 + 等值广告金币 — Accepted — 2026-06-21
 
@@ -178,7 +178,7 @@
   - **D-CITY-1 建筑赛季清空**：建筑/资源/兵力/地图态等 SLG 赛季内战略态**全部赛季重置清空**（对齐 SLG4），是变现发动机「重肝」。**跨季只留 meta 系统资产**——主要是**材料**（材料合成装备；meta 直接发装备的地方很少，呼应 ADR-012/ADR-017「材料为主、成品骨干靠合成」）。
   - **红线/边界**：建筑只动经济/兵力上限/主城城防，**不提单位战力**（战力归跨季统一养成树的装备/科技）；建筑**永不喂 `buildPvpBlueprints`**（天梯红线，SLG7）；升级吃赛季资源+时间，**coin 只买加速不买上限**（反 P2W，ADR-009 经济基调）。
 - **为什么**：graphite/sticker 两种赛季资源此前无 faucet/sink 空转；`troopCap` 是死值无成长；「点进主城内政」是 SLG 核心体验缺口。仿三战结构最省且玩家认知成熟。赛季清空保战略起跑公平 + 变现重肝，与跨季养成（meta 材料/装备）分层互不污染。
-- **影响**：新增 [`game/SLG_CITY_DESIGN.md`](game/SLG_CITY_DESIGN.md) 为建筑系统机制权威；[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.4 遗留指针改指本方案、§21 R-1 更新、新增 §21 剩余工作总览；数字落 [`game/ECONOMY_NUMBERS.md`](game/ECONOMY_NUMBERS.md) §13-SLG-CITY，核验经 [`game/SLG_ECONOMY_CHECK.md`](game/SLG_ECONOMY_CHECK.md)。实现 P1 含 `biomeAt` 四分改造（client 经 alias 共用，须确认确定性地图不破老种子——或仅新赛季生效）。README §1.2 已登记。
+- **影响**：新增 [`game/SLG_CITY_DESIGN.md`](game/SLG_CITY_DESIGN.md) 为建筑系统机制权威；[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.4 遗留指针改指本方案、[`game/SLG_DESIGN_LOG.md`](game/SLG_DESIGN_LOG.md) §21 R-1 更新、新增 §21 剩余工作总览；数字落 [`game/ECONOMY_VERIFICATION_LOG.md`](game/ECONOMY_VERIFICATION_LOG.md) §13-SLG-CITY，核验经 [`game/SLG_ECONOMY_CHECK.md`](game/SLG_ECONOMY_CHECK.md)。实现 P1 含 `biomeAt` 四分改造（client 经 alias 共用，须确认确定性地图不破老种子——或仅新赛季生效）。README §1.2 已登记。
 
 ## ADR-023 服务端契约从「运行时解析」改为「构建期代码生成」 — Accepted — 2026-06-30
 
@@ -313,7 +313,7 @@
 ## ADR-030 深化金币 sink（洗练金币化 / SLG 便利 / 外观广度）+ PvE 多人副本 + SLG 新手区毕业软过渡 — Accepted — 2026-07-03
 
 - **背景**：本会话核查确认经济收支两端已**全实装**（盲盒/装备/成就/留存/战令，均有代码+测试；README 状态标签本轮已从「设计中」修正为「已实现」）。但金币深水 sink 集中在**盲盒 + 装备强化**两处，暴露两个偏浅：①长尾鲸鱼「买空盲盒后金币无处去」；②变现重心压在 **SLG 参与率**（纯 PvP/收集玩家付费弱）。用户全数采纳补深方案。
-- **先厘清既有、只记增量**（不重复既有拍板）：SLG 建筑/练兵「coin 只买加速不买上限」= ADR-022；洗练 2 技能「金币锁 1 条」= ADR-017；SLG 外环新手区 + 宗门>家族>单随路由 + 跨区隔离 = **G6 已实现（2026-06-21，[`SLG_DESIGN.md`](game/SLG_DESIGN.md) §20 / R4）**。
+- **先厘清既有、只记增量**（不重复既有拍板）：SLG 建筑/练兵「coin 只买加速不买上限」= ADR-022；洗练 2 技能「金币锁 1 条」= ADR-017；SLG 外环新手区 + 宗门>家族>单随路由 + 跨区隔离 = **G6 已实现（2026-06-21，[`SLG_DESIGN_LOG.md`](game/SLG_DESIGN_LOG.md) §20 / R4）**。
 - **决策（5 项增量，用户 2026-07-03 拍板全采纳）**：
   1. **洗练基础金币化**：洗练**每次**收基础金币（不止 2 技能锁定费）——把「重洗词条」整体做成可无限重复的深水 coin sink（付的是**尝试次数**、买不到确定结果，不破公平红线）。落 [`EQUIPMENT_DESIGN.md`](game/EQUIPMENT_DESIGN.md) §7.8，数字 ECONOMY_NUMBERS §5.3。⚠️ 代码缺口：`metaserver/src/equipment.ts reforgeEquipment()` 现仅扣材料未扣基础金币（2026-07-03 核查），落地补。
   2. **SLG 便利 sink 扩展**（在 ADR-022 加速之外新增）：迁城令 / 开新地块 / 宗门科技捐献等「买方便不买战力」的 coin sink。红线同 ADR-022（coin 不买上限、永不喂天梯）。落 SLG_CITY_DESIGN / SLG_DESIGN。
@@ -335,7 +335,7 @@
 
 - **背景**：用户怀疑 SLG 文档与实现脱节，逐项核查后确认属实，且比预想的更严重：
   1. `SLG_DESIGN.md` 曾在 2026-06-18 拍板"U2 地图尺寸 ✅ 1500×1500替代300×300"和"U4 大区容量 ✅ 1万玩家替代300-500"，但代码里 `SLG_MAP_W/H`（`server/shared/src/slg.ts:108-109`）从未改过，一直是 300；`SLG_WORLD_CAPACITY_MIN/TARGET/MAX` 也一直是 300/400/500。这次"✅"标记的升级从未真正实现。
-  2. 更严重的是，2026-06-30 的经济核验（`ECONOMY_NUMBERS.md` §13-SLG-NATION、§13-SLG-STRONGHOLD）是在这次"从未实现的升级"之后做的，却仍然是在未升级的 300×300 上跑蒙特卡洛，并被打上「已过核验」标签——即错误的地图尺寸假设已经污染了一份"已核验"的经济结论。
+  2. 更严重的是，2026-06-30 的经济核验（`ECONOMY_VERIFICATION_LOG.md` §13-SLG-NATION、§13-SLG-STRONGHOLD）是在这次"从未实现的升级"之后做的，却仍然是在未升级的 300×300 上跑蒙特卡洛，并被打上「已过核验」标签——即错误的地图尺寸假设已经污染了一份"已核验"的经济结论。
   3. 地块等级上限代码实际是 `SLG_MAP_MAX_LEVEL=5`（`slg.ts:110`），用户回忆中的"9 级"实际是装备强化/武将卡的 `MAX_LEVEL=9`（`equipment.ts:64`/`unitCards.ts:12`）——两套毫不相关的系统被记混。经网络调研核实，用户参照的三国志战略版真实地块等级上限是 **10 级**，不是 9 级也不是 5 级（详见 [`SGZ_LAND_REFERENCE.md`](game/SGZ_LAND_REFERENCE.md)）。
   4. 现有等级生成公式 `level = round((1-dr)×(MAX-1)+1+noise)` 配合 `resourceDensity=0.34`（34% 概率地块保留计算出的等级，66% 被降级为"中立地"、等级强制封顶 2 级且不产任何资源）——这与用户在本轮讨论最初提出的设计前提"地图上没有真正空地，低级地也是某种资源，只是没人要"直接矛盾。
 - **决策（用户 2026-07-04 拍板，逐步收敛到最终数字）**：
@@ -348,7 +348,7 @@
 - **为什么**：用户对三战玩法节奏非常熟悉，希望 Notebook Wars 的 SLG 数值手感向其看齐；核查发现两轮此前的"文档拍板"都从未真正实现，且已经污染了下游的经济核验结论，必须先把地图尺寸/等级上限这个地基钉死，才能继续设计地块建筑、国家版图等上层玩法。
 - **影响**：
   - [`SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.2、§14.2（P3）、§14.10（U2/U4/U11/U12/U14）已按本决议改写。
-  - [`ECONOMY_NUMBERS.md`](game/ECONOMY_NUMBERS.md) 的 `WORLD_CAPACITY` 行、§13-SLG-NATION、§13-SLG-STRONGHOLD 已标记「待重跑」，尚未重新跑 econ-sim（下一步工作）。
+  - [`ECONOMY_NUMBERS.md`](game/ECONOMY_NUMBERS.md) 的 `WORLD_CAPACITY` 行、[`ECONOMY_VERIFICATION_LOG.md`](game/ECONOMY_VERIFICATION_LOG.md) 的 §13-SLG-NATION、§13-SLG-STRONGHOLD 已标记「待重跑」，尚未重新跑 econ-sim（下一步工作）。
   - 新增 [`SGZ_LAND_REFERENCE.md`](game/SGZ_LAND_REFERENCE.md)：三战地块/建筑/版图机制调研笔记，供后续设计参考，非本项目设计基准。
   - **代码尚未改动**：`server/shared/src/slg.ts` 的 `SLG_MAP_W/H`、`SLG_MAP_MAX_LEVEL`、`SLG_GEN.resourceDensity`、等级曲线指数均待实现（本次只是拍板+文档，依本会话"先文档后代码"的既定流程，实现是下一步任务，会牵动十余个 e2e 测试的坐标假设）。
   - 地块建筑系统（三战式"6-10级解锁造币厂/工坊/虎帐/仓库/乐府"）与国家版图重构均为后续独立任务，不在本 ADR 范围内。
@@ -386,7 +386,7 @@
 - **为什么**：用户对三战版图结构（环带分层+关隘严格对应层级）非常熟悉，希望复刻其"层级递进"的攻略节奏，同时解决现有 Voronoi 方案地形/国界两不相干的结构性缺陷；城池/关隘分离是三战调研澄清的关键差异，直接照抄"关隘=城池"会做错机制；本 ADR 优先于 ADR-033，是因为角度扇区+完整地形城池体系比"点+距离衰减"更彻底地解决了"地形不知道国界"的根因（扇区边界本身就是地形，不是事后套一层距离公式）。
 - **影响**：
   - 新增/改写 [`design/tools/map-editor/DESIGN.md`](tools/map-editor/DESIGN.md)（§2-§4 地形骨架定稿，§6 编辑器需求，§7 原型迭代记录）。
-  - [`SLG_DESIGN.md`](game/SLG_DESIGN.md) §2.4（国家系统）、§3.2（地图尺寸与地形布局）已改写，指向本 ADR；§24 记录代码重写完成状态。
+  - [`SLG_DESIGN.md`](game/SLG_DESIGN.md) §2.4（国家系统）、§3.2（地图尺寸与地形布局）已改写，指向本 ADR；[`SLG_DESIGN_LOG.md`](game/SLG_DESIGN_LOG.md) §24 记录代码重写完成状态。
   - **ADR-033 判定作废**：其已落地的代码已按本 ADR 整体重写完成（2026-07-05）——`server/shared/src/slg.ts` 新增 `provinceIdxAt()`（角度扇区+半径环归属，替代 `nearestCapitalIdx()` Voronoi）、`provinceCapitalPositions()`（州府位置按扇区+种子派生，替代固定表 `CAPITAL_FRACTIONS`）、环形地形带/墨河弦/支脉/城池节点（州府+世界中心 9×9+关隘城池+每出生州 9 座分级城池）、按环等级分布表；`NATION_KIND_BY_IDX` 的 `hegemony` 改名 `core`。城池落地为现有 `familyKeep`/`center` 类型而非独立 collection（驻军/耐久数值本条未拍板，故不新增 schema）。`server/worldsvc` 消费方（`coreKernel`/`coreNation`/`coreYield`/`combatSiege`）与受影响 e2e（`nation-bonus`/`season-ops`/`fog`/`service`/`httpApi`/`pathfinding`）已同步修完；`server/shared`/`server/worldsvc`/`server/tools/econ-sim` typecheck+test 全绿。
   - `tools/map-editor` 工具仍未搭骨架，讨论期验证骨架用的 HTML/JS 原型未提交仓库——留后续任务。
   - 城池驻军/耐久数值、资源州/核心州是否也要分级城池梯度、国民加成如何随分层结构调整，均留待后续 ADR。

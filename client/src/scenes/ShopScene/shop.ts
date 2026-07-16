@@ -7,6 +7,18 @@ import { ui as C, txt } from '../../render/sketchUi';
 import { type IconKind } from '../../render/icons';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { type Constructor, type ShopSceneBaseCtor, type CardSpec, type BtnSpec } from './base';
+import infantryArtUrl from '../../assets/infantry.png';
+import archerArtUrl from '../../assets/archer.png';
+import shieldBearerArtUrl from '../../assets/shieldbearer.png';
+
+// Skin catalogue art is blocked on real assets (see cardArt.ts TODO for skin_infantry/skin_archer/
+// skin_shield .tao bundles). Until then, borrow the matching base unit's card PNG as a placeholder
+// so the shop grid at least shows *a* picture instead of a generic brush glyph.
+const SKIN_PLACEHOLDER_ART: Record<string, string> = {
+  skin_shop_c1: infantryArtUrl as string,
+  skin_shop_r1: archerArtUrl as string,
+  skin_shop_e1: shieldBearerArtUrl as string,
+};
 
 // Subscription-card display prices (¥). Mirror of @nw/shared MONTHLY/YEAR_CARD_PRICE_YUAN — the real IAP charge is
 // server-authorized (no coins debited); these drive the strike-through + savings badge only. Year = 12×¥30 (¥360) at ~10% off → ¥298.
@@ -146,7 +158,8 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
           const isOwned = owned.has(item.grants ?? item.id);
           const canBuy = !isOwned && !busy && this.cb.getCoins() >= item.cost;
           specs.push({
-            icon: 'brush', iconColor: C.accent, title: `${t('shop.skinLabel')} · ${item.id}`,
+            icon: 'brush', iconColor: C.accent, artUrl: SKIN_PLACEHOLDER_ART[item.id],
+            title: `${t('shop.skinLabel')} · ${item.id}`,
             coinAmount: item.cost,
             buttons: [{
               label: isOwned ? t('shop.owned') : t('shop.buy'), enabled: canBuy, primary: true,

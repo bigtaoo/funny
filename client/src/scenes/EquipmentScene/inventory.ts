@@ -14,8 +14,10 @@ import {
   SLOTS, RARITY_COLOR,
 } from './base';
 
+export type SectionKey = 'equipped' | 'bag';
+
 export type DisplayEntry =
-  | { kind: 'header'; label: string }
+  | { kind: 'header'; label: string; key: SectionKey }
   | { kind: 'item'; inst: EquipmentInstance; count: number; isEquipped: boolean };
 
 export interface InventoryHandlers {
@@ -26,6 +28,16 @@ export interface InventoryHandlers {
 
 export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): TBase & Constructor<InventoryHandlers> {
   return class extends Base {
+    /**
+     * Section headers (Equipped / Bag) tapped closed by the player; collapsed sections hide their
+     * item cells but keep the header visible. Lazily initialized via the getter below — the base
+     * class constructor calls render() before this mixin's own field initializers run, so a plain
+     * field initializer here would be undefined on first render.
+     */
+    private _collapsedSections?: Set<SectionKey>;
+    private get collapsedSections(): Set<SectionKey> {
+      return (this._collapsedSections ??= new Set<SectionKey>());
+    }
     /**
      * Left sidebar rail, stacked inside the notebook-margin gutter (`marginLineX`) below the
      * header: the progression group nav [<peer>|Equipment] (LOBBY_IA_REDESIGN P1.5, only when
@@ -117,24 +129,31 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       const gridLeft = left + CELL_GAP;
       const avail = w - gridLeft - CELL_GAP;
       const cols = Math.max(1, Math.floor((avail + CELL_GAP) / (EQUIP_CELL_W_TARGET + CELL_GAP)));
-      const cellW = (avail - CELL_GAP * (cols - 1)) / cols;
+      // Cap at the target width instead of stretching to fill the row — dividing the full
+      // available width evenly across `cols` left cards much wider than their content needed,
+      // reading as mostly blank paper; any leftover width is just unused margin on the right.
+      const cellW = Math.min(EQUIP_CELL_W_TARGET, (avail - CELL_GAP * (cols - 1)) / cols);
 
       // Layout pass: headers span a full row and reset the column cursor; item
       // cells pack left-to-right into `cols` columns. `off` is the vertical
       // offset from listY (pre-scroll), computed up-front to clamp scrollY.
+      // Items belonging to a collapsed section are skipped entirely (no space reserved).
       type Placed =
-        | { kind: 'header'; label: string; off: number }
+        | { kind: 'header'; label: string; key: SectionKey; off: number }
         | { kind: 'item'; inst: EquipmentInstance; isEquipped: boolean; count: number; x: number; off: number };
       const placed: Placed[] = [];
       let off = CELL_GAP;
       let col = 0;
+      let collapsed = false;
       for (const entry of entries) {
         if (entry.kind === 'header') {
           if (col !== 0) { off += EQUIP_CELL_H + CELL_GAP; col = 0; }
-          placed.push({ kind: 'header', label: entry.label, off });
+          collapsed = this.collapsedSections.has(entry.key);
+          placed.push({ kind: 'header', label: entry.label, key: entry.key, off });
           off += SECTION_H;
           continue;
         }
+        if (collapsed) continue;
         const x = gridLeft + col * (cellW + CELL_GAP);
         placed.push({ kind: 'item', inst: entry.inst, isEquipped: entry.isEquipped, count: entry.count, x, off });
         col++;
@@ -148,7 +167,7 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
         const y = listY + p.off - this.scrollY;
         const eh = p.kind === 'header' ? SECTION_H : EQUIP_CELL_H;
         if (y + eh < listY || y > listY + listH) continue;
-        if (p.kind === 'header') this.renderSectionHeader(p.label, y);
+        if (p.kind === 'header') this.renderSectionHeader(p.label, p.key, y);
         else this.renderInstanceCell(p.inst, p.x, y, cellW, p.isEquipped, p.count);
       }
 
@@ -188,18 +207,32 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       });
     }
 
-    /** Section divider header ("Equipped" / "Bag"), aligned with the item grid (right of the sidebar/margin rule). Bold + dark so it reads against the paper texture. */
-    private renderSectionHeader(label: string, cy: number): void {
+    /**
+     * Section divider header ("Equipped" / "Bag"), aligned with the item grid (right of the
+     * sidebar/margin rule, shifted right a bit further so it doesn't hug the rule) and sized 2x
+     * for legibility. Tapping it toggles that section's cards collapsed/expanded — the chevron
+     * shows the current state. Bold + dark so it reads against the paper texture.
+     */
+    private renderSectionHeader(label: string, key: SectionKey, cy: number): void {
       const { w } = this;
-      const left = marginLineX(w) + CELL_GAP;
-      const lbl = txt(label, 12, C.dark, true);
+      const collapsed = this.collapsedSections.has(key);
+      const left = marginLineX(w) + CELL_GAP + 20;
+      const lbl = txt(`${collapsed ? '▶' : '▼'} ${label}`, 24, C.dark, true);
       lbl.x = left; lbl.y = cy + (SECTION_H - lbl.height) / 2;
       this.bodyLayer.addChild(lbl);
-      const lineX = lbl.x + lbl.width + 6;
+      const lineX = lbl.x + lbl.width + 10;
       const lineY = cy + SECTION_H / 2;
       const line = new PIXI.Graphics();
       line.lineStyle(1, C.mid, 0.5).moveTo(lineX, lineY).lineTo(w - 14, lineY);
       this.bodyLayer.addChild(line);
+      this.hitRects.push({
+        rect: { x: 0, y: cy, w, h: SECTION_H },
+        action: () => {
+          if (collapsed) this.collapsedSections.delete(key);
+          else this.collapsedSections.add(key);
+          this.render();
+        },
+      });
     }
 
     /**
@@ -222,11 +255,11 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
 
         if (isEquipped && !inEquippedSection) {
           inEquippedSection = true;
-          entries.push({ kind: 'header', label: t('equip.sectionEquipped') });
+          entries.push({ kind: 'header', label: t('equip.sectionEquipped'), key: 'equipped' });
         }
         if (!isEquipped && !inBagSection) {
           inBagSection = true;
-          entries.push({ kind: 'header', label: t('equip.sectionBag') });
+          entries.push({ kind: 'header', label: t('equip.sectionBag'), key: 'bag' });
         }
 
         if (isEquipped || inst.locked || inst.level > 0) {

@@ -190,6 +190,12 @@ export function startHttpApi(
               await svc.closeSeason(worldId);
               return send(res, 200, ok({}));
             }
+            // Shard merge (G6/§27): move every remaining player out of worldId (source) into body.targetWorldId, then close worldId.
+            if (aurl.pathname === '/admin/world/merge') {
+              const targetWorldId = typeof body.targetWorldId === 'string' ? body.targetWorldId : null;
+              if (!targetWorldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'targetWorldId required');
+              return send(res, 200, ok(await svc.mergeShard(worldId, targetWorldId)));
+            }
             return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
           } catch (e) {
             if (e instanceof SlgError) return sendErr(res, e.code, e.message);
@@ -272,7 +278,7 @@ export function startHttpApi(
           return send(res, 200, ok(await svc.getOccupations(worldId, accountId)));
         }
 
-        // ── Territory Overview panel (2026-07-16, SLG_DESIGN.md §26): full list of owned tiles ──
+        // ── Territory Overview panel (2026-07-16, SLG_DESIGN_LOG.md §26): full list of owned tiles ──
         if (method === 'GET' && path === '/world/territories') {
           const worldId = q.get('worldId');
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
@@ -294,6 +300,22 @@ export function startHttpApi(
           if (!Number.isFinite(season)) return sendErr(res, ErrorCode.BAD_REQUEST, 'season required');
           // System auto-places base (§3.4): no coordinates taken from client, server picks the location.
           return send(res, 200, ok(await svc.joinSeason(season, accountId)));
+        }
+
+        // ── Mid-season shard transfer (G6/§27): list candidate destination shards for the player's current shard ──
+        if (method === 'GET' && path === '/world/season/transfer/targets') {
+          const worldId = q.get('worldId');
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          return send(res, 200, ok(await svc.listTransferTargets(worldId)));
+        }
+
+        // ── Mid-season shard transfer (G6/§27): forfeit all shard-scoped state in fromWorldId, re-join toWorldId fresh ──
+        if (method === 'POST' && path === '/world/season/transfer') {
+          const body = await readJson(req);
+          const fromWorldId = typeof body.fromWorldId === 'string' ? body.fromWorldId : null;
+          const toWorldId = typeof body.toWorldId === 'string' ? body.toWorldId : null;
+          if (!fromWorldId || !toWorldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'fromWorldId/toWorldId required');
+          return send(res, 200, ok(await svc.transferShard(accountId, fromWorldId, toWorldId)));
         }
 
         // ── Join world (S8-1): system auto-places base (§3.4), only worldId required, no coordinates ──

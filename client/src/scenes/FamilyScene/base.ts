@@ -338,9 +338,9 @@ export class FamilySceneBase {
   protected showToast(msg: string, color: number = C.dark): void {
     const tl = this.toastLayer;
     tl.removeChildren();
-    const lbl = txt(msg, 13, color);
-    lbl.anchor.set(0.5, 0);
-    lbl.x = this.w / 2; lbl.y = this.h - 80;
+    const lbl = txt(msg, 26, color);
+    lbl.anchor.set(0.5, 0.5);
+    lbl.x = this.w / 2; lbl.y = Math.round(this.h * 2 / 3);
     tl.addChild(lbl);
     this.toastTimer = 2500;
   }

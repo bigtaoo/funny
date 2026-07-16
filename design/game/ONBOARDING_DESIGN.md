@@ -2,7 +2,7 @@
 
 > 状态：设计中 · 权威：本文（首次体验**编排流程 + 专属教学关 + 首次功能引导**的单一入口）· 更新：2026-06-27
 >
-> **权威边界**：本文拥有 **① 专属教学关 `ch0_tutorial` 的编排/卡点/脚本特效**、**② 首次功能引导（per-feature first-use guide）机制**、**③ 功能开放策略（哪些首启即开、哪些设门槛）**。本文**不**拥有——故事文案（归 [`CAMPAIGN_STORY.md`](CAMPAIGN_STORY.md) / [`../product/world.md`](../product/world.md)）、引擎/波次数据结构（归 `@nw/engine` `campaign/`，见 [`SLG_DESIGN.md`](SLG_DESIGN.md) §16.7）、合规弹窗（归 [`COMPLIANCE_GLOBAL.md`](COMPLIANCE_GLOBAL.md) / [`COMPLIANCE_CN.md`](COMPLIANCE_CN.md)，**合规是开机第一步、不属于新手引导**，见 §6）、漏斗埋点字段（归 [`ANALYTICS_DESIGN.md`](ANALYTICS_DESIGN.md)）。
+> **权威边界**：本文拥有 **① 专属教学关 `ch0_tutorial` 的编排/卡点/脚本特效**、**② 首次功能引导（per-feature first-use guide）机制**、**③ 功能开放策略（哪些首启即开、哪些设门槛）**。本文**不**拥有——故事文案（归 [`CAMPAIGN_STORY.md`](CAMPAIGN_STORY.md) / [`../product/world.md`](../product/world.md)）、引擎/波次数据结构（归 `@nw/engine` `campaign/`，见 [`SLG_DESIGN_LOG.md`](SLG_DESIGN_LOG.md) §16.7）、合规弹窗（归 [`COMPLIANCE_GLOBAL.md`](COMPLIANCE_GLOBAL.md) / [`COMPLIANCE_CN.md`](COMPLIANCE_CN.md)，**合规是开机第一步、不属于新手引导**，见 §6）、漏斗埋点字段（归 [`ANALYTICS_DESIGN.md`](ANALYTICS_DESIGN.md)）。
 
 ---
 

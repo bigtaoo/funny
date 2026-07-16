@@ -10,6 +10,7 @@ export interface WorldHandlers {
   slgSettleSeason(actor: string, worldId: string): Promise<unknown>;
   slgResetSeason(actor: string, worldId: string): Promise<unknown>;
   slgCloseSeason(actor: string, worldId: string): Promise<void>;
+  slgMergeShard(actor: string, worldId: string, targetWorldId: string): Promise<{ moved: number; failed: string[] }>;
 }
 
 export function WorldMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & Constructor<WorldHandlers> {
@@ -56,6 +57,17 @@ export function WorldMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & Co
     async slgCloseSeason(actor: string, worldId: string): Promise<void> {
       await this.world.closeWorld(worldId);
       await this.audit(actor, 'slg.season.close', { target: worldId });
+    }
+
+    /**
+     * Merge a low-population shard (G6/§27, high-risk): moves every remaining player out of `worldId`
+     * (source) into `targetWorldId`, then closes `worldId`. Best-effort per player — `failed` lists accounts
+     * that could not be moved (logged server-side, left in the closing shard). Audited with the move count.
+     */
+    async slgMergeShard(actor: string, worldId: string, targetWorldId: string): Promise<{ moved: number; failed: string[] }> {
+      const r = await this.world.mergeWorld(worldId, targetWorldId);
+      await this.audit(actor, 'slg.season.merge', { target: worldId, summary: `→${targetWorldId} moved=${r.moved} failed=${r.failed.length}` });
+      return r;
     }
   };
 }

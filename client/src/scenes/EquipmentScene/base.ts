@@ -71,12 +71,12 @@ export const LOADOUT_H = 78;   // loadout strip at the top of the inventory tab 
 export const ROW_H = 56;
 export const FILTER_H = 48;   // slot filter bar (All / Weapon / Armor / Trinket)
 export const MAT_BAND_H = 52; // materials band (scrap / lead / binding) below the header
-export const SECTION_H = 20;  // section divider (Equipped / Bag)
+export const SECTION_H = 36;  // section divider (Equipped / Bag) — clickable to collapse, text is 2x the previous size
 
 // Inventory grid: icon-card cells (name top / glyph left / rarity+level right)
 // packed into columns sized to the wide (1920) landscape canvas.
 export const CELL_GAP = 12;
-export const EQUIP_CELL_H = 177; // 1.5x the previous 118 (unified with CARD_CELL_H in CardScene.ts)
+export const EQUIP_CELL_H = 266; // +50% atop the previous 177 (2026-07-16 inventory legibility pass)
 export const EQUIP_CELL_W_TARGET = 480; // 1.5x the previous 320 (unified with CARD_CELL_W_TARGET in CardScene.ts)
 // Craft grid: same column + cell sizing as the inventory grid so the icon
 // frames read at the same scale; cost chips + craft button sit beside the glyph.
@@ -517,12 +517,12 @@ export class EquipmentSceneBase {
   protected showToast(msg: string, color: number = C.dark): void {
     const tl = this.toastLayer;
     tl.removeChildren();
-    const lbl = txt(msg, 13, 0xffffff, true);
-    const padX = 14, padY = 8;
+    const lbl = txt(msg, 26, 0xffffff, true);
+    const padX = 28, padY = 16;
     const bw = lbl.width + padX * 2;
     const bh = lbl.height + padY * 2;
     const bx = (this.w - bw) / 2;
-    const by = this.h - 92;
+    const by = Math.round(this.h * 2 / 3 - bh / 2);
     const bg = sketchPanel(bw, bh, { fill: color, fillAlpha: 0.96, border: color, seed: seedFor(bw, bh, 3) });
     bg.x = bx; bg.y = by;
     tl.addChild(bg);

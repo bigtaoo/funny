@@ -23,28 +23,36 @@ export function npcGarrison(level: number): number {
   return NPC_GARRISON_PER_LEVEL * Math.max(1, level);
 }
 
-// ── G8 stronghold (§3.1) values (DRAFT; tune after launch) ────────────
+// ── G8 stronghold (§3.1) values (combat-power calibrated 2026-07-16, see SLG_DESIGN_LOG §21.4 follow-up) ────────────
 /**
- * Stronghold system NPC garrison strength per level (max level 5 → 1800 troop equivalent). Far stronger than ordinary tile garrison (GARRISON_PER_TILE=500)
- * and sweep NPCs (NPC_GARRISON_PER_LEVEL=120); "extremely hard to conquer" (§3.1): with basic infantry, even a fully-loaded free-to-play player
- * (TROOP_CAP_BASE=2000) will nearly always lose due to the defender advantage (base + timeout = defender wins); conquering requires tech/equipment progression to strengthen the army lineup
- * (delivering on SLG7 selling combat power / U7 overwhelming tier). Max-level 1800 ÷ unit full HP ≈ 60 units (depth ~6 rows), plus attacker
- * ≤2000 troops ≈ 67 units (depth ~7 rows), total < 16-row board depth → normal-scale authoritative engine can run without falling back to the cheap fallback;
- * only whale-tier armies (>5000 troops) overflow the board and trigger the fallback.
+ * Stronghold system NPC garrison strength per level. Strongholds always generate at `SLG_MAP_MAX_LEVEL` (currently
+ * 10, stronghold.ts), so the garrison a player actually faces is fixed at 3600 troops, not a hypothetical 1..5 range
+ * (an earlier version of this comment assumed max level 5 / 1800 — stale; the map's max level moved to 10 without
+ * updating this note). Far stronger than ordinary tile garrison (GARRISON_PER_TILE=500) and sweep NPCs
+ * (NPC_GARRISON_PER_LEVEL=120); "extremely hard to conquer" (§3.1). **Combat-power confirmed, not just asserted**
+ * (`server/tools/econ-sim/src/strongholdCombatRun.ts`, real `@nw/engine` siege auto-battle): a fresh player
+ * (troopCap=2000) loses outright (0% win rate across seeds); a modestly-invested one (troopCap≈4500, ~3 drillYard
+ * levels) reliably wins (100%) — delivering on SLG7 selling combat power / U7 overwhelming tier as a real, not free,
+ * gate. Caveat: single-deployment troop counts above ~9600 hit an unrelated engine board-depth limit and produce
+ * non-monotonic outcomes (see strongholdCombat.ts header) — that's a follow-up item, not a reason to retune this
+ * constant.
  */
 export const STRONGHOLD_GARRISON_PER_LEVEL = 360;
 /** Stronghold system garrison (linear by tile level; §3.1 overwhelmingly strong default defensive config). */
 export function strongholdGarrison(level: number): number {
   return STRONGHOLD_GARRISON_PER_LEVEL * Math.max(1, level);
 }
-/** One-time resource reward on stronghold conquest (per tile level, per resource type; §3.1 "large resource yield"). */
+/** One-time resource reward on stronghold conquest (per tile level, per resource type; §3.1 "large resource yield"). Season-internal, capped by RESOURCE_CAP — sanity-checked in strongholdRun.ts §④. */
 export const STRONGHOLD_LOOT_PER_LEVEL = 5000;
 
 // ── Crossing buildings (bridge / plankway) garrison (gate→bridge/plankway migration) ────────────
 /**
- * NPC garrison per level for a crossing building (bridge/plankway). A crossing is a strategic choke — harder than an
- * ordinary tile (NPC_GARRISON_PER_LEVEL=120) but well below a stronghold (360), so an early player can force a
- * passage but still needs a real army: a siege-to-pass gate, not a free arc. DRAFT — tune in the balance pass.
+ * NPC garrison per level for a crossing building (bridge/plankway). Auto-crossings always generate at
+ * `max(2, SLG_MAP_MAX_LEVEL-1)` (currently 9, mapgen.ts), so the garrison actually faced is fixed at 1800 troops.
+ * A crossing is a strategic choke — harder than an ordinary tile (NPC_GARRISON_PER_LEVEL=120) but well below a
+ * stronghold (360), so an early player can force a passage but still needs a real army: a siege-to-pass gate, not
+ * a free arc. **Combat-power confirmed** (strongholdCombatRun.ts): a fresh player (troopCap=2000) loses outright;
+ * a single drillYard level (troopCap=3000) opens it — lighter investment than the stronghold's ~3 levels, as intended.
  */
 export const CROSSING_GARRISON_PER_LEVEL = 200;
 /** Crossing-building (bridge/plankway) NPC garrison (linear by tile level). */
@@ -55,7 +63,8 @@ export function passageGarrison(level: number): number {
 /**
  * Additional progression material drop on stronghold conquest (§19.5 "unified with G4 progression material flow"): single rare material `binding`
  * (gates rare/epic equipment; scarce through normal map routes), linear by tile level, delivered to SaveData.materials unified progression pool
- * (not a season resource; persists across seasons, SLG4). **DRAFT [tunable]**: quantity pending economic simulation (§16.5 same batch).
+ * (not a season resource; persists across seasons, SLG4). Economic-simulation validated (`strongholdRun.ts` §③): persistent-faucet dilution vs.
+ * regular grind stays ≤15% even at full-world capture, so the quantity is confirmed as-is (was DRAFT pending that check; check has since passed).
  */
 export const STRONGHOLD_LOOT_MATERIAL = 'binding';
 export const STRONGHOLD_LOOT_MATERIAL_PER_LEVEL = 4;

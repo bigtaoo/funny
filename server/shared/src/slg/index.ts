@@ -3,7 +3,8 @@
 // core (errors/enums/IDs/capacity/base-footprint/gen-knobs/numeric consts), noise (deterministic value noise),
 // auction (guardrails + anomaly detection), city (home-city building system), province (nation/province geometry),
 // shop (SLG shop items), prosperity (prosperity/season settlement/sharding), mapgen (terrain + proceduralTile + templates),
-// march (tile yield + A* pathfinding), siege (siege settlement + vision + siege level + card troop system).
+// march (tile yield + A* pathfinding), siege (siege settlement + vision + siege level + card troop system),
+// transfer (G6 mid-season shard transfer/merge, §27).
 export * from './core';
 export * from './auction';
 export * from './city';
@@ -19,4 +20,5 @@ export * from './mapgen';
 export * from './mapEdit';
 export * from './march';
 export * from './siege';
+export * from './transfer';
 export { worldSeed } from './noise';

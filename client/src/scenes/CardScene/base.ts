@@ -26,7 +26,7 @@ import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { BusyTracker } from '../../ui/busyTracker';
 import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
 import type { CardSLGState } from '../../net/WorldApiClient';
-import { cardPower } from '../../game/meta/cardDefs';
+import { CARD_DEFS, cardPower } from '../../game/meta/cardDefs';
 import type { UnitType } from '../../game/types';
 
 export type CardActionResult = { ok: true } | { ok: false; key: TranslationKey };
@@ -83,9 +83,18 @@ export const CARD_CELL_W_TARGET = 300;
 
 export interface Rect { x: number; y: number; w: number; h: number; }
 
-/** Sort cards: power descending, then level descending, then id for stability. */
+const DEF_ORDER = Object.keys(CARD_DEFS);
+
+/**
+ * Sort cards: grouped by hero (CARD_DEFS declaration order) so duplicate instances of the same
+ * hero sit together instead of interleaving with others at the same power — same-name cards were
+ * scattering across the grid and reading as visual noise. Within a group: power desc, level desc,
+ * id for stability.
+ */
 export function sortCards(cards: CardInstance[], equipInv: SaveData['equipmentInv']): CardInstance[] {
   return [...cards].sort((a, b) => {
+    const gd = DEF_ORDER.indexOf(a.defId) - DEF_ORDER.indexOf(b.defId);
+    if (gd !== 0) return gd;
     const pd = cardPower(b, equipInv) - cardPower(a, equipInv);
     if (pd !== 0) return pd;
     if (b.level !== a.level) return b.level - a.level;
@@ -284,12 +293,12 @@ export class CardSceneBase {
   protected showToast(msg: string, color: number = C.dark): void {
     const tl = this.toastLayer;
     tl.removeChildren();
-    const lbl = txt(msg, 13, 0xffffff, true);
-    const padX = 14, padY = 8;
+    const lbl = txt(msg, 26, 0xffffff, true);
+    const padX = 28, padY = 16;
     const bw = lbl.width + padX * 2;
     const bh = lbl.height + padY * 2;
     const bx = (this.w - bw) / 2;
-    const by = this.h - 92;
+    const by = Math.round(this.h * 2 / 3 - bh / 2);
     const bg = sketchPanel(bw, bh, { fill: color, fillAlpha: 0.96, border: color, seed: seedFor(bw, bh, 3) });
     bg.x = bx; bg.y = by;
     tl.addChild(bg);

@@ -2,7 +2,7 @@
 
 > 状态：设计中 · 权威：本文（**SLG DRAFT 数值的核验流程/验收口径**；具体数字仍归 [ECONOMY_NUMBERS.md](ECONOMY_NUMBERS.md) §13-SLG） · 更新：2026-06-30
 
-本文回答一个问题：[SLG_DESIGN.md](SLG_DESIGN.md) §17.12 / §21.4 列出的一批 **DRAFT 数值**——
+本文回答一个问题：[SLG_DESIGN_LOG.md](SLG_DESIGN_LOG.md) §17.12 / §21.4 列出的一批 **DRAFT 数值**——
 `PROSPERITY_W_*` / `PROSPERITY_DECAY_PER_DAY` / `SECT_FOUND_PROSPERITY_MIN` / `SETTLE_REWARDS` 各档 + `CENTER_CAPITAL_MULT` /
 `sectStrengthScore` 权重 / `WORLD_CAPACITY` / `RESET_DELETE_BATCH` / 国民加成 `NATION_BONUS_PRODUCTION(0.10)`·`NATION_BONUS_DEFENSE(0.15)` / 碾压级廉价结算阈值（U7）——
 **怎么算「过没过」**，谁来签字，结果登记到哪。
@@ -109,7 +109,7 @@ capitalMult(tier) = 该档玩家所属宗门持中原首府(CENTER_CAPITAL_IDX=9
 
 ## 3. econ-sim 核验脚本（A 轨已建 ✅ 2026-06-30，B 轨季内模式待补）
 
-战斗侧有 `difficultySim`（headless 引擎 + 基线 AI，见 [[project-difficulty-sim]]）；经济侧 **A 轨工具已落地**：`server/tools/econ-sim/`（纯 TS，import `@nw/shared` 的 `SETTLE_REWARDS`/`CENTER_CAPITAL_MULT`/`WORLD_CAPACITY`/`DUPE_REFUND_COINS`/`GACHA_MATERIAL_GRANTS`，**不连库**，与 difficultySim 同构）。跑法 `cd server/tools/econ-sim && npx tsx src/index.ts`；估值/基准在 `src/valuation.ts`，聚合/判据在 `src/model.ts`，场景在 `scenarios/*.json`。首跑结论登记 [`ECONOMY_NUMBERS.md` §13-SLG](ECONOMY_NUMBERS.md)。**B 轨全部已建**：`src/city.ts` + `cityRun.ts`（建筑节奏，结论 [§13-SLG-CITY](ECONOMY_NUMBERS.md)）；`src/nationBonus.ts` + `nationBonusRun.ts`（裸经济不破·国民加成，结论 [§13-SLG-NATION](ECONOMY_NUMBERS.md)）；均 import `@nw/shared`，`npx tsx src/cityRun.ts` / `npx tsx src/nationBonusRun.ts`。B 轨 CLOSED（2026-06-30）。**险地轨 CLOSED**（2026-07-02）：`src/stronghold.ts` + `strongholdRun.ts`（`npx tsx src/strongholdRun.ts`）——用真实 `proceduralTile` 跨种子实测险地密度/blob/持久 binding 龙头；暴露平滑噪声生成缺陷 → `slg.ts` 改逐格哈希修复，①②③全 PASS，结论 [§13-SLG-STRONGHOLD](ECONOMY_NUMBERS.md)。
+战斗侧有 `difficultySim`（headless 引擎 + 基线 AI，见 [[project-difficulty-sim]]）；经济侧 **A 轨工具已落地**：`server/tools/econ-sim/`（纯 TS，import `@nw/shared` 的 `SETTLE_REWARDS`/`CENTER_CAPITAL_MULT`/`WORLD_CAPACITY`/`DUPE_REFUND_COINS`/`GACHA_MATERIAL_GRANTS`，**不连库**，与 difficultySim 同构）。跑法 `cd server/tools/econ-sim && npx tsx src/index.ts`；估值/基准在 `src/valuation.ts`，聚合/判据在 `src/model.ts`，场景在 `scenarios/*.json`。首跑结论登记 [`ECONOMY_NUMBERS.md` §13-SLG](ECONOMY_NUMBERS.md)。**B 轨全部已建**：`src/city.ts` + `cityRun.ts`（建筑节奏，结论 [§13-SLG-CITY](ECONOMY_VERIFICATION_LOG.md)）；`src/nationBonus.ts` + `nationBonusRun.ts`（裸经济不破·国民加成，结论 [§13-SLG-NATION](ECONOMY_VERIFICATION_LOG.md)）；均 import `@nw/shared`，`npx tsx src/cityRun.ts` / `npx tsx src/nationBonusRun.ts`。B 轨 CLOSED（2026-06-30）。**险地轨 CLOSED**（2026-07-02）：`src/stronghold.ts` + `strongholdRun.ts`（`npx tsx src/strongholdRun.ts`）——用真实 `proceduralTile` 跨种子实测险地密度/blob/持久 binding 龙头；暴露平滑噪声生成缺陷 → `slg.ts` 改逐格哈希修复，①②③全 PASS，结论 [§13-SLG-STRONGHOLD](ECONOMY_VERIFICATION_LOG.md)。
 
 **位置**：`server/tools/econ-sim/`（已建）。
 
@@ -147,7 +147,7 @@ capitalMult(tier) = 该档玩家所属宗门持中原首府(CENTER_CAPITAL_IDX=9
 
 **判据**：
 - **裸经济不破**：+10% 不应让「占本国地 vs 占敌国地」的产出差大到逼所有人龟缩本国（破坏大世界争夺动机）。用 econ-sim 季内模式对比 `本国全占` vs `跨国扩张` 两种策略的资源累计曲线，差距 ≤ **某阈值（提案 20%）**。
-- **建造/练兵节奏**：用加成后的资源产率，验算 SLG_CITY（[SLG_CITY_DESIGN.md](SLG_CITY_DESIGN.md)）关键建筑/练兵的达成时间是否落在设计窗口（数字归 ECONOMY_NUMBERS §13-SLG-CITY）。
+- **建造/练兵节奏**：用加成后的资源产率，验算 SLG_CITY（[SLG_CITY_DESIGN.md](SLG_CITY_DESIGN.md)）关键建筑/练兵的达成时间是否落在设计窗口（数字归 ECONOMY_VERIFICATION_LOG §13-SLG-CITY）。
 
 ---
 
@@ -204,15 +204,15 @@ capitalMult(tier) = 该档玩家所属宗门持中原首府(CENTER_CAPITAL_IDX=9
   - ~~**A 轨已过核验（2026-06-30，CLOSED）**：econ-sim 三场景 **CORE 全 PASS**（§13-SLG.3）；材料→金币估值基准已确立并记录（§13-SLG.1，binding=400 保守上界）；细水已计入。**人均稀释 ✅**（participant 0.11% / champion 13.36%）+ **全服通胀 ✅**（vs 材料龙头 0.45–4.01%）+ **coins=0 ✅**。头部倾斜经经济负责人拍板**降级为 informational**（采纳方案 a，护栏改由 champion 绝对稀释承担，§13-SLG.4-2）。**~~
 - [x] **A-coin**：`SETTLE_REWARDS.coins` = 0（econ-sim 校验 ✅）；若改 >0，须并入 §6.1 预算且经济负责人签字。
 - [x] **B 轨（全 ✅ CLOSED 2026-06-30）**：
-  - **建造/练兵节奏 ✅**（econ-sim `city.ts`/`cityRun.ts`，结论 [§13-SLG-CITY](ECONOMY_NUMBERS.md)：资源门控数周肝、落 60 天窗口、乘子合理；informational：drillYard L13 提速触底 / sticker 自我门控）。
-  - **裸经济不破 ✅**（econ-sim `nationBonus.ts`/`nationBonusRun.ts`，结论 [§13-SLG-NATION](ECONOMY_NUMBERS.md)：`NATION_BONUS_PRODUCTION=0.10` 本国 vs 跨国最大差距 **+10.0%**（≪ 阈值 20%）；结构性保证：差距上限恒等于加成值本身，11 个场景全 PASS；高等级他国格（+20% level）可使跨国扩张反超 −8.3%——大世界争夺动机完整）。
+  - **建造/练兵节奏 ✅**（econ-sim `city.ts`/`cityRun.ts`，结论 [§13-SLG-CITY](ECONOMY_VERIFICATION_LOG.md)：资源门控数周肝、落 60 天窗口、乘子合理；informational：drillYard L13 提速触底 / sticker 自我门控）。
+  - **裸经济不破 ✅**（econ-sim `nationBonus.ts`/`nationBonusRun.ts`，结论 [§13-SLG-NATION](ECONOMY_VERIFICATION_LOG.md)：`NATION_BONUS_PRODUCTION=0.10` 本国 vs 跨国最大差距 **+10.0%**（≪ 阈值 20%）；结构性保证：差距上限恒等于加成值本身，11 个场景全 PASS；高等级他国格（+20% level）可使跨国扩张反超 −8.3%——大世界争夺动机完整）。
 - [x] **SLG_CITY P2 ✅ CLOSED（2026-06-30）**：`wall`（守方主城 garrison HP × wallDefenseMult）/ `cabinet`（transferLoot 折减 effectiveLootRate）/ `academy`（`buildSiegeBlueprints` 第 4 参数 siegeAcademy 叠乘攻方 HP/伤害）全部落地；`buildGateReason` 改用 `BUILDING_KEYS` 全集，wall/academy 正式可建；CityScene 建筑网格更新；i18n zh/en/de；单测 11/11 绿；DRAFT 数值（WALL_DEFENSE_STEP=0.05 / CABINET_PROTECT_STEP=0.02 / ACADEMY_HP_STEP=0.02 / ACADEMY_DAMAGE_STEP=0.015）。
-- [x] **C 轨 ✅ CLOSED（2026-06-30）**：Lanchester 线性模型（`resolveSiege + nationDefenseStrength`，与 worldsvc `applySiege` 一致）；攻方胜率 U[100,2000] = **43.0%**、U[100,500] = **40.4%**，均在 40–55% 窗口；`SIEGE_CHEAP_RATIO=10` 误判率 **0%**（结构性保证：atk/defEff≥10⇒attacker_win）。结论 [§13-SLG-C](ECONOMY_NUMBERS.md)。
-- [x] **D 轨 ✅ CLOSED（2026-06-30）**：蒙特卡洛 10 seeds × 6 配置（sects 10–1000，shards 2–10）**全 PASS**（极差 ≤ 最强单体，典型极差 ≈ 10–15% 上界）；排名权重是主稳定器（去掉排名退化符合预期，确认多维设计必要性）。结论 [§13-SLG-D](ECONOMY_NUMBERS.md)。
-- [x] **E 轨 ✅ CLOSED（2026-06-30）**：活跃中位家族（20 人起、3.5 地/天、4 活跃/天）**第 9 天**建宗门（7–14 天窗口 ✅）；从 ≥3000 分起零活跃 **8 天**跌门槛（≥7 天判据 ✅）；`decayProsperity` 惰性结算，有动作即满分重算，周常活跃玩家不观测衰减 ✅。结论 [§13-SLG-E](ECONOMY_NUMBERS.md)。
-- [x] **F 轨 ✅ CLOSED（2026-06-30，工程估算）**：WORLD_CAPACITY=10000 / shard：~246k（中位）–582k（峰值）文档；热路径查询全为点查或窄范围扫描（< 10ms）；RESET_DELETE_BATCH=2000 清档 **1.9–4.4s**（< 5s）；活跃层缓存 **36 MB / shard**（VPS 可承 28–56 shard）。结论 [§13-SLG-F](ECONOMY_NUMBERS.md)；待预发压测确认。
-- [x] **险地轨 ✅ CLOSED（2026-07-02）**：econ-sim `stronghold.ts`/`strongholdRun.ts` 用真实 `proceduralTile` 跨 100 种子实测——险地占领发**持久** `binding`（A 轨从未计入的龙头）。**缺陷（已修复）**：原 freq `1/70` value-noise 在 300×300 图上只 ~18 格点，险地数量种子间 **0→6,436**（CV 1.02，14% 零险地，聚成 blob 均值 862 格），持久 binding 稀释高数量种子/满占领率破 15% 判据。**修复**：生成层换逐格哈希 `rand2(x,y,seed^0x0555) > 0.997`（`shared/slg.ts`，merge-first / rule 4 已先合 main），删 `strongholdFreq`。**修复后实测（2026-07-05 用 500×500 + 等级 10 新地图重跑，见 §13-SLG-STRONGHOLD.2）**：险地数 **567 中位（504–636）**、平均 blob **1.0 格（孤立点）**、持久 binding 稀释峰值 **12.6%（< 15%）**——①②③全 PASS。结论 [§13-SLG-STRONGHOLD](ECONOMY_NUMBERS.md)。
-- [x] **登记 ✅（2026-06-30）**：C/D/E/F 轨结论已写入 [ECONOMY_NUMBERS.md](ECONOMY_NUMBERS.md) §13-SLG-C / §13-SLG-D / §13-SLG-E / §13-SLG-F；数值未变（常量未动），SLG_DESIGN §17.1 / §21.4 `DRAFT` 标记按上线后压测策略保留（见 §10）。险地轨结论写入 §13-SLG-STRONGHOLD（2026-07-02）。
+- [x] **C 轨 ✅ CLOSED（2026-06-30）**：Lanchester 线性模型（`resolveSiege + nationDefenseStrength`，与 worldsvc `applySiege` 一致）；攻方胜率 U[100,2000] = **43.0%**、U[100,500] = **40.4%**，均在 40–55% 窗口；`SIEGE_CHEAP_RATIO=10` 误判率 **0%**（结构性保证：atk/defEff≥10⇒attacker_win）。结论 [§13-SLG-C](ECONOMY_VERIFICATION_LOG.md)。
+- [x] **D 轨 ✅ CLOSED（2026-06-30）**：蒙特卡洛 10 seeds × 6 配置（sects 10–1000，shards 2–10）**全 PASS**（极差 ≤ 最强单体，典型极差 ≈ 10–15% 上界）；排名权重是主稳定器（去掉排名退化符合预期，确认多维设计必要性）。结论 [§13-SLG-D](ECONOMY_VERIFICATION_LOG.md)。
+- [x] **E 轨 ✅ CLOSED（2026-06-30）**：活跃中位家族（20 人起、3.5 地/天、4 活跃/天）**第 9 天**建宗门（7–14 天窗口 ✅）；从 ≥3000 分起零活跃 **8 天**跌门槛（≥7 天判据 ✅）；`decayProsperity` 惰性结算，有动作即满分重算，周常活跃玩家不观测衰减 ✅。结论 [§13-SLG-E](ECONOMY_VERIFICATION_LOG.md)。
+- [x] **F 轨 ✅ CLOSED（2026-06-30，工程估算）**：WORLD_CAPACITY=10000 / shard：~246k（中位）–582k（峰值）文档；热路径查询全为点查或窄范围扫描（< 10ms）；RESET_DELETE_BATCH=2000 清档 **1.9–4.4s**（< 5s）；活跃层缓存 **36 MB / shard**（VPS 可承 28–56 shard）。结论 [§13-SLG-F](ECONOMY_VERIFICATION_LOG.md)；待预发压测确认。
+- [x] **险地轨 ✅ CLOSED（2026-07-02）**：econ-sim `stronghold.ts`/`strongholdRun.ts` 用真实 `proceduralTile` 跨 100 种子实测——险地占领发**持久** `binding`（A 轨从未计入的龙头）。**缺陷（已修复）**：原 freq `1/70` value-noise 在 300×300 图上只 ~18 格点，险地数量种子间 **0→6,436**（CV 1.02，14% 零险地，聚成 blob 均值 862 格），持久 binding 稀释高数量种子/满占领率破 15% 判据。**修复**：生成层换逐格哈希 `rand2(x,y,seed^0x0555) > 0.997`（`shared/slg.ts`，merge-first / rule 4 已先合 main），删 `strongholdFreq`。**修复后实测（2026-07-05 用 500×500 + 等级 10 新地图重跑，见 §13-SLG-STRONGHOLD.2）**：险地数 **567 中位（504–636）**、平均 blob **1.0 格（孤立点）**、持久 binding 稀释峰值 **12.6%（< 15%）**——①②③全 PASS。结论 [§13-SLG-STRONGHOLD](ECONOMY_VERIFICATION_LOG.md)。
+- [x] **登记 ✅（2026-06-30）**：C/D/E/F 轨结论已写入 [ECONOMY_VERIFICATION_LOG.md](ECONOMY_VERIFICATION_LOG.md) §13-SLG-C / §13-SLG-D / §13-SLG-E / §13-SLG-F；数值未变（常量未动），SLG_DESIGN_LOG §17.1 / §21.4 `DRAFT` 标记按上线后压测策略保留（见 §10）。险地轨结论写入 §13-SLG-STRONGHOLD（2026-07-02）。
 - [x] **代码**：C/D/E/F 轨核验数字与 `server/shared/src/slg.ts` 当前常量一致，无需改动；**险地轨**生成缺陷已修复并落地（`slg.ts` 逐格哈希 + `strongholdThreshold=0.997`，删 `strongholdFreq`；merge-first 已合 main）。
 
 **签字人**：A/A-coin 轨 = 经济负责人（动持久经济）；B/C 轨 = 战斗/SLG 玩法负责人；D/E/F 轨 = 实现者自核 + 复核即可；**险地轨**：持久 binding 稀释 = 经济负责人，生成算法改动 = SLG 玩法负责人。

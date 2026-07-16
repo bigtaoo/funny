@@ -105,7 +105,7 @@ interface StarContext {
 
 ## 与难度重调的关系
 
-难度上调（`enemyScale` / 经济 / 波次量，沿用 `tune-*.cjs` + `difficulty.test.ts`）
+难度上调（`enemyScale` / 经济 / 波次量，沿用 `tune-*.cjs` + `test/difficulty/`）
 与本轴改动**一起做**：前者让 `hpScore`（防御类）重新分散，后者让进攻类按 `speedScore`
-分档。目标是 `difficulty.test.ts` 全 61 关矩阵里星级**真正散开**（同一养成档下不再一律 3★，
+分档。目标是 `test/difficulty/` 全 61 关矩阵里星级**真正散开**（同一养成档下不再一律 3★，
 出现干净的 1★→2★→3★ 阶梯）。

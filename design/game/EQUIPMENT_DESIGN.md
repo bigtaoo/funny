@@ -503,6 +503,8 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 **"+0" 噪音清理 + 背包格空白填充 + Equip/详情视觉分级**（2026-07-15 追加）：真人吐槽走查（真实账号，dev server 指向正式服 `api.gamestao.com` 实测，见 `client-run-and-visual-verify` 记忆新增的"指向正式服 VPS 实测"用法）发现三处问题并修复：① 几乎所有未强化过的装备标题都带一个没有信息量的 `+0`（`Marker +0`/`Pencil +0`…），只有 `Foil Cover +6` 这种真正强化过的才有意义——`EquipmentSceneBase` 新增共享方法 `itemLabel(defId, level)`（`level>0` 才拼 `+N`），替换掉 `inventory.ts`/`detail.ts`/`assign.ts`/`reforge.ts` 五处硬编码的 `` `${itemName} +${level}` ``，全场景统一生效。② 背包格 `renderInstanceCell` 右侧列此前只有稀有度一行文字，格子下半区大片空白——稀有度/已装备标签/堆叠数字字号统一放大（16/14/16→18/16/18）+ 行距拉开，并新增底部满宽的操作区。③ 该操作区顺带解决"箭头 vs Equip 按钮权重分不清"：未装备格给一个真正的按钮外观（`sketchPanel` 描边填充 + 居中文案，取代原来贴在右下角的小字提示），已装备格保留安静的 `› 查看详情`（新 i18n key `equip.viewDetails`，三语言都加了）——两者其实都是同一个"打开详情"点击（整格命中区不变），但视觉上现在清楚区分"这是主操作"和"这只是查看"。原先怀疑的头部 `42/300` 容量数字截断问题实测**未复现**（1280px/1568px 均完整显示），代码里 `drawHeaderCurrency` 本就是量出总宽度后从右边界反推起点，结构上不会裁字，判断是旧版本或更窄分辨率下的截图，未做改动。`tsc --noEmit` + 生产 webpack 构建全绿，真实账号截图逐项核对过。
 
+**分区标题放大+可折叠 + 图标卡再放大 50% + 去除宽度空白**（2026-07-16 追加）：真人截图走查发现三处问题并修复：① 「已装备/背包」分区标题字号 12→24（2 倍）+ 左边距再加 20px 右移，`SECTION_H` 20→36 容纳大字；② 分区标题新增点击折叠：整行（`x=0` 到画布右边界）可点，`▼`/`▶` 箭头指示状态，`InventoryMixin` 新增 `collapsedSections: Set<'equipped'|'bag'>` 实例态，折叠的分区其下图标卡在布局阶段直接跳过（不占垂直空间），`DisplayEntry`/`Placed` 的 header 变体新增 `key` 字段区分两个分区。③ 图标卡 `EQUIP_CELL_H` 再 +50%（177→266，同步带动 `CRAFT_CELL_H`）；`renderInventory` 里的 `cellW` 此前把整行可用宽度平均分给列数，导致格子比设计目标宽（480）撑得更宽、内部大片空白，改为 `cellW = min(480, 平均列宽)` 封顶，多余宽度留在网格右侧当边距，不再撑大卡片本身。`tsc --noEmit` 验证；因端口 9090 dev server 被同目录另一并发会话占用，未起浏览器截图核对（未注入调试钩子以免打断对方热更新）。
+
 #### E2 掉落 faucet + E6 洗练 实现记录（2026-06-22，✅）
 
 **E2 关卡掉落 faucet**

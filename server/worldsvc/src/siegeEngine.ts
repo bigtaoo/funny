@@ -35,6 +35,7 @@ import {
 import {
   buildSiegeBattle,
   SIEGE_BATTLE_TIMEOUT_TICKS,
+  SIEGE_CHEAP_RATIO,
   CARD_BASE_SURVIVAL,
   CARD_INJURY_DURATION_MS,
   CARD_DEFS,
@@ -81,6 +82,38 @@ export function synthesizeArmy(troops: number, role: 'attacker' | 'defender'): G
     army.push({ unitType: SYNTH_UNIT, col, row, initialHp: hp });
   }
   return army;
+}
+
+/**
+ * Max troop count `synthesizeArmy` can place without stacking multiple units on the same lane/row (ATTACK_LANES.length
+ * distinct columns × the number of depths before `row` clamps to the opposing spawn row × HP_PER_UNIT). Beyond this,
+ * round-robin placement runs out of board depth and units clog lanes, so the auto-battle can hit its hard time limit
+ * (defender advantage) regardless of true combat strength — discovered while calibrating stronghold/crossing garrison
+ * constants (a maxed drillYard+satchel raises both troopCap and per-march carry cap to 12,000, comfortably over this
+ * cap). Only meaningful for synthesized (flat-troop, no real per-unit layout) armies — a real card/team army places
+ * each unit at an explicit, level-schema-validated col/row and never collides regardless of total troops.
+ */
+export const SIEGE_SYNTH_ARMY_MAX_TROOPS = ATTACK_LANES.length * (TOP_SPAWN_ROW - BOTTOM_SPAWN_ROW + 1) * HP_PER_UNIT;
+
+/**
+ * Whether a siege should skip the deterministic engine and settle via the cheap linear `resolveSiege` instead
+ * (§14.10 U7 / §16.5 A7 decision, SIEGE_CHEAP_RATIO): true when the attacker holds an overwhelming troop
+ * advantage over the effective defense, or when a synthesized side's troop count would overflow
+ * `synthesizeArmy`'s placement capacity (see {@link SIEGE_SYNTH_ARMY_MAX_TROOPS}) and congest the board
+ * regardless of true strength. The overflow check is independent of the ratio: a lopsided-but-not-quite-10×
+ * fight can still overflow the board and must not reach the engine either.
+ */
+export function shouldUseCheapSiege(opts: {
+  attackerTroops: number;
+  defenderTroops: number;
+  attackerSynthesized: boolean;
+  defenderSynthesized: boolean;
+}): boolean {
+  const { attackerTroops, defenderTroops, attackerSynthesized, defenderSynthesized } = opts;
+  if (attackerSynthesized && attackerTroops > SIEGE_SYNTH_ARMY_MAX_TROOPS) return true;
+  if (defenderSynthesized && defenderTroops > SIEGE_SYNTH_ARMY_MAX_TROOPS) return true;
+  if (attackerTroops <= 0) return false;
+  return defenderTroops > 0 ? attackerTroops >= defenderTroops * SIEGE_CHEAP_RATIO : true;
 }
 
 /**

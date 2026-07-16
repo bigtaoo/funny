@@ -1,4 +1,4 @@
-// worldsvc territory overview list e2e (SLG_DESIGN.md §26): GET /world/territories backs the client's
+// worldsvc territory overview list e2e (SLG_DESIGN_LOG.md §26): GET /world/territories backs the client's
 // Territory Overview panel — the HUD's territoryCount is only an aggregate, listTerritories returns the
 // full rows (x, y, level, garrison) so the panel can offer per-tile jump/abandon actions.
 // Requires `cd server && docker compose up -d`.
@@ -70,7 +70,7 @@ function findCapitalSite(sx: number, sy: number): { x: number; y: number } {
 
 const HOME = findCapitalSite(5, 5);
 
-describe.skipIf(!mongo)('worldsvc territory overview list e2e (SLG_DESIGN.md §26)', () => {
+describe.skipIf(!mongo)('worldsvc territory overview list e2e (SLG_DESIGN_LOG.md §26)', () => {
   const m = mongo!;
   let nowMs = 1_000_000;
   const now = () => nowMs;

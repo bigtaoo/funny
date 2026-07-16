@@ -18,6 +18,7 @@ import { TerritoryService } from './territory';
 import { SeasonService } from './season';
 import { CityService } from './city';
 import { CombatService } from './combat';
+import { TransferService, type ShardSummary } from './transfer';
 import type { PlayerWorldView, WorldTileView, MarchView, OccupationView } from './worldTypes';
 import type { SLG_SHOP_ITEMS, BuildingKey, MarchKind } from '@nw/shared';
 import type { TeamTemplate } from './db';
@@ -32,6 +33,7 @@ export class WorldService extends WorldCore {
   private readonly season = new SeasonService(this, this.territory);
   private readonly city = new CityService(this);
   private readonly combat = new CombatService(this);
+  private readonly transfer = new TransferService(this, this.territory);
 
   // ── marches / siege / defense / replay (combat.ts) ───────────
   startMarch(
@@ -138,6 +140,17 @@ export class WorldService extends WorldCore {
   }
   patrolShardIsolation(): ReturnType<SeasonService['patrolShardIsolation']> {
     return this.season.patrolShardIsolation();
+  }
+
+  // ── G6 mid-season shard transfer/merge (transfer.ts, §27) ─────
+  listTransferTargets(fromWorldId: string): Promise<ShardSummary[]> {
+    return this.transfer.listTransferTargets(fromWorldId);
+  }
+  transferShard(accountId: string, fromWorldId: string, toWorldId: string): Promise<PlayerWorldView> {
+    return this.transfer.transferShard(accountId, fromWorldId, toWorldId);
+  }
+  mergeShard(sourceWorldId: string, targetWorldId: string): ReturnType<TransferService['mergeShard']> {
+    return this.transfer.mergeShard(sourceWorldId, targetWorldId);
   }
 
   // ── territory (territory.ts) ─────────────────────────────────

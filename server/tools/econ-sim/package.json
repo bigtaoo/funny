@@ -7,13 +7,17 @@
   "scripts": {
     "sim": "tsx src/index.ts",
     "enhance-protect": "tsx src/enhanceProtectRun.ts",
-    "typecheck": "tsc --noEmit"
+    "stronghold-combat": "tsx src/strongholdCombatRun.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@nw/engine": "*",
     "@nw/shared": "*"
   },
   "devDependencies": {
     "tsx": "^4.0.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "vitest": "^2.1.8"
   }
 }

@@ -516,11 +516,12 @@ export class BattlePassScene implements Scene {
   private renderToast(): void {
     if (!this.toast) return;
     const { w, h } = this;
+    const toastCy = Math.round(h * 2 / 3);
     const tBg = new PIXI.Graphics();
-    tBg.beginFill(C.dark, 0.88).drawRoundedRect(Math.round(w * 0.15), Math.round(h * 0.82), Math.round(w * 0.7), Math.round(h * 0.08), 8).endFill();
+    tBg.beginFill(C.dark, 0.88).drawRoundedRect(Math.round(w * 0.15), Math.round(toastCy - h * 0.08), Math.round(w * 0.7), Math.round(h * 0.16), 8).endFill();
     this.container.addChild(tBg);
-    const tTxt = txt(this.toast, Math.round(h * 0.028), 0xffffff);
-    tTxt.anchor.set(0.5, 0.5); tTxt.x = w / 2; tTxt.y = Math.round(h * 0.86);
+    const tTxt = txt(this.toast, Math.round(h * 0.056), 0xffffff);
+    tTxt.anchor.set(0.5, 0.5); tTxt.x = w / 2; tTxt.y = toastCy;
     this.container.addChild(tTxt);
   }
 }

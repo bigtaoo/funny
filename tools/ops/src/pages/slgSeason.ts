@@ -127,9 +127,24 @@ function slgWorldRow(ctx: Ctx, w: SlgWorldSummary, onRefresh: () => Promise<void
     }
   };
 
+  const doMerge = async (): Promise<void> => {
+    const targetWorldId = prompt(`Merge "${w.worldId}" into which shard? (worldId, e.g. s${w.season}-0)`);
+    if (!targetWorldId) return;
+    if (!confirm(`DANGER: Move every remaining player out of "${w.worldId}" into "${targetWorldId}", then permanently close "${w.worldId}"? Irreversible — use only for a low-population shard (§27).`)) return;
+    rowErr.textContent = '';
+    pageErr.textContent = '';
+    try {
+      const r = await api.slgMergeShard(w.worldId, targetWorldId);
+      showOk(rowErr, `Moved ${r.moved} player(s)${r.failed.length ? `, ${r.failed.length} failed (see server logs)` : ''}`);
+      await onRefresh();
+    } catch (e) {
+      showErr(rowErr, e);
+    }
+  };
+
   const buttons: HTMLElement[] = [];
   if (canManage) {
-    if (w.status === 'open') {
+    if (w.status === 'open' || w.status === 'active') {
       buttons.push(
         h('button', { class: 'warn',
           onclick: () => void doAction('Settle', `Settle world "${w.worldId}"? This distributes rewards and marks the season as settling.`, () => api.slgSettleSeason(w.worldId)) },
@@ -137,6 +152,7 @@ function slgWorldRow(ctx: Ctx, w: SlgWorldSummary, onRefresh: () => Promise<void
         h('button', { class: 'ghost',
           onclick: () => void doAction('Close', `Archive world "${w.worldId}"? This permanently closes it.`, () => api.slgCloseSeason(w.worldId)) },
           'Close'),
+        h('button', { class: 'danger', onclick: () => void doMerge() }, 'Merge into…'),
       );
     } else if (w.status === 'settling' || w.status === 'resetting') {
       buttons.push(

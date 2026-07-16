@@ -85,6 +85,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/world/season/transfer/targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Mid-season shard transfer (G6/§27): list candidate destination shards for the player's current shard — same season, open/active, not full, excluding the current shard. Empty if the current world has no seeded WorldDoc. */
+        get: operations["listTransferTargets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/world/season/transfer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Mid-season shard transfer (G6/§27): forfeits ALL shard-scoped state in fromWorldId (city/tiles/troops — via the same purge used for corrupt-account repair) and re-joins toWorldId fresh, exactly like a first-time join. No stat migration. Blocked by: an in-flight march/occupation in fromWorldId (TRANSFER_BUSY, recall/wait first), a recent prior transfer (TRANSFER_COOLDOWN, SHARD_TRANSFER_COOLDOWN_DAYS=7), or an invalid/full/different-season target (TRANSFER_TARGET_INVALID). Family/sect membership is untouched (family is not shard-scoped data). */
+        post: operations["transferShard"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/world/join": {
         parameters: {
             query?: never;
@@ -838,6 +872,13 @@ export interface components {
             /** @description Occupied tiles only, sparse array */
             tiles: components["schemas"]["WorldTileSparseView"][];
         };
+        /** @description A candidate destination shard for mid-season transfer (G6/§27) — same season, open/active, not full. */
+        ShardTransferTargetView: {
+            worldId: string;
+            shard: number;
+            population: number;
+            capacity: number;
+        };
         PlayerWorldView: {
             joined: boolean;
             /** @description The shard worldId the player belongs to (G6/§20: returned from join-season resolution; the client uses this to enter the world) */
@@ -1216,6 +1257,60 @@ export interface operations {
             };
         };
     };
+    listTransferTargets: {
+        parameters: {
+            query: {
+                /** @description The player's current shard. */
+                worldId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Candidate shards */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["ShardTransferTargetView"][];
+                    };
+                };
+            };
+        };
+    };
+    transferShard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    fromWorldId: string;
+                    toWorldId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Transferred; response is the fresh PlayerWorldView in toWorldId */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["PlayerWorldView"];
+                    };
+                };
+            };
+        };
+    };
     joinWorld: {
         parameters: {
             query?: never;
@@ -1484,7 +1579,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Full list of tiles owned by the requester (territory + captured stronghold; excludes the 3×3 capital footprint). Backs the Territory Overview panel (SLG_DESIGN.md §26) — `territoryCount` on PlayerWorldView is only an aggregate count, this returns the rows for jump/abandon actions. */
+            /** @description Full list of tiles owned by the requester (territory + captured stronghold; excludes the 3×3 capital footprint). Backs the Territory Overview panel (SLG_DESIGN_LOG.md §26) — `territoryCount` on PlayerWorldView is only an aggregate count, this returns the rows for jump/abandon actions. */
             200: {
                 headers: {
                     [name: string]: unknown;
