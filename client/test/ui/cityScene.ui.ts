@@ -527,8 +527,8 @@ describe('CityScene military page team panel (D-CITY-10, 2026-07-16)', () => {
 
   it('registers one hit per visible team slot when onEditTeam is wired', async () => {
     const { scene, inner } = await buildOnMilitaryPage({ teams: [] }, () => {});
-    // Back + 2 page tabs + tech-tree panel + one hit for each of the TEAM_CAP slots.
-    expect(inner.hits.length).toBe(4 + TEAM_CAP);
+    // Back + the rail tab hit + tech-tree panel + one hit for each of the TEAM_CAP slots.
+    expect(inner.hits.length).toBe(3 + TEAM_CAP);
     scene.destroy();
   });
 
@@ -538,7 +538,7 @@ describe('CityScene military page team panel (D-CITY-10, 2026-07-16)', () => {
       { teams: [{ id: teamSlotId(0), name: 'Alpha', army: [{ cardInstanceId: 'c1' }] }], me: { cardState: { c1: { currentTroops: 400 } } } },
       (teamId, teamName) => { opened.push({ teamId, teamName }); },
     );
-    const teamHit = inner.hits[4]!; // first team card, past Back + 2 tabs + tech-tree panel
+    const teamHit = inner.hits[3]!; // first team card, past Back + rail tab + tech-tree panel
     inner.handleDown(teamHit.x + teamHit.w / 2, teamHit.y + teamHit.h / 2);
     expect(opened).toEqual([{ teamId: teamSlotId(0), teamName: 'Alpha' }]);
     scene.destroy();
@@ -550,7 +550,7 @@ describe('CityScene military page team panel (D-CITY-10, 2026-07-16)', () => {
       { teams: [] },
       (teamId, teamName) => { opened.push({ teamId, teamName }); },
     );
-    const firstSlotHit = inner.hits[4]!;
+    const firstSlotHit = inner.hits[3]!;
     inner.handleDown(firstSlotHit.x + firstSlotHit.w / 2, firstSlotHit.y + firstSlotHit.h / 2);
     expect(opened).toEqual([{ teamId: teamSlotId(0), teamName: teamSlotName(0) }]);
     scene.destroy();
@@ -558,8 +558,8 @@ describe('CityScene military page team panel (D-CITY-10, 2026-07-16)', () => {
 
   it('team-card hits land within the screen, below the page tabs, and do not overlap each other', async () => {
     const { scene, inner } = await buildOnMilitaryPage({ teams: [] }, () => {});
-    const tabsHit = inner.hits[2]!; // military tab — y-reference for "below the tabs"
-    const teamHits = inner.hits.slice(4);
+    const tabsHit = inner.hits[1]!; // rail tab hit — y-reference for "below the tabs"
+    const teamHits = inner.hits.slice(3);
     expect(teamHits.length).toBe(TEAM_CAP);
     for (const th of teamHits) {
       expect(th.x).toBeGreaterThanOrEqual(0);
@@ -577,13 +577,13 @@ describe('CityScene military page team panel (D-CITY-10, 2026-07-16)', () => {
 
   it('switching back to the domestic page drops the team-card hits (no leak across pages)', async () => {
     const { scene, inner } = await buildOnMilitaryPage({ teams: [] }, () => {});
-    expect(inner.hits.length).toBe(4 + TEAM_CAP);
+    expect(inner.hits.length).toBe(3 + TEAM_CAP);
     const domesticTab = inner.hits[1]!;
     inner.handleDown(domesticTab.x + domesticTab.w / 2, domesticTab.y + domesticTab.h / 2);
     expect(inner.page).toBe('domestic');
-    // Back + 2 page tabs + 10 building cards — no team hits survive on the domestic page,
-    // so the id-based tap-through can't misfire there.
-    expect(inner.hits.length).toBe(13);
+    // Back + the rail tab hit + 10 building cards — no team hits survive on the domestic
+    // page, so the id-based tap-through can't misfire there.
+    expect(inner.hits.length).toBe(12);
     scene.destroy();
   });
 });

@@ -52,9 +52,9 @@ describe('WorldMapPanels.renderHud — header bar shows production, not the "Wor
     panels.renderHud();
     // Left column (Zoom/Back) sits near x=0; the auction button must be nowhere near it.
     expect(ctx.aucBtnRect.x).toBeGreaterThan(W / 2);
-    // Right-anchored: within a small margin of the screen's right edge (30px margin,
-    // widened from 10px for narrow/notched viewports — see WorldMapPanels.renderHeaderHud).
-    expect(ctx.aucBtnRect.x + ctx.aucBtnRect.w).toBeGreaterThan(W - 40);
+    // Right-anchored: within a small margin of the screen's right edge (56px margin,
+    // widened for narrow/notched viewports — see WorldMapPanels.renderHeaderHud).
+    expect(ctx.aucBtnRect.x + ctx.aucBtnRect.w).toBeGreaterThan(W - 60);
     expect(ctx.aucBtnRect.x + ctx.aucBtnRect.w).toBeLessThanOrEqual(W);
   });
 
