@@ -1323,6 +1323,8 @@ export const zh = {
   'titles.back': '← 返回',
   'titles.empty': '暂无称号',
   'titles.equipped': '已佩戴',
+  'titles.tapUnequip': '（轻触取消）',
+  'titles.locked': '未获得',
   // Title names (TITLE_DESIGN §6).
   'title.event.newbie.full': '新手上路',
   'title.event.newbie.short': '新手',
