@@ -1350,6 +1350,16 @@ export const zh = {
   // Ranked-season titles (ladder.s{N}.{rank}); the dynamic part is assembled by formatLadderTitle.
   'title.ladder.full': '天梯达人',
   'title.ladder.short': '天梯',
+  // SLG 大区赛季称号（slg.s{N}.{key}），按结算档位（SLG_DESIGN §8.3）。
+  'title.slg.champion.full': '赛季霸主',
+  'title.slg.champion.short': '霸主',
+  'title.slg.top3.full': '赛季前三',
+  'title.slg.top3.short': '前三',
+  // SLG 赛季结算邮件（worldsvc 下发这些 key；正文带 |rank=|nations= 参数）。
+  'slg.settle.subject': '大区赛季结算',
+  'slg.settle.body': '你在大区赛季大比中位列第 {rank} 名，占据 {nations} 座首府，赛季奖励已随信附上。',
+  'slg.settle.bp.subject': '战令赛季奖励',
+  'slg.settle.bp.body': '作为战令持有者，这是你的赛季末额外奖励。',
 
   // ── Limited-time events (B6) ──────────────────────────────────────────────────
   'event.title': '限时活动',

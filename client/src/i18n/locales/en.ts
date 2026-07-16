@@ -1336,6 +1336,16 @@ export const en: Record<TranslationKey, string> = {
   'title.ach.pvp.veteran.short': 'Veteran',
   'title.ladder.full': 'Ladder Ace',
   'title.ladder.short': 'Ladder',
+  // SLG regional-season titles (slg.s{N}.{key}); per settlement tier (SLG_DESIGN §8.3).
+  'title.slg.champion.full': 'Season Champion',
+  'title.slg.champion.short': 'Champ',
+  'title.slg.top3.full': 'Season Top 3',
+  'title.slg.top3.short': 'Top 3',
+  // SLG season settlement mail (worldsvc dispatches these keys; body carries |rank=|nations= params).
+  'slg.settle.subject': 'SLG Season Settled',
+  'slg.settle.body': 'You placed #{rank} in the regional grand contest, holding {nations} capital(s). Your season rewards are attached.',
+  'slg.settle.bp.subject': 'Battle Pass Season Bonus',
+  'slg.settle.bp.body': 'As a Battle Pass holder, here is your extra end-of-season reward.',
 
   // ── Limited-time events (B6) ─────────────────────────────────────────────
   'event.title': 'Events',

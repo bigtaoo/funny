@@ -123,6 +123,9 @@ export class WorldService extends WorldCore {
   settleSeason(worldId: string): ReturnType<SeasonService['settleSeason']> {
     return this.season.settleSeason(worldId);
   }
+  processDueSeasonSettlement(): ReturnType<SeasonService['processDueSeasonSettlement']> {
+    return this.season.processDueSeasonSettlement();
+  }
   resetSeason(worldId: string): Promise<{ deleted: Record<string, number> }> {
     return this.season.resetSeason(worldId);
   }

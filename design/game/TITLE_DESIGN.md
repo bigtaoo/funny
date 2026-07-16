@@ -169,6 +169,10 @@ grant(t):
   - 测试：`server/metaserver/test/starter-title.e2e.test.ts`（新号拥有+佩戴、老号补发+自动戴、不抢已挣称号、幂等 4 例）；更新 `titles.test.ts`（新号断言）、`internal-ladder.test.ts`（admin 授予后 titles 含 newbie）。**founder 仍走 admin 手动发放（运营活动），不自动发**。
 - [x] **称号墙全目录展示（2026-07-16）**：`TitlesScene` 由"只列已获得"改为展示全部固定称号（`TITLE_DEFS` 4 条，含 event/achievement）+ 已获得的赛季称号；未获得的固定称号灰显 + "未获得"角标、不可点击。是否展示称号完全由玩家决定：点未获得称号无反应，点已获得未佩戴称号→佩戴，再点已佩戴称号→取消佩戴（允许不展示任何称号）。赛季（ladder/slg）未获得的档位不枚举穷举（无固定目录、且跨赛季组合会爆炸），只展示玩家已获得的动态称号。纯客户端改动：`client/src/game/meta/titles.ts`（新增 `allTitleIds`）+ `client/src/scenes/TitlesScene.ts` + i18n `titles.locked`/`titles.tapUnequip`；未触碰 `GET/PUT /titles` 端点或 `save.titles`/`save.equipped` 存储（`TitlesScene` 走 `saveManager` 本地状态，不走该 REST 端点）。展示形式由整行列表改为图标卡网格（勋章 glyph + 短/全称 + 状态角标，每行按可用宽度自适应列数），复用 Equipment/Achievement 等页已有的 icon-card 网格排布手法，纯 `TitlesScene.ts` 内部改动。
 - [ ] 社交消息 sender 前缀（`[称号]`）— 待 S6 social 消息体扩展
-- [ ] SLG 赛季称号授予 — 待 worldsvc SLG 赛季结算落地
+- [x] **SLG 赛季称号授予（2026-07-16）**：worldsvc 赛季结算早已发称号，但发的是扁平 id `slg.champion`/`slg.top3`（不带 `s{N}` 段）→ `titleWeight`/`parseTitleId` 都不认（权重 0、来源误判 achievement）、无 i18n → 授而不显、不可排序。本次补齐端到端：
+  - `@nw/shared/src/slg/prosperity.ts`：`SettleReward.titleId` → `titleKey`（'champion'/'top3'），结算时由 `slgTitleId(season, key)` 戳上赛季号 → `slg.s{N}.champion`；`server/worldsvc/src/season.ts` 授予改用戳号 id。
+  - `@nw/shared/src/titles.ts`：新增 `slgTitleId()` + `SLG_TITLE_WEIGHTS`（champion 5500 > top3 4500，T5+/T4，占位待 launch 校准）；`titleWeight`/`titleShortKey` 按 `slg.s{N}.{key}` 的 key 段解析（未知 key 回落 T3 3500）；`parseTitleId` 原已识别 slg。客户端 `client/src/game/meta/titles.ts` 镜像同步 + 新增 `formatSlgTitle`（`getTitleKeys` 返回 per-key `title.slg.{key}.{full,short}`，4 处显示点无需改）。
+  - i18n zh/en/de：`title.slg.champion.*`/`title.slg.top3.*` + 结算邮件 `slg.settle.*`（正文 `|rank=|nations=` 参数插值——顺带让 `FriendsScene/mail.ts` 的 `mailText` 支持 `key|k=v` 拆参传 `t(key, params)`，此前整串当 key 查找 → 结算邮件正文显示原始 token）。
+  - 测试：`server/shared/test/titles.test.ts`（champion>top3、slgTitleId 往返）、`client/test/titles.test.ts`（镜像）。「十冠王」/连冠等更高阶 SLG 称号仍为设计意图，未落地。
 - [ ] `equipped.title` 短标签限长 UI 截断（建议 ≤ 4 字，前端展示截断即可）
 - [ ] 成就→称号具体条目清单（§7，与 ACHIEVEMENT_DESIGN 对齐）

@@ -24,6 +24,13 @@ const LADDER_RANK_WEIGHTS: Readonly<Record<string, number>> = {
   king:         5000,
 };
 
+// ── SLG season title weights (mirror of @nw/shared SLG_TITLE_WEIGHTS) ────────
+const SLG_TITLE_WEIGHTS: Readonly<Record<string, number>> = {
+  champion: 5500,
+  top3:     4500,
+};
+const SLG_TITLE_WEIGHT_DEFAULT = 3500;
+
 // ── Permanent / event title definition table ───────────────────────────────
 export const TITLE_DEFS: Readonly<Record<string, TitleDef>> = {
   'event.newbie': {
@@ -50,13 +57,15 @@ export function titleWeight(titleId: string): number {
   if (titleId in TITLE_DEFS) return TITLE_DEFS[titleId]!.weight;
   const lm = titleId.match(/^ladder\.s\d+\.(\w+)$/);
   if (lm) return LADDER_RANK_WEIGHTS[lm[1]!] ?? 0;
-  if (/^slg\.s\d+\./.test(titleId)) return 3500;
+  const sm = titleId.match(/^slg\.s\d+\.(\w+)$/);
+  if (sm) return SLG_TITLE_WEIGHTS[sm[1]!] ?? SLG_TITLE_WEIGHT_DEFAULT;
   return 0;
 }
 
 /**
  * Get the i18n keys for the equipped title (full name / short label).
- * Dynamic season titles (ladder.s{N}.{rank}) are not in TITLE_DEFS; use formatLadderTitle to format them.
+ * Dynamic season titles (ladder.s{N}.{rank} / slg.s{N}.{key}) are not in TITLE_DEFS; SLG uses per-key keys,
+ * ladder uses a single key + formatLadderTitle for the S{N} part.
  */
 export function getTitleKeys(titleId: string): { fullKey: string; shortKey: string } | null {
   if (titleId in TITLE_DEFS) {
@@ -65,6 +74,11 @@ export function getTitleKeys(titleId: string): { fullKey: string; shortKey: stri
   }
   if (/^ladder\.s\d+\./.test(titleId)) {
     return { fullKey: 'title.ladder.full', shortKey: 'title.ladder.short' };
+  }
+  // slg.s{N}.{key} → per-key i18n (title.slg.champion.full / title.slg.top3.short, …)
+  const sm = titleId.match(/^slg\.s\d+\.(\w+)$/);
+  if (sm) {
+    return { fullKey: `title.slg.${sm[1]}.full`, shortKey: `title.slg.${sm[1]}.short` };
   }
   return null;
 }
@@ -75,6 +89,16 @@ export function getTitleKeys(titleId: string): { fullKey: string; shortKey: stri
  */
 export function formatLadderTitle(titleId: string): string {
   const m = titleId.match(/^ladder\.s(\d+)\.(\w+)$/);
+  if (!m) return titleId;
+  return `S${m[1]} ${m[2]}`;
+}
+
+/**
+ * Format the fallback display text for an SLG season title (used only when its i18n key is missing).
+ * Returns "S{N} {key}"; the season stamp gives the prize its year.
+ */
+export function formatSlgTitle(titleId: string): string {
+  const m = titleId.match(/^slg\.s(\d+)\.(\w+)$/);
   if (!m) return titleId;
   return `S${m[1]} ${m[2]}`;
 }

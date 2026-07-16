@@ -228,6 +228,26 @@ describe.skipIf(!mongo)('worldsvc season ops e2e', () => {
     expect(bpMails.find((x) => x.accountId === 'bob')).toBeUndefined();
   });
 
+  it('auto-settle: processDueSeasonSettlement settles only due active worlds, idempotently (§17.14)', async () => {
+    await seed('active');
+    const NOW = 1_700_000_000_000; // matches the fixed WorldService clock in beforeEach
+
+    // Clock not yet elapsed → not settled.
+    await m.collections.worlds.updateOne({ _id: W }, { $set: { settleAt: NOW + 1000 } });
+    expect(await svc.processDueSeasonSettlement()).toEqual([]);
+    expect((await m.collections.worlds.findOne({ _id: W }))!.status).toBe('active');
+
+    // Clock elapsed (settleAt ≤ now) → settled once: status → settling + seasonResults written.
+    await m.collections.worlds.updateOne({ _id: W }, { $set: { settleAt: NOW } });
+    expect(await svc.processDueSeasonSettlement()).toEqual([W]);
+    expect((await m.collections.worlds.findOne({ _id: W }))!.status).toBe('settling');
+    expect(await m.collections.seasonResults.countDocuments({ _id: `${W}:s${SEASON}` })).toBe(1);
+
+    // Idempotent: the world is now 'settling' (no longer 'active'), so a second pass does not re-settle.
+    expect(await svc.processDueSeasonSettlement()).toEqual([]);
+    expect(await m.collections.seasonResults.countDocuments({ worldId: W })).toBe(1);
+  });
+
   it('reset: reset without settling first is rejected (prevents history loss)', async () => {
     await seed('active'); // status=active, not yet settled
     await expect(svc.resetSeason(W)).rejects.toMatchObject({ code: 'WORLD_CLOSED' });

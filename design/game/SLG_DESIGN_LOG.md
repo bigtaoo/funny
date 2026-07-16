@@ -617,9 +617,18 @@ if (path.startsWith('/admin/world/')) {
 - **数值（→ ECONOMY_NUMBERS §13-SLG 登记 + 经济模拟）**：`PROSPERITY_W_*`/`PROSPERITY_DECAY_PER_DAY`/`SECT_FOUND_PROSPERITY_MIN`；`SETTLE_REWARDS` 各档材料/皮肤量 + `CENTER_CAPITAL_MULT`；`sectStrengthScore` 权重；`WORLD_CAPACITY`/`RESET_DELETE_BATCH`。settle coin 若 >0 须经经济总预算批准（OVERVIEW §3.3）。**核验方法（怎么算「过没过」、判据、签字、登记）见 [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md)**——这批数分 6 条轨道分流核（只有 `SETTLE_REWARDS` 动持久经济），不是笼统「跑一遍经济模拟」。
 - **G6 运行时 ✅（2026-06-21，§20；转区/合区 ✅ 2026-07-16，§28）**：多 shard 实际开区编排（`allocateNextSeason`）、人口溢出开新区（`resolveShardForJoin`）、玩家 join 自动路由（宗门>家族>单随）、跨区隔离巡检（`patrolShardIsolation`）、赛季中个人转区+运营合区（§28）均已落地。剩赛季元数据下发（待 S11）。
 - **SLG 战令增益（C6/G4，S8-8）✅（2026-07-01，全档完成）**：`hasBattlePass` 全四档已接线——① `trainTroops` 训练时长 ×0.8（+20%）；② `speedupTraining` / `speedupBuilding` 每币加速时长 ÷0.85（消耗 -15%）；③ **产率加成档**：`recomputeYield` 末尾 ×`BP_YIELD_MULT`=1.1（+10% 所有资源产率），`buildingsOverride` 路径同步透传 `hasBattlePass`；④ **额外结算奖励档**：`settleSeason` 结算后额外查 `{hasBattlePass:true}` 全列，对每名持有者发 `slg-settle-bp:{world}:s{season}`（`BP_SETTLE_EXTRA`：scrap 50 / lead 20 / binding 5），dispatchKey 幂等防重发；与天梯战令独立（OVERVIEW §2/§4）。
-- **称号（C1）✅（2026-06-22）**：`SETTLE_REWARDS.titleId` 的 `grantTitle` 已接入（S10-3）——`settleSeason` 发奖循环 best-effort 调 `meta.grantTitle(acct, base.titleId)`，经 `WorldMetaClient` → `POST /internal/title/grant`（metaserver）。
+- **称号（C1）✅（2026-06-22 接线；2026-07-16 修正戳号/权重/i18n）**：`settleSeason` 发奖循环 best-effort 调 `meta.grantTitle`，经 `WorldMetaClient` → `POST /internal/title/grant`（metaserver）。**2026-07-16 修正**：此前发的是扁平 id `slg.champion`/`slg.top3`（不符 `slg.s{N}.{key}` 约定 → 权重 0、来源误判、无 i18n）；改为 `SETTLE_REWARDS.titleKey` + 结算时 `slgTitleId(season, key)` 戳赛季号，并补 `SLG_TITLE_WEIGHTS`（champion>top3）+ 三语 `title.slg.*`/`slg.settle.*` 文案。详见 [`TITLE_DESIGN.md §9`](TITLE_DESIGN.md)。
 - **异常交易审计工单 ✅（2026-06-21，G7；ops 前端 + 自动处置补记 2026-07-16）**：检测层 + admin 审计队列 + ops 前端审计页 + 确认违规自动封禁（不含追缴）均已落地（§17.13）。G7 全部收口。
 - **G5 视野系统 / G8 险地**：与赛季正交，各自专项（§15.2）。G5 已启动 → §18。
+
+### 17.14 赛季自动结算（auto-settle，2026-07-16）
+
+> 背景：§17.7 落地时 settle/reset/close 全走 admin 手动四段式（同天梯 §3.1「不自带定时器」）。用户拍板 SLG 侧改为**结算自动触发**（reset/close 仍手动——清图破坏性、需运维择时，与 G6 转合区一致）。
+
+- **季钟字段**：`WorldDoc.settleAt?`（`= openAt + SLG_SEASON_DURATION_MS`，60 天，`@nw/shared/slg/prosperity.ts`，[可调→ECONOMY_NUMBERS §13-SLG]）。`openSeason`（含 reset 后 reopen 的 ⑤）写入，故大区回收/新季均获新钟。legacy 无 `settleAt` 的世界永不自动结算。
+- **调度**：`scheduler.ts` 每 tick（2s）在 `autoSettleSeasons` 开时调 `processDueSeasonSettlement`——查 `{status:'active', settleAt:{$lte:now}}`（新增复合索引 `{status:1,settleAt:1}`，无到期项时零成本），对每个到期世界调 `settleSeason`（CAS 仅 active→settling、幂等；单区失败不阻断其余）。
+- **边界**：只做 active→settling（发奖/落库/发称号），**不自动 reset/close**。开关 `NW_SLG_AUTO_SETTLE`（默认开；`=0` 退回纯 admin）。`getSeason`/`listWorlds`/admin 列表回带 `settleAt` 供 ops 展示「预计结束」。
+- 测试：`season-ops.e2e.test.ts` auto-settle 用例（未到点不结算 / 到点结算一次 / settling 不重入）。
 
 ---
 
