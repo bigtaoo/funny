@@ -21,6 +21,8 @@ export interface WorldClient {
   settleWorld(worldId: string): Promise<unknown>;
   resetWorld(worldId: string): Promise<unknown>;
   closeWorld(worldId: string): Promise<void>;
+  /** G6 shard merge (§27): move every remaining player out of worldId (source) into targetWorldId, then close worldId. */
+  mergeWorld(worldId: string, targetWorldId: string): Promise<{ moved: number; failed: string[] }>;
 
   // ── Map templates (§24 Layer A, admin map editor) ──
   listMapTemplates(): Promise<MapTemplateSummary[]>;
@@ -77,6 +79,9 @@ export class HttpWorldClient implements WorldClient {
   }
   async closeWorld(worldId: string): Promise<void> {
     await this.post('/admin/world/close', { worldId });
+  }
+  async mergeWorld(worldId: string, targetWorldId: string): Promise<{ moved: number; failed: string[] }> {
+    return (await this.post('/admin/world/merge', { worldId, targetWorldId })) as { moved: number; failed: string[] };
   }
 
   private async get(path: string): Promise<unknown> {

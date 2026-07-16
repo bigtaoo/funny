@@ -157,6 +157,20 @@ components:
           items:
             $ref: '#/components/schemas/WorldTileSparseView'
 
+    ShardTransferTargetView:
+      description: A candidate destination shard for mid-season transfer (G6/§27) — same season, open/active, not full.
+      type: object
+      required: [worldId, shard, population, capacity]
+      properties:
+        worldId:
+          type: string
+        shard:
+          type: integer
+        population:
+          type: integer
+        capacity:
+          type: integer
+
     PlayerWorldView:
       type: object
       required: [joined]
@@ -695,6 +709,63 @@ paths:
       responses:
         '200':
           description: Player world state
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PlayerWorldView' }
+
+  /world/season/transfer/targets:
+    get:
+      operationId: listTransferTargets
+      description: >-
+        Mid-season shard transfer (G6/§27): list candidate destination shards for the player's current shard —
+        same season, open/active, not full, excluding the current shard. Empty if the current world has no
+        seeded WorldDoc.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: worldId, in: query, required: true, schema: { type: string }, description: The player's current shard. }
+      responses:
+        '200':
+          description: Candidate shards
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/ShardTransferTargetView' }
+
+  /world/season/transfer:
+    post:
+      operationId: transferShard
+      description: >-
+        Mid-season shard transfer (G6/§27): forfeits ALL shard-scoped state in fromWorldId (city/tiles/troops —
+        via the same purge used for corrupt-account repair) and re-joins toWorldId fresh, exactly like a
+        first-time join. No stat migration. Blocked by: an in-flight march/occupation in fromWorldId
+        (TRANSFER_BUSY, recall/wait first), a recent prior transfer (TRANSFER_COOLDOWN,
+        SHARD_TRANSFER_COOLDOWN_DAYS=7), or an invalid/full/different-season target (TRANSFER_TARGET_INVALID).
+        Family/sect membership is untouched (family is not shard-scoped data).
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fromWorldId, toWorldId]
+              properties:
+                fromWorldId: { type: string }
+                toWorldId: { type: string }
+      responses:
+        '200':
+          description: Transferred; response is the fresh PlayerWorldView in toWorldId
           content:
             application/json:
               schema:
