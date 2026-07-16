@@ -1,7 +1,10 @@
 // SLG anomalous trade audit (G7 anti-RMT, §17.7). worldsvc offline scan detects suspicious seller→buyer
 // pairs; ops files an audit ticket → single-person adjudication (dismiss for false positive / action for
 // confirmed violation). Parallel to compensation tickets: no rewards issued, no two-person approval; review
-// is single-person adjudication + audit trail; enforcement (ban/clawback) follows the external liaison process.
+// is single-person adjudication + audit trail. Confirmed violations ('actioned') trigger automatic
+// best-effort enforcement: both parties are banned via the existing suspiciousPve metaserver client
+// (same endpoint the anti-cheat page uses), recorded on the ticket as `enforcement`. Ban failures never
+// block ticket resolution — the ticket still resolves, with enforcement reflecting what actually landed.
 import { randomUUID } from 'node:crypto';
 import type {
   AuctionAnomaly,
@@ -76,6 +79,7 @@ export function SlgAuditMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase &
     /**
      * Adjudicate an audit ticket (capability slg.audit.manage): open → dismissed (false positive) / actioned (confirmed violation).
      * Only open tickets can be adjudicated (atomic guard prevents concurrent double-adjudication). Audited as slg.audit.resolve.
+     * 'actioned' additionally triggers best-effort auto-enforcement (ban both parties, see class header).
      */
     async slgResolveAuditTicket(
       actor: Actor,
@@ -90,7 +94,10 @@ export function SlgAuditMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase &
       if (!doc) throw new AdminError(404, 'not_found', 'no such ticket');
       if (doc.status !== 'open') throw new AdminError(409, 'conflict', `ticket is ${doc.status}`);
       const trimmedNote = (note ?? '').trim();
-      const res = await this.cols.tradeAuditTickets.findOneAndUpdate(
+
+      // Atomic status transition first (wins the race against a concurrent resolve of the same ticket);
+      // enforcement only runs for whichever call actually wins this update, so accounts are never double-banned.
+      let res = await this.cols.tradeAuditTickets.findOneAndUpdate(
         { _id: id, status: 'open' },
         {
           $set: {
@@ -103,9 +110,27 @@ export function SlgAuditMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase &
         { returnDocument: 'after' },
       );
       if (!res) throw new AdminError(409, 'conflict', 'ticket no longer open');
+
+      let enforcement: { sellerBanned: boolean; buyerBanned: boolean } | undefined;
+      if (disposition === 'actioned') {
+        const { sellerId, buyerId } = res.snapshot;
+        const [sellerRes, buyerRes] = await Promise.all([
+          this.suspiciousPve.banAccount(sellerId),
+          this.suspiciousPve.banAccount(buyerId),
+        ]);
+        enforcement = { sellerBanned: sellerRes.ok, buyerBanned: buyerRes.ok };
+        if (sellerRes.ok) await this.audit(actor.adminId, 'account.ban', { target: sellerId, summary: `slg audit ${id}: seller auto-ban` });
+        if (buyerRes.ok) await this.audit(actor.adminId, 'account.ban', { target: buyerId, summary: `slg audit ${id}: buyer auto-ban` });
+        res = (await this.cols.tradeAuditTickets.findOneAndUpdate(
+          { _id: id },
+          { $set: { enforcement } },
+          { returnDocument: 'after' },
+        )) ?? res;
+      }
+
       await this.audit(actor.adminId, 'slg.audit.resolve', {
         target: id,
-        summary: `${disposition}${trimmedNote ? `: ${trimmedNote}` : ''}`,
+        summary: `${disposition}${trimmedNote ? `: ${trimmedNote}` : ''}${enforcement ? ` (seller banned=${enforcement.sellerBanned}, buyer banned=${enforcement.buyerBanned})` : ''}`,
       });
       return this.toAuditTicketView(res);
     }
@@ -123,6 +148,7 @@ export function SlgAuditMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase &
         ...(doc.resolvedBy ? { resolvedBy: doc.resolvedBy } : {}),
         ...(doc.resolvedBy && names.get(doc.resolvedBy) ? { resolvedByName: names.get(doc.resolvedBy)! } : {}),
         ...(doc.resolvedAt ? { resolvedAt: doc.resolvedAt } : {}),
+        ...(doc.enforcement ? { enforcement: doc.enforcement } : {}),
       };
     }
   };

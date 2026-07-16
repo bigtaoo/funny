@@ -33,9 +33,9 @@
 
 1. ~~**G1（国民加成）+ G3（判负翻转）**~~ ✅：「承诺了但空转」，先收口。
 2. ~~**G5（视野系统）**~~ ✅：「加家族才守得住」留存逻辑的关键拼图，四片全落地（§18，含联盟黄标 §18.7）。
-3. **G2/G4/G6/G7/G8**：随对应经济/运营/规模化专项推进。
+3. **G2/G4/G6/G8**：随对应经济/运营/规模化专项推进。~~G7~~ ✅ 全部收口（含 ops 前端 + 自动处置，2026-07-16）。
 
-> **进度**：**G1 国民加成已落地（2026-06-20）**——见 §15.5。**G5 视野/迷雾四片全落地（2026-06-21，含联盟黄标）**——见 §18。
+> **进度**：**G1 国民加成已落地（2026-06-20）**——见 §15.5。**G5 视野/迷雾四片全落地（2026-06-21，含联盟黄标）**——见 §18。**G7 异常审计 ops 前端 + 自动处置已落地（2026-07-16）**——见 §17.13。
 
 ### 15.5 G1 国民加成实现记录（2026-06-20）
 
@@ -561,7 +561,8 @@ if (path.startsWith('/admin/world/')) {
 - **worldsvc**：`AuctionDoc.soldAt`（status→sold 时写；旧档回退解析 `auctionId` 内挂单 ts）；`AuctionService.scanAnomalies(worldId, windowSec?, thresholds?)` 拉近期 sold 投影成 `AuctionTradeRecord[]` 跑检测；内部端点 `GET /admin/world/audit/anomalies?worldId=&windowSec=`（X-Internal-Key，并入既有 `/admin/world/*` 内部分支）。只读，不改状态。
 - **admin**：`WorldClient.listAuctionAnomalies` 代理 worldsvc；新集合 `tradeAuditTickets`（独立库 `notebook_wars_admin`，`pairKey` 去重 + status/filedAt 索引）；`AdminService` 加 `slgScanAnomalies`/`slgFileAuditTicket`（冻结快照 + pairKey 同配对 open 去重幂等）/`slgListAuditTickets`/`slgResolveAuditTicket`（open→dismissed|actioned 原子守卫，审计 `slg.audit.file`/`slg.audit.resolve`）；REST `GET /admin/slg/audit/anomalies`·`GET|POST /admin/slg/audit/tickets`·`POST /admin/slg/audit/tickets/{id}/resolve`。能力 `slg.audit.view`（super/ops/viewer）/ `slg.audit.manage`（super/ops）。
 - **验收**：server `tsc -b`（10 包）全绿；worldsvc e2e 167（+6 `auction-audit`：repeated/designated+high_value/正常无异常/窗口外不计/soldAt 回退/方向区分）；admin e2e 24（+6 `season-audit`：扫描代理/立单 pairKey 去重/裁定 open→actioned+重复裁定拒/结案后可重立/无效裁定+无效快照拒/审计留痕）。
-- **未尽**：ops 前端审计页（SLG season admin 同样暂无 ops UI，一并后置）；确认违规后的自动处置（封禁/扣回）走外联流程，本轮只到「立单 + 裁定 + 留痕」。
+- **ops 前端审计页 ✅（已随后续 ops 拆分落地，未在本节记录过）**：`tools/ops/src/pages/auctionAudit.ts`（`pageAuctionAudit`，nav id `slg-audit`，能力 `slg.audit.view/manage`）——扫描表单 + 异常表（File ticket 按钮）+ 工单队列（状态筛选 + Dismiss/Action 按钮），沿用与 `pageSlgShop` 相同的 `pageXxx(ctx)` 模板。**本节盘点（2026-07-16）时发现这行"未尽"记录是过时的**——UI 早已存在，只是本文档没跟着更新。
+- **确认违规后自动处置 ✅（2026-07-16）**：`slgResolveAuditTicket` 裁定为 `actioned` 时，自动对买卖双方调用既有 `suspiciousPve.banAccount`（与反作弊页同一 metaserver `/internal/accounts/{id}/ban` 端点）——先原子状态迁移（`open→actioned`，赢得并发裁定竞争的那次调用才执行封禁，杜绝双重封号），再对双方发起封禁（best-effort、互相独立、失败不阻断工单裁定），结果写回 ticket 的 `enforcement: {sellerBanned, buyerBanned}` 字段（`TradeAuditTicketDoc`/`TradeAuditTicketView` 新增，admin/ops 两侧类型同步）；每次成功封禁额外记 `account.ban` 审计条目。ops 页面工单行展示 `Enforcement: seller banned/ban failed, buyer banned/ban failed`。**范围说明**：只做封号（冻结账号，阻止后续登录/交易），不做「追缴」——回收违规交易涉及的金币/物品需要单独判定该退给谁、是否已被二次转手，属于更复杂的资产清算逻辑，本轮不做。**验收**：`server/admin/test/season-audit.e2e.test.ts` 新增用例（actioned 双方被封 + enforcement 字段 + 2 条 `account.ban` 审计；dismissed 不触发任何封禁）；`tsc -b shared admin` + `tools/ops` `tsc --noEmit` 全绿。
 
 ### 17.8 G6 多大区 + 按宗门强弱平衡分配（数据地基 + 算法规格，运行时延后）
 
@@ -617,7 +618,7 @@ if (path.startsWith('/admin/world/')) {
 - **G6 运行时 ✅（2026-06-21，§20）**：多 shard 实际开区编排（`allocateNextSeason`）、人口溢出开新区（`resolveShardForJoin`）、玩家 join 自动路由（宗门>家族>单随）、跨区隔离巡检（`patrolShardIsolation`）已落地。剩赛季中主动转区/合区（运营专项）+ 赛季元数据下发（待 S11）。
 - **SLG 战令增益（C6/G4，S8-8）✅（2026-07-01，全档完成）**：`hasBattlePass` 全四档已接线——① `trainTroops` 训练时长 ×0.8（+20%）；② `speedupTraining` / `speedupBuilding` 每币加速时长 ÷0.85（消耗 -15%）；③ **产率加成档**：`recomputeYield` 末尾 ×`BP_YIELD_MULT`=1.1（+10% 所有资源产率），`buildingsOverride` 路径同步透传 `hasBattlePass`；④ **额外结算奖励档**：`settleSeason` 结算后额外查 `{hasBattlePass:true}` 全列，对每名持有者发 `slg-settle-bp:{world}:s{season}`（`BP_SETTLE_EXTRA`：scrap 50 / lead 20 / binding 5），dispatchKey 幂等防重发；与天梯战令独立（OVERVIEW §2/§4）。
 - **称号（C1）✅（2026-06-22）**：`SETTLE_REWARDS.titleId` 的 `grantTitle` 已接入（S10-3）——`settleSeason` 发奖循环 best-effort 调 `meta.grantTitle(acct, base.titleId)`，经 `WorldMetaClient` → `POST /internal/title/grant`（metaserver）。
-- **异常交易审计工单 ✅（2026-06-21，G7）**：检测层 + admin 审计队列已落地（§17.13）。剩 ops 前端审计页 + 确认违规的自动处置（封禁/扣回）外联，后置。
+- **异常交易审计工单 ✅（2026-06-21，G7；ops 前端 + 自动处置补记 2026-07-16）**：检测层 + admin 审计队列 + ops 前端审计页 + 确认违规自动封禁（不含追缴）均已落地（§17.13）。G7 全部收口。
 - **G5 视野系统 / G8 险地**：与赛季正交，各自专项（§15.2）。G5 已启动 → §18。
 
 ---

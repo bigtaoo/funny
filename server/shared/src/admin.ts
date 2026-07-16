@@ -233,10 +233,10 @@ export interface CompTicketView {
 // ── SLG anomalous-trade audit tickets (G7 anti-RMT, isomorphic reuse of OPS_DESIGN §3 ticket infrastructure) ──────────
 // worldsvc performs offline scans for suspicious seller→buyer pairs (detectAuctionAnomalies). Ops staff
 // then file those suspected pairs as audit tickets in admin, and adjudicate them as dismissed
-// (false positive / legitimate trade) or actioned (confirmed violation; remediation is handled via
-// existing compensation / ban flows externally). Parallel to but independent from compensation
-// tickets: compensation = "issue rewards", audit = "investigate a violation" — no rewards issued,
-// no two-person approval required (a single adjudicator resolves, with a full audit trail).
+// (false positive / legitimate trade) or actioned (confirmed violation — triggers automatic best-effort
+// ban of both parties via metaserver, recorded in `enforcement`). Parallel to but independent from
+// compensation tickets: compensation = "issue rewards", audit = "investigate a violation" — no rewards
+// issued, no two-person approval required (a single adjudicator resolves, with a full audit trail).
 export type TradeAuditTicketStatus = 'open' | 'dismissed' | 'actioned';
 
 /** Anomalous-pair snapshot (copied from the worldsvc scan result at ticket-filing time, freezing evidence as of that moment). */
@@ -265,6 +265,8 @@ export interface TradeAuditTicketView {
   resolvedBy?: string;
   resolvedByName?: string;
   resolvedAt?: number;
+  /** Auto-disposition result, set only when resolved as 'actioned' (best-effort ban of both parties via metaserver). */
+  enforcement?: { sellerBanned: boolean; buyerBanned: boolean };
 }
 
 // ── Audit ───────────────────────────────────────────────
