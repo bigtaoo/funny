@@ -10,6 +10,7 @@
 import { describe, it, expect } from 'vitest';
 import { createGameEngine } from '../src/game/GameEngine';
 import { NetInputSource, type CmdSink } from '../src/game/net/NetInputSource';
+import { RecordingInputSource } from '../src/game/net/ReplayInputSource';
 import type { GameConfig, IGameEngine } from '../src/game/types';
 import { PlayerCommands } from '../src/net/proto/game';
 import type { FrameCmds, ServerMsg, SideCmd } from '../src/net/proto/transport';
@@ -390,6 +391,36 @@ describe('NetInputSource — two-client lockstep determinism', () => {
     const before = eng.state.elapsedTicks;
     eng.tick(TICK_DT);
     expect(eng.state.elapsedTicks - before).toBeLessThanOrEqual(1);
+  });
+
+  it('catches up THROUGH a RecordingInputSource wrapper (prod netplay wiring)', () => {
+    // Regression for the "追帧根本没生效" bug: online matches build the engine with
+    // `new RecordingInputSource(session.input)` (nav/result.ts), so the engine's input
+    // is the recorder wrapper, not the NetInputSource directly. `confirmedLead` is an
+    // OPTIONAL method on InputSource; when the wrapper didn't forward it, catchUpSpeed()
+    // saw `undefined ?? 0` and stayed pinned at 1× for the entire match — a backgrounded
+    // tab's backlog never drained (a placed card only surfaced seconds later). This drives
+    // the identical 40 s-backlog scenario as the test above but THROUGH the recorder, so it
+    // fails if the wrapper ever drops confirmedLead again.
+    const SEED = 123;
+    const ni = new NetInputSource(noopSink);
+    ni.handleServerMsg(matchStartMsg(SEED, 0));
+    const rec = new RecordingInputSource(ni); // exactly how nav/result.ts wires it
+    const eng = createGameEngine(netConfig(SEED), rec);
+    ni.handleServerMsg(frameBatchMsg(1200)); // playTo = 1197 (~40 s backlog)
+
+    let renderFrames = 0;
+    while (ni.confirmedLead(eng.state.elapsedTicks) > 3 && renderFrames < 2000) {
+      eng.tick(TICK_DT);
+      renderFrames++;
+    }
+    // With confirmedLead forwarded, the 10×/5×/3× tiers drain ~40 s in a few hundred
+    // frames. Pinned at 1× (the bug) it needs ~1200 frames — assert convergence well
+    // under a pure-1× rate so the regression bites, not just under the 2000 wall.
+    expect(renderFrames).toBeLessThan(600);
+    expect(ni.confirmedLead(eng.state.elapsedTicks)).toBeLessThanOrEqual(3);
+    // Passthrough stayed transparent: the recorder captured every fast-forwarded frame.
+    expect(rec.frameCount).toBe(eng.state.elapsedTicks);
   });
 
   it('absorbs <100ms jitter without stalling (one-batch cushion)', () => {
