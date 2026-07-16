@@ -77,7 +77,7 @@ export class TraitSystem {
   private spawnSummon(summoner: Unit, state: GameState): void {
     const { type: summonType } = summoner.summonOnTimer!;
     const bp      = state.unitBlueprints[summonType];
-    const spawned = new Unit(summonType, summoner.side, summoner.col, summoner.row, bp);
+    const spawned = new Unit(summonType, summoner.side, summoner.col, summoner.row, bp, undefined, state.allocUnitId());
     state.board.addUnit(spawned);
     state.stats[state.ownerOf(summoner.side)].unitsSent++;
     const destRow = summoner.side === Side.Bottom ? TOP_BUILDING_ROW : BOTTOM_BUILDING_ROW;

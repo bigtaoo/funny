@@ -2,18 +2,24 @@ import { fp, FP_SCALE, fromFp, toFp, TICK_RATE, type Fp } from './math/fixed';
 import { UNIT_BLUEPRINTS } from './config';
 import { Side, UnitState, UnitType, type TraitSpec, type UnitBlueprint } from './types';
 
-// Units are the high-volume entity (continuous spawning), so they take the upper
-// id range starting at 1000. Buildings start at 0 and — capped by board cells —
-// never reach 1000, so the two id namespaces can never collide.
-let nextId = 1000;
+// Real match spawns get their id from the owning GameState's per-instance counter
+// (GameState.allocUnitId, range 1000+). This module-level counter is ONLY a fallback
+// for standalone construction that has no owning GameState — i.e. unit tests / tools.
+//
+// ⚠️ It must NOT be shared as the live-match id source: a second GameState built
+// mid-match (e.g. judgeRunner's hash-recompute) used to reset a shared global back to
+// 1000, so the live engine's next spawn reused a still-live id and clobbered it in
+// board.units (Map keyed by id) — orphaning a "ghost" unit that stayed in columnUnits
+// and blocked its lane forever. Hence the counter now lives on GameState, per instance.
+//
+// The fallback starts well above the per-instance range so a test that mixes standalone
+// units with GameState-spawned units on one board can never collide. Units keep the
+// upper id range (≥1000); buildings stay at 0+, so the two namespaces never overlap.
+let nextId = 900_000;
 
-/**
- * Reset the unit id counter. Called once per game (GameState constructor) so that
- * entity ids are reproducible across engine instances — required for deterministic
- * replay verification (same seed ⇒ identical id stream).
- */
+/** Reset the standalone/test-only unit id fallback (see above). Not used by real matches. */
 export function resetUnitIds(): void {
-  nextId = 1000;
+  nextId = 900_000;
 }
 
 export class Unit {
@@ -168,8 +174,11 @@ export class Unit {
     spawnRow: number,
     blueprint: UnitBlueprint = UNIT_BLUEPRINTS[unitType],
     initialHp?: number,
+    // Explicit id from the owning GameState (GameState.allocUnitId). Omitted only by
+    // standalone construction (tests/tools), which falls back to the module counter.
+    id?: number,
   ) {
-    this.id        = nextId++;
+    this.id        = id ?? nextId++;
     this.unitType  = unitType;
     this.side      = side;
     this.col       = col;

@@ -483,9 +483,13 @@ npm run test:watch
 
 黄金回放测试是守护"同 seed + 同命令流 ⇒ 逐位一致"这一核心契约的主测试。它用**运行 vs 运行结构比对**而非硬编码数值，因此平衡数值调整不会让它误报。
 
-> **配套修复**：`Unit`/`Building` 原用模块级全局 `nextId`，跨 engine 实例 ID 不复现。新增 `resetUnitIds()`/`resetBuildingIds()`，由 `GameState` 构造函数调用，使每局实体 ID 从固定基址开始 —— replay 可跨进程复现。
+> **实体 ID 分配（2026-07-16 修正为每实例计数器）**：**unit ID 现由 `GameState` 实例字段 `_nextUnitId`（从 1000 起）经 `allocUnitId()` 分配**，所有真实出兵点（`commands.ts` 出牌、`BuildingProductionSystem` 兵营、`CombatSystem` onDeathSpawn、`TraitSystem` summon、`engine/base.ts` garrison/attackerArmy、`campaign.ts` 波次）都走它。每个 `GameState` 从 1000 起 ⇒ 同 seed 仍逐位复现（ID 本就不进 `matchStateHash`，只哈希 `{winner, stats}`）。`Unit.ts` 保留的模块级 `nextId` 仅作**独立构造（单测/工具，无宿主 GameState）**的兜底，基址抬到 900_000，与每实例区间（1000+）隔离，避免同一 board 上混用时撞号。
+>
+> ⚠️ **为什么必须每实例**：曾用模块级全局 `nextId` 且由 `GameState` 构造函数 `resetUnitIds()` 归零。联机对战中 `judgeRunner` 会在**对局进行中**新建第二个 `GameState`（hash 争议重算），把共享计数器重置回 1000 —— 主引擎下一个出兵**复用了仍存活的 ID**，`Board.units`（`Map<id,Unit>`）里 `addUnit` 直接**覆盖**旧单位；旧单位从 `board.units` 消失却仍留在 `columnUnits`，`MovementSystem` 遍历 `board.units.values()` 再也碰不到它 —— 成了一个**看不见、冻结、永久挡路的"幽灵兵"**，后面出的兵全堆在它身后 `waiting`（前方无可见敌人）。回归测试见 `__tests__/unit-id-per-instance.test.ts`。
 >
 > **ID 命名空间**：**building 从 0 起、unit 从 1000 起**。建筑数量受棋盘格子数（12×18=216）封顶，永远到不了 1000；单位是高频增长方，取上段。两个命名空间无论对局多长都不会冲突。渲染层按事件类型（`unit_spawned` / `building_placed`）分池管理 view，不依赖 ID 区间。
+>
+> ⚠️ **遗留同类隐患（未修）**：`Building` 仍用模块级全局 `nextId` + `resetBuildingIds()`（`GameState` 构造函数调用），与 unit 修复前同款footgun —— 玩家在对局中放塔时，若期间发生 judge 重算，理论上同样会在 `Board.buildings`（同为 `Map<id>`）里覆盖出幽灵建筑。已单列后续任务跟进。`EscortUnit`/`Projectile` 存于数组（push 序，非 id-keyed Map），撞号仅事件歧义、不产生覆盖幽灵，暂不处理。
 
 ---
 
