@@ -388,6 +388,33 @@ describe.skipIf(!mongo)('ADR-026 base siege e2e', () => {
     expect(bPw?.teamState?.['t2']?.injuredUntil).toBe(nowMs + SLG_TEAM_INJURY_MS); // pre-existing injury unchanged
   });
 
+  it('overwhelming synthesized (no-team) attacker army beyond board capacity still wins a wave consistently (ratio ~6.7, under SIEGE_CHEAP_RATIO — only the board-overflow guard applies)', async () => {
+    const tgt = findCoord(20, 5);
+    // 12-card defender team, 150 troops each = 1,800 total. 12,000 attacker troops / 1,800 = ratio ~6.67, well under
+    // SIEGE_CHEAP_RATIO=10, so this wave can ONLY be routed to the cheap fallback via the board-overflow guard.
+    const d = mkCards('cd', 12, 150);
+    cardInvByAccount['b'] = d.inv;
+    await setupBase(tgt.x, tgt.y, { durability: 100, teams: [{ id: 't1', name: 'Guard', army: d.army }], cardState: d.state });
+    await svc.joinWorld(W, 'a', 5, 5);
+    await connectAttacker(tgt.x, tgt.y);
+
+    // 12,000 = the max satchel/troopCap a maxed drillYard+satchel allows (D-CITY-9). No team/army array on the
+    // march → applyBaseSiege's wave loop synthesizes the attacker army, well past the 9,600-troop board capacity
+    // that used to make the real engine congest and time out regardless of true strength.
+    const troops = 12_000;
+    const doc: MarchDoc = {
+      _id: `mFlat-${tgt.x}-${tgt.y}-${nowMs}`, worldId: W, ownerId: 'a',
+      fromTile: tileId(W, 5, 5), toTile: tileId(W, tgt.x, tgt.y),
+      kind: 'attack', troops, departAt: nowMs, arriveAt: nowMs, status: 'marching', rev: 0,
+    };
+    await m.collections.marches.insertOne(doc);
+    expect(await svc.processDueArrivals()).toBe(1);
+
+    const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
+    expect(siege?.outcome).toBe('attacker_win');
+    expect(await m.collections.siegeDamage.findOne({ tile: tileId(W, tgt.x, tgt.y) })).toBeTruthy();
+  });
+
   it('durability regenerates passively over time between attacks, display-only until a real settle (D-CITY-8)', async () => {
     const tgt = findCoord(20, 5);
     const startDurability = 50;
