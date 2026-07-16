@@ -6,7 +6,7 @@ import { t } from '../i18n';
 import { CHAPTER_ORDER, getChapterMap } from '../game';
 import type { ChapterMap, ChapterNode } from '../game';
 import { parseLevelId, isLevelUnlocked, currentChapter, currentLevelIdInChapter } from '../game/campaign/progress';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchButton, seedFor } from '../render/sketchUi';
 import { buildIcon } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
@@ -226,28 +226,41 @@ export class CampaignMapScene implements Scene {
 
     hits.push({ rect: hdr.backRect, fn: onBack });
 
+    // Right-aligned header shortcuts, each on the one true primary-button
+    // background (sketchButton, §7.5) so they read as real buttons — matching
+    // the Back pill — rather than bare gold text floating on the paper bar.
+    // Laid out right→left; `rightX` walks left by each pill's width + gap.
+    const fontSz = Math.round(h * 0.024);
+    const padX = Math.round(fontSz * 0.8);
+    const pillH = Math.round(fontSz + padX * 1.4);
+    const pillGap = Math.round(w * 0.02);
+    let rightX = w - Math.round(w * 0.04);
+
+    const addHeaderButton = (labelStr: string, fn: () => void): void => {
+      const label = txt(labelStr, fontSz, C.gold, true);
+      const pillW = Math.round(label.width + padX * 2);
+      const pillX = rightX - pillW;
+      const pillY = Math.round((tbH - pillH) / 2);
+
+      const bg = sketchButton(pillW, pillH, seedFor(pillX, pillY, pillW));
+      bg.x = pillX; bg.y = pillY;
+      root.addChild(bg);
+
+      label.anchor.set(0.5, 0.5);
+      label.x = pillX + pillW / 2; label.y = tbH / 2;
+      root.addChild(label);
+
+      hits.push({ rect: { x: pillX, y: pillY, w: pillW, h: pillH }, fn });
+      rightX = pillX - pillGap;
+    };
+
     // Single growth-hub entry (LOBBY_IA_REDESIGN §9): merges the former separate
     // Collection/Equipment header links, matching the lobby's unified [Collection|Equipment] tab.
-    const equip = txt(t('campaign.equipment'), Math.round(h * 0.024), C.gold, true);
-    equip.anchor.set(1, 0.5); equip.x = w - Math.round(w * 0.04); equip.y = tbH / 2;
-    root.addChild(equip);
-    hits.push({
-      rect: { x: equip.x - equip.width - Math.round(w * 0.03), y: 0, w: equip.width + Math.round(w * 0.06), h: tbH },
-      fn: () => this.cb.onOpenEquipment(),
-    });
+    addHeaderButton(t('campaign.equipment'), () => this.cb.onOpenEquipment());
 
     // Chapter-page-only shortcut to the notebook overview (TOC), since Back now exits to the lobby directly.
     if (showChaptersButton) {
-      const gap = Math.round(w * 0.05);
-      const chapters = txt(t('campaign.chapters'), Math.round(h * 0.024), C.gold, true);
-      chapters.anchor.set(1, 0.5);
-      chapters.x = equip.x - equip.width - gap;
-      chapters.y = tbH / 2;
-      root.addChild(chapters);
-      hits.push({
-        rect: { x: chapters.x - chapters.width - Math.round(w * 0.03), y: 0, w: chapters.width + Math.round(w * 0.06), h: tbH },
-        fn: () => this.backToToc(),
-      });
+      addHeaderButton(t('campaign.chapters'), () => this.backToToc());
     }
 
     return tbH;
