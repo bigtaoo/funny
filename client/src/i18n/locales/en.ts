@@ -1360,7 +1360,11 @@ export const en: Record<TranslationKey, string> = {
   'settings.deleteAccount.failed': 'Deletion failed — please retry',
 
   // ── City / Home Desk (SLG_CITY_DESIGN P1) ────────────────────────────────
-  'city.title': 'Home Desk',
+  'city.page.domestic': 'Home Desk',
+  'city.page.military': 'Home City · Military',
+  'city.tab.domestic': 'Domestic',
+  'city.tab.military': 'Military',
+  'city.military.comingSoon': 'Team roster & tech tree panels coming soon',
   'city.buildings': 'Buildings',
   'city.resources': 'Resources',
   'city.buildQueue': 'Build Queue',
