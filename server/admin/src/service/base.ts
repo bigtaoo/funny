@@ -13,7 +13,7 @@ import {
   type AuditAction,
 } from '@nw/shared';
 import type { AdminCollections, AuditDoc } from '../db';
-import type { StatsClient, PlayerClient, AntiCheatClient, MismatchClient, SuspiciousPveClient, MailDispatcher, AnalyticsClient, WorldClient, AuctionClient, LadderClient, EventsClient, GachaPoolsClient, PromoClient } from '../clients';
+import type { StatsClient, PlayerClient, AntiCheatClient, MismatchClient, SuspiciousPveClient, MailDispatcher, AnalyticsClient, WorldClient, AuctionClient, LadderClient, EventsClient, GachaPoolsClient, PromoClient, PaddleEventsClient } from '../clients';
 import { AdminError } from './errors';
 
 const log = createLogger('admin:service');
@@ -41,6 +41,7 @@ export interface AdminServiceDeps {
   events: EventsClient;
   gachaPools: GachaPoolsClient;
   promo: PromoClient;
+  paddleEvents: PaddleEventsClient;
   now: () => number;
 }
 
@@ -80,6 +81,7 @@ export class AdminServiceBase {
   protected readonly events: EventsClient;
   protected readonly gachaPools: GachaPoolsClient;
   protected readonly promo: PromoClient;
+  protected readonly paddleEvents: PaddleEventsClient;
   protected readonly now: () => number;
   /** Login failure rate-limit table (keyed by username, in-memory). */
   protected readonly loginAttempts = new Map<string, LoginAttempt>();
@@ -102,6 +104,7 @@ export class AdminServiceBase {
     this.events = deps.events;
     this.gachaPools = deps.gachaPools;
     this.promo = deps.promo;
+    this.paddleEvents = deps.paddleEvents;
     this.now = deps.now;
   }
 

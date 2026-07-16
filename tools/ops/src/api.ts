@@ -19,6 +19,7 @@ import type {
   FeatureFlagRow,
   FlagRollout,
   LiveStats,
+  PaddleEventView,
   PlayerProfile,
   PlayerSummary,
   Session,
@@ -233,6 +234,16 @@ export class Api {
     if (filter.to !== undefined) qs.set('to', String(filter.to));
     const r = await this.req<{ entries: AuditEntryView[] }>('GET', `/admin/audit?${qs}`);
     return r.entries;
+  }
+
+  // —— Paddle webhook event log (support/CS lookup) ——
+  async paddleEvents(filter: { accountId?: string; transactionId?: string; limit?: number }): Promise<PaddleEventView[]> {
+    const qs = new URLSearchParams();
+    if (filter.accountId) qs.set('accountId', filter.accountId);
+    if (filter.transactionId) qs.set('transactionId', filter.transactionId);
+    if (filter.limit !== undefined) qs.set('limit', String(filter.limit));
+    const r = await this.req<{ events: PaddleEventView[] }>('GET', `/admin/paddle/events?${qs}`);
+    return r.events;
   }
 
   // —— Ladder season operations ——

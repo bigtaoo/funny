@@ -24,6 +24,7 @@ export type AdminCapability =
   | 'config.manage'
   | 'events.manage'
   | 'gacha.pools.manage'
+  | 'paddle.events.view'
   | 'admin.manage';
 
 export interface AdminAccountView {
@@ -89,6 +90,15 @@ export interface AuditEntryView {
   target?: string;
   summary?: string;
   ip?: string;
+  ts: number;
+}
+
+export interface PaddleEventView {
+  transactionId: string;
+  eventType: string;
+  status?: string;
+  accountId?: string;
+  rawEvent: string;
   ts: number;
 }
 

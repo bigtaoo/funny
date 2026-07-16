@@ -66,6 +66,22 @@ export interface RechargeDoc {
   ts: number;
 }
 
+/**
+ * Paddle webhook event log (all `event_type`s, not just `transaction.completed` — that one also lands in
+ * `recharges` via paddleComplete()). Support/CS lookup for "why didn't my payment go through": failed/canceled
+ * transactions are otherwise dropped silently by the webhook handler. _id = `${transactionId}:${eventType}`
+ * (naturally unique per event occurrence; Paddle may resend the same event, so this also dedupes retries).
+ */
+export interface PaddleEventDoc {
+  _id: string; // `${transactionId}:${eventType}`
+  transactionId: string;
+  eventType: string;
+  status?: string;
+  accountId?: string;
+  rawEvent: string; // JSON.stringify(event) — full payload for support diagnosis
+  ts: number;
+}
+
 /** Gacha draw history (persisted per draw, M7). */
 export interface GachaHistoryDoc {
   accountId: string;
@@ -150,6 +166,7 @@ export interface CommercialCollections {
   ledger: Collection<LedgerDoc>;
   orders: Collection<OrderDoc>;
   recharges: Collection<RechargeDoc>;
+  paddleEvents: Collection<PaddleEventDoc>;
   gachaHistory: Collection<GachaHistoryDoc>;
   victoryDaily: Collection<VictoryDailyDoc>;
   promoCodes: Collection<PromoCodeDoc>;
@@ -188,6 +205,7 @@ export async function createCommercialMongo(
     ledger: db.collection<LedgerDoc>('ledger'),
     orders: db.collection<OrderDoc>('orders'),
     recharges: db.collection<RechargeDoc>('recharges'),
+    paddleEvents: db.collection<PaddleEventDoc>('paddleEvents'),
     gachaHistory: db.collection<GachaHistoryDoc>('gachaHistory'),
     victoryDaily: db.collection<VictoryDailyDoc>('victoryDaily'),
     promoCodes: db.collection<PromoCodeDoc>('promoCodes'),
@@ -201,6 +219,9 @@ export async function createCommercialMongo(
     // Reconciliation scan: undelivered orders (status:'charged') by time.
     await collections.orders.createIndex({ status: 1, ts: 1 });
     await collections.gachaHistory.createIndex({ accountId: 1, ts: -1 });
+    // paddleEvents._id = transactionId:eventType is naturally unique; index for support lookup by account/transaction.
+    await collections.paddleEvents.createIndex({ accountId: 1, ts: -1 });
+    await collections.paddleEvents.createIndex({ transactionId: 1 });
     // recharges._id = receiptId is naturally unique; wallets._id = accountId is naturally unique.
     // promoCodes._id = code is naturally unique; promoRedemptions._id = accountId:code is naturally unique.
     await collections.promoRedemptions.createIndex({ accountId: 1, ts: -1 });

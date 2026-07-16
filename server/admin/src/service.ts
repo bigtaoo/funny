@@ -11,6 +11,7 @@ import { AdminServiceBase } from './service/base';
 import { EventsMixin } from './service/events';
 import { GachaMixin } from './service/gacha';
 import { PromoMixin } from './service/promo';
+import { PaddleEventsMixin } from './service/paddleEvents';
 import { LadderMixin } from './service/ladder';
 import { WorldMixin } from './service/world';
 import { MapTemplatesMixin } from './service/mapTemplates';
@@ -37,8 +38,10 @@ const Assembled = ShopMixin(
               WorldMixin(
                 LadderMixin(
                   PromoMixin(
-                    GachaMixin(
-                      EventsMixin(AdminServiceBase),
+                    PaddleEventsMixin(
+                      GachaMixin(
+                        EventsMixin(AdminServiceBase),
+                      ),
                     ),
                   ),
                 ),

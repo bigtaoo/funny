@@ -143,6 +143,15 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
     state.inLobby = false;
     views.showCity({
       onBack() { goWorldMap(worldApi, worldId); },
+      // Team card on the military page → that team's formation editor; back returns to the city.
+      onEditTeam(teamId, teamName) {
+        views.showDefenseEditor({
+          onBack() { goCity(worldApi, worldId); },
+          worldApi,
+          worldId,
+          target: { mode: 'attack', teamId, teamName },
+        });
+      },
       worldApi,
       worldId,
       getCoins: () => saveManager.get().wallet.coins,

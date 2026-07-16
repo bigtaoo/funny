@@ -20,6 +20,7 @@ import { registerEconomyRoutes } from './internal/economyRoutes.js';
 import { registerLadderRoutes } from './internal/ladderRoutes.js';
 import { registerEventAdminRoutes } from './internal/eventAdminRoutes.js';
 import { registerPromoGachaRoutes } from './internal/promoGachaRoutes.js';
+import { registerPaddleEventRoutes } from './internal/paddleEventRoutes.js';
 
 export interface InternalDeps {
   cols: Collections;
@@ -57,4 +58,5 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
   registerLadderRoutes(app, ctx);
   registerEventAdminRoutes(app, ctx);
   registerPromoGachaRoutes(app, ctx);
+  registerPaddleEventRoutes(app, ctx);
 }
