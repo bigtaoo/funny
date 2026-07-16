@@ -384,7 +384,7 @@ export class WorldMapNet {
       await this.ctx.cb.worldApi.buyShopItem(this.ctx.cb.worldId, itemId);
       this.ctx.panels.showToast(t('world.shopBought'));
       await this.refreshMe();
-      if (this.ctx.modalDimRect && !this.ctx.trainPanelOpen) this.ctx.panels.renderInfoPanel();
+      if (this.ctx.territoryPanelOpen && this.ctx.territoryTab === 'world' && !this.ctx.trainPanelOpen) this.ctx.panels.renderTerritoryPanel();
     } catch (e) {
       this.ctx.panels.showToast(this.errorMsg(e), C.red);
     }
@@ -400,7 +400,7 @@ export class WorldMapNet {
       await this.ctx.cb.worldApi.setNationName(this.ctx.cb.worldId, capitalIdx, name);
       const n = this.ctx.nations.find(x => x.capitalIdx === capitalIdx);
       if (n) n.nationName = name;
-      if (this.ctx.modalDimRect && !this.ctx.trainPanelOpen) this.ctx.panels.renderInfoPanel();
+      if (this.ctx.territoryPanelOpen && this.ctx.territoryTab === 'world' && !this.ctx.trainPanelOpen) this.ctx.panels.renderTerritoryPanel();
     } catch (e) {
       this.ctx.panels.showToast(this.errorMsg(e), C.red);
     }

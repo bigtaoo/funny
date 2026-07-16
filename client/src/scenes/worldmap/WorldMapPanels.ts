@@ -279,17 +279,6 @@ export class WorldMapPanels {
     } else {
       this.ctx.marchBadgeRect = { x: 0, y: 0, w: 0, h: 0 };
     }
-
-    // World info button — nations / season / shop.
-    const infoH = 68;
-    const infoBtn = sketchPanel(rightW, infoH, { fill: C.dark, border: C.accent, seed: seedFor(3, 1, rightW) });
-    infoBtn.x = rx; infoBtn.y = ry;
-    hud.addChild(infoBtn);
-    const infoLbl = txt(t('world.info'), 26, C.light);
-    infoLbl.anchor.set(0.5, 0.5);
-    infoLbl.x = infoBtn.x + rightW / 2; infoLbl.y = infoBtn.y + infoH / 2;
-    hud.addChild(infoLbl);
-    this.ctx.infoBtnRect = { x: infoBtn.x, y: infoBtn.y, w: rightW, h: infoH };
   }
 
   // ── Hit rects ──────────────────────────────────────────────────────────────
@@ -442,14 +431,15 @@ export class WorldMapPanels {
   }
 
   /**
-   * Start a masked, wheel/drag-scrollable list region inside the modal layer (world-info
-   * nations/shop tabs — see renderInfoPanel). Registers ctx.infoScrollRect/infoMaxScroll so
-   * WorldMapInput can route wheel + drag gestures here, and clamps the current scroll offset
-   * to the new content height (list length can change between renders, e.g. shop catalog load).
-   * Returns the container rows should be added to (already `.mask`ed to the viewport rect).
+   * Start a masked, wheel/drag-scrollable list region inside the modal layer (Territory
+   * Overview's list/world tabs — see renderTerritoryPanel/renderWorldTabBody). Registers
+   * ctx.infoScrollRect/infoMaxScroll so WorldMapInput can route wheel + drag gestures here, and
+   * clamps the current scroll offset to the new content height (list length can change between
+   * renders, e.g. shop catalog load). Returns the container rows should be added to (already
+   * `.mask`ed to the viewport rect).
    */
 
-  beginScrollList(x: number, y: number, w: number, h: number, contentH: number, rerender: () => void = () => this.renderInfoPanel()): PIXI.Container {
+  beginScrollList(x: number, y: number, w: number, h: number, contentH: number, rerender: () => void = () => this.renderTerritoryPanel()): PIXI.Container {
     this.ctx.infoScrollRect = { x, y, w, h };
     this.ctx.infoMaxScroll = Math.max(0, contentH - h);
     this.ctx.infoScrollY = Math.max(0, Math.min(this.ctx.infoScrollY, this.ctx.infoMaxScroll));
@@ -462,7 +452,7 @@ export class WorldMapPanels {
     layer.mask = mask;
     ml.addChild(layer);
     // Position indicator on the list's right edge. Drawn into the modal layer above `layer`
-    // so it's never clipped by the mask; renderInfoPanel adds the close button after, on top.
+    // so it's never clipped by the mask; renderTerritoryPanel adds the close button after, on top.
     drawScrollIndicator(ml, { x, y, w, h }, this.ctx.infoScrollY, this.ctx.infoMaxScroll);
     return layer;
   }
@@ -622,14 +612,16 @@ export class WorldMapPanels {
     this.panelButton(t('world.close'), px + pw / 2 - 50 * S, py + ph - 34 * S, 100 * S, 28 * S, C.dark, () => this.closeModal(), 12 * S);
   }
 
-  openInfoPanel(): void {
-    this.ctx.trainPanelOpen = false;
-    this.ctx.infoScrollY = 0;
-    this.renderInfoPanel();
-    // Lazy-load shop catalog + fresh nations/season the first time.
+  /** Lazy-load the world-info data (nations/shop catalog) the first time the 'world' tab of
+   * the Territory Overview panel is opened — mirrors the old standalone world-info button. */
+
+  loadWorldTabData(): void {
     if (this.ctx.shopItems.length === 0) {
       void this.ctx.cb.worldApi.getShopItems()
-        .then((items) => { this.ctx.shopItems = items; if (this.ctx.modalDimRect && !this.ctx.trainPanelOpen) this.renderInfoPanel(); })
+        .then((items) => {
+          this.ctx.shopItems = items;
+          if (this.ctx.territoryPanelOpen && this.ctx.territoryTab === 'world' && !this.ctx.trainPanelOpen) this.renderTerritoryPanel();
+        })
         .catch(() => { /* offline */ });
     }
     void this.ctx.cb.worldApi.getNations(this.ctx.cb.worldId)
@@ -650,26 +642,13 @@ export class WorldMapPanels {
     }
   }
 
-  renderInfoPanel(): void {
+  /** Nations / season / shop sub-tabs — the 'world' tab body of the Territory Overview panel
+   * (folded in from the old standalone world-info button/modal). Draws into the panel region
+   * already set up by renderTerritoryPanel (px/pw for the panel, ly the current cursor y, and
+   * bodyBottom the panel's content-area bottom). */
+
+  private renderWorldTabBody(px: number, pw: number, ly: number, bodyBottom: number): void {
     const ml = this.ctx.modalLayer;
-    ml.removeChildren();
-    this.ctx.modalBtnRects = [];
-
-    const { w, h } = this.ctx;
-    const pw = Math.min(360, w - 20);
-    const ph = Math.min(380, h - HUD_H - 16);
-    const px = (w - pw) / 2;
-    const py = (h - HUD_H - ph) / 2;
-
-    const dim = new PIXI.Graphics();
-    dim.beginFill(0x000000, 0.35).drawRect(0, 0, w, h).endFill();
-    ml.addChild(dim);
-    this.ctx.modalDimRect = { x: 0, y: 0, w, h };
-
-    const panel = sketchPanel(pw, ph, { fill: C.paper, border: C.dark, seed: seedFor(9, 9, pw) });
-    panel.x = px; panel.y = py;
-    ml.addChild(panel);
-
     const addText = (s: string, tx2: number, ty: number, size = 12, color: number = C.dark, anchorX = 0): void => {
       const lbl = txt(s, size, color);
       lbl.anchor.set(anchorX, 0);
@@ -677,12 +656,7 @@ export class WorldMapPanels {
       ml.addChild(lbl);
     };
 
-    // Title
-    const title = txt(t('world.infoTitle'), 14, C.accent);
-    title.anchor.set(0.5, 0); title.x = px + pw / 2; title.y = py + 10;
-    ml.addChild(title);
-
-    // Tabs
+    // Sub-tabs
     const tabs: { id: 'nations' | 'season' | 'shop'; label: string }[] = [
       { id: 'nations', label: t('world.tabNations') },
       { id: 'season',  label: t('world.tabSeason') },
@@ -690,28 +664,26 @@ export class WorldMapPanels {
     ];
     const tabW = (pw - 28 - MARGIN * 2) / 3;
     let tx = px + 14;
-    const tabY = py + 34;
     for (const tab of tabs) {
       const active = this.ctx.infoTab === tab.id;
-      this.panelButton(tab.label, tx, tabY, tabW, 26, active ? C.red : C.dark, () => {
-        this.ctx.infoTab = tab.id; this.ctx.infoScrollY = 0; this.renderInfoPanel();
+      this.panelButton(tab.label, tx, ly, tabW, 26, active ? C.red : C.dark, () => {
+        this.ctx.infoTab = tab.id; this.ctx.infoScrollY = 0; this.renderTerritoryPanel();
       });
       tx += tabW + MARGIN;
     }
 
-    let ly = tabY + 38;
-    const bodyBottom = py + ph - 42;
+    let cy = ly + 34;
     this.ctx.infoScrollRect = null;
 
     if (this.ctx.infoTab === 'nations') {
       if (this.ctx.nations.length === 0) {
-        addText(t('world.nationsEmpty'), px + 14, ly, 11, C.mid);
+        addText(t('world.nationsEmpty'), px + 14, cy, 11, C.mid);
       } else {
         const rowH = 24;
-        const listLayer = this.beginScrollList(px, ly, pw, bodyBottom - ly, this.ctx.nations.length * rowH);
-        let ry = ly - this.ctx.infoScrollY;
+        const listLayer = this.beginScrollList(px, cy, pw, bodyBottom - cy, this.ctx.nations.length * rowH, () => this.renderTerritoryPanel());
+        let ry = cy - this.ctx.infoScrollY;
         for (const n of this.ctx.nations) {
-          if (ry + rowH >= ly && ry <= bodyBottom) {
+          if (ry + rowH >= cy && ry <= bodyBottom) {
             const name = n.nationName || t('world.nationCol').replace('{idx}', String(n.capitalIdx));
             const mine = !!n.ownerId && n.ownerId === this.ctx.cb.accountId;
             const nStar = buildIcon('star', 12, C.gold);
@@ -737,28 +709,28 @@ export class WorldMapPanels {
     } else if (this.ctx.infoTab === 'season') {
       const s = this.ctx.season;
       if (!s) {
-        addText('—', px + 14, ly, 11, C.mid);
+        addText('—', px + 14, cy, 11, C.mid);
       } else {
-        addText(t('world.seasonNo').replace('{n}', String(s.season)), px + 14, ly, 13, C.red); ly += 22;
+        addText(t('world.seasonNo').replace('{n}', String(s.season)), px + 14, cy, 13, C.red); cy += 22;
         const statusKey = `world.season.${s.status}`;
-        addText(t(statusKey as Parameters<typeof t>[0]), px + 14, ly, 11); ly += 18;
-        addText(t('world.seasonPop').replace('{pop}', String(s.population)).replace('{cap}', String(s.capacity)), px + 14, ly, 11); ly += 18;
+        addText(t(statusKey as Parameters<typeof t>[0]), px + 14, cy, 11); cy += 18;
+        addText(t('world.seasonPop').replace('{pop}', String(s.population)).replace('{cap}', String(s.capacity)), px + 14, cy, 11); cy += 18;
         if (s.resetAt) {
           const days = Math.max(0, Math.ceil((s.resetAt - Date.now()) / 86400000));
-          addText(t('world.seasonReset').replace('{d}', String(days)), px + 14, ly, 11); ly += 18;
+          addText(t('world.seasonReset').replace('{d}', String(days)), px + 14, cy, 11); cy += 18;
         }
       }
     } else {
       // Shop — show current coin balance (SaveData mirror) above the catalog.
       if (this.ctx.cb.getCoins) {
-        addText(t('world.shopBalance').replace('{coins}', String(this.ctx.cb.getCoins())), px + 14, ly, 11, C.accent);
-        ly += 22;
+        addText(t('world.shopBalance').replace('{coins}', String(this.ctx.cb.getCoins())), px + 14, cy, 11, C.accent);
+        cy += 22;
       }
       const rowH = 32;
-      const listLayer = this.beginScrollList(px, ly, pw, bodyBottom - ly, this.ctx.shopItems.length * rowH);
-      let ry = ly - this.ctx.infoScrollY;
+      const listLayer = this.beginScrollList(px, cy, pw, bodyBottom - cy, this.ctx.shopItems.length * rowH, () => this.renderTerritoryPanel());
+      let ry = cy - this.ctx.infoScrollY;
       for (const it of this.ctx.shopItems) {
-        if (ry + rowH >= ly && ry <= bodyBottom) {
+        if (ry + rowH >= cy && ry <= bodyBottom) {
           const nameLbl = txt(this.shopLabel(it), 11, C.dark);
           nameLbl.x = px + 14; nameLbl.y = ry + 4;
           listLayer.addChild(nameLbl);
@@ -771,9 +743,6 @@ export class WorldMapPanels {
         ry += rowH;
       }
     }
-
-    // Close
-    this.panelButton(t('world.close'), px + pw / 2 - 50, py + ph - 34, 100, 28, C.dark, () => this.closeModal());
   }
 
   // ── Territory Overview panel (SLG_DESIGN_LOG.md §26) ────────────────────────────
@@ -790,7 +759,7 @@ export class WorldMapPanels {
     this.renderTerritoryPanel();
   }
 
-  private switchTerritoryTab(tab: 'overview' | 'list'): void {
+  private switchTerritoryTab(tab: 'overview' | 'list' | 'world'): void {
     this.ctx.territoryTab = tab;
     this.ctx.infoScrollY = 0;
     this.renderTerritoryPanel();
@@ -798,6 +767,8 @@ export class WorldMapPanels {
       void this.ctx.net.refreshTerritories().then(() => {
         if (this.ctx.territoryPanelOpen && this.ctx.territoryTab === 'list') this.renderTerritoryPanel();
       });
+    } else if (tab === 'world') {
+      this.loadWorldTabData();
     }
   }
 
@@ -810,7 +781,8 @@ export class WorldMapPanels {
 
     const { w, h } = this.ctx;
     const pw = Math.min(420, w - 20);
-    const ph = Math.min(460, h - HUD_H - 16);
+    // Panel height is 80% of the page height (capped so it never overlaps the HUD).
+    const ph = Math.min(h * 0.8, h - HUD_H - 16);
     const px = (w - pw) / 2;
     const py = (h - HUD_H - ph) / 2;
 
@@ -834,11 +806,12 @@ export class WorldMapPanels {
     ml.addChild(title);
 
     // Tabs
-    const tabs: { id: 'overview' | 'list'; label: string }[] = [
+    const tabs: { id: 'overview' | 'list' | 'world'; label: string }[] = [
       { id: 'overview', label: t('world.territoryTabOverview') },
       { id: 'list', label: t('world.territoryTabList') },
+      { id: 'world', label: t('world.info') },
     ];
-    const tabW = (pw - 28 - MARGIN) / 2;
+    const tabW = (pw - 28 - MARGIN * 2) / 3;
     let tabX = px + 14;
     const tabY = py + 34;
     for (const tab of tabs) {
@@ -871,6 +844,8 @@ export class WorldMapPanels {
         addText(t('world.seasonNo').replace('{n}', String(s.season)), px + 14, ly, 12, C.mid); ly += 18;
         addText(t('world.seasonPop').replace('{pop}', String(s.population)).replace('{cap}', String(s.capacity)), px + 14, ly, 12, C.mid); ly += 18;
       }
+    } else if (this.ctx.territoryTab === 'world') {
+      this.renderWorldTabBody(px, pw, ly, bodyBottom);
     } else {
       // Level-filter checkbox grid, two rows — split evenly across the levels actually present.
       const levels = Array.from(new Set(this.ctx.territories.map((tv) => tv.level))).sort((a, b) => a - b);

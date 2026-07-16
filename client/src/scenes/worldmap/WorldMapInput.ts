@@ -263,13 +263,6 @@ export class WorldMapInput {
       return;
     }
 
-    // World info button (floats top-right over the map)
-    const ib = this.ctx.infoBtnRect;
-    if (ib.w > 0 && x >= ib.x && x <= ib.x + ib.w && y >= ib.y && y <= ib.y + ib.h) {
-      this.ctx.panels.openInfoPanel();
-      return;
-    }
-
     // Header resource cluster — opens the Territory Overview panel (SLG_DESIGN_LOG.md §26)
     const rc = this.ctx.resClusterRect;
     if (rc.w > 0 && x >= rc.x && x <= rc.x + rc.w && y >= rc.y && y <= rc.y + rc.h) {
