@@ -447,6 +447,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/world/sieges": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listSieges"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/world/nations": {
         parameters: {
             query?: never;
@@ -1081,6 +1097,24 @@ export interface components {
             level: {
                 [key: string]: unknown;
             };
+        };
+        SiegeSummaryView: {
+            siegeId: string;
+            /** @description Target tile id (worldId:x:y) */
+            tile: string;
+            /** @description Target tile level (absent for legacy reports) */
+            tileLevel?: number;
+            /** @enum {string} */
+            outcome: "attacker_win" | "defender_win" | "draw";
+            /**
+             * @description Requester's side in this battle
+             * @enum {string}
+             */
+            role: "attacker" | "defender";
+            /** @description Unix ms timestamp the battle resolved */
+            ts: number;
+            /** @description Whether a headless replay is available for this report */
+            hasReplay: boolean;
         };
         CardSLGState: {
             /** @description Troops currently allocated to this card */
@@ -1953,6 +1987,32 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["OkResponse"] & {
                         data?: components["schemas"]["SiegeReplayView"];
+                    };
+                };
+            };
+        };
+    };
+    listSieges: {
+        parameters: {
+            query: {
+                worldId: string;
+                /** @description Max reports to return (capped at 100) */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The requester's recent siege battle reports (attacker or defender), newest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["SiegeSummaryView"][];
                     };
                 };
             };

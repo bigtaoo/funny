@@ -6,7 +6,7 @@ import { makeZoomCfgs } from './zoom';
 import { DEFAULT_MAP_SIZE } from './constants';
 import type { ILayout } from '../../layout/ILayout';
 import type { ZoomCfg, PoolSlot } from './zoom';
-import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, OccupationView, NationView, SeasonView, SlgShopItemView, WorldChatMessage } from '../../net/WorldApiClient';
+import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, OccupationView, NationView, SeasonView, SlgShopItemView, WorldChatMessage, SiegeSummaryView } from '../../net/WorldApiClient';
 import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult } from '../../net/proto/transport';
 import type { WorldMapRenderer } from './WorldMapRenderer';
 import type { WorldMapPanels } from './WorldMapPanels';
@@ -138,6 +138,12 @@ export class WorldMapContext {
   aucBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   zoomBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   marchBadgeRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
+  /** Top-right "battle replays" badge (below the marches badge) — tapping it opens the last-100 replay browser. */
+  replayBadgeRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
+  /** Whether the replay-browser list modal is open. */
+  replayPanelOpen = false;
+  /** Cached recent siege reports (fetched when the replay browser opens). */
+  sieges: SiegeSummaryView[] = [];
   chatBarRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   /** Header-bar resource production cluster (renderHeaderHud) — tapping it opens the Territory Overview panel. */
   resClusterRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };

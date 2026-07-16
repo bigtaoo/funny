@@ -276,8 +276,24 @@ export class WorldMapPanels {
         }
         ry = listPanel.y + listH + 12;
       }
+
+      // Battle-replays badge — sits directly below the marches badge; tapping opens the last-100 replay browser.
+      const repH = 64;
+      const repBadge = sketchPanel(rightW, repH, { fill: C.paper, border: C.mid, seed: seedFor(6, 3, rightW) });
+      repBadge.x = rx; repBadge.y = ry;
+      hud.addChild(repBadge);
+      const repIcon = buildIcon('replay', 28, C.dark);
+      repIcon.x = rx + 20; repIcon.y = ry + (repH - 28) / 2;
+      hud.addChild(repIcon);
+      const repTxt = txt(t('world.replays'), 22, C.dark);
+      repTxt.anchor.set(0, 0.5);
+      repTxt.x = rx + 60; repTxt.y = ry + repH / 2;
+      hud.addChild(repTxt);
+      this.ctx.replayBadgeRect = { x: repBadge.x, y: repBadge.y, w: rightW, h: repH };
+      ry += repH + 12;
     } else {
       this.ctx.marchBadgeRect = { x: 0, y: 0, w: 0, h: 0 };
+      this.ctx.replayBadgeRect = { x: 0, y: 0, w: 0, h: 0 };
     }
   }
 
@@ -366,6 +382,7 @@ export class WorldMapPanels {
     this.ctx.selectedTile = null;
     this.ctx.trainPanelOpen = false;
     this.ctx.territoryPanelOpen = false;
+    this.ctx.replayPanelOpen = false;
     this.ctx.view.renderMap();
   }
 
@@ -893,6 +910,98 @@ export class WorldMapPanels {
 
     // Close
     this.panelButton(t('world.close'), px + pw / 2 - 50, py + ph - 34, 100, 28, C.dark, () => this.closeModal());
+  }
+
+  // ── Battle replay browser (last-100 sieges) ─────────────────────────────────────
+
+  /** Open the replay browser: fetch the recent sieges, then render the list (repaints once the fetch lands). */
+  openReplayPanel(): void {
+    if (!this.ctx.me?.joined) { this.showToast(t('world.needBase'), C.red); return; }
+    this.ctx.replayPanelOpen = true;
+    this.ctx.infoScrollY = 0;
+    this.renderReplayPanel();
+    void this.ctx.cb.worldApi.listSieges(this.ctx.cb.worldId)
+      .then((rows) => { this.ctx.sieges = rows; if (this.ctx.replayPanelOpen) this.renderReplayPanel(); })
+      .catch(() => { /* offline — keep whatever is cached */ });
+  }
+
+  /** Render the recent-sieges list as a scrollable modal; each replayable row opens the existing siege replay. */
+  renderReplayPanel(): void {
+    if (!this.ctx.me?.joined) { this.closeModal(); return; }
+    const ml = this.ctx.modalLayer;
+    ml.removeChildren();
+    this.ctx.modalBtnRects = [];
+
+    const { w, h } = this.ctx;
+    const pw = Math.min(440, w - 20);
+    const ph = Math.min(h * 0.8, h - HUD_H - 16);
+    const px = (w - pw) / 2;
+    const py = (h - HUD_H - ph) / 2;
+
+    const dim = new PIXI.Graphics();
+    dim.beginFill(0x000000, 0.35).drawRect(0, 0, w, h).endFill();
+    ml.addChild(dim);
+    this.ctx.modalDimRect = { x: 0, y: 0, w, h };
+
+    const panel = sketchPanel(pw, ph, { fill: C.paper, border: C.dark, seed: seedFor(12, 12, pw) });
+    panel.x = px; panel.y = py;
+    ml.addChild(panel);
+
+    const title = txt(t('world.replaysTitle'), 14, C.accent);
+    title.anchor.set(0.5, 0); title.x = px + pw / 2; title.y = py + 10;
+    ml.addChild(title);
+
+    const ly = py + 44;
+    const bodyBottom = py + ph - 42;
+    this.ctx.infoScrollRect = null;
+
+    const rows = this.ctx.sieges;
+    if (rows.length === 0) {
+      const empty = txt(t('world.replaysEmpty'), 12, C.mid);
+      empty.x = px + 16; empty.y = ly;
+      ml.addChild(empty);
+    } else {
+      const rowH = 40;
+      const now = Date.now();
+      const listLayer = this.beginScrollList(px, ly, pw, bodyBottom - ly, rows.length * rowH, () => this.renderReplayPanel());
+      let ry = ly - this.ctx.infoScrollY;
+      for (const s of rows) {
+        if (ry + rowH >= ly && ry <= bodyBottom) {
+          const [, sx, sy] = s.tile.split(':');
+          const roleTxt = s.role === 'attacker' ? t('world.replay.atk') : t('world.replay.def');
+          const outTxt = s.outcome === 'attacker_win' ? t('world.replay.win')
+            : s.outcome === 'defender_win' ? t('world.replay.loss') : t('world.replay.draw');
+          // Win/loss is relative to the requester's role: attacker_win is a win for the attacker but a loss for the defender.
+          const won = (s.role === 'attacker') === (s.outcome === 'attacker_win');
+          const lvlTxt = s.tileLevel ? `Lv.${s.tileLevel}` : '';
+          const label = `(${sx},${sy}) ${lvlTxt}  ${roleTxt}·${outTxt}  ${this.agoText(now - s.ts)}`;
+          const rowLbl = txt(label, 12, won ? C.dark : C.red);
+          rowLbl.x = px + 14; rowLbl.y = ry + 6;
+          listLayer.addChild(rowLbl);
+          const btnW = 72;
+          if (s.hasReplay) {
+            this.panelButtonIn(listLayer, t('world.replaySiege'), px + pw - btnW - 14, ry + 2, btnW, 28,
+              C.accent, () => { this.closeModal(); this.ctx.cb.onReplaySiege(s.siegeId); });
+          } else {
+            const noRep = txt(t('world.replay.none'), 11, C.mid);
+            noRep.x = px + pw - btnW - 8; noRep.y = ry + 8;
+            listLayer.addChild(noRep);
+          }
+        }
+        ry += rowH;
+      }
+    }
+
+    this.panelButton(t('world.close'), px + pw / 2 - 50, py + ph - 34, 100, 28, C.dark, () => this.closeModal());
+  }
+
+  /** Compact "how long ago" label from a millisecond delta (m/h/d), for battle-report rows. */
+  private agoText(deltaMs: number): string {
+    const min = Math.max(0, Math.floor(deltaMs / 60000));
+    if (min < 60) return `${min}m`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}h`;
+    return `${Math.floor(hr / 24)}d`;
   }
 
   /** Open a hidden text input to rename an owned capital, then PATCH via worldsvc. */

@@ -79,6 +79,7 @@ export type NationView = components['schemas']['NationView'];
 export type SeasonView = components['schemas']['SeasonView'];
 export type SlgShopItemView = components['schemas']['SlgShopItemView'];
 export type SiegeReplayView = components['schemas']['SiegeReplayView'];
+export type SiegeSummaryView = components['schemas']['SiegeSummaryView'];
 export type DefenseConfig = components['schemas']['DefenseConfig'];
 export type TeamTemplate = components['schemas']['TeamTemplate'];
 export type ShardTransferTargetView = components['schemas']['ShardTransferTargetView'];
@@ -362,6 +363,11 @@ export class WorldApiClient {
    */
   async getSiegeReplay(worldId: string, siegeId: string): Promise<SiegeReplayView> {
     return this.req('GET', `/world/siege/${encodeURIComponent(siegeId)}/replay?worldId=${encodeURIComponent(worldId)}`);
+  }
+
+  /** Recent siege battle reports (attacker or defender), newest first — backing the last-100 replay browser. */
+  async listSieges(worldId: string, limit = 100): Promise<SiegeSummaryView[]> {
+    return this.req('GET', `/world/sieges?worldId=${encodeURIComponent(worldId)}&limit=${limit}`);
   }
 
   // ── Nations (nation system S8-6.5) ───────────────────────────────────────────────

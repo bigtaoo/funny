@@ -1,7 +1,7 @@
 // worldsvc shared view/response types + service dependency contract.
 // Extracted verbatim from service.ts (god-class split, 2026-07-03). No behavior change:
 // these are the REST response shapes returned by WorldService and the DI surface it is constructed with.
-import type { BuildingKey, TileType, ResourceType, ObstacleKind, MarchKind, SlgShopPriceCache } from '@nw/shared';
+import type { BuildingKey, TileType, ResourceType, ObstacleKind, MarchKind, SlgShopPriceCache, SiegeOutcome } from '@nw/shared';
 import type { GarrisonEntry } from '@nw/engine';
 import type { WorldCollections, MarchDoc, CardSLGState } from './db';
 import type { WorldRedis } from './redis';
@@ -17,6 +17,22 @@ export interface SiegeReplayInputs {
   attackerArmy: GarrisonEntry[];
   defenderConfig: { garrison?: unknown; defenderBuildings?: unknown; defenderBaseLevel?: unknown } | null;
   tileLevel: number;
+}
+
+/**
+ * Compact battle-report row for the "recent sieges" list (last-100 replay browser). Returned by listSieges;
+ * one entry per SiegeDoc the requester took part in, newest first. `role` is relative to the requester
+ * (attacker/defender), and `hasReplay` reflects whether the persisted record can be headless-replayed
+ * (seed + attackerArmy present — cheap-settle / NPC-sweep reports degrade to a non-replayable outcome row).
+ */
+export interface SiegeSummaryView {
+  siegeId: string;
+  tile: string;
+  tileLevel?: number;
+  outcome: SiegeOutcome;
+  role: 'attacker' | 'defender';
+  ts: number;
+  hasReplay: boolean;
 }
 
 /** Single-tile view in the viewport (REST response). `mine` indicates whether the tile belongs to the requester; `ownerPublicId`/`ownerName` are the nickname of another player's territory (requires meta to be available). */

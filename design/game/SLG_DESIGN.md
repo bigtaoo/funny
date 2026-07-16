@@ -181,7 +181,15 @@
 **问题 1：占地（`kind:'occupy'`）从未接入真实卡牌军队。** `combatMarch.ts` 目前只在 `kind==='attack' && teamId` 时读取真实布阵（`resolveCardArmy`），占地 march 永远用 `synthesizeArmy(troops,'attacker')` 把兵力数字合成成通用步兵去打 `npcGarrison(level)`，与玩家真实卡牌等级/装备/兵种无关——三战式"高级队伍打低级地基本不掉血"这条效果因此从未在占地这个最高频场景上体现，只在打其他玩家/主城时体现。
 
 - **服务端已修复（2026-07-15）**：`startMarch` 允许 `kind==='occupy'` 也带 `teamId`（沿用 `pw.teams` 里已保存的布阵模板，校验逻辑与 `attack` 分支一致）；`occupation.ts` 的 `applyOccupy`/`applyOccupationExpulsion` 比照 `arrival.ts` 的 `hasCardArmy` 判断，卡牌布阵走 `resolveCardArmy` + 真实引擎战斗 + `cardInstances`/`equipmentInv` 注入（复用 §16.5 已有的 CC-3 管线），非卡牌布阵保留 `synthesizeArmy` 兜底。e2e 已验证：12 卡满编队伍打 level≤1 地（`npcGarrison=120`）近乎不掉血。
-- **客户端 UI 待补（未在本次范围内）**：目前占地弹窗走的是 `showDeployDialog(tx,ty,'occupy')`（纯兵力数字输入），不是攻击用的 `showAttackTeamPicker` 选队流程——服务端接口已支持占地带 `teamId`，但客户端还没有暴露"用哪支队伍去占地"的入口，玩家实际操作层面暂时还摸不到这条新能力，需要后续一个单独的客户端任务把占地弹窗也接上选队 UI。
+- **客户端 UI 已接（2026-07-16）**：占地操作不再直接弹 `showDeployDialog(tx,ty,'occupy')`，而是走统一的选队流程。原 `showAttackTeamPicker` 泛化为 `showTeamPicker(tx,ty,kind)`（`kind:'attack'|'occupy'`），`doMarchTeam(tx,ty,teamId,kind)` 相应带上 `kind`，占地时 `startMarch(...,'occupy',1,teamId)`。选队占地下投入的兵力归属卡牌（`cardState.currentTroops`，战后按实际存活写回、可继续出战），不再永久变成地块驻军而从兵力池划走。**兼容早期玩家**：占地选队弹窗内保留一颗「散兵占领（兵力池）」按钮，回退到旧的 `showDeployDialog` flat 派兵路径（无卡牌队伍时仍可占地）。受影响文件：`WorldMapNet.ts`（`showTeamPicker`/`doMarchTeam` 泛化）、`WorldMapInput.ts`（占地操作改调选队）、i18n（`world.team.pickTitleOccupy`/`noTeamsOccupy`/`flatOccupy`）。
+  - **为何玩家会误以为"分配一次兵力打一次就没了"**：散兵占地打赢后，幸存兵力按设计留作该地驻军（§4「驻军占用兵力池」的留存/社交机制），从兵力池划走、不回池；`deployAll` 全量派兵时池子直接归零，被读成"一次战斗全损"，实际是占地留守而非真实战损（2000 兵打 L1/L2 的 `npcGarrison=120/240` 必胜、高存活）。选队占地把兵力归属卡牌，正是解决这一体感的路径。
+
+### 4.3 SLG 战斗录像浏览器（最近 100 场，2026-07-16）
+
+> 单场围攻录像（`getSiegeReplay`，seed + 双方布阵重建 `LevelDefinition` 客户端 headless 重放）自 G3-2c 已有，但只能从"刚打完"的结算弹窗进入。本节新增按玩家维度列出历史战斗的浏览器，便于事后核实任意一场的胜负/存活（例如排查"是不是真的全灭"）。
+
+- **服务端**：`SiegeDoc` 无 TTL、永久留存，已有 `{worldId,ts:-1}`、`{attackerId}` 索引。新增 `GET /world/sieges?worldId&limit`（`listSieges`，`DefenseService.listSieges`），查 `worldId` 下 `attackerId==me || defenderId==me`、`ts` 倒序、上限 100，返回精简 `SiegeSummaryView`（`siegeId/tile/tileLevel?/outcome/role/ts/hasReplay`）。重的重放输入仍按需通过既有 `getSiegeReplay` 单场拉取。`hasReplay=seed 存在 && attackerArmy 非空`（廉价结算/扫荡 NPC 的记录不可重放）。
+- **客户端**：右上角状态卡 + 行军徽标**下方**新增「战斗录像」徽标（`replayBadgeRect`），点开一个可滚动列表模态（`renderReplayPanel`，复用 `beginScrollList`/`panelButtonIn`），每行显示坐标/等级/攻守/胜负(相对本方)/多久前；可重放行点「复盘并验证」复用既有 `onReplaySiege(siegeId)`，不可重放行标「无录像」。受影响文件：`openapi-world.yml`（`SiegeSummaryView` + `/world/sieges`）、`worldTypes.ts`/`combatDefense.ts`/`combat.ts`/`service.ts`/`httpApi.ts`、`WorldApiClient.listSieges`、`WorldMapContext.ts`/`WorldMapPanels.ts`/`WorldMapInput.ts`、i18n（`world.replays*`/`world.replay.*`）。
 
 **问题 2：卡牌布阵行军会同时扣/退地图兵力池，制造双重记账。** `startMarch` 对**任何**行军（不分卡牌队伍还是散兵）都会在出征时 `$inc:{troops:-troops}`（`troops`=队伍全部卡牌 HP 之和），到达/扑空/驱逐/围攻失败等分支又统一走 `refundTroops(pw, survivors)` 把存活值加回 `playerWorld.troops`；与此同时卡牌胜负结算（`computeCardStateUpdates`）**又单独**把同一批存活值写回 `cardState.{id}.currentTroops`。等于同一次战斗的存活兵力被记了两遍账（一份进地图池，一份留在卡上），且卡牌队伍出征凭空临时"占用"了一段与之无关的地图兵力池容量。
 

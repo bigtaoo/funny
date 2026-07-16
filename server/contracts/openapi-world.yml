@@ -548,6 +548,20 @@ components:
           type: object
           additionalProperties: true
 
+    # Compact battle-report row for the recent-sieges replay browser (last-100). role/hasReplay are relative
+    # to the requester; only replayable rows (hasReplay=true) can be opened via GET /world/siege/{id}/replay.
+    SiegeSummaryView:
+      type: object
+      required: [siegeId, tile, outcome, role, ts, hasReplay]
+      properties:
+        siegeId: { type: string }
+        tile: { type: string, description: "Target tile id (worldId:x:y)" }
+        tileLevel: { type: integer, description: Target tile level (absent for legacy reports) }
+        outcome: { type: string, enum: [attacker_win, defender_win, draw] }
+        role: { type: string, enum: [attacker, defender], description: Requester's side in this battle }
+        ts: { type: integer, description: Unix ms timestamp the battle resolved }
+        hasReplay: { type: boolean, description: Whether a headless replay is available for this report }
+
     # CC-3: per-card SLG run-time state stored in PlayerWorldDoc.cardState (CHARACTER_CARDS_DESIGN §7).
     CardSLGState:
       type: object
@@ -1332,6 +1346,27 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/SiegeReplayView' }
+
+  /world/sieges:
+    get:
+      operationId: listSieges
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: worldId, in: query, required: true, schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer, default: 100, maximum: 100 }, description: "Max reports to return (capped at 100)" }
+      responses:
+        '200':
+          description: The requester's recent siege battle reports (attacker or defender), newest first
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/SiegeSummaryView' }
 
   /world/nations:
     get:

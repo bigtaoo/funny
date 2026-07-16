@@ -3,6 +3,10 @@
 import { buildSiegeBattle, playerWorldId, SlgError, type SiegeOutcome } from '@nw/shared';
 import { validateDefenseConfig } from './siegeEngine';
 import { WorldCore } from './core';
+import type { SiegeSummaryView } from './worldTypes';
+
+/** Upper bound on how many recent sieges the browser can pull in one call (last-100 replay browser). */
+const SIEGE_LIST_MAX = 100;
 
 export class DefenseService {
   constructor(private readonly core: WorldCore) {}
@@ -93,5 +97,30 @@ export class DefenseService {
       siege.seed,
     );
     return { siegeId: sid, seed: siege.seed, outcome: siege.outcome, level };
+  }
+
+  /**
+   * List the requester's most recent siege battle reports (attacker OR defender), newest first, for the
+   * client-side replay browser (last-100). Backed by the `{ worldId, ts:-1 }` index; sieges have no TTL, so
+   * this is the player's full history capped at `limit` (≤ SIEGE_LIST_MAX). Only compact fields are returned —
+   * the heavy replay inputs (seed + formations) are fetched per-row via getSiegeReplay when a row is opened.
+   * `hasReplay` tells the client which rows are actually replayable (cheap-settle / NPC-sweep rows are not).
+   */
+  async listSieges(worldId: string, accountId: string, limit = SIEGE_LIST_MAX): Promise<SiegeSummaryView[]> {
+    const n = Math.max(1, Math.min(SIEGE_LIST_MAX, Math.floor(limit) || SIEGE_LIST_MAX));
+    const rows = await this.core.deps.cols.sieges
+      .find({ worldId, $or: [{ attackerId: accountId }, { defenderId: accountId }] })
+      .sort({ ts: -1 })
+      .limit(n)
+      .toArray();
+    return rows.map((s) => ({
+      siegeId: s._id,
+      tile: s.tile,
+      ...(typeof s.tileLevel === 'number' ? { tileLevel: s.tileLevel } : {}),
+      outcome: s.outcome,
+      role: s.attackerId === accountId ? 'attacker' : 'defender',
+      ts: s.ts,
+      hasReplay: typeof s.seed === 'number' && Array.isArray(s.attackerArmy) && s.attackerArmy.length > 0,
+    }));
   }
 }
