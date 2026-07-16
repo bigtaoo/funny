@@ -1,7 +1,6 @@
 import { Board } from './Board';
 import { Prng } from './math/prng';
 import { Player } from './Player';
-import { resetUnitIds } from './Unit';
 import { resetBuildingIds } from './Building';
 import { EscortUnit, resetEscortIds } from './EscortUnit';
 import { Projectile, resetProjectileIds } from './Projectile';
@@ -111,10 +110,24 @@ export class GameState {
 
   private _events: GameEvent[] = [];
 
+  /**
+   * Per-instance unit id counter (units take the id range ≥1000). MUST be instance-scoped,
+   * never a module global: a second GameState built mid-match (e.g. judgeRunner's hash
+   * recompute) would otherwise reset the shared counter, so the live engine's next spawn
+   * reused a still-live id and clobbered it in board.units — orphaning a "ghost" unit that
+   * kept blocking its lane. Starting at 1000 on every instance also keeps ids reproducible
+   * for same-seed replays (ids are not part of matchStateHash, but stay stable regardless).
+   */
+  private _nextUnitId = 1000;
+
+  /** Allocate the next unique unit id for THIS match. All real spawns must use this. */
+  allocUnitId(): number {
+    return this._nextUnitId++;
+  }
+
   constructor(seed: number) {
     // Reset entity id counters so ids are reproducible across engine instances
-    // (deterministic replay). Safe because the client runs one game at a time.
-    resetUnitIds();
+    // (deterministic replay). Unit ids are per-instance (see _nextUnitId) and need no reset.
     resetBuildingIds();
     resetEscortIds();
     resetProjectileIds();

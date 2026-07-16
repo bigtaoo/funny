@@ -27,7 +27,7 @@ export function CampaignMixin<TBase extends GameEngineBaseCtor>(Base: TBase): TB
       const laneLen  = this.level?.board?.laneLength;
       const lane = laneLen?.[String(col)];
       const spawnRow = lane !== undefined ? BOARD_ROWS - lane : TOP_SPAWN_ROW;
-      const unit = new Unit(unitType, side, col, spawnRow, this.enemyWaveBlueprints[unitType]);
+      const unit = new Unit(unitType, side, col, spawnRow, this.enemyWaveBlueprints[unitType], undefined, this.state.allocUnitId());
       if (isBoss) {
         unit.isBoss = true;
         this.state.bossUnitIds.add(unit.id);
