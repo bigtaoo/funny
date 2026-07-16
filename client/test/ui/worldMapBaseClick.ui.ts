@@ -75,7 +75,7 @@ function buildHarness(opts: { me?: PlayerWorldView; mapW?: number; mapH?: number
       onOpenTeams: vi.fn(),
     },
     panels: { showModal, showToast, closeModal, openTrainPanel, showDeployDialog },
-    net: { doJoin: vi.fn(), doAbandon: vi.fn(), confirmWatchtower: vi.fn(), doScout: vi.fn(), showAttackTeamPicker: vi.fn() },
+    net: { doJoin: vi.fn(), doAbandon: vi.fn(), confirmWatchtower: vi.fn(), doScout: vi.fn(), showTeamPicker: vi.fn() },
   } as unknown as WorldMapContext;
 
   // Mark every tile in the 3×3 base footprint as mine (matches server: all 9 cells share ownerId).

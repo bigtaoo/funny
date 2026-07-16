@@ -513,6 +513,15 @@ export function startHttpApi(
           }
         }
 
+        // ── Recent sieges list (replay browser, last-100): the requester's battle reports as attacker or defender ──
+        if (method === 'GET' && path === '/world/sieges') {
+          const worldId = q.get('worldId');
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          const limitRaw = q.get('limit');
+          const limit = limitRaw != null ? Number(limitRaw) : undefined;
+          return send(res, 200, ok(await svc.listSieges(worldId, accountId, limit)));
+        }
+
 
         // ── Sect (S8-4b, implemented) ────────────────────────────────────────
         if (method === 'GET' && path === '/sect/list') {

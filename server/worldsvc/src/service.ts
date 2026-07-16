@@ -74,6 +74,9 @@ export class WorldService extends WorldCore {
   getSiegeReplay(worldId: string, accountId: string, sid: string): ReturnType<CombatService['getSiegeReplay']> {
     return this.combat.getSiegeReplay(worldId, accountId, sid);
   }
+  listSieges(worldId: string, accountId: string, limit?: number): ReturnType<CombatService['listSieges']> {
+    return this.combat.listSieges(worldId, accountId, limit);
+  }
 
   // ── home city: training / buildings / teams / cards (city.ts) ─
   trainTroops(worldId: string, accountId: string, qty: number): Promise<PlayerWorldView> {
