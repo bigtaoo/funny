@@ -63,4 +63,42 @@ describe('shouldUseCheapSiege', () => {
       shouldUseCheapSiege({ attackerTroops: 1000, defenderTroops: 900, attackerSynthesized: true, defenderSynthesized: true }),
     ).toBe(false);
   });
+
+  it('boundary: exactly at capacity does NOT trigger the overflow guard (only strictly beyond it does)', () => {
+    expect(
+      shouldUseCheapSiege({
+        attackerTroops: SIEGE_SYNTH_ARMY_MAX_TROOPS,
+        defenderTroops: SIEGE_SYNTH_ARMY_MAX_TROOPS, // ratio 1, well under SIEGE_CHEAP_RATIO
+        attackerSynthesized: true,
+        defenderSynthesized: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldUseCheapSiege({
+        attackerTroops: SIEGE_SYNTH_ARMY_MAX_TROOPS + 1,
+        defenderTroops: SIEGE_SYNTH_ARMY_MAX_TROOPS + 1,
+        attackerSynthesized: true,
+        defenderSynthesized: true,
+      }),
+    ).toBe(true);
+  });
+
+  it('zero-troop attacker never triggers the cheap path (nothing to synthesize, ratio degenerate)', () => {
+    expect(
+      shouldUseCheapSiege({ attackerTroops: 0, defenderTroops: 500, attackerSynthesized: true, defenderSynthesized: true }),
+    ).toBe(false);
+  });
+
+  it('positive attacker vs. zero-troop (empty) defender → cheap (trivially overwhelming, avoids div-by-zero)', () => {
+    expect(
+      shouldUseCheapSiege({ attackerTroops: 100, defenderTroops: 0, attackerSynthesized: false, defenderSynthesized: false }),
+    ).toBe(true);
+  });
+
+  it('mixed synthesis: only the attacker synthesized and overflowing still triggers cheap even if the (real) defender does not overflow', () => {
+    const attackerTroops = SIEGE_SYNTH_ARMY_MAX_TROOPS + 1;
+    expect(
+      shouldUseCheapSiege({ attackerTroops, defenderTroops: 100, attackerSynthesized: true, defenderSynthesized: false }),
+    ).toBe(true);
+  });
 });

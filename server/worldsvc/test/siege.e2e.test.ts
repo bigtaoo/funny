@@ -231,6 +231,53 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     expect(siege?.outcome).toBe('defender_win');
   });
 
+  it('overwhelming synthesized attacker army (12,000 troops, beyond synthesizeArmy board capacity of 9,600) vs a modest garrison still resolves attacker_win via the cheap fallback', async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    const tgt = findCoord(NON_BLOCKING, 10, 5);
+    await setupDefender('b', tgt.x, tgt.y, { type: 'territory', garrison: 500 });
+    await connect(svc, 'a', tgt);
+    // 12,000 = the max satchel/troopCap a maxed drillYard+satchel allows (D-CITY-9); a plain (no-team) attack march
+    // has no real army layout, so this goes through synthesizeArmy — well past its 9,600-troop placement capacity,
+    // which used to make the real engine congest and time out (defender wins regardless of true strength).
+    await m.collections.playerWorld.updateOne(
+      { _id: playerWorldId(W, 'a') },
+      { $set: { troops: 12_000, troopCap: 12_000 } },
+    );
+
+    const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 12_000);
+    nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+
+    const tile = await svc.getTile(W, 'a', tgt.x, tgt.y);
+    expect(tile).toMatchObject({ type: 'territory', mine: true });
+    const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
+    expect(siege?.outcome).toBe('attacker_win');
+    // No replay fields persisted → confirms the cheap linear path ran, not the congested real engine.
+    expect(siege?.seed).toBeUndefined();
+    expect(siege?.attackerArmy).toBeUndefined();
+  });
+
+  it('overwhelming synthesized defender garrison (20,000, beyond board capacity) vs a modest attacker still resolves defender_win via the cheap fallback (future-proofs a raised garrison constant)', async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    const tgt = findCoord(NON_BLOCKING, 10, 5);
+    // No custom formation set on the tile → buildDefenderConfig falls back to synthesizeArmy('defender', 20,000),
+    // itself beyond the 9,600-troop board capacity — same congestion risk on the defender side, independent of
+    // the attacker. Regular tiles never carry a garrison this large today, but stronghold/crossing NPC garrisons
+    // could after a future balance pass (see SLG_DESIGN_LOG.md §27), so this guards that path too.
+    await setupDefender('b', tgt.x, tgt.y, { type: 'territory', garrison: 20_000 });
+    await connect(svc, 'a', tgt);
+
+    const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', OCCUPY_MIN_TROOPS);
+    nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+
+    const tile = await svc.getTile(W, 'b', tgt.x, tgt.y);
+    expect(tile.mine).toBe(true); // still b's — attacker did not win
+    const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
+    expect(siege?.outcome).toBe('defender_win');
+    expect(siege?.seed).toBeUndefined();
+  });
+
   // NOTE (ADR-026): "attack main base" is no longer an instant single-battle capture. A base now has HP + wave defenders
   // (t1..t5) + a delayed siege-value settlement (see design/DECISIONS.md ADR-026). The full base-siege lifecycle —
   // wave order, attacker survivor carry-over, defeated-team injury, out-team skip, delayed HP hit, HP depletion → forced
