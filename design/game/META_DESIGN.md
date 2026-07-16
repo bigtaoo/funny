@@ -285,7 +285,7 @@ function buildCampaignBlueprints(save: SaveData): UnitBlueprints {
 - gameserver 转发 `commands` **字节流不拆包**（不认识 PlayerCommand，M12）；**同帧多指令需确定性 tiebreak**（按 `side`），否则两端应用顺序分歧。
 - **空闲零上行**：客户端只在出牌时发 `cmd_submit`；`frame_batch` 流是唯一"可前进"信号 → 服务器停发 ⇒ 客户端暂停。
 - **抖动分三档**：<100ms（1 批次）缓冲透明吸收 / 超出该端短暂卡住再快进追帧（对手不受影响）/ 彻底掉线才暂停。
-  - **追帧倍速**：`GameEngine.tick()` 按 `NetInputSource.confirmedLead`（播放头之后的已确认积压帧）选倍速——落后 >30s→5× / >10s→3× / >1s→2× / 否则 1×；缩短每步 `stepDt` 让暂停或最小化（rAF 停摆）后落后的客户端加速排帧追上水位线，追上自动落回 1×。只重定时 step、不改帧序，锁步确定性不受影响。
+  - **追帧倍速**：`GameEngine.tick()` 按 `NetInputSource.confirmedLead`（播放头之后的已确认积压帧）选倍速——落后 >3s→10× / >1s→5× / >0.1s（`CATCHUP_MIN_LEAD`=一个批次）→3× / 否则 1×；缩短每步 `stepDt` 让暂停或最小化（rAF 停摆）后落后的客户端加速排帧追上水位线，追上自动落回 1×。只重定时 step、不改帧序，锁步确定性不受影响。**关键**：`confirmedLead` 已减去 100ms 抖动缓冲，故只要 >0 就是缓冲外的真积压；档位一路排空到 ≈ 缓冲本身（稳态延迟 ~0.1–0.2s），而非旧版停在 1s（旧 `else 1×` 死区会让任何卡顿后的 <1s 落后永久保持——节拍器同速，1× 追不动，落卡要等 ~1.1s 才上屏）。追帧下限不低于一个批次，否则会去追每个正常批次、与节拍器打架引发微抖。
 - **断线（M10）**：in_match 掉线 → gameserver 停发该房间批次 + `peer_dc{grace_ms:60000}` 起 **60s**；`conn_resume` 续发续打；**超时掉线方判负**。
 - **局末（修订 M19）**：game 把 `{双方 hash, 双方 winner_side, 非空帧录像}` 打包 POST 给 **meta**；meta 比对查 desync（纯字符串比；非反作弊，是确定性回归探针）、判定胜负、归档、存录像。game 不连库、不判定。
 - **match 类型（M11）**：`friendly`（meta 仅写 `matches` 记结果）/ `ranked`（**meta** 收到 game 上报后结算 ELO 写 `pvp` 段，服务器权威；订正 2026-07-07：已从 gameserver 迁至 meta，2026-06-14 落地，见 `MATCHSVC_DESIGN`）。
