@@ -17,6 +17,7 @@ import type { WorldApiClient, AuctionView } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
 import type { SaveData, EquipmentInstance, CardInstance } from '../../game/meta/SaveData';
 import { buildIcon, type IconKind } from '../../render/icons';
+import { caretDisplay } from '../../render/inputDisplay';
 
 // ── AuctionScene (S8-5) — SLG auction scene ─────────────────────────────────
 //
@@ -120,6 +121,7 @@ export class AuctionSceneBase {
   protected buyerActive = false;
   protected caretOn = true;
   protected caretTimer = 0;
+  protected numEditKey: string | null = null; // which addNumInput field is being typed into (null = none)
   protected createOpen = false;
 
   // Price guardrail band for the item currently selected in the create form, fetched from the server
@@ -342,6 +344,10 @@ export class AuctionSceneBase {
     value: number,
     onChange: (v: number) => void,
     scale = 1,
+    // When `editKey` is set the value becomes a tappable text field (type a number directly); `clamp`
+    // (if given) is applied when the user commits the typed value on blur — used to snap out-of-range
+    // prices back into the allowed band.
+    opts?: { editKey?: string; clamp?: (v: number) => number },
   ): void {
     const btnSize = 24 * scale;
     const gap = 8 * scale;
@@ -359,6 +365,30 @@ export class AuctionSceneBase {
     layer.addChild(ml);
     this.modalHits.push({ rect: { x: minusBtn.x, y: minusBtn.y, w: btnSize, h: btnSize }, action: () => onChange(value - 1) });
 
+    const editing = opts?.editKey != null && this.numEditKey === opts.editKey;
+    if (opts?.editKey != null) {
+      // Editable field: tap to type a value directly (mirrors the buyer-id field pattern).
+      const fieldW = 64 * scale;
+      const fieldH = btnSize;
+      const fieldX = minusBtn.x + btnSize + gap;
+      const field = sketchPanel(fieldW, fieldH, { fill: 0xfaf9f5, border: editing ? C.accent : C.mid, seed: seedFor(y, 2, fieldW) });
+      field.x = fieldX; field.y = y - 2 * scale;
+      layer.addChild(field);
+      const valLbl = txt(caretDisplay(String(value), editing && this.caretOn, String(value)), 13 * scale, C.dark);
+      valLbl.anchor.set(0.5, 0.5); valLbl.x = fieldX + fieldW / 2; valLbl.y = y + 10 * scale;
+      layer.addChild(valLbl);
+      this.modalHits.push({ rect: { x: fieldX, y: field.y, w: fieldW, h: fieldH }, action: () => this.openNumInput(opts.editKey!, value, onChange, opts.clamp) });
+
+      const plusBtn = sketchPanel(btnSize, btnSize, { fill: 0xeeeeee, border: C.mid, seed: seedFor(y, 1, btnSize) });
+      plusBtn.x = fieldX + fieldW + gap; plusBtn.y = y - 2 * scale;
+      layer.addChild(plusBtn);
+      const pl = txt('+', 14 * scale, C.dark);
+      pl.anchor.set(0.5, 0.5); pl.x = plusBtn.x + half; pl.y = y + 10 * scale;
+      layer.addChild(pl);
+      this.modalHits.push({ rect: { x: plusBtn.x, y: plusBtn.y, w: btnSize, h: btnSize }, action: () => onChange(value + 1) });
+      return;
+    }
+
     const valLbl = txt(String(value), 13 * scale, C.dark);
     valLbl.anchor.set(0, 0.5);
     valLbl.x = minusBtn.x + btnSize + gap; valLbl.y = y + 10 * scale;
@@ -371,6 +401,40 @@ export class AuctionSceneBase {
     pl.anchor.set(0.5, 0.5); pl.x = plusBtn.x + half; pl.y = y + 10 * scale;
     layer.addChild(pl);
     this.modalHits.push({ rect: { x: plusBtn.x, y: plusBtn.y, w: btnSize, h: btnSize }, action: () => onChange(value + 1) });
+  }
+
+  // Hidden-input driver for a tappable numeric field: live-updates the value as digits are typed and, on
+  // blur, applies the optional clamp so an out-of-range price snaps to the nearest allowed bound.
+  protected openNumInput(key: string, current: number, onChange: (v: number) => void, clamp?: (v: number) => number): void {
+    this.numEditKey = key;
+    this.caretOn = true;
+    this.caretTimer = 0;
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.inputMode = 'numeric';
+    inp.value = String(current);
+    inp.maxLength = 12;
+    inp.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
+    document.body.appendChild(inp);
+    inp.focus();
+    inp.select();
+    const parse = (): number => {
+      const digits = inp.value.replace(/[^0-9]/g, '');
+      return digits === '' ? 0 : parseInt(digits, 10);
+    };
+    inp.addEventListener('input', () => {
+      const digits = inp.value.replace(/[^0-9]/g, '');
+      if (inp.value !== digits) inp.value = digits;
+      onChange(parse());
+    });
+    inp.addEventListener('blur', () => {
+      const v = parse();
+      this.numEditKey = null;
+      inp.remove();
+      if (this.hiddenInput === inp) this.hiddenInput = null;
+      onChange(clamp ? clamp(v) : v);
+    });
+    this.hiddenInput = inp;
   }
 
   // ── Modal / toast primitives ────────────────────────────────────────────────
@@ -500,7 +564,7 @@ export class AuctionSceneBase {
       this.toastTimer -= dt * 1000;
       if (this.toastTimer <= 0) this.toastLayer.removeChildren();
     }
-    if (this.buyerActive) {
+    if (this.buyerActive || this.numEditKey) {
       this.caretTimer += dt;
       if (this.caretTimer >= 0.5) { this.caretTimer = 0; this.caretOn = !this.caretOn; if (this.modalOpen) this.openCreateForm(); }
     }

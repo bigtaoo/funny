@@ -249,6 +249,7 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 
 **客户端竞拍 UI ✅（2026-06-21）**：`AuctionScene` 接入竞拍全链路，B 功能端到端打通。
 - **挂单表单**：加售卖方式切换（一口价/竞拍）——竞拍模式下 `price` 输入替换为 `startPrice`（起拍）+ 可选 `buyoutPrice`（买断，0=无）；表单改顺序游标布局 + 按模式动态算高度（多一行价格）。`doCreate` 按模式分发 `createAuction({saleMode:'auction', startPrice, buyoutPrice?})`。
+  - **价格步进器可直接输入（2026-07-16）**：`addNumInput` 增 `{ editKey, clamp? }`——价格字段（起拍价/一口价）值区变为可点输入框（隐藏 DOM input，复用买家字段的游标模式），支持手输数字；失焦提交时经 `clampToBand` 自动吸附回参考价带（低于 `floor` → `ceil(floor)`，高于 `ceil` → `floor(ceil)`，无价带/冷启动品类原样放行）。表单整体高度 +20%（垂直步进 `VA = SCALE×1.2`，仅纵向行距变宽，元素本身尺寸不变）。
 - **市场列表**：竞拍行显示 `[竞拍]` 标记 + 当前出价（`auc.price`，无出价回退起拍价）+ 买断价行；操作按钮一口价=「购买」、竞拍=「出价」。
 - **出价弹层**：`openBidForm` 显示标的/当前价/买断价 + 数字步进器（默认最低出价：有出价则 `max(price+1, ceil(price×1.05))`，服务端权威校验加价）→ `confirmBid` 二次确认 → `placeBid`。
 - **错误码映射**：`errorMsg` 补 `BID_TOO_LOW`/`PRICE_OUT_OF_RANGE`/`MATERIAL_NOT_TRADEABLE`/`WORLD_CLOSED`/`EQUIP_LOCKED`/`EQUIP_IN_USE`/`AUCTION_NOT_FOUND`/`NO_PERMISSION`/`INSUFFICIENT_RESOURCES`。i18n 三语补 ~20 键。

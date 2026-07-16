@@ -110,6 +110,30 @@ function tapLabel(scene: any, container: PIXI.Container, label: string, hitsFiel
   hit!.action();
 }
 
+/** Capturing hidden-input stub. The headless UI harness (plain Node) has no DOM, so the numeric-field
+ *  editor (openNumInput → document.createElement + addEventListener + blur) has nothing to attach to.
+ *  Installs a fake `document` whose created <input> records its 'input'/'blur' listeners and exposes
+ *  `_fire(type)` so a test can drive the real handler code. Restores the previous global on teardown. */
+type StubInput = { value: string; _fire: (type: 'input' | 'blur') => void; [k: string]: unknown };
+function withStubbedInput(run: () => void): void {
+  const g = globalThis as unknown as { document?: unknown };
+  const prev = g.document;
+  g.document = {
+    body: { appendChild(): void {} },
+    createElement(): StubInput {
+      const listeners: Record<string, Array<() => void>> = {};
+      return {
+        type: '', value: '', inputMode: '', maxLength: 0, placeholder: '', autocomplete: '',
+        style: { cssText: '' }, parentNode: null,
+        focus(): void {}, select(): void {}, remove(): void {}, setAttribute(): void {},
+        addEventListener(t: string, fn: () => void): void { (listeners[t] ??= []).push(fn); },
+        _fire(t: 'input' | 'blur'): void { for (const fn of listeners[t] ?? []) fn(); },
+      };
+    },
+  };
+  try { run(); } finally { g.document = prev; }
+}
+
 // ── errorMsg() — the WorldApiError code → localized-message table ─────────────────────────────
 
 describe('AuctionScene — errorMsg()', () => {
@@ -314,6 +338,158 @@ describe('AuctionScene — doCreate()', () => {
     await scene.doCreate();
 
     expect(collectTexts(scene.toastLayer)).toContain(t('auction.err.noMaterial'));
+    scene.destroy();
+  });
+});
+
+// ── clampToBand() — typed-price snap into the item's guardrail band ───────────────────────────
+
+describe('AuctionScene — clampToBand()', () => {
+  it('snaps a below-floor price up to the floor and an above-ceil price down to the ceil', () => {
+    const scene = buildScene();
+    scene.refBand = { ref: 80, floor: 40, ceil: 160 };
+    expect(scene.clampToBand(10)).toBe(40);   // too low → floor
+    expect(scene.clampToBand(500)).toBe(160); // too high → ceil
+    expect(scene.clampToBand(90)).toBe(90);   // in range → unchanged
+    scene.destroy();
+  });
+
+  it('uses ceil()/floor() on fractional band edges so the snapped value is always inside the band', () => {
+    const scene = buildScene();
+    scene.refBand = { ref: 80, floor: 40.4, ceil: 160.9 };
+    expect(scene.clampToBand(40)).toBe(41);   // floor rounds up (40 < 40.4)
+    expect(scene.clampToBand(200)).toBe(160); // ceil rounds down
+    scene.destroy();
+  });
+
+  it('passes through unchanged (min 1) when no band is loaded (cards / cold-start)', () => {
+    const scene = buildScene();
+    scene.refBand = null;
+    expect(scene.clampToBand(0)).toBe(1);
+    expect(scene.clampToBand(9999)).toBe(9999);
+    scene.destroy();
+  });
+});
+
+// ── openNumInput() — tap-to-type price field: live update while typing, clamp on blur ─────────
+
+describe('AuctionScene — editable price field (openNumInput)', () => {
+  it('live-updates the bound value on each keystroke (no clamp mid-typing)', () => {
+    withStubbedInput(() => {
+      const scene = buildScene();
+      scene.refBand = { ref: 80, floor: 40, ceil: 160 };
+      const onChange = (v: number): void => { scene.createStartPrice = Math.max(1, v); };
+      scene.openNumInput('startPrice', 15, onChange, (v: number) => scene.clampToBand(v));
+
+      const inp = scene.hiddenInput as unknown as StubInput;
+      expect(scene.numEditKey).toBe('startPrice');
+
+      inp.value = '12';                // below the floor (40) — but not clamped while typing
+      inp._fire('input');
+      expect(scene.createStartPrice).toBe(12);
+      scene.destroy();
+    });
+  });
+
+  it('strips non-digit characters from the typed value', () => {
+    withStubbedInput(() => {
+      const scene = buildScene();
+      const onChange = (v: number): void => { scene.createPrice = Math.max(1, v); };
+      scene.openNumInput('price', 10, onChange);
+
+      const inp = scene.hiddenInput as unknown as StubInput;
+      inp.value = '1a2b3';
+      inp._fire('input');
+      expect(inp.value).toBe('123');
+      expect(scene.createPrice).toBe(123);
+      scene.destroy();
+    });
+  });
+
+  it('snaps a below-floor typed price up to the floor on blur, then clears the edit state', () => {
+    withStubbedInput(() => {
+      const scene = buildScene();
+      scene.refBand = { ref: 80, floor: 40, ceil: 160 };
+      const onChange = (v: number): void => { scene.createStartPrice = Math.max(1, v); };
+      scene.openNumInput('startPrice', 15, onChange, (v: number) => scene.clampToBand(v));
+
+      const inp = scene.hiddenInput as unknown as StubInput;
+      inp.value = '12';
+      inp._fire('input');
+      inp._fire('blur');
+
+      expect(scene.createStartPrice).toBe(40);   // clamped up to floor on commit
+      expect(scene.numEditKey).toBeNull();
+      expect(scene.hiddenInput).toBeNull();
+      scene.destroy();
+    });
+  });
+
+  it('snaps an above-ceil typed price down to the ceil on blur', () => {
+    withStubbedInput(() => {
+      const scene = buildScene();
+      scene.refBand = { ref: 80, floor: 40, ceil: 160 };
+      const onChange = (v: number): void => { scene.createStartPrice = Math.max(1, v); };
+      scene.openNumInput('startPrice', 15, onChange, (v: number) => scene.clampToBand(v));
+
+      const inp = scene.hiddenInput as unknown as StubInput;
+      inp.value = '9999';
+      inp._fire('input');
+      inp._fire('blur');
+
+      expect(scene.createStartPrice).toBe(160);
+      scene.destroy();
+    });
+  });
+
+  it('leaves a value with no clamp fn untouched on blur (e.g. the buyout field)', () => {
+    withStubbedInput(() => {
+      const scene = buildScene();
+      const onChange = (v: number): void => { scene.createBuyoutPrice = Math.max(0, v); };
+      scene.openNumInput('buyout', 0, onChange);       // no clamp passed
+
+      const inp = scene.hiddenInput as unknown as StubInput;
+      inp.value = '5000';
+      inp._fire('input');
+      inp._fire('blur');
+
+      expect(scene.createBuyoutPrice).toBe(5000);
+      scene.destroy();
+    });
+  });
+
+  it('is wired to the start-price field in the create form (tapping it opens the numeric editor)', () => {
+    withStubbedInput(() => {
+      const scene = buildScene();
+      scene.createClass = 'equipment'; // no qty row, so '80' below is unambiguously the start price
+      scene.createSaleMode = 'auction';
+      scene.refBand = { ref: 80, floor: 40, ceil: 160 };
+      scene.createStartPrice = 80;     // distinctive value → its rendered field label is unique
+      scene.createBuyoutPrice = 0;
+      scene.openCreateForm();
+
+      // Tap the hit sitting under the rendered '80' (the editable start-price field value).
+      tapLabel(scene, scene.container, '80', 'modalHits');
+      expect(scene.numEditKey).toBe('startPrice');
+      scene.destroy();
+    });
+  });
+
+  it('renders a blinking caret in the editable field while it is being typed into', () => {
+    const scene = buildScene();
+    scene.createClass = 'material';
+    scene.createSaleMode = 'auction';
+    scene.refBand = { ref: 80, floor: 40, ceil: 160 };
+    scene.createStartPrice = 80;
+    scene.numEditKey = 'startPrice';
+
+    scene.caretOn = true;
+    scene.openCreateForm();
+    expect(collectTexts(scene.container)).toContain('80|');
+
+    scene.caretOn = false;
+    scene.openCreateForm();
+    expect(collectTexts(scene.container)).not.toContain('80|');
     scene.destroy();
   });
 });

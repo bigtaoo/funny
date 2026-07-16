@@ -15,7 +15,10 @@ export interface CreateFormHandlers {
 
 // Dialog is rendered 1.5x larger than the original design for legibility.
 const SCALE = 1.5;
-const ROW = 46 * SCALE;
+// Vertical metrics use an extra 1.2x so the dialog stands 20% taller (roomier row spacing) than its
+// content-derived height, while element widths/fonts stay at SCALE.
+const VA = SCALE * 1.2;
+const ROW = 46 * VA;
 
 export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBase & Constructor<CreateFormHandlers> {
   return class extends Base {
@@ -33,7 +36,7 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
       // Keep the price guardrail band for the current item in sync (fires one fetch per item selection).
       this.ensureRefBand(this.currentListingCategory());
       // item(field=48) + [qty only for material] + saleMode + price(s) + refBand(22) + buyer(label+field=60) + info(26) + buttons(50) + pads(26)
-      const mh = (16 + 48 + 60 + 26 + 22 + 50 + 10) * SCALE + ROW * (1 + (isMaterial ? 1 : 0)) + priceRowsH;
+      const mh = (16 + 48 + 60 + 26 + 22 + 50 + 10) * VA + ROW * (1 + (isMaterial ? 1 : 0)) + priceRowsH;
       const mx = (w - mw) / 2;
       const my = Math.max(50 + 4, (h - mh) / 2);
 
@@ -45,7 +48,7 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
       panel.x = mx; panel.y = my;
       ml.addChild(panel);
 
-      let cy = my + 16 * SCALE;
+      let cy = my + 16 * VA;
 
       // Item — unified selector across material/equipment/card: tap opens a picker listing every sellable
       // item (materials always offered; equipment/card require getSave), sorted by estimated value descending.
@@ -63,7 +66,7 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
       fl.x = mx + 38 * SCALE; fl.y = cy + 25 * SCALE;
       ml.addChild(fl);
       this.modalHits.push({ rect: { x: mx + 10 * SCALE, y: cy + 18 * SCALE, w: mw - 20 * SCALE, h: 30 * SCALE }, action: () => this.openItemPicker() });
-      cy += 48 * SCALE;
+      cy += 48 * VA;
 
       // Qty (material only; equipment/card are unique instances, qty forced to 1 server-side).
       if (isMaterial) {
@@ -100,12 +103,12 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
 
       // Price(s) — fixed: single buy-now price; auction: startPrice + optional buyout
       if (auctionMode) {
-        this.addNumInput(ml, mx, cy, t('auction.startPrice') + ':', this.createStartPrice, (v) => { this.createStartPrice = Math.max(1, v); this.openCreateForm(); }, SCALE);
+        this.addNumInput(ml, mx, cy, t('auction.startPrice') + ':', this.createStartPrice, (v) => { this.createStartPrice = Math.max(1, v); this.openCreateForm(); }, SCALE, { editKey: 'startPrice', clamp: (v) => this.clampToBand(v) });
         cy += ROW;
-        this.addNumInput(ml, mx, cy, t('auction.buyout') + ':', this.createBuyoutPrice, (v) => { this.createBuyoutPrice = Math.max(0, v); this.openCreateForm(); }, SCALE);
+        this.addNumInput(ml, mx, cy, t('auction.buyout') + ':', this.createBuyoutPrice, (v) => { this.createBuyoutPrice = Math.max(0, v); this.openCreateForm(); }, SCALE, { editKey: 'buyout' });
         cy += ROW;
       } else {
-        this.addNumInput(ml, mx, cy, t('auction.price') + ':', this.createPrice, (v) => { this.createPrice = Math.max(1, v); this.openCreateForm(); }, SCALE);
+        this.addNumInput(ml, mx, cy, t('auction.price') + ':', this.createPrice, (v) => { this.createPrice = Math.max(1, v); this.openCreateForm(); }, SCALE, { editKey: 'price', clamp: (v) => this.clampToBand(v) });
         cy += ROW;
       }
 
@@ -131,7 +134,7 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
       const refLbl = txt(refText, 11 * SCALE, refColor);
       refLbl.x = mx + 10 * SCALE; refLbl.y = cy;
       ml.addChild(refLbl);
-      cy += 22 * SCALE;
+      cy += 22 * VA;
 
       // Designated buyer (optional) — private sale to a specific account.
       const bl0 = txt(t('auction.buyer') + ':', 12 * SCALE, C.dark);
@@ -144,7 +147,7 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
       bfl.x = mx + 16 * SCALE; bfl.y = cy + 25 * SCALE;
       ml.addChild(bfl);
       this.modalHits.push({ rect: { x: mx + 10 * SCALE, y: cy + 18 * SCALE, w: mw - 20 * SCALE, h: 28 * SCALE }, action: () => this.openBuyerInput() });
-      cy += 60 * SCALE;
+      cy += 60 * VA;
 
       // Tax info — estimate seller proceeds at the floor price (start/buy-now).
       const refPrice = auctionMode ? this.createStartPrice : this.createPrice;
@@ -152,7 +155,7 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
       const taxLbl = txt(`${t('auction.youGet')}: ${youGet}`, 12 * SCALE, C.mid);
       taxLbl.x = mx + 10 * SCALE; taxLbl.y = cy;
       ml.addChild(taxLbl);
-      cy += 26 * SCALE;
+      cy += 26 * VA;
 
       // OK / Cancel
       const btnW = 90 * SCALE, btnH = 32 * SCALE;
@@ -171,6 +174,14 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
       cl.x = mx + mw / 2 + 53 * SCALE - 7 * SCALE; cl.y = cy + 16 * SCALE - 7 * SCALE;
       ml.addChild(cl);
       this.modalHits.push({ rect: { x: caBtn.x, y: caBtn.y, w: btnW, h: btnH }, action: () => this.closeModal() });
+    }
+
+    // Snap a typed price into the item's allowed guardrail band: below floor → floor, above ceil → ceil.
+    // With no loaded band (cards / cold-start categories) the price passes through unchanged (min 1).
+    private clampToBand(v: number): number {
+      const b = this.refBand;
+      if (!b) return Math.max(1, v);
+      return Math.min(Math.floor(b.ceil), Math.max(Math.ceil(b.floor), v));
     }
 
     private openBuyerInput(): void {
