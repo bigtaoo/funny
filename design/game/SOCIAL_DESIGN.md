@@ -146,6 +146,7 @@ interface MailAttachment {
 
 - 领取附件：`POST /mail/{id}/claim` → meta 校验未领 → 经 commercial 发金币（`/internal/...`）+ 写 inventory 物品/皮肤（meta 库）→ 标 `claimedAt + claimOrderId`（幂等：重复领取靠 `deliveredOrders`/orderId 不重复发放）→ 回推权威 `SaveData`（钱包镜像/inventory）。
 - 系统邮件（运营补偿、活动奖励、好友申请被接受通知等）= 后台/内部端点写一份/收件人。一期不做群发模板优化（SOC5）。
+- **删除守卫（2026-07-16）**：有附件且未领取（`attachments` 非空且 `claimedAt` 未设置）的邮件禁止删除，防止误删导致奖励永久丢失（删除直接 `deleteOne` 整份文档，含 `attachments`，无退回逻辑）。`DELETE /mail/{id}` 命中时返回 409 `MAIL_HAS_UNCLAIMED_ATTACHMENT`；已领取或本就无附件的邮件删除不受影响。客户端邮件详情页「删除」按钮在此状态下置灰，点击提示先领取附件。
 
 ---
 
@@ -210,7 +211,7 @@ POST   /chat/read   { convId }           → { ok }
 GET    /mail                             → { mail: MailView[], unread: number }
 POST   /mail/{id}/read                   → { ok }
 POST   /mail/{id}/claim                  → { save: SaveData } | ALREADY_CLAIMED | NO_ATTACHMENT
-DELETE /mail/{id}                        → { ok }
+DELETE /mail/{id}                        → { ok } | MAIL_HAS_UNCLAIMED_ATTACHMENT（有未领取附件，需先领取）
 POST   /mail/send   { toPublicId, subject, body } → { mailId } | NOT_FRIEND   // 玩家间邮件（可选门控为好友）
 ```
 

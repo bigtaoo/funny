@@ -746,6 +746,7 @@ export const zh = {
   'mail.claimFail': '领取失败',
   'mail.alreadyClaimed': '已经领取过了',
   'mail.delete': '删除邮件',
+  'mail.deleteBlockedAttachment': '请先领取附件再删除邮件',
   // ── SLG overworld (S8) ────────────────────────────────────────────────────
   'world.title': '大世界',
   'world.troops': '兵力',

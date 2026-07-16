@@ -4334,6 +4334,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
         };
     };
     sendMail: {

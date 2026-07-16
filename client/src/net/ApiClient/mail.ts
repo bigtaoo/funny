@@ -28,7 +28,7 @@ export function MailMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase &
       return this.post<{ save: SaveData }>(`/mail/${encodeURIComponent(mailId)}/claim`, {});
     }
 
-    /** Delete a mail. */
+    /** Delete a mail. Mail with an unclaimed attachment → ApiError('MAIL_HAS_UNCLAIMED_ATTACHMENT'); claim it first. */
     async deleteMail(mailId: string): Promise<void> {
       await this.request<{ ok: boolean }>('DELETE', `/mail/${encodeURIComponent(mailId)}`);
     }

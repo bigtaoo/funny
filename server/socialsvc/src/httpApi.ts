@@ -533,7 +533,10 @@ export function startHttpApi(
         {
           const m = /^\/social\/mail\/([^/]+)$/.exec(path);
           if (method === 'DELETE' && m) {
-            await mailSvc.deleteMail(accountId, decodeURIComponent(m[1]!));
+            const r = await mailSvc.deleteMail(accountId, decodeURIComponent(m[1]!));
+            if ('error' in r) {
+              return sendErr(res, ErrorCode.MAIL_HAS_UNCLAIMED_ATTACHMENT, 'mail has an unclaimed attachment; claim it before deleting');
+            }
             return send(res, 200, ok({ ok: true }));
           }
         }

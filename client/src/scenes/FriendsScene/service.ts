@@ -222,8 +222,13 @@ export function NetworkMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
     }
 
     async doMailDelete(m: MailView): Promise<void> {
-      this.openMailItem = null;
-      try { await this.cb.deleteMail(m.mailId); } catch { this.toast('friends.error'); }
+      try {
+        await this.cb.deleteMail(m.mailId);
+        this.openMailItem = null;
+      } catch (e) {
+        this.toast(((e as { code?: string } | null)?.code) === 'MAIL_HAS_UNCLAIMED_ATTACHMENT'
+          ? 'mail.deleteBlockedAttachment' : 'friends.error');
+      }
       this.render();
       void this.refresh();
     }

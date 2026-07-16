@@ -734,6 +734,7 @@ export const en: Record<TranslationKey, string> = {
   'mail.claimFail': 'Claim failed',
   'mail.alreadyClaimed': 'Already claimed',
   'mail.delete': 'Delete',
+  'mail.deleteBlockedAttachment': 'Claim the attachment before deleting this mail',
   // SLG World (S8)
   'world.title': 'World',
   'world.troops': 'Troops',

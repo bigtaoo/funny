@@ -70,8 +70,13 @@ export class MailService {
     return res.matchedCount > 0 || (await this.cols.mails.countDocuments({ _id: mailId, to: accountId })) > 0;
   }
 
-  async deleteMail(accountId: string, mailId: string): Promise<void> {
+  async deleteMail(accountId: string, mailId: string): Promise<{ ok: true } | { error: 'HAS_UNCLAIMED_ATTACHMENT' }> {
+    const doc = await this.cols.mails.findOne({ _id: mailId, to: accountId });
+    if (doc && doc.attachments && doc.attachments.length > 0 && doc.claimedAt === undefined) {
+      return { error: 'HAS_UNCLAIMED_ATTACHMENT' };
+    }
     await this.cols.mails.deleteOne({ _id: mailId, to: accountId });
+    return { ok: true };
   }
 
   /**
