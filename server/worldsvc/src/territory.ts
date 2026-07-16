@@ -12,6 +12,7 @@ import {
   WATCHTOWER_COST,
   RESOURCE_TYPES,
   SlgError,
+  buildingLevel,
   type ResourceType,
   type BuildingKey,
 } from '@nw/shared';
@@ -100,6 +101,7 @@ export class TerritoryService {
       ...(spawn.resType ? { resType: spawn.resType } : {}),
       protectedUntil: t + PROTECTION_SEC * 1000,
       ...(familyId ? { familyId } : {}),
+      now: t, // fresh capital: no buildings yet → wallLevel 0 → full base-durability
     });
     await Promise.all(
       baseDocs.map((d) => cols.tiles.updateOne({ _id: d._id }, { $setOnInsert: d }, { upsert: true })),
@@ -197,6 +199,19 @@ export class TerritoryService {
   }
 
   /**
+   * List all tiles the player currently owns (territory + captured stronghold; excludes the 3×3 capital
+   * footprint, which is managed via relocate, not jump/abandon). Backs the client Territory Overview panel
+   * (design/game/SLG_DESIGN.md §26) — the HUD's `territoryCount` is only an aggregate, this returns the rows.
+   */
+  async listTerritories(worldId: string, accountId: string): Promise<WorldTileView[]> {
+    const { cols } = this.core.deps;
+    const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+    if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
+    const owned = await cols.tiles.find({ worldId, ownerId: accountId, type: { $ne: 'base' } }).toArray();
+    return owned.map((t) => this.core.tileDocView(t, accountId));
+  }
+
+  /**
    * Abandon a tile: refund garrison troops + recompute yield. The capital cannot be abandoned.
    */
   async abandonTile(worldId: string, accountId: string, x: number, y: number): Promise<PlayerWorldView> {
@@ -265,6 +280,11 @@ export class TerritoryService {
       ...(proc.resType ? { resType: proc.resType } : {}),
       ...(carryProtect ? { protectedUntil: carryProtect } : {}),
       ...(pw.familyId ? { familyId: pw.familyId } : {}),
+      // D-CITY-8: voluntary relocation carries over durability/damage taken (like garrison), not a free heal.
+      wallLevel: buildingLevel(pw.buildings, 'wall'),
+      ...(oldBase?.durability != null ? { durability: oldBase.durability } : {}),
+      ...(oldBase?.durabilityRegenAt != null ? { durabilityRegenAt: oldBase.durabilityRegenAt } : {}),
+      now: t,
     });
     await Promise.all(
       baseDocs.map((d) => cols.tiles.updateOne({ _id: d._id }, { $set: d }, { upsert: true })),

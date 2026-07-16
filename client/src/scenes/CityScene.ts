@@ -1,8 +1,9 @@
-// CityScene — Home-city management (SLG_CITY_DESIGN P1).
+// CityScene — Home-city management (SLG_CITY_DESIGN P1 + P3 D-CITY-11/12).
 // Entry: WorldMapScene taps own base tile → "Enter Desk".
-// Layout: shared SceneHeader (title + back) + resource bar + build-queue strip +
-//   scrollable building card grid (matches the Roster/Skins/Teams card-grid
-//   language) + tap-to-open detail modal (popup-scale-to-80% convention).
+// Two switchable pages (D-CITY-11): 内政 (resource bar + build-queue strip +
+//   scrollable building card grid, matches the Roster/Skins/Teams card-grid
+//   language, tap-to-open detail modal) and 军事 (tech-tree panel for `academy`,
+//   D-CITY-12; team panel D-CITY-10 still a placeholder below it).
 // Troop training is surfaced via the drillYard detail modal (replaces the
 // WorldMapScene train button for users who enter city).
 
@@ -17,12 +18,22 @@ import {
 import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { formatDuration } from './worldmap/formatDuration';
-import type { WorldApiClient, PlayerWorldView, BuildingKey } from '../net/WorldApiClient';
+import type {
+  WorldApiClient, PlayerWorldView, BuildingKey, TeamTemplate, MarchView, OccupationView,
+} from '../net/WorldApiClient';
+import { teamSlotId, teamSlotName, TEAM_CAP } from './TeamsScene';
 import {
   BUILDING_KEYS,
   RESOURCE_TYPES,
   DESK_MAX_LEVEL,
   BUILD_SPEEDUP_SECS_PER_COIN,
+  CABINET_CAP_STEP,
+  DRILL_TROOPCAP_STEP,
+  DRILL_TRAIN_SPEED_STEP,
+  baseDurabilityMax,
+  ACADEMY_HP_STEP,
+  ACADEMY_DAMAGE_STEP,
+  SATCHEL_CARRY_STEP,
   buildingLevel,
   buildCost,
   buildTimeSec,
@@ -32,6 +43,7 @@ import {
   resourceCapFor,
   troopCapFor,
   trainQueueMaxFor,
+  satchelCarryCapFor,
   type ResourceType,
 } from '@nw/shared';
 import { BusyTracker } from '../ui/busyTracker';
@@ -78,6 +90,7 @@ const BLD_ICON: Readonly<Record<BuildingKey, string>> = {
   drillYard:    '⚔️',
   wall:         '🏯',
   academy:      '📚',
+  satchel:      '🎒',
 };
 
 // Building glyph source: the five resource-producer buildings reuse the res_atlas
@@ -97,9 +110,19 @@ const CARD_W_TARGET = 148;
 const CARD_H = 128;
 const GRID_PAD = 8;
 
+// D-CITY-12: academy is pulled out of the domestic building grid into its own
+// standalone tech-tree panel on the military page (see renderMilitaryPage).
+const DOMESTIC_BUILDING_KEYS: readonly BuildingKey[] = BUILDING_KEYS.filter((k) => k !== 'academy');
+
+// Team panel (D-CITY-10) — 2-col card grid, read-only display (editing stays in TeamsScene).
+const TEAM_COLS = 2;
+const TEAM_CARD_H = 96;
+
 // ── CityScene ────────────────────────────────────────────────────────────────
 
 interface Hit { x: number; y: number; w: number; h: number; fn: () => void }
+
+type CityPage = 'domestic' | 'military';
 
 export class CityScene implements Scene {
   readonly container: PIXI.Container;
@@ -115,6 +138,10 @@ export class CityScene implements Scene {
   private destroyed = false;
 
   private me: PlayerWorldView | null = null;
+  private teams: TeamTemplate[] = [];
+  private marches: MarchView[] = [];
+  private occupations: OccupationView[] = [];
+  private page: CityPage = 'domestic';
   private selectedBuilding: BuildingKey | null = null;
   private toast: string | null = null;
   private toastColor: number = C.red;
@@ -162,9 +189,18 @@ export class CityScene implements Scene {
     // Resource / producer-building glyphs reuse the res_atlas motifs; re-render once decoded.
     void loadResAtlas().then(() => this.render()).catch(() => { /* color/emoji fallback */ });
     try {
-      this.me = await this.cb.worldApi.getMe(this.cb.worldId);
+      const [me, teams, marches, occupations] = await Promise.all([
+        this.cb.worldApi.getMe(this.cb.worldId),
+        this.cb.worldApi.getTeams(this.cb.worldId),
+        this.cb.worldApi.getMarches(this.cb.worldId),
+        this.cb.worldApi.getOccupations(this.cb.worldId),
+      ]);
+      this.me = me;
+      this.teams = teams;
+      this.marches = marches;
+      this.occupations = occupations;
     } catch {
-      /* use null — shows loading state */
+      /* use null/empty — shows loading state */
     }
     this.render();
   }
@@ -274,28 +310,35 @@ export class CityScene implements Scene {
     const decoC = buildDecorCLayer(w, h);
     if (decoC) this.container.addChild(decoC);
 
-    const hdr = drawSceneHeader(this.container, w, h, t('city.title'), {
+    const hdr = drawSceneHeader(this.container, w, h, t(`city.page.${this.page}` as 'city.page.domestic'), {
       variant: 'paper', accent: HEADER_ACCENT.slg,
     });
     const backHit: Hit = { x: hdr.backRect.x, y: hdr.backRect.y, w: hdr.backRect.w, h: hdr.backRect.h, fn: () => this.cb.onBack() };
     this.hits.push(backHit);
 
     let y = hdr.headerH + 8;
+    y = this.renderPageTabs(y);
 
-    // Resource bar
-    y = this.renderResourceBar(y);
-    y += 8;
+    if (this.page === 'domestic') {
+      // Resource bar
+      y = this.renderResourceBar(y);
+      y += 8;
 
-    // Build queue strip
-    y = this.renderBuildQueue(y);
-    y += 8;
+      // Build queue strip
+      y = this.renderBuildQueue(y);
+      y += 8;
 
-    // Building card grid (scrollable)
-    this.renderBuildingGrid(y);
+      // Building card grid (scrollable)
+      this.renderBuildingGrid(y);
+    } else {
+      this.scrollMax = 0;
+      this.renderMilitaryPage(y);
+    }
 
-    // Detail modal (popup-scale-to-80% convention, tap-outside-to-close). The grid/queue
-    // sit dimmed underneath — drop their hits (keeping only Back) so a tap there can't
-    // silently switch buildings or trigger speedup instead of dismissing the modal.
+    // Detail modal (popup-scale-to-80% convention, tap-outside-to-close). The page content
+    // sits dimmed underneath — drop its hits (keeping only Back) so a tap there can't
+    // silently switch buildings or trigger speedup instead of dismissing the modal. Shared
+    // across both pages: the military page's tech-tree panel (academy) opens it too.
     if (this.selectedBuilding) {
       this.hits = [backHit];
       this.renderDetailModal(this.selectedBuilding);
@@ -326,6 +369,280 @@ export class CityScene implements Scene {
       tl.y = tg.y + 10;
       this.container.addChild(tl);
     }
+  }
+
+  // ── Page tabs (D-CITY-11: 内政 / 军事 switch) ────────────────────────────────
+
+  private switchPage(page: CityPage): void {
+    if (this.page === page) return;
+    this.page = page;
+    this.scrollY = 0;
+    this.render();
+  }
+
+  private renderPageTabs(startY: number): number {
+    const { w } = this;
+    const tabH = 36;
+    const pages: CityPage[] = ['domestic', 'military'];
+    const tabW = Math.floor((w - 16) / pages.length);
+
+    pages.forEach((page, i) => {
+      const tx = 8 + i * tabW;
+      const active = this.page === page;
+      const g = sketchPanel(tabW - (i > 0 ? 2 : 0), tabH, {
+        fill: active ? C.accent : C.paper,
+        border: C.line, width: 1, seed: seedFor(tx, startY, i + 1),
+      });
+      g.x = tx;
+      g.y = startY;
+      this.container.addChild(g);
+      const lbl = txt(t(`city.tab.${page}` as 'city.tab.domestic'), 14, active ? 0xffffff : C.dark, true);
+      lbl.x = tx + (tabW - lbl.width) / 2;
+      lbl.y = startY + (tabH - 16) / 2;
+      this.container.addChild(lbl);
+      this.hits.push({ x: tx, y: startY, w: tabW, h: tabH, fn: () => this.switchPage(page) });
+    });
+
+    return startY + tabH + 8;
+  }
+
+  // ── Military page (D-CITY-11 tab container) ──────────────────────────────────
+  // Durability panel (D-CITY-8), tech-tree panel (D-CITY-12) and team panel
+  // (D-CITY-10) are all implemented below.
+
+  private renderMilitaryPage(startY: number): void {
+    startY = this.renderDurabilityPanel(startY);
+    startY = this.renderTechTreePanel(startY);
+
+    const sectionLbl = txt(t('city.military.teams'), 13, C.mid, true);
+    sectionLbl.x = 12;
+    sectionLbl.y = startY;
+    this.container.addChild(sectionLbl);
+    this.renderTeamPanel(startY + 20);
+  }
+
+  // D-CITY-8: main-base durability panel — a persistent, self-healing HP bar for the
+  // player's own base, capped by the `wall` building's level (baseDurabilityMax). Reads
+  // `me.hp`/`me.maxHp` (same field names/semantics as WorldMapView's tile HP bar); falls
+  // back to a full bar derived from the current wall level when the server hasn't resolved
+  // a main-base anchor yet (e.g. brand-new account mid-joinWorld race).
+  private renderDurabilityPanel(startY: number): number {
+    const { w } = this;
+    const bld = this.me?.buildings;
+    const maxHp = this.me?.maxHp ?? baseDurabilityMax(buildingLevel(bld, 'wall'));
+    const hp = this.me?.hp ?? maxHp;
+    const ratio = maxHp > 0 ? Math.max(0, Math.min(1, hp / maxHp)) : 1;
+
+    const panH = 56;
+    const pg = sketchPanel(w - 16, panH, { fill: C.paper, border: C.line, width: 1, seed: seedFor(w, panH, 11) });
+    pg.x = 8;
+    pg.y = startY;
+    this.container.addChild(pg);
+
+    const icon = this.bldIcon('wall', 28, C.dark);
+    icon.x = 16;
+    icon.y = startY + (panH - 28) / 2;
+    this.container.addChild(icon);
+
+    const titleLbl = txt(t('city.military.durability'), 14, C.dark, true);
+    titleLbl.x = 56;
+    titleLbl.y = startY + 9;
+    this.container.addChild(titleLbl);
+
+    const valLbl = txt(`${this.fmtNum(hp)} / ${this.fmtNum(maxHp)}`, 12, C.mid);
+    valLbl.x = 56;
+    valLbl.y = startY + 30;
+    this.container.addChild(valLbl);
+
+    const barX = 56 + Math.max(90, valLbl.width + 16);
+    const barW = Math.max(20, w - barX - 16);
+    const barH = 10;
+    const barY = startY + (panH - barH) / 2;
+
+    const track = new PIXI.Graphics();
+    track.beginFill(0x2a1e12, 0.15);
+    track.drawRoundedRect(barX, barY, barW, barH, 3);
+    track.endFill();
+    this.container.addChild(track);
+
+    // Green (healthy) → amber (mid) → red (low) — mirrors the world-map tile HP bar
+    // (worldmap/tileGraphics.ts drawHpBar) so the color language is consistent everywhere.
+    const fillColor = ratio > 0.5 ? 0x3aa03a : (ratio > 0.25 ? 0xd8a520 : 0xcc2222);
+    const fill = new PIXI.Graphics();
+    fill.beginFill(fillColor, 0.9);
+    fill.drawRoundedRect(barX, barY, Math.max(2, barW * ratio), barH, 3);
+    fill.endFill();
+    this.container.addChild(fill);
+
+    return startY + panH + 8;
+  }
+
+  /** Current order tying up a team, if any — mirrors TeamsScene.teamOrder (server's TEAM_BUSY predicate). */
+  private teamOrder(teamId: string): { march: MarchView } | { occ: OccupationView } | null {
+    const march = this.marches.find(m => m.mine !== false && m.teamId === teamId);
+    if (march) return { march };
+    const occ = this.occupations.find(o => o.teamId === teamId);
+    if (occ) return { occ };
+    return null;
+  }
+
+  /** Total troops committed across a team's cards — mirrors TeamsScene.committedTroops. */
+  private committedTroops(army: TeamTemplate['army']): number {
+    const cardState = this.me?.cardState ?? {};
+    let total = 0;
+    for (const entry of army) {
+      const cid = entry.cardInstanceId;
+      total += cid ? (cardState[cid]?.currentTroops ?? 0) : Math.max(0, Math.floor(entry.initialHp ?? 0));
+    }
+    return total;
+  }
+
+  /** Read-only 2-col grid of the 5 team slots (editing stays in TeamsScene, reachable from the map). */
+  private renderTeamPanel(startY: number): void {
+    const { w, h } = this;
+    const availW = w - GRID_PAD * 2;
+    const cellW = Math.floor((availW - (TEAM_COLS - 1) * CARD_GAP) / TEAM_COLS);
+    const rows = Math.ceil(TEAM_CAP / TEAM_COLS);
+    const contentH = rows * TEAM_CARD_H + (rows - 1) * CARD_GAP;
+
+    const viewY = startY;
+    const viewH = Math.max(0, h - viewY - GRID_PAD);
+    this.scrollMax = Math.max(0, contentH - viewH);
+    if (this.scrollY > this.scrollMax) this.scrollY = this.scrollMax;
+
+    const gridLayer = new PIXI.Container();
+    gridLayer.y = viewY - this.scrollY;
+    const maskG = new PIXI.Graphics();
+    maskG.beginFill(0xffffff).drawRect(0, viewY, w, viewH).endFill();
+    this.container.addChild(maskG);
+    gridLayer.mask = maskG;
+    this.container.addChild(gridLayer);
+
+    const now = Date.now();
+    for (let i = 0; i < TEAM_CAP; i++) {
+      const col = i % TEAM_COLS;
+      const row = Math.floor(i / TEAM_COLS);
+      const cx = GRID_PAD + col * (cellW + CARD_GAP);
+      const cy = row * (TEAM_CARD_H + CARD_GAP);
+      this.renderTeamCard(i, cx, cy, cellW, gridLayer, now);
+    }
+
+    drawScrollIndicator(this.container, { x: 0, y: viewY, w, h: viewH }, this.scrollY, this.scrollMax);
+  }
+
+  private renderTeamCard(i: number, x: number, y: number, cardW: number, layer: PIXI.Container, now: number): void {
+    const id = teamSlotId(i);
+    const team = this.teams.find(tm => tm.id === id);
+    const filled = !!team && team.army.length > 0;
+    const injuredUntil = this.me?.teamState?.[id]?.injuredUntil ?? 0;
+    const injured = injuredUntil > now;
+    const order = this.teamOrder(id);
+    const pad = 8;
+
+    const border = injured ? C.red : (order ? C.gold : (filled ? C.accent : C.mid));
+    const panel = sketchPanel(cardW, TEAM_CARD_H, {
+      fill: filled ? 0xfaf9f5 : C.paper, border, width: filled ? 2 : 1.2, seed: seedFor(x, y, cardW),
+    });
+    panel.x = x;
+    panel.y = y;
+    layer.addChild(panel);
+
+    const name = txt(team?.name || teamSlotName(i), 13, C.dark, true);
+    name.x = x + pad;
+    name.y = y + pad;
+    layer.addChild(name);
+
+    let statusLbl: string;
+    let statusColor: number;
+    if (injured) {
+      const secsLeft = Math.ceil((injuredUntil - now) / 1000);
+      const timeStr = secsLeft >= 60 ? `${Math.ceil(secsLeft / 60)}m` : `${secsLeft}s`;
+      statusLbl = t('roster.injured').replace('{time}', timeStr);
+      statusColor = C.red as number;
+    } else if (order) {
+      const remaining = Math.max(0, Math.ceil((('march' in order ? order.march.arriveAt : order.occ.dueAt) - now) / 1000));
+      const timeStr = remaining >= 60 ? `${Math.ceil(remaining / 60)}m` : `${remaining}s`;
+      statusLbl = 'march' in order
+        ? t('world.team.marching')
+        : t('world.team.occupying').replace('{time}', timeStr);
+      statusColor = C.gold as number;
+    } else if (filled) {
+      statusLbl = t('city.military.teamIdle');
+      statusColor = C.accent as number;
+    } else {
+      statusLbl = t('world.team.empty');
+      statusColor = C.mid as number;
+    }
+    const statusTag = txt(statusLbl, 11, statusColor, true);
+    statusTag.x = x + pad;
+    statusTag.y = y + pad + 20;
+    layer.addChild(statusTag);
+
+    if (filled) {
+      const committed = this.committedTroops(team!.army);
+      const sub = `${t('world.defense.garrison').replace('{n}', String(team!.army.length))}   ${t('world.team.committed').replace('{n}', String(committed))}`;
+      const subLbl = txt(sub, 11, C.mid, false, cardW - pad * 2);
+      subLbl.x = x + pad;
+      subLbl.y = y + TEAM_CARD_H - pad - 14;
+      layer.addChild(subLbl);
+    }
+  }
+
+  // D-CITY-12: academy promoted from an ordinary building-grid card to its own standalone
+  // panel — a season-scoped blueprint buff deserves more ceremony than a generic card.
+  // Injection logic (buildSiegeBlueprints) is unchanged; only the UI presentation moved.
+  private renderTechTreePanel(startY: number): number {
+    const { w } = this;
+    const bld = this.me?.buildings;
+    const lvl = buildingLevel(bld, 'academy');
+    const inQueue = (this.me?.buildQueue ?? []).some(q => q.key === 'academy');
+    const bonusLines = this.buildingBonusLines('academy', bld);
+
+    const panH = 96;
+    const pg = sketchPanel(w - 16, panH, {
+      fill: C.paper, border: inQueue ? C.gold : C.line, width: inQueue ? 2 : 1, seed: seedFor(w, panH, 10),
+    });
+    pg.x = 8;
+    pg.y = startY;
+    this.container.addChild(pg);
+
+    const icon = this.bldIcon('academy', 36, C.dark);
+    icon.x = 20;
+    icon.y = startY + (panH - 36) / 2;
+    this.container.addChild(icon);
+
+    const titleLbl = txt(t('city.military.techTree'), 16, C.dark, true);
+    titleLbl.x = 68;
+    titleLbl.y = startY + 12;
+    this.container.addChild(titleLbl);
+
+    const lvlLbl = txt(t('city.lvlLabel').replace('{lvl}', String(lvl)), 12, C.mid);
+    lvlLbl.x = 68 + titleLbl.width + 10;
+    lvlLbl.y = startY + 14;
+    this.container.addChild(lvlLbl);
+
+    let bly = startY + 34;
+    for (const line of bonusLines) {
+      const bl = txt(line, 12, C.mid, false, w - 96);
+      bl.x = 68;
+      bl.y = bly;
+      this.container.addChild(bl);
+      bly += 16;
+    }
+
+    if (inQueue) {
+      const qDot = buildIcon('hammer', 18, C.gold);
+      qDot.x = w - 40;
+      qDot.y = startY + 12;
+      this.container.addChild(qDot);
+    }
+
+    this.hits.push({
+      x: 8, y: startY, w: w - 16, h: panH,
+      fn: () => { this.selectedBuilding = 'academy'; this.render(); },
+    });
+
+    return startY + panH + 8;
   }
 
   // ── Resource bar ──────────────────────────────────────────────────────────
@@ -434,7 +751,7 @@ export class CityScene implements Scene {
   private renderBuildingGrid(startY: number): void {
     const { w, h } = this;
     const bld = this.me?.buildings;
-    const keys = BUILDING_KEYS;
+    const keys = DOMESTIC_BUILDING_KEYS;
 
     const availW = w - GRID_PAD * 2;
     const cols = Math.max(1, Math.floor((availW + CARD_GAP) / (CARD_W_TARGET + CARD_GAP)));
@@ -699,27 +1016,30 @@ export class CityScene implements Scene {
         break;
       }
       case 'cabinet': {
-        const capPct = Math.round((1 + lvl * 0.1) * 100);
+        const capPct = Math.round((1 + lvl * CABINET_CAP_STEP) * 100);
         lines.push(t('city.bonusCap').replace('{pct}', String(capPct)));
         break;
       }
       case 'drillYard':
-        lines.push(t('city.bonusTroopCap').replace('{n}', String(lvl * 500)));
-        lines.push(t('city.bonusTrainSpeed').replace('{pct}', String(Math.round(lvl * 4))));
+        lines.push(t('city.bonusTroopCap').replace('{n}', String(lvl * DRILL_TROOPCAP_STEP)));
+        lines.push(t('city.bonusTrainSpeed').replace('{pct}', String(Math.round(lvl * DRILL_TRAIN_SPEED_STEP * 100))));
         lines.push(t('city.bonusQueueSlots').replace('{n}', String(trainQueueMaxFor(bld))));
         break;
       case 'wall': {
-        const wallPct = Math.round(lvl * 5);
-        lines.push(t('city.bonusWallHp').replace('{pct}', String(wallPct)));
+        // D-CITY-8: wall no longer buffs battle-time garrison HP — it caps the base's persistent, self-healing durability instead.
+        lines.push(t('city.bonusWallHp').replace('{n}', String(baseDurabilityMax(lvl))));
         break;
       }
       case 'academy': {
-        const hpPct = Math.round(lvl * 2);
-        const dmgPct = Math.round(lvl * 1.5);
+        const hpPct = Math.round(lvl * ACADEMY_HP_STEP * 100);
+        const dmgPct = Math.round(lvl * ACADEMY_DAMAGE_STEP * 100);
         if (hpPct > 0) lines.push(t('city.bonusAcademyHp').replace('{pct}', String(hpPct)));
         if (dmgPct > 0) lines.push(t('city.bonusAcademyDmg').replace('{pct}', String(dmgPct)));
         break;
       }
+      case 'satchel':
+        lines.push(t('city.bonusSatchel').replace('{n}', String(satchelCarryCapFor(bld))));
+        break;
     }
     return lines;
   }

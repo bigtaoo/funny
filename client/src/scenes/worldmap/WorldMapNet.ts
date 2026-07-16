@@ -321,6 +321,30 @@ export class WorldMapNet {
     }
   }
 
+  /** Full list of owned tiles (Territory Overview panel, SLG_DESIGN.md §26). Fetched on demand
+   * (list tab opened), not on the ~5s poll — can be 200-300 rows. */
+  async refreshTerritories(): Promise<void> {
+    if (this.ctx.destroyed) return;
+    try {
+      this.ctx.territories = await this.ctx.cb.worldApi.getTerritories(this.ctx.cb.worldId);
+    } catch { /* offline */ }
+  }
+
+  /** Same as doAbandon but for a row in the Territory Overview list: keeps the panel open and
+   * refreshes the list in place instead of closing the modal. */
+  async doAbandonFromList(tx: number, ty: number): Promise<void> {
+    try {
+      await this.ctx.cb.worldApi.abandonTile(this.ctx.cb.worldId, tx, ty);
+      this.ctx.me = await this.ctx.cb.worldApi.getMe(this.ctx.cb.worldId);
+      this.ctx.tileCache.delete(`${tx}:${ty}`);
+      await Promise.all([this.loadMapViewport(), this.refreshTerritories()]);
+      this.ctx.view.renderMap(); this.ctx.panels.renderHud();
+      if (this.ctx.territoryPanelOpen) this.ctx.panels.renderTerritoryPanel();
+    } catch (e) {
+      this.ctx.panels.showToast(this.errorMsg(e), C.red);
+    }
+  }
+
   // ── Train / resource panel (C4) ─────────────────────────────────────────────
   // A richer modal than showModal: full resources + yield, recruit presets, the
   // live training queue (countdown), and a one-tap coin speedup. Rendered into
@@ -387,9 +411,22 @@ export class WorldMapNet {
     void this.refreshMarches();
   }
 
-  applyTileUpdate(_tu: TileUpdate): void {
+  applyTileUpdate(tu: TileUpdate): void {
     if (this.ctx.destroyed) return;
-    void this.loadMapViewport().then(() => { if (!this.ctx.destroyed) this.ctx.view.renderMap(); });
+    // D-CITY-8: flag whether this push is our own main base losing durability, so the full-screen
+    // vignette flash (WorldMapRenderer/vignette.ts) can fire once the fresh hp value is in cache.
+    // TileUpdate itself carries no hp field (see transport.proto), so we diff the cached view before/after.
+    const isOwnBase = !!this.ctx.me?.mainBaseTile && tu.tileId === this.ctx.me.mainBaseTile;
+    const [bx, by] = isOwnBase ? this.ctx.parseTileId(tu.tileId) : [0, 0];
+    const prevHp = isOwnBase ? this.ctx.tileCache.get(`${bx}:${by}`)?.hp : undefined;
+    void this.loadMapViewport().then(() => {
+      if (this.ctx.destroyed) return;
+      if (isOwnBase) {
+        const nowHp = this.ctx.tileCache.get(`${bx}:${by}`)?.hp;
+        if (prevHp != null && nowHp != null && nowHp < prevHp) this.ctx.view.flashDamageVignette();
+      }
+      this.ctx.view.renderMap();
+    });
   }
 
   applyUnderAttack(u: UnderAttack): void {
@@ -408,6 +445,16 @@ export class WorldMapNet {
 
   applySiegeResult(s: SiegeResult): void {
     if (this.ctx.destroyed) return;
+    // The attacking march is about to drop off `ctx.marches` (refreshMarches below) and get torn
+    // down by fog.ts syncMarchTokens — mark it to keep playing 'attacking' a beat longer instead
+    // of vanishing instantly. Default duration covers the case the .tao asset hasn't loaded yet.
+    if (s.marchId) {
+      const entry = this.ctx.marchTokenRuntimes.get(s.marchId);
+      if (entry) {
+        const durSec = entry.runtime?.currentDuration || 0.6;
+        this.ctx.marchAttackUntil.set(s.marchId, Date.now() + durSec * 1000);
+      }
+    }
     // Ownership / resources / troops may all have shifted — refetch the lot.
     void this.loadMapViewport().then(() => { if (!this.ctx.destroyed) this.ctx.view.renderMap(); });
     void this.refreshMe();

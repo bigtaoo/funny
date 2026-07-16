@@ -357,6 +357,8 @@ export interface SiegeResult {
   outcome: string;
   lootSummary: string;
   replayRef: string;
+  /** attacking march's id (occupy attack-animation correlation) */
+  marchId: string;
 }
 
 export interface FamilyMsg {
@@ -3233,7 +3235,7 @@ export const UnderAttack: MessageFns<UnderAttack> = {
 };
 
 function createBaseSiegeResult(): SiegeResult {
-  return { siegeId: "", tile: "", outcome: "", lootSummary: "", replayRef: "" };
+  return { siegeId: "", tile: "", outcome: "", lootSummary: "", replayRef: "", marchId: "" };
 }
 
 export const SiegeResult: MessageFns<SiegeResult> = {
@@ -3252,6 +3254,9 @@ export const SiegeResult: MessageFns<SiegeResult> = {
     }
     if (message.replayRef !== "") {
       writer.uint32(42).string(message.replayRef);
+    }
+    if (message.marchId !== "") {
+      writer.uint32(50).string(message.marchId);
     }
     return writer;
   },
@@ -3303,6 +3308,14 @@ export const SiegeResult: MessageFns<SiegeResult> = {
           message.replayRef = reader.string();
           continue;
         }
+        case 6: {
+          if (tag !== 50) {
+            break;
+          }
+
+          message.marchId = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -3322,6 +3335,7 @@ export const SiegeResult: MessageFns<SiegeResult> = {
     message.outcome = object.outcome ?? "";
     message.lootSummary = object.lootSummary ?? "";
     message.replayRef = object.replayRef ?? "";
+    message.marchId = object.marchId ?? "";
     return message;
   },
 };

@@ -1701,6 +1701,32 @@ if (path.startsWith('/admin/world/')) {
 - `renderHud()`：左上 Zoom 按钮 88×34 → 176×68（图标/文字同比放大）；右上部队/领地状态卡 + 行军角标/列表 + World-info 按钮整个右列宽度 160 → 320，所有子元素（字号、图标、召回按钮、行高）同步 2 倍缩放。
 - 验证：`tsc --noEmit` + `webpack --mode production` 全绿；未能起本机后端跑通完整登录→世界地图流程做截图核对（`/bootstrap` 网络失败，是已知未解决的本机开发环境问题，非本次改动引入），代码改动本身逻辑清晰、走查过一遍无遗漏，但视觉效果待后续实机确认。
 
+## 26. 领地总览面板（点击标题栏资源条打开，设计阶段，2026-07-16）
+
+**背景**：`renderHeaderHud()`（§25 2026-07-14）画出的标题栏资源产量条目前只是静态展示，不可点击；右上状态卡的 `territoryCount` 也只是一个聚合数字，玩家看不到自己占的具体是哪些格、也无法从 HUD 直接跳转/放弃某块领地。占地规模到中后期可达 200~300 格，需要一个专门面板承载"总览 + 逐格管理"。
+
+**拍板要点**：
+- **点击入口**：标题栏资源产量簇（`renderHeaderHud()` 已有的命中矩形范围）新增点击 → 打开新面板，复用 `WorldMapPanels` 现有的弹层机制（`openInfoPanel()`/`modalLayer`/`modalDimRect` 关闭逻辑），而非另起一个 Scene。
+- **一屏两 Tab**，不做成两次跳转的独立页面：
+  1. **总览 Tab**：资源产量/仓库（当前标题栏资源条的完整版，含存量+上限）、Troops、Territory 计数、World 摘要（原右上 World-info 弹层内容收纳一份精简摘要，保留原入口跳转完整页）。纯展示，无分页。
+  2. **领地列表 Tab**：逐格一行——坐标 `(x,y)`、等级、驻军，行内两个按钮「跳转」「放弃」。
+- **不做成两屏/两个独立页面的理由**：总览部分内容量小且强相关（同一决策上下文：家底够不够、要不要扩张），拆开需要来回切换对比，增加认知负担；领地列表因为可能有 200~300 行、且是"列表+逐行操作"这一功能形态，与总览的纯展示不同，值得单开一个 Tab，但仍在同一弹层内即可，不需要跳转到独立 Scene。
+- **等级过滤**：领地列表 Tab 顶部加两排 checkbox（按等级分两行，例如 1-5 一排、6-10 一排，取决于实际等级上限），勾选决定显示哪些等级的领地行；默认全选。纯客户端过滤，不需要服务端参数化。
+- **规模应对（200~300 行）**：不能一次性铺开全部行，沿用 §25 2026-07-13 `beginScrollList()`/`panelButtonIn()` 的 PIXI mask 滚动列表模式（而非新增分页组件），按等级过滤后的行数决定 `contentH`；每行按钮沿用 `ctx.modalBtnRects` 命中登记方式。
+- **复用清单（已在代码里现成、直接调用即可）**：
+  - 跳转：`viewport.ts` 的 `centerAt(tx, ty)`（marches 列表点击跳转已是同一模式，见 `WorldMapInput.ts:314`）。
+  - 放弃：`WorldMapNet.doAbandon(tx, ty)` → `WorldApiClient.abandonTile()` → 服务端 `httpApi.ts` `/world/abandon`（已end-to-end 实现，直接对列表行调用）。
+- **新增缺口（需要实现）**：
+  - **服务端**：worldsvc 目前没有"枚举玩家全部占地"的接口——`getOccupations()`/`/world/occupations` 只返回行军中的临时捕获态,不是全部持有的领地集合。需要在 `server/worldsvc/src/territory.ts`（或等价位置）新增聚合查询 + `httpApi.ts` 新路由（如 `GET /world/territories`），返回 `{x, y, level, garrison}[]`。
+  - **契约**：`openapi-world.yml` 补新端点 + 类型；`client/src/net/WorldApiClient.ts` 补对应方法。
+  - **客户端 UI**：`WorldMapPanels.ts` 新增总览/领地列表两个 Tab 渲染分支 + 等级过滤 checkbox 渲染与状态；`WorldMapContext.ts` 补面板开关状态、等级过滤勾选集合、Tab 切换状态；`WorldMapInput.ts` 补标题栏资源条点击入口 + 过滤 checkbox/跳转/放弃按钮命中分支。
+- **未决**：等级上限具体是多少（决定 checkbox 两排怎么分）、领地列表默认排序（等级降序 or 离主城距离）——待实现前确认或按现有惯例（等级降序）先定一版，暂不阻塞开工。
+
+**落地状态（2026-07-16，已实现）**：
+- 服务端：`TerritoryService.listTerritories()`（`territory.ts`）复用 `coreYield.ts` 已有的 `cols.tiles.find({worldId, ownerId, type:{$ne:'base'}})` 查询模式，经 `service.ts` 委托、`httpApi.ts` `GET /world/territories` 暴露；`openapi-world.yml` 新增端点定义（复用既有 `WorldTileView` schema，未新建 schema），`gen:api:world` + `gen:api:contracts` + 客户端 `rest:gen` 三步codegen 全部重跑同步。
+- 客户端：`WorldMapContext` 新增 `territoryPanelOpen`/`territoryTab`/`territories`/`territoryHiddenLevels`/`resClusterRect`；`beginScrollList()` 顺带泛化出 `ctx.infoScrollRerender` 回调（原先滚动拖拽/滚轮硬编码调 `renderInfoPanel()`，现在按打开的是哪个面板调用对应的渲染函数，World-info 和 Territory Overview 两个弹层共用同一套滚动输入代码不用分叉）；等级过滤 checkbox 直接注册为普通 `modalBtnRects` 项（勾选即 toggle + 重渲染），不需要新的命中判定分支；跳转复用 `centerAt` 并额外 `closeModal()`（列表在弹层里，跳转后应看地图）；放弃改走新增的 `WorldMapNet.doAbandonFromList()`（区别于原 `doAbandon()`：不 `closeModal()`，放弃后原地刷新列表，不打断玩家继续处理其他行）。
+- 测试：`server/worldsvc/test/territories.e2e.test.ts`（5 例，真实 Mongo）——未入世界拒绝、已加入无领地返回空、领地行字段正确且排除 3×3 主城 footprint、跨玩家隔离、放弃后从列表消失。`client/test/ui/worldMapTerritoryPanel.ui.ts`（12 例，PIXI headless）——开面板守卫（未入世界→toast 不开面板）、总览页无滚动区、切到列表 Tab 触发一次性拉取、等级 checkbox 勾选/取消的行数变化（按 `modalBtnRects` 长度断言，不深入渲染内容）、跳转关闭弹层+居中地图、放弃调用 `net.doAbandonFromList` 且不关弹层。另修了 `worldMapHeaderInset.ui.ts` 手搭假 ctx 缺 `resClusterRect` 字段导致的 3 例失败（`zeroRect()` 补齐）。`tsc --noEmit` + `webpack --mode production` + worldsvc 全套（31 文件 235 例）+ client `test:ui` 全套（52 文件 490 例）均绿；浏览器截图人工核对总览/列表/过滤/跳转/放弃交互，细节见会话记录。
+
 ---
 
 *本文档为 SLG 设计基准，DRAFT 标注处随实现/调参细化；锁定决策（SLG1~13）非经重新拍板不改。*

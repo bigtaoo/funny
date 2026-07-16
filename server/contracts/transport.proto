@@ -233,6 +233,7 @@ message SiegeResult {
   string outcome      = 3;   // attacker_win | defender_win | draw
   string loot_summary = 4;
   string replay_ref   = 5;
+  string march_id     = 6;   // attacking march's id (occupy attack-animation correlation)
 }
 message FamilyMsg {
   string family_id      = 1;

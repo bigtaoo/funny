@@ -160,7 +160,7 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
 
       // ── Left: framed item picture (square, capped so a tall cell doesn't crowd out the text
       // column to its right — see renderItemPicture for the real per-item art). ──
-      const imgSize = Math.min(AUC_CELL_H - pad * 2, 180);
+      const imgSize = Math.min(AUC_CELL_H - pad * 2, 130);
       const imgX = x + pad; const imgY = y + (AUC_CELL_H - imgSize) / 2;
       const frame = sketchPanel(imgSize, imgSize, { fill: 0xf0eee7, border: C.mid, seed: seedFor(x, y, imgSize) });
       frame.x = imgX; frame.y = imgY;
@@ -198,14 +198,23 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
         boLbl.x = ax; boLbl.y = ay;
         boLbl.style.wordWrap = true; boLbl.style.wordWrapWidth = Math.max(20, rightW);
         this.bodyLayer.addChild(boLbl);
+        ay += Math.max(20, boLbl.height + 6);
       }
 
       // Countdown only makes sense for a live listing — closed history cells (sold/expired/cancelled) would
-      // otherwise all read "0m". Those show a status badge instead (My-Listings branch below).
+      // otherwise all read "0d 0h 0m 0s". Those show a status badge instead (My-Listings branch below).
+      // Stacked right below the price/buyout block (not pinned to the card's bottom edge — that left a
+      // dead gap and put it fighting the buy button for the same row, see 16.07.2026 "看起来太乱了" report)
+      // and shown as days/hours/minutes/seconds since listings run up to 72h.
       if (auc.status === 'open') {
-        const remaining = Math.max(0, Math.ceil((auc.expireAt - now) / 60000));
-        const expLbl = txt(`${remaining}m`, 14, C.mid);
-        expLbl.x = ax; expLbl.y = y + AUC_CELL_H - pad - 18;
+        const remainingSec = Math.max(0, Math.floor((auc.expireAt - now) / 1000));
+        const d = Math.floor(remainingSec / 86400);
+        const h = Math.floor((remainingSec % 86400) / 3600);
+        const m = Math.floor((remainingSec % 3600) / 60);
+        const s = remainingSec % 60;
+        const expLbl = txt(t('auction.timeLeft', { d, h, m, s }), 14, C.mid);
+        expLbl.x = ax; expLbl.y = ay;
+        expLbl.style.wordWrap = true; expLbl.style.wordWrapWidth = Math.max(20, rightW);
         this.bodyLayer.addChild(expLbl);
       }
 

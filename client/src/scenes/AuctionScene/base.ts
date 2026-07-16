@@ -54,8 +54,10 @@ export const FILTER_H = 66;
 // Auction market grid: card cells (mirrors CardScene's roster-card treatment — a framed item glyph
 // on the left, info stacked to the right) instead of thin list rows.
 export const AUC_CELL_GAP = 14;
-// 1.5x the original 190 — approved 15.07.2026 card-height enlargement pass.
-export const AUC_CELL_H = 285;
+// Compact card height — the 285 from the 15.07.2026 1.5x pass left a large dead gap between the
+// price block and the bottom-pinned countdown/buy row (16.07.2026 report: "看起来太乱了"). Shrunk
+// back down so content and the bottom row sit close together, with more rows visible per screen.
+export const AUC_CELL_H = 180;
 export const AUC_CELL_W_TARGET = 340;
 
 // Material types available for auction

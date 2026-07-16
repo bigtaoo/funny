@@ -217,6 +217,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/world/territories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listTerritories"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/world/team/{teamId}/cancel-occupation": {
         parameters: {
             query?: never;
@@ -868,12 +884,16 @@ export interface components {
             teamState?: {
                 [key: string]: components["schemas"]["TeamSLGState"];
             };
+            /** @description D-CITY-8: own main base's current persistent durability, same field name/semantics as WorldTileView.hp (wall-level-derived cap, self-regenerating). Absent when the player has no resolved main base yet. */
+            hp?: number;
+            /** @description D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp. */
+            maxHp?: number;
         };
         /**
          * @description Home-city building identifier (SLG_CITY_DESIGN). P1 buildable: desk/inkPot/paperTray/graphiteMill/metalForge/stickerShop/cabinet/drillYard; wall/academy are P2.
          * @enum {string}
          */
-        BuildingKey: "desk" | "inkPot" | "paperTray" | "graphiteMill" | "metalForge" | "stickerShop" | "cabinet" | "drillYard" | "wall" | "academy";
+        BuildingKey: "desk" | "inkPot" | "paperTray" | "graphiteMill" | "metalForge" | "stickerShop" | "cabinet" | "drillYard" | "wall" | "academy" | "satchel";
         MarchView: {
             marchId: string;
             /** @enum {string} */
@@ -1448,6 +1468,30 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["OkResponse"] & {
                         data?: components["schemas"]["OccupationView"][];
+                    };
+                };
+            };
+        };
+    };
+    listTerritories: {
+        parameters: {
+            query: {
+                worldId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Full list of tiles owned by the requester (territory + captured stronghold; excludes the 3×3 capital footprint). Backs the Territory Overview panel (SLG_DESIGN.md §26) — `territoryCount` on PlayerWorldView is only an aggregate count, this returns the rows for jump/abandon actions. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["WorldTileView"][];
                     };
                 };
             };

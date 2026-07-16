@@ -2,7 +2,7 @@
 // SiegeDamageDocs and applies each hit (settleSiegeDamage). Bodies moved verbatim out of combatSiege.ts
 // (2026-07-07 split). Depends on the helpers mixin (transferLoot / applySectLeaderPenalty / passiveRelocate).
 // No behavior change.
-import { playerWorldId, buildingMaxHp } from '@nw/shared';
+import { playerWorldId, buildingMaxHp, baseDurabilityMax, regenDurability, buildingLevel } from '@nw/shared';
 import type { SiegeDamageDoc } from '../db';
 import { refundTroops } from '../combatShared';
 import type { SiegeServiceBaseCtor, Constructor } from './base';
@@ -42,6 +42,9 @@ export function SiegeDamageMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase
      * HP survives → persist reduced HP + refund attacker survivors; HP≤0 → capture (loot + main-base passiveRelocate, or
      * hand over a non-base building). If the target is no longer the same owner / is protected / gone, the hit is voided and
      * attacker survivors are refunded.
+     *
+     * D-CITY-8: for a base hit (`d.isBase`), the HP pool is `durability`/`durabilityMax` (wall-level-derived, persistent,
+     * self-regenerating) instead of `hp`/`buildingMaxHp(level)` — non-base buildings (territory/stronghold) are unchanged.
      */
     private async settleSiegeDamage(d: SiegeDamageDoc, t: number): Promise<void> {
       const { cols } = this.core.deps;
@@ -56,13 +59,18 @@ export function SiegeDamageMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase
         return;
       }
 
-      const maxHp = buildingMaxHp(tile.level ?? 1);
-      const curHp = tile.hp ?? maxHp;
+      const defenderForMaxHp = d.isBase ? await cols.playerWorld.findOne({ _id: playerWorldId(d.worldId, defenderId) }) : null;
+      const maxHp = d.isBase ? baseDurabilityMax(buildingLevel(defenderForMaxHp?.buildings, 'wall')) : buildingMaxHp(tile.level ?? 1);
+      const curHpRaw = d.isBase ? (tile.durability ?? maxHp) : (tile.hp ?? maxHp);
+      const curHp = d.isBase ? regenDurability(curHpRaw, maxHp, tile.durabilityRegenAt ?? t, t) : curHpRaw;
       const newHp = curHp - Math.max(0, Math.floor(d.damage));
 
       if (newHp > 0) {
-        // Building survives: reduce HP; besiegers return to the pool.
-        await cols.tiles.updateOne({ _id: d.tile }, { $set: { hp: newHp }, $inc: { rev: 1 } });
+        // Building survives: reduce HP (durability for a base, plain hp otherwise); besiegers return to the pool.
+        const survivorSet = d.isBase
+          ? { durability: newHp, durabilityMax: maxHp, durabilityRegenAt: t }
+          : { hp: newHp };
+        await cols.tiles.updateOne({ _id: d.tile }, { $set: survivorSet, $inc: { rev: 1 } });
         if (attacker && d.attackerSurvivors > 0) await refundTroops(this.core, attacker, d.attackerSurvivors, t);
         const after = await cols.tiles.findOne({ _id: d.tile });
         if (after) { void this.core.pushTile(d.attackerId, after); void this.core.pushTile(defenderId, after); }
@@ -70,12 +78,12 @@ export function SiegeDamageMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase
       }
 
       // HP depleted → capture. Loot first (settles both sides' resources).
-      const defender = await cols.playerWorld.findOne({ _id: playerWorldId(d.worldId, defenderId) });
+      const defender = defenderForMaxHp ?? (await cols.playerWorld.findOne({ _id: playerWorldId(d.worldId, defenderId) }));
       if (attacker && defender) await this.transferLoot(defender, attacker, t);
 
       if (d.isBase) {
         // Main base captured: it cannot be permanently held → besiegers return; sect-leader penalty; passive relocation
-        // (all territory lost + shield + a fresh full-HP base at a random tile).
+        // (all territory lost + shield + a fresh full-durability base at a random tile) + system mail (D-CITY-8).
         if (attacker && d.attackerSurvivors > 0) await refundTroops(this.core, attacker, d.attackerSurvivors, t);
         await this.applySectLeaderPenalty(d.worldId, defenderId, t);
         await this.passiveRelocate(d.worldId, defenderId, t);

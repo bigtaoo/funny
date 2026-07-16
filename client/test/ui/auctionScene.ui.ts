@@ -381,6 +381,115 @@ describe('AuctionScene — My Listings status badges', () => {
   });
 });
 
+// ── renderAuctionCell() — countdown format (d/h/m/s) + compact-card stacking (16.07.2026 fix) ──
+
+describe('AuctionScene — market cell countdown', () => {
+  it('formats the remaining time as full days/hours/minutes/seconds, not bare minutes', () => {
+    const fixedNow = Date.parse('2026-07-16T00:00:00Z');
+    vi.useFakeTimers();
+    vi.setSystemTime(fixedNow);
+    try {
+      const scene = buildScene();
+      const remainingMs = ((3 * 86400) + (2 * 3600) + (5 * 60) + 20) * 1000;
+      scene.allAuctions = [makeAuction({ status: 'open', expireAt: fixedNow + remainingMs })];
+      scene.activeTab = 'all';
+      scene.loading = false;
+      scene.render();
+
+      expect(collectTexts(scene.container)).toContain(t('auction.timeLeft', { d: 3, h: 2, m: 5, s: 20 }));
+      scene.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows no countdown for a closed listing (sold/expired/cancelled show a status badge instead)', () => {
+    const fixedNow = Date.parse('2026-07-16T00:00:00Z');
+    vi.useFakeTimers();
+    vi.setSystemTime(fixedNow);
+    try {
+      const scene = buildScene();
+      const remainingMs = (2 * 3600 + 30 * 60) * 1000;
+      scene.myListings = [makeAuction({ status: 'sold', expireAt: fixedNow + remainingMs })];
+      scene.activeTab = 'mine';
+      scene.loading = false;
+      scene.render();
+
+      expect(collectTexts(scene.container)).not.toContain(t('auction.timeLeft', { d: 0, h: 2, m: 30, s: 0 }));
+      scene.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stacks below the price/buyout block instead of pinning to a fixed bottom offset', () => {
+    // Regression guard for the 16.07.2026 "看起来太乱了" layout fix: the countdown used to be
+    // pinned at `y + AUC_CELL_H - pad - 18` regardless of content height, leaving a large dead
+    // gap above it. It must now flow immediately after the price (or buyout) line, so adding a
+    // buyout line pushes the countdown further down.
+    const fixedNow = Date.parse('2026-07-16T00:00:00Z');
+    vi.useFakeTimers();
+    vi.setSystemTime(fixedNow);
+    try {
+      const remainingMs = (5 * 3600) * 1000;
+      const withoutBuyout = buildScene();
+      withoutBuyout.allAuctions = [makeAuction({
+        auctionId: 'no-buyout', saleMode: 'auction', status: 'open', expireAt: fixedNow + remainingMs,
+      })];
+      withoutBuyout.activeTab = 'all';
+      withoutBuyout.loading = false;
+      withoutBuyout.render();
+      const yWithoutBuyout = findLabelPos(withoutBuyout.container, t('auction.timeLeft', { d: 0, h: 5, m: 0, s: 0 }))?.y;
+
+      const withBuyout = buildScene();
+      withBuyout.allAuctions = [makeAuction({
+        auctionId: 'with-buyout', saleMode: 'auction', buyoutPrice: 999, status: 'open', expireAt: fixedNow + remainingMs,
+      })];
+      withBuyout.activeTab = 'all';
+      withBuyout.loading = false;
+      withBuyout.render();
+      const yWithBuyout = findLabelPos(withBuyout.container, t('auction.timeLeft', { d: 0, h: 5, m: 0, s: 0 }))?.y;
+
+      expect(yWithoutBuyout).toBeDefined();
+      expect(yWithBuyout).toBeDefined();
+      expect(yWithBuyout!).toBeGreaterThan(yWithoutBuyout!);
+
+      withoutBuyout.destroy();
+      withBuyout.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('never overlaps the buy/bid button pinned to the card\'s bottom-right corner', () => {
+    const fixedNow = Date.parse('2026-07-16T00:00:00Z');
+    vi.useFakeTimers();
+    vi.setSystemTime(fixedNow);
+    try {
+      const scene = buildScene();
+      const remainingMs = (1 * 86400 + 3 * 3600) * 1000;
+      scene.allAuctions = [makeAuction({ saleMode: 'auction', buyoutPrice: 999, status: 'open', expireAt: fixedNow + remainingMs })];
+      scene.activeTab = 'all';
+      scene.loading = false;
+      scene.render();
+
+      const countdownPos = findLabelPos(scene.container, t('auction.timeLeft', { d: 1, h: 3, m: 0, s: 0 }));
+      expect(countdownPos).not.toBeNull();
+
+      // The buy/bid button hit rect is the only 96x40 rect in the list (btnW/btnH in list.ts).
+      const btnHit = (scene.hitRects as Hit[]).find(({ rect: r }) => r.w === 96 && r.h === 40);
+      expect(btnHit).toBeDefined();
+
+      // Generous line-height allowance (14px font) — the countdown's own bottom edge must sit
+      // at or above the button's top edge.
+      expect(countdownPos!.y + 18).toBeLessThanOrEqual(btnHit!.rect.y);
+      scene.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 // ── Tab switching & filter chips — click wiring through the real hit-rect list ─────────────────
 
 describe('AuctionScene — sidebar tabs & filter chips', () => {

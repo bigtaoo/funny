@@ -1,6 +1,7 @@
 // Render domain: the mode-specific views (loading / no-sect / create form / my-sect with the
 // families + channel tabs) plus the small center-message / center-button / bottom-bar-button helpers.
 import * as PIXI from 'pixi.js-legacy';
+import { SECT_CREATE_COST } from '@nw/shared';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
@@ -16,7 +17,7 @@ export interface RenderHandlers {
   renderBottomBar(y: number): void;
   renderChannel(y0: number, maxH: number): void;
   centerMessage(msg: string): void;
-  addCenterButton(label: string, x: number, y: number, action: () => void, seed: number): void;
+  addCenterButton(label: string, x: number, y: number, action: () => void, seed: number, enabled?: boolean): void;
   addBarButton(label: string, x: number, y: number, color: number, action: () => void, seed: number): void;
 }
 
@@ -47,12 +48,17 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       lbl.x = w / 2; lbl.y = h / 2 - 100;
       this.bodyLayer.addChild(lbl);
 
-      const hint = txt(t('sect.createHint'), 22, C.mid);
+      const hint = txt(t('sect.createHint', { n: SECT_CREATE_COST }), 22, C.mid);
       hint.anchor.set(0.5, 0.5);
       hint.x = w / 2; hint.y = h / 2 - 56;
       this.bodyLayer.addChild(hint);
 
-      this.addCenterButton(t('sect.create'), w / 2 - 260, h / 2, () => { this.mode = 'create'; this.render(); }, 0);
+      const canAffordCreate = this.cb.getCoins() >= SECT_CREATE_COST;
+      this.addCenterButton(
+        t('sect.create'), w / 2 - 260, h / 2,
+        () => { this.mode = 'create'; this.render(); },
+        0, canAffordCreate,
+      );
       this.addCenterButton(t('sect.browse'), w / 2 + 20, h / 2, () => void this.openBrowseList(), 1);
     }
 
@@ -344,14 +350,14 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       this.bodyLayer.addChild(lbl);
     }
 
-    addCenterButton(label: string, x: number, y: number, action: () => void, seed: number): void {
-      const btn = sketchPanel(240, 72, { fill: C.dark, border: C.accent, seed: seedFor(seed, 0, 240) });
+    addCenterButton(label: string, x: number, y: number, action: () => void, seed: number, enabled = true): void {
+      const btn = sketchPanel(240, 72, { fill: enabled ? C.dark : C.btnOff, border: enabled ? C.accent : C.mid, seed: seedFor(seed, 0, 240) });
       btn.x = x; btn.y = y;
       this.bodyLayer.addChild(btn);
-      const lbl = txt(label, 26, C.light);
+      const lbl = txt(label, 26, enabled ? C.light : C.mid);
       lbl.anchor.set(0.5, 0.5); lbl.x = x + 120; lbl.y = y + 36;
       this.bodyLayer.addChild(lbl);
-      this.hitRects.push({ rect: { x, y, w: 240, h: 72 }, action });
+      if (enabled) this.hitRects.push({ rect: { x, y, w: 240, h: 72 }, action });
     }
 
     addBarButton(label: string, x: number, y: number, color: number, action: () => void, seed: number): void {

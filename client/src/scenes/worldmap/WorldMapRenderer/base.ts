@@ -43,4 +43,6 @@ export interface WorldMapRendererBase {
   renderMap(): void;
   renderMapL3(): void;
   hideLoading(): void;
+  flashDamageVignette(): void;
+  updateVignette(dt: number): void;
 }

@@ -1,6 +1,6 @@
 // SLG home-city building system pure-function unit tests (SLG_CITY_DESIGN P1+P2, ADR-022).
 // Covers: biomeAt provincial-bias per-tile draw (graphite now has a map faucet) + building yield/cap/troop/training helpers + desk gate + cost/time curves
-//         + P2: wall defense mult / cabinet loot protect / academy buff.
+//         + P2: cabinet loot protect / academy buff. (wall's siege effect moved to durability, D-CITY-8 — see shared/test/siege.test.ts.)
 import { describe, it, expect } from 'vitest';
 import {
   proceduralTile,
@@ -12,12 +12,14 @@ import {
   BUILD_YIELD_STEP,
   STICKER_SELF_BASE,
   CABINET_CAP_STEP,
-  WALL_DEFENSE_STEP,
   CABINET_PROTECT_STEP,
   ACADEMY_HP_STEP,
   ACADEMY_DAMAGE_STEP,
   ACADEMY_SIEGE_STEP,
   DRILL_TROOPCAP_STEP,
+  DRILL_QUEUE_PER_LEVELS,
+  SATCHEL_CARRY_BASE,
+  SATCHEL_CARRY_STEP,
   buildingLevel,
   deskLevel,
   buildingYieldMult,
@@ -29,9 +31,9 @@ import {
   buildCost,
   buildTimeSec,
   buildGateReason,
-  wallDefenseMult,
   cabinetLootProtect,
   academyBuff,
+  satchelCarryCapFor,
   type BuildingKey,
 } from '../src/slg';
 
@@ -95,7 +97,7 @@ describe('storage / troop / training derived caps', () => {
     expect(drillTrainMult({ drillYard: 2 })).toBeLessThan(1);
     expect(drillTrainMult({ drillYard: 100 })).toBeGreaterThanOrEqual(0.5); // floored
     expect(trainQueueMaxFor(undefined)).toBe(TROOP_TRAIN_QUEUE_MAX);
-    expect(trainQueueMaxFor({ drillYard: 5 })).toBe(TROOP_TRAIN_QUEUE_MAX + 1);
+    expect(trainQueueMaxFor({ drillYard: 5 })).toBe(TROOP_TRAIN_QUEUE_MAX + Math.floor(5 / DRILL_QUEUE_PER_LEVELS));
   });
 });
 
@@ -121,13 +123,7 @@ describe('desk gate (D-CITY-6) + cost / time curves', () => {
   });
 });
 
-describe('P2 building functions: wall / cabinetLootProtect / academyBuff', () => {
-  it('wallDefenseMult: no wall → mult=1; each level adds WALL_DEFENSE_STEP', () => {
-    expect(wallDefenseMult(undefined)).toBe(1);
-    expect(wallDefenseMult({ wall: 0 })).toBe(1);
-    expect(wallDefenseMult({ wall: 1 })).toBeCloseTo(1 + WALL_DEFENSE_STEP);
-    expect(wallDefenseMult({ wall: 10 })).toBeCloseTo(1 + 10 * WALL_DEFENSE_STEP);
-  });
+describe('P2 building functions: cabinetLootProtect / academyBuff', () => {
   it('cabinetLootProtect: no cabinet → 0; scales with CABINET_PROTECT_STEP; capped at 0.8', () => {
     expect(cabinetLootProtect(undefined)).toBe(0);
     expect(cabinetLootProtect({ cabinet: 1 })).toBeCloseTo(CABINET_PROTECT_STEP);
@@ -142,5 +138,14 @@ describe('P2 building functions: wall / cabinetLootProtect / academyBuff', () =>
     expect(academyBuff({ academy: 10 }).hp).toBeCloseTo(10 * ACADEMY_HP_STEP);
     expect(academyBuff({ academy: 10 }).damage).toBeCloseTo(10 * ACADEMY_DAMAGE_STEP);
     expect(academyBuff({ academy: 10 }).siege).toBeCloseTo(10 * ACADEMY_SIEGE_STEP);
+  });
+});
+
+describe('P3 building function: satchel per-march troop-carry cap (D-CITY-9)', () => {
+  it('satchelCarryCapFor: no satchel → SATCHEL_CARRY_BASE; each level adds SATCHEL_CARRY_STEP', () => {
+    expect(satchelCarryCapFor(undefined)).toBe(SATCHEL_CARRY_BASE);
+    expect(satchelCarryCapFor({ satchel: 0 })).toBe(SATCHEL_CARRY_BASE);
+    expect(satchelCarryCapFor({ satchel: 1 })).toBe(SATCHEL_CARRY_BASE + SATCHEL_CARRY_STEP);
+    expect(satchelCarryCapFor({ satchel: 10 })).toBe(SATCHEL_CARRY_BASE + 10 * SATCHEL_CARRY_STEP);
   });
 });

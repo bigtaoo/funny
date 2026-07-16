@@ -237,6 +237,21 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     await expect(svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 1, 't1')).rejects.toThrow();
   });
 
+  it('satchel cap: a team carrying more troops than satchelCarryCapFor(buildings) is rejected (SATCHEL_CAP_EXCEEDED)', async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    const tgt = findCoord(10, 5);
+    await setupDefender('b', tgt.x, tgt.y, 50);
+    await connect(svc, 'a', tgt);
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { troops: 5000 } });
+    // no satchel built → cap = SATCHEL_CARRY_BASE (2000, = TROOP_CAP_BASE); 12 units × 200 = 2400 committed exceeds it.
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Overloaded', army: army(12, 200) }]);
+    await expect(svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 1, 't1')).rejects.toThrow(/satchel/i);
+
+    // building satchel raises the cap enough for the same team to depart.
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { buildings: { desk: 1, satchel: 1 } } });
+    await expect(svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 1, 't1')).resolves.toBeTruthy();
+  });
+
   it('idle-team gate: a team en route to an attack rejects a second order (TEAM_BUSY)', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const tgt1 = findCoord(10, 5);

@@ -163,6 +163,7 @@ describe('SectScene — social tab rail (onNavTab wiring)', () => {
     const scene: any = new SectScene(createLayout(W, H), new InputManager(), {
       onBack() {}, onNavTab,
       worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: 'acc_test', playerName: 'Tester',
+      getCoins: () => 100000, refreshWallet: async () => {},
     });
     scene.mode = 'mySect';
     scene.sect = SECT_FIXTURE;

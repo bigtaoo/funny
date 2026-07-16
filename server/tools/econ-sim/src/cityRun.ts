@@ -9,7 +9,7 @@ import {
   INCOME_PROFILES, hourlyIncome, daysToMax, daysToMaxWithWhaleSpend, whaleResourcePackDailyMax,
   type CityTotals,
 } from './city';
-import { RESOURCE_CAP, TROOP_CAP_BASE } from '@nw/shared';
+import { RESOURCE_CAP, TROOP_CAP_BASE, DESK_MAX_LEVEL } from '@nw/shared';
 
 const RES = ['ink', 'paper', 'graphite', 'metal', 'sticker'] as const;
 const fmt = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 0 });
@@ -22,7 +22,7 @@ console.log('Pure intra-season pacing: NOTHING here enters the §6.1 monthly coi
 
 const totals: CityTotals = cityTotals();
 
-console.log('── 1. Cost to max ALL P1 buildings to L20 (code-derived, no assumptions) ──');
+console.log(`── 1. Cost to max ALL P1 buildings to L${DESK_MAX_LEVEL} (code-derived, no assumptions) ──`);
 const byB = costByBuilding();
 const header = 'building'.padEnd(13) + RES.map((r) => r.padStart(10)).join('');
 console.log(header);
@@ -78,7 +78,7 @@ console.log('  has. That remains an open gap (ECONOMY_NUMBERS §13-SLG.6), not f
 
 console.log('── 5. Army training pacing (drillYard-max troop cap) ──');
 const a = armyPacing();
-console.log(`  troopCap @ drillYard L20 = ${fmt(a.troopCap)} (base ${fmt(TROOP_CAP_BASE)})`);
+console.log(`  troopCap @ drillYard L${DESK_MAX_LEVEL} = ${fmt(a.troopCap)} (base ${fmt(TROOP_CAP_BASE)})`);
 console.log(`  fill it: ${fmt(a.inkToFill)} ink, ${f1(a.totalTrainHours)} h continuous, or skip for ${fmt(a.coinsToSkip)} coins`);
 console.log(`  season window = ${a.seasonDays} days\n`);
 

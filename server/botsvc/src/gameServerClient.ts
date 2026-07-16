@@ -3,12 +3,19 @@
 // simulation, per server/gameserver/src/Room.ts), then streams `cmd_submit`/`frame_batch` for the
 // rest of the match and finally reports `match_result`.
 import { EnvelopeSocket } from './envelopeSocket';
-import type { FrameBatch, MatchStart } from './generated/transport';
+import type { FrameBatch, MatchOver, MatchStart } from './generated/transport';
 
 export interface GameServerClientHandlers {
   /** Fired once per match, after connect, before any frame_batch. */
   onMatchStart(m: MatchStart): void;
   onFrameBatch(fb: FrameBatch): void;
+  /**
+   * Fired when the SERVER unilaterally settles the match (opponent disconnect-forfeit or hash
+   * mismatch) rather than this client's own engine reaching game_over. Room.destroy() never closes
+   * the socket, so without this the client just hangs waiting for frame_batches that will never
+   * come again, until the caller's own wall-clock guard fires minutes later (see battleSession.ts).
+   */
+  onMatchOver(m: MatchOver): void;
   /** Fired on an unexpected close (before the bot itself called close()) — treat as match failure. */
   onDisconnect(code: number): void;
 }
@@ -35,6 +42,8 @@ export class GameServerClient {
             resolve();
           } else if (msg.frameBatch) {
             handlers.onFrameBatch(msg.frameBatch);
+          } else if (msg.matchOver) {
+            handlers.onMatchOver(msg.matchOver);
           }
         },
         onClose: (code) => {

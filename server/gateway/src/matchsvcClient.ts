@@ -63,6 +63,7 @@ export type PushMsg =
   | {
       kind: 'siege_result';
       siegeId: string;
+      marchId: string;
       tile: string;
       outcome: string;
       lootSummary: string;

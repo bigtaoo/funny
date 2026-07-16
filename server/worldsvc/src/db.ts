@@ -89,6 +89,16 @@ export interface TileDoc {
    * Absent = full (derive from buildingMaxHp(level) on read/first hit). A successful siege deducts the attacker team's siege value; HP≤0 → captured.
    */
   hp?: number;
+  /**
+   * D-CITY-8: main-base anchor only. Persistent durability, capped by `durabilityMax` (derived from the
+   * owner's `wall` building level via baseDurabilityMax — cached here to avoid an owner lookup per tile-view
+   * read; recomputed whenever `wall` finishes a build). Replaces buildingMaxHp(level)/`hp` for base tiles;
+   * territory/stronghold tiles are unaffected and keep using `hp` as before. Absent = full (fresh base).
+   */
+  durability?: number;
+  durabilityMax?: number;
+  /** D-CITY-8: last time `durability` was settled (siege hit or regen read) — lazy-regen anchor, mirrors resource yield settling. */
+  durabilityRegenAt?: number;
   protectedUntil?: number; // ms
   watchtower?: boolean; // watchtower (§18 G5 V2): once built, this tile becomes a large-radius persistent vision source; lost together with TileDoc when tile is lost
   /** ADR-025: true on the 8 non-anchor cells of a 3×3 main-base footprint (the anchor omits this). Ring cells hold ownerId + protection but no garrison/yield. */
@@ -246,6 +256,9 @@ export interface NationMessageDoc {
 export interface SiegeDoc {
   _id: string; // siegeId
   worldId: string;
+  /** Attacking march's _id — lets the client correlate the resolved siege back to its march
+   * token (e.g. to play an attack animation before tearing the token down). */
+  marchId: string;
   attackerId: string;
   defenderId?: string;
   tile: string;

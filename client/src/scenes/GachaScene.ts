@@ -541,17 +541,19 @@ export class GachaScene implements Scene {
     plate.beginFill(C.paper, 0.92); plate.drawRect(x, plateY, w, plateH); plate.endFill();
     this.container.addChild(plate);
 
-    // Item id.
-    const idLbl = txt(r.itemId, Math.round(h * 0.075), C.dark);
+    // Item name (translated display name, not the raw itemId).
+    const idLbl = txt(this.displayName(r.itemId), Math.round(h * 0.075), C.dark);
     idLbl.anchor.set(0.5, 0.5); idLbl.x = x + w / 2; idLbl.y = y + h * 0.63;
     this.container.addChild(idLbl);
 
-    // NEW / duplicate badge. Kept above 0.80h so it clears the decorative frame's
-    // bottom border band (frame overlay is drawn on top of the plate, last).
-    const badge = txt(r.duplicate ? t('gacha.duplicate') : t('gacha.new'),
-      Math.round(h * 0.10), r.duplicate ? C.mid : C.green, true);
-    badge.anchor.set(0.5, 0.5); badge.x = x + w / 2; badge.y = y + h * 0.78;
-    this.container.addChild(badge);
+    // NEW badge only — duplicates get no badge (a "Dup" label read as noise).
+    // Kept above 0.80h so it clears the decorative frame's bottom border band
+    // (frame overlay is drawn on top of the plate, last).
+    if (!r.duplicate) {
+      const badge = txt(t('gacha.new'), Math.round(h * 0.10), C.green, true);
+      badge.anchor.set(0.5, 0.5); badge.x = x + w / 2; badge.y = y + h * 0.78;
+      this.container.addChild(badge);
+    }
 
     // Frame overlay — drawn last so it sits on top of the card art.
     const frameSpr = new PIXI.Sprite(gachaFrameTexture(r.rarity));

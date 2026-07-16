@@ -4605,6 +4605,8 @@ paths:
                         type: boolean
         '401':
           $ref: '#/components/responses/ErrorResp'
+        '409':
+          $ref: '#/components/responses/ErrorResp'
   /mail/send:
     post:
       operationId: sendMail

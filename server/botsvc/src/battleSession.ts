@@ -36,6 +36,7 @@ export async function playRankedMatch(opts: PlayRankedMatchOptions): Promise<Ran
 
   const game = new GameServerClient();
   let driver: BattleEngine | undefined;
+  let myOwner: 0 | 1 | undefined;
 
   return new Promise<RankedMatchOutcome>((resolve, reject) => {
     let settled = false;
@@ -85,6 +86,7 @@ export async function playRankedMatch(opts: PlayRankedMatchOptions): Promise<Ran
       .connect(gameUrl, ticket, {
         onMatchStart: (matchStart) => {
           try {
+            myOwner = matchStart.localSide as 0 | 1;
             driver = new BattleEngine(matchStart, opts.difficulty ?? 5);
           } catch (err) {
             finish(() => reject(err as Error));
@@ -98,6 +100,14 @@ export async function playRankedMatch(opts: PlayRankedMatchOptions): Promise<Ran
           } catch (err) {
             finish(() => reject(err as Error));
           }
+        },
+        // Server settled the match unilaterally (opponent disconnect-forfeit or hash mismatch) before
+        // this bot's own engine reached game_over — no more frame_batches are coming (Room.destroy()
+        // never closes the socket), so resolve now instead of hanging until maxMatchMs fires.
+        onMatchOver: (m) => {
+          if (settled) return;
+          const won = m.mismatch || myOwner === undefined ? null : m.winnerSide === myOwner;
+          finish(() => resolve({ won, stateHash: '' }));
         },
         onDisconnect: (code) => {
           finish(() => reject(new Error(`gameserver disconnected mid-match (code ${code})`)));

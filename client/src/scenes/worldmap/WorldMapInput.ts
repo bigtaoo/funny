@@ -270,6 +270,13 @@ export class WorldMapInput {
       return;
     }
 
+    // Header resource cluster — opens the Territory Overview panel (SLG_DESIGN.md §26)
+    const rc = this.ctx.resClusterRect;
+    if (rc.w > 0 && x >= rc.x && x <= rc.x + rc.w && y >= rc.y && y <= rc.y + rc.h) {
+      this.ctx.panels.openTerritoryPanel();
+      return;
+    }
+
     // Back button (floating top-left chip, drawn on topLayer — see WorldMapRenderer)
     const b = this.ctx.backRect;
     if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
@@ -334,7 +341,7 @@ export class WorldMapInput {
         const next = Math.max(0, Math.min(this.ctx.infoMaxScroll, this.ctx.infoScrollDragStartScroll - dy));
         if (next !== this.ctx.infoScrollY) {
           this.ctx.infoScrollY = next;
-          this.ctx.panels.renderInfoPanel();
+          this.ctx.infoScrollRerender?.();
         }
       }
       return;
@@ -354,6 +361,11 @@ export class WorldMapInput {
         this.ctx.view.renderOverlay();
       } else {
         this.ctx.l3Dirty = true;
+        // refreshPool() short-circuits the tile pool at L3 but still repositions city
+        // sprites (refreshCityLayer) — without this, city sprites keep whatever screen
+        // position they were last drawn at and appear to drift with the camera instead
+        // of tracking the map while panning at L3.
+        this.ctx.view.refreshCityLayer();
         this.ctx.view.renderOverlay();
       }
     }
@@ -386,7 +398,7 @@ export class WorldMapInput {
     const next = Math.max(0, Math.min(this.ctx.infoMaxScroll, this.ctx.infoScrollY + deltaY));
     if (next !== this.ctx.infoScrollY) {
       this.ctx.infoScrollY = next;
-      this.ctx.panels.renderInfoPanel();
+      this.ctx.infoScrollRerender?.();
     }
   }
 }

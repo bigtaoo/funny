@@ -6,6 +6,7 @@
   "type": "commonjs",
   "scripts": {
     "sim": "tsx src/index.ts",
+    "enhance-protect": "tsx src/enhanceProtectRun.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

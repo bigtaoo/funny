@@ -170,6 +170,46 @@ describe('march-token walk animation (2026-07-15)', () => {
     scene.destroy();
   });
 
+  it('occupy resolution (2026-07-16): keeps the arrived march\'s token alive playing "attacking" instead of destroying it instantly', () => {
+    const scene = buildScene();
+    scene.ctx.marches = [marchRight('m1', 'occupy')];
+    scene.update(1 / 60);
+
+    const runtimes = scene.ctx.marchTokenRuntimes as Map<string, { runtime: any; kind: string }>;
+    const fake = makeFakeRuntime();
+    runtimes.get('m1')!.runtime = fake;
+    scene.ctx.marchAttackUntil.set('m1', Date.now() + 5000); // simulate applySiegeResult having fired
+
+    scene.ctx.marches = []; // the march arrived and dropped off the poll (server deletes on arrival)
+    scene.update(1 / 60);
+
+    expect(runtimes.has('m1')).toBe(true); // NOT torn down while the attack window is open
+    expect(fake.destroy).not.toHaveBeenCalled();
+    expect(fake.syncState).toHaveBeenCalledWith('attacking');
+
+    scene.destroy();
+  });
+
+  it('occupy resolution: tears the token down once the attack window has elapsed', () => {
+    const scene = buildScene();
+    scene.ctx.marches = [marchRight('m1', 'occupy')];
+    scene.update(1 / 60);
+
+    const runtimes = scene.ctx.marchTokenRuntimes as Map<string, { runtime: any; kind: string }>;
+    const fake = makeFakeRuntime();
+    runtimes.get('m1')!.runtime = fake;
+    scene.ctx.marchAttackUntil.set('m1', Date.now() - 1); // window already expired
+
+    scene.ctx.marches = [];
+    scene.update(1 / 60);
+
+    expect(runtimes.has('m1')).toBe(false);
+    expect(fake.destroy).toHaveBeenCalledTimes(1);
+    expect(scene.ctx.marchAttackUntil.has('m1')).toBe(false);
+
+    scene.destroy();
+  });
+
   it('scene.destroy() tears down every pooled runtime without throwing', () => {
     const scene = buildScene();
     scene.ctx.marches = [marchRight('m1', 'occupy'), marchRight('m2', 'attack')];

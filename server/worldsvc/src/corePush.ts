@@ -101,6 +101,7 @@ export class WorldCorePush extends WorldCoreYield {
     await this.gateway.push(accountId, {
       kind: 'siege_result',
       siegeId: s._id,
+      marchId: s.marchId,
       tile: s.tile,
       outcome: s.outcome,
       lootSummary: lootSummaryStr,

@@ -47,6 +47,15 @@ export class GatewayClient {
               this.close();
               reject(new Error(`room_error: ${msg.roomError!.code} ${msg.roomError!.message}`));
             });
+          } else if (msg.matchBot) {
+            // Queue wait exceeded matchsvc's bot-fallback threshold (see Matchsvc.ts's botFallbackMs):
+            // it wants THIS client to simulate a local AI match instead of matching a real opponent.
+            // Meaningless for a bot (it exists to exercise the real ranked flow) — bail cleanly rather
+            // than sit on the 60s enqueueRanked timeout waiting for a match_found that isn't coming.
+            finish(() => {
+              this.close();
+              reject(new Error('matched to local bot-fallback (no real opponent found)'));
+            });
           }
         },
         onClose: (code) => {

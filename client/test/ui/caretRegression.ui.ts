@@ -152,6 +152,7 @@ describe('SectScene — create-form caret', () => {
   function build(): any {
     return new SectScene(createLayout(W, H), new InputManager(), {
       onBack() {}, onNavTab() {}, worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: 'acc_test', playerName: 'Tester',
+      getCoins: () => 100000, refreshWallet: async () => {},
     });
   }
 

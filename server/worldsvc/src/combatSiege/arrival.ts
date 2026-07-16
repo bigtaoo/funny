@@ -19,7 +19,6 @@ import {
   RESOURCE_TYPES,
   NATION_BONUS_DEFENSE,
   nationDefenseStrength,
-  wallDefenseMult,
   academyBuff,
   teamSiegeValue,
   waveSeed,
@@ -206,7 +205,8 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
     ): Promise<void> {
       const { cols } = this.core.deps;
       const tileLevel = baseTile.level ?? 1;
-      const wallMult = wallDefenseMult(defender?.buildings);
+      // wall no longer buffs garrison HP during battle — its effect moved to persistent durability
+      // (D-CITY-8; see settleSiegeDamage's use of baseDurabilityMax for the delayed HP hit below).
 
       // Teams currently out on active (non-recalled) marches are skipped as defenders (ADR-026 §2).
       const activeMarches = await cols.marches
@@ -240,7 +240,6 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
         // Re-place the attack-authored team onto defender spawn positions (top half) so the auto-battle isn't degenerate.
         let defArmy = toDefenderFormation(resolveCardArmy(tm.army, defCardState, defCardInv));
         if (inOwnNation) defArmy = scaleArmyHp(defArmy, 1 + NATION_BONUS_DEFENSE); // §2.4 nation defence bonus
-        if (wallMult > 1) defArmy = scaleArmyHp(defArmy, wallMult);               // P2 wall HP buff
         if (defArmy.length === 0) { defeatedTeamIds.push(tm.id); continue; }      // empty/stale team → already cleared (still injured)
         // ADR-026: the per-wave engine "base" is only a battle terminator (the real building durability is TileDoc.hp,
         // reduced separately by the delayed siege-value hit). Pin it to the weakest level so each wave is decided by

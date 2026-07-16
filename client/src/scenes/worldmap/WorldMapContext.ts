@@ -77,6 +77,13 @@ export class WorldMapContext {
   season: SeasonView | null = null;
   shopItems: SlgShopItemView[] = [];
   infoTab: 'nations' | 'season' | 'shop' = 'nations';
+  /** Territory Overview panel (SLG_DESIGN.md §26): opened by tapping the header resource cluster. */
+  territoryPanelOpen = false;
+  territoryTab: 'overview' | 'list' = 'overview';
+  /** Full list of owned tiles — fetched lazily (WorldMapNet.refreshTerritories) when the list tab is opened, not on every ~5s poll (can be 200-300 rows). */
+  territories: WorldTileView[] = [];
+  /** Levels unchecked in the list-tab filter grid; empty = show all levels. */
+  territoryHiddenLevels: Set<number> = new Set();
   hiddenInput: HTMLInputElement | null = null;
   zoom: 1 | 2 | 3 = 1;
   zoomCfgs!: [ZoomCfg, ZoomCfg, ZoomCfg];
@@ -95,6 +102,11 @@ export class WorldMapContext {
   /** marchId → live StickmanRuntime riding that march's route (fog.ts syncMarchTokens). `runtime` is
    * null while the (cached-after-first-use) .tao asset is still loading. */
   marchTokenRuntimes: Map<string, { runtime: StickmanRuntime | null; kind: string }> = new Map();
+  /** marchId → epoch-ms deadline to keep playing the 'attacking' clip after the march has
+   * resolved (arrived off `ctx.marches`) instead of tearing its token down instantly (§ occupy
+   * attack-animation fix). Populated by WorldMapNet.applySiegeResult, consumed/expired in
+   * fog.ts syncMarchTokens. */
+  marchAttackUntil: Map<string, number> = new Map();
   hudLayer!: PIXI.Container;
   /** Title bar + back button — static, drawn once (unlike hudLayer, which is torn down on every ~5s march-poll re-render). */
   topLayer!: PIXI.Container;
@@ -107,6 +119,10 @@ export class WorldMapContext {
   loadingLayer: PIXI.Container | null = null;
   loadingSpinner: PIXI.Graphics | null = null;
   loadingAngle = 0;
+  /** Screen-edge red vignette (D-CITY-8): flashed when the player's own main-base durability is
+   * deducted by a settled siege hit. Mirrors the battle scene's base-damage vignette (GameRenderer/events.ts). */
+  vignetteGfx!: PIXI.Graphics;
+  vignetteAlpha = 0;
   loadingTimeout: ReturnType<typeof setTimeout> | null = null;
   selectedTile: { x: number; y: number } | null = null;
   myAttackTiles: Set<string> = new Set();
@@ -124,6 +140,8 @@ export class WorldMapContext {
   zoomBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   marchBadgeRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   chatBarRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
+  /** Header-bar resource production cluster (renderHeaderHud) — tapping it opens the Territory Overview panel. */
+  resClusterRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   /** Latest world-chat message, polled alongside marches (§25 follow-up) — null until first fetch. */
   worldChatLatest: WorldChatMessage | null = null;
   /** Count of fetched messages newer than the local "last seen" mark; capped by refreshWorldChat's page size. */
@@ -147,6 +165,8 @@ export class WorldMapContext {
   infoScrollDragMoved = false;
   infoScrollDragStartY = 0;
   infoScrollDragStartScroll = 0;
+  /** Which panel's scroll list is currently active — WorldMapInput calls this instead of hardcoding renderInfoPanel, so any modal (world-info, Territory Overview) can host a beginScrollList region. Set by beginScrollList, cleared by closeModal. */
+  infoScrollRerender: (() => void) | null = null;
 
   // Collaborators (assigned by WorldMapScene right after construction).
   view!: WorldMapRenderer;

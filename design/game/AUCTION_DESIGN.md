@@ -294,6 +294,12 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - **顶栏右上角显示金币**：`base.ts` 新增 `headerOverlayLayer`（叠在静态 header chrome 之上）+ `renderHeaderCurrency()`，每次 `render()` 调用，走共享 `drawHeaderCurrency` 组件（与 Shop/Gacha/Equipment 同款），读 `cb.getSave().wallet.coins`；`doBuy` 成交后并行 `reloadSave()`，余额立即反映新扣款。
 - 验证：client `tsc --noEmit` 全绿。真机截图当次仍受本机既有 Browser-pane 渲染卡死问题阻塞（见「WorldMap standalone debug render」系列记忆），改走「无登录临时挂 `__NW_DEBUG` 钩子 + 手造 fixture + 直接 `new AuctionScene(...)` 挂载」的技术路线：走完整登录/世界解析链路太慢，用 PIXI 树内省核对——分类栏字号 21、卡片高度按倒计时 y 坐标反算确认 285、价格/买断价 `wordWrap` 宽度落在文字宽之外（无溢出）、顶栏金币文本 `"12,345"` 存在、角色卡出现真实立绘 `Sprite`（`.png` 纹理 URL 命中）而非占位图标，均核对通过。
 
+**倒计时显示天/时/分/秒 + 卡片紧凑化（2026-07-16）**：按用户截图反馈修两处——
+- **倒计时格式**：原来只显示剩余分钟数（如 `4321m`），拍卖最长 72h，看不出到底还剩几天。新增 `auction.timeLeft` i18n key（`'{d}天{h}时{m}分{s}秒'`，en/de 对应 `'{d}d {h}h {m}m {s}s'` / `'{d}T {h}Std {m}Min {s}Sek'`），`list.ts` 的 `renderAuctionCell` 从 `auc.expireAt - now` 拆算 d/h/m/s 四段传参渲染，替代原先的纯分钟数。
+- **卡片紧凑化**：上一版 1.5x 放大把 `AUC_CELL_H` 拉到 285，但内容（品名/价格/买断价）只占前 100px 左右，价格行与底部固定的倒计时/购买按钮之间留出大片空白，用户反馈"看起来太乱了"。给了两个重排方案（紧凑卡片 / 横向条状列表）由用户选定**紧凑卡片**：`AUC_CELL_H` 285→180，图片框上限 180→130px（让右侧文字列更宽，减少换行）；倒计时不再绝对定位在卡片底部，改成紧跟在价格/买断价文字块下方顺流排布（`ay` 累加），只有操作按钮仍固定卡片右下角——消除了原来倒计时和按钮各自独立锚定造成的中间大片留白。
+- 验证：client `tsc --noEmit` 全绿；沿用同款「临时挂 `__NW_DEBUG` 钩子（含 `setLocale`）+ 手造 fixture + 直接 `new AuctionScene(...)` 挂载」路线，独立 dev-server 端口（9099，避开另一并发会话占用的 9090）截图核对：英文/中文两种 locale 下卡片紧凑、倒计时完整显示四段单位、买断价+倒计时+按钮均未溢出或重叠。
+- **新增回归测试**（`auctionScene.ui.ts`，`describe('AuctionScene — market cell countdown')`，4 条）：倒计时按 `{d,h,m,s}` 完整格式渲染（非纯分钟数）；已关闭挂单（sold/expired/cancelled）不显示倒计时；倒计时随价格/买断价文字块顺流堆叠而非钉死在卡片底部固定偏移（有买断价行时 y 坐标显著大于无买断价，防止改动回退到旧的"钉底"写法）；倒计时文字块与购买/出价按钮（96×40 hit rect）任何情况下都不发生垂直重叠。均用 `vi.useFakeTimers()`/`setSystemTime` 固定时钟，避免真实时间流逝导致的秒数抖动。
+
 ---
 
 ## 7. 反 RMT 总览（持续对抗 R3）
@@ -456,6 +462,12 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - **问题**：玩家反馈拍卖行标题栏"← Back"看起来和其它场景一样宽，但点在返回文字右侧的"背景"上没反应。根因：`AuctionSceneBase.build()`（`client/src/scenes/AuctionScene/base.ts`）用共享组件 `drawSceneHeader()` 返回的标准返回热区（`hdr.backRect`，宽度是统一常量 `BACK_HIT_W=160`）建头部，但 `render()` 每次都会清空 `hitRects` 重建，重建时却硬编码了一个**只有一半宽（`w:80`）**的热区（item-picker 遮罩层同样硬编码）——视觉上和商店等场景一致的返回条，实际可点区域只有左半边。
 - **修复**：把 `hdr.backRect` 缓存到实例字段 `backRect`，`render()` 里两处硬编码的 `{w:80}` 都改成复用它，和 `ShopScene` 等场景的写法统一。
 - **验收**：`tsc --noEmit` 绿；headless 实例化 `AuctionScene` 读取渲染后的 `hitRects` 确认宽度恢复为 160；新增回归测试 `client/test/ui/auctionBackButtonHitWidth.ui.ts`（4 例：初始/多次 render 后宽度不变、右半区点击触发 onBack、item-picker 遮罩下右半区点击取消 picker）——摘掉修复重跑 4 例全部按预期失败，验证测试能真正捕获这个回归。
+
+### 修复：出售物品选择页图标错误 + 重复堆叠（2026-07-16）
+
+- **问题**：`picker.ts`（出售物品选择页）里，装备类目的所有条目一律画成同一个盾牌图标（`itemKind()` 硬编码 `'armor'`），角色卡类目一律画同一个书本图标（硬编码 `'cards'`）——市场列表页 `list.ts`/`renderAuctionCell` 早已有真实的按槽位/稀有度程序化图形（装备）与真实立绘（角色卡）的画法（`renderItemPicture`），选择页却从未接上。此外装备/角色卡的库存实例是**逐个实例**枚举的（`listableEquipment()`/`listableCards()`），玩家抽到几十个同款低阶装备（Marker/Pencil 等）或多张同名 Lv.1 卡时，选择页会把同一件物品重复铺满整页网格。
+- **修复**：`renderPickCard` 改调用新增的 `renderPickIcon`（镜像 `list.ts` 的 `renderItemPicture` 画法）——装备用 `getEquipDef(defId)` 取槽位/稀有度走 `drawEquipmentGlyph` 程序化图形，角色卡用 `CARD_DEFS[defId].unitType` 取 `UNIT_ART_URLS` 真实立绘（异步加载沿用既有 `artHooked` 去重+加载完成后 `render()` 的机制），材料保留原有专属图标兜底。`buildPickEntries()` 里装备/角色卡改为按 `defId+level` 分组（`Map`）而非逐实例枚举，标签追加 `×N`（如"Marker +0 ×3"）；`onPick` 落在分组代表实例上——反正每次挂单服务端强制只拿走 1 个实例（qty=1），组内实例本就等价，拍到哪个都一样。角色卡分组时优先选未上锁的实例作代表，避免把可挂的库存"锁"在一个恰好被选为代表的已锁实例背后。
+- **验收**：`tsc --noEmit` 绿；headless 灌入含重复装备/卡片的假 save（5×Pencil、3×Marker、4×Su Yuan Lv.1 + 各一件独立高阶装备/卡）实例化 `AuctionScene` 并调用 `buildPickEntries()`，确认重复项正确合并为单条 `×N` 标签、非重复项维持原样；`toDataURL()` 截图确认装备显示各自独立图形、角色卡显示真实立绘，不再是统一占位图标。
 
 ---
 
