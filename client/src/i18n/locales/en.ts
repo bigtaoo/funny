@@ -1310,6 +1310,8 @@ export const en: Record<TranslationKey, string> = {
   'titles.back': '← Back',
   'titles.empty': 'No titles yet',
   'titles.equipped': 'Equipped',
+  'titles.tapUnequip': '(tap to remove)',
+  'titles.locked': 'Locked',
   'title.event.newbie.full': 'New Player',
   'title.event.newbie.short': 'Newbie',
   'title.event.founder.full': 'Founder',

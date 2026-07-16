@@ -1310,6 +1310,8 @@ export const de: Record<TranslationKey, string> = {
   'titles.back': '← Zurück',
   'titles.empty': 'Noch keine Titel',
   'titles.equipped': 'Angelegt',
+  'titles.tapUnequip': '(zum Entfernen tippen)',
+  'titles.locked': 'Nicht freigeschaltet',
   'title.event.newbie.full': 'Neuling',
   'title.event.newbie.short': 'Neuling',
   'title.event.founder.full': 'Gründer',

@@ -8,12 +8,15 @@ import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawCareerTabs } from '../ui/widgets/CareerTabs';
 import { sidebarNavW } from '../ui/widgets/HubTabs';
-import { sortTitlesByWeight, getTitleKeys, formatLadderTitle } from '../game/meta/titles';
+import { sortTitlesByWeight, getTitleKeys, formatLadderTitle, allTitleIds } from '../game/meta/titles';
 
-// ── TitlesScene — title wall (S10, TITLE_DESIGN §7) ────────────────────────────
+// ── TitlesScene — title wall (S10, TITLE_DESIGN §7/§9) ────────────────────────────
 //
 // Entry: StatsScene → onOpenTitles.
-// Displays: all titles owned by the player, sorted by weight descending; the equipped one is highlighted.
+// Displays: the full title catalog (allTitleIds — fixed event/achievement titles always
+// listed, plus any owned seasonal ones), sorted by weight descending; ungained titles are
+// greyed out and non-interactive. Which title (if any) is shown is entirely the player's
+// choice — tap an owned title to equip it, tap the equipped one again to unequip (blank).
 // Interaction: tap a title row → update equipped['title'] (PUT /save, client-side sync segment).
 
 export interface TitlesSceneCallbacks {
@@ -134,7 +137,8 @@ export class TitlesScene implements Scene {
     const rowH = Math.round(h * 0.1);
     const gap = Math.round(h * 0.016);
     const rowW = w - padX - padRight;
-    const sorted = sortTitlesByWeight(this.cb.titles);
+    const owned = new Set(this.cb.titles);
+    const sorted = sortTitlesByWeight(allTitleIds(this.cb.titles));
 
     if (sorted.length === 0) {
       const empty = txt(t('titles.empty'), Math.round(h * 0.032), C.mid);
@@ -145,15 +149,17 @@ export class TitlesScene implements Scene {
 
     sorted.forEach((titleId, i) => {
       const rowY = tbH + Math.round(h * 0.04) + i * (rowH + gap);
+      const isOwned = owned.has(titleId);
       const equipped = titleId === this.cb.equippedTitle;
 
       const row = sketchPanel(rowW, rowH, {
         fill: equipped ? 0xfef8e0 : C.paper,
-        border: equipped ? C.gold : C.line,
+        border: equipped ? C.gold : isOwned ? C.line : C.btnOff,
         width: equipped ? 2.5 : 1.5,
         seed: seedFor(padX, rowY + i, rowW),
       });
       row.x = padX; row.y = rowY;
+      row.alpha = isOwned ? 1 : 0.5;
       this.container.addChild(row);
 
       const keys = getTitleKeys(titleId);
@@ -164,23 +170,32 @@ export class TitlesScene implements Scene {
         ? (t(keys.fullKey as import('../i18n').TranslationKey) || shortLabel)
         : shortLabel;
 
-      const nameLbl = txt(`「${shortLabel}」  ${fullLabel}`, Math.round(rowH * 0.38), equipped ? C.gold : C.dark, equipped);
+      const nameLbl = txt(`「${shortLabel}」  ${fullLabel}`, Math.round(rowH * 0.38), equipped ? C.gold : isOwned ? C.dark : C.mid, equipped);
       nameLbl.anchor.set(0, 0.5); nameLbl.x = padX + Math.round(rowW * 0.04); nameLbl.y = rowY + rowH / 2;
+      nameLbl.alpha = isOwned ? 1 : 0.7;
       this.container.addChild(nameLbl);
 
-      if (equipped) {
-        const badge = txt(t('titles.equipped'), Math.round(rowH * 0.3), C.gold, true);
+      if (!isOwned) {
+        const badge = txt(t('titles.locked'), Math.round(rowH * 0.3), C.mid);
         badge.anchor.set(1, 0.5); badge.x = padX + rowW - Math.round(rowW * 0.04); badge.y = rowY + rowH / 2;
         this.container.addChild(badge);
-      } else {
-        this.hits.push({
-          rect: { x: padX, y: rowY, w: rowW, h: rowH },
-          fn: () => {
-            this.cb.onEquip(titleId);
-            this.render();
-          },
-        });
+        return;
       }
+
+      if (equipped) {
+        const badge = txt(`${t('titles.equipped')} ${t('titles.tapUnequip')}`, Math.round(rowH * 0.3), C.gold, true);
+        badge.anchor.set(1, 0.5); badge.x = padX + rowW - Math.round(rowW * 0.04); badge.y = rowY + rowH / 2;
+        this.container.addChild(badge);
+      }
+
+      // Owned rows are always tappable: unequipped → equip; equipped → tap again to unequip (blank display is allowed).
+      this.hits.push({
+        rect: { x: padX, y: rowY, w: rowW, h: rowH },
+        fn: () => {
+          this.cb.onEquip(equipped ? '' : titleId);
+          this.render();
+        },
+      });
     });
   }
 }
