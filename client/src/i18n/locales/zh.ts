@@ -1081,6 +1081,7 @@ export const zh = {
   'auction.currentBid': '当前出价',
   'auction.noBid': '暂无出价',
   'auction.buyoutAt': '买断 {price}',
+  'auction.timeLeft': '{d}天{h}时{m}分{s}秒',
   'auction.confirmBid': '确认出价 {price} 金币？',
   'auction.bidPlaced': '出价成功',
   'auction.err.bidTooLow': '出价低于最低加价',

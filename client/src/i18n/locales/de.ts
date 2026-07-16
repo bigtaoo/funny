@@ -1069,6 +1069,7 @@ export const de: Record<TranslationKey, string> = {
   'auction.currentBid': 'Aktuelles Gebot',
   'auction.noBid': 'Noch keine Gebote',
   'auction.buyoutAt': 'Sofort {price}',
+  'auction.timeLeft': '{d}T {h}Std {m}Min {s}Sek',
   'auction.confirmBid': 'Gebot von {price} Münzen abgeben?',
   'auction.bidPlaced': 'Gebot abgegeben',
   'auction.err.bidTooLow': 'Gebot unter Mindesterhöhung',

@@ -294,6 +294,12 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - **顶栏右上角显示金币**：`base.ts` 新增 `headerOverlayLayer`（叠在静态 header chrome 之上）+ `renderHeaderCurrency()`，每次 `render()` 调用，走共享 `drawHeaderCurrency` 组件（与 Shop/Gacha/Equipment 同款），读 `cb.getSave().wallet.coins`；`doBuy` 成交后并行 `reloadSave()`，余额立即反映新扣款。
 - 验证：client `tsc --noEmit` 全绿。真机截图当次仍受本机既有 Browser-pane 渲染卡死问题阻塞（见「WorldMap standalone debug render」系列记忆），改走「无登录临时挂 `__NW_DEBUG` 钩子 + 手造 fixture + 直接 `new AuctionScene(...)` 挂载」的技术路线：走完整登录/世界解析链路太慢，用 PIXI 树内省核对——分类栏字号 21、卡片高度按倒计时 y 坐标反算确认 285、价格/买断价 `wordWrap` 宽度落在文字宽之外（无溢出）、顶栏金币文本 `"12,345"` 存在、角色卡出现真实立绘 `Sprite`（`.png` 纹理 URL 命中）而非占位图标，均核对通过。
 
+**倒计时显示天/时/分/秒 + 卡片紧凑化（2026-07-16）**：按用户截图反馈修两处——
+- **倒计时格式**：原来只显示剩余分钟数（如 `4321m`），拍卖最长 72h，看不出到底还剩几天。新增 `auction.timeLeft` i18n key（`'{d}天{h}时{m}分{s}秒'`，en/de 对应 `'{d}d {h}h {m}m {s}s'` / `'{d}T {h}Std {m}Min {s}Sek'`），`list.ts` 的 `renderAuctionCell` 从 `auc.expireAt - now` 拆算 d/h/m/s 四段传参渲染，替代原先的纯分钟数。
+- **卡片紧凑化**：上一版 1.5x 放大把 `AUC_CELL_H` 拉到 285，但内容（品名/价格/买断价）只占前 100px 左右，价格行与底部固定的倒计时/购买按钮之间留出大片空白，用户反馈"看起来太乱了"。给了两个重排方案（紧凑卡片 / 横向条状列表）由用户选定**紧凑卡片**：`AUC_CELL_H` 285→180，图片框上限 180→130px（让右侧文字列更宽，减少换行）；倒计时不再绝对定位在卡片底部，改成紧跟在价格/买断价文字块下方顺流排布（`ay` 累加），只有操作按钮仍固定卡片右下角——消除了原来倒计时和按钮各自独立锚定造成的中间大片留白。
+- 验证：client `tsc --noEmit` 全绿；沿用同款「临时挂 `__NW_DEBUG` 钩子（含 `setLocale`）+ 手造 fixture + 直接 `new AuctionScene(...)` 挂载」路线，独立 dev-server 端口（9099，避开另一并发会话占用的 9090）截图核对：英文/中文两种 locale 下卡片紧凑、倒计时完整显示四段单位、买断价+倒计时+按钮均未溢出或重叠。
+- **新增回归测试**（`auctionScene.ui.ts`，`describe('AuctionScene — market cell countdown')`，4 条）：倒计时按 `{d,h,m,s}` 完整格式渲染（非纯分钟数）；已关闭挂单（sold/expired/cancelled）不显示倒计时；倒计时随价格/买断价文字块顺流堆叠而非钉死在卡片底部固定偏移（有买断价行时 y 坐标显著大于无买断价，防止改动回退到旧的"钉底"写法）；倒计时文字块与购买/出价按钮（96×40 hit rect）任何情况下都不发生垂直重叠。均用 `vi.useFakeTimers()`/`setSystemTime` 固定时钟，避免真实时间流逝导致的秒数抖动。
+
 ---
 
 ## 7. 反 RMT 总览（持续对抗 R3）

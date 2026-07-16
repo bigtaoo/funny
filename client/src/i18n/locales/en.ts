@@ -1069,6 +1069,7 @@ export const en: Record<TranslationKey, string> = {
   'auction.currentBid': 'Current bid',
   'auction.noBid': 'No bids yet',
   'auction.buyoutAt': 'Buyout {price}',
+  'auction.timeLeft': '{d}d {h}h {m}m {s}s',
   'auction.confirmBid': 'Place bid of {price} coins?',
   'auction.bidPlaced': 'Bid placed',
   'auction.err.bidTooLow': 'Bid below minimum increment',
