@@ -57,11 +57,20 @@ class FakeAuction implements AuctionClient {
   async scanAnomalies(): Promise<AuctionAnomaly[]> { return sampleAnomalies; }
 }
 // Fake suspiciousPve/ban client: records which accounts got banned, for enforcement-on-actioned assertions.
+// `failFor` lets a test simulate one party's ban call failing (e.g. metaserver unreachable) without the
+// other's — enforcement is per-party independent, so a partial failure must not block ticket resolution.
 class FakeSuspiciousPve implements SuspiciousPveClient {
   available = true;
   banned = new Set<string>();
+  banCalls: string[] = [];
+  failFor = new Set<string>();
   async listSuspiciousPve() { return []; }
-  async banAccount(accountId: string) { this.banned.add(accountId); return { ok: true }; }
+  async banAccount(accountId: string) {
+    this.banCalls.push(accountId);
+    if (this.failFor.has(accountId)) return { ok: false };
+    this.banned.add(accountId);
+    return { ok: true };
+  }
   async unbanAccount(accountId: string) { this.banned.delete(accountId); return { ok: true }; }
 }
 
@@ -166,5 +175,35 @@ describe.skipIf(!mongo)('admin SLG audit e2e', () => {
     const actions = entries.map((e) => e.action);
     expect(actions).toContain('slg.audit.file');
     expect(actions).toContain('slg.audit.resolve');
+  });
+
+  it('partial ban failure: one party unreachable still resolves the ticket, records the accurate per-party result, and only audits the party that actually got banned', async () => {
+    const root = await actorOf('root');
+    suspiciousPve.failFor.add(SNAP.buyerId); // buyer's ban call fails (e.g. metaserver unreachable)
+    const a = await svc.slgFileAuditTicket(root, SNAP);
+    const resolved = await svc.slgResolveAuditTicket(root, a.id, 'actioned', '');
+    expect(resolved.status).toBe('actioned'); // resolution itself never blocks on ban failure
+    expect(resolved.enforcement).toEqual({ sellerBanned: true, buyerBanned: false });
+    expect(suspiciousPve.banned.has(SNAP.sellerId)).toBe(true);
+    expect(suspiciousPve.banned.has(SNAP.buyerId)).toBe(false);
+    const banActions = (await svc.listAudit(root, {})).filter((e) => e.action === 'account.ban');
+    expect(banActions).toHaveLength(1); // only the successful ban is audited, not the failed attempt
+  });
+
+  it('concurrent resolution of the same ticket: only the winning call bans anyone (no double-ban), the loser gets 409', async () => {
+    const root = await actorOf('root');
+    const a = await svc.slgFileAuditTicket(root, SNAP);
+    const [r1, r2] = await Promise.allSettled([
+      svc.slgResolveAuditTicket(root, a.id, 'actioned', 'first'),
+      svc.slgResolveAuditTicket(root, a.id, 'actioned', 'second'),
+    ]);
+    const outcomes = [r1, r2];
+    expect(outcomes.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(outcomes.filter((r) => r.status === 'rejected')).toHaveLength(1);
+    const rejected = outcomes.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+    expect(rejected.reason).toMatchObject({ status: 409 });
+    // Each account was called at most once — the loser's attempt never reached the ban step.
+    expect(suspiciousPve.banCalls.filter((id) => id === SNAP.sellerId)).toHaveLength(1);
+    expect(suspiciousPve.banCalls.filter((id) => id === SNAP.buyerId)).toHaveLength(1);
   });
 });
