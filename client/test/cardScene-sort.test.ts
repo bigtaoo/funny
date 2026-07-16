@@ -6,7 +6,7 @@ import { sortCards } from '../src/scenes/CardScene/base';
 import type { CardInstance } from '../src/game/meta/SaveData';
 
 function makeCard(id: string, defId: string, level: number): CardInstance {
-  return { id, defId, level, xp: 0, gear: {} };
+  return { id, defId, level, xp: 0, gear: {}, locked: false };
 }
 
 describe('sortCards', () => {
