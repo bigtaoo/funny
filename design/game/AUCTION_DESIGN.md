@@ -457,6 +457,12 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - **修复**：把 `hdr.backRect` 缓存到实例字段 `backRect`，`render()` 里两处硬编码的 `{w:80}` 都改成复用它，和 `ShopScene` 等场景的写法统一。
 - **验收**：`tsc --noEmit` 绿；headless 实例化 `AuctionScene` 读取渲染后的 `hitRects` 确认宽度恢复为 160；新增回归测试 `client/test/ui/auctionBackButtonHitWidth.ui.ts`（4 例：初始/多次 render 后宽度不变、右半区点击触发 onBack、item-picker 遮罩下右半区点击取消 picker）——摘掉修复重跑 4 例全部按预期失败，验证测试能真正捕获这个回归。
 
+### 修复：出售物品选择页图标错误 + 重复堆叠（2026-07-16）
+
+- **问题**：`picker.ts`（出售物品选择页）里，装备类目的所有条目一律画成同一个盾牌图标（`itemKind()` 硬编码 `'armor'`），角色卡类目一律画同一个书本图标（硬编码 `'cards'`）——市场列表页 `list.ts`/`renderAuctionCell` 早已有真实的按槽位/稀有度程序化图形（装备）与真实立绘（角色卡）的画法（`renderItemPicture`），选择页却从未接上。此外装备/角色卡的库存实例是**逐个实例**枚举的（`listableEquipment()`/`listableCards()`），玩家抽到几十个同款低阶装备（Marker/Pencil 等）或多张同名 Lv.1 卡时，选择页会把同一件物品重复铺满整页网格。
+- **修复**：`renderPickCard` 改调用新增的 `renderPickIcon`（镜像 `list.ts` 的 `renderItemPicture` 画法）——装备用 `getEquipDef(defId)` 取槽位/稀有度走 `drawEquipmentGlyph` 程序化图形，角色卡用 `CARD_DEFS[defId].unitType` 取 `UNIT_ART_URLS` 真实立绘（异步加载沿用既有 `artHooked` 去重+加载完成后 `render()` 的机制），材料保留原有专属图标兜底。`buildPickEntries()` 里装备/角色卡改为按 `defId+level` 分组（`Map`）而非逐实例枚举，标签追加 `×N`（如"Marker +0 ×3"）；`onPick` 落在分组代表实例上——反正每次挂单服务端强制只拿走 1 个实例（qty=1），组内实例本就等价，拍到哪个都一样。角色卡分组时优先选未上锁的实例作代表，避免把可挂的库存"锁"在一个恰好被选为代表的已锁实例背后。
+- **验收**：`tsc --noEmit` 绿；headless 灌入含重复装备/卡片的假 save（5×Pencil、3×Marker、4×Su Yuan Lv.1 + 各一件独立高阶装备/卡）实例化 `AuctionScene` 并调用 `buildPickEntries()`，确认重复项正确合并为单条 `×N` 标签、非重复项维持原样；`toDataURL()` 截图确认装备显示各自独立图形、角色卡显示真实立绘，不再是统一占位图标。
+
 ---
 
 *本文为拍卖行机制权威，DRAFT/⚠️ 处随实现与拍板细化；数值以 `server/shared/src/slg.ts` 为准。*

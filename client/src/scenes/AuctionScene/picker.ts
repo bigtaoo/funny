@@ -1,6 +1,7 @@
 // Unified item picker (scene-level overlay): choosing what to list, reached from the create form's item
 // field. Lists every sellable item across all three classes (materials + equipment + cards) in one scrollable
 // list, sorted by estimated value descending. Picking an entry returns to the create form.
+import * as PIXI from 'pixi.js-legacy';
 import { AUCTION_STATIC_REF_PRICE } from '@nw/shared';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
@@ -8,6 +9,10 @@ import { t } from '../../i18n';
 import { buildIcon, type IconKind } from '../../render/icons';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import type { EquipmentInstance, CardInstance, EquipRarity } from '../../game/meta/SaveData';
+import { getEquipDef } from '../../game/meta/equipmentDefs';
+import { drawEquipmentGlyph } from '../../render/equipmentGlyph';
+import { CARD_DEFS } from '../../game/meta/cardDefs';
+import { UNIT_ART_URLS, getArtTexture } from '../../render/cardArt';
 import { FILTERS, type AucFilter, MATERIALS, type Constructor, type AuctionSceneBaseCtor } from './base';
 
 // Icon-card grid metrics (mirrors EquipmentScene/inventory.ts's responsive column layout), enlarged 1.5x
@@ -25,11 +30,13 @@ const CARD_VALUE_BASE = 500;
 const CARD_VALUE_PER_LEVEL = 300;
 
 interface PickEntry {
-  icon: IconKind;
   label: string;
   value: number;
   locked: boolean;
   cls: 'material' | 'equipment' | 'card';
+  /** Material glyph name (cls === 'material') or def id (equipment/card) used to resolve the real per-item picture. */
+  material?: typeof MATERIALS[number];
+  defId?: string;
   onPick: () => void;
 }
 
@@ -75,30 +82,58 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
       return inst ? `${this.cardName(inst.defId)} Lv.${inst.level}` : null;
     }
 
-    /** Combined pick list across all three classes, sorted by estimated value descending. */
+    /**
+     * Combined pick list across all three classes, sorted by estimated value descending.
+     * Equipment/card instances are grouped by defId+level: a stack of identical drops (e.g. a dozen
+     * "Marker +0") would otherwise repeat the same card dozens of times. Each listing only ever escrows
+     * one instance anyway (qty forced to 1 server-side), so any instance in the group is an equally
+     * valid pick — the label just appends "×N" so the count isn't lost.
+     */
     private buildPickEntries(): PickEntry[] {
       const entries: PickEntry[] = [];
       for (const mat of MATERIALS) {
         entries.push({
-          icon: mat, label: t(`auction.${mat}` as 'auction.scrap' | 'auction.lead' | 'auction.binding'),
+          material: mat, label: t(`auction.${mat}` as 'auction.scrap' | 'auction.lead' | 'auction.binding'),
           value: AUCTION_STATIC_REF_PRICE[mat] ?? 0, locked: false, cls: 'material',
           onPick: () => { this.createClass = 'material'; this.createMaterial = mat; this.closeItemPicker(); },
         });
       }
+
+      const equipGroups = new Map<string, { rep: EquipmentInstance; count: number }>();
       for (const e of this.listableEquipment()) {
+        const key = `${e.defId}:${e.level}`;
+        const g = equipGroups.get(key);
+        if (g) g.count++; else equipGroups.set(key, { rep: e, count: 1 });
+      }
+      for (const { rep, count } of equipGroups.values()) {
+        const base = `${this.equipName(rep.defId)} +${rep.level}`;
         entries.push({
-          icon: 'armor', label: `${this.equipName(e.defId)} +${e.level}`,
-          value: EQUIP_VALUE_BY_RARITY[e.rarity] ?? 0, locked: false, cls: 'equipment',
-          onPick: () => { this.createClass = 'equipment'; this.createEquipId = e.id; this.closeItemPicker(); },
+          defId: rep.defId, label: count > 1 ? `${base} ×${count}` : base,
+          value: EQUIP_VALUE_BY_RARITY[rep.rarity] ?? 0, locked: false, cls: 'equipment',
+          onPick: () => { this.createClass = 'equipment'; this.createEquipId = rep.id; this.closeItemPicker(); },
         });
       }
+
+      const cardGroups = new Map<string, { rep: CardInstance; count: number }>();
       for (const c of this.listableCards()) {
+        const key = `${c.defId}:${c.level}`;
+        const g = cardGroups.get(key);
+        if (g) {
+          g.count++;
+          if (!c.locked && g.rep.locked) g.rep = c; // prefer an unlocked instance as the pick target
+        } else {
+          cardGroups.set(key, { rep: c, count: 1 });
+        }
+      }
+      for (const { rep, count } of cardGroups.values()) {
+        const base = `${this.cardName(rep.defId)} Lv.${rep.level}`;
         entries.push({
-          icon: 'cards', label: `${this.cardName(c.defId)} Lv.${c.level}`,
-          value: CARD_VALUE_BASE + (c.level - 1) * CARD_VALUE_PER_LEVEL, locked: c.locked, cls: 'card',
-          onPick: () => { this.createClass = 'card'; this.createCardId = c.id; this.closeItemPicker(); },
+          defId: rep.defId, label: count > 1 ? `${base} ×${count}` : base,
+          value: CARD_VALUE_BASE + (rep.level - 1) * CARD_VALUE_PER_LEVEL, locked: rep.locked, cls: 'card',
+          onPick: () => { this.createClass = 'card'; this.createCardId = rep.id; this.closeItemPicker(); },
         });
       }
+
       entries.sort((a, b) => b.value - a.value);
       return entries;
     }
@@ -187,6 +222,47 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
       drawScrollIndicator(this.bodyLayer, { x: contentX + pad, y: listY, w: avail, h: listH }, this.scrollY, Math.max(0, totalH - listH));
     }
 
+    /**
+     * Real per-item picture (mirrors list.ts's renderAuctionCell): equipment gets its per-slot/rarity
+     * procedural glyph, cards get the real unit art PNG, materials keep their dedicated icon glyph.
+     * Centered at (cx, cy) in a `size`×`size` box.
+     */
+    private renderPickIcon(entry: PickEntry, cx: number, cy: number, size: number, seed: number): void {
+      if (entry.cls === 'equipment' && entry.defId) {
+        const def = getEquipDef(entry.defId);
+        if (def) {
+          const g = new PIXI.Graphics();
+          drawEquipmentGlyph(g, def.slot, def.rarity, size, seed);
+          g.x = cx; g.y = cy;
+          this.bodyLayer.addChild(g);
+          return;
+        }
+      } else if (entry.cls === 'card' && entry.defId) {
+        const cardDef = CARD_DEFS[entry.defId];
+        const artUrl = cardDef ? UNIT_ART_URLS[cardDef.unitType] : undefined;
+        if (artUrl) {
+          const tex = getArtTexture(artUrl);
+          if (tex.baseTexture.valid) {
+            const scale = Math.min(size / tex.width, size / tex.height);
+            const sp = new PIXI.Sprite(tex);
+            sp.anchor.set(0.5);
+            sp.scale.set(scale);
+            sp.position.set(cx, cy);
+            this.bodyLayer.addChild(sp);
+            return;
+          }
+          if (!this.artHooked.has(artUrl)) {
+            this.artHooked.add(artUrl);
+            tex.baseTexture.once('loaded', () => this.render());
+          }
+        }
+      }
+      const fallback: IconKind = entry.cls === 'material' ? (entry.material ?? 'scrap') : entry.cls === 'equipment' ? 'armor' : 'cards';
+      const icon = buildIcon(fallback, size, C.dark);
+      icon.x = cx - size / 2; icon.y = cy - size / 2;
+      this.bodyLayer.addChild(icon);
+    }
+
     /** Square-ish icon card: glyph centered top, name below, lock badge top-right, tap anywhere to pick. */
     private renderPickCard(entry: PickEntry, x: number, y: number, cardW: number): void {
       const card = sketchPanel(cardW, CARD_H, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(x, y, cardW) });
@@ -199,9 +275,7 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
         this.bodyLayer.addChild(lk);
       }
 
-      const ic = buildIcon(entry.icon, 39, C.dark);
-      ic.x = x + cardW / 2 - 20; ic.y = y + 18;
-      this.bodyLayer.addChild(ic);
+      this.renderPickIcon(entry, x + cardW / 2, y + 18 + 19.5, 39, seedFor(x, y, cardW));
 
       const nameLbl = txt(entry.label, 18, C.dark, true);
       nameLbl.anchor.set(0.5, 0); nameLbl.x = x + cardW / 2; nameLbl.y = y + 78;
