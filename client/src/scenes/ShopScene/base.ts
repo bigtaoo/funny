@@ -90,6 +90,11 @@ export interface BtnSpec { label: string; enabled: boolean; primary: boolean; fn
 export interface CardSpec {
   icon: IconKind;
   iconColor: number;
+  /**
+   * Real art texture URL, drawn instead of the vector `icon` glyph when set (placeholder skin
+   * art borrows the base unit's card PNG — see ShopMixin.buildShopCards skin section).
+   */
+  artUrl?: string;
   title: string;
   /** Prominent gold coin amount (coin glyph + number), shown under the title (skins / coin tiers). */
   coinAmount?: number;
@@ -451,9 +456,16 @@ export class ShopSceneBase {
     const iconS = Math.min(Math.round(ch * 0.32), midH || Math.round(ch * 0.32));
     const iconX = x + pad;
     const iconY = midTop;
-    const icon = buildCoinIcon(spec.icon, iconS, spec.iconColor);
-    icon.x = iconX; icon.y = iconY;
-    body.addChild(icon);
+    if (spec.artUrl) {
+      const art = PIXI.Sprite.from(spec.artUrl);
+      art.width = iconS; art.height = iconS;
+      art.x = iconX; art.y = iconY;
+      body.addChild(art);
+    } else {
+      const icon = buildCoinIcon(spec.icon, iconS, spec.iconColor);
+      icon.x = iconX; icon.y = iconY;
+      body.addChild(icon);
+    }
 
     // Info column (right of the icon) — remaining status/bonus lines only.
     const infoX = iconX + iconS + Math.round(cw * 0.05);
