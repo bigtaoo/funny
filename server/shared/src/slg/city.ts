@@ -31,31 +31,37 @@ export const BUILDING_YIELD_RES: Readonly<Partial<Record<BuildingKey, ResourceTy
   inkPot: 'ink', paperTray: 'paper', graphiteMill: 'graphite', metalForge: 'metal',
 };
 
-export const DESK_MAX_LEVEL = 20;              // hub total-level cap (aligned with Three-Kingdoms 20)
-export const BUILD_YIELD_STEP = 0.05;          // resource building: +5% land-resource yield per level
-export const STICKER_SELF_BASE = 200;          // stickerShop: sticker self-produced per hour per level (residential-model faucet)
-export const CABINET_CAP_STEP = 0.10;          // cabinet: +10% storage cap per level
-export const DRILL_TROOPCAP_STEP = 500;        // drillYard: +500 troopCap per level
-export const DRILL_TRAIN_SPEED_STEP = 0.04;    // drillYard: -4% training time per level (floored)
+// D-CITY-7 (2026-07-15): DESK_MAX_LEVEL corrected from 20 to 10 — the earlier "aligned with
+// Three-Kingdoms 20" comment was never verified; Three Kingdoms' hub (君王殿) actually caps at
+// 10 (http://m.7724.com/sggame/news/23083.html). Halving the level range means every per-level
+// growth step below is doubled (so max-level totals are unchanged) and BUILD_COST_BASE / BUILD_TIME_BASE_SEC
+// are scaled ×4 (sum_{2..20}lvl / sum_{2..10}lvl ≈ 3.87, rounded to a clean 4×) so total investment-to-max
+// stays in the same ballpark rather than getting cheaper/faster purely from fewer levels.
+export const DESK_MAX_LEVEL = 10;              // hub total-level cap (Three-Kingdoms 君王殿 = 10, D-CITY-7)
+export const BUILD_YIELD_STEP = 0.10;          // resource building: +10% land-resource yield per level
+export const STICKER_SELF_BASE = 400;          // stickerShop: sticker self-produced per hour per level (residential-model faucet)
+export const CABINET_CAP_STEP = 0.20;          // cabinet: +20% storage cap per level
+export const DRILL_TROOPCAP_STEP = 1000;       // drillYard: +1000 troopCap per level
+export const DRILL_TRAIN_SPEED_STEP = 0.08;    // drillYard: -8% training time per level (floored)
 export const DRILL_TRAIN_SPEED_FLOOR = 0.5;    // drillYard: training-time multiplier never below 0.5
-export const DRILL_QUEUE_PER_LEVELS = 5;       // drillYard: +1 training queue slot per this many levels
+export const DRILL_QUEUE_PER_LEVELS = 2;       // drillYard: +1 training queue slot per this many levels
 export const BUILD_QUEUE_SLOTS = 1;            // concurrent build-queue slots (paid 2nd slot deferred, §6)
 export const BUILD_SPEEDUP_SECS_PER_COIN = 60; // build speedup rate (aligned with TROOP_SPEEDUP_SECS_PER_COIN)
-export const BUILD_TIME_BASE_SEC = 120;        // base build time per level; time(toLevel) = base × toLevel
+export const BUILD_TIME_BASE_SEC = 480;        // base build time per level; time(toLevel) = base × toLevel
 export const DESK_BUILD_TIME_MULT = 5;         // desk upgrades take longer (hub)
 
 /** Per-building base resource cost; buildCost(toLevel) = base × toLevel (DRAFT linear curve). High-tier keys eat graphite + sticker (sink). */
 const BUILD_COST_BASE: Readonly<Record<BuildingKey, Partial<Record<ResourceType, number>>>> = {
-  desk:         { paper: 2000, graphite: 800, sticker: 500 },
-  inkPot:       { paper: 600, ink: 300 },
-  paperTray:    { paper: 600 },
-  graphiteMill: { paper: 800, graphite: 200 },
-  metalForge:   { paper: 800, metal: 300 },
-  stickerShop:  { paper: 700, graphite: 200 },
-  cabinet:      { paper: 1000, graphite: 400, sticker: 200 },
-  drillYard:    { paper: 900, metal: 400, sticker: 200 },
-  wall:         { paper: 1200, graphite: 600, metal: 400 },
-  academy:      { paper: 1000, graphite: 800, sticker: 400 },
+  desk:         { paper: 8000, graphite: 3200, sticker: 2000 },
+  inkPot:       { paper: 2400, ink: 1200 },
+  paperTray:    { paper: 2400 },
+  graphiteMill: { paper: 3200, graphite: 800 },
+  metalForge:   { paper: 3200, metal: 1200 },
+  stickerShop:  { paper: 2800, graphite: 800 },
+  cabinet:      { paper: 4000, graphite: 1600, sticker: 800 },
+  drillYard:    { paper: 3600, metal: 1600, sticker: 800 },
+  wall:         { paper: 4800, graphite: 2400, metal: 1600 },
+  academy:      { paper: 4000, graphite: 3200, sticker: 1600 },
 };
 
 /** Current level of a building: desk defaults to 1 (always present), every other building defaults to 0 (unbuilt). */
@@ -130,16 +136,16 @@ export function buildGateReason(
 }
 
 // ── P2 building functions (wall / academy / cabinet loot-protect) ───────────────────────────────
-/** DRAFT: wall building → +5% garrison HP per level on the defender's main base. */
-export const WALL_DEFENSE_STEP = 0.05;
-/** DRAFT: academy building → attacker siege-blueprint HP buff per level. */
-export const ACADEMY_HP_STEP = 0.02;
-/** DRAFT: academy building → attacker siege-blueprint damage buff per level. */
-export const ACADEMY_DAMAGE_STEP = 0.015;
-/** DRAFT: academy building → attacker siege-blueprint siege-value buff per level (ADR-026, mirrors damage step). */
-export const ACADEMY_SIEGE_STEP = 0.015;
-/** DRAFT: cabinet building → loot protection rate per level (stacks up to 40% at max). */
-export const CABINET_PROTECT_STEP = 0.02;
+/** DRAFT: wall building → +10% garrison HP per level on the defender's main base (step doubled for DESK_MAX_LEVEL=10, D-CITY-7). */
+export const WALL_DEFENSE_STEP = 0.10;
+/** DRAFT: academy building → attacker siege-blueprint HP buff per level (step doubled for DESK_MAX_LEVEL=10, D-CITY-7). */
+export const ACADEMY_HP_STEP = 0.04;
+/** DRAFT: academy building → attacker siege-blueprint damage buff per level (step doubled for DESK_MAX_LEVEL=10, D-CITY-7). */
+export const ACADEMY_DAMAGE_STEP = 0.03;
+/** DRAFT: academy building → attacker siege-blueprint siege-value buff per level (ADR-026, mirrors damage step; doubled for DESK_MAX_LEVEL=10, D-CITY-7). */
+export const ACADEMY_SIEGE_STEP = 0.03;
+/** DRAFT: cabinet building → loot protection rate per level (stacks up to 40% at max; step doubled for DESK_MAX_LEVEL=10, D-CITY-7). */
+export const CABINET_PROTECT_STEP = 0.04;
 
 /** Multiplier applied to defender garrison HP when the defender's main base (type:'base') is besieged (P2, SLG_CITY_DESIGN §5). */
 export function wallDefenseMult(buildings: Partial<Record<BuildingKey, number>> | undefined): number {

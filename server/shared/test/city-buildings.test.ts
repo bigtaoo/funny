@@ -18,6 +18,7 @@ import {
   ACADEMY_DAMAGE_STEP,
   ACADEMY_SIEGE_STEP,
   DRILL_TROOPCAP_STEP,
+  DRILL_QUEUE_PER_LEVELS,
   buildingLevel,
   deskLevel,
   buildingYieldMult,
@@ -95,7 +96,7 @@ describe('storage / troop / training derived caps', () => {
     expect(drillTrainMult({ drillYard: 2 })).toBeLessThan(1);
     expect(drillTrainMult({ drillYard: 100 })).toBeGreaterThanOrEqual(0.5); // floored
     expect(trainQueueMaxFor(undefined)).toBe(TROOP_TRAIN_QUEUE_MAX);
-    expect(trainQueueMaxFor({ drillYard: 5 })).toBe(TROOP_TRAIN_QUEUE_MAX + 1);
+    expect(trainQueueMaxFor({ drillYard: 5 })).toBe(TROOP_TRAIN_QUEUE_MAX + Math.floor(5 / DRILL_QUEUE_PER_LEVELS));
   });
 });
 
