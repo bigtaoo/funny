@@ -37,20 +37,26 @@ describe('LandscapeLayout dynamic width', () => {
     expect(Math.abs(scaleW - scaleH)).toBeLessThan(0.001);
   });
 
-  it('anchors the HUD strips to the edges and stretches the hand on a wide phone', () => {
+  it('anchors the HUD strips to the board and fills the hand to the board width', () => {
     const l = new LandscapeLayout(844, 390);
+    const boardLeft  = l.boardRect.x;
+    const boardRight = l.boardRect.x + l.boardRect.w;
     // Top HUD spans the full (widened) width.
     expect(l.hudTopRect.x).toBe(0);
     expect(l.hudTopRect.w).toBe(l.designWidth);
-    // Bottom-left/right strips are pulled inward by however far the board's edge
-    // moved past its reference position, so they stay near the board on
-    // ultra-wide screens instead of stranding at the far screen edges.
-    const inset = l.boardRect.x - 330;
-    expect(l.hudBottomLeftRect.x).toBe(inset);
-    expect(l.hudBottomRightRect.x + l.hudBottomRightRect.w).toBe(l.designWidth - inset);
-    // Hand fills the reclaimed middle between the two bottom strips.
-    expect(l.handRect.x).toBe(l.hudBottomLeftRect.x + l.hudBottomLeftRect.w);
-    expect(l.handRect.x + l.handRect.w).toBe(l.hudBottomRightRect.x);
+    // The ink/HP column sits in the LEFT margin, its inner edge flush against the
+    // board's left edge; the refresh/upgrade column sits in the RIGHT margin, its
+    // inner edge flush against the board's right edge. Both stay locked to the
+    // board no matter how wide the design space grows.
+    expect(l.hudBottomLeftRect.x + l.hudBottomLeftRect.w).toBe(boardLeft);
+    expect(l.hudBottomRightRect.x).toBe(boardRight);
+    // Each side column fits entirely within its margin (never off-screen, never
+    // overlapping the board).
+    expect(l.hudBottomLeftRect.x).toBeGreaterThanOrEqual(0);
+    expect(l.hudBottomRightRect.x + l.hudBottomRightRect.w).toBeLessThanOrEqual(l.designWidth);
+    // Hand fills the board's horizontal extent exactly.
+    expect(l.handRect.x).toBe(boardLeft);
+    expect(l.handRect.x + l.handRect.w).toBe(boardRight);
     // Board stays centered in the widened space.
     expect(l.boardRect.x).toBe(Math.round((l.designWidth - l.boardRect.w) / 2));
   });

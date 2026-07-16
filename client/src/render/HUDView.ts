@@ -66,6 +66,8 @@ export class HUDView {
   private _enemyInfoRect:   Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Local player info area (bottom strip, left) — profile tap (S1 net). */
   private _playerInfoRect:  Rect = { x: 0, y: 0, w: 0, h: 0 };
+  /** Enemy HP bar (top strip, board-centered) — the opponent name button anchors to its left. */
+  private _enemyHpRect:     Rect = { x: 0, y: 0, w: 0, h: 0 };
 
   /** True when upgrade is currently affordable (set each frame by sync). */
   upgradeEnabled = false;
@@ -88,6 +90,9 @@ export class HUDView {
   getSurrenderConfirmRect(): Rect | null { return this._surrenderConfirmRect; }
   getEnemyInfoRect():        Rect        { return this._enemyInfoRect; }
   getPlayerInfoRect():       Rect        { return this._playerInfoRect; }
+  getEnemyHpRect():          Rect        { return this._enemyHpRect; }
+  /** Tighten the opponent profile-tap region to the name button (set by GameRenderer). */
+  setEnemyInfoRect(r: Rect): void        { this._enemyInfoRect = r; }
 
   // ── Per-frame sync ─────────────────────────────────────────────────────────
 
@@ -217,8 +222,15 @@ export class HUDView {
   // ── Private build ──────────────────────────────────────────────────────────
 
   private build(): void {
-    const { hudTopRect: topR, hudBottomLeftRect: bLR, hudBottomRightRect: bRR } = this.layout;
+    const { hudTopRect: topR, hudBottomLeftRect: bLR, hudBottomRightRect: bRR, boardRect: board } = this.layout;
     const isLandscape = this.layout.orientation === 'landscape';
+    // In landscape the design space can be far wider than the centered board, so
+    // top-strip elements anchor to the board's horizontal extent (its left edge,
+    // center, and right edge) instead of the design edges — keeping the timer,
+    // enemy HP bar, and surrender button locked to the board like the bottom
+    // strip. Portrait keeps its own full-width top-strip anchoring.
+    const boardLeft  = board.x;
+    const boardRight = board.x + board.w;
 
     // Top strip background
     const topBg = new PIXI.Graphics();
@@ -226,30 +238,23 @@ export class HUDView {
     topBg.drawRect(topR.x, topR.y, topR.w, topR.h);
     topBg.endFill();
 
-    // On ultra-wide screens the board is centered in a design space wider than the
-    // classic 1920 reference, leaving the bottom-strip side columns (whose x anchors
-    // hudBottomLeftRect/hudBottomRightRect already pull inward toward that same
-    // center — see LandscapeLayout/PortraitLayout) stranded near the screen edges.
-    // Mirror the same inward pull for the top strip's timer/surrender button so all
-    // four HUD corners move together instead of only two of them. `inset` is 0 at
-    // the reference aspect (bLR.x === 0), so this is a no-op there.
-    const inset = bLR.x;
-
-    // Timer
+    // Timer — landscape hugs the board's left edge; portrait keeps the strip edge.
     this.timerText   = new PIXI.Text('0:00', { ...TEXT_STYLE, fontSize: 34 });
-    this.timerText.x = topR.x + 14 + inset;
+    this.timerText.x = (isLandscape ? boardLeft : topR.x) + 14;
     this.timerText.y = topR.y + (topR.h - this.timerText.height) / 2;
 
-    // Enemy HP bar
+    // Enemy HP bar — centered over the board (landscape) or the enemy base (portrait).
     this.enemyHpGfx   = new PIXI.Graphics();
     this.enemyHpGfx.y = topR.y + (topR.h - HP_CELL_H) / 2;
     this.enemyHpGfx.x = isLandscape
-      ? topR.x + (topR.w - HP_BAR_W) / 2
+      ? boardLeft + (board.w - HP_BAR_W) / 2
       : this.baseCenterX() - HP_BAR_W / 2;
+    this._enemyHpRect = { x: this.enemyHpGfx.x, y: this.enemyHpGfx.y, w: HP_BAR_W, h: HP_CELL_H };
 
-    // Surrender button — visual only, no interactive
+    // Surrender button — visual only, no interactive. Landscape hugs the board's
+    // right edge; portrait keeps the strip edge.
     this.surrenderBtnBg = new PIXI.Graphics();
-    const sBtnX = topR.x + topR.w - BTN_W - 8 - inset;
+    const sBtnX = (isLandscape ? boardRight : topR.x + topR.w) - BTN_W - 8;
     const sBtnY = topR.y + (topR.h - BTN_H) / 2;
     this.surrenderBtnBg.x = sBtnX;
     this.surrenderBtnBg.y = sBtnY;

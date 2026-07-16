@@ -100,21 +100,23 @@ export class LandscapeLayout implements ILayout {
     // vertical layout is unchanged — height is fixed, only width is reclaimed.
     this.boardX = Math.round((this.designWidth - BOARD_W) / 2);
 
-    // On screens wider than the classic 16:9 reference, the bottom-strip side
-    // columns (ink/HP on the left, refresh+upgrade on the right) would otherwise
-    // stay pinned to the far screen edges while the board/hand stay centered —
-    // stranding them far from the rest of the HUD. Pull both columns inward by
-    // the same amount the board's edge has moved past its reference position;
-    // this is 0 at/under the reference width, so the classic 1920×1080 layout is
-    // unaffected. The hand region (between the two columns) shrinks to match so
-    // nothing overlaps — HandView already centers cards within it.
-    const inset = Math.max(0, this.boardX - Math.round((REFERENCE_W - BOARD_W) / 2));
+    // Anchor every HUD element to the board's own horizontal extent rather than
+    // the (possibly much wider) design-space edges: the hand fills the board
+    // width exactly, the ink/HP column sits in the left paper margin hugging the
+    // board's left edge, and the refresh/upgrade column sits in the right margin
+    // hugging the board's right edge. Each side margin is `boardX` wide, and
+    // boardX ≥ (1920−1260)/2 = 330 for every allowed design width — always enough
+    // for the 300px left column and the 200px right column. At the classic 16:9
+    // reference this pulls the four HUD corners in from the screen edges to the
+    // board edges (the old layout stranded them at x=0 / x=designWidth); on wider
+    // screens it keeps them locked to the board instead of drifting outward.
+    const boardRight = this.boardX + BOARD_W;
 
     this.boardRect          = { x: this.boardX, y: BOARD_Y, w: BOARD_W, h: BOARD_H };
     this.hudTopRect         = { x: 0, y: 0, w: this.designWidth, h: HUD_TOP_H };
-    this.hudBottomLeftRect  = { x: inset, y: BOT_Y, w: BOT_LEFT_W, h: BOT_H };
-    this.hudBottomRightRect = { x: this.designWidth - BOT_RIGHT_W - inset, y: BOT_Y, w: BOT_RIGHT_W, h: BOT_H };
-    this.handRect           = { x: BOT_LEFT_W + inset, y: BOT_Y, w: this.designWidth - BOT_LEFT_W - BOT_RIGHT_W - 2 * inset, h: BOT_H };
+    this.hudBottomLeftRect  = { x: this.boardX - BOT_LEFT_W, y: BOT_Y, w: BOT_LEFT_W, h: BOT_H };
+    this.hudBottomRightRect = { x: boardRight,               y: BOT_Y, w: BOT_RIGHT_W, h: BOT_H };
+    this.handRect           = { x: this.boardX, y: BOT_Y, w: BOARD_W, h: BOT_H };
   }
 
   // ── Coordinate transforms ──────────────────────────────────────────────────
