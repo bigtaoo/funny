@@ -228,6 +228,7 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 > - **i18n**：`city.bonusWallHp`/`city.bonusAcademyHp`/`city.bonusAcademyDmg`（zh/en/de）。
 > - **单测**：city-buildings.test.ts P2 新增 3 例（wallDefenseMult/cabinetLootProtect/academyBuff），11 例全绿。
 > - 验证：shared/engine `tsc -b` 全绿；worldsvc `tsc -b` 全绿；client `tsc --noEmit` 零错误。数值仍 DRAFT（终态判据=上线后实测）。
+> - **补丁（2026-07-16）**：P2 收尾时漏改一处 —— `worldsvc httpApi.ts` 的 `POST /world/build/upgrade` 路由校验仍写着 `BUILDING_KEYS_P1`（`buildGateReason` 内部早已用 `BUILDING_KEYS`），导致 wall/academy 在 `CityScene` 网格里可点、一提交就 400。改用 `BUILDING_KEYS`；新增 `httpApi.e2e.test.ts` 覆盖两键的真实升级请求，防止再次静默漏改。
 
 - **P2 ✅ CLOSED（2026-06-30）** — `wall` 注入主城围攻 + `cabinet` 护掠夺 + `academy` 赛季蓝图 buff（独立注入口，守红线）。
 - ~~**P3 — 委任内政官**：角色卡派进建筑加成（角色养成接入 SLG 内政），数值按角色属性。~~ **DROPPED**：卡池仅 8 张，无"多余英雄"消耗问题；最优解唯一，决策退化为一次性设置；建筑乘数链在 P2 已自洽，无需此层。
