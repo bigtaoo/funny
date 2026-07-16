@@ -308,8 +308,20 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
           }
         }
       }
+      const now = Date.now();
       for (const [id, entry] of this.ctx.marchTokenRuntimes) {
         if (live.has(id)) continue;
+        const attackUntil = this.ctx.marchAttackUntil.get(id);
+        if (attackUntil != null && now < attackUntil) {
+          // Resolved as an attack (occupy/siege) — keep the token alive playing 'attacking'
+          // instead of tearing it down instantly; position stays wherever it last was.
+          if (entry.runtime) {
+            entry.runtime.syncState('attacking');
+            entry.runtime.update(dt);
+          }
+          continue;
+        }
+        this.ctx.marchAttackUntil.delete(id);
         entry.runtime?.destroy();
         this.ctx.marchTokenRuntimes.delete(id);
       }

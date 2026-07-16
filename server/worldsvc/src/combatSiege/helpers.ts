@@ -69,6 +69,7 @@ export function SiegeHelpersMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       const doc: SiegeDoc = {
         _id: siegeId(m.worldId, m.ownerId, t, ++this.core.siegeSeq),
         worldId: m.worldId,
+        marchId: m._id,
         attackerId: m.ownerId,
         ...(defenderId ? { defenderId } : {}),
         tile: m.toTile,

@@ -127,6 +127,13 @@
 > 目前没有专门的攻城兵种，盾兵是最接近"破城"定位的单位）；其余全部行军用普通兵 `infantry.tao`。
 > **TODO（美术）**：等专门的行军动画素材（含旗帜/头像等帮会标识）出图后替换 `MARCH_TOKEN_ASSET`；
 > 目前旗帜/头像暂不做，涉及帮会图标体系，留待后续。
+>
+> **占领/攻城到达 — ✅ 已修复（2026-07-16）**：此前令牌抵达目的地时 `syncMarchTokens()` 直接
+> `destroy()`，攻击方令牌瞬间消失、从未播放 `attack` 动画。现在 `SiegeDoc`/`siege_result` 推送
+> 携带 `marchId`（`combatSiege/helpers.ts::recordSiege` + `corePush.ts::pushSiege` + `transport.proto`），
+> 客户端 `WorldMapNet.applySiegeResult()` 据此把该令牌标记进 `ctx.marchAttackUntil`（截止时间 =
+> 当前 `attack` clip 时长，素材未加载时兜底 0.6s），`fog.ts::syncMarchTokens()` 的清理循环对标记中的
+> 令牌播放 `attacking` 状态而非立即销毁，到期后才真正 `destroy()`。
 
 ---
 

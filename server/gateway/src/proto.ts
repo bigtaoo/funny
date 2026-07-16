@@ -108,6 +108,7 @@ export type ServerMsg =
   | {
       case: 'siege_result';
       siegeId: string;
+      marchId: string;
       tile: string;
       outcome: string;
       lootSummary: string;
@@ -219,7 +220,7 @@ export function encodeServer(msg: ServerMsg): Uint8Array {
       server = { underAttack: { tile: msg.tile, attackerName: msg.attackerName, attackerPublicId: msg.attackerPublicId, arriveAt: msg.arriveAt, troopsHint: msg.troopsHint } };
       break;
     case 'siege_result':
-      server = { siegeResult: { siegeId: msg.siegeId, tile: msg.tile, outcome: msg.outcome, lootSummary: msg.lootSummary, replayRef: msg.replayRef } };
+      server = { siegeResult: { siegeId: msg.siegeId, marchId: msg.marchId, tile: msg.tile, outcome: msg.outcome, lootSummary: msg.lootSummary, replayRef: msg.replayRef } };
       break;
     case 'family_msg':
       server = { familyMsg: { familyId: msg.familyId, fromPublicId: msg.fromPublicId, fromName: msg.fromName, text: msg.body, ts: msg.ts } };

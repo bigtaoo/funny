@@ -77,6 +77,7 @@ export function LifecycleMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBa
       this.ctx.citySprites.clear();
       for (const { runtime } of this.ctx.marchTokenRuntimes.values()) runtime?.destroy();
       this.ctx.marchTokenRuntimes.clear();
+      this.ctx.marchAttackUntil.clear();
     }
   };
 }

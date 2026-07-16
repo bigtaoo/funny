@@ -581,6 +581,7 @@ function toServerMsg(msg: PushMsg): ServerMsg {
       return {
         case: 'siege_result',
         siegeId: msg.siegeId,
+        marchId: msg.marchId,
         tile: msg.tile,
         outcome: msg.outcome,
         lootSummary: msg.lootSummary,

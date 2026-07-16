@@ -40,6 +40,7 @@ export type SlgPushMsg =
   | {
       kind: 'siege_result'; // S8-3: pushed to both attacker and defender after siege settlement
       siegeId: string;
+      marchId: string; // attacking march's id (occupy attack-animation correlation)
       tile: string;
       outcome: string; // attacker_win | defender_win | draw
       lootSummary: string; // human-readable summary (e.g. "ink+250"), displayed directly in UI

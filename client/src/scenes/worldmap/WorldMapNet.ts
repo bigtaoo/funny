@@ -421,6 +421,16 @@ export class WorldMapNet {
 
   applySiegeResult(s: SiegeResult): void {
     if (this.ctx.destroyed) return;
+    // The attacking march is about to drop off `ctx.marches` (refreshMarches below) and get torn
+    // down by fog.ts syncMarchTokens — mark it to keep playing 'attacking' a beat longer instead
+    // of vanishing instantly. Default duration covers the case the .tao asset hasn't loaded yet.
+    if (s.marchId) {
+      const entry = this.ctx.marchTokenRuntimes.get(s.marchId);
+      if (entry) {
+        const durSec = entry.runtime?.currentDuration || 0.6;
+        this.ctx.marchAttackUntil.set(s.marchId, Date.now() + durSec * 1000);
+      }
+    }
     // Ownership / resources / troops may all have shifted — refetch the lot.
     void this.loadMapViewport().then(() => { if (!this.ctx.destroyed) this.ctx.view.renderMap(); });
     void this.refreshMe();

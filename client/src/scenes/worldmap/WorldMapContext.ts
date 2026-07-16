@@ -95,6 +95,11 @@ export class WorldMapContext {
   /** marchId → live StickmanRuntime riding that march's route (fog.ts syncMarchTokens). `runtime` is
    * null while the (cached-after-first-use) .tao asset is still loading. */
   marchTokenRuntimes: Map<string, { runtime: StickmanRuntime | null; kind: string }> = new Map();
+  /** marchId → epoch-ms deadline to keep playing the 'attacking' clip after the march has
+   * resolved (arrived off `ctx.marches`) instead of tearing its token down instantly (§ occupy
+   * attack-animation fix). Populated by WorldMapNet.applySiegeResult, consumed/expired in
+   * fog.ts syncMarchTokens. */
+  marchAttackUntil: Map<string, number> = new Map();
   hudLayer!: PIXI.Container;
   /** Title bar + back button — static, drawn once (unlike hudLayer, which is torn down on every ~5s march-poll re-render). */
   topLayer!: PIXI.Container;

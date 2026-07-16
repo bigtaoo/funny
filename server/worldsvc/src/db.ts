@@ -256,6 +256,9 @@ export interface NationMessageDoc {
 export interface SiegeDoc {
   _id: string; // siegeId
   worldId: string;
+  /** Attacking march's _id — lets the client correlate the resolved siege back to its march
+   * token (e.g. to play an attack animation before tearing the token down). */
+  marchId: string;
   attackerId: string;
   defenderId?: string;
   tile: string;
