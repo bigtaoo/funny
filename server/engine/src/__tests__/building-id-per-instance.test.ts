@@ -17,7 +17,32 @@ import { test } from 'node:test';
 
 import { GameState } from '../GameState';
 import { Building, resetBuildingIds } from '../Building';
-import { BuildingType, Side } from '../types';
+import { Unit } from '../Unit';
+import { createGameEngine } from '../GameEngine';
+import { ATTACK_LANES } from '../config';
+import { toFp } from '../math/fixed';
+import { BuildingType, CardType, Side, UnitType } from '../types';
+import type { GameConfig, GameEvent, PlayerCommand } from '../types';
+import type { LevelDefinition } from '../campaign/LevelDefinition';
+
+/** Play `step(0)` on a fresh engine, retrying seeds until the bottom opening hand holds a building card. */
+function engineWithBuildingCard(): { engine: ReturnType<typeof createGameEngine>; slotIndex: number } {
+  for (let seed = 1; seed < 500; seed++) {
+    const engine = createGameEngine({ seed, players: [{ id: 0 }, { id: 1 }] });
+    engine.step(0, []);
+    const slotIndex = engine.state.bottomPlayer.hand.slots.findIndex(
+      (s) => s?.card.cardType === CardType.Building,
+    );
+    if (slotIndex >= 0) return { engine, slotIndex };
+  }
+  throw new Error('no seed < 500 dealt an opening hand containing a building card');
+}
+
+/** Id of the first `building_placed` event in a batch, or undefined. The `.type` guard narrows the union. */
+function placedBuildingId(events: readonly GameEvent[]): number | undefined {
+  for (const e of events) if (e.type === 'building_placed') return e.buildingId;
+  return undefined;
+}
 
 test('allocBuildingId is monotonic and starts at 0 for a fresh match', () => {
   const gs = new GameState(1);
@@ -103,4 +128,62 @@ test('standalone Building fallback ids never collide with per-instance ids', () 
 
   const gs = new GameState(1);
   assert.equal(gs.allocBuildingId(), 0); // instance counter unaffected by the module fallback
+});
+
+test('integration: placing a building via the play_card command path draws its id from GameState.allocBuildingId', () => {
+  const { engine, slotIndex } = engineWithBuildingCard();
+  // Grant ink so the affordability guard doesn't skip the play (setup only).
+  engine.state.bottomPlayer.addInkFp(toFp(9999));
+
+  const cmd: PlayerCommand = { type: 'play_card', owner: 0, tick: 1, handIndex: slotIndex, col: ATTACK_LANES[0] };
+  const events = engine.step(1, [cmd]);
+
+  const id = placedBuildingId(events);
+  assert.notEqual(id, undefined, 'building_placed event fired for the played building card');
+  // Per-instance counter starts at 0; the module fallback is >=500. If commands.ts stopped
+  // passing state.allocBuildingId() (the wiring this fix adds), the placement would fall back
+  // to the module counter and this id would be >=500 — so <500 pins the wiring.
+  assert.ok(id! < 500, `placed building id ${id} came from the module fallback, not GameState.allocBuildingId`);
+  assert.equal(engine.state.board.buildings.get(id!)?.id, id, 'placed building is retrievable from board.buildings by its event id');
+});
+
+test('integration: defenderBuildings (engine/base.ts) get per-instance ids, starting at 0', () => {
+  const level: LevelDefinition = {
+    id: 'test_defender_buildings',
+    chapter: 0,
+    seed: 7,
+    objective: { kind: 'timed_defense', durationTicks: 5 },
+    waves: { entries: [] },
+    defenderBuildings: [
+      { buildingType: BuildingType.ArrowTower, col: ATTACK_LANES[0] },
+      { buildingType: BuildingType.ArrowTower, col: ATTACK_LANES[1] },
+    ],
+  };
+  const config: GameConfig = { seed: 7, mode: 'campaign', players: [{ id: 0 }, { id: 1 }], level };
+  const engine = createGameEngine(config);
+  engine.step(0, []);
+
+  const ids = [...engine.state.board.buildings.keys()].sort((a, b) => a - b);
+  assert.equal(ids.length, 2, 'both defender buildings landed on the board');
+  // Freshly built engine → instance counter runs 0, 1. A dropped allocBuildingId() wiring in
+  // base.ts would instead hand out module-fallback ids (>=500).
+  assert.deepEqual(ids, [0, 1], `defender buildings did not use the per-instance counter (got ${ids})`);
+});
+
+test('unit and building id namespaces never overlap on the same live board', () => {
+  const gs = new GameState(1);
+  // Interleave real placements + spawns exactly as a live match would, all through the
+  // per-instance counters, then assert the two id ranges stay disjoint.
+  for (let i = 0; i < 3; i++) {
+    gs.board.addBuilding(new Building(BuildingType.ArrowTower, Side.Bottom, i, 1, undefined, gs.allocBuildingId()));
+    gs.board.addUnit(new Unit(UnitType.Infantry, Side.Bottom, i, 5, undefined, undefined, gs.allocUnitId()));
+  }
+
+  const buildingIds = [...gs.board.buildings.keys()];
+  const unitIds = [...gs.board.units.keys()];
+  for (const bid of buildingIds) assert.ok(bid < 1000, `building id ${bid} bled into the unit range (>=1000)`);
+  for (const uid of unitIds) assert.ok(uid >= 1000, `unit id ${uid} bled into the building range (<1000)`);
+
+  const overlap = buildingIds.filter((id) => unitIds.includes(id));
+  assert.deepEqual(overlap, [], `id collision across the unit/building namespaces: ${overlap}`);
 });
