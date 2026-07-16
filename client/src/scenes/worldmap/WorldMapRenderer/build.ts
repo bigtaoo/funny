@@ -87,6 +87,11 @@ export function BuildMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase):
       this.ctx.toastLayer = new PIXI.Container();
       this.ctx.container.addChild(this.ctx.toastLayer);
 
+      // Base-damage vignette (D-CITY-8) — screen-edge red flash, above every other layer
+      // (including HUD/modals) so a siege hit reads even while a panel is open.
+      this.ctx.vignetteGfx = new PIXI.Graphics();
+      this.ctx.container.addChild(this.ctx.vignetteGfx);
+
       // Loading cover — top-most so the half-built / untextured map never peeks through.
       this.buildLoadingOverlay();
 

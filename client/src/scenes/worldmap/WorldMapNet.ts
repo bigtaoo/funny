@@ -387,9 +387,22 @@ export class WorldMapNet {
     void this.refreshMarches();
   }
 
-  applyTileUpdate(_tu: TileUpdate): void {
+  applyTileUpdate(tu: TileUpdate): void {
     if (this.ctx.destroyed) return;
-    void this.loadMapViewport().then(() => { if (!this.ctx.destroyed) this.ctx.view.renderMap(); });
+    // D-CITY-8: flag whether this push is our own main base losing durability, so the full-screen
+    // vignette flash (WorldMapRenderer/vignette.ts) can fire once the fresh hp value is in cache.
+    // TileUpdate itself carries no hp field (see transport.proto), so we diff the cached view before/after.
+    const isOwnBase = !!this.ctx.me?.mainBaseTile && tu.tileId === this.ctx.me.mainBaseTile;
+    const [bx, by] = isOwnBase ? this.ctx.parseTileId(tu.tileId) : [0, 0];
+    const prevHp = isOwnBase ? this.ctx.tileCache.get(`${bx}:${by}`)?.hp : undefined;
+    void this.loadMapViewport().then(() => {
+      if (this.ctx.destroyed) return;
+      if (isOwnBase) {
+        const nowHp = this.ctx.tileCache.get(`${bx}:${by}`)?.hp;
+        if (prevHp != null && nowHp != null && nowHp < prevHp) this.ctx.view.flashDamageVignette();
+      }
+      this.ctx.view.renderMap();
+    });
   }
 
   applyUnderAttack(u: UnderAttack): void {

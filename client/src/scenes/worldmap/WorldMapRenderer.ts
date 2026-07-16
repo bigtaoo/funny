@@ -11,14 +11,17 @@ import { ViewportMixin } from './WorldMapRenderer/viewport';
 import { PoolMixin } from './WorldMapRenderer/pool';
 import { CityMixin } from './WorldMapRenderer/city';
 import { FogMixin } from './WorldMapRenderer/fog';
+import { VignetteMixin } from './WorldMapRenderer/vignette';
 import { LifecycleMixin } from './WorldMapRenderer/lifecycle';
 
 const Assembled = LifecycleMixin(
-  FogMixin(
-    CityMixin(
-      PoolMixin(
-        ViewportMixin(
-          BuildMixin(WorldMapRendererBase),
+  VignetteMixin(
+    FogMixin(
+      CityMixin(
+        PoolMixin(
+          ViewportMixin(
+            BuildMixin(WorldMapRendererBase),
+          ),
         ),
       ),
     ),

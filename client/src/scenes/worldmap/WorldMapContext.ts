@@ -107,6 +107,10 @@ export class WorldMapContext {
   loadingLayer: PIXI.Container | null = null;
   loadingSpinner: PIXI.Graphics | null = null;
   loadingAngle = 0;
+  /** Screen-edge red vignette (D-CITY-8): flashed when the player's own main-base durability is
+   * deducted by a settled siege hit. Mirrors the battle scene's base-damage vignette (GameRenderer/events.ts). */
+  vignetteGfx!: PIXI.Graphics;
+  vignetteAlpha = 0;
   loadingTimeout: ReturnType<typeof setTimeout> | null = null;
   selectedTile: { x: number; y: number } | null = null;
   myAttackTiles: Set<string> = new Set();
