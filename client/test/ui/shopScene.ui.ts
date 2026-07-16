@@ -15,6 +15,10 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { sidebarNavW } from '../../src/ui/widgets/HubTabs';
 import { ShopScene, type ShopSceneCallbacks } from '../../src/scenes/ShopScene';
+// Same asset the shop borrows as skin_shop_c1's placeholder art (SKIN_PLACEHOLDER_ART in shop.ts).
+// Under vitest.ui.config.ts every .png import stubs to a 1×1 data-URI string, so this resolves to
+// the exact URL the scene feeds to getArtTexture() — i.e. the same cached PIXI texture object.
+import infantryArtUrl from '../../src/assets/infantry.png';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -332,6 +336,63 @@ describe('ShopScene — promo-code redemption lives on the Coins tab', () => {
       redeemPromo: async () => ({ ok: true }),
     });
     expect(findLabelPos(scene.container, PROMO_PLACEHOLDER)).not.toBeNull();
+    scene.destroy();
+  });
+});
+
+// Regression coverage for the 2026-07-16 fix: skin cards carry an `artUrl` placeholder (SKIN_PLACEHOLDER_ART),
+// but drawCard() used `PIXI.Sprite.from(url)` and set width/height *immediately* — against a texture whose
+// image had not decoded yet. On a still-loading (baseTexture.valid === false) texture that yields a garbage
+// scale, so the art never appeared, and the scene never re-rendered once the texture finished loading (this
+// is a render()-on-change tree). The fix mirrors CardScene.drawArtFit: skip the sprite while invalid, hook
+// baseTexture.once('loaded', render), and only build+size the sprite once the texture is valid.
+describe('ShopScene — skin card art waits for texture load, then re-renders it in', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+  const SKIN_TITLE = `${t('shop.skinLabel')} · skin_shop_c1`;
+
+  /** Every Sprite in the tree backed by the given base texture (the skin's placeholder art). */
+  function artSprites(container: PIXI.Container, base: PIXI.BaseTexture): PIXI.Sprite[] {
+    const out: PIXI.Sprite[] = [];
+    const walk = (node: PIXI.Container): void => {
+      if (node instanceof PIXI.Sprite && node.texture?.baseTexture === base) out.push(node);
+      for (const c of node.children) walk(c as PIXI.Container);
+    };
+    walk(container);
+    return out;
+  }
+
+  it('draws no art sprite while the texture is loading, then a correctly-sized one once it loads', async () => {
+    const tex = PIXI.Texture.from(infantryArtUrl as string);
+    // Pin the pre-load state deterministically: the headless Image never fires onload, but the global
+    // texture cache is shared across tests in this file, so an earlier render may have left it valid.
+    tex.baseTexture.valid = false;
+
+    const scene = buildShop({
+      loadItems: async () => [{ id: 'skin_shop_c1', cost: 300, kind: 'skin', grants: 'skin_shop_c1' }],
+    });
+    await flush();
+
+    // The card body rendered (title present) — but with the texture unloaded, the OLD code left a
+    // zero/garbage-scaled sprite here; the fix must add none until the texture is valid.
+    expect(findLabelPos(scene.container, SKIN_TITLE), 'skin card should render').not.toBeNull();
+    expect(artSprites(scene.container, tex.baseTexture)).toHaveLength(0);
+
+    // Texture finishes decoding: give it a real size, mark valid, and fire the events drawCard's
+    // once('loaded') hook is waiting on. 'update' refreshes the Texture frame (so orig size > 0);
+    // 'loaded' triggers the scene's re-render.
+    tex.baseTexture.valid = true;
+    tex.baseTexture.width = 64;
+    tex.baseTexture.height = 64;
+    tex.baseTexture.emit('update', tex.baseTexture);
+    tex.baseTexture.emit('loaded', tex.baseTexture);
+    await flush();
+
+    const sprites = artSprites(scene.container, tex.baseTexture);
+    expect(sprites.length, 'art sprite should appear after the texture loads').toBeGreaterThan(0);
+    // Sized to the card's icon slot (width/height set on a now-valid texture), not left native 1×1.
+    expect(sprites[0].width).toBeGreaterThan(1);
+    expect(sprites[0].height).toBeGreaterThan(1);
+
     scene.destroy();
   });
 });
