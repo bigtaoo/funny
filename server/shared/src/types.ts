@@ -16,6 +16,7 @@ import type { EquipRarity, EquipSlot } from './equipment';
 import type { RankId } from './ladder';
 import type { BattlePassData } from './battlepass';
 import type { RetentionSave } from './retention';
+import { STARTER_TITLE } from './titles';
 
 /** Affix (unified shape for primary/secondary/special affixes); id points to the affix pool, value is the rolled number. */
 export interface Affix {
@@ -220,7 +221,9 @@ export function makeNewSave(accountId: string, now: number): SaveData {
     materials: {},
     pveUpgrades: {},
     cardInventory: {},
-    equipped: {},
+    // Starter title granted at creation (TITLE_DESIGN §6); auto-worn since it's the only title owned.
+    titles: [STARTER_TITLE],
+    equipped: { title: STARTER_TITLE },
     flags: {},
     equipmentInv: {},
     cardInv: {},

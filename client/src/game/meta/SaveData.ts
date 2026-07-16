@@ -167,7 +167,11 @@ export const SAVE_VERSION = 5;
 /** Primary storage key for local saves (IPlatform.storage). */
 export const SAVE_STORAGE_KEY = 'nw_save_v1';
 
-/** Default save for a new account. All authoritative sections start from zero (consistent with server-side makeNewSave). */
+/**
+ * Default save for a new account. All authoritative sections start from zero (consistent with server-side makeNewSave).
+ * `titles` is server-authoritative (client read-only): the server seeds the `event.newbie` starter title at account
+ * creation and syncs it down via GET /save, so it is intentionally omitted from this client-local default.
+ */
 export function makeNewSave(accountId = '', now = 0): SaveData {
   return {
     version: SAVE_VERSION,

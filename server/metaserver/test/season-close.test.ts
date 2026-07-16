@@ -201,7 +201,7 @@ describe('settleSeasonParticipants (L2-1 end-of-season close loop)', () => {
     await settleSeasonParticipants(f.cols, commercial, f.socialsvc, 1, 200); // run the same season again
 
     expect(f.socialsvc.mail.size).toBe(1); // mail deduplicated by dispatchKey
-    expect(titlesOf(f, 'alice')).toEqual([ladderTitleId(1, 'master')]); // no duplicate title
+    expect(titlesOf(f, 'alice')).toEqual(['event.newbie', ladderTitleId(1, 'master')]); // starter title + one master, no duplicate
     expect(await f.snaps.countDocuments()).toBe(1); // snapshot deduplicated by composite _id
     expect(f.snaps.docs.get('1:alice')!.ts).toBe(100); // $setOnInsert does not overwrite the first settlement
   });

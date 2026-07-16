@@ -5,8 +5,9 @@
 import { randomUUID, randomBytes } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { SyncPatch } from '@nw/shared';
-import { ErrorCode, err, ok } from '@nw/shared';
+import { ErrorCode, err, ok, STARTER_TITLE } from '@nw/shared';
 import { getOrCreateSave, putSave, writeMigratedSave } from '../save.js';
+import { grantTitleToPlayer } from '../titles.js';
 import { getCurrentSeason, migrateIfStale } from '../ladderSeason.js';
 import { getDisplayName, ensurePublicId, hasFreeRename } from '../accounts.js';
 import { mirrorWalletFrom, reconcileUndelivered } from '../economy.js';
@@ -54,6 +55,12 @@ export function SaveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
       const accountId = accountIdOf(req);
       const { cols, commercial, now } = this.deps;
       await getOrCreateSave(cols, accountId, now()); // ensure save document exists
+      // Starter title backfill (TITLE_DESIGN §6): idempotent grant of the newbie title. New accounts already
+      // have it from makeNewSave; this heals pre-existing accounts created before the starter grant was wired.
+      // Runs before the authoritative read below so the granted title is reflected in this response.
+      await grantTitleToPlayer(cols, accountId, STARTER_TITLE, now()).catch((e) => {
+        req.log.warn({ err: e }, 'starter title grant failed (non-fatal)');
+      });
       // Also reconcile + refresh wallet mirror (when commercial is available): re-deliver orders left from crashes + pull authoritative balance/pity into the mirror.
       if (commercial.available) {
         try {

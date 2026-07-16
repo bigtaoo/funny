@@ -60,6 +60,13 @@ export const TITLE_DEFS: Readonly<Record<string, TitleDef>> = {
   },
 };
 
+/**
+ * Starter title every account owns from creation (TITLE_DESIGN §6, "新号起步称号").
+ * Granted at save creation (makeNewSave) and lazily backfilled for pre-existing accounts on save read.
+ * T1 weight (1300), so it never overrides a title the player actually earned.
+ */
+export const STARTER_TITLE = 'event.newbie';
+
 // ── Weight lookup (supports dynamic seasonal titleId) ────────────────────────────────────────────
 
 /** Returns the weight for any titleId. Dynamic seasonal titleIds are derived from LADDER_RANK_WEIGHTS; unknown titles return 0. */

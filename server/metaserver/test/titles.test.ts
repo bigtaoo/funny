@@ -94,11 +94,15 @@ describe('GET /titles (L2-2)', () => {
     await app.close();
   });
 
-  it('new account with no titles → empty array + equipped:null', async () => {
+  it('new account → starts with the newbie starter title, auto-equipped', async () => {
+    // makeNewSave seeds event.newbie (TITLE_DESIGN §6); getOrCreateSave persists it for a fresh account.
     const app = await makeApp(fakeCols());
     const res = await app.inject({ method: 'GET', url: '/titles', headers: auth });
     expect(res.statusCode).toBe(200);
-    expect(res.json().data).toEqual({ titles: [], equipped: null });
+    expect(res.json().data).toEqual({
+      titles: [{ id: 'event.newbie', source: 'event' }],
+      equipped: 'event.newbie',
+    });
     await app.close();
   });
 });
