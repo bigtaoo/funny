@@ -287,7 +287,14 @@ describe.skipIf(!mongo)('worldsvc occupy-march e2e (ADR-037 §5.4)', () => {
     for (const id of cardIds) cardStateSet[id] = { currentTroops: 200, teamId: 't1' };
     await m.collections.playerWorld.updateOne(
       { _id: playerWorldId(W, 'a') },
-      { $set: Object.fromEntries(Object.entries(cardStateSet).map(([id, cs]) => [`cardState.${id}`, cs])) },
+      {
+        $set: {
+          ...Object.fromEntries(Object.entries(cardStateSet).map(([id, cs]) => [`cardState.${id}`, cs])),
+          // 12×200 = 2400 committed exceeds SATCHEL_CARRY_BASE (D-CITY-9, added 2026-07-16); build satchel:1 so
+          // this pre-existing occupy-march scenario (unrelated to satchel) keeps working unchanged otherwise.
+          buildings: { desk: 1, satchel: 1 },
+        },
+      },
     );
     const lanes = [0, 1, 2, 3, 4, 7, 8, 9, 10, 11];
     const teams: TeamTemplate[] = [{

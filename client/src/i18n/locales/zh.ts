@@ -1396,6 +1396,7 @@ export const zh = {
   'city.bonusWallHp': '主城守军HP +{pct}%（主城被围）',
   'city.bonusAcademyHp': '出征单位HP +{pct}%',
   'city.bonusAcademyDmg': '出征单位伤害 +{pct}%',
+  'city.bonusSatchel': '单队出征携带兵力上限 {n}',
   'city.trainPanel': '练兵',
   'city.troopCap': '兵力 {cur}/{cap}',
   'city.err.noResources': '资源不足',
@@ -1416,6 +1417,7 @@ export const zh = {
   'city.bld.drillYard': '练兵场',
   'city.bld.wall': '城墙',
   'city.bld.academy': '书院',
+  'city.bld.satchel': '书包',
   // world map entry button
   'world.actEnterCity': '进入主城',
 

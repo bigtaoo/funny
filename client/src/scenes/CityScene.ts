@@ -23,6 +23,13 @@ import {
   RESOURCE_TYPES,
   DESK_MAX_LEVEL,
   BUILD_SPEEDUP_SECS_PER_COIN,
+  CABINET_CAP_STEP,
+  DRILL_TROOPCAP_STEP,
+  DRILL_TRAIN_SPEED_STEP,
+  WALL_DEFENSE_STEP,
+  ACADEMY_HP_STEP,
+  ACADEMY_DAMAGE_STEP,
+  SATCHEL_CARRY_STEP,
   buildingLevel,
   buildCost,
   buildTimeSec,
@@ -32,6 +39,7 @@ import {
   resourceCapFor,
   troopCapFor,
   trainQueueMaxFor,
+  satchelCarryCapFor,
   type ResourceType,
 } from '@nw/shared';
 import { BusyTracker } from '../ui/busyTracker';
@@ -78,6 +86,7 @@ const BLD_ICON: Readonly<Record<BuildingKey, string>> = {
   drillYard:    '⚔️',
   wall:         '🏯',
   academy:      '📚',
+  satchel:      '🎒',
 };
 
 // Building glyph source: the five resource-producer buildings reuse the res_atlas
@@ -699,27 +708,30 @@ export class CityScene implements Scene {
         break;
       }
       case 'cabinet': {
-        const capPct = Math.round((1 + lvl * 0.1) * 100);
+        const capPct = Math.round((1 + lvl * CABINET_CAP_STEP) * 100);
         lines.push(t('city.bonusCap').replace('{pct}', String(capPct)));
         break;
       }
       case 'drillYard':
-        lines.push(t('city.bonusTroopCap').replace('{n}', String(lvl * 500)));
-        lines.push(t('city.bonusTrainSpeed').replace('{pct}', String(Math.round(lvl * 4))));
+        lines.push(t('city.bonusTroopCap').replace('{n}', String(lvl * DRILL_TROOPCAP_STEP)));
+        lines.push(t('city.bonusTrainSpeed').replace('{pct}', String(Math.round(lvl * DRILL_TRAIN_SPEED_STEP * 100))));
         lines.push(t('city.bonusQueueSlots').replace('{n}', String(trainQueueMaxFor(bld))));
         break;
       case 'wall': {
-        const wallPct = Math.round(lvl * 5);
+        const wallPct = Math.round(lvl * WALL_DEFENSE_STEP * 100);
         lines.push(t('city.bonusWallHp').replace('{pct}', String(wallPct)));
         break;
       }
       case 'academy': {
-        const hpPct = Math.round(lvl * 2);
-        const dmgPct = Math.round(lvl * 1.5);
+        const hpPct = Math.round(lvl * ACADEMY_HP_STEP * 100);
+        const dmgPct = Math.round(lvl * ACADEMY_DAMAGE_STEP * 100);
         if (hpPct > 0) lines.push(t('city.bonusAcademyHp').replace('{pct}', String(hpPct)));
         if (dmgPct > 0) lines.push(t('city.bonusAcademyDmg').replace('{pct}', String(dmgPct)));
         break;
       }
+      case 'satchel':
+        lines.push(t('city.bonusSatchel').replace('{n}', String(satchelCarryCapFor(bld))));
+        break;
     }
     return lines;
   }

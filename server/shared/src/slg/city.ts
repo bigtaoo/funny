@@ -1,4 +1,4 @@
-// SLG home-city building system (SLG_CITY_DESIGN, ADR-022; season-scoped, cleared on reset) — P1 + P2 (wall/academy/cabinet).
+// SLG home-city building system (SLG_CITY_DESIGN, ADR-022; season-scoped, cleared on reset) — P1 + P2 (wall/academy/cabinet) + P3 (satchel, D-CITY-9).
 // Split out of slg.ts (god-file split, [[project_godfile_split_pattern]]).
 // Home-city administration: a single hub (desk) gates a row of stationery buildings. Buildings inject ONLY into SLG economy / troop paths
 // (recomputeYield / settleResources cap / troopCap + training); they NEVER feed buildPvpBlueprints (ladder red line, D-CITY-6).
@@ -17,14 +17,16 @@ export type BuildingKey =
   | 'cabinet'      // storage cap (RESOURCE_CAP multiplier) + loot protection (P2)
   | 'drillYard'    // troopCap growth + training speed + training queue slots
   | 'wall'         // P2: home-city siege defense
-  | 'academy';     // P2: season-scoped blueprint buff
+  | 'academy'      // P2: season-scoped blueprint buff
+  | 'satchel';     // P3: per-march troop-carry cap (D-CITY-9), independent of drillYard's total troopCap
 
 export const BUILDING_KEYS: readonly BuildingKey[] = [
-  'desk', 'inkPot', 'paperTray', 'graphiteMill', 'metalForge', 'stickerShop', 'cabinet', 'drillYard', 'wall', 'academy',
+  'desk', 'inkPot', 'paperTray', 'graphiteMill', 'metalForge', 'stickerShop', 'cabinet', 'drillYard', 'wall', 'academy', 'satchel',
 ];
-/** P1-implemented building keys (wall/academy are P2 placeholders, not yet buildable). */
+/** Buildable-via-live-endpoint keys (`/world/build/upgrade` gate, httpApi.ts) — wall/academy remain P2 placeholders
+ *  not yet wired to that endpoint (pure-function-only today); satchel (P3, D-CITY-9) joins P1's buildable set. */
 export const BUILDING_KEYS_P1: readonly BuildingKey[] = [
-  'desk', 'inkPot', 'paperTray', 'graphiteMill', 'metalForge', 'stickerShop', 'cabinet', 'drillYard',
+  'desk', 'inkPot', 'paperTray', 'graphiteMill', 'metalForge', 'stickerShop', 'cabinet', 'drillYard', 'satchel',
 ];
 /** Which land resource each resource-building boosts (recomputeYield multiplier). stickerShop is self-production, handled separately. */
 export const BUILDING_YIELD_RES: Readonly<Partial<Record<BuildingKey, ResourceType>>> = {
@@ -45,6 +47,11 @@ export const DRILL_TROOPCAP_STEP = 1000;       // drillYard: +1000 troopCap per 
 export const DRILL_TRAIN_SPEED_STEP = 0.08;    // drillYard: -8% training time per level (floored)
 export const DRILL_TRAIN_SPEED_FLOOR = 0.5;    // drillYard: training-time multiplier never below 0.5
 export const DRILL_QUEUE_PER_LEVELS = 2;       // drillYard: +1 training queue slot per this many levels
+// DRAFT: base = TROOP_CAP_BASE (a single team can carry the whole starting pool with no satchel built) and
+// step mirrors DRILL_TROOPCAP_STEP so a maxed satchel (L10) lets one team carry the whole max troopCap (12,000) —
+// without it, surplus troops from a maxed drillYard must be split across multiple teams (D-CITY-9).
+export const SATCHEL_CARRY_BASE = TROOP_CAP_BASE; // per-march troop-carry cap with no satchel built
+export const SATCHEL_CARRY_STEP = 1000;           // satchel: +1000 per-march troop-carry cap per level
 export const BUILD_QUEUE_SLOTS = 1;            // concurrent build-queue slots (paid 2nd slot deferred, §6)
 export const BUILD_SPEEDUP_SECS_PER_COIN = 60; // build speedup rate (aligned with TROOP_SPEEDUP_SECS_PER_COIN)
 export const BUILD_TIME_BASE_SEC = 480;        // base build time per level; time(toLevel) = base × toLevel
@@ -62,6 +69,7 @@ const BUILD_COST_BASE: Readonly<Record<BuildingKey, Partial<Record<ResourceType,
   drillYard:    { paper: 3600, metal: 1600, sticker: 800 },
   wall:         { paper: 4800, graphite: 2400, metal: 1600 },
   academy:      { paper: 4000, graphite: 3200, sticker: 1600 },
+  satchel:      { paper: 3600, metal: 1200, sticker: 800 },
 };
 
 /** Current level of a building: desk defaults to 1 (always present), every other building defaults to 0 (unbuilt). */
@@ -93,6 +101,10 @@ export function resourceCapFor(buildings: Partial<Record<BuildingKey, number>> |
 /** Troop cap including drillYard growth (replaces the static TROOP_CAP_BASE). */
 export function troopCapFor(buildings: Partial<Record<BuildingKey, number>> | undefined): number {
   return TROOP_CAP_BASE + buildingLevel(buildings, 'drillYard') * DRILL_TROOPCAP_STEP;
+}
+/** Per-march troop-carry cap from satchel (D-CITY-9) — independent of troopCapFor's total pool cap; gates a single team's march/siege deployment. */
+export function satchelCarryCapFor(buildings: Partial<Record<BuildingKey, number>> | undefined): number {
+  return SATCHEL_CARRY_BASE + buildingLevel(buildings, 'satchel') * SATCHEL_CARRY_STEP;
 }
 /** Training-time multiplier from drillYard speed (floored at DRILL_TRAIN_SPEED_FLOOR). */
 export function drillTrainMult(buildings: Partial<Record<BuildingKey, number>> | undefined): number {

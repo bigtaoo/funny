@@ -100,6 +100,8 @@ export const ErrorCode = {
   TEAM_BUSY: 'TEAM_BUSY',                           // team is already committed to an active (non-recalled) march; recall it first
   OCCUPATION_NOT_FOUND: 'OCCUPATION_NOT_FOUND',     // no active occupation-hold for this team/tile (already settled, expelled, or never started)
   MAIL_HAS_UNCLAIMED_ATTACHMENT: 'MAIL_HAS_UNCLAIMED_ATTACHMENT', // mail has an attachment that hasn't been claimed yet; claim it before deleting
+  // —— SLG city P3 (2026-07-16): satchel per-march troop-carry cap ——
+  SATCHEL_CAP_EXCEEDED: 'SATCHEL_CAP_EXCEEDED',     // team's carried troops exceed satchelCarryCapFor(buildings), D-CITY-9
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -192,4 +194,5 @@ export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.TEAM_BUSY]: 409,
   [ErrorCode.OCCUPATION_NOT_FOUND]: 404,
   [ErrorCode.MAIL_HAS_UNCLAIMED_ATTACHMENT]: 409,
+  [ErrorCode.SATCHEL_CAP_EXCEEDED]: 409,
 };

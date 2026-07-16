@@ -13,6 +13,7 @@ import {
   isInVision,
   marchInterpPos,
   baseFootprintCells,
+  satchelCarryCapFor,
   SlgError,
   type PathCell,
   type MarchKind,
@@ -149,6 +150,17 @@ export class MarchService {
       if (busyMarch || busyHold) throw new SlgError('TEAM_BUSY', 'Team is already marching or occupying; recall it first');
       army = team.army;
       troops = team.army.reduce((s, e) => s + Math.max(1, Math.floor(e.initialHp ?? 0)), 0);
+      // D-CITY-9: satchel gates how many troops a SINGLE team may carry per march/siege — independent of the
+      // total troopCap pool (troopCapFor/drillYard). Card-army teams carry real strength in cardState.currentTroops
+      // (the flat `troops` above degenerates to card count for them, per the CC-3 note below), so sum that instead.
+      const teamHasCardArmy = team.army.some((e) => !!e.cardInstanceId);
+      const carried = teamHasCardArmy
+        ? team.army.reduce((s, e) => s + (e.cardInstanceId ? (pw.cardState?.[e.cardInstanceId]?.currentTroops ?? 0) : 0), 0)
+        : troops;
+      const satchelCap = satchelCarryCapFor(pw.buildings);
+      if (carried > satchelCap) {
+        throw new SlgError('SATCHEL_CAP_EXCEEDED', `Team carries ${carried} troops, exceeds satchel cap of ${satchelCap}`);
+      }
     }
     // CC-3 card-based team (cardInstanceId entries): committed strength lives entirely in cardState.currentTroops
     // (§6.1/§9 of CHARACTER_CARDS_DESIGN — a ledger fully independent of playerWorld.troops), so `troops` above

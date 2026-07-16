@@ -873,7 +873,7 @@ export interface components {
          * @description Home-city building identifier (SLG_CITY_DESIGN). P1 buildable: desk/inkPot/paperTray/graphiteMill/metalForge/stickerShop/cabinet/drillYard; wall/academy are P2.
          * @enum {string}
          */
-        BuildingKey: "desk" | "inkPot" | "paperTray" | "graphiteMill" | "metalForge" | "stickerShop" | "cabinet" | "drillYard" | "wall" | "academy";
+        BuildingKey: "desk" | "inkPot" | "paperTray" | "graphiteMill" | "metalForge" | "stickerShop" | "cabinet" | "drillYard" | "wall" | "academy" | "satchel";
         MarchView: {
             marchId: string;
             /** @enum {string} */

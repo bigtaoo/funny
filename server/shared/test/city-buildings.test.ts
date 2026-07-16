@@ -19,6 +19,8 @@ import {
   ACADEMY_SIEGE_STEP,
   DRILL_TROOPCAP_STEP,
   DRILL_QUEUE_PER_LEVELS,
+  SATCHEL_CARRY_BASE,
+  SATCHEL_CARRY_STEP,
   buildingLevel,
   deskLevel,
   buildingYieldMult,
@@ -33,6 +35,7 @@ import {
   wallDefenseMult,
   cabinetLootProtect,
   academyBuff,
+  satchelCarryCapFor,
   type BuildingKey,
 } from '../src/slg';
 
@@ -143,5 +146,14 @@ describe('P2 building functions: wall / cabinetLootProtect / academyBuff', () =>
     expect(academyBuff({ academy: 10 }).hp).toBeCloseTo(10 * ACADEMY_HP_STEP);
     expect(academyBuff({ academy: 10 }).damage).toBeCloseTo(10 * ACADEMY_DAMAGE_STEP);
     expect(academyBuff({ academy: 10 }).siege).toBeCloseTo(10 * ACADEMY_SIEGE_STEP);
+  });
+});
+
+describe('P3 building function: satchel per-march troop-carry cap (D-CITY-9)', () => {
+  it('satchelCarryCapFor: no satchel → SATCHEL_CARRY_BASE; each level adds SATCHEL_CARRY_STEP', () => {
+    expect(satchelCarryCapFor(undefined)).toBe(SATCHEL_CARRY_BASE);
+    expect(satchelCarryCapFor({ satchel: 0 })).toBe(SATCHEL_CARRY_BASE);
+    expect(satchelCarryCapFor({ satchel: 1 })).toBe(SATCHEL_CARRY_BASE + SATCHEL_CARRY_STEP);
+    expect(satchelCarryCapFor({ satchel: 10 })).toBe(SATCHEL_CARRY_BASE + 10 * SATCHEL_CARRY_STEP);
   });
 });

@@ -1382,6 +1382,7 @@ export const de: Record<TranslationKey, string> = {
   'city.bonusWallHp': 'Garnisonstruppstärke +{pct}% (bei Belagerung)',
   'city.bonusAcademyHp': 'Angriffseinheiten HP +{pct}%',
   'city.bonusAcademyDmg': 'Angriffseinheiten Schaden +{pct}%',
+  'city.bonusSatchel': 'Truppenobergrenze pro Marsch: {n}',
   'city.trainPanel': 'Truppen ausbilden',
   'city.troopCap': 'Truppen {cur}/{cap}',
   'city.err.noResources': 'Nicht genug Ressourcen',
@@ -1401,6 +1402,7 @@ export const de: Record<TranslationKey, string> = {
   'city.bld.drillYard': 'Exerzierplatz',
   'city.bld.wall': 'Stadtmauer',
   'city.bld.academy': 'Akademie',
+  'city.bld.satchel': 'Beutel',
   'world.actEnterCity': 'Heimatstadt betreten',
 
   // ── Hero Roster (CHARACTER_CARDS_DESIGN §10) ──────────────────────────────
