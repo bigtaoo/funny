@@ -1364,6 +1364,7 @@ export const de: Record<TranslationKey, string> = {
   'city.page.military': 'Heimatstadt · Militär',
   'city.tab.domestic': 'Inneres',
   'city.tab.military': 'Militär',
+  'city.military.techTree': 'Technologiebaum',
   'city.military.teams': 'Teams',
   'city.military.teamIdle': 'Garnisoniert',
   'city.buildings': 'Gebäude',

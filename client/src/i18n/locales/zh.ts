@@ -1378,6 +1378,7 @@ export const zh = {
   'city.page.military': '主城·军情',
   'city.tab.domestic': '内政',
   'city.tab.military': '军事',
+  'city.military.techTree': '科技树',
   'city.military.teams': '队伍',
   'city.military.teamIdle': '驻军在家',
   'city.buildings': '建筑',

@@ -103,9 +103,10 @@ for (const [label, [w, h]] of [['portrait', PORTRAIT], ['landscape', LANDSCAPE]]
       const { scene } = buildScene(w, h);
       const inner = internals(scene);
       // hits[0] is the header Back button, hits[1..2] are the D-CITY-11 page tabs
-      // (内政/军事); the rest (BUILDING_KEYS.length, 11 incl. satchel/D-CITY-9) are the grid cards.
+      // (内政/军事); the rest are the grid cards — BUILDING_KEYS.length (11, incl.
+      // satchel/D-CITY-9) minus academy, which D-CITY-12 moved to its own military-page panel.
       const cards = inner.hits.slice(3);
-      expect(cards.length).toBe(11);
+      expect(cards.length).toBe(10);
 
       for (const c of cards) {
         expect(c.x).toBeGreaterThanOrEqual(0);
@@ -191,8 +192,9 @@ describe('CityScene page tabs (D-CITY-11 dual-screen split, 2026-07-16)', () => 
     const militaryTab = inner.hits[2]!;
     inner.handleDown(militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
     expect(inner.page).toBe('military');
-    // Building-grid card hits must not leak into the military page's hit list.
-    expect(inner.hits.length).toBe(3);
+    // Building-grid card hits must not leak into the military page's hit list; hits[3] is
+    // the D-CITY-12 tech-tree panel (academy), the only card left there.
+    expect(inner.hits.length).toBe(4);
 
     const domesticTab = inner.hits[1]!;
     inner.handleDown(domesticTab.x + domesticTab.w / 2, domesticTab.y + domesticTab.h / 2);
@@ -206,6 +208,96 @@ describe('CityScene page tabs (D-CITY-11 dual-screen split, 2026-07-16)', () => 
     const militaryTab = inner.hits[2]!;
     inner.handleDown(militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
     expect(inner.page).toBe('military');
+
+    const backHit = inner.hits[0]!;
+    inner.handleDown(backHit.x + backHit.w / 2, backHit.y + backHit.h / 2);
+    expect(calls.back).toBe(1);
+    scene.destroy();
+  });
+});
+
+function gotoMilitary(inner: CitySceneInternals): void {
+  const militaryTab = inner.hits[2]!;
+  inner.handleDown(militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
+}
+
+describe('CityScene tech-tree panel (D-CITY-12, 2026-07-16)', () => {
+  it('tapping the military page tech-tree panel opens the academy detail modal', () => {
+    const { scene } = buildScene(...PORTRAIT);
+    const inner = internals(scene);
+    gotoMilitary(inner);
+    expect(inner.page).toBe('military');
+
+    const techTreeHit = inner.hits[3]!;
+    inner.handleDown(techTreeHit.x + techTreeHit.w / 2, techTreeHit.y + techTreeHit.h / 2);
+    expect(inner.selectedBuilding).toBe('academy');
+    scene.destroy();
+  });
+
+  it('academy no longer appears as a card in the domestic building grid', () => {
+    const { scene } = buildScene(...PORTRAIT);
+    const inner = internals(scene);
+    // 10 cards now (11 BUILDING_KEYS minus academy), past Back + 2 page tabs.
+    expect(inner.hits.slice(3).length).toBe(10);
+    scene.destroy();
+  });
+
+  for (const [label, [w, h]] of [['portrait', PORTRAIT], ['landscape', LANDSCAPE]] as const) {
+    it(`the tech-tree panel hit lands fully within the screen and below the page tabs — ${label}`, () => {
+      const { scene } = buildScene(w, h);
+      const inner = internals(scene);
+      gotoMilitary(inner);
+      const tabsHit = inner.hits[2]!; // military page tab, used only as a y-reference here
+      const techTreeHit = inner.hits[3]!;
+
+      expect(techTreeHit.x).toBeGreaterThanOrEqual(0);
+      expect(techTreeHit.y).toBeGreaterThan(tabsHit.y + tabsHit.h);
+      expect(techTreeHit.x + techTreeHit.w).toBeLessThanOrEqual(inner.w + 1e-6);
+      expect(techTreeHit.y + techTreeHit.h).toBeLessThanOrEqual(inner.h + 1e-6);
+      scene.destroy();
+    });
+  }
+
+  it('opening the academy modal from the military page drops the page-tab hits underneath the dim overlay (same modal-hit-gating invariant as the domestic page)', () => {
+    const { scene } = buildScene(...PORTRAIT);
+    const inner = internals(scene);
+    gotoMilitary(inner);
+    const militaryTab = inner.hits[2]!; // position to re-tap once the modal is open
+
+    const techTreeHit = inner.hits[3]!;
+    inner.handleDown(techTreeHit.x + techTreeHit.w / 2, techTreeHit.y + techTreeHit.h / 2);
+    expect(inner.selectedBuilding).toBe('academy');
+
+    // Before the D-CITY-11 fix this class of bug came from, a stale page-tab hit sitting
+    // underneath the dim overlay would still fire and switch pages instead of just closing
+    // the modal. Tapping the old military-tab coordinates must close the modal, not switch pages.
+    inner.handleDown(militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
+    expect(inner.selectedBuilding).toBeNull();
+    expect(inner.page).toBe('military');
+    scene.destroy();
+  });
+
+  it('tapping far outside the modal opened from the military page closes it and stays on the military page', () => {
+    const { scene } = buildScene(...PORTRAIT);
+    const inner = internals(scene);
+    gotoMilitary(inner);
+    const techTreeHit = inner.hits[3]!;
+    inner.handleDown(techTreeHit.x + techTreeHit.w / 2, techTreeHit.y + techTreeHit.h / 2);
+    expect(inner.selectedBuilding).toBe('academy');
+
+    inner.handleDown(inner.w - 2, inner.h - 2);
+    expect(inner.selectedBuilding).toBeNull();
+    expect(inner.page).toBe('military');
+    scene.destroy();
+  });
+
+  it('the header Back button stays reachable while the academy modal (opened from the military page) is open', () => {
+    const { scene, calls } = buildScene(...PORTRAIT);
+    const inner = internals(scene);
+    gotoMilitary(inner);
+    const techTreeHit = inner.hits[3]!;
+    inner.handleDown(techTreeHit.x + techTreeHit.w / 2, techTreeHit.y + techTreeHit.h / 2);
+    expect(inner.selectedBuilding).toBe('academy');
 
     const backHit = inner.hits[0]!;
     inner.handleDown(backHit.x + backHit.w / 2, backHit.y + backHit.h / 2);
@@ -266,8 +358,9 @@ describe('CityScene military page team panel (D-CITY-10, 2026-07-16)', () => {
       marches: [{ marchId: 'm1', mine: true, teamId: 't1', arriveAt: Date.now() + 30_000 }],
       me: { cardState: { c1: { currentTroops: 400 } }, teamState: { t2: { injuredUntil: Date.now() + 60_000 } } },
     });
-    // Only Back + the 2 page tabs — the team cards are display-only, no card hits pushed.
-    expect(inner.hits.length).toBe(3);
+    // Back + the 2 page tabs + the D-CITY-12 tech-tree panel — the team cards
+    // themselves are display-only, no card hits pushed.
+    expect(inner.hits.length).toBe(4);
     scene.destroy();
   });
 
