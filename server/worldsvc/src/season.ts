@@ -10,6 +10,8 @@ import {
   BP_SETTLE_EXTRA,
   RESET_DELETE_BATCH,
   WORLD_CAPACITY,
+  SLG_SEASON_DURATION_MS,
+  slgTitleId,
   worldShardId,
   shardCountForPopulation,
   allocateSectsToShards,
@@ -37,6 +39,7 @@ export class SeasonService {
     status: string;
     openAt: number;
     resetAt?: number;
+    settleAt?: number;
     capacity: number;
     population: number;
     mapW: number;
@@ -51,6 +54,7 @@ export class SeasonService {
       status: w.status,
       openAt: w.openAt,
       ...(w.resetAt ? { resetAt: w.resetAt } : {}),
+      ...(w.settleAt ? { settleAt: w.settleAt } : {}),
       capacity: w.capacity,
       population: w.population,
       mapW: w.mapW,
@@ -98,7 +102,8 @@ export class SeasonService {
         },
         // status is set only in $set (both first insert and reopen set it to open); the same field cannot appear in both $set and $setOnInsert (Mongo upsert conflict).
         // Pin the engine version on open (C7/§17.9): consistency anchor for authoritative siege / replay. Reopen pins the current process version.
-        $set: { status: 'open' as const, engineVersion: ENGINE_VERSION },
+        // settleAt (§17.14) is set here too so a reopened world (same _id) gets a fresh season clock; auto-settle (processDueSeasonSettlement) fires once now() ≥ settleAt.
+        $set: { status: 'open' as const, engineVersion: ENGINE_VERSION, settleAt: now() + SLG_SEASON_DURATION_MS },
       },
       { upsert: true },
     );
@@ -257,9 +262,12 @@ export class SeasonService {
             attachments,
             expireDays: 30,
           });
-          if (base.titleId) {
-            void this.core.meta.grantTitle(acct, base.titleId).catch((e) =>
-              console.error('[worldsvc] settle grantTitle failed', { acct, titleId: base.titleId, err: (e as Error).message }),
+          if (base.titleKey) {
+            // Stamp the season onto the title id (slg.s{N}.{key}) so it follows the naming convention → correct weight,
+            // source, and i18n on the client (TITLE_DESIGN §3). grantTitle is idempotent ($addToSet) on the meta side.
+            const titleId = slgTitleId(w.season, base.titleKey);
+            void this.core.meta.grantTitle(acct, titleId).catch((e) =>
+              console.error('[worldsvc] settle grantTitle failed', { acct, titleId, err: (e as Error).message }),
             );
           }
         }
@@ -284,6 +292,31 @@ export class SeasonService {
     }
 
     return ranking;
+  }
+
+  /**
+   * Scheduler hook (§17.14): auto-settle every active world whose season clock has elapsed (settleAt ≤ now).
+   * Only transitions active → settling (settleSeason CAS-guards + is idempotent); reset/close stay admin-driven
+   * (destructive map wipe needs ops judgment on timing, consistent with G6 shard ops). Best-effort per world:
+   * one world's failure does not block the others. Returns the worldIds that were settled this pass.
+   */
+  async processDueSeasonSettlement(): Promise<string[]> {
+    const { cols, now } = this.core.deps;
+    const due = await cols.worlds
+      .find({ status: 'active', settleAt: { $lte: now() } }, { projection: { _id: 1 } })
+      .toArray();
+    const settled: string[] = [];
+    for (const w of due) {
+      try {
+        await this.settleSeason(w._id);
+        settled.push(w._id);
+        console.log('[worldsvc] auto-settled season', { worldId: w._id });
+      } catch (e) {
+        // WORLD_CLOSED (raced to settling/closed by another actor) is benign; log others.
+        console.error('[worldsvc] auto-settle failed', { worldId: w._id, err: (e as Error).message });
+      }
+    }
+    return settled;
   }
 
   /**
@@ -317,10 +350,10 @@ export class SeasonService {
     // Family identity/membership itself persists across seasons on socialsvc — only the SLG mirror is reset here.
     await Promise.all(activeFamilyIds.map((fid) => this.core.socialsvc.resetSlgState(fid)));
 
-    // ⑤ Reopen (re-pin engineVersion to the current process version, C7).
+    // ⑤ Reopen (re-pin engineVersion to the current process version, C7; fresh settleAt clock for the recycled world, §17.14).
     await cols.worlds.updateOne(
       { _id: worldId },
-      { $set: { status: 'open' as const, population: 0, resetAt: now(), engineVersion: ENGINE_VERSION }, $inc: { rev: 1 } },
+      { $set: { status: 'open' as const, population: 0, resetAt: now(), engineVersion: ENGINE_VERSION, settleAt: now() + SLG_SEASON_DURATION_MS }, $inc: { rev: 1 } },
     );
     // Re-initialize capital documents
     await this.core.initNations(worldId);
@@ -330,7 +363,7 @@ export class SeasonService {
   /** List all shard world operational summaries (G7/§17.7 admin backend, internal endpoint). */
   async listWorlds(): Promise<Array<{
     worldId: string; season: number; shard: number; status: string;
-    population: number; capacity: number; openAt: number; resetAt?: number; engineVersion?: number;
+    population: number; capacity: number; openAt: number; resetAt?: number; settleAt?: number; engineVersion?: number;
   }>> {
     const worlds = await this.core.deps.cols.worlds.find({}).sort({ season: -1, shard: 1 }).toArray();
     return worlds.map((w) => ({
@@ -342,6 +375,7 @@ export class SeasonService {
       capacity: w.capacity,
       openAt: w.openAt,
       ...(w.resetAt ? { resetAt: w.resetAt } : {}),
+      ...(w.settleAt ? { settleAt: w.settleAt } : {}),
       ...(w.engineVersion != null ? { engineVersion: w.engineVersion } : {}),
     }));
   }

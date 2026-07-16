@@ -95,7 +95,7 @@ async function main(): Promise<void> {
 
   const mapTemplateSvc = new MapTemplateService({ cols: mongo.collections, now: () => Date.now() });
 
-  const scheduler = startScheduler(svc);
+  const scheduler = startScheduler(svc, { autoSettleSeasons: env.autoSettleSeasons });
 
   const server = startHttpApi(
     { host: env.host, port: env.port, jwtSecret: env.jwtSecret, internalKey: env.internalKey },

@@ -64,6 +64,8 @@ export interface WorldDoc {
   mapH: number;
   openAt: number;
   resetAt?: number;
+  /** Season clock (§17.14): openAt + SLG_SEASON_DURATION_MS. When status='active' and now ≥ settleAt, the scheduler auto-settles. Absent = legacy world (never auto-settles). */
+  settleAt?: number;
   capacity: number;
   population: number;
   /** Engine version pinned at world open (C7/§17.9, = @nw/engine ENGINE_VERSION); absent means not pinned (legacy world). */
@@ -493,6 +495,8 @@ export async function createWorldMongo(
 
   async function ensureIndexes(): Promise<void> {
     await collections.worlds.createIndex({ status: 1 });
+    // Auto-settle due scan (§17.14): scheduler finds active worlds whose season clock elapsed (status='active', settleAt ≤ now).
+    await collections.worlds.createIndex({ status: 1, settleAt: 1 });
     // Viewport range query (P6: spatial query v1 uses Mongo {worldId,x,y} range query; Redis bucket cache is a later addition).
     await collections.tiles.createIndex({ worldId: 1, x: 1, y: 1 });
     await collections.tiles.createIndex({ ownerId: 1 });

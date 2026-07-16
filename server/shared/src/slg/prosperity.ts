@@ -34,19 +34,27 @@ export function settleTier(rank: number): SettleTier {
   if (rank <= 10) return 'top10';
   return 'participant';
 }
-/** Per-tier rewards (material items / skins / titleId). Placeholder values pending economic simulation. */
+/** Per-tier rewards (material items / skins / title). Placeholder values pending economic simulation. */
 export interface SettleReward {
   items: Record<string, number>;     // materials: { scrap: N, lead: M, binding: K }
   skins: string[];                   // skin ids (limited edition)
-  titleId?: string;                  // title (grantTitle TODO S10; this round: email body only)
+  /** Season-title key (the {key} in slg.s{N}.{key}); settlement stamps the season → slgTitleId(season, key). Absent = no title for this tier. */
+  titleKey?: string;
   coins?: number;                    // optional coins (must be included in the overall economic budget, OVERVIEW §3.3)
 }
 export const SETTLE_REWARDS: Record<SettleTier, SettleReward> = {
-  champion:    { items: { scrap: 500, lead: 200, binding: 50 }, skins: ['slg_champion_frame'], titleId: 'slg.champion', coins: 0 },
-  top3:        { items: { scrap: 300, lead: 120, binding: 25 }, skins: [], titleId: 'slg.top3' },
+  champion:    { items: { scrap: 500, lead: 200, binding: 50 }, skins: ['slg_champion_frame'], titleKey: 'champion', coins: 0 },
+  top3:        { items: { scrap: 300, lead: 120, binding: 25 }, skins: [], titleKey: 'top3' },
   top10:       { items: { scrap: 150, lead: 60,  binding: 10 }, skins: [] },
   participant: { items: { scrap: 50,  lead: 20,  binding: 0  }, skins: [] },
 };
+
+/**
+ * SLG regional season length (SEASON_OVERVIEW §2: SLG 大区赛季 = 2 个月). Drives WorldDoc.settleAt (= openAt + this)
+ * so the scheduler can auto-run settlement at season end (§17.11). Displayed as "预计结束"; also an admin can settle early.
+ * [可调 → ECONOMY_NUMBERS §13-SLG]
+ */
+export const SLG_SEASON_DURATION_MS = 60 * 24 * 60 * 60 * 1000; // 60 days
 /** Battle-pass resource production multiplier (S8-8): hourly yield ×BP_YIELD_MULT for holders. Applied in recomputeYield after all other multipliers. */
 export const BP_YIELD_MULT = 1.1;
 /** Extra settlement reward dispatched to every battle-pass holder at season end, regardless of tier (S8-8). */

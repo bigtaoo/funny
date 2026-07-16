@@ -157,9 +157,21 @@ function attachmentLabel(a: MailAttachmentView): string {
 /** System mail subject/body arrive as i18n keys (e.g. `auction.mail.returned.subject`); player-authored mail
  *  (friend/family messages) arrives as plain text. Translate if it resolves to a known key, else show as-is. */
 function mailText(raw: string): string {
-  const key = raw as TranslationKey;
-  const s = t(key);
-  return s === key ? raw : s;
+  // System-mail subject/body are i18n keys. Some carry pipe-delimited params for interpolation:
+  // `key|name=value|name2=value2` (e.g. SLG season settlement `slg.settle.body|rank=1|nations=2`).
+  const [key, ...paramParts] = raw.split('|');
+  const k = key as TranslationKey;
+  if (paramParts.length === 0) {
+    const s = t(k);
+    return s === key ? raw : s;
+  }
+  const params: Record<string, string> = {};
+  for (const part of paramParts) {
+    const eq = part.indexOf('=');
+    if (eq > 0) params[part.slice(0, eq)] = part.slice(eq + 1);
+  }
+  const s = t(k, params);
+  return s === key ? raw : s; // key missing → t() returns the bare key; fall back to the raw string
 }
 
 /** Localized def display name (`equip.<defId>.name` / `card.<defId>.name`); falls back to the raw defId. */
