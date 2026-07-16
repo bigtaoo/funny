@@ -25,6 +25,7 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { CityScene, type CitySceneCallbacks } from '../../src/scenes/CityScene';
+import { sidebarNavW } from '../../src/ui/widgets/HubTabs';
 import { formatDuration } from '../../src/scenes/worldmap/formatDuration';
 import type { WorldApiClient, PlayerWorldView } from '../../src/net/WorldApiClient';
 
@@ -49,12 +50,31 @@ type CitySceneInternals = {
   hits: Hit[];
   selectedBuilding: string | null;
   page: 'domestic' | 'military';
+  contentX: number;
   handleDown(x: number, y: number): void;
   render(): void;
 };
 
 function internals(scene: CityScene): CitySceneInternals {
   return scene as unknown as CitySceneInternals;
+}
+
+// The Domestic/Military switch moved from a horizontal strip above the body (2026-07-16
+// D-CITY-11) to a vertical rail LEFT of the binding line (2026-07-16 rework), reusing the
+// Roster/Equipment sidebar-nav convention (HubTabs.drawSidebarTabs/sidebarNavW). That widget
+// only registers a hit for the INACTIVE tab (tapping the already-active tab is a no-op), so
+// the hit list no longer has a fixed "Back + 2 tabs + N cards" shape — it's "Back + 1 tab hit
+// (whichever page isn't current) + N content hits". Content hits always land at
+// x >= inner.contentX (the rail's width); the tab hit is the sole remaining entry left of it.
+// hits[0] is always the header Back button (pushed first, unconditionally, in render()).
+function tabHit(inner: CitySceneInternals): Hit {
+  const candidates = inner.hits.slice(1).filter((h) => h.x < inner.contentX);
+  expect(candidates.length).toBe(1);
+  return candidates[0]!;
+}
+
+function contentHits(inner: CitySceneInternals): Hit[] {
+  return inner.hits.slice(1).filter((h) => h.x >= inner.contentX);
 }
 
 /** All PIXI.Text content currently in the display tree, recursing sub-containers. */
@@ -102,14 +122,15 @@ for (const [label, [w, h]] of [['portrait', PORTRAIT], ['landscape', LANDSCAPE]]
     it('all 11 building cards land fully within the screen and do not overlap each other', () => {
       const { scene } = buildScene(w, h);
       const inner = internals(scene);
-      // hits[0] is the header Back button, hits[1..2] are the D-CITY-11 page tabs
-      // (内政/军事); the rest are the grid cards — BUILDING_KEYS.length (11, incl.
-      // satchel/D-CITY-9) minus academy, which D-CITY-12 moved to its own military-page panel.
-      const cards = inner.hits.slice(3);
+      // hits[0] is the header Back button; contentHits() are the grid cards — BUILDING_KEYS.length
+      // (11, incl. satchel/D-CITY-9) minus academy, which D-CITY-12 moved to its own
+      // military-page panel. (The Domestic/Military rail's own hit is excluded — it lives left
+      // of contentX, see tabHit()/contentHits() above.)
+      const cards = contentHits(inner);
       expect(cards.length).toBe(10);
 
       for (const c of cards) {
-        expect(c.x).toBeGreaterThanOrEqual(0);
+        expect(c.x).toBeGreaterThanOrEqual(inner.contentX);
         expect(c.y).toBeGreaterThanOrEqual(0);
         expect(c.x + c.w).toBeLessThanOrEqual(inner.w + 1e-6);
         // Regression for the gridLayer viewY-offset bug: a card can never sit above the
@@ -127,7 +148,7 @@ for (const [label, [w, h]] of [['portrait', PORTRAIT], ['landscape', LANDSCAPE]]
     it('tapping a building card opens its detail modal (selectedBuilding set)', () => {
       const { scene } = buildScene(w, h);
       const inner = internals(scene);
-      const card = inner.hits[3]!; // first building card ('desk'), past Back + 2 page tabs
+      const card = contentHits(inner)[0]!; // first building card ('desk')
       inner.handleDown(card.x + card.w / 2, card.y + card.h / 2);
       expect(inner.selectedBuilding).not.toBeNull();
       scene.destroy();
@@ -140,8 +161,8 @@ describe('CityScene detail modal — hit gating (2026-07-15 modal-hit-leak fix)'
     const { scene } = buildScene(...PORTRAIT);
     const inner = internals(scene);
 
-    const firstCard = inner.hits[3]!; // 'desk', past Back + 2 page tabs
-    const secondCard = inner.hits[4]!; // 'inkPot' — distinct coordinates from the first
+    const firstCard = contentHits(inner)[0]!; // 'desk'
+    const secondCard = contentHits(inner)[1]!; // 'inkPot' — distinct coordinates from the first
     expect(rectsOverlap(firstCard, secondCard)).toBe(false);
 
     inner.handleDown(firstCard.x + firstCard.w / 2, firstCard.y + firstCard.h / 2);
@@ -161,7 +182,7 @@ describe('CityScene detail modal — hit gating (2026-07-15 modal-hit-leak fix)'
     const inner = internals(scene);
     const backHit = inner.hits[0]!;
 
-    const card = inner.hits[3]!;
+    const card = contentHits(inner)[0]!;
     inner.handleDown(card.x + card.w / 2, card.y + card.h / 2);
     expect(inner.selectedBuilding).not.toBeNull();
 
@@ -173,7 +194,7 @@ describe('CityScene detail modal — hit gating (2026-07-15 modal-hit-leak fix)'
   it('tapping far outside the (centered, narrower) modal panel closes it', () => {
     const { scene } = buildScene(...PORTRAIT);
     const inner = internals(scene);
-    const card = inner.hits[3]!;
+    const card = contentHits(inner)[0]!;
     inner.handleDown(card.x + card.w / 2, card.y + card.h / 2);
     expect(inner.selectedBuilding).not.toBeNull();
 
@@ -183,20 +204,21 @@ describe('CityScene detail modal — hit gating (2026-07-15 modal-hit-leak fix)'
   });
 });
 
-describe('CityScene page tabs (D-CITY-11 dual-screen split, 2026-07-16)', () => {
-  it('starts on the domestic page and switches to the military page via hits[1]/hits[2]', () => {
+describe('CityScene page tabs (D-CITY-11 dual-screen split; left rail rework 2026-07-16)', () => {
+  it('starts on the domestic page and switches to the military page via the rail tab hit', () => {
     const { scene } = buildScene(...PORTRAIT);
     const inner = internals(scene);
     expect(inner.page).toBe('domestic');
 
-    const militaryTab = inner.hits[2]!;
+    const militaryTab = tabHit(inner);
     inner.handleDown(militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
     expect(inner.page).toBe('military');
-    // Building-grid card hits must not leak into the military page's hit list; hits[3] is
-    // the D-CITY-12 tech-tree panel (academy), the only card left there.
-    expect(inner.hits.length).toBe(4);
+    // Building-grid card hits must not leak into the military page's hit list — only the
+    // D-CITY-12 tech-tree panel (academy) remains as a content hit there.
+    expect(contentHits(inner).length).toBe(1);
+    expect(inner.hits.length).toBe(3); // back + rail tab + tech-tree panel
 
-    const domesticTab = inner.hits[1]!;
+    const domesticTab = tabHit(inner);
     inner.handleDown(domesticTab.x + domesticTab.w / 2, domesticTab.y + domesticTab.h / 2);
     expect(inner.page).toBe('domestic');
     scene.destroy();
@@ -205,7 +227,7 @@ describe('CityScene page tabs (D-CITY-11 dual-screen split, 2026-07-16)', () => 
   it('the Back button stays reachable on the military page', () => {
     const { scene, calls } = buildScene(...PORTRAIT);
     const inner = internals(scene);
-    const militaryTab = inner.hits[2]!;
+    const militaryTab = tabHit(inner);
     inner.handleDown(militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
     expect(inner.page).toBe('military');
 
@@ -214,10 +236,30 @@ describe('CityScene page tabs (D-CITY-11 dual-screen split, 2026-07-16)', () => 
     expect(calls.back).toBe(1);
     scene.destroy();
   });
+
+  for (const [label, [w, h]] of [['portrait', PORTRAIT], ['landscape', LANDSCAPE]] as const) {
+    it(`the rail sits left of contentX (= sidebarNavW) and content never overlaps it — ${label}`, () => {
+      const { scene } = buildScene(w, h);
+      const inner = internals(scene);
+      const landscape = h < w;
+      // sidebarNavW reads off the scene's own (design-resolution) w/h, not the raw viewport
+      // dims passed to createLayout() — ILayout maps those to a fixed design resolution.
+      expect(inner.contentX).toBe(sidebarNavW(inner.w, inner.h, landscape));
+
+      const rail = tabHit(inner);
+      expect(rail.x).toBeGreaterThanOrEqual(0);
+      expect(rail.x + rail.w).toBeLessThanOrEqual(inner.contentX + 1e-6);
+
+      for (const c of contentHits(inner)) {
+        expect(c.x).toBeGreaterThanOrEqual(inner.contentX);
+      }
+      scene.destroy();
+    });
+  }
 });
 
 function gotoMilitary(inner: CitySceneInternals): void {
-  const militaryTab = inner.hits[2]!;
+  const militaryTab = tabHit(inner);
   inner.handleDown(militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
 }
 
@@ -228,7 +270,7 @@ describe('CityScene tech-tree panel (D-CITY-12, 2026-07-16)', () => {
     gotoMilitary(inner);
     expect(inner.page).toBe('military');
 
-    const techTreeHit = inner.hits[3]!;
+    const techTreeHit = contentHits(inner)[0]!;
     inner.handleDown(techTreeHit.x + techTreeHit.w / 2, techTreeHit.y + techTreeHit.h / 2);
     expect(inner.selectedBuilding).toBe('academy');
     scene.destroy();
@@ -237,41 +279,39 @@ describe('CityScene tech-tree panel (D-CITY-12, 2026-07-16)', () => {
   it('academy no longer appears as a card in the domestic building grid', () => {
     const { scene } = buildScene(...PORTRAIT);
     const inner = internals(scene);
-    // 10 cards now (11 BUILDING_KEYS minus academy), past Back + 2 page tabs.
-    expect(inner.hits.slice(3).length).toBe(10);
+    // 10 cards now (11 BUILDING_KEYS minus academy).
+    expect(contentHits(inner).length).toBe(10);
     scene.destroy();
   });
 
   for (const [label, [w, h]] of [['portrait', PORTRAIT], ['landscape', LANDSCAPE]] as const) {
-    it(`the tech-tree panel hit lands fully within the screen and below the page tabs — ${label}`, () => {
+    it(`the tech-tree panel hit lands fully within the screen, right of the rail — ${label}`, () => {
       const { scene } = buildScene(w, h);
       const inner = internals(scene);
       gotoMilitary(inner);
-      const tabsHit = inner.hits[2]!; // military page tab, used only as a y-reference here
-      const techTreeHit = inner.hits[3]!;
+      const techTreeHit = contentHits(inner)[0]!;
 
-      expect(techTreeHit.x).toBeGreaterThanOrEqual(0);
-      expect(techTreeHit.y).toBeGreaterThan(tabsHit.y + tabsHit.h);
+      expect(techTreeHit.x).toBeGreaterThanOrEqual(inner.contentX);
       expect(techTreeHit.x + techTreeHit.w).toBeLessThanOrEqual(inner.w + 1e-6);
       expect(techTreeHit.y + techTreeHit.h).toBeLessThanOrEqual(inner.h + 1e-6);
       scene.destroy();
     });
   }
 
-  it('opening the academy modal from the military page drops the page-tab hits underneath the dim overlay (same modal-hit-gating invariant as the domestic page)', () => {
+  it('opening the academy modal from the military page drops the rail-tab hit underneath the dim overlay (same modal-hit-gating invariant as the domestic page)', () => {
     const { scene } = buildScene(...PORTRAIT);
     const inner = internals(scene);
     gotoMilitary(inner);
-    const militaryTab = inner.hits[2]!; // position to re-tap once the modal is open
+    const railTab = tabHit(inner); // position to re-tap once the modal is open
 
-    const techTreeHit = inner.hits[3]!;
+    const techTreeHit = contentHits(inner)[0]!;
     inner.handleDown(techTreeHit.x + techTreeHit.w / 2, techTreeHit.y + techTreeHit.h / 2);
     expect(inner.selectedBuilding).toBe('academy');
 
     // Before the D-CITY-11 fix this class of bug came from, a stale page-tab hit sitting
     // underneath the dim overlay would still fire and switch pages instead of just closing
-    // the modal. Tapping the old military-tab coordinates must close the modal, not switch pages.
-    inner.handleDown(militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
+    // the modal. Tapping the old rail-tab coordinates must close the modal, not switch pages.
+    inner.handleDown(railTab.x + railTab.w / 2, railTab.y + railTab.h / 2);
     expect(inner.selectedBuilding).toBeNull();
     expect(inner.page).toBe('military');
     scene.destroy();
@@ -281,7 +321,7 @@ describe('CityScene tech-tree panel (D-CITY-12, 2026-07-16)', () => {
     const { scene } = buildScene(...PORTRAIT);
     const inner = internals(scene);
     gotoMilitary(inner);
-    const techTreeHit = inner.hits[3]!;
+    const techTreeHit = contentHits(inner)[0]!;
     inner.handleDown(techTreeHit.x + techTreeHit.w / 2, techTreeHit.y + techTreeHit.h / 2);
     expect(inner.selectedBuilding).toBe('academy');
 
@@ -295,7 +335,7 @@ describe('CityScene tech-tree panel (D-CITY-12, 2026-07-16)', () => {
     const { scene, calls } = buildScene(...PORTRAIT);
     const inner = internals(scene);
     gotoMilitary(inner);
-    const techTreeHit = inner.hits[3]!;
+    const techTreeHit = contentHits(inner)[0]!;
     inner.handleDown(techTreeHit.x + techTreeHit.w / 2, techTreeHit.y + techTreeHit.h / 2);
     expect(inner.selectedBuilding).toBe('academy');
 
@@ -332,7 +372,7 @@ describe('CityScene military page durability panel (D-CITY-8, 2026-07-16)', () =
     const scene = new CityScene(createLayout(...PORTRAIT), input, cb);
     await new Promise((r) => setTimeout(r, 0));
     const inner = internals(scene);
-    const militaryTab = inner.hits[2]!;
+    const militaryTab = tabHit(inner);
     inner.handleDown(militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
     expect(inner.page).toBe('military');
     return { scene, inner };
@@ -344,10 +384,9 @@ describe('CityScene military page durability panel (D-CITY-8, 2026-07-16)', () =
     expect(texts).toContain(t('city.military.durability'));
     // fmtNum floors to the nearest 'k' — 3200/8000 renders as "3k / 8k".
     expect(texts).toContain('3k / 8k');
-    // Panel doesn't register a hit (display-only) — hit count/indices for the tech-tree
-    // panel and team panel below it must stay unaffected by adding this panel above them.
-    expect(inner.hits.length).toBe(4);
-    expect(inner.hits[3]!.y).toBeGreaterThan(0);
+    // Panel doesn't register a hit (display-only) — back + rail tab + tech-tree panel only.
+    expect(inner.hits.length).toBe(3);
+    expect(contentHits(inner)[0]!.y).toBeGreaterThan(0);
     scene.destroy();
   });
 
@@ -396,7 +435,7 @@ describe('CityScene military page team panel (D-CITY-10, 2026-07-16)', () => {
     const scene = new CityScene(createLayout(...PORTRAIT), input, cb);
     await new Promise((r) => setTimeout(r, 0));
     const inner = internals(scene);
-    const militaryTab = inner.hits[2]!;
+    const militaryTab = tabHit(inner);
     inner.handleDown(militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
     expect(inner.page).toBe('military');
     return { scene, inner };
@@ -411,9 +450,9 @@ describe('CityScene military page team panel (D-CITY-10, 2026-07-16)', () => {
       marches: [{ marchId: 'm1', mine: true, teamId: 't1', arriveAt: Date.now() + 30_000 }],
       me: { cardState: { c1: { currentTroops: 400 } }, teamState: { t2: { injuredUntil: Date.now() + 60_000 } } },
     });
-    // Back + the 2 page tabs + the D-CITY-12 tech-tree panel — the team cards
+    // Back + the rail tab + the D-CITY-12 tech-tree panel — the team cards
     // themselves are display-only, no card hits pushed.
-    expect(inner.hits.length).toBe(4);
+    expect(inner.hits.length).toBe(3);
     scene.destroy();
   });
 

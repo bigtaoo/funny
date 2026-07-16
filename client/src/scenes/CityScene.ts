@@ -16,6 +16,7 @@ import {
   ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren,
 } from '../render/sketchUi';
 import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
+import { drawSidebarTabs, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { formatDuration } from './worldmap/formatDuration';
 import type {
@@ -142,6 +143,10 @@ export class CityScene implements Scene {
   private marches: MarchView[] = [];
   private occupations: OccupationView[] = [];
   private page: CityPage = 'domestic';
+  /** Left edge of the body content, set each render() to sidebarNavW() — the vertical tab
+   *  rail sits at x=0..contentX, left of the binding line, matching the roster/equipment
+   *  card-scene sidebar-nav convention (HubTabs.ts drawSidebarTabs). */
+  private contentX = 0;
   private selectedBuilding: BuildingKey | null = null;
   private toast: string | null = null;
   private toastColor: number = C.red;
@@ -316,20 +321,20 @@ export class CityScene implements Scene {
     const backHit: Hit = { x: hdr.backRect.x, y: hdr.backRect.y, w: hdr.backRect.w, h: hdr.backRect.h, fn: () => this.cb.onBack() };
     this.hits.push(backHit);
 
-    let y = hdr.headerH + 8;
-    y = this.renderPageTabs(y);
+    const y = hdr.headerH + 8;
+    this.contentX = this.renderPageTabs(y);
 
     if (this.page === 'domestic') {
       // Resource bar
-      y = this.renderResourceBar(y);
-      y += 8;
+      let cy = this.renderResourceBar(y);
+      cy += 8;
 
       // Build queue strip
-      y = this.renderBuildQueue(y);
-      y += 8;
+      cy = this.renderBuildQueue(cy);
+      cy += 8;
 
       // Building card grid (scrollable)
-      this.renderBuildingGrid(y);
+      this.renderBuildingGrid(cy);
     } else {
       this.scrollMax = 0;
       this.renderMilitaryPage(y);
@@ -381,30 +386,21 @@ export class CityScene implements Scene {
     this.render();
   }
 
+  /** Draws the Domestic/Military rail left of the binding line (roster/equipment sidebar-nav
+   *  convention) and returns the rail width — the x-offset where body content starts. */
   private renderPageTabs(startY: number): number {
-    const { w } = this;
-    const tabH = 36;
+    const { w, h, landscape } = this;
+    const railW = sidebarNavW(w, h, landscape);
     const pages: CityPage[] = ['domestic', 'military'];
-    const tabW = Math.floor((w - 16) / pages.length);
-
-    pages.forEach((page, i) => {
-      const tx = 8 + i * tabW;
-      const active = this.page === page;
-      const g = sketchPanel(tabW - (i > 0 ? 2 : 0), tabH, {
-        fill: active ? C.accent : C.paper,
-        border: C.line, width: 1, seed: seedFor(tx, startY, i + 1),
-      });
-      g.x = tx;
-      g.y = startY;
-      this.container.addChild(g);
-      const lbl = txt(t(`city.tab.${page}` as 'city.tab.domestic'), 14, active ? 0xffffff : C.dark, true);
-      lbl.x = tx + (tabW - lbl.width) / 2;
-      lbl.y = startY + (tabH - 16) / 2;
-      this.container.addChild(lbl);
-      this.hits.push({ x: tx, y: startY, w: tabW, h: tabH, fn: () => this.switchPage(page) });
-    });
-
-    return startY + tabH + 8;
+    const tabs: HubTab[] = pages.map((page) => ({
+      label: t(`city.tab.${page}` as 'city.tab.domestic'),
+      active: this.page === page,
+    }));
+    const { hits } = drawSidebarTabs(this.container, railW, startY, h, tabs, (i) => this.switchPage(pages[i]!));
+    for (const hit of hits) {
+      this.hits.push({ x: hit.rect.x, y: hit.rect.y, w: hit.rect.w, h: hit.rect.h, fn: hit.fn });
+    }
+    return railW;
   }
 
   // ── Military page (D-CITY-11 tab container) ──────────────────────────────────
@@ -416,7 +412,7 @@ export class CityScene implements Scene {
     startY = this.renderTechTreePanel(startY);
 
     const sectionLbl = txt(t('city.military.teams'), 13, C.mid, true);
-    sectionLbl.x = 12;
+    sectionLbl.x = this.contentX + 12;
     sectionLbl.y = startY;
     this.container.addChild(sectionLbl);
     this.renderTeamPanel(startY + 20);
@@ -428,7 +424,8 @@ export class CityScene implements Scene {
   // back to a full bar derived from the current wall level when the server hasn't resolved
   // a main-base anchor yet (e.g. brand-new account mid-joinWorld race).
   private renderDurabilityPanel(startY: number): number {
-    const { w } = this;
+    const cx0 = this.contentX;
+    const w = this.w - cx0;
     const bld = this.me?.buildings;
     const maxHp = this.me?.maxHp ?? baseDurabilityMax(buildingLevel(bld, 'wall'));
     const hp = this.me?.hp ?? maxHp;
@@ -436,27 +433,27 @@ export class CityScene implements Scene {
 
     const panH = 56;
     const pg = sketchPanel(w - 16, panH, { fill: C.paper, border: C.line, width: 1, seed: seedFor(w, panH, 11) });
-    pg.x = 8;
+    pg.x = cx0 + 8;
     pg.y = startY;
     this.container.addChild(pg);
 
     const icon = this.bldIcon('wall', 28, C.dark);
-    icon.x = 16;
+    icon.x = cx0 + 16;
     icon.y = startY + (panH - 28) / 2;
     this.container.addChild(icon);
 
     const titleLbl = txt(t('city.military.durability'), 14, C.dark, true);
-    titleLbl.x = 56;
+    titleLbl.x = cx0 + 56;
     titleLbl.y = startY + 9;
     this.container.addChild(titleLbl);
 
     const valLbl = txt(`${this.fmtNum(hp)} / ${this.fmtNum(maxHp)}`, 12, C.mid);
-    valLbl.x = 56;
+    valLbl.x = cx0 + 56;
     valLbl.y = startY + 30;
     this.container.addChild(valLbl);
 
-    const barX = 56 + Math.max(90, valLbl.width + 16);
-    const barW = Math.max(20, w - barX - 16);
+    const barX = cx0 + 56 + Math.max(90, valLbl.width + 16);
+    const barW = Math.max(20, cx0 + w - barX - 16);
     const barH = 10;
     const barY = startY + (panH - barH) / 2;
 
@@ -500,7 +497,9 @@ export class CityScene implements Scene {
 
   /** Read-only 2-col grid of the 5 team slots (editing stays in TeamsScene, reachable from the map). */
   private renderTeamPanel(startY: number): void {
-    const { w, h } = this;
+    const { h } = this;
+    const cx0 = this.contentX;
+    const w = this.w - cx0;
     const availW = w - GRID_PAD * 2;
     const cellW = Math.floor((availW - (TEAM_COLS - 1) * CARD_GAP) / TEAM_COLS);
     const rows = Math.ceil(TEAM_CAP / TEAM_COLS);
@@ -512,9 +511,10 @@ export class CityScene implements Scene {
     if (this.scrollY > this.scrollMax) this.scrollY = this.scrollMax;
 
     const gridLayer = new PIXI.Container();
+    gridLayer.x = cx0;
     gridLayer.y = viewY - this.scrollY;
     const maskG = new PIXI.Graphics();
-    maskG.beginFill(0xffffff).drawRect(0, viewY, w, viewH).endFill();
+    maskG.beginFill(0xffffff).drawRect(cx0, viewY, w, viewH).endFill();
     this.container.addChild(maskG);
     gridLayer.mask = maskG;
     this.container.addChild(gridLayer);
@@ -528,7 +528,7 @@ export class CityScene implements Scene {
       this.renderTeamCard(i, cx, cy, cellW, gridLayer, now);
     }
 
-    drawScrollIndicator(this.container, { x: 0, y: viewY, w, h: viewH }, this.scrollY, this.scrollMax);
+    drawScrollIndicator(this.container, { x: cx0, y: viewY, w, h: viewH }, this.scrollY, this.scrollMax);
   }
 
   private renderTeamCard(i: number, x: number, y: number, cardW: number, layer: PIXI.Container, now: number): void {
@@ -593,7 +593,8 @@ export class CityScene implements Scene {
   // panel — a season-scoped blueprint buff deserves more ceremony than a generic card.
   // Injection logic (buildSiegeBlueprints) is unchanged; only the UI presentation moved.
   private renderTechTreePanel(startY: number): number {
-    const { w } = this;
+    const cx0 = this.contentX;
+    const w = this.w - cx0;
     const bld = this.me?.buildings;
     const lvl = buildingLevel(bld, 'academy');
     const inQueue = (this.me?.buildQueue ?? []).some(q => q.key === 'academy');
@@ -603,29 +604,29 @@ export class CityScene implements Scene {
     const pg = sketchPanel(w - 16, panH, {
       fill: C.paper, border: inQueue ? C.gold : C.line, width: inQueue ? 2 : 1, seed: seedFor(w, panH, 10),
     });
-    pg.x = 8;
+    pg.x = cx0 + 8;
     pg.y = startY;
     this.container.addChild(pg);
 
     const icon = this.bldIcon('academy', 36, C.dark);
-    icon.x = 20;
+    icon.x = cx0 + 20;
     icon.y = startY + (panH - 36) / 2;
     this.container.addChild(icon);
 
     const titleLbl = txt(t('city.military.techTree'), 16, C.dark, true);
-    titleLbl.x = 68;
+    titleLbl.x = cx0 + 68;
     titleLbl.y = startY + 12;
     this.container.addChild(titleLbl);
 
     const lvlLbl = txt(t('city.lvlLabel').replace('{lvl}', String(lvl)), 12, C.mid);
-    lvlLbl.x = 68 + titleLbl.width + 10;
+    lvlLbl.x = cx0 + 68 + titleLbl.width + 10;
     lvlLbl.y = startY + 14;
     this.container.addChild(lvlLbl);
 
     let bly = startY + 34;
     for (const line of bonusLines) {
       const bl = txt(line, 12, C.mid, false, w - 96);
-      bl.x = 68;
+      bl.x = cx0 + 68;
       bl.y = bly;
       this.container.addChild(bl);
       bly += 16;
@@ -633,13 +634,13 @@ export class CityScene implements Scene {
 
     if (inQueue) {
       const qDot = buildIcon('hammer', 18, C.gold);
-      qDot.x = w - 40;
+      qDot.x = cx0 + w - 40;
       qDot.y = startY + 12;
       this.container.addChild(qDot);
     }
 
     this.hits.push({
-      x: 8, y: startY, w: w - 16, h: panH,
+      x: cx0 + 8, y: startY, w: w - 16, h: panH,
       fn: () => { this.selectedBuilding = 'academy'; this.render(); },
     });
 
@@ -649,19 +650,20 @@ export class CityScene implements Scene {
   // ── Resource bar ──────────────────────────────────────────────────────────
 
   private renderResourceBar(startY: number): number {
-    const { w } = this;
+    const cx0 = this.contentX;
+    const w = this.w - cx0;
     const bld = this.me?.buildings;
     const resources = this.me?.resources as Partial<Record<ResourceType, number>> | undefined;
 
     const panH = 72;
     const pg = sketchPanel(w - 16, panH, { fill: C.paper, border: C.line, width: 1, seed: seedFor(w, panH, 3) });
-    pg.x = 8;
+    pg.x = cx0 + 8;
     pg.y = startY;
     this.container.addChild(pg);
 
     const cellW = Math.floor((w - 16) / 5);
     RESOURCE_TYPES.forEach((rt, i) => {
-      const cx = 8 + i * cellW;
+      const cx = cx0 + 8 + i * cellW;
       const cur = resources?.[rt] ?? 0;
       const cap = resourceCapFor(bld);
       const yld = buildingYieldMult(bld, rt);
@@ -703,24 +705,25 @@ export class CityScene implements Scene {
   // ── Build queue ───────────────────────────────────────────────────────────
 
   private renderBuildQueue(startY: number): number {
-    const { w } = this;
+    const cx0 = this.contentX;
+    const w = this.w - cx0;
     const queue = this.me?.buildQueue ?? [];
     const now = Date.now();
 
     const panH = queue.length > 0 ? 48 : 34;
     const pg = sketchPanel(w - 16, panH, { fill: C.paper, border: C.line, width: 1, seed: seedFor(w, panH, 5) });
-    pg.x = 8;
+    pg.x = cx0 + 8;
     pg.y = startY;
     this.container.addChild(pg);
 
     const hdr = txt(t('city.buildQueue'), 12, C.mid, true);
-    hdr.x = 16;
+    hdr.x = cx0 + 16;
     hdr.y = startY + 9;
     this.container.addChild(hdr);
 
     if (queue.length === 0) {
       const empty = txt(t('city.queueEmpty'), 12, C.mid);
-      empty.x = 130;
+      empty.x = cx0 + 130;
       empty.y = startY + 9;
       this.container.addChild(empty);
     } else {
@@ -733,14 +736,14 @@ export class CityScene implements Scene {
         .replace('{sec}', formatDuration(secsLeft));
 
       const entryLbl = txt(label, 13, C.dark, true);
-      entryLbl.x = 130;
+      entryLbl.x = cx0 + 130;
       entryLbl.y = startY + 9;
       this.container.addChild(entryLbl);
 
       if (secsLeft > 0) {
         const coins = Math.ceil(secsLeft / BUILD_SPEEDUP_SECS_PER_COIN);
         const speedLabel = t('city.speedup').replace('{coins}', String(coins));
-        this.addBtn(w - 166, startY + 6, 152, 30, speedLabel, 0xffffff, C.gold, () => void this.doSpeedup(entry.key));
+        this.addBtn(cx0 + w - 166, startY + 6, 152, 30, speedLabel, 0xffffff, C.gold, () => void this.doSpeedup(entry.key));
       }
     }
 
@@ -750,7 +753,9 @@ export class CityScene implements Scene {
   // ── Building grid ─────────────────────────────────────────────────────────
 
   private renderBuildingGrid(startY: number): void {
-    const { w, h } = this;
+    const { h } = this;
+    const cx0 = this.contentX;
+    const w = this.w - cx0;
     const bld = this.me?.buildings;
     const keys = DOMESTIC_BUILDING_KEYS;
 
@@ -766,9 +771,10 @@ export class CityScene implements Scene {
     if (this.scrollY > this.scrollMax) this.scrollY = this.scrollMax;
 
     const gridLayer = new PIXI.Container();
+    gridLayer.x = cx0;
     gridLayer.y = viewY - this.scrollY;
     const maskG = new PIXI.Graphics();
-    maskG.beginFill(0xffffff).drawRect(0, viewY, w, viewH).endFill();
+    maskG.beginFill(0xffffff).drawRect(cx0, viewY, w, viewH).endFill();
     this.container.addChild(maskG);
     gridLayer.mask = maskG;
     this.container.addChild(gridLayer);
@@ -820,13 +826,13 @@ export class CityScene implements Scene {
       const screenY = viewY - this.scrollY + cy;
       if (screenY + CARD_H > viewY && screenY < viewY + viewH) {
         this.hits.push({
-          x: cx, y: screenY, w: cellW, h: CARD_H,
+          x: cx0 + cx, y: screenY, w: cellW, h: CARD_H,
           fn: () => { this.selectedBuilding = key; this.render(); },
         });
       }
     });
 
-    drawScrollIndicator(this.container, { x: 0, y: viewY, w, h: viewH }, this.scrollY, this.scrollMax);
+    drawScrollIndicator(this.container, { x: cx0, y: viewY, w, h: viewH }, this.scrollY, this.scrollMax);
   }
 
   // ── Detail modal ──────────────────────────────────────────────────────────
