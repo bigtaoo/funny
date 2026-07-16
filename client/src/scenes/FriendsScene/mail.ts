@@ -2,6 +2,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t, TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
+import { FS, snapFont } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import type { MailView, MailAttachmentView } from '../../net/ApiClient';
 import { type Constructor, type FriendsSceneBaseCtor } from './base';
@@ -66,10 +67,10 @@ export function MailMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): TBas
         layer.addChild(gi);
         subjX = tx + giftSz + Math.round(rw * 0.015);
       }
-      const subj = txt(mailText(m.subject), Math.round(rh * 0.3), C.dark, true);
+      const subj = txt(mailText(m.subject), snapFont(Math.round(rh * 0.3)), C.dark, true);
       subj.anchor.set(0, 0.5); subj.x = subjX; subj.y = y + rh * 0.34;
       layer.addChild(subj);
-      const from = txt(m.fromName || (m.from === 'system' ? t('mail.system') : `#${m.from}`), Math.round(rh * 0.22), C.mid);
+      const from = txt(m.fromName || (m.from === 'system' ? t('mail.system') : `#${m.from}`), snapFont(Math.round(rh * 0.22)), C.mid);
       from.anchor.set(0, 0.5); from.x = tx; from.y = y + rh * 0.70;
       layer.addChild(from);
 
@@ -89,15 +90,15 @@ export function MailMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): TBas
       const px = this.cX;
       const panelW = this.cW;
 
-      const subj = txt(mailText(m.subject), Math.round(h * 0.034), C.dark, true);
+      const subj = txt(mailText(m.subject), FS.headline, C.dark, true);
       subj.anchor.set(0, 0); subj.x = px; subj.y = top;
       this.container.addChild(subj);
-      const from = txt(m.fromName || (m.from === 'system' ? t('mail.system') : `#${m.from}`), Math.round(h * 0.024), C.mid);
+      const from = txt(m.fromName || (m.from === 'system' ? t('mail.system') : `#${m.from}`), FS.heading, C.mid);
       from.anchor.set(0, 0); from.x = px; from.y = top + Math.round(h * 0.05);
       this.container.addChild(from);
 
       const bodyTxt = new PIXI.Text(mailText(m.body), {
-        fontSize: Math.round(h * 0.026), fill: C.dark, fontFamily: 'monospace',
+        fontSize: FS.heading, fill: C.dark, fontFamily: 'monospace',
         wordWrap: true, wordWrapWidth: panelW, breakWords: true,
       });
       bodyTxt.x = px; bodyTxt.y = top + Math.round(h * 0.10);
@@ -106,13 +107,13 @@ export function MailMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): TBas
       let cy = bodyTxt.y + bodyTxt.height + Math.round(h * 0.03);
       const hasAtt = !!m.attachments && m.attachments.length > 0;
       if (hasAtt) {
-        const label = txt(t('mail.attachments'), Math.round(h * 0.024), C.mid, true);
+        const label = txt(t('mail.attachments'), FS.heading, C.mid, true);
         label.anchor.set(0, 0); label.x = px; label.y = cy;
         this.container.addChild(label);
         cy += Math.round(h * 0.04);
         for (const a of m.attachments!) {
           const desc = attachmentLabel(a);
-          const row = txt('· ' + desc, Math.round(h * 0.026), C.dark);
+          const row = txt('· ' + desc, FS.heading, C.dark);
           row.anchor.set(0, 0); row.x = px + Math.round(w * 0.02); row.y = cy;
           this.container.addChild(row);
           cy += Math.round(h * 0.04);
@@ -120,7 +121,7 @@ export function MailMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): TBas
         cy += Math.round(h * 0.02);
         const bH = Math.round(h * 0.08);
         if (m.claimed) {
-          const done = txt(t('mail.claimed'), Math.round(h * 0.028), C.green, true);
+          const done = txt(t('mail.claimed'), FS.title, C.green, true);
           done.anchor.set(0.5, 0.5); done.x = this.cCX; done.y = cy + bH / 2;
           this.container.addChild(done);
         } else {

@@ -6,6 +6,7 @@ import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildIcon } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
+import { FS, snapFont } from '../render/fontScale';
 
 // ── LoginScene (SA-3) — account login / register + single-player entry ─────────
 //
@@ -296,13 +297,13 @@ export class LoginScene implements Scene {
     titleBg.beginFill(C.dark); titleBg.drawRect(0, 0, w, tbH); titleBg.endFill();
     this.container.addChild(titleBg);
 
-    const title = txt(t('auth.title', { game: t('game.title') }), Math.round(h * 0.034), 0xffffff, true);
+    const title = txt(t('auth.title', { game: t('game.title') }), FS.headline, 0xffffff, true);
     title.anchor.set(0.5, 0.5); title.x = w / 2; title.y = tbH / 2;
     this.container.addChild(title);
 
     // Back button (only on form views).
     if (this.view === 'password' || this.view === 'register') {
-      const back = txt(t('auth.back'), Math.round(h * 0.026), C.light);
+      const back = txt(t('auth.back'), FS.heading, C.light);
       back.anchor.set(0, 0.5); back.x = Math.round(w * 0.04); back.y = tbH / 2;
       this.container.addChild(back);
       const pad = Math.round(h * 0.02);
@@ -331,7 +332,7 @@ export class LoginScene implements Scene {
 
     // Wrap within the design width so long locales (EN/DE run wider than the 1080
     // design width in monospace) stay on-screen instead of clipping both edges.
-    const hint = txt(t('auth.offlineHint'), Math.round(h * 0.020), C.mid, false, Math.round(w * 0.86));
+    const hint = txt(t('auth.offlineHint'), FS.label, C.mid, false, Math.round(w * 0.86));
     hint.style.align = 'center';
     hint.anchor.set(0.5, 0); hint.x = w / 2; hint.y = offY + btnH + Math.round(h * 0.012);
     this.container.addChild(hint);
@@ -377,11 +378,11 @@ export class LoginScene implements Scene {
 
     // Error line (+ raw detail beneath, for diagnosis).
     if (this.errorKey) {
-      const errLbl = txt(t(this.errorKey), Math.round(h * 0.022), C.red, true);
+      const errLbl = txt(t(this.errorKey), FS.label, C.red, true);
       errLbl.anchor.set(0.5, 0.5); errLbl.x = w / 2; errLbl.y = y + Math.round(h * 0.005);
       this.container.addChild(errLbl);
       if (this.errorDetail) {
-        const det = txt(this.errorDetail, Math.round(h * 0.016), C.mid);
+        const det = txt(this.errorDetail, FS.body, C.mid);
         det.anchor.set(0.5, 0); det.x = w / 2; det.y = y + Math.round(h * 0.02);
         det.style.wordWrap = true; det.style.wordWrapWidth = fieldW; det.style.align = 'center';
         this.container.addChild(det);
@@ -401,7 +402,7 @@ export class LoginScene implements Scene {
     y += Math.round(h * 0.092) + Math.round(h * 0.03);
 
     // Switch login/register.
-    const swap = txt(isRegister ? t('auth.toLogin') : t('auth.toRegister'), Math.round(h * 0.024), C.accent, true);
+    const swap = txt(isRegister ? t('auth.toLogin') : t('auth.toRegister'), FS.heading, C.accent, true);
     swap.anchor.set(0.5, 0.5); swap.x = w / 2; swap.y = y;
     this.container.addChild(swap);
     const sp = Math.round(h * 0.02);
@@ -435,7 +436,7 @@ export class LoginScene implements Scene {
     const isFocused = this.focused === field;
 
     // Label above the box.
-    const lbl = txt(label, Math.round(h * 0.30), C.mid);
+    const lbl = txt(label, snapFont(Math.round(h * 0.30)), C.mid);
     lbl.anchor.set(0, 1); lbl.x = x; lbl.y = y - Math.round(h * 0.08);
     this.container.addChild(lbl);
 
@@ -446,7 +447,7 @@ export class LoginScene implements Scene {
     const shown = masked ? '•'.repeat(value.length) : value;
     const display = shown + (isFocused && this.caretOn ? '|' : '');
     const placeholder = value.length === 0 && !isFocused;
-    const valTxt = txt(placeholder ? t('auth.tapToType') : display, Math.round(h * 0.40),
+    const valTxt = txt(placeholder ? t('auth.tapToType') : display, snapFont(Math.round(h * 0.40)),
       placeholder ? C.light : C.dark);
     valTxt.anchor.set(0, 0.5); valTxt.x = x + Math.round(w * 0.04); valTxt.y = y + h / 2;
     this.container.addChild(valTxt);
@@ -457,7 +458,7 @@ export class LoginScene implements Scene {
   /** Live requirement line under a field: ✓ green when satisfied, • grey otherwise. */
   private drawHint(text: string, ok: boolean, x: number, y: number, w: number): void {
     const { h } = this;
-    const fs = Math.round(h * 0.019);
+    const fs = FS.bodyLg;
     const baseX = x + Math.round(w * 0.02);
     const ty = y + Math.round(h * 0.004);
     if (ok) {
@@ -477,7 +478,7 @@ export class LoginScene implements Scene {
 
   private drawSubmitting(): void {
     const { w, h } = this;
-    const label = txt(t('auth.loggingIn'), Math.round(h * 0.032), C.dark, true);
+    const label = txt(t('auth.loggingIn'), FS.title, C.dark, true);
     label.anchor.set(0.5, 0.5); label.x = w / 2; label.y = h * 0.45;
     this.container.addChild(label);
     this.spinnerText = label;
@@ -509,7 +510,7 @@ export class LoginScene implements Scene {
     g.x = -w / 2; g.y = -h / 2;
     cont.addChild(g);
 
-    const tl = txt(label, fontSize ?? Math.round(h * 0.36), tc, true);
+    const tl = txt(label, snapFont(fontSize ?? Math.round(h * 0.36)), tc, true);
     tl.anchor.set(0.5, 0.5); tl.x = 0; tl.y = 0;
     cont.addChild(tl);
 

@@ -2,6 +2,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { snapFont } from '../../render/fontScale';
 import { caretDisplay } from '../../render/inputDisplay';
 import type { WorldChatMessage } from '../../net/WorldApiClient';
 import { type Constructor, type FriendsSceneBaseCtor } from './base';
@@ -37,7 +38,7 @@ export function WorldChatMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase):
       this.container.addChild(inputBg);
       const inputTxt = txt(
         caretDisplay(this.worldChatInput, this.worldChatActive && this.caretOn, t('social.world.placeholder')),
-        Math.round(inputH * 0.3),
+        snapFont(Math.round(inputH * 0.3)),
         this.worldChatInput ? C.dark : C.mid,
       );
       inputTxt.anchor.set(0, 0.5);
@@ -104,11 +105,11 @@ export function WorldChatMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase):
       bg.x = rx; bg.y = y;
       layer.addChild(bg);
 
-      const sender = txt(m.senderName, Math.round(rh * 0.28), C.accent, true);
+      const sender = txt(m.senderName, snapFont(Math.round(rh * 0.28)), C.accent, true);
       sender.anchor.set(0, 0.5); sender.x = rx + Math.round(rw * 0.04); sender.y = y + rh * 0.32;
       layer.addChild(sender);
 
-      const body = txt(m.body.slice(0, 60), Math.round(rh * 0.26), C.dark);
+      const body = txt(m.body.slice(0, 60), snapFont(Math.round(rh * 0.26)), C.dark);
       body.anchor.set(0, 0.5); body.x = rx + Math.round(rw * 0.04); body.y = y + rh * 0.68;
       layer.addChild(body);
 

@@ -1,6 +1,7 @@
 // Bid modal for auction-mode listings: min-bid computation, the bid form, and placing the bid.
 import * as PIXI from 'pixi.js-legacy';
 import { ui as C, txt, sketchPanel, sketchButton, seedFor } from '../../render/sketchUi';
+import { FS } from '../../render/fontScale';
 import { t } from '../../i18n';
 import { buildIcon } from '../../render/icons';
 import type { AuctionView } from '../../net/WorldApiClient';
@@ -46,18 +47,18 @@ export function BidMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBase
       ml.addChild(panel);
 
       let cy = my + 14;
-      const titleLbl = txt(this.auctionLabel(auc), 13, C.dark);
+      const titleLbl = txt(this.auctionLabel(auc), FS.tiny, C.dark);
       titleLbl.x = mx + 12; titleLbl.y = cy;
       ml.addChild(titleLbl);
       cy += 24;
 
-      const curLbl = txt(`${t(auc.topBid ? 'auction.currentBid' : 'auction.startPrice')}: ${auc.price}`, 11, C.accent);
+      const curLbl = txt(`${t(auc.topBid ? 'auction.currentBid' : 'auction.startPrice')}: ${auc.price}`, FS.micro, C.accent);
       curLbl.x = mx + 12; curLbl.y = cy;
       ml.addChild(curLbl);
       cy += 20;
 
       if (auc.buyoutPrice) {
-        const boLbl = txt(t('auction.buyoutAt').replace('{price}', String(auc.buyoutPrice)), 10, C.mid);
+        const boLbl = txt(t('auction.buyoutAt').replace('{price}', String(auc.buyoutPrice)), FS.micro, C.mid);
         boLbl.x = mx + 12; boLbl.y = cy;
         ml.addChild(boLbl);
         cy += 18;
@@ -68,7 +69,7 @@ export function BidMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBase
       const okBtn = sketchButton(80, 28, seedFor(0, 3, 80));
       okBtn.x = mx + mw / 2 - 88; okBtn.y = my + mh - 36;
       ml.addChild(okBtn);
-      const ol = txt(t('auction.bid'), 12, C.light);
+      const ol = txt(t('auction.bid'), FS.tiny, C.light);
       ol.anchor.set(0.5, 0.5); ol.x = mx + mw / 2 - 48; ol.y = my + mh - 22;
       ml.addChild(ol);
       this.modalHits.push({ rect: { x: okBtn.x, y: okBtn.y, w: 80, h: 28 }, action: () => this.confirmBid(auc) });

@@ -7,6 +7,7 @@ import { ui as C, txt } from '../../render/sketchUi';
 import { type IconKind } from '../../render/icons';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { type Constructor, type ShopSceneBaseCtor, type CardSpec, type BtnSpec } from './base';
+import { FS } from '../../render/fontScale';
 import infantryArtUrl from '../../assets/infantry.png';
 import archerArtUrl from '../../assets/archer.png';
 import shieldBearerArtUrl from '../../assets/shieldbearer.png';
@@ -40,7 +41,7 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
       const viewH = h - bodyTop - Math.round(h * 0.02);
 
       if (this.loading) {
-        const lbl = txt(t('shop.loading'), Math.round(h * 0.028), C.mid);
+        const lbl = txt(t('shop.loading'), FS.title, C.mid);
         lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = bodyTop + Math.round(h * 0.14);
         body.addChild(lbl);
         return;
@@ -53,7 +54,7 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
       this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - viewH)));
 
       if (specs.length === 0) {
-        const lbl = txt(t('shop.empty'), Math.round(h * 0.028), C.mid);
+        const lbl = txt(t('shop.empty'), FS.title, C.mid);
         lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = bodyTop + Math.round(h * 0.14);
         body.addChild(lbl);
         return;

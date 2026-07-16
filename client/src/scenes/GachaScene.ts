@@ -19,6 +19,7 @@ import { CARD_DEFS } from '../game/meta/cardDefs';
 import { SKIN_TARGET_UNIT } from '../game/meta/skinDefs';
 import { UNIT_ART_URLS, getArtTexture } from '../render/cardArt';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
+import { FS, snapFont } from '../render/fontScale';
 
 /** itemId prefix → material icon glyph (mat_scrap/mat_lead/mat_binding). */
 const MATERIAL_ICON: Record<string, 'scrap' | 'lead' | 'binding'> = {
@@ -306,13 +307,13 @@ export class GachaScene implements Scene {
     const { x0: cx0, w: cw } = this.contentBounds();
     const centerX = cx0 + cw / 2;
     if (this.loading) {
-      const lbl = txt(t('gacha.loading'), Math.round(h * 0.028), C.mid);
+      const lbl = txt(t('gacha.loading'), FS.title, C.mid);
       lbl.anchor.set(0.5, 0.5); lbl.x = centerX; lbl.y = tbH + Math.round(h * 0.20);
       this.container.addChild(lbl);
       return;
     }
     if (!this.pool) {
-      const lbl = txt(t('gacha.error'), Math.round(h * 0.028), C.mid);
+      const lbl = txt(t('gacha.error'), FS.title, C.mid);
       lbl.anchor.set(0.5, 0.5); lbl.x = centerX; lbl.y = tbH + Math.round(h * 0.20);
       this.container.addChild(lbl);
       return;
@@ -367,7 +368,7 @@ export class GachaScene implements Scene {
               d: Math.floor(remain / 86_400_000),
               h: Math.floor((remain % 86_400_000) / 3_600_000),
             });
-      const cd = txt(cdLabel, Math.round(h * 0.016), remain <= 0 ? C.mid : C.gold, true);
+      const cd = txt(cdLabel, FS.body, remain <= 0 ? C.mid : C.gold, true);
       cd.anchor.set(0, 1);
       cd.x = bx + Math.round(w * 0.02);
       cd.y = by + bannerH - Math.round(h * 0.015);
@@ -393,13 +394,13 @@ export class GachaScene implements Scene {
         this.container.addChild(st);
         sxp += starSz + 2;
       }
-      const lbl = txt(t(('rarity.' + rar) as TranslationKey), Math.round(h * 0.016), C.mid);
+      const lbl = txt(t(('rarity.' + rar) as TranslationKey), FS.body, C.mid);
       lbl.anchor.set(0.5, 0); lbl.x = cx; lbl.y = legendY;
       this.container.addChild(lbl);
     });
 
     // Odds detail button (L1-3, Apple 3.1.1) — top-right of the banner.
-    const oddsLbl = txt('ⓘ ' + t('gacha.oddsDetail.button'), Math.round(h * 0.02), C.accent, true);
+    const oddsLbl = txt('ⓘ ' + t('gacha.oddsDetail.button'), FS.label, C.accent, true);
     oddsLbl.anchor.set(1, 0); oddsLbl.x = bx + bannerW - Math.round(w * 0.02); oddsLbl.y = by + Math.round(h * 0.015);
     this.container.addChild(oddsLbl);
     const oPad = Math.round(h * 0.012);
@@ -412,7 +413,7 @@ export class GachaScene implements Scene {
     const pityMax = pool.pityThreshold ?? 0;
     if (pityMax > 0) {
       const cur = this.cb.getPity(pool.id);
-      const pity = txt(t('gacha.pity', { cur, max: pityMax }), Math.round(h * 0.024), C.dark, true);
+      const pity = txt(t('gacha.pity', { cur, max: pityMax }), FS.heading, C.dark, true);
       pity.anchor.set(0.5, 0.5); pity.x = centerX; pity.y = by + bannerH + Math.round(h * 0.05);
       this.container.addChild(pity);
 
@@ -456,7 +457,7 @@ export class GachaScene implements Scene {
       const fate = this.cb.getFatePoints();
       const cost = GachaScene.FATE_COST;
       btnY += btnH + Math.round(h * 0.02);
-      const fateLbl = txt(t('gacha.fate.balance', { cur: fate, cost }), Math.round(h * 0.022), C.dark, true);
+      const fateLbl = txt(t('gacha.fate.balance', { cur: fate, cost }), FS.label, C.dark, true);
       fateLbl.anchor.set(0, 0.5); fateLbl.x = btnX; fateLbl.y = btnY + btnH * 0.28;
       this.container.addChild(fateLbl);
       const canRedeem = !this.bt.busy && fate >= cost;
@@ -470,7 +471,7 @@ export class GachaScene implements Scene {
   private drawToast(): void {
     const { w, h } = this;
     const toast = this.toast!;
-    const lbl = txt(toast.text, Math.round(h * 0.026), 0xffffff, true);
+    const lbl = txt(toast.text, FS.heading, 0xffffff, true);
     const padX = Math.round(w * 0.04);
     const padY = Math.round(h * 0.012);
     const bw = lbl.width + padX * 2;
@@ -490,7 +491,7 @@ export class GachaScene implements Scene {
     dim.beginFill(0x000000, 0.82); dim.drawRect(0, 0, w, h); dim.endFill();
     this.container.addChild(dim);
 
-    const header = txt(t('gacha.results'), Math.round(h * 0.036), 0xffffff, true);
+    const header = txt(t('gacha.results'), FS.headline, 0xffffff, true);
     header.anchor.set(0.5, 0.5); header.x = w / 2; header.y = Math.round(h * 0.12);
     this.container.addChild(header);
 
@@ -515,7 +516,7 @@ export class GachaScene implements Scene {
       this.drawResultCard(r, cx, cy, cellW, cellH, i + 1);
     });
 
-    const hint = txt(t('gacha.tapContinue'), Math.round(h * 0.022), C.light);
+    const hint = txt(t('gacha.tapContinue'), FS.label, C.light);
     hint.anchor.set(0.5, 0.5); hint.x = w / 2; hint.y = Math.round(h * 0.92);
     this.container.addChild(hint);
   }
@@ -542,7 +543,7 @@ export class GachaScene implements Scene {
     this.container.addChild(plate);
 
     // Item name (translated display name, not the raw itemId).
-    const idLbl = txt(this.displayName(r.itemId), Math.round(h * 0.075), C.dark);
+    const idLbl = txt(this.displayName(r.itemId), snapFont(Math.round(h * 0.075)), C.dark);
     idLbl.anchor.set(0.5, 0.5); idLbl.x = x + w / 2; idLbl.y = y + h * 0.63;
     this.container.addChild(idLbl);
 
@@ -550,7 +551,7 @@ export class GachaScene implements Scene {
     // Kept above 0.80h so it clears the decorative frame's bottom border band
     // (frame overlay is drawn on top of the plate, last).
     if (!r.duplicate) {
-      const badge = txt(t('gacha.new'), Math.round(h * 0.10), C.green, true);
+      const badge = txt(t('gacha.new'), snapFont(Math.round(h * 0.10)), C.green, true);
       badge.anchor.set(0.5, 0.5); badge.x = x + w / 2; badge.y = y + h * 0.78;
       this.container.addChild(badge);
     }
@@ -583,7 +584,7 @@ export class GachaScene implements Scene {
     panel.x = px; panel.y = py;
     this.container.addChild(panel);
 
-    const header = txt(t('gacha.oddsDetail.title'), Math.round(h * 0.032), C.dark, true);
+    const header = txt(t('gacha.oddsDetail.title'), FS.title, C.dark, true);
     header.anchor.set(0.5, 0); header.x = w / 2; header.y = py + Math.round(h * 0.02);
     this.container.addChild(header);
 
@@ -634,14 +635,14 @@ export class GachaScene implements Scene {
       const picSz = Math.round(Math.min(cardW * 0.62, cardH * 0.42));
       this.drawEntryPicture(e.itemId, e.rarity, cardX + cardW / 2, cardY + cardH * 0.10 + picSz / 2, picSz, i + 1, gridLayer);
 
-      const nameSize = Math.max(9, Math.round(cardH * 0.13));
+      const nameSize = snapFont(Math.max(9, Math.round(cardH * 0.13)));
       const name = txt(this.displayName(e.itemId), nameSize, C.dark);
       name.anchor.set(0.5, 0); name.x = cardX + cardW / 2; name.y = cardY + cardH * 0.52;
       const nameMax = cardW * 0.9;
       if (name.width > nameMax) name.scale.set(nameMax / name.width);
       gridLayer.addChild(name);
 
-      const probSize = Math.max(10, Math.round(cardH * 0.17));
+      const probSize = snapFont(Math.max(10, Math.round(cardH * 0.17)));
       const prob = txt(`${(e.probability * 100).toFixed(2)}%`, probSize, C.accent, true);
       prob.anchor.set(0.5, 1); prob.x = cardX + cardW / 2; prob.y = cardY + cardH * 0.94;
       gridLayer.addChild(prob);
@@ -650,21 +651,21 @@ export class GachaScene implements Scene {
     drawScrollIndicator(this.container, { x: gridX, y: gridTop, w: gridW, h: gridH }, this.oddsScrollY, this.oddsScrollMax);
 
     // Total + pity rule + close hint.
-    const totalLbl = txt(t('gacha.oddsDetail.total', { pct: (total * 100).toFixed(2) }), Math.round(h * 0.022), C.mid, true);
+    const totalLbl = txt(t('gacha.oddsDetail.total', { pct: (total * 100).toFixed(2) }), FS.label, C.mid, true);
     totalLbl.anchor.set(0.5, 1); totalLbl.x = w / 2; totalLbl.y = gridBottom + Math.round(h * 0.005);
     this.container.addChild(totalLbl);
 
     const pity = pool.pityThreshold ?? 0;
     if (pity > 0) {
       const pityLbl = new PIXI.Text(t('gacha.oddsDetail.pityRule', { n: pity }), {
-        fontSize: Math.round(h * 0.02), fill: C.dark, fontFamily: 'monospace',
+        fontSize: FS.label, fill: C.dark, fontFamily: 'monospace',
         wordWrap: true, wordWrapWidth: pw * 0.84, align: 'center',
       });
       pityLbl.anchor.set(0.5, 0); pityLbl.x = w / 2; pityLbl.y = gridBottom + Math.round(h * 0.02);
       this.container.addChild(pityLbl);
     }
 
-    const hint = txt(t('gacha.oddsDetail.tapClose'), Math.round(h * 0.02), C.mid);
+    const hint = txt(t('gacha.oddsDetail.tapClose'), FS.label, C.mid);
     hint.anchor.set(0.5, 1); hint.x = w / 2; hint.y = py + ph - Math.round(h * 0.02);
     this.container.addChild(hint);
   }
@@ -759,7 +760,7 @@ export class GachaScene implements Scene {
     g.x = x; g.y = y;
     this.container.addChild(g);
 
-    const tl = txt(label, Math.round(h * 0.36), enabled ? 0xffffff : C.mid, true);
+    const tl = txt(label, snapFont(Math.round(h * 0.36)), enabled ? 0xffffff : C.mid, true);
     tl.anchor.set(0.5, 0.5); tl.x = x + w / 2; tl.y = y + h / 2;
     this.container.addChild(tl);
 

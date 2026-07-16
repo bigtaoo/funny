@@ -22,6 +22,7 @@ import {
   type Constructor, type LobbySceneBaseCtor,
 } from './base';
 import { headerMetrics } from './format';
+import { FS, snapFont } from '../../render/fontScale';
 
 export interface BuildHandlers {
   build(): void;
@@ -189,10 +190,10 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       titleBg.endFill();
       this.container.addChild(titleBg);
 
-      const title = txt(t('lobby.brandTitle'), Math.round(h * 0.05), 0xffffff, true);
+      const title = txt(t('lobby.brandTitle'), FS.display, 0xffffff, true);
       title.anchor.set(0, 0.5);
 
-      const subtitle = txt(t('lobby.subtitle'), Math.round(h * 0.022), C.light);
+      const subtitle = txt(t('lobby.subtitle'), FS.label, C.light);
       subtitle.anchor.set(0.5, 0.5); subtitle.y = subtitleY;
       this.container.addChild(subtitle);
 
@@ -227,7 +228,7 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       this.container.addChild(avatar);
 
       const nameGap = Math.round(w * 0.02);
-      const nameLabel = txt(this.cb.playerName, Math.round(chipBandH * 0.24), 0xffffff, true);
+      const nameLabel = txt(this.cb.playerName, snapFont(Math.round(chipBandH * 0.24)), 0xffffff, true);
       nameLabel.anchor.set(0, 0.5);
       nameLabel.x = avX + av + nameGap;
       nameLabel.y = chipBandH * 0.5;
@@ -260,7 +261,7 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       // server-authoritative ladder badge with a small logout affordance.
       const chipX = w - Math.round(w * 0.04);
       if (this.cb.offline) {
-        const login = txt(t('auth.loginEntry'), Math.round(h * 0.024), C.gold, true);
+        const login = txt(t('auth.loginEntry'), FS.heading, C.gold, true);
         login.anchor.set(1, 0.5); login.x = chipX; login.y = chipBandH * 0.5;
         this.container.addChild(login);
         const pad = Math.round(h * 0.02);
@@ -279,7 +280,7 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
 
         // Soft-currency balance (server-authoritative mirror) — only meaningful online.
         if (typeof this.cb.coins === 'number') {
-          const coinLbl = txt(fmtCoins(this.cb.coins), Math.round(h * 0.022), C.gold, true);
+          const coinLbl = txt(fmtCoins(this.cb.coins), FS.label, C.gold, true);
           coinLbl.anchor.set(1, 0.5); coinLbl.x = chipX; coinLbl.y = coinsY;
           this.container.addChild(coinLbl);
           // Coin icon to the left of the number — same AI atlas glyph as the shop header (falls
@@ -300,7 +301,7 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
 
         const rankName = t(('rank.' + pvp.rank) as TranslationKey);
         const badge = pvp.rank === 'unranked' ? rankName : `${rankName} · ${pvp.elo}`;
-        const badgeLabel = txt(badge, Math.round(h * 0.022), C.light, true);
+        const badgeLabel = txt(badge, FS.label, C.light, true);
         badgeLabel.anchor.set(1, 0.5); badgeLabel.x = chipX; badgeLabel.y = rankY;
         this.container.addChild(badgeLabel);
         if (this.cb.onOpenLeaderboard) {
@@ -311,7 +312,7 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
           };
         }
         if (this.cb.onLogout) {
-          const out = txt(t('auth.logout'), Math.round(h * 0.016), C.mid);
+          const out = txt(t('auth.logout'), FS.body, C.mid);
           out.anchor.set(1, 0.5); out.x = chipX; out.y = outY;
           this.container.addChild(out);
           const pad = Math.round(h * 0.012);
@@ -370,7 +371,7 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       heroMotif.y = Math.round(heroY + heroH / 2 - heroMotifS / 2);
       this.container.addChild(heroMotif);
 
-      this.btnLabel = txt(this.cb.offline ? t('lobby.startVsAI') : t('lobby.startMatch'), Math.round(heroH * 0.30), 0xffffff, true);
+      this.btnLabel = txt(this.cb.offline ? t('lobby.startVsAI') : t('lobby.startMatch'), snapFont(Math.round(heroH * 0.30)), 0xffffff, true);
       this.btnLabel.anchor.set(0.5, 0.5);
       this.btnLabel.x = contentX + contentW / 2;
       this.btnLabel.y = heroY + heroH * 0.38;
@@ -424,7 +425,7 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       const heroSubKey: TranslationKey = this.cb.offline
         ? 'lobby.match.subSolo'
         : (this.cb.online ? 'lobby.match.subRanked' : 'lobby.match.subAI');
-      const heroSub = txt(t(heroSubKey), Math.round(heroH * 0.15), C.light);
+      const heroSub = txt(t(heroSubKey), snapFont(Math.round(heroH * 0.15)), C.light);
       heroSub.anchor.set(0.5, 0.5);
       heroSub.x = contentX + contentW / 2;
       heroSub.y = heroY + heroH * 0.70;
@@ -478,7 +479,7 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
         const totalH   = entries.length * sideItemSz + (entries.length - 1) * itemGap;
         // Vertically centre the strip within the hero+pillars block.
         const stripTopY = Math.round(heroY + (stackH - totalH) / 2);
-        const fontSize  = Math.round(sideItemSz * 0.30);
+        const fontSize  = snapFont(Math.round(sideItemSz * 0.30));
 
         entries.forEach((entry, i) => {
           const iy = stripTopY + i * (sideItemSz + itemGap);
@@ -570,7 +571,7 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
         icon.y = iconTopY;
         navBg.addChild(icon);
 
-        const navLabel = txt(slot.name, Math.round(navH * 0.20), active ? 0xffffff : C.light, active);
+        const navLabel = txt(slot.name, snapFont(Math.round(navH * 0.20)), active ? 0xffffff : C.light, active);
         navLabel.anchor.set(0.5, 0);
         navLabel.alpha = disabled ? 0.4 : (active ? 1.0 : 0.78);
         navLabel.x = slotX; navLabel.y = labelTopY;
@@ -632,12 +633,12 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       glyph.y = Math.round(y + h * 0.40 - iconSize / 2);
       this.container.addChild(glyph);
 
-      const titleLbl = txt(title, Math.round(h * 0.22), C.dark, true);
+      const titleLbl = txt(title, snapFont(Math.round(h * 0.22)), C.dark, true);
       titleLbl.anchor.set(0.5, 0.5);
       titleLbl.x = x + w / 2; titleLbl.y = y + h * 0.70;
       this.container.addChild(titleLbl);
 
-      const subLbl = txt(sub, Math.round(h * 0.12), C.mid);
+      const subLbl = txt(sub, snapFont(Math.round(h * 0.12)), C.mid);
       subLbl.anchor.set(0.5, 0.5);
       subLbl.x = x + w / 2; subLbl.y = y + h * 0.88;
       this.container.addChild(subLbl);
@@ -660,7 +661,7 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       youCard.x = cardX; youCard.y = Math.round(h * 0.28);
       c.addChild(youCard);
 
-      const vs = txt(t('lobby.vs'), Math.round(h * 0.09), C.gold, true);
+      const vs = txt(t('lobby.vs'), FS.display, C.gold, true);
       vs.anchor.set(0.5, 0.5); vs.x = w / 2; vs.y = h * 0.5;
       c.addChild(vs);
 
@@ -669,7 +670,7 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       c.addChild(oppCard);
       this.oppLabel = oppCard.getChildByName('nameLabel') as PIXI.Text;
 
-      const hint = txt(t('lobby.loading'), Math.round(h * 0.022), C.mid);
+      const hint = txt(t('lobby.loading'), FS.label, C.mid);
       hint.anchor.set(0.5, 0); hint.x = w / 2; hint.y = h * 0.8;
       c.addChild(hint);
 
@@ -681,7 +682,7 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       const bg = sketchPanel(w, h, { fill: C.paper, border: accentColor, width: 2.4, seed: accentColor });
       // Ink accent stroke down the left edge.
       new SketchPen(bg, accentColor ^ 0x55).line(4, 5, 4, h - 5, { color: accentColor, width: 5, jitter: 0.8, taper: 0.85 });
-      const nameLabel = txt(name, Math.round(h * 0.45), C.dark, true);
+      const nameLabel = txt(name, snapFont(Math.round(h * 0.45)), C.dark, true);
       nameLabel.name = 'nameLabel'; nameLabel.anchor.set(0, 0.5);
       nameLabel.x = Math.round(w * 0.08); nameLabel.y = h / 2;
       bg.addChild(nameLabel);

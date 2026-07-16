@@ -7,6 +7,7 @@
  * Destroyed once the L0 tier is ready, immediately before the first scene shows.
  */
 import * as PIXI from 'pixi.js-legacy';
+import { FS } from './fontScale';
 
 const INK = 0x3a3a3a;        // pencil/pen ink
 const HIGHLIGHT = 0x4a7fb5;  // faction-blue highlighter wash (our side, §3.2)
@@ -28,7 +29,7 @@ export class LoadingOverlay {
 
     this.pct = new PIXI.Text('0%', {
       fontFamily: 'sans-serif',
-      fontSize: 18,
+      fontSize: FS.body,
       fill: INK,
     });
     this.pct.anchor.set(0.5);

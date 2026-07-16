@@ -7,6 +7,7 @@ import { CHAPTER_ORDER, getChapterMap } from '../game';
 import type { ChapterMap, ChapterNode } from '../game';
 import { parseLevelId, isLevelUnlocked, currentChapter, currentLevelIdInChapter } from '../game/campaign/progress';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchButton, seedFor } from '../render/sketchUi';
+import { FS, snapFont } from '../render/fontScale';
 import { buildIcon } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
@@ -212,13 +213,13 @@ export class CampaignMapScene implements Scene {
 
     // With a subtitle (chapter pages: notebook owner), the title rides slightly
     // above center so the dim owner line tucks beneath it; without one it centers.
-    const title = txt(titleStr, Math.round(h * 0.032), C.dark, true);
+    const title = txt(titleStr, FS.title, C.dark, true);
     title.anchor.set(0.5, 0.5); title.x = w / 2;
     title.y = subtitleStr ? Math.round(tbH * 0.40) : tbH / 2;
     root.addChild(title);
 
     if (subtitleStr) {
-      const sub = txt(subtitleStr, Math.round(h * 0.020), C.mid);
+      const sub = txt(subtitleStr, FS.label, C.mid);
       sub.anchor.set(0.5, 0.5); sub.x = w / 2; sub.y = Math.round(tbH * 0.72);
       sub.alpha = 0.75;
       root.addChild(sub);
@@ -230,7 +231,7 @@ export class CampaignMapScene implements Scene {
     // background (sketchButton, §7.5) so they read as real buttons — matching
     // the Back pill — rather than bare gold text floating on the paper bar.
     // Laid out right→left; `rightX` walks left by each pill's width + gap.
-    const fontSz = Math.round(h * 0.024);
+    const fontSz = FS.label;
     const padX = Math.round(fontSz * 0.8);
     const pillH = Math.round(fontSz + padX * 1.4);
     const pillGap = Math.round(w * 0.02);
@@ -302,7 +303,7 @@ export class CampaignMapScene implements Scene {
       root.addChild(card);
 
       const titleStr = `${t('campaign.chapterLabel', { n: ch })} · ${t(map.venueKey)}`;
-      const name = txt(titleStr, Math.round(cardH * 0.30), unlocked ? C.dark : C.mid, true);
+      const name = txt(titleStr, snapFont(Math.round(cardH * 0.30)), unlocked ? C.dark : C.mid, true);
       name.anchor.set(0, 0.5); name.x = listX + Math.round(w * 0.04); name.y = y + cardH * 0.36;
       root.addChild(name);
 
@@ -310,14 +311,14 @@ export class CampaignMapScene implements Scene {
       const clearedCount = map.nodes.filter((node) => cleared.has(node.levelId)).length;
       const earned = map.nodes.reduce((s, node) => s + (stars[node.levelId] ?? 0), 0);
       const progStr = t('campaign.chapterProgress', { c: clearedCount, n: map.nodes.length });
-      const prog = txt(progStr, Math.round(cardH * 0.22), unlocked ? C.mid : C.btnOff);
+      const prog = txt(progStr, snapFont(Math.round(cardH * 0.22)), unlocked ? C.mid : C.btnOff);
       prog.anchor.set(0, 0.5); prog.x = listX + Math.round(w * 0.04); prog.y = y + cardH * 0.70;
       root.addChild(prog);
 
       if (unlocked) {
         // Hand-drawn star glyph + earned/total count (replaces the ★ text bullet).
         const rightX = listX + listW - Math.round(w * 0.04);
-        const st = txt(`${earned}/${map.nodes.length * 3}`, Math.round(cardH * 0.26), C.gold, true);
+        const st = txt(`${earned}/${map.nodes.length * 3}`, snapFont(Math.round(cardH * 0.26)), C.gold, true);
         st.anchor.set(1, 0.5); st.x = rightX; st.y = y + cardH / 2;
         root.addChild(st);
         const starSz = Math.round(cardH * 0.28);
@@ -328,7 +329,7 @@ export class CampaignMapScene implements Scene {
       } else {
         // Locked chapter — taped shut.
         this.drawTape(card, listW, cardH, seedFor(listX, cardH, ch));
-        const lock = txt(t(online ? 'campaign.locked' : 'campaign.lockedOffline'), Math.round(cardH * 0.22), C.mid);
+        const lock = txt(t(online ? 'campaign.locked' : 'campaign.lockedOffline'), snapFont(Math.round(cardH * 0.22)), C.mid);
         lock.anchor.set(1, 0.5); lock.x = listX + listW - Math.round(w * 0.04); lock.y = y + cardH / 2;
         root.addChild(lock);
       }
@@ -410,7 +411,7 @@ export class CampaignMapScene implements Scene {
     const idx = CHAPTER_ORDER.indexOf(ch);
     if (idx > 0) {
       const prevCh = CHAPTER_ORDER[idx - 1]!;
-      const a = txt('‹', Math.round(h * 0.06), C.mid, true);
+      const a = txt('‹', FS.display, C.mid, true);
       a.anchor.set(0.5); a.x = Math.round(w * 0.05); a.y = (tbH + h) / 2;
       root.addChild(a);
       hits.push({ rect: { x: 0, y: tbH, w: Math.round(w * 0.12), h: h - tbH }, fn: () => this.openChapter(prevCh) });
@@ -419,7 +420,7 @@ export class CampaignMapScene implements Scene {
       const nextCh = CHAPTER_ORDER[idx + 1]!;
       const nextMap = getChapterMap(nextCh);
       const nextUnlocked = nextMap ? isLevelUnlocked(nextMap.nodes[0]!.levelId, cleared) : false;
-      const a = txt('›', Math.round(h * 0.06), nextUnlocked ? C.accent : C.btnOff, true);
+      const a = txt('›', FS.display, nextUnlocked ? C.accent : C.btnOff, true);
       a.anchor.set(0.5); a.x = w - Math.round(w * 0.05); a.y = (tbH + h) / 2;
       root.addChild(a);
       if (nextUnlocked) {
@@ -458,7 +459,7 @@ export class CampaignMapScene implements Scene {
     }
     root.addChild(g);
 
-    const num = txt(String(lvIndex), Math.round(r * 1.0), unlocked ? (isCleared ? C.gold : C.dark) : C.btnOff, true);
+    const num = txt(String(lvIndex), snapFont(Math.round(r * 1.0)), unlocked ? (isCleared ? C.gold : C.dark) : C.btnOff, true);
     num.anchor.set(0.5); num.x = cx; num.y = cy;
     root.addChild(num);
 
@@ -474,7 +475,7 @@ export class CampaignMapScene implements Scene {
         root.addChild(ic);
       }
     } else if (unlocked && pending) {
-      const pd = txt(t('campaign.pending'), Math.round(r * 0.55), C.mid);
+      const pd = txt(t('campaign.pending'), snapFont(Math.round(r * 0.55)), C.mid);
       pd.anchor.set(0.5, 0); pd.x = cx; pd.y = cy + r + Math.round(h * 0.004);
       root.addChild(pd);
     }
@@ -528,7 +529,7 @@ export class CampaignMapScene implements Scene {
         const fl = new PIXI.Graphics();
         fl.beginFill(C.green, 0.85); fl.drawPolygon([x, y - s, x + s * 1.3, y - s * 0.6, x, y - s * 0.2]); fl.endFill();
         root.addChild(fl);
-        const lbl = txt(t('campaign.markerStart'), Math.round(s * 0.62), C.green, true);
+        const lbl = txt(t('campaign.markerStart'), snapFont(Math.round(s * 0.62)), C.green, true);
         lbl.anchor.set(0.5, 0); lbl.x = x; lbl.y = y + s * 0.2; root.addChild(lbl);
         break;
       }
@@ -537,7 +538,7 @@ export class CampaignMapScene implements Scene {
         const fl = new PIXI.Graphics();
         fl.beginFill(C.red, 0.85); fl.drawPolygon([x, y - s, x + s * 1.4, y - s * 0.55, x, y - s * 0.1]); fl.endFill();
         root.addChild(fl);
-        const lbl = txt(t('campaign.markerBoss'), Math.round(s * 0.62), C.red, true);
+        const lbl = txt(t('campaign.markerBoss'), snapFont(Math.round(s * 0.62)), C.red, true);
         lbl.anchor.set(0.5, 0); lbl.x = x; lbl.y = y + s * 0.2; root.addChild(lbl);
         break;
       }
@@ -586,7 +587,7 @@ export class CampaignMapScene implements Scene {
   private drawClearStamp(root: PIXI.Container, ch: number, x: number, y: number): void {
     const wrap = new PIXI.Container();
     const label = `${t('campaign.chapterLabel', { n: ch })} · ${t('campaign.chapterStamp')}`;
-    const tx = txt(label, Math.round(this.h * 0.024), C.red, true);
+    const tx = txt(label, FS.heading, C.red, true);
     tx.anchor.set(0.5);
     const pad = Math.round(this.h * 0.012);
     const box = new PIXI.Graphics();

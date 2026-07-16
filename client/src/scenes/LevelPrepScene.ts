@@ -8,6 +8,7 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedF
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { buildIcon, type IconKind } from '../render/icons';
+import { FS, snapFont } from '../render/fontScale';
 
 // ── LevelPrepScene — objective / brief / stamina + Start ────────────────────
 //
@@ -159,7 +160,7 @@ export class LevelPrepScene implements Scene {
     const stColor = stInsufficient ? C.red : C.accent;
     const stTxt = txt(
       t('stamina.cost', { cost: stCost, current: stamina.current }),
-      Math.round(stBarH * 0.48),
+      snapFont(Math.round(stBarH * 0.48)),
       stColor,
       true,
     );
@@ -173,7 +174,7 @@ export class LevelPrepScene implements Scene {
       const buyBg = sketchPanel(buyW, buyH, { fill: C.red, border: C.dark, width: 1.6, seed: seedFor(buyX, buyY, buyW) });
       buyBg.x = buyX; buyBg.y = buyY;
       this.container.addChild(buyBg);
-      const buyLbl = txt(t('stamina.buy'), Math.round(buyH * 0.4), 0xffffff, true);
+      const buyLbl = txt(t('stamina.buy'), snapFont(Math.round(buyH * 0.4)), 0xffffff, true);
       buyLbl.anchor.set(0.5, 0.5); buyLbl.x = buyX + buyW / 2; buyLbl.y = buyY + buyH / 2;
       this.container.addChild(buyLbl);
       this.hits.push({ rect: { x: buyX, y: buyY, w: buyW, h: buyH }, fn: () => this.cb.onBuyStamina() });
@@ -190,7 +191,7 @@ export class LevelPrepScene implements Scene {
     const sb = sketchPanel(sbW, sbH, { fill: sbFill, border: sbBorder, width: 2.6, seed: seedFor(sbX, sbY, sbW) });
     sb.x = sbX; sb.y = sbY;
     this.container.addChild(sb);
-    const sl = txt(t('prep.start'), Math.round(sbH * 0.42), stInsufficient ? C.mid : 0xffffff, true);
+    const sl = txt(t('prep.start'), snapFont(Math.round(sbH * 0.42)), stInsufficient ? C.mid : 0xffffff, true);
     sl.anchor.set(0.5, 0.5); sl.x = sbX + sbW / 2; sl.y = sbY + sbH / 2;
     this.container.addChild(sl);
     this.hits.push({
@@ -226,7 +227,7 @@ export class LevelPrepScene implements Scene {
     const { w, h } = this;
     const padX = marginLineX(w);
     const panW = w - padX - Math.round(w * 0.06);
-    const fs = Math.round(h * 0.044);
+    const fs = FS.headline;
     const innerPadX = Math.round(panW * 0.06);
     const wrapWidth = panW - innerPadX * 2;
     const padV = Math.round(h * 0.018);
@@ -271,7 +272,7 @@ export class LevelPrepScene implements Scene {
     const { w, h } = this;
     const padX = marginLineX(w);
     const panW = w - padX - Math.round(w * 0.06);
-    const fs = Math.round(h * 0.033);
+    const fs = FS.headline;
     const padV = Math.round(h * 0.021);
     const panH = fs * 1.6 + padV * 2;
 
@@ -315,7 +316,7 @@ export class LevelPrepScene implements Scene {
     const { w, h } = this;
     const padX = marginLineX(w);
     const panW = w - padX - Math.round(w * 0.06);
-    const fontSize = Math.round(h * 0.033);
+    const fontSize = FS.headline;
     const innerPadX = Math.round(panW * 0.06);
     const wrapWidth = panW - innerPadX * 2;
     const padV = Math.round(h * 0.012);
@@ -353,7 +354,7 @@ export class LevelPrepScene implements Scene {
     bg.beginFill(0x1a1408, 0.97); bg.drawRect(0, 0, w, h); bg.endFill();
     this.container.addChild(bg);
 
-    const fontSize = Math.round(h * 0.026);
+    const fontSize = FS.heading;
     const lineGapY = Math.round(h * 0.085);
     const blockH = (this.introLines.length - 1) * lineGapY;
     const startY = (h - blockH) / 2 - Math.round(h * 0.05);
@@ -378,7 +379,7 @@ export class LevelPrepScene implements Scene {
     });
 
     const hint = new PIXI.Text(t('story.tapToContinue'), {
-      fontSize: Math.round(h * 0.02),
+      fontSize: FS.label,
       fill: 0x8a7a60,
       fontFamily: 'monospace',
     });
@@ -388,7 +389,7 @@ export class LevelPrepScene implements Scene {
     this.container.addChild(hint);
 
     const skipText = new PIXI.Text(t('story.skip'), {
-      fontSize: Math.round(h * 0.022),
+      fontSize: FS.label,
       fill: 0x8a7a60,
       fontFamily: 'monospace',
     });

@@ -9,6 +9,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
+import { FS, snapFont } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import { UNIT_ART_URLS } from '../../render/cardArt';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
@@ -118,7 +119,7 @@ export function SkinsMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase 
       dot.x = tileAreaX + 5; dot.y = y + CARD_PAD + 9;
       this.bodyLayer.addChild(dot);
 
-      const nameLbl = txt(t(`card.${def.id}.name` as TranslationKey), 18, C.dark, true);
+      const nameLbl = txt(t(`card.${def.id}.name` as TranslationKey), FS.body, C.dark, true);
       nameLbl.x = tileAreaX + 16; nameLbl.y = y + CARD_PAD;
       if (nameLbl.width > tileAreaW - 16) nameLbl.scale.set((tileAreaW - 16) / nameLbl.width);
       this.bodyLayer.addChild(nameLbl);
@@ -161,13 +162,13 @@ export function SkinsMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase 
       ic.x = x + (w - icSize) / 2; ic.y = y + Math.round(h * 0.12);
       this.bodyLayer.addChild(ic);
 
-      const name = txt(tile.label, Math.round(h * 0.13), C.dark, true);
+      const name = txt(tile.label, snapFont(Math.round(h * 0.13)), C.dark, true);
       name.anchor.set(0.5, 0.5); name.x = x + w / 2; name.y = y + h * 0.62;
       if (name.width > w - 8) name.scale.set((w - 8) / name.width);
       this.bodyLayer.addChild(name);
 
       const status = txt(isEquipped ? t('collection.equipped') : t('collection.equip'),
-        Math.round(h * 0.11), isEquipped ? C.green : C.gold, true);
+        snapFont(Math.round(h * 0.11)), isEquipped ? C.green : C.gold, true);
       status.anchor.set(0.5, 0.5); status.x = x + w / 2; status.y = y + h * 0.84;
       this.bodyLayer.addChild(status);
 

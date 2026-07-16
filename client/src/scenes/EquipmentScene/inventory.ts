@@ -3,6 +3,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor, marginLineX } from '../../render/sketchUi';
+import { FS } from '../../render/fontScale';
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { buildIcon } from '../../render/icons';
@@ -105,7 +106,7 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
         : allInstances.filter(x => getEquipDef(x.defId)?.slot === this.filterSlot);
 
       if (instances.length === 0) {
-        const lbl = txt(t('equip.invEmpty'), 28, C.mid);
+        const lbl = txt(t('equip.invEmpty'), FS.heading, C.mid);
         lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = listY + listH / 2;
         this.bodyLayer.addChild(lbl);
         return;
@@ -195,7 +196,7 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
           hlt.beginFill(0xfaf9f5).drawRoundedRect(fx + 3, y + 3, fw - 6, FILTER_H - 6, 3).endFill();
           this.bodyLayer.addChild(hlt);
         }
-        const lbl = txt(f.label, 24, active ? C.accent : C.dark, active);
+        const lbl = txt(f.label, FS.label, active ? C.accent : C.dark, active);
         lbl.anchor.set(0.5, 0.5); lbl.x = fx + fw / 2; lbl.y = y + FILTER_H / 2;
         this.bodyLayer.addChild(lbl);
         this.hitRects.push({
@@ -217,7 +218,7 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       const { w } = this;
       const collapsed = this.collapsedSections.has(key);
       const left = marginLineX(w) + CELL_GAP + 20;
-      const lbl = txt(`${collapsed ? '▶' : '▼'} ${label}`, 24, C.dark, true);
+      const lbl = txt(`${collapsed ? '▶' : '▼'} ${label}`, FS.label, C.dark, true);
       lbl.x = left; lbl.y = cy + (SECTION_H - lbl.height) / 2;
       this.bodyLayer.addChild(lbl);
       const lineX = lbl.x + lbl.width + 10;
@@ -284,7 +285,7 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
     /** Loadout strip (Weapon/Armor/Trinket preview cells), confined to the right column — right of the sidebar rail, mirroring the filter bar and item grid below it. */
     private renderLoadout(save: SaveData, y: number, left: number): void {
       const { w } = this;
-      const label = txt(t('equip.loadout'), 11, C.mid);
+      const label = txt(t('equip.loadout'), FS.micro, C.mid);
       label.x = left + 10; label.y = y + 4;
       this.bodyLayer.addChild(label);
 
@@ -304,20 +305,20 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
         this.bodyLayer.addChild(cell);
 
         // Slot label: when equipped, show the slot type in small text as a secondary hint; when empty, show it bold so the player can easily identify open slots.
-        const slotLbl = txt(t(`equip.slot.${slot}` as TranslationKey), inst ? 10 : 11, inst ? C.mid : C.dark, !inst);
+        const slotLbl = txt(t(`equip.slot.${slot}` as TranslationKey), FS.micro, inst ? C.mid : C.dark, !inst);
         slotLbl.anchor.set(0.5, 0); slotLbl.x = x + cellW / 2; slotLbl.y = cy + 4;
         this.bodyLayer.addChild(slotLbl);
 
         if (inst) {
           this.addGlyph(slot, inst.rarity, x + cellW / 2, cy + cellH * 0.4, 30, seedFor(i, 13, cellW), 1, inst.defId);
-          const nm = txt(this.itemLabel(inst.defId, inst.level), 11, C.dark);
+          const nm = txt(this.itemLabel(inst.defId, inst.level), FS.micro, C.dark);
           nm.anchor.set(0.5, 0.5); nm.x = x + cellW / 2; nm.y = cy + cellH * 0.82;
           this.bodyLayer.addChild(nm);
           this.hitRects.push({ rect: { x, y: cy, w: cellW, h: cellH }, action: () => this.openDetail(inst.id) });
         } else {
           // Empty slot: darken the glyph alpha (0.40) and add the "empty" label so the player can clearly identify available equip positions.
           this.addGlyph(slot, 'common', x + cellW / 2, cy + cellH * 0.45, 28, seedFor(i, 13, cellW), 0.40);
-          const empty = txt(t('equip.slotEmpty'), 11, C.mid);
+          const empty = txt(t('equip.slotEmpty'), FS.micro, C.mid);
           empty.anchor.set(0.5, 0.5); empty.x = x + cellW / 2; empty.y = cy + cellH * 0.88;
           this.bodyLayer.addChild(empty);
         }
@@ -340,7 +341,7 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       this.bodyLayer.addChild(cell);
 
       // Top: name +level (scaled down to fit if too wide).
-      const name = txt(this.itemLabel(inst.defId, inst.level), 20, C.dark, true);
+      const name = txt(this.itemLabel(inst.defId, inst.level), FS.bodyLg, C.dark, true);
       name.x = x + pad; name.y = y + pad;
       if (name.width > cellW - pad * 2 - 20) name.scale.set(Math.min(1, cellW / (name.width + 40)));
       this.bodyLayer.addChild(name);
@@ -368,15 +369,15 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       const ax = imgX + imgBox + 12;
       const colW = x + cellW - pad - ax;
       let ay = imgY + 4;
-      const rar = txt(t(`equip.rarity.${inst.rarity}` as TranslationKey), 18, color, true);
+      const rar = txt(t(`equip.rarity.${inst.rarity}` as TranslationKey), FS.body, color, true);
       rar.x = ax; rar.y = ay; this.bodyLayer.addChild(rar); ay += 28;
       if (equipped) {
         const slotLabel = t(`equip.slot.${slot}` as TranslationKey);
-        const e = txt(`[${t('equip.equipped')} · ${slotLabel}]`, 16, C.green, true);
+        const e = txt(`[${t('equip.equipped')} · ${slotLabel}]`, FS.small, C.green, true);
         e.x = ax; e.y = ay; this.bodyLayer.addChild(e); ay += 24;
       }
       if (count > 1) {
-        const badge = txt(`×${count}`, 18, C.mid);
+        const badge = txt(`×${count}`, FS.body, C.mid);
         badge.x = ax; badge.y = ay; this.bodyLayer.addChild(badge);
       }
 
@@ -386,14 +387,14 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       const btnH = 36;
       const btnY = imgY + imgBox - btnH;
       if (equipped) {
-        const hint = txt('› ' + t('equip.viewDetails'), 15, C.mid);
+        const hint = txt('› ' + t('equip.viewDetails'), FS.small, C.mid);
         hint.anchor.set(1, 1); hint.x = x + cellW - pad; hint.y = y + EQUIP_CELL_H - pad;
         this.bodyLayer.addChild(hint);
       } else {
         const btn = sketchPanel(colW, btnH, { fill: 0xf3ede0, border: C.accent, seed: seedFor(ax, btnY, colW) });
         btn.x = ax; btn.y = btnY;
         this.bodyLayer.addChild(btn);
-        const label = txt(t('equip.hintEquip'), 17, C.accent, true);
+        const label = txt(t('equip.hintEquip'), FS.body, C.accent, true);
         label.anchor.set(0.5, 0.5); label.x = ax + colW / 2; label.y = btnY + btnH / 2;
         this.bodyLayer.addChild(label);
       }

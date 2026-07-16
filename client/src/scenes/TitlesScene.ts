@@ -10,6 +10,7 @@ import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawCareerTabs } from '../ui/widgets/CareerTabs';
 import { sidebarNavW } from '../ui/widgets/HubTabs';
 import { sortTitlesByWeight, getTitleKeys, formatLadderTitle, allTitleIds } from '../game/meta/titles';
+import { FS, snapFont } from '../render/fontScale';
 
 // ── TitlesScene — title wall (S10, TITLE_DESIGN §7/§9) ────────────────────────────
 //
@@ -143,7 +144,7 @@ export class TitlesScene implements Scene {
     const sorted = sortTitlesByWeight(allTitleIds(this.cb.titles));
 
     if (sorted.length === 0) {
-      const empty = txt(t('titles.empty'), Math.round(h * 0.032), C.mid);
+      const empty = txt(t('titles.empty'), FS.title, C.mid);
       empty.anchor.set(0.5, 0.5); empty.x = w / 2; empty.y = h / 2;
       this.container.addChild(empty);
       return;
@@ -198,29 +199,29 @@ export class TitlesScene implements Scene {
       : shortLabel;
 
     const shortY = y + Math.round(cellH * 0.1) + iconS + Math.round(cellH * 0.05);
-    const shortLbl = txt(`「${shortLabel}」`, Math.round(cellH * 0.11), color, equipped);
+    const shortLbl = txt(`「${shortLabel}」`, snapFont(Math.round(cellH * 0.11)), color, equipped);
     shortLbl.anchor.set(0.5, 0); shortLbl.x = x + cellW / 2; shortLbl.y = shortY;
     if (shortLbl.width > cellW * 0.88) shortLbl.scale.set((cellW * 0.88) / shortLbl.width);
     shortLbl.alpha = isOwned ? 1 : 0.7;
     this.container.addChild(shortLbl);
 
-    const fullLbl = txt(fullLabel, Math.round(cellH * 0.07), isOwned ? C.dark : C.mid, false, Math.round(cellW * 0.85));
+    const fullLbl = txt(fullLabel, snapFont(Math.round(cellH * 0.07)), isOwned ? C.dark : C.mid, false, Math.round(cellW * 0.85));
     fullLbl.anchor.set(0.5, 0); fullLbl.x = x + cellW / 2; fullLbl.y = shortY + Math.round(cellH * 0.15);
     fullLbl.alpha = isOwned ? 0.85 : 0.65;
     this.container.addChild(fullLbl);
 
     if (!isOwned) {
-      const badge = txt(t('titles.locked'), Math.round(cellH * 0.08), C.mid);
+      const badge = txt(t('titles.locked'), snapFont(Math.round(cellH * 0.08)), C.mid);
       badge.anchor.set(0.5, 1); badge.x = x + cellW / 2; badge.y = y + cellH - Math.round(cellH * 0.06);
       this.container.addChild(badge);
       return;
     }
 
     if (equipped) {
-      const badge = txt(t('titles.equipped'), Math.round(cellH * 0.08), C.gold, true);
+      const badge = txt(t('titles.equipped'), snapFont(Math.round(cellH * 0.08)), C.gold, true);
       badge.anchor.set(0.5, 1); badge.x = x + cellW / 2; badge.y = y + cellH - Math.round(cellH * 0.14);
       this.container.addChild(badge);
-      const hint = txt(t('titles.tapUnequip'), Math.round(cellH * 0.06), C.mid);
+      const hint = txt(t('titles.tapUnequip'), snapFont(Math.round(cellH * 0.06)), C.mid);
       hint.anchor.set(0.5, 1); hint.x = x + cellW / 2; hint.y = y + cellH - Math.round(cellH * 0.06);
       this.container.addChild(hint);
     }

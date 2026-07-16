@@ -4,6 +4,7 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { buildPaperBackground, ui } from '../render/sketchUi';
+import { FS } from '../render/fontScale';
 
 // ── First-launch intro (background story) ─────────────────────────────────────
 //
@@ -122,7 +123,7 @@ export class IntroScene implements Scene {
     this.container.addChild(buildPaperBackground('introbg', w, h));
 
     // Story lines, vertically centered as a block
-    const fontSize  = Math.round(h * 0.026);
+    const fontSize  = FS.heading;
     const lineGapY  = Math.round(h * 0.085);
     const blockH    = (STORY_LINE_KEYS.length - 1) * lineGapY;
     const startY    = (h - blockH) / 2 - h * 0.05;
@@ -147,7 +148,7 @@ export class IntroScene implements Scene {
 
     // Tap-to-continue hint
     this.hintText = new PIXI.Text(t('story.tapToContinue'), {
-      fontSize: Math.round(h * 0.02),
+      fontSize: FS.label,
       fill: ui.mid,
       fontFamily: 'monospace',
     });
@@ -158,7 +159,7 @@ export class IntroScene implements Scene {
 
     // Skip button (top-right)
     const skipText = new PIXI.Text(t('story.skip'), {
-      fontSize: Math.round(h * 0.022),
+      fontSize: FS.label,
       fill: ui.mid,
       fontFamily: 'monospace',
     });

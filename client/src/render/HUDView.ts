@@ -6,16 +6,17 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { t } from '../i18n';
 import { getLabelTexture } from './labelDecor';
 import { drawHudButton, hudButtonText, HudButtonVariant } from './hudButton';
+import { FS, snapFont } from './fontScale';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const TEXT_STYLE  = { fontSize: 14, fill: 0x222222, fontFamily: 'monospace' } as const;
-const SMALL_STYLE = { fontSize: 11, fill: 0x555555, fontFamily: 'monospace' } as const;
+const TEXT_STYLE  = { fontSize: FS.tiny, fill: 0x222222, fontFamily: 'monospace' } as const;
+const SMALL_STYLE = { fontSize: FS.micro, fill: 0x555555, fontFamily: 'monospace' } as const;
 // Surrender button — top strip.
 const BTN_W       = 100;
 const BTN_H       = 30;
 // Bottom action buttons (upgrade / refresh) — larger, laid out inside hudBottomRightRect.
-const ACTION_LABEL_STYLE = { fontSize: 30, fill: 0x555555, fontFamily: 'monospace', fontWeight: 'bold' } as const;
+const ACTION_LABEL_STYLE = { fontSize: FS.title, fill: 0x555555, fontFamily: 'monospace', fontWeight: 'bold' } as const;
 
 const HP_CELLS    = 10;
 const HP_CELL_W   = 14;
@@ -152,7 +153,7 @@ export class HUDView {
     overlay.addChild(panel);
 
     const title = new PIXI.Text(t('hud.surrenderTitle'), {
-      fontSize: Math.round(pH * 0.18), fill: 0x222222,
+      fontSize: snapFont(Math.round(pH * 0.18)), fill: 0x222222,
       fontWeight: 'bold', fontFamily: 'monospace',
     });
     title.anchor.set(0.5, 0);
@@ -196,7 +197,7 @@ export class HUDView {
     bg.drawRoundedRect(-160, -50, 320, 100, 8);
     bg.endFill();
     const msg  = winner === null ? t('hud.draw') : (winner === localOwner ? t('hud.win') : t('hud.lose'));
-    const text = new PIXI.Text(msg, { fontSize: 38, fill: 0xffffff, fontWeight: 'bold' });
+    const text = new PIXI.Text(msg, { fontSize: FS.headline, fill: 0xffffff, fontWeight: 'bold' });
     text.anchor.set(0.5);
     overlay.addChild(bg, text);
 
@@ -239,7 +240,7 @@ export class HUDView {
     topBg.endFill();
 
     // Timer — landscape hugs the board's left edge; portrait keeps the strip edge.
-    this.timerText   = new PIXI.Text('0:00', { ...TEXT_STYLE, fontSize: 34 });
+    this.timerText   = new PIXI.Text('0:00', { ...TEXT_STYLE, fontSize: FS.title });
     this.timerText.x = (isLandscape ? boardLeft : topR.x) + 14;
     this.timerText.y = topR.y + (topR.h - this.timerText.height) / 2;
 
@@ -261,7 +262,7 @@ export class HUDView {
     this.drawSurrenderBtn();
     this._surrenderRect = { x: sBtnX, y: sBtnY, w: BTN_W, h: BTN_H };
 
-    const sLabel = new PIXI.Text(t('hud.surrender'), { fontSize: 15, fill: 0x333333, fontWeight: 'bold', fontFamily: 'monospace' });
+    const sLabel = new PIXI.Text(t('hud.surrender'), { fontSize: FS.small, fill: 0x333333, fontWeight: 'bold', fontFamily: 'monospace' });
     sLabel.anchor.set(0.5);
     sLabel.x = sBtnX + BTN_W / 2;
     sLabel.y = sBtnY + BTN_H / 2;
@@ -275,7 +276,7 @@ export class HUDView {
     this.backgroundContainer.addChild(botBg);
 
     // Ink
-    this.inkText = new PIXI.Text('⬤ 0', { ...TEXT_STYLE, fontSize: 34 });
+    this.inkText = new PIXI.Text('⬤ 0', { ...TEXT_STYLE, fontSize: FS.title });
 
     // Player HP bar
     this.playerHpGfx = new PIXI.Graphics();
@@ -367,7 +368,7 @@ export class HUDView {
     const bg = new PIXI.Graphics();
     drawHudButton(bg, w, h, variant, { radius: 6 });
     const txt = new PIXI.Text(label, {
-      fontSize: Math.round(h * 0.42), fill: hudButtonText(variant), fontWeight: 'bold', fontFamily: 'monospace',
+      fontSize: snapFont(Math.round(h * 0.42)), fill: hudButtonText(variant), fontWeight: 'bold', fontFamily: 'monospace',
     });
     txt.anchor.set(0.5, 0.5);
     txt.x = w / 2; txt.y = h / 2;

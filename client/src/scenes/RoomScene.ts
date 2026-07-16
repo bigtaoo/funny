@@ -9,6 +9,7 @@ import { ProfilePopup } from '../render/ProfilePopup';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
+import { FS, snapFont } from '../render/fontScale';
 
 // ── RoomScene (S1-8) — friendly online room ──────────────────────────────────
 //
@@ -315,7 +316,7 @@ export class RoomScene implements Scene {
 
     // Ranked (primary) → matchmaking queue.
     this.addButton(t('room.ranked'), btnX, y0, btnW, btnH, C.dark, C.green, () => this.onRanked());
-    const rankedHint = txt(t('room.rankedDesc'), Math.round(h * 0.02), C.mid);
+    const rankedHint = txt(t('room.rankedDesc'), FS.label, C.mid);
     rankedHint.anchor.set(0.5, 0); rankedHint.x = w / 2; rankedHint.y = y0 + btnH + Math.round(h * 0.008);
     this.container.addChild(rankedHint);
 
@@ -323,19 +324,19 @@ export class RoomScene implements Scene {
     this.addButton(t('room.create'), btnX, y1, btnW, btnH, C.dark, C.accent, () => this.onCreate());
     this.addButton(t('room.join'), btnX, y1 + btnH + gap, btnW, btnH, C.dark, C.gold, () => this.onJoinPressed());
 
-    const hint = txt(t('room.share'), Math.round(h * 0.022), C.mid);
+    const hint = txt(t('room.share'), FS.label, C.mid);
     hint.anchor.set(0.5, 0); hint.x = w / 2; hint.y = y1 + 2 * btnH + gap + Math.round(h * 0.035);
     this.container.addChild(hint);
   }
 
   private drawSearching(): void {
     const { w, h } = this;
-    const label = txt(t('room.searching'), Math.round(h * 0.034), C.dark, true);
+    const label = txt(t('room.searching'), FS.headline, C.dark, true);
     label.anchor.set(0.5, 0.5); label.x = w / 2; label.y = h * 0.40;
     this.container.addChild(label);
     this.spinnerText = label;
 
-    const sub = txt(t('room.searchingHint'), Math.round(h * 0.022), C.mid);
+    const sub = txt(t('room.searchingHint'), FS.label, C.mid);
     sub.anchor.set(0.5, 0.5); sub.x = w / 2; sub.y = h * 0.40 + Math.round(h * 0.06);
     this.container.addChild(sub);
 
@@ -347,7 +348,7 @@ export class RoomScene implements Scene {
 
   private drawConnecting(): void {
     const { w, h } = this;
-    const label = txt(t(this.connectingKey), Math.round(h * 0.032), C.dark, true);
+    const label = txt(t(this.connectingKey), FS.title, C.dark, true);
     label.anchor.set(0.5, 0.5); label.x = w / 2; label.y = h * 0.45;
     this.container.addChild(label);
     this.spinnerText = label;
@@ -356,7 +357,7 @@ export class RoomScene implements Scene {
   private drawCodeEntry(): void {
     const { w, h } = this;
 
-    const prompt = txt(t('room.enterCode'), Math.round(h * 0.028), C.dark, true);
+    const prompt = txt(t('room.enterCode'), FS.title, C.dark, true);
     prompt.anchor.set(0.5, 0.5); prompt.x = w / 2; prompt.y = Math.round(h * 0.18);
     this.container.addChild(prompt);
 
@@ -375,7 +376,7 @@ export class RoomScene implements Scene {
       g.x = bx; g.y = rowY;
       this.container.addChild(g);
       const ch = this.codeChars[i] ?? '';
-      const cl = txt(ch, Math.round(boxH * 0.55), C.dark, true);
+      const cl = txt(ch, snapFont(Math.round(boxH * 0.55)), C.dark, true);
       cl.anchor.set(0.5, 0.5); cl.x = bx + boxW / 2; cl.y = rowY + boxH / 2;
       this.container.addChild(cl);
     }
@@ -430,11 +431,11 @@ export class RoomScene implements Scene {
     const code = this.roomState?.code ?? '';
 
     // Room code + copy.
-    const codeLabel = txt(t('room.roomCode'), Math.round(h * 0.024), C.mid);
+    const codeLabel = txt(t('room.roomCode'), FS.heading, C.mid);
     codeLabel.anchor.set(0.5, 0); codeLabel.x = w / 2; codeLabel.y = Math.round(h * 0.17);
     this.container.addChild(codeLabel);
 
-    const codeText = txt(code.split('').join(' '), Math.round(h * 0.06), C.dark, true);
+    const codeText = txt(code.split('').join(' '), FS.display, C.dark, true);
     codeText.anchor.set(0.5, 0); codeText.x = w / 2; codeText.y = Math.round(h * 0.205);
     this.container.addChild(codeText);
 
@@ -454,7 +455,7 @@ export class RoomScene implements Scene {
 
     // Peer-disconnected / reconnecting banner.
     if (this.peerDcActive) {
-      const banner = txt(t('room.peerDc'), Math.round(h * 0.024), C.red, true);
+      const banner = txt(t('room.peerDc'), FS.heading, C.red, true);
       banner.anchor.set(0.5, 0.5); banner.x = w / 2; banner.y = slotY0 + 2 * slotH + slotGap + Math.round(h * 0.05);
       this.container.addChild(banner);
     }
@@ -479,7 +480,7 @@ export class RoomScene implements Scene {
         bothReady ? C.dark : C.btnOff, bothReady ? C.gold : C.light,
         () => { if (bothReady) this.cb.startMatch(); }, 0xffffff);
     } else {
-      const wait = txt(t('room.waitingHost'), Math.round(h * 0.022), C.mid);
+      const wait = txt(t('room.waitingHost'), FS.label, C.mid);
       wait.anchor.set(0.5, 0); wait.x = w / 2; wait.y = btnY + btnH + Math.round(h * 0.03);
       this.container.addChild(wait);
     }
@@ -508,25 +509,25 @@ export class RoomScene implements Scene {
     const name = slot ? (slot.name || t(roleKey)) : t('room.empty');
     const hasId = !!slot?.publicId;
     const nameY = hasId ? y + h * 0.38 : y + h / 2;
-    const nameTxt = txt(name, Math.round(h * 0.32), slot ? C.dark : C.mid, true);
+    const nameTxt = txt(name, snapFont(Math.round(h * 0.32)), slot ? C.dark : C.mid, true);
     nameTxt.anchor.set(0, 0.5); nameTxt.x = x + Math.round(w * 0.06); nameTxt.y = nameY;
     this.container.addChild(nameTxt);
 
     if (slot && hasId) {
       const idLabel = `#${slot.publicId}${isMe ? ' · ' + t('room.you') : ''}`;
-      const idTxt = txt(idLabel, Math.round(h * 0.2), C.mid, false);
+      const idTxt = txt(idLabel, snapFont(Math.round(h * 0.2)), C.mid, false);
       idTxt.anchor.set(0, 0.5); idTxt.x = x + Math.round(w * 0.06); idTxt.y = y + h * 0.68;
       this.container.addChild(idTxt);
     } else if (slot && isMe) {
       // No id yet (server didn't supply one) — still mark which slot is me.
-      const meTxt = txt(t('room.you'), Math.round(h * 0.2), C.mid, false);
+      const meTxt = txt(t('room.you'), snapFont(Math.round(h * 0.2)), C.mid, false);
       meTxt.anchor.set(0, 0.5); meTxt.x = x + Math.round(w * 0.06); meTxt.y = y + h * 0.68;
       this.container.addChild(meTxt);
     }
 
     if (slot) {
       const statusKey: TranslationKey = slot.ready ? 'room.statusReady' : 'room.statusNotReady';
-      const status = txt(t(statusKey), Math.round(h * 0.28), slot.ready ? C.green : C.mid, true);
+      const status = txt(t(statusKey), snapFont(Math.round(h * 0.28)), slot.ready ? C.green : C.mid, true);
       status.anchor.set(1, 0.5); status.x = x + w - Math.round(w * 0.05); status.y = y + h / 2;
       this.container.addChild(status);
     }
@@ -536,7 +537,7 @@ export class RoomScene implements Scene {
     if (!this.toastKey) return;
     const { w, h } = this;
     const msg = t(this.toastKey);
-    const label = txt(msg, Math.round(h * 0.026), 0xffffff, true);
+    const label = txt(msg, FS.heading, 0xffffff, true);
     const padX = Math.round(w * 0.04);
     const padY = Math.round(h * 0.018);
     const bw = label.width + padX * 2;
@@ -560,7 +561,7 @@ export class RoomScene implements Scene {
     g.x = x; g.y = y;
     this.container.addChild(g);
 
-    const tl = txt(label, fontSize ?? Math.round(h * 0.36), textColor, true);
+    const tl = txt(label, snapFont(fontSize ?? Math.round(h * 0.36)), textColor, true);
     tl.anchor.set(0.5, 0.5); tl.x = x + w / 2; tl.y = y + h / 2;
     this.container.addChild(tl);
 

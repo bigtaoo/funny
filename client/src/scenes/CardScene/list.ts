@@ -3,6 +3,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor, marginLineX } from '../../render/sketchUi';
+import { FS } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import { UNIT_ART_URLS } from '../../render/cardArt';
 import { drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
@@ -79,7 +80,7 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       const listH = h - listY - 8;
 
       if (cards.length === 0) {
-        const lbl = txt(t('roster.empty'), 28, C.mid);
+        const lbl = txt(t('roster.empty'), FS.heading, C.mid);
         lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = listY + listH / 2;
         lbl.style.wordWrap = true; lbl.style.wordWrapWidth = w - 32;
         this.bodyLayer.addChild(lbl);
@@ -159,7 +160,7 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       this.bodyLayer.addChild(dot);
 
       const cardName = t(`card.${card.defId}.name` as TranslationKey);
-      const nameLbl = txt(cardName, 20, C.dark, true);
+      const nameLbl = txt(cardName, FS.bodyLg, C.dark, true);
       nameLbl.x = ax + 16; nameLbl.y = y + pad;
       nameLbl.style.wordWrap = false;
       // Leave room for the lock badge on the name row when locked.
@@ -175,29 +176,29 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       }
 
       let ay = y + pad + 34;
-      const lvLbl = txt(`Lv.${card.level}`, 16, C.mid, true);
+      const lvLbl = txt(`Lv.${card.level}`, FS.small, C.mid, true);
       lvLbl.x = ax; lvLbl.y = ay; this.bodyLayer.addChild(lvLbl);
       ay += 24;
 
       const power = Math.round(cardPower(card, save.equipmentInv ?? {}));
-      const pwrLbl = txt(`${t('roster.power')} ${power}`, 16, C.dark);
+      const pwrLbl = txt(`${t('roster.power')} ${power}`, FS.small, C.dark);
       pwrLbl.x = ax; pwrLbl.y = ay; this.bodyLayer.addChild(pwrLbl);
       ay += 24;
 
       if (def && state !== undefined) {
         const cap = troopCap(card);
         const cur = state.currentTroops;
-        const troopLbl = txt(`${cur}/${cap}`, 16, cur >= cap ? C.gold : C.mid);
+        const troopLbl = txt(`${cur}/${cap}`, FS.small, cur >= cap ? C.gold : C.mid);
         troopLbl.x = ax; troopLbl.y = ay; this.bodyLayer.addChild(troopLbl);
         ay += 24;
       }
 
       // Status tag (deployed / injured).
       if (inTeam) {
-        const tag = txt(`[${t('roster.inTeam')}]`, 13, C.accent, true);
+        const tag = txt(`[${t('roster.inTeam')}]`, FS.tiny, C.accent, true);
         tag.x = ax; tag.y = ay; this.bodyLayer.addChild(tag); ay += 20;
       } else if (isInjured) {
-        const tag = txt(`[${t('roster.injured').replace('{time}', injuryCountdown(injuredUntil, now))}]`, 13, C.red);
+        const tag = txt(`[${t('roster.injured').replace('{time}', injuryCountdown(injuredUntil, now))}]`, FS.tiny, C.red);
         tag.x = ax; tag.y = ay; this.bodyLayer.addChild(tag); ay += 20;
       }
 

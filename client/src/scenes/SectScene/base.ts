@@ -29,6 +29,7 @@ import type {
 } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
 import { drawSocialTabRail, type SocialTab } from '../../render/socialTabRail';
+import { FS } from '../../render/fontScale';
 
 export interface SectSceneCallbacks {
   onBack(): void;
@@ -205,7 +206,7 @@ export class SectSceneBase {
   protected showToast(msg: string, color: number = C.dark): void {
     const tl = this.toastLayer;
     tl.removeChildren();
-    const lbl = txt(msg, 26, color);
+    const lbl = txt(msg, FS.heading, color);
     lbl.anchor.set(0.5, 0.5);
     lbl.x = this.w / 2; lbl.y = Math.round(this.h * 2 / 3);
     tl.addChild(lbl);

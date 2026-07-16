@@ -13,6 +13,7 @@ import type { ILayout } from '../../layout/ILayout';
 import type { InputManager } from '../../inputSystem/InputManager';
 import { t } from '../../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchButton, seedFor, tearDownChildren } from '../../render/sketchUi';
+import { FS } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
@@ -222,7 +223,7 @@ export class FamilySceneBase {
     // center it in the space between the back pill and the member count, instead of it always
     // starting flush against the back button — which read lopsided once the identity was moved
     // into the landscape header.
-    const titleNode = add(txt(t('family.title'), Math.round(h * 0.034), C.dark, true));
+    const titleNode = add(txt(t('family.title'), FS.headline, C.dark, true));
     let clusterW = titleNode.width;
 
     let nameNode: PIXI.Text | null = null;
@@ -231,11 +232,11 @@ export class FamilySceneBase {
     let prosNode: PIXI.Text | null = null;
     let countNode: PIXI.Text | null = null;
     if (fam) {
-      nameNode = add(txt(`[${fam.tag}] ${fam.name}`, Math.round(h * 0.03), C.dark));
+      nameNode = add(txt(`[${fam.tag}] ${fam.name}`, FS.title, C.dark));
       starSize = Math.round(h * 0.026);
       star = add(buildIcon('star', starSize, 0xd4a030));
-      prosNode = add(txt(t('family.prosperity', { n: fam.prosperity }), Math.round(h * 0.024), 0xa9750f));
-      countNode = add(txt(t('family.memberCount', { n: fam.memberCount, cap: FAMILY_CAP }), Math.round(h * 0.024), FamilySceneBase.MUTED));
+      prosNode = add(txt(t('family.prosperity', { n: fam.prosperity }), FS.heading, 0xa9750f));
+      countNode = add(txt(t('family.memberCount', { n: fam.memberCount, cap: FAMILY_CAP }), FS.heading, FamilySceneBase.MUTED));
       clusterW += gap + nameNode.width + gap + starSize + 6 + prosNode.width;
     }
 
@@ -306,14 +307,14 @@ export class FamilySceneBase {
     panel.x = mx; panel.y = my;
     ml.addChild(panel);
 
-    const lbl = txt(msg, 13, C.dark);
+    const lbl = txt(msg, FS.tiny, C.dark);
     lbl.anchor.set(0.5, 0); lbl.x = mx + mw / 2; lbl.y = my + 14;
     ml.addChild(lbl);
 
     const okBtn = sketchButton(80, 28, seedFor(0, 1, 80));
     okBtn.x = mx + mw / 2 - 88; okBtn.y = my + mh - 36;
     ml.addChild(okBtn);
-    const ol = txt('OK', 13, C.light);
+    const ol = txt('OK', FS.tiny, C.light);
     ol.anchor.set(0.5, 0.5); ol.x = mx + mw / 2 - 48; ol.y = my + mh - 22;
     ml.addChild(ol);
     this.modalHits.push({ rect: { x: okBtn.x, y: okBtn.y, w: 80, h: 28 }, action: onOk });
@@ -338,7 +339,7 @@ export class FamilySceneBase {
   protected showToast(msg: string, color: number = C.dark): void {
     const tl = this.toastLayer;
     tl.removeChildren();
-    const lbl = txt(msg, 26, color);
+    const lbl = txt(msg, FS.heading, color);
     lbl.anchor.set(0.5, 0.5);
     lbl.x = this.w / 2; lbl.y = Math.round(this.h * 2 / 3);
     tl.addChild(lbl);

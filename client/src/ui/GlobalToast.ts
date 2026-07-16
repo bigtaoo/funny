@@ -1,5 +1,6 @@
 import * as PIXI from 'pixi.js-legacy';
 import { ui as C, txt, sketchPanel, seedFor } from '../render/sketchUi';
+import { snapFont } from '../render/fontScale';
 
 // Global fallback toast: a temporary banner that floats above all scenes, used exclusively by
 // createAppCore / the global error handler when a scene has no toast of its own (fallback for
@@ -30,7 +31,9 @@ export class GlobalToast {
   show(text: string, color: number = C.red): void {
     this.clear();
     const { width: w, height: h } = this.app.screen;
-    const lbl = txt(text, Math.round(h * 0.052), 0xffffff, true);
+    // Real screen-pixel space (see class note), so keep the size responsive to the
+    // actual canvas height but snap it onto the shared scale.
+    const lbl = txt(text, snapFont(Math.round(h * 0.052)), 0xffffff, true);
     const padX = Math.round(w * 0.08);
     const padY = Math.round(h * 0.024);
     const bw = lbl.width + padX * 2;

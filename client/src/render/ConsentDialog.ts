@@ -13,6 +13,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import type { Scene } from '../scenes/SceneManager';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from './sketchUi';
+import { snapFont } from './fontScale';
 import { t } from '../i18n';
 
 export interface ConsentCallbacks {
@@ -65,11 +66,11 @@ export class ConsentDialog implements Scene {
 
     // Build the text nodes first so we can measure their real (wrapped) heights,
     // then lay the card out top-down with explicit gaps and grow it to fit.
-    const title = txt(t('consent.title'), Math.round(unit * 0.07), C.dark, true);
+    const title = txt(t('consent.title'), snapFont(Math.round(unit * 0.07)), C.dark, true);
     title.anchor.set(0.5, 0);
 
     const body = new PIXI.Text(t('consent.body'), {
-      fontSize: Math.round(unit * 0.04), fill: C.dark, fontFamily: 'monospace',
+      fontSize: snapFont(Math.round(unit * 0.04)), fill: C.dark, fontFamily: 'monospace',
       wordWrap: true, wordWrapWidth: cardW * 0.84, lineHeight: Math.round(unit * 0.06),
     });
     body.anchor.set(0.5, 0);
@@ -118,14 +119,14 @@ export class ConsentDialog implements Scene {
     btn.on('pointertap', () => this.cb.onAccept());
     this.container.addChild(btn);
 
-    const btnLabel = txt(t('consent.accept'), Math.round(bH * 0.4), 0xffffff, true);
+    const btnLabel = txt(t('consent.accept'), snapFont(Math.round(bH * 0.4)), 0xffffff, true);
     btnLabel.anchor.set(0.5, 0.5); btnLabel.x = bX + bW / 2; btnLabel.y = bY + bH / 2;
     this.container.addChild(btnLabel);
   }
 
   /** Add a centred, tappable "· <label>" link that opens `url` in a new browser tab. */
   private addLink(label: string, cx: number, y: number, cardH: number, url: string): void {
-    const link = txt('· ' + label, Math.round(cardH * 0.042), C.accent, true);
+    const link = txt('· ' + label, snapFont(Math.round(cardH * 0.042)), C.accent, true);
     link.anchor.set(0.5, 0); link.x = cx; link.y = y;
     link.eventMode = 'static';
     link.cursor = 'pointer';

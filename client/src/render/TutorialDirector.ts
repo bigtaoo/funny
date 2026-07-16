@@ -3,6 +3,7 @@ import { CardType, SpellType, GameState } from '../game';
 import { ILayout, Rect } from '../layout/ILayout';
 import { t, type TranslationKey } from '../i18n';
 import { drawHudButton, hudButtonText } from './hudButton';
+import { snapFont } from './fontScale';
 
 /**
  * TutorialDirector — presentation-layer orchestrator for the tutorial level `ch0_tutorial` (ONBOARDING_DESIGN §3.4).
@@ -377,7 +378,7 @@ export class TutorialDirector {
     g.x = bx; g.y = by;
     this.root.addChild(g);
     const lbl = new PIXI.Text(t('tutorial.skip' as TranslationKey), {
-      fontFamily: 'monospace', fontSize: Math.round(bh * 0.42), fill: hudButtonText('primary'),
+      fontFamily: 'monospace', fontSize: snapFont(Math.round(bh * 0.42)), fill: hudButtonText('primary'),
     });
     lbl.anchor.set(0.5);
     lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
@@ -404,14 +405,14 @@ export class TutorialDirector {
     this.cardPanel.addChild(bg);
 
     const titleLbl = new PIXI.Text(title, {
-      fontFamily: 'monospace', fontSize: Math.round(ph * 0.18), fontWeight: 'bold', fill: C_DARK,
+      fontFamily: 'monospace', fontSize: snapFont(Math.round(ph * 0.18)), fontWeight: 'bold', fill: C_DARK,
       wordWrap: true, wordWrapWidth: pw - 32,
     });
     titleLbl.x = px + 16; titleLbl.y = py + 14;
     this.cardPanel.addChild(titleLbl);
 
     const bodyLbl = new PIXI.Text(body, {
-      fontFamily: 'monospace', fontSize: Math.round(ph * 0.13), fill: C_MID,
+      fontFamily: 'monospace', fontSize: snapFont(Math.round(ph * 0.13)), fill: C_MID,
       wordWrap: true, wordWrapWidth: pw - 32,
     });
     bodyLbl.x = px + 16; bodyLbl.y = py + 14 + Math.round(ph * 0.26);
@@ -429,7 +430,7 @@ export class TutorialDirector {
       btn.x = bx; btn.y = by;
       this.cardPanel.addChild(btn);
       const bl = new PIXI.Text(btnLabel!, {
-        fontFamily: 'monospace', fontSize: Math.round(bh * 0.46), fontWeight: 'bold', fill: hudButtonText('accent'),
+        fontFamily: 'monospace', fontSize: snapFont(Math.round(bh * 0.46)), fontWeight: 'bold', fill: hudButtonText('accent'),
       });
       bl.anchor.set(0.5);
       bl.x = bx + bw / 2; bl.y = by + bh / 2;
