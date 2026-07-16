@@ -81,6 +81,7 @@ export type SlgShopItemView = components['schemas']['SlgShopItemView'];
 export type SiegeReplayView = components['schemas']['SiegeReplayView'];
 export type DefenseConfig = components['schemas']['DefenseConfig'];
 export type TeamTemplate = components['schemas']['TeamTemplate'];
+export type ShardTransferTargetView = components['schemas']['ShardTransferTargetView'];
 export type ArmyEntry = components['schemas']['ArmyEntry'];
 export type SectView = components['schemas']['SectView'];
 export type SectDetailView = components['schemas']['SectDetailView'];
@@ -244,6 +245,16 @@ export class WorldApiClient {
   /** Enter the world: the system automatically places the player's city (§3.4; prefers near family → outer-ring newcomer zone); spawn point is server-determined, player does not pass coordinates. */
   async joinWorld(worldId: string): Promise<PlayerWorldView> {
     return this.req('POST', '/world/join', { worldId });
+  }
+
+  /** Mid-season shard transfer (G6/§27): candidate destination shards for the player's current shard. */
+  async getTransferTargets(worldId: string): Promise<ShardTransferTargetView[]> {
+    return this.req('GET', `/world/season/transfer/targets?worldId=${encodeURIComponent(worldId)}`);
+  }
+
+  /** Mid-season shard transfer (G6/§27): forfeits all shard-scoped state in fromWorldId, re-joins toWorldId fresh. */
+  async transferShard(fromWorldId: string, toWorldId: string): Promise<PlayerWorldView> {
+    return this.req('POST', '/world/season/transfer', { fromWorldId, toWorldId });
   }
 
   /** Return the current active SLG season number from worldsvc (§20.8). No auth required. */

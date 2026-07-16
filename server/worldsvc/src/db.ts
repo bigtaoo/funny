@@ -370,6 +370,17 @@ export interface ShardAllocationDoc {
   createdAt: number;
 }
 
+/** G6 mid-season shard transfer cooldown tracker (§27). `_id` = accountId — one doc per account, independent
+ *  of any world (survives the source shard's playerWorld doc being purged on transfer). */
+export interface ShardTransferDoc {
+  _id: string; // accountId
+  lastTransferAt: number;
+  /** Season the last transfer happened in (cooldown is season-scoped: a new season resets the clock). */
+  season: number;
+  fromWorldId: string;
+  toWorldId: string;
+}
+
 /** Map template metadata (§24 Layer A). `_id` = templateId. At most one document has `active: true`. */
 export interface MapTemplateDoc {
   _id: string;
@@ -428,6 +439,7 @@ export interface WorldCollections {
   nations: Collection<NationDoc>;
   seasonResults: Collection<SeasonResultDoc>;
   shardAllocations: Collection<ShardAllocationDoc>;
+  shardTransfers: Collection<ShardTransferDoc>;
   mapTemplates: Collection<MapTemplateDoc>;
   mapTemplateTiles: Collection<MapTemplateTileDoc>;
   mapBaselines: Collection<MapBaselineTileDoc>;
@@ -473,6 +485,7 @@ export async function createWorldMongo(
     nations: db.collection<NationDoc>('nations'),
     seasonResults: db.collection<SeasonResultDoc>('seasonResults'),
     shardAllocations: db.collection<ShardAllocationDoc>('shardAllocations'),
+    shardTransfers: db.collection<ShardTransferDoc>('shardTransfers'),
     mapTemplates: db.collection<MapTemplateDoc>('mapTemplates'),
     mapTemplateTiles: db.collection<MapTemplateTileDoc>('mapTemplateTiles'),
     mapBaselines: db.collection<MapBaselineTileDoc>('mapBaselines'),
@@ -514,6 +527,7 @@ export async function createWorldMongo(
     await collections.seasonResults.createIndex({ worldId: 1, season: -1 });
     // G6 multi-shard allocation (§20): retrieve this-season allocation table by season (join routing looks up familyShard).
     await collections.shardAllocations.createIndex({ season: 1 });
+    // G6 mid-season transfer cooldown (§27): _id is already accountId (unique by definition); no secondary index needed.
     // Map templates (§24): viewport bbox reads scan by templateId + x/y range; active lookup for the "which template do new worlds clone" query.
     await collections.mapTemplateTiles.createIndex({ templateId: 1, x: 1, y: 1 });
     await collections.mapTemplates.createIndex({ active: 1 });

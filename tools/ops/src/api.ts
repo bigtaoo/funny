@@ -333,6 +333,11 @@ export class Api {
   async slgCloseSeason(worldId: string): Promise<void> {
     await this.req('POST', '/admin/slg/season/close', { worldId });
   }
+  /** G6 shard merge (§27): move every remaining player out of worldId (source) into targetWorldId, then close worldId. */
+  async slgMergeShard(worldId: string, targetWorldId: string): Promise<{ moved: number; failed: string[] }> {
+    const r = await this.req<{ result: { moved: number; failed: string[] } }>('POST', '/admin/slg/season/merge', { worldId, targetWorldId });
+    return r.result;
+  }
 
   // ── SLG anomalous trade audit (G7 anti-RMT; slg.audit.view / slg.audit.manage) ──
   async slgScanAnomalies(worldId: string, windowSec?: number): Promise<AuctionAnomaly[]> {

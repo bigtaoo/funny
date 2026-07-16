@@ -102,6 +102,11 @@ export const ErrorCode = {
   MAIL_HAS_UNCLAIMED_ATTACHMENT: 'MAIL_HAS_UNCLAIMED_ATTACHMENT', // mail has an attachment that hasn't been claimed yet; claim it before deleting
   // —— SLG city P3 (2026-07-16): satchel per-march troop-carry cap ——
   SATCHEL_CAP_EXCEEDED: 'SATCHEL_CAP_EXCEEDED',     // team's carried troops exceed satchelCarryCapFor(buildings), D-CITY-9
+  // —— SLG G6 mid-season shard transfer/merge (2026-07-16, SLG_DESIGN_LOG §27) ——
+  TRANSFER_COOLDOWN: 'TRANSFER_COOLDOWN',           // must wait SHARD_TRANSFER_COOLDOWN_DAYS since the last transfer
+  TRANSFER_TARGET_INVALID: 'TRANSFER_TARGET_INVALID', // target shard does not exist / not same season / not open+active / full
+  TRANSFER_SAME_SHARD: 'TRANSFER_SAME_SHARD',       // target shard is the shard the player is already in
+  TRANSFER_BUSY: 'TRANSFER_BUSY',                   // an in-flight march or occupation-hold blocks transfer; recall/wait first
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -195,4 +200,8 @@ export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.OCCUPATION_NOT_FOUND]: 404,
   [ErrorCode.MAIL_HAS_UNCLAIMED_ATTACHMENT]: 409,
   [ErrorCode.SATCHEL_CAP_EXCEEDED]: 409,
+  [ErrorCode.TRANSFER_COOLDOWN]: 409,
+  [ErrorCode.TRANSFER_TARGET_INVALID]: 400,
+  [ErrorCode.TRANSFER_SAME_SHARD]: 400,
+  [ErrorCode.TRANSFER_BUSY]: 409,
 };

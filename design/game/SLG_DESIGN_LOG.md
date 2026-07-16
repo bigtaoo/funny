@@ -20,7 +20,7 @@
 | # | 缺口 | 现状 | 影响 |
 |---|---|---|---|
 | **G5** | ~~**地图迷雾 / 侦察视野 / 宗门视野共享 / 盟友土地标记**~~ ✅ **四片全落地（2026-06-21，§18）** | G5-1 读路径门控 + G5-2 反向视野推送 + G5-3 客户端渲染（灰雾/友敌色/敌军显形）+ 联盟领地黄标（§18.7）全 ✅；共享降级为家族级（§18.1 V2）。scout 侦察行军（§18.8）+ 瞭望塔建筑（§18.9）全 ✅，V2 余项全部兑现 | §8.2 视野共享 + 盟友标记、§2.1 视野订阅核心战略玩法已兑现 |
-| **G6** | **多大区 + 赛季分配规则**（数据地基+纯算法 ✅ **2026-06-21，§17.8**；**多 shard 运行时调度 ✅ 2026-06-21，§20**） | 数据地基：`seasonResults` 落库宗门排名 + 繁荣度快照（C2 闭）；`sectStrengthScore`/`allocateSectsToShards`（蛇形均衡）纯函数 + 单测。运行时（§20）：`allocateNextSeason` 编排开 N 区 + 落 `shardAllocations.familyShard`；`joinSeason`/`resolveShardForJoin` 自动路由（粘性>家族查表>最空开区>溢出开新区）；`patrolShardIsolation` 跨区隔离巡检。**剩**赛季中主动转区/合区（运营专项）+ 赛季元数据下发（待 S11） | 规模化数据/算法地基 + 运行时调度兑现；赛季中迁移待专项 |
+| **G6** | **多大区 + 赛季分配规则**（数据地基+纯算法 ✅ **2026-06-21，§17.8**；**多 shard 运行时调度 ✅ 2026-06-21，§20**） | 数据地基：`seasonResults` 落库宗门排名 + 繁荣度快照（C2 闭）；`sectStrengthScore`/`allocateSectsToShards`（蛇形均衡）纯函数 + 单测。运行时（§20）：`allocateNextSeason` 编排开 N 区 + 落 `shardAllocations.familyShard`；`joinSeason`/`resolveShardForJoin` 自动路由（粘性>家族查表>最空开区>溢出开新区）；`patrolShardIsolation` 跨区隔离巡检。~~剩赛季中主动转区/合区（运营专项）~~ ✅ **已设计+落地（2026-07-16，§28）**；赛季元数据下发（待 S11） | 规模化数据/算法地基 + 运行时调度 + 赛季中迁移全部兑现 |
 | **G7** | **admin 运营后台 SLG 接入**（赛季运维 ✅ **2026-06-21，§17.7**；商品价格可调 ✅ **2026-07-13**） | worldsvc `/admin/world/*` 迁出 JWT 改 X-Internal-Key（**C4 安全洞已堵**，任意玩家不再可清区）+ 新增 `GET /admin/world/list`；admin 后端加 `worldClient` + `POST /admin/slg/season/{open,settle,reset,close}` + `GET /admin/slg/worlds`（能力 `slg.season.view/manage`，reset 前必 settle 约束 + 审计）。**商品价格可调**（能力 `slg.shop.manage`）：`slgShopPrices` 集合 DB 覆盖 + 代码默认 fallback，worldsvc 轮询 admin 内部端点合并生效，ops `pageSlgShop` 面板可编辑 9 件商品（详见 OPS_DESIGN §4.2/§8） | S8-8 赛季运维 + 商城定价均兑现 |
 | **G8** | ~~**险地（Stronghold）格子类型**~~ ✅ **已落地（2026-06-21，§19）** | 新增 `'stronghold'` TileType + `proceduralTile` 稀疏生成（~0.3%，比 familyKeep 稀疏 ~16×）+ `strongholdGarrison` 系统超强守军 + worldsvc `applyStrongholdSiege`（无主险地 PvE 围攻：权威引擎跑系统守军，攻克占为领地 + 一次性丰厚奖励，攻败残兵撤退）；occupy/sweep/落城/重生全拦截险地；契约 enum + 客户端渲染/交互/i18n。worldsvc 5 e2e | 高战略价值 PvE 格兑现（§3.1） |
 
@@ -263,7 +263,7 @@
 > - **§17.7 admin（C4/G7）**：worldsvc `/admin/world/*` 迁出 JWT 改 `X-Internal-Key` + `GET /admin/world/list`；admin 后端 `worldClient` + `/admin/slg/season/*` + `/admin/slg/worlds`（能力 `slg.season.view/manage`，reset 前必 settle + 审计）。
 > - **§17.9 engineVersion pin**：`openSeason`/`resetSeason` pin `ENGINE_VERSION`；`applySiege` 跑前漂移告警（不阻断）。
 > - **§17.13 异常交易审计（D/G7 反 RMT）✅（2026-06-21）**：`detectAuctionAnomalies` 检测 + worldsvc 扫描端点 + admin `tradeAuditTickets` 审计队列（立单/去重/裁定/留痕）+ 能力 `slg.audit.view|manage`。
-> - **DRAFT/后续（§17.12）**：数值待经济模拟；SLG 战令增益、称号 grantTitle(S10) 仍待；G6 赛季中转区/合区运营专项；G7 异常审计 ops 前端页 + 确认违规自动处置外联。
+> - **DRAFT/后续（§17.12）**：数值待经济模拟；SLG 战令增益、称号 grantTitle(S10) 仍待；~~G6 赛季中转区/合区运营专项~~ ✅ 已设计+落地（§28）；~~G7 异常审计 ops 前端页 + 确认违规自动处置外联~~ ✅ 已落地（§17.13）。
 >
 > 本节把 §2.3 / §8.3 / S8-7 + 缺口 G2（繁荣度）/ G6（多大区分配）/ G7（admin 接入）细化到**字段/常量/函数签名/端点伪代码**级别，对齐现行 `worldsvc`（`service.ts` 1657–1837 五个赛季函数 + `db.ts` schema + `commercialClient`/`metaClient`）与 `metaserver`（`mail.ts`/`internal.ts`）代码。
 > **范式同源**：与天梯 [`SEASON_DESIGN §13A/§13B`](SEASON_DESIGN.md)（commit 1c3f46cf）并列；天梯那轮逐文件核对发现 4 处代码冲突，本节核对 worldsvc 发现 **7 处**（§17.0）。
@@ -615,7 +615,7 @@ if (path.startsWith('/admin/world/')) {
 ### 17.12 DRAFT 数值 / 后续任务（待拍板/调参/单列）
 
 - **数值（→ ECONOMY_NUMBERS §13-SLG 登记 + 经济模拟）**：`PROSPERITY_W_*`/`PROSPERITY_DECAY_PER_DAY`/`SECT_FOUND_PROSPERITY_MIN`；`SETTLE_REWARDS` 各档材料/皮肤量 + `CENTER_CAPITAL_MULT`；`sectStrengthScore` 权重；`WORLD_CAPACITY`/`RESET_DELETE_BATCH`。settle coin 若 >0 须经经济总预算批准（OVERVIEW §3.3）。**核验方法（怎么算「过没过」、判据、签字、登记）见 [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md)**——这批数分 6 条轨道分流核（只有 `SETTLE_REWARDS` 动持久经济），不是笼统「跑一遍经济模拟」。
-- **G6 运行时 ✅（2026-06-21，§20）**：多 shard 实际开区编排（`allocateNextSeason`）、人口溢出开新区（`resolveShardForJoin`）、玩家 join 自动路由（宗门>家族>单随）、跨区隔离巡检（`patrolShardIsolation`）已落地。剩赛季中主动转区/合区（运营专项）+ 赛季元数据下发（待 S11）。
+- **G6 运行时 ✅（2026-06-21，§20；转区/合区 ✅ 2026-07-16，§28）**：多 shard 实际开区编排（`allocateNextSeason`）、人口溢出开新区（`resolveShardForJoin`）、玩家 join 自动路由（宗门>家族>单随）、跨区隔离巡检（`patrolShardIsolation`）、赛季中个人转区+运营合区（§28）均已落地。剩赛季元数据下发（待 S11）。
 - **SLG 战令增益（C6/G4，S8-8）✅（2026-07-01，全档完成）**：`hasBattlePass` 全四档已接线——① `trainTroops` 训练时长 ×0.8（+20%）；② `speedupTraining` / `speedupBuilding` 每币加速时长 ÷0.85（消耗 -15%）；③ **产率加成档**：`recomputeYield` 末尾 ×`BP_YIELD_MULT`=1.1（+10% 所有资源产率），`buildingsOverride` 路径同步透传 `hasBattlePass`；④ **额外结算奖励档**：`settleSeason` 结算后额外查 `{hasBattlePass:true}` 全列，对每名持有者发 `slg-settle-bp:{world}:s{season}`（`BP_SETTLE_EXTRA`：scrap 50 / lead 20 / binding 5），dispatchKey 幂等防重发；与天梯战令独立（OVERVIEW §2/§4）。
 - **称号（C1）✅（2026-06-22）**：`SETTLE_REWARDS.titleId` 的 `grantTitle` 已接入（S10-3）——`settleSeason` 发奖循环 best-effort 调 `meta.grantTitle(acct, base.titleId)`，经 `WorldMetaClient` → `POST /internal/title/grant`（metaserver）。
 - **异常交易审计工单 ✅（2026-06-21，G7；ops 前端 + 自动处置补记 2026-07-16）**：检测层 + admin 审计队列 + ops 前端审计页 + 确认违规自动封禁（不含追缴）均已落地（§17.13）。G7 全部收口。
@@ -850,7 +850,7 @@ if (path.startsWith('/admin/world/')) {
 
 - **散家族补位 + 单随路由**当前为「最少家族数/最空开区」确定性贪心；大规模下家族大小方差大时可换按成员数加权（待压测 U12）。
 - **赛季元数据下发**：`CURRENT_SEASON` 客户端暂常量；待 S11 天梯赛季打通后由 metaserver 下发当前赛季号（SLG 赛季与天梯赛季是否同步另议）。
-- **跨区迁移（赛季中）**：本节只做 join 时一次性路由；赛季中主动转区/合区（人口骤降合并低活 shard）仍待规模化运营专项。
+- ~~**跨区迁移（赛季中）**：本节只做 join 时一次性路由；赛季中主动转区/合区（人口骤降合并低活 shard）仍待规模化运营专项。~~ ✅ **已设计+落地（2026-07-16，§28）**：个人转区 + 运营合区。
 - **`resolveShardForJoin` 单点**：高并发开服瞬时大量 join 经 worldsvc 单进程，与 U12 march 调度单点同源，规模化需选主/分片。
 
 ---
@@ -881,9 +881,9 @@ if (path.startsWith('/admin/world/')) {
 
 | # | 缺口 | 现状 |
 |---|---|---|
-| **R-5** | 赛季中主动转区 / 合区（人口骤降合并低活 shard） | §20.8：当前只做 join 时一次性路由；赛季中迁移待规模化运营专项。 |
+| ~~**R-5**~~ | ~~赛季中主动转区 / 合区（人口骤降合并低活 shard）~~ | ✅ **已设计+落地（2026-07-16）**：§28，个人转区（`POST /world/season/transfer`）+ 运营合区（`POST /admin/world/merge`）。 |
 | **R-6** | 赛季元数据下发 | §20.8：`CURRENT_SEASON` 暂客户端常量；待 S11 天梯赛季打通后由 metaserver 下发（SLG 赛季是否与天梯同步另议）。 |
-| **R-7** | 异常交易审计 ops 前端 + 自动处置 | §17.13 检测层 + admin 审计队列已落地；缺 ops 前端审计页 + 确认违规后的封禁/扣回外联。 |
+| ~~**R-7**~~ | ~~异常交易审计 ops 前端 + 自动处置~~ | ✅ **已落地（2026-07-16）**：§17.13，ops 前端审计页 + 确认违规后自动封禁（不含追缴）。 |
 | ~~**R-8**~~ | ~~商品价格可调后台~~ | ✅ **已落地（2026-07-13）**：G7，admin `slg.shop.manage` + ops `pageSlgShop`，见 G7 行 / OPS_DESIGN §4.2/§8。 |
 | **R-9** | `resolveShardForJoin` / march 调度单点 | §20.8：高并发开服经 worldsvc 单进程，规模化需选主/分片（U12 压测后）。 |
 
@@ -1087,3 +1087,53 @@ if (path.startsWith('/admin/world/')) {
 3. **⚠️ 新发现的独立 gap（非本轮数值范围）**：单次出征兵力超过约 9,600（= 10 攻击车道 × 16 可生成行 × 60 血/兵，棋盘纵深耗尽）时，`synthesizeArmy` 轮转铺兵会让胜负变得非单调（例如 9,000 兵败、9,600 兵胜、10,000 兵又败），根源是兵力在车道内拥堵导致战斗超时，与守军强度无关。`SIEGE_CHEAP_RATIO`（`shared/slg/siege.ts`）本该把这种悬殊对局挡在真实引擎之外，但 `combatSiege/arrival.ts` 的险地/关隘围攻从未做这个比率检查，无条件跑 `runSiegeBattle`——满练兵场+满行囊（satchel，均可堆到 12,000）玩家单次出征在生产环境就可能撞上这个问题。这是路由/工程缺口，不是「调大调小某个常量」能解决的，已登记为独立后续任务（不在本轮范围内处理）。
 
 **结论**：`STRONGHOLD_GARRISON_PER_LEVEL=360`、`CROSSING_GARRISON_PER_LEVEL=200`、`STRONGHOLD_LOOT_MATERIAL_PER_LEVEL=4` 三处 DRAFT 标记均已清除（前者战力实测通过，后者经济稀释早已通过只是注释未同步）；`STRONGHOLD_LOOT_PER_LEVEL=5000` 本就非 DRAFT（季内一次性、已有 sanity check）。四项收尾完成，SLG 待调参数值清单清空。
+
+---
+
+## 28. G6 赛季中转区/合区（设计 + 实现，2026-07-16）
+
+> 收尾 §17.12/§21.4 遗留的最后一项：G6 运行时调度（§20）只做了赛季开局的一次性路由分配；赛季中途「玩家主动转区」「运营合并低活 shard」此前完全没有设计（§17.8/§17.12 只写了"运营专项，待定"）。本节补齐设计并实现。
+
+### 28.1 架构前提（决定了方案为什么这么简单）
+
+调研确认两个关键事实，把原本设想的"复杂跨区数据迁移"问题大幅简化：
+
+1. **所有 shard 共享同一套 Mongo 集合**（`playerWorld`/`tiles`/`marches`/`families` 等），按 `worldId` 字段区分,不是一区一库。转区因此是**同集合内**的操作,不是跨库迁移。
+2. **`joinWorld`（首次加入）与 `purgePlayerWorld`（清空某玩家在某 shard 的全部数据,含主城）两个函数早已存在**（分别用于正常加入、corrupt 存档修复重建）,且都是"对单一 (worldId, accountId) 操作,与其在其他 shard 的状态无关"——直接复用,零新建迁移逻辑。
+
+### 28.2 转区（个人转移）—— "刻意的退出+重新加入"
+
+**模型**：转区 = 放弃源 shard 全部 shard 内数据(城市/领地/兵力,经 `purgePlayerWorld`)+ 在目标 shard 全新加入(经 `joinWorld`)。**不做属性迁移**——account 级进度(卡牌/装备/金币,存在 meta SaveData)本来就不是 shard 数据,天然不受影响。
+
+**家族/宗门不受影响**：调研确认「家族」（family）是 socialsvc 的账号级概念，不按 shard 存储；「宗门」（sect）虽是 worldId 域概念，但挂在**家族**（不是账号）上，一个成员单独转区不涉及宗门变更。因此转区**不触碰**家族/宗门成员关系——这是刻意的设计简化，不是遗漏。
+
+**守卫**：
+- 目标 shard 必须存在、同赛季、`open`/`active`、未满员，否则 `TRANSFER_TARGET_INVALID`。
+- 源 shard 内有在途行军(非 `recalled`)或占领倒计时 → `TRANSFER_BUSY`（先撤军/等结算）——避免刚离开的 shard 里留下悬空的跨区引用（正是 `patrolShardIsolation` 的 `crossWorldMarches` 巡检要抓的那类东西）。
+- 每账号冷却 `SHARD_TRANSFER_COOLDOWN_DAYS=7`（防止反复横跳/侦察对手 shard），冷却计时存在独立的新集合 `shardTransfers`（`_id=accountId`,不挂靠任何一个 shard,故不会被 `purgePlayerWorld` 清掉）。
+
+**已知残余风险(接受)**:目标容量在"转区前检查"和"joinWorld 内原子检查"之间的极窄窗口耗尽,会让玩家短暂"两边都不在"——本项目全程无跨集合事务(`shared/mongo.ts` 明确写单节点副本集只解锁事务能力,但代码里从未真正用过,全靠单文档 CAS),与既有惯例一致,不引入 the-first transaction。恢复路径:玩家可直接调用普通 `joinWorld` 进任意其他 open shard(无历史依赖,不是卡死状态)。
+
+### 28.3 合区（运营触发）—— 复用转区,不做地图合并
+
+**关键简化**：不做"两张活地图的瓦片所有权对账"——那是原调研认定的真正难题。合区改为：把源 shard 剩余的**每一个玩家**都用同一套转区核心操作搬到目标 shard,搬完后关闭源 shard。因为源 shard 上没有玩家了,自然不存在"两边地图重叠"的问题——从头到尾没有发生"地图合并"这件事。
+
+- **与个人转区的区别**：合区是运营强制操作，不检查冷却/繁忙——先强制清空该玩家的在途行军/占领(`marches.deleteMany`/`occupations.deleteMany`),再走同一个"退出+加入"核心,逐账号 best-effort(单个账号失败只记日志跳过,不中断整个合区)。
+- **前置容量检查**：合区前一次性校验目标 shard 剩余容量 ≥ 源 shard 全部玩家数,不足直接拒绝——避免在循环中途撞见 28.2 提到的"两边都不在"窗口。
+- **收尾**：全部搬完后源 shard 置 `status:'closed'`——`resolveShardForJoin`/`joinWorld` 本来就按 `status in [open,active]` 过滤(§17.3),`closed` 天然被未来加入路由排除,无需额外清理路由表。
+
+### 28.4 实现落地
+
+- **`@nw/shared`**：`slg/transfer.ts`（新文件）——`SHARD_TRANSFER_COOLDOWN_DAYS=7` + `parseWorldId`；`api.ts` 新增错误码 `TRANSFER_COOLDOWN`/`TRANSFER_TARGET_INVALID`/`TRANSFER_SAME_SHARD`/`TRANSFER_BUSY`。
+- **`worldsvc`**：新模块 `transfer.ts`（`TransferService`，同 `TerritoryService`/`SeasonService` 的领域服务范式）——`listTransferTargets`/`transferShard`/`mergeShard`；`db.ts` 新增 `ShardTransferDoc` + `shardTransfers` 集合（`_id=accountId`）；`service.ts` 接线委托方法。
+- **契约**：`openapi-world.yml` 新增 `GET /world/season/transfer/targets` + `POST /world/season/transfer`（玩家侧，JWT）+ `ShardTransferTargetView` schema；`POST /admin/world/merge`（X-Internal-Key，运维侧，未入 openapi-world.yml——与其余 `/admin/world/*` 端点一致，属内部分支不进公开契约）。client `rest:gen` 重生 `openapi-world.ts`。
+- **客户端**：`WorldApiClient.getTransferTargets`/`transferShard` 已接入（数据层）。**UI 场景本轮暂缓**——给时间预算判断，玩家侧转区选择/确认界面留作后续任务，不阻塞服务端能力落地。
+- **admin 后端**：`WorldClient.mergeWorld` 代理 + `AdminService.slgMergeShard`（复用既有 `slg.season.manage` 能力，新增审计动作 `slg.season.merge`）+ httpApi 路由 `POST /admin/slg/season/merge`。
+- **ops 前端**：`tools/ops/src/pages/slgSeason.ts` 季世界列表新增「Merge into…」按钮（危险操作二次确认 + 目标 worldId 输入）。**顺带修复一处相邻小 bug**：原按钮判断只覆盖 `status==='open'`，遗漏了 `'active'`（世界一旦有玩家加入就从 open 变成 active，§17.3）——导致进行中的世界在 ops 页面上其实**没有** Settle/Close 按钮可点。改为 `open || active` 都显示操作按钮，这是本次改动顺带修的，不是范围外改动。
+- **验收**：`server/worldsvc/test/transfer.e2e.test.ts`（11 例，真实 Mongo）——转区成功（源清空含主城+人口计数扣减、目标全新加入+人口计数+3×3 主城 footprint）/ 同 shard 拒绝 / 跨赛季目标拒绝 / 不存在目标拒绝 / 满员目标拒绝 / 在途行军阻挡（recalled 后放行）/ 占领倒计时阻挡 / 同赛季冷却生效+跨赛季不冷却 / 合区搬空全部玩家+强制清行军占领+关闭源 shard+未来加入路由自动跳过 / 合区目标容量不足拒绝 / 合区同 shard 与跨赛季目标拒绝。worldsvc 全量 246 测试无回归；`tsc -b`（shared/engine/worldsvc/admin/metaserver/gateway/commercial）+ client `tsc --noEmit` + ops `tsc --noEmit` 全绿。
+
+### 28.5 明确排除的范围（不是遗漏，是拍板）
+
+- **不做真正的地图/瓦片合并**：两个 shard 各自独立地图从未需要对账，因为合区前置为"先搬空玩家再关闭"，任何时刻只有一张地图有活跃玩家在上面。
+- **不做家族/宗门整体转移**：转区是纯个人操作；一个家族想集体换 shard，需要每个成员各自转区（家族本身跟着任一成员走，不会"卡住"，因为家族不是 shard 数据）。
+- **不做玩家侧 UI**：服务端能力+契约+admin 运维入口已完整；玩家自助转区的选择/确认场景留作后续任务（数据层 `WorldApiClient` 方法已就绪，UI 是纯前端工作，不依赖任何未决的服务端设计）。
