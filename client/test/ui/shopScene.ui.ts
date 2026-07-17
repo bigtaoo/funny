@@ -301,6 +301,25 @@ describe('ShopScene — consumable items (kind="item") render their own name/des
     expect(findLabelPos(scene.container, t('shop.buy'))).not.toBeNull();
     scene.destroy();
   });
+
+  it('sorts consumables ahead of skins even when skins come first in loadItems', async () => {
+    const scene = buildShop({
+      // Skins listed BEFORE the stone in the source array; the shop must still render the stone first.
+      loadItems: async () => [
+        { id: 'skin_shop_c1', cost: 800, kind: 'skin', grants: 'skin_shop_c1' },
+        { id: 'protect_enhance', cost: 500, kind: 'item', grants: 'protect_enhance' },
+      ],
+    });
+    await flush();
+    const stone = findLabelPos(scene.container, t('shop.item.protect_enhance.name'));
+    const skin = findLabelPos(scene.container, skinDisplayName('skin_shop_c1'));
+    expect(stone).not.toBeNull();
+    expect(skin).not.toBeNull();
+    // Reading order (row-major grid): stone above the skin, or same row but to its left.
+    const before = stone!.y < skin!.y - 1 || (Math.abs(stone!.y - skin!.y) <= 1 && stone!.x < skin!.x);
+    expect(before).toBe(true);
+    scene.destroy();
+  });
 });
 
 describe('ShopScene — promo-code redemption lives on the Coins tab', () => {
