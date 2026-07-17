@@ -34,8 +34,11 @@ describe('PvP balance sim (P4)', () => {
 
     // Anchor-rebalance guard (2026-07-02, BALANCE.md §5.1): Max was a stat overload
     // — a 190-HP/armor-2 tank that also out-DPSed the field at 22 melee, winning
-    // ~91% of equal-ink duels at ANY cost. attack 22→14 + cost 5→6 centers it.
-    // Lock it so a future stat/cost edit can't silently revive the overload.
+    // ~91% of equal-ink duels at ANY cost. attack 22→14 + cost 5→6 centered it.
+    // Ghost-fix re-tune (2026-07-17): the stacked-unit targeting fix lifted Max to
+    // ~73% (it had been suppressed by the swarm-ghost artifact); attack 14→11 puts
+    // it back at ~54%. Lock it so a future stat/cost edit can't silently revive the
+    // overload.
     const max = rows.find((r) => r.cardId === 'max_1')!;
     expect(max.winRate).toBeLessThanOrEqual(0.65);
     // NOTE — do NOT "fix" infantry's high rate here. infantry_1 is the cp/ink=1.0
