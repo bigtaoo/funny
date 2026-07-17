@@ -344,6 +344,8 @@ export class FriendsSceneBase {
     value: string;
     maxLength: number;
     placeholder?: string;
+    /** Optional clamp applied to the raw value before onInput (e.g. display-width cap for org names). */
+    clamp?(v: string): string;
     onInput(v: string): void;
     onBlur?(): void;
     onEnter?(): void;
@@ -365,6 +367,10 @@ export class FriendsSceneBase {
     document.body.appendChild(inp);
     inp.focus();
     inp.addEventListener('input', () => {
+      if (opts.clamp) {
+        const clamped = opts.clamp(inp.value);
+        if (clamped !== inp.value) inp.value = clamped;
+      }
       opts.onInput(inp.value);
       if (!this.dead) this.render();
     });

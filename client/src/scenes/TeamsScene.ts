@@ -518,12 +518,16 @@ export class TeamsScene implements Scene {
       let remaining = stock;
 
       // Sort by deficit descending (most empty first) to match the "power-desc" design intent.
+      // Only cards assigned to a team can receive troops — the server rejects the whole
+      // distribute request if any allocation targets a card with no teamId (BAD_REQUEST).
       const slots = Object.values(cardInv)
         .map(card => {
+          const cs = cardState[card.id];
           const def = CARD_DEFS[card.defId];
           const cap = def ? troopCap(card) : 0;
-          const cur = cardState[card.id]?.currentTroops ?? 0;
-          return { card, gap: Math.max(0, cap - cur) };
+          const cur = cs?.currentTroops ?? 0;
+          const onTeam = !!cs?.teamId;
+          return { card, gap: onTeam ? Math.max(0, cap - cur) : 0 };
         })
         .filter(s => s.gap > 0)
         .sort((a, b) => b.gap - a.gap);

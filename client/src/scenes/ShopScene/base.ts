@@ -379,8 +379,9 @@ export class ShopSceneBase {
     const gap = Math.round(w * 0.015);
     const listX = sidebarNavW(w, h, landscape) + gap;
     const listW = w - listX - Math.round(w * 0.04);
-    // Landscape packs ~4 across; portrait ~3 (wider fractional target on the narrower axis).
-    const targetW = Math.round(w * (landscape ? 0.16 : 0.30));
+    // Both orientations pack ~3 across: wider cards keep product titles (e.g. "Monthly Card",
+    // "Skin · …") on one line so the price row below can't get pushed down onto the bottom buttons.
+    const targetW = Math.round(w * (landscape ? 0.24 : 0.30));
     const cols = Math.max(1, Math.floor((listW + gap) / (targetW + gap)));
     const cellW = Math.round((listW - gap * (cols - 1)) / cols);
     const cellH = Math.round(cellW * 1.5);

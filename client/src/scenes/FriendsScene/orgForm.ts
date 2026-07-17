@@ -1,4 +1,5 @@
 // Family + Sect tabs: near-identical mirror render methods (info panel + create/join forms).
+import { ORG_NAME_WIDTH_MAX, truncateOrgName } from '@nw/shared';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS, snapFont } from '../../render/fontScale';
@@ -84,7 +85,8 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       this.hits.push({ rect: { x: px, y: cy, w: panelW, h: fH }, fn: () => {
         this.familyActiveInput = 'name';
         this.openHiddenInput({
-          value: this.familyCreateName, maxLength: 24,
+          value: this.familyCreateName, maxLength: ORG_NAME_WIDTH_MAX,
+          clamp: (v) => truncateOrgName(v, ORG_NAME_WIDTH_MAX),
           onInput: (v) => { this.familyCreateName = v; },
           onBlur: () => { this.familyActiveInput = null; },
         });
@@ -245,7 +247,8 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       this.hits.push({ rect: { x: px, y: cy, w: panelW, h: fH }, fn: () => {
         this.sectActiveInput = 'name';
         this.openHiddenInput({
-          value: this.sectCreateName, maxLength: 24,
+          value: this.sectCreateName, maxLength: ORG_NAME_WIDTH_MAX,
+          clamp: (v) => truncateOrgName(v, ORG_NAME_WIDTH_MAX),
           onInput: (v) => { this.sectCreateName = v; },
           onBlur: () => { this.sectActiveInput = null; },
         });

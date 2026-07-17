@@ -213,6 +213,15 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     expect(spends).toEqual([{ accountId: 'alice', amount: SECT_CREATE_COST }]);
   });
 
+  it('found sect: name width-capped (full-width = 2, cap 12 → 6 汉字 or 12 letters)', async () => {
+    await makeFamily('alice', 'Alpha', 'AW');
+    await expect(sect.createSect(W, 'alice', 'x', 'S1')).rejects.toMatchObject({ code: 'BAD_REQUEST' });               // width 1 < 2
+    await expect(sect.createSect(W, 'alice', '七个汉字超限了', 'S2')).rejects.toMatchObject({ code: 'BAD_REQUEST' });   // 7 汉字 = 14 > 12
+    await expect(sect.createSect(W, 'alice', 'abcdefghijklm', 'S3')).rejects.toMatchObject({ code: 'BAD_REQUEST' });   // 13 letters > 12
+    const detail = await sect.createSect(W, 'alice', '六个汉字上限', 'CAP6');                                          // 6 汉字 = 12 ok
+    expect(detail.sectId).toBe(sectId(W, 'CAP6'));
+  });
+
   it('founding has no prosperity threshold: a zero-activity family leader can still found a sect', async () => {
     // Prosperity gate was removed (family leaders may found a sect at any prosperity level).
     await insertFamily('poor', 'Poor', 'PR', 0);

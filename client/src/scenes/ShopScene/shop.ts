@@ -8,6 +8,7 @@ import { type IconKind } from '../../render/icons';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { type Constructor, type ShopSceneBaseCtor, type CardSpec, type BtnSpec } from './base';
 import { FS } from '../../render/fontScale';
+import { skinDisplayName } from '../../game/meta/skinDefs';
 import infantryArtUrl from '../../assets/infantry.png';
 import archerArtUrl from '../../assets/archer.png';
 import shieldBearerArtUrl from '../../assets/shieldbearer.png';
@@ -165,7 +166,7 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
           const canBuy = !isOwned && !busy && this.cb.getCoins() >= item.cost;
           specs.push({
             icon: 'brush', iconColor: C.accent, artUrl: SKIN_PLACEHOLDER_ART[item.id],
-            title: `${t('shop.skinLabel')} · ${item.id}`,
+            title: skinDisplayName(item.id),
             coinAmount: item.cost,
             buttons: [{
               label: isOwned ? t('shop.owned') : t('shop.buy'), enabled: canBuy, primary: true,

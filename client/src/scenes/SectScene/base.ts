@@ -96,8 +96,14 @@ export class SectSceneBase {
   protected caretOn = true;
   protected caretTimer = 0;
 
-  // Scroll
+  // Scroll — `scrollY` is the families/single-column scroll; `scrollYChannel` only comes into play
+  // in the landscape split view (see RenderMixin.renderSplitView), where the channel column scrolls
+  // independently alongside the families column instead of sharing one tab's scroll state.
   protected scrollY = 0;
+  protected scrollYChannel = 0;
+  /** X boundary between the families and channel columns in the landscape split view; used by
+   *  handleDown to route a drag to the right column's scroll state. Unused (0) in portrait. */
+  protected chatColX = 0;
   /** Title-bar height, set from the shared header — drives all body layout below it. */
   protected headerH = 0;
   /**
@@ -105,6 +111,8 @@ export class SectSceneBase {
    * dragged (so a drag starting on a member/list cell scrolls instead of firing it). See ScrollTapGesture.
    */
   private readonly gesture = new ScrollTapGesture();
+  /** Which column the in-progress drag scrolls — captured at pointer-down, applied in handleMove. */
+  private dragTarget: 'families' | 'channel' = 'families';
   /** Set by handleMove instead of rendering inline — see FamilySceneBase.scrollDirty for why. */
   private scrollDirty = false;
 
@@ -241,12 +249,22 @@ export class SectSceneBase {
     for (const { rect, action } of this.hitRects) {
       if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) { hit = action; break; }
     }
-    this.gesture.down(this.scrollY, y, hit);
+    // Landscape split view has two independently-scrolling columns — route by which side of the
+    // divider the drag started on. Portrait's tab view has one column at a time, scrolled by
+    // whichever tab is active (both share scrollY — see renderTabbedView).
+    this.dragTarget =
+      this.mode !== 'mySect' ? 'families'
+      : this.landscape ? (x >= this.chatColX ? 'channel' : 'families')
+      : 'families';
+    this.gesture.down(this.dragTarget === 'channel' ? this.scrollYChannel : this.scrollY, y, hit);
   }
 
   handleMove(_x: number, y: number): void {
     const scroll = this.gesture.move(y);
-    if (scroll !== null) { this.scrollY = scroll; this.scrollDirty = true; }
+    if (scroll === null) return;
+    if (this.dragTarget === 'channel') this.scrollYChannel = scroll;
+    else this.scrollY = scroll;
+    this.scrollDirty = true;
   }
 
   handleUp(_x: number, _y: number): void {

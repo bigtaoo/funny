@@ -5,6 +5,9 @@
 import {
   FAMILY_CAP,
   FAMILY_MSG_BODY_MAX,
+  ORG_NAME_WIDTH_MIN,
+  ORG_NAME_WIDTH_MAX,
+  orgNameWidth,
   SlgError,
   familyProsperity,
   type FamilyRole,
@@ -153,7 +156,8 @@ export class FamilyService {
 
     const tagUpper = tag.toUpperCase();
     if (!/^[A-Z0-9]{2,5}$/.test(tagUpper)) throw new SlgError('BAD_REQUEST');
-    if (!name || name.length < 2 || name.length > 20) throw new SlgError('BAD_REQUEST');
+    const nameWidth = name ? orgNameWidth(name) : 0;
+    if (nameWidth < ORG_NAME_WIDTH_MIN || nameWidth > ORG_NAME_WIDTH_MAX) throw new SlgError('BAD_REQUEST');
 
     const fid = makeFamilyId(tagUpper);
 

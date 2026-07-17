@@ -55,6 +55,9 @@ export class TitlesScene implements Scene {
 
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
+  /** Art urls we've already hooked a 'loaded' re-render on — avoids stacking listeners. */
+  private readonly artHooked = new Set<string>();
+  private destroyed = false;
 
   constructor(layout: ILayout, input: InputManager, cb: TitlesSceneCallbacks) {
     this.container = new PIXI.Container();
@@ -70,6 +73,7 @@ export class TitlesScene implements Scene {
   update(_dt: number): void {}
 
   destroy(): void {
+    this.destroyed = true;
     this.unsubs.forEach((u) => u());
     tearDownChildren(this.container);
   }
@@ -185,14 +189,38 @@ export class TitlesScene implements Scene {
     card.alpha = isOwned ? 1 : 0.5;
     this.container.addChild(card);
 
-    const iconS = Math.round(cellH * 0.3);
+    // Medal art is tall portrait (~0.5 aspect); fit it into the icon box preserving aspect so it
+    // isn't squashed into a square. Box gets the top ~44% of the card.
+    const boxH = Math.round(cellH * 0.44);
+    const boxMaxW = Math.round(cellW * 0.7);
+    const iconTop = y + Math.round(cellH * 0.06);
     const iconUrl = titleIconUrl(titleId);
-    const icon: PIXI.DisplayObject = iconUrl
-      ? Object.assign(new PIXI.Sprite(getTitleIconTexture(iconUrl)), { width: iconS, height: iconS, tint: color })
-      : buildIcon('medal', iconS, color);
-    icon.x = x + cellW / 2 - iconS / 2; icon.y = y + Math.round(cellH * 0.1);
-    icon.alpha = isOwned ? 1 : 0.6;
-    this.container.addChild(icon);
+    if (iconUrl) {
+      const tex = getTitleIconTexture(iconUrl);
+      if (tex.baseTexture.valid) {
+        const aspect = tex.width / tex.height;
+        let ih = boxH;
+        let iw = ih * aspect;
+        if (iw > boxMaxW) { iw = boxMaxW; ih = iw / aspect; }
+        const sprite = new PIXI.Sprite(tex);
+        sprite.width = iw; sprite.height = ih;
+        sprite.tint = color;
+        sprite.x = x + cellW / 2 - iw / 2;
+        sprite.y = iconTop + (boxH - ih) / 2;
+        sprite.alpha = isOwned ? 1 : 0.6;
+        this.container.addChild(sprite);
+      } else if (!this.artHooked.has(iconUrl)) {
+        // Sizing against an unloaded (0/1px) baseTexture yields garbage — re-render once it loads.
+        this.artHooked.add(iconUrl);
+        tex.baseTexture.once('loaded', () => { if (!this.destroyed) this.render(); });
+      }
+    } else {
+      const iconS = Math.min(boxH, boxMaxW);
+      const icon = buildIcon('medal', iconS, color);
+      icon.x = x + cellW / 2 - iconS / 2; icon.y = iconTop + (boxH - iconS) / 2;
+      icon.alpha = isOwned ? 1 : 0.6;
+      this.container.addChild(icon);
+    }
 
     const keys = getTitleKeys(titleId);
     const shortLabel = keys
@@ -202,7 +230,7 @@ export class TitlesScene implements Scene {
       ? (t(keys.fullKey as import('../i18n').TranslationKey) || shortLabel)
       : shortLabel;
 
-    const shortY = y + Math.round(cellH * 0.1) + iconS + Math.round(cellH * 0.05);
+    const shortY = iconTop + boxH + Math.round(cellH * 0.04);
     const shortLbl = txt(`「${shortLabel}」`, snapFont(Math.round(cellH * 0.11)), color, equipped);
     shortLbl.anchor.set(0.5, 0); shortLbl.x = x + cellW / 2; shortLbl.y = shortY;
     if (shortLbl.width > cellW * 0.88) shortLbl.scale.set((cellW * 0.88) / shortLbl.width);

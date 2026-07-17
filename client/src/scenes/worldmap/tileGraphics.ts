@@ -11,6 +11,14 @@ import type { TerrainTextureName } from '../../render/terrainAtlasLoader';
 import type { WorldTileView } from '../../net/WorldApiClient';
 import { worldSeed, obstacleShoreAt, type ProceduralTile } from '@nw/shared';
 
+// Resource motif size as a fraction of tile pitch `tp`. Shared by the fogged (type-only) and
+// revealed (per-level) draw paths so they never diverge in size. Shrunk 0.40→0.30 (2026-07-17):
+// with resourceDensity=1.0 a motif sits on EVERY tile, so 0.40 filled each tile edge-to-edge and
+// the map read as one uniform carpet of large icons with no visual hierarchy — every tile a
+// competing focal point. 0.30 opens real gaps between adjacent motifs so ownership/terrain and
+// the high-value tiles can lead the eye. Must stay in lockstep with the map-editor's drawResMotif.
+const MOTIF_SIZE_FRAC = 0.30;
+
 export function drawTileL1(
   g: PIXI.Graphics, tile: WorldTileView | null,
   fill: number, owner: number | null, fogged: boolean, tp: number, isAnchor: boolean,
@@ -377,9 +385,9 @@ export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, t
     if (!ftex) return;
     const sp = new PIXI.Sprite(ftex);
     sp.anchor.set(0.5, 0.5);
-    // Generic type frame (tall, w<h) — keep max(w,h) so it stays bounded; 0.40 matches the
-    // revealed per-level motif size below so the sprite doesn't jump size when fog clears.
-    sp.scale.set((tp * 0.40) / Math.max(ftex.width, ftex.height) * jitter.scale);
+    // Generic type frame (tall, w<h) — keep max(w,h) so it stays bounded; MOTIF_SIZE_FRAC matches
+    // the revealed per-level motif size below so the sprite doesn't jump size when fog clears.
+    sp.scale.set((tp * MOTIF_SIZE_FRAC) / Math.max(ftex.width, ftex.height) * jitter.scale);
     sp.rotation = jitter.rot;
     sp.alpha = 0.35;
     [sp.x, sp.y] = toLocal(0.5, 0.52);
@@ -404,8 +412,8 @@ export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, t
   // level = taller/denser), so scale them by width — this keeps the per-level height
   // difference instead of normalizing it away via max(w,h). The generic fallback frame
   // (types without per-level art) is TALLER than wide, so it stays on max(w,h) to stay
-  // bounded. 0.40: shrunk from 0.55→0.48→0.40 to leave clear gaps between adjacent tiles'
-  // motifs (resourceDensity=1.0 puts one on every tile), while l1..l10 still read apart.
+  // bounded. MOTIF_SIZE_FRAC: shrunk 0.55→0.48→0.40→0.30 to leave clear gaps between adjacent
+  // tiles' motifs (resourceDensity=1.0 puts one on every tile), while l1..l10 still read apart.
   const denom = levelTex ? tex.width : Math.max(tex.width, tex.height);
   // Per-tile jitter (2026-07-12, resource-carpet pass): resourceDensity=1.0 puts the SAME
   // resType/level frame on every tile of a biome region, so at real play zoom (L1) identical
@@ -416,15 +424,16 @@ export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, t
   // drawStar's per-vertex wobble — breaks the grid regularity without changing density/alpha/
   // size tuning from those prior passes. Must stay in lockstep with the map-editor's
   // drawResMotif (SLG map render parity).
-  sp.scale.set((tp * 0.40) / denom * jitter.scale);
+  sp.scale.set((tp * MOTIF_SIZE_FRAC) / denom * jitter.scale);
   sp.rotation = jitter.rot;
   // Value hierarchy by opacity: with resourceDensity=1.0 a heap sits on EVERY tile, so drawing
   // them all at full strength reads as uniform confetti. Fading low-level heaps (and keeping
   // high-level ones solid) lets the eye pick out the tiles worth fighting for — lv1≈0.65 → lv10=1.0.
-  // Floor raised 0.4→0.65 (2026-07-11 legibility pass): most tiles sit at low levels, so the old
-  // floor made the majority of motifs read as barely-there. Must stay in lockstep with the
+  // Floor 0.4→0.65 (2026-07-11) then 0.65→0.55 (2026-07-17): paired with the MOTIF_SIZE_FRAC
+  // shrink, a slightly lower floor lets the many low-level tiles recede so the map has a clear
+  // value hierarchy again instead of a uniform carpet. Must stay in lockstep with the
   // map-editor's drawResMotif (SLG map render parity).
-  sp.alpha = 0.65 + 0.35 * ((lv - 1) / 9);
+  sp.alpha = 0.55 + 0.45 * ((lv - 1) / 9);
   [sp.x, sp.y] = toLocal(0.5, 0.52);
   sp.x += jitter.dx * tp; sp.y += jitter.dy * tp;
   g.addChild(sp);

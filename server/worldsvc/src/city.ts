@@ -333,6 +333,14 @@ export class CityService {
         }
       }
     }
+    // Mirror the new desk level onto the anchor tile so the world map can render the matching
+    // player-base art frame (playerbase_l{n}) — see TileDoc.deskLevel.
+    if (done.some((e) => e.key === 'desk') && fresh.mainBaseTile) {
+      await cols.tiles.updateOne(
+        { _id: fresh.mainBaseTile },
+        { $set: { deskLevel: buildingLevel(next, 'desk') }, $inc: { rev: 1 } },
+      );
+    }
     return done.length;
   }
 

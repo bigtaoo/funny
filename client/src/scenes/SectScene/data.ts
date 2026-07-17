@@ -59,7 +59,9 @@ export function DataMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase &
         return; // deduplicate with polling / resend
       }
       this.messages.unshift(msg);
-      if (this.mode === 'mySect' && this.activeTab === 'channel') this.render();
+      // Landscape shows the channel column permanently (split view), so re-render regardless of
+      // the active tab; portrait only needs it while the channel tab is showing.
+      if (this.mode === 'mySect' && (this.landscape || this.activeTab === 'channel')) this.render();
     }
   };
 }

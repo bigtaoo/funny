@@ -52,6 +52,8 @@ export interface WorldTileView {
   occupied?: boolean;
   /** Whether owned by the requester. */
   mine?: boolean;
+  /** Main-base anchor only: owner's `desk` building level (1-10), for the player-base art frame. Absent = level 1. */
+  deskLevel?: number;
   /** Another player's territory: occupier's 9-digit public id (populated when meta is available). */
   ownerPublicId?: string;
   /** Another player's territory: occupier's display name (populated when meta is available). */

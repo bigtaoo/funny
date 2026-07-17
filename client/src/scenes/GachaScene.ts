@@ -17,7 +17,7 @@ import { buildCoinIcon } from '../render/coinIconAtlas';
 import { getEquipDef } from '../game/meta/equipmentDefs';
 import { buildEquipIcon } from '../render/equipmentAtlas';
 import { CARD_DEFS } from '../game/meta/cardDefs';
-import { SKIN_TARGET_UNIT } from '../game/meta/skinDefs';
+import { SKIN_TARGET_UNIT, skinDisplayName } from '../game/meta/skinDefs';
 import { UNIT_ART_URLS, getArtTexture } from '../render/cardArt';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { FS, snapFont } from '../render/fontScale';
@@ -719,12 +719,7 @@ export class GachaScene implements Scene {
 
     if (CARD_DEFS[itemId]) return t((`card.${itemId}.name`) as TranslationKey);
 
-    const skinUnit = SKIN_TARGET_UNIT[itemId];
-    if (skinUnit) {
-      const target = Object.values(CARD_DEFS).find((d) => d.unitType === skinUnit);
-      const base = target ? t((`card.${target.id}.name`) as TranslationKey) : itemId;
-      return `${base}·${t('shop.skinLabel')}`;
-    }
+    if (SKIN_TARGET_UNIT[itemId]) return skinDisplayName(itemId);
 
     return itemId;
   }

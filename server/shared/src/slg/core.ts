@@ -285,6 +285,40 @@ export const RESOURCE_CAP = 200_000;
 export const RESOURCE_YIELD_BASE = 100; // base yield per tile per hour (× level multiplier)
 export const PROTECTION_SEC = 8 * 3600; // protection duration for new players / after home-city is destroyed
 export const FAMILY_CAP = 30; // S8-4 decision: max family size 30 members
+/**
+ * Family / sect name limits, measured in DISPLAY WIDTH (see orgNameWidth): a full-width
+ * (CJK/全角) character counts as 2, everything else as 1. Cap 12 → at most 6 汉字 or 12 letters.
+ * TAG is validated separately (2–5 uppercase alphanumerics).
+ */
+export const ORG_NAME_WIDTH_MIN = 2;
+export const ORG_NAME_WIDTH_MAX = 12;
+/**
+ * Display width of an org (family/sect) name: full-width characters (CJK ideographs, kana,
+ * full-width forms, etc.) count as 2, all others as 1. Iterates by code point so astral
+ * characters (emoji) are counted once (as width 2, since they fall outside the ASCII/half-width range).
+ */
+export function orgNameWidth(name: string): number {
+  let w = 0;
+  for (const ch of name) {
+    const cp = ch.codePointAt(0)!;
+    // Half-width: ASCII printable + Latin-1 + half-width forms → width 1; everything else → width 2.
+    w += cp <= 0x2e7f || (cp >= 0xff61 && cp <= 0xffdc) || (cp >= 0xffe8 && cp <= 0xffee) ? 1 : 2;
+  }
+  return w;
+}
+/** Truncate `name` to at most `maxWidth` display units (orgNameWidth), never splitting a code point. */
+export function truncateOrgName(name: string, maxWidth: number = ORG_NAME_WIDTH_MAX): string {
+  let w = 0;
+  let out = '';
+  for (const ch of name) {
+    const cp = ch.codePointAt(0)!;
+    const cw = cp <= 0x2e7f || (cp >= 0xff61 && cp <= 0xffdc) || (cp >= 0xffe8 && cp <= 0xffee) ? 1 : 2;
+    if (w + cw > maxWidth) break;
+    w += cw;
+    out += ch;
+  }
+  return out;
+}
 /** Family channel message retention duration (seconds); TTL anchor field must be a BSON Date (see FamilyMessageDoc note in db.ts). */
 export const FAMILY_MSG_RETENTION_SEC = 7 * 24 * 3600; // 7 days
 /** Maximum body length for a single family channel message. */
