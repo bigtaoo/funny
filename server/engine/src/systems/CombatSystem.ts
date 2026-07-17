@@ -170,8 +170,9 @@ export class CombatSystem {
           if (checkRow < 0 || checkRow >= BOARD_ROWS) continue;
           if (checkCol < 0 || checkCol >= BOARD_COLS) continue;
 
-          const enemy = board.getUnitAt(checkCol, checkRow);
-          if (enemy && enemy.side !== unit.side && !enemy.isDead) {
+          // A cell may hold several stacked units — scan them all so none is hidden.
+          for (const enemy of board.getUnitsAt(checkCol, checkRow)) {
+            if (enemy.side === unit.side) continue;
             // Flying filter: skip flying targets if attacker can't target them.
             if (enemy.flying && !unit.canTargetFlying) continue;
             // Stealth: invisible beyond dist 2.
@@ -227,8 +228,9 @@ export class CombatSystem {
           const checkCol = building.col + dc;
           if (checkRow < 0 || checkRow >= BOARD_ROWS) continue;
           if (checkCol < 0 || checkCol >= BOARD_COLS) continue;
-          const unit = board.getUnitAt(checkCol, checkRow);
-          if (unit && unit.side === enemySide && !unit.isDead) {
+          // Scan every unit stacked on the cell so a ghosted enemy is still found.
+          for (const unit of board.getUnitsAt(checkCol, checkRow)) {
+            if (unit.side !== enemySide) continue;
             // Flying filter: buildings without canTargetFlying skip flying targets.
             if (unit.flying && !building.canTargetFlying) continue;
             return unit;
