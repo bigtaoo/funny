@@ -15,6 +15,7 @@ import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { BusyTracker } from '../../ui/busyTracker';
+import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance } from '../../game/meta/SaveData';
 import { affixKind, EQUIPMENT_INV_CAP, type EnhanceCost } from '../../game/meta/equipmentDefs';
 import { ENHANCE_COEFF_PER_LEVEL } from '@nw/engine/balance/equipment';
@@ -163,7 +164,12 @@ export class EquipmentSceneBase {
   protected filterSlot: EquipSlot | 'all' = 'all';
 
   protected scrollY = 0;
-  protected dragStart: { x: number; y: number; scroll: number } | null = null;
+  /**
+   * Tap-vs-drag gesture tracker: defers an item cell's hit action to pointer-up and drops it if the
+   * pointer dragged (so a drag starting on an item scrolls instead of opening its detail; mirrors
+   * CardSceneBase). See ScrollTapGesture.
+   */
+  private readonly gesture = new ScrollTapGesture();
   /** Set by handleMove instead of rendering inline — pointermove can fire far faster than the
    *  display refresh rate, and render() fully tears down/rebuilds the scene, so calling it per-event
    *  caused visible jank while dragging. update() (ticker-gated, once per frame) drains this instead. */
@@ -547,23 +553,26 @@ export class EquipmentSceneBase {
       }
       return;
     }
+    // Don't fire the hit action here — capture it and start gesture tracking. If the pointer then
+    // drags past the threshold it becomes a scroll and the tap is dropped on up; otherwise the tap
+    // fires on up. This lets a drag that starts *on an item cell* scroll the grid instead of instantly
+    // opening that item's detail.
+    let hit: (() => void) | null = null;
     for (const { rect, action } of this.hitRects) {
-      if (this.inRect(x, y, rect)) { action(); return; }
+      if (this.inRect(x, y, rect)) { hit = action; break; }
     }
-    this.dragStart = { x, y, scroll: this.scrollY };
+    this.gesture.down(this.scrollY, y, hit);
   }
 
   protected handleMove(_x: number, y: number): void {
-    if (!this.dragStart || this.modalOpen) return;
-    const dy = y - this.dragStart.y;
-    if (Math.abs(dy) > 6) {
-      this.scrollY = Math.max(0, this.dragStart.scroll - dy);
-      this.scrollDirty = true;
-    }
+    if (this.modalOpen) return;
+    const scroll = this.gesture.move(y);
+    if (scroll !== null) { this.scrollY = scroll; this.scrollDirty = true; }
   }
 
   protected handleUp(): void {
-    this.dragStart = null;
+    // Fires only for a genuine tap (pointer didn't drag); a released drag returns null.
+    this.gesture.up()?.();
   }
 
   protected inRect(x: number, y: number, r: Rect): boolean {

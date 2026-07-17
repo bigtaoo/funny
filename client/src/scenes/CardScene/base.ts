@@ -25,6 +25,7 @@ import { getArtTexture } from '../../render/cardArt';
 import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { BusyTracker } from '../../ui/busyTracker';
+import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
 import type { CardSLGState } from '../../net/WorldApiClient';
 import { CARD_DEFS, cardPower } from '../../game/meta/cardDefs';
@@ -151,7 +152,11 @@ export class CardSceneBase {
 
   protected detailId: string | null = null;
   protected scrollY = 0;
-  protected dragStart: { x: number; y: number; scroll: number } | null = null;
+  /**
+   * Tap-vs-drag gesture tracker: defers a cell's hit action to pointer-up and drops it if the pointer
+   * dragged (so a drag starting on a card scrolls instead of opening its detail). See ScrollTapGesture.
+   */
+  private readonly gesture = new ScrollTapGesture();
   /** Set by handleMove instead of rendering inline — see EquipmentSceneBase.scrollDirty for why. */
   private scrollDirty = false;
   /** [Cards|Equipment?|Skins] sidebar nav — always shown (Skins is always reachable, LOBBY_IA_REDESIGN §15). */
@@ -322,23 +327,26 @@ export class CardSceneBase {
       }
       return;
     }
+    // Don't fire the hit action here — capture it and start gesture tracking. If the pointer then
+    // drags past the threshold it becomes a scroll and the tap is dropped on up; otherwise the tap
+    // fires on up. This lets a drag that starts *on a card cell* scroll the grid instead of instantly
+    // opening that card's detail.
+    let hit: (() => void) | null = null;
     for (const { rect, action } of this.hitRects) {
-      if (this.inRect(x, y, rect)) { action(); return; }
+      if (this.inRect(x, y, rect)) { hit = action; break; }
     }
-    this.dragStart = { x, y, scroll: this.scrollY };
+    this.gesture.down(this.scrollY, y, hit);
   }
 
   private handleMove(y: number): void {
-    if (!this.dragStart || this.modalOpen) return;
-    const dy = y - this.dragStart.y;
-    if (Math.abs(dy) > 6) {
-      this.scrollY = Math.max(0, this.dragStart.scroll - dy);
-      this.scrollDirty = true;
-    }
+    if (this.modalOpen) return;
+    const scroll = this.gesture.move(y);
+    if (scroll !== null) { this.scrollY = scroll; this.scrollDirty = true; }
   }
 
   private handleUp(): void {
-    this.dragStart = null;
+    // Fires only for a genuine tap (pointer didn't drag); a released drag returns null.
+    this.gesture.up()?.();
   }
 
   private inRect(x: number, y: number, r: Rect): boolean {
