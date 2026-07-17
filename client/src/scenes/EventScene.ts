@@ -8,6 +8,7 @@ import { buildIcon, type IconKind } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
+import { FS, snapFont } from '../render/fontScale';
 
 /** Map a reward's craft-material id to its hand-drawn icon (scrap / lead / binding), else null. */
 function materialIcon(id: string | undefined): IconKind | null {
@@ -141,7 +142,7 @@ export class EventScene implements Scene {
     this.hits.push({ ...hdr.backRect, fn: () => this.cb.onBack() });
 
     if (this.events.length === 0) {
-      const empty = txt(t('event.noEvents'), Math.round(h * 0.035), C.mid);
+      const empty = txt(t('event.noEvents'), FS.headline, C.mid);
       empty.anchor.set(0.5, 0.5);
       empty.x = w / 2; empty.y = h * 0.5;
       this.container.addChild(empty);
@@ -185,7 +186,7 @@ export class EventScene implements Scene {
       });
       bg.x = x; bg.y = top;
       this.container.addChild(bg);
-      const label = txt(ev.title, Math.round(tabH * 0.38), isSelected ? 0x2a5018 : C.mid);
+      const label = txt(ev.title, snapFont(Math.round(tabH * 0.38)), isSelected ? 0x2a5018 : C.mid);
       label.anchor.set(0.5, 0.5);
       label.x = x + (tabW - w * 0.01) / 2;
       label.y = top + tabH / 2;
@@ -203,20 +204,20 @@ export class EventScene implements Scene {
     const daysLeft = Math.ceil(timeLeft / 86_400_000);
 
     // Event title + countdown
-    const evTitle = txt(event.title, Math.round(h * 0.038), C.dark, true);
+    const evTitle = txt(event.title, FS.headline, C.dark, true);
     evTitle.x = PAD; evTitle.y = top;
     this.container.addChild(evTitle);
 
     const countdown = txt(
       daysLeft > 0 ? t('event.daysLeft', { n: daysLeft }) : t('event.ending'),
-      Math.round(h * 0.028), 0x886622,
+      FS.title, 0x886622,
     );
     countdown.anchor.set(1, 0);
     countdown.x = w - PAD; countdown.y = top;
     this.container.addChild(countdown);
 
     // Points display
-    const ptsTxt = txt(t('event.points', { n: event.myPoints }), Math.round(h * 0.032), 0x226644);
+    const ptsTxt = txt(t('event.points', { n: event.myPoints }), FS.title, 0x226644);
     ptsTxt.x = PAD; ptsTxt.y = top + h * 0.05;
     this.container.addChild(ptsTxt);
 
@@ -244,7 +245,7 @@ export class EventScene implements Scene {
     const { h } = this;
     const PAD = areaX + areaW * 0.05;
 
-    const sec = txt(t('event.tasks.title'), Math.round(h * 0.03), C.dark, true);
+    const sec = txt(t('event.tasks.title'), FS.title, C.dark, true);
     sec.x = PAD; sec.y = top;
     this.container.addChild(sec);
 
@@ -258,19 +259,19 @@ export class EventScene implements Scene {
       bg.x = PAD; bg.y = cy;
       this.container.addChild(bg);
 
-      const label = txt(t(`event.tasks.${task.kind}` as any) ?? task.kind, Math.round(cardH * 0.34), 0x333333);
+      const label = txt(t(`event.tasks.${task.kind}` as any) ?? task.kind, snapFont(Math.round(cardH * 0.34)), 0x333333);
       label.anchor.set(0, 0.5);
       label.x = PAD + cardW * 0.04;
       label.y = cy + cardH * 0.5;
       this.container.addChild(label);
 
-      const progTxt = txt(`${Math.min(task.progress, task.target)} / ${task.target}`, Math.round(cardH * 0.3), task.done ? 0x336644 : C.mid);
+      const progTxt = txt(`${Math.min(task.progress, task.target)} / ${task.target}`, snapFont(Math.round(cardH * 0.3)), task.done ? 0x336644 : C.mid);
       progTxt.anchor.set(0.5, 0.5);
       progTxt.x = PAD + cardW * 0.7;
       progTxt.y = cy + cardH * 0.5;
       this.container.addChild(progTxt);
 
-      const rewardTxt = txt(`+${task.points}pt`, Math.round(cardH * 0.3), task.done ? 0x888888 : 0x226644);
+      const rewardTxt = txt(`+${task.points}pt`, snapFont(Math.round(cardH * 0.3)), task.done ? 0x888888 : 0x226644);
       rewardTxt.anchor.set(1, 0.5);
       rewardTxt.x = PAD + cardW * 0.97;
       rewardTxt.y = cy + cardH * 0.5;
@@ -282,7 +283,7 @@ export class EventScene implements Scene {
     const { h } = this;
     const PAD = areaX + areaW * 0.05;
 
-    const sec = txt(t('event.rewards.title'), Math.round(h * 0.03), C.dark, true);
+    const sec = txt(t('event.rewards.title'), FS.title, C.dark, true);
     sec.x = PAD; sec.y = top;
     this.container.addChild(sec);
 
@@ -315,20 +316,20 @@ export class EventScene implements Scene {
         this.container.addChild(glyph);
         labelX += ic + Math.round(cardH * 0.12);
       }
-      const label = txt(rewardLabel, Math.round(cardH * 0.34), exhausted ? 0x999999 : 0x333333);
+      const label = txt(rewardLabel, snapFont(Math.round(cardH * 0.34)), exhausted ? 0x999999 : 0x333333);
       label.anchor.set(0, 0.5);
       label.x = labelX;
       label.y = cy + cardH * 0.5;
       this.container.addChild(label);
 
-      const costTxt = txt(`${reward.cost}pt`, Math.round(cardH * 0.32), canClaim ? 0x226644 : 0x888888);
+      const costTxt = txt(`${reward.cost}pt`, snapFont(Math.round(cardH * 0.32)), canClaim ? 0x226644 : 0x888888);
       costTxt.anchor.set(0.5, 0.5);
       costTxt.x = PAD + cardW * 0.72;
       costTxt.y = cy + cardH * 0.5;
       this.container.addChild(costTxt);
 
       const claimedBadge = reward.maxClaims !== undefined
-        ? txt(`${reward.claimedCount}/${reward.maxClaims}`, Math.round(cardH * 0.28), 0x888888)
+        ? txt(`${reward.claimedCount}/${reward.maxClaims}`, snapFont(Math.round(cardH * 0.28)), 0x888888)
         : null;
       if (claimedBadge) {
         claimedBadge.anchor.set(1, 1);
@@ -338,7 +339,7 @@ export class EventScene implements Scene {
       }
 
       if (canClaim && this.cb.onClaimReward) {
-        const claimLabel = txt(t('event.rewards.claim'), Math.round(cardH * 0.34), 0x2a5018);
+        const claimLabel = txt(t('event.rewards.claim'), snapFont(Math.round(cardH * 0.34)), 0x2a5018);
         claimLabel.anchor.set(1, 0.5);
         claimLabel.x = PAD + cardW * 0.97;
         claimLabel.y = cy + cardH * 0.5;
@@ -358,7 +359,7 @@ export class EventScene implements Scene {
     toastBg.beginFill(0x1a1408, 0.85);
     toastBg.drawRoundedRect(w * 0.15, toastCy - h * 0.07, w * 0.7, h * 0.14, 8);
     toastBg.endFill();
-    const toastTxt = txt(this.toast, Math.round(h * 0.056), 0xffd88a);
+    const toastTxt = txt(this.toast, FS.display, 0xffd88a);
     toastTxt.anchor.set(0.5, 0.5);
     toastTxt.x = w / 2; toastTxt.y = toastCy;
     this.container.addChild(toastBg, toastTxt);

@@ -41,7 +41,7 @@
 | **周期** | 6 周 | 2 个月 |
 | **时钟载体** | `ladderSeasons` 单文档（全局唯一，无大区维度） | `worlds` 文档逐大区独立（`status: open/active/settling/closed` + `openAt/resetAt`） |
 | **作用域** | 全服唯一一条天梯 | 每大区一张地图实例（~1 万活跃玩家/区，超出开新区） |
-| **赛季切换触发** | admin 手动 `POST /admin/ladder/season/roll`（CAS 幂等；meta 不自带定时器） | admin 赛季运维四段式 `open / settle / reset / close`（`SLG_DESIGN S8-7`） |
+| **赛季切换触发** | admin 手动 `POST /admin/ladder/season/roll`（CAS 幂等；meta 不自带定时器） | `open`/`reset`/`close` admin 手动；**`settle` 到点自动**（`WorldDoc.settleAt` = openAt+2 月，scheduler 到期自动结算发奖发称号，`NW_SLG_AUTO_SETTLE=0` 可退回纯 admin，`SLG_DESIGN §17.7/§17.14`） |
 | **重置粒度** | **软重置**（向基准 1200 回归一半，只压不抬） | **硬清**战略态 |
 | **重置清掉什么** | `pvp.elo / rank / streak` 拉回基线；`seasonPeak*` 重置到新基线 | 领地 / 兵力 / 地图态 / 赛季资源(粮铁木) / 繁荣度 / 国家归属 / 家族宗门编制 |
 | **跨季保留什么** | `wins/losses`（终身累计）、`reachedRanks`（终身首达账本）、已授段位称号 | 养成（装备/科技/材料）、皮肤、**天梯段位/ELO**、账号档案、好友关系、`coin` |

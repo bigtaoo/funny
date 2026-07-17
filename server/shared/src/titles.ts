@@ -29,6 +29,17 @@ export const LADDER_RANK_WEIGHTS: Readonly<Record<RankId, number>> = {
   king:         5000, // T5
 };
 
+// ── SLG season title weights (by SLG_DESIGN §8.3 settlement tier) ───────────────────────
+// Region champion is the single strongest shard-level prize (above king/all_chapters, below the manual event.founder);
+// top3 sits at T4. Placeholder tier bands — configure exact weights at launch (ECONOMY_NUMBERS §13-SLG). Key = the {key}
+// segment of slg.s{N}.{key} (see SETTLE_REWARDS.titleKey in slg/prosperity.ts).
+export const SLG_TITLE_WEIGHTS: Readonly<Record<string, number>> = {
+  champion: 5500, // T5+ — shard grand-contest winner
+  top3:     4500, // T4  — shard runner-up (rank 2–3)
+};
+/** Fallback weight for any slg.s{N}.{key} whose key is not in SLG_TITLE_WEIGHTS (T3 base). */
+const SLG_TITLE_WEIGHT_DEFAULT = 3500;
+
 // ── Permanent / event title definition table (non-seasonal) ────────────────────────────────────────────
 // Seasonal titles (ladder.s{N}.{rank} / slg.s{N}.*) are constructed dynamically; weights derived from LADDER_RANK_WEIGHTS.
 export const TITLE_DEFS: Readonly<Record<string, TitleDef>> = {
@@ -60,16 +71,24 @@ export const TITLE_DEFS: Readonly<Record<string, TitleDef>> = {
   },
 };
 
+/**
+ * Starter title every account owns from creation (TITLE_DESIGN §6, "新号起步称号").
+ * Granted at save creation (makeNewSave) and lazily backfilled for pre-existing accounts on save read.
+ * T1 weight (1300), so it never overrides a title the player actually earned.
+ */
+export const STARTER_TITLE = 'event.newbie';
+
 // ── Weight lookup (supports dynamic seasonal titleId) ────────────────────────────────────────────
 
-/** Returns the weight for any titleId. Dynamic seasonal titleIds are derived from LADDER_RANK_WEIGHTS; unknown titles return 0. */
+/** Returns the weight for any titleId. Dynamic seasonal titleIds are derived from LADDER_RANK_WEIGHTS / SLG_TITLE_WEIGHTS; unknown titles return 0. */
 export function titleWeight(titleId: string): number {
   if (titleId in TITLE_DEFS) return TITLE_DEFS[titleId]!.weight;
   // ladder.s{N}.{rank}
   const lm = titleId.match(/^ladder\.s\d+\.(\w+)$/);
   if (lm) return LADDER_RANK_WEIGHTS[lm[1] as RankId] ?? 0;
-  // slg.s{N}.{key} — SLG seasonal title (§3; placeholder using T3 base; configure actual weight at launch)
-  if (/^slg\.s\d+\./.test(titleId)) return 3500;
+  // slg.s{N}.{key} — SLG seasonal title (§3): champion outranks top3; unknown key falls back to T3 base.
+  const sm = titleId.match(/^slg\.s\d+\.(\w+)$/);
+  if (sm) return SLG_TITLE_WEIGHTS[sm[1]!] ?? SLG_TITLE_WEIGHT_DEFAULT;
   return 0;
 }
 
@@ -79,6 +98,9 @@ export function titleShortKey(titleId: string): string {
   // ladder.s{N}.{rank} → dynamically assembled; client prepends the S{N} prefix
   const lm = titleId.match(/^ladder\.s(\d+)\.(\w+)$/);
   if (lm) return `title.ladder.short`; // client assembles with formatLadderTitle
+  // slg.s{N}.{key} → per-key short label (title.slg.champion.short / title.slg.top3.short)
+  const sm = titleId.match(/^slg\.s\d+\.(\w+)$/);
+  if (sm) return `title.slg.${sm[1]}.short`;
   return '';
 }
 
@@ -128,6 +150,11 @@ export function grantTitle(
 /** Builds a ladder seasonal title id. */
 export function ladderTitleId(seasonNo: number, rank: RankId): string {
   return `ladder.s${seasonNo}.${rank}`;
+}
+
+/** Builds an SLG seasonal title id (key = settlement-tier key, e.g. 'champion' | 'top3'; see SETTLE_REWARDS.titleKey). */
+export function slgTitleId(seasonNo: number, key: string): string {
+  return `slg.s${seasonNo}.${key}`;
 }
 
 /**

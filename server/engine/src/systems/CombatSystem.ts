@@ -84,7 +84,7 @@ export class CombatSystem {
         if (unit.onDeathSpawn) {
           const spawnBp = state.unitBlueprints[unit.onDeathSpawn.type];
           for (let i = 0; i < unit.onDeathSpawn.count; i++) {
-            const spawned = new Unit(unit.onDeathSpawn.type, unit.side, unit.col, unit.row, spawnBp);
+            const spawned = new Unit(unit.onDeathSpawn.type, unit.side, unit.col, unit.row, spawnBp, undefined, state.allocUnitId());
             board.addUnit(spawned);
             state.stats[state.ownerOf(unit.side)].unitsSent++;
             const destRow = unit.side === Side.Bottom ? TOP_BUILDING_ROW : BOTTOM_BUILDING_ROW;

@@ -617,9 +617,18 @@ if (path.startsWith('/admin/world/')) {
 - **数值（→ ECONOMY_NUMBERS §13-SLG 登记 + 经济模拟）**：`PROSPERITY_W_*`/`PROSPERITY_DECAY_PER_DAY`/`SECT_FOUND_PROSPERITY_MIN`；`SETTLE_REWARDS` 各档材料/皮肤量 + `CENTER_CAPITAL_MULT`；`sectStrengthScore` 权重；`WORLD_CAPACITY`/`RESET_DELETE_BATCH`。settle coin 若 >0 须经经济总预算批准（OVERVIEW §3.3）。**核验方法（怎么算「过没过」、判据、签字、登记）见 [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md)**——这批数分 6 条轨道分流核（只有 `SETTLE_REWARDS` 动持久经济），不是笼统「跑一遍经济模拟」。
 - **G6 运行时 ✅（2026-06-21，§20；转区/合区 ✅ 2026-07-16，§28）**：多 shard 实际开区编排（`allocateNextSeason`）、人口溢出开新区（`resolveShardForJoin`）、玩家 join 自动路由（宗门>家族>单随）、跨区隔离巡检（`patrolShardIsolation`）、赛季中个人转区+运营合区（§28）均已落地。剩赛季元数据下发（待 S11）。
 - **SLG 战令增益（C6/G4，S8-8）✅（2026-07-01，全档完成）**：`hasBattlePass` 全四档已接线——① `trainTroops` 训练时长 ×0.8（+20%）；② `speedupTraining` / `speedupBuilding` 每币加速时长 ÷0.85（消耗 -15%）；③ **产率加成档**：`recomputeYield` 末尾 ×`BP_YIELD_MULT`=1.1（+10% 所有资源产率），`buildingsOverride` 路径同步透传 `hasBattlePass`；④ **额外结算奖励档**：`settleSeason` 结算后额外查 `{hasBattlePass:true}` 全列，对每名持有者发 `slg-settle-bp:{world}:s{season}`（`BP_SETTLE_EXTRA`：scrap 50 / lead 20 / binding 5），dispatchKey 幂等防重发；与天梯战令独立（OVERVIEW §2/§4）。
-- **称号（C1）✅（2026-06-22）**：`SETTLE_REWARDS.titleId` 的 `grantTitle` 已接入（S10-3）——`settleSeason` 发奖循环 best-effort 调 `meta.grantTitle(acct, base.titleId)`，经 `WorldMetaClient` → `POST /internal/title/grant`（metaserver）。
+- **称号（C1）✅（2026-06-22 接线；2026-07-16 修正戳号/权重/i18n）**：`settleSeason` 发奖循环 best-effort 调 `meta.grantTitle`，经 `WorldMetaClient` → `POST /internal/title/grant`（metaserver）。**2026-07-16 修正**：此前发的是扁平 id `slg.champion`/`slg.top3`（不符 `slg.s{N}.{key}` 约定 → 权重 0、来源误判、无 i18n）；改为 `SETTLE_REWARDS.titleKey` + 结算时 `slgTitleId(season, key)` 戳赛季号，并补 `SLG_TITLE_WEIGHTS`（champion>top3）+ 三语 `title.slg.*`/`slg.settle.*` 文案。详见 [`TITLE_DESIGN.md §9`](TITLE_DESIGN.md)。
 - **异常交易审计工单 ✅（2026-06-21，G7；ops 前端 + 自动处置补记 2026-07-16）**：检测层 + admin 审计队列 + ops 前端审计页 + 确认违规自动封禁（不含追缴）均已落地（§17.13）。G7 全部收口。
 - **G5 视野系统 / G8 险地**：与赛季正交，各自专项（§15.2）。G5 已启动 → §18。
+
+### 17.14 赛季自动结算（auto-settle，2026-07-16）
+
+> 背景：§17.7 落地时 settle/reset/close 全走 admin 手动四段式（同天梯 §3.1「不自带定时器」）。用户拍板 SLG 侧改为**结算自动触发**（reset/close 仍手动——清图破坏性、需运维择时，与 G6 转合区一致）。
+
+- **季钟字段**：`WorldDoc.settleAt?`（`= openAt + SLG_SEASON_DURATION_MS`，60 天，`@nw/shared/slg/prosperity.ts`，[可调→ECONOMY_NUMBERS §13-SLG]）。`openSeason`（含 reset 后 reopen 的 ⑤）写入，故大区回收/新季均获新钟。legacy 无 `settleAt` 的世界永不自动结算。
+- **调度**：`scheduler.ts` 每 tick（2s）在 `autoSettleSeasons` 开时调 `processDueSeasonSettlement`——查 `{status:'active', settleAt:{$lte:now}}`（新增复合索引 `{status:1,settleAt:1}`，无到期项时零成本），对每个到期世界调 `settleSeason`（CAS 仅 active→settling、幂等；单区失败不阻断其余）。
+- **边界**：只做 active→settling（发奖/落库/发称号），**不自动 reset/close**。开关 `NW_SLG_AUTO_SETTLE`（默认开；`=0` 退回纯 admin）。`getSeason`/`listWorlds`/admin 列表回带 `settleAt` 供 ops 展示「预计结束」。
+- 测试：`season-ops.e2e.test.ts` auto-settle 用例（未到点不结算 / 到点结算一次 / settling 不重入）。
 
 ---
 
@@ -1074,6 +1083,8 @@ if (path.startsWith('/admin/world/')) {
 - 测试：`server/worldsvc/test/territories.e2e.test.ts`（5 例，真实 Mongo）——未入世界拒绝、已加入无领地返回空、领地行字段正确且排除 3×3 主城 footprint、跨玩家隔离、放弃后从列表消失。`client/test/ui/worldMapTerritoryPanel.ui.ts`（12 例，PIXI headless）——开面板守卫（未入世界→toast 不开面板）、总览页无滚动区、切到列表 Tab 触发一次性拉取、等级 checkbox 勾选/取消的行数变化（按 `modalBtnRects` 长度断言，不深入渲染内容）、跳转关闭弹层+居中地图、放弃调用 `net.doAbandonFromList` 且不关弹层。另修了 `worldMapHeaderInset.ui.ts` 手搭假 ctx 缺 `resClusterRect` 字段导致的 3 例失败（`zeroRect()` 补齐）。`tsc --noEmit` + `webpack --mode production` + worldsvc 全套（31 文件 235 例）+ client `test:ui` 全套（52 文件 490 例）均绿；浏览器截图人工核对总览/列表/过滤/跳转/放弃交互，细节见会话记录。
 
 **World-info 合并进第三 Tab + 面板加高（2026-07-16）**：用户截图标注反馈两点——右上角单独的 World 按钮/弹层和领地总览面板功能重叠，应合并；面板偏矮，内容常需要滚动。改动：`renderHud()` 删除原独立的 World 按钮渲染块与 `ctx.infoBtnRect` 命中矩形，`WorldMapInput.ts` 对应的点击分支一并移除；`renderTerritoryPanel()` 的 Tab 数组新增第三项 `world`（`territoryTab` 类型相应扩为 `'overview' | 'list' | 'world'`），点击后渲染原 `renderInfoPanel()` 的 nations/season/shop 三个二级 Tab——抽成新的私有方法 `renderWorldTabBody()`，直接画进总览面板已有的弹层区域（不再单独起 dim/panel/title/关闭按钮）；`openInfoPanel()` 整个方法删除，原先「首次打开时懒加载 shop 目录 + nations」的逻辑搬进新增的 `loadWorldTabData()`，由 `switchTerritoryTab('world')` 触发；`doBuyShopItem`/`doRename`（`WorldMapNet.ts`）刷新面板的判断条件相应改成 `territoryPanelOpen && territoryTab === 'world'`。面板高度从固定 `min(460, …)` 改为页面高度的 80%（`h * 0.8`，仍 cap 到不遮挡底部 HUD）。验证：`tsc --noEmit` + `webpack --mode development` 全绿；用临时 `__NW_WorldMapPanels` 调试钩子（挂在 `app.ts`，验证后已移除）在真实 dev server 里手搭最小 ctx 直接调 `renderTerritoryPanel()`，截图确认三个 Tab（总览/领地/World）+ World Tab 下 nations/season/shop 二级 Tab 正常显示、面板高度明显变高。
+
+**总览可读性放大（2026-07-16）**：用户反馈资源界面偏窄偏小。`renderTerritoryPanel()` 面板宽度上限从 `min(420, w-20)` 提到 `min(840, w-20)`（窄屏仍钳到 `w-20`，真机不溢出）；总览页文字约 2×——资源行/赛季·人口行用 `FS.label`（24）、强调的兵力/领地行用 `FS.heading`（28），行距同步加倍（20→40、22→44、26→52、18→36）以免重叠。仅影响总览 Tab；列表/World 两个 Tab 共用同一 `pw` 会一起变宽，内部字号未动。验证：`tsc --noEmit` 绿；临时 `?terrpanel` 调试入口（构造真实 `WorldMapScene` + 假数据，`forceCanvas` 抓图，验证后已移除）截图确认字号翻倍、面板加宽、无重叠裁切。
 
 ---
 

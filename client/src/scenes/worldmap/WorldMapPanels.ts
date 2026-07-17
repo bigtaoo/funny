@@ -3,6 +3,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchButton, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { buildIcon } from '../../render/icons';
+import { FS, snapFont } from '../../render/fontScale';
 import { WorldApiError } from '../../net/WorldApiClient';
 import { proceduralTile } from '@nw/shared';
 import { loadResAtlas, getResTexture, isResAtlasReady } from '../../render/resAtlasLoader';
@@ -42,7 +43,7 @@ export class WorldMapPanels {
     const aucH = Math.round(headerH * 0.7);
     const aIconSize = Math.round(aucH * 0.4);
     const aIcon = buildIcon('tag', aIconSize, C.light);
-    const aTxt = txt(t('world.auction'), Math.round(aucH * 0.34), C.light);
+    const aTxt = txt(t('world.auction'), snapFont(Math.round(aucH * 0.34)), C.light);
     aTxt.anchor.set(0, 0.5);
     const aGrpW = aIconSize + 4 + aTxt.width;
     const aucW = Math.ceil(aGrpW) + 24; // horizontal padding around the content group
@@ -59,7 +60,7 @@ export class WorldMapPanels {
     // button, replacing the old "World" title text.
     const yieldRate = this.ctx.me?.yieldRate ?? {};
     const iconSize = Math.round(headerH * 0.34);
-    const fontSize = Math.round(headerH * 0.26);
+    const fontSize = snapFont(Math.round(headerH * 0.26));
     const gap = Math.round(headerH * 0.3);
     const cluster = new PIXI.Container();
     let cx = 0;
@@ -109,7 +110,7 @@ export class WorldMapPanels {
     const latest = this.ctx.worldChatLatest;
     const chatLbl = txt(
       latest ? `${latest.senderName}: ${latest.body.slice(0, 28)}` : t('world.chat'),
-      13, latest ? C.dark : C.mid,
+      FS.tiny, latest ? C.dark : C.mid,
     );
     chatLbl.anchor.set(0, 0.5);
     chatLbl.x = 14; chatLbl.y = h - HUD_H / 2;
@@ -119,7 +120,7 @@ export class WorldMapPanels {
       const badge = sketchPanel(22, 18, { fill: C.red, border: C.dark, width: 1, seed: seedFor(2, 1, 22) });
       badge.x = 14 + chatLbl.width + 8; badge.y = h - HUD_H / 2 - 9;
       hud.addChild(badge);
-      const badgeTxt = txt(badgeLabel, 11, C.light, true);
+      const badgeTxt = txt(badgeLabel, FS.micro, C.light, true);
       badgeTxt.anchor.set(0.5);
       badgeTxt.x = badge.x + 11; badgeTxt.y = badge.y + 9;
       hud.addChild(badgeTxt);
@@ -138,7 +139,7 @@ export class WorldMapPanels {
     zoomBtn.x = colX; zoomBtn.y = ly;
     hud.addChild(zoomBtn);
     const zIcon = buildIcon('zoom', 32, C.light);
-    const zTxt = txt(zoomLabels[this.ctx.zoom] ?? '', 26, C.light);
+    const zTxt = txt(zoomLabels[this.ctx.zoom] ?? '', FS.heading, C.light);
     zTxt.anchor.set(0, 0.5);
     const zGrpW = 32 + 8 + zTxt.width;
     const zGx = zoomBtn.x + (colW - zGrpW) / 2;
@@ -163,7 +164,7 @@ export class WorldMapPanels {
       const troopCap = this.ctx.me.troopCap ?? 0;
       const territory = this.ctx.me.territoryCount ?? 0;
       const line1 = `${t('world.troops')} ${troops}/${troopCap}  ${t('world.territory')} ${territory}`;
-      const lbl1 = txt(line1, 20, C.dark);
+      const lbl1 = txt(line1, FS.bodyLg, C.dark);
       lbl1.x = rx + 16; lbl1.y = ry + 12;
       hud.addChild(lbl1);
 
@@ -184,12 +185,12 @@ export class WorldMapPanels {
           sp.x = ix; sp.y = resRowY - 6;
           hud.addChild(sp);
           ix += RES_ICON + 2;
-          const cnt = txt(`${res[rt]}`, 20, C.dark);
+          const cnt = txt(`${res[rt]}`, FS.bodyLg, C.dark);
           cnt.x = ix; cnt.y = resRowY;
           hud.addChild(cnt);
           ix += cnt.width + 16;
         } else {
-          const lbl = txt(`${RES_EMOJI[rt]}${res[rt]}`, 20, C.dark);
+          const lbl = txt(`${RES_EMOJI[rt]}${res[rt]}`, FS.bodyLg, C.dark);
           lbl.x = ix; lbl.y = resRowY;
           hud.addChild(lbl);
           ix += lbl.width + 16;
@@ -211,7 +212,7 @@ export class WorldMapPanels {
       const bIcon = buildIcon('flag', 28, C.light);
       bIcon.x = rx + 20; bIcon.y = ry + (badgeH - 28) / 2;
       hud.addChild(bIcon);
-      const bTxt = txt(myMarches.length > 0 ? `${t('world.marchList')} (${myMarches.length})` : t('world.marchList'), 22, C.light);
+      const bTxt = txt(myMarches.length > 0 ? `${t('world.marchList')} (${myMarches.length})` : t('world.marchList'), FS.label, C.light);
       bTxt.anchor.set(0, 0.5);
       bTxt.x = rx + 60; bTxt.y = ry + badgeH / 2;
       hud.addChild(bTxt);
@@ -240,7 +241,7 @@ export class WorldMapPanels {
           const kindIc = buildIcon(MARCH_KIND_ICON[m.kind] ?? 'flag', 26, C.dark);
           kindIc.x = rx + 12; kindIc.y = rowY + 2;
           hud.addChild(kindIc);
-          const rowLbl = txt(`(${tx},${ty})  ${remaining}s`, 20, C.dark);
+          const rowLbl = txt(`(${tx},${ty})  ${remaining}s`, FS.bodyLg, C.dark);
           rowLbl.x = rx + 44; rowLbl.y = rowY + 4;
           hud.addChild(rowLbl);
 
@@ -248,7 +249,7 @@ export class WorldMapPanels {
             const recallBtn = sketchPanel(RECALL_W, 36, { fill: C.accent, border: C.red, seed: seedFor(i, 99, RECALL_W) });
             recallBtn.x = rx + rightW - RECALL_W - 8; recallBtn.y = rowY;
             hud.addChild(recallBtn);
-            const recallLbl = txt(t('world.recall'), 18, C.light);
+            const recallLbl = txt(t('world.recall'), FS.body, C.light);
             recallLbl.anchor.set(0.5, 0.5);
             recallLbl.x = recallBtn.x + RECALL_W / 2; recallLbl.y = recallBtn.y + 18;
             hud.addChild(recallLbl);
@@ -271,7 +272,7 @@ export class WorldMapPanels {
         }
         if (overflowCount > 0) {
           const overflowY = listPanel.y + 6 + visibleMarches.length * MARCH_ROW_H;
-          const overflowLbl = txt(t('world.marchMore', { n: overflowCount }), 20, C.mid);
+          const overflowLbl = txt(t('world.marchMore', { n: overflowCount }), FS.bodyLg, C.mid);
           overflowLbl.x = rx + 12; overflowLbl.y = overflowY + 4;
           hud.addChild(overflowLbl);
         }
@@ -286,7 +287,7 @@ export class WorldMapPanels {
       const repIcon = buildIcon('replay', 28, C.dark);
       repIcon.x = rx + 20; repIcon.y = ry + (repH - 28) / 2;
       hud.addChild(repIcon);
-      const repTxt = txt(t('world.replays'), 22, C.dark);
+      const repTxt = txt(t('world.replays'), FS.label, C.dark);
       repTxt.anchor.set(0, 0.5);
       repTxt.x = rx + 60; repTxt.y = ry + repH / 2;
       hud.addChild(repTxt);
@@ -319,7 +320,7 @@ export class WorldMapPanels {
 
     // Pre-measure wrapped label heights so the panel sizes to content instead of clipping/overlapping.
     const labels = lines.map((line) => {
-      const lbl = txt(line, 30, C.dark, false, textW);
+      const lbl = txt(line, FS.title, C.dark, false, textW);
       lbl.anchor.set(0.5, 0);
       return lbl;
     });
@@ -361,7 +362,7 @@ export class WorldMapPanels {
         ic.x = bx + btnW / 2 - 24; ic.y = by + btnH / 2 - 24;
         ml.addChild(ic);
       } else {
-        const bl = txt(btn.label, 30, disabled ? C.mid : C.light);
+        const bl = txt(btn.label, FS.title, disabled ? C.mid : C.light);
         bl.anchor.set(0.5, 0.5);
         bl.x = bx + btnW / 2; bl.y = by + btnH / 2;
         ml.addChild(bl);
@@ -391,7 +392,7 @@ export class WorldMapPanels {
     const tl = this.ctx.toastLayer;
     tl.removeChildren();
     const { w, h } = this.ctx;
-    const lbl = txt(msg, 26, color);
+    const lbl = txt(msg, FS.heading, color);
     lbl.anchor.set(0.5, 0);
     lbl.x = w / 2; lbl.y = h / 3;
     tl.addChild(lbl);
@@ -441,7 +442,7 @@ export class WorldMapPanels {
     const bp = sketchPanel(bw, bh, { fill, border: C.accent, seed: seedFor(x, y, bw) });
     bp.x = x; bp.y = y;
     ml.addChild(bp);
-    const bl = txt(label, fontSize, C.light);
+    const bl = txt(label, snapFont(fontSize), C.light);
     bl.anchor.set(0.5, 0.5);
     bl.x = x + bw / 2; bl.y = y + bh / 2;
     ml.addChild(bl);
@@ -484,7 +485,7 @@ export class WorldMapPanels {
     const bp = sketchPanel(bw, bh, { fill, border: C.accent, seed: seedFor(x, y, bw) });
     bp.x = x; bp.y = y;
     layer.addChild(bp);
-    const bl = txt(label, 11, C.light);
+    const bl = txt(label, FS.micro, C.light);
     bl.anchor.set(0.5, 0.5);
     bl.x = x + bw / 2; bl.y = y + bh / 2;
     layer.addChild(bl);
@@ -515,7 +516,7 @@ export class WorldMapPanels {
     ml.addChild(panel);
 
     const addText = (s: string, ty: number, size = 12 * S, color: number = C.dark, cx = px + 14 * S, anchorX = 0): PIXI.Text => {
-      const lbl = txt(s, size, color);
+      const lbl = txt(s, snapFont(size), color);
       lbl.anchor.set(anchorX, 0);
       lbl.x = cx; lbl.y = ty;
       ml.addChild(lbl);
@@ -524,7 +525,7 @@ export class WorldMapPanels {
 
     let ly = py + 12 * S;
     // Title
-    const title = txt(t('world.trainTitle'), 14 * S, C.accent);
+    const title = txt(t('world.trainTitle'), snapFont(14 * S), C.accent);
     title.anchor.set(0.5, 0); title.x = px + pw / 2; title.y = ly;
     ml.addChild(title);
     ly += 26 * S;
@@ -668,7 +669,7 @@ export class WorldMapPanels {
   private renderWorldTabBody(px: number, pw: number, ly: number, bodyBottom: number): void {
     const ml = this.ctx.modalLayer;
     const addText = (s: string, tx2: number, ty: number, size = 12, color: number = C.dark, anchorX = 0): void => {
-      const lbl = txt(s, size, color);
+      const lbl = txt(s, snapFont(size), color);
       lbl.anchor.set(anchorX, 0);
       lbl.x = tx2; lbl.y = ty;
       ml.addChild(lbl);
@@ -707,7 +708,7 @@ export class WorldMapPanels {
             const nStar = buildIcon('star', 12, C.gold);
             nStar.x = px + 14; nStar.y = ry - 1;
             listLayer.addChild(nStar);
-            const nameLbl = txt(`${name}  (${n.x},${n.y})`, 11, C.dark);
+            const nameLbl = txt(`${name}  (${n.x},${n.y})`, FS.micro, C.dark);
             nameLbl.x = px + 30; nameLbl.y = ry;
             listLayer.addChild(nameLbl);
             if (mine) {
@@ -716,7 +717,7 @@ export class WorldMapPanels {
               this.panelButtonIn(listLayer, t('world.nationRename'), px + pw - bw - 14, ry - 4, bw, 22, C.accent, () => this.openRenameInput(n.capitalIdx, name));
             } else {
               const status = n.ownerId ? t('world.nationOwned') : t('world.nationFree');
-              const statusLbl = txt(status, 11, n.ownerId ? C.red : C.mid);
+              const statusLbl = txt(status, FS.micro, n.ownerId ? C.red : C.mid);
               statusLbl.anchor.set(1, 0); statusLbl.x = px + pw - 14; statusLbl.y = ry;
               listLayer.addChild(statusLbl);
             }
@@ -749,10 +750,10 @@ export class WorldMapPanels {
       let ry = cy - this.ctx.infoScrollY;
       for (const it of this.ctx.shopItems) {
         if (ry + rowH >= cy && ry <= bodyBottom) {
-          const nameLbl = txt(this.shopLabel(it), 11, C.dark);
+          const nameLbl = txt(this.shopLabel(it), FS.micro, C.dark);
           nameLbl.x = px + 14; nameLbl.y = ry + 4;
           listLayer.addChild(nameLbl);
-          const costLbl = txt(t('world.shopCost').replace('{coins}', String(it.cost)), 10, C.mid);
+          const costLbl = txt(t('world.shopCost').replace('{coins}', String(it.cost)), FS.micro, C.mid);
           costLbl.x = px + 14; costLbl.y = ry + 18;
           listLayer.addChild(costLbl);
           const bw = 56;
@@ -798,7 +799,9 @@ export class WorldMapPanels {
     this.ctx.modalBtnRects = [];
 
     const { w, h } = this.ctx;
-    const pw = Math.min(420, w - 20);
+    // Width doubled (420→840, still clamped to the viewport) so the enlarged
+    // overview text has room to breathe.
+    const pw = Math.min(840, w - 20);
     // Panel height is 80% of the page height (capped so it never overlaps the HUD).
     const ph = Math.min(h * 0.8, h - HUD_H - 16);
     const px = (w - pw) / 2;
@@ -814,12 +817,12 @@ export class WorldMapPanels {
     ml.addChild(panel);
 
     const addText = (s: string, tx2: number, ty: number, size = 12, color: number = C.dark): void => {
-      const lbl = txt(s, size, color);
+      const lbl = txt(s, snapFont(size), color);
       lbl.x = tx2; lbl.y = ty;
       ml.addChild(lbl);
     };
 
-    const title = txt(t('world.territoryTitle'), 14, C.accent);
+    const title = txt(t('world.territoryTitle'), FS.tiny, C.accent);
     title.anchor.set(0.5, 0); title.x = px + pw / 2; title.y = py + 10;
     ml.addChild(title);
 
@@ -846,21 +849,23 @@ export class WorldMapPanels {
       const res = me.resources ?? {};
       const yieldRate = me.yieldRate ?? {};
       const RES_LABEL: Record<string, string> = { ink: t('world.ink'), paper: t('world.paper'), graphite: t('world.graphite'), metal: t('world.metal'), sticker: t('world.sticker') };
+      // Overview text enlarged ~2x per request: resource/season rows at FS.label,
+      // the emphasized troops/territory lines at FS.heading; line spacing doubled to match.
       for (const rt of ['ink', 'paper', 'graphite', 'metal', 'sticker']) {
         const amt = Math.floor(res[rt] ?? 0);
         const yr = Math.round(yieldRate[rt] ?? 0);
-        addText(`${RES_LABEL[rt]}  ${amt}  (+${yr}/${t('world.resYield')})`, px + 14, ly, 12, C.dark);
-        ly += 20;
+        addText(`${RES_LABEL[rt]}  ${amt}  (+${yr}/${t('world.resYield')})`, px + 14, ly, FS.label, C.dark);
+        ly += 40;
       }
-      ly += 8;
-      addText(`${t('world.troops')} ${Math.floor(me.troops ?? 0)}/${Math.floor(me.troopCap ?? 0)}`, px + 14, ly, 13, C.red);
-      ly += 22;
-      addText(`${t('world.territory')} ${me.territoryCount ?? 0}`, px + 14, ly, 13, C.red);
-      ly += 26;
+      ly += 16;
+      addText(`${t('world.troops')} ${Math.floor(me.troops ?? 0)}/${Math.floor(me.troopCap ?? 0)}`, px + 14, ly, FS.heading, C.red);
+      ly += 44;
+      addText(`${t('world.territory')} ${me.territoryCount ?? 0}`, px + 14, ly, FS.heading, C.red);
+      ly += 52;
       const s = this.ctx.season;
       if (s) {
-        addText(t('world.seasonNo').replace('{n}', String(s.season)), px + 14, ly, 12, C.mid); ly += 18;
-        addText(t('world.seasonPop').replace('{pop}', String(s.population)).replace('{cap}', String(s.capacity)), px + 14, ly, 12, C.mid); ly += 18;
+        addText(t('world.seasonNo').replace('{n}', String(s.season)), px + 14, ly, FS.label, C.mid); ly += 36;
+        addText(t('world.seasonPop').replace('{pop}', String(s.population)).replace('{cap}', String(s.capacity)), px + 14, ly, FS.label, C.mid); ly += 36;
       }
     } else if (this.ctx.territoryTab === 'world') {
       this.renderWorldTabBody(px, pw, ly, bodyBottom);
@@ -895,7 +900,7 @@ export class WorldMapPanels {
         for (const tv of filtered) {
           if (ry + rowH >= ly && ry <= bodyBottom) {
             const label = `(${tv.x},${tv.y})  Lv.${tv.level}  ${t('world.garrison').replace('{n}', String(tv.garrison ?? 0))}`;
-            const nameLbl = txt(label, 11, C.dark);
+            const nameLbl = txt(label, FS.micro, C.dark);
             nameLbl.x = px + 14; nameLbl.y = ry + 8;
             listLayer.addChild(nameLbl);
             const btnW = 56;
@@ -948,7 +953,7 @@ export class WorldMapPanels {
     panel.x = px; panel.y = py;
     ml.addChild(panel);
 
-    const title = txt(t('world.replaysTitle'), 14, C.accent);
+    const title = txt(t('world.replaysTitle'), FS.tiny, C.accent);
     title.anchor.set(0.5, 0); title.x = px + pw / 2; title.y = py + 10;
     ml.addChild(title);
 
@@ -958,7 +963,7 @@ export class WorldMapPanels {
 
     const rows = this.ctx.sieges;
     if (rows.length === 0) {
-      const empty = txt(t('world.replaysEmpty'), 12, C.mid);
+      const empty = txt(t('world.replaysEmpty'), FS.tiny, C.mid);
       empty.x = px + 16; empty.y = ly;
       ml.addChild(empty);
     } else {
@@ -976,7 +981,7 @@ export class WorldMapPanels {
           const won = (s.role === 'attacker') === (s.outcome === 'attacker_win');
           const lvlTxt = s.tileLevel ? `Lv.${s.tileLevel}` : '';
           const label = `(${sx},${sy}) ${lvlTxt}  ${roleTxt}·${outTxt}  ${this.agoText(now - s.ts)}`;
-          const rowLbl = txt(label, 12, won ? C.dark : C.red);
+          const rowLbl = txt(label, FS.tiny, won ? C.dark : C.red);
           rowLbl.x = px + 14; rowLbl.y = ry + 6;
           listLayer.addChild(rowLbl);
           const btnW = 72;
@@ -984,7 +989,7 @@ export class WorldMapPanels {
             this.panelButtonIn(listLayer, t('world.replaySiege'), px + pw - btnW - 14, ry + 2, btnW, 28,
               C.accent, () => { this.closeModal(); this.ctx.cb.onReplaySiege(s.siegeId); });
           } else {
-            const noRep = txt(t('world.replay.none'), 11, C.mid);
+            const noRep = txt(t('world.replay.none'), FS.micro, C.mid);
             noRep.x = px + pw - btnW - 8; noRep.y = ry + 8;
             listLayer.addChild(noRep);
           }

@@ -3,11 +3,13 @@
 import { describe, it, expect } from 'vitest';
 import {
   LADDER_RANK_WEIGHTS,
+  SLG_TITLE_WEIGHTS,
   TITLE_DEFS,
   titleWeight,
   titleShortKey,
   grantTitle,
   ladderTitleId,
+  slgTitleId,
   parseTitleId,
 } from '../src/titles';
 import type { RankId } from '../src/ladder';
@@ -35,8 +37,14 @@ describe('titleWeight', () => {
     expect(titleWeight('ladder.s5.diamond')).toBe(LADDER_RANK_WEIGHTS.diamond);
   });
 
-  it('gives SLG seasonal titles the placeholder T3 weight', () => {
+  it('gives an SLG seasonal title with an unknown key the fallback T3 weight', () => {
     expect(titleWeight('slg.s2.conqueror')).toBe(3500);
+  });
+
+  it('resolves known SLG tier keys and ranks champion above top3', () => {
+    expect(titleWeight('slg.s2.champion')).toBe(SLG_TITLE_WEIGHTS.champion);
+    expect(titleWeight('slg.s2.top3')).toBe(SLG_TITLE_WEIGHTS.top3);
+    expect(titleWeight('slg.s2.champion')).toBeGreaterThan(titleWeight('slg.s2.top3'));
   });
 
   it('returns 0 for an unknown title', () => {
@@ -57,6 +65,11 @@ describe('titleShortKey', () => {
 
   it('returns the generic ladder short key for a seasonal ladder title', () => {
     expect(titleShortKey('ladder.s3.gold')).toBe('title.ladder.short');
+  });
+
+  it('returns the per-key slg short key for a seasonal slg title', () => {
+    expect(titleShortKey('slg.s3.champion')).toBe('title.slg.champion.short');
+    expect(titleShortKey('slg.s3.top3')).toBe('title.slg.top3.short');
   });
 
   it('returns empty for unknown', () => {
@@ -110,6 +123,21 @@ describe('ladderTitleId', () => {
 
   it('round-trips through titleWeight', () => {
     expect(titleWeight(ladderTitleId(4, 'king'))).toBe(LADDER_RANK_WEIGHTS.king);
+  });
+});
+
+describe('slgTitleId', () => {
+  it('assembles the seasonal id', () => {
+    expect(slgTitleId(3, 'champion')).toBe('slg.s3.champion');
+  });
+
+  it('round-trips through titleWeight (champion outranks top3)', () => {
+    expect(titleWeight(slgTitleId(3, 'champion'))).toBe(SLG_TITLE_WEIGHTS.champion);
+    expect(titleWeight(slgTitleId(3, 'top3'))).toBe(SLG_TITLE_WEIGHTS.top3);
+  });
+
+  it('round-trips through parseTitleId', () => {
+    expect(parseTitleId(slgTitleId(9, 'champion'))).toEqual({ source: 'slg', seasonNo: 9 });
   });
 });
 

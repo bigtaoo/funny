@@ -18,6 +18,7 @@ import {
 import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
+import { FS, snapFont } from '../render/fontScale';
 import { formatDuration } from './worldmap/formatDuration';
 import type {
   WorldApiClient, PlayerWorldView, BuildingKey, TeamTemplate, MarchView, OccupationView,
@@ -109,8 +110,8 @@ const BLD_GLYPH: Partial<Record<BuildingKey, IconKind>> = {
 // Card-grid sizing — matches the CardScene/Skins wardrobe language (dynamic
 // column count from a target width, rather than CityScene's old fixed 4-col table).
 const CARD_GAP = 12;
-const CARD_W_TARGET = 148;
-const CARD_H = 128;
+const CARD_W_TARGET = 222;
+const CARD_H = 192;
 const GRID_PAD = 8;
 
 // D-CITY-12: academy is pulled out of the domestic building grid into its own
@@ -119,7 +120,7 @@ const DOMESTIC_BUILDING_KEYS: readonly BuildingKey[] = BUILDING_KEYS.filter((k) 
 
 // Team panel (D-CITY-10) — 2-col card grid; tapping a card opens that team's formation editor.
 const TEAM_COLS = 2;
-const TEAM_CARD_H = 96;
+const TEAM_CARD_H = 144;
 
 // ── CityScene ────────────────────────────────────────────────────────────────
 
@@ -222,7 +223,7 @@ export class CityScene implements Scene {
       sp.width = sp.height = size;
       return sp;
     }
-    return txt(RES_ICON[rt], Math.round(size * 0.85), C.dark);
+    return txt(RES_ICON[rt], snapFont(Math.round(size * 0.85)), C.dark);
   }
 
   /** Building glyph: producer→res_atlas motif, others→icons.ts line-art, emoji as last resort. */
@@ -231,7 +232,7 @@ export class CityScene implements Scene {
     if (res) return this.resIcon(res, size);
     const kind = BLD_GLYPH[key];
     if (kind) return buildIcon(kind, size, color);
-    return txt(BLD_ICON[key], Math.round(size * 0.85), color);
+    return txt(BLD_ICON[key], snapFont(Math.round(size * 0.85)), color);
   }
 
   private async doUpgrade(key: BuildingKey): Promise<void> {
@@ -313,7 +314,11 @@ export class CityScene implements Scene {
     this.hits = [];
     const { w, h } = this;
 
-    this.container.addChild(buildPaperBackground('citybg', w, h));
+    // Draw the red binding line at the tab rail's right edge (railX) instead of the default
+    // 9%-of-width position — otherwise the 20%-wide sidebar rail overhangs the line and the
+    // Domestic/Military tabs cross it. Matches every other sidebar scene (CardScene/Equipment/…).
+    const railX = sidebarNavW(w, h, this.landscape);
+    this.container.addChild(buildPaperBackground('citybg', w, h, { railX }));
     const decoC = buildDecorCLayer(w, h);
     if (decoC) this.container.addChild(decoC);
 
@@ -358,23 +363,23 @@ export class CityScene implements Scene {
       ov.drawRect(0, 0, w, h);
       ov.endFill();
       this.container.addChild(ov);
-      const lbl = txt('…', 28, 0xffffff, true);
-      lbl.x = w / 2 - 10;
-      lbl.y = h / 2 - 14;
+      const lbl = txt('…', FS.headline, 0xffffff, true);
+      lbl.x = w / 2 - 15;
+      lbl.y = h / 2 - 21;
       this.container.addChild(lbl);
     }
 
     // Toast
     if (this.toast !== null) {
-      const tw = Math.min(w - 40, 640);
-      const th = 72;
+      const tw = Math.min(w - 40, 720);
+      const th = 84;
       const tg = sketchPanel(tw, th, { fill: C.dark, fillAlpha: 0.88, border: this.toastColor, width: 1, seed: 7 });
       tg.x = (w - tw) / 2;
       tg.y = Math.round(h * 2 / 3 - th / 2);
       this.container.addChild(tg);
-      const tl = txt(this.toast, 26, 0xffffff);
-      tl.x = tg.x + 20;
-      tl.y = tg.y + 20;
+      const tl = txt(this.toast, FS.headline, 0xffffff);
+      tl.x = tg.x + 24;
+      tl.y = tg.y + 22;
       this.container.addChild(tl);
     }
   }
@@ -413,11 +418,11 @@ export class CityScene implements Scene {
     startY = this.renderDurabilityPanel(startY);
     startY = this.renderTechTreePanel(startY);
 
-    const sectionLbl = txt(t('city.military.teams'), 13, C.mid, true);
-    sectionLbl.x = this.contentX + 12;
+    const sectionLbl = txt(t('city.military.teams'), FS.bodyLg, C.mid, true);
+    sectionLbl.x = this.contentX + 18;
     sectionLbl.y = startY;
     this.container.addChild(sectionLbl);
-    this.renderTeamPanel(startY + 20);
+    this.renderTeamPanel(startY + 30);
   }
 
   // D-CITY-8: main-base durability panel — a persistent, self-healing HP bar for the
@@ -433,30 +438,30 @@ export class CityScene implements Scene {
     const hp = this.me?.hp ?? maxHp;
     const ratio = maxHp > 0 ? Math.max(0, Math.min(1, hp / maxHp)) : 1;
 
-    const panH = 56;
+    const panH = 84;
     const pg = sketchPanel(w - 16, panH, { fill: C.paper, border: C.line, width: 1, seed: seedFor(w, panH, 11) });
     pg.x = cx0 + 8;
     pg.y = startY;
     this.container.addChild(pg);
 
-    const icon = this.bldIcon('wall', 28, C.dark);
-    icon.x = cx0 + 16;
-    icon.y = startY + (panH - 28) / 2;
+    const icon = this.bldIcon('wall', 42, C.dark);
+    icon.x = cx0 + 20;
+    icon.y = startY + (panH - 42) / 2;
     this.container.addChild(icon);
 
-    const titleLbl = txt(t('city.military.durability'), 14, C.dark, true);
-    titleLbl.x = cx0 + 56;
-    titleLbl.y = startY + 9;
+    const titleLbl = txt(t('city.military.durability'), FS.bodyLg, C.dark, true);
+    titleLbl.x = cx0 + 84;
+    titleLbl.y = startY + 13;
     this.container.addChild(titleLbl);
 
-    const valLbl = txt(`${this.fmtNum(hp)} / ${this.fmtNum(maxHp)}`, 12, C.mid);
-    valLbl.x = cx0 + 56;
-    valLbl.y = startY + 30;
+    const valLbl = txt(`${this.fmtNum(hp)} / ${this.fmtNum(maxHp)}`, FS.body, C.mid);
+    valLbl.x = cx0 + 84;
+    valLbl.y = startY + 45;
     this.container.addChild(valLbl);
 
-    const barX = cx0 + 56 + Math.max(90, valLbl.width + 16);
+    const barX = cx0 + 84 + Math.max(135, valLbl.width + 24);
     const barW = Math.max(20, cx0 + w - barX - 16);
-    const barH = 10;
+    const barH = 15;
     const barY = startY + (panH - barH) / 2;
 
     const track = new PIXI.Graphics();
@@ -540,7 +545,7 @@ export class CityScene implements Scene {
     const injuredUntil = this.me?.teamState?.[id]?.injuredUntil ?? 0;
     const injured = injuredUntil > now;
     const order = this.teamOrder(id);
-    const pad = 8;
+    const pad = 12;
 
     const border = injured ? C.red : (order ? C.gold : (filled ? C.accent : C.mid));
     const panel = sketchPanel(cardW, TEAM_CARD_H, {
@@ -550,7 +555,7 @@ export class CityScene implements Scene {
     panel.y = y;
     layer.addChild(panel);
 
-    const name = txt(team?.name || teamSlotName(i), 13, C.dark, true);
+    const name = txt(team?.name || teamSlotName(i), FS.bodyLg, C.dark, true);
     name.x = x + pad;
     name.y = y + pad;
     layer.addChild(name);
@@ -576,17 +581,17 @@ export class CityScene implements Scene {
       statusLbl = t('world.team.empty');
       statusColor = C.mid as number;
     }
-    const statusTag = txt(statusLbl, 11, statusColor, true);
+    const statusTag = txt(statusLbl, FS.body, statusColor, true);
     statusTag.x = x + pad;
-    statusTag.y = y + pad + 20;
+    statusTag.y = y + pad + 30;
     layer.addChild(statusTag);
 
     if (filled) {
       const committed = this.committedTroops(team!.army);
       const sub = `${t('world.defense.garrison').replace('{n}', String(team!.army.length))}   ${t('world.team.committed').replace('{n}', String(committed))}`;
-      const subLbl = txt(sub, 11, C.mid, false, cardW - pad * 2);
+      const subLbl = txt(sub, FS.body, C.mid, false, cardW - pad * 2);
       subLbl.x = x + pad;
-      subLbl.y = y + TEAM_CARD_H - pad - 14;
+      subLbl.y = y + TEAM_CARD_H - pad - 21;
       layer.addChild(subLbl);
     }
 
@@ -614,7 +619,7 @@ export class CityScene implements Scene {
     const inQueue = (this.me?.buildQueue ?? []).some(q => q.key === 'academy');
     const bonusLines = this.buildingBonusLines('academy', bld);
 
-    const panH = 96;
+    const panH = 144;
     const pg = sketchPanel(w - 16, panH, {
       fill: C.paper, border: inQueue ? C.gold : C.line, width: inQueue ? 2 : 1, seed: seedFor(w, panH, 10),
     });
@@ -622,34 +627,34 @@ export class CityScene implements Scene {
     pg.y = startY;
     this.container.addChild(pg);
 
-    const icon = this.bldIcon('academy', 36, C.dark);
-    icon.x = cx0 + 20;
-    icon.y = startY + (panH - 36) / 2;
+    const icon = this.bldIcon('academy', 54, C.dark);
+    icon.x = cx0 + 30;
+    icon.y = startY + (panH - 54) / 2;
     this.container.addChild(icon);
 
-    const titleLbl = txt(t('city.military.techTree'), 16, C.dark, true);
-    titleLbl.x = cx0 + 68;
-    titleLbl.y = startY + 12;
+    const titleLbl = txt(t('city.military.techTree'), FS.label, C.dark, true);
+    titleLbl.x = cx0 + 102;
+    titleLbl.y = startY + 18;
     this.container.addChild(titleLbl);
 
-    const lvlLbl = txt(t('city.lvlLabel').replace('{lvl}', String(lvl)), 12, C.mid);
-    lvlLbl.x = cx0 + 68 + titleLbl.width + 10;
-    lvlLbl.y = startY + 14;
+    const lvlLbl = txt(t('city.lvlLabel').replace('{lvl}', String(lvl)), FS.body, C.mid);
+    lvlLbl.x = cx0 + 102 + titleLbl.width + 15;
+    lvlLbl.y = startY + 21;
     this.container.addChild(lvlLbl);
 
-    let bly = startY + 34;
+    let bly = startY + 51;
     for (const line of bonusLines) {
-      const bl = txt(line, 12, C.mid, false, w - 96);
-      bl.x = cx0 + 68;
+      const bl = txt(line, FS.body, C.mid, false, w - 144);
+      bl.x = cx0 + 102;
       bl.y = bly;
       this.container.addChild(bl);
-      bly += 16;
+      bly += 24;
     }
 
     if (inQueue) {
-      const qDot = buildIcon('hammer', 18, C.gold);
-      qDot.x = cx0 + w - 40;
-      qDot.y = startY + 12;
+      const qDot = buildIcon('hammer', 27, C.gold);
+      qDot.x = cx0 + w - 60;
+      qDot.y = startY + 18;
       this.container.addChild(qDot);
     }
 
@@ -669,7 +674,7 @@ export class CityScene implements Scene {
     const bld = this.me?.buildings;
     const resources = this.me?.resources as Partial<Record<ResourceType, number>> | undefined;
 
-    const panH = 72;
+    const panH = 108;
     const pg = sketchPanel(w - 16, panH, { fill: C.paper, border: C.line, width: 1, seed: seedFor(w, panH, 3) });
     pg.x = cx0 + 8;
     pg.y = startY;
@@ -686,30 +691,30 @@ export class CityScene implements Scene {
       // Color accent bar
       const ab = new PIXI.Graphics();
       ab.beginFill(RES_COLORS[rt], 0.45);
-      ab.drawRect(cx + 6, startY + 4, cellW - 12, 7);
+      ab.drawRect(cx + 9, startY + 6, cellW - 18, 10);
       ab.endFill();
       this.container.addChild(ab);
 
-      const icon = this.resIcon(rt, 22);
-      icon.x = cx + 8;
-      icon.y = startY + 15;
+      const icon = this.resIcon(rt, 33);
+      icon.x = cx + 12;
+      icon.y = startY + 24;
       this.container.addChild(icon);
 
-      const curLbl = txt(this.fmtNum(cur), 15, C.dark, true);
-      curLbl.x = cx + 34;
-      curLbl.y = startY + 15;
+      const curLbl = txt(this.fmtNum(cur), FS.label, C.dark, true);
+      curLbl.x = cx + 52;
+      curLbl.y = startY + 24;
       this.container.addChild(curLbl);
 
-      const capLbl = txt(`/${this.fmtNum(cap)}`, 10, C.mid);
-      capLbl.x = cx + 8;
-      capLbl.y = startY + 40;
+      const capLbl = txt(`/${this.fmtNum(cap)}`, FS.small, C.mid);
+      capLbl.x = cx + 12;
+      capLbl.y = startY + 62;
       this.container.addChild(capLbl);
 
       const yldPct = Math.round(yld * 100);
       const yldStr = self > 0 ? `+${self}/h` : `×${yldPct}%`;
-      const yldLbl = txt(yldStr, 10, C.mid);
-      yldLbl.x = cx + 8;
-      yldLbl.y = startY + 54;
+      const yldLbl = txt(yldStr, FS.small, C.mid);
+      yldLbl.x = cx + 12;
+      yldLbl.y = startY + 84;
       this.container.addChild(yldLbl);
     });
 
@@ -724,21 +729,21 @@ export class CityScene implements Scene {
     const queue = this.me?.buildQueue ?? [];
     const now = Date.now();
 
-    const panH = queue.length > 0 ? 48 : 34;
+    const panH = queue.length > 0 ? 72 : 51;
     const pg = sketchPanel(w - 16, panH, { fill: C.paper, border: C.line, width: 1, seed: seedFor(w, panH, 5) });
     pg.x = cx0 + 8;
     pg.y = startY;
     this.container.addChild(pg);
 
-    const hdr = txt(t('city.buildQueue'), 12, C.mid, true);
-    hdr.x = cx0 + 16;
-    hdr.y = startY + 9;
+    const hdr = txt(t('city.buildQueue'), FS.body, C.mid, true);
+    hdr.x = cx0 + 24;
+    hdr.y = startY + 14;
     this.container.addChild(hdr);
 
     if (queue.length === 0) {
-      const empty = txt(t('city.queueEmpty'), 12, C.mid);
-      empty.x = cx0 + 130;
-      empty.y = startY + 9;
+      const empty = txt(t('city.queueEmpty'), FS.body, C.mid);
+      empty.x = cx0 + 195;
+      empty.y = startY + 14;
       this.container.addChild(empty);
     } else {
       const entry = queue[0]!;
@@ -749,15 +754,15 @@ export class CityScene implements Scene {
         .replace('{to}', String(entry.toLevel))
         .replace('{sec}', formatDuration(secsLeft));
 
-      const entryLbl = txt(label, 13, C.dark, true);
-      entryLbl.x = cx0 + 130;
-      entryLbl.y = startY + 9;
+      const entryLbl = txt(label, FS.bodyLg, C.dark, true);
+      entryLbl.x = cx0 + 195;
+      entryLbl.y = startY + 14;
       this.container.addChild(entryLbl);
 
       if (secsLeft > 0) {
         const coins = Math.ceil(secsLeft / BUILD_SPEEDUP_SECS_PER_COIN);
         const speedLabel = t('city.speedup').replace('{coins}', String(coins));
-        this.addBtn(cx0 + w - 166, startY + 6, 152, 30, speedLabel, 0xffffff, C.gold, () => void this.doSpeedup(entry.key));
+        this.addBtn(cx0 + w - 249, startY + 9, 228, 45, speedLabel, 0xffffff, C.gold, () => void this.doSpeedup(entry.key));
       }
     }
 
@@ -813,25 +818,25 @@ export class CityScene implements Scene {
       bg.y = cy;
       gridLayer.addChild(bg);
 
-      const icon = this.bldIcon(key, 40, C.dark);
-      icon.x = cx + (cellW - 40) / 2;
-      icon.y = cy + 12;
+      const icon = this.bldIcon(key, 60, C.dark);
+      icon.x = cx + (cellW - 60) / 2;
+      icon.y = cy + 18;
       gridLayer.addChild(icon);
 
-      const nameLbl = txt(t(`city.bld.${key}` as 'city.bld.desk'), 12, C.dark, true, cellW - 12);
-      nameLbl.x = cx + 6;
-      nameLbl.y = cy + 60;
+      const nameLbl = txt(t(`city.bld.${key}` as 'city.bld.desk'), FS.body, C.dark, true, cellW - 18);
+      nameLbl.x = cx + 9;
+      nameLbl.y = cy + 90;
       gridLayer.addChild(nameLbl);
 
-      const lvlLbl = txt(t('city.lvlLabel').replace('{lvl}', String(lvl)), 11, C.mid);
-      lvlLbl.x = cx + 6;
-      lvlLbl.y = cy + CARD_H - 22;
+      const lvlLbl = txt(t('city.lvlLabel').replace('{lvl}', String(lvl)), FS.body, C.mid);
+      lvlLbl.x = cx + 9;
+      lvlLbl.y = cy + CARD_H - 33;
       gridLayer.addChild(lvlLbl);
 
       if (inQueue) {
-        const qDot = buildIcon('hammer', 16, C.gold);
-        qDot.x = cx + cellW - 24;
-        qDot.y = cy + 8;
+        const qDot = buildIcon('hammer', 24, C.gold);
+        qDot.x = cx + cellW - 36;
+        qDot.y = cy + 12;
         gridLayer.addChild(qDot);
       }
 
@@ -904,14 +909,14 @@ export class CityScene implements Scene {
     hIcon.x = 10;
     hIcon.y = iy - 2;
     panelRoot.addChild(hIcon);
-    const hdrTxt = txt(`${t(`city.bld.${key}` as 'city.bld.desk')} ${t('city.lvlLabel').replace('{lvl}', String(lvl))}`, 16, C.dark, true);
+    const hdrTxt = txt(`${t(`city.bld.${key}` as 'city.bld.desk')} ${t('city.lvlLabel').replace('{lvl}', String(lvl))}`, FS.small, C.dark, true);
     hdrTxt.x = 38;
     hdrTxt.y = iy;
     panelRoot.addChild(hdrTxt);
     iy += 28;
 
     for (const line of bonusLines) {
-      const bl = txt(line, 12, C.mid);
+      const bl = txt(line, FS.tiny, C.mid);
       bl.x = 10;
       bl.y = iy;
       panelRoot.addChild(bl);
@@ -920,19 +925,19 @@ export class CityScene implements Scene {
     iy += 4;
 
     if (atMax) {
-      const ml = txt(t('city.maxLevel'), 13, C.mid, true);
+      const ml = txt(t('city.maxLevel'), FS.tiny, C.mid, true);
       ml.x = 10;
       ml.y = iy;
       panelRoot.addChild(ml);
     } else {
-      const nextHdr = txt(`→ Lv.${toLevel}`, 12, C.mid);
+      const nextHdr = txt(`→ Lv.${toLevel}`, FS.tiny, C.mid);
       nextHdr.x = 10;
       nextHdr.y = iy;
       panelRoot.addChild(nextHdr);
       iy += 16;
 
       if (costEntries.length > 0) {
-        const costLbl = txt(t('city.costLabel'), 12, C.dark);
+        const costLbl = txt(t('city.costLabel'), FS.tiny, C.dark);
         costLbl.x = 10;
         costLbl.y = iy;
         panelRoot.addChild(costLbl);
@@ -944,7 +949,7 @@ export class CityScene implements Scene {
           mi.y = iy - 1;
           panelRoot.addChild(mi);
           cxp += 17;
-          const nl = txt(this.fmtNum(need), 12, ok ? C.dark : C.red);
+          const nl = txt(this.fmtNum(need), FS.tiny, ok ? C.dark : C.red);
           nl.x = cxp;
           nl.y = iy;
           panelRoot.addChild(nl);
@@ -953,19 +958,19 @@ export class CityScene implements Scene {
         iy += 16;
       }
 
-      const timeLbl = txt(t('city.timeLabel') + formatDuration(timeSec), 12, C.mid);
+      const timeLbl = txt(t('city.timeLabel') + formatDuration(timeSec), FS.tiny, C.mid);
       timeLbl.x = 10;
       timeLbl.y = iy;
       panelRoot.addChild(timeLbl);
       iy += 24;
 
       if (gateReason?.includes('desk')) {
-        const gl = txt(t('city.deskGate').replace('{lvl}', String(toLevel)), 12, C.red);
+        const gl = txt(t('city.deskGate').replace('{lvl}', String(toLevel)), FS.tiny, C.red);
         gl.x = 10;
         gl.y = iy;
         panelRoot.addChild(gl);
       } else if (inQueue) {
-        const ql = txt(t('city.upgrading'), 13, C.gold, true);
+        const ql = txt(t('city.upgrading'), FS.tiny, C.gold, true);
         ql.x = 10;
         ql.y = iy;
         panelRoot.addChild(ql);
@@ -977,7 +982,7 @@ export class CityScene implements Scene {
         g.x = btnRectLocal.x;
         g.y = btnRectLocal.y;
         panelRoot.addChild(g);
-        const lbl = txt(t('city.upgrade'), 13, canAfford ? C.dark : C.mid, true);
+        const lbl = txt(t('city.upgrade'), FS.tiny, canAfford ? C.dark : C.mid, true);
         lbl.x = btnRectLocal.x + 8;
         lbl.y = btnRectLocal.y + (btnRectLocal.h - 16) / 2;
         panelRoot.addChild(lbl);
@@ -995,7 +1000,7 @@ export class CityScene implements Scene {
     if (key === 'drillYard') {
       const tc = troopCapFor(bld);
       const ts = this.me?.troops ?? 0;
-      const troopLbl = txt(t('city.troopCap').replace('{cur}', String(ts)).replace('{cap}', String(tc)), 12, C.mid);
+      const troopLbl = txt(t('city.troopCap').replace('{cur}', String(ts)).replace('{cap}', String(tc)), FS.tiny, C.mid);
       troopLbl.x = 10;
       troopLbl.y = iy;
       panelRoot.addChild(troopLbl);
@@ -1076,9 +1081,9 @@ export class CityScene implements Scene {
     g.x = x;
     g.y = y;
     this.container.addChild(g);
-    const lbl = txt(label, 12, textColor, true);
-    lbl.x = x + 8;
-    lbl.y = y + (h - 15) / 2;
+    const lbl = txt(label, FS.body, textColor, true);
+    lbl.x = x + 12;
+    lbl.y = y + (h - 22) / 2;
     this.container.addChild(lbl);
     this.hits.push({ x, y, w, h, fn });
   }

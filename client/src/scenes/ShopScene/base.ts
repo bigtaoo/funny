@@ -28,9 +28,11 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedF
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { type IconKind } from '../../render/icons';
 import { loadCoinIconAtlas, buildCoinIcon } from '../../render/coinIconAtlas';
+import { getArtTexture } from '../../render/cardArt';
 import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
 import { BusyTracker } from '../../ui/busyTracker';
+import { FS, snapFont } from '../../render/fontScale';
 
 /** Outcome of a buy — ok, or a message key to surface as a toast. */
 export type ShopActionResult =
@@ -132,6 +134,8 @@ export class ShopSceneBase {
   protected toast: { text: string; color: number } | null = null;
 
   protected hits: Hit[] = [];
+  /** URLs whose texture-load re-render has already been hooked (mirrors CardScene.drawArtFit). */
+  private readonly artHooked = new Set<string>();
   protected readonly unsubs: Array<() => void> = [];
   /** Set in destroy(); guards render() so a late async re-render can't paint into a torn-down container. */
   protected destroyed = false;
@@ -399,7 +403,7 @@ export class ShopSceneBase {
     let ry = y + pad;
 
     if (spec.badge) {
-      const badge = txt(spec.badge.text, Math.round(ch * 0.11), spec.badge.color, true);
+      const badge = txt(spec.badge.text, snapFont(Math.round(ch * 0.11)), spec.badge.color, true);
       badge.anchor.set(1, 0); badge.x = rightX; badge.y = ry;
       body.addChild(badge);
       ry += badge.height + Math.round(ch * 0.03);
@@ -407,7 +411,7 @@ export class ShopSceneBase {
 
     if (spec.coinAmount !== undefined) {
       const cs = Math.round(ch * 0.20);
-      const amt = txt(spec.coinAmount.toLocaleString(), Math.round(ch * 0.20), C.gold, true);
+      const amt = txt(spec.coinAmount.toLocaleString(), snapFont(Math.round(ch * 0.20)), C.gold, true);
       amt.anchor.set(1, 0); amt.x = rightX; amt.y = ry;
       body.addChild(amt);
       const ci = buildCoinIcon('coin', cs, C.gold);
@@ -417,11 +421,11 @@ export class ShopSceneBase {
     }
 
     if (spec.yuanPrice !== undefined) {
-      const price = txt(`¥${spec.yuanPrice}`, Math.round(ch * 0.18), C.gold, true);
+      const price = txt(`¥${spec.yuanPrice}`, snapFont(Math.round(ch * 0.18)), C.gold, true);
       price.anchor.set(1, 0); price.x = rightX; price.y = ry;
       body.addChild(price);
       if (spec.yuanStrike !== undefined) {
-        const strike = txt(`¥${spec.yuanStrike}`, Math.round(ch * 0.12), C.mid, false);
+        const strike = txt(`¥${spec.yuanStrike}`, snapFont(Math.round(ch * 0.12)), C.mid, false);
         strike.anchor.set(1, 0.5);
         strike.x = price.x - price.width - Math.round(cw * 0.03);
         strike.y = ry + price.height / 2;
@@ -436,7 +440,7 @@ export class ShopSceneBase {
 
     // Title (left; wraps to multiple lines rather than crowding the price column).
     const titleMaxW = cw - pad * 2 - rightColW - rightGap;
-    const title = txt(spec.title, Math.round(ch * 0.15), C.dark, true, titleMaxW);
+    const title = txt(spec.title, snapFont(Math.round(ch * 0.15)), C.dark, true, titleMaxW);
     title.anchor.set(0, 0);
     title.x = x + pad; title.y = y + pad;
     body.addChild(title);
@@ -457,10 +461,19 @@ export class ShopSceneBase {
     const iconX = x + pad;
     const iconY = midTop;
     if (spec.artUrl) {
-      const art = PIXI.Sprite.from(spec.artUrl);
-      art.width = iconS; art.height = iconS;
-      art.x = iconX; art.y = iconY;
-      body.addChild(art);
+      // Wait for the texture to finish loading before sizing the sprite — setting width/height
+      // against an unloaded (0/1px) baseTexture yields a garbage scale and the art never appears.
+      // Re-render once loaded (mirrors CardScene.drawArtFit).
+      const tex = getArtTexture(spec.artUrl);
+      if (tex.baseTexture.valid) {
+        const art = new PIXI.Sprite(tex);
+        art.width = iconS; art.height = iconS;
+        art.x = iconX; art.y = iconY;
+        body.addChild(art);
+      } else if (!this.artHooked.has(spec.artUrl)) {
+        this.artHooked.add(spec.artUrl);
+        tex.baseTexture.once('loaded', () => this.render());
+      }
     } else {
       const icon = buildCoinIcon(spec.icon, iconS, spec.iconColor);
       icon.x = iconX; icon.y = iconY;
@@ -472,7 +485,7 @@ export class ShopSceneBase {
     const lines = spec.lines ?? [];
     if (lines.length > 0 && midH > 0) {
       const lineH = Math.min(Math.round(ch * 0.14), Math.floor(midH / lines.length));
-      const fontSize = Math.max(9, Math.round(lineH * 0.78));
+      const fontSize = snapFont(Math.max(9, Math.round(lineH * 0.78)));
       let iy = midTop;
       for (const ln of lines) {
         const l = txt(ln.text, fontSize, ln.color, true);
@@ -499,7 +512,7 @@ export class ShopSceneBase {
     });
     btn.x = x; btn.y = y;
     body.addChild(btn);
-    const lbl = txt(b.label, Math.round(h * 0.42), b.enabled ? 0xffffff : C.mid, true);
+    const lbl = txt(b.label, snapFont(Math.round(h * 0.42)), b.enabled ? 0xffffff : C.mid, true);
     lbl.anchor.set(0.5, 0.5); lbl.x = x + w / 2; lbl.y = y + h / 2;
     body.addChild(lbl);
     if (b.enabled && b.fn) this.hits.push({ rect: { x, y, w, h }, fn: b.fn });
@@ -508,7 +521,7 @@ export class ShopSceneBase {
   private drawToast(): void {
     const { w, h } = this;
     const toast = this.toast!;
-    const lbl = txt(toast.text, Math.round(h * 0.026), 0xffffff, true);
+    const lbl = txt(toast.text, FS.heading, 0xffffff, true);
     const padX = Math.round(w * 0.04);
     const padY = Math.round(h * 0.012);
     const bw = lbl.width + padX * 2;

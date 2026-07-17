@@ -2,6 +2,7 @@
 // and the bottom "create listing" button.
 import * as PIXI from 'pixi.js-legacy';
 import { ui as C, txt, sketchPanel, sketchButton, seedFor } from '../../render/sketchUi';
+import { FS } from '../../render/fontScale';
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
 import { t } from '../../i18n';
 import type { AuctionView } from '../../net/WorldApiClient';
@@ -68,7 +69,7 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
       // label is measured and scaled down if it would otherwise overflow the chip (see maxLblW below).
       const pad = 9;
       const iconSize = 30;
-      const fontSize = 21;
+      const fontSize = FS.bodyLg;
       for (let i = 0; i < FILTERS.length; i++) {
         const f = FILTERS[i]!;
         const active = f === this.allFilter;
@@ -110,14 +111,14 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
       };
 
       if (this.loading) {
-        const lbl = txt(t('world.loading'), 16, C.dark);
+        const lbl = txt(t('world.loading'), FS.small, C.dark);
         lbl.anchor.set(0.5, 0.5); lbl.x = contentX + contentW / 2; lbl.y = listY + listH / 2;
         this.bodyLayer.addChild(lbl);
         return;
       }
 
       if (auctions.length === 0) {
-        const lbl = txt(t(emptyKeys[this.activeTab]), 16, C.dark);
+        const lbl = txt(t(emptyKeys[this.activeTab]), FS.small, C.dark);
         lbl.anchor.set(0.5, 0.5); lbl.x = contentX + contentW / 2; lbl.y = listY + listH / 2;
         this.bodyLayer.addChild(lbl);
         return;
@@ -176,7 +177,7 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
       const ax = imgX + imgSize + 16;
       const rightW = x + cellW - pad - ax;
 
-      const itemLbl = txt(this.auctionLabel(auc), 19, C.dark, true);
+      const itemLbl = txt(this.auctionLabel(auc), FS.bodyLg, C.dark, true);
       itemLbl.x = ax; itemLbl.y = y + pad;
       itemLbl.style.wordWrap = true; itemLbl.style.wordWrapWidth = Math.max(20, rightW);
       this.bodyLayer.addChild(itemLbl);
@@ -187,14 +188,14 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
       const priceText = isAuction
         ? `${t(auc.topBid ? 'auction.currentBid' : 'auction.startPrice')}: ${auc.price}`
         : `${t('auction.price')}: ${auc.price}`;
-      const priceLbl = txt(priceText, 17, C.accent, true);
+      const priceLbl = txt(priceText, FS.body, C.accent, true);
       priceLbl.x = ax; priceLbl.y = ay;
       priceLbl.style.wordWrap = true; priceLbl.style.wordWrapWidth = Math.max(20, rightW);
       this.bodyLayer.addChild(priceLbl);
       ay += Math.max(26, priceLbl.height + 8);
 
       if (isAuction && auc.buyoutPrice) {
-        const boLbl = txt(t('auction.buyoutAt').replace('{price}', String(auc.buyoutPrice)), 14, C.mid);
+        const boLbl = txt(t('auction.buyoutAt').replace('{price}', String(auc.buyoutPrice)), FS.tiny, C.mid);
         boLbl.x = ax; boLbl.y = ay;
         boLbl.style.wordWrap = true; boLbl.style.wordWrapWidth = Math.max(20, rightW);
         this.bodyLayer.addChild(boLbl);
@@ -212,7 +213,7 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
         const h = Math.floor((remainingSec % 86400) / 3600);
         const m = Math.floor((remainingSec % 3600) / 60);
         const s = remainingSec % 60;
-        const expLbl = txt(t('auction.timeLeft', { d, h, m, s }), 14, C.mid);
+        const expLbl = txt(t('auction.timeLeft', { d, h, m, s }), FS.tiny, C.mid);
         expLbl.x = ax; expLbl.y = ay;
         expLbl.style.wordWrap = true; expLbl.style.wordWrapWidth = Math.max(20, rightW);
         this.bodyLayer.addChild(expLbl);
@@ -227,7 +228,7 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
         const btn = sketchButton(btnW, btnH, seedFor(y, 0, btnW));
         btn.x = btnX; btn.y = btnY;
         this.bodyLayer.addChild(btn);
-        const bl = txt(isAuction ? t('auction.bid') : t('auction.buy'), 16, C.light);
+        const bl = txt(isAuction ? t('auction.bid') : t('auction.buy'), FS.small, C.light);
         bl.anchor.set(0.5, 0.5); bl.x = btnX + btnW / 2; bl.y = btnY + btnH / 2;
         this.bodyLayer.addChild(bl);
         this.hitRects.push({
@@ -240,7 +241,7 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
           const cancelBtn = sketchPanel(btnW, btnH, { fill: 0xf0e0e0, border: C.red, seed: seedFor(y, 1, btnW) });
           cancelBtn.x = btnX; cancelBtn.y = btnY;
           this.bodyLayer.addChild(cancelBtn);
-          const cl = txt(t('auction.cancel'), 16, C.red);
+          const cl = txt(t('auction.cancel'), FS.small, C.red);
           cl.anchor.set(0.5, 0.5); cl.x = btnX + btnW / 2; cl.y = btnY + btnH / 2;
           this.bodyLayer.addChild(cl);
           const aucId = auc.auctionId;
@@ -252,13 +253,13 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
             : auc.status === 'cancelled'
               ? 'auction.statusCancelled'
               : 'auction.statusExpired';
-          const badge = txt(t(statusKey), 15, auc.status === 'sold' ? C.accent : C.mid, true);
+          const badge = txt(t(statusKey), FS.small, auc.status === 'sold' ? C.accent : C.mid, true);
           badge.anchor.set(1, 0.5); badge.x = x + cellW - pad; badge.y = btnY + btnH / 2;
           this.bodyLayer.addChild(badge);
         }
       } else {
         // My Bids: informational only (leading bidder, not the owner) — no action button, just a status badge.
-        const badge = txt(t('auction.leading'), 15, C.accent, true);
+        const badge = txt(t('auction.leading'), FS.small, C.accent, true);
         badge.anchor.set(1, 0.5); badge.x = x + cellW - pad; badge.y = btnY + btnH / 2;
         this.bodyLayer.addChild(badge);
       }
@@ -316,7 +317,7 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
       const btn = sketchButton(btnW, btnH, seedFor(0, 0, btnW));
       btn.x = contentX + contentW / 2 - btnW / 2; btn.y = btnY;
       this.bodyLayer.addChild(btn);
-      const bl = txt(`+ ${t('auction.create')}`, 32, C.light);
+      const bl = txt(`+ ${t('auction.create')}`, FS.title, C.light);
       bl.anchor.set(0.5, 0.5); bl.x = contentX + contentW / 2; bl.y = btnY + btnH / 2;
       this.bodyLayer.addChild(bl);
       this.hitRects.push({ rect: { x: contentX + contentW / 2 - btnW / 2, y: btnY, w: btnW, h: btnH }, action: () => this.openCreateForm() });

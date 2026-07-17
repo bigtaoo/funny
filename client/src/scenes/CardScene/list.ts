@@ -3,6 +3,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor, marginLineX } from '../../render/sketchUi';
+import { FS } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import { UNIT_ART_URLS } from '../../render/cardArt';
 import { drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
@@ -13,8 +14,12 @@ import type { CardSLGState } from '../../net/WorldApiClient';
 import { CARD_DEFS, CARD_INV_CAP, CARD_INV_WARN, troopCap, cardPower } from '../../game/meta/cardDefs';
 import {
   type Constructor, type CardSceneBaseCtor,
-  CELL_GAP, CARD_CELL_H, CARD_CELL_W_TARGET, sortCards, injuryCountdown,
+  CARD_CELL_H, CARD_CELL_W_TARGET, sortCards, injuryCountdown,
 } from './base';
+
+// Roster grid packs a fixed 5 cards per row (was auto-fit ~6) with roomier gaps than the shared CELL_GAP.
+const ROSTER_COLS = 5;
+const ROSTER_GAP = 24;
 
 export interface ListHandlers {
   renderSidebar(): void;
@@ -75,7 +80,7 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       const listH = h - listY - 8;
 
       if (cards.length === 0) {
-        const lbl = txt(t('roster.empty'), 28, C.mid);
+        const lbl = txt(t('roster.empty'), FS.heading, C.mid);
         lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = listY + listH / 2;
         lbl.style.wordWrap = true; lbl.style.wordWrapWidth = w - 32;
         this.bodyLayer.addChild(lbl);
@@ -83,21 +88,22 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       }
 
       const sorted = sortCards(cards, save.equipmentInv ?? {});
-      // Start the grid right of the sidebar rail (when shown) or the red margin rule; right pad stays one CELL_GAP.
-      const left = (this.showSidebar ? sidebarNavW(w, h, this.landscape) : marginLineX(w)) + CELL_GAP;
-      const avail = w - left - CELL_GAP;
-      const cols = Math.max(1, Math.floor((avail + CELL_GAP) / (CARD_CELL_W_TARGET + CELL_GAP)));
-      const cellW = (avail - CELL_GAP * (cols - 1)) / cols;
+      // Start the grid right of the sidebar rail (when shown) or the red margin rule; right pad stays one ROSTER_GAP.
+      const left = (this.showSidebar ? sidebarNavW(w, h, this.landscape) : marginLineX(w)) + ROSTER_GAP;
+      const avail = w - left - ROSTER_GAP;
+      // Fixed 5-per-row roster (was auto-fit ~6): wider cards, roomier gaps. Clamp down on narrow viewports.
+      const cols = Math.max(1, Math.min(ROSTER_COLS, Math.floor((avail + ROSTER_GAP) / (CARD_CELL_W_TARGET + ROSTER_GAP))));
+      const cellW = (avail - ROSTER_GAP * (cols - 1)) / cols;
       const rows = Math.ceil(sorted.length / cols);
-      const totalH = rows * (CARD_CELL_H + CELL_GAP) + CELL_GAP;
+      const totalH = rows * (CARD_CELL_H + ROSTER_GAP) + ROSTER_GAP;
       this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
 
       const now = Date.now();
       sorted.forEach((card, i) => {
         const col = i % cols;
         const row = Math.floor(i / cols);
-        const x = left + col * (cellW + CELL_GAP);
-        const y = listY + CELL_GAP + row * (CARD_CELL_H + CELL_GAP) - this.scrollY;
+        const x = left + col * (cellW + ROSTER_GAP);
+        const y = listY + ROSTER_GAP + row * (CARD_CELL_H + ROSTER_GAP) - this.scrollY;
         if (y + CARD_CELL_H >= listY && y <= listY + listH) {
           this.renderCardCell(card, x, y, cellW, cardState[card.id], now, save);
         }
@@ -154,7 +160,7 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       this.bodyLayer.addChild(dot);
 
       const cardName = t(`card.${card.defId}.name` as TranslationKey);
-      const nameLbl = txt(cardName, 20, C.dark, true);
+      const nameLbl = txt(cardName, FS.bodyLg, C.dark, true);
       nameLbl.x = ax + 16; nameLbl.y = y + pad;
       nameLbl.style.wordWrap = false;
       // Leave room for the lock badge on the name row when locked.
@@ -170,29 +176,29 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       }
 
       let ay = y + pad + 34;
-      const lvLbl = txt(`Lv.${card.level}`, 16, C.mid, true);
+      const lvLbl = txt(`Lv.${card.level}`, FS.small, C.mid, true);
       lvLbl.x = ax; lvLbl.y = ay; this.bodyLayer.addChild(lvLbl);
       ay += 24;
 
       const power = Math.round(cardPower(card, save.equipmentInv ?? {}));
-      const pwrLbl = txt(`${t('roster.power')} ${power}`, 16, C.dark);
+      const pwrLbl = txt(`${t('roster.power')} ${power}`, FS.small, C.dark);
       pwrLbl.x = ax; pwrLbl.y = ay; this.bodyLayer.addChild(pwrLbl);
       ay += 24;
 
       if (def && state !== undefined) {
         const cap = troopCap(card);
         const cur = state.currentTroops;
-        const troopLbl = txt(`${cur}/${cap}`, 16, cur >= cap ? C.gold : C.mid);
+        const troopLbl = txt(`${cur}/${cap}`, FS.small, cur >= cap ? C.gold : C.mid);
         troopLbl.x = ax; troopLbl.y = ay; this.bodyLayer.addChild(troopLbl);
         ay += 24;
       }
 
       // Status tag (deployed / injured).
       if (inTeam) {
-        const tag = txt(`[${t('roster.inTeam')}]`, 13, C.accent, true);
+        const tag = txt(`[${t('roster.inTeam')}]`, FS.tiny, C.accent, true);
         tag.x = ax; tag.y = ay; this.bodyLayer.addChild(tag); ay += 20;
       } else if (isInjured) {
-        const tag = txt(`[${t('roster.injured').replace('{time}', injuryCountdown(injuredUntil, now))}]`, 13, C.red);
+        const tag = txt(`[${t('roster.injured').replace('{time}', injuryCountdown(injuredUntil, now))}]`, FS.tiny, C.red);
         tag.x = ax; tag.y = ay; this.bodyLayer.addChild(tag); ay += 20;
       }
 

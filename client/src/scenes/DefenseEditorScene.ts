@@ -24,6 +24,7 @@ import type { Scene } from './SceneManager';
 import { t, type TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
+import { FS } from '../render/fontScale';
 import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import type { WorldApiClient, TeamTemplate, ArmyEntry } from '../net/WorldApiClient';
 import { WorldApiError } from '../net/WorldApiClient';
@@ -315,7 +316,7 @@ export class DefenseEditorScene implements Scene {
     this.renderFooter(h - FOOTER_H);
 
     if (this.loading) {
-      const lbl = txt(t('world.loading'), 13, C.mid);
+      const lbl = txt(t('world.loading'), FS.tiny, C.mid);
       lbl.anchor.set(0.5, 0.5);
       lbl.x = w / 2; lbl.y = h / 2;
       this.bodyLayer.addChild(lbl);
@@ -324,12 +325,12 @@ export class DefenseEditorScene implements Scene {
 
   private renderBaseStepper(rightX: number, y: number): void {
     const btnW = 24, btnH = 24;
-    const lbl = txt(t('world.defense.baseLevel').replace('{lv}', String(this.baseLevel)), 11, C.dark);
+    const lbl = txt(t('world.defense.baseLevel').replace('{lv}', String(this.baseLevel)), FS.micro, C.dark);
     // [-] label [+] laid right-aligned
     const plus = sketchPanel(btnW, btnH, { fill: C.dark, border: C.gold, seed: seedFor(rightX, y, btnW) });
     plus.x = rightX - btnW; plus.y = y;
     this.bodyLayer.addChild(plus);
-    const plusLbl = txt('+', 16, C.light); plusLbl.anchor.set(0.5, 0.5);
+    const plusLbl = txt('+', FS.small, C.light); plusLbl.anchor.set(0.5, 0.5);
     plusLbl.x = plus.x + btnW / 2; plusLbl.y = plus.y + btnH / 2;
     this.bodyLayer.addChild(plusLbl);
     this.hits.push({ rect: { x: plus.x, y: plus.y, w: btnW, h: btnH }, action: () => {
@@ -343,7 +344,7 @@ export class DefenseEditorScene implements Scene {
     const minus = sketchPanel(btnW, btnH, { fill: C.dark, border: C.gold, seed: seedFor(rightX, y + 1, btnW) });
     minus.x = lbl.x - lbl.width - 6 - btnW; minus.y = y;
     this.bodyLayer.addChild(minus);
-    const minusLbl = txt('−', 16, C.light); minusLbl.anchor.set(0.5, 0.5);
+    const minusLbl = txt('−', FS.small, C.light); minusLbl.anchor.set(0.5, 0.5);
     minusLbl.x = minus.x + btnW / 2; minusLbl.y = minus.y + btnH / 2;
     this.bodyLayer.addChild(minusLbl);
     this.hits.push({ rect: { x: minus.x, y: minus.y, w: btnW, h: btnH }, action: () => {
@@ -376,7 +377,7 @@ export class DefenseEditorScene implements Scene {
       });
       box.x = x; box.y = top + 5;
       this.bodyLayer.addChild(box);
-      const lbl = txt(label, 10, active ? C.light : C.dark, true);
+      const lbl = txt(label, FS.micro, active ? C.light : C.dark, true);
       lbl.anchor.set(0.5, 0.5);
       lbl.x = x + btnW / 2; lbl.y = top + 5 + btnH / 2;
       this.bodyLayer.addChild(lbl);
@@ -453,7 +454,7 @@ export class DefenseEditorScene implements Scene {
     }
 
     // Row label (left): defense → building row; attack → spawn row at the home row (bottom).
-    const lbl = txt(this.hasBuildingRow ? t('world.defense.buildRow') : t('world.team.frontRow'), 9, C.mid);
+    const lbl = txt(this.hasBuildingRow ? t('world.defense.buildRow') : t('world.team.frontRow'), FS.micro, C.mid);
     lbl.anchor.set(1, 0.5);
     lbl.x = gridX - 3;
     lbl.y = this.hasBuildingRow ? gridY + cellH / 2 : gridY + (rows - 0.5) * cellH;
@@ -511,11 +512,11 @@ export class DefenseEditorScene implements Scene {
       // committed troops = sum of each unit's allocated HP (§16.5 tap cell to cycle steps; this total is deducted on march).
       ? `${t('world.defense.garrison').replace('{n}', String(this.garrison.size))}   ${t('world.team.committed').replace('{n}', String(this.committedTroops()))}`
       : `${t('world.defense.buildings')} ${this.buildings.size}   ${t('world.defense.garrison').replace('{n}', String(this.garrison.size))}`;
-    const counts = txt(countsStr, 11, C.dark);
+    const counts = txt(countsStr, FS.micro, C.dark);
     counts.x = PAD; counts.y = top + 8;
     this.bodyLayer.addChild(counts);
 
-    const hint = txt(this.mode === 'attack' ? t('world.team.hint') : t('world.defense.hint'), 9, C.mid);
+    const hint = txt(this.mode === 'attack' ? t('world.team.hint') : t('world.defense.hint'), FS.micro, C.mid);
     hint.x = PAD; hint.y = top + 26;
     this.bodyLayer.addChild(hint);
 
@@ -524,7 +525,7 @@ export class DefenseEditorScene implements Scene {
     const save = sketchPanel(btnW, btnH, { fill: C.dark, border: C.gold, seed: seedFor(w, top, btnW) });
     save.x = w - btnW - PAD; save.y = top + (FOOTER_H - btnH) / 2;
     this.bodyLayer.addChild(save);
-    const saveLbl = txt(t('world.defense.save'), 13, C.light, true);
+    const saveLbl = txt(t('world.defense.save'), FS.tiny, C.light, true);
     saveLbl.anchor.set(0.5, 0.5);
     saveLbl.x = save.x + btnW / 2; saveLbl.y = save.y + btnH / 2;
     this.bodyLayer.addChild(saveLbl);
@@ -533,7 +534,7 @@ export class DefenseEditorScene implements Scene {
     const clear = sketchPanel(btnW, btnH, { fill: C.paper, border: C.red, seed: seedFor(w, top + 1, btnW) });
     clear.x = save.x - btnW - 8; clear.y = save.y;
     this.bodyLayer.addChild(clear);
-    const clearLbl = txt(t('world.defense.clear'), 13, C.red, true);
+    const clearLbl = txt(t('world.defense.clear'), FS.tiny, C.red, true);
     clearLbl.anchor.set(0.5, 0.5);
     clearLbl.x = clear.x + btnW / 2; clearLbl.y = clear.y + btnH / 2;
     this.bodyLayer.addChild(clearLbl);
@@ -608,7 +609,7 @@ export class DefenseEditorScene implements Scene {
 
   private showToast(msg: string, color: number = C.dark): void {
     this.toastLayer.removeChildren();
-    const lbl = txt(msg, 26, color);
+    const lbl = txt(msg, FS.heading, color);
     lbl.anchor.set(0.5, 0.5);
     lbl.x = this.w / 2; lbl.y = Math.round(this.h * 2 / 3);
     this.toastLayer.addChild(lbl);

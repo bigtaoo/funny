@@ -25,6 +25,8 @@ export interface WorldsvcEnv extends ServerEnv {
   socialsvcInternalUrl: string | undefined;
   /** admin internal HTTP base URL (polls SLG shop price overrides; if absent, shop always uses SLG_SHOP_ITEMS code defaults). */
   adminInternalUrl: string | undefined;
+  /** Auto-settle SLG seasons when their clock elapses (§17.14). Default on; set NW_SLG_AUTO_SETTLE=0 to keep settlement admin-only. */
+  autoSettleSeasons: boolean;
 }
 
 export function loadWorldsvcEnv(): WorldsvcEnv {
@@ -41,5 +43,6 @@ export function loadWorldsvcEnv(): WorldsvcEnv {
     metaInternalUrl: process.env.NW_META_INTERNAL_URL || undefined,
     socialsvcInternalUrl: process.env.NW_SOCIALSVC_INTERNAL_URL || undefined,
     adminInternalUrl: process.env.NW_ADMIN_INTERNAL_URL || undefined,
+    autoSettleSeasons: process.env.NW_SLG_AUTO_SETTLE !== '0',
   };
 }

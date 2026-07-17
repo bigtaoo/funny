@@ -31,6 +31,7 @@ import * as PIXI from 'pixi.js-legacy';
 import type { Rect } from '../../layout/ILayout';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { buildIcon, type IconKind } from '../../render/icons';
+import { snapFont } from '../../render/fontScale';
 
 export interface HubTab {
   label: string;
@@ -83,7 +84,7 @@ export function drawHubTabs(
     container.addChild(box);
 
     const fg = tab.active ? 0xffffff : C.mid;
-    const lbl = txt(tab.label, Math.round(stripH * 0.42), fg, true);
+    const lbl = txt(tab.label, snapFont(Math.round(stripH * 0.42)), fg, true);
     lbl.anchor.set(0.5, 0.5);
     lbl.y = y + stripH / 2;
 
@@ -187,7 +188,7 @@ export function drawSidebarTabs(
     container.addChild(box);
 
     const fg = tab.active ? 0xffffff : C.mid;
-    const lbl = txt(tab.label, Math.round(itemH * (sub ? 0.28 : 0.24)), fg, true);
+    const lbl = txt(tab.label, snapFont(Math.round(itemH * (sub ? 0.28 : 0.24))), fg, true);
     lbl.anchor.set(0.5, 0.5);
     lbl.x = indent + cellW / 2;
     // Never let a long label ("Hero Roster") spill past the cell and clip off the

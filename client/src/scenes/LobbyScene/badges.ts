@@ -5,6 +5,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { tearDownChildren } from '../../render/sketchUi';
 import { Rect } from '../../layout/ILayout';
 import { C, txt, type Constructor, type LobbySceneBaseCtor } from './base';
+import { snapFont } from '../../render/fontScale';
 
 export interface BadgesHandlers {
   applySocialBadge(total: number): void;
@@ -113,7 +114,7 @@ export function BadgesMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBas
       const cy = s.y + navH / 2 - Math.round(navH * 0.18) - dotR;
 
       const label = this.socialBadge > 99 ? '99+' : String(this.socialBadge);
-      const txtNode = txt(label, Math.round(navH * 0.24), 0xffffff, true);
+      const txtNode = txt(label, snapFont(Math.round(navH * 0.24)), 0xffffff, true);
       txtNode.anchor.set(0.5, 0.5);
       const r = Math.max(Math.round(navH * 0.16), txtNode.width / 2 + Math.round(navH * 0.08));
 
@@ -194,7 +195,7 @@ export function BadgesMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBas
 
       // Small "offline" tag pinned to the top-right corner of the world-map pillar.
       const tagH = Math.round(p.h * 0.22);
-      const lbl = txt('offline', Math.round(tagH * 0.7), 0xffffff, true);
+      const lbl = txt('offline', snapFont(Math.round(tagH * 0.7)), 0xffffff, true);
       const tagW = Math.round(lbl.width + tagH * 0.6);
       const tagX = p.x + p.w - tagW - Math.round(p.h * 0.08);
       const tagY = p.y + Math.round(p.h * 0.08);

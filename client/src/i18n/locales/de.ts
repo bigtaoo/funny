@@ -1336,6 +1336,16 @@ export const de: Record<TranslationKey, string> = {
   'title.ach.pvp.veteran.short': 'Veteran',
   'title.ladder.full': 'Ranglistenprofi',
   'title.ladder.short': 'Rangliste',
+  // SLG-Regionssaison-Titel (slg.s{N}.{key}), nach Abrechnungsstufe (SLG_DESIGN §8.3).
+  'title.slg.champion.full': 'Saisonchampion',
+  'title.slg.champion.short': 'Champ',
+  'title.slg.top3.full': 'Saison-Top-3',
+  'title.slg.top3.short': 'Top 3',
+  // SLG-Saisonabrechnungs-Mail (worldsvc sendet diese Keys; Text mit |rank=|nations= Parametern).
+  'slg.settle.subject': 'SLG-Saison abgerechnet',
+  'slg.settle.body': 'Du belegtest Platz {rank} im regionalen Wettstreit und hältst {nations} Hauptstadt/Hauptstädte. Deine Saisonbelohnungen sind beigefügt.',
+  'slg.settle.bp.subject': 'Battle-Pass-Saisonbonus',
+  'slg.settle.bp.body': 'Als Battle-Pass-Inhaber erhältst du diese zusätzliche Saisonend-Belohnung.',
 
   // ── Zeitlich begrenzte Events (B6) ──────────────────────────────────────
   'event.title': 'Events',

@@ -3,6 +3,7 @@
 // Listing duration is fixed (AUCTION_DURATION_SEC, currently 72h) and no longer user-selectable.
 import * as PIXI from 'pixi.js-legacy';
 import { ui as C, txt, sketchPanel, sketchButton, seedFor } from '../../render/sketchUi';
+import { snapFont } from '../../render/fontScale';
 import { t } from '../../i18n';
 import { buildIcon } from '../../render/icons';
 import { caretDisplay } from '../../render/inputDisplay';
@@ -15,7 +16,10 @@ export interface CreateFormHandlers {
 
 // Dialog is rendered 1.5x larger than the original design for legibility.
 const SCALE = 1.5;
-const ROW = 46 * SCALE;
+// Vertical metrics use an extra 1.2x so the dialog stands 20% taller (roomier row spacing) than its
+// content-derived height, while element widths/fonts stay at SCALE.
+const VA = SCALE * 1.2;
+const ROW = 46 * VA;
 
 export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBase & Constructor<CreateFormHandlers> {
   return class extends Base {
@@ -33,7 +37,7 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
       // Keep the price guardrail band for the current item in sync (fires one fetch per item selection).
       this.ensureRefBand(this.currentListingCategory());
       // item(field=48) + [qty only for material] + saleMode + price(s) + refBand(22) + buyer(label+field=60) + info(26) + buttons(50) + pads(26)
-      const mh = (16 + 48 + 60 + 26 + 22 + 50 + 10) * SCALE + ROW * (1 + (isMaterial ? 1 : 0)) + priceRowsH;
+      const mh = (16 + 48 + 60 + 26 + 22 + 50 + 10) * VA + ROW * (1 + (isMaterial ? 1 : 0)) + priceRowsH;
       const mx = (w - mw) / 2;
       const my = Math.max(50 + 4, (h - mh) / 2);
 
@@ -45,11 +49,11 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
       panel.x = mx; panel.y = my;
       ml.addChild(panel);
 
-      let cy = my + 16 * SCALE;
+      let cy = my + 16 * VA;
 
       // Item — unified selector across material/equipment/card: tap opens a picker listing every sellable
       // item (materials always offered; equipment/card require getSave), sorted by estimated value descending.
-      const il0 = txt(t('auction.item') + ':', 13 * SCALE, C.dark);
+      const il0 = txt(t('auction.item') + ':', snapFont(13 * SCALE), C.dark);
       il0.x = mx + 10 * SCALE; il0.y = cy;
       ml.addChild(il0);
       const selLabel = this.selectedItemLabel();
@@ -59,11 +63,11 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
       const ic = buildIcon(this.itemKind(this.createClass, this.createMaterial), 16 * SCALE, selLabel ? C.dark : C.mid);
       ic.x = mx + 16 * SCALE; ic.y = cy + 24 * SCALE;
       ml.addChild(ic);
-      const fl = txt(selLabel ?? t('auction.tapChoose'), 12 * SCALE, selLabel ? C.dark : C.mid);
+      const fl = txt(selLabel ?? t('auction.tapChoose'), snapFont(12 * SCALE), selLabel ? C.dark : C.mid);
       fl.x = mx + 38 * SCALE; fl.y = cy + 25 * SCALE;
       ml.addChild(fl);
       this.modalHits.push({ rect: { x: mx + 10 * SCALE, y: cy + 18 * SCALE, w: mw - 20 * SCALE, h: 30 * SCALE }, action: () => this.openItemPicker() });
-      cy += 48 * SCALE;
+      cy += 48 * VA;
 
       // Qty (material only; equipment/card are unique instances, qty forced to 1 server-side).
       if (isMaterial) {
@@ -72,7 +76,7 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
       }
 
       // Sale mode toggle (fixed buy-now / auction)
-      const sm0 = txt(t('auction.saleMode') + ':', 13 * SCALE, C.dark);
+      const sm0 = txt(t('auction.saleMode') + ':', snapFont(13 * SCALE), C.dark);
       sm0.x = mx + 10 * SCALE; sm0.y = cy;
       ml.addChild(sm0);
       let sx = mx + 10 * SCALE + sm0.width + 8 * SCALE;
@@ -90,7 +94,7 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
         const mi = buildIcon(this.saleModeKind(md.key), 15 * SCALE, active ? C.light : C.dark);
         mi.x = sx + 6 * SCALE; mi.y = cy + 3 * SCALE;
         ml.addChild(mi);
-        const bl = txt(md.label, 12 * SCALE, active ? C.light : C.dark);
+        const bl = txt(md.label, snapFont(12 * SCALE), active ? C.light : C.dark);
         bl.anchor.set(0.5, 0.5); bl.x = sx + 46 * SCALE; bl.y = cy + 11 * SCALE;
         ml.addChild(bl);
         this.modalHits.push({ rect: { x: sx, y: cy - 2 * SCALE, w: btnW, h: btnH }, action: () => { this.createSaleMode = md.key; this.openCreateForm(); } });
@@ -100,12 +104,12 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
 
       // Price(s) — fixed: single buy-now price; auction: startPrice + optional buyout
       if (auctionMode) {
-        this.addNumInput(ml, mx, cy, t('auction.startPrice') + ':', this.createStartPrice, (v) => { this.createStartPrice = Math.max(1, v); this.openCreateForm(); }, SCALE);
+        this.addNumInput(ml, mx, cy, t('auction.startPrice') + ':', this.createStartPrice, (v) => { this.createStartPrice = Math.max(1, v); this.openCreateForm(); }, SCALE, { editKey: 'startPrice', clamp: (v) => this.clampToBand(v) });
         cy += ROW;
-        this.addNumInput(ml, mx, cy, t('auction.buyout') + ':', this.createBuyoutPrice, (v) => { this.createBuyoutPrice = Math.max(0, v); this.openCreateForm(); }, SCALE);
+        this.addNumInput(ml, mx, cy, t('auction.buyout') + ':', this.createBuyoutPrice, (v) => { this.createBuyoutPrice = Math.max(0, v); this.openCreateForm(); }, SCALE, { editKey: 'buyout' });
         cy += ROW;
       } else {
-        this.addNumInput(ml, mx, cy, t('auction.price') + ':', this.createPrice, (v) => { this.createPrice = Math.max(1, v); this.openCreateForm(); }, SCALE);
+        this.addNumInput(ml, mx, cy, t('auction.price') + ':', this.createPrice, (v) => { this.createPrice = Math.max(1, v); this.openCreateForm(); }, SCALE, { editKey: 'price', clamp: (v) => this.clampToBand(v) });
         cy += ROW;
       }
 
@@ -128,38 +132,38 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
       } else {
         refText = t('auction.refUnrestricted');
       }
-      const refLbl = txt(refText, 11 * SCALE, refColor);
+      const refLbl = txt(refText, snapFont(11 * SCALE), refColor);
       refLbl.x = mx + 10 * SCALE; refLbl.y = cy;
       ml.addChild(refLbl);
-      cy += 22 * SCALE;
+      cy += 22 * VA;
 
       // Designated buyer (optional) — private sale to a specific account.
-      const bl0 = txt(t('auction.buyer') + ':', 12 * SCALE, C.dark);
+      const bl0 = txt(t('auction.buyer') + ':', snapFont(12 * SCALE), C.dark);
       bl0.x = mx + 10 * SCALE; bl0.y = cy;
       ml.addChild(bl0);
       const buyerField = sketchPanel(mw - 20 * SCALE, 28 * SCALE, { fill: 0xfaf9f5, border: this.buyerActive ? C.accent : C.mid, seed: seedFor(cy, 0, mw - 20 * SCALE) });
       buyerField.x = mx + 10 * SCALE; buyerField.y = cy + 18 * SCALE;
       ml.addChild(buyerField);
-      const bfl = txt(caretDisplay(this.createBuyer, this.buyerActive && this.caretOn, t('auction.buyerPlaceholder')), 12 * SCALE, this.createBuyer ? C.dark : C.mid);
+      const bfl = txt(caretDisplay(this.createBuyer, this.buyerActive && this.caretOn, t('auction.buyerPlaceholder')), snapFont(12 * SCALE), this.createBuyer ? C.dark : C.mid);
       bfl.x = mx + 16 * SCALE; bfl.y = cy + 25 * SCALE;
       ml.addChild(bfl);
       this.modalHits.push({ rect: { x: mx + 10 * SCALE, y: cy + 18 * SCALE, w: mw - 20 * SCALE, h: 28 * SCALE }, action: () => this.openBuyerInput() });
-      cy += 60 * SCALE;
+      cy += 60 * VA;
 
       // Tax info — estimate seller proceeds at the floor price (start/buy-now).
       const refPrice = auctionMode ? this.createStartPrice : this.createPrice;
       const youGet = refPrice - Math.floor(refPrice * 0.1);
-      const taxLbl = txt(`${t('auction.youGet')}: ${youGet}`, 12 * SCALE, C.mid);
+      const taxLbl = txt(`${t('auction.youGet')}: ${youGet}`, snapFont(12 * SCALE), C.mid);
       taxLbl.x = mx + 10 * SCALE; taxLbl.y = cy;
       ml.addChild(taxLbl);
-      cy += 26 * SCALE;
+      cy += 26 * VA;
 
       // OK / Cancel
       const btnW = 90 * SCALE, btnH = 32 * SCALE;
       const okBtn = sketchButton(btnW, btnH, seedFor(0, 0, btnW));
       okBtn.x = mx + mw / 2 - 98 * SCALE; okBtn.y = cy;
       ml.addChild(okBtn);
-      const ol = txt(t('auction.create'), 13 * SCALE, C.light);
+      const ol = txt(t('auction.create'), snapFont(13 * SCALE), C.light);
       ol.anchor.set(0.5, 0.5); ol.x = mx + mw / 2 - 53 * SCALE; ol.y = cy + 16 * SCALE;
       ml.addChild(ol);
       this.modalHits.push({ rect: { x: okBtn.x, y: okBtn.y, w: btnW, h: btnH }, action: () => void this.doCreate() });
@@ -171,6 +175,14 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
       cl.x = mx + mw / 2 + 53 * SCALE - 7 * SCALE; cl.y = cy + 16 * SCALE - 7 * SCALE;
       ml.addChild(cl);
       this.modalHits.push({ rect: { x: caBtn.x, y: caBtn.y, w: btnW, h: btnH }, action: () => this.closeModal() });
+    }
+
+    // Snap a typed price into the item's allowed guardrail band: below floor → floor, above ceil → ceil.
+    // With no loaded band (cards / cold-start categories) the price passes through unchanged (min 1).
+    private clampToBand(v: number): number {
+      const b = this.refBand;
+      if (!b) return Math.max(1, v);
+      return Math.min(Math.floor(b.ceil), Math.max(Math.ceil(b.floor), v));
     }
 
     private openBuyerInput(): void {

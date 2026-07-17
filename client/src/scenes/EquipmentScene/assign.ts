@@ -4,6 +4,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { FS } from '../../render/fontScale';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import type { SaveData, EquipSlot, CardInstance } from '../../game/meta/SaveData';
@@ -62,7 +63,7 @@ export function AssignMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       const barBg = new PIXI.Graphics();
       barBg.beginFill(0xf3f1ea).drawRect(sidebarW, top, w - sidebarW, RES_H).endFill();
       this.bodyLayer.addChild(barBg);
-      const title = txt(t('equip.assignTitle').replace('{name}', this.itemLabel(inst.defId, inst.level)), 22, C.dark, true);
+      const title = txt(t('equip.assignTitle').replace('{name}', this.itemLabel(inst.defId, inst.level)), FS.label, C.dark, true);
       title.anchor.set(0.5, 0.5); title.x = sidebarW + (w - sidebarW) / 2; title.y = top + RES_H / 2;
       this.bodyLayer.addChild(title);
 
@@ -70,7 +71,7 @@ export function AssignMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       const listH = h - listY - 8;
       const cards = Object.values(save.cardInv ?? {});
       if (cards.length === 0) {
-        const lbl = txt(t('equip.assignEmpty'), 28, C.mid);
+        const lbl = txt(t('equip.assignEmpty'), FS.heading, C.mid);
         lbl.anchor.set(0.5, 0.5); lbl.x = sidebarW + (w - sidebarW) / 2; lbl.y = listY + listH / 2;
         this.bodyLayer.addChild(lbl);
         return;
@@ -109,10 +110,10 @@ export function AssignMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       dot.x = left + 12; dot.y = cy + 18;
       this.bodyLayer.addChild(dot);
 
-      const nameLbl = txt(t(`card.${card.defId}.name` as TranslationKey), 13, C.dark, true);
+      const nameLbl = txt(t(`card.${card.defId}.name` as TranslationKey), FS.tiny, C.dark, true);
       nameLbl.x = left + 24; nameLbl.y = cy + 8;
       this.bodyLayer.addChild(nameLbl);
-      const lvLbl = txt(`Lv.${card.level}`, 11, C.mid);
+      const lvLbl = txt(`Lv.${card.level}`, FS.micro, C.mid);
       lvLbl.x = left + 24; lvLbl.y = cy + 26;
       this.bodyLayer.addChild(lvLbl);
 
@@ -121,7 +122,7 @@ export function AssignMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       const cur = curId ? save.equipmentInv[curId] : undefined;
       const curLbl = txt(
         cur ? t('equip.assignCurrent').replace('{name}', this.itemLabel(cur.defId, cur.level)) : t('equip.assignSlotFree'),
-        10, cur ? C.gold : C.mid,
+        FS.micro, cur ? C.gold : C.mid,
       );
       curLbl.anchor.set(1, 0.5); curLbl.x = w - 18; curLbl.y = cy + ROW_H / 2 - 2;
       this.bodyLayer.addChild(curLbl);

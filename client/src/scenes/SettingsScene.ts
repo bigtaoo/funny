@@ -10,6 +10,7 @@ import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { caretDisplay } from '../render/inputDisplay';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { buildAvatar, AVATAR_COUNT } from '../render/avatar';
+import { FS, snapFont } from '../render/fontScale';
 
 // ── SettingsScene — personal profile + settings ────────────────────────────────
 //
@@ -265,7 +266,7 @@ export class SettingsScene implements Scene {
       const badge = new PIXI.Graphics();
       badge.beginFill(C.accent); badge.drawCircle(bcx, bcy, badgeR); badge.endFill();
       this.container.addChild(badge);
-      const pencil = txt('✎', Math.round(badgeR * 1.4), 0xffffff, true);
+      const pencil = txt('✎', snapFont(Math.round(badgeR * 1.4)), 0xffffff, true);
       pencil.anchor.set(0.5, 0.5); pencil.x = bcx; pencil.y = bcy;
       this.container.addChild(pencil);
       this.hits.push({ rect: { x: cardX, y: cardY, w: av, h: av }, fn: () => this.openAvatarPicker() });
@@ -277,13 +278,13 @@ export class SettingsScene implements Scene {
     // Stack name / #id / rank vertically next to the avatar; top line rises when
     // there are more lines so the block stays vertically centred on the avatar.
     const nameY = cardY + av * (hasId || hasRank ? 0.28 : 0.34);
-    const name = txt(this.playerName, Math.round(h * 0.04), C.dark, true);
+    const name = txt(this.playerName, FS.headline, C.dark, true);
     name.anchor.set(0, 0.5); name.x = nameX; name.y = nameY;
     this.container.addChild(name);
 
     if (hasId) {
       // Display-only public id (#123456789); the uuid stays server-internal.
-      const idLine = txt(t('settings.playerId', { id: this.cb.publicId! }), Math.round(h * 0.026), C.mid);
+      const idLine = txt(t('settings.playerId', { id: this.cb.publicId! }), FS.heading, C.mid);
       idLine.anchor.set(0, 0.5); idLine.x = nameX; idLine.y = cardY + av * 0.56;
       this.container.addChild(idLine);
     }
@@ -292,7 +293,7 @@ export class SettingsScene implements Scene {
       const pvp = this.cb.pvp!;
       const rankName = t(('rank.' + pvp.rank) as TranslationKey);
       const sub = pvp.rank === 'unranked' ? rankName : `${rankName} · ${pvp.elo}`;
-      const rank = txt(sub, Math.round(h * 0.026), C.gold, true);
+      const rank = txt(sub, FS.heading, C.gold, true);
       rank.anchor.set(0, 0.5); rank.x = nameX; rank.y = cardY + av * (hasId ? 0.82 : 0.68);
       this.container.addChild(rank);
     }
@@ -310,7 +311,7 @@ export class SettingsScene implements Scene {
 
       // Free rename: show a hint instead of the balance line.
       const sub = free ? t('settings.renameFreeHint') : t('settings.coins', { coins });
-      const bal = txt(sub, Math.round(h * 0.022), C.mid);
+      const bal = txt(sub, FS.label, C.mid);
       bal.anchor.set(0, 0.5); bal.x = cardX; bal.y = btnY + Math.round(h * 0.07) + Math.round(h * 0.022);
       this.container.addChild(bal);
     }
@@ -343,7 +344,7 @@ export class SettingsScene implements Scene {
     panel.x = px; panel.y = py;
     this.container.addChild(panel);
 
-    const title = txt(t('settings.avatar'), Math.round(h * 0.03), C.dark, true);
+    const title = txt(t('settings.avatar'), FS.title, C.dark, true);
     title.anchor.set(0.5, 0); title.x = w / 2; title.y = py + Math.round(h * 0.03);
     this.container.addChild(title);
 
@@ -395,7 +396,7 @@ export class SettingsScene implements Scene {
     const cBox = new PIXI.Graphics();
     cBox.beginFill(C.dark); cBox.drawRect(bxx, byy, btnW, btnH); cBox.endFill();
     this.container.addChild(cBox);
-    const cLbl = txt(t('common.close'), Math.round(btnH * 0.36), 0xffffff, true);
+    const cLbl = txt(t('common.close'), snapFont(Math.round(btnH * 0.36)), 0xffffff, true);
     cLbl.anchor.set(0.5, 0.5); cLbl.x = bxx + btnW / 2; cLbl.y = byy + btnH / 2;
     this.container.addChild(cLbl);
     this.hits.push({ rect: { x: bxx, y: byy, w: btnW, h: btnH }, fn: () => this.closeAvatarPicker() });
@@ -407,7 +408,7 @@ export class SettingsScene implements Scene {
   private drawLanguage(): void {
     const { w, h } = this;
     const secY = Math.round(h * 0.48);
-    const label = txt(t('settings.language'), Math.round(h * 0.028), C.dark, true);
+    const label = txt(t('settings.language'), FS.title, C.dark, true);
     label.anchor.set(0, 0.5); label.x = Math.round(w * 0.12); label.y = secY;
     this.container.addChild(label);
 
@@ -432,7 +433,7 @@ export class SettingsScene implements Scene {
       box.x = bx; box.y = btnY;
       this.container.addChild(box);
 
-      const lbl = txt(LOCALE_LABEL[loc], Math.round(btnH * 0.36), on ? 0xffffff : C.dark, on);
+      const lbl = txt(LOCALE_LABEL[loc], snapFont(Math.round(btnH * 0.36)), on ? 0xffffff : C.dark, on);
       lbl.anchor.set(0.5, 0.5); lbl.x = bx + btnW / 2; lbl.y = btnY + btnH / 2;
       this.container.addChild(lbl);
 
@@ -451,7 +452,7 @@ export class SettingsScene implements Scene {
     const { w, h } = this;
     const secY = Math.round(h * 0.73);
     const x = Math.round(w * 0.56);
-    const label = txt(t('settings.help'), Math.round(h * 0.028), C.dark, true);
+    const label = txt(t('settings.help'), FS.title, C.dark, true);
     label.anchor.set(0, 0.5); label.x = x; label.y = secY;
     this.container.addChild(label);
     this.addButton(t('settings.replayTutorial'), secY + Math.round(h * 0.045), C.accent, () => this.cb.onReplayTutorial!(), Math.round(w * 0.4), x);
@@ -462,12 +463,12 @@ export class SettingsScene implements Scene {
     const secY = Math.round(h * 0.73);
     const x = Math.round(w * 0.12);
     const btnW = Math.round(w * 0.4);
-    const label = txt(t('settings.account'), Math.round(h * 0.028), C.dark, true);
+    const label = txt(t('settings.account'), FS.title, C.dark, true);
     label.anchor.set(0, 0.5); label.x = x; label.y = secY;
     this.container.addChild(label);
 
     if (this.cb.offline) {
-      const hint = txt(t('settings.offlineHint'), Math.round(h * 0.022), C.mid);
+      const hint = txt(t('settings.offlineHint'), FS.label, C.mid);
       hint.anchor.set(0, 0.5); hint.x = x; hint.y = secY + Math.round(h * 0.045);
       this.container.addChild(hint);
       if (this.cb.onLogin) {
@@ -526,12 +527,12 @@ export class SettingsScene implements Scene {
     panel.x = px; panel.y = py;
     this.container.addChild(panel);
 
-    const title = txt(t('settings.deleteAccount.confirmTitle'), Math.round(h * 0.03), C.red, true);
+    const title = txt(t('settings.deleteAccount.confirmTitle'), FS.title, C.red, true);
     title.anchor.set(0.5, 0); title.x = w / 2; title.y = py + Math.round(h * 0.03);
     this.container.addChild(title);
 
     const body = new PIXI.Text(t('settings.deleteAccount.confirmBody'), {
-      fontSize: Math.round(h * 0.024), fill: C.dark, fontFamily: 'monospace',
+      fontSize: FS.heading, fill: C.dark, fontFamily: 'monospace',
       wordWrap: true, wordWrapWidth: pw * 0.86, align: 'center', lineHeight: Math.round(h * 0.036),
     });
     body.anchor.set(0.5, 0); body.x = w / 2; body.y = py + Math.round(ph * 0.26);
@@ -545,7 +546,7 @@ export class SettingsScene implements Scene {
     const delBox = new PIXI.Graphics();
     delBox.beginFill(C.red); delBox.drawRect(delX, byy, btnW, btnH); delBox.endFill();
     this.container.addChild(delBox);
-    const delLbl = txt(t('settings.deleteAccount.confirm'), Math.round(btnH * 0.32), 0xffffff, true);
+    const delLbl = txt(t('settings.deleteAccount.confirm'), snapFont(Math.round(btnH * 0.32)), 0xffffff, true);
     delLbl.anchor.set(0.5, 0.5); delLbl.x = delX + btnW / 2; delLbl.y = byy + btnH / 2;
     this.container.addChild(delLbl);
     this.hits.push({ rect: { x: delX, y: byy, w: btnW, h: btnH }, fn: () => void this.submitDelete() });
@@ -553,7 +554,7 @@ export class SettingsScene implements Scene {
     const cBox = new PIXI.Graphics();
     cBox.beginFill(C.mid); cBox.drawRect(cancelX, byy, btnW, btnH); cBox.endFill();
     this.container.addChild(cBox);
-    const cLbl = txt(t('settings.deleteAccount.cancel'), Math.round(btnH * 0.36), 0xffffff, true);
+    const cLbl = txt(t('settings.deleteAccount.cancel'), snapFont(Math.round(btnH * 0.36)), 0xffffff, true);
     cLbl.anchor.set(0.5, 0.5); cLbl.x = cancelX + btnW / 2; cLbl.y = byy + btnH / 2;
     this.container.addChild(cLbl);
     this.hits.push({ rect: { x: cancelX, y: byy, w: btnW, h: btnH }, fn: () => this.closeDelete() });
@@ -578,7 +579,7 @@ export class SettingsScene implements Scene {
     box.x = bx; box.y = y;
     this.container.addChild(box);
 
-    const lbl = txt(label, Math.round(btnH * 0.34), 0xffffff, true);
+    const lbl = txt(label, snapFont(Math.round(btnH * 0.34)), 0xffffff, true);
     lbl.anchor.set(0.5, 0.5); lbl.x = bx + btnW / 2; lbl.y = y + btnH / 2;
     lbl.alpha = enabled ? 1 : 0.6;
     this.container.addChild(lbl);
@@ -589,7 +590,7 @@ export class SettingsScene implements Scene {
   private drawToast(): void {
     const { w, h } = this;
     const to = this.toast!;
-    const label = txt(to.text, Math.round(h * 0.026), 0xffffff, true);
+    const label = txt(to.text, FS.heading, 0xffffff, true);
     label.anchor.set(0.5, 0.5);
     const padX = Math.round(w * 0.04), padY = Math.round(h * 0.014);
     const boxW = label.width + 2 * padX, boxH = label.height + 2 * padY;
@@ -616,7 +617,7 @@ export class SettingsScene implements Scene {
     panel.x = px; panel.y = py;
     this.container.addChild(panel);
 
-    const title = txt(t('settings.renameTitle'), Math.round(h * 0.03), C.dark, true);
+    const title = txt(t('settings.renameTitle'), FS.title, C.dark, true);
     title.anchor.set(0.5, 0); title.x = w / 2; title.y = py + Math.round(h * 0.03);
     this.container.addChild(title);
 
@@ -631,7 +632,7 @@ export class SettingsScene implements Scene {
     this.hits.push({ rect: { x: ibX, y: ibY, w: ibW, h: ibH }, fn: () => this.hiddenInput?.focus() });
 
     const display = caretDisplay(this.renameText, this.caretOn, t('settings.renamePlaceholder'));
-    const field = txt(display, Math.round(ibH * 0.42), (this.renameText || this.caretOn) ? C.dark : C.mid);
+    const field = txt(display, snapFont(Math.round(ibH * 0.42)), (this.renameText || this.caretOn) ? C.dark : C.mid);
     field.anchor.set(0, 0.5); field.x = ibX + Math.round(ibW * 0.04); field.y = ibY + ibH / 2;
     this.container.addChild(field);
 
@@ -643,7 +644,7 @@ export class SettingsScene implements Scene {
     const okBox = new PIXI.Graphics();
     okBox.beginFill(C.green); okBox.drawRect(okX, byy, btnW, btnH); okBox.endFill();
     this.container.addChild(okBox);
-    const okLbl = txt(t('settings.renameConfirm'), Math.round(btnH * 0.36), 0xffffff, true);
+    const okLbl = txt(t('settings.renameConfirm'), snapFont(Math.round(btnH * 0.36)), 0xffffff, true);
     okLbl.anchor.set(0.5, 0.5); okLbl.x = okX + btnW / 2; okLbl.y = byy + btnH / 2;
     this.container.addChild(okLbl);
     this.hits.push({ rect: { x: okX, y: byy, w: btnW, h: btnH }, fn: () => void this.submitRename() });
@@ -651,7 +652,7 @@ export class SettingsScene implements Scene {
     const cBox = new PIXI.Graphics();
     cBox.beginFill(C.mid); cBox.drawRect(cancelX, byy, btnW, btnH); cBox.endFill();
     this.container.addChild(cBox);
-    const cLbl = txt(t('settings.renameCancel'), Math.round(btnH * 0.36), 0xffffff, true);
+    const cLbl = txt(t('settings.renameCancel'), snapFont(Math.round(btnH * 0.36)), 0xffffff, true);
     cLbl.anchor.set(0.5, 0.5); cLbl.x = cancelX + btnW / 2; cLbl.y = byy + btnH / 2;
     this.container.addChild(cLbl);
     this.hits.push({ rect: { x: cancelX, y: byy, w: btnW, h: btnH }, fn: () => this.closeRename() });

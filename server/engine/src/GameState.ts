@@ -1,8 +1,6 @@
 import { Board } from './Board';
 import { Prng } from './math/prng';
 import { Player } from './Player';
-import { resetUnitIds } from './Unit';
-import { resetBuildingIds } from './Building';
 import { EscortUnit, resetEscortIds } from './EscortUnit';
 import { Projectile, resetProjectileIds } from './Projectile';
 import { UNIT_BLUEPRINTS } from './config';
@@ -111,11 +109,41 @@ export class GameState {
 
   private _events: GameEvent[] = [];
 
+  /**
+   * Per-instance unit id counter (units take the id range ≥1000). MUST be instance-scoped,
+   * never a module global: a second GameState built mid-match (e.g. judgeRunner's hash
+   * recompute) would otherwise reset the shared counter, so the live engine's next spawn
+   * reused a still-live id and clobbered it in board.units — orphaning a "ghost" unit that
+   * kept blocking its lane. Starting at 1000 on every instance also keeps ids reproducible
+   * for same-seed replays (ids are not part of matchStateHash, but stay stable regardless).
+   */
+  private _nextUnitId = 1000;
+
+  /** Allocate the next unique unit id for THIS match. All real spawns must use this. */
+  allocUnitId(): number {
+    return this._nextUnitId++;
+  }
+
+  /**
+   * Per-instance building id counter (buildings take the low id range 0–999, capped by
+   * board cells). MUST be instance-scoped for the same reason as _nextUnitId: a second
+   * GameState built mid-match (judgeRunner's hash recompute) would otherwise reset a
+   * shared module global back to 0, so the live engine's next Arrow Tower placement
+   * reused a still-live id and clobbered it in board.buildings (a Map keyed by id) —
+   * orphaning a "ghost" building. Starting at 0 on every instance keeps ids reproducible
+   * for same-seed replays (ids are not part of matchStateHash, but stay stable regardless).
+   */
+  private _nextBuildingId = 0;
+
+  /** Allocate the next unique building id for THIS match. All real placements must use this. */
+  allocBuildingId(): number {
+    return this._nextBuildingId++;
+  }
+
   constructor(seed: number) {
     // Reset entity id counters so ids are reproducible across engine instances
-    // (deterministic replay). Safe because the client runs one game at a time.
-    resetUnitIds();
-    resetBuildingIds();
+    // (deterministic replay). Unit and building ids are per-instance (see _nextUnitId /
+    // _nextBuildingId) and need no reset.
     resetEscortIds();
     resetProjectileIds();
 

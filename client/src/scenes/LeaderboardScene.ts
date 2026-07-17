@@ -8,6 +8,7 @@ import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { buildIcon } from '../render/icons';
+import { FS, snapFont } from '../render/fontScale';
 import { formatLadderTitle, getTitleKeys } from '../game/meta/titles';
 
 // ── LeaderboardScene — global ladder leaderboard (SE-6) ─────────────────────────
@@ -151,7 +152,7 @@ export class LeaderboardScene implements Scene {
 
     // Season subtitle
     if (this.data && this.data.seasonNo > 0) {
-      const sub = txt(t('leaderboard.season', { no: String(this.data.seasonNo) }), Math.round(h * 0.022), C.gold);
+      const sub = txt(t('leaderboard.season', { no: String(this.data.seasonNo) }), FS.label, C.gold);
       sub.anchor.set(1, 0.5); sub.x = w - Math.round(w * 0.04); sub.y = tbH / 2;
       this.container.addChild(sub);
     }
@@ -162,21 +163,21 @@ export class LeaderboardScene implements Scene {
     const bodyH = h - bodyY;
 
     if (!this.cb.loadLeaderboard) {
-      const msg = txt(t('leaderboard.loginRequired'), Math.round(h * 0.03), C.mid);
+      const msg = txt(t('leaderboard.loginRequired'), FS.title, C.mid);
       msg.anchor.set(0.5, 0.5); msg.x = w / 2; msg.y = bodyY + bodyH / 2;
       this.container.addChild(msg);
       return;
     }
 
     if (this.loading) {
-      const msg = txt(t('leaderboard.loading'), Math.round(h * 0.03), C.mid);
+      const msg = txt(t('leaderboard.loading'), FS.title, C.mid);
       msg.anchor.set(0.5, 0.5); msg.x = w / 2; msg.y = bodyY + bodyH / 2;
       this.container.addChild(msg);
       return;
     }
 
     if (!this.data || this.data.entries.length === 0) {
-      const msg = txt(t('leaderboard.empty'), Math.round(h * 0.03), C.mid);
+      const msg = txt(t('leaderboard.empty'), FS.title, C.mid);
       msg.anchor.set(0.5, 0.5); msg.x = w / 2; msg.y = bodyY + bodyH / 2;
       this.container.addChild(msg);
       return;
@@ -190,7 +191,7 @@ export class LeaderboardScene implements Scene {
     const meText = this.data.me
       ? `${t('leaderboard.myRank', { rank: String(this.data.me.rank) })}   ${this.data.me.elo}`
       : t('leaderboard.myRankNone');
-    const meLbl = txt(meText, Math.round(h * 0.026), C.accent, true);
+    const meLbl = txt(meText, FS.heading, C.accent, true);
     meLbl.anchor.set(1, 0.5);
     meLbl.x = w - Math.round(w * 0.04);
     meLbl.y = tbH + Math.round(h * 0.028);
@@ -263,12 +264,12 @@ export class LeaderboardScene implements Scene {
       medal.x = x + Math.round(w * 0.03); medal.y = y + rowH / 2 - medalSz / 2;
       parent.addChild(medal);
     } else {
-      const rankLbl = txt(`#${e.rank}`, Math.round(rowH * 0.5), C.mid);
+      const rankLbl = txt(`#${e.rank}`, snapFont(Math.round(rowH * 0.5)), C.mid);
       rankLbl.anchor.set(0, 0.5); rankLbl.x = x + Math.round(w * 0.03); rankLbl.y = y + rowH / 2;
       parent.addChild(rankLbl);
     }
 
-    const nameLbl = txt(e.displayName || `#${e.publicId}`, Math.round(rowH * 0.48), C.dark);
+    const nameLbl = txt(e.displayName || `#${e.publicId}`, snapFont(Math.round(rowH * 0.48)), C.dark);
     nameLbl.anchor.set(0, 0.5); nameLbl.x = x + Math.round(w * 0.18); nameLbl.y = y + rowH / 2;
     parent.addChild(nameLbl);
 
@@ -277,16 +278,16 @@ export class LeaderboardScene implements Scene {
       const tLabel = keys
         ? (t(keys.shortKey as import('../i18n').TranslationKey) || formatLadderTitle(e.equippedTitle))
         : formatLadderTitle(e.equippedTitle);
-      const titleLbl = txt(`「${tLabel}」`, Math.round(rowH * 0.3), C.mid);
+      const titleLbl = txt(`「${tLabel}」`, snapFont(Math.round(rowH * 0.3)), C.mid);
       titleLbl.anchor.set(0, 0.5); titleLbl.x = nameLbl.x + nameLbl.width + 4; titleLbl.y = y + rowH / 2;
       parent.addChild(titleLbl);
     }
 
-    const pvpRankLbl = txt(e.pvpRank, Math.round(rowH * 0.38), C.mid);
+    const pvpRankLbl = txt(e.pvpRank, snapFont(Math.round(rowH * 0.38)), C.mid);
     pvpRankLbl.anchor.set(0.5, 0.5); pvpRankLbl.x = x + Math.round(w * 0.68); pvpRankLbl.y = y + rowH / 2;
     parent.addChild(pvpRankLbl);
 
-    const eloLbl = txt(String(e.elo), Math.round(rowH * 0.5), isTop3 ? C.gold : C.dark, isTop3);
+    const eloLbl = txt(String(e.elo), snapFont(Math.round(rowH * 0.5)), isTop3 ? C.gold : C.dark, isTop3);
     eloLbl.anchor.set(1, 0.5); eloLbl.x = x + w - Math.round(w * 0.03); eloLbl.y = y + rowH / 2;
     parent.addChild(eloLbl);
   }

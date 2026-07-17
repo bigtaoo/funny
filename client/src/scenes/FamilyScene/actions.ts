@@ -2,6 +2,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { FS } from '../../render/fontScale';
 import type { FamilyView, FamilyMessageView } from '../../net/WorldApiClient';
 import { type Constructor, type FamilySceneBaseCtor } from './base';
 
@@ -64,7 +65,7 @@ export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TB
       ml.addChild(panel);
 
       if (families.length === 0) {
-        const lbl = txt(t('family.noFamily'), 13, C.dark);
+        const lbl = txt(t('family.noFamily'), FS.tiny, C.dark);
         lbl.anchor.set(0.5, 0.5); lbl.x = mx + mw / 2; lbl.y = my + mh / 2;
         ml.addChild(lbl);
         return;
@@ -75,7 +76,7 @@ export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TB
         const row = sketchPanel(mw - 16, 36, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(cy, 0, mw - 16) });
         row.x = mx + 8; row.y = cy;
         ml.addChild(row);
-        const lbl = txt(`[${fam.tag}] ${fam.name} (${fam.memberCount})`, 12, C.dark);
+        const lbl = txt(`[${fam.tag}] ${fam.name} (${fam.memberCount})`, FS.tiny, C.dark);
         lbl.x = mx + 14; lbl.y = cy + 10;
         ml.addChild(lbl);
         const famId = fam.familyId;

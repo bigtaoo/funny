@@ -36,6 +36,8 @@ export class BuildingProductionSystem {
       building.col,
       spawnRow,
       state.unitBlueprints[bp.spawnUnit!],
+      undefined,
+      state.allocUnitId(),
     );
     state.board.addUnit(unit);
 

@@ -17,6 +17,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { SketchPen } from './sketch';
 import { palette } from './theme';
 import { bake } from './bake';
+import { FS } from './fontScale';
 
 /**
  * Shared scene palette. Paper / ruled line / margin / red flow from the theme
@@ -206,7 +207,7 @@ export function drawLoadingOverlay(
   container.addChild(dim);
 
   const display = label + '.'.repeat(dots + 1);
-  const lbl = txt(display, Math.round(h * 0.030), 0xffffff, true);
+  const lbl = txt(display, FS.title, 0xffffff, true);
   const padX = Math.round(w * 0.08);
   const padY = Math.round(h * 0.022);
   const bw = Math.max(lbl.width + padX * 2, Math.round(w * 0.40));

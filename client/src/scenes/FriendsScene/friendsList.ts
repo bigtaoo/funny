@@ -2,6 +2,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t, TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
+import { FS, snapFont } from '../../render/fontScale';
 import type { FriendView, FriendRequestView } from '../../net/ApiClient';
 import { rankLabel, type Constructor, type FriendsSceneBaseCtor } from './base';
 
@@ -37,7 +38,7 @@ export function FriendsListMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase
       this.container.addChild(layer);
 
       if (this.loading) {
-        const l = txt(t('friends.loading'), Math.round(h * 0.03), C.mid);
+        const l = txt(t('friends.loading'), FS.title, C.mid);
         l.anchor.set(0.5, 0.5); l.x = this.cCX; l.y = this.regionTop + regionH / 2;
         layer.addChild(l);
         this.maxScroll = 0;
@@ -49,7 +50,7 @@ export function FriendsListMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase
       const screenY = (contentY: number) => this.regionTop + contentY - this.scrollY;
 
       const sectionLabel = (key: TranslationKey, count?: number): void => {
-        const label = txt(count !== undefined ? `${t(key)} (${count})` : t(key), Math.round(h * 0.024), C.mid, true);
+        const label = txt(count !== undefined ? `${t(key)} (${count})` : t(key), FS.heading, C.mid, true);
         label.anchor.set(0, 0.5); label.x = this.cX; label.y = screenY(cy + Math.round(h * 0.018));
         layer.addChild(label);
         cy += Math.round(h * 0.045);
@@ -68,7 +69,7 @@ export function FriendsListMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase
 
       sectionLabel('friends.sectionFriends', this.friends.length);
       if (this.friends.length === 0) {
-        const empty = txt(t('friends.empty'), Math.round(h * 0.024), C.mid);
+        const empty = txt(t('friends.empty'), FS.heading, C.mid);
         empty.anchor.set(0.5, 0); empty.x = this.cCX; empty.y = screenY(cy + Math.round(h * 0.02));
         layer.addChild(empty);
         cy += Math.round(h * 0.08);
@@ -99,10 +100,10 @@ export function FriendsListMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase
       sketchAccentBar(bg, rh, C.gold, seedFor(rx, rh, 5));
       layer.addChild(bg);
 
-      const name = txt(r.fromName || t('friends.you'), Math.round(rh * 0.32), C.dark, true);
+      const name = txt(r.fromName || t('friends.you'), snapFont(Math.round(rh * 0.32)), C.dark, true);
       name.anchor.set(0, 0.5); name.x = rx + Math.round(rw * 0.06); name.y = y + rh * 0.36;
       layer.addChild(name);
-      const id = txt(`#${r.fromPublicId}`, Math.round(rh * 0.22), C.mid);
+      const id = txt(`#${r.fromPublicId}`, snapFont(Math.round(rh * 0.22)), C.mid);
       id.anchor.set(0, 0.5); id.x = rx + Math.round(rw * 0.06); id.y = y + rh * 0.70;
       layer.addChild(id);
 
@@ -112,9 +113,9 @@ export function FriendsListMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase
       const rejX = rx + rw - bW - Math.round(rw * 0.03);
       const accX = rejX - bW - Math.round(rw * 0.02);
       this.addButton(t('friends.accept'), accX, bY, bW, bH, C.green, C.green,
-        () => void this.doRespond(r.requestId, true), 0xffffff, Math.round(bH * 0.4), layer);
+        () => void this.doRespond(r.requestId, true), 0xffffff, snapFont(Math.round(bH * 0.4)), layer);
       this.addButton(t('friends.reject'), rejX, bY, bW, bH, C.paper, C.red,
-        () => void this.doRespond(r.requestId, false), C.red, Math.round(bH * 0.4), layer);
+        () => void this.doRespond(r.requestId, false), C.red, snapFont(Math.round(bH * 0.4)), layer);
     }
 
     private drawFriendRow(layer: PIXI.Container, f: FriendView, _contentY: number, y: number): void {
@@ -137,13 +138,13 @@ export function FriendsListMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase
       layer.addChild(dot);
 
       const tx = rx + Math.round(rw * 0.12);
-      const name = txt(f.alias || f.displayName, Math.round(rh * 0.30), C.dark, true);
+      const name = txt(f.alias || f.displayName, snapFont(Math.round(rh * 0.30)), C.dark, true);
       name.anchor.set(0, 0.5); name.x = tx; name.y = y + rh * 0.34;
       layer.addChild(name);
 
       const statusTxt = t(f.online ? 'friends.online' : 'friends.offline');
       const idRank = `#${f.publicId}${f.rank ? '  ·  ' + rankLabel(f.rank) : ''}  ·  ${statusTxt}`;
-      const sub = txt(idRank, Math.round(rh * 0.2), C.mid);
+      const sub = txt(idRank, snapFont(Math.round(rh * 0.2)), C.mid);
       sub.anchor.set(0, 0.5); sub.x = tx; sub.y = y + rh * 0.68;
       layer.addChild(sub);
 
@@ -151,7 +152,7 @@ export function FriendsListMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase
       const xX = rx + rw - xW - Math.round(rw * 0.03);
       const xY = y + (rh - xW) / 2;
       this.addButton('✕', xX, xY, xW, xW, C.paper, C.red,
-        () => void this.doRemove(f.publicId), C.red, Math.round(xW * 0.5), layer);
+        () => void this.doRemove(f.publicId), C.red, snapFont(Math.round(xW * 0.5)), layer);
 
       this.hits.push({ rect: { x: rx, y, w: rw, h: rh }, scroll: true, fn: () => this.openFriendProfile(f) });
     }

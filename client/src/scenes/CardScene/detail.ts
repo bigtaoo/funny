@@ -3,6 +3,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { FS } from '../../render/fontScale';
 import { UNIT_ART_URLS } from '../../render/cardArt';
 import { buildIcon } from '../../render/icons';
 import { drawEquipmentGlyph } from '../../render/equipmentGlyph';
@@ -87,12 +88,12 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
 
       // Name + faction
       const factionColor = def?.faction === 'anna' ? 0xcc4466 : 0x4477cc;
-      const nameLbl = txt(t(`card.${card.defId}.name` as TranslationKey), 16, C.dark, true);
+      const nameLbl = txt(t(`card.${card.defId}.name` as TranslationKey), FS.small, C.dark, true);
       nameLbl.x = mx + 12; nameLbl.y = cy;
       panelRoot.addChild(nameLbl);
 
       const facStr = def ? t(`roster.faction.${def.faction}` as TranslationKey) : '';
-      const facLbl = txt(facStr, 10, factionColor);
+      const facLbl = txt(facStr, FS.micro, factionColor);
       facLbl.anchor.set(1, 0); facLbl.x = mx + mw - 12; facLbl.y = cy + 3;
       panelRoot.addChild(facLbl);
       cy += 26;
@@ -136,12 +137,12 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
 
       const statX = portraitX + portraitBox + 14;
       let statY = portraitY + 2;
-      const lvLine = txt(t('roster.level').replace('{lv}', String(card.level)), 13, C.mid, true);
+      const lvLine = txt(t('roster.level').replace('{lv}', String(card.level)), FS.tiny, C.mid, true);
       lvLine.x = statX; lvLine.y = statY;
       panelRoot.addChild(lvLine);
       statY += 20;
 
-      const pwrLine = txt(`${t('roster.power')} ${power}`, 13, C.dark, true);
+      const pwrLine = txt(`${t('roster.power')} ${power}`, FS.tiny, C.dark, true);
       pwrLine.x = statX; pwrLine.y = statY;
       panelRoot.addChild(pwrLine);
       statY += 20;
@@ -150,13 +151,13 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
       const troopStr = state !== undefined
         ? `${t('roster.troopCap')}: ${state.currentTroops}/${cap}`
         : `${t('roster.troopCap')}: ${cap}`;
-      const troopLine = txt(troopStr, 11, state !== undefined && state.currentTroops >= cap ? C.gold : C.dark);
+      const troopLine = txt(troopStr, FS.micro, state !== undefined && state.currentTroops >= cap ? C.gold : C.dark);
       troopLine.x = statX; troopLine.y = statY;
       panelRoot.addChild(troopLine);
       statY += 18;
 
       if (inTeam) {
-        const tag = txt(`[${t('roster.inTeam')}]`, 10, C.accent, true);
+        const tag = txt(`[${t('roster.inTeam')}]`, FS.micro, C.accent, true);
         tag.x = statX; tag.y = statY;
         panelRoot.addChild(tag);
         statY += 16;
@@ -166,7 +167,7 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
 
       // Injury status + recover button
       if (isInjured && state?.injuredUntil) {
-        const injLine = txt(t('roster.injured').replace('{time}', injuryCountdown(state.injuredUntil, now)), 11, C.red);
+        const injLine = txt(t('roster.injured').replace('{time}', injuryCountdown(state.injuredUntil, now)), FS.micro, C.red);
         injLine.x = mx + 12; injLine.y = cy;
         panelRoot.addChild(injLine);
 
@@ -175,7 +176,7 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
           const recBtn = sketchPanel(recBtnW, 22, { fill: 0xf0e0e0, border: C.red, seed: seedFor(cy, 3, recBtnW) });
           recBtn.x = mx + mw - 12 - recBtnW; recBtn.y = cy - 1;
           panelRoot.addChild(recBtn);
-          const recLbl = txt(t('roster.recoverBtn'), 10, C.dark);
+          const recLbl = txt(t('roster.recoverBtn'), FS.micro, C.dark);
           recLbl.anchor.set(0.5, 0.5); recLbl.x = recBtn.x + recBtnW / 2; recLbl.y = recBtn.y + 11;
           panelRoot.addChild(recLbl);
           this.modalHits.push({
@@ -191,7 +192,7 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
       const skillVal = def ? def.skillGrowth[Math.max(0, card.level - 1)] : 0;
       const hasSkill = def?.faction === 'anna' && skillVal > 0;
       const skillKey = hasSkill ? `card.${card.defId}.desc` as TranslationKey : 'roster.skillNone' as TranslationKey;
-      const skillLine = txt(`${t('roster.skill')}: ${t(skillKey)}`, 11, hasSkill ? C.accent : C.mid);
+      const skillLine = txt(`${t('roster.skill')}: ${t(skillKey)}`, FS.micro, hasSkill ? C.accent : C.mid);
       skillLine.x = mx + 12; skillLine.y = cy;
       skillLine.style.wordWrap = true; skillLine.style.wordWrapWidth = mw - 24;
       panelRoot.addChild(skillLine);
@@ -209,8 +210,8 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
         panelRoot.addChild(barFill);
       }
       const xpLbl = maxLevel
-        ? txt(t('roster.maxLevel'), 10, C.gold, true)
-        : txt(`${card.xp} / ${xpNeeded} XP`, 10, C.mid);
+        ? txt(t('roster.maxLevel'), FS.micro, C.gold, true)
+        : txt(`${card.xp} / ${xpNeeded} XP`, FS.micro, C.mid);
       xpLbl.anchor.set(0.5, 0); xpLbl.x = mx + mw / 2; xpLbl.y = cy + 12;
       panelRoot.addChild(xpLbl);
       cy += 26;
@@ -247,7 +248,7 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
         const g = sketchPanel(bw, btnH, { fill: b.on ? b.fill : C.btnOff, border: b.on ? b.stroke : C.mid, seed: seedFor(i, 6, bw) });
         g.x = x; g.y = btnY;
         panelRoot.addChild(g);
-        const lbl = txt(b.label, 11, b.on ? (b.fill === 0xeeeedd || b.fill === 0xf5f0e8 ? C.dark : C.light) : C.mid);
+        const lbl = txt(b.label, FS.micro, b.on ? (b.fill === 0xeeeedd || b.fill === 0xf5f0e8 ? C.dark : C.light) : C.mid);
         lbl.anchor.set(0.5, 0.5); lbl.x = x + bw / 2; lbl.y = btnY + btnH / 2;
         panelRoot.addChild(lbl);
         if (b.on) this.modalHits.push({ rect: this.toModalScreen({ x, y: btnY, w: bw, h: btnH }), action: b.fn });
@@ -277,7 +278,7 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
           const row = sketchPanel(pW - 8, rowH, { fill: isEq ? C.dark : 0xf5f0e8, border: isEq ? C.green : C.mid, seed: seedFor(i, ry, pW) });
           row.x = pX + 4; row.y = ry;
           panelRoot.addChild(row);
-          const lbl = txt(opt.label, 11, isEq ? C.light : C.dark, true);
+          const lbl = txt(opt.label, FS.micro, isEq ? C.light : C.dark, true);
           lbl.anchor.set(0.5, 0.5); lbl.x = pX + pW / 2; lbl.y = ry + rowH / 2;
           panelRoot.addChild(lbl);
           if (!isEq) {
@@ -305,7 +306,7 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
       const bg = new PIXI.Graphics();
       bg.beginFill(0xf0eee7).drawRect(-box / 2, -box / 2, box, box).endFill();
       container.addChild(bg);
-      const lore = txt(loreText, 9, C.mid);
+      const lore = txt(loreText, FS.micro, C.mid);
       lore.style.wordWrap = true;
       lore.style.wordWrapWidth = box - 10;
       lore.x = -box / 2 + 5; lore.y = -box / 2 + 5;
@@ -370,12 +371,12 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
           root.addChild(gfx);
         }
 
-        const slotLbl = txt(t(`equip.slot.${slot}` as TranslationKey), 9, inst ? C.mid : C.light);
+        const slotLbl = txt(t(`equip.slot.${slot}` as TranslationKey), FS.micro, inst ? C.mid : C.light);
         slotLbl.anchor.set(0.5, 0); slotLbl.x = iconCx; slotLbl.y = cy + cellH - 16;
         root.addChild(slotLbl);
 
         if (inst) {
-          const badge = txt(`+${inst.level}`, 10, C.dark, true);
+          const badge = txt(`+${inst.level}`, FS.micro, C.dark, true);
           badge.anchor.set(1, 0); badge.x = x + cellW - 4; badge.y = cy + 4;
           root.addChild(badge);
         }

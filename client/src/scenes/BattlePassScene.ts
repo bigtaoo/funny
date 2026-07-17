@@ -5,6 +5,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
 import { buildIcon, type IconKind } from '../render/icons';
+import { FS, snapFont } from '../render/fontScale';
 import { buildCoinIcon } from '../render/coinIconAtlas';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
@@ -85,6 +86,12 @@ export class BattlePassScene implements Scene {
   private scrollY = 0;
   private scrollMax = 0;
   private dragStart: { x: number; y: number; scroll: number } | null = null;
+  /**
+   * One-shot flag: on the first render that has battle-pass data we auto-scroll so the current
+   * level lands on the 3rd visible reward row (two earned rows above it as context). Subsequent
+   * renders (claim / toast / manual drag) must not snap back, so this only runs once.
+   */
+  private scrolledToCurrent = false;
 
   // Scroll-drag fast path (avoids full tearDownChildren+redraw of all 30 reward cells per
   // pointermove — that was the dropped-frames cause). handleMove only repositions
@@ -150,8 +157,15 @@ export class BattlePassScene implements Scene {
     if (!this.scrollContainer) return;
     const sy = Math.min(this.scrollY, this.scrollMax);
     this.scrollContainer.y = this.bodyTopY - sy;
+    // Cell hit rects are pure math, not clipped by the scroll mask — so a cell scrolled *out* of
+    // the viewport (above bodyTopY, or below the bottom edge) still has a live rect that could
+    // steal a tap meant for the header/XP bar. Keep only cells whose rect intersects the viewport.
+    const vTop = this.scrollView.y;
+    const vBot = this.scrollView.y + this.scrollView.h;
     this.hits = this.staticHits.concat(
-      this.scrollCellDefs.map((d) => ({ rect: { x: d.x, y: this.bodyTopY - sy + d.cellY, w: d.w, h: d.h }, fn: d.fn })),
+      this.scrollCellDefs
+        .map((d) => ({ rect: { x: d.x, y: this.bodyTopY - sy + d.cellY, w: d.w, h: d.h }, fn: d.fn }))
+        .filter((hit) => hit.rect.y + hit.rect.h > vTop && hit.rect.y < vBot),
     );
     if (this.scrollbar) { this.scrollbar.destroy(); this.scrollbar = null; }
     this.scrollbar = drawScrollIndicator(this.container, this.scrollView, sy, this.scrollMax);
@@ -232,7 +246,7 @@ export class BattlePassScene implements Scene {
 
     // ── Auth / offline guard ──────────────────────────────────────────────────
     if (!this.cb.getBattlePass) {
-      const msg = txt(t('battlepass.loginRequired'), Math.round(h * 0.03), C.mid);
+      const msg = txt(t('battlepass.loginRequired'), FS.title, C.mid);
       msg.anchor.set(0.5, 0.5); msg.x = centerX; msg.y = h / 2;
       this.container.addChild(msg);
       this.renderToast();
@@ -268,7 +282,7 @@ export class BattlePassScene implements Scene {
     const isMaxed = currentLevel >= BATTLEPASS_MAX_LEVEL;
     const levelLbl = txt(
       isMaxed ? t('battlepass.maxLevel') : t('battlepass.level', { n: String(currentLevel) }),
-      Math.round(barH * 0.55), 0xffffff, true,
+      snapFont(Math.round(barH * 0.55)), 0xffffff, true,
     );
     levelLbl.anchor.set(0, 0.5); levelLbl.x = pad + Math.round(barW * 0.03); levelLbl.y = y + barH / 2;
     this.container.addChild(levelLbl);
@@ -277,7 +291,7 @@ export class BattlePassScene implements Scene {
       isMaxed
         ? t('battlepass.xpProgress', { xp: String(maxXp), total: String(maxXp) })
         : t('battlepass.xpStatus', { xp: String(xp), n: String(xpToNextLevel(xp)) }),
-      Math.round(barH * 0.42), C.light,
+      snapFont(Math.round(barH * 0.42)), C.light,
     );
     xpLbl.anchor.set(1, 0.5); xpLbl.x = pad + barW - Math.round(barW * 0.03); xpLbl.y = y + barH / 2;
     this.container.addChild(xpLbl);
@@ -288,7 +302,7 @@ export class BattlePassScene implements Scene {
     if (!isMaxed) {
       const hint = txt(
         t('battlepass.xpEarnHint', { win: String(BP_XP_PER_RANKED_WIN), loss: String(BP_XP_PER_RANKED_LOSS) }),
-        Math.round(h * 0.024), C.mid,
+        FS.heading, C.mid,
       );
       hint.anchor.set(0, 0.5); hint.x = pad + Math.round(barW * 0.01); hint.y = y + Math.round(h * 0.016);
       this.container.addChild(hint);
@@ -304,7 +318,7 @@ export class BattlePassScene implements Scene {
       const btnBox = sketchPanel(barW, buyAreaH, { fill: 0xfef8e0, border: C.gold, width: 2, seed: seedFor(0, y, barW) });
       btnBox.x = pad; btnBox.y = y;
       this.container.addChild(btnBox);
-      const btnLbl = txt(t('battlepass.buy', { coins: String(BATTLEPASS_BUY_COST) }), Math.round(buyAreaH * 0.5), C.gold, true);
+      const btnLbl = txt(t('battlepass.buy', { coins: String(BATTLEPASS_BUY_COST) }), snapFont(Math.round(buyAreaH * 0.5)), C.gold, true);
       btnLbl.anchor.set(0.5, 0.5); btnLbl.x = centerX; btnLbl.y = y + buyAreaH / 2;
       this.container.addChild(btnLbl);
       this.hits.push({
@@ -336,6 +350,18 @@ export class BattlePassScene implements Scene {
     const scrollMax = Math.max(0, totalContentH - scrollBodyH);
     this.scrollMax = scrollMax;
     this.scrollView = { x: pad, y: bodyTopY, w: barW, h: scrollBodyH };
+
+    // First open: drop the current level onto the 3rd reward row (rows for currentLevel-2 and
+    // currentLevel-1 sit above it). cellY(level) = headerH + (level-1)*(cellH+cellGap); to place it
+    // two rows down from the viewport top we subtract two row heights. Clamped to the scroll range,
+    // so early levels (where the target is negative) stay pinned at the top.
+    if (!this.scrolledToCurrent) {
+      const rowStride = cellH + cellGap;
+      const target = headerH + (currentLevel - 3) * rowStride;
+      this.scrollY = Math.max(0, Math.min(scrollMax, target));
+      this.scrolledToCurrent = true;
+    }
+
     const sy = Math.min(this.scrollY, scrollMax);
 
     const scrollContainer = new PIXI.Container();
@@ -346,11 +372,11 @@ export class BattlePassScene implements Scene {
     this.scrollCellDefs = [];
 
     // Column headers
-    const freeHdr = txt(t('battlepass.free'), Math.round(headerH * 0.6), C.accent, true);
+    const freeHdr = txt(t('battlepass.free'), snapFont(Math.round(headerH * 0.6)), C.accent, true);
     freeHdr.anchor.set(0.5, 0.5); freeHdr.x = freeX + halfW / 2; freeHdr.y = headerH / 2;
     scrollContainer.addChild(freeHdr);
 
-    const paidHdr = txt(t('battlepass.paid'), Math.round(headerH * 0.6), C.gold, true);
+    const paidHdr = txt(t('battlepass.paid'), snapFont(Math.round(headerH * 0.6)), C.gold, true);
     paidHdr.anchor.set(0.5, 0.5); paidHdr.x = paidX + halfW / 2; paidHdr.y = headerH / 2;
     scrollContainer.addChild(paidHdr);
 
@@ -433,7 +459,7 @@ export class BattlePassScene implements Scene {
     parent.addChild(box);
 
     // Level badge (+ a gold star flag on milestone rows).
-    const lvlTxt = txt(t('battlepass.level', { n: String(level) }), Math.round(h * 0.32), C.mid);
+    const lvlTxt = txt(t('battlepass.level', { n: String(level) }), snapFont(Math.round(h * 0.32)), C.mid);
     lvlTxt.anchor.set(0, 0); lvlTxt.x = x + Math.round(w * 0.05); lvlTxt.y = y + Math.round(h * 0.08);
     parent.addChild(lvlTxt);
     if (milestone) {
@@ -463,7 +489,7 @@ export class BattlePassScene implements Scene {
         glyph.x = x + w / 2 - ic / 2; glyph.y = cy - ic / 2;
         parent.addChild(glyph);
       } else {
-        const rew = txt(`×${reward.count}`, Math.round(h * 0.4), rewardColor, state === 'claimable');
+        const rew = txt(`×${reward.count}`, snapFont(Math.round(h * 0.4)), rewardColor, state === 'claimable');
         const gap = Math.round(w * 0.02);
         const groupW = ic + gap + rew.width;
         const gx = x + w / 2 - groupW / 2;
@@ -490,7 +516,7 @@ export class BattlePassScene implements Scene {
 
       if (stateLbl) {
         const stateColor = state === 'claimable' ? C.green : C.mid;
-        const sl = txt(stateLbl, Math.round(h * 0.34), stateColor, state === 'claimable');
+        const sl = txt(stateLbl, snapFont(Math.round(h * 0.34)), stateColor, state === 'claimable');
         sl.anchor.set(1, 1); sl.x = anchorX; sl.y = anchorY;
         parent.addChild(sl);
       }
@@ -520,7 +546,7 @@ export class BattlePassScene implements Scene {
     const tBg = new PIXI.Graphics();
     tBg.beginFill(C.dark, 0.88).drawRoundedRect(Math.round(w * 0.15), Math.round(toastCy - h * 0.08), Math.round(w * 0.7), Math.round(h * 0.16), 8).endFill();
     this.container.addChild(tBg);
-    const tTxt = txt(this.toast, Math.round(h * 0.056), 0xffffff);
+    const tTxt = txt(this.toast, FS.display, 0xffffff);
     tTxt.anchor.set(0.5, 0.5); tTxt.x = w / 2; tTxt.y = toastCy;
     this.container.addChild(tTxt);
   }

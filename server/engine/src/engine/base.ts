@@ -195,7 +195,7 @@ export class GameEngineBase {
       if (config.level.garrison) {
         for (const entry of config.level.garrison) {
           const bp = this.state.unitBlueprints[entry.unitType];
-          const unit = new Unit(entry.unitType, Side.Top, entry.col, entry.row, bp, entry.initialHp);
+          const unit = new Unit(entry.unitType, Side.Top, entry.col, entry.row, bp, entry.initialHp, this.state.allocUnitId());
           this.state.board.addUnit(unit);
           this.garrisonUnits.push(unit);
         }
@@ -209,7 +209,7 @@ export class GameEngineBase {
       if (config.level.attackerArmy) {
         for (const entry of config.level.attackerArmy) {
           const bp = this.state.unitBlueprints[entry.unitType];
-          const unit = new Unit(entry.unitType, Side.Bottom, entry.col, entry.row, bp, entry.initialHp);
+          const unit = new Unit(entry.unitType, Side.Bottom, entry.col, entry.row, bp, entry.initialHp, this.state.allocUnitId());
           this.state.board.addUnit(unit);
           this.attackerArmyUnits.push(unit);
         }
@@ -219,7 +219,7 @@ export class GameEngineBase {
       // Tracked in defenderBuildingList[] for emitInitialEvents() event emission.
       if (config.level.defenderBuildings) {
         for (const entry of config.level.defenderBuildings) {
-          const building = new Building(entry.buildingType, Side.Top, entry.col, TOP_BUILDING_ROW);
+          const building = new Building(entry.buildingType, Side.Top, entry.col, TOP_BUILDING_ROW, undefined, this.state.allocBuildingId());
           this.state.board.addBuilding(building);
           this.defenderBuildingList.push(building);
         }

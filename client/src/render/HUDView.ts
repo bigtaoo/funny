@@ -6,16 +6,17 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { t } from '../i18n';
 import { getLabelTexture } from './labelDecor';
 import { drawHudButton, hudButtonText, HudButtonVariant } from './hudButton';
+import { FS, snapFont } from './fontScale';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const TEXT_STYLE  = { fontSize: 14, fill: 0x222222, fontFamily: 'monospace' } as const;
-const SMALL_STYLE = { fontSize: 11, fill: 0x555555, fontFamily: 'monospace' } as const;
+const TEXT_STYLE  = { fontSize: FS.tiny, fill: 0x222222, fontFamily: 'monospace' } as const;
+const SMALL_STYLE = { fontSize: FS.micro, fill: 0x555555, fontFamily: 'monospace' } as const;
 // Surrender button — top strip.
 const BTN_W       = 100;
 const BTN_H       = 30;
 // Bottom action buttons (upgrade / refresh) — larger, laid out inside hudBottomRightRect.
-const ACTION_LABEL_STYLE = { fontSize: 30, fill: 0x555555, fontFamily: 'monospace', fontWeight: 'bold' } as const;
+const ACTION_LABEL_STYLE = { fontSize: FS.title, fill: 0x555555, fontFamily: 'monospace', fontWeight: 'bold' } as const;
 
 const HP_CELLS    = 10;
 const HP_CELL_W   = 14;
@@ -66,6 +67,8 @@ export class HUDView {
   private _enemyInfoRect:   Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Local player info area (bottom strip, left) — profile tap (S1 net). */
   private _playerInfoRect:  Rect = { x: 0, y: 0, w: 0, h: 0 };
+  /** Enemy HP bar (top strip, board-centered) — the opponent name button anchors to its left. */
+  private _enemyHpRect:     Rect = { x: 0, y: 0, w: 0, h: 0 };
 
   /** True when upgrade is currently affordable (set each frame by sync). */
   upgradeEnabled = false;
@@ -88,6 +91,9 @@ export class HUDView {
   getSurrenderConfirmRect(): Rect | null { return this._surrenderConfirmRect; }
   getEnemyInfoRect():        Rect        { return this._enemyInfoRect; }
   getPlayerInfoRect():       Rect        { return this._playerInfoRect; }
+  getEnemyHpRect():          Rect        { return this._enemyHpRect; }
+  /** Tighten the opponent profile-tap region to the name button (set by GameRenderer). */
+  setEnemyInfoRect(r: Rect): void        { this._enemyInfoRect = r; }
 
   // ── Per-frame sync ─────────────────────────────────────────────────────────
 
@@ -147,7 +153,7 @@ export class HUDView {
     overlay.addChild(panel);
 
     const title = new PIXI.Text(t('hud.surrenderTitle'), {
-      fontSize: Math.round(pH * 0.18), fill: 0x222222,
+      fontSize: snapFont(Math.round(pH * 0.18)), fill: 0x222222,
       fontWeight: 'bold', fontFamily: 'monospace',
     });
     title.anchor.set(0.5, 0);
@@ -191,7 +197,7 @@ export class HUDView {
     bg.drawRoundedRect(-160, -50, 320, 100, 8);
     bg.endFill();
     const msg  = winner === null ? t('hud.draw') : (winner === localOwner ? t('hud.win') : t('hud.lose'));
-    const text = new PIXI.Text(msg, { fontSize: 38, fill: 0xffffff, fontWeight: 'bold' });
+    const text = new PIXI.Text(msg, { fontSize: FS.headline, fill: 0xffffff, fontWeight: 'bold' });
     text.anchor.set(0.5);
     overlay.addChild(bg, text);
 
@@ -217,8 +223,15 @@ export class HUDView {
   // ── Private build ──────────────────────────────────────────────────────────
 
   private build(): void {
-    const { hudTopRect: topR, hudBottomLeftRect: bLR, hudBottomRightRect: bRR } = this.layout;
+    const { hudTopRect: topR, hudBottomLeftRect: bLR, hudBottomRightRect: bRR, boardRect: board } = this.layout;
     const isLandscape = this.layout.orientation === 'landscape';
+    // In landscape the design space can be far wider than the centered board, so
+    // top-strip elements anchor to the board's horizontal extent (its left edge,
+    // center, and right edge) instead of the design edges — keeping the timer,
+    // enemy HP bar, and surrender button locked to the board like the bottom
+    // strip. Portrait keeps its own full-width top-strip anchoring.
+    const boardLeft  = board.x;
+    const boardRight = board.x + board.w;
 
     // Top strip background
     const topBg = new PIXI.Graphics();
@@ -226,37 +239,30 @@ export class HUDView {
     topBg.drawRect(topR.x, topR.y, topR.w, topR.h);
     topBg.endFill();
 
-    // On ultra-wide screens the board is centered in a design space wider than the
-    // classic 1920 reference, leaving the bottom-strip side columns (whose x anchors
-    // hudBottomLeftRect/hudBottomRightRect already pull inward toward that same
-    // center — see LandscapeLayout/PortraitLayout) stranded near the screen edges.
-    // Mirror the same inward pull for the top strip's timer/surrender button so all
-    // four HUD corners move together instead of only two of them. `inset` is 0 at
-    // the reference aspect (bLR.x === 0), so this is a no-op there.
-    const inset = bLR.x;
-
-    // Timer
-    this.timerText   = new PIXI.Text('0:00', { ...TEXT_STYLE, fontSize: 34 });
-    this.timerText.x = topR.x + 14 + inset;
+    // Timer — landscape hugs the board's left edge; portrait keeps the strip edge.
+    this.timerText   = new PIXI.Text('0:00', { ...TEXT_STYLE, fontSize: FS.title });
+    this.timerText.x = (isLandscape ? boardLeft : topR.x) + 14;
     this.timerText.y = topR.y + (topR.h - this.timerText.height) / 2;
 
-    // Enemy HP bar
+    // Enemy HP bar — centered over the board (landscape) or the enemy base (portrait).
     this.enemyHpGfx   = new PIXI.Graphics();
     this.enemyHpGfx.y = topR.y + (topR.h - HP_CELL_H) / 2;
     this.enemyHpGfx.x = isLandscape
-      ? topR.x + (topR.w - HP_BAR_W) / 2
+      ? boardLeft + (board.w - HP_BAR_W) / 2
       : this.baseCenterX() - HP_BAR_W / 2;
+    this._enemyHpRect = { x: this.enemyHpGfx.x, y: this.enemyHpGfx.y, w: HP_BAR_W, h: HP_CELL_H };
 
-    // Surrender button — visual only, no interactive
+    // Surrender button — visual only, no interactive. Landscape hugs the board's
+    // right edge; portrait keeps the strip edge.
     this.surrenderBtnBg = new PIXI.Graphics();
-    const sBtnX = topR.x + topR.w - BTN_W - 8 - inset;
+    const sBtnX = (isLandscape ? boardRight : topR.x + topR.w) - BTN_W - 8;
     const sBtnY = topR.y + (topR.h - BTN_H) / 2;
     this.surrenderBtnBg.x = sBtnX;
     this.surrenderBtnBg.y = sBtnY;
     this.drawSurrenderBtn();
     this._surrenderRect = { x: sBtnX, y: sBtnY, w: BTN_W, h: BTN_H };
 
-    const sLabel = new PIXI.Text(t('hud.surrender'), { fontSize: 15, fill: 0x333333, fontWeight: 'bold', fontFamily: 'monospace' });
+    const sLabel = new PIXI.Text(t('hud.surrender'), { fontSize: FS.small, fill: 0x333333, fontWeight: 'bold', fontFamily: 'monospace' });
     sLabel.anchor.set(0.5);
     sLabel.x = sBtnX + BTN_W / 2;
     sLabel.y = sBtnY + BTN_H / 2;
@@ -270,7 +276,7 @@ export class HUDView {
     this.backgroundContainer.addChild(botBg);
 
     // Ink
-    this.inkText = new PIXI.Text('⬤ 0', { ...TEXT_STYLE, fontSize: 34 });
+    this.inkText = new PIXI.Text('⬤ 0', { ...TEXT_STYLE, fontSize: FS.title });
 
     // Player HP bar
     this.playerHpGfx = new PIXI.Graphics();
@@ -362,7 +368,7 @@ export class HUDView {
     const bg = new PIXI.Graphics();
     drawHudButton(bg, w, h, variant, { radius: 6 });
     const txt = new PIXI.Text(label, {
-      fontSize: Math.round(h * 0.42), fill: hudButtonText(variant), fontWeight: 'bold', fontFamily: 'monospace',
+      fontSize: snapFont(Math.round(h * 0.42)), fill: hudButtonText(variant), fontWeight: 'bold', fontFamily: 'monospace',
     });
     txt.anchor.set(0.5, 0.5);
     txt.x = w / 2; txt.y = h / 2;

@@ -111,7 +111,7 @@ export function CommandsMixin<TBase extends GameEngineBaseCtor & Constructor<Hel
           const bp = this.state.unitBlueprints[unitType];
           this.consumeCardSlot(player, cmd.owner, cmd.handIndex, card, () => {
             for (let i = 0; i < bp.spawnCount; i++) {
-              const unit = new Unit(unitType, side, col, spawnRow, bp);
+              const unit = new Unit(unitType, side, col, spawnRow, bp, undefined, this.state.allocUnitId());
               this.state.board.addUnit(unit);
               this.state.stats[cmd.owner].unitsSent++;
               this.state.pushEvent({
@@ -146,7 +146,7 @@ export function CommandsMixin<TBase extends GameEngineBaseCtor & Constructor<Hel
 
           const buildingType = card.buildingType;
           this.consumeCardSlot(player, cmd.owner, cmd.handIndex, card, () => {
-            const building = new Building(buildingType, side, col, buildingRow);
+            const building = new Building(buildingType, side, col, buildingRow, undefined, this.state.allocBuildingId());
             this.state.board.addBuilding(building);
             this.state.pushEvent({
               type:         'building_placed',

@@ -22,6 +22,7 @@ import type { BattleLabelContext } from '../battleLabels';
 import { BuildingView } from '../BuildingView';
 import { HandView } from '../HandView';
 import { HUDView } from '../HUDView';
+import { drawHudButton } from '../hudButton';
 import { NetStatusView } from '../NetStatusView';
 import { UnitView } from '../UnitView';
 import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
@@ -32,6 +33,7 @@ import { buildWearOverlay } from '../wearOverlay';
 import { ProfilePopup, type ProfileData } from '../ProfilePopup';
 import { stateRecorder } from '../../game/replay/StateRecorder';
 import { registerPool } from '../../cache/poolRegistry';
+import { snapFont } from '../fontScale';
 
 /** Optional player identities for the in-battle profile popup (netplay, S1). */
 export interface GameProfiles {
@@ -361,17 +363,37 @@ export class GameRendererBase {
     }
   }
 
-  /** Opponent nickname on the top HUD strip, right-aligned before the settings button. */
+  /**
+   * Opponent nickname on the top HUD strip, in a shared-style button background
+   * sitting just left of the (board-centered) enemy HP bar — so the name reads
+   * right before the opponent's HP. The profile-tap region is tightened to this
+   * button. Vertical band / height reuse the surrender button's.
+   */
   protected drawOpponentLabel(): void {
-    const r = this.hudView.getEnemyInfoRect();
+    const sr = this.hudView.getSurrenderRect();
+    const hp = this.hudView.getEnemyHpRect();
     const label = new PIXI.Text(this.oppProfile!.name || '?', {
-      fontSize: Math.max(11, Math.round(r.h * 0.34)),
+      fontSize: snapFont(Math.max(12, Math.round(sr.h * 0.5))),
       fill: 0x333333, fontWeight: 'bold', fontFamily: 'monospace',
     });
-    label.anchor.set(1, 0.5);
-    label.x = r.x + r.w - 8;
-    label.y = r.y + r.h / 2;
-    this.container.addChild(label);
+
+    const padX = 14;
+    const bw = Math.ceil(label.width) + padX * 2;
+    const bh = sr.h;
+    const bx = hp.x - 12 - bw;  // gap of 12px before the enemy HP bar
+    const by = sr.y;
+
+    const bg = new PIXI.Graphics();
+    drawHudButton(bg, bw, bh, 'secondary', { radius: 4 });
+    bg.x = bx;
+    bg.y = by;
+
+    label.anchor.set(0.5);
+    label.x = bx + bw / 2;
+    label.y = by + bh / 2;
+
+    this.container.addChild(bg, label);
+    this.hudView.setEnemyInfoRect({ x: bx, y: by, w: bw, h: bh });
   }
 }
 

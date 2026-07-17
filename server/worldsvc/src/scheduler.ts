@@ -2,6 +2,8 @@
 // March: periodically calls WorldService.processDueArrivals to settle all arrivals (capture / reinforce / retreat).
 // Training: periodically calls WorldService.processCompletedTraining to convert completed batches into troop strength (S8-2).
 // Builds: periodically calls WorldService.processCompletedBuilds to apply completed home-city building upgrades (SLG_CITY_DESIGN P1).
+// Season (§17.14): when autoSettleSeasons is on, calls WorldService.processDueSeasonSettlement to auto-settle active worlds
+//   whose season clock (WorldDoc.settleAt) has elapsed. Reset/close stay admin-driven.
 // All share a single setInterval (tickMs = 2s); Mongo index scan is authoritative (correct even without Redis).
 // timer uses unref() to avoid blocking process exit; running guard prevents re-entrant ticks.
 import type { WorldService } from './service';
@@ -10,8 +12,15 @@ export interface Scheduler {
   stop(): void;
 }
 
-/** Process due marches + completed training + completed builds once per tickMs (default 2s). */
-export function startScheduler(svc: WorldService, tickMs = 2000): Scheduler {
+export interface SchedulerOptions {
+  tickMs?: number;
+  /** Auto-run season settlement when a world's clock elapses (§17.14). Default false — caller (index.ts) passes env.autoSettleSeasons. */
+  autoSettleSeasons?: boolean;
+}
+
+/** Process due marches + completed training/builds + (optionally) due season settlement once per tickMs (default 2s). */
+export function startScheduler(svc: WorldService, opts: SchedulerOptions = {}): Scheduler {
+  const { tickMs = 2000, autoSettleSeasons = false } = opts;
   let running = false;
   const timer = setInterval(() => {
     if (running) return;
@@ -35,6 +44,14 @@ export function startScheduler(svc: WorldService, tickMs = 2000): Scheduler {
         .processDueOccupations()
         .catch((e) => console.error('[world-scheduler] processDueOccupations failed:', (e as Error).message)),
     ];
+    // §17.14: auto season settlement (opt-out via NW_SLG_AUTO_SETTLE=0). Only fires for worlds past settleAt (indexed, cheap when none due).
+    if (autoSettleSeasons) {
+      tasks.push(
+        svc
+          .processDueSeasonSettlement()
+          .catch((e) => console.error('[world-scheduler] processDueSeasonSettlement failed:', (e as Error).message)),
+      );
+    }
     void Promise.allSettled(tasks).finally(() => {
       running = false;
     });

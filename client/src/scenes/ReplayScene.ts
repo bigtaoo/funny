@@ -13,6 +13,7 @@ import {
 } from '../game';
 import { t } from '../i18n';
 import { ui, sketchPanel, seedFor } from '../render/sketchUi';
+import { FS, snapFont } from '../render/fontScale';
 
 /**
  * Replay player (S1-RP).
@@ -141,7 +142,7 @@ export class ReplayScene implements Scene {
 
     // "REPLAY" tag (top-left).
     const tag = new PIXI.Text(`● ${t('replay.title')}`, {
-      fontSize: Math.round(btnH * 0.5),
+      fontSize: snapFont(Math.round(btnH * 0.5)),
       fill: 0xaa2222,
       fontWeight: 'bold',
       fontFamily: 'monospace',
@@ -185,7 +186,7 @@ export class ReplayScene implements Scene {
 
     // Centre status text ("replay ended" / error), hidden until needed.
     this.statusLabel = new PIXI.Text(this.errorMsg ?? '', {
-      fontSize: Math.round(this.layout.designHeight * 0.04),
+      fontSize: FS.headline,
       fill: 0xaa2222,
       fontWeight: 'bold',
       fontFamily: 'monospace',
@@ -215,7 +216,7 @@ export class ReplayScene implements Scene {
     bg.on('pointertap', onTap);
 
     const label = new PIXI.Text(text, {
-      fontSize: Math.round(h * 0.42),
+      fontSize: snapFont(Math.round(h * 0.42)),
       fill: 0xffffff,
       fontWeight: 'bold',
       fontFamily: 'monospace',

@@ -562,7 +562,13 @@ describe('CampaignMapScene — tap detection', () => {
     // way back to the TOC/notebook overview — the "Chapters" button next to Gear.
     const { scene, input } = buildCampaign(() => {});
     expect((scene as any).mode).toBe('chapter');
-    const headerHits = (scene as any).hits.filter((hh: any) => hh.rect.y === 0);
+    // Back sits flush at y=0 with its rect.h spanning the full header row; the
+    // equipment/chapters pills (sketchButton bg, added by 8739154e) are vertically
+    // centered within that same row instead, so "header row" now means y < headerH,
+    // not y === 0.
+    const backHit = (scene as any).hits.find((hh: any) => hh.rect.x === 0 && hh.rect.y === 0);
+    const headerH = backHit.rect.h;
+    const headerHits = (scene as any).hits.filter((hh: any) => hh.rect.y < headerH);
     // back + equipment + chapters = 3 hits pinned to the header row on a chapter page.
     expect(headerHits.length).toBe(3);
     // Both text buttons are right-anchored; "Chapters" sits immediately left of "Gear"
@@ -593,7 +599,11 @@ describe('CampaignMapScene — tap detection', () => {
     (scene as any).backToToc();
     scene.update(1.0);
     expect((scene as any).mode).toBe('toc');
-    const headerHits = (scene as any).hits.filter((hh: any) => hh.rect.y === 0);
+    // See the "Chapters" header button test above for why header-row hits are
+    // bounded by headerH rather than a strict y === 0 check.
+    const backHit = (scene as any).hits.find((hh: any) => hh.rect.x === 0 && hh.rect.y === 0);
+    const headerH = backHit.rect.h;
+    const headerHits = (scene as any).hits.filter((hh: any) => hh.rect.y < headerH);
     // back + equipment only — no third "Chapters" hit on the TOC page.
     expect(headerHits.length).toBe(2);
     scene.destroy();

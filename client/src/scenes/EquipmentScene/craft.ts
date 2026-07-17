@@ -2,6 +2,7 @@
 // craft action itself.
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { FS } from '../../render/fontScale';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { withTimeout, TimeoutError } from '../../ui/busyTracker';
@@ -61,11 +62,11 @@ export function CraftMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): T
       this.bodyLayer.addChild(cell);
 
       // Top: name (scaled to fit) + rarity tag.
-      const name = txt(this.itemName(defId), 20, C.dark, true);
+      const name = txt(this.itemName(defId), FS.bodyLg, C.dark, true);
       name.x = x + pad; name.y = y + pad;
       if (name.width > cellW - pad * 2 - 80) name.scale.set(Math.min(1, (cellW - pad * 2 - 80) / name.width));
       this.bodyLayer.addChild(name);
-      const rar = txt(t(`equip.rarity.${def.rarity}` as import('../../i18n').TranslationKey), 16, color, true);
+      const rar = txt(t(`equip.rarity.${def.rarity}` as import('../../i18n').TranslationKey), FS.small, color, true);
       rar.anchor.set(1, 0); rar.x = x + cellW - pad; rar.y = y + pad + 2;
       this.bodyLayer.addChild(rar);
 
@@ -92,7 +93,7 @@ export function CraftMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): T
       const btn = sketchPanel(btnW, btnH, { fill: enabled ? C.dark : C.btnOff, border: enabled ? C.accent : C.mid, seed: seedFor(x, y, btnW) });
       btn.x = btnX; btn.y = btnY;
       this.bodyLayer.addChild(btn);
-      const bl = txt(t('equip.craftBtn'), 17, enabled ? C.light : C.mid);
+      const bl = txt(t('equip.craftBtn'), FS.body, enabled ? C.light : C.mid);
       bl.anchor.set(0.5, 0.5); bl.x = btnX + btnW / 2; bl.y = btnY + btnH / 2;
       this.bodyLayer.addChild(bl);
       if (enabled) this.hitRects.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, action: () => void this.doCraft(defId) });

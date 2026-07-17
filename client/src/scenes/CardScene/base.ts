@@ -20,6 +20,7 @@ import {
   drawLoadingOverlay, tearDownChildren,
 } from '../../render/sketchUi';
 import { buildDecorCLayer } from '../../render/decorCLayer';
+import { FS } from '../../render/fontScale';
 import { getArtTexture } from '../../render/cardArt';
 import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
@@ -293,7 +294,7 @@ export class CardSceneBase {
   protected showToast(msg: string, color: number = C.dark): void {
     const tl = this.toastLayer;
     tl.removeChildren();
-    const lbl = txt(msg, 26, 0xffffff, true);
+    const lbl = txt(msg, FS.heading, 0xffffff, true);
     const padX = 28, padY = 16;
     const bw = lbl.width + padX * 2;
     const bh = lbl.height + padY * 2;

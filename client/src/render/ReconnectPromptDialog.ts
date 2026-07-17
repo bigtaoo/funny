@@ -10,6 +10,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import type { Scene } from '../scenes/SceneManager';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from './sketchUi';
+import { snapFont } from './fontScale';
 import { t } from '../i18n';
 
 export interface ReconnectPromptCallbacks {
@@ -61,11 +62,11 @@ export class ReconnectPromptDialog implements Scene {
     const cardX = (w - cardW) / 2;
     const unit = cardHmin;
 
-    const title = txt(t('reconnect.title'), Math.round(unit * 0.09), C.dark, true);
+    const title = txt(t('reconnect.title'), snapFont(Math.round(unit * 0.09)), C.dark, true);
     title.anchor.set(0.5, 0);
 
     const body = new PIXI.Text(t('reconnect.body'), {
-      fontSize: Math.round(unit * 0.05), fill: C.dark, fontFamily: 'monospace',
+      fontSize: snapFont(Math.round(unit * 0.05)), fill: C.dark, fontFamily: 'monospace',
       wordWrap: true, wordWrapWidth: cardW * 0.84, lineHeight: Math.round(unit * 0.07),
     });
     body.anchor.set(0.5, 0);
@@ -106,7 +107,7 @@ export class ReconnectPromptDialog implements Scene {
     resumeBtn.cursor = 'pointer';
     resumeBtn.on('pointertap', () => this.cb.onReconnect());
     this.container.addChild(resumeBtn);
-    const resumeLabel = txt(t('reconnect.accept'), Math.round(bH * 0.36), 0xffffff, true);
+    const resumeLabel = txt(t('reconnect.accept'), snapFont(Math.round(bH * 0.36)), 0xffffff, true);
     resumeLabel.anchor.set(0.5, 0.5); resumeLabel.x = bx1 + bW / 2; resumeLabel.y = bY + bH / 2;
     this.container.addChild(resumeLabel);
 
@@ -116,7 +117,7 @@ export class ReconnectPromptDialog implements Scene {
     declineBtn.cursor = 'pointer';
     declineBtn.on('pointertap', () => this.cb.onDecline());
     this.container.addChild(declineBtn);
-    const declineLabel = txt(t('reconnect.decline'), Math.round(bH * 0.36), C.dark, true);
+    const declineLabel = txt(t('reconnect.decline'), snapFont(Math.round(bH * 0.36)), C.dark, true);
     declineLabel.anchor.set(0.5, 0.5); declineLabel.x = bx2 + bW / 2; declineLabel.y = bY + bH / 2;
     this.container.addChild(declineLabel);
   }
