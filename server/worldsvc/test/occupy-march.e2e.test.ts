@@ -21,6 +21,8 @@ import {
   proceduralTile,
   tileId,
   npcGarrison,
+  npcBaseHp,
+  OCCUPY_MIN_TROOPS,
   playerWorldId,
   SLG_MAP_W,
   SLG_MAP_H,
@@ -185,6 +187,34 @@ describe.skipIf(!mongo)('worldsvc occupy-march e2e (ADR-037 §5.4)', () => {
     expect(tile.contestedByMe).toBeUndefined();
     // Pending doc consumed.
     expect(await m.collections.occupations.findOne({ _id: tileId(W, target.x, target.y) })).toBeNull();
+  });
+
+  it('base HP scales with tile level (2026-07-17): the minimum occupy force takes a level-1 tile, and the siege records defenderBaseHp', async () => {
+    // Regression guard for the "cleared the garrison but couldn't destroy the base" bug: a level-1 tile's base HP
+    // used to be a flat 100, so OCCUPY_MIN_TROOPS (500 = 8 infantry) cleared the 2-infantry garrison but timed out
+    // against the base (min-win was ~660, see econ-sim occupyBaseHpRun). Now base HP = npcBaseHp(1) = 40, so the
+    // minimum force wins. Also asserts the scaled base HP is actually wired into the engine battle + persisted.
+    await svc.joinWorld(W, 'a', 10, 10);
+    const target = findCoord((t) => t.type === 'resource' && t.level === 1, 30, 30);
+    const proc = proceduralTile(W, target.x, target.y);
+    expect(proc.level).toBe(1);
+    await connect(svc, 'a', target); // ADR-039: border the target before marching
+
+    const mv = await svc.startMarch(W, 'a', 10, 10, target.x, target.y, 'occupy', OCCUPY_MIN_TROOPS);
+    nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+
+    // The minimum force now wins (would have lost against a flat-100 base).
+    const held = await svc.getTile(W, 'a', target.x, target.y);
+    expect(held.contestedByMe).toBe(true);
+    expect(pushes.some((p) => p.accountId === 'a' && p.msg.kind === 'siege_result' && p.msg.outcome === 'attacker_win')).toBe(true);
+
+    // The persisted siege replay carries the scaled defender base HP (= npcBaseHp(1) = 40) → the engine battle and
+    // any client-side replay use the level-scaled base, not the flat BASE_HP default.
+    const siege = await m.collections.sieges.findOne({ attackerId: 'a' }, { sort: { ts: -1 } });
+    expect(siege).toBeTruthy();
+    expect((siege!.defenderConfig as { defenderBaseHp?: number } | null)?.defenderBaseHp).toBe(npcBaseHp(1));
+    expect(npcBaseHp(1)).toBe(40);
   });
 
   it('loses the PvE battle with insufficient troops → survivors refunded, tile remains neutral (no hold)', async () => {
