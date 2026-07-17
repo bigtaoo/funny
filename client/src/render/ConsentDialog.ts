@@ -11,6 +11,7 @@
  * tab (`/privacy.html`, `/terms.html`), matching the marketing site's footer.
  */
 import * as PIXI from 'pixi.js-legacy';
+import { makeText } from './pixiText';
 import type { Scene } from '../scenes/SceneManager';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from './sketchUi';
 import { snapFont } from './fontScale';
@@ -69,7 +70,7 @@ export class ConsentDialog implements Scene {
     const title = txt(t('consent.title'), snapFont(Math.round(unit * 0.07)), C.dark, true);
     title.anchor.set(0.5, 0);
 
-    const body = new PIXI.Text(t('consent.body'), {
+    const body = makeText(t('consent.body'), {
       fontSize: snapFont(Math.round(unit * 0.04)), fill: C.dark, fontFamily: 'monospace',
       wordWrap: true, wordWrapWidth: cardW * 0.84, lineHeight: Math.round(unit * 0.06),
     });

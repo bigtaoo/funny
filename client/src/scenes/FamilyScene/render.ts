@@ -216,6 +216,18 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       const chatW = w - chatX - 8;
       this.chatColX = chatX - 6;
 
+      // Unified header band behind both column titles (Members / Family Channel) so they read as
+      // one section strip rather than two labels floating on the ruled paper.
+      const bandY = contentY - colLblGap - 4;
+      const bandH = colLblGap + 4;
+      const band = new PIXI.Graphics();
+      band.beginFill(C.dark, 0.06);
+      band.drawRect(left, bandY, w - 8 - left, bandH);
+      band.endFill();
+      band.lineStyle(1, C.mid, 0.5);
+      band.moveTo(left, bandY + bandH).lineTo(w - 8, bandY + bandH);
+      this.bodyLayer.addChild(band);
+
       const membersLbl = txt(t('family.tabMembers'), colLblSize, MUTED);
       membersLbl.x = left + 12; membersLbl.y = contentY - colLblGap;
       this.bodyLayer.addChild(membersLbl);

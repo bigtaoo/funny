@@ -136,6 +136,10 @@ export class GameScene implements Scene {
 
     void preloadL1CardArtTextures();
     this.renderer = new GameRenderer(engine, layout, input, opts.net ?? false, false, opts.profiles ?? {}, opts.equippedSkins ?? [], opts.cardInstances ?? null, opts.equipmentInv ?? null, opts.tutorial ?? false, battleLabels);
+    // Campaign (PvE) levels reword the surrender button/dialog as "exit level" —
+    // surrendering to a stage reads oddly. Mirror createLocalMatch's mode resolution.
+    const isCampaign = !opts.net && (opts.mode ?? (opts.level ? 'campaign' : 'pvp')) === 'campaign';
+    this.renderer.setCampaignMode(isCampaign);
     this.renderer.init();
     // Attach the recording (if any) to the end-of-game callback.
     this.renderer.onGameEnd = (winner, stats, summary) => this.cb.onGameEnd(winner, stats, buildReplay(winner), summary);

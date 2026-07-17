@@ -57,7 +57,9 @@ export interface SectSceneView {
 export type SectTab = 'families' | 'channel';
 export type ViewMode = 'loading' | 'noSect' | 'create' | 'mySect';
 
-export const ROW_H = 48;
+// Bumped from 48 so the enlarged (family-matched) row fonts — a heading-size name over a body-size
+// stat line — fit without clipping. See RenderMixin.renderFamiliesList / renderChannel.
+export const ROW_H = 68;
 
 // ── Mixin plumbing ────────────────────────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -17,8 +17,19 @@ export class Board {
   /** All active buildings keyed by id */
   readonly buildings: Map<number, Building> = new Map();
 
-  /** unitGrid[row][col] = unit id, or null */
-  private unitGrid: (number | null)[][] = [];
+  /**
+   * unitGrid[row][col] = ids of ALL units currently snapped to that cell, or null.
+   *
+   * A cell can legitimately hold more than one unit: positions are continuous
+   * (fixed-point) and snapped to an integer cell via Math.round, while the collision
+   * systems only guarantee a *surface* gap of (r1+r2). Small-radius units (Runner
+   * r=0.25 → 0.5-cell centre gap) routinely round two stacked bodies onto the same
+   * cell. A single-slot grid silently dropped the earlier occupant — it stayed alive
+   * and acting in `units` but vanished from every getUnitAt-based target scan, so it
+   * became an un-attackable "ghost" that kept sieging. Storing all ids keeps every
+   * live unit targetable. Almost always length ≤ 1, so the array cost is negligible.
+   */
+  private unitGrid: (number[] | null)[][] = [];
   /** buildingGrid[row][col] = building id, or null */
   private buildingGrid: (number | null)[][] = [];
 
@@ -63,7 +74,7 @@ export class Board {
 
   removeUnit(unit: Unit): void {
     this.units.delete(unit.id);
-    this.clearUnitCell(unit.col, unit.row);
+    this.clearUnitCell(unit.col, unit.row, unit.id);
     this.removeFromColumn(unit);
   }
 
@@ -72,7 +83,7 @@ export class Board {
     const newRow = unit.row;
     const newCol = unit.col;
     if (newRow !== oldRow || newCol !== oldCol) {
-      this.clearUnitCell(oldCol, oldRow);
+      this.clearUnitCell(oldCol, oldRow, unit.id);
       this.setUnitCell(newCol, newRow, unit.id);
     }
     if (newCol !== oldCol) {
@@ -89,13 +100,29 @@ export class Board {
     }
   }
 
-  getUnitAt(col: number, row: number): Unit | null {
-    const id = this.unitGrid[row]?.[col];
-    return id != null ? (this.units.get(id) ?? null) : null;
+  /**
+   * All live units snapped to the cell, ascending by id (deterministic order).
+   * Target scans iterate this so a stacked unit is never hidden behind a cell-mate.
+   *
+   * Note: there is deliberately no single-unit getUnitAt(). A one-per-cell accessor
+   * silently drops co-located units — the exact defect this grid was rewritten to
+   * kill (a stacked enemy became an un-attackable "ghost"). Always scan all occupants.
+   */
+  getUnitsAt(col: number, row: number): Unit[] {
+    const ids = this.unitGrid[row]?.[col];
+    if (!ids || ids.length === 0) return [];
+    const out: Unit[] = [];
+    for (const id of ids) {
+      const u = this.units.get(id);
+      if (u && !u.isDead) out.push(u);
+    }
+    if (out.length > 1) out.sort((a, b) => a.id - b.id);
+    return out;
   }
 
   isCellOccupiedByUnit(col: number, row: number): boolean {
-    return this.unitGrid[row]?.[col] != null;
+    const ids = this.unitGrid[row]?.[col];
+    return !!ids && ids.length > 0;
   }
 
   /**
@@ -107,14 +134,16 @@ export class Board {
     if (side === Side.Bottom) {
       // Bottom moves toward high y — front = highest row
       for (let row = BOARD_ROWS - 1; row >= 0; row--) {
-        const unit = this.getUnitAt(col, row);
-        if (unit && unit.side === Side.Bottom) return unit;
+        for (const unit of this.getUnitsAt(col, row)) {
+          if (unit.side === Side.Bottom) return unit;
+        }
       }
     } else {
       // Top moves toward low y — front = lowest row
       for (let row = 0; row < BOARD_ROWS; row++) {
-        const unit = this.getUnitAt(col, row);
-        if (unit && unit.side === Side.Top) return unit;
+        for (const unit of this.getUnitsAt(col, row)) {
+          if (unit.side === Side.Top) return unit;
+        }
       }
     }
     return null;
@@ -280,8 +309,9 @@ export class Board {
   getUnitsInRange(col: number, row: number, range: number, side: Side): Unit[] {
     const result: Unit[] = [];
     for (let r = Math.max(0, row - range); r <= Math.min(BOARD_ROWS - 1, row + range); r++) {
-      const unit = this.getUnitAt(col, r);
-      if (unit && unit.side === side) result.push(unit);
+      for (const unit of this.getUnitsAt(col, r)) {
+        if (unit.side === side) result.push(unit);
+      }
     }
     return result;
   }
@@ -332,15 +362,23 @@ export class Board {
   // ─── Private grid helpers ─────────────────────────────────────────────────
 
   private setUnitCell(col: number, row: number, id: number): void {
-    if (row >= 0 && row < BOARD_ROWS) {
-      this.unitGrid[row]![col] = id;
+    if (row < 0 || row >= BOARD_ROWS || col < 0 || col >= BOARD_COLS) return;
+    const cell = this.unitGrid[row]![col];
+    if (!cell) {
+      this.unitGrid[row]![col] = [id];
+    } else if (!cell.includes(id)) {
+      cell.push(id);
     }
   }
 
-  private clearUnitCell(col: number, row: number): void {
-    if (row >= 0 && row < BOARD_ROWS) {
-      this.unitGrid[row]![col] = null;
-    }
+  /** Remove only THIS unit's id from the cell — never evicts a co-located unit. */
+  private clearUnitCell(col: number, row: number, id: number): void {
+    if (row < 0 || row >= BOARD_ROWS || col < 0 || col >= BOARD_COLS) return;
+    const cell = this.unitGrid[row]![col];
+    if (!cell) return;
+    const idx = cell.indexOf(id);
+    if (idx >= 0) cell.splice(idx, 1);
+    if (cell.length === 0) this.unitGrid[row]![col] = null;
   }
 
   // ─── Debug ────────────────────────────────────────────────────────────────

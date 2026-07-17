@@ -4,6 +4,7 @@
 // (InputMixin) and event/VFX handling lives in ./events.ts (EventMixin); each is chained on top of this
 // base into the final GameRenderer.
 import * as PIXI from 'pixi.js-legacy';
+import { makeText } from '../pixiText';
 import { BASE_HP, BOTTOM_BUILDING_ROW, BOTTOM_SPAWN_ROW, TOP_BUILDING_ROW, TOP_SPAWN_ROW } from '../../game/config';
 
 /** HP fraction at/under which a base is "critical" (~last HP cell) — triggers the board ring. */
@@ -117,6 +118,10 @@ export class GameRendererBase {
   /** Tutorial director (activated only for the dedicated tutorial level ch0_tutorial); orchestrates presentation-layer checkpoints / tours / never-lose guarantee. */
   protected tutorial: TutorialDirector | null = null;
   protected tutorialEnabled = false;
+
+  /** Campaign (PvE) level: the surrender button/dialog reword to "exit level". Set before init(). */
+  protected campaignMode = false;
+  setCampaignMode(v: boolean): void { this.campaignMode = v; }
 
   constructor(
     engine: IGameEngine,
@@ -331,7 +336,7 @@ export class GameRendererBase {
     this.unitView     = new UnitView(this.boardView, this.layout.localSide, this.equippedSkins, this.cardInstances, this.equipmentInv);
     this.buildingView = new BuildingView(this.boardView);
     this.handView     = new HandView(this.layout);
-    this.hudView      = new HUDView(this.layout);
+    this.hudView      = new HUDView(this.layout, this.campaignMode);
     this.netStatus    = new NetStatusView(this.layout);
     this.vfxSystem    = new VFXSystem();
 
@@ -379,7 +384,7 @@ export class GameRendererBase {
   protected drawOpponentLabel(): void {
     const sr = this.hudView.getSurrenderRect();
     const hp = this.hudView.getEnemyHpRect();
-    const label = new PIXI.Text(this.oppProfile!.name || '?', {
+    const label = makeText(this.oppProfile!.name || '?', {
       fontSize: snapFont(Math.max(12, Math.round(sr.h * 0.5))),
       fill: factionInk.enemy, fontWeight: 'bold', fontFamily: 'monospace',
     });

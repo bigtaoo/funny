@@ -121,6 +121,10 @@ export const zh = {
   'hud.surrenderTitle': '确定要投降吗？',
   'hud.surrenderCancel': '取消',
   'hud.surrenderConfirm': '确定投降',
+  // Campaign levels: "surrender" reads oddly against a PvE stage, so use "exit level" wording.
+  'hud.exitLevel': '退出关卡',
+  'hud.exitLevelTitle': '确定要退出关卡吗？',
+  'hud.exitLevelConfirm': '确定退出',
   'hud.upgradeMax': '已满级',
   'hud.upgradeCost': '↑ {cost}g',
   'hud.upgrade': '↑ 升级',

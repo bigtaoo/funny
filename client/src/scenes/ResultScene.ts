@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js-legacy';
+import { makeText } from '../render/pixiText';
 import { Scene } from './SceneManager';
 import { OwnerId, PlayerStats } from '../game/types';
 import { t, TranslationKey } from '../i18n';
@@ -172,7 +173,7 @@ export class ResultScene implements Scene {
 
     const margin = Math.round(w * 0.08);
     const fontSize = FS.heading;
-    const body = new PIXI.Text(text, {
+    const body = makeText(text, {
       fontSize,
       fill: 0xe8dfc0,
       wordWrap: true,
@@ -186,7 +187,7 @@ export class ResultScene implements Scene {
     body.y = h / 2;
     this.container.addChild(body);
 
-    const hint = new PIXI.Text(t('story.tapToContinue'), {
+    const hint = makeText(t('story.tapToContinue'), {
       fontSize: FS.label,
       fill: 0x8a7a60,
       fontFamily: 'monospace',
@@ -243,7 +244,7 @@ export class ResultScene implements Scene {
     // red cross-outs on a loss (echoes the "red-pen" art motif).
     this.addMoodDeco(isDraw ? 'draw' : (isWin ? 'win' : 'loss'));
 
-    const title = new PIXI.Text(headline, {
+    const title = makeText(headline, {
       fontSize: FS.display,
       fill: headlineColor,
       fontWeight: 'bold',
@@ -259,7 +260,7 @@ export class ResultScene implements Scene {
     if (this.elo) {
       const sign = this.elo.delta >= 0 ? '+' : '';
       const rankName = t(('rank.' + this.elo.rankAfter) as TranslationKey);
-      const eloLine = new PIXI.Text(
+      const eloLine = makeText(
         t('result.eloDelta', { delta: `${sign}${this.elo.delta}`, after: this.elo.after, rank: rankName }),
         {
           fontSize: FS.title,
@@ -302,7 +303,7 @@ export class ResultScene implements Scene {
       glyph.y = headerBottom + h * 0.03;
       this.container.addChild(glyph);
 
-      const heroText = new PIXI.Text(hero.title(), {
+      const heroText = makeText(hero.title(), {
         fontSize: FS.display,
         fill: 0x222222,
         fontWeight: 'bold',
@@ -312,7 +313,7 @@ export class ResultScene implements Scene {
       heroText.y = glyph.y + heroIcon + h * 0.008;
       this.container.addChild(heroText);
 
-      const heroDetail = new PIXI.Text(`「${hero.detail(playerStats)}」`, {
+      const heroDetail = makeText(`「${hero.detail(playerStats)}」`, {
         fontSize: FS.title,
         fill: 0x444444,
         fontStyle: 'italic',
@@ -340,7 +341,7 @@ export class ResultScene implements Scene {
       }
     } else {
       // No notable stats
-      const no = new PIXI.Text(t('result.keepGoing'), {
+      const no = makeText(t('result.keepGoing'), {
         fontSize: FS.headline,
         fill: 0x888888,
         fontFamily: 'monospace',
@@ -454,7 +455,7 @@ export class ResultScene implements Scene {
   /** A centred, tappable "name #id" line that opens its profile card. Returns new bottom y. */
   private addProfileLine(label: string, top: number, data: ProfileData, color: number): number {
     const { w, h } = this;
-    const line = new PIXI.Text(label, {
+    const line = makeText(label, {
       fontSize: FS.title,
       fill: color,
       fontFamily: 'monospace',
@@ -479,7 +480,7 @@ export class ResultScene implements Scene {
     const { w, h } = this;
     const y = top + h * 0.018;
     const makeName = (label: string, color: number, data: ProfileData): PIXI.Text => {
-      const txt = new PIXI.Text(label, {
+      const txt = makeText(label, {
         fontSize: FS.title,
         fill: color,
         fontFamily: 'monospace',
@@ -492,7 +493,7 @@ export class ResultScene implements Scene {
       return txt;
     };
     const leftTxt = makeName(local.name + ' ' + t('profile.you'), 0x2c2c2a, local);
-    const vsTxt = new PIXI.Text('vs', {
+    const vsTxt = makeText('vs', {
       fontSize: FS.title,
       fill: 0x888888,
       fontFamily: 'monospace',
@@ -526,7 +527,7 @@ export class ResultScene implements Scene {
     const titleLabel = keys
       ? t(keys.shortKey as TranslationKey) || formatLadderTitle(data.equippedTitle)
       : formatLadderTitle(data.equippedTitle);
-    const sub = new PIXI.Text(`「${titleLabel}」`, {
+    const sub = makeText(`「${titleLabel}」`, {
       fontSize: FS.label,
       fill: 0x8a7020,
       fontFamily: 'monospace',
@@ -572,7 +573,7 @@ export class ResultScene implements Scene {
     text: string, icon: IconKind, color: number, fontSize: number, bold: boolean,
   ): void {
     const iconSize = Math.round(h * 0.62);
-    const label = new PIXI.Text(text, {
+    const label = makeText(text, {
       fontSize,
       fill: color,
       fontWeight: bold ? 'bold' : 'normal',
@@ -678,7 +679,7 @@ export class ResultScene implements Scene {
     glyph.y = 0;
     c.addChild(glyph);
 
-    const title = new PIXI.Text(badge.title(), {
+    const title = makeText(badge.title(), {
       fontSize: FS.heading,
       fill: 0x555555,
       fontFamily: 'monospace',
@@ -688,7 +689,7 @@ export class ResultScene implements Scene {
     title.y = iconSize + h * 0.008;
     c.addChild(title);
 
-    const value = new PIXI.Text(badge.value(stats), {
+    const value = makeText(badge.value(stats), {
       fontSize: FS.title,
       fill: 0x222222,
       fontWeight: 'bold',

@@ -54,6 +54,7 @@ type SceneInternals = {
   modalScale: number; modalOriginX: number; modalOriginY: number;
   modalPanelRoot: PIXI.Container;
   handleDown(x: number, y: number): void;
+  handleUp(): void;
 };
 
 function internals(scene: CardScene | EquipmentScene): SceneInternals {
@@ -121,8 +122,10 @@ describe('Back button stays reachable while a detail modal is open', () => {
     const { scene, calls } = buildCardScene(...LANDSCAPE);
     (scene as unknown as { openDetail(id: string): void }).openDetail('c1');
     // Bottom-right corner of the screen: outside both the Back rect and the (now-enlarged,
-    // but still centered) panel.
+    // but still centered) panel. Modal hits now fire on pointer-UP (press-drag-release), so a tap
+    // is down+up with no drag in between.
     internals(scene).handleDown(internals(scene).w - 2, internals(scene).h - 2);
+    internals(scene).handleUp();
 
     expect(calls.back).toBe(0);
     expect(internals(scene).modalOpen).toBe(false);
@@ -273,5 +276,51 @@ describe('Detail/reforge modal panel scales to 80% of the constrained screen axi
     expect(pi.modalScale).toBeCloseTo(portraitScale, 10);
     expect(mw0 * pi.modalScale).toBeCloseTo(pi.w * 0.8, 6);
     portrait.destroy();
+  });
+});
+
+// Regression for the 2026-07-17 press-drag-release fix extended to EquipmentScene's modal path:
+// modal hits (e.g. reforge material-picker rows) now fire on pointer-UP, and a drag past the
+// threshold drops the pending hit — mirroring CardScene. Drives the real handleDown/Move/Up path
+// via a retained InputManager rather than calling private handlers directly.
+describe('EquipmentScene modal — press-drag-release', () => {
+  function buildWithInput(w: number, h: number): { scene: EquipmentScene; input: InputManager } {
+    const save = makeNewSave();
+    save.equipmentInv['i1'] = { id: 'i1', defId: 'wp_pen', rarity: 'fine', level: 0, affixes: [{ id: 'm_atk', value: 20 }] };
+    const cb: EquipmentCallbacks = {
+      onBack() {}, getSave: () => save,
+      craft: async () => ({ ok: true }), enhance: async () => ({ ok: true, success: true, level: 1 }),
+      salvage: async () => ({ ok: true }), equip: async () => ({ ok: true }), reforge: async () => ({ ok: true }),
+      activeCardInstanceId: '',
+    };
+    const input = new InputManager();
+    return { scene: new EquipmentScene(createLayout(w, h), input, cb), input };
+  }
+
+  it('a clean tap outside the panel (down+up, no drag) closes the modal on release', () => {
+    const { scene, input } = buildWithInput(...LANDSCAPE);
+    (scene as unknown as { openDetail(id: string): void }).openDetail('i1');
+    expect(internals(scene).modalOpen).toBe(true);
+
+    input._emitDown(internals(scene).w - 2, internals(scene).h - 2);
+    expect(internals(scene).modalOpen, 'must not close on pointer-DOWN').toBe(true);
+    input._emitUp(internals(scene).w - 2, internals(scene).h - 2);
+
+    expect(internals(scene).modalOpen).toBe(false);
+    scene.destroy();
+  });
+
+  it('a drag started outside the panel does NOT close the modal', () => {
+    const { scene, input } = buildWithInput(...LANDSCAPE);
+    (scene as unknown as { openDetail(id: string): void }).openDetail('i1');
+
+    const x = internals(scene).w - 2;
+    const y = internals(scene).h - 2;
+    input._emitDown(x, y);
+    input._emitMove(x, y - 40); // past DRAG_THRESHOLD
+    input._emitUp(x, y - 40);
+
+    expect(internals(scene).modalOpen).toBe(true);
+    scene.destroy();
   });
 });

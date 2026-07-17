@@ -9,6 +9,7 @@
  * Shared by the lobby profile chip, the settings screen, and the avatar picker.
  */
 import * as PIXI from 'pixi.js-legacy';
+import { makeText } from './pixiText';
 import { SketchPen } from './sketch';
 import { palette } from './theme';
 import { buildIcon, IconKind } from './icons';
@@ -66,7 +67,7 @@ export function buildAvatar(size: number, name: string, seed = 7, avatarId?: str
     icon.y = Math.round(cy - iconS / 2);
     c.addChild(icon);
   } else {
-    const letter = new PIXI.Text(initial(name), {
+    const letter = makeText(initial(name), {
       fontSize: snapFont(Math.round(size * 0.5)),
       fill: palette.paper,
       fontFamily: 'monospace',
