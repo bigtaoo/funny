@@ -21,6 +21,9 @@ import {
   SECT_ALLY_CAP,
   SECT_REMOVAL_VOTE_RATIO,
   FAMILY_MSG_BODY_MAX,
+  ORG_NAME_WIDTH_MIN,
+  ORG_NAME_WIDTH_MAX,
+  orgNameWidth,
   SlgError,
 } from '@nw/shared';
 import type { WorldCollections, SectDoc, SectMessageDoc } from './db';
@@ -165,7 +168,10 @@ export class SectService {
 
     const tagUpper = tag.toUpperCase();
     if (!/^[A-Z0-9]{2,5}$/.test(tagUpper)) throw new SlgError('BAD_REQUEST', 'Tag must be 2–5 uppercase alphanumeric characters');
-    if (!name || name.length < 2 || name.length > 20) throw new SlgError('BAD_REQUEST', 'Name must be 2–20 characters');
+    const nameWidth = name ? orgNameWidth(name) : 0;
+    if (nameWidth < ORG_NAME_WIDTH_MIN || nameWidth > ORG_NAME_WIDTH_MAX) {
+      throw new SlgError('BAD_REQUEST', 'Name must be 2–12 display units (full-width chars count as 2)');
+    }
 
     const sid = makeSectId(worldId, tagUpper);
 

@@ -51,10 +51,17 @@ describe.skipIf(!mongo)('socialsvc FamilyService e2e', () => {
   it('createFamily: rejects bad tag / bad name / double-membership / duplicate tag', async () => {
     await expectErr(svc.createFamily('leader', 'Valid Name', 'a'), 'BAD_REQUEST');       // tag too short
     await expectErr(svc.createFamily('leader', 'Valid Name', 'toolong'), 'BAD_REQUEST'); // tag too long
-    await expectErr(svc.createFamily('leader', 'x', 'ABC'), 'BAD_REQUEST');              // name too short
+    await expectErr(svc.createFamily('leader', 'x', 'ABC'), 'BAD_REQUEST');              // name too short (width 1 < 2)
+    await expectErr(svc.createFamily('leader', '七个汉字超限了', 'CJK'), 'BAD_REQUEST');   // name too long (7 汉字 = width 14 > 12)
+    await expectErr(svc.createFamily('leader', 'abcdefghijklm', 'LAT'), 'BAD_REQUEST');  // name too long (13 letters > 12)
     await svc.createFamily('leader', 'First Family', 'AAA');
     await expectErr(svc.createFamily('leader', 'Second Family', 'BBB'), 'ALREADY_IN_FAMILY'); // already in a family
     await expectErr(svc.createFamily('m1', 'Tag Clash', 'AAA'), 'ALREADY_IN_FAMILY');         // duplicate tag → unique index
+  });
+
+  it('createFamily: accepts a name exactly at the width cap (6 汉字 = width 12)', async () => {
+    const fam = await svc.createFamily('leader', '六个汉字上限', 'CAP6');
+    expect(fam.name).toBe('六个汉字上限');
   });
 
   it('joinFamily: member added, memberCount incremented, role=member', async () => {
