@@ -178,35 +178,45 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
           );
         }
 
-        // Confirm button
-        const confirmOn = selected.size > 0 && !this.bt.busy;
-        const confirmBtnW = 100 * S;
+        // Confirm + Cancel buttons — each button's width auto-fits its label (with a
+        // per-button minimum) so longer localized text (e.g. German "Zusammenbauen")
+        // never overflows a fixed box; the pair stays centered under the panel.
         const btnH = 28 * S;
+        const btnPadX = 16 * S;
+        const btnGap = 8 * S;
+        const btnY = my + mh - 36 * S;
+
+        const confirmOn = selected.size > 0 && !this.bt.busy;
+        const confirmLbl = txt(`${t('roster.feedBtn')} (${selected.size})`, snapFont(11 * S), confirmOn ? C.light : C.mid);
+        const cancelLbl = txt(t('equip.cancel'), snapFont(11 * S), C.dark);
+        const confirmBtnW = Math.max(100 * S, confirmLbl.width + btnPadX * 2);
+        const cancelBtnW = Math.max(80 * S, cancelLbl.width + btnPadX * 2);
+
+        const pairW = confirmBtnW + btnGap + cancelBtnW;
+        const confirmX = mx + mw / 2 - pairW / 2;
+        const cancelX = confirmX + confirmBtnW + btnGap;
+
         const confirmBtn = sketchPanel(confirmBtnW, btnH, {
           fill: confirmOn ? C.dark : C.btnOff, border: confirmOn ? C.gold : C.mid,
           seed: seedFor(0, 20, confirmBtnW),
         });
-        confirmBtn.x = mx + mw / 2 - confirmBtnW - 4 * S; confirmBtn.y = my + mh - 36 * S;
+        confirmBtn.x = confirmX; confirmBtn.y = btnY;
         ml.addChild(confirmBtn);
-        const confirmLbl = txt(`${t('roster.feedBtn')} (${selected.size})`, snapFont(11 * S), confirmOn ? C.light : C.mid);
-        confirmLbl.anchor.set(0.5, 0.5); confirmLbl.x = confirmBtn.x + confirmBtnW / 2; confirmLbl.y = confirmBtn.y + btnH / 2;
+        confirmLbl.anchor.set(0.5, 0.5); confirmLbl.x = confirmX + confirmBtnW / 2; confirmLbl.y = btnY + btnH / 2;
         ml.addChild(confirmLbl);
         if (confirmOn) {
           this.modalHits.push({
-            rect: { x: confirmBtn.x, y: confirmBtn.y, w: confirmBtnW, h: btnH },
+            rect: { x: confirmX, y: btnY, w: confirmBtnW, h: btnH },
             action: () => void this.doFeed(target.id, [...selected]),
           });
         }
 
-        // Cancel button
-        const cancelBtnW = 80 * S;
         const cancelBtn = sketchPanel(cancelBtnW, btnH, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 21, cancelBtnW) });
-        cancelBtn.x = mx + mw / 2 + 4 * S; cancelBtn.y = my + mh - 36 * S;
+        cancelBtn.x = cancelX; cancelBtn.y = btnY;
         ml.addChild(cancelBtn);
-        const cancelLbl = txt(t('equip.cancel'), snapFont(11 * S), C.dark);
-        cancelLbl.anchor.set(0.5, 0.5); cancelLbl.x = cancelBtn.x + cancelBtnW / 2; cancelLbl.y = cancelBtn.y + btnH / 2;
+        cancelLbl.anchor.set(0.5, 0.5); cancelLbl.x = cancelX + cancelBtnW / 2; cancelLbl.y = btnY + btnH / 2;
         ml.addChild(cancelLbl);
-        this.modalHits.push({ rect: { x: cancelBtn.x, y: cancelBtn.y, w: cancelBtnW, h: btnH }, action: () => { this.closeModal(); this.render(); } });
+        this.modalHits.push({ rect: { x: cancelX, y: btnY, w: cancelBtnW, h: btnH }, action: () => { this.closeModal(); this.render(); } });
 
         // Dismiss on backdrop
         this.modalHits.push({ rect: { x: mx, y: my, w: mw, h: mh }, action: () => {} });
