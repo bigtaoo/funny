@@ -54,6 +54,7 @@ import { buildDecorCLayer } from '../render/decorCLayer';
 import { ScrollTapGesture } from '../ui/scrollTapGesture';
 import { buildIcon, type IconKind } from '../render/icons';
 import { loadResAtlas, getResTexture } from '../render/resAtlasLoader';
+import { loadCityBldAtlas, getCityBldTexture } from '../render/cityBldAtlasLoader';
 
 // ── Public interface ─────────────────────────────────────────────────────────
 
@@ -107,6 +108,12 @@ const BLD_RES: Partial<Record<BuildingKey, ResourceType>> = {
 };
 const BLD_GLYPH: Partial<Record<BuildingKey, IconKind>> = {
   desk: 'desk', cabinet: 'cabinet', drillYard: 'swords', wall: 'castle', academy: 'book',
+};
+
+// Hand-drawn atlas art (art/ui/slg-desk → city_bld_atlas) supersedes the BLD_GLYPH
+// programmatic line-art / emoji fallback for these five once the atlas has decoded.
+const BLD_ATLAS: Partial<Record<BuildingKey, string>> = {
+  desk: 'bld_desk', cabinet: 'bld_cabinet', drillYard: 'bld_drillYard', wall: 'bld_wall', satchel: 'bld_satchel',
 };
 
 // Card-grid sizing — matches the CardScene/Skins wardrobe language (dynamic
@@ -194,6 +201,7 @@ export class CityScene implements Scene {
   private async load(): Promise<void> {
     // Resource / producer-building glyphs reuse the res_atlas motifs; re-render once decoded.
     void loadResAtlas().then(() => this.render()).catch(() => { /* color/emoji fallback */ });
+    void loadCityBldAtlas().then(() => this.render()).catch(() => { /* icons.ts/emoji fallback */ });
     try {
       const [me, teams, marches, occupations] = await Promise.all([
         this.cb.worldApi.getMe(this.cb.worldId),
@@ -224,10 +232,17 @@ export class CityScene implements Scene {
     return txt(RES_ICON[rt], snapFont(Math.round(size * 0.85)), C.dark);
   }
 
-  /** Building glyph: producer→res_atlas motif, others→icons.ts line-art, emoji as last resort. */
+  /** Building glyph: producer→res_atlas motif, hand-drawn city_bld_atlas art, then icons.ts line-art, emoji as last resort. */
   private bldIcon(key: BuildingKey, size: number, color: number): PIXI.DisplayObject {
     const res = BLD_RES[key];
     if (res) return this.resIcon(res, size);
+    const frame = BLD_ATLAS[key];
+    const tex = frame ? getCityBldTexture(frame) : null;
+    if (tex) {
+      const sp = new PIXI.Sprite(tex);
+      sp.width = sp.height = size;
+      return sp;
+    }
     const kind = BLD_GLYPH[key];
     if (kind) return buildIcon(kind, size, color);
     return txt(BLD_ICON[key], snapFont(Math.round(size * 0.85)), color);

@@ -1,0 +1,114 @@
+{
+  "frames": {
+    "bld_cabinet": {
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 172,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 172,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 172,
+        "h": 256
+      }
+    },
+    "bld_desk": {
+      "frame": {
+        "x": 2,
+        "y": 518,
+        "w": 256,
+        "h": 249
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 249
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 249
+      }
+    },
+    "bld_drillYard": {
+      "frame": {
+        "x": 176,
+        "y": 2,
+        "w": 224,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 224,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 224,
+        "h": 256
+      }
+    },
+    "bld_satchel": {
+      "frame": {
+        "x": 249,
+        "y": 260,
+        "w": 210,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 210,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 210,
+        "h": 256
+      }
+    },
+    "bld_wall": {
+      "frame": {
+        "x": 2,
+        "y": 260,
+        "w": 245,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 245,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 245,
+        "h": 256
+      }
+    }
+  },
+  "meta": {
+    "app": "pack_city_bld.cjs",
+    "image": "city_bld_atlas.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 512,
+      "h": 1024
+    },
+    "scale": "1"
+  }
+}
