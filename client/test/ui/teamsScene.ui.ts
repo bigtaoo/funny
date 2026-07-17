@@ -346,4 +346,32 @@ describe('TeamsScene — Fill All Troops', () => {
     expect(toasts).toContain(t('world.team.fillNoCards'));
     expect(toasts).not.toContain(t('world.team.fillTroopsOk'));
   });
+
+  it('Fill All Troops when every on-team card is already at cap is a genuine no-op success (not the "no cards" error)', async () => {
+    const cardInv = { onTeam: makeCard('onTeam', 'lichuang', 1) }; // cap 200
+    const cardState = { onTeam: { currentTroops: 200, teamId: 't1' } }; // already full
+    let distributeCalled = false;
+    const cb = makeCb({
+      getSave: () => ({ cardInv } as unknown as SaveData),
+      worldApi: stubWorldApi({
+        getMe: async () => ({ joined: true, baseTroopStock: 500, cardState } as unknown as PlayerWorldView),
+        distributeTroops: async () => { distributeCalled = true; return { ok: true }; },
+      }),
+    });
+    const scene = new TeamsScene(createLayout(W, H), new InputManager(), cb) as any;
+    await Promise.resolve();
+    await Promise.resolve();
+    scene.render();
+
+    const toasts: string[] = [];
+    scene.showToast = (msg: string) => { toasts.push(msg); };
+
+    tap(scene, `${t('world.team.fillTroops')}  (500 ${t('world.troops')})`);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(distributeCalled).toBe(false);
+    expect(toasts).toContain(t('world.team.fillTroopsOk'));
+    expect(toasts).not.toContain(t('world.team.fillNoCards'));
+  });
 });
