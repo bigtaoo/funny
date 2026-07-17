@@ -3,8 +3,8 @@
 // surfaces a success/error toast, and re-renders. The economy is server-authoritative — every buy
 // returns a fresh SaveData that the app adopts.
 import { t, TranslationKey } from '../../i18n';
-import { ui as C } from '../../render/sketchUi';
 import { withTimeout, TimeoutError } from '../../ui/busyTracker';
+import { showToastMessage } from '../../net/log';
 import { type Constructor, type ShopSceneBaseCtor, type ShopActionResult } from './base';
 
 export interface ActionHandlers {
@@ -25,7 +25,7 @@ export function ActionsMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBas
       } catch {
         // On load failure don't pretend the shop is empty: surface a clear error to the player (go back and re-enter to retry).
         this.items = [];
-        this.toast = { text: t('common.networkError'), color: C.red };
+        showToastMessage(t('common.networkError'), 'error');
       }
       this.loading = false;
       this.render();
@@ -37,15 +37,13 @@ export function ActionsMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBas
       if (this.bt.busy) return;
       this.blurPromo();
       this.bt.start();
-      this.toast = null;
       this.render();
       try {
         const res = await withTimeout(this.cb.buy(itemId));
-        this.toast = res.ok
-          ? { text: t('shop.bought'), color: C.green }
-          : { text: t(res.key), color: C.red };
+        if (res.ok) showToastMessage(t('shop.bought'), 'success');
+        else showToastMessage(t(res.key), 'error');
       } catch (e) {
-        this.toast = { text: t(e instanceof TimeoutError ? 'common.networkTimeout' : 'shop.error'), color: C.red };
+        showToastMessage(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'shop.error'), 'error');
       } finally {
         this.bt.stop();
         this.render();
@@ -60,19 +58,18 @@ export function ActionsMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBas
       if (!code) return;
       this.blurPromo();
       this.bt.start();
-      this.toast = null;
       this.render();
       try {
         const res = await withTimeout(this.cb.redeemPromo(code));
         if (res.ok) {
           this.promoCode = '';
           if (this.hiddenInput) this.hiddenInput.value = '';
-          this.toast = { text: t('shop.promoSuccess'), color: C.green };
+          showToastMessage(t('shop.promoSuccess'), 'success');
         } else {
-          this.toast = { text: t(res.key), color: C.red };
+          showToastMessage(t(res.key), 'error');
         }
       } catch (e) {
-        this.toast = { text: t(e instanceof TimeoutError ? 'common.networkTimeout' : 'shop.promoError'), color: C.red };
+        showToastMessage(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'shop.promoError'), 'error');
       } finally {
         this.bt.stop();
         this.render();
@@ -85,18 +82,16 @@ export function ActionsMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBas
       if (this.bt.busy || !this.cb.rechargeCoins) return;
       this.blurPromo();
       this.bt.start();
-      this.toast = null;
       this.render();
       // No blanket withTimeout here (unlike buy/redeem): recharge opens a user-paced payment UI
       // (Paddle overlay / native store sheet) that may stay open for minutes. The callback bounds its
       // own network calls internally and always resolves with a result key, so the spinner still clears.
       try {
         const res = await this.cb.rechargeCoins(tierId);
-        this.toast = res.ok
-          ? { text: t('shop.rechargeSuccess'), color: C.green }
-          : { text: t(res.key), color: C.red };
+        if (res.ok) showToastMessage(t('shop.rechargeSuccess'), 'success');
+        else showToastMessage(t(res.key), 'error');
       } catch {
-        this.toast = { text: t('shop.rechargeError'), color: C.red };
+        showToastMessage(t('shop.rechargeError'), 'error');
       } finally {
         this.bt.stop();
         this.render();
@@ -109,13 +104,13 @@ export function ActionsMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBas
       if (this.bt.busy) return;
       this.blurPromo();
       this.bt.start();
-      this.toast = null;
       this.render();
       try {
         const res = await withTimeout(action());
-        this.toast = res.ok ? { text: t(okKey), color: C.green } : { text: t(res.key), color: C.red };
+        if (res.ok) showToastMessage(t(okKey), 'success');
+        else showToastMessage(t(res.key), 'error');
       } catch (e) {
-        this.toast = { text: t(e instanceof TimeoutError ? 'common.networkTimeout' : 'shop.error'), color: C.red };
+        showToastMessage(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'shop.error'), 'error');
       } finally {
         this.bt.stop();
         this.render();
