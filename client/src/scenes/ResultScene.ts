@@ -277,12 +277,15 @@ export class ResultScene implements Scene {
 
     // Tap-to-view profile lines (netplay only — local then "vs opponent").
     const local = this.profiles?.local;
-    if (local) {
+    const opp = this.profiles?.opponent;
+    if (local && opp && opp.name) {
+      // Both players known: single centred line "local (you)  vs  opponent",
+      // with the neutral-grey "vs" sitting between the two tappable names.
+      headerBottom = this.addVersusLine(local, opp, headerBottom);
+    } else if (local) {
       headerBottom = this.addProfileLine(
         local.name + ' ' + t('profile.you'), headerBottom, local, 0x2c2c2a);
-    }
-    const opp = this.profiles?.opponent;
-    if (opp && opp.name) {
+    } else if (opp && opp.name) {
       headerBottom = this.addProfileLine(
         t('result.vs', { name: opp.name }), headerBottom, opp, 0xaa2222);
     }
@@ -464,24 +467,75 @@ export class ResultScene implements Scene {
     line.cursor = 'pointer';
     line.on('pointertap', () => this.popup.show(data));
     this.container.addChild(line);
-    let bottom = line.y + line.height;
-    if (data.equippedTitle) {
-      const keys = getTitleKeys(data.equippedTitle);
-      const titleLabel = keys
-        ? t(keys.shortKey as TranslationKey) || formatLadderTitle(data.equippedTitle)
-        : formatLadderTitle(data.equippedTitle);
-      const sub = new PIXI.Text(`「${titleLabel}」`, {
-        fontSize: FS.label,
-        fill: 0x8a7020,
+    return this.addTitleSub(data, w / 2, line.y + line.height);
+  }
+
+  /**
+   * Single centred versus line: "local (you)  vs  opponent". Each name is
+   * tappable to open its profile popup; the "vs" separator sits between them in
+   * a neutral grey. Any equipped titles render beneath their respective names.
+   */
+  private addVersusLine(local: ProfileData, opp: ProfileData, top: number): number {
+    const { w, h } = this;
+    const y = top + h * 0.018;
+    const makeName = (label: string, color: number, data: ProfileData): PIXI.Text => {
+      const txt = new PIXI.Text(label, {
+        fontSize: FS.title,
+        fill: color,
         fontFamily: 'monospace',
+        fontWeight: 'bold',
       });
-      sub.anchor.set(0.5, 0);
-      sub.x = w / 2;
-      sub.y = bottom + h * 0.004;
-      this.container.addChild(sub);
-      bottom = sub.y + sub.height;
+      txt.anchor.set(0, 0);
+      txt.eventMode = 'static';
+      txt.cursor = 'pointer';
+      txt.on('pointertap', () => this.popup.show(data));
+      return txt;
+    };
+    const leftTxt = makeName(local.name + ' ' + t('profile.you'), 0x2c2c2a, local);
+    const vsTxt = new PIXI.Text('vs', {
+      fontSize: FS.title,
+      fill: 0x888888,
+      fontFamily: 'monospace',
+      fontWeight: 'bold',
+    });
+    vsTxt.anchor.set(0, 0);
+    const rightTxt = makeName(opp.name, 0xaa2222, opp);
+
+    const gap = Math.round(w * 0.022);
+    const totalW = leftTxt.width + gap + vsTxt.width + gap + rightTxt.width;
+    let x = (w - totalW) / 2;
+    const rowH = Math.max(leftTxt.height, vsTxt.height, rightTxt.height);
+    for (const txt of [leftTxt, vsTxt, rightTxt]) {
+      txt.x = x;
+      txt.y = y + (rowH - txt.height) / 2;
+      this.container.addChild(txt);
+      x += txt.width + gap;
     }
-    return bottom;
+
+    const bottom = y + rowH;
+    return Math.max(
+      this.addTitleSub(local, leftTxt.x + leftTxt.width / 2, bottom),
+      this.addTitleSub(opp, rightTxt.x + rightTxt.width / 2, bottom),
+    );
+  }
+
+  /** Optional "「title」" sub-line centred at centerX beneath a name. */
+  private addTitleSub(data: ProfileData, centerX: number, top: number): number {
+    if (!data.equippedTitle) return top;
+    const keys = getTitleKeys(data.equippedTitle);
+    const titleLabel = keys
+      ? t(keys.shortKey as TranslationKey) || formatLadderTitle(data.equippedTitle)
+      : formatLadderTitle(data.equippedTitle);
+    const sub = new PIXI.Text(`「${titleLabel}」`, {
+      fontSize: FS.label,
+      fill: 0x8a7020,
+      fontFamily: 'monospace',
+    });
+    sub.anchor.set(0.5, 0);
+    sub.x = centerX;
+    sub.y = top + this.h * 0.004;
+    this.container.addChild(sub);
+    return sub.y + sub.height;
   }
 
   /** Primary call-to-action: gold-filled, bold white label with a leading icon. */
