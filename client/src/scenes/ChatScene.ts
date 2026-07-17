@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js-legacy';
+import { makeText } from '../render/pixiText';
 import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
@@ -330,7 +331,7 @@ export class ChatScene implements Scene {
     const maxW = Math.round(w * 0.68);
     const padX = Math.round(w * 0.03);
     const padY = Math.round(this.h * 0.012);
-    const body = new PIXI.Text(m.body, {
+    const body = makeText(m.body, {
       fontSize: FS.heading, fill: mine ? 0xffffff : C.dark,
       fontFamily: 'monospace', wordWrap: true, wordWrapWidth: maxW - padX * 2, breakWords: true,
     });

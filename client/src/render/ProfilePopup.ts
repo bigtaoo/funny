@@ -17,6 +17,7 @@
  * decision still uses the uuid accountId, never publicId.
  */
 import * as PIXI from 'pixi.js-legacy';
+import { makeText } from './pixiText';
 import { buildAvatar } from './avatar';
 import { palette } from './theme';
 import { t, type TranslationKey } from '../i18n';
@@ -105,7 +106,7 @@ export class ProfilePopup {
     this.card.y = cardY;
 
     // Title bar.
-    const title = new PIXI.Text(t('profile.title'), {
+    const title = makeText(t('profile.title'), {
       fontSize: snapFont(Math.round(cardH * 0.075)), fill: palette.pencil,
       fontWeight: 'bold', fontFamily: 'monospace',
     });
@@ -123,7 +124,7 @@ export class ProfilePopup {
 
     // Name (+ "you" tag).
     const nameStr = data.name + (data.isSelf ? ' ' + t('profile.you') : '');
-    const name = new PIXI.Text(nameStr || '?', {
+    const name = makeText(nameStr || '?', {
       fontSize: snapFont(Math.round(cardH * 0.085)), fill: palette.pencil,
       fontWeight: 'bold', fontFamily: 'monospace',
     });
@@ -137,7 +138,7 @@ export class ProfilePopup {
     // Public id line (display-only identifier) — tap to copy to clipboard.
     if (data.publicId) {
       const idText = `${t('profile.id')}  #${data.publicId}`;
-      const idLine = new PIXI.Text(idText, {
+      const idLine = makeText(idText, {
         fontSize: snapFont(Math.round(cardH * 0.05)), fill: palette.inkBlue, fontFamily: 'monospace',
       });
       idLine.anchor.set(0.5, 0);
@@ -156,7 +157,7 @@ export class ProfilePopup {
       const titleLabel = keys
         ? t(keys.shortKey as TranslationKey) || formatLadderTitle(data.equippedTitle)
         : formatLadderTitle(data.equippedTitle);
-      const titleLine = new PIXI.Text(`「${titleLabel}」`, {
+      const titleLine = makeText(`「${titleLabel}」`, {
         fontSize: snapFont(Math.round(cardH * 0.048)), fill: palette.inkBlue,
         fontFamily: 'monospace',
       });
@@ -171,7 +172,7 @@ export class ProfilePopup {
     if (data.rankKey) {
       const rankName = t(('rank.' + data.rankKey.replace(/^rank\./, '')) as TranslationKey);
       const eloPart = data.elo !== undefined ? `  ·  ELO ${data.elo}` : '';
-      const rankLine = new PIXI.Text(`${t('profile.rank')}  ${rankName}${eloPart}`, {
+      const rankLine = makeText(`${t('profile.rank')}  ${rankName}${eloPart}`, {
         fontSize: snapFont(Math.round(cardH * 0.05)), fill: palette.pencil, fontFamily: 'monospace',
       });
       rankLine.anchor.set(0.5, 0);
@@ -204,7 +205,7 @@ export class ProfilePopup {
         ab.cursor = 'pointer';
         ab.on('pointertap', () => { this.hide(); act.fn(); });
         this.card.addChild(ab);
-        const al = new PIXI.Text(t(act.labelKey), {
+        const al = makeText(t(act.labelKey), {
           fontSize: snapFont(Math.round(aH * 0.4)), fill: hudButtonText(actVariant),
           fontWeight: 'bold', fontFamily: 'monospace',
         });
@@ -221,7 +222,7 @@ export class ProfilePopup {
     btn.on('pointertap', () => this.hide());
     this.card.addChild(btn);
 
-    const btnLabel = new PIXI.Text(t('profile.close'), {
+    const btnLabel = makeText(t('profile.close'), {
       fontSize: snapFont(Math.round(bH * 0.42)), fill: hudButtonText('primary'), fontWeight: 'bold', fontFamily: 'monospace',
     });
     btnLabel.anchor.set(0.5, 0.5);

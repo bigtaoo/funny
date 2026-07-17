@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js-legacy';
+import { makeText } from './pixiText';
 import { Player } from '../game/Player';
 import { CardDefinition, CardType } from '../game/types';
 import { ILayout } from '../layout/ILayout';
@@ -46,13 +47,13 @@ function createCardSlot(): PIXI.Container {
   const art      = new PIXI.Sprite(PIXI.Texture.EMPTY); art.name = 'art';
   art.anchor.set(0.5);
   art.visible = false;
-  const typeText = new PIXI.Text('', { fontSize: FS.tiny,  fill: 0x888888 }); typeText.name = 'type';
+  const typeText = makeText('', { fontSize: FS.tiny,  fill: 0x888888 }); typeText.name = 'type';
   typeText.x = 4; typeText.y = 2;
-  const nameText = new PIXI.Text('', {
+  const nameText = makeText('', {
     fontSize: FS.bodyLg, fill: 0x222222, wordWrap: true, align: 'center', fontWeight: 'bold',
   }); nameText.name = 'name';
   const costBg   = new PIXI.Graphics(); costBg.name   = 'costBg';
-  const costText = new PIXI.Text('', { fontSize: FS.bodyLg, fill: 0xffffff, fontWeight: 'bold' });
+  const costText = makeText('', { fontSize: FS.bodyLg, fill: 0xffffff, fontWeight: 'bold' });
   costText.name  = 'cost';
   const overlay  = new PIXI.Graphics(); overlay.name  = 'overlay';
   const bar      = new PIXI.Graphics(); bar.name      = 'bar';

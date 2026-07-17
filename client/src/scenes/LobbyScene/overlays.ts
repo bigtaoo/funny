@@ -5,6 +5,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t, TranslationKey } from '../../i18n';
 import { buildIcon, IconKind } from '../../render/icons';
+import { makeText } from '../../render/pixiText';
 import { C, txt, sketchPanel, type Constructor, type LobbySceneBaseCtor } from './base';
 import { snapFont } from '../../render/fontScale';
 
@@ -105,7 +106,7 @@ export function OverlaysMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TB
       titleLbl.anchor.set(0.5, 0); titleLbl.x = w / 2; titleLbl.y = cy + Math.round(ch * 0.1);
       layer.addChild(titleLbl);
 
-      const bodyLbl = new PIXI.Text(t(bodyKey), {
+      const bodyLbl = makeText(t(bodyKey), {
         fontSize: snapFont(Math.round(ch * 0.092)), fill: C.mid, fontFamily: 'monospace',
         wordWrap: true, wordWrapWidth: cw - Math.round(cw * 0.12), align: 'center',
       });

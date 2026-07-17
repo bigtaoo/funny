@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js-legacy';
+import { makeText } from './pixiText';
 import { CardType, SpellType, GameState } from '../game';
 import { ILayout, Rect } from '../layout/ILayout';
 import { t, type TranslationKey } from '../i18n';
@@ -377,7 +378,7 @@ export class TutorialDirector {
     drawHudButton(g, bw, bh, 'primary', { radius: bh * 0.3, fillAlpha: 0.78 });
     g.x = bx; g.y = by;
     this.root.addChild(g);
-    const lbl = new PIXI.Text(t('tutorial.skip' as TranslationKey), {
+    const lbl = makeText(t('tutorial.skip' as TranslationKey), {
       fontFamily: 'monospace', fontSize: snapFont(Math.round(bh * 0.42)), fill: hudButtonText('primary'),
     });
     lbl.anchor.set(0.5);
@@ -404,14 +405,14 @@ export class TutorialDirector {
     bg.drawRoundedRect(px, py, pw, ph, 12).endFill();
     this.cardPanel.addChild(bg);
 
-    const titleLbl = new PIXI.Text(title, {
+    const titleLbl = makeText(title, {
       fontFamily: 'monospace', fontSize: snapFont(Math.round(ph * 0.18)), fontWeight: 'bold', fill: C_DARK,
       wordWrap: true, wordWrapWidth: pw - 32,
     });
     titleLbl.x = px + 16; titleLbl.y = py + 14;
     this.cardPanel.addChild(titleLbl);
 
-    const bodyLbl = new PIXI.Text(body, {
+    const bodyLbl = makeText(body, {
       fontFamily: 'monospace', fontSize: snapFont(Math.round(ph * 0.13)), fill: C_MID,
       wordWrap: true, wordWrapWidth: pw - 32,
     });
@@ -429,7 +430,7 @@ export class TutorialDirector {
       drawHudButton(btn, bw, bh, 'accent', { radius: bh * 0.3 });
       btn.x = bx; btn.y = by;
       this.cardPanel.addChild(btn);
-      const bl = new PIXI.Text(btnLabel!, {
+      const bl = makeText(btnLabel!, {
         fontFamily: 'monospace', fontSize: snapFont(Math.round(bh * 0.46)), fontWeight: 'bold', fill: hudButtonText('accent'),
       });
       bl.anchor.set(0.5);

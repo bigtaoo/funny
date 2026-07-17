@@ -4,6 +4,7 @@
 // (InputMixin) and event/VFX handling lives in ./events.ts (EventMixin); each is chained on top of this
 // base into the final GameRenderer.
 import * as PIXI from 'pixi.js-legacy';
+import { makeText } from '../pixiText';
 import { BOTTOM_BUILDING_ROW, BOTTOM_SPAWN_ROW, TOP_BUILDING_ROW, TOP_SPAWN_ROW } from '../../game/config';
 import {
   IGameEngine,
@@ -376,7 +377,7 @@ export class GameRendererBase {
   protected drawOpponentLabel(): void {
     const sr = this.hudView.getSurrenderRect();
     const hp = this.hudView.getEnemyHpRect();
-    const label = new PIXI.Text(this.oppProfile!.name || '?', {
+    const label = makeText(this.oppProfile!.name || '?', {
       fontSize: snapFont(Math.max(12, Math.round(sr.h * 0.5))),
       fill: 0x333333, fontWeight: 'bold', fontFamily: 'monospace',
     });
