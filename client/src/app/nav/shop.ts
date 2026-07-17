@@ -167,6 +167,7 @@ export function createShopNav(ctx: AppCtx): ShopNav {
             subscriptionLastClaimDay: m?.subscriptionLastClaimDay,
             starterUsed: m?.starterUsed ?? [],
             starterGrowthEligible: m?.starterGrowthEligible,
+            firstPurchaseUsed: m?.firstPurchaseUsed,
           };
         },
         async buyMonthlyCard() {

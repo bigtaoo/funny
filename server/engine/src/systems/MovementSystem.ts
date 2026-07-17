@@ -2,7 +2,6 @@ import {
   ATTACK_MULT_LATE_GAME,
   ATTACK_MULT_THRESHOLD_TICKS,
   BASE_COLS,
-  BASE_HP,
   BOARD_COLS,
   BOTTOM_BUILDING_ROW,
   TOP_BUILDING_ROW,
@@ -340,7 +339,7 @@ export class MovementSystem {
         type:  'base_hp_changed',
         owner: defenderOwner,
         hp:    opponent.baseHp,
-        maxHp: BASE_HP,
+        maxHp: opponent.maxBaseHp,
       });
 
       unit.hp    = 0;

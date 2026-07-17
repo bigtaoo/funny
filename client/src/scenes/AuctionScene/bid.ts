@@ -4,7 +4,7 @@ import { ui as C, txt, sketchPanel, sketchButton, seedFor } from '../../render/s
 import { FS } from '../../render/fontScale';
 import { t } from '../../i18n';
 import { buildIcon } from '../../render/icons';
-import type { AuctionView } from '../../net/WorldApiClient';
+import { WorldApiError, type AuctionView } from '../../net/WorldApiClient';
 import { type Constructor, type AuctionSceneBaseCtor } from './base';
 
 export interface BidHandlers {
@@ -97,6 +97,10 @@ export function BidMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBase
         await this.loadData();
       } catch (e) {
         this.showToast(this.errorMsg(e), C.red);
+        // Auction ended in the poll gap (bought out / expired) — refresh so the stale card drops off.
+        if (e instanceof WorldApiError && (e.code === 'AUCTION_CLOSED' || e.code === 'AUCTION_NOT_FOUND')) {
+          await this.loadData();
+        }
       }
     }
 

@@ -15,7 +15,8 @@ import { createGameEngine } from '../GameEngine';
 import { runHeadless } from '../runHeadless';
 import { LocalInputSource } from '../net/InputSource';
 import { toFp } from '../math/fixed';
-import { ATTACK_LANES, HAND_SIZE } from '../config';
+import { ATTACK_LANES, BASE_HP, HAND_SIZE, TOP_SPAWN_ROW, UNIT_BLUEPRINTS } from '../config';
+import { parseLevelDefinition, LevelParseError } from '../campaign/levelSchema';
 import { CardType, GamePhase, Side, UnitType } from '../types';
 import type { GameConfig, PlayerCommand } from '../types';
 import type { LevelDefinition } from '../campaign/LevelDefinition';
@@ -118,6 +119,66 @@ test('campaign timed_defense objective ends the match with GamePhase.GameOver an
   assert.ok(outcome.ok, 'match reaches GameOver within maxTicks');
   assert.equal(outcome.engine.state.phase, GamePhase.GameOver);
   assert.equal(outcome.engine.state.winner, Side.Bottom);
+});
+
+// ── Defender base HP scaling (SLG option 2, 2026-07-17) ────────────────────────────────
+
+test('siege defenderBaseHp initializes the Top base HP + maxBaseHp; default stays BASE_HP', () => {
+  const level: LevelDefinition = {
+    id: 'test_defender_base_hp',
+    chapter: 0,
+    seed: 9,
+    objective: { kind: 'destroy_base' },
+    waves: { entries: [] },
+    defenderBaseHp: 40, // npcBaseHp(1) — a level-1 NPC tile
+  };
+  const config: GameConfig = { seed: 9, mode: 'siege', players: [{ id: 0 }, { id: 1 }], level };
+  const engine = createGameEngine(config);
+  engine.step(0, []);
+
+  assert.equal(engine.state.topPlayer.maxBaseHp, 40, 'defender base ceiling scaled to defenderBaseHp');
+  assert.equal(engine.state.topPlayer.baseHp, 40, 'defender base starts full at the scaled ceiling');
+  // Attacker (Bottom) base is untouched → global BASE_HP default.
+  assert.equal(engine.state.bottomPlayer.maxBaseHp, engine.state.bottomPlayer.baseHp, 'attacker base full at its default ceiling');
+  assert.equal(engine.state.bottomPlayer.baseHp, BASE_HP, 'attacker base defaults to BASE_HP');
+});
+
+test('base_hp_changed carries the scaled defender maxBaseHp when an attacker reaches the base', () => {
+  const col = ATTACK_LANES[0]!;
+  const level: LevelDefinition = {
+    id: 'test_defender_base_hp_event',
+    chapter: 0,
+    seed: 11,
+    objective: { kind: 'destroy_base' },
+    waves: { entries: [] },
+    defenderBaseHp: 40, // npcBaseHp(1)
+    // One attacker (Bottom) infantry pre-placed right at the top spawn row, next to the undefended Top base, so
+    // it reaches and dents the base within a handful of ticks — keeps the test fast and deterministic.
+    attackerArmy: [{ unitType: UnitType.Infantry, col, row: TOP_SPAWN_ROW, initialHp: 60 }],
+  };
+  const config: GameConfig = { seed: 11, mode: 'siege', players: [{ id: 0 }, { id: 1 }], level };
+  const engine = createGameEngine(config);
+
+  let hpEvent: { hp: number; maxHp: number; owner: number } | undefined;
+  for (let tick = 0; tick < 2000 && !hpEvent; tick++) {
+    for (const ev of engine.step(tick, [])) {
+      if (ev.type === 'base_hp_changed') { hpEvent = { hp: ev.hp, maxHp: ev.maxHp, owner: ev.owner }; break; }
+    }
+  }
+
+  assert.ok(hpEvent, 'the attacker reached the base and emitted base_hp_changed');
+  assert.equal(hpEvent!.owner, 1, 'the damaged base is the defender (owner1/Top)');
+  assert.equal(hpEvent!.maxHp, 40, 'maxHp reflects the scaled defenderBaseHp, not the flat BASE_HP=100');
+  assert.equal(hpEvent!.hp, 40 - UNIT_BLUEPRINTS[UnitType.Infantry].siegeValue, 'first infantry hit deals its siege value off the scaled ceiling');
+});
+
+test('levelSchema validates defenderBaseHp: accepts a positive int, rejects <1 and >100000', () => {
+  // battleTimeoutTicks marks this a siege battle → empty waves are allowed (isSiegeBattle in levelSchema).
+  const base = { id: 'l', chapter: 0, seed: 1, objective: { kind: 'destroy_base' }, waves: { entries: [] }, battleTimeoutTicks: 100 };
+  assert.equal(parseLevelDefinition({ ...base, defenderBaseHp: 400 }).defenderBaseHp, 400);
+  assert.throws(() => parseLevelDefinition({ ...base, defenderBaseHp: 0 }), LevelParseError);
+  assert.throws(() => parseLevelDefinition({ ...base, defenderBaseHp: -40 }), LevelParseError);
+  assert.throws(() => parseLevelDefinition({ ...base, defenderBaseHp: 100_001 }), LevelParseError);
 });
 
 // ── Scripted enemy waves (CampaignMixin.spawnEnemyUnit + WaveDirector) ─────────────────

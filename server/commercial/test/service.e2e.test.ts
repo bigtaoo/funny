@@ -50,6 +50,7 @@ describe.skipIf(!mongo)('commercial service e2e', () => {
       fatePoints: 0,
       subscriptionExpiry: 0,
       starterUsed: [],
+      firstPurchaseUsed: false,
     });
   });
 

@@ -470,6 +470,15 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - **修复**：`renderPickCard` 改调用新增的 `renderPickIcon`（镜像 `list.ts` 的 `renderItemPicture` 画法）——装备用 `getEquipDef(defId)` 取槽位/稀有度走 `drawEquipmentGlyph` 程序化图形，角色卡用 `CARD_DEFS[defId].unitType` 取 `UNIT_ART_URLS` 真实立绘（异步加载沿用既有 `artHooked` 去重+加载完成后 `render()` 的机制），材料保留原有专属图标兜底。`buildPickEntries()` 里装备/角色卡改为按 `defId+level` 分组（`Map`）而非逐实例枚举，标签追加 `×N`（如"Marker +0 ×3"）；`onPick` 落在分组代表实例上——反正每次挂单服务端强制只拿走 1 个实例（qty=1），组内实例本就等价，拍到哪个都一样。角色卡分组时优先选未上锁的实例作代表，避免把可挂的库存"锁"在一个恰好被选为代表的已锁实例背后。
 - **验收**：`tsc --noEmit` 绿；headless 灌入含重复装备/卡片的假 save（5×Pencil、3×Marker、4×Su Yuan Lv.1 + 各一件独立高阶装备/卡）实例化 `AuctionScene` 并调用 `buildPickEntries()`，确认重复项正确合并为单条 `×N` 标签、非重复项维持原样；`toDataURL()` 截图确认装备显示各自独立图形、角色卡显示真实立绘，不再是统一占位图标。
 
+### 客户端：打开的拍卖行界面自动刷新 + 并发抢购处理（2026-07-17）
+
+- **问题**：玩家反馈「拍卖行里的物品被别人买走后，我已经打开的界面不会主动刷新」。根因：`AuctionScene` 打开时只在构造函数里 `loadData()` 拉一次，之后只有**本人**下单/出价/取消/改筛选才重拉；`auctionsvc` 是纯 REST 独立服务（独立库、端口 18086，**未接** gateway `/gw` 推送、无 Redis），成交只给买卖双方发系统邮件，不广播给其它在线客户端——所以别人买走后本地缓存一直是旧的。
+- **方案选型：定时拉取（非服务器广播）**。理由：① 改动自包含（纯客户端一处），镜像 `WorldMapNet` 既有的 `setInterval` 刷新模式；② 服务器广播要动四层（给 auctionsvc 加 gatewayClient + 新 `PushMsg`/proto `ServerMsg` 类型 + `NetSession` 路由 + 场景订阅），且 auctionsvc 是刻意做成孤立服务的；③ 项目既有推送一贯被当作「轮询之上的加速器」（`gatewayClient` 注释：gateway 没配时 client relies on polling）；④ 拍卖列表是全服共享数据而非点对点事件，靠推送保鲜需服务器知道「谁开着界面、看哪个筛选」才能精准推，否则等于全服广播每笔成交，不如客户端自轮询。拍卖列表非低延迟刚需，晚几秒看到「已售出」可接受，且成交本就有邮件兜底。
+- **实现**：
+  - **轮询**（`base.ts`）：常量 `AUCTION_POLL_SEC=5`；`update(dt)` 里累加 `pollTimer`，达阈值调 `pollRefresh()`。`pollRefresh()` 是**静默重拉**——不置 `loading`（无「加载中」闪屏）、保留 `scrollY`；用轻量签名 `auctionSig()`（`auctionId:price:status:expireAt:buyerId` 拼接）比对，**仅当数据真变了才 `render()`**，避免每 5s 无谓 teardown/重建 body（会打断滚动）。护栏：`loading || modalOpen || itemPickerOpen` 时**暂停计时**（绝不在开着的创建/出价表单或选择页上重绘），且 `await` 后再次复查这些标志以防拉取途中弹窗打开。轮询挂在场景自己的 `update(dt)` tick 上而非裸 `setInterval`，`destroy()` 后自动停，无悬挂定时器泄漏。
+  - **并发抢购**（`tradeActions.ts` `doBuy`）：两人在轮询间隙同抢一件，失败方的 `buyAuction` 抛 `AUCTION_CLOSED`/`AUCTION_NOT_FOUND` → 弹专用提示 `auction.err.soldOut`（中「手慢了，该物品已被他人买走」/英/德）并 `loadData()` 刷新，让作废的卡片消失；其它错误（如金币不足）维持原有报错、不刷新（挂单仍有效）。`bid.ts` `doBid` 同理：竞拍在间隙被买断/到期时也刷新列表。
+- **验收**：`tsc --noEmit` 绿；`client/test/ui/auctionScene.ui.ts` 新增 16 例（共 55 通过）。轮询组：到点重拉并应用变更快照、未到点不拉、modal/picker 打开时暂停+恢复、`loading` 时不拉、dt 分段累加恰好触发一次、沿用当前筛选重拉、签名不变时**只拉不重绘**、有新出价（价格变）时重绘、拉取途中弹窗打开则丢弃该次结果不覆盖表单、离线拉取失败保留上次快照、`destroy()` 后不再拉且在途 `pollRefresh` 安全早退。抢购/竞拍组：`AUCTION_CLOSED`/`AUCTION_NOT_FOUND` 均弹 soldOut+刷新、金币不足不刷新、竞拍在间隙结束弹错+刷新、出价过低不刷新。注：真实并发抢购需两个客户端 + 活的 worldsvc/auctionsvc 后端，preview 单端无法复现，逻辑由驱动真实场景的 headless 测试覆盖。
+
 ---
 
 *本文为拍卖行机制权威，DRAFT/⚠️ 处随实现与拍板细化；数值以 `server/shared/src/slg.ts` 为准。*

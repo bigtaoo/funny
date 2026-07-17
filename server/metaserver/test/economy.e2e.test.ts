@@ -49,6 +49,7 @@ class FakeCommercial implements CommercialClient {
       subscriptionExpiry: sub?.expiry ?? 0,
       subscriptionLastClaimDay: sub?.lastClaimDayKey,
       starterUsed: this.starterUsed.get(id) ?? [],
+      firstPurchaseUsed: false,
     };
   }
   async starterBuy(a: { accountId: string; productId: string; orderId: string }) {

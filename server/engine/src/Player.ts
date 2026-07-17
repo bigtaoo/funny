@@ -19,6 +19,13 @@ export class Player {
 
   baseHp: number = BASE_HP;
 
+  /**
+   * Base HP ceiling for this player (drives the HP-bar denominator in `base_hp_changed`). Defaults to the
+   * global {@link BASE_HP}; a siege level can raise the DEFENDER's ceiling via `defenderBaseLevel`→`base.ts`
+   * so an NPC tile's base scales with its level (SLG option 2, 2026-07-17). Set together with `baseHp` at init.
+   */
+  maxBaseHp: number = BASE_HP;
+
   /** 0 = no upgrade, max BASE_UPGRADE_COSTS.length */
   upgradeLevel: number = 0;
 

@@ -23,6 +23,7 @@ export interface WalletView {
   subscriptionExpiry: number;
   subscriptionLastClaimDay?: string; // UTC day (YYYY-MM-DD) of last daily-coin claim; absent = never claimed
   starterUsed: string[];
+  firstPurchaseUsed: boolean; // true once the first-purchase 2× bonus has been claimed
 }
 
 /** Audit fields commercial stamps on every stored pool config. */
@@ -220,6 +221,7 @@ export class HttpCommercialClient implements CommercialClient {
           subscriptionExpiry: b.subscriptionExpiry ?? 0,
           subscriptionLastClaimDay: b.subscriptionLastClaimDay,
           starterUsed: b.starterUsed ?? [],
+          firstPurchaseUsed: b.firstPurchaseUsed ?? false,
         }
       : null;
   }

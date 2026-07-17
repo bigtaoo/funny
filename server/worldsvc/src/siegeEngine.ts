@@ -309,8 +309,8 @@ export function computeCardStateUpdates(
 export interface SiegeBattleInput {
   /** Attacker army layout (GarrisonEntry[], each unit's initialHp = allocated troop strength). */
   attackerArmy: GarrisonEntry[];
-  /** Defender defense config (garrison/defenderBuildings/defenderBaseLevel); null = derive a symbolic base only. */
-  defenderConfig: { garrison?: unknown; defenderBuildings?: unknown; defenderBaseLevel?: unknown } | null;
+  /** Defender defense config (garrison/defenderBuildings/defenderBaseLevel/defenderBaseHp); null = derive a symbolic base only. */
+  defenderConfig: { garrison?: unknown; defenderBuildings?: unknown; defenderBaseLevel?: unknown; defenderBaseHp?: unknown } | null;
   /** Tile level used to derive a symbolic base when no custom defender config is provided. */
   tileLevel: number;
   /** Level seed (same seed for a siege → recalculation and replay are tick-for-tick identical). */

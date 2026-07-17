@@ -1152,3 +1152,34 @@ if (path.startsWith('/admin/world/')) {
 - **不做真正的地图/瓦片合并**：两个 shard 各自独立地图从未需要对账，因为合区前置为"先搬空玩家再关闭"，任何时刻只有一张地图有活跃玩家在上面。
 - **不做家族/宗门整体转移**：转区是纯个人操作；一个家族想集体换 shard，需要每个成员各自转区（家族本身跟着任一成员走，不会"卡住"，因为家族不是 shard 数据）。
 - **不做玩家侧 UI**：服务端能力+契约+admin 运维入口已完整；玩家自助转区的选择/确认场景留作后续任务（数据层 `WorldApiClient` 方法已就绪，UI 是纯前端工作，不依赖任何未决的服务端设计）。
+
+## 29. NPC 地块基地血量随等级缩放（2026-07-17，方案 2，用户拍板）
+
+**背景/病灶**：用户实测「打一级地，打败了敌方所有的兵，但自己的兵不足以摧毁基地」。根因：**NPC 地块**（占地 `applyOccupy` / 驱逐 `applyOccupationExpulsion` / 领地 `buildDefenderConfig` / 据点 `applyStrongholdSiege` / 关口）走**单场** `runSiegeBattle`（objective=`destroy_base`），其引擎内象征基地血量此前恒为 `BASE_HP=100`，**与地块等级无关**。而基地不是"慢慢磨"——每个走到基地格的单位一次性造成自己的 `siegeValue`（合成步兵=11）后当场消失（`MovementSystem`）。于是一级地驻军仅 `npcGarrison(1)=120`（=2 步兵）微不足道，但要凑够 ~10 个幸存步兵抵达基地才推得平 100 血；`OCCUPY_MIN_TROOPS=500` 的最小占地兵力清完守军后幸存不足 → 超时 → 守方胜（防守方偏置）。**玩家主城/领地侧本无此问题**：走 ADR-026 分波，象征基地钉死 `defenderBaseLevel:0` 只当终结器，真实血量是 `TileDoc.hp = baseDurabilityMax(墙等级)`——已随基地等级缩放。缺口只在 NPC 单场路径。
+
+**方案（用户在三选项中选"缓坡 40×等级"）**：新增 `npcBaseHp(level) = SLG_NPC_BASE_HP_PER_LEVEL × max(1,level)`，`SLG_NPC_BASE_HP_PER_LEVEL = 40`（L1=40、L10=400）。低级更软、高级更硬，与玩家城侧 `baseDurabilityMax` 形成对称。
+
+**实现（跨 4 包，显式传参、无隐式推导）**：
+- **`@nw/shared`**（`slg/siege.ts`）：`SLG_NPC_BASE_HP_PER_LEVEL` + `npcBaseHp()`；`buildSiegeLevel`/`buildSiegeBattle` 的 config 加 `defenderBaseHp` 透传（>0 才写；**不**从 tileLevel 隐式推导，分波路径不传即保持默认）。
+- **`@nw/engine`**：`Player.maxBaseHp`（默认 `BASE_HP`）；`LevelDefinition.defenderBaseHp` + `levelSchema` 校验（1..100000 脏数据兜底）；`base.ts` 开局把 `topPlayer.baseHp=maxBaseHp=defenderBaseHp`；`MovementSystem` 的 `base_hp_changed.maxHp` 改发 `opponent.maxBaseHp`（原写死 `BASE_HP`）。
+- **`worldsvc`**：占地/驱逐/据点/关口/领地单场五处 `defenderConfig` 显式加 `defenderBaseHp: npcBaseHp(tileLevel)`；分波路径（`defenderBaseLevel:0`）**不加**；config 类型（`siegeEngine.ts`/`worldTypes.ts`/`combatSiege/base.ts`）补字段。回放走持久化 `defenderConfig`，确定性保持。
+- **client**：`GameRenderer/base.ts` 的 critical 阈值从 `BASE_HP×ratio` 改为各玩家 `maxBaseHp×ratio`（血条 max 本就走事件 `maxHp`，replay `baseMaxHp` 从首帧 `baseHp` 锚定，均自动正确）。
+
+**econ-sim 复核**（`tools/econ-sim/src/occupyBaseHpRun.ts` + `npm run --workspace @nw/econ-sim occupy-base-hp`，真实 `@nw/engine` 单场，合成步兵，每级 5 seed 全胜的最小兵力）：
+
+| 地块 | 驻军 | 旧(基地=100) 最小取胜 | 新(=40×L) 最小取胜 | 新基地血量 |
+|---|---|---|---|---|
+| 1 | 120 | 660 (11 步兵) | **300 (5 步兵)** | 40 |
+| 2 | 240 | 660 | 660 | 80 |
+| 3 | 360 | 720 | 720 | 120 |
+| 4 | 480 | 780 | 960 | 160 |
+| 5 | 600 | 900 | 1140 | 200 |
+| 6 | 720 | 960 | 1500 | 240 |
+| 7 | 840 | 1140 | 2160 | 280 |
+| 8 | 960 | 1260 | 2340 | 320 |
+| 9 | 1080 | 1320 | 2640 | 360 |
+| 10 | 1200 | 1560 | **2940** | 400 |
+
+L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/L3 基本不变；L4+ 显著变硬，高级地成为真正的战力门槛。
+
+**验收**：shared/engine/worldsvc/client `tsc` 全绿；shared siege 单测 39/39（+npcBaseHp/defenderBaseHp 用例）；engine 66/66（+siege defenderBaseHp 初始化用例）；worldsvc occupy/base-siege/siege/stronghold/passage/cheap-fallback e2e 全绿（无结果翻盘）；econ-sim `tsc --noEmit` 通过。**数值仍 DRAFT**（README §0 铁律：只调常数不改公式）。

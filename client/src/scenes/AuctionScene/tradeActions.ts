@@ -1,6 +1,7 @@
 // Buy-now and cancel-listing actions (market row buttons), each gated behind a confirm modal.
 import { ui as C } from '../../render/sketchUi';
 import { t } from '../../i18n';
+import { WorldApiError } from '../../net/WorldApiClient';
 import { type Constructor, type AuctionSceneBaseCtor } from './base';
 
 export interface TradeActionsHandlers {
@@ -24,7 +25,14 @@ export function TradeActionsMixin<TBase extends AuctionSceneBaseCtor>(Base: TBas
         this.showToast(t('auction.bought'));
         await Promise.all([this.loadData(), this.cb.reloadSave?.()]);
       } catch (e) {
-        this.showToast(this.errorMsg(e), C.red);
+        // Lost the race: another buyer took it (or it closed/expired) in the poll gap since our snapshot.
+        // Refresh so the now-stale card drops off, and tell the user plainly it's gone.
+        if (e instanceof WorldApiError && (e.code === 'AUCTION_CLOSED' || e.code === 'AUCTION_NOT_FOUND')) {
+          this.showToast(t('auction.err.soldOut'), C.red);
+          await this.loadData();
+        } else {
+          this.showToast(this.errorMsg(e), C.red);
+        }
       }
     }
 

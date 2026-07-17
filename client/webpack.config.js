@@ -2,6 +2,7 @@ const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const webpack = require('webpack');
 const CopyPlugin = require('copy-webpack-plugin');
+const TerserPlugin = require('terser-webpack-plugin');
 
 module.exports = (env, argv) => {
   const isProd = argv.mode === 'production';
@@ -146,6 +147,13 @@ module.exports = (env, argv) => {
     },
     optimization: {
       minimize: isProd,
+      // Keep the source names of Scene classes through minification. The anomaly channel stamps the
+      // active scene on ANR reports via `SceneManager` reading `scene.constructor.name` — with default
+      // terser mangling that name collapses to a 2-char alias (e.g. WorldMapScene→"hf", LobbyScene→"$t"),
+      // making the `anr.scene` breadcrumb unreadable in Loki. Scoping keep_classnames to /Scene$/ preserves
+      // exactly those names (all scenes end in "Scene") at negligible bundle cost, leaving every other
+      // class mangled as before.
+      minimizer: [new TerserPlugin({ terserOptions: { keep_classnames: /Scene$/ } })],
     },
   };
 };

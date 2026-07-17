@@ -234,6 +234,7 @@ POST /internal/ads/credit
   - 历史 bug（已修）：扣款路径曾「先扣币、后 `insertOne` 且无 catch」，两个并发同 orderId 请求会**双重扣款**、第二个 `insertOne` 抛 E11000 冒泡成 400。**顺序重放安全，并发重放不安全**。
 - **返回值仅供参考**：并发竞争的败者走 E11000 分支读订单时，赢者可能尚未回填 `coinsAfter`（读到占位 0）。余额权威以 `getWallet` / 后续镜像为准，`coinsAfter` 非权威。
 - **首充 2× 奖励时序**：`rechargeVerify` / `paddleComplete` 均须在 `claimFirstPurchaseBonus()` **之前** `ensureWallet`——`claim` 的 `findOneAndUpdate({firstPurchasedAt:{$exists:false}})` 无 upsert，钱包不存在时匹配不到会把 2× 漏到第二笔。
+- **首充状态回传（客户端徽标门控）**：`WalletView.firstPurchaseUsed`（= `wallets.firstPurchasedAt != null`）经 `meta` `mirrorWalletFrom` 写入 `save.monetization.firstPurchaseUsed`。客户端充值档位仅在 `firstPurchaseUsed !== true` 时展示「首充双倍」徽标——老玩家用掉首充后不再显示（否则会误导：徽标在，实际不再翻倍）。离线/无镜像时默认视为可用（仍显示）。
 
 ---
 

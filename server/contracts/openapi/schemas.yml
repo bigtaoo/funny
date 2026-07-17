@@ -73,6 +73,7 @@ schemas:
             items: { type: string }
             description: 'one-off product ids already purchased (§6)'
           starterGrowthEligible: { type: boolean, description: 'still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)' }
+          firstPurchaseUsed: { type: boolean, description: 'true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge' }
       # Delivered purchase orders (commercial orderId); idempotent delivery ledger (S5-5). May be absent in legacy saves, so not required.
       deliveredOrders:
         type: array

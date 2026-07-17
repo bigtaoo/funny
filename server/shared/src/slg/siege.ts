@@ -284,6 +284,28 @@ export function buildingMaxHp(level: number): number {
   return Math.max(1, Math.floor((Math.max(0, Math.floor(level)) || 0) * SLG_BASE_HP_PER_LEVEL) || SLG_BASE_HP_PER_LEVEL);
 }
 
+/**
+ * NPC-tile symbolic base HP, scaled by tile level (2026-07-17 owner decision, option 2 "缓坡"):
+ * the single-battle NPC capture paths (occupy / sweep / territory tile / stronghold / crossing) run one
+ * `runSiegeBattle` whose in-engine defender base HP was previously a flat {@link BASE_HP}=100 regardless of
+ * tile level — a low-level tile with a trivial garrison (npcGarrison(1)=120 = 2 infantry) still needed ~10
+ * surviving infantry (siegeValue 11 each) to batter a 100-HP base, so "clear the garrison, fail to destroy
+ * the base, time out → defender wins" was the common outcome. Scaling base HP with tile level makes low tiles
+ * genuinely soft and high tiles a real wall, mirroring the player-city side where the base gate already scales
+ * with wall level via {@link baseDurabilityMax}. Chosen at 40/level (L1=40 ⇒ ~4 infantry survivors; L10=400).
+ *
+ * NOT applied to the ADR-026 main-base WAVE path (arrival.ts pins defenderBaseLevel:0 and keeps the symbolic
+ * base a minimal terminator — the real durability there is TileDoc.hp = baseDurabilityMax). Callers opt in by
+ * passing `defenderBaseHp: npcBaseHp(tileLevel)` explicitly; {@link buildSiegeLevel} does no implicit derivation.
+ * [DRAFT → economy pass; econ-sim verified 2026-07-17]
+ */
+export const SLG_NPC_BASE_HP_PER_LEVEL = 40;
+
+/** NPC-tile symbolic base HP for a given tile level (floors at one level so every tile has a destructible base). */
+export function npcBaseHp(level: number): number {
+  return SLG_NPC_BASE_HP_PER_LEVEL * Math.max(1, Math.floor(level) || 1);
+}
+
 // ── D-CITY-8: main-base durability (SLG_CITY_DESIGN §8.2, 锁定 2026-07-15) ─────────────────────────
 // Replaces the old "wall temporarily buffs garrison HP during battle" mechanic (former WALL_DEFENSE_STEP/
 // wallDefenseMult in city.ts, now removed): the main base's durability cap is instead driven persistently
@@ -340,7 +362,7 @@ export function waveSeed(marchId: string, waveIndex: number): number {
  * Pure function, deterministic, computable on either end.
  */
 export function buildSiegeLevel(
-  config: { garrison?: unknown; defenderBuildings?: unknown; defenderBaseLevel?: unknown } | null | undefined,
+  config: { garrison?: unknown; defenderBuildings?: unknown; defenderBaseLevel?: unknown; defenderBaseHp?: unknown } | null | undefined,
   tileLevel: number,
   seed: number,
 ): Record<string, unknown> {
@@ -363,6 +385,12 @@ export function buildSiegeLevel(
     // No custom defense → derive a symbolic base defense from tile level (deterministic; attacker wins by destroying the base).
     level.defenderBaseLevel = clampBaseLevel(Math.floor(tileLevel) - 1);
   }
+  // Explicit per-level base HP (2026-07-17): honored regardless of the config/no-config branch above so the NPC
+  // single-battle capture paths can scale the defender base with tile level (see {@link npcBaseHp}). No implicit
+  // derivation from tileLevel here — the ADR-026 wave path deliberately omits it to keep its symbolic base minimal.
+  if (config && typeof config.defenderBaseHp === 'number' && config.defenderBaseHp > 0) {
+    level.defenderBaseHp = Math.max(1, Math.floor(config.defenderBaseHp));
+  }
   return level;
 }
 
@@ -383,7 +411,7 @@ export function buildSiegeLevel(
  */
 export function buildSiegeBattle(
   attacker: { army?: unknown } | null | undefined,
-  defender: { garrison?: unknown; defenderBuildings?: unknown; defenderBaseLevel?: unknown } | null | undefined,
+  defender: { garrison?: unknown; defenderBuildings?: unknown; defenderBaseLevel?: unknown; defenderBaseHp?: unknown } | null | undefined,
   tileLevel: number,
   seed: number,
   battleTimeoutTicks: number = SIEGE_BATTLE_TIMEOUT_TICKS,

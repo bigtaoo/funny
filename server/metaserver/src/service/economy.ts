@@ -228,6 +228,7 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
             fatePoints: draw.fatePointsAfter,
             subscriptionExpiry: saveWithRet2.monetization?.subscriptionExpiry ?? 0,
             starterUsed: saveWithRet2.monetization?.starterUsed ?? [],
+            firstPurchaseUsed: saveWithRet2.monetization?.firstPurchaseUsed,
           },
         };
       }
@@ -266,6 +267,7 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
           fatePoints: r.fatePointsAfter,
           subscriptionExpiry: save.monetization?.subscriptionExpiry ?? 0,
           starterUsed: save.monetization?.starterUsed ?? [],
+          firstPurchaseUsed: save.monetization?.firstPurchaseUsed,
         },
       };
       return ok({ save, granted: itemId });

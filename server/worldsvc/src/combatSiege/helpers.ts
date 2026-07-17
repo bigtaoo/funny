@@ -12,6 +12,7 @@ import {
   NATION_BONUS_DEFENSE,
   cabinetLootProtect,
   buildingLevel,
+  npcBaseHp,
   SECT_LEADER_PENALTY_RATE,
   type ResourceType,
   type SiegeOutcome,
@@ -43,16 +44,19 @@ export function SiegeHelpersMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       target: TileDoc,
       effGarrison: number,
       inOwnNation: boolean,
-    ): { garrison?: unknown; defenderBuildings?: unknown; defenderBaseLevel?: unknown } | null {
+    ): { garrison?: unknown; defenderBuildings?: unknown; defenderBaseLevel?: unknown; defenderBaseHp?: unknown } | null {
       const custom = target.defense as DefenseConfig | undefined;
+      // Territory-tile symbolic base HP scales with tile level (npcBaseHp; 2026-07-17) — same curve as the NPC
+      // capture paths. A custom defense that explicitly set defenderBaseHp overrides this default.
+      const baseHp = npcBaseHp(target.level ?? 1);
       const customGarrison = custom && (custom as { garrison?: unknown }).garrison;
       if (Array.isArray(customGarrison) && customGarrison.length > 0) {
         const garrison = inOwnNation
           ? scaleArmyHp(customGarrison as GarrisonEntry[], 1 + NATION_BONUS_DEFENSE)
           : (customGarrison as GarrisonEntry[]);
-        return { ...custom, garrison };
+        return { defenderBaseHp: baseHp, ...custom, garrison };
       }
-      return effGarrison > 0 ? { garrison: synthesizeArmy(effGarrison, 'defender') } : null;
+      return effGarrison > 0 ? { garrison: synthesizeArmy(effGarrison, 'defender'), defenderBaseHp: baseHp } : null;
     }
 
     /**

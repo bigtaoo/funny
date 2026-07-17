@@ -1377,6 +1377,8 @@ export interface components {
                 starterUsed: string[];
                 /** @description still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6) */
                 starterGrowthEligible?: boolean;
+                /** @description true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge */
+                firstPurchaseUsed?: boolean;
             };
             deliveredOrders?: string[];
             pvp: {

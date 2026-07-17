@@ -232,6 +232,13 @@ export class GameEngineBase {
         this.state.topPlayer.upgradeLevel = config.level.defenderBaseLevel;
       }
 
+      // Defender base HP ceiling: NPC tiles scale their base HP with tile level (SLG option 2, 2026-07-17).
+      // Sets both current and max so the HP bar reads full (hp/maxBaseHp) at start; independent of upgradeLevel.
+      if (config.level.defenderBaseHp && config.level.defenderBaseHp > 0) {
+        this.state.topPlayer.maxBaseHp = config.level.defenderBaseHp;
+        this.state.topPlayer.baseHp = config.level.defenderBaseHp;
+      }
+
       // Loadout / banned cards + level spells (§4.7, §4.9.2).
       // Build a unified card pool for the bottom player's draw policy that
       // respects loadout/ban filters and includes any PvE-only spell cards.

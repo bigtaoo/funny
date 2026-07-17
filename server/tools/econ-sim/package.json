@@ -8,6 +8,7 @@
     "sim": "tsx src/index.ts",
     "enhance-protect": "tsx src/enhanceProtectRun.ts",
     "stronghold-combat": "tsx src/strongholdCombatRun.ts",
+    "occupy-base-hp": "tsx src/occupyBaseHpRun.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

@@ -6,11 +6,11 @@
 // Layout (2026-07-15 redesign): cards packed into a scrolling multi-column masonry grid — mirrors the
 // roster grid's full-height-portrait cell language (CardScene/list.ts, CARD_CELL_H/CARD_CELL_W_TARGET)
 // instead of the old single-column "one row per character" list that left most of the screen width empty.
-import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { FS, snapFont } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
+import { buildFactionIcon } from '../../render/factionIcon';
 import { UNIT_ART_URLS } from '../../render/cardArt';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
@@ -100,7 +100,6 @@ export function SkinsMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase 
       // Skip drawing entirely when scrolled fully off-screen — same "no mask, just skip" pattern as renderList.
       if (y + cardH < viewTop || y > viewTop + viewH) return cardH;
 
-      const factionColor = def.faction === 'anna' ? 0xcc4466 : 0x4477cc;
       const card = sketchPanel(cardW, cardH, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(x, y, cardW) });
       card.x = x; card.y = y;
       this.bodyLayer.addChild(card);
@@ -113,15 +112,15 @@ export function SkinsMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase 
       const artUrl = UNIT_ART_URLS[def.unitType as UnitType];
       if (artUrl) this.drawArtFit(artUrl, x + CARD_PAD + 2, y + CARD_PAD + 2, portraitW - 4, this.bodyLayer, portraitH - 4);
 
-      // ── Right: name header + wrapped skin tile grid ──
-      const dot = new PIXI.Graphics();
-      dot.beginFill(factionColor).drawCircle(0, 0, 5).endFill();
-      dot.x = tileAreaX + 5; dot.y = y + CARD_PAD + 9;
-      this.bodyLayer.addChild(dot);
+      // ── Right: name header (faction totem + name) + wrapped skin tile grid ──
+      const facSize = 16;
+      const facIcon = buildFactionIcon(def.faction, facSize);
+      facIcon.x = tileAreaX; facIcon.y = y + CARD_PAD + 1;
+      this.bodyLayer.addChild(facIcon);
 
       const nameLbl = txt(t(`card.${def.id}.name` as TranslationKey), FS.body, C.dark, true);
-      nameLbl.x = tileAreaX + 16; nameLbl.y = y + CARD_PAD;
-      if (nameLbl.width > tileAreaW - 16) nameLbl.scale.set((tileAreaW - 16) / nameLbl.width);
+      nameLbl.x = tileAreaX + 18; nameLbl.y = y + CARD_PAD;
+      if (nameLbl.width > tileAreaW - 18) nameLbl.scale.set((tileAreaW - 18) / nameLbl.width);
       this.bodyLayer.addChild(nameLbl);
 
       const tileTop = y + CARD_PAD + HEADER_H;

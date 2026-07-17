@@ -5,6 +5,7 @@ import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor, marginLineX } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
+import { buildFactionIcon } from '../../render/factionIcon';
 import { UNIT_ART_URLS } from '../../render/cardArt';
 import { drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
@@ -152,19 +153,20 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       const ax = imgX + imgW + 12;
       const rightW = x + cellW - pad - ax; // available text width to the right of the portrait
 
-      // Name row: faction dot + name (name clipped so long names don't overrun the column).
-      const factionColor = def?.faction === 'anna' ? 0xcc4466 : 0x4477cc;
-      const dot = new PIXI.Graphics();
-      dot.beginFill(factionColor).drawCircle(0, 0, 5).endFill();
-      dot.x = ax + 5; dot.y = y + pad + 7;
-      this.bodyLayer.addChild(dot);
+      // Name row: faction totem + name (name clipped so long names don't overrun the column).
+      if (def) {
+        const facSize = 16;
+        const facIcon = buildFactionIcon(def.faction, facSize);
+        facIcon.x = ax; facIcon.y = y + pad - 1;
+        this.bodyLayer.addChild(facIcon);
+      }
 
       const cardName = t(`card.${card.defId}.name` as TranslationKey);
       const nameLbl = txt(cardName, FS.bodyLg, C.dark, true);
-      nameLbl.x = ax + 16; nameLbl.y = y + pad;
+      nameLbl.x = ax + 18; nameLbl.y = y + pad;
       nameLbl.style.wordWrap = false;
       // Leave room for the lock badge on the name row when locked.
-      const nameMaxW = rightW - 16 - (card.locked ? 24 : 0);
+      const nameMaxW = rightW - 18 - (card.locked ? 24 : 0);
       if (nameLbl.width > nameMaxW) nameLbl.scale.set(Math.min(1, nameMaxW / nameLbl.width));
       this.bodyLayer.addChild(nameLbl);
 
