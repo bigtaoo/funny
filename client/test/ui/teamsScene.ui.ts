@@ -228,7 +228,11 @@ describe('TeamsScene — Fill All Troops', () => {
       c1: makeCard('c1', 'lichuang', 1), // cap 200
       c2: makeCard('c2', 'max', 1),      // cap 100
     };
-    const cardState = { c1: { currentTroops: 0 }, c2: { currentTroops: 90 } };
+    // Both cards are assigned to a team (teamId set) — required for the server to accept them.
+    const cardState = {
+      c1: { currentTroops: 0, teamId: 't1' },
+      c2: { currentTroops: 90, teamId: 't1' },
+    };
     let distributed: Record<string, number> | null = null;
     const cb = makeCb({
       getSave: () => ({ cardInv } as unknown as SaveData),
@@ -251,5 +255,41 @@ describe('TeamsScene — Fill All Troops', () => {
 
     // c1's deficit (200) is filled first (highest gap), consuming all 150 stock; c2 gets nothing.
     expect(distributed).toEqual({ c1: 150 });
+  });
+
+  it('regression: only cards assigned to a team receive troops — roster cards with no teamId are excluded', async () => {
+    // Reproduces the "Fill failed" 400: the client used to build allocations from the whole
+    // roster, but the server rejects the entire distribute request if any allocation targets a
+    // card without a teamId (BAD_REQUEST "Card X is not assigned to a team").
+    const cardInv = {
+      onTeam: makeCard('onTeam', 'lichuang', 1),  // assigned → cap 200
+      benched: makeCard('benched', 'max', 1),     // roster-only → must be skipped
+    };
+    const cardState = {
+      onTeam: { currentTroops: 0, teamId: 't1' },
+      benched: { currentTroops: 0 }, // no teamId — not on any team
+    };
+    let distributed: Record<string, number> | null = null;
+    const cb = makeCb({
+      getSave: () => ({ cardInv } as unknown as SaveData),
+      worldApi: stubWorldApi({
+        getMe: async () => ({ joined: true, baseTroopStock: 500, cardState } as unknown as PlayerWorldView),
+        distributeTroops: async (_worldId: string, allocations: Record<string, number>) => {
+          distributed = allocations;
+          return { ok: true };
+        },
+      }),
+    });
+    const scene = new TeamsScene(createLayout(W, H), new InputManager(), cb) as any;
+    await Promise.resolve();
+    await Promise.resolve();
+    scene.render();
+
+    tap(scene, `${t('world.team.fillTroops')}  (500 ${t('world.troops')})`);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Only the on-team card is in the allocation; the benched roster card is never sent.
+    expect(distributed).toEqual({ onTeam: 200 });
   });
 });
