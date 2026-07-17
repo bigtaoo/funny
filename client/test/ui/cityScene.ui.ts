@@ -503,6 +503,18 @@ describe('CityScene military page team panel (D-CITY-10, 2026-07-16)', () => {
     scene.destroy();
   });
 
+  it('a legacy unit-type team (pre-card-migration, no cards) shows committed 0 — its old initialHp entries carry nothing', async () => {
+    const { scene } = await buildOnMilitaryPage({
+      teams: [{ id: 't1', name: 'Alpha', army: [{ initialHp: 240 }, { initialHp: 290 }] }],
+      me: { cardState: {} },
+    });
+    const texts = collectTexts(scene.container);
+    // Two entries in the garrison, but 0 committed (legacy initialHp is not counted as carried troops).
+    const sub = `${t('world.defense.garrison').replace('{n}', '2')}   ${t('world.team.committed').replace('{n}', '0')}`;
+    expect(texts).toContain(sub);
+    scene.destroy();
+  });
+
   it('shows the marching tag for a team with an active march', async () => {
     const { scene, inner } = await buildOnMilitaryPage({
       teams: [{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] }],

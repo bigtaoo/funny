@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js-legacy';
+import { makeText } from '../render/pixiText';
 import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
@@ -635,7 +636,7 @@ export class GachaScene implements Scene {
 
     const pity = pool.pityThreshold ?? 0;
     if (pity > 0) {
-      const pityLbl = new PIXI.Text(t('gacha.oddsDetail.pityRule', { n: pity }), {
+      const pityLbl = makeText(t('gacha.oddsDetail.pityRule', { n: pity }), {
         fontSize: FS.label, fill: C.dark, fontFamily: 'monospace',
         wordWrap: true, wordWrapWidth: pw * 0.84, align: 'center',
       });

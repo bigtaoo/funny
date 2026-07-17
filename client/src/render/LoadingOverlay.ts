@@ -7,6 +7,7 @@
  * Destroyed once the L0 tier is ready, immediately before the first scene shows.
  */
 import * as PIXI from 'pixi.js-legacy';
+import { makeText } from './pixiText';
 import { FS } from './fontScale';
 
 const INK = 0x3a3a3a;        // pencil/pen ink
@@ -27,7 +28,7 @@ export class LoadingOverlay {
     this.bg.beginFill(PAPER).drawRect(0, 0, width, height).endFill();
     this.container.addChild(this.bg);
 
-    this.pct = new PIXI.Text('0%', {
+    this.pct = makeText('0%', {
       fontFamily: 'sans-serif',
       fontSize: FS.body,
       fill: INK,

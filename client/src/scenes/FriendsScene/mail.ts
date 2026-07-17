@@ -4,6 +4,7 @@ import { t, TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { FS, snapFont } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
+import { makeText } from '../../render/pixiText';
 import type { MailView, MailAttachmentView } from '../../net/ApiClient';
 import { type Constructor, type FriendsSceneBaseCtor } from './base';
 
@@ -97,7 +98,7 @@ export function MailMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): TBas
       from.anchor.set(0, 0); from.x = px; from.y = top + Math.round(h * 0.05);
       this.container.addChild(from);
 
-      const bodyTxt = new PIXI.Text(mailText(m.body), {
+      const bodyTxt = makeText(mailText(m.body), {
         fontSize: FS.heading, fill: C.dark, fontFamily: 'monospace',
         wordWrap: true, wordWrapWidth: panelW, breakWords: true,
       });

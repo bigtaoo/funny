@@ -4,6 +4,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../../i18n';
 import { buildPaperBackground } from '../../../render/sketchUi';
+import { makeText } from '../../../render/pixiText';
 import { FS } from '../../../render/fontScale';
 import { drawSceneHeader, HEADER_ACCENT } from '../../../ui/widgets/SceneHeader';
 import { HUD_H } from '../constants';
@@ -124,7 +125,7 @@ export function BuildMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase):
       spinner.position.set(cx, cy);
       layer.addChild(spinner);
 
-      const label = new PIXI.Text(t('world.loading'), {
+      const label = makeText(t('world.loading'), {
         fontFamily: 'sans-serif', fontSize: FS.body, fill: 0x3a3a3a,
       });
       label.anchor.set(0.5);

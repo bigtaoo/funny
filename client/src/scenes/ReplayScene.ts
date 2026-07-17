@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js-legacy';
+import { makeText } from '../render/pixiText';
 import { Scene } from './SceneManager';
 import { GameRenderer } from '../render/GameRenderer';
 import { ILayout } from '../layout/ILayout';
@@ -141,7 +142,7 @@ export class ReplayScene implements Scene {
     this.overlay.addChild(track, this.progressFill);
 
     // "REPLAY" tag (top-left).
-    const tag = new PIXI.Text(`● ${t('replay.title')}`, {
+    const tag = makeText(`● ${t('replay.title')}`, {
       fontSize: snapFont(Math.round(btnH * 0.5)),
       fill: 0xaa2222,
       fontWeight: 'bold',
@@ -185,7 +186,7 @@ export class ReplayScene implements Scene {
     this.makeButton(x, rowY, exitW, btnH, t('replay.exit'), () => this.cb.onExit());
 
     // Centre status text ("replay ended" / error), hidden until needed.
-    this.statusLabel = new PIXI.Text(this.errorMsg ?? '', {
+    this.statusLabel = makeText(this.errorMsg ?? '', {
       fontSize: FS.headline,
       fill: 0xaa2222,
       fontWeight: 'bold',
@@ -215,7 +216,7 @@ export class ReplayScene implements Scene {
     bg.cursor = 'pointer';
     bg.on('pointertap', onTap);
 
-    const label = new PIXI.Text(text, {
+    const label = makeText(text, {
       fontSize: snapFont(Math.round(h * 0.42)),
       fill: 0xffffff,
       fontWeight: 'bold',

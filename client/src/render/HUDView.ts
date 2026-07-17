@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js-legacy';
+import { makeText } from './pixiText';
 import { BASE_HP, BASE_UPGRADE_COSTS, HAND_REFRESH_COST } from '../game/config';
 import { GameState } from '../game/GameState';
 import { OwnerId } from '../game/types';
@@ -75,10 +76,14 @@ export class HUDView {
   /** True when hand-refresh is currently affordable (set each frame by sync). */
   refreshEnabled = false;
 
-  constructor(layout: ILayout) {
+  /** Campaign (PvE) levels reword the surrender button/dialog as "exit level". */
+  private readonly campaign: boolean;
+
+  constructor(layout: ILayout, campaign = false) {
     this.container           = new PIXI.Container();
     this.backgroundContainer = new PIXI.Container();
     this.layout              = layout;
+    this.campaign            = campaign;
     this.build();
   }
 
@@ -152,7 +157,7 @@ export class HUDView {
     panel.endFill();
     overlay.addChild(panel);
 
-    const title = new PIXI.Text(t('hud.surrenderTitle'), {
+    const title = makeText(t(this.campaign ? 'hud.exitLevelTitle' : 'hud.surrenderTitle'), {
       fontSize: snapFont(Math.round(pH * 0.18)), fill: 0x222222,
       fontWeight: 'bold', fontFamily: 'monospace',
     });
@@ -169,7 +174,7 @@ export class HUDView {
     const bX  = (dw - bW) / 2;
 
     overlay.addChild(this.makeBtn(bX, y1, bW, bH, 'secondary', t('hud.surrenderCancel')));
-    overlay.addChild(this.makeBtn(bX, y2, bW, bH, 'primary',   t('hud.surrenderConfirm')));
+    overlay.addChild(this.makeBtn(bX, y2, bW, bH, 'primary',   t(this.campaign ? 'hud.exitLevelConfirm' : 'hud.surrenderConfirm')));
 
     this._surrenderCancelRect  = { x: bX, y: y1, w: bW, h: bH };
     this._surrenderConfirmRect = { x: bX, y: y2, w: bW, h: bH };
@@ -197,7 +202,7 @@ export class HUDView {
     bg.drawRoundedRect(-160, -50, 320, 100, 8);
     bg.endFill();
     const msg  = winner === null ? t('hud.draw') : (winner === localOwner ? t('hud.win') : t('hud.lose'));
-    const text = new PIXI.Text(msg, { fontSize: FS.headline, fill: 0xffffff, fontWeight: 'bold' });
+    const text = makeText(msg, { fontSize: FS.headline, fill: 0xffffff, fontWeight: 'bold' });
     text.anchor.set(0.5);
     overlay.addChild(bg, text);
 
@@ -240,7 +245,7 @@ export class HUDView {
     topBg.endFill();
 
     // Timer — landscape hugs the board's left edge; portrait keeps the strip edge.
-    this.timerText   = new PIXI.Text('0:00', { ...TEXT_STYLE, fontSize: FS.title });
+    this.timerText   = makeText('0:00', { ...TEXT_STYLE, fontSize: FS.title });
     this.timerText.x = (isLandscape ? boardLeft : topR.x) + 14;
     this.timerText.y = topR.y + (topR.h - this.timerText.height) / 2;
 
@@ -262,7 +267,7 @@ export class HUDView {
     this.drawSurrenderBtn();
     this._surrenderRect = { x: sBtnX, y: sBtnY, w: BTN_W, h: BTN_H };
 
-    const sLabel = new PIXI.Text(t('hud.surrender'), { fontSize: FS.small, fill: 0x333333, fontWeight: 'bold', fontFamily: 'monospace' });
+    const sLabel = makeText(t(this.campaign ? 'hud.exitLevel' : 'hud.surrender'), { fontSize: FS.small, fill: 0x333333, fontWeight: 'bold', fontFamily: 'monospace' });
     sLabel.anchor.set(0.5);
     sLabel.x = sBtnX + BTN_W / 2;
     sLabel.y = sBtnY + BTN_H / 2;
@@ -276,7 +281,7 @@ export class HUDView {
     this.backgroundContainer.addChild(botBg);
 
     // Ink
-    this.inkText = new PIXI.Text('⬤ 0', { ...TEXT_STYLE, fontSize: FS.title });
+    this.inkText = makeText('⬤ 0', { ...TEXT_STYLE, fontSize: FS.title });
 
     // Player HP bar
     this.playerHpGfx = new PIXI.Graphics();
@@ -322,7 +327,7 @@ export class HUDView {
 
     // Refresh button — visual only, no interactive
     this.refreshBtnBg    = new PIXI.Graphics();
-    this.refreshBtnLabel = new PIXI.Text(t('hud.refreshCost', { cost: HAND_REFRESH_COST }), ACTION_LABEL_STYLE);
+    this.refreshBtnLabel = makeText(t('hud.refreshCost', { cost: HAND_REFRESH_COST }), ACTION_LABEL_STYLE);
     this.refreshBtnBg.x  = rRefresh.x;
     this.refreshBtnBg.y  = rRefresh.y;
     this.refreshBtnLabel.anchor.set(0.5);
@@ -333,7 +338,7 @@ export class HUDView {
 
     // Upgrade button — visual only, no interactive
     this.upgradeBtnBg    = new PIXI.Graphics();
-    this.upgradeBtnLabel = new PIXI.Text(t('hud.upgradeCost', { cost: BASE_UPGRADE_COSTS[0]! }), ACTION_LABEL_STYLE);
+    this.upgradeBtnLabel = makeText(t('hud.upgradeCost', { cost: BASE_UPGRADE_COSTS[0]! }), ACTION_LABEL_STYLE);
     this.upgradeBtnBg.x  = rUpgrade.x;
     this.upgradeBtnBg.y  = rUpgrade.y;
     this.upgradeBtnLabel.anchor.set(0.5);
@@ -367,7 +372,7 @@ export class HUDView {
     const c = new PIXI.Container();
     const bg = new PIXI.Graphics();
     drawHudButton(bg, w, h, variant, { radius: 6 });
-    const txt = new PIXI.Text(label, {
+    const txt = makeText(label, {
       fontSize: snapFont(Math.round(h * 0.42)), fill: hudButtonText(variant), fontWeight: 'bold', fontFamily: 'monospace',
     });
     txt.anchor.set(0.5, 0.5);

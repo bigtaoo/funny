@@ -31,6 +31,16 @@ const OUT_DIR = path.resolve(__dirname, '../../../client/src/assets/slg');
 const CELL = 256;
 const COLS = 5;
 const PAD_FRAC = 0.02;
+// Fraction of the cell the (bottom-aligned, centered) building content is scaled to occupy. UNLIKE
+// the city atlas — whose source art bakes in a big isometric ground plate that visually equals the
+// 3×3 plot, leaving the actual building small within it — this "stationery fortress" art has NO
+// ground plate: the object (dustpan, book-fort, …) fills its own source frame edge-to-edge. Fitting
+// that straight into the full CELL made the on-map sprite (BASE_SPRITE_TILES=3.2 tiles) read as ~3.2
+// tiles of solid building sitting on a 3-tile plot — i.e. visibly oversized/overhanging. Scaling the
+// content below 1.0 reproduces the city art's breathing room: side margin (building narrower than the
+// plot diamond) + headroom above (flags/spires clear the top). Foot stays flush to the cell bottom so
+// the renderer's bottom-center anchor still plants it on the plot. Tune visually against the running map.
+const CONTENT_SCALE = 0.8;
 const TSTEP = 33;
 const TSEED = 0;
 const PRECUT_ALPHA_FRAC = 0.02;
@@ -130,9 +140,10 @@ async function makeCell(srcPath) {
   const cw = Math.min(width, box.maxX + pad + 1) - left;
   const ch = Math.min(height, box.maxY + 1) - top;
 
+  const inner = Math.round(CELL * CONTENT_SCALE);
   const fitted = await sharp(Buffer.from(data), { raw: { width, height, channels: 4 } })
     .extract({ left, top, width: cw, height: ch })
-    .resize(CELL, CELL, { fit: 'inside', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .resize(inner, inner, { fit: 'inside', background: { r: 0, g: 0, b: 0, alpha: 0 } })
     .png()
     .toBuffer();
   const fm = await sharp(fitted).metadata();

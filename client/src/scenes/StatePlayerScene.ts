@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js-legacy';
+import { makeText } from '../render/pixiText';
 import { Scene } from './SceneManager';
 import { ILayout } from '../layout/ILayout';
 import { BoardView } from '../render/BoardView';
@@ -281,7 +282,7 @@ export class StatePlayerScene implements Scene {
     const fs = FS.heading;
     for (const p of replay.header.players) {
       const name = p.name || (p.side === 0 ? t('stateplayer.you') : t('stateplayer.opponent'));
-      const label = new PIXI.Text(name, {
+      const label = makeText(name, {
         fontSize: fs,
         fill: p.side === 0 ? 0x2244aa : 0xaa2222,
         fontWeight: 'bold',
@@ -310,7 +311,7 @@ export class StatePlayerScene implements Scene {
     const tagIc = buildIcon('play', tagSz, 0x2244aa);
     tagIc.x = Math.round(w * 0.04); tagIc.y = this.barY - 2;
     this.overlay.addChild(tagIc);
-    const tag = new PIXI.Text(t('stateplayer.tag'), {
+    const tag = makeText(t('stateplayer.tag'), {
       fontSize: snapFont(tagSz),
       fill: 0x2244aa,
       fontWeight: 'bold',
@@ -353,7 +354,7 @@ export class StatePlayerScene implements Scene {
         : winner === 0
           ? t('stateplayer.bottomWon')
           : t('stateplayer.topWon');
-    const banner = new PIXI.Text(headline, {
+    const banner = makeText(headline, {
       fontSize: FS.display,
       fill: 0x2c2c2a,
       fontWeight: 'bold',
@@ -399,7 +400,7 @@ export class StatePlayerScene implements Scene {
     bg.cursor = 'pointer';
     bg.on('pointertap', onTap);
 
-    const label = new PIXI.Text(text, {
+    const label = makeText(text, {
       fontSize: snapFont(Math.round(h * 0.42)),
       fill: 0xffffff,
       fontWeight: 'bold',

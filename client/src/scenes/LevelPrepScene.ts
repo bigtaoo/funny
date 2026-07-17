@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js-legacy';
+import { makeText } from '../render/pixiText';
 import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
@@ -236,7 +237,7 @@ export class LevelPrepScene implements Scene {
     const label = txt(t('level.objective.label'), fs, C.mid);
     label.anchor.set(0, 0);
 
-    const desc = new PIXI.Text(this.objectiveText(obj), {
+    const desc = makeText(this.objectiveText(obj), {
       fontSize: fs,
       fill: C.dark,
       fontWeight: 'bold',
@@ -321,7 +322,7 @@ export class LevelPrepScene implements Scene {
     const wrapWidth = panW - innerPadX * 2;
     const padV = Math.round(h * 0.012);
 
-    const scratch = new PIXI.Text(this.cb.brief!, {
+    const scratch = makeText(this.cb.brief!, {
       fontSize,
       fill: C.mid,
       wordWrap: true,
@@ -361,7 +362,7 @@ export class LevelPrepScene implements Scene {
 
     this.introLineTexts = [];
     this.introLines.forEach((line, i) => {
-      const text = new PIXI.Text(line, {
+      const text = makeText(line, {
         fontSize,
         fill: 0xe8dfc0,
         fontFamily: 'serif',
@@ -378,7 +379,7 @@ export class LevelPrepScene implements Scene {
       this.introLineTexts.push(text);
     });
 
-    const hint = new PIXI.Text(t('story.tapToContinue'), {
+    const hint = makeText(t('story.tapToContinue'), {
       fontSize: FS.label,
       fill: 0x8a7a60,
       fontFamily: 'monospace',
@@ -388,7 +389,7 @@ export class LevelPrepScene implements Scene {
     hint.y = h * 0.92;
     this.container.addChild(hint);
 
-    const skipText = new PIXI.Text(t('story.skip'), {
+    const skipText = makeText(t('story.skip'), {
       fontSize: FS.label,
       fill: 0x8a7a60,
       fontFamily: 'monospace',

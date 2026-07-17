@@ -117,6 +117,10 @@ export const en: Record<TranslationKey, string> = {
   'hud.surrenderTitle': 'Surrender the match?',
   'hud.surrenderCancel': 'CANCEL',
   'hud.surrenderConfirm': 'SURRENDER',
+  // Campaign levels: "surrender" reads oddly against a PvE stage, so use "exit level" wording.
+  'hud.exitLevel': 'EXIT LEVEL',
+  'hud.exitLevelTitle': 'Exit the level?',
+  'hud.exitLevelConfirm': 'EXIT',
   'hud.upgradeMax': 'MAX',
   'hud.upgradeCost': '↑ {cost}g',
   'hud.upgrade': '↑ Upgrade',
@@ -1501,6 +1505,8 @@ export const en: Record<TranslationKey, string> = {
   'world.team.fillTroops': 'Fill All Troops',
   'world.team.fillTroopsOk': 'Troops filled',
   'world.team.fillTroopsErr': 'Fill failed',
+  'world.team.fillNoCards': 'No cards on any team — build a team first',
+  'world.team.legacyRebuild': '⚠ Team outdated — tap to rebuild',
   'world.team.troopsStatus': '{cur}/{cap}',
   'world.team.injured': 'Injured',
 
