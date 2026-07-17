@@ -15,7 +15,7 @@ import type { WorldSocialsvcClient } from './socialsvcClient';
 export interface SiegeReplayInputs {
   seed: number;
   attackerArmy: GarrisonEntry[];
-  defenderConfig: { garrison?: unknown; defenderBuildings?: unknown; defenderBaseLevel?: unknown } | null;
+  defenderConfig: { garrison?: unknown; defenderBuildings?: unknown; defenderBaseLevel?: unknown; defenderBaseHp?: unknown } | null;
   tileLevel: number;
 }
 

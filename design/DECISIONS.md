@@ -233,6 +233,8 @@
 
 - **5 分钟语义澄清**：即「攻方胜利 → 结算伤害」之间的延迟，**不是**再攻免疫窗；同一建筑可叠加多次各自的 5min 计时。
 
+- **细化（2026-07-17，NPC 单场围攻基地血量随等级缩放，用户拍板方案 2）**：上面 ①/④ 描述的是**玩家主城/领地**的分波 + `TileDoc.hp` 延迟结算路径。但 **NPC 地块**（占地 `applyOccupy`/驱逐 `applyOccupationExpulsion`、领地 `buildDefenderConfig`、据点、关口）走的是**单场** `runSiegeBattle`（objective=`destroy_base`），其"基地"是引擎内的象征基地——此前恒为 `BASE_HP=100`，**不随地块等级变化**。后果：一级地驻军仅 `npcGarrison(1)=120`(=2 步兵)，基地却要 100 血,合成步兵每个到城仅造成 siege 值 11 ⇒ 需 ~10 个幸存者才推得平，`OCCUPY_MIN_TROOPS=500` 的最小占地兵力清完守军也打不掉基地 → 超时判守方胜（用户实测踩到）。修复：新增 `npcBaseHp(level) = SLG_NPC_BASE_HP_PER_LEVEL × level`（**缓坡 40/级**：L1=40、L10=400），由上述 NPC 单场路径**显式**经 `defenderConfig.defenderBaseHp` 传入（引擎新增 `LevelDefinition.defenderBaseHp` → `Player.maxBaseHp`；`base_hp_changed.maxHp` 改发各玩家 `maxBaseHp`）。分波路径**不传**该字段（`defenderBaseLevel:0` 的象征基地保持最小终结器，真实血量仍是 `TileDoc.hp = baseDurabilityMax(墙等级)`），与玩家城侧"基地血量随墙等级缩放"形成对称。econ-sim 复核（`tools/econ-sim/src/occupyBaseHpRun.ts`，真实引擎）：L1 最小取胜兵力 660→**300**(5 步兵，最小占地 500 现稳赢)，L2/L3 基本不变，L10 1560→**2940**(高级地成真墙)。数值仍 DRAFT。
+
 - **PvE**：关卡里与 PvP 里的基地**都吃攻城值**（同一套血量+扣血）。PvE 据点守军仍为系统 NPC 阵（沿用 `applyStrongholdSiege` 的合成守军），不套 5 队玩家波次。
 
 - **实现更新（2026-07-02，PvP/引擎接线）**：攻城值落地为**引擎蓝图级一级属性**，接入 PvP/战役实时基地扣血。

@@ -11,6 +11,7 @@ import {
   playerWorldId,
   resolveSiege,
   npcGarrison,
+  npcBaseHp,
   OCCUPY_HOLD_SEC,
   SlgError,
   type SiegeResolution,
@@ -127,8 +128,8 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
         cardInstances = ci;
         cardEquipInv = engEquipInv;
       }
-      const defenderConfig = { garrison: synthesizeArmy(garrison, 'defender') };
       const tileLevel = proc.level;
+      const defenderConfig = { garrison: synthesizeArmy(garrison, 'defender'), defenderBaseHp: npcBaseHp(tileLevel) };
       const seed = siegeSeedFromId(m._id);
       let res: SiegeResolution;
       let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
@@ -186,8 +187,8 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
         cardInstances = ci;
         cardEquipInv = engEquipInv;
       }
-      const defenderConfig = { garrison: synthesizeArmy(garrison, 'defender') };
       const tileLevel = tile.level ?? 1;
+      const defenderConfig = { garrison: synthesizeArmy(garrison, 'defender'), defenderBaseHp: npcBaseHp(tileLevel) };
       const seed = siegeSeedFromId(m._id);
       let res: SiegeResolution;
       let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };

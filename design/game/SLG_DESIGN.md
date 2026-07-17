@@ -232,6 +232,8 @@
 >
 > **攻城值 = 逐卡属性（任务 #8 已实现）**：每张卡有 `CardDef.siegeValueBase`（DRAFT，按定位差异化：盾兵/坦克 14 > 步兵 11/Max 12 > 弓手/Mara 8，目录均值 ≈ 10 以保血量节奏），`cardSiegeValue(card)` 逐级 `×(1+0.1(lv-1))`；队伍攻城值 = `teamSiegeValue(army, cardInv)` 逐卡求和（缺卡回退统一值）。**数值 DRAFT，待经济核验**。
 >
+> **NPC 单场围攻基地血量随等级缩放（2026-07-17，方案 2，见 [DECISIONS ADR-026](../DECISIONS.md) 细化条 + [LOG §29](SLG_DESIGN_LOG.md)）**：上面的分波 + `TileDoc.hp` 是**玩家主城/领地**路径；**NPC 地块**（占地/驱逐/据点/关口/领地单场）走 `runSiegeBattle`（`destroy_base`），其象征基地血量此前恒为 `BASE_HP=100`，与等级无关——一级地驻军仅 120 却要打 100 血基地，最小占地兵力清完守军也推不平基地（超时判守方胜）。现改为 `npcBaseHp(level)=40×level`（L1=40、L10=400），经 `defenderConfig.defenderBaseHp` 显式传入引擎（`Player.maxBaseHp`）。低级更软（L1 最小取胜 660→300 兵）、高级更硬（L10 1560→2940），与玩家城侧 `baseDurabilityMax(墙等级)` 对称。分波路径不受影响。
+>
 > **血量/受伤下行 + UI（任务 #8 已实现）**：`WorldTileView.hp/maxHp`（base/territory/stronghold）与 `PlayerWorldView.teamState`（+ 补齐 `cardState/baseTroopStock`）经 `getMe/getMap` 下行（主动查询，无实时推送）。客户端：`WorldMapScene` 地图建筑血条（**仅受损时显示**，绿→琥珀→红）+ 攻击弹窗 `world.buildingHp` 数值；`TeamsScene` 队伍受伤倒计时徽标（复用 `roster.injured`）。
 
 ### 5.1 围攻 = 确定性引擎打防守 config + 录像（SLG5）

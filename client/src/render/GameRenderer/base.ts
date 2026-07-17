@@ -5,7 +5,7 @@
 // base into the final GameRenderer.
 import * as PIXI from 'pixi.js-legacy';
 import { makeText } from '../pixiText';
-import { BASE_HP, BOTTOM_BUILDING_ROW, BOTTOM_SPAWN_ROW, TOP_BUILDING_ROW, TOP_SPAWN_ROW } from '../../game/config';
+import { BOTTOM_BUILDING_ROW, BOTTOM_SPAWN_ROW, TOP_BUILDING_ROW, TOP_SPAWN_ROW } from '../../game/config';
 
 /** HP fraction at/under which a base is "critical" (~last HP cell) — triggers the board ring. */
 const BASE_CRITICAL_RATIO = 0.15;
@@ -256,9 +256,10 @@ export class GameRendererBase {
     this.boardView.update(dt);
     this.boardView.setBaseUpgradeLevel(0, state.bottomPlayer.upgradeLevel);
     this.boardView.setBaseUpgradeLevel(1, state.topPlayer.upgradeLevel);
-    // Critical-HP ring on the board (both bases): one haste-rush from ending.
-    this.boardView.setBaseCritical(0, state.bottomPlayer.baseHp > 0 && state.bottomPlayer.baseHp <= BASE_HP * BASE_CRITICAL_RATIO);
-    this.boardView.setBaseCritical(1, state.topPlayer.baseHp > 0 && state.topPlayer.baseHp <= BASE_HP * BASE_CRITICAL_RATIO);
+    // Critical-HP ring on the board (both bases): one haste-rush from ending. Threshold is a fraction of each
+    // player's own maxBaseHp (not the global BASE_HP) — an NPC tile's defender base can scale above/below 100.
+    this.boardView.setBaseCritical(0, state.bottomPlayer.baseHp > 0 && state.bottomPlayer.baseHp <= state.bottomPlayer.maxBaseHp * BASE_CRITICAL_RATIO);
+    this.boardView.setBaseCritical(1, state.topPlayer.baseHp > 0 && state.topPlayer.baseHp <= state.topPlayer.maxBaseHp * BASE_CRITICAL_RATIO);
     this.vfxSystem.update(dt);
     if (this.vignetteAlpha > 0) {
       this.vignetteAlpha = Math.max(0, this.vignetteAlpha - dt / GameRendererBase.VIGNETTE_FADE);

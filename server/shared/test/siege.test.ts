@@ -13,7 +13,9 @@ import {
   isInVision,
   marchInterpPos,
   nationDefenseStrength,
+  npcBaseHp,
   npcGarrison,
+  SLG_NPC_BASE_HP_PER_LEVEL,
   regenDurability,
   resolveSiege,
   siegeSeedFromId,
@@ -179,6 +181,20 @@ describe('teamSiegeValue', () => {
   });
 });
 
+describe('npcBaseHp (SLG option 2 — base HP scales with tile level)', () => {
+  it('scales linearly at SLG_NPC_BASE_HP_PER_LEVEL per level', () => {
+    expect(npcBaseHp(1)).toBe(SLG_NPC_BASE_HP_PER_LEVEL);
+    expect(npcBaseHp(1)).toBe(40); // locked value (2026-07-17): L1 is genuinely soft
+    expect(npcBaseHp(10)).toBe(10 * SLG_NPC_BASE_HP_PER_LEVEL);
+  });
+
+  it('floors sub-1 / fractional levels at one level', () => {
+    expect(npcBaseHp(0)).toBe(SLG_NPC_BASE_HP_PER_LEVEL);
+    expect(npcBaseHp(-3)).toBe(SLG_NPC_BASE_HP_PER_LEVEL);
+    expect(npcBaseHp(2.9)).toBe(2 * SLG_NPC_BASE_HP_PER_LEVEL);
+  });
+});
+
 describe('buildSiegeLevel / buildSiegeBattle', () => {
   it('derives a symbolic defenderBaseLevel from tileLevel when no config is given', () => {
     const level = buildSiegeLevel(null, 3, 123);
@@ -209,5 +225,23 @@ describe('buildSiegeLevel / buildSiegeBattle', () => {
   it('omits attackerArmy when the attacker has no army', () => {
     const battle = buildSiegeBattle(null, null, 3, 42);
     expect(battle.attackerArmy).toBeUndefined();
+  });
+
+  it('carries through an explicit defenderBaseHp (NPC single-battle base-HP scaling)', () => {
+    const level = buildSiegeLevel({ garrison: [{ x: 1 }], defenderBaseHp: npcBaseHp(1) }, 1, 7);
+    expect(level.defenderBaseHp).toBe(40);
+    const battle = buildSiegeBattle({ army: [{ initialHp: 300 }] }, { garrison: [{ x: 1 }], defenderBaseHp: npcBaseHp(5) }, 5, 7);
+    expect(battle.defenderBaseHp).toBe(200);
+  });
+
+  it('does NOT derive defenderBaseHp implicitly — the wave path (no defenderBaseHp) keeps the default base', () => {
+    // A config without defenderBaseHp (ADR-026 wave terminator) must not get a tile-level-scaled base.
+    expect(buildSiegeLevel({ garrison: [{ x: 1 }], defenderBaseLevel: 0 }, 10, 1).defenderBaseHp).toBeUndefined();
+    expect(buildSiegeLevel(null, 10, 1).defenderBaseHp).toBeUndefined();
+  });
+
+  it('ignores a non-positive defenderBaseHp', () => {
+    expect(buildSiegeLevel({ garrison: [{ x: 1 }], defenderBaseHp: 0 }, 3, 1).defenderBaseHp).toBeUndefined();
+    expect(buildSiegeLevel({ garrison: [{ x: 1 }], defenderBaseHp: -50 }, 3, 1).defenderBaseHp).toBeUndefined();
   });
 });
