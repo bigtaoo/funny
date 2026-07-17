@@ -43,6 +43,7 @@ ZIP 内含 `animation.json`（v2）+ `spritesheet.png`（shelf bin-packing）+ `
 - **animator 编辑**：阴影槽已从图片面板（`ImageController.ALL_SLOTS` 去掉 shadow）移除，只在 `AttachmentPanel` 调挂点位置 + `shadowW/H`；预览（`Renderer.ts`）改用同一份程序生成纹理（`shadowTexture()`），与游戏一致。
 - **runtime**（`StickmanRuntime.ts`）：构造时若有 `shadow` 挂点就建一个底层 sprite 用程序纹理；加载 spritesheet 时**跳过任何 `shadow` 帧**，所以**旧 `.tao`（仍打包了 shadow.png）也走统一程序绘制**，无需重导出。
 - 旧 `.tao` 内残留的 `shadow.png` 成为死字节，运行时忽略；如需瘦身可在 animator 里重新导出覆盖。
+- **2026-07-17 瘦身**：`client/src/assets` 里 `infantry/max/shieldbearer` 三个仍带 `shadow` 帧的旧包，已用脚本外科式删掉 `spritesheet.json` 的 `shadow` 帧条目（`animation.json` 的 shadow 挂点 + `spritesheet.png` 字节不动，程序阴影照常渲染）。注意 `art/units/*/*.tao` 母版早已重导出为无 shadow 帧，但与 `src/assets/*` 已**分叉**（不同版本、PNG 体积差很大），故不可用母版覆盖 src/assets——只能就地删帧。
 
 ## `.tao.editor`（编辑器存档）
 
