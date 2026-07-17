@@ -9,10 +9,19 @@
  */
 import * as PIXI from 'pixi.js-legacy';
 import { ui as C, txt } from './sketchUi';
+import { t, type TranslationKey } from '../i18n';
+import { getTitleKeys, formatLadderTitle } from '../game/meta/titles';
+
+/** Resolve a raw titleId (e.g. `event.newbie`) to its short display label (e.g. 新手). */
+function titleShortLabel(titleId: string): string {
+  const keys = getTitleKeys(titleId);
+  if (keys) return t(keys.shortKey as TranslationKey) || formatLadderTitle(titleId);
+  return formatLadderTitle(titleId);
+}
 
 export interface ChatSender {
   senderName: string;
-  /** Equipped title (称号), if any. */
+  /** Equipped title (称号) as a raw titleId (e.g. `event.newbie`); resolved to its short label. */
   title?: string;
   /** Sect name (宗门), if any. */
   sectName?: string;
@@ -23,7 +32,7 @@ export interface ChatSender {
 /** `[title][sect][family]name` — bracket segments included only when present. */
 export function chatNameLabel(m: ChatSender): string {
   let prefix = '';
-  if (m.title) prefix += `[${m.title}]`;
+  if (m.title) prefix += `[${titleShortLabel(m.title)}]`;
   if (m.sectName) prefix += `[${m.sectName}]`;
   if (m.familyName) prefix += `[${m.familyName}]`;
   return prefix + m.senderName;
