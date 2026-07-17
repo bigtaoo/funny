@@ -306,7 +306,7 @@ describe('ShopScene — consumable items (kind="item") render their own name/des
     const scene = buildShop({
       // Skins listed BEFORE the stone in the source array; the shop must still render the stone first.
       loadItems: async () => [
-        { id: 'skin_shop_c1', cost: 800, grants: 'skin_shop_c1' },
+        { id: 'skin_shop_c1', cost: 800, kind: 'skin', grants: 'skin_shop_c1' },
         { id: 'protect_enhance', cost: 500, kind: 'item', grants: 'protect_enhance' },
       ],
     });
