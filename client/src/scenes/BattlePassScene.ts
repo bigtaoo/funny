@@ -12,6 +12,7 @@ import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../ui/widget
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
+import { showToastMessage, type ToastKind } from '../net/log';
 import { ScrollTapGesture } from '../ui/scrollTapGesture';
 import type { SaveData } from '../game/meta/SaveData';
 import {
@@ -82,8 +83,6 @@ export class BattlePassScene implements Scene {
   private destroyed = false;
 
   private readonly bt = new BusyTracker();
-  private toast: string | null = null;
-  private toastTimer = 0;
   private scrollY = 0;
   private scrollMax = 0;
   /**
@@ -123,10 +122,6 @@ export class BattlePassScene implements Scene {
   }
 
   update(dt: number): void {
-    if (this.toast !== null) {
-      this.toastTimer -= dt;
-      if (this.toastTimer <= 0) { this.toast = null; this.render(); }
-    }
     if (this.bt.tick(dt)) this.render();
   }
 
@@ -180,10 +175,8 @@ export class BattlePassScene implements Scene {
     this.gesture.up()?.();
   }
 
-  private showToast(msg: string): void {
-    this.toast = msg;
-    this.toastTimer = 2.5;
-    this.render();
+  private showToast(msg: string, kind: ToastKind = 'success'): void {
+    showToastMessage(msg, kind);
   }
 
   /**
@@ -254,7 +247,6 @@ export class BattlePassScene implements Scene {
       const msg = txt(t('battlepass.loginRequired'), FS.title, C.mid);
       msg.anchor.set(0.5, 0.5); msg.x = centerX; msg.y = h / 2;
       this.container.addChild(msg);
-      this.renderToast();
       if (this.bt.loadingVisible) drawLoadingOverlay(this.container, w, h, this.bt.dots, t('common.processing'));
       return;
     }
@@ -334,7 +326,7 @@ export class BattlePassScene implements Scene {
           this.render();
           withTimeout(this.cb.onBuy!())
             .then(() => { this.bt.stop(); this.render(); })
-            .catch((e) => { this.bt.stop(); this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('battlepass.buyFailed')); });
+            .catch((e) => { this.bt.stop(); this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('battlepass.buyFailed'), 'error'); });
         },
       });
       y += buyAreaH + Math.round(h * 0.015);
@@ -418,7 +410,6 @@ export class BattlePassScene implements Scene {
     this.container.addChild(scrollContainer);
     this.updateScrollPosition();
 
-    this.renderToast();
     if (this.bt.loadingVisible) drawLoadingOverlay(this.container, w, h, this.bt.dots, t('common.processing'));
   }
 
@@ -540,19 +531,8 @@ export class BattlePassScene implements Scene {
       })
       .catch((e) => {
         this.bt.stop();
-        this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('battlepass.claimFailed'));
+        this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('battlepass.claimFailed'), 'error');
       });
   }
 
-  private renderToast(): void {
-    if (!this.toast) return;
-    const { w, h } = this;
-    const toastCy = Math.round(h * 2 / 3);
-    const tBg = new PIXI.Graphics();
-    tBg.beginFill(C.dark, 0.88).drawRoundedRect(Math.round(w * 0.15), Math.round(toastCy - h * 0.08), Math.round(w * 0.7), Math.round(h * 0.16), 8).endFill();
-    this.container.addChild(tBg);
-    const tTxt = txt(this.toast, FS.display, 0xffffff);
-    tTxt.anchor.set(0.5, 0.5); tTxt.x = w / 2; tTxt.y = toastCy;
-    this.container.addChild(tTxt);
-  }
 }

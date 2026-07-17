@@ -10,6 +10,7 @@ import { InputManager } from '../../inputSystem/InputManager';
 import { t, TranslationKey } from '../../i18n';
 import { ProfilePopup } from '../../render/ProfilePopup';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../../render/sketchUi';
+import { showToastMessage, type ToastKind } from '../../net/log';
 import { FS, snapFont } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import { buildDecorCLayer } from '../../render/decorCLayer';
@@ -162,8 +163,6 @@ export class FriendsSceneBase {
   protected caretOn = true;
   protected caretTimer = 0;
 
-  protected toastKey: TranslationKey | null = null;
-  protected toastT = 0;
 
   protected scrollY = 0;
   protected maxScroll = 0;
@@ -201,10 +200,6 @@ export class FriendsSceneBase {
   // ── Scene interface ──────────────────────────────────────────────────────────
 
   update(dt: number): void {
-    if (this.toastKey) {
-      this.toastT -= dt;
-      if (this.toastT <= 0) { this.toastKey = null; this.render(); }
-    }
     if (this.familyActiveInput || this.sectActiveInput || this.worldChatActive) {
       this.caretTimer += dt;
       if (this.caretTimer >= 0.5) { this.caretTimer = 0; this.caretOn = !this.caretOn; this.render(); }
@@ -332,9 +327,8 @@ export class FriendsSceneBase {
     return this.cX + this.cW / 2;
   }
 
-  protected toast(key: TranslationKey): void {
-    this.toastKey = key;
-    this.toastT = 2.5;
+  protected toast(key: TranslationKey, kind: ToastKind = 'error'): void {
+    showToastMessage(t(key), kind);
   }
 
   // ── HTML hidden input helpers ────────────────────────────────────────────────
@@ -428,7 +422,6 @@ export class FriendsSceneBase {
     if (this.dead) return;
 
     this.drawScrollbar();
-    this.drawToast();
     this.container.addChild(this.popup.container);
   }
 
@@ -473,22 +466,6 @@ export class FriendsSceneBase {
 
   // ── Toast & shared helpers ─────────────────────────────────────────────────────
 
-  protected drawToast(): void {
-    if (!this.toastKey) return;
-    const { w, h } = this;
-    const label = txt(t(this.toastKey), FS.heading, 0xffffff, true);
-    const padX = Math.round(w * 0.04);
-    const padY = Math.round(h * 0.018);
-    const bw = label.width + padX * 2;
-    const bh = label.height + padY * 2;
-    const bx = (w - bw) / 2;
-    const by = Math.round(h * 0.135);
-    const bg = sketchPanel(bw, bh, { fill: C.dark, fillAlpha: 0.92, border: C.gold, width: 2, seed: seedFor(bw, bh, 1) });
-    bg.x = bx; bg.y = by;
-    this.container.addChild(bg);
-    label.anchor.set(0.5, 0.5); label.x = w / 2; label.y = by + bh / 2;
-    this.container.addChild(label);
-  }
 
   /** Center label (fixed position, not in the scroll layer). */
   protected centerLabelFixed(text: string): void {

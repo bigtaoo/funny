@@ -49,6 +49,7 @@ import {
   type ResourceType,
 } from '@nw/shared';
 import { BusyTracker } from '../ui/busyTracker';
+import { showToastMessage } from '../net/log';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { ScrollTapGesture } from '../ui/scrollTapGesture';
 import { buildIcon, type IconKind } from '../render/icons';
@@ -152,9 +153,6 @@ export class CityScene implements Scene {
    *  card-scene sidebar-nav convention (HubTabs.ts drawSidebarTabs). */
   private contentX = 0;
   private selectedBuilding: BuildingKey | null = null;
-  private toast: string | null = null;
-  private toastColor: number = C.red;
-  private toastTimer = 0;
 
   // Building-grid scroll state (drag-to-scroll, matches the CardScene/TeamsScene pattern).
   private scrollY = 0;
@@ -182,11 +180,6 @@ export class CityScene implements Scene {
 
   update(dt: number): void {
     if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
-    // Refresh countdown display for build queue every second
-    if (this.toast !== null) {
-      this.toastTimer -= dt;
-      if (this.toastTimer <= 0) { this.toast = null; this.render(); }
-    }
     if (this.bt.tick(dt)) this.render();
   }
 
@@ -279,10 +272,7 @@ export class CityScene implements Scene {
   }
 
   private showToast(msg: string, color: number = C.red as number): void {
-    this.toast = msg;
-    this.toastColor = color;
-    this.toastTimer = 2.5;
-    this.render();
+    showToastMessage(msg, color === (C.red as number) ? 'error' : 'success');
   }
 
   // ── Input ─────────────────────────────────────────────────────────────────
@@ -373,19 +363,6 @@ export class CityScene implements Scene {
       this.container.addChild(lbl);
     }
 
-    // Toast
-    if (this.toast !== null) {
-      const tw = Math.min(w - 40, 720);
-      const th = 84;
-      const tg = sketchPanel(tw, th, { fill: C.dark, fillAlpha: 0.88, border: this.toastColor, width: 1, seed: 7 });
-      tg.x = (w - tw) / 2;
-      tg.y = Math.round(h * 2 / 3 - th / 2);
-      this.container.addChild(tg);
-      const tl = txt(this.toast, FS.headline, 0xffffff);
-      tl.x = tg.x + 24;
-      tl.y = tg.y + 22;
-      this.container.addChild(tl);
-    }
   }
 
   // ── Page tabs (D-CITY-11: 内政 / 军事 switch) ────────────────────────────────

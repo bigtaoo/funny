@@ -7,6 +7,7 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOv
 import { buildIcon, type IconKind } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
+import { showToastMessage, type ToastKind } from '../net/log';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { FS, snapFont } from '../render/fontScale';
 
@@ -73,8 +74,6 @@ export class EventScene implements Scene {
   private destroyed = false;
 
   private readonly bt = new BusyTracker();
-  private toast: string | null = null;
-  private toastTimer = 0;
   private events: EventView[] = [];
   private selectedIdx = 0;
 
@@ -90,10 +89,6 @@ export class EventScene implements Scene {
   }
 
   update(dt: number): void {
-    if (this.toast !== null) {
-      this.toastTimer -= dt;
-      if (this.toastTimer <= 0) { this.toast = null; this.render(); }
-    }
     if (this.bt.tick(dt)) this.render();
   }
 
@@ -122,10 +117,8 @@ export class EventScene implements Scene {
     }
   }
 
-  private showToast(msg: string): void {
-    this.toast = msg;
-    this.toastTimer = 2.5;
-    this.render();
+  private showToast(msg: string, kind: ToastKind = 'success'): void {
+    showToastMessage(msg, kind);
   }
 
   private render(): void {
@@ -146,14 +139,12 @@ export class EventScene implements Scene {
       empty.anchor.set(0.5, 0.5);
       empty.x = w / 2; empty.y = h * 0.5;
       this.container.addChild(empty);
-      this.renderToast();
       if (this.bt.loadingVisible) drawLoadingOverlay(this.container, w, h, this.bt.dots, t('common.processing'));
       return;
     }
 
     const event = this.events[this.selectedIdx];
     if (!event) {
-      this.renderToast();
       if (this.bt.loadingVisible) drawLoadingOverlay(this.container, w, h, this.bt.dots, t('common.processing'));
       return;
     }
@@ -167,7 +158,6 @@ export class EventScene implements Scene {
     const bodyTop = this.events.length > 1 ? contentTop + h * 0.09 : contentTop;
 
     this.renderEvent(event, bodyTop, h - bodyTop - h * 0.03);
-    this.renderToast();
     if (this.bt.loadingVisible) drawLoadingOverlay(this.container, w, h, this.bt.dots, t('common.processing'));
   }
 
@@ -351,20 +341,6 @@ export class EventScene implements Scene {
     });
   }
 
-  private renderToast(): void {
-    if (!this.toast) return;
-    const { w, h } = this;
-    const toastCy = h * (2 / 3);
-    const toastBg = new PIXI.Graphics();
-    toastBg.beginFill(0x1a1408, 0.85);
-    toastBg.drawRoundedRect(w * 0.15, toastCy - h * 0.07, w * 0.7, h * 0.14, 8);
-    toastBg.endFill();
-    const toastTxt = txt(this.toast, FS.display, 0xffd88a);
-    toastTxt.anchor.set(0.5, 0.5);
-    toastTxt.x = w / 2; toastTxt.y = toastCy;
-    this.container.addChild(toastBg, toastTxt);
-  }
-
   private async doClaim(eventId: string, rewardId: string): Promise<void> {
     if (this.bt.busy || !this.cb.onClaimReward) return;
     this.bt.start();
@@ -373,7 +349,7 @@ export class EventScene implements Scene {
       this.showToast(t('event.rewards.claimToast', { n: r.pointsLeft }));
       await this.load();
     } catch (e) {
-      this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('event.rewards.claimFailed'));
+      this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('event.rewards.claimFailed'), 'error');
     } finally {
       this.bt.stop();
     }

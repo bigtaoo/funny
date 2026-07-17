@@ -21,6 +21,7 @@ import type { ILayout } from '../../layout/ILayout';
 import type { InputManager } from '../../inputSystem/InputManager';
 import { t } from '../../i18n';
 import { ui as C, txt, buildPaperBackground, tearDownChildren } from '../../render/sketchUi';
+import { showToastMessage } from '../../net/log';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
@@ -85,7 +86,6 @@ export class SectSceneBase {
   protected sectsCache: SectView[] = [];
 
   protected bodyLayer!: PIXI.Container;
-  protected toastLayer!: PIXI.Container;
   protected modalLayer!: PIXI.Container;
 
   // Create form
@@ -113,7 +113,6 @@ export class SectSceneBase {
   protected modalHits: { rect: { x: number; y: number; w: number; h: number }; action: () => void }[] = [];
   protected modalOpen = false;
 
-  protected toastTimer = 0;
   protected destroyed = false;
   protected readonly unsubs: (() => void)[] = [];
 
@@ -150,9 +149,6 @@ export class SectSceneBase {
 
     this.modalLayer = new PIXI.Container();
     this.container.addChild(this.modalLayer);
-
-    this.toastLayer = new PIXI.Container();
-    this.container.addChild(this.toastLayer);
 
     this.renderHeader();
   }
@@ -208,13 +204,7 @@ export class SectSceneBase {
   // ── Toast ───────────────────────────────────────────────────────────────────
 
   protected showToast(msg: string, color: number = C.dark): void {
-    const tl = this.toastLayer;
-    tl.removeChildren();
-    const lbl = txt(msg, FS.heading, color);
-    lbl.anchor.set(0.5, 0.5);
-    lbl.x = this.w / 2; lbl.y = Math.round(this.h * 2 / 3);
-    tl.addChild(lbl);
-    this.toastTimer = 2500;
+    showToastMessage(msg, color === C.red ? 'error' : 'success');
   }
 
   protected errorMsg(e: unknown): string {
@@ -266,10 +256,6 @@ export class SectSceneBase {
 
   update(dt: number): void {
     if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
-    if (this.toastTimer > 0) {
-      this.toastTimer -= dt * 1000;
-      if (this.toastTimer <= 0) this.toastLayer.removeChildren();
-    }
     if (this.createField) {
       this.caretTimer += dt;
       if (this.caretTimer >= 0.5) { this.caretTimer = 0; this.caretOn = !this.caretOn; this.render(); }

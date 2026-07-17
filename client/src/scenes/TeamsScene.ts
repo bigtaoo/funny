@@ -19,6 +19,7 @@ import type { InputManager } from '../inputSystem/InputManager';
 import type { Scene } from './SceneManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
+import { showToastMessage } from '../net/log';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
@@ -83,13 +84,11 @@ export class TeamsScene implements Scene {
   private occupations: OccupationView[] = [];
   private loading = true;
   private destroyed = false;
-  private toastTimer = 0;
   /** Two-tap arm/confirm for "放弃占领" (forfeits the garrison, unlike march recall) — id of the team armed to cancel. */
   private confirmCancelOccId: string | null = null;
   private confirmCancelOccTimer = 0;
 
   private bodyLayer!: PIXI.Container;
-  private toastLayer!: PIXI.Container;
   private hits: { rect: { x: number; y: number; w: number; h: number }; action: () => void }[] = [];
   private readonly unsubs: (() => void)[] = [];
 
@@ -118,8 +117,6 @@ export class TeamsScene implements Scene {
     if (decoC) this.container.addChild(decoC);
     this.bodyLayer = new PIXI.Container();
     this.container.addChild(this.bodyLayer);
-    this.toastLayer = new PIXI.Container();
-    this.container.addChild(this.toastLayer);
 
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((_x, y) => this.handleMove(y)));
@@ -600,20 +597,7 @@ export class TeamsScene implements Scene {
   // ── Toast ────────────────────────────────────────────────────────────────
 
   private showToast(msg: string, color: number): void {
-    const tl = this.toastLayer;
-    tl.removeChildren();
-    const lbl = txt(msg, FS.heading, 0xffffff, true);
-    const padX = 28, padY = 16;
-    const bw = lbl.width + padX * 2;
-    const bh = lbl.height + padY * 2;
-    const bx = (this.w - bw) / 2;
-    const by = Math.round(this.h * 2 / 3 - bh / 2);
-    const bg = sketchPanel(bw, bh, { fill: color, fillAlpha: 0.96, border: color, seed: seedFor(bw, bh, 3) });
-    bg.x = bx; bg.y = by;
-    tl.addChild(bg);
-    lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
-    tl.addChild(lbl);
-    this.toastTimer = 2200;
+    showToastMessage(msg, color === C.red ? 'error' : 'success');
   }
 
   // ── Input / lifecycle ────────────────────────────────────────────────────
@@ -645,10 +629,6 @@ export class TeamsScene implements Scene {
     // the whole scene per event).
     if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
     if (this.bt.tick(dt)) this.render();
-    if (this.toastTimer > 0) {
-      this.toastTimer -= dt * 1000;
-      if (this.toastTimer <= 0) this.toastLayer.removeChildren();
-    }
     if (this.confirmCancelOccTimer > 0) {
       this.confirmCancelOccTimer -= dt * 1000;
       if (this.confirmCancelOccTimer <= 0) { this.confirmCancelOccId = null; this.render(); }

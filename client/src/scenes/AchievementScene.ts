@@ -4,6 +4,7 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
+import { showToastMessage, type ToastKind } from '../net/log';
 import { buildIcon, type IconKind } from '../render/icons';
 import { FS, snapFont } from '../render/fontScale';
 import { buildDecorCLayer } from '../render/decorCLayer';
@@ -76,9 +77,6 @@ export class AchievementScene implements Scene {
   private activeCat: Achievement['category'] = 'pve';
   /** True while a claim is in flight (prevents double-tap). */
   private claiming = false;
-  /** One-shot toast (claim success / error), fades out. */
-  private toast: string | null = null;
-  private toastTimer = 0;
 
   constructor(layout: ILayout, input: InputManager, cb: AchievementCallbacks) {
     this.container = new PIXI.Container();
@@ -104,12 +102,7 @@ export class AchievementScene implements Scene {
     this.render();
   }
 
-  update(dt: number): void {
-    if (this.toast !== null) {
-      this.toastTimer -= dt;
-      if (this.toastTimer <= 0) { this.toast = null; this.render(); }
-    }
-  }
+  update(_dt: number): void { /* no per-frame work; toasts are global (GlobalToast) */ }
 
   destroy(): void {
     this.destroyed = true;
@@ -124,10 +117,8 @@ export class AchievementScene implements Scene {
     }
   }
 
-  private flash(msg: string): void {
-    this.toast = msg;
-    this.toastTimer = 2.2;
-    this.render();
+  private flash(msg: string, kind: ToastKind = 'success'): void {
+    showToastMessage(msg, kind);
   }
 
   /** Categories present in defs (in fixed order; empty categories are hidden). */
@@ -152,7 +143,7 @@ export class AchievementScene implements Scene {
       }
       this.flash(t('achievement.claimToast', { coins: granted }));
     } catch {
-      this.flash(t('achievement.claimFailed'));
+      this.flash(t('achievement.claimFailed'), 'error');
     } finally {
       this.claiming = false;
       this.render();
@@ -200,7 +191,7 @@ export class AchievementScene implements Scene {
     if (this.data === null) { this.drawCentered(tbH, t('achievement.loading')); return; }
 
     const cats = this.categories(this.data);
-    if (cats.length === 0) { this.drawCentered(tbH, t('achievement.empty')); this.drawToast(); return; }
+    if (cats.length === 0) { this.drawCentered(tbH, t('achievement.empty')); return; }
     if (!cats.includes(this.activeCat)) this.activeCat = cats[0]!;
 
     const top = tbH + Math.round(h * 0.025);
@@ -248,8 +239,6 @@ export class AchievementScene implements Scene {
         y += gap;
       }
     }
-
-    this.drawToast();
   }
 
   private drawCentered(tbH: number, msg: string): void {
@@ -382,18 +371,4 @@ export class AchievementScene implements Scene {
     this.container.addChild(g);
   }
 
-  private drawToast(): void {
-    if (this.toast === null) return;
-    const { w, h } = this;
-    const tw = Math.round(w * 0.7);
-    const th = Math.round(h * 0.07);
-    const tx = (w - tw) / 2;
-    const ty = Math.round(h * 0.82);
-    const box = sketchPanel(tw, th, { fill: C.dark, border: C.dark, width: 1.6, seed: seedFor(tx, ty, tw) });
-    box.x = tx; box.y = ty;
-    this.container.addChild(box);
-    const lbl = txt(this.toast, snapFont(Math.round(th * 0.34)), 0xffffff, true);
-    lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = ty + th / 2;
-    this.container.addChild(lbl);
-  }
 }

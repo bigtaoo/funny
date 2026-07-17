@@ -10,6 +10,7 @@ import type { InputManager } from '../../inputSystem/InputManager';
 import type { Scene } from '../SceneManager';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchButton, seedFor, drawLoadingOverlay, tearDownChildren } from '../../render/sketchUi';
+import { showToastMessage } from '../../net/log';
 import { FS, snapFont } from '../../render/fontScale';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { buildDecorCLayer } from '../../render/decorCLayer';
@@ -152,7 +153,6 @@ export class EquipmentSceneBase {
   protected headerH = 0;
   protected bodyLayer!: PIXI.Container;
   protected modalLayer!: PIXI.Container;
-  protected toastLayer!: PIXI.Container;
   protected loadingLayer!: PIXI.Container;
   /** Drawn *after* the static header chrome so the coin/material readout sits on top of the header bar (same row as the title), not in a separate band below it. */
   protected headerOverlayLayer!: PIXI.Container;
@@ -190,7 +190,6 @@ export class EquipmentSceneBase {
   /** Container for modal-panel content that should scale/position as one unit — see {@link modalScale}. */
   protected modalPanelRoot!: PIXI.Container;
 
-  protected toastTimer = 0;
   protected destroyed = false;
   protected readonly unsubs: (() => void)[] = [];
 
@@ -222,8 +221,6 @@ export class EquipmentSceneBase {
     this.container.addChild(this.bodyLayer);
     this.modalLayer = new PIXI.Container();
     this.container.addChild(this.modalLayer);
-    this.toastLayer = new PIXI.Container();
-    this.container.addChild(this.toastLayer);
     this.loadingLayer = new PIXI.Container();
     this.container.addChild(this.loadingLayer);
 
@@ -511,20 +508,7 @@ export class EquipmentSceneBase {
   // ── Toast ───────────────────────────────────────────────────────────────────
 
   protected showToast(msg: string, color: number = C.dark): void {
-    const tl = this.toastLayer;
-    tl.removeChildren();
-    const lbl = txt(msg, FS.heading, 0xffffff, true);
-    const padX = 28, padY = 16;
-    const bw = lbl.width + padX * 2;
-    const bh = lbl.height + padY * 2;
-    const bx = (this.w - bw) / 2;
-    const by = Math.round(this.h * 2 / 3 - bh / 2);
-    const bg = sketchPanel(bw, bh, { fill: color, fillAlpha: 0.96, border: color, seed: seedFor(bw, bh, 3) });
-    bg.x = bx; bg.y = by;
-    tl.addChild(bg);
-    lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
-    tl.addChild(lbl);
-    this.toastTimer = 2200;
+    showToastMessage(msg, color === C.red ? 'error' : 'success');
   }
 
   // ── Scene interface / input ───────────────────────────────────────────────
@@ -570,10 +554,6 @@ export class EquipmentSceneBase {
   update(dt: number): void {
     if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
     if (this.bt.tick(dt)) this.render();
-    if (this.toastTimer > 0) {
-      this.toastTimer -= dt * 1000;
-      if (this.toastTimer <= 0) this.toastLayer.removeChildren();
-    }
   }
 
   destroy(): void {
