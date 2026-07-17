@@ -3,6 +3,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { BASE_FOOTPRINT, citySpriteTiles, cityGroundFwdPx, cityPlotMaskPoints } from '@nw/shared';
 import { getCityTextureForLevel, isCityAtlasReady } from '../../../render/cityAtlasLoader';
+import { getPlayerBaseTextureForLevel } from '../../../render/playerBaseAtlasLoader';
 import { tileToScreen, visibleTileBounds, ISO_RATIO } from '../../../render/isoGrid';
 import { HUD_H, BASE_SPRITE_TILES } from '../constants';
 import { type Constructor, type WorldMapRendererBaseCtor } from './base';
@@ -57,7 +58,12 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
 
           const lv = tile.level ?? 1;
           const tier = lv <= 2 ? 1 : lv <= 5 ? 2 : lv <= 8 ? 3 : 4;
-          const tex = getCityTextureForLevel(lv);
+          // The requester's own base renders from the separate "stationery fortress" playerbase_atlas,
+          // keyed by desk building level rather than the tile's terrain-generated `level` (see
+          // TileDoc.deskLevel). Other players' bases and NPC map cities keep the shared city_atlas below.
+          const tex = tile.mine
+            ? (getPlayerBaseTextureForLevel(tile.deskLevel ?? 1) ?? getCityTextureForLevel(lv))
+            : getCityTextureForLevel(lv);
           if (!tex) continue;
 
           // Reuse or create city container

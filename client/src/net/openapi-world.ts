@@ -858,6 +858,8 @@ export interface components {
             ally?: boolean;
             /** @description G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; only distinguished on the map with a yellow border (§8.2, attacking/capturing between allies is forbidden). */
             allySect?: boolean;
+            /** @description Main-base anchor only: owner's `desk` building level (1-10), mirrored from playerWorld onto the anchor tile whenever a desk upgrade completes. Drives the player-base art frame (playerbase_l{n}) on the requester's own base tile (see design/product/player-base-image-prompts.md); absent = level 1. */
+            deskLevel?: number;
         };
         WorldMapView: {
             worldId: string;

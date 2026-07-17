@@ -118,6 +118,12 @@ export interface TileDoc {
   contestedUntil?: number;
   contestedGarrison?: number;
   contestedFamilyId?: string;
+  /**
+   * Main-base anchor only. Mirrors the owner's `desk` building level (1-10) so the world-map render can
+   * pick the player-base art frame (`playerbase_l{n}`) without a separate playerWorld lookup per tile-view
+   * read. Set whenever a `desk` upgrade completes (applyDueBuilds); absent = level 1 (fresh base).
+   */
+  deskLevel?: number;
   rev: number;
 }
 
