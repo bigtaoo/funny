@@ -395,3 +395,13 @@ client_log_debug: { default: false, desc: '客户端日志上报-debug', side: '
 **验证**：`client/test/anomaly-chain.test.ts` 新增 2 例（"anr detail 带 scene + provider 注入的 GPU 计数" + "provider 抛错不破坏上报"）；`tsc --noEmit -p tsconfig.test.json` 通过，anomaly 套件 12 例全绿。
 
 **用法**：下次 `mem` 报警看 `texTop` 第一名的目录 + 计数 → 若单目录条目数随会话单调上涨，即为该类美术缓存无上限（下一步做 LRU/离场回收）。`anr` 看 `scene` 字段 → 反复冲同一场景即可锁定那段同步长任务（56s 冻结与纹理数无关，是独立的 compute stall）。
+
+### 2026-07-17（续）· `anr.scene` 生产可读性修复（keep_classnames）+ 首批归因数据解读（§9.7 anr）
+
+**背景**：上面的 `scene` 打点在生产**不可读**——web 生产构建 `devtool:false`（无 source map，仅 wechat 有），且 terser 默认 mangle `constructor.name`，`SceneManager` 打的场景名在线上被压成两字母别名。build `5b7f5c2` 首批日志即出现 `anr.scene` 为 `$t`/`Md`/`hf`。通过下载线上 bundle（`https://a.gamestao.com/<hash>.js`，hash 取自站点 `<script src>`，版本见 `/version.json`）+ grep nav 层实例化点（`showLobby→new $t` / `showShop→new Md` / `showWorldMap→new hf`）反解出：**`$t`=LobbyScene（当批卡死 3 次）、`Md`=ShopScene、`hf`=WorldMapScene**。卡死全在浏览类场景、无一在战斗——与内存/纹理压力一致。
+
+**改动**：`client/webpack.config.js` `optimization.minimizer = [new TerserPlugin({ terserOptions: { keep_classnames: /Scene$/ } })]`——只对以 `Scene` 结尾的类（所有场景类）保名，其余照常压缩。生产构建已验证 `class WorldMapScene`/`LobbyScene`/`ShopScene`/`GameScene` 等在产物中原名存在；bundle 仅增 ~2.8KB（+0.15%）。此后 `anr.scene` 在 Loki 直接是真名，无需再反解。
+
+**顺带修正上一条的结论**：`src/assets` 只有 48 个打包 PNG，stickman `.tao` 资产由 `StickmanRuntime._cache` 按 URL 缓存（每兵种一份，有界），两者都撑不起 `baseTex=716`——所以上一条"`baseTex` 几乎全是浏览过的美术"不准确，实际大头是**动态纹理**（远程/CDN 头像 URL、`blob:` spritesheet、或 `PIXI.Text` canvas）。具体归属仍等 `texTop`（该字段只在新构建 5b7f5c2 起才有，首批 `mem` 来自旧构建 5bca554 故缺失）。
+
+**已知未修缺口**：`cpu` 事件不带 `scene`（PerfMonitor 只发 fps/threshold/sustained），持续低帧无法归因到界面；若复发，把 `anrContext()` 的 scene 折进 cpu detail 即可。
