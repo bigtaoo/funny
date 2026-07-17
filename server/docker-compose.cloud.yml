@@ -157,6 +157,12 @@ services:
       NW_WORLD_MONGO_DB: ${NW_WORLD_MONGO_DB:-notebook_wars_world}
       NW_WORLD_REDIS_URL: ${NW_WORLD_REDIS_URL:-redis://redis:6379}
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
+      # Family identity / roster / leader lookups (sect permission checks) delegate to socialsvc; missing this
+      # → socialsvc.available=false → getMember() always null → every sect op fails with NOT_IN_FAMILY.
+      NW_SOCIALSVC_INTERNAL_URL: http://socialsvc:8085
+      # System mail from worldsvc (forced-relocate notice, season settlement, SLG title grants) is sent via meta;
+      # missing this → meta.available=false → those mails silently no-op.
+      NW_META_INTERNAL_URL: http://metaserver:8080
       # Auction coin trading + world-chat 50-coin fee (nationChannelService) both go through commercial; missing this
       # → commercial.available=false → both silently skip coin deduction instead of erroring.
       NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
