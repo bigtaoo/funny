@@ -34,6 +34,7 @@ import { ProfilePopup, type ProfileData } from '../ProfilePopup';
 import { stateRecorder } from '../../game/replay/StateRecorder';
 import { registerPool } from '../../cache/poolRegistry';
 import { snapFont } from '../fontScale';
+import { factionInk } from '../theme';
 
 /** Optional player identities for the in-battle profile popup (netplay, S1). */
 export interface GameProfiles {
@@ -374,7 +375,7 @@ export class GameRendererBase {
     const hp = this.hudView.getEnemyHpRect();
     const label = new PIXI.Text(this.oppProfile!.name || '?', {
       fontSize: snapFont(Math.max(12, Math.round(sr.h * 0.5))),
-      fill: 0x333333, fontWeight: 'bold', fontFamily: 'monospace',
+      fill: factionInk.enemy, fontWeight: 'bold', fontFamily: 'monospace',
     });
 
     const padX = 14;
