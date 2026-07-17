@@ -72,4 +72,11 @@ export interface ILayout {
 
   /** Design-space rect occupied by the enemy's base. */
   enemyBaseRect(): Rect;
+
+  /**
+   * A copy of this layout for the same screen dimensions but the opposite
+   * `localSide` — used by the replay player to flip the viewpoint (S1-RP). The
+   * design size is unchanged (side does not affect it), so scaling is unaffected.
+   */
+  mirrored(): ILayout;
 }

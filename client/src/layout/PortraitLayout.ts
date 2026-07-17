@@ -59,6 +59,11 @@ export class PortraitLayout implements ILayout {
   private readonly boardX: number;
   private readonly boardY: number;
 
+  // Safe drawable area (CSS px) the layout was built for — retained so `mirrored()`
+  // can rebuild an identical layout for the opposite side.
+  private readonly availW: number;
+  private readonly availH: number;
+
   /**
    * @param availW  Safe drawable area width  (CSS px) — viewport minus L/R insets.
    * @param availH  Safe drawable area height (CSS px) — viewport minus T/B insets.
@@ -70,6 +75,8 @@ export class PortraitLayout implements ILayout {
     localSide: Side = Side.Bottom,
   ) {
     this.localSide = localSide;
+    this.availW = availW;
+    this.availH = availH;
 
     // Design height matches the safe-area aspect (fit-to-width leaves no letterbox),
     // clamped so a squat/near-square portrait still gets the classic 1920 height.
@@ -168,5 +175,10 @@ export class PortraitLayout implements ILayout {
       w: 2 * CELL,
       h: 2 * CELL,
     };
+  }
+
+  mirrored(): ILayout {
+    const other = this.localSide === Side.Bottom ? Side.Top : Side.Bottom;
+    return new PortraitLayout(this.availW, this.availH, other);
   }
 }

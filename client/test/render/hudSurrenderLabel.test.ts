@@ -133,6 +133,16 @@ describe('HUDView surrender label — campaign "exit level" relabel', () => {
     }
   });
 
+  it('replay/spectator HUD hides the surrender button entirely (must not regress)', () => {
+    // hideSurrender = true (3rd arg) → neither surrender nor exit-level text is present.
+    const hud = new HUDView(fakeLayout(), false, true);
+    const texts = collectTexts(hud.container);
+    expect(texts).not.toContain(t('hud.surrender'));
+    expect(texts).not.toContain(t('hud.exitLevel'));
+    // The surrender hit rect stays zero so input never triggers the confirm dialog.
+    expect(hud.getSurrenderRect()).toEqual({ x: 0, y: 0, w: 0, h: 0 });
+  });
+
   it('campaign confirm dialog uses exit-level title + confirm, shared cancel', () => {
     const hud = new HUDView(fakeLayout(), true);
     hud.showSurrenderConfirm();

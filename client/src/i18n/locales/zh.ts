@@ -301,6 +301,10 @@ export const zh = {
   'replay.speed': '{n}×',
   'replay.ended': '回放结束',
   'replay.versionError': '录像版本不兼容，无法回放',
+  'replay.viewpoint': '视角：{name}',
+  'replay.player1': '玩家1',
+  'replay.player2': '玩家2',
+  'replay.aiOpponent': '电脑',
 
   // ── Out-of-game replay share (REPLAY_SHARE_DESIGN) ───────────────────────────
   'share.button': '分享',

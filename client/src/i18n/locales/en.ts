@@ -297,6 +297,10 @@ export const en: Record<TranslationKey, string> = {
   'replay.speed': '{n}×',
   'replay.ended': 'Replay ended',
   'replay.versionError': 'Replay version incompatible — cannot play back',
+  'replay.viewpoint': 'View: {name}',
+  'replay.player1': 'Player 1',
+  'replay.player2': 'Player 2',
+  'replay.aiOpponent': 'CPU',
 
   // ── Out-of-game replay sharing (REPLAY_SHARE_DESIGN) ─────────────────────────
   'share.button': 'Share',

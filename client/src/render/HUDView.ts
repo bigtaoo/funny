@@ -89,11 +89,15 @@ export class HUDView {
   /** Campaign (PvE) levels reword the surrender button/dialog as "exit level". */
   private readonly campaign: boolean;
 
-  constructor(layout: ILayout, campaign = false) {
+  /** Replay/spectator playback hides the surrender button entirely (nothing to surrender). */
+  private readonly hideSurrender: boolean;
+
+  constructor(layout: ILayout, campaign = false, hideSurrender = false) {
     this.container           = new PIXI.Container();
     this.backgroundContainer = new PIXI.Container();
     this.layout              = layout;
     this.campaign            = campaign;
+    this.hideSurrender       = hideSurrender;
     this.build();
   }
 
@@ -313,19 +317,24 @@ export class HUDView {
     this._enemyHpRect = { x: this.enemyHpGfx.x, y: this.enemyHpGfx.y, w: HP_BAR_W, h: HP_CELL_H };
 
     // Surrender button — visual only, no interactive. Landscape hugs the board's
-    // right edge; portrait keeps the strip edge.
+    // right edge; portrait keeps the strip edge. Hidden entirely during replay
+    // playback (spectator): there is nothing to surrender, and `_surrenderRect`
+    // stays zero so input hit-testing never triggers the confirm dialog.
     this.surrenderBtnBg = new PIXI.Graphics();
     const sBtnX = (isLandscape ? boardRight : topR.x + topR.w) - BTN_W - 8;
     const sBtnY = topR.y + (topR.h - BTN_H) / 2;
-    this.surrenderBtnBg.x = sBtnX;
-    this.surrenderBtnBg.y = sBtnY;
-    this.drawSurrenderBtn();
-    this._surrenderRect = { x: sBtnX, y: sBtnY, w: BTN_W, h: BTN_H };
+    let sLabel: PIXI.Text | null = null;
+    if (!this.hideSurrender) {
+      this.surrenderBtnBg.x = sBtnX;
+      this.surrenderBtnBg.y = sBtnY;
+      this.drawSurrenderBtn();
+      this._surrenderRect = { x: sBtnX, y: sBtnY, w: BTN_W, h: BTN_H };
 
-    const sLabel = makeText(t(this.campaign ? 'hud.exitLevel' : 'hud.surrender'), { fontSize: FS.small, fill: 0x333333, fontWeight: 'bold', fontFamily: 'monospace' });
-    sLabel.anchor.set(0.5);
-    sLabel.x = sBtnX + BTN_W / 2;
-    sLabel.y = sBtnY + BTN_H / 2;
+      sLabel = makeText(t(this.campaign ? 'hud.exitLevel' : 'hud.surrender'), { fontSize: FS.small, fill: 0x333333, fontWeight: 'bold', fontFamily: 'monospace' });
+      sLabel.anchor.set(0.5);
+      sLabel.x = sBtnX + BTN_W / 2;
+      sLabel.y = sBtnY + BTN_H / 2;
+    }
 
     // Bottom strip (full width) — rendered behind the hand cards so it
     // doesn't paint over them (see backgroundContainer wiring in GameRenderer).
@@ -424,13 +433,14 @@ export class HUDView {
     this._playerInfoRect = { x: bLR.x, y: bLR.y, w: Math.round(this.layout.designWidth * 0.34), h: bLR.h };
 
     this.container.addChild(
-      topBg, this.timerText, this.enemyHpGfx, this.surrenderBtnBg, sLabel,
+      topBg, this.timerText, this.enemyHpGfx, this.surrenderBtnBg,
       this.inkIcon, this.inkText, this.playerHpGfx,
       this.refreshBtnBg, this.refreshBtnLabel,
       this.upgradeGlow,                        // behind the upgrade button
       this.upgradeBtnBg, this.upgradeBtnLabel,
       this.upgradeArrow,                       // above the upgrade button
     );
+    if (sLabel) this.container.addChild(sLabel);
   }
 
   private baseCenterX(): number {

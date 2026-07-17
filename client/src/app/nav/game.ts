@@ -74,6 +74,8 @@ export function createGameNav(ctx: AppCtx): GameNav {
       // filter both sides' draw pool to the player's current-elo-validated deck (mirror match).
       // Without this the local engine draws from the full pool and leaks locked units (runner/splitter/…).
       decks: (() => { const d = resolvePvpDeck(); return { top: d, bottom: d }; })(),
+      // Replay labels: human at the bottom, AI at the top (owner-indexed, matchEngine writes meta.players).
+      players: { bottom: ctx.playerName(), top: t('replay.aiOpponent') },
       ...(opts?.seed !== undefined ? { seed: opts.seed } : {}),
       ...(opts?.difficulty !== undefined ? { difficulty: opts.difficulty } : {}),
     });
@@ -491,6 +493,8 @@ export function createGameNav(ctx: AppCtx): GameNav {
     }, {
       level,
       equippedSkins: allEquippedSkins(saveManager.get().equipped),
+      // Replay labels: human at the bottom, the level's forces at the top (owner-indexed).
+      players: { bottom: ctx.playerName(), top: t('replay.aiOpponent') },
       // Hero Roster → engine (card level + per-card equipment buff blueprints, §9) and to the
       // renderer (worn gear drawn on units, §20.4). PvE-only; PvP omits both (hard wall).
       cardInstances: toEngineCardInstances(saveManager.get().cardInv ?? {}),
