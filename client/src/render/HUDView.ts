@@ -75,10 +75,14 @@ export class HUDView {
   /** True when hand-refresh is currently affordable (set each frame by sync). */
   refreshEnabled = false;
 
-  constructor(layout: ILayout) {
+  /** Campaign (PvE) levels reword the surrender button/dialog as "exit level". */
+  private readonly campaign: boolean;
+
+  constructor(layout: ILayout, campaign = false) {
     this.container           = new PIXI.Container();
     this.backgroundContainer = new PIXI.Container();
     this.layout              = layout;
+    this.campaign            = campaign;
     this.build();
   }
 
@@ -152,7 +156,7 @@ export class HUDView {
     panel.endFill();
     overlay.addChild(panel);
 
-    const title = new PIXI.Text(t('hud.surrenderTitle'), {
+    const title = new PIXI.Text(t(this.campaign ? 'hud.exitLevelTitle' : 'hud.surrenderTitle'), {
       fontSize: snapFont(Math.round(pH * 0.18)), fill: 0x222222,
       fontWeight: 'bold', fontFamily: 'monospace',
     });
@@ -169,7 +173,7 @@ export class HUDView {
     const bX  = (dw - bW) / 2;
 
     overlay.addChild(this.makeBtn(bX, y1, bW, bH, 'secondary', t('hud.surrenderCancel')));
-    overlay.addChild(this.makeBtn(bX, y2, bW, bH, 'primary',   t('hud.surrenderConfirm')));
+    overlay.addChild(this.makeBtn(bX, y2, bW, bH, 'primary',   t(this.campaign ? 'hud.exitLevelConfirm' : 'hud.surrenderConfirm')));
 
     this._surrenderCancelRect  = { x: bX, y: y1, w: bW, h: bH };
     this._surrenderConfirmRect = { x: bX, y: y2, w: bW, h: bH };
@@ -262,7 +266,7 @@ export class HUDView {
     this.drawSurrenderBtn();
     this._surrenderRect = { x: sBtnX, y: sBtnY, w: BTN_W, h: BTN_H };
 
-    const sLabel = new PIXI.Text(t('hud.surrender'), { fontSize: FS.small, fill: 0x333333, fontWeight: 'bold', fontFamily: 'monospace' });
+    const sLabel = new PIXI.Text(t(this.campaign ? 'hud.exitLevel' : 'hud.surrender'), { fontSize: FS.small, fill: 0x333333, fontWeight: 'bold', fontFamily: 'monospace' });
     sLabel.anchor.set(0.5);
     sLabel.x = sBtnX + BTN_W / 2;
     sLabel.y = sBtnY + BTN_H / 2;

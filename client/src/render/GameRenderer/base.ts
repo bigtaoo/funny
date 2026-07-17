@@ -114,6 +114,10 @@ export class GameRendererBase {
   protected tutorial: TutorialDirector | null = null;
   protected tutorialEnabled = false;
 
+  /** Campaign (PvE) level: the surrender button/dialog reword to "exit level". Set before init(). */
+  protected campaignMode = false;
+  setCampaignMode(v: boolean): void { this.campaignMode = v; }
+
   constructor(
     engine: IGameEngine,
     layout: ILayout,
@@ -324,7 +328,7 @@ export class GameRendererBase {
     this.unitView     = new UnitView(this.boardView, this.layout.localSide, this.equippedSkins, this.cardInstances, this.equipmentInv);
     this.buildingView = new BuildingView(this.boardView);
     this.handView     = new HandView(this.layout);
-    this.hudView      = new HUDView(this.layout);
+    this.hudView      = new HUDView(this.layout, this.campaignMode);
     this.netStatus    = new NetStatusView(this.layout);
     this.vfxSystem    = new VFXSystem();
 

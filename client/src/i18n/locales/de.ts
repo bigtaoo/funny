@@ -117,6 +117,10 @@ export const de: Record<TranslationKey, string> = {
   'hud.surrenderTitle': 'Wirklich aufgeben?',
   'hud.surrenderCancel': 'ABBRECHEN',
   'hud.surrenderConfirm': 'AUFGEBEN',
+  // Campaign levels: "surrender" reads oddly against a PvE stage, so use "exit level" wording.
+  'hud.exitLevel': 'LEVEL VERLASSEN',
+  'hud.exitLevelTitle': 'Level verlassen?',
+  'hud.exitLevelConfirm': 'VERLASSEN',
   'hud.upgradeMax': 'MAX',
   'hud.upgradeCost': '↑ {cost}g',
   'hud.upgrade': '↑ Ausbau',
