@@ -28,8 +28,8 @@ export class FakeMeta implements SocialMetaClient {
   private readonly byAccount = new Map<string, ProfileView>();
   private readonly byPublicId = new Map<string, string>(); // publicId → accountId
 
-  add(accountId: string, publicId: string, displayName = publicId, rank?: string): this {
-    const profile: ProfileView = { publicId, displayName, ...(rank ? { rank } : {}) };
+  add(accountId: string, publicId: string, displayName = publicId, rank?: string, equippedTitle?: string): this {
+    const profile: ProfileView = { publicId, displayName, ...(rank ? { rank } : {}), ...(equippedTitle ? { equippedTitle } : {}) };
     this.byAccount.set(accountId, profile);
     this.byPublicId.set(publicId, accountId);
     return this;

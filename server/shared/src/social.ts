@@ -49,6 +49,8 @@ export interface ProfileView {
   publicId: string;
   displayName: string;
   rank?: string;
+  /** Equipped title (称号), if any. */
+  equippedTitle?: string;
 }
 
 export interface FriendView {

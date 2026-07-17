@@ -8,6 +8,7 @@ import { NationChannelService } from '../src/nationChannelService';
 import { nullWorldCommercialClient, type WorldCommercialClient } from '../src/commercialClient';
 import type { HttpWorldGatewayClient } from '../src/gatewayClient';
 import type { WorldMetaClient } from '../src/metaClient';
+import type { WorldSocialsvcClient, FamilyMembership, FamilySummary } from '../src/socialsvcClient';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_world_nation_channel_test';
@@ -47,6 +48,7 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
     await Promise.all([
       cols.nationMessages.deleteMany({}),
       cols.playerWorld.deleteMany({}),
+      cols.sects.deleteMany({}),
     ]);
     broadcasts.length = 0;
     spends.length = 0;
@@ -285,6 +287,98 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
       });
       const result = await svc.sendMessage(W, 'alice', 'ClientFallback', 'hi');
       expect(result.senderName).toBe('ClientFallback');
+    });
+  });
+
+  // World chat spans every family/sect, so — unlike the family/sect-scoped channels where the
+  // sender's own family/sect is already known — it must resolve an arbitrary sender's title
+  // (via meta) and family/sect name (via socialsvc.getMember + getFamiliesByIds + a local
+  // cols.sects lookup, since sects are worldsvc-owned) before persisting/returning the message.
+  describe('title / sectName / familyName resolution', () => {
+    const fakeMetaWithTitle: WorldMetaClient = {
+      available: true,
+      async getProfile(id) {
+        return id === 'alice' ? { publicId: 'alice#0042', displayName: 'Alice', equippedTitle: 'Grandmaster' } : null;
+      },
+      async deductMaterial() { throw new Error('unused'); },
+      async grantMaterial() { /* no-op */ },
+      async getSaveFields() { return null; },
+      async escrowEquipment() { throw new Error('unused'); },
+      async grantEquipment() { /* no-op */ },
+      async grantTitle() { /* no-op */ },
+    } as unknown as WorldMetaClient;
+
+    function fakeSocialsvc(mem: FamilyMembership | null, families: FamilySummary[]): WorldSocialsvcClient {
+      return {
+        available: true,
+        async getFamilyId() { return mem?.familyId ?? null; },
+        async getMember(id) { return id === 'alice' ? mem : null; },
+        async getFamiliesByIds() { return families; },
+        async getFamiliesBySect() { return []; },
+        async setSect() { /* no-op */ },
+        async bumpActivity() { /* no-op */ },
+        async refreshProsperity() { return 0; },
+        async resetSlgState() { /* no-op */ },
+        async push() { /* no-op */ },
+      };
+    }
+
+    it('sendMessage() resolves title + sectName + familyName and getChannel() returns them', async () => {
+      await mongo!.collections.sects.insertOne({
+        _id: 'sect1', worldId: W, name: 'IronSect', tag: 'IRON',
+        leaderFamilyId: 'fam1', leaderId: 'alice', memberFamilyCount: 1,
+        allySectIds: [], prosperity: 0, rev: 1,
+      });
+      const mem: FamilyMembership = { familyId: 'fam1', role: 'leader', leaderId: 'alice', name: 'WangFam', tag: 'WANG', memberCount: 1 };
+      const families: FamilySummary[] = [{ familyId: 'fam1', name: 'WangFam', tag: 'WANG', leaderId: 'alice', memberCount: 1, prosperity: 0, sectId: 'sect1' }];
+
+      const svc = new NationChannelService({
+        cols: mongo!.collections,
+        gateway: fakeGateway,
+        commercial: fakeCommercial,
+        meta: fakeMetaWithTitle,
+        socialsvc: fakeSocialsvc(mem, families),
+        now: () => 10_000,
+      });
+      const result = await svc.sendMessage(W, 'alice', 'Alice', 'hi everyone');
+      expect(result.title).toBe('Grandmaster');
+      expect(result.sectName).toBe('IronSect');
+      expect(result.familyName).toBe('WangFam');
+
+      const history = await svc.getChannel(W, 'alice');
+      expect(history[0]?.title).toBe('Grandmaster');
+      expect(history[0]?.sectName).toBe('IronSect');
+      expect(history[0]?.familyName).toBe('WangFam');
+    });
+
+    it('omits sectName when the sender\'s family is not in a sect (familyName still resolved)', async () => {
+      const mem: FamilyMembership = { familyId: 'fam2', role: 'leader', leaderId: 'alice', name: 'LoneFam', tag: 'LONE', memberCount: 1 };
+      const families: FamilySummary[] = [{ familyId: 'fam2', name: 'LoneFam', tag: 'LONE', leaderId: 'alice', memberCount: 1, prosperity: 0 }];
+
+      const svc = new NationChannelService({
+        cols: mongo!.collections,
+        gateway: fakeGateway,
+        commercial: fakeCommercial,
+        meta: fakeMetaWithTitle,
+        socialsvc: fakeSocialsvc(mem, families),
+        now: () => 11_000,
+      });
+      const result = await svc.sendMessage(W, 'alice', 'Alice', 'hi');
+      expect(result.familyName).toBe('LoneFam');
+      expect(result.sectName).toBeUndefined();
+    });
+
+    it('omits title/sectName/familyName entirely when meta/socialsvc are not configured', async () => {
+      const svc = new NationChannelService({
+        cols: mongo!.collections,
+        gateway: fakeGateway,
+        commercial: fakeCommercial,
+        now: () => 12_000,
+      });
+      const result = await svc.sendMessage(W, 'alice', 'Alice', 'hi');
+      expect(result.title).toBeUndefined();
+      expect(result.sectName).toBeUndefined();
+      expect(result.familyName).toBeUndefined();
     });
   });
 });

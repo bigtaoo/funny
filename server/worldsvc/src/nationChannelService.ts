@@ -18,6 +18,12 @@ export interface NationMessageView {
   senderName: string;
   /** 9-digit public id (display-only); empty if unknown (meta unavailable or message predates this field). */
   senderPublicId: string;
+  /** Sender's equipped title (称号), if any. */
+  title?: string;
+  /** Sender's sect name (宗门), if any. */
+  sectName?: string;
+  /** Sender's family name (家族), if any. */
+  familyName?: string;
   body: string;
   ts: number;
 }
@@ -71,12 +77,24 @@ export class NationChannelService {
     const seq = ++msgSeq;
     const msgId = `nm:${worldId}:${ts}:${seq}`;
 
-    // Resolve publicId + display name from meta (source of truth for renames); best-effort,
+    // Resolve publicId + display name + title from meta (source of truth for renames); best-effort,
     // falls back to the client-supplied senderName if meta is unavailable or profile not found —
     // a stale/incorrect client-side cache must never be preferred over the account's real name.
     const profile = this.meta.available ? await this.meta.getProfile(accountId).catch(() => null) : null;
     const senderPublicId = profile?.publicId ?? '';
     const resolvedSenderName = profile?.displayName ?? senderName;
+    const title = profile?.equippedTitle;
+
+    // Resolve family + sect name (world chat spans every family/sect, unlike the family/sect-scoped
+    // channels where the sender's own family/sect is already known); best-effort, both absent if the
+    // sender is family-less or the family isn't in a sect.
+    const mem = this.socialsvc.available ? await this.socialsvc.getMember(accountId).catch(() => null) : null;
+    const familyName = mem?.name;
+    let sectName: string | undefined;
+    if (mem) {
+      const [famSummary] = await this.socialsvc.getFamiliesByIds([mem.familyId]).catch(() => []);
+      if (famSummary?.sectId) sectName = (await cols.sects.findOne({ _id: famSummary.sectId }))?.name;
+    }
 
     const msgDoc: NationMessageDoc = {
       _id: msgId,
@@ -84,13 +102,16 @@ export class NationChannelService {
       senderId: accountId,
       senderName: resolvedSenderName,
       senderPublicId,
+      ...(title ? { title } : {}),
+      ...(sectName ? { sectName } : {}),
+      ...(familyName ? { familyName } : {}),
       body,
       ts: new Date(ts),
     };
     await cols.nationMessages.insertOne(msgDoc);
 
     // Push: prefer delegating to socialsvc (push hub, §5); fall back to direct gateway push O(n) when socialsvc is unavailable.
-    const payload = { worldId, fromPublicId: senderPublicId, fromName: resolvedSenderName, body, ts };
+    const payload = { worldId, fromPublicId: senderPublicId, fromName: resolvedSenderName, title, sectName, familyName, body, ts };
     if (this.socialsvc.available) {
       const recipients = await this.worldMemberAccountIds(worldId, accountId);
       void this.socialsvc.push({ kind: 'world', worldId }, 'nation_msg', payload, recipients);
@@ -99,7 +120,7 @@ export class NationChannelService {
       void this.deps.gateway.broadcast(recipients, { kind: 'nation_msg', ...payload });
     }
 
-    return { id: msgId, senderId: accountId, senderName: resolvedSenderName, senderPublicId, body, ts };
+    return { id: msgId, senderId: accountId, senderName: resolvedSenderName, senderPublicId, title, sectName, familyName, body, ts };
   }
 
   /**
@@ -132,6 +153,9 @@ export class NationChannelService {
       senderId: d.senderId,
       senderName: d.senderName,
       senderPublicId: d.senderPublicId ?? '',
+      title: d.title,
+      sectName: d.sectName,
+      familyName: d.familyName,
       body: d.body,
       ts: d.ts.getTime(),
     }));

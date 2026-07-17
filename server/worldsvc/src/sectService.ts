@@ -62,6 +62,12 @@ export interface SectMessageView {
   id: string;
   senderId: string;
   senderName: string;
+  /** Sender's equipped title (称号), if any. */
+  title?: string;
+  /** Sender's sect name (宗门) — the sect itself, since this channel is sect-scoped. */
+  sectName?: string;
+  /** Sender's family name (家族), if any. */
+  familyName?: string;
   body: string;
   ts: number; // ms since epoch
 }
@@ -363,11 +369,16 @@ export class SectService {
     const seq = ++msgSeq;
     const msgId = `sm:${sectId}:${ts}:${seq}`;
 
-    // Resolve display name from meta (source of truth for renames); best-effort, falls back to
-    // the client-supplied senderName if meta is unavailable or profile not found — a stale/incorrect
+    // Resolve display name + title from meta (source of truth for renames); best-effort, falls back
+    // to the client-supplied senderName if meta is unavailable or profile not found — a stale/incorrect
     // client-side cache must never be preferred over the account's real name.
     const profile = this.meta.available ? await this.meta.getProfile(accountId).catch(() => null) : null;
     const resolvedSenderName = profile?.displayName ?? senderName;
+    const title = profile?.equippedTitle;
+    // Family + sect name are already resolved above (mem.name / the sect this channel belongs to) — no extra lookups.
+    const familyName = mem.name;
+    const sectDoc = await cols.sects.findOne({ _id: sectId });
+    const sectDocName = sectDoc?.name;
 
     const msgDoc: SectMessageDoc = {
       _id: msgId,
@@ -375,13 +386,16 @@ export class SectService {
       sectId,
       senderId: accountId,
       senderName: resolvedSenderName,
+      ...(title ? { title } : {}),
+      ...(sectDocName ? { sectName: sectDocName } : {}),
+      ...(familyName ? { familyName } : {}),
       body,
       ts: new Date(ts),
     };
     await cols.sectMessages.insertOne(msgDoc);
 
     // Push: prefer delegating to socialsvc (the push hub, §5); fall back to direct gateway push when socialsvc is unavailable.
-    const payload = { sectId, fromPublicId: profile?.publicId ?? '', fromName: resolvedSenderName, body, ts };
+    const payload = { sectId, fromPublicId: profile?.publicId ?? '', fromName: resolvedSenderName, title, sectName: sectDocName, familyName, body, ts };
     if (this.socialsvc.available) {
       const recipients = await this.sectMemberAccountIds(worldId, sectId, accountId);
       void this.socialsvc.push({ kind: 'sect', sectId }, 'sect_msg', payload, recipients);
@@ -390,7 +404,7 @@ export class SectService {
       void this.gateway.broadcast(recipients, { kind: 'sect_msg', ...payload });
     }
 
-    return { id: msgId, senderId: accountId, senderName: resolvedSenderName, body, ts };
+    return { id: msgId, senderId: accountId, senderName: resolvedSenderName, title, sectName: sectDocName, familyName, body, ts };
   }
 
   /** Collects all member accountIds within the sect who are joined to this world (spread across member families, via PlayerWorldDoc.familyId); optionally excludes one account (e.g., the sender). */
@@ -429,6 +443,9 @@ export class SectService {
       id: d._id,
       senderId: d.senderId,
       senderName: d.senderName,
+      title: d.title,
+      sectName: d.sectName,
+      familyName: d.familyName,
       body: d.body,
       ts: d.ts instanceof Date ? d.ts.getTime() : (d.ts as unknown as number),
     }));

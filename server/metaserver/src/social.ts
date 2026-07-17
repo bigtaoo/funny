@@ -6,11 +6,13 @@ import { eloToRank, INITIAL_ELO } from '@nw/shared';
 export async function profileOf(cols: Collections, accountId: string): Promise<ProfileView | null> {
   const doc = await cols.accounts.findOne({ _id: accountId });
   if (!doc?.publicId) return null;
-  const save = await cols.saves.findOne({ _id: accountId }, { projection: { 'save.pvp.elo': 1 } });
+  const save = await cols.saves.findOne({ _id: accountId }, { projection: { 'save.pvp.elo': 1, 'save.equipped': 1 } });
   const elo = save?.save.pvp.elo ?? INITIAL_ELO;
+  const equippedTitle = (save?.save.equipped as Record<string, string> | undefined)?.['title'];
   return {
     publicId: doc.publicId,
     displayName: doc.displayName ?? `Player${doc.publicId.slice(-4)}`,
     rank: eloToRank(elo),
+    ...(equippedTitle ? { equippedTitle } : {}),
   };
 }

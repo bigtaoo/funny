@@ -439,4 +439,47 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     const fallback = await sectNoMeta.sendMessage(W, 'alice', 'ClientFallback', 'hi again');
     expect(fallback.senderName).toBe('ClientFallback');
   });
+
+  // Sect chat is already scoped to one sect, so title/familyName/sectName are cheap to resolve
+  // (family name + sect's own name are already known from the membership/sect lookups the send
+  // path already does) — no extra cross-service calls beyond what sendMessage already makes.
+  it('channel: title/sectName/familyName resolved and returned by both sendMessage() and getChannel()', async () => {
+    await makeFamily('alice', 'Alpha', 'AW');
+    await sect.createSect(W, 'alice', 'Sky Sect', 'SKY');
+
+    const fakeMeta: WorldMetaClient = {
+      available: true,
+      async getProfile(id) {
+        return id === 'alice' ? { publicId: 'alice#1234', displayName: 'Alice', equippedTitle: 'Grandmaster' } : null;
+      },
+      async deductMaterial() { throw new Error('unused'); },
+      async grantMaterial() { /* no-op */ },
+      async getSaveFields() { return null; },
+      async escrowEquipment() { throw new Error('unused'); },
+      async grantEquipment() { /* no-op */ },
+      async grantTitle() { /* no-op */ },
+    } as unknown as WorldMetaClient;
+    const sectWithMeta = new SectService({ cols: mongo!.collections, commercial, gateway: fakeGateway, socialsvc, meta: fakeMeta, now: () => Date.now() });
+
+    const result = await sectWithMeta.sendMessage(W, 'alice', 'Alice', 'hi everyone');
+    expect(result.title).toBe('Grandmaster');
+    expect(result.sectName).toBe('Sky Sect');
+    expect(result.familyName).toBe('Alpha');
+
+    const msgs = await sectWithMeta.getChannel(W, 'alice');
+    expect(msgs[0]?.title).toBe('Grandmaster');
+    expect(msgs[0]?.sectName).toBe('Sky Sect');
+    expect(msgs[0]?.familyName).toBe('Alpha');
+  });
+
+  it('channel: title/sectName/familyName all absent when meta is not configured', async () => {
+    await makeFamily('alice', 'Alpha', 'AW');
+    await sect.createSect(W, 'alice', 'Sky Sect', 'SKY');
+    const result = await sect.sendMessage(W, 'alice', 'Alice', 'hi');
+    expect(result.title).toBeUndefined();
+    // sectName/familyName are resolved independently of meta (from the membership/sect lookup),
+    // so they are populated even without meta.
+    expect(result.sectName).toBe('Sky Sect');
+    expect(result.familyName).toBe('Alpha');
+  });
 });

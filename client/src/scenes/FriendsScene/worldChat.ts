@@ -4,6 +4,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { snapFont } from '../../render/fontScale';
 import { caretDisplay } from '../../render/inputDisplay';
+import { drawChatLine } from '../../render/chatRow';
 import type { WorldChatMessage } from '../../net/WorldApiClient';
 import { type Constructor, type FriendsSceneBaseCtor } from './base';
 
@@ -80,7 +81,7 @@ export function WorldChatMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase):
         return;
       }
 
-      const rh = Math.round(h * 0.095);
+      const rh = Math.round(h * 0.06);
       const rowGap = Math.round(h * 0.01);
       let cy = Math.round(h * 0.01);
       const screenY = (c: number) => this.regionTop + c - this.scrollY;
@@ -98,20 +99,18 @@ export function WorldChatMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase):
 
     private drawWorldMsgRow(layer: PIXI.Container, m: WorldChatMessage, y: number): void {
       const { h } = this;
-      const rh = Math.round(h * 0.095);
+      const rh = Math.round(h * 0.06);
       const rx = this.cX;
       const rw = this.cW;
       const bg = sketchPanel(rw, rh, { fill: C.paper, border: C.line, width: 1, seed: seedFor(rx, m.ts % 1000, rw) });
       bg.x = rx; bg.y = y;
       layer.addChild(bg);
 
-      const sender = txt(m.senderName, snapFont(Math.round(rh * 0.28)), C.accent, true);
-      sender.anchor.set(0, 0.5); sender.x = rx + Math.round(rw * 0.04); sender.y = y + rh * 0.32;
-      layer.addChild(sender);
-
-      const body = txt(m.body.slice(0, 60), snapFont(Math.round(rh * 0.26)), C.dark);
-      body.anchor.set(0, 0.5); body.x = rx + Math.round(rw * 0.04); body.y = y + rh * 0.68;
-      layer.addChild(body);
+      drawChatLine(
+        layer, rx + Math.round(rw * 0.04), y + rh / 2,
+        { senderName: m.senderName, title: m.title, sectName: m.sectName, familyName: m.familyName },
+        m.body, snapFont(Math.round(rh * 0.32)), snapFont(Math.round(rh * 0.32)),
+      );
 
       this.hits.push({ rect: { x: rx, y, w: rw, h: rh }, scroll: true, fn: () => this.openWorldSenderProfile(m) });
     }
