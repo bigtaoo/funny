@@ -108,8 +108,36 @@
 
       // The public client token is delivered by the game's own bootstrap endpoint (same value the
       // web client uses), so this page needs no hard-coded secret and tracks sandbox/prod automatically.
-      fetch('/api/bootstrap?platform=web')
-        .then(function (r) { return r.json(); })
+      //
+      // Host resolution: this page is served from the static site (a.gamestao.com / nivara.gamestao.com,
+      // a Cloudflare Worker) where `/api/*` is NOT proxied to the backend — a same-origin fetch there
+      // returns the SPA index.html and JSON.parse throws. So try same-origin first (covers local dev and
+      // a direct api.* host), then fall back to the derived `api.<apex>` host (the REST backend, which
+      // sends CORS headers for these origins). Mirrors the web client's api base (webpack MOBILE_ORIGIN).
+      function bootstrapUrls() {
+        var qs = '/api/bootstrap?platform=web';
+        var urls = [qs];
+        var parts = location.hostname.split('.');
+        if (parts.length > 2 && parts[0] !== 'api') {
+          urls.push(location.protocol + '//api.' + parts.slice(1).join('.') + qs);
+        }
+        return urls;
+      }
+      function fetchBootstrap(urls, i) {
+        i = i || 0;
+        return fetch(urls[i])
+          .then(function (r) {
+            var ct = r.headers.get('content-type') || '';
+            if (!r.ok || ct.indexOf('application/json') === -1) throw new Error('non-json response');
+            return r.json();
+          })
+          .catch(function (e) {
+            if (i + 1 < urls.length) return fetchBootstrap(urls, i + 1);
+            throw e;
+          });
+      }
+
+      fetchBootstrap(bootstrapUrls())
         .then(function (body) {
           var token = body && body.data && body.data.paddleClientToken;
           if (!token) throw new Error('paddle client token unavailable');
