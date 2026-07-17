@@ -133,6 +133,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
     state.inLobby = false;
     views.showDefenseEditor({
       onBack() { goTeams(worldApi, worldId); },
+      getSave: () => saveManager.get(),
       worldApi,
       worldId,
       target: { mode: 'attack', teamId, teamName },
@@ -147,6 +148,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       onEditTeam(teamId, teamName) {
         views.showDefenseEditor({
           onBack() { goCity(worldApi, worldId); },
+          getSave: () => saveManager.get(),
           worldApi,
           worldId,
           target: { mode: 'attack', teamId, teamName },

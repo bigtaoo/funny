@@ -7,15 +7,23 @@
 //    defender (Top) half garrison + building row defenderBuildings + defenderBaseLevel(0..BASE_UPGRADE_COSTS.length).
 //    Save via setDefense (overwrite).
 //
-// ② Attack (mode='attack', G3-2c §16.2 / A7 §16.5): edit a pre-deployment attack team template —
-//    attacker (Bottom) half with collected units pre-placed; no buildings / no base upgrades
-//    (attacker places units only). Tapping an already-placed unit cycles HP steps:
-//    100%→75%→50%→25%→100% (§16.5 SIEGE_UNIT_HP_MIN_FRACTION=0.25, 4 steps), committed troops
-//    = sum of each unit's allocated HP. Save via getTeams→replace slot→setTeams.
+// ② Attack (mode='attack', G3-2c §16.2 / A7 §16.5, migrated to CC-3 hero cards 2026-07-17): edit a
+//    pre-deployment attack team template — attacker (Bottom) half with hero cards from the player's
+//    roster (SaveData.cardInv) pre-placed; no buildings / no base upgrades (attacker places cards
+//    only). A card can occupy only one cell (placing it elsewhere moves it); committed troops = sum
+//    of each placed card's cardState.currentTroops (server-authoritative ledger, not a client HP
+//    slider). Save via getTeams→replace slot→setTeams, entries are {cardInstanceId, col, row}.
 //
-// "Collected units" constraint (U8): palette only lists unit/building types from card definitions
-// (CARD_DEFINITIONS); PvE-only units naturally excluded. During a siege, worldsvc runs the engine
-// headless with the attacker army + defender config to compute the authoritative result (§16.8).
+//    Previously (pre-2026-07-17) this mode used the same raw "collected units" palette as defense
+//    mode with a client-side 25%-100% HP slider (ArmyEntry.unitType/initialHp) — that path never
+//    touched cardState, so combatMarch.ts's card-army exemption from the flat troop pool never
+//    applied to teams built here, causing "team shows troops but march says insufficient troops"
+//    (the legacy `pw.troops < troops` gate still fired). See slg-occupy-team-only-troops memory.
+//
+// "Collected units" constraint (U8, defense mode only): palette only lists unit/building types from
+// card definitions (CARD_DEFINITIONS); PvE-only units naturally excluded. During a siege, worldsvc
+// runs the engine headless with the attacker army + defender config to compute the authoritative
+// result (§16.8).
 
 import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../layout/ILayout';
@@ -27,10 +35,13 @@ import { showToastMessage } from '../net/log';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { FS } from '../render/fontScale';
 import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
-import type { WorldApiClient, TeamTemplate, ArmyEntry } from '../net/WorldApiClient';
+import type { WorldApiClient, TeamTemplate, ArmyEntry, CardSLGState } from '../net/WorldApiClient';
 import { WorldApiError } from '../net/WorldApiClient';
 import { ATTACK_LANES, BASE_COLS, BASE_UPGRADE_COSTS, CARD_DEFINITIONS, UNIT_BLUEPRINTS } from '../game/config';
 import { CardType, UnitType, BuildingType } from '../game/types';
+import type { SaveData, CardInstance } from '../game/meta/SaveData';
+import { CARD_DEFS, troopCap } from '../game/meta/cardDefs';
+import { CARD_TEAM_MAX_SIZE } from '@nw/shared';
 
 /** Max defender base upgrade level the engine schema accepts (0..BASE_UPGRADE_COSTS.length). */
 const MAX_BASE_LEVEL = BASE_UPGRADE_COSTS.length;
@@ -45,6 +56,8 @@ export interface DefenseEditorCallbacks {
   worldApi: WorldApiClient;
   worldId: string;
   target: DefenseEditorTarget;
+  /** Current authoritative save (for cardInv roster). Attack mode only. */
+  getSave?(): SaveData;
 }
 
 // ── Collected pool (U8) ───────────────────────────────────────────────────────
@@ -78,6 +91,7 @@ function nameKeyFor(kind: 'unit' | 'building', type: string): TranslationKey {
 type Tool =
   | { kind: 'unit'; type: UnitType }
   | { kind: 'building'; type: BuildingType }
+  | { kind: 'card'; cardInstanceId: string; unitType: UnitType }
   | { kind: 'erase' };
 
 // Defender deployment zone shown top→bottom: building row first, then garrison rows
@@ -89,11 +103,11 @@ const ATTACK_ROWS = [8, 7, 6, 5, 4, 3, 2, 1] as const;
 
 const MAX_GARRISON = 30;
 
-// §16.5 Per-unit troop allocation slider (A7 tuning): 4 steps 25%/50%/75%/100%, matches server/shared SIEGE_UNIT_HP_MIN_FRACTION.
-const UNIT_HP_STEPS = 4;      // number of HP steps
-const UNIT_HP_MIN_FRAC = 0.25; // minimum step = 25% of blueprint max HP
-
-type GarrisonEntry = { unitType: UnitType; hp: number };
+/**
+ * hp: defense-mode blueprint HP allocation; attack-mode current cardState troop count (display cache,
+ * refreshed from this.cardState on each render via committedTroops()/drawUnit — see cardInstanceId).
+ */
+type GarrisonEntry = { unitType: UnitType; hp: number; cardInstanceId?: string };
 
 // ── Caps / layout ────────────────────────────────────────────────────────────
 
@@ -121,6 +135,10 @@ export class DefenseEditorScene implements Scene {
   private baseLevel = 0;
   // Attack mode: the full team list (loaded once) so save merges this slot without clobbering others.
   private teams: TeamTemplate[] = [];
+  // Attack mode: this account's live card ledger (troops/injury/teamId), fetched alongside teams.
+  private cardState: Record<string, CardSLGState> = {};
+  // Attack mode: card palette pagination (roster can be far wider than one screen row).
+  private cardPage = 0;
 
   private tool: Tool = { kind: 'erase' };
   private loading = true;
@@ -148,7 +166,7 @@ export class DefenseEditorScene implements Scene {
     this.mode = cb.target.mode;
     this.gRows = this.mode === 'attack' ? ATTACK_ROWS : DEFENSE_ROWS;
     this.hasBuildingRow = this.mode === 'defense';
-    if (this.mode === 'attack') this.tool = { kind: 'unit', type: COLLECTED_UNITS[0] ?? UnitType.Infantry };
+    // Attack mode: no default tool — the roster loads async, so start on erase until the player taps a card.
     this.container = new PIXI.Container();
 
     const bg = buildPaperBackground('defense', this.w, this.h);
@@ -169,9 +187,13 @@ export class DefenseEditorScene implements Scene {
   private async loadData(): Promise<void> {
     try {
       if (this.cb.target.mode === 'attack') {
-        const teams = await this.cb.worldApi.getTeams(this.cb.worldId);
+        const [teams, me] = await Promise.all([
+          this.cb.worldApi.getTeams(this.cb.worldId),
+          this.cb.worldApi.getMe(this.cb.worldId),
+        ]);
         if (!this.destroyed) {
           this.teams = teams;
+          this.cardState = me.cardState ?? {};
           const team = teams.find((tm) => tm.id === (this.cb.target as { teamId: string }).teamId);
           if (team) this.applyArmy(team.army);
         }
@@ -184,21 +206,27 @@ export class DefenseEditorScene implements Scene {
     if (!this.destroyed) this.render();
   }
 
-  /** Decode a stored attacker army (G3-2c) into the garrison map (units only, attacker rows). */
+  /**
+   * Decode a stored attacker army (CC-3 hero cards) into the garrison map. Each entry must carry a
+   * cardInstanceId resolving to a card the player still owns; unitType is derived from CARD_DEFS, troop
+   * count from the live cardState ledger (not persisted on the entry itself). Legacy entries from before
+   * the 2026-07-17 card migration (unitType/initialHp, no cardInstanceId) are dropped silently — they
+   * have no card to resolve to and would just re-hit the flat-pool bug this migration fixes.
+   */
   private applyArmy(army: ArmyEntry[]): void {
     this.garrison.clear();
+    const cardInv = this.cb.getSave?.().cardInv ?? {};
     for (const e of army) {
       if (!e || typeof e !== 'object') continue;
-      const { unitType, col, row, initialHp } = e;
-      if (typeof unitType === 'string' && (COLLECTED_UNITS as string[]).includes(unitType)
-        && typeof col === 'number' && (ATTACK_LANES as readonly number[]).includes(col)
-        && typeof row === 'number' && (this.gRows as readonly number[]).includes(row)) {
-        const ut = unitType as UnitType;
-        const maxHp = UNIT_BLUEPRINTS[ut].hp;
-        const hp = (typeof initialHp === 'number' && initialHp >= 1 && initialHp <= maxHp)
-          ? initialHp : maxHp;
-        this.garrison.set(`${col}:${row}`, { unitType: ut, hp });
-      }
+      const { col, row, cardInstanceId } = e;
+      if (!cardInstanceId) continue;
+      if (typeof col !== 'number' || !(ATTACK_LANES as readonly number[]).includes(col)) continue;
+      if (typeof row !== 'number' || !(this.gRows as readonly number[]).includes(row)) continue;
+      const inst = cardInv[cardInstanceId];
+      const def = inst ? CARD_DEFS[inst.defId] : undefined;
+      if (!def) continue; // stale/unknown card (sold, migrated away) — drop
+      const hp = this.cardState[cardInstanceId]?.currentTroops ?? 0;
+      this.garrison.set(`${col}:${row}`, { unitType: def.unitType as UnitType, hp, cardInstanceId });
     }
   }
 
@@ -234,11 +262,11 @@ export class DefenseEditorScene implements Scene {
     this.baseLevel = typeof lv === 'number' ? Math.max(0, Math.min(MAX_BASE_LEVEL, Math.floor(lv))) : 0;
   }
 
-  /** Attacker army: each unit's initialHp = player-allocated troops (§16.5 slider 25%–100%). */
+  /** Attacker army: each placed cell is a hero card at that position — troops live in cardState, not here. */
   private buildArmy(): ArmyEntry[] {
     return [...this.garrison.entries()].map(([key, entry]) => {
       const [col, row] = key.split(':').map(Number);
-      return { unitType: entry.unitType, col: col!, row: row!, initialHp: entry.hp };
+      return { cardInstanceId: entry.cardInstanceId!, col: col!, row: row! };
     });
   }
 
@@ -350,6 +378,7 @@ export class DefenseEditorScene implements Scene {
   }
 
   private renderPalette(top: number): void {
+    if (this.mode === 'attack') { this.renderCardPalette(top); return; }
     const { w } = this;
     const tools: { tool: Tool; label: string; tint: number }[] = [
       // Buildings are defense-mode only (attacker places units only).
@@ -389,7 +418,118 @@ export class DefenseEditorScene implements Scene {
   private toolEquals(a: Tool, b: Tool): boolean {
     if (a.kind !== b.kind) return false;
     if (a.kind === 'erase' || b.kind === 'erase') return a.kind === b.kind;
+    if (a.kind === 'card' && b.kind === 'card') return a.cardInstanceId === b.cardInstanceId;
     return (a as { type: string }).type === (b as { type: string }).type;
+  }
+
+  /**
+   * Roster cards eligible for this team: not injured, and not already committed to a *different*
+   * team slot (a card on this same slot is fine — it's already reflected in this.garrison and shows
+   * as placed). Mirrors TeamsScene's card-availability rules (CHARACTER_CARDS_DESIGN §8).
+   */
+  private availableCards(): { card: CardInstance; unitType: UnitType; troops: number; cap: number }[] {
+    const cardInv = this.cb.getSave?.().cardInv ?? {};
+    const myTeamId = this.mode === 'attack' ? (this.cb.target as { teamId: string }).teamId : undefined;
+    const now = Date.now();
+    const out: { card: CardInstance; unitType: UnitType; troops: number; cap: number }[] = [];
+    for (const card of Object.values(cardInv)) {
+      const def = CARD_DEFS[card.defId];
+      if (!def) continue;
+      const st = this.cardState[card.id];
+      if ((st?.injuredUntil ?? 0) > now) continue;
+      if (st?.teamId && st.teamId !== myTeamId) continue;
+      out.push({ card, unitType: def.unitType as UnitType, troops: st?.currentTroops ?? 0, cap: troopCap(card) });
+    }
+    return out;
+  }
+
+  /** Which cell (if any) a given card is currently placed at, in this in-progress edit. */
+  private cellForCard(cardInstanceId: string): string | undefined {
+    for (const [key, entry] of this.garrison) if (entry.cardInstanceId === cardInstanceId) return key;
+    return undefined;
+  }
+
+  /** Attack mode palette: a paginated strip of the player's hero-card roster + an erase tool. */
+  private renderCardPalette(top: number): void {
+    const { w } = this;
+    const cards = this.availableCards();
+    const cellW = 84, gap = 6, eraseW = 50, arrowW = 22;
+    const btnH = PALETTE_H - 10;
+    const innerW = w - PAD * 2 - arrowW * 2 - gap * 3 - eraseW;
+    const perPage = Math.max(1, Math.floor((innerW + gap) / (cellW + gap)));
+    const pageCount = Math.max(1, Math.ceil(cards.length / perPage));
+    this.cardPage = Math.max(0, Math.min(this.cardPage, pageCount - 1));
+    const showArrows = cards.length > perPage;
+    const pageCards = cards.slice(this.cardPage * perPage, this.cardPage * perPage + perPage);
+
+    let x = PAD;
+    if (showArrows) {
+      const enabled = this.cardPage > 0;
+      const box = sketchPanel(arrowW, btnH, { fill: C.paper, border: enabled ? C.dark : C.mid, seed: seedFor(x, top, arrowW) });
+      box.x = x; box.y = top + 5;
+      this.bodyLayer.addChild(box);
+      const lbl = txt('<', FS.small, enabled ? C.dark : C.mid, true);
+      lbl.anchor.set(0.5, 0.5); lbl.x = box.x + arrowW / 2; lbl.y = box.y + btnH / 2;
+      this.bodyLayer.addChild(lbl);
+      if (enabled) this.hits.push({ rect: { x: box.x, y: box.y, w: arrowW, h: btnH }, action: () => { this.cardPage--; this.render(); } });
+      x += arrowW + gap;
+    }
+
+    if (cards.length === 0) {
+      const empty = txt(t('world.team.noCards'), FS.micro, C.mid);
+      empty.x = x; empty.y = top + 5 + btnH / 2 - 6;
+      this.bodyLayer.addChild(empty);
+    }
+
+    for (const c of pageCards) {
+      const active = this.tool.kind === 'card' && this.tool.cardInstanceId === c.card.id;
+      const placed = this.cellForCard(c.card.id) !== undefined;
+      const box = sketchPanel(cellW, btnH, {
+        fill: active ? C.accent : C.paper, border: active ? C.dark : (placed ? C.accent : C.mid),
+        width: active ? 2.4 : 1.4, seed: seedFor(x, top, cellW),
+      });
+      box.x = x; box.y = top + 5;
+      this.bodyLayer.addChild(box);
+      const name = t(`card.${c.card.defId}.name` as import('../i18n').TranslationKey);
+      const nameLbl = txt(name, FS.micro, active ? C.light : C.dark, true);
+      nameLbl.anchor.set(0.5, 0); nameLbl.x = x + cellW / 2; nameLbl.y = box.y + 4;
+      if (nameLbl.width > cellW - 6) nameLbl.scale.set((cellW - 6) / nameLbl.width);
+      this.bodyLayer.addChild(nameLbl);
+      const sub = txt(`${c.troops}/${c.cap}`, FS.micro, active ? C.light : C.mid);
+      sub.anchor.set(0.5, 0); sub.x = x + cellW / 2; sub.y = box.y + btnH - 16;
+      this.bodyLayer.addChild(sub);
+      const captured = c;
+      this.hits.push({ rect: { x: box.x, y: box.y, w: cellW, h: btnH }, action: () => {
+        this.tool = { kind: 'card', cardInstanceId: captured.card.id, unitType: captured.unitType };
+        this.render();
+      } });
+      x += cellW + gap;
+    }
+
+    const eraseX = w - PAD - eraseW - (showArrows ? gap + arrowW : 0);
+    const eraseActive = this.tool.kind === 'erase';
+    const eraseBox = sketchPanel(eraseW, btnH, {
+      fill: eraseActive ? C.red : C.paper, border: eraseActive ? C.dark : C.red,
+      width: eraseActive ? 2.4 : 1.4, seed: seedFor(eraseX, top, eraseW),
+    });
+    eraseBox.x = eraseX; eraseBox.y = top + 5;
+    this.bodyLayer.addChild(eraseBox);
+    const eraseLbl = txt(t('world.defense.erase'), FS.micro, eraseActive ? C.light : C.red, true);
+    eraseLbl.anchor.set(0.5, 0.5); eraseLbl.x = eraseBox.x + eraseW / 2; eraseLbl.y = eraseBox.y + btnH / 2;
+    this.bodyLayer.addChild(eraseLbl);
+    this.hits.push({ rect: { x: eraseBox.x, y: eraseBox.y, w: eraseW, h: btnH }, action: () => { this.tool = { kind: 'erase' }; this.render(); } });
+
+    if (showArrows) {
+      const rx = w - PAD - arrowW;
+      const enabled = this.cardPage < pageCount - 1;
+      const box = sketchPanel(arrowW, btnH, { fill: C.paper, border: enabled ? C.dark : C.mid, seed: seedFor(rx, top, arrowW) });
+      box.x = rx; box.y = top + 5;
+      this.bodyLayer.addChild(box);
+      const lbl = txt('>', FS.small, enabled ? C.dark : C.mid, true);
+      lbl.anchor.set(0.5, 0.5); lbl.x = box.x + arrowW / 2; lbl.y = box.y + btnH / 2;
+      this.bodyLayer.addChild(lbl);
+      if (enabled) this.hits.push({ rect: { x: box.x, y: box.y, w: arrowW, h: btnH }, action: () => { this.cardPage++; this.render(); } });
+    }
   }
 
   private renderGrid(top: number, bottom: number): void {
@@ -487,15 +627,13 @@ export class DefenseEditorScene implements Scene {
     g.drawCircle(cx, cy, r);
     g.endFill();
 
-    // Attack mode: draw HP fraction bar below circle (§16.5 slider).
+    // Attack mode: show the card's live troop count under the icon — a card's cardState ledger, not
+    // a blueprint-relative HP fraction (a card's troop count isn't bounded by the unit's base HP stat).
     if (hp !== undefined && this.mode === 'attack') {
-      const maxHp = UNIT_BLUEPRINTS[type].hp;
-      const frac = maxHp > 0 ? Math.min(1, hp / maxHp) : 1;
-      const barW = cw * 0.7, barH = 3;
-      const bx = px + (cw - barW) / 2, by = cy + r + 2;
-      g.lineStyle(0);
-      g.beginFill(0xcccccc, 0.5); g.drawRect(bx, by, barW, barH); g.endFill();
-      g.beginFill(0x3388ff, 0.9); g.drawRect(bx, by, barW * frac, barH); g.endFill();
+      const label = txt(String(hp), FS.micro, 0x222222, true);
+      label.anchor.set(0.5, 0);
+      label.x = cx; label.y = cy + r + 1;
+      this.bodyLayer.addChild(label);
     }
   }
 
@@ -540,10 +678,12 @@ export class DefenseEditorScene implements Scene {
     } });
   }
 
-  /** Attacker army committed troops = sum of each unit's allocated HP (§16.5 slider; consistent with buildArmy / server). */
+  /** Attacker army committed troops = sum of each placed card's live cardState.currentTroops (consistent with TeamsScene / server). */
   private committedTroops(): number {
     let sum = 0;
-    for (const entry of this.garrison.values()) sum += entry.hp;
+    for (const entry of this.garrison.values()) {
+      sum += entry.cardInstanceId ? (this.cardState[entry.cardInstanceId]?.currentTroops ?? 0) : entry.hp;
+    }
     return sum;
   }
 
@@ -577,23 +717,26 @@ export class DefenseEditorScene implements Scene {
       const key = `${col}:${row}`;
       if (this.tool.kind === 'erase') {
         this.garrison.delete(key);
-      } else if (this.tool.kind === 'unit') {
-        const existing = this.garrison.get(key);
-        if (existing && existing.unitType === this.tool.type && this.mode === 'attack') {
-          // Same unit already here in attack mode → cycle HP through UNIT_HP_STEPS steps.
-          const maxHp = UNIT_BLUEPRINTS[this.tool.type].hp;
-          const minHp = Math.max(1, Math.ceil(maxHp * UNIT_HP_MIN_FRAC));
-          const step = Math.round((maxHp - minHp) / (UNIT_HP_STEPS - 1));
-          const nextHp = existing.hp + step > maxHp ? minHp : existing.hp + step;
-          this.garrison.set(key, { unitType: this.tool.type, hp: nextHp });
-        } else {
-          if (!existing && this.garrison.size >= MAX_GARRISON) {
-            this.showToast(t('world.defense.full'), C.red);
-            return;
-          }
-          const maxHp = UNIT_BLUEPRINTS[this.tool.type].hp;
-          this.garrison.set(key, { unitType: this.tool.type, hp: maxHp });
+      } else if (this.mode === 'attack' && this.tool.kind === 'card') {
+        const { cardInstanceId, unitType } = this.tool;
+        // A card can only occupy one cell — placing it elsewhere moves it. Net size only grows when
+        // both the card is brand-new to this team AND the target cell isn't already overwriting another card.
+        const prevCell = this.cellForCard(cardInstanceId);
+        const willGrow = !prevCell && !this.garrison.has(key);
+        if (willGrow && this.garrison.size >= CARD_TEAM_MAX_SIZE) {
+          this.showToast(t('world.team.full'), C.red);
+          return;
         }
+        if (prevCell && prevCell !== key) this.garrison.delete(prevCell);
+        const troops = this.cardState[cardInstanceId]?.currentTroops ?? 0;
+        this.garrison.set(key, { unitType, hp: troops, cardInstanceId });
+      } else if (this.tool.kind === 'unit') {
+        if (!this.garrison.has(key) && this.garrison.size >= MAX_GARRISON) {
+          this.showToast(t('world.defense.full'), C.red);
+          return;
+        }
+        const maxHp = UNIT_BLUEPRINTS[this.tool.type].hp;
+        this.garrison.set(key, { unitType: this.tool.type, hp: maxHp });
       } else {
         this.showToast(t('world.defense.buildingsNotHere'), C.red);
         return;

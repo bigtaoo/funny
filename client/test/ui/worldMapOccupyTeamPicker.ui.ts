@@ -71,14 +71,14 @@ function buildHarness(opts: {
 }
 
 describe('WorldMapNet.showTeamPicker — occupy uses the team picker (§4.2)', () => {
-  it('occupy picker lists the team, manage, and close — and NO flat-pool fallback', async () => {
+  it('occupy picker lists the team and close — no "manage teams" and NO flat-pool fallback (2026-07-17: only battle-ready teams shown)', async () => {
     const { net, showModal, showDeployDialog } = buildHarness();
     await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
     expect(showModal).toHaveBeenCalledTimes(1);
     const buttons = showModal.mock.calls[0][1] as { label: string; action: () => void }[];
     const labels = buttons.map((b) => b.label);
     expect(labels.some((l) => l.startsWith('Alpha'))).toBe(true);
-    expect(labels).toContain(t('world.team.manage'));
+    expect(labels).not.toContain(t('world.team.manage'));
     expect(labels).toContain('✕');
     // No occupy path opens the flat pool-troop deploy dialog any more.
     for (const b of buttons) b.action();
@@ -106,12 +106,23 @@ describe('WorldMapNet.showTeamPicker — occupy uses the team picker (§4.2)', (
     expect(startMarch).toHaveBeenCalledWith(WORLD_ID, ANCHOR.x, ANCHOR.y, ANCHOR.x, ANCHOR.y, 'occupy', 1, 't1');
   });
 
-  it('a busy team is disabled in the occupy picker (TEAM_BUSY mirror)', async () => {
+  it('a busy team is omitted from the occupy picker entirely (TEAM_BUSY mirror; 2026-07-17: not shown at all, not just disabled)', async () => {
     const { ctx, net, showModal } = buildHarness();
     (ctx.occupations as { teamId: string }[]).push({ teamId: 't1' });
     await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
-    const buttons = showModal.mock.calls[0][1] as { label: string; disabled?: boolean }[];
-    const teamBtn = buttons.find((b) => b.label.startsWith('Alpha'))!;
-    expect(teamBtn.disabled).toBe(true);
+    const buttons = showModal.mock.calls[0][1] as { label: string }[];
+    expect(buttons.some((b) => b.label.startsWith('Alpha'))).toBe(false);
+  });
+
+  it('a team with zero committed troops (e.g. its cards were wiped) is omitted — it would just die on contact', async () => {
+    const { net, showModal } = buildHarness({
+      teams: [{ id: 't1', name: 'Wiped', army: [{ cardInstanceId: 'c1' }] }],
+      cardState: { c1: { currentTroops: 0 } },
+    });
+    await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
+    const buttons = showModal.mock.calls[0][1] as { label: string }[];
+    expect(buttons.some((b) => b.label.startsWith('Wiped'))).toBe(false);
+    const head = showModal.mock.calls[0][0] as string[];
+    expect(head).toContain(t('world.team.noTeamsOccupy'));
   });
 });
