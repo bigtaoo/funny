@@ -323,6 +323,7 @@ ShopScene → rechargeCoins(tierId) → createAppCore.doRechargeCoins
 
 - **字段必须 snake_case**：`price_id` / `custom_data`（不是 camelCase `priceId`/`customData`，否则 400 `price_id is required` oneOf 校验失败 → `/shop/paddle/checkout` 返 502 `PADDLE_ERROR`）。
 - **Paddle 后台须配 Default Payment Link**（Dashboard → Checkout settings）：未配则 400 `transaction_default_checkout_url_not_set`。游戏内 overlay（`Paddle.Checkout.open({transactionId})`）不依赖该页内容，但 Paddle 生成的兜底链接（收据/付款失败重试邮件/「完成付款」）会以 `<Default Payment Link>?_ptxn=<txnId>` 形式跳转。故新增 `client/public/web/pay.html`：加载 Paddle.js + 从 `/api/bootstrap` 取 client token（按 `test_` 前缀切沙盒/生产）+ 读 `_ptxn` 自动开结账浮层，后台默认支付链接填 `https://<host>/pay.html`（已接入 webpack copy）。
+  - **⚠️ 踩坑（2026-07-17）**：pay.html 原先用**同源** `fetch('/api/bootstrap')` 取 client token。但游戏站主机（`a.gamestao.com` / `nivara.gamestao.com`）是 Cloudflare Worker 静态站（`wrangler/client.jsonc` `not_found_handling: single-page-application`），`/api/*` **不代理**到后端 → 同源请求返回 SPA 的 `index.html`，`JSON.parse` 抛错，页面显示 "Checkout unavailable (Unexpected token '<')"，浮层永远打不开。修复（commit `8d50c31d`）：pay.html 先试同源、失败再回退到由主机名推导的 `api.<apex>` 源（对齐 webpack `MOBILE_ORIGIN`），并加 `content-type` 判断，避免把 SPA HTML 当 JSON 解析。**通则**：`client/public/web/` 下任何调 REST 的静态页都不能假设 `/api` 同源可用——游戏站是纯静态 CF Worker，须用 `api.<apex>` 回退。注意 pay.html 只随**客户端静态部署**（`client-deploy.yml` → `wrangler deploy`）上线，更新 VPS 不会改到它。
 
 ### 10.4 原生计费桥契约（`window.NWBilling`，本仓库外实现）
 
