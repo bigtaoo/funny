@@ -86,7 +86,7 @@ describe('FriendsScene mail detail — delete blocked while an attachment is unc
 
     expect(deleteCalls).toBe(0);
     expect(scene.openMailItem).toBe(unclaimedGiftMail); // detail stays open
-    expect(toastMsgs.at(-1)).toBe(t('mail.deleteBlockedAttachment'));
+    expect(toastMsgs[toastMsgs.length - 1]).toBe(t('mail.deleteBlockedAttachment'));
     scene.destroy();
   });
 
@@ -127,7 +127,7 @@ describe('FriendsScene mail detail — delete blocked while an attachment is unc
     await scene.doMailDelete(claimedGiftMail);
 
     expect(scene.openMailItem).toBe(claimedGiftMail);
-    expect(toastMsgs.at(-1)).toBe(t('mail.deleteBlockedAttachment'));
+    expect(toastMsgs[toastMsgs.length - 1]).toBe(t('mail.deleteBlockedAttachment'));
     scene.destroy();
   });
 });
