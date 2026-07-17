@@ -387,6 +387,7 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       if (equipped) {
         const slotLabel = t(`equip.slot.${slot}` as TranslationKey);
         const e = txt(`[${t('equip.equipped')} · ${slotLabel}]`, FS.small, C.green, true);
+        if (e.width > colW) e.scale.set(Math.max(0.01, colW / e.width));
         e.x = ax; e.y = ay; this.bodyLayer.addChild(e); ay += 24;
       }
       if (count > 1) {
