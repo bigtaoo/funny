@@ -114,9 +114,11 @@ async function createPaddleTransaction(priceId: string, accountId: string): Prom
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
     },
+    // Paddle Billing API uses snake_case field names — price_id / custom_data (NOT priceId / customData,
+    // which the API silently rejects with a 400 "price_id is required" oneOf validation error).
     body: JSON.stringify({
-      items: [{ priceId, quantity: 1 }],
-      customData: { accountId },
+      items: [{ price_id: priceId, quantity: 1 }],
+      custom_data: { accountId },
     }),
   });
 
