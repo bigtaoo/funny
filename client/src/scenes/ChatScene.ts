@@ -4,6 +4,7 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
+import { showToastMessage } from '../net/log';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader, sceneHeaderHeight } from '../ui/widgets/SceneHeader';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
@@ -61,8 +62,6 @@ export class ChatScene implements Scene {
   private composeFocused = false;
   private caretOn = true;
   private caretTimer = 0;
-  private toastKey: TranslationKey | null = null;
-  private toastT = 0;
 
   // Scroll (drag) state.
   private scrollY = 0;
@@ -96,10 +95,6 @@ export class ChatScene implements Scene {
   }
 
   update(dt: number): void {
-    if (this.toastKey) {
-      this.toastT -= dt;
-      if (this.toastT <= 0) { this.toastKey = null; this.render(); }
-    }
     if (this.composeFocused) {
       this.caretTimer += dt;
       if (this.caretTimer >= 0.5) { this.caretTimer = 0; this.caretOn = !this.caretOn; this.render(); }
@@ -239,7 +234,7 @@ export class ChatScene implements Scene {
     }
   }
 
-  private toast(key: TranslationKey): void { this.toastKey = key; this.toastT = 2.5; }
+  private toast(key: TranslationKey): void { showToastMessage(t(key), 'error'); }
 
   // ── Render ───────────────────────────────────────────────────────────────────
   private render(): void {
@@ -252,7 +247,6 @@ export class ChatScene implements Scene {
     this.drawHeader();
     this.drawThread();
     this.drawComposer();
-    this.drawToast();
   }
 
   private drawHeader(): void {
@@ -389,20 +383,6 @@ export class ChatScene implements Scene {
     this.hits.push({ rect: { x: sx, y: fieldY, w: sendW, h: fieldH }, fn: () => { if (enabled) void this.doSend(); } });
   }
 
-  private drawToast(): void {
-    if (!this.toastKey) return;
-    const { w, h } = this;
-    const label = txt(t(this.toastKey), FS.heading, 0xffffff, true);
-    const bw = label.width + Math.round(w * 0.08);
-    const bh = label.height + Math.round(h * 0.036);
-    const bx = (w - bw) / 2;
-    const by = Math.round(h * 0.13);
-    const bg = sketchPanel(bw, bh, { fill: C.dark, fillAlpha: 0.92, border: C.gold, width: 2, seed: seedFor(bw, bh, 1) });
-    bg.x = bx; bg.y = by;
-    this.container.addChild(bg);
-    label.anchor.set(0.5, 0.5); label.x = w / 2; label.y = by + bh / 2;
-    this.container.addChild(label);
-  }
 }
 
 function clamp(v: number, lo: number, hi: number): number {

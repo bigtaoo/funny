@@ -25,6 +25,8 @@ import { getArtTexture } from '../../render/cardArt';
 import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { BusyTracker } from '../../ui/busyTracker';
+import { showToastMessage } from '../../net/log';
+import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
 import type { CardSLGState } from '../../net/WorldApiClient';
 import { CARD_DEFS, cardPower } from '../../game/meta/cardDefs';
@@ -125,7 +127,6 @@ export class CardSceneBase {
 
   protected bodyLayer!: PIXI.Container;
   protected modalLayer!: PIXI.Container;
-  protected toastLayer!: PIXI.Container;
   protected loadingLayer!: PIXI.Container;
   /** Drawn after the static header chrome so the coin balance + capacity readout sit on the same row as the title (matches EquipmentScene, EQUIPMENT_DESIGN header-alignment fix). */
   protected headerOverlayLayer!: PIXI.Container;
@@ -151,7 +152,11 @@ export class CardSceneBase {
 
   protected detailId: string | null = null;
   protected scrollY = 0;
-  protected dragStart: { x: number; y: number; scroll: number } | null = null;
+  /**
+   * Tap-vs-drag gesture tracker: defers a cell's hit action to pointer-up and drops it if the pointer
+   * dragged (so a drag starting on a card scrolls instead of opening its detail). See ScrollTapGesture.
+   */
+  private readonly gesture = new ScrollTapGesture();
   /** Set by handleMove instead of rendering inline — see EquipmentSceneBase.scrollDirty for why. */
   private scrollDirty = false;
   /** [Cards|Equipment?|Skins] sidebar nav — always shown (Skins is always reachable, LOBBY_IA_REDESIGN §15). */
@@ -167,7 +172,6 @@ export class CardSceneBase {
   /** Removes the in-flight portrait flip's PIXI.Ticker.shared listener, if any (avoids leaking it across re-renders/destroy). */
   protected flipTickerCleanup: (() => void) | null = null;
 
-  protected toastTimer = 0;
   protected destroyed = false;
   protected readonly unsubs: (() => void)[] = [];
   /** Portrait urls whose texture we've hooked for a one-shot re-render on load. */
@@ -201,8 +205,6 @@ export class CardSceneBase {
     this.container.addChild(this.bodyLayer);
     this.modalLayer = new PIXI.Container();
     this.container.addChild(this.modalLayer);
-    this.toastLayer = new PIXI.Container();
-    this.container.addChild(this.toastLayer);
     this.loadingLayer = new PIXI.Container();
     this.container.addChild(this.loadingLayer);
 
@@ -292,20 +294,7 @@ export class CardSceneBase {
   // ── Toast ─────────────────────────────────────────────────────────────────
 
   protected showToast(msg: string, color: number = C.dark): void {
-    const tl = this.toastLayer;
-    tl.removeChildren();
-    const lbl = txt(msg, FS.heading, 0xffffff, true);
-    const padX = 28, padY = 16;
-    const bw = lbl.width + padX * 2;
-    const bh = lbl.height + padY * 2;
-    const bx = (this.w - bw) / 2;
-    const by = Math.round(this.h * 2 / 3 - bh / 2);
-    const bg = sketchPanel(bw, bh, { fill: color, fillAlpha: 0.96, border: color, seed: seedFor(bw, bh, 3) });
-    bg.x = bx; bg.y = by;
-    tl.addChild(bg);
-    lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
-    tl.addChild(lbl);
-    this.toastTimer = 2200;
+    showToastMessage(msg, color === C.red ? 'error' : 'success');
   }
 
   // ── Input / lifecycle ─────────────────────────────────────────────────────
@@ -322,23 +311,26 @@ export class CardSceneBase {
       }
       return;
     }
+    // Don't fire the hit action here — capture it and start gesture tracking. If the pointer then
+    // drags past the threshold it becomes a scroll and the tap is dropped on up; otherwise the tap
+    // fires on up. This lets a drag that starts *on a card cell* scroll the grid instead of instantly
+    // opening that card's detail.
+    let hit: (() => void) | null = null;
     for (const { rect, action } of this.hitRects) {
-      if (this.inRect(x, y, rect)) { action(); return; }
+      if (this.inRect(x, y, rect)) { hit = action; break; }
     }
-    this.dragStart = { x, y, scroll: this.scrollY };
+    this.gesture.down(this.scrollY, y, hit);
   }
 
   private handleMove(y: number): void {
-    if (!this.dragStart || this.modalOpen) return;
-    const dy = y - this.dragStart.y;
-    if (Math.abs(dy) > 6) {
-      this.scrollY = Math.max(0, this.dragStart.scroll - dy);
-      this.scrollDirty = true;
-    }
+    if (this.modalOpen) return;
+    const scroll = this.gesture.move(y);
+    if (scroll !== null) { this.scrollY = scroll; this.scrollDirty = true; }
   }
 
   private handleUp(): void {
-    this.dragStart = null;
+    // Fires only for a genuine tap (pointer didn't drag); a released drag returns null.
+    this.gesture.up()?.();
   }
 
   private inRect(x: number, y: number, r: Rect): boolean {
@@ -348,10 +340,6 @@ export class CardSceneBase {
   update(dt: number): void {
     if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
     if (this.bt.tick(dt)) this.render();
-    if (this.toastTimer > 0) {
-      this.toastTimer -= dt * 1000;
-      if (this.toastTimer <= 0) this.toastLayer.removeChildren();
-    }
   }
 
   destroy(): void {

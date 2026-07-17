@@ -238,21 +238,29 @@ export class WorldMapInput {
   handleDown(x: number, y: number): void {
     // Modal buttons
     if (this.ctx.modalDimRect) {
+      // Scrollable list body (world-info nations/shop tabs) — check this BEFORE firing modal buttons.
+      // A press inside the list begins a drag-to-scroll gesture and defers any in-list button tap
+      // (Buy/Rename) to pointer-up, dropping it if the pointer drags. Otherwise a drag that started
+      // on one of those buttons would fire it instead of scrolling the list.
+      const sr = this.ctx.infoScrollRect;
+      if (sr && x >= sr.x && x <= sr.x + sr.w && y >= sr.y && y <= sr.y + sr.h) {
+        let pending: (() => void) | null = null;
+        for (const { rect, action } of this.ctx.modalBtnRects) {
+          if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) { pending = action; break; }
+        }
+        this.ctx.infoScrollDragging = true;
+        this.ctx.infoScrollDragMoved = false;
+        this.ctx.infoScrollDragStartY = y;
+        this.ctx.infoScrollDragStartScroll = this.ctx.infoScrollY;
+        this.ctx.infoScrollPendingTap = pending;
+        return;
+      }
+      // Outside the scroll list, modal buttons (tabs, close, action row) fire on down.
       for (const { rect, action } of this.ctx.modalBtnRects) {
         if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) {
           action();
           return;
         }
-      }
-      // Scrollable list body (world-info nations/shop tabs) — begin a drag-to-scroll
-      // gesture instead of closing the modal on a tap inside the list.
-      const sr = this.ctx.infoScrollRect;
-      if (sr && x >= sr.x && x <= sr.x + sr.w && y >= sr.y && y <= sr.y + sr.h) {
-        this.ctx.infoScrollDragging = true;
-        this.ctx.infoScrollDragMoved = false;
-        this.ctx.infoScrollDragStartY = y;
-        this.ctx.infoScrollDragStartScroll = this.ctx.infoScrollY;
-        return;
       }
       this.ctx.panels.closeModal();
       return;
@@ -376,6 +384,10 @@ export class WorldMapInput {
   handleUp(x: number, y: number): void {
     if (this.ctx.infoScrollDragging) {
       this.ctx.infoScrollDragging = false;
+      // Fire a deferred in-list button tap only for a genuine tap (the pointer never dragged).
+      const tap = this.ctx.infoScrollPendingTap;
+      this.ctx.infoScrollPendingTap = null;
+      if (tap && !this.ctx.infoScrollDragMoved) tap();
       return;
     }
     if (!this.ctx.dragging) return;

@@ -19306,6 +19306,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "type": "boolean"
               },
               "description": "Contains only flags whose evaluated result differs from the default (key→bool); empty object for most players"
+            },
+            "paddleClientToken": {
+              "type": "string",
+              "description": "Paddle.js client-side token (COMMERCIAL_DESIGN §IAP client) — public, client-safe (ptok_/live_/test_). Only present when the server has NW_PADDLE_CLIENT_TOKEN configured; absent otherwise. The web client needs this to open the Paddle checkout overlay. Must be declared here or the Fastify response serializer strips it from the wire (fast-json-stringify only emits schema-declared properties)."
             }
           }
         }

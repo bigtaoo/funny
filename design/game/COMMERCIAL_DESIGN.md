@@ -315,6 +315,15 @@ ShopScene → rechargeCoins(tierId) → createAppCore.doRechargeCoins
 
 `metaserver` 的 `MetaService.bootstrap` 在 `NW_PADDLE_CLIENT_TOKEN` 配置时，于响应里附带 `paddleClientToken`（未配置则不带）。客户端 `FeatureFlags` 轮询 `/bootstrap` 时缓存它，`getPaddleClientToken()` 供 `doRechargeCoins` 取用。token 缺失（服务端未配置）→ Paddle 充值提示 `shop.rechargeError`，不发起 checkout。
 
+> **⚠️ 踩坑（2026-07-17）**：`paddleClientToken` **必须在 `/bootstrap` 的 OpenAPI 200 响应 schema 里显式声明**（`openapi/paths/telemetry.yml`）。Fastify 用响应 schema 做 fast-json-stringify 序列化，**只输出 schema 声明过的字段**——handler 返回了 token 但 schema 没声明时会被静默剥掉，症状是 env 配好了、代码也返回了，客户端却永远拿到 null、充值秒失败。此规则适用于本仓所有 codegen 路由的任何新增响应字段。
+
+### 10.3.1 Paddle 建交易的两个前置（2026-07-17）
+
+`metaserver/src/paddle.ts` `createPaddleTransaction` 调 Paddle Billing `POST /transactions`：
+
+- **字段必须 snake_case**：`price_id` / `custom_data`（不是 camelCase `priceId`/`customData`，否则 400 `price_id is required` oneOf 校验失败 → `/shop/paddle/checkout` 返 502 `PADDLE_ERROR`）。
+- **Paddle 后台须配 Default Payment Link**（Dashboard → Checkout settings）：未配则 400 `transaction_default_checkout_url_not_set`。游戏内 overlay（`Paddle.Checkout.open({transactionId})`）不依赖该页内容，但 Paddle 生成的兜底链接（收据/付款失败重试邮件/「完成付款」）会以 `<Default Payment Link>?_ptxn=<txnId>` 形式跳转。故新增 `client/public/web/pay.html`：加载 Paddle.js + 从 `/api/bootstrap` 取 client token（按 `test_` 前缀切沙盒/生产）+ 读 `_ptxn` 自动开结账浮层，后台默认支付链接填 `https://<host>/pay.html`（已接入 webpack copy）。
+
 ### 10.4 原生计费桥契约（`window.NWBilling`，本仓库外实现）
 
 TS 契约见 `client/src/platform/iap.ts`：

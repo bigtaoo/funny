@@ -66,26 +66,30 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
     renderCreate(): void {
       const { w, h } = this;
 
+      // Whole create-form is scaled up uniformly (constants + fonts) by S so it reads larger
+      // without touching the global font scale. Every geometry value below is pre-multiplied.
+      const S = 1.3;
+
       // Everything lives inside a centered card in the region RIGHT of the social rail — the
       // old absolute-x layout overlapped the rail (Family/Sect/World/Mail) and the header text.
       const left = this.railW;
       const availW = w - left;
-      const cardW = Math.min(720, availW * 0.82);
+      const cardW = Math.min(720 * S, availW * 0.9);
       const cardX = left + (availW - cardW) / 2;
-      const pad = 36;
+      const pad = 36 * S;
       const cx = cardX + cardW / 2;      // card horizontal center (used for title + buttons)
       const inX = cardX + pad;            // inner content left edge
       const inW = cardW - pad * 2;        // inner content width
-      const fieldH = 48;
+      const fieldH = 48 * S;
 
       // Field metrics chosen up front so we can size the card to its content.
-      const titleH = 34, gapAfterTitle = 26;
-      const labelH = 26, gapLabelField = 8;
-      const gapAfterName = 30;
-      const tagLabelH = 24, tagHintH = 20;
-      const tagFieldW = Math.min(260, inW);
-      const gapAfterTag = 40;
-      const btnH = 48;
+      const titleH = 34 * S, gapAfterTitle = 26 * S;
+      const labelH = 26 * S, gapLabelField = 8 * S;
+      const gapAfterName = 30 * S;
+      const tagLabelH = 24 * S, tagHintH = 20 * S;
+      const tagFieldW = Math.min(260 * S, inW);
+      const gapAfterTag = 40 * S;
+      const btnH = 48 * S;
 
       const cardH = pad
         + titleH + gapAfterTitle
@@ -103,13 +107,13 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       let y = cardY + pad;
 
       // Title.
-      const title = txt(t('sect.createTitle'), FS.label, C.dark);
+      const title = txt(t('sect.createTitle'), FS.label * S, C.dark);
       title.anchor.set(0.5, 0); title.x = cx; title.y = y;
       this.bodyLayer.addChild(title);
       y += titleH + gapAfterTitle;
 
       // ── Sect name ──
-      const nameLbl = txt(t('sect.name'), FS.body, C.dark);
+      const nameLbl = txt(t('sect.name'), FS.body * S, C.dark);
       nameLbl.x = inX; nameLbl.y = y;
       this.bodyLayer.addChild(nameLbl);
       y += labelH + gapLabelField;
@@ -119,18 +123,18 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       nameField.x = inX; nameField.y = y;
       this.bodyLayer.addChild(nameField);
       const nameEmpty = this.createName.length === 0 && !nameFocused;
-      const nl = txt(nameEmpty ? t('social.sect.namePlaceholder') : caretDisplay(this.createName, nameFocused && this.caretOn, ' '), FS.bodyLg, nameEmpty ? C.mid : C.dark);
-      nl.anchor.set(0, 0.5); nl.x = inX + 12; nl.y = y + fieldH / 2;
+      const nl = txt(nameEmpty ? t('social.sect.namePlaceholder') : caretDisplay(this.createName, nameFocused && this.caretOn, ' '), FS.bodyLg * S, nameEmpty ? C.mid : C.dark);
+      nl.anchor.set(0, 0.5); nl.x = inX + 12 * S; nl.y = y + fieldH / 2;
       this.bodyLayer.addChild(nl);
       this.hitRects.push({ rect: { x: inX, y, w: inW, h: fieldH }, action: () => this.openInputFor('name') });
       y += fieldH + gapAfterName;
 
       // ── Tag (short label + hint line underneath) ──
-      const tagLbl = txt(t('sect.tagLabel'), FS.body, C.dark);
+      const tagLbl = txt(t('sect.tagLabel'), FS.body * S, C.dark);
       tagLbl.x = inX; tagLbl.y = y;
       this.bodyLayer.addChild(tagLbl);
       y += tagLabelH;
-      const tagHint = txt(t('sect.tagHint'), FS.tiny, C.mid);
+      const tagHint = txt(t('sect.tagHint'), FS.tiny * S, C.mid);
       tagHint.x = inX; tagHint.y = y;
       this.bodyLayer.addChild(tagHint);
       y += tagHintH;
@@ -139,21 +143,21 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       const tagField = sketchPanel(tagFieldW, fieldH, { fill: 0xfaf9f5, border: tagFocused ? C.accent : C.mid, seed: seedFor(1, 0, tagFieldW) });
       tagField.x = inX; tagField.y = y;
       this.bodyLayer.addChild(tagField);
-      const tl = txt(caretDisplay(this.createTag, tagFocused && this.caretOn, ' '), FS.bodyLg, C.dark);
-      tl.anchor.set(0, 0.5); tl.x = inX + 12; tl.y = y + fieldH / 2;
+      const tl = txt(caretDisplay(this.createTag, tagFocused && this.caretOn, ' '), FS.bodyLg * S, C.dark);
+      tl.anchor.set(0, 0.5); tl.x = inX + 12 * S; tl.y = y + fieldH / 2;
       this.bodyLayer.addChild(tl);
       this.hitRects.push({ rect: { x: inX, y, w: tagFieldW, h: fieldH }, action: () => this.openInputFor('tag') });
       y += fieldH + gapAfterTag;
 
       // ── Buttons (create + cancel, side by side, centered under the fields) ──
-      const btnW = 150, btnGap = 24;
+      const btnW = 150 * S, btnGap = 24 * S;
       const okX = cx - btnW - btnGap / 2;
       const cancelX = cx + btnGap / 2;
 
       const okBtn = sketchButton(btnW, btnH, seedFor(0, 1, btnW));
       okBtn.x = okX; okBtn.y = y;
       this.bodyLayer.addChild(okBtn);
-      const ok = txt(t('sect.create'), FS.body, C.light);
+      const ok = txt(t('sect.create'), FS.body * S, C.light);
       ok.anchor.set(0.5, 0.5); ok.x = okX + btnW / 2; ok.y = y + btnH / 2;
       this.bodyLayer.addChild(ok);
       this.hitRects.push({ rect: { x: okX, y, w: btnW, h: btnH }, action: () => void this.doCreate() });
@@ -161,7 +165,7 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       const cancelBtn = sketchPanel(btnW, btnH, { fill: 0xeeeeee, border: C.mid, seed: seedFor(1, 1, btnW) });
       cancelBtn.x = cancelX; cancelBtn.y = y;
       this.bodyLayer.addChild(cancelBtn);
-      const ca = txt(t('social.sect.cancel'), FS.body, C.dark);
+      const ca = txt(t('social.sect.cancel'), FS.body * S, C.dark);
       ca.anchor.set(0.5, 0.5); ca.x = cancelX + btnW / 2; ca.y = y + btnH / 2;
       this.bodyLayer.addChild(ca);
       this.hitRects.push({ rect: { x: cancelX, y, w: btnW, h: btnH }, action: () => { this.mode = 'noSect'; this.render(); } });

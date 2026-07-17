@@ -800,6 +800,7 @@ export const en: Record<TranslationKey, string> = {
   'world.err.notImpl': 'Feature not available yet',
   'world.err.pathBlocked': 'No passable route (terrain blocks the way)',
   'world.err.notConnected': 'Target must border your sect\'s territory',
+  'world.err.satchelCap': 'Team carries more troops than the satchel cap — build/upgrade a satchel or reduce the team',
   // Military actions / siege (C2)
   'world.actAttack': 'Siege',
   'world.actReinforce': 'Reinforce',
@@ -874,7 +875,6 @@ export const en: Record<TranslationKey, string> = {
   'world.team.busy': 'Marching / occupying',
   'world.team.pickTitleOccupy': 'Pick a team to occupy with',
   'world.team.noTeamsOccupy': 'No teams yet — use loose troops or go edit a formation',
-  'world.team.flatOccupy': 'Loose troops (pool)',
   // ── SLG battle replay browser (last-100) ─────────────────────────────────
   'world.replays': 'Battle replays',
   'world.replaysTitle': 'Battle replays (last 100)',

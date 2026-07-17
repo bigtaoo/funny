@@ -10,7 +10,7 @@ import type { EquipmentInstance, CardInstance } from '../../game/meta/SaveData';
 import { buildIcon, type IconKind } from '../../render/icons';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { getEquipDef } from '../../game/meta/equipmentDefs';
-import { drawEquipmentGlyph } from '../../render/equipmentGlyph';
+import { buildEquipIcon } from '../../render/equipmentAtlas';
 import { CARD_DEFS } from '../../game/meta/cardDefs';
 import { UNIT_ART_URLS, getArtTexture } from '../../render/cardArt';
 import { FILTER_H, AUC_CELL_GAP, AUC_CELL_H, AUC_CELL_W_TARGET, FILTERS, type AucFilter, type AucTab } from './base';
@@ -275,10 +275,9 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
         const inst = auc.item?.['instance'] as EquipmentInstance | undefined;
         const def = inst ? getEquipDef(inst.defId) : undefined;
         if (def) {
-          const g = new PIXI.Graphics();
-          drawEquipmentGlyph(g, def.slot, def.rarity, size, seed);
-          g.x = cx; g.y = cy;
-          this.bodyLayer.addChild(g);
+          const icon = buildEquipIcon(inst?.defId, def.slot, def.rarity, size, seed);
+          icon.x = cx; icon.y = cy;
+          this.bodyLayer.addChild(icon);
           return;
         }
       } else if (auc.itemType === 'card') {

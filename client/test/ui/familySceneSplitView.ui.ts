@@ -353,7 +353,9 @@ describe('FamilyScene — member rows & self action', () => {
       (c) => c instanceof PIXI.Text && c.text === 'Dissolve Family',
     )!;
     // Label anchor is (0.5,0.5) so its x/y are the button centre — route a tap there.
+    // The hit action fires on pointer-up now (ScrollTapGesture defers taps so a drag scrolls).
     scene.handleDown(btn.x, btn.y);
+    scene.handleUp(btn.x, btn.y);
     expect(scene.confirmDissolve).toHaveBeenCalledTimes(1);
   });
 
@@ -371,6 +373,7 @@ describe('FamilyScene — member rows & self action', () => {
       (c) => c instanceof PIXI.Text && c.text === 'Leave Family',
     )!;
     scene.handleDown(btn.x, btn.y);
+    scene.handleUp(btn.x, btn.y);
     expect(scene.confirmLeave).toHaveBeenCalledTimes(1);
   });
 });

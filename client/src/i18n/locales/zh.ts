@@ -812,6 +812,7 @@ export const zh = {
   'world.err.notImpl': '功能暂未开放',
   'world.err.pathBlocked': '无可通行路线（地形阻挡）',
   'world.err.notConnected': '目标地块须与本宗门已占领地相邻',
+  'world.err.satchelCap': '队伍携带兵力超过挎包上限，请建造/升级挎包或减少该队伍兵力',
   // ── Military actions / siege (C2) ────────────────────────────────────────
   'world.actAttack': '围攻',
   'world.actReinforce': '增援',
@@ -886,7 +887,6 @@ export const zh = {
   'world.team.busy': '行军/占领中',
   'world.team.pickTitleOccupy': '选择占领队伍',
   'world.team.noTeamsOccupy': '尚无队伍，可用散兵占领或先去编辑布阵',
-  'world.team.flatOccupy': '散兵占领（兵力池）',
   // ── SLG battle replay browser (last-100) ─────────────────────────────────
   'world.replays': '战斗录像',
   'world.replaysTitle': '战斗录像（最近 100 场）',

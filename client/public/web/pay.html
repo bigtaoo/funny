@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Complete your purchase — Nivara / Notebook Wars</title>
+  <meta name="robots" content="noindex" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --paper: #F9F7F2; --card: #FFFFFF; --ink: #1C1C1A; --ink-mid: #5A574F;
+      --ink-faint: #A09B90; --rule: #DDD8CC; --blue: #2756D6; --blue-light: #EEF2FD; --red: #C4382E;
+    }
+    body {
+      background: var(--paper); color: var(--ink);
+      font-family: Georgia, 'Times New Roman', serif; line-height: 1.65;
+      min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px;
+    }
+    .card {
+      background: var(--card); border: 1px solid var(--rule); border-left: 3px solid var(--blue);
+      border-radius: 8px; padding: 40px 36px; max-width: 460px; width: 100%; text-align: center;
+    }
+    .brand {
+      font-family: 'Arial Narrow', Arial, sans-serif; font-weight: 700; font-size: 0.82rem;
+      letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 18px;
+    }
+    h1 {
+      font-family: 'Arial Narrow', Arial, sans-serif; font-size: 1.6rem; font-weight: 700;
+      line-height: 1.15; margin-bottom: 12px;
+    }
+    p { color: var(--ink-mid); font-size: 1rem; margin-bottom: 8px; }
+    .spinner {
+      width: 34px; height: 34px; margin: 22px auto 4px; border: 3px solid var(--rule);
+      border-top-color: var(--blue); border-radius: 50%; animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .err { color: var(--red); }
+    .btn {
+      display: inline-block; margin-top: 22px; font-family: 'Arial Narrow', Arial, sans-serif;
+      font-size: 0.9rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+      padding: 12px 26px; border-radius: 6px; text-decoration: none;
+      border: 1px solid var(--blue); background: var(--blue); color: #fff;
+    }
+    .btn:hover { background: #1c44b0; }
+    .btn.ghost { background: transparent; color: var(--blue); }
+    .btn.ghost:hover { background: var(--blue-light); }
+    .foot { margin-top: 26px; font-size: 0.8rem; color: var(--ink-faint); }
+    .foot a { color: var(--ink-mid); }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">Nivara · Notebook Wars</div>
+
+    <div id="loading">
+      <h1>Opening secure checkout…</h1>
+      <p>You're being connected to Paddle to complete your purchase.</p>
+      <div class="spinner" role="status" aria-label="Loading"></div>
+    </div>
+
+    <div id="ready" class="hidden">
+      <h1>Complete your purchase</h1>
+      <p>Your secure Paddle checkout is ready.</p>
+      <a href="#" id="openBtn" class="btn">Open checkout</a>
+    </div>
+
+    <div id="error" class="hidden">
+      <h1 class="err">Checkout unavailable</h1>
+      <p id="errMsg">We couldn't open the checkout. Please return to the game and try again.</p>
+      <a href="/" class="btn ghost">Back to the game</a>
+    </div>
+
+    <div class="foot">
+      Payments are processed by <a href="https://www.paddle.com" target="_blank" rel="noopener">Paddle</a>,
+      our Merchant of Record. Need help? <a href="mailto:support@gamestao.com">support@gamestao.com</a>
+    </div>
+  </div>
+
+  <script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script>
+  <script>
+    // Standalone Paddle checkout page. Set this URL as the Paddle Dashboard "Default payment link"
+    // (Checkout settings). Paddle appends the transaction as `?_ptxn=<txnId>` to hosted-checkout
+    // links it generates (payment receipts, failed-payment retry emails, "complete purchase" links),
+    // so those all render a working overlay here. The in-app flow (game canvas → Paddle.Checkout.open)
+    // does not depend on this page; this is the fallback surface for out-of-app links.
+    (function () {
+      var $ = function (id) { return document.getElementById(id); };
+      function show(which, msg) {
+        ['loading', 'ready', 'error'].forEach(function (s) { $(s).classList.add('hidden'); });
+        $(which).classList.remove('hidden');
+        if (which === 'error' && msg) $('errMsg').textContent = msg;
+      }
+
+      var params = new URLSearchParams(location.search);
+      // Paddle uses `_ptxn`; accept `txn` as a lenient alias in case a link is hand-built.
+      var txnId = params.get('_ptxn') || params.get('txn');
+
+      if (!window.Paddle) { show('error', 'Payment library failed to load. Please try again later.'); return; }
+      if (!txnId) {
+        // No transaction in the URL: this page was opened directly, not from a checkout link.
+        show('error', 'No checkout session found. Please start your purchase from inside the game.');
+        return;
+      }
+
+      // The public client token is delivered by the game's own bootstrap endpoint (same value the
+      // web client uses), so this page needs no hard-coded secret and tracks sandbox/prod automatically.
+      fetch('/api/bootstrap?platform=web')
+        .then(function (r) { return r.json(); })
+        .then(function (body) {
+          var token = body && body.data && body.data.paddleClientToken;
+          if (!token) throw new Error('paddle client token unavailable');
+
+          // Sandbox tokens are prefixed `test_`; production `live_`.
+          if (token.indexOf('test_') === 0 && window.Paddle.Environment) {
+            window.Paddle.Environment.set('sandbox');
+          }
+
+          var opened = false;
+          function openCheckout() {
+            if (opened) return;
+            opened = true;
+            window.Paddle.Checkout.open({ transactionId: txnId });
+          }
+
+          window.Paddle.Initialize({
+            token: token,
+            eventCallback: function (ev) {
+              // When the overlay actually opens, swap the spinner for a fallback "Open checkout" button
+              // (covers the case where a browser blocks the auto-open until a user gesture).
+              if (ev && ev.name === 'checkout.loaded') show('ready');
+            },
+          });
+
+          // Auto-open the overlay; also wire the manual button as a gesture-driven fallback.
+          $('openBtn').addEventListener('click', function (e) { e.preventDefault(); openCheckout(); });
+          show('ready');
+          openCheckout();
+        })
+        .catch(function (e) {
+          show('error', 'Could not initialize checkout (' + (e && e.message ? e.message : 'unknown error') + ').');
+        });
+    })();
+  </script>
+</body>
+</html>

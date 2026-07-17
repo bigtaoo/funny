@@ -170,6 +170,12 @@ export class WorldMapContext {
   infoScrollDragMoved = false;
   infoScrollDragStartY = 0;
   infoScrollDragStartScroll = 0;
+  /**
+   * A button tap that started inside the scrollable list, captured at pointer-down and deferred to
+   * pointer-up — fired only if the pointer never dragged past the threshold. Without this, a drag
+   * starting on an in-list Buy/Rename button fired it instead of scrolling the list.
+   */
+  infoScrollPendingTap: (() => void) | null = null;
   /** Which panel's scroll list is currently active — WorldMapInput calls this instead of hardcoding a render method, so any modal hosting a beginScrollList region re-renders correctly. Set by beginScrollList, cleared by closeModal. */
   infoScrollRerender: (() => void) | null = null;
 

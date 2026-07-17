@@ -67,7 +67,8 @@ describe('BattlePassScene — reward track drag-scroll', () => {
     expect(s.scrollY).toBe(s.scrollMax);
 
     input._emitUp(700, 50 - 100000);
-    expect((scene as unknown as { dragStart: unknown }).dragStart).toBeNull();
+    // Gesture is reset on pointer-up (was `dragStart === null` before the ScrollTapGesture refactor).
+    expect((scene as unknown as { gesture: { active: boolean } }).gesture.active).toBe(false);
     scene.destroy();
   });
 

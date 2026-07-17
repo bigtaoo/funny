@@ -1,5 +1,6 @@
 // Craft tab: the craftable-equipment grid (icon-card cells with cost chips + Craft button) and the
 // craft action itself.
+import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
@@ -10,7 +11,7 @@ import type { SaveData } from '../../game/meta/SaveData';
 import { craftableDefs, getEquipDef, EQUIPMENT_INV_CAP } from '../../game/meta/equipmentDefs';
 import {
   type Constructor, type EquipmentSceneBaseCtor,
-  CELL_GAP, EQUIP_CELL_W_TARGET, CRAFT_CELL_H, RARITY_COLOR,
+  CELL_GAP, CELL_GAP_X, EQUIP_CELL_W_TARGET, CRAFT_CELL_H, RARITY_COLOR,
 } from './base';
 
 export interface CraftHandlers {
@@ -30,20 +31,31 @@ export function CraftMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): T
       // Cells start right of the sidebar rail; right pad stays one CELL_GAP.
       const left = sidebarNavW(w, h, this.landscape) + CELL_GAP;
       const avail = w - left - CELL_GAP;
-      const cols = Math.max(1, Math.floor((avail + CELL_GAP) / (EQUIP_CELL_W_TARGET + CELL_GAP)));
-      const cellW = (avail - CELL_GAP * (cols - 1)) / cols;
+      const cols = Math.max(1, Math.floor((avail + CELL_GAP_X) / (EQUIP_CELL_W_TARGET + CELL_GAP_X)));
+      const cellW = (avail - CELL_GAP_X * (cols - 1)) / cols;
       const rows = Math.ceil(defs.length / cols);
       const totalH = CELL_GAP + rows * (CRAFT_CELL_H + CELL_GAP);
       this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
 
+      // Masked sub-layer so an overscrolled row never bleeds up past listY and paints over the
+      // materials band above it (see the matching fix in inventory.ts's renderInventory).
+      const gridLayer = new PIXI.Container();
+      this.bodyLayer.addChild(gridLayer);
+      const clip = new PIXI.Graphics();
+      clip.beginFill(0xffffff).drawRect(0, listY, w, listH).endFill();
+      this.bodyLayer.addChild(clip);
+      gridLayer.mask = clip;
+      const outerLayer = this.bodyLayer;
+      this.bodyLayer = gridLayer;
       defs.forEach((def, i) => {
         const col = i % cols;
         const row = Math.floor(i / cols);
-        const x = left + col * (cellW + CELL_GAP);
+        const x = left + col * (cellW + CELL_GAP_X);
         const y = listY + CELL_GAP + row * (CRAFT_CELL_H + CELL_GAP) - this.scrollY;
         if (y + CRAFT_CELL_H < listY || y > listY + listH) return;
         this.renderCraftCell(def.defId, x, y, cellW, save, full);
       });
+      this.bodyLayer = outerLayer;
 
       drawScrollIndicator(this.bodyLayer, { x: left, y: listY, w: avail, h: listH }, this.scrollY, Math.max(0, totalH - listH));
     }

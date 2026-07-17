@@ -23,6 +23,7 @@ import type { InputManager } from '../inputSystem/InputManager';
 import type { Scene } from './SceneManager';
 import { t, type TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
+import { showToastMessage } from '../net/log';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { FS } from '../render/fontScale';
 import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
@@ -128,7 +129,6 @@ export class DefenseEditorScene implements Scene {
 
   // Layers
   private bodyLayer!: PIXI.Container;
-  private toastLayer!: PIXI.Container;
 
   // Hit rects (rebuilt each render)
   private hits: { rect: { x: number; y: number; w: number; h: number }; action: () => void }[] = [];
@@ -139,7 +139,6 @@ export class DefenseEditorScene implements Scene {
   private cellW = 0;
   private cellH = 0;
 
-  private toastTimer = 0;
   private readonly unsubs: (() => void)[] = [];
 
   constructor(layout: ILayout, input: InputManager, cb: DefenseEditorCallbacks) {
@@ -158,8 +157,6 @@ export class DefenseEditorScene implements Scene {
     if (decoC) this.container.addChild(decoC);
     this.bodyLayer = new PIXI.Container();
     this.container.addChild(this.bodyLayer);
-    this.toastLayer = new PIXI.Container();
-    this.container.addChild(this.toastLayer);
 
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
 
@@ -608,12 +605,7 @@ export class DefenseEditorScene implements Scene {
   // ── Toast ──────────────────────────────────────────────────────────────────
 
   private showToast(msg: string, color: number = C.dark): void {
-    this.toastLayer.removeChildren();
-    const lbl = txt(msg, FS.heading, color);
-    lbl.anchor.set(0.5, 0.5);
-    lbl.x = this.w / 2; lbl.y = Math.round(this.h * 2 / 3);
-    this.toastLayer.addChild(lbl);
-    this.toastTimer = 2200;
+    showToastMessage(msg, color === C.red ? 'error' : 'success');
   }
 
   // ── Scene interface ───────────────────────────────────────────────────────
@@ -628,12 +620,7 @@ export class DefenseEditorScene implements Scene {
     this.onGridTap(x, y);
   }
 
-  update(dt: number): void {
-    if (this.toastTimer > 0) {
-      this.toastTimer -= dt * 1000;
-      if (this.toastTimer <= 0) this.toastLayer.removeChildren();
-    }
-  }
+  update(_dt: number): void { /* no per-frame work; toasts are global (GlobalToast) */ }
 
   destroy(): void {
     this.destroyed = true;

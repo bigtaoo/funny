@@ -11,6 +11,11 @@ import { FS } from '../../render/fontScale';
 import infantryArtUrl from '../../assets/infantry.png';
 import archerArtUrl from '../../assets/archer.png';
 import shieldBearerArtUrl from '../../assets/shieldbearer.png';
+import monthlyCardArtUrl from '../../assets/gacha/monthly_card.png';
+import yearCardArtUrl from '../../assets/shop/year_card.png';
+import protectStoneArtUrl from '../../assets/shop/protect_stone.png';
+import starterDrawArtUrl from '../../assets/shop/starter_draw.png';
+import starterGrowthArtUrl from '../../assets/shop/starter_growth.png';
 
 // Skin catalogue art is blocked on real assets (see cardArt.ts TODO for skin_infantry/skin_archer/
 // skin_shield .tao bundles). Until then, borrow the matching base unit's card PNG as a placeholder
@@ -96,7 +101,7 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
           });
         }
         specs.push({
-          icon: 'coinChest', iconColor: C.gold, title: t('shop.monthlyCard'), highlight: true,
+          icon: 'coinChest', iconColor: C.gold, artUrl: monthlyCardArtUrl as string, title: t('shop.monthlyCard'), highlight: true,
           yuanPrice: MONTHLY_CARD_YUAN,
           lines: [{ text: active ? t('shop.monthlyActive') : t('shop.monthlyInactive'), color: active ? C.green : C.mid }],
           buttons,
@@ -106,7 +111,7 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
       // Year card: 365-day, ~10% off vs 12 monthly cards. Same single-slot gate.
       if (this.cb.buyYearCard) {
         specs.push({
-          icon: 'trophy', iconColor: C.gold, title: t('shop.yearCard'), highlight: true,
+          icon: 'trophy', iconColor: C.gold, artUrl: yearCardArtUrl as string, title: t('shop.yearCard'), highlight: true,
           yuanPrice: YEAR_CARD_YUAN, yuanStrike: YEAR_CARD_LIST_YUAN,
           badge: { text: t('shop.save', { amount: `¥${YEAR_CARD_LIST_YUAN - YEAR_CARD_YUAN}` }), color: C.green },
           lines: [{ text: active ? t('shop.monthlyActive') : t('shop.monthlyInactive'), color: active ? C.green : C.mid }],
@@ -121,15 +126,15 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
       // Starter packs: free one-time grants. Drop the card entirely once claimed — a disabled
       // "Owned" tile sitting in the grid forever reads as a broken purchase, not a claimed reward.
       if (this.cb.buyStarter) {
-        const packs: { id: 'starter_draw' | 'starter_growth'; label: TranslationKey; icon: IconKind }[] = [
-          { id: 'starter_draw', label: 'shop.starterDraw', icon: 'capsule' },
-          { id: 'starter_growth', label: 'shop.starterGrowth', icon: 'gift' },
+        const packs: { id: 'starter_draw' | 'starter_growth'; label: TranslationKey; icon: IconKind; art: string }[] = [
+          { id: 'starter_draw', label: 'shop.starterDraw', icon: 'capsule', art: starterDrawArtUrl as string },
+          { id: 'starter_growth', label: 'shop.starterGrowth', icon: 'gift', art: starterGrowthArtUrl as string },
         ];
         for (const pk of packs) {
           if (mon.starterUsed.includes(pk.id)) continue;
           if (pk.id === 'starter_growth' && mon.starterGrowthEligible === false) continue;
           specs.push({
-            icon: pk.icon, iconColor: C.gold, title: t(pk.label),
+            icon: pk.icon, iconColor: C.gold, artUrl: pk.art, title: t(pk.label),
             lines: [{ text: t('shop.free'), color: C.green }],
             buttons: [{
               label: t('shop.buy'), enabled: !busy, primary: true,
@@ -148,7 +153,7 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
             const canBuy = !busy && this.cb.getCoins() >= item.cost;
             const known = item.id === 'protect_enhance';
             specs.push({
-              icon: 'armor', iconColor: C.accent,
+              icon: 'armor', iconColor: C.accent, artUrl: known ? protectStoneArtUrl as string : undefined,
               title: known ? t('shop.item.protect_enhance.name') : `${t('shop.itemLabel')} · ${item.id}`,
               lines: known ? [{ text: t('shop.item.protect_enhance.desc'), color: C.mid }] : [],
               coinAmount: item.cost,

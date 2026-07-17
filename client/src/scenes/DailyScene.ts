@@ -10,6 +10,7 @@ import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawSidebarTabs as drawSidebarTabsShared, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
+import { showToastMessage, type ToastKind } from '../net/log';
 import type { SaveData } from '../game/meta/SaveData';
 import type { RetentionView } from '../net/ApiClient';
 import {
@@ -57,8 +58,6 @@ export class DailyScene implements Scene {
   private activeTab: DailyTab = 'checkin';
 
   private readonly bt = new BusyTracker();
-  private toast: string | null = null;
-  private toastTimer = 0;
 
   private retention: RetentionView | null = null;
   /** Set in destroy(); guards render() so a late async load() re-render can't paint into a torn-down container. */
@@ -78,10 +77,6 @@ export class DailyScene implements Scene {
   }
 
   update(dt: number): void {
-    if (this.toast !== null) {
-      this.toastTimer -= dt;
-      if (this.toastTimer <= 0) { this.toast = null; this.render(); }
-    }
     if (this.bt.tick(dt)) this.render();
   }
 
@@ -109,10 +104,8 @@ export class DailyScene implements Scene {
     }
   }
 
-  private showToast(msg: string): void {
-    this.toast = msg;
-    this.toastTimer = 2.5;
-    this.render();
+  private showToast(msg: string, kind: ToastKind = 'success'): void {
+    showToastMessage(msg, kind);
   }
 
   private render(): void {
@@ -154,17 +147,6 @@ export class DailyScene implements Scene {
       this.renderDailyTasks(contentX, contentTop, contentW, availH, save, nowMs);
     }
 
-    if (this.toast) {
-      const toastCy = h * (2 / 3);
-      const toastBg = new PIXI.Graphics();
-      toastBg.beginFill(0x1a1408, 0.85);
-      toastBg.drawRoundedRect(w * 0.15, toastCy - h * 0.07, w * 0.7, h * 0.14, 8);
-      toastBg.endFill();
-      const toastTxt = txt(this.toast, FS.display, 0xffd88a);
-      toastTxt.anchor.set(0.5, 0.5);
-      toastTxt.x = w / 2; toastTxt.y = toastCy;
-      this.container.addChild(toastBg, toastTxt);
-    }
     if (this.bt.loadingVisible) drawLoadingOverlay(this.container, w, h, this.bt.dots, t('common.processing'));
   }
 
@@ -378,7 +360,7 @@ export class DailyScene implements Scene {
         : t('daily.checkin.rewardStamina', { n: r.reward.count });
       this.showToast(`${t('daily.checkin.day', { n: r.day })} ${rewardDesc}`);
     } catch (e) {
-      this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('daily.tasks.claimFailed'));
+      this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('daily.tasks.claimFailed'), 'error');
     } finally {
       this.bt.stop();
       void this.load();
@@ -392,7 +374,7 @@ export class DailyScene implements Scene {
       const r = await withTimeout(this.cb.onClaimDaily());
       this.showToast(t('daily.tasks.claimToast', { n: r.coins }));
     } catch (e) {
-      this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('daily.tasks.claimFailed'));
+      this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('daily.tasks.claimFailed'), 'error');
     } finally {
       this.bt.stop();
       void this.load();

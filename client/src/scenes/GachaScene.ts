@@ -6,6 +6,7 @@ import { t, TranslationKey } from '../i18n';
 import type { Rarity } from '../game/meta/SaveData';
 import type { GachaPool, GachaResultEntry } from '../net/ApiClient';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
+import { showToastMessage } from '../net/log';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { gachaCardTexture, gachaFrameTexture, gachaBannerTexture, preloadGachaTextures } from '../render/gachaArt';
 import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
@@ -14,7 +15,7 @@ import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { buildIcon } from '../render/icons';
 import { buildCoinIcon } from '../render/coinIconAtlas';
 import { getEquipDef } from '../game/meta/equipmentDefs';
-import { drawEquipmentGlyph } from '../render/equipmentGlyph';
+import { buildEquipIcon } from '../render/equipmentAtlas';
 import { CARD_DEFS } from '../game/meta/cardDefs';
 import { SKIN_TARGET_UNIT } from '../game/meta/skinDefs';
 import { UNIT_ART_URLS, getArtTexture } from '../render/cardArt';
@@ -101,8 +102,6 @@ export class GachaScene implements Scene {
 
   /** Hero-card art urls already hooked for a 'loaded' re-render (odds popup), so we don't double-hook. */
   private readonly artHooked = new Set<string>();
-
-  private toast: { text: string; color: number } | null = null;
   /** Reveal overlay: non-null while showing the latest draw's results. */
   private reveal: GachaResultEntry[] | null = null;
   /** Odds-detail overlay open (L1-3, Apple 3.1.1): lists per-item probability + pity rule. */
@@ -162,15 +161,13 @@ export class GachaScene implements Scene {
     const pool = this.pool;
     if (this.bt.busy || !pool?.featuredLegendary) return;
     this.bt.start();
-    this.toast = null;
     this.render();
     try {
       const res = await withTimeout(this.cb.redeemFate(pool.featuredLegendary));
-      this.toast = res.ok
-        ? { text: t('gacha.fate.redeemed', { item: res.granted }), color: C.green }
-        : { text: t(res.key), color: C.red };
+      if (res.ok) showToastMessage(t('gacha.fate.redeemed', { item: res.granted }), 'success');
+      else showToastMessage(t(res.key), 'error');
     } catch (e) {
-      this.toast = { text: t(e instanceof TimeoutError ? 'common.networkTimeout' : 'gacha.error'), color: C.red };
+      showToastMessage(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'gacha.error'), 'error');
     } finally {
       this.bt.stop();
       this.render();
@@ -182,14 +179,13 @@ export class GachaScene implements Scene {
   private async onDraw(count: 1 | 10): Promise<void> {
     if (this.bt.busy || !this.pool) return;
     this.bt.start();
-    this.toast = null;
     this.render();
     try {
       const res = await withTimeout(this.cb.draw(this.pool.id, count));
       if (res.ok) this.reveal = res.results;
-      else this.toast = { text: t(res.key), color: C.red };
+      else showToastMessage(t(res.key), 'error');
     } catch (e) {
-      this.toast = { text: t(e instanceof TimeoutError ? 'common.networkTimeout' : 'gacha.error'), color: C.red };
+      showToastMessage(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'gacha.error'), 'error');
     } finally {
       this.bt.stop();
       this.render();
@@ -242,7 +238,6 @@ export class GachaScene implements Scene {
     const tbH = this.drawHeader();
     this.drawSidebar(tbH);
     this.drawBody(tbH);
-    if (this.toast) this.drawToast();
     if (this.reveal) this.drawReveal(this.reveal);
     if (this.oddsOpen && this.pool) this.drawOdds(this.pool);
     if (this.bt.loadingVisible) drawLoadingOverlay(this.container, this.w, this.h, this.bt.dots, t('common.processing'));
@@ -468,23 +463,6 @@ export class GachaScene implements Scene {
     }
   }
 
-  private drawToast(): void {
-    const { w, h } = this;
-    const toast = this.toast!;
-    const lbl = txt(toast.text, FS.heading, 0xffffff, true);
-    const padX = Math.round(w * 0.04);
-    const padY = Math.round(h * 0.012);
-    const bw = lbl.width + padX * 2;
-    const bh = lbl.height + padY * 2;
-    const bx = (w - bw) / 2;
-    const by = Math.round(h * 0.88);
-    const bg = sketchPanel(bw, bh, { fill: toast.color, fillAlpha: 0.95, border: toast.color, width: 2, seed: seedFor(bw, bh, 2) });
-    bg.x = bx; bg.y = by;
-    this.container.addChild(bg);
-    lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
-    this.container.addChild(lbl);
-  }
-
   private drawReveal(results: GachaResultEntry[]): void {
     const { w, h } = this;
     const dim = new PIXI.Graphics();
@@ -692,10 +670,9 @@ export class GachaScene implements Scene {
 
     const equipDef = getEquipDef(itemId);
     if (equipDef) {
-      const g = new PIXI.Graphics();
-      drawEquipmentGlyph(g, equipDef.slot, equipDef.rarity, size, seed);
-      g.x = cx; g.y = cy;
-      parent.addChild(g);
+      const icon = buildEquipIcon(itemId, equipDef.slot, equipDef.rarity, size, seed);
+      icon.x = cx; icon.y = cy;
+      parent.addChild(icon);
       return;
     }
 

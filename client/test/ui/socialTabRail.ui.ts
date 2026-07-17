@@ -71,7 +71,8 @@ function railCellPitch(h: number): number {
 }
 
 /** FamilyScene/SectScene rail sits under their static full-width header (`headerH`) and
- *  dispatches clicks through `handleDown`. */
+ *  dispatches clicks through `handleDown` + `handleUp` — the hit action fires on pointer-up now
+ *  (ScrollTapGesture defers taps so a drag scrolls the body instead of firing a rail tab). */
 function clickRailTab(scene: any, tab: SocialTab): void {
   const index = TAB_ORDER.indexOf(tab);
   const railW = sidebarNavW(scene.w, scene.h, scene.landscape);
@@ -80,6 +81,7 @@ function clickRailTab(scene: any, tab: SocialTab): void {
   const x = Math.round(railW / 2);
   const y = top + index * pitch + Math.round(sidebarItemHeight(scene.h) / 2);
   scene.handleDown(x, y);
+  scene.handleUp(x, y);
 }
 
 /** FriendsScene has no `headerH` field — its rail sits under `bodyTop` and dispatches

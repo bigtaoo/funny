@@ -96,6 +96,9 @@ module.exports = (env, argv) => {
       // home.html is the crawler-readable site Paddle reviews (the game root / is a bare canvas).
       ...(!isWechat ? [new CopyPlugin({ patterns: [
         { from: 'public/web/home.html' }, { from: 'public/web/terms.html' }, { from: 'public/web/privacy.html' }, { from: 'public/web/refunds.html' }, { from: 'public/web/pricing.html' },
+        // pay.html: standalone Paddle checkout surface, set as the Dashboard "Default payment link"
+        // (handles hosted-checkout ?_ptxn links from receipts / retry emails). See COMMERCIAL_DESIGN §IAP.
+        { from: 'public/web/pay.html' },
         { from: 'public/favicon-16.png' }, { from: 'public/favicon-32.png' }, { from: 'public/favicon-48.png' },
         { from: 'public/apple-touch-icon.png' }, { from: 'public/icon-192.png' }, { from: 'public/icon-512.png' },
         { from: 'public/site.webmanifest' },

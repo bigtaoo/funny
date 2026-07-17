@@ -10,16 +10,17 @@ import type { InputManager } from '../../inputSystem/InputManager';
 import type { Scene } from '../SceneManager';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchButton, seedFor, drawLoadingOverlay, tearDownChildren } from '../../render/sketchUi';
+import { showToastMessage } from '../../net/log';
 import { FS, snapFont } from '../../render/fontScale';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { BusyTracker } from '../../ui/busyTracker';
+import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance } from '../../game/meta/SaveData';
 import { affixKind, EQUIPMENT_INV_CAP, type EnhanceCost } from '../../game/meta/equipmentDefs';
 import { ENHANCE_COEFF_PER_LEVEL } from '@nw/engine/balance/equipment';
-import { drawEquipmentGlyph } from '../../render/equipmentGlyph';
-import { getEquipIconTexture } from '../../render/equipmentAtlas';
+import { buildEquipIcon } from '../../render/equipmentAtlas';
 import { buildIcon, type IconKind } from '../../render/icons';
 
 export type EquipResult = { ok: true } | { ok: false; key: TranslationKey };
@@ -77,8 +78,9 @@ export const SECTION_H = 36;  // section divider (Equipped / Bag) — clickable 
 // Inventory grid: icon-card cells (name top / glyph left / rarity+level right)
 // packed into columns sized to the wide (1920) landscape canvas.
 export const CELL_GAP = 36;
+export const CELL_GAP_X = CELL_GAP * 2; // horizontal gap between grid cells only — doubled per 2026-07-17 legibility pass
 export const EQUIP_CELL_H = 266; // +50% atop the previous 177 (2026-07-16 inventory legibility pass)
-export const EQUIP_CELL_W_TARGET = 480; // 1.5x the previous 320 (unified with CARD_CELL_W_TARGET in CardScene.ts)
+export const EQUIP_CELL_W_TARGET = 360; // tightened from 480 (2026-07-17) — 480 left a wide empty band between the glyph and the craft/level column
 // Craft grid: same column + cell sizing as the inventory grid so the icon
 // frames read at the same scale; cost chips + craft button sit beside the glyph.
 export const CRAFT_CELL_H = EQUIP_CELL_H;
@@ -151,7 +153,6 @@ export class EquipmentSceneBase {
   protected headerH = 0;
   protected bodyLayer!: PIXI.Container;
   protected modalLayer!: PIXI.Container;
-  protected toastLayer!: PIXI.Container;
   protected loadingLayer!: PIXI.Container;
   /** Drawn *after* the static header chrome so the coin/material readout sits on top of the header bar (same row as the title), not in a separate band below it. */
   protected headerOverlayLayer!: PIXI.Container;
@@ -162,7 +163,12 @@ export class EquipmentSceneBase {
   protected filterSlot: EquipSlot | 'all' = 'all';
 
   protected scrollY = 0;
-  protected dragStart: { x: number; y: number; scroll: number } | null = null;
+  /**
+   * Tap-vs-drag gesture tracker: defers an item cell's hit action to pointer-up and drops it if the
+   * pointer dragged (so a drag starting on an item scrolls instead of opening its detail; mirrors
+   * CardSceneBase). See ScrollTapGesture.
+   */
+  private readonly gesture = new ScrollTapGesture();
   /** Set by handleMove instead of rendering inline — pointermove can fire far faster than the
    *  display refresh rate, and render() fully tears down/rebuilds the scene, so calling it per-event
    *  caused visible jank while dragging. update() (ticker-gated, once per frame) drains this instead. */
@@ -184,7 +190,6 @@ export class EquipmentSceneBase {
   /** Container for modal-panel content that should scale/position as one unit — see {@link modalScale}. */
   protected modalPanelRoot!: PIXI.Container;
 
-  protected toastTimer = 0;
   protected destroyed = false;
   protected readonly unsubs: (() => void)[] = [];
 
@@ -216,8 +221,6 @@ export class EquipmentSceneBase {
     this.container.addChild(this.bodyLayer);
     this.modalLayer = new PIXI.Container();
     this.container.addChild(this.modalLayer);
-    this.toastLayer = new PIXI.Container();
-    this.container.addChild(this.toastLayer);
     this.loadingLayer = new PIXI.Container();
     this.container.addChild(this.loadingLayer);
 
@@ -422,20 +425,9 @@ export class EquipmentSceneBase {
    * The rarity border is always drawn by the surrounding sketchPanel, not here.
    */
   protected addGlyph(slot: EquipSlot, rarity: EquipRarity, cx: number, cy: number, size: number, seed: number, alpha = 1, defId?: string): void {
-    const tex = defId ? getEquipIconTexture(defId) : null;
-    if (tex) {
-      const sprite = new PIXI.Sprite(tex);
-      const scale = size / 128;
-      sprite.scale.set(scale);
-      sprite.anchor.set(0.5, 0.5);
-      sprite.x = cx; sprite.y = cy; sprite.alpha = alpha;
-      this.bodyLayer.addChild(sprite);
-    } else {
-      const gfx = new PIXI.Graphics();
-      drawEquipmentGlyph(gfx, slot, rarity, size, seed);
-      gfx.x = cx; gfx.y = cy; gfx.alpha = alpha;
-      this.bodyLayer.addChild(gfx);
-    }
+    const icon = buildEquipIcon(defId, slot, rarity, size, seed);
+    icon.x = cx; icon.y = cy; icon.alpha = alpha;
+    this.bodyLayer.addChild(icon);
   }
 
   protected itemName(defId: string): string {
@@ -516,20 +508,7 @@ export class EquipmentSceneBase {
   // ── Toast ───────────────────────────────────────────────────────────────────
 
   protected showToast(msg: string, color: number = C.dark): void {
-    const tl = this.toastLayer;
-    tl.removeChildren();
-    const lbl = txt(msg, FS.heading, 0xffffff, true);
-    const padX = 28, padY = 16;
-    const bw = lbl.width + padX * 2;
-    const bh = lbl.height + padY * 2;
-    const bx = (this.w - bw) / 2;
-    const by = Math.round(this.h * 2 / 3 - bh / 2);
-    const bg = sketchPanel(bw, bh, { fill: color, fillAlpha: 0.96, border: color, seed: seedFor(bw, bh, 3) });
-    bg.x = bx; bg.y = by;
-    tl.addChild(bg);
-    lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
-    tl.addChild(lbl);
-    this.toastTimer = 2200;
+    showToastMessage(msg, color === C.red ? 'error' : 'success');
   }
 
   // ── Scene interface / input ───────────────────────────────────────────────
@@ -546,23 +525,26 @@ export class EquipmentSceneBase {
       }
       return;
     }
+    // Don't fire the hit action here — capture it and start gesture tracking. If the pointer then
+    // drags past the threshold it becomes a scroll and the tap is dropped on up; otherwise the tap
+    // fires on up. This lets a drag that starts *on an item cell* scroll the grid instead of instantly
+    // opening that item's detail.
+    let hit: (() => void) | null = null;
     for (const { rect, action } of this.hitRects) {
-      if (this.inRect(x, y, rect)) { action(); return; }
+      if (this.inRect(x, y, rect)) { hit = action; break; }
     }
-    this.dragStart = { x, y, scroll: this.scrollY };
+    this.gesture.down(this.scrollY, y, hit);
   }
 
   protected handleMove(_x: number, y: number): void {
-    if (!this.dragStart || this.modalOpen) return;
-    const dy = y - this.dragStart.y;
-    if (Math.abs(dy) > 6) {
-      this.scrollY = Math.max(0, this.dragStart.scroll - dy);
-      this.scrollDirty = true;
-    }
+    if (this.modalOpen) return;
+    const scroll = this.gesture.move(y);
+    if (scroll !== null) { this.scrollY = scroll; this.scrollDirty = true; }
   }
 
   protected handleUp(): void {
-    this.dragStart = null;
+    // Fires only for a genuine tap (pointer didn't drag); a released drag returns null.
+    this.gesture.up()?.();
   }
 
   protected inRect(x: number, y: number, r: Rect): boolean {
@@ -572,10 +554,6 @@ export class EquipmentSceneBase {
   update(dt: number): void {
     if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
     if (this.bt.tick(dt)) this.render();
-    if (this.toastTimer > 0) {
-      this.toastTimer -= dt * 1000;
-      if (this.toastTimer <= 0) this.toastLayer.removeChildren();
-    }
   }
 
   destroy(): void {

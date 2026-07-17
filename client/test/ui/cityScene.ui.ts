@@ -52,12 +52,25 @@ type CitySceneInternals = {
   selectedBuilding: string | null;
   page: 'domestic' | 'military';
   contentX: number;
+  scrollY: number;
+  scrollMax: number;
   handleDown(x: number, y: number): void;
+  handleUp(): void;
   render(): void;
 };
 
 function internals(scene: CityScene): CitySceneInternals {
   return scene as unknown as CitySceneInternals;
+}
+
+/**
+ * Simulate a tap: press down then release. CityScene defers a cell's hit action to pointer-up
+ * (ScrollTapGesture — so a drag starting on a card scrolls instead of opening it), so a test tap
+ * must include the release, not just handleDown.
+ */
+function tap(inner: CitySceneInternals, x: number, y: number): void {
+  inner.handleDown(x, y);
+  inner.handleUp();
 }
 
 // The Domestic/Military switch moved from a horizontal strip above the body (2026-07-16
@@ -150,8 +163,22 @@ for (const [label, [w, h]] of [['portrait', PORTRAIT], ['landscape', LANDSCAPE]]
       const { scene } = buildScene(w, h);
       const inner = internals(scene);
       const card = contentHits(inner)[0]!; // first building card ('desk')
-      inner.handleDown(card.x + card.w / 2, card.y + card.h / 2);
+      tap(inner, card.x + card.w / 2, card.y + card.h / 2);
       expect(inner.selectedBuilding).not.toBeNull();
+      scene.destroy();
+    });
+
+    it('dragging on a building card scrolls the grid instead of opening its detail (tap-vs-drag)', () => {
+      const { scene, input } = buildScene(w, h);
+      const inner = internals(scene);
+      const card = contentHits(inner)[0]!;
+      const cx = card.x + card.w / 2, cy = card.y + card.h / 2;
+      // Press on the card, then drag up past the 6px threshold and release — a scroll, not a tap.
+      input._emitDown(cx, cy);
+      input._emitMove(cx, cy - 40);
+      input._emitUp(cx, cy - 40);
+      expect(inner.selectedBuilding).toBeNull(); // the card's detail must NOT have opened
+      if (inner.scrollMax > 0) expect(inner.scrollY).toBe(Math.min(40, inner.scrollMax));
       scene.destroy();
     });
   });
@@ -166,13 +193,13 @@ describe('CityScene detail modal — hit gating (2026-07-15 modal-hit-leak fix)'
     const secondCard = contentHits(inner)[1]!; // 'inkPot' — distinct coordinates from the first
     expect(rectsOverlap(firstCard, secondCard)).toBe(false);
 
-    inner.handleDown(firstCard.x + firstCard.w / 2, firstCard.y + firstCard.h / 2);
+    tap(inner, firstCard.x + firstCard.w / 2, firstCard.y + firstCard.h / 2);
     const openedAs = inner.selectedBuilding;
     expect(openedAs).not.toBeNull();
 
     // Tap the second card's old screen coordinates. Before the fix, this hit the stale grid
     // hit (which fires first in array order) and silently reassigned selectedBuilding.
-    inner.handleDown(secondCard.x + secondCard.w / 2, secondCard.y + secondCard.h / 2);
+    tap(inner, secondCard.x + secondCard.w / 2, secondCard.y + secondCard.h / 2);
 
     expect(inner.selectedBuilding).not.toBe('inkPot');
     scene.destroy();
@@ -184,10 +211,10 @@ describe('CityScene detail modal — hit gating (2026-07-15 modal-hit-leak fix)'
     const backHit = inner.hits[0]!;
 
     const card = contentHits(inner)[0]!;
-    inner.handleDown(card.x + card.w / 2, card.y + card.h / 2);
+    tap(inner, card.x + card.w / 2, card.y + card.h / 2);
     expect(inner.selectedBuilding).not.toBeNull();
 
-    inner.handleDown(backHit.x + backHit.w / 2, backHit.y + backHit.h / 2);
+    tap(inner, backHit.x + backHit.w / 2, backHit.y + backHit.h / 2);
     expect(calls.back).toBe(1);
     scene.destroy();
   });
@@ -196,10 +223,10 @@ describe('CityScene detail modal — hit gating (2026-07-15 modal-hit-leak fix)'
     const { scene } = buildScene(...PORTRAIT);
     const inner = internals(scene);
     const card = contentHits(inner)[0]!;
-    inner.handleDown(card.x + card.w / 2, card.y + card.h / 2);
+    tap(inner, card.x + card.w / 2, card.y + card.h / 2);
     expect(inner.selectedBuilding).not.toBeNull();
 
-    inner.handleDown(inner.w - 2, inner.h - 2);
+    tap(inner, inner.w - 2, inner.h - 2);
     expect(inner.selectedBuilding).toBeNull();
     scene.destroy();
   });
@@ -212,7 +239,7 @@ describe('CityScene page tabs (D-CITY-11 dual-screen split; left rail rework 202
     expect(inner.page).toBe('domestic');
 
     const militaryTab = tabHit(inner);
-    inner.handleDown(militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
+    tap(inner, militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
     expect(inner.page).toBe('military');
     // Building-grid card hits must not leak into the military page's hit list — only the
     // D-CITY-12 tech-tree panel (academy) remains as a content hit there.
@@ -220,7 +247,7 @@ describe('CityScene page tabs (D-CITY-11 dual-screen split; left rail rework 202
     expect(inner.hits.length).toBe(3); // back + rail tab + tech-tree panel
 
     const domesticTab = tabHit(inner);
-    inner.handleDown(domesticTab.x + domesticTab.w / 2, domesticTab.y + domesticTab.h / 2);
+    tap(inner, domesticTab.x + domesticTab.w / 2, domesticTab.y + domesticTab.h / 2);
     expect(inner.page).toBe('domestic');
     scene.destroy();
   });
@@ -229,11 +256,11 @@ describe('CityScene page tabs (D-CITY-11 dual-screen split; left rail rework 202
     const { scene, calls } = buildScene(...PORTRAIT);
     const inner = internals(scene);
     const militaryTab = tabHit(inner);
-    inner.handleDown(militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
+    tap(inner, militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
     expect(inner.page).toBe('military');
 
     const backHit = inner.hits[0]!;
-    inner.handleDown(backHit.x + backHit.w / 2, backHit.y + backHit.h / 2);
+    tap(inner, backHit.x + backHit.w / 2, backHit.y + backHit.h / 2);
     expect(calls.back).toBe(1);
     scene.destroy();
   });
@@ -261,7 +288,7 @@ describe('CityScene page tabs (D-CITY-11 dual-screen split; left rail rework 202
 
 function gotoMilitary(inner: CitySceneInternals): void {
   const militaryTab = tabHit(inner);
-  inner.handleDown(militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
+  tap(inner, militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
 }
 
 describe('CityScene tech-tree panel (D-CITY-12, 2026-07-16)', () => {
@@ -272,7 +299,7 @@ describe('CityScene tech-tree panel (D-CITY-12, 2026-07-16)', () => {
     expect(inner.page).toBe('military');
 
     const techTreeHit = contentHits(inner)[0]!;
-    inner.handleDown(techTreeHit.x + techTreeHit.w / 2, techTreeHit.y + techTreeHit.h / 2);
+    tap(inner, techTreeHit.x + techTreeHit.w / 2, techTreeHit.y + techTreeHit.h / 2);
     expect(inner.selectedBuilding).toBe('academy');
     scene.destroy();
   });
@@ -306,13 +333,13 @@ describe('CityScene tech-tree panel (D-CITY-12, 2026-07-16)', () => {
     const railTab = tabHit(inner); // position to re-tap once the modal is open
 
     const techTreeHit = contentHits(inner)[0]!;
-    inner.handleDown(techTreeHit.x + techTreeHit.w / 2, techTreeHit.y + techTreeHit.h / 2);
+    tap(inner, techTreeHit.x + techTreeHit.w / 2, techTreeHit.y + techTreeHit.h / 2);
     expect(inner.selectedBuilding).toBe('academy');
 
     // Before the D-CITY-11 fix this class of bug came from, a stale page-tab hit sitting
     // underneath the dim overlay would still fire and switch pages instead of just closing
     // the modal. Tapping the old rail-tab coordinates must close the modal, not switch pages.
-    inner.handleDown(railTab.x + railTab.w / 2, railTab.y + railTab.h / 2);
+    tap(inner, railTab.x + railTab.w / 2, railTab.y + railTab.h / 2);
     expect(inner.selectedBuilding).toBeNull();
     expect(inner.page).toBe('military');
     scene.destroy();
@@ -323,10 +350,10 @@ describe('CityScene tech-tree panel (D-CITY-12, 2026-07-16)', () => {
     const inner = internals(scene);
     gotoMilitary(inner);
     const techTreeHit = contentHits(inner)[0]!;
-    inner.handleDown(techTreeHit.x + techTreeHit.w / 2, techTreeHit.y + techTreeHit.h / 2);
+    tap(inner, techTreeHit.x + techTreeHit.w / 2, techTreeHit.y + techTreeHit.h / 2);
     expect(inner.selectedBuilding).toBe('academy');
 
-    inner.handleDown(inner.w - 2, inner.h - 2);
+    tap(inner, inner.w - 2, inner.h - 2);
     expect(inner.selectedBuilding).toBeNull();
     expect(inner.page).toBe('military');
     scene.destroy();
@@ -337,11 +364,11 @@ describe('CityScene tech-tree panel (D-CITY-12, 2026-07-16)', () => {
     const inner = internals(scene);
     gotoMilitary(inner);
     const techTreeHit = contentHits(inner)[0]!;
-    inner.handleDown(techTreeHit.x + techTreeHit.w / 2, techTreeHit.y + techTreeHit.h / 2);
+    tap(inner, techTreeHit.x + techTreeHit.w / 2, techTreeHit.y + techTreeHit.h / 2);
     expect(inner.selectedBuilding).toBe('academy');
 
     const backHit = inner.hits[0]!;
-    inner.handleDown(backHit.x + backHit.w / 2, backHit.y + backHit.h / 2);
+    tap(inner, backHit.x + backHit.w / 2, backHit.y + backHit.h / 2);
     expect(calls.back).toBe(1);
     scene.destroy();
   });
@@ -374,7 +401,7 @@ describe('CityScene military page durability panel (D-CITY-8, 2026-07-16)', () =
     await new Promise((r) => setTimeout(r, 0));
     const inner = internals(scene);
     const militaryTab = tabHit(inner);
-    inner.handleDown(militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
+    tap(inner, militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
     expect(inner.page).toBe('military');
     return { scene, inner };
   }
@@ -442,7 +469,7 @@ describe('CityScene military page team panel (D-CITY-10, 2026-07-16)', () => {
     await new Promise((r) => setTimeout(r, 0));
     const inner = internals(scene);
     const militaryTab = tabHit(inner);
-    inner.handleDown(militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
+    tap(inner, militaryTab.x + militaryTab.w / 2, militaryTab.y + militaryTab.h / 2);
     expect(inner.page).toBe('military');
     return { scene, inner };
   }
@@ -539,7 +566,7 @@ describe('CityScene military page team panel (D-CITY-10, 2026-07-16)', () => {
       (teamId, teamName) => { opened.push({ teamId, teamName }); },
     );
     const teamHit = inner.hits[3]!; // first team card, past Back + rail tab + tech-tree panel
-    inner.handleDown(teamHit.x + teamHit.w / 2, teamHit.y + teamHit.h / 2);
+    tap(inner, teamHit.x + teamHit.w / 2, teamHit.y + teamHit.h / 2);
     expect(opened).toEqual([{ teamId: teamSlotId(0), teamName: 'Alpha' }]);
     scene.destroy();
   });
@@ -551,7 +578,7 @@ describe('CityScene military page team panel (D-CITY-10, 2026-07-16)', () => {
       (teamId, teamName) => { opened.push({ teamId, teamName }); },
     );
     const firstSlotHit = inner.hits[3]!;
-    inner.handleDown(firstSlotHit.x + firstSlotHit.w / 2, firstSlotHit.y + firstSlotHit.h / 2);
+    tap(inner, firstSlotHit.x + firstSlotHit.w / 2, firstSlotHit.y + firstSlotHit.h / 2);
     expect(opened).toEqual([{ teamId: teamSlotId(0), teamName: teamSlotName(0) }]);
     scene.destroy();
   });
@@ -579,7 +606,7 @@ describe('CityScene military page team panel (D-CITY-10, 2026-07-16)', () => {
     const { scene, inner } = await buildOnMilitaryPage({ teams: [] }, () => {});
     expect(inner.hits.length).toBe(3 + TEAM_CAP);
     const domesticTab = inner.hits[1]!;
-    inner.handleDown(domesticTab.x + domesticTab.w / 2, domesticTab.y + domesticTab.h / 2);
+    tap(inner, domesticTab.x + domesticTab.w / 2, domesticTab.y + domesticTab.h / 2);
     expect(inner.page).toBe('domestic');
     // Back + the rail tab hit + 10 building cards — no team hits survive on the domestic
     // page, so the id-based tap-through can't misfire there.

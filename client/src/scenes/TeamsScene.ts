@@ -19,6 +19,7 @@ import type { InputManager } from '../inputSystem/InputManager';
 import type { Scene } from './SceneManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
+import { showToastMessage } from '../net/log';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
@@ -29,6 +30,7 @@ import type { SaveData, CardInstance } from '../game/meta/SaveData';
 import type { UnitType } from '../game/types';
 import { CARD_DEFS, troopCap } from '../game/meta/cardDefs';
 import { FS } from '../render/fontScale';
+import { ScrollTapGesture } from '../ui/scrollTapGesture';
 
 /** Team slot cap (UI constant; the server's SIEGE_TEAM_CAP is authoritative). */
 export const TEAM_CAP = 5;
@@ -82,13 +84,11 @@ export class TeamsScene implements Scene {
   private occupations: OccupationView[] = [];
   private loading = true;
   private destroyed = false;
-  private toastTimer = 0;
   /** Two-tap arm/confirm for "放弃占领" (forfeits the garrison, unlike march recall) — id of the team armed to cancel. */
   private confirmCancelOccId: string | null = null;
   private confirmCancelOccTimer = 0;
 
   private bodyLayer!: PIXI.Container;
-  private toastLayer!: PIXI.Container;
   private hits: { rect: { x: number; y: number; w: number; h: number }; action: () => void }[] = [];
   private readonly unsubs: (() => void)[] = [];
 
@@ -96,7 +96,11 @@ export class TeamsScene implements Scene {
   // handleMove — a burst of pointermove events would rebuild the whole scene per event).
   private scrollY = 0;
   private scrollMax = 0;
-  private dragStart: { x: number; y: number; scroll: number } | null = null;
+  /**
+   * Tap-vs-drag gesture tracker: defers a roster cell's hit action to pointer-up and drops it if the
+   * pointer dragged (so a drag starting on a roster card scrolls instead of firing it). See ScrollTapGesture.
+   */
+  private readonly gesture = new ScrollTapGesture();
   private scrollDirty = false;
   private rosterTop = 0;
   /** Portrait urls whose texture we've hooked for a one-shot re-render on load. */
@@ -113,8 +117,6 @@ export class TeamsScene implements Scene {
     if (decoC) this.container.addChild(decoC);
     this.bodyLayer = new PIXI.Container();
     this.container.addChild(this.bodyLayer);
-    this.toastLayer = new PIXI.Container();
-    this.container.addChild(this.toastLayer);
 
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((_x, y) => this.handleMove(y)));
@@ -595,46 +597,30 @@ export class TeamsScene implements Scene {
   // ── Toast ────────────────────────────────────────────────────────────────
 
   private showToast(msg: string, color: number): void {
-    const tl = this.toastLayer;
-    tl.removeChildren();
-    const lbl = txt(msg, FS.heading, 0xffffff, true);
-    const padX = 28, padY = 16;
-    const bw = lbl.width + padX * 2;
-    const bh = lbl.height + padY * 2;
-    const bx = (this.w - bw) / 2;
-    const by = Math.round(this.h * 2 / 3 - bh / 2);
-    const bg = sketchPanel(bw, bh, { fill: color, fillAlpha: 0.96, border: color, seed: seedFor(bw, bh, 3) });
-    bg.x = bx; bg.y = by;
-    tl.addChild(bg);
-    lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
-    tl.addChild(lbl);
-    this.toastTimer = 2200;
+    showToastMessage(msg, color === C.red ? 'error' : 'success');
   }
 
   // ── Input / lifecycle ────────────────────────────────────────────────────
 
   private handleDown(x: number, y: number): void {
+    // Defer the hit action to pointer-up — if the pointer drags past the threshold it becomes a
+    // scroll and the tap is dropped, so a drag starting on a roster card scrolls instead of firing it.
+    let hit: (() => void) | null = null;
     for (const { rect, action } of this.hits) {
-      if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) {
-        action();
-        return;
-      }
+      if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) { hit = action; break; }
     }
-    // No hit (e.g. pressed in the roster grid) — could be the start of a drag-scroll.
-    if (y >= this.rosterTop) this.dragStart = { x, y, scroll: this.scrollY };
+    // Track a tap anywhere; only begin a scroll gesture when the press lands in the roster grid.
+    if (hit || y >= this.rosterTop) this.gesture.down(this.scrollY, y, hit);
   }
 
   private handleMove(y: number): void {
-    if (!this.dragStart) return;
-    const dy = y - this.dragStart.y;
-    if (Math.abs(dy) > 6) {
-      this.scrollY = Math.max(0, Math.min(this.scrollMax, this.dragStart.scroll - dy));
-      this.scrollDirty = true;
-    }
+    const scroll = this.gesture.move(y);
+    if (scroll !== null) { this.scrollY = Math.min(this.scrollMax, scroll); this.scrollDirty = true; }
   }
 
   private handleUp(): void {
-    this.dragStart = null;
+    // Fires only for a genuine tap (pointer didn't drag); a released drag returns null.
+    this.gesture.up()?.();
   }
 
   update(dt: number): void {
@@ -643,10 +629,6 @@ export class TeamsScene implements Scene {
     // the whole scene per event).
     if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
     if (this.bt.tick(dt)) this.render();
-    if (this.toastTimer > 0) {
-      this.toastTimer -= dt * 1000;
-      if (this.toastTimer <= 0) this.toastLayer.removeChildren();
-    }
     if (this.confirmCancelOccTimer > 0) {
       this.confirmCancelOccTimer -= dt * 1000;
       if (this.confirmCancelOccTimer <= 0) { this.confirmCancelOccId = null; this.render(); }

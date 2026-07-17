@@ -10,6 +10,7 @@ import type { ILayout } from '../../layout/ILayout';
 import type { InputManager } from '../../inputSystem/InputManager';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchButton, seedFor, tearDownChildren } from '../../render/sketchUi';
+import { showToastMessage } from '../../net/log';
 import { FS, snapFont } from '../../render/fontScale';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSceneHeader, sceneHeaderHeight, HEADER_ACCENT, drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
@@ -19,6 +20,7 @@ import { WorldApiError } from '../../net/WorldApiClient';
 import type { SaveData, EquipmentInstance, CardInstance } from '../../game/meta/SaveData';
 import { buildIcon, type IconKind } from '../../render/icons';
 import { caretDisplay } from '../../render/inputDisplay';
+import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 
 // ── AuctionScene (S8-5) — SLG auction scene ─────────────────────────────────
 //
@@ -101,7 +103,6 @@ export class AuctionSceneBase {
 
   protected bodyLayer!: PIXI.Container;
   protected modalLayer!: PIXI.Container;
-  protected toastLayer!: PIXI.Container;
   /** Coin balance readout, drawn over the static header chrome and refreshed every render(). */
   protected headerOverlayLayer!: PIXI.Container;
 
@@ -146,7 +147,11 @@ export class AuctionSceneBase {
 
   // Scroll
   protected scrollY = 0;
-  protected dragStart: { x: number; y: number; scroll: number } | null = null;
+  /**
+   * Tap-vs-drag gesture tracker: defers a listing card's hit action to pointer-up and drops it if the
+   * pointer dragged (so a drag starting on a card scrolls instead of firing it). See ScrollTapGesture.
+   */
+  private readonly gesture = new ScrollTapGesture();
   /** Set by handleMove instead of rendering inline — see EquipmentSceneBase.scrollDirty for why. */
   private scrollDirty = false;
 
@@ -155,8 +160,6 @@ export class AuctionSceneBase {
   protected modalHits: { rect: { x: number; y: number; w: number; h: number }; action: () => void }[] = [];
   protected modalOpen = false;
 
-  // Toast
-  protected toastTimer = 0;
   protected destroyed = false;
   protected readonly unsubs: (() => void)[] = [];
 
@@ -189,9 +192,6 @@ export class AuctionSceneBase {
 
     this.modalLayer = new PIXI.Container();
     this.container.addChild(this.modalLayer);
-
-    this.toastLayer = new PIXI.Container();
-    this.container.addChild(this.toastLayer);
 
     // Static header — shared standard height/title size (matches every other secondary scene); only the
     // SLG-red accent rule distinguishes it. headerH drives the body layout below.
@@ -490,13 +490,7 @@ export class AuctionSceneBase {
   // ── Toast ──────────────────────────────────────────────────────────────────
 
   protected showToast(msg: string, color: number = C.dark): void {
-    const tl = this.toastLayer;
-    tl.removeChildren();
-    const lbl = txt(msg, FS.heading, color);
-    lbl.anchor.set(0.5, 0.5);
-    lbl.x = this.w / 2; lbl.y = Math.round(this.h * 2 / 3);
-    tl.addChild(lbl);
-    this.toastTimer = 2500;
+    showToastMessage(msg, color === C.red ? 'error' : 'success');
   }
 
   protected errorMsg(e: unknown): string {
@@ -538,33 +532,27 @@ export class AuctionSceneBase {
       }
       return;
     }
+    // Defer the hit action to pointer-up — if the pointer drags past the threshold it becomes a
+    // scroll and the tap is dropped, so a drag starting on a listing card scrolls instead of firing it.
+    let hit: (() => void) | null = null;
     for (const { rect, action } of this.hitRects) {
-      if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) {
-        action(); return;
-      }
+      if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) { hit = action; break; }
     }
-    this.dragStart = { x, y, scroll: this.scrollY };
+    this.gesture.down(this.scrollY, y, hit);
   }
 
   handleMove(_x: number, y: number): void {
-    if (!this.dragStart) return;
-    const dy = y - this.dragStart.y;
-    if (Math.abs(dy) > 6) {
-      this.scrollY = Math.max(0, this.dragStart.scroll - dy);
-      this.scrollDirty = true;
-    }
+    const scroll = this.gesture.move(y);
+    if (scroll !== null) { this.scrollY = scroll; this.scrollDirty = true; }
   }
 
   handleUp(_x: number, _y: number): void {
-    this.dragStart = null;
+    // Fires only for a genuine tap (pointer didn't drag); a released drag returns null.
+    this.gesture.up()?.();
   }
 
   update(dt: number): void {
     if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
-    if (this.toastTimer > 0) {
-      this.toastTimer -= dt * 1000;
-      if (this.toastTimer <= 0) this.toastLayer.removeChildren();
-    }
     if (this.buyerActive || this.numEditKey) {
       this.caretTimer += dt;
       if (this.caretTimer >= 0.5) { this.caretTimer = 0; this.caretOn = !this.caretOn; if (this.modalOpen) this.openCreateForm(); }

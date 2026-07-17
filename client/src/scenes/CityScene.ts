@@ -49,7 +49,9 @@ import {
   type ResourceType,
 } from '@nw/shared';
 import { BusyTracker } from '../ui/busyTracker';
+import { showToastMessage } from '../net/log';
 import { buildDecorCLayer } from '../render/decorCLayer';
+import { ScrollTapGesture } from '../ui/scrollTapGesture';
 import { buildIcon, type IconKind } from '../render/icons';
 import { loadResAtlas, getResTexture } from '../render/resAtlasLoader';
 
@@ -151,14 +153,15 @@ export class CityScene implements Scene {
    *  card-scene sidebar-nav convention (HubTabs.ts drawSidebarTabs). */
   private contentX = 0;
   private selectedBuilding: BuildingKey | null = null;
-  private toast: string | null = null;
-  private toastColor: number = C.red;
-  private toastTimer = 0;
 
   // Building-grid scroll state (drag-to-scroll, matches the CardScene/TeamsScene pattern).
   private scrollY = 0;
   private scrollMax = 0;
-  private dragStart: { y: number; scroll: number } | null = null;
+  /**
+   * Tap-vs-drag gesture tracker: defers a hit action to pointer-up and drops it if the pointer
+   * dragged (so a drag starting on a building cell scrolls instead of firing it). See ScrollTapGesture.
+   */
+  private readonly gesture = new ScrollTapGesture();
   /** Set by handleMove instead of rendering inline — avoids a render() per pointermove (jank). */
   private scrollDirty = false;
 
@@ -177,11 +180,6 @@ export class CityScene implements Scene {
 
   update(dt: number): void {
     if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
-    // Refresh countdown display for build queue every second
-    if (this.toast !== null) {
-      this.toastTimer -= dt;
-      if (this.toastTimer <= 0) { this.toast = null; this.render(); }
-    }
     if (this.bt.tick(dt)) this.render();
   }
 
@@ -274,36 +272,32 @@ export class CityScene implements Scene {
   }
 
   private showToast(msg: string, color: number = C.red as number): void {
-    this.toast = msg;
-    this.toastColor = color;
-    this.toastTimer = 2.5;
-    this.render();
+    showToastMessage(msg, color === (C.red as number) ? 'error' : 'success');
   }
 
   // ── Input ─────────────────────────────────────────────────────────────────
 
   private handleDown(px: number, py: number): void {
     if (this.bt.busy) return;
+    // Defer the hit action to pointer-up — if the pointer drags past the threshold it becomes a
+    // scroll and the tap is dropped, so a drag starting on a building cell scrolls instead of firing it.
+    let hit: (() => void) | null = null;
     for (const h of this.hits) {
-      if (px >= h.x && px <= h.x + h.w && py >= h.y && py <= h.y + h.h) {
-        h.fn();
-        return;
-      }
+      if (px >= h.x && px <= h.x + h.w && py >= h.y && py <= h.y + h.h) { hit = h.fn; break; }
     }
-    if (!this.selectedBuilding) this.dragStart = { y: py, scroll: this.scrollY };
+    this.gesture.down(this.scrollY, py, hit);
   }
 
   private handleMove(py: number): void {
-    if (!this.dragStart || this.selectedBuilding) return;
-    const dy = py - this.dragStart.y;
-    if (Math.abs(dy) > 6) {
-      this.scrollY = Math.max(0, Math.min(this.scrollMax, this.dragStart.scroll - dy));
-      this.scrollDirty = true;
-    }
+    // Scroll is disabled while a building is selected (the detail panel owns the view); taps still fire.
+    if (this.selectedBuilding) return;
+    const scroll = this.gesture.move(py);
+    if (scroll !== null) { this.scrollY = Math.min(this.scrollMax, scroll); this.scrollDirty = true; }
   }
 
   private handleUp(): void {
-    this.dragStart = null;
+    // Fires only for a genuine tap (pointer didn't drag); a released drag returns null.
+    this.gesture.up()?.();
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -369,19 +363,6 @@ export class CityScene implements Scene {
       this.container.addChild(lbl);
     }
 
-    // Toast
-    if (this.toast !== null) {
-      const tw = Math.min(w - 40, 720);
-      const th = 84;
-      const tg = sketchPanel(tw, th, { fill: C.dark, fillAlpha: 0.88, border: this.toastColor, width: 1, seed: 7 });
-      tg.x = (w - tw) / 2;
-      tg.y = Math.round(h * 2 / 3 - th / 2);
-      this.container.addChild(tg);
-      const tl = txt(this.toast, FS.headline, 0xffffff);
-      tl.x = tg.x + 24;
-      tl.y = tg.y + 22;
-      this.container.addChild(tl);
-    }
   }
 
   // ── Page tabs (D-CITY-11: 内政 / 军事 switch) ────────────────────────────────
