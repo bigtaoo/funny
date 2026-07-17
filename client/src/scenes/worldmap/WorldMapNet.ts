@@ -4,6 +4,7 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChild
 import { buildIcon } from '../../render/icons';
 import { WorldApiError } from '../../net/WorldApiClient';
 import type { TeamTemplate } from '../../net/WorldApiClient';
+import { carriedTroops } from '../../game/meta/teamTroops';
 import { proceduralTile } from '@nw/shared';
 import { loadResAtlas, getResTexture, isResAtlasReady } from '../../render/resAtlasLoader';
 import { loadCityAtlas, getCityTexture, isCityAtlasReady } from '../../render/cityAtlasLoader';
@@ -149,17 +150,14 @@ export class WorldMapNet {
       ...this.ctx.marches.filter((m) => m.mine && m.teamId).map((m) => m.teamId),
       ...this.ctx.occupations.filter((o) => o.teamId).map((o) => o.teamId),
     ]);
-    // Committed troops = the strength the team actually CARRIES: card entries draw from
-    // cardState.currentTroops (their own ledger, §6.1), flat entries from initialHp. Mirrors
-    // CityScene.committedTroops / TeamsScene so the picker shows the same number as those screens
-    // (previously summed initialHp only → card teams misleadingly showed "0").
+    // Committed troops = the strength the team actually CARRIES, from each card's cardState.currentTroops
+    // ledger (§6.1). Legacy pre-migration teams (unit entries, no cardInstanceId) carry 0 — they can't be
+    // dispatched, so they read 0 here and drop out of `usable` below (see teamTroops.ts). Mirrors
+    // CityScene.committedTroops / TeamsScene so the picker shows the same number as those screens.
     const cardState = me.cardState ?? {};
-    const committedOf = (tm: TeamTemplate): number => tm.army.reduce(
-      (s, e) => s + (e.cardInstanceId ? (cardState[e.cardInstanceId]?.currentTroops ?? 0) : Math.max(0, Math.floor(e.initialHp ?? 0))),
-      0,
-    );
+    const committedOf = (tm: TeamTemplate): number => carriedTroops(tm.army, cardState);
     // Only offer teams that can actually go into battle right now: non-empty army, not already
-    // out on a march/hold, and carrying troops > 0 (a wiped-out card team would just die on contact).
+    // out on a march/hold, and carrying troops > 0 (a wiped-out or legacy team can't fight).
     const usable = teams.filter((tm) => tm.army.length > 0 && !busyTeamIds.has(tm.id) && committedOf(tm) > 0);
     const buttons: { label: string; action: () => void }[] = [];
     for (const tm of usable) {

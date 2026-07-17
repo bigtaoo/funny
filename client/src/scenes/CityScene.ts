@@ -24,6 +24,7 @@ import type {
   WorldApiClient, PlayerWorldView, BuildingKey, TeamTemplate, MarchView, OccupationView,
 } from '../net/WorldApiClient';
 import { teamSlotId, teamSlotName, TEAM_CAP } from './TeamsScene';
+import { carriedTroops } from '../game/meta/teamTroops';
 import {
   BUILDING_KEYS,
   RESOURCE_TYPES,
@@ -487,15 +488,9 @@ export class CityScene implements Scene {
     return null;
   }
 
-  /** Total troops committed across a team's cards — mirrors TeamsScene.committedTroops. */
+  /** Total troops committed across a team's cards — legacy non-card entries count 0 (see teamTroops.ts). */
   private committedTroops(army: TeamTemplate['army']): number {
-    const cardState = this.me?.cardState ?? {};
-    let total = 0;
-    for (const entry of army) {
-      const cid = entry.cardInstanceId;
-      total += cid ? (cardState[cid]?.currentTroops ?? 0) : Math.max(0, Math.floor(entry.initialHp ?? 0));
-    }
-    return total;
+    return carriedTroops(army, this.me?.cardState);
   }
 
   /** 2-col grid of the 5 team slots; each card taps through to the team formation editor. */

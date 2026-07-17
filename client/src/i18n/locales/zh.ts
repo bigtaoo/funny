@@ -1517,6 +1517,8 @@ export const zh = {
   'world.team.fillTroops': '一键补满兵力',
   'world.team.fillTroopsOk': '兵力已补满',
   'world.team.fillTroopsErr': '补满失败',
+  'world.team.fillNoCards': '队伍里没有卡牌，请先编队再补兵',
+  'world.team.legacyRebuild': '⚠ 队伍已过期，点击重建',
   'world.team.troopsStatus': '{cur}/{cap}',
   'world.team.injured': '受伤',
 

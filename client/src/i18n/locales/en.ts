@@ -1501,6 +1501,8 @@ export const en: Record<TranslationKey, string> = {
   'world.team.fillTroops': 'Fill All Troops',
   'world.team.fillTroopsOk': 'Troops filled',
   'world.team.fillTroopsErr': 'Fill failed',
+  'world.team.fillNoCards': 'No cards on any team — build a team first',
+  'world.team.legacyRebuild': '⚠ Team outdated — tap to rebuild',
   'world.team.troopsStatus': '{cur}/{cap}',
   'world.team.injured': 'Injured',
 

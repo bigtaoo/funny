@@ -29,6 +29,7 @@ import type { WorldApiClient, TeamTemplate, CardSLGState, PlayerWorldView, March
 import type { SaveData, CardInstance } from '../game/meta/SaveData';
 import type { UnitType } from '../game/types';
 import { CARD_DEFS, troopCap } from '../game/meta/cardDefs';
+import { carriedTroops, isLegacyTeam } from '../game/meta/teamTroops';
 import { FS } from '../render/fontScale';
 import { ScrollTapGesture } from '../ui/scrollTapGesture';
 
@@ -153,19 +154,9 @@ export class TeamsScene implements Scene {
     return null;
   }
 
-  /** Total troops committed across all cards in a team (uses cardState if available). */
+  /** Total troops committed across all cards in a team (legacy non-card entries count 0 — see teamTroops.ts). */
   private committedTroops(army: TeamTemplate['army']): number {
-    const cardState = this.worldView?.cardState ?? {};
-    let total = 0;
-    for (const entry of army) {
-      const cid = entry.cardInstanceId;
-      if (cid) {
-        total += cardState[cid]?.currentTroops ?? 0;
-      } else {
-        total += Math.max(0, Math.floor(entry.initialHp ?? 0));
-      }
-    }
-    return total;
+    return carriedTroops(army, this.worldView?.cardState);
   }
 
   private render(): void {
@@ -233,13 +224,15 @@ export class TeamsScene implements Scene {
     const id = teamSlotId(i);
     const team = this.teams.find((tm) => tm.id === id);
     const filled = !!team && team.army.length > 0;
+    // Legacy team (pre-2026-07-17 unit-type army, no cards): can't be dispatched — flag it for rebuild.
+    const legacy = filled && isLegacyTeam(team!.army);
     // ADR-026 §5: a team that lost a defensive wave is injury-locked and cannot defend until healed.
     const injuredUntil = teamState[id]?.injuredUntil ?? 0;
     const injured = injuredUntil > now;
     const pad = 10;
 
     const order = this.teamOrder(id);
-    const border = injured ? C.red : (order ? C.gold : (filled ? C.accent : C.mid));
+    const border = (injured || legacy) ? C.red : (order ? C.gold : (filled ? C.accent : C.mid));
     const panel = sketchPanel(cardW, TEAM_CARD_H, {
       fill: filled ? 0xfaf9f5 : C.paper, border, width: filled ? 2.2 : 1.3,
       seed: seedFor(x, y, cardW),
@@ -335,9 +328,12 @@ export class TeamsScene implements Scene {
         this.bodyLayer.addChild(more);
       }
 
+      // Legacy team: its old unit entries carry no troops and can't march — tell the player to rebuild.
       const committed = this.committedTroops(team!.army);
-      const sub = `${t('world.defense.garrison').replace('{n}', String(team!.army.length))}   ${t('world.team.committed').replace('{n}', String(committed))}`;
-      const subLbl = txt(sub, FS.micro, C.mid);
+      const sub = legacy
+        ? t('world.team.legacyRebuild')
+        : `${t('world.defense.garrison').replace('{n}', String(team!.army.length))}   ${t('world.team.committed').replace('{n}', String(committed))}`;
+      const subLbl = txt(sub, FS.micro, legacy ? C.red : C.mid);
       subLbl.x = x + pad; subLbl.y = y + TEAM_CARD_H - pad - 14;
       this.bodyLayer.addChild(subLbl);
     } else {
@@ -540,7 +536,13 @@ export class TeamsScene implements Scene {
       }
 
       if (Object.keys(allocations).length === 0) {
-        this.showToast(t('world.team.fillTroopsOk'), C.green);
+        // Nothing to allocate. Two very different reasons — don't fake success (this false "OK" is why
+        // players thought they'd assigned troops when in fact no card was on any team):
+        //   - no card is assigned to a team → guide them to build a team first;
+        //   - every on-team card is already at cap → genuine no-op, report success.
+        const anyOnTeam = Object.values(cardInv).some((c) => !!cardState[c.id]?.teamId);
+        if (anyOnTeam) this.showToast(t('world.team.fillTroopsOk'), C.green);
+        else this.showToast(t('world.team.fillNoCards'), C.red);
         return;
       }
 

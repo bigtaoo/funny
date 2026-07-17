@@ -127,6 +127,30 @@ describe('TeamsScene — formation slot card grid', () => {
     expect(onEditTeam).toHaveBeenCalledWith('t1', 'Team 1');
   });
 
+  it('a legacy unit-type team (pre-2026-07-17 migration, no cards) shows the "tap to rebuild" warning, not a committed count', async () => {
+    // Its old {unitType, initialHp} entries carry no card troops and can never march — flag it for rebuild
+    // instead of showing a phantom committed count that would fail with "Insufficient troops" on dispatch.
+    const teams: TeamTemplate[] = [
+      { id: 't1', name: 'Team 1', army: [{ initialHp: 240 } as never, { initialHp: 240 } as never] },
+    ];
+    const cb = makeCb({
+      getSave: () => ({ cardInv: {} } as unknown as SaveData),
+      worldApi: stubWorldApi({
+        getTeams: async () => teams,
+        getMe: async () => ({ joined: true, cardState: {} } as unknown as PlayerWorldView),
+      }),
+    });
+    const scene = new TeamsScene(createLayout(W, H), new InputManager(), cb) as any;
+    await Promise.resolve();
+    await Promise.resolve();
+    scene.render();
+
+    expect(hasLabel(scene.container, t('world.team.legacyRebuild'))).toBe(true);
+    // The normal "garrison N / committed N" sub-label is NOT shown for a legacy team.
+    const committedSub = `${t('world.defense.garrison').replace('{n}', '2')}   ${t('world.team.committed').replace('{n}', '0')}`;
+    expect(hasLabel(scene.container, committedSub)).toBe(false);
+  });
+
   it('an injury-locked team (ADR-026 §5) shows the injured countdown tag', async () => {
     const teams: TeamTemplate[] = [{ id: 't1', name: 'Team 1', army: [{ cardInstanceId: 'c1', col: 1, row: 1 }] }];
     const cb = makeCb({
@@ -291,5 +315,35 @@ describe('TeamsScene — Fill All Troops', () => {
 
     // Only the on-team card is in the allocation; the benched roster card is never sent.
     expect(distributed).toEqual({ onTeam: 200 });
+  });
+
+  it('Fill All Troops with NO card on any team reports "build a team first" — not a false success', async () => {
+    // The old code showed the green "Troops filled" toast even when nothing was allocated, which is
+    // exactly why players believed they had assigned troops when in fact no card was on a team.
+    const cardInv = { benched: makeCard('benched', 'max', 1) };
+    const cardState = { benched: { currentTroops: 0 } }; // no teamId → not on any team
+    let distributeCalled = false;
+    const cb = makeCb({
+      getSave: () => ({ cardInv } as unknown as SaveData),
+      worldApi: stubWorldApi({
+        getMe: async () => ({ joined: true, baseTroopStock: 500, cardState } as unknown as PlayerWorldView),
+        distributeTroops: async () => { distributeCalled = true; return { ok: true }; },
+      }),
+    });
+    const scene = new TeamsScene(createLayout(W, H), new InputManager(), cb) as any;
+    await Promise.resolve();
+    await Promise.resolve();
+    scene.render();
+
+    const toasts: string[] = [];
+    scene.showToast = (msg: string) => { toasts.push(msg); };
+
+    tap(scene, `${t('world.team.fillTroops')}  (500 ${t('world.troops')})`);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(distributeCalled).toBe(false);
+    expect(toasts).toContain(t('world.team.fillNoCards'));
+    expect(toasts).not.toContain(t('world.team.fillTroopsOk'));
   });
 });
