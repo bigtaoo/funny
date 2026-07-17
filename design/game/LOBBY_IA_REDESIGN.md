@@ -429,3 +429,13 @@
 - **测试**：新增 `client/test/ui/cardCodexFlip.ui.ts`（2 例，`npm run test:ui`）——泵真实 `PIXI.Ticker.shared` 断言翻转前无故事文案、过中点后出现、settle 后保持、再点翻回消失；并断言锁定卡不注册翻转命中。翻转命中无独立标签，按目标卡所在行的正方形（`w===h`，即卡图框）命中矩形定位（同 `cardDetailFlipAndSkin.ui.ts` 的按尺寸/`findLabelPos` 定位法）。既有 `cardCodexScene.ui.ts`（锁定计数 + 属性 chips）保持绿。
 - **验证**：`tsc --noEmit -p tsconfig.test.json` 仅报一处**无关的既有未跟踪 WIP** 测试（`baseUpgradeEvent.test.ts` 的 `GameMode "skirmish"`），本次两文件干净；`npm run test:ui` 全绿（32 文件 / 317 例）。未做真人截图——该游戏为 WebGL/PIXI canvas 且本地无后端（`/bootstrap` 网络失败），in-app 浏览器无法抓取 canvas 画面，改以本仓既有 headless 场景图测试作为验证路径（同 §12/§13 的约定）。
 - **涉及文件**：`client/src/ui/widgets/CareerTabs.ts`、`client/src/scenes/CardCodexScene.ts`、`client/test/ui/cardCodexFlip.ui.ts`（新增）。
+
+## 17. 商城消耗品卡排到皮肤之前（2026-07-17）
+
+> 状态：**已实现**。用户看商城截图报：「Enhance Protection Stone（护佑石，消耗品）」排在两张皮肤（Su Yuan / Chen Shou Skin）之后，希望把石头排到皮肤前面。
+
+- 根因：`ShopMixin.buildShopCards()`（`client/src/scenes/ShopScene/shop.ts`）原来在同一个循环里按 `this.items` 的**原始数组顺序**遍历，`kind==='item'` 的消耗品与皮肤混在一起，后端返回皮肤在前时石头就落到最后。
+- 修复：拆成两遍——先遍历所有 `kind==='item'` 的消耗品（护佑石）压卡，再遍历皮肤压卡。这样无论 `this.items` 内部顺序如何，消耗品恒排在皮肤之前。卡片渲染几何（`drawShopGrid` 的网格分页）不变。
+- **测试**：`client/test/ui/shopScene.ui.ts` 新增 1 例——故意把皮肤放在 `loadItems` 数组前面、石头在后，断言石头在渲染树里按行主序位于皮肤之前（更靠上，或同行更靠左）。既有 23 例（含消耗品命名/永远可买）保持绿。
+- **验证**：`tsc --noEmit` 干净；`test/ui/shopScene.ui.ts` 全绿（23 例）。纯排序逻辑，headless 场景图测试直接断言坐标顺序，未另开 dev server。
+- **涉及文件**：`client/src/scenes/ShopScene/shop.ts`、`client/test/ui/shopScene.ui.ts`。

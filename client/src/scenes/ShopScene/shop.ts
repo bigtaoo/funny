@@ -145,23 +145,25 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
         }
       }
 
-      // Skins (cosmetic → brush glyph; real skin art pending) + consumable items (e.g. enhance protection).
+      // Consumable items (e.g. enhance protection) come first, then skins (cosmetic → brush glyph;
+      // real skin art pending). Consumables sort ahead of skins regardless of their order in this.items.
       if (this.items && this.items.length > 0) {
         const owned = new Set(this.cb.getOwnedSkins());
         for (const item of this.items) {
-          if (item.kind === 'item') {
-            // Consumables aren't "owned" — always re-buyable while affordable.
-            const canBuy = !busy && this.cb.getCoins() >= item.cost;
-            const known = item.id === 'protect_enhance';
-            specs.push({
-              icon: 'armor', iconColor: C.accent, artUrl: known ? protectStoneArtUrl as string : undefined,
-              title: known ? t('shop.item.protect_enhance.name') : `${t('shop.itemLabel')} · ${item.id}`,
-              lines: known ? [{ text: t('shop.item.protect_enhance.desc'), color: C.mid }] : [],
-              coinAmount: item.cost,
-              buttons: [{ label: t('shop.buy'), enabled: canBuy, primary: true, fn: () => void this.onBuy(item.id) }],
-            });
-            continue;
-          }
+          if (item.kind !== 'item') continue;
+          // Consumables aren't "owned" — always re-buyable while affordable.
+          const canBuy = !busy && this.cb.getCoins() >= item.cost;
+          const known = item.id === 'protect_enhance';
+          specs.push({
+            icon: 'armor', iconColor: C.accent, artUrl: known ? protectStoneArtUrl as string : undefined,
+            title: known ? t('shop.item.protect_enhance.name') : `${t('shop.itemLabel')} · ${item.id}`,
+            lines: known ? [{ text: t('shop.item.protect_enhance.desc'), color: C.mid }] : [],
+            coinAmount: item.cost,
+            buttons: [{ label: t('shop.buy'), enabled: canBuy, primary: true, fn: () => void this.onBuy(item.id) }],
+          });
+        }
+        for (const item of this.items) {
+          if (item.kind === 'item') continue;
           const isOwned = owned.has(item.grants ?? item.id);
           const canBuy = !isOwned && !busy && this.cb.getCoins() >= item.cost;
           specs.push({
