@@ -14,6 +14,7 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { sidebarNavW } from '../../src/ui/widgets/HubTabs';
+import { skinDisplayName } from '../../src/game/meta/skinDefs';
 import { ShopScene, type ShopSceneCallbacks } from '../../src/scenes/ShopScene';
 // Same asset the shop borrows as skin_shop_c1's placeholder art (SKIN_PLACEHOLDER_ART in shop.ts).
 // Under vitest.ui.config.ts every .png import stubs to a 1×1 data-URI string, so this resolves to
@@ -348,7 +349,7 @@ describe('ShopScene — promo-code redemption lives on the Coins tab', () => {
 // baseTexture.once('loaded', render), and only build+size the sprite once the texture is valid.
 describe('ShopScene — skin card art waits for texture load, then re-renders it in', () => {
   const flush = () => new Promise((r) => setTimeout(r, 0));
-  const SKIN_TITLE = `${t('shop.skinLabel')} · skin_shop_c1`;
+  const SKIN_TITLE = skinDisplayName('skin_shop_c1');
 
   /** Every Sprite in the tree backed by the given base texture (the skin's placeholder art). */
   function artSprites(container: PIXI.Container, base: PIXI.BaseTexture): PIXI.Sprite[] {
@@ -393,6 +394,103 @@ describe('ShopScene — skin card art waits for texture load, then re-renders it
     expect(sprites[0].width).toBeGreaterThan(1);
     expect(sprites[0].height).toBeGreaterThan(1);
 
+    scene.destroy();
+  });
+});
+
+// Regression coverage for the 2026-07-17 fix: shop skin cards showed the raw catalogue id
+// ("Skin · skin_shop_c1") because ShopItem carries no name. buildShopCards() now resolves the title
+// through the shared skinDisplayName() (character card name + skin label), so the shop and gacha read
+// the same human name. Guards both the pure resolver and the rendered card title.
+describe('ShopScene — skin cards show the real character name, not the raw catalogue id', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it('skinDisplayName resolves each shop skin to "{character}·{skin}", and falls back to the id when unmapped', () => {
+    // c1→Infantry/Lichuang, r1→Archer/Suyuan, e1→ShieldBearer/Chenshou (SKIN_TARGET_UNIT + CARD_DEFS).
+    for (const [id, cardKey] of [['skin_shop_c1', 'lichuang'], ['skin_shop_r1', 'suyuan'], ['skin_shop_e1', 'chenshou']] as const) {
+      const name = skinDisplayName(id);
+      expect(name).toBe(`${t(`card.${cardKey}.name` as never)}·${t('shop.skinLabel')}`);
+      expect(name).not.toContain(id); // never the raw catalogue id
+    }
+    expect(skinDisplayName('not_a_skin')).toBe('not_a_skin'); // unmapped → id fallback
+  });
+
+  it('renders the resolved skin name as the card title and never the raw id', async () => {
+    const scene = buildShop({
+      loadItems: async () => [{ id: 'skin_shop_c1', cost: 300, kind: 'skin', grants: 'skin_shop_c1' }],
+    });
+    await flush();
+    expect(findLabelPos(scene.container, skinDisplayName('skin_shop_c1'))).not.toBeNull();
+    // The old raw-id title must be gone.
+    expect(findLabelPos(scene.container, `${t('shop.skinLabel')} · skin_shop_c1`)).toBeNull();
+    scene.destroy();
+  });
+});
+
+// Regression coverage for the 2026-07-17 fix: landscape packed ~4 narrow cards per row, so long titles
+// wrapped to 2–3 lines and pushed the price row (¥/coin) down onto the bottom action buttons. The grid
+// now targets ~3 wider cards per row (matching portrait). Guards the column count AND the invariant the
+// column change protects: the price row must sit strictly above the card's action button.
+describe('ShopScene — landscape shop grid is 3-up and the price never overlaps the buttons', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  // Landscape layout (w>h): exercises the multi-column grid path the fix targets.
+  const buildLandscape = (cb: Partial<ShopSceneCallbacks>): ShopScene =>
+    new ShopScene(createLayout(1920, 1080), new InputManager(), {
+      onBack() {}, getCoins: () => 100_000_000, getOwnedSkins: () => [],
+      loadItems: async () => [], buy: async () => ({ ok: true }), openGacha() {},
+      ...cb,
+    });
+
+  /** Absolute top/bottom edge of the LAST Text node matching `label` (anchor-corrected; the whole
+   *  card tree hangs off body/container at 0,0, so node-local coords are already absolute here). */
+  function labelBox(container: PIXI.Container, label: string): { top: number; bottom: number } | null {
+    let box: { top: number; bottom: number } | null = null;
+    const walk = (n: PIXI.Container): void => {
+      if (n instanceof PIXI.Text && n.text === label) {
+        const top = n.y - n.anchor.y * n.height;
+        box = { top, bottom: top + n.height };
+      }
+      for (const c of n.children) walk(c as PIXI.Container);
+    };
+    walk(container);
+    return box;
+  }
+
+  it('lays the grid out 3 columns wide in landscape', () => {
+    const scene = buildLandscape({});
+    const { cols } = (scene as unknown as { gridMetrics(): { cols: number } }).gridMetrics();
+    expect(cols).toBe(3);
+    scene.destroy();
+  });
+
+  it('draws the skin coin price strictly above its Buy button (no overlap)', async () => {
+    // Single skin item, no monetization callbacks → only the skin card renders, so "300"/"Buy" are unique.
+    const scene = buildLandscape({
+      loadItems: async () => [{ id: 'skin_shop_c1', cost: 300, kind: 'skin', grants: 'skin_shop_c1' }],
+    });
+    await flush();
+    const price = labelBox(scene.container, '300');
+    const buy = labelBox(scene.container, t('shop.buy'));
+    expect(price, 'coin price should render').not.toBeNull();
+    expect(buy, 'buy button should render').not.toBeNull();
+    expect(price!.bottom).toBeLessThanOrEqual(buy!.top);
+    scene.destroy();
+  });
+
+  it('draws the monthly-card ¥ price strictly above its buttons (no overlap)', async () => {
+    // Only the monthly card renders (no year card / skins), so "¥30" and "Buy" are unique to it.
+    const scene = buildLandscape({
+      getMonetization: () => ({ subscriptionExpiry: 0, starterUsed: [] }),
+      buyMonthlyCard: async () => ({ ok: true }),
+      claimMonthlyCard: async () => ({ ok: true }),
+    });
+    await flush();
+    const price = labelBox(scene.container, '¥30');
+    const buy = labelBox(scene.container, t('shop.buy'));
+    expect(price, 'yuan price should render').not.toBeNull();
+    expect(buy, 'buy button should render').not.toBeNull();
+    expect(price!.bottom).toBeLessThanOrEqual(buy!.top);
     scene.destroy();
   });
 });
