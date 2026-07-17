@@ -10,6 +10,13 @@
 // neighbour, or within TSEED of the sampled border colour. Pre-cut (already-transparent) sources skip
 // colour-keying and just get cropped.
 //
+// TSEED=0 (disabled) for this batch: the pale yellow-green marker fill used throughout this art set is
+// close enough to the plain-white background (colour distance ~44) that pack_city_atlas.js's TSEED=72
+// absolute-distance shortcut ate straight through interior fill wherever a thin gap (pencil spires,
+// ruler-wall crenellations) gave it a path from the border — shattering playerbase_l7 into slivers.
+// This set's backgrounds are flat white (no graph-paper grid to bridge), so TSTEP's gradient-following
+// alone cuts every frame cleanly without needing the absolute check.
+//
 // Run: node art/ui/slg-playerbase/pack_playerbase_atlas.js
 //   optional: node art/ui/slg-playerbase/pack_playerbase_atlas.js --debug   (also writes _debug_preview.png)
 const fs = require('fs');
@@ -25,13 +32,16 @@ const CELL = 256;
 const COLS = 5;
 const PAD_FRAC = 0.02;
 const TSTEP = 33;
-const TSEED = 72;
+const TSEED = 0;
 const PRECUT_ALPHA_FRAC = 0.02;
 const HALO_ALPHA = 110;
 
+// Source files may be .png or .webp (mixed AI-generation batch); resolve whichever exists per level.
 const FILES = Array.from({ length: 10 }, (_, i) => {
   const lv = i + 1;
-  return { file: `playerbase_l${lv}.png`, name: `playerbase_l${lv}` };
+  const name = `playerbase_l${lv}`;
+  const ext = ['.png', '.webp'].find((e) => fs.existsSync(path.join(__dirname, name + e))) ?? '.png';
+  return { file: `${name}${ext}`, name };
 });
 
 // Remove background in-place (set alpha=0) via region-growing flood fill from the border.

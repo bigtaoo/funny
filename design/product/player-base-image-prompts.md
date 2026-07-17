@@ -123,9 +123,13 @@ spire tips.
 [+ style]
 ```
 
-## 接入说明（已实现代码管线，等美术图）
+## 接入现状（2026-07-17 已上线）
 
-1. 把 10 张出好的图放进 `art/ui/slg-playerbase/`，命名 `playerbase_l1.png` … `playerbase_l10.png`
-2. 跑 `node art/ui/slg-playerbase/pack_playerbase_atlas.js`（打包逻辑照抄 `pack_city_atlas.js` 的区域生长去背算法），输出 `client/src/assets/slg/playerbase_atlas.{png,json}`，覆盖当前的空占位图
-3. 代码已接入：`client/src/render/playerBaseAtlasLoader.ts` 提供 `loadPlayerBaseAtlas()`/`getPlayerBaseTextureForLevel(level)`；`WorldMapRenderer/lifecycle.ts` 随其余图集一起加载；`WorldMapRenderer/city.ts` 按 `tile.mine` 分支选图（自己的基地用这套，其他玩家的基地和 NPC 城池节点继续用 `city_atlas`）
-4. 服务端：`worldsvc/src/city.ts` 的 `applyDueBuilds` 在 desk 完工时把新等级写入 `TileDoc.deskLevel`，`coreMap.ts tileDocView` 透出到 `WorldTileView.deskLevel`——图片就位后无需再改这部分代码
+10 张图已由用户按上述 prompt 生成、放入 `art/ui/slg-playerbase/`（`playerbase_l1.png` … `playerbase_l10.png`，混合 png/webp），并跑 `node art/ui/slg-playerbase/pack_playerbase_atlas.js` 打包成 `client/src/assets/slg/playerbase_atlas.{png,json}`，覆盖了此前的空占位图。
+
+**打包脚本一处偏差（相对 `pack_city_atlas.js`）**：这批源图的背景是纯白、无方格纸网格，而建筑主体的浅黄绿色水彩填充与白色背景的色距（约44）小于 `pack_city_atlas.js` 原有的 `TSEED=72` 绝对阈值，会导致区域生长去背算法从边缘一路吃穿建筑内部填充（`playerbase_l7` 曾被吃成碎片）。`pack_playerbase_atlas.js` 因此把 `TSEED` 改成 `0`（只保留 `TSTEP=33` 的渐变跟随去背），10 帧全部干净切割，无需网格桥接。
+
+代码管线（无需再改）：
+- `client/src/render/playerBaseAtlasLoader.ts` 提供 `loadPlayerBaseAtlas()`/`getPlayerBaseTextureForLevel(level)`；`WorldMapRenderer/lifecycle.ts` 随其余图集一起加载
+- `WorldMapRenderer/city.ts` 按 `tile.mine` 分支选图（自己的基地用这套，其他玩家的基地和 NPC 城池节点继续用 `city_atlas`）
+- 服务端 `worldsvc/src/city.ts` 的 `applyDueBuilds` 在 desk 完工时把新等级写入 `TileDoc.deskLevel`（新字段），`coreMap.ts tileDocView` 透出到 `WorldTileView.deskLevel`（`server/contracts/openapi-world.yml` 已加对应 schema 字段，client/worldsvc 的生成类型已同步重新生成）
