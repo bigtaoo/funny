@@ -4,8 +4,12 @@
 // the captured tile's garrison and never came back, so a player who "gave 2000 troops" to a grab felt
 // like they were all lost after one fight. Occupy now goes through the same team picker as attack, so the
 // committed troops belong to the card team (cardState.currentTroops, retained across battles). The picker
-// is generalized: showTeamPicker(tx,ty,kind) + doMarchTeam(tx,ty,teamId,kind). A flat "散兵占领" fallback
-// button is kept inside the occupy picker for players with no card team.
+// is generalized: showTeamPicker(tx,ty,kind) + doMarchTeam(tx,ty,teamId,kind).
+//
+// 2026-07-17: the flat "散兵占领" fallback was removed — occupation commits a team's OWN carried troops
+// (card ledger); the base-barracks reserve pool is only for distributing to teams, never for grabbing land
+// directly. The picker also now shows each team's real carried strength (cardState.currentTroops for card
+// entries), matching CityScene, instead of summing initialHp only (which showed "0" for card teams).
 //
 // These assert the button set the picker builds and that dispatch routes the right march kind — no PIXI
 // rendering needed (panels.showModal is spied, mirroring worldMapBaseClick.ui.ts's harness pattern).
@@ -29,7 +33,10 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
 const WORLD_ID = 'world:1:0';
 const ANCHOR = { x: 20, y: 20 };
 
-function buildHarness(opts: { teams?: { id: string; name: string; army: { initialHp?: number }[] }[] } = {}) {
+function buildHarness(opts: {
+  teams?: { id: string; name: string; army: { initialHp?: number; cardInstanceId?: string }[] }[];
+  cardState?: Record<string, { currentTroops: number }>;
+} = {}) {
   const showModal = vi.fn();
   const showToast = vi.fn();
   const closeModal = vi.fn();
@@ -45,7 +52,7 @@ function buildHarness(opts: { teams?: { id: string; name: string; army: { initia
     marches: [],
     occupations: [],
     myAttackTiles: new Set<string>(),
-    me: { joined: true, mainBaseTile: `${WORLD_ID}:${ANCHOR.x}:${ANCHOR.y}` } as PlayerWorldView,
+    me: { joined: true, mainBaseTile: `${WORLD_ID}:${ANCHOR.x}:${ANCHOR.y}`, cardState: opts.cardState } as PlayerWorldView,
     parseTileId(tileId: string): [number, number] {
       const parts = tileId.split(':');
       return [Number(parts[parts.length - 2]), Number(parts[parts.length - 1])];
@@ -64,31 +71,29 @@ function buildHarness(opts: { teams?: { id: string; name: string; army: { initia
 }
 
 describe('WorldMapNet.showTeamPicker — occupy uses the team picker (§4.2)', () => {
-  it('occupy picker lists the team, a flat "散兵占领" fallback, manage, and close', async () => {
-    const { net, showModal } = buildHarness();
-    await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
-    expect(showModal).toHaveBeenCalledTimes(1);
-    const buttons = showModal.mock.calls[0][1] as { label: string }[];
-    const labels = buttons.map((b) => b.label);
-    expect(labels.some((l) => l.startsWith('Alpha'))).toBe(true);
-    expect(labels).toContain(t('world.team.flatOccupy'));
-    expect(labels).toContain(t('world.team.manage'));
-    expect(labels).toContain('✕');
-  });
-
-  it('the flat-occupy fallback opens the old pool-troop deploy dialog', async () => {
+  it('occupy picker lists the team, manage, and close — and NO flat-pool fallback', async () => {
     const { net, showModal, showDeployDialog } = buildHarness();
     await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
+    expect(showModal).toHaveBeenCalledTimes(1);
     const buttons = showModal.mock.calls[0][1] as { label: string; action: () => void }[];
-    buttons.find((b) => b.label === t('world.team.flatOccupy'))!.action();
-    expect(showDeployDialog).toHaveBeenCalledWith(ANCHOR.x, ANCHOR.y, 'occupy');
+    const labels = buttons.map((b) => b.label);
+    expect(labels.some((l) => l.startsWith('Alpha'))).toBe(true);
+    expect(labels).toContain(t('world.team.manage'));
+    expect(labels).toContain('✕');
+    // No occupy path opens the flat pool-troop deploy dialog any more.
+    for (const b of buttons) b.action();
+    expect(showDeployDialog).not.toHaveBeenCalled();
   });
 
-  it('the attack picker has NO flat-occupy fallback (attack always needs a team)', async () => {
-    const { net, showModal } = buildHarness();
-    await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'attack');
+  it('occupy picker shows a card team\'s real carried troops (cardState.currentTroops), not 0', async () => {
+    const { net, showModal } = buildHarness({
+      teams: [{ id: 't1', name: 'Cards', army: [{ cardInstanceId: 'c1' }, { cardInstanceId: 'c2' }] }],
+      cardState: { c1: { currentTroops: 1200 }, c2: { currentTroops: 960 } },
+    });
+    await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
     const labels = (showModal.mock.calls[0][1] as { label: string }[]).map((b) => b.label);
-    expect(labels).not.toContain(t('world.team.flatOccupy'));
+    const teamLabel = labels.find((l) => l.startsWith('Cards'))!;
+    expect(teamLabel).toContain(t('world.team.committed').replace('{n}', '2160'));
   });
 
   it('picking a team for occupy dispatches startMarch with kind="occupy" + teamId', async () => {

@@ -15,7 +15,9 @@
 //      center-anchored like pattern 2; CityScene's is NOT anchor-centered (drawn inset at the
 //      panel's top-left + 20px), so its assertion checks the *panel*'s vertical center instead.
 // Plus GlobalToast (ui/GlobalToast.ts), the non-scene network-error fallback banner, which shares
-// pattern 1's box-centered-label shape.
+// pattern 1's box-centered-label shape, and WorldMapPanels.showToast (2026-07-17): the world map was
+// excluded from the original unification (its toast was a bare label at h/3, no box) and is now aligned
+// to pattern 1 — a bordered dark panel with a center-anchored label centered on the h*2/3 line.
 //
 // Not independently covered here (same formula as an already-covered sibling, skipped to avoid
 // extra scene-construction overhead): EventScene/BattlePassScene (== DailyScene's pattern),
@@ -38,8 +40,10 @@ import { SectScene } from '../../src/scenes/SectScene';
 import { CityScene, type CitySceneCallbacks } from '../../src/scenes/CityScene';
 import { DailyScene } from '../../src/scenes/DailyScene';
 import { GlobalToast } from '../../src/ui/GlobalToast';
+import { WorldMapPanels } from '../../src/scenes/worldmap/WorldMapPanels';
 import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { WorldApiClient, PlayerWorldView } from '../../src/net/WorldApiClient';
+import type { WorldMapContext } from '../../src/scenes/worldmap/WorldMapContext';
 import { FS } from '../../src/render/fontScale';
 
 const memStore = (() => {
@@ -152,6 +156,21 @@ describe('showToast() — bordered-panel toasts sit centered on the bottom-third
     expect(lbl!.style.fontSize).toBe(FS.heading);
     expect(Math.abs(lbl!.y - BOTTOM_THIRD_Y)).toBeLessThanOrEqual(1);
     scene.destroy();
+  });
+
+  it('WorldMapPanels (world map, aligned to pattern 1 on 2026-07-17)', () => {
+    // showToast only touches ctx.toastLayer / ctx.w / ctx.h / ctx.toastTimer, so a minimal stub is
+    // enough — no full WorldMapScene/renderer construction needed.
+    const toastLayer = new PIXI.Container();
+    const ctx = { toastLayer, w: W, h: DESIGN_H, toastTimer: 0 } as unknown as WorldMapContext;
+    const panels = new WorldMapPanels(ctx);
+    panels.showToast(MSG, 0xc0392b);
+    const lbl = findText(toastLayer, MSG);
+    expect(lbl).not.toBeNull();
+    expect(lbl!.style.fontSize).toBe(FS.headline);
+    expect(Math.abs(lbl!.y - BOTTOM_THIRD_Y)).toBeLessThanOrEqual(1);
+    // The label must sit on a real background panel (the box), not float bare like the old h/3 text.
+    expect(findPanelBehindText(toastLayer, MSG)).not.toBeNull();
   });
 
   it('GlobalToast (non-scene network-error fallback)', () => {

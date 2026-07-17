@@ -3,6 +3,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
 import { WorldApiError } from '../../net/WorldApiClient';
+import type { TeamTemplate } from '../../net/WorldApiClient';
 import { proceduralTile } from '@nw/shared';
 import { loadResAtlas, getResTexture, isResAtlasReady } from '../../render/resAtlasLoader';
 import { loadCityAtlas, getCityTexture, isCityAtlasReady } from '../../render/cityAtlasLoader';
@@ -137,7 +138,7 @@ export class WorldMapNet {
   async showTeamPicker(tx: number, ty: number, kind: 'attack' | 'occupy' = 'attack'): Promise<void> {
     const me = this.ctx.me;
     if (!me?.joined || !me.mainBaseTile) { this.ctx.panels.showToast(t('world.needBase'), C.red); return; }
-    let teams: { id: string; name: string; army: { initialHp?: number }[] }[] = [];
+    let teams: TeamTemplate[] = [];
     try {
       teams = await this.ctx.cb.worldApi.getTeams(this.ctx.cb.worldId);
     } catch { /* offline — treat as empty */ }
@@ -150,10 +151,19 @@ export class WorldMapNet {
       ...this.ctx.marches.filter((m) => m.mine && m.teamId).map((m) => m.teamId),
       ...this.ctx.occupations.filter((o) => o.teamId).map((o) => o.teamId),
     ]);
+    // Committed troops = the strength the team actually CARRIES: card entries draw from
+    // cardState.currentTroops (their own ledger, §6.1), flat entries from initialHp. Mirrors
+    // CityScene.committedTroops / TeamsScene so the picker shows the same number as those screens
+    // (previously summed initialHp only → card teams misleadingly showed "0").
+    const cardState = me.cardState ?? {};
+    const committedOf = (tm: TeamTemplate): number => tm.army.reduce(
+      (s, e) => s + (e.cardInstanceId ? (cardState[e.cardInstanceId]?.currentTroops ?? 0) : Math.max(0, Math.floor(e.initialHp ?? 0))),
+      0,
+    );
     const buttons: { label: string; action: () => void; disabled?: boolean }[] = [];
     for (const tm of usable) {
       const busy = busyTeamIds.has(tm.id);
-      const committed = tm.army.reduce((s, e) => s + Math.max(0, Math.floor(e.initialHp ?? 0)), 0);
+      const committed = committedOf(tm);
       const status = busy ? ` · ${t('world.team.busy')}` : ` · ${t('world.team.committed').replace('{n}', String(committed))}`;
       buttons.push({
         label: `${tm.name}${status}`,
@@ -161,10 +171,8 @@ export class WorldMapNet {
         action: busy ? () => this.ctx.panels.showToast(t('world.team.busy'), C.red) : () => void this.doMarchTeam(tx, ty, tm.id, kind),
       });
     }
-    // Occupy retains the flat-pool path (散兵占领) — the committed troops become the tile garrison the old way.
-    if (kind === 'occupy') {
-      buttons.push({ label: t('world.team.flatOccupy'), action: () => this.ctx.panels.showDeployDialog(tx, ty, 'occupy') });
-    }
+    // Occupation commits a team's own carried troops (card ledger) — the base-barracks reserve pool is only
+    // for distributing to teams, never for grabbing land directly, so there is no flat-pool occupy path.
     buttons.push({ label: t('world.team.manage'), action: () => this.ctx.cb.onOpenTeams() });
     buttons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
     const head = usable.length > 0
@@ -515,6 +523,7 @@ export class WorldMapNet {
         PATH_BLOCKED:  t('world.err.pathBlocked'),
         TERRITORY_NOT_CONNECTED: t('world.err.notConnected'),
         TEAM_BUSY:     t('world.team.busy'),
+        SATCHEL_CAP_EXCEEDED: t('world.err.satchelCap'),
       };
       return map[e.code] ?? e.message;
     }

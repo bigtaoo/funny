@@ -393,9 +393,18 @@ export class WorldMapPanels {
     const tl = this.ctx.toastLayer;
     tl.removeChildren();
     const { w, h } = this.ctx;
-    const lbl = txt(msg, FS.heading, color);
-    lbl.anchor.set(0.5, 0);
-    lbl.x = w / 2; lbl.y = h / 3;
+    // Unified toast box: dark panel + colored border, centered at h*2/3 — matches CityScene.showToast
+    // and the global fallback GlobalToast so world-map notices read the same as the rest of the game.
+    const tw = Math.min(w - 40, 720);
+    const th = 84;
+    const box = sketchPanel(tw, th, { fill: C.dark, fillAlpha: 0.88, border: color, width: 1, seed: 7 });
+    box.x = (w - tw) / 2;
+    box.y = Math.round(h * 2 / 3 - th / 2);
+    tl.addChild(box);
+    const lbl = txt(msg, FS.headline, 0xffffff, false, tw - 48);
+    lbl.anchor.set(0.5, 0.5);
+    lbl.x = box.x + tw / 2;
+    lbl.y = box.y + th / 2;
     tl.addChild(lbl);
     this.ctx.toastTimer = 2500;
   }

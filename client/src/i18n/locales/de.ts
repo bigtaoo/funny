@@ -800,6 +800,7 @@ export const de: Record<TranslationKey, string> = {
   'world.err.notImpl': 'Funktion noch nicht verfügbar',
   'world.err.pathBlocked': 'Keine begehbare Route (Gelände blockiert)',
   'world.err.notConnected': 'Das Ziel muss an das Gebiet deiner Sekte angrenzen',
+  'world.err.satchelCap': 'Das Team trägt mehr Truppen als das Ranzen-Limit — Ranzen bauen/aufwerten oder Team verkleinern',
   // Militäraktionen / Belagerung (C2)
   'world.actAttack': 'Belagern',
   'world.actReinforce': 'Verstärken',
@@ -874,7 +875,6 @@ export const de: Record<TranslationKey, string> = {
   'world.team.busy': 'Im Marsch / bei der Besetzung',
   'world.team.pickTitleOccupy': 'Team zum Besetzen wählen',
   'world.team.noTeamsOccupy': 'Noch keine Teams — lose Truppen nutzen oder Aufstellung bearbeiten',
-  'world.team.flatOccupy': 'Lose Truppen (Pool)',
   // ── SLG battle replay browser (last-100) ─────────────────────────────────
   'world.replays': 'Kampf-Wiederholungen',
   'world.replaysTitle': 'Kampf-Wiederholungen (letzte 100)',

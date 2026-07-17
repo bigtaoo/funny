@@ -48,6 +48,15 @@ describe('WorldMapNet.errorMsg — SLG error-code mapping', () => {
     expect(net.errorMsg(new WorldApiError('TILE_OCCUPIED', 'x'))).toBe(t('world.err.occupied'));
   });
 
+  it('SATCHEL_CAP_EXCEEDED maps to a localized message, not the raw satchel-cap English text (2026-07-17)', () => {
+    // A team carrying more troops than the no-satchel carry cap (SATCHEL_CARRY_BASE=2000) is rejected
+    // server-side; before the map entry existed this fell through to the raw "Team carries N troops,
+    // exceeds satchel cap of M" English string. It must now render the actionable localized copy.
+    const mapped = net.errorMsg(new WorldApiError('SATCHEL_CAP_EXCEEDED', 'Team carries 2160 troops, exceeds satchel cap of 2000'));
+    expect(mapped).toBe(t('world.err.satchelCap'));
+    expect(mapped).not.toContain('satchel cap of');
+  });
+
   it('unmapped code falls back to the raw server message', () => {
     expect(net.errorMsg(new WorldApiError('SOME_UNMAPPED_CODE', 'raw server text')))
       .toBe('raw server text');
