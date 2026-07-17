@@ -11,7 +11,7 @@ import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance } from '../../
 import { getEquipDef } from '../../game/meta/equipmentDefs';
 import {
   type Constructor, type EquipmentSceneBaseCtor, type EquipTab,
-  LOADOUT_H, FILTER_H, SECTION_H, CELL_GAP, EQUIP_CELL_H, EQUIP_CELL_W_TARGET,
+  LOADOUT_H, FILTER_H, SECTION_H, CELL_GAP, CELL_GAP_X, EQUIP_CELL_H, EQUIP_CELL_W_TARGET,
   SLOTS, RARITY_COLOR,
 } from './base';
 
@@ -129,11 +129,11 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       // Item cells start right of the sidebar rail; right pad stays one CELL_GAP.
       const gridLeft = left + CELL_GAP;
       const avail = w - gridLeft - CELL_GAP;
-      const cols = Math.max(1, Math.floor((avail + CELL_GAP) / (EQUIP_CELL_W_TARGET + CELL_GAP)));
+      const cols = Math.max(1, Math.floor((avail + CELL_GAP_X) / (EQUIP_CELL_W_TARGET + CELL_GAP_X)));
       // Cap at the target width instead of stretching to fill the row — dividing the full
       // available width evenly across `cols` left cards much wider than their content needed,
       // reading as mostly blank paper; any leftover width is just unused margin on the right.
-      const cellW = Math.min(EQUIP_CELL_W_TARGET, (avail - CELL_GAP * (cols - 1)) / cols);
+      const cellW = Math.min(EQUIP_CELL_W_TARGET, (avail - CELL_GAP_X * (cols - 1)) / cols);
 
       // Layout pass: headers span a full row and reset the column cursor; item
       // cells pack left-to-right into `cols` columns. `off` is the vertical
@@ -155,7 +155,7 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
           continue;
         }
         if (collapsed) continue;
-        const x = gridLeft + col * (cellW + CELL_GAP);
+        const x = gridLeft + col * (cellW + CELL_GAP_X);
         placed.push({ kind: 'item', inst: entry.inst, isEquipped: entry.isEquipped, count: entry.count, x, off });
         col++;
         if (col >= cols) { col = 0; off += EQUIP_CELL_H + CELL_GAP; }
@@ -164,6 +164,18 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       const totalH = off + CELL_GAP;
 
       this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
+
+      // Cards are drawn into a masked sub-layer so an overscrolled row never bleeds up past listY
+      // and paints over the slot filter bar / loadout strip above it (they only skip rows fully
+      // outside [listY, listY+listH], so a row straddling that edge would otherwise render in full).
+      const gridLayer = new PIXI.Container();
+      this.bodyLayer.addChild(gridLayer);
+      const clip = new PIXI.Graphics();
+      clip.beginFill(0xffffff).drawRect(0, listY, w, listH).endFill();
+      this.bodyLayer.addChild(clip);
+      gridLayer.mask = clip;
+      const outerLayer = this.bodyLayer;
+      this.bodyLayer = gridLayer;
       for (const p of placed) {
         const y = listY + p.off - this.scrollY;
         const eh = p.kind === 'header' ? SECTION_H : EQUIP_CELL_H;
@@ -171,6 +183,7 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
         if (p.kind === 'header') this.renderSectionHeader(p.label, p.key, y);
         else this.renderInstanceCell(p.inst, p.x, y, cellW, p.isEquipped, p.count);
       }
+      this.bodyLayer = outerLayer;
 
       drawScrollIndicator(this.bodyLayer, { x: gridLeft, y: listY, w: avail, h: listH }, this.scrollY, Math.max(0, totalH - listH));
     }

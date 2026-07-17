@@ -77,8 +77,9 @@ export const SECTION_H = 36;  // section divider (Equipped / Bag) — clickable 
 // Inventory grid: icon-card cells (name top / glyph left / rarity+level right)
 // packed into columns sized to the wide (1920) landscape canvas.
 export const CELL_GAP = 36;
+export const CELL_GAP_X = CELL_GAP * 2; // horizontal gap between grid cells only — doubled per 2026-07-17 legibility pass
 export const EQUIP_CELL_H = 266; // +50% atop the previous 177 (2026-07-16 inventory legibility pass)
-export const EQUIP_CELL_W_TARGET = 480; // 1.5x the previous 320 (unified with CARD_CELL_W_TARGET in CardScene.ts)
+export const EQUIP_CELL_W_TARGET = 360; // tightened from 480 (2026-07-17) — 480 left a wide empty band between the glyph and the craft/level column
 // Craft grid: same column + cell sizing as the inventory grid so the icon
 // frames read at the same scale; cost chips + craft button sit beside the glyph.
 export const CRAFT_CELL_H = EQUIP_CELL_H;
