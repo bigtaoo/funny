@@ -74,6 +74,7 @@ export interface ShopSceneCallbacks {
     subscriptionLastClaimDay?: string;
     starterUsed: string[];
     starterGrowthEligible?: boolean;
+    firstPurchaseUsed?: boolean;
   };
   buyMonthlyCard?(): Promise<ShopActionResult>;
   /** Buy the year card (365-day subscription). Absent = year card not shown. */

@@ -59,7 +59,7 @@ describe('HttpCommercialClient', () => {
     const c = new HttpCommercialClient(base, KEY);
     expect(c.available).toBe(true);
     const w = await c.getWallet('a');
-    expect(w).toEqual({ coins: 42, pity: { standard: 3 }, fatePoints: 0, subscriptionExpiry: 0, starterUsed: [] });
+    expect(w).toEqual({ coins: 42, pity: { standard: 3 }, fatePoints: 0, subscriptionExpiry: 0, starterUsed: [], firstPurchaseUsed: false });
     expect(lastReq?.key).toBe(KEY);
   });
 

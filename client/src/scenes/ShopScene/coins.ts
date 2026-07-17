@@ -43,12 +43,17 @@ export function CoinsMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase 
       const viewH = h - bodyTop - Math.round(h * 0.02);
       const busy = this.bt.busy;
 
+      // The first-purchase 2× bonus is a one-time, account-wide grant (server CAS on wallets.firstPurchasedAt).
+      // Only advertise it while the account still has it available, so returning players aren't shown a badge
+      // for a bonus their purchase won't actually receive. Absent monetization mirror (offline) = assume available.
+      const firstDoubleAvailable = this.cb.getMonetization?.().firstPurchaseUsed !== true;
+
       const specs: CardSpec[] = WEB_COIN_TIERS.map((tier, idx) => {
         const bonus = tier.coins - tier.base;
         const lines: { text: string; color: number }[] = [];
         if (bonus > 0) lines.push({ text: `+${bonus}`, color: C.green });
         if (tier.bestValue) lines.push({ text: t('shop.bestValue'), color: C.gold });
-        lines.push({ text: t('shop.firstDouble'), color: 0xff6b00 });
+        if (firstDoubleAvailable) lines.push({ text: t('shop.firstDouble'), color: 0xff6b00 });
         const tierId = tier.id;
         return {
           icon: COIN_TIER_ICONS[idx] ?? 'coin', iconColor: C.gold,

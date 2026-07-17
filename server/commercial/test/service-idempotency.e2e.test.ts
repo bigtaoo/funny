@@ -235,10 +235,15 @@ describe.skipIf(!mongo)('commercial service — idempotency / concurrency / boun
   it('rechargeVerify: first-purchase 2× bonus lands on the FIRST recharge; the second gets no bonus', async () => {
     // rechargeVerify now ensures the wallet BEFORE claimFirstPurchaseBonus (§6.5), so the CAS matches on the
     // genuine first purchase and the 2× multiplier is applied to recharge #1 — matching paddleComplete.
+    // firstPurchaseUsed (the flag meta mirrors to gate the client "首充双倍" badge) tracks the CAS: false
+    // before any purchase, true once the first lands, and it stays true — never re-opening the bonus.
+    expect((await svc.getWallet('q')).firstPurchaseUsed).toBe(false);
     const first = await svc.rechargeVerify({ accountId: 'q', platform: 'web', receipt: 'tier:t499', receiptId: 'q1' });
     expect(first.ok && first.coinsGranted).toBe(550 * FIRST_PURCHASE_BONUS_MULTIPLIER); // 2× on the true first purchase
+    expect((await svc.getWallet('q')).firstPurchaseUsed).toBe(true);
     const second = await svc.rechargeVerify({ accountId: 'q', platform: 'web', receipt: 'tier:t499', receiptId: 'q2' });
     expect(second.ok && second.coinsGranted).toBe(550); // no bonus on the second purchase
+    expect((await svc.getWallet('q')).firstPurchaseUsed).toBe(true); // still claimed after the second
     expect((await svc.getWallet('q')).coins).toBe(550 * FIRST_PURCHASE_BONUS_MULTIPLIER + 550);
   });
 

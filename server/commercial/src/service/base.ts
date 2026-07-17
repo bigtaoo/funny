@@ -54,6 +54,7 @@ export interface WalletView {
   subscriptionExpiry: number; // 0 = no active subscription
   subscriptionLastClaimDay?: string; // UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed
   starterUsed: string[];
+  firstPurchaseUsed: boolean; // true once the first-purchase 2× bonus has been claimed; gates the "首充双倍" shop badge
 }
 
 export type Result<T> = ({ ok: true } & T) | { ok: false; error: ServiceErr };
@@ -88,6 +89,7 @@ export function walletView(w: WalletDoc | null): WalletView {
     subscriptionExpiry: w?.subscription?.expiry ?? 0,
     subscriptionLastClaimDay: w?.subscription?.lastClaimDayKey,
     starterUsed: w?.starterUsed ?? [],
+    firstPurchaseUsed: w?.firstPurchasedAt != null,
   };
 }
 

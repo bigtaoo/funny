@@ -73,6 +73,7 @@ export interface SaveData {
     subscriptionLastClaimDay?: string; // UTC day (YYYY-MM-DD) of last daily-coin claim; absent = never claimed (§5)
     starterUsed: string[]; // one-off product ids already purchased (§6)
     starterGrowthEligible?: boolean; // still inside the growth pack's first-N-days account-age window; absent = eligible (§6)
+    firstPurchaseUsed?: boolean; // true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves)
   };
   // Delivered purchase orders (commercial orderId); server-authoritative, client read-only (S5-5).
   deliveredOrders: string[];

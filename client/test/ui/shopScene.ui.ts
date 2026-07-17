@@ -322,6 +322,54 @@ describe('ShopScene — consumable items (kind="item") render their own name/des
   });
 });
 
+// Regression coverage for the 2026-07-17 fix: the Coins tab stamped a "首充双倍" (first-purchase 2×)
+// badge on EVERY recharge tier unconditionally, even for players who had already consumed their one-time
+// first-purchase bonus (server CAS on wallets.firstPurchasedAt) — so returning payers were shown a bonus
+// their next purchase would not actually receive. The badge is now gated on
+// monetization.firstPurchaseUsed !== true (absent/offline = assume still available, so it still shows).
+describe('ShopScene — first-purchase 2× badge only shows while the bonus is still available', () => {
+  const FIRST_DOUBLE = t('shop.firstDouble');
+
+  const buildCoins = (cb: Partial<ShopSceneCallbacks>): ShopScene =>
+    buildShop({ initialTab: 'coins', rechargeCoins: async () => ({ ok: true }), ...cb });
+
+  it('shows the badge for a fresh account (firstPurchaseUsed false)', () => {
+    const scene = buildCoins({ getMonetization: () => ({ subscriptionExpiry: 0, starterUsed: [], firstPurchaseUsed: false }) });
+    expect(findLabelPos(scene.container, FIRST_DOUBLE)).not.toBeNull();
+    scene.destroy();
+  });
+
+  it('shows the badge when firstPurchaseUsed is absent (legacy save / not yet mirrored)', () => {
+    const scene = buildCoins({ getMonetization: () => ({ subscriptionExpiry: 0, starterUsed: [] }) });
+    expect(findLabelPos(scene.container, FIRST_DOUBLE)).not.toBeNull();
+    scene.destroy();
+  });
+
+  it('shows the badge when monetization is not wired (offline / logged out)', () => {
+    const scene = buildCoins({});
+    expect(findLabelPos(scene.container, FIRST_DOUBLE)).not.toBeNull();
+    scene.destroy();
+  });
+
+  it('hides the badge once the first-purchase bonus has been used (firstPurchaseUsed true)', () => {
+    const scene = buildCoins({ getMonetization: () => ({ subscriptionExpiry: 0, starterUsed: [], firstPurchaseUsed: true }) });
+    expect(findLabelPos(scene.container, FIRST_DOUBLE)).toBeNull();
+    scene.destroy();
+  });
+
+  it('drops the badge on the next render after the mirror flips firstPurchaseUsed to true', () => {
+    const state = { subscriptionExpiry: 0, starterUsed: [] as string[], firstPurchaseUsed: false };
+    const scene = buildCoins({ getMonetization: () => ({ ...state }) });
+    expect(findLabelPos(scene.container, FIRST_DOUBLE)).not.toBeNull();
+
+    // Simulate the post-purchase mirror refresh (saveManager.adoptServer): the badge must clear on re-render.
+    state.firstPurchaseUsed = true;
+    (scene as unknown as { render(): void }).render();
+    expect(findLabelPos(scene.container, FIRST_DOUBLE)).toBeNull();
+    scene.destroy();
+  });
+});
+
 describe('ShopScene — promo-code redemption lives on the Coins tab', () => {
   it('does not show the promo field on the Shop tab', () => {
     const scene = buildShop({

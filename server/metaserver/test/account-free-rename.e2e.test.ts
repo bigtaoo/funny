@@ -32,7 +32,7 @@ function makeCommercial(): CommercialClient {
   return {
     available: true,
     async getWallet(id: string) {
-      return { coins: coins.get(id) ?? 0, pity: {}, fatePoints: 0, subscriptionExpiry: 0, starterUsed: [] };
+      return { coins: coins.get(id) ?? 0, pity: {}, fatePoints: 0, subscriptionExpiry: 0, starterUsed: [], firstPurchaseUsed: false };
     },
     async spend(a: { accountId: string; amount: number; orderId: string }) {
       const bal = coins.get(a.accountId) ?? 0;

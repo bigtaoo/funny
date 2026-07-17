@@ -76,6 +76,7 @@ describe.skipIf(!mongo)('commercial internalHttp', () => {
       fatePoints: 0,
       subscriptionExpiry: 0,
       starterUsed: [],
+      firstPurchaseUsed: false,
     });
   });
 
