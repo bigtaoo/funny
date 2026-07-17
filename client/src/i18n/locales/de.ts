@@ -297,6 +297,10 @@ export const de: Record<TranslationKey, string> = {
   'replay.speed': '{n}×',
   'replay.ended': 'Wiederholung beendet',
   'replay.versionError': 'Wiederholungsversion inkompatibel — Abspielen nicht möglich',
+  'replay.viewpoint': 'Ansicht: {name}',
+  'replay.player1': 'Spieler 1',
+  'replay.player2': 'Spieler 2',
+  'replay.aiOpponent': 'CPU',
 
   // ── Spielexternes Teilen von Wiederholungen (REPLAY_SHARE_DESIGN) ────────────
   'share.button': 'Teilen',

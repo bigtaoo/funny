@@ -56,6 +56,12 @@ export interface LocalMatchOpts {
    * default (5). Ignored when `level` is set (PvE uses WaveDirector, not AISystem).
    */
   difficulty?: AIDifficulty;
+  /**
+   * Owner-indexed display names for the replay player (bottom = owner 0 = human, top = owner 1 =
+   * AI / opponent). Written into `meta.players`; the replay player labels the bases and viewpoint.
+   * Omit either side → the replay player falls back to a generic placeholder.
+   */
+  players?: { bottom?: string; top?: string };
 }
 
 export interface LocalMatch {
@@ -104,6 +110,7 @@ export function createLocalMatch(opts: LocalMatchOpts = {}): LocalMatch {
         recordedAt: Date.now(),
         winner: winner ?? -1,
         ...(recordLevelId ? { levelId: recordLevelId } : {}),
+        ...(opts.players ? { players: opts.players } : {}),
       },
     });
   return { engine, buildReplay };

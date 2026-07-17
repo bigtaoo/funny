@@ -95,6 +95,12 @@ export interface GameSceneOptions {
    * free play + never-fail mode. Only used together with `level=ch0_tutorial`.
    */
   tutorial?: boolean;
+  /**
+   * Owner-indexed display names (bottom = owner 0 = human, top = owner 1 = AI/level) written into the
+   * recorded replay's `meta.players` so the replay player can label the bases + viewpoint. Ignored
+   * for netplay (server records that match) — netplay names are written in nav/result.ts instead.
+   */
+  players?: { bottom?: string; top?: string };
 }
 
 export class GameScene implements Scene {
@@ -122,6 +128,7 @@ export class GameScene implements Scene {
         ...(opts.decks ? { decks: opts.decks } : {}),
         ...(opts.seed !== undefined ? { seed: opts.seed } : {}),
         ...(opts.difficulty !== undefined ? { difficulty: opts.difficulty } : {}),
+        ...(opts.players ? { players: opts.players } : {}),
       });
       engine = match.engine;
       buildReplay = match.buildReplay;

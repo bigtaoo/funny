@@ -130,12 +130,17 @@ export function createResultNav(ctx: AppCtx): ResultNav {
       },
       recorder,
     );
+    // Owner-indexed display names for the replay player (bottom = owner 0, top = owner 1).
+    const replayPlayers = {
+      bottom: localOwner === 0 ? playerName() : info.opponentName,
+      top:    localOwner === 0 ? info.opponentName : playerName(),
+    };
     const buildNetReplay = (winner: OwnerId | null): Replay =>
       recorder.snapshot({
         seed: info.seed,
         mode: 'netplay',
         ...(info.decks ? { decks: { top: info.decks.top, bottom: info.decks.bottom } } : {}),
-        meta: { recordedAt: Date.now(), winner: winner ?? -1 },
+        meta: { recordedAt: Date.now(), winner: winner ?? -1, players: replayPlayers },
       });
 
     const isRanked = isRankedMode;
