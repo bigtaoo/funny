@@ -99,8 +99,9 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          # Versioned zip: immutable, long-cacheable.
-          command: r2 object put ${{ env.OTA_R2_BUCKET }}/${{ steps.ver.outputs.version }}.zip --file=client/${{ steps.ver.outputs.version }}.zip --content-type=application/zip --remote
+          # Versioned zip: immutable, long-cacheable. (r2 object put targets remote by default;
+          # the --remote flag doesn't exist in the wrangler-action's pinned 3.90.0.)
+          command: r2 object put ${{ env.OTA_R2_BUCKET }}/${{ steps.ver.outputs.version }}.zip --file=client/${{ steps.ver.outputs.version }}.zip --content-type=application/zip
 
       - name: Publish manifest to R2 (last, so it only points at an already-uploaded zip)
         uses: cloudflare/wrangler-action@v3
@@ -108,4 +109,4 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           # manifest must never be cached, or clients keep seeing the old version.
-          command: r2 object put ${{ env.OTA_R2_BUCKET }}/manifest.json --file=client/manifest.json --content-type=application/json --cache-control="no-cache, must-revalidate" --remote
+          command: r2 object put ${{ env.OTA_R2_BUCKET }}/manifest.json --file=client/manifest.json --content-type=application/json --cache-control="no-cache, must-revalidate"
