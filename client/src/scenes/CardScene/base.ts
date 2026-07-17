@@ -306,9 +306,14 @@ export class CardSceneBase {
       // tap there falls through to the modal's own dim-to-close catch-all and just closes the
       // modal instead of leaving the scene (LOBBY_IA_REDESIGN back-button-always-works fix, 2026-07-14).
       if (this.inRect(x, y, this.backRect)) { this.cb.onBack(); return; }
+      // Defer the modal hit to pointer-UP and drop it if the pointer drags past the threshold, same
+      // as the grid behind it — so a press-drag-release on a feed-select row (or any modal row) only
+      // toggles on release, and a drag away doesn't accidentally toggle it (2026-07-17).
+      let modalHit: (() => void) | null = null;
       for (const { rect, action } of this.modalHits) {
-        if (this.inRect(x, y, rect)) { action(); return; }
+        if (this.inRect(x, y, rect)) { modalHit = action; break; }
       }
+      this.gesture.down(this.scrollY, y, modalHit);
       return;
     }
     // Don't fire the hit action here — capture it and start gesture tracking. If the pointer then
@@ -323,8 +328,10 @@ export class CardSceneBase {
   }
 
   private handleMove(y: number): void {
-    if (this.modalOpen) return;
+    // Feed the move to the gesture even while a modal is open: the modal doesn't scroll, but this
+    // latches `moved` once the pointer crosses the drag threshold so the pending modal tap is dropped on up.
     const scroll = this.gesture.move(y);
+    if (this.modalOpen) return;
     if (scroll !== null) { this.scrollY = scroll; this.scrollDirty = true; }
   }
 
