@@ -30,6 +30,6 @@ export interface SiegeServiceBase {
   transferLoot(defender: PlayerWorldDoc, attacker: PlayerWorldDoc, t: number): Promise<Record<ResourceType, number>>;
   applySectLeaderPenalty(worldId: string, defenderId: string, t: number): Promise<void>;
   passiveRelocate(worldId: string, defenderId: string, t: number): Promise<void>;
-  buildDefenderConfig(target: TileDoc, effGarrison: number, inOwnNation: boolean): { garrison?: unknown; defenderBuildings?: unknown; defenderBaseLevel?: unknown } | null;
+  buildDefenderConfig(target: TileDoc, effGarrison: number, inOwnNation: boolean): { garrison?: unknown; defenderBuildings?: unknown; defenderBaseLevel?: unknown; defenderBaseHp?: unknown } | null;
   applyOccupationExpulsion(m: MarchDoc, pw: PlayerWorldDoc, tile: TileDoc, t: number): Promise<void>;
 }

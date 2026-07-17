@@ -90,6 +90,14 @@ export interface LevelDefinition {
    */
   defenderBaseLevel?: number;
   /**
+   * SLG defense config: absolute HP ceiling for the defender's (Top side) base, overriding the global BASE_HP
+   * default. Lets an NPC tile's base scale with its tile level (SLG option 2, 2026-07-17: base HP = 40×level via
+   * shared `npcBaseHp`) instead of a flat 100. Positive integer; sets both `topPlayer.baseHp` and
+   * `topPlayer.maxBaseHp` at battle start. Valid for 'siege' mode; ignored in 'campaign'. Independent of
+   * `defenderBaseLevel` (which only affects ink regen).
+   */
+  defenderBaseHp?: number;
+  /**
    * Stamina cost to attempt this level (A4). Explicit override range 1–5 (default 10 when omitted).
    * Deducted server-side on /pve/enter (level entry, not clear); client shows it in LevelPrepScene.
    */

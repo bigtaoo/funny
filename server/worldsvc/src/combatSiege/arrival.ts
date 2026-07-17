@@ -9,6 +9,7 @@ import {
   playerWorldId,
   resolveSiege,
   npcGarrison,
+  npcBaseHp,
   strongholdGarrison,
   passageGarrison,
   STRONGHOLD_LOOT_PER_LEVEL,
@@ -391,9 +392,11 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
         cardInstances = ci;
         cardEquipInv = engEquipInv;
       }
-      // System ultra-strong default garrison + elevated base (defenderBaseLevel is derived and clamped by buildSiegeLevel from tileLevel).
-      const defenderConfig = { garrison: synthesizeArmy(garrison, 'defender') };
+      // System ultra-strong default garrison + tile-level-scaled base HP (npcBaseHp; 2026-07-17). Stronghold
+      // tiles are max level, so the base is at the top of the curve — consistent with the "extremely hard to
+      // conquer" intent (§3.1); the real gate is still the huge garrison.
       const tileLevel = proc.level;
+      const defenderConfig = { garrison: synthesizeArmy(garrison, 'defender'), defenderBaseHp: npcBaseHp(tileLevel) };
       const seed = siegeSeedFromId(m._id);
 
       // E8: stronghold is also a PvE-like siege; attacker equipment applies in the same way (legacy path only — a
@@ -525,8 +528,9 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
         cardInstances = ci;
         cardEquipInv = engEquipInv;
       }
-      const defenderConfig = { garrison: synthesizeArmy(garrison, 'defender') };
       const tileLevel = proc.level;
+      // Crossing (bridge/plankway) NPC base HP scales with tile level (npcBaseHp; 2026-07-17).
+      const defenderConfig = { garrison: synthesizeArmy(garrison, 'defender'), defenderBaseHp: npcBaseHp(tileLevel) };
       const seed = siegeSeedFromId(m._id);
 
       const siegeEquip: EngineEquipmentInput | undefined =

@@ -481,6 +481,16 @@ export function parseLevelDefinition(raw: unknown, ctx = 'level'): LevelDefiniti
     level.defenderBaseLevel = lvl;
   }
 
+  if (raw.defenderBaseHp !== undefined) {
+    const hp = int(raw.defenderBaseHp, `${ctx}.defenderBaseHp`);
+    // Absolute HP ceiling for the defender base (SLG NPC-tile scaling). Upper bound is generous — a sanity cap
+    // against dirty data, not a balance knob (npcBaseHp tops out at 40×10=400 today).
+    if (hp < 1 || hp > 100_000) {
+      fail(`${ctx}.defenderBaseHp`, `must be 1..100000, got ${hp}`);
+    }
+    level.defenderBaseHp = hp;
+  }
+
   const rewards = parseRewards(raw.rewards, `${ctx}.rewards`);
   if (rewards) level.rewards = rewards;
 

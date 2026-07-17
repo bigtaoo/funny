@@ -15,7 +15,7 @@ import { createGameEngine } from '../GameEngine';
 import { runHeadless } from '../runHeadless';
 import { LocalInputSource } from '../net/InputSource';
 import { toFp } from '../math/fixed';
-import { ATTACK_LANES, HAND_SIZE } from '../config';
+import { ATTACK_LANES, BASE_HP, HAND_SIZE } from '../config';
 import { CardType, GamePhase, Side, UnitType } from '../types';
 import type { GameConfig, PlayerCommand } from '../types';
 import type { LevelDefinition } from '../campaign/LevelDefinition';
@@ -118,6 +118,28 @@ test('campaign timed_defense objective ends the match with GamePhase.GameOver an
   assert.ok(outcome.ok, 'match reaches GameOver within maxTicks');
   assert.equal(outcome.engine.state.phase, GamePhase.GameOver);
   assert.equal(outcome.engine.state.winner, Side.Bottom);
+});
+
+// ── Defender base HP scaling (SLG option 2, 2026-07-17) ────────────────────────────────
+
+test('siege defenderBaseHp initializes the Top base HP + maxBaseHp; default stays BASE_HP', () => {
+  const level: LevelDefinition = {
+    id: 'test_defender_base_hp',
+    chapter: 0,
+    seed: 9,
+    objective: { kind: 'destroy_base' },
+    waves: { entries: [] },
+    defenderBaseHp: 40, // npcBaseHp(1) — a level-1 NPC tile
+  };
+  const config: GameConfig = { seed: 9, mode: 'siege', players: [{ id: 0 }, { id: 1 }], level };
+  const engine = createGameEngine(config);
+  engine.step(0, []);
+
+  assert.equal(engine.state.topPlayer.maxBaseHp, 40, 'defender base ceiling scaled to defenderBaseHp');
+  assert.equal(engine.state.topPlayer.baseHp, 40, 'defender base starts full at the scaled ceiling');
+  // Attacker (Bottom) base is untouched → global BASE_HP default.
+  assert.equal(engine.state.bottomPlayer.maxBaseHp, engine.state.bottomPlayer.baseHp, 'attacker base full at its default ceiling');
+  assert.equal(engine.state.bottomPlayer.baseHp, BASE_HP, 'attacker base defaults to BASE_HP');
 });
 
 // ── Scripted enemy waves (CampaignMixin.spawnEnemyUnit + WaveDirector) ─────────────────
