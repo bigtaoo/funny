@@ -507,6 +507,8 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 **分区标题放大+可折叠 + 图标卡再放大 50% + 去除宽度空白**（2026-07-16 追加）：真人截图走查发现三处问题并修复：① 「已装备/背包」分区标题字号 12→24（2 倍）+ 左边距再加 20px 右移，`SECTION_H` 20→36 容纳大字；② 分区标题新增点击折叠：整行（`x=0` 到画布右边界）可点，`▼`/`▶` 箭头指示状态，`InventoryMixin` 新增 `collapsedSections: Set<'equipped'|'bag'>` 实例态，折叠的分区其下图标卡在布局阶段直接跳过（不占垂直空间），`DisplayEntry`/`Placed` 的 header 变体新增 `key` 字段区分两个分区。③ 图标卡 `EQUIP_CELL_H` 再 +50%（177→266，同步带动 `CRAFT_CELL_H`）；`renderInventory` 里的 `cellW` 此前把整行可用宽度平均分给列数，导致格子比设计目标宽（480）撑得更宽、内部大片空白，改为 `cellW = min(480, 平均列宽)` 封顶，多余宽度留在网格右侧当边距，不再撑大卡片本身。`tsc --noEmit` 验证；因端口 9090 dev server 被同目录另一并发会话占用，未起浏览器截图核对（未注入调试钩子以免打断对方热更新）。
 
+**下拉遮挡筛选条修复 + 图标卡横向间距翻倍**（2026-07-17 追加）：真人截图走查发现两处问题并修复：① 网格滚动到某一行与筛选条/资源条边界跨骑（straddle）时，该行此前会整格照常绘制、视觉上盖住上方的「All/Weapon/Armor/Trinket」筛选条与资源条——原本的裁剪逻辑（`renderInventory`/`renderCraft`）只跳过完全落在可视区外的行，不裁剪跨骑行。改为把网格绘制进一个临时子容器（`gridLayer`），套一个对齐可视区 `[listY, listY+listH)` 的矩形 `mask`，跨骑行现在被硬裁剪，不再盖住上方内容。② 图标卡之间的横向间距翻倍：新增 `CELL_GAP_X = CELL_GAP * 2`，仅用于同一行内卡片间的水平间隙（`Inventory`/`Craft` 两个网格都改用），网格外边距、行间距（垂直）仍用原 `CELL_GAP`，未受影响。（同批次另有并发会话把 `EQUIP_CELL_W_TARGET` 480→360 收窄，见对应 commit，非本条修复范围。）用 `__NW_APP`/`__NW_PIXI`/`__NW_EquipmentScene` 临时钩子起真实 `npm run start` 渲染 + `toDataURL` 截图核对（多组 `scrollY` 下筛选条不再被盖住），验证后移除钩子；`tsc --noEmit` 通过。新增回归测试 [equipmentGridLayout.ui.ts](../../client/test/ui/equipmentGridLayout.ui.ts)：同行横向间距＝`CELL_GAP_X`、行间距＝`CELL_GAP`不变、网格渲染进一个裁剪到可视列表带（非全屏）的 mask 层内。
+
 #### E2 掉落 faucet + E6 洗练 实现记录（2026-06-22，✅）
 
 **E2 关卡掉落 faucet**
