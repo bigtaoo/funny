@@ -145,3 +145,52 @@ describe('ReplayScene — playback', () => {
     scene.destroy();
   });
 });
+
+// ── Siege replay player names (§16.3) ────────────────────────────────────────
+// Siege replays feed the attacker/defender display names through meta.players
+// (owner-indexed: bottom = attacker = owner0, top = defender = owner1). The generic
+// PvP/campaign placeholders (replay.player1/2) only show when a name is blank. This
+// asserts both base plates and the current-viewpoint tag pick up the provided names.
+describe('ReplayScene — siege player names', () => {
+  /** All PIXI.Text strings in a container subtree. */
+  function collectTexts(node: PIXI.Container): string[] {
+    const out: string[] = [];
+    const walk = (n: PIXI.Container): void => {
+      if (n instanceof PIXI.Text) out.push(n.text);
+      for (const c of n.children) walk(c as PIXI.Container);
+    };
+    walk(node);
+    return out;
+  }
+
+  it('draws attacker (bottom) + defender (top) names on base plates and the viewpoint tag', () => {
+    const replay = recordReplay(30);
+    replay.meta = { ...(replay.meta ?? {}), players: { bottom: 'AtkAlice', top: 'DefBob' } };
+    const scene = new ReplayScene(createLayout(...LANDSCAPE), new InputManager(), replay, {
+      onExit() {},
+    });
+    scene.update(1 / 30);
+    const texts = collectTexts((scene as any).container);
+    // Both base name plates render with the real names, not the generic placeholders.
+    expect(texts).toContain('AtkAlice');
+    expect(texts).toContain('DefBob');
+    expect(texts).not.toContain('Player 1');
+    expect(texts).not.toContain('Player 2');
+    // Viewpoint tag defaults to the bottom (attacker) side.
+    expect(texts.some((s) => s.includes('AtkAlice'))).toBe(true);
+    scene.destroy();
+  });
+
+  it('falls back to generic placeholders when a name is blank (PvE defender)', () => {
+    const replay = recordReplay(30);
+    replay.meta = { ...(replay.meta ?? {}), players: { bottom: 'AtkAlice', top: '' } };
+    const scene = new ReplayScene(createLayout(...LANDSCAPE), new InputManager(), replay, {
+      onExit() {},
+    });
+    scene.update(1 / 30);
+    const texts = collectTexts((scene as any).container);
+    expect(texts).toContain('AtkAlice');
+    expect(texts).toContain('Player 2'); // blank top → placeholder
+    scene.destroy();
+  });
+});

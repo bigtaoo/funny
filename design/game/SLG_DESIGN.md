@@ -195,6 +195,14 @@
 - **服务端**：`SiegeDoc` 无 TTL、永久留存，已有 `{worldId,ts:-1}`、`{attackerId}` 索引。新增 `GET /world/sieges?worldId&limit`（`listSieges`，`DefenseService.listSieges`），查 `worldId` 下 `attackerId==me || defenderId==me`、`ts` 倒序、上限 100，返回精简 `SiegeSummaryView`（`siegeId/tile/tileLevel?/outcome/role/ts/hasReplay`）。重的重放输入仍按需通过既有 `getSiegeReplay` 单场拉取。`hasReplay=seed 存在 && attackerArmy 非空`（廉价结算/扫荡 NPC 的记录不可重放）。
 - **客户端**：右上角状态卡 + 行军徽标**下方**新增「战斗录像」徽标（`replayBadgeRect`），点开一个可滚动列表模态（`renderReplayPanel`，复用 `beginScrollList`/`panelButtonIn`），每行显示坐标/等级/攻守/胜负(相对本方)/多久前；可重放行点「复盘并验证」复用既有 `onReplaySiege(siegeId)`，不可重放行标「无录像」。受影响文件：`openapi-world.yml`（`SiegeSummaryView` + `/world/sieges`）、`worldTypes.ts`/`combatDefense.ts`/`combat.ts`/`service.ts`/`httpApi.ts`、`WorldApiClient.listSieges`、`WorldMapContext.ts`/`WorldMapPanels.ts`/`WorldMapInput.ts`、i18n（`world.replays*`/`world.replay.*`）。
 
+#### 4.3.1 攻城回放玩家名（2026-07-17）
+
+> 回放观看已支持在基地旁显示玩家名、底部显示当前视角玩家名（`ReplayMeta.players: {bottom?, top?}`，owner 索引，见 `UI_DESIGN.md` §23）。攻城回放此前只能兜底显示占位（`replay.player1/2`）——本次补上真实攻/防名字。
+
+- **服务端**：`DefenseService.getSiegeReplay` 在返回里新增 `attackerName` / `defenderName`。名字来源同行军 `under_attack` 预警——`WorldCore.meta.getProfile(id).displayName`（`resolveDisplayName` 助手，meta 不可用/查失败→空串）。攻方 `siege.attackerId` 恒为玩家；防守方 `siege.defenderId` 在基地/领地攻城时为玩家，PvE 目标（据点/关卡/无主建筑）缺省→空串。
+- **契约**：`openapi-world.yml` 的 `SiegeReplayView` 加 `attackerName`/`defenderName`（均 required string，可为空串）；`worldsvc/src/generated/routes.gen.ts` 与 `client/src/net/openapi-world.ts` 按 codegen 重生成。
+- **owner→side 映射**：攻方 = owner0 = bottom，防守方 = owner1 = top（见 `buildSiegeBattle` 注释）。`world.ts:goSiegeReplay` 据此设 `replay.meta = { players: { bottom: attackerName, top: defenderName } }`；空串时 `ReplayScene` 回退到既有占位。
+
 **问题 2：卡牌布阵行军会同时扣/退地图兵力池，制造双重记账。** `startMarch` 对**任何**行军（不分卡牌队伍还是散兵）都会在出征时 `$inc:{troops:-troops}`（`troops`=队伍全部卡牌 HP 之和），到达/扑空/驱逐/围攻失败等分支又统一走 `refundTroops(pw, survivors)` 把存活值加回 `playerWorld.troops`；与此同时卡牌胜负结算（`computeCardStateUpdates`）**又单独**把同一批存活值写回 `cardState.{id}.currentTroops`。等于同一次战斗的存活兵力被记了两遍账（一份进地图池，一份留在卡上），且卡牌队伍出征凭空临时"占用"了一段与之无关的地图兵力池容量。
 
 - **修复（拍板规则）**：卡牌布阵（`army` 含 `cardInstanceId` 的行军）**全程不触碰 `playerWorld.troops`**——出征不扣、到达不管输赢/扑空一律不退。卡牌的兵力只活在 `cardState.currentTroops` 这一份账本里：分配（`distributeTroops`，从 `baseTroopStock` 转入）→ 出战消耗/结算存活（`computeCardStateUpdates`）→ 移出队伍销毁 + 退 80% 训练资源（`setTeams`，已有行为不变）。**分配给某张卡的兵力永远不会回到 `playerWorld.troops` 这个地图兵力池，唯一的"释放"路径是把该卡移出队伍**（销毁兵力、退部分训练资源，不是退兵）。

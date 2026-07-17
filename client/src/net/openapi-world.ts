@@ -1105,6 +1105,8 @@ export interface components {
             level: {
                 [key: string]: unknown;
             };
+            attackerName: string;
+            defenderName: string;
         };
         SiegeSummaryView: {
             siegeId: string;

@@ -225,6 +225,32 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     // defender can also read; spectators are rejected.
     await expect(svc.getSiegeReplay(W, 'b', siege!._id)).resolves.toBeTruthy();
     await expect(svc.getSiegeReplay(W, 'c', siege!._id)).rejects.toThrow();
+
+    // §16.3 replay names: no meta client → blank names (client falls back to generic placeholders).
+    expect(replay.attackerName).toBe('');
+    expect(replay.defenderName).toBe('');
+
+    // With a meta client, the display names resolve. Owner→side mapping: attacker → bottom, defender → top.
+    const svcNamed = new WorldService({
+      cols: m.collections,
+      redis: null,
+      gateway: fakeGateway,
+      mapW: SLG_MAP_W,
+      mapH: SLG_MAP_H,
+      now,
+      meta: {
+        available: true,
+        async getProfile(id: string) {
+          return { publicId: id, displayName: id === 'a' ? 'Alice' : id === 'b' ? 'Bob' : '' };
+        },
+        async grantMaterial() {},
+        async getSaveFields() { return null; },
+        async grantTitle() {},
+      },
+    });
+    const named = await svcNamed.getSiegeReplay(W, 'a', siege!._id);
+    expect(named.attackerName).toBe('Alice');
+    expect(named.defenderName).toBe('Bob');
   });
 
   it('team troop pool insufficient → rejected (NO_TROOPS)', async () => {

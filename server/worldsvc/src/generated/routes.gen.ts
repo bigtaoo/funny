@@ -4009,7 +4009,9 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "siegeId",
                 "seed",
                 "outcome",
-                "level"
+                "level",
+                "attackerName",
+                "defenderName"
               ],
               "properties": {
                 "siegeId": {
@@ -4029,6 +4031,12 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "level": {
                   "type": "object",
                   "additionalProperties": true
+                },
+                "attackerName": {
+                  "type": "string"
+                },
+                "defenderName": {
+                  "type": "string"
                 }
               }
             }

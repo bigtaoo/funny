@@ -87,10 +87,14 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
   async function goSiegeReplay(worldApi: WorldApiClient, worldId: string, siegeId: string): Promise<void> {
     let level: LevelDefinition;
     let seed = 0;
+    let attackerName = '';
+    let defenderName = '';
     try {
       const data = await worldApi.getSiegeReplay(worldId, siegeId);
       level = data.level as unknown as LevelDefinition;
       seed = data.seed;
+      attackerName = data.attackerName;
+      defenderName = data.defenderName;
     } catch {
       goWorldMap(worldApi, worldId);
       return;
@@ -101,7 +105,16 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
     // timeout plus a buffer as the playback upper bound (game-over will actually stop it first).
     const SIEGE_TIMEOUT_FALLBACK = 10 * 60 * 30; // §16.1 DRAFT, matches server default
     const endFrame = (level.battleTimeoutTicks ?? SIEGE_TIMEOUT_FALLBACK) + 600;
-    const replay: Replay = { engineVersion: ENGINE_VERSION, mode: 'siege', seed, frames: [], endFrame };
+    // Owner→side mapping (§16.3): attacker = owner0 = bottom, defender = owner1 = top. Empty names
+    // (unresolved / PvE defender) leave ReplayScene to draw its generic placeholders.
+    const replay: Replay = {
+      engineVersion: ENGINE_VERSION,
+      mode: 'siege',
+      seed,
+      frames: [],
+      endFrame,
+      meta: { players: { bottom: attackerName, top: defenderName } },
+    };
     views.showReplay(replay, { onExit() { goWorldMap(worldApi, worldId); } }, level);
   }
 

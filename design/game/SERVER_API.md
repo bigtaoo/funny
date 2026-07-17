@@ -564,7 +564,7 @@ POST /world/troops/train  { worldId, qty }          → PlayerWorldView
 POST /world/troops/speedup{ worldId, coins }        → PlayerWorldView
 GET/PUT /world/defense    ?worldId&tileKey / { worldId, tileKey?, defenseConfig } → DefenseConfig（攻守两用布阵）
 GET/PUT /world/teams      ?worldId / { worldId, teams[] } → TeamTemplate[]（进攻布阵模板，≤5 支）
-GET  /world/siege/{siegeId}/replay  ?worldId        → SiegeReplayView（观战重播，客户端同 seed headless 重跑）
+GET  /world/siege/{siegeId}/replay  ?worldId        → SiegeReplayView（观战重播，客户端同 seed headless 重跑；含 attackerName/defenderName 供回放基地铭牌+视角标签）
 ```
 
 ### 10.2 Nation / Season / SLG Shop
