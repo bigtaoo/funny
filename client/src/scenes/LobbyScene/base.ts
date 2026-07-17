@@ -15,6 +15,7 @@ import { IconKind } from '../../render/icons';
 import { BoilingSprite } from '../../render/boil';
 import { StickmanRuntime } from '../../render/stickman/StickmanRuntime';
 import { loadCoinIconAtlas } from '../../render/coinIconAtlas';
+import { makeText } from '../../render/pixiText';
 
 export { fmtCoins } from './format';
 
@@ -44,7 +45,7 @@ export const C = {
 };
 
 export function txt(label: string, size: number, color: number, bold = false): PIXI.Text {
-  return new PIXI.Text(label, {
+  return makeText(label, {
     fontSize: size, fill: color, fontFamily: 'monospace',
     fontWeight: bold ? 'bold' : 'normal',
   });

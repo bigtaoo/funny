@@ -1,6 +1,6 @@
 import * as PIXI from 'pixi.js-legacy';
 import { netLog } from '../net/log';
-import { reportAnomaly } from '../net/anomaly';
+import { reportAnomaly, setAnrContextProvider } from '../net/anomaly';
 import { snapshotPools } from './poolRegistry';
 
 // Runtime memory monitor: reads JS heap usage every few seconds, emits a console.warn when the threshold
@@ -82,6 +82,40 @@ function cacheSize(name: 'TextureCache' | 'BaseTextureCache'): number {
 }
 
 /**
+ * Collapse a BaseTextureCache key to a coarse bucket so 1000+ distinct keys aggregate into a handful of
+ * categories. Art is loaded via `PIXI.Texture.from(url)` (see cardArt/gachaArt/titleArt/CardScene.drawArtFit),
+ * so keys are the webpack asset URLs — bucketing by directory tells us *which* art folder is filling the cache
+ * (cards vs skins vs titles vs …). data:/blob: sources bucket by scheme.
+ */
+function texBucket(key: string): string {
+  if (key.startsWith('data:')) return 'data:';
+  if (key.startsWith('blob:')) return 'blob:';
+  const noQuery = key.split('?')[0];
+  const slash = noQuery.lastIndexOf('/');
+  return slash > 0 ? noQuery.slice(0, slash) : noQuery;
+}
+
+/**
+ * Top texture-cache buckets by entry count — the single most useful signal for a "baseTex keeps climbing"
+ * report: it distinguishes an unbounded *asset* cache (many entries under one art directory, retained forever
+ * because PIXI's URL cache never evicts) from a handful of legitimately-reused sheets. Capped output so the
+ * detail string stays well under the anomaly truncation limit.
+ */
+function texTop(limit = 6): { k: string; n: number }[] {
+  const c = (PIXI.utils as unknown as Record<string, Record<string, unknown> | undefined>).BaseTextureCache;
+  if (!c) return [];
+  const groups = new Map<string, number>();
+  for (const key of Object.keys(c)) {
+    const b = texBucket(key);
+    groups.set(b, (groups.get(b) ?? 0) + 1);
+  }
+  return [...groups.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([k, n]) => ({ k, n }));
+}
+
+/**
  * Application-wide singleton memory monitor. Installed once via install(app.ticker) at app.ts startup;
  * persists across scene transitions. When no battle is running the pool registry is empty, so only heap readings are reported.
  */
@@ -95,6 +129,13 @@ export class MemoryMonitor {
     this.ticker = ticker;
     this.stage = stage ?? null;
     ticker.add(this.onTick);
+
+    // Feed live GPU/texture counters into ANR reports: a freeze that always fires with a huge baseTex count
+    // points at texture pressure, whereas one at a low count is a pure compute stall. Cheap counters only —
+    // no scene-graph walk here (the watchdog fires *during* a stall; walking the tree would worsen it).
+    setAnrContextProvider(() => ({
+      gpu: { tex: cacheSize('TextureCache'), baseTex: cacheSize('BaseTextureCache'), tickers: this.ticker?.count ?? -1 },
+    }));
 
     // WeChat Mini Game: the OS low-memory callback is the real budget gate (performance.memory is typically unavailable in the WeChat runtime).
     const wx = (globalThis as unknown as { wx?: { onMemoryWarning?: (cb: (res: { level?: number }) => void) => void } }).wx;
@@ -142,15 +183,19 @@ export class MemoryMonitor {
       nodes: nodes >= NODE_WALK_CAP ? `${NODE_WALK_CAP}+` : nodes,
       tickers: this.ticker?.count ?? -1,
     };
+    // Which art directories dominate the base-texture cache — categorizes a "baseTex climbing" leak
+    // (unbounded URL-keyed asset cache) down to the specific folder without a follow-up repro.
+    const tex = texTop();
     log.warn(reason, {
       heap: heapInfo,
       pools: pools.rows.map((r) => ({ label: r.label, idle: r.idle, estKB: round(r.estBytes / 1024) })),
       poolTotal,
       gpu,
+      texTop: tex,
     });
     // Also forward to the "full anomaly reporting" channel (parallel to the directed-sampling ring buffer):
     // any client on the network that exceeds the memory threshold reports directly to Loki.
     // reportAnomaly has a 60 s cooldown for the mem type internally, so the 5 s sampling cadence will not flood the logs.
-    reportAnomaly('mem', reason, { heap: heapInfo, poolTotal, gpu });
+    reportAnomaly('mem', reason, { heap: heapInfo, poolTotal, gpu, texTop: tex });
   }
 }

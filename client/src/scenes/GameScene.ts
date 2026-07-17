@@ -95,6 +95,12 @@ export interface GameSceneOptions {
    * free play + never-fail mode. Only used together with `level=ch0_tutorial`.
    */
   tutorial?: boolean;
+  /**
+   * Owner-indexed display names (bottom = owner 0 = human, top = owner 1 = AI/level) written into the
+   * recorded replay's `meta.players` so the replay player can label the bases + viewpoint. Ignored
+   * for netplay (server records that match) — netplay names are written in nav/result.ts instead.
+   */
+  players?: { bottom?: string; top?: string };
 }
 
 export class GameScene implements Scene {
@@ -122,6 +128,7 @@ export class GameScene implements Scene {
         ...(opts.decks ? { decks: opts.decks } : {}),
         ...(opts.seed !== undefined ? { seed: opts.seed } : {}),
         ...(opts.difficulty !== undefined ? { difficulty: opts.difficulty } : {}),
+        ...(opts.players ? { players: opts.players } : {}),
       });
       engine = match.engine;
       buildReplay = match.buildReplay;
@@ -136,6 +143,10 @@ export class GameScene implements Scene {
 
     void preloadL1CardArtTextures();
     this.renderer = new GameRenderer(engine, layout, input, opts.net ?? false, false, opts.profiles ?? {}, opts.equippedSkins ?? [], opts.cardInstances ?? null, opts.equipmentInv ?? null, opts.tutorial ?? false, battleLabels);
+    // Campaign (PvE) levels reword the surrender button/dialog as "exit level" —
+    // surrendering to a stage reads oddly. Mirror createLocalMatch's mode resolution.
+    const isCampaign = !opts.net && (opts.mode ?? (opts.level ? 'campaign' : 'pvp')) === 'campaign';
+    this.renderer.setCampaignMode(isCampaign);
     this.renderer.init();
     // Attach the recording (if any) to the end-of-game callback.
     this.renderer.onGameEnd = (winner, stats, summary) => this.cb.onGameEnd(winner, stats, buildReplay(winner), summary);

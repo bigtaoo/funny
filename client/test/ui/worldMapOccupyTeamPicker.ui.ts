@@ -42,7 +42,7 @@ function buildHarness(opts: {
   const closeModal = vi.fn();
   const showDeployDialog = vi.fn();
   const renderHud = vi.fn();
-  const getTeams = vi.fn().mockResolvedValue(opts.teams ?? [{ id: 't1', name: 'Alpha', army: [{ initialHp: 60 }, { initialHp: 60 }] }]);
+  const getTeams = vi.fn().mockResolvedValue(opts.teams ?? [{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }, { cardInstanceId: 'c2' }] }]);
   const startMarch = vi.fn().mockResolvedValue({ toTile: `${WORLD_ID}:${ANCHOR.x}:${ANCHOR.y}` });
   const getMarches = vi.fn().mockResolvedValue([]);
   const getMe = vi.fn().mockResolvedValue({ joined: true } as PlayerWorldView);
@@ -52,7 +52,7 @@ function buildHarness(opts: {
     marches: [],
     occupations: [],
     myAttackTiles: new Set<string>(),
-    me: { joined: true, mainBaseTile: `${WORLD_ID}:${ANCHOR.x}:${ANCHOR.y}`, cardState: opts.cardState } as PlayerWorldView,
+    me: { joined: true, mainBaseTile: `${WORLD_ID}:${ANCHOR.x}:${ANCHOR.y}`, cardState: opts.cardState ?? { c1: { currentTroops: 60 }, c2: { currentTroops: 60 } } } as PlayerWorldView,
     parseTileId(tileId: string): [number, number] {
       const parts = tileId.split(':');
       return [Number(parts[parts.length - 2]), Number(parts[parts.length - 1])];
@@ -112,6 +112,18 @@ describe('WorldMapNet.showTeamPicker — occupy uses the team picker (§4.2)', (
     await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
     const buttons = showModal.mock.calls[0][1] as { label: string }[];
     expect(buttons.some((b) => b.label.startsWith('Alpha'))).toBe(false);
+  });
+
+  it('a legacy unit-type team (pre-2026-07-17 migration, no cards) is omitted — it carries 0 and can never be dispatched', async () => {
+    const { net, showModal } = buildHarness({
+      teams: [{ id: 't1', name: 'Legacy', army: [{ initialHp: 240 }, { initialHp: 240 }] }],
+      cardState: {},
+    });
+    await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
+    const buttons = showModal.mock.calls[0][1] as { label: string }[];
+    expect(buttons.some((b) => b.label.startsWith('Legacy'))).toBe(false);
+    const head = showModal.mock.calls[0][0] as string[];
+    expect(head).toContain(t('world.team.noTeamsOccupy'));
   });
 
   it('a team with zero committed troops (e.g. its cards were wiped) is omitted — it would just die on contact', async () => {

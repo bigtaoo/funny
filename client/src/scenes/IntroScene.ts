@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js-legacy';
+import { makeText } from '../render/pixiText';
 import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
@@ -129,7 +130,7 @@ export class IntroScene implements Scene {
     const startY    = (h - blockH) / 2 - h * 0.05;
 
     STORY_LINE_KEYS.forEach((key, i) => {
-      const text = new PIXI.Text(t(key), {
+      const text = makeText(t(key), {
         fontSize,
         fill: ui.dark,
         fontFamily: 'serif',
@@ -147,7 +148,7 @@ export class IntroScene implements Scene {
     });
 
     // Tap-to-continue hint
-    this.hintText = new PIXI.Text(t('story.tapToContinue'), {
+    this.hintText = makeText(t('story.tapToContinue'), {
       fontSize: FS.label,
       fill: ui.mid,
       fontFamily: 'monospace',
@@ -158,7 +159,7 @@ export class IntroScene implements Scene {
     this.container.addChild(this.hintText);
 
     // Skip button (top-right)
-    const skipText = new PIXI.Text(t('story.skip'), {
+    const skipText = makeText(t('story.skip'), {
       fontSize: FS.label,
       fill: ui.mid,
       fontFamily: 'monospace',

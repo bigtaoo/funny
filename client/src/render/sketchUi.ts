@@ -18,6 +18,7 @@ import { SketchPen } from './sketch';
 import { palette } from './theme';
 import { bake } from './bake';
 import { FS } from './fontScale';
+import { makeText } from './pixiText';
 
 /**
  * Shared scene palette. Paper / ruled line / margin / red flow from the theme
@@ -55,7 +56,8 @@ export const ui = {
  * centralised here so that swap is one edit across every scene.
  */
 export function txt(label: string, size: number, color: number, bold = false, wordWrapWidth?: number): PIXI.Text {
-  return new PIXI.Text(label, {
+  // makeText() applies CJK anti-clip padding (see render/pixiText.ts) — layout-neutral.
+  return makeText(label, {
     fontSize: size, fill: color, fontFamily: 'monospace',
     fontWeight: bold ? 'bold' : 'normal',
     ...(wordWrapWidth !== undefined ? { wordWrap: true, wordWrapWidth, breakWords: true } : {}),

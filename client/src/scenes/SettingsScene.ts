@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js-legacy';
+import { makeText } from '../render/pixiText';
 import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
@@ -23,7 +24,7 @@ import { FS, snapFont } from '../render/fontScale';
 const LOCALE_LABEL: Record<Locale, string> = { zh: '中文', en: 'English', de: 'Deutsch' };
 
 function txt(label: string, size: number, color: number, bold = false): PIXI.Text {
-  return new PIXI.Text(label, {
+  return makeText(label, {
     fontSize: size, fill: color, fontFamily: 'monospace',
     fontWeight: bold ? 'bold' : 'normal',
   });
@@ -527,7 +528,7 @@ export class SettingsScene implements Scene {
     title.anchor.set(0.5, 0); title.x = w / 2; title.y = py + Math.round(h * 0.03);
     this.container.addChild(title);
 
-    const body = new PIXI.Text(t('settings.deleteAccount.confirmBody'), {
+    const body = makeText(t('settings.deleteAccount.confirmBody'), {
       fontSize: FS.heading, fill: C.dark, fontFamily: 'monospace',
       wordWrap: true, wordWrapWidth: pw * 0.86, align: 'center', lineHeight: Math.round(h * 0.036),
     });

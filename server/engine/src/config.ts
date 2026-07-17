@@ -281,13 +281,16 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
   // PvP anchor rebalance (2026-07-02): attack 22→14. At 22 melee DPS Max was a
   // tank (190 HP + armor 2) that ALSO out-DPSed the field, winning ~91% of equal-
   // ink duels at any cost (cost-insensitive → a stat overload, not a price issue;
-  // see pvpSim.ts / BALANCE.md §5.1). Cutting attack to 14 (still > Infantry 12,
-  // < Berserker 18) keeps the durable-vanguard identity but removes the DPS
-  // overload; paired with cost 5→6 (CARD_DEFINITIONS) it lands ~54% equal-ink.
+  // see pvpSim.ts / BALANCE.md §5.1). Cutting attack + cost 5→6 landed ~54%.
+  // Ghost-fix re-tune (2026-07-17): the stacked-unit targeting fix (Board multi-
+  // occupant grid) removed the swarm "ghost" artifact that had been suppressing
+  // Max's real duel rate; equal-ink jumped 54%→73%, above the ≤65% guard. Trimming
+  // attack 14→11 (now ≤ Infantry 12 — Max leans on 190 HP + armor 2 + burstOnSingle,
+  // not raw DPS) restores the intended ~54% without touching the tank identity.
   [UnitType.Max]: {
     type: UnitType.Max,
     hp: 190,
-    attack: 14,
+    attack: 11,
     attackInterval: 1.3,
     speed: 1.0,
     range: 1,

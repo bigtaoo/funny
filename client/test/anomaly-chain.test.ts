@@ -230,6 +230,38 @@ describe('ANR watchdog: backgrounded tab does not report a false stall (Bug: hid
     const body = JSON.parse((cap.fetch.mock.calls[0] as [string, RequestInit])[1].body as string);
     expect(body.events[0].type).toBe('anr');
   });
+
+  it('anr detail carries the active scene + registered context (GPU counters) for attribution', async () => {
+    const { mod, cap } = await freshAnomaly({ publicId: PUBLIC_ID });
+    mod.installAnomalyWatchers();
+    mod.setActiveScene('WorldMapScene');
+    mod.setAnrContextProvider(() => ({ gpu: { tex: 12, baseTex: 1105, tickers: 5 } }));
+    await vi.advanceTimersByTimeAsync(1000);
+
+    vi.setSystemTime(new Date(Date.now() + 20_000)); // genuine visible stall
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(1500);
+
+    const body = JSON.parse((cap.fetch.mock.calls[0] as [string, RequestInit])[1].body as string);
+    const detail = JSON.parse(body.events[0].detail as string);
+    expect(detail.scene).toBe('WorldMapScene');
+    expect(detail.gpu.baseTex).toBe(1105);
+    expect(detail.stallMs).toBeGreaterThan(4000);
+  });
+
+  it('a throwing context provider never breaks the anr report', async () => {
+    const { mod, cap } = await freshAnomaly({ publicId: PUBLIC_ID });
+    mod.installAnomalyWatchers();
+    mod.setAnrContextProvider(() => { throw new Error('provider boom'); });
+    await vi.advanceTimersByTimeAsync(1000);
+
+    vi.setSystemTime(new Date(Date.now() + 20_000));
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(1500);
+
+    expect(cap.fetch).toHaveBeenCalledTimes(1);
+    expect(JSON.parse((cap.fetch.mock.calls[0] as [string, RequestInit])[1].body as string).events[0].type).toBe('anr');
+  });
 });
 
 // ── Crash sentinel catch-up report (regression: 2026-06-27 Bug B — immediate eager flush, no 1.5s batch wait) ────────────────

@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js-legacy';
+import { makeText } from '../render/pixiText';
 import { Scene } from './SceneManager';
 import { GameRenderer } from '../render/GameRenderer';
 import { ILayout } from '../layout/ILayout';
@@ -8,6 +9,7 @@ import {
   getLevel,
   ReplayInputSource,
   ReplayVersionError,
+  Side,
   type Replay,
   type LevelDefinition,
 } from '../game';
@@ -21,8 +23,13 @@ import { FS, snapFont } from '../render/fontScale';
  * Re-creates a recorded match by building a fresh engine on the replay's
  * `seed` + `mode` (+ level for campaign) and driving it with a
  * {@link ReplayInputSource}. The {@link GameRenderer} runs in *spectator* mode
- * (no input wiring), and this scene draws its own transport controls on top:
- * play/pause, speed cycle (1×/2×/4×), a progress bar, and exit.
+ * (no input wiring, surrender hidden, base/viewpoint name labels drawn), and this
+ * scene draws its own transport controls on top: play/pause, speed cycle
+ * (1×/2×/4×), a progress bar, and exit.
+ *
+ * Tapping a base flips the viewpoint (mirrors the whole board): a fresh renderer
+ * for the opposite side is built and fast-forwarded to the current tick, then the
+ * old and new renderers cross-fade. Playback position is preserved.
  *
  * Playback never stalls — `ReplayInputSource.take` always has the answer — and
  * stops when the sim reaches game-over or the recording's `endFrame`.
@@ -38,7 +45,7 @@ const SPEEDS = [1, 2, 4] as const;
 export class ReplayScene implements Scene {
   readonly container: PIXI.Container;
 
-  private readonly renderer: GameRenderer | null = null;
+  private renderer: GameRenderer | null = null;
   private readonly endFrame: number;
   private readonly errorMsg: string | null = null;
 
@@ -46,20 +53,34 @@ export class ReplayScene implements Scene {
   private ended = false;
   private speedIdx = 0;
 
+  /** Owner-indexed display names (0 = bottom, 1 = top), read from the replay with generic fallback. */
+  private readonly replayNames: readonly [string, string];
+  /** Which side is currently at the bottom (the viewpoint). Flipped by base taps. */
+  private curSide: Side = Side.Bottom;
+
+  /**
+   * In-flight viewpoint cross-fade. While set, both renderers are frozen and only
+   * the alpha tween advances; on completion the old renderer is destroyed and
+   * `next` becomes the live renderer.
+   */
+  private transition: { next: GameRenderer; elapsed: number } | null = null;
+  private static readonly FADE_S = 0.35;
+
   // Overlay widgets (rebuilt label text each frame).
   private readonly overlay = new PIXI.Container();
   private playLabel!: PIXI.Text;
   private speedLabel!: PIXI.Text;
   private progressFill!: PIXI.Graphics;
   private statusLabel!: PIXI.Text;
+  private statusPanel!: PIXI.Container;
   private readonly barX: number;
   private readonly barY: number;
   private readonly barW: number;
 
   constructor(
     private readonly layout: ILayout,
-    input: InputManager,
-    replay: Replay,
+    private readonly input: InputManager,
+    private readonly replay: Replay,
     private readonly cb: ReplaySceneCallbacks,
     /**
      * Explicit level to rebuild the sim against. Required for siege replays (G3-2c):
@@ -67,32 +88,22 @@ export class ReplayScene implements Scene {
      * so the level can't be derived from a campaign id. When omitted, campaign replays
      * fall back to `getLevel(meta.levelId)`.
      */
-    providedLevel?: LevelDefinition,
+    private readonly providedLevel?: LevelDefinition,
   ) {
     this.container = new PIXI.Container();
 
+    // Owner-indexed names for the base plates / viewpoint tag; generic fallback when the
+    // recording carries none (siege / server-history / pre-feature replays).
+    const players = this.replay.meta?.players;
+    this.replayNames = [
+      players?.bottom || t('replay.player1'),
+      players?.top    || t('replay.player2'),
+    ];
+
     let endFrame = 0;
     try {
-      const src = new ReplayInputSource(replay);
-      endFrame = src.endFrame;
-      const level =
-        providedLevel
-        ?? (replay.mode === 'campaign' && replay.meta?.levelId
-          ? getLevel(replay.meta.levelId)
-          : null);
-      const engine = createGameEngine(
-        {
-          seed: replay.seed,
-          players: [{ id: 0 }, { id: 1 }],
-          mode: replay.mode,
-          ...(level ? { level } : {}),
-          ...(replay.decks ? { decks: replay.decks } : {}),
-        },
-        src,
-      );
-      this.renderer = new GameRenderer(engine, layout, input, false, /* spectator */ true);
-      this.renderer.init();
-      this.container.addChild(this.renderer.container);
+      endFrame = new ReplayInputSource(replay).endFrame;
+      this.renderer = this.buildRenderer(Side.Bottom, 0);
     } catch (e) {
       this.renderer = null;
       this.errorMsg =
@@ -100,6 +111,7 @@ export class ReplayScene implements Scene {
       this.playing = false;
       this.ended = true;
     }
+    if (this.renderer) this.container.addChild(this.renderer.container);
     this.endFrame = Math.max(1, endFrame);
 
     const w = layout.designWidth;
@@ -111,6 +123,17 @@ export class ReplayScene implements Scene {
   }
 
   update(dt: number): void {
+    // Viewpoint cross-fade: freeze playback, advance only the alpha tween.
+    if (this.transition && this.renderer) {
+      this.transition.elapsed += dt;
+      const p = Math.min(1, this.transition.elapsed / ReplayScene.FADE_S);
+      this.renderer.container.alpha = 1 - p;
+      this.transition.next.container.alpha = p;
+      if (p >= 1) this.finishTransition();
+      this.refreshOverlay();
+      return;
+    }
+
     if (this.renderer && this.playing && !this.ended) {
       this.renderer.update(dt * SPEEDS[this.speedIdx]!);
       if (this.renderer.isGameOver() || this.renderer.currentTick >= this.endFrame) {
@@ -122,8 +145,76 @@ export class ReplayScene implements Scene {
   }
 
   destroy(): void {
+    this.transition?.next.destroy();
+    this.transition = null;
     this.renderer?.destroy();
     this.container.destroy({ children: true });
+  }
+
+  // ─── Renderer build + viewpoint switch ─────────────────────────────────────────
+
+  /**
+   * Build a spectator renderer for `side`, fast-forwarded to `ffToTick`. The engine
+   * is deterministic, so a fresh engine + {@link ReplayInputSource} re-run to the
+   * same tick reproduces the exact board state (units/buildings/HP), only losing the
+   * transient VFX (in-flight arrows / explosions) of intermediate frames — acceptable.
+   */
+  private buildRenderer(side: Side, ffToTick: number): GameRenderer {
+    const src = new ReplayInputSource(this.replay);
+    const level =
+      this.providedLevel
+      ?? (this.replay.mode === 'campaign' && this.replay.meta?.levelId
+        ? getLevel(this.replay.meta.levelId)
+        : null);
+    const engine = createGameEngine(
+      {
+        seed: this.replay.seed,
+        players: [{ id: 0 }, { id: 1 }],
+        mode: this.replay.mode,
+        ...(level ? { level } : {}),
+        ...(this.replay.decks ? { decks: this.replay.decks } : {}),
+      },
+      src,
+    );
+
+    // Fast-forward without rendering: step one tick at a time until the target is
+    // reached, or the sim stops advancing (game over) — the no-progress guard makes
+    // this terminate even past the decisive frame.
+    while (engine.state.elapsedTicks < ffToTick) {
+      const before = engine.state.elapsedTicks;
+      engine.tick(1 / 30);
+      if (engine.state.elapsedTicks <= before) break;
+    }
+
+    const lay = side === this.layout.localSide ? this.layout : this.layout.mirrored();
+    const renderer = new GameRenderer(
+      engine, lay, this.input,
+      /* netEnabled */ false, /* spectator */ true,
+      {}, [], null, null, /* tutorial */ false, {},
+      this.replayNames,
+    );
+    renderer.init();
+    return renderer;
+  }
+
+  /** Tap-a-base handler: flip the viewpoint and start the cross-fade (no-op mid-transition). */
+  private switchViewpoint(): void {
+    if (this.transition || !this.renderer) return;
+    const targetSide = this.curSide === Side.Bottom ? Side.Top : Side.Bottom;
+    const next = this.buildRenderer(targetSide, this.renderer.currentTick);
+    next.container.alpha = 0;
+    // Insert just beneath the overlay so the transport controls stay on top.
+    this.container.addChildAt(next.container, this.container.getChildIndex(this.overlay));
+    this.curSide = targetSide;
+    this.transition = { next, elapsed: 0 };
+  }
+
+  private finishTransition(): void {
+    if (!this.transition) return;
+    this.renderer?.destroy();
+    this.renderer = this.transition.next;
+    this.renderer.container.alpha = 1;
+    this.transition = null;
   }
 
   // ─── Overlay ─────────────────────────────────────────────────────────────────
@@ -141,7 +232,7 @@ export class ReplayScene implements Scene {
     this.overlay.addChild(track, this.progressFill);
 
     // "REPLAY" tag (top-left).
-    const tag = new PIXI.Text(`● ${t('replay.title')}`, {
+    const tag = makeText(`● ${t('replay.title')}`, {
       fontSize: snapFont(Math.round(btnH * 0.5)),
       fill: 0xaa2222,
       fontWeight: 'bold',
@@ -184,19 +275,51 @@ export class ReplayScene implements Scene {
     }
     this.makeButton(x, rowY, exitW, btnH, t('replay.exit'), () => this.cb.onExit());
 
-    // Centre status text ("replay ended" / error), hidden until needed.
-    this.statusLabel = new PIXI.Text(this.errorMsg ?? '', {
+    // Tap-a-base hotspots (both toggle the viewpoint — a 2-player match). Placed on the
+    // overlay so they sit above the board; own base = near side, enemy = far side. Both
+    // sides keep own/enemy on the same screen positions, so these never need repositioning.
+    if (this.renderer) {
+      this.addBaseHotspot(this.layout.playerBaseRect());
+      this.addBaseHotspot(this.layout.enemyBaseRect());
+    }
+
+    // Centre status text ("replay ended" / error) on a shared toast-style panel, sitting
+    // below the game-over win/lose box (which the renderer draws centred) so the two never
+    // overlap. Persistent (does not auto-dismiss); hidden until needed.
+    const panelW = Math.round(w * 0.42);
+    const panelH = Math.round(this.layout.designHeight * 0.11);
+    const panelX = Math.round((w - panelW) / 2);
+    const panelY = Math.round(this.layout.designHeight * 0.66);
+    this.statusPanel = sketchPanel(panelW, panelH, {
+      fill: ui.dark, fillAlpha: 0.92, border: 0xaa2222, width: 2, seed: seedFor(panelW, panelH, 7),
+    });
+    this.statusPanel.x = panelX;
+    this.statusPanel.y = panelY;
+    this.statusLabel = makeText(this.errorMsg ?? '', {
       fontSize: FS.headline,
-      fill: 0xaa2222,
+      fill: 0xffffff,
       fontWeight: 'bold',
       fontFamily: 'monospace',
       align: 'center',
     });
     this.statusLabel.anchor.set(0.5, 0.5);
-    this.statusLabel.x = w / 2;
-    this.statusLabel.y = this.layout.designHeight / 2;
+    this.statusLabel.x = panelX + panelW / 2;
+    this.statusLabel.y = panelY + panelH / 2;
+    this.statusPanel.visible = this.errorMsg !== null;
     this.statusLabel.visible = this.errorMsg !== null;
-    this.overlay.addChild(this.statusLabel);
+    this.overlay.addChild(this.statusPanel, this.statusLabel);
+  }
+
+  /** A transparent, tappable rect over a base rect that toggles the viewpoint. */
+  private addBaseHotspot(r: { x: number; y: number; w: number; h: number }): void {
+    const hot = new PIXI.Graphics();
+    hot.beginFill(0xffffff, 0.001); // near-zero alpha: invisible but hit-testable
+    hot.drawRect(r.x, r.y, r.w, r.h);
+    hot.endFill();
+    hot.eventMode = 'static';
+    hot.cursor = 'pointer';
+    hot.on('pointertap', () => this.switchViewpoint());
+    this.overlay.addChild(hot);
   }
 
   /** A rounded button with a centred label; returns the label for live updates. */
@@ -215,7 +338,7 @@ export class ReplayScene implements Scene {
     bg.cursor = 'pointer';
     bg.on('pointertap', onTap);
 
-    const label = new PIXI.Text(text, {
+    const label = makeText(text, {
       fontSize: snapFont(Math.round(h * 0.42)),
       fill: 0xffffff,
       fontWeight: 'bold',
@@ -244,14 +367,11 @@ export class ReplayScene implements Scene {
     this.playLabel.text = this.playing ? t('replay.pause') : t('replay.play');
     this.speedLabel.text = t('replay.speed', { n: SPEEDS[this.speedIdx]! });
 
-    if (this.errorMsg) {
-      this.statusLabel.text = this.errorMsg;
-      this.statusLabel.visible = true;
-    } else if (this.ended) {
-      this.statusLabel.text = t('replay.ended');
-      this.statusLabel.visible = true;
-    } else {
-      this.statusLabel.visible = false;
-    }
+    let status: string | null = null;
+    if (this.errorMsg) status = this.errorMsg;
+    else if (this.ended) status = t('replay.ended');
+    if (status !== null) this.statusLabel.text = status;
+    this.statusPanel.visible = status !== null;
+    this.statusLabel.visible = status !== null;
   }
 }

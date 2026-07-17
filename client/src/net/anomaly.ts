@@ -145,6 +145,30 @@ export function reportAnomaly(type: AnomalyType, msg: string, detail?: Record<st
   anomalyReporter.report(type, msg, detail);
 }
 
+// ── ANR attribution context ─────────────────────────────────────────────────────
+// The watchdog only sees a wall-clock drift; it has no idea *what* was on screen or running when the
+// main thread froze. These two hooks let the higher layers (SceneManager / MemoryMonitor) feed that
+// context in without anomaly.ts (net layer) reverse-importing PIXI or the scene graph:
+//   setActiveScene(name)  — SceneManager stamps the current scene on every swap (a plain string).
+//   setAnrContextProvider — MemoryMonitor registers a getter for live GPU/texture counters.
+// Both are folded into the `anr` event detail so a recurring freeze is attributable to a screen
+// (e.g. "always stalls on WorldMap") instead of being an anonymous stallMs with no lead.
+
+let activeScene = '';
+let anrContextProvider: (() => Record<string, unknown>) | null = null;
+
+/** Stamp the currently-mounted scene name (called by SceneManager on each swap). Attached to anr reports. */
+export function setActiveScene(name: string): void { activeScene = name; }
+
+/** Register a getter for extra ANR context (GPU/texture counters). Called once by MemoryMonitor. */
+export function setAnrContextProvider(fn: (() => Record<string, unknown>) | null): void { anrContextProvider = fn; }
+
+function anrContext(): Record<string, unknown> {
+  let extra: Record<string, unknown> = {};
+  try { extra = anrContextProvider?.() ?? {}; } catch { /* provider must never break the report */ }
+  return { ...(activeScene ? { scene: activeScene } : {}), ...extra };
+}
+
 // ── Crash sentinel (localStorage) ───────────────────────────────────────────────────────────────
 const SENTINEL_KEY = 'nw_session_sentinel';
 const HEARTBEAT_MS = 15_000;
@@ -270,7 +294,7 @@ function installAnrWatchdog(): void {
     const drift = now - expected;
     const wasHidden = hiddenSinceLastTick || g.document?.hidden === true;
     if (!wasHidden && drift > STALL_MS) {
-      reportAnomaly('anr', `main thread stalled ~${Math.round(drift)}ms`, { stallMs: Math.round(drift) });
+      reportAnomaly('anr', `main thread stalled ~${Math.round(drift)}ms`, { stallMs: Math.round(drift), ...anrContext() });
       log.warn(`main thread stalled ~${Math.round(drift)}ms`);
     }
     hiddenSinceLastTick = false;

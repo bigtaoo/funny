@@ -55,6 +55,7 @@ import { installGlobalErrorHandlers, setToastSink } from './net/log';
 import { GlobalToast } from './ui/GlobalToast';
 import { ui as C } from './render/sketchUi';
 import { setBakeRenderer } from './render/bake';
+import { installTextPaddingFloor } from './render/pixiText';
 import { preloadBoot } from './assets/bootManifest';
 import { LoadingOverlay } from './render/LoadingOverlay';
 import { createAppCore } from './app/createAppCore';
@@ -362,6 +363,10 @@ export async function startApp(platform: IPlatform): Promise<void> {
     resolution:      platform.devicePixelRatio,
     autoDensity:     true,
   });
+
+  // Raise the global text-padding floor so no PIXI.Text (migrated to makeText or not)
+  // can clip tall CJK glyph tops. See render/pixiText.ts. Layout-neutral.
+  installTextPaddingFloor();
 
   // Procedural art (sketch.ts) bakes static board layers to textures via this renderer.
   setBakeRenderer(app.renderer);

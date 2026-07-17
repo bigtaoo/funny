@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js-legacy';
+import { makeText } from '../render/pixiText';
 import { Scene } from './SceneManager';
 import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
@@ -302,7 +303,7 @@ export class DailyScene implements Scene {
 
       // Label is wrapped and width-capped to the left ~62% of the card so long
       // labels (e.g. "Clear any PvE level") can never grow into the right-aligned state text.
-      const label = new PIXI.Text(t(labelKey as TranslationKey), {
+      const label = makeText(t(labelKey as TranslationKey), {
         fontSize: snapFont(Math.round(cardH * 0.3)), fill: 0x333333, fontFamily: 'monospace',
         wordWrap: true, wordWrapWidth: cardW * 0.6, breakWords: true,
       });

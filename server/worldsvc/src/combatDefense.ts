@@ -81,7 +81,14 @@ export class DefenseService {
     worldId: string,
     accountId: string,
     sid: string,
-  ): Promise<{ siegeId: string; seed: number; outcome: SiegeOutcome; level: Record<string, unknown> }> {
+  ): Promise<{
+    siegeId: string;
+    seed: number;
+    outcome: SiegeOutcome;
+    level: Record<string, unknown>;
+    attackerName: string;
+    defenderName: string;
+  }> {
     const siege = await this.core.deps.cols.sieges.findOne({ _id: sid, worldId });
     if (!siege) throw new SlgError('NOT_FOUND', 'Battle report not found');
     if (siege.attackerId !== accountId && siege.defenderId !== accountId) {
@@ -96,7 +103,24 @@ export class DefenseService {
       siege.tileLevel ?? 1,
       siege.seed,
     );
-    return { siegeId: sid, seed: siege.seed, outcome: siege.outcome, level };
+    // Resolve both sides' display names for the replay's base plates / viewpoint tag (§16.3).
+    // Same source as the march under_attack push — meta profile displayName. The attacker is always a
+    // player (the march owner); the defender is a player for base/territory sieges but absent for PvE
+    // targets (strongholds / crossings / ownerless buildings) → empty name, and the client falls back to
+    // its generic placeholder (t('replay.player2')). Owner→side mapping: attacker = owner0 = bottom,
+    // defender = owner1 = top (see buildSiegeBattle).
+    const [attackerName, defenderName] = await Promise.all([
+      this.resolveDisplayName(siege.attackerId),
+      siege.defenderId ? this.resolveDisplayName(siege.defenderId) : Promise.resolve(''),
+    ]);
+    return { siegeId: sid, seed: siege.seed, outcome: siege.outcome, level, attackerName, defenderName };
+  }
+
+  /** Resolve a player's display name via the meta service; '' when meta is unavailable or the lookup fails. */
+  private async resolveDisplayName(id: string): Promise<string> {
+    if (!this.core.meta.available) return '';
+    const profile = await this.core.meta.getProfile(id).catch(() => null);
+    return profile?.displayName ?? '';
   }
 
   /**

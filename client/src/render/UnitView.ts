@@ -119,9 +119,12 @@ const MARKER_Y = 12;   // fallback feet ground Y (circle units / no shadow)
 const HIT_FLASH_COLOR = 0xff5a2b;
 
 /**
- * Faction ground marker — a soft highlighter wash overlaid on the unit's shadow
- * (cx, cy = shadow center; rx, ry = wash half-extents). Two overlapping ellipses
- * give an uneven marker feel rather than a flat disc.
+ * Faction ground marker — a highlighter wash overlaid on the unit's shadow
+ * (cx, cy = shadow center; rx, ry = wash half-extents). Three stacked ellipses:
+ * a wide soft halo, a stronger mid disc, and a saturated core, so every unit
+ * casts an unmistakable blue (us) or red (enemy) footprint readable at a glance
+ * across a busy board — this is the primary friend/foe signal for full-colour
+ * sprites (art-direction §3.2). Alphas raised from the old faint 0.16/0.22 wash.
  */
 function drawFactionMarker(
   g: PIXI.Graphics, side: Side,
@@ -129,8 +132,9 @@ function drawFactionMarker(
 ): void {
   const color = side === Side.Bottom ? factionInk.friend : factionInk.enemy;
   g.clear();
-  g.beginFill(color, 0.16); g.drawEllipse(cx,       cy,       rx,        ry);        g.endFill();
-  g.beginFill(color, 0.22); g.drawEllipse(cx + 1.5, cy + 0.5, rx * 0.74, ry * 0.74); g.endFill();
+  g.beginFill(color, 0.22); g.drawEllipse(cx,       cy,       rx * 1.12, ry * 1.12); g.endFill();
+  g.beginFill(color, 0.38); g.drawEllipse(cx + 1.0, cy + 0.4, rx * 0.82, ry * 0.82); g.endFill();
+  g.beginFill(color, 0.55); g.drawEllipse(cx + 1.5, cy + 0.6, rx * 0.5,  ry * 0.5);  g.endFill();
 }
 
 const HP_BAR_WIDTH  = 20;

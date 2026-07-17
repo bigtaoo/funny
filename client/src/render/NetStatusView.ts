@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js-legacy';
+import { makeText } from './pixiText';
 import { ILayout } from '../layout/ILayout';
 import { t } from '../i18n';
 import { FS } from './fontScale';
@@ -43,7 +44,7 @@ export class NetStatusView {
     this.container.visible = false;
 
     this.pill = new PIXI.Graphics();
-    this.label = new PIXI.Text('', {
+    this.label = makeText('', {
       fontSize: FS.label, fill: 0xffffff, fontWeight: 'bold', fontFamily: 'monospace',
     });
     this.label.anchor.set(0.5);

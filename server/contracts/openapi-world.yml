@@ -554,7 +554,7 @@ components:
     # Siege spectator replay level (G3-2c): LevelDefinition rebuilt from seed + both sides' formations; client headlessly replays with the same seed.
     SiegeReplayView:
       type: object
-      required: [siegeId, seed, outcome, level]
+      required: [siegeId, seed, outcome, level, attackerName, defenderName]
       properties:
         siegeId: { type: string }
         seed: { type: integer }
@@ -562,6 +562,11 @@ components:
         level:
           type: object
           additionalProperties: true
+        # Display names for the replay's base plates / viewpoint tag (§16.3). attacker = owner0 = bottom,
+        # defender = owner1 = top. Empty string when unresolved (meta down) or PvE defender (stronghold /
+        # crossing / ownerless building) — the client falls back to a generic placeholder.
+        attackerName: { type: string }
+        defenderName: { type: string }
 
     # Compact battle-report row for the recent-sieges replay browser (last-100). role/hasReplay are relative
     # to the requester; only replayable rows (hasReplay=true) can be opened via GET /world/siege/{id}/replay.

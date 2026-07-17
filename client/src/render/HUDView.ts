@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js-legacy';
+import { makeText } from './pixiText';
 import { BASE_HP, BASE_UPGRADE_COSTS, HAND_REFRESH_COST } from '../game/config';
 import { GameState } from '../game/GameState';
 import { OwnerId } from '../game/types';
@@ -7,14 +8,18 @@ import { t } from '../i18n';
 import { getLabelTexture } from './labelDecor';
 import { drawHudButton, hudButtonText, HudButtonVariant } from './hudButton';
 import { FS, snapFont } from './fontScale';
+import { factionInk, fx } from './theme';
+import { drawInk } from './icons/currency';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const TEXT_STYLE  = { fontSize: FS.tiny, fill: 0x222222, fontFamily: 'monospace' } as const;
 const SMALL_STYLE = { fontSize: FS.micro, fill: 0x555555, fontFamily: 'monospace' } as const;
-// Surrender button — top strip.
+// Surrender button — top strip. Taller than the old 30 so it's an easier tap target.
 const BTN_W       = 100;
-const BTN_H       = 30;
+const BTN_H       = 44;
+/** Ink-well glyph box (design px) drawn left of the ink count. */
+const INK_ICON_S  = 28;
 // Bottom action buttons (upgrade / refresh) — larger, laid out inside hudBottomRightRect.
 const ACTION_LABEL_STYLE = { fontSize: FS.title, fill: 0x555555, fontFamily: 'monospace', fontWeight: 'bold' } as const;
 
@@ -43,13 +48,19 @@ export class HUDView {
 
   private timerText!:       PIXI.Text;
   private inkText!:         PIXI.Text;
+  private inkIcon!:         PIXI.Graphics;
   private playerHpGfx!:     PIXI.Graphics;
   private enemyHpGfx!:      PIXI.Graphics;
   private upgradeBtnBg!:    PIXI.Graphics;
   private upgradeBtnLabel!: PIXI.Text;
+  private upgradeGlow!:     PIXI.Graphics;
+  private upgradeArrow!:    PIXI.Text;
   private refreshBtnBg!:    PIXI.Graphics;
   private refreshBtnLabel!: PIXI.Text;
   private surrenderBtnBg!:  PIXI.Graphics;
+
+  /** Monotonic phase driver for HP-danger blink + upgrade-affordable pulse. */
+  private pulseT = 0;
 
   /** Pixel size of the bottom action buttons (set in build, per orientation). */
   private actionBtnW = 0;
@@ -75,10 +86,18 @@ export class HUDView {
   /** True when hand-refresh is currently affordable (set each frame by sync). */
   refreshEnabled = false;
 
-  constructor(layout: ILayout) {
+  /** Campaign (PvE) levels reword the surrender button/dialog as "exit level". */
+  private readonly campaign: boolean;
+
+  /** Replay/spectator playback hides the surrender button entirely (nothing to surrender). */
+  private readonly hideSurrender: boolean;
+
+  constructor(layout: ILayout, campaign = false, hideSurrender = false) {
     this.container           = new PIXI.Container();
     this.backgroundContainer = new PIXI.Container();
     this.layout              = layout;
+    this.campaign            = campaign;
+    this.hideSurrender       = hideSurrender;
     this.build();
   }
 
@@ -104,10 +123,22 @@ export class HUDView {
     const p = localOwner === 0 ? state.bottomPlayer : state.topPlayer;
     const e = localOwner === 0 ? state.topPlayer    : state.bottomPlayer;
 
+    // Danger blink / affordable pulse phases: 0..1 sinusoids. `pulse` (~0.7s) drives
+    // the gentle low-HP throb + upgrade glow; `pulseFast` (~0.3s) drives the urgent
+    // critical-HP blink + ⚠. Deterministic enough without a real clock (sync runs per frame).
+    this.pulseT += 0.15;
+    const pulse     = 0.5 + 0.5 * Math.sin(this.pulseT);
+    const pulseFast = 0.5 + 0.5 * Math.sin(this.pulseT * 2.3);
+
     this.timerText.text = this.formatTime(state.elapsedTicks / 30);
-    this.inkText.text   = `⬤ ${p.ink}`;
-    this.drawHpBar(this.playerHpGfx, p.baseHp, BASE_HP);
-    this.drawHpBar(this.enemyHpGfx,  e.baseHp, BASE_HP);
+    this.inkText.text   = `${p.ink}`;
+    this.positionInkIcon();
+    // Faction hue is fixed (us = blue, enemy = red); "low HP" is signalled by the
+    // bar blinking, NOT by turning red — otherwise our own low-HP warning would
+    // collide with the enemy's red. Critical (last cell) escalates to a fast blink
+    // plus an amber ⚠. See drawHpBar.
+    this.drawHpBar(this.playerHpGfx, p.baseHp, BASE_HP, factionInk.friend, pulse, pulseFast);
+    this.drawHpBar(this.enemyHpGfx,  e.baseHp, BASE_HP, factionInk.enemy,  pulse, pulseFast);
 
     const cost = p.nextUpgradeCost;
     if (cost === null) {
@@ -120,10 +151,43 @@ export class HUDView {
       this.upgradeEnabled       = canAfford;
       this.setUpgradeBtnStyle(canAfford);
     }
+    this.animateUpgradeFx(pulse);
 
     const canRefresh = p.ink >= HAND_REFRESH_COST;
     this.refreshEnabled = canRefresh;
     this.setRefreshBtnStyle(canRefresh);
+  }
+
+  /** Place the ink glyph just left of the (variable-width) ink count, both orientations. */
+  private positionInkIcon(): void {
+    const numLeft = this.inkText.anchor.x === 1
+      ? this.inkText.x - this.inkText.width   // landscape: right-anchored count
+      : this.inkText.x;                        // portrait: left-anchored count
+    this.inkIcon.x = numLeft - 8 - INK_ICON_S;
+    this.inkIcon.y = this.inkText.y + (this.inkText.height - INK_ICON_S) / 2;
+  }
+
+  /**
+   * Upgrade-affordable attention FX (§5): a marker-yellow glow ring that breathes
+   * around the button plus a small chevron bobbing above it. Hidden unless the
+   * upgrade is currently affordable — the button itself also flips to `primary`.
+   */
+  private animateUpgradeFx(pulse: number): void {
+    if (!this.upgradeEnabled) {
+      this.upgradeGlow.visible  = false;
+      this.upgradeArrow.visible = false;
+      return;
+    }
+    const r = this._upgradeRect;
+    const grow = 3 + 4 * pulse;
+    this.upgradeGlow.visible = true;
+    this.upgradeGlow.clear();
+    this.upgradeGlow.lineStyle(3, fx.upgrade, 0.35 + 0.5 * pulse);
+    this.upgradeGlow.drawRoundedRect(r.x - grow, r.y - grow, r.w + grow * 2, r.h + grow * 2, 8);
+
+    this.upgradeArrow.visible = true;
+    this.upgradeArrow.y = r.y - this.upgradeArrow.height - 2 - 4 * pulse; // bob toward the button
+    this.upgradeArrow.alpha = 0.55 + 0.45 * pulse;
   }
 
   // ── Surrender confirmation overlay ────────────────────────────────────────
@@ -152,7 +216,7 @@ export class HUDView {
     panel.endFill();
     overlay.addChild(panel);
 
-    const title = new PIXI.Text(t('hud.surrenderTitle'), {
+    const title = makeText(t(this.campaign ? 'hud.exitLevelTitle' : 'hud.surrenderTitle'), {
       fontSize: snapFont(Math.round(pH * 0.18)), fill: 0x222222,
       fontWeight: 'bold', fontFamily: 'monospace',
     });
@@ -169,7 +233,7 @@ export class HUDView {
     const bX  = (dw - bW) / 2;
 
     overlay.addChild(this.makeBtn(bX, y1, bW, bH, 'secondary', t('hud.surrenderCancel')));
-    overlay.addChild(this.makeBtn(bX, y2, bW, bH, 'primary',   t('hud.surrenderConfirm')));
+    overlay.addChild(this.makeBtn(bX, y2, bW, bH, 'primary',   t(this.campaign ? 'hud.exitLevelConfirm' : 'hud.surrenderConfirm')));
 
     this._surrenderCancelRect  = { x: bX, y: y1, w: bW, h: bH };
     this._surrenderConfirmRect = { x: bX, y: y2, w: bW, h: bH };
@@ -197,7 +261,7 @@ export class HUDView {
     bg.drawRoundedRect(-160, -50, 320, 100, 8);
     bg.endFill();
     const msg  = winner === null ? t('hud.draw') : (winner === localOwner ? t('hud.win') : t('hud.lose'));
-    const text = new PIXI.Text(msg, { fontSize: FS.headline, fill: 0xffffff, fontWeight: 'bold' });
+    const text = makeText(msg, { fontSize: FS.headline, fill: 0xffffff, fontWeight: 'bold' });
     text.anchor.set(0.5);
     overlay.addChild(bg, text);
 
@@ -240,7 +304,7 @@ export class HUDView {
     topBg.endFill();
 
     // Timer — landscape hugs the board's left edge; portrait keeps the strip edge.
-    this.timerText   = new PIXI.Text('0:00', { ...TEXT_STYLE, fontSize: FS.title });
+    this.timerText   = makeText('0:00', { ...TEXT_STYLE, fontSize: FS.title });
     this.timerText.x = (isLandscape ? boardLeft : topR.x) + 14;
     this.timerText.y = topR.y + (topR.h - this.timerText.height) / 2;
 
@@ -253,19 +317,24 @@ export class HUDView {
     this._enemyHpRect = { x: this.enemyHpGfx.x, y: this.enemyHpGfx.y, w: HP_BAR_W, h: HP_CELL_H };
 
     // Surrender button — visual only, no interactive. Landscape hugs the board's
-    // right edge; portrait keeps the strip edge.
+    // right edge; portrait keeps the strip edge. Hidden entirely during replay
+    // playback (spectator): there is nothing to surrender, and `_surrenderRect`
+    // stays zero so input hit-testing never triggers the confirm dialog.
     this.surrenderBtnBg = new PIXI.Graphics();
     const sBtnX = (isLandscape ? boardRight : topR.x + topR.w) - BTN_W - 8;
     const sBtnY = topR.y + (topR.h - BTN_H) / 2;
-    this.surrenderBtnBg.x = sBtnX;
-    this.surrenderBtnBg.y = sBtnY;
-    this.drawSurrenderBtn();
-    this._surrenderRect = { x: sBtnX, y: sBtnY, w: BTN_W, h: BTN_H };
+    let sLabel: PIXI.Text | null = null;
+    if (!this.hideSurrender) {
+      this.surrenderBtnBg.x = sBtnX;
+      this.surrenderBtnBg.y = sBtnY;
+      this.drawSurrenderBtn();
+      this._surrenderRect = { x: sBtnX, y: sBtnY, w: BTN_W, h: BTN_H };
 
-    const sLabel = new PIXI.Text(t('hud.surrender'), { fontSize: FS.small, fill: 0x333333, fontWeight: 'bold', fontFamily: 'monospace' });
-    sLabel.anchor.set(0.5);
-    sLabel.x = sBtnX + BTN_W / 2;
-    sLabel.y = sBtnY + BTN_H / 2;
+      sLabel = makeText(t(this.campaign ? 'hud.exitLevel' : 'hud.surrender'), { fontSize: FS.small, fill: 0x333333, fontWeight: 'bold', fontFamily: 'monospace' });
+      sLabel.anchor.set(0.5);
+      sLabel.x = sBtnX + BTN_W / 2;
+      sLabel.y = sBtnY + BTN_H / 2;
+    }
 
     // Bottom strip (full width) — rendered behind the hand cards so it
     // doesn't paint over them (see backgroundContainer wiring in GameRenderer).
@@ -275,8 +344,11 @@ export class HUDView {
     botBg.endFill();
     this.backgroundContainer.addChild(botBg);
 
-    // Ink
-    this.inkText = new PIXI.Text('⬤ 0', { ...TEXT_STYLE, fontSize: FS.title });
+    // Ink — a dedicated ink-well glyph (our faction blue) followed by the count.
+    // The glyph is positioned each frame by positionInkIcon (count width varies).
+    this.inkText = makeText('0', { ...TEXT_STYLE, fontSize: FS.title });
+    this.inkIcon = new PIXI.Graphics();
+    drawInk(this.inkIcon, INK_ICON_S, factionInk.friend);
 
     // Player HP bar
     this.playerHpGfx = new PIXI.Graphics();
@@ -291,7 +363,8 @@ export class HUDView {
       this.playerHpGfx.x   = bLR.x + bLR.w - HP_BAR_W - 14;
       this.playerHpGfx.y   = bLR.y + bLR.h * 0.58;
     } else {
-      this.inkText.x       = bLR.x + 14;
+      // Shift the count right to leave room for the glyph at the strip's left edge.
+      this.inkText.x       = bLR.x + 14 + INK_ICON_S + 8;
       this.inkText.y       = bLR.y + (bLR.h - this.inkText.height) / 2;
       this.playerHpGfx.x   = this.baseCenterX() - HP_BAR_W / 2;
       this.playerHpGfx.y   = bLR.y + (bLR.h - HP_CELL_H) / 2;
@@ -322,7 +395,7 @@ export class HUDView {
 
     // Refresh button — visual only, no interactive
     this.refreshBtnBg    = new PIXI.Graphics();
-    this.refreshBtnLabel = new PIXI.Text(t('hud.refreshCost', { cost: HAND_REFRESH_COST }), ACTION_LABEL_STYLE);
+    this.refreshBtnLabel = makeText(t('hud.refreshCost', { cost: HAND_REFRESH_COST }), ACTION_LABEL_STYLE);
     this.refreshBtnBg.x  = rRefresh.x;
     this.refreshBtnBg.y  = rRefresh.y;
     this.refreshBtnLabel.anchor.set(0.5);
@@ -333,7 +406,7 @@ export class HUDView {
 
     // Upgrade button — visual only, no interactive
     this.upgradeBtnBg    = new PIXI.Graphics();
-    this.upgradeBtnLabel = new PIXI.Text(t('hud.upgradeCost', { cost: BASE_UPGRADE_COSTS[0]! }), ACTION_LABEL_STYLE);
+    this.upgradeBtnLabel = makeText(t('hud.upgradeCost', { cost: BASE_UPGRADE_COSTS[0]! }), ACTION_LABEL_STYLE);
     this.upgradeBtnBg.x  = rUpgrade.x;
     this.upgradeBtnBg.y  = rUpgrade.y;
     this.upgradeBtnLabel.anchor.set(0.5);
@@ -342,17 +415,32 @@ export class HUDView {
     this._upgradeRect      = rUpgrade;
     this.setUpgradeBtnStyle(false);
 
+    // Upgrade attention FX (§5): breathing glow ring (behind the button) + a bobbing
+    // chevron above it. Both hidden until the upgrade is affordable (animateUpgradeFx).
+    this.upgradeGlow = new PIXI.Graphics();
+    this.upgradeGlow.visible = false;
+    this.upgradeArrow = makeText('▼', {
+      fontSize: snapFont(Math.round(rUpgrade.h * 0.5)), fill: fx.upgrade, fontWeight: 'bold', fontFamily: 'monospace',
+    });
+    this.upgradeArrow.anchor.set(0.5, 0);
+    this.upgradeArrow.x = rUpgrade.x + rUpgrade.w / 2;
+    this.upgradeArrow.y = rUpgrade.y - this.upgradeArrow.height - 2;
+    this.upgradeArrow.visible = false;
+
     // Profile-tap regions (used only in netplay, GameRenderer gates on netEnabled):
     // opponent = top strip up to the surrender button; local = bottom-left info column.
     this._enemyInfoRect  = { x: topR.x, y: topR.y, w: Math.max(0, sBtnX - topR.x), h: topR.h };
     this._playerInfoRect = { x: bLR.x, y: bLR.y, w: Math.round(this.layout.designWidth * 0.34), h: bLR.h };
 
     this.container.addChild(
-      topBg, this.timerText, this.enemyHpGfx, this.surrenderBtnBg, sLabel,
-      this.inkText,  this.playerHpGfx,
+      topBg, this.timerText, this.enemyHpGfx, this.surrenderBtnBg,
+      this.inkIcon, this.inkText, this.playerHpGfx,
       this.refreshBtnBg, this.refreshBtnLabel,
+      this.upgradeGlow,                        // behind the upgrade button
       this.upgradeBtnBg, this.upgradeBtnLabel,
+      this.upgradeArrow,                       // above the upgrade button
     );
+    if (sLabel) this.container.addChild(sLabel);
   }
 
   private baseCenterX(): number {
@@ -367,7 +455,7 @@ export class HUDView {
     const c = new PIXI.Container();
     const bg = new PIXI.Graphics();
     drawHudButton(bg, w, h, variant, { radius: 6 });
-    const txt = new PIXI.Text(label, {
+    const txt = makeText(label, {
       fontSize: snapFont(Math.round(h * 0.42)), fill: hudButtonText(variant), fontWeight: 'bold', fontFamily: 'monospace',
     });
     txt.anchor.set(0.5, 0.5);
@@ -377,17 +465,48 @@ export class HUDView {
     return c;
   }
 
-  private drawHpBar(gfx: PIXI.Graphics, hp: number, maxHp: number): void {
+  /**
+   * HP bar in the faction hue (us = blue, enemy = red). Danger is signalled by the
+   * filled cells *blinking* (alpha throb) — never by changing hue — so our low-HP
+   * alarm can't be mistaken for the enemy's red. Two tiers:
+   *   low      (≤3 cells): gentle blink on `pulse`.
+   *   critical (last cell): urgent fast blink on `pulseFast` + an amber ⚠ above the
+   *     bar. The last cell is the "one haste-rush from over" moment for BOTH bases,
+   *     so the enemy bar escalates too (it also gets a base-ring on the board).
+   */
+  private drawHpBar(
+    gfx: PIXI.Graphics, hp: number, maxHp: number, color: number, pulse: number, pulseFast: number,
+  ): void {
     gfx.clear();
-    const filled = Math.ceil((hp / maxHp) * HP_CELLS);
+    const filled   = Math.ceil((hp / maxHp) * HP_CELLS);
+    const critical = hp > 0 && filled <= 1;
+    const low      = hp > 0 && filled <= 3 && !critical;
+    const fillAlpha = critical ? 0.25 + 0.75 * pulseFast : low ? 0.35 + 0.6 * pulse : 0.9;
     for (let i = 0; i < HP_CELLS; i++) {
       const f = i < filled;
-      const d = filled <= 3;
-      gfx.beginFill(f ? (d ? 0xcc3333 : 0x333333) : 0xdddddd, f ? 0.85 : 0.5);
+      gfx.beginFill(f ? color : 0xdddddd, f ? fillAlpha : 0.4);
       gfx.lineStyle(1, 0x888888, 0.4);
       gfx.drawRect(i * (HP_CELL_W + HP_CELL_GAP), 0, HP_CELL_W, HP_CELL_H);
       gfx.endFill();
     }
+    if (critical) this.drawHpWarning(gfx, pulseFast);
+  }
+
+  /** Amber ⚠ centred above the bar, blinking on `pulseFast` — the critical-HP alarm. */
+  private drawHpWarning(gfx: PIXI.Graphics, pulseFast: number): void {
+    const cx = HP_BAR_W / 2;
+    const tw = 16, th = 13, topY = -th - 4;
+    const a = 0.4 + 0.6 * pulseFast;
+    gfx.beginFill(0xffb300, a);
+    gfx.moveTo(cx, topY);
+    gfx.lineTo(cx - tw / 2, topY + th);
+    gfx.lineTo(cx + tw / 2, topY + th);
+    gfx.closePath();
+    gfx.endFill();
+    gfx.beginFill(0x4a3200, a); // the "!" inside
+    gfx.drawRect(cx - 1, topY + 3, 2, th - 7);
+    gfx.drawRect(cx - 1, topY + th - 3, 2, 2);
+    gfx.endFill();
   }
 
   private drawSurrenderBtn(): void {

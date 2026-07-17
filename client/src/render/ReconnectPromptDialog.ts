@@ -8,6 +8,7 @@
  * is a normal, expected choice (the player just goes to the lobby).
  */
 import * as PIXI from 'pixi.js-legacy';
+import { makeText } from './pixiText';
 import type { Scene } from '../scenes/SceneManager';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from './sketchUi';
 import { snapFont } from './fontScale';
@@ -65,7 +66,7 @@ export class ReconnectPromptDialog implements Scene {
     const title = txt(t('reconnect.title'), snapFont(Math.round(unit * 0.09)), C.dark, true);
     title.anchor.set(0.5, 0);
 
-    const body = new PIXI.Text(t('reconnect.body'), {
+    const body = makeText(t('reconnect.body'), {
       fontSize: snapFont(Math.round(unit * 0.05)), fill: C.dark, fontFamily: 'monospace',
       wordWrap: true, wordWrapWidth: cardW * 0.84, lineHeight: Math.round(unit * 0.07),
     });

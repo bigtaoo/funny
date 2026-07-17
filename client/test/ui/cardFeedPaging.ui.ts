@@ -53,6 +53,16 @@ function buildScene(cb: CardCallbacks): CardScene {
   return new CardScene(createLayout(1920, 1080), new InputManager(), cb);
 }
 
+function buildSceneWithInput(cb: CardCallbacks): { scene: CardScene; input: InputManager } {
+  const input = new InputManager();
+  return { scene: new CardScene(createLayout(1920, 1080), input, cb), input };
+}
+
+/** True once a row is selected: the Confirm button only renders its `(N)` count when N > 0. */
+function isRowSelected(scene: CardScene): boolean {
+  return findLabelPos(scene.container, `${t('roster.feedBtn')} (1)`) !== null;
+}
+
 function makeCard(id: string, defId: string, overrides: Partial<CardInstance> = {}): CardInstance {
   return { id, defId, level: 1, xp: 0, gear: {}, locked: false, ...overrides };
 }
@@ -162,6 +172,58 @@ describe('CardScene feed modal — paging when candidates overflow the panel', (
       expect(++guard).toBeLessThan(20);
     }
     expect(feedScrollIdxOf(scene)).toBe(0);
+  });
+
+  // Regression for the 2026-07-17 press-drag-release fix: feed-select rows fire their toggle on
+  // pointer-UP now, and a drag that starts on a row must NOT toggle it (it's a scroll-intent gesture,
+  // even though this paged list doesn't itself scroll). Drives the real handleDown/Move/Up path via
+  // the InputManager rather than calling hit.action() directly.
+  describe('press-drag-release on a feed-select row', () => {
+    function openWithRow(): { scene: CardScene; input: InputManager; rowCx: number; rowCy: number } {
+      const target = makeCard('target', 'lena');
+      const cardInv: Record<string, CardInstance> = { target, mat0: makeCard('mat0', 'max') };
+      const { scene, input } = buildSceneWithInput(baseCb(cardInv));
+      openFeed(scene, target);
+      const rowPos = findLabelPos(scene.container, `${t('card.max.name' as never)} Lv.1`);
+      expect(rowPos, 'no visible material row label').not.toBeNull();
+      const rowHit = hitUnder(modalHitsOf(scene), rowPos!);
+      expect(rowHit, 'no hit rect under the material row').toBeDefined();
+      return {
+        scene, input,
+        rowCx: rowHit!.rect.x + rowHit!.rect.w / 2,
+        rowCy: rowHit!.rect.y + rowHit!.rect.h / 2,
+      };
+    }
+
+    it('a clean tap (down+up, no drag) toggles the row selection', () => {
+      const { scene, input, rowCx, rowCy } = openWithRow();
+      expect(isRowSelected(scene)).toBe(false);
+
+      input._emitDown(rowCx, rowCy);
+      input._emitUp(rowCx, rowCy);
+
+      expect(isRowSelected(scene)).toBe(true);
+    });
+
+    it('a drag that starts on the row does NOT toggle it', () => {
+      const { scene, input, rowCx, rowCy } = openWithRow();
+      expect(isRowSelected(scene)).toBe(false);
+
+      input._emitDown(rowCx, rowCy);
+      input._emitMove(rowCx, rowCy + 40); // past DRAG_THRESHOLD
+      input._emitUp(rowCx, rowCy + 40);
+
+      expect(isRowSelected(scene)).toBe(false);
+    });
+
+    it('sub-threshold jitter still counts as a tap', () => {
+      const { scene, input, rowCx, rowCy } = openWithRow();
+      input._emitDown(rowCx, rowCy);
+      input._emitMove(rowCx, rowCy + 3); // within DRAG_THRESHOLD (6)
+      input._emitUp(rowCx, rowCy + 3);
+
+      expect(isRowSelected(scene)).toBe(true);
+    });
   });
 
   it('shows no pager and keeps Cancel on-screen when candidates fit without scrolling', () => {

@@ -264,6 +264,13 @@ export interface ReplayMeta {
   levelId?: string;
   /** Winning side (0 bottom / 1 top), -1 = draw/unknown. */
   winner?: number;
+  /**
+   * Human-facing display names, owner-indexed (bottom = owner 0, top = owner 1).
+   * Written at record time; read by the replay player to label the two bases and
+   * the current viewpoint. Absent for siege / server-history replays (playback
+   * falls back to generic placeholders).
+   */
+  players?: { bottom?: string; top?: string };
   [key: string]: unknown;
 }
 

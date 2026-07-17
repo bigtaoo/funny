@@ -4,7 +4,11 @@
 // (InputMixin) and event/VFX handling lives in ./events.ts (EventMixin); each is chained on top of this
 // base into the final GameRenderer.
 import * as PIXI from 'pixi.js-legacy';
-import { BOTTOM_BUILDING_ROW, BOTTOM_SPAWN_ROW, TOP_BUILDING_ROW, TOP_SPAWN_ROW } from '../../game/config';
+import { makeText } from '../pixiText';
+import { BASE_HP, BOTTOM_BUILDING_ROW, BOTTOM_SPAWN_ROW, TOP_BUILDING_ROW, TOP_SPAWN_ROW } from '../../game/config';
+
+/** HP fraction at/under which a base is "critical" (~last HP cell) — triggers the board ring. */
+const BASE_CRITICAL_RATIO = 0.15;
 import {
   IGameEngine,
   OwnerId,
@@ -15,7 +19,8 @@ import {
   Side,
   sideToOwner,
 } from '../../game';
-import { ILayout } from '../../layout/ILayout';
+import { ILayout, Rect } from '../../layout/ILayout';
+import { t } from '../../i18n';
 import { InputManager } from '../../inputSystem/InputManager';
 import { BoardView } from '../BoardView';
 import type { BattleLabelContext } from '../battleLabels';
@@ -34,6 +39,7 @@ import { ProfilePopup, type ProfileData } from '../ProfilePopup';
 import { stateRecorder } from '../../game/replay/StateRecorder';
 import { registerPool } from '../../cache/poolRegistry';
 import { snapFont } from '../fontScale';
+import { factionInk } from '../theme';
 
 /** Optional player identities for the in-battle profile popup (netplay, S1). */
 export interface GameProfiles {
@@ -114,6 +120,15 @@ export class GameRendererBase {
   protected tutorial: TutorialDirector | null = null;
   protected tutorialEnabled = false;
 
+  /** Campaign (PvE) level: the surrender button/dialog reword to "exit level". Set before init(). */
+  protected campaignMode = false;
+  setCampaignMode(v: boolean): void { this.campaignMode = v; }
+
+  /** Replay playback: no input wiring, surrender button hidden, base/viewpoint name labels drawn. */
+  protected readonly spectator: boolean;
+  /** Owner-indexed display names (0 = bottom, 1 = top) shown by the replay player; null outside replay. */
+  protected readonly replayNames: readonly [string, string] | null;
+
   constructor(
     engine: IGameEngine,
     layout: ILayout,
@@ -126,10 +141,13 @@ export class GameRendererBase {
     equipmentInv: EngineEquipInv | null = null,
     tutorial = false,
     battleLabels: BattleLabelContext = {},
+    replayNames: readonly [string, string] | null = null,
   ) {
     this.engine     = engine;
     this.layout     = layout;
     this.netEnabled = netEnabled;
+    this.spectator   = spectator;
+    this.replayNames = replayNames;
     this.equippedSkins = equippedSkins;
     this.cardInstances = cardInstances;
     this.equipmentInv  = equipmentInv;
@@ -238,6 +256,9 @@ export class GameRendererBase {
     this.boardView.update(dt);
     this.boardView.setBaseUpgradeLevel(0, state.bottomPlayer.upgradeLevel);
     this.boardView.setBaseUpgradeLevel(1, state.topPlayer.upgradeLevel);
+    // Critical-HP ring on the board (both bases): one haste-rush from ending.
+    this.boardView.setBaseCritical(0, state.bottomPlayer.baseHp > 0 && state.bottomPlayer.baseHp <= BASE_HP * BASE_CRITICAL_RATIO);
+    this.boardView.setBaseCritical(1, state.topPlayer.baseHp > 0 && state.topPlayer.baseHp <= BASE_HP * BASE_CRITICAL_RATIO);
     this.vfxSystem.update(dt);
     if (this.vignetteAlpha > 0) {
       this.vignetteAlpha = Math.max(0, this.vignetteAlpha - dt / GameRendererBase.VIGNETTE_FADE);
@@ -324,7 +345,7 @@ export class GameRendererBase {
     this.unitView     = new UnitView(this.boardView, this.layout.localSide, this.equippedSkins, this.cardInstances, this.equipmentInv);
     this.buildingView = new BuildingView(this.boardView);
     this.handView     = new HandView(this.layout);
-    this.hudView      = new HUDView(this.layout);
+    this.hudView      = new HUDView(this.layout, this.campaignMode, /* hideSurrender */ this.spectator);
     this.netStatus    = new NetStatusView(this.layout);
     this.vfxSystem    = new VFXSystem();
 
@@ -361,6 +382,52 @@ export class GameRendererBase {
       this.profilePopup = new ProfilePopup(this.layout.designWidth, this.layout.designHeight);
       this.container.addChild(this.profilePopup.container); // topmost — above status pill
     }
+
+    // Replay playback: label both bases with their player names and mark the current viewpoint.
+    if (this.spectator && this.replayNames) this.drawReplayNameLabels();
+  }
+
+  /**
+   * Replay-only name labels (S1-RP). Two pieces:
+   *  • a name plate above each base — the local (viewpoint) side over `playerBaseRect`,
+   *    the opponent over `enemyBaseRect`, keyed off `localOwner` so they follow a viewpoint flip;
+   *  • a "View: <name>" tag in the bottom-left strip so the current viewpoint is unambiguous.
+   * Both read from `replayNames` (owner-indexed); no-op outside replay (gated by the caller).
+   */
+  protected drawReplayNameLabels(): void {
+    const names = this.replayNames!;
+    const localName = names[this.localOwner];
+    const enemyName = names[this.localOwner === 0 ? 1 : 0];
+
+    // Base name plates (over each base, centered on the base rect's top edge).
+    const plate = (name: string, rect: Rect): void => {
+      const label = makeText(name, {
+        fontSize: snapFont(22), fill: 0x333333, fontWeight: 'bold', fontFamily: 'monospace',
+      });
+      const padX = 12;
+      const bw = Math.ceil(label.width) + padX * 2;
+      const bh = Math.ceil(label.height) + 8;
+      const bx = Math.round(rect.x + rect.w / 2 - bw / 2);
+      const by = Math.round(rect.y - bh - 6);
+      const bg = new PIXI.Graphics();
+      drawHudButton(bg, bw, bh, 'secondary', { radius: 4 });
+      bg.x = bx; bg.y = by;
+      label.anchor.set(0.5);
+      label.x = bx + bw / 2;
+      label.y = by + bh / 2;
+      this.container.addChild(bg, label);
+    };
+    plate(localName, this.layout.playerBaseRect());
+    plate(enemyName, this.layout.enemyBaseRect());
+
+    // Current-viewpoint tag in the bottom-left strip (above the ink counter).
+    const vp = makeText(t('replay.viewpoint', { name: localName }), {
+      fontSize: snapFont(22), fill: 0x2a5599, fontWeight: 'bold', fontFamily: 'monospace',
+    });
+    const bl = this.layout.hudBottomLeftRect;
+    vp.x = Math.round(bl.x + 14);
+    vp.y = Math.round(bl.y + 6);
+    this.container.addChild(vp);
   }
 
   /**
@@ -372,9 +439,9 @@ export class GameRendererBase {
   protected drawOpponentLabel(): void {
     const sr = this.hudView.getSurrenderRect();
     const hp = this.hudView.getEnemyHpRect();
-    const label = new PIXI.Text(this.oppProfile!.name || '?', {
+    const label = makeText(this.oppProfile!.name || '?', {
       fontSize: snapFont(Math.max(12, Math.round(sr.h * 0.5))),
-      fill: 0x333333, fontWeight: 'bold', fontFamily: 'monospace',
+      fill: factionInk.enemy, fontWeight: 'bold', fontFamily: 'monospace',
     });
 
     const padX = 14;

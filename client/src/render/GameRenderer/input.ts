@@ -2,6 +2,7 @@
 // shared placement-highlight / card-commit logic they both drive. All hit-testing is manual in design
 // space (no PIXI interactive/hitArea). Chained onto GameRendererBase (./base.ts) — see ../GameRenderer.ts.
 import * as PIXI from 'pixi.js-legacy';
+import { makeText } from '../pixiText';
 import { ATTACK_LANES, BOARD_COLS } from '../../game/config';
 import { CardType, SpellType } from '../../game';
 import { Rect } from '../../layout/ILayout';
@@ -412,11 +413,11 @@ export function InputMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
       gfx.drawRoundedRect(-32, -42, 64, 84, 6);
       gfx.endFill();
 
-      const nameText = new PIXI.Text(label, { fontSize: FS.micro, fill: 0x222222, align: 'center' });
+      const nameText = makeText(label, { fontSize: FS.micro, fill: 0x222222, align: 'center' });
       nameText.anchor.set(0.5, 0.5);
       nameText.y = -10;
 
-      const costText = new PIXI.Text(String(cost), { fontSize: FS.tiny, fill: accentColor, fontWeight: 'bold' });
+      const costText = makeText(String(cost), { fontSize: FS.tiny, fill: accentColor, fontWeight: 'bold' });
       costText.anchor.set(0.5, 0.5);
       costText.y = 18;
 

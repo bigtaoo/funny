@@ -1,5 +1,6 @@
 import * as PIXI from 'pixi.js-legacy';
 import { netLog } from '../net/log';
+import { setActiveScene } from '../net/anomaly';
 
 const log = netLog('scene');
 
@@ -167,6 +168,8 @@ export class SceneManager {
     this.current = next;
     this.updateFaulted = false;
     this.targetStage.addChild(next.container);
+    // Stamp the scene name for anomaly attribution (ANR watchdog has no other lead on what was on screen).
+    setActiveScene(next.constructor?.name ?? 'Scene');
   }
 
   private destroyScene(scene: Scene): void {
