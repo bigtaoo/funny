@@ -164,16 +164,25 @@ export function registerPaddleRoutes(app: FastifyInstance, deps: PaddleDeps): vo
     '/shop/paddle/checkout',
     async (req: FastifyRequest, reply: FastifyReply) => {
       const accountId = deps.getAccountId(req);
-      if (!accountId) return reply.code(401).send({ ok: false, error: 'UNAUTHENTICATED' });
+      if (!accountId) {
+        return reply
+          .code(401)
+          .send({ ok: false, error: { code: 'UNAUTHENTICATED', message: 'login required' } });
+      }
 
       const { tierId } = req.body as { tierId?: string };
       if (!tierId || !IAP_TIERS[tierId]) {
-        return reply.code(400).send({ ok: false, error: 'INVALID_TIER' });
+        return reply
+          .code(400)
+          .send({ ok: false, error: { code: 'INVALID_TIER', message: 'unknown coin tier' } });
       }
 
       const priceId = priceIdForTier(tierId);
       if (!priceId) {
-        return reply.code(503).send({ ok: false, error: 'PADDLE_NOT_CONFIGURED' });
+        return reply.code(503).send({
+          ok: false,
+          error: { code: 'PADDLE_NOT_CONFIGURED', message: 'paddle price ids unset' },
+        });
       }
 
       let transactionId: string;
@@ -182,10 +191,14 @@ export function registerPaddleRoutes(app: FastifyInstance, deps: PaddleDeps): vo
       } catch (e) {
         const msg = (e as Error).message;
         app.log.error(`paddle checkout error: ${msg}`);
-        return reply.code(502).send({ ok: false, error: 'PADDLE_ERROR' });
+        return reply
+          .code(502)
+          .send({ ok: false, error: { code: 'PADDLE_ERROR', message: 'checkout create failed' } });
       }
 
-      return reply.send({ ok: true, transactionId });
+      // Client's ApiClient.request() unwraps the standard envelope and returns `json.data`, so the
+      // transactionId MUST be nested under `data` (not top-level) or the client destructure throws.
+      return reply.send({ ok: true, data: { transactionId } });
     },
   );
 
