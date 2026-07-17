@@ -112,19 +112,19 @@ export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, t
   // level = taller/denser), so scale them by width — this keeps the per-level height
   // difference instead of normalizing it away via max(w,h). The generic fallback frame
   // (types without per-level art) is TALLER than wide, so it stays on max(w,h) to stay
-  // bounded. 0.40: shrunk 0.55→0.48→0.40 for clear gaps between adjacent tiles' motifs
+  // bounded. 0.30: shrunk 0.55→0.48→0.40→0.30 for clear gaps between adjacent tiles' motifs
   // (resourceDensity=1.0 puts one on every tile); mirrors the game client (parity).
   const denom = levelTex ? tex.width : Math.max(tex.width, tex.height);
   // Per-tile jitter (2026-07-12, resource-carpet pass) — mirrors the game client's
   // drawResMotif/motifJitter (SLG map render parity): breaks the perfectly uniform grid look of
   // identical same-biome frames repeating at real play zoom, without touching density/alpha tuning.
-  sp.scale.set((tp * 0.40) / denom * jitter.scale);
+  sp.scale.set((tp * 0.30) / denom * jitter.scale);
   sp.rotation = jitter.rot;
   // Value hierarchy by opacity: resourceDensity=1.0 puts a heap on EVERY tile, so full-strength
   // everywhere reads as uniform confetti. Fade low-level heaps and keep high-level ones solid so
-  // the eye picks out valuable tiles — lv1≈0.65 → lv10=1.0. Floor raised 0.4→0.65 (2026-07-11
-  // legibility pass). Mirrors the game client (parity).
-  sp.alpha = 0.65 + 0.35 * ((lv - 1) / 9);
+  // the eye picks out valuable tiles — lv1≈0.55 → lv10=1.0. Floor 0.4→0.65 (2026-07-11) then
+  // 0.65→0.55 (2026-07-17), paired with the size shrink. Mirrors the game client (parity).
+  sp.alpha = 0.55 + 0.45 * ((lv - 1) / 9);
   [sp.x, sp.y] = toLocal(0.5, 0.52);
   sp.x += jitter.dx * tp; sp.y += jitter.dy * tp;
   g.addChild(sp);
