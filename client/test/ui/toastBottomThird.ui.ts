@@ -1,7 +1,10 @@
 // Regression coverage for the 2026-07-16 toast unification (design/game/UI_DESIGN.md §18): every
 // scene's showToast() font size was doubled (13px→26px; relative h*0.028→h*0.056) and its vertical
 // position moved off the literal bottom edge (`h-80`/`h-92`) onto the bottom-third boundary
-// `h*(2/3)` — matching what DailyScene already did before this change.
+// `h*(2/3)` — matching what DailyScene already did before this change. The later font-scale
+// unification (858cba0e) moved most of those scenes' literal 26px onto the semantic FS scale
+// (FS.heading=28 for the bordered/plain-text patterns, FS.headline=42 for CityScene's larger
+// render()-driven toast) — assertions below check against the FS tokens, not the original px.
 //
 // Covers all three structural toast patterns found in the codebase:
 //   1. Bordered-panel toast (EquipmentScene, CardScene, TeamsScene): sketchPanel bg + a
@@ -37,6 +40,7 @@ import { DailyScene } from '../../src/scenes/DailyScene';
 import { GlobalToast } from '../../src/ui/GlobalToast';
 import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { WorldApiClient, PlayerWorldView } from '../../src/net/WorldApiClient';
+import { FS } from '../../src/render/fontScale';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -108,7 +112,7 @@ describe('showToast() — bordered-panel toasts sit centered on the bottom-third
     scene.showToast(MSG);
     const lbl = findText(scene.container, MSG);
     expect(lbl).not.toBeNull();
-    expect(lbl!.style.fontSize).toBe(26);
+    expect(lbl!.style.fontSize).toBe(FS.heading);
     expect(Math.abs(lbl!.y - BOTTOM_THIRD_Y)).toBeLessThanOrEqual(1);
     scene.destroy();
   });
@@ -124,7 +128,7 @@ describe('showToast() — bordered-panel toasts sit centered on the bottom-third
     scene.showToast(MSG);
     const lbl = findText(scene.container, MSG);
     expect(lbl).not.toBeNull();
-    expect(lbl!.style.fontSize).toBe(26);
+    expect(lbl!.style.fontSize).toBe(FS.heading);
     expect(Math.abs(lbl!.y - BOTTOM_THIRD_Y)).toBeLessThanOrEqual(1);
     scene.destroy();
   });
@@ -145,7 +149,7 @@ describe('showToast() — bordered-panel toasts sit centered on the bottom-third
     scene.showToast(MSG, 0xc0392b);
     const lbl = findText(scene.container, MSG);
     expect(lbl).not.toBeNull();
-    expect(lbl!.style.fontSize).toBe(26);
+    expect(lbl!.style.fontSize).toBe(FS.heading);
     expect(Math.abs(lbl!.y - BOTTOM_THIRD_Y)).toBeLessThanOrEqual(1);
     scene.destroy();
   });
@@ -176,7 +180,7 @@ describe('showToast() — plain-text toasts sit centered on the bottom-third lin
     scene.showToast(MSG);
     const lbl = findText(scene.container, MSG);
     expect(lbl).not.toBeNull();
-    expect(lbl!.style.fontSize).toBe(26);
+    expect(lbl!.style.fontSize).toBe(FS.heading);
     expect(lbl!.y).toBe(BOTTOM_THIRD_Y);
     scene.destroy();
   });
@@ -188,7 +192,7 @@ describe('showToast() — plain-text toasts sit centered on the bottom-third lin
     scene.showToast(MSG);
     const lbl = findText(scene.container, MSG);
     expect(lbl).not.toBeNull();
-    expect(lbl!.style.fontSize).toBe(26);
+    expect(lbl!.style.fontSize).toBe(FS.heading);
     expect(lbl!.y).toBe(BOTTOM_THIRD_Y);
     scene.destroy();
   });
@@ -203,7 +207,7 @@ describe('showToast() — plain-text toasts sit centered on the bottom-third lin
     scene.showToast(MSG);
     const lbl = findText(scene.container, MSG);
     expect(lbl).not.toBeNull();
-    expect(lbl!.style.fontSize).toBe(26);
+    expect(lbl!.style.fontSize).toBe(FS.heading);
     expect(lbl!.y).toBe(BOTTOM_THIRD_Y);
     scene.destroy();
   });
@@ -237,11 +241,11 @@ describe('showToast() — render()-driven toasts sit centered on the bottom-thir
     scene.showToast(MSG, 0xc0392b);
     const lbl = findText(scene.container, MSG);
     expect(lbl).not.toBeNull();
-    expect(lbl!.style.fontSize).toBe(26);
+    expect(lbl!.style.fontSize).toBe(FS.headline);
     const panel = findPanelBehindText(scene.container, MSG);
     expect(panel).not.toBeNull();
-    // th=72 (the doubled panel height, see CityScene.ts's toast block) — panel's vertical center.
-    expect(Math.abs((panel!.y + 36) - BOTTOM_THIRD_Y)).toBeLessThanOrEqual(1);
+    // th=84 (see CityScene.ts's toast block, sized for FS.headline text) — panel's vertical center.
+    expect(Math.abs((panel!.y + 42) - BOTTOM_THIRD_Y)).toBeLessThanOrEqual(1);
     scene.destroy();
   });
 });
