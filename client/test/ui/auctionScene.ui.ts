@@ -16,6 +16,7 @@ import { AUCTION_DURATION_SEC } from '../../src/scenes/AuctionScene/base';
 import { WorldApiError, type AuctionView, type WorldApiClient } from '../../src/net/WorldApiClient';
 import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { SaveData, EquipmentInstance, CardInstance } from '../../src/game/meta/SaveData';
+import { setToastSink } from '../../src/net/log';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -26,6 +27,12 @@ const memStore = (() => {
   };
 })();
 initI18n('en', memStore, ['zh', 'en', 'de']);
+
+// Scene toasts now route through the global sink (net/log) → GlobalToast, no longer a per-scene
+// toastLayer. Capture what the scene emits so the "refuses to submit / server rejects" cases can
+// still assert the user-facing message.
+const toastMsgs: string[] = [];
+setToastSink((text) => { toastMsgs.push(text); });
 
 const [W, H] = [800, 1280];
 const WORLD_ID = 'world:1:0';
@@ -310,7 +317,7 @@ describe('AuctionScene — doCreate()', () => {
     await scene.doCreate();
 
     expect(worldApi.createAuction).not.toHaveBeenCalled();
-    expect(collectTexts(scene.toastLayer)).toContain(t('auction.selectItem'));
+    expect(toastMsgs).toContain(t('auction.selectItem'));
     scene.destroy();
   });
 
@@ -323,7 +330,7 @@ describe('AuctionScene — doCreate()', () => {
     await scene.doCreate();
 
     expect(worldApi.createAuction).not.toHaveBeenCalled();
-    expect(collectTexts(scene.toastLayer)).toContain(t('auction.selectItem'));
+    expect(toastMsgs).toContain(t('auction.selectItem'));
     scene.destroy();
   });
 
@@ -337,7 +344,7 @@ describe('AuctionScene — doCreate()', () => {
 
     await scene.doCreate();
 
-    expect(collectTexts(scene.toastLayer)).toContain(t('auction.err.noMaterial'));
+    expect(toastMsgs).toContain(t('auction.err.noMaterial'));
     scene.destroy();
   });
 });

@@ -89,7 +89,7 @@ export function NetworkMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
     async doAdd(publicId: string): Promise<void> {
       try {
         await this.cb.addFriend(publicId);
-        this.toast('friends.requestSent');
+        this.toast('friends.requestSent', 'success');
         this.view = 'list';
         this.render();
         void this.refresh();
@@ -106,12 +106,12 @@ export function NetworkMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
 
     async doRemove(publicId: string): Promise<void> {
       this.popup.hide();
-      try { await this.cb.removeFriend(publicId); this.toast('friends.removed'); } catch { this.toast('friends.error'); }
+      try { await this.cb.removeFriend(publicId); this.toast('friends.removed', 'success'); } catch { this.toast('friends.error'); }
       void this.refresh();
     }
 
     async doBlock(publicId: string): Promise<void> {
-      try { await this.cb.blockUser(publicId); this.toast('friends.blockedDone'); } catch { this.toast('friends.error'); }
+      try { await this.cb.blockUser(publicId); this.toast('friends.blockedDone', 'success'); } catch { this.toast('friends.error'); }
       void this.refresh();
     }
 
@@ -122,7 +122,7 @@ export function NetworkMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       this.clearHiddenInput();
       try {
         await this.cb.createFamily?.(name, tag);
-        this.toast('social.family.created');
+        this.toast('social.family.created', 'success');
         this.familySubview = 'info';
         this.familyCreateName = '';
         this.familyCreateTag = '';
@@ -140,7 +140,7 @@ export function NetworkMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       this.clearHiddenInput();
       try {
         await this.cb.joinFamily?.(id);
-        this.toast('social.family.joined');
+        this.toast('social.family.joined', 'success');
         this.familySubview = 'info';
         this.familyJoinId = '';
         this.slgLoaded = false;
@@ -158,7 +158,7 @@ export function NetworkMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       this.clearHiddenInput();
       try {
         await this.cb.createSect?.(name, tag);
-        this.toast('social.sect.created');
+        this.toast('social.sect.created', 'success');
         this.sectSubview = 'info';
         this.sectCreateName = '';
         this.sectCreateTag = '';
@@ -176,7 +176,7 @@ export function NetworkMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       this.clearHiddenInput();
       try {
         await this.cb.joinSect?.(id);
-        this.toast('social.sect.joined');
+        this.toast('social.sect.joined', 'success');
         this.sectSubview = 'info';
         this.sectJoinId = '';
         this.slgLoaded = false;
@@ -197,7 +197,7 @@ export function NetworkMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
         const senderName = this.cb.playerName?.() ?? '';
         await this.cb.sendWorldChat(body, senderName);
         this.worldChatInput = '';
-        this.toast('social.world.sent');
+        this.toast('social.world.sent', 'success');
         // Re-sync coins so the HUD reflects the server-side deduction (see refreshWallet doc).
         await this.cb.refreshWallet?.();
         void this.loadWorldMessages();
@@ -212,7 +212,7 @@ export function NetworkMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
     async doClaim(m: MailView): Promise<void> {
       try {
         const ok = await this.cb.claimMail(m.mailId);
-        if (ok) { m.claimed = true; this.toast('mail.claimDone'); }
+        if (ok) { m.claimed = true; this.toast('mail.claimDone', 'success'); }
         else this.toast('mail.claimFail');
       } catch (e) {
         this.toast(((e as { code?: string } | null)?.code) === 'ALREADY_CLAIMED' ? 'mail.alreadyClaimed' : 'mail.claimFail');

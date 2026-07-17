@@ -5,10 +5,11 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, getLocale, setLocale, getSupportedLocales, Locale, TranslationKey } from '../i18n';
 import { SketchPen } from '../render/sketch';
 import { palette } from '../render/theme';
-import { sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren, ui as C } from '../render/sketchUi';
+import { sketchPanel, drawLoadingOverlay, tearDownChildren, ui as C } from '../render/sketchUi';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { caretDisplay } from '../render/inputDisplay';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
+import { showToastMessage } from '../net/log';
 import { buildAvatar, AVATAR_COUNT } from '../render/avatar';
 import { FS, snapFont } from '../render/fontScale';
 
@@ -104,7 +105,6 @@ export class SettingsScene implements Scene {
   private readonly bt = new BusyTracker();
   private caretOn = true;
   private caretTimer = 0;
-  private toast: { text: string; color: number } | null = null;
   private hiddenInput: HTMLInputElement | null = null;
 
   constructor(layout: ILayout, input: InputManager, cb: SettingsSceneCallbacks) {
@@ -168,7 +168,6 @@ export class SettingsScene implements Scene {
   private openRename(): void {
     this.renameOpen = true;
     this.renameText = '';
-    this.toast = null;
     this.caretOn = true; this.caretTimer = 0;
     const el = this.hiddenInput;
     if (el) { el.value = ''; el.focus(); }
@@ -193,12 +192,12 @@ export class SettingsScene implements Scene {
       const res = await withTimeout(this.cb.onRename(name));
       if (res.ok) {
         this.playerName = res.name;
-        this.toast = { text: t('settings.renameOk'), color: C.green };
+        showToastMessage(t('settings.renameOk'), 'success');
       } else {
-        this.toast = { text: t(res.key), color: C.red };
+        showToastMessage(t(res.key), 'error');
       }
     } catch (e) {
-      this.toast = { text: e instanceof TimeoutError ? t('common.networkTimeout') : t('settings.renameFail'), color: C.red };
+      showToastMessage(e instanceof TimeoutError ? t('common.networkTimeout') : t('settings.renameFail'), 'error');
     } finally {
       this.bt.stop();
       this.render();
@@ -218,7 +217,6 @@ export class SettingsScene implements Scene {
     this.drawLanguage();
     if (this.cb.onReplayTutorial) this.drawHelp();
     this.drawAccount();
-    if (this.toast) this.drawToast();
     if (this.avatarPickerOpen) this.drawAvatarPickerOverlay();
     if (this.renameOpen) this.drawRenameOverlay();
     if (this.deleteConfirmOpen) this.drawDeleteConfirm();
@@ -319,7 +317,6 @@ export class SettingsScene implements Scene {
 
   private openAvatarPicker(): void {
     this.avatarPickerOpen = true;
-    this.toast = null;
     this.render();
   }
 
@@ -485,7 +482,6 @@ export class SettingsScene implements Scene {
 
   private openDelete(): void {
     this.deleteConfirmOpen = true;
-    this.toast = null;
     this.render();
   }
 
@@ -503,9 +499,9 @@ export class SettingsScene implements Scene {
       const res = await withTimeout(this.cb.onDeleteAccount());
       // On success the core navigates to the login screen (this scene is torn down);
       // only a failure path returns here visibly.
-      if (!res.ok) this.toast = { text: t('settings.deleteAccount.failed'), color: C.red };
+      if (!res.ok) showToastMessage(t('settings.deleteAccount.failed'), 'error');
     } catch (e) {
-      this.toast = { text: e instanceof TimeoutError ? t('common.networkTimeout') : t('settings.deleteAccount.failed'), color: C.red };
+      showToastMessage(e instanceof TimeoutError ? t('common.networkTimeout') : t('settings.deleteAccount.failed'), 'error');
     } finally {
       this.bt.stop();
       this.render();
@@ -585,21 +581,6 @@ export class SettingsScene implements Scene {
     this.container.addChild(lbl);
 
     if (enabled) this.hits.push({ rect: { x: bx, y, w: btnW, h: btnH }, fn });
-  }
-
-  private drawToast(): void {
-    const { w, h } = this;
-    const to = this.toast!;
-    const label = txt(to.text, FS.heading, 0xffffff, true);
-    label.anchor.set(0.5, 0.5);
-    const padX = Math.round(w * 0.04), padY = Math.round(h * 0.014);
-    const boxW = label.width + 2 * padX, boxH = label.height + 2 * padY;
-    const bx = (w - boxW) / 2, by = Math.round(h * 0.9);
-    const box = sketchPanel(boxW, boxH, { fill: to.color, fillAlpha: 0.95, border: to.color, width: 2, seed: seedFor(boxW, boxH, 4) });
-    box.x = bx; box.y = by;
-    this.container.addChild(box);
-    label.x = w / 2; label.y = by + boxH / 2;
-    this.container.addChild(label);
   }
 
   private drawRenameOverlay(): void {

@@ -7,6 +7,7 @@ import type { NetState } from '../net/NetClient';
 import type { PeerDc, RoomError, RoomState, PlayerSlot } from '../net/proto/transport';
 import { ProfilePopup } from '../render/ProfilePopup';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
+import { showToastMessage, type ToastKind } from '../net/log';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { FS, snapFont } from '../render/fontScale';
@@ -73,8 +74,6 @@ export class RoomScene implements Scene {
   private peerDcActive = false;
   private codeChars: string[] = [];
 
-  private toastKey: TranslationKey | null = null;
-  private toastT = 0;
 
   private dotCount = 0;
   private dotsTimer = 0;
@@ -116,11 +115,6 @@ export class RoomScene implements Scene {
         this.dotCount = (this.dotCount + 1) % 4;
         this.spinnerText.text = t(this.connectingKey) + '.'.repeat(this.dotCount);
       }
-    }
-    // Auto-dismiss the toast.
-    if (this.toastKey) {
-      this.toastT -= dt;
-      if (this.toastT <= 0) { this.toastKey = null; this.render(); }
     }
   }
 
@@ -239,9 +233,8 @@ export class RoomScene implements Scene {
     return false;
   }
 
-  private toast(key: TranslationKey): void {
-    this.toastKey = key;
-    this.toastT = 2.5;
+  private toast(key: TranslationKey, kind: ToastKind = 'error'): void {
+    showToastMessage(t(key), kind);
   }
 
   private mySlot() {
@@ -251,8 +244,7 @@ export class RoomScene implements Scene {
   private copyCode(code: string): void {
     try {
       void (navigator as Navigator | undefined)?.clipboard?.writeText(code);
-      this.toast('room.copied');
-      this.render();
+      this.toast('room.copied', 'success');
     } catch { /* clipboard unavailable — ignore */ }
   }
 
@@ -275,8 +267,6 @@ export class RoomScene implements Scene {
       case 'searching':  this.drawSearching();  break;
       case 'inRoom':     this.drawInRoom();     break;
     }
-
-    this.drawToast();
 
     // Profile overlay stays on top of every re-render (server room_state pushes
     // re-run render()); the popup keeps its own visibility state.
@@ -531,24 +521,6 @@ export class RoomScene implements Scene {
       status.anchor.set(1, 0.5); status.x = x + w - Math.round(w * 0.05); status.y = y + h / 2;
       this.container.addChild(status);
     }
-  }
-
-  private drawToast(): void {
-    if (!this.toastKey) return;
-    const { w, h } = this;
-    const msg = t(this.toastKey);
-    const label = txt(msg, FS.heading, 0xffffff, true);
-    const padX = Math.round(w * 0.04);
-    const padY = Math.round(h * 0.018);
-    const bw = label.width + padX * 2;
-    const bh = label.height + padY * 2;
-    const bx = (w - bw) / 2;
-    const by = Math.round(h * 0.135);
-    const bg = sketchPanel(bw, bh, { fill: C.red, fillAlpha: 0.92, border: C.red, width: 2, seed: seedFor(bw, bh, 1) });
-    bg.x = bx; bg.y = by;
-    this.container.addChild(bg);
-    label.anchor.set(0.5, 0.5); label.x = w / 2; label.y = by + bh / 2;
-    this.container.addChild(label);
   }
 
   /** Draw a rounded button and register its hit rect. */

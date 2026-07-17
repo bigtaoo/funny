@@ -12,9 +12,10 @@
 import { describe, it, expect } from 'vitest';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
-import { initI18n } from '../../src/i18n';
+import { initI18n, t } from '../../src/i18n';
 import { FriendsScene } from '../../src/scenes/FriendsScene';
 import type { MailView } from '../../src/net/ApiClient';
+import { setToastSink } from '../../src/net/log';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -25,6 +26,11 @@ const memStore = (() => {
   };
 })();
 initI18n('en', memStore, ['zh', 'en', 'de']);
+
+// FriendsScene toasts now route through the global sink (net/log) → GlobalToast, no longer a
+// per-scene toastKey field. Capture what the scene emits so the "delete blocked" case can assert it.
+const toastMsgs: string[] = [];
+setToastSink((text) => { toastMsgs.push(text); });
 
 const [W, H] = [800, 1280];
 
@@ -80,7 +86,7 @@ describe('FriendsScene mail detail — delete blocked while an attachment is unc
 
     expect(deleteCalls).toBe(0);
     expect(scene.openMailItem).toBe(unclaimedGiftMail); // detail stays open
-    expect(scene.toastKey).toBe('mail.deleteBlockedAttachment');
+    expect(toastMsgs.at(-1)).toBe(t('mail.deleteBlockedAttachment'));
     scene.destroy();
   });
 
@@ -121,7 +127,7 @@ describe('FriendsScene mail detail — delete blocked while an attachment is unc
     await scene.doMailDelete(claimedGiftMail);
 
     expect(scene.openMailItem).toBe(claimedGiftMail);
-    expect(scene.toastKey).toBe('mail.deleteBlockedAttachment');
+    expect(toastMsgs.at(-1)).toBe(t('mail.deleteBlockedAttachment'));
     scene.destroy();
   });
 });
