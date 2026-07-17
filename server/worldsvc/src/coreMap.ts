@@ -218,6 +218,7 @@ export class WorldCoreMap extends WorldCoreVision {
       ...(o.contestedUntil ? { contestedUntil: o.contestedUntil } : {}),
       ...(o.contestedBy === accountId ? { contestedByMe: true } : {}),
       ...(o.watchtower ? { watchtower: true } : {}),
+      ...(o.deskLevel ? { deskLevel: o.deskLevel } : {}),
     };
   }
 

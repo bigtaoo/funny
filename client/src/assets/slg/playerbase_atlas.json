@@ -1,0 +1,12 @@
+{
+  "frames": {},
+  "meta": {
+    "image": "playerbase_atlas.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 4,
+      "h": 4
+    },
+    "scale": "1"
+  }
+}

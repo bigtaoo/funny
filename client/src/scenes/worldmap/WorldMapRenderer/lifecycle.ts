@@ -2,6 +2,7 @@
 // atlas bootstrap behind the loading cover, and teardown of pooled Graphics / city sprites.
 import { loadResAtlas } from '../../../render/resAtlasLoader';
 import { loadCityAtlas } from '../../../render/cityAtlasLoader';
+import { loadPlayerBaseAtlas } from '../../../render/playerBaseAtlasLoader';
 import { loadTerrainAtlas } from '../../../render/terrainAtlasLoader';
 import { loadBuildingAtlas } from '../../../render/buildingAtlasLoader';
 import { type Constructor, type WorldMapRendererBaseCtor } from './base';
@@ -54,6 +55,7 @@ export function LifecycleMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBa
       const atlasLoads = [
         loadTerrainAtlas().catch((err) => console.warn('[WorldMapScene] terrain atlas load failed:', err)),
         loadCityAtlas().catch((err) => console.warn('[WorldMapScene] city atlas load failed:', err)),
+        loadPlayerBaseAtlas().catch((err) => console.warn('[WorldMapScene] player base atlas load failed:', err)),
         loadResAtlas().catch((err) => console.warn('[WorldMapScene] res atlas load failed:', err)),
         loadBuildingAtlas().catch((err) => console.warn('[WorldMapScene] building atlas load failed:', err)),
       ];
