@@ -32,7 +32,8 @@ import { getArtTexture } from '../../render/cardArt';
 import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
 import { BusyTracker } from '../../ui/busyTracker';
-import { FS, snapFont } from '../../render/fontScale';
+import { ScrollTapGesture } from '../../ui/scrollTapGesture';
+import { snapFont } from '../../render/fontScale';
 
 /** Outcome of a buy — ok, or a message key to surface as a toast. */
 export type ShopActionResult =
@@ -130,9 +131,6 @@ export class ShopSceneBase {
   protected readonly bt = new BusyTracker();
   protected tab: 'shop' | 'coins';
 
-  /** Transient toast message (success / error), cleared on next action. */
-  protected toast: { text: string; color: number } | null = null;
-
   protected hits: Hit[] = [];
   /** URLs whose texture-load re-render has already been hooked (mirrors CardScene.drawArtFit). */
   private readonly artHooked = new Set<string>();
@@ -142,7 +140,11 @@ export class ShopSceneBase {
 
   // ── Scroll state (grid may overflow the body region) ──────────────────────
   protected scrollY = 0;
-  protected dragStart: { y: number; scroll: number } | null = null;
+  /**
+   * Tap-vs-drag gesture tracker: defers a cell's hit action to pointer-up and drops it if the pointer
+   * dragged (so a drag starting on a shop card scrolls instead of firing it). See ScrollTapGesture.
+   */
+  private readonly gesture = new ScrollTapGesture();
   /** Set by handleMove instead of rendering inline — see EquipmentSceneBase.scrollDirty for why. */
   private scrollDirty = false;
 
@@ -240,26 +242,27 @@ export class ShopSceneBase {
 
   private handleDown(x: number, y: number): void {
     if (this.bt.busy) return;
-    for (const hit of this.hits) {
-      const r = hit.rect;
-      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); return; }
+    // Capture the hit action and defer it to pointer-up — if the pointer drags past the threshold
+    // it becomes a scroll and the tap is dropped, so a drag starting on a shop card scrolls the
+    // list instead of instantly firing that card.
+    let hit: (() => void) | null = null;
+    for (const h of this.hits) {
+      const r = h.rect;
+      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit = h.fn; break; }
     }
-    // No hit — begin a drag-scroll (and blur the promo field if it was focused).
-    if (this.promoFocused) this.blurPromo();
-    this.dragStart = { y, scroll: this.scrollY };
+    // No hit — blur the promo field if it was focused (matches the old miss-only behaviour).
+    if (!hit && this.promoFocused) this.blurPromo();
+    this.gesture.down(this.scrollY, y, hit);
   }
 
   private handleMove(y: number): void {
-    if (!this.dragStart) return;
-    const dy = y - this.dragStart.y;
-    if (Math.abs(dy) > 6) {
-      this.scrollY = Math.max(0, this.dragStart.scroll - dy);
-      this.scrollDirty = true;
-    }
+    const scroll = this.gesture.move(y);
+    if (scroll !== null) { this.scrollY = scroll; this.scrollDirty = true; }
   }
 
   private handleUp(): void {
-    this.dragStart = null;
+    // Fires only for a genuine tap (pointer didn't drag); a released drag returns null.
+    this.gesture.up()?.();
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -287,7 +290,6 @@ export class ShopSceneBase {
       this.drawShopGrid(body, top);
     }
 
-    if (this.toast) this.drawToast();
     if (this.bt.loadingVisible) drawLoadingOverlay(this.container, this.w, this.h, this.bt.dots, t('common.processing'));
   }
 
@@ -518,22 +520,6 @@ export class ShopSceneBase {
     if (b.enabled && b.fn) this.hits.push({ rect: { x, y, w, h }, fn: b.fn });
   }
 
-  private drawToast(): void {
-    const { w, h } = this;
-    const toast = this.toast!;
-    const lbl = txt(toast.text, FS.heading, 0xffffff, true);
-    const padX = Math.round(w * 0.04);
-    const padY = Math.round(h * 0.012);
-    const bw = lbl.width + padX * 2;
-    const bh = lbl.height + padY * 2;
-    const bx = (w - bw) / 2;
-    const by = Math.round(h * 0.80);
-    const bg = sketchPanel(bw, bh, { fill: toast.color, fillAlpha: 0.95, border: toast.color, width: 2, seed: seedFor(bw, bh, 2) });
-    bg.x = bx; bg.y = by;
-    this.container.addChild(bg);
-    lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
-    this.container.addChild(lbl);
-  }
 }
 
 // ── Domain entrypoints dispatched to from base-level code (constructor / render) and across sibling

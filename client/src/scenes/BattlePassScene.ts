@@ -12,6 +12,7 @@ import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../ui/widget
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
+import { ScrollTapGesture } from '../ui/scrollTapGesture';
 import type { SaveData } from '../game/meta/SaveData';
 import {
   BATTLEPASS_DEFS, BATTLEPASS_MAX_LEVEL, BATTLEPASS_BUY_COST, BP_XP_PER_LEVEL,
@@ -85,7 +86,11 @@ export class BattlePassScene implements Scene {
   private toastTimer = 0;
   private scrollY = 0;
   private scrollMax = 0;
-  private dragStart: { x: number; y: number; scroll: number } | null = null;
+  /**
+   * Tap-vs-drag gesture tracker: defers a reward cell's hit action to pointer-up and drops it if the
+   * pointer dragged (so a drag starting on a reward cell scrolls instead of firing it). See ScrollTapGesture.
+   */
+  private readonly gesture = new ScrollTapGesture();
   /**
    * One-shot flag: on the first render that has battle-pass data we auto-scroll so the current
    * level lands on the 3rd visible reward row (two earned rows above it as context). Subsequent
@@ -133,20 +138,19 @@ export class BattlePassScene implements Scene {
 
   private handleDown(x: number, y: number): void {
     if (this.bt.busy) return;
-    for (const hit of this.hits) {
-      const r = hit.rect;
-      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); return; }
+    // Defer the hit action to pointer-up — if the pointer drags past the threshold it becomes a
+    // scroll and the tap is dropped, so a drag starting on a reward cell scrolls instead of firing it.
+    let hit: (() => void) | null = null;
+    for (const h of this.hits) {
+      const r = h.rect;
+      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit = h.fn; break; }
     }
-    this.dragStart = { x, y, scroll: this.scrollY };
+    this.gesture.down(this.scrollY, y, hit);
   }
 
   private handleMove(_x: number, y: number): void {
-    if (!this.dragStart) return;
-    const dy = y - this.dragStart.y;
-    if (Math.abs(dy) > 6) {
-      this.scrollY = Math.max(0, Math.min(this.scrollMax, this.dragStart.scroll - dy));
-      this.updateScrollPosition();
-    }
+    const scroll = this.gesture.move(y);
+    if (scroll !== null) { this.scrollY = Math.min(this.scrollMax, scroll); this.updateScrollPosition(); }
   }
 
   /**
@@ -172,7 +176,8 @@ export class BattlePassScene implements Scene {
   }
 
   private handleUp(): void {
-    this.dragStart = null;
+    // Fires only for a genuine tap (pointer didn't drag); a released drag returns null.
+    this.gesture.up()?.();
   }
 
   private showToast(msg: string): void {

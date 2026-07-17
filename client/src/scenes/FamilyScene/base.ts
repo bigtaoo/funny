@@ -22,6 +22,7 @@ import { FAMILY_CAP } from '@nw/shared';
 import type { WorldApiClient, FamilyDetailView, FamilyMemberView, FamilyMessageView } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
 import { drawSocialTabRail, type SocialTab } from '../../render/socialTabRail';
+import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 
 export interface FamilySceneCallbacks {
   onBack(): void;
@@ -91,8 +92,13 @@ export class FamilySceneBase {
    *  chrome. Destroyed and rebuilt each renderHeader() so repeated renders (e.g. scroll drags) don't
    *  stack duplicate Text nodes on the container. */
   private headerExtras: PIXI.DisplayObject[] = [];
-  protected dragStart: { x: number; y: number; scroll: number; target: 'members' | 'channel' } | null = null;
-  protected dragMoved = false;
+  /**
+   * Tap-vs-drag gesture tracker: defers a hit action to pointer-up and drops it if the pointer
+   * dragged (so a drag starting on a member/message cell scrolls instead of firing it). See ScrollTapGesture.
+   */
+  private readonly gesture = new ScrollTapGesture();
+  /** Which column the in-progress drag scrolls — captured at pointer-down, applied in handleMove. */
+  private dragTarget: 'members' | 'channel' = 'members';
   /** Set by handleMove instead of rendering inline — pointermove can fire far faster than the display
    *  refresh rate, and render() fully tears down/rebuilds every Text/Graphics node in the roster and
    *  channel lists, so calling it per-event caused visible jank while dragging. update() (ticker-gated,
@@ -372,36 +378,33 @@ export class FamilySceneBase {
       }
       return;
     }
+    // Defer the hit action to pointer-up — if the pointer drags past the threshold it becomes a
+    // scroll and the tap is dropped, so a drag starting on a cell scrolls instead of firing it.
+    let hit: (() => void) | null = null;
     for (const { rect, action } of this.hitRects) {
-      if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) {
-        action(); return;
-      }
+      if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) { hit = action; break; }
     }
     // Landscape split view has two independently-scrolling columns — route by which side of the
     // divider the drag started on. Portrait's tab view has one column at a time, scrolled by
     // whichever tab is active (members ↔ scrollY, channel ↔ scrollYChannel — see renderTabbedView).
-    const target: 'members' | 'channel' =
+    this.dragTarget =
       this.mode !== 'myFamily' ? 'members'
       : this.landscape ? (x >= this.chatColX ? 'channel' : 'members')
       : this.activeTab;
-    this.dragStart = { x, y, scroll: target === 'channel' ? this.scrollYChannel : this.scrollY, target };
-    this.dragMoved = false;
+    this.gesture.down(this.dragTarget === 'channel' ? this.scrollYChannel : this.scrollY, y, hit);
   }
 
-  handleMove(x: number, y: number): void {
-    if (!this.dragStart) return;
-    const dy = y - this.dragStart.y;
-    if (Math.abs(dy) > 6) {
-      this.dragMoved = true;
-      const next = Math.max(0, this.dragStart.scroll - dy);
-      if (this.dragStart.target === 'channel') this.scrollYChannel = next;
-      else this.scrollY = next;
-      this.scrollDirty = true;
-    }
+  handleMove(_x: number, y: number): void {
+    const next = this.gesture.move(y);
+    if (next === null) return;
+    if (this.dragTarget === 'channel') this.scrollYChannel = next;
+    else this.scrollY = next;
+    this.scrollDirty = true;
   }
 
   handleUp(_x: number, _y: number): void {
-    this.dragStart = null;
+    // Fires only for a genuine tap (pointer didn't drag); a released drag returns null.
+    this.gesture.up()?.();
   }
 
   update(dt: number): void {

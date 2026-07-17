@@ -29,6 +29,7 @@ import type {
 } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
 import { drawSocialTabRail, type SocialTab } from '../../render/socialTabRail';
+import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { FS } from '../../render/fontScale';
 
 export interface SectSceneCallbacks {
@@ -99,8 +100,11 @@ export class SectSceneBase {
   protected scrollY = 0;
   /** Title-bar height, set from the shared header — drives all body layout below it. */
   protected headerH = 0;
-  protected dragStart: { x: number; y: number; scroll: number } | null = null;
-  protected dragMoved = false;
+  /**
+   * Tap-vs-drag gesture tracker: defers a hit action to pointer-up and drops it if the pointer
+   * dragged (so a drag starting on a member/list cell scrolls instead of firing it). See ScrollTapGesture.
+   */
+  private readonly gesture = new ScrollTapGesture();
   /** Set by handleMove instead of rendering inline — see FamilySceneBase.scrollDirty for why. */
   private scrollDirty = false;
 
@@ -241,27 +245,23 @@ export class SectSceneBase {
       }
       return;
     }
+    // Defer the hit action to pointer-up — if the pointer drags past the threshold it becomes a
+    // scroll and the tap is dropped, so a drag starting on a cell scrolls instead of firing it.
+    let hit: (() => void) | null = null;
     for (const { rect, action } of this.hitRects) {
-      if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) {
-        action(); return;
-      }
+      if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) { hit = action; break; }
     }
-    this.dragStart = { x, y, scroll: this.scrollY };
-    this.dragMoved = false;
+    this.gesture.down(this.scrollY, y, hit);
   }
 
-  handleMove(x: number, y: number): void {
-    if (!this.dragStart) return;
-    const dy = y - this.dragStart.y;
-    if (Math.abs(dy) > 6) {
-      this.dragMoved = true;
-      this.scrollY = Math.max(0, this.dragStart.scroll - dy);
-      this.scrollDirty = true;
-    }
+  handleMove(_x: number, y: number): void {
+    const scroll = this.gesture.move(y);
+    if (scroll !== null) { this.scrollY = scroll; this.scrollDirty = true; }
   }
 
   handleUp(_x: number, _y: number): void {
-    this.dragStart = null;
+    // Fires only for a genuine tap (pointer didn't drag); a released drag returns null.
+    this.gesture.up()?.();
   }
 
   update(dt: number): void {

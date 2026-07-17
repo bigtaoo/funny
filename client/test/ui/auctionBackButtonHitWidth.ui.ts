@@ -35,6 +35,7 @@ type SceneInternals = {
   hitRects: Hit[];
   itemPickerOpen: boolean;
   handleDown(x: number, y: number): void;
+  handleUp(x: number, y: number): void;
   render(): void;
   openItemPicker(): void;
 };
@@ -84,7 +85,9 @@ describe('AuctionScene back-button hit rect matches the shared SceneHeader stand
     const { scene, calls } = buildScene();
     const w = standardBackHitWidth();
     expect(w).toBeGreaterThan(80); // sanity: the regression only reproduces if the standard is wider than 80
+    // The hit action fires on pointer-up now (ScrollTapGesture defers taps so a drag scrolls).
     internals(scene).handleDown(w - 1, 10);
+    internals(scene).handleUp(w - 1, 10);
     expect(calls.back).toBe(1);
     scene.destroy();
   });
@@ -96,6 +99,7 @@ describe('AuctionScene back-button hit rect matches the shared SceneHeader stand
 
     const w = standardBackHitWidth();
     internals(scene).handleDown(w - 1, 10);
+    internals(scene).handleUp(w - 1, 10);
 
     expect(internals(scene).itemPickerOpen).toBe(false);
     expect(calls.back).toBe(0); // picker-cancel, not scene onBack

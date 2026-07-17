@@ -381,6 +381,7 @@ export class WorldMapPanels {
     this.ctx.modalDimRect = null;
     this.ctx.infoScrollRect = null;
     this.ctx.infoScrollRerender = null;
+    this.ctx.infoScrollPendingTap = null;
     this.ctx.selectedTile = null;
     this.ctx.trainPanelOpen = false;
     this.ctx.territoryPanelOpen = false;

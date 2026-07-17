@@ -19,6 +19,7 @@ import { WorldApiError } from '../../net/WorldApiClient';
 import type { SaveData, EquipmentInstance, CardInstance } from '../../game/meta/SaveData';
 import { buildIcon, type IconKind } from '../../render/icons';
 import { caretDisplay } from '../../render/inputDisplay';
+import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 
 // ── AuctionScene (S8-5) — SLG auction scene ─────────────────────────────────
 //
@@ -146,7 +147,11 @@ export class AuctionSceneBase {
 
   // Scroll
   protected scrollY = 0;
-  protected dragStart: { x: number; y: number; scroll: number } | null = null;
+  /**
+   * Tap-vs-drag gesture tracker: defers a listing card's hit action to pointer-up and drops it if the
+   * pointer dragged (so a drag starting on a card scrolls instead of firing it). See ScrollTapGesture.
+   */
+  private readonly gesture = new ScrollTapGesture();
   /** Set by handleMove instead of rendering inline — see EquipmentSceneBase.scrollDirty for why. */
   private scrollDirty = false;
 
@@ -538,25 +543,23 @@ export class AuctionSceneBase {
       }
       return;
     }
+    // Defer the hit action to pointer-up — if the pointer drags past the threshold it becomes a
+    // scroll and the tap is dropped, so a drag starting on a listing card scrolls instead of firing it.
+    let hit: (() => void) | null = null;
     for (const { rect, action } of this.hitRects) {
-      if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) {
-        action(); return;
-      }
+      if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) { hit = action; break; }
     }
-    this.dragStart = { x, y, scroll: this.scrollY };
+    this.gesture.down(this.scrollY, y, hit);
   }
 
   handleMove(_x: number, y: number): void {
-    if (!this.dragStart) return;
-    const dy = y - this.dragStart.y;
-    if (Math.abs(dy) > 6) {
-      this.scrollY = Math.max(0, this.dragStart.scroll - dy);
-      this.scrollDirty = true;
-    }
+    const scroll = this.gesture.move(y);
+    if (scroll !== null) { this.scrollY = scroll; this.scrollDirty = true; }
   }
 
   handleUp(_x: number, _y: number): void {
-    this.dragStart = null;
+    // Fires only for a genuine tap (pointer didn't drag); a released drag returns null.
+    this.gesture.up()?.();
   }
 
   update(dt: number): void {

@@ -50,6 +50,7 @@ import {
 } from '@nw/shared';
 import { BusyTracker } from '../ui/busyTracker';
 import { buildDecorCLayer } from '../render/decorCLayer';
+import { ScrollTapGesture } from '../ui/scrollTapGesture';
 import { buildIcon, type IconKind } from '../render/icons';
 import { loadResAtlas, getResTexture } from '../render/resAtlasLoader';
 
@@ -158,7 +159,11 @@ export class CityScene implements Scene {
   // Building-grid scroll state (drag-to-scroll, matches the CardScene/TeamsScene pattern).
   private scrollY = 0;
   private scrollMax = 0;
-  private dragStart: { y: number; scroll: number } | null = null;
+  /**
+   * Tap-vs-drag gesture tracker: defers a hit action to pointer-up and drops it if the pointer
+   * dragged (so a drag starting on a building cell scrolls instead of firing it). See ScrollTapGesture.
+   */
+  private readonly gesture = new ScrollTapGesture();
   /** Set by handleMove instead of rendering inline — avoids a render() per pointermove (jank). */
   private scrollDirty = false;
 
@@ -284,26 +289,25 @@ export class CityScene implements Scene {
 
   private handleDown(px: number, py: number): void {
     if (this.bt.busy) return;
+    // Defer the hit action to pointer-up — if the pointer drags past the threshold it becomes a
+    // scroll and the tap is dropped, so a drag starting on a building cell scrolls instead of firing it.
+    let hit: (() => void) | null = null;
     for (const h of this.hits) {
-      if (px >= h.x && px <= h.x + h.w && py >= h.y && py <= h.y + h.h) {
-        h.fn();
-        return;
-      }
+      if (px >= h.x && px <= h.x + h.w && py >= h.y && py <= h.y + h.h) { hit = h.fn; break; }
     }
-    if (!this.selectedBuilding) this.dragStart = { y: py, scroll: this.scrollY };
+    this.gesture.down(this.scrollY, py, hit);
   }
 
   private handleMove(py: number): void {
-    if (!this.dragStart || this.selectedBuilding) return;
-    const dy = py - this.dragStart.y;
-    if (Math.abs(dy) > 6) {
-      this.scrollY = Math.max(0, Math.min(this.scrollMax, this.dragStart.scroll - dy));
-      this.scrollDirty = true;
-    }
+    // Scroll is disabled while a building is selected (the detail panel owns the view); taps still fire.
+    if (this.selectedBuilding) return;
+    const scroll = this.gesture.move(py);
+    if (scroll !== null) { this.scrollY = Math.min(this.scrollMax, scroll); this.scrollDirty = true; }
   }
 
   private handleUp(): void {
-    this.dragStart = null;
+    // Fires only for a genuine tap (pointer didn't drag); a released drag returns null.
+    this.gesture.up()?.();
   }
 
   // ── Render ────────────────────────────────────────────────────────────────

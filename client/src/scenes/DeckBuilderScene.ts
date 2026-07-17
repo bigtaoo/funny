@@ -18,6 +18,7 @@ import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { buildIcon } from '../render/icons';
 import { FS } from '../render/fontScale';
+import { ScrollTapGesture } from '../ui/scrollTapGesture';
 import { CARD_DEFINITIONS } from '../game/config';
 import {
   PVP_DECK_SIZE,
@@ -73,8 +74,12 @@ export class DeckBuilderScene implements Scene {
   private scrollMax = 0;
   private listStartY = 0;
   private listH = 0;
-  private dragStartY: number | null = null;
-  private dragScrollStart = 0;
+  /**
+   * Tap-vs-drag gesture tracker: defers a card cell's toggle to pointer-up and drops it if the pointer
+   * dragged. The old code returned early for any press in the list area (so a card tap was swallowed
+   * entirely and only scroll worked); this restores tap-to-toggle while keeping drag-to-scroll. See ScrollTapGesture.
+   */
+  private readonly gesture = new ScrollTapGesture();
   /** Set by handleMove instead of rendering inline — see EquipmentSceneBase.scrollDirty for why. */
   private scrollDirty = false;
 
@@ -89,7 +94,7 @@ export class DeckBuilderScene implements Scene {
 
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
-    this.unsubs.push(input.onUp(() => { this.dragStartY = null; }));
+    this.unsubs.push(input.onUp(() => this.handleUp()));
 
     this.render();
   }
@@ -105,23 +110,25 @@ export class DeckBuilderScene implements Scene {
   }
 
   private handleDown(x: number, y: number): void {
-    // Scroll initiation in the list area
-    if (y >= this.listStartY && y <= this.listStartY + this.listH) {
-      this.dragStartY = y;
-      this.dragScrollStart = this.scrollY;
-      return;
+    // Defer the hit action to pointer-up — if the pointer drags past the threshold it becomes a
+    // scroll and the tap is dropped, so a drag starting on a card cell scrolls the grid instead of
+    // toggling that card (and a genuine tap still toggles it, unlike the old list-area early-return).
+    let hit: (() => void) | null = null;
+    for (const h of this.hits) {
+      const r = h.rect;
+      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit = h.fn; break; }
     }
-    for (const hit of this.hits) {
-      const r = hit.rect;
-      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); return; }
-    }
+    this.gesture.down(this.scrollY, y, hit);
   }
 
-  private handleMove(x: number, y: number): void {
-    if (this.dragStartY === null) return;
-    const delta = this.dragStartY - y;
-    this.scrollY = Math.max(0, Math.min(this.scrollMax, this.dragScrollStart + delta));
-    this.scrollDirty = true;
+  private handleMove(_x: number, y: number): void {
+    const scroll = this.gesture.move(y);
+    if (scroll !== null) { this.scrollY = Math.min(this.scrollMax, scroll); this.scrollDirty = true; }
+  }
+
+  private handleUp(): void {
+    // Fires only for a genuine tap (pointer didn't drag); a released drag returns null.
+    this.gesture.up()?.();
   }
 
   private toggleCard(id: string): void {

@@ -17,7 +17,7 @@
 //
 // Runs under the headless PIXI adapter (vitest.ui.config.ts setupFiles).
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { initI18n } from '../../src/i18n';
 import { WorldMapPanels } from '../../src/scenes/worldmap/WorldMapPanels';
@@ -228,6 +228,54 @@ describe('WorldMapInput — world-info list drag-to-scroll', () => {
     (input as unknown as { ctx: WorldMapContext }).ctx.panels.renderTerritoryPanel();
     input.handleDown(1, 1);
     expect(ctx.modalDimRect).toBeNull();
+  });
+});
+
+// The nations/shop lists carry tappable buttons (Buy / Rename) INSIDE the scroll region. Those
+// buttons live in modalBtnRects, which handleDown used to fire on pointer-DOWN before the scroll
+// branch ran — so a drag that started on a Buy button fired the purchase instead of scrolling.
+// The fix: a press inside infoScrollRect captures any in-list button hit as ctx.infoScrollPendingTap
+// and fires it on pointer-UP only if the pointer never dragged past the threshold.
+describe('WorldMapInput — in-list button tap-vs-drag (infoScrollPendingTap)', () => {
+  /** Renders the shop tab and returns the centre of the first in-list Buy button + the buy spy. */
+  function shopHarness() {
+    const { ctx, panels, input } = buildHarness({ infoTab: 'shop', shopItems: makeShopItems(15) });
+    const doBuyShopItem = vi.fn();
+    (ctx as unknown as { net: { doBuyShopItem: () => void } }).net = { doBuyShopItem };
+    panels.renderTerritoryPanel();
+    const sr = ctx.infoScrollRect!;
+    const inSr = (r: { x: number; y: number; w: number; h: number }): boolean => {
+      const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+      return cx >= sr.x && cx <= sr.x + sr.w && cy >= sr.y && cy <= sr.y + sr.h;
+    };
+    const buyBtn = ctx.modalBtnRects.find((b) => inSr(b.rect))!;
+    expect(buyBtn, 'no Buy button rect inside the scroll region').toBeTruthy();
+    return { ctx, input, doBuyShopItem, cx: buyBtn.rect.x + buyBtn.rect.w / 2, cy: buyBtn.rect.y + buyBtn.rect.h / 2 };
+  }
+
+  it('a tap (down+up, no drag) on an in-list Buy button fires the purchase', () => {
+    const { input, doBuyShopItem, cx, cy } = shopHarness();
+    input.handleDown(cx, cy);
+    input.handleUp(cx, cy);
+    expect(doBuyShopItem).toHaveBeenCalledTimes(1);
+  });
+
+  it('a drag that STARTS on an in-list Buy button scrolls the list and does NOT fire the purchase', () => {
+    const { ctx, input, doBuyShopItem, cx, cy } = shopHarness();
+    input.handleDown(cx, cy);
+    input.handleMove(cx, cy - 40); // past the 6px drag threshold
+    input.handleUp(cx, cy - 40);
+    expect(doBuyShopItem).not.toHaveBeenCalled();
+    expect(ctx.infoScrollY).toBe(40); // the gesture scrolled instead
+  });
+
+  it('closeModal clears a pending in-list tap so it cannot fire against the next panel', () => {
+    const { ctx, input, doBuyShopItem, cx, cy } = shopHarness();
+    input.handleDown(cx, cy); // pending tap captured, not yet released
+    ctx.panels.closeModal();
+    expect((ctx as unknown as { infoScrollPendingTap: unknown }).infoScrollPendingTap).toBeNull();
+    input.handleUp(cx, cy);
+    expect(doBuyShopItem).not.toHaveBeenCalled();
   });
 });
 
