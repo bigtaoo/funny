@@ -174,7 +174,8 @@ describe('GameRenderer InputMixin — placement highlight stays in sync with boa
     const unitGrid = (engine.state.board as any).unitGrid;
 
     // Fake-occupy the spawn-row cell directly (equivalent to a unit currently standing there).
-    unitGrid[spawnRow][lane] = 12345;
+    // unitGrid is multi-occupant since the ghost-fix (Board stores number[] | null per cell).
+    unitGrid[spawnRow][lane] = [12345];
 
     const from = (renderer as any).handView.slotCenter(SLOT_UNIT_SHIELDBEARER);
     const to   = layout.gridToScreen(lane, 1);
