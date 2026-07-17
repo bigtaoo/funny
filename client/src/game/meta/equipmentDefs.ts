@@ -44,9 +44,13 @@ export function getEquipDef(defId: string): EquipDef | undefined {
   return EQUIPMENT_DEFS[defId];
 }
 
-/** Craftable equipment definitions (those with craftCost), in catalog order. Source list for the forge tab. */
+const RARITY_ORDER: Record<EquipRarity, number> = { common: 0, fine: 1, rare: 2, epic: 3 };
+
+/** Craftable equipment definitions (those with craftCost), sorted by rarity so the forge grid groups tiers together. */
 export function craftableDefs(): EquipDef[] {
-  return Object.values(EQUIPMENT_DEFS).filter((d) => d.craftCost);
+  return Object.values(EQUIPMENT_DEFS)
+    .filter((d) => d.craftCost)
+    .sort((a, b) => RARITY_ORDER[a.rarity] - RARITY_ORDER[b.rarity]);
 }
 
 /** Enhancement level cap (+0..+9). */

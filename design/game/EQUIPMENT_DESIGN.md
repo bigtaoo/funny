@@ -784,3 +784,9 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 铁律：今后任何装备图标绘制点**必须调 `buildEquipIcon`**，禁止直接 `drawEquipmentGlyph`。`EquipDef.media` 字段对渲染是死字段（无解析器读它）。验证：client `tsc --noEmit` + webpack 构建全绿（因后端未起未做游戏内截图；渲染路径与既有可用的装备包一致）。
 
+### 20.9 实现记录（2026-07-17，✅）— 锻造格按稀有度分组
+
+背景：`craftableDefs()`（`client/src/game/meta/equipmentDefs.ts`）此前按 `EQUIPMENT_DEFS` 声明顺序返回（先按槽位 weapon/armor/trinket 分组，槽位内再按稀有度），锻造 tab（`EquipmentScene/craft.ts`）不做二次排序、直接按数组顺序铺格子——4 列网格下第一行变成「铅笔(普通/武器)、钢笔(精良/武器)、马克笔(稀有/武器)、稿纸(普通/防具)」，稀有度视觉上没有分组，用户截图指出与预期不符。
+
+落地：`craftableDefs()` 加一次按稀有度的**稳定排序**（`common→fine→rare→epic`，与 `RARITY_COLOR` 键序一致），槽位内原顺序不变。9 件可锻造装备现按 3 普通/3 精良/3 稀有连续输出，4 列网格下每行稀有度一致。新增 `client/test/equipmentDefs.test.ts` 固化排序 + craftCost 过滤两条不变量。验证：client `tsc --noEmit` 全绿 + 新测试通过；因本机会话无后端未做游戏内截图，改动本身是纯数据排序，用脚本直接打印排序结果核对。
+
