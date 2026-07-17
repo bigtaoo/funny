@@ -19,8 +19,7 @@ import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance } from '../../game/meta/SaveData';
 import { affixKind, EQUIPMENT_INV_CAP, type EnhanceCost } from '../../game/meta/equipmentDefs';
 import { ENHANCE_COEFF_PER_LEVEL } from '@nw/engine/balance/equipment';
-import { drawEquipmentGlyph } from '../../render/equipmentGlyph';
-import { getEquipIconTexture } from '../../render/equipmentAtlas';
+import { buildEquipIcon } from '../../render/equipmentAtlas';
 import { buildIcon, type IconKind } from '../../render/icons';
 
 export type EquipResult = { ok: true } | { ok: false; key: TranslationKey };
@@ -429,20 +428,9 @@ export class EquipmentSceneBase {
    * The rarity border is always drawn by the surrounding sketchPanel, not here.
    */
   protected addGlyph(slot: EquipSlot, rarity: EquipRarity, cx: number, cy: number, size: number, seed: number, alpha = 1, defId?: string): void {
-    const tex = defId ? getEquipIconTexture(defId) : null;
-    if (tex) {
-      const sprite = new PIXI.Sprite(tex);
-      const scale = size / 128;
-      sprite.scale.set(scale);
-      sprite.anchor.set(0.5, 0.5);
-      sprite.x = cx; sprite.y = cy; sprite.alpha = alpha;
-      this.bodyLayer.addChild(sprite);
-    } else {
-      const gfx = new PIXI.Graphics();
-      drawEquipmentGlyph(gfx, slot, rarity, size, seed);
-      gfx.x = cx; gfx.y = cy; gfx.alpha = alpha;
-      this.bodyLayer.addChild(gfx);
-    }
+    const icon = buildEquipIcon(defId, slot, rarity, size, seed);
+    icon.x = cx; icon.y = cy; icon.alpha = alpha;
+    this.bodyLayer.addChild(icon);
   }
 
   protected itemName(defId: string): string {

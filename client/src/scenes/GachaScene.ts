@@ -14,7 +14,7 @@ import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { buildIcon } from '../render/icons';
 import { buildCoinIcon } from '../render/coinIconAtlas';
 import { getEquipDef } from '../game/meta/equipmentDefs';
-import { drawEquipmentGlyph } from '../render/equipmentGlyph';
+import { buildEquipIcon } from '../render/equipmentAtlas';
 import { CARD_DEFS } from '../game/meta/cardDefs';
 import { SKIN_TARGET_UNIT } from '../game/meta/skinDefs';
 import { UNIT_ART_URLS, getArtTexture } from '../render/cardArt';
@@ -692,10 +692,9 @@ export class GachaScene implements Scene {
 
     const equipDef = getEquipDef(itemId);
     if (equipDef) {
-      const g = new PIXI.Graphics();
-      drawEquipmentGlyph(g, equipDef.slot, equipDef.rarity, size, seed);
-      g.x = cx; g.y = cy;
-      parent.addChild(g);
+      const icon = buildEquipIcon(itemId, equipDef.slot, equipDef.rarity, size, seed);
+      icon.x = cx; icon.y = cy;
+      parent.addChild(icon);
       return;
     }
 

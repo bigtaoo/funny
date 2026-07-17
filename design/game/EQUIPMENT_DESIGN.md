@@ -776,3 +776,11 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 废弃：旧 `byUnit/global` loadout 概念随本切片彻底作废（per-card 取代，穿戴 UI 已在 CC-3 的 CardScene/EquipmentScene）；`EngineEquipmentInput` 仅保留为向后兼容类型别名，新代码不用。验证：client `tsc --noEmit`(含 test) + webpack 生产构建全绿；equipment/hardwall/progression 单测 38 全过。
 
+### 20.8 实现记录（2026-07-17，✅）— 装备图标统一出处（buildEquipIcon）
+
+背景：§20.2 引入了 AI 位图图集（`client/src/assets/equipment/equipment.{png,json}`，12 帧按 defId 命名，boot 时经 `bootManifest.ts` 的 `equip:atlas` 加载），`getEquipIconTexture(defId)` 解析。但各界面**各自决定用图集还是 §20.3 手绘 glyph**：只有 `EquipmentScene`/`CardScene` 走「图集优先→glyph 兜底」，而**抽卡（结果卡+概率表）、拍卖行（列表+挂单选择器）直接调 `drawEquipmentGlyph`**，从不查图集。`drawEquipmentGlyph` 只认 slot+rarity、无视 defId，导致同一件装备在装备包显示专属位图、在抽卡/拍卖显示同槽位同稀有度的通用草图——**同物不同图**。
+
+落地（纯客户端，零新资产）：`render/equipmentAtlas.ts` 新增唯一解析器 `buildEquipIcon(defId, slot, rarity, size, seed): PIXI.Container`——图集就绪且 defId 已知返回 `Sprite`（anchor 0.5、scale `size/128`），否则返回 §20.3 procedural glyph；原点居中，调用方只设 `x/y/alpha`。全部 5 处图标绘制统一走它：`GachaScene.drawEntryPicture`、`AuctionScene` list/picker、`EquipmentScene.addGlyph`、`CardScene` detail（后两者删去各自重复的图集处理代码）。
+
+铁律：今后任何装备图标绘制点**必须调 `buildEquipIcon`**，禁止直接 `drawEquipmentGlyph`。`EquipDef.media` 字段对渲染是死字段（无解析器读它）。验证：client `tsc --noEmit` + webpack 构建全绿（因后端未起未做游戏内截图；渲染路径与既有可用的装备包一致）。
+

@@ -6,8 +6,7 @@ import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { UNIT_ART_URLS } from '../../render/cardArt';
 import { buildIcon } from '../../render/icons';
-import { drawEquipmentGlyph } from '../../render/equipmentGlyph';
-import { getEquipIconTexture } from '../../render/equipmentAtlas';
+import { buildEquipIcon } from '../../render/equipmentAtlas';
 import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
 import { CARD_DEFS, xpToNextLevel, troopCap, cardPower } from '../../game/meta/cardDefs';
 import { skinsForUnitType } from '../../game/meta/skinDefs';
@@ -356,20 +355,10 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
 
         const iconCx = x + cellW / 2;
         const iconCy = cy + 6 + iconSize / 2;
-        const tex = inst ? getEquipIconTexture(inst.defId) : null;
-        if (tex) {
-          const sp = new PIXI.Sprite(tex);
-          sp.anchor.set(0.5);
-          sp.scale.set(iconSize / 128);
-          sp.position.set(iconCx, iconCy);
-          root.addChild(sp);
-        } else {
-          const gfx = new PIXI.Graphics();
-          drawEquipmentGlyph(gfx, slot, inst?.rarity ?? 'common', iconSize, seedFor(i, 8, cellW));
-          gfx.position.set(iconCx, iconCy);
-          gfx.alpha = inst ? 1 : 0.3;
-          root.addChild(gfx);
-        }
+        const icon = buildEquipIcon(inst?.defId, slot, inst?.rarity ?? 'common', iconSize, seedFor(i, 8, cellW));
+        icon.position.set(iconCx, iconCy);
+        icon.alpha = inst ? 1 : 0.3;
+        root.addChild(icon);
 
         const slotLbl = txt(t(`equip.slot.${slot}` as TranslationKey), FS.micro, inst ? C.mid : C.light);
         slotLbl.anchor.set(0.5, 0); slotLbl.x = iconCx; slotLbl.y = cy + cellH - 16;
