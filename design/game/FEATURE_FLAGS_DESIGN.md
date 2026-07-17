@@ -382,3 +382,16 @@ client_log_debug: { default: false, desc: '客户端日志上报-debug', side: '
 **验证**：`client/test/anomaly-chain.test.ts` 全链路接缝测试断言 body 里的 `buildVersion` 能一路传到 Loki 行（`buildVersion=0.0.0`，测试环境未烘焙）；`server/metaserver/test/clientLog.test.ts` 断言非空值写入行内（`buildVersion=0861367`）；client + metaserver `tsc --noEmit` 均通过，两处 vitest 全绿。
 
 **用法**：以后同一 publicId 反复出现同一异常时，先用 Grafana `{source="client",kind="anomaly"} | logfmt | publicId="..."` 拉出 `buildVersion`，跟部署时间线对一下——版本落后于最近一次相关修复的部署时间，就是"旧 tab 没刷新"，不必再当新 bug 查。
+
+### 2026-07-17 · `anr` 补场景/GPU 归因 + `mem` 补 `texTop` 纹理来源分类（§9.7 anr/mem）
+
+**动机**：同一 publicId 233784986 又贴出一整天日志——`anr` `stallMs` 5–56s 反复、`mem` 堆 400–668MB，`gpu.baseTex` 反复冲到 1000+ 而 `nodes` 常常只有 43–52。两个盲点卡住定位：① `anr` 事件只有 `stallMs`，不知道冻结时在哪个场景、也没有栈；② `mem` 的 `baseTex` 只有一个总数，不知道这 1000+ 张纹理是哪来的。代码审计已确认：全部美术走 `PIXI.Texture.from(url)`/`BaseTexture.from`（cardArt/gachaArt/titleArt/CardScene.drawArtFit/建筑图），是**按 URL 键的全局永久缓存、无任何回收**；而 `PIXI.Text` 生成的纹理**不进** `BaseTextureCache`（无 cacheId），所以 `baseTex` 这个计数几乎全是"浏览过的美术资源"——强烈指向无上限的资源缓存，需要按目录分类来坐实是哪个美术文件夹在涨。
+
+**改动**：
+- `client/src/net/anomaly.ts`：新增 `setActiveScene(name)`（`SceneManager.swap` 每次挂载场景时用 `scene.constructor.name` 打点）+ `setAnrContextProvider(fn)`（供上层注入 GPU 计数，避免 net 层反向依赖 PIXI）。ANR 上报的 detail 现在带 `{ stallMs, scene, gpu:{tex,baseTex,tickers} }`。provider 抛错被吞，绝不影响上报。
+- `client/src/cache/MemoryMonitor.ts`：`install()` 里注册 ANR provider（只读廉价计数，不在卡死当下走场景图遍历）；`dump()` 的 `mem` 上报新增 `texTop`——把 `BaseTextureCache` 的 key 按目录（`data:`/`blob:` 按 scheme）分组，取占比最高的 6 类，直接告诉我们是哪个美术目录在把缓存撑大。
+- 服务端**无需改**：`detail` 早已是自由序列化字符串透传，新字段落在 detail 内。
+
+**验证**：`client/test/anomaly-chain.test.ts` 新增 2 例（"anr detail 带 scene + provider 注入的 GPU 计数" + "provider 抛错不破坏上报"）；`tsc --noEmit -p tsconfig.test.json` 通过，anomaly 套件 12 例全绿。
+
+**用法**：下次 `mem` 报警看 `texTop` 第一名的目录 + 计数 → 若单目录条目数随会话单调上涨，即为该类美术缓存无上限（下一步做 LRU/离场回收）。`anr` 看 `scene` 字段 → 反复冲同一场景即可锁定那段同步长任务（56s 冻结与纹理数无关，是独立的 compute stall）。
