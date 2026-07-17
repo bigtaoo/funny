@@ -5,7 +5,7 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { ObjectPool } from '../cache/ObjectPool';
 import baseTexUrl from '../assets/game_base.png';
 import { SketchPen } from './sketch';
-import { palette, fx } from './theme';
+import { palette, fx, factionInk } from './theme';
 import { bake } from './bake';
 import { buildDecorLayer } from './decorLayer';
 import { buildBattleLabels, type BattleLabelContext } from './battleLabels';
@@ -26,6 +26,10 @@ const BASE_PULSE_SPEED  = Math.PI / 2; // rad/s → period = 4s
 const BASE_HIT_PULSE_SEC   = 0.5;   // duration of one pulse
 const BASE_HIT_PULSE_GROW  = 0.18;  // outline expands by this fraction as it fades
 
+// Base critical (last HP): a faction-colored ring throbs around the base — this is
+// where a haste-rush ends the game, so it draws the eye to the board, not the HUD.
+const CRIT_RING_SPEED = 7.5; // rad/s → fast, urgent throb
+
 interface BaseRef {
   sprite:   PIXI.Sprite;
   crackGfx: PIXI.Graphics;
@@ -38,6 +42,12 @@ interface BaseRef {
   rect:     Rect;
   /** Base-upgrade tier currently shown (0 = original texture, no upgrade bought yet). */
   upgradeTier: number;
+  /** Faction-colored critical ring (throbs while this base is one hit from over). */
+  ringGfx:  PIXI.Graphics;
+  /** Faction hue for the critical ring (this base's owner: us = blue, enemy = red). */
+  ringColor: number;
+  /** True while HP is critical — drives the ring throb in update(). */
+  critical: boolean;
 }
 
 export class BoardView {
@@ -150,6 +160,8 @@ export class BoardView {
     this.applyBasePulse(this.enemyBase,  t, 1.2);
     this.applyHitPulse(this.playerBase, dt);
     this.applyHitPulse(this.enemyBase,  dt);
+    this.applyCriticalRing(this.playerBase, t);
+    this.applyCriticalRing(this.enemyBase,  t);
   }
 
   private applyBasePulse(base: BaseRef | null, t: number, phaseOffset: number): void {
@@ -447,14 +459,17 @@ export class BoardView {
     // Base art is a bitmap asset (art belongs to AI-drawn assets, not procedural
     // — see art-direction.md "Asset responsibility breakdown"). Enemy base mirrors by orientation.
     const baseTex = PIXI.Texture.from(baseTexUrl as string);
-    this.playerBase = this.buildBaseRef(layout.playerBaseRect(), false, baseTex, layout);
-    this.enemyBase  = this.buildBaseRef(layout.enemyBaseRect(),  true,  baseTex, layout);
+    // playerBase = local player's base (blue = us); enemyBase = opponent (red).
+    this.playerBase = this.buildBaseRef(layout.playerBaseRect(), false, baseTex, layout, factionInk.friend);
+    this.enemyBase  = this.buildBaseRef(layout.enemyBaseRect(),  true,  baseTex, layout, factionInk.enemy);
   }
 
-  private buildBaseRef(rect: Rect, mirror: boolean, tex: PIXI.Texture, layout: ILayout): BaseRef {
+  private buildBaseRef(rect: Rect, mirror: boolean, tex: PIXI.Texture, layout: ILayout, ringColor: number): BaseRef {
     const con = new PIXI.Container();
     con.x = rect.x + rect.w / 2;
     con.y = rect.y + rect.h / 2;
+
+    const ringGfx = new PIXI.Graphics(); // critical throb — behind the sprite (halo)
 
     const s = new PIXI.Sprite(tex);
     s.anchor.set(0.5);
@@ -469,9 +484,34 @@ export class BoardView {
 
     const crackGfx = new PIXI.Graphics();
     const pulseGfx = new PIXI.Graphics();   // under-attack outline, drawn on top
-    con.addChild(s, crackGfx, pulseGfx);
+    con.addChild(ringGfx, s, crackGfx, pulseGfx);
     this.container.addChild(con);
-    return { sprite: s, crackGfx, pulseGfx, pulseT: 0, pulseSeed: 1, rect, upgradeTier: 0 };
+    return { sprite: s, crackGfx, pulseGfx, pulseT: 0, pulseSeed: 1, rect, upgradeTier: 0, ringGfx, ringColor, critical: false };
+  }
+
+  /**
+   * Toggle the critical-HP ring on a base (owner is the raw game owner; mapped to
+   * the local/enemy sprite like playBaseCrackEffect). Idempotent — the ring is
+   * animated in update() while `critical` is set, and cleared once on toggle-off.
+   */
+  setBaseCritical(owner: 0 | 1, on: boolean): void {
+    const localOwner = sideToOwner(this.layout.localSide);
+    const base = owner === localOwner ? this.playerBase : this.enemyBase;
+    if (!base || base.critical === on) return;
+    base.critical = on;
+    if (!on) base.ringGfx.clear();
+  }
+
+  /** Throb the faction ring while a base is critical (fast, urgent). */
+  private applyCriticalRing(base: BaseRef | null, t: number): void {
+    if (!base || !base.critical) return;
+    const p   = 0.5 + 0.5 * Math.sin(t * CRIT_RING_SPEED);
+    const pad = 6 + 9 * p;
+    const hw  = base.rect.w / 2, hh = base.rect.h / 2;
+    const g   = base.ringGfx;
+    g.clear();
+    g.lineStyle(4, base.ringColor, 0.35 + 0.5 * p);
+    g.drawRoundedRect(-hw - pad, -hh - pad, base.rect.w + pad * 2, base.rect.h + pad * 2, 12);
   }
 
   /**

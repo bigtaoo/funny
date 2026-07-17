@@ -114,19 +114,22 @@ export class HUDView {
     const p = localOwner === 0 ? state.bottomPlayer : state.topPlayer;
     const e = localOwner === 0 ? state.topPlayer    : state.bottomPlayer;
 
-    // Danger blink / affordable pulse phase: 0..1 sinusoid, ~0.7s period. Deterministic
-    // enough for a smooth throb without needing a real clock (sync runs per render frame).
+    // Danger blink / affordable pulse phases: 0..1 sinusoids. `pulse` (~0.7s) drives
+    // the gentle low-HP throb + upgrade glow; `pulseFast` (~0.3s) drives the urgent
+    // critical-HP blink + ⚠. Deterministic enough without a real clock (sync runs per frame).
     this.pulseT += 0.15;
-    const pulse = 0.5 + 0.5 * Math.sin(this.pulseT);
+    const pulse     = 0.5 + 0.5 * Math.sin(this.pulseT);
+    const pulseFast = 0.5 + 0.5 * Math.sin(this.pulseT * 2.3);
 
     this.timerText.text = this.formatTime(state.elapsedTicks / 30);
     this.inkText.text   = `${p.ink}`;
     this.positionInkIcon();
     // Faction hue is fixed (us = blue, enemy = red); "low HP" is signalled by the
     // bar blinking, NOT by turning red — otherwise our own low-HP warning would
-    // collide with the enemy's red. See drawHpBar.
-    this.drawHpBar(this.playerHpGfx, p.baseHp, BASE_HP, factionInk.friend, pulse);
-    this.drawHpBar(this.enemyHpGfx,  e.baseHp, BASE_HP, factionInk.enemy,  pulse);
+    // collide with the enemy's red. Critical (last cell) escalates to a fast blink
+    // plus an amber ⚠. See drawHpBar.
+    this.drawHpBar(this.playerHpGfx, p.baseHp, BASE_HP, factionInk.friend, pulse, pulseFast);
+    this.drawHpBar(this.enemyHpGfx,  e.baseHp, BASE_HP, factionInk.enemy,  pulse, pulseFast);
 
     const cost = p.nextUpgradeCost;
     if (cost === null) {
@@ -448,16 +451,22 @@ export class HUDView {
   }
 
   /**
-   * HP bar in the faction hue (us = blue, enemy = red). Danger (≤3 cells left) is
-   * signalled by the filled cells *blinking* — the alpha throbs with `pulse` — so
-   * the warning never changes hue and so our low-HP alarm can't be mistaken for the
-   * enemy's red. `pulse` is the shared 0..1 sinusoid from sync().
+   * HP bar in the faction hue (us = blue, enemy = red). Danger is signalled by the
+   * filled cells *blinking* (alpha throb) — never by changing hue — so our low-HP
+   * alarm can't be mistaken for the enemy's red. Two tiers:
+   *   low      (≤3 cells): gentle blink on `pulse`.
+   *   critical (last cell): urgent fast blink on `pulseFast` + an amber ⚠ above the
+   *     bar. The last cell is the "one haste-rush from over" moment for BOTH bases,
+   *     so the enemy bar escalates too (it also gets a base-ring on the board).
    */
-  private drawHpBar(gfx: PIXI.Graphics, hp: number, maxHp: number, color: number, pulse: number): void {
+  private drawHpBar(
+    gfx: PIXI.Graphics, hp: number, maxHp: number, color: number, pulse: number, pulseFast: number,
+  ): void {
     gfx.clear();
-    const filled = Math.ceil((hp / maxHp) * HP_CELLS);
-    const danger = filled > 0 && filled <= 3;
-    const fillAlpha = danger ? 0.3 + 0.65 * pulse : 0.9;
+    const filled   = Math.ceil((hp / maxHp) * HP_CELLS);
+    const critical = hp > 0 && filled <= 1;
+    const low      = hp > 0 && filled <= 3 && !critical;
+    const fillAlpha = critical ? 0.25 + 0.75 * pulseFast : low ? 0.35 + 0.6 * pulse : 0.9;
     for (let i = 0; i < HP_CELLS; i++) {
       const f = i < filled;
       gfx.beginFill(f ? color : 0xdddddd, f ? fillAlpha : 0.4);
@@ -465,6 +474,24 @@ export class HUDView {
       gfx.drawRect(i * (HP_CELL_W + HP_CELL_GAP), 0, HP_CELL_W, HP_CELL_H);
       gfx.endFill();
     }
+    if (critical) this.drawHpWarning(gfx, pulseFast);
+  }
+
+  /** Amber ⚠ centred above the bar, blinking on `pulseFast` — the critical-HP alarm. */
+  private drawHpWarning(gfx: PIXI.Graphics, pulseFast: number): void {
+    const cx = HP_BAR_W / 2;
+    const tw = 16, th = 13, topY = -th - 4;
+    const a = 0.4 + 0.6 * pulseFast;
+    gfx.beginFill(0xffb300, a);
+    gfx.moveTo(cx, topY);
+    gfx.lineTo(cx - tw / 2, topY + th);
+    gfx.lineTo(cx + tw / 2, topY + th);
+    gfx.closePath();
+    gfx.endFill();
+    gfx.beginFill(0x4a3200, a); // the "!" inside
+    gfx.drawRect(cx - 1, topY + 3, 2, th - 7);
+    gfx.drawRect(cx - 1, topY + th - 3, 2, 2);
+    gfx.endFill();
   }
 
   private drawSurrenderBtn(): void {
