@@ -73,6 +73,19 @@ export const AUCTION_DURATION_SEC = 72 * 3600;
 export const FILTERS = ['', 'material', 'equipment', 'card'] as const;
 export type AucFilter = typeof FILTERS[number];
 
+// Background-poll cadence. auctionsvc is a pure REST service with no push channel (own DB, port 18086,
+// not wired into the gateway), so the open market goes stale the moment another player buys/bids/lists.
+// We mirror WorldMapNet's setInterval refresh — but off the scene's own update(dt) tick so it stops
+// automatically on destroy — to re-pull every few seconds. See loadData / pollRefresh.
+export const AUCTION_POLL_SEC = 5;
+
+// Lightweight change-signature for a listing set: re-render on a poll only when something visible
+// actually changed (item sold/removed, new bid → price change, expiry, new listing), so an unchanged
+// market doesn't tear down and rebuild the body (which would fight scrolling) every 5s.
+export function auctionSig(list: AuctionView[]): string {
+  return list.map((a) => `${a.auctionId}:${a.price}:${a.status}:${a.expireAt}:${a.buyerId ?? ''}`).join(',');
+}
+
 // ── Mixin plumbing ────────────────────────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Constructor<T = object> = new (...args: any[]) => T;
@@ -99,6 +112,10 @@ export class AuctionSceneBase {
   protected allAuctions: AuctionView[] = [];
   protected myListings: AuctionView[] = [];
   protected loading = true;
+  /** Seconds since the last background poll (accumulated in update()); fires pollRefresh() every AUCTION_POLL_SEC. */
+  protected pollTimer = 0;
+  /** Change-signature of the last applied listing snapshot — a poll only re-renders when this changes. */
+  protected lastSig = '';
   protected hiddenInput: HTMLInputElement | null = null;
 
   protected bodyLayer!: PIXI.Container;
@@ -227,9 +244,37 @@ export class AuctionSceneBase {
       ]);
       this.allAuctions = all;
       this.myListings = mine;
+      this.lastSig = auctionSig(all) + '|' + auctionSig(mine);
     } catch { /* offline */ }
     this.loading = false;
+    this.pollTimer = 0; // just refreshed — restart the background-poll clock
     if (!this.destroyed) this.render();
+  }
+
+  /**
+   * Silent background re-pull (no loading flash, keeps scrollY): fetch the market + my listings and
+   * re-render only when the signature changed, so another player's buy/bid/cancel/new-listing shows up
+   * while the panel stays open. Called from update() every AUCTION_POLL_SEC; update() skips it while a
+   * modal/picker is open, and we double-check after the await in case one opened mid-fetch (don't stomp
+   * an in-progress create/bid form). On network failure we keep the last snapshot and retry next tick.
+   */
+  protected async pollRefresh(): Promise<void> {
+    if (this.destroyed) return;
+    let all: AuctionView[];
+    let mine: AuctionView[];
+    try {
+      [all, mine] = await Promise.all([
+        this.cb.worldApi.listAuctions(this.allFilter ? { itemType: this.allFilter } : undefined),
+        this.cb.worldApi.getMyListings(),
+      ]);
+    } catch { return; /* offline — keep last snapshot */ }
+    if (this.destroyed || this.modalOpen || this.itemPickerOpen) return;
+    const sig = auctionSig(all) + '|' + auctionSig(mine);
+    if (sig === this.lastSig) return; // nothing changed → skip the teardown/re-render
+    this.allAuctions = all;
+    this.myListings = mine;
+    this.lastSig = sig;
+    this.render();
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -556,6 +601,12 @@ export class AuctionSceneBase {
     if (this.buyerActive || this.numEditKey) {
       this.caretTimer += dt;
       if (this.caretTimer >= 0.5) { this.caretTimer = 0; this.caretOn = !this.caretOn; if (this.modalOpen) this.openCreateForm(); }
+    }
+    // Background poll: keep the open market fresh (auctionsvc has no push). Hold the clock while loading
+    // or while a modal/picker is open so we never re-render over an in-progress form or the user's input.
+    if (!this.loading && !this.modalOpen && !this.itemPickerOpen) {
+      this.pollTimer += dt;
+      if (this.pollTimer >= AUCTION_POLL_SEC) { this.pollTimer = 0; void this.pollRefresh(); }
     }
   }
 

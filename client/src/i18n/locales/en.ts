@@ -1078,6 +1078,7 @@ export const en: Record<TranslationKey, string> = {
   'auction.statusExpired': 'Expired · returned',
   'auction.statusCancelled': 'Cancelled',
   'auction.err.closed': 'Auction already closed',
+  'auction.err.soldOut': 'Too slow — someone else already bought it',
   'auction.err.selfBuy': 'Cannot buy your own listing',
   'auction.err.insufficientFunds': 'Not enough coins',
   'auction.err.notImpl': 'Item type not supported yet',

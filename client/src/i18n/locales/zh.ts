@@ -1090,6 +1090,7 @@ export const zh = {
   'auction.statusExpired': '已过期·已退回',
   'auction.statusCancelled': '已取消',
   'auction.err.closed': '拍卖已结束',
+  'auction.err.soldOut': '手慢了，该物品已被他人买走',
   'auction.err.selfBuy': '不能购买自己的拍卖',
   'auction.err.insufficientFunds': '金币不足',
   'auction.err.notImpl': '暂不支持该物品类型',

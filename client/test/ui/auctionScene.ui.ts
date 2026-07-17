@@ -12,7 +12,7 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { AuctionScene } from '../../src/scenes/AuctionScene';
-import { AUCTION_DURATION_SEC } from '../../src/scenes/AuctionScene/base';
+import { AUCTION_DURATION_SEC, AUCTION_POLL_SEC } from '../../src/scenes/AuctionScene/base';
 import { WorldApiError, type AuctionView, type WorldApiClient } from '../../src/net/WorldApiClient';
 import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { SaveData, EquipmentInstance, CardInstance } from '../../src/game/meta/SaveData';
@@ -717,6 +717,251 @@ describe('AuctionScene — sidebar tabs & filter chips', () => {
     scene.activeTab = 'mine';
     scene.render();
     expect(findLabelPos(scene.container, t('auction.filterEquipment'))).toBeNull();
+    scene.destroy();
+  });
+});
+
+// ── Background poll — keeps the open market fresh (auctionsvc has no push) ─────────────────────
+const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
+describe('AuctionScene — background poll', () => {
+  it('re-fetches once the poll interval elapses in update() and applies a changed snapshot', async () => {
+    // First load returns one listing; the next (poll) load returns empty — as if it was bought elsewhere.
+    let call = 0;
+    const worldApi = stubWorldApi({
+      listAuctions: vi.fn(async () => (call++ === 0 ? [makeAuction({ auctionId: 'auc_1' })] : [])),
+    });
+    const scene = buildScene({ worldApi });
+    await flush();
+    expect(worldApi.listAuctions).toHaveBeenCalledTimes(1);
+    expect(scene.allAuctions).toHaveLength(1);
+
+    // Not enough time yet — no extra fetch.
+    scene.update(AUCTION_POLL_SEC - 1);
+    expect(worldApi.listAuctions).toHaveBeenCalledTimes(1);
+
+    // Cross the interval → one silent re-pull; the sold listing drops off.
+    scene.update(2);
+    expect(worldApi.listAuctions).toHaveBeenCalledTimes(2);
+    await flush();
+    expect(scene.allAuctions).toHaveLength(0);
+    scene.destroy();
+  });
+
+  it('holds the poll clock while a modal is open (never re-renders over an in-progress form)', async () => {
+    const worldApi = stubWorldApi();
+    const scene = buildScene({ worldApi });
+    await flush();
+    expect(worldApi.listAuctions).toHaveBeenCalledTimes(1);
+
+    scene.modalOpen = true;
+    scene.update(AUCTION_POLL_SEC + 5);
+    expect(worldApi.listAuctions).toHaveBeenCalledTimes(1); // suppressed
+
+    scene.modalOpen = false;
+    scene.update(AUCTION_POLL_SEC + 1);
+    expect(worldApi.listAuctions).toHaveBeenCalledTimes(2); // resumes once idle
+    scene.destroy();
+  });
+
+  it('does not fire the poll while still loading the initial data', () => {
+    const worldApi = stubWorldApi();
+    const scene = buildScene({ worldApi });
+    scene.loading = true; // simulate the in-flight initial load
+    scene.update(AUCTION_POLL_SEC + 1);
+    expect(worldApi.listAuctions).toHaveBeenCalledTimes(1); // only the constructor's load
+    scene.destroy();
+  });
+
+  it('holds the poll clock while the item picker overlay is open', async () => {
+    const worldApi = stubWorldApi();
+    const scene = buildScene({ worldApi });
+    await flush();
+    scene.itemPickerOpen = true; // picker replaces the list (modalOpen stays false)
+    scene.update(AUCTION_POLL_SEC + 5);
+    expect(worldApi.listAuctions).toHaveBeenCalledTimes(1);
+    scene.destroy();
+  });
+
+  it('accumulates dt across several sub-interval ticks before firing once', async () => {
+    const worldApi = stubWorldApi();
+    const scene = buildScene({ worldApi });
+    await flush();
+    for (let i = 0; i < 4; i++) scene.update(AUCTION_POLL_SEC / 4); // sums to exactly one interval
+    expect(worldApi.listAuctions).toHaveBeenCalledTimes(2); // fired exactly once
+    scene.destroy();
+  });
+
+  it('re-fetches scoped to the currently active filter, not the default', async () => {
+    const worldApi = stubWorldApi();
+    const scene = buildScene({ worldApi });
+    await flush();
+    scene.allFilter = 'equipment';
+    scene.update(AUCTION_POLL_SEC + 1);
+    expect(worldApi.listAuctions).toHaveBeenLastCalledWith({ itemType: 'equipment' });
+    scene.destroy();
+  });
+
+  it('skips the re-render when the snapshot signature is unchanged', async () => {
+    // Same listing on every fetch → poll still calls the API but must not tear down / rebuild the body.
+    // Fixed expireAt so the signature is byte-identical across fetches (makeAuction() would recompute it).
+    const stable = makeAuction({ auctionId: 'auc_1', price: 100, expireAt: 9_999_999_999 });
+    const worldApi = stubWorldApi({
+      listAuctions: vi.fn(async () => [{ ...stable }]),
+    });
+    const scene = buildScene({ worldApi });
+    await flush();
+    const renderSpy = vi.spyOn(scene, 'render');
+    scene.update(AUCTION_POLL_SEC + 1);
+    await flush();
+    expect(worldApi.listAuctions).toHaveBeenCalledTimes(2); // fetched
+    expect(renderSpy).not.toHaveBeenCalled();               // but nothing changed → no re-render
+    scene.destroy();
+  });
+
+  it('re-renders when a new bid changes the price (signature differs)', async () => {
+    let call = 0;
+    const worldApi = stubWorldApi({
+      listAuctions: vi.fn(async () => [makeAuction({ auctionId: 'auc_1', price: call++ === 0 ? 100 : 120 })]),
+    });
+    const scene = buildScene({ worldApi });
+    await flush();
+    const renderSpy = vi.spyOn(scene, 'render');
+    scene.update(AUCTION_POLL_SEC + 1);
+    await flush();
+    expect(renderSpy).toHaveBeenCalled();
+    expect(scene.allAuctions[0].price).toBe(120);
+    scene.destroy();
+  });
+
+  it('drops a poll result if a modal opened during the in-flight fetch (no stomp)', async () => {
+    let resolveList: (v: AuctionView[]) => void = () => {};
+    const worldApi = stubWorldApi({
+      listAuctions: vi.fn(() => new Promise<AuctionView[]>((r) => { resolveList = r; })),
+    });
+    const scene = buildScene({ worldApi });
+    // Let the constructor's initial load settle first.
+    resolveList([makeAuction({ auctionId: 'auc_1' })]);
+    await flush();
+
+    scene.update(AUCTION_POLL_SEC + 1);       // kicks off pollRefresh (fetch now pending)
+    scene.modalOpen = true;                    // user opens a form while it's in flight
+    const renderSpy = vi.spyOn(scene, 'render');
+    resolveList([]);                           // fetch resolves with an emptied market
+    await flush();
+    expect(renderSpy).not.toHaveBeenCalled();  // post-await guard drops it — form untouched
+    expect(scene.allAuctions).toHaveLength(1); // snapshot left as-is
+    scene.destroy();
+  });
+
+  it('keeps the last snapshot when a poll fetch fails (offline)', async () => {
+    let call = 0;
+    const worldApi = stubWorldApi({
+      listAuctions: vi.fn(async () => {
+        if (call++ === 0) return [makeAuction({ auctionId: 'auc_1' })];
+        throw new Error('network down');
+      }),
+    });
+    const scene = buildScene({ worldApi });
+    await flush();
+    expect(scene.allAuctions).toHaveLength(1);
+    scene.update(AUCTION_POLL_SEC + 1);
+    await flush();
+    expect(scene.allAuctions).toHaveLength(1); // unchanged — kept the last good snapshot
+    scene.destroy();
+  });
+
+  it('stops polling after destroy (no fetch, and an in-flight refresh bails out)', async () => {
+    const worldApi = stubWorldApi();
+    const scene = buildScene({ worldApi });
+    await flush();
+    scene.destroy();
+    scene.update(AUCTION_POLL_SEC + 1);
+    expect(worldApi.listAuctions).toHaveBeenCalledTimes(1); // no post-destroy fetch
+    await scene.pollRefresh();                              // guarded early-return, no throw
+    expect(worldApi.listAuctions).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── Concurrent-buy race — two buyers, the loser gets refreshed + told ─────────────────────────
+describe('AuctionScene — buy race', () => {
+  it('on AUCTION_CLOSED refreshes the market and shows the sold-out prompt', async () => {
+    let call = 0;
+    const worldApi = stubWorldApi({
+      // Snapshot still shows the listing; the buy loses the race; the refresh returns it gone.
+      listAuctions: vi.fn(async () => (call++ === 0 ? [makeAuction({ auctionId: 'auc_1' })] : [])),
+      buyAuction: vi.fn(async () => { throw new WorldApiError('AUCTION_CLOSED', 'closed'); }),
+    });
+    const scene = buildScene({ worldApi });
+    await flush();
+    toastMsgs.length = 0;
+
+    await scene.doBuy('auc_1');
+
+    expect(toastMsgs).toContain(t('auction.err.soldOut'));
+    expect(worldApi.listAuctions).toHaveBeenCalledTimes(2); // refreshed after the lost race
+    await flush();
+    expect(scene.allAuctions).toHaveLength(0);
+    scene.destroy();
+  });
+
+  it('treats AUCTION_NOT_FOUND (already purged) the same as CLOSED', async () => {
+    const worldApi = stubWorldApi({
+      buyAuction: vi.fn(async () => { throw new WorldApiError('AUCTION_NOT_FOUND', 'gone'); }),
+    });
+    const scene = buildScene({ worldApi });
+    await flush();
+    toastMsgs.length = 0;
+
+    await scene.doBuy('auc_1');
+
+    expect(toastMsgs).toContain(t('auction.err.soldOut'));
+    expect(worldApi.listAuctions).toHaveBeenCalledTimes(2); // refreshed
+    scene.destroy();
+  });
+
+  it('a non-race buy failure (insufficient funds) shows its own error and does not refetch', async () => {
+    const worldApi = stubWorldApi({
+      buyAuction: vi.fn(async () => { throw new WorldApiError('INSUFFICIENT_FUNDS', 'x'); }),
+    });
+    const scene = buildScene({ worldApi });
+    await flush();
+    toastMsgs.length = 0;
+
+    await scene.doBuy('auc_1');
+
+    expect(toastMsgs).toContain(t('auction.err.insufficientFunds'));
+    expect(worldApi.listAuctions).toHaveBeenCalledTimes(1); // no refresh — the listing is still valid
+    scene.destroy();
+  });
+
+  it('a bid on an auction that ended in the gap surfaces the error and refreshes the list', async () => {
+    const worldApi = stubWorldApi({
+      placeBid: vi.fn(async () => { throw new WorldApiError('AUCTION_CLOSED', 'closed'); }),
+    });
+    const scene = buildScene({ worldApi });
+    await flush();
+    toastMsgs.length = 0;
+
+    await scene.doBid('auc_1', 150);
+
+    expect(toastMsgs).toContain(t('auction.err.closed'));
+    expect(worldApi.listAuctions).toHaveBeenCalledTimes(2); // stale card refreshed off
+    scene.destroy();
+  });
+
+  it('a bid rejected as too low does not refetch (listing still valid)', async () => {
+    const worldApi = stubWorldApi({
+      placeBid: vi.fn(async () => { throw new WorldApiError('BID_TOO_LOW', 'x'); }),
+    });
+    const scene = buildScene({ worldApi });
+    await flush();
+    toastMsgs.length = 0;
+
+    await scene.doBid('auc_1', 1);
+
+    expect(toastMsgs).toContain(t('auction.err.bidTooLow'));
+    expect(worldApi.listAuctions).toHaveBeenCalledTimes(1);
     scene.destroy();
   });
 });

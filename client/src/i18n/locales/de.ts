@@ -1078,6 +1078,7 @@ export const de: Record<TranslationKey, string> = {
   'auction.statusExpired': 'Abgelaufen · zurück',
   'auction.statusCancelled': 'Storniert',
   'auction.err.closed': 'Auktion bereits beendet',
+  'auction.err.soldOut': 'Zu langsam — jemand anderes hat es schon gekauft',
   'auction.err.selfBuy': 'Eigenes Angebot nicht kaufbar',
   'auction.err.insufficientFunds': 'Nicht genug Münzen',
   'auction.err.notImpl': 'Gegenstandstyp nicht unterstützt',
