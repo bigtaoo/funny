@@ -7,6 +7,7 @@ import { FS } from '../../render/fontScale';
 import { UNIT_ART_URLS } from '../../render/cardArt';
 import { buildIcon } from '../../render/icons';
 import { buildEquipIcon } from '../../render/equipmentAtlas';
+import { buildFactionIcon, FACTION_COLOR } from '../../render/factionIcon';
 import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
 import { CARD_DEFS, xpToNextLevel, troopCap, cardPower } from '../../game/meta/cardDefs';
 import { skinsForUnitType } from '../../game/meta/skinDefs';
@@ -85,16 +86,19 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
 
       let cy = my + 12;
 
-      // Name + faction
-      const factionColor = def?.faction === 'anna' ? 0xcc4466 : 0x4477cc;
+      // Name + faction totem (totem, not text — the faction is named after a
+      // story lead, so a faction *name* here reads as a second character name).
+      const factionColor = def ? FACTION_COLOR[def.faction] : C.accent;
       const nameLbl = txt(t(`card.${card.defId}.name` as TranslationKey), FS.small, C.dark, true);
       nameLbl.x = mx + 12; nameLbl.y = cy;
       panelRoot.addChild(nameLbl);
 
-      const facStr = def ? t(`roster.faction.${def.faction}` as TranslationKey) : '';
-      const facLbl = txt(facStr, FS.micro, factionColor);
-      facLbl.anchor.set(1, 0); facLbl.x = mx + mw - 12; facLbl.y = cy + 3;
-      panelRoot.addChild(facLbl);
+      if (def) {
+        const facSize = 22;
+        const facIcon = buildFactionIcon(def.faction, facSize);
+        facIcon.x = mx + mw - 12 - facSize; facIcon.y = cy - 2;
+        panelRoot.addChild(facIcon);
+      }
       cy += 26;
 
       // ── Portrait (left, tap to flip → lore) + stats column (right) ──

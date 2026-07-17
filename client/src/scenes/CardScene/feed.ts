@@ -5,6 +5,7 @@ import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { snapFont } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
+import { buildFactionIcon } from '../../render/factionIcon';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import type { CardInstance } from '../../game/meta/SaveData';
 import { CARD_DEFS } from '../../game/meta/cardDefs';
@@ -123,9 +124,12 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
           nameLbl.x = mx + 36 * S; nameLbl.y = cy + 6 * S;
           ml.addChild(nameLbl);
 
-          const facLbl = txt(matDef ? t(`roster.faction.${matDef.faction}` as TranslationKey) : '', snapFont(10 * S), matDef?.faction === 'anna' ? 0xcc4466 : 0x4477cc);
-          facLbl.x = mx + 36 * S; facLbl.y = cy + 22 * S;
-          ml.addChild(facLbl);
+          if (matDef) {
+            const facSize = 14 * S;
+            const facIcon = buildFactionIcon(matDef.faction, facSize);
+            facIcon.x = mx + 36 * S; facIcon.y = cy + 22 * S;
+            ml.addChild(facIcon);
+          }
 
           const matId = mat.id;
           this.modalHits.push({
