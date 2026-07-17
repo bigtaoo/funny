@@ -5,6 +5,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildIcon } from '../render/icons';
+import { titleIconUrl, getTitleIconTexture } from '../render/titleArt';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawCareerTabs } from '../ui/widgets/CareerTabs';
@@ -185,7 +186,10 @@ export class TitlesScene implements Scene {
     this.container.addChild(card);
 
     const iconS = Math.round(cellH * 0.3);
-    const icon = buildIcon('medal', iconS, color);
+    const iconUrl = titleIconUrl(titleId);
+    const icon: PIXI.DisplayObject = iconUrl
+      ? Object.assign(new PIXI.Sprite(getTitleIconTexture(iconUrl)), { width: iconS, height: iconS, tint: color })
+      : buildIcon('medal', iconS, color);
     icon.x = x + cellW / 2 - iconS / 2; icon.y = y + Math.round(cellH * 0.1);
     icon.alpha = isOwned ? 1 : 0.6;
     this.container.addChild(icon);

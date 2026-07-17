@@ -9,6 +9,8 @@ export type SocialPushMsg =
       familyId: string;
       fromAccountId: string;
       fromName: string;
+      title?: string;
+      familyName?: string;
       body: string;
       ts: number;
     }
@@ -19,6 +21,9 @@ export type SocialPushMsg =
       sectId: string;
       fromAccountId: string;
       fromName: string;
+      title?: string;
+      sectName?: string;
+      familyName?: string;
       body: string;
       ts: number;
     }
@@ -27,6 +32,9 @@ export type SocialPushMsg =
       worldId: string;
       fromAccountId: string;
       fromName: string;
+      title?: string;
+      sectName?: string;
+      familyName?: string;
       body: string;
       ts: number;
     }

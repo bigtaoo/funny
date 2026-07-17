@@ -239,6 +239,12 @@ export interface SectMessageDoc {
   sectId: string;
   senderId: string;
   senderName: string;
+  /** Sender's equipped title snapshot at send time (称号); absent if the sender had none. */
+  title?: string;
+  /** Sender's sect name snapshot at send time (宗门 — the sect itself, since the channel is sect-scoped). */
+  sectName?: string;
+  /** Sender's family name snapshot at send time (家族). */
+  familyName?: string;
   body: string;
   ts: Date;
 }
@@ -251,6 +257,12 @@ export interface NationMessageDoc {
   senderName: string;
   /** Sender's 9-digit public id snapshot (meta lookup at send time); empty if meta was unavailable. */
   senderPublicId: string;
+  /** Sender's equipped title snapshot at send time (称号); absent if the sender had none. */
+  title?: string;
+  /** Sender's sect name snapshot at send time (宗门); absent if the sender isn't in a sect. */
+  sectName?: string;
+  /** Sender's family name snapshot at send time (家族); absent if the sender isn't in a family. */
+  familyName?: string;
   body: string;
   ts: Date;
 }

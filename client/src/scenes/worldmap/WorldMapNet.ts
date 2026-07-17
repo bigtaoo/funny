@@ -142,11 +142,9 @@ export class WorldMapNet {
     try {
       teams = await this.ctx.cb.worldApi.getTeams(this.ctx.cb.worldId);
     } catch { /* offline — treat as empty */ }
-    const usable = teams.filter((tm) => tm.army.length > 0);
     // Idle-team gate (2026-07-15): a team already committed to an active (non-recalled) march — marching or
     // holding a captured tile — must not accept a new order (mirrors the server-side TEAM_BUSY check in
-    // combatMarch.ts, which checks both `marches` and `occupations`). Grey it out here instead of silently
-    // letting the picker resubmit onto a busy team.
+    // combatMarch.ts, which checks both `marches` and `occupations`).
     const busyTeamIds = new Set([
       ...this.ctx.marches.filter((m) => m.mine && m.teamId).map((m) => m.teamId),
       ...this.ctx.occupations.filter((o) => o.teamId).map((o) => o.teamId),
@@ -160,20 +158,17 @@ export class WorldMapNet {
       (s, e) => s + (e.cardInstanceId ? (cardState[e.cardInstanceId]?.currentTroops ?? 0) : Math.max(0, Math.floor(e.initialHp ?? 0))),
       0,
     );
-    const buttons: { label: string; action: () => void; disabled?: boolean }[] = [];
+    // Only offer teams that can actually go into battle right now: non-empty army, not already
+    // out on a march/hold, and carrying troops > 0 (a wiped-out card team would just die on contact).
+    const usable = teams.filter((tm) => tm.army.length > 0 && !busyTeamIds.has(tm.id) && committedOf(tm) > 0);
+    const buttons: { label: string; action: () => void }[] = [];
     for (const tm of usable) {
-      const busy = busyTeamIds.has(tm.id);
       const committed = committedOf(tm);
-      const status = busy ? ` · ${t('world.team.busy')}` : ` · ${t('world.team.committed').replace('{n}', String(committed))}`;
       buttons.push({
-        label: `${tm.name}${status}`,
-        disabled: busy,
-        action: busy ? () => this.ctx.panels.showToast(t('world.team.busy'), C.red) : () => void this.doMarchTeam(tx, ty, tm.id, kind),
+        label: `${tm.name} · ${t('world.team.committed').replace('{n}', String(committed))}`,
+        action: () => void this.doMarchTeam(tx, ty, tm.id, kind),
       });
     }
-    // Occupation commits a team's own carried troops (card ledger) — the base-barracks reserve pool is only
-    // for distributing to teams, never for grabbing land directly, so there is no flat-pool occupy path.
-    buttons.push({ label: t('world.team.manage'), action: () => this.ctx.cb.onOpenTeams() });
     buttons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
     const head = usable.length > 0
       ? (kind === 'occupy' ? t('world.team.pickTitleOccupy') : t('world.team.pickTitle'))

@@ -1,7 +1,13 @@
 # SLG 地图资源 — AI 出图 prompt 表
 
-状态：母题 5 张 ✅ 已出图（2026-07-01）；**分级图改为每级一张；木材(paper) l1–l10 全就位并打包上线 ✅（2026-07-06）；粮草(ink) / 石料(graphite) l1–l10 全就位并打包上线 ✅（2026-07-07）；铜钱/铜矿(sticker) l6–l10 五张专属上线 ✅（2026-07-07，无 l1–5，只在 6 级地及以上，§5.7-sticker）；铁矿(metal) l1–l10 全就位并打包上线 ✅（2026-07-08，§5.7-metal）**——l6–l10 专属真图直接进 atlas，l1–l5 由脚本烘焙（母题 token 白底填实 + 骰子槽叠放）；**5 种资源分级图全部就位，`HEAP_TYPES` 已空、再无过渡态合成帧**
+状态：母题 5 张 ✅ 已出图（2026-07-01）；**四种基础资源(粮/木/石/铁) l1–l10 全部专属手绘、打包上线 ✅；铜钱/铜矿(sticker) l6–l10 五张专属上线 ✅（无 l1–5，只在 6 级地及以上，§5.7-sticker）**——所有 `res_{type}_l{n}` 都是白底手绘真图直接进 atlas，**构建期不再合成任何帧**（`bakeCountFrames`/`bakeHeapFrames`/`resbg_*` 托盘背景已于 2026-07-17 全部删除，见下方决策变更 II）。当前 atlas = **50 帧 / 512×2048 / ~395 KB**，client + map-editor 两份字节一致。
 关联：资源命名定版见 [`design/game/SLG_DESIGN.md`](../game/SLG_DESIGN.md) §3.4；美术铁律 / decor 出图管线见 [`art-direction.md`](art-direction.md) §〇 / §6.2；分级出图规范见下方 **§5**
+
+> **⚠️ 决策变更 II（2026-07-17，用户拍板）**：推翻 l1–l5「母题 token + 骰子槽计数拼接」。理由：地图上绝大多数格子是低级地（`tileGraphics.ts` 注释 "most tiles sit at low levels"），而拼接图恰是玩家 90% 时间盯着看的主视觉，读作机械印章、表现比 l6–10 专属图差一大截；省的图（4×5 专属 − 4×2 托盘背景 ≈ 12 张）本就是 AI 出图、成本很低。→ **l1–l5 也改每级一张专属手绘**，与 l6–l10 口径统一。
+> - **放弃「数个数读精确等级」**（原 §5.4 的核心诉求）：高档本就已脱离计数，低档统一改为靠**体量/繁简/高度递进**一眼分辨即可。
+> - **色带（BAND）豁免推广到全等级**：paper/ink/graphite/metal 的 l1–l10 全部保留原黑墨（靠剪影读级、l1–l10 观感统一）；**只有 sticker 仍上色带**（其 l6→l10 tan→gold = 铜→金，货币主题加分）。见 `pack_resources.cjs` `tintLevelFrame` 豁免正则。
+> - **删除的东西**：`pack_resources.cjs` 里 `bakeCountFrames`/`bakeHeapFrames`/`fillInteriorWhite`/`BAKE`/`DICE`/`HEAP_TYPES` 及高度台阶常量；8 张 `resbg_*` 托盘背景移入 `art/leftover/`。**运行时代码零改**（`getResLevelTexture` 命中 `res_{type}_l1..10` 即画）。
+> - **l1–l5 出图规范 + 20 条 prompt 见 §5.4-lo。**
 
 > **⚠️ 决策变更（2026-07-06，用户拍板）**：推翻 2026-06-30「只出 5 张母题 + 程序合成」。改为**每级单独出一张真图**，照城池 `city_l{n}` 那套（代码钩子 `getResLevelTexture` 已就位：atlas 里出现 `res_{type}_l{level}` 帧即自动取用、跳过丰度模拟，零改代码；未出图的级继续回退母题模拟，不报错）。
 > - **规模**：4 种基础资源(粮/木/石/铁) × 10 级 + 铜钱 5 张 = **45 张**。
@@ -140,12 +146,36 @@ background, notebook grid lines, ruled lines, drop shadow, ground line, baseline
 
 ### 5.4 分级方案（2026-07-06 定 · 低档计数 + 高档专属）
 
+> **⚠️ 本节 l1–5「计数拼接」部分已于 2026-07-17 废止**（见顶部决策变更 II）。l1–5 现为每级专属手绘，规范见 **§5.4-lo**。下文保留作历史。l6–10「每资源专属手绘」部分仍有效（§5.7 各资源表格）。
+
 > **为什么必须格面上就能读出精确等级**：守军强度随等级递增，玩家若一眼分不出级会**误伤**（去打打不过的守军）。所以精确等级要在地图格上直接可读，不能只塞进点击面板。又因纯数量在 34% 格宽下到高档糊成一坨（用户实测 l9 vs l10 几乎一样），拆成两段：
 
 - **l1–5（全 5 资源通用）**：复用已验收的**母题图当计数 token**，摆 **N 个 = 等级**（1 个=lv1 … 5 个=lv5），骰子点式固定槽位，叠在背景上。精确等级靠数 token，≤5 是人眼一眼可辨的上限。**新增美术仅背景**（母题复用，5 资源一次全解决）。
 - **l6–10（每资源各自出图）**：每种资源、每一级**专属手绘**，形态逐级跃迁，追求最佳表现。5 资源 × 5 级 = **25 张**。5→6 画风从「计数图」跳到「专属大图」，正好标记「进入强守军区」，强化误伤规避。
 
 > 硬约束（§5.3 单色墨线 + 白底）对背景和专属图同样适用。木材的 1–5 计数底 + 6–10 专属阶梯见 §5.7；ink/graphite/metal 套同骨架（1–5 复用各自母题、6–10 各画形态阶梯），待写。铜钱(sticker)另议。
+
+### 5.4-lo 低档分级（2026-07-17 定 · 权威 · l1–l5 每级专属手绘）
+
+原则：**单母题逐级"长大"**，靠体量/繁简/高度递进一眼分辨，不再数个数。l5 = 最丰的"单堆"，正好顶到 l6 专属图下沿；5→6 跳到"容器/多体大簇"标记进入强守军区。渲染按宽归一 → 画得越高越满 = 屏上等级越高。守 §5.3 硬约束（单色黑墨 + 纯白底、不上色不阴影），**色带不再施加于这四类**（§顶部决策变更 II）。每条接 §5.5 共用前缀 + §5.6 共用负向。
+
+**已出图上线（2026-07-17，gpt-image）**。各级主体（帧名 `res_{type}_l{n}`）：
+
+| 级 | paper 木材 | ink 粮草 | graphite 石料 | metal 铁矿 |
+|---|---|---|---|---|
+| l1 | 单页（卷角） | 小空瓶 | 单块矿石 | 单只长尾夹 |
+| l2 | 两页叠 | 带塞瓶 | 单块+1 碎屑 | 夹+1 小件 |
+| l3 | 小叠~4 张 | 开塞+洒墨 | 块+几粒碎屑 | 夹+几件散落 |
+| l4 | 大叠 | 满瓶（brimming） | 高石块 | 夹+更多散件 |
+| l5 | 叠+卷一张 | 大墨罐溢出 | 大石+散屑 | 夹+一大堆散件（最满单夹） |
+
+> **主体 prompt 全文**（接 §5.5 前缀）：
+> - paper：`A single blank sheet of paper lying almost flat, one corner lightly curled up` / `Two blank sheets loosely overlapping, the top one slightly askew with a curled corner` / `A small loose stack of three or four blank sheets, edges uneven and fanned, top corner curled` / `A taller loose stack of blank sheets, one sheet sliding off the top, edges fanned out` / `A full loose stack of many blank sheets, one sheet loosely rolled resting on top, a stray sheet leaning at the base`
+> - ink：`A single small squat glass inkwell bottle, one tiny ink drop near the rim, low and humble` / `A single slightly taller glass inkwell bottle with its cork stopper on top, a tiny ink drop at its base` / `A single glass inkwell bottle, cork off and lying beside it, a small ink puddle spreading at the base` / `A single taller fuller glass inkwell bottle brimming with ink, a couple of ink drops and a small blot around its base` / `One large round-bellied glass inkwell bottle brimming over, cork lying beside it, ink drops and a blot pooled around its base`
+> - graphite：`A single small angular chunk of graphite ore, faceted like a rough crystal, a couple of short hatching strokes on one facet` / `A single small modest chunk of graphite ore, a low rough angular block, one tiny broken ore shard lying beside it` / `A single larger faceted graphite ore chunk with a few small ore shards scattered at its base` / `A single bigger boulder-like faceted graphite ore chunk standing taller, a couple of shards at its base` / `One large faceted graphite ore chunk with a small loose scatter of ore shards heaped around its base`
+> - metal：`A single metal binder clip (foldback clip), a chunky triangular body with two thin looped wire handles sticking up` / `A single metal binder clip with one small loose paper fastener or metal bit lying beside it` / `A single metal binder clip with a couple of small metal bits scattered at its base` / `A single larger foldback clip standing taller, two looped wire handles up, a small metal bit or two at its base` / `One metal binder clip standing amid a big loose heap of assorted small metal hardware piled and spilling all around its base`
+>
+> 剪影铁律（同 §5.7）：paper=层叠扁矩形 / ink=圆肚瓶罐 / graphite=尖锐棱块 / metal=三角夹身+两根线圈，四者一眼互不撞。**替换单张成本极低**（丢 `res_{type}_l{n}.{png,webp}` 进 `art/ui/slg-map/` 重跑脚本即可，零改代码）。
 
 ### 5.5 共用前缀（分级版，接在每条主体前）
 
@@ -288,25 +318,22 @@ shadow, ground line, baseline
 3. ✅ 重跑脚本 → **50 帧 / 512×2048 / ~290 KB**（sticker 由 10 堆叠帧降为 5 专属，净 −5 帧），client + map-editor 两份 atlas 逐字节一致；`res_sticker_l6..l10` 就位、无 l1–5。**零改运行时代码**（`getResLevelTexture('sticker',6..10)` 命中即画）。
 4. ✅ **worldsvc 生成门槛已落地**（2026-07-07）：`mapgen.ts` 新增 `resTypeFor(x,y,seed,level)`——resource 格在 `level ≥ SLG_GEN.copperMinLevel`(=6) 时按 `copperShare`(=0.3) 抽取覆盖为 `sticker`，否则四种生物群系陆地资源。plain resource 格才应用（stronghold/familyKeep/center 保生物群系资源、画建筑不画资源母题）。产出侧 `tileYield` 对任何 resType 通用（铜矿格自然产铜钱）。全图扫描验证：铜矿 =资源格 3.4%（≈≥6 格的 30%），**level<6 的 sticker = 0**；shared 544 + worldsvc 192 全绿。
 
-### 5.8 打包管线（沿用母题口径，加分级帧）
+### 5.8 打包管线（2026-07-17 简化 · 纯手绘帧，无合成）
 
-**l6–10（专属图）**：
-1. 白底 png `res_paper_l6.png … res_paper_l10.png`（5 张），放 `art/ui/slg-map/`。
-2. 重跑 `node art/ui/slg-map/pack_resources.cjs`：近白→透明(`alpha=255−luma` 保原墨色) + 裁透明边 + 等比缩长边 128 + shelf-pack。帧名按文件名(去扩展)，即得 `res_paper_l6..l10`。**零改运行时代码**——`getResLevelTexture('paper',6..10)` 命中即画。
+**所有帧同一条路**（母题 + 各资源 l1–l10 + sticker l6–10 全是白底手绘真图）：
+1. 白底 png/webp `res_<type>_l<n>.{png,webp}` 放 `art/ui/slg-map/`（文件名即帧名，去扩展）。
+2. 重跑 `node art/ui/slg-map/pack_resources.cjs`：主扫描 `^res_.*\.(webp|png)$` 逐张 `loadSprite`（近白→透明 `alpha=255−luma` 保原墨色 + 裁透明边 + 等比缩长边 128）→ `tintLevelFrame`（**仅 sticker 上色带**，其余保黑墨）→ shelf-pack → 写两份字节一致的 atlas。
+3. **零改运行时代码**——`getResLevelTexture('<type>',n)` 命中 `res_<type>_l<n>` 即画。
+4. **替换/新增单张成本极低**：丢新图进目录、重跑脚本即可。
 
-**l1–5（母题计数）**：✅ **已落地为烘焙合成**（`pack_resources.cjs`，非手绘）：
-3. `bakeCountFrames()` 吃背景（`resbg_paper_a`=l1–3 / `resbg_paper_b`=l4–5）+ 母题 `res_paper`，按骰子槽（`DICE`：1中／2对角／3三角／4四角／5四角+中）叠 1..5 张 token 出 `res_paper_l1..l5`，一并进 atlas。**零改运行时代码**（`getResLevelTexture('paper',1..5)` 直接命中）。
-   - **关键坑（已解）**：token 走近白→透明抠图后「纸面」是透明的，直接叠会互相透光、数不清。烘焙前对 token 跑 `fillInteriorWhite()`（从边界洪水填充定位外部、把被墨线闭合包住的纸面涂成不透明白），叠起来才互相遮挡、读成实心纸张堆。`TOKEN_FRAC=0.40`、槽位见脚本 `C/TL/TR/BL/BR/BC`。
-4. ~~退路：运行时程序合成~~——已选烘焙（零改代码、体积可控），此路作废。
+**产物**：`client/src/assets/slg/res_atlas.{png,json}` + `tools/map-editor/src/assets/slg/` 两份字节一致（`OUT_DIRS` 一次写两处）。当前 **50 帧**（5 母题 + paper/ink/graphite/metal 各 l1–10 + sticker l6–10），**512×2048，~395 KB**。
 
-**通用收尾**：
-5. ✅ 产物写到 **`client/src/assets/slg/res_atlas.{png,json}`** + **`tools/map-editor/src/assets/slg/`** 两份字节一致（脚本 `OUT_DIRS` 一次性写两处）。当前 **50 帧**（5 母题 + paper/ink/graphite/metal 各 l1–10 + sticker l6–10），512×2048，~334 KB。
-6. ✅ 粮/木/石/铁四类全部 l1–5 烘焙计数 + l6–10 专属；铜钱(sticker)仅 l6–10 专属。`HEAP_TYPES` 已空。
+> 历史（2026-07-06 → 07-08）：曾用 `bakeCountFrames`（l1–5 母题+骰子槽计数托盘）+ `bakeHeapFrames`（过渡态合成堆叠）+ `resbg_*` 托盘背景。**均于 2026-07-17 删除**（决策变更 II），l1–5 改专属手绘。
 
-### 5.9 待定项
+### 5.9 待定项 / 收尾
 
-- **过渡态已清零**（2026-07-08）：metal 专属手绘 l6–10 出图上线后，`HEAP_TYPES` 已空——**再无 `bakeHeapFrames` 合成堆叠帧**。4 种基础资源(粮/木/石/铁)全部走「l1–5 烘焙计数托盘 + l6–10 专属手绘」，铜矿(sticker)走 l6–10 专属。当前 **50 帧**（5 母题 + paper/ink/graphite/metal 各 l1–10 + sticker l6–10 专属），**512×2048，~334 KB**。
-- **背景已定**（2026-07-06）：每资源专属 2 张，用该资源生产建筑容器（`paperTray`/`inkPot`/`graphiteMill`/`metalForge`），按 `l1–3 / l4–5` 分。木材/粮草/石料/铁矿已全部出图+烘焙上线（§5.7 / §5.7-ink / §5.7-graphite / §5.7-metal）。
-- **专属出图后落地清单**（paper/ink/graphite/metal 均已按此落地）：源图（`res_<type>_l6..l10` + 空容器 `resbg_<type>_a`/`resbg_<type>_b`，白底 png/webp）放 `art/ui/slg-map/` → `pack_resources.cjs` 里 (a) `BAKE` 加一条 `{ type, token: 'res_<type>', bgA, bgB }`，(b) 从 `HEAP_TYPES` 删掉该 type（专属帧接管，别再合成堆叠帧撞名），(c) `tintLevelFrame` 的 l6–10 免色带豁免正则加该 type（专属手绘保原墨色）→ 重跑脚本，client + map-editor 两份 atlas 逐字节一致。**4 种基础资源已全部照此上线，`HEAP_TYPES` 现为空。**
+- **构建期合成已彻底移除**（2026-07-17）：`bakeCountFrames`/`bakeHeapFrames`/`fillInteriorWhite`/`BAKE`/`DICE`/`HEAP_TYPES`/高度台阶常量全部删除；8 张 `resbg_*` 托盘背景移入 `art/leftover/`。脚本现只做「扫描→抠图→(sticker)色带→打包」。
+- **色带（BAND）现状**：仅 sticker l6–10（tan→gold=铜→金）。paper/ink/graphite/metal 全等级保黑墨（`tintLevelFrame` 豁免正则 `^res_(paper|ink|graphite|metal)_`）。
+- **可选后续**：若实测低档在整图缩放下仍难辨（silhouette 不够），再单独给这四类补一档极淡的按级 wash（勿回退计数拼接）。
 - ~~**l1–5 落地方式**~~：✅ 已定=**烘焙合成**（§5.8 步骤 3），token 走 `fillInteriorWhite` 填实后叠骰子槽。粮/木/石/铁全部复用同一 `bakeCountFrames`。
 - **铜钱/铜矿(sticker)** ✅ 已全链路上线（2026-07-07）：美术 l6–10 五张专属进 atlas + worldsvc 生成门槛（`resTypeFor`：resource 格 lvl≥6 按 `copperShare` 覆盖为 sticker，`SLG_GEN.copperMinLevel/copperShare`）。全图扫描验证 level<6 无 sticker、铜矿占资源格 3.4%。见 §5.7-sticker。**经济侧 TBD**：家城 `stickerShop` 是否与地图铜矿并存产铜钱、copperShare 数值调参。

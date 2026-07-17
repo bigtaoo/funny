@@ -197,6 +197,44 @@ describe.skipIf(!mongo)('socialsvc FamilyService e2e', () => {
     expect(fallback2.senderName).toBe('ClientFallback2');
   });
 
+  // Family chat is already scoped to one family, so familyName is cheap to resolve (the family's
+  // own name, looked up alongside the sender's meta profile); title comes from meta.equippedTitle.
+  // sectName is intentionally NOT resolved here (would need a cross-service call to worldsvc) —
+  // absent means the client simply omits that bracket segment.
+  it('sendMessage: title + familyName resolved and returned by both sendMessage() and getChannel()', async () => {
+    meta = new FakeMeta().add('leader', 'P-LEAD', 'Alice', undefined, 'Grandmaster');
+    svc = new FamilyService({ cols: m.collections, now, gateway, meta });
+    const fam = await svc.createFamily('leader', 'The Inklords', 'INK');
+
+    const result = await svc.sendMessage('leader', 'Alice', 'hi everyone');
+    expect(result.title).toBe('Grandmaster');
+    expect(result.familyName).toBe('The Inklords');
+
+    const history = await svc.getChannel('leader');
+    expect(history[0]?.title).toBe('Grandmaster');
+    expect(history[0]?.familyName).toBe('The Inklords');
+    void fam;
+  });
+
+  it('sendMessage: title absent (no equippedTitle) still resolves familyName', async () => {
+    const fam = await svc.createFamily('leader', 'Titleless', 'NOTL');
+    const result = await svc.sendMessage('leader', 'Leader', 'hi');
+    expect(result.title).toBeUndefined();
+    expect(result.familyName).toBe('Titleless');
+    void fam;
+  });
+
+  it('sendMessage: title/familyName both absent when meta is not configured', async () => {
+    const svcNoMeta = new FamilyService({ cols: m.collections, now, gateway, meta: undefined });
+    const fam = await svcNoMeta.createFamily('leader', 'NoMeta', 'NOMT');
+    const result = await svcNoMeta.sendMessage('leader', 'Leader', 'hi');
+    expect(result.title).toBeUndefined();
+    // familyName is resolved independently of meta (a plain families collection lookup),
+    // so it's still populated even without meta.
+    expect(result.familyName).toBe('NoMeta');
+    void fam;
+  });
+
   // ── worldsvc-facing internal API ──────────────────────────────────────────────
 
   it('getMember / getFamilyIdByAccount: one-round-trip membership identity', async () => {

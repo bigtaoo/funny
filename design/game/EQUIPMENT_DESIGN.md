@@ -509,6 +509,8 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 **下拉遮挡筛选条修复 + 图标卡横向间距翻倍**（2026-07-17 追加）：真人截图走查发现两处问题并修复：① 网格滚动到某一行与筛选条/资源条边界跨骑（straddle）时，该行此前会整格照常绘制、视觉上盖住上方的「All/Weapon/Armor/Trinket」筛选条与资源条——原本的裁剪逻辑（`renderInventory`/`renderCraft`）只跳过完全落在可视区外的行，不裁剪跨骑行。改为把网格绘制进一个临时子容器（`gridLayer`），套一个对齐可视区 `[listY, listY+listH)` 的矩形 `mask`，跨骑行现在被硬裁剪，不再盖住上方内容。② 图标卡之间的横向间距翻倍：新增 `CELL_GAP_X = CELL_GAP * 2`，仅用于同一行内卡片间的水平间隙（`Inventory`/`Craft` 两个网格都改用），网格外边距、行间距（垂直）仍用原 `CELL_GAP`，未受影响。（同批次另有并发会话把 `EQUIP_CELL_W_TARGET` 480→360 收窄，见对应 commit，非本条修复范围。）用 `__NW_APP`/`__NW_PIXI`/`__NW_EquipmentScene` 临时钩子起真实 `npm run start` 渲染 + `toDataURL` 截图核对（多组 `scrollY` 下筛选条不再被盖住），验证后移除钩子；`tsc --noEmit` 通过。新增回归测试 [equipmentGridLayout.ui.ts](../../client/test/ui/equipmentGridLayout.ui.ts)：同行横向间距＝`CELL_GAP_X`、行间距＝`CELL_GAP`不变、网格渲染进一个裁剪到可视列表带（非全屏）的 mask 层内。
 
+**已装备标签文字溢出格子修复**（2026-07-17 追加）：真人截图走查发现 Equipped 分区图标卡右列的「[Equipped · Weapon]」绿色标签文字比格子本身还宽，溢出格子右边界、盖住相邻卡片文字——`renderInstanceCell`（`inventory.ts`）此前只对顶部的名称文字做了「超宽则缩放」处理，右列的稀有度/已装备标签/堆叠数字没有同样的宽度约束。修复：已装备标签超出可用列宽 `colW` 时 `e.scale.set(colW / e.width)` 等比缩小，与名称文字用同一模式。用临时 `__NW_DEBUG` 钩子（`app.ts` 里挂 `{PIXI, app, EquipmentScene}`）直接 new 一个装了 3 件已装备道具的 `EquipmentScene`，遍历 `container` 找 `[Equipped · ...]` 文字节点核对 `scale`/`x`/`width` 不再越出格子右边界（验证后移除钩子）；`tsc --noEmit` 通过。新增回归测试 [equipmentEquippedTagOverflow.ui.ts](../../client/test/ui/equipmentEquippedTagOverflow.ui.ts)：反向验证过（去掉 scale 修复后测试确实失败），已装备标签的渲染右边界始终 ≤ 所在格子的右边界。
+
 #### E2 掉落 faucet + E6 洗练 实现记录（2026-06-22，✅）
 
 **E2 关卡掉落 faucet**
@@ -783,4 +785,10 @@ buildSiegeBlueprints(levels, equipped, inv)
 落地（纯客户端，零新资产）：`render/equipmentAtlas.ts` 新增唯一解析器 `buildEquipIcon(defId, slot, rarity, size, seed): PIXI.Container`——图集就绪且 defId 已知返回 `Sprite`（anchor 0.5、scale `size/128`），否则返回 §20.3 procedural glyph；原点居中，调用方只设 `x/y/alpha`。全部 5 处图标绘制统一走它：`GachaScene.drawEntryPicture`、`AuctionScene` list/picker、`EquipmentScene.addGlyph`、`CardScene` detail（后两者删去各自重复的图集处理代码）。
 
 铁律：今后任何装备图标绘制点**必须调 `buildEquipIcon`**，禁止直接 `drawEquipmentGlyph`。`EquipDef.media` 字段对渲染是死字段（无解析器读它）。验证：client `tsc --noEmit` + webpack 构建全绿（因后端未起未做游戏内截图；渲染路径与既有可用的装备包一致）。
+
+### 20.9 实现记录（2026-07-17，✅）— 锻造格按稀有度分组
+
+背景：`craftableDefs()`（`client/src/game/meta/equipmentDefs.ts`）此前按 `EQUIPMENT_DEFS` 声明顺序返回（先按槽位 weapon/armor/trinket 分组，槽位内再按稀有度），锻造 tab（`EquipmentScene/craft.ts`）不做二次排序、直接按数组顺序铺格子——4 列网格下第一行变成「铅笔(普通/武器)、钢笔(精良/武器)、马克笔(稀有/武器)、稿纸(普通/防具)」，稀有度视觉上没有分组，用户截图指出与预期不符。
+
+落地：`craftableDefs()` 加一次按稀有度的**稳定排序**（`common→fine→rare→epic`，与 `RARITY_COLOR` 键序一致），槽位内原顺序不变。9 件可锻造装备现按 3 普通/3 精良/3 稀有连续输出，4 列网格下每行稀有度一致。新增 `client/test/equipmentDefs.test.ts` 固化排序 + craftCost 过滤两条不变量。验证：client `tsc --noEmit` 全绿 + 新测试通过；因本机会话无后端未做游戏内截图，改动本身是纯数据排序，用脚本直接打印排序结果核对。
 

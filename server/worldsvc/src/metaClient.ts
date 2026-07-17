@@ -7,6 +7,8 @@ import { internalHeaders, type GearLoadout, type EquipmentInstance, type CardIns
 export interface PlayerProfile {
   publicId?: string;
   displayName?: string;
+  /** Equipped title (称号), if any. */
+  equippedTitle?: string;
 }
 
 /** Attacker progression snapshot required for authoritative siege engine calculation (E8 + CC-3, /internal/save-fields). */

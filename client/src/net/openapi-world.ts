@@ -1047,6 +1047,12 @@ export interface components {
             id: string;
             senderId: string;
             senderName: string;
+            /** @description Sender's equipped title (称号), if any. */
+            title?: string;
+            /** @description Sender's sect name (宗门), if any. */
+            sectName?: string;
+            /** @description Sender's family name (家族), if any. */
+            familyName?: string;
             body: string;
             ts: number;
         };

@@ -5436,6 +5436,18 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "senderName": {
                   "type": "string"
                 },
+                "title": {
+                  "type": "string",
+                  "description": "Sender's equipped title (称号), if any."
+                },
+                "sectName": {
+                  "type": "string",
+                  "description": "Sender's sect name (宗门), if any."
+                },
+                "familyName": {
+                  "type": "string",
+                  "description": "Sender's family name (家族), if any."
+                },
                 "body": {
                   "type": "string"
                 },
@@ -5489,6 +5501,18 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   },
                   "senderName": {
                     "type": "string"
+                  },
+                  "title": {
+                    "type": "string",
+                    "description": "Sender's equipped title (称号), if any."
+                  },
+                  "sectName": {
+                    "type": "string",
+                    "description": "Sender's sect name (宗门), if any."
+                  },
+                  "familyName": {
+                    "type": "string",
+                    "description": "Sender's family name (家族), if any."
                   },
                   "body": {
                     "type": "string"

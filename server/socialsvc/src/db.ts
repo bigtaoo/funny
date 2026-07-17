@@ -100,6 +100,10 @@ export interface FamilyMessageDoc {
   familyId: string;
   senderId: string;
   senderName: string;
+  /** Sender's equipped title snapshot at send time (称号); absent if the sender had none. */
+  title?: string;
+  /** Sender's family name snapshot at send time (家族 — the family itself, since the channel is family-scoped). */
+  familyName?: string;
   body: string;
   ts: Date;
 }

@@ -206,6 +206,22 @@ describe('GET /internal/account/by-public-id/:publicId', () => {
     expect(body.profile.publicId).toBe('123456789');
     expect(body.profile.displayName).toBe('Alice');
   });
+
+  it('profile carries equippedTitle when the account has one equipped', async () => {
+    const { app } = build(
+      [{ _id: 'a', publicId: '123456789', displayName: 'Alice' }],
+      [saveRow('a', { equipped: { title: 't.ladder.1' } } as Partial<SaveData>)],
+    );
+    const res = await app.inject({ method: 'GET', url: '/internal/account/by-public-id/123456789', headers: authHeaders });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.payload).profile.equippedTitle).toBe('t.ladder.1');
+  });
+
+  it('profile omits equippedTitle when no title is equipped', async () => {
+    const { app } = build([{ _id: 'a', publicId: '123456789', displayName: 'Alice' }]);
+    const res = await app.inject({ method: 'GET', url: '/internal/account/by-public-id/123456789', headers: authHeaders });
+    expect(JSON.parse(res.payload).profile.equippedTitle).toBeUndefined();
+  });
 });
 
 describe('POST /internal/account/batch-profiles', () => {
@@ -239,5 +255,24 @@ describe('POST /internal/account/batch-profiles', () => {
     const { profiles } = JSON.parse(res.payload);
     expect(Object.keys(profiles)).toEqual(['a']);
     expect(profiles.a).toMatchObject({ publicId: '123456789', displayName: 'Alice' });
+  });
+
+  it('includes equippedTitle for accounts with one equipped, omits it for the rest', async () => {
+    const withTitle = saveRow('a', { equipped: { title: 't.ladder.1' } } as Partial<SaveData>);
+    const noTitle = saveRow('b', { equipped: {} } as Partial<SaveData>);
+    const { app } = build(
+      [{ _id: 'a', publicId: '123456789', displayName: 'Alice' }, { _id: 'b', publicId: '987654321', displayName: 'Bob' }],
+      [withTitle, noTitle],
+    );
+    const res = await app.inject({
+      method: 'POST',
+      url: '/internal/account/batch-profiles',
+      headers: authHeaders,
+      payload: { accountIds: ['a', 'b'] },
+    });
+    expect(res.statusCode).toBe(200);
+    const { profiles } = JSON.parse(res.payload);
+    expect(profiles.a.equippedTitle).toBe('t.ladder.1');
+    expect(profiles.b.equippedTitle).toBeUndefined();
   });
 });

@@ -368,22 +368,33 @@ export class ShopSceneBase {
 
   // ── Grid layout ────────────────────────────────────────────────────────────
 
-  /** Responsive column count + cell width for the product grid (mirrors CardScene/EquipmentScene). */
+  /**
+   * Responsive column count + cell size for the image-dominant vertical product cards (big square art
+   * up top, then title / price / action button(s) stacked below). Narrower target than the old wide
+   * text-row card so several icon-cards sit per row (mirrors the roster/gacha card grids); cellH is
+   * derived from cellW to keep a consistent portrait aspect.
+   */
   protected gridMetrics(): { listX: number; listW: number; gap: number; cols: number; cellW: number; cellH: number } {
     const { w, h, landscape } = this;
     const gap = Math.round(w * 0.015);
     const listX = sidebarNavW(w, h, landscape) + gap;
     const listW = w - listX - Math.round(w * 0.04);
-    const targetW = Math.round(w * 0.30);
+    // Landscape packs ~4 across; portrait ~3 (wider fractional target on the narrower axis).
+    const targetW = Math.round(w * (landscape ? 0.16 : 0.30));
     const cols = Math.max(1, Math.floor((listW + gap) / (targetW + gap)));
     const cellW = Math.round((listW - gap * (cols - 1)) / cols);
-    const cellH = Math.round(h * 0.27);
+    const cellH = Math.round(cellW * 1.5);
     return { listX, listW, gap, cols, cellW, cellH };
   }
 
   // ── Card cell ────────────────────────────────────────────────────────────
 
-  /** Draw one product card: name across the top, icon on the left, price/info on the right, action button(s) at the bottom. */
+  /**
+   * Draw one product card as an image-dominant vertical tile: a big square art/icon fills the top,
+   * then title, price (coins or ¥ with optional strike-through), any status lines, and the action
+   * button(s) stack full-width below it. A savings badge sits in the top-right corner over the art.
+   * Everything is horizontally centered so several narrow cards read cleanly across a row.
+   */
   protected drawCard(body: PIXI.Container, spec: CardSpec, x: number, y: number, cw: number, ch: number): void {
     const box = sketchPanel(cw, ch, {
       fill: spec.highlight ? 0xfff8e8 : C.paper,
@@ -396,114 +407,106 @@ export class ShopSceneBase {
     body.addChild(box);
 
     const pad = Math.round(cw * 0.06);
+    const cx = x + cw / 2; // card horizontal centre — everything centres on this
+    const innerW = cw - pad * 2;
 
-    // Right-side column: badge + price, right-aligned and never wrapped.
-    const hasRightInfo = !!(spec.badge || spec.coinAmount !== undefined || spec.yuanPrice !== undefined);
-    const rightColW = hasRightInfo ? Math.round(cw * 0.40) : 0;
-    const rightGap = hasRightInfo ? Math.round(cw * 0.03) : 0;
-    const rightX = x + cw - pad;
-    let ry = y + pad;
+    // ── Action button(s), pinned at the bottom and reserved first (full-width, stacked when >1) so the
+    //    text band above can be clamped to whatever room is left and never overlaps them. ──
+    const n = spec.buttons.length;
+    const btnH = Math.round(ch * 0.13);
+    const bGap = Math.round(ch * 0.02);
+    const btnAreaH = n * btnH + Math.max(0, n - 1) * bGap;
+    const btnTop = y + ch - pad - btnAreaH;
+    spec.buttons.forEach((b, i) => {
+      this.drawButton(body, b, x + pad, btnTop + i * (btnH + bGap), innerW, btnH);
+    });
 
-    if (spec.badge) {
-      const badge = txt(spec.badge.text, snapFont(Math.round(ch * 0.11)), spec.badge.color, true);
-      badge.anchor.set(1, 0); badge.x = rightX; badge.y = ry;
-      body.addChild(badge);
-      ry += badge.height + Math.round(ch * 0.03);
-    }
-
-    if (spec.coinAmount !== undefined) {
-      const cs = Math.round(ch * 0.20);
-      const amt = txt(spec.coinAmount.toLocaleString(), snapFont(Math.round(ch * 0.20)), C.gold, true);
-      amt.anchor.set(1, 0); amt.x = rightX; amt.y = ry;
-      body.addChild(amt);
-      const ci = buildCoinIcon('coin', cs, C.gold);
-      ci.x = rightX - amt.width - Math.round(cw * 0.02) - cs; ci.y = ry + (amt.height - cs) / 2;
-      body.addChild(ci);
-      ry += Math.max(amt.height, cs) + Math.round(ch * 0.03);
-    }
-
-    if (spec.yuanPrice !== undefined) {
-      const price = txt(`¥${spec.yuanPrice}`, snapFont(Math.round(ch * 0.18)), C.gold, true);
-      price.anchor.set(1, 0); price.x = rightX; price.y = ry;
-      body.addChild(price);
-      if (spec.yuanStrike !== undefined) {
-        const strike = txt(`¥${spec.yuanStrike}`, snapFont(Math.round(ch * 0.12)), C.mid, false);
-        strike.anchor.set(1, 0.5);
-        strike.x = price.x - price.width - Math.round(cw * 0.03);
-        strike.y = ry + price.height / 2;
-        body.addChild(strike);
-        const line = new PIXI.Graphics();
-        line.lineStyle(2, C.mid, 1);
-        line.moveTo(strike.x - strike.width, strike.y).lineTo(strike.x, strike.y);
-        body.addChild(line);
-      }
-      ry += price.height + Math.round(ch * 0.03);
-    }
-
-    // Title (left; wraps to multiple lines rather than crowding the price column).
-    const titleMaxW = cw - pad * 2 - rightColW - rightGap;
-    const title = txt(spec.title, snapFont(Math.round(ch * 0.15)), C.dark, true, titleMaxW);
-    title.anchor.set(0, 0);
-    title.x = x + pad; title.y = y + pad;
-    body.addChild(title);
-
-    // Action buttons at the bottom (1 = full width, 2 = split). Reserved first so the icon/lines
-    // block below can be clamped to whatever room is left above it — never overlap the buttons.
-    const btnH = Math.round(ch * 0.22);
-    const btnY = y + ch - pad - btnH;
-
-    // Icon + info block: fills the gap between the top content (title / right column) and the
-    // button row. Sized from that actual gap rather than fixed ch fractions, so it can never
-    // spill into the buttons regardless of how many bonus lines a card has.
-    const midTop = Math.max(y + Math.round(ch * 0.30), title.y + title.height + Math.round(ch * 0.04));
-    const midBottom = btnY - Math.round(ch * 0.02);
-    const midH = Math.max(0, midBottom - midTop);
-
-    const iconS = Math.min(Math.round(ch * 0.32), midH || Math.round(ch * 0.32));
-    const iconX = x + pad;
-    const iconY = midTop;
+    // ── Top: big square art / icon, centred. ──
+    const imgSize = Math.min(Math.round(ch * 0.46), innerW);
+    const imgX = Math.round(cx - imgSize / 2);
+    const imgY = y + pad;
     if (spec.artUrl) {
-      // Wait for the texture to finish loading before sizing the sprite — setting width/height
-      // against an unloaded (0/1px) baseTexture yields a garbage scale and the art never appears.
-      // Re-render once loaded (mirrors CardScene.drawArtFit).
+      // Wait for the texture to finish loading before sizing the sprite — setting width/height against
+      // an unloaded (0/1px) baseTexture yields a garbage scale and the art never appears; re-render on
+      // 'loaded' (mirrors CardScene.drawArtFit).
       const tex = getArtTexture(spec.artUrl);
       if (tex.baseTexture.valid) {
         const art = new PIXI.Sprite(tex);
-        art.width = iconS; art.height = iconS;
-        art.x = iconX; art.y = iconY;
+        art.width = imgSize; art.height = imgSize;
+        art.x = imgX; art.y = imgY;
         body.addChild(art);
       } else if (!this.artHooked.has(spec.artUrl)) {
         this.artHooked.add(spec.artUrl);
         tex.baseTexture.once('loaded', () => this.render());
       }
     } else {
-      const icon = buildCoinIcon(spec.icon, iconS, spec.iconColor);
-      icon.x = iconX; icon.y = iconY;
+      const icon = buildCoinIcon(spec.icon, imgSize, spec.iconColor);
+      icon.x = imgX; icon.y = imgY;
       body.addChild(icon);
     }
 
-    // Info column (right of the icon) — remaining status/bonus lines only.
-    const infoX = iconX + iconS + Math.round(cw * 0.05);
+    // Savings / best-value badge: top-right corner over the art.
+    if (spec.badge) {
+      const badge = txt(spec.badge.text, snapFont(Math.round(ch * 0.075)), spec.badge.color, true);
+      badge.anchor.set(1, 0); badge.x = x + cw - pad; badge.y = y + pad;
+      body.addChild(badge);
+    }
+
+    // ── Middle text band: title, then price, then status lines — all centred, top-aligned from just
+    //    below the art down to just above the buttons. ──
+    let ty = imgY + imgSize + Math.round(ch * 0.03);
+    const bandBottom = btnTop - Math.round(ch * 0.02);
+
+    const title = txt(spec.title, snapFont(Math.round(ch * 0.085)), C.dark, true, innerW);
+    title.anchor.set(0.5, 0); title.x = cx; title.y = ty;
+    body.addChild(title);
+    ty += title.height + Math.round(ch * 0.02);
+
+    if (spec.coinAmount !== undefined) {
+      const cs = Math.round(ch * 0.11);
+      const amt = txt(spec.coinAmount.toLocaleString(), snapFont(cs), C.gold, true);
+      const rowW = cs + Math.round(cw * 0.02) + amt.width;
+      const ci = buildCoinIcon('coin', cs, C.gold);
+      ci.x = Math.round(cx - rowW / 2); ci.y = ty;
+      body.addChild(ci);
+      amt.anchor.set(0, 0); amt.x = ci.x + cs + Math.round(cw * 0.02); amt.y = ty + (cs - amt.height) / 2;
+      body.addChild(amt);
+      ty += Math.max(cs, amt.height) + Math.round(ch * 0.02);
+    }
+
+    if (spec.yuanPrice !== undefined) {
+      const price = txt(`¥${spec.yuanPrice}`, snapFont(Math.round(ch * 0.11)), C.gold, true);
+      if (spec.yuanStrike !== undefined) {
+        const strike = txt(`¥${spec.yuanStrike}`, snapFont(Math.round(ch * 0.07)), C.mid, false);
+        const gap = Math.round(cw * 0.03);
+        const rowW = strike.width + gap + price.width;
+        strike.anchor.set(0, 0.5); strike.x = Math.round(cx - rowW / 2); strike.y = ty + price.height / 2;
+        body.addChild(strike);
+        const line = new PIXI.Graphics();
+        line.lineStyle(2, C.mid, 1);
+        line.moveTo(strike.x, strike.y).lineTo(strike.x + strike.width, strike.y);
+        body.addChild(line);
+        price.anchor.set(0, 0); price.x = strike.x + strike.width + gap; price.y = ty;
+        body.addChild(price);
+      } else {
+        price.anchor.set(0.5, 0); price.x = cx; price.y = ty;
+        body.addChild(price);
+      }
+      ty += price.height + Math.round(ch * 0.02);
+    }
+
+    // Status / bonus lines (Active, Free, item description…) — centred, wrapped, clamped to the band.
     const lines = spec.lines ?? [];
-    if (lines.length > 0 && midH > 0) {
-      const lineH = Math.min(Math.round(ch * 0.14), Math.floor(midH / lines.length));
-      const fontSize = snapFont(Math.max(9, Math.round(lineH * 0.78)));
-      let iy = midTop;
+    if (lines.length > 0 && ty < bandBottom) {
+      const fontSize = snapFont(Math.round(ch * 0.06));
       for (const ln of lines) {
-        const l = txt(ln.text, fontSize, ln.color, true);
-        l.anchor.set(0, 0); l.x = infoX; l.y = iy;
+        if (ty >= bandBottom) break;
+        const l = txt(ln.text, fontSize, ln.color, true, innerW);
+        l.anchor.set(0.5, 0); l.x = cx; l.y = ty;
         body.addChild(l);
-        iy += lineH;
+        ty += l.height + Math.round(ch * 0.01);
       }
     }
-    const n = spec.buttons.length;
-    const totalW = cw - pad * 2;
-    const bGap = Math.round(cw * 0.03);
-    const bw = n > 1 ? Math.round((totalW - bGap * (n - 1)) / n) : totalW;
-    spec.buttons.forEach((b, i) => {
-      const bx = x + pad + i * (bw + bGap);
-      this.drawButton(body, b, bx, btnY, bw, btnH);
-    });
   }
 
   protected drawButton(body: PIXI.Container, b: BtnSpec, x: number, y: number, w: number, h: number): void {

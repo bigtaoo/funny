@@ -78,8 +78,11 @@ export function CoinsMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase 
       });
 
       if (promoH) {
+        // Always emit the promo row (it's a single lightweight row): with the taller image-cards the
+        // tier grid can push it below the initial fold, but it's part of the scroll content and the
+        // body mask clips it, so it must stay in the tree to be reachable once the grid scrolls.
         const py = bodyTop + gridH - this.scrollY;
-        if (py + promoH >= top && py <= h) this.drawPromoRow(body, listX, py, listW, promoH);
+        this.drawPromoRow(body, listX, py, listW, promoH);
       }
 
       drawScrollIndicator(this.container, { x: listX, y: bodyTop, w: listW, h: viewH }, this.scrollY, Math.max(0, totalH - viewH));

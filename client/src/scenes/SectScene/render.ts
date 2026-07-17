@@ -6,6 +6,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchButton, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { caretDisplay } from '../../render/inputDisplay';
+import { drawChatLine } from '../../render/chatRow';
 import { type Constructor, type SectSceneBaseCtor, type SectTab, ROW_H } from './base';
 import { FS } from '../../render/fontScale';
 
@@ -316,12 +317,11 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       let cy = y0 - this.scrollY;
       for (const msg of ordered) {
         if (cy + ROW_H < y0 || cy > y0 + listH2) { cy += ROW_H; continue; }
-        const nameLbl = txt(msg.senderName, FS.micro, C.accent);
-        nameLbl.x = left + 12; nameLbl.y = cy + 4;
-        this.bodyLayer.addChild(nameLbl);
-        const bodyLbl = txt(msg.body, FS.tiny, C.dark);
-        bodyLbl.x = left + 12; bodyLbl.y = cy + 18;
-        this.bodyLayer.addChild(bodyLbl);
+        drawChatLine(
+          this.bodyLayer, left + 12, cy + ROW_H / 2,
+          { senderName: msg.senderName, title: msg.title, sectName: msg.sectName, familyName: msg.familyName },
+          msg.body, FS.micro, FS.tiny,
+        );
         cy += ROW_H;
       }
 

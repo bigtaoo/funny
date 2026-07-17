@@ -70,6 +70,12 @@ export interface FamilyMessageView {
   id: string;
   senderId: string;
   senderName: string;
+  /** Sender's equipped title (称号), if any. */
+  title?: string;
+  /** Sender's sect name (宗门), if any. */
+  sectName?: string;
+  /** Sender's family name (家族), if any. */
+  familyName?: string;
   body: string;
   ts: number;
 }
@@ -98,6 +104,12 @@ export interface WorldChatMessage {
   senderName: string;
   /** 9-digit public id (display-only); empty if unknown (meta unavailable or message predates this field). */
   senderPublicId: string;
+  /** Sender's equipped title (称号), if any. */
+  title?: string;
+  /** Sender's sect name (宗门), if any. */
+  sectName?: string;
+  /** Sender's family name (家族), if any. */
+  familyName?: string;
   body: string;
   ts: number;
 }

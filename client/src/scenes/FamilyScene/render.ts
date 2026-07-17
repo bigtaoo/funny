@@ -6,6 +6,7 @@ import { FS } from '../../render/fontScale';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { buildIcon } from '../../render/icons';
 import { caretDisplay } from '../../render/inputDisplay';
+import { drawChatLine } from '../../render/chatRow';
 import { FAMILY_CAP } from '@nw/shared';
 import { type Constructor, type FamilySceneBaseCtor, type FamilyTab } from './base';
 
@@ -410,12 +411,11 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       let cy = y0 - this[scrollKey];
       for (const msg of this.messages) {
         if (cy + R < y0 || cy > y0 + listH2) { cy += R; continue; }
-        const nameLbl = txt(msg.senderName ?? msg.senderId, FS.label, C.accent);
-        nameLbl.x = x0 + 12; nameLbl.y = cy + Math.round(R * 0.1);
-        this.bodyLayer.addChild(nameLbl);
-        const bodyLbl = txt(msg.body, FS.heading, C.dark);
-        bodyLbl.x = x0 + 12; bodyLbl.y = cy + Math.round(R * 0.44);
-        this.bodyLayer.addChild(bodyLbl);
+        drawChatLine(
+          this.bodyLayer, x0 + 12, cy + R / 2,
+          { senderName: msg.senderName ?? msg.senderId, title: msg.title, familyName: msg.familyName },
+          msg.body, FS.label, FS.label,
+        );
         cy += R;
       }
 
