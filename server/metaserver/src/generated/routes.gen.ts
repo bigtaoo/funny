@@ -1849,6 +1849,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -2362,6 +2366,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -2908,6 +2916,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -3422,6 +3434,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "starterGrowthEligible": {
                   "type": "boolean",
                   "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                },
+                "firstPurchaseUsed": {
+                  "type": "boolean",
+                  "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                 }
               }
             },
@@ -4364,6 +4380,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -4953,6 +4973,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -5574,6 +5598,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -6132,6 +6160,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -6750,6 +6782,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -7301,6 +7337,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -7811,6 +7851,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -8318,6 +8362,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -8826,6 +8874,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -9338,6 +9390,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -9889,6 +9945,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -10400,6 +10460,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -10943,6 +11007,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -11562,6 +11630,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -12077,6 +12149,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -12584,6 +12660,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -13145,6 +13225,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -13700,6 +13784,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -14207,6 +14295,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -14714,6 +14806,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -15593,6 +15689,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -16251,6 +16351,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -16789,6 +16893,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -17535,6 +17643,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
@@ -18845,6 +18957,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "starterGrowthEligible": {
                       "type": "boolean",
                       "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                    },
+                    "firstPurchaseUsed": {
+                      "type": "boolean",
+                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
                     }
                   }
                 },
