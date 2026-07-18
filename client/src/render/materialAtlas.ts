@@ -57,8 +57,8 @@ export async function loadMaterialAtlas(): Promise<void> {
  * procedural ink glyph (icons.ts). The returned DisplayObject fits a `size`×`size`
  * box with its top-left at the origin (matching `buildIcon`'s contract) — callers
  * set `.x/.y` to the box's top-left. Every material-icon site (gacha reveal + odds,
- * equipment materials band) MUST go through here so the same material reads the
- * same everywhere.
+ * equipment materials band, level/daily/event/battle-pass reward rows) MUST go
+ * through here so the same material reads the same everywhere.
  */
 export function buildMaterialIcon(kind: MaterialKind, size: number, color: number): PIXI.DisplayObject {
   const tex = getMaterialIconTexture(kind);

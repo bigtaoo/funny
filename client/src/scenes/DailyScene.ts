@@ -6,6 +6,11 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
 import { buildIcon, type IconKind } from '../render/icons';
+import { buildMaterialIcon, type MaterialKind } from '../render/materialAtlas';
+
+function isMaterialKind(kind: IconKind): kind is MaterialKind {
+  return kind === 'scrap' || kind === 'lead' || kind === 'binding';
+}
 import { FS, snapFont } from '../render/fontScale';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
@@ -233,7 +238,9 @@ export class DailyScene implements Scene {
         const baseY = y + ch * 0.92;
         if (icon) {
           const rc = Math.round(ch * 0.26);
-          const ic = buildIcon(icon, rc, reward.kind === 'coins' ? C.gold : 0x336644);
+          const ic = isMaterialKind(icon)
+            ? buildMaterialIcon(icon, rc, 0x336644)
+            : buildIcon(icon, rc, reward.kind === 'coins' ? C.gold : 0x336644);
           if (singleItem) {
             ic.x = cx - rc / 2; ic.y = baseY - rc;
             this.container.addChild(ic);
