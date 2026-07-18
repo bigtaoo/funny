@@ -231,7 +231,13 @@ baseTroopStock ≤ cityTroopCap              // 当前存量
 - **战前检查**：布阵中有卡 `currentTroops = 0` → UI 显示警告（不强制阻拦）
 - **新玩家**：进入 SLG 时系统赠送 10000 兵力，足够初始布阵
 
----
+> **客户端缺口修复**（2026-07-18）：server 端 CC-4（`distributeTroops`/`POST /world/troops/distribute`）
+> 2026-07-01 已完成，但客户端从未接入——`DefenseEditorScene`（布阵编辑器）只把卡片拖进队伍格子，
+> 从没有界面调用这个接口，导致玩家配好队伍后 `cardState.currentTroops` 永远是 0，`teamTroops.ts`
+> 的 `carriedTroops()` 算出 0，占地/进攻的队伍选择器（`WorldMapNet.showTeamPicker`）判定为"无可用队伍"
+> 直接过滤掉——即使 UI 上"看起来已经配置了两个队伍"。已在 `DefenseEditorScene` 底部加"补满兵力"
+> 按钮，实现上述"一键补满"规则（战力降序、补至 troopCap、池不足按顺序分配剩余）；"手动调整"逐卡改量
+> 仍未做，留作后续。
 
 ## 7. 战斗结算与受伤
 
