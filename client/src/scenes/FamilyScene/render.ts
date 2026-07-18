@@ -191,7 +191,8 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       const contentH = h - contentY - 6;
 
       if (this.activeTab === 'members') {
-        this.renderMembers(left, w - left, contentY, contentH, 'scrollY');
+        const btnH = this.renderPendingButton(left, w - left, contentY);
+        this.renderMembers(left, w - left, contentY + btnH, contentH - btnH, 'scrollY');
       } else {
         this.renderChannel(left, w - left, contentY, contentH, 'scrollYChannel');
       }
@@ -240,8 +241,28 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       divider.moveTo(this.chatColX, contentY - colLblGap - 4).lineTo(this.chatColX, contentY + contentH);
       this.bodyLayer.addChild(divider);
 
-      this.renderMembers(left, rosterW, contentY, contentH, 'scrollY');
+      const btnH = this.renderPendingButton(left, rosterW, contentY);
+      this.renderMembers(left, rosterW, contentY + btnH, contentH - btnH, 'scrollY');
       this.renderChannel(chatX, chatW, contentY, contentH, 'scrollYChannel');
+    }
+
+    /** Leader/elder-only "N pending applicants" button shown above the roster when there's at least
+     *  one open join request; opens the approve/reject modal (actions.ts openJoinRequests). Returns
+     *  the vertical space it consumed (0 when hidden) so callers can shrink the roster area by it. */
+    private renderPendingButton(x0: number, colW: number, y: number): number {
+      if (!this.isFamilyApprover || this.joinRequests.length === 0) return 0;
+      const btnH = Math.round(this.rowH * 0.8);
+      const btn = sketchPanel(colW - 12, btnH - 4, { fill: 0xfff3d6, border: 0xd4a030, seed: seedFor(y, 9, colW) });
+      btn.x = x0 + 6; btn.y = y + 2;
+      this.bodyLayer.addChild(btn);
+      const lbl = txt(t('family.pendingRequests', { n: this.joinRequests.length }), FS.bodyLg, 0xa9750f, true);
+      lbl.anchor.set(0, 0.5); lbl.x = x0 + 18; lbl.y = y + btnH / 2;
+      this.bodyLayer.addChild(lbl);
+      const arrow = txt('›', FS.bodyLg, 0xa9750f);
+      arrow.anchor.set(1, 0.5); arrow.x = x0 + colW - 20; arrow.y = y + btnH / 2;
+      this.bodyLayer.addChild(arrow);
+      this.hitRects.push({ rect: { x: x0 + 6, y: y + 2, w: colW - 12, h: btnH - 4 }, action: () => this.openJoinRequests() });
+      return btnH;
     }
 
     /** Family identity band: `[TAG] Name` + member count on row 1, prosperity on row 2, optional

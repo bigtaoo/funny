@@ -2,6 +2,7 @@
 // A family is a globally persistent entity (no worldId); TAG is unique across the entire database.
 // A player can belong to at most one family at a time (FamilyMemberDoc._id = accountId).
 // Member cap FAMILY_CAP=30; three permission tiers: leader > elder > member.
+import { randomUUID } from 'node:crypto';
 import {
   FAMILY_CAP,
   FAMILY_MSG_BODY_MAX,
@@ -12,11 +13,12 @@ import {
   familyProsperity,
   type FamilyRole,
 } from '@nw/shared';
-import type { SocialCollections, FamilyDoc, FamilyMemberDoc, FamilyMessageDoc } from './db';
+import type { SocialCollections, FamilyDoc, FamilyMemberDoc, FamilyMessageDoc, FamilyJoinRequestDoc } from './db';
 import type { SocialGatewayClient } from './gatewayClient';
 import { nullSocialGatewayClient } from './gatewayClient';
 import type { SocialMetaClient } from './metaClient';
 import { nullSocialMetaClient } from './metaClient';
+import type { MailService } from './mailService';
 
 export interface FamilyView {
   familyId: string;
@@ -57,6 +59,16 @@ export interface FamilyMemberView {
   displayName?: string;
 }
 
+/** A pending join request as seen by the approving leader/elder (SS3.x join-approval). */
+export interface FamilyJoinRequestView {
+  requestId: string;
+  accountId: string;
+  /** Resolved via SocialMetaClient.batchProfiles; omitted if the lookup is unavailable. */
+  publicId?: string;
+  displayName?: string;
+  createdAt: number;
+}
+
 export interface FamilyMessageView {
   id: string;
   senderId: string;
@@ -74,6 +86,8 @@ export interface FamilyServiceDeps {
   now: () => number;
   gateway?: SocialGatewayClient;
   meta?: SocialMetaClient;
+  /** Used to mail the applicant when their join request is rejected (SS3.x). Omitted in tests that don't exercise that path. */
+  mail?: MailService;
 }
 
 /** In-process monotonic sequence number to prevent message ID collisions within the same millisecond. */
@@ -101,10 +115,12 @@ function docToView(doc: FamilyDoc): FamilyView {
 export class FamilyService {
   private readonly gateway: SocialGatewayClient;
   private readonly meta: SocialMetaClient;
+  private readonly mail?: MailService;
 
   constructor(private readonly deps: FamilyServiceDeps) {
     this.gateway = deps.gateway ?? nullSocialGatewayClient;
     this.meta = deps.meta ?? nullSocialMetaClient;
+    this.mail = deps.mail;
   }
 
   /** Attach resolved publicId/displayName to each member (best-effort; missing profiles are left unresolved). */
@@ -214,7 +230,11 @@ export class FamilyService {
     };
   }
 
-  /** Join a family (direct join; cap of 30 members; must not already be in a family). */
+  /**
+   * Add membership directly (cap of 30 members; must not already be in a family). Public routes no
+   * longer call this straight from a join click — see requestJoin/respondJoinRequest above; this is
+   * now reached only via an accepted join request.
+   */
   async joinFamily(accountId: string, familyId: string): Promise<void> {
     const cols = this.deps.cols;
     const now = this.deps.now();
@@ -241,6 +261,90 @@ export class FamilyService {
       joinedAt: now,
     };
     await cols.familyMembers.insertOne(memberDoc);
+  }
+
+  /**
+   * Submit a request to join a family (SS3.x join-approval). Does not add membership — a
+   * leader/elder must call respondJoinRequest to accept before joinFamily actually runs.
+   */
+  async requestJoin(accountId: string, familyId: string): Promise<{ requestId: string }> {
+    const cols = this.deps.cols;
+    const now = this.deps.now();
+
+    const existing = await cols.familyMembers.findOne({ _id: accountId });
+    if (existing) throw new SlgError('ALREADY_IN_FAMILY');
+
+    const fam = await cols.families.findOne({ _id: familyId });
+    if (!fam) throw new SlgError('NOT_FOUND');
+    if (fam.memberCount >= FAMILY_CAP) throw new SlgError('FAMILY_FULL');
+
+    const pending = await cols.familyJoinRequests.findOne({ accountId, status: 'pending' });
+    if (pending) throw new SlgError('ALREADY_REQUESTED');
+
+    const requestId = randomUUID();
+    const doc: FamilyJoinRequestDoc = { _id: requestId, familyId, accountId, status: 'pending', createdAt: now };
+    await cols.familyJoinRequests.insertOne(doc);
+    return { requestId };
+  }
+
+  /** List pending join requests for the caller's own family (leader/elder only). */
+  async listJoinRequests(requesterId: string): Promise<FamilyJoinRequestView[]> {
+    const requesterMem = await this.deps.cols.familyMembers.findOne({ _id: requesterId });
+    if (!requesterMem) throw new SlgError('NOT_IN_FAMILY');
+    if (requesterMem.role === 'member') throw new SlgError('NO_PERMISSION');
+
+    const docs = await this.deps.cols.familyJoinRequests
+      .find({ familyId: requesterMem.familyId, status: 'pending' })
+      .sort({ createdAt: 1 })
+      .toArray();
+    if (docs.length === 0) return [];
+    const profiles = await this.meta.batchProfiles(docs.map((d) => d.accountId));
+    return docs.map((d) => {
+      const p = profiles.get(d.accountId);
+      return {
+        requestId: d._id,
+        accountId: d.accountId,
+        createdAt: d.createdAt,
+        ...(p ? { publicId: p.publicId, displayName: p.displayName } : {}),
+      };
+    });
+  }
+
+  /**
+   * Approve or reject a pending join request (leader/elder only). Accept runs the same
+   * cap-checked join as joinFamily; reject mails the applicant (SS3.x).
+   */
+  async respondJoinRequest(requesterId: string, requestId: string, accept: boolean): Promise<void> {
+    const cols = this.deps.cols;
+    const requesterMem = await cols.familyMembers.findOne({ _id: requesterId });
+    if (!requesterMem) throw new SlgError('NOT_IN_FAMILY');
+    if (requesterMem.role === 'member') throw new SlgError('NO_PERMISSION');
+
+    const reqDoc = await cols.familyJoinRequests.findOne({ _id: requestId });
+    if (!reqDoc || reqDoc.familyId !== requesterMem.familyId || reqDoc.status !== 'pending') {
+      throw new SlgError('NOT_FOUND');
+    }
+    const now = this.deps.now();
+    const claimed = await cols.familyJoinRequests.findOneAndUpdate(
+      { _id: requestId, status: 'pending' },
+      { $set: { status: accept ? 'accepted' : 'rejected', resolvedAt: now } },
+    );
+    if (!claimed) throw new SlgError('NOT_FOUND');
+
+    if (accept) {
+      await this.joinFamily(reqDoc.accountId, reqDoc.familyId);
+    } else if (this.mail) {
+      const fam = await cols.families.findOne({ _id: reqDoc.familyId });
+      await this.mail.insertSystemMail(
+        `family-join-reject:${reqDoc.familyId}:${reqDoc.accountId}:${now}`,
+        reqDoc.accountId,
+        {
+          subject: 'family.mail.rejected.subject',
+          body: `family.mail.rejected.body|familyName=${fam?.name ?? ''}`,
+          expireDays: 7,
+        },
+      );
+    }
   }
 
   /** Leave the family (the leader must first transfer leadership or dissolve the family). */

@@ -66,6 +66,14 @@ export interface FamilyView {
 export interface FamilyDetailView extends FamilyView {
   members: FamilyMemberView[];
 }
+/** A pending join request awaiting leader/elder approval — hand-mirrored from FamilyJoinRequestView (familyService.ts). */
+export interface FamilyJoinRequestView {
+  requestId: string;
+  accountId: string;
+  publicId?: string;
+  displayName?: string;
+  createdAt: number;
+}
 export interface FamilyMessageView {
   id: string;
   senderId: string;
@@ -428,8 +436,20 @@ export class WorldApiClient {
     return this.req('POST', '/social/family', { name, tag }, 10_000, getSocialBaseUrl());
   }
 
-  async joinFamily(familyId: string): Promise<{ ok: true }> {
+  /** Submit a request to join a family — leader/elder approval required before membership takes effect. */
+  async requestJoinFamily(familyId: string): Promise<{ requestId: string }> {
     return this.req('POST', `/social/family/${encodeURIComponent(familyId)}/join`, {}, 10_000, getSocialBaseUrl());
+  }
+
+  /** Pending join requests for the caller's own family (leader/elder only). */
+  async listJoinRequests(): Promise<FamilyJoinRequestView[]> {
+    const res = await this.req<{ requests: FamilyJoinRequestView[] }>('GET', '/social/family/requests', undefined, 10_000, getSocialBaseUrl());
+    return res.requests;
+  }
+
+  /** Approve or reject a pending join request (leader/elder only). Rejection mails the applicant. */
+  async respondJoinRequest(requestId: string, accept: boolean): Promise<{ ok: true }> {
+    return this.req('POST', `/social/family/requests/${encodeURIComponent(requestId)}/respond`, { accept }, 10_000, getSocialBaseUrl());
   }
 
   /** Browse joinable families: top-N by prosperity (default), or fuzzy name-matched when `query` is given. Only families with an open slot are returned. */

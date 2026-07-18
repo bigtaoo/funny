@@ -477,3 +477,14 @@
   - 客户端 `WorldMapInput.ts`：主城分支从五按钮 `showModal` 改为直接 `onOpenCity()`；连带移除只被这个弹窗使用的 i18n key（`world.actEnterCity`/`world.train`/`world.team.manage`，3 语言）与回归测试 `worldMapBaseClick.ui.ts` 的断言更新。
   - `onOpenDefense('base')`/`onOpenTeams()`（地图层「打开队伍列表 TeamsScene」入口）、`WorldMapPanels.openTrainPanel()`（地图层训练面板）自此弹窗移除后**已无任何调用方**——确认为死代码，但体量较大（TeamsScene 整个场景 + 训练面板渲染 ~150 行 + 多处 `trainPanelOpen` 状态联动），本次不一并删除，留作后续单独清理（已用 spawn_task 标记）。
   - `server/worldsvc` 的 `PlayerWorldDoc.defense`（`tileKey='base'` 的 `setDefense`/`getDefense` 分支）**保留未删**——虽已确认是死代码，但涉及改 `openapi-world.yml` 契约（`tileKey` 参数默认值/说明）+ 两端 codegen 重新生成，风险/收益比不划算，本次不动；后续若清理前端 TeamsScene/训练面板时可一并处理。
+
+## ADR-042 家族加入改为需 leader/elder 审批（解决 SOCIAL_SVC_DESIGN §8 O1）— Accepted — 2026-07-18
+
+- **决策**（用户拍板）：`POST /social/family/:id/join` 不再直接入队，改为插入一条 `FamilyJoinRequestDoc`（`pending`）；leader/elder 通过新增的 `GET /social/family/requests` 查看、`POST /social/family/requests/:id/respond` 同意（复用原直接入队逻辑）或拒绝（拒绝会给申请人发一封系统邮件，`family.mail.rejected.*` i18n key）。解决 `SOCIAL_SVC_DESIGN.md` §8 遗留的 O1 开放问题（此前文档已预留 `joinPolicy` 字段但从未实现，实际代码是直接入队）。
+- **为什么**：直接入队让族长对新成员毫无筛选权，用户希望能审核申请人。
+- **影响**：
+  - `server/socialsvc`：`db.ts` 新增 `familyJoinRequests` 集合（`{familyId,status}`/`{accountId,status}` 索引）；`familyService.ts` 新增 `requestJoin`/`listJoinRequests`/`respondJoinRequest`（`joinFamily` 保留但只在 accept 路径内部调用）；`httpApi.ts` 新增两条路由（**踩坑**：`GET /social/family/requests` 必须排在通用 `GET /social/family/:id` 之前，否则 `requests` 会被当成 familyId 捕获——已加 HTTP 层 e2e 测试锁定顺序）；`FamilyService` 新增可选 `mail?: MailService` 依赖，`index.ts` 调整实例化顺序（mailSvc 先于 familySvc）。
+  - `@nw/shared`：`ErrorCode.ALREADY_REQUESTED`（409）。
+  - `client`：`WorldApiClient.joinFamily` 改名 `requestJoinFamily` + 新增 `listJoinRequests`/`respondJoinRequest`；`FamilyScene`（`base/data/actions/render.ts`）新增 `isFamilyApprover` 判定、Members 面板顶部"待审批 (N)"按钮（仅 leader/elder 且有申请时显示）、审批弹窗；`FriendsScene` 的家族加入入口（`app/nav/social.ts`/`FriendsScene/service.ts`）同步改为提交申请语义，不再假定"点击即入队"。
+  - 文档：[`SOCIAL_SVC_DESIGN.md`](game/SOCIAL_SVC_DESIGN.md) §3.1（新增 `FamilyJoinRequestDoc`）+ §4.1（路由表）+ §8 O1 拍板。
+  - 测试：`server/socialsvc/test/family.e2e.test.ts`（新增 8 个用例）+ `familyHttp.e2e.test.ts`（新增 8 个用例，含 wire-level 路由顺序回归、权限拒绝、拒绝邮件断言）；`client/test/ui/familyJoinApproval.ui.ts`（新增，8 个用例，覆盖审批方 + 申请方双视角，headless PIXI 渲染断言）。
