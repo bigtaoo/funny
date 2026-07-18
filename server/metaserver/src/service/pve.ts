@@ -532,6 +532,9 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
             status,
             judgedStars,
             ...(verdict.judgeAccountId ? { judgeAccountId: verdict.judgeAccountId } : {}),
+            // Archive the submitted frames only when suspicious (§8.6 待办): lets ops re-examine a disputed
+            // clear later instead of only having the judge's verdict; kept out of the common verified/unverified path.
+            ...(rejected ? { frames: frames ?? [], endFrame: Math.floor(endFrame) || 0 } : {}),
           },
         },
       );

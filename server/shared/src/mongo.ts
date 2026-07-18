@@ -193,6 +193,13 @@ export interface PveVerificationDoc {
   /** Star count from re-simulation (present when verified or rejected). */
   judgedStars?: number;
   judgeAccountId?: string;
+  /**
+   * Raw replay frames submitted to `/pve/verify`, archived only when the re-simulation came back `rejected`
+   * (PVE_INTEGRITY_PLAN §8.6 待办) — lets ops re-examine a disputed clear after the fact instead of only
+   * having the judge's verdict to go on. Absent for `verified`/`unverified` docs to keep the collection lean.
+   */
+  frames?: { frame: number; cmds: { side: number; commands: string }[] }[];
+  endFrame?: number;
   ts: number;
 }
 
