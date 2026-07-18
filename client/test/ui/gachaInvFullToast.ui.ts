@@ -25,7 +25,7 @@ function buildGacha(drawResult: GachaDrawResult): GachaScene {
     getCoins: () => 1000,
     getPity: () => 0,
     getFatePoints: () => 0,
-    loadPools: async () => [{ id: 'standard', name: 'Standard', kind: 'static', drawOneCost: 150, drawTenCost: 1350, items: [] }],
+    loadPools: async () => [{ id: 'standard', name: 'Standard', costSingle: 150, costTen: 1350, entries: [] }],
     draw: async () => drawResult,
     redeemFate: async () => ({ ok: true, granted: 'placeholder' }),
   };
@@ -36,7 +36,7 @@ function buildGacha(drawResult: GachaDrawResult): GachaScene {
 async function drawThenDismiss(scene: GachaScene): Promise<void> {
   // The constructor kicks off loadPools() without awaiting it (fire-and-forget); onDraw no-ops
   // without a resolved pool, so force one directly rather than racing the real async load.
-  (scene as unknown as { pools: unknown[] }).pools = [{ id: 'standard', name: 'Standard', kind: 'static', drawOneCost: 150, drawTenCost: 1350, items: [] }];
+  (scene as unknown as { pools: unknown[] }).pools = [{ id: 'standard', name: 'Standard', costSingle: 150, costTen: 1350, entries: [] }];
   await (scene as unknown as { onDraw(count: 1 | 10): Promise<void> }).onDraw(10);
   (scene as unknown as { dismissReveal(): void }).dismissReveal();
 }

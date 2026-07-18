@@ -67,7 +67,7 @@ function buildGacha(cb: Partial<GachaSceneCallbacks>): GachaScene {
     getPity: () => 0,
     getFatePoints: () => 0,
     loadPools: async () => [],
-    draw: async () => ({ ok: true, results: [] }),
+    draw: async () => ({ ok: true, results: [], overflow: { cardMailed: 0, cardCompensatedCoins: 0, equipMailed: 0, equipCompensatedCoins: 0 } }),
     redeemFate: async () => ({ ok: true, granted: 'placeholder' }),
     ...cb,
   });

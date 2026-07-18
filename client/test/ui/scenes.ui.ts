@@ -237,7 +237,7 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         getPity: () => 0,
         getFatePoints: () => 0,
         loadPools: async () => [],
-        draw: async () => ({ ok: true, results: [] }),
+        draw: async () => ({ ok: true, results: [], overflow: { cardMailed: 0, cardCompensatedCoins: 0, equipMailed: 0, equipCompensatedCoins: 0 } }),
         redeemFate: async () => ({ ok: true, granted: 'placeholder' }),
       }),
   },
