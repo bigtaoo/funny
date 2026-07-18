@@ -14,6 +14,7 @@ import type {
   PlayerClient,
   PlayerProfile,
   StatsClient,
+  SuspiciousPveClient,
 } from '../src/clients';
 import type { LiveStats } from '@nw/shared';
 
@@ -59,9 +60,24 @@ class FakeMail implements MailDispatcher {
 }
 const stubPlayer: PlayerClient = {
   available: true,
-  lookupByPublicId: async (publicId: string): Promise<PlayerProfile | null> =>
-    publicId === '123456789' ? { publicId, displayName: 'Alice', rank: 'gold', elo: 1200, wins: 3, losses: 1 } : null,
+  lookupByPublicId: async (publicId: string): Promise<PlayerProfile | null> => {
+    if (publicId === '123456789') return { publicId, displayName: 'Alice', rank: 'gold', elo: 1200, wins: 3, losses: 1, banned: false };
+    if (publicId === '999999998') return { publicId, displayName: 'Bob', banned: true };
+    return null;
+  },
+  lookupByAccountId: async (): Promise<PlayerProfile | null> => null,
+  search: async (): Promise<[]> => [],
+  resetPassword: async (accountId: string): Promise<{ ok: true } | { ok: false; error: string }> =>
+    accountId === 'no-password-account' ? { ok: false, error: 'account has no password credential' } : { ok: true },
 };
+// Fake ban/unban backing store for the manual ban feature (S4-4, anticheat.action) — mirrors FakeSuspiciousPve in season-audit.e2e.test.ts.
+class FakeSuspiciousPve implements SuspiciousPveClient {
+  available = true;
+  banned = new Set<string>();
+  async listSuspiciousPve() { return []; }
+  async banAccount(accountId: string) { this.banned.add(accountId); return { ok: true }; }
+  async unbanAccount(accountId: string) { this.banned.delete(accountId); return { ok: true }; }
+}
 
 async function actorOf(svc: AdminService, username: string): Promise<Actor> {
   const doc = (await svc.getAccount((await mongo!.collections.adminAccounts.findOne({ username }))!._id))!;
@@ -72,12 +88,14 @@ describe.skipIf(!mongo)('admin service e2e', () => {
   const m = mongo!;
   let svc: AdminService;
   let mail: FakeMail;
+  let suspiciousPve: FakeSuspiciousPve;
 
   beforeEach(async () => {
     await m.db.dropDatabase();
     await m.ensureIndexes(3600);
     mail = new FakeMail();
-    svc = new AdminService({ cols: m.collections, stats: stubStats, players: stubPlayer, mail, now });
+    suspiciousPve = new FakeSuspiciousPve();
+    svc = new AdminService({ cols: m.collections, stats: stubStats, players: stubPlayer, suspiciousPve, mail, now });
     // Seed: one super-admin + one ops + one support agent.
     await seedSuperAdmin(m.collections, 'root', 'rootpass', now);
     const root = await actorOf(svc, 'root');
@@ -285,6 +303,33 @@ describe.skipIf(!mongo)('admin service e2e', () => {
   it('player.lookup by publicId + not found', async () => {
     expect(await svc.lookupPlayer('123456789')).toMatchObject({ displayName: 'Alice', rank: 'gold' });
     await expect(svc.lookupPlayer('999999999')).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('player.lookup surfaces the banned flag from the player client (2026-07-18 Player Lookup ban-visibility fix)', async () => {
+    expect(await svc.lookupPlayer('123456789')).toMatchObject({ banned: false });
+    expect(await svc.lookupPlayer('999999998')).toMatchObject({ banned: true });
+  });
+
+  it('anticheat.action: manual ban/unban (S4-4) is idempotent and toggles the backing store', async () => {
+    expect(await svc.banAccount('acc-1')).toEqual({ ok: true });
+    expect(suspiciousPve.banned.has('acc-1')).toBe(true);
+    // Idempotent: banning an already-banned account still succeeds.
+    expect(await svc.banAccount('acc-1')).toEqual({ ok: true });
+    expect(await svc.unbanAccount('acc-1')).toEqual({ ok: true });
+    expect(suspiciousPve.banned.has('acc-1')).toBe(false);
+    // Idempotent: unbanning an already-clear account still succeeds.
+    expect(await svc.unbanAccount('acc-1')).toEqual({ ok: true });
+  });
+
+  it('player.password_reset: resets via the player client + audits; surfaces the client error for a passwordless account', async () => {
+    const root = await actorOf(svc, 'root');
+    await svc.resetPlayerPassword(root.adminId, 'acc-1', '123456');
+    const entries = await svc.listAudit(root, {});
+    expect(entries.some((e) => e.action === 'player.password_reset' && e.target === 'acc-1')).toBe(true);
+    await expect(svc.resetPlayerPassword(root.adminId, 'no-password-account', '123456')).rejects.toMatchObject({
+      status: 409,
+    });
+    await expect(svc.resetPlayerPassword(root.adminId, 'acc-1', 'short')).rejects.toMatchObject({ status: 400 });
   });
 
   it('sampling writes metricSnapshots → trend queryable', async () => {

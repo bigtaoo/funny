@@ -188,6 +188,17 @@ export class Api {
     const r = await this.req<{ players: PlayerSummary[] }>('GET', `/admin/players/search?q=${encodeURIComponent(q)}`);
     return r.players;
   }
+  /** Admin-only (player.password_reset, super role): reset a player's password when they have no contact method on file. */
+  async resetPlayerPassword(accountId: string, password: string): Promise<void> {
+    await this.req('POST', `/admin/players/${encodeURIComponent(accountId)}/reset-password`, { password });
+  }
+  /** Manual account ban/unban (anticheat.action, S4-4). */
+  async banPlayer(accountId: string): Promise<void> {
+    await this.req('POST', `/admin/accounts/${encodeURIComponent(accountId)}/ban`);
+  }
+  async unbanPlayer(accountId: string): Promise<void> {
+    await this.req('POST', `/admin/accounts/${encodeURIComponent(accountId)}/unban`);
+  }
 
   // —— Achievement anti-cheat review queue (S9-7) ——
   async antiCheatReviews(opts?: { accountId?: string; status?: string; limit?: number }): Promise<AntiCheatReviewView[]> {

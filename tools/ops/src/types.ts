@@ -6,7 +6,9 @@ export type AdminCapability =
   | 'monitor.view'
   | 'analytics.view'
   | 'player.lookup'
+  | 'player.password_reset'
   | 'anticheat.view'
+  | 'anticheat.action'
   | 'comp.initiate.single'
   | 'comp.initiate.global'
   | 'comp.approve.single'
@@ -139,6 +141,7 @@ export interface PlayerProfile {
   elo?: number;
   wins?: number;
   losses?: number;
+  banned?: boolean;
 }
 
 export interface PlayerSummary {

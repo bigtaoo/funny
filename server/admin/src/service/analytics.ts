@@ -2,6 +2,7 @@
 // (OPS_DESIGN §5). Read-mostly surfaces backed by self-collected metric snapshots and the analytics/player clients.
 import {
   roleHasCapability,
+  validatePassword,
   METRIC_KEYS,
   type AuditEntryView,
   type CompTicketStatus,
@@ -35,6 +36,7 @@ export interface AnalyticsHandlers {
   lookupPlayer(publicId: string): Promise<PlayerProfile>;
   lookupPlayerByAccountId(accountId: string): Promise<PlayerProfile>;
   searchPlayers(actor: string, q: string): Promise<PlayerSummary[]>;
+  resetPlayerPassword(actor: string, accountId: string, password: string): Promise<void>;
   listAntiCheatReviews(
     actor: string,
     opts?: { accountId?: string; status?: string; limit?: number },
@@ -173,6 +175,24 @@ export function AnalyticsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase 
       const rows = await this.players.search(term, 20);
       await this.audit(actor, 'player.search', { summary: `q=${term} → ${rows.length} hits` });
       return rows;
+    }
+
+    /**
+     * Admin-only password reset for a player with no self-service recovery path (player.password_reset,
+     * super role only — capability checked by httpApi before this is called). Bypasses the old-password
+     * check that /auth/password/change requires.
+     */
+    async resetPlayerPassword(actor: string, accountId: string, password: string): Promise<void> {
+      const id = (accountId ?? '').trim();
+      if (!id) throw new AdminError(400, 'bad_request', 'accountId required');
+      const pwErr = validatePassword(password);
+      if (pwErr) throw new AdminError(400, 'bad_request', pwErr);
+      if (!this.players.available) {
+        throw new AdminError(503, 'unavailable', 'player lookup backend unavailable');
+      }
+      const result = await this.players.resetPassword(id, password);
+      if (!result.ok) throw new AdminError(409, 'reset_failed', result.error);
+      await this.audit(actor, 'player.password_reset', { target: id });
     }
 
     /** Achievement anti-cheat review queue (anticheat.view, S9-7). Defaults to open status; can be filtered by accountId. Audited. */
