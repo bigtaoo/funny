@@ -4,11 +4,14 @@
 // (ADR-025 — "nine cells, one entity"), but the click handler used to compare the clicked
 // tile against the anchor coordinate only (`bx === tx && by === ty`). Clicking any of the
 // other 8 cells that visually belong to the same city fell through to the generic
-// "my tile" menu (reinforce/defense/watchtower/abandon) instead of the city menu
-// (Enter City / Train / Defense / Team), which looked like the city was unresponsive and
-// blocked the player from ever reaching the troop-training UI.
+// "my tile" menu (reinforce/defense/watchtower/abandon) instead of entering the city.
 //
 // Fix: treat any cell inside baseFootprintCells(anchor) as "the city".
+//
+// 2026-07-18: the main-city tap no longer opens a menu at all — it goes straight into the
+// desk (city) scene (no Enter City / Train / Defense / Manage team popup). Base defense is
+// not a manual setting; teams left in the city auto-defend (ADR-026 §2) and teams out on a
+// march simply leave it undefended, so there is no "Defense" concept at the base tile anymore.
 //
 // Runs under the headless PIXI adapter (vitest.ui.config.ts setupFiles). Uses a minimal
 // hand-rolled WorldMapContext (mirrors worldMapInfoScroll.ui.ts's harness pattern) with
@@ -33,7 +36,6 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
 const WORLD_ID = 'world:1:0';
 const ANCHOR = { x: 20, y: 20 };
 
-const CITY_MENU_LABELS = [t('world.actEnterCity'), t('world.train'), t('world.actDefense'), t('world.team.manage'), '✕'];
 const MINE_TILE_MENU_LABELS = [t('world.actReinforce'), t('world.actDefense'), t('world.actWatchtower'), t('world.actRelocate'), t('world.actAbandon'), '✕'];
 // Relocate is only offered when the player already has a main base (me.mainBaseTile set).
 const MINE_TILE_MENU_LABELS_NO_BASE = [t('world.actReinforce'), t('world.actDefense'), t('world.actWatchtower'), t('world.actAbandon'), '✕'];
@@ -54,7 +56,6 @@ function buildHarness(opts: { me?: PlayerWorldView; mapW?: number; mapH?: number
   const showModal = vi.fn();
   const showToast = vi.fn();
   const closeModal = vi.fn();
-  const openTrainPanel = vi.fn();
   const showDeployDialog = vi.fn();
 
   const ctx = {
@@ -72,9 +73,8 @@ function buildHarness(opts: { me?: PlayerWorldView; mapW?: number; mapH?: number
       worldId: WORLD_ID,
       onOpenCity: vi.fn(),
       onOpenDefense: vi.fn(),
-      onOpenTeams: vi.fn(),
     },
-    panels: { showModal, showToast, closeModal, openTrainPanel, showDeployDialog },
+    panels: { showModal, showToast, closeModal, showDeployDialog },
     net: { doJoin: vi.fn(), doAbandon: vi.fn(), confirmWatchtower: vi.fn(), doScout: vi.fn(), showTeamPicker: vi.fn() },
   } as unknown as WorldMapContext;
 
@@ -86,50 +86,35 @@ function buildHarness(opts: { me?: PlayerWorldView; mapW?: number; mapH?: number
   }
 
   const input = new WorldMapInput(ctx);
-  return { ctx, input, showModal, closeModal, openTrainPanel };
+  return { ctx, input, showModal, closeModal };
 }
 
 describe('WorldMapInput.onTileClick — main city hit area (ADR-025 3×3 footprint)', () => {
-  it('clicking the exact anchor tile opens the city menu (Enter City / Train)', () => {
-    const { input, showModal } = buildHarness();
+  it('clicking the exact anchor tile enters the city directly (no menu)', () => {
+    const { ctx, input, showModal } = buildHarness();
     input.onTileClick(ANCHOR.x, ANCHOR.y);
-    expect(showModal).toHaveBeenCalledTimes(1);
-    const buttons = showModal.mock.calls[0][1] as { label: string; action: () => void }[];
-    expect(buttons.map((b) => b.label)).toEqual(CITY_MENU_LABELS);
+    expect(showModal).not.toHaveBeenCalled();
+    expect(ctx.cb.onOpenCity).toHaveBeenCalledTimes(1);
   });
 
-  it('clicking any other cell of the same 3×3 footprint also opens the city menu (regression)', () => {
+  it('clicking any other cell of the same 3×3 footprint also enters the city directly (regression)', () => {
     for (let dy = -1; dy <= 1; dy++) {
       for (let dx = -1; dx <= 1; dx++) {
         if (dx === 0 && dy === 0) continue; // anchor itself, covered above
         const { ctx, input, showModal } = buildHarness();
         input.onTileClick(ANCHOR.x + dx, ANCHOR.y + dy);
-        expect(showModal).toHaveBeenCalledTimes(1);
-        const [lines, buttons] = showModal.mock.calls[0] as [string[], { label: string; action: () => void }[]];
         // Regression: before the footprint-aware fix, all 8 non-anchor cells fell through to
-        // MINE_TILE_MENU_LABELS (reinforce/defense/watchtower/abandon) instead of the city menu.
-        expect(buttons.map((b) => b.label)).toEqual(CITY_MENU_LABELS);
-        expect(lines[0]).toBeTruthy();
-        void ctx;
+        // MINE_TILE_MENU_LABELS (reinforce/defense/watchtower/abandon) instead of entering the city.
+        expect(showModal).not.toHaveBeenCalled();
+        expect(ctx.cb.onOpenCity).toHaveBeenCalledTimes(1);
       }
     }
   });
 
-  it('the city menu\'s "Enter City" button calls cb.onOpenCity', () => {
-    const { ctx, input, showModal, closeModal } = buildHarness();
-    input.onTileClick(ANCHOR.x + 1, ANCHOR.y); // an edge cell, not the anchor
-    const buttons = showModal.mock.calls[0][1] as { label: string; action: () => void }[];
-    buttons[0].action(); // Enter City is pushed first
-    expect(closeModal).toHaveBeenCalled();
-    expect(ctx.cb.onOpenCity).toHaveBeenCalledTimes(1);
-  });
-
-  it('the city menu\'s "Train" button calls panels.openTrainPanel', () => {
-    const { input, showModal, openTrainPanel } = buildHarness();
-    input.onTileClick(ANCHOR.x, ANCHOR.y - 1); // another non-anchor footprint cell
-    const buttons = showModal.mock.calls[0][1] as { label: string; action: () => void }[];
-    buttons[1].action(); // Train is pushed second
-    expect(openTrainPanel).toHaveBeenCalledTimes(1);
+  it('never routes the base tap through Defense — main-city defense has no manual UI (ADR-041/ADR-026)', () => {
+    const { ctx, input } = buildHarness();
+    input.onTileClick(ANCHOR.x, ANCHOR.y);
+    expect(ctx.cb.onOpenDefense).not.toHaveBeenCalled();
   });
 
   it('clicking a tile outside the base footprint (but still mine) falls through to the generic mine-tile menu', () => {

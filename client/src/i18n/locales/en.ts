@@ -878,20 +878,14 @@ export const en: Record<TranslationKey, string> = {
   'world.defense.unitsNotHere': 'Units go on garrison rows only',
   'world.defense.buildingsNotHere': 'Buildings go on the build row only',
   // ── Attack teams / formation editor (G3-2c) ─────────────────────────────────
-  'world.teams': 'Teams',
-  'world.team.title': 'Attack Teams',
   'world.team.slot': 'Team {n}',
   'world.team.empty': '(empty)',
-  'world.team.tapToBuild': 'Tap to build',
   'world.team.committed': 'Troops {n}',
   'world.team.editTitle': 'Edit {name}',
   'world.team.frontRow': 'Deploy',
   'world.team.hint': 'Pick a card, tap a cell to place it; each card can only be deployed once, erase to remove',
-  'world.team.edit': 'Edit',
   'world.team.pickTitle': 'Choose attack team',
   'world.team.noTeams': 'No teams yet — set up a formation first',
-  'world.team.manage': 'Manage teams',
-  'world.team.emptyArmy': 'This team has no formation',
   'world.team.busy': 'Marching / occupying',
   'world.team.pickTitleOccupy': 'Pick a team to occupy with',
   'world.team.noTeamsOccupy': 'No teams yet — go edit a formation',
@@ -907,20 +901,6 @@ export const en: Record<TranslationKey, string> = {
   'world.replay.atk': 'Atk',
   'world.replay.def': 'Def',
   'world.replay.none': 'No replay',
-  // Training queue / resource panel (C4)
-  'world.train': 'Train',
-  'world.trainTitle': 'Train · Resources',
-  'world.trainNew': 'Recruit troops',
-  'world.trainBatch': '+{n}',
-  'world.trainMax': 'Fill',
-  'world.trainCost': '({ink} ink)',
-  'world.trainQueue': 'Training queue',
-  'world.trainQueueEmpty': 'No training',
-  'world.trainEntry': '{n} troops · {time} left',
-  'world.trainInQueue': 'Training {n}',
-  'world.speedup': 'Speed up ({coins} coins)',
-  'world.trained': 'Queued for training',
-  'world.spedup': 'Sped up',
   'world.resYield': 'Yield',
   'world.close': 'Close',
   // ── Territory Overview panel (2026-07-16, SLG_DESIGN_LOG.md §26) ─────────────
@@ -931,7 +911,6 @@ export const en: Record<TranslationKey, string> = {
   'world.territoryJump': 'Jump',
   'world.err.troopCap': 'Troop cap reached',
   'world.err.noInk': 'Not enough ink',
-  'world.err.queueFull': 'Training queue full',
   // Nations / season / shop panel (C5)
   'world.info': 'World',
   'world.infoTitle': 'World info',
@@ -1473,7 +1452,6 @@ export const en: Record<TranslationKey, string> = {
   'city.bld.wall': 'Wall',
   'city.bld.academy': 'Academy',
   'city.bld.satchel': 'Satchel',
-  'world.actEnterCity': 'Enter Desk',
 
   // ── Hero Roster (CHARACTER_CARDS_DESIGN §10) ──────────────────────────────
   'roster.title': 'Hero Roster',
@@ -1522,20 +1500,6 @@ export const en: Record<TranslationKey, string> = {
   'card.suyuan.name': 'Su Yuan',
   'card.suyuan.lore': 'A bow bent from a paperclip — precise shots from behind the grid lines.',
 
-  // Teams scene (CC-4)
-  'world.team.fillTroops': 'Fill All Troops',
-  'world.team.fillTroopsOk': 'Troops filled',
-  'world.team.fillTroopsErr': 'Fill failed',
-  'world.team.fillNoCards': 'No cards on any team — build a team first',
-  'world.team.legacyRebuild': '⚠ Team outdated — tap to rebuild',
-  'world.team.troopsStatus': '{cur}/{cap}',
-  'world.team.injured': 'Injured',
-
   'world.team.marching': 'Marching',
   'world.team.occupying': 'Occupying, {time} left',
-  'world.team.cancelOccupy': 'Abandon',
-  'world.team.cancelOccupyConfirm': 'Confirm?',
-  'world.team.cancelOccupyOk': 'Occupation abandoned, team is idle',
-  'world.team.cancelOccupyErr': 'Cancel failed',
-  'world.team.recallErr': 'Recall failed',
 };

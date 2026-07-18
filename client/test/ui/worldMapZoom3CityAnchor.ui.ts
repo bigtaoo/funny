@@ -55,7 +55,7 @@ const LAYOUT = { designWidth: 1280, designHeight: 800 } as ILayout;
 
 const CB: WorldMapCallbacks = {
   onBack() {}, onOpenChat() {}, onOpenAuction() {}, onReplaySiege() {}, onOpenCity() {},
-  onOpenDefense() {}, onOpenTeams() {}, worldApi: {} as WorldMapCallbacks['worldApi'],
+  onOpenDefense() {}, worldApi: {} as WorldMapCallbacks['worldApi'],
   worldId: 'w1', playerName: 'dbg', accountId: 'acc_dbg',
 };
 

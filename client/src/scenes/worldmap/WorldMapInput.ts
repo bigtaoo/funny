@@ -9,7 +9,7 @@ import { loadCityAtlas, getCityTexture, isCityAtlasReady } from '../../render/ci
 import { loadTerrainAtlas, getTerrainTexture, isTerrainAtlasReady } from '../../render/terrainAtlasLoader';
 import { loadBuildingAtlas, getBuildingTexture, isBuildingAtlasReady } from '../../render/buildingAtlasLoader';
 import { ISO_RATIO, tileToScreen, screenToTile, screenToTileF, diamondPath, diamondVertices, visibleTileBounds } from '../../render/isoGrid';
-import { DEFAULT_MAP_SIZE, HUD_H, MARGIN, CONFIRM_H, BASE_SPRITE_TILES, TRAIN_INK_PER, TRAIN_SPEEDUP_PER_COIN, TRAIN_BATCH_MAX, TRAIN_PRESETS, RELOCATE_COST, WATCHTOWER_COST_METAL, WATCHTOWER_COST_PAPER } from './constants';
+import { DEFAULT_MAP_SIZE, HUD_H, MARGIN, CONFIRM_H, BASE_SPRITE_TILES, RELOCATE_COST, WATCHTOWER_COST_METAL, WATCHTOWER_COST_PAPER } from './constants';
 import { TERRAIN_COLORS, RES_COLORS, MINE_TINT, MINE_BASE_TINT, ENEMY_TINT, ENEMY_BASE_TINT, ALLY_TINT, ALLY_BASE_TINT, FOG_COLOR, CLOUD_COLOR, ALLY_SECT_BORDER, ownerTint, terrainFill, terrainTextureName, tileColor, proceduralTileColor } from './tileStyle';
 import { makeZoomCfgs } from './zoom';
 import { drawTileL1, drawTileL2, drawResMotif, drawResMotifFallback, drawCityIcon, drawHpBar, placeBuildingSprite, drawStar } from './tileGraphics';
@@ -97,17 +97,10 @@ export class WorldMapInput {
       // to the generic mine-tile menu (no Enter City / Train option) and looked like a dead click.
       const isBase = me.mainBaseTile != null && baseFootprintCells(bx, by).some((c) => c.x === tx && c.y === ty);
       if (isBase) {
-        // Main city — enter desk / defense / teams.
-        this.ctx.panels.showModal(
-          [t('world.myBase'), `(${tx}, ${ty})`],
-          [
-            { label: t('world.actEnterCity'), action: () => { this.ctx.panels.closeModal(); this.ctx.cb.onOpenCity(); } },
-            { label: t('world.train'), action: () => { this.ctx.panels.closeModal(); this.ctx.panels.openTrainPanel(); } },
-            { label: t('world.actDefense'), action: () => { this.ctx.panels.closeModal(); this.ctx.cb.onOpenDefense('base'); } },
-            { label: t('world.team.manage'), action: () => { this.ctx.panels.closeModal(); this.ctx.cb.onOpenTeams(); } },
-            { label: '✕', action: () => this.ctx.panels.closeModal() },
-          ],
-        );
+        // Main city — no menu: tapping the base goes straight into the desk (city) scene.
+        // Defense is not a manual setting here — teams left in the city auto-defend (ADR-026 §2);
+        // teams that are out on a march simply leave the base undefended.
+        this.ctx.cb.onOpenCity();
         return;
       }
       const tileKey = `${this.ctx.cb.worldId}:${tx}:${ty}`;

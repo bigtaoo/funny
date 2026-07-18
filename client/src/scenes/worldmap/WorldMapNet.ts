@@ -11,7 +11,7 @@ import { loadCityAtlas, getCityTexture, isCityAtlasReady } from '../../render/ci
 import { loadTerrainAtlas, getTerrainTexture, isTerrainAtlasReady } from '../../render/terrainAtlasLoader';
 import { loadBuildingAtlas, getBuildingTexture, isBuildingAtlasReady } from '../../render/buildingAtlasLoader';
 import { ISO_RATIO, tileToScreen, screenToTile, screenToTileF, diamondPath, diamondVertices, visibleTileBounds } from '../../render/isoGrid';
-import { DEFAULT_MAP_SIZE, HUD_H, MARGIN, CONFIRM_H, BASE_SPRITE_TILES, TRAIN_INK_PER, TRAIN_SPEEDUP_PER_COIN, TRAIN_BATCH_MAX, TRAIN_PRESETS, RELOCATE_COST, WATCHTOWER_COST_METAL, WATCHTOWER_COST_PAPER } from './constants';
+import { DEFAULT_MAP_SIZE, HUD_H, MARGIN, CONFIRM_H, BASE_SPRITE_TILES, RELOCATE_COST, WATCHTOWER_COST_METAL, WATCHTOWER_COST_PAPER } from './constants';
 import { TERRAIN_COLORS, RES_COLORS, MINE_TINT, MINE_BASE_TINT, ENEMY_TINT, ENEMY_BASE_TINT, ALLY_TINT, ALLY_BASE_TINT, FOG_COLOR, CLOUD_COLOR, ALLY_SECT_BORDER, ownerTint, terrainFill, terrainTextureName, tileColor, proceduralTileColor } from './tileStyle';
 import { makeZoomCfgs } from './zoom';
 import { drawTileL1, drawTileL2, drawResMotif, drawResMotifFallback, drawCityIcon, drawHpBar, placeBuildingSprite, drawStar } from './tileGraphics';
@@ -360,34 +360,6 @@ export class WorldMapNet {
     }
   }
 
-  // ── Train / resource panel (C4) ─────────────────────────────────────────────
-  // A richer modal than showModal: full resources + yield, recruit presets, the
-  // live training queue (countdown), and a one-tap coin speedup. Rendered into
-  // modalLayer (reusing modalBtnRects for hit detection + dim-to-close), and
-  // re-painted ~1s by update() so the queue countdowns tick.
-
-  async doTrain(qty: number): Promise<void> {
-    try {
-      this.ctx.me = await this.ctx.cb.worldApi.trainTroops(this.ctx.cb.worldId, qty);
-      this.ctx.panels.showToast(t('world.trained'));
-      if (this.ctx.trainPanelOpen) this.ctx.panels.renderTrainPanel();
-      this.ctx.panels.renderHud();
-    } catch (e) {
-      this.ctx.panels.showToast(this.errorMsg(e), C.red);
-    }
-  }
-
-  async doSpeedup(coins: number): Promise<void> {
-    try {
-      this.ctx.me = await this.ctx.cb.worldApi.speedupTraining(this.ctx.cb.worldId, coins);
-      this.ctx.panels.showToast(t('world.spedup'));
-      if (this.ctx.trainPanelOpen) this.ctx.panels.renderTrainPanel();
-      this.ctx.panels.renderHud();
-    } catch (e) {
-      this.ctx.panels.showToast(this.errorMsg(e), C.red);
-    }
-  }
-
   // ── World info panel (C5): nations / season / SLG shop ───────────────────────
   // Tabbed modal rendered into modalLayer. Season is read-only; nations lets the
   // capital owner rename theirs (setNationName, server re-checks ownerId). The shop
@@ -399,7 +371,7 @@ export class WorldMapNet {
       await this.ctx.cb.worldApi.buyShopItem(this.ctx.cb.worldId, itemId);
       this.ctx.panels.showToast(t('world.shopBought'));
       await this.refreshMe();
-      if (this.ctx.territoryPanelOpen && this.ctx.territoryTab === 'world' && !this.ctx.trainPanelOpen) this.ctx.panels.renderTerritoryPanel();
+      if (this.ctx.territoryPanelOpen && this.ctx.territoryTab === 'world') this.ctx.panels.renderTerritoryPanel();
     } catch (e) {
       this.ctx.panels.showToast(this.errorMsg(e), C.red);
     }
@@ -415,7 +387,7 @@ export class WorldMapNet {
       await this.ctx.cb.worldApi.setNationName(this.ctx.cb.worldId, capitalIdx, name);
       const n = this.ctx.nations.find(x => x.capitalIdx === capitalIdx);
       if (n) n.nationName = name;
-      if (this.ctx.territoryPanelOpen && this.ctx.territoryTab === 'world' && !this.ctx.trainPanelOpen) this.ctx.panels.renderTerritoryPanel();
+      if (this.ctx.territoryPanelOpen && this.ctx.territoryTab === 'world') this.ctx.panels.renderTerritoryPanel();
     } catch (e) {
       this.ctx.panels.showToast(this.errorMsg(e), C.red);
     }

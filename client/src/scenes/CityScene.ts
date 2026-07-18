@@ -23,8 +23,7 @@ import { formatDuration } from './worldmap/formatDuration';
 import type {
   WorldApiClient, PlayerWorldView, BuildingKey, TeamTemplate, MarchView, OccupationView,
 } from '../net/WorldApiClient';
-import { teamSlotId, teamSlotName, TEAM_CAP } from './TeamsScene';
-import { carriedTroops } from '../game/meta/teamTroops';
+import { teamSlotId, teamSlotName, TEAM_CAP, carriedTroops } from '../game/meta/teamTroops';
 import {
   BUILDING_KEYS,
   RESOURCE_TYPES,

@@ -26,7 +26,6 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { EquipmentScene, type EquipmentCallbacks } from '../../src/scenes/EquipmentScene';
 import { FamilyScene } from '../../src/scenes/FamilyScene';
-import { TeamsScene, type TeamsCallbacks } from '../../src/scenes/TeamsScene';
 import { CityScene, type CitySceneCallbacks } from '../../src/scenes/CityScene';
 import { GlobalToast } from '../../src/ui/GlobalToast';
 import { WorldMapPanels } from '../../src/scenes/worldmap/WorldMapPanels';
@@ -112,24 +111,6 @@ describe('scene showToast() routes to the global toast sink (success/error kind)
     const cb = { onBack() {}, onOpenSect() {}, onNavTab() {}, worldApi, worldId: 'w1', myAccountId: 'me', playerName: 'tao' };
     const scene = new FamilyScene(createLayout(W, H), new InputManager(), cb as any) as any;
     scene.showToast(MSG);
-    expect(sink).toHaveBeenLastCalledWith(MSG, 'success');
-    scene.showToast(MSG, C.red);
-    expect(sink).toHaveBeenLastCalledWith(MSG, 'error');
-    scene.destroy();
-  });
-
-  it('TeamsScene: C.green → success, C.red → error', async () => {
-    const worldApi = {
-      getTeams: async () => [], getMe: async () => ({ joined: true } as PlayerWorldView),
-      distributeTroops: async () => ({ ok: true }), getMarches: async () => [], getOccupations: async () => [],
-    } as unknown as WorldApiClient;
-    const cb: TeamsCallbacks = {
-      onBack: () => {}, onEditTeam: () => {}, getSave: () => ({ cardInv: {} } as any),
-      worldApi, worldId: 'world:1:0',
-    };
-    const scene = new TeamsScene(createLayout(W, H), new InputManager(), cb) as any;
-    await Promise.resolve();
-    scene.showToast(MSG, C.green);
     expect(sink).toHaveBeenLastCalledWith(MSG, 'success');
     scene.showToast(MSG, C.red);
     expect(sink).toHaveBeenLastCalledWith(MSG, 'error');

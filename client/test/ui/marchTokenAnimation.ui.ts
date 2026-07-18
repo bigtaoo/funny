@@ -45,7 +45,7 @@ function stubWorldApi(): WorldApiClient {
 function buildScene() {
   return new WorldMapScene(createLayout(W, H), new InputManager(), {
     onBack() {}, onOpenChat() {}, onOpenAuction() {}, onReplaySiege() {},
-    onOpenCity() {}, onOpenDefense() {}, onOpenTeams() {},
+    onOpenCity() {}, onOpenDefense() {},
     worldApi: stubWorldApi(), worldId: 'world:1:0', playerName: 'Tester', accountId: 'acc_test',
   }) as any;
 }

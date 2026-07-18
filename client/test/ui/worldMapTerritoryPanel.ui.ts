@@ -69,7 +69,6 @@ function buildHarness(opts: {
     territoryHiddenLevels: new Set<number>(),
     season: null,
     selectedTile: null,
-    trainPanelOpen: false,
     toastTimer: 0,
     me: opts.joined === false ? { joined: false } : {
       joined: true,
