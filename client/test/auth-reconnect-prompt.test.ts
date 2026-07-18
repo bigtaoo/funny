@@ -206,6 +206,89 @@ describe('offerResume via resolveEntry() (wx auto-login)', () => {
   });
 });
 
+describe('account-switch NetSession reset (2026-07-18: elo credited to previous account bug)', () => {
+  it('doAuth() closes a stale NetSession from a previous account, even when the gateway URL is unchanged', async () => {
+    const saveManager = fakeSaveManager({ activeMatch: null });
+    const views = fakeViews();
+    const { ctx } = buildCtx({ saveManager, views });
+    const staleSession = { close: vi.fn() };
+    (ctx.state as AppState).netSession = staleSession as unknown as AppState['netSession'];
+    const authNav = createAuthNav(ctx);
+
+    authNav.goLogin();
+    views.triggerLogin('tao', 'pw');
+    await settle();
+
+    expect(staleSession.close).toHaveBeenCalledTimes(1);
+    expect(ctx.state.netSession).toBeNull();
+  });
+
+  it('doLogout() closes any live NetSession so it cannot keep routing to the logged-out account', () => {
+    const saveManager = fakeSaveManager({ activeMatch: null });
+    const views = fakeViews();
+    const { ctx } = buildCtx({ saveManager, views, token: 'existing-token' });
+    const staleSession = { close: vi.fn() };
+    (ctx.state as AppState).netSession = staleSession as unknown as AppState['netSession'];
+    const authNav = createAuthNav(ctx);
+
+    authNav.doLogout();
+
+    expect(staleSession.close).toHaveBeenCalledTimes(1);
+    expect(ctx.state.netSession).toBeNull();
+  });
+
+  it('doAuth() does not throw when no NetSession has been created yet (fresh app launch)', async () => {
+    const saveManager = fakeSaveManager({ activeMatch: null });
+    const views = fakeViews();
+    const { ctx } = buildCtx({ saveManager, views });
+    // state.netSession left at its initial null — nothing to close yet.
+    const authNav = createAuthNav(ctx);
+
+    authNav.goLogin();
+    expect(() => views.triggerLogin('tao', 'pw')).not.toThrow();
+    await settle();
+
+    expect(ctx.state.netSession).toBeNull();
+  });
+
+  it('repeated account switches each close only the session that was live at that moment', async () => {
+    const saveManager = fakeSaveManager({ activeMatch: null });
+    const views = fakeViews();
+    const { ctx } = buildCtx({ saveManager, views });
+    const authNav = createAuthNav(ctx);
+
+    // tao1's gateway session is live when tao logs in.
+    const sessionForTao1 = { close: vi.fn() };
+    (ctx.state as AppState).netSession = sessionForTao1 as unknown as AppState['netSession'];
+    authNav.goLogin();
+    views.triggerLogin('tao', 'pw');
+    await settle();
+    expect(sessionForTao1.close).toHaveBeenCalledTimes(1);
+    expect(ctx.state.netSession).toBeNull();
+
+    // Simulate tao's own gateway session getting lazily created afterwards (e.g. opening a room),
+    // then a second switch to a third account — the fix must not only fire once per process lifetime.
+    const sessionForTao = { close: vi.fn() };
+    (ctx.state as AppState).netSession = sessionForTao as unknown as AppState['netSession'];
+    authNav.goLogin();
+    views.triggerLogin('tao2', 'pw');
+    await settle();
+    expect(sessionForTao.close).toHaveBeenCalledTimes(1);
+    expect(sessionForTao1.close).toHaveBeenCalledTimes(1); // untouched by the second switch
+    expect(ctx.state.netSession).toBeNull();
+  });
+
+  it('doLogout() does not throw when no NetSession exists', () => {
+    const saveManager = fakeSaveManager({ activeMatch: null });
+    const views = fakeViews();
+    const { ctx } = buildCtx({ saveManager, views, token: 'existing-token' });
+    const authNav = createAuthNav(ctx);
+
+    expect(() => authNav.doLogout()).not.toThrow();
+    expect(ctx.state.netSession).toBeNull();
+  });
+});
+
 describe('mapAuthError (2026-07-18: banned accounts get a distinct message, not the generic network error)', () => {
   it('ACCOUNT_BANNED maps to its own key, not the generic network fallback', () => {
     expect(mapAuthError(new ApiError('ACCOUNT_BANNED', 'account banned'))).toBe('auth.err.banned');
