@@ -98,6 +98,13 @@ export class SectSceneBase {
   protected caretOn = true;
   protected caretTimer = 0;
 
+  // Channel message draft — persists the hidden-input value so the visible Send button can send
+  // it directly (previously the field and button both just reopened the hidden input, and the
+  // only actual send path was a literal Enter keydown, which is unreliable on mobile keyboards).
+  protected channelInput = '';
+  protected channelActive = false;
+  protected channelSending = false;
+
   // Scroll — `scrollY` is the families/single-column scroll; `scrollYChannel` only comes into play
   // in the landscape split view (see RenderMixin.renderSplitView), where the channel column scrolls
   // independently alongside the families column instead of sharing one tab's scroll state.
@@ -280,7 +287,7 @@ export class SectSceneBase {
 
   update(dt: number): void {
     if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
-    if (this.createField) {
+    if (this.createField || this.channelActive) {
       this.caretTimer += dt;
       if (this.caretTimer >= 0.5) { this.caretTimer = 0; this.caretOn = !this.caretOn; this.render(); }
     }
@@ -322,6 +329,7 @@ export interface SectSceneBase {
   confirmVote(nomineeFamilyId: string, nomineeLabel: string): void;
   openAllyList(): Promise<void>;
   openManageAllies(): Promise<void>;
+  doSendChannelMessage(): Promise<void>;
   // modals
   showSectPickModal(sects: SectView[], onPick: (sectId: string) => void, emptyKey: 'sect.noSects' | 'sect.noAllies'): void;
   showConfirm(msg: string, onOk: () => void): void;

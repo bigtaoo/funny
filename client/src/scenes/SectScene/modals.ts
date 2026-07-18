@@ -21,8 +21,10 @@ export function ModalsMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       this.modalHits = [];
       this.modalOpen = true;
 
-      const mw = Math.min(320, w - 32);
-      const mh = Math.min(320, h - 80);
+      // Doubled from the original 320×320 cap — this one modal already backs both the ally-list
+      // and manage-allies dialogs (and the sect browse list), so enlarging it here covers all three.
+      const mw = Math.min(640, w - 32);
+      const mh = Math.min(640, h - 80);
       const mx = (w - mw) / 2;
       const my = (h - mh) / 2;
 
@@ -43,7 +45,8 @@ export function ModalsMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       }
 
       let cy = my + 10;
-      for (const s of sects.slice(0, 6)) {
+      const maxRows = Math.max(6, Math.floor((mh - 20) / 40));
+      for (const s of sects.slice(0, maxRows)) {
         const row = sketchPanel(mw - 16, 36, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(cy, 0, mw - 16) });
         row.x = mx + 8; row.y = cy;
         ml.addChild(row);

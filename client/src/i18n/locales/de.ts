@@ -1029,6 +1029,7 @@ export const de: Record<TranslationKey, string> = {
   'sect.vote': 'Abwählen',
   'sect.voteStatus': 'Abwahl: {name} ({cur}/{need})',
   'sect.send': 'Senden',
+  'sect.sending': 'Wird gesendet…',
   'sect.msgPlaceholder': 'Nachricht eingeben…',
   'sect.noMessages': 'Keine Nachrichten',
   'sect.noSects': 'Noch keine Sekten in dieser Region',

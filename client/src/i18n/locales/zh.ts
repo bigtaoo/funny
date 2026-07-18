@@ -1041,6 +1041,7 @@ export const zh = {
   'sect.vote': '投票罢免',
   'sect.voteStatus': '罢免投票：{name} （{cur}/{need}）',
   'sect.send': '发送',
+  'sect.sending': '发送中…',
   'sect.msgPlaceholder': '输入消息…',
   'sect.noMessages': '暂无消息',
   'sect.noSects': '本区暂无宗门',
