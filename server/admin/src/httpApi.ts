@@ -465,6 +465,21 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           const anomalies = await svc.slgScanAnomalies(worldId, numOpt(url.searchParams.get('windowSec')));
           return send(res, 200, { ok: true, anomalies });
         }
+        if (method === 'GET' && path === '/admin/slg/audit/listings') {
+          requireCap(actor, 'slg.audit.view');
+          const sellerId = url.searchParams.get('sellerId') ?? undefined;
+          const itemType = url.searchParams.get('itemType') ?? undefined;
+          const status = url.searchParams.get('status') ?? undefined;
+          const itemName = url.searchParams.get('itemName') ?? undefined;
+          const listings = await svc.slgQueryAuctionListings({
+            sellerId,
+            itemType: itemType as never,
+            status: status as never,
+            itemName,
+            limit: numOpt(url.searchParams.get('limit')),
+          });
+          return send(res, 200, { ok: true, listings });
+        }
         if (method === 'GET' && path === '/admin/slg/audit/tickets') {
           requireCap(actor, 'slg.audit.view');
           const status = url.searchParams.get('status');

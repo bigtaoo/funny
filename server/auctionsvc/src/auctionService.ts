@@ -33,6 +33,8 @@ import {
   SlgError,
   type AuctionAnomaly,
   type AuctionAuditThresholds,
+  type AuctionListingAdminView,
+  type AuctionListingQuery,
   type AuctionStatus,
   type AuctionTradeRecord,
   type EquipmentInstance,
@@ -84,6 +86,9 @@ const AUCTION_CLOSED_RETENTION_SEC = 30 * 24 * 3600;
 /** Fetch cap for getMyListings — larger than AUCTION_MAX_LISTINGS (open cap) to leave room for retained closed history. */
 const MY_LISTINGS_FETCH_LIMIT = 100;
 
+/** Fetch cap for queryListings when an itemName filter is applied (filtered in memory, see queryListings). */
+const QUERY_FETCH_CAP = 500;
+
 /** In-process sequence counter to prevent key collisions when multiple listings are created within the same millisecond. */
 let auctionSeq = 0;
 
@@ -117,6 +122,39 @@ function categoryOf(doc: Pick<AuctionDoc, 'itemType' | 'item'>): string | null {
   }
   // 'card', 'skin' and unknown types: no price window
   return null;
+}
+
+/** Derived display name for ops lookup: material name / equipment defId / card defId / skinId. */
+function itemNameOf(doc: Pick<AuctionDoc, 'itemType' | 'item'>): string {
+  if (doc.itemType === 'material') return (doc.item['material'] as string | undefined) ?? '';
+  if (doc.itemType === 'equipment') return equipInstanceOf(doc.item)?.defId ?? '';
+  if (doc.itemType === 'card') return cardInstanceOf(doc.item)?.defId ?? '';
+  if (doc.itemType === 'skin') return (doc.item['skinId'] as string | undefined) ?? '';
+  return '';
+}
+
+function docToAdminView(doc: AuctionDoc): AuctionListingAdminView {
+  return {
+    auctionId: doc._id,
+    sellerId: doc.sellerId,
+    itemType: doc.itemType as AuctionListingAdminView['itemType'],
+    itemName: itemNameOf(doc),
+    item: doc.item,
+    qty: doc.qty,
+    price: doc.price,
+    currency: doc.currency,
+    ...(doc.designatedBuyerId ? { designatedBuyerId: doc.designatedBuyerId } : {}),
+    expireAt: doc.expireAt,
+    status: doc.status,
+    ...(doc.buyerId ? { buyerId: doc.buyerId } : {}),
+    ...(doc.soldAt != null ? { soldAt: doc.soldAt } : {}),
+    ...(doc.closedAt != null ? { closedAt: doc.closedAt } : {}),
+    saleMode: doc.saleMode ?? 'fixed',
+    ...(doc.startPrice != null ? { startPrice: doc.startPrice } : {}),
+    ...(doc.buyoutPrice != null ? { buyoutPrice: doc.buyoutPrice } : {}),
+    ...(doc.topBid ? { topBid: doc.topBid } : {}),
+    rev: doc.rev,
+  };
 }
 
 function docToView(doc: AuctionDoc): AuctionView {
@@ -324,6 +362,30 @@ export class AuctionService {
       });
     }
     return docs.map(docToView);
+  }
+
+  /**
+   * Ops lookup (internal, admin.slg.audit.view): query listings across every status (open/sold/cancelled/expired)
+   * by sellerId / itemType / status, optionally narrowed by itemName (case-insensitive substring against the
+   * derived display name). sellerId/itemType/status filter at the DB level; itemName filters in memory over a
+   * capped fetch (QUERY_FETCH_CAP) since the underlying field differs per itemType and isn't directly indexable.
+   */
+  async queryListings(filter: AuctionListingQuery): Promise<AuctionListingAdminView[]> {
+    const query: Record<string, unknown> = {};
+    if (filter.sellerId) query['sellerId'] = filter.sellerId;
+    if (filter.itemType) query['itemType'] = filter.itemType;
+    if (filter.status) query['status'] = filter.status;
+    const limit = Math.min(Math.max(filter.limit ?? 50, 1), 200);
+    const fetchLimit = filter.itemName ? QUERY_FETCH_CAP : limit;
+    const docs = await this.deps.cols.auctions
+      .find(query)
+      .sort({ expireAt: -1 })
+      .limit(fetchLimit)
+      .toArray();
+    const views = docs.map(docToAdminView);
+    const needle = filter.itemName?.toLowerCase();
+    const filtered = needle ? views.filter((v) => v.itemName.toLowerCase().includes(needle)) : views;
+    return filtered.slice(0, limit);
   }
 
   /** My listings (all statuses; open first by expireAt desc, then recent closed history within the retention window). */

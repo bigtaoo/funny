@@ -246,6 +246,37 @@ export interface AuctionAnomaly {
   reasons: AuctionAnomalyReason[];
 }
 
+// ── Ops auction listing lookup (mirror of @nw/shared AuctionListingAdminView/AuctionListingQuery) ──
+export interface AuctionListingQuery {
+  sellerId?: string;
+  itemType?: 'material' | 'equipment' | 'card' | 'skin';
+  status?: 'open' | 'sold' | 'cancelled' | 'expired';
+  itemName?: string;
+  limit?: number;
+}
+
+export interface AuctionListingAdminView {
+  auctionId: string;
+  sellerId: string;
+  itemType: 'material' | 'equipment' | 'card' | 'skin';
+  itemName: string;
+  item: Record<string, unknown>;
+  qty: number;
+  price: number;
+  currency: string;
+  designatedBuyerId?: string;
+  expireAt: number;
+  status: 'open' | 'sold' | 'cancelled' | 'expired';
+  buyerId?: string;
+  soldAt?: number;
+  closedAt?: number;
+  saleMode: 'fixed' | 'auction';
+  startPrice?: number;
+  buyoutPrice?: number;
+  topBid?: { bidderId: string; amount: number; ts: number };
+  rev: number;
+}
+
 export interface TradeAuditSnapshot {
   worldId: string;
   sellerId: string;

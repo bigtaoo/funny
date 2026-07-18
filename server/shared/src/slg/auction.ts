@@ -83,6 +83,42 @@ export interface AuctionAuditThresholds {
   minCoins?: number;
 }
 
+// ── Ops listing lookup (auctionsvc /internal/audit/listings, admin.slg.audit.view) ──
+// Unlike the anomaly scan (which only aggregates completed 'sold' trades), this surfaces a single
+// listing's full record across every status (open/sold/cancelled/expired) — needed when ops has to
+// answer "what does this specific in-flight listing look like" (e.g. designatedBuyerId, escrowed price).
+export interface AuctionListingQuery {
+  sellerId?: string;
+  itemType?: 'material' | 'equipment' | 'card' | 'skin';
+  status?: 'open' | 'sold' | 'cancelled' | 'expired';
+  /** Case-insensitive substring match against the listing's derived item name (material name / equip defId / card defId / skinId). */
+  itemName?: string;
+  limit?: number;
+}
+
+/** Full admin-facing view of one auction listing (mirrors AuctionDoc, adds a derived display name). */
+export interface AuctionListingAdminView {
+  auctionId: string;
+  sellerId: string;
+  itemType: 'material' | 'equipment' | 'card' | 'skin';
+  itemName: string;
+  item: Record<string, unknown>;
+  qty: number;
+  price: number;
+  currency: string;
+  designatedBuyerId?: string;
+  expireAt: number;
+  status: 'open' | 'sold' | 'cancelled' | 'expired';
+  buyerId?: string;
+  soldAt?: number;
+  closedAt?: number;
+  saleMode: 'fixed' | 'auction';
+  startPrice?: number;
+  buyoutPrice?: number;
+  topBid?: { bidderId: string; amount: number; ts: number };
+  rev: number;
+}
+
 /**
  * Anomalous trade detection (pure function, D/G7): aggregates completed trade records by directed seller→buyer pair; reports an anomaly if any signal is triggered.
  * - repeated: pair trade count ≥ minTrades (repeated wash-trading / self-buy loop).

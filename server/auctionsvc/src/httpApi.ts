@@ -81,6 +81,26 @@ export function startHttpApi(
         return send(res, 200, ok(await auctionSvc.scanAnomalies(windowSec)));
       }
 
+      // ── Internal ops (auction listing lookup): X-Internal-Key, no player JWT ──
+      if (path === '/internal/audit/listings') {
+        if (!internalAuth.verify(req.headers).ok) {
+          return sendErr(res, ErrorCode.UNAUTHENTICATED, 'internal endpoint requires X-Internal-Key');
+        }
+        if (method !== 'GET') return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
+        const sellerId = q.get('sellerId') ?? undefined;
+        const itemTypeQ = q.get('itemType') ?? undefined;
+        const statusQ = q.get('status') ?? undefined;
+        const itemName = q.get('itemName') ?? undefined;
+        const limit = numQ(q.get('limit'), 50);
+        return send(res, 200, ok(await auctionSvc.queryListings({
+          sellerId,
+          itemType: itemTypeQ as 'material' | 'equipment' | 'card' | 'skin' | undefined,
+          status: statusQ as 'open' | 'sold' | 'cancelled' | 'expired' | undefined,
+          itemName,
+          limit,
+        })));
+      }
+
       // ── JWT verification (extract accountId only, no DB connection) ──
       const token = extractBearer(req.headers['authorization']);
       let accountId: string;

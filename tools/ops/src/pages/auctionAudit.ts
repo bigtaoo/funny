@@ -1,7 +1,7 @@
 // SLG anomalous trade audit page (G7 anti-RMT, §17.7; slg.audit.view / slg.audit.manage):
-// scan for suspicious seller→buyer pairs, file audit tickets, then adjudicate.
+// look up individual auction listings, scan for suspicious seller→buyer pairs, file audit tickets, then adjudicate.
 import { clear, fmtTime, h, pill } from '../dom';
-import type { AuctionAnomaly, TradeAuditTicketView } from '../types';
+import type { AuctionAnomaly, AuctionListingAdminView, AuctionListingQuery, TradeAuditTicketView } from '../types';
 import { showErr, showOk, type Ctx } from './shared';
 
 export async function pageAuctionAudit(ctx: Ctx): Promise<void> {
@@ -13,6 +13,86 @@ export async function pageAuctionAudit(ctx: Ctx): Promise<void> {
     h('div', { class: 'muted', style: 'margin-bottom:8px' },
       'Anti-RMT: scan for suspicious seller→buyer pairs, file audit tickets, then adjudicate (dismiss = false positive; action = confirmed violation). ' +
       'Actioning a ticket automatically bans both parties (best-effort); the result is shown per ticket below.'),
+  );
+
+  // ── Listing lookup (any status: open/sold/cancelled/expired) ──
+  const lookupSellerInput = h('input', { placeholder: 'sellerId' }) as HTMLInputElement;
+  const lookupItemTypeSel = h('select', {},
+    h('option', { value: '' }, 'Any item type'),
+    h('option', { value: 'material' }, 'material'),
+    h('option', { value: 'equipment' }, 'equipment'),
+    h('option', { value: 'card' }, 'card'),
+    h('option', { value: 'skin' }, 'skin'),
+  ) as HTMLSelectElement;
+  const lookupStatusSel = h('select', {},
+    h('option', { value: '' }, 'Any status'),
+    h('option', { value: 'open' }, 'open'),
+    h('option', { value: 'sold' }, 'sold'),
+    h('option', { value: 'cancelled' }, 'cancelled'),
+    h('option', { value: 'expired' }, 'expired'),
+  ) as HTMLSelectElement;
+  const lookupItemNameInput = h('input', { placeholder: 'item name (material / defId / skinId, substring)' }) as HTMLInputElement;
+  const lookupErr = h('div', { class: 'err' });
+  const lookupOut = h('div', { class: 'card' });
+  lookupOut.style.display = 'none';
+
+  const runLookup = async (): Promise<void> => {
+    const filter: AuctionListingQuery = {};
+    const sellerId = lookupSellerInput.value.trim();
+    const itemName = lookupItemNameInput.value.trim();
+    if (sellerId) filter.sellerId = sellerId;
+    if (lookupItemTypeSel.value) filter.itemType = lookupItemTypeSel.value as AuctionListingQuery['itemType'];
+    if (lookupStatusSel.value) filter.status = lookupStatusSel.value as AuctionListingQuery['status'];
+    if (itemName) filter.itemName = itemName;
+    if (!filter.sellerId && !filter.itemType && !filter.itemName) {
+      showErr(lookupErr, new Error('at least one of sellerId / itemType / item name is required'));
+      return;
+    }
+    lookupErr.textContent = '';
+    clear(lookupOut);
+    try {
+      const listings = await api.slgQueryAuctionListings(filter);
+      lookupOut.style.display = '';
+      if (listings.length === 0) {
+        lookupOut.append(h('div', { class: 'muted' }, 'No matching listings.'));
+        return;
+      }
+      lookupOut.append(h('div', { class: 'muted' }, `${listings.length} listing${listings.length === 1 ? '' : 's'} found`));
+      const t = h('table', {},
+        h('tr', {},
+          h('th', {}, 'Auction ID'),
+          h('th', {}, 'Seller'),
+          h('th', {}, 'Item'),
+          h('th', {}, 'Qty'),
+          h('th', {}, 'Price'),
+          h('th', {}, 'Sale mode'),
+          h('th', {}, 'Status'),
+          h('th', {}, 'Designated buyer'),
+          h('th', {}, 'Buyer'),
+          h('th', {}, 'Expire / closed'),
+        ),
+      );
+      for (const l of listings) t.append(listingRow(l));
+      lookupOut.append(t);
+    } catch (e) {
+      showErr(lookupErr, e);
+      lookupOut.style.display = 'none';
+    }
+  };
+
+  root.append(
+    h('div', { class: 'card', style: 'margin-bottom:12px' },
+      h('div', { class: 'muted', style: 'margin-bottom:6px' }, 'Look up listings (any status) by seller / item type / item name'),
+      h('div', { class: 'row' },
+        h('div', {}, h('label', {}, 'Seller ID'), lookupSellerInput),
+        h('div', {}, h('label', {}, 'Item type'), lookupItemTypeSel),
+        h('div', {}, h('label', {}, 'Status'), lookupStatusSel),
+        h('div', {}, h('label', {}, 'Item name'), lookupItemNameInput),
+        h('button', { onclick: runLookup }, 'Search'),
+      ),
+      lookupErr,
+    ),
+    lookupOut,
   );
 
   // ── Anomaly scanner ──
@@ -122,6 +202,27 @@ export async function pageAuctionAudit(ctx: Ctx): Promise<void> {
     ticketBox,
   );
   await ticketRefresh();
+}
+
+const LISTING_STATUS_CLS: Record<string, string> = { open: 'warn', sold: '', cancelled: '', expired: 'failed' };
+
+function listingRow(l: AuctionListingAdminView): HTMLElement {
+  const priceLabel = l.saleMode === 'auction'
+    ? `${l.topBid ? `bid ${l.topBid.amount}` : `start ${l.startPrice ?? l.price}`}${l.buyoutPrice != null ? ` / buyout ${l.buyoutPrice}` : ''}`
+    : String(l.price);
+  const closedTs = l.soldAt ?? l.closedAt;
+  return h('tr', {},
+    h('td', { class: 'muted', style: 'font-size:12px' }, l.auctionId),
+    h('td', {}, l.sellerId),
+    h('td', {}, `${l.itemType}: ${l.itemName || '—'}`),
+    h('td', { style: 'text-align:right' }, String(l.qty)),
+    h('td', { style: 'text-align:right' }, priceLabel),
+    h('td', {}, l.saleMode),
+    h('td', {}, pill(l.status, LISTING_STATUS_CLS[l.status] ?? '')),
+    h('td', {}, l.designatedBuyerId ?? '—'),
+    h('td', {}, l.buyerId ?? '—'),
+    h('td', { class: 'muted', style: 'font-size:12px' }, closedTs ? fmtTime(closedTs) : fmtTime(l.expireAt)),
+  );
 }
 
 const SEVERITY_CLS: Record<string, string> = { high: 'failed', medium: 'warn' };
