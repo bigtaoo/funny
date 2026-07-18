@@ -76,6 +76,9 @@ export class ChatScene implements Scene {
   private dragStartScroll = 0;
   /** Pin to bottom (latest) unless the user scrolled up. */
   private stickBottom = true;
+  /** Set by onPointerMove during a drag, drained (render() called) once per frame in update()
+   *  instead of rendering inline — see scroll-drag-throttle-pattern memory. */
+  private scrollDirty = false;
 
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
@@ -96,6 +99,7 @@ export class ChatScene implements Scene {
   }
 
   update(dt: number): void {
+    if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
     if (this.composeFocused) {
       this.caretTimer += dt;
       if (this.caretTimer >= 0.5) { this.caretTimer = 0; this.caretOn = !this.caretOn; this.render(); }
@@ -218,7 +222,7 @@ export class ChatScene implements Scene {
     if (!this.dragging && Math.hypot(x - this.downX, y - this.downY) > DRAG_THRESHOLD) this.dragging = true;
     if (this.dragging && this.maxScroll > 0) {
       const next = clamp(this.dragStartScroll + (this.downY - y), 0, this.maxScroll);
-      if (next !== this.scrollY) { this.scrollY = next; this.stickBottom = next >= this.maxScroll - 1; this.render(); }
+      if (next !== this.scrollY) { this.scrollY = next; this.stickBottom = next >= this.maxScroll - 1; this.scrollDirty = true; }
     }
   }
   private onPointerUp(x: number, y: number): void {

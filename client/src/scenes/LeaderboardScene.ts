@@ -72,6 +72,15 @@ export class LeaderboardScene implements Scene {
   private downY = 0;
   private dragStartScroll = 0;
 
+  // Scroll-drag fast path (avoids full tearDownChildren+redraw of every row per pointermove):
+  // onPointerMove only repositions the already-built listContainer and recomputes hit rects
+  // from cached row defs; render() still does the full rebuild for actual data changes.
+  private listContainer: PIXI.Container | null = null;
+  private listTop = 0;
+  private listH = 0;
+  private rowDefs: Array<{ y: number; h: number; fn: () => void }> = [];
+  private scrollbar: PIXI.Graphics | null = null;
+
   constructor(layout: ILayout, input: InputManager, cb: LeaderboardCallbacks) {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
@@ -120,7 +129,23 @@ export class LeaderboardScene implements Scene {
     }
     if (this.dragging && this.scrollMax > 0) {
       const next = Math.max(0, Math.min(this.scrollMax, this.dragStartScroll + (this.downY - y)));
-      if (next !== this.scrollY) { this.scrollY = next; this.render(); }
+      if (next !== this.scrollY) { this.scrollY = next; this.updateScrollPosition(); }
+    }
+  }
+
+  /** Cheap per-move update: reposition the already-built list container and redraw the scroll indicator. */
+  private updateScrollPosition(): void {
+    if (!this.listContainer) return;
+    const sy = Math.min(this.scrollY, this.scrollMax);
+    this.listContainer.y = this.listTop - sy;
+    if (this.scrollbar) { this.scrollbar.destroy(); this.scrollbar = null; }
+    const pad = Math.round(this.w * 0.05);
+    this.scrollbar = drawScrollIndicator(this.container, { x: pad, y: this.listTop, w: this.w - pad * 2, h: this.listH }, sy, this.scrollMax);
+    this.hits = this.hits.filter((hit) => !this.rowDefs.some((rd) => rd.fn === hit.fn));
+    for (const rd of this.rowDefs) {
+      const absY = this.listTop - sy + rd.y;
+      if (absY + rd.h < this.listTop || absY > this.listTop + this.listH) continue;
+      this.hits.push({ rect: { x: pad, y: absY, w: this.w - pad * 2, h: rd.h }, fn: rd.fn });
     }
   }
 
@@ -139,6 +164,9 @@ export class LeaderboardScene implements Scene {
     tearDownChildren(this.container);
     this.hits = [];
     this.scrollMax = 0;
+    this.listContainer = null;
+    this.rowDefs = [];
+    this.scrollbar = null; // torn down with the container above; drop the stale ref
     const { w, h } = this;
 
     this.container.addChild(buildPaperBackground('lbbg', w, h));
@@ -200,6 +228,8 @@ export class LeaderboardScene implements Scene {
     // The scrollable list starts below the "my rank" strip.
     const listTop = tbH + Math.round(h * 0.06);
     const listH = h - listTop;
+    this.listTop = listTop;
+    this.listH = listH;
 
     // Scrollable list container
     const listContainer = new PIXI.Container();
@@ -211,6 +241,9 @@ export class LeaderboardScene implements Scene {
       const ry = i * (rowH + Math.round(h * 0.008));
       totalH = ry + rowH;
       this.drawRow(listContainer, e, 0, ry, listW, rowH, i);
+      if (this.cb.onOpenProfile) {
+        this.rowDefs.push({ y: ry, h: rowH, fn: () => this.cb.onOpenProfile!(e.publicId) });
+      }
     });
 
     this.scrollMax = Math.max(0, totalH - listH);
@@ -224,21 +257,10 @@ export class LeaderboardScene implements Scene {
     listContainer.mask = maskGfx;
 
     this.container.addChild(listContainer);
+    this.listContainer = listContainer;
 
-    // Hits (absolute coords offset by current scroll)
-    entries.forEach((e, i) => {
-      const ry = i * (rowH + Math.round(h * 0.008));
-      const absY = listTop - sy + ry;
-      if (absY + rowH < listTop || absY > listTop + listH) return;
-      if (this.cb.onOpenProfile) {
-        this.hits.push({
-          rect: { x: pad, y: absY, w: listW, h: rowH },
-          fn: () => this.cb.onOpenProfile!(e.publicId),
-        });
-      }
-    });
-
-    drawScrollIndicator(this.container, { x: pad, y: listTop, w: listW, h: listH }, sy, this.scrollMax);
+    // Hits (absolute coords offset by current scroll) + scroll indicator via the shared fast path.
+    this.updateScrollPosition();
   }
 
   private drawRow(
