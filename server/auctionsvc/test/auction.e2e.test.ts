@@ -519,6 +519,21 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(mailAtt('bob', 'auction_settle:')).toMatchObject({ kind: 'material', id: 'scrap' });
   });
 
+  it('B buyout bypasses the min-increment floor even when a prior bid pushed it above buyoutPrice', async () => {
+    // Use a card item: itemType 'card' has no price-guard category (categoryOf → null), so this
+    // isolates the increment-vs-buyout interaction from the unrelated PRICE_OUT_OF_RANGE guard.
+    seedCard('alice', mkCard('cd1'));
+    const v = await svc.createAuction({
+      sellerId: 'alice', itemType: 'card', saleMode: 'auction',
+      item: { instanceId: 'cd1' }, qty: 1, startPrice: 10, buyoutPrice: 2400, durationSec: DUR,
+    });
+    // Top bid close to buyoutPrice: increment-based minBid (2399 + ~5%) exceeds 2400.
+    await svc.placeBid('carol', v.auctionId, 2399);
+    const bought = await svc.placeBid('bob', v.auctionId, 2400);
+    expect(bought.status).toBe('sold');
+    expect(bought.buyerId).toBe('bob');
+  });
+
   it('B cannot cancel auction after a bid has been placed → BAD_REQUEST', async () => {
     const v = await svc.createAuction({
       sellerId: 'alice', itemType: 'material', saleMode: 'auction',
