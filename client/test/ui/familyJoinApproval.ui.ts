@@ -146,7 +146,7 @@ describe('FamilyScene — pending join-request approval', () => {
     // (Hits fire-and-forget the async handler — `action()` returns void, not a promise — so call
     // the underlying handler directly to await it deterministically; the rect count above already
     // proves the button wiring exists.)
-    const rowHits = scene.modalHits.filter((h: any) => h.rect.w === 56);
+    const rowHits = scene.modalHits.filter((h: any) => h.rect.w === 112);
     expect(rowHits).toHaveLength(2);
     await scene.doRespondJoinRequest('r1', true);
 
@@ -168,7 +168,7 @@ describe('FamilyScene — pending join-request approval', () => {
     scene.render();
     scene.openJoinRequests();
 
-    const rowHits = scene.modalHits.filter((h: any) => h.rect.w === 56);
+    const rowHits = scene.modalHits.filter((h: any) => h.rect.w === 112);
     expect(rowHits).toHaveLength(4); // 2 requests × (approve + reject)
     await scene.doRespondJoinRequest('r1', false);
 
