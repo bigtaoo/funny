@@ -531,26 +531,30 @@ export class GachaScene implements Scene {
     // Item picture — same per-item representation used in the odds-detail grid
     // (material icon / equipment glyph / real unit art / skin brush / rarity
     // star fallback), so a glance shows *what* was drawn, not just its id string.
-    const picSize = Math.round(Math.min(w, h) * 0.46);
-    this.drawEntryPicture(r.itemId, r.rarity, x + w / 2, y + h * 0.34, picSize, seed);
+    // Sized to 2/3 of the card (up from a small inset icon); the plate below is
+    // derived from where the picture ends rather than a fixed fraction, so the
+    // enlarged picture never overlaps the name/badge text.
+    const picSize = Math.round(Math.min(w, h) * (2 / 3));
+    const picTop = y + h * 0.03;
+    this.drawEntryPicture(r.itemId, r.rarity, x + w / 2, picTop + picSize / 2, picSize, seed);
 
-    const plateY = y + h * 0.54;
-    const plateH = h * 0.38;
+    const plateY = picTop + picSize + h * 0.02;
+    const plateH = y + h * 0.94 - plateY;
     const plate = new PIXI.Graphics();
     plate.beginFill(C.paper, 0.92); plate.drawRect(x, plateY, w, plateH); plate.endFill();
     this.container.addChild(plate);
 
     // Item name (translated display name, not the raw itemId).
     const idLbl = txt(this.displayName(r.itemId), snapFont(Math.round(h * 0.075)), C.dark);
-    idLbl.anchor.set(0.5, 0.5); idLbl.x = x + w / 2; idLbl.y = y + h * 0.63;
+    idLbl.anchor.set(0.5, 0.5); idLbl.x = x + w / 2; idLbl.y = plateY + plateH * 0.237;
     this.container.addChild(idLbl);
 
     // NEW badge only — duplicates get no badge (a "Dup" label read as noise).
-    // Kept above 0.80h so it clears the decorative frame's bottom border band
-    // (frame overlay is drawn on top of the plate, last).
+    // Kept off the plate's bottom edge so it clears the decorative frame's
+    // bottom border band (frame overlay is drawn on top of the plate, last).
     if (!r.duplicate) {
       const badge = txt(t('gacha.new'), snapFont(Math.round(h * 0.10)), C.green, true);
-      badge.anchor.set(0.5, 0.5); badge.x = x + w / 2; badge.y = y + h * 0.78;
+      badge.anchor.set(0.5, 0.5); badge.x = x + w / 2; badge.y = plateY + plateH * 0.632;
       this.container.addChild(badge);
     }
 
