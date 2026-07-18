@@ -150,6 +150,12 @@ services:
       NW_ADMIN_INTERNAL_URL: http://admin:8083
       NW_REGION: ${NW_REGION:-}
       NW_MM_BOT_FALLBACK_MS: ${NW_MM_BOT_FALLBACK_MS:-30000}
+      # Active-match resume tracking (login-reconnect-prompt) + gateway push fan-out (multi-instance safe,
+      # 2026-07-18): without this, both degrade — resume prompts never persist, and gateway pushes fall back
+      # to one fixed gateway address (breaks once gateway is scaled to >1 replica). Override '' to degrade.
+      NW_REDIS_URL: ${NW_REDIS_URL:-redis://redis:6379}
+    depends_on:
+      - redis
     restart: unless-stopped
 
   # Data-plane WS (thin lockstep relay, S1-M2). Validates ?ticket=, never connects to DB; reports to meta at game end.

@@ -28,11 +28,16 @@ async function main(): Promise<void> {
     gateway,
   );
 
-  // Sect channel real-time push (S8-4b): subscribe to Redis and deliver worldsvc fan-out pushes to online recipients on this instance.
+  // Sect channel real-time push (S8-4b) + cross-instance account takeover (2026-07-18): subscribe to
+  // Redis and (a) deliver worldsvc/matchsvc fan-out pushes to online recipients on this instance,
+  // (b) evict a same-account connection this instance might be holding when a sibling instance accepts
+  // a new login for it.
   const subscriber: GatewaySubscriber | null = await connectGatewaySubscriber(
     env.redisUrl,
     gateway.routeBroadcast,
+    gateway.routeKick,
   );
+  if (subscriber) gateway.setKickPublisher((accountId, originInstanceId) => void subscriber.publishKick(accountId, originInstanceId));
 
   const shutdown = (): void => {
     gateway.close();

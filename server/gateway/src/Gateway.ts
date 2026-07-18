@@ -6,6 +6,7 @@
 //
 // This service does not handle matchmaking, does not store rooms, and does not issue tickets — all of that lives in matchsvc (§8.1).
 // Ranked enqueue fetches ELO from meta before joining the queue.
+import { randomUUID } from 'crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { verifyToken, createLogger, validatePvpDeck, defaultPvpDeck, type JwtConfig } from '@nw/shared';
 
@@ -80,6 +81,12 @@ export class Gateway {
   private readonly wss: WebSocketServer;
   private readonly conns = new Map<string, GwConn>(); // accountId → active connection
   private readonly heartbeat: NodeJS.Timeout;
+  /** Stable per-process id (2026-07-18): tags this instance's own kick broadcasts so it can ignore
+   *  its own echo instead of evicting the very connection it just accepted (see onConnection). */
+  private readonly instanceId = randomUUID();
+  /** Set once Redis connects (index.ts); null in single-instance/no-Redis deployments, where the
+   *  local eviction in onConnection() already fully covers same-account takeover. */
+  private kickPublisher: ((accountId: string, originInstanceId: string) => void) | null = null;
   /** In-flight judge requests (requestId → pending). Cleared when a verdict arrives or on timeout. */
   private readonly pendingJudges = new Map<string, PendingJudge>();
   private judgeSeq = 0;
@@ -133,6 +140,31 @@ export class Gateway {
     for (const accountId of recipients) {
       const conn = this.conns.get(accountId);
       if (conn && conn.ws.readyState === conn.ws.OPEN) this.push(accountId, msg);
+    }
+  };
+
+  /** Wired by index.ts once Redis connects — lets onConnection() notify sibling instances of a same-account takeover. */
+  setKickPublisher(fn: (accountId: string, originInstanceId: string) => void): void {
+    this.kickPublisher = fn;
+  }
+
+  /**
+   * Cross-instance account takeover (2026-07-18, §8.4): received via Redis from another gateway
+   * instance's onConnection(). Skip our own echo (we already evicted synchronously, in-process,
+   * before publishing) — otherwise we'd kill the very connection we just accepted. Otherwise, if
+   * this instance happens to be holding a now-stale connection for the account, evict it exactly
+   * like the local same-instance path (4409 'replaced'); the ws 'close' handler does the rest
+   * (conns cleanup, matchsvc.disconnected, presence broadcast).
+   */
+  readonly routeKick = (accountId: string, originInstanceId: string): void => {
+    if (originInstanceId === this.instanceId) return;
+    const conn = this.conns.get(accountId);
+    if (!conn) return;
+    log.info('evicting stale connection (cross-instance takeover)', { accountId });
+    try {
+      conn.ws.close(4409, 'replaced');
+    } catch {
+      /* ignore */
     }
   };
 
@@ -243,6 +275,10 @@ export class Gateway {
     const conn: GwConn = { accountId, ws, alive: true, canJudge: false };
     this.conns.set(accountId, conn);
     log.info('WS connected', { accountId, online: this.conns.size });
+    // Tell sibling gateway instances too (2026-07-18): the account→socket map above is per-process,
+    // so a stale connection on a DIFFERENT instance wouldn't be caught by the `prev` check. No-op
+    // (kickPublisher unset) in single-instance/no-Redis deployments — this instance's own eviction above already sufficed.
+    this.kickPublisher?.(accountId, this.instanceId);
     this.matchsvc.connected(accountId);
     // Friend online-status broadcast (SOC9): notify online friends that I came online + push me a snapshot of online friends.
     void this.broadcastPresence(accountId, true);
