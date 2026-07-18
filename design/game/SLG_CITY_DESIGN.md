@@ -165,7 +165,7 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 
 ## 8. 客户端 UI（用户要的「点进主城界面」）
 
-- **入口**：`WorldMapScene` 点**自己主城**（`type:'base'` 且 `mine`）→ 菜单「进入主城 / Enter Desk」→ 新场景 **`CityScene`**。
+- **入口**：`WorldMapScene` 点**自己主城**（`type:'base'` 且 `mine`）→ **不再弹菜单**，直接进入 **`CityScene`**（ADR-041，2026-07-18；此前的「进入主城/Train/Defense/Manage team」五按钮弹窗已移除——Train/队伍管理本就在 CityScene 内有完整入口，主城也没有「手动防守配置」这一概念，防守由留守队伍自动构成，见 ADR-026）。
 - **`CityScene`**（手绘书桌俯视，SketchPen 风）：
   - 书桌上摆一排文具建筑图标，标等级徽章；底部 5 资源条（当前量/产率/仓储上限）。
   - 点建筑 → 详情卡：当前等级 / 各级加成曲线 / 下一级消耗（5 资源 + 时长）/「升级」按钮（资源不足置灰）。

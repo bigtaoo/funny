@@ -97,17 +97,10 @@ export class WorldMapInput {
       // to the generic mine-tile menu (no Enter City / Train option) and looked like a dead click.
       const isBase = me.mainBaseTile != null && baseFootprintCells(bx, by).some((c) => c.x === tx && c.y === ty);
       if (isBase) {
-        // Main city — enter desk / defense / teams.
-        this.ctx.panels.showModal(
-          [t('world.myBase'), `(${tx}, ${ty})`],
-          [
-            { label: t('world.actEnterCity'), action: () => { this.ctx.panels.closeModal(); this.ctx.cb.onOpenCity(); } },
-            { label: t('world.train'), action: () => { this.ctx.panels.closeModal(); this.ctx.panels.openTrainPanel(); } },
-            { label: t('world.actDefense'), action: () => { this.ctx.panels.closeModal(); this.ctx.cb.onOpenDefense('base'); } },
-            { label: t('world.team.manage'), action: () => { this.ctx.panels.closeModal(); this.ctx.cb.onOpenTeams(); } },
-            { label: '✕', action: () => this.ctx.panels.closeModal() },
-          ],
-        );
+        // Main city — no menu: tapping the base goes straight into the desk (city) scene.
+        // Defense is not a manual setting here — teams left in the city auto-defend (ADR-026 §2);
+        // teams that are out on a march simply leave the base undefended.
+        this.ctx.cb.onOpenCity();
         return;
       }
       const tileKey = `${this.ctx.cb.worldId}:${tx}:${ty}`;

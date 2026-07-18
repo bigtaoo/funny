@@ -902,7 +902,6 @@ export const zh = {
   'world.team.edit': '编辑',
   'world.team.pickTitle': '选择进攻队伍',
   'world.team.noTeams': '尚无队伍，先去编辑布阵',
-  'world.team.manage': '管理队伍',
   'world.team.emptyArmy': '该队伍未布阵',
   'world.team.busy': '行军/占领中',
   'world.team.pickTitleOccupy': '选择占领队伍',
@@ -920,7 +919,6 @@ export const zh = {
   'world.replay.def': '守',
   'world.replay.none': '无录像',
   // ── Training queue / resource panel (C4) ─────────────────────────────────
-  'world.train': '练兵',
   'world.trainTitle': '练兵 · 资源',
   'world.trainNew': '招募新兵',
   'world.trainBatch': '+{n}',
@@ -1489,7 +1487,6 @@ export const zh = {
   'city.bld.academy': '书院',
   'city.bld.satchel': '书包',
   // world map entry button
-  'world.actEnterCity': '进入主城',
 
   // ── Hero Roster (CHARACTER_CARDS_DESIGN §10) ──────────────────────────────
   'roster.title': '卡背包',

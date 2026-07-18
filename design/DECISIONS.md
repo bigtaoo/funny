@@ -467,3 +467,13 @@
   - 下游消费者（`gen-openapi-server.mjs`→`routes.gen.ts`、`client/scripts/gen-openapi.mjs`→`client/src/net/openapi.ts`、`openapi-request-schema.test.ts`/`openapi-response-schema.test.ts`）均只读 `openapi.yml` 文件路径，**未改动**，已验证 tsc/vitest/client typecheck 全绿。
   - CI：`.github/workflows/ci.yml` 新增 "server codegen check (metaserver openapi bundle)" 步骤（`npm run gen:api:contracts:check`），跑在既有 routes.gen.ts staleness check 之前。
   - 范围明确不含 `openapi-world.yml`（worldsvc）/`openapi-auction.yml`（auctionsvc）——规模本身不是痛点，未来若需要可复用同一套 `bundle-openapi.mjs` 模式。
+
+## ADR-041 主城点击直达 Desk（去掉城池菜单弹窗）+ 清理主城「手动防守配置」残留 — Accepted — 2026-07-18
+
+- **决策**（用户拍板）：世界地图上点击自己的主城 3×3 九格，**不再弹出菜单**（原「Enter Desk / Train / Defense / Manage team / ✕」五按钮弹窗），直接调用 `onOpenCity()` 进入 Desk（CityScene）。Train 与队伍管理本就已在 CityScene 内有完整入口（drillYard 训练详情弹窗、D-CITY-10 队伍卡片网格 → `onEditTeam`），不再需要地图层的重复菜单。
+- **主城没有「防守配置」概念**：ADR-026（2026-07-02）早已把主城攻防重构为「逐队守军波次」——**在城内、未受伤的队伍自动为守军；出征在外的队伍不参与防守**（`applyBaseSiege` 判据：`MarchDoc.teamId` 是否有活跃行军）。本条只是**移除与该已实现机制矛盾的遗留 UI/API**：地图菜单里指向主城的「Defense」按钮 → `DefenseEditorScene`（`mode:'defense', tileKey:'base'`）→ `setDefense/getDefense` 写读 `PlayerWorldDoc.defense`，这条路径是 ADR-026 之前（S8-4）的手动编队防守遗留，`buildDefenderConfig` 从未对 `target.type==='base'` 调用过（`applySiege` 在 `target.type==='base'` 分支直接转 `applyBaseSiege`，绕开了 `buildDefenderConfig`/`tile.defense`），即 `PlayerWorldDoc.defense` 字段自 ADR-026 起就是纯死数据，从未被任何攻城结算读取。
+- **领地/据点的手动防守配置不受影响**：非主城的己方领地格（`tileKey='{x}:{y}'`）仍走 `TileDoc.defense` → `buildDefenderConfig` 的既有编队路径（S8-4/G3-2c），本条不改动。
+- **影响**：
+  - 客户端 `WorldMapInput.ts`：主城分支从五按钮 `showModal` 改为直接 `onOpenCity()`；连带移除只被这个弹窗使用的 i18n key（`world.actEnterCity`/`world.train`/`world.team.manage`，3 语言）与回归测试 `worldMapBaseClick.ui.ts` 的断言更新。
+  - `onOpenDefense('base')`/`onOpenTeams()`（地图层「打开队伍列表 TeamsScene」入口）、`WorldMapPanels.openTrainPanel()`（地图层训练面板）自此弹窗移除后**已无任何调用方**——确认为死代码，但体量较大（TeamsScene 整个场景 + 训练面板渲染 ~150 行 + 多处 `trainPanelOpen` 状态联动），本次不一并删除，留作后续单独清理（已用 spawn_task 标记）。
+  - `server/worldsvc` 的 `PlayerWorldDoc.defense`（`tileKey='base'` 的 `setDefense`/`getDefense` 分支）**保留未删**——虽已确认是死代码，但涉及改 `openapi-world.yml` 契约（`tileKey` 参数默认值/说明）+ 两端 codegen 重新生成，风险/收益比不划算，本次不动；后续若清理前端 TeamsScene/训练面板时可一并处理。

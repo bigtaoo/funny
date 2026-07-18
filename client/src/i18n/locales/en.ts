@@ -890,7 +890,6 @@ export const en: Record<TranslationKey, string> = {
   'world.team.edit': 'Edit',
   'world.team.pickTitle': 'Choose attack team',
   'world.team.noTeams': 'No teams yet — set up a formation first',
-  'world.team.manage': 'Manage teams',
   'world.team.emptyArmy': 'This team has no formation',
   'world.team.busy': 'Marching / occupying',
   'world.team.pickTitleOccupy': 'Pick a team to occupy with',
@@ -908,7 +907,6 @@ export const en: Record<TranslationKey, string> = {
   'world.replay.def': 'Def',
   'world.replay.none': 'No replay',
   // Training queue / resource panel (C4)
-  'world.train': 'Train',
   'world.trainTitle': 'Train · Resources',
   'world.trainNew': 'Recruit troops',
   'world.trainBatch': '+{n}',
@@ -1473,7 +1471,6 @@ export const en: Record<TranslationKey, string> = {
   'city.bld.wall': 'Wall',
   'city.bld.academy': 'Academy',
   'city.bld.satchel': 'Satchel',
-  'world.actEnterCity': 'Enter Desk',
 
   // ── Hero Roster (CHARACTER_CARDS_DESIGN §10) ──────────────────────────────
   'roster.title': 'Hero Roster',

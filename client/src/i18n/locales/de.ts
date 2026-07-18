@@ -890,7 +890,6 @@ export const de: Record<TranslationKey, string> = {
   'world.team.edit': 'Bearbeiten',
   'world.team.pickTitle': 'Angriffsteam wählen',
   'world.team.noTeams': 'Noch keine Teams — erst eine Aufstellung anlegen',
-  'world.team.manage': 'Teams verwalten',
   'world.team.emptyArmy': 'Dieses Team hat keine Aufstellung',
   'world.team.busy': 'Im Marsch / bei der Besetzung',
   'world.team.pickTitleOccupy': 'Team zum Besetzen wählen',
@@ -908,7 +907,6 @@ export const de: Record<TranslationKey, string> = {
   'world.replay.def': 'Vert.',
   'world.replay.none': 'Keine Aufz.',
   // Trainingswarteschlange / Ressourcen (C4)
-  'world.train': 'Ausbilden',
   'world.trainTitle': 'Ausbildung · Ressourcen',
   'world.trainNew': 'Truppen rekrutieren',
   'world.trainBatch': '+{n}',
@@ -1473,7 +1471,6 @@ export const de: Record<TranslationKey, string> = {
   'city.bld.wall': 'Stadtmauer',
   'city.bld.academy': 'Akademie',
   'city.bld.satchel': 'Beutel',
-  'world.actEnterCity': 'Heimatstadt betreten',
 
   // ── Hero Roster (CHARACTER_CARDS_DESIGN §10) ──────────────────────────────
   'roster.title': 'Helden-Roster',
