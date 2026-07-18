@@ -23,6 +23,7 @@ import { ENHANCE_COEFF_PER_LEVEL } from '@nw/engine/balance/equipment';
 import { buildEquipIcon } from '../../render/equipmentAtlas';
 import { buildIcon, type IconKind } from '../../render/icons';
 import { buildMaterialIcon, type MaterialKind } from '../../render/materialAtlas';
+import { buildCoinIcon } from '../../render/coinIconAtlas';
 
 export type EquipResult = { ok: true } | { ok: false; key: TranslationKey };
 export type EnhanceResult =
@@ -478,7 +479,9 @@ export class EquipmentSceneBase {
       if (kind) {
         const ic = (kind === 'scrap' || kind === 'lead' || kind === 'binding')
           ? buildMaterialIcon(kind, size, iconColor)
-          : buildIcon(kind, size, iconColor);
+          : kind === 'coin'
+            ? buildCoinIcon(kind, size, iconColor)
+            : buildIcon(kind, size, iconColor);
         ic.x = cx; ic.y = midY - size / 2;
         parent.addChild(ic);
         cx += size + 1;
