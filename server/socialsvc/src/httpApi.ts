@@ -343,6 +343,13 @@ export function startHttpApi(
           return send(res, 200, ok(await familySvc.searchByTag(tag)));
         }
 
+        if (method === 'GET' && path === '/social/family/browse') {
+          const query = q.get('q') ?? undefined;
+          const limitRaw = q.get('limit');
+          const limit = limitRaw ? Number(limitRaw) : 10;
+          return send(res, 200, ok(await familySvc.browseFamilies(query, limit)));
+        }
+
         if (method === 'POST' && path === '/social/family') {
           const body = await readJson(req);
           const name = typeof body.name === 'string' ? body.name : null;

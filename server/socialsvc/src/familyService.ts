@@ -142,6 +142,25 @@ export class FamilyService {
     return doc ? docToView(doc) : null;
   }
 
+  /**
+   * Browse joinable families (join-picker source): families with an open slot, fuzzy-matched by
+   * name when `query` is given, sorted by prosperity desc (default view = top-N most prosperous).
+   */
+  async browseFamilies(query: string | undefined, limit = 10): Promise<FamilyView[]> {
+    const filter: Record<string, unknown> = { memberCount: { $lt: FAMILY_CAP } };
+    const trimmed = query?.trim();
+    if (trimmed) {
+      const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.name = { $regex: escaped, $options: 'i' };
+    }
+    const docs = await this.deps.cols.families
+      .find(filter)
+      .sort({ prosperity: -1 })
+      .limit(Math.min(Math.max(limit, 1), 50))
+      .toArray();
+    return docs.map(docToView);
+  }
+
   /** Create a family. TAG must be unique across the database; the creator becomes the leader; the creator must not already be in another family. */
   async createFamily(
     leaderId: string,

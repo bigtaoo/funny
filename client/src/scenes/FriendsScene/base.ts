@@ -32,7 +32,7 @@ import type {
   ChatMessagePush,
   MailNew,
 } from '../../net/proto/transport';
-import type { WorldChatMessage } from '../../net/WorldApiClient';
+import type { WorldChatMessage, FamilyView } from '../../net/WorldApiClient';
 
 // ── FriendsScene (S6-1/S6-2/S6-3/S6-4) — Social Hub ─────────────────────────
 //
@@ -74,6 +74,8 @@ export interface FriendsSceneCallbacks {
   loadSLGStatus?(): Promise<SLGSocialStatus | null>;
   createFamily?(name: string, tag: string): Promise<void>;
   joinFamily?(familyId: string): Promise<void>;
+  /** Top-prosperity families with an open slot, or fuzzy-matched by name when `query` is non-empty. */
+  browseFamilies?(query?: string): Promise<FamilyView[]>;
   createSect?(name: string, tag: string): Promise<void>;
   joinSect?(sectId: string): Promise<void>;
   openFamilyHub?(): void;
@@ -140,8 +142,13 @@ export class FriendsSceneBase {
   protected familySubview: 'info' | 'create' | 'joinById' = 'info';
   protected familyCreateName = '';
   protected familyCreateTag = '';
-  protected familyJoinId = '';
-  protected familyActiveInput: 'name' | 'tag' | 'id' | null = null;
+  protected familyActiveInput: 'name' | 'tag' | 'search' | null = null;
+  // Join-by-search: default view (query='') shows top-prosperity families with an open slot;
+  // typing a name fuzzy-filters the same list server-side.
+  protected familyBrowseQuery = '';
+  protected familyBrowseResults: FamilyView[] = [];
+  protected familyBrowseLoading = false;
+  protected familyBrowseLoaded = false;
 
   // Sect tab subview
   protected sectSubview: 'info' | 'create' | 'joinById' = 'info';
@@ -550,7 +557,8 @@ export interface FriendsSceneBase {
   doRemove(publicId: string): Promise<void>;
   doBlock(publicId: string): Promise<void>;
   doCreateFamily(): Promise<void>;
-  doJoinFamily(): Promise<void>;
+  loadFamilyBrowse(query: string): Promise<void>;
+  doJoinFamily(familyId: string): Promise<void>;
   doCreateSect(): Promise<void>;
   doJoinSect(): Promise<void>;
   doSendWorldChat(): Promise<void>;
