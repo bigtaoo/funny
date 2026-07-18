@@ -531,31 +531,45 @@ export class GachaScene implements Scene {
     // Item picture — same per-item representation used in the odds-detail grid
     // (material icon / equipment glyph / real unit art / skin brush / rarity
     // star fallback), so a glance shows *what* was drawn, not just its id string.
-    // Sized to 2/3 of the card (up from a small inset icon); the plate below is
-    // derived from where the picture ends rather than a fixed fraction, so the
-    // enlarged picture never overlaps the name/badge text.
-    const picSize = Math.round(Math.min(w, h) * (2 / 3));
+    // Sized to 3/4 of the card and pulled down close to the plate (the NEW badge
+    // no longer lives in the plate — see stamp below — so the plate only needs
+    // to fit the name and the picture can sit right above it).
+    const picSize = Math.round(Math.min(w, h) * 0.75);
     const picTop = y + h * 0.03;
     this.drawEntryPicture(r.itemId, r.rarity, x + w / 2, picTop + picSize / 2, picSize, seed);
 
-    const plateY = picTop + picSize + h * 0.02;
+    const plateY = picTop + picSize + h * 0.008;
     const plateH = y + h * 0.94 - plateY;
     const plate = new PIXI.Graphics();
     plate.beginFill(C.paper, 0.92); plate.drawRect(x, plateY, w, plateH); plate.endFill();
     this.container.addChild(plate);
 
-    // Item name (translated display name, not the raw itemId).
+    // Item name (translated display name, not the raw itemId), centred in the
+    // (now badge-free) plate.
     const idLbl = txt(this.displayName(r.itemId), snapFont(Math.round(h * 0.075)), C.dark);
-    idLbl.anchor.set(0.5, 0.5); idLbl.x = x + w / 2; idLbl.y = plateY + plateH * 0.237;
+    idLbl.anchor.set(0.5, 0.5); idLbl.x = x + w / 2; idLbl.y = plateY + plateH * 0.5;
     this.container.addChild(idLbl);
 
-    // NEW badge only — duplicates get no badge (a "Dup" label read as noise).
-    // Kept off the plate's bottom edge so it clears the decorative frame's
-    // bottom border band (frame overlay is drawn on top of the plate, last).
+    // NEW stamp — duplicates get nothing (a "Dup" label read as noise). Printed
+    // straight onto the picture at an angle, like a rubber ink stamp, rather
+    // than sitting as a separate plate label.
     if (!r.duplicate) {
-      const badge = txt(t('gacha.new'), snapFont(Math.round(h * 0.10)), C.green, true);
-      badge.anchor.set(0.5, 0.5); badge.x = x + w / 2; badge.y = plateY + plateH * 0.632;
-      this.container.addChild(badge);
+      const stamp = new PIXI.Container();
+      const stampW = Math.round(w * 0.86);
+      const stampH = Math.round(h * 0.13);
+      const ink = 0xaf2430;
+      const border = new PIXI.Graphics();
+      border.lineStyle(Math.max(2, Math.round(h * 0.012)), ink, 0.9);
+      border.drawRoundedRect(-stampW / 2, -stampH / 2, stampW, stampH, stampH * 0.3);
+      stamp.addChild(border);
+      const label = txt(t('gacha.new'), snapFont(Math.round(h * 0.085)), ink, true);
+      label.anchor.set(0.5, 0.5);
+      stamp.addChild(label);
+      stamp.rotation = -0.3;
+      stamp.alpha = 0.88;
+      stamp.x = x + w / 2;
+      stamp.y = picTop + picSize - h * 0.05;
+      this.container.addChild(stamp);
     }
 
     // Frame overlay — drawn last so it sits on top of the card art.
