@@ -1196,3 +1196,11 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 - 选卡→点格子放置的既有交互（含跨队伍互斥、`CARD_TEAM_MAX_SIZE` 上限、卡牌只能占一格）逻辑未改动。
 
 **验证**：`client/test/ui/defenseEditorAttackCards.ui.ts`（6 例，纯逻辑，不测布局像素）+ `teamsScene.ui.ts`（11 例）全绿，`tsc --noEmit` 全绿；另用临时 `?teamEditor` 调试入口（构造假 `WorldApiClient` + 假 `SaveData`，跳过登录/后端，验证后已删除，未随功能保留）在 Browser 截图核对了实际渲染效果——左侧棋盘 + 右侧卡牌网格、已部署卡牌高亮 + "已在队伍中"标签、选卡后点格子放置生效。
+
+### 30.1 棋盘格已布置单位改用卡牌肖像（2026-07-18）
+
+**背景**：左侧棋盘上已放置的单位此前只画一个纯色圆点（按 unitType 分 4 色）+ 兵力数字，与右侧名册的肖像卡片视觉不一致，用户反馈应显示卡牌图片。
+
+**实现**：`drawUnit()`（`DefenseEditorScene.ts`）改为复用 `renderRosterCell()` 同款素材管线——`UNIT_ART_URLS[type]` 取到肖像 URL 时画一个 `sketchPanel` 方框 + `drawArtFit()`（与名册肖像同一 `getArtTexture`/`artHooked` 缓存与异步加载回调），取不到时保留原纯色圆点兜底（理论上不会触发，因为可布置单位均来自 `CARD_DEFINITIONS` 已收集兵种，均有肖像）。兵力数字标签位置从"圆心+半径"改为"方框底部"。
+
+**验证**：`tsc --noEmit` 全绿；用临时 `__NW_APP`/`__NW_DefenseEditorScene` 调试钩子（`Object.create(DefenseEditorScene.prototype)` 假实例直调 `drawUnit`，跳过登录/WorldApiClient，验证后已删除）截图确认 Max/Lena/Archer 三种兵种均正确显示肖像图（非圆点）。
