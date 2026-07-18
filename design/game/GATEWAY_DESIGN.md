@@ -11,7 +11,7 @@
 - **gateway = 薄连接层，玩家公开门面**：鉴权长连接 + `account→socket` 映射 + 房间/匹配消息转发 matchsvc + 事件回推（含 match_found+ticket）+ 在线状态。
 - **不连库**：入队前向 meta 取一次 ELO（`GET /internal/elo`）带进 matchsvc；自身无持久数据。
 - 是 **matchsvc 的公开门面**——matchsvc 因此对玩家不可达。
-- **部署粒度**：gateway 与 matchsvc 各为独立进程（S1-M5/M23），经内部 HTTP 互通；对外只暴露 gateway 公开 WS。gateway 横扩时再加 Redis 做 `account→实例` 路由。
+- **部署粒度**：gateway 与 matchsvc 各为独立进程（S1-M5/M23），经内部 HTTP 互通；对外只暴露 gateway 公开 WS。**gateway 横扩（多实例）已支持（2026-07-18）**：跨实例顶号 + matchsvc→gateway 推送均改走 Redis（`NW_GW_REDIS_URL` 订阅端 / `NW_REDIS_URL` matchsvc 发布端），详见下文 §1。
 
 > matchsvc 自身（匹配队列/房间/ticket/game 注册）、gameserver 瘦身、meta 局末结算见 **`MATCHSVC_DESIGN.md`**。
 
@@ -21,6 +21,7 @@
 
 - WS 握手 `?token=<jwt>`（复用 meta 的 JWT，解出 accountId 绑定连接）。
 - 维护 `account → socket` 映射（同账号新连顶替旧连，沿用现有顶替逻辑）。被顶替的旧连以关闭码 **`4409 'replaced'`** 断开；**客户端收到 4409 不得重连**（`NetClient` 已处理），否则两个会话互相顶替会陷入无限重连 ping-pong 战（常见于同账号开了两个标签页）。
+  - **跨实例顶号（2026-07-18）**：`account → socket` 映射是**单进程内存态**，gateway 横扩到多实例后，旧连接可能落在另一个实例上，本地的 `prev` 检查看不到它。修法：每个实例有一个启动时生成的 `instanceId`（`randomUUID()`）；`onConnection()` 除了本地顶替，还会通过 Redis 广播 `{kick:{accountId, originInstanceId}}` 到 `GW_PUSH_REDIS_CHANNEL`（复用 S8-4b 已有的 pub/sub 通道，不新增基建）；**所有**实例（含自己）都订阅同一通道，收到后各自检查本地 `conns` map——`originInstanceId` 等于自己的直接忽略（避免踢掉刚接受的新连接），否则若本地持有该账号的连接，同样以 `4409 'replaced'` 关闭。无 Redis 配置（`NW_GW_REDIS_URL` 为空）时该广播是无操作（只退化为单实例内的本地顶替，行为与之前一致）。实现：`Gateway.ts` 的 `instanceId`/`kickPublisher`/`routeKick()`，`redis.ts` 的 `publishKick()`。
 - 把客户端控制面消息转发 matchsvc；把 matchsvc 回调事件（`/gw/push`）推回对应 socket。
 - 入队前向 meta 取 ELO（`GET /internal/elo`，M17），带进 `/mm/enqueue`——让 matchsvc 保持 DB-free。
 - 在线状态 / （将来）好友 / 通知 / 聊天的承载连接。
@@ -63,7 +64,7 @@ GET /internal/elo?accountId=<id>  (内部密钥)   → { elo }
 ## 4. 部署粒度（M20）
 
 - **现状（S1-M5/M23）**：gateway 与 matchsvc 是两个独立进程，经内部 HTTP 互通（gateway→matchsvc 转命令、matchsvc→gateway `/gw/push` 回事件、game→matchsvc 注册心跳）。对外只暴露 gateway 公开 WS（`/gw`），matchsvc 内部 HTTP 不绑公网。
-- **后期**：gateway 连接数撑不住 → 多 gateway 实例 + Redis 做 `account→gateway 实例` 路由（届时 `/gw/push` 改 pub/sub，见 `META_DESIGN §6.7`）；matchsvc 仍单点。
+- **多 gateway 实例（2026-07-18 落地）**：matchsvc→gateway 的推送（room_state/match_found/room_error）不再固定发往 `NW_GATEWAY_INTERNAL_URL` 这一个地址——matchsvc 配置了 `NW_REDIS_URL` 时，改为发布 `{recipients:[accountId], msg}` 到 `GW_PUSH_REDIS_CHANNEL`（与 worldsvc 的 sect/nation 广播共用同一通道），每个 gateway 实例各自过滤只投递给本地在线的 accountId；未配置 Redis 时退化回原来的直连 HTTP（仅适用单实例）。跨实例顶号见上文 §1。matchsvc 自身仍是单点（无状态、可随时重启，未做横向扩展的必要）。
 - 反代：`/gw`→gateway(WS)；`/ws`→gameserver(WS)；`/api/*`→meta(REST)；matchsvc/commercial 不暴露公网。
 
 ---

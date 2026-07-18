@@ -173,6 +173,20 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
       modeIcon.x = imgX + imgSize - 22; modeIcon.y = imgY;
       this.bodyLayer.addChild(modeIcon);
 
+      // Designated-buyer badge: shown in "Market" when I'm the account this listing is exclusive to
+      // (server already hides it from everyone else; this just distinguishes it from the open market).
+      if (this.activeTab === 'all' && auc.designatedBuyerId && auc.designatedBuyerId === this.cb.myAccountId) {
+        const badge = txt(t('auction.exclusive'), FS.tiny, C.light, true);
+        badge.anchor.set(0, 0);
+        const bx = x + pad; const by = y + pad;
+        const bw = badge.width + 12; const bh = badge.height + 8;
+        const badgeBg = sketchPanel(bw, bh, { fill: C.accent, border: C.accent, seed: seedFor(x, y, bw) });
+        badgeBg.x = bx; badgeBg.y = by;
+        this.bodyLayer.addChild(badgeBg);
+        badge.x = bx + 6; badge.y = by + 4;
+        this.bodyLayer.addChild(badge);
+      }
+
       // ── Right: info column (name, price, buyout, countdown) ──
       const ax = imgX + imgSize + 16;
       const rightW = x + cellW - pad - ax;

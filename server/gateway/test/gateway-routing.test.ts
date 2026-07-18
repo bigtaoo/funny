@@ -158,6 +158,38 @@ describe('Gateway control-plane routing', () => {
     expect(await closed).toBe(4409);
   });
 
+  it('cross-instance kick (routeKick from a sibling instance) evicts a locally-held connection', async () => {
+    const port = 19526;
+    startGateway(port, new RecordingMatchsvc());
+    const ws1 = await connect(port, 'acc-remote');
+    const closed = new Promise<number>((res) => ws1.on('close', (code: number) => res(code)));
+
+    // Simulates a Redis-delivered kick broadcast originating from a different gateway instance.
+    gateway!.routeKick('acc-remote', 'some-other-instance-id');
+    expect(await closed).toBe(4409);
+  });
+
+  it('cross-instance kick ignores its own echo (originInstanceId === this instance)', async () => {
+    const port = 19527;
+    startGateway(port, new RecordingMatchsvc());
+    let ownInstanceId = '';
+    gateway!.setKickPublisher((_accountId, originInstanceId) => { ownInstanceId = originInstanceId; });
+    const ws1 = await connect(port, 'acc-self'); // onConnection() calls the publisher, capturing our own instanceId
+    let closed = false;
+    ws1.on('close', () => { closed = true; });
+
+    expect(ownInstanceId).not.toBe('');
+    gateway!.routeKick('acc-self', ownInstanceId); // echo of our own broadcast — must be a no-op
+    await sleep(40);
+    expect(closed).toBe(false);
+  });
+
+  it('routeKick is a no-op when this instance holds no connection for the account', () => {
+    const port = 19528;
+    startGateway(port, new RecordingMatchsvc());
+    expect(() => gateway!.routeKick('nobody-here', 'other-instance')).not.toThrow();
+  });
+
   it('friendly room_create with a locked card → gateway strips it (falls back to defaultPvpDeck)', async () => {
     // The reported-bug class: a sub-1500 player must not field ELO-locked units even in a
     // friendly/custom room — server-side gating is universal (PVP_LOADOUT §6.3).

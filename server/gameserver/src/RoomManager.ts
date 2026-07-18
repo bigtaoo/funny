@@ -36,8 +36,13 @@ export class RoomManager {
     if (room) {
       // Room already exists: verify seed/mode match (prevents forgery / mismatched pairing).
       if (room.seedValue !== seed || room.mode !== mode) return false;
-      // Side already in room = reconnect: do not call addPlayer again; slot.conn is rebound by a subsequent conn_resume.
-      if (!room.hasSide(conn.side)) room.addPlayer(conn, name, publicId, opponentTitle, decks);
+      // Side already in room = reconnect (or a new-device login taking over): rebind immediately and
+      // evict any stale connection instead of leaving it dangling until a conn_resume arrives.
+      if (room.hasSide(conn.side)) {
+        room.takeover(conn);
+      } else {
+        room.addPlayer(conn, name, publicId, opponentTitle, decks);
+      }
       return true;
     }
     room = new Room(conn.roomId, seed, mode, {

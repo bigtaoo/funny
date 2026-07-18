@@ -9,7 +9,9 @@ import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../../layout/ILayout';
 import type { InputManager } from '../../inputSystem/InputManager';
 import { t, type TranslationKey } from '../../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchButton, seedFor, tearDownChildren } from '../../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
+import { drawConfirmDialog } from '../../render/confirmDialog';
+import type { IconKind } from '../../render/icons';
 import { showToastMessage } from '../../net/log';
 import { FS, snapFont } from '../../render/fontScale';
 import { buildDecorCLayer } from '../../render/decorCLayer';
@@ -18,7 +20,6 @@ import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import type { WorldApiClient, AuctionView } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
 import type { SaveData, EquipmentInstance, CardInstance } from '../../game/meta/SaveData';
-import { buildIcon, type IconKind } from '../../render/icons';
 import { caretDisplay } from '../../render/inputDisplay';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 
@@ -488,42 +489,9 @@ export class AuctionSceneBase {
   protected showConfirmModal(msg: string, onOk: () => void): void {
     const { w, h } = this;
     const ml = this.modalLayer;
-    tearDownChildren(ml);
     this.modalHits = [];
     this.modalOpen = true;
-
-    const mw = Math.min(280, w - 40);
-    const mh = 110;
-    const mx = (w - mw) / 2;
-    const my = (h - mh) / 2;
-
-    const dim = new PIXI.Graphics();
-    dim.beginFill(0x000000, 0.35).drawRect(0, 0, w, h).endFill();
-    ml.addChild(dim);
-
-    const panel = sketchPanel(mw, mh, { fill: C.paper, border: C.dark, seed: seedFor(0, 0, mw) });
-    panel.x = mx; panel.y = my;
-    ml.addChild(panel);
-
-    const lbl = txt(msg, FS.tiny, C.dark);
-    lbl.anchor.set(0.5, 0); lbl.x = mx + mw / 2; lbl.y = my + 14;
-    ml.addChild(lbl);
-
-    const okBtn = sketchButton(80, 28, seedFor(0, 1, 80));
-    okBtn.x = mx + mw / 2 - 88; okBtn.y = my + mh - 36;
-    ml.addChild(okBtn);
-    const ol = txt('OK', FS.tiny, C.light);
-    ol.anchor.set(0.5, 0.5); ol.x = mx + mw / 2 - 48; ol.y = my + mh - 22;
-    ml.addChild(ol);
-    this.modalHits.push({ rect: { x: okBtn.x, y: okBtn.y, w: 80, h: 28 }, action: onOk });
-
-    const caBtn = sketchPanel(80, 28, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 2, 80) });
-    caBtn.x = mx + mw / 2 + 8; caBtn.y = my + mh - 36;
-    ml.addChild(caBtn);
-    const cl = buildIcon('close', 14, C.dark);
-    cl.x = mx + mw / 2 + 48 - 7; cl.y = my + mh - 22 - 7;
-    ml.addChild(cl);
-    this.modalHits.push({ rect: { x: caBtn.x, y: caBtn.y, w: 80, h: 28 }, action: () => this.closeModal() });
+    this.modalHits = drawConfirmDialog(ml, w, h, msg, () => onOk(), () => this.closeModal());
   }
 
   protected closeModal(): void {
@@ -543,7 +511,7 @@ export class AuctionSceneBase {
       const map: Record<string, string> = {
         AUCTION_CLOSED:          t('auction.err.closed'),
         AUCTION_NOT_FOUND:       t('auction.err.closed'),
-        NOT_DESIGNATED_BUYER:    t('auction.err.selfBuy'),
+        NOT_DESIGNATED_BUYER:    t('auction.err.notDesignatedBuyer'),
         AUCTION_LIMIT_REACHED:   t('auction.err.limitReached'),
         INSUFFICIENT_FUNDS:      t('auction.err.insufficientFunds'),
         INSUFFICIENT_RESOURCES:  t('auction.err.insufficientFunds'),

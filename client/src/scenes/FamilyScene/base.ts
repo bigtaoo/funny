@@ -284,7 +284,7 @@ export class FamilySceneBase {
     // Same sect-tab visibility rule as FriendsScene's rail: hide it unless this player is a
     // family leader (who could found/join a sect) or their family is already in one.
     const hidden: SocialTab[] = !this.isFamilyLeader && !this.family?.sectId ? ['sect'] : [];
-    const railHits = drawSocialTabRail(this.bodyLayer, this.w, this.h, this.headerH, this.landscape, 'family', {}, (tab) => this.cb.onNavTab(tab), hidden);
+    const railHits = drawSocialTabRail(this.bodyLayer, this.w, this.h, this.headerH, this.landscape, 'family', { family: this.joinRequests.length }, (tab) => this.cb.onNavTab(tab), hidden);
     this.hitRects.push(...railHits.map((hit) => ({ rect: hit.rect, action: hit.fn })));
 
     switch (this.mode) {
@@ -334,7 +334,11 @@ export class FamilySceneBase {
 
   handleDown(x: number, y: number): void {
     if (this.modalOpen) {
-      for (const { rect, action } of this.modalHits) {
+      // Reverse order: the full-screen dim-to-close rect is always pushed first, so checking
+      // in push order made it win over every button drawn on top of it (approve/reject, pick
+      // rows, ...) — clicks looked like they did nothing because they just closed the modal.
+      for (let i = this.modalHits.length - 1; i >= 0; i--) {
+        const { rect, action } = this.modalHits[i]!;
         if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) {
           action(); return;
         }

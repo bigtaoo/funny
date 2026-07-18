@@ -435,3 +435,25 @@ client_log_debug: { default: false, desc: '客户端日志上报-debug', side: '
 **新增 `longConstructMs`/`longConstructScene`**：`net/anomaly.ts` 新增 `recordConstructSample(scene, ms)`（同 `recordFrameSample` 的模式，≥200ms 才记，60s 内附到下一次 `anr` 上报）；`app.ts` `PixiAppViews` 新增私有 `timedBuild(name, build)` helper，包住全部 ~30 处 `new XxxScene(...)` 调用计时。**若 `longConstructMs` 接近 `stallMs`，说明卡顿其实发生在场景构造阶段（可复现、可优化，大概率是某个场景进入时同步建了太多 UI/纹理）；若仍然缺席，才真正指向 GC/系统级停顿或渲染代码之外的阻塞**。
 
 `tsc --noEmit` clean。**下一步**：等下一批线上 `anr` 日志读 `longConstructMs`——这应该能把 LobbyScene/FriendsScene/LeaderboardScene 反复出现的卡顿最终定位到"哪个场景的构造函数"或彻底排除掉这条路径。
+
+### 2026-07-18（四续）· 补 `longRender` 归因，覆盖 PIXI 渲染调用本身（§9.7 anr）
+
+**验证结果**：`longConstructMs` 上线后拿到的下一批线上 `anr`（build `85c3448`，`merge 85c34488` 之后，确认已包含该字段）——`stallMs` 4227-29672 的多条 LobbyScene/LeaderboardScene/GachaScene 冻结，`longFrameMs` 和 `longConstructMs` **同时缺席**。两条已知的同步路径（`scene.update()`、场景构造函数）都被排除了。
+
+**新盲区定位**：`PIXI.Application` 把它自己的渲染调用挂在共享 ticker 的 `UPDATE_PRIORITY.LOW`，而 `SceneManager.onTick` 用的是默认（`NORMAL`）优先级——两者顺序固定是 `onTick` 先跑，PIXI 的 `renderer.render(stage)` 后跑。也就是说真正的 GPU draw-call 提交、以及它同步触发的 `PIXI.Text` canvas 光栅化，完全落在 `recordFrameSample` 的计时窗口之外,是第三条、此前完全没被计时的同步路径。
+
+**新增 `longRenderMs`/`longRenderScene`**：`net/anomaly.ts` 新增 `recordRenderSample(ms)`（同前两个埋点的模式，≥200ms 才记，60s 内附到下一次 `anr` 上报，场景名复用已有的 `activeScene`）；`app.ts` 在创建 `PIXI.Application` 后直接包一层 `app.renderer.render`（`origRender = app.renderer.render.bind(...)`，替换为计时后转发的版本),不依赖 ticker 优先级顺序,直接量渲染调用本身的耗时。**若 `longRenderMs` 接近 `stallMs`,说明卡顿发生在渲染阶段(大概率是某场景当帧同步创建/更新了大量 `PIXI.Text`,触发密集 canvas 光栅化);若三条路径都缺席,才真正确认是渲染代码之外的 GC/系统级停顿,此时应该把方向从"继续加归因埋点"转向"降低整体堆内存压力/分配速率"。**
+
+`tsc --noEmit` clean,`anomaly-chain.test.ts` 12/12 green(纯新增,未改动既有行为)。未提交(当日分支 `18.07.2026`)。**下一步**：等下一批线上 `anr` 日志读 `longRenderMs`——这是当前归因链条里最后一段未覆盖的同步路径,读到结果后三选一都有明确后续动作。
+
+### 2026-07-18(五续)· Long Tasks + Page Lifecycle + 堆增量,补三条"应用代码之外"的信号(§9.7 anr)
+
+**动机**：问题已经持续一周,`longFrameMs`/`longConstructMs`/`longRenderMs` 三条同步路径埋点陆续上线后,用户明确要求"更深入探查/加更多日志"。这三个埋点的共同局限是——它们都只能看见**我们自己代码**跑了多久;如果卡顿根本不是应用代码造成的(真·GC 停顿、或标签页被系统挂起而 `visibilitychange` 没能及时反映),三个字段会全部缺席,却给不出"那到底是什么"的下一步线索。这次加的三个信号专门补这个盲区：
+
+1. **`longTaskMs`/`longTaskCount`**(Long Tasks API,仅 Chromium)：`PerformanceObserver({type:'longtask'})` 独立于我们自己的计时,能看到主线程上**任何** ≥50ms 的任务,不管是不是我们的代码触发的(第三方脚本、浏览器内部 layout/style、或嵌在当前任务里跑的同步 GC)。价值在于反向验证：如果卡了几十秒但这段窗口里**完全没有** long task 记录,说明主线程根本没在跑 JS——真正指向"线程被系统挂起"这类边界情况,而不是慢代码或 GC。`net/anomaly.ts` 新增 `installLongTaskObserver()` + `longTasksSince(since)`,窗口起点用 watchdog 的 `expected - WATCH_MS`(即上一次已知正常 tick 的时间)。
+2. **Page Lifecycle `freeze`/`resume` 事件**(仅 Chromium)：比 `visibilitychange` 更强的挂起信号——部分系统级挂起路径(后台 CPU 预算耗尽等)只触发 `freeze`/`resume`,不一定翻转 `document.hidden`,这正是 07-18 第三批记录里提到但没修的那个盲区("`visibilitychange` 锁存是否有遗漏的挂起模式")。`installAnrWatchdog()` 里新增 `document.addEventListener('freeze'/'resume', ...)`,`freeze` 和 `hidden` 一样锁存(抑制误报),两者都记一条 `[info:anomaly]` crumb,即使没有抑制到报告,也能在 `crumbs` 里看到冻结/恢复配对。
+3. **`heapMB`/`heapDeltaMB`**(仅 Chromium `performance.memory`)：每次 `anr` 上报时采样一次已用堆,和上一次采样做差。如果一次长卡顿伴随堆大幅下降,是"这段时间跑了一次大 GC"最接近的同批证据;如果长卡顿堆没怎么变,削弱 GC 停顿假说。
+
+`anrContext()` 签名改为 `anrContext(stallSince?: number)`,`installAnrWatchdog` 调用时传入 `expected - WATCH_MS`。三个信号全部 feature-detect,不支持的浏览器(WeChat/Safari/Firefox)直接不生效,不影响现有上报。`tsc --noEmit` clean,`anomaly-chain.test.ts` 12/12 green,`client/test/` 全量 735/735 green(纯新增,未改动既有行为)。未提交(当日分支 `18.07.2026`)。
+
+**下一步**：等下一批线上 `anr` 日志,同时读六个字段(`longFrameMs`/`longConstructMs`/`longRenderMs`/`longTaskMs`/`longTaskCount`/`heapDeltaMB`)。三条"自己代码"路径 + longTask 都缺席 → 强烈指向真正的线程挂起(边界情况,考虑加更激进的挂起检测或直接接受为不可控);`heapDeltaMB` 大幅下降 → GC 停顿证据变实;`freeze`/`resume` crumb 配对出现在卡顿前后 → 是挂起检测的盲区被证实,需要扩大抑制逻辑或干脆把这类样本从"ANR"里过滤掉(它其实是正常的系统级挂起,不是 bug)。

@@ -5,6 +5,8 @@ import type {
   AntiCheatReviewView,
   AuditEntryView,
   AuctionAnomaly,
+  AuctionListingAdminView,
+  AuctionListingQuery,
   CompMailContent,
   CompScope,
   CompTarget,
@@ -371,6 +373,16 @@ export class Api {
     if (windowSec !== undefined) qs.set('windowSec', String(windowSec));
     const r = await this.req<{ anomalies: AuctionAnomaly[] }>('GET', `/admin/slg/audit/anomalies?${qs}`);
     return r.anomalies;
+  }
+  async slgQueryAuctionListings(filter: AuctionListingQuery): Promise<AuctionListingAdminView[]> {
+    const qs = new URLSearchParams();
+    if (filter.sellerId) qs.set('sellerId', filter.sellerId);
+    if (filter.itemType) qs.set('itemType', filter.itemType);
+    if (filter.status) qs.set('status', filter.status);
+    if (filter.itemName) qs.set('itemName', filter.itemName);
+    if (filter.limit != null) qs.set('limit', String(filter.limit));
+    const r = await this.req<{ listings: AuctionListingAdminView[] }>('GET', `/admin/slg/audit/listings?${qs}`);
+    return r.listings;
   }
   async slgListAuditTickets(status?: string): Promise<TradeAuditTicketView[]> {
     const qs = status ? `?status=${encodeURIComponent(status)}` : '';

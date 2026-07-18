@@ -100,6 +100,9 @@ export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TB
       this.showJoinRequestsModal();
     }
 
+    // 2x the size of every other confirm-style modal in this scene — approving/rejecting a
+    // join request is a more consequential action (changes the roster) and was easy to miss
+    // at the old, small size (user feedback 2026-07-18).
     private showJoinRequestsModal(): void {
       const { w, h } = this;
       const ml = this.modalLayer;
@@ -107,8 +110,8 @@ export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TB
       this.modalHits = [];
       this.modalOpen = true;
 
-      const mw = Math.min(340, w - 32);
-      const mh = Math.min(360, h - 80);
+      const mw = Math.min(680, w - 32);
+      const mh = Math.min(720, h - 80);
       const mx = (w - mw) / 2;
       const my = (h - mh) / 2;
 
@@ -121,48 +124,48 @@ export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TB
       panel.x = mx; panel.y = my;
       ml.addChild(panel);
 
-      const title = txt(t('family.pendingRequests', { n: this.joinRequests.length }), FS.heading, C.dark, true);
-      title.x = mx + 12; title.y = my + 10;
+      const title = txt(t('family.pendingRequests', { n: this.joinRequests.length }), FS.heading * 2, C.dark, true);
+      title.x = mx + 24; title.y = my + 20;
       ml.addChild(title);
 
       if (this.joinRequests.length === 0) {
-        const lbl = txt(t('family.noPendingRequests'), FS.tiny, C.dark);
+        const lbl = txt(t('family.noPendingRequests'), FS.tiny * 2, C.dark);
         lbl.anchor.set(0.5, 0.5); lbl.x = mx + mw / 2; lbl.y = my + mh / 2;
         ml.addChild(lbl);
         return;
       }
 
-      let cy = my + 40;
+      let cy = my + 80;
       for (const reqv of this.joinRequests) {
-        const row = sketchPanel(mw - 16, 40, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(cy, 0, mw - 16) });
-        row.x = mx + 8; row.y = cy;
+        const row = sketchPanel(mw - 32, 80, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(cy, 0, mw - 32) });
+        row.x = mx + 16; row.y = cy;
         ml.addChild(row);
-        const nameLbl = txt(reqv.displayName ?? reqv.publicId ?? reqv.accountId, FS.tiny, C.dark);
-        nameLbl.x = mx + 14; nameLbl.y = cy + 12;
+        const nameLbl = txt(reqv.displayName ?? reqv.publicId ?? reqv.accountId, FS.tiny * 2, C.dark);
+        nameLbl.x = mx + 28; nameLbl.y = cy + 24;
         ml.addChild(nameLbl);
 
-        const approveW = 56, rejectW = 56, btnH = 26, gap = 6;
-        const rejectX = mx + mw - 8 - rejectW;
+        const approveW = 112, rejectW = 112, btnH = 52, gap = 12;
+        const rejectX = mx + mw - 16 - rejectW;
         const approveX = rejectX - gap - approveW;
 
         const approveBtn = sketchPanel(approveW, btnH, { fill: 0xe0f0e0, border: 0x4a8a4a, seed: seedFor(cy, 1, approveW) });
-        approveBtn.x = approveX; approveBtn.y = cy + 7;
+        approveBtn.x = approveX; approveBtn.y = cy + 14;
         ml.addChild(approveBtn);
-        const al = txt(t('family.approve'), FS.label, 0x2f6b2f);
-        al.anchor.set(0.5, 0.5); al.x = approveX + approveW / 2; al.y = cy + 7 + btnH / 2;
+        const al = txt(t('family.approve'), FS.label * 2, 0x2f6b2f);
+        al.anchor.set(0.5, 0.5); al.x = approveX + approveW / 2; al.y = cy + 14 + btnH / 2;
         ml.addChild(al);
         const rid = reqv.requestId;
-        this.modalHits.push({ rect: { x: approveX, y: cy + 7, w: approveW, h: btnH }, action: () => void this.doRespondJoinRequest(rid, true) });
+        this.modalHits.push({ rect: { x: approveX, y: cy + 14, w: approveW, h: btnH }, action: () => void this.doRespondJoinRequest(rid, true) });
 
         const rejectBtn = sketchPanel(rejectW, btnH, { fill: 0xf0e0e0, border: C.red, seed: seedFor(cy, 2, rejectW) });
-        rejectBtn.x = rejectX; rejectBtn.y = cy + 7;
+        rejectBtn.x = rejectX; rejectBtn.y = cy + 14;
         ml.addChild(rejectBtn);
-        const rl = txt(t('family.reject'), FS.label, C.red);
-        rl.anchor.set(0.5, 0.5); rl.x = rejectX + rejectW / 2; rl.y = cy + 7 + btnH / 2;
+        const rl = txt(t('family.reject'), FS.label * 2, C.red);
+        rl.anchor.set(0.5, 0.5); rl.x = rejectX + rejectW / 2; rl.y = cy + 14 + btnH / 2;
         ml.addChild(rl);
-        this.modalHits.push({ rect: { x: rejectX, y: cy + 7, w: rejectW, h: btnH }, action: () => void this.doRespondJoinRequest(rid, false) });
+        this.modalHits.push({ rect: { x: rejectX, y: cy + 14, w: rejectW, h: btnH }, action: () => void this.doRespondJoinRequest(rid, false) });
 
-        cy += 44;
+        cy += 88;
       }
     }
 

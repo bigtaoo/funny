@@ -8,6 +8,8 @@
 import { randomUUID } from 'node:crypto';
 import type {
   AuctionAnomaly,
+  AuctionListingAdminView,
+  AuctionListingQuery,
   TradeAuditSnapshot,
   TradeAuditTicketStatus,
   TradeAuditTicketView,
@@ -19,6 +21,7 @@ import { validateAuditSnapshot } from './validators';
 
 export interface SlgAuditHandlers {
   slgScanAnomalies(worldId: string, windowSec?: number): Promise<AuctionAnomaly[]>;
+  slgQueryAuctionListings(filter: AuctionListingQuery): Promise<AuctionListingAdminView[]>;
   slgFileAuditTicket(actor: Actor, snapshot: TradeAuditSnapshot): Promise<TradeAuditTicketView>;
   slgListAuditTickets(filter: { status?: string }): Promise<TradeAuditTicketView[]>;
   slgResolveAuditTicket(actor: Actor, id: string, disposition: string, note: string): Promise<TradeAuditTicketView>;
@@ -36,6 +39,17 @@ export function SlgAuditMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase &
     async slgScanAnomalies(worldId: string, windowSec?: number): Promise<AuctionAnomaly[]> {
       if (!this.auction.available) return [];
       return this.auction.scanAnomalies(windowSec);
+    }
+
+    /**
+     * Ops listing lookup (capability slg.audit.view): query auction listings across every status by
+     * sellerId / itemType / status / itemName. Returns empty if auctionsvc is unreachable. Unlike
+     * slgScanAnomalies (which only aggregates completed sold trades), this surfaces one listing's full
+     * record — including designatedBuyerId — regardless of whether it has sold yet.
+     */
+    async slgQueryAuctionListings(filter: AuctionListingQuery): Promise<AuctionListingAdminView[]> {
+      if (!this.auction.available) return [];
+      return this.auction.queryListings(filter);
     }
 
     /**

@@ -287,6 +287,22 @@ export class Room {
     }, GRACE_MS);
   }
 
+  /**
+   * A new ticket connection claims a side that's already occupied — either the previous connection
+   * is stale (new-device login evicting the old one) or this is the same device racing its own
+   * reconnect. Evicts the stale socket immediately so it can't linger duplicating frames or block
+   * the account from being taken over. Deliberately leaves `slot.conn`/grace-timer/metronome alone:
+   * the client's follow-up conn_resume still drives resume() for that, since it carries lastFrame
+   * needed to backfill the missed frame log correctly — rebinding here first could let a metronome
+   * tick reach the new connection before its resync, if the stale socket hadn't disconnected yet.
+   */
+  takeover(conn: Connection): void {
+    const slot = this.slotOfSide(conn.side);
+    if (!slot) return;
+    const stale = slot.conn;
+    if (stale && stale !== conn) stale.close(4409, 'replaced');
+  }
+
   /** Reconnect: rebind connection + send conn_resync to catch up frames + resume metronome. */
   resume(conn: Connection, lastFrame: number): void {
     const slot = this.slotOfSide(conn.side);

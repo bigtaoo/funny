@@ -147,7 +147,7 @@ describe('AuctionScene — errorMsg()', () => {
   it('maps known WorldApiError codes to their localized message', () => {
     const scene = buildScene();
     expect(scene.errorMsg(new WorldApiError('AUCTION_CLOSED', 'x'))).toBe(t('auction.err.closed'));
-    expect(scene.errorMsg(new WorldApiError('NOT_DESIGNATED_BUYER', 'x'))).toBe(t('auction.err.selfBuy'));
+    expect(scene.errorMsg(new WorldApiError('NOT_DESIGNATED_BUYER', 'x'))).toBe(t('auction.err.notDesignatedBuyer'));
     expect(scene.errorMsg(new WorldApiError('BID_TOO_LOW', 'x'))).toBe(t('auction.err.bidTooLow'));
     scene.destroy();
   });
@@ -603,6 +603,32 @@ describe('AuctionScene — market cell countdown', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('shows the "For You" badge in Market only when I am the designated buyer', () => {
+    const scene = buildScene({ myAccountId: 'acc_me' });
+    scene.allAuctions = [
+      makeAuction({ auctionId: 'a_mine', designatedBuyerId: 'acc_me' }),
+      makeAuction({ auctionId: 'a_other', designatedBuyerId: 'acc_other' }),
+      makeAuction({ auctionId: 'a_open' }),
+    ];
+    scene.activeTab = 'all';
+    scene.loading = false;
+    scene.render();
+
+    expect(collectTexts(scene.container)).toContain(t('auction.exclusive'));
+    scene.destroy();
+  });
+
+  it('does not show the "For You" badge outside Market (My Auctions / My Bids)', () => {
+    const scene = buildScene({ myAccountId: 'acc_me' });
+    scene.myListings = [makeAuction({ designatedBuyerId: 'acc_me' })];
+    scene.activeTab = 'mine';
+    scene.loading = false;
+    scene.render();
+
+    expect(collectTexts(scene.container)).not.toContain(t('auction.exclusive'));
+    scene.destroy();
   });
 
   it('stacks below the price/buyout block instead of pinning to a fixed bottom offset', () => {

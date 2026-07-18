@@ -12,8 +12,9 @@ interface FakeConn {
   accountId: string;
   alive: boolean;
   outbox: ServerMsg[];
+  closedWith: { code: number; reason: string } | null;
   send(msg: ServerMsg): void;
-  close(): void;
+  close(code: number, reason: string): void;
 }
 function makeConn(roomId: string, side: 0 | 1, accountId: string): FakeConn {
   return {
@@ -22,10 +23,13 @@ function makeConn(roomId: string, side: 0 | 1, accountId: string): FakeConn {
     accountId,
     alive: true,
     outbox: [],
+    closedWith: null,
     send(msg) {
       this.outbox.push(msg);
     },
-    close() {},
+    close(code, reason) {
+      this.closedWith = { code, reason };
+    },
   };
 }
 const asConn = (c: FakeConn): Connection => c as unknown as Connection;
@@ -95,5 +99,18 @@ describe('RoomManager (ticket relay)', () => {
     mgr.join(asConn(c1), 'b', '', SEED, MatchMode.FRIENDLY);
     const c0b = makeConn('R', 0, 'a'); // reconnect
     expect(mgr.join(asConn(c0b), 'a', '', SEED, MatchMode.FRIENDLY)).toBe(true);
+  });
+
+  it('new-device login for an already-connected side evicts the stale connection (4409 replaced)', () => {
+    const mgr = newManager();
+    const c0 = makeConn('R', 0, 'a');
+    const c1 = makeConn('R', 1, 'b');
+    mgr.join(asConn(c0), 'a', '', SEED, MatchMode.FRIENDLY);
+    mgr.join(asConn(c1), 'b', '', SEED, MatchMode.FRIENDLY);
+
+    const c0New = makeConn('R', 0, 'a'); // same account, new device/ticket takes over side 0
+    expect(mgr.join(asConn(c0New), 'a', '', SEED, MatchMode.FRIENDLY)).toBe(true);
+    expect(c0.closedWith).toEqual({ code: 4409, reason: 'replaced' });
+    expect(c0New.closedWith).toBeNull();
   });
 });

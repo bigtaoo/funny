@@ -92,6 +92,15 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
             status.familyName = fam.name;
             status.familyTag = fam.tag;
             status.isLeader = !!myAccountId && fam.leaderId === myAccountId;
+            // Leader/elder only — matches familyService's server-side approval gate — so
+            // the pending-request badge never fires an extra request for regular members.
+            const myRole = fam.members?.find((m) => m.accountId === myAccountId)?.role;
+            if (myRole === 'leader' || myRole === 'elder') {
+              try {
+                const reqs = await worldApi.listJoinRequests();
+                status.pendingJoinRequests = reqs.length;
+              } catch { /* best-effort — badge just stays off */ }
+            }
             if (fam.sectId) {
               status.sectId = fam.sectId;
               try {

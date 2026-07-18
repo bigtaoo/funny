@@ -238,7 +238,11 @@ export class SectSceneBase {
 
   handleDown(x: number, y: number): void {
     if (this.modalOpen) {
-      for (const { rect, action } of this.modalHits) {
+      // Reverse order: the full-screen dim-to-close rect is always pushed first, so checking
+      // in push order made it win over every button drawn on top of it — see FamilySceneBase's
+      // handleDown for the same fix and the bug it addresses.
+      for (let i = this.modalHits.length - 1; i >= 0; i--) {
+        const { rect, action } = this.modalHits[i]!;
         if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) {
           action(); return;
         }
