@@ -28,3 +28,13 @@ describe('deploy config — matchsvc feature flag wiring', () => {
     });
   }
 });
+
+describe('deploy config — matchsvc redis wiring (2026-07-18)', () => {
+  for (const file of COMPOSE_FILES) {
+    it(`${file}: matchsvc injects NW_REDIS_URL pointing to redis (otherwise active-match resume never persists, and gateway push falls back to a single fixed address — breaks once gateway has >1 replica)`, () => {
+      const env = loadMatchsvcEnv(file);
+      expect(env.NW_REDIS_URL, 'matchsvc missing NW_REDIS_URL → resume-prompt data + multi-instance gateway push both disabled').toBeTruthy();
+      expect(env.NW_REDIS_URL).toContain('redis');
+    });
+  }
+});

@@ -35,7 +35,10 @@ async function main(): Promise<void> {
   if (adminUrl) void flags.start();
 
   const games = new GameRegistry(Date.now, env.gamePublicWsUrl);
-  const gateway = new GatewayClient(env.gatewayInternalUrl, env.internalKey);
+  // Reuses the same Redis connection as active-match tracking to publish gateway pushes via the
+  // shared fan-out channel (GW_PUSH_REDIS_CHANNEL) instead of one fixed gateway address — correct
+  // regardless of how many gateway instances are running (see gatewayClient.ts).
+  const gateway = new GatewayClient(env.gatewayInternalUrl, env.internalKey, redis);
   const matchsvc = new Matchsvc(gateway.push, games, env.internalKey, {
     ticketTtlSec: env.ticketTtlSec,
     flags,
@@ -57,7 +60,7 @@ async function main(): Promise<void> {
 
   console.log(`matchsvc internal HTTP on :${env.internalPort} (gateway commands + game register/heartbeat)`);
   console.log(
-    `gateway push: ${gateway.available ? env.gatewayInternalUrl : 'unavailable (events dropped)'}; ` +
+    `gateway push: ${redis ? 'redis fan-out (multi-instance safe)' : gateway.available ? `direct HTTP ${env.gatewayInternalUrl} (single-instance only)` : 'unavailable (events dropped)'}; ` +
       `game fallback: ${env.gamePublicWsUrl ?? 'none (register required)'}`,
   );
   console.log(
