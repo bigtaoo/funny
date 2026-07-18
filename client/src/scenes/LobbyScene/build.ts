@@ -424,8 +424,18 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       // 2. Pillars: Campaign (gold, PvE) | World map (accent, SLG). The world map needs an account,
       // so it's hidden in offline mode — Campaign then takes the full content width.
       const showWorld = !this.cb.offline && !!this.cb.onOpenWorld;
-      const pillarGap = Math.round(w * 0.025);
+      const pillarGap = Math.round(w * 0.05);
       const pw = showWorld ? Math.round((contentW - pillarGap) / 2) : contentW;
+
+      // Shared backdrop behind both pillars — a single hand-drawn panel that reads as
+      // one grouped block, with the individual pillar cards sitting on top of it.
+      if (showWorld) {
+        const pad = Math.round(pillarH * 0.08);
+        const backdrop = sketchPanel(contentW + 2 * pad, pillarH + 2 * pad,
+          { fill: C.paper, border: C.mid, width: 1.6, seed: 52 });
+        backdrop.x = contentX - pad; backdrop.y = pillarsY - pad;
+        this.container.addChild(backdrop);
+      }
 
       this.campaignBtnRect = { x: contentX, y: pillarsY, w: pw, h: pillarH };
       this.drawPillar(contentX, pillarsY, pw, pillarH, C.gold, 'book',
