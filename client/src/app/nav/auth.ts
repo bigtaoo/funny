@@ -196,6 +196,7 @@ export function mapAuthError(e: unknown): TranslationKey {
     case 'INVALID_CREDENTIALS': return 'auth.err.invalid';
     case 'WEAK_PASSWORD':       return 'auth.err.weak';
     case 'BAD_REQUEST':         return 'auth.err.loginId';
+    case 'ACCOUNT_BANNED':      return 'auth.err.banned';
     default:                    return 'auth.err.network';
   }
 }

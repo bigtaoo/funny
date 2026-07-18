@@ -268,6 +268,20 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true, reviews });
         }
 
+        // ── Resolve an anti-cheat review (anticheat.action): human decides dismiss vs ban ──
+        const reviewResolveMatch = path.match(/^\/admin\/anticheat\/reviews\/([^/]+)\/resolve$/);
+        if (method === 'POST' && reviewResolveMatch) {
+          requireCap(actor, 'anticheat.action');
+          const id = decodeURIComponent(reviewResolveMatch[1] ?? '');
+          const b = await readJson(req);
+          const resolution = str(b.resolution);
+          if (resolution !== 'dismissed' && resolution !== 'banned') {
+            return send(res, 400, { ok: false, error: 'resolution must be dismissed or banned' });
+          }
+          await svc.resolveAntiCheatReview(actor.adminId, id, str(b.accountId), resolution);
+          return send(res, 200, { ok: true });
+        }
+
         // ── Compensation tickets ──
         if (method === 'POST' && path === '/admin/comp/tickets') {
           const b = await readJson(req);

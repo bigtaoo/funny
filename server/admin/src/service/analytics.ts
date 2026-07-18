@@ -37,6 +37,12 @@ export interface AnalyticsHandlers {
   lookupPlayerByAccountId(accountId: string): Promise<PlayerProfile>;
   searchPlayers(actor: string, q: string): Promise<PlayerSummary[]>;
   resetPlayerPassword(actor: string, accountId: string, password: string): Promise<void>;
+  resolveAntiCheatReview(
+    actor: string,
+    id: string,
+    accountId: string,
+    resolution: 'dismissed' | 'banned',
+  ): Promise<void>;
   listAntiCheatReviews(
     actor: string,
     opts?: { accountId?: string; status?: string; limit?: number },
@@ -209,6 +215,35 @@ export function AnalyticsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase 
         summary: `${rows.length} reviews (status=${opts.status ?? 'open'})`,
       });
       return rows;
+    }
+
+    /**
+     * Resolve an anti-cheat review (anticheat.action): a human decides dismiss vs ban — no automatic
+     * ban path feeds this queue (2026-07-18 policy change). Banning goes through the same manual
+     * ban endpoint/audit trail as banAccount, so there is exactly one ban code path.
+     */
+    async resolveAntiCheatReview(
+      actor: string,
+      id: string,
+      accountId: string,
+      resolution: 'dismissed' | 'banned',
+    ): Promise<void> {
+      if (!this.antiCheat.available) {
+        throw new AdminError(503, 'unavailable', 'anti-cheat backend unavailable');
+      }
+      if (resolution === 'banned') {
+        if (!this.suspiciousPve.available) {
+          throw new AdminError(503, 'unavailable', 'ban backend unavailable');
+        }
+        const banRes = await this.suspiciousPve.banAccount(accountId);
+        if (!banRes.ok) throw new AdminError(502, 'ban_failed', 'failed to ban account');
+      }
+      const res = await this.antiCheat.resolveReview(id, resolution, actor);
+      if (!res.ok) throw new AdminError(404, 'not_found', 'review not found');
+      await this.audit(actor, resolution === 'banned' ? 'account.ban' : 'anticheat.review.resolve', {
+        target: accountId,
+        summary: `review ${id} → ${resolution}`,
+      });
     }
 
     // ───────────────────────── Sampling (OPS_DESIGN §5) ─────────────────────────

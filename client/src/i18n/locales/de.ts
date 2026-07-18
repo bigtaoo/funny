@@ -352,6 +352,7 @@ export const de: Record<TranslationKey, string> = {
   'auth.err.fields': 'Bitte alle Felder ausfüllen',
   'auth.err.passwordMismatch': 'Passwörter stimmen nicht überein',
   'auth.err.network': 'Netzwerkfehler — bitte erneut versuchen',
+  'auth.err.banned': 'Dieses Konto wurde gesperrt',
 
   // ── Shop / Aufladen (S2-6) ──────────────────────────────────────────────────
   'shop.title': 'Shop',
@@ -893,6 +894,10 @@ export const de: Record<TranslationKey, string> = {
   'world.team.pickTitleOccupy': 'Team zum Besetzen wählen',
   'world.team.noTeamsOccupy': 'Noch keine Teams — erst eine Aufstellung anlegen',
   'world.team.noCards': 'Keine Karten verfügbar (verletzt oder bereits in einem anderen Team)',
+  'world.team.pool': 'Truppenpool {n}',
+  'world.team.fill': 'Truppen auffüllen',
+  'world.team.fillNone': 'Truppenpool ist leer, oder das Team ist bereits voll',
+  'world.team.fillDone': '{n} Truppen zugewiesen',
   'world.team.full': 'Aufstellung ist voll',
   // ── SLG battle replay browser (last-100) ─────────────────────────────────
   'world.replays': 'Kampf-Wiederholungen',

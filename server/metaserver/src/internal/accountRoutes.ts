@@ -8,7 +8,7 @@ import type { InternalCtx } from './context.js';
 const log = createLogger('meta:internal');
 
 export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): void {
-  const { cols, authed } = ctx;
+  const { cols, authed, now } = ctx;
 
   // ── GET /internal/elo?accountId= ──────────────────────────────────────
   app.get('/internal/elo', async (req, reply) => {
@@ -108,6 +108,26 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
       .limit(limit)
       .toArray();
     return reply.send({ reviews });
+  });
+
+  // ── POST /internal/anticheat/reviews/:id/resolve (anticheat.action, admin-initiated) ─────────
+  // Marks a review record resolved. Does NOT itself ban — the caller (admin backend) bans separately via
+  // POST /internal/accounts/:id/ban when resolution='banned', so there is exactly one ban code path.
+  app.post('/internal/anticheat/reviews/:id/resolve', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    const { id } = req.params as { id: string };
+    const { resolution, resolvedBy } = (req.body ?? {}) as { resolution?: string; resolvedBy?: string };
+    if (resolution !== 'dismissed' && resolution !== 'banned') {
+      return reply.code(400).send({ ok: false, error: 'resolution must be dismissed or banned' });
+    }
+    const res = await cols.antiCheatReviews.updateOne(
+      { _id: id },
+      { $set: { status: 'reviewed', resolution, resolvedAt: now(), ...(resolvedBy ? { resolvedBy } : {}) } },
+    );
+    if (res.matchedCount === 0) return reply.code(404).send({ ok: false, error: 'review not found' });
+    return reply.send({ ok: true });
   });
 
   // ── GET /internal/social/friends?accountId= ──────────────────────────

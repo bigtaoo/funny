@@ -209,6 +209,10 @@ export class Api {
     const r = await this.req<{ reviews: AntiCheatReviewView[] }>('GET', `/admin/anticheat/reviews?${qs}`);
     return r.reviews;
   }
+  /** Human resolution of a review record: dismiss (no action) or ban (goes through the same manual ban path as Player Lookup). */
+  async resolveAntiCheatReview(id: string, accountId: string, resolution: 'dismissed' | 'banned'): Promise<void> {
+    await this.req('POST', `/admin/anticheat/reviews/${encodeURIComponent(id)}/resolve`, { accountId, resolution });
+  }
 
   // —— Compensation tickets ——
   async initiate(input: {

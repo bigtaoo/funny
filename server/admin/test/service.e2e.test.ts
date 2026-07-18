@@ -6,6 +6,8 @@ import { createAdminMongo, type AdminMongo } from '../src/db';
 import { AdminService, AdminError, type Actor } from '../src/service';
 import { seedSuperAdmin } from '../src/seed';
 import type {
+  AntiCheatClient,
+  AntiCheatReviewRow,
   MailDispatcher,
   MailSendReq,
   MailSendRes,
@@ -78,6 +80,25 @@ class FakeSuspiciousPve implements SuspiciousPveClient {
   async banAccount(accountId: string) { this.banned.add(accountId); return { ok: true }; }
   async unbanAccount(accountId: string) { this.banned.delete(accountId); return { ok: true }; }
 }
+// Fake anti-cheat review queue backing store (PvE reject review, 2026-07-18 policy change: no auto-ban).
+class FakeAntiCheat implements AntiCheatClient {
+  available = true;
+  rows: AntiCheatReviewRow[] = [];
+  async listReviews(opts?: { accountId?: string; status?: string; limit?: number }) {
+    return this.rows.filter(
+      (r) => (!opts?.accountId || r.accountId === opts.accountId) && (!opts?.status || opts.status === 'all' || r.status === opts.status),
+    );
+  }
+  async resolveReview(id: string, resolution: 'dismissed' | 'banned', resolvedBy: string) {
+    const row = this.rows.find((r) => r._id === id);
+    if (!row) return { ok: false };
+    row.status = 'reviewed';
+    row.resolution = resolution;
+    row.resolvedBy = resolvedBy;
+    row.resolvedAt = 1;
+    return { ok: true };
+  }
+}
 
 async function actorOf(svc: AdminService, username: string): Promise<Actor> {
   const doc = (await svc.getAccount((await mongo!.collections.adminAccounts.findOne({ username }))!._id))!;
@@ -89,13 +110,15 @@ describe.skipIf(!mongo)('admin service e2e', () => {
   let svc: AdminService;
   let mail: FakeMail;
   let suspiciousPve: FakeSuspiciousPve;
+  let antiCheat: FakeAntiCheat;
 
   beforeEach(async () => {
     await m.db.dropDatabase();
     await m.ensureIndexes(3600);
     mail = new FakeMail();
     suspiciousPve = new FakeSuspiciousPve();
-    svc = new AdminService({ cols: m.collections, stats: stubStats, players: stubPlayer, suspiciousPve, mail, now });
+    antiCheat = new FakeAntiCheat();
+    svc = new AdminService({ cols: m.collections, stats: stubStats, players: stubPlayer, suspiciousPve, antiCheat, mail, now });
     // Seed: one super-admin + one ops + one support agent.
     await seedSuperAdmin(m.collections, 'root', 'rootpass', now);
     const root = await actorOf(svc, 'root');
@@ -330,6 +353,49 @@ describe.skipIf(!mongo)('admin service e2e', () => {
       status: 409,
     });
     await expect(svc.resetPlayerPassword(root.adminId, 'acc-1', 'short')).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('anticheat review resolve (2026-07-18 policy: PvE reject no longer auto-bans, human decides ban vs dismiss)', async () => {
+    const root = await actorOf(svc, 'root');
+    antiCheat.rows.push({
+      _id: 'pve:verify-1',
+      kind: 'pve_reject',
+      accountId: 'acc-1',
+      levelId: 'ch1_lv7',
+      claimedStars: 2,
+      judgedStars: 0,
+      rejectCountAfter: 1,
+      severity: 'normal',
+      status: 'open',
+      ts: 1,
+    });
+    antiCheat.rows.push({
+      _id: 'pve:verify-2',
+      kind: 'pve_reject',
+      accountId: 'acc-2',
+      levelId: 'ch1_lv9',
+      claimedStars: 2,
+      judgedStars: 1,
+      rejectCountAfter: 3,
+      severity: 'high',
+      status: 'open',
+      ts: 2,
+    });
+    // Dismiss: no ban, just marks the review resolved.
+    await svc.resolveAntiCheatReview(root.adminId, 'pve:verify-1', 'acc-1', 'dismissed');
+    expect(suspiciousPve.banned.has('acc-1')).toBe(false);
+    expect(antiCheat.rows[0]).toMatchObject({ status: 'reviewed', resolution: 'dismissed', resolvedBy: root.adminId });
+    // Ban: goes through the same manual-ban backing store as Player Lookup's Ban button.
+    await svc.resolveAntiCheatReview(root.adminId, 'pve:verify-2', 'acc-2', 'banned');
+    expect(suspiciousPve.banned.has('acc-2')).toBe(true);
+    expect(antiCheat.rows[1]).toMatchObject({ status: 'reviewed', resolution: 'banned' });
+    // Audited under account.ban when banned, so it's visible in the same audit trail as manual bans.
+    const entries = await svc.listAudit(root, {});
+    expect(entries.some((e) => e.action === 'account.ban' && e.target === 'acc-2')).toBe(true);
+    // Unknown review id → 404.
+    await expect(svc.resolveAntiCheatReview(root.adminId, 'no-such-review', 'acc-3', 'dismissed')).rejects.toMatchObject({
+      status: 404,
+    });
   });
 
   it('sampling writes metricSnapshots → trend queryable', async () => {

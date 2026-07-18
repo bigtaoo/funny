@@ -352,6 +352,7 @@ export const en: Record<TranslationKey, string> = {
   'auth.err.fields': 'Please fill in all fields',
   'auth.err.passwordMismatch': 'Passwords do not match',
   'auth.err.network': 'Network error — please retry',
+  'auth.err.banned': 'This account has been suspended',
 
   // ── Shop / top-up (S2-6) ────────────────────────────────────────────────────
   'shop.title': 'Shop',
@@ -893,6 +894,10 @@ export const en: Record<TranslationKey, string> = {
   'world.team.pickTitleOccupy': 'Pick a team to occupy with',
   'world.team.noTeamsOccupy': 'No teams yet — go edit a formation',
   'world.team.noCards': 'No cards available (injured or already on another team)',
+  'world.team.pool': 'Troop pool {n}',
+  'world.team.fill': 'Fill troops',
+  'world.team.fillNone': 'Troop pool is empty, or the team is already full',
+  'world.team.fillDone': 'Assigned {n} troops',
   'world.team.full': 'Formation is full',
   // ── SLG battle replay browser (last-100) ─────────────────────────────────
   'world.replays': 'Battle replays',

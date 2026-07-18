@@ -290,6 +290,7 @@ export type AuditAction =
   | 'comp.execute'
   | 'comp.execute.failed'
   | 'anticheat.view'
+  | 'anticheat.review.resolve'
   | 'account.ban'
   | 'account.unban'
   | 'player.search'

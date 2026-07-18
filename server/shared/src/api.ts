@@ -84,7 +84,7 @@ export const ErrorCode = {
   SKIN_NOT_FOUND: 'SKIN_NOT_FOUND',                 // account does not own this skin id
   SKIN_IN_USE: 'SKIN_IN_USE',                       // skin is currently equipped → may not be listed
   // —— PvE anti-cheat (S4-4) ——
-  ACCOUNT_BANNED: 'ACCOUNT_BANNED',                 // replay re-computation rejected three times — account banned
+  ACCOUNT_BANNED: 'ACCOUNT_BANNED',                 // manually banned by an ops admin (2026-07-18: no auto-ban path remains — every ban goes through human review)
   // —— compliance (C5) ——
   ACCOUNT_DELETED: 'ACCOUNT_DELETED',               // soft-deleted account; auth returns 410
   // —— stamina system (A4) ——
