@@ -4,6 +4,11 @@
 //      authoritative siege is run with the real formation when the march arrives;
 //   ③ getSiegeReplay: after a key siege, seed + both formations are persisted; attacker and defender can read, spectators are rejected;
 //   ④ custom defender formation benefits from the national bonus (buildDefenderConfig scaleArmyHp path).
+//
+// CC-3: every army entry is card-based (`cardInstanceId`, resolved via a fake meta client's `cardInv`) — the
+// pre-CC-3 raw `{unitType, initialHp}` format has no compat path (`sanitizeCardArmy` drops it silently on
+// save), so tests build teams from a pool of fake owned cards and set each card's `cardState.currentTroops`
+// directly (mirroring `distributeTroops`, without its baseTroopStock bookkeeping).
 // Requires `cd server && docker compose up -d`.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -15,11 +20,13 @@ import {
   SLG_MAP_H,
   SIEGE_TEAM_CAP,
   TROOP_CAP_BASE,
+  type CardInstance,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
 import type { TileDoc, PlayerWorldDoc, TeamTemplate } from '../src/db';
 import { WorldService } from '../src/service';
 import type { WorldGatewayClient, SlgPushMsg } from '../src/gatewayClient';
+import type { WorldMetaClient } from '../src/metaClient';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_world_teams_test';
@@ -78,16 +85,23 @@ async function connect(svc: WorldService, accountId: string, target: { x: number
   throw new Error('no connector neighbor found');
 }
 
-/** A valid attack formation: n infantry units spread across row 1 lanes, each allocated hp troops. */
-function army(n: number, hp: number): TeamTemplate['army'] {
-  const lanes = [0, 1, 2, 3, 4, 7, 8, 9, 10, 11];
-  return Array.from({ length: n }, (_, i) => ({
-    unitType: 'infantry',
-    col: lanes[i % lanes.length]!,
-    row: 1 + Math.floor(i / lanes.length),
-    initialHp: hp,
-  }));
-}
+// Fake owned-card pool for account 'a' — all `lichuang` (unitType 'infantry'), matching the old
+// raw-unitType fixtures this suite used before the CC-3 card migration.
+const CARD_DEF_ID = 'lichuang';
+const CARD_IDS = Array.from({ length: 100 }, (_, i) => `card${i}`);
+const CARD_INV_A: Record<string, CardInstance> = Object.fromEntries(
+  CARD_IDS.map((id) => [id, { id, defId: CARD_DEF_ID, level: 1, xp: 0, gear: {}, locked: false }]),
+);
+const fakeMeta: WorldMetaClient = {
+  available: true,
+  async getSaveFields(accountId: string) {
+    if (accountId !== 'a') return null;
+    return { pveUpgrades: {}, unitLevels: {}, gear: {}, equipmentInv: {}, cardInv: CARD_INV_A };
+  },
+  async getProfile() { return null; },
+  async grantMaterial() {},
+  async grantTitle() {},
+};
 
 describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
   const m = mongo!;
@@ -95,6 +109,7 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
   const now = () => nowMs;
   let svc: WorldService;
   let pushes: { accountId: string; msg: SlgPushMsg }[];
+  let cardCursor = 0;
 
   const fakeGateway: WorldGatewayClient = {
     available: true,
@@ -105,6 +120,36 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
       for (const accountId of recipients) pushes.push({ accountId, msg });
     },
   };
+
+  /** Next `n` fresh card ids from the shared pool — fresh per call so sibling teams/tests never collide on the same card. */
+  function nextCardIds(n: number): string[] {
+    const ids = CARD_IDS.slice(cardCursor, cardCursor + n);
+    cardCursor += n;
+    if (ids.length < n) throw new Error('card pool exhausted; raise CARD_IDS length');
+    return ids;
+  }
+
+  /** A valid card-based attack formation: n fresh cards spread across row 1 lanes. Caller sets each card's troops via setTroops. */
+  function army(n: number): { entries: TeamTemplate['army']; ids: string[] } {
+    const ids = nextCardIds(n);
+    const lanes = [0, 1, 2, 3, 4, 7, 8, 9, 10, 11];
+    const entries = ids.map((id, i) => ({ cardInstanceId: id, col: lanes[i % lanes.length]!, row: 1 + Math.floor(i / lanes.length) }));
+    return { entries, ids };
+  }
+
+  /** Sets each card's cardState.currentTroops directly (mirrors distributeTroops without its baseTroopStock bookkeeping). */
+  async function setTroops(accountId: string, ids: string[], hp: number): Promise<void> {
+    const set: Record<string, number> = {};
+    for (const id of ids) set[`cardState.${id}.currentTroops`] = hp;
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, accountId) }, { $set: set });
+  }
+
+  /** army(n) + setTroops(hp) in one call — the common case where every unit carries the same troop count. */
+  async function armyWithTroops(accountId: string, n: number, hp: number): Promise<TeamTemplate['army']> {
+    const { entries, ids } = army(n);
+    await setTroops(accountId, ids, hp);
+    return entries;
+  }
 
   async function setupDefender(accountId: string, x: number, y: number, garrison: number, ink = 0): Promise<void> {
     const proc = proceduralTile(W, x, y);
@@ -141,6 +186,7 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     await m.ensureIndexes();
     nowMs = 1_000_000;
     pushes = [];
+    cardCursor = 0;
     svc = new WorldService({
       cols: m.collections,
       redis: null,
@@ -148,6 +194,7 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
       mapW: SLG_MAP_W,
       mapH: SLG_MAP_H,
       now,
+      meta: fakeMeta,
     });
   });
 
@@ -159,8 +206,8 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
   it('setTeams/getTeams round-trip; validates cap / unique ids / valid formation', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const teams: TeamTemplate[] = [
-      { id: 't1', name: 'Vanguard', army: army(3, 60) },
-      { id: 't2', name: 'Main Force', army: army(5, 50) },
+      { id: 't1', name: 'Vanguard', army: army(3).entries },
+      { id: 't2', name: 'Main Force', army: army(5).entries },
     ];
     await svc.setTeams(W, 'a', teams);
     expect(await svc.getTeams(W, 'a')).toEqual(teams);
@@ -169,36 +216,132 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     const tooMany = Array.from({ length: SIEGE_TEAM_CAP + 1 }, (_, i) => ({
       id: `t${i}`,
       name: `q${i}`,
-      army: army(1, 60),
+      army: army(1).entries,
     }));
     await expect(svc.setTeams(W, 'a', tooMany)).rejects.toThrow();
     // duplicate id → rejected.
     await expect(
       svc.setTeams(W, 'a', [
-        { id: 'dup', name: 'x', army: army(1, 60) },
-        { id: 'dup', name: 'y', army: army(1, 60) },
+        { id: 'dup', name: 'x', army: army(1).entries },
+        { id: 'dup', name: 'y', army: army(1).entries },
       ]),
     ).rejects.toThrow();
     // invalid formation (out-of-bounds column) → rejected.
+    const [badId] = nextCardIds(1);
     await expect(
-      svc.setTeams(W, 'a', [{ id: 't1', name: 'bad', army: [{ unitType: 'infantry', col: 99, row: 1, initialHp: 60 }] }]),
+      svc.setTeams(W, 'a', [{ id: 't1', name: 'bad', army: [{ cardInstanceId: badId, col: 99, row: 1 }] }]),
     ).rejects.toThrow();
     // validation failure does not persist (teams remain from the first successful call).
     expect(await svc.getTeams(W, 'a')).toEqual(teams);
   });
 
+  it('an army entry with no cardInstanceId (pre-CC-3 raw unit-type format) is dropped silently, not rejected', async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    const { entries, ids } = army(2);
+    await setTroops('a', ids, 60);
+    const legacyEntry = { unitType: 'infantry', col: 5, row: 1, initialHp: 999 } as unknown as TeamTemplate['army'][number];
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Mixed', army: [...entries, legacyEntry] }]);
+    const saved = await svc.getTeams(W, 'a');
+    expect(saved[0]!.army).toHaveLength(2); // the legacy entry never persisted
+    expect(saved[0]!.army.every((e) => !!e.cardInstanceId)).toBe(true);
+  });
+
+  it('setTeams drops a stale cardInstanceId (card no longer owned — fed/consumed since the team was built) and frees it: teamId/currentTroops cleared, resources refunded', async () => {
+    const pwId = playerWorldId(W, 'a');
+    await svc.joinWorld(W, 'a', 5, 5);
+    const { entries, ids } = army(2);
+    await setTroops('a', ids, 60);
+    // A card the team references was consumed (fed to another card) after being assigned — its id is no
+    // longer in cardInv (CARD_INV_A never contains 'card-fed'), but cardState still has a stale ledger entry
+    // as if it had been on a team with troops.
+    await m.collections.playerWorld.updateOne(
+      { _id: pwId },
+      { $set: { 'cardState.card-fed': { currentTroops: 100, teamId: 't1' } } },
+    );
+    const staleEntry = { cardInstanceId: 'card-fed', col: 8, row: 2 };
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Mixed', army: [...entries, staleEntry] }]);
+
+    const saved = await svc.getTeams(W, 'a');
+    expect(saved[0]!.army).toHaveLength(2); // the stale entry never persisted
+    expect(saved[0]!.army.some((e) => e.cardInstanceId === 'card-fed')).toBe(false);
+
+    const pw = await m.collections.playerWorld.findOne({ _id: pwId });
+    expect(pw?.cardState?.['card-fed']?.currentTroops).toBe(0);
+    expect(pw?.cardState?.['card-fed']?.teamId).toBeNull();
+    // 80% refund of the 100 troops it carried (CARD_TROOP_*_COST × CARD_TROOP_REFUND_RATE), same terms as an explicit removal.
+    expect(pw?.resources?.paper).toBeGreaterThan(0);
+  });
+
+  it('getTeams self-heals pre-existing bad data (written directly, bypassing setTeams): drops unresolvable entries, persists the cleanup once, frees the card', async () => {
+    const pwId = playerWorldId(W, 'a');
+    await svc.joinWorld(W, 'a', 5, 5);
+    const { entries, ids } = army(1);
+    await setTroops('a', ids, 40);
+    // Simulate data that predates this fix (or a direct-DB edge case): a team with one valid card entry and
+    // one that never resolves (no matching cardInv id), plus a matching stale cardState ledger with troops.
+    await m.collections.playerWorld.updateOne(
+      { _id: pwId },
+      {
+        $set: {
+          teams: [{ id: 't1', name: 'Stale', army: [...entries, { cardInstanceId: 'card-ghost', col: 9, row: 2 }] }],
+          'cardState.card-ghost': { currentTroops: 50, teamId: 't1' },
+        },
+      },
+    );
+
+    const healed = await svc.getTeams(W, 'a');
+    expect(healed[0]!.army).toHaveLength(1);
+    expect(healed[0]!.army[0]!.cardInstanceId).toBe(ids[0]);
+
+    // self-heal persisted: re-reading returns the same cleaned result, and the freed card was refunded.
+    const pw = await m.collections.playerWorld.findOne({ _id: pwId });
+    expect(pw?.teams?.[0]?.army).toHaveLength(1);
+    expect(pw?.cardState?.['card-ghost']?.currentTroops).toBe(0);
+    expect(pw?.cardState?.['card-ghost']?.teamId).toBeNull();
+    expect(pw?.resources?.paper).toBeGreaterThan(0);
+
+    // idempotent: a second read doesn't re-refund (the ghost card's teamId is already cleared).
+    const paperAfterFirstHeal = pw!.resources.paper;
+    await svc.getTeams(W, 'a');
+    const pw2 = await m.collections.playerWorld.findOne({ _id: pwId });
+    expect(pw2?.resources?.paper).toBe(paperAfterFirstHeal);
+  });
+
+  it('setTeams/getTeams fail closed (not destructive) when the meta cardInv lookup is unavailable', async () => {
+    const pwId = playerWorldId(W, 'nometa');
+    // fakeMeta only serves 'a' — any other account gets getSaveFields() => null, simulating metaserver being down.
+    await svc.joinWorld(W, 'nometa', 6, 6);
+    // Pre-seed teams directly (as if saved earlier while meta was reachable).
+    const seeded = [{ id: 't1', name: 'Seeded', army: [{ cardInstanceId: 'card-x', col: 0, row: 1 }] }];
+    await m.collections.playerWorld.updateOne({ _id: pwId }, { $set: { teams: seeded } });
+
+    // setTeams must reject rather than silently persist an emptied-out team.
+    await expect(svc.setTeams(W, 'nometa', [{ id: 't1', name: 'New', army: [{ cardInstanceId: 'card-y', col: 0, row: 1 }] }]))
+      .rejects.toThrow(/unavailable/i);
+    // getTeams degrades to returning the stored data as-is, rather than wiping it because cardInv couldn't be checked.
+    expect(await svc.getTeams(W, 'nometa')).toEqual(seeded);
+    const pw = await m.collections.playerWorld.findOne({ _id: pwId });
+    expect(pw?.teams).toEqual(seeded); // untouched
+  });
+
   it('siege with team: committed = sum of team allocations; army snapshot persisted with march; authoritative siege runs on arrival + replayable', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
-    const tgt = findCoord(10, 5);
-    await setupDefender('b', tgt.x, tgt.y, 400, 800);
+    // Low tile level (findCoord's usual level<=2 constraint, matching the occupation-hold test below) — a
+    // territory tile's symbolic base HP (npcBaseHp(level)) scales with level, and a single-battle assault
+    // must destroy it within the tick limit; a high-level tile's base HP can outlast any one battle regardless
+    // of garrison strength.
+    const tgt = findCoord(10, 5, (t) => t.level <= 2);
+    await setupDefender('b', tgt.x, tgt.y, 100, 800);
     await connect(svc, 'a', tgt); // ADR-039: border the target before attacking
 
-    // 12 infantry (CARD_TEAM_MAX_SIZE cap) × 70 allotted = 840 committed troops (overrides body troops).
-    // Combat HP per unit is clamped to the infantry blueprint cap (60), so effective assault ≈ 12×60 = 720,
-    // still an overwhelming force over the 400 garrison → capture (same intent as the pre-cap 14-unit version).
-    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Assault', army: army(12, 70) }]);
+    // 12 infantry (CARD_TEAM_MAX_SIZE cap), each carrying 160 troops via cardState (not initialHp — card
+    // entries carry none, so `march.troops` below degenerates to a card count; see combatMarch.ts's CC-3 note);
+    // 12×160 = 1920 stays under the default (no-satchel) 2000 carry cap. An overwhelming force over the
+    // 100 garrison → capture.
+    const entries = await armyWithTroops('a', 12, 160);
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Assault', army: entries }]);
     const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 1, 't1');
-    expect(mv.troops).toBe(840); // derived from team; body's troops=1 is overridden
+    expect(mv.troops).toBe(12); // card-army march.troops degenerates to card count (real strength is in cardState)
 
     // march is persisted to the database with the army snapshot.
     const marchDoc = await m.collections.marches.findOne({ _id: mv.marchId });
@@ -207,7 +350,7 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
-    // tile ownership changes hands (12-unit assault overwhelms the 400 garrison).
+    // tile ownership changes hands (12-unit assault overwhelms the 100 garrison).
     const tile = await svc.getTile(W, 'a', tgt.x, tgt.y);
     expect(tile?.mine).toBe(true);
 
@@ -226,11 +369,11 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     await expect(svc.getSiegeReplay(W, 'b', siege!._id)).resolves.toBeTruthy();
     await expect(svc.getSiegeReplay(W, 'c', siege!._id)).rejects.toThrow();
 
-    // §16.3 replay names: no meta client → blank names (client falls back to generic placeholders).
+    // §16.3 replay names: attacker resolves via the fake meta client; defender 'b' has no profile → blank.
     expect(replay.attackerName).toBe('');
     expect(replay.defenderName).toBe('');
 
-    // With a meta client, the display names resolve. Owner→side mapping: attacker → bottom, defender → top.
+    // With a meta client that also serves profiles, the display names resolve. Owner→side mapping: attacker → bottom, defender → top.
     const svcNamed = new WorldService({
       cols: m.collections,
       redis: null,
@@ -239,13 +382,10 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
       mapH: SLG_MAP_H,
       now,
       meta: {
-        available: true,
+        ...fakeMeta,
         async getProfile(id: string) {
           return { publicId: id, displayName: id === 'a' ? 'Alice' : id === 'b' ? 'Bob' : '' };
         },
-        async grantMaterial() {},
-        async getSaveFields() { return null; },
-        async grantTitle() {},
       },
     });
     const named = await svcNamed.getSiegeReplay(W, 'a', siege!._id);
@@ -253,24 +393,14 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     expect(named.defenderName).toBe('Bob');
   });
 
-  it('team troop pool insufficient → rejected (NO_TROOPS)', async () => {
-    await svc.joinWorld(W, 'a', 5, 5);
-    const tgt = findCoord(10, 5);
-    await setupDefender('b', tgt.x, tgt.y, 100);
-    // reduce the attacker's troop pool to a very low value.
-    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { troops: 50 } });
-    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Grand Army', army: army(10, 60) }]); // committed 600 > 50
-    await expect(svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 1, 't1')).rejects.toThrow();
-  });
-
   it('satchel cap: a team carrying more troops than satchelCarryCapFor(buildings) is rejected (SATCHEL_CAP_EXCEEDED)', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const tgt = findCoord(10, 5);
     await setupDefender('b', tgt.x, tgt.y, 50);
     await connect(svc, 'a', tgt);
-    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { troops: 5000 } });
     // no satchel built → cap = SATCHEL_CARRY_BASE (2000, = TROOP_CAP_BASE); 12 units × 200 = 2400 committed exceeds it.
-    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Overloaded', army: army(12, 200) }]);
+    const entries = await armyWithTroops('a', 12, 200);
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Overloaded', army: entries }]);
     await expect(svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 1, 't1')).rejects.toThrow(/satchel/i);
 
     // building satchel raises the cap enough for the same team to depart.
@@ -286,10 +416,8 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     await setupDefender('c', tgt2.x, tgt2.y, 50);
     await connect(svc, 'a', tgt1);
     await connect(svc, 'a', tgt2);
-    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Vanguard', army: army(10, 60) }]);
-    // enough pool to re-dispatch the same team's committed troops twice over (siege losses are not proportional
-    // to garrison strength) — the point of this test is idle-team gating, not troop economy.
-    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { troops: 5000 } });
+    const entries = await armyWithTroops('a', 10, 60);
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Vanguard', army: entries }]);
 
     const mv = await svc.startMarch(W, 'a', 5, 5, tgt1.x, tgt1.y, 'attack', 1, 't1');
     expect(mv.status).toBe('marching');
@@ -310,10 +438,10 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     const proc = proceduralTile(W, target.x, target.y);
     const npc = npcGarrison(proc.level);
     await connect(svc, 'a', target);
-    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { troops: 5000 } });
 
     // enough troops per unit to overwhelm the NPC garrison comfortably.
-    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Vanguard', army: army(12, Math.ceil(npc / 8) + 100) }]);
+    const entries = await armyWithTroops('a', 12, Math.ceil(npc / 8) + 100);
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Vanguard', army: entries }]);
     const mv = await svc.startMarch(W, 'a', 10, 10, target.x, target.y, 'occupy', 1, 't1');
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
@@ -339,9 +467,9 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     const proc = proceduralTile(W, target.x, target.y);
     const npc = npcGarrison(proc.level);
     await connect(svc, 'a', target);
-    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { troops: 5000 } });
 
-    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Vanguard', army: army(12, Math.ceil(npc / 8) + 100) }]);
+    const entries = await armyWithTroops('a', 12, Math.ceil(npc / 8) + 100);
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Vanguard', army: entries }]);
     const mv = await svc.startMarch(W, 'a', 10, 10, target.x, target.y, 'occupy', 1, 't1');
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);

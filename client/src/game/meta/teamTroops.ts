@@ -1,16 +1,13 @@
 // teamTroops — shared helpers for reasoning about an SLG attack team's carried strength.
 //
-// Post the 2026-07-17 card migration (see slg-occupy-team-only-troops memory / SLG_DESIGN §4.2),
+// Since the 2026-07-17 card migration (see slg-occupy-team-only-troops memory / SLG_DESIGN §4.2),
 // an attack team's committed strength lives ENTIRELY in each card's cardState.currentTroops ledger.
-// Legacy teams built before the migration store raw unit entries ({unitType, initialHp}, no
-// cardInstanceId); the card editor drops those on open and the server's card-army exemption never
-// applies to them, so they can never actually march (they fail the flat-pool gate in
-// combatMarch.ts). We therefore treat a legacy entry as carrying ZERO troops everywhere in the UI:
-// a legacy team reads "0 committed", is filtered out of the occupy/attack picker, and is flagged
-// for rebuild — instead of misleadingly showing its old initialHp sum as if usable.
+// The server (worldsvc city.ts setTeams/getTeams) never persists an army entry that doesn't resolve
+// to an owned cardInstanceId — no raw unit-type entries reach the client, so every entry here always
+// has a cardInstanceId.
 //
-// Several scenes (CityScene, WorldMapNet) previously each summed initialHp for legacy
-// entries and drifted apart; they now all route through carriedTroops() here.
+// Several scenes (CityScene, WorldMapNet) previously each summed troops independently and drifted
+// apart; they now all route through carriedTroops() here.
 
 import type { TeamTemplate, CardSLGState } from '../../net/WorldApiClient';
 import { t } from '../../i18n';
@@ -28,20 +25,7 @@ export function teamSlotName(i: number): string {
   return t('world.team.slot').replace('{n}', String(i + 1));
 }
 
-/**
- * A team is "legacy" when it has units but at least one carries no cardInstanceId — i.e. it was
- * authored with the pre-migration unit-type editor and can no longer be dispatched. Empty teams
- * are not legacy (they are just unbuilt slots).
- */
-export function isLegacyTeam(army: Army | undefined): boolean {
-  if (!army || army.length === 0) return false;
-  return army.some((e) => !e.cardInstanceId);
-}
-
-/**
- * Troops the team actually carries into battle. Card entries draw from their cardState.currentTroops
- * ledger; legacy (non-card) entries contribute 0 — they are non-functional after the card migration.
- */
+/** Troops the team actually carries into battle — sum of each card's cardState.currentTroops ledger. */
 export function carriedTroops(
   army: Army | undefined,
   cardState: Record<string, CardSLGState> | undefined,

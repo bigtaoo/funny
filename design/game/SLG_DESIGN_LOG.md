@@ -1211,3 +1211,16 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 **实现**：`drawUnit()`（`DefenseEditorScene.ts`）改为复用 `renderRosterCell()` 同款素材管线——`UNIT_ART_URLS[type]` 取到肖像 URL 时画一个 `sketchPanel` 方框 + `drawArtFit()`（与名册肖像同一 `getArtTexture`/`artHooked` 缓存与异步加载回调），取不到时保留原纯色圆点兜底（理论上不会触发，因为可布置单位均来自 `CARD_DEFINITIONS` 已收集兵种，均有肖像）。兵力数字标签位置从"圆心+半径"改为"方框底部"。
 
 **验证**：`tsc --noEmit` 全绿；用临时 `__NW_APP`/`__NW_DefenseEditorScene` 调试钩子（`Object.create(DefenseEditorScene.prototype)` 假实例直调 `drawUnit`，跳过登录/WorldApiClient，验证后已删除）截图确认 Max/Lena/Archer 三种兵种均正确显示肖像图（非圆点）。
+
+## 31. 出征队伍保存必现校验失败修复 + 旧格式兼容代码删除（2026-07-18）
+
+**背景（用户报告的错误）**：`DefenseEditorScene`（attack 模式）保存队伍时必现 `Team formation is invalid: level.attackerArmy[0].unitType: expected a string, got undefined`。
+
+**根因**：卡牌迁移（commit `a91bb018`）之后 `DefenseEditorScene.buildArmy()` 只发送 `{cardInstanceId, col, row}`（无 `unitType`），但 `server/worldsvc/src/city.ts` 的 `setTeams` 从未跟着改——`validateAttackerArmy(team.army)` 把这个原始数组直接打包进 `level.attackerArmy` 走引擎 `parseLevelDefinition` 校验，而该校验要求每条 entry 必须有字符串 `unitType`。也就是说**卡牌迁移之后，任何带卡牌的出征队伍保存都必现此错误**，且校验发生在 `pw`（含 `cardInv` 所需的 `cardState`）取出**之前**，根本没机会解析 `cardInstanceId → unitType`。
+
+**修复**（用户拍板：错误数据直接丢弃+把卡牌还给玩家空闲状态，不保留旧格式兼容代码）：
+- `server/worldsvc/src/siegeEngine.ts`：新增 `sanitizeCardArmy(army, cardInv)`——过滤掉任何无法解析出真实卡牌的 entry（无 `cardInstanceId`，或引用了玩家已不再拥有的卡牌），返回净化后的 `ArmyEntry[]` + 已解析的 `{unitType,col,row}[]`；`validateAttackerArmy` 改为只接收已解析好的 `{unitType,col,row}`（不再检查 `initialHp`——0 兵力的新分配卡牌是合法状态，不该在保存时被当成格式错误拒绝）。`resolveCardArmy` 里"无 `cardInstanceId` 走 legacy unitType"的兼容分支整个删除。
+- `server/worldsvc/src/city.ts`：`setTeams` 改为先取 `pw` + `meta.getSaveFields()`（拿不到 `cardInv` 就报 `INTERNAL` 重试，而不是把队伍当空处理——防止 metaserver 抖动时误删真实数据）→ 净化每个队伍的 `army` → 校验净化后的数据 → 保存。被丢弃的卡牌复用已有的"移出队伍"逻辑（`buildCardRemovalPatch`）自动清空 `teamId`、扣空 `currentTroops`、退 80% 训练资源——即"空闲状态"。`getTeams` 同步做一次自愈：读取时净化数据库里已存在的脏数据（如迁移前遗留的旧队伍）并回写一次，之后不再重复触发；`meta` 不可用时原样返回，不做破坏性清空。
+- 客户端 `client/src/game/meta/teamTroops.ts` 的 `isLegacyTeam`（已是死代码，生产 UI 早已无引用——`TeamsScene.ts` 在更早的重构里被删掉了）连同测试一并删除。
+
+**测试**：`server/worldsvc/test/teams.e2e.test.ts` + `card-slg.e2e.test.ts` 里引用旧原始 `{unitType,initialHp}` 格式的用例（迁移后从未更新过）改成卡牌格式；新增 3 例覆盖本次修复的实际行为——`setTeams` 丢弃失效 `cardInstanceId`（卡牌已被消耗/喂卡）并释放退款、`getTeams` 自愈直接写入数据库的脏数据并释放退款（幂等，不重复退款）、`meta` 不可用时 `setTeams`/`getTeams` 均不破坏已存数据。worldsvc 全量 e2e 串行跑通（33 文件 / 284 例）；client/server `tsc --noEmit` 全绿。

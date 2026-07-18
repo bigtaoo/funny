@@ -12,11 +12,29 @@ import {
   BASE_TROOP_STOCK_INITIAL,
   CARD_RECOVER_COIN_COST,
 } from '@nw/shared';
+import type { CardInstance } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
 import type { TileDoc, PlayerWorldDoc, TeamTemplate, CardSLGState } from '../src/db';
 import { WorldService } from '../src/service';
 import type { WorldGatewayClient, SlgPushMsg } from '../src/gatewayClient';
 import type { WorldCommercialClient } from '../src/commercialClient';
+import type { WorldMetaClient } from '../src/metaClient';
+
+// Every card id this suite uses (e.g. 'card-1', 'card-x') is treated as an owned 'lichuang' (infantry) card —
+// setTeams resolves cardInstanceId → unitType via cardInv (CC-3; sanitizeCardArmy drops anything that doesn't
+// resolve), so a Proxy stands in for a real hero-roster lookup rather than enumerating every id used below.
+const CARD_INV_ANY: Record<string, CardInstance> = new Proxy({} as Record<string, CardInstance>, {
+  get: (_t, prop: string) => ({ id: prop, defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false }),
+});
+const fakeMeta: WorldMetaClient = {
+  available: true,
+  async getSaveFields() {
+    return { pveUpgrades: {}, unitLevels: {}, gear: {}, equipmentInv: {}, cardInv: CARD_INV_ANY };
+  },
+  async getProfile() { return null; },
+  async grantMaterial() {},
+  async grantTitle() {},
+};
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_world_card_slg_test';
@@ -33,11 +51,10 @@ async function tryConnect(): Promise<WorldMongo | null> {
 const mongo = await tryConnect();
 if (!mongo) console.warn(`[worldsvc.card-slg.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
 
-// Minimal card-based army entry. CC-3 keeps cardInstanceId (engine derives the real unit at siege time),
-// but the formation validator (levelSchema, via setTeams → validateAttackerArmy) still requires a valid
-// unitType string + attack-lane col + combat-zone row. 'infantry' is a valid UnitType.
+// Minimal card-based army entry. CC-3: setTeams resolves cardInstanceId → unitType via cardInv (CARD_INV_ANY
+// above always resolves to 'lichuang'/infantry); col must be a valid attack lane, row within the combat zone.
 function cardEntry(cardInstanceId: string, col = 0, row = 1): TeamTemplate['army'][number] {
-  return { cardInstanceId, unitType: 'infantry', col, row };
+  return { cardInstanceId, col, row };
 }
 
 const CENTER_X = Math.floor(SLG_MAP_W / 2);
@@ -95,6 +112,7 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
       mapW: SLG_MAP_W,
       mapH: SLG_MAP_H,
       now,
+      meta: fakeMeta,
     });
   });
 

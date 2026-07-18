@@ -28,7 +28,7 @@ import {
   regenDurability,
   type BuildingKey,
 } from '@nw/shared';
-import { validateAttackerArmy } from './siegeEngine';
+import { validateAttackerArmy, sanitizeCardArmy } from './siegeEngine';
 import { WorldCore } from './core';
 import type { TrainingEntry, BuildQueueEntry, TeamTemplate } from './db';
 import type { PlayerWorldView } from './worldTypes';
@@ -346,44 +346,118 @@ export class CityService {
 
   // ── G3-2c: attack formation templates (teams) ─────────────────────────────
 
-  /** Read the player's list of attack formation templates in a given world (editor / pre-fill on departure). Throws TILE_NOT_OWNED if the player has not joined the world. */
+  /**
+   * Read the player's list of attack formation templates in a given world (editor / pre-fill on departure).
+   * Throws TILE_NOT_OWNED if the player has not joined the world.
+   * Self-heal: drops any army entry that no longer resolves to an owned card (stale reference, or a
+   * pre-CC-3 raw unit-type entry — no compat path, see `sanitizeCardArmy`) and persists the cleanup so it
+   * only runs once; freed cards are released via the same teamId/currentTroops-clear + refund path as an
+   * explicit `setTeams` removal. Skipped (returns raw data) if meta is unreachable — never destroy team
+   * data just because the cardInv lookup degraded.
+   */
   async getTeams(worldId: string, accountId: string): Promise<TeamTemplate[]> {
-    const pw = await this.core.deps.cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+    const pwId = playerWorldId(worldId, accountId);
+    const pw = await this.core.deps.cols.playerWorld.findOne({ _id: pwId });
     if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
-    return pw.teams ?? [];
+    const teams = pw.teams ?? [];
+    if (teams.length === 0) return teams;
+    const save = await this.core.meta.getSaveFields(accountId).catch(() => null);
+    if (!save) return teams; // meta unreachable; degrade without touching stored data
+
+    let changed = false;
+    const cleaned = teams.map((team) => {
+      const { army } = sanitizeCardArmy(team.army, save.cardInv);
+      if (army.length !== team.army.length) changed = true;
+      return { ...team, army };
+    });
+    if (!changed) return teams;
+
+    const patch = this.buildCardRemovalPatch(pw.cardState ?? {}, cleaned);
+    await this.core.deps.cols.playerWorld.updateOne(
+      { _id: pwId },
+      { $set: { teams: cleaned, ...patch.cardStateSet }, $inc: { rev: 1, ...patch.resourceInc } },
+    );
+    return cleaned;
+  }
+
+  /**
+   * Shared by `getTeams` (self-heal) and `setTeams` (explicit save): diffs `cardState`'s current
+   * teamId assignments against `teams` and builds the $set/$inc patch that frees any card no longer
+   * referenced by any team — clears teamId + currentTroops, refunds 80% of its training resources
+   * (same terms as an explicit removal in the editor).
+   */
+  private buildCardRemovalPatch(
+    cardState: Record<string, { currentTroops?: number; teamId?: string }>,
+    teams: TeamTemplate[],
+  ): { cardStateSet: Record<string, unknown>; resourceInc: Record<string, number> } {
+    const cardIds = new Set<string>();
+    for (const team of teams) for (const e of team.army) if (e.cardInstanceId) cardIds.add(e.cardInstanceId);
+
+    const prevCardTeams = Object.entries(cardState).filter(([, cs]) => cs.teamId).map(([id]) => id);
+    const removedCards = prevCardTeams.filter((id) => !cardIds.has(id));
+
+    const cardStateSet: Record<string, unknown> = {};
+    for (const team of teams) {
+      for (const entry of team.army) {
+        if (entry.cardInstanceId) cardStateSet[`cardState.${entry.cardInstanceId}.teamId`] = team.id;
+      }
+    }
+    const resourceInc: Record<string, number> = {};
+    for (const id of removedCards) {
+      const troops = cardState[id]?.currentTroops ?? 0;
+      if (troops > 0) {
+        resourceInc['resources.paper'] = (resourceInc['resources.paper'] ?? 0) + Math.floor(troops * CARD_TROOP_PAPER_COST * CARD_TROOP_REFUND_RATE);
+        resourceInc['resources.graphite'] = (resourceInc['resources.graphite'] ?? 0) + Math.floor(troops * CARD_TROOP_GRAPHITE_COST * CARD_TROOP_REFUND_RATE);
+        resourceInc['resources.metal'] = (resourceInc['resources.metal'] ?? 0) + Math.floor(troops * CARD_TROOP_METAL_COST * CARD_TROOP_REFUND_RATE);
+      }
+      cardStateSet[`cardState.${id}.currentTroops`] = 0;
+      cardStateSet[`cardState.${id}.teamId`] = null;
+    }
+    return { cardStateSet, resourceInc };
   }
 
   /**
    * Overwrite the player's attack formation templates (editor save, §16.2).
-   * CC-3: validates cardInstanceId uniqueness across all teams, max CARD_TEAM_MAX_SIZE slots per team, and injured card check.
-   * Card removal: when a card's teamId disappears from the new teams, clear its currentTroops and refund 80% training resources.
+   * CC-3: each team's army is resolved against the player's real card inventory first (`sanitizeCardArmy`) —
+   * an entry with no `cardInstanceId` (pre-CC-3 raw unit-type format) or one that no longer resolves to an
+   * owned card is dropped silently rather than rejecting the whole save; the dropped card (if any) is freed
+   * by the same removal path as an explicit un-assign (teamId/currentTroops cleared, 80% refund). Then
+   * validates cardInstanceId uniqueness across all teams, max CARD_TEAM_MAX_SIZE slots per team, formation
+   * legality (`validateAttackerArmy`), and injured-card lock.
    * Full-set overwrite (frontend sends the complete list).
    */
   async setTeams(worldId: string, accountId: string, teams: TeamTemplate[]): Promise<void> {
     if (!Array.isArray(teams)) throw new SlgError('BAD_REQUEST', 'teams must be an array');
     if (teams.length > SIEGE_TEAM_CAP) throw new SlgError('BAD_REQUEST', `Team count exceeds the cap of ${SIEGE_TEAM_CAP}`);
     const teamIds = new Set<string>();
-    const cardIds = new Set<string>();
     for (const team of teams) {
       if (!team || typeof team.id !== 'string' || !team.id) throw new SlgError('BAD_REQUEST', 'Team id is invalid');
       if (teamIds.has(team.id)) throw new SlgError('BAD_REQUEST', `Duplicate team id: ${team.id}`);
       teamIds.add(team.id);
       if (team.army.length > CARD_TEAM_MAX_SIZE) throw new SlgError('BAD_REQUEST', `Team ${team.id} exceeds max size of ${CARD_TEAM_MAX_SIZE}`);
-      for (const entry of team.army) {
-        if (entry.cardInstanceId) {
-          if (cardIds.has(entry.cardInstanceId)) throw new SlgError('BAD_REQUEST', `Card ${entry.cardInstanceId} assigned to multiple teams`);
-          cardIds.add(entry.cardInstanceId);
-        }
-      }
-      try {
-        validateAttackerArmy(team.army);
-      } catch (err) {
-        throw new SlgError('BAD_REQUEST', `Team ${team.id} formation is invalid: ${(err as Error).message}`);
-      }
     }
+
     const pwId = playerWorldId(worldId, accountId);
     const pw = await this.core.deps.cols.playerWorld.findOne({ _id: pwId });
     if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
+    const save = await this.core.meta.getSaveFields(accountId).catch(() => null);
+    if (!save) throw new SlgError('INTERNAL', 'Card inventory unavailable, please retry');
+
+    const cardIds = new Set<string>();
+    const cleanedTeams: TeamTemplate[] = [];
+    for (const team of teams) {
+      const { army, resolved } = sanitizeCardArmy(team.army, save.cardInv);
+      for (const e of army) {
+        if (cardIds.has(e.cardInstanceId!)) throw new SlgError('BAD_REQUEST', `Card ${e.cardInstanceId} assigned to multiple teams`);
+        cardIds.add(e.cardInstanceId!);
+      }
+      try {
+        validateAttackerArmy(resolved);
+      } catch (err) {
+        throw new SlgError('BAD_REQUEST', `Team ${team.id} formation is invalid: ${(err as Error).message}`);
+      }
+      cleanedTeams.push({ ...team, army });
+    }
 
     const now = this.core.deps.now();
     const cardState = pw.cardState ?? {};
@@ -395,42 +469,8 @@ export class CityService {
       }
     }
 
-    // Detect cards removed from all teams compared to current teams (their teamId no longer appears in the new list).
-    const prevCardTeams: Record<string, string> = {};
-    for (const cs of Object.entries(cardState)) {
-      if (cs[1].teamId) prevCardTeams[cs[0]] = cs[1].teamId;
-    }
-    const removedCards = Object.keys(prevCardTeams).filter((id) => !cardIds.has(id));
-
-    // Build cardState patch: update teamId for all assigned cards; clear currentTroops + teamId for removed cards.
-    const cardStateSet: Record<string, unknown> = {};
-    for (const team of teams) {
-      for (const entry of team.army) {
-        if (entry.cardInstanceId) {
-          cardStateSet[`cardState.${entry.cardInstanceId}.teamId`] = team.id;
-        }
-      }
-    }
-    let paperRefund = 0;
-    let graphiteRefund = 0;
-    let metalRefund = 0;
-    for (const id of removedCards) {
-      const troops = cardState[id]?.currentTroops ?? 0;
-      if (troops > 0) {
-        paperRefund += Math.floor(troops * CARD_TROOP_PAPER_COST * CARD_TROOP_REFUND_RATE);
-        graphiteRefund += Math.floor(troops * CARD_TROOP_GRAPHITE_COST * CARD_TROOP_REFUND_RATE);
-        metalRefund += Math.floor(troops * CARD_TROOP_METAL_COST * CARD_TROOP_REFUND_RATE);
-      }
-      cardStateSet[`cardState.${id}.currentTroops`] = 0;
-      cardStateSet[`cardState.${id}.teamId`] = null;
-    }
-
-    const update: Record<string, unknown> = { $set: { teams, ...cardStateSet }, $inc: { rev: 1 } };
-    if (paperRefund > 0 || graphiteRefund > 0 || metalRefund > 0) {
-      (update as Record<string, Record<string, unknown>>)['$inc']!['resources.paper'] = paperRefund;
-      (update as Record<string, Record<string, unknown>>)['$inc']!['resources.graphite'] = graphiteRefund;
-      (update as Record<string, Record<string, unknown>>)['$inc']!['resources.metal'] = metalRefund;
-    }
+    const patch = this.buildCardRemovalPatch(cardState, cleanedTeams);
+    const update: Record<string, unknown> = { $set: { teams: cleanedTeams, ...patch.cardStateSet }, $inc: { rev: 1, ...patch.resourceInc } };
     await this.core.deps.cols.playerWorld.updateOne({ _id: pwId }, update);
   }
 

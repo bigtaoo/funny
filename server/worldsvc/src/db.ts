@@ -33,18 +33,22 @@ export interface CardSLGState {
 }
 
 /**
- * Army placement unit (CC-3: cardInstanceId replaces unitType; unitType is derived by the engine from CARD_DEFS;
- * initialHp is derived from cardState[cardInstanceId].currentTroops at siege time).
- * Backward-compat: unitType / initialHp are kept optional for legacy replay data in SiegeDoc.attackerArmy.
+ * Army placement unit. Two shapes share this type depending on where it's stored:
+ * - `TeamTemplate.army` (player-authored): `cardInstanceId` only — `unitType`/`initialHp` are derived by
+ *   `resolveCardArmy` from CARD_DEFS + `cardState[cardInstanceId].currentTroops` at siege time. An entry
+ *   without a resolvable `cardInstanceId` is invalid and never persisted (`sanitizeCardArmy` drops it on
+ *   save/read — no raw unitType format is accepted here).
+ * - `MarchDoc.army` / `SiegeDoc.attackerArmy` (resolved snapshots): `unitType`/`initialHp` populated directly
+ *   by `synthesizeArmy` for flat-troop marches that never attached a team (no `cardInstanceId` involved).
  */
 export interface ArmyEntry {
-  /** Card instance id (CC-3). When present, unitType is derived from CARD_DEFS at siege time. */
+  /** Card instance id. When present, unitType is derived from CARD_DEFS at siege time. */
   cardInstanceId?: string;
-  /** Legacy unit type string (pre-CC-3); used when cardInstanceId is absent (synthesized army / replay data). */
+  /** Unit type string; populated on synthesized (flat-troop) army snapshots, absent on card-based entries. */
   unitType?: string;
   col: number;
   row: number;
-  /** Legacy troop allocation (pre-CC-3 / replay snapshot). In CC-3 paths, derived from cardState at siege time. */
+  /** Troop allocation; populated on synthesized army snapshots. On card-based entries, derived from cardState at siege time. */
   initialHp?: number;
 }
 
