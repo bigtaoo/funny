@@ -1,16 +1,18 @@
 import { toFp, type Fp } from './math/fixed';
 import { Side } from './types';
 
-// Projectiles take the highest id range (2,000,000+). Buildings (0–999),
-// units (1000+) and escorts (5000+) never reach it, so projectile ids can ride
-// in GameEvents alongside the others without ever colliding.
+// Real match spawns get their id from the owning GameState's per-instance counter
+// (GameState.allocProjectileId, range 2,000,000+). This module-level counter is ONLY
+// a fallback for standalone construction that has no owning GameState — i.e. tests.
+//
+// ⚠️ It must NOT be shared as the live-match id source: a second GameState built
+// mid-match (e.g. judgeRunner's hash recompute) used to reset a shared global back to
+// 2,000,000, so the live engine's next projectile reused a still-live id — the same
+// ghost-entity bug fixed for Unit/Building ids (see GameState._nextUnitId). Hence the
+// counter now lives on GameState, per instance.
 let nextId = 2_000_000;
 
-/**
- * Reset the projectile id counter. Called once per game (GameState constructor)
- * so ids are reproducible across engine instances — required for deterministic
- * replay verification (same seed ⇒ identical id stream).
- */
+/** Reset the standalone/test-only projectile id fallback (see above). Not used by real matches. */
 export function resetProjectileIds(): void {
   nextId = 2_000_000;
 }
@@ -69,8 +71,11 @@ export class Projectile {
     targetKind: ProjectileTargetKind,
     payload: ProjectilePayload,
     kind: string,
+    // Explicit id from the owning GameState (GameState.allocProjectileId). Omitted only
+    // by standalone construction (tests), which falls back to the module counter.
+    id?: number,
   ) {
-    this.id         = nextId++;
+    this.id         = id ?? nextId++;
     this.x_fp       = startCol_fp;
     this.y_fp       = startRow_fp;
     this.speed_fp   = toFp(speedGridPerSec); // grid/s → fp/s (same convention as Unit.speed_fp)
