@@ -177,6 +177,14 @@ export interface SaveData {
   // v3→v4 migration: unitLevels + gear are dropped (incompatible with new model); cardInv starts empty;
   // new-account onboarding gifts 3 starter cards (CHARACTER_CARDS_DESIGN §4).
   cardInv: Record<string, CardInstance>; // instanceId → CardInstance; max 150 entries
+
+  // —— Roster/inventory-full overflow mail counters (CHARACTER_CARDS_DESIGN §4 / EQUIPMENT_DESIGN §3.3). ——
+  // While cardInv/equipmentInv stays at its cap, the first INV_FULL_MAIL_COUNT overflow items per type are
+  // mailed as real instances instead of coin-compensated; these counters track how many have been mailed
+  // since the inventory last had free space. Reset to 0 the moment a grant call observes room again.
+  // Absent in old saves → treated as 0 (lazy default, no migration).
+  cardMailOverflowCount?: number;
+  equipMailOverflowCount?: number;
 }
 
 /**

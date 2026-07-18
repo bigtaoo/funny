@@ -423,6 +423,10 @@ export const zh = {
   'gacha.fate.redeem': '兑换限定',
   'gacha.fate.redeemed': '已兑换 {item}',
   'gacha.fate.insufficient': '命运点不足',
+  // ── 背包已满溢出提示（角色卡150 / 装备300 上限）──
+  'gacha.invFull.mailed': '背包已满，{count} 件已通过邮件补偿，请前往邮箱领取',
+  'gacha.invFull.compensated': '背包已满，已额外获得 {coins} 金币补偿',
+  'gacha.invFull.mailedAndCompensated': '背包已满，{mailed} 件已通过邮件补偿，另有 {coins} 金币补偿',
 
   // ── Rarity tiers ──────────────────────────────────────────────────────────────
   'rarity.common': '普通',
@@ -1063,6 +1067,10 @@ export const zh = {
   'auction.mail.sold.body': '您拍得的物品在附件中，领取后将进入背包。',
   'auction.mail.returned.subject': '拍卖物品退回',
   'auction.mail.returned.body': '您的挂单流拍或已取消，物品在附件中，领取后退回背包。',
+  'card.mail.rosterFull.subject': '角色卡背包已满',
+  'card.mail.rosterFull.body': '英雄名录已满，本次抽到的角色卡在附件中，请先腾出背包空间再领取。',
+  'equipment.mail.invFull.subject': '装备背包已满',
+  'equipment.mail.invFull.body': '装备背包已满，本次抽到的装备在附件中，请先腾出背包空间再领取。',
   'auction.back': '← 返回',
   'auction.tabAll': '市场',
   'auction.tabMine': '我的拍卖',

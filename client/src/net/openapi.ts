@@ -1428,6 +1428,8 @@ export interface components {
             cardInv?: {
                 [key: string]: components["schemas"]["CardInstance"];
             };
+            cardMailOverflowCount?: number;
+            equipMailOverflowCount?: number;
             equipped: {
                 [key: string]: string;
             };
@@ -2694,6 +2696,13 @@ export interface operations {
                         data: {
                             save: components["schemas"]["SaveData"];
                             results: components["schemas"]["GachaResult"][];
+                            /** @description Roster/inventory-full overflow summary for this draw (CHARACTER_CARDS_DESIGN §4 / EQUIPMENT_DESIGN §3.3): the first 10 overflow items per type since that inventory last had free space are mailed as real instances; the rest are coin-compensated. All-zero when nothing overflowed. */
+                            overflow: {
+                                cardMailed: number;
+                                cardCompensatedCoins: number;
+                                equipMailed: number;
+                                equipCompensatedCoins: number;
+                            };
                         };
                     };
                 };

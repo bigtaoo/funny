@@ -1,11 +1,11 @@
 // Gacha pools/draws + monetized card products (GACHA_DESIGN, requires login token).
 import type { SaveData } from '../../game/meta/SaveData';
 import { type Constructor, type ApiClientBaseCtor } from './base';
-import type { GachaPool, GachaResultEntry } from './types';
+import type { GachaOverflow, GachaPool, GachaResultEntry } from './types';
 
 export interface GachaApi {
   getGachaPools(): Promise<GachaPool[]>;
-  gachaDraw(poolId: string, count: 1 | 10): Promise<{ save: SaveData; results: GachaResultEntry[] }>;
+  gachaDraw(poolId: string, count: 1 | 10): Promise<{ save: SaveData; results: GachaResultEntry[]; overflow: GachaOverflow }>;
   redeemFate(itemId: string): Promise<{ save: SaveData; granted: string }>;
   monthlyCardBuy(): Promise<{ save: SaveData }>;
   yearCardBuy(): Promise<{ save: SaveData }>;
@@ -25,8 +25,8 @@ export function GachaMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase 
     async gachaDraw(
       poolId: string,
       count: 1 | 10,
-    ): Promise<{ save: SaveData; results: GachaResultEntry[] }> {
-      return this.post<{ save: SaveData; results: GachaResultEntry[] }>('/gacha/draw', {
+    ): Promise<{ save: SaveData; results: GachaResultEntry[]; overflow: GachaOverflow }> {
+      return this.post<{ save: SaveData; results: GachaResultEntry[]; overflow: GachaOverflow }>('/gacha/draw', {
         poolId,
         count,
       });
