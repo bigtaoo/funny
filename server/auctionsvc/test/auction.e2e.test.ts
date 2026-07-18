@@ -40,7 +40,6 @@ if (!mongo) {
 
 describe.skipIf(!mongo)('AuctionService e2e', () => {
   const spends: Array<{ account: string; amount: number; orderId: string }> = [];
-  const grants: Array<{ account: string; amount: number; orderId: string }> = [];
   const materialDeducts: Array<{ account: string; material: string; qty: number; orderId: string }> = [];
   const materialGrants: Array<{ account: string; material: string; qty: number; orderId: string }> = [];
   // Equipment: simulated meta inventory (Map<account, Map<instanceId, instance>>) + escrow/transfer log.
@@ -71,9 +70,6 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     async spend(accountId, amount, orderId) {
       spends.push({ account: accountId, amount, orderId });
     },
-    async grant(accountId, amount, orderId) {
-      grants.push({ account: accountId, amount, orderId });
-    },
   };
 
   // Escrow-out model: item delivery/return goes through system mail (not direct meta grants). Spy on sent mail.
@@ -84,9 +80,11 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
       mails.push({ account: accountId, dispatchKey, content });
     },
   };
+  /** The mail whose recipient matches and dispatchKey starts with the given prefix. */
+  const mailFor = (account: string, dispatchPrefix: string) =>
+    mails.find((m) => m.account === account && m.dispatchKey.startsWith(dispatchPrefix));
   /** First attachment of the mail whose recipient matches and dispatchKey starts with the given prefix. */
-  const mailAtt = (account: string, dispatchPrefix: string) =>
-    mails.find((m) => m.account === account && m.dispatchKey.startsWith(dispatchPrefix))?.content.attachments?.[0];
+  const mailAtt = (account: string, dispatchPrefix: string) => mailFor(account, dispatchPrefix)?.content.attachments?.[0];
 
   const meta: AuctionMetaClient = {
     available: true,
@@ -142,7 +140,6 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     await mongo!.collections.auctionDaily.deleteMany({});
     await mongo!.collections.auctionPrices.deleteMany({});
     spends.length = 0;
-    grants.length = 0;
     materialDeducts.length = 0;
     materialGrants.length = 0;
     equipInv.clear();
@@ -225,8 +222,9 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     // escrow-out: item delivered to buyer via system mail (claimed to enter inventory)
     expect(mailAtt('bob', 'auction_buy:')).toMatchObject({ kind: 'material', id: 'lead', count: 2 });
     const tax = Math.floor(60 * AUCTION_TAX_RATE);
-    expect(grants).toHaveLength(1);
-    expect(grants[0]).toMatchObject({ account: 'alice', amount: 60 - tax });
+    // escrow-out: seller proceeds also delivered via system mail (no direct wallet credit)
+    expect(mailAtt('alice', 'auction_buy:')).toMatchObject({ kind: 'coins', count: 60 - tax });
+    expect(mailFor('alice', 'auction_buy:')?.content.subject).toBe('auction.mail.proceeds.subject');
   });
 
   it('buy own auction → BAD_REQUEST', async () => {
@@ -244,6 +242,31 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     });
     await svc.buyAuction('bob', view.auctionId);
     await expect(svc.buyAuction('carol', view.auctionId)).rejects.toMatchObject({ code: 'AUCTION_CLOSED' });
+  });
+
+  it('buy: concurrently sniped between doc read and settle → buyer refunded via mail', async () => {
+    const view = await svc.createAuction({
+      sellerId: 'alice', itemType: 'material',
+      item: { material: 'scrap' }, qty: 1, price: 10, durationSec: DUR,
+    });
+    // Simulate another buyer completing the sale between bob's initial doc read and the atomic
+    // open→sold write (commercial.spend is awaited in between, so it's a convenient interleave point).
+    const originalSpend = commercial.spend;
+    commercial.spend = async (accountId, amount, orderId) => {
+      spends.push({ account: accountId, amount, orderId });
+      await mongo!.collections.auctions.updateOne(
+        { _id: view.auctionId },
+        { $set: { status: 'sold', buyerId: 'eve', soldAt: nowMs, closedAt: nowMs, rev: 2 } },
+      );
+    };
+    try {
+      await expect(svc.buyAuction('bob', view.auctionId)).rejects.toMatchObject({ code: 'AUCTION_CLOSED' });
+    } finally {
+      commercial.spend = originalSpend;
+    }
+    // bob's already-deducted coins come back via mail, not a direct wallet credit
+    expect(mailAtt('bob', 'auction_buy:')).toMatchObject({ kind: 'coins', count: 10 });
+    expect(mailFor('bob', 'auction_buy:')?.content.subject).toBe('auction.mail.refund.subject');
   });
 
   it('designated buyer: another buyer → NOT_DESIGNATED_BUYER', async () => {
@@ -413,9 +436,10 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     const b1 = await svc.placeBid('bob', v.auctionId, 12);
     expect(b1.topBid).toMatchObject({ bidderId: 'bob', amount: 12 });
     expect(spends.find((s) => s.account === 'bob' && s.amount === 12)).toBeTruthy();
-    // carol bids 15 (escrow 15) → refund bob's 12
+    // carol bids 15 (escrow 15) → refund bob's 12 via mail
     await svc.placeBid('carol', v.auctionId, 15);
-    expect(grants.find((g) => g.account === 'bob' && g.amount === 12)).toBeTruthy();
+    expect(mailAtt('bob', 'auction_bid_refund:')).toMatchObject({ kind: 'coins', count: 12 });
+    expect(mailFor('bob', 'auction_bid_refund:')?.content.subject).toBe('auction.mail.refund.subject');
     // force expiry → scanner closes auction for carol (seller receives 15 after tax)
     await mongo!.collections.auctions.updateOne({ _id: v.auctionId }, { $set: { expireAt: nowMs - 1000 } });
     const count = await svc.processExpiredAuctions();
@@ -425,7 +449,28 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(sold?.buyerId).toBe('carol');
     expect(mailAtt('carol', 'auction_settle:')).toMatchObject({ kind: 'material', id: 'scrap' });
     const tax = Math.floor(15 * AUCTION_TAX_RATE);
-    expect(grants.find((g) => g.account === 'alice' && g.amount === 15 - tax)).toBeTruthy();
+    expect(mailAtt('alice', 'auction_settle:')).toMatchObject({ kind: 'coins', count: 15 - tax });
+  });
+
+  it('B bid: concurrently superseded between doc read and write → this bid\'s escrow refunded via mail', async () => {
+    const v = await svc.createAuction({
+      sellerId: 'alice', itemType: 'material', saleMode: 'auction',
+      item: { material: 'scrap' }, qty: 1, startPrice: 10, durationSec: DUR,
+    });
+    // Simulate a concurrent bid/settle bumping rev between bob's doc read and his atomic topBid write
+    // (commercial.spend is awaited in between, so it's a convenient interleave point).
+    const originalSpend = commercial.spend;
+    commercial.spend = async (accountId, amount, orderId) => {
+      spends.push({ account: accountId, amount, orderId });
+      await mongo!.collections.auctions.updateOne({ _id: v.auctionId }, { $inc: { rev: 1 } });
+    };
+    try {
+      await expect(svc.placeBid('bob', v.auctionId, 12)).rejects.toMatchObject({ code: 'AUCTION_CLOSED' });
+    } finally {
+      commercial.spend = originalSpend;
+    }
+    expect(mailAtt('bob', 'auction_bid:')).toMatchObject({ kind: 'coins', count: 12 });
+    expect(mailFor('bob', 'auction_bid:')?.content.subject).toBe('auction.mail.refund.subject');
   });
 
   it('B buyout → auction closes immediately', async () => {
@@ -491,9 +536,9 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     const bobInst = att?.instance as EquipmentInstance | undefined;
     expect(bobInst).toMatchObject({ id: 'eq1', level: 3 });
     expect(bobInst?.affixes).toHaveLength(2);
-    // seller receives payment after tax
+    // seller receives payment after tax, via mail
     const tax = Math.floor(400 * AUCTION_TAX_RATE);
-    expect(grants.find((g) => g.account === 'alice' && g.amount === 400 - tax)).toBeTruthy();
+    expect(mailAtt('alice', 'auction_buy:')).toMatchObject({ kind: 'coins', count: 400 - tax });
   });
 
   it('A equipment cancel → instance mailed back to seller', async () => {
@@ -567,7 +612,7 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(spends[0]).toMatchObject({ account: 'bob', amount: 500 });
     expect(mailAtt('bob', 'auction_buy:')).toMatchObject({ kind: 'skin', id: 'skin_notebook_blue' });
     const tax = Math.floor(500 * AUCTION_TAX_RATE);
-    expect(grants.find((g) => g.account === 'alice' && g.amount === 500 - tax)).toBeTruthy();
+    expect(mailAtt('alice', 'auction_buy:')).toMatchObject({ kind: 'coins', count: 500 - tax });
   });
 
   it('skin cancel → skinId mailed back to seller', async () => {
@@ -620,7 +665,7 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(att?.kind).toBe('card');
     expect(att?.instance as CardInstance | undefined).toMatchObject({ id: 'cd1', defId: 'lichuang', level: 5, xp: 42 });
     const tax = Math.floor(500 * AUCTION_TAX_RATE);
-    expect(grants.find((g) => g.account === 'alice' && g.amount === 500 - tax)).toBeTruthy();
+    expect(mailAtt('alice', 'auction_buy:')).toMatchObject({ kind: 'coins', count: 500 - tax });
   });
 
   it('CC-5 card cancel → instance mailed back to seller', async () => {

@@ -56,9 +56,11 @@ if (!mongo) {
 describe.skipIf(!mongo)('Auction full-link E2E (real WorldApiClient → real auctionsvc HTTP)', () => {
   // ── Downstream stubs (coins / materials / mail), tracked for assertions ──
   const spends: Array<{ account: string; amount: number; orderId: string }> = [];
-  const grants: Array<{ account: string; amount: number; orderId: string }> = [];
   const materialDeducts: Array<{ account: string; material: string; qty: number }> = [];
   const mails: Array<{ account: string; dispatchKey: string; content: AuctionMailContent }> = [];
+  /** First attachment of the mail whose recipient matches and dispatchKey starts with the given prefix. */
+  const mailAtt = (account: string, dispatchPrefix: string) =>
+    mails.find((m) => m.account === account && m.dispatchKey.startsWith(dispatchPrefix))?.content.attachments?.[0];
   // Equipment + card simulated meta inventory (Map<account, Map<instanceId, instance>>), same
   // seam the AuctionService unit e2e stubs. Escrow removes from the seller's map (and enforces
   // the meta-side guards: EQUIP_LOCKED / CARD_HAS_GEAR); grant re-seeds the recipient's map.
@@ -82,7 +84,6 @@ describe.skipIf(!mongo)('Auction full-link E2E (real WorldApiClient → real auc
   const commercial: AuctionCommercialClient = {
     available: true,
     async spend(accountId, amount, orderId) { spends.push({ account: accountId, amount, orderId }); },
-    async grant(accountId, amount, orderId) { grants.push({ account: accountId, amount, orderId }); },
   };
 
   const notNeeded = (what: string): never => { throw new SlgError('BAD_REQUEST', `${what} not exercised by full-link test`); };
@@ -148,7 +149,6 @@ describe.skipIf(!mongo)('Auction full-link E2E (real WorldApiClient → real auc
     await mongo!.collections.auctionDaily.deleteMany({});
     await mongo!.collections.auctionPrices.deleteMany({});
     spends.length = 0;
-    grants.length = 0;
     materialDeducts.length = 0;
     mails.length = 0;
     equipInv.clear();
@@ -181,7 +181,7 @@ describe.skipIf(!mongo)('Auction full-link E2E (real WorldApiClient → real auc
     await buyer.buyAuction(view.auctionId);
     expect(spends).toContainEqual(expect.objectContaining({ account: 'buyer1', amount: 20 }));
     const tax = Math.floor(20 * AUCTION_TAX_RATE);
-    expect(grants).toContainEqual(expect.objectContaining({ account: 'seller1', amount: 20 - tax }));
+    expect(mailAtt('seller1', 'auction_buy:')).toMatchObject({ kind: 'coins', count: 20 - tax });
     expect(mails.some((m) => m.account === 'buyer1' && m.dispatchKey.startsWith('auction_buy:'))).toBe(true);
 
     // and it's gone from the open market
@@ -206,7 +206,7 @@ describe.skipIf(!mongo)('Auction full-link E2E (real WorldApiClient → real auc
     const closed = await sniper.placeBid(view.auctionId, 18);
     expect(closed.status).toBe('sold');
     expect(closed.buyerId).toBe('buyer2');
-    expect(grants).toContainEqual(expect.objectContaining({ account: 'buyer1', amount: 12 })); // refund
+    expect(mailAtt('buyer1', 'auction_bid_refund:')).toMatchObject({ kind: 'coins', count: 12 }); // refund
     expect(mails.some((m) => m.account === 'buyer2' && m.dispatchKey.startsWith('auction_settle:'))).toBe(true);
   });
 
@@ -240,8 +240,8 @@ describe.skipIf(!mongo)('Auction full-link E2E (real WorldApiClient → real auc
     await buyer.buyAuction(view.auctionId);
     expect(spends).toContainEqual(expect.objectContaining({ account: 'buyer1', amount: 400 }));
     const tax = Math.floor(400 * AUCTION_TAX_RATE);
-    expect(grants).toContainEqual(expect.objectContaining({ account: 'seller1', amount: 400 - tax }));
-    const att = mails.find((m) => m.account === 'buyer1' && m.dispatchKey.startsWith('auction_buy:'))?.content.attachments?.[0];
+    expect(mailAtt('seller1', 'auction_buy:')).toMatchObject({ kind: 'coins', count: 400 - tax });
+    const att = mailAtt('buyer1', 'auction_buy:');
     expect(att?.kind).toBe('equipment');
     expect(att?.instance as EquipmentInstance | undefined).toMatchObject({ id: 'eq1', level: 3 });
     expect((att?.instance as EquipmentInstance | undefined)?.affixes).toHaveLength(2);
@@ -264,8 +264,8 @@ describe.skipIf(!mongo)('Auction full-link E2E (real WorldApiClient → real auc
     await buyer.buyAuction(view.auctionId);
     expect(spends).toContainEqual(expect.objectContaining({ account: 'buyer1', amount: 500 }));
     const tax = Math.floor(500 * AUCTION_TAX_RATE);
-    expect(grants).toContainEqual(expect.objectContaining({ account: 'seller1', amount: 500 - tax }));
-    const att = mails.find((m) => m.account === 'buyer1' && m.dispatchKey.startsWith('auction_buy:'))?.content.attachments?.[0];
+    expect(mailAtt('seller1', 'auction_buy:')).toMatchObject({ kind: 'coins', count: 500 - tax });
+    const att = mailAtt('buyer1', 'auction_buy:');
     expect(att?.kind).toBe('card');
     expect(att?.instance as CardInstance | undefined).toMatchObject({ id: 'cd1', defId: 'lichuang', level: 5, xp: 42 });
 

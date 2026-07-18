@@ -35,7 +35,6 @@ describe.skipIf(!mongo)('AuctionService.scanAnomalies e2e', () => {
   const stubCommercial: AuctionCommercialClient = {
     available: true,
     async spend() {},
-    async grant() {},
   };
   const stubMeta: AuctionMetaClient = {
     available: true,

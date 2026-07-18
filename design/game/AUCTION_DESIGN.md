@@ -65,11 +65,12 @@
 买方 buyAuction
   ├─ 校验：存在 / status=open / 非自买 / 未过期 / （若定向）== designatedBuyerId
   ├─ 1. commercial.spend(buyer, totalPrice, buyOrderId)     扣买方金币（不足→抛错不成交）
-  ├─ 2. 原子 findOneAndUpdate {status:open}→sold            防并发重复购买；抢失败→退买方款
-  ├─ 3. meta.grantMaterial(buyer, …, `${orderId}:item`)     发标的给买方
-  └─ 4. commercial.grant(seller, sellerReceives, `…:seller`) 卖方收款（税后）
+  ├─ 2. 原子 findOneAndUpdate {status:open}→sold            防并发重复购买；抢失败→退买方款（走邮件，见下）
+  ├─ 3. mail.sendSystemMail(buyer, `${orderId}:item`, …)    标的走系统邮件发给买方（领取后入库）
+  └─ 4. mail.sendSystemMail(seller, `…:seller`, coins attach) 卖方收款（税后）走系统邮件，领取后 commercial.grant 入账
 ```
 
+- **2026-07-18 拍板**：卖方收款、竞价被超/拍卖被抢的**所有**退款一律走系统邮件（`kind:'coins'` 附件，领取时 metaserver `claimMail` 才调 `commercial.grant`），`auctionsvc` 不再有任何路径直接 `commercial.grant` 到账——只有真实充值（Paddle webhook）才直接进钱包。`AuctionCommercialClient` 因此只剩 `spend`（扣买方款），`grant` 方法已删除。
 - **幂等**：每步 orderId 派生自 `auctionId`（`auction_buy:{id}` / `:item` / `:seller`），重放安全。
 - **失败补偿**：买方已扣款但步骤 3/4 失败 → 标的停在 `sold`，运维后台凭 orderId 查并补发（已在代码注释明确；接 OPS 工单见 §4.D）。
 
