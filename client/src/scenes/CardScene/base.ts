@@ -89,18 +89,18 @@ export interface Rect { x: number; y: number; w: number; h: number; }
 const DEF_ORDER = Object.keys(CARD_DEFS);
 
 /**
- * Sort cards: grouped by hero (CARD_DEFS declaration order) so duplicate instances of the same
- * hero sit together instead of interleaving with others at the same power — same-name cards were
- * scattering across the grid and reading as visual noise. Within a group: power desc, level desc,
- * id for stability.
+ * Sort cards: highest level first (level is the headline stat — surfaced as a star row in the grid),
+ * so the strongest heroes always float to the top of the roster. Within one level, cards stay grouped
+ * by hero (CARD_DEFS declaration order) so duplicate instances of the same hero sit together instead
+ * of scattering; within a hero group, power desc, then id for stability.
  */
 export function sortCards(cards: CardInstance[], equipInv: SaveData['equipmentInv']): CardInstance[] {
   return [...cards].sort((a, b) => {
+    if (b.level !== a.level) return b.level - a.level;
     const gd = DEF_ORDER.indexOf(a.defId) - DEF_ORDER.indexOf(b.defId);
     if (gd !== 0) return gd;
     const pd = cardPower(b, equipInv) - cardPower(a, equipInv);
     if (pd !== 0) return pd;
-    if (b.level !== a.level) return b.level - a.level;
     return a.id < b.id ? -1 : 1;
   });
 }

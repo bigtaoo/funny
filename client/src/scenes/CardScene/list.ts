@@ -178,8 +178,23 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       }
 
       let ay = y + pad + 34;
-      const lvLbl = txt(`Lv.${card.level}`, FS.small, C.mid, true);
-      lvLbl.x = ax; lvLbl.y = ay; this.bodyLayer.addChild(lvLbl);
+      // Level as a row of gold stars, not a small "Lv.N" — level is the headline stat and a lone
+      // number was too easy to overlook. One filled star per level (max 9); the row shrinks to fit
+      // the info column so high-level cards still stay on one line.
+      const stars = new PIXI.Container();
+      stars.name = 'levelStars'; // test hook: one child per level star (see cardSceneLevelStars.ui.ts)
+      const starN = Math.max(1, Math.min(9, card.level));
+      const starSize = 15;
+      const starGap = 3;
+      for (let i = 0; i < starN; i++) {
+        const st = buildIcon('star', starSize, C.gold);
+        st.x = i * (starSize + starGap);
+        stars.addChild(st);
+      }
+      const starsW = starN * starSize + (starN - 1) * starGap;
+      if (starsW > rightW) stars.scale.set(rightW / starsW);
+      stars.x = ax; stars.y = ay;
+      this.bodyLayer.addChild(stars);
       ay += 24;
 
       const power = Math.round(cardPower(card, save.equipmentInv ?? {}));
