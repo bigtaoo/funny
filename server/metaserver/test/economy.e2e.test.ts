@@ -504,4 +504,52 @@ describe.skipIf(!mongo2)('gacha inventory-full overflow → mail', () => {
     const second = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } }));
     expect(second.data.overflow).toMatchObject({ equipMailed: 0, equipCompensatedCoins: 100 }); // 10 x EQUIP_FULL_COMPENSATION_COINS(10)
   });
+
+  it('equipment no longer full → mail quota refills (parity with the card-roster case above)', async () => {
+    await fillEquipInv(300);
+    comm.nextResults = Array.from({ length: 10 }, () => ({ itemId: 'wp_pencil', rarity: 'common' as const }));
+    await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } });
+    // Free up room: drop back to 299 entries.
+    await m.collections.saves.updateOne({ _id: accountId }, { $unset: { 'save.equipmentInv.eq_filler_0': '' } });
+    const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } }));
+    // 1 slot free → 1 instance lands in equipmentInv; remaining 9 overflow, quota reset to 0 first since room was seen.
+    expect(r.data.overflow).toMatchObject({ equipMailed: 9, equipCompensatedCoins: 0 });
+    expect(r.data.save.equipMailOverflowCount).toBe(9);
+  });
+
+  it('mailed attachments carry the real instance data, not just a count — cards keep defId/level, equipment keeps defId/rarity', async () => {
+    await fillCardInv(150);
+    comm.nextResults = [{ itemId: 'chenshou', rarity: 'rare' as const }];
+    const r1 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+    expect(r1.data.overflow.cardMailed).toBe(1);
+    const cardMail = socialsvc.sent.find((s) => s.content.attachments?.[0]?.kind === 'card');
+    expect(cardMail?.content.attachments?.[0]?.instance).toMatchObject({ defId: 'chenshou', level: 1, xp: 0, locked: false });
+
+    await fillEquipInv(300);
+    comm.nextResults = [{ itemId: 'wp_marker', rarity: 'rare' as const }];
+    const r2 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+    expect(r2.data.overflow.equipMailed).toBe(1);
+    const equipMail = socialsvc.sent.find((s) => s.content.attachments?.[0]?.kind === 'equipment');
+    expect(equipMail?.content.attachments?.[0]?.instance).toMatchObject({ defId: 'wp_marker', rarity: 'rare', level: 0 });
+  });
+
+  it('mail delivery failure (socialsvc unreachable) does not block the draw response or lose the overflow accounting', async () => {
+    await fillCardInv(150);
+    socialsvc.insertSystemMail = async () => { throw new Error('simulated socialsvc outage'); };
+    comm.nextResults = Array.from({ length: 10 }, () => ({ itemId: 'lichuang', rarity: 'common' as const }));
+    const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } }));
+    // Draw still succeeds and reports the intended split even though the mail write itself failed —
+    // best-effort delivery, same risk tolerance as the existing coin-compensation `commercial.grant` calls.
+    expect(r.data.overflow).toMatchObject({ cardMailed: 10, cardCompensatedCoins: 0 });
+    expect(r.data.save.cardMailOverflowCount).toBe(10);
+  });
+
+  it('fresh account with room to spare never touches the overflow counters', async () => {
+    comm.nextResults = [{ itemId: 'lichuang', rarity: 'common' as const }];
+    const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+    expect(r.data.overflow).toMatchObject({ cardMailed: 0, cardCompensatedCoins: 0, equipMailed: 0, equipCompensatedCoins: 0 });
+    expect(r.data.save.cardMailOverflowCount ?? 0).toBe(0);
+    expect(r.data.save.equipMailOverflowCount ?? 0).toBe(0);
+    expect(socialsvc.sent).toHaveLength(0);
+  });
 });

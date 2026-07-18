@@ -102,4 +102,36 @@ describe('GachaScene — inventory-full overflow toast', () => {
     scene.destroy();
     spy.mockRestore();
   });
+
+  it('cross-type mix (equipment mailed + cards compensated) still sums into the combined toast', async () => {
+    const spy = vi.spyOn(log, 'showToastMessage');
+    const scene = buildGacha({
+      ok: true,
+      results: [],
+      overflow: { cardMailed: 0, cardCompensatedCoins: 50, equipMailed: 4, equipCompensatedCoins: 0 },
+    });
+    await drawThenDismiss(scene);
+    expect(spy).toHaveBeenCalledWith(t('gacha.invFull.mailedAndCompensated', { mailed: 4, coins: 50 }), 'success');
+    scene.destroy();
+    spy.mockRestore();
+  });
+
+  it('a later non-overflow draw does not replay the previous draw\'s overflow toast', async () => {
+    const scene = buildGacha({
+      ok: true,
+      results: [],
+      overflow: { cardMailed: 5, cardCompensatedCoins: 0, equipMailed: 0, equipCompensatedCoins: 0 },
+    });
+    await drawThenDismiss(scene); // first draw: overflow present, dismissed and toasted
+    const spy = vi.spyOn(log, 'showToastMessage');
+    (scene as unknown as { cb: GachaSceneCallbacks }).cb.draw = async () => ({
+      ok: true,
+      results: [],
+      overflow: { cardMailed: 0, cardCompensatedCoins: 0, equipMailed: 0, equipCompensatedCoins: 0 },
+    });
+    await drawThenDismiss(scene); // second draw: no overflow this time
+    expect(spy).not.toHaveBeenCalled();
+    scene.destroy();
+    spy.mockRestore();
+  });
 });
