@@ -167,8 +167,14 @@ export class CardSceneBase {
   protected detailFlipped = false;
   /** Detail modal: whether the skin picker popover is open. */
   protected skinPickerOpen = false;
-  /** Feed-select modal: index of the first visible material row (paged list, not free-scroll). */
-  protected feedScrollIdx = 0;
+  /** Feed-select modal: pixel scroll offset of the (drag-scrollable) material list. */
+  protected feedScrollPx = 0;
+  /** Feed-select modal: largest valid {@link feedScrollPx} (contentH − listH); set each redraw. */
+  protected feedScrollMax = 0;
+  /** Feed-select modal: latched by a drag-move, consumed in update() to redraw at most once per frame. */
+  protected feedScrollDirty = false;
+  /** Feed-select modal: the panel redraw closure, so base input/update code can re-draw it. Null when closed. */
+  protected feedRedraw: (() => void) | null = null;
   /** Removes the in-flight portrait flip's PIXI.Ticker.shared listener, if any (avoids leaking it across re-renders/destroy). */
   protected flipTickerCleanup: (() => void) | null = null;
 
@@ -279,6 +285,10 @@ export class CardSceneBase {
     this.modalScale = 1;
     this.modalOriginX = 0;
     this.modalOriginY = 0;
+    this.feedRedraw = null;
+    this.feedScrollPx = 0;
+    this.feedScrollMax = 0;
+    this.feedScrollDirty = false;
   }
 
   /** Convert a rect drawn in {@link modalPanelRoot}'s local (unscaled) space into real screen space. */
@@ -313,7 +323,9 @@ export class CardSceneBase {
       for (const { rect, action } of this.modalHits) {
         if (this.inRect(x, y, rect)) { modalHit = action; break; }
       }
-      this.gesture.down(this.scrollY, y, modalHit);
+      // The feed modal is drag-scrollable: track from its own scroll base so a drag pans the list
+      // (see handleMove). Other modals don't scroll — feedRedraw is null and the returned delta is ignored.
+      this.gesture.down(this.feedScrollPx, y, modalHit);
       return;
     }
     // Don't fire the hit action here — capture it and start gesture tracking. If the pointer then
@@ -331,7 +343,15 @@ export class CardSceneBase {
     // Feed the move to the gesture even while a modal is open: the modal doesn't scroll, but this
     // latches `moved` once the pointer crosses the drag threshold so the pending modal tap is dropped on up.
     const scroll = this.gesture.move(y);
-    if (this.modalOpen) return;
+    if (this.modalOpen) {
+      // Only the feed modal scrolls; apply the drag delta to its pixel offset (clamped on redraw)
+      // and latch a dirty flag so update() redraws the panel at most once per frame.
+      if (scroll !== null && this.feedRedraw) {
+        this.feedScrollPx = Math.max(0, Math.min(scroll, this.feedScrollMax));
+        this.feedScrollDirty = true;
+      }
+      return;
+    }
     if (scroll !== null) { this.scrollY = scroll; this.scrollDirty = true; }
   }
 
@@ -346,6 +366,7 @@ export class CardSceneBase {
 
   update(dt: number): void {
     if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
+    if (this.feedScrollDirty) { this.feedScrollDirty = false; this.feedRedraw?.(); }
     if (this.bt.tick(dt)) this.render();
   }
 
