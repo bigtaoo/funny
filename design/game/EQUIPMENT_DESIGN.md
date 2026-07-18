@@ -395,7 +395,7 @@ buildSiegeBlueprints(levels, equipped, inv)
 | **独立背包**（LOBBY_IA）：养成 `[卡牌\|装备]` 组标签 → 装备 | `''` | `[卡牌\|装备]`（`peerTab`） | 隐藏（无单卡上下文） | 弹「选卡」子视图，选卡后装上 |
 
 - **组标签泛化**：`EquipmentScene` 原 `openCollection`（图鉴组 `[图鉴|装备]`）泛化为 `peerTab: { labelKey, onSelect }`，图鉴组与养成组共用一套 `HubTabs`；`CardScene` 同样注入 `[卡牌|装备]` 组标签（`openEquipmentBag`）。
-- **背包「选卡」子模式**（`assign`）：背包里点某件装备的「穿戴」→ 整屏卡片选择列表（按战力降序，复用主 scrollY 拖动），列出每张卡该槽当前占用件，点卡即装（占用则替换，旧件回库）；卸下则回扫佩戴该件的卡。`合成 / 洗练 / 强化 / 分解` 都无需选卡，照常在背包/详情里用。
+- **背包「选卡」子模式**（`assign`）：背包里点某件装备的「穿戴」→ 整屏**图标卡网格**（每行 5 张，窄屏自动收缩；照搬英雄名册 `CardScene/list.ts` 的卡片：满高立绘 + 阵营色点 + 名字 + 等级金星 + 战力；按战力降序，复用主 scrollY 拖动），每张卡底部显示该槽当前占用件（空槽 `Slot free` / 已装金色 `Now: <件>`），点卡即装（占用则替换，旧件回库）；卸下则回扫佩戴该件的卡。此前为一行一卡的窄列表，2026-07-18 改为网格以与角色界面统一视觉。`合成 / 洗练 / 强化 / 分解` 都无需选卡，照常在背包/详情里用。
 - **术语**：现有 zh 标签把 craft 叫「锻造」、enhance 叫「强化」；产品口径的「合成 / 洗练 / 锻造(=强化+级)」与之有出入，标签对齐待定（本次未改）。
 
 > **i18n**：装备名 / 词条 / 特技 / 稀有度 一律走 i18n key（`equip.<defId>.name`、`affix.<id>.desc`、`skill.<id>.*`），不硬编码中文（项目 i18n 纪律，见 UI_DESIGN）。
@@ -791,4 +791,14 @@ buildSiegeBlueprints(levels, equipped, inv)
 背景：`craftableDefs()`（`client/src/game/meta/equipmentDefs.ts`）此前按 `EQUIPMENT_DEFS` 声明顺序返回（先按槽位 weapon/armor/trinket 分组，槽位内再按稀有度），锻造 tab（`EquipmentScene/craft.ts`）不做二次排序、直接按数组顺序铺格子——4 列网格下第一行变成「铅笔(普通/武器)、钢笔(精良/武器)、马克笔(稀有/武器)、稿纸(普通/防具)」，稀有度视觉上没有分组，用户截图指出与预期不符。
 
 落地：`craftableDefs()` 加一次按稀有度的**稳定排序**（`common→fine→rare→epic`，与 `RARITY_COLOR` 键序一致），槽位内原顺序不变。9 件可锻造装备现按 3 普通/3 精良/3 稀有连续输出，4 列网格下每行稀有度一致。新增 `client/test/equipmentDefs.test.ts` 固化排序 + craftCost 过滤两条不变量。验证：client `tsc --noEmit` 全绿 + 新测试通过；因本机会话无后端未做游戏内截图，改动本身是纯数据排序，用脚本直接打印排序结果核对。
+
+### 20.10 实现记录（2026-07-18，✅）— 材料图标位图化（scrap/lead/binding）
+
+背景：§20.5 把材料（scrap/lead/binding）图标做成 `SketchPen` **程序绘制、零位图**。但装备本体早已在 §20.2 换成 AI 位图图集（`buildEquipIcon`，§20.8 统一出处），导致装备页里「装备本体是彩色位图、三个材料余额却是灰扑扑的程序 glyph」的观感割裂——抽卡结果卡/概率表里材料同样只有 glyph。用户走查确认「位图缺失」。
+
+资产：3 张 AI 手绘位图（notebook 风、透明底、墨线描边）——scrap=撕纸+铅笔屑、lead=三根石墨条捆麻绳、binding=紫色螺旋线圈。源图放 `art/ui/material/`，`build-atlas.js`（仿 `art/ui/equipment/build-atlas.js`，`sharp` 先 `.trim()` 去透明边再 `contain` 到 128²）打成 `client/src/assets/material/material.{png,json}`（384×128，3×1，frame 名 = `scrap`/`lead`/`binding`，即 EquipmentScene 短 id、也是 `GachaScene.MATERIAL_ICON` 的目标 kind）。
+
+接线（纯客户端）：新增 `client/src/render/materialAtlas.ts`——`loadMaterialAtlas()`（boot `material:atlas` 步，非致命）+ `getMaterialIconTexture(kind)` + `buildMaterialIcon(kind,size,color)`（图集就绪返回 `Sprite`，否则回退 §20.5 的 `buildIcon` glyph，与 `buildEquipIcon` 同款「位图优先→glyph 兜底」契约，原点为左上角 `size×size`）。三处调用改走它：`GachaScene.drawEntryPicture`（材料分支）、`EquipmentScene/base.ts` 的 `renderMaterialsBand`（顶部余额条）与成本 chip 闭包（coin 仍走 `buildIcon`）。
+
+验证：client `tsc --noEmit` + 生产 webpack 构建全绿；dev server（9090）运行态经 webpack chunk 反射拿到 PIXI `TextureCache`，确认 `scrap/lead/binding` 三帧 `valid` 且 128²、源图 384×128、逐帧非空（scrap 68 色/luma 9–255 证明是真插画非纯色块）。因材料图标深藏抽卡/装备页需登录+后端，用运行态贴图内省替代逐屏截图。
 

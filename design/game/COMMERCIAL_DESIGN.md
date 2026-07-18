@@ -363,3 +363,19 @@ metaserver /paddle/webhook（HMAC 校验后）
   客服排查场景不需要 `ops`/`super`）。
 - **ops 前端**：新页面 "Paddle Events"（`tools/ops/src/pages/paddleEvents.ts`），按 accountId/transactionId 搜索，点击一行展开
   原始事件 JSON。
+
+### 10.6 Paddle checkout 数量购买（1–5 份，2026-07-18）
+
+> 状态：✅ 已实现（服务端）。Paddle Dashboard 侧的 checkout overlay 数量选择器（1–5，价格 price 的 "adjustable
+> quantity" 设置）由用户在 Paddle 后台配置，不在本仓代码范围内。
+
+此前 `/paddle/webhook` 完全没读 `items[].quantity`：`createPaddleTransaction` 建交易时硬编码 `quantity: 1`，webhook
+按 `items[0].price.id` 查一个**固定**金币数直接发币，无论玩家在 overlay 里实际调到几份。若玩家把 19.99 那档调到 10 份
+并真的付了 10 份的钱，此前只会拿到 1 份的金币——钱多币少，会引出退款/工单。
+
+修复（`server/metaserver/src/paddle.ts`）：webhook 里读 `items[0].quantity`，四舍五入并 clamp 到
+`[MIN_PADDLE_QUANTITY, MAX_PADDLE_QUANTITY] = [1, 5]`（与 Paddle 后台配置的档位对齐；越界值记 warn 日志但仍按夹紧后的
+数量发币，不拒绝整笔交易），`coins = coinsForPriceId(priceId) * clampedQuantity` 后原样交给
+`commercial.paddleComplete()`——首充 2× 奖励逻辑不变（乘的是发币总额，不关心是 1 份还是 5 份换来的）。
+`createPaddleTransaction` 建交易时仍传 `quantity: 1` 作为 overlay 的初始默认值，玩家在浮层里自行调到 Paddle 后台
+允许的上限。

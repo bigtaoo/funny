@@ -232,13 +232,14 @@ describe('FriendsScene — family/sect/world tab carets', () => {
     scene.destroy();
   });
 
-  it('family join-by-id field shows a blinking cursor', () => {
+  it('family join-search field shows a blinking cursor', () => {
     const scene = build();
     enterSlgTab(scene, 'family');
     scene.familySubview = 'joinById';
-    scene.familyActiveInput = 'id';
-    scene.familyJoinId = 'fam_123';
-    expectBlinkingCaret(scene.container, (on) => { scene.caretOn = on; }, () => scene.render(), 'fam_123|');
+    scene.familyActiveInput = 'search';
+    scene.familyBrowseQuery = 'Fam';
+    scene.familyBrowseLoaded = true;
+    expectBlinkingCaret(scene.container, (on) => { scene.caretOn = on; }, () => scene.render(), 'Fam|');
     scene.destroy();
   });
 

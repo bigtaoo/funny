@@ -432,6 +432,14 @@ export class WorldApiClient {
     return this.req('POST', `/social/family/${encodeURIComponent(familyId)}/join`, {}, 10_000, getSocialBaseUrl());
   }
 
+  /** Browse joinable families: top-N by prosperity (default), or fuzzy name-matched when `query` is given. Only families with an open slot are returned. */
+  async browseFamilies(query?: string, limit = 10): Promise<FamilyView[]> {
+    const qs = new URLSearchParams();
+    if (query) qs.set('q', query);
+    qs.set('limit', String(limit));
+    return this.req('GET', `/social/family/browse?${qs.toString()}`, undefined, 10_000, getSocialBaseUrl());
+  }
+
   async leaveFamily(): Promise<{ ok: true }> {
     return this.req('POST', '/social/family/leave', {}, 10_000, getSocialBaseUrl());
   }

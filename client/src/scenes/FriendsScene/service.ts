@@ -14,7 +14,8 @@ export interface NetworkHandlers {
   doRemove(publicId: string): Promise<void>;
   doBlock(publicId: string): Promise<void>;
   doCreateFamily(): Promise<void>;
-  doJoinFamily(): Promise<void>;
+  loadFamilyBrowse(query: string): Promise<void>;
+  doJoinFamily(familyId: string): Promise<void>;
   doCreateSect(): Promise<void>;
   doJoinSect(): Promise<void>;
   doSendWorldChat(): Promise<void>;
@@ -61,12 +62,19 @@ export function NetworkMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
     }
 
     async loadWorldMessages(): Promise<void> {
-      if (!this.cb.loadWorldChat) return;
+      if (!this.cb.loadWorldChat || this.worldLoading) return;
+      this.worldLoading = true;
+      this.worldLoadError = false;
+      if (!this.dead) this.render();
       try {
         const msgs = await this.cb.loadWorldChat();
         this.worldMessages = msgs.slice().reverse(); // server newest-first → oldest-first for display
         this.worldLoaded = true;
-      } catch { /* keep existing */ }
+      } catch {
+        this.worldLoadError = true;
+      } finally {
+        this.worldLoading = false;
+      }
       if (!this.dead) this.render();
     }
 
@@ -134,15 +142,30 @@ export function NetworkMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       this.render();
     }
 
-    async doJoinFamily(): Promise<void> {
-      const id = this.familyJoinId.trim();
-      if (!id) return;
+    async loadFamilyBrowse(query: string): Promise<void> {
+      this.familyBrowseLoading = true;
+      this.render();
+      try {
+        this.familyBrowseResults = await this.cb.browseFamilies?.(query) ?? [];
+      } catch {
+        this.familyBrowseResults = [];
+      } finally {
+        this.familyBrowseLoading = false;
+        this.familyBrowseLoaded = true;
+      }
+      if (!this.dead) this.render();
+    }
+
+    async doJoinFamily(familyId: string): Promise<void> {
+      if (!familyId) return;
       this.clearHiddenInput();
       try {
-        await this.cb.joinFamily?.(id);
+        await this.cb.joinFamily?.(familyId);
         this.toast('social.family.joined', 'success');
         this.familySubview = 'info';
-        this.familyJoinId = '';
+        this.familyBrowseQuery = '';
+        this.familyBrowseResults = [];
+        this.familyBrowseLoaded = false;
         this.slgLoaded = false;
         void this.loadSLGStatus();
       } catch {

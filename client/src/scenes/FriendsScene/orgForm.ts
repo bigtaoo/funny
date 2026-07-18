@@ -56,7 +56,11 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
           this.addButton(t('social.family.create'), px, cy, bW, bH, C.dark, C.accent,
             () => { this.familySubview = 'create'; this.render(); });
           this.addButton(t('social.family.joinById'), px + bW + bGap, cy, bW, bH, C.paper, C.line,
-            () => { this.familySubview = 'joinById'; this.render(); }, C.dark);
+            () => {
+              this.familySubview = 'joinById';
+              if (!this.familyBrowseLoaded && !this.familyBrowseLoading) void this.loadFamilyBrowse('');
+              this.render();
+            }, C.dark);
         } else if (this.familySubview === 'create') {
           this.drawFamilyCreateForm(px, panelW, cy);
         } else {
@@ -130,34 +134,83 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       const gap = Math.round(h * 0.02);
       let cy = startY;
 
-      const lbl = txt(t('social.family.idPlaceholder'), FS.heading, C.mid);
-      lbl.anchor.set(0, 0.5); lbl.x = px; lbl.y = cy + fH / 2;
-      this.container.addChild(lbl);
-      cy += fH + gap;
-
-      const idBg = sketchPanel(panelW, fH, { fill: C.paper, border: this.familyActiveInput === 'id' ? C.accent : C.line, width: 2, seed: seedFor(px, cy, panelW) });
-      idBg.x = px; idBg.y = cy;
-      this.container.addChild(idBg);
-      const idVal = txt(caretDisplay(this.familyJoinId, this.familyActiveInput === 'id' && this.caretOn, ' '), snapFont(Math.round(fH * 0.4)), C.dark);
-      idVal.anchor.set(0, 0.5); idVal.x = px + Math.round(panelW * 0.04); idVal.y = cy + fH / 2;
-      this.container.addChild(idVal);
+      // Search box — Enter re-queries the server; typing alone just edits the field (the
+      // browse list is fuzzy-matched server-side, not filtered client-side).
+      const searchBg = sketchPanel(panelW, fH, { fill: C.paper, border: this.familyActiveInput === 'search' ? C.accent : C.line, width: 2, seed: seedFor(px, cy, panelW) });
+      searchBg.x = px; searchBg.y = cy;
+      this.container.addChild(searchBg);
+      const searchActive = this.familyActiveInput === 'search';
+      const searchVal = txt(
+        this.familyBrowseQuery || searchActive
+          ? caretDisplay(this.familyBrowseQuery, searchActive && this.caretOn, ' ')
+          : t('social.family.searchPlaceholder'),
+        snapFont(Math.round(fH * 0.4)), this.familyBrowseQuery || searchActive ? C.dark : C.mid,
+      );
+      searchVal.anchor.set(0, 0.5); searchVal.x = px + Math.round(panelW * 0.04); searchVal.y = cy + fH / 2;
+      this.container.addChild(searchVal);
       this.hits.push({ rect: { x: px, y: cy, w: panelW, h: fH }, fn: () => {
-        this.familyActiveInput = 'id';
+        this.familyActiveInput = 'search';
         this.openHiddenInput({
-          value: this.familyJoinId, maxLength: 64,
-          onInput: (v) => { this.familyJoinId = v; },
+          value: this.familyBrowseQuery, maxLength: ORG_NAME_WIDTH_MAX,
+          onInput: (v) => { this.familyBrowseQuery = v; },
           onBlur: () => { this.familyActiveInput = null; },
+          onEnter: () => { void this.loadFamilyBrowse(this.familyBrowseQuery); },
         });
         this.render();
       }});
-      cy += fH + Math.round(h * 0.04);
+      cy += fH + gap;
 
       const bH = Math.round(h * 0.08);
       const bGap = Math.round(w * 0.04);
       const bW = Math.round((panelW - bGap) / 2);
-      this.addButton(t('social.family.confirm'), px, cy, bW, bH, C.dark, C.accent, () => void this.doJoinFamily());
+      this.addButton(t('family.search'), px, cy, bW, bH, C.dark, C.accent,
+        () => void this.loadFamilyBrowse(this.familyBrowseQuery));
       this.addButton(t('social.family.cancel'), px + bW + bGap, cy, bW, bH, C.paper, C.line,
         () => { this.familySubview = 'info'; this.clearHiddenInput(); this.render(); }, C.dark);
+      cy += bH + gap;
+
+      this.drawFamilyBrowseList(px, panelW, cy);
+    }
+
+    private drawFamilyBrowseList(px: number, panelW: number, startY: number): void {
+      const { h } = this;
+      let cy = startY;
+
+      if (this.familyBrowseLoading) {
+        const lbl = txt(t('social.family.browseLoading'), FS.label, C.mid);
+        lbl.anchor.set(0.5, 0); lbl.x = px + panelW / 2; lbl.y = cy + Math.round(h * 0.02);
+        this.container.addChild(lbl);
+        return;
+      }
+
+      if (this.familyBrowseResults.length === 0) {
+        const lbl = txt(t('social.family.browseEmpty'), FS.label, C.mid);
+        lbl.anchor.set(0.5, 0); lbl.x = px + panelW / 2; lbl.y = cy + Math.round(h * 0.02);
+        this.container.addChild(lbl);
+        return;
+      }
+
+      const rowH = Math.round(h * 0.08);
+      const rowGap = Math.round(h * 0.012);
+      for (const fam of this.familyBrowseResults) {
+        if (!this.rowVisible(cy, rowH)) { cy += rowH + rowGap; continue; }
+        const row = sketchPanel(panelW, rowH, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(cy, 0, panelW) });
+        row.x = px; row.y = cy;
+        this.container.addChild(row);
+
+        const name = truncateOrgName(fam.name, ORG_NAME_WIDTH_MAX);
+        const nameLbl = txt(`[${fam.tag}] ${name}`, FS.label, C.dark, true);
+        nameLbl.anchor.set(0, 0.5); nameLbl.x = px + Math.round(panelW * 0.04); nameLbl.y = cy + rowH * 0.36;
+        this.container.addChild(nameLbl);
+
+        const info = txt(`${t('family.members', { n: fam.memberCount })} · ${fam.prosperity}`, FS.tiny, C.mid);
+        info.anchor.set(0, 0.5); info.x = px + Math.round(panelW * 0.04); info.y = cy + rowH * 0.72;
+        this.container.addChild(info);
+
+        const famId = fam.familyId;
+        this.hits.push({ rect: { x: px, y: cy, w: panelW, h: rowH }, fn: () => void this.doJoinFamily(famId) });
+        cy += rowH + rowGap;
+      }
     }
 
     // ── Sect tab ──────────────────────────────────────────────────────────────────

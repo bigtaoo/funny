@@ -1,18 +1,30 @@
 // Feed flow (modal-within-modal): from the detail modal, pick eligible material cards (same faction,
 // unlocked, not deployed) via a multi-select panel, then confirm → doFeed().
+//
+// Identical materials (same card def + same level) collapse into ONE row with a quantity stepper —
+// e.g. "Mara Lv.1  1 / 3" — instead of listing every duplicate. The list is drag-scrollable (pan with
+// a press-drag) rather than paged via arrow buttons.
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { snapFont } from '../../render/fontScale';
-import { buildIcon } from '../../render/icons';
-import { buildFactionIcon } from '../../render/factionIcon';
+import { FACTION_COLOR } from '../../render/factionIcon';
+import { UNIT_ART_URLS, getArtTexture } from '../../render/cardArt';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
+import type { Rect } from '../../layout/ILayout';
 import type { CardInstance } from '../../game/meta/SaveData';
 import { CARD_DEFS } from '../../game/meta/cardDefs';
 import { type Constructor, type CardSceneBaseCtor, MODAL_DIM } from './base';
 
 export interface FeedHandlers {
   openFeedSelect(target: CardInstance): void;
+}
+
+/** One collapsed material row: all owned cards sharing a def + level, plus how many are selected. */
+interface FeedGroup {
+  defId: string;
+  level: number;
+  ids: string[];
 }
 
 export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase & Constructor<FeedHandlers> {
@@ -33,17 +45,33 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         return true;
       });
 
+      // Collapse duplicates: group by def + level, preserving first-seen order.
+      const groupMap = new Map<string, FeedGroup>();
+      for (const c of candidates) {
+        const key = `${c.defId}:${c.level}`;
+        let g = groupMap.get(key);
+        if (!g) { g = { defId: c.defId, level: c.level, ids: [] }; groupMap.set(key, g); }
+        g.ids.push(c.id);
+      }
+      const groups = [...groupMap.values()];
+      const keyOf = (g: FeedGroup): string => `${g.defId}:${g.level}`;
+      // Selected quantity per group (0..ids.length).
+      const counts = new Map<string, number>();
+      const totalSelected = (): number => { let n = 0; for (const v of counts.values()) n += v; return n; };
+      const selectedIds = (): string[] => {
+        const out: string[] = [];
+        for (const g of groups) out.push(...g.ids.slice(0, counts.get(keyOf(g)) ?? 0));
+        return out;
+      };
+
       const { w, h } = this;
       const ml = this.modalLayer;
       ml.removeChildren();
       this.modalHits = [];
       this.modalOpen = true;
+      this.feedScrollPx = 0;
+      const artHooked = new Set<string>();
 
-      const selected = new Set<string>();
-      // Paged (not free-scroll) list: avoids fighting the modal's fire-on-pointerdown row
-      // taps with a drag-to-scroll gesture over the same rows. this.feedScrollIdx is the index
-      // of the first visible candidate; clamped to fit whenever the panel redraws.
-      this.feedScrollIdx = 0;
       const drawFeedPanel = (): void => {
         ml.removeChildren();
         this.modalHits = [];
@@ -61,8 +89,8 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         const topLimit = this.headerH + 4;
         const bottomLimit = h - 8;
         const availH = Math.max(0, bottomLimit - topLimit);
-        // Panel height shows up to 6 rows before paging kicks in, still clamped to the screen.
-        const mh = Math.min(headerBlockH + Math.min(Math.max(candidates.length, 1), 6) * rowH + footerBlockH, availH);
+        // Panel height shows up to 6 rows before scrolling kicks in, still clamped to the screen.
+        const mh = Math.min(headerBlockH + Math.min(Math.max(groups.length, 1), 6) * rowH + footerBlockH, availH);
         const mx = (w - mw) / 2;
         const my = topLimit + (availH - mh) / 2;
 
@@ -85,101 +113,132 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         const listY = my + headerBlockH;
         const listH = mh - headerBlockH - footerBlockH;
 
-        if (candidates.length === 0) {
+        if (groups.length === 0) {
           const empty = txt(t('roster.feedEmpty'), snapFont(12 * S), C.mid);
           empty.anchor.set(0.5, 0.5); empty.x = mx + mw / 2; empty.y = listY + listH / 2;
           ml.addChild(empty);
         }
 
-        const maxVisible = Math.max(1, Math.floor(listH / rowH));
-        const scrollMax = Math.max(0, candidates.length - maxVisible);
-        this.feedScrollIdx = Math.max(0, Math.min(this.feedScrollIdx, scrollMax));
-        // Reserve a paging column on the right of the rows when the list overflows the panel.
-        const pagerW = scrollMax > 0 ? 28 * S : 0;
-        const rowW = mw - 16 * S - pagerW;
+        // Pixel-based drag scroll: clamp the offset, reserve a slim scrollbar column on overflow.
+        const contentH = groups.length * rowH;
+        const scrollMax = Math.max(0, contentH - listH);
+        this.feedScrollPx = Math.max(0, Math.min(this.feedScrollPx, scrollMax));
+        this.feedScrollMax = scrollMax;
+        const barW = scrollMax > 0 ? 10 * S : 0;
+        const listX = mx + 8 * S;
+        const rowW = mw - 16 * S - barW;
+        const viewport: Rect = { x: listX, y: listY, w: rowW + barW, h: listH };
 
-        let cy = listY;
-        const visible = candidates.slice(this.feedScrollIdx, this.feedScrollIdx + maxVisible);
-        for (const mat of visible) {
-          const isSelected = selected.has(mat.id);
-          const matDef = CARD_DEFS[mat.defId];
-          const rowBg = sketchPanel(rowW, rowH - 4 * S, { fill: isSelected ? 0xfaf0d4 : 0xf5f3ec, border: isSelected ? C.gold : C.mid, seed: seedFor(cy, 19, mw) });
-          rowBg.x = mx + 8 * S; rowBg.y = cy;
-          ml.addChild(rowBg);
+        // Mask the rows to the viewport so partial rows at the top/bottom edge don't spill over the
+        // title/footer. Rows live in an untransformed container, so their local coords == screen coords.
+        const listC = new PIXI.Container();
+        ml.addChild(listC);
+        const maskG = new PIXI.Graphics();
+        maskG.beginFill(0xffffff).drawRect(viewport.x, viewport.y, viewport.w, viewport.h).endFill();
+        ml.addChild(maskG);
+        listC.mask = maskG;
 
-          // Checkbox: a small ink box, ticked with a hand-drawn check when selected (replaces [✓]/[ ]).
-          const boxSz = 14 * S;
-          const box = new PIXI.Graphics();
-          box.lineStyle(1.5 * S, isSelected ? C.accent : C.mid, 1);
-          box.drawRect(mx + 14 * S, cy + 6 * S, boxSz, boxSz);
-          ml.addChild(box);
-          if (isSelected) {
-            const ck = buildIcon('check', boxSz, C.accent);
-            ck.x = mx + 14 * S; ck.y = cy + 6 * S;
-            ml.addChild(ck);
-          }
+        // Intersect a hit rect with the viewport so taps on a clipped-away part of a partial row don't fire.
+        const clip = (r: Rect): Rect | null => {
+          const x1 = Math.max(r.x, viewport.x), y1 = Math.max(r.y, viewport.y);
+          const x2 = Math.min(r.x + r.w, viewport.x + viewport.w), y2 = Math.min(r.y + r.h, viewport.y + viewport.h);
+          if (x2 <= x1 || y2 <= y1) return null;
+          return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+        };
+        const pushHit = (rect: Rect, action: () => void): void => {
+          const c = clip(rect);
+          if (c) this.modalHits.push({ rect: c, action });
+        };
 
-          const matName = t(`card.${mat.defId}.name` as TranslationKey);
-          const nameLbl = txt(`${matName} Lv.${mat.level}`, snapFont(12 * S), C.dark, true);
-          nameLbl.x = mx + 36 * S; nameLbl.y = cy + 6 * S;
-          ml.addChild(nameLbl);
+        for (let i = 0; i < groups.length; i++) {
+          const g = groups[i];
+          const rowTop = listY - this.feedScrollPx + i * rowH;
+          if (rowTop + rowH <= listY || rowTop >= listY + listH) continue; // fully off-screen
+          const key = keyOf(g);
+          const total = g.ids.length;
+          const n = counts.get(key) ?? 0;
+          const isSelected = n > 0;
+          const rowCy = rowTop + (rowH - 4 * S) / 2;
 
+          const rowBg = sketchPanel(rowW, rowH - 4 * S, { fill: isSelected ? 0xfaf0d4 : 0xf5f3ec, border: isSelected ? C.gold : C.mid, seed: seedFor(i, 19, mw) });
+          rowBg.x = listX; rowBg.y = rowTop;
+          listC.addChild(rowBg);
+
+          // Portrait thumbnail, framed with the material's faction color.
+          const matDef = CARD_DEFS[g.defId];
+          const thumbBox = rowH - 8 * S;
+          const thumbX = listX + 4 * S;
+          const thumbY = rowTop + (rowH - thumbBox) / 2;
           if (matDef) {
-            const facSize = 14 * S;
-            const facIcon = buildFactionIcon(matDef.faction, facSize);
-            facIcon.x = mx + 36 * S; facIcon.y = cy + 22 * S;
-            ml.addChild(facIcon);
+            const frame = sketchPanel(thumbBox, thumbBox, { fill: 0xf0eee7, border: FACTION_COLOR[matDef.faction], seed: seedFor(i, 24, thumbBox) });
+            frame.x = thumbX; frame.y = thumbY;
+            listC.addChild(frame);
+            const artUrl = UNIT_ART_URLS[matDef.unitType];
+            if (artUrl) {
+              const tex = getArtTexture(artUrl);
+              if (tex.baseTexture.valid) {
+                const scale = Math.min((thumbBox - 4 * S) / tex.width, (thumbBox - 4 * S) / tex.height);
+                const sp = new PIXI.Sprite(tex);
+                sp.anchor.set(0.5);
+                sp.scale.set(scale);
+                sp.position.set(thumbX + thumbBox / 2, thumbY + thumbBox / 2);
+                listC.addChild(sp);
+              } else if (!artHooked.has(artUrl)) {
+                artHooked.add(artUrl);
+                tex.baseTexture.once('loaded', () => this.feedRedraw?.());
+              }
+            }
           }
 
-          const matId = mat.id;
-          this.modalHits.push({
-            rect: { x: mx + 8 * S, y: cy, w: rowW, h: rowH - 4 * S },
-            action: () => {
-              if (selected.has(matId)) selected.delete(matId);
-              else selected.add(matId);
-              drawFeedPanel();
-            },
-          });
-          cy += rowH;
+          const matName = t(`card.${g.defId}.name` as TranslationKey);
+          const nameLbl = txt(`${matName} Lv.${g.level}`, snapFont(12 * S), C.dark, true);
+          nameLbl.anchor.set(0, 0.5); nameLbl.x = thumbX + thumbBox + 8 * S; nameLbl.y = rowCy;
+          listC.addChild(nameLbl);
+
+          // Quantity stepper on the right: [−]  n / total  [+].
+          const stepSz = 26 * S;
+          const rowRight = listX + rowW;
+          const plusX = rowRight - 12 * S - stepSz;
+          const minusX = plusX - stepSz - 56 * S;
+          const countCx = (minusX + stepSz + plusX) / 2;
+          const stepY = rowCy - stepSz / 2;
+
+          const drawStepBtn = (bx: number, enabled: boolean, plus: boolean): void => {
+            const btn = sketchPanel(stepSz, stepSz, { fill: enabled ? C.paper : C.btnOff, border: enabled ? C.dark : C.mid, seed: seedFor(bx, plus ? 22 : 23, stepSz) });
+            btn.x = bx; btn.y = stepY;
+            listC.addChild(btn);
+            const glyph = new PIXI.Graphics();
+            const gc = enabled ? C.dark : C.mid;
+            const cx = bx + stepSz / 2, cy = stepY + stepSz / 2, arm = stepSz * 0.28;
+            glyph.lineStyle(2.5 * S, gc, enabled ? 0.9 : 0.4);
+            glyph.moveTo(cx - arm, cy).lineTo(cx + arm, cy);
+            if (plus) glyph.moveTo(cx, cy - arm).lineTo(cx, cy + arm);
+            listC.addChild(glyph);
+          };
+
+          const minusOn = n > 0;
+          const plusOn = n < total;
+          drawStepBtn(minusX, minusOn, false);
+          drawStepBtn(plusX, plusOn, true);
+
+          const countLbl = txt(`${n} / ${total}`, snapFont(12 * S), isSelected ? C.dark : C.mid, true);
+          countLbl.anchor.set(0.5, 0.5); countLbl.x = countCx; countLbl.y = rowCy;
+          listC.addChild(countLbl);
+
+          const setCount = (v: number): void => {
+            const clamped = Math.max(0, Math.min(total, v));
+            if (clamped === 0) counts.delete(key); else counts.set(key, clamped);
+            drawFeedPanel();
+          };
+
+          if (minusOn) pushHit({ x: minusX, y: stepY, w: stepSz, h: stepSz }, () => setCount(n - 1));
+          if (plusOn) pushHit({ x: plusX, y: stepY, w: stepSz, h: stepSz }, () => setCount(n + 1));
+          // Tapping the row body (left of the stepper) cycles the quantity: +1, wrapping to 0 past the max.
+          pushHit({ x: listX, y: rowTop, w: minusX - listX, h: rowH - 4 * S }, () => setCount(n >= total ? 0 : n + 1));
         }
 
         if (scrollMax > 0) {
-          const pagerX = mx + mw - 8 * S - pagerW;
-          const arrowSz = pagerW - 6 * S;
-          const drawArrow = (ax: number, ay: number, pointUp: boolean, enabled: boolean): void => {
-            const g = new PIXI.Graphics();
-            g.beginFill(enabled ? C.dark : C.mid, enabled ? 0.85 : 0.4);
-            if (pointUp) g.drawPolygon([ax, ay + arrowSz, ax + arrowSz / 2, ay, ax + arrowSz, ay + arrowSz]);
-            else g.drawPolygon([ax, ay, ax + arrowSz, ay, ax + arrowSz / 2, ay + arrowSz]);
-            g.endFill();
-            ml.addChild(g);
-          };
-
-          const upEnabled = this.feedScrollIdx > 0;
-          drawArrow(pagerX, listY, true, upEnabled);
-          if (upEnabled) {
-            this.modalHits.push({
-              rect: { x: pagerX, y: listY, w: arrowSz, h: arrowSz },
-              action: () => { this.feedScrollIdx = Math.max(0, this.feedScrollIdx - maxVisible); drawFeedPanel(); },
-            });
-          }
-
-          const downY = listY + listH - arrowSz;
-          const downEnabled = this.feedScrollIdx < scrollMax;
-          drawArrow(pagerX, downY, false, downEnabled);
-          if (downEnabled) {
-            this.modalHits.push({
-              rect: { x: pagerX, y: downY, w: arrowSz, h: arrowSz },
-              action: () => { this.feedScrollIdx = Math.min(scrollMax, this.feedScrollIdx + maxVisible); drawFeedPanel(); },
-            });
-          }
-
-          drawScrollIndicator(
-            ml,
-            { x: pagerX, y: listY + arrowSz + 4 * S, w: arrowSz, h: listH - 2 * arrowSz - 8 * S },
-            this.feedScrollIdx * rowH,
-            scrollMax * rowH,
-          );
+          drawScrollIndicator(ml, viewport, this.feedScrollPx, scrollMax);
         }
 
         // Confirm + Cancel buttons — each button's width auto-fits its label (with a
@@ -190,8 +249,9 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         const btnGap = 8 * S;
         const btnY = my + mh - 36 * S;
 
-        const confirmOn = selected.size > 0 && !this.bt.busy;
-        const confirmLbl = txt(`${t('roster.feedBtn')} (${selected.size})`, snapFont(11 * S), confirmOn ? C.light : C.mid);
+        const total = totalSelected();
+        const confirmOn = total > 0 && !this.bt.busy;
+        const confirmLbl = txt(`${t('roster.feedBtn')} (${total})`, snapFont(11 * S), confirmOn ? C.light : C.mid);
         const cancelLbl = txt(t('equip.cancel'), snapFont(11 * S), C.dark);
         const confirmBtnW = Math.max(100 * S, confirmLbl.width + btnPadX * 2);
         const cancelBtnW = Math.max(80 * S, cancelLbl.width + btnPadX * 2);
@@ -211,7 +271,7 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         if (confirmOn) {
           this.modalHits.push({
             rect: { x: confirmX, y: btnY, w: confirmBtnW, h: btnH },
-            action: () => void this.doFeed(target.id, [...selected]),
+            action: () => void this.doFeed(target.id, selectedIds()),
           });
         }
 
@@ -227,6 +287,7 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         this.modalHits.push({ rect: { x: 0, y: 0, w, h }, action: () => { this.closeModal(); this.render(); } });
       };
 
+      this.feedRedraw = drawFeedPanel;
       drawFeedPanel();
     }
   };

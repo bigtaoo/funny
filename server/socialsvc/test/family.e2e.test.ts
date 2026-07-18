@@ -293,4 +293,22 @@ describe.skipIf(!mongo)('socialsvc FamilyService e2e', () => {
     expect((await svc.searchByTag('srch'))!.tag).toBe('SRCH');
     expect(await svc.searchByTag('nope')).toBeNull();
   });
+
+  it('browseFamilies: sorts by prosperity desc, excludes full families, fuzzy-matches name', async () => {
+    const low = await svc.createFamily('l1', 'LowPro', 'LOWP');
+    const high = await svc.createFamily('l2', 'HighPro', 'HIGP');
+    const full = await svc.createFamily('l3', 'FullFam', 'FULL');
+    await svc.refreshProsperity(low.familyId, 1);
+    await svc.refreshProsperity(high.familyId, 100);
+    for (let i = 0; i < FAMILY_CAP - 1; i++) await svc.joinFamily(`filler${i}`, full.familyId);
+
+    const top = await svc.browseFamilies(undefined, 10);
+    expect(top.map((f) => f.familyId)).toEqual([high.familyId, low.familyId]);
+    expect(top.find((f) => f.familyId === full.familyId)).toBeUndefined();
+
+    const matched = await svc.browseFamilies('highpro');
+    expect(matched.map((f) => f.familyId)).toEqual([high.familyId]);
+
+    expect(await svc.browseFamilies('nonexistent')).toEqual([]);
+  });
 });

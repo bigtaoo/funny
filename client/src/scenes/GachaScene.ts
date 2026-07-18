@@ -17,6 +17,7 @@ import { buildIcon } from '../render/icons';
 import { buildCoinIcon } from '../render/coinIconAtlas';
 import { getEquipDef } from '../game/meta/equipmentDefs';
 import { buildEquipIcon } from '../render/equipmentAtlas';
+import { buildMaterialIcon } from '../render/materialAtlas';
 import { CARD_DEFS } from '../game/meta/cardDefs';
 import { SKIN_TARGET_UNIT, skinDisplayName } from '../game/meta/skinDefs';
 import { UNIT_ART_URLS, getArtTexture } from '../render/cardArt';
@@ -663,7 +664,7 @@ export class GachaScene implements Scene {
   ): void {
     const matKind = MATERIAL_ICON[itemId];
     if (matKind) {
-      const icon = buildIcon(matKind, size, RARITY_COLOR[rarity]);
+      const icon = buildMaterialIcon(matKind, size, RARITY_COLOR[rarity]);
       icon.x = cx - size / 2; icon.y = cy - size / 2;
       parent.addChild(icon);
       return;

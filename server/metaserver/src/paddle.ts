@@ -37,7 +37,7 @@ function paddleApiBase(): string {
  * Format: "t499:pri_xxx,t999:pri_yyy,..."  (tier key → Paddle price ID)
  * Returns 0 if the price ID is not mapped.
  */
-function coinsForPriceId(priceId: string): number {
+export function coinsForPriceId(priceId: string): number {
   const raw = process.env.NW_PADDLE_PRICE_IDS ?? '';
   for (const pair of raw.split(',')) {
     const colonIdx = pair.indexOf(':');
@@ -139,8 +139,23 @@ interface PaddleWebhookEvent {
     id?: string; // transaction ID
     status?: string;
     custom_data?: { accountId?: string };
-    items?: Array<{ price?: { id?: string } }>;
+    items?: Array<{ price?: { id?: string }; quantity?: number }>;
   };
+}
+
+// Buyer-adjustable quantity range on the Paddle checkout overlay (Dashboard price setting).
+// Clamped again here so a forged/out-of-range webhook payload can't over-credit coins.
+export const MIN_PADDLE_QUANTITY = 1;
+export const MAX_PADDLE_QUANTITY = 5;
+
+/**
+ * Clamp a webhook-reported `items[0].quantity` to [MIN_PADDLE_QUANTITY, MAX_PADDLE_QUANTITY].
+ * Non-numeric / missing / non-finite input defaults to 1 (the pre-quantity-support behavior).
+ */
+export function clampPaddleQuantity(rawQuantity: unknown): number {
+  const n = Number(rawQuantity);
+  const rounded = Number.isFinite(n) ? Math.round(n) : 1;
+  return Math.min(MAX_PADDLE_QUANTITY, Math.max(MIN_PADDLE_QUANTITY, rounded));
 }
 
 // ── Route registration ──────────────────────────────────────────────────────
@@ -259,16 +274,32 @@ export function registerPaddleRoutes(app: FastifyInstance, deps: PaddleDeps): vo
         const status = txData?.status;
         const accountId = txData?.custom_data?.accountId;
         const priceId = txData?.items?.[0]?.price?.id;
+        const rawQuantity = txData?.items?.[0]?.quantity;
 
         if (!transactionId || status !== 'completed' || !accountId || !priceId) {
           return reply.code(400).send('missing required fields');
         }
 
-        const coins = coinsForPriceId(priceId);
-        if (coins === 0) {
+        const unitCoins = coinsForPriceId(priceId);
+        if (unitCoins === 0) {
           app.log.warn(`paddle webhook: unknown priceId ${priceId} for tx ${transactionId}`);
           return reply.code(200).send('unknown price'); // 200 so Paddle does not retry
         }
+
+        // Clamp to the checkout overlay's allowed range (MIN/MAX_PADDLE_QUANTITY) so a malformed or
+        // forged payload can't over-credit. A missing `quantity` field defaults to 1 silently (older
+        // event shape); a present-but-out-of-range value is clamped AND logged for CS lookup.
+        const clampedQuantity = clampPaddleQuantity(rawQuantity);
+        if (
+          typeof rawQuantity === 'number' &&
+          Number.isFinite(rawQuantity) &&
+          (rawQuantity < MIN_PADDLE_QUANTITY || rawQuantity > MAX_PADDLE_QUANTITY)
+        ) {
+          app.log.warn(
+            `paddle webhook: quantity ${rawQuantity} out of range for tx ${transactionId}, clamped to ${clampedQuantity}`,
+          );
+        }
+        const coins = unitCoins * clampedQuantity;
 
         const result = await deps.commercial.paddleComplete({ accountId, transactionId, coins });
         if (!result.ok) {
