@@ -16,6 +16,7 @@ import { loadDecorAtlas } from '../render/decorAtlas';
 import { loadLabelDecor } from '../render/labelDecor';
 import { loadDecorCAtlas } from '../render/decorCAtlas';
 import { loadEquipmentAtlas } from '../render/equipmentAtlas';
+import { loadFactionAtlas } from '../render/factionIcon';
 import { preloadTexture } from './preloadTextures';
 
 // Starter-trio skeletal bundles + card illustrations — the only units the first
@@ -56,6 +57,7 @@ const STEPS: BootStep[] = [
   { id: 'decor:labels',     run: () => loadLabelDecor() },
   { id: 'decor:c',          run: () => loadDecorCAtlas() },
   { id: 'equip:atlas',      run: () => loadEquipmentAtlas() },
+  { id: 'faction:atlas',    run: () => loadFactionAtlas() },
 ];
 
 /**

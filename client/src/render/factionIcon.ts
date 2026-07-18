@@ -4,21 +4,27 @@
  * The two factions (`tao` / `anna`) are named after the story leads, so showing
  * the faction *name* next to a character's own name reads as a second name and
  * confuses players (AUCTION/ROSTER feedback 2026-07-17). Instead every faction
- * site shows a small totem: an emblem that reads by silhouette first and by the
- * faction colour second.
+ * site shows a small totem — an East/West emblem that reads by silhouette first
+ * and by the faction colour second:
  *
- *   tao  — an upward fountain-pen nib (writing / blue ink); sharp, vertical.
- *   anna — a hand-scribbled star; round, radial — opposite silhouette.
+ *   tao  — an Eastern coiled-dragon medallion (round, dense); Chinese-named cards.
+ *   anna — a Western heraldic eagle displayed (winged, radial); Western-named cards.
  *
- * Colour lives here too (`FACTION_COLOR`) so the four call sites (card detail /
- * list / skins / feed) stop hard-coding `0xcc4466` / `0x4477cc` and can never
- * drift — same lesson as the equipment-icon unified source.
+ * Art comes from a 2-frame atlas (assets/factions/, built by
+ * art/ui/camps/pack_faction_atlas.js) of WHITE line-art on transparent, tinted
+ * per-faction at runtime. A procedural glyph is the fallback until the atlas
+ * finishes decoding.
  *
- * Art path mirrors buildEquipIcon: when the AI totem atlas lands, fill in
- * `getFactionIconTexture` and callers keep working unchanged. Until then the
- * procedural glyph below is the placeholder — swap it, don't re-plumb callers.
+ * The emblems are detailed line-art — crisp at ≥48px, faint at ≤20px — so only
+ * the roomy card-detail modal shows the full totem via `buildFactionIcon`. The
+ * dense list / skins / feed rows keep a plain `FACTION_COLOR` dot, where colour
+ * alone carries the faction. Either way `FACTION_COLOR` is the ONE place the
+ * tao/anna colour is defined, so no call site can drift.
  */
 import * as PIXI from 'pixi.js-legacy';
+import { assetIO } from '../assets/assetIO';
+import atlasUrl from '../assets/factions/factions.png';
+import atlasData from '../assets/factions/factions.json';
 import { getCachedDisplay } from '../ui/widgets/uiCache';
 import { SketchPen } from './sketch';
 import type { Faction } from '../game/meta/cardDefs';
@@ -28,6 +34,31 @@ export const FACTION_COLOR: Record<Faction, number> = {
   tao:  0x4477cc, // blue ink
   anna: 0xcc4466, // red ink
 };
+
+let sheet: PIXI.Spritesheet | null = null;
+let loading: Promise<void> | null = null;
+
+/**
+ * Decode + parse the totem atlas. Idempotent; rejects on decode error (callers
+ * degrade to the procedural glyph). Wired into bootManifest L0, mirroring the
+ * equipment atlas.
+ */
+export async function loadFactionAtlas(): Promise<void> {
+  if (sheet) return;
+  if (loading) return loading;
+  loading = (async () => {
+    const baseTex = new PIXI.BaseTexture(await assetIO().textureSource(atlasUrl as string));
+    await new Promise<void>((resolve, reject) => {
+      if (baseTex.valid) { resolve(); return; }
+      baseTex.once('loaded', () => resolve());
+      baseTex.once('error', (err: unknown) => reject(new Error(`faction atlas load error: ${String(err)}`)));
+    });
+    const ss = new PIXI.Spritesheet(baseTex, atlasData as unknown as PIXI.ISpritesheetData);
+    await ss.parse();
+    sheet = ss;
+  })();
+  return loading;
+}
 
 // ── Placeholder glyphs (swap for the totem atlas when art arrives) ──────────
 
@@ -81,11 +112,11 @@ const DRAW_FACTION: Record<Faction, (g: PIXI.Graphics, s: number, color: number)
 };
 
 /**
- * Texture for a faction totem from the AI atlas, or null until it is loaded.
- * Stub for now (no atlas yet) — callers fall back to the procedural glyph.
+ * Texture for a faction totem from the atlas (frame name === faction key), or
+ * null until it is loaded — callers fall back to the procedural glyph.
  */
-export function getFactionIconTexture(_faction: Faction): PIXI.Texture | null {
-  return null;
+export function getFactionIconTexture(faction: Faction): PIXI.Texture | null {
+  return sheet ? (sheet.textures[faction] ?? null) : null;
 }
 
 /**

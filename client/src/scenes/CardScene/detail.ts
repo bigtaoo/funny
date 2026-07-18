@@ -94,9 +94,9 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
       panelRoot.addChild(nameLbl);
 
       if (def) {
-        const facSize = 22;
+        const facSize = 28;
         const facIcon = buildFactionIcon(def.faction, facSize);
-        facIcon.x = mx + mw - 12 - facSize; facIcon.y = cy - 2;
+        facIcon.x = mx + mw - 12 - facSize; facIcon.y = cy - 4;
         panelRoot.addChild(facIcon);
       }
       cy += 26;
