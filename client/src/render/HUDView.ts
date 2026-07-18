@@ -24,9 +24,9 @@ const INK_ICON_S  = 28;
 const ACTION_LABEL_STYLE = { fontSize: FS.title, fill: 0x555555, fontFamily: 'monospace', fontWeight: 'bold' } as const;
 
 const HP_CELLS    = 10;
-const HP_CELL_W   = 14;
-const HP_CELL_H   = 10;
-const HP_CELL_GAP = 2;
+const HP_CELL_W   = 21;
+const HP_CELL_H   = 15;
+const HP_CELL_GAP = 3;
 const HP_BAR_W    = HP_CELLS * (HP_CELL_W + HP_CELL_GAP) - HP_CELL_GAP;
 
 /** Parametric heart outline (same curve as icons/equipment.ts drawHp), as plain points for fill/clip. */
