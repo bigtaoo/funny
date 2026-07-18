@@ -53,7 +53,9 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
     broadcasts.length = 0;
     spends.length = 0;
 
-    // Settle alice into the world so sendMessage passes the NOT_IN_WORLD guard.
+    // Settle alice into the world — most tests below exercise the title/sectName/familyName
+    // resolution path, which is orthogonal to SLG-map settlement; a playerWorld record is not
+    // required for send/read (see regression test below), it's just present in most fixtures.
     await cols.playerWorld.insertOne({
       _id: `${W}:alice`,
       worldId: W,
@@ -112,6 +114,36 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
       // No free message left behind.
       const history = await svc.getChannel(W, 'alice');
       expect(history).toHaveLength(0);
+    });
+  });
+
+  // Regression (2026-07-18, account tao1 hit 403 on a fresh account that never entered the SLG
+  // map): world chat is a social feature scoped to the shard, not to SLG map settlement — send
+  // and read must both work for an account with no playerWorld record in this world.
+  describe('regression: works without ever having settled a base (no playerWorld record)', () => {
+    it('sendMessage() succeeds for an account with no playerWorld record', async () => {
+      const svc = new NationChannelService({
+        cols: mongo!.collections,
+        gateway: fakeGateway,
+        commercial: fakeCommercial,
+        now: () => 500,
+      });
+      const result = await svc.sendMessage(W, 'bob', 'Bob', 'hi from a bob with no base');
+      expect(result.body).toBe('hi from a bob with no base');
+      expect(result.senderId).toBe('bob');
+    });
+
+    it('getChannel() succeeds for an account with no playerWorld record', async () => {
+      const svc = new NationChannelService({
+        cols: mongo!.collections,
+        gateway: fakeGateway,
+        commercial: fakeCommercial,
+        now: () => 501,
+      });
+      await svc.sendMessage(W, 'alice', 'Alice', 'settled sender posts');
+      const history = await svc.getChannel(W, 'bob');
+      expect(history).toHaveLength(1);
+      expect(history[0].body).toBe('settled sender posts');
     });
   });
 

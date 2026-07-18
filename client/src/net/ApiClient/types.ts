@@ -11,6 +11,9 @@ type Schemas = components['schemas'];
 export type ShopItem = Schemas['ShopItem'];
 export type GachaPool = Schemas['GachaPool'];
 export type GachaResultEntry = Schemas['GachaResult'];
+/** Roster/inventory-full overflow summary from a gacha draw (CHARACTER_CARDS_DESIGN §4 / EQUIPMENT_DESIGN §3.3); all-zero when nothing overflowed. */
+export type GachaOverflow =
+  operations['gachaDraw']['responses']['200']['content']['application/json']['data']['overflow'];
 /** One match history entry (from the perspective of the current account). */
 export type MatchHistoryEntry = Schemas['MatchHistoryEntry'];
 export type AuthResult = Schemas['AuthResult'];

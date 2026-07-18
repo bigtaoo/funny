@@ -40,6 +40,7 @@ import {
   recordAdToken,
   checkAdInterval,
 } from '../economy.js';
+import { nullMetaSocialsvcClient } from '../socialsvcClient.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
 import { accountIdOf, type Constructor, type MetaBaseCtor } from './base.js';
 
@@ -156,8 +157,8 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
         return reply.code(400).send(err(ErrorCode.BAD_REQUEST, charge.error));
       }
       // Delivery: route by the item's declared kind (skin vs. inventory.items) + mark delivered + mirror wallet.
-      const save = await deliverOrder(
-        cols, commercial, accountId,
+      const { save } = await deliverOrder(
+        cols, commercial, this.deps.socialsvc ?? nullMetaSocialsvcClient, accountId,
         { _id: orderId, kind: 'shop', result: { itemId: def.grants } },
         charge.coinsAfter, null, now(),
       );
@@ -196,9 +197,10 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       // only the actual delivery routing changed.
       const cur = await savePromise;
       const { marked } = markDuplicates(cur.inventory.skins, draw.results);
-      const save = await deliverLootBox(
+      const { save, overflow } = await deliverLootBox(
         cols,
         commercial,
+        this.deps.socialsvc ?? nullMetaSocialsvcClient,
         accountId,
         orderId,
         draw.results,
@@ -232,7 +234,7 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
           },
         };
       }
-      return ok({ save: saveWithRet2, results: marked });
+      return ok({ save: saveWithRet2, results: marked, overflow });
     }
 
     /** Fate Point redemption (GACHA_DESIGN §7): 30 points → one self-chosen past-featured legendary skin. */
@@ -256,8 +258,8 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       }
       await getOrCreateSave(cols, accountId, now());
       // Deliver the chosen skin idempotently (shared routing), then reflect the new fate balance immediately.
-      let save = await deliverOrder(
-        cols, commercial, accountId,
+      let { save } = await deliverOrder(
+        cols, commercial, this.deps.socialsvc ?? nullMetaSocialsvcClient, accountId,
         { _id: orderId, kind: 'fate', result: { itemId } },
         r.coinsAfter, null, now(),
       );
@@ -348,7 +350,7 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       // starter_draw delivers pack items (loot-box routing); starter_growth grants coins/subscription only (no items).
       if (r.results.length > 0) {
         await deliverOrder(
-          cols, commercial, accountId,
+          cols, commercial, this.deps.socialsvc ?? nullMetaSocialsvcClient, accountId,
           { _id: orderId, kind: 'starter', result: { results: r.results, poolId: 'standard' } },
           r.coinsAfter, null, now(),
         );

@@ -291,7 +291,7 @@ export class FamilySceneBase {
   protected showConfirm(msg: string, onOk: () => void): void {
     const { w, h } = this;
     const ml = this.modalLayer;
-    ml.removeChildren();
+    tearDownChildren(ml);
     this.modalHits = [];
     this.modalOpen = true;
 
@@ -330,7 +330,7 @@ export class FamilySceneBase {
   }
 
   protected closeModal(): void {
-    this.modalLayer.removeChildren();
+    tearDownChildren(this.modalLayer);
     this.modalHits = [];
     this.modalOpen = false;
   }

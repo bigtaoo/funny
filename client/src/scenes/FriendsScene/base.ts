@@ -32,7 +32,7 @@ import type {
   ChatMessagePush,
   MailNew,
 } from '../../net/proto/transport';
-import type { WorldChatMessage, FamilyView } from '../../net/WorldApiClient';
+import type { WorldChatMessage, FamilyView, FamilyDetailView } from '../../net/WorldApiClient';
 
 // ── FriendsScene (S6-1/S6-2/S6-3/S6-4) — Social Hub ─────────────────────────
 //
@@ -76,6 +76,8 @@ export interface FriendsSceneCallbacks {
   joinFamily?(familyId: string): Promise<void>;
   /** Top-prosperity families with an open slot, or fuzzy-matched by name when `query` is non-empty. */
   browseFamilies?(query?: string): Promise<FamilyView[]>;
+  /** Full detail (incl. member roster) for a family being browsed, e.g. to preview it before joining. */
+  viewFamily?(familyId: string): Promise<FamilyDetailView>;
   createSect?(name: string, tag: string): Promise<void>;
   joinSect?(sectId: string): Promise<void>;
   openFamilyHub?(): void;
@@ -149,6 +151,10 @@ export class FriendsSceneBase {
   protected familyBrowseResults: FamilyView[] = [];
   protected familyBrowseLoading = false;
   protected familyBrowseLoaded = false;
+  // Family info popup — opened by tapping a browse-result row (join button on the row itself
+  // joins directly without going through this).
+  protected familyDetailView: FamilyDetailView | null = null;
+  protected familyDetailLoading = false;
 
   // Sect tab subview
   protected sectSubview: 'info' | 'create' | 'joinById' = 'info';
@@ -277,6 +283,7 @@ export class FriendsSceneBase {
 
   protected onBack(): void {
     if (this.openMailItem) { this.openMailItem = null; this.render(); return; }
+    if (this.familyDetailView) { this.familyDetailView = null; this.render(); return; }
     if (this.view === 'search') { this.view = 'list'; this.render(); return; }
     this.cb.onBack();
   }
@@ -543,6 +550,7 @@ export interface FriendsSceneBase {
   drawList(): void;
   drawSearch(): void;
   drawFamilyTab(): void;
+  drawFamilyDetail(fam: FamilyDetailView): void;
   drawSectTab(): void;
   drawWorldTab(): void;
   drawMailList(): void;

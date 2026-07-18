@@ -15,6 +15,7 @@ import {
   CARD_INV_CAP,
   CARD_FULL_COMPENSATION_COINS,
   CARD_FEED_IDEM_TTL_SEC,
+  INV_FULL_MAIL_COUNT,
   cardInvCount,
   feedXp,
   LEVEL_CUMULATIVE_XP,
@@ -24,6 +25,18 @@ import {
   type CardDef,
 } from '@nw/shared';
 import { getOrCreateSave } from './save.js';
+import { insertSystemMail } from './mail.js';
+import type { MetaSocialsvcClient } from './socialsvcClient.js';
+
+/** 30-day expiry, matching the auction/ladder-settlement system-mail convention. */
+const CARD_OVERFLOW_MAIL_EXPIRE_DAYS = 30;
+
+/** Context required to mail roster-full overflow cards instead of silently coin-compensating them (see grantCards). */
+export interface CardMailCtx {
+  socialsvc: MetaSocialsvcClient;
+  /** Idempotency key for the system-mail upsert; scope it to the triggering order/request. */
+  dispatchKey: string;
+}
 
 export type CardErrorCode =
   | 'BAD_REQUEST'
@@ -101,8 +114,13 @@ export async function grantCard(
 /**
  * Create card instances and add them to save.cardInv (CHARACTER_CARDS_DESIGN §4).
  * Each entry in `defs` produces one new CardInstance at `level` (default 1), xp=0.
- * When the roster is full (≥ CARD_INV_CAP), the card is not added and compensatedCoins is
- * incremented by CARD_FULL_COMPENSATION_COINS (caller must deliver via commercial if > 0).
+ * When the roster is full (≥ CARD_INV_CAP):
+ *   - if `mailCtx` is given, the first INV_FULL_MAIL_COUNT overflow cards since the roster last had
+ *     free space are mailed to the player as real instances (best-effort via socialsvc; counted by
+ *     the persistent save.cardMailOverflowCount, reset to 0 the moment this call observes free room),
+ *     and any remaining overflow beyond that falls back to coin compensation below.
+ *   - without `mailCtx` (existing callers), overflow is coin-compensated as before — unchanged behavior.
+ * compensatedCoins is caller-delivered via commercial if > 0.
  */
 export async function grantCards(
   cols: Collections,
@@ -110,10 +128,11 @@ export async function grantCards(
   accountId: string,
   defs: CardDef[],
   level = 1,
-): Promise<{ instances: CardInstance[]; compensatedCoins: number; save: SaveData } | CardError> {
+  mailCtx?: CardMailCtx,
+): Promise<{ instances: CardInstance[]; mailedCount: number; compensatedCoins: number; save: SaveData } | CardError> {
   if (!defs.length) {
     const save = await getOrCreateSave(cols, accountId, now());
-    return { instances: [], compensatedCoins: 0, save };
+    return { instances: [], mailedCount: 0, compensatedCoins: 0, save };
   }
 
   // Pre-generate IDs outside the rev loop (same IDs on retry → $set is idempotent)
@@ -133,13 +152,19 @@ export async function grantCards(
     const save = doc.save;
 
     const newInstances: CardInstance[] = [];
+    const mailInstances: CardInstance[] = [];
     let compensatedCoins = 0;
     let cap = cardInvCount(save.cardInv ?? {});
+    // Free room right now → the mail quota refills; otherwise carry the persisted counter forward.
+    let mailOverflowCount = mailCtx ? (cap < CARD_INV_CAP ? 0 : (save.cardMailOverflowCount ?? 0)) : 0;
 
     for (const inst of pendingInstances) {
       if (cap < CARD_INV_CAP) {
         newInstances.push(inst);
         cap++;
+      } else if (mailCtx && mailOverflowCount < INV_FULL_MAIL_COUNT) {
+        mailInstances.push(inst);
+        mailOverflowCount++;
       } else {
         compensatedCoins += CARD_FULL_COMPENSATION_COINS;
       }
@@ -148,12 +173,28 @@ export async function grantCards(
     const nextCardInv = { ...(save.cardInv ?? {}) };
     for (const inst of newInstances) nextCardInv[inst.id] = inst;
 
-    const next: SaveData = { ...save, rev: save.rev + 1, updatedAt: now(), cardInv: nextCardInv };
+    const next: SaveData = {
+      ...save,
+      rev: save.rev + 1,
+      updatedAt: now(),
+      cardInv: nextCardInv,
+      cardMailOverflowCount: mailCtx ? mailOverflowCount : save.cardMailOverflowCount,
+    };
     const res = await cols.saves.findOneAndUpdate(
       { _id: accountId, rev: doc.rev },
       { $set: { save: next, rev: next.rev } },
     );
-    if (res) return { instances: newInstances, compensatedCoins, save: next };
+    if (res) {
+      if (mailInstances.length > 0 && mailCtx) {
+        await insertSystemMail(mailCtx.socialsvc, mailCtx.dispatchKey, accountId, {
+          subject: 'card.mail.rosterFull.subject',
+          body: 'card.mail.rosterFull.body',
+          attachments: mailInstances.map((instance) => ({ kind: 'card' as const, instance })),
+          expireDays: CARD_OVERFLOW_MAIL_EXPIRE_DAYS,
+        }).catch(() => { /* best-effort: same risk tolerance as the coin-compensation path below */ });
+      }
+      return { instances: newInstances, mailedCount: mailInstances.length, compensatedCoins, save: next };
+    }
   }
   return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
 }

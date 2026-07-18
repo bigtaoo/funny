@@ -303,7 +303,7 @@ export class WorldMapPanels {
 
   showModal(lines: string[], buttons: { label: string; action: () => void; disabled?: boolean }[]): void {
     const ml = this.ctx.modalLayer;
-    ml.removeChildren();
+    tearDownChildren(ml);
 
     const { w, h } = this.ctx;
     // 1.5× the original footprint (600×280 panel, 26/24px text, 56px buttons) — the old fixed
@@ -376,7 +376,7 @@ export class WorldMapPanels {
   }
 
   closeModal(): void {
-    this.ctx.modalLayer.removeChildren();
+    tearDownChildren(this.ctx.modalLayer);
     this.ctx.modalBtnRects = [];
     this.ctx.modalDimRect = null;
     this.ctx.infoScrollRect = null;
@@ -391,7 +391,7 @@ export class WorldMapPanels {
 
   showToast(msg: string, color: number = C.dark): void {
     const tl = this.ctx.toastLayer;
-    tl.removeChildren();
+    tearDownChildren(tl);
     const { w, h } = this.ctx;
     // Unified toast box: dark panel + colored border, centered at h*2/3 — matches CityScene.showToast
     // and the global fallback GlobalToast so world-map notices read the same as the rest of the game.
@@ -805,7 +805,7 @@ export class WorldMapPanels {
     const me = this.ctx.me;
     if (!me?.joined) { this.closeModal(); return; }
     const ml = this.ctx.modalLayer;
-    ml.removeChildren();
+    tearDownChildren(ml);
     this.ctx.modalBtnRects = [];
 
     const { w, h } = this.ctx;
@@ -945,7 +945,7 @@ export class WorldMapPanels {
   renderReplayPanel(): void {
     if (!this.ctx.me?.joined) { this.closeModal(); return; }
     const ml = this.ctx.modalLayer;
-    ml.removeChildren();
+    tearDownChildren(ml);
     this.ctx.modalBtnRects = [];
 
     const { w, h } = this.ctx;

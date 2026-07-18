@@ -66,6 +66,16 @@ export const EQUIP_MAX_LEVEL = 9;
 /** Hard cap on individual inventory instances (EQUIPMENT_DESIGN §3.3, ADR-012, DRAFT [adjustable]). */
 export const EQUIPMENT_INV_CAP = 300;
 
+/** Coin compensation per equipment instance when the inventory is full (overflow → coin sink, mirrors CARD_FULL_COMPENSATION_COINS). [DRAFT → ECONOMY_NUMBERS §6] */
+export const EQUIP_FULL_COMPENSATION_COINS = 10;
+
+/**
+ * Within one grant call, the first N inventory-full overflow equipment instances are mailed to the
+ * player as real instances instead of being coin-compensated (mirrors CARD's INV_FULL_MAIL_COUNT).
+ * Beyond this count, remaining overflow falls back to EQUIP_FULL_COMPENSATION_COINS.
+ */
+export const EQUIP_INV_FULL_MAIL_COUNT = 10;
+
 /** Equipment idempotency ledger (craft/escrow) TTL (seconds): retained for 7 days, covering client retries + worldsvc refund window (§18.2). */
 export const EQUIPMENT_IDEM_TTL_SEC = 7 * 24 * 3600;
 

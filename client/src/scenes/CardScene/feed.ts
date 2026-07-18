@@ -6,7 +6,7 @@
 // a press-drag) rather than paged via arrow buttons.
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
-import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { snapFont } from '../../render/fontScale';
 import { FACTION_COLOR } from '../../render/factionIcon';
 import { UNIT_ART_URLS, getArtTexture } from '../../render/cardArt';
@@ -66,14 +66,14 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
 
       const { w, h } = this;
       const ml = this.modalLayer;
-      ml.removeChildren();
+      tearDownChildren(ml);
       this.modalHits = [];
       this.modalOpen = true;
       this.feedScrollPx = 0;
       const artHooked = new Set<string>();
 
       const drawFeedPanel = (): void => {
-        ml.removeChildren();
+        tearDownChildren(ml);
         this.modalHits = [];
 
         // Scale the whole feed modal up 3x (local factor, other modals untouched).

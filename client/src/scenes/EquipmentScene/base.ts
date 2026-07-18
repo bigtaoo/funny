@@ -243,7 +243,7 @@ export class EquipmentSceneBase {
     if (this.destroyed) return;
     tearDownChildren(this.bodyLayer);
     this.hitRects = [];
-    this.loadingLayer.removeChildren();
+    tearDownChildren(this.loadingLayer);
     // Back button (header is static art; its hit lives here so re-render keeps it).
     // While assigning, Back cancels the card picker rather than leaving the scene.
     this.hitRects.push({ rect: this.backRect, action: () => this.backAction() });
@@ -280,7 +280,7 @@ export class EquipmentSceneBase {
    * mode, so it stays visible even while the card-assign picker is open.
    */
   protected renderHeaderCurrency(): void {
-    this.headerOverlayLayer.removeChildren();
+    tearDownChildren(this.headerOverlayLayer);
     const save = this.cb.getSave();
     const count = Object.keys(save.equipmentInv).length;
     // Header carries only the coin balance + capacity — a compact right cluster that leaves room
@@ -347,7 +347,7 @@ export class EquipmentSceneBase {
   protected showConfirm(msg: string, onOk: () => void): void {
     const { w, h } = this;
     const ml = this.modalLayer;
-    ml.removeChildren();
+    tearDownChildren(ml);
     this.modalHits = [];
     this.modalOpen = true;
     // Confirm replaces detail; keep detailId so cancel returns to it.
@@ -388,7 +388,7 @@ export class EquipmentSceneBase {
   }
 
   protected closeModal(): void {
-    this.modalLayer.removeChildren();
+    tearDownChildren(this.modalLayer);
     this.modalHits = [];
     this.modalOpen = false;
     this.modalScale = 1;
@@ -418,6 +418,21 @@ export class EquipmentSceneBase {
       }
     }
     return ids;
+  }
+
+  /**
+   * All instance ids sharing `inst`'s defId+rarity that the inventory grid merges into the same
+   * stacked cell (mirrors InventoryMixin.buildDisplayEntries: +0, unequipped, unlocked only —
+   * everything else is always its own row). Used by the detail modal to offer a "salvage all"
+   * action for the whole stack instead of just the one representative instance it was opened with.
+   */
+  protected stackSiblingIds(save: SaveData, inst: EquipmentInstance): string[] {
+    if (inst.level !== 0 || inst.locked) return [inst.id];
+    const equipped = this.equippedIds(save);
+    if (equipped.has(inst.id)) return [inst.id];
+    return Object.values(save.equipmentInv)
+      .filter(x => !equipped.has(x.id) && !x.locked && x.level === 0 && x.defId === inst.defId && x.rarity === inst.rarity)
+      .map(x => x.id);
   }
 
   /**

@@ -2,7 +2,7 @@
 // scrolling icon-card grid, and the per-card cell renderer.
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
-import { ui as C, txt, sketchPanel, seedFor, marginLineX } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, seedFor, marginLineX, tearDownChildren } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import { FACTION_COLOR } from '../../render/factionIcon';
@@ -59,7 +59,7 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
      * the title when navigating between the card-inventory/equipment peer scenes instead of popping in/out.
      */
     renderHeaderCurrency(): void {
-      this.headerOverlayLayer.removeChildren();
+      tearDownChildren(this.headerOverlayLayer);
       const save = this.cb.getSave();
       const count = Object.keys(save.cardInv ?? {}).length;
       const warn = count >= CARD_INV_WARN;

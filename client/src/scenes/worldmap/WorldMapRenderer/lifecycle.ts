@@ -5,6 +5,7 @@ import { loadCityAtlas } from '../../../render/cityAtlasLoader';
 import { loadPlayerBaseAtlas } from '../../../render/playerBaseAtlasLoader';
 import { loadTerrainAtlas } from '../../../render/terrainAtlasLoader';
 import { loadBuildingAtlas } from '../../../render/buildingAtlasLoader';
+import { tearDownChildren } from '../../../render/sketchUi';
 import { type Constructor, type WorldMapRendererBaseCtor } from './base';
 
 export interface LifecycleHandlers {
@@ -23,7 +24,7 @@ export function LifecycleMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBa
       }
       if (this.ctx.toastTimer > 0) {
         this.ctx.toastTimer -= dt * 1000;
-        if (this.ctx.toastTimer <= 0) this.ctx.toastLayer.removeChildren();
+        if (this.ctx.toastTimer <= 0) tearDownChildren(this.ctx.toastLayer);
       }
       this.updateVignette(dt);
       // L3 overview: flush dirty flag at most once per frame (60fps cap).

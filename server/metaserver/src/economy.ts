@@ -10,9 +10,26 @@
 //    in commercial is already prepared.
 import { createHash } from 'node:crypto';
 import type { Collections, SaveData, Rarity, EquipmentInstance } from '@nw/shared';
-import { EQUIPMENT_DEFS, GACHA_MATERIAL_GRANTS, makeGachaEquipInstance, EQUIPMENT_INV_CAP, equipmentInvCount, CARD_DEFS, type CardDef, PRODUCT_STARTER_GROWTH, GROWTH_PACK_WINDOW_DAYS, findShopItem } from '@nw/shared';
+import {
+  EQUIPMENT_DEFS, GACHA_MATERIAL_GRANTS, makeGachaEquipInstance, EQUIPMENT_INV_CAP,
+  EQUIP_FULL_COMPENSATION_COINS, EQUIP_INV_FULL_MAIL_COUNT, equipmentInvCount, CARD_DEFS,
+  type CardDef, PRODUCT_STARTER_GROWTH, GROWTH_PACK_WINDOW_DAYS, findShopItem,
+} from '@nw/shared';
 import { grantCards as grantHeroCards } from './cards.js';
+import { insertSystemMail } from './mail.js';
+import type { MetaSocialsvcClient } from './socialsvcClient.js';
 import type { CommercialClient, GachaResultEntry, WalletView } from './commercialClient.js';
+
+/** 30-day expiry, matching the auction/ladder-settlement system-mail convention. */
+const EQUIP_OVERFLOW_MAIL_EXPIRE_DAYS = 30;
+
+/** Roster/inventory-full overflow summary for one delivery call (used by gachaDraw to surface a client toast). */
+export interface OverflowSummary {
+  cardMailed: number;
+  cardCompensatedCoins: number;
+  equipMailed: number;
+  equipCompensatedCoins: number;
+}
 
 /** Mark each result as duplicate or not (compared against current inventory + already granted in this batch; used by the client for loot-box display). */
 export function markDuplicates(
@@ -49,6 +66,7 @@ export async function deliverGrant(
   now: number,
   materialInc?: Record<string, number>,
   equipInstances?: Record<string, EquipmentInstance>,
+  equipMailOverflowCount?: number,
 ): Promise<SaveData> {
   const set: Record<string, unknown> = {
     'save.updatedAt': now,
@@ -57,8 +75,9 @@ export async function deliverGrant(
   if (pityPatch) {
     for (const [pool, v] of Object.entries(pityPatch)) set[`save.gacha.pity.${pool}`] = v;
   }
-  // Equipment instances are $set one by one (not subject to the 300-cap; intentionally obtained via loot box; overflow handling via mail pending §13).
+  // Equipment instances are $set one by one (not subject to the 300-cap; overflow → mail/coin, see deliverLootBox).
   for (const [id, inst] of Object.entries(equipInstances ?? {})) set[`save.equipmentInv.${id}`] = inst;
+  if (equipMailOverflowCount !== undefined) set['save.equipMailOverflowCount'] = equipMailOverflowCount;
   const inc: Record<string, number> = { 'save.rev': 1, rev: 1 };
   for (const [mat, qty] of Object.entries(materialInc ?? {})) if (qty > 0) inc[`save.materials.${mat}`] = qty;
   const res = await cols.saves.findOneAndUpdate(
@@ -185,24 +204,35 @@ export async function mirrorWalletFrom(
  * gachaDraw (which delivers standard-pool draws directly, without going through the
  * commercial order-replay path). Does not mark the order delivered — callers do that
  * themselves (gachaDraw does it fire-and-forget to keep it off the response critical path).
+ *
+ * Roster/inventory-full overflow (cards ≥150 / equipment ≥300): the first INV_FULL_MAIL_COUNT
+ * overflow items per type (since that inventory last had free space) are mailed to the player as
+ * real instances instead of being coin-compensated; the persistent per-account counter lives on
+ * save.cardMailOverflowCount / save.equipMailOverflowCount. Returned `overflow` lets gachaDraw
+ * surface a "inventory full" toast.
  */
 export async function deliverLootBox(
   cols: Collections,
   commercial: CommercialClient,
+  socialsvc: MetaSocialsvcClient,
   accountId: string,
   orderId: string,
   results: GachaResultEntry[],
   coinsAfter: number,
   pityPatch: Record<string, number> | null,
   now: number,
-): Promise<SaveData> {
+): Promise<{ save: SaveData; overflow: OverflowSummary }> {
   const cur = await cols.saves.findOne({ _id: accountId });
   const owned = cur?.save.inventory.skins ?? [];
   const invCount = equipmentInvCount(cur?.save.equipmentInv);
+  // Free room right now → the mail quota refills; otherwise carry the persisted counter forward.
+  let equipMailOverflowCount = invCount < EQUIPMENT_INV_CAP ? 0 : (cur?.save.equipMailOverflowCount ?? 0);
 
   const skinResults: GachaResultEntry[] = [];
   const materialInc: Record<string, number> = {};
   const equipInstances: Record<string, EquipmentInstance> = {};
+  const equipMailInstances: EquipmentInstance[] = [];
+  let equipCompensatedCoins = 0;
   const cardDefs: CardDef[] = [];
 
   for (let i = 0; i < results.length; i++) {
@@ -211,10 +241,15 @@ export async function deliverLootBox(
     if (matGrant) {
       for (const [mat, qty] of Object.entries(matGrant)) materialInc[mat] = (materialInc[mat] ?? 0) + qty;
     } else if (EQUIPMENT_DEFS[r.itemId]) {
-      // Skip if inventory full (300 cap, silently skipped; full-inventory compensation via §13 to be done later)
+      const instanceId = `eq_gacha_${orderId}_${i}`;
+      const instance = makeGachaEquipInstance(r.itemId, instanceId) as EquipmentInstance;
       if (invCount + Object.keys(equipInstances).length < EQUIPMENT_INV_CAP) {
-        const instanceId = `eq_gacha_${orderId}_${i}`;
-        equipInstances[instanceId] = makeGachaEquipInstance(r.itemId, instanceId) as EquipmentInstance;
+        equipInstances[instanceId] = instance;
+      } else if (equipMailOverflowCount < EQUIP_INV_FULL_MAIL_COUNT) {
+        equipMailInstances.push(instance);
+        equipMailOverflowCount++;
+      } else {
+        equipCompensatedCoins += EQUIP_FULL_COMPENSATION_COINS;
       }
     } else if (CARD_DEFS[r.itemId]) {
       cardDefs.push(CARD_DEFS[r.itemId]!);
@@ -229,29 +264,62 @@ export async function deliverLootBox(
     cols, accountId, orderId, newSkins, coinsAfter, pityPatch, now,
     hasMixed ? materialInc : undefined,
     hasMixed ? equipInstances : undefined,
+    equipMailInstances.length > 0 || equipCompensatedCoins > 0 ? equipMailOverflowCount : undefined,
   );
 
+  if (equipMailInstances.length > 0) {
+    await insertSystemMail(socialsvc, `${orderId}:equip_mail`, accountId, {
+      subject: 'equipment.mail.invFull.subject',
+      body: 'equipment.mail.invFull.body',
+      attachments: equipMailInstances.map((instance) => ({ kind: 'equipment' as const, instance })),
+      expireDays: EQUIP_OVERFLOW_MAIL_EXPIRE_DAYS,
+    }).catch(() => { /* best-effort: same risk tolerance as the coin-compensation path below */ });
+  }
+  if (equipCompensatedCoins > 0 && commercial.available) {
+    await commercial.grant({
+      accountId,
+      amount: equipCompensatedCoins,
+      reason: 'equip_inv_full',
+      orderId: `${orderId}:equip_comp`,
+    }).catch(() => { /* best-effort */ });
+  }
+
   // Character card delivery (CC-5): grant hero cards after the skin/material/equipment grant lands.
-  // If the roster is full, compensatedCoins are credited immediately (best-effort).
+  // Roster-full overflow: first INV_FULL_MAIL_COUNT go to mail, the rest fall back to coin compensation.
+  let finalSave = save;
+  let cardMailed = 0;
+  let cardCompensatedCoins = 0;
   if (cardDefs.length > 0) {
-    const cardResult = await grantHeroCards(cols, () => now, accountId, cardDefs);
-    if (!('error' in cardResult) && cardResult.compensatedCoins > 0 && commercial.available) {
-      await commercial.grant({
-        accountId,
-        amount: cardResult.compensatedCoins,
-        reason: 'card_inv_full',
-        orderId: `${orderId}:card_comp`,
-      }).catch(() => { /* best-effort */ });
+    const cardResult = await grantHeroCards(cols, () => now, accountId, cardDefs, 1, {
+      socialsvc,
+      dispatchKey: `${orderId}:card_mail`,
+    });
+    if (!('error' in cardResult)) {
+      finalSave = cardResult.save;
+      cardMailed = cardResult.mailedCount;
+      cardCompensatedCoins = cardResult.compensatedCoins;
+      if (cardResult.compensatedCoins > 0 && commercial.available) {
+        await commercial.grant({
+          accountId,
+          amount: cardResult.compensatedCoins,
+          reason: 'card_inv_full',
+          orderId: `${orderId}:card_comp`,
+        }).catch(() => { /* best-effort */ });
+      }
     }
   }
 
-  return save;
+  return {
+    save: finalSave,
+    overflow: { cardMailed, cardCompensatedCoins, equipMailed: equipMailInstances.length, equipCompensatedCoins },
+  };
 }
 
 /** Complete the delivery loop for one order (skins idempotent + mark delivered). Shared by reconciliation + fate/starter handlers. */
 export async function deliverOrder(
   cols: Collections,
   commercial: CommercialClient,
+  socialsvc: MetaSocialsvcClient,
   accountId: string,
   order: {
     _id: string;
@@ -261,7 +329,7 @@ export async function deliverOrder(
   coinsAfter: number,
   pityPatch: Record<string, number> | null,
   now: number,
-): Promise<SaveData> {
+): Promise<{ save: SaveData; overflow?: OverflowSummary }> {
   // Fate Point redemption (§7): a single self-chosen legendary skin, delivered idempotently like a shop skin.
   if (order.kind === 'fate' && order.result.itemId) {
     const cur = await cols.saves.findOne({ _id: accountId });
@@ -269,7 +337,7 @@ export async function deliverOrder(
     const newSkins = owned.includes(order.result.itemId) ? [] : [order.result.itemId];
     const save = await deliverGrant(cols, accountId, order._id, newSkins, coinsAfter, pityPatch, now);
     await commercial.orderDelivered({ orderId: order._id });
-    return save;
+    return { save };
   }
 
   const cur = await cols.saves.findOne({ _id: accountId });
@@ -284,19 +352,19 @@ export async function deliverOrder(
       const itemInc: Record<string, number> = { [itemId]: 1 };
       const save = await deliverMailGrant(cols, accountId, order._id, [], itemInc, coinsAfter, now);
       await commercial.orderDelivered({ orderId: order._id });
-      return save;
+      return { save };
     }
     const newSkins = owned.includes(itemId) ? [] : [itemId];
     const save = await deliverGrant(cols, accountId, order._id, newSkins, coinsAfter, pityPatch, now);
     await commercial.orderDelivered({ orderId: order._id });
-    return save;
+    return { save };
   }
 
   // Loot box: route each result itemId — mat_* → materials, equipment defId → equipment instance, character card defId → card grant, everything else → skin.
   const results = order.result.results ?? [];
-  const save = await deliverLootBox(cols, commercial, accountId, order._id, results, coinsAfter, pityPatch, now);
+  const { save, overflow } = await deliverLootBox(cols, commercial, socialsvc, accountId, order._id, results, coinsAfter, pityPatch, now);
   await commercial.orderDelivered({ orderId: order._id });
-  return save;
+  return { save, overflow };
 }
 
 /**
@@ -307,6 +375,7 @@ export async function deliverOrder(
 export async function reconcileUndelivered(
   cols: Collections,
   commercial: CommercialClient,
+  socialsvc: MetaSocialsvcClient,
   accountId: string,
   now: number,
 ): Promise<void> {
@@ -318,7 +387,7 @@ export async function reconcileUndelivered(
       o.kind === 'gacha' && o.result.poolId && w
         ? { [o.result.poolId]: w.pity[o.result.poolId] ?? 0 }
         : null;
-    await deliverOrder(cols, commercial, accountId, o, w?.coins ?? 0, pityPatch, now);
+    await deliverOrder(cols, commercial, socialsvc, accountId, o, w?.coins ?? 0, pityPatch, now);
   }
 }
 

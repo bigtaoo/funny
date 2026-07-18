@@ -1,7 +1,7 @@
 // Modal overlays: the sect picker (browse / ally / manage-allies) and the generic OK/cancel confirm.
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
-import { ui as C, txt, sketchPanel, sketchButton, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, sketchButton, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
 import type { SectView } from '../../net/WorldApiClient';
 import { type Constructor, type SectSceneBaseCtor } from './base';
@@ -17,7 +17,7 @@ export function ModalsMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
     showSectPickModal(sects: SectView[], onPick: (sectId: string) => void, emptyKey: 'sect.noSects' | 'sect.noAllies'): void {
       const { w, h } = this;
       const ml = this.modalLayer;
-      ml.removeChildren();
+      tearDownChildren(ml);
       this.modalHits = [];
       this.modalOpen = true;
 
@@ -59,7 +59,7 @@ export function ModalsMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
     showConfirm(msg: string, onOk: () => void): void {
       const { w, h } = this;
       const ml = this.modalLayer;
-      ml.removeChildren();
+      tearDownChildren(ml);
       this.modalHits = [];
       this.modalOpen = true;
 

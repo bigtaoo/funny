@@ -1,6 +1,6 @@
 import * as PIXI from 'pixi.js-legacy';
 import { netLog } from '../net/log';
-import { setActiveScene } from '../net/anomaly';
+import { setActiveScene, recordFrameSample } from '../net/anomaly';
 
 const log = netLog('scene');
 
@@ -214,6 +214,10 @@ export class SceneManager {
 
     const scene = this.current;
     if (!scene) return;
+    // Timed (not just try/caught): a single scene.update() call running for seconds is one of the
+    // two things that can produce an ANR-watchdog report, and this is the only vantage point that can
+    // tell the difference — see recordFrameSample in net/anomaly for why that distinction matters.
+    const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
     try {
       scene.update(this.app.ticker.deltaMS / 1000);
     } catch (e) {
@@ -228,6 +232,9 @@ export class SceneManager {
         this.updateFaulted = true;
         log.error('scene update threw (contained)', errInfo(e));
       }
+    } finally {
+      const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      recordFrameSample(t1 - t0);
     }
   };
 

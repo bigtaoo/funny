@@ -1030,6 +1030,25 @@ describe('EquipmentScene — mixin-split wiring', () => {
     scene.destroy();
   });
 
+  it('salvage-all flow: a ×N stacked cell offers a batch "Salvage All" action alongside the single-item one', async () => {
+    const { cb, calls, save } = buildEquipCallbacks('card1');
+    // Duplicate eqBagCommon into a 3-item stack (same defId+rarity, +0, unequipped, unlocked).
+    save.equipmentInv.eqBagCommon2 = { id: 'eqBagCommon2', defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [{ id: 'm_atk', value: 10 }] };
+    save.equipmentInv.eqBagCommon3 = { id: 'eqBagCommon3', defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [{ id: 'm_atk', value: 10 }] };
+    const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
+    (scene as any).openDetail('eqBagCommon');
+    // Button order: [Enhance, Equip, Salvage, Salvage All, panel-inert, outside-close].
+    let modalHits = (scene as any).modalHits as Array<{ action: () => void }>;
+    expect(modalHits.length).toBe(6);
+    modalHits[3].action(); // Salvage All → confirmSalvageAll → showConfirm
+    modalHits = (scene as any).modalHits;
+    expect(modalHits.length).toBe(2); // showConfirm's [OK, Cancel]
+    modalHits[0].action(); // OK → doSalvageAll
+    await Promise.resolve();
+    expect(calls.salvage).toEqual([['eqBagCommon', 'eqBagCommon2', 'eqBagCommon3']]);
+    scene.destroy();
+  });
+
   // initialFilterSlot (CardScene gear-slot tap → jump straight to that slot's filter tab, instead
   // of landing on "All"). The seeding happens in EquipmentSceneBase's constructor: verify the
   // default, that each slot value round-trips, and that render() honors the seeded filter without
