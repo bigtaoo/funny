@@ -1,6 +1,5 @@
 // Hidden-DOM-input overlays: the create-form field editor (name/tag) and the channel message sender.
 import { ORG_NAME_WIDTH_MAX, truncateOrgName } from '@nw/shared';
-import { ui as C } from '../../render/sketchUi';
 import { type Constructor, type SectSceneBaseCtor } from './base';
 
 export interface InputHandlers {
@@ -41,28 +40,31 @@ export function InputMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase 
     }
 
     openSendInput(): void {
+      if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
+      this.channelActive = true;
+      this.caretOn = true;
+      this.caretTimer = 0;
       const inp = document.createElement('input');
       inp.type = 'text';
       inp.maxLength = 200;
+      inp.value = this.channelInput;
       inp.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
       document.body.appendChild(inp);
       inp.focus();
-      inp.addEventListener('keydown', async (e) => {
-        if (e.key === 'Enter') {
-          const body = inp.value.trim();
-          inp.remove();
-          if (body && this.sect) {
-            try {
-              await this.cb.worldApi.sendSectMessage(this.cb.worldId, body, this.cb.playerName);
-              await this.loadChannel();
-              if (!this.destroyed) this.render();
-            } catch (err) {
-              this.showToast(this.errorMsg(err), C.red);
-            }
-          }
-        }
+      inp.addEventListener('input', () => {
+        this.channelInput = inp.value;
+        if (!this.destroyed) this.render();
       });
-      inp.addEventListener('blur', () => { inp.remove(); });
+      inp.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') void this.doSendChannelMessage();
+      });
+      inp.addEventListener('blur', () => {
+        this.channelActive = false;
+        if (this.hiddenInput === inp) this.hiddenInput = null;
+        inp.remove();
+        if (!this.destroyed) this.render();
+      });
+      this.hiddenInput = inp;
     }
   };
 }

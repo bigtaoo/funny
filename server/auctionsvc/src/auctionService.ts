@@ -632,13 +632,17 @@ export class AuctionService {
     }
 
     // Minimum bid: start price / current top bid + minimum increment
-    const startPrice = doc.startPrice ?? doc.price;
-    let minBid = startPrice;
-    if (doc.topBid) {
-      const inc = Math.max(1, Math.floor(doc.topBid.amount * AUCTION_MIN_INCREMENT_RATIO));
-      minBid = doc.topBid.amount + inc;
+    // Buyout bypasses the increment floor — it only needs to clear the seller's buyout price.
+    const isBuyout = doc.buyoutPrice != null && amount >= doc.buyoutPrice;
+    if (!isBuyout) {
+      const startPrice = doc.startPrice ?? doc.price;
+      let minBid = startPrice;
+      if (doc.topBid) {
+        const inc = Math.max(1, Math.floor(doc.topBid.amount * AUCTION_MIN_INCREMENT_RATIO));
+        minBid = doc.topBid.amount + inc;
+      }
+      if (amount < minBid) throw new SlgError('BID_TOO_LOW');
     }
-    if (amount < minBid) throw new SlgError('BID_TOO_LOW');
 
     // G Price guardrail (bid unit price is also subject to the guardrail)
     await this.checkPriceGuard(categoryOf(doc), amount);

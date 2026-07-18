@@ -437,21 +437,28 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       const inputY = y0 + listH2 + 4;
       const sendW = 96;
       const fieldW = colW - sendW - 12;
-      const field = sketchPanel(fieldW, inputH, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(0, 0, fieldW) });
+      const field = sketchPanel(fieldW, inputH, { fill: 0xfaf9f5, border: this.channelActive ? C.accent : C.mid, seed: seedFor(0, 0, fieldW) });
       field.x = x0 + 6; field.y = inputY;
       this.bodyLayer.addChild(field);
-      const fl = txt(t('sect.msgPlaceholder'), FS.label, C.mid);
+      const fl = txt(
+        caretDisplay(this.channelInput, this.channelActive && this.caretOn, t('sect.msgPlaceholder')),
+        FS.label, this.channelInput ? C.dark : C.mid,
+      );
       fl.anchor.set(0, 0.5); fl.x = x0 + 12; fl.y = inputY + inputH / 2;
       this.bodyLayer.addChild(fl);
       this.hitRects.push({ rect: { x: x0 + 6, y: inputY, w: fieldW, h: inputH }, action: () => this.openSendInput() });
 
+      const sendLabel = this.channelSending ? t('sect.sending') : t('sect.send');
       const sendBtn = sketchButton(sendW, inputH, seedFor(1, 0, sendW));
       sendBtn.x = right - sendW; sendBtn.y = inputY;
       this.bodyLayer.addChild(sendBtn);
-      const sl = txt(t('sect.send'), FS.heading, C.light);
+      const sl = txt(sendLabel, FS.heading, C.light);
       sl.anchor.set(0.5, 0.5); sl.x = right - sendW / 2; sl.y = inputY + inputH / 2;
       this.bodyLayer.addChild(sl);
-      this.hitRects.push({ rect: { x: right - sendW, y: inputY, w: sendW, h: inputH }, action: () => this.openSendInput() });
+      this.hitRects.push({
+        rect: { x: right - sendW, y: inputY, w: sendW, h: inputH },
+        action: () => { if (!this.channelSending) void this.doSendChannelMessage(); },
+      });
     }
 
     // ── Small render helpers ────────────────────────────────────────────────────

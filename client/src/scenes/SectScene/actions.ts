@@ -21,6 +21,7 @@ export interface ActionsHandlers {
   openManageAllies(): Promise<void>;
   confirmUnally(targetSectId: string, label: string): void;
   doUnally(targetSectId: string): Promise<void>;
+  doSendChannelMessage(): Promise<void>;
 }
 
 export function ActionsMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase & Constructor<ActionsHandlers> {
@@ -176,6 +177,25 @@ export function ActionsMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBas
         this.render();
       } catch (e) {
         this.showToast(this.errorMsg(e), C.red);
+      }
+    }
+
+    async doSendChannelMessage(): Promise<void> {
+      const body = this.channelInput.trim();
+      if (!body || this.channelSending || !this.sect) return;
+      if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
+      this.channelActive = false;
+      this.channelSending = true;
+      this.render();
+      try {
+        await this.cb.worldApi.sendSectMessage(this.cb.worldId, body, this.cb.playerName);
+        this.channelInput = '';
+        await this.loadChannel();
+      } catch (e) {
+        this.showToast(this.errorMsg(e), C.red);
+      } finally {
+        this.channelSending = false;
+        if (!this.destroyed) this.render();
       }
     }
   };

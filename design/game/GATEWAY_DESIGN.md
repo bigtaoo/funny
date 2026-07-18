@@ -103,3 +103,4 @@ NetSession
 - [x] gateway 重连续房间会话：重连后 gateway（`Matchsvc.onConnected`）据 accountId 重发当前 `room_state`；掉线在大厅房标记 `connected:false` 保留 60s 宽限，全员掉线才回收。
 - [x] `presence`/好友/聊天：首期不上，控制面只做房间/匹配（协议未占位，后续加 `presence` ServerMsg）。
 - [x] 内部 RPC（gateway↔matchsvc）：S1-M5 拆进程后走**内部 HTTP**（`MatchsvcClient` POST 命令 → matchsvc `internalHttp`；matchsvc `GatewayClient` POST `/gw/push` → gateway `internalHttp`）。接口与合一进程时的函数调用一一对应，仅换传输。
+- [x]（2026-07-18 修复）**账号切换后战绩记到旧账号**：`NetSession.gateway`（控制面 WS）只在握手时校验一次 token，之后同一条已连接的 socket 不会重新鉴权。`applyGatewayUrl` 原先只在 gatewayUrl 字符串变化时才 `close()` 重建 `NetSession`——同一 gateway 实例下退出账号 A 再登录账号 B，旧 socket 仍带着 A 的鉴权原样存活，B 之后开的房/排位会继续算到 A 头上。修复：`client/src/app/nav/auth.ts` 的 `doAuth()`/`doLogout()` 现在无条件 `state.netSession?.close(); state.netSession = null`，强制下一次 `getNetSession()` 用当前账号的新 token 重新握手。回归用例见 `client/test/auth-reconnect-prompt.test.ts`。

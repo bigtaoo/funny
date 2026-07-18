@@ -272,46 +272,61 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
         this.accountChipFn = this.cb.onLogin ?? null;
       } else if (this.cb.pvp) {
         const pvp = this.cb.pvp;
-        // Two stacked lines in the header's right column: coins · rank.
+        // Two stacked lines in the header's right column: coins · rank. Given
+        // more breathing room between them (was 0.15*chipBandH, cramped enough
+        // that the two chip frames below would nearly touch).
         // Logout intentionally omitted here — it sat right below the rank badge and
         // players fat-fingered it while tapping through to the leaderboard; log out
         // still lives in SettingsScene.
-        const coinsY = chipBandH * 0.30;
-        const rankY  = chipBandH * 0.45;
+        const coinsY = chipBandH * 0.26;
+        const rankY  = chipBandH * 0.58;
 
         // Soft-currency balance (server-authoritative mirror) — only meaningful online.
         if (typeof this.cb.coins === 'number') {
           const coinLbl = txt(fmtCoins(this.cb.coins), FS.label, C.gold, true);
           coinLbl.anchor.set(1, 0.5); coinLbl.x = chipX; coinLbl.y = coinsY;
-          this.container.addChild(coinLbl);
           // Coin icon to the left of the number — same AI atlas glyph as the shop header (falls
           // back to the procedural buildIcon draw until coinIconAtlas finishes loading).
           const ci = Math.round(h * 0.032);
-          const coinIcon = buildCoinIcon('coin', ci, C.gold);
-          coinIcon.x = Math.round(chipX - coinLbl.width - Math.round(h * 0.01) - ci);
-          coinIcon.y = Math.round(coinsY - ci / 2);
-          this.container.addChild(coinIcon);
+          const coinIconX = Math.round(chipX - coinLbl.width - Math.round(h * 0.01) - ci);
+          const coinIconY = Math.round(coinsY - ci / 2);
           if (this.cb.onOpenRecharge) {
             const cpad = Math.round(h * 0.012);
             this.coinsChipRect = {
-              x: coinIcon.x - cpad, y: coinsY - ci / 2 - cpad,
-              w: (chipX - coinIcon.x) + cpad, h: ci + 2 * cpad,
+              x: coinIconX - cpad, y: coinIconY - cpad,
+              w: (chipX - coinIconX) + cpad, h: ci + 2 * cpad,
             };
+            // Standard chip frame (§ shared sketchPanel) behind the coin readout so it
+            // reads as a real button, not bare text floating on the dark title bar.
+            const coinBg = sketchPanel(this.coinsChipRect.w, this.coinsChipRect.h,
+              { fill: C.paper, border: C.gold, width: 1.6, seed: 73 });
+            coinBg.alpha = 0.32;
+            coinBg.x = this.coinsChipRect.x; coinBg.y = this.coinsChipRect.y;
+            this.container.addChild(coinBg);
           }
+          const coinIcon = buildCoinIcon('coin', ci, C.gold);
+          coinIcon.x = coinIconX; coinIcon.y = coinIconY;
+          this.container.addChild(coinIcon);
+          this.container.addChild(coinLbl);
         }
 
         const rankName = t(('rank.' + pvp.rank) as TranslationKey);
         const badge = pvp.rank === 'unranked' ? rankName : `${rankName} · ${pvp.elo}`;
         const badgeLabel = txt(badge, FS.label, C.light, true);
         badgeLabel.anchor.set(1, 0.5); badgeLabel.x = chipX; badgeLabel.y = rankY;
-        this.container.addChild(badgeLabel);
         if (this.cb.onOpenLeaderboard) {
           const rpad = Math.round(h * 0.012);
           this.rankChipRect = {
             x: badgeLabel.x - badgeLabel.width - rpad, y: badgeLabel.y - badgeLabel.height / 2 - rpad,
             w: badgeLabel.width + 2 * rpad, h: badgeLabel.height + 2 * rpad,
           };
+          const rankBg = sketchPanel(this.rankChipRect.w, this.rankChipRect.h,
+            { fill: C.paper, border: C.light, width: 1.6, seed: 74 });
+          rankBg.alpha = 0.32;
+          rankBg.x = this.rankChipRect.x; rankBg.y = this.rankChipRect.y;
+          this.container.addChild(rankBg);
         }
+        this.container.addChild(badgeLabel);
       }
 
       // ── Main content stack ─────────────────────────────────────────────────

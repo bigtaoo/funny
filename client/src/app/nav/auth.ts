@@ -136,6 +136,14 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
       const res = await call();
       platform.storage.setItem(TOKEN_KEY, res.token);
       applyGatewayUrl(res.gatewayUrl);
+      // applyGatewayUrl only recycles the NetSession when the gateway URL string itself
+      // changes; switching accounts on the same gateway leaves the old gateway WS open,
+      // still authenticated (via its handshake token) as the *previous* account — so
+      // rooms/ranked matches created after a login-switch would silently keep routing to
+      // the old account. Force a reset here so the next getNetSession() reconnects with
+      // this account's fresh token.
+      state.netSession?.close();
+      state.netSession = null;
       const resolvedName = res.displayName || name;
       if (resolvedName) platform.storage.setItem(PLAYER_NAME_KEY, resolvedName);
       if (res.publicId) platform.storage.setItem(PLAYER_PUBLIC_ID_KEY, res.publicId);
@@ -158,6 +166,10 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
     platform.storage.removeItem(PLAYER_NAME_KEY);
     platform.storage.removeItem(PLAYER_PUBLIC_ID_KEY);
     api?.setToken(null);
+    // Tear down any live gateway connection too — otherwise it keeps sitting there
+    // authenticated as the account we just logged out of (see doAuth's reset for why).
+    state.netSession?.close();
+    state.netSession = null;
     goLogin();
   }
 

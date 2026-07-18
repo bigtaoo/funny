@@ -1029,6 +1029,7 @@ export const en: Record<TranslationKey, string> = {
   'sect.vote': 'Vote Out',
   'sect.voteStatus': 'Removal vote: {name} ({cur}/{need})',
   'sect.send': 'Send',
+  'sect.sending': 'Sending…',
   'sect.msgPlaceholder': 'Type a message…',
   'sect.noMessages': 'No messages',
   'sect.noSects': 'No sects in this region yet',
