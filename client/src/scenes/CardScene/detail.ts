@@ -8,6 +8,7 @@ import { UNIT_ART_URLS } from '../../render/cardArt';
 import { buildIcon } from '../../render/icons';
 import { buildEquipIcon } from '../../render/equipmentAtlas';
 import { buildFactionIcon, FACTION_COLOR } from '../../render/factionIcon';
+import { RARITY_COLOR } from '../EquipmentScene/base';
 import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
 import { CARD_DEFS, xpToNextLevel, troopCap, cardPower } from '../../game/meta/cardDefs';
 import { skinsForUnitType } from '../../game/meta/skinDefs';
@@ -353,7 +354,7 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
         const x = mx + 12 + i * (cellW + 8);
         const instId = card.gear[slot];
         const inst = instId ? save.equipmentInv?.[instId] : undefined;
-        const cell = sketchPanel(cellW, cellH, { fill: 0xf0eeea, border: inst ? C.accent : C.mid, seed: seedFor(i, 8, cellW) });
+        const cell = sketchPanel(cellW, cellH, { fill: 0xf0eeea, border: inst ? RARITY_COLOR[inst.rarity] : C.mid, seed: seedFor(i, 8, cellW) });
         cell.x = x; cell.y = cy;
         root.addChild(cell);
 
