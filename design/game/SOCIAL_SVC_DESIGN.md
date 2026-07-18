@@ -162,7 +162,7 @@ interface FamilyJoinRequestDoc {
 | `GET` | `/social/family/requests` | 查我所在家族的待审批申请列表（leader/elder） |
 | `POST` | `/social/family/requests/:requestId/respond` | 同意/拒绝申请（`{accept: boolean}`；拒绝会给申请人发系统邮件） |
 | `POST` | `/social/family/:familyId/leave` | 退出家族 |
-| `POST` | `/social/family/:familyId/kick` | 踢出成员（leader/elder） |
+| `POST` | `/social/family/:familyId/kick` | 踢出成员（leader/elder）。客户端限制：长老（elder）不能被直接踢出，Kick 按钮置灰，点击提示需先卸任长老 |
 | `POST` | `/social/family/:familyId/role` | 更改成员角色（leader 降/升 elder） |
 | `POST` | `/social/family/:familyId/disband` | 解散（leader，需无成员或强制）|
 | `GET` | `/social/family/:familyId/messages` | 拉频道历史（分页） |

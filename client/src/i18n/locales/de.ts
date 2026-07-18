@@ -962,6 +962,7 @@ export const de: Record<TranslationKey, string> = {
   'family.setElder': 'Zum Ältesten befördern',
   'family.setMember': 'Zum Mitglied degradieren',
   'family.kick': 'Rauswerfen',
+  'family.kick.needDemoteFirst': 'Dieses Mitglied hat ein Amt inne — zuerst zurückstufen, dann rauswerfen',
   'family.channel': 'Familienkanal',
   'family.sendMsg': 'Nachricht senden',
   'family.msgPlaceholder': 'Nachricht eingeben…',

@@ -974,6 +974,7 @@ export const zh = {
   'family.setElder': '设为长老',
   'family.setMember': '降为成员',
   'family.kick': '踢出',
+  'family.kick.needDemoteFirst': '该成员担任官职，请先卸任再踢出',
   'family.channel': '家族频道',
   'family.sendMsg': '发送消息',
   'family.msgPlaceholder': '输入消息…',

@@ -962,6 +962,7 @@ export const en: Record<TranslationKey, string> = {
   'family.setElder': 'Promote to Elder',
   'family.setMember': 'Demote to Member',
   'family.kick': 'Kick',
+  'family.kick.needDemoteFirst': 'This member holds an office — demote them first before kicking',
   'family.channel': 'Family Channel',
   'family.sendMsg': 'Send Message',
   'family.msgPlaceholder': 'Type a message…',

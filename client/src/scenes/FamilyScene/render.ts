@@ -358,15 +358,24 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
         if (showActions) {
           const accId = mem.accountId;
 
-          const kl = txt(t('family.kick'), FS.bodyLg, C.red);
+          // Members holding an office (elder) can't be kicked directly — the button is greyed
+          // out and clicking it just explains that the office must be resigned first, rather
+          // than silently doing nothing or letting an elder be kicked with an armed officer role.
+          const hasOffice = mem.role === 'elder';
+          const kl = txt(t('family.kick'), FS.bodyLg, hasOffice ? MUTED : C.red);
           const kickW = Math.round(kl.width + padX * 2);
           const kx = right - kickW - 8;
-          const kickBtn = sketchPanel(kickW, btnH, { fill: 0xf0e0e0, border: C.red, seed: seedFor(cy, 0, kickW) });
+          const kickBtn = sketchPanel(kickW, btnH, { fill: hasOffice ? 0xeceae2 : 0xf0e0e0, border: hasOffice ? C.mid : C.red, seed: seedFor(cy, 0, kickW) });
           kickBtn.x = kx; kickBtn.y = btnY;
           this.bodyLayer.addChild(kickBtn);
           kl.anchor.set(0.5, 0.5); kl.x = kx + kickW / 2; kl.y = btnY + btnH / 2;
           this.bodyLayer.addChild(kl);
-          this.hitRects.push({ rect: { x: kx, y: btnY, w: kickW, h: btnH }, action: () => this.confirmKick(accId, mem.displayName ?? mem.publicId ?? '') });
+          this.hitRects.push({
+            rect: { x: kx, y: btnY, w: kickW, h: btnH },
+            action: () => hasOffice
+              ? this.showToast(t('family.kick.needDemoteFirst'), C.dark)
+              : this.confirmKick(accId, mem.displayName ?? mem.publicId ?? ''),
+          });
           nameRight = kx - btnGap;
 
           // Role toggle: members → elder, elders → member. (Leader role only changes via transfer/dissolve.)
