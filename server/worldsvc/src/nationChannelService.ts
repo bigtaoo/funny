@@ -50,9 +50,10 @@ export class NationChannelService {
   }
 
   /**
-   * Send a nation/world public-channel message. The player must already be settled in the world
-   * (playerWorld record must exist); the message is persisted then broadcast to all other online
-   * players in the world.
+   * Send a nation/world public-channel message. World chat is a social feature scoped to the
+   * player's shard, not an SLG-map feature — posting must not require a playerWorld record (i.e.
+   * having actually settled a base in that world); the message is persisted then broadcast to all
+   * other online players in the world.
    */
   async sendMessage(
     worldId: string,
@@ -62,8 +63,6 @@ export class NationChannelService {
   ): Promise<NationMessageView> {
     const { cols } = this.deps;
 
-    const pw = await cols.playerWorld.findOne({ _id: `${worldId}:${accountId}` });
-    if (!pw) throw new SlgError('NOT_IN_WORLD');
     if (!body || body.length > FAMILY_MSG_BODY_MAX) throw new SlgError('BAD_REQUEST');
 
     const ts = this.deps.now();
@@ -125,7 +124,8 @@ export class NationChannelService {
 
   /**
    * Fetch nation/world public-channel history (reverse-chronological pagination; before is an ms
-   * epoch cursor; limit ≤ 50). The player must already be settled in the world.
+   * epoch cursor; limit ≤ 50). Read access must not require a playerWorld record — a player who
+   * has never settled a base in this world's SLG map can still read/post its social chat.
    */
   async getChannel(
     worldId: string,
@@ -134,9 +134,6 @@ export class NationChannelService {
     limit = 30,
   ): Promise<NationMessageView[]> {
     const { cols } = this.deps;
-
-    const pw = await cols.playerWorld.findOne({ _id: `${worldId}:${accountId}` });
-    if (!pw) throw new SlgError('NOT_IN_WORLD');
 
     const realLimit = Math.min(Math.max(limit, 1), 50);
     const query: Record<string, unknown> = { worldId };

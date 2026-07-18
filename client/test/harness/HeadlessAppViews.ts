@@ -46,7 +46,6 @@ import { defaultPvpDeck } from '../../src/game/meta/pvpLoadout';
 import type { AchievementCallbacks } from '../../src/scenes/AchievementScene';
 import type { LeaderboardCallbacks } from '../../src/scenes/LeaderboardScene';
 import type { BattlePassCallbacks } from '../../src/scenes/BattlePassScene';
-import type { TeamsCallbacks } from '../../src/scenes/TeamsScene';
 import type { WorldMapView } from '../../src/scenes/WorldMapScene';
 import type { DailyCallbacks } from '../../src/scenes/DailyScene';
 import type { EventCallbacks } from '../../src/scenes/EventScene';
@@ -227,7 +226,6 @@ export class HeadlessAppViews implements AppViews {
   auction?: AuctionSceneCallbacks;
   showAuction(cb: AuctionSceneCallbacks): void { this.screen = 'auction'; this.auction = cb; }
   showDefenseEditor(_cb: DefenseEditorCallbacks): void { this.screen = 'defenseEditor'; }
-  showTeams(_cb: TeamsCallbacks): void { this.screen = 'teams'; }
 
   // Headless: the PvP deck builder gates ranked entry. Mirror a player who
   // confirms immediately — keep the current saved deck (or default) and save,

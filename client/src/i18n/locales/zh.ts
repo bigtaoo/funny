@@ -423,6 +423,10 @@ export const zh = {
   'gacha.fate.redeem': '兑换限定',
   'gacha.fate.redeemed': '已兑换 {item}',
   'gacha.fate.insufficient': '命运点不足',
+  // ── 背包已满溢出提示（角色卡150 / 装备300 上限）──
+  'gacha.invFull.mailed': '背包已满，{count} 件已通过邮件补偿，请前往邮箱领取',
+  'gacha.invFull.compensated': '背包已满，已额外获得 {coins} 金币补偿',
+  'gacha.invFull.mailedAndCompensated': '背包已满，{mailed} 件已通过邮件补偿，另有 {coins} 金币补偿',
 
   // ── Rarity tiers ──────────────────────────────────────────────────────────────
   'rarity.common': '普通',
@@ -531,8 +535,12 @@ export const zh = {
   'equip.equip': '穿戴',
   'equip.unequip': '卸下',
   'equip.salvage': '分解',
+  'equip.salvageAll': '全部分解',
   'equip.confirmSalvage': '分解 {name}？返还 {refund}',
+  'equip.confirmSalvageOne': '分解其中 1 件 {name}（共 {count} 件）？返还 {refund}',
+  'equip.confirmSalvageAll': '分解全部 {count} 件 {name}？返还 {refund}',
   'equip.salvaged': '已分解',
+  'equip.salvagedAll': '已分解 {count} 件',
   'equip.nothing': '无',
   'equip.ok': '确定',
   'equip.cancel': '取消',
@@ -705,7 +713,7 @@ export const zh = {
   'social.family.tagPlaceholder': '标签（2-5 位大写字母/数字）',
   'social.family.enter': '进入家族',
   'social.family.created': '家族创建成功',
-  'social.family.joined': '已加入家族',
+  'social.family.joinRequested': '申请已提交，请等待家族审批',
   'social.family.createFail': '创建失败，请重试',
   'social.family.joinFail': '加入失败，请重试',
   'social.family.confirm': '确认',
@@ -882,20 +890,14 @@ export const zh = {
   'world.defense.unitsNotHere': '单位只能放在驻军行',
   'world.defense.buildingsNotHere': '建筑只能放在建筑行',
   // ── Attack teams / formation editor (G3-2c) ───────────────────────────────
-  'world.teams': '队伍',
-  'world.team.title': '进攻队伍',
   'world.team.slot': '队伍 {n}',
   'world.team.empty': '（空）',
-  'world.team.tapToBuild': '点击编队',
   'world.team.committed': '兵力 {n}',
   'world.team.editTitle': '编辑 {name}',
   'world.team.frontRow': '出兵',
   'world.team.hint': '选卡牌点格布阵，一张卡只能上阵一次，擦除可移除',
-  'world.team.edit': '编辑',
   'world.team.pickTitle': '选择进攻队伍',
   'world.team.noTeams': '尚无队伍，先去编辑布阵',
-  'world.team.manage': '管理队伍',
-  'world.team.emptyArmy': '该队伍未布阵',
   'world.team.busy': '行军/占领中',
   'world.team.pickTitleOccupy': '选择占领队伍',
   'world.team.noTeamsOccupy': '尚无队伍，先去编辑布阵',
@@ -911,20 +913,6 @@ export const zh = {
   'world.replay.atk': '攻',
   'world.replay.def': '守',
   'world.replay.none': '无录像',
-  // ── Training queue / resource panel (C4) ─────────────────────────────────
-  'world.train': '练兵',
-  'world.trainTitle': '练兵 · 资源',
-  'world.trainNew': '招募新兵',
-  'world.trainBatch': '+{n}',
-  'world.trainMax': '满编',
-  'world.trainCost': '（耗墨 {ink}）',
-  'world.trainQueue': '训练队列',
-  'world.trainQueueEmpty': '暂无训练',
-  'world.trainEntry': '{n} 兵 · 剩 {time}',
-  'world.trainInQueue': '训练中 {n}',
-  'world.speedup': '加速 ({coins} 金币)',
-  'world.trained': '已入队训练',
-  'world.spedup': '已加速',
   'world.resYield': '产出',
   'world.close': '关闭',
   // ── Territory Overview panel (2026-07-16, SLG_DESIGN_LOG.md §26) ─────────────
@@ -935,7 +923,6 @@ export const zh = {
   'world.territoryJump': '跳转',
   'world.err.troopCap': '兵力已满',
   'world.err.noInk': '墨水不足',
-  'world.err.queueFull': '训练队列已满',
   // ── Nations / season / shop panel (C5) ───────────────────────────────────
   'world.info': '世界',
   'world.infoTitle': '世界信息',
@@ -1004,6 +991,16 @@ export const zh = {
   'family.prosperity': '繁荣度 {n}',
   'family.memberCount': '成员 {n}/{cap}',
   'family.vacancies': '还有 {n} 个空位',
+  'family.joinRequested': '申请已提交，请等待家族审批',
+  'family.err.alreadyRequested': '已提交过申请，请等待审批',
+  'family.pendingRequests': '待审批 ({n})',
+  'family.noPendingRequests': '暂无待审批申请',
+  'family.approve': '同意',
+  'family.reject': '拒绝',
+  'family.requestApproved': '已同意加入申请',
+  'family.requestRejected': '已拒绝加入申请',
+  'family.mail.rejected.subject': '加入申请被拒绝',
+  'family.mail.rejected.body': '你申请加入的家族「{familyName}」拒绝了你的申请。',
   // ── Sect / guild (S8-4b) ─────────────────────────────────────────────────
   'sect.title': '宗门',
   'sect.back': '← 返回',
@@ -1059,6 +1056,10 @@ export const zh = {
   'auction.mail.sold.body': '您拍得的物品在附件中，领取后将进入背包。',
   'auction.mail.returned.subject': '拍卖物品退回',
   'auction.mail.returned.body': '您的挂单流拍或已取消，物品在附件中，领取后退回背包。',
+  'card.mail.rosterFull.subject': '角色卡背包已满',
+  'card.mail.rosterFull.body': '英雄名录已满，本次抽到的角色卡在附件中，请先腾出背包空间再领取。',
+  'equipment.mail.invFull.subject': '装备背包已满',
+  'equipment.mail.invFull.body': '装备背包已满，本次抽到的装备在附件中，请先腾出背包空间再领取。',
   'auction.back': '← 返回',
   'auction.tabAll': '市场',
   'auction.tabMine': '我的拍卖',
@@ -1477,7 +1478,6 @@ export const zh = {
   'city.bld.academy': '书院',
   'city.bld.satchel': '书包',
   // world map entry button
-  'world.actEnterCity': '进入主城',
 
   // ── Hero Roster (CHARACTER_CARDS_DESIGN §10) ──────────────────────────────
   'roster.title': '卡背包',
@@ -1526,23 +1526,9 @@ export const zh = {
   'card.suyuan.name': '苏远',
   'card.suyuan.lore': '用回形针弯成的弓，在格线后方精准点射。',
 
-  // Teams scene (CC-4)
-  'world.team.fillTroops': '一键补满兵力',
-  'world.team.fillTroopsOk': '兵力已补满',
-  'world.team.fillTroopsErr': '补满失败',
-  'world.team.fillNoCards': '队伍里没有卡牌，请先编队再补兵',
-  'world.team.legacyRebuild': '⚠ 队伍已过期，点击重建',
-  'world.team.troopsStatus': '{cur}/{cap}',
-  'world.team.injured': '受伤',
-
   // Team management "取消指令" (2026-07-15): force a busy team back to idle
   'world.team.marching': '行军中',
   'world.team.occupying': '占领中 剩{time}',
-  'world.team.cancelOccupy': '放弃占领',
-  'world.team.cancelOccupyConfirm': '确认放弃?',
-  'world.team.cancelOccupyOk': '已放弃占领，队伍已空闲',
-  'world.team.cancelOccupyErr': '取消失败',
-  'world.team.recallErr': '撤军失败',
 };
 
 export type TranslationKey = keyof typeof zh;

@@ -226,7 +226,7 @@ export class AuctionSceneBase {
   /** Coin balance (top-right), drawn on top of the static header chrome; called every render() so a
    * buy/bid immediately reflects the new balance without rebuilding the whole header. */
   protected renderHeaderCurrency(): void {
-    this.headerOverlayLayer.removeChildren();
+    tearDownChildren(this.headerOverlayLayer);
     const coins = this.cb.getSave?.()?.wallet.coins ?? 0;
     drawHeaderCurrency(this.headerOverlayLayer, this.w, this.headerH, coins);
   }
@@ -488,7 +488,7 @@ export class AuctionSceneBase {
   protected showConfirmModal(msg: string, onOk: () => void): void {
     const { w, h } = this;
     const ml = this.modalLayer;
-    ml.removeChildren();
+    tearDownChildren(ml);
     this.modalHits = [];
     this.modalOpen = true;
 
@@ -527,7 +527,7 @@ export class AuctionSceneBase {
   }
 
   protected closeModal(): void {
-    this.modalLayer.removeChildren();
+    tearDownChildren(this.modalLayer);
     this.modalHits = [];
     this.modalOpen = false;
   }

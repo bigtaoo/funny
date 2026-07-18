@@ -186,7 +186,11 @@ export function createResultNav(ctx: AppCtx): ResultNav {
         });
         if (isRanked) {
           pending = { winner, stats, replay };
-          eloWaitTimer = setTimeout(() => finishNet(winner, stats, lastElo, replay), 6000);
+          // gameserver awaits meta's report() before sending match_over, and that internal
+          // call itself allows up to 10s (metaReport.ts AbortSignal.timeout(10_000)) — this
+          // fallback must exceed that worst case or the ELO line silently disappears on any
+          // report call that's merely slow, not actually failed.
+          eloWaitTimer = setTimeout(() => finishNet(winner, stats, lastElo, replay), 12000);
         } else {
           finishNet(winner, stats, undefined, replay);
         }

@@ -26,7 +26,7 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { CityScene, type CitySceneCallbacks } from '../../src/scenes/CityScene';
 import { sidebarNavW } from '../../src/ui/widgets/HubTabs';
-import { teamSlotId, teamSlotName, TEAM_CAP } from '../../src/scenes/TeamsScene';
+import { teamSlotId, teamSlotName, TEAM_CAP } from '../../src/game/meta/teamTroops';
 import { formatDuration } from '../../src/scenes/worldmap/formatDuration';
 import type { WorldApiClient, PlayerWorldView } from '../../src/net/WorldApiClient';
 

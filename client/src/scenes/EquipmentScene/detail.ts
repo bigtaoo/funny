@@ -3,7 +3,7 @@
 // it's the target of both the detail modal's buttons and the assign mixin's card picker.
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
-import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { withTimeout, TimeoutError } from '../../ui/busyTracker';
 import type { SaveData, EquipSlot, EquipmentInstance } from '../../game/meta/SaveData';
@@ -36,7 +36,7 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
 
       const { w, h } = this;
       const ml = this.modalLayer;
-      ml.removeChildren();
+      tearDownChildren(ml);
       this.modalHits = [];
       this.modalOpen = true;
 
@@ -45,6 +45,9 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       const slot = getEquipDef(inst.defId)?.slot;
       const maxed = inst.level >= EQUIP_MAX_LEVEL;
       const salvageable = inst.level <= SALVAGE_MAX_LEVEL && !equipped && !inst.locked;
+      // Stack size (>1 when this is a merged ×N cell in the grid) — drives whether a
+      // separate "salvage all" action is offered alongside the single-item one (see stackSiblingIds).
+      const stackIds = salvageable ? this.stackSiblingIds(save, inst) : [inst.id];
 
       // Natural (unscaled) content size — everything below is laid out in this local frame.
       const mw = Math.min(330, w - 24);
@@ -191,7 +194,10 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
         buttons.push({ label: t('equip.reforge'), fill: reforgeOn ? 0x3355aa : C.btnOff, stroke: reforgeOn ? 0x6688dd : C.mid, on: reforgeOn, fn: () => this.openReforgeSelect(inst) });
       }
       if (salvageable) {
-        buttons.push({ label: t('equip.salvage'), fill: 0xeeeeee, stroke: C.mid, on: !this.bt.busy, fn: () => this.confirmSalvage(inst) });
+        buttons.push({ label: t('equip.salvage'), fill: 0xeeeeee, stroke: C.mid, on: !this.bt.busy, fn: () => this.confirmSalvage(inst, stackIds.length) });
+        if (stackIds.length > 1) {
+          buttons.push({ label: t('equip.salvageAll'), fill: 0xeeeeee, stroke: C.mid, on: !this.bt.busy, fn: () => this.confirmSalvageAll(inst, stackIds) });
+        }
       }
       const n = buttons.length;
       const gap = 8;
@@ -241,10 +247,12 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       }
     }
 
-    private confirmSalvage(inst: EquipmentInstance): void {
+    /** stackCount is the total ×N the item is currently stacked as (1 when not part of a stack) — only used to pick the confirm wording that makes clear this salvages one out of several. */
+    private confirmSalvage(inst: EquipmentInstance, stackCount = 1): void {
       const refund = salvageRefund(inst.defId);
-      const msg = t('equip.confirmSalvage')
+      const msg = (stackCount > 1 ? t('equip.confirmSalvageOne') : t('equip.confirmSalvage'))
         .replace('{name}', this.itemName(inst.defId))
+        .replace('{count}', String(stackCount))
         .replace('{refund}', this.materialsStr(refund) || t('equip.nothing'));
       this.showConfirm(msg, () => void this.doSalvage(inst.id));
     }
@@ -255,6 +263,33 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       try {
         const res = await withTimeout(this.cb.salvage([instanceId]));
         if (res.ok) { this.showToast(t('equip.salvaged'), C.green); this.detailId = null; }
+        else this.showToast(t(res.key), C.red);
+      } catch (e) {
+        this.showToast(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'equip.err.generic'), C.red);
+      } finally {
+        this.bt.stop();
+        this.render();
+      }
+    }
+
+    /** Salvage every instance in the same ×N stack as `inst` in one batch call (see stackSiblingIds). */
+    private confirmSalvageAll(inst: EquipmentInstance, ids: string[]): void {
+      const perItem = salvageRefund(inst.defId);
+      const total: Record<string, number> = {};
+      for (const [mat, qty] of Object.entries(perItem)) total[mat] = qty * ids.length;
+      const msg = t('equip.confirmSalvageAll')
+        .replace('{name}', this.itemName(inst.defId))
+        .replace('{count}', String(ids.length))
+        .replace('{refund}', this.materialsStr(total) || t('equip.nothing'));
+      this.showConfirm(msg, () => void this.doSalvageAll(ids));
+    }
+
+    private async doSalvageAll(instanceIds: string[]): Promise<void> {
+      if (this.bt.busy) return;
+      this.bt.start();
+      try {
+        const res = await withTimeout(this.cb.salvage(instanceIds));
+        if (res.ok) { this.showToast(t('equip.salvagedAll').replace('{count}', String(instanceIds.length)), C.green); this.detailId = null; }
         else this.showToast(t(res.key), C.red);
       } catch (e) {
         this.showToast(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'equip.err.generic'), C.red);

@@ -405,3 +405,23 @@ client_log_debug: { default: false, desc: '客户端日志上报-debug', side: '
 **顺带修正上一条的结论**：`src/assets` 只有 48 个打包 PNG，stickman `.tao` 资产由 `StickmanRuntime._cache` 按 URL 缓存（每兵种一份，有界），两者都撑不起 `baseTex=716`——所以上一条"`baseTex` 几乎全是浏览过的美术"不准确，实际大头是**动态纹理**（远程/CDN 头像 URL、`blob:` spritesheet、或 `PIXI.Text` canvas）。具体归属仍等 `texTop`（该字段只在新构建 5b7f5c2 起才有，首批 `mem` 来自旧构建 5bca554 故缺失）。
 
 **已知未修缺口**：`cpu` 事件不带 `scene`（PerfMonitor 只发 fps/threshold/sustained），持续低帧无法归因到界面；若复发，把 `anrContext()` 的 scene 折进 cpu detail 即可。
+
+### 2026-07-18 · `texTop` 首次读数确认根因：裸 `removeChildren()` 泄漏 Text/Graphics 纹理（§9.7 mem）
+
+**新一批日志**（build `e2b159f`，`texTop` 首次真正生效）：`https://a.gamestao.com`（CDN 美术）只占 `n=23`，`baseTex` 却有 3200+，其余全是 `pixiid_N`（每条 `n=1`）——说明泄漏源不是 CDN 美术，而是大量**各自独立、无共享 cache key** 的纹理。同批 `anr` 里 `scene` 已可读（`EquipmentScene`/`CardScene`/`LobbyScene`，验证了 §9.7 上一条 keep_classnames 修复已生效上线），卡顿 25–54s。
+
+**根因**：`容器.removeChildren()` 只是从显示树摘除子节点，不会 `destroy()` 底层 GPU 纹理；`sketchUi.ts` 里 `txt()` 生成的 `PIXI.Text` 自己持有一份专属纹理，不摘除+销毁就一直挂着，直到 PIXI 内置 ~60s 纹理 GC 才回收——期间反复触发（每次点卡/装备格、每次开关弹窗、每帧滚动重绘）只会越攒越多，正好对应"停留在 Equipment/Card 越久堆越涨"的现象。项目早就有正确写法 `tearDownChildren()`（`sketchUi.ts:85`，Text 走 `destroy({texture:true, baseTexture:true})`，其余走 `destroy({children:true})`），只是没铺到这批模态层/徽标层代码。
+
+**修复**：把 18 个文件里裸 `removeChildren()` 全部换成 `tearDownChildren()`——`EquipmentScene`(base/detail/reforge)、`CardScene`(base/detail/feed/list)、`LobbyScene/badges.ts`、`SectScene`(base/modals)、`AuctionScene`(base/bid/createForm)、`FamilyScene`(base/actions)、`worldmap/WorldMapPanels.ts` + `WorldMapRenderer/lifecycle.ts`（toast 层）、`CardCodexScene.ts`。最大头是 `CardScene/feed.ts` 的携手成长弹窗——拖动滚动时**每帧**都重建一次列表标签，一次滚动手势能泄漏几十次。`worldmap/WorldMapRenderer/pool.ts` 的 `removeChildren()` 不用改（调用前已手动 `s.g.destroy()`）。`tsc --noEmit` clean，`test:ui` 638/638 通过。真机复测需等下一批 `mem`/`anr` 日志：`baseTex` 应显著回落，`pixiid_N` 单例条目应基本消失。
+
+**顺带假设**：25–54s 的 `anr` 卡顿本身还是独立未解问题，但不排除其中一部分其实是这个泄漏间接造成的——heap 涨到 GB 级后，JS 引擎的 major GC 本身就是同步阻塞主线程的，heap 越大单次 GC 停顿越久，理论上足以造成数十秒级的"卡死"而不需要真的有一行慢代码。泄漏修复后，如果这类超长 ANR 频率/时长明显下降，就基本坐实是 GC 停顿而非另一个独立 bug；如果还在，说明是真正的同步阻塞代码，需要靠下面的新埋点定位。
+
+### 2026-07-18（续）· 新增 `longFrame` + `crumbs` 归因埋点，为剩余 ANR 卡顿收集更细数据（§9.7 anr）
+
+**背景**：即使已知发生在哪个场景（`anr.scene`），watchdog 本身只是"墙钟时间漂移超过阈值"，无法区分卡顿是（a）该场景自己的 `update()`/`render()` 里跑了一段很慢的同步代码，还是（b）根本不在我们的 ticker 里——浏览器合成器停顿、GC 停顿、后台节流的边界情况。这个区分正是继续查 25–54s 卡顿的下一步所缺的信息，用户明确同意"日志里收集的信息你可以随便加"。
+
+**新增两类归因数据，都折进 `anr` 事件的 `detail`**：
+- **`longFrameMs` / `longFrameScene`**：`SceneManager.onTick`（`client/src/scenes/SceneManager.ts`）现在用 `performance.now()` 精确计时每一次 `scene.update()` 调用，只要单次调用 ≥200ms 就记录到 `net/anomaly.ts` 的 `recordFrameSample()`（新增导出）。`anr` 上报时如果 60s 内有过这样的慢帧，就带上其时长+场景名。**如果 `longFrameMs` 数值接近 `stallMs`，说明卡顿真的是某个场景一次 `update()` 调用卡住了（同步阻塞，可复现、可优化）；如果 `longFrameMs` 缺席或远小于 `stallMs`，说明阻塞发生在我们自己的渲染代码之外**（大概率是 GC 停顿或系统级）。
+- **`crumbs`**：`anr` 上报现在也带上最近 12 条 `recentClientLogs()` 环形缓冲（此前只有 crash/exit-flush 才带），格式同 `[level:tag] msg`——多数是 `crumb:info:api`/`crumb:info:gateway` 这类网络层事件，卡顿前最后一次网络活动是什么，有时候本身就是线索（例如卡顿前一刻正在等一个从未返回的请求）。
+
+`tsc --noEmit` clean；`test/anomaly-chain.test.ts` 12/12、`client/test/ui/scenes.ui.ts` 83/83 不受影响（未改动其结构，纯加法）。**下一步**：等下一批线上 `anr` 日志，看 `longFrameMs` 是否出现、是否接近 `stallMs`——这会直接决定卡顿是"某个场景的慢同步代码"还是"GC/系统级停顿"，两条路径的修法完全不同。

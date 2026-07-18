@@ -33,8 +33,6 @@ export interface WorldMapCallbacks {
    * main city or the full tileId `{worldId}:{x}:{y}` for an owned territory.
    */
   onOpenDefense(tileKey: string): void;
-  /** Open the attack-team manager (G3-2c) — 5 formation templates used when sieging. */
-  onOpenTeams(): void;
   worldApi: WorldApiClient;
   worldId: string;
   playerName: string;
@@ -128,8 +126,6 @@ export class WorldMapContext {
   myAttackTiles: Set<string> = new Set();
   toastTimer = 0;
   destroyed = false;
-  trainPanelOpen = false;
-  panelRepaint = 0;
   marchPoll: ReturnType<typeof setInterval> | null = null;
   readonly unsubs: (() => void)[] = [];
   /** Marches badge (top-right stack) toggles between collapsed count and the full expanded list (§25). */

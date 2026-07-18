@@ -60,7 +60,6 @@ function buildHarness(opts: {
     view: { renderMap: vi.fn() },
     cb: {
       worldId: WORLD_ID,
-      onOpenTeams: vi.fn(),
       worldApi: { getTeams, startMarch, getMarches, getMe },
     },
     panels: { showModal, showToast, closeModal, showDeployDialog, renderHud },
@@ -78,7 +77,6 @@ describe('WorldMapNet.showTeamPicker — occupy uses the team picker (§4.2)', (
     const buttons = showModal.mock.calls[0][1] as { label: string; action: () => void }[];
     const labels = buttons.map((b) => b.label);
     expect(labels.some((l) => l.startsWith('Alpha'))).toBe(true);
-    expect(labels).not.toContain(t('world.team.manage'));
     expect(labels).toContain('✕');
     // No occupy path opens the flat pool-troop deploy dialog any more.
     for (const b of buttons) b.action();

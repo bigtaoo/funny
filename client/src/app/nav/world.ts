@@ -9,7 +9,7 @@ import { TOKEN_KEY } from '../appConstants';
 
 type WorldNav = Pick<Nav,
   'goWorldEntry' | 'goAuctionFromLobby' | 'goWorldMap' | 'goSiegeReplay' | 'goDefenseEditor' |
-  'goTeams' | 'goTeamEditor' | 'goCity' | 'goFamilyHub' | 'goSectHub' | 'goAuctionHouse'>;
+  'goCity' | 'goFamilyHub' | 'goSectHub' | 'goAuctionHouse'>;
 
 export function createWorldNav(ctx: AppCtx): WorldNav {
   const { saveManager, platform, state, views, nav, getNetSession, playerName, resolveWorldShard } = ctx;
@@ -53,7 +53,6 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       onOpenAuction() { goAuctionHouse(worldApi, worldId); },
       onReplaySiege(siegeId) { void goSiegeReplay(worldApi, worldId, siegeId); },
       onOpenDefense(tileKey) { goDefenseEditor(worldApi, worldId, tileKey); },
-      onOpenTeams() { goTeams(worldApi, worldId); },
       onOpenCity() { goCity(worldApi, worldId); },
       worldApi,
       worldId,
@@ -126,30 +125,6 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       worldApi,
       worldId,
       target: { mode: 'defense', tileKey },
-    });
-  }
-
-  /** Open the attack-team list (G3-2c); back → map, edit → team formation editor. */
-  function goTeams(worldApi: WorldApiClient, worldId: string): void {
-    state.inLobby = false;
-    views.showTeams({
-      onBack() { goWorldMap(worldApi, worldId); },
-      onEditTeam(teamId, teamName) { goTeamEditor(worldApi, worldId, teamId, teamName); },
-      getSave: () => saveManager.get(),
-      worldApi,
-      worldId,
-    });
-  }
-
-  /** Open the formation editor for one attack-team slot; back → team list. */
-  function goTeamEditor(worldApi: WorldApiClient, worldId: string, teamId: string, teamName: string): void {
-    state.inLobby = false;
-    views.showDefenseEditor({
-      onBack() { goTeams(worldApi, worldId); },
-      getSave: () => saveManager.get(),
-      worldApi,
-      worldId,
-      target: { mode: 'attack', teamId, teamName },
     });
   }
 
@@ -240,6 +215,6 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
 
   return {
     goWorldEntry, goAuctionFromLobby, goWorldMap, goSiegeReplay, goDefenseEditor,
-    goTeams, goTeamEditor, goCity, goFamilyHub, goSectHub, goAuctionHouse,
+    goCity, goFamilyHub, goSectHub, goAuctionHouse,
   };
 }

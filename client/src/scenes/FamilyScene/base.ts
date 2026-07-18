@@ -20,7 +20,7 @@ import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { FAMILY_CAP } from '@nw/shared';
-import type { WorldApiClient, FamilyDetailView, FamilyMemberView, FamilyMessageView } from '../../net/WorldApiClient';
+import type { WorldApiClient, FamilyDetailView, FamilyMemberView, FamilyMessageView, FamilyJoinRequestView } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
 import { drawSocialTabRail, type SocialTab } from '../../render/socialTabRail';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
@@ -61,6 +61,8 @@ export class FamilySceneBase {
   protected family: FamilyDetailView | null = null;
   protected members: FamilyMemberView[] = [];
   protected messages: FamilyMessageView[] = [];
+  /** Pending join requests for my family — populated only when I'm a leader/elder (see isFamilyApprover). */
+  protected joinRequests: FamilyJoinRequestView[] = [];
 
   protected bodyLayer!: PIXI.Container;
   protected modalLayer!: PIXI.Container;
@@ -158,6 +160,12 @@ export class FamilySceneBase {
 
   protected get isFamilyLeader(): boolean {
     return this.family?.members?.find((m) => m.accountId === this.cb.myAccountId)?.role === 'leader';
+  }
+
+  /** Leader or elder — the two roles allowed to review join requests (matches familyService's server-side gate). */
+  protected get isFamilyApprover(): boolean {
+    const role = this.family?.members?.find((m) => m.accountId === this.cb.myAccountId)?.role;
+    return role === 'leader' || role === 'elder';
   }
 
   private build(): void {
@@ -291,7 +299,7 @@ export class FamilySceneBase {
   protected showConfirm(msg: string, onOk: () => void): void {
     const { w, h } = this;
     const ml = this.modalLayer;
-    ml.removeChildren();
+    tearDownChildren(ml);
     this.modalHits = [];
     this.modalOpen = true;
 
@@ -330,7 +338,7 @@ export class FamilySceneBase {
   }
 
   protected closeModal(): void {
-    this.modalLayer.removeChildren();
+    tearDownChildren(this.modalLayer);
     this.modalHits = [];
     this.modalOpen = false;
   }
@@ -350,6 +358,7 @@ export class FamilySceneBase {
         NO_PERMISSION:     t('family.err.noPermission'),
         INVALID_TAG:       t('family.err.badTag'),
         NOT_FOUND:         t('family.err.notFound'),
+        ALREADY_REQUESTED: t('family.err.alreadyRequested'),
       };
       return map[e.code] ?? e.message;
     }
@@ -425,6 +434,7 @@ export interface FamilySceneBase {
   loadData(): Promise<void>;
   loadMyFamily(familyId: string): Promise<void>;
   loadChannel(): Promise<void>;
+  loadJoinRequests(): Promise<void>;
   // render
   renderLoading(): void;
   renderNoFamily(): void;
@@ -442,4 +452,5 @@ export interface FamilySceneBase {
   confirmKick(targetId: string, name: string): void;
   confirmDissolve(): void;
   confirmLeave(): void;
+  openJoinRequests(): void;
 }

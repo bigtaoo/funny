@@ -104,7 +104,7 @@ export function BadgesMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBas
     drawSocialBadge(): void {
       const layer = this.socialBadgeLayer;
       if (!layer) return;
-      layer.removeChildren();
+      tearDownChildren(layer);
       if (this.socialBadge <= 0) return;
 
       const s = this.socialNavRect;
@@ -132,7 +132,7 @@ export function BadgesMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBas
     drawAchievementBadge(): void {
       const layer = this.achievementBadgeLayer;
       if (!layer) return;
-      layer.removeChildren();
+      tearDownChildren(layer);
       if (!this.achievementBadge) return;
 
       const s = this.statsNavRect;
@@ -154,7 +154,7 @@ export function BadgesMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBas
     drawShopBadge(): void {
       const layer = this.shopBadgeLayer;
       if (!layer) return;
-      layer.removeChildren();
+      tearDownChildren(layer);
       if (!this.shopBadge) return;
 
       const s = this.shopNavRect;
@@ -188,7 +188,7 @@ export function BadgesMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBas
     drawWorldOfflineBadge(): void {
       const layer = this.worldOfflineBadgeLayer;
       if (!layer) return;
-      layer.removeChildren();
+      tearDownChildren(layer);
       if (this.worldOnline !== false) return;       // null (not yet checked) or true → nothing to show
       const p = this.worldPillarRect;
       if (p.w <= 0) return;                          // world pillar not present (offline mode)
@@ -212,7 +212,7 @@ export function BadgesMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBas
     drawSideStripBadges(): void {
       const layer = this.sideStripBadgeLayer;
       if (!layer) return;
-      layer.removeChildren();
+      tearDownChildren(layer);
 
       const r = Math.round(this.h * 0.012);
       const drawDot = (rect: Rect): void => {

@@ -177,15 +177,24 @@ export function AssignMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       const pwrLbl = txt(`${t('roster.power')} ${power}`, FS.small, C.dark);
       pwrLbl.x = ax; pwrLbl.y = ay; this.bodyLayer.addChild(pwrLbl);
 
-      // ── Bottom: slot-occupant hint (Slot free / Now: <item>) ──
+      // ── Bottom: slot-occupant hint (Slot free / Now: <item>), with the current item's icon ──
       const curId = card.gear[slot];
       const cur = curId ? save.equipmentInv[curId] : undefined;
+      const hintY = y + PICK_CELL_H - pad - 20;
+      let hintX = ax;
+      let hintW = rightW;
+      if (cur) {
+        const iconSize = 22;
+        this.addGlyph(slot, cur.rarity, ax + iconSize / 2, hintY + FS.tiny / 2, iconSize, seedFor(x, y, cellW), 1, cur.defId);
+        hintX = ax + iconSize + 6;
+        hintW = rightW - iconSize - 6;
+      }
       const hint = txt(
         cur ? t('equip.assignCurrent').replace('{name}', this.itemLabel(cur.defId, cur.level)) : t('equip.assignSlotFree'),
         FS.tiny, cur ? C.gold : C.mid,
       );
-      hint.x = ax; hint.y = y + PICK_CELL_H - pad - 20;
-      hint.style.wordWrap = true; hint.style.wordWrapWidth = rightW;
+      hint.x = hintX; hint.y = hintY;
+      hint.style.wordWrap = true; hint.style.wordWrapWidth = hintW;
       this.bodyLayer.addChild(hint);
 
       const cardId = card.id;

@@ -81,7 +81,6 @@ function buildHarness(opts: { infoTab?: 'nations' | 'season' | 'shop'; nations?:
     season: null,
     shopItems: opts.shopItems ?? [],
     selectedTile: null,
-    trainPanelOpen: false,
     cb: { accountId: 'me', getCoins: () => 999 },
     view: { renderMap: () => {} },
   } as unknown as WorldMapContext;

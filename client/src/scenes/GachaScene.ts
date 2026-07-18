@@ -5,7 +5,7 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import type { Rarity } from '../game/meta/SaveData';
-import type { GachaPool, GachaResultEntry } from '../net/ApiClient';
+import type { GachaOverflow, GachaPool, GachaResultEntry } from '../net/ApiClient';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
 import { showToastMessage } from '../net/log';
 import { buildDecorCLayer } from '../render/decorCLayer';
@@ -50,7 +50,7 @@ const RARITY_STARS: Record<Rarity, number> = {
 };
 
 export type GachaDrawResult =
-  | { ok: true; results: GachaResultEntry[] }
+  | { ok: true; results: GachaResultEntry[]; overflow: GachaOverflow }
   | { ok: false; key: TranslationKey };
 
 export type FateRedeemResult =
@@ -106,6 +106,8 @@ export class GachaScene implements Scene {
   private readonly artHooked = new Set<string>();
   /** Reveal overlay: non-null while showing the latest draw's results. */
   private reveal: GachaResultEntry[] | null = null;
+  /** Roster/inventory-full overflow from the draw currently shown in `reveal`; toasted once the player dismisses the reveal. */
+  private revealOverflow: GachaOverflow | null = null;
   /** Odds-detail overlay open (L1-3, Apple 3.1.1): lists per-item probability + pity rule. */
   private oddsOpen = false;
   /** Odds-grid scroll state — the grid shows every pool entry (no rarity grouping/paging), so it can
@@ -184,8 +186,12 @@ export class GachaScene implements Scene {
     this.render();
     try {
       const res = await withTimeout(this.cb.draw(this.pool.id, count));
-      if (res.ok) this.reveal = res.results;
-      else showToastMessage(t(res.key), 'error');
+      if (res.ok) {
+        this.reveal = res.results;
+        this.revealOverflow = res.overflow;
+      } else {
+        showToastMessage(t(res.key), 'error');
+      }
     } catch (e) {
       showToastMessage(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'gacha.error'), 'error');
     } finally {
@@ -196,7 +202,19 @@ export class GachaScene implements Scene {
 
   private dismissReveal(): void {
     this.reveal = null;
+    const overflow = this.revealOverflow;
+    this.revealOverflow = null;
     this.render();
+    if (!overflow) return;
+    const mailed = overflow.cardMailed + overflow.equipMailed;
+    const compensated = overflow.cardCompensatedCoins + overflow.equipCompensatedCoins;
+    if (mailed > 0 && compensated > 0) {
+      showToastMessage(t('gacha.invFull.mailedAndCompensated', { mailed, coins: compensated }), 'success');
+    } else if (mailed > 0) {
+      showToastMessage(t('gacha.invFull.mailed', { count: mailed }), 'success');
+    } else if (compensated > 0) {
+      showToastMessage(t('gacha.invFull.compensated', { coins: compensated }), 'success');
+    }
   }
 
   // ── Input ─────────────────────────────────────────────────────────────────

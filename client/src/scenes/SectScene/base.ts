@@ -206,7 +206,7 @@ export class SectSceneBase {
   // ── Modals ──────────────────────────────────────────────────────────────────
 
   protected closeModal(): void {
-    this.modalLayer.removeChildren();
+    tearDownChildren(this.modalLayer);
     this.modalHits = [];
     this.modalOpen = false;
   }

@@ -91,6 +91,19 @@ export interface FamilyMemberDoc {
 }
 // index: { familyId: 1 }
 
+/** A join request awaiting leader/elder approval (replaces the old direct-join flow). */
+export interface FamilyJoinRequestDoc {
+  /** uuid */
+  _id: string;
+  familyId: string;
+  accountId: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  createdAt: number;
+  resolvedAt?: number;
+}
+// index: { familyId: 1, status: 1 }
+// index: { accountId: 1, status: 1 }
+
 /**
  * Family channel message. ts must be a BSON Date (MongoDB TTL only applies to Date fields).
  */
@@ -124,6 +137,7 @@ export interface SocialCollections {
   families: Collection<FamilyDoc>;
   familyMembers: Collection<FamilyMemberDoc>;
   familyMessages: Collection<FamilyMessageDoc>;
+  familyJoinRequests: Collection<FamilyJoinRequestDoc>;
   // P2
   friendEdges: Collection<FriendEdgeDoc>;
   friendRequests: Collection<FriendRequestDoc>;
@@ -147,6 +161,7 @@ export async function createSocialMongo(uri: string, dbName: string): Promise<So
   const families = db.collection<FamilyDoc>('families');
   const familyMembers = db.collection<FamilyMemberDoc>('familyMembers');
   const familyMessages = db.collection<FamilyMessageDoc>('familyMessages');
+  const familyJoinRequests = db.collection<FamilyJoinRequestDoc>('familyJoinRequests');
   const friendEdges = db.collection<FriendEdgeDoc>('friendEdges');
   const friendRequests = db.collection<FriendRequestDoc>('friendRequests');
   const blockList = db.collection<BlockDoc>('blockList');
@@ -155,7 +170,7 @@ export async function createSocialMongo(uri: string, dbName: string): Promise<So
   const mails = db.collection<MailDoc>('mails');
 
   const collections: SocialCollections = {
-    families, familyMembers, familyMessages,
+    families, familyMembers, familyMessages, familyJoinRequests,
     friendEdges, friendRequests, blockList, conversations, chatMessages, mails,
   };
 
@@ -170,6 +185,10 @@ export async function createSocialMongo(uri: string, dbName: string): Promise<So
     // familyMessages: auto-expired via TTL
     await familyMessages.createIndex({ familyId: 1, ts: -1 });
     await familyMessages.createIndex({ ts: 1 }, { expireAfterSeconds: FAMILY_MSG_RETENTION_SEC });
+
+    // familyJoinRequests
+    await familyJoinRequests.createIndex({ familyId: 1, status: 1 });
+    await familyJoinRequests.createIndex({ accountId: 1, status: 1 });
 
     // friendEdges
     await friendEdges.createIndex({ owner: 1 });

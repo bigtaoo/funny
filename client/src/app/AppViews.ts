@@ -49,7 +49,6 @@ import type { FamilySceneCallbacks } from '../scenes/FamilyScene';
 import type { SectSceneCallbacks, SectSceneView } from '../scenes/SectScene';
 import type { AuctionSceneCallbacks } from '../scenes/AuctionScene';
 import type { DefenseEditorCallbacks } from '../scenes/DefenseEditorScene';
-import type { TeamsCallbacks } from '../scenes/TeamsScene';
 import type { TitlesSceneCallbacks } from '../scenes/TitlesScene';
 import type { DailyCallbacks } from '../scenes/DailyScene';
 import type { EventCallbacks } from '../scenes/EventScene';
@@ -216,7 +215,6 @@ export interface AppViews {
   showAuction(cb: AuctionSceneCallbacks): void;
   /** SLG simplified defense placement editor (S8-9 C3). */
   showDefenseEditor(cb: DefenseEditorCallbacks): void;
-  showTeams(cb: TeamsCallbacks): void;
   /** PvP deck builder (P3, PVP_LOADOUT §8). */
   showDeckBuilder(cb: DeckBuilderCallbacks): void;
   /** SLG home-city management (SLG_CITY_DESIGN P1). */

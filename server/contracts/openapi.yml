@@ -255,6 +255,12 @@ components:
           additionalProperties:
             $ref: '#/components/schemas/CardInstance'
           description: Card instance inventory (instanceId→CardInstance); max 150 entries
+        cardMailOverflowCount:
+          type: integer
+          minimum: 0
+        equipMailOverflowCount:
+          type: integer
+          minimum: 0
         equipped:
           type: object
           additionalProperties:
@@ -2246,6 +2252,7 @@ paths:
                     required:
                       - save
                       - results
+                      - overflow
                     properties:
                       save:
                         $ref: '#/components/schemas/SaveData'
@@ -2253,6 +2260,27 @@ paths:
                         type: array
                         items:
                           $ref: '#/components/schemas/GachaResult'
+                      overflow:
+                        type: object
+                        required:
+                          - cardMailed
+                          - cardCompensatedCoins
+                          - equipMailed
+                          - equipCompensatedCoins
+                        description: 'Roster/inventory-full overflow summary for this draw (CHARACTER_CARDS_DESIGN §4 / EQUIPMENT_DESIGN §3.3): the first 10 overflow items per type since that inventory last had free space are mailed as real instances; the rest are coin-compensated. All-zero when nothing overflowed.'
+                        properties:
+                          cardMailed:
+                            type: integer
+                            minimum: 0
+                          cardCompensatedCoins:
+                            type: integer
+                            minimum: 0
+                          equipMailed:
+                            type: integer
+                            minimum: 0
+                          equipCompensatedCoins:
+                            type: integer
+                            minimum: 0
         '402':
           $ref: '#/components/responses/ErrorResp'
         '404':

@@ -7,14 +7,26 @@
 // applies to them, so they can never actually march (they fail the flat-pool gate in
 // combatMarch.ts). We therefore treat a legacy entry as carrying ZERO troops everywhere in the UI:
 // a legacy team reads "0 committed", is filtered out of the occupy/attack picker, and is flagged
-// for rebuild in TeamsScene — instead of misleadingly showing its old initialHp sum as if usable.
+// for rebuild — instead of misleadingly showing its old initialHp sum as if usable.
 //
-// Three scenes (TeamsScene, CityScene, WorldMapNet) previously each summed initialHp for legacy
+// Several scenes (CityScene, WorldMapNet) previously each summed initialHp for legacy
 // entries and drifted apart; they now all route through carriedTroops() here.
 
 import type { TeamTemplate, CardSLGState } from '../../net/WorldApiClient';
+import { t } from '../../i18n';
 
 type Army = TeamTemplate['army'];
+
+/** Team slot cap (UI constant; the server's SIEGE_TEAM_CAP is authoritative). */
+export const TEAM_CAP = 5;
+
+/** Fixed slot id/name (v1 does not support custom naming). */
+export function teamSlotId(i: number): string {
+  return `t${i + 1}`;
+}
+export function teamSlotName(i: number): string {
+  return t('world.team.slot').replace('{n}', String(i + 1));
+}
 
 /**
  * A team is "legacy" when it has units but at least one carries no cardInstanceId — i.e. it was

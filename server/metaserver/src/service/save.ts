@@ -64,7 +64,7 @@ export function SaveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
       // Also reconcile + refresh wallet mirror (when commercial is available): re-deliver orders left from crashes + pull authoritative balance/pity into the mirror.
       if (commercial.available) {
         try {
-          await reconcileUndelivered(cols, commercial, accountId, now());
+          await reconcileUndelivered(cols, commercial, this.deps.socialsvc ?? nullMetaSocialsvcClient, accountId, now());
           const w = await commercial.getWallet(accountId);
           if (w) await mirrorWalletFrom(cols, accountId, w, now());
         } catch (e) {

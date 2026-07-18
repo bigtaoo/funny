@@ -10,6 +10,11 @@ import type { AddressInfo } from 'net';
 import { signToken, proceduralTile, playerWorldId, SLG_MAP_W, SLG_MAP_H } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
 import { WorldService } from '../src/service';
+import { SectService } from '../src/sectService';
+import { NationChannelService } from '../src/nationChannelService';
+import { MapTemplateService } from '../src/mapTemplateService';
+import { nullWorldGatewayClient } from '../src/gatewayClient';
+import { nullWorldSocialsvcClient } from '../src/socialsvcClient';
 import { startHttpApi } from '../src/httpApi';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
@@ -81,7 +86,22 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
       mapH: SLG_MAP_H,
       now: () => t,
     });
-    server = startHttpApi({ host: '127.0.0.1', port: 0, jwtSecret: SECRET }, svc);
+    const sectSvc = new SectService({ cols: m.collections, now: () => t });
+    const nationChannelSvc = new NationChannelService({
+      cols: m.collections,
+      gateway: nullWorldGatewayClient as unknown as ConstructorParameters<typeof NationChannelService>[0]['gateway'],
+      commercial: { available: true, async spend() { /* no-op: free in this suite */ }, async grant() { /* no-op */ } },
+      now: () => t,
+    });
+    const mapTemplateSvc = new MapTemplateService({ cols: m.collections, now: () => t });
+    server = startHttpApi(
+      { host: '127.0.0.1', port: 0, jwtSecret: SECRET, internalKey: 'test-internal-key' },
+      svc,
+      sectSvc,
+      nationChannelSvc,
+      nullWorldSocialsvcClient,
+      mapTemplateSvc,
+    );
     await new Promise<void>((res) => server.on('listening', res));
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
@@ -289,5 +309,43 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
       body: JSON.stringify({ worldId: W, troops: 500 }),
     });
     expect(sweep.status).toBe(400);
+  });
+
+  // Regression (2026-07-18, account tao1): GET /nation/channel returned a real HTTP 403 for an
+  // account that had never settled a base in this world (no playerWorld record) — world chat is
+  // a shard-scoped social channel, not gated on SLG-map settlement (see nation-channel.e2e.test.ts
+  // for the service-level coverage of the same fix).
+  describe('nation/world public channel (§6.4): no playerWorld record required', () => {
+    const freshToken = signToken('acct-never-joined', { secret: SECRET });
+    const freshAuth = { authorization: `Bearer ${freshToken}` };
+
+    it('GET /nation/channel: 200 (not 403) for an account with no playerWorld record', async () => {
+      const r = await fetch(`${base}/nation/channel?worldId=${W}`, { headers: freshAuth });
+      expect(r.status).toBe(200);
+      const body = await r.json();
+      expect(body.ok).toBe(true);
+      expect(Array.isArray(body.data)).toBe(true);
+    });
+
+    it('POST /nation/message: 200 (not 403) for an account with no playerWorld record', async () => {
+      const r = await fetch(`${base}/nation/message`, {
+        method: 'POST',
+        headers: { ...freshAuth, 'content-type': 'application/json' },
+        body: JSON.stringify({ worldId: W, body: 'hi, never joined the SLG map' }),
+      });
+      expect(r.status).toBe(200);
+      const body = await r.json();
+      expect(body.ok).toBe(true);
+      expect(body.data.body).toBe('hi, never joined the SLG map');
+
+      const history = await fetch(`${base}/nation/channel?worldId=${W}`, { headers: freshAuth });
+      const historyBody = await history.json();
+      expect(historyBody.data.some((msg: { body: string }) => msg.body === 'hi, never joined the SLG map')).toBe(true);
+    });
+
+    it('GET /nation/channel missing worldId → 400', async () => {
+      const r = await fetch(`${base}/nation/channel`, { headers: freshAuth });
+      expect(r.status).toBe(400);
+    });
   });
 });

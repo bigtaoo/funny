@@ -467,3 +467,25 @@
   - 下游消费者（`gen-openapi-server.mjs`→`routes.gen.ts`、`client/scripts/gen-openapi.mjs`→`client/src/net/openapi.ts`、`openapi-request-schema.test.ts`/`openapi-response-schema.test.ts`）均只读 `openapi.yml` 文件路径，**未改动**，已验证 tsc/vitest/client typecheck 全绿。
   - CI：`.github/workflows/ci.yml` 新增 "server codegen check (metaserver openapi bundle)" 步骤（`npm run gen:api:contracts:check`），跑在既有 routes.gen.ts staleness check 之前。
   - 范围明确不含 `openapi-world.yml`（worldsvc）/`openapi-auction.yml`（auctionsvc）——规模本身不是痛点，未来若需要可复用同一套 `bundle-openapi.mjs` 模式。
+
+## ADR-041 主城点击直达 Desk（去掉城池菜单弹窗）+ 清理主城「手动防守配置」残留 — Accepted — 2026-07-18
+
+- **决策**（用户拍板）：世界地图上点击自己的主城 3×3 九格，**不再弹出菜单**（原「Enter Desk / Train / Defense / Manage team / ✕」五按钮弹窗），直接调用 `onOpenCity()` 进入 Desk（CityScene）。Train 与队伍管理本就已在 CityScene 内有完整入口（drillYard 训练详情弹窗、D-CITY-10 队伍卡片网格 → `onEditTeam`），不再需要地图层的重复菜单。
+- **主城没有「防守配置」概念**：ADR-026（2026-07-02）早已把主城攻防重构为「逐队守军波次」——**在城内、未受伤的队伍自动为守军；出征在外的队伍不参与防守**（`applyBaseSiege` 判据：`MarchDoc.teamId` 是否有活跃行军）。本条只是**移除与该已实现机制矛盾的遗留 UI/API**：地图菜单里指向主城的「Defense」按钮 → `DefenseEditorScene`（`mode:'defense', tileKey:'base'`）→ `setDefense/getDefense` 写读 `PlayerWorldDoc.defense`，这条路径是 ADR-026 之前（S8-4）的手动编队防守遗留，`buildDefenderConfig` 从未对 `target.type==='base'` 调用过（`applySiege` 在 `target.type==='base'` 分支直接转 `applyBaseSiege`，绕开了 `buildDefenderConfig`/`tile.defense`），即 `PlayerWorldDoc.defense` 字段自 ADR-026 起就是纯死数据，从未被任何攻城结算读取。
+- **领地/据点的手动防守配置不受影响**：非主城的己方领地格（`tileKey='{x}:{y}'`）仍走 `TileDoc.defense` → `buildDefenderConfig` 的既有编队路径（S8-4/G3-2c），本条不改动。
+- **影响**：
+  - 客户端 `WorldMapInput.ts`：主城分支从五按钮 `showModal` 改为直接 `onOpenCity()`；连带移除只被这个弹窗使用的 i18n key（`world.actEnterCity`/`world.train`/`world.team.manage`，3 语言）与回归测试 `worldMapBaseClick.ui.ts` 的断言更新。
+  - `onOpenDefense('base')`/`onOpenTeams()`（地图层「打开队伍列表 TeamsScene」入口）、`WorldMapPanels.openTrainPanel()`（地图层训练面板）自此弹窗移除后**已无任何调用方**——确认为死代码，但体量较大（TeamsScene 整个场景 + 训练面板渲染 ~150 行 + 多处 `trainPanelOpen` 状态联动），本次不一并删除，留作后续单独清理（已用 spawn_task 标记）。
+  - `server/worldsvc` 的 `PlayerWorldDoc.defense`（`tileKey='base'` 的 `setDefense`/`getDefense` 分支）**保留未删**——虽已确认是死代码，但涉及改 `openapi-world.yml` 契约（`tileKey` 参数默认值/说明）+ 两端 codegen 重新生成，风险/收益比不划算，本次不动；后续若清理前端 TeamsScene/训练面板时可一并处理。
+  - **2026-07-18 后续清理（已完成）**：上面标记的死代码已按后续任务清理完毕——删除 `TeamsScene.ts` 整个场景及其接线（`goTeams`/`onOpenTeams`/`showTeams`/`goTeamEditor`，后者随 `goTeams` 一起变为死代码故一并删除；`WorldMapContext.onOpenTeams`）；删除 `WorldMapPanels.openTrainPanel`/`renderTrainPanel`/`ctx.trainPanelOpen`/`ctx.panelRepaint`，以及仅服务于训练面板、随之变为死代码的 `WorldMapNet.doTrain`/`doSpeedup`；`teamSlotId`/`teamSlotName`/`TEAM_CAP`（CityScene 仍需要）迁到 `game/meta/teamTroops.ts`。相应清理了仅被这些死代码引用的 i18n key（`world.teams`/`world.team.title`/`.edit`/`.tapToBuild`/`.emptyArmy`/`.fillTroops*`/`.legacyRebuild`/`.cancelOccupy*`/`.recallErr`、`world.train*`/`.speedup`/`.trained`/`.spedup`/`.err.queueFull`，3 语言）与对应测试（删除 `teamsScene.ui.ts`，其余文件去掉对已删符号的引用）。`tsc --noEmit` + `test`/`test:ui` 全绿（104+68 files / 727+635 tests）。`server/worldsvc` 的 `PlayerWorldDoc.defense` 死字段本次仍未动，维持上面的评估。
+
+## ADR-042 家族加入改为需 leader/elder 审批（解决 SOCIAL_SVC_DESIGN §8 O1）— Accepted — 2026-07-18
+
+- **决策**（用户拍板）：`POST /social/family/:id/join` 不再直接入队，改为插入一条 `FamilyJoinRequestDoc`（`pending`）；leader/elder 通过新增的 `GET /social/family/requests` 查看、`POST /social/family/requests/:id/respond` 同意（复用原直接入队逻辑）或拒绝（拒绝会给申请人发一封系统邮件，`family.mail.rejected.*` i18n key）。解决 `SOCIAL_SVC_DESIGN.md` §8 遗留的 O1 开放问题（此前文档已预留 `joinPolicy` 字段但从未实现，实际代码是直接入队）。
+- **为什么**：直接入队让族长对新成员毫无筛选权，用户希望能审核申请人。
+- **影响**：
+  - `server/socialsvc`：`db.ts` 新增 `familyJoinRequests` 集合（`{familyId,status}`/`{accountId,status}` 索引）；`familyService.ts` 新增 `requestJoin`/`listJoinRequests`/`respondJoinRequest`（`joinFamily` 保留但只在 accept 路径内部调用）；`httpApi.ts` 新增两条路由（**踩坑**：`GET /social/family/requests` 必须排在通用 `GET /social/family/:id` 之前，否则 `requests` 会被当成 familyId 捕获——已加 HTTP 层 e2e 测试锁定顺序）；`FamilyService` 新增可选 `mail?: MailService` 依赖，`index.ts` 调整实例化顺序（mailSvc 先于 familySvc）。
+  - `@nw/shared`：`ErrorCode.ALREADY_REQUESTED`（409）。
+  - `client`：`WorldApiClient.joinFamily` 改名 `requestJoinFamily` + 新增 `listJoinRequests`/`respondJoinRequest`；`FamilyScene`（`base/data/actions/render.ts`）新增 `isFamilyApprover` 判定、Members 面板顶部"待审批 (N)"按钮（仅 leader/elder 且有申请时显示）、审批弹窗；`FriendsScene` 的家族加入入口（`app/nav/social.ts`/`FriendsScene/service.ts`）同步改为提交申请语义，不再假定"点击即入队"。
+  - 文档：[`SOCIAL_SVC_DESIGN.md`](game/SOCIAL_SVC_DESIGN.md) §3.1（新增 `FamilyJoinRequestDoc`）+ §4.1（路由表）+ §8 O1 拍板。
+  - 测试：`server/socialsvc/test/family.e2e.test.ts`（新增 8 个用例）+ `familyHttp.e2e.test.ts`（新增 8 个用例，含 wire-level 路由顺序回归、权限拒绝、拒绝邮件断言）；`client/test/ui/familyJoinApproval.ui.ts`（新增，8 个用例，覆盖审批方 + 申请方双视角，headless PIXI 渲染断言）。
