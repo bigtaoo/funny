@@ -456,7 +456,7 @@ export class CombatSystem {
     payload: ProjectilePayload,
   ): void {
     const { targetId, targetKind } = this.targetRef(target);
-    const proj = new Projectile(startCol_fp, startRow_fp, spec.speed, targetId, targetKind, payload, spec.kind);
+    const proj = new Projectile(startCol_fp, startRow_fp, spec.speed, targetId, targetKind, payload, spec.kind, state.allocProjectileId());
     state.projectiles.push(proj);
     state.pushEvent({
       type:         'projectile_fired',
