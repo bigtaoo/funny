@@ -830,6 +830,7 @@ export const de: Record<TranslationKey, string> = {
   'world.actOccupy': 'Besetzen',
   'world.actScout': 'Erkunden',
   'world.actAbandon': 'Aufgeben',
+  'world.abandonConfirm': 'Gebiet ({x},{y}) aufgeben? Die Garnison geht verloren.',
   'world.actRelocate': 'Hierher verlegen',
   'world.relocateTitle': 'Hauptstadt verlegen',
   'world.relocateConfirm': '{n} Münzen ausgeben, um deine Hauptstadt hierher zu verlegen? Alle Gebiete bleiben erhalten.',

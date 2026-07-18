@@ -1087,6 +1087,12 @@ if (path.startsWith('/admin/world/')) {
 
 **总览可读性放大（2026-07-16）**：用户反馈资源界面偏窄偏小。`renderTerritoryPanel()` 面板宽度上限从 `min(420, w-20)` 提到 `min(840, w-20)`（窄屏仍钳到 `w-20`，真机不溢出）；总览页文字约 2×——资源行/赛季·人口行用 `FS.label`（24）、强调的兵力/领地行用 `FS.heading`（28），行距同步加倍（20→40、22→44、26→52、18→36）以免重叠。仅影响总览 Tab；列表/World 两个 Tab 共用同一 `pw` 会一起变宽，内部字号未动。验证：`tsc --noEmit` 绿；临时 `?terrpanel` 调试入口（构造真实 `WorldMapScene` + 假数据，`forceCanvas` 抓图，验证后已移除）截图确认字号翻倍、面板加宽、无重叠裁切。
 
+**领地列表排序/驻军可读性/放弃二次确认（2026-07-18）**：用户截图指出列表 Tab 的等级过滤按钮与实际行序对不上——过滤按钮是勾选开关，行序却是原始拉取顺序，Lv.1/Lv.2 交替出现，读起来像分组渲染 bug。同时解决 §26 遗留的「未决」排序问题。改动（均在 `renderTerritoryPanel()`）：
+1. 列表改为按 `level` 升序、同级按坐标排序，与过滤按钮的等级分组语义对齐。
+2. 等级过滤按钮标签加计数，如 `Lv.1 (12)`，勾选前就能看到该等级有多少格，不用逐个数。
+3. 驻军数值低于当前过滤结果集中位数一半时文字变红——阈值取当次列表的中位数而非写死绝对值，避免不同账号规模下失真。
+4. 「放弃」不再直接调用 `doAbandonFromList`，先弹二次确认（复用 `panelButton` 在 `ctx.territoryAbandonConfirm` 非空时整体替换面板内容，避免遮挡态下误触底层按钮）；确认态复用面板已有的 dim+panel 外框，只替换正文为提示语 + 确定/取消。`WorldMapContext` 新增 `territoryAbandonConfirm: {x,y} | null` 字段；`world.abandonConfirm` i18n key（zh/en/de）。验证：`tsc --noEmit` 绿；临时 `?territorydbg` 调试入口（`territoryDebug.ts`，直接构造 `WorldMapScene` + reject-fast `WorldApiClient` stub + 18 行假数据，验证后已移除）在真实 dev server 里截图确认排序分组正确、过滤按钮计数、驻军红字、确认弹窗文案与按钮布局，以及 Cancel 能正确清空确认态回到列表。
+
 ---
 
 ## 27. 险地/关隘战力模拟补测（2026-07-16，DRAFT 数值收尾）

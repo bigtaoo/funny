@@ -830,6 +830,7 @@ export const en: Record<TranslationKey, string> = {
   'world.actOccupy': 'Occupy',
   'world.actScout': 'Scout',
   'world.actAbandon': 'Abandon',
+  'world.abandonConfirm': 'Abandon the territory at ({x},{y})? Its garrison will be lost.',
   'world.actRelocate': 'Relocate here',
   'world.relocateTitle': 'Relocate base',
   'world.relocateConfirm': 'Spend {n} coins to move your base here? All territories are kept.',

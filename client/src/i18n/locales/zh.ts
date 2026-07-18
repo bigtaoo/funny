@@ -842,6 +842,7 @@ export const zh = {
   'world.actOccupy': '占领',
   'world.actScout': '侦察',
   'world.actAbandon': '放弃',
+  'world.abandonConfirm': '确定放弃 ({x},{y}) 这块领地吗？驻军将全部损失。',
   'world.actRelocate': '迁城到此',
   'world.relocateTitle': '主动迁城',
   'world.relocateConfirm': '花费 {n} 金币把主城迁到此格？保留全部领地。',
