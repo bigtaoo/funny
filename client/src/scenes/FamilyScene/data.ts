@@ -6,6 +6,7 @@ export interface DataHandlers {
   loadData(): Promise<void>;
   loadMyFamily(familyId: string): Promise<void>;
   loadChannel(): Promise<void>;
+  loadJoinRequests(): Promise<void>;
 }
 
 export function DataMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBase & Constructor<DataHandlers> {
@@ -41,12 +42,23 @@ export function DataMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBase
       // once loadChannel() lands, filling the message list in.
       if (!this.destroyed) this.render();
       await this.loadChannel();
+      await this.loadJoinRequests();
     }
 
     async loadChannel(): Promise<void> {
       if (!this.family) return;
       const ch = await this.cb.worldApi.getFamilyChannel(this.family.familyId);
       this.messages = ch;
+    }
+
+    async loadJoinRequests(): Promise<void> {
+      if (!this.family || !this.isFamilyApprover) { this.joinRequests = []; return; }
+      try {
+        this.joinRequests = await this.cb.worldApi.listJoinRequests();
+      } catch {
+        this.joinRequests = [];
+      }
+      if (!this.destroyed) this.render();
     }
   };
 }

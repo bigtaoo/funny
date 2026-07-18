@@ -358,6 +358,22 @@ export function startHttpApi(
           return send(res, 201, ok(await familySvc.createFamily(accountId, name, tag)));
         }
 
+        // Must be checked before the generic GET /social/family/:id route below, since "requests"
+        // would otherwise be captured as a familyId by that route's [^/]+ pattern.
+        if (method === 'GET' && path === '/social/family/requests') {
+          return send(res, 200, ok({ requests: await familySvc.listJoinRequests(accountId) }));
+        }
+
+        {
+          const m = /^\/social\/family\/requests\/([^/]+)\/respond$/.exec(path);
+          if (method === 'POST' && m) {
+            const body = await readJson(req);
+            const accept = body.accept === true;
+            await familySvc.respondJoinRequest(accountId, decodeURIComponent(m[1]!), accept);
+            return send(res, 200, ok({}));
+          }
+        }
+
         {
           const m = /^\/social\/family\/([^/]+)$/.exec(path);
           if (method === 'GET' && m) {
@@ -368,8 +384,7 @@ export function startHttpApi(
         {
           const m = /^\/social\/family\/([^/]+)\/join$/.exec(path);
           if (method === 'POST' && m) {
-            await familySvc.joinFamily(accountId, decodeURIComponent(m[1]!));
-            return send(res, 200, ok({}));
+            return send(res, 200, ok(await familySvc.requestJoin(accountId, decodeURIComponent(m[1]!))));
           }
         }
 
