@@ -1143,6 +1143,7 @@ export const zh = {
   'auction.err.equipInUse': '装备穿戴中，无法挂拍',
   'auction.err.cardHasGear': '角色卡仍装备着道具，请先卸下',
   'auction.filterCard': '角色卡',
+  'auction.exclusive': '专属',
   'auction.tapChoose': '点击选择物品',
   'auction.pickItem': '选择要出售的物品',
   'auction.pickHint': '选择 ›',

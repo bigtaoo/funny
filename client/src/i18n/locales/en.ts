@@ -1131,6 +1131,7 @@ export const en: Record<TranslationKey, string> = {
   'auction.err.equipInUse': 'Equipment equipped, cannot list',
   'auction.err.cardHasGear': 'Card still has gear equipped — unequip first',
   'auction.filterCard': 'Cards',
+  'auction.exclusive': 'For You',
   'auction.tapChoose': 'Tap to choose an item',
   'auction.pickItem': 'Choose item to sell',
   'auction.pickHint': 'Select ›',

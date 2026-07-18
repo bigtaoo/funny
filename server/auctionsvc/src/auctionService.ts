@@ -296,15 +296,33 @@ export class AuctionService {
     });
   }
 
-  /** Lists open auctions (optionally filtered by itemType, sorted by price ascending, limit ≤50). */
-  async listAuctions(itemType?: string, limit = 20): Promise<AuctionView[]> {
-    const query: Record<string, unknown> = { status: 'open' };
+  /**
+   * Lists open auctions (optionally filtered by itemType), sorted by price ascending, limit ≤50.
+   * Designated-buyer listings are hidden from everyone except the seller and the designated buyer
+   * (§ requirement 2026-07-18); a listing designated to `accountId` is pinned to the front of the page.
+   */
+  async listAuctions(itemType?: string, limit = 20, accountId?: string): Promise<AuctionView[]> {
+    const query: Record<string, unknown> = {
+      status: 'open',
+      $or: [
+        { designatedBuyerId: { $exists: false } },
+        ...(accountId ? [{ designatedBuyerId: accountId }, { sellerId: accountId }] : []),
+      ],
+    };
     if (itemType) query['itemType'] = itemType;
     const docs = await this.deps.cols.auctions
       .find(query)
       .sort({ price: 1 })
       .limit(Math.min(Math.max(limit, 1), 50))
       .toArray();
+    // Pin listings designated to the current account to the front (stable relative order otherwise).
+    if (accountId) {
+      docs.sort((a, b) => {
+        const aPinned = a.designatedBuyerId === accountId ? 0 : 1;
+        const bPinned = b.designatedBuyerId === accountId ? 0 : 1;
+        return aPinned - bPinned;
+      });
+    }
     return docs.map(docToView);
   }
 

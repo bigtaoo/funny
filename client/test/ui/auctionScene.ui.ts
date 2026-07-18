@@ -605,6 +605,32 @@ describe('AuctionScene — market cell countdown', () => {
     }
   });
 
+  it('shows the "For You" badge in Market only when I am the designated buyer', () => {
+    const scene = buildScene({ myAccountId: 'acc_me' });
+    scene.allAuctions = [
+      makeAuction({ auctionId: 'a_mine', designatedBuyerId: 'acc_me' }),
+      makeAuction({ auctionId: 'a_other', designatedBuyerId: 'acc_other' }),
+      makeAuction({ auctionId: 'a_open' }),
+    ];
+    scene.activeTab = 'all';
+    scene.loading = false;
+    scene.render();
+
+    expect(collectTexts(scene.container)).toContain(t('auction.exclusive'));
+    scene.destroy();
+  });
+
+  it('does not show the "For You" badge outside Market (My Auctions / My Bids)', () => {
+    const scene = buildScene({ myAccountId: 'acc_me' });
+    scene.myListings = [makeAuction({ designatedBuyerId: 'acc_me' })];
+    scene.activeTab = 'mine';
+    scene.loading = false;
+    scene.render();
+
+    expect(collectTexts(scene.container)).not.toContain(t('auction.exclusive'));
+    scene.destroy();
+  });
+
   it('stacks below the price/buyout block instead of pinning to a fixed bottom offset', () => {
     // Regression guard for the 16.07.2026 "看起来太乱了" layout fix: the countdown used to be
     // pinned at `y + AUC_CELL_H - pad - 18` regardless of content height, leaving a large dead

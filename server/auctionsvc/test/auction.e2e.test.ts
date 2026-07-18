@@ -280,6 +280,41 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(bought.status).toBe('sold');
   });
 
+  it('designated buyer: listAuctions hides the listing from everyone but seller + designated buyer', async () => {
+    const view = await svc.createAuction({
+      sellerId: 'alice', itemType: 'material',
+      item: { material: 'binding' }, qty: 1, price: 50, durationSec: DUR,
+      designatedBuyerId: 'bob',
+    });
+    // Uninvolved third party never sees it.
+    const carolList = await svc.listAuctions(undefined, 20, 'carol');
+    expect(carolList.find((a) => a.auctionId === view.auctionId)).toBeUndefined();
+    // Anonymous/no-accountId caller also never sees it (defensive default).
+    const anonList = await svc.listAuctions();
+    expect(anonList.find((a) => a.auctionId === view.auctionId)).toBeUndefined();
+    // Seller sees their own designated listing.
+    const aliceList = await svc.listAuctions(undefined, 20, 'alice');
+    expect(aliceList.find((a) => a.auctionId === view.auctionId)).toBeDefined();
+    // Designated buyer sees it too.
+    const bobList = await svc.listAuctions(undefined, 20, 'bob');
+    expect(bobList.find((a) => a.auctionId === view.auctionId)).toBeDefined();
+  });
+
+  it('designated buyer: listAuctions pins the designated listing to the front for that buyer', async () => {
+    await svc.createAuction({
+      sellerId: 'alice', itemType: 'material',
+      item: { material: 'scrap' }, qty: 1, price: 10, durationSec: DUR,
+    });
+    const designated = await svc.createAuction({
+      sellerId: 'alice', itemType: 'material',
+      item: { material: 'lead' }, qty: 1, price: 50, durationSec: DUR,
+      designatedBuyerId: 'dave',
+    });
+    // Sorted by price ascending, so without pinning the cheap open listing would come first.
+    const list = await svc.listAuctions(undefined, 20, 'dave');
+    expect(list[0]!.auctionId).toBe(designated.auctionId);
+  });
+
   it('seller cancels → materials mailed back to seller', async () => {
     const view = await svc.createAuction({
       sellerId: 'alice', itemType: 'material',

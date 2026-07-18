@@ -1131,6 +1131,7 @@ export const de: Record<TranslationKey, string> = {
   'auction.err.equipInUse': 'Ausrüstung angelegt, nicht handelbar',
   'auction.err.cardHasGear': 'Karte trägt noch Ausrüstung — zuerst ablegen',
   'auction.filterCard': 'Karten',
+  'auction.exclusive': 'Für dich',
   'auction.tapChoose': 'Zum Auswählen tippen',
   'auction.pickItem': 'Gegenstand zum Verkauf wählen',
   'auction.pickHint': 'Wählen ›',

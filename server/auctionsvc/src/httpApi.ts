@@ -95,7 +95,7 @@ export function startHttpApi(
         if (method === 'GET' && path === '/auction/list') {
           const itemType = q.get('itemType') ?? undefined;
           const limit = numQ(q.get('limit'), 20);
-          return send(res, 200, ok(await auctionSvc.listAuctions(itemType, limit)));
+          return send(res, 200, ok(await auctionSvc.listAuctions(itemType, limit, accountId)));
         }
         if (method === 'GET' && path === '/auction/mine') {
           return send(res, 200, ok(await auctionSvc.getMyListings(accountId)));

@@ -26,7 +26,7 @@
 | 维度 | 决策 | 来源 |
 |---|---|---|
 | 唯一交易机制 | 全游戏交易只走拍卖行；无独立「邮寄/转账/摆摊」系统 | 拍板 |
-| 点对点交易 | = 挂单时填 `designatedBuyerId`，仅该账号可拍下；无独立转移系统 | 拍板 |
+| 点对点交易 | = 挂单时填 `designatedBuyerId`，仅该账号可拍下；市场浏览层同步隐藏——`listAuctions` 只对卖家本人和被指定买家可见（其余账号完全看不到该挂单），被指定买家的视图里该挂单置顶并带「专属」标签；无独立转移系统 | 拍板（2026-07-18 补：浏览层隐藏 + 置顶） |
 | 可交易品 | 材料（scrap/lead/binding）+ 装备 + 角色卡 + 皮肤（拍卖流程已在 auctionsvc 接入，见 §2.1/§9 任务4）；**SLG 赛季资源（粮/铁/木）从不在拍卖标的范围** | §2.1 |
 | 计价 | 仅金币 coins（跨季 premium 货币）；禁赛季资源/ink 计价 | ECONOMY_BALANCE |
 | 手续费 | 成交价 10%（coin），系统回收（sink） | 拍板 |
@@ -208,7 +208,7 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 
 | 方法 | 路径 | 作用 |
 |---|---|---|
-| GET | `/auction/list?itemType&limit` | 浏览 open 挂单（按 price 升序，limit ≤50） |
+| GET | `/auction/list?itemType&limit` | 浏览 open 挂单（按 price 升序，limit ≤50）；鉴权 accountId 隐式传入 `listAuctions(itemType, limit, accountId)`：过滤掉别人的 `designatedBuyerId` 定向挂单（卖家自己和被指定买家除外），并把当前账号被指定的挂单排到本页最前（2026-07-18） |
 | GET | `/auction/mine` | 我的挂单（全状态，≤20） |
 | GET | `/auction/refprice?category` | **G 参考价带**：返回该品类（`material:{mat}`/`equip:{defId}`）的 `{ ref, floor, ceil }`（floor/ceil = ref×0.5/×2.0，与 checkPriceGuard 同界），无护栏/冷启动放行时返回 `null`。挂单界面据此在提交前展示允许区间，避免只在提交后撞 `PRICE_OUT_OF_RANGE`。 |
 | POST | `/auction/create` | 挂单（material；equipment 待 A；`saleMode=fixed`→price / `auction`→startPrice+可选 buyoutPrice；可带 designatedBuyerId） |
@@ -485,6 +485,20 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
   - **轮询**（`base.ts`）：常量 `AUCTION_POLL_SEC=5`；`update(dt)` 里累加 `pollTimer`，达阈值调 `pollRefresh()`。`pollRefresh()` 是**静默重拉**——不置 `loading`（无「加载中」闪屏）、保留 `scrollY`；用轻量签名 `auctionSig()`（`auctionId:price:status:expireAt:buyerId` 拼接）比对，**仅当数据真变了才 `render()`**，避免每 5s 无谓 teardown/重建 body（会打断滚动）。护栏：`loading || modalOpen || itemPickerOpen` 时**暂停计时**（绝不在开着的创建/出价表单或选择页上重绘），且 `await` 后再次复查这些标志以防拉取途中弹窗打开。轮询挂在场景自己的 `update(dt)` tick 上而非裸 `setInterval`，`destroy()` 后自动停，无悬挂定时器泄漏。
   - **并发抢购**（`tradeActions.ts` `doBuy`）：两人在轮询间隙同抢一件，失败方的 `buyAuction` 抛 `AUCTION_CLOSED`/`AUCTION_NOT_FOUND` → 弹专用提示 `auction.err.soldOut`（中「手慢了，该物品已被他人买走」/英/德）并 `loadData()` 刷新，让作废的卡片消失；其它错误（如金币不足）维持原有报错、不刷新（挂单仍有效）。`bid.ts` `doBid` 同理：竞拍在间隙被买断/到期时也刷新列表。
 - **验收**：`tsc --noEmit` 绿；`client/test/ui/auctionScene.ui.ts` 新增 16 例（共 55 通过）。轮询组：到点重拉并应用变更快照、未到点不拉、modal/picker 打开时暂停+恢复、`loading` 时不拉、dt 分段累加恰好触发一次、沿用当前筛选重拉、签名不变时**只拉不重绘**、有新出价（价格变）时重绘、拉取途中弹窗打开则丢弃该次结果不覆盖表单、离线拉取失败保留上次快照、`destroy()` 后不再拉且在途 `pollRefresh` 安全早退。抢购/竞拍组：`AUCTION_CLOSED`/`AUCTION_NOT_FOUND` 均弹 soldOut+刷新、金币不足不刷新、竞拍在间隙结束弹错+刷新、出价过低不刷新。注：真实并发抢购需两个客户端 + 活的 worldsvc/auctionsvc 后端，preview 单端无法复现，逻辑由驱动真实场景的 headless 测试覆盖。
+
+### ops：新增拍卖挂单查询工具（不限成交，任意状态）（2026-07-18）
+
+- **问题**：ops 后台此前只有 G7 反 RMT 异常扫描器（`GET /admin/slg/audit/anomalies`，见 §4.D）——按 seller→buyer 聚合**已成交**订单统计对敲/定向异价信号，无法回答「这一条在售挂单具体是什么样（含 `designatedBuyerId`）」这类客服/调查场景，且完全看不到 `open`/`cancelled`/`expired` 状态的挂单。
+- **改动**：
+  - `server/shared/src/slg/auction.ts`：新增 `AuctionListingQuery`（`sellerId`/`itemType`/`status`/`itemName`/`limit`）与 `AuctionListingAdminView`（`AuctionDoc` 的管理视图，含 `designatedBuyerId`/`buyerId`/`soldAt`/`closedAt`/`topBid` 等全字段 + 派生 `itemName`）。
+  - `server/auctionsvc/src/auctionService.ts`：新增 `queryListings()`——`sellerId`/`itemType`/`status` 在 Mongo 层过滤，`itemName`（材料名/装备 `defId`/卡牌 `defId`/皮肤 `skinId`，物品类型不同字段不同、无法直接建索引查询）在内存里对一次性拉取的至多 `QUERY_FETCH_CAP=500` 条做子串匹配后再按 `limit`（默认 50，上限 200）截断。
+  - `server/auctionsvc/src/httpApi.ts`：新增内部端点 `GET /internal/audit/listings`，鉴权模式照抄既有 `/internal/audit/anomalies`（`X-Internal-Key`，无玩家 JWT）。
+  - `server/admin/src/clients/auction.ts`：`AuctionClient` 接口 + `HttpAuctionClient` 新增 `queryListings()`。
+  - `server/admin/src/service/slgAudit.ts`：新增 `slgQueryAuctionListings()`（复用既有 capability `slg.audit.view`，只读查询，与异常扫描同一信任级别，未新增 capability）。
+  - `server/admin/src/httpApi.ts`：新增路由 `GET /admin/slg/audit/listings`。
+  - `tools/ops/src/api.ts` + `tools/ops/src/types.ts`：新增 `slgQueryAuctionListings()` 客户端方法 + 镜像类型。
+  - `tools/ops/src/pages/auctionAudit.ts`：在既有「SLG Audit」页顶部新增「Listing lookup」卡片（sellerId / itemType / status / item name 四个筛选框 + 结果表格，展示 Auction ID/Seller/Item/Qty/Price/Sale mode/Status/Designated buyer/Buyer/Expire-closed），复用同一 nav 项与 capability，不新增页面/导航条目。
+- **验收**：`tsc --noEmit` 对 `shared`/`auctionsvc`/`admin`/`tools/ops` 四个包全绿。未跑 e2e/UI 截图验证（无新增业务规则或可见渲染回归风险，纯新增只读查询通路）。
 
 ---
 
