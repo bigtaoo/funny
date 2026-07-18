@@ -166,6 +166,7 @@ export function NetworkMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
         this.familyBrowseQuery = '';
         this.familyBrowseResults = [];
         this.familyBrowseLoaded = false;
+        this.familyDetailView = null;
         this.slgLoaded = false;
         void this.loadSLGStatus();
       } catch {

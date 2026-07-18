@@ -4,10 +4,12 @@ import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS, snapFont } from '../../render/fontScale';
 import { caretDisplay } from '../../render/inputDisplay';
+import type { FamilyDetailView } from '../../net/WorldApiClient';
 import { type Constructor, type FriendsSceneBaseCtor } from './base';
 
 export interface OrgFormHandlers {
   drawFamilyTab(): void;
+  drawFamilyDetail(fam: FamilyDetailView): void;
   drawSectTab(): void;
 }
 
@@ -31,6 +33,15 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       }
       if (!this.slgStatus) {
         this.centerLabelFixed(t('social.noSlg'));
+        return;
+      }
+
+      if (this.familyDetailView) {
+        this.drawFamilyDetail(this.familyDetailView);
+        return;
+      }
+      if (this.familyDetailLoading) {
+        this.centerLabelFixed(t('friends.loading'));
         return;
       }
 
@@ -192,6 +203,9 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
 
       const rowH = Math.round(h * 0.08);
       const rowGap = Math.round(h * 0.012);
+      const joinBtnW = Math.round(panelW * 0.22);
+      const joinBtnH = Math.round(rowH * 0.6);
+      const joinBtnGap = Math.round(panelW * 0.03);
       for (const fam of this.familyBrowseResults) {
         if (!this.rowVisible(cy, rowH)) { cy += rowH + rowGap; continue; }
         const row = sketchPanel(panelW, rowH, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(cy, 0, panelW) });
@@ -208,9 +222,68 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
         this.container.addChild(info);
 
         const famId = fam.familyId;
-        this.hits.push({ rect: { x: px, y: cy, w: panelW, h: rowH }, fn: () => void this.doJoinFamily(famId) });
+        const joinBtnX = px + panelW - joinBtnW - joinBtnGap;
+        this.addButton(t('family.join'), joinBtnX, cy + (rowH - joinBtnH) / 2, joinBtnW, joinBtnH, C.dark, C.accent,
+          () => void this.doJoinFamily(famId), 0xffffff, undefined);
+        // Tapping the rest of the row (left of the Join button) previews the family's info.
+        this.hits.push({ rect: { x: px, y: cy, w: joinBtnX - joinBtnGap - px, h: rowH }, fn: () => this.openFamilyDetail(famId) });
         cy += rowH + rowGap;
       }
+    }
+
+    /** Fetch + show the info popup for a browsed family (tap on the row, not the Join button). */
+    private openFamilyDetail(familyId: string): void {
+      if (!this.cb.viewFamily) return;
+      this.familyDetailLoading = true;
+      this.render();
+      void this.cb.viewFamily(familyId)
+        .then((fam) => { this.familyDetailLoading = false; this.familyDetailView = fam; this.render(); })
+        .catch(() => { this.familyDetailLoading = false; this.toast('social.family.joinFail'); this.render(); });
+    }
+
+    drawFamilyDetail(fam: FamilyDetailView): void {
+      const { h } = this;
+      const px = this.cX;
+      const panelW = this.cW;
+      let cy = this.regionTop + Math.round(h * 0.03);
+
+      const name = truncateOrgName(fam.name, ORG_NAME_WIDTH_MAX);
+      const title = txt(`[${fam.tag}] ${name}`, FS.title, C.dark, true);
+      title.anchor.set(0, 0); title.x = px; title.y = cy;
+      this.container.addChild(title);
+      cy += Math.round(h * 0.06);
+
+      const leader = fam.members.find((m) => m.role === 'leader');
+      const lines = [
+        `${t('family.leader')}: ${leader?.displayName ?? '—'}`,
+        t('family.members', { n: fam.memberCount }),
+        t('family.prosperity', { n: fam.prosperity }),
+      ];
+      if (fam.sectId) lines.push(t('family.sect'));
+      for (const line of lines) {
+        const l = txt(line, FS.heading, C.mid);
+        l.anchor.set(0, 0); l.x = px; l.y = cy;
+        this.container.addChild(l);
+        cy += Math.round(h * 0.045);
+      }
+
+      if (fam.announcement) {
+        cy += Math.round(h * 0.015);
+        const ann = txt(fam.announcement, FS.label, C.dark);
+        ann.anchor.set(0, 0); ann.x = px; ann.y = cy;
+        this.container.addChild(ann);
+        cy += Math.round(h * 0.05);
+      }
+
+      const bH = Math.round(h * 0.08);
+      const bGap = Math.round(this.w * 0.04);
+      const bW = Math.round((panelW - bGap) / 2);
+      const bY = h - bH - Math.round(h * 0.03);
+      this.addButton(t('social.family.cancel'), px, bY, bW, bH, C.paper, C.line,
+        () => { this.familyDetailView = null; this.render(); }, C.dark);
+      const famId = fam.familyId;
+      this.addButton(t('family.join'), px + bW + bGap, bY, bW, bH, C.dark, C.accent,
+        () => void this.doJoinFamily(famId));
     }
 
     // ── Sect tab ──────────────────────────────────────────────────────────────────

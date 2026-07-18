@@ -105,6 +105,7 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
         createFamily: async (name, tag) => { await worldApi.createFamily(name, tag); },
         joinFamily:   async (familyId) => { await worldApi.joinFamily(familyId); },
         browseFamilies: async (query) => worldApi.browseFamilies(query),
+        viewFamily: (familyId) => worldApi.getFamily(familyId),
         createSect:   async (name, tag) => { const wid = await ensureWorldId(); await worldApi.createSect(wid, name, tag); },
         joinSect:     async (sectId) => { const wid = await ensureWorldId(); await worldApi.joinSect(wid, sectId); },
         openFamilyHub: () => { if (slgWorldId) nav.goFamilyHub(worldApi, slgWorldId, backTo); },
