@@ -32,6 +32,7 @@ export interface FamilySummary {
   prosperityUpdatedAt?: number;
   territoryCount?: number;
   sectId?: string;
+  sectName?: string;
 }
 
 export interface WorldSocialsvcClient {
@@ -45,7 +46,7 @@ export interface WorldSocialsvcClient {
   /** Internal: all families currently pointing at the given sectId. */
   getFamiliesBySect(sectId: string): Promise<FamilySummary[]>;
   /** Internal: set/clear the sect a family belongs to (worldsvc is authoritative; best-effort mirror write). */
-  setSect(familyId: string, sectId: string | null): Promise<void>;
+  setSect(familyId: string, sectId: string | null, sectName?: string | null): Promise<void>;
   /** Internal: increment a family's season activity score (occupation / battle). */
   bumpActivity(familyId: string, delta: number): Promise<void>;
   /** Internal: recompute + persist prosperity from a worldsvc-supplied territoryCount. Returns the new value (0 on failure/unknown family). */
@@ -131,13 +132,13 @@ export class HttpWorldSocialsvcClient implements WorldSocialsvcClient {
     }
   }
 
-  async setSect(familyId: string, sectId: string | null): Promise<void> {
+  async setSect(familyId: string, sectId: string | null, sectName?: string | null): Promise<void> {
     if (!this.baseUrl) return;
     try {
       await fetch(`${this.baseUrl}/internal/family/${encodeURIComponent(familyId)}/sect`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...internalHeaders('worldsvc', this.internalKey) },
-        body: JSON.stringify({ sectId }),
+        body: JSON.stringify({ sectId, sectName }),
       });
     } catch {
       // best-effort: worldsvc remains authoritative for sectId; a failed mirror write only stales the client-facing socialsvc copy.

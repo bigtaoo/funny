@@ -61,6 +61,8 @@ export interface FamilyView {
   territoryCount?: number;
   /** Sect the family currently belongs to (worldsvc-owned mirror; absent = independent family). */
   sectId?: string;
+  /** Display name of the sect above, mirrored alongside sectId. */
+  sectName?: string;
   announcement?: string;
 }
 export interface FamilyDetailView extends FamilyView {

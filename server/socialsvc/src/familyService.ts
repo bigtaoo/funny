@@ -33,6 +33,8 @@ export interface FamilyView {
   territoryCount?: number;
   /** Sect the family currently belongs to (worldsvc-owned mirror; absent = independent family). */
   sectId?: string;
+  /** Display name of the sect above, mirrored alongside sectId. */
+  sectName?: string;
   announcement?: string;
 }
 
@@ -108,6 +110,7 @@ function docToView(doc: FamilyDoc): FamilyView {
     prosperityUpdatedAt: doc.prosperityUpdatedAt,
     ...(doc.territoryCount != null ? { territoryCount: doc.territoryCount } : {}),
     ...(doc.sectId ? { sectId: doc.sectId } : {}),
+    ...(doc.sectName ? { sectName: doc.sectName } : {}),
     ...(doc.announcement ? { announcement: doc.announcement } : {}),
   };
 }
@@ -531,10 +534,12 @@ export class FamilyService {
   }
 
   /** Internal API: set/clear the sect a family belongs to (called by worldsvc on sect join/leave/found/dissolve; worldsvc is authoritative, this is a read cache for clients). */
-  async setSect(familyId: string, sectId: string | null): Promise<void> {
+  async setSect(familyId: string, sectId: string | null, sectName?: string | null): Promise<void> {
     await this.deps.cols.families.updateOne(
       { _id: familyId },
-      sectId ? { $set: { sectId } } : { $unset: { sectId: '' } },
+      sectId
+        ? { $set: { sectId, ...(sectName ? { sectName } : {}) } }
+        : { $unset: { sectId: '', sectName: '' } },
     );
   }
 
@@ -558,7 +563,7 @@ export class FamilyService {
   async resetSlgState(familyId: string): Promise<void> {
     await this.deps.cols.families.updateOne(
       { _id: familyId },
-      { $set: { territoryCount: 0, prosperity: 0, activity: 0, prosperityUpdatedAt: this.deps.now() }, $unset: { sectId: '' } },
+      { $set: { territoryCount: 0, prosperity: 0, activity: 0, prosperityUpdatedAt: this.deps.now() }, $unset: { sectId: '', sectName: '' } },
     );
   }
 }

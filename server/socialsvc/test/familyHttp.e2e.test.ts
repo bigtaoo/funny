@@ -4,7 +4,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Server } from 'http';
 import type { AddressInfo } from 'net';
-import { signToken } from '@nw/shared';
+import { signToken, internalHeaders } from '@nw/shared';
 import { createSocialMongo, type SocialMongo } from '../src/db';
 import { FamilyService } from '../src/familyService';
 import { FriendService } from '../src/friendService';
@@ -181,5 +181,42 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
     const famRes = await fetch(`${base}/social/family/fam:ALFA`, { headers: auth });
     const fam = (await famRes.json()).data as { members: Array<{ accountId: string }> };
     expect(fam.members.map((mem) => mem.accountId)).toContain('applicant-a');
+  });
+
+  it('POST /internal/family/:id/sect: mirrors sectId + sectName; clearing wipes both (wire-level)', async () => {
+    const internalAuth = internalHeaders('worldsvc', INTERNAL_KEY);
+
+    const setRes = await fetch(`${base}/internal/family/fam:ALFA/sect`, {
+      method: 'POST',
+      headers: { ...internalAuth, 'content-type': 'application/json' },
+      body: JSON.stringify({ sectId: 'sect:1', sectName: 'Iron Fist' }),
+    });
+    expect(setRes.status).toBe(200);
+
+    const afterSet = await fetch(`${base}/social/family/fam:ALFA`, { headers: auth });
+    const famAfterSet = (await afterSet.json()).data as { sectId?: string; sectName?: string };
+    expect(famAfterSet.sectId).toBe('sect:1');
+    expect(famAfterSet.sectName).toBe('Iron Fist');
+
+    const clearRes = await fetch(`${base}/internal/family/fam:ALFA/sect`, {
+      method: 'POST',
+      headers: { ...internalAuth, 'content-type': 'application/json' },
+      body: JSON.stringify({ sectId: null }),
+    });
+    expect(clearRes.status).toBe(200);
+
+    const afterClear = await fetch(`${base}/social/family/fam:ALFA`, { headers: auth });
+    const famAfterClear = (await afterClear.json()).data as { sectId?: string; sectName?: string };
+    expect(famAfterClear.sectId).toBeUndefined();
+    expect(famAfterClear.sectName).toBeUndefined();
+  });
+
+  it('POST /internal/family/:id/sect: without X-Internal-Key → 401', async () => {
+    const r = await fetch(`${base}/internal/family/fam:ALFA/sect`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sectId: 'sect:2', sectName: 'Nope' }),
+    });
+    expect(r.status).toBe(401);
   });
 });

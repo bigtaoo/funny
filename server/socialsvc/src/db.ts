@@ -75,6 +75,8 @@ export interface FamilyDoc {
   territoryCount?: number;
   /** Sect the family currently belongs to (worldsvc-owned mirror; sects are season/world-scoped and live in worldsvc — see SLG_DESIGN §8.2. Written via /internal/family/:familyId/sect). */
   sectId?: string;
+  /** Display name of the sect above, mirrored alongside sectId so clients can show it without a second lookup. */
+  sectName?: string;
   createdAt: number;
   rev: number;
 }
