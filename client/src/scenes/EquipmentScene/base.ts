@@ -421,6 +421,21 @@ export class EquipmentSceneBase {
   }
 
   /**
+   * All instance ids sharing `inst`'s defId+rarity that the inventory grid merges into the same
+   * stacked cell (mirrors InventoryMixin.buildDisplayEntries: +0, unequipped, unlocked only —
+   * everything else is always its own row). Used by the detail modal to offer a "salvage all"
+   * action for the whole stack instead of just the one representative instance it was opened with.
+   */
+  protected stackSiblingIds(save: SaveData, inst: EquipmentInstance): string[] {
+    if (inst.level !== 0 || inst.locked) return [inst.id];
+    const equipped = this.equippedIds(save);
+    if (equipped.has(inst.id)) return [inst.id];
+    return Object.values(save.equipmentInv)
+      .filter(x => !equipped.has(x.id) && !x.locked && x.level === 0 && x.defId === inst.defId && x.rarity === inst.rarity)
+      .map(x => x.id);
+  }
+
+  /**
    * Draw an equipment icon centered at (cx, cy) onto bodyLayer.
    * When defId is provided and the atlas is ready, renders the AI bitmap sprite
    * (EQUIPMENT_DESIGN §20.2); otherwise falls back to the procedural glyph (§20.3).
