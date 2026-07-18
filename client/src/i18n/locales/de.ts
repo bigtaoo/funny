@@ -19,6 +19,8 @@ export const de: Record<TranslationKey, string> = {
   // Einheitliches Zurück-Label (SceneHeader stellt "← " voran, siehe UI_DESIGN §3.1).
   'common.back': 'Zurück',
   'common.close': 'Schließen',
+  'common.ok': 'OK',
+  'common.cancel': 'Abbrechen',
 
   // ── Karten ────────────────────────────────────────────────────────────────
   'card.infantry.name': 'Infanterie',

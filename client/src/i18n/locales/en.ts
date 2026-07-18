@@ -19,6 +19,8 @@ export const en: Record<TranslationKey, string> = {
   // Unified back-button label (SceneHeader prepends "← ", see UI_DESIGN §3.1).
   'common.back': 'Back',
   'common.close': 'Close',
+  'common.ok': 'OK',
+  'common.cancel': 'Cancel',
 
   // ── Cards ─────────────────────────────────────────────────────────────────
   'card.infantry.name': 'Infantry',

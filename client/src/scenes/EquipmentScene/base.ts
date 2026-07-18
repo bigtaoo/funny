@@ -10,6 +10,7 @@ import type { InputManager } from '../../inputSystem/InputManager';
 import type { Scene } from '../SceneManager';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchButton, seedFor, drawLoadingOverlay, tearDownChildren } from '../../render/sketchUi';
+import { drawConfirmDialog } from '../../render/confirmDialog';
 import { showToastMessage } from '../../net/log';
 import { FS, snapFont } from '../../render/fontScale';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
@@ -345,46 +346,11 @@ export class EquipmentSceneBase {
   // ── Confirm modal ───────────────────────────────────────────────────────────
 
   protected showConfirm(msg: string, onOk: () => void): void {
-    const { w, h } = this;
-    const ml = this.modalLayer;
-    tearDownChildren(ml);
-    this.modalHits = [];
+    // Confirm replaces detail; keep detailId so cancel returns to it via render().
     this.modalOpen = true;
-    // Confirm replaces detail; keep detailId so cancel returns to it.
-
-    const mw = Math.min(300, w - 36);
-    const mh = 130;
-    const mx = (w - mw) / 2;
-    const my = (h - mh) / 2;
-
-    const dim = new PIXI.Graphics();
-    dim.beginFill(0x000000, 0.4).drawRect(0, 0, w, h).endFill();
-    ml.addChild(dim);
-    const panel = sketchPanel(mw, mh, { fill: C.paper, border: C.dark, seed: seedFor(0, 12, mw) });
-    panel.x = mx; panel.y = my;
-    ml.addChild(panel);
-
-    const lbl = txt(msg, FS.tiny, C.dark);
-    lbl.anchor.set(0.5, 0); lbl.x = mx + mw / 2; lbl.y = my + 16;
-    lbl.style.wordWrap = true; lbl.style.wordWrapWidth = mw - 24; lbl.style.align = 'center';
-    ml.addChild(lbl);
-
-    const okBtn = sketchButton(84, 28, seedFor(0, 13, 84));
-    okBtn.x = mx + mw / 2 - 92; okBtn.y = my + mh - 36;
-    ml.addChild(okBtn);
-    const ol = txt(t('equip.ok'), FS.tiny, C.light, true);
-    ol.anchor.set(0.5, 0.5); ol.x = okBtn.x + 42; ol.y = okBtn.y + 14;
-    ml.addChild(ol);
-    this.modalHits.push({ rect: { x: okBtn.x, y: okBtn.y, w: 84, h: 28 }, action: onOk });
-
-    const caBtn = sketchPanel(84, 28, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 14, 84) });
-    caBtn.x = mx + mw / 2 + 8; caBtn.y = my + mh - 36;
-    ml.addChild(caBtn);
-    const cl = txt(t('equip.cancel'), FS.tiny, C.dark);
-    cl.anchor.set(0.5, 0.5); cl.x = caBtn.x + 42; cl.y = caBtn.y + 14;
-    ml.addChild(cl);
-    // Cancel re-opens the detail (detailId still set) via render().
-    this.modalHits.push({ rect: { x: caBtn.x, y: caBtn.y, w: 84, h: 28 }, action: () => { this.closeModal(); this.render(); } });
+    this.modalHits = drawConfirmDialog(this.modalLayer, this.w, this.h, msg, onOk, () => {
+      this.closeModal(); this.render();
+    });
   }
 
   protected closeModal(): void {

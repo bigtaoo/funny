@@ -23,6 +23,8 @@ export const zh = {
   // Unified back-button label (SceneHeader prepends "← " automatically; see UI_DESIGN §3.1).
   'common.back': '返回',
   'common.close': '关闭',
+  'common.ok': '确定',
+  'common.cancel': '取消',
 
   // ── Cards ─────────────────────────────────────────────────────────────────
   'card.infantry.name': '普通兵',
