@@ -8,7 +8,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { IPlatform } from './platform/IPlatform';
 import { MemoryMonitor } from './cache/MemoryMonitor';
 import { PerfMonitor } from './cache/PerfMonitor';
-import { initCrashSentinel, installAnomalyWatchers, recordConstructSample } from './net/anomaly';
+import { initCrashSentinel, installAnomalyWatchers, recordConstructSample, recordRenderSample } from './net/anomaly';
 import { SceneManager, type Scene } from './scenes/SceneManager';
 import { IntroScene } from './scenes/IntroScene';
 import { LobbyScene, type LobbySceneCallbacks } from './scenes/LobbyScene';
@@ -374,6 +374,17 @@ export async function startApp(platform: IPlatform): Promise<void> {
   // Raise the global text-padding floor so no PIXI.Text (migrated to makeText or not)
   // can clip tall CJK glyph tops. See render/pixiText.ts. Layout-neutral.
   installTextPaddingFloor();
+
+  // Time the actual GPU render call: PIXI's own ticker listener (registered by Application at
+  // UPDATE_PRIORITY.LOW) runs strictly after SceneManager's onTick, so a stall inside render()
+  // itself (draw-call submission, or Text canvas rasterization it triggers) is invisible to
+  // recordFrameSample/recordConstructSample. See recordRenderSample in net/anomaly.ts.
+  const origRender = app.renderer.render.bind(app.renderer);
+  app.renderer.render = ((...args: Parameters<typeof origRender>) => {
+    const t0 = performance.now();
+    origRender(...args);
+    recordRenderSample(performance.now() - t0);
+  }) as typeof app.renderer.render;
 
   // Procedural art (sketch.ts) bakes static board layers to textures via this renderer.
   setBakeRenderer(app.renderer);

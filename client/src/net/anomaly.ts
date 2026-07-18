@@ -204,7 +204,72 @@ export function recordConstructSample(scene: string, ms: number): void {
   if (!lastLongConstruct || ms >= lastLongConstruct.ms) lastLongConstruct = { ms: Math.round(ms), scene, ts: Date.now() };
 }
 
-function anrContext(): Record<string, unknown> {
+/**
+ * Longest `renderer.render()` call seen recently, if any exceeded LONG_FRAME_MS.
+ * PIXI's `Application` registers its own render call on the shared ticker at `UPDATE_PRIORITY.LOW`,
+ * strictly *after* `SceneManager`'s `onTick` (registered at default/NORMAL priority) — so the actual
+ * GPU draw-call submission and any synchronous Text-canvas rasterization it triggers happen completely
+ * outside the window `recordFrameSample` covers. A batch of prod ANRs (85c3448, 2026-07-18) came back
+ * with *both* `longFrameMs` and `longConstructMs` absent despite 5-30s stalls — this is the one
+ * remaining synchronous path a `goto()`/steady-state frame runs that was still dark.
+ */
+let lastLongRender: { ms: number; scene: string; ts: number } | null = null;
+
+/** Called by the renderer.render() wrapper installed in app.ts, with how long the call took. */
+export function recordRenderSample(ms: number): void {
+  if (ms < LONG_FRAME_MS) return;
+  if (!lastLongRender || ms >= lastLongRender.ms) lastLongRender = { ms: Math.round(ms), scene: activeScene, ts: Date.now() };
+}
+
+// ── Long Tasks correlation (Long Tasks API, Chromium-only) ─────────────────────────────────────
+// recordFrameSample / recordConstructSample / recordRenderSample only see OUR OWN code (scene
+// update/construct/render calls). The Long Tasks API instead observes ANY main-thread task
+// >=50ms regardless of source — third-party code, browser-internal layout/style work, or (nested
+// inside whichever task happens to be running) a synchronous GC pause. Its value here is less
+// "what ran long" and more a falsifiable test: if a multi-second `stallMs` has NO overlapping long
+// tasks at all, the main thread wasn't executing JS during that window — pointing at true thread
+// suspension (an OS/browser tab-freeze edge case the visibilitychange latch below doesn't catch)
+// rather than at slow or GC-heavy script.
+const longTaskLog: { start: number; dur: number }[] = [];
+const LONGTASK_RETAIN_MS = 120_000;
+
+function installLongTaskObserver(): void {
+  const PO = (globalThis as { PerformanceObserver?: typeof PerformanceObserver }).PerformanceObserver;
+  if (!PO || !PO.supportedEntryTypes?.includes?.('longtask')) return;
+  try {
+    new PO((list) => {
+      const origin = performance.timeOrigin;
+      for (const e of list.getEntries()) longTaskLog.push({ start: Math.round(origin + e.startTime), dur: Math.round(e.duration) });
+      const cutoff = Date.now() - LONGTASK_RETAIN_MS;
+      while (longTaskLog.length && longTaskLog[0].start < cutoff) longTaskLog.shift();
+    }).observe({ type: 'longtask', buffered: true });
+  } catch { /* unsupported in this browser build; never fatal */ }
+}
+
+/** Total duration + count of observed long tasks overlapping [since, now] — see installLongTaskObserver. */
+function longTasksSince(since: number): { longTaskMs: number; longTaskCount: number } | Record<string, never> {
+  if (!longTaskLog.length) return {};
+  let ms = 0, count = 0;
+  for (const t of longTaskLog) if (t.start + t.dur >= since) { ms += t.dur; count++; }
+  return count ? { longTaskMs: Math.round(ms), longTaskCount: count } : {};
+}
+
+// ── Heap delta across a stall (Chromium-only `performance.memory`) ─────────────────────────────
+// A large drop in used-heap across the stall window is the closest same-run signal that a major
+// GC pause ran during the freeze (heap size as reported here doesn't shrink any other way);
+// no drop despite a long stall argues against the GC-pause theory for that occurrence.
+let lastHeapSampleMB: number | null = null;
+function heapDelta(): Record<string, unknown> {
+  const mem = (performance as unknown as { memory?: { usedJSHeapSize?: number } }).memory;
+  const used = mem?.usedJSHeapSize;
+  if (typeof used !== 'number') return {};
+  const usedMB = Math.round((used / 1_048_576) * 10) / 10;
+  const prev = lastHeapSampleMB;
+  lastHeapSampleMB = usedMB;
+  return prev == null ? { heapMB: usedMB } : { heapMB: usedMB, heapDeltaMB: Math.round((usedMB - prev) * 10) / 10 };
+}
+
+function anrContext(stallSince?: number): Record<string, unknown> {
   let extra: Record<string, unknown> = {};
   try { extra = anrContextProvider?.() ?? {}; } catch { /* provider must never break the report */ }
   const lf = lastLongFrame;
@@ -215,11 +280,20 @@ function anrContext(): Record<string, unknown> {
   const longConstruct = lc && Date.now() - lc.ts <= LONG_FRAME_STALE_MS
     ? { longConstructMs: lc.ms, longConstructScene: lc.scene }
     : {};
+  const lr = lastLongRender;
+  const longRender = lr && Date.now() - lr.ts <= LONG_FRAME_STALE_MS
+    ? { longRenderMs: lr.ms, longRenderScene: lr.scene }
+    : {};
+  const longTasks = stallSince != null ? longTasksSince(stallSince) : {};
   // Attach the same recent breadcrumbs used on crash/exit reports — the last net-layer activity
   // (api/gateway) right before the freeze is often the only lead when longFrame comes back empty
   // (i.e. the block wasn't inside a tracked scene.update() call).
   const crumbs = recentClientLogs(BREADCRUMB_N).map((e) => `[${e.level}${e.tag ? ':' + e.tag : ''}] ${e.msg}`);
-  return { ...(activeScene ? { scene: activeScene } : {}), ...extra, ...longFrame, ...longConstruct, ...(crumbs.length ? { crumbs } : {}) };
+  return {
+    ...(activeScene ? { scene: activeScene } : {}),
+    ...extra, ...longFrame, ...longConstruct, ...longRender, ...longTasks, ...heapDelta(),
+    ...(crumbs.length ? { crumbs } : {}),
+  };
 }
 
 // ── Crash sentinel (localStorage) ───────────────────────────────────────────────────────────────
@@ -320,6 +394,11 @@ export function installAnomalyWatchers(opts: AnomalyWatchersOpts = {}): void {
   //    Background tabs are throttled → not counted as frozen when document.hidden.
   installAnrWatchdog();
 
+  // 4b) Long Tasks observer (Chromium-only) — see installLongTaskObserver for why this is worth
+  //     having alongside the watchdog: it can independently confirm/rule out "main thread was
+  //     actually busy running JS" during a reported stall.
+  installLongTaskObserver();
+
   // 5) WeChat mini-game global error callback (no window error event; must be wired separately).
   const wx = (globalThis as { wx?: { onError?: (cb: (e: { message?: string } | string) => void) => void } }).wx;
   wx?.onError?.((e) => reportAnomaly('jserror', `[wx onError] ${clip(String((e as { message?: string })?.message ?? e), MSG_MAX)}`));
@@ -328,7 +407,10 @@ export function installAnomalyWatchers(opts: AnomalyWatchersOpts = {}): void {
 function installAnrWatchdog(): void {
   const WATCH_MS = 1_000;
   const STALL_MS = 4_000; // minimum freeze duration to count as an ANR (avoids false positives from GC jitter / background throttling)
-  const g = globalThis as typeof globalThis & { document?: { hidden?: boolean }; addEventListener?: (type: string, cb: () => void) => void };
+  const g = globalThis as typeof globalThis & {
+    document?: { hidden?: boolean; addEventListener?: (type: string, cb: () => void) => void };
+    addEventListener?: (type: string, cb: () => void) => void;
+  };
 
   // Latched (not sampled) hidden flag: a backgrounded tab has its timers throttled/suspended by the
   // OS/browser, so a long "stall" is often just the tab being backgrounded the whole time — but by the
@@ -341,13 +423,28 @@ function installAnrWatchdog(): void {
     if (g.document?.hidden) hiddenSinceLastTick = true;
   });
 
+  // Page Lifecycle 'freeze'/'resume' (Chromium): a *stronger* suspension signal than
+  // visibilitychange — some OS/browser tab-freeze paths (bfcache-adjacent, background CPU
+  // budget exhaustion) fire these without ever flipping `document.hidden`, which is the exact gap
+  // flagged after the 2026-07-18 batch (long freezes with no longFrame/longConstruct/longRender and,
+  // per the new long-task check above, potentially no observed long tasks either). Latched the same
+  // way, and logged as crumbs so a freeze/resume pair right before a stall is visible even when it
+  // doesn't end up suppressing the report.
+  g.document?.addEventListener?.('freeze', () => {
+    hiddenSinceLastTick = true;
+    log.info('page lifecycle: freeze');
+  });
+  g.document?.addEventListener?.('resume', () => {
+    log.info('page lifecycle: resume');
+  });
+
   let expected = Date.now() + WATCH_MS;
   setInterval(() => {
     const now = Date.now();
     const drift = now - expected;
     const wasHidden = hiddenSinceLastTick || g.document?.hidden === true;
     if (!wasHidden && drift > STALL_MS) {
-      reportAnomaly('anr', `main thread stalled ~${Math.round(drift)}ms`, { stallMs: Math.round(drift), ...anrContext() });
+      reportAnomaly('anr', `main thread stalled ~${Math.round(drift)}ms`, { stallMs: Math.round(drift), ...anrContext(expected - WATCH_MS) });
       log.warn(`main thread stalled ~${Math.round(drift)}ms`);
     }
     hiddenSinceLastTick = false;
