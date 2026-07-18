@@ -161,7 +161,7 @@ export function NetworkMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       this.clearHiddenInput();
       try {
         await this.cb.joinFamily?.(familyId);
-        this.toast('social.family.joined', 'success');
+        this.toast('social.family.joinRequested', 'success');
         this.familySubview = 'info';
         this.familyBrowseQuery = '';
         this.familyBrowseResults = [];

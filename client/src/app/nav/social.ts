@@ -103,7 +103,7 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
           return status;
         },
         createFamily: async (name, tag) => { await worldApi.createFamily(name, tag); },
-        joinFamily:   async (familyId) => { await worldApi.joinFamily(familyId); },
+        joinFamily:   async (familyId) => { await worldApi.requestJoinFamily(familyId); },
         browseFamilies: async (query) => worldApi.browseFamilies(query),
         createSect:   async (name, tag) => { const wid = await ensureWorldId(); await worldApi.createSect(wid, name, tag); },
         joinSect:     async (sectId) => { const wid = await ensureWorldId(); await worldApi.joinSect(wid, sectId); },

@@ -6,6 +6,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { FAMILY_CAP, FAMILY_MSG_BODY_MAX, familyProsperity, type ErrorCode } from '@nw/shared';
 import type { SocialMongo } from '../src/db';
 import { FamilyService } from '../src/familyService';
+import { MailService } from '../src/mailService';
 import { tryConnect, FakeMeta, FakeGateway } from './harness';
 
 const mongo = await tryConnect('nw_social_family_test');
@@ -23,15 +24,19 @@ describe.skipIf(!mongo)('socialsvc FamilyService e2e', () => {
   let meta: FakeMeta;
   let gateway: FakeGateway;
   let svc: FamilyService;
+  let mailSvc: MailService;
 
   beforeEach(async () => {
     await m.collections.families.deleteMany({});
     await m.collections.familyMembers.deleteMany({});
     await m.collections.familyMessages.deleteMany({});
+    await m.collections.familyJoinRequests.deleteMany({});
+    await m.collections.mails.deleteMany({});
     nowMs = 1_000_000;
     meta = new FakeMeta().add('leader', 'P-LEAD').add('m1', 'P-M1').add('m2', 'P-M2');
     gateway = new FakeGateway();
-    svc = new FamilyService({ cols: m.collections, now, gateway, meta });
+    mailSvc = new MailService({ cols: m.collections, gateway, meta, now });
+    svc = new FamilyService({ cols: m.collections, now, gateway, meta, mail: mailSvc });
   });
 
   afterAll(async () => { await m.close(); });
@@ -89,6 +94,94 @@ describe.skipIf(!mongo)('socialsvc FamilyService e2e', () => {
     // memberCount not corrupted by the rejected join.
     expect((await svc.getFamily(fam.familyId))!.memberCount).toBe(FAMILY_CAP);
     expect(await m.collections.familyMembers.findOne({ _id: 'overflow' })).toBeNull();
+  });
+
+  // ── Join-request approval (SS3.x) ────────────────────────────────────────────
+
+  it('requestJoin: creates a pending request without adding membership', async () => {
+    const fam = await svc.createFamily('leader', 'Requesters', 'REQ');
+    const { requestId } = await svc.requestJoin('m1', fam.familyId);
+    expect(requestId).toBeTruthy();
+    expect((await svc.getFamily(fam.familyId))!.memberCount).toBe(1); // still just the leader
+    expect(await svc.getFamilyIdByAccount('m1')).toBeNull();
+  });
+
+  it('requestJoin: rejects unknown family, double-membership, full family, and duplicate pending request', async () => {
+    await expectErr(svc.requestJoin('m1', 'fam:NOPE'), 'NOT_FOUND');
+
+    const fam = await svc.createFamily('leader', 'Requesters2', 'REQ2');
+    await expectErr(svc.requestJoin('leader', fam.familyId), 'ALREADY_IN_FAMILY');
+
+    await svc.requestJoin('m1', fam.familyId);
+    await expectErr(svc.requestJoin('m1', fam.familyId), 'ALREADY_REQUESTED');
+
+    const full = await svc.createFamily('leader2', 'Full Reqs', 'FREQ');
+    meta.add('leader2', 'P-LEAD2');
+    for (let i = 1; i < FAMILY_CAP; i++) await svc.joinFamily(`filler${i}`, full.familyId);
+    await expectErr(svc.requestJoin('overflow', full.familyId), 'FAMILY_FULL');
+  });
+
+  it('listJoinRequests: leader/elder only, resolves applicant profile', async () => {
+    const fam = await svc.createFamily('leader', 'Listers', 'LIST');
+    await svc.requestJoin('m1', fam.familyId);
+    const list = await svc.listJoinRequests('leader');
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ accountId: 'm1', publicId: 'P-M1' });
+
+    await svc.joinFamily('m2', fam.familyId); // plain member, not an approver
+    await expectErr(svc.listJoinRequests('m2'), 'NO_PERMISSION');
+    await expectErr(svc.listJoinRequests('nobody'), 'NOT_IN_FAMILY');
+  });
+
+  it('respondJoinRequest: accept adds membership and clears the pending request', async () => {
+    const fam = await svc.createFamily('leader', 'Approvers', 'APRV');
+    const { requestId } = await svc.requestJoin('m1', fam.familyId);
+    await svc.respondJoinRequest('leader', requestId, true);
+
+    const detail = await svc.getFamily(fam.familyId);
+    expect(detail!.memberCount).toBe(2);
+    expect(detail!.members.find((x) => x.accountId === 'm1')?.role).toBe('member');
+    expect(await svc.listJoinRequests('leader')).toHaveLength(0);
+    // No rejection mail on accept.
+    expect(await m.collections.mails.findOne({ to: 'm1' })).toBeNull();
+  });
+
+  it('respondJoinRequest: reject mails the applicant and leaves membership untouched', async () => {
+    const fam = await svc.createFamily('leader', 'Rejecters', 'REJT');
+    const { requestId } = await svc.requestJoin('m1', fam.familyId);
+    await svc.respondJoinRequest('leader', requestId, false);
+
+    expect(await svc.getFamilyIdByAccount('m1')).toBeNull();
+    expect((await svc.getFamily(fam.familyId))!.memberCount).toBe(1);
+    expect(await svc.listJoinRequests('leader')).toHaveLength(0);
+
+    const mail = await m.collections.mails.findOne({ to: 'm1' });
+    expect(mail).toMatchObject({ subject: 'family.mail.rejected.subject' });
+    expect(mail!.body).toMatch(/^family\.mail\.rejected\.body\|familyName=Rejecters$/);
+  });
+
+  it('respondJoinRequest: elder may respond; member and non-members may not', async () => {
+    const fam = await svc.createFamily('leader', 'Tiered', 'TIER');
+    await svc.joinFamily('elder1', fam.familyId);
+    await svc.setRole('leader', 'elder1', 'elder');
+    await svc.joinFamily('member1', fam.familyId);
+
+    const { requestId: r1 } = await svc.requestJoin('m1', fam.familyId);
+    await expectErr(svc.respondJoinRequest('member1', r1, true), 'NO_PERMISSION');
+    await expectErr(svc.respondJoinRequest('outsider', r1, true), 'NOT_IN_FAMILY');
+    await svc.respondJoinRequest('elder1', r1, true);
+    expect(await svc.getFamilyIdByAccount('m1')).toBe(fam.familyId);
+  });
+
+  it('respondJoinRequest: rejects a request already resolved or from another family', async () => {
+    const famA = await svc.createFamily('leader', 'AFam', 'AFAM');
+    await svc.createFamily('leader2', 'BFam', 'BFAM');
+    meta.add('leader2', 'P-LEAD2');
+    const { requestId } = await svc.requestJoin('m1', famA.familyId);
+
+    await expectErr(svc.respondJoinRequest('leader2', requestId, true), 'NOT_FOUND'); // wrong family
+    await svc.respondJoinRequest('leader', requestId, true);
+    await expectErr(svc.respondJoinRequest('leader', requestId, true), 'NOT_FOUND'); // already resolved
   });
 
   it('leaveFamily: member leaves; leader cannot leave (must transfer/dissolve)', async () => {

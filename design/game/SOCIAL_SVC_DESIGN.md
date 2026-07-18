@@ -112,7 +112,20 @@ interface FamilyMessageDoc {
 }
 // index: { familyId: 1, ts: -1 }
 // TTL index: { ts: 1 } expireAfterSeconds = 7 * 86400
+
+interface FamilyJoinRequestDoc {
+  _id: string;           // uuid
+  familyId: string;
+  accountId: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  createdAt: number;
+  resolvedAt?: number;
+}
+// index: { familyId: 1, status: 1 }
+// index: { accountId: 1, status: 1 }
 ```
+
+**加入需审批**（O1 已拍板，18.07.2026）：`POST /join` 不再直接入队，而是插入一条 `pending` 申请；leader/elder 通过 `GET /requests` 查看、`POST /requests/:id/respond` 同意（走原直接入队逻辑）或拒绝（拒绝会给申请人发一封系统邮件，`family.mail.rejected.*` i18n key，见 §4.1）。
 
 注意：**无 worldId 字段**。家族进入 SLG 大区时，worldsvc 把 `familyId` 写入 `playerWorld.familyId`（只读镜像，socialsvc 不拥有 `playerWorld`）。
 
@@ -145,7 +158,9 @@ interface FamilyMessageDoc {
 | `GET` | `/social/family/mine` | 查我所在的家族（含成员列表） |
 | `GET` | `/social/family/:familyId` | 查指定家族信息 |
 | `GET` | `/social/family/search?tag=` | 按 TAG 搜索家族 |
-| `POST` | `/social/family/:familyId/join` | 申请加入 |
+| `POST` | `/social/family/:familyId/join` | 申请加入（插入 pending 申请，不直接入队） |
+| `GET` | `/social/family/requests` | 查我所在家族的待审批申请列表（leader/elder） |
+| `POST` | `/social/family/requests/:requestId/respond` | 同意/拒绝申请（`{accept: boolean}`；拒绝会给申请人发系统邮件） |
 | `POST` | `/social/family/:familyId/leave` | 退出家族 |
 | `POST` | `/social/family/:familyId/kick` | 踢出成员（leader/elder） |
 | `POST` | `/social/family/:familyId/role` | 更改成员角色（leader 降/升 elder） |
@@ -313,7 +328,7 @@ socialsvc 收到后：从 Redis 查对应频道的在线成员列表，批量调
 
 | # | 问题 | 当前倾向 |
 |---|---|---|
-| O1 | 家族加入方式：开放加入 vs 需族长审批？ | 两种模式都支持（`FamilyDoc.joinPolicy: 'open' \| 'approval'`），P1 先做开放 |
+| O1 | 家族加入方式：开放加入 vs 需族长审批？ | **已拍板（18.07.2026）：统一走审批**，见 §3.1 `FamilyJoinRequestDoc`；未实现 `joinPolicy` 开关 |
 | O2 | 存量 worldsvc 家族（有 worldId）的迁移优先级？ | ✅ 已解决（2026-07-01）：worldsvc 本地 `families`/`familyMembers` 集合已整体移除，无需迁移脚本——家族身份统一在 socialsvc，worldsvc 只保留 `sectId`/`territoryCount`/`prosperity`/`activity` 的写回镜像，见 §6 宗门功能修复 |
 | O3 | socialsvc 是否需要独立 JWT secret，还是复用 meta 的？ | 复用 meta JWT secret，verifyToken 同一套；避免双密钥管理 |
 | O4 | 家族繁荣度（进 SLG 建宗门的门槛）由谁维护？ | socialsvc 记 `prosperity`（家族活跃/捐献累积），worldsvc 读镜像判断门槛 |

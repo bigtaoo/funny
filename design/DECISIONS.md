@@ -467,3 +467,14 @@
   - 下游消费者（`gen-openapi-server.mjs`→`routes.gen.ts`、`client/scripts/gen-openapi.mjs`→`client/src/net/openapi.ts`、`openapi-request-schema.test.ts`/`openapi-response-schema.test.ts`）均只读 `openapi.yml` 文件路径，**未改动**，已验证 tsc/vitest/client typecheck 全绿。
   - CI：`.github/workflows/ci.yml` 新增 "server codegen check (metaserver openapi bundle)" 步骤（`npm run gen:api:contracts:check`），跑在既有 routes.gen.ts staleness check 之前。
   - 范围明确不含 `openapi-world.yml`（worldsvc）/`openapi-auction.yml`（auctionsvc）——规模本身不是痛点，未来若需要可复用同一套 `bundle-openapi.mjs` 模式。
+
+## ADR-041 家族加入改为需 leader/elder 审批（解决 SOCIAL_SVC_DESIGN §8 O1）— Accepted — 2026-07-18
+
+- **决策**（用户拍板）：`POST /social/family/:id/join` 不再直接入队，改为插入一条 `FamilyJoinRequestDoc`（`pending`）；leader/elder 通过新增的 `GET /social/family/requests` 查看、`POST /social/family/requests/:id/respond` 同意（复用原直接入队逻辑）或拒绝（拒绝会给申请人发一封系统邮件，`family.mail.rejected.*` i18n key）。解决 `SOCIAL_SVC_DESIGN.md` §8 遗留的 O1 开放问题（此前文档已预留 `joinPolicy` 字段但从未实现，实际代码是直接入队）。
+- **为什么**：直接入队让族长对新成员毫无筛选权，用户希望能审核申请人。
+- **影响**：
+  - `server/socialsvc`：`db.ts` 新增 `familyJoinRequests` 集合（`{familyId,status}`/`{accountId,status}` 索引）；`familyService.ts` 新增 `requestJoin`/`listJoinRequests`/`respondJoinRequest`（`joinFamily` 保留但只在 accept 路径内部调用）；`httpApi.ts` 新增两条路由（**踩坑**：`GET /social/family/requests` 必须排在通用 `GET /social/family/:id` 之前，否则 `requests` 会被当成 familyId 捕获——已加 HTTP 层 e2e 测试锁定顺序）；`FamilyService` 新增可选 `mail?: MailService` 依赖，`index.ts` 调整实例化顺序（mailSvc 先于 familySvc）。
+  - `@nw/shared`：`ErrorCode.ALREADY_REQUESTED`（409）。
+  - `client`：`WorldApiClient.joinFamily` 改名 `requestJoinFamily` + 新增 `listJoinRequests`/`respondJoinRequest`；`FamilyScene`（`base/data/actions/render.ts`）新增 `isFamilyApprover` 判定、Members 面板顶部"待审批 (N)"按钮（仅 leader/elder 且有申请时显示）、审批弹窗；`FriendsScene` 的家族加入入口（`app/nav/social.ts`/`FriendsScene/service.ts`）同步改为提交申请语义，不再假定"点击即入队"。
+  - 文档：[`SOCIAL_SVC_DESIGN.md`](game/SOCIAL_SVC_DESIGN.md) §3.1（新增 `FamilyJoinRequestDoc`）+ §4.1（路由表）+ §8 O1 拍板。
+  - 测试：`server/socialsvc/test/family.e2e.test.ts`（新增 8 个用例）+ `familyHttp.e2e.test.ts`（新增 wire-level 路由顺序回归）；`client/test/ui/familyJoinApproval.ui.ts`（新增，5 个用例，headless PIXI 渲染断言）。

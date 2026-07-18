@@ -34,6 +34,7 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
   const m = mongo!;
   let server: Server;
   let base: string;
+  let familySvc: FamilyService;
   const token = signToken('leader-a', { secret: SECRET });
   const auth = { authorization: `Bearer ${token}` };
   let t = 1_000_000;
@@ -41,11 +42,11 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
   beforeAll(async () => {
     await m.collections.families.deleteMany({});
     await m.collections.familyMembers.deleteMany({});
-    const meta = new FakeMeta().add('leader-a', 'P-A', 'Alice');
+    const meta = new FakeMeta().add('leader-a', 'P-A', 'Alice').add('leader-b', 'P-B', 'Bob');
     const gateway = new FakeGateway();
-    const familySvc = new FamilyService({ cols: m.collections, now: () => t, gateway, meta });
-    const friendSvc = new FriendService({ cols: m.collections, gateway, meta, now: () => t });
     const mailSvc = new MailService({ cols: m.collections, gateway, meta, now: () => t });
+    familySvc = new FamilyService({ cols: m.collections, now: () => t, gateway, meta, mail: mailSvc });
+    const friendSvc = new FriendService({ cols: m.collections, gateway, meta, now: () => t });
     server = startHttpApi(
       { host: '127.0.0.1', port: 0, jwtSecret: SECRET, internalKey: INTERNAL_KEY },
       familySvc, friendSvc, mailSvc, gateway,
@@ -92,5 +93,93 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
     const families = (await r.json()).data as Array<{ familyId: string }>;
     expect(families).toHaveLength(1);
     expect(families[0]!.familyId).toBe('fam:BETA');
+  });
+
+  it('GET /social/family/requests: 403 for a caller not in any family', async () => {
+    const outsiderToken = signToken('outsider-a', { secret: SECRET });
+    const r = await fetch(`${base}/social/family/requests`, { headers: { authorization: `Bearer ${outsiderToken}` } });
+    expect(r.status).toBe(403);
+    expect((await r.json()).error.code).toBe('NOT_IN_FAMILY');
+  });
+
+  it('POST /respond: 403 when the caller is a plain member (leader/elder only)', async () => {
+    const leaderBToken = signToken('leader-b', { secret: SECRET });
+    const leaderBAuth = { authorization: `Bearer ${leaderBToken}` };
+    const memberToken = signToken('member-b', { secret: SECRET });
+    const memberAuth = { authorization: `Bearer ${memberToken}` };
+
+    await familySvc.joinFamily('member-b', 'fam:BETA'); // direct add — this member isn't the applicant under test
+    const { requestId } = await familySvc.requestJoin('applicant-b', 'fam:BETA');
+
+    const listAsMember = await fetch(`${base}/social/family/requests`, { headers: memberAuth });
+    expect(listAsMember.status).toBe(403);
+    expect((await listAsMember.json()).error.code).toBe('NO_PERMISSION');
+
+    const respondAsMember = await fetch(`${base}/social/family/requests/${requestId}/respond`, {
+      method: 'POST',
+      headers: { ...memberAuth, 'content-type': 'application/json' },
+      body: JSON.stringify({ accept: true }),
+    });
+    expect(respondAsMember.status).toBe(403);
+    expect((await respondAsMember.json()).error.code).toBe('NO_PERMISSION');
+
+    // Sanity: the leader (who does have permission) can still resolve it — the request wasn't
+    // consumed by the rejected attempts above.
+    const respondAsLeader = await fetch(`${base}/social/family/requests/${requestId}/respond`, {
+      method: 'POST',
+      headers: { ...leaderBAuth, 'content-type': 'application/json' },
+      body: JSON.stringify({ accept: false }),
+    });
+    expect(respondAsLeader.status).toBe(200);
+  });
+
+  it('POST /respond {accept:false}: mails the applicant a rejection notice (wire-level)', async () => {
+    const leaderBToken = signToken('leader-b', { secret: SECRET });
+    const leaderBAuth = { authorization: `Bearer ${leaderBToken}` };
+    const { requestId } = await familySvc.requestJoin('applicant-c', 'fam:BETA');
+
+    const r = await fetch(`${base}/social/family/requests/${requestId}/respond`, {
+      method: 'POST',
+      headers: { ...leaderBAuth, 'content-type': 'application/json' },
+      body: JSON.stringify({ accept: false }),
+    });
+    expect(r.status).toBe(200);
+
+    const mail = await m.collections.mails.findOne({ to: 'applicant-c' });
+    expect(mail).toMatchObject({ subject: 'family.mail.rejected.subject' });
+    expect(mail!.body).toMatch(/^family\.mail\.rejected\.body\|familyName=BetaRaiders$/);
+
+    // Rejected applicant is not a member.
+    const famRes = await fetch(`${base}/social/family/fam:BETA`, { headers: leaderBAuth });
+    const fam = (await famRes.json()).data as { members: Array<{ accountId: string }> };
+    expect(fam.members.map((mem) => mem.accountId)).not.toContain('applicant-c');
+  });
+
+  it('join → requests → respond: full wire round trip, and GET /requests is not swallowed by GET /:id', async () => {
+    const applicantToken = signToken('applicant-a', { secret: SECRET });
+    const applicantAuth = { authorization: `Bearer ${applicantToken}` };
+
+    const joinRes = await fetch(`${base}/social/family/fam:ALFA/join`, { method: 'POST', headers: applicantAuth });
+    expect(joinRes.status).toBe(200);
+    const { requestId } = (await joinRes.json()).data as { requestId: string };
+    expect(requestId).toBeTruthy();
+
+    // GET /social/family/requests must resolve to the requests-list route, not the generic
+    // GET /social/family/:id route (which would 500 trying to look up a family named "requests").
+    const listRes = await fetch(`${base}/social/family/requests`, { headers: auth });
+    expect(listRes.status).toBe(200);
+    const { requests } = (await listRes.json()).data as { requests: Array<{ requestId: string; accountId: string }> };
+    expect(requests).toEqual([expect.objectContaining({ requestId, accountId: 'applicant-a' })]);
+
+    const respondRes = await fetch(`${base}/social/family/requests/${requestId}/respond`, {
+      method: 'POST',
+      headers: { ...auth, 'content-type': 'application/json' },
+      body: JSON.stringify({ accept: true }),
+    });
+    expect(respondRes.status).toBe(200);
+
+    const famRes = await fetch(`${base}/social/family/fam:ALFA`, { headers: auth });
+    const fam = (await famRes.json()).data as { members: Array<{ accountId: string }> };
+    expect(fam.members.map((mem) => mem.accountId)).toContain('applicant-a');
   });
 });

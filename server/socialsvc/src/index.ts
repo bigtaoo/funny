@@ -25,13 +25,6 @@ async function main(): Promise<void> {
     ? new HttpSocialMetaClient(env.metaInternalUrl, env.internalKey)
     : nullSocialMetaClient;
 
-  const familySvc = new FamilyService({
-    cols: mongo.collections,
-    gateway,
-    meta,
-    now: () => Date.now(),
-  });
-
   const friendSvc = new FriendService({
     cols: mongo.collections,
     gateway,
@@ -43,6 +36,14 @@ async function main(): Promise<void> {
     cols: mongo.collections,
     gateway,
     meta,
+    now: () => Date.now(),
+  });
+
+  const familySvc = new FamilyService({
+    cols: mongo.collections,
+    gateway,
+    meta,
+    mail: mailSvc,
     now: () => Date.now(),
   });
 
