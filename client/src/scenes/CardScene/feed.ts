@@ -9,6 +9,7 @@ import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { snapFont } from '../../render/fontScale';
 import { FACTION_COLOR } from '../../render/factionIcon';
+import { UNIT_ART_URLS, getArtTexture } from '../../render/cardArt';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import type { Rect } from '../../layout/ILayout';
 import type { CardInstance } from '../../game/meta/SaveData';
@@ -69,6 +70,7 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       this.modalHits = [];
       this.modalOpen = true;
       this.feedScrollPx = 0;
+      const artHooked = new Set<string>();
 
       const drawFeedPanel = (): void => {
         ml.removeChildren();
@@ -162,18 +164,35 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
           rowBg.x = listX; rowBg.y = rowTop;
           listC.addChild(rowBg);
 
-          // Faction identity dot (materials are same-faction anyway; the full totem is detail-only).
+          // Portrait thumbnail, framed with the material's faction color.
           const matDef = CARD_DEFS[g.defId];
+          const thumbBox = rowH - 8 * S;
+          const thumbX = listX + 4 * S;
+          const thumbY = rowTop + (rowH - thumbBox) / 2;
           if (matDef) {
-            const dot = new PIXI.Graphics();
-            dot.beginFill(FACTION_COLOR[matDef.faction]).drawCircle(0, 0, 6 * S).endFill();
-            dot.x = listX + 20 * S; dot.y = rowCy;
-            listC.addChild(dot);
+            const frame = sketchPanel(thumbBox, thumbBox, { fill: 0xf0eee7, border: FACTION_COLOR[matDef.faction], seed: seedFor(i, 24, thumbBox) });
+            frame.x = thumbX; frame.y = thumbY;
+            listC.addChild(frame);
+            const artUrl = UNIT_ART_URLS[matDef.unitType];
+            if (artUrl) {
+              const tex = getArtTexture(artUrl);
+              if (tex.baseTexture.valid) {
+                const scale = Math.min((thumbBox - 4 * S) / tex.width, (thumbBox - 4 * S) / tex.height);
+                const sp = new PIXI.Sprite(tex);
+                sp.anchor.set(0.5);
+                sp.scale.set(scale);
+                sp.position.set(thumbX + thumbBox / 2, thumbY + thumbBox / 2);
+                listC.addChild(sp);
+              } else if (!artHooked.has(artUrl)) {
+                artHooked.add(artUrl);
+                tex.baseTexture.once('loaded', () => this.feedRedraw?.());
+              }
+            }
           }
 
           const matName = t(`card.${g.defId}.name` as TranslationKey);
           const nameLbl = txt(`${matName} Lv.${g.level}`, snapFont(12 * S), C.dark, true);
-          nameLbl.anchor.set(0, 0.5); nameLbl.x = listX + 34 * S; nameLbl.y = rowCy;
+          nameLbl.anchor.set(0, 0.5); nameLbl.x = thumbX + thumbBox + 8 * S; nameLbl.y = rowCy;
           listC.addChild(nameLbl);
 
           // Quantity stepper on the right: [−]  n / total  [+].
