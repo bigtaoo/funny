@@ -302,6 +302,12 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - 验证：client `tsc --noEmit` 全绿；沿用同款「临时挂 `__NW_DEBUG` 钩子（含 `setLocale`）+ 手造 fixture + 直接 `new AuctionScene(...)` 挂载」路线，独立 dev-server 端口（9099，避开另一并发会话占用的 9090）截图核对：英文/中文两种 locale 下卡片紧凑、倒计时完整显示四段单位、买断价+倒计时+按钮均未溢出或重叠。
 - **新增回归测试**（`auctionScene.ui.ts`，`describe('AuctionScene — market cell countdown')`，4 条）：倒计时按 `{d,h,m,s}` 完整格式渲染（非纯分钟数）；已关闭挂单（sold/expired/cancelled）不显示倒计时；倒计时随价格/买断价文字块顺流堆叠而非钉死在卡片底部固定偏移（有买断价行时 y 坐标显著大于无买断价，防止改动回退到旧的"钉底"写法）；倒计时文字块与购买/出价按钮（96×40 hit rect）任何情况下都不发生垂直重叠。均用 `vi.useFakeTimers()`/`setSystemTime` 固定时钟，避免真实时间流逝导致的秒数抖动。
 
+**出价弹层加一口价买断 + 加价步进 + 统一弹窗放大一倍（2026-07-18）**：按用户截图反馈修三处——
+- **一口价买断按钮**：`bid.ts` 的 `openBidForm` 新增：有 `buyoutPrice` 时在弹层内加一条整宽按钮「一口价购买 {price}」（`auction.buyoutNow`，i18n 三语补齐）。服务端 `placeBid` 已支持出价达到/超过 `buyoutPrice` 立即结拍（`auctionService.ts` §B），故按钮直接把 `bidAmount` 设为 `buyoutPrice` 并走既有 `confirmBid`→`placeBid` 链路，未新增接口——`buyAuction` 端点对 `saleMode='auction'` 的单子会 `BAD_REQUEST`（只认 `fixed` 单），一口价买断竞拍单必须走 `placeBid`。
+- **加价步进按钮 +1/+5/+10**：数字步进器（`addNumInput`，仅有 -1/+1）下方新增一排三个快捷加价按钮，点击在当前出价基础上 `+1`/`+5`/`+10`（仍夹在 `minBidFor` 算出的最低出价之上）。
+- **统一弹窗 + 放大一倍**：`bid.ts` 里手写的确认弹窗调用（`confirmBid`→`showConfirmModal`）此前是 `base.ts` 里一份独立手绘实现（尺寸/按钮与其他场景已迁移的共享 `confirmDialog.ts` 不一致），本次把 `AuctionSceneBase.showConfirmModal` 改为直接调用 `drawConfirmDialog`（`FamilyScene`/`SectScene`/`EquipmentScene` 同款，OK/Cancel 文字按钮），消除又一处重复弹窗实现。出价弹层本身（`openBidForm`）保留自绘（内容是表单，非纯确认对话，`drawConfirmDialog` 不适用），尺寸整体翻倍（`mw` 300→600、`mh` 184→276/356，随 buyoutPrice 是否存在浮动）以容纳新增的买断按钮 + 加价步进行；Bid/Cancel 按钮尺寸与统一弹窗的 126×42 对齐（原 80×28），Cancel 从 ✕ 图标改文字，与 `drawConfirmDialog` 视觉统一。
+- 验证：client `tsc --noEmit` 全绿；沿用「临时挂 `__NW_APP`/`__NW_AuctionScene` 钩子（已移除）+ 手造 fixture + 直接 `new AuctionScene(...)` 挂载」路线截图核对：买断按钮/加价步进渲染正确，点击 `+10`×3 出价从 600→630（模拟 `handleDown`/`handleUp` 命中对应 hit rect 验证），点击买断按钮出价直跳 2400（=`buyoutPrice`）并弹出统一确认对话框「Place bid of 2400 coins?」。
+
 ---
 
 ## 7. 反 RMT 总览（持续对抗 R3）
