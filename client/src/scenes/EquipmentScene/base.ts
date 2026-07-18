@@ -22,6 +22,7 @@ import { affixKind, EQUIPMENT_INV_CAP, type EnhanceCost } from '../../game/meta/
 import { ENHANCE_COEFF_PER_LEVEL } from '@nw/engine/balance/equipment';
 import { buildEquipIcon } from '../../render/equipmentAtlas';
 import { buildIcon, type IconKind } from '../../render/icons';
+import { buildMaterialIcon, type MaterialKind } from '../../render/materialAtlas';
 
 export type EquipResult = { ok: true } | { ok: false; key: TranslationKey };
 export type EnhanceResult =
@@ -307,7 +308,7 @@ export class EquipmentSceneBase {
     const slotW = w / TRACKED_MATERIALS.length;
     TRACKED_MATERIALS.forEach((m, i) => {
       const cx = x + i * slotW + Math.round(slotW * 0.1);
-      const ic = buildIcon(matIconKind(m) ?? 'coin', iconSize, MAT_COLOR[m] ?? C.mid);
+      const ic = buildMaterialIcon(m as MaterialKind, iconSize, MAT_COLOR[m] ?? C.mid);
       ic.x = cx; ic.y = midY - iconSize / 2;
       this.bodyLayer.addChild(ic);
       const lbl = txt(`${t(`material.${m}` as TranslationKey)} ${save.materials[m] ?? 0}`, fontSize, C.dark);
@@ -475,7 +476,9 @@ export class EquipmentSceneBase {
     const labelSize = snapFont(Math.round(size * 0.8));
     const item = (kind: IconKind | null, fallback: string, iconColor: number, n: number): void => {
       if (kind) {
-        const ic = buildIcon(kind, size, iconColor);
+        const ic = (kind === 'scrap' || kind === 'lead' || kind === 'binding')
+          ? buildMaterialIcon(kind, size, iconColor)
+          : buildIcon(kind, size, iconColor);
         ic.x = cx; ic.y = midY - size / 2;
         parent.addChild(ic);
         cx += size + 1;

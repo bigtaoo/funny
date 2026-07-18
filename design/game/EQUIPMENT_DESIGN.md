@@ -792,3 +792,13 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 落地：`craftableDefs()` 加一次按稀有度的**稳定排序**（`common→fine→rare→epic`，与 `RARITY_COLOR` 键序一致），槽位内原顺序不变。9 件可锻造装备现按 3 普通/3 精良/3 稀有连续输出，4 列网格下每行稀有度一致。新增 `client/test/equipmentDefs.test.ts` 固化排序 + craftCost 过滤两条不变量。验证：client `tsc --noEmit` 全绿 + 新测试通过；因本机会话无后端未做游戏内截图，改动本身是纯数据排序，用脚本直接打印排序结果核对。
 
+### 20.10 实现记录（2026-07-18，✅）— 材料图标位图化（scrap/lead/binding）
+
+背景：§20.5 把材料（scrap/lead/binding）图标做成 `SketchPen` **程序绘制、零位图**。但装备本体早已在 §20.2 换成 AI 位图图集（`buildEquipIcon`，§20.8 统一出处），导致装备页里「装备本体是彩色位图、三个材料余额却是灰扑扑的程序 glyph」的观感割裂——抽卡结果卡/概率表里材料同样只有 glyph。用户走查确认「位图缺失」。
+
+资产：3 张 AI 手绘位图（notebook 风、透明底、墨线描边）——scrap=撕纸+铅笔屑、lead=三根石墨条捆麻绳、binding=紫色螺旋线圈。源图放 `art/ui/material/`，`build-atlas.js`（仿 `art/ui/equipment/build-atlas.js`，`sharp` 先 `.trim()` 去透明边再 `contain` 到 128²）打成 `client/src/assets/material/material.{png,json}`（384×128，3×1，frame 名 = `scrap`/`lead`/`binding`，即 EquipmentScene 短 id、也是 `GachaScene.MATERIAL_ICON` 的目标 kind）。
+
+接线（纯客户端）：新增 `client/src/render/materialAtlas.ts`——`loadMaterialAtlas()`（boot `material:atlas` 步，非致命）+ `getMaterialIconTexture(kind)` + `buildMaterialIcon(kind,size,color)`（图集就绪返回 `Sprite`，否则回退 §20.5 的 `buildIcon` glyph，与 `buildEquipIcon` 同款「位图优先→glyph 兜底」契约，原点为左上角 `size×size`）。三处调用改走它：`GachaScene.drawEntryPicture`（材料分支）、`EquipmentScene/base.ts` 的 `renderMaterialsBand`（顶部余额条）与成本 chip 闭包（coin 仍走 `buildIcon`）。
+
+验证：client `tsc --noEmit` + 生产 webpack 构建全绿；dev server（9090）运行态经 webpack chunk 反射拿到 PIXI `TextureCache`，确认 `scrap/lead/binding` 三帧 `valid` 且 128²、源图 384×128、逐帧非空（scrap 68 色/luma 9–255 证明是真插画非纯色块）。因材料图标深藏抽卡/装备页需登录+后端，用运行态贴图内省替代逐屏截图。
+
