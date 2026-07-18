@@ -280,7 +280,8 @@ export function startHttpApi(
             const familyId = decodeURIComponent(m[1]!);
             const body = await readJson(req);
             const sectId = typeof body.sectId === 'string' ? body.sectId : null;
-            await familySvc.setSect(familyId, sectId);
+            const sectName = typeof body.sectName === 'string' ? body.sectName : null;
+            await familySvc.setSect(familyId, sectId, sectName);
             return send(res, 200, ok({}));
           }
         }

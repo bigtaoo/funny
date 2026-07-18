@@ -6,6 +6,8 @@ import { createAdminMongo, type AdminMongo } from '../src/db';
 import { AdminService, AdminError, type Actor } from '../src/service';
 import { seedSuperAdmin } from '../src/seed';
 import type {
+  AntiCheatClient,
+  AntiCheatReviewRow,
   MailDispatcher,
   MailSendReq,
   MailSendRes,
@@ -14,6 +16,7 @@ import type {
   PlayerClient,
   PlayerProfile,
   StatsClient,
+  SuspiciousPveClient,
 } from '../src/clients';
 import type { LiveStats } from '@nw/shared';
 
@@ -59,9 +62,43 @@ class FakeMail implements MailDispatcher {
 }
 const stubPlayer: PlayerClient = {
   available: true,
-  lookupByPublicId: async (publicId: string): Promise<PlayerProfile | null> =>
-    publicId === '123456789' ? { publicId, displayName: 'Alice', rank: 'gold', elo: 1200, wins: 3, losses: 1 } : null,
+  lookupByPublicId: async (publicId: string): Promise<PlayerProfile | null> => {
+    if (publicId === '123456789') return { publicId, displayName: 'Alice', rank: 'gold', elo: 1200, wins: 3, losses: 1, banned: false };
+    if (publicId === '999999998') return { publicId, displayName: 'Bob', banned: true };
+    return null;
+  },
+  lookupByAccountId: async (): Promise<PlayerProfile | null> => null,
+  search: async (): Promise<[]> => [],
+  resetPassword: async (accountId: string): Promise<{ ok: true } | { ok: false; error: string }> =>
+    accountId === 'no-password-account' ? { ok: false, error: 'account has no password credential' } : { ok: true },
 };
+// Fake ban/unban backing store for the manual ban feature (S4-4, anticheat.action) — mirrors FakeSuspiciousPve in season-audit.e2e.test.ts.
+class FakeSuspiciousPve implements SuspiciousPveClient {
+  available = true;
+  banned = new Set<string>();
+  async listSuspiciousPve() { return []; }
+  async banAccount(accountId: string) { this.banned.add(accountId); return { ok: true }; }
+  async unbanAccount(accountId: string) { this.banned.delete(accountId); return { ok: true }; }
+}
+// Fake anti-cheat review queue backing store (PvE reject review, 2026-07-18 policy change: no auto-ban).
+class FakeAntiCheat implements AntiCheatClient {
+  available = true;
+  rows: AntiCheatReviewRow[] = [];
+  async listReviews(opts?: { accountId?: string; status?: string; limit?: number }) {
+    return this.rows.filter(
+      (r) => (!opts?.accountId || r.accountId === opts.accountId) && (!opts?.status || opts.status === 'all' || r.status === opts.status),
+    );
+  }
+  async resolveReview(id: string, resolution: 'dismissed' | 'banned', resolvedBy: string) {
+    const row = this.rows.find((r) => r._id === id);
+    if (!row) return { ok: false };
+    row.status = 'reviewed';
+    row.resolution = resolution;
+    row.resolvedBy = resolvedBy;
+    row.resolvedAt = 1;
+    return { ok: true };
+  }
+}
 
 async function actorOf(svc: AdminService, username: string): Promise<Actor> {
   const doc = (await svc.getAccount((await mongo!.collections.adminAccounts.findOne({ username }))!._id))!;
@@ -72,12 +109,16 @@ describe.skipIf(!mongo)('admin service e2e', () => {
   const m = mongo!;
   let svc: AdminService;
   let mail: FakeMail;
+  let suspiciousPve: FakeSuspiciousPve;
+  let antiCheat: FakeAntiCheat;
 
   beforeEach(async () => {
     await m.db.dropDatabase();
     await m.ensureIndexes(3600);
     mail = new FakeMail();
-    svc = new AdminService({ cols: m.collections, stats: stubStats, players: stubPlayer, mail, now });
+    suspiciousPve = new FakeSuspiciousPve();
+    antiCheat = new FakeAntiCheat();
+    svc = new AdminService({ cols: m.collections, stats: stubStats, players: stubPlayer, suspiciousPve, antiCheat, mail, now });
     // Seed: one super-admin + one ops + one support agent.
     await seedSuperAdmin(m.collections, 'root', 'rootpass', now);
     const root = await actorOf(svc, 'root');
@@ -285,6 +326,76 @@ describe.skipIf(!mongo)('admin service e2e', () => {
   it('player.lookup by publicId + not found', async () => {
     expect(await svc.lookupPlayer('123456789')).toMatchObject({ displayName: 'Alice', rank: 'gold' });
     await expect(svc.lookupPlayer('999999999')).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('player.lookup surfaces the banned flag from the player client (2026-07-18 Player Lookup ban-visibility fix)', async () => {
+    expect(await svc.lookupPlayer('123456789')).toMatchObject({ banned: false });
+    expect(await svc.lookupPlayer('999999998')).toMatchObject({ banned: true });
+  });
+
+  it('anticheat.action: manual ban/unban (S4-4) is idempotent and toggles the backing store', async () => {
+    expect(await svc.banAccount('acc-1')).toEqual({ ok: true });
+    expect(suspiciousPve.banned.has('acc-1')).toBe(true);
+    // Idempotent: banning an already-banned account still succeeds.
+    expect(await svc.banAccount('acc-1')).toEqual({ ok: true });
+    expect(await svc.unbanAccount('acc-1')).toEqual({ ok: true });
+    expect(suspiciousPve.banned.has('acc-1')).toBe(false);
+    // Idempotent: unbanning an already-clear account still succeeds.
+    expect(await svc.unbanAccount('acc-1')).toEqual({ ok: true });
+  });
+
+  it('player.password_reset: resets via the player client + audits; surfaces the client error for a passwordless account', async () => {
+    const root = await actorOf(svc, 'root');
+    await svc.resetPlayerPassword(root.adminId, 'acc-1', '123456');
+    const entries = await svc.listAudit(root, {});
+    expect(entries.some((e) => e.action === 'player.password_reset' && e.target === 'acc-1')).toBe(true);
+    await expect(svc.resetPlayerPassword(root.adminId, 'no-password-account', '123456')).rejects.toMatchObject({
+      status: 409,
+    });
+    await expect(svc.resetPlayerPassword(root.adminId, 'acc-1', 'short')).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('anticheat review resolve (2026-07-18 policy: PvE reject no longer auto-bans, human decides ban vs dismiss)', async () => {
+    const root = await actorOf(svc, 'root');
+    antiCheat.rows.push({
+      _id: 'pve:verify-1',
+      kind: 'pve_reject',
+      accountId: 'acc-1',
+      levelId: 'ch1_lv7',
+      claimedStars: 2,
+      judgedStars: 0,
+      rejectCountAfter: 1,
+      severity: 'normal',
+      status: 'open',
+      ts: 1,
+    });
+    antiCheat.rows.push({
+      _id: 'pve:verify-2',
+      kind: 'pve_reject',
+      accountId: 'acc-2',
+      levelId: 'ch1_lv9',
+      claimedStars: 2,
+      judgedStars: 1,
+      rejectCountAfter: 3,
+      severity: 'high',
+      status: 'open',
+      ts: 2,
+    });
+    // Dismiss: no ban, just marks the review resolved.
+    await svc.resolveAntiCheatReview(root.adminId, 'pve:verify-1', 'acc-1', 'dismissed');
+    expect(suspiciousPve.banned.has('acc-1')).toBe(false);
+    expect(antiCheat.rows[0]).toMatchObject({ status: 'reviewed', resolution: 'dismissed', resolvedBy: root.adminId });
+    // Ban: goes through the same manual-ban backing store as Player Lookup's Ban button.
+    await svc.resolveAntiCheatReview(root.adminId, 'pve:verify-2', 'acc-2', 'banned');
+    expect(suspiciousPve.banned.has('acc-2')).toBe(true);
+    expect(antiCheat.rows[1]).toMatchObject({ status: 'reviewed', resolution: 'banned' });
+    // Audited under account.ban when banned, so it's visible in the same audit trail as manual bans.
+    const entries = await svc.listAudit(root, {});
+    expect(entries.some((e) => e.action === 'account.ban' && e.target === 'acc-2')).toBe(true);
+    // Unknown review id → 404.
+    await expect(svc.resolveAntiCheatReview(root.adminId, 'no-such-review', 'acc-3', 'dismissed')).rejects.toMatchObject({
+      status: 404,
+    });
   });
 
   it('sampling writes metricSnapshots → trend queryable', async () => {

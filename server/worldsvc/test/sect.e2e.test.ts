@@ -82,11 +82,11 @@ class FakeSocialsvc implements WorldSocialsvcClient {
     return [...this.families.values()].filter((f) => f.sectId === sid).map((f) => ({ ...f }));
   }
 
-  async setSect(familyId: string, sid: string | null): Promise<void> {
+  async setSect(familyId: string, sid: string | null, sectName?: string | null): Promise<void> {
     const f = this.families.get(familyId);
     if (!f) return;
-    if (sid) f.sectId = sid;
-    else delete f.sectId;
+    if (sid) { f.sectId = sid; if (sectName) f.sectName = sectName; }
+    else { delete f.sectId; delete f.sectName; }
   }
 
   async bumpActivity(familyId: string, delta: number): Promise<void> {
@@ -110,6 +110,7 @@ class FakeSocialsvc implements WorldSocialsvcClient {
     f.prosperity = 0;
     f.activity = 0;
     delete f.sectId;
+    delete f.sectName;
   }
 
   /** Test sink: sect real-time fan-out now flows through socialsvc.push (preferred path when available); tests capture it here. */
@@ -211,6 +212,9 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     expect(detail.leaderFamilyId).toBe(aa);
     expect(detail.memberFamilyCount).toBe(1);
     expect(spends).toEqual([{ accountId: 'alice', amount: SECT_CREATE_COST }]);
+    // The founding family's socialsvc mirror carries the sect's display name, not just its id
+    // (client family-detail popup shows this — see SOCIAL_SVC_DESIGN.md 2026-07-18 note).
+    expect((await socialsvc.getFamiliesByIds([aa]))[0].sectName).toBe('Sky Sect');
   });
 
   it('found sect: name width-capped (full-width = 2, cap 12 → 6 汉字 or 12 letters)', async () => {
@@ -255,22 +259,28 @@ describe.skipIf(!mongo)('SectService e2e', () => {
 
   it('join + list + detail', async () => {
     await makeFamily('alice', 'Alpha', 'AW');
-    await makeFamily('bob', 'Beta', 'BT');
+    const bb = await makeFamily('bob', 'Beta', 'BT');
     const s = await sect.createSect(W, 'alice', 'Sky', 'SKY');
     await sect.joinSect(W, 'bob', s.sectId);
     const list = await sect.listSects(W);
     expect(list[0].memberFamilyCount).toBe(2);
     const detail = await sect.getSect(s.sectId);
     expect(detail!.memberFamilies.map((f) => f.tag).sort()).toEqual(['AW', 'BT']);
+    // Joining (not just founding) also mirrors the sect's display name onto the joining family.
+    expect((await socialsvc.getFamiliesByIds([bb]))[0].sectName).toBe('Sky');
   });
 
   it('leave sect: member family may leave; leader family cannot leave directly', async () => {
     await makeFamily('alice', 'Alpha', 'AW');
-    await makeFamily('bob', 'Beta', 'BT');
+    const bb = await makeFamily('bob', 'Beta', 'BT');
     const s = await sect.createSect(W, 'alice', 'Sky', 'SKY');
     await sect.joinSect(W, 'bob', s.sectId);
     await sect.leaveSect(W, 'bob');
     expect((await sect.getSect(s.sectId))!.memberFamilyCount).toBe(1);
+    // Leaving clears both the sectId and the mirrored sectName off bob's family.
+    const [fBob] = await socialsvc.getFamiliesByIds([bb]);
+    expect(fBob!.sectId).toBeUndefined();
+    expect(fBob!.sectName).toBeUndefined();
     await expect(sect.leaveSect(W, 'alice')).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
@@ -353,9 +363,10 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     expect(await sect.getSect(a.sectId)).toBeNull();
     // Ally b's allySectIds has had a removed
     expect((await sect.getSect(b.sectId))!.allySectIds).not.toContain(a.sectId);
-    // alice family's sectId has been cleared (via socialsvc mirror)
+    // alice family's sectId (and mirrored sectName) has been cleared (via socialsvc mirror)
     const [fAlice] = await socialsvc.getFamiliesByIds([aa]);
     expect(fAlice!.sectId).toBeUndefined();
+    expect(fAlice!.sectName).toBeUndefined();
   });
 
   it('settleSeason: aggregate nation count by sect (sect > family > solo)', async () => {

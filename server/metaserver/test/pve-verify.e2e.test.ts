@@ -114,23 +114,31 @@ describe.skipIf(!mongo)('pve L1 verify e2e', () => {
     expect((await verify('no-such-id')).statusCode).toBe(404);
   });
 
-  it('three-strikes ban: pveClear returns 403 after 3 re-computation rejections', async () => {
-    // PVE_REJECT_BAN_THRESHOLD = 3: 3 rejected verdicts → pveBanned = true → subsequent clears return 403.
-    // Only *first* clears are force-sampled for spot-check (non-first clears are only randomly sampled), so drive
-    // three distinct first-clears — ch1_lv1→lv2→lv3. Each clear writes progress even on the spot-check path
-    // (materials withheld), so the next level unlocks; each is then rejected via verify.
+  it('repeated rejections no longer auto-ban (2026-07-18 policy change): each files an open review ticket instead', async () => {
+    // A legitimate, heavily-invested account can clear early content with zero input (base/hero auto-attack
+    // alone), which a naive 3-strikes auto-ban can't distinguish from a forged empty replay — see
+    // PVE_INTEGRITY_PLAN.md. So a rejection now only files a review ticket for a human to decide; it never
+    // bans on its own. Drive three distinct first-clears — ch1_lv1→lv2→lv3 (only first clears are
+    // force-sampled for spot-check) — each rejected via verify.
     gateway.next = { ok: true, stars: 1 }; // re-computation yields 1 star, claimed 3 → rejected
 
     for (const levelId of ['ch1_lv1', 'ch1_lv2', 'ch1_lv3']) {
       const c = b(await clear(levelId, 3));
       expect(c.data.needsReplay).toBe(true); // first clear is always spot-checked
       const v = b(await verify(c.data.verifyId));
-      expect(v.data.verified).toBe(false); // rejected → pveRejectCount++
+      expect(v.data.verified).toBe(false); // rejected → pveRejectCount++, no ban
+      expect(v.data.save.antiCheat?.pveBanned).toBeFalsy();
     }
 
-    // 4th pveClear is blocked by the ban (3 rejections → pveBanned).
-    const blocked = await clear('ch1_lv1', 3);
-    expect(blocked.statusCode).toBe(403);
+    // Not blocked: 4th pveClear proceeds normally — no auto-ban regardless of reject count.
+    const notBlocked = await clear('ch1_lv1', 3);
+    expect(notBlocked.statusCode).toBe(200);
+
+    // Every rejection filed an open pve_reject review ticket; the 3rd (reaching the old ban threshold) is 'high' severity.
+    const reviews = await m.collections.antiCheatReviews.find({ kind: 'pve_reject' }).sort({ ts: 1 }).toArray();
+    expect(reviews).toHaveLength(3);
+    expect(reviews.every((r) => r.status === 'open')).toBe(true);
+    expect(reviews.map((r) => r.severity)).toEqual(['normal', 'normal', 'high']);
   });
 
   it('three-strikes ban: pveVerify returns 403 for a banned account', async () => {

@@ -1,9 +1,11 @@
 // Regression coverage for the feed-modal material picker (client/src/scenes/CardScene/feed.ts).
 //
-// Two behaviours, both requested 2026-07-18:
-//  1. Identical materials (same card def + same level) collapse into ONE row with a quantity stepper
-//     ([−] n / total [+]) instead of a separate row per duplicate.
-//  2. The list is drag-scrollable (press-drag pans it), not paged via arrow buttons.
+// Behaviours covered:
+//  1. Identical materials (same card def + same level) collapse into ONE row showing "n / total".
+//  2. Tapping a row's body cycles its count +1, wrapping back to 0 past the max; dragging the row's
+//     quantity slider jumps straight to a value (added 2026-07-18 to replace a +/- stepper — with
+//     dozens of owned duplicates, tapping + once per card was too slow).
+//  3. The list is drag-scrollable (press-drag pans it), not paged via arrow buttons.
 // Plus the still-relevant invariants: Confirm/Cancel stay on-screen, and a drag that starts on a row
 // does not toggle/step it (it's a scroll-intent gesture).
 
@@ -55,33 +57,44 @@ function hitUnder(hits: Hit[], pos: { x: number; y: number }): Hit | undefined {
   return hits.find(({ rect: r }) => pos.x >= r.x && pos.x <= r.x + r.w && pos.y >= r.y && pos.y <= r.y + r.h);
 }
 
-/** The two stepper buttons are the only square hits of this fixed size (see feed.ts's `stepSz`). */
-function stepperHits(hits: Hit[]): Hit[] {
-  const STEP_SZ = 78; // 26 * S, S=3
-  return hits.filter((h) => Math.abs(h.rect.w - STEP_SZ) < 1e-6 && Math.abs(h.rect.h - STEP_SZ) < 1e-6);
+type Slider = { rect: { x: number; y: number; w: number; h: number }; onDrag: (x: number) => void };
+
+function modalSlidersOf(scene: CardScene): Slider[] {
+  return (scene as unknown as { modalSliders: Slider[] }).modalSliders;
 }
 
-/** Plus is the right-most stepper (always present until the cap); minus the left-most (only when n>0). */
-function plusHit(hits: Hit[]): Hit {
-  const s = stepperHits(hits).sort((a, b) => a.rect.x - b.rect.x);
-  return s[s.length - 1];
-}
-function minusHit(hits: Hit[]): Hit {
-  const s = stepperHits(hits).sort((a, b) => a.rect.x - b.rect.x);
-  return s[0];
-}
-
-/** Steppers of the row whose vertical center is nearest `y` (to target one group among several). */
-function steppersInRow(hits: Hit[], y: number): Hit[] {
-  return stepperHits(hits)
-    .filter((h) => Math.abs(h.rect.y + h.rect.h / 2 - y) < 60)
-    .sort((a, b) => a.rect.x - b.rect.x);
-}
-function plusInRow(scene: CardScene, label: string): Hit {
+/** The row-body hit is the wide hit whose vertical center sits under the row's name label. */
+function bodyHitInRow(scene: CardScene, label: string): Hit {
   const pos = findLabelPos(scene.container, label);
   expect(pos, `row "${label}" not found`).not.toBeNull();
-  const s = steppersInRow(modalHitsOf(scene), pos!.y);
-  return s[s.length - 1];
+  const hit = modalHitsOf(scene).find(
+    (h) => pos!.x >= h.rect.x && pos!.x <= h.rect.x + h.rect.w && Math.abs(pos!.y - (h.rect.y + h.rect.h / 2)) < 70,
+  );
+  expect(hit, `no row-body hit for "${label}"`).toBeDefined();
+  return hit!;
+}
+
+/** Tapping a row's body cycles its selected count by +1 (wrapping to 0 past the max). */
+function tapRow(scene: CardScene, label: string): void {
+  bodyHitInRow(scene, label).action();
+}
+
+/** The quantity drag-slider for the row whose vertical center is nearest the row's name label. */
+function sliderInRow(scene: CardScene, label: string): Slider {
+  const pos = findLabelPos(scene.container, label);
+  expect(pos, `row "${label}" not found`).not.toBeNull();
+  const slider = modalSlidersOf(scene).find((s) => Math.abs(s.rect.y + s.rect.h / 2 - pos!.y) < 60);
+  expect(slider, `no slider for row "${label}"`).toBeDefined();
+  return slider!;
+}
+
+/** Drags a row's slider so it lands on exactly `n` out of `total` (matches feed.ts's own rounding). */
+function dragRowTo(scene: CardScene, label: string, n: number, total: number): void {
+  const HANDLE_R = 27; // 9 * S, S=3 — see feed.ts
+  const s = sliderInRow(scene, label);
+  const trackX0 = s.rect.x + HANDLE_R;
+  const trackW = s.rect.w - HANDLE_R * 2;
+  s.onDrag(trackX0 + (n / total) * trackW);
 }
 
 function buildScene(cb: CardCallbacks): CardScene {
@@ -163,25 +176,27 @@ describe('CardScene feed modal — duplicate grouping + quantity stepper', () =>
     expect(findLabelPos(scene.container, '0 / 1')).not.toBeNull(); // the one Lv.2
   });
 
-  it('+ steps up to the max (then disables), − steps back down, Confirm shows the running total', () => {
+  it('tapping the row body steps up to the max, then wraps to 0; Confirm shows the running total', () => {
     const target = makeCard('target', 'lena');
     const cardInv: Record<string, CardInstance> = { target };
     for (let i = 0; i < 3; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max');
 
     const scene = buildScene(baseCb(cardInv));
     openFeed(scene, target);
+    const rowLabel = `${MAX_NAME} Lv.1`;
 
-    // Step up to the max.
+    // Tap up to the max.
     for (let want = 1; want <= 3; want++) {
-      plusHit(modalHitsOf(scene)).action();
+      tapRow(scene, rowLabel);
       expect(findLabelPos(scene.container, `${want} / 3`)).not.toBeNull();
       expect(findLabelPos(scene.container, `${t('roster.feedBtn')} (${want})`)).not.toBeNull();
     }
-    // At the cap the plus is disabled ⇒ only the minus stepper remains.
-    expect(stepperHits(modalHitsOf(scene)).length).toBe(1);
+    // One more tap past the cap wraps back to 0.
+    tapRow(scene, rowLabel);
+    expect(findLabelPos(scene.container, '0 / 3')).not.toBeNull();
 
-    // Step back down one.
-    minusHit(modalHitsOf(scene)).action();
+    // Dragging the slider jumps straight to an exact value.
+    dragRowTo(scene, rowLabel, 2, 3);
     expect(findLabelPos(scene.container, '2 / 3')).not.toBeNull();
     expect(findLabelPos(scene.container, `${t('roster.feedBtn')} (2)`)).not.toBeNull();
   });
@@ -197,8 +212,9 @@ describe('CardScene feed modal — duplicate grouping + quantity stepper', () =>
     }));
     openFeed(scene, target);
 
-    plusHit(modalHitsOf(scene)).action();
-    plusHit(modalHitsOf(scene)).action(); // select 2
+    const rowLabel = `${MAX_NAME} Lv.1`;
+    tapRow(scene, rowLabel);
+    tapRow(scene, rowLabel); // select 2
 
     const confirmPos = findLabelPos(scene.container, `${t('roster.feedBtn')} (2)`);
     expect(confirmPos).not.toBeNull();
@@ -314,9 +330,9 @@ describe('CardScene feed modal — multiple groups', () => {
     const scene = buildScene(baseCb(cardInv));
     openFeed(scene, target);
 
-    plusInRow(scene, `${MAX_NAME} Lv.1`).action();  // Max → 1
-    plusInRow(scene, `${MARA_NAME} Lv.1`).action(); // Mara → 1
-    plusInRow(scene, `${MARA_NAME} Lv.1`).action(); // Mara → 2
+    tapRow(scene, `${MAX_NAME} Lv.1`);  // Max → 1
+    tapRow(scene, `${MARA_NAME} Lv.1`); // Mara → 1
+    tapRow(scene, `${MARA_NAME} Lv.1`); // Mara → 2
 
     expect(findLabelPos(scene.container, '1 / 2')).not.toBeNull(); // Max row
     expect(findLabelPos(scene.container, '2 / 3')).not.toBeNull(); // Mara row
@@ -337,8 +353,8 @@ describe('CardScene feed modal — multiple groups', () => {
     }));
     openFeed(scene, target);
 
-    plusInRow(scene, `${MAX_NAME} Lv.1`).action();  // 1 max
-    plusInRow(scene, `${MARA_NAME} Lv.1`).action(); // 1 mara
+    tapRow(scene, `${MAX_NAME} Lv.1`);  // 1 max
+    tapRow(scene, `${MARA_NAME} Lv.1`); // 1 mara
 
     const confirmPos = findLabelPos(scene.container, `${t('roster.feedBtn')} (2)`);
     hitUnder(modalHitsOf(scene), confirmPos!)!.action();
@@ -358,22 +374,11 @@ describe('CardScene feed modal — multiple groups', () => {
 
     const scene = buildScene(baseCb(cardInv));
     openFeed(scene, target);
+    const rowLabel = `${MAX_NAME} Lv.1`;
 
-    // The row-body hit is the wide, non-square hit on the left of the row (not a stepper square).
-    const bodyTap = (): void => {
-      const pos = findLabelPos(scene.container, `${MAX_NAME} Lv.1`)!;
-      const steppers = new Set(stepperHits(modalHitsOf(scene)));
-      const body = modalHitsOf(scene).find(
-        (h) => !steppers.has(h) && pos.x >= h.rect.x && pos.x <= h.rect.x + h.rect.w
-          && Math.abs(pos.y - (h.rect.y + h.rect.h / 2)) < 70,
-      );
-      expect(body, 'no row-body hit').toBeDefined();
-      body!.action();
-    };
-
-    bodyTap(); expect(findLabelPos(scene.container, '1 / 2')).not.toBeNull();
-    bodyTap(); expect(findLabelPos(scene.container, '2 / 2')).not.toBeNull();
-    bodyTap(); expect(findLabelPos(scene.container, '0 / 2')).not.toBeNull(); // wrapped
+    tapRow(scene, rowLabel); expect(findLabelPos(scene.container, '1 / 2')).not.toBeNull();
+    tapRow(scene, rowLabel); expect(findLabelPos(scene.container, '2 / 2')).not.toBeNull();
+    tapRow(scene, rowLabel); expect(findLabelPos(scene.container, '0 / 2')).not.toBeNull(); // wrapped
   });
 });
 

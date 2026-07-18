@@ -6,7 +6,8 @@
 // save-manager.test.ts's fakeApi) rather than the full createAppCore/HeadlessPlatform stack, since
 // this is exercising nav/auth.ts's own logic, not full app wiring.
 import { describe, it, expect, vi } from 'vitest';
-import { createAuthNav } from '../src/app/nav/auth';
+import { createAuthNav, mapAuthError } from '../src/app/nav/auth';
+import { ApiError } from '../src/net/ApiClient/base';
 import type { AppCtx, AppState, Nav } from '../src/app/appCtx';
 import type { ActiveMatchInfo } from '../src/net/ApiClient';
 import type { ReconnectPromptCallbacks } from '../src/render/ReconnectPromptDialog';
@@ -202,5 +203,17 @@ describe('offerResume via resolveEntry() (wx auto-login)', () => {
     await settle();
     expect(saveManager.bootstrap).toHaveBeenCalledTimes(1);
     expect(views.showReconnectPrompt).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('mapAuthError (2026-07-18: banned accounts get a distinct message, not the generic network error)', () => {
+  it('ACCOUNT_BANNED maps to its own key, not the generic network fallback', () => {
+    expect(mapAuthError(new ApiError('ACCOUNT_BANNED', 'account banned'))).toBe('auth.err.banned');
+  });
+  it('unmapped codes still fall back to the generic network error', () => {
+    expect(mapAuthError(new ApiError('SOME_UNKNOWN_CODE', 'x'))).toBe('auth.err.network');
+  });
+  it('INVALID_CREDENTIALS still maps as before (regression guard)', () => {
+    expect(mapAuthError(new ApiError('INVALID_CREDENTIALS', 'nope'))).toBe('auth.err.invalid');
   });
 });

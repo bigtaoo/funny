@@ -6,7 +6,9 @@ export type AdminCapability =
   | 'monitor.view'
   | 'analytics.view'
   | 'player.lookup'
+  | 'player.password_reset'
   | 'anticheat.view'
+  | 'anticheat.action'
   | 'comp.initiate.single'
   | 'comp.initiate.global'
   | 'comp.approve.single'
@@ -114,21 +116,33 @@ export interface TrendPoint {
   ts: number;
   value: number;
 }
-/** Achievement anti-cheat review record (S9-7; read-only view of the meta AntiCheatReviewDoc). */
+/** Anti-cheat review record (S9-7 + PvE reject 2026-07-18; mirror of the meta AntiCheatReviewDoc). Human resolves via resolveAntiCheatReview. */
 export interface AntiCheatReviewView {
   _id: string;
-  roomId: string;
+  kind?: 'pvp_overclaim' | 'pve_reject'; // absent = 'pvp_overclaim' (pre-existing rows)
   accountId: string;
   publicId?: string;
-  side: number;
-  reported: Record<string, number>;
-  authoritative: Record<string, number>;
-  overclaim: Record<string, number>;
-  rolledBack: Record<string, number>;
-  suspicionAfter: number;
-  judgeAccountId?: string;
   status: 'open' | 'reviewed';
   ts: number;
+  // pvp_overclaim
+  roomId?: string;
+  side?: number;
+  reported?: Record<string, number>;
+  authoritative?: Record<string, number>;
+  overclaim?: Record<string, number>;
+  rolledBack?: Record<string, number>;
+  suspicionAfter?: number;
+  judgeAccountId?: string;
+  // pve_reject
+  levelId?: string;
+  claimedStars?: number;
+  judgedStars?: number;
+  rejectCountAfter?: number;
+  severity?: 'normal' | 'high';
+  // resolution
+  resolvedBy?: string;
+  resolvedAt?: number;
+  resolution?: 'dismissed' | 'banned';
 }
 
 export interface PlayerProfile {
@@ -139,6 +153,7 @@ export interface PlayerProfile {
   elo?: number;
   wins?: number;
   losses?: number;
+  banned?: boolean;
 }
 
 export interface PlayerSummary {

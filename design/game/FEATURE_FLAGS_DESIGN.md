@@ -425,3 +425,13 @@ client_log_debug: { default: false, desc: '客户端日志上报-debug', side: '
 - **`crumbs`**：`anr` 上报现在也带上最近 12 条 `recentClientLogs()` 环形缓冲（此前只有 crash/exit-flush 才带），格式同 `[level:tag] msg`——多数是 `crumb:info:api`/`crumb:info:gateway` 这类网络层事件，卡顿前最后一次网络活动是什么，有时候本身就是线索（例如卡顿前一刻正在等一个从未返回的请求）。
 
 `tsc --noEmit` clean；`test/anomaly-chain.test.ts` 12/12、`client/test/ui/scenes.ui.ts` 83/83 不受影响（未改动其结构，纯加法）。**下一步**：等下一批线上 `anr` 日志，看 `longFrameMs` 是否出现、是否接近 `stallMs`——这会直接决定卡顿是"某个场景的慢同步代码"还是"GC/系统级停顿"，两条路径的修法完全不同。
+
+### 2026-07-18（三续）· 补 `longConstruct` 归因，覆盖 `scene.update()` 之外的另一段同步路径（§9.7 anr）
+
+**验证结果**：上一条埋点上线后拿到的下一批线上 `anr`（build `7d16ec4`/`8175930`，均已包含 `tearDownChildren` 泄漏修复的祖先提交，`baseTex` 已从 1000-3200+ 降到 100-450，确认泄漏修复生效）里，`stallMs` 8982-53151 的多条 `LobbyScene`/`FriendsScene`/`LeaderboardScene` 冻结**全部没有 `longFrameMs`**——排除了"某场景 `update()` 卡住"。但泄漏修复后 baseTex 大降，卡顿时长却没有变短（甚至出现比修复前更长的 53s），也削弱了"堆越大 GC 停顿越久"这个假设。
+
+**盲区定位**：`recordFrameSample` 只计时 `SceneManager.onTick` 里的 `scene.update()` 调用，但 `goto()` 导航还有另一段完全同步、且完全没被计时的路径——`new XxxScene(...)` 构造函数本身（`client/src/app.ts` `PixiAppViews` 的每个 `showXxx()` 方法都是 `new XxxScene(...)` 后立即 `manager.goto()`）。场景构造函数在挂载/被 tick 之前就跑完了列表建行、布局、文本纹理等全部同步 UI 搭建工作，这条路径此前完全是黑的。
+
+**新增 `longConstructMs`/`longConstructScene`**：`net/anomaly.ts` 新增 `recordConstructSample(scene, ms)`（同 `recordFrameSample` 的模式，≥200ms 才记，60s 内附到下一次 `anr` 上报）；`app.ts` `PixiAppViews` 新增私有 `timedBuild(name, build)` helper，包住全部 ~30 处 `new XxxScene(...)` 调用计时。**若 `longConstructMs` 接近 `stallMs`，说明卡顿其实发生在场景构造阶段（可复现、可优化，大概率是某个场景进入时同步建了太多 UI/纹理）；若仍然缺席，才真正指向 GC/系统级停顿或渲染代码之外的阻塞**。
+
+`tsc --noEmit` clean。**下一步**：等下一批线上 `anr` 日志读 `longConstructMs`——这应该能把 LobbyScene/FriendsScene/LeaderboardScene 反复出现的卡顿最终定位到"哪个场景的构造函数"或彻底排除掉这条路径。

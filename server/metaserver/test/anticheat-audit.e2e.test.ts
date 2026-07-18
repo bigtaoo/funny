@@ -261,4 +261,42 @@ describe.skipIf(!mongo)('anti-cheat offline audit e2e', () => {
     expect(body.reviews.length).toBe(1);
     expect(body.reviews[0].accountId).toBe('acctA');
   });
+
+  it('POST /internal/anticheat/reviews/:id/resolve: auth guard + marks resolved + rejects unknown id/resolution (2026-07-18 human-review policy)', async () => {
+    await seedSave('acctA', { 'kill.archer': 50 });
+    await seedSave('acctB');
+    await seedMatch('r1', { '0': { 'kill.archer': 50 }, '1': {} });
+    gateway.next = { ok: true, statsJson: '{"0":{"kill.archer":10},"1":{}}' };
+    await auditOnce(deps());
+    const id = (await getReviews('acctA'))[0]._id;
+
+    const unauth = await app.inject({ method: 'POST', url: `/internal/anticheat/reviews/${id}/resolve`, payload: { resolution: 'dismissed' } });
+    expect(unauth.statusCode).toBe(401);
+
+    const badResolution = await app.inject({
+      method: 'POST',
+      url: `/internal/anticheat/reviews/${id}/resolve`,
+      headers: { 'x-internal-key': KEY },
+      payload: { resolution: 'ban-please' },
+    });
+    expect(badResolution.statusCode).toBe(400);
+
+    const notFound = await app.inject({
+      method: 'POST',
+      url: '/internal/anticheat/reviews/no-such-review/resolve',
+      headers: { 'x-internal-key': KEY },
+      payload: { resolution: 'dismissed' },
+    });
+    expect(notFound.statusCode).toBe(404);
+
+    const r = await app.inject({
+      method: 'POST',
+      url: `/internal/anticheat/reviews/${id}/resolve`,
+      headers: { 'x-internal-key': KEY },
+      payload: { resolution: 'dismissed', resolvedBy: 'admin-1' },
+    });
+    expect(r.statusCode).toBe(200);
+    const updated = await getReviews('acctA');
+    expect(updated[0]).toMatchObject({ status: 'reviewed', resolution: 'dismissed', resolvedBy: 'admin-1' });
+  });
 });

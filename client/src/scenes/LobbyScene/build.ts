@@ -272,11 +272,12 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
         this.accountChipFn = this.cb.onLogin ?? null;
       } else if (this.cb.pvp) {
         const pvp = this.cb.pvp;
-        // Three stacked lines in the header's right column: coins · rank · logout.
-        const hasLogout = !!this.cb.onLogout;
+        // Two stacked lines in the header's right column: coins · rank.
+        // Logout intentionally omitted here — it sat right below the rank badge and
+        // players fat-fingered it while tapping through to the leaderboard; log out
+        // still lives in SettingsScene.
         const coinsY = chipBandH * 0.30;
-        const rankY  = hasLogout ? chipBandH * 0.55 : chipBandH * 0.45;
-        const outY   = chipBandH * 0.80;
+        const rankY  = chipBandH * 0.45;
 
         // Soft-currency balance (server-authoritative mirror) — only meaningful online.
         if (typeof this.cb.coins === 'number') {
@@ -310,17 +311,6 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
             x: badgeLabel.x - badgeLabel.width - rpad, y: badgeLabel.y - badgeLabel.height / 2 - rpad,
             w: badgeLabel.width + 2 * rpad, h: badgeLabel.height + 2 * rpad,
           };
-        }
-        if (this.cb.onLogout) {
-          const out = txt(t('auth.logout'), FS.body, C.mid);
-          out.anchor.set(1, 0.5); out.x = chipX; out.y = outY;
-          this.container.addChild(out);
-          const pad = Math.round(h * 0.012);
-          this.accountChipRect = {
-            x: out.x - out.width - pad, y: out.y - out.height / 2 - pad,
-            w: out.width + 2 * pad, h: out.height + 2 * pad,
-          };
-          this.accountChipFn = this.cb.onLogout;
         }
       }
 

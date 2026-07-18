@@ -259,7 +259,7 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
         t('family.members', { n: fam.memberCount }),
         t('family.prosperity', { n: fam.prosperity }),
       ];
-      if (fam.sectId) lines.push(t('family.sect'));
+      if (fam.sectId) lines.push(`${t('family.sect')}: ${fam.sectName ?? '—'}`);
       for (const line of lines) {
         const l = txt(line, FS.heading, C.mid);
         l.anchor.set(0, 0); l.x = px; l.y = cy;

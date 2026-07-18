@@ -44,8 +44,8 @@ export interface AccountDoc {
   region?: ChatRegion;
   /** C4 PvE anti-cheat: suspicious attempt count + ban flag (account level, used to block auth). */
   flags?: {
-    pveWarnings?: number; // cumulative PvE suspicious attempt count
-    banned?: boolean;     // banned after threshold is reached; auth returns ACCOUNT_BANNED
+    pveWarnings?: number; // cumulative PvE suspicious attempt count (visibility only, no longer a ban trigger — see AntiCheatReviewDoc pve_reject)
+    banned?: boolean;     // set only via ops manual ban (anticheat.action) after human review; auth returns ACCOUNT_BANNED
     gdprConsent?: boolean; // C5-c GDPR consent (must be true to record analytics events)
   };
   /** C5-b soft-delete timestamp; once set, auth returns ACCOUNT_DELETED and data is asynchronously purged after 7 days. */
@@ -248,25 +248,43 @@ export interface StateReplayShareDoc {
 }
 
 /**
- * Achievement PvP stat anti-cheat review queue (S9-7 L2/L3, ACHIEVEMENT_DESIGN §4.4). When an offline audit re-simulation conclusively confirms
- * a side over-reported kill/cast → roll back the over-reported stats + escalate statSuspicion + write this entry for ops admin (OPS) manual review/ban.
- * Lives in the business database (meta), proxied by admin via `GET /internal/anticheat/reviews` (admin database is physically isolated).
- * `_id = `${roomId}:${accountId}``: one entry per cheating side per match, naturally idempotent (prevents double rollback).
+ * Anti-cheat review queue (S9-7 L2/L3, ACHIEVEMENT_DESIGN §4.4; PvE side added 2026-07-18, PVE_INTEGRITY_PLAN §8.6).
+ * Two kinds share one collection/queue: `kind` is absent on pre-existing rows, which are implicitly `'pvp_overclaim'`.
+ * - `pvp_overclaim`: an offline audit re-simulation conclusively confirms a side over-reported kill/cast → roll back
+ *   the over-reported stats + escalate statSuspicion + write this entry for ops manual review/ban.
+ *   `_id = `${roomId}:${accountId}``: one entry per cheating side per match, naturally idempotent (prevents double rollback).
+ * - `pve_reject`: a PvE replay spot-check re-simulation yields fewer stars than claimed (`pveVerify`, no automatic ban
+ *   as of 2026-07-18 — a legitimate, over-leveled account can clear early content passively with zero input, which is
+ *   indistinguishable from a forged empty replay without human judgment). `_id = `pve:${verifyId}``.
+ * Lives in the business database (meta), proxied by admin via `GET /internal/anticheat/reviews` (admin database is
+ * physically isolated); resolved (dismiss/ban) via `POST /internal/anticheat/reviews/:id/resolve`.
  */
 export interface AntiCheatReviewDoc {
-  _id: string; // `${roomId}:${accountId}`
-  roomId: string;
+  _id: string; // `${roomId}:${accountId}` (pvp_overclaim) | `pve:${verifyId}` (pve_reject)
+  kind?: 'pvp_overclaim' | 'pve_reject'; // absent = 'pvp_overclaim' (pre-existing rows, back-compat)
   accountId: string;
   publicId?: string; // snapshot at archive time (for OPS display)
-  side: number;
-  reported: Partial<Record<StatKey, number>>; // values reported by this side
-  authoritative: Partial<Record<StatKey, number>>; // authoritative values from judge re-simulation
-  overclaim: Partial<Record<StatKey, number>>; // theoretical over-report (reported - authoritative)
-  rolledBack: Partial<Record<StatKey, number>>; // actual rollback amount (clamped to 0 floor)
-  suspicionAfter: number; // statSuspicion for this account after escalation
-  judgeAccountId?: string; // re-simulation judge (for auditing)
   status: 'open' | 'reviewed';
   ts: number;
+  // —— pvp_overclaim fields ——
+  roomId?: string;
+  side?: number;
+  reported?: Partial<Record<StatKey, number>>; // values reported by this side
+  authoritative?: Partial<Record<StatKey, number>>; // authoritative values from judge re-simulation
+  overclaim?: Partial<Record<StatKey, number>>; // theoretical over-report (reported - authoritative)
+  rolledBack?: Partial<Record<StatKey, number>>; // actual rollback amount (clamped to 0 floor)
+  suspicionAfter?: number; // statSuspicion for this account after escalation
+  judgeAccountId?: string; // re-simulation judge (for auditing)
+  // —— pve_reject fields ——
+  levelId?: string;
+  claimedStars?: number;
+  judgedStars?: number;
+  rejectCountAfter?: number;
+  severity?: 'normal' | 'high'; // 'high' once rejectCountAfter crosses the old auto-ban threshold — triage signal only
+  // —— resolution (both kinds) ——
+  resolvedBy?: string; // admin id
+  resolvedAt?: number;
+  resolution?: 'dismissed' | 'banned';
 }
 
 // Friend/private-chat/block collections (FriendEdgeDoc / FriendRequestDoc / BlockDoc / ConversationDoc / ChatMessageDoc)

@@ -66,6 +66,9 @@ interface AdminAccountDoc {
 | `monitor.view` 在线/匹配池/趋势 | ✓ | ✓ | ✓ | ✓ |
 | `analytics.view` 数据分析 | ✓ | ✓ | – | ✓ |
 | `player.lookup` 查玩家档案 | ✓ | ✓ | ✓ | – |
+| `player.password_reset` 重置玩家密码（无联系方式时的支持工具，仅超管） | ✓ | – | – | – |
+| `anticheat.view` 查反作弊审核队列（S9-7） | ✓ | ✓ | – | – |
+| `anticheat.action` 手动封禁/解封账号（S4-4，玩家查询详情页内联按钮） | ✓ | ✓ | – | – |
 | `comp.initiate.single` 发起个人补偿 | ✓ | ✓ | ✓ | – |
 | `comp.initiate.global` 发起全服补偿 | ✓ | ✓ | – | – |
 | `comp.approve.single` 审批个人补偿（额度内） | ✓ | ✓ | – | – |
@@ -167,6 +170,8 @@ admin 执行器（approved 后，可自动或手动触发）
 | `GET /internal/profile` | meta（已存在） | 查玩家昵称/publicId（player.lookup） | ✅ |
 | `GET /internal/player?publicId=` \| `?accountId=` | meta | 玩家档案摘要（昵称/段位/ELO/胜负），player.lookup 详情 | ✅ |
 | `GET /internal/players/search?q=&limit=` | meta | 玩家模糊搜：单关键词命中 publicId/accountId（精确）+ loginId（前缀）+ displayName（子串，不分大小写）；q<2 字符返空、limit 1..50、正则元字符转义防注入/ReDoS | ✅ |
+| `POST /internal/accounts/{id}/reset-password` | meta | 管理员重置玩家密码（player.password_reset）：只改写已有 `password.hash`，账号没有密码凭证（匿名/微信登录）则 409；不创建新凭证 | ✅ |
+| `POST /internal/anticheat/reviews/{id}/resolve` | meta | 人工裁定一条审核记录（`anticheat.action`）：只改 `status`/`resolution`/`resolvedBy`，本身不封号——`resolution:'banned'` 时 admin 侧另调 `/internal/accounts/{id}/ban`，全库只有一条封号执行路径（2026-07-18，取代 PvE reject 三振自动封号） | ✅ |
 | `POST /internal/mail/system/send` | **meta**（SOCIAL_DESIGN S6-3） | 执行补偿 = 创建系统邮件（单人/批量，幂等键） | ✅ 已联调 |
 | `POST /internal/mail/system/preview` | meta | 全服补偿 dry-run 估算命中人数 | ✅ 已联调 |
 
@@ -189,8 +194,15 @@ GET  /admin/analytics/summary                        → { ... }                
 
 # 玩家查询（player.lookup）——两段式：先模糊搜列表 → 点行拉详情
 GET  /admin/players/search?q=                        → { players: [{accountId, publicId?, displayName?, loginId?}] }  // player.search 审计
-GET  /admin/player/{publicId}                        → { player, ... }                 // 详情（按 9 位公开 id）
-GET  /admin/player/account/{accountId}               → { player, ... }                 // 详情（按 accountId，模糊搜结果点击）
+GET  /admin/player/{publicId}                        → { player, ... }                 // 详情（按 9 位公开 id），player.banned 字段随详情返回
+GET  /admin/player/account/{accountId}               → { player, ... }                 // 详情（按 accountId，模糊搜结果点击），同上
+POST /admin/players/{accountId}/reset-password  { password }  → { ok }            // player.password_reset（仅超管，无联系方式支持工具）
+POST /admin/accounts/{accountId}/ban                 → { ok }                          // anticheat.action（S4-4 手动封禁，详情页内联按钮，幂等）
+POST /admin/accounts/{accountId}/unban               → { ok }                          // anticheat.action（S4-4 手动解封，同上；此前只有拍卖异常审计的自动封禁会调用这两个已有端点，玩家查询页从未接入，导致封禁状态不可见、无法手动解封）
+
+# 反作弊审核队列（S9-7 PvP 超报 + 2026-07-18 PvE reject 复用同一队列，详见 ACHIEVEMENT_DESIGN §S9-7）
+GET  /admin/anticheat/reviews?accountId=&status=&limit=  → { reviews: [...] }          // anticheat.view，kind='pvp_overclaim'|'pve_reject'
+POST /admin/anticheat/reviews/{id}/resolve  { accountId, resolution }  → { ok }        // anticheat.action：resolution='dismissed'|'banned'；banned 内部走上面同一条 ban 端点，全库仅此一条封号执行路径
 
 # 补偿工单
 POST /admin/comp/tickets       { scope, target, mail, reason }  → { ticketId }        // comp.initiate.*

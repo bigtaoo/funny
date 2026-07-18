@@ -540,19 +540,21 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
       );
 
       if (rejected) {
-        let banned = false;
+        // No automatic ban (design decision, 2026-07-18): a rejection only means the re-simulation
+        // yielded fewer stars than claimed, which can also happen to a legitimate, heavily-invested
+        // account clearing early content passively (base/hero auto-attack alone, no card played that
+        // tick) — see PVE_INTEGRITY_PLAN.md fairness note. Every rejection now files an ops review
+        // ticket instead; a human decides whether to ban via the anti-cheat review queue.
         let rejectCount = 1;
         const saved = await this.mutateSave(accountId, (s) => {
           const ac = s.antiCheat ?? { statSuspicion: 0 };
           rejectCount = (ac.pveRejectCount ?? 0) + 1;
-          banned = rejectCount >= PVE_REJECT_BAN_THRESHOLD;
           return {
             ...s,
             antiCheat: {
               ...ac,
               pveRejectCount: rejectCount,
               lastFlaggedTs: now(),
-              ...(banned ? { pveBanned: true } : {}),
             },
           };
         });
@@ -563,28 +565,38 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
           claimedStars: doc.claimedStars,
           judgedStars,
           rejectCountAfter: rejectCount,
-          banned,
+          banned: false,
           ts: now(),
         });
 
-        // C4: account-level pveWarnings count + warning mail + ban (intercepted at the auth layer).
+        // C4: account-level pveWarnings count (visibility only, no longer a ban trigger) + warning mail every time.
         const updatedAcc = await cols.accounts.findOneAndUpdate(
           { _id: accountId },
           { $inc: { 'flags.pveWarnings': 1 } },
-          { returnDocument: 'after', projection: { 'flags.pveWarnings': 1 } },
+          { returnDocument: 'after', projection: { 'flags.pveWarnings': 1, publicId: 1 } },
         );
-        const newWarnings = updatedAcc?.flags?.pveWarnings ?? 1;
-        if (newWarnings === 1) {
-          // Best-effort: a failed warning mail must not block the reject-count/ban flow above.
-          await insertSystemMail(this.deps.socialsvc ?? nullMetaSocialsvcClient, `pve-warn-${verifyId}`, accountId, {
-            subject: 'Fair Play Warning',
-            body: 'Unusual PvE activity was detected. Continued violations may result in account suspension.',
-            expireDays: 30,
-          }).catch((e) => req.log.warn({ err: e }, 'pve-warn mail failed'));
-        }
-        if (newWarnings >= PVE_REJECT_BAN_THRESHOLD) {
-          await cols.accounts.updateOne({ _id: accountId }, { $set: { 'flags.banned': true } });
-        }
+        // Best-effort: a failed warning mail must not block the reject-count/review flow above.
+        await insertSystemMail(this.deps.socialsvc ?? nullMetaSocialsvcClient, `pve-warn-${verifyId}`, accountId, {
+          subject: 'Fair Play Warning',
+          body: 'Unusual PvE activity was detected. Repeated flags may be reviewed by our team.',
+          expireDays: 30,
+        }).catch((e) => req.log.warn({ err: e }, 'pve-warn mail failed'));
+
+        // File an ops review ticket (anticheat.view/anticheat.action queue) — human decides ban vs dismiss.
+        // severity escalates at the old auto-ban threshold, as a repeat-offender signal for ops triage (not an automatic action).
+        await cols.antiCheatReviews.insertOne({
+          _id: `pve:${verifyId}`,
+          kind: 'pve_reject',
+          accountId,
+          ...(updatedAcc?.publicId ? { publicId: updatedAcc.publicId } : {}),
+          levelId: doc.levelId,
+          claimedStars: doc.claimedStars,
+          judgedStars,
+          rejectCountAfter: rejectCount,
+          severity: rejectCount >= PVE_REJECT_BAN_THRESHOLD ? 'high' : 'normal',
+          status: 'open',
+          ts: now(),
+        });
 
         const s = 'error' in saved ? await getOrCreateSave(cols, accountId, now()) : saved.save;
         return ok({ save: s, granted: {}, capped: false, verified: false });

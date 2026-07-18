@@ -188,6 +188,17 @@ export class Api {
     const r = await this.req<{ players: PlayerSummary[] }>('GET', `/admin/players/search?q=${encodeURIComponent(q)}`);
     return r.players;
   }
+  /** Admin-only (player.password_reset, super role): reset a player's password when they have no contact method on file. */
+  async resetPlayerPassword(accountId: string, password: string): Promise<void> {
+    await this.req('POST', `/admin/players/${encodeURIComponent(accountId)}/reset-password`, { password });
+  }
+  /** Manual account ban/unban (anticheat.action, S4-4). */
+  async banPlayer(accountId: string): Promise<void> {
+    await this.req('POST', `/admin/accounts/${encodeURIComponent(accountId)}/ban`);
+  }
+  async unbanPlayer(accountId: string): Promise<void> {
+    await this.req('POST', `/admin/accounts/${encodeURIComponent(accountId)}/unban`);
+  }
 
   // —— Achievement anti-cheat review queue (S9-7) ——
   async antiCheatReviews(opts?: { accountId?: string; status?: string; limit?: number }): Promise<AntiCheatReviewView[]> {
@@ -197,6 +208,10 @@ export class Api {
     if (opts?.limit) qs.set('limit', String(opts.limit));
     const r = await this.req<{ reviews: AntiCheatReviewView[] }>('GET', `/admin/anticheat/reviews?${qs}`);
     return r.reviews;
+  }
+  /** Human resolution of a review record: dismiss (no action) or ban (goes through the same manual ban path as Player Lookup). */
+  async resolveAntiCheatReview(id: string, accountId: string, resolution: 'dismissed' | 'banned'): Promise<void> {
+    await this.req('POST', `/admin/anticheat/reviews/${encodeURIComponent(id)}/resolve`, { accountId, resolution });
   }
 
   // —— Compensation tickets ——

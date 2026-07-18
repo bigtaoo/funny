@@ -17,6 +17,7 @@ export type AdminCapability =
   | 'monitor.view' // online / match-queue / trends
   | 'analytics.view' // data analytics
   | 'player.lookup' // look up player profile
+  | 'player.password_reset' // admin-only: reset a player's password when they have no contact method on file
   | 'anticheat.view' // view achievement anti-cheat review queue (S9-7)
   | 'anticheat.action' // manual ban / unban (S4-4)
   | 'comp.initiate.single' // initiate a single-player compensation
@@ -52,6 +53,7 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'monitor.view',
     'analytics.view',
     'player.lookup',
+    'player.password_reset',
     'anticheat.view',
     'anticheat.action',
     'comp.initiate.single',
@@ -288,9 +290,11 @@ export type AuditAction =
   | 'comp.execute'
   | 'comp.execute.failed'
   | 'anticheat.view'
+  | 'anticheat.review.resolve'
   | 'account.ban'
   | 'account.unban'
   | 'player.search'
+  | 'player.password_reset'
   | 'ladder.season.roll'
   | 'slg.season.open'
   | 'slg.season.settle'

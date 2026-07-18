@@ -1,7 +1,7 @@
-// Anti-cheat review queue (S9-7): achievement stat overclaim review records.
+// Anti-cheat review queue (S9-7 PvP overclaim + PvE reject 2026-07-18): human resolves each record as dismiss/ban.
 import { clear, fmtTime, h, pill } from '../dom';
 import type { AntiCheatReviewView } from '../types';
-import { showErr, type Ctx } from './shared';
+import { showErr, showOk, type Ctx } from './shared';
 
 /** Render a statKey→count map as compact text (empty → —). */
 function fmtStats(m: Record<string, number> | undefined): string {
@@ -11,9 +11,10 @@ function fmtStats(m: Record<string, number> | undefined): string {
 }
 
 export async function pageSuspicions(ctx: Ctx): Promise<void> {
-  const { api, root } = ctx;
+  const { api, root, session } = ctx;
+  const canResolve = session.capabilities.includes('anticheat.action');
   clear(root);
-  root.append(h('h2', {}, 'Anti-cheat review (achievement stat overclaim)'));
+  root.append(h('h2', {}, 'Anti-cheat review'));
   const err = h('div', { class: 'err' });
   const acct = h('input', { placeholder: 'Filter by accountId (optional)' });
   const statusSel = h(
@@ -42,28 +43,55 @@ export async function pageSuspicions(ctx: Ctx): Promise<void> {
       t.append(
         h('tr', {},
           h('th', {}, 'Time'),
+          h('th', {}, 'Kind'),
           h('th', {}, 'Player'),
-          h('th', {}, 'Room'),
-          h('th', {}, 'Reported'),
-          h('th', {}, 'Authoritative'),
-          h('th', {}, 'Overclaim'),
-          h('th', {}, 'Rolled back'),
-          h('th', {}, 'suspicion'),
+          h('th', {}, 'Detail'),
           h('th', {}, 'Status'),
+          h('th', {}, ''),
         ),
       );
       for (const r of rows as AntiCheatReviewView[]) {
+        const kind = r.kind ?? 'pvp_overclaim';
+        const detail =
+          kind === 'pve_reject'
+            ? `${r.levelId ?? '—'}: claimed ${r.claimedStars ?? '—'}★, judged ${r.judgedStars ?? '—'}★ (reject #${r.rejectCountAfter ?? '—'})`
+            : `${r.roomId ?? '—'} (side ${r.side ?? '—'}) reported ${fmtStats(r.reported)} / auth ${fmtStats(r.authoritative)} / overclaim ${fmtStats(r.overclaim)} / rolled back ${fmtStats(r.rolledBack)} / suspicion ${r.suspicionAfter ?? '—'}`;
+        const statusCell = h('td', {},
+          pill(r.status, r.status === 'open' ? 'warn' : 'ok'),
+          ...(r.status === 'reviewed' && r.resolution ? [' ', pill(r.resolution, r.resolution === 'banned' ? 'failed' : 'ok')] : []),
+        );
+        const actionCell = h('td', {});
+        if (canResolve && r.status === 'open') {
+          const rowErr = h('div', { class: 'err' });
+          const resolve = async (resolution: 'dismissed' | 'banned'): Promise<void> => {
+            if (resolution === 'banned' && !confirm(`Ban accountId ${r.accountId}?`)) return;
+            rowErr.textContent = '';
+            try {
+              await api.resolveAntiCheatReview(r._id, r.accountId, resolution);
+              showOk(rowErr, resolution === 'banned' ? 'Banned.' : 'Dismissed.');
+              await load();
+            } catch (e) {
+              showErr(rowErr, e);
+            }
+          };
+          actionCell.append(
+            h('div', { class: 'row' },
+              h('button', { onclick: () => void resolve('dismissed') }, 'Dismiss'),
+              h('button', { class: 'danger', onclick: () => void resolve('banned') }, 'Ban'),
+            ),
+            rowErr,
+          );
+        } else if (r.status === 'reviewed' && r.resolvedBy) {
+          actionCell.append(h('div', { class: 'muted' }, `by ${r.resolvedBy}`));
+        }
         t.append(
           h('tr', {},
             h('td', {}, fmtTime(r.ts)),
+            h('td', {}, kind === 'pve_reject' ? pill('PvE', r.severity === 'high' ? 'failed' : 'warn') : 'PvP'),
             h('td', {}, r.publicId ? '#' + r.publicId : r.accountId),
-            h('td', {}, r.roomId + ` (side ${r.side})`),
-            h('td', {}, fmtStats(r.reported)),
-            h('td', {}, fmtStats(r.authoritative)),
-            h('td', {}, fmtStats(r.overclaim)),
-            h('td', {}, fmtStats(r.rolledBack)),
-            h('td', {}, String(r.suspicionAfter)),
-            h('td', {}, pill(r.status, r.status === 'open' ? 'warn' : 'ok')),
+            h('td', {}, detail),
+            statusCell,
+            actionCell,
           ),
         );
       }

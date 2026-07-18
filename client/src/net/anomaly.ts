@@ -184,6 +184,26 @@ export function recordFrameSample(ms: number): void {
   if (!lastLongFrame || ms >= lastLongFrame.ms) lastLongFrame = { ms: Math.round(ms), scene: activeScene, ts: Date.now() };
 }
 
+/**
+ * Longest scene *construction* (`new XScene(...)`) seen recently, if any exceeded LONG_FRAME_MS.
+ * `recordFrameSample` only times each tick's `scene.update()` call — it has no visibility into the
+ * synchronous work a scene's constructor does while building its own UI (layout, text, list rows)
+ * *before* it's ever mounted and ticked. A run of prod ANRs (25-54s, LobbyScene/FriendsScene/
+ * LeaderboardScene) all came back with `longFrameMs` absent, meaning the freeze wasn't inside a
+ * tracked update() call — construction is the other synchronous path a `goto()` navigation runs,
+ * and it was completely dark. Cleared once stale, same as lastLongFrame.
+ */
+let lastLongConstruct: { ms: number; scene: string; ts: number } | null = null;
+
+/**
+ * Called by PixiAppViews around every `new XxxScene(...)` call, with how long the constructor took.
+ * Only constructions slower than LONG_FRAME_MS are kept (cheap: no-op comparison on the fast path).
+ */
+export function recordConstructSample(scene: string, ms: number): void {
+  if (ms < LONG_FRAME_MS) return;
+  if (!lastLongConstruct || ms >= lastLongConstruct.ms) lastLongConstruct = { ms: Math.round(ms), scene, ts: Date.now() };
+}
+
 function anrContext(): Record<string, unknown> {
   let extra: Record<string, unknown> = {};
   try { extra = anrContextProvider?.() ?? {}; } catch { /* provider must never break the report */ }
@@ -191,11 +211,15 @@ function anrContext(): Record<string, unknown> {
   const longFrame = lf && Date.now() - lf.ts <= LONG_FRAME_STALE_MS
     ? { longFrameMs: lf.ms, longFrameScene: lf.scene }
     : {};
+  const lc = lastLongConstruct;
+  const longConstruct = lc && Date.now() - lc.ts <= LONG_FRAME_STALE_MS
+    ? { longConstructMs: lc.ms, longConstructScene: lc.scene }
+    : {};
   // Attach the same recent breadcrumbs used on crash/exit reports — the last net-layer activity
   // (api/gateway) right before the freeze is often the only lead when longFrame comes back empty
   // (i.e. the block wasn't inside a tracked scene.update() call).
   const crumbs = recentClientLogs(BREADCRUMB_N).map((e) => `[${e.level}${e.tag ? ':' + e.tag : ''}] ${e.msg}`);
-  return { ...(activeScene ? { scene: activeScene } : {}), ...extra, ...longFrame, ...(crumbs.length ? { crumbs } : {}) };
+  return { ...(activeScene ? { scene: activeScene } : {}), ...extra, ...longFrame, ...longConstruct, ...(crumbs.length ? { crumbs } : {}) };
 }
 
 // ── Crash sentinel (localStorage) ───────────────────────────────────────────────────────────────

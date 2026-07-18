@@ -8,8 +8,8 @@ import * as PIXI from 'pixi.js-legacy';
 import { IPlatform } from './platform/IPlatform';
 import { MemoryMonitor } from './cache/MemoryMonitor';
 import { PerfMonitor } from './cache/PerfMonitor';
-import { initCrashSentinel, installAnomalyWatchers } from './net/anomaly';
-import { SceneManager } from './scenes/SceneManager';
+import { initCrashSentinel, installAnomalyWatchers, recordConstructSample } from './net/anomaly';
+import { SceneManager, type Scene } from './scenes/SceneManager';
 import { IntroScene } from './scenes/IntroScene';
 import { LobbyScene, type LobbySceneCallbacks } from './scenes/LobbyScene';
 import { GameScene, type GameSceneCallbacks, type GameSceneOptions } from './scenes/GameScene';
@@ -103,23 +103,36 @@ class PixiAppViews implements AppViews {
     window.removeEventListener('resize', this.onResize);
   }
 
+  /**
+   * Times a scene constructor and reports it to net/anomaly if it ran long enough to plausibly
+   * BE a prod ANR (see recordConstructSample) — this is the only vantage point that can see scene
+   * construction, since it happens before the scene is ever mounted/ticked by SceneManager.
+   */
+  private timedBuild<T extends Scene>(name: string, build: () => T): T {
+    const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const scene = build();
+    const dt = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
+    recordConstructSample(name, dt);
+    return scene;
+  }
+
   showIntro(cb: Parameters<AppViews['showIntro']>[0]): void {
     this.leaveLobby();
-    this.manager.goto(new IntroScene(this.layout, this.input, cb));
+    this.manager.goto(this.timedBuild('IntroScene', () => new IntroScene(this.layout, this.input, cb)));
   }
 
   showConsent(cb: ConsentCallbacks): void {
     this.leaveLobby();
-    this.manager.goto(new ConsentDialog(this.layout.designWidth, this.layout.designHeight, cb));
+    this.manager.goto(this.timedBuild('ConsentDialog', () => new ConsentDialog(this.layout.designWidth, this.layout.designHeight, cb)));
   }
 
   showReconnectPrompt(cb: ReconnectPromptCallbacks): void {
     this.leaveLobby();
-    this.manager.goto(new ReconnectPromptDialog(this.layout.designWidth, this.layout.designHeight, cb));
+    this.manager.goto(this.timedBuild('ReconnectPromptDialog', () => new ReconnectPromptDialog(this.layout.designWidth, this.layout.designHeight, cb)));
   }
 
   showLobby(cb: LobbySceneCallbacks, opts?: FadeOpts): LobbyView {
-    const scene = new LobbyScene(this.layout, this.input, cb);
+    const scene = this.timedBuild('LobbyScene', () => new LobbyScene(this.layout, this.input, cb));
     // A resize-driven rebuild always swaps instantly, regardless of the caller's fade request.
     this.manager.goto(scene, { fade: !this.resizing && !!opts?.fade });
     window.addEventListener('resize', this.onResize);
@@ -138,97 +151,97 @@ class PixiAppViews implements AppViews {
 
   showSettings(cb: SettingsSceneCallbacks): void {
     this.leaveLobby();
-    this.manager.goto(new SettingsScene(this.layout, this.input, cb));
+    this.manager.goto(this.timedBuild('SettingsScene', () => new SettingsScene(this.layout, this.input, cb)));
   }
 
   showLogin(cb: LoginSceneCallbacks): void {
     this.leaveLobby();
-    this.manager.goto(new LoginScene(this.layout, this.input, cb));
+    this.manager.goto(this.timedBuild('LoginScene', () => new LoginScene(this.layout, this.input, cb)));
   }
 
   showShop(cb: ShopSceneCallbacks): void {
     this.leaveLobby();
-    this.manager.goto(new ShopScene(this.layout, this.input, cb));
+    this.manager.goto(this.timedBuild('ShopScene', () => new ShopScene(this.layout, this.input, cb)));
   }
 
   showGacha(cb: GachaSceneCallbacks): void {
     this.leaveLobby();
-    this.manager.goto(new GachaScene(this.layout, this.input, cb));
+    this.manager.goto(this.timedBuild('GachaScene', () => new GachaScene(this.layout, this.input, cb)));
   }
 
   showCampaignMap(cb: CampaignMapCallbacks): void {
     this.leaveLobby();
-    this.manager.goto(new CampaignMapScene(this.layout, this.input, cb));
+    this.manager.goto(this.timedBuild('CampaignMapScene', () => new CampaignMapScene(this.layout, this.input, cb)));
   }
 
   showLevelPrep(cb: LevelPrepCallbacks): void {
     this.leaveLobby();
-    this.manager.goto(new LevelPrepScene(this.layout, this.input, cb));
+    this.manager.goto(this.timedBuild('LevelPrepScene', () => new LevelPrepScene(this.layout, this.input, cb)));
   }
 
   showCardCodex(cb: CardCodexCallbacks): void {
     this.leaveLobby();
-    this.manager.goto(new CardCodexScene(this.layout, this.input, cb));
+    this.manager.goto(this.timedBuild('CardCodexScene', () => new CardCodexScene(this.layout, this.input, cb)));
   }
 
   showCardRoster(cb: CardCallbacks): void {
     this.leaveLobby();
-    this.manager.goto(new CardScene(this.layout, this.input, cb));
+    this.manager.goto(this.timedBuild('CardScene', () => new CardScene(this.layout, this.input, cb)));
   }
 
   showEquipment(cb: EquipmentCallbacks): void {
     this.leaveLobby();
-    this.manager.goto(new EquipmentScene(this.layout, this.input, cb));
+    this.manager.goto(this.timedBuild('EquipmentScene', () => new EquipmentScene(this.layout, this.input, cb)));
   }
 
   showStats(cb: StatsCallbacks): void {
     this.leaveLobby();
-    this.manager.goto(new StatsScene(this.layout, this.input, cb));
+    this.manager.goto(this.timedBuild('StatsScene', () => new StatsScene(this.layout, this.input, cb)));
   }
 
   showAchievements(cb: AchievementCallbacks): void {
     this.leaveLobby();
-    this.manager.goto(new AchievementScene(this.layout, this.input, cb));
+    this.manager.goto(this.timedBuild('AchievementScene', () => new AchievementScene(this.layout, this.input, cb)));
   }
 
   showLeaderboard(cb: LeaderboardCallbacks): void {
     this.leaveLobby();
-    this.manager.goto(new LeaderboardScene(this.layout, this.input, cb));
+    this.manager.goto(this.timedBuild('LeaderboardScene', () => new LeaderboardScene(this.layout, this.input, cb)));
   }
 
   showBattlePass(cb: BattlePassCallbacks): void {
     this.leaveLobby();
-    this.manager.goto(new BattlePassScene(this.layout, this.input, cb));
+    this.manager.goto(this.timedBuild('BattlePassScene', () => new BattlePassScene(this.layout, this.input, cb)));
   }
 
   showTitles(cb: TitlesSceneCallbacks): void {
     this.leaveLobby();
-    this.manager.goto(new TitlesScene(this.layout, this.input, cb));
+    this.manager.goto(this.timedBuild('TitlesScene', () => new TitlesScene(this.layout, this.input, cb)));
   }
 
   showDaily(cb: DailyCallbacks): void {
     this.leaveLobby();
-    this.manager.goto(new DailyScene(this.layout, this.input, cb));
+    this.manager.goto(this.timedBuild('DailyScene', () => new DailyScene(this.layout, this.input, cb)));
   }
 
   showEvents(cb: EventCallbacks): void {
     this.leaveLobby();
-    this.manager.goto(new EventScene(this.layout, this.input, cb));
+    this.manager.goto(this.timedBuild('EventScene', () => new EventScene(this.layout, this.input, cb)));
   }
 
   showReplay(replay: Replay, cb: ReplaySceneCallbacks, level?: LevelDefinition): void {
     this.leaveLobby();
-    this.manager.goto(new ReplayScene(this.layout, this.input, replay, cb, level));
+    this.manager.goto(this.timedBuild('ReplayScene', () => new ReplayScene(this.layout, this.input, replay, cb, level)));
   }
 
   showStatePlayer(replay: StateReplay, cb: StatePlayerSceneCallbacks, encoded?: EncodedStateReplay): void {
     this.leaveLobby();
-    this.manager.goto(new StatePlayerScene(this.layout, replay, cb, encoded));
+    this.manager.goto(this.timedBuild('StatePlayerScene', () => new StatePlayerScene(this.layout, replay, cb, encoded)));
   }
 
   showResult(props: ResultViewProps): void {
     this.leaveLobby();
-    this.manager.goto(new ResultScene(
+    this.manager.goto(this.timedBuild('ResultScene', () => new ResultScene(
       this.layout.designWidth,
       this.layout.designHeight,
       props.winner,
@@ -238,18 +251,18 @@ class PixiAppViews implements AppViews {
       props.elo,
       props.profiles,
       props.outroText,
-    ));
+    )));
   }
 
   showGame(cb: GameSceneCallbacks, opts: GameSceneOptions): void {
     this.leaveLobby();
     // Entering a match is one of the handful of transitions that cross-fade (see SceneManager).
-    this.manager.goto(new GameScene(this.layout, this.input, cb, opts), { fade: true });
+    this.manager.goto(this.timedBuild('GameScene', () => new GameScene(this.layout, this.input, cb, opts)), { fade: true });
   }
 
   showRoom(cb: RoomSceneCallbacks): RoomView {
     this.leaveLobby();
-    const scene = new RoomScene(this.layout, this.input, cb);
+    const scene = this.timedBuild('RoomScene', () => new RoomScene(this.layout, this.input, cb));
     this.manager.goto(scene);
     return {
       applyRoomState: (s) => scene.applyRoomState(s),
@@ -261,7 +274,7 @@ class PixiAppViews implements AppViews {
 
   showFriends(cb: FriendsSceneCallbacks): FriendsView {
     this.leaveLobby();
-    const scene = new FriendsScene(this.layout, this.input, cb);
+    const scene = this.timedBuild('FriendsScene', () => new FriendsScene(this.layout, this.input, cb));
     this.manager.goto(scene);
     return {
       applyFriendPresence: (p) => scene.applyFriendPresence(p),
@@ -274,14 +287,14 @@ class PixiAppViews implements AppViews {
 
   showChat(cb: ChatSceneCallbacks): ChatView {
     this.leaveLobby();
-    const scene = new ChatScene(this.layout, this.input, cb);
+    const scene = this.timedBuild('ChatScene', () => new ChatScene(this.layout, this.input, cb));
     this.manager.goto(scene);
     return { applyIncoming: (m) => scene.applyIncoming(m) };
   }
 
   showWorldMap(cb: WorldMapCallbacks): WorldMapView {
     this.leaveLobby();
-    const scene = new WorldMapScene(this.layout, this.input, cb);
+    const scene = this.timedBuild('WorldMapScene', () => new WorldMapScene(this.layout, this.input, cb));
     // Entering the SLG is one of the handful of transitions that cross-fade (see SceneManager).
     this.manager.goto(scene, { fade: true });
     return {
@@ -294,34 +307,34 @@ class PixiAppViews implements AppViews {
 
   showFamily(cb: FamilySceneCallbacks): void {
     this.leaveLobby();
-    this.manager.goto(new FamilyScene(this.layout, this.input, cb));
+    this.manager.goto(this.timedBuild('FamilyScene', () => new FamilyScene(this.layout, this.input, cb)));
   }
 
   showSect(cb: SectSceneCallbacks): SectSceneView {
     this.leaveLobby();
-    const scene = new SectScene(this.layout, this.input, cb);
+    const scene = this.timedBuild('SectScene', () => new SectScene(this.layout, this.input, cb));
     this.manager.goto(scene);
     return scene;
   }
 
   showAuction(cb: AuctionSceneCallbacks): void {
     this.leaveLobby();
-    this.manager.goto(new AuctionScene(this.layout, this.input, cb));
+    this.manager.goto(this.timedBuild('AuctionScene', () => new AuctionScene(this.layout, this.input, cb)));
   }
 
   showDefenseEditor(cb: DefenseEditorCallbacks): void {
     this.leaveLobby();
-    this.manager.goto(new DefenseEditorScene(this.layout, this.input, cb));
+    this.manager.goto(this.timedBuild('DefenseEditorScene', () => new DefenseEditorScene(this.layout, this.input, cb)));
   }
 
   showCity(cb: CitySceneCallbacks): void {
     this.leaveLobby();
-    this.manager.goto(new CityScene(this.layout, this.input, cb));
+    this.manager.goto(this.timedBuild('CityScene', () => new CityScene(this.layout, this.input, cb)));
   }
 
   showDeckBuilder(cb: DeckBuilderCallbacks): void {
     this.leaveLobby();
-    this.manager.goto(new DeckBuilderScene(this.layout, this.input, cb));
+    this.manager.goto(this.timedBuild('DeckBuilderScene', () => new DeckBuilderScene(this.layout, this.input, cb)));
   }
 
   showGameNet(localSide: OwnerId, cb: GameSceneCallbacks, opts: GameSceneOptions): NetGameView {
@@ -331,7 +344,7 @@ class PixiAppViews implements AppViews {
     const side = ownerToSide(localSide);
     const { width, height } = this.platform.getScreenSize();
     const netLayout = createLayout(width, height, side, this.platform.getSafeAreaInsets?.());
-    const scene = new GameScene(netLayout, this.input, cb, opts);
+    const scene = this.timedBuild('GameScene', () => new GameScene(netLayout, this.input, cb, opts));
     // Entering a match is one of the handful of transitions that cross-fade (see SceneManager).
     this.manager.goto(scene, { fade: true });
     return {

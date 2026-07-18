@@ -201,7 +201,7 @@ export class SectService {
       }
       throw e;
     }
-    await this.socialsvc.setSect(fam.familyId, sid);
+    await this.socialsvc.setSect(fam.familyId, sid, name);
 
     return { ...docToView(doc), memberFamilies: [{
       familyId: fam.familyId, name: fam.name, tag: fam.tag, leaderId: fam.leaderId,
@@ -227,7 +227,7 @@ export class SectService {
       if (!exists) throw new SlgError('NOT_FOUND', 'Sect not found');
       throw new SlgError('SECT_FULL');
     }
-    await this.socialsvc.setSect(fam.familyId, sectId);
+    await this.socialsvc.setSect(fam.familyId, sectId, res.name);
   }
 
   /** Family leaves a sect (family leader operation). The leader family cannot leave directly — must dissolve the sect or go through a leadership vote first. */

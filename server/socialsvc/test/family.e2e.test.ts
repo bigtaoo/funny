@@ -361,24 +361,36 @@ describe.skipIf(!mongo)('socialsvc FamilyService e2e', () => {
   it('setSect / getFamiliesBySect / getFamiliesByIds / resetSlgState: sect mirror + season reset', async () => {
     const a = await svc.createFamily('leader', 'Alpha', 'ALFA');
     const b = await svc.createFamily('m1', 'Bravo', 'BRVO');
-    await svc.setSect(a.familyId, 'sect:1');
-    await svc.setSect(b.familyId, 'sect:1');
+    await svc.setSect(a.familyId, 'sect:1', 'Iron Fist');
+    await svc.setSect(b.familyId, 'sect:1', 'Iron Fist');
     await svc.refreshProsperity(a.familyId, 5);
 
     const roster = await svc.getFamiliesBySect('sect:1');
     expect(new Set(roster.map((f) => f.familyId))).toEqual(new Set([a.familyId, b.familyId]));
     const byIds = await svc.getFamiliesByIds([a.familyId, 'fam:MISS']);
     expect(byIds).toHaveLength(1);
+    expect((await svc.getFamily(a.familyId))!.sectName).toBe('Iron Fist');
 
     await svc.setSect(a.familyId, null); // clear
-    expect((await svc.getFamily(a.familyId))!.sectId).toBeUndefined();
+    const aAfter = await svc.getFamily(a.familyId);
+    expect(aAfter!.sectId).toBeUndefined();
+    expect(aAfter!.sectName).toBeUndefined(); // clearing sectId also clears the mirrored name
 
     await svc.resetSlgState(b.familyId); // wipe season state, keep identity
     const bAfter = await svc.getFamily(b.familyId);
     expect(bAfter!.prosperity).toBe(0);
     expect(bAfter!.territoryCount).toBe(0);
     expect(bAfter!.sectId).toBeUndefined();
+    expect(bAfter!.sectName).toBeUndefined();
     expect(bAfter!.leaderId).toBe('m1'); // identity intact
+  });
+
+  it('setSect: omitting sectName leaves sectId set without a name (defensive — callers should always pass one)', async () => {
+    const a = await svc.createFamily('leader', 'Alpha', 'ALFA');
+    await svc.setSect(a.familyId, 'sect:1');
+    const view = await svc.getFamily(a.familyId);
+    expect(view!.sectId).toBe('sect:1');
+    expect(view!.sectName).toBeUndefined();
   });
 
   it('searchByTag: case-insensitive exact match', async () => {

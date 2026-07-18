@@ -356,6 +356,7 @@ export const zh = {
   'auth.err.fields': '请填写完整',
   'auth.err.passwordMismatch': '两次输入的密码不一致',
   'auth.err.network': '网络错误，请重试',
+  'auth.err.banned': '该账号已被封禁',
 
   // ── Shop / top-up (S2-6) ─────────────────────────────────────────────────────
   'shop.title': '商店',
@@ -905,6 +906,10 @@ export const zh = {
   'world.team.pickTitleOccupy': '选择占领队伍',
   'world.team.noTeamsOccupy': '尚无队伍，先去编辑布阵',
   'world.team.noCards': '没有可用卡牌（可能已受伤或编入其他队伍）',
+  'world.team.pool': '兵力池 {n}',
+  'world.team.fill': '补满兵力',
+  'world.team.fillNone': '兵力池已空，或队伍已满员',
+  'world.team.fillDone': '已分配 {n} 兵力',
   'world.team.full': '编队已达上限',
   // ── SLG battle replay browser (last-100) ─────────────────────────────────
   'world.replays': '战斗录像',

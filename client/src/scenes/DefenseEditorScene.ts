@@ -43,7 +43,7 @@ import { WorldApiError } from '../net/WorldApiClient';
 import { ATTACK_LANES, BASE_COLS, BASE_UPGRADE_COSTS, CARD_DEFINITIONS, UNIT_BLUEPRINTS } from '../game/config';
 import { CardType, UnitType, BuildingType } from '../game/types';
 import type { SaveData, CardInstance } from '../game/meta/SaveData';
-import { CARD_DEFS, troopCap } from '../game/meta/cardDefs';
+import { CARD_DEFS, troopCap, cardPower } from '../game/meta/cardDefs';
 import { CARD_TEAM_MAX_SIZE } from '@nw/shared';
 
 /** Max defender base upgrade level the engine schema accepts (0..BASE_UPGRADE_COSTS.length). */
@@ -140,9 +140,12 @@ export class DefenseEditorScene implements Scene {
   private teams: TeamTemplate[] = [];
   // Attack mode: this account's live card ledger (troops/injury/teamId), fetched alongside teams.
   private cardState: Record<string, CardSLGState> = {};
+  // Attack mode: base troop stock available to distribute to this team's cards (CHARACTER_CARDS_DESIGN §6.5).
+  private baseTroopStock = 0;
   private tool: Tool = { kind: 'erase' };
   private loading = true;
   private saving = false;
+  private filling = false;
   private destroyed = false;
 
   // Attack mode: right-half card roster is a scrollable vertical grid (left half = formation grid).
@@ -208,6 +211,7 @@ export class DefenseEditorScene implements Scene {
         if (!this.destroyed) {
           this.teams = teams;
           this.cardState = me.cardState ?? {};
+          this.baseTroopStock = me.baseTroopStock ?? 0;
           const team = teams.find((tm) => tm.id === (this.cb.target as { teamId: string }).teamId);
           if (team) this.applyArmy(team.army);
         }
@@ -312,6 +316,59 @@ export class DefenseEditorScene implements Scene {
       this.saving = false;
       this.showToast(this.errorMsg(e), C.red);
     }
+  }
+
+  /**
+   * §6.5 一键补满: distribute the base troop pool to this formation's placed cards, highest combat-power
+   * first, up to each card's troopCap. Manual per-card adjustment is not yet supported.
+   */
+  private async doFillTroops(): Promise<void> {
+    if (this.filling || this.cb.target.mode !== 'attack') return;
+    const cardInv = this.cb.getSave?.().cardInv ?? {};
+    const equipmentInv = this.cb.getSave?.().equipmentInv ?? {};
+    const placed = [...this.garrison.values()]
+      .filter((e) => !!e.cardInstanceId)
+      .map((e) => ({ entry: e, card: cardInv[e.cardInstanceId!] }))
+      .filter((x): x is { entry: GarrisonEntry; card: CardInstance } => !!x.card);
+    if (placed.length === 0) return;
+    placed.sort((a, b) => cardPower(b.card, equipmentInv) - cardPower(a.card, equipmentInv));
+
+    let pool = this.baseTroopStock;
+    const allocations: Record<string, number> = {};
+    for (const { entry, card } of placed) {
+      if (pool <= 0) break;
+      const current = this.cardState[entry.cardInstanceId!]?.currentTroops ?? 0;
+      const gap = Math.max(0, troopCap(card) - current);
+      if (gap <= 0) continue;
+      const amount = Math.min(gap, pool);
+      allocations[entry.cardInstanceId!] = amount;
+      pool -= amount;
+    }
+
+    if (Object.keys(allocations).length === 0) {
+      this.showToast(t('world.team.fillNone'), C.red);
+      return;
+    }
+
+    this.filling = true;
+    try {
+      await this.cb.worldApi.distributeTroops(this.cb.worldId, allocations);
+      let total = 0;
+      for (const [id, amount] of Object.entries(allocations)) {
+        total += amount;
+        const cs = this.cardState[id];
+        const nextTroops = (cs?.currentTroops ?? 0) + amount;
+        this.cardState[id] = { ...cs, currentTroops: nextTroops };
+        const entry = [...this.garrison.values()].find((e) => e.cardInstanceId === id);
+        if (entry) entry.hp = nextTroops;
+      }
+      this.baseTroopStock -= total;
+      this.showToast(t('world.team.fillDone').replace('{n}', String(total)));
+    } catch (e) {
+      this.showToast(this.errorMsg(e), C.red);
+    }
+    this.filling = false;
+    this.render();
   }
 
   private errorMsg(e: unknown): string {
@@ -726,8 +783,7 @@ export class DefenseEditorScene implements Scene {
     this.bodyLayer.addChild(panel);
 
     const countsStr = this.mode === 'attack'
-      // committed troops = sum of each unit's allocated HP (§16.5 tap cell to cycle steps; this total is deducted on march).
-      ? `${t('world.defense.garrison').replace('{n}', String(this.garrison.size))}   ${t('world.team.committed').replace('{n}', String(this.committedTroops()))}`
+      ? `${t('world.defense.garrison').replace('{n}', String(this.garrison.size))}   ${t('world.team.committed').replace('{n}', String(this.committedTroops()))}   ${t('world.team.pool').replace('{n}', String(this.baseTroopStock))}`
       : `${t('world.defense.buildings')} ${this.buildings.size}   ${t('world.defense.garrison').replace('{n}', String(this.garrison.size))}`;
     const counts = txt(countsStr, FS.micro, C.dark);
     counts.x = PAD; counts.y = top + 8;
@@ -740,7 +796,7 @@ export class DefenseEditorScene implements Scene {
       this.bodyLayer.addChild(hint);
     }
 
-    // Clear + Save (right)
+    // Clear + Save (+ Fill troops, attack mode only) (right)
     const btnW = 70, btnH = 30;
     const save = sketchPanel(btnW, btnH, { fill: C.dark, border: C.gold, seed: seedFor(w, top, btnW) });
     save.x = w - btnW - PAD; save.y = top + (FOOTER_H - btnH) / 2;
@@ -754,6 +810,19 @@ export class DefenseEditorScene implements Scene {
     const clear = sketchPanel(btnW, btnH, { fill: C.paper, border: C.red, seed: seedFor(w, top + 1, btnW) });
     clear.x = save.x - btnW - 8; clear.y = save.y;
     this.bodyLayer.addChild(clear);
+
+    if (this.mode === 'attack') {
+      const fillW = 84;
+      const fill = sketchPanel(fillW, btnH, { fill: C.paper, border: C.gold, seed: seedFor(w, top + 2, fillW) });
+      fill.x = clear.x - fillW - 8; fill.y = save.y;
+      this.bodyLayer.addChild(fill);
+      const fillLbl = txt(t('world.team.fill'), FS.tiny, C.dark, true);
+      fillLbl.anchor.set(0.5, 0.5);
+      fillLbl.x = fill.x + fillW / 2; fillLbl.y = fill.y + btnH / 2;
+      if (fillLbl.width > fillW - 6) fillLbl.scale.set((fillW - 6) / fillLbl.width);
+      this.bodyLayer.addChild(fillLbl);
+      this.hits.push({ rect: { x: fill.x, y: fill.y, w: fillW, h: btnH }, action: () => void this.doFillTroops() });
+    }
     const clearLbl = txt(t('world.defense.clear'), FS.tiny, C.red, true);
     clearLbl.anchor.set(0.5, 0.5);
     clearLbl.x = clear.x + btnW / 2; clearLbl.y = clear.y + btnH / 2;

@@ -136,6 +136,14 @@ export class CardSceneBase {
   protected headerH = 0;
   protected hitRects: { rect: Rect; action: () => void }[] = [];
   protected modalHits: { rect: Rect; action: () => void }[] = [];
+  /**
+   * Drag-slider hit zones for the modal layer (feed quantity slider, 2026-07-18): unlike modalHits
+   * (tap-vs-drag deferred to pointer-up via ScrollTapGesture), a slider must track the pointer live
+   * while down, so it's a separate list checked first in handleDown/handleMove.
+   */
+  protected modalSliders: { rect: Rect; onDrag: (x: number) => void }[] = [];
+  /** Slider currently being dragged (set on a down inside a modalSliders rect), or null. */
+  private activeModalSlider: ((x: number) => void) | null = null;
   protected modalOpen = false;
   /**
    * Detail-modal scale transform (popup-scale-to-80pct fix, 2026-07-14): the whole modal panel is
@@ -194,7 +202,7 @@ export class CardSceneBase {
     this.render();
 
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
-    this.unsubs.push(input.onMove((_x, y) => this.handleMove(y)));
+    this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
     this.unsubs.push(input.onUp(() => this.handleUp()));
   }
 
@@ -281,6 +289,8 @@ export class CardSceneBase {
     this.flipTickerCleanup = null;
     tearDownChildren(this.modalLayer);
     this.modalHits = [];
+    this.modalSliders = [];
+    this.activeModalSlider = null;
     this.modalOpen = false;
     this.modalScale = 1;
     this.modalOriginX = 0;
@@ -316,6 +326,11 @@ export class CardSceneBase {
       // tap there falls through to the modal's own dim-to-close catch-all and just closes the
       // modal instead of leaving the scene (LOBBY_IA_REDESIGN back-button-always-works fix, 2026-07-14).
       if (this.inRect(x, y, this.backRect)) { this.cb.onBack(); return; }
+      // A slider (feed quantity drag bar) must track the pointer live, not defer to up like a tap —
+      // check it first and, if hit, jump the value to the press point immediately.
+      for (const { rect, onDrag } of this.modalSliders) {
+        if (this.inRect(x, y, rect)) { this.activeModalSlider = onDrag; onDrag(x); return; }
+      }
       // Defer the modal hit to pointer-UP and drop it if the pointer drags past the threshold, same
       // as the grid behind it — so a press-drag-release on a feed-select row (or any modal row) only
       // toggles on release, and a drag away doesn't accidentally toggle it (2026-07-17).
@@ -339,7 +354,8 @@ export class CardSceneBase {
     this.gesture.down(this.scrollY, y, hit);
   }
 
-  private handleMove(y: number): void {
+  private handleMove(x: number, y: number): void {
+    if (this.activeModalSlider) { this.activeModalSlider(x); return; }
     // Feed the move to the gesture even while a modal is open: the modal doesn't scroll, but this
     // latches `moved` once the pointer crosses the drag threshold so the pending modal tap is dropped on up.
     const scroll = this.gesture.move(y);
@@ -356,6 +372,7 @@ export class CardSceneBase {
   }
 
   private handleUp(): void {
+    if (this.activeModalSlider) { this.activeModalSlider = null; return; }
     // Fires only for a genuine tap (pointer didn't drag); a released drag returns null.
     this.gesture.up()?.();
   }

@@ -75,6 +75,7 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       const drawFeedPanel = (): void => {
         tearDownChildren(ml);
         this.modalHits = [];
+        this.modalSliders = [];
 
         // Scale the whole feed modal up 3x (local factor, other modals untouched).
         // Geometry stays clamped to the screen so it never overflows.
@@ -195,35 +196,14 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
           nameLbl.anchor.set(0, 0.5); nameLbl.x = thumbX + thumbBox + 8 * S; nameLbl.y = rowCy;
           listC.addChild(nameLbl);
 
-          // Quantity stepper on the right: [−]  n / total  [+].
-          const stepSz = 26 * S;
+          // Quantity drag-slider on the right: "n / total"  ====o====.
+          // Replaces the old +/- stepper — with up to ~50 owned duplicates, tapping + fifty times
+          // was too slow; dragging the handle straight to a value (or the track ends for min/max) is not.
+          const trackW = 90 * S;
+          const handleR = 9 * S;
           const rowRight = listX + rowW;
-          const plusX = rowRight - 12 * S - stepSz;
-          const minusX = plusX - stepSz - 56 * S;
-          const countCx = (minusX + stepSz + plusX) / 2;
-          const stepY = rowCy - stepSz / 2;
-
-          const drawStepBtn = (bx: number, enabled: boolean, plus: boolean): void => {
-            const btn = sketchPanel(stepSz, stepSz, { fill: enabled ? C.paper : C.btnOff, border: enabled ? C.dark : C.mid, seed: seedFor(bx, plus ? 22 : 23, stepSz) });
-            btn.x = bx; btn.y = stepY;
-            listC.addChild(btn);
-            const glyph = new PIXI.Graphics();
-            const gc = enabled ? C.dark : C.mid;
-            const cx = bx + stepSz / 2, cy = stepY + stepSz / 2, arm = stepSz * 0.28;
-            glyph.lineStyle(2.5 * S, gc, enabled ? 0.9 : 0.4);
-            glyph.moveTo(cx - arm, cy).lineTo(cx + arm, cy);
-            if (plus) glyph.moveTo(cx, cy - arm).lineTo(cx, cy + arm);
-            listC.addChild(glyph);
-          };
-
-          const minusOn = n > 0;
-          const plusOn = n < total;
-          drawStepBtn(minusX, minusOn, false);
-          drawStepBtn(plusX, plusOn, true);
-
-          const countLbl = txt(`${n} / ${total}`, snapFont(12 * S), isSelected ? C.dark : C.mid, true);
-          countLbl.anchor.set(0.5, 0.5); countLbl.x = countCx; countLbl.y = rowCy;
-          listC.addChild(countLbl);
+          const trackX0 = rowRight - 12 * S - trackW;
+          const trackY = rowCy - 3 * S;
 
           const setCount = (v: number): void => {
             const clamped = Math.max(0, Math.min(total, v));
@@ -231,10 +211,37 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
             drawFeedPanel();
           };
 
-          if (minusOn) pushHit({ x: minusX, y: stepY, w: stepSz, h: stepSz }, () => setCount(n - 1));
-          if (plusOn) pushHit({ x: plusX, y: stepY, w: stepSz, h: stepSz }, () => setCount(n + 1));
-          // Tapping the row body (left of the stepper) cycles the quantity: +1, wrapping to 0 past the max.
-          pushHit({ x: listX, y: rowTop, w: minusX - listX, h: rowH - 4 * S }, () => setCount(n >= total ? 0 : n + 1));
+          const countLbl = txt(`${n} / ${total}`, snapFont(12 * S), isSelected ? C.dark : C.mid, true);
+          countLbl.anchor.set(1, 0.5); countLbl.x = trackX0 - 10 * S; countLbl.y = rowCy;
+          listC.addChild(countLbl);
+
+          const frac = n / total;
+          const handleX = trackX0 + frac * trackW;
+
+          const track = new PIXI.Graphics();
+          track.lineStyle(1.5 * S, C.mid, 0.8);
+          track.beginFill(C.light, 0.6).drawRoundedRect(trackX0, trackY, trackW, 6 * S, 3 * S).endFill();
+          if (n > 0) {
+            track.lineStyle(0);
+            track.beginFill(C.gold, 0.85).drawRoundedRect(trackX0, trackY, handleX - trackX0, 6 * S, 3 * S).endFill();
+          }
+          listC.addChild(track);
+
+          const handle = new PIXI.Graphics();
+          handle.lineStyle(2 * S, C.gold, 1).beginFill(isSelected ? C.dark : C.paper).drawCircle(handleX, rowCy, handleR).endFill();
+          listC.addChild(handle);
+
+          const dragToCount = (px: number): void => {
+            const f = Math.max(0, Math.min(1, (px - trackX0) / trackW));
+            setCount(Math.round(f * total));
+          };
+          this.modalSliders.push({
+            rect: { x: trackX0 - handleR, y: rowCy - Math.max(handleR, rowH / 2 - 2 * S), w: trackW + handleR * 2, h: Math.max(handleR, rowH / 2 - 2 * S) * 2 },
+            onDrag: (px: number) => dragToCount(px),
+          });
+          // Tapping the row body (left of the slider) cycles the quantity: +1, wrapping to 0 past the max.
+          const rowBodyRight = countLbl.x - countLbl.width - 6 * S;
+          pushHit({ x: listX, y: rowTop, w: Math.max(0, rowBodyRight - listX), h: rowH - 4 * S }, () => setCount(n >= total ? 0 : n + 1));
         }
 
         if (scrollMax > 0) {

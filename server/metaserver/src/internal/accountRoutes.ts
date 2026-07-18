@@ -1,6 +1,6 @@
 // Account/profile lookups + moderation (ban/unban, anti-cheat review queue) used by gateway + admin backend.
 import type { FastifyInstance } from 'fastify';
-import { INITIAL_ELO, createLogger } from '@nw/shared';
+import { INITIAL_ELO, createLogger, hashPassword, validatePassword } from '@nw/shared';
 import { getProfile, resolveByPublicId, searchAccounts } from '../accounts.js';
 import { profileOf } from '../social.js';
 import type { InternalCtx } from './context.js';
@@ -8,7 +8,7 @@ import type { InternalCtx } from './context.js';
 const log = createLogger('meta:internal');
 
 export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): void {
-  const { cols, authed } = ctx;
+  const { cols, authed, now } = ctx;
 
   // ── GET /internal/elo?accountId= ──────────────────────────────────────
   app.get('/internal/elo', async (req, reply) => {
@@ -71,14 +71,16 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
       accountId = exists?._id ?? null;
     }
     if (!accountId) return reply.code(404).send({ ok: false, error: 'not found' });
-    const [profile, saveDoc] = await Promise.all([
+    const [profile, saveDoc, accountDoc] = await Promise.all([
       getProfile(cols, accountId),
       cols.saves.findOne({ _id: accountId }),
+      cols.accounts.findOne({ _id: accountId }, { projection: { 'flags.banned': 1 } }),
     ]);
     const pvp = saveDoc?.save.pvp;
     return reply.send({
       publicId: profile.publicId,
       accountId,
+      banned: accountDoc?.flags?.banned ?? false,
       ...(profile.displayName ? { displayName: profile.displayName } : {}),
       ...(pvp
         ? { rank: pvp.rank, elo: pvp.elo, wins: pvp.wins, losses: pvp.losses }
@@ -106,6 +108,26 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
       .limit(limit)
       .toArray();
     return reply.send({ reviews });
+  });
+
+  // ── POST /internal/anticheat/reviews/:id/resolve (anticheat.action, admin-initiated) ─────────
+  // Marks a review record resolved. Does NOT itself ban — the caller (admin backend) bans separately via
+  // POST /internal/accounts/:id/ban when resolution='banned', so there is exactly one ban code path.
+  app.post('/internal/anticheat/reviews/:id/resolve', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    const { id } = req.params as { id: string };
+    const { resolution, resolvedBy } = (req.body ?? {}) as { resolution?: string; resolvedBy?: string };
+    if (resolution !== 'dismissed' && resolution !== 'banned') {
+      return reply.code(400).send({ ok: false, error: 'resolution must be dismissed or banned' });
+    }
+    const res = await cols.antiCheatReviews.updateOne(
+      { _id: id },
+      { $set: { status: 'reviewed', resolution, resolvedAt: now(), ...(resolvedBy ? { resolvedBy } : {}) } },
+    );
+    if (res.matchedCount === 0) return reply.code(404).send({ ok: false, error: 'review not found' });
+    return reply.send({ ok: true });
   });
 
   // ── GET /internal/social/friends?accountId= ──────────────────────────
@@ -193,6 +215,31 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
     await cols.accounts.updateOne({ _id: id }, { $unset: { 'flags.banned': '' } });
     // Also clear the save-layer pveBanned flag to prevent the account from being blocked by pveClear after unbanning.
     await cols.saves.updateOne({ _id: id }, { $unset: { 'save.antiCheat.pveBanned': '' } });
+    return reply.send({ ok: true });
+  });
+
+  // ── POST /internal/accounts/:id/reset-password (player.password_reset) ─────────
+  // Admin-initiated password reset for a player who lost access and has no contact method on file
+  // (no self-service recovery path exists otherwise, see changePassword which requires the old password).
+  // Only rewrites the hash of an *existing* password credential; does not create one, since accounts
+  // without password.loginId (anonymous/wechat-only) have no username to log back in with anyway.
+  app.post('/internal/accounts/:id/reset-password', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    const { id } = req.params as { id: string };
+    const { password } = (req.body ?? {}) as { password?: string };
+    if (typeof password !== 'string') {
+      return reply.code(400).send({ ok: false, error: 'password required' });
+    }
+    const pwErr = validatePassword(password);
+    if (pwErr) return reply.code(400).send({ ok: false, error: pwErr });
+    const doc = await cols.accounts.findOne({ _id: id }, { projection: { password: 1 } });
+    if (!doc) return reply.code(404).send({ ok: false, error: 'account not found' });
+    if (!doc.password) return reply.code(409).send({ ok: false, error: 'account has no password credential' });
+    const hash = await hashPassword(password);
+    await cols.accounts.updateOne({ _id: id }, { $set: { 'password.hash': hash } });
+    log.info('admin reset player password', { accountId: id });
     return reply.send({ ok: true });
   });
 }

@@ -15,6 +15,7 @@ interface AccountDoc {
   publicId?: string;
   displayName?: string;
   password?: { loginId: string };
+  flags?: { banned?: boolean };
 }
 interface SaveDocRow { _id: string; save: SaveData; rev: number }
 
@@ -166,6 +167,27 @@ describe('GET /internal/player', () => {
     const body = JSON.parse(res.payload);
     expect(body.accountId).toBe('a');
     expect(body.rank).toBeUndefined();
+  });
+
+  it('lookup by publicId → banned defaults to false when flags.banned is unset', async () => {
+    const { app } = build([{ _id: 'a', publicId: '123456789' }]);
+    const res = await app.inject({ method: 'GET', url: '/internal/player?publicId=123456789', headers: authHeaders });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.payload).banned).toBe(false);
+  });
+
+  it('lookup by publicId → surfaces banned:true (Player Lookup ban-status regression, 2026-07-18)', async () => {
+    const { app } = build([{ _id: 'a', publicId: '123456789', flags: { banned: true } }]);
+    const res = await app.inject({ method: 'GET', url: '/internal/player?publicId=123456789', headers: authHeaders });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.payload).banned).toBe(true);
+  });
+
+  it('lookup by accountId → surfaces banned:true', async () => {
+    const { app } = build([{ _id: 'a', flags: { banned: true } }]);
+    const res = await app.inject({ method: 'GET', url: '/internal/player?accountId=a', headers: authHeaders });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.payload).banned).toBe(true);
   });
 });
 
