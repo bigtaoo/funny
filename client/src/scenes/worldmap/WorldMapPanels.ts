@@ -317,6 +317,15 @@ export class WorldMapPanels {
     const modalMargin = MARGIN * 3;
     const mx = (w - mw) / 2;
 
+    // Wrap into multiple rows once buttons would otherwise be squeezed below a legible width
+    // (e.g. the 6-button owned-tile menu: Reinforce/Defense/Watchtower/Relocate/Abandon/✕) —
+    // a single row at that count left labels overlapping their neighbors.
+    const minBtnW = 150;
+    const maxCols = Math.max(1, Math.floor((mw + modalMargin) / (minBtnW + modalMargin)));
+    const cols = Math.min(buttons.length, maxCols);
+    const rows = Math.ceil(buttons.length / cols);
+    const rowGap = 16;
+
     // Pre-measure wrapped label heights so the panel sizes to content instead of clipping/overlapping.
     const labels = lines.map((line) => {
       const lbl = txt(line, FS.title, C.dark, false, textW);
@@ -324,7 +333,8 @@ export class WorldMapPanels {
       return lbl;
     });
     const textH = labels.reduce((sum, lbl) => sum + lbl.height, 0) + lineGap * Math.max(0, labels.length - 1);
-    const mh = Math.max(CONFIRM_H * 1.5, topPad + textH + btnGap + btnH + btnGap);
+    const btnAreaH = btnH * rows + rowGap * (rows - 1);
+    const mh = Math.max(CONFIRM_H * 1.5, topPad + textH + btnGap + btnAreaH + btnGap);
     const my = (h - HUD_H - mh) / 2;
 
     // Dimmer
@@ -344,10 +354,16 @@ export class WorldMapPanels {
     }
 
     this.ctx.modalBtnRects = [];
-    const btnW = Math.min(300, (mw - modalMargin * (buttons.length + 1)) / buttons.length);
-    let bx = mx + (mw - (btnW + modalMargin) * buttons.length + modalMargin) / 2;
-    const by = my + mh - btnH - 30;
-    for (const btn of buttons) {
+    const btnW = Math.min(300, (mw - modalMargin * (cols + 1)) / cols);
+    const btnTop = my + mh - btnAreaH - 30;
+    for (let i = 0; i < buttons.length; i++) {
+      const btn = buttons[i];
+      const row = Math.floor(i / cols);
+      const rowStart = row * cols;
+      const rowCount = Math.min(cols, buttons.length - rowStart);
+      const colInRow = i - rowStart;
+      const bx = mx + (mw - (btnW + modalMargin) * rowCount + modalMargin) / 2 + colInRow * (btnW + modalMargin);
+      const by = btnTop + row * (btnH + rowGap);
       // Disabled buttons (e.g. Occupy on a tile not connected to the player's territory, ADR-039) use the
       // shared pale-grey disabled styling; the action is still registered so tapping it surfaces a toast
       // explaining why, rather than reading as a dead click.
@@ -361,13 +377,13 @@ export class WorldMapPanels {
         ic.x = bx + btnW / 2 - 24; ic.y = by + btnH / 2 - 24;
         ml.addChild(ic);
       } else {
-        const bl = txt(btn.label, FS.title, disabled ? C.mid : C.light);
+        // Word-wrap to the button's own width so long labels (or squeezed columns) never bleed into neighbors.
+        const bl = txt(btn.label, FS.title, disabled ? C.mid : C.light, false, btnW - 16);
         bl.anchor.set(0.5, 0.5);
         bl.x = bx + btnW / 2; bl.y = by + btnH / 2;
         ml.addChild(bl);
       }
       this.ctx.modalBtnRects.push({ rect: { x: bx, y: by, w: btnW, h: btnH }, action: btn.action });
-      bx += btnW + modalMargin;
     }
 
     // Close on dim
