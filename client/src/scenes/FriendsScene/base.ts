@@ -50,6 +50,8 @@ export interface SLGSocialStatus {
   sectName?: string;
   /** Whether the current player is the family leader (only leaders can create sects). */
   isLeader: boolean;
+  /** Open join requests awaiting this player's (leader/elder) review — drives the Family tab badge. */
+  pendingJoinRequests?: number;
 }
 
 export interface FriendsSceneCallbacks {
@@ -474,7 +476,7 @@ export class FriendsSceneBase {
     const hidden: SocialTab[] = s && !s.isLeader && !s.sectId ? ['sect'] : [];
     const hits = drawSocialTabRail(
       this.container, this.w, this.h, this.bodyTop, this.landscape, this.tab,
-      { friends: this.incoming.length, mail: this.mailUnread },
+      { friends: this.incoming.length, mail: this.mailUnread, family: this.slgStatus?.pendingJoinRequests ?? 0 },
       (tab) => this.switchTab(tab),
       hidden,
     );
