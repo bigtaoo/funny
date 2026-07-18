@@ -147,12 +147,19 @@ export function reportAnomaly(type: AnomalyType, msg: string, detail?: Record<st
 
 // ── ANR attribution context ─────────────────────────────────────────────────────
 // The watchdog only sees a wall-clock drift; it has no idea *what* was on screen or running when the
-// main thread froze. These two hooks let the higher layers (SceneManager / MemoryMonitor) feed that
+// main thread froze. These hooks let the higher layers (SceneManager / MemoryMonitor) feed that
 // context in without anomaly.ts (net layer) reverse-importing PIXI or the scene graph:
 //   setActiveScene(name)  — SceneManager stamps the current scene on every swap (a plain string).
 //   setAnrContextProvider — MemoryMonitor registers a getter for live GPU/texture counters.
-// Both are folded into the `anr` event detail so a recurring freeze is attributable to a screen
-// (e.g. "always stalls on WorldMap") instead of being an anonymous stallMs with no lead.
+//   recordFrameSample(ms) — SceneManager times every scene.update() call. If a single call ran long
+//                           enough to plausibly BE the freeze, its scene + duration is attached — this
+//                           tells us whether the block happened inside our own synchronous render code
+//                           (a specific scene's update() took e.g. 30000ms) versus somewhere the ticker
+//                           can't see (GC pause, tab-switch compositor stall, background throttling edge
+//                           case) — the watchdog alone can't distinguish these, and that distinction is
+//                           exactly what's still missing to root-cause the recurring 25-54s freezes.
+// All folded into the `anr` event detail so a recurring freeze is attributable to a screen and, when
+// possible, a specific blocking call — instead of being an anonymous stallMs with no lead.
 
 let activeScene = '';
 let anrContextProvider: (() => Record<string, unknown>) | null = null;
@@ -163,10 +170,32 @@ export function setActiveScene(name: string): void { activeScene = name; }
 /** Register a getter for extra ANR context (GPU/texture counters). Called once by MemoryMonitor. */
 export function setAnrContextProvider(fn: (() => Record<string, unknown>) | null): void { anrContextProvider = fn; }
 
+/** Longest single scene.update() call seen recently, if any exceeded LONG_FRAME_MS. Cleared once stale. */
+let lastLongFrame: { ms: number; scene: string; ts: number } | null = null;
+const LONG_FRAME_MS = 200;      // frames this slow are worth remembering even outside a full ANR
+const LONG_FRAME_STALE_MS = 60_000; // don't attach a stale sample from long before the freeze
+
+/**
+ * Called once per tick by SceneManager with how long the just-finished scene.update() call took.
+ * Only frames slower than LONG_FRAME_MS are kept (cheap: no-op comparison on the fast path).
+ */
+export function recordFrameSample(ms: number): void {
+  if (ms < LONG_FRAME_MS) return;
+  if (!lastLongFrame || ms >= lastLongFrame.ms) lastLongFrame = { ms: Math.round(ms), scene: activeScene, ts: Date.now() };
+}
+
 function anrContext(): Record<string, unknown> {
   let extra: Record<string, unknown> = {};
   try { extra = anrContextProvider?.() ?? {}; } catch { /* provider must never break the report */ }
-  return { ...(activeScene ? { scene: activeScene } : {}), ...extra };
+  const lf = lastLongFrame;
+  const longFrame = lf && Date.now() - lf.ts <= LONG_FRAME_STALE_MS
+    ? { longFrameMs: lf.ms, longFrameScene: lf.scene }
+    : {};
+  // Attach the same recent breadcrumbs used on crash/exit reports — the last net-layer activity
+  // (api/gateway) right before the freeze is often the only lead when longFrame comes back empty
+  // (i.e. the block wasn't inside a tracked scene.update() call).
+  const crumbs = recentClientLogs(BREADCRUMB_N).map((e) => `[${e.level}${e.tag ? ':' + e.tag : ''}] ${e.msg}`);
+  return { ...(activeScene ? { scene: activeScene } : {}), ...extra, ...longFrame, ...(crumbs.length ? { crumbs } : {}) };
 }
 
 // ── Crash sentinel (localStorage) ───────────────────────────────────────────────────────────────

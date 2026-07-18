@@ -322,7 +322,7 @@ export class CardCodexScene implements Scene {
 
   /** Draw the illustration face: art (front) or word-wrapped story text (back), centred on the container origin. */
   private drawTileFace(container: PIXI.Container, box: number, card: CardDefinition, art: string | null, story: string, showStory: boolean): void {
-    container.removeChildren();
+    tearDownChildren(container);
     if (!showStory) {
       if (art) { this.drawArtFit(art, -box / 2, -box / 2, box, container); return; }
       // No illustration for this card yet — a faded monogram keeps the frame from reading as broken.

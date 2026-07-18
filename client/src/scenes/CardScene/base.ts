@@ -230,7 +230,7 @@ export class CardSceneBase {
     if (this.destroyed) return;
     tearDownChildren(this.bodyLayer);
     this.hitRects = [];
-    this.loadingLayer.removeChildren();
+    tearDownChildren(this.loadingLayer);
     this.hitRects.push({ rect: this.backRect, action: () => this.cb.onBack() });
 
     this.renderHeaderCurrency();
@@ -279,7 +279,7 @@ export class CardSceneBase {
   protected closeModal(): void {
     this.flipTickerCleanup?.();
     this.flipTickerCleanup = null;
-    this.modalLayer.removeChildren();
+    tearDownChildren(this.modalLayer);
     this.modalHits = [];
     this.modalOpen = false;
     this.modalScale = 1;

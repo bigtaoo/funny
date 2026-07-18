@@ -3,7 +3,7 @@
 // it's the target of both the detail modal's buttons and the assign mixin's card picker.
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
-import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { withTimeout, TimeoutError } from '../../ui/busyTracker';
 import type { SaveData, EquipSlot, EquipmentInstance } from '../../game/meta/SaveData';
@@ -36,7 +36,7 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
 
       const { w, h } = this;
       const ml = this.modalLayer;
-      ml.removeChildren();
+      tearDownChildren(ml);
       this.modalHits = [];
       this.modalOpen = true;
 

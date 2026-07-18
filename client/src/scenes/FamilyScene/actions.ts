@@ -1,7 +1,7 @@
 // Network actions + confirm/pick modals for the family scene: create, join, leave, dissolve, kick, set-role.
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
-import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import type { FamilyView, FamilyMessageView } from '../../net/WorldApiClient';
 import { type Constructor, type FamilySceneBaseCtor } from './base';
@@ -46,7 +46,7 @@ export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TB
     private showPickModal(families: FamilyView[]): void {
       const { w, h } = this;
       const ml = this.modalLayer;
-      ml.removeChildren();
+      tearDownChildren(ml);
       this.modalHits = [];
       this.modalOpen = true;
 

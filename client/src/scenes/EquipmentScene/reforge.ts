@@ -1,7 +1,7 @@
 // Reforge (E6): material selection modal + confirm + the reforge action itself.
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
-import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { withTimeout, TimeoutError } from '../../ui/busyTracker';
 import type { EquipmentInstance } from '../../game/meta/SaveData';
@@ -28,7 +28,7 @@ export function ReforgeMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase):
 
       const { w, h } = this;
       const ml = this.modalLayer;
-      ml.removeChildren();
+      tearDownChildren(ml);
       this.modalHits = [];
       this.modalOpen = true;
 

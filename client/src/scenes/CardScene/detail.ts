@@ -2,7 +2,7 @@
 // slots + the action button row (lock / feed / list-auction). Opened from a roster cell tap.
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
-import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { UNIT_ART_URLS } from '../../render/cardArt';
 import { buildIcon } from '../../render/icons';
@@ -33,7 +33,7 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
 
       const { w, h } = this;
       const ml = this.modalLayer;
-      ml.removeChildren();
+      tearDownChildren(ml);
       this.modalHits = [];
       this.modalOpen = true;
 
@@ -302,7 +302,7 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
 
     /** Draw the portrait face: art (front) or word-wrapped lore text (back), centered on the container's local origin. */
     drawDetailFace(container: PIXI.Container, box: number, artUrl: string | undefined, loreText: string, flipped: boolean): void {
-      container.removeChildren();
+      tearDownChildren(container);
       if (!flipped) {
         if (artUrl) this.drawArtFit(artUrl, -box / 2, -box / 2, box, container);
         return;
