@@ -35,6 +35,9 @@ import { showToastMessage } from '../net/log';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { FS } from '../render/fontScale';
 import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
+import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
+import { ScrollTapGesture } from '../ui/scrollTapGesture';
+import { UNIT_ART_URLS, getArtTexture } from '../render/cardArt';
 import type { WorldApiClient, TeamTemplate, ArmyEntry, CardSLGState } from '../net/WorldApiClient';
 import { WorldApiError } from '../net/WorldApiClient';
 import { ATTACK_LANES, BASE_COLS, BASE_UPGRADE_COSTS, CARD_DEFINITIONS, UNIT_BLUEPRINTS } from '../game/config';
@@ -137,13 +140,22 @@ export class DefenseEditorScene implements Scene {
   private teams: TeamTemplate[] = [];
   // Attack mode: this account's live card ledger (troops/injury/teamId), fetched alongside teams.
   private cardState: Record<string, CardSLGState> = {};
-  // Attack mode: card palette pagination (roster can be far wider than one screen row).
-  private cardPage = 0;
-
   private tool: Tool = { kind: 'erase' };
   private loading = true;
   private saving = false;
   private destroyed = false;
+
+  // Attack mode: right-half card roster is a scrollable vertical grid (left half = formation grid).
+  // Same tap-vs-drag disambiguation as TeamsScene's roster grid — see ScrollTapGesture.
+  private scrollY = 0;
+  private scrollMax = 0;
+  private scrollDirty = false;
+  private readonly gesture = new ScrollTapGesture();
+  private rosterX = 0;
+  private rosterY = 0;
+  private rosterW = 0;
+  private rosterH = 0;
+  private readonly artHooked = new Set<string>();
 
   // Layers
   private bodyLayer!: PIXI.Container;
@@ -177,6 +189,8 @@ export class DefenseEditorScene implements Scene {
     this.container.addChild(this.bodyLayer);
 
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
+    this.unsubs.push(input.onMove((_x, y) => this.handleMove(y)));
+    this.unsubs.push(input.onUp(() => this.handleUp()));
 
     this.render();
     void this.loadData();
@@ -329,13 +343,15 @@ export class DefenseEditorScene implements Scene {
     // Base-level stepper (defense only — attacker has no base/buildings)
     if (this.hasBuildingRow) this.renderBaseStepper(w - PAD, 8);
 
-    // Palette
-    this.renderPalette(hdr.headerH + 4);
-
-    // Board grid
-    const gridTop = hdr.headerH + 4 + PALETTE_H + 4;
     const gridBottom = h - FOOTER_H - 4;
-    this.renderGrid(gridTop, gridBottom);
+    if (this.mode === 'attack') {
+      // Left half = formation grid, right half = scrollable card roster (布阵/选卡 split).
+      this.renderAttackBody(hdr.headerH + 4, gridBottom);
+    } else {
+      this.renderPalette(hdr.headerH + 4);
+      const gridTop = hdr.headerH + 4 + PALETTE_H + 4;
+      this.renderGrid(gridTop, gridBottom);
+    }
 
     // Footer: counts + clear + save
     this.renderFooter(h - FOOTER_H);
@@ -378,7 +394,6 @@ export class DefenseEditorScene implements Scene {
   }
 
   private renderPalette(top: number): void {
-    if (this.mode === 'attack') { this.renderCardPalette(top); return; }
     const { w } = this;
     const tools: { tool: Tool; label: string; tint: number }[] = [
       // Buildings are defense-mode only (attacker places units only).
@@ -449,100 +464,161 @@ export class DefenseEditorScene implements Scene {
     return undefined;
   }
 
-  /** Attack mode palette: a paginated strip of the player's hero-card roster + an erase tool. */
-  private renderCardPalette(top: number): void {
+  /**
+   * Attack mode body: left half = formation grid (place cards into cells), right half = a scrollable
+   * vertical card roster to pick from — mirrors 布阵(left)/选卡(right) so both stay visible together
+   * instead of the old horizontal palette strip forcing a page-flip to see more cards.
+   */
+  private renderAttackBody(top: number, bottom: number): void {
     const { w } = this;
-    const cards = this.availableCards();
-    const cellW = 84, gap = 6, eraseW = 50, arrowW = 22;
-    const btnH = PALETTE_H - 10;
-    const innerW = w - PAD * 2 - arrowW * 2 - gap * 3 - eraseW;
-    const perPage = Math.max(1, Math.floor((innerW + gap) / (cellW + gap)));
-    const pageCount = Math.max(1, Math.ceil(cards.length / perPage));
-    this.cardPage = Math.max(0, Math.min(this.cardPage, pageCount - 1));
-    const showArrows = cards.length > perPage;
-    const pageCards = cards.slice(this.cardPage * perPage, this.cardPage * perPage + perPage);
+    const gap = PAD;
+    const leftW = Math.floor((w - PAD * 2 - gap) / 2);
+    const rightX = PAD + leftW + gap;
+    const rightW = w - PAD - rightX;
 
-    let x = PAD;
-    if (showArrows) {
-      const enabled = this.cardPage > 0;
-      const box = sketchPanel(arrowW, btnH, { fill: C.paper, border: enabled ? C.dark : C.mid, seed: seedFor(x, top, arrowW) });
-      box.x = x; box.y = top + 5;
-      this.bodyLayer.addChild(box);
-      const lbl = txt('<', FS.small, enabled ? C.dark : C.mid, true);
-      lbl.anchor.set(0.5, 0.5); lbl.x = box.x + arrowW / 2; lbl.y = box.y + btnH / 2;
-      this.bodyLayer.addChild(lbl);
-      if (enabled) this.hits.push({ rect: { x: box.x, y: box.y, w: arrowW, h: btnH }, action: () => { this.cardPage--; this.render(); } });
-      x += arrowW + gap;
-    }
+    const toolbarH = 30;
+    this.renderAttackToolbar(PAD, top, leftW, toolbarH);
+    this.renderGrid(top + toolbarH + 6, bottom, PAD, leftW);
 
-    if (cards.length === 0) {
-      const empty = txt(t('world.team.noCards'), FS.micro, C.mid);
-      empty.x = x; empty.y = top + 5 + btnH / 2 - 6;
-      this.bodyLayer.addChild(empty);
-    }
-
-    for (const c of pageCards) {
-      const active = this.tool.kind === 'card' && this.tool.cardInstanceId === c.card.id;
-      const placed = this.cellForCard(c.card.id) !== undefined;
-      const box = sketchPanel(cellW, btnH, {
-        fill: active ? C.accent : C.paper, border: active ? C.dark : (placed ? C.accent : C.mid),
-        width: active ? 2.4 : 1.4, seed: seedFor(x, top, cellW),
-      });
-      box.x = x; box.y = top + 5;
-      this.bodyLayer.addChild(box);
-      const name = t(`card.${c.card.defId}.name` as import('../i18n').TranslationKey);
-      const nameLbl = txt(name, FS.micro, active ? C.light : C.dark, true);
-      nameLbl.anchor.set(0.5, 0); nameLbl.x = x + cellW / 2; nameLbl.y = box.y + 4;
-      if (nameLbl.width > cellW - 6) nameLbl.scale.set((cellW - 6) / nameLbl.width);
-      this.bodyLayer.addChild(nameLbl);
-      const sub = txt(`${c.troops}/${c.cap}`, FS.micro, active ? C.light : C.mid);
-      sub.anchor.set(0.5, 0); sub.x = x + cellW / 2; sub.y = box.y + btnH - 16;
-      this.bodyLayer.addChild(sub);
-      const captured = c;
-      this.hits.push({ rect: { x: box.x, y: box.y, w: cellW, h: btnH }, action: () => {
-        this.tool = { kind: 'card', cardInstanceId: captured.card.id, unitType: captured.unitType };
-        this.render();
-      } });
-      x += cellW + gap;
-    }
-
-    const eraseX = w - PAD - eraseW - (showArrows ? gap + arrowW : 0);
-    const eraseActive = this.tool.kind === 'erase';
-    const eraseBox = sketchPanel(eraseW, btnH, {
-      fill: eraseActive ? C.red : C.paper, border: eraseActive ? C.dark : C.red,
-      width: eraseActive ? 2.4 : 1.4, seed: seedFor(eraseX, top, eraseW),
-    });
-    eraseBox.x = eraseX; eraseBox.y = top + 5;
-    this.bodyLayer.addChild(eraseBox);
-    const eraseLbl = txt(t('world.defense.erase'), FS.micro, eraseActive ? C.light : C.red, true);
-    eraseLbl.anchor.set(0.5, 0.5); eraseLbl.x = eraseBox.x + eraseW / 2; eraseLbl.y = eraseBox.y + btnH / 2;
-    this.bodyLayer.addChild(eraseLbl);
-    this.hits.push({ rect: { x: eraseBox.x, y: eraseBox.y, w: eraseW, h: btnH }, action: () => { this.tool = { kind: 'erase' }; this.render(); } });
-
-    if (showArrows) {
-      const rx = w - PAD - arrowW;
-      const enabled = this.cardPage < pageCount - 1;
-      const box = sketchPanel(arrowW, btnH, { fill: C.paper, border: enabled ? C.dark : C.mid, seed: seedFor(rx, top, arrowW) });
-      box.x = rx; box.y = top + 5;
-      this.bodyLayer.addChild(box);
-      const lbl = txt('>', FS.small, enabled ? C.dark : C.mid, true);
-      lbl.anchor.set(0.5, 0.5); lbl.x = box.x + arrowW / 2; lbl.y = box.y + btnH / 2;
-      this.bodyLayer.addChild(lbl);
-      if (enabled) this.hits.push({ rect: { x: box.x, y: box.y, w: arrowW, h: btnH }, action: () => { this.cardPage++; this.render(); } });
-    }
+    this.rosterX = rightX; this.rosterY = top; this.rosterW = rightW; this.rosterH = bottom - top;
+    this.renderCardRosterPanel(rightX, top, rightW, bottom - top);
   }
 
-  private renderGrid(top: number, bottom: number): void {
-    const { w } = this;
+  /** Hint text + erase toggle, sized to the left (grid) half only. */
+  private renderAttackToolbar(x: number, y: number, w: number, h: number): void {
+    const hint = txt(t('world.team.hint'), FS.micro, C.mid);
+    hint.anchor.set(0, 0.5);
+    hint.x = x; hint.y = y + h / 2;
+    if (hint.width > w - 66) hint.scale.set((w - 66) / hint.width);
+    this.bodyLayer.addChild(hint);
+
+    const eraseW = 60, eraseH = h - 6;
+    const eraseActive = this.tool.kind === 'erase';
+    const eraseX = x + w - eraseW;
+    const box = sketchPanel(eraseW, eraseH, {
+      fill: eraseActive ? C.red : C.paper, border: eraseActive ? C.dark : C.red,
+      width: eraseActive ? 2.4 : 1.4, seed: seedFor(eraseX, y, eraseW),
+    });
+    box.x = eraseX; box.y = y + 3;
+    this.bodyLayer.addChild(box);
+    const lbl = txt(t('world.defense.erase'), FS.micro, eraseActive ? C.light : C.red, true);
+    lbl.anchor.set(0.5, 0.5); lbl.x = box.x + eraseW / 2; lbl.y = box.y + eraseH / 2;
+    this.bodyLayer.addChild(lbl);
+    this.hits.push({ rect: { x: box.x, y: box.y, w: eraseW, h: eraseH }, action: () => { this.tool = { kind: 'erase' }; this.render(); } });
+  }
+
+  /** Right-half card roster: a scrollable portrait-card grid (mirrors TeamsScene's roster grid). */
+  private renderCardRosterPanel(x: number, y: number, w: number, h: number): void {
+    const cards = this.availableCards();
+    const titleH = 22;
+    const title = txt(t('roster.title'), FS.micro, C.mid);
+    title.x = x; title.y = y + 2;
+    this.bodyLayer.addChild(title);
+
+    const listY = y + titleH;
+    const listH = h - titleH;
+    if (cards.length === 0) {
+      const empty = txt(t('world.team.noCards'), FS.micro, C.mid);
+      empty.x = x; empty.y = listY + 8;
+      this.bodyLayer.addChild(empty);
+      this.scrollMax = 0;
+      return;
+    }
+
+    const gap = 8;
+    const cellWTarget = 168, cellH = 96;
+    const cols = Math.max(1, Math.floor((w + gap) / (cellWTarget + gap)));
+    const cellW = (w - gap * (cols - 1)) / cols;
+    const rows = Math.ceil(cards.length / cols);
+    const totalH = rows * (cellH + gap) + gap;
+    this.scrollMax = Math.max(0, totalH - listH);
+    this.scrollY = Math.max(0, Math.min(this.scrollY, this.scrollMax));
+
+    cards.forEach((c, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const cx = x + col * (cellW + gap);
+      const cy = listY + gap + row * (cellH + gap) - this.scrollY;
+      if (cy + cellH >= listY && cy <= listY + listH) this.renderRosterCell(c, cx, cy, cellW, cellH);
+    });
+
+    drawScrollIndicator(this.bodyLayer, { x, y: listY, w, h: listH }, this.scrollY, this.scrollMax);
+  }
+
+  private renderRosterCell(
+    c: { card: CardInstance; unitType: UnitType; troops: number; cap: number },
+    x: number, y: number, cellW: number, cellH: number,
+  ): void {
+    const active = this.tool.kind === 'card' && this.tool.cardInstanceId === c.card.id;
+    const placed = this.cellForCard(c.card.id) !== undefined;
+    const pad = 6;
+    const box = sketchPanel(cellW, cellH, {
+      fill: active ? C.accent : 0xfaf9f5, border: active ? C.dark : (placed ? C.accent : C.mid),
+      width: active ? 2.4 : 1.4, seed: seedFor(x, y, cellW),
+    });
+    box.x = x; box.y = y;
+    this.bodyLayer.addChild(box);
+
+    const imgH = cellH - pad * 2;
+    const imgW = Math.round(imgH * 0.72);
+    const frame = sketchPanel(imgW, imgH, { fill: 0xf0eee7, border: C.mid, seed: seedFor(x, y, imgW) });
+    frame.x = x + pad; frame.y = y + pad;
+    this.bodyLayer.addChild(frame);
+    const artUrl = UNIT_ART_URLS[c.unitType];
+    if (artUrl) this.drawArtFit(artUrl, x + pad + 1, y + pad + 1, imgW - 2, imgH - 2);
+
+    const ax = x + pad + imgW + 8;
+    const rightW = Math.max(10, x + cellW - pad - ax);
+    const name = t(`card.${c.card.defId}.name` as import('../i18n').TranslationKey);
+    const nameLbl = txt(`${name} Lv.${c.card.level}`, FS.micro, active ? C.light : C.dark, true);
+    nameLbl.x = ax; nameLbl.y = y + pad;
+    if (nameLbl.width > rightW) nameLbl.scale.set(Math.max(0.5, rightW / nameLbl.width));
+    this.bodyLayer.addChild(nameLbl);
+
+    const troopLbl = txt(`${c.troops}/${c.cap}`, FS.micro, active ? C.light : C.mid);
+    troopLbl.x = ax; troopLbl.y = y + pad + 18;
+    this.bodyLayer.addChild(troopLbl);
+
+    if (placed) {
+      const tag = txt(`[${t('roster.inTeam')}]`, FS.micro, active ? C.light : C.accent, true);
+      tag.x = ax; tag.y = y + pad + 36;
+      this.bodyLayer.addChild(tag);
+    }
+
+    this.hits.push({ rect: { x, y, w: cellW, h: cellH }, action: () => {
+      this.tool = { kind: 'card', cardInstanceId: c.card.id, unitType: c.unitType };
+      this.render();
+    } });
+  }
+
+  /** Draw a unit portrait fit into a box, centered; re-render once its texture loads (mirrors TeamsScene). */
+  private drawArtFit(url: string, x: number, y: number, boxW: number, boxH: number): void {
+    const tex = getArtTexture(url);
+    if (!tex.baseTexture.valid) {
+      if (!this.artHooked.has(url)) {
+        this.artHooked.add(url);
+        tex.baseTexture.once('loaded', () => { if (!this.destroyed) this.render(); });
+      }
+      return;
+    }
+    const scale = Math.min(boxW / tex.width, boxH / tex.height);
+    const sp = new PIXI.Sprite(tex);
+    sp.anchor.set(0.5);
+    sp.scale.set(scale);
+    sp.position.set(x + boxW / 2, y + boxH / 2);
+    this.bodyLayer.addChild(sp);
+  }
+
+  private renderGrid(top: number, bottom: number, areaX: number = PAD, areaW: number = this.w - PAD * 2): void {
     const buildRows = this.hasBuildingRow ? 1 : 0;
     const rows = buildRows + this.gRows.length; // (defense: building row +) garrison rows
-    const availW = w - PAD * 2;
+    const availW = areaW;
     const availH = bottom - top;
     const cellW = availW / 12;
     const cellH = Math.min(cellW, availH / rows);
     const gridW = cellW * 12;
     const gridH = cellH * rows;
-    const gridX = (w - gridW) / 2;
+    const gridX = areaX + (areaW - gridW) / 2;
     const gridY = top + (availH - gridH) / 2;
     this.gridX = gridX; this.gridY = gridY; this.cellW = cellW; this.cellH = cellH;
 
@@ -651,9 +727,12 @@ export class DefenseEditorScene implements Scene {
     counts.x = PAD; counts.y = top + 8;
     this.bodyLayer.addChild(counts);
 
-    const hint = txt(this.mode === 'attack' ? t('world.team.hint') : t('world.defense.hint'), FS.micro, C.mid);
-    hint.x = PAD; hint.y = top + 26;
-    this.bodyLayer.addChild(hint);
+    // Attack mode already shows its hint in the grid-side toolbar (renderAttackToolbar).
+    if (this.mode !== 'attack') {
+      const hint = txt(t('world.defense.hint'), FS.micro, C.mid);
+      hint.x = PAD; hint.y = top + 26;
+      this.bodyLayer.addChild(hint);
+    }
 
     // Clear + Save (right)
     const btnW = 70, btnH = 30;
@@ -754,16 +833,33 @@ export class DefenseEditorScene implements Scene {
   // ── Scene interface ───────────────────────────────────────────────────────
 
   private handleDown(x: number, y: number): void {
+    let hit: (() => void) | null = null;
     for (const { rect, action } of this.hits) {
-      if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) {
-        action();
-        return;
-      }
+      if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) { hit = action; break; }
     }
+    // The card roster (attack mode, right half) scrolls — defer its hit to pointer-up so a drag that
+    // starts on a card scrolls instead of selecting it (see scroll-drag-throttle-pattern memory).
+    const inRoster = this.mode === 'attack' && x >= this.rosterX && x <= this.rosterX + this.rosterW
+      && y >= this.rosterY && y <= this.rosterY + this.rosterH;
+    if (inRoster) { this.gesture.down(this.scrollY, y, hit); return; }
+    if (hit) { hit(); return; }
     this.onGridTap(x, y);
   }
 
-  update(_dt: number): void { /* no per-frame work; toasts are global (GlobalToast) */ }
+  private handleMove(y: number): void {
+    const scroll = this.gesture.move(y);
+    if (scroll !== null) { this.scrollY = Math.min(this.scrollMax, scroll); this.scrollDirty = true; }
+  }
+
+  private handleUp(): void {
+    this.gesture.up()?.();
+  }
+
+  update(_dt: number): void {
+    // Drain the drag-scroll flag once per frame instead of rendering inline from handleMove
+    // (see scroll-drag-throttle-pattern memory).
+    if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
+  }
 
   destroy(): void {
     this.destroyed = true;

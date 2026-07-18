@@ -1183,3 +1183,16 @@ if (path.startsWith('/admin/world/')) {
 L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/L3 基本不变；L4+ 显著变硬，高级地成为真正的战力门槛。
 
 **验收**：shared/engine/worldsvc/client `tsc` 全绿；shared siege 单测 39/39（+npcBaseHp/defenderBaseHp 用例）；engine 66/66（+siege defenderBaseHp 初始化用例）；worldsvc occupy/base-siege/siege/stronghold/passage/cheap-fallback e2e 全绿（无结果翻盘）；econ-sim `tsc --noEmit` 通过。**数值仍 DRAFT**（README §0 铁律：只调常数不改公式）。
+
+## 30. 出征队伍编辑器：左右分栏布局（2026-07-18，用户拍板）
+
+**背景**：`DefenseEditorScene`（attack 模式，`client/src/scenes/DefenseEditorScene.ts`）此前把卡牌调色板做成顶部一条可翻页的横向卡片带（`cardPage` 分页 + 左右箭头），棋盘格铺满整个屏幕宽度。用户反馈配队应该"左半屏布阵、右半屏选卡"，两者同屏可见，不必来回翻页。
+
+**实现**：仅改 attack 模式（defense 模式的兵种/建筑调色板不变，仍是顶部横条）：
+- `renderAttackBody()`：屏幕对半分——左半宽度内画棋盘格（`renderGrid()` 加了 `areaX`/`areaW` 参数，defense 模式沿用默认值=全宽不受影响），右半宽度内画卡牌名册。
+- `renderAttackToolbar()`：原顶部横条只剩提示文案 + 删除工具切换按钮，收窄到左半宽度上方一条。
+- `renderCardRosterPanel()` / `renderRosterCell()`：卡牌名册改为**竖直可滚动的肖像卡片网格**（列数按右半宽度自适应），复用 `TeamsScene.ts` 的花名册卡片视觉语言（肖像+等级+兵力+"已在队伍中"标签）与 `ScrollTapGesture` 拖拽/点击消歧（防止在名册上拖动滚动时误触发选卡）。
+- 移除了原分页横条 `renderCardPalette()`/`cardPage` 字段（不再需要翻页）。
+- 选卡→点格子放置的既有交互（含跨队伍互斥、`CARD_TEAM_MAX_SIZE` 上限、卡牌只能占一格）逻辑未改动。
+
+**验证**：`client/test/ui/defenseEditorAttackCards.ui.ts`（6 例，纯逻辑，不测布局像素）+ `teamsScene.ui.ts`（11 例）全绿，`tsc --noEmit` 全绿；另用临时 `?teamEditor` 调试入口（构造假 `WorldApiClient` + 假 `SaveData`，跳过登录/后端，验证后已删除，未随功能保留）在 Browser 截图核对了实际渲染效果——左侧棋盘 + 右侧卡牌网格、已部署卡牌高亮 + "已在队伍中"标签、选卡后点格子放置生效。
