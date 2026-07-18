@@ -809,3 +809,10 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 验证：client `tsc --noEmit` + 生产 webpack 构建全绿；dev server（9090）运行态经 webpack chunk 反射拿到 PIXI `TextureCache`，确认 `scrap/lead/binding` 三帧 `valid` 且 128²、源图 384×128、逐帧非空（scrap 68 色/luma 9–255 证明是真插画非纯色块）。因材料图标深藏抽卡/装备页需登录+后端，用运行态贴图内省替代逐屏截图。
 
+### 20.11 实现记录（2026-07-18，✅）— 材料图标接入奖励类场景
+
+背景：用户截图关卡结算（Level 18）奖励行，三个材料图标（scrap≈书签/lead≈铅笔/binding≈螺旋）显示为灰扑扑手绘 glyph，怀疑图标管理不统一。排查发现 §20.10 的 `buildMaterialIcon` 铁律当时只接了 3 处（GachaScene、EquipmentScene），关卡结算（`LevelPrepScene.drawRewards`）、每日签到（`DailyScene.rewardIcon` 消费点）、活动兑换（`EventScene` 积分商店卡片）、通行证（`BattlePassScene` 关卡奖励行）四处仍直连 `buildIcon`，同一材料在这些场景永远显示程序 glyph 而非位图——铁律未覆盖全部调用点，非新 bug。
+
+落地：四处对 `scrap/lead/binding` 的图标绘制改为 `buildMaterialIcon`（`coin`/`skin`/`card`/`equipment`/`star` 等非材料 kind 不变，仍走 `buildIcon`/`buildCoinIcon`）。`materialAtlas.ts` 顶部注释同步扩充覆盖范围说明。
+
+验证：client `tsc --noEmit` + 生产 webpack 构建全绿。四场景均无既有单测覆盖；因需登录+后端进入关卡结算/签到/活动/通行证界面，未做游戏内截图核对，改动为同签名图标构建函数替换，风险低。

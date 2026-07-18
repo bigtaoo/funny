@@ -23,6 +23,8 @@ export const zh = {
   // Unified back-button label (SceneHeader prepends "← " automatically; see UI_DESIGN §3.1).
   'common.back': '返回',
   'common.close': '关闭',
+  'common.ok': '确定',
+  'common.cancel': '取消',
 
   // ── Cards ─────────────────────────────────────────────────────────────────
   'card.infantry.name': '普通兵',
@@ -840,6 +842,7 @@ export const zh = {
   'world.actOccupy': '占领',
   'world.actScout': '侦察',
   'world.actAbandon': '放弃',
+  'world.abandonConfirm': '确定放弃 ({x},{y}) 这块领地吗？驻军将全部损失。',
   'world.actRelocate': '迁城到此',
   'world.relocateTitle': '主动迁城',
   'world.relocateConfirm': '花费 {n} 金币把主城迁到此格？保留全部领地。',
@@ -971,6 +974,7 @@ export const zh = {
   'family.setElder': '设为长老',
   'family.setMember': '降为成员',
   'family.kick': '踢出',
+  'family.kick.needDemoteFirst': '该成员担任官职，请先卸任再踢出',
   'family.channel': '家族频道',
   'family.sendMsg': '发送消息',
   'family.msgPlaceholder': '输入消息…',
@@ -1056,6 +1060,10 @@ export const zh = {
   'auction.mail.sold.body': '您拍得的物品在附件中，领取后将进入背包。',
   'auction.mail.returned.subject': '拍卖物品退回',
   'auction.mail.returned.body': '您的挂单流拍或已取消，物品在附件中，领取后退回背包。',
+  'auction.mail.proceeds.subject': '拍卖收益到账',
+  'auction.mail.proceeds.body': '您售出的物品已成交，扣税后的金币在附件中，领取后到账。',
+  'auction.mail.refund.subject': '拍卖金币退还',
+  'auction.mail.refund.body': '您出的价被超过或竞拍未成功，金币在附件中，领取后退还。',
   'card.mail.rosterFull.subject': '角色卡背包已满',
   'card.mail.rosterFull.body': '英雄名录已满，本次抽到的角色卡在附件中，请先腾出背包空间再领取。',
   'equipment.mail.invFull.subject': '装备背包已满',

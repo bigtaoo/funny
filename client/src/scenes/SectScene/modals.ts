@@ -2,7 +2,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchButton, seedFor, tearDownChildren } from '../../render/sketchUi';
-import { buildIcon } from '../../render/icons';
+import { drawConfirmDialog } from '../../render/confirmDialog';
 import type { SectView } from '../../net/WorldApiClient';
 import { type Constructor, type SectSceneBaseCtor } from './base';
 import { FS } from '../../render/fontScale';
@@ -57,47 +57,8 @@ export function ModalsMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
     }
 
     showConfirm(msg: string, onOk: () => void): void {
-      const { w, h } = this;
-      const ml = this.modalLayer;
-      tearDownChildren(ml);
-      this.modalHits = [];
       this.modalOpen = true;
-
-      const mw = Math.min(300, w - 40);
-      const mh = 120;
-      const mx = (w - mw) / 2;
-      const my = (h - mh) / 2;
-
-      const dim = new PIXI.Graphics();
-      dim.beginFill(0x000000, 0.35).drawRect(0, 0, w, h).endFill();
-      ml.addChild(dim);
-
-      const panel = sketchPanel(mw, mh, { fill: C.paper, border: C.dark, seed: seedFor(0, 0, mw) });
-      panel.x = mx; panel.y = my;
-      ml.addChild(panel);
-
-      const lbl = txt(msg, FS.tiny, C.dark);
-      lbl.anchor.set(0.5, 0); lbl.x = mx + mw / 2; lbl.y = my + 16;
-      (lbl.style as PIXI.TextStyle).wordWrap = true;
-      (lbl.style as PIXI.TextStyle).wordWrapWidth = mw - 24;
-      (lbl.style as PIXI.TextStyle).align = 'center';
-      ml.addChild(lbl);
-
-      const okBtn = sketchButton(80, 28, seedFor(0, 1, 80));
-      okBtn.x = mx + mw / 2 - 88; okBtn.y = my + mh - 36;
-      ml.addChild(okBtn);
-      const ol = txt('OK', FS.tiny, C.light);
-      ol.anchor.set(0.5, 0.5); ol.x = mx + mw / 2 - 48; ol.y = my + mh - 22;
-      ml.addChild(ol);
-      this.modalHits.push({ rect: { x: okBtn.x, y: okBtn.y, w: 80, h: 28 }, action: onOk });
-
-      const cancelBtn = sketchPanel(80, 28, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 2, 80) });
-      cancelBtn.x = mx + mw / 2 + 8; cancelBtn.y = my + mh - 36;
-      ml.addChild(cancelBtn);
-      const cl = buildIcon('close', 15, C.dark);
-      cl.x = mx + mw / 2 + 48 - 7.5; cl.y = my + mh - 22 - 7.5;
-      ml.addChild(cl);
-      this.modalHits.push({ rect: { x: cancelBtn.x, y: cancelBtn.y, w: 80, h: 28 }, action: () => this.closeModal() });
+      this.modalHits = drawConfirmDialog(this.modalLayer, this.w, this.h, msg, onOk, () => this.closeModal());
     }
   };
 }

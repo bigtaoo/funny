@@ -1,5 +1,7 @@
-// auctionsvc → commercial internal calls (auction task 4): buyer deducts coins / seller receives coins.
-// commercial internal HTTP (/internal/spend · /internal/grant), X-Internal-Key auth.
+// auctionsvc → commercial internal calls (auction task 4): buyer coin deduction only.
+// commercial internal HTTP (/internal/spend), X-Internal-Key auth.
+// Seller proceeds and escrow refunds go through system mail (see mailClient.ts), not direct grant — only
+// real-money recharge credits the wallet directly.
 // NW_COMMERCIAL_INTERNAL_URL not configured → available=false → coin trading unavailable (graceful degradation notice to player).
 // Migrated verbatim from server/worldsvc/src/commercialClient.ts (caller name updated to 'auctionsvc').
 
@@ -9,8 +11,6 @@ export interface AuctionCommercialClient {
   readonly available: boolean;
   /** Deduct coins from buyer (purchasing an auction item). Insufficient funds → throws an Error containing INSUFFICIENT_FUNDS. */
   spend(accountId: string, amount: number, orderId: string): Promise<void>;
-  /** Credit coins to seller (auction item sold, post-tax). Best-effort; logs failure but does not roll back a completed buyer transaction. */
-  grant(accountId: string, amount: number, orderId: string): Promise<void>;
 }
 
 export class HttpAuctionCommercialClient implements AuctionCommercialClient {
@@ -35,23 +35,9 @@ export class HttpAuctionCommercialClient implements AuctionCommercialClient {
       throw new Error(body.error ?? `spend failed: ${res.status}`);
     }
   }
-
-  async grant(accountId: string, amount: number, orderId: string): Promise<void> {
-    if (!this.baseUrl) return; // no-op when not configured
-    try {
-      await fetch(`${this.baseUrl}/internal/grant`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...internalHeaders('auctionsvc', this.internalKey) },
-        body: JSON.stringify({ accountId, amount, orderId }),
-      });
-    } catch (e) {
-      console.error('[auctionsvc] commercial.grant failed', { accountId, amount, orderId, err: (e as Error).message });
-    }
-  }
 }
 
 export const nullAuctionCommercialClient: AuctionCommercialClient = {
   available: false,
   async spend() { throw new Error('commercial service not configured'); },
-  async grant() { /* no-op */ },
 };

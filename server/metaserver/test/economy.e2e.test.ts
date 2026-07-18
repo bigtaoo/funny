@@ -297,6 +297,38 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(r.data.save.inventory.skins).not.toContain('suyuan');
   });
 
+  it('gacha: card NEW badge checks cardInv, not inventory.skins (regression — markDuplicates only checked inventory.skins, so an already-owned card kept showing NEW on every later draw since cards never land in inventory.skins)', async () => {
+    comm.coins.set(accountId, 2000);
+    // 'max' is not one of the 3 auto-granted starter cards (lichuang/chenshou/suyuan), so the account starts without it.
+    comm.nextResults = [{ itemId: 'max', rarity: 'epic' }];
+    const r1 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+    expect(r1.data.results[0]).toMatchObject({ itemId: 'max', rarity: 'epic', duplicate: false });
+    // Drawing the same card again (already owned, e.g. leveled up via feed) must be marked duplicate — no NEW badge.
+    comm.nextResults = [{ itemId: 'max', rarity: 'epic' }];
+    const r2 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+    expect(r2.data.results[0]).toMatchObject({ itemId: 'max', rarity: 'epic', duplicate: true });
+    // A third draw of the same defId is still marked duplicate.
+    comm.nextResults = [{ itemId: 'max', rarity: 'epic' }];
+    const r3 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+    expect(r3.data.results[0].duplicate).toBe(true);
+  });
+
+  it('gacha: card already owned via the account-creation starter grant (lichuang/chenshou/suyuan, CHARACTER_CARDS_DESIGN §4) is never shown as NEW (exact bug report: player already had a levelled-up Li Chuang, gacha still badged it NEW every pull)', async () => {
+    comm.coins.set(accountId, 2000);
+    comm.nextResults = [{ itemId: 'lichuang', rarity: 'common' }];
+    const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+    expect(r.data.results[0]).toMatchObject({ itemId: 'lichuang', rarity: 'common', duplicate: true });
+  });
+
+  it('gacha: within a single ten-pull, the first copy of a new card is NEW and later copies of the same card in the same batch are duplicate', async () => {
+    comm.coins.set(accountId, 2000);
+    comm.nextResults = Array.from({ length: 10 }, () => ({ itemId: 'max', rarity: 'epic' as const }));
+    const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } }));
+    expect(r.data.results).toHaveLength(10);
+    expect(r.data.results[0].duplicate).toBe(false);
+    expect(r.data.results.slice(1).every((e: { duplicate: boolean }) => e.duplicate)).toBe(true);
+  });
+
   it('ad cap: more than 5 times → 429', async () => {
     for (let i = 0; i < 5; i++) {
       fakeNow += ADS_MIN_INTERVAL_MS + 1000;

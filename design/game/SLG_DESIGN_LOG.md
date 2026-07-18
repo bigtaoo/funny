@@ -699,6 +699,7 @@ if (path.startsWith('/admin/world/')) {
   - **行军动画（2026-07-12）**：此前箭头是全长静态直线，全程不变，占领/围攻是否真的"在路上"只能靠 HUD 倒计时文字判断。现按 `frac=(now-departAt)/(arriveAt-departAt)` 在起终点间插值出一个沿路径滑动的菱形兵力 token（朝向随行军方向），原满长直线降 alpha 保留为路线淡描，终点箭头保留但同样调淡。`WorldMapRenderer/fog.ts renderOverlay()` 计算插值；`WorldMapRenderer/lifecycle.ts update()` 在 `ctx.marches.length>0 && zoom<3` 时每帧重绘 overlay 驱动动画（无行军时不额外重绘，避免空耗）。
   - **地块操作弹窗放大 2 倍（2026-07-12）**：`showModal()`（占领/侦查/迁城/驻防/攻击等所有地块点击弹窗共用）尺寸整体 ×2——宽度上限 300→600、高度 140→280、标题字号 13→26、按钮高度 28→56、按钮字号 12→24；按钮间距用局部 `modalMargin`，不改共用 `MARGIN` 常量（避免连带影响训练面板等其他 UI）。
   - **弹窗再放大 1.5 倍 + 文字自动换行 + 迁城 3×3 前置校验（2026-07-12 二次修复）**：迁城确认弹窗（`world.relocateConfirm` 长文案）此前固定 600×280，长文案不换行导致溢出面板。`showModal()` 改为：宽度上限 600→900；文本改用 `txt(..., wordWrapWidth)` 换行；面板高度由内容动态撑开（`Math.max(CONFIRM_H*1.5, 实际文本高+按钮高+边距)`），不再固定裁切。同时补上迁城的 3×3 校验缺口——此前"迁城到此"按钮只检查被点格子本身类型，未检查完整 3×3 地基（ADR-025），导致对着实际放不下地基的格子也弹出确认框，点击后收到含糊的"该地已被占领"报错。`WorldMapInput.footprintFree()`（镜像服务端 `footprintFree`，用 `@nw/shared` 的 `baseFootprintCells`/`baseFootprintInBounds` + 本地 `tileCache` 判断地形/占用）现在前置校验整块地基，条件不满足时直接不显示按钮；万一客户端缓存过期导致仍提交到服务端被拒，`errorMsg()` 按服务端报错文案中的"3×3"关键字匹配出新 `world.err.footprintBlocked` 文案，不再复用含糊的 `world.err.occupied`。
+  - **弹窗按钮多行换行（2026-07-18）**：己方地块菜单最多 6 个按钮（增援/驻防/瞭望塔/迁城/放弃/✕）挤在同一行时，单个按钮宽度过窄，文字溢出与相邻按钮的文字重叠。`showModal()` 现按最小可读宽度（150px）算出每行最多列数，超出的按钮自动换到下一行（面板高度按行数动态撑开）；每个按钮标签也改为按自身按钮宽度 `wordWrapWidth` 换行，杜绝任何按钮数下文字溢出邻格。
   - **点击选中相邻格子修复（2026-07-12）**：`render/isoGrid.ts` 的 `tileToScreen(tx,ty)` 把格子(tx,ty)的**中心**映射到投影坐标（见其注释），因此其精确反函数 `screenToTileF` 返回的连续坐标空间里，一个格子的真实范围是 `[tx-0.5, tx+0.5)`，不是 `[tx, tx+1)`。而 `screenToTile` 此前对反函数结果直接 `Math.floor`——只对"整数=左上角"的映射成立，对"整数=中心"的映射会把每次点击命中判定整体偏移半格（朝 tx/ty 增大方向），表现为点击某格却选中了它左上方（iso 屏幕坐标里 tx/ty 减小的方向）的相邻格。修复：`screenToTile` 改 `Math.floor(f.x + 0.5)`（即四舍五入），使命中范围重新对齐到以格子中心为界的 `[tx-0.5, tx+0.5)`。新增 `client/test/isoGrid-screenToTile.test.ts`（5 例：格心点击、偏心点击、菱形四顶点内侧点击、旧 bug 回归断言、相邻格无缝/无重叠边界）锁定该不变量；`visibleTileBounds` 的 floor/ceil 保持不变（那是视口覆盖范围的外接矩形计算，不需要精确到格，不受影响）。
   - 既有 `applyMarchUpdate`→`refreshMarches()` / `applyTileUpdate`→`loadMapViewport()` 的 refetch-on-push 通道不变——G5-2 推送触发 refetch，新 `getMarches`/`getMap` 门控返回视野内敌情，自动显形。
 - **scout 行军**：已落地（§18.8，2026-06-21）。**瞭望塔**：已落地（§18.9，2026-06-21）——己方领地建固定半径（8）持久视野源。
@@ -1086,6 +1087,12 @@ if (path.startsWith('/admin/world/')) {
 
 **总览可读性放大（2026-07-16）**：用户反馈资源界面偏窄偏小。`renderTerritoryPanel()` 面板宽度上限从 `min(420, w-20)` 提到 `min(840, w-20)`（窄屏仍钳到 `w-20`，真机不溢出）；总览页文字约 2×——资源行/赛季·人口行用 `FS.label`（24）、强调的兵力/领地行用 `FS.heading`（28），行距同步加倍（20→40、22→44、26→52、18→36）以免重叠。仅影响总览 Tab；列表/World 两个 Tab 共用同一 `pw` 会一起变宽，内部字号未动。验证：`tsc --noEmit` 绿；临时 `?terrpanel` 调试入口（构造真实 `WorldMapScene` + 假数据，`forceCanvas` 抓图，验证后已移除）截图确认字号翻倍、面板加宽、无重叠裁切。
 
+**领地列表排序/驻军可读性/放弃二次确认（2026-07-18）**：用户截图指出列表 Tab 的等级过滤按钮与实际行序对不上——过滤按钮是勾选开关，行序却是原始拉取顺序，Lv.1/Lv.2 交替出现，读起来像分组渲染 bug。同时解决 §26 遗留的「未决」排序问题。改动（均在 `renderTerritoryPanel()`）：
+1. 列表改为按 `level` 升序、同级按坐标排序，与过滤按钮的等级分组语义对齐。
+2. 等级过滤按钮标签加计数，如 `Lv.1 (12)`，勾选前就能看到该等级有多少格，不用逐个数。
+3. 驻军数值低于当前过滤结果集中位数一半时文字变红——阈值取当次列表的中位数而非写死绝对值，避免不同账号规模下失真。
+4. 「放弃」不再直接调用 `doAbandonFromList`，先弹二次确认（复用 `panelButton` 在 `ctx.territoryAbandonConfirm` 非空时整体替换面板内容，避免遮挡态下误触底层按钮）；确认态复用面板已有的 dim+panel 外框，只替换正文为提示语 + 确定/取消。`WorldMapContext` 新增 `territoryAbandonConfirm: {x,y} | null` 字段；`world.abandonConfirm` i18n key（zh/en/de）。验证：`tsc --noEmit` 绿；临时 `?territorydbg` 调试入口（`territoryDebug.ts`，直接构造 `WorldMapScene` + reject-fast `WorldApiClient` stub + 18 行假数据，验证后已移除）在真实 dev server 里截图确认排序分组正确、过滤按钮计数、驻军红字、确认弹窗文案与按钮布局，以及 Cancel 能正确清空确认态回到列表。
+
 ---
 
 ## 27. 险地/关隘战力模拟补测（2026-07-16，DRAFT 数值收尾）
@@ -1196,3 +1203,24 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 - 选卡→点格子放置的既有交互（含跨队伍互斥、`CARD_TEAM_MAX_SIZE` 上限、卡牌只能占一格）逻辑未改动。
 
 **验证**：`client/test/ui/defenseEditorAttackCards.ui.ts`（6 例，纯逻辑，不测布局像素）+ `teamsScene.ui.ts`（11 例）全绿，`tsc --noEmit` 全绿；另用临时 `?teamEditor` 调试入口（构造假 `WorldApiClient` + 假 `SaveData`，跳过登录/后端，验证后已删除，未随功能保留）在 Browser 截图核对了实际渲染效果——左侧棋盘 + 右侧卡牌网格、已部署卡牌高亮 + "已在队伍中"标签、选卡后点格子放置生效。
+
+### 30.1 棋盘格已布置单位改用卡牌肖像（2026-07-18）
+
+**背景**：左侧棋盘上已放置的单位此前只画一个纯色圆点（按 unitType 分 4 色）+ 兵力数字，与右侧名册的肖像卡片视觉不一致，用户反馈应显示卡牌图片。
+
+**实现**：`drawUnit()`（`DefenseEditorScene.ts`）改为复用 `renderRosterCell()` 同款素材管线——`UNIT_ART_URLS[type]` 取到肖像 URL 时画一个 `sketchPanel` 方框 + `drawArtFit()`（与名册肖像同一 `getArtTexture`/`artHooked` 缓存与异步加载回调），取不到时保留原纯色圆点兜底（理论上不会触发，因为可布置单位均来自 `CARD_DEFINITIONS` 已收集兵种，均有肖像）。兵力数字标签位置从"圆心+半径"改为"方框底部"。
+
+**验证**：`tsc --noEmit` 全绿；用临时 `__NW_APP`/`__NW_DefenseEditorScene` 调试钩子（`Object.create(DefenseEditorScene.prototype)` 假实例直调 `drawUnit`，跳过登录/WorldApiClient，验证后已删除）截图确认 Max/Lena/Archer 三种兵种均正确显示肖像图（非圆点）。
+
+## 31. 出征队伍保存必现校验失败修复 + 旧格式兼容代码删除（2026-07-18）
+
+**背景（用户报告的错误）**：`DefenseEditorScene`（attack 模式）保存队伍时必现 `Team formation is invalid: level.attackerArmy[0].unitType: expected a string, got undefined`。
+
+**根因**：卡牌迁移（commit `a91bb018`）之后 `DefenseEditorScene.buildArmy()` 只发送 `{cardInstanceId, col, row}`（无 `unitType`），但 `server/worldsvc/src/city.ts` 的 `setTeams` 从未跟着改——`validateAttackerArmy(team.army)` 把这个原始数组直接打包进 `level.attackerArmy` 走引擎 `parseLevelDefinition` 校验，而该校验要求每条 entry 必须有字符串 `unitType`。也就是说**卡牌迁移之后，任何带卡牌的出征队伍保存都必现此错误**，且校验发生在 `pw`（含 `cardInv` 所需的 `cardState`）取出**之前**，根本没机会解析 `cardInstanceId → unitType`。
+
+**修复**（用户拍板：错误数据直接丢弃+把卡牌还给玩家空闲状态，不保留旧格式兼容代码）：
+- `server/worldsvc/src/siegeEngine.ts`：新增 `sanitizeCardArmy(army, cardInv)`——过滤掉任何无法解析出真实卡牌的 entry（无 `cardInstanceId`，或引用了玩家已不再拥有的卡牌），返回净化后的 `ArmyEntry[]` + 已解析的 `{unitType,col,row}[]`；`validateAttackerArmy` 改为只接收已解析好的 `{unitType,col,row}`（不再检查 `initialHp`——0 兵力的新分配卡牌是合法状态，不该在保存时被当成格式错误拒绝）。`resolveCardArmy` 里"无 `cardInstanceId` 走 legacy unitType"的兼容分支整个删除。
+- `server/worldsvc/src/city.ts`：`setTeams` 改为先取 `pw` + `meta.getSaveFields()`（拿不到 `cardInv` 就报 `INTERNAL` 重试，而不是把队伍当空处理——防止 metaserver 抖动时误删真实数据）→ 净化每个队伍的 `army` → 校验净化后的数据 → 保存。被丢弃的卡牌复用已有的"移出队伍"逻辑（`buildCardRemovalPatch`）自动清空 `teamId`、扣空 `currentTroops`、退 80% 训练资源——即"空闲状态"。`getTeams` 同步做一次自愈：读取时净化数据库里已存在的脏数据（如迁移前遗留的旧队伍）并回写一次，之后不再重复触发；`meta` 不可用时原样返回，不做破坏性清空。
+- 客户端 `client/src/game/meta/teamTroops.ts` 的 `isLegacyTeam`（已是死代码，生产 UI 早已无引用——`TeamsScene.ts` 在更早的重构里被删掉了）连同测试一并删除。
+
+**测试**：`server/worldsvc/test/teams.e2e.test.ts` + `card-slg.e2e.test.ts` 里引用旧原始 `{unitType,initialHp}` 格式的用例（迁移后从未更新过）改成卡牌格式；新增 3 例覆盖本次修复的实际行为——`setTeams` 丢弃失效 `cardInstanceId`（卡牌已被消耗/喂卡）并释放退款、`getTeams` 自愈直接写入数据库的脏数据并释放退款（幂等，不重复退款）、`meta` 不可用时 `setTeams`/`getTeams` 均不破坏已存数据。worldsvc 全量 e2e 串行跑通（33 文件 / 284 例）；client/server `tsc --noEmit` 全绿。

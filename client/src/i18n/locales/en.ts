@@ -19,6 +19,8 @@ export const en: Record<TranslationKey, string> = {
   // Unified back-button label (SceneHeader prepends "← ", see UI_DESIGN §3.1).
   'common.back': 'Back',
   'common.close': 'Close',
+  'common.ok': 'OK',
+  'common.cancel': 'Cancel',
 
   // ── Cards ─────────────────────────────────────────────────────────────────
   'card.infantry.name': 'Infantry',
@@ -828,6 +830,7 @@ export const en: Record<TranslationKey, string> = {
   'world.actOccupy': 'Occupy',
   'world.actScout': 'Scout',
   'world.actAbandon': 'Abandon',
+  'world.abandonConfirm': 'Abandon the territory at ({x},{y})? Its garrison will be lost.',
   'world.actRelocate': 'Relocate here',
   'world.relocateTitle': 'Relocate base',
   'world.relocateConfirm': 'Spend {n} coins to move your base here? All territories are kept.',
@@ -959,6 +962,7 @@ export const en: Record<TranslationKey, string> = {
   'family.setElder': 'Promote to Elder',
   'family.setMember': 'Demote to Member',
   'family.kick': 'Kick',
+  'family.kick.needDemoteFirst': 'This member holds an office — demote them first before kicking',
   'family.channel': 'Family Channel',
   'family.sendMsg': 'Send Message',
   'family.msgPlaceholder': 'Type a message…',
@@ -1044,6 +1048,10 @@ export const en: Record<TranslationKey, string> = {
   'auction.mail.sold.body': 'Your winning auction item is attached. Claim it to add it to your inventory.',
   'auction.mail.returned.subject': 'Auction item returned',
   'auction.mail.returned.body': 'Your listing ended without a sale or was cancelled. The item is attached — claim it to return it to your inventory.',
+  'auction.mail.proceeds.subject': 'Auction proceeds received',
+  'auction.mail.proceeds.body': 'Your listing sold. The coins (after tax) are attached — claim them to add them to your balance.',
+  'auction.mail.refund.subject': 'Auction coins refunded',
+  'auction.mail.refund.body': 'Your bid was outbid or did not win. The escrowed coins are attached — claim them to get them back.',
   'card.mail.rosterFull.subject': 'Hero Roster full',
   'card.mail.rosterFull.body': 'Your Hero Roster is full. This drawn character card is attached — free up roster space, then claim it.',
   'equipment.mail.invFull.subject': 'Equipment inventory full',

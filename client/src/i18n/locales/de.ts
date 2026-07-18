@@ -19,6 +19,8 @@ export const de: Record<TranslationKey, string> = {
   // Einheitliches Zurück-Label (SceneHeader stellt "← " voran, siehe UI_DESIGN §3.1).
   'common.back': 'Zurück',
   'common.close': 'Schließen',
+  'common.ok': 'OK',
+  'common.cancel': 'Abbrechen',
 
   // ── Karten ────────────────────────────────────────────────────────────────
   'card.infantry.name': 'Infanterie',
@@ -828,6 +830,7 @@ export const de: Record<TranslationKey, string> = {
   'world.actOccupy': 'Besetzen',
   'world.actScout': 'Erkunden',
   'world.actAbandon': 'Aufgeben',
+  'world.abandonConfirm': 'Gebiet ({x},{y}) aufgeben? Die Garnison geht verloren.',
   'world.actRelocate': 'Hierher verlegen',
   'world.relocateTitle': 'Hauptstadt verlegen',
   'world.relocateConfirm': '{n} Münzen ausgeben, um deine Hauptstadt hierher zu verlegen? Alle Gebiete bleiben erhalten.',
@@ -959,6 +962,7 @@ export const de: Record<TranslationKey, string> = {
   'family.setElder': 'Zum Ältesten befördern',
   'family.setMember': 'Zum Mitglied degradieren',
   'family.kick': 'Rauswerfen',
+  'family.kick.needDemoteFirst': 'Dieses Mitglied hat ein Amt inne — zuerst zurückstufen, dann rauswerfen',
   'family.channel': 'Familienkanal',
   'family.sendMsg': 'Nachricht senden',
   'family.msgPlaceholder': 'Nachricht eingeben…',
@@ -1044,6 +1048,10 @@ export const de: Record<TranslationKey, string> = {
   'auction.mail.sold.body': 'Dein ersteigerter Artikel ist angehängt. Fordere ihn an, um ihn deinem Inventar hinzuzufügen.',
   'auction.mail.returned.subject': 'Auktionsartikel zurückgegeben',
   'auction.mail.returned.body': 'Deine Auktion endete ohne Verkauf oder wurde abgebrochen. Der Artikel ist angehängt – fordere ihn an, um ihn ins Inventar zurückzuholen.',
+  'auction.mail.proceeds.subject': 'Auktionserlös erhalten',
+  'auction.mail.proceeds.body': 'Dein Angebot wurde verkauft. Die Münzen (nach Steuer) sind angehängt — fordere sie an, um sie deinem Guthaben hinzuzufügen.',
+  'auction.mail.refund.subject': 'Auktionsmünzen erstattet',
+  'auction.mail.refund.body': 'Dein Gebot wurde überboten oder hat nicht gewonnen. Die hinterlegten Münzen sind angehängt — fordere sie an, um sie zurückzuerhalten.',
   'card.mail.rosterFull.subject': 'Heldenliste voll',
   'card.mail.rosterFull.body': 'Deine Heldenliste ist voll. Diese gezogene Charakterkarte ist angehängt — schaffe Platz und fordere sie an.',
   'equipment.mail.invFull.subject': 'Ausrüstungsinventar voll',

@@ -317,6 +317,15 @@ export class WorldMapPanels {
     const modalMargin = MARGIN * 3;
     const mx = (w - mw) / 2;
 
+    // Wrap into multiple rows once buttons would otherwise be squeezed below a legible width
+    // (e.g. the 6-button owned-tile menu: Reinforce/Defense/Watchtower/Relocate/Abandon/✕) —
+    // a single row at that count left labels overlapping their neighbors.
+    const minBtnW = 150;
+    const maxCols = Math.max(1, Math.floor((mw + modalMargin) / (minBtnW + modalMargin)));
+    const cols = Math.min(buttons.length, maxCols);
+    const rows = Math.ceil(buttons.length / cols);
+    const rowGap = 16;
+
     // Pre-measure wrapped label heights so the panel sizes to content instead of clipping/overlapping.
     const labels = lines.map((line) => {
       const lbl = txt(line, FS.title, C.dark, false, textW);
@@ -324,7 +333,8 @@ export class WorldMapPanels {
       return lbl;
     });
     const textH = labels.reduce((sum, lbl) => sum + lbl.height, 0) + lineGap * Math.max(0, labels.length - 1);
-    const mh = Math.max(CONFIRM_H * 1.5, topPad + textH + btnGap + btnH + btnGap);
+    const btnAreaH = btnH * rows + rowGap * (rows - 1);
+    const mh = Math.max(CONFIRM_H * 1.5, topPad + textH + btnGap + btnAreaH + btnGap);
     const my = (h - HUD_H - mh) / 2;
 
     // Dimmer
@@ -344,10 +354,16 @@ export class WorldMapPanels {
     }
 
     this.ctx.modalBtnRects = [];
-    const btnW = Math.min(300, (mw - modalMargin * (buttons.length + 1)) / buttons.length);
-    let bx = mx + (mw - (btnW + modalMargin) * buttons.length + modalMargin) / 2;
-    const by = my + mh - btnH - 30;
-    for (const btn of buttons) {
+    const btnW = Math.min(300, (mw - modalMargin * (cols + 1)) / cols);
+    const btnTop = my + mh - btnAreaH - 30;
+    for (let i = 0; i < buttons.length; i++) {
+      const btn = buttons[i];
+      const row = Math.floor(i / cols);
+      const rowStart = row * cols;
+      const rowCount = Math.min(cols, buttons.length - rowStart);
+      const colInRow = i - rowStart;
+      const bx = mx + (mw - (btnW + modalMargin) * rowCount + modalMargin) / 2 + colInRow * (btnW + modalMargin);
+      const by = btnTop + row * (btnH + rowGap);
       // Disabled buttons (e.g. Occupy on a tile not connected to the player's territory, ADR-039) use the
       // shared pale-grey disabled styling; the action is still registered so tapping it surfaces a toast
       // explaining why, rather than reading as a dead click.
@@ -361,13 +377,13 @@ export class WorldMapPanels {
         ic.x = bx + btnW / 2 - 24; ic.y = by + btnH / 2 - 24;
         ml.addChild(ic);
       } else {
-        const bl = txt(btn.label, FS.title, disabled ? C.mid : C.light);
+        // Word-wrap to the button's own width so long labels (or squeezed columns) never bleed into neighbors.
+        const bl = txt(btn.label, FS.title, disabled ? C.mid : C.light, false, btnW - 16);
         bl.anchor.set(0.5, 0.5);
         bl.x = bx + btnW / 2; bl.y = by + btnH / 2;
         ml.addChild(bl);
       }
       this.ctx.modalBtnRects.push({ rect: { x: bx, y: by, w: btnW, h: btnH }, action: btn.action });
-      bx += btnW + modalMargin;
     }
 
     // Close on dim
@@ -674,6 +690,27 @@ export class WorldMapPanels {
     panel.x = px; panel.y = py;
     ml.addChild(panel);
 
+    // Abandon confirm — replaces the whole panel body so the underlying list buttons can't be
+    // clicked through the dialog (this branch draws nothing else and returns early).
+    if (this.ctx.territoryAbandonConfirm) {
+      const { x: tx1, y: ty1 } = this.ctx.territoryAbandonConfirm;
+      const msg = t('world.abandonConfirm').replace('{x}', String(tx1)).replace('{y}', String(ty1));
+      const mLbl = txt(msg, FS.label, C.dark);
+      mLbl.anchor.set(0.5, 0); mLbl.x = px + pw / 2; mLbl.y = py + ph / 2 - 50;
+      mLbl.style.wordWrap = true; mLbl.style.wordWrapWidth = pw - 60; mLbl.style.align = 'center';
+      ml.addChild(mLbl);
+      const btnW = 120, btnH = 42;
+      this.panelButton(t('common.ok'), px + pw / 2 - btnW - 10, py + ph / 2 + 10, btnW, btnH, C.red, () => {
+        this.ctx.territoryAbandonConfirm = null;
+        void this.ctx.net.doAbandonFromList(tx1, ty1);
+      });
+      this.panelButton(t('common.cancel'), px + pw / 2 + 10, py + ph / 2 + 10, btnW, btnH, C.dark, () => {
+        this.ctx.territoryAbandonConfirm = null;
+        this.renderTerritoryPanel();
+      });
+      return;
+    }
+
     const addText = (s: string, tx2: number, ty: number, size = 12, color: number = C.dark): void => {
       const lbl = txt(s, snapFont(size), color);
       lbl.x = tx2; lbl.y = ty;
@@ -729,7 +766,11 @@ export class WorldMapPanels {
       this.renderWorldTabBody(px, pw, ly, bodyBottom);
     } else {
       // Level-filter checkbox grid, two rows — split evenly across the levels actually present.
-      const levels = Array.from(new Set(this.ctx.territories.map((tv) => tv.level))).sort((a, b) => a - b);
+      // Each chip is labeled with its tile count so the number behind a filter is visible without
+      // toggling it on.
+      const levelCounts = new Map<number, number>();
+      for (const tv of this.ctx.territories) levelCounts.set(tv.level, (levelCounts.get(tv.level) ?? 0) + 1);
+      const levels = Array.from(levelCounts.keys()).sort((a, b) => a - b);
       if (levels.length > 0) {
         const perRow = Math.ceil(levels.length / 2);
         const chkW = (pw - 28 - MARGIN * (perRow - 1)) / perRow;
@@ -740,7 +781,7 @@ export class WorldMapPanels {
           const hidden = this.ctx.territoryHiddenLevels.has(lvl);
           const cx3 = px + 14 + col * (chkW + MARGIN);
           const cy3 = ly + row * 28;
-          this.panelButton(`Lv.${lvl}`, cx3, cy3, chkW, 24, hidden ? C.mid : C.red, () => {
+          this.panelButton(`Lv.${lvl} (${levelCounts.get(lvl)})`, cx3, cy3, chkW, 24, hidden ? C.mid : C.red, () => {
             if (hidden) this.ctx.territoryHiddenLevels.delete(lvl); else this.ctx.territoryHiddenLevels.add(lvl);
             this.renderTerritoryPanel();
           }, 10);
@@ -748,24 +789,35 @@ export class WorldMapPanels {
         ly += 2 * 28 + 8;
       }
 
-      const filtered = this.ctx.territories.filter((tv) => !this.ctx.territoryHiddenLevels.has(tv.level));
+      // Sorted by level then coords so the level chips above actually correspond to contiguous
+      // runs in the list below (previously the raw fetch order interleaved levels, which read as
+      // a rendering bug against the filter grouping).
+      const filtered = this.ctx.territories
+        .filter((tv) => !this.ctx.territoryHiddenLevels.has(tv.level))
+        .sort((a, b) => a.level - b.level || a.x - b.x || a.y - b.y);
       if (filtered.length === 0) {
         addText(t('world.territoryEmpty'), px + 14, ly, 11, C.mid);
       } else {
+        // Garrisons below half the fleet's median read as under-defended — flagged in red so a
+        // thin tile stands out without needing a fixed absolute threshold.
+        const sortedGarrisons = filtered.map((tv) => tv.garrison ?? 0).sort((a, b) => a - b);
+        const medianGarrison = sortedGarrisons[Math.floor(sortedGarrisons.length / 2)] ?? 0;
+        const weakThreshold = medianGarrison * 0.5;
         const rowH = 34;
         const listLayer = this.beginScrollList(px, ly, pw, bodyBottom - ly, filtered.length * rowH, () => this.renderTerritoryPanel());
         let ry = ly - this.ctx.infoScrollY;
         for (const tv of filtered) {
           if (ry + rowH >= ly && ry <= bodyBottom) {
-            const label = `(${tv.x},${tv.y})  Lv.${tv.level}  ${t('world.garrison').replace('{n}', String(tv.garrison ?? 0))}`;
-            const nameLbl = txt(label, FS.micro, C.dark);
+            const garrison = tv.garrison ?? 0;
+            const label = `(${tv.x},${tv.y})  Lv.${tv.level}  ${t('world.garrison').replace('{n}', String(garrison))}`;
+            const nameLbl = txt(label, FS.micro, garrison < weakThreshold ? C.red : C.dark);
             nameLbl.x = px + 14; nameLbl.y = ry + 8;
             listLayer.addChild(nameLbl);
             const btnW = 56;
             this.panelButtonIn(listLayer, t('world.territoryJump'), px + pw - btnW * 2 - 22, ry + 2, btnW, 26,
               C.accent, () => { this.ctx.view.centerAt(tv.x, tv.y); this.ctx.view.renderMap(); this.closeModal(); });
             this.panelButtonIn(listLayer, t('world.actAbandon'), px + pw - btnW - 14, ry + 2, btnW, 26,
-              C.red, () => void this.ctx.net.doAbandonFromList(tv.x, tv.y));
+              C.red, () => { this.ctx.territoryAbandonConfirm = { x: tv.x, y: tv.y }; this.renderTerritoryPanel(); });
           }
           ry += rowH;
         }

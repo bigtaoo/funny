@@ -182,7 +182,7 @@ export class GameEngineBase {
       // Escort units (§4.9.3): created here so they're ready for emitInitialEvents.
       if (config.level.escorts) {
         for (const spec of config.level.escorts) {
-          this.state.escorts.push(new EscortUnit(spec));
+          this.state.escorts.push(new EscortUnit(spec, this.state.allocEscortId()));
         }
       }
 

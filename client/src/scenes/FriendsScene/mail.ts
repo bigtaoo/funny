@@ -58,7 +58,7 @@ export function MailMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): TBas
         dot.beginFill(C.gold); dot.drawCircle(rx + Math.round(rw * 0.05), y + rh / 2, Math.round(rh * 0.08)); dot.endFill();
         layer.addChild(dot);
       }
-      const tx = rx + Math.round(rw * 0.1);
+      const tx = rx + 18;
       // Attachment marker: a hand-drawn gift glyph before the subject (replaces the 🎁 emoji).
       let subjX = tx;
       if (hasAtt) {

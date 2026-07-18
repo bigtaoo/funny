@@ -183,6 +183,9 @@ export class FriendsSceneBase {
   protected maxScroll = 0;
   protected regionTop = 0;
   protected regionBottom = 0;
+  /** Set by onPointerMove during a drag, drained (render() called) once per frame in update()
+   *  instead of rendering inline — see scroll-drag-throttle-pattern memory. */
+  protected scrollDirty = false;
   protected pointerActive = false;
   protected dragging = false;
   protected downX = 0;
@@ -215,6 +218,7 @@ export class FriendsSceneBase {
   // ── Scene interface ──────────────────────────────────────────────────────────
 
   update(dt: number): void {
+    if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
     if (this.familyActiveInput || this.sectActiveInput || this.worldChatActive) {
       this.caretTimer += dt;
       if (this.caretTimer >= 0.5) { this.caretTimer = 0; this.caretOn = !this.caretOn; this.render(); }
@@ -263,7 +267,7 @@ export class FriendsSceneBase {
     }
     if (this.dragging && this.maxScroll > 0) {
       const next = clamp(this.dragStartScroll + (this.downY - y), 0, this.maxScroll);
-      if (next !== this.scrollY) { this.scrollY = next; this.render(); }
+      if (next !== this.scrollY) { this.scrollY = next; this.scrollDirty = true; }
     }
   }
 

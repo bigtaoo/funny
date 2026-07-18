@@ -193,10 +193,11 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       // Route each result: mat_* → materials, equipment defId → equipment instance, character card
       // defId → hero card grant (save.cardInv via grantHeroCards), everything else → skin (idempotent
       // inventory.skins add; duplicate-to-coin conversion deferred to S5, see economy.ts comment).
-      // `marked` (new/duplicate badges for the reveal UI) stays based on the full raw result list —
-      // only the actual delivery routing changed.
+      // `marked` (new/duplicate badges for the reveal UI) is computed on the full raw result list,
+      // checking cards against cardInv defIds (not inventory.skins) since that's where they land.
       const cur = await savePromise;
-      const { marked } = markDuplicates(cur.inventory.skins, draw.results);
+      const ownedCardDefIds = Object.values(cur.cardInv).map((c) => c.defId);
+      const { marked } = markDuplicates(cur.inventory.skins, ownedCardDefIds, draw.results);
       const { save, overflow } = await deliverLootBox(
         cols,
         commercial,
@@ -346,7 +347,8 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
 
       const before = await getOrCreateSave(cols, accountId, now());
       // Mark new/dup for the reveal BEFORE delivery mutates the skin set (mirrors gachaDraw's convention).
-      const marked = markDuplicates(before.inventory.skins, r.results).marked;
+      const beforeCardDefIds = Object.values(before.cardInv).map((c) => c.defId);
+      const marked = markDuplicates(before.inventory.skins, beforeCardDefIds, r.results).marked;
       // starter_draw delivers pack items (loot-box routing); starter_growth grants coins/subscription only (no items).
       if (r.results.length > 0) {
         await deliverOrder(

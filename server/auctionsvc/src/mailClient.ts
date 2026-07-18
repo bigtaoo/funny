@@ -10,7 +10,8 @@ export interface AuctionMailAttachment {
   // 'material' → SaveData.materials unified progression pool; 'skin' → inventory.skins array.
   // 'equipment'/'card' → auction escrow-out delivery/return: carries the full instance snapshot, written back to
   //   equipmentInv/cardInv by instance.id when the recipient claims the mail (AUCTION_DESIGN escrow-out model).
-  kind: 'material' | 'equipment' | 'card' | 'skin';
+  // 'coins' → sale proceeds / escrow refunds; credited via commercial.grant at claim time (metaserver claimMail).
+  kind: 'material' | 'equipment' | 'card' | 'skin' | 'coins';
   id?: string;
   count?: number;
   instance?: EquipmentInstance | CardInstance;

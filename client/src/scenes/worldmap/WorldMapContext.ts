@@ -82,6 +82,8 @@ export class WorldMapContext {
   territories: WorldTileView[] = [];
   /** Levels unchecked in the list-tab filter grid; empty = show all levels. */
   territoryHiddenLevels: Set<number> = new Set();
+  /** Set while the list tab's Abandon confirm dialog is showing (which tile is pending). */
+  territoryAbandonConfirm: { x: number; y: number } | null = null;
   hiddenInput: HTMLInputElement | null = null;
   zoom: 1 | 2 | 3 = 1;
   zoomCfgs!: [ZoomCfg, ZoomCfg, ZoomCfg];

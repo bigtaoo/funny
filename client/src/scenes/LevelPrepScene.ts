@@ -9,6 +9,7 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedF
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { buildIcon, type IconKind } from '../render/icons';
+import { buildMaterialIcon, type MaterialKind } from '../render/materialAtlas';
 import { FS, snapFont } from '../render/fontScale';
 
 // ── LevelPrepScene — objective / brief / stamina + Start ────────────────────
@@ -299,7 +300,9 @@ export class LevelPrepScene implements Scene {
     }
 
     for (const entry of entries) {
-      const icon = buildIcon(entry.icon, iconSize, C.dark);
+      const icon = entry.icon === 'coin'
+        ? buildIcon(entry.icon, iconSize, C.dark)
+        : buildMaterialIcon(entry.icon as MaterialKind, iconSize, C.dark);
       icon.x = cx; icon.y = y + (panH - iconSize) / 2;
       this.container.addChild(icon);
       cx += iconSize + Math.round(w * 0.01);

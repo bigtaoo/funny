@@ -275,6 +275,27 @@ export class AuctionService {
     });
   }
 
+  /**
+   * Delivers coins to an account via system mail (claimed → commercial.grant at claim time, metaserver claimMail).
+   * Used for both seller sale proceeds ('proceeds') and buyer/bidder escrow refunds ('refund') — no path in
+   * auctionsvc credits coins directly anymore; only real-money recharge goes straight to the wallet.
+   * dispatchKey = orderId → idempotent (each call site passes a stable, unique orderId).
+   */
+  private async deliverCoins(
+    toAccountId: string,
+    amount: number,
+    orderId: string,
+    reason: 'proceeds' | 'refund',
+  ): Promise<void> {
+    if (amount <= 0) return;
+    await this.deps.mail.sendSystemMail(toAccountId, orderId, {
+      subject: `auction.mail.${reason}.subject`,
+      body: `auction.mail.${reason}.body`,
+      attachments: [{ kind: 'coins', count: amount }],
+      expireDays: AUCTION_MAIL_EXPIRE_DAYS,
+    });
+  }
+
   /** Lists open auctions (optionally filtered by itemType, sorted by price ascending, limit ≤50). */
   async listAuctions(itemType?: string, limit = 20): Promise<AuctionView[]> {
     const query: Record<string, unknown> = { status: 'open' };
@@ -493,16 +514,16 @@ export class AuctionService {
       { returnDocument: 'after' },
     );
     if (!updated) {
-      // Concurrently sniped by another buyer → refund buyer coins (best-effort)
-      await commercial.grant(buyerId, totalPrice, `${buyOrderId}:refund`);
+      // Concurrently sniped by another buyer → refund buyer coins via mail (best-effort)
+      await this.deliverCoins(buyerId, totalPrice, `${buyOrderId}:refund`, 'refund');
       throw new SlgError('AUCTION_CLOSED');
     }
 
     // 3. Deliver item to buyer via system mail (escrow-out: buyer claims the attachment)
     await this.deliverItem(buyerId, doc, `${buyOrderId}:item`, 'sold');
 
-    // 4. Pay seller coins (after tax, best-effort)
-    await commercial.grant(doc.sellerId, sellerReceives, `${buyOrderId}:seller`);
+    // 4. Pay seller coins via mail (after tax, best-effort)
+    await this.deliverCoins(doc.sellerId, sellerReceives, `${buyOrderId}:seller`, 'proceeds');
 
     // G Record sale unit price into sliding window
     await this.recordSoldPrice(categoryOf(doc), doc.price);
@@ -566,23 +587,24 @@ export class AuctionService {
       { returnDocument: 'after' },
     );
     if (!updated) {
-      // Concurrently superseded or already closed → refund this escrow
-      await commercial.grant(bidderId, escrowTotal, `${bidOrderId}:refund`);
+      // Concurrently superseded or already closed → refund this escrow via mail
+      await this.deliverCoins(bidderId, escrowTotal, `${bidOrderId}:refund`, 'refund');
       throw new SlgError('AUCTION_CLOSED');
     }
 
-    // 4. Refund previous top bidder's escrowed coins (best-effort, idempotent)
+    // 4. Refund previous top bidder's escrowed coins via mail (best-effort, idempotent)
     if (prevBid) {
-      await commercial.grant(
+      await this.deliverCoins(
         prevBid.bidderId,
         prevBid.amount * doc.qty,
         `auction_bid_refund:${auctionId}:${prevBid.bidderId}:${prevBid.amount}`,
+        'refund',
       );
     }
 
     // 5. Buyout: bid reaches/exceeds buyoutPrice → immediate settlement
     if (doc.buyoutPrice != null && amount >= doc.buyoutPrice) {
-      return this.settleAuctionWin(updated, commercial);
+      return this.settleAuctionWin(updated);
     }
     return docToView(updated);
   }
@@ -591,10 +613,7 @@ export class AuctionService {
    * Settle an auction win (internal): deliver item to the top bidder and pay seller post-tax proceeds (coins already escrowed, no second deduction).
    * Atomic open→sold prevents double-settlement with the expiry scanner or a concurrent buyout. If concurrently already settled → read and return the current state.
    */
-  private async settleAuctionWin(
-    doc: AuctionDoc,
-    commercial: AuctionCommercialClient,
-  ): Promise<AuctionView> {
+  private async settleAuctionWin(doc: AuctionDoc): Promise<AuctionView> {
     const top = doc.topBid!;
     const now = this.deps.now();
     const updated = await this.deps.cols.auctions.findOneAndUpdate(
@@ -614,8 +633,8 @@ export class AuctionService {
 
     // Deliver item to the winner via system mail (escrow-out: winner claims the attachment)
     await this.deliverItem(top.bidderId, doc, `${orderId}:item`, 'sold');
-    // Pay seller post-tax proceeds
-    await commercial.grant(doc.sellerId, sellerReceives, `${orderId}:seller`);
+    // Pay seller post-tax proceeds via mail
+    await this.deliverCoins(doc.sellerId, sellerReceives, `${orderId}:seller`, 'proceeds');
     // G Record sale unit price
     await this.recordSoldPrice(categoryOf(doc), top.amount);
 
@@ -657,7 +676,7 @@ export class AuctionService {
    * At most 50 documents per batch to prevent overly long single scans.
    */
   async processExpiredAuctions(): Promise<number> {
-    const { cols, now, commercial } = this.deps;
+    const { cols, now } = this.deps;
     const ts = now();
     const expired = await cols.auctions
       .find({ status: 'open', expireAt: { $lt: ts } })
@@ -669,7 +688,7 @@ export class AuctionService {
       const isAuctionWin = (doc.saleMode ?? 'fixed') === 'auction' && !!doc.topBid;
       if (isAuctionWin) {
         // Settle auction win (settleAuctionWin contains atomic open→sold to prevent concurrent double-settle)
-        await this.settleAuctionWin(doc, commercial);
+        await this.settleAuctionWin(doc);
         processed++;
         continue;
       }

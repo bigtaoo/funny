@@ -5,6 +5,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
 import { buildIcon, type IconKind } from '../render/icons';
+import { buildMaterialIcon, type MaterialKind } from '../render/materialAtlas';
 import { FS, snapFont } from '../render/fontScale';
 import { buildCoinIcon } from '../render/coinIconAtlas';
 import { buildDecorCLayer } from '../render/decorCLayer';
@@ -479,7 +480,9 @@ export class BattlePassScene implements Scene {
       const ic = Math.round(h * 0.5);
       const glyph = reward.kind === 'coins'
         ? buildCoinIcon(iconKind, ic, rewardColor)
-        : buildIcon(iconKind, ic, rewardColor);
+        : (iconKind === 'scrap' || iconKind === 'lead' || iconKind === 'binding')
+          ? buildMaterialIcon(iconKind as MaterialKind, ic, rewardColor)
+          : buildIcon(iconKind, ic, rewardColor);
       if (reward.kind === 'skin') {
         // Skins are singletons — glyph alone, centred.
         glyph.x = x + w / 2 - ic / 2; glyph.y = cy - ic / 2;

@@ -5,14 +5,15 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
 import { buildIcon, type IconKind } from '../render/icons';
+import { buildMaterialIcon, type MaterialKind } from '../render/materialAtlas';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { showToastMessage, type ToastKind } from '../net/log';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { FS, snapFont } from '../render/fontScale';
 
-/** Map a reward's craft-material id to its hand-drawn icon (scrap / lead / binding), else null. */
-function materialIcon(id: string | undefined): IconKind | null {
+/** Map a reward's craft-material id to its icon kind (scrap / lead / binding), else null. */
+function materialIcon(id: string | undefined): MaterialKind | null {
   return id === 'scrap' || id === 'lead' || id === 'binding' ? id : null;
 }
 
@@ -301,7 +302,10 @@ export class EventScene implements Scene {
       let labelX = PAD + cardW * 0.04;
       if (rk) {
         const ic = Math.round(cardH * 0.42);
-        const glyph = buildIcon(rk, ic, exhausted ? C.mid : reward.kind === 'coins' ? C.gold : C.accent);
+        const glyphColor = exhausted ? C.mid : reward.kind === 'coins' ? C.gold : C.accent;
+        const glyph = (rk === 'scrap' || rk === 'lead' || rk === 'binding')
+          ? buildMaterialIcon(rk, ic, glyphColor)
+          : buildIcon(rk, ic, glyphColor);
         glyph.x = labelX; glyph.y = cy + cardH * 0.5 - ic / 2;
         this.container.addChild(glyph);
         labelX += ic + Math.round(cardH * 0.12);

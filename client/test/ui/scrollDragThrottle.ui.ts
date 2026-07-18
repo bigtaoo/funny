@@ -31,8 +31,11 @@ import { AuctionScene } from '../../src/scenes/AuctionScene';
 import { CityScene } from '../../src/scenes/CityScene';
 import { ShopScene } from '../../src/scenes/ShopScene';
 import { DeckBuilderScene } from '../../src/scenes/DeckBuilderScene';
+import { FriendsScene } from '../../src/scenes/FriendsScene';
+import { ChatScene } from '../../src/scenes/ChatScene';
 import type { WorldApiClient } from '../../src/net/WorldApiClient';
 import { makeNewSave } from '../../src/game/meta/SaveData';
+import type { FriendView, ChatMessageView } from '../../src/net/ApiClient';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -87,6 +90,31 @@ function assertScrollDragThrottled(scene: any, input: InputManager): void {
   expect(renderSpy).toHaveBeenCalledTimes(1);
 
   // A second frame with no further movement must not re-render.
+  scene.update(1 / 60);
+  expect(renderSpy).toHaveBeenCalledTimes(1);
+
+  scene.destroy();
+}
+
+/**
+ * Same contract as assertScrollDragThrottled(), but drags upward (decreasing y — the
+ * gesture a user makes to scroll a list *down*). FriendsScene/ChatScene's onPointerMove only
+ * flags scrollDirty when the requested offset actually differs from the current scrollY; at
+ * scrollY=0 a downward drag clamps right back to 0 and never dirties, so those two scenes need
+ * the opposite direction from the FamilyScene-style ScrollTapGesture scenes above.
+ */
+function assertScrollDragThrottledUpward(scene: any, input: InputManager): void {
+  const renderSpy = vi.spyOn(scene, 'render');
+
+  input._emitDown(W / 2, H / 2);
+  input._emitMove(W / 2, H / 2 - 20);
+  input._emitMove(W / 2, H / 2 - 40);
+  input._emitMove(W / 2, H / 2 - 60);
+  expect(renderSpy).not.toHaveBeenCalled();
+
+  scene.update(1 / 60);
+  expect(renderSpy).toHaveBeenCalledTimes(1);
+
   scene.update(1 / 60);
   expect(renderSpy).toHaveBeenCalledTimes(1);
 
@@ -212,6 +240,134 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
     expect(renderSpy).not.toHaveBeenCalled();
     scene.update(1 / 60);
     expect(renderSpy).toHaveBeenCalledTimes(1);
+    scene.destroy();
+  });
+
+  it('FriendsScene: friends-list drag-scroll renders once per frame, not once per pointermove (2026-07-18 fix)', async () => {
+    const friends: FriendView[] = Array.from({ length: 30 }, (_, i) => ({
+      publicId: String(100000000 + i), displayName: `Friend${i}`, online: i % 2 === 0,
+    }));
+    const input = new InputManager();
+    const scene = new FriendsScene(createLayout(W, H), input, {
+      onBack() {}, onOpenRoom() {},
+      loadFriends: async () => friends,
+      loadRequests: async () => ({ incoming: [], outgoing: [] }),
+      search: async () => ({ publicId: '123456789', displayName: 'Bob' }),
+      addFriend: async () => {}, respond: async () => {}, removeFriend: async () => {}, blockUser: async () => {},
+      loadConversations: async () => [], openChat() {},
+      loadMail: async () => ({ mail: [], unread: 0 }), markMailRead: async () => {},
+      claimMail: async () => true, deleteMail: async () => {},
+    }) as any;
+    // Flush the refresh() microtasks queued by the constructor so the 30-row friends list
+    // (and its non-zero maxScroll) is actually rendered before we drive the drag.
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    expect(scene.maxScroll).toBeGreaterThan(0);
+    // Drag upward (decreasing y) from scrollY=0 so the requested scroll offset actually
+    // changes (a downward drag would clamp to the same 0 and never dirty the scroll).
+    assertScrollDragThrottledUpward(scene, input);
+  });
+
+  it('FriendsScene: scrollY reflects the final drag position (not an intermediate one) once drained', async () => {
+    const friends: FriendView[] = Array.from({ length: 30 }, (_, i) => ({
+      publicId: String(100000000 + i), displayName: `Friend${i}`, online: i % 2 === 0,
+    }));
+    const input = new InputManager();
+    const scene = new FriendsScene(createLayout(W, H), input, {
+      onBack() {}, onOpenRoom() {},
+      loadFriends: async () => friends,
+      loadRequests: async () => ({ incoming: [], outgoing: [] }),
+      search: async () => ({ publicId: '123456789', displayName: 'Bob' }),
+      addFriend: async () => {}, respond: async () => {}, removeFriend: async () => {}, blockUser: async () => {},
+      loadConversations: async () => [], openChat() {},
+      loadMail: async () => ({ mail: [], unread: 0 }), markMailRead: async () => {},
+      claimMail: async () => true, deleteMail: async () => {},
+    }) as any;
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    expect(scene.maxScroll).toBeGreaterThan(0);
+
+    input._emitDown(W / 2, H / 2);
+    input._emitMove(W / 2, H / 2 - 20);
+    input._emitMove(W / 2, H / 2 - 40);
+    input._emitMove(W / 2, H / 2 - 60); // dy = -60 total from down
+    scene.update(1 / 60); // single drained render should reflect the LAST move, not an intermediate one
+
+    expect(scene.scrollY).toBe(Math.min(scene.maxScroll, 60));
+    scene.destroy();
+  });
+
+  it('FriendsScene: a released drag does not fire the row tap it started on', async () => {
+    const friends: FriendView[] = Array.from({ length: 30 }, (_, i) => ({
+      publicId: String(100000000 + i), displayName: `Friend${i}`, online: i % 2 === 0,
+    }));
+    const input = new InputManager();
+    const opened: string[] = [];
+    const scene = new FriendsScene(createLayout(W, H), input, {
+      onBack() {}, onOpenRoom() {},
+      loadFriends: async () => friends,
+      loadRequests: async () => ({ incoming: [], outgoing: [] }),
+      search: async () => ({ publicId: '123456789', displayName: 'Bob' }),
+      addFriend: async () => {}, respond: async () => {}, removeFriend: async () => {}, blockUser: async () => {},
+      loadConversations: async () => [], openChat() {},
+      loadMail: async () => ({ mail: [], unread: 0 }), markMailRead: async () => {},
+      claimMail: async () => true, deleteMail: async () => {},
+    }) as any;
+    // Stub in a spy so we can tell whether a profile hit fired without relying on ProfilePopup internals.
+    (scene as any).openFriendProfile = (id: string) => opened.push(id);
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    expect(scene.maxScroll).toBeGreaterThan(0);
+
+    input._emitDown(W / 2, H / 2);
+    input._emitMove(W / 2, H / 2 - 20); // exceeds DRAG_THRESHOLD -> dragging = true
+    input._emitUp(W / 2, H / 2 - 20);
+
+    expect(opened).toEqual([]);
+    scene.destroy();
+  });
+
+  it('ChatScene: message-thread drag-scroll renders once per frame, not once per pointermove (2026-07-18 fix)', async () => {
+    const messages: ChatMessageView[] = Array.from({ length: 40 }, (_, i) => ({
+      messageId: `m${i}`, convId: 'c1', fromPublicId: '123456789', body: `hello ${i}`, kind: 'text', ts: i,
+    }));
+    const input = new InputManager();
+    const scene = new ChatScene(createLayout(W, H), input, {
+      onBack() {}, peerName: 'Bob', peerPublicId: '123456789', myPublicId: '987654321',
+      resolveConvId: async () => 'c1',
+      loadMessages: async () => messages,
+      send: async () => ({ messageId: 'mx', ts: 0 }),
+      markRead: async () => {},
+    }) as any;
+    // Flush the load() microtasks queued by the constructor so the 40-message thread (and its
+    // non-zero maxScroll) is actually rendered before we drive the drag.
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    expect(scene.maxScroll).toBeGreaterThan(0);
+    // ChatScene starts pinned to the bottom (scrollY === maxScroll), so — unlike FriendsScene,
+    // which starts at scrollY=0 — a *downward* drag is what actually changes the offset here.
+    assertScrollDragThrottled(scene, input);
+  });
+
+  it('ChatScene: scrollY reflects the final drag position (not an intermediate one) once drained', async () => {
+    const messages: ChatMessageView[] = Array.from({ length: 40 }, (_, i) => ({
+      messageId: `m${i}`, convId: 'c1', fromPublicId: '123456789', body: `hello ${i}`, kind: 'text', ts: i,
+    }));
+    const input = new InputManager();
+    const scene = new ChatScene(createLayout(W, H), input, {
+      onBack() {}, peerName: 'Bob', peerPublicId: '123456789', myPublicId: '987654321',
+      resolveConvId: async () => 'c1',
+      loadMessages: async () => messages,
+      send: async () => ({ messageId: 'mx', ts: 0 }),
+      markRead: async () => {},
+    }) as any;
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    const maxScroll0 = scene.maxScroll;
+    expect(maxScroll0).toBeGreaterThan(0);
+
+    input._emitDown(W / 2, H / 2);
+    input._emitMove(W / 2, H / 2 + 20);
+    input._emitMove(W / 2, H / 2 + 40);
+    input._emitMove(W / 2, H / 2 + 60); // dy = +60 total from down -> scrolls up (away from bottom)
+    scene.update(1 / 60); // single drained render should reflect the LAST move, not an intermediate one
+
+    expect(scene.scrollY).toBe(Math.max(0, maxScroll0 - 60));
     scene.destroy();
   });
 });

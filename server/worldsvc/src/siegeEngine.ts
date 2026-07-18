@@ -117,16 +117,45 @@ export function shouldUseCheapSiege(opts: {
 }
 
 /**
- * Validates an attacker army layout (called when saving a team template, G3-2c). Reuses the engine-side
- * levelSchema: packs the army into a symbolic siege level and passes it through `parseLevelDefinition`;
- * invalid unitType/column/row or out-of-bounds values throw an error (caller maps to SlgError).
+ * Validates a card-resolved attacker army layout (called by `city.ts#setTeams` after `sanitizeCardArmy`
+ * has already dropped any entry it couldn't resolve to a real card — see that function for why raw
+ * `ArmyEntry[]` is never validated directly). Reuses the engine-side levelSchema: packs the resolved
+ * `{unitType, col, row}` layout into a symbolic siege level and passes it through `parseLevelDefinition`;
+ * out-of-bounds column/row throws (caller maps to SlgError). initialHp is deliberately omitted here —
+ * this checks formation legality, not troop counts (a freshly-assigned card with 0 troops is legal).
  * Pure validation, no side effects. An empty army ([]) is valid (= empty team slot).
  */
-export function validateAttackerArmy(army: unknown): void {
-  if (!Array.isArray(army)) throw new Error('army must be an array');
-  if (army.length === 0) return;
-  const levelObj = buildSiegeBattle({ army }, null, 1, 0);
-  parseLevelDefinition(levelObj); // throws = invalid army layout
+export function validateAttackerArmy(resolved: ReadonlyArray<{ unitType: UnitType; col: number; row: number }>): void {
+  if (resolved.length === 0) return;
+  const levelObj = buildSiegeBattle({ army: resolved.map((e) => ({ unitType: e.unitType, col: e.col, row: e.row })) }, null, 1, 0);
+  parseLevelDefinition(levelObj); // throws = invalid formation (bad column/row)
+}
+
+/**
+ * Drops every `ArmyEntry` that can't be resolved to a real, owned card: no `cardInstanceId` (the
+ * pre-CC-3 raw unit-type format is no longer supported — no compat path, no error, just removed),
+ * an id the player no longer owns (`cardInv`), or an id whose card definition is unknown. Returns the
+ * cleaned army alongside the resolved `{unitType, col, row}` triples `validateAttackerArmy` needs.
+ * Called by both `city.ts#setTeams` (save) and `#getTeams` (self-heal on read) so bad data never
+ * lingers — dropped cards simply fall out of the team's `cardInstanceId` set and are freed by the
+ * existing "removed card" cleanup (teamId/currentTroops cleared, training resources refunded).
+ */
+export function sanitizeCardArmy(
+  army: ArmyEntry[],
+  cardInv: Record<string, CardInstance>,
+): { army: ArmyEntry[]; resolved: { unitType: UnitType; col: number; row: number }[] } {
+  const outArmy: ArmyEntry[] = [];
+  const resolved: { unitType: UnitType; col: number; row: number }[] = [];
+  for (const e of army) {
+    if (!e.cardInstanceId) continue;
+    const instance = cardInv[e.cardInstanceId];
+    if (!instance) continue;
+    const def = CARD_DEFS[instance.defId];
+    if (!def) continue;
+    outArmy.push({ cardInstanceId: e.cardInstanceId, col: e.col, row: e.row });
+    resolved.push({ unitType: def.unitType as UnitType, col: e.col, row: e.row });
+  }
+  return { army: outArmy, resolved };
 }
 
 /**
@@ -200,9 +229,9 @@ export function scaleArmyByRatio(army: ReadonlyArray<GarrisonEntry>, ratio: numb
 
 /**
  * Resolves a card-based ArmyEntry[] to GarrisonEntry[] for the engine (CC-3, CHARACTER_CARDS_DESIGN §8.3).
- * For each entry with cardInstanceId: looks up CardInstance → CardDef.unitType; sets initialHp from cardState.currentTroops.
- * Entries without cardInstanceId (legacy synthesized/replay paths) are passed through as-is.
- * Entries whose card is missing from cardInv are skipped (defence against stale/migrated data).
+ * For each entry: looks up CardInstance → CardDef.unitType; sets initialHp from cardState.currentTroops.
+ * Entries with no cardInstanceId, or one that no longer resolves to an owned card, are dropped — the
+ * pre-CC-3 raw unit-type format has no compat path.
  */
 export function resolveCardArmy(
   army: ArmyEntry[],
@@ -211,13 +240,7 @@ export function resolveCardArmy(
 ): GarrisonEntry[] {
   const result: GarrisonEntry[] = [];
   for (const e of army) {
-    if (!e.cardInstanceId) {
-      // Legacy path: unitType must be present (synthesis / replay).
-      if (e.unitType) {
-        result.push({ unitType: e.unitType as UnitType, col: e.col, row: e.row, ...(e.initialHp != null ? { initialHp: e.initialHp } : {}) });
-      }
-      continue;
-    }
+    if (!e.cardInstanceId) continue;
     const instance = cardInv[e.cardInstanceId];
     if (!instance) continue; // card not found (stale reference); skip
     const def = CARD_DEFS[instance.defId];

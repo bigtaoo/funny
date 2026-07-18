@@ -1,8 +1,8 @@
 import { Board } from './Board';
 import { Prng } from './math/prng';
 import { Player } from './Player';
-import { EscortUnit, resetEscortIds } from './EscortUnit';
-import { Projectile, resetProjectileIds } from './Projectile';
+import { EscortUnit } from './EscortUnit';
+import { Projectile } from './Projectile';
 import { UNIT_BLUEPRINTS } from './config';
 import { ActiveSpell, GameEvent, GamePhase, MatchSummary, OwnerId, PlayerStats, Side, SpellType, UnitType, UnitBlueprint, sideToOwner } from './types';
 import type { HazardSpec } from './campaign/LevelDefinition';
@@ -140,13 +140,30 @@ export class GameState {
     return this._nextBuildingId++;
   }
 
-  constructor(seed: number) {
-    // Reset entity id counters so ids are reproducible across engine instances
-    // (deterministic replay). Unit and building ids are per-instance (see _nextUnitId /
-    // _nextBuildingId) and need no reset.
-    resetEscortIds();
-    resetProjectileIds();
+  /**
+   * Per-instance escort id counter (escorts take the 5000+ range). MUST be instance-scoped
+   * for the same reason as _nextUnitId/_nextBuildingId — see those fields' docs.
+   */
+  private _nextEscortId = 5000;
 
+  /** Allocate the next unique escort id for THIS match. All real escort spawns must use this. */
+  allocEscortId(): number {
+    return this._nextEscortId++;
+  }
+
+  /**
+   * Per-instance projectile id counter (projectiles take the highest range, 2,000,000+).
+   * MUST be instance-scoped for the same reason as _nextUnitId/_nextBuildingId — see
+   * those fields' docs.
+   */
+  private _nextProjectileId = 2_000_000;
+
+  /** Allocate the next unique projectile id for THIS match. All real projectile spawns must use this. */
+  allocProjectileId(): number {
+    return this._nextProjectileId++;
+  }
+
+  constructor(seed: number) {
     // Each player gets separate PRNGs: one for card draws, one for timer stagger offsets.
     const cardPrng0  = new Prng(seed);
     const cardPrng1  = new Prng(seed ^ 0xdeadbeef);

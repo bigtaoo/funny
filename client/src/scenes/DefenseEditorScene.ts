@@ -693,22 +693,28 @@ export class DefenseEditorScene implements Scene {
 
   private drawUnit(g: PIXI.Graphics, px: number, py: number, cw: number, ch: number, type: UnitType, hp?: number): void {
     const cx = px + cw / 2, cy = py + ch / 2;
-    const r = Math.min(cw, ch) * 0.3;
-    const col = type === UnitType.Archer || type === UnitType.Mara ? 0x44aa66
-      : type === UnitType.ShieldBearer || type === UnitType.Lena ? 0x8866cc
-      : type === UnitType.Max ? 0xcc6633
-      : 0x4477cc;
-    g.lineStyle(1.2, 0x33425a, 1);
-    g.beginFill(col, 0.92);
-    g.drawCircle(cx, cy, r);
-    g.endFill();
+    const size = Math.min(cw, ch) * 0.72;
+    const bx = cx - size / 2, by = cy - size / 2;
+    const artUrl = UNIT_ART_URLS[type];
+    if (artUrl) {
+      const frame = sketchPanel(size, size, { fill: 0xf0eee7, border: 0x33425a, width: 1.2, seed: seedFor(px, py, size) });
+      frame.x = bx; frame.y = by;
+      this.bodyLayer.addChild(frame);
+      this.drawArtFit(artUrl, bx + 1, by + 1, size - 2, size - 2);
+    } else {
+      const r = size / 2;
+      g.lineStyle(1.2, 0x33425a, 1);
+      g.beginFill(0x4477cc, 0.92);
+      g.drawCircle(cx, cy, r);
+      g.endFill();
+    }
 
     // Attack mode: show the card's live troop count under the icon — a card's cardState ledger, not
     // a blueprint-relative HP fraction (a card's troop count isn't bounded by the unit's base HP stat).
     if (hp !== undefined && this.mode === 'attack') {
       const label = txt(String(hp), FS.micro, 0x222222, true);
       label.anchor.set(0.5, 0);
-      label.x = cx; label.y = cy + r + 1;
+      label.x = cx; label.y = by + size + 1;
       this.bodyLayer.addChild(label);
     }
   }
