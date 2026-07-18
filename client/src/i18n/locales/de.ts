@@ -419,6 +419,10 @@ export const de: Record<TranslationKey, string> = {
   'gacha.fate.redeem': 'Einlösen',
   'gacha.fate.redeemed': '{item} eingelöst',
   'gacha.fate.insufficient': 'Nicht genug Schicksalspunkte',
+  // ── Inventar-voll-Überlauf-Hinweis (Heldenkarten 150 / Ausrüstung 300 Limit) ──
+  'gacha.invFull.mailed': 'Inventar voll — {count} Gegenstand/Gegenstände per Post gesendet, dort abholen',
+  'gacha.invFull.compensated': 'Inventar voll — {coins} Münzen als Ausgleich gutgeschrieben',
+  'gacha.invFull.mailedAndCompensated': 'Inventar voll — {mailed} Gegenstand/Gegenstände per Post gesendet, {coins} Münzen als Ausgleich gutgeschrieben',
 
   // ── Seltenheit ───────────────────────────────────────────────────────────────
   'rarity.common': 'Gewöhnlich',
@@ -1051,6 +1055,10 @@ export const de: Record<TranslationKey, string> = {
   'auction.mail.sold.body': 'Dein ersteigerter Artikel ist angehängt. Fordere ihn an, um ihn deinem Inventar hinzuzufügen.',
   'auction.mail.returned.subject': 'Auktionsartikel zurückgegeben',
   'auction.mail.returned.body': 'Deine Auktion endete ohne Verkauf oder wurde abgebrochen. Der Artikel ist angehängt – fordere ihn an, um ihn ins Inventar zurückzuholen.',
+  'card.mail.rosterFull.subject': 'Heldenliste voll',
+  'card.mail.rosterFull.body': 'Deine Heldenliste ist voll. Diese gezogene Charakterkarte ist angehängt — schaffe Platz und fordere sie an.',
+  'equipment.mail.invFull.subject': 'Ausrüstungsinventar voll',
+  'equipment.mail.invFull.body': 'Dein Ausrüstungsinventar ist voll. Diese gezogene Ausrüstung ist angehängt — schaffe Platz und fordere sie an.',
   'auction.back': '← Zurück',
   'auction.tabAll': 'Markt',
   'auction.tabMine': 'Meine Angebote',

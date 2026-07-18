@@ -146,6 +146,13 @@ export const CARD_INV_CAP = 150;
 /** Coin compensation per card when the roster is full (overflow → coin sink; CHARACTER_CARDS_DESIGN §4). [DRAFT → ECONOMY_NUMBERS §6] */
 export const CARD_FULL_COMPENSATION_COINS = 10;
 
+/**
+ * Within one grant call, the first N roster-full overflow cards are mailed to the player
+ * as real card instances instead of being coin-compensated (CHARACTER_CARDS_DESIGN §4).
+ * Beyond this count, remaining overflow still falls back to CARD_FULL_COMPENSATION_COINS.
+ */
+export const INV_FULL_MAIL_COUNT = 10;
+
 /** TTL in seconds for card operation idempotency ledger entries (7 days; same convention as equipment idem). */
 export const CARD_FEED_IDEM_TTL_SEC = 7 * 24 * 3600;
 

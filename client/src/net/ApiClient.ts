@@ -25,6 +25,7 @@ export type {
   ShopItem,
   GachaPool,
   GachaResultEntry,
+  GachaOverflow,
   MatchHistoryEntry,
   AuthResult,
   ActiveMatchInfo,

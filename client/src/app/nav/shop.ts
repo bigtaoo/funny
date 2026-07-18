@@ -247,10 +247,10 @@ export function createShopNav(ctx: AppCtx): ShopNav {
       loadPools: () => client.getGachaPools(),
       async draw(poolId, count) {
         try {
-          const { save, results } = await client.gachaDraw(poolId, count);
+          const { save, results, overflow } = await client.gachaDraw(poolId, count);
           saveManager.adoptServer(save);
           analytics.track('gacha_draw', { pool_id: poolId, count });
-          return { ok: true, results };
+          return { ok: true, results, overflow };
         } catch (e) {
           return {
             ok: false,

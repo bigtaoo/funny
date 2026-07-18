@@ -99,6 +99,7 @@ type SlotMap = Partial<Record<EquipSlot, string /*instanceId*/>>;
 
 - **重复件堆叠**：**0 级、无副词条**的同 `defId` 装备**按数量堆叠**（存 `Record<defId, count>`，不开实例 id），只有"被强化过 / 已 roll 副词条 / 已穿戴 / `locked`"的才升格为独立 `EquipmentInstance`。绝大多数低级重复件走堆叠，不占实例槽。
 - **背包容量硬上限 = 300 独立实例**（[ADR-012](DECISIONS.md)，DRAFT [可调]）。堆叠件**不计入**。逼近上限时提示，引导拿低级件去**分解（§6.3）/ 强化燃料 / 洗练燃料**消耗（这也是 §6/§7.8 sink 的需求侧）。满仓时**禁止再获得新实例**（掉落转为材料补偿，见 §4）。
+  - **⚠️ 抽卡溢出改走邮件（2026-07-18）**：此前抽卡途径的满仓溢出装备是**纯丢弃、无任何补偿**（`deliverLootBox` 静默跳过写入，未接入任何 sink）。现改为与 §13 escrow-out 同一套邮件模式：自库存上次有空位起，累计溢出的前 `EQUIP_INV_FULL_MAIL_COUNT`（=10）件装备作为真实实例通过系统邮件下发（`kind:'equipment'` 附件），超出部分转 `EQUIP_FULL_COMPENSATION_COINS`（=10/件）金币补偿；持久计数器 `save.equipMailOverflowCount` 记录已用额度，背包再次出现空位即重置。**仅覆盖抽卡路径**——关卡掉落 faucet（`grantClearReward`，§4.2 一带）与合成 craft 仍是原有"满仓静默跳过，不补偿"口径，未变。
 - **穿戴单独计、不占 300**：被穿戴的实例存在 `equipped`，不计入 300 库存上限。但**穿戴数不另设 1000 之类的大上限**——它**结构性自限 = 3 槽 × loadout 套数**（global 阶段最多 3；byUnit 阶段 = 3 × 兵种数），远低于任何人为上限。⚠️ **堵漏洞**：穿戴既不计库存，就不能成为"靠给一堆兵穿戴囤货"的后门——穿戴上限恒等于槽位结构，多余装备无处可穿，只能留库存（受 300 约束）或走分解/拍卖出口。
 - **存储落点**：v1 把 `equipmentInv` 内嵌进 SaveData 文档（300 实例 × ~150B ≈ 45KB，可接受）；若实测膨胀，迁独立集合 `equipment`（`accountId + instanceId` 索引），见 §18。
 
@@ -540,7 +541,7 @@ buildSiegeBlueprints(levels, equipped, inv)
 落地 = `server/shared/src/economy.ts`（`GACHA_MATERIAL_GRANTS` 新导出：mat_scrap→{scrap:10} / mat_lead→{lead:3} / mat_binding→{binding:1}；标准池 `STANDARD_POOL.itemsByRarity` 更新四档：common 7 项加 mat_scrap×3 / rare 8 项加 mat_lead×2 + wp_pen/ar_cardstock/tk_bookmark / epic 6 项加 mat_binding + wp_marker/ar_leather/tk_sticker / legendary 4 项加 wp_highlighter/ar_foil/tk_seal）+ `server/shared/src/equipment.ts`（`makeGachaEquipInstance(defId, instanceId)` 新函数：按指定 defId 生成 +0 实例，affixes 绑 instanceId 种子）+ `server/metaserver/src/economy.ts`（`deliverGrant` 扩签名加 `materialInc?`/`equipInstances?` 参数，原子写合并 `$inc` 材料 + `$set` 各装备键 + `$addToSet` 皮肤；`deliverOrder` 重写路由分类：`mat_*` → materialInc via `GACHA_MATERIAL_GRANTS`、`EQUIPMENT_DEFS[id]` → equipInstances 上限 `EQUIPMENT_INV_CAP`、其余 → skins；instanceId 格式 `eq_gacha_${orderId}_${i}` 确定性幂等）+ `server/contracts/openapi.yml`（无需新端点，原有 gacha 接口覆盖）+ `client/src/game/meta/equipmentDefs.ts`（`PROTECT_ENHANCE_ITEM_ID = 'protect_enhance'`）。关键决策：
 
 1. **三类产出单次原子写**：皮肤（`$addToSet skins`）、材料（`$inc save.materials.*`）、装备（`$set save.equipmentInv.${id}`）合入同一 `findOneAndUpdate`，杜绝部分成功。
-2. **装备满仓静默截断**：与关卡掉落 faucet 同口径（ADR-012）——`equipInstances` 在 `deliverOrder` 时检 `equipmentInvCount(save) < EQUIPMENT_INV_CAP`，满则跳过，不阻塞同批材料/皮肤入账。
+2. **装备满仓截断**：`equipInstances` 在 `deliverLootBox` 时检 `equipmentInvCount(save) < EQUIPMENT_INV_CAP`，满则不写入 `equipmentInv`，不阻塞同批材料/皮肤入账。~~静默丢弃~~ **2026-07-18 起改为邮件+金币补偿**，见 §3.3 新增小节；关卡掉落 faucet 仍是原口径（静默跳过，不补偿）。
 3. **装备 instanceId 绑 orderId + 结果下标**：`eq_gacha_${order._id}_${i}` 使同一订单重放产同一套实例（idempotency）。
 
 **保护道具 — `protect_enhance` 消耗品**
