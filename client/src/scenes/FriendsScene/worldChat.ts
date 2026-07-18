@@ -70,6 +70,20 @@ export function WorldChatMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase):
       const regionH = this.regionBottom - this.regionTop;
       const { layer } = this.scrollRegion(regionH);
 
+      if (this.worldLoadError) {
+        const msgY = this.regionTop + regionH * 0.4;
+        const msg = txt(t('social.world.loadFail'), snapFont(Math.round(h * 0.032)), C.mid);
+        msg.anchor.set(0.5, 0.5); msg.x = this.cCX; msg.y = msgY;
+        layer.addChild(msg);
+        const btnW = Math.round(this.cW * 0.3);
+        const btnH = Math.round(h * 0.05);
+        this.addButton(t('friends.retry'),
+          this.cCX - btnW / 2, msgY + Math.round(h * 0.05),
+          btnW, btnH, C.dark, C.gold,
+          () => { void this.loadWorldMessages(); }, 0xffffff, undefined, layer);
+        this.maxScroll = 0;
+        return;
+      }
       if (!this.worldLoaded) {
         this.centerLabel(layer, 'friends.loading', regionH);
         this.maxScroll = 0;

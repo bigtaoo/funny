@@ -661,6 +661,7 @@ export const zh = {
   'friends.back': '← 返回',
   'friends.loading': '加载中…',
   'friends.error': '出错了，请重试',
+  'friends.retry': '重试',
   'friends.search': '＋ 添加好友',
   'friends.room': '联机对战',
   'friends.requests': '好友申请',
@@ -730,6 +731,7 @@ export const zh = {
   'social.world.sent': '已发送',
   'social.world.sendFail': '发送失败，请重试',
   'social.world.sending': '发送中…',
+  'social.world.loadFail': '世界频道加载失败',
   // Direct messages (S6-2)
   'chat.back': '← 返回',
   'chat.loading': '加载中…',

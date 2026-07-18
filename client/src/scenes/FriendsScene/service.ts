@@ -61,12 +61,19 @@ export function NetworkMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
     }
 
     async loadWorldMessages(): Promise<void> {
-      if (!this.cb.loadWorldChat) return;
+      if (!this.cb.loadWorldChat || this.worldLoading) return;
+      this.worldLoading = true;
+      this.worldLoadError = false;
+      if (!this.dead) this.render();
       try {
         const msgs = await this.cb.loadWorldChat();
         this.worldMessages = msgs.slice().reverse(); // server newest-first → oldest-first for display
         this.worldLoaded = true;
-      } catch { /* keep existing */ }
+      } catch {
+        this.worldLoadError = true;
+      } finally {
+        this.worldLoading = false;
+      }
       if (!this.dead) this.render();
     }
 

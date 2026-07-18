@@ -153,6 +153,8 @@ export class FriendsSceneBase {
   // World channel tab
   protected worldMessages: WorldChatMessage[] = [];
   protected worldLoaded = false;
+  protected worldLoading = false;
+  protected worldLoadError = false;
   protected worldChatInput = '';
   protected worldChatActive = false;
   protected worldSending = false;
@@ -294,7 +296,7 @@ export class FriendsSceneBase {
     if ((tab === 'family' || tab === 'sect') && !this.slgLoaded && !this.slgLoading) {
       void this.loadSLGStatus();
     }
-    if (tab === 'world' && !this.worldLoaded) {
+    if (tab === 'world' && !this.worldLoaded && !this.worldLoading) {
       void this.loadWorldMessages();
     }
   }
