@@ -81,6 +81,17 @@ export class LeaderboardScene implements Scene {
   private rowDefs: Array<{ y: number; h: number; fn: () => void }> = [];
   private scrollbar: PIXI.Graphics | null = null;
 
+  // Row virtualization: entries can number in the hundreds, and every row draws several
+  // PIXI.Text + a hand-sketched panel border — building all of them up front blew past
+  // iOS Safari's WebGL texture/GPU-object budget and crashed the tab. Only rows within
+  // one viewport-height of the visible area are actually built; the rest exist only as
+  // rowDefs (cheap hit-test metadata).
+  private entries: LeaderboardEntry[] = [];
+  private rowH = 0;
+  private rowGap = 0;
+  private listW = 0;
+  private builtRows: Map<number, PIXI.Container> = new Map();
+
   constructor(layout: ILayout, input: InputManager, cb: LeaderboardCallbacks) {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
@@ -111,6 +122,7 @@ export class LeaderboardScene implements Scene {
   destroy(): void {
     this.destroyed = true;
     this.unsubs.forEach((u) => u());
+    this.builtRows.clear();
     this.container.destroy({ children: true });
   }
 
@@ -146,6 +158,36 @@ export class LeaderboardScene implements Scene {
       const absY = this.listTop - sy + rd.y;
       if (absY + rd.h < this.listTop || absY > this.listTop + this.listH) continue;
       this.hits.push({ rect: { x: pad, y: absY, w: this.w - pad * 2, h: rd.h }, fn: rd.fn });
+    }
+    this.updateVisibleRows();
+  }
+
+  /** Builds/destroys row visuals so only entries within one viewport-height of the visible
+   *  area actually exist as PIXI DisplayObjects. See the `builtRows` field comment for why. */
+  private updateVisibleRows(): void {
+    if (!this.listContainer) return;
+    const sy = Math.min(this.scrollY, this.scrollMax);
+    const buffer = this.listH * 0.5;
+    const viewTop = sy - buffer;
+    const viewBottom = sy + this.listH + buffer;
+    const stride = this.rowH + this.rowGap;
+    const needed = new Set<number>();
+    for (let i = 0; i < this.entries.length; i++) {
+      const ry = i * stride;
+      if (ry + this.rowH < viewTop || ry > viewBottom) continue;
+      needed.add(i);
+      if (!this.builtRows.has(i)) {
+        const rowC = new PIXI.Container();
+        rowC.y = ry;
+        this.drawRow(rowC, this.entries[i], 0, 0, this.listW, this.rowH, i);
+        this.listContainer.addChild(rowC);
+        this.builtRows.set(i, rowC);
+      }
+    }
+    for (const [i, rowC] of this.builtRows) {
+      if (needed.has(i)) continue;
+      rowC.destroy({ children: true });
+      this.builtRows.delete(i);
     }
   }
 
@@ -213,7 +255,13 @@ export class LeaderboardScene implements Scene {
 
     const entries = this.data.entries;
     const rowH = Math.round(h * 0.065);
+    const rowGap = Math.round(h * 0.008);
     const listW = w - pad * 2;
+    this.entries = entries;
+    this.rowH = rowH;
+    this.rowGap = rowGap;
+    this.listW = listW;
+    this.builtRows.clear();
 
     // ── "My rank" line — right-aligned, just below the season label ────────────
     const meText = this.data.me
@@ -236,11 +284,9 @@ export class LeaderboardScene implements Scene {
     listContainer.x = pad;
     listContainer.y = listTop;
 
-    let totalH = 0;
+    const totalH = entries.length > 0 ? (entries.length - 1) * (rowH + rowGap) + rowH : 0;
     entries.forEach((e, i) => {
-      const ry = i * (rowH + Math.round(h * 0.008));
-      totalH = ry + rowH;
-      this.drawRow(listContainer, e, 0, ry, listW, rowH, i);
+      const ry = i * (rowH + rowGap);
       if (this.cb.onOpenProfile) {
         this.rowDefs.push({ y: ry, h: rowH, fn: () => this.cb.onOpenProfile!(e.publicId) });
       }
