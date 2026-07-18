@@ -189,7 +189,7 @@ describe('WorldMapPanels.renderTerritoryPanel — Territory (list) tab', () => {
     expect(ctx.territoryPanelOpen).toBe(false);
   });
 
-  it('Abandon delegates to net.doAbandonFromList without closing the modal itself', () => {
+  it('Abandon opens a confirm dialog, only calling net.doAbandonFromList after OK', () => {
     const single = [{ x: 9, y: 4, type: 'territory' as const, level: 1, garrison: 3 }];
     const { ctx, panels, doAbandonFromList } = buildHarness({ territoryTab: 'list', territories: single });
     panels.renderTerritoryPanel();
@@ -197,7 +197,15 @@ describe('WorldMapPanels.renderTerritoryPanel — Territory (list) tab', () => {
     const abandonAction = ctx.modalBtnRects[5]?.action;
     expect(abandonAction).toBeTruthy();
     abandonAction!();
+    expect(doAbandonFromList).not.toHaveBeenCalled();
+    expect(ctx.territoryAbandonConfirm).toEqual({ x: 9, y: 4 });
+
+    // Confirm dialog replaces the panel body with OK/Cancel — OK is index 0 post re-render.
+    const okAction = ctx.modalBtnRects[0]?.action;
+    expect(okAction).toBeTruthy();
+    okAction!();
     expect(doAbandonFromList).toHaveBeenCalledWith(9, 4);
+    expect(ctx.territoryAbandonConfirm).toBeNull();
   });
 });
 
