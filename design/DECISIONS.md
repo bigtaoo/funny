@@ -477,6 +477,7 @@
   - 客户端 `WorldMapInput.ts`：主城分支从五按钮 `showModal` 改为直接 `onOpenCity()`；连带移除只被这个弹窗使用的 i18n key（`world.actEnterCity`/`world.train`/`world.team.manage`，3 语言）与回归测试 `worldMapBaseClick.ui.ts` 的断言更新。
   - `onOpenDefense('base')`/`onOpenTeams()`（地图层「打开队伍列表 TeamsScene」入口）、`WorldMapPanels.openTrainPanel()`（地图层训练面板）自此弹窗移除后**已无任何调用方**——确认为死代码，但体量较大（TeamsScene 整个场景 + 训练面板渲染 ~150 行 + 多处 `trainPanelOpen` 状态联动），本次不一并删除，留作后续单独清理（已用 spawn_task 标记）。
   - `server/worldsvc` 的 `PlayerWorldDoc.defense`（`tileKey='base'` 的 `setDefense`/`getDefense` 分支）**保留未删**——虽已确认是死代码，但涉及改 `openapi-world.yml` 契约（`tileKey` 参数默认值/说明）+ 两端 codegen 重新生成，风险/收益比不划算，本次不动；后续若清理前端 TeamsScene/训练面板时可一并处理。
+  - **2026-07-18 后续清理（已完成）**：上面标记的死代码已按后续任务清理完毕——删除 `TeamsScene.ts` 整个场景及其接线（`goTeams`/`onOpenTeams`/`showTeams`/`goTeamEditor`，后者随 `goTeams` 一起变为死代码故一并删除；`WorldMapContext.onOpenTeams`）；删除 `WorldMapPanels.openTrainPanel`/`renderTrainPanel`/`ctx.trainPanelOpen`/`ctx.panelRepaint`，以及仅服务于训练面板、随之变为死代码的 `WorldMapNet.doTrain`/`doSpeedup`；`teamSlotId`/`teamSlotName`/`TEAM_CAP`（CityScene 仍需要）迁到 `game/meta/teamTroops.ts`。相应清理了仅被这些死代码引用的 i18n key（`world.teams`/`world.team.title`/`.edit`/`.tapToBuild`/`.emptyArmy`/`.fillTroops*`/`.legacyRebuild`/`.cancelOccupy*`/`.recallErr`、`world.train*`/`.speedup`/`.trained`/`.spedup`/`.err.queueFull`，3 语言）与对应测试（删除 `teamsScene.ui.ts`，其余文件去掉对已删符号的引用）。`tsc --noEmit` + `test`/`test:ui` 全绿（104+68 files / 727+635 tests）。`server/worldsvc` 的 `PlayerWorldDoc.defense` 死字段本次仍未动，维持上面的评估。
 
 ## ADR-042 家族加入改为需 leader/elder 审批（解决 SOCIAL_SVC_DESIGN §8 O1）— Accepted — 2026-07-18
 

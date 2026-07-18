@@ -60,7 +60,6 @@ function buildHarness(opts: {
     view: { renderMap: vi.fn() },
     cb: {
       worldId: WORLD_ID,
-      onOpenTeams: vi.fn(),
       worldApi: { getTeams, startMarch, getMarches, getMe },
     },
     panels: { showModal, showToast, closeModal, showDeployDialog, renderHud },

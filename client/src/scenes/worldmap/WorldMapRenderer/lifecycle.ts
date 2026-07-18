@@ -1,4 +1,4 @@
-// Scene lifecycle: per-frame update (loading spinner, toast timer, L3 flush, train-panel tick),
+// Scene lifecycle: per-frame update (loading spinner, toast timer, L3 flush),
 // atlas bootstrap behind the loading cover, and teardown of pooled Graphics / city sprites.
 import { loadResAtlas } from '../../../render/resAtlasLoader';
 import { loadCityAtlas } from '../../../render/cityAtlasLoader';
@@ -30,14 +30,6 @@ export function LifecycleMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBa
       // L3 overview: flush dirty flag at most once per frame (60fps cap).
       if (this.ctx.l3Dirty && this.ctx.zoom === 3) {
         this.renderMapL3();
-      }
-      // Tick the train panel's queue countdowns once per second while open.
-      if (this.ctx.trainPanelOpen) {
-        this.ctx.panelRepaint += dt;
-        if (this.ctx.panelRepaint >= 1) {
-          this.ctx.panelRepaint = 0;
-          this.ctx.panels.renderTrainPanel();
-        }
       }
       // March tokens ride the route between poll ticks — redraw every frame while any are in
       // flight, so their position advances smoothly instead of jumping on each ~5s poll. Also

@@ -7,7 +7,7 @@
 // These are pure functions — no PIXI harness needed, so this runs under the default vitest config.
 
 import { describe, it, expect } from 'vitest';
-import { isLegacyTeam, carriedTroops } from '../src/game/meta/teamTroops';
+import { isLegacyTeam, carriedTroops, TEAM_CAP, teamSlotId, teamSlotName } from '../src/game/meta/teamTroops';
 import type { TeamTemplate, CardSLGState } from '../src/net/WorldApiClient';
 
 type Army = TeamTemplate['army'];
@@ -60,5 +60,24 @@ describe('carriedTroops', () => {
 
   it('a mixed army counts only the card entries, ignoring the legacy ones', () => {
     expect(carriedTroops([card('c1'), unit(999)], cardState)).toBe(100);
+  });
+});
+
+// Moved here 2026-07-18 (from the now-deleted TeamsScene.ts) when the map-layer team list and
+// train panel were removed as unreachable — CityScene still needs these for its team-card grid.
+describe('TEAM_CAP / teamSlotId / teamSlotName', () => {
+  it('TEAM_CAP is the UI-side formation slot count (server SIEGE_TEAM_CAP is authoritative)', () => {
+    expect(TEAM_CAP).toBe(5);
+  });
+
+  it('teamSlotId is 1-indexed and stable across the cap', () => {
+    expect(teamSlotId(0)).toBe('t1');
+    expect(teamSlotId(4)).toBe('t5');
+    expect(Array.from({ length: TEAM_CAP }, (_, i) => teamSlotId(i))).toEqual(['t1', 't2', 't3', 't4', 't5']);
+  });
+
+  it('teamSlotName interpolates the 1-indexed slot number into the localized template', () => {
+    expect(teamSlotName(0)).toBe('队伍 1');
+    expect(teamSlotName(4)).toBe('队伍 5');
   });
 });

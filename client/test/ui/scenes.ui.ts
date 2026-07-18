@@ -361,7 +361,6 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         onReplaySiege() {},
         onOpenCity() {},
         onOpenDefense() {},
-        onOpenTeams() {},
         worldApi: stubWorldApi(),
         worldId: 'world:1:0',
         playerName: 'Tester',

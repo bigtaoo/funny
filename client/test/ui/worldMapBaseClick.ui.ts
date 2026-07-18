@@ -56,7 +56,6 @@ function buildHarness(opts: { me?: PlayerWorldView; mapW?: number; mapH?: number
   const showModal = vi.fn();
   const showToast = vi.fn();
   const closeModal = vi.fn();
-  const openTrainPanel = vi.fn();
   const showDeployDialog = vi.fn();
 
   const ctx = {
@@ -74,9 +73,8 @@ function buildHarness(opts: { me?: PlayerWorldView; mapW?: number; mapH?: number
       worldId: WORLD_ID,
       onOpenCity: vi.fn(),
       onOpenDefense: vi.fn(),
-      onOpenTeams: vi.fn(),
     },
-    panels: { showModal, showToast, closeModal, openTrainPanel, showDeployDialog },
+    panels: { showModal, showToast, closeModal, showDeployDialog },
     net: { doJoin: vi.fn(), doAbandon: vi.fn(), confirmWatchtower: vi.fn(), doScout: vi.fn(), showTeamPicker: vi.fn() },
   } as unknown as WorldMapContext;
 
@@ -88,7 +86,7 @@ function buildHarness(opts: { me?: PlayerWorldView; mapW?: number; mapH?: number
   }
 
   const input = new WorldMapInput(ctx);
-  return { ctx, input, showModal, closeModal, openTrainPanel };
+  return { ctx, input, showModal, closeModal };
 }
 
 describe('WorldMapInput.onTileClick — main city hit area (ADR-025 3×3 footprint)', () => {
@@ -113,12 +111,10 @@ describe('WorldMapInput.onTileClick — main city hit area (ADR-025 3×3 footpri
     }
   });
 
-  it('never routes the base tap through Defense/Teams/Train — main-city defense has no manual UI (ADR-041/ADR-026)', () => {
-    const { ctx, input, openTrainPanel } = buildHarness();
+  it('never routes the base tap through Defense — main-city defense has no manual UI (ADR-041/ADR-026)', () => {
+    const { ctx, input } = buildHarness();
     input.onTileClick(ANCHOR.x, ANCHOR.y);
     expect(ctx.cb.onOpenDefense).not.toHaveBeenCalled();
-    expect(ctx.cb.onOpenTeams).not.toHaveBeenCalled();
-    expect(openTrainPanel).not.toHaveBeenCalled();
   });
 
   it('clicking a tile outside the base footprint (but still mine) falls through to the generic mine-tile menu', () => {

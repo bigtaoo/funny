@@ -39,7 +39,6 @@ import { FamilyScene, type FamilySceneCallbacks } from './scenes/FamilyScene';
 import { SectScene, type SectSceneCallbacks, type SectSceneView } from './scenes/SectScene';
 import { AuctionScene, type AuctionSceneCallbacks } from './scenes/AuctionScene';
 import { DefenseEditorScene, type DefenseEditorCallbacks } from './scenes/DefenseEditorScene';
-import { TeamsScene, type TeamsCallbacks } from './scenes/TeamsScene';
 import { DeckBuilderScene, type DeckBuilderCallbacks } from './scenes/DeckBuilderScene';
 import { CityScene, type CitySceneCallbacks } from './scenes/CityScene';
 import { DailyScene, type DailyCallbacks } from './scenes/DailyScene';
@@ -313,11 +312,6 @@ class PixiAppViews implements AppViews {
   showDefenseEditor(cb: DefenseEditorCallbacks): void {
     this.leaveLobby();
     this.manager.goto(new DefenseEditorScene(this.layout, this.input, cb));
-  }
-
-  showTeams(cb: TeamsCallbacks): void {
-    this.leaveLobby();
-    this.manager.goto(new TeamsScene(this.layout, this.input, cb));
   }
 
   showCity(cb: CitySceneCallbacks): void {

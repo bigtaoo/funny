@@ -55,8 +55,6 @@ export interface Nav {
   goWorldMap(worldApi: WorldApiClient, worldId: string): void;
   goSiegeReplay(worldApi: WorldApiClient, worldId: string, siegeId: string): Promise<void>;
   goDefenseEditor(worldApi: WorldApiClient, worldId: string, tileKey: string): void;
-  goTeams(worldApi: WorldApiClient, worldId: string): void;
-  goTeamEditor(worldApi: WorldApiClient, worldId: string, teamId: string, teamName: string): void;
   goCity(worldApi: WorldApiClient, worldId: string): void;
   goFamilyHub(worldApi: WorldApiClient, worldId: string, onExit?: () => void): void;
   goSectHub(worldApi: WorldApiClient, worldId: string, onExit?: () => void): void;
