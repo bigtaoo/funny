@@ -92,6 +92,15 @@ interface Slot {
 export class Room {
   phase: number = RoomPhase.WAITING;
   private slots: Slot[] = [];
+  /**
+   * Immutable identity roster (side -> accountId), captured once per side in addPlayer and never
+   * shrunk. `slots` is mutated by onDisconnect's "already reported -> removeSlot" path (a same-tick
+   * finish racing its own socket teardown is normal, not abnormal) — endMatch's report to meta must
+   * not read `slots` for player identities, or the side that disconnected right after reporting its
+   * result silently vanishes from the report and ranked settlement gets skipped with no error (the
+   * `if (winner && loser)` guard in meta's matchReport.ts just no-ops).
+   */
+  private readonly roster: { side: number; accountId: string }[] = [];
 
   private curFrame = START_FRAME;
   private pending: SideCmd[] = [];
@@ -134,6 +143,7 @@ export class Room {
     if (this.phase >= RoomPhase.IN_MATCH) return; // match already started; new connections go through resume
     if (this.hasSide(conn.side)) return;
     this.slots.push({ side: conn.side, accountId: conn.accountId, name, publicId, opponentTitle, decks, conn });
+    this.roster.push({ side: conn.side, accountId: conn.accountId });
     if (this.slots.length === 2) {
       this.launch();
     } else if (!this.launchTimer) {
@@ -358,7 +368,7 @@ export class Room {
       reason: opts.reason,
       winnerSide: opts.winnerSide,
       hashOk: opts.hashOk,
-      players: this.slots.map((s) => ({ side: s.side, accountId: s.accountId })),
+      players: this.roster,
       results: [...this.results.entries()].map(([side, r]) => ({
         side,
         stateHash: r.hash,

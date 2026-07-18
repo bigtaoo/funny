@@ -479,6 +479,7 @@ POST /internal/match/report  (内部密钥)
 - meta 收后：**比对 hash + winner_side**（一致才认；不一致 `mismatch` 作废，ranked 不动 ELO）→ `ranked` 算 ELO 写 `saves.pvp`（单文档原子更新）→ 写 `matches`（内嵌 `replay` / 大局转 `replayRef`）。
 - **friendly 正常结束** `winner_side` 由客户端模拟权威决定（meta 不复算，归档 `winner` 可记 -1 或采信一致上报）；**掉线/认输**由 game 直接判对手胜并在上报里标明，meta 据此结算。
 - meta 暂不可用 → game 端**排队重试**（M16 的隔离收益：进行中的对局与结果上报都不依赖 meta 实时在线）。
+- **`players` 身份名单必须来自不可变 roster，不能读 `Room.slots`**（2026-07-18 修复的回归）：一方提交完 `reportResult` 后立刻断开 socket 是常态（机器人几乎总是这样，真人客户端也可能抢跑），`onDisconnect` 的"已上报→摘除 slot"分支会把它从 `slots` 里删掉；若 `endMatch` 上报时直接读 `slots.map(...)`，断线的一方就从 `players` 里彻底消失。meta 那边 `if (winner && loser)` 找不到缺的一方就**静默跳过**结算，不报错——ranked 局大多数（凡对手断线快于己方）都拿不到 ELO。修复：`Room` 维护一份 `addPlayer` 时写入、永不删除的 `roster`，`endMatch` 的 `players` 字段读这份 roster。
 
 ### 8.4 gateway 控制面 WS（M20，玩家公开门面）
 

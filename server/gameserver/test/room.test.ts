@@ -169,6 +169,23 @@ describe('Room', () => {
     expect(reports).toHaveLength(1);
   });
 
+  /**
+   * Regression coverage (2026-07-18): a side that reports its result and then immediately closes its
+   * socket (bots do this routinely; a human's client can too, racing its own teardown) used to vanish
+   * from the reported `players` list — onDisconnect's "already reported" branch removed it from `slots`,
+   * which endMatch's report used directly. meta's settleElo silently no-ops without a full pair of
+   * players (no error logged), so ranked matches against a fast-disconnecting opponent never got ELO.
+   */
+  it('side disconnects right after reporting its own result → report.players still has both sides', () => {
+    startMatch();
+    room.reportResult(1, 'H', 0);
+    room.onDisconnect(1, asConn(c1)); // side 1 tears down its socket right after reporting
+    room.reportResult(0, 'H', 0);
+
+    expect(reports).toHaveLength(1);
+    expect(reports[0]!.players.map((p) => p.accountId).sort()).toEqual(['acc-0', 'acc-1']);
+  });
+
   it('embedded replay frames match non-empty metronome frame log', () => {
     startMatch();
     room.submitCmd(0, new Uint8Array([7]));
