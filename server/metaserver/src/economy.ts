@@ -31,14 +31,26 @@ export interface OverflowSummary {
   equipCompensatedCoins: number;
 }
 
-/** Mark each result as duplicate or not (compared against current inventory + already granted in this batch; used by the client for loot-box display). */
+/**
+ * Mark each result as duplicate or not (compared against current inventory + already granted in
+ * this batch; used by the client for loot-box display). Character cards are routed to `cardInv`
+ * on delivery (not `inventory.skins`), so they're checked against `ownedCardDefIds` instead —
+ * otherwise a card already owned (at any level) would still show the NEW badge every draw.
+ */
 export function markDuplicates(
   ownedSkins: string[],
+  ownedCardDefIds: string[],
   results: GachaResultEntry[],
 ): { newSkins: string[]; marked: { itemId: string; rarity: Rarity; duplicate: boolean }[] } {
   const owned = new Set(ownedSkins);
+  const ownedCards = new Set(ownedCardDefIds);
   const newSkins: string[] = [];
   const marked = results.map((r) => {
+    if (CARD_DEFS[r.itemId]) {
+      const duplicate = ownedCards.has(r.itemId);
+      if (!duplicate) ownedCards.add(r.itemId);
+      return { itemId: r.itemId, rarity: r.rarity, duplicate };
+    }
     const duplicate = owned.has(r.itemId);
     if (!duplicate) {
       owned.add(r.itemId);
@@ -258,7 +270,7 @@ export async function deliverLootBox(
     }
   }
 
-  const { newSkins } = markDuplicates(owned, skinResults);
+  const { newSkins } = markDuplicates(owned, [], skinResults);
   const hasMixed = Object.keys(materialInc).length > 0 || Object.keys(equipInstances).length > 0;
   const save = await deliverGrant(
     cols, accountId, orderId, newSkins, coinsAfter, pityPatch, now,
