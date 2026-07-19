@@ -55,10 +55,8 @@ export interface CardInstance {
   id: string;
   /** Card definition id — references CARD_DEFS[defId] in @nw/shared/cards (e.g. 'lichuang', 'max'). */
   defId: string;
-  /** Card level 1–9. Increases via the feed system (CHARACTER_CARDS_DESIGN §3). */
+  /** Card level 1–9. Increases via fusion (CHARACTER_CARDS_DESIGN §3): 5 same-level same-faction materials → +1 level. */
   level: number;
-  /** Accumulated XP within the current level (resets to 0 on level-up). */
-  xp: number;
   /** Per-slot equipped item instance ids (weapon/armor/trinket → equipmentInstanceId). */
   gear: GearSlotMap;
   /** Locked cards cannot be used as feed material (CC4); prevents accidental consumption. */
@@ -179,7 +177,7 @@ export interface SaveData {
   cardInv: Record<string, CardInstance>; // instanceId → CardInstance; max 150 entries
 
   // —— Roster/inventory-full overflow mail counters (CHARACTER_CARDS_DESIGN §4 / EQUIPMENT_DESIGN §3.3). ——
-  // While cardInv/equipmentInv stays at its cap, the first INV_FULL_MAIL_COUNT overflow items per type are
+  // While cardInv/equipmentInv stays at its cap, the first CARD_INV_OVERFLOW_BUFFER overflow items per type are
   // mailed as real instances instead of coin-compensated; these counters track how many have been mailed
   // since the inventory last had free space. Reset to 0 the moment a grant call observes room again.
   // Absent in old saves → treated as 0 (lazy default, no migration).

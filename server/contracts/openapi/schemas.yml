@@ -236,17 +236,16 @@ schemas:
   # —— Hero Roster card instance (CC-1/CC-2, CHARACTER_CARDS_DESIGN §2.2) ——
   CardInstance:
     type: object
-    required: [id, defId, level, xp, gear, locked]
+    required: [id, defId, level, gear, locked]
     properties:
       id: { type: string, description: Unique instance id (e.g. 'card_a1b2c3') }
       defId: { type: string, description: Card definition id (references CARD_DEFS) }
       level: { type: integer, minimum: 1, maximum: 9 }
-      xp: { type: integer, minimum: 0, description: Accumulated XP within the current level }
       gear:
         type: object
         additionalProperties: { type: string }
         description: Per-slot equipped equipment instance ids (slot→equipmentInstanceId)
-      locked: { type: boolean, description: Locked cards cannot be used as feed material }
+      locked: { type: boolean, description: Locked cards cannot be used as fusion material }
 
   # —— Client sync patch (PUT /save only accepts these fields, §2.2) ——
   # From PVE_INTEGRITY_PLAN §8 onward, progress/materials/pveUpgrades become server-authoritative

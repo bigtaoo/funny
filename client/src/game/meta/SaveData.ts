@@ -42,10 +42,8 @@ export interface CardInstance {
   id: string;
   /** Card definition id — references CARD_DEFS[defId] (e.g. 'lichuang', 'max'). */
   defId: string;
-  /** Card level 1–9. Increases via the feed system (CHARACTER_CARDS_DESIGN §3). */
+  /** Card level 1–9. Increases via fusion (CHARACTER_CARDS_DESIGN §3): 5 same-level same-faction materials → +1 level. */
   level: number;
-  /** Accumulated XP within the current level (resets to 0 on level-up). */
-  xp: number;
   /** Per-slot equipped item instance ids (weapon/armor/trinket → equipmentInstanceId). */
   gear: GearSlotMap;
   /** Locked cards cannot be used as feed material (CC4). */

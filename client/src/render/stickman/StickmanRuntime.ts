@@ -59,6 +59,8 @@ export class StickmanRuntime {
   private currentClip:     AnimationClip | null = null;
   private currentClipName  = '';
   private time             = 0;
+  /** See {@link setAttackInterval}. */
+  private attackIntervalSec = 0;
 
   constructor(asset: TaoAsset, options: StickmanOptions = {}) {
     this.asset        = asset;
@@ -267,14 +269,34 @@ export class StickmanRuntime {
     } else if (this.currentClip && !this.currentClip.loop && this.time >= this.currentClip.duration) {
       // A non-loop clip (e.g. 'attack') has finished but the state still holds —
       // replay it so a unit attacking continuously keeps swinging instead of
-      // freezing on the final attack pose.
+      // freezing on the final attack pose. With attackIntervalSec set (see
+      // setAttackInterval()) each playthrough already takes exactly one real
+      // attack interval of wall-clock time, so this loop point lines up with
+      // the unit's actual next attack.
       this.time = 0;
     }
+  }
+
+  /**
+   * Seconds the unit's real attack cycle takes (its effective attack interval),
+   * or 0 to play the clip at its own authored duration. Set from the unit's
+   * live combat stats (`UnitView.sync`) so the 'attack' clip is time-scaled to
+   * finish exactly one playthrough per real attack, instead of looping at a
+   * fixed authored duration that has no relation to how often the unit
+   * actually swings (see update()).
+   */
+  setAttackInterval(seconds: number): void {
+    this.attackIntervalSec = seconds;
   }
 
   /** Duration (seconds) of the currently-playing clip, or 0 when none is set. */
   get currentDuration(): number {
     return this.currentClip?.duration ?? 0;
+  }
+
+  /** Elapsed time (seconds) into the currently-playing clip. */
+  get currentTime(): number {
+    return this.time;
   }
 
   /**
@@ -307,7 +329,15 @@ export class StickmanRuntime {
   update(dt: number): void {
     if (!this.currentClip) return;
 
-    this.time += dt;
+    // Stretch/compress the 'attack' clip so one playthrough takes exactly the
+    // unit's real attack interval, e.g. a 1 s attack interval plays the swing
+    // over 1 s regardless of the art's authored clip duration. Other clips
+    // (walk/idle/death) are unaffected — they have no real-world cadence to match.
+    let rate = 1;
+    if (this.currentClipName === 'attack' && this.attackIntervalSec > 0 && this.currentClip.duration > 0) {
+      rate = this.currentClip.duration / this.attackIntervalSec;
+    }
+    this.time += dt * rate;
     if (this.currentClip.loop) {
       const dur = this.currentClip.duration;
       if (dur > 0) this.time = this.time % dur;

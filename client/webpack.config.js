@@ -69,6 +69,12 @@ module.exports = (env, argv) => {
         // TS source via ts-loader. client's first cross-boundary bridge (§16.7).
         '@nw/engine$': path.resolve(__dirname, '../server/engine/src/index.ts'),
         '@nw/engine': path.resolve(__dirname, '../server/engine/src'),
+        // @nw/shared/cards = card catalogue + pure progression constants (cards.ts has zero
+        // runtime imports — only `import type` — so it's browser-safe on its own). Lets
+        // client/src/game/meta/cardDefs.ts import the real inventory-cap/level constants
+        // instead of maintaining a second copy (CHARACTER_CARDS_DESIGN §2/§3). Must precede
+        // the general '@nw/shared' entry below (more specific alias wins).
+        '@nw/shared/cards': path.resolve(__dirname, '../server/shared/src/cards.ts'),
         // @nw/shared = browser-safe slice of server/shared. Points directly to slg/index.ts
         // (pure/deterministic, no Node.js built-ins) to avoid pulling in password/logger
         // which import node:crypto / node:fs / node:path and break webpack browser builds.

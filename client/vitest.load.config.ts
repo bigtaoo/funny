@@ -12,7 +12,14 @@ import { defineConfig } from 'vitest/config';
 //
 // Named *.load.ts so neither `npm test` nor `npm run test:e2e` picks it up.
 export default defineConfig({
-  resolve: { alias: { '@nw/engine': path.resolve(__dirname, '../server/engine/src') } },
+  resolve: {
+    alias: {
+      '@nw/engine': path.resolve(__dirname, '../server/engine/src'),
+      // Card catalogue constants (roster cap / fusion) — mirrors vitest.e2e.config.ts.
+      '@nw/shared/cards': path.resolve(__dirname, '../server/shared/src/cards.ts'),
+      '@nw/shared': path.resolve(__dirname, '../server/shared/src/index.ts'),
+    },
+  },
   test: {
     include: ['test/load/**/*.load.ts'],
     environment: 'node',

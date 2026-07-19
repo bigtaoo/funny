@@ -199,11 +199,11 @@
 
 # —— CC-2 Hero Roster ————————————————————————————————————————————————————————
 
-/cards/feed:
+/cards/fuse:
   post:
-    operationId: cardsFeed
+    operationId: cardsFuse
     tags: [save]
-    summary: Feed material cards into a target card to gain XP and level up (CHARACTER_CARDS_DESIGN §3.3, CC-2). Same-faction required; locked materials rejected. idempotencyKey prevents double-consumption
+    summary: Fuse exactly 5 same-faction same-level material cards into a target card, raising it one level (CHARACTER_CARDS_DESIGN §3, fusion redesign, CC-2). Locked materials rejected; idempotencyKey prevents double-consumption
     security: [{ bearerAuth: [] }]
     requestBody:
       required: true
@@ -217,7 +217,9 @@
               materialIds:
                 type: array
                 items: { type: string }
-                description: CardInstance ids to consume as feed material (same faction; must not be locked)
+                minItems: 5
+                maxItems: 5
+                description: Exactly 5 CardInstance ids to consume as fusion material (same faction, same level as target; must not be locked)
               idempotencyKey: { type: string, description: Client-generated idempotency key; prevents double-consumption on retry }
     responses:
       '200':
@@ -231,10 +233,9 @@
                 ok: { type: boolean, enum: [true] }
                 data:
                   type: object
-                  required: [card, levelsGained, save]
+                  required: [card, save]
                   properties:
                     card: { $ref: '#/components/schemas/CardInstance' }
-                    levelsGained: { type: integer, minimum: 0 }
                     save: { $ref: '#/components/schemas/SaveData' }
       '400': { $ref: '#/components/responses/ErrorResp' }
       '401': { $ref: '#/components/responses/ErrorResp' }

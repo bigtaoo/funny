@@ -668,7 +668,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/cards/feed": {
+    "/cards/fuse": {
         parameters: {
             query?: never;
             header?: never;
@@ -677,8 +677,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Feed material cards into a target card to gain XP and level up (CHARACTER_CARDS_DESIGN §3.3, CC-2). Same-faction required; locked materials rejected. idempotencyKey prevents double-consumption */
-        post: operations["cardsFeed"];
+        /** Fuse exactly 5 same-faction same-level material cards into a target card, raising it one level (CHARACTER_CARDS_DESIGN §3, fusion redesign, CC-2). Locked materials rejected; idempotencyKey prevents double-consumption */
+        post: operations["cardsFuse"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1495,13 +1495,11 @@ export interface components {
             /** @description Card definition id (references CARD_DEFS) */
             defId: string;
             level: number;
-            /** @description Accumulated XP within the current level */
-            xp: number;
             /** @description Per-slot equipped equipment instance ids (slot→equipmentInstanceId) */
             gear: {
                 [key: string]: string;
             };
-            /** @description Locked cards cannot be used as feed material */
+            /** @description Locked cards cannot be used as fusion material */
             locked: boolean;
         };
         SyncPatch: {
@@ -3192,7 +3190,7 @@ export interface operations {
             409: components["responses"]["ErrorResp"];
         };
     };
-    cardsFeed: {
+    cardsFuse: {
         parameters: {
             query?: never;
             header?: never;
@@ -3204,7 +3202,7 @@ export interface operations {
                 "application/json": {
                     /** @description CardInstance id of the card to level up */
                     targetId: string;
-                    /** @description CardInstance ids to consume as feed material (same faction; must not be locked) */
+                    /** @description Exactly 5 CardInstance ids to consume as fusion material (same faction, same level as target; must not be locked) */
                     materialIds: string[];
                     /** @description Client-generated idempotency key; prevents double-consumption on retry */
                     idempotencyKey: string;
@@ -3223,7 +3221,6 @@ export interface operations {
                         ok: true;
                         data: {
                             card: components["schemas"]["CardInstance"];
-                            levelsGained: number;
                             save: components["schemas"]["SaveData"];
                         };
                     };

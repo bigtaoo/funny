@@ -604,21 +604,21 @@ value(material) = DUPE_REFUND_COINS[该材料所在 gacha 稀有度档] / GACHA_
 
 > `troopCap(card) = troopCapBase + troopCapGrowth × level`。Tao 三人 = 现有兵种具名版，属性不变（CHARACTER_DESIGN §1 铁律），故 NO_SKILL。
 
-### 15.2 升级曲线（XP，`cards.ts` `LEVEL_CUMULATIVE_XP`）
+### 15.2 升级：融合（`cards.ts`，2026-07-19 由连续 XP 曲线重设计）
 
-- 公式：`cost(n→n+1) = 5^n`（1-indexed，L1→L2 = 5）
-- 累计：L2=5 / L3=30 / L4=155 / L5=780 / L6=3 905 / L7=19 530 / L8=97 655 / **L9≈488 280**
-- 喂卡效率：**1 级卡固定 1 点 XP 不打折**（基础货币单位）；**2 级及以上卡打 8 折**（同阵营任意卡）
-- `feedXp(card) = card.level <= 1 ? 1 + card.xp : floor((LEVEL_CUMULATIVE_XP[level] + card.xp) × 0.8)`
-- `receiverXp += feedXp(material)`（折损已内含在 `feedXp` 中，不再额外乘系数）
+- 规则：目标卡 + **5 张同阵营、同等级**材料卡一次性融合 → 目标 `level + 1`；材料必须严格等于目标当前等级，不支持混级/打折顶替
+- `FUSION_MATERIAL_COUNT` = 5，`MAX_CARD_LEVEL` = 9（原散落各处的字面量 9 收拢为命名常量）
+- `applyFusion(target) = target.level >= MAX_CARD_LEVEL ? target : { ...target, level: target.level + 1 }`
+- 旧版连续 XP 曲线（`cost(n→n+1) = 5^n`，L9 累计约 488 280 XP）与 `feedXp()`/`LEVEL_CUMULATIVE_XP`/`CardInstance.xp` 字段已移除；总卡量需求量级不变（材料仍需逐级独立融合，等同于原 `5^level` 曲线），改动的是交互体验（离散凑 5 张 vs 连续攒经验条），不是经济投放节奏
 
 ### 15.3 背包 / 补偿（`cards.ts`）
 
 | 参数 | 常量 | 默认值 | 说明 |
 |---|---|---|---|
-| 卡背包硬上限 | `CARD_INV_CAP` | 150 | 独立于装备背包 300 |
+| 卡背包硬上限 | `CARD_INV_CAP` | 500（2026-07-19 由 150 扩容） | 独立于装备背包 300 |
 | 背包满补偿 | `CARD_FULL_COMPENSATION_COINS` | 10 coins/张 | 抽卡/通关溢出转 coin sink |
-| 喂卡幂等 TTL | `CARD_FEED_IDEM_TTL_SEC` | 7 天 | 同装备幂等纪律 |
+| 预警阈值 + 溢出邮寄上限 | `CARD_INV_OVERFLOW_BUFFER` | 10（2026-07-19 合并自 `CARD_INV_WARN`+`INV_FULL_MAIL_COUNT` 两个常量） | 剩余槽位 ≤10 时 UI 预警；满仓溢出时最多邮寄 10 张实体卡，其余转 coin |
+| 融合幂等 TTL | `CARD_FEED_IDEM_TTL_SEC` | 7 天 | 同装备幂等纪律 |
 
 ### 15.4 SLG 兵力 / 受伤（`slg.ts`）
 

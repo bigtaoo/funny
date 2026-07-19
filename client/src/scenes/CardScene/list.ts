@@ -12,7 +12,7 @@ import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubT
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
 import type { CardSLGState } from '../../net/WorldApiClient';
-import { CARD_DEFS, CARD_INV_CAP, CARD_INV_WARN, troopCap, cardPower } from '../../game/meta/cardDefs';
+import { CARD_DEFS, CARD_INV_CAP, CARD_INV_OVERFLOW_BUFFER, troopCap, cardPower } from '../../game/meta/cardDefs';
 import {
   type Constructor, type CardSceneBaseCtor,
   CARD_CELL_H, CARD_CELL_W_TARGET, sortCards, injuryCountdown,
@@ -62,7 +62,7 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       tearDownChildren(this.headerOverlayLayer);
       const save = this.cb.getSave();
       const count = Object.keys(save.cardInv ?? {}).length;
-      const warn = count >= CARD_INV_WARN;
+      const warn = count >= CARD_INV_CAP - CARD_INV_OVERFLOW_BUFFER;
       const full = count >= CARD_INV_CAP;
       // Keep the coin + capacity readout at a compact absolute size (matches EquipmentScene, its
       // [Cards|Equipment] peer) rather than scaling it up with the taller unified header.

@@ -10,7 +10,7 @@ import { buildEquipIcon } from '../../render/equipmentAtlas';
 import { buildFactionIcon, FACTION_COLOR } from '../../render/factionIcon';
 import { RARITY_COLOR } from '../EquipmentScene/base';
 import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
-import { CARD_DEFS, xpToNextLevel, troopCap, cardPower } from '../../game/meta/cardDefs';
+import { CARD_DEFS, MAX_CARD_LEVEL, FUSION_MATERIAL_COUNT, fusionMaterialCandidates, troopCap, cardPower } from '../../game/meta/cardDefs';
 import { skinsForUnitType } from '../../game/meta/skinDefs';
 import type { UnitType } from '../../game/types';
 import {
@@ -45,11 +45,12 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
       const inTeam = !!state?.teamId;
       const cap = def ? troopCap(card) : 0;
       const power = Math.round(cardPower(card, save.equipmentInv ?? {}));
-      const maxLevel = card.level >= 9;
+      const maxLevel = card.level >= MAX_CARD_LEVEL;
 
-      // Compute XP progress bar fraction.
-      const xpNeeded = maxLevel ? 1 : xpToNextLevel(card.level);
-      const xpFrac = maxLevel ? 1 : Math.min(1, card.xp / xpNeeded);
+      // Fusion-readiness: how many eligible (same faction, same level, unlocked) material cards
+      // are currently owned, out of the FUSION_MATERIAL_COUNT needed for the next fusion.
+      const materialsOwned = maxLevel ? 0 : fusionMaterialCandidates(card, save.cardInv ?? {}).length;
+      const materialsFrac = maxLevel ? 1 : Math.min(1, materialsOwned / FUSION_MATERIAL_COUNT);
 
       // Natural (unscaled) content size — everything below is laid out in this local frame.
       const mw = Math.min(380, w - 24);
@@ -202,20 +203,20 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
       panelRoot.addChild(skillLine);
       cy += 28;
 
-      // XP progress bar
+      // Fusion-readiness bar: owned same-level same-faction materials toward FUSION_MATERIAL_COUNT.
       const barW = mw - 24;
       const barH = 10;
       const barBg = new PIXI.Graphics();
       barBg.beginFill(0xe0ddd4).drawRoundedRect(mx + 12, cy, barW, barH, 4).endFill();
       panelRoot.addChild(barBg);
-      if (!maxLevel && xpFrac > 0) {
+      if (!maxLevel && materialsFrac > 0) {
         const barFill = new PIXI.Graphics();
-        barFill.beginFill(C.accent).drawRoundedRect(mx + 12, cy, Math.max(4, barW * xpFrac), barH, 4).endFill();
+        barFill.beginFill(C.accent).drawRoundedRect(mx + 12, cy, Math.max(4, barW * materialsFrac), barH, 4).endFill();
         panelRoot.addChild(barFill);
       }
       const xpLbl = maxLevel
         ? txt(t('roster.maxLevel'), FS.micro, C.gold, true)
-        : txt(`${card.xp} / ${xpNeeded} XP`, FS.micro, C.mid);
+        : txt(`${t('roster.fuseMaterials')} ${materialsOwned} / ${FUSION_MATERIAL_COUNT}`, FS.micro, C.mid);
       xpLbl.anchor.set(0.5, 0); xpLbl.x = mx + mw / 2; xpLbl.y = cy + 12;
       panelRoot.addChild(xpLbl);
       cy += 26;
@@ -235,9 +236,9 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
         ? { label: t('roster.unlock'), fill: 0xeeeedd, stroke: C.mid, on: lockOn, fn: () => void this.doSetLock(card.id, false) }
         : { label: t('roster.lock'), fill: 0xeeeedd, stroke: C.mid, on: lockOn, fn: () => void this.doSetLock(card.id, true) });
 
-      // Feed
-      const feedOn = !this.bt.busy && !maxLevel;
-      buttons.push({ label: t('roster.feedBtn'), fill: C.dark, stroke: C.gold, on: feedOn, fn: () => this.openFeedSelect(card) });
+      // Fuse
+      const fuseOn = !this.bt.busy && !maxLevel;
+      buttons.push({ label: t('roster.fuseBtn'), fill: C.dark, stroke: C.gold, on: fuseOn, fn: () => this.openFuseSelect(card) });
 
       // Auction (requires all gear slots empty)
       const allGearEmpty = !card.gear.weapon && !card.gear.armor && !card.gear.trinket;

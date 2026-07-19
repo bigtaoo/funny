@@ -205,7 +205,7 @@ describe('AuctionScene — listableEquipment() / listableCards()', () => {
     return { id, defId: 'sword_basic', rarity: 'common', level: 0, affixes: [], ...opts };
   }
   function card(id: string, opts: Partial<CardInstance> = {}): CardInstance {
-    return { id, defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false, ...opts };
+    return { id, defId: 'lichuang', level: 1, gear: {}, locked: false, ...opts };
   }
 
   function saveWith(equipmentInv: Record<string, EquipmentInstance>, cardInv: Record<string, CardInstance>): SaveData {

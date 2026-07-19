@@ -100,7 +100,7 @@ function buildEquipSave(): SaveData {
   save.wallet.coins = 100000;
   save.materials = { scrap: 999, lead: 999, binding: 999 };
   save.cardInv = {
-    card1: { id: 'card1', defId: 'lichuang', level: 1, xp: 0, gear: { weapon: 'eqEquippedFine' }, locked: false },
+    card1: { id: 'card1', defId: 'lichuang', level: 1, gear: { weapon: 'eqEquippedFine' }, locked: false },
   };
   save.equipmentInv = {
     eqEquippedFine: { id: 'eqEquippedFine', defId: 'wp_pen', rarity: 'fine', level: 0, affixes: [{ id: 'm_atk', value: 20 }] },

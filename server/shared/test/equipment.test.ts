@@ -22,6 +22,7 @@ import {
   REFORGE_MATERIAL_RARITY,
   reforgeCoinCost,
   EQUIP_AUCTION_REF_PRICE_BY_RARITY,
+  equipEnhanceExpectedCost,
   type EquipRarity,
 } from '../src/equipment';
 
@@ -336,5 +337,36 @@ describe('EQUIP_AUCTION_REF_PRICE_BY_RARITY', () => {
         EQUIP_AUCTION_REF_PRICE_BY_RARITY[RARITIES[i - 1]!],
       );
     }
+  });
+});
+
+describe('equipEnhanceExpectedCost', () => {
+  const MAT_VALUE = { scrap: 10, lead: 30, binding: 80 };
+
+  it('is 0 at +0 (no enhancement invested yet)', () => {
+    expect(equipEnhanceExpectedCost(0, MAT_VALUE)).toBe(0);
+  });
+
+  it('strictly increases with level (every attempt has a real coin+material cost)', () => {
+    let prev = 0;
+    for (let lv = 1; lv <= EQUIP_MAX_LEVEL; lv++) {
+      const cur = equipEnhanceExpectedCost(lv, MAT_VALUE);
+      expect(cur).toBeGreaterThan(prev);
+      prev = cur;
+    }
+  });
+
+  it('+9 expected cost dwarfs an epic bare-item reference price (the bug this fixes: system ceiling < enhancement sunk cost)', () => {
+    const cost9 = equipEnhanceExpectedCost(EQUIP_MAX_LEVEL, MAT_VALUE);
+    expect(cost9).toBeGreaterThan(EQUIP_AUCTION_REF_PRICE_BY_RARITY.epic * 5);
+  });
+
+  it('unknown materials are treated as free, not NaN/throw', () => {
+    expect(Number.isFinite(equipEnhanceExpectedCost(9, {}))).toBe(true);
+  });
+
+  it('clamps out-of-range levels into the valid band', () => {
+    expect(equipEnhanceExpectedCost(-5, MAT_VALUE)).toBe(0);
+    expect(equipEnhanceExpectedCost(999, MAT_VALUE)).toBe(equipEnhanceExpectedCost(EQUIP_MAX_LEVEL, MAT_VALUE));
   });
 });

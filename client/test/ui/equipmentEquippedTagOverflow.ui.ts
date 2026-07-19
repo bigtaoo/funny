@@ -66,7 +66,7 @@ function buildSave(): SaveData {
   save.materials = { scrap: 4, lead: 53, binding: 1 };
   save.cardInv = {
     card1: {
-      id: 'card1', defId: 'lichuang', level: 1, xp: 0, locked: false,
+      id: 'card1', defId: 'lichuang', level: 1, locked: false,
       gear: { weapon: 'eqWeapon', armor: 'eqArmor', trinket: 'eqTrinket' },
     },
   };

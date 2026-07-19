@@ -1,12 +1,18 @@
 // Character card definitions — client-side mirror (CHARACTER_CARDS_DESIGN §2.1/§3).
 //
-// Mirror discipline: same as equipmentDefs.ts. No @nw/shared import (pulls in mongodb/jwt);
-// only pure data needed for UI preview. CardDef.unitType values must match @nw/engine UnitType enum.
+// CardDef catalogue mirror discipline: same as equipmentDefs.ts (no @nw/shared barrel import —
+// pulls in mongodb/jwt). CardDef.unitType values must match @nw/engine UnitType enum.
+// Inventory-cap/level constants are NOT mirrored — imported from '@nw/shared/cards', which
+// aliases directly to server/shared/src/cards.ts (zero runtime imports, browser-safe on its
+// own; see webpack.config.js / vitest.config.ts / tsconfig.json '@nw/shared/cards' alias).
 // Numerical calibration: DRAFT values — authoritative destination is ECONOMY_NUMBERS §6.
 
 import type { CardInstance } from './SaveData';
 import type { EquipmentInstance } from './SaveData';
 import type { EngineCardInstance, UnitType } from '@nw/engine';
+import { CARD_INV_CAP, CARD_INV_OVERFLOW_BUFFER, MAX_CARD_LEVEL, FUSION_MATERIAL_COUNT } from '@nw/shared/cards';
+
+export { CARD_INV_CAP, CARD_INV_OVERFLOW_BUFFER, MAX_CARD_LEVEL, FUSION_MATERIAL_COUNT };
 
 export type Faction = 'tao' | 'anna';
 
@@ -37,43 +43,25 @@ export function getCardDef(defId: string): CardDef | undefined {
   return CARD_DEFS[defId];
 }
 
-/** Hard cap on CardInstance count per account (CHARACTER_CARDS_DESIGN §2). */
-export const CARD_INV_CAP = 150;
-
-/** Warn threshold: show cap warning when > this many cards are held. */
-export const CARD_INV_WARN = 140;
-
-export const LEVEL_CUMULATIVE_XP: readonly number[] = [
-  0,       // [0] unused
-  0,       // [1] level 1 = starting state
-  5,       // [2] +5
-  30,      // [3] +25
-  155,     // [4] +125
-  780,     // [5] +625
-  3905,    // [6] +3125
-  19530,   // [7] +15625
-  97655,   // [8] +78125
-  488280,  // [9] +390625
-];
-
-/** Total XP value of a card (used as feed input; CHARACTER_CARDS_DESIGN §3.3). */
-export function feedXp(card: CardInstance): number {
-  const level = Math.max(1, Math.min(Math.floor(card.level), 9));
-  return (LEVEL_CUMULATIVE_XP[level] ?? 0) + Math.max(0, card.xp);
-}
-
-/** XP required to advance from current level to next (returns Infinity at max level 9). */
-export function xpToNextLevel(level: number): number {
-  if (level >= 9) return Infinity;
-  const next = Math.pow(5, Math.max(1, level));
-  return next;
+/** Eligible fusion materials for `target`: same faction, unlocked, and at `target`'s current level. */
+export function fusionMaterialCandidates(
+  target: CardInstance,
+  cardInv: Record<string, CardInstance>,
+): CardInstance[] {
+  const def = CARD_DEFS[target.defId];
+  if (!def) return [];
+  return Object.values(cardInv).filter((c) => {
+    if (c.id === target.id || c.locked) return false;
+    const cDef = CARD_DEFS[c.defId];
+    return !!cDef && cDef.faction === def.faction && c.level === target.level;
+  });
 }
 
 /** Troop capacity for a card at a given level. */
 export function troopCap(card: CardInstance): number {
   const def = CARD_DEFS[card.defId];
   if (!def) return 0;
-  const lv = Math.max(1, Math.min(Math.floor(card.level), 9));
+  const lv = Math.max(1, Math.min(Math.floor(card.level), MAX_CARD_LEVEL));
   return def.troopCapBase + def.troopCapGrowth * (lv - 1);
 }
 
@@ -81,7 +69,7 @@ export function troopCap(card: CardInstance): number {
 export function cardPower(card: CardInstance, equipmentInv: Record<string, EquipmentInstance> = {}): number {
   const def = CARD_DEFS[card.defId];
   if (!def) return 0;
-  const lv = Math.max(1, Math.min(Math.floor(card.level), 9));
+  const lv = Math.max(1, Math.min(Math.floor(card.level), MAX_CARD_LEVEL));
   const basePower = (def.powerWeights.hp + def.powerWeights.atk) * 100 * (1 + 0.11 * (lv - 1));
   let equipBonusPct = 0;
   for (const instId of Object.values(card.gear)) {

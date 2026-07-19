@@ -217,7 +217,7 @@ export async function mirrorWalletFrom(
  * commercial order-replay path). Does not mark the order delivered — callers do that
  * themselves (gachaDraw does it fire-and-forget to keep it off the response critical path).
  *
- * Roster/inventory-full overflow (cards ≥150 / equipment ≥300): the first INV_FULL_MAIL_COUNT
+ * Roster/inventory-full overflow (cards ≥500 / equipment ≥300): the first CARD_INV_OVERFLOW_BUFFER
  * overflow items per type (since that inventory last had free space) are mailed to the player as
  * real instances instead of being coin-compensated; the persistent per-account counter lives on
  * save.cardMailOverflowCount / save.equipMailOverflowCount. Returned `overflow` lets gachaDraw
@@ -297,7 +297,7 @@ export async function deliverLootBox(
   }
 
   // Character card delivery (CC-5): grant hero cards after the skin/material/equipment grant lands.
-  // Roster-full overflow: first INV_FULL_MAIL_COUNT go to mail, the rest fall back to coin compensation.
+  // Roster-full overflow: first CARD_INV_OVERFLOW_BUFFER go to mail, the rest fall back to coin compensation.
   let finalSave = save;
   let cardMailed = 0;
   let cardCompensatedCoins = 0;

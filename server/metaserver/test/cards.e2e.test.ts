@@ -1,6 +1,6 @@
-// Hero Roster card backend end-to-end (CC-2, CHARACTER_CARDS_DESIGN §3/§4):
+// Hero Roster card backend end-to-end (CC-2, CHARACTER_CARDS_DESIGN §3, fusion redesign):
 //   New account initialization: 3 starter cards (lichuang/chenshou/suyuan) on first auth
-//   POST /cards/feed: XP transfer + level-up + material removal; idempotency; faction validation; locked rejection
+//   POST /cards/fuse: exactly 5 same-faction same-level materials consumed → target +1 level; idempotency
 //   POST /equipment/equip: equip into CardInstance.gear[slot]; cardInstanceId validation
 // Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
@@ -9,8 +9,8 @@ import {
   type JwtConfig,
   type MongoHandle,
   CARD_DEFS,
-  LEVEL_CUMULATIVE_XP,
-  feedXp,
+  MAX_CARD_LEVEL,
+  FUSION_MATERIAL_COUNT,
 } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
 import type { CommercialClient } from '../dist/commercialClient.js';
@@ -49,13 +49,22 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
   const body = (r: { payload: string }) => JSON.parse(r.payload);
   const auth = () => ({ authorization: `Bearer ${token}` });
 
-  const feed = (targetId: string, materialIds: string[], idempotencyKey: string) =>
+  const fuse = (targetId: string, materialIds: string[], idempotencyKey: string) =>
     app.inject({
       method: 'POST',
-      url: '/cards/feed',
+      url: '/cards/fuse',
       headers: auth(),
       payload: { targetId, materialIds, idempotencyKey },
     });
+
+  /** Directly seeds a CardInstance into save.cardInv (bypassing grantCards) — used to build up
+   * enough same-faction same-level materials for fusion tests beyond the 3 starter cards. */
+  const seedCard = async (id: string, defId: string, level = 1, locked = false): Promise<void> => {
+    await m.collections.saves.updateOne(
+      { _id: accountId },
+      { $set: { [`save.cardInv.${id}`]: { id, defId, level, gear: {}, locked } } },
+    );
+  };
 
   const equip = (slot: string, instanceId: string | null, cardInstanceId: string) =>
     app.inject({
@@ -95,13 +104,12 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
       expect(ids).toHaveLength(3);
     });
 
-    it('starter cards are lichuang/chenshou/suyuan at level 1, xp 0, not locked', async () => {
+    it('starter cards are lichuang/chenshou/suyuan at level 1, not locked', async () => {
       const save = await readSave();
       const defIds = Object.values(save.cardInv ?? {}).map((c) => c.defId).sort();
       expect(defIds).toEqual(['chenshou', 'lichuang', 'suyuan']);
       for (const card of Object.values(save.cardInv ?? {})) {
         expect(card.level).toBe(1);
-        expect(card.xp).toBe(0);
         expect(card.locked).toBe(false);
         expect(card.gear).toEqual({});
       }
@@ -133,84 +141,107 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
     });
   });
 
-  // ── CC-2 §3: Feed cards ─────────────────────────────────────────────────────
-  describe('POST /cards/feed', () => {
+  // ── CC-2 §3: Fuse cards (fusion redesign) ──────────────────────────────────
+  describe('POST /cards/fuse', () => {
     let targetId: string;
-    let materialId: string;
+    let materialIds: string[];
 
     beforeEach(async () => {
-      const ids = await cardIds();
-      // lichuang (infantry) is tao-faction; use two tao cards for same-faction feed
+      // Starter grants only 3 tao cards; fusion needs the target + FUSION_MATERIAL_COUNT (5)
+      // same-level same-faction materials, so seed extras directly.
       const save = await readSave();
       const taoCards = Object.values(save.cardInv!).filter((c) => CARD_DEFS[c.defId]?.faction === 'tao');
       targetId = taoCards[0]!.id;
-      materialId = taoCards[1]!.id;
+      const existingMaterials = taoCards.slice(1).map((c) => c.id); // 2 remaining starters
+      const extraIds = ['seed_m1', 'seed_m2', 'seed_m3'];
+      for (const id of extraIds) await seedCard(id, 'lichuang', 1);
+      materialIds = [...existingMaterials, ...extraIds];
+      expect(materialIds).toHaveLength(FUSION_MATERIAL_COUNT);
     });
 
-    it('feed transfers XP and removes material card', async () => {
-      const matCardBefore = (await readSave()).cardInv![materialId]!;
-      const expectedXp = feedXp(matCardBefore);
-      const r = body(await feed(targetId, [materialId], 'ik-feed-1'));
+    it('fuse consumes exactly 5 materials and raises the target one level', async () => {
+      const before = (await cardById(targetId))!;
+      const r = body(await fuse(targetId, materialIds, 'ik-fuse-1'));
       expect(r.ok).toBe(true);
       expect(r.data.card.id).toBe(targetId);
-      expect(r.data.card.xp).toBe(expectedXp);
-      expect(r.data.save.cardInv[materialId]).toBeUndefined(); // material consumed
+      expect(r.data.card.level).toBe(before.level + 1);
+      for (const id of materialIds) expect(r.data.save.cardInv[id]).toBeUndefined();
     });
 
-    it('feed: XP accumulates; level-up fires when threshold crossed', async () => {
-      // Manually boost material to level 2 (xp needed: 5) so feedXp is non-trivial
-      const matXpNeeded = LEVEL_CUMULATIVE_XP[2]!; // 5 XP to reach level 2
+    it('fuse: fewer than 5 materials → 400 BAD_REQUEST', async () => {
+      const res = await fuse(targetId, materialIds.slice(0, FUSION_MATERIAL_COUNT - 1), 'ik-fuse-few');
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('fuse: material at a different level than the target → 400 BAD_REQUEST', async () => {
       await m.collections.saves.updateOne(
         { _id: accountId },
-        { $set: { [`save.cardInv.${materialId}.level`]: 2, [`save.cardInv.${materialId}.xp`]: 0 } },
+        { $set: { [`save.cardInv.${materialIds[0]}.level`]: 2 } },
       );
-      // feedXp of L2 card = floor(LEVEL_CUMULATIVE_XP[2] * 0.8) = floor(5*0.8) = 4
-      const r = body(await feed(targetId, [materialId], 'ik-feed-lv'));
-      expect(r.data.levelsGained).toBeGreaterThanOrEqual(0); // may or may not level up from 3xp
+      const res = await fuse(targetId, materialIds, 'ik-fuse-lvmismatch');
+      expect(res.statusCode).toBe(400);
     });
 
-    it('feed: cross-faction materials → 400 WRONG_FACTION', async () => {
-      // Seed an anna-faction card (max) as material
+    it('fuse: cross-faction materials → 400 WRONG_FACTION', async () => {
       const annaCardId = 'card_anna_test';
-      await m.collections.saves.updateOne(
-        { _id: accountId },
-        { $set: { [`save.cardInv.${annaCardId}`]: { id: annaCardId, defId: 'max', level: 1, xp: 0, gear: {}, locked: false } } },
-      );
-      const res = await feed(targetId, [annaCardId], 'ik-faction');
+      await seedCard(annaCardId, 'max', 1);
+      const mats = [...materialIds.slice(0, FUSION_MATERIAL_COUNT - 1), annaCardId];
+      const res = await fuse(targetId, mats, 'ik-faction');
       expect(res.statusCode).toBe(400);
       expect(body(res).error.code).toBe('WRONG_FACTION');
     });
 
-    it('feed: locked material → 400 CARD_LOCKED', async () => {
+    it('fuse: locked material → 400 CARD_LOCKED', async () => {
       await m.collections.saves.updateOne(
         { _id: accountId },
-        { $set: { [`save.cardInv.${materialId}.locked`]: true } },
+        { $set: { [`save.cardInv.${materialIds[0]}.locked`]: true } },
       );
-      const res = await feed(targetId, [materialId], 'ik-locked');
+      const res = await fuse(targetId, materialIds, 'ik-locked');
       expect(res.statusCode).toBe(400);
       expect(body(res).error.code).toBe('CARD_LOCKED');
     });
 
-    it('feed: target not found → 404 CARD_NOT_FOUND', async () => {
-      const res = await feed('card_does_not_exist', [materialId], 'ik-notfound');
+    it('fuse: target not found → 404 CARD_NOT_FOUND', async () => {
+      const res = await fuse('card_does_not_exist', materialIds, 'ik-notfound');
       expect(res.statusCode).toBe(404);
     });
 
-    it('feed: material = target → 400 BAD_REQUEST (target cannot be its own material)', async () => {
-      const res = await feed(targetId, [targetId], 'ik-self');
+    it('fuse: material = target → 400 BAD_REQUEST (target cannot be its own material)', async () => {
+      const mats = [targetId, ...materialIds.slice(1)];
+      const res = await fuse(targetId, mats, 'ik-self');
       expect(res.statusCode).toBe(400);
     });
 
-    it('feed: idempotency — second call with same key replays without re-consuming', async () => {
-      const r1 = body(await feed(targetId, [materialId], 'ik-idem'));
+    it('fuse: duplicate material ids → 400 BAD_REQUEST', async () => {
+      const mats = [materialIds[0]!, materialIds[0]!, materialIds[1]!, materialIds[2]!, materialIds[3]!];
+      const res = await fuse(targetId, mats, 'ik-dup');
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('fuse: idempotency — second call with same key replays without re-consuming', async () => {
+      const r1 = body(await fuse(targetId, materialIds, 'ik-idem'));
       expect(r1.ok).toBe(true);
-      // Second call: material is already gone, but key is known → replay
-      const r2 = body(await feed(targetId, [materialId], 'ik-idem'));
+      // Second call: materials are already gone, but the key is known → replay
+      const r2 = body(await fuse(targetId, materialIds, 'ik-idem'));
       expect(r2.ok).toBe(true);
-      expect(r2.data.levelsGained).toBe(r1.data.levelsGained);
-      // Target still exists and was not double-fed
+      expect(r2.data.card.level).toBe(r1.data.card.level);
       const card = await cardById(targetId);
       expect(card).toBeDefined();
+    });
+
+    it('fuse: target already at MAX_CARD_LEVEL → 400 BAD_REQUEST', async () => {
+      await m.collections.saves.updateOne(
+        { _id: accountId },
+        { $set: { [`save.cardInv.${targetId}.level`]: MAX_CARD_LEVEL } },
+      );
+      for (const id of materialIds) {
+        await m.collections.saves.updateOne(
+          { _id: accountId },
+          { $set: { [`save.cardInv.${id}.level`]: MAX_CARD_LEVEL } },
+        );
+      }
+      const res = await fuse(targetId, materialIds, 'ik-maxlevel');
+      expect(res.statusCode).toBe(400);
     });
   });
 
@@ -248,13 +279,15 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
       expect((await readSave()).rev).toBe(revAfterFirst); // no-op did not bump rev
     });
 
-    it('locked card is rejected as feed material → 400 CARD_LOCKED', async () => {
+    it('locked card is rejected as fusion material → 400 CARD_LOCKED', async () => {
       const save = await readSave();
       const taoCards = Object.values(save.cardInv!).filter((c) => CARD_DEFS[c.defId]?.faction === 'tao');
       const targetId = taoCards[0]!.id;
       const materialId = taoCards[1]!.id;
+      const extraIds = ['lock_seed1', 'lock_seed2', 'lock_seed3', 'lock_seed4'];
+      for (const id of extraIds) await seedCard(id, 'lichuang', 1);
       await lock(materialId);
-      const res = await feed(targetId, [materialId], 'ik-lock-then-feed');
+      const res = await fuse(targetId, [materialId, ...extraIds], 'ik-lock-then-fuse');
       expect(res.statusCode).toBe(400);
       expect(body(res).error.code).toBe('CARD_LOCKED');
     });
@@ -311,19 +344,22 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
       expect(r.data.save.cardInv[siblingId!]).toEqual(siblingBefore);
     });
 
-    it('full cycle: lock blocks feed → unlock re-enables it', async () => {
+    it('full cycle: lock blocks fusion → unlock re-enables it', async () => {
       const save = await readSave();
       const taoCards = Object.values(save.cardInv!).filter((c) => CARD_DEFS[c.defId]?.faction === 'tao');
       const targetId = taoCards[0]!.id;
       const materialId = taoCards[1]!.id;
+      const extraIds = ['cycle_seed1', 'cycle_seed2', 'cycle_seed3', 'cycle_seed4'];
+      for (const id of extraIds) await seedCard(id, 'lichuang', 1);
+      const materialIds = [materialId, ...extraIds];
 
       await lock(materialId);
-      const blocked = await feed(targetId, [materialId], 'ik-cycle-blocked');
+      const blocked = await fuse(targetId, materialIds, 'ik-cycle-blocked');
       expect(blocked.statusCode).toBe(400);
       expect(body(blocked).error.code).toBe('CARD_LOCKED');
 
       await unlock(materialId);
-      const allowed = body(await feed(targetId, [materialId], 'ik-cycle-allowed'));
+      const allowed = body(await fuse(targetId, materialIds, 'ik-cycle-allowed'));
       expect(allowed.ok).toBe(true);
       expect(allowed.data.save.cardInv[materialId]).toBeUndefined(); // material consumed after unlock
     });

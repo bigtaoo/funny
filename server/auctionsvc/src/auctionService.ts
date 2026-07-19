@@ -30,6 +30,7 @@ import {
   detectAuctionAnomalies,
   EQUIPMENT_DEFS,
   EQUIP_AUCTION_REF_PRICE_BY_RARITY,
+  equipEnhanceExpectedCost,
   SlgError,
   type AuctionAnomaly,
   type AuctionAuditThresholds,
@@ -109,7 +110,8 @@ function cardInstanceOf(item: Record<string, unknown>): CardInstance | null {
   return inst && typeof inst === 'object' ? (inst as CardInstance) : null;
 }
 
-/** Item category key (price sliding window is isolated per category). Material = `material:{mat}`; equipment = `equip:{defId}`.
+/** Item category key (price sliding window is isolated per category). Material = `material:{mat}`; equipment = `equip:{defId}:{level}`
+ *  (bucketed by enhancement level — a +9 sale must not get diluted into the same median as a +0 sale of the same defId).
  *  Cards and skins return null — no price sliding window (cold-start pass-through; prices are determined by market). */
 function categoryOf(doc: Pick<AuctionDoc, 'itemType' | 'item'>): string | null {
   if (doc.itemType === 'material') {
@@ -118,7 +120,7 @@ function categoryOf(doc: Pick<AuctionDoc, 'itemType' | 'item'>): string | null {
   }
   if (doc.itemType === 'equipment') {
     const inst = equipInstanceOf(doc.item);
-    return inst?.defId ? `equip:${inst.defId}` : null;
+    return inst?.defId ? `equip:${inst.defId}:${inst.level}` : null;
   }
   // 'card', 'skin' and unknown types: no price window
   return null;
@@ -230,10 +232,14 @@ export class AuctionService {
       if (stat != null) return stat;
     }
     if (category.startsWith('equip:')) {
-      // Equipment cold-start: estimate reference price by rarity (§4.A: price guardrail range is set per rarity).
-      const defId = category.slice('equip:'.length);
-      const def = EQUIPMENT_DEFS[defId];
-      if (def) return EQUIP_AUCTION_REF_PRICE_BY_RARITY[def.rarity];
+      // Equipment cold-start: base rarity value + expected enhancement investment (§4.A: price guardrail
+      // range is set per rarity+level, so a heavily-enhanced instance isn't priced as if it were +0).
+      const [defId, levelStr] = category.slice('equip:'.length).split(':');
+      const def = defId ? EQUIPMENT_DEFS[defId] : undefined;
+      if (def) {
+        const level = Number(levelStr ?? 0) || 0;
+        return EQUIP_AUCTION_REF_PRICE_BY_RARITY[def.rarity] + equipEnhanceExpectedCost(level, AUCTION_STATIC_REF_PRICE);
+      }
     }
     return null;
   }
@@ -493,8 +499,8 @@ export class AuctionService {
       const instance = await meta.escrowEquipment(sellerId, instanceId, orderId);
       storedItem = { instance };
       try {
-        // G Price guardrail (equipment by defId/rarity category) + C daily cap — return escrowed instance on failure.
-        await this.checkPriceGuard(`equip:${instance.defId}`, unitPrice);
+        // G Price guardrail (equipment by defId/rarity/level category) + C daily cap — return escrowed instance on failure.
+        await this.checkPriceGuard(`equip:${instance.defId}:${instance.level}`, unitPrice);
         await this.bumpDaily(sellerId, 'lists', AUCTION_DAILY_LIST_CAP);
       } catch (e) {
         await meta.grantEquipment(sellerId, instance, `${orderId}:return`);

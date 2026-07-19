@@ -7,7 +7,7 @@ import { ObjectPool } from '../cache/ObjectPool';
 import { registerPool } from '../cache/poolRegistry';
 import { StickmanRuntime } from './stickman/StickmanRuntime';
 import type { TaoAsset, GearGlyphSpec } from './stickman/StickmanRuntime';
-import { PLAYER_EQUIPPABLE_UNITS } from '@nw/engine';
+import { PLAYER_EQUIPPABLE_UNITS, TICK_RATE } from '@nw/engine';
 import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import { getEquipDef } from '../game/meta/equipmentDefs';
 import type { EquipSlot } from '../game/meta/SaveData';
@@ -317,9 +317,14 @@ export class UnitView {
         this.container.addChild(sprite);
       }
 
-      // Update stickman animation state + advance clock
+      // Update stickman animation state + advance clock. The 'attack' clip is
+      // time-scaled to the unit's real attack interval (see
+      // StickmanRuntime.setAttackInterval) so the swing animation's cadence
+      // matches how often the unit actually deals damage, not the art's
+      // authored clip duration.
       const runtime = this.stickmanRuntimes.get(unit.id);
       if (runtime) {
+        runtime.setAttackInterval(unit.effectiveAttackIntervalTicks / TICK_RATE);
         runtime.syncState(unit.state);
         runtime.update(dt);
       }

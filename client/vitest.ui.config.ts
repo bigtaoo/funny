@@ -47,6 +47,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@nw/engine': path.resolve(__dirname, '../server/engine/src'),
+      '@nw/shared/cards': path.resolve(__dirname, '../server/shared/src/cards.ts'),
       '@nw/shared': path.resolve(__dirname, '../server/shared/src/index.ts'),
     },
   },

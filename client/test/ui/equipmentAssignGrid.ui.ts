@@ -39,7 +39,7 @@ function buildSave(): SaveData {
   save.cardInv = {};
   for (let i = 0; i < 12; i++) {
     const id = `card_${i}`;
-    save.cardInv[id] = { id, defId: 'lichuang', level: (i % 5) + 1, xp: 0, gear: {}, locked: false };
+    save.cardInv[id] = { id, defId: 'lichuang', level: (i % 5) + 1, gear: {}, locked: false };
   }
   // One bag weapon to assign.
   save.equipmentInv = {

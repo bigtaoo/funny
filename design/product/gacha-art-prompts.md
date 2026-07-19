@@ -289,7 +289,7 @@ Stationery/school supply aesthetic, student notebook art style.
 ```
 
 > 替换 `[文具物品]`：
-> - `mat_scrap`：`pile of torn paper scraps and pencil shavings`
+> - `mat_scrap`：~~`pile of torn paper scraps and pencil shavings`~~ → 2026-07-19 换成单体剪影版（原版多形状+撞色，缩小到签到格子 ~28px 糊成一团），见下方专用 prompt
 > - `mat_lead`：`three pencil lead sticks, mechanical pencil refills`
 > - `mat_binding`：`a small metal ring binder clip`
 > - `wp_pen`：`a fountain pen nib and cap, slightly open`
@@ -301,3 +301,25 @@ Stationery/school supply aesthetic, student notebook art style.
 > - `wp_highlighter`：`a gold metallic highlighter marker`
 > - `ar_foil`：`crinkled gold foil sheet, partially unrolled`
 > - `tk_seal`：`a wax seal stamp with star impression`
+
+### `mat_scrap` 专用 prompt（2026-07-19 替换，见 EQUIPMENT_DESIGN §20.12）
+
+原通用模板的 `pile of torn paper scraps and pencil shavings` 天生是多体堆叠（撕纸+铅笔屑+散落黑点，两种撞色），签到日历格子里图标只有 ~28px，糊成一团色块。改用单体折页剪影，颜色和阴影处理对齐 `lead`/`binding`：
+
+```
+A small square icon of a single torn notebook-paper scrap, folded once with
+a jagged torn edge, punched ring-binder holes visible, as crafting material
+in a game.
+Drawn in hand-sketched notebook style, pencil and ink outline, cross-hatch
+shading for depth.
+Cream/off-white paper with warm tan shadow tones, faint blue ruled lines,
+solid black binder holes — same warm muted palette as a used school notebook.
+One bold silhouette only — no scattered pieces, no confetti dots, no second
+bright accent color.
+Simple centered object, white or transparent background.
+Clear thick outline, readable at 40x40 pixels.
+Stationery/school supply aesthetic, student notebook art style, matching the
+shading style of a bundle of pencils and a spiral binder ring icon in the
+same set.
+--ar 1:1 --style raw --no gradient, glow, 3D, multiple objects, pile, pure line art, no color
+```

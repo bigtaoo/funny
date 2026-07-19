@@ -52,7 +52,7 @@ export type OperationId =
   | "salvageEquipment"
   | "equipEquipment"
   | "reforgeEquipment"
-  | "cardsFeed"
+  | "cardsFuse"
   | "cardsLock"
   | "cardsUnlock"
   | "getLeaderboard"
@@ -135,7 +135,7 @@ export interface MetaHandlers {
   salvageEquipment(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
   equipEquipment(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
   reforgeEquipment(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
-  cardsFeed(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
+  cardsFuse(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
   cardsLock(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
   cardsUnlock(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
   getLeaderboard(req: FastifyRequest, reply: FastifyReply): Promise<unknown>;
@@ -223,7 +223,7 @@ export const ROUTES = [
   { method: 'POST' as const, url: "/equipment/salvage", operationId: "salvageEquipment", security: ["bearerAuth"] },
   { method: 'POST' as const, url: "/equipment/equip", operationId: "equipEquipment", security: ["bearerAuth"] },
   { method: 'POST' as const, url: "/equipment/reforge", operationId: "reforgeEquipment", security: ["bearerAuth"] },
-  { method: 'POST' as const, url: "/cards/feed", operationId: "cardsFeed", security: ["bearerAuth"] },
+  { method: 'POST' as const, url: "/cards/fuse", operationId: "cardsFuse", security: ["bearerAuth"] },
   { method: 'POST' as const, url: "/cards/lock", operationId: "cardsLock", security: ["bearerAuth"] },
   { method: 'POST' as const, url: "/cards/unlock", operationId: "cardsUnlock", security: ["bearerAuth"] },
   { method: 'GET' as const, url: "/leaderboard", operationId: "getLeaderboard", security: ["bearerAuth"] },
@@ -792,7 +792,7 @@ const BODY_SCHEMAS: Record<string, unknown> = {
       }
     }
   },
-  "cardsFeed": {
+  "cardsFuse": {
     "type": "object",
     "required": [
       "targetId",
@@ -809,7 +809,9 @@ const BODY_SCHEMAS: Record<string, unknown> = {
         "items": {
           "type": "string"
         },
-        "description": "CardInstance ids to consume as feed material (same faction; must not be locked)"
+        "minItems": 5,
+        "maxItems": 5,
+        "description": "Exactly 5 CardInstance ids to consume as fusion material (same faction, same level as target; must not be locked)"
       },
       "idempotencyKey": {
         "type": "string",
@@ -2040,7 +2042,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -2058,11 +2059,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -2072,7 +2068,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -2565,7 +2561,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -2583,11 +2578,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -2597,7 +2587,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -3123,7 +3113,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -3141,11 +3130,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -3155,7 +3139,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -3649,7 +3633,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   "id",
                   "defId",
                   "level",
-                  "xp",
                   "gear",
                   "locked"
                 ],
@@ -3667,11 +3650,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "minimum": 1,
                     "maximum": 9
                   },
-                  "xp": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "description": "Accumulated XP within the current level"
-                  },
                   "gear": {
                     "type": "object",
                     "additionalProperties": {
@@ -3681,7 +3659,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   },
                   "locked": {
                     "type": "boolean",
-                    "description": "Locked cards cannot be used as feed material"
+                    "description": "Locked cards cannot be used as fusion material"
                   }
                 }
               },
@@ -4603,7 +4581,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -4621,11 +4598,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -4635,7 +4607,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -5204,7 +5176,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -5222,11 +5193,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -5236,7 +5202,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -5837,7 +5803,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -5855,11 +5820,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -5869,7 +5829,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -6407,7 +6367,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -6425,11 +6384,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -6439,7 +6393,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -7038,7 +6992,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -7056,11 +7009,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -7070,7 +7018,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -7629,7 +7577,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -7647,11 +7594,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -7661,7 +7603,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -8151,7 +8093,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -8169,11 +8110,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -8183,7 +8119,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -8670,7 +8606,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -8688,11 +8623,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -8702,7 +8632,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -9190,7 +9120,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -9208,11 +9137,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -9222,7 +9146,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -9714,7 +9638,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -9732,11 +9655,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -9746,7 +9664,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -10277,7 +10195,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -10295,11 +10212,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -10309,7 +10221,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -10800,7 +10712,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -10818,11 +10729,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -10832,7 +10738,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -11355,7 +11261,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -11373,11 +11278,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -11387,7 +11287,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -11986,7 +11886,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -12004,11 +11903,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -12018,7 +11912,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -12513,7 +12407,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -12531,11 +12424,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -12545,7 +12433,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -13032,7 +12920,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -13050,11 +12937,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -13064,7 +12946,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -13605,7 +13487,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -13623,11 +13504,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -13637,7 +13513,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -13805,7 +13681,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
       }
     }
   },
-  "cardsFeed": {
+  "cardsFuse": {
     "200": {
       "type": "object",
       "required": [
@@ -13823,7 +13699,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
           "type": "object",
           "required": [
             "card",
-            "levelsGained",
             "save"
           ],
           "properties": {
@@ -13833,7 +13708,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "id",
                 "defId",
                 "level",
-                "xp",
                 "gear",
                 "locked"
               ],
@@ -13851,11 +13725,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   "minimum": 1,
                   "maximum": 9
                 },
-                "xp": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "description": "Accumulated XP within the current level"
-                },
                 "gear": {
                   "type": "object",
                   "additionalProperties": {
@@ -13865,13 +13734,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "locked": {
                   "type": "boolean",
-                  "description": "Locked cards cannot be used as feed material"
+                  "description": "Locked cards cannot be used as fusion material"
                 }
               }
-            },
-            "levelsGained": {
-              "type": "integer",
-              "minimum": 0
             },
             "save": {
               "type": "object",
@@ -14172,7 +14037,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -14190,11 +14054,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -14204,7 +14063,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -14691,7 +14550,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -14709,11 +14567,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -14723,7 +14576,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -15210,7 +15063,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -15228,11 +15080,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -15242,7 +15089,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -16101,7 +15948,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -16119,11 +15965,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -16133,7 +15974,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -16771,7 +16612,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -16789,11 +16629,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -16803,7 +16638,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -17321,7 +17156,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -17339,11 +17173,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -17353,7 +17182,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -18079,7 +17908,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -18097,11 +17925,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -18111,7 +17934,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },
@@ -18990,7 +18813,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                                 "id",
                                 "defId",
                                 "level",
-                                "xp",
                                 "gear",
                                 "locked"
                               ],
@@ -19008,11 +18830,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                                   "minimum": 1,
                                   "maximum": 9
                                 },
-                                "xp": {
-                                  "type": "integer",
-                                  "minimum": 0,
-                                  "description": "Accumulated XP within the current level"
-                                },
                                 "gear": {
                                   "type": "object",
                                   "additionalProperties": {
@@ -19022,7 +18839,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                                 },
                                 "locked": {
                                   "type": "boolean",
-                                  "description": "Locked cards cannot be used as feed material"
+                                  "description": "Locked cards cannot be used as fusion material"
                                 }
                               }
                             }
@@ -19401,7 +19218,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "id",
                       "defId",
                       "level",
-                      "xp",
                       "gear",
                       "locked"
                     ],
@@ -19419,11 +19235,6 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "minimum": 1,
                         "maximum": 9
                       },
-                      "xp": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Accumulated XP within the current level"
-                      },
                       "gear": {
                         "type": "object",
                         "additionalProperties": {
@@ -19433,7 +19244,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean",
-                        "description": "Locked cards cannot be used as feed material"
+                        "description": "Locked cards cannot be used as fusion material"
                       }
                     }
                   },

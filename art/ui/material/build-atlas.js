@@ -21,9 +21,9 @@ const { execSync } = require('child_process');
 
 // Source filename → frame id, left-to-right atlas order
 const ENTRIES = [
-  ['u1ebKY9bQy9uCF6ZmZWrPz_1784354438164_na1fn_L2hvbWUvdWJ1bnR1L25vdGVib29rX3NjcmFwc19pY29uX3Yy.webp', 'scrap'],
-  ['ce2tpuG7kHWi2B920YQQsO_1784355547924_na1fn_L2hvbWUvdWJ1bnR1L3BlbmNpbF9sZWFkX2ljb24.webp',        'lead'],
-  ['wJVPojCcordDTLZRbBlZiR_1784355565801_na1fn_L2hvbWUvdWJ1bnR1L3NwaXJhbF9jb2lsX2ljb24.webp',        'binding'],
+  ['scrap.png',   'scrap'],
+  ['lead.webp',   'lead'],
+  ['binding.webp', 'binding'],
 ];
 
 // Atlas layout: N cols × 1 row, each cell 128×128
