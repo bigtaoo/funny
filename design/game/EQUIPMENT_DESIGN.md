@@ -816,3 +816,13 @@ buildSiegeBlueprints(levels, equipped, inv)
 落地：四处对 `scrap/lead/binding` 的图标绘制改为 `buildMaterialIcon`（`coin`/`skin`/`card`/`equipment`/`star` 等非材料 kind 不变，仍走 `buildIcon`/`buildCoinIcon`）。`materialAtlas.ts` 顶部注释同步扩充覆盖范围说明。
 
 验证：client `tsc --noEmit` + 生产 webpack 构建全绿。四场景均无既有单测覆盖；因需登录+后端进入关卡结算/签到/活动/通行证界面，未做游戏内截图核对，改动为同签名图标构建函数替换，风险低。
+
+### 20.12 实现记录（2026-07-19，✅）— 材料图标 `scrap` 重绘（单体剪影替换堆叠碎片）
+
+背景：用户走查每日签到日历，指出 `scrap`（碎屑）图标在商店里就偏花哨，缩小到签到格子（~28px）后糊成一团。对比同组 `lead`/`binding`（单体、单色调、强轮廓）确认问题只出在 `scrap`——原图（"一堆撕纸+铅笔屑+散落黑点"）是多形状堆叠+两种撞色，天生难以在小尺寸下保持可读剪影。
+
+处理：AI 重新出图两轮收敛——第一轮改「单张折角撕边纸」剪影（去掉多体堆叠），验证轮廓在缩小后清晰，但是纯黑白线稿、无色彩，与 `lead`（灰阶+棕绳）/`binding`（紫圈+灰杆）的上色处理不一致；第二轮加回暖色调（米黄纸面+蓝色横线+橙色页边线+棕色阴影，明确要求匹配同组明暗处理）确认通过。新 prompt 记录在 `design/product/gacha-art-prompts.md` §`mat_scrap` 专用 prompt。
+
+资产整理：三张源图重命名为 `scrap.png`/`lead.webp`/`binding.webp`（原为 AI 工具生成的随机编码文件名），`build-atlas.js` 的 `ENTRIES` 同步更新为新文件名，重新打包 `material.png/json`（384×128，帧名不变）。
+
+验证：`node build-atlas.js` 打包成功；用 sharp 把 `scrap` 帧缩到 28×28（对齐签到格子实际图标尺寸 `ch*0.26`）人工核对，折角撕边纸的剪影清晰可辨，未再糊成色块。client `tsc --noEmit` 未跑（仅素材/构建脚本变更，无 TS 改动）。
