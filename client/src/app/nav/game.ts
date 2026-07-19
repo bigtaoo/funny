@@ -160,13 +160,13 @@ export function createGameNav(ctx: AppCtx): GameNav {
       onBack() { back(); },
       initialTab,
       getSave: () => saveManager.get(),
-      async feedCards(targetCardId, materialCardIds) {
+      async fuseCards(targetCardId, materialCardIds) {
         if (!client) return { ok: false as const, key: 'roster.err.offline' as TranslationKey };
         try {
-          const { save, levelsGained } = await client.feedCards(targetCardId, materialCardIds, genUuid());
+          const { save } = await client.fuseCards(targetCardId, materialCardIds, genUuid());
           saveManager.adoptServer(save);
-          analytics.track('card_feed', { target_id: targetCardId, material_count: materialCardIds.length, levels_gained: levelsGained });
-          return { ok: true as const, levelsGained };
+          analytics.track('card_fuse', { target_id: targetCardId, material_count: materialCardIds.length });
+          return { ok: true as const };
         } catch { return { ok: false as const, key: 'roster.err.generic' as TranslationKey }; }
       },
       async setCardLock(cardInstanceId, locked) {

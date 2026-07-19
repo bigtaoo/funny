@@ -1,9 +1,11 @@
-// Feed flow (modal-within-modal): from the detail modal, pick eligible material cards (same faction,
-// unlocked, not deployed) via a multi-select panel, then confirm → doFeed().
+// Fusion flow (CHARACTER_CARDS_DESIGN §3, fusion redesign 2026-07-19): from the detail modal, open
+// a ring layout — the target card sits in the center, 5 material slots surround it. Tapping an
+// eligible candidate below (same faction, same level as the target, unlocked, not deployed) fills
+// the next empty slot; tapping a filled slot returns that card to the pool. Once all 5 slots are
+// filled, Fuse consumes them and the target gains one level (doFuse → playFusionAnim).
 //
-// Identical materials (same card def + same level) collapse into ONE row with a quantity stepper —
-// e.g. "Mara Lv.1  1 / 3" — instead of listing every duplicate. The list is drag-scrollable (pan with
-// a press-drag) rather than paged via arrow buttons.
+// The candidate list collapses duplicates into one row per defId (level is fixed = target's level,
+// so a group key is just defId) with a remaining-count badge, drag-scrollable when it overflows.
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
@@ -13,55 +15,91 @@ import { UNIT_ART_URLS, getArtTexture } from '../../render/cardArt';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import type { Rect } from '../../layout/ILayout';
 import type { CardInstance } from '../../game/meta/SaveData';
-import { CARD_DEFS } from '../../game/meta/cardDefs';
+import { CARD_DEFS, FUSION_MATERIAL_COUNT, fusionMaterialCandidates, type Faction } from '../../game/meta/cardDefs';
 import { type Constructor, type CardSceneBaseCtor, MODAL_DIM } from './base';
 
 export interface FeedHandlers {
-  openFeedSelect(target: CardInstance): void;
+  openFuseSelect(target: CardInstance): void;
+  playFusionAnim(): Promise<void>;
 }
 
-/** One collapsed material row: all owned cards sharing a def + level, plus how many are selected. */
-interface FeedGroup {
+/** One collapsed candidate row: all owned same-level same-faction cards of one defId. */
+interface FuseGroup {
   defId: string;
-  level: number;
   ids: string[];
 }
 
 export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase & Constructor<FeedHandlers> {
   return class extends Base {
-    openFeedSelect(target: CardInstance): void {
+    /** Placeholder in-engine fusion animation: the center portrait pulses gold, the 5 material
+     * thumbnails collapse inward and fade. Program-art stand-in — a dedicated VFX-editor asset
+     * replaces this call site once authored (feed.ts owns the whole visual, so the swap is local). */
+    async playFusionAnim(): Promise<void> {
+      const ml = this.modalLayer;
+      const { w, h } = this;
+      const flash = new PIXI.Graphics();
+      flash.beginFill(0xffe28a, 0).drawRect(0, 0, w, h).endFill();
+      ml.addChild(flash);
+      const cx = w / 2, cy = h / 2;
+      const burst = new PIXI.Graphics();
+      ml.addChild(burst);
+      const DURATION_MS = 650;
+      await new Promise<void>((resolve) => {
+        const start = performance.now();
+        const tick = (): void => {
+          const elapsed = performance.now() - start;
+          const f = Math.min(1, elapsed / DURATION_MS);
+          const pulse = Math.sin(f * Math.PI); // 0 → 1 → 0
+          flash.alpha = pulse * 0.5;
+          burst.clear();
+          burst.lineStyle(4, C.gold, pulse);
+          burst.drawCircle(cx, cy, 24 + pulse * 70);
+          if (f < 1) {
+            requestAnimationFrame(tick);
+          } else {
+            flash.destroy();
+            burst.destroy();
+            resolve();
+          }
+        };
+        requestAnimationFrame(tick);
+      });
+    }
+
+    openFuseSelect(target: CardInstance): void {
       const save = this.cb.getSave();
       const def = CARD_DEFS[target.defId];
       if (!def) return;
 
-      // Eligible materials: same faction, not locked, not this card, not in SLG team.
       const cardState = this.cb.getCardState?.() ?? {};
-      const candidates = Object.values(save.cardInv ?? {}).filter((c) => {
-        if (c.id === target.id) return false;
-        if (c.locked) return false;
-        const matDef = CARD_DEFS[c.defId];
-        if (!matDef || matDef.faction !== def.faction) return false;
-        if (cardState[c.id]?.teamId) return false; // deployed cards cannot be fed
-        return true;
-      });
+      const candidateOf = (id: string): boolean => !cardState[id]?.teamId; // deployed cards cannot be fused
+      const allCandidates = fusionMaterialCandidates(target, save.cardInv ?? {}).filter((c) => candidateOf(c.id));
 
-      // Collapse duplicates: group by def + level, preserving first-seen order.
-      const groupMap = new Map<string, FeedGroup>();
-      for (const c of candidates) {
-        const key = `${c.defId}:${c.level}`;
-        let g = groupMap.get(key);
-        if (!g) { g = { defId: c.defId, level: c.level, ids: [] }; groupMap.set(key, g); }
-        g.ids.push(c.id);
-      }
-      const groups = [...groupMap.values()];
-      const keyOf = (g: FeedGroup): string => `${g.defId}:${g.level}`;
-      // Selected quantity per group (0..ids.length).
-      const counts = new Map<string, number>();
-      const totalSelected = (): number => { let n = 0; for (const v of counts.values()) n += v; return n; };
-      const selectedIds = (): string[] => {
-        const out: string[] = [];
-        for (const g of groups) out.push(...g.ids.slice(0, counts.get(keyOf(g)) ?? 0));
-        return out;
+      // slotIds[i] = the specific CardInstance id occupying material slot i, or null when empty.
+      const slotIds: (string | null)[] = new Array(FUSION_MATERIAL_COUNT).fill(null);
+      const filledCount = (): number => slotIds.filter((id) => id !== null).length;
+      const firstEmptySlot = (): number => slotIds.indexOf(null);
+      const assign = (cardId: string): void => {
+        const i = firstEmptySlot();
+        if (i < 0) return;
+        slotIds[i] = cardId;
+        drawFusePanel();
+      };
+      const unassign = (slotIdx: number): void => {
+        slotIds[slotIdx] = null;
+        drawFusePanel();
+      };
+
+      const groupsOf = (): FuseGroup[] => {
+        const used = new Set(slotIds.filter((id): id is string => id !== null));
+        const map = new Map<string, FuseGroup>();
+        for (const c of allCandidates) {
+          if (used.has(c.id)) continue; // already sitting in a slot
+          let g = map.get(c.defId);
+          if (!g) { g = { defId: c.defId, ids: [] }; map.set(c.defId, g); }
+          g.ids.push(c.id);
+        }
+        return [...map.values()];
       };
 
       const { w, h } = this;
@@ -72,26 +110,22 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       this.feedScrollPx = 0;
       const artHooked = new Set<string>();
 
-      const drawFeedPanel = (): void => {
+      const drawFusePanel = (): void => {
         tearDownChildren(ml);
         this.modalHits = [];
-        this.modalSliders = [];
 
-        // Scale the whole feed modal up 3x (local factor, other modals untouched).
-        // Geometry stays clamped to the screen so it never overflows.
-        const S = 3;
-        const mw = Math.min(320 * S, w - 24);
-        const rowH = 44 * S;
-        const headerBlockH = 44 * S; // title + hint
-        const footerBlockH = 56 * S; // confirm/cancel row + margin
-        // Panel must fit strictly below the scene's own header bar and above the screen edge — a
-        // naive `h - 60` cap (ignoring this.headerH) let a tall header push the panel's bottom
-        // (Confirm/Cancel) off-screen even though the panel's own height looked clamped.
+        const S = 2;
+        const mw = Math.min(340 * S, w - 24);
         const topLimit = this.headerH + 4;
         const bottomLimit = h - 8;
         const availH = Math.max(0, bottomLimit - topLimit);
-        // Panel height shows up to 6 rows before scrolling kicks in, still clamped to the screen.
-        const mh = Math.min(headerBlockH + Math.min(Math.max(groups.length, 1), 6) * rowH + footerBlockH, availH);
+        const headerBlockH = 40 * S;
+        const ringH = 130 * S;
+        const rowH = 40 * S;
+        const footerBlockH = 52 * S;
+        const groups = groupsOf();
+        const listRows = Math.min(Math.max(groups.length, 1), 4);
+        const mh = Math.min(headerBlockH + ringH + listRows * rowH + footerBlockH, availH);
         const mx = (w - mw) / 2;
         const my = topLimit + (availH - mh) / 2;
 
@@ -103,35 +137,94 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         panel.x = mx; panel.y = my;
         ml.addChild(panel);
 
-        const titleLbl = txt(t('roster.feedTitle'), snapFont(13 * S), C.dark, true);
-        titleLbl.anchor.set(0.5, 0); titleLbl.x = mx + mw / 2; titleLbl.y = my + 10 * S;
+        const titleLbl = txt(t('roster.fuseTitle'), snapFont(13 * S), C.dark, true);
+        titleLbl.anchor.set(0.5, 0); titleLbl.x = mx + mw / 2; titleLbl.y = my + 8 * S;
         ml.addChild(titleLbl);
 
-        const hintLbl = txt(t('roster.feedHint'), snapFont(10 * S), C.mid);
-        hintLbl.anchor.set(0.5, 0); hintLbl.x = mx + mw / 2; hintLbl.y = my + 26 * S;
+        const hintLbl = txt(t('roster.fuseHint'), snapFont(9.5 * S), C.mid);
+        hintLbl.anchor.set(0.5, 0); hintLbl.x = mx + mw / 2; hintLbl.y = my + 24 * S;
         ml.addChild(hintLbl);
 
-        const listY = my + headerBlockH;
-        const listH = mh - headerBlockH - footerBlockH;
+        // ── Ring: center card + 5 material slots arranged around it ──
+        const ringCx = mx + mw / 2;
+        const ringCy = my + headerBlockH + ringH / 2;
+        const centerR = 22 * S;
+        const slotR = 15 * S;
+        const orbit = 46 * S;
 
-        if (groups.length === 0) {
-          const empty = txt(t('roster.feedEmpty'), snapFont(12 * S), C.mid);
+        const drawPortrait = (
+          cardId: string | null, cx: number, cy: number, r: number, faction: Faction | undefined,
+        ): void => {
+          const frame = new PIXI.Graphics();
+          frame.lineStyle(2, faction ? FACTION_COLOR[faction] : C.mid, cardId ? 1 : 0.4);
+          frame.beginFill(0xf0eee7, cardId ? 1 : 0.5).drawCircle(cx, cy, r).endFill();
+          ml.addChild(frame);
+          if (!cardId) return;
+          const inst = save.cardInv?.[cardId];
+          const cDef = inst && CARD_DEFS[inst.defId];
+          const artUrl = cDef && UNIT_ART_URLS[cDef.unitType];
+          if (artUrl) {
+            const tex = getArtTexture(artUrl);
+            if (tex.baseTexture.valid) {
+              const scale = Math.min((r * 2 - 4) / tex.width, (r * 2 - 4) / tex.height);
+              const sp = new PIXI.Sprite(tex);
+              sp.anchor.set(0.5);
+              sp.scale.set(scale);
+              sp.position.set(cx, cy);
+              ml.addChild(sp);
+            } else if (!artHooked.has(artUrl)) {
+              artHooked.add(artUrl);
+              tex.baseTexture.once('loaded', () => drawFusePanel());
+            }
+          }
+        };
+
+        // Connecting spokes (drawn under the portraits) so the ring reads as one fusion unit.
+        for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
+          const ang = -Math.PI / 2 + (i * 2 * Math.PI) / FUSION_MATERIAL_COUNT;
+          const sx = ringCx + Math.cos(ang) * orbit, sy = ringCy + Math.sin(ang) * orbit;
+          const spoke = new PIXI.Graphics();
+          spoke.lineStyle(1.5, C.mid, slotIds[i] ? 0.7 : 0.3);
+          spoke.moveTo(ringCx, ringCy).lineTo(sx, sy);
+          ml.addChild(spoke);
+        }
+
+        drawPortrait(target.id, ringCx, ringCy, centerR, def.faction);
+        const lvlLbl = txt(`Lv.${target.level}`, snapFont(9 * S), C.dark, true);
+        lvlLbl.anchor.set(0.5, 0); lvlLbl.x = ringCx; lvlLbl.y = ringCy + centerR + 2 * S;
+        ml.addChild(lvlLbl);
+
+        for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
+          const ang = -Math.PI / 2 + (i * 2 * Math.PI) / FUSION_MATERIAL_COUNT;
+          const sx = ringCx + Math.cos(ang) * orbit, sy = ringCy + Math.sin(ang) * orbit;
+          const slotCardId = slotIds[i];
+          drawPortrait(slotCardId, sx, sy, slotR, def.faction);
+          if (slotCardId) {
+            this.modalHits.push({
+              rect: { x: sx - slotR, y: sy - slotR, w: slotR * 2, h: slotR * 2 },
+              action: () => unassign(i),
+            });
+          }
+        }
+
+        // ── Candidate list ──
+        const listY = my + headerBlockH + ringH;
+        const listH = mh - headerBlockH - ringH - footerBlockH;
+        if (groups.length === 0 && filledCount() < FUSION_MATERIAL_COUNT) {
+          const empty = txt(t('roster.fuseEmpty'), snapFont(11 * S), C.mid);
           empty.anchor.set(0.5, 0.5); empty.x = mx + mw / 2; empty.y = listY + listH / 2;
           ml.addChild(empty);
         }
 
-        // Pixel-based drag scroll: clamp the offset, reserve a slim scrollbar column on overflow.
         const contentH = groups.length * rowH;
         const scrollMax = Math.max(0, contentH - listH);
         this.feedScrollPx = Math.max(0, Math.min(this.feedScrollPx, scrollMax));
         this.feedScrollMax = scrollMax;
-        const barW = scrollMax > 0 ? 10 * S : 0;
+        const barW = scrollMax > 0 ? 8 * S : 0;
         const listX = mx + 8 * S;
         const rowW = mw - 16 * S - barW;
         const viewport: Rect = { x: listX, y: listY, w: rowW + barW, h: listH };
 
-        // Mask the rows to the viewport so partial rows at the top/bottom edge don't spill over the
-        // title/footer. Rows live in an untransformed container, so their local coords == screen coords.
         const listC = new PIXI.Container();
         ml.addChild(listC);
         const maskG = new PIXI.Graphics();
@@ -139,7 +232,6 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         ml.addChild(maskG);
         listC.mask = maskG;
 
-        // Intersect a hit rect with the viewport so taps on a clipped-away part of a partial row don't fire.
         const clip = (r: Rect): Rect | null => {
           const x1 = Math.max(r.x, viewport.x), y1 = Math.max(r.y, viewport.y);
           const x2 = Math.min(r.x + r.w, viewport.x + viewport.w), y2 = Math.min(r.y + r.h, viewport.y + viewport.h);
@@ -154,27 +246,22 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         for (let i = 0; i < groups.length; i++) {
           const g = groups[i];
           const rowTop = listY - this.feedScrollPx + i * rowH;
-          if (rowTop + rowH <= listY || rowTop >= listY + listH) continue; // fully off-screen
-          const key = keyOf(g);
-          const total = g.ids.length;
-          const n = counts.get(key) ?? 0;
-          const isSelected = n > 0;
-          const rowCy = rowTop + (rowH - 4 * S) / 2;
+          if (rowTop + rowH <= listY || rowTop >= listY + listH) continue;
+          const gDef = CARD_DEFS[g.defId];
+          const canAssign = firstEmptySlot() >= 0;
 
-          const rowBg = sketchPanel(rowW, rowH - 4 * S, { fill: isSelected ? 0xfaf0d4 : 0xf5f3ec, border: isSelected ? C.gold : C.mid, seed: seedFor(i, 19, mw) });
+          const rowBg = sketchPanel(rowW, rowH - 4 * S, { fill: canAssign ? 0xf5f3ec : 0xeeeeee, border: C.mid, seed: seedFor(i, 19, mw) });
           rowBg.x = listX; rowBg.y = rowTop;
           listC.addChild(rowBg);
 
-          // Portrait thumbnail, framed with the material's faction color.
-          const matDef = CARD_DEFS[g.defId];
           const thumbBox = rowH - 8 * S;
           const thumbX = listX + 4 * S;
           const thumbY = rowTop + (rowH - thumbBox) / 2;
-          if (matDef) {
-            const frame = sketchPanel(thumbBox, thumbBox, { fill: 0xf0eee7, border: FACTION_COLOR[matDef.faction], seed: seedFor(i, 24, thumbBox) });
+          if (gDef) {
+            const frame = sketchPanel(thumbBox, thumbBox, { fill: 0xf0eee7, border: FACTION_COLOR[gDef.faction], seed: seedFor(i, 24, thumbBox) });
             frame.x = thumbX; frame.y = thumbY;
             listC.addChild(frame);
-            const artUrl = UNIT_ART_URLS[matDef.unitType];
+            const artUrl = UNIT_ART_URLS[gDef.unitType];
             if (artUrl) {
               const tex = getArtTexture(artUrl);
               if (tex.baseTexture.valid) {
@@ -192,76 +279,33 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
           }
 
           const matName = t(`card.${g.defId}.name` as TranslationKey);
-          const nameLbl = txt(`${matName} Lv.${g.level}`, snapFont(12 * S), C.dark, true);
-          nameLbl.anchor.set(0, 0.5); nameLbl.x = thumbX + thumbBox + 8 * S; nameLbl.y = rowCy;
+          const nameLbl = txt(`${matName} Lv.${target.level}`, snapFont(11 * S), C.dark, true);
+          nameLbl.anchor.set(0, 0.5); nameLbl.x = thumbX + thumbBox + 8 * S; nameLbl.y = rowTop + rowH / 2;
           listC.addChild(nameLbl);
 
-          // Quantity drag-slider on the right: "n / total"  ====o====.
-          // Replaces the old +/- stepper — with up to ~50 owned duplicates, tapping + fifty times
-          // was too slow; dragging the handle straight to a value (or the track ends for min/max) is not.
-          const trackW = 90 * S;
-          const handleR = 9 * S;
-          const rowRight = listX + rowW;
-          const trackX0 = rowRight - 12 * S - trackW;
-          const trackY = rowCy - 3 * S;
-
-          const setCount = (v: number): void => {
-            const clamped = Math.max(0, Math.min(total, v));
-            if (clamped === 0) counts.delete(key); else counts.set(key, clamped);
-            drawFeedPanel();
-          };
-
-          const countLbl = txt(`${n} / ${total}`, snapFont(12 * S), isSelected ? C.dark : C.mid, true);
-          countLbl.anchor.set(1, 0.5); countLbl.x = trackX0 - 10 * S; countLbl.y = rowCy;
+          const countLbl = txt(`x${g.ids.length}`, snapFont(11 * S), C.mid);
+          countLbl.anchor.set(1, 0.5); countLbl.x = listX + rowW - 8 * S; countLbl.y = rowTop + rowH / 2;
           listC.addChild(countLbl);
 
-          const frac = n / total;
-          const handleX = trackX0 + frac * trackW;
-
-          const track = new PIXI.Graphics();
-          track.lineStyle(1.5 * S, C.mid, 0.8);
-          track.beginFill(C.light, 0.6).drawRoundedRect(trackX0, trackY, trackW, 6 * S, 3 * S).endFill();
-          if (n > 0) {
-            track.lineStyle(0);
-            track.beginFill(C.gold, 0.85).drawRoundedRect(trackX0, trackY, handleX - trackX0, 6 * S, 3 * S).endFill();
-          }
-          listC.addChild(track);
-
-          const handle = new PIXI.Graphics();
-          handle.lineStyle(2 * S, C.gold, 1).beginFill(isSelected ? C.dark : C.paper).drawCircle(handleX, rowCy, handleR).endFill();
-          listC.addChild(handle);
-
-          const dragToCount = (px: number): void => {
-            const f = Math.max(0, Math.min(1, (px - trackX0) / trackW));
-            setCount(Math.round(f * total));
-          };
-          this.modalSliders.push({
-            rect: { x: trackX0 - handleR, y: rowCy - Math.max(handleR, rowH / 2 - 2 * S), w: trackW + handleR * 2, h: Math.max(handleR, rowH / 2 - 2 * S) * 2 },
-            onDrag: (px: number) => dragToCount(px),
-          });
-          // Tapping the row body (left of the slider) cycles the quantity: +1, wrapping to 0 past the max.
-          const rowBodyRight = countLbl.x - countLbl.width - 6 * S;
-          pushHit({ x: listX, y: rowTop, w: Math.max(0, rowBodyRight - listX), h: rowH - 4 * S }, () => setCount(n >= total ? 0 : n + 1));
+          if (canAssign) pushHit({ x: listX, y: rowTop, w: rowW, h: rowH - 4 * S }, () => assign(g.ids[0]));
         }
 
         if (scrollMax > 0) {
           drawScrollIndicator(ml, viewport, this.feedScrollPx, scrollMax);
         }
 
-        // Confirm + Cancel buttons — each button's width auto-fits its label (with a
-        // per-button minimum) so longer localized text (e.g. German "Zusammenbauen")
-        // never overflows a fixed box; the pair stays centered under the panel.
-        const btnH = 28 * S;
-        const btnPadX = 16 * S;
+        // ── Footer: Fuse / Cancel ──
+        const btnH = 26 * S;
+        const btnPadX = 14 * S;
         const btnGap = 8 * S;
-        const btnY = my + mh - 36 * S;
+        const btnY = my + mh - 32 * S;
 
-        const total = totalSelected();
-        const confirmOn = total > 0 && !this.bt.busy;
-        const confirmLbl = txt(`${t('roster.feedBtn')} (${total})`, snapFont(11 * S), confirmOn ? C.light : C.mid);
-        const cancelLbl = txt(t('equip.cancel'), snapFont(11 * S), C.dark);
-        const confirmBtnW = Math.max(100 * S, confirmLbl.width + btnPadX * 2);
-        const cancelBtnW = Math.max(80 * S, cancelLbl.width + btnPadX * 2);
+        const n = filledCount();
+        const confirmOn = n === FUSION_MATERIAL_COUNT && !this.bt.busy;
+        const confirmLbl = txt(`${t('roster.fuseBtn')} (${n}/${FUSION_MATERIAL_COUNT})`, snapFont(10 * S), confirmOn ? C.light : C.mid);
+        const cancelLbl = txt(t('equip.cancel'), snapFont(10 * S), C.dark);
+        const confirmBtnW = Math.max(90 * S, confirmLbl.width + btnPadX * 2);
+        const cancelBtnW = Math.max(70 * S, cancelLbl.width + btnPadX * 2);
 
         const pairW = confirmBtnW + btnGap + cancelBtnW;
         const confirmX = mx + mw / 2 - pairW / 2;
@@ -278,7 +322,7 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         if (confirmOn) {
           this.modalHits.push({
             rect: { x: confirmX, y: btnY, w: confirmBtnW, h: btnH },
-            action: () => void this.doFeed(target.id, selectedIds()),
+            action: () => void this.doFuse(target.id, slotIds.filter((id): id is string => id !== null)),
           });
         }
 
@@ -294,8 +338,8 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         this.modalHits.push({ rect: { x: 0, y: 0, w, h }, action: () => { this.closeModal(); this.render(); } });
       };
 
-      this.feedRedraw = drawFeedPanel;
-      drawFeedPanel();
+      this.feedRedraw = drawFusePanel;
+      drawFusePanel();
     }
   };
 }

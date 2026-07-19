@@ -3,44 +3,31 @@
 // live in the default game-logic suite. Added alongside the 2026-07-07 CardScene split.
 import { describe, it, expect } from 'vitest';
 import {
-  CARD_DEFS, LEVEL_CUMULATIVE_XP, getCardDef,
-  xpToNextLevel, troopCap, cardPower, feedXp,
+  CARD_DEFS, MAX_CARD_LEVEL, FUSION_MATERIAL_COUNT, getCardDef,
+  troopCap, cardPower, fusionMaterialCandidates,
 } from '../src/game/meta/cardDefs';
 import type { CardInstance, EquipmentInstance } from '../src/game/meta/SaveData';
 
 function card(partial: Partial<CardInstance> & { defId: string }): CardInstance {
-  return { id: 'c1', level: 1, xp: 0, gear: {}, locked: false, ...partial };
+  return { id: 'c1', level: 1, gear: {}, locked: false, ...partial };
 }
 
-describe('xpToNextLevel', () => {
-  it('is 5^level below max level', () => {
-    expect(xpToNextLevel(1)).toBe(5);
-    expect(xpToNextLevel(2)).toBe(25);
-    expect(xpToNextLevel(8)).toBe(5 ** 8);
+describe('fusionMaterialCandidates', () => {
+  it('includes only unlocked same-faction same-level cards, excluding the target itself', () => {
+    const target = card({ id: 'target', defId: 'lichuang', level: 3 });
+    const inv: Record<string, CardInstance> = {
+      target,
+      wrongLevel: card({ id: 'wrongLevel', defId: 'chenshou', level: 2 }),
+      wrongFaction: card({ id: 'wrongFaction', defId: 'max', level: 3 }),
+      locked: card({ id: 'locked', defId: 'suyuan', level: 3, locked: true }),
+      eligible: card({ id: 'eligible', defId: 'chenshou', level: 3 }),
+    };
+    const candidates = fusionMaterialCandidates(target, inv);
+    expect(candidates.map((c) => c.id)).toEqual(['eligible']);
   });
 
-  it('is Infinity at and beyond max level 9', () => {
-    expect(xpToNextLevel(9)).toBe(Infinity);
-    expect(xpToNextLevel(99)).toBe(Infinity);
-  });
-});
-
-describe('LEVEL_CUMULATIVE_XP', () => {
-  it('is strictly increasing from level 1 through 9', () => {
-    for (let i = 1; i < 9; i++) {
-      expect(LEVEL_CUMULATIVE_XP[i + 1]).toBeGreaterThan(LEVEL_CUMULATIVE_XP[i]);
-    }
-  });
-});
-
-describe('feedXp', () => {
-  it('adds in-level xp to the cumulative floor for the current level', () => {
-    expect(feedXp(card({ defId: 'lichuang', level: 3, xp: 10 }))).toBe(LEVEL_CUMULATIVE_XP[3] + 10);
-  });
-
-  it('clamps level into 1..9 and floors negative xp to 0', () => {
-    expect(feedXp(card({ defId: 'lichuang', level: 99, xp: -5 }))).toBe(LEVEL_CUMULATIVE_XP[9]);
-    expect(feedXp(card({ defId: 'lichuang', level: 0, xp: 3 }))).toBe(LEVEL_CUMULATIVE_XP[1] + 3);
+  it('respects FUSION_MATERIAL_COUNT as the number of slots a fusion needs', () => {
+    expect(FUSION_MATERIAL_COUNT).toBe(5);
   });
 });
 

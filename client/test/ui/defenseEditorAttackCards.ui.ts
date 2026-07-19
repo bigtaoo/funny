@@ -32,7 +32,7 @@ const WORLD_ID = 'world:1:0';
 function buildSave(cardCount: number): SaveData {
   const save = makeNewSave('acc_test');
   for (let i = 0; i < cardCount; i++) {
-    save.cardInv![`c${i}`] = { id: `c${i}`, defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false };
+    save.cardInv![`c${i}`] = { id: `c${i}`, defId: 'lichuang', level: 1, gear: {}, locked: false };
   }
   return save;
 }

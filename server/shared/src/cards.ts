@@ -141,17 +141,22 @@ export const CARD_DEFS: Record<string, CardDef> = {
 // ── Card inventory constants (CHARACTER_CARDS_DESIGN §2/§4) ────────────────────────────
 
 /** Hard cap on CardInstance count per account (CHARACTER_CARDS_DESIGN §2). */
-export const CARD_INV_CAP = 150;
+export const CARD_INV_CAP = 500;
 
 /** Coin compensation per card when the roster is full (overflow → coin sink; CHARACTER_CARDS_DESIGN §4). [DRAFT → ECONOMY_NUMBERS §6] */
 export const CARD_FULL_COMPENSATION_COINS = 10;
 
 /**
- * Within one grant call, the first N roster-full overflow cards are mailed to the player
- * as real card instances instead of being coin-compensated (CHARACTER_CARDS_DESIGN §4).
- * Beyond this count, remaining overflow still falls back to CARD_FULL_COMPENSATION_COINS.
+ * Single shared "near full" buffer (CHARACTER_CARDS_DESIGN §4), reused for two purposes:
+ *   · UI capacity warning fires when free slots ≤ this value (CARD_INV_CAP − CARD_INV_OVERFLOW_BUFFER).
+ *   · Within one grantCards call, the first N roster-full overflow cards are mailed to the player
+ *     as real card instances instead of being coin-compensated; beyond this count, remaining
+ *     overflow falls back to CARD_FULL_COMPENSATION_COINS.
  */
-export const INV_FULL_MAIL_COUNT = 10;
+export const CARD_INV_OVERFLOW_BUFFER = 10;
+
+/** Max card level (CHARACTER_CARDS_DESIGN §3, fusion-redesign). */
+export const MAX_CARD_LEVEL = 9;
 
 /** TTL in seconds for card operation idempotency ledger entries (7 days; same convention as equipment idem). */
 export const CARD_FEED_IDEM_TTL_SEC = 7 * 24 * 3600;
@@ -162,38 +167,26 @@ export function cardInvCount(cardInv: Record<string, CardInstance>): number {
   return Object.keys(cardInv).length;
 }
 
-// ── XP curve (CHARACTER_CARDS_DESIGN §3.1) ──────────────────────────────────────────────
+// ── Fusion upgrade (CHARACTER_CARDS_DESIGN §3, redesigned 2026-07-19) ───────────────────
 //
-// Formula: cost(level → level+1) = 5^level   (level 1-indexed, so L1→L2 = 5^1 = 5)
-// LEVEL_CUMULATIVE_XP[k] = total XP needed to reach level k from the starting state (level 1, xp=0).
-// Index 0 is unused; index 1 = 0 (level 1 is the starting state, no cost to "reach" it).
-// Final: L9 cumulative ≈ 488k XP.  [DRAFT authoritative value → ECONOMY_NUMBERS §6]
+// Replaces the old continuous-XP feed curve. A fusion consumes exactly FUSION_MATERIAL_COUNT
+// material cards — same faction, same level as the target — and raises the target one level.
+// No partial credit, no XP carry: it's a discrete "5 duplicates in, 1 level out" operation,
+// capped at MAX_CARD_LEVEL. Materials must match the target's *current* level, so reaching a
+// high level still requires a cascade of lower-level fusions first (same order of growth as
+// the old 5^level curve — this redesign changes the interaction, not the total card count).
 
-export const LEVEL_CUMULATIVE_XP: readonly number[] = [
-  0,       // [0] unused (no level 0)
-  0,       // [1] level 1 = starting state
-  5,       // [2] +5^1 = +5
-  30,      // [3] +5^2 = +25
-  155,     // [4] +5^3 = +125
-  780,     // [5] +5^4 = +625
-  3905,    // [6] +5^5 = +3125
-  19530,   // [7] +5^6 = +15625
-  97655,   // [8] +5^7 = +78125
-  488280,  // [9] +5^8 = +390625
-];
+/** Number of same-level same-faction material cards a single fusion consumes. */
+export const FUSION_MATERIAL_COUNT = 5;
 
 /**
- * Total "feed value" of a card instance, used directly as receiverXp += feedXp(material)
- * (CHARACTER_CARDS_DESIGN §3.3). Level 1 is the base currency unit and always feeds its
- * full value (1 + card.xp) with no loss; level 2+ cards feed at 80% of their accumulated
- * investment (LEVEL_CUMULATIVE_XP[level] + card.xp), which discourages melting down
- * already-leveled cards without zeroing out fresh level-1 duplicates.
+ * Applies one fusion: target gains exactly one level. Callers are responsible for having
+ * already validated the materials (count, faction, level-match) before calling this.
+ * No-op (returns target unchanged) if already at MAX_CARD_LEVEL.
  */
-export function feedXp(card: CardInstance): number {
-  const level = Math.max(1, Math.min(Math.floor(card.level), 9));
-  const xp = Math.max(0, card.xp);
-  if (level <= 1) return 1 + xp;
-  return Math.floor(((LEVEL_CUMULATIVE_XP[level] ?? 0) + xp) * 0.8);
+export function applyFusion(target: CardInstance): CardInstance {
+  if (target.level >= MAX_CARD_LEVEL) return target;
+  return { ...target, level: target.level + 1 };
 }
 
 // ── Power scoring (CHARACTER_CARDS_DESIGN §2.4) ─────────────────────────────────────────
@@ -210,7 +203,7 @@ export function feedXp(card: CardInstance): number {
 
 /** Approximate continuous stat growth at level k (average of hp+12% and atk+10% per step ≈ 11%). */
 function levelStatMult(level: number): number {
-  return 1 + 0.11 * (Math.max(1, Math.min(level, 9)) - 1);
+  return 1 + 0.11 * (Math.max(1, Math.min(level, MAX_CARD_LEVEL)) - 1);
 }
 
 /**
@@ -226,7 +219,7 @@ export function cardPower(
 ): number {
   const def = CARD_DEFS[card.defId];
   if (!def) return 0;
-  const lv = Math.max(1, Math.min(Math.floor(card.level), 9));
+  const lv = Math.max(1, Math.min(Math.floor(card.level), MAX_CARD_LEVEL));
   // Base power: normalized by power weights (both on 0–1 scale summing to 1) × 100 scale factor
   const basePower = (def.powerWeights.hp + def.powerWeights.atk) * 100 * levelStatMult(lv);
   // Equipment bonus: rough sum of all affix values (affix.value is in % units for primary/secondary)
@@ -287,6 +280,6 @@ const SIEGE_VALUE_GROWTH_PER_LEVEL = 0.1;
 export function cardSiegeValue(card: CardInstance): number {
   const def = CARD_DEFS[card.defId];
   if (!def) return 0;
-  const lv = Math.max(1, Math.min(Math.floor(card.level), 9));
+  const lv = Math.max(1, Math.min(Math.floor(card.level), MAX_CARD_LEVEL));
   return Math.round(def.siegeValueBase * (1 + SIEGE_VALUE_GROWTH_PER_LEVEL * (lv - 1)));
 }

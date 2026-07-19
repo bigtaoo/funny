@@ -14,10 +14,11 @@
       "@nw/engine": ["../server/engine/src/index.ts"],
       "@nw/engine/*": ["../server/engine/src/*"],
       "@nw/shared/slg/auction": ["../server/shared/src/slg/auction.ts"],
+      "@nw/shared/cards": ["../server/shared/src/cards.ts"],
       "@nw/shared": ["../server/shared/src/slg/index.ts"]
     }
   },
-  "include": ["src/**/*", "../server/engine/src/**/*", "../server/shared/src/slg/**/*"],
+  "include": ["src/**/*", "../server/engine/src/**/*", "../server/shared/src/slg/**/*", "../server/shared/src/cards.ts", "../server/shared/src/types.ts"],
   "exclude": [
     "node_modules",
     "dist",

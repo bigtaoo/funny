@@ -93,19 +93,20 @@ describe('ApiClient password auth (SA-1/SA-3)', () => {
 });
 
 describe('ApiClient card/equipment request bodies (CC-1/E3/E6)', () => {
-  // Regression: feedCards() used to send { targetCardId, materialCardIds } with no
+  // Regression: fuseCards() used to send { targetCardId, materialCardIds } with no
   // idempotencyKey — the server's openapi contract requires { targetId, materialIds,
-  // idempotencyKey }, so every feed call 400'd. Assert the wire body matches the contract
+  // idempotencyKey }, so every fuse call 400'd. Assert the wire body matches the contract
   // field names verbatim, not just the client-side parameter names.
-  it('feedCards: POST /cards/feed with targetId/materialIds/idempotencyKey', async () => {
-    const calls = installFetch(() => ({ json: { ok: true, data: { save: {}, levelsGained: 1 } } }));
+  it('fuseCards: POST /cards/fuse with targetId/materialIds/idempotencyKey', async () => {
+    const calls = installFetch(() => ({ json: { ok: true, data: { save: {}, card: {} } } }));
     const api = new ApiClient('https://h/api');
-    await api.feedCards('card-target', ['card-mat-1', 'card-mat-2'], 'idem-1');
-    expect(calls[0]!.url).toBe('https://h/api/cards/feed');
+    const materialIds = ['card-mat-1', 'card-mat-2', 'card-mat-3', 'card-mat-4', 'card-mat-5'];
+    await api.fuseCards('card-target', materialIds, 'idem-1');
+    expect(calls[0]!.url).toBe('https://h/api/cards/fuse');
     expect(calls[0]!.method).toBe('POST');
     expect(calls[0]!.body).toEqual({
       targetId: 'card-target',
-      materialIds: ['card-mat-1', 'card-mat-2'],
+      materialIds,
       idempotencyKey: 'idem-1',
     });
   });

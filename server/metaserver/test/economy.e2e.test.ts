@@ -2,7 +2,7 @@
 //   shop/gacha coin deduction → item delivery → mirror, ads cap, iap mirror, reconciliation re-delivery (crash before delivery) with no loss and no duplication.
 // Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { createMongo, type JwtConfig, type MongoHandle, ADS_MIN_INTERVAL_MS } from '@nw/shared';
+import { createMongo, type JwtConfig, type MongoHandle, ADS_MIN_INTERVAL_MS, CARD_INV_CAP } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../dist/app.js';
 import type {
@@ -469,7 +469,7 @@ describe.skipIf(!mongo2)('gacha inventory-full overflow → mail', () => {
   /** Directly fill save.cardInv with N dummy instances (bypassing gacha) so a draw starts already at the cap. */
   async function fillCardInv(n: number): Promise<void> {
     const cardInv: Record<string, unknown> = {};
-    for (let i = 0; i < n; i++) cardInv[`card_filler_${i}`] = { id: `card_filler_${i}`, defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false };
+    for (let i = 0; i < n; i++) cardInv[`card_filler_${i}`] = { id: `card_filler_${i}`, defId: 'lichuang', level: 1, gear: {}, locked: false };
     await m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.cardInv': cardInv } });
   }
 
@@ -481,18 +481,18 @@ describe.skipIf(!mongo2)('gacha inventory-full overflow → mail', () => {
   }
 
   it('roster full: first 10 overflow cards in one draw are mailed, not coin-compensated', async () => {
-    await fillCardInv(150);
+    await fillCardInv(CARD_INV_CAP);
     comm.nextResults = Array.from({ length: 10 }, () => ({ itemId: 'lichuang', rarity: 'common' as const }));
     const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } }));
     expect(r.data.overflow).toMatchObject({ cardMailed: 10, cardCompensatedCoins: 0 });
-    expect(Object.keys(r.data.save.cardInv)).toHaveLength(150); // none of the 10 landed in cardInv
+    expect(Object.keys(r.data.save.cardInv)).toHaveLength(CARD_INV_CAP); // none of the 10 landed in cardInv
     expect(r.data.save.cardMailOverflowCount).toBe(10);
     const cardMail = socialsvc.sent.find((s) => s.content.attachments?.[0]?.kind === 'card');
     expect(cardMail?.content.attachments).toHaveLength(10);
   });
 
   it('roster full: overflow beyond the first 10 (across draws) falls back to coin compensation', async () => {
-    await fillCardInv(150);
+    await fillCardInv(CARD_INV_CAP);
     comm.nextResults = Array.from({ length: 10 }, () => ({ itemId: 'lichuang', rarity: 'common' as const }));
     const first = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } }));
     expect(first.data.overflow.cardMailed).toBe(10);
@@ -507,10 +507,10 @@ describe.skipIf(!mongo2)('gacha inventory-full overflow → mail', () => {
   });
 
   it('roster no longer full → mail quota refills', async () => {
-    await fillCardInv(150);
+    await fillCardInv(CARD_INV_CAP);
     comm.nextResults = Array.from({ length: 10 }, () => ({ itemId: 'lichuang', rarity: 'common' as const }));
     await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } });
-    // Free up room: drop back to 149 entries.
+    // Free up room: drop back to CARD_INV_CAP - 1 entries.
     await m.collections.saves.updateOne({ _id: accountId }, { $unset: { 'save.cardInv.card_filler_0': '' } });
     const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } }));
     // 1 slot free → 1 card lands in cardInv; remaining 9 overflow, and since room was seen the mail quota reset to 0 first.
@@ -550,12 +550,12 @@ describe.skipIf(!mongo2)('gacha inventory-full overflow → mail', () => {
   });
 
   it('mailed attachments carry the real instance data, not just a count — cards keep defId/level, equipment keeps defId/rarity', async () => {
-    await fillCardInv(150);
+    await fillCardInv(CARD_INV_CAP);
     comm.nextResults = [{ itemId: 'chenshou', rarity: 'rare' as const }];
     const r1 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
     expect(r1.data.overflow.cardMailed).toBe(1);
     const cardMail = socialsvc.sent.find((s) => s.content.attachments?.[0]?.kind === 'card');
-    expect(cardMail?.content.attachments?.[0]?.instance).toMatchObject({ defId: 'chenshou', level: 1, xp: 0, locked: false });
+    expect(cardMail?.content.attachments?.[0]?.instance).toMatchObject({ defId: 'chenshou', level: 1, locked: false });
 
     await fillEquipInv(300);
     comm.nextResults = [{ itemId: 'wp_marker', rarity: 'rare' as const }];
@@ -566,7 +566,7 @@ describe.skipIf(!mongo2)('gacha inventory-full overflow → mail', () => {
   });
 
   it('mail delivery failure (socialsvc unreachable) does not block the draw response or lose the overflow accounting', async () => {
-    await fillCardInv(150);
+    await fillCardInv(CARD_INV_CAP);
     socialsvc.insertSystemMail = async () => { throw new Error('simulated socialsvc outage'); };
     comm.nextResults = Array.from({ length: 10 }, () => ({ itemId: 'lichuang', rarity: 'common' as const }));
     const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } }));

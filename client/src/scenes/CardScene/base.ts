@@ -7,9 +7,9 @@
 // live in their own sibling file as `XMixin(Base)` and are chained into the final CardScene.
 //
 // CardScene — Hero Roster UI (CHARACTER_CARDS_DESIGN §10).
-//   List: card inventory sorted by power desc → level desc; capacity counter (n/150).
-//   Detail modal: stats + skill + troop cap + gear 3 slots + XP bar + lock toggle + feed + list-auction.
-//   Feed flow: select target → material selection panel (same-faction, multi-select) → feedCards().
+//   List: card inventory sorted by power desc → level desc; capacity counter (n/500).
+//   Detail modal: stats + skill + troop cap + gear 3 slots + fusion-readiness bar + lock toggle + fuse + list-auction.
+//   Fuse flow: select target → fusion panel (center card + 5 material slots, same faction+level) → fuseCards().
 // Server-authoritative (L2): all mutations go through server endpoints; SaveData is the read-only mirror.
 import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../../layout/ILayout';
@@ -41,8 +41,8 @@ export interface CardCallbacks {
   getSave(): SaveData;
   /** SLG per-card state (troops/injury/teamId); undefined when outside SLG. */
   getCardState?(): Record<string, CardSLGState> | undefined;
-  /** Feed cards: consumes materialCardIds, grants XP to targetCardId. */
-  feedCards(targetCardId: string, materialCardIds: string[]): Promise<CardActionResult & { levelsGained?: number }>;
+  /** Fuse cards: consumes exactly 5 materialCardIds (same faction+level as target), targetCardId +1 level. */
+  fuseCards(targetCardId: string, materialCardIds: string[]): Promise<CardActionResult>;
   /** Toggle card lock. */
   setCardLock(cardInstanceId: string, locked: boolean): Promise<CardActionResult>;
   /** Recover an injured card by spending coins. Only present when in SLG context. */
@@ -409,9 +409,11 @@ export interface CardSceneBase {
   renderCardCell(card: CardInstance, x: number, y: number, cellW: number, state: CardSLGState | undefined, now: number, save: SaveData): void;
   openDetail(cardId: string): void;
   renderDetailGearSlots(card: CardInstance, mx: number, cy: number, mw: number, save: SaveData): void;
-  openFeedSelect(target: CardInstance): void;
-  doFeed(targetId: string, materialIds: string[]): Promise<void>;
+  openFuseSelect(target: CardInstance): void;
+  doFuse(targetId: string, materialIds: string[]): Promise<void>;
   doSetLock(cardId: string, locked: boolean): Promise<void>;
   doRecover(cardId: string): Promise<void>;
   renderSkinsTab(): void;
+  /** Placeholder in-engine fusion animation (programmer art; see FeedMixin). Resolves when it finishes. */
+  playFusionAnim?(): Promise<void>;
 }

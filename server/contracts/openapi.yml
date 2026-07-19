@@ -406,7 +406,6 @@ components:
         - id
         - defId
         - level
-        - xp
         - gear
         - locked
       properties:
@@ -420,10 +419,6 @@ components:
           type: integer
           minimum: 1
           maximum: 9
-        xp:
-          type: integer
-          minimum: 0
-          description: Accumulated XP within the current level
         gear:
           type: object
           additionalProperties:
@@ -431,7 +426,7 @@ components:
           description: Per-slot equipped equipment instance ids (slot→equipmentInstanceId)
         locked:
           type: boolean
-          description: Locked cards cannot be used as feed material
+          description: Locked cards cannot be used as fusion material
     SyncPatch:
       type: object
       properties:
@@ -2953,12 +2948,12 @@ paths:
           $ref: '#/components/responses/ErrorResp'
         '409':
           $ref: '#/components/responses/ErrorResp'
-  /cards/feed:
+  /cards/fuse:
     post:
-      operationId: cardsFeed
+      operationId: cardsFuse
       tags:
         - save
-      summary: Feed material cards into a target card to gain XP and level up (CHARACTER_CARDS_DESIGN §3.3, CC-2). Same-faction required; locked materials rejected. idempotencyKey prevents double-consumption
+      summary: Fuse exactly 5 same-faction same-level material cards into a target card, raising it one level (CHARACTER_CARDS_DESIGN §3, fusion redesign, CC-2). Locked materials rejected; idempotencyKey prevents double-consumption
       security:
         - bearerAuth: []
       requestBody:
@@ -2979,7 +2974,9 @@ paths:
                   type: array
                   items:
                     type: string
-                  description: CardInstance ids to consume as feed material (same faction; must not be locked)
+                  minItems: 5
+                  maxItems: 5
+                  description: Exactly 5 CardInstance ids to consume as fusion material (same faction, same level as target; must not be locked)
                 idempotencyKey:
                   type: string
                   description: Client-generated idempotency key; prevents double-consumption on retry
@@ -3002,14 +2999,10 @@ paths:
                     type: object
                     required:
                       - card
-                      - levelsGained
                       - save
                     properties:
                       card:
                         $ref: '#/components/schemas/CardInstance'
-                      levelsGained:
-                        type: integer
-                        minimum: 0
                       save:
                         $ref: '#/components/schemas/SaveData'
         '400':

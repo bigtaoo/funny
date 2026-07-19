@@ -85,11 +85,11 @@ describe('sidebarNavW — pure formula', () => {
 
 function buildCardScene(w: number, h: number): { scene: CardScene } {
   const save = makeNewSave();
-  save.cardInv['c1'] = { id: 'c1', defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false };
+  save.cardInv['c1'] = { id: 'c1', defId: 'lichuang', level: 1, gear: {}, locked: false };
   const cb: CardCallbacks = {
     onBack() {},
     getSave: () => save,
-    feedCards: async () => ({ ok: true }),
+    fuseCards: async () => ({ ok: true }),
     setCardLock: async () => ({ ok: true }),
     openEquipmentBag() {},
     getOwnedSkins: () => [],

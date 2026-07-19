@@ -320,14 +320,14 @@ export interface MailDoc {
 }
 
 /**
- * Card operation idempotency ledger (CC-2, CHARACTER_CARDS_DESIGN §3.3): prevents double-consumption of material cards
- * when the client retries a /cards/feed request. _id = idempotencyKey. TTL auto-expiry (7 days).
+ * Card operation idempotency ledger (CC-2, CHARACTER_CARDS_DESIGN §3): prevents double-consumption of material cards
+ * when the client retries a /cards/fuse request. _id = idempotencyKey. TTL auto-expiry (7 days).
  */
 export interface CardIdemDoc {
   _id: string; // idempotencyKey
   accountId: string;
-  op: 'feed';
-  result: unknown; // { targetId: string; levelsGained: number }
+  op: 'fuse';
+  result: unknown; // { targetId: string }
   expireAt: Date;
 }
 

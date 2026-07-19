@@ -1,5 +1,5 @@
-// Verifies the feed modal's Confirm/Cancel buttons auto-fit their label width per locale:
-// German "Zusammenbauen" is wider than Chinese "携手成长", and the button box must grow to fit
+// Verifies the fuse modal's Confirm/Cancel buttons auto-fit their label width per locale:
+// German "Fusionieren" is wider than Chinese "融合", and the button box must grow to fit
 // so the label never overflows. Asserts each button label's measured width <= its button rect width.
 
 import { describe, it, expect } from 'vitest';
@@ -9,6 +9,7 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, setLocale, t } from '../../src/i18n';
 import { CardScene, type CardCallbacks } from '../../src/scenes/CardScene';
 import type { CardInstance } from '../../src/game/meta/SaveData';
+import { FUSION_MATERIAL_COUNT } from '../../src/game/meta/cardDefs';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -23,7 +24,7 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
 type Hit = { rect: { x: number; y: number; w: number; h: number }; action: () => void };
 
 function makeCard(id: string, defId: string, o: Partial<CardInstance> = {}): CardInstance {
-  return { id, defId, level: 1, xp: 0, gear: {}, locked: false, ...o } as CardInstance;
+  return { id, defId, level: 1, gear: {}, locked: false, ...o } as CardInstance;
 }
 
 /** Collect every PIXI.Text with its world position + measured width. */
@@ -42,28 +43,32 @@ function collectTexts(container: PIXI.Container): { text: string; x: number; y: 
   return out;
 }
 
-describe('feed modal Confirm/Cancel buttons auto-fit label width per locale', () => {
+describe('fuse modal Confirm/Cancel buttons auto-fit label width per locale', () => {
   for (const loc of ['zh', 'en', 'de'] as const) {
     it(`${loc}: labels fit inside their buttons`, () => {
       setLocale(loc);
       const target = makeCard('target', 'lena');
-      const cardInv: Record<string, CardInstance> = { target, mat0: makeCard('mat0', 'max') };
+      const cardInv: Record<string, CardInstance> = { target };
+      for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max');
       const cb = {
         onBack() {}, getSave: () => ({ cardInv, equipmentInv: {}, wallet: { coins: 0 } }),
-        feedCards: async () => ({ ok: true }), setCardLock: async () => ({ ok: true }),
+        fuseCards: async () => ({ ok: true }), setCardLock: async () => ({ ok: true }),
         getOwnedSkins: () => [], getEquippedSkin: () => null, equipSkin() {},
       } as unknown as CardCallbacks;
 
       const scene = new CardScene(createLayout(1920, 1080), new InputManager(), cb);
-      (scene as unknown as { openFeedSelect: (c: CardInstance) => void }).openFeedSelect(target);
+      (scene as unknown as { openFuseSelect: (c: CardInstance) => void }).openFuseSelect(target);
 
       const hitsOf = (): Hit[] => (scene as unknown as { modalHits: Hit[] }).modalHits;
-      // Select the material row so Confirm renders "(1)".
+      // Fill all 5 slots so Confirm renders "(5/5)" and registers a tappable hit.
       const rowLabel = `${t('card.max.name' as never)} Lv.1`;
-      const rowText = collectTexts(scene.container).find((tt) => tt.text === rowLabel)!;
-      hitsOf().find((h) => rowText.x >= h.rect.x && rowText.x <= h.rect.x + h.rect.w && rowText.y >= h.rect.y && rowText.y <= h.rect.y + h.rect.h)!.action();
+      for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
+        const rowText = collectTexts(scene.container).find((tt) => tt.text === rowLabel);
+        expect(rowText, `${loc}: candidate row missing before assigning material ${i}`).toBeDefined();
+        hitsOf().find((h) => rowText!.x >= h.rect.x && rowText!.x <= h.rect.x + h.rect.w && rowText!.y >= h.rect.y && rowText!.y <= h.rect.y + h.rect.h)!.action();
+      }
 
-      const confirmLabel = `${t('roster.feedBtn')} (1)`;
+      const confirmLabel = `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`;
       const cancelLabel = t('equip.cancel');
       const texts = collectTexts(scene.container);
       const hits = hitsOf();

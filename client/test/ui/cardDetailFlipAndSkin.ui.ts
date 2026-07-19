@@ -107,7 +107,7 @@ function baseCb(overrides: Partial<CardCallbacks>): CardCallbacks {
       equipmentInv: {},
       wallet: { coins: 0 },
     } as unknown as ReturnType<CardCallbacks['getSave']>),
-    feedCards: async () => ({ ok: true }),
+    fuseCards: async () => ({ ok: true }),
     setCardLock: async () => ({ ok: true }),
     getOwnedSkins: () => [],
     getEquippedSkin: () => null,
