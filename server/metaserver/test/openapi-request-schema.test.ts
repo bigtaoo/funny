@@ -73,8 +73,10 @@ function minimalValue(rawNode: Node): unknown {
       return typeof node.minimum === 'number' ? node.minimum : 1;
     case 'boolean':
       return true;
-    case 'array':
-      return node.items ? [minimalValue(node.items)] : [];
+    case 'array': {
+      const minItems = typeof node.minItems === 'number' ? node.minItems : 1;
+      return node.items ? Array.from({ length: Math.max(minItems, 1) }, () => minimalValue(node.items)) : [];
+    }
     case 'object':
       return minimalObject(node);
     default:

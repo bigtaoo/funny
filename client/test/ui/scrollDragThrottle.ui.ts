@@ -213,7 +213,7 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
     const scene = new CardScene(createLayout(W, H), input, {
       onBack() {},
       getSave: () => save,
-      feedCards: async () => ({ ok: true }),
+      fuseCards: async () => ({ ok: true }),
       setCardLock: async () => ({ ok: true }),
       getOwnedSkins: () => [],
       getEquippedSkin: () => null,

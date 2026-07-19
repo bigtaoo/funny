@@ -26,7 +26,7 @@ const memStore = (() => {
 initI18n('en', memStore, ['zh', 'en', 'de']);
 
 function makeCard(id: string, defId: string, level: number): CardInstance {
-  return { id, defId, level, xp: 0, gear: {}, locked: false };
+  return { id, defId, level, gear: {}, locked: false };
 }
 
 function buildScene(cards: CardInstance[]): CardScene {
@@ -35,7 +35,7 @@ function buildScene(cards: CardInstance[]): CardScene {
   const cb: CardCallbacks = {
     onBack() {},
     getSave: () => save,
-    feedCards: async () => ({ ok: true }),
+    fuseCards: async () => ({ ok: true }),
     setCardLock: async () => ({ ok: true }),
     getOwnedSkins: () => [],
     getEquippedSkin: () => null,

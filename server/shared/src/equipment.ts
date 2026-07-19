@@ -71,7 +71,7 @@ export const EQUIP_FULL_COMPENSATION_COINS = 10;
 
 /**
  * Within one grant call, the first N inventory-full overflow equipment instances are mailed to the
- * player as real instances instead of being coin-compensated (mirrors CARD's INV_FULL_MAIL_COUNT).
+ * player as real instances instead of being coin-compensated (mirrors CARD's CARD_INV_OVERFLOW_BUFFER).
  * Beyond this count, remaining overflow falls back to EQUIP_FULL_COMPENSATION_COINS.
  */
 export const EQUIP_INV_FULL_MAIL_COUNT = 10;

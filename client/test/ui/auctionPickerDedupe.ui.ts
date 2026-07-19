@@ -54,7 +54,7 @@ function equip(id: string, opts: Partial<EquipmentInstance> = {}): EquipmentInst
   return { id, defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [], ...opts };
 }
 function card(id: string, opts: Partial<CardInstance> = {}): CardInstance {
-  return { id, defId: 'suyuan', level: 1, xp: 0, gear: {}, locked: false, ...opts };
+  return { id, defId: 'suyuan', level: 1, gear: {}, locked: false, ...opts };
 }
 function saveWith(equipmentInv: Record<string, EquipmentInstance>, cardInv: Record<string, CardInstance>): SaveData {
   return { ...makeNewSave('acc_1'), equipmentInv, cardInv };

@@ -46,7 +46,7 @@ function buildSave(): SaveData {
   save.wallet.coins = 100000;
   save.materials = { scrap: 4, lead: 53, binding: 1 };
   save.cardInv = {
-    card1: { id: 'card1', defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false },
+    card1: { id: 'card1', defId: 'lichuang', level: 1, gear: {}, locked: false },
   };
   const defIds = ['wp_pencil', 'wp_pen', 'wp_marker', 'ar_draft'];
   const rarities: EquipRarity[] = ['common', 'fine', 'rare', 'epic'];

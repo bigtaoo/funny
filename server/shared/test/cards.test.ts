@@ -1,9 +1,10 @@
-// Unit tests for cards.ts: feedXp / cardPower / selectBestCard (CHARACTER_CARDS_DESIGN §3/§2.4/§9).
+// Unit tests for cards.ts: applyFusion / cardPower / selectBestCard (CHARACTER_CARDS_DESIGN §3/§2.4/§9).
 import { describe, it, expect } from 'vitest';
 import {
   CARD_DEFS,
-  LEVEL_CUMULATIVE_XP,
-  feedXp,
+  MAX_CARD_LEVEL,
+  FUSION_MATERIAL_COUNT,
+  applyFusion,
   cardPower,
   selectBestCard,
 } from '../src/cards';
@@ -12,8 +13,8 @@ import type { EquipmentInstance } from '../src/types';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────────
 
-function makeCard(defId: string, level: number, xp = 0, gear: CardInstance['gear'] = {}): CardInstance {
-  return { id: `test_${defId}_${level}`, defId, level, xp, gear, locked: false };
+function makeCard(defId: string, level: number, gear: CardInstance['gear'] = {}): CardInstance {
+  return { id: `test_${defId}_${level}`, defId, level, gear, locked: false };
 }
 
 function makeEquip(id: string, mainAffixValue: number): EquipmentInstance {
@@ -66,64 +67,28 @@ describe('CARD_DEFS', () => {
   });
 });
 
-// ── LEVEL_CUMULATIVE_XP ──────────────────────────────────────────────────────────
+// ── applyFusion ──────────────────────────────────────────────────────────────────
 
-describe('LEVEL_CUMULATIVE_XP', () => {
-  it('has 10 entries (index 0..9)', () => {
-    expect(LEVEL_CUMULATIVE_XP).toHaveLength(10);
+describe('applyFusion', () => {
+  it('raises the card exactly one level', () => {
+    const fused = applyFusion(makeCard('lichuang', 3));
+    expect(fused.level).toBe(4);
   });
 
-  it('level 1 cumulative XP is 0 (starting state)', () => {
-    expect(LEVEL_CUMULATIVE_XP[1]).toBe(0);
+  it('is a no-op at MAX_CARD_LEVEL', () => {
+    const maxed = makeCard('lichuang', MAX_CARD_LEVEL);
+    expect(applyFusion(maxed)).toBe(maxed);
   });
 
-  it('follows cost(n→n+1) = 5^n formula', () => {
-    // L1→L2 costs 5^1 = 5  →  cumXP[2] - cumXP[1] = 5
-    expect(LEVEL_CUMULATIVE_XP[2]! - LEVEL_CUMULATIVE_XP[1]!).toBe(5);
-    // L2→L3 costs 5^2 = 25  →  cumXP[3] - cumXP[2] = 25
-    expect(LEVEL_CUMULATIVE_XP[3]! - LEVEL_CUMULATIVE_XP[2]!).toBe(25);
-    // L8→L9 costs 5^8 = 390625
-    expect(LEVEL_CUMULATIVE_XP[9]! - LEVEL_CUMULATIVE_XP[8]!).toBe(390625);
+  it('does not mutate the input card', () => {
+    const card = makeCard('lichuang', 2);
+    const fused = applyFusion(card);
+    expect(card.level).toBe(2);
+    expect(fused).not.toBe(card);
   });
 
-  it('level 9 cumulative is ~488k', () => {
-    expect(LEVEL_CUMULATIVE_XP[9]).toBe(488280);
-  });
-});
-
-// ── feedXp ───────────────────────────────────────────────────────────────────────
-
-describe('feedXp', () => {
-  it('level 1, xp=0 → 1 (base currency unit, no loss)', () => {
-    expect(feedXp(makeCard('lichuang', 1, 0))).toBe(1);
-  });
-
-  it('level 1, xp=3 → 4 (base + partial XP progress, no loss)', () => {
-    expect(feedXp(makeCard('lichuang', 1, 3))).toBe(4);
-  });
-
-  it('level 2, xp=0 → 4 (cost of L1→L2 = 5, at 80% efficiency)', () => {
-    expect(feedXp(makeCard('lichuang', 2, 0))).toBe(4);
-  });
-
-  it('level 2, xp=10 → 12 (level cost + partial progress, at 80% efficiency)', () => {
-    expect(feedXp(makeCard('lichuang', 2, 10))).toBe(12);
-  });
-
-  it('level 9, xp=0 → 390624 (full max investment, at 80% efficiency)', () => {
-    expect(feedXp(makeCard('lichuang', 9, 0))).toBe(390624);
-  });
-
-  it('clamps level below 1 to 1', () => {
-    expect(feedXp(makeCard('lichuang', 0, 0))).toBe(1); // level clamped to 1, xp 0 → base value 1
-  });
-
-  it('clamps level above 9 to 9', () => {
-    expect(feedXp(makeCard('lichuang', 10, 0))).toBe(390624);
-  });
-
-  it('ignores negative xp (treated as 0)', () => {
-    expect(feedXp(makeCard('lichuang', 1, -5))).toBe(1);
+  it('FUSION_MATERIAL_COUNT is 5', () => {
+    expect(FUSION_MATERIAL_COUNT).toBe(5);
   });
 });
 
@@ -148,14 +113,14 @@ describe('cardPower', () => {
 
   it('equipment bonus increases power', () => {
     const equip = makeEquip('e1', 30); // m_atk +30%
-    const card = makeCard('lichuang', 5, 0, { weapon: 'e1' });
+    const card = makeCard('lichuang', 5, { weapon: 'e1' });
     const noEquip = cardPower(makeCard('lichuang', 5), {});
     const withEquip = cardPower(card, { e1: equip });
     expect(withEquip).toBeGreaterThan(noEquip);
   });
 
   it('missing equipment instance in inv is silently ignored', () => {
-    const card = makeCard('lichuang', 5, 0, { weapon: 'nonexistent' });
+    const card = makeCard('lichuang', 5, { weapon: 'nonexistent' });
     expect(cardPower(card, {})).toBeCloseTo(cardPower(makeCard('lichuang', 5), {}), 5);
   });
 });
@@ -192,8 +157,8 @@ describe('selectBestCard', () => {
 
   it('considers equipment when ranking (higher-level card with no equipment vs lower-level with large bonus)', () => {
     // This test documents the expected behaviour, not a correctness requirement for the formula.
-    const noEquip = makeCard('lichuang', 9, 0, {});
-    const withEquip = makeCard('lichuang', 1, 0, { weapon: 'e1' });
+    const noEquip = makeCard('lichuang', 9, {});
+    const withEquip = makeCard('lichuang', 1, { weapon: 'e1' });
     const equip = makeEquip('e1', 9999); // absurdly high bonus to ensure it wins
     const cardInv = { a: noEquip, b: withEquip };
     const best = selectBestCard('infantry', cardInv, { e1: equip });

@@ -4,14 +4,14 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ErrorCode, ERROR_HTTP_STATUS, err, ok } from '@nw/shared';
 import { craftEquipment, enhanceEquipment, salvageEquipment, equipEquipment, reforgeEquipment } from '../equipment.js';
-import { feedCards, setCardLock } from '../cards.js';
+import { fuseCards, setCardLock } from '../cards.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
 import { accountIdOf, type Constructor, type MetaBaseCtor } from './base.js';
 
 type InventoryHandlers = Pick<
   MetaHandlers,
   | 'craftEquipment' | 'enhanceEquipment' | 'salvageEquipment' | 'equipEquipment' | 'reforgeEquipment'
-  | 'cardsFeed' | 'cardsLock' | 'cardsUnlock'
+  | 'cardsFuse' | 'cardsLock' | 'cardsUnlock'
 >;
 
 export function InventoryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Constructor<InventoryHandlers> {
@@ -90,10 +90,11 @@ export function InventoryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
     }
 
     /**
-     * Feed material cards into a target card to gain XP and level up (CHARACTER_CARDS_DESIGN §3.3, CC-2).
-     * Same-faction required; locked materials rejected; idempotencyKey prevents double-consumption.
+     * Fuse exactly 5 same-faction same-level material cards into a target card, raising it one
+     * level (CHARACTER_CARDS_DESIGN §3, fusion redesign, CC-2). Locked materials rejected;
+     * idempotencyKey prevents double-consumption.
      */
-    async cardsFeed(req: FastifyRequest, reply: FastifyReply) {
+    async cardsFuse(req: FastifyRequest, reply: FastifyReply) {
       const accountId = accountIdOf(req);
       const { targetId, materialIds, idempotencyKey } = req.body as {
         targetId: string;
@@ -101,13 +102,13 @@ export function InventoryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
         idempotencyKey: string;
       };
       const { cols, now } = this.deps;
-      const r = await feedCards(cols, now, accountId, targetId, materialIds, idempotencyKey);
+      const r = await fuseCards(cols, now, accountId, targetId, materialIds, idempotencyKey);
       if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
-      return ok({ card: r.card, levelsGained: r.levelsGained, save: r.save });
+      return ok({ card: r.card, save: r.save });
     }
 
     /**
-     * Lock a character card (CC-4): locked cards cannot be consumed as feed material.
+     * Lock a character card (CC-4): locked cards cannot be consumed as fusion material.
      * Idempotent — locking an already-locked card succeeds without bumping the save rev.
      */
     async cardsLock(req: FastifyRequest, reply: FastifyReply) {

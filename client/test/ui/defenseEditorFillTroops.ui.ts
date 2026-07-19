@@ -29,7 +29,7 @@ const WORLD_ID = 'world:1:0';
 function buildSave(cardDefs: { id: string; level?: number }[]): SaveData {
   const save = makeNewSave('acc_test');
   for (const { id, level } of cardDefs) {
-    save.cardInv![id] = { id, defId: 'lichuang', level: level ?? 1, xp: 0, gear: {}, locked: false };
+    save.cardInv![id] = { id, defId: 'lichuang', level: level ?? 1, gear: {}, locked: false };
   }
   return save;
 }

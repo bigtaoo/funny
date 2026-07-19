@@ -63,12 +63,12 @@ function internals(scene: CardScene | EquipmentScene): SceneInternals {
 
 function buildCardScene(w: number, h: number) {
   const save = makeNewSave();
-  save.cardInv['c1'] = { id: 'c1', defId: 'lichuang', level: 3, xp: 0, gear: {}, locked: false };
+  save.cardInv['c1'] = { id: 'c1', defId: 'lichuang', level: 3, gear: {}, locked: false };
   const calls = { back: 0 };
   const cb: CardCallbacks = {
     onBack: () => { calls.back++; },
     getSave: () => save,
-    feedCards: async () => ({ ok: true }),
+    fuseCards: async () => ({ ok: true }),
     setCardLock: async () => ({ ok: true }),
     getOwnedSkins: () => [],
     getEquippedSkin: () => null,

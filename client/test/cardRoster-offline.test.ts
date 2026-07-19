@@ -73,13 +73,14 @@ describe('createGameNav — goCardRoster offline', () => {
     expect(cb!.openEquipmentBag).toBeUndefined();
   });
 
-  it('feed/lock fail gracefully offline instead of throwing or hitting the network', async () => {
+  it('fuse/lock fail gracefully offline instead of throwing or hitting the network', async () => {
     const { ctx, getCardRoster } = buildCtx({ online: false });
     const { goCardRoster } = createGameNav(ctx);
     goCardRoster();
     const cb = getCardRoster()!;
 
-    await expect(cb.feedCards('target', ['mat1'])).resolves.toEqual({ ok: false, key: 'roster.err.offline' });
+    await expect(cb.fuseCards('target', ['mat1', 'mat2', 'mat3', 'mat4', 'mat5']))
+      .resolves.toEqual({ ok: false, key: 'roster.err.offline' });
     await expect(cb.setCardLock('c1', true)).resolves.toEqual({ ok: false, key: 'roster.err.offline' });
   });
 

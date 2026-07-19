@@ -53,7 +53,7 @@ function buildSave(): SaveData {
   save.wallet.coins = 100000;
   save.materials = { scrap: 4, lead: 53, binding: 1 };
   save.cardInv = {
-    card1: { id: 'card1', defId: 'lichuang', level: 1, xp: 0, gear: { trinket: 'eqTrinket' }, locked: false },
+    card1: { id: 'card1', defId: 'lichuang', level: 1, gear: { trinket: 'eqTrinket' }, locked: false },
   };
   save.equipmentInv = {
     eqTrinket: { id: 'eqTrinket', defId: 'sticker', rarity: 'rare', level: 0, affixes: [] },

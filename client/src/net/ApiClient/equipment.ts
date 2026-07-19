@@ -1,5 +1,5 @@
 // Equipment system (E2 craft / E3 enhance·salvage / E4 equip / E6 reforge) + card feed/lock (CC-1).
-import type { SaveData, EquipmentInstance, EquipSlot } from '../../game/meta/SaveData';
+import type { SaveData, EquipmentInstance, EquipSlot, CardInstance } from '../../game/meta/SaveData';
 import { type Constructor, type ApiClientBaseCtor } from './base';
 
 export interface EquipmentApi {
@@ -14,11 +14,11 @@ export interface EquipmentApi {
     idempotencyKey: string,
   ): Promise<{ refunded: Record<string, number>; save: SaveData }>;
   equipEquipment(slot: EquipSlot, instanceId: string | null, cardInstanceId: string): Promise<{ save: SaveData }>;
-  feedCards(
+  fuseCards(
     targetCardId: string,
     materialCardIds: string[],
     idempotencyKey: string,
-  ): Promise<{ save: SaveData; levelsGained: number }>;
+  ): Promise<{ save: SaveData; card: CardInstance }>;
   setCardLock(cardInstanceId: string, locked: boolean): Promise<{ save: SaveData }>;
   reforgeEquipment(
     targetId: string,
@@ -88,16 +88,16 @@ export function EquipmentMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TB
     }
 
     /**
-     * Feed cards (CC-1): consumes materialCardIds (same-faction), adds XP to targetCardId.
-     * Returns the updated SaveData; feed target must not be locked.
-     * Material cards that are locked or deployed → 409 CARD_LOCKED.
+     * Fuse cards (CC-1, fusion redesign): consumes exactly 5 materialCardIds (same faction, same
+     * level as target), raises targetCardId one level. Returns the updated SaveData + target card.
+     * Target must not be locked; material cards that are locked or deployed → 409 CARD_LOCKED.
      */
-    async feedCards(
+    async fuseCards(
       targetCardId: string,
       materialCardIds: string[],
       idempotencyKey: string,
-    ): Promise<{ save: SaveData; levelsGained: number }> {
-      return this.post<{ save: SaveData; levelsGained: number }>('/cards/feed', {
+    ): Promise<{ save: SaveData; card: CardInstance }> {
+      return this.post<{ save: SaveData; card: CardInstance }>('/cards/fuse', {
         targetId: targetCardId,
         materialIds: materialCardIds,
         idempotencyKey,
@@ -106,7 +106,7 @@ export function EquipmentMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TB
 
     /**
      * Toggle card lock (CC-4 client helper): calls POST /cards/lock or /cards/unlock.
-     * Locked cards cannot be used as feed material (CC4).
+     * Locked cards cannot be used as fusion material (CC4).
      */
     async setCardLock(cardInstanceId: string, locked: boolean): Promise<{ save: SaveData }> {
       return this.post<{ save: SaveData }>(locked ? '/cards/lock' : '/cards/unlock', { cardInstanceId });
