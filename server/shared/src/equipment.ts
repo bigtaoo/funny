@@ -272,8 +272,11 @@ export function equipmentInvCount(inv: Record<string, unknown> | undefined): num
 }
 
 /**
- * Equipment auction cold-start reference unit price (per item, by rarity, DRAFT): fallback when price guardrail sliding window has insufficient samples (AUCTION_DESIGN §4.A/§4.G).
- * Equipment qty is always 1, so "unit price" equals the full item valuation. Derivation goes to ECONOMY_NUMBERS §5.
+ * Equipment auction cold-start reference unit price (per item, by rarity, DRAFT): the "bare +0 item" component
+ * of the reference price, used as fallback when the price guardrail sliding window has insufficient samples
+ * (AUCTION_DESIGN §4.A/§4.G). Enhancement investment is added on top via `equipEnhanceExpectedCost` — this
+ * table alone is NOT the full reference price for an enhanced instance. Equipment qty is always 1, so "unit
+ * price" equals the full item valuation. Derivation goes to ECONOMY_NUMBERS §5.
  */
 export const EQUIP_AUCTION_REF_PRICE_BY_RARITY: Record<EquipRarity, number> = {
   common: 50,
@@ -281,6 +284,27 @@ export const EQUIP_AUCTION_REF_PRICE_BY_RARITY: Record<EquipRarity, number> = {
   rare: 400,
   epic: 1200,
 };
+
+/**
+ * Expected coin-equivalent cost of enhancing an instance from +0 to `level`, used to fold enhancement
+ * investment into the auction cold-start reference price (fixes the sunk-cost/price mismatch where a
+ * heavily-enhanced item's system price ceiling could fall below what was spent enhancing it, [[auction-refprice-ignores-enhance-level]]).
+ * Accounts for the real expected retry count from `enhanceSuccessRate` (failure still consumes materials+coins),
+ * not just a single attempt per level. `materialUnitValue` supplies coin-equivalent unit prices per material id
+ * (caller passes AUCTION_STATIC_REF_PRICE); materials with no listed value are treated as free.
+ */
+export function equipEnhanceExpectedCost(level: number, materialUnitValue: Record<string, number>): number {
+  const target = Math.max(0, Math.min(level, EQUIP_MAX_LEVEL));
+  let total = 0;
+  for (let lv = 0; lv < target; lv++) {
+    const { materials, coins } = enhanceCost(lv);
+    let perAttempt = coins;
+    for (const [mat, qty] of Object.entries(materials)) perAttempt += qty * (materialUnitValue[mat] ?? 0);
+    const expectedAttempts = 1 / enhanceSuccessRate(lv);
+    total += perAttempt * expectedAttempts;
+  }
+  return total;
+}
 
 // Deterministic drop: instanceId is used as seed; same id always replays the same result (caller passes randomUUID to ensure id uniqueness).
 // Slot is randomly selected via instanceId hash (three slots, equal probability); rarity is determined by the caller (pveRewards config).

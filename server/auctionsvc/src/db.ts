@@ -42,7 +42,7 @@ export interface AuctionDailyDoc {
 /** G Price guardrail sliding window (AUCTION_DESIGN §4.G). _id = category, stores the last N transaction unit prices. */
 export interface AuctionPriceDoc {
   _id: string;
-  category: string; // material category (material:scrap…); equipment category equip:{defId}
+  category: string; // material category (material:scrap…); equipment category equip:{defId}:{level}
   prices: number[]; // last N transaction unit prices (newest at tail, length ≤ AUCTION_PRICE_WINDOW_N)
 }
 

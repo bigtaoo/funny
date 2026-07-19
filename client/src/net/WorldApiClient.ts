@@ -510,7 +510,7 @@ export class WorldApiClient {
   }
 
   /**
-   * Price guardrail band for a listing category (e.g. `material:scrap`, `equip:<defId>`), used by the
+   * Price guardrail band for a listing category (e.g. `material:scrap`, `equip:<defId>:<level>`), used by the
    * create-listing form to show the seller the acceptable range before submitting. Returns null when the
    * category is unguarded / cold-start (any price allowed). floor/ceil match the server's PRICE_OUT_OF_RANGE check.
    */

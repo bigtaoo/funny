@@ -353,14 +353,14 @@ export class AuctionSceneBase {
 
   /**
    * Server price-guard category for the item currently selected in the create form
-   * (`material:<mat>` / `equip:<defId>`), or null for classes with no guardrail (cards). Mirrors the
-   * server's categoryOf so the band we fetch matches the band createAuction will enforce.
+   * (`material:<mat>` / `equip:<defId>:<level>`), or null for classes with no guardrail (cards). Mirrors
+   * the server's categoryOf so the band we fetch matches the band createAuction will enforce.
    */
   protected currentListingCategory(): string | null {
     if (this.createClass === 'material') return `material:${this.createMaterial}`;
     if (this.createClass === 'equipment') {
       const inst = this.listableEquipment().find((e) => e.id === this.createEquipId);
-      return inst ? `equip:${inst.defId}` : null;
+      return inst ? `equip:${inst.defId}:${inst.level}` : null;
     }
     return null; // card: no price window (server passes through)
   }

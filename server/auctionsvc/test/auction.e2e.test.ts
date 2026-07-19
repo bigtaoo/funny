@@ -12,6 +12,10 @@ import {
   AUCTION_DAILY_LIST_CAP,
   AUCTION_DAILY_BUY_CAP,
   AUCTION_ANTI_SNIPE_WINDOW_SEC,
+  AUCTION_STATIC_REF_PRICE,
+  AUCTION_PRICE_WINDOW_MIN_SAMPLES,
+  EQUIP_AUCTION_REF_PRICE_BY_RARITY,
+  equipEnhanceExpectedCost,
   SlgError,
   type EquipmentInstance,
   type CardInstance,
@@ -437,6 +441,51 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(await svc.getRefBand(null)).toBeNull();
   });
 
+  // ── G equipment ref price: folds enhancement level into the guardrail (fixes the "+9 epic priced like
+  //    +0" bug — the price guardrail used to be per-defId only, so a heavily-enhanced instance's ceiling
+  //    could sit below what was spent enhancing it) ──────────────────────────────────────────────────
+  it('G equipment getRefBand at +0 matches the flat rarity reference (no enhancement invested yet)', async () => {
+    const rareBase = EQUIP_AUCTION_REF_PRICE_BY_RARITY.rare;
+    expect(await svc.getRefBand('equip:wp_marker:0')).toEqual({ ref: rareBase, floor: rareBase * 0.5, ceil: rareBase * 2 });
+  });
+
+  it('G equipment getRefBand rises with enhancement level (folds expected enhance cost into the ref price)', async () => {
+    const rareBase = EQUIP_AUCTION_REF_PRICE_BY_RARITY.rare;
+    const band0 = await svc.getRefBand('equip:wp_marker:0');
+    const band9 = await svc.getRefBand('equip:wp_marker:9');
+    const expectedRef9 = rareBase + equipEnhanceExpectedCost(9, AUCTION_STATIC_REF_PRICE);
+    expect(band9).toEqual({ ref: expectedRef9, floor: expectedRef9 * 0.5, ceil: expectedRef9 * 2 });
+    expect(band9!.ref).toBeGreaterThan(band0!.ref);
+  });
+
+  it('G epic +9: the old flat rarity ceiling (2400) is now well below the guarded ceiling (the bug this fixes)', async () => {
+    const epicBase = EQUIP_AUCTION_REF_PRICE_BY_RARITY.epic;
+    const oldFlatCeiling = epicBase * 2; // = 2400, the exact number reported as "too low to cover enhance materials"
+    const band = await svc.getRefBand('equip:wp_highlighter:9');
+    expect(band!.ref).toBeGreaterThan(oldFlatCeiling);
+    expect(band!.ceil).toBeGreaterThan(oldFlatCeiling * 5);
+  });
+
+  it('G equipment price window is isolated per enhancement level (a +0 sale does not move the +9 reference price)', async () => {
+    const lowPrice = 250; // within the +0 rare band [200,800]
+    for (let i = 0; i < AUCTION_PRICE_WINDOW_MIN_SAMPLES; i++) {
+      seedEquip('alice', mkInst(`lvl0-${i}`));
+      const v = await svc.createAuction({
+        sellerId: 'alice', itemType: 'equipment',
+        item: { instanceId: `lvl0-${i}` }, qty: 1, price: lowPrice, durationSec: DUR,
+      });
+      await svc.buyAuction('bob', v.auctionId);
+    }
+    // +0 category now has enough samples to switch from the static fallback to the dynamic median.
+    const band0 = await svc.getRefBand('equip:wp_marker:0');
+    expect(band0!.ref).toBe(lowPrice);
+    // +9 category is untouched — still the level-aware cold-start formula, not diluted by the +0 sales.
+    const rareBase = EQUIP_AUCTION_REF_PRICE_BY_RARITY.rare;
+    const expectedRef9 = rareBase + equipEnhanceExpectedCost(9, AUCTION_STATIC_REF_PRICE);
+    const band9 = await svc.getRefBand('equip:wp_marker:9');
+    expect(band9!.ref).toBe(expectedRef9);
+  });
+
   // ── C Daily listing cap ────────────────────────────────────────────────────────
   it('C daily listings exceed AUCTION_DAILY_LIST_CAP → AUCTION_LIMIT_REACHED', async () => {
     // List one and immediately cancel (does not consume an open slot), repeat to reach the daily cap; next listing hits the limit.
@@ -573,13 +622,15 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
 
   it('A equipment buy → instance mailed to buyer (including full affix snapshot)', async () => {
     seedEquip('alice', mkInst('eq1', 'wp_marker', { level: 3, affixes: [{ id: 'm_atk', value: 8 }, { id: 's_hp', value: 5 }] }));
+    // price guardrail ref price rises with enhancement level (equip:{defId}:{level} category), so a +3
+    // rare needs a higher unit price than a +0 one to stay in-band — 800 clears the +3 floor.
     const view = await svc.createAuction({
       sellerId: 'alice', itemType: 'equipment',
-      item: { instanceId: 'eq1' }, qty: 1, price: 400, durationSec: DUR,
+      item: { instanceId: 'eq1' }, qty: 1, price: 800, durationSec: DUR,
     });
     const bought = await svc.buyAuction('bob', view.auctionId);
     expect(bought.status).toBe('sold');
-    expect(spends[0]).toMatchObject({ account: 'bob', amount: 400 });
+    expect(spends[0]).toMatchObject({ account: 'bob', amount: 800 });
     // escrow-out: buyer receives the instance via mail attachment (id + level + affix snapshot carried as-is)
     const att = mailAtt('bob', 'auction_buy:');
     expect(att?.kind).toBe('equipment');
@@ -587,8 +638,8 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(bobInst).toMatchObject({ id: 'eq1', level: 3 });
     expect(bobInst?.affixes).toHaveLength(2);
     // seller receives payment after tax, via mail
-    const tax = Math.floor(400 * AUCTION_TAX_RATE);
-    expect(mailAtt('alice', 'auction_buy:')).toMatchObject({ kind: 'coins', count: 400 - tax });
+    const tax = Math.floor(800 * AUCTION_TAX_RATE);
+    expect(mailAtt('alice', 'auction_buy:')).toMatchObject({ kind: 'coins', count: 800 - tax });
   });
 
   it('A equipment cancel → instance mailed back to seller', async () => {
