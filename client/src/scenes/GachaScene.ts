@@ -531,23 +531,28 @@ export class GachaScene implements Scene {
     // Item picture — same per-item representation used in the odds-detail grid
     // (material icon / equipment glyph / real unit art / skin brush / rarity
     // star fallback), so a glance shows *what* was drawn, not just its id string.
-    // Sized to 3/4 of the card and pulled down close to the plate (the NEW badge
-    // no longer lives in the plate — see stamp below — so the plate only needs
-    // to fit the name and the picture can sit right above it).
-    const picSize = Math.round(Math.min(w, h) * 0.75);
-    const picTop = y + h * 0.03;
+    // Pulled down from the card top (portrait art was clipping heads against the
+    // frame decoration otherwise) and sized to leave a small name plate at the
+    // bottom rather than a half-card white gutter.
+    const picSize = Math.round(Math.min(w, h) * 0.72);
+    const picTop = y + h * 0.11;
     this.drawEntryPicture(r.itemId, r.rarity, x + w / 2, picTop + picSize / 2, picSize, seed);
 
-    const plateY = picTop + picSize + h * 0.008;
-    const plateH = y + h * 0.94 - plateY;
+    // Name plate — a tight pill just big enough for the text, not a half-card
+    // gutter, with its own bordered background so the name reads as a label.
+    const plateH = Math.round(h * 0.1);
+    const plateY = y + h * 0.87 - plateH;
     const plate = new PIXI.Graphics();
-    plate.beginFill(C.paper, 0.92); plate.drawRect(x, plateY, w, plateH); plate.endFill();
+    plate.lineStyle(Math.max(1.5, Math.round(h * 0.006)), RARITY_COLOR[r.rarity], 0.9);
+    plate.beginFill(C.paper, 0.92);
+    plate.drawRoundedRect(x + w * 0.08, plateY, w * 0.84, plateH, plateH * 0.3);
+    plate.endFill();
     this.container.addChild(plate);
 
-    // Item name (translated display name, not the raw itemId), centred in the
-    // (now badge-free) plate.
-    const idLbl = txt(this.displayName(r.itemId), snapFont(Math.round(h * 0.075)), C.dark);
+    // Item name (translated display name, not the raw itemId), centred in the plate.
+    const idLbl = txt(this.displayName(r.itemId), snapFont(Math.round(h * 0.065)), C.dark);
     idLbl.anchor.set(0.5, 0.5); idLbl.x = x + w / 2; idLbl.y = plateY + plateH * 0.5;
+    if (idLbl.width > w * 0.78) idLbl.scale.set((w * 0.78) / idLbl.width);
     this.container.addChild(idLbl);
 
     // NEW stamp — duplicates get nothing (a "Dup" label read as noise). Printed
