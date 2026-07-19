@@ -14,6 +14,9 @@ export default defineConfig({
       // Map the deep auction module BEFORE the barrel so the barrel's server-only
       // re-exports (jwt.ts -> jsonwebtoken) are never pulled into the client test.
       '@nw/shared/slg/auction': path.resolve(__dirname, '../server/shared/src/slg/auction.ts'),
+      // Card catalogue constants (roster cap / fusion). Map before the barrel, same
+      // reasoning as the auction alias above.
+      '@nw/shared/cards': path.resolve(__dirname, '../server/shared/src/cards.ts'),
       '@nw/shared': path.resolve(__dirname, '../server/shared/src/index.ts'),
     },
   },
