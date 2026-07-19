@@ -14,6 +14,7 @@ import type { InputManager } from '../../inputSystem/InputManager';
 import { t } from '../../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchButton, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { drawConfirmDialog } from '../../render/confirmDialog';
+import { ProfilePopup, type ProfileAction } from '../../render/ProfilePopup';
 import { showToastMessage } from '../../net/log';
 import { FS } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
@@ -38,6 +39,8 @@ export interface FamilySceneCallbacks {
   myAccountId: string;
   /** current player's display name, denormalized onto sent family messages */
   playerName: string;
+  /** Send a friend request to another player (unified profile popup's "Add Friend" action). */
+  addFriend(publicId: string): Promise<void>;
 }
 
 export type FamilyTab = 'members' | 'channel';
@@ -67,6 +70,8 @@ export class FamilySceneBase {
 
   protected bodyLayer!: PIXI.Container;
   protected modalLayer!: PIXI.Container;
+  /** Unified player-info popup — opened by tapping a member's name in the roster. */
+  protected readonly profilePopup: ProfilePopup;
 
   // Input overlay for create form
   protected hiddenInput: HTMLInputElement | null = null;
@@ -122,6 +127,7 @@ export class FamilySceneBase {
     this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
     this.container = new PIXI.Container();
+    this.profilePopup = new ProfilePopup(this.w, this.h);
     this.build();
     // Paint the rail + loading state on the same frame the scene mounts, so switching to the
     // family tab shows the chrome instantly instead of a blank body while loadData()'s network
@@ -183,6 +189,10 @@ export class FamilySceneBase {
 
     this.modalLayer = new PIXI.Container();
     this.container.addChild(this.modalLayer);
+
+    // Persistent singleton, added once and reused across renders — render()/tearDownChildren()
+    // never touch it (mirrors modalLayer above, not the bodyLayer that gets rebuilt each render).
+    this.container.addChild(this.profilePopup.container);
 
     this.renderHeader();
   }
@@ -333,6 +343,7 @@ export class FamilySceneBase {
   // ── Scene interface ───────────────────────────────────────────────────────
 
   handleDown(x: number, y: number): void {
+    if (this.profilePopup.isOpen) return;
     if (this.modalOpen) {
       // Reverse order: the full-screen dim-to-close rect is always pushed first, so checking
       // in push order made it win over every button drawn on top of it (approve/reject, pick
@@ -389,7 +400,42 @@ export class FamilySceneBase {
     this.unsubs.length = 0;
     if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
     if (this.sendInput) { this.sendInput.remove(); this.sendInput = null; }
+    this.profilePopup.destroy();
     this.container.destroy({ children: true });
+  }
+
+  // ── Member profile popup ──────────────────────────────────────────────────
+
+  /** Opens the unified profile popup for a roster row; adds an "Add Friend" action unless it's my own row. */
+  protected openMemberProfile(mem: FamilyMemberView): void {
+    const isMe = mem.accountId === this.cb.myAccountId;
+    const actions: ProfileAction[] = [];
+    if (!isMe && mem.publicId) {
+      const publicId = mem.publicId;
+      actions.push({ labelKey: 'friends.add', fn: () => void this.doAddFriend(publicId) });
+    }
+    this.profilePopup.show({
+      name: mem.displayName ?? mem.publicId ?? '',
+      publicId: mem.publicId ?? '',
+      isSelf: isMe,
+      actions,
+    });
+  }
+
+  private async doAddFriend(publicId: string): Promise<void> {
+    try {
+      await this.cb.addFriend(publicId);
+      this.showToast(t('friends.requestSent'), C.dark);
+    } catch (e) {
+      const code = (e as { code?: string } | null)?.code;
+      const map: Record<string, string> = {
+        ALREADY_FRIEND: t('friends.alreadyFriend'),
+        FRIEND_CAP_REACHED: t('friends.capReached'),
+        BLOCKED: t('friends.blocked'),
+        NOT_FOUND: t('friends.notFound'),
+      };
+      this.showToast((code && map[code]) ?? t('friends.error'), C.red);
+    }
   }
 }
 

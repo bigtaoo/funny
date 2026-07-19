@@ -12,7 +12,7 @@ type WorldNav = Pick<Nav,
   'goCity' | 'goFamilyHub' | 'goSectHub' | 'goAuctionHouse'>;
 
 export function createWorldNav(ctx: AppCtx): WorldNav {
-  const { saveManager, platform, state, views, nav, getNetSession, playerName, resolveWorldShard } = ctx;
+  const { api, saveManager, platform, state, views, nav, getNetSession, playerName, resolveWorldShard } = ctx;
 
   function goWorldEntry(): void {
     // Note: getWorldBaseUrl() returns '' in Docker/production (same-origin nginx proxy,
@@ -166,6 +166,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       worldId,
       myAccountId,
       playerName: playerName(),
+      addFriend: async (publicId) => { await api!.requestFriend(publicId); },
     });
   }
 

@@ -236,6 +236,7 @@ POST /gw/social/invalidate { accountId }   → { ok }                  // 好友
 - **UI（待 `UI_DESIGN.md` 细化，sketchUi 手绘风）**：
   - 大厅「社交」入口扩为多 Tab：好友 / 聊天 / 邮件（现有社交格进 RoomScene 的房间功能保留或并入）。
   - 好友列表（在线态点 + 段位 + 复用 `ProfilePopup` 看资料）、申请红点；搜索框输 publicId 加好友。
+  - 家族成员列表（FamilyScene）点击成员名同样弹出 `ProfilePopup`，非本人行带「加为好友」action（2026-07-19）。
   - 会话列表 + 聊天窗（未读红点、历史上拉加载）。
   - 邮件箱（未读/附件标记、一键领取、领取动画复用奖励揭示）。
   - 顶部/底栏未读总红点：登录后拉一次 + push 增量更新。
