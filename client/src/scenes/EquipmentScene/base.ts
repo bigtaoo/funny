@@ -9,7 +9,7 @@ import type { ILayout } from '../../layout/ILayout';
 import type { InputManager } from '../../inputSystem/InputManager';
 import type { Scene } from '../SceneManager';
 import { t, type TranslationKey } from '../../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchButton, seedFor, drawLoadingOverlay, tearDownChildren } from '../../render/sketchUi';
+import { ui as C, txt, scaledTxt, buildPaperBackground, sketchPanel, sketchButton, seedFor, drawLoadingOverlay, tearDownChildren } from '../../render/sketchUi';
 import { drawConfirmDialog } from '../../render/confirmDialog';
 import { showToastMessage } from '../../net/log';
 import { FS, snapFont } from '../../render/fontScale';
@@ -372,6 +372,14 @@ export class EquipmentSceneBase {
     };
   }
 
+  /**
+   * `txt()` for content drawn onto {@link modalPanelRoot} — compensates PIXI.Text's raster
+   * blur from the later `modalPanelRoot.scale.set(modalScale)` (see {@link scaledTxt}).
+   */
+  protected stxt(label: string, size: number, color: number, bold = false, wordWrapWidth?: number): PIXI.Text {
+    return scaledTxt(this.modalScale)(label, size, color, bold, wordWrapWidth);
+  }
+
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   /** Collect all equipment instance ids currently worn across ALL card instances (CC-1). */
@@ -481,12 +489,12 @@ export class EquipmentSceneBase {
         parent.addChild(ic);
         cx += size + 1;
       } else {
-        const fl = txt(fallback, labelSize, color);
+        const fl = this.stxt(fallback, labelSize, color);
         fl.anchor.set(0, 0.5); fl.x = cx; fl.y = midY;
         parent.addChild(fl);
         cx += fl.width + 1;
       }
-      const lbl = txt(`${prefix}${n}`, labelSize, color);
+      const lbl = this.stxt(`${prefix}${n}`, labelSize, color);
       lbl.anchor.set(0, 0.5); lbl.x = cx; lbl.y = midY;
       parent.addChild(lbl);
       cx += lbl.width + 9;
