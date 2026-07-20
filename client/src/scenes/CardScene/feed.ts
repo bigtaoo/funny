@@ -135,25 +135,29 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       const candidateOf = (id: string): boolean => !cardState[id]?.teamId; // deployed cards cannot be fused
 
       /** Best owned card to fuse right now: unlocked, undeployed, below max level, with >= FUSION_MATERIAL_COUNT
-       * eligible same-faction same-level materials already on hand. Prefers the highest level. */
-      const findAutoTarget = (requireLevel?: number): CardInstance | null => {
+       * eligible same-faction same-level materials already on hand. Prefers a card matching `preferDefId`
+       * (the card the player was already fusing) so auto-retarget/auto-continue don't jump to an unrelated
+       * card line when another copy of the same one is still fusable; otherwise prefers the highest level. */
+      const findAutoTarget = (requireLevel?: number, preferDefId?: string): CardInstance | null => {
         const inv = this.cb.getSave().cardInv ?? {};
         let best: CardInstance | null = null;
+        let preferred: CardInstance | null = null;
         for (const c of Object.values(inv)) {
           if (c.locked || !candidateOf(c.id) || c.level >= MAX_CARD_LEVEL || !CARD_DEFS[c.defId]) continue;
           if (requireLevel !== undefined && c.level !== requireLevel) continue;
           const cnt = fusionMaterialCandidates(c, inv).filter((m) => candidateOf(m.id)).length;
           if (cnt < FUSION_MATERIAL_COUNT) continue;
           if (!best || c.level > best.level) best = c;
+          if (preferDefId && c.defId === preferDefId && (!preferred || c.level > preferred.level)) preferred = c;
         }
-        return best;
+        return preferred ?? best;
       };
 
       let currentTarget = initialTarget;
       const initialCandidateCount = fusionMaterialCandidates(currentTarget, this.cb.getSave().cardInv ?? {})
         .filter((c) => candidateOf(c.id)).length;
       if (initialCandidateCount < FUSION_MATERIAL_COUNT) {
-        const alt = findAutoTarget();
+        const alt = findAutoTarget(undefined, currentTarget.defId);
         if (alt) {
           currentTarget = alt;
           this.showToast(t('roster.fuseAutoRetarget'), C.gold);
@@ -204,7 +208,7 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
        * applies and one is available, otherwise close like before (doFuse's old default behavior). */
       const onFuseSettled = (success: boolean): void => {
         if (success && continueLevel !== null) {
-          const next = findAutoTarget(continueLevel);
+          const next = findAutoTarget(continueLevel, currentTarget.defId);
           if (next) {
             currentTarget = next;
             slotIds.fill(null);
