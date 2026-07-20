@@ -52,6 +52,11 @@ services:
       dockerfile: Dockerfile
     image: nw-server:latest
     command: ["node", "metaserver/dist/index.js"]
+    volumes:
+      # Cold-tier replay archive (S1-RP, 2026-07-20): local VPS disk, not cloud object storage (Hetzner
+      # Object Storage's flat monthly fee doesn't pay for itself at our data volume). Named volume so it
+      # survives container recreation; see server/metaserver/src/replayArchive.ts.
+      - replay-archive:/data/replay-archive
     environment:
       NW_JWT_SECRET: ${NW_JWT_SECRET:?set NW_JWT_SECRET in .env}
       NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:?set NW_INTERNAL_KEY in .env}
@@ -74,6 +79,9 @@ services:
       # connected to the main stack network (server_default, alias nw-loki) via observability/docker-compose.obs.yml, so
       # use container name directly. Safe if obs is down: pushToLoki fails to resolve → silently drops, never affects players. Can override via .env.
       NW_LOKI_PUSH_URL: ${NW_LOKI_PUSH_URL:-http://nw-loki:3100/loki/api/v1/push}
+      # Cold-tier replay archive dir (S1-RP, 2026-07-20): mirrors settled-match replays to local disk past
+      # Mongo's 7-day TTL, kept 365 days. Unset in local/CI compose files → archiving no-ops there.
+      NW_REPLAY_ARCHIVE_DIR: ${NW_REPLAY_ARCHIVE_DIR:-/data/replay-archive}
       # Paddle web recharge (metaserver/src/paddle.ts). Leave empty → web recharge disabled (IAP_CREDENTIALS.md §1.1).
       NW_PADDLE_API_KEY: ${NW_PADDLE_API_KEY:-}
       NW_PADDLE_WEBHOOK_SECRET: ${NW_PADDLE_WEBHOOK_SECRET:-}
@@ -362,3 +370,4 @@ volumes:
   redis-data:
   caddy-data:
   caddy-config:
+  replay-archive:

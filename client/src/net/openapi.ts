@@ -216,7 +216,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Fetch a match replay (only matches the account participated in); server opaque frames, client decodes for playback */
+        /** Fetch a match replay (only matches the account participated in); gzip-compressed opaque frames, client decompresses + decodes for playback */
         get: operations["getMatchReplay"];
         put?: never;
         post?: never;
@@ -2206,7 +2206,8 @@ export interface operations {
                         /** @enum {boolean} */
                         ok: true;
                         data: {
-                            replay: components["schemas"]["MatchReplay"];
+                            /** @description base64(gzip(JSON.stringify(MatchReplay))) — client decompresses (DecompressionStream) then JSON.parses to recover the MatchReplay structure */
+                            replayGz: string;
                         };
                     };
                 };
@@ -2267,7 +2268,8 @@ export interface operations {
                         /** @enum {boolean} */
                         ok: true;
                         data: {
-                            replay: components["schemas"]["MatchReplay"];
+                            /** @description base64(gzip(JSON.stringify(MatchReplay))) — client decompresses (DecompressionStream) then JSON.parses to recover the MatchReplay structure */
+                            replayGz: string;
                         };
                     };
                 };

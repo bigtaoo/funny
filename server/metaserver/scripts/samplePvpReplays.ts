@@ -9,14 +9,19 @@
 //
 // Sampling rule (see design/game/BALANCE.md "线上对局数据来源"):
 //   - Disputed matches (hashMismatch/cheat) are skipped — already routed through the anti-cheat review queue.
-//   - Matches with no restricted deck (replay.decks absent) are skipped — nothing to correlate against P1.
 //   - "Upset" matches (winner's pre-match ELO was the LOWER of the two sides, by more than UPSET_ELO_GAP) are
 //     always sampled — these are the most likely to contain a playstyle the equal-ink simulator never modeled.
 //   - Everything else is sampled at `--rate` (default 5%) as an unbiased baseline.
 //   - Already-sampled matches (present in pvpPlaySequences) are skipped — idempotent re-run.
-//   - Replays that fail to decode (corrupt/incomplete frame log) are logged and skipped, not silently dropped.
+//   - Only after a match is selected do we decompress its replay to check for a restricted deck (replay.decks) —
+//     unlike the P1 hot-path accrual, decks presence isn't queryable in Mongo anymore (it's inside the gzip
+//     blob), so checking it upfront for every candidate would mean decompressing far more matches than we
+//     actually sample; deferring it to post-selection keeps decompression bounded to the sample size.
+//   - Matches with no restricted deck (nothing to correlate against P1), or replays that fail to decode
+//     (corrupt/incomplete frame log), are logged and skipped, not silently dropped.
 import { MongoClient, type Document } from 'mongodb';
 import { pathToFileURL } from 'node:url';
+import { decompressReplayDoc } from '@nw/shared';
 import { decodeReplay } from '../src/internal/replayDecode.js';
 
 const MONGO_URI = process.env.NW_MONGO_URI ?? 'mongodb://localhost:27017';
@@ -36,7 +41,7 @@ export interface MatchRow {
   hashMismatch?: boolean;
   cheat?: unknown;
   players: { side: number; eloDelta?: number; eloAfter?: number }[];
-  replay?: { engineVersion: number; mode: string; seed: string; endFrame: number; frames: { frame: number; cmds: { side: number; commands: string }[] }[]; decks?: { top: string[]; bottom: string[] } };
+  replayGz?: Buffer;
   replayRef?: string;
   ts: number;
 }
@@ -65,10 +70,9 @@ async function main(): Promise<void> {
     ts: { $gte: SINCE },
     hashMismatch: { $exists: false },
     cheat: { $exists: false },
-    'replay.decks': { $exists: true },
   });
 
-  let scanned = 0, sampled = 0, decoded = 0, failed = 0, skippedRate = 0;
+  let scanned = 0, sampled = 0, decoded = 0, failed = 0, noDeck = 0, skippedRate = 0;
   for await (const doc of cursor) {
     const row = doc as unknown as MatchRow;
     scanned++;
@@ -78,14 +82,17 @@ async function main(): Promise<void> {
     if (!reason) { skippedRate++; continue; }
     sampled++;
 
-    let replay = row.replay;
-    if (!replay && row.replayRef) {
+    let replayGzBuf = row.replayGz;
+    if (!replayGzBuf && row.replayRef) {
       const blob = await replayBlobs.findOne({ _id: row.replayRef });
-      replay = (blob as { replay?: MatchRow['replay'] } | null)?.replay;
+      replayGzBuf = (blob as { replayGz?: Buffer } | null)?.replayGz ?? undefined;
     }
-    if (!replay) { console.warn(`[samplePvpReplays] ${row.roomId}: no replay data, skipping`); failed++; continue; }
+    if (!replayGzBuf) { console.warn(`[samplePvpReplays] ${row.roomId}: no replay data, skipping`); failed++; continue; }
 
-    const result = decodeReplay(replay);
+    const replayDoc = decompressReplayDoc(replayGzBuf);
+    if (!replayDoc.decks) { console.warn(`[samplePvpReplays] ${row.roomId}: no restricted deck, skipping`); noDeck++; continue; }
+
+    const result = decodeReplay(replayDoc);
     if (!result) { console.warn(`[samplePvpReplays] ${row.roomId}: decode failed (incomplete/corrupt replay), skipping`); failed++; continue; }
 
     console.log(`[samplePvpReplays] ${row.roomId}: ${reason}, ${result.plays.length} plays, winner=${result.winnerSide}`);
@@ -99,7 +106,7 @@ async function main(): Promise<void> {
     decoded++;
   }
 
-  console.log(`[samplePvpReplays] done: scanned=${scanned} sampled=${sampled} decoded=${decoded} failed=${failed} skipped(rate)=${skippedRate} ${DRY_RUN ? '(dry-run, no writes)' : ''}`);
+  console.log(`[samplePvpReplays] done: scanned=${scanned} sampled=${sampled} decoded=${decoded} failed=${failed} noDeck=${noDeck} skipped(rate)=${skippedRate} ${DRY_RUN ? '(dry-run, no writes)' : ''}`);
   await client.close();
 }
 

@@ -1,7 +1,7 @@
 // End-of-match settlement (M19): gameserver reports the result here; meta reconciles, settles ranked ELO
 // (including Phase C peer-judge adjudication on hash mismatch), and archives the match + replay.
 import type { FastifyInstance } from 'fastify';
-import type { Collections, SaveDoc, SaveData } from '@nw/shared';
+import type { Collections, SaveDoc, SaveData, MatchDoc, MatchReplayDoc } from '@nw/shared';
 import {
   INITIAL_ELO,
   ELO_FLOOR,
@@ -20,9 +20,11 @@ import {
   xpToLevel,
   accrueRetentionTask,
   clearActiveMatch,
+  decompressReplayDoc,
   type StatKey,
   type RankId,
 } from '@nw/shared';
+import { archiveMatch } from '../replayArchive.js';
 import { getCurrentSeason, migrateIfStale } from '../ladderSeason.js';
 import { writeMigratedSave } from '../save.js';
 import type { GatewayClient } from '../gatewayClient.js';
@@ -35,7 +37,12 @@ import type { InternalCtx } from './context.js';
 
 const log = createLogger('meta:internal');
 
-/** Maximum byte size for inline replay frames; if exceeded, frames are stored externally in replayBlobs + replayRef (keeps matches documents compact). */
+/**
+ * Maximum byte size for the inline (already gzip-compressed) replay; if exceeded, it is stored
+ * externally in replayBlobs + replayRef (keeps matches documents compact). Measured post-compression
+ * (2026-07-20) — the constant value is unchanged (256KB) but it now bounds compressed bytes, not the
+ * raw JSON frame log, so effectively far more raw replay content fits inline than before.
+ */
 const REPLAY_INLINE_MAX_BYTES = 256 * 1024;
 
 /** Storage cleanup TTL for non-disputed matches (7 days — bots have only been live a week, so 30d bought no headroom; see MatchDoc.expireAt). */
@@ -56,15 +63,8 @@ interface ReportBody {
   hash_ok: boolean;
   players: { side: number; accountId: string }[];
   results: { side: number; state_hash: string; winner_side: number; stats?: Record<string, number> }[];
-  replay: {
-    engineVersion: number;
-    mode: string;
-    seed: string;
-    endFrame: number;
-    frames: { frame: number; cmds: { side: number; commands: string }[] }[];
-    meta: { recordedAt: number; winner: number };
-    decks?: { top: string[]; bottom: string[] };
-  };
+  /** base64(gzip(JSON.stringify(replayDoc))) — see @nw/shared replayCodec. Never decoded on the hot per-match path (M12); only judgeMismatch/anticheatAudit decompress it. */
+  replay_gz: string;
 }
 
 export function registerMatchReportRoutes(app: FastifyInstance, ctx: InternalCtx): void {
@@ -121,7 +121,9 @@ export function registerMatchReportRoutes(app: FastifyInstance, ctx: InternalCtx
     } else if (body.mode === 'ranked' && body.reason === 'mismatch' && gateway.available) {
       // Phase C peer judge: the two sides' hashes disagree → pick a third-party headless re-computation to adjudicate (rather than voiding directly).
       try {
-        const verdict = await judgeMismatch(gateway, body);
+        // Rare/periodic path — decompressing here (unlike the per-match write path below) is fine.
+        const replayDoc = decompressReplayDoc(Buffer.from(body.replay_gz, 'base64'));
+        const verdict = await judgeMismatch(gateway, body, replayDoc);
         if (verdict) {
           // A hash-mismatched match is already suspicious: do not accumulate either side's self-reported kill/cast (pvp.wins still counts for the honest side's win).
           eloBySide = await settleElo(cols, now, commercial, socialsvc, verdict.honest, verdict.cheater, {}, {});
@@ -155,18 +157,12 @@ export function registerMatchReportRoutes(app: FastifyInstance, ctx: InternalCtx
     );
 
     // Archive to matches. winner -1 = unknown (friendly match ended normally).
-    // Replay: small matches inline as `replay`; large matches that exceed the threshold are stored externally in `replayBlobs` + `replayRef` (keeps matches documents compact).
-    const replayDoc = {
-      engineVersion: body.replay.engineVersion,
-      mode: body.replay.mode,
-      seed: body.replay.seed,
-      endFrame: body.replay.endFrame,
-      frames: body.replay.frames, // cmds[].commands are base64 opaque (not decoded — M12)
-      meta: body.replay.meta,
-      ...(body.replay.decks ? { decks: body.replay.decks } : {}),
-    };
-    const replayBytes = JSON.stringify(replayDoc.frames).length;
-    const inline = replayBytes <= REPLAY_INLINE_MAX_BYTES;
+    // Replay: already gzip-compressed by gameserver (replay_gz, base64) — stored verbatim as a Buffer
+    // (Mongo driver maps it to BSON Binary automatically, no further encoding needed). Small matches
+    // inline as `replayGz`; large ones (post-compression!) are stored externally in `replayBlobs` +
+    // `replayRef` (keeps matches documents compact). Never decoded here (M12) — see REPLAY_INLINE_MAX_BYTES.
+    const replayGzBuf = Buffer.from(body.replay_gz, 'base64');
+    const inline = replayGzBuf.byteLength <= REPLAY_INLINE_MAX_BYTES;
     const hashMismatch = !body.hash_ok && !cheat;
     // Storage cleanup TTL: keep disputed matches (unresolved hash mismatch / peer-judge conviction) indefinitely
     // for ops review + anti-cheat audit trail; everything else auto-expires after MATCH_RETENTION_MS.
@@ -177,37 +173,44 @@ export function registerMatchReportRoutes(app: FastifyInstance, ctx: InternalCtx
       await cols.replayBlobs
         .updateOne(
           { _id: body.room_id },
-          { $set: { _id: body.room_id, replay: replayDoc, ts: now(), ...(expireAt ? { expireAt } : {}) } },
+          { $set: { _id: body.room_id, replayGz: replayGzBuf, ts: now(), ...(expireAt ? { expireAt } : {}) } },
           { upsert: true },
         )
         .catch((e) => log.error('archive replay blob failed', { err: (e as Error).message }));
     }
+    const matchDoc: MatchDoc = {
+      roomId: body.room_id,
+      mode: body.mode,
+      seed: body.seed,
+      players: enrichedPlayers,
+      winner: cheat ? body.players.find((p) => p.side !== cheat!.side)!.side : body.winner_side,
+      reason: body.reason,
+      hashOk: body.hash_ok,
+      // C3: hash mismatch and peer judge did not intervene (no cheat verdict) → flag for admin review.
+      ...(hashMismatch ? { hashMismatch: true } : {}),
+      ...(inline ? { replayGz: replayGzBuf } : { replayRef: body.room_id }),
+      ...(cheat ? { cheat } : {}),
+      ...(reportedStats ? { reportedStats } : {}),
+      ts: now(),
+      ...(expireAt ? { expireAt } : {}),
+    };
     await cols.matches
-      .insertOne({
-        roomId: body.room_id,
-        mode: body.mode,
-        seed: body.seed,
-        players: enrichedPlayers,
-        winner: cheat ? body.players.find((p) => p.side !== cheat!.side)!.side : body.winner_side,
-        reason: body.reason,
-        hashOk: body.hash_ok,
-        // C3: hash mismatch and peer judge did not intervene (no cheat verdict) → flag for admin review.
-        ...(hashMismatch ? { hashMismatch: true } : {}),
-        ...(inline ? { replay: replayDoc } : { replayRef: body.room_id }),
-        ...(cheat ? { cheat } : {}),
-        ...(reportedStats ? { reportedStats } : {}),
-        ts: now(),
-        ...(expireAt ? { expireAt } : {}),
-      })
+      .insertOne(matchDoc)
       .catch((e) => {
         // Idempotency race: a unique-index conflict means a concurrent request already archived the match; ignore.
         if ((e as { code?: number }).code !== 11000) log.error('archive match failed', { err: (e as Error).message });
       });
 
+    // Cold-tier disk archive (2026-07-20, S1-RP): fire-and-forget, never awaited/blocking the response;
+    // skips disputed matches (already kept indefinitely in Mongo). No-op if NW_REPLAY_ARCHIVE_DIR is unset.
+    archiveMatch(matchDoc, replayGzBuf);
+
     // BALANCE data pipeline (P1): deck-composition win-rate counters, best-effort. Disputed matches (hashMismatch/cheat)
-    // are excluded so they don't pollute the signal; only restricted-deck-pool matches carry `replay.decks`.
-    if (!disputed && body.replay.decks && body.winner_side >= 0) {
-      accruePvpCardStats(cols, now(), body.mode, body.winner_side, body.replay.decks).catch((e) =>
+    // are excluded so they don't pollute the signal; only restricted-deck-pool matches carry decks. Decompressing
+    // replayGzBuf here is the one exception to "never decode replay_gz on the hot path" (see ReportBody doc comment)
+    // — safe because this whole block is fire-and-forget (unawaited), so it runs after the response is already sent.
+    if (!disputed && body.winner_side >= 0) {
+      accruePvpCardStats(cols, now(), body.mode, body.winner_side, replayGzBuf).catch((e) =>
         log.error('pvp card stats accrue failed', { roomId: body.room_id, err: (e as Error).message }),
       );
     }
@@ -287,8 +290,10 @@ async function accruePvpCardStats(
   ts: number,
   mode: string,
   winnerSide: number,
-  decks: { top: string[]; bottom: string[] },
+  replayGzBuf: Buffer,
 ): Promise<void> {
+  const decks = decompressReplayDoc(replayGzBuf).decks;
+  if (!decks) return;
   const day = utcDayKey(ts);
   const sides: { side: number; deck: string[] }[] = [
     { side: 0, deck: decks.top },
@@ -320,6 +325,7 @@ async function accruePvpCardStats(
 async function judgeMismatch(
   gateway: GatewayClient,
   body: ReportBody,
+  replayDoc: MatchReplayDoc,
 ): Promise<{
   honest: { side: number; accountId: string };
   cheater: { side: number; accountId: string };
@@ -329,10 +335,14 @@ async function judgeMismatch(
   const verdict = await gateway.judge({
     seed: Number(body.seed),
     mode: 1, // RANKED (judge client re-computes as netplay; mode is audit-semantic only)
-    endFrame: body.replay.endFrame,
-    frames: body.replay.frames, // command bytes are already base64; passed through as-is
+    endFrame: replayDoc.endFrame,
+    // command bytes are already base64 (stored as `unknown` in MatchReplayDoc — BSON binary shape); coerce to string, passed through as-is otherwise.
+    frames: replayDoc.frames.map((f) => ({
+      frame: f.frame,
+      cmds: f.cmds.map((c) => ({ side: c.side, commands: String(c.commands) })),
+    })),
     exclude: body.players.map((p) => p.accountId),
-    ...(body.replay.decks ? { decks: body.replay.decks } : {}),
+    ...(replayDoc.decks ? { decks: replayDoc.decks } : {}),
   });
   if (!verdict.ok || !verdict.stateHash) return null;
 

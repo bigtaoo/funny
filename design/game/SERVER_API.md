@@ -356,9 +356,16 @@ message Replay {
 
 > **修订（2026-07-15）**：新增 `decks`（=top_deck/bottom_deck）——此前录像只存 seed+指令流，回放重建引擎时没有卡组过滤，会退化成"全卡池抽卡"，导致 ELO 锁定的高级卡（runner/splitter 等）凭空出现在回放里。现在录制（`matchEngine.ts`/`ReplayInputSource.snapshot`/`Room.buildReplay`）与回放重建（`ReplayScene.ts`/`serverReplayToReplay`）都携带 `decks`；对应 `MatchReplay`（`openapi/schemas.yml`）同步加了可选 `decks{top,bottom}` 字段。
 
-- **PvP**：`gameserver` 为重连保留的非空帧日志**即录像**，局末零成本持久化——小局直接内嵌 `matches.replay`（`engineVersion=0`，服务器逻辑无关、客户端回放自校验；`cmds[].commands` 为 BSON binary opaque），大局转对象存储 `matches.replayRef`（待办）。
+- **PvP**：`gameserver` 为重连保留的非空帧日志**即录像**，局末零成本持久化——小局直接内嵌 `matches.replayGz`（`engineVersion=0`，服务器逻辑无关、客户端回放自校验；`cmds[].commands` 为 BSON binary opaque），大局转对象存储 `matches.replayRef` → `replayBlobs.replayGz`。
 - **PvE**：客户端本地录制（只记玩家指令；敌方 `WaveDirector` 回放时由 seed+level 重算），可选上传分享。
 - 回放走 `ReplayInputSource`：同 seed 起新引擎，按 tick 喂 `frames` → 逐 tick 还原。
+
+> **修订（2026-07-20，S1-RP 存储成本修复）**：Pipeline A（本节，seed+指令流录像，用于反作弊/结算/观战）此前是纯 JSON（`frames[].cmds[].commands` 已 base64，但外层从未压缩），是 MongoDB Atlas 存储告警的主因（见 `mongo-matches-ttl-storage-fix-2026-07-20.md`）。现在改为端到端 gzip：
+> - `gameserver`（`metaReport.ts`）拼好 replayDoc 后整体 `JSON.stringify` + `zlib.gzipSync` 一次，base64 编码为单个字符串，以 `replay_gz` 字段随 `/internal/match/report` 上报（原 `replay` 字段废弃）。
+> - `metaserver`（`matchReport.ts`）**始终不解压**存进 Mongo：`replay_gz` 的 base64 解出的 gzip 字节直接作为 `Buffer` 存入 `matches.replayGz` / `replayBlobs.replayGz`（Mongo 驱动自动映射为 BSON Binary）。`REPLAY_INLINE_MAX_BYTES`（256KB）现在衡量**压缩后**字节数，而非原始 JSON 长度。
+> - 只有两处稀疏/周期性路径会解压：Phase C 争议裁决（`judgeMismatch`）和反作弊离线抽样（`anticheatAudit.ts`），二者都要把 `frames` 转发给 gateway 的第三方无头重算，用 `@nw/shared` 的 `decompressReplayDoc`。**每局落库这条热路径永远不解压**。
+> - `GET /match/{roomId}/replay`、`GET /share/replay/{shareId}`：服务器直接把仍压缩的 `replayGz`（base64）传给客户端（响应字段从 `replay` 改为 `replayGz`），解压下放到客户端（`client/src/net/gzip.ts` + `net/serverReplay.ts` 的 `decodeReplayGz`），省流量、也省服务器 CPU。
+> - **冷存储层**：Mongo 7 天 TTL（`MATCH_RETENTION_MS`）到期后数据即永久丢失；现追加落盘归档 `server/metaserver/src/replayArchive.ts`——结算成功后 fire-and-forget 把 `replayGz` 字节 + 小型元数据 sidecar 写到同一 VPS 本地磁盘（`NW_REPLAY_ARCHIVE_DIR`，Docker 具名卷 `replay-archive`，见 `docker-compose.{prod,cloud}.yml`），保留 365 天（每日 sweep 清理），有争议的（`hashMismatch`/`cheat`）跳过（Mongo 里已永久保留）。`getMatchReplay`/`getReplayByShare` 在 Mongo 未命中时会回退读取该归档。**特意不用云对象存储**（Hetzner Object Storage 有固定月租，按当前回放数据量——峰值也到不了 10GB——划不来），留到有真实收入后再评估。
 
 ---
 

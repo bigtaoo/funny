@@ -76,6 +76,8 @@ export interface MatchReplayDoc {
   endFrame: number;
   frames: { frame: number; cmds: { side: number; commands: unknown }[] }[];
   meta: { recordedAt: number; winner: number };
+  /** Deck loadout at match start (PVP_LOADOUT_DESIGN §6.2); absent when the match had no loadout gating. */
+  decks?: { top: string[]; bottom: string[] };
 }
 
 export interface MatchDoc {
@@ -102,8 +104,13 @@ export interface MatchDoc {
   hashMismatch?: boolean;
   /** Pointer to externally-stored replay (large matches); reserved, not yet used. */
   replayRef?: string;
-  /** Embedded replay (small matches) — the retained frame log, zero extra cost. */
-  replay?: MatchReplayDoc;
+  /**
+   * Embedded replay (small matches, gzip-compressed JSON of {@link MatchReplayDoc} — frames[].cmds[].commands
+   * are base64 opaque inside, unchanged, M12). Decompress only when the full replay content is actually
+   * needed (peer-judge dispute, anti-cheat audit sample) via `@nw/shared`'s decompressReplayDoc — never on
+   * the per-match write path (that's the whole point of storing it compressed).
+   */
+  replayGz?: Buffer;
   /**
    * Peer-judge conviction flag (Phase C): when a ranked hash mismatch is resolved by a third-party headless re-simulation,
    * the side whose result disagrees with the judge is declared the loser and this flag is set. `judgeAccountId` is the re-simulation judge (for auditing).
@@ -194,7 +201,8 @@ export interface AdsTokenDoc {
  */
 export interface ReplayBlobDoc {
   _id: string; // roomId
-  replay: MatchReplayDoc;
+  /** gzip-compressed JSON of {@link MatchReplayDoc}, same encoding as MatchDoc.replayGz. */
+  replayGz: Buffer;
   ts: number;
   /** TTL auto-expiry anchor, mirrors the owning MatchDoc.expireAt (absent for disputed matches — see there). */
   expireAt?: Date;

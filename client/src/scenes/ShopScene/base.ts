@@ -423,8 +423,10 @@ export class ShopSceneBase {
       this.drawButton(body, b, x + pad, btnTop + i * (btnH + bGap), innerW, btnH);
     });
 
-    // ── Top: big square art / icon, centred. ──
-    const imgSize = Math.min(Math.round(ch * 0.46), innerW);
+    // ── Top: big square art / icon, centred. Shrunk when status lines are present (e.g. item
+    //    descriptions) so the wrapped text band below has room without spilling onto the buttons. ──
+    const hasLines = (spec.lines?.length ?? 0) > 0;
+    const imgSize = Math.min(Math.round(ch * (hasLines ? 0.2 : 0.46)), innerW);
     const imgX = Math.round(cx - imgSize / 2);
     const imgY = y + pad;
     if (spec.artUrl) {
@@ -459,7 +461,7 @@ export class ShopSceneBase {
     let ty = imgY + imgSize + Math.round(ch * 0.03);
     const bandBottom = btnTop - Math.round(ch * 0.02);
 
-    const title = txt(spec.title, snapFont(Math.round(ch * 0.085)), C.dark, true, innerW);
+    const title = txt(spec.title, snapFont(Math.round(ch * (hasLines ? 0.06 : 0.085))), C.dark, true, innerW);
     title.anchor.set(0.5, 0); title.x = cx; title.y = ty;
     body.addChild(title);
     ty += title.height + Math.round(ch * 0.02);
@@ -504,6 +506,9 @@ export class ShopSceneBase {
       for (const ln of lines) {
         if (ty >= bandBottom) break;
         const l = txt(ln.text, fontSize, ln.color, true, innerW);
+        // Wrapped text can span multiple physical lines — check the whole block's bottom (not just
+        // its start y) against the button area so a long description never spills onto the buttons.
+        if (ty + l.height > bandBottom) { l.destroy(); break; }
         l.anchor.set(0.5, 0); l.x = cx; l.y = ty;
         body.addChild(l);
         ty += l.height + Math.round(ch * 0.01);

@@ -5,6 +5,7 @@ import { loadMetaEnv } from './config.js';
 import { buildApp, SPEC_PATH } from './app.js';
 import { HttpGatewayClient } from './gatewayClient.js';
 import { auditOnce } from './anticheatAudit.js';
+import { ensureArchiveDir, sweepArchive } from './replayArchive.js';
 
 const log = createLogger('meta');
 
@@ -69,6 +70,10 @@ async function main() {
 
   const redis = await connectActiveMatchRedis(env.redisUrl);
 
+  // Cold-tier replay archive (S1-RP, 2026-07-20): local VPS disk mirror, no-op unless
+  // NW_REPLAY_ARCHIVE_DIR is set (see replayArchive.ts).
+  await ensureArchiveDir();
+
   const app = await buildApp({
     cols: mongo.collections,
     jwt,
@@ -108,8 +113,15 @@ async function main() {
       : null;
   auditTimer?.unref?.();
 
+  // Replay archive daily sweep (365-day retention, see replayArchive.ts). No-op if archiving is disabled.
+  const archiveSweepTimer = setInterval(() => {
+    void sweepArchive().catch((e) => log.error('replay archive sweep failed', { err: (e as Error).message }));
+  }, 24 * 3600 * 1000);
+  archiveSweepTimer.unref();
+
   const shutdown = async () => {
     if (auditTimer) clearInterval(auditTimer);
+    clearInterval(archiveSweepTimer);
     await app.close();
     await mongo.close();
     process.exit(0);

@@ -2,7 +2,7 @@
 // each side's deck → GET /internal/pvp-card-stats returns the aggregated per-card totals.
 // Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
+import { createMongo, compressReplayDoc, type JwtConfig, type MatchReplayDoc, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../dist/app.js';
 
@@ -30,6 +30,15 @@ function reportPayload(
   decks?: { top: string[]; bottom: string[] },
   extra: { mode?: string; hashOk?: boolean } = {},
 ) {
+  const replayDoc: MatchReplayDoc = {
+    engineVersion: 0,
+    mode: 'netplay',
+    seed: '42',
+    endFrame: 3,
+    frames: [{ frame: 3, cmds: [{ side: 0, commands: 'AAA=' }] }],
+    meta: { recordedAt: 1, winner: winnerSide },
+    ...(decks ? { decks } : {}),
+  };
   return {
     room_id: roomId,
     seed: '42',
@@ -42,15 +51,7 @@ function reportPayload(
       { side: 0, state_hash: 'H', winner_side: winnerSide },
       { side: 1, state_hash: 'H', winner_side: winnerSide },
     ],
-    replay: {
-      engineVersion: 0,
-      mode: 'netplay',
-      seed: '42',
-      endFrame: 3,
-      frames: [{ frame: 3, cmds: [{ side: 0, commands: 'AAA=' }] }],
-      meta: { recordedAt: 1, winner: winnerSide },
-      ...(decks ? { decks } : {}),
-    },
+    replay_gz: compressReplayDoc(replayDoc).toString('base64'),
   };
 }
 

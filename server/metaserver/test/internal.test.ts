@@ -2,7 +2,7 @@
 // ELO settlement logic migrated from gameserver (M19, meta is authoritative). Uses fastify inject + in-memory fake cols (no Mongo).
 import { describe, it, expect, vi } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { makeNewSave, type Collections, type SaveData, type SaveDoc } from '@nw/shared';
+import { makeNewSave, compressReplayDoc, type Collections, type SaveData, type SaveDoc, type MatchReplayDoc } from '@nw/shared';
 import { registerInternalRoutes } from '../src/internal.js';
 import type { GatewayClient, JudgeRes } from '../src/gatewayClient.js';
 import type { CommercialClient } from '../src/commercialClient.js';
@@ -112,8 +112,13 @@ function build(
   return app;
 }
 
-function emptyReplay() {
+function emptyReplay(): MatchReplayDoc {
   return { engineVersion: 0, mode: 'netplay', seed: '1', endFrame: 0, frames: [], meta: { recordedAt: 0, winner: 0 } };
+}
+
+/** base64(gzip(...)) wire form of a replay doc for /internal/match/report payloads (replay_gz, S1-RP). */
+function replayGz(doc: MatchReplayDoc = emptyReplay()): string {
+  return compressReplayDoc(doc).toString('base64');
 }
 
 describe('internal routes', () => {
@@ -193,7 +198,7 @@ describe('internal routes', () => {
         hash_ok: true,
         players: [{ side: 0, accountId: 'a' }, { side: 1, accountId: 'b' }],
         results: [{ side: 0, state_hash: 'H', winner_side: 0 }, { side: 1, state_hash: 'H', winner_side: 0 }],
-        replay: emptyReplay(),
+        replay_gz: replayGz(),
       },
     });
     const body = res.json() as { ok: boolean; elo?: Record<number, { delta: number; after: number }> };
@@ -227,7 +232,7 @@ describe('internal routes', () => {
         hash_ok: true,
         players: [{ side: 0, accountId: 'a' }, { side: 1, accountId: 'b' }],
         results: [{ side: 0, state_hash: 'H', winner_side: 0 }, { side: 1, state_hash: 'H', winner_side: 0 }],
-        replay: emptyReplay(),
+        replay_gz: replayGz(),
       },
     });
     const body = res.json() as { ok: boolean; elo?: Record<number, { delta: number; after: number }> };
@@ -255,7 +260,7 @@ describe('internal routes', () => {
           { side: 0, state_hash: 'H', winner_side: 0, stats: { 'kill.archer': 3, 'cast.meteor': 2 } },
           { side: 1, state_hash: 'H', winner_side: 0, stats: { 'kill.guard': 1, 'pvp.wins': 999 } }, // pvp.wins report is discarded
         ],
-        replay: emptyReplay(),
+        replay_gz: replayGz(),
       },
     });
     const sa = await cols.saves.findOne({ _id: 'a' });
@@ -288,7 +293,7 @@ describe('internal routes', () => {
           { side: 0, state_hash: 'H', winner_side: 0, stats: { 'kill.archer': 999999 } }, // L1 out-of-bounds → entire stats rejected
           { side: 1, state_hash: 'H', winner_side: 0, stats: { 'kill.guard': 2 } },
         ],
-        replay: emptyReplay(),
+        replay_gz: replayGz(),
       },
     });
     const sa = await cols.saves.findOne({ _id: 'a' });
@@ -317,7 +322,7 @@ describe('internal routes', () => {
           { side: 0, state_hash: 'H', winner_side: 0, stats: { 'kill.archer': 5 } },
           { side: 1, state_hash: 'H', winner_side: 0, stats: { 'kill.guard': 5 } },
         ],
-        replay: emptyReplay(),
+        replay_gz: replayGz(),
       },
     });
     const sa = await cols.saves.findOne({ _id: 'a' });
@@ -346,7 +351,7 @@ describe('internal routes', () => {
         hash_ok: true,
         players: [{ side: 0, accountId: 'a' }, { side: 1, accountId: 'b' }],
         results: [{ side: 0, state_hash: 'H', winner_side: 0 }, { side: 1, state_hash: 'H', winner_side: 0 }],
-        replay: emptyReplay(),
+        replay_gz: replayGz(),
       },
     });
     // Only winner a receives coins; post-settlement ELO 1016 → bronze → 5 coins.
@@ -365,7 +370,7 @@ describe('internal routes', () => {
       room_id: 'R1', seed: '1', mode: 'ranked', reason: 'base', winner_side: 0, hash_ok: true,
       players: [{ side: 0, accountId: 'a' }, { side: 1, accountId: 'b' }],
       results: [{ side: 0, state_hash: 'H', winner_side: 0 }, { side: 1, state_hash: 'H', winner_side: 0 }],
-      replay: emptyReplay(),
+      replay_gz: replayGz(),
     };
     await app.inject({ method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY }, payload });
     const r2 = await app.inject({ method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY }, payload });
@@ -388,7 +393,7 @@ describe('internal routes', () => {
         room_id: 'F1', seed: '1', mode: 'friendly', reason: 'base', winner_side: -1, hash_ok: true,
         players: [{ side: 0, accountId: 'a' }, { side: 1, accountId: 'b' }],
         results: [{ side: 0, state_hash: 'H', winner_side: 0 }, { side: 1, state_hash: 'H', winner_side: 0 }],
-        replay: emptyReplay(),
+        replay_gz: replayGz(),
       },
     });
     expect(res.json()).toEqual({ ok: true }); // friendly: no elo
@@ -404,7 +409,7 @@ describe('internal routes', () => {
     players: [{ side: 0, accountId: 'a' }, { side: 1, accountId: 'b' }],
     // Both sides report different hashes: a reports HONEST, b reports FAKE.
     results: [{ side: 0, state_hash: 'HONEST', winner_side: 0 }, { side: 1, state_hash: 'FAKE', winner_side: 1 }],
-    replay: emptyReplay(),
+    replay_gz: replayGz(),
   };
 
   it('ranked mismatch + judge matches a\'s hash → b judged as loser + archived cheat + ELO settled', async () => {
@@ -448,7 +453,7 @@ describe('internal routes', () => {
     const app = build(cols, gateway);
     await app.inject({
       method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY },
-      payload: { ...mismatchPayload, replay: { ...emptyReplay(), decks } },
+      payload: { ...mismatchPayload, replay_gz: replayGz({ ...emptyReplay(), decks }) },
     });
     expect(seenReq?.decks).toEqual(decks);
     await app.close();
@@ -523,7 +528,7 @@ describe('internal routes', () => {
       room_id: 'HASH_OK', seed: '1', mode: 'ranked', reason: 'base', winner_side: 0, hash_ok: true,
       players: [{ side: 0, accountId: 'a' }, { side: 1, accountId: 'b' }],
       results: [{ side: 0, state_hash: 'SAME', winner_side: 0 }, { side: 1, state_hash: 'SAME', winner_side: 0 }],
-      replay: emptyReplay(),
+      replay_gz: replayGz(),
     };
     await app.inject({
       method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY }, payload: noMismatchPayload,
@@ -547,7 +552,7 @@ describe('internal routes', () => {
         room_id: 'RM1', seed: '1', mode: 'ranked', reason: 'base', winner_side: 0, hash_ok: true,
         players: [{ side: 0, accountId: 'a' }, { side: 1, accountId: 'b' }],
         results: [{ side: 0, state_hash: 'H', winner_side: 0 }, { side: 1, state_hash: 'H', winner_side: 0 }],
-        replay: emptyReplay(),
+        replay_gz: replayGz(),
       },
     });
     await Promise.resolve(); // flush the fire-and-forget clearActiveMatch() microtask
@@ -565,7 +570,7 @@ describe('internal routes', () => {
       room_id: 'RM2', seed: '1', mode: 'ranked', reason: 'base', winner_side: 0, hash_ok: true,
       players: [{ side: 0, accountId: 'a' }, { side: 1, accountId: 'b' }],
       results: [{ side: 0, state_hash: 'H', winner_side: 0 }, { side: 1, state_hash: 'H', winner_side: 0 }],
-      replay: emptyReplay(),
+      replay_gz: replayGz(),
     };
     await app.inject({ method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY }, payload });
     await app.inject({ method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY }, payload });
@@ -587,7 +592,7 @@ describe('internal routes', () => {
         room_id: 'RM3', seed: '1', mode: 'friendly', reason: 'base', winner_side: -1, hash_ok: true,
         players: [{ side: 0, accountId: 'a' }, { side: 1, accountId: 'b' }],
         results: [{ side: 0, state_hash: 'H', winner_side: 0 }, { side: 1, state_hash: 'H', winner_side: 0 }],
-        replay: emptyReplay(),
+        replay_gz: replayGz(),
       },
     });
     expect(res.json()).toEqual({ ok: true });
