@@ -13,7 +13,7 @@ import type { ILayout } from '../layout/ILayout';
 import type { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import {
-  ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren,
+  ui as C, txt, scaledTxt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren,
 } from '../render/sketchUi';
 import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
@@ -893,6 +893,8 @@ export class CityScene implements Scene {
     panelRoot.position.set(screenX, screenY);
     panelRoot.scale.set(scale);
     this.container.addChild(panelRoot);
+    // Compensates PIXI.Text's raster blur from the panelRoot scale-up above — see scaledTxt().
+    const st = scaledTxt(scale);
 
     const panel = sketchPanel(mw, mh, { fill: C.paper, border: C.accent, width: 2, seed: seedFor(0, 5, mw) });
     panelRoot.addChild(panel);
@@ -904,14 +906,14 @@ export class CityScene implements Scene {
     hIcon.x = 10;
     hIcon.y = iy - 2;
     panelRoot.addChild(hIcon);
-    const hdrTxt = txt(`${t(`city.bld.${key}` as 'city.bld.desk')} ${t('city.lvlLabel').replace('{lvl}', String(lvl))}`, FS.small, C.dark, true);
+    const hdrTxt = st(`${t(`city.bld.${key}` as 'city.bld.desk')} ${t('city.lvlLabel').replace('{lvl}', String(lvl))}`, FS.small, C.dark, true);
     hdrTxt.x = 38;
     hdrTxt.y = iy;
     panelRoot.addChild(hdrTxt);
     iy += 28;
 
     for (const line of bonusLines) {
-      const bl = txt(line, FS.tiny, C.mid);
+      const bl = st(line, FS.tiny, C.mid);
       bl.x = 10;
       bl.y = iy;
       panelRoot.addChild(bl);
@@ -920,19 +922,19 @@ export class CityScene implements Scene {
     iy += 4;
 
     if (atMax) {
-      const ml = txt(t('city.maxLevel'), FS.tiny, C.mid, true);
+      const ml = st(t('city.maxLevel'), FS.tiny, C.mid, true);
       ml.x = 10;
       ml.y = iy;
       panelRoot.addChild(ml);
     } else {
-      const nextHdr = txt(`→ Lv.${toLevel}`, FS.tiny, C.mid);
+      const nextHdr = st(`→ Lv.${toLevel}`, FS.tiny, C.mid);
       nextHdr.x = 10;
       nextHdr.y = iy;
       panelRoot.addChild(nextHdr);
       iy += 16;
 
       if (costEntries.length > 0) {
-        const costLbl = txt(t('city.costLabel'), FS.tiny, C.dark);
+        const costLbl = st(t('city.costLabel'), FS.tiny, C.dark);
         costLbl.x = 10;
         costLbl.y = iy;
         panelRoot.addChild(costLbl);
@@ -944,7 +946,7 @@ export class CityScene implements Scene {
           mi.y = iy - 1;
           panelRoot.addChild(mi);
           cxp += 17;
-          const nl = txt(this.fmtNum(need), FS.tiny, ok ? C.dark : C.red);
+          const nl = st(this.fmtNum(need), FS.tiny, ok ? C.dark : C.red);
           nl.x = cxp;
           nl.y = iy;
           panelRoot.addChild(nl);
@@ -953,19 +955,19 @@ export class CityScene implements Scene {
         iy += 16;
       }
 
-      const timeLbl = txt(t('city.timeLabel') + formatDuration(timeSec), FS.tiny, C.mid);
+      const timeLbl = st(t('city.timeLabel') + formatDuration(timeSec), FS.tiny, C.mid);
       timeLbl.x = 10;
       timeLbl.y = iy;
       panelRoot.addChild(timeLbl);
       iy += 24;
 
       if (gateReason?.includes('desk')) {
-        const gl = txt(t('city.deskGate').replace('{lvl}', String(toLevel)), FS.tiny, C.red);
+        const gl = st(t('city.deskGate').replace('{lvl}', String(toLevel)), FS.tiny, C.red);
         gl.x = 10;
         gl.y = iy;
         panelRoot.addChild(gl);
       } else if (inQueue) {
-        const ql = txt(t('city.upgrading'), FS.tiny, C.gold, true);
+        const ql = st(t('city.upgrading'), FS.tiny, C.gold, true);
         ql.x = 10;
         ql.y = iy;
         panelRoot.addChild(ql);
@@ -977,7 +979,7 @@ export class CityScene implements Scene {
         g.x = btnRectLocal.x;
         g.y = btnRectLocal.y;
         panelRoot.addChild(g);
-        const lbl = txt(t('city.upgrade'), FS.tiny, canAfford ? C.dark : C.mid, true);
+        const lbl = st(t('city.upgrade'), FS.tiny, canAfford ? C.dark : C.mid, true);
         lbl.x = btnRectLocal.x + 8;
         lbl.y = btnRectLocal.y + (btnRectLocal.h - 16) / 2;
         panelRoot.addChild(lbl);
@@ -995,7 +997,7 @@ export class CityScene implements Scene {
     if (key === 'drillYard') {
       const tc = troopCapFor(bld);
       const ts = this.me?.troops ?? 0;
-      const troopLbl = txt(t('city.troopCap').replace('{cur}', String(ts)).replace('{cap}', String(tc)), FS.tiny, C.mid);
+      const troopLbl = st(t('city.troopCap').replace('{cur}', String(ts)).replace('{cap}', String(tc)), FS.tiny, C.mid);
       troopLbl.x = 10;
       troopLbl.y = iy;
       panelRoot.addChild(troopLbl);
