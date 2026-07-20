@@ -484,6 +484,7 @@ export class FriendsSceneBase {
       { friends: this.incoming.length, mail: this.mailUnread, family: this.slgStatus?.pendingJoinRequests ?? 0 },
       (tab) => this.switchTab(tab),
       hidden,
+      true, // activeTappable: re-tapping the active Mail tab must close an open detail view
     );
     this.hits.push(...hits);
   }

@@ -24,6 +24,9 @@ export function ActionsMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBas
       // Redraw the fusion ring itself (busy → Fuse disabled) instead of a full this.render(), which
       // would re-open the underlying card detail modal (detailId stays set through this whole flow)
       // and blow away the ring — the animation needs to play over the ring, not the detail popup.
+      // fuseInProgress additionally suppresses the busy-dots re-render that update() would otherwise
+      // fire every 0.4s (same teardown, but mid-animation it destroys the live VFX graphics).
+      this.fuseInProgress = true;
       this.feedRedraw?.();
       let success = false;
       try {
@@ -39,6 +42,7 @@ export function ActionsMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBas
         this.showToast(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'roster.fuseErr'), C.red);
       } finally {
         this.bt.stop();
+        this.fuseInProgress = false;
         if (onSettled) {
           onSettled(success);
         } else {

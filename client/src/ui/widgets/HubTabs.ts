@@ -164,8 +164,12 @@ export function drawSidebarTabs(
    * `sub: true` demotes this stack to a second-tier group nested under the primary tabs above it
    * (e.g. Inventory/Craft under the [Cards|Equipment] peer nav): smaller cells, indented from the
    * left edge, so it visually reads as "belongs to" rather than a sibling of equal weight.
+   *
+   * `activeTappable: true` also emits a hit rect for the currently-active cell (normally the active
+   * cell is a no-op with no rect). Needed by rails where re-tapping the active tab means something —
+   * e.g. the social rail backs out of a drilled-in detail view (an open mail) to that tab's list.
    */
-  opts?: { sub?: boolean },
+  opts?: { sub?: boolean; activeTappable?: boolean },
 ): { hits: Array<{ rect: Rect; fn: () => void }>; bottom: number } {
   const hits: Array<{ rect: Rect; fn: () => void }> = [];
   if (tabs.length === 0) return { hits, bottom: y };
@@ -218,7 +222,7 @@ export function drawSidebarTabs(
       container.addChild(dot);
     }
 
-    if (!tab.active) {
+    if (!tab.active || opts?.activeTappable) {
       hits.push({ rect: { x: indent, y: cy, w: cellW, h: itemH }, fn: () => onSelect(i) });
     }
     cy += itemH + gap;

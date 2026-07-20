@@ -12,6 +12,7 @@
 //  5. The list is drag-scrollable when candidate groups overflow the panel.
 import { describe, it, expect, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
+import { tearDownChildren } from '../../src/render/sketchUi';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
@@ -79,30 +80,37 @@ function detailIdOf(scene: CardScene): string | null {
   return (scene as unknown as { detailId: string | null }).detailId;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function priv(scene: CardScene): any {
+  return scene as unknown as Record<string, unknown>;
+}
+
 /** Flush every microtask queued by the doFuse → fuseCards → playFusionAnim → onSettled chain. */
 async function flushAsync(): Promise<void> {
   await new Promise((r) => setTimeout(r, 0));
 }
 
 /**
- * Ring-slot-0 screen position. Mirrors feed.ts's own layout constants (S=2, headerBlockH=40*S,
- * ringH=130*S, orbit=46*S) — same convention as the old feed-modal test's HANDLE_R replication.
- * Slot 0 sits at angle -90° (straight up from the ring center), so its position needs no cos/sin:
- * (ringCx, ringCy - orbit).
+ * Ring-slot-0 screen position. Mirrors feed.ts's own layout math — including the dynamic S that
+ * scales the whole panel so it fills 80% of the primary viewport axis (2026-07-20). Slot 0 sits at
+ * angle -90° (straight up from the ring center), so its position needs no cos/sin: (ringCx, ringCy - orbit).
  *
  * W×H here is 1920×1080 → landscape (see detectOrientation), so this mirrors feed.ts's landscape
- * branch: the ring sits in the left column, not centered on the whole panel width.
+ * branch: S is chosen so the taller of the two columns fills 80% of the height, and the ring sits in
+ * the left column, not centered on the whole panel width.
  */
 function slotZeroPos(scene: CardScene, groupsCount: number): { x: number; y: number } {
   const headerH = (scene as unknown as { headerH: number }).headerH;
-  const S = 2;
   const topLimit = headerH + 4;
   const availH = Math.max(0, (H - 8) - topLimit);
-  const headerBlockH = 52 * S; // landscape header block (see feed.ts drawFusePanel)
-  const ringH = 130 * S;
-  const rowH = 40 * S;
-  const footerBlockH = 52 * S;
   const listRows = Math.min(Math.max(groupsCount, 1), 4);
+  const headerBlockU = 52; // landscape header block (see feed.ts drawFusePanel)
+  const ringU = 130, rowU = 40, footerBlockU = 52;
+  const S = Math.min(H * 0.8, availH) / Math.max(headerBlockU + ringU + 8, listRows * rowU + footerBlockU + 8);
+  const headerBlockH = headerBlockU * S;
+  const ringH = ringU * S;
+  const rowH = rowU * S;
+  const footerBlockH = footerBlockU * S;
 
   const gap = 12 * S;
   let leftW = 180 * S;
@@ -458,5 +466,189 @@ describe('CardScene fuse panel — auto-continue after a successful fuse', () =>
     expect(calls).toHaveLength(1);
     expect(target.level).toBe(2); // leveled up once, then had nothing left to continue onto
     expect(modalOpenOf(scene)).toBe(false);
+  });
+});
+
+// Regression: the fusion animation (playFusionAnim) draws flash/burst PIXI.Graphics onto modalLayer
+// and animates them over ~1s of requestAnimationFrame ticks. The busy-dots re-render in update()
+// (bt.tick → render()) used to fire every 0.4s during that window, and render() rebuilds the modal
+// (openDetail → tearDownChildren(modalLayer)) since detailId stays set through the whole fuse. That
+// destroyed the live burst graphics; the next rAF tick called burst.clear() on a destroyed Graphics
+// → "Cannot read properties of null (reading 'clear')", which also left the fuse promise unresolved
+// and bt.busy stuck on forever (permanent "Processing." lock). Root-cause fix: fuseInProgress
+// suppresses the busy re-render for the whole fuse. Defensive fix: the animation ticks bail cleanly
+// if their graphics were destroyed out from under them.
+describe('CardScene fuse panel — animation is not torn down by the busy re-render', () => {
+  it('mid-fuse update() ticks do not rebuild the modal (which would destroy the live VFX)', async () => {
+    const target = makeCard('target', 'lena', { level: 3 }); // level 3 ⇒ no auto-continue, closes on settle
+    const cardInv: Record<string, CardInstance> = { target };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max', { level: 3 });
+
+    const scene = buildScene(baseCb(cardInv));
+    priv(scene).openFuseSelect(target);
+    priv(scene).detailId = target.id; // the fuse is always reached from the detail modal in production
+    // Hold the animation open so the fuse stays in flight while we pump update().
+    let releaseAnim: () => void = () => {};
+    priv(scene).playFusionAnim = () => new Promise<void>((r) => { releaseAnim = r; });
+
+    const rowLabel = `${MAX_NAME} Lv.3`;
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
+      hitUnder(modalHitsOf(scene), findLabelPos(scene.container, rowLabel)!)!.action();
+    }
+    hitUnder(modalHitsOf(scene), findLabelPos(scene.container, `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
+    await flushAsync(); // doFuse → fuseCards resolves → parks on the awaited playFusionAnim
+
+    expect(priv(scene).fuseInProgress).toBe(true);
+    const openDetailSpy = vi.spyOn(priv(scene), 'openDetail');
+
+    // Cross the 1s loading threshold, then several dot cycles — the OLD bug rebuilt the modal here.
+    priv(scene).update(1.2);
+    for (let i = 0; i < 5; i++) priv(scene).update(0.45);
+
+    expect(openDetailSpy).not.toHaveBeenCalled();
+    expect(findLabelPos(scene.container, t('roster.fuseTitle'))).not.toBeNull(); // fuse ring still standing
+
+    releaseAnim();
+    await flushAsync();
+    expect(priv(scene).fuseInProgress).toBe(false); // flag released so the scene isn't stuck busy
+    openDetailSpy.mockRestore();
+  });
+
+  it('a modal teardown mid-animation does not throw and still settles the fuse (null _geometry guard)', async () => {
+    const rafQueue: FrameRequestCallback[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const g = globalThis as any;
+    const origRaf = g.requestAnimationFrame;
+    g.requestAnimationFrame = (cb: FrameRequestCallback): number => { rafQueue.push(cb); return rafQueue.length; };
+    try {
+      const target = makeCard('target', 'lena', { level: 3 });
+      const cardInv: Record<string, CardInstance> = { target };
+      for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max', { level: 3 });
+
+      const scene = buildScene(baseCb(cardInv));
+      priv(scene).openFuseSelect(target); // real playFusionAnim
+      priv(scene).fuseRingGeom = null; // skip the converge phase → straight to the burst phase
+
+      const p = priv(scene).playFusionAnim() as Promise<void>;
+      expect(rafQueue.length).toBe(1); // burst phase registered its first frame synchronously
+
+      // Destroy the burst/flash out from under the loop — exactly what the busy re-render used to do.
+      tearDownChildren(priv(scene).modalLayer);
+      // The next frame must NOT throw "Cannot read properties of null (reading 'clear')".
+      expect(() => rafQueue.shift()!(performance.now())).not.toThrow();
+      await p; // and the promise resolves instead of hanging forever
+    } finally {
+      g.requestAnimationFrame = origRaf;
+    }
+  });
+
+  it('end-to-end: the real animation + busy update() ticks run to completion and close the panel', async () => {
+    const rafQueue: FrameRequestCallback[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const g = globalThis as any;
+    const origRaf = g.requestAnimationFrame;
+    g.requestAnimationFrame = (cb: FrameRequestCallback): number => { rafQueue.push(cb); return rafQueue.length; };
+    let clock = 1000; // playFusionAnim reads performance.now() (not the rAF timestamp) to advance f
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => clock);
+    try {
+      const target = makeCard('target', 'lena', { level: 3 }); // level 3 ⇒ closes on settle
+      const cardInv: Record<string, CardInstance> = { target };
+      for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max', { level: 3 });
+
+      const scene = buildScene(baseCb(cardInv));
+      priv(scene).openFuseSelect(target); // REAL playFusionAnim, driven by the controllable rAF + clock
+      priv(scene).detailId = target.id;
+
+      const rowLabel = `${MAX_NAME} Lv.3`;
+      for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
+        hitUnder(modalHitsOf(scene), findLabelPos(scene.container, rowLabel)!)!.action();
+      }
+      hitUnder(modalHitsOf(scene), findLabelPos(scene.container, `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
+      await flushAsync(); // fuseCards resolves; playFusionAnim registers its first (converge) frame
+      expect(rafQueue.length).toBeGreaterThan(0);
+
+      // Drain both animation phases, calling update(0.5) between every frame — that dt crosses the 1s
+      // loading gate and cycles the busy dots, i.e. the exact re-render that used to tear the live
+      // Graphics down. Advancing the clock 60ms/frame carries f past CONVERGE_MS(380)+DURATION_MS(650).
+      let threw: unknown = null;
+      for (let guard = 0; guard < 500; guard++) {
+        if (rafQueue.length === 0) {
+          await flushAsync();               // let a phase→phase await register the next frame
+          if (rafQueue.length === 0) break; // both phases done
+        }
+        const cb = rafQueue.shift()!;
+        clock += 60;
+        try { cb(clock); } catch (e) { threw = e; break; }
+        priv(scene).update(0.5);
+      }
+      await flushAsync();
+
+      expect(threw).toBeNull();                 // no "reading 'clear'" crash
+      expect(priv(scene).bt.busy).toBe(false);  // fuse settled — didn't hang on an unresolved promise
+      expect(priv(scene).fuseInProgress).toBe(false);
+      expect(modalOpenOf(scene)).toBe(false);   // level-3 target closes the panel after a successful fuse
+      expect(detailIdOf(scene)).toBeNull();
+    } finally {
+      g.requestAnimationFrame = origRaf;
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('a fuse whose network call fails still clears fuseInProgress + bt.busy (no permanent render lock)', async () => {
+    const target = makeCard('target', 'lena', { level: 3 });
+    const cardInv: Record<string, CardInstance> = { target };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max', { level: 3 });
+
+    // Server error path: fuseCards throws (playFusionAnim is never reached, so its stub is moot).
+    const scene = buildScene(baseCb(cardInv, { fuseCards: async () => { throw new Error('network boom'); } }));
+    openFuse(scene, target);
+    priv(scene).detailId = target.id;
+
+    const rowLabel = `${MAX_NAME} Lv.3`;
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
+      hitUnder(modalHitsOf(scene), findLabelPos(scene.container, rowLabel)!)!.action();
+    }
+    hitUnder(modalHitsOf(scene), findLabelPos(scene.container, `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
+    await flushAsync();
+
+    expect(priv(scene).fuseInProgress).toBe(false); // finally cleared it even though the fuse failed
+    expect(priv(scene).bt.busy).toBe(false);
+    // The busy re-render is no longer suppressed, and normal update() ticks still work.
+    expect(() => priv(scene).update(0.1)).not.toThrow();
+  });
+});
+
+describe('CardScene fuse panel — fills 80% of the primary viewport axis (2026-07-20)', () => {
+  // The panel scales its whole layout (dynamic S) so it fills 80% of the primary axis: height in
+  // landscape, width in portrait — the secondary axis stays content-driven. m(x,y,w,h) isn't
+  // exposed, but drawFusePanel pushes the panel's own box as the penultimate modalHit (the
+  // dismiss-on-backdrop no-op), immediately before the full-screen backdrop hit.
+  function panelRect(scene: CardScene): { x: number; y: number; w: number; h: number } {
+    const hits = modalHitsOf(scene);
+    return hits[hits.length - 2].rect;
+  }
+
+  function withMaterials(target: CardInstance): Record<string, CardInstance> {
+    const inv: Record<string, CardInstance> = { [target.id]: target };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) inv[`mat${i}`] = makeCard(`mat${i}`, 'max', { level: target.level });
+    return inv;
+  }
+
+  it('landscape (1920×1080): panel height is 80% of the viewport height', () => {
+    const target = makeCard('target', 'lena');
+    const scene = new CardScene(createLayout(1920, 1080), new InputManager(), baseCb(withMaterials(target)));
+    openFuse(scene, target);
+
+    const availH = (1080 - 8) - ((priv(scene).headerH as number) + 4);
+    expect(availH).toBeGreaterThanOrEqual(1080 * 0.8); // 80% is reachable, not clamped by the header
+    expect(panelRect(scene).h).toBeCloseTo(1080 * 0.8, 0);
+  });
+
+  it('portrait (1080×1920): panel width is 80% of the viewport width', () => {
+    const target = makeCard('target', 'lena');
+    const scene = new CardScene(createLayout(1080, 1920), new InputManager(), baseCb(withMaterials(target)));
+    openFuse(scene, target);
+
+    expect(panelRect(scene).w).toBeCloseTo(1080 * 0.8, 0);
   });
 });
