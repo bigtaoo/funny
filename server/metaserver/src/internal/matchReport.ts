@@ -38,6 +38,9 @@ const log = createLogger('meta:internal');
 /** Maximum byte size for inline replay frames; if exceeded, frames are stored externally in replayBlobs + replayRef (keeps matches documents compact). */
 const REPLAY_INLINE_MAX_BYTES = 256 * 1024;
 
+/** Storage cleanup TTL for non-disputed matches (7 days — bots have only been live a week, so 30d bought no headroom; see MatchDoc.expireAt). */
+const MATCH_RETENTION_MS = 7 * 24 * 3600 * 1000;
+
 interface EloResult {
   delta: number;
   after: number;
@@ -164,12 +167,17 @@ export function registerMatchReportRoutes(app: FastifyInstance, ctx: InternalCtx
     };
     const replayBytes = JSON.stringify(replayDoc.frames).length;
     const inline = replayBytes <= REPLAY_INLINE_MAX_BYTES;
+    const hashMismatch = !body.hash_ok && !cheat;
+    // Storage cleanup TTL: keep disputed matches (unresolved hash mismatch / peer-judge conviction) indefinitely
+    // for ops review + anti-cheat audit trail; everything else auto-expires after MATCH_RETENTION_MS.
+    const disputed = hashMismatch || !!cheat;
+    const expireAt = disputed ? undefined : new Date(now() + MATCH_RETENTION_MS);
     if (!inline) {
       // Write the blob first (roomId upsert is idempotent); matches only stores the replayRef pointer.
       await cols.replayBlobs
         .updateOne(
           { _id: body.room_id },
-          { $set: { _id: body.room_id, replay: replayDoc, ts: now() } },
+          { $set: { _id: body.room_id, replay: replayDoc, ts: now(), ...(expireAt ? { expireAt } : {}) } },
           { upsert: true },
         )
         .catch((e) => log.error('archive replay blob failed', { err: (e as Error).message }));
@@ -184,11 +192,12 @@ export function registerMatchReportRoutes(app: FastifyInstance, ctx: InternalCtx
         reason: body.reason,
         hashOk: body.hash_ok,
         // C3: hash mismatch and peer judge did not intervene (no cheat verdict) → flag for admin review.
-        ...(!body.hash_ok && !cheat ? { hashMismatch: true } : {}),
+        ...(hashMismatch ? { hashMismatch: true } : {}),
         ...(inline ? { replay: replayDoc } : { replayRef: body.room_id }),
         ...(cheat ? { cheat } : {}),
         ...(reportedStats ? { reportedStats } : {}),
         ts: now(),
+        ...(expireAt ? { expireAt } : {}),
       })
       .catch((e) => {
         // Idempotency race: a unique-index conflict means a concurrent request already archived the match; ignore.

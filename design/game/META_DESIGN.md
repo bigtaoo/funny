@@ -354,6 +354,7 @@ message Replay {
 - **PvE 只记玩家指令**（敌方由 `WaveDirector` 从 seed+level 确定性生成，不记，回放时重算）；**PvP 记双方**——gameserver 为重连保留的输入日志**即录像**，服务端录制零额外成本。
 - 落地：PvE 客户端本地存（可选上传分享）；PvP gameserver 持久化到 `matches`/对象存储 → 服务端回放 / 分享 / 纠纷复核 / 裁判复算。
 - ⚠️ **脆弱点**：录像绑 `engineVersion`，引擎逻辑改动后老录像可能回放发散，回放前必须校验版本（确定性回放方案的通用代价）。已有的黄金回放确定性测试天然延伸为整局录像的回归守卫。
+- **存储清理（2026-07-20）**：`matches` 曾经无 TTL，3 真人 + 100 bot 上线仅一周就跑出 39K 局 / 296MB，是 Atlas 存储告警的唯一来源（其余 collection 均为 KB 级）。现改为：非争议对局（`hashMismatch`/`cheat` 均不存在）写入时打 `expireAt`（**7 天** TTL 索引——bot 刚上线一周，30 天窗口起不到清理作用，故收紧到 7 天），争议对局永久保留供 ops 复核/反作弊审计追溯；`replayBlobs`（外部大录像，实测一直是空表）镜像同一 `expireAt`。存量数据由一次性脚本 `server/metaserver/scripts/backfillMatchExpiry.ts` 回填（dry-run 确认 34,040/39,000 条非争议对局会被标记）。
 
 ### 6.7 服务间通信选型（ADR，2026-06-14 定）
 

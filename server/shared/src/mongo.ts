@@ -127,6 +127,13 @@ export interface MatchDoc {
     overclaim?: Record<string, Partial<Record<StatKey, number>>>;
   };
   ts: number;
+  /**
+   * TTL auto-expiry anchor (7 days, storage cleanup — Atlas ran near capacity at 39K docs / 296MB with no cleanup;
+   * bots have only been live a week so a longer window bought no headroom).
+   * Only set for non-disputed matches (no `hashMismatch`, no `cheat`); disputed matches are kept indefinitely for ops
+   * review / anti-cheat audit trail. Absent on old pre-migration docs until the one-off backfill script runs.
+   */
+  expireAt?: Date;
 }
 
 /** Daily ad cap counter (S5-5, authoritative in meta, not surfaced to client sync segment to prevent abuse). _id = `${accountId}:${dayKey}`. */
@@ -157,6 +164,8 @@ export interface ReplayBlobDoc {
   _id: string; // roomId
   replay: MatchReplayDoc;
   ts: number;
+  /** TTL auto-expiry anchor, mirrors the owning MatchDoc.expireAt (absent for disputed matches — see there). */
+  expireAt?: Date;
 }
 
 /** PvE daily material-rewarding clear count (server-authoritative, anti-abuse). _id = `${accountId}:${dayKey}`. */
@@ -493,6 +502,10 @@ export async function createMongo(
     // 9-digit numeric public id globally unique (sparse, lazily back-filled for legacy accounts).
     await collections.accounts.createIndex({ publicId: 1 }, { sparse: true, unique: true });
     await collections.matches.createIndex({ ts: -1 });
+    // storage cleanup TTL (non-disputed matches only, see MatchDoc.expireAt doc comment): 296MB/39K docs with no
+    // cleanup was the sole driver of Atlas storage alerts at 3 real players + 100 bots.
+    await collections.matches.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
+    await collections.replayBlobs.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
     // roomId idempotency: gameserver end-of-match report retries must not trigger duplicate settlement/archival (meta /internal/match/report).
     await collections.matches.createIndex({ roomId: 1 }, { unique: true });
     // lookup match/replay history by player (S1-RP sharing, ranked match record).
