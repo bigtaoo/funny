@@ -5,6 +5,7 @@ export * from './clients/stats';
 export * from './clients/player';
 export * from './clients/anticheat';
 export * from './clients/mismatch';
+export * from './clients/pvpCardStats';
 export * from './clients/suspiciousPve';
 export * from './clients/analytics';
 export * from './clients/mail';

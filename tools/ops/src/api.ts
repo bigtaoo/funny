@@ -24,6 +24,7 @@ import type {
   PaddleEventView,
   PlayerProfile,
   PlayerSummary,
+  PvpCardStatRow,
   Session,
   SlgShopItemOverrideDoc,
   SlgShopItemRow,
@@ -271,6 +272,16 @@ export class Api {
   async ladderRollSeason(): Promise<{ seasonNo: number; startAt: number; endAt: number; state: string }> {
     const r = await this.req<{ season: { seasonNo: number; startAt: number; endAt: number; state: string } }>('POST', '/admin/ladder/season/roll');
     return r.season;
+  }
+
+  // —— PvP card win-rate report (BALANCE data pipeline P1) ——
+  async pvpCardStats(filter: { mode?: string; since?: string } = {}): Promise<PvpCardStatRow[]> {
+    const qs = new URLSearchParams();
+    if (filter.mode) qs.set('mode', filter.mode);
+    if (filter.since) qs.set('since', filter.since);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    const r = await this.req<{ cards: PvpCardStatRow[] }>('GET', `/admin/pvp-card-stats${suffix}`);
+    return r.cards;
   }
 
   // —— Account management ——

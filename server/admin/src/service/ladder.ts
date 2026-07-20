@@ -1,11 +1,12 @@
 // Ladder season ops (SE-3) + anti-cheat mismatch/suspicious-PvE views + manual ban (C3/C4/S4-4).
-import type { LadderSeasonInfo, MismatchRow, SuspiciousPveRow } from '../clients';
+import type { LadderSeasonInfo, MismatchRow, PvpCardStatRow, SuspiciousPveRow } from '../clients';
 import type { AdminBaseCtor, Constructor } from './base';
 
 export interface LadderHandlers {
   getLadderCurrentSeason(): Promise<LadderSeasonInfo | null>;
   rollLadderSeason(actor: string): Promise<LadderSeasonInfo>;
   listMismatches(): Promise<MismatchRow[]>;
+  listPvpCardStats(filter: { mode?: string; since?: string }): Promise<PvpCardStatRow[]>;
   listSuspiciousPve(): Promise<SuspiciousPveRow[]>;
   banAccount(accountId: string): Promise<{ ok: boolean }>;
   unbanAccount(accountId: string): Promise<{ ok: boolean }>;
@@ -31,6 +32,12 @@ export function LadderMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & C
     async listMismatches(): Promise<MismatchRow[]> {
       if (!this.mismatches.available) return [];
       return this.mismatches.listMismatches();
+    }
+
+    /** BALANCE data pipeline (P1): deck-composition win-rate by card, optionally filtered by mode/since (analytics.view capability). */
+    async listPvpCardStats(filter: { mode?: string; since?: string }): Promise<PvpCardStatRow[]> {
+      if (!this.pvpCardStats.available) return [];
+      return this.pvpCardStats.listPvpCardStats(filter);
     }
 
     /** C4: list of suspicious accounts with pveWarnings > 0 (anticheat.view capability). */

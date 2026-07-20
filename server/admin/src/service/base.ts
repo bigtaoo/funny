@@ -13,7 +13,7 @@ import {
   type AuditAction,
 } from '@nw/shared';
 import type { AdminCollections, AuditDoc } from '../db';
-import type { StatsClient, PlayerClient, AntiCheatClient, MismatchClient, SuspiciousPveClient, MailDispatcher, AnalyticsClient, WorldClient, AuctionClient, LadderClient, EventsClient, GachaPoolsClient, PromoClient, PaddleEventsClient } from '../clients';
+import type { StatsClient, PlayerClient, AntiCheatClient, MismatchClient, PvpCardStatsClient, SuspiciousPveClient, MailDispatcher, AnalyticsClient, WorldClient, AuctionClient, LadderClient, EventsClient, GachaPoolsClient, PromoClient, PaddleEventsClient } from '../clients';
 import { AdminError } from './errors';
 
 const log = createLogger('admin:service');
@@ -32,6 +32,7 @@ export interface AdminServiceDeps {
   players: PlayerClient;
   antiCheat: AntiCheatClient;
   mismatches: MismatchClient;
+  pvpCardStats: PvpCardStatsClient;
   suspiciousPve: SuspiciousPveClient;
   mail: MailDispatcher;
   analytics: AnalyticsClient;
@@ -72,6 +73,7 @@ export class AdminServiceBase {
   protected readonly players: PlayerClient;
   protected readonly antiCheat: AntiCheatClient;
   protected readonly mismatches: MismatchClient;
+  protected readonly pvpCardStats: PvpCardStatsClient;
   protected readonly suspiciousPve: SuspiciousPveClient;
   protected readonly mail: MailDispatcher;
   protected readonly analytics: AnalyticsClient;
@@ -95,6 +97,7 @@ export class AdminServiceBase {
     this.players = deps.players;
     this.antiCheat = deps.antiCheat;
     this.mismatches = deps.mismatches;
+    this.pvpCardStats = deps.pvpCardStats;
     this.suspiciousPve = deps.suspiciousPve;
     this.mail = deps.mail;
     this.analytics = deps.analytics;
