@@ -141,9 +141,13 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     return platform.storage.getItem(PLAYER_NAME_KEY) || t('settings.guest');
   }
 
-  /** Selected avatar token, or undefined for letter-initial fallback. */
+  /**
+   * Selected avatar token, or undefined for letter-initial fallback. Prefers the server-synced
+   * `save.equipped.avatar` (so a login on a new device picks up the same avatar other players see);
+   * falls back to the local-only key from before avatar sync existed / offline mode.
+   */
   function avatarId(): string | undefined {
-    return platform.storage.getItem(PLAYER_AVATAR_KEY) ?? undefined;
+    return saveManager.get().equipped['avatar'] || platform.storage.getItem(PLAYER_AVATAR_KEY) || undefined;
   }
 
   /**

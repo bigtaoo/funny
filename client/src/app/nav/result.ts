@@ -110,6 +110,7 @@ export function createResultNav(ctx: AppCtx): ResultNav {
       name: info.opponentName,
       publicId: info.opponentPublicId,
       ...(info.opponentTitle ? { equippedTitle: info.opponentTitle } : {}),
+      ...(info.opponentAvatarId ? { avatarId: info.opponentAvatarId } : {}),
     };
     const localProfile: ProfileData = {
       name: playerName(),

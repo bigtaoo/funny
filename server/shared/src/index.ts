@@ -7,6 +7,7 @@ export * from './ticket';
 export * from './password';
 export * from './playerNames';
 export * from './mongo';
+export * from './replayCodec';
 export * from './roomRegistry';
 export * from './activeMatch';
 export * from './ladder';

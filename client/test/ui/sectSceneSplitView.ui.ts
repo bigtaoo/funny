@@ -72,10 +72,18 @@ function buildScene(w: number, h: number, orientation: 'portrait' | 'landscape',
   return new SectScene(layout, new InputManager(), cb as any);
 }
 
+// Rows are drawn into masked sub-containers (the scroll-peek clip), so walk the whole
+// bodyLayer subtree rather than only its direct children.
 function textsOf(scene: any): string[] {
-  return scene.bodyLayer.children
-    .filter((c: unknown) => c instanceof PIXI.Text)
-    .map((c: PIXI.Text) => c.text);
+  const out: string[] = [];
+  const walk = (node: PIXI.Container): void => {
+    for (const c of node.children) {
+      if (c instanceof PIXI.Text) out.push(c.text);
+      if ((c as PIXI.Container).children) walk(c as PIXI.Container);
+    }
+  };
+  walk(scene.bodyLayer);
+  return out;
 }
 
 async function flush(scene: any): Promise<void> {

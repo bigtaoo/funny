@@ -29,6 +29,7 @@ const matchStartMsg = {
   opponentName: 'opp',
   opponentPublicId: '123456789',
   opponentTitle: '',
+  opponentAvatarId: '',
   topDeck: ['card_a'],
   bottomDeck: ['card_b'],
 };

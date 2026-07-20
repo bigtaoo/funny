@@ -419,6 +419,7 @@ export class FamilySceneBase {
       publicId: mem.publicId ?? '',
       isSelf: isMe,
       actions,
+      ...(mem.avatarId ? { avatarId: mem.avatarId } : {}),
     });
   }
 

@@ -6,7 +6,7 @@
 // opponentName snapshot is populated for an opponent who never customized their nickname.
 // Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
+import { createMongo, compressReplayDoc, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../dist/app.js';
 
@@ -39,7 +39,7 @@ function reportPayload(roomId: string, a: string, b: string) {
       { side: 0, state_hash: 'H', winner_side: 0 },
       { side: 1, state_hash: 'H', winner_side: 0 },
     ],
-    replay: { engineVersion: 0, mode: 'netplay', seed: '1', endFrame: 1, frames: [], meta: { recordedAt: 1, winner: 0 } },
+    replay_gz: compressReplayDoc({ engineVersion: 0, mode: 'netplay', seed: '1', endFrame: 1, frames: [], meta: { recordedAt: 1, winner: 0 } }).toString('base64'),
   };
 }
 

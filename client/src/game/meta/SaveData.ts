@@ -110,6 +110,16 @@ export interface SaveData {
   // The equipped slot is at equipped['title'] (sync section, client-writable); servers broadcast the opponent's title from it.
   titles?: string[];
 
+  // —— Lifetime-owned ledger (avatar unlock across hero/equipment/material/skin). Server-authoritative,
+  // not sent up on PUT /save (client read-only). Additive-only: survives the item later being
+  // salvaged/consumed/sold, unlike cardInv/equipmentInv/materials/inventory.skins themselves.
+  everOwned?: {
+    hero?: string[];
+    equipment?: string[];
+    material?: string[];
+    skin?: string[];
+  };
+
   // —— Client sync section (light validation, §2) ——
   progress: {
     cleared: string[];

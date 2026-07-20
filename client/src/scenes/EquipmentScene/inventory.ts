@@ -6,6 +6,7 @@ import { ui as C, txt, sketchPanel, seedFor, marginLineX } from '../../render/sk
 import { FS } from '../../render/fontScale';
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
+import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { buildIcon } from '../../render/icons';
 import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance } from '../../game/meta/SaveData';
 import { getEquipDef } from '../../game/meta/equipmentDefs';
@@ -98,7 +99,7 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       // Bag mode (no active card) has no single-card loadout to show; the list starts right below the header row.
       let listY = bodyTop;
       if (!this.bag) { this.renderLoadout(save, bodyTop, left); listY = bodyTop + LOADOUT_H; }
-      const listH = h - listY - 8;
+      const availH = h - listY - 8;
 
       const allInstances = Object.values(save.equipmentInv);
       const instances = this.filterSlot === 'all'
@@ -107,7 +108,7 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
 
       if (instances.length === 0) {
         const lbl = txt(t('equip.invEmpty'), FS.heading, C.mid);
-        lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = listY + listH / 2;
+        lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = listY + availH / 2;
         this.bodyLayer.addChild(lbl);
         return;
       }
@@ -162,6 +163,9 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       }
       if (col !== 0) off += EQUIP_CELL_H + CELL_GAP;
       const totalH = off + CELL_GAP;
+      // Clamp the viewport so it always cuts mid-row when there's more below — a partial next card
+      // always peeks above the fold instead of the screen looking coincidentally "full".
+      const listH = peekViewportH(availH, EQUIP_CELL_H + CELL_GAP, totalH);
 
       this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
 
@@ -324,9 +328,14 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
 
         if (inst) {
           this.addGlyph(slot, inst.rarity, x + cellW / 2, cy + cellH * 0.4, 30, seedFor(i, 13, cellW), 1, inst.defId);
-          const nm = txt(this.itemLabel(inst.defId, inst.level), FS.micro, C.dark);
-          nm.anchor.set(0.5, 0.5); nm.x = x + cellW / 2; nm.y = cy + cellH * 0.82;
+          const nm = txt(this.itemName(inst.defId), FS.micro, C.dark);
+          nm.anchor.set(0.5, 0.5); nm.x = x + cellW / 2; nm.y = cy + cellH * 0.72;
           this.bodyLayer.addChild(nm);
+          if (inst.level > 0) {
+            const stars = this.buildLevelStars(inst.level, cellW - 8, 10, 2);
+            stars.x = x + cellW / 2 - stars.width / 2; stars.y = cy + cellH * 0.86;
+            this.bodyLayer.addChild(stars);
+          }
           this.hitRects.push({ rect: { x, y: cy, w: cellW, h: cellH }, action: () => this.openDetail(inst.id) });
         } else {
           // Empty slot: darken the glyph alpha (0.40) and add the "empty" label so the player can clearly identify available equip positions.
@@ -353,8 +362,8 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       cell.x = x; cell.y = y;
       this.bodyLayer.addChild(cell);
 
-      // Top: name +level (scaled down to fit if too wide).
-      const name = txt(this.itemLabel(inst.defId, inst.level), FS.bodyLg, C.dark, true);
+      // Top: name (scaled down to fit if too wide).
+      const name = txt(this.itemName(inst.defId), FS.bodyLg, C.dark, true);
       name.x = x + pad; name.y = y + pad;
       if (name.width > cellW - pad * 2 - 20) name.scale.set(Math.min(1, cellW / (name.width + 40)));
       this.bodyLayer.addChild(name);
@@ -366,11 +375,20 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
         this.bodyLayer.addChild(l);
       }
 
+      // Enhance level as a row of gold stars beneath the name, in place of the old "+N" suffix
+      // (matches the Hero Roster / Card level-star convention). Header row grows to make room.
+      const headerH = inst.level > 0 ? 40 : 32;
+      if (inst.level > 0) {
+        const stars = this.buildLevelStars(inst.level, cellW - pad * 2);
+        stars.x = x + pad; stars.y = y + pad + 20;
+        this.bodyLayer.addChild(stars);
+      }
+
       // Left: glyph in a rarity-bordered frame.
       const slot = getEquipDef(inst.defId)?.slot ?? 'weapon';
-      const imgBox = EQUIP_CELL_H - (pad + 32) - pad;
+      const imgBox = EQUIP_CELL_H - (pad + headerH) - pad;
       const imgX = x + pad;
-      const imgY = y + pad + 32;
+      const imgY = y + pad + headerH;
       const frame = sketchPanel(imgBox, imgBox, { fill: 0xf0eee7, border: color, seed: seedFor(x, y, imgBox) });
       frame.x = imgX; frame.y = imgY;
       this.bodyLayer.addChild(frame);

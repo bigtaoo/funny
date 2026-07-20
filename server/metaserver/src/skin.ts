@@ -96,12 +96,19 @@ export async function grantSkin(
     if (!doc) return { error: 'save not found', code: 'NOT_FOUND' };
     const save = doc.save;
     const curSkins = save.inventory?.skins ?? [];
+    // Lifetime skin-owned ledger (avatar unlock): written even on the already-owned no-op return
+    // below is unnecessary (it's already in inventory.skins, which is itself sufficient there), but
+    // this path also covers "bought back after selling" — everOwned.skin must gain the id here too
+    // in case it somehow never got there (e.g. a skin granted before this ledger existed).
+    const everOwnedSkin = new Set(save.everOwned?.skin ?? []);
+    everOwnedSkin.add(skinId);
     if (curSkins.includes(skinId)) return { ok: true }; // already owned, no-op
     const next: SaveData = {
       ...save,
       rev: save.rev + 1,
       updatedAt: now(),
       inventory: { ...(save.inventory ?? { items: {} }), skins: [...curSkins, skinId] },
+      everOwned: { ...save.everOwned, skin: [...everOwnedSkin] },
     };
     const res = await cols.saves.findOneAndUpdate(
       { _id: accountId, rev: doc.rev },

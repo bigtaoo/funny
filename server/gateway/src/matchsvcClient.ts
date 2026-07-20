@@ -106,11 +106,11 @@ export class MatchsvcClient {
   // roomCreate / roomJoin are NOT idempotent on the matchsvc side (a re-landed dup
   // would create a second room / push ALREADY_IN_ROOM), so they stay retries=0 — the
   // player can simply click again. They still get the body-drain + timeout fix.
-  roomCreate(accountId: string, name: string, publicId: string, equippedTitle = '', deck: string[] = []): void {
-    this.post('/mm/room/create', { accountId, name, publicId, equippedTitle, deck });
+  roomCreate(accountId: string, name: string, publicId: string, equippedTitle = '', avatarId = '', deck: string[] = []): void {
+    this.post('/mm/room/create', { accountId, name, publicId, equippedTitle, avatarId, deck });
   }
-  roomJoin(accountId: string, name: string, publicId: string, code: string, equippedTitle = '', deck: string[] = []): void {
-    this.post('/mm/room/join', { accountId, name, publicId, code, equippedTitle, deck });
+  roomJoin(accountId: string, name: string, publicId: string, code: string, equippedTitle = '', avatarId = '', deck: string[] = []): void {
+    this.post('/mm/room/join', { accountId, name, publicId, code, equippedTitle, avatarId, deck });
   }
   roomReady(accountId: string, ready: boolean): void {
     this.post('/mm/room/ready', { accountId, ready });
@@ -125,8 +125,8 @@ export class MatchsvcClient {
   }
   // enqueue is idempotent (matchsvc dedups by accountId) and non-self-healing (a lost
   // enqueue strands the player on "searching") → retry. This is the 0/20 fix.
-  enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = '', platform = '', deck: string[] = []): void {
-    this.post('/mm/queue/enqueue', { accountId, name, publicId, elo, equippedTitle, platform, deck }, 2);
+  enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = '', avatarId = '', platform = '', deck: string[] = []): void {
+    this.post('/mm/queue/enqueue', { accountId, name, publicId, elo, equippedTitle, avatarId, platform, deck }, 2);
   }
   connected(accountId: string): void {
     this.post('/mm/conn/connected', { accountId });

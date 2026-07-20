@@ -82,7 +82,7 @@ function main(): void {
       side: claims.side,
       mode: claims.mode,
     });
-    const ok = manager.join(conn, claims.opponent, claims.opponentPublicId ?? '', claims.seed, mode, claims.opponentTitle ?? '', claims.decks);
+    const ok = manager.join(conn, claims.opponent, claims.opponentPublicId ?? '', claims.seed, mode, claims.opponentTitle ?? '', claims.decks, claims.opponentAvatarId ?? '');
     if (!ok) {
       log.warn('join rejected: ticket room mismatch', { accountId: claims.accountId, roomId: claims.roomId });
       ws.close(4403, 'ticket room mismatch');

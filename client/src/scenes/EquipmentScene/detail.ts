@@ -84,12 +84,21 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       panelRoot.addChild(panel);
 
       let cy = my + 12;
-      const title = txt(this.itemLabel(inst.defId, inst.level), FS.tiny, C.dark, true);
+      const title = txt(this.itemName(inst.defId), FS.tiny, C.dark, true);
       title.x = mx + 12; title.y = cy;
       panelRoot.addChild(title);
       const rar = txt(t(`equip.rarity.${inst.rarity}` as TranslationKey), FS.micro, color, true);
       rar.anchor.set(1, 0); rar.x = mx + mw - 12; rar.y = cy + 1;
       panelRoot.addChild(rar);
+      // Enhance level as gold stars, squeezed into the gap between the name and the rarity tag.
+      if (inst.level > 0) {
+        const starsMaxW = (rar.x - rar.width) - (title.x + title.width) - 16;
+        if (starsMaxW > 20) {
+          const stars = this.buildLevelStars(inst.level, starsMaxW, 12, 2);
+          stars.x = title.x + title.width + 8; stars.y = cy + 4;
+          panelRoot.addChild(stars);
+        }
+      }
       cy += 26;
 
       // Affix lines (stat icon + text; main affixes highlighted in ink-blue).

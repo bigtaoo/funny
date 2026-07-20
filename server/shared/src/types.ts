@@ -117,6 +117,19 @@ export interface SaveData {
   // Written by season settlement / achievement claim / admin grant; equipped['title'] is the equipped slot (client sync section).
   titles?: string[];
 
+  // —— Lifetime-owned ledger (avatar-unlock across hero/equipment/material/skin categories). Server-
+  // authoritative, additive-only ($addToSet at every grant point), never pruned when the current
+  // inventory drops an item — this is what makes "obtained once" avatar unlocks survive salvage/
+  // consume/sell. Titles don't need an entry here: titles[] (above) is already append-only. Skins
+  // mostly don't either (inventory.skins is append-only) except auction escrow removes the skin from
+  // inventory.skins, so everOwned.skin is the fallback that survives a sold-then-not-bought-back skin.
+  everOwned?: {
+    hero?: string[];       // unitType (CARD_DEFS key), granted whenever any card instance of that unit is ever received
+    equipment?: string[];  // equip defId, granted whenever any equipment instance of that def is ever received
+    material?: string[];   // material kind (scrap/lead/binding), granted whenever a material is credited
+    skin?: string[];       // skinId, granted alongside inventory.skins (survives auction escrow removal)
+  };
+
   // —— Battle pass (S11-C, SEASON_DESIGN §C). Server-authoritative; not writable via PUT /save. Absent = treated as not enrolled, lazily created. ——
   battlePass?: BattlePassData;
 

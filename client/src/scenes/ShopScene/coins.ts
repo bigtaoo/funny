@@ -6,6 +6,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { type IconKind } from '../../render/icons';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
+import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { type Constructor, type ShopSceneBaseCtor, type CardSpec } from './base';
 import { snapFont } from '../../render/fontScale';
 
@@ -40,7 +41,7 @@ export function CoinsMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase 
     drawCoinsGrid(body: PIXI.Container, top: number): void {
       const { h } = this;
       const bodyTop = top + Math.round(h * 0.02);
-      const viewH = h - bodyTop - Math.round(h * 0.02);
+      const availH = h - bodyTop - Math.round(h * 0.02);
       const busy = this.bt.busy;
 
       // The first-purchase 2× bonus is a one-time, account-wide grant (server CAS on wallets.firstPurchasedAt).
@@ -72,6 +73,10 @@ export function CoinsMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase 
       // Promo-code redemption (B-PROMO) lives on the Coins tab, full-width below the tier grid.
       const promoH = this.cb.redeemPromo ? Math.round(h * 0.09) : 0;
       const totalH = gridH + (promoH ? promoH + gap : 0);
+      // Clamp the viewport so it always cuts mid-row when there's more below — never flush with a
+      // row boundary, so a partial next card is visibly peeking above the fold.
+      const viewH = peekViewportH(availH, cellH + gap, totalH);
+      this.maskBody(top, viewH);
       this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - viewH)));
 
       specs.forEach((spec, i) => {
@@ -79,7 +84,7 @@ export function CoinsMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase 
         const row = Math.floor(i / cols);
         const cx = listX + col * (cellW + gap);
         const cy = bodyTop + row * (cellH + gap) - this.scrollY;
-        if (cy + cellH >= top && cy <= h) this.drawCard(body, spec, cx, cy, cellW, cellH);
+        if (cy + cellH >= top && cy <= bodyTop + viewH) this.drawCard(body, spec, cx, cy, cellW, cellH);
       });
 
       if (promoH) {

@@ -110,6 +110,7 @@ message MatchStart {
   string          opponent_title     = 8;   // opponent's equipped title id (UI use, display only; empty string = no title)
   repeated string top_deck           = 9;   // side-0 player's deck (PVP_LOADOUT §6.2); both sides receive both decks for deterministic engine construction
   repeated string bottom_deck        = 10;  // side-1 player's deck
+  string          opponent_avatar_id = 11;  // opponent's equipped avatar id (UI use, display only; empty string = no avatar)
 }
 
 message ConnResync {

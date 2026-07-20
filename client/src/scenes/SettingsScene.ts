@@ -11,8 +11,39 @@ import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { caretDisplay } from '../render/inputDisplay';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { showToastMessage } from '../net/log';
-import { buildAvatar, AVATAR_COUNT } from '../render/avatar';
+import { buildAvatar, AVATAR_COUNT, makeAvatarId, parseAvatarId, type AvatarCategory } from '../render/avatar';
+import { buildIcon } from '../render/icons';
+import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
+import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
+import { ScrollTapGesture } from '../ui/scrollTapGesture';
+import { CARD_DEFS } from '../game/meta/cardDefs';
+import { EQUIPMENT_DEFS } from '../game/meta/equipmentDefs';
+import { SKIN_TARGET_UNIT } from '../game/meta/skinDefs';
+import { allTitleIds } from '../game/meta/titles';
 import { FS, snapFont } from '../render/fontScale';
+
+/** One selectable item in the avatar picker grid, regardless of category. */
+interface AvatarPickerItem {
+  id: string;
+  locked: boolean;
+}
+
+const AVATAR_TABS: AvatarCategory[] = ['preset', 'title', 'hero', 'equip', 'material', 'skin'];
+const AVATAR_TAB_LABEL_KEY: Record<AvatarCategory, TranslationKey> = {
+  preset: 'settings.avatarTab.preset',
+  title: 'settings.avatarTab.title',
+  hero: 'settings.avatarTab.hero',
+  equip: 'settings.avatarTab.equip',
+  material: 'settings.avatarTab.material',
+  skin: 'settings.avatarTab.skin',
+};
+const AVATAR_LOCKED_KEY: Record<Exclude<AvatarCategory, 'preset'>, TranslationKey> = {
+  title: 'settings.avatarLocked.title',
+  hero: 'settings.avatarLocked.hero',
+  equip: 'settings.avatarLocked.equip',
+  material: 'settings.avatarLocked.material',
+  skin: 'settings.avatarLocked.skin',
+};
 
 // ── SettingsScene — personal profile + settings ────────────────────────────────
 //
@@ -59,10 +90,16 @@ export interface SettingsSceneCallbacks {
   onDeleteAccount?(): Promise<{ ok: boolean }>;
   /** Replay the onboarding tutorial (ONBOARDING_DESIGN §3.4); absent = not shown. */
   onReplayTutorial?(): void;
-  /** Currently selected avatar token ('0'-'7'); absent = letter-initial fallback. */
+  /** Currently selected avatar id (composite "<category>:<key>", see render/avatar.ts); absent = letter-initial fallback. */
   avatarId?: string;
   /** Called when the player picks a new avatar; absent = picker is read-only. */
   onSetAvatar?(id: string): void;
+  /** Owned title ids (save.titles) — unlocks the title tab's items. */
+  ownedTitles?: string[];
+  /** Currently owned skin ids (save.inventory.skins) — unlocks the skin tab's items alongside everOwned.skin. */
+  ownedSkins?: string[];
+  /** Lifetime-owned ledger (save.everOwned) — unlocks the hero/equipment/material/skin tabs' items even after the item itself is gone from inventory. */
+  everOwned?: { hero?: string[]; equipment?: string[]; material?: string[]; skin?: string[] };
   // ── rename (online only; absent → no rename UI) ──
   /** Coin cost of a rename; presence enables the rename button. */
   renameCost?: number;
@@ -101,6 +138,17 @@ export class SettingsScene implements Scene {
   private renameText = '';
   /** Avatar picker overlay — opened by tapping the profile avatar. */
   private avatarPickerOpen = false;
+  /** Active picker tab + its scroll offset (each tab keeps its own scroll — switching tabs resets to 0). */
+  private pickerTab: AvatarCategory = 'preset';
+  private pickerScrollY = 0;
+  private pickerMaxScroll = 0;
+  /** Grid viewport + per-cell hit list for the current picker render — read by handleDown/Move for drag-scroll vs tap. */
+  private pickerViewRect: Rect | null = null;
+  private pickerCellHits: Array<{ rect: Rect; fn: () => void }> = [];
+  private readonly pickerGesture = new ScrollTapGesture();
+  /** Transient "why is this locked" hint shown under the grid; cleared after a couple seconds. */
+  private toastMsg: string | null = null;
+  private toastTimer = 0;
   /** Delete-account confirmation overlay (C5-b). */
   private deleteConfirmOpen = false;
   private readonly bt = new BusyTracker();
@@ -116,6 +164,8 @@ export class SettingsScene implements Scene {
     this.playerName = cb.playerName;
     this.currentAvatarId = cb.avatarId;
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
+    this.unsubs.push(input.onMove((x, y) => this.handlePickerMove(y)));
+    this.unsubs.push(input.onUp(() => this.handlePickerUp()));
     this.setupHiddenInput();
     this.render();
   }
@@ -124,6 +174,10 @@ export class SettingsScene implements Scene {
     if (this.renameOpen) {
       this.caretTimer += dt;
       if (this.caretTimer >= 0.5) { this.caretTimer = 0; this.caretOn = !this.caretOn; this.render(); }
+    }
+    if (this.toastMsg) {
+      this.toastTimer -= dt;
+      if (this.toastTimer <= 0) { this.toastMsg = null; this.render(); }
     }
     if (this.bt.tick(dt)) this.render();
   }
@@ -135,12 +189,42 @@ export class SettingsScene implements Scene {
     this.container.destroy({ children: true });
   }
 
+  private inRect(x: number, y: number, r: Rect): boolean {
+    return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+  }
+
   private handleDown(x: number, y: number): void {
     if (this.bt.busy) return;
+    // The picker grid is drag-scrollable: a down inside its viewport starts a tap-vs-drag gesture
+    // (ScrollTapGesture) instead of firing immediately, so a drag that starts on a cell scrolls the
+    // grid rather than instantly selecting/toasting that cell.
+    if (this.avatarPickerOpen && this.pickerViewRect && this.inRect(x, y, this.pickerViewRect)) {
+      let hit: (() => void) | null = null;
+      for (const h of this.pickerCellHits) {
+        if (this.inRect(x, y, h.rect)) { hit = h.fn; break; }
+      }
+      this.pickerGesture.down(this.pickerScrollY, y, hit);
+      return;
+    }
     for (const hit of this.hits) {
       const r = hit.rect;
       if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); return; }
     }
+  }
+
+  private handlePickerMove(y: number): void {
+    if (!this.avatarPickerOpen) return;
+    const scroll = this.pickerGesture.move(y);
+    if (scroll !== null) {
+      this.pickerScrollY = Math.max(0, Math.min(scroll, this.pickerMaxScroll));
+      this.render();
+    }
+  }
+
+  private handlePickerUp(): void {
+    if (!this.avatarPickerOpen) return;
+    const tap = this.pickerGesture.up();
+    if (tap) tap();
   }
 
   // ── Hidden input (rename capture) ────────────────────────────────────────────
@@ -318,79 +402,180 @@ export class SettingsScene implements Scene {
 
   private openAvatarPicker(): void {
     this.avatarPickerOpen = true;
+    this.pickerTab = 'preset';
+    this.pickerScrollY = 0;
+    this.toastMsg = null;
     this.render();
   }
 
   private closeAvatarPicker(): void {
     this.avatarPickerOpen = false;
+    this.pickerViewRect = null;
+    this.pickerCellHits = [];
     this.render();
   }
 
-  /** Modal avatar picker — a 2×4 grid of tokens (0-7) inside a sketch panel. */
+  private showLockToast(category: Exclude<AvatarCategory, 'preset'>): void {
+    this.toastMsg = t(AVATAR_LOCKED_KEY[category]);
+    this.toastTimer = 2.2;
+    this.render();
+  }
+
+  /** The full candidate list + lock state for one tab (preset is always all-unlocked). */
+  private pickerItems(category: AvatarCategory): AvatarPickerItem[] {
+    const everOwned = this.cb.everOwned ?? {};
+    switch (category) {
+      case 'preset':
+        return Array.from({ length: AVATAR_COUNT }, (_, i) => ({ id: makeAvatarId('preset', String(i)), locked: false }));
+      case 'title': {
+        const owned = new Set(this.cb.ownedTitles ?? []);
+        return allTitleIds(this.cb.ownedTitles ?? []).map((id) => ({ id: makeAvatarId('title', id), locked: !owned.has(id) }));
+      }
+      case 'hero': {
+        const owned = new Set(everOwned.hero ?? []);
+        return Object.values(CARD_DEFS).map((d) => ({ id: makeAvatarId('hero', d.unitType), locked: !owned.has(d.unitType) }));
+      }
+      case 'equip': {
+        const owned = new Set(everOwned.equipment ?? []);
+        return Object.values(EQUIPMENT_DEFS).map((d) => ({ id: makeAvatarId('equip', d.defId), locked: !owned.has(d.defId) }));
+      }
+      case 'material': {
+        const owned = new Set(everOwned.material ?? []);
+        return (['scrap', 'lead', 'binding'] as const).map((kind) => ({ id: makeAvatarId('material', kind), locked: !owned.has(kind) }));
+      }
+      case 'skin': {
+        const owned = new Set([...(this.cb.ownedSkins ?? []), ...(everOwned.skin ?? [])]);
+        return Object.keys(SKIN_TARGET_UNIT).map((id) => ({ id: makeAvatarId('skin', id), locked: !owned.has(id) }));
+      }
+    }
+  }
+
+  /** Modal avatar picker — category tabs + a scrollable icon grid, with locked (never-owned) items greyed out. */
   private drawAvatarPickerOverlay(): void {
     const { w, h } = this;
-    // Modal: discard base-scene hits so only the overlay's controls are tappable.
+    // Modal: discard base-scene hits so only the overlay's controls are tappable; the grid itself
+    // uses pickerCellHits/pickerViewRect (checked in handleDown) instead of this.hits.
     this.hits = [];
+    this.pickerCellHits = [];
 
     const dim = new PIXI.Graphics();
     dim.beginFill(0x000000, 0.7); dim.drawRect(0, 0, w, h); dim.endFill();
     this.container.addChild(dim);
 
-    const pw = Math.round(w * 0.8), ph = Math.round(h * 0.52);
+    const pw = Math.round(w * 0.88), ph = Math.round(h * 0.68);
     const px = (w - pw) / 2, py = (h - ph) / 2;
     const panel = sketchPanel(pw, ph, { fill: C.paper, border: C.dark, width: 2.4, seed: 42 });
     panel.x = px; panel.y = py;
     this.container.addChild(panel);
 
     const title = txt(t('settings.avatar'), FS.title, C.dark, true);
-    title.anchor.set(0.5, 0); title.x = w / 2; title.y = py + Math.round(h * 0.03);
+    title.anchor.set(0.5, 0); title.x = w / 2; title.y = py + Math.round(h * 0.022);
     this.container.addChild(title);
 
-    // 2 rows of 4 avatars, centred in the panel.
-    const cols = 4;
-    const avS = Math.round(h * 0.09);
-    const gridW = Math.round(pw * 0.82);
-    const gap = Math.round((gridW - cols * avS) / (cols - 1));
-    const rowGap = Math.round(h * 0.03);
-    const gridX = px + Math.round((pw - gridW) / 2);
-    const gridY = py + Math.round(ph * 0.24);
+    // Category tabs, drawn in a sub-container offset to the panel so drawHubTabs' own (0-based)
+    // layout math just works; its returned hit rects are local to that sub-container, so they're
+    // translated back to stage space before landing in this.hits.
+    const tabY = py + Math.round(h * 0.06);
+    const tabStripH = hubTabsHeight(h);
+    const tabLayer = new PIXI.Container();
+    this.container.addChild(tabLayer);
+    const tabs: HubTab[] = AVATAR_TABS.map((cat) => ({ label: t(AVATAR_TAB_LABEL_KEY[cat]), active: cat === this.pickerTab }));
+    const tabHits = drawHubTabs(tabLayer, pw, 0, tabStripH, tabs, (i) => {
+      this.pickerTab = AVATAR_TABS[i]!;
+      this.pickerScrollY = 0;
+      this.toastMsg = null;
+      this.render();
+    });
+    tabLayer.x = px; tabLayer.y = tabY;
+    this.hits.push(...tabHits.map((hit) => ({ rect: { x: hit.rect.x + px, y: hit.rect.y + tabY, w: hit.rect.w, h: hit.rect.h }, fn: hit.fn })));
 
-    for (let i = 0; i < AVATAR_COUNT; i++) {
+    // Scrollable icon grid below the tabs.
+    const gridTop = tabY + tabStripH + Math.round(h * 0.02);
+    const toastH = Math.round(h * 0.045);
+    const closeAreaH = Math.round(h * 0.09);
+    const gridH = py + ph - closeAreaH - toastH - gridTop;
+    const gridPad = Math.round(pw * 0.05);
+    const gridInnerW = pw - gridPad * 2;
+    const view: Rect = { x: px + gridPad, y: gridTop, w: gridInnerW, h: gridH };
+
+    const clip = new PIXI.Graphics();
+    clip.beginFill(0xffffff); clip.drawRect(view.x, view.y, view.w, view.h); clip.endFill();
+    this.container.addChild(clip);
+    const gridLayer = new PIXI.Container();
+    gridLayer.mask = clip;
+    this.container.addChild(gridLayer);
+
+    const items = this.pickerItems(this.pickerTab);
+    const avS = Math.round(h * 0.085);
+    const cellGap = Math.round(avS * 0.35);
+    const cols = Math.max(1, Math.floor((gridInnerW + cellGap) / (avS + cellGap)));
+    const rowH = avS + cellGap;
+    const rows = Math.ceil(items.length / cols);
+    const contentH = rows * rowH;
+    this.pickerMaxScroll = Math.max(0, contentH - gridH);
+    this.pickerScrollY = Math.min(this.pickerScrollY, this.pickerMaxScroll);
+
+    items.forEach((item, i) => {
       const col = i % cols;
       const row = Math.floor(i / cols);
-      const ax = gridX + col * (avS + gap);
-      const ay = gridY + row * (avS + rowGap);
-      const id = String(i);
-      const selected = this.currentAvatarId === id;
+      const ax = view.x + col * (avS + cellGap);
+      const ay = view.y + row * rowH - this.pickerScrollY;
+      if (ay + avS < view.y || ay > view.y + view.h) return; // culled — off-screen row
 
-      // Selection ring drawn behind the avatar.
+      const selected = this.currentAvatarId === item.id;
       if (selected) {
         const ring = new PIXI.Graphics();
         ring.lineStyle(Math.max(2, Math.round(avS * 0.07)), C.gold, 1);
         ring.drawCircle(ax + avS / 2, ay + avS / 2, avS / 2 + Math.round(avS * 0.06));
-        this.container.addChild(ring);
+        gridLayer.addChild(ring);
       }
 
-      const av = buildAvatar(avS, '', 10 + i, id);
+      const av = buildAvatar(avS, '', 10 + i, item.id);
       av.x = ax; av.y = ay;
-      av.alpha = (!this.cb.onSetAvatar) ? 0.75 : (selected ? 1.0 : 0.82);
-      this.container.addChild(av);
+      av.alpha = item.locked ? 0.32 : (!this.cb.onSetAvatar ? 0.75 : (selected ? 1.0 : 0.82));
+      gridLayer.addChild(av);
+
+      if (item.locked) {
+        const lockS = Math.round(avS * 0.42);
+        const lockBadge = new PIXI.Graphics();
+        lockBadge.beginFill(0x000000, 0.5);
+        lockBadge.drawCircle(ax + avS / 2, ay + avS / 2, lockS / 2 + 3);
+        lockBadge.endFill();
+        gridLayer.addChild(lockBadge);
+        const lock = buildIcon('lock', lockS, 0xffffff);
+        lock.x = ax + avS / 2 - lockS / 2; lock.y = ay + avS / 2 - lockS / 2;
+        gridLayer.addChild(lock);
+      }
 
       if (this.cb.onSetAvatar && !selected) {
-        this.hits.push({
-          rect: { x: ax, y: ay, w: avS, h: avS },
-          fn: () => {
-            this.currentAvatarId = id;
-            this.cb.onSetAvatar!(id);
-            this.closeAvatarPicker(); // pick + dismiss
-          },
+        const cat = this.pickerTab;
+        this.pickerCellHits.push({
+          rect: { x: ax, y: ay, w: avS, h: avS }, // ay is already on-screen position for this render
+          fn: item.locked
+            ? () => this.showLockToast(cat as Exclude<AvatarCategory, 'preset'>)
+            : () => {
+              this.currentAvatarId = item.id;
+              this.cb.onSetAvatar!(item.id);
+              this.closeAvatarPicker(); // pick + dismiss
+            },
         });
       }
+    });
+    this.pickerViewRect = view;
+
+    drawScrollIndicator(this.container, view, this.pickerScrollY, this.pickerMaxScroll);
+
+    // Transient lock-reason toast, between the grid and the close button.
+    if (this.toastMsg) {
+      const toast = txt(this.toastMsg, snapFont(Math.round(toastH * 0.5)), C.red, true);
+      toast.anchor.set(0.5, 0.5);
+      toast.x = w / 2; toast.y = gridTop + gridH + toastH / 2;
+      this.container.addChild(toast);
     }
 
     // Close button.
-    const btnW = Math.round(pw * 0.5), btnH = Math.round(h * 0.06);
-    const bxx = px + (pw - btnW) / 2, byy = py + ph - btnH - Math.round(h * 0.03);
+    const btnW = Math.round(pw * 0.5), btnH = Math.round(closeAreaH * 0.62);
+    const bxx = px + (pw - btnW) / 2, byy = py + ph - btnH - Math.round(h * 0.02);
     const cBox = new PIXI.Graphics();
     cBox.beginFill(C.dark); cBox.drawRect(bxx, byy, btnW, btnH); cBox.endFill();
     this.container.addChild(cBox);

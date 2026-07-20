@@ -74,11 +74,14 @@ export async function grantCard(
   for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
     const doc = await cols.saves.findOne({ _id: accountId });
     if (!doc) return { error: 'save not found', code: 'NOT_FOUND' };
+    const everOwnedHero = new Set(doc.save.everOwned?.hero ?? []);
+    everOwnedHero.add(instance.defId);
     const next: SaveData = {
       ...doc.save,
       rev: doc.save.rev + 1,
       updatedAt: now(),
       cardInv: { ...(doc.save.cardInv ?? {}), [instance.id]: instance },
+      everOwned: { ...doc.save.everOwned, hero: [...everOwnedHero] },
     };
     const res = await cols.saves.findOneAndUpdate(
       { _id: accountId, rev: doc.rev },
@@ -150,12 +153,20 @@ export async function grantCards(
     const nextCardInv = { ...(save.cardInv ?? {}) };
     for (const inst of newInstances) nextCardInv[inst.id] = inst;
 
+    // Lifetime hero-owned ledger (avatar unlock): every def in this grant was obtained by the player,
+    // regardless of whether the resulting instance landed in cardInv, was mailed, or was coin-compensated
+    // for a full roster — the "obtained" event happened either way. Never pruned when cards are later
+    // fused away (unlike cardInv), so an avatar picked from a since-consumed hero stays unlocked.
+    const everOwnedHero = new Set(save.everOwned?.hero ?? []);
+    for (const inst of pendingInstances) everOwnedHero.add(inst.defId);
+
     const next: SaveData = {
       ...save,
       rev: save.rev + 1,
       updatedAt: now(),
       cardInv: nextCardInv,
       cardMailOverflowCount: mailCtx ? mailOverflowCount : save.cardMailOverflowCount,
+      everOwned: { ...save.everOwned, hero: [...everOwnedHero] },
     };
     const res = await cols.saves.findOneAndUpdate(
       { _id: accountId, rev: doc.rev },

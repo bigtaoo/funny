@@ -73,10 +73,10 @@ export function startInternalHttp(
         switch (req.url) {
           // —— gateway control commands ——
           case '/mm/room/create':
-            svc.roomCreate(str(b.accountId), str(b.name), str(b.publicId), str(b.equippedTitle), strArr(b.deck));
+            svc.roomCreate(str(b.accountId), str(b.name), str(b.publicId), str(b.equippedTitle), str(b.avatarId), strArr(b.deck));
             break;
           case '/mm/room/join':
-            svc.roomJoin(str(b.accountId), str(b.name), str(b.publicId), str(b.code), str(b.equippedTitle), strArr(b.deck));
+            svc.roomJoin(str(b.accountId), str(b.name), str(b.publicId), str(b.code), str(b.equippedTitle), str(b.avatarId), strArr(b.deck));
             break;
           case '/mm/room/ready':
             svc.roomReady(str(b.accountId), Boolean(b.ready));
@@ -88,7 +88,7 @@ export function startInternalHttp(
             svc.roomLeave(str(b.accountId));
             break;
           case '/mm/queue/enqueue':
-            svc.enqueue(str(b.accountId), str(b.name), str(b.publicId), num(b.elo, 1000), str(b.equippedTitle), str(b.platform), strArr(b.deck));
+            svc.enqueue(str(b.accountId), str(b.name), str(b.publicId), num(b.elo, 1000), str(b.equippedTitle), str(b.avatarId), str(b.platform), strArr(b.deck));
             break;
           case '/mm/conn/connected':
             svc.onConnected(str(b.accountId));

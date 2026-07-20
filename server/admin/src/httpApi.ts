@@ -234,6 +234,15 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true, mismatches: rows });
         }
 
+        // ── PvP card win-rate report (BALANCE data pipeline P1) ──
+        if (method === 'GET' && path === '/admin/pvp-card-stats') {
+          requireCap(actor, 'analytics.view');
+          const mode = url.searchParams.get('mode') ?? undefined;
+          const since = url.searchParams.get('since') ?? undefined;
+          const cards = await svc.listPvpCardStats({ mode, since });
+          return send(res, 200, { ok: true, cards });
+        }
+
         // ── PvE suspicious account list (C4) ──
         if (method === 'GET' && path === '/admin/suspicious-pve') {
           requireCap(actor, 'anticheat.view');

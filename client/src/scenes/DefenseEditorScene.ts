@@ -36,6 +36,7 @@ import { buildDecorCLayer } from '../render/decorCLayer';
 import { FS } from '../render/fontScale';
 import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
+import { peekViewportH } from '../ui/widgets/scrollPeek';
 import { ScrollTapGesture } from '../ui/scrollTapGesture';
 import { UNIT_ART_URLS, getArtTexture } from '../render/cardArt';
 import type { WorldApiClient, TeamTemplate, ArmyEntry, CardSLGState } from '../net/WorldApiClient';
@@ -573,7 +574,7 @@ export class DefenseEditorScene implements Scene {
     this.bodyLayer.addChild(title);
 
     const listY = y + titleH;
-    const listH = h - titleH;
+    const availH = h - titleH;
     if (cards.length === 0) {
       const empty = txt(t('world.team.noCards'), FS.micro, C.mid);
       empty.x = x; empty.y = listY + 8;
@@ -588,6 +589,8 @@ export class DefenseEditorScene implements Scene {
     const cellW = (w - gap * (cols - 1)) / cols;
     const rows = Math.ceil(cards.length / cols);
     const totalH = rows * (cellH + gap) + gap;
+    // Pull the visible viewport in so a partial next row always peeks above the fold (see scrollPeek).
+    const listH = peekViewportH(availH, cellH + gap, totalH);
     this.scrollMax = Math.max(0, totalH - listH);
     this.scrollY = Math.max(0, Math.min(this.scrollY, this.scrollMax));
 

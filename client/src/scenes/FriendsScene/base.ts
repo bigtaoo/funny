@@ -295,7 +295,12 @@ export class FriendsSceneBase {
   }
 
   protected switchTab(tab: Tab): void {
-    if (this.tab === tab) return;
+    if (this.tab === tab) {
+      // Re-tapping the active tab backs out of a drilled-in detail view (e.g. an open
+      // mail) back to that tab's list, instead of doing nothing.
+      if (this.openMailItem) { this.openMailItem = null; this.render(); }
+      return;
+    }
     this.tab = tab;
     this.view = 'list';
     this.openMailItem = null;

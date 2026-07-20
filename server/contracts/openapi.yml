@@ -657,6 +657,9 @@ components:
         equippedTitle:
           type: string
           description: Currently equipped title id (empty string = no title)
+        avatarId:
+          type: string
+          description: Equipped avatar id, composite "<category>:<key>" (empty string = no avatar)
     FriendView:
       type: object
       required:
@@ -675,6 +678,9 @@ components:
         alias:
           type: string
           description: owner's private alias
+        avatarId:
+          type: string
+          description: Equipped avatar id, composite "<category>:<key>" (empty string = no avatar)
     FriendRequestView:
       type: object
       required:
@@ -1547,7 +1553,7 @@ paths:
       operationId: getMatchReplay
       tags:
         - save
-      summary: Fetch a match replay (only matches the account participated in); server opaque frames, client decodes for playback
+      summary: Fetch a match replay (only matches the account participated in); gzip-compressed opaque frames, client decompresses + decodes for playback
       security:
         - bearerAuth: []
       parameters:
@@ -1574,10 +1580,11 @@ paths:
                   data:
                     type: object
                     required:
-                      - replay
+                      - replayGz
                     properties:
-                      replay:
-                        $ref: '#/components/schemas/MatchReplay'
+                      replayGz:
+                        type: string
+                        description: base64(gzip(JSON.stringify(MatchReplay))) — client decompresses (DecompressionStream) then JSON.parses to recover the MatchReplay structure
         '401':
           $ref: '#/components/responses/ErrorResp'
         '404':
@@ -1653,10 +1660,11 @@ paths:
                   data:
                     type: object
                     required:
-                      - replay
+                      - replayGz
                     properties:
-                      replay:
-                        $ref: '#/components/schemas/MatchReplay'
+                      replayGz:
+                        type: string
+                        description: base64(gzip(JSON.stringify(MatchReplay))) — client decompresses (DecompressionStream) then JSON.parses to recover the MatchReplay structure
         '404':
           $ref: '#/components/responses/ErrorResp'
   /replay/share:
@@ -3893,6 +3901,52 @@ paths:
                 titleId:
                   type: string
                   description: Title id to equip; empty string means unequip the displayed title
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - data
+                properties:
+                  ok:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - save
+                    properties:
+                      save:
+                        $ref: '#/components/schemas/SaveData'
+        '401':
+          $ref: '#/components/responses/ErrorResp'
+        '403':
+          $ref: '#/components/responses/ErrorResp'
+  /avatar/equip:
+    put:
+      operationId: equipAvatar
+      tags:
+        - save
+      summary: Select the displayed avatar (writes equipped.avatar and pushes save). Composite id "<category>:<key>" (preset/title/hero/equip/material/skin); preset always allowed, other categories require the item to appear in the player's lifetime-owned records (titles / everOwned / inventory.skins).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - avatarId
+              properties:
+                avatarId:
+                  type: string
+                  description: Composite avatar id to equip, e.g. preset:3, title:t_champion, hero:archer, equip:sword_01, material:scrap, skin:skin_04
       responses:
         '200':
           description: Success

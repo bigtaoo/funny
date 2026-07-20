@@ -205,4 +205,25 @@
 - `regenAt=0` 表示已满（无需计时）；`regenAt>0` 表示下次 +1 点的时间戳(ms)。
 - 体力快照在 `getSave` / `pveClear` 返回时注入 `save.stamina`，不写回 saves 集合。
 - 客户端 `LevelPrepScene` 红色提示不足 + "补充体力"按钮（先尝试直接 purchaseStamina，失败则路由到商店）。
+
+---
+
+## 11. 线上对局数据来源（BALANCE 数据管线，2026-07-20）
+
+> 背景：§5 的等墨胜率完全依赖离线模拟器 `client/test/pvpSim.ts`——机器人对战用固定卡组+固定难度，没有卡牌多样性信号；真人玩家的实战理解（连招、走位、时机）模拟器建模不到。本节数据管线把"模拟预期"和"真实对局"对上号。
+
+### 11.1 阶段一：卡组层面胜率（`pvpCardStats`，已上线）
+
+- **数据源**：`matches` 表已有的 `winner_side` + `replay.decks.{top,bottom}`（仅限组卡池对局才有），零客户端改动。
+- **写入**：`server/metaserver/src/internal/matchReport.ts` 归档时，对每方卡组里的每张卡 `$inc games`，赢方额外 `$inc wins`；**争议对局（hashMismatch/cheat）不计入**，按天（UTC）+ mode 分桶存进 `pvpCardStats`（`server/shared/src/mongo.ts` `PvpCardStatDoc`）。
+- **查询**：`GET /internal/pvp-card-stats`（metaserver，`x-internal-key` 鉴权，可选 `mode`/`since` 过滤）→ admin `GET /admin/pvp-card-stats`（`analytics.view`）→ `tools/ops` "PvP Balance" 页面，按胜率排序，偏离 50% ±15pt 标红。
+- **局限**：只反映"这张卡所在卡组赢没赢"，不反映"这张卡具体怎么打的"——一张卡在强力卡组里躺赢会拉高其数字，这是已知的粗粒度权衡，不是 bug。
+
+### 11.2 阶段二：抽样出牌序列（`pvpPlaySequences`，离线脚本）
+
+- **目标**：对少量对局还原逐帧出牌（卡种 + 帧号），补足阶段一看不到的"打法"维度。**不做全量/实时**——解码要重放整局引擎模拟，且本代码库没有 cron 基础设施（只有各服务里的进程内 `setInterval` scheduler），把这个还在摸索阶段的重活塞进常驻进程风险面太大。
+- **实现**：`server/metaserver/src/internal/replayDecode.ts`——复用 `client/src/net/judgeRunner.ts` 的 proto→Replay 转换手法，但自驱动 tick 循环（而非 `runHeadless`）以捕获每 tick 的 `GameEvent`（`GameState.clearEvents()` 在每个 tick 开头清空，`runHeadless` 那种一口气跑到底的循环只会看到最后一 tick 的事件）。用 `card_drawn`（带 `cardType`）维护每方 `handIndex→cardType` 映射，`card_played`（只带 `handIndex`）触发时查表还原卡种；**只到卡种粒度，不到卡 id（infantry_1 vs infantry_2 无平衡意义），也不含出牌位置**（card_played 事件不带位置，按流序回溯对应哪条 PlayCard 指令在早前指令被验证拒绝时会静默错位，故不做）。
+- **依赖**：metaserver 新增 `@nw/engine` 依赖 + 一套 proto codegen（`buf.gen.yaml` + `scripts/gen-proto.mjs`，照抄 gameserver/botsvc 现成模式），仅供这一离线脚本使用，不影响常驻服务运行时。
+- **抽样规则**（`server/metaserver/scripts/samplePvpReplays.ts`，`npx tsx` 手动/外部调度触发）：争议对局排除；**爆冷对局**（赢方赛前 ELO 明显更低，≥150 分）优先全采；其余按 `--rate`（默认 5%）随机兜底；已采样过的（`pvpPlaySequences` 里已有）跳过。解码失败（残缺/损坏 replay）记日志跳过，不静默丢弃。
+- **产出用法**：暂不建专门报表页——采样量小，更适合直接查 `pvpPlaySequences` 或写临时聚合脚本（例如"爆冷局赢家用了什么卡序列"）；等摸出固定分析需求，再考虑并入阶段一的 ops 页面。
 </content>

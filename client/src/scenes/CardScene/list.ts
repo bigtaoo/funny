@@ -10,6 +10,7 @@ import { UNIT_ART_URLS } from '../../render/cardArt';
 import { drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
+import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
 import type { CardSLGState } from '../../net/WorldApiClient';
 import { CARD_DEFS, CARD_INV_CAP, CARD_INV_OVERFLOW_BUFFER, troopCap, cardPower } from '../../game/meta/cardDefs';
@@ -78,11 +79,11 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       const cardState = this.cb.getCardState?.() ?? {};
       const cards = Object.values(save.cardInv ?? {});
       const listY = this.headerH;
-      const listH = h - listY - 8;
+      const availH = h - listY - 8;
 
       if (cards.length === 0) {
         const lbl = txt(t('roster.empty'), FS.heading, C.mid);
-        lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = listY + listH / 2;
+        lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = listY + availH / 2;
         lbl.style.wordWrap = true; lbl.style.wordWrapWidth = w - 32;
         this.bodyLayer.addChild(lbl);
         return;
@@ -97,7 +98,10 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       const cellW = (avail - ROSTER_GAP * (cols - 1)) / cols;
       const rows = Math.ceil(sorted.length / cols);
       const totalH = rows * (CARD_CELL_H + ROSTER_GAP) + ROSTER_GAP;
-      this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
+      // Clamp the viewport so it always cuts mid-row when there's more below — a partial next card
+      // peeks above the fold instead of the screen looking "full" with only the scrollbar hinting more.
+      const viewH = peekViewportH(availH, CARD_CELL_H + ROSTER_GAP, totalH);
+      this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - viewH)));
 
       const now = Date.now();
       sorted.forEach((card, i) => {
@@ -105,12 +109,12 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         const row = Math.floor(i / cols);
         const x = left + col * (cellW + ROSTER_GAP);
         const y = listY + ROSTER_GAP + row * (CARD_CELL_H + ROSTER_GAP) - this.scrollY;
-        if (y + CARD_CELL_H >= listY && y <= listY + listH) {
+        if (y + CARD_CELL_H >= listY && y <= listY + viewH) {
           this.renderCardCell(card, x, y, cellW, cardState[card.id], now, save);
         }
       });
 
-      drawScrollIndicator(this.bodyLayer, { x: left, y: listY, w: avail, h: listH }, this.scrollY, Math.max(0, totalH - listH));
+      drawScrollIndicator(this.bodyLayer, { x: left, y: listY, w: avail, h: viewH }, this.scrollY, Math.max(0, totalH - viewH));
     }
 
     /**

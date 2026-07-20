@@ -10,7 +10,7 @@
 //  3. Confirm reads "n/5" and only registers a hit (is tappable) once all 5 slots are filled.
 //  4. Confirm calls fuseCards with exactly the 5 assigned material ids.
 //  5. The list is drag-scrollable when candidate groups overflow the panel.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
@@ -18,6 +18,7 @@ import { initI18n, t } from '../../src/i18n';
 import { CardScene, type CardCallbacks } from '../../src/scenes/CardScene';
 import type { CardInstance } from '../../src/game/meta/SaveData';
 import { FUSION_MATERIAL_COUNT } from '../../src/game/meta/cardDefs';
+import * as log from '../../src/net/log';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -70,25 +71,55 @@ function feedScrollPxOf(scene: CardScene): number {
   return (scene as unknown as { feedScrollPx: number }).feedScrollPx;
 }
 
+function modalOpenOf(scene: CardScene): boolean {
+  return (scene as unknown as { modalOpen: boolean }).modalOpen;
+}
+
+function detailIdOf(scene: CardScene): string | null {
+  return (scene as unknown as { detailId: string | null }).detailId;
+}
+
+/** Flush every microtask queued by the doFuse → fuseCards → playFusionAnim → onSettled chain. */
+async function flushAsync(): Promise<void> {
+  await new Promise((r) => setTimeout(r, 0));
+}
+
 /**
  * Ring-slot-0 screen position. Mirrors feed.ts's own layout constants (S=2, headerBlockH=40*S,
  * ringH=130*S, orbit=46*S) — same convention as the old feed-modal test's HANDLE_R replication.
  * Slot 0 sits at angle -90° (straight up from the ring center), so its position needs no cos/sin:
- * (ringCx, ringCy - orbit). ringCx always equals w/2 regardless of panel width (mx + mw/2 = w/2).
+ * (ringCx, ringCy - orbit).
+ *
+ * W×H here is 1920×1080 → landscape (see detectOrientation), so this mirrors feed.ts's landscape
+ * branch: the ring sits in the left column, not centered on the whole panel width.
  */
 function slotZeroPos(scene: CardScene, groupsCount: number): { x: number; y: number } {
   const headerH = (scene as unknown as { headerH: number }).headerH;
   const S = 2;
   const topLimit = headerH + 4;
   const availH = Math.max(0, (H - 8) - topLimit);
-  const headerBlockH = 40 * S;
+  const headerBlockH = 52 * S; // landscape header block (see feed.ts drawFusePanel)
   const ringH = 130 * S;
   const rowH = 40 * S;
   const footerBlockH = 52 * S;
   const listRows = Math.min(Math.max(groupsCount, 1), 4);
-  const mh = Math.min(headerBlockH + ringH + listRows * rowH + footerBlockH, availH);
+
+  const gap = 12 * S;
+  let leftW = 180 * S;
+  let rightW = 220 * S;
+  const maxTotal = W - 24;
+  if (leftW + gap + rightW > maxTotal) {
+    const k = Math.max(0, maxTotal - gap) / (leftW + rightW);
+    leftW *= k; rightW *= k;
+  }
+  const mw = leftW + gap + rightW;
+  const leftContentH = headerBlockH + ringH + 8 * S;
+  const rightContentH = listRows * rowH + footerBlockH + 8 * S;
+  const mh = Math.min(Math.max(leftContentH, rightContentH), availH);
+  const mx = (W - mw) / 2;
   const my = topLimit + (availH - mh) / 2;
-  const ringCx = W / 2;
+
+  const ringCx = mx + leftW / 2;
   const ringCy = my + headerBlockH + ringH / 2;
   const orbit = 46 * S;
   return { x: ringCx, y: ringCy - orbit };
@@ -306,5 +337,126 @@ describe('CardScene fuse panel — candidate list scroll state', () => {
     input._emitMove(startPos.x, startPos.y - 120);
     input._emitUp(startPos.x, startPos.y - 120);
     expect(feedScrollPxOf(scene)).toBe(0);
+  });
+});
+
+describe('CardScene fuse panel — auto-retarget when the tapped card has too few materials', () => {
+  it('swaps in the highest-level fusable card and toasts, when the tapped target has 0 materials', () => {
+    const target = makeCard('target', 'lena', { level: 1 }); // faction anna, no materials at all
+    const altLow = makeCard('altLow', 'lichuang', { level: 1 });   // faction tao, level 1
+    const altHigh = makeCard('altHigh', 'chenshou', { level: 2 }); // faction tao, level 2 — should win (higher level)
+    const cardInv: Record<string, CardInstance> = { target, altLow, altHigh };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`loMat${i}`] = makeCard(`loMat${i}`, 'suyuan', { level: 1 });
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`hiMat${i}`] = makeCard(`hiMat${i}`, 'suyuan', { level: 2 });
+
+    const spy = vi.spyOn(log, 'showToastMessage');
+    const scene = buildScene(baseCb(cardInv));
+    (scene as unknown as { openFuseSelect: (c: CardInstance) => void }).openFuseSelect(target);
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0][0]).toBe(t('roster.fuseAutoRetarget'));
+    // The ring now centers on altHigh (Lv.2), not the tapped target or altLow (both Lv.1).
+    expect(findLabelPos(scene.container, 'Lv.2')).not.toBeNull();
+    expect(findLabelPos(scene.container, 'Lv.1')).toBeNull();
+    spy.mockRestore();
+  });
+
+  it('does not retarget or toast when the tapped target already has 5 materials', () => {
+    const target = makeCard('target', 'lena', { level: 1 });
+    const cardInv: Record<string, CardInstance> = { target };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max');
+
+    const spy = vi.spyOn(log, 'showToastMessage');
+    const scene = buildScene(baseCb(cardInv));
+    openFuse(scene, target);
+
+    expect(spy).not.toHaveBeenCalled();
+    expect(findLabelPos(scene.container, 'Lv.1')).not.toBeNull();
+    spy.mockRestore();
+  });
+});
+
+describe('CardScene fuse panel — auto-continue after a successful fuse', () => {
+  /** A fuseCards stub that mirrors the real server: removes the consumed materials and levels up
+   * the target, so findAutoTarget sees post-fuse state exactly like production would. */
+  function mutatingFuseCards(cardInv: Record<string, CardInstance>, calls: { targetId: string; ids: string[] }[]): CardCallbacks['fuseCards'] {
+    return async (targetId: string, ids: string[]) => {
+      calls.push({ targetId, ids });
+      for (const id of ids) delete cardInv[id];
+      cardInv[targetId].level += 1;
+      return { ok: true };
+    };
+  }
+
+  it('level-1 target: after Confirm succeeds, auto-loads another level-1 card and keeps the panel open', async () => {
+    const target = makeCard('target', 'lena', { level: 1 });        // faction anna
+    const target2 = makeCard('target2', 'lichuang', { level: 1 });  // faction tao — never a valid material for `target`
+    const cardInv: Record<string, CardInstance> = { target, target2 };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`matA${i}`] = makeCard(`matA${i}`, 'max', { level: 1 });      // anna — target's materials
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`matB${i}`] = makeCard(`matB${i}`, 'chenshou', { level: 1 }); // tao — target2's materials
+
+    const calls: { targetId: string; ids: string[] }[] = [];
+    const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls) }));
+    openFuse(scene, target);
+
+    const rowLabel = `${MAX_NAME} Lv.1`;
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
+      hitUnder(modalHitsOf(scene), findLabelPos(scene.container, rowLabel)!)!.action();
+    }
+    const confirmPos = findLabelPos(scene.container, `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`);
+    hitUnder(modalHitsOf(scene), confirmPos!)!.action();
+    await flushAsync();
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].targetId).toBe('target');
+    expect(target.level).toBe(2); // the original target really did level up
+    expect(modalOpenOf(scene)).toBe(true); // stayed open instead of closing
+    // The ring/list now reflect target2 (still Lv.1) and its own material pool.
+    expect(findLabelPos(scene.container, `${t('card.chenshou.name' as never)} Lv.1`)).not.toBeNull();
+    expect(findLabelPos(scene.container, rowLabel)).toBeNull(); // old target's material group is gone (consumed)
+  });
+
+  it('level-3+ target: after Confirm succeeds, closes the panel like before the auto-continue feature', async () => {
+    const target = makeCard('target', 'lena', { level: 3 });
+    const cardInv: Record<string, CardInstance> = { target };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max', { level: 3 });
+
+    const calls: { targetId: string; ids: string[] }[] = [];
+    const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls) }));
+    openFuse(scene, target);
+
+    const rowLabel = `${MAX_NAME} Lv.3`;
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
+      hitUnder(modalHitsOf(scene), findLabelPos(scene.container, rowLabel)!)!.action();
+    }
+    const confirmPos = findLabelPos(scene.container, `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`);
+    hitUnder(modalHitsOf(scene), confirmPos!)!.action();
+    await flushAsync();
+
+    expect(calls).toHaveLength(1);
+    expect(modalOpenOf(scene)).toBe(false);
+    expect(detailIdOf(scene)).toBeNull();
+  });
+
+  it('level-1 target with no other fusable card: falls back to closing instead of continuing forever', async () => {
+    const target = makeCard('target', 'lena', { level: 1 }); // the only level-1 card in the roster
+    const cardInv: Record<string, CardInstance> = { target };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max', { level: 1 });
+
+    const calls: { targetId: string; ids: string[] }[] = [];
+    const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls) }));
+    openFuse(scene, target);
+
+    const rowLabel = `${MAX_NAME} Lv.1`;
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
+      hitUnder(modalHitsOf(scene), findLabelPos(scene.container, rowLabel)!)!.action();
+    }
+    const confirmPos = findLabelPos(scene.container, `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`);
+    hitUnder(modalHitsOf(scene), confirmPos!)!.action();
+    await flushAsync();
+
+    expect(calls).toHaveLength(1);
+    expect(target.level).toBe(2); // leveled up once, then had nothing left to continue onto
+    expect(modalOpenOf(scene)).toBe(false);
   });
 });

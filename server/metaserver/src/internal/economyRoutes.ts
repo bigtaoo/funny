@@ -63,11 +63,14 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: InternalCtx): v
       const doc = await cols.saves.findOne({ _id: accountId });
       if (!doc) return reply.code(404).send({ ok: false, error: 'save not found' });
       const cur = doc.save.materials?.[material] ?? 0;
+      const everOwnedMaterial = new Set(doc.save.everOwned?.material ?? []);
+      everOwnedMaterial.add(material);
       const next: SaveData = {
         ...doc.save,
         rev: doc.save.rev + 1,
         updatedAt: now(),
         materials: { ...doc.save.materials, [material]: cur + qty },
+        everOwned: { ...doc.save.everOwned, material: [...everOwnedMaterial] },
       };
       const res = await cols.saves.findOneAndUpdate(
         { _id: accountId, rev: doc.rev },

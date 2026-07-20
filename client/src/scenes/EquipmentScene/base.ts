@@ -19,7 +19,7 @@ import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../../ui/wid
 import { BusyTracker } from '../../ui/busyTracker';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance } from '../../game/meta/SaveData';
-import { affixKind, EQUIPMENT_INV_CAP, type EnhanceCost } from '../../game/meta/equipmentDefs';
+import { affixKind, EQUIPMENT_INV_CAP, EQUIP_MAX_LEVEL, type EnhanceCost } from '../../game/meta/equipmentDefs';
 import { ENHANCE_COEFF_PER_LEVEL } from '@nw/engine/balance/equipment';
 import { buildEquipIcon } from '../../render/equipmentAtlas';
 import { buildIcon, type IconKind } from '../../render/icons';
@@ -419,9 +419,23 @@ export class EquipmentSceneBase {
     return s === key ? defId : s;
   }
 
-  /** Item name + enhance level, e.g. "Marker +3" — omits the "+0" suffix (the vast majority of items sit at level 0, and printing it everywhere is pure noise). */
+  /** Item name + enhance level as text stars, e.g. "Marker ★★★" — omits stars entirely at level 0 (the vast majority of items, and printing a bare "+0" everywhere was pure noise). Used only where the label is embedded in a translated sentence; standalone item cards use buildLevelStars() for real gold-icon stars instead. */
   protected itemLabel(defId: string, level: number): string {
-    return level > 0 ? `${this.itemName(defId)} +${level}` : this.itemName(defId);
+    return level > 0 ? `${this.itemName(defId)} ${'★'.repeat(Math.min(level, EQUIP_MAX_LEVEL))}` : this.itemName(defId);
+  }
+
+  /** Row of gold star icons for the enhance level (one per level, max EQUIP_MAX_LEVEL), scaled down to fit maxW. Mirrors the card-level star row (CardScene/list.ts). */
+  protected buildLevelStars(level: number, maxW: number, size = 14, gap = 3): PIXI.Container {
+    const stars = new PIXI.Container();
+    const starN = Math.max(0, Math.min(EQUIP_MAX_LEVEL, level));
+    for (let i = 0; i < starN; i++) {
+      const st = buildIcon('star', size, C.gold);
+      st.x = i * (size + gap);
+      stars.addChild(st);
+    }
+    const starsW = starN * size + Math.max(0, starN - 1) * gap;
+    if (starsW > maxW && starsW > 0) stars.scale.set(maxW / starsW);
+    return stars;
   }
 
   /** Affix description: i18n `affix.<id>` template with {v}; main affixes are scaled up by level. */

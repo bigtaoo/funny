@@ -11,6 +11,8 @@ export interface QueueEntry {
   publicId: string;
   /** Equipped title ID (from meta /internal/profile; empty string = no title). */
   equippedTitle: string;
+  /** Equipped avatar ID (from meta /internal/profile; empty string = no avatar). */
+  avatarId: string;
   elo: number;
   enqueuedAt: number;
   /** Platform (used for feature flag targeted evaluation; defaults to empty string). */
@@ -81,9 +83,9 @@ export class Matchmaking {
   }
 
   /** Enqueue (re-enqueuing the same account replaces the old entry and resets the wait timer). Attempts one pairing pass after enqueuing. */
-  enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = '', platform = '', deck: string[] = []): void {
+  enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = '', avatarId = '', platform = '', deck: string[] = []): void {
     this.remove(accountId);
-    this.queue.push({ accountId, name, publicId, equippedTitle, elo, enqueuedAt: this.now(), platform, deck });
+    this.queue.push({ accountId, name, publicId, equippedTitle, avatarId, elo, enqueuedAt: this.now(), platform, deck });
     this.ensureTimer();
     this.tick();
   }

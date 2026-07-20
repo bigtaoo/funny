@@ -76,6 +76,8 @@ export interface MatchReplayDoc {
   endFrame: number;
   frames: { frame: number; cmds: { side: number; commands: unknown }[] }[];
   meta: { recordedAt: number; winner: number };
+  /** Deck loadout at match start (PVP_LOADOUT_DESIGN §6.2); absent when the match had no loadout gating. */
+  decks?: { top: string[]; bottom: string[] };
 }
 
 export interface MatchDoc {
@@ -102,8 +104,13 @@ export interface MatchDoc {
   hashMismatch?: boolean;
   /** Pointer to externally-stored replay (large matches); reserved, not yet used. */
   replayRef?: string;
-  /** Embedded replay (small matches) — the retained frame log, zero extra cost. */
-  replay?: MatchReplayDoc;
+  /**
+   * Embedded replay (small matches, gzip-compressed JSON of {@link MatchReplayDoc} — frames[].cmds[].commands
+   * are base64 opaque inside, unchanged, M12). Decompress only when the full replay content is actually
+   * needed (peer-judge dispute, anti-cheat audit sample) via `@nw/shared`'s decompressReplayDoc — never on
+   * the per-match write path (that's the whole point of storing it compressed).
+   */
+  replayGz?: Buffer;
   /**
    * Peer-judge conviction flag (Phase C): when a ranked hash mismatch is resolved by a third-party headless re-simulation,
    * the side whose result disagrees with the judge is declared the loser and this flag is set. `judgeAccountId` is the re-simulation judge (for auditing).
@@ -136,6 +143,38 @@ export interface MatchDoc {
   expireAt?: Date;
 }
 
+/**
+ * Deck-composition-level PvP win-rate counter (BALANCE data pipeline P1): one row per card per UTC day per mode.
+ * Incremented at match-report time from `MatchDoc.replay.decks` (only present for restricted-deck-pool matches) — every card in a
+ * side's deck gets `games` credited, and `wins` too if that side won. Disputed matches (hashMismatch/cheat) are excluded rather than
+ * counted, matching the existing "auto-clean, don't hard-reject" data hygiene approach. Deck-level only — this cannot tell you how a
+ * card was actually played, only whether the deck holding it won; see `pvpPlaySequences` (P2, sampled replay decode) for play-by-play.
+ * `_id = `${day}:${cardId}:${mode}``, naturally idempotent for the bulkWrite upsert.
+ */
+export interface PvpCardStatDoc {
+  _id: string;
+  day: string; // UTC YYYYMMDD
+  cardId: string;
+  mode: string; // matches MatchDoc.mode ('ranked' | 'friendly'), kept separate so casual play doesn't dilute ranked signal
+  games: number;
+  wins: number;
+}
+
+/**
+ * Sampled replay decode (BALANCE data pipeline P2, `server/metaserver/scripts/samplePvpReplays.ts`): for a small
+ * sample of matches (upsets + a random baseline — never the full volume, decoding re-simulates the whole match),
+ * the per-side card-type play sequence, for spotting playstyles the offline equal-ink simulator can't model
+ * (timing, combos, positioning-driven value). `_id = roomId` (one entry per sampled match, idempotent re-run).
+ */
+export interface PvpPlaySequenceDoc {
+  _id: string; // roomId
+  ts: number;
+  mode: string;
+  sampleReason: 'upset' | 'random';
+  winnerSide: number;
+  plays: { side: number; frame: number; cardType: string }[];
+}
+
 /** Daily ad cap counter (S5-5, authoritative in meta, not surfaced to client sync segment to prevent abuse). _id = `${accountId}:${dayKey}`. */
 export interface AdsDailyDoc {
   _id: string;
@@ -162,7 +201,8 @@ export interface AdsTokenDoc {
  */
 export interface ReplayBlobDoc {
   _id: string; // roomId
-  replay: MatchReplayDoc;
+  /** gzip-compressed JSON of {@link MatchReplayDoc}, same encoding as MatchDoc.replayGz. */
+  replayGz: Buffer;
   ts: number;
   /** TTL auto-expiry anchor, mirrors the owning MatchDoc.expireAt (absent for disputed matches — see there). */
   expireAt?: Date;
@@ -430,6 +470,10 @@ export interface Collections {
   // time-limited events (B6)
   events: Collection<EventDoc>;
   eventParticipants: Collection<EventParticipantDoc>;
+  // PvP balance data pipeline (BALANCE §11): deck-composition win-rate counters
+  pvpCardStats: Collection<PvpCardStatDoc>;
+  // PvP balance data pipeline P2: sampled replay decode (play sequences)
+  pvpPlaySequences: Collection<PvpPlaySequenceDoc>;
 }
 
 export interface MongoHandle {
@@ -485,6 +529,8 @@ export async function createMongo(
     pveStamina: db.collection<StaminaDoc>('pveStamina'),
     events: db.collection<EventDoc>('events'),
     eventParticipants: db.collection<EventParticipantDoc>('eventParticipants'),
+    pvpCardStats: db.collection<PvpCardStatDoc>('pvpCardStats'),
+    pvpPlaySequences: db.collection<PvpPlaySequenceDoc>('pvpPlaySequences'),
   };
 
   async function ensureIndexes(): Promise<void> {
@@ -551,6 +597,8 @@ export async function createMongo(
     await collections.events.createIndex({ windowStart: 1, windowEnd: 1 });
     // participation records: point-query by event + account (_id is already composite); additional index by accountId to fetch all events a player participates in.
     await collections.eventParticipants.createIndex({ accountId: 1, eventId: 1 });
+    // PvP balance card stats: query by card across days for the aggregate report (_id is already the composite upsert key).
+    await collections.pvpCardStats.createIndex({ cardId: 1, day: 1 });
   }
 
   return {
