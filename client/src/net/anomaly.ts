@@ -233,6 +233,10 @@ export function recordRenderSample(ms: number): void {
 const longTaskLog: { start: number; dur: number }[] = [];
 const LONGTASK_RETAIN_MS = 120_000;
 
+/** True once the Long Tasks observer is confirmed running. Only then can "zero long tasks in the
+ *  stall window" be trusted as real evidence (vs. an unsupported browser silently seeing nothing). */
+let longTaskObserverActive = false;
+
 function installLongTaskObserver(): void {
   const PO = (globalThis as { PerformanceObserver?: typeof PerformanceObserver }).PerformanceObserver;
   if (!PO || !PO.supportedEntryTypes?.includes?.('longtask')) return;
@@ -243,6 +247,7 @@ function installLongTaskObserver(): void {
       const cutoff = Date.now() - LONGTASK_RETAIN_MS;
       while (longTaskLog.length && longTaskLog[0].start < cutoff) longTaskLog.shift();
     }).observe({ type: 'longtask', buffered: true });
+    longTaskObserverActive = true;
   } catch { /* unsupported in this browser build; never fatal */ }
 }
 
@@ -444,8 +449,19 @@ function installAnrWatchdog(): void {
     const drift = now - expected;
     const wasHidden = hiddenSinceLastTick || g.document?.hidden === true;
     if (!wasHidden && drift > STALL_MS) {
-      reportAnomaly('anr', `main thread stalled ~${Math.round(drift)}ms`, { stallMs: Math.round(drift), ...anrContext(expected - WATCH_MS) });
-      log.warn(`main thread stalled ~${Math.round(drift)}ms`);
+      const ctx = anrContext(expected - WATCH_MS);
+      // Confirmed via a week of prod batches (FEATURE_FLAGS_DESIGN §9.7, 2026-07-20): once the Long
+      // Tasks observer is active and reports zero tasks overlapping the drift window, all three
+      // own-code timers (longFrame/longConstruct/longRender) are necessarily also empty — the main
+      // thread simply wasn't running JS. That is genuine OS/browser thread suspension, not anything
+      // this app can fix. With only a handful of testers today, reporting it anyway would bury real
+      // signal in noise — so it's suppressed (kept local-only) instead of sent to the server.
+      if (longTaskObserverActive && !('longTaskMs' in ctx)) {
+        log.info(`anr suppressed: ~${Math.round(drift)}ms drift, no long tasks observed (thread suspension, not app code)`);
+      } else {
+        reportAnomaly('anr', `main thread stalled ~${Math.round(drift)}ms`, { stallMs: Math.round(drift), ...ctx });
+        log.warn(`main thread stalled ~${Math.round(drift)}ms`);
+      }
     }
     hiddenSinceLastTick = false;
     expected = now + WATCH_MS;
