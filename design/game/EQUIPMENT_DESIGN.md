@@ -735,6 +735,18 @@ buildSiegeBlueprints(levels, equipped, inv)
 - 符号用 `SketchPen` 程序绘制，保持手绘风；史诗装备 +9 可加极轻描边发光（与边框色同色调）。
 - 实现落点：`drawEquipmentGlyph` 新增 `level` 参数，按上表选形/填充。
 
+### 20.6b 实现记录（2026-07-20，✅）— 强化等级改为星级展示
+
+§20.6 的图标符号方案未落地；实际实现此前是纯文字 `"{名称} +{等级}"`（`itemLabel()`），玩家反馈数字后缀不够醒目、易与名称混读。改为与卡牌/英雄等级一致的**金色星星行**（每级 1 颗，最多 9 颗，超宽自动缩放填满可用宽度），复用 `buildIcon('star', …)`：
+
+- 背包/已装备大卡片（`EquipmentScene/inventory.ts` `renderInstanceCell`）：名称行下方单独一行星星，卡片头部区随星星行按需从 32px 加到 40px。
+- Loadout 三槽预览（`renderLoadout`）：名称居中一行 + 星星居中一行（更小尺寸）。
+- 详情弹窗标题（`EquipmentScene/detail.ts` `openDetail`）：星星紧跟名称，挤在名称与稀有度标签之间的空档里。
+- `itemLabel()` 仍保留，但改为向文本星号 `★`（非彩色图标）——只用于嵌在翻译句子里、无法放置图形节点的场景（锻造/重铸候选行、指派提示语等）。
+- 新增 `EquipmentSceneBase.buildLevelStars(level, maxW, size?, gap?)` 共享辅助方法。
+- 0 级不显示任何符号（与旧的省略 "+0" 后缀语义一致）。
+- 用假 `save`/`cb` 构造 `EquipmentScene` 两次 `app.renderer.render` 后 `toDataURL` 截图验证（背包卡片、loadout 预览、详情弹窗三处），`tsc --noEmit` 通过。
+
 ### 20.3 实现记录（2026-06-24，✅）— UI 装备图标程序化
 
 落地 = 新建 `client/src/render/equipmentGlyph.ts`（`drawEquipmentGlyph(g, slot, rarity, size, seed)` + `MEDIA` 媒材色表，用 `SketchPen` 画 3 类基形：weapon=笔杆+笔尖 / armor=封皮+书脊 / trinket=小配件，稀有度色驱动填充与点缀）+ 接入 `EquipmentScene`（loadout 三槽、背包实例行、锻造行把原"纯文字"替换为程序图标）。零位图资产，`tsc --noEmit` + webpack 构建验证。
