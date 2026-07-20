@@ -23,6 +23,7 @@ export type { WorldMapCallbacks, WorldMapView } from './worldmap/WorldMapContext
 
 export class WorldMapScene implements Scene {
   private readonly ctx: WorldMapContext;
+  private readonly input: InputManager;
 
   constructor(layout: ILayout, input: InputManager, cb: WorldMapCallbacks) {
     const ctx = new WorldMapContext(layout, cb);
@@ -31,14 +32,12 @@ export class WorldMapScene implements Scene {
     ctx.net = new WorldMapNet(ctx);
     ctx.input = new WorldMapInput(ctx);
     this.ctx = ctx;
+    this.input = input;
 
     ctx.view.build();
     void ctx.net.loadData();
 
-    ctx.unsubs.push(input.onDown((x, y) => ctx.input.handleDown(x, y)));
-    ctx.unsubs.push(input.onMove((x, y) => ctx.input.handleMove(x, y)));
-    ctx.unsubs.push(input.onUp((x, y) => ctx.input.handleUp(x, y)));
-    ctx.unsubs.push(input.onWheel((x, y, deltaY) => ctx.input.handleWheel(x, y, deltaY)));
+    this.subscribeInput();
 
     // Center map on join initially; will be overridden once we know base location.
     ctx.view.centerAt(Math.floor(ctx.mapW / 2), Math.floor(ctx.mapH / 2));
@@ -51,6 +50,27 @@ export class WorldMapScene implements Scene {
 
   update(dt: number): void { this.ctx.view.update(dt); }
 
+  /** Home Desk (CityScene) opens as an overlay on top of this scene instead of replacing it
+   * (SceneManager.pushOverlay) — suspend pointer input so a tap meant for the overlay doesn't
+   * also dispatch into the hidden map underneath (InputManager broadcasts to every subscriber). */
+  pause(): void { this.unsubscribeInput(); }
+
+  /** Reverse of {@link pause}, called once the overlay above is popped and the map is visible again. */
+  resume(): void { this.subscribeInput(); }
+
+  private subscribeInput(): void {
+    const { ctx, input } = this;
+    ctx.unsubs.push(input.onDown((x, y) => ctx.input.handleDown(x, y)));
+    ctx.unsubs.push(input.onMove((x, y) => ctx.input.handleMove(x, y)));
+    ctx.unsubs.push(input.onUp((x, y) => ctx.input.handleUp(x, y)));
+    ctx.unsubs.push(input.onWheel((x, y, deltaY) => ctx.input.handleWheel(x, y, deltaY)));
+  }
+
+  private unsubscribeInput(): void {
+    for (const u of this.ctx.unsubs) u();
+    this.ctx.unsubs.length = 0;
+  }
+
   // ── Live push (worldsvc → gateway → NetSession → here, §14.5) ────────────────
   applyMarchUpdate(m: MarchUpdate): void { this.ctx.net.applyMarchUpdate(m); }
   applyTileUpdate(tu: TileUpdate): void { this.ctx.net.applyTileUpdate(tu); }
@@ -61,8 +81,7 @@ export class WorldMapScene implements Scene {
     this.ctx.destroyed = true;
     this.ctx.net.destroy();
     this.ctx.view.destroy();
-    for (const u of this.ctx.unsubs) u();
-    this.ctx.unsubs.length = 0;
+    this.unsubscribeInput();
     this.ctx.container.destroy({ children: true });
   }
 }

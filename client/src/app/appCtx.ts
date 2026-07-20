@@ -23,6 +23,8 @@ export interface AppState {
   firstLobbyHandled: boolean;
   /** Cached aggregate social unread (GET /social/badges); survives lobby re-shows. */
   socialBadgeTotal: number;
+  /** Cached mail-only unread count (GET /social/badges .mail); drives the mail strip dot specifically. */
+  mailBadgeCount: number;
   /** Cached achievement-claimable flag, kept across lobby re-shows. */
   achievementClaimable: boolean;
   /** Cached "monthly/year card active + today's daily reward unclaimed" flag → shop nav red dot. */

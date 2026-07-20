@@ -33,7 +33,8 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
     try {
       const b = await api.getSocialBadges();
       state.socialBadgeTotal = b.total;
-      view.applySocialBadge(b.total);
+      state.mailBadgeCount = b.mail;
+      view.applySocialBadge(b.total, b.mail);
     } catch { /* best-effort red dot — leave the cached value in place */ }
   }
 
@@ -203,7 +204,7 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
 
     // Paint the cached social total immediately so the dot survives a resize
     // rebuild without flicker; then refresh from the server (skip on resize).
-    lobby.applySocialBadge(state.socialBadgeTotal);
+    lobby.applySocialBadge(state.socialBadgeTotal, state.mailBadgeCount);
     lobby.applyAchievementBadge(state.achievementClaimable);
     lobby.applyShopBadge(state.shopCardClaimable);
     // Ping worldsvc so the world-map nav button shows a "×" badge immediately when
@@ -236,6 +237,7 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
       refreshShopBadge(lobby);
     } else {
       state.socialBadgeTotal = 0;
+      state.mailBadgeCount = 0;
       state.achievementClaimable = false;
       state.shopCardClaimable = false;
       state.achievementReached = null; // drop the unlock baseline so a later login re-seeds without a stale toast

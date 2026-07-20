@@ -16,7 +16,7 @@ import type { ILayout } from '../../layout/ILayout';
 import type { InputManager } from '../../inputSystem/InputManager';
 import { t, type TranslationKey } from '../../i18n';
 import {
-  ui as C, txt, buildPaperBackground, sketchPanel, seedFor,
+  ui as C, txt, scaledTxt, buildPaperBackground, sketchPanel, seedFor,
   drawLoadingOverlay, tearDownChildren,
 } from '../../render/sketchUi';
 import { buildDecorCLayer } from '../../render/decorCLayer';
@@ -318,6 +318,14 @@ export class CardSceneBase {
       w: r.w * this.modalScale,
       h: r.h * this.modalScale,
     };
+  }
+
+  /**
+   * `txt()` for content drawn onto {@link modalPanelRoot} — compensates PIXI.Text's raster
+   * blur from the later `modalPanelRoot.scale.set(modalScale)` (see {@link scaledTxt}).
+   */
+  protected stxt(label: string, size: number, color: number, bold = false, wordWrapWidth?: number): PIXI.Text {
+    return scaledTxt(this.modalScale)(label, size, color, bold, wordWrapWidth);
   }
 
   // ── Toast ─────────────────────────────────────────────────────────────────

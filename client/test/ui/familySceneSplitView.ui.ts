@@ -98,10 +98,19 @@ async function flush(scene: any): Promise<void> {
   await scene.loadData();
 }
 
+// Channel rows are drawn into a masked sub-container (the chat scroll clip), so walk the whole
+// bodyLayer subtree rather than only its direct children — see sectSceneSplitView.ui.ts's
+// identical helper, added for the same reason when SectScene's channel got a mask.
 function textsOf(scene: any): string[] {
-  return scene.bodyLayer.children
-    .filter((c: unknown) => c instanceof PIXI.Text)
-    .map((c: PIXI.Text) => c.text);
+  const out: string[] = [];
+  const walk = (node: PIXI.Container): void => {
+    for (const c of node.children) {
+      if (c instanceof PIXI.Text) out.push(c.text);
+      if ((c as PIXI.Container).children) walk(c as PIXI.Container);
+    }
+  };
+  walk(scene.bodyLayer);
+  return out;
 }
 
 /** Header identity (title + landscape `[TAG] Name` / prosperity / count) is drawn on the scene

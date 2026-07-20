@@ -60,7 +60,7 @@ import type { CitySceneCallbacks } from '../scenes/CityScene';
 /** Live handle for the lobby scene — the core pushes the aggregate social badge into it. */
 export interface LobbyView {
   /** Update the social (friends/chat/mail) unread total shown on the bottom-nav dot. */
-  applySocialBadge(total: number): void;
+  applySocialBadge(total: number, mail: number): void;
   /** Toggle the achievement-claimable red dot on the stats nav slot (ACHIEVEMENT_DESIGN §4.1). */
   applyAchievementBadge(claimable: boolean): void;
   /** Toggle the monthly/year-card daily-reward-claimable red dot on the shop nav slot. */
@@ -219,6 +219,15 @@ export interface AppViews {
   showDeckBuilder(cb: DeckBuilderCallbacks): void;
   /** SLG home-city management (SLG_CITY_DESIGN P1). */
   showCity(cb: CitySceneCallbacks): void;
+  /**
+   * Same scene as {@link showCity}, but mounted as an overlay on top of the still-live WorldMapScene
+   * (SceneManager.pushOverlay) instead of replacing it — the common open/close Home Desk edge, so the
+   * SLG map never tears down and rebuilds. Only valid while a WorldMapScene is current. Reversed by
+   * {@link hideCityOverlay}.
+   */
+  showCityOverlay(cb: CitySceneCallbacks): void;
+  /** Pop the overlay pushed by {@link showCityOverlay}, resuming the WorldMapScene underneath. */
+  hideCityOverlay(): void;
   /**
    * Netplay match. The core passes the pre-built engine in `opts.engine` plus the
    * local side; the view turns `localSide` into the side-flipped layout. Always cross-fades in — entering a match.

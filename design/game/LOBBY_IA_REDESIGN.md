@@ -210,13 +210,14 @@
     每日（`dailyBtnRect`）/ 邮件（`mailStripRect`，`onOpenMail`→`goMail()`）/
     活动（`eventsBtnRect`，仅 `eventsAvailable` 时出现）/ 成就（`achieveStripRect`，仅 `onOpenAchievements` wired 时出现）。
   - **contentW 收窄**：`fullContentW(w*0.82) - sideItemSz - sideGap(w*0.018)`，左 margin 不变；竖栏 X = 收窄后内容右边 + sideGap，竖向居中于 hero+pillars 区。
-  - **`sideStripBadgeLayer`**：廉价重绘红点（retentionBadge→每日，socialBadge→邮件，achievementBadge→成就）；`applyRetentionBadge` 不再 `rebuild()`，改调 `drawSideStripBadges()`。
+  - **`sideStripBadgeLayer`**：廉价重绘红点（retentionBadge→每日，mailBadge→邮件，achievementBadge→成就）；`applyRetentionBadge` 不再 `rebuild()`，改调 `drawSideStripBadges()`。
   - **邮件直达**：`FriendsSceneCallbacks.defaultTab?: 'friends'|'mail'`；`goMail()` → `goFriends({defaultTab:'mail'})`；大厅 `onOpenMail` 仅 online 注入。
   - **i18n**：新增 `lobby.strip.events/achieve/mail`（zh/en/de）。
 - ✅ **商城组 Coins tab 缺失补齐**（2026-07-05）：上条「顶栏金币直达」只给 `ShopScene` 加了 Coins tab，`GachaScene`/`BattlePassScene` 的分组 strip 是 P1.5 时写死的 `[商城|盲盒|战令]`（三格常量数组），从未跟进——从盲盒/战令页看不到充值 tab（用户报的 bug）。修复：两场景 `drawGroupTabs` 改用 `tabs`/`actions` 并行数组动态拼，新增可选回调 `openCoins?`（跟 `ShopScene.rechargeCoins` 同一可用性判断：登录在线 + `platform.iapKind()!==null`）；`createShopNav.goGacha/goBattlePass` 按同条件注入 `openCoins:()=>goShop(shopBack,'coins')`。分组 strip 现为 `[商城|充值?|盲盒|战令?]`，与 `ShopScene` 自身顺序一致。回归测试见 `client/test/ui/shopGroupTabs.ui.ts`（按渲染出的 tab 文案定位并模拟点击，非硬编码 index）。
 - ✅ **商城 tab 月卡红点补齐**（2026-07-08）：§7 拍板「付费曝光靠商城 tab 红点」，但底部导航「商城」slot 此前只有社交/成就有红点，月卡（含年卡）**每日可领奖励未领时无任何红点提示**（用户报的 bug）——玩家买了月卡却常忘记每天回商城领币。修复：底部导航「商城」slot 新增红点，逻辑与成就红点同构。
   - **`shopBadge` + `shopBadgeLayer`**（`LobbyScene/base.ts`）：独立重绘层，`applyShopBadge()` 只重画点不 `rebuild()`；`drawShopBadge()` 画在 `shopNavRect` 右上角（`shopNavRect.w<=0` 即离线灰置时早退不画）。
   - **可领判定**（`app/nav/lobby.ts` `computeShopCardClaimable()`）：直接读本地镜像存档 `monetization`（与 `ShopScene.buildShopCards` 同源，无需网络）——`subscriptionExpiry>now`（卡生效）且 `subscriptionLastClaimDay !== 今日 UTC key`。每次进大厅 `refreshShopBadge()` 重算，领奖返回大厅即清点；离线态强制 false。
+- ✅ **邮件红点误报修复**（2026-07-20）：用户报「大厅邮件红点，点进去却啥也没有」——`mailStripRect` 的红点此前复用 `socialBadge`（好友申请+未读会话+未读邮件三项合计的 `total`），只要有未读好友申请或聊天消息，哪怕邮件数为 0 也会点亮邮件格；点进去（`onOpenMail`→`goMail()`→`FriendsScene` mail tab）自然是空的。`GET /social/badges` 早已按三项拆分返回（`SocialBadges.mail`），只是客户端此前只取了 `total`。修复：`applySocialBadge(total, mail)` 两参签名（`AppViews`/`LobbySceneCallbacks`/`badges.ts`），新增独立 `mailBadge` 字段只驱动 `mailStripRect`；`socialBadge`（聚合值）继续驱动底部导航「社交」nav 格红点不变；`app/nav/lobby.ts` 新增 `state.mailBadgeCount` 跟 `socialBadgeTotal` 一样缓存跨 resize/reset。服务端无需改动。
   - **缓存**：`state.shopCardClaimable` 跨 resize 重建保红点不闪；`LobbyView.applyShopBadge` 贯穿 `AppViews`/`app.ts`/headless harness。
 - ✅ **商城场景内侧栏「商城」标签补红点**（2026-07-09）：上条只修了大厅底部导航的商城 slot；玩家点进商城后（`ShopScene` §9 已改左侧竖栏），左栏 `[商城|充值?|盲盒|战令?]` 里的「商城」格本身**没有任何红点**——已经进了商城还是看不出该点哪张卡（用户报的 bug：截图里月卡面板 `Claim` 按钮虽可点，但没有视觉引导）。修复：
   - **`HubTab.badge?: boolean`**（`ui/widgets/HubTabs.ts`）：`drawSidebarTabs` 新增红点绘制（格右上角，不管该格是否 `active`）；`drawHubTabs`（水平条）暂未跟进，留给 §8 提到的三场景统一样式时一起补。

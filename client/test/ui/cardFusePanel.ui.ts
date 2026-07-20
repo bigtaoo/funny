@@ -467,6 +467,35 @@ describe('CardScene fuse panel — auto-continue after a successful fuse', () =>
     expect(target.level).toBe(2); // leveled up once, then had nothing left to continue onto
     expect(modalOpenOf(scene)).toBe(false);
   });
+
+  it('prefers continuing with another card of the same defId over an unrelated one inserted earlier', async () => {
+    const target = makeCard('target', 'lena', { level: 1 });              // faction anna
+    // Inserted before `lena2` so the old first-found-wins tie-break would have picked it instead.
+    const otherLine = makeCard('otherLine', 'lichuang', { level: 1 });    // faction tao — unrelated card line
+    const lena2 = makeCard('lena2', 'lena', { level: 1 });                // same defId as `target` — the expected pick
+    const cardInv: Record<string, CardInstance> = { target, otherLine, lena2 };
+    // Enough anna-faction materials to cover both the initial fuse and lena2's own pool afterwards.
+    for (let i = 0; i < FUSION_MATERIAL_COUNT * 2; i++) cardInv[`matA${i}`] = makeCard(`matA${i}`, 'max', { level: 1 });
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`matB${i}`] = makeCard(`matB${i}`, 'chenshou', { level: 1 }); // tao — otherLine's materials
+
+    const calls: { targetId: string; ids: string[] }[] = [];
+    const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls) }));
+    openFuse(scene, target);
+
+    const rowLabel = `${MAX_NAME} Lv.1`;
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
+      hitUnder(modalHitsOf(scene), findLabelPos(scene.container, rowLabel)!)!.action();
+    }
+    const confirmPos = findLabelPos(scene.container, `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`);
+    hitUnder(modalHitsOf(scene), confirmPos!)!.action();
+    await flushAsync();
+
+    expect(calls).toHaveLength(1);
+    expect(modalOpenOf(scene)).toBe(true); // stayed open, continuing
+    // Continued onto lena2 (still anna-faction 'max' materials), not otherLine (tao-faction 'chenshou').
+    expect(findLabelPos(scene.container, rowLabel)).not.toBeNull();
+    expect(findLabelPos(scene.container, `${t('card.chenshou.name' as never)} Lv.1`)).toBeNull();
+  });
 });
 
 // Regression: the fusion animation (playFusionAnim) draws flash/burst PIXI.Graphics onto modalLayer

@@ -470,11 +470,18 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       const viewH2 = peekViewportH(listH2, R, msgH);
       this[scrollKey] = Math.max(0, Math.min(this[scrollKey], Math.max(0, msgH - viewH2)));
 
+      const list = new PIXI.Container();
+      const mask = new PIXI.Graphics().beginFill(0xffffff).drawRect(x0, y0, colW, viewH2).endFill();
+      list.mask = mask;
+      this.bodyLayer.addChild(list, mask);
+
+      // Channel is returned newest-first; render oldest-at-top for natural reading (matches Sect/World chat).
+      const ordered = [...this.messages].reverse();
       let cy = y0 - this[scrollKey];
-      for (const msg of this.messages) {
+      for (const msg of ordered) {
         if (cy + R < y0 || cy > y0 + viewH2) { cy += R; continue; }
         drawChatLine(
-          this.bodyLayer, x0 + 12, cy + R / 2,
+          list, x0 + 12, cy + R / 2,
           { senderName: msg.senderName ?? msg.senderId, title: msg.title, familyName: msg.familyName },
           msg.body, FS.label, FS.label,
         );

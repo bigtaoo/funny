@@ -254,8 +254,9 @@ export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TB
       if (!body || !this.family) return;
       // Optimistic echo: show the sender's own message instantly instead of blocking on
       // POST + full channel refetch (two sequential round-trips ≈ 2–3s of frozen UI — the
-      // "Send does nothing" complaint). The channel is newest-first (server sorts ts desc),
-      // so prepend and reset the channel scroll to the top so the new line is in view.
+      // "Send does nothing" complaint). The channel is stored newest-first (server sorts ts
+      // desc) but rendered oldest-at-top, so prepend and scroll to the bottom so the new line
+      // is in view.
       const optimistic: FamilyMessageView = {
         id: `pending-${body.length}-${this.messages.length}`,
         senderId: this.cb.myAccountId,
@@ -264,7 +265,7 @@ export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TB
         ts: Number.MAX_SAFE_INTEGER,
       };
       this.messages = [optimistic, ...this.messages];
-      this.scrollYChannel = 0;
+      this.scrollYChannel = Number.MAX_SAFE_INTEGER;
       if (!this.destroyed) this.render();
       try {
         await this.cb.worldApi.sendFamilyMessage(this.family.familyId, body, this.cb.playerName);

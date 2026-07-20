@@ -1,7 +1,7 @@
 // Reforge (E6): material selection modal + confirm + the reforge action itself.
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
-import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
+import { ui as C, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { withTimeout, TimeoutError } from '../../ui/busyTracker';
 import type { EquipmentInstance } from '../../game/meta/SaveData';
@@ -62,7 +62,7 @@ export function ReforgeMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase):
       panel.x = mx; panel.y = my;
       panelRoot.addChild(panel);
 
-      const titleLbl = txt(t('equip.reforgeSelectTitle').replace('{rarity}', t(`equip.rarity.${requiredRarity}` as import('../../i18n').TranslationKey)), FS.tiny, C.dark, true);
+      const titleLbl = this.stxt(t('equip.reforgeSelectTitle').replace('{rarity}', t(`equip.rarity.${requiredRarity}` as import('../../i18n').TranslationKey)), FS.tiny, C.dark, true);
       titleLbl.anchor.set(0.5, 0); titleLbl.x = mx + mw / 2; titleLbl.y = my + 10;
       panelRoot.addChild(titleLbl);
 
@@ -72,10 +72,10 @@ export function ReforgeMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase):
         const rowBg = sketchPanel(mw - 16, rowH - 4, { fill: 0xf8f4e8, border: color, seed: seedFor(cy, 21, mw) });
         rowBg.x = mx + 8; rowBg.y = cy;
         panelRoot.addChild(rowBg);
-        const nameLbl = txt(this.itemLabel(mat.defId, mat.level), FS.tiny, C.dark, true);
+        const nameLbl = this.stxt(this.itemLabel(mat.defId, mat.level), FS.tiny, C.dark, true);
         nameLbl.x = mx + 18; nameLbl.y = cy + 6;
         panelRoot.addChild(nameLbl);
-        const rarLbl = txt(t(`equip.rarity.${mat.rarity}` as import('../../i18n').TranslationKey), FS.micro, color);
+        const rarLbl = this.stxt(t(`equip.rarity.${mat.rarity}` as import('../../i18n').TranslationKey), FS.micro, color);
         rarLbl.x = mx + 18; rarLbl.y = cy + 24;
         panelRoot.addChild(rarLbl);
         const matId = mat.id;
@@ -83,7 +83,7 @@ export function ReforgeMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase):
         cy += rowH;
       }
       if (candidates.length === 0) {
-        const empty = txt(t('equip.reforgeNoMat'), FS.tiny, C.mid);
+        const empty = this.stxt(t('equip.reforgeNoMat'), FS.tiny, C.mid);
         empty.anchor.set(0.5, 0.5); empty.x = mx + mw / 2; empty.y = my + mh / 2;
         panelRoot.addChild(empty);
       }
@@ -91,7 +91,7 @@ export function ReforgeMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase):
       const closeBtn = sketchPanel(60, 26, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 22, 60) });
       closeBtn.x = mx + (mw - 60) / 2; closeBtn.y = my + mh - 34;
       panelRoot.addChild(closeBtn);
-      const closeLbl = txt(t('equip.cancel'), FS.tiny, C.dark);
+      const closeLbl = this.stxt(t('equip.cancel'), FS.tiny, C.dark);
       closeLbl.anchor.set(0.5, 0.5); closeLbl.x = closeBtn.x + 30; closeLbl.y = closeBtn.y + 13;
       panelRoot.addChild(closeLbl);
       this.modalHits.push({ rect: this.toModalScreen({ x: closeBtn.x, y: closeBtn.y, w: 60, h: 26 }), action: () => { this.closeModal(); this.render(); } });

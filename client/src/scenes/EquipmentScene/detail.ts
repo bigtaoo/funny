@@ -3,7 +3,7 @@
 // it's the target of both the detail modal's buttons and the assign mixin's card picker.
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
-import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
+import { ui as C, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { withTimeout, TimeoutError } from '../../ui/busyTracker';
 import type { SaveData, EquipSlot, EquipmentInstance } from '../../game/meta/SaveData';
@@ -84,10 +84,10 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       panelRoot.addChild(panel);
 
       let cy = my + 12;
-      const title = txt(this.itemName(inst.defId), FS.tiny, C.dark, true);
+      const title = this.stxt(this.itemName(inst.defId), FS.tiny, C.dark, true);
       title.x = mx + 12; title.y = cy;
       panelRoot.addChild(title);
-      const rar = txt(t(`equip.rarity.${inst.rarity}` as TranslationKey), FS.micro, color, true);
+      const rar = this.stxt(t(`equip.rarity.${inst.rarity}` as TranslationKey), FS.micro, color, true);
       rar.anchor.set(1, 0); rar.x = mx + mw - 12; rar.y = cy + 1;
       panelRoot.addChild(rar);
       // Enhance level as gold stars, squeezed into the gap between the name and the rarity tag.
@@ -112,7 +112,7 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
           panelRoot.addChild(ic);
           tx = mx + 16 + 19;
         }
-        const line = txt(this.affixDesc(af.id, af.value, inst.level), FS.micro, col);
+        const line = this.stxt(this.affixDesc(af.id, af.value, inst.level), FS.micro, col);
         line.x = tx; line.y = cy;
         panelRoot.addChild(line);
         cy += 20;
@@ -121,20 +121,20 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
 
       // Enhance section.
       if (maxed) {
-        const lbl = txt(t('equip.maxLevel'), FS.tiny, C.gold, true);
+        const lbl = this.stxt(t('equip.maxLevel'), FS.tiny, C.gold, true);
         lbl.x = mx + 12; lbl.y = cy;
         panelRoot.addChild(lbl);
         cy += 24;
       } else {
         const rate = Math.round(enhanceSuccessRate(inst.level) * 100);
         const cost = enhanceCost(inst.level);
-        const rateLbl = txt(t('equip.enhanceRate').replace('{rate}', String(rate)), FS.micro, C.dark);
+        const rateLbl = this.stxt(t('equip.enhanceRate').replace('{rate}', String(rate)), FS.micro, C.dark);
         rateLbl.x = mx + 12; rateLbl.y = cy;
         panelRoot.addChild(rateLbl);
         cy += 18;
         const affordable = this.canAffordEnhance(save, cost);
         const costColor = affordable ? C.mid : C.red;
-        const costLbl = txt(`${t('equip.cost')}:`, FS.micro, costColor);
+        const costLbl = this.stxt(`${t('equip.cost')}:`, FS.micro, costColor);
         costLbl.anchor.set(0, 0.5); costLbl.x = mx + 12; costLbl.y = cy + 7;
         panelRoot.addChild(costLbl);
         this.drawCostChips(panelRoot, costLbl.x + costLbl.width + 8, cy + 7, cost.materials, cost.coins, costColor, 13);
@@ -154,7 +154,7 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
           ck.x = mx + 12; ck.y = cy;
           panelRoot.addChild(ck);
         }
-        const protectLbl = txt(t('equip.protect').replace('{n}', String(protectCount)), FS.micro, protectColor);
+        const protectLbl = this.stxt(t('equip.protect').replace('{n}', String(protectCount)), FS.micro, protectColor);
         protectLbl.x = mx + 12 + boxSz + 4; protectLbl.y = cy + 2;
         panelRoot.addChild(protectLbl);
         if (canToggle && !this.bt.busy) {
@@ -216,7 +216,7 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
         const g = sketchPanel(bw, btnH, { fill: b.on ? b.fill : C.btnOff, border: b.on ? b.stroke : C.mid, seed: seedFor(i, 11, bw) });
         g.x = x; g.y = btnY;
         panelRoot.addChild(g);
-        const lbl = txt(b.label, FS.tiny, b.on ? (b.fill === 0xeeeeee || b.fill === 0xf0e0e0 ? C.dark : C.light) : C.mid, true);
+        const lbl = this.stxt(b.label, FS.tiny, b.on ? (b.fill === 0xeeeeee || b.fill === 0xf0e0e0 ? C.dark : C.light) : C.mid, true);
         lbl.anchor.set(0.5, 0.5); lbl.x = x + bw / 2; lbl.y = btnY + btnH / 2;
         panelRoot.addChild(lbl);
         if (b.on) this.modalHits.push({ rect: this.toModalScreen({ x, y: btnY, w: bw, h: btnH }), action: b.fn });
