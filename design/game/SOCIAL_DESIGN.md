@@ -238,7 +238,7 @@ POST /gw/social/invalidate { accountId }   → { ok }                  // 好友
   - 好友列表（在线态点 + 段位 + 复用 `ProfilePopup` 看资料）、申请红点；搜索框输 publicId 加好友。
   - 家族成员列表（FamilyScene）点击成员名同样弹出 `ProfilePopup`，非本人行带「加为好友」action（2026-07-19）。
   - 会话列表 + 聊天窗（未读红点、历史上拉加载）。
-  - 邮件箱（未读/附件标记、一键领取、领取动画复用奖励揭示）。
+  - 邮件箱（未读/附件标记、一键领取、领取动画复用奖励揭示）。附件详情除名称文字列表外，另在下方横排一行图片（每件附件一张），复用 Equipment/Auction/Gacha 同一套图标解析（`buildEquipIcon`/卡图/`buildMaterialIcon`/`buildIcon`），未知种类落到通用图标兜底（2026-07-20）。
   - 顶部/底栏未读总红点：登录后拉一次 + push 增量更新。
 - **离线**：未登录/纯本地无社交（社交本质需账号 + 服务器）；入口置灰提示登录，同 economy 门控。
 
