@@ -58,6 +58,17 @@ async function flush(scene: any): Promise<void> {
   scene.render();
 }
 
+// Kick buttons are the row's shortest-and-shallowest action rects; the profile-tap hit rect
+// covers the whole name/role area (narrow for short test names, but noticeably taller), so
+// picking the minimum height among the narrow rects reliably isolates the Kick buttons.
+function findKickHits(scene: any): any[] {
+  const narrow = scene.hitRects.filter((h: any) => h.rect.w < 150);
+  const minH = Math.min(...narrow.map((h: any) => h.rect.h));
+  return narrow
+    .filter((h: any) => h.rect.h === minH)
+    .sort((a: any, b: any) => a.rect.y - b.rect.y);
+}
+
 describe('FamilyScene — elder cannot be kicked without demoting first', () => {
   it('the elder row Kick hit shows a toast and never opens the confirm dialog', async () => {
     const scene = buildScene();
@@ -67,9 +78,7 @@ describe('FamilyScene — elder cannot be kicked without demoting first', () => 
     expect(elder.role).toBe('elder');
 
     // Kick hits are the narrowest per-row action rects; the elder row's sits above the member row's.
-    const kickHits = scene.hitRects
-      .filter((h: any) => h.rect.w < 150 && h.rect.h === scene.hitRects.find((k: any) => k.rect.w < 150)?.rect.h)
-      .sort((a: any, b: any) => a.rect.y - b.rect.y);
+    const kickHits = findKickHits(scene);
     expect(kickHits.length).toBe(2);
 
     const [elderKick, memberKick] = kickHits;
@@ -95,9 +104,7 @@ describe('FamilyScene — elder cannot be kicked without demoting first', () => 
     await scene.doSetRole('elderAcc', 'member');
     scene.render();
 
-    const kickHits = scene.hitRects
-      .filter((h: any) => h.rect.w < 150)
-      .sort((a: any, b: any) => a.rect.y - b.rect.y);
+    const kickHits = findKickHits(scene);
     // Both rows are now plain members — either Kick hit should open the confirm dialog.
     kickHits[0].action();
     expect(scene.modalOpen).toBe(true);

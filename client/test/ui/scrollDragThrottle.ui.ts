@@ -125,7 +125,7 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
   it('FamilyScene: drag-scroll renders once per frame, not once per pointermove', () => {
     const input = new InputManager();
     const scene = new FamilyScene(createLayout(W, H), input, {
-      onBack() {}, onOpenSect() {}, onNavTab() {},
+      onBack() {}, onOpenSect() {}, onNavTab() {}, async addFriend() {},
       worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: 'acc_test', playerName: 'Tester',
     }) as any;
     assertScrollDragThrottled(scene, input);

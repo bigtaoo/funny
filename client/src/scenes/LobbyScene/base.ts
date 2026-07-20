@@ -44,6 +44,19 @@ export const C = {
   red:    0xcc3333,
 };
 
+/** Ladder-tier accent color, keyed by `pvp.rank`. Gives the rank badge its own
+ * color identity per tier instead of borrowing the currency gold or a flat
+ * grey — falls back to `C.mid` for `unranked`/unknown tiers. */
+export const TIER_COLORS: Record<string, number> = {
+  unranked: 0x999999,
+  bronze:   0xb3652e,
+  silver:   0x9aa3ab,
+  gold:     0xd9a520,
+  platinum: 0x4fb8ac,
+  diamond:  0x5bb8e8,
+  master:   0xb377e0,
+};
+
 export function txt(label: string, size: number, color: number, bold = false): PIXI.Text {
   return makeText(label, {
     fontSize: size, fill: color, fontFamily: 'monospace',

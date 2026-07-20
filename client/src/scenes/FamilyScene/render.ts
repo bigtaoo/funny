@@ -423,6 +423,12 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
         roleLbl.x = nameLbl.x + nameLbl.width + 10; roleLbl.y = cy + Math.round((R - roleLbl.height) / 2);
         this.bodyLayer.addChild(roleLbl);
 
+        // Tapping the name/role opens the unified profile popup (view info + Add Friend).
+        this.hitRects.push({
+          rect: { x: x0 + 6, y: cy + 2, w: roleLbl.x + roleLbl.width - (x0 + 6), h: R - 4 },
+          action: () => this.openMemberProfile(mem),
+        });
+
         cy += R;
       }
 
