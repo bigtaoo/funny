@@ -4,6 +4,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchButton, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
+import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { buildIcon } from '../../render/icons';
 import { caretDisplay } from '../../render/inputDisplay';
 import { drawChatLine } from '../../render/chatRow';
@@ -324,7 +325,10 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       const isLeader = myRole === 'leader';
 
       const listH = this.members.length * R;
-      this[scrollKey] = Math.max(0, Math.min(this[scrollKey], Math.max(0, listH - maxH)));
+      // Clamp the viewport so it always cuts mid-row when there's more below — a partial next
+      // member card peeks above the fold instead of the row grid landing flush with the edge.
+      const viewH = peekViewportH(maxH, R, listH);
+      this[scrollKey] = Math.max(0, Math.min(this[scrollKey], Math.max(0, listH - viewH)));
 
       const btnH = Math.round(R * 0.44);
       // Buttons are sized to their (i18n-variable-length) label + padding rather than a fixed width,
@@ -334,7 +338,7 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
 
       let cy = y0 - this[scrollKey];
       for (const mem of this.members) {
-        if (cy + R < y0 || cy > y0 + maxH) { cy += R; continue; }
+        if (cy + R < y0 || cy > y0 + viewH) { cy += R; continue; }
         const isMe = mem.accountId === me;
 
         // Per-member card background — my own row is tinted a touch warmer so it stands out.
@@ -435,14 +439,14 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       // Vacancy hint: turns the leftover space below a small roster into information ("room to
       // grow") instead of dead whitespace, without implying an invite feature that doesn't exist yet.
       const vacancies = FAMILY_CAP - this.members.length;
-      if (vacancies > 0 && cy + 20 < y0 + maxH) {
+      if (vacancies > 0 && cy + 20 < y0 + viewH) {
         const vacLbl = txt(t('family.vacancies', { n: vacancies }), FS.label, MUTED);
         vacLbl.alpha = 0.75;
         vacLbl.x = x0 + 18; vacLbl.y = cy + Math.round(R * 0.2);
         this.bodyLayer.addChild(vacLbl);
       }
 
-      drawScrollIndicator(this.bodyLayer, { x: x0, y: y0, w: colW, h: maxH }, this[scrollKey], Math.max(0, listH - maxH));
+      drawScrollIndicator(this.bodyLayer, { x: x0, y: y0, w: colW, h: viewH }, this[scrollKey], Math.max(0, listH - viewH));
     }
 
     /** Channel column. Same `x0`/`colW`/`scrollKey` parametrization as `renderMembers` — see there. */
@@ -452,13 +456,16 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       const inputH = Math.round(this.h * 0.05);
       const listH2 = maxH - inputH - 6;
 
-      // Message list
+      // Message list. The input box below stays pinned off `listH2` (the naive space reserved for
+      // it); only the scrollable message area's cull/clamp/indicator use the peek-adjusted viewH2,
+      // so a partial next message always peeks above the fold when there's more to scroll to.
       const msgH = this.messages.length * R;
-      this[scrollKey] = Math.max(0, Math.min(this[scrollKey], Math.max(0, msgH - listH2)));
+      const viewH2 = peekViewportH(listH2, R, msgH);
+      this[scrollKey] = Math.max(0, Math.min(this[scrollKey], Math.max(0, msgH - viewH2)));
 
       let cy = y0 - this[scrollKey];
       for (const msg of this.messages) {
-        if (cy + R < y0 || cy > y0 + listH2) { cy += R; continue; }
+        if (cy + R < y0 || cy > y0 + viewH2) { cy += R; continue; }
         drawChatLine(
           this.bodyLayer, x0 + 12, cy + R / 2,
           { senderName: msg.senderName ?? msg.senderId, title: msg.title, familyName: msg.familyName },
@@ -467,7 +474,7 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
         cy += R;
       }
 
-      drawScrollIndicator(this.bodyLayer, { x: x0, y: y0, w: colW, h: listH2 }, this[scrollKey], Math.max(0, msgH - listH2));
+      drawScrollIndicator(this.bodyLayer, { x: x0, y: y0, w: colW, h: viewH2 }, this[scrollKey], Math.max(0, msgH - viewH2));
 
       if (this.messages.length === 0) {
         const emptyLbl = txt(t('family.noMessages'), FS.label, MUTED);

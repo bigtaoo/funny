@@ -14,6 +14,18 @@
       "port": 9090
     },
     {
+      "name": "game-verify2",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "npm", "--prefix", "D:\\funny\\client", "run", "start", "--", "--port", "9290"],
+      "port": 9290
+    },
+    {
+      "name": "game-avatar-system",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "npm", "--prefix", "D:\\funny\\.claude\\worktrees\\avatar-system\\client", "run", "start", "--", "--port", "9390"],
+      "port": 9390
+    },
+    {
       "name": "animator",
       "runtimeExecutable": "cmd",
       "runtimeArgs": ["/c", "npm", "run", "start", "--prefix", "D:\\funny\\tools\\animator"],

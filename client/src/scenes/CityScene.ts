@@ -18,6 +18,7 @@ import {
 import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
+import { peekViewportH } from '../ui/widgets/scrollPeek';
 import { FS, snapFont } from '../render/fontScale';
 import { formatDuration } from './worldmap/formatDuration';
 import type {
@@ -503,7 +504,9 @@ export class CityScene implements Scene {
     const contentH = rows * TEAM_CARD_H + (rows - 1) * CARD_GAP;
 
     const viewY = startY;
-    const viewH = Math.max(0, h - viewY - GRID_PAD);
+    const availH = Math.max(0, h - viewY - GRID_PAD);
+    // Clamp so overflow always cuts mid-row, leaving a partial next card peeking above the fold.
+    const viewH = peekViewportH(availH, TEAM_CARD_H + CARD_GAP, contentH);
     this.scrollMax = Math.max(0, contentH - viewH);
     if (this.scrollY > this.scrollMax) this.scrollY = this.scrollMax;
 
@@ -775,7 +778,9 @@ export class CityScene implements Scene {
     const contentH = rows * CARD_H + (rows - 1) * CARD_GAP;
 
     const viewY = startY;
-    const viewH = Math.max(0, h - viewY - GRID_PAD);
+    const availH = Math.max(0, h - viewY - GRID_PAD);
+    // Clamp so overflow always cuts mid-row, leaving a partial next card peeking above the fold.
+    const viewH = peekViewportH(availH, CARD_H + CARD_GAP, contentH);
     this.scrollMax = Math.max(0, contentH - viewH);
     if (this.scrollY > this.scrollMax) this.scrollY = this.scrollMax;
 

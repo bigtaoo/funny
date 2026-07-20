@@ -9,6 +9,7 @@ import type { AuctionView } from '../../net/WorldApiClient';
 import type { EquipmentInstance, CardInstance } from '../../game/meta/SaveData';
 import { buildIcon, type IconKind } from '../../render/icons';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
+import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { getEquipDef } from '../../game/meta/equipmentDefs';
 import { buildEquipIcon } from '../../render/equipmentAtlas';
 import { CARD_DEFS } from '../../game/meta/cardDefs';
@@ -104,7 +105,7 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
       const { w, h } = this;
       const listY = this.headerH + filterH;
       const createBtnH = 100; // reserves room for the 2x "+ List Item" button below
-      const listH = h - listY - createBtnH - 10;
+      const availH = h - listY - createBtnH - 10;
       const contentW = w - contentX;
       const emptyKeys: Record<AucTab, 'auction.empty' | 'auction.myEmpty' | 'auction.bidsEmpty'> = {
         all: 'auction.empty', mine: 'auction.myEmpty', bids: 'auction.bidsEmpty',
@@ -112,14 +113,14 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
 
       if (this.loading) {
         const lbl = txt(t('world.loading'), FS.small, C.dark);
-        lbl.anchor.set(0.5, 0.5); lbl.x = contentX + contentW / 2; lbl.y = listY + listH / 2;
+        lbl.anchor.set(0.5, 0.5); lbl.x = contentX + contentW / 2; lbl.y = listY + availH / 2;
         this.bodyLayer.addChild(lbl);
         return;
       }
 
       if (auctions.length === 0) {
         const lbl = txt(t(emptyKeys[this.activeTab]), FS.small, C.dark);
-        lbl.anchor.set(0.5, 0.5); lbl.x = contentX + contentW / 2; lbl.y = listY + listH / 2;
+        lbl.anchor.set(0.5, 0.5); lbl.x = contentX + contentW / 2; lbl.y = listY + availH / 2;
         this.bodyLayer.addChild(lbl);
         return;
       }
@@ -131,6 +132,9 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
       const cellW = (avail - AUC_CELL_GAP * (cols - 1)) / cols;
       const rows = Math.ceil(auctions.length / cols);
       const totalH = rows * (AUC_CELL_H + AUC_CELL_GAP) + AUC_CELL_GAP;
+      // Clamp the viewport so it always cuts mid-row when there's more below, so a partial next
+      // card always peeks above the fold (see scrollPeek.ts).
+      const listH = peekViewportH(availH, AUC_CELL_H + AUC_CELL_GAP, totalH);
       this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
 
       const now = Date.now();

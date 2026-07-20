@@ -6,6 +6,7 @@ import { t, TranslationKey } from '../../i18n';
 import { ui as C, txt } from '../../render/sketchUi';
 import { type IconKind } from '../../render/icons';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
+import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { type Constructor, type ShopSceneBaseCtor, type CardSpec, type BtnSpec } from './base';
 import { FS } from '../../render/fontScale';
 import { skinDisplayName } from '../../game/meta/skinDefs';
@@ -44,9 +45,10 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
     drawShopGrid(body: PIXI.Container, top: number): void {
       const { w, h } = this;
       const bodyTop = top + Math.round(h * 0.02);
-      const viewH = h - bodyTop - Math.round(h * 0.02);
+      const availH = h - bodyTop - Math.round(h * 0.02);
 
       if (this.loading) {
+        this.maskBody(top, availH);
         const lbl = txt(t('shop.loading'), FS.title, C.mid);
         lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = bodyTop + Math.round(h * 0.14);
         body.addChild(lbl);
@@ -57,6 +59,11 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
       const { listX, listW, gap, cols, cellW, cellH } = this.gridMetrics();
       const rows = Math.ceil(specs.length / cols);
       const totalH = rows > 0 ? rows * (cellH + gap) : 0;
+      // Clamp the viewport so it always cuts mid-row when there's more below — never flush with a
+      // row boundary, so a partial next card is visibly peeking above the fold (not just the thin
+      // ScrollIndicator thumb hinting it).
+      const viewH = peekViewportH(availH, cellH + gap, totalH);
+      this.maskBody(top, viewH);
       this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - viewH)));
 
       if (specs.length === 0) {
@@ -71,7 +78,7 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
         const row = Math.floor(i / cols);
         const cx = listX + col * (cellW + gap);
         const cy = bodyTop + row * (cellH + gap) - this.scrollY;
-        if (cy + cellH >= top && cy <= h) this.drawCard(body, spec, cx, cy, cellW, cellH);
+        if (cy + cellH >= top && cy <= bodyTop + viewH) this.drawCard(body, spec, cx, cy, cellW, cellH);
       });
 
       drawScrollIndicator(this.container, { x: listX, y: bodyTop, w: listW, h: viewH }, this.scrollY, Math.max(0, totalH - viewH));

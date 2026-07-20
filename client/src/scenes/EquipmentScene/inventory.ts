@@ -6,6 +6,7 @@ import { ui as C, txt, sketchPanel, seedFor, marginLineX } from '../../render/sk
 import { FS } from '../../render/fontScale';
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
+import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { buildIcon } from '../../render/icons';
 import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance } from '../../game/meta/SaveData';
 import { getEquipDef } from '../../game/meta/equipmentDefs';
@@ -98,7 +99,7 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       // Bag mode (no active card) has no single-card loadout to show; the list starts right below the header row.
       let listY = bodyTop;
       if (!this.bag) { this.renderLoadout(save, bodyTop, left); listY = bodyTop + LOADOUT_H; }
-      const listH = h - listY - 8;
+      const availH = h - listY - 8;
 
       const allInstances = Object.values(save.equipmentInv);
       const instances = this.filterSlot === 'all'
@@ -107,7 +108,7 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
 
       if (instances.length === 0) {
         const lbl = txt(t('equip.invEmpty'), FS.heading, C.mid);
-        lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = listY + listH / 2;
+        lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = listY + availH / 2;
         this.bodyLayer.addChild(lbl);
         return;
       }
@@ -162,6 +163,9 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       }
       if (col !== 0) off += EQUIP_CELL_H + CELL_GAP;
       const totalH = off + CELL_GAP;
+      // Clamp the viewport so it always cuts mid-row when there's more below — a partial next card
+      // always peeks above the fold instead of the screen looking coincidentally "full".
+      const listH = peekViewportH(availH, EQUIP_CELL_H + CELL_GAP, totalH);
 
       this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
 

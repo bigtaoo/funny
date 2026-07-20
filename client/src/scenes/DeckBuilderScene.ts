@@ -16,6 +16,7 @@ import {
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
+import { peekViewportH } from '../ui/widgets/scrollPeek';
 import { buildIcon } from '../render/icons';
 import { FS } from '../render/fontScale';
 import { ScrollTapGesture } from '../ui/scrollTapGesture';
@@ -203,24 +204,28 @@ export class DeckBuilderScene implements Scene {
     // ── Scrollable card grid ─────────────────────────────────────────────────
     const listY = tbH + Math.round(h * 0.02);
     this.listStartY = listY;
-    this.listH = footerY - listY;
+    const availH = footerY - listY;
 
     const cols = 2;
     const cardW = Math.round((w - pad * 3) / cols);
     const cardH = Math.round(h * 0.13);
     const gapY = Math.round(h * 0.015);
 
+    // Peek-adjust the viewport so, when the grid overflows, the cut always lands mid-row and a
+    // partial next card is visible above the fold (not just the thin ScrollIndicator thumb).
+    const rows = Math.ceil(ALL_PVP_CARDS.length / cols);
+    const totalH = rows > 0 ? (rows - 1) * (cardH + gapY) + cardH : 0;
+    this.listH = peekViewportH(availH, cardH + gapY, totalH);
+
     const listContainer = new PIXI.Container();
     listContainer.x = 0;
     listContainer.y = listY - this.scrollY;
 
-    let totalH = 0;
     ALL_PVP_CARDS.forEach((id, idx) => {
       const col = idx % cols;
       const row = Math.floor(idx / cols);
       const cx = pad + col * (cardW + pad);
       const cy = row * (cardH + gapY);
-      totalH = cy + cardH;
 
       const isUnlocked = unlocked.has(id);
       const isSelected = this.selected.has(id);

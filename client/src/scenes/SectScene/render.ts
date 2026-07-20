@@ -5,6 +5,7 @@ import { SECT_CREATE_COST } from '@nw/shared';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchButton, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
+import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { caretDisplay } from '../../render/inputDisplay';
 import { drawChatLine } from '../../render/chatRow';
 import { type Constructor, type SectSceneBaseCtor, type SectTab, ROW_H } from './base';
@@ -343,40 +344,48 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       const right = x0 + colW;
 
       const listH = sect.memberFamilies.length * ROW_H;
-      this[scrollKey] = Math.max(0, Math.min(this[scrollKey], Math.max(0, listH - maxH)));
+      // Clamp the viewport so it always cuts mid-row when there's more below — a partial next
+      // family row always peeks above the fold instead of landing flush with the column edge.
+      const viewH = peekViewportH(maxH, ROW_H, listH);
+      this[scrollKey] = Math.max(0, Math.min(this[scrollKey], Math.max(0, listH - viewH)));
+
+      const list = new PIXI.Container();
+      const mask = new PIXI.Graphics().beginFill(0xffffff).drawRect(x0, y0, colW, viewH).endFill();
+      list.mask = mask;
+      this.bodyLayer.addChild(list, mask);
 
       let cy = y0 - this[scrollKey];
       for (const fam of sect.memberFamilies) {
-        if (cy + ROW_H >= y0 && cy <= y0 + maxH) {
+        if (cy + ROW_H >= y0 && cy <= y0 + viewH) {
           const isLeaderFam = fam.familyId === sect.leaderFamilyId;
           const bar = new PIXI.Graphics();
           sketchAccentBar(bar, ROW_H - 6, isLeaderFam ? C.accent : C.mid);
           bar.x = x0 + 6; bar.y = cy + 3;
-          this.bodyLayer.addChild(bar);
+          list.addChild(bar);
 
           // Row 1: family name, with the "Leader family" tag inline to its right.
           const nameLbl = txt(`[${fam.tag}] ${fam.name}`, FS.heading, C.dark);
           nameLbl.x = x0 + 18; nameLbl.y = cy + 8;
-          this.bodyLayer.addChild(nameLbl);
+          list.addChild(nameLbl);
           if (isLeaderFam) {
             const ldr = txt(t('sect.leaderFamily'), FS.small, C.accent);
             ldr.anchor.set(0, 0.5); ldr.x = nameLbl.x + nameLbl.width + 12; ldr.y = cy + 8 + nameLbl.height / 2;
-            this.bodyLayer.addChild(ldr);
+            list.addChild(ldr);
           }
           // Row 2: member / territory counts.
           const statLbl = txt(`${t('family.members', { n: fam.memberCount })} · ${t('sect.territory', { n: fam.territoryCount })}`, FS.body, C.mid);
           statLbl.x = x0 + 18; statLbl.y = cy + 8 + nameLbl.height + 6;
-          this.bodyLayer.addChild(statLbl);
+          list.addChild(statLbl);
 
           // Any family leader (except the current leader family) can launch / vote a removal.
           if (this.isFamilyLeader && !isLeaderFam) {
             const voteW = 104, voteBtnX = right - voteW - 12;
             const voteBtn = sketchPanel(voteW, 34, { fill: 0xf0e0e0, border: C.red, seed: seedFor(cy, 1, voteW) });
             voteBtn.x = voteBtnX; voteBtn.y = cy + (ROW_H - 34) / 2;
-            this.bodyLayer.addChild(voteBtn);
+            list.addChild(voteBtn);
             const vl = txt(t('sect.vote'), FS.body, C.red);
             vl.anchor.set(0.5, 0.5); vl.x = voteBtnX + voteW / 2; vl.y = cy + ROW_H / 2;
-            this.bodyLayer.addChild(vl);
+            list.addChild(vl);
             const nomId = fam.familyId;
             const nomLabel = `[${fam.tag}] ${fam.name}`;
             this.hitRects.push({ rect: { x: voteBtnX, y: cy + (ROW_H - 34) / 2, w: voteW, h: 34 }, action: () => this.confirmVote(nomId, nomLabel) });
@@ -385,7 +394,7 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
         cy += ROW_H;
       }
 
-      drawScrollIndicator(this.bodyLayer, { x: x0, y: y0, w: colW, h: maxH }, this[scrollKey], Math.max(0, listH - maxH));
+      drawScrollIndicator(this.bodyLayer, { x: x0, y: y0, w: colW, h: viewH }, this[scrollKey], Math.max(0, listH - viewH));
     }
 
     renderBottomBar(y: number): void {
@@ -408,7 +417,7 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
     renderChannel(x0: number, colW: number, y0: number, maxH: number, scrollKey: 'scrollY' | 'scrollYChannel'): void {
       const right = x0 + colW;
       const inputH = 52;
-      const listH2 = maxH - inputH - 6;
+      const availH2 = maxH - inputH - 6;
 
       if (this.messages.length === 0) {
         const empty = txt(t('sect.noMessages'), FS.label, C.mid);
@@ -417,24 +426,32 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       }
 
       const msgH = this.messages.length * ROW_H;
-      this[scrollKey] = Math.max(0, Math.min(this[scrollKey], Math.max(0, msgH - listH2)));
+      // Clamp the viewport so it always cuts mid-row when there's more below — a partial next
+      // message always peeks above the fold instead of landing flush with the input box.
+      const viewH2 = peekViewportH(availH2, ROW_H, msgH);
+      this[scrollKey] = Math.max(0, Math.min(this[scrollKey], Math.max(0, msgH - viewH2)));
+
+      const list = new PIXI.Container();
+      const mask = new PIXI.Graphics().beginFill(0xffffff).drawRect(x0, y0, colW, viewH2).endFill();
+      list.mask = mask;
+      this.bodyLayer.addChild(list, mask);
 
       // Channel is returned newest-first; render oldest-at-top for natural reading.
       const ordered = [...this.messages].reverse();
       let cy = y0 - this[scrollKey];
       for (const msg of ordered) {
-        if (cy + ROW_H < y0 || cy > y0 + listH2) { cy += ROW_H; continue; }
+        if (cy + ROW_H < y0 || cy > y0 + viewH2) { cy += ROW_H; continue; }
         drawChatLine(
-          this.bodyLayer, x0 + 12, cy + ROW_H / 2,
+          list, x0 + 12, cy + ROW_H / 2,
           { senderName: msg.senderName, title: msg.title, sectName: msg.sectName, familyName: msg.familyName },
           msg.body, FS.label, FS.label,
         );
         cy += ROW_H;
       }
 
-      drawScrollIndicator(this.bodyLayer, { x: x0, y: y0, w: colW, h: listH2 }, this[scrollKey], Math.max(0, msgH - listH2));
+      drawScrollIndicator(this.bodyLayer, { x: x0, y: y0, w: colW, h: viewH2 }, this[scrollKey], Math.max(0, msgH - viewH2));
 
-      const inputY = y0 + listH2 + 4;
+      const inputY = y0 + availH2 + 4;
       const sendW = 96;
       const fieldW = colW - sendW - 12;
       const field = sketchPanel(fieldW, inputH, { fill: 0xfaf9f5, border: this.channelActive ? C.accent : C.mid, seed: seedFor(0, 0, fieldW) });

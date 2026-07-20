@@ -9,6 +9,7 @@ import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubT
 import { t } from '../../i18n';
 import { buildIcon, type IconKind } from '../../render/icons';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
+import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import type { EquipmentInstance, CardInstance, EquipRarity } from '../../game/meta/SaveData';
 import { getEquipDef } from '../../game/meta/equipmentDefs';
 import { buildEquipIcon } from '../../render/equipmentAtlas';
@@ -193,12 +194,12 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
 
       const contentX = this.renderPickerSidebar();
       const listY = this.headerH + 40;
-      const listH = h - listY - 10;
+      const availH = h - listY - 10;
 
       const entries = this.buildPickEntries().filter((e) => this.pickerFilter === '' || e.cls === this.pickerFilter);
       if (entries.length === 0) {
         const lbl = txt(t('auction.noItems'), FS.tiny, C.dark);
-        lbl.anchor.set(0.5, 0.5); lbl.x = contentX + (w - contentX) / 2; lbl.y = listY + listH / 2;
+        lbl.anchor.set(0.5, 0.5); lbl.x = contentX + (w - contentX) / 2; lbl.y = listY + availH / 2;
         this.bodyLayer.addChild(lbl);
         return;
       }
@@ -209,6 +210,8 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
       const cardW = (avail - CARD_GAP * (cols - 1)) / cols;
       const rows = Math.ceil(entries.length / cols);
       const totalH = rows * (CARD_H + CARD_GAP);
+      // Clamp the viewport so it always cuts mid-row when there's more below (see scrollPeek.ts).
+      const listH = peekViewportH(availH, CARD_H + CARD_GAP, totalH);
       this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
 
       entries.forEach((entry, i) => {

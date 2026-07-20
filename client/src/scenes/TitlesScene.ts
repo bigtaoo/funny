@@ -10,6 +10,8 @@ import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawCareerTabs } from '../ui/widgets/CareerTabs';
 import { sidebarNavW } from '../ui/widgets/HubTabs';
+import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
+import { peekViewportH } from '../ui/widgets/scrollPeek';
 import { sortTitlesByWeight, getTitleKeys, formatLadderTitle, allTitleIds } from '../game/meta/titles';
 import { FS, snapFont } from '../render/fontScale';
 
@@ -59,6 +61,15 @@ export class TitlesScene implements Scene {
   private readonly artHooked = new Set<string>();
   private destroyed = false;
 
+  // Grid scroll state (title catalog grows unboundedly with owned seasonal titles, so it can
+  // overflow one screen) — drag-scroll + tap-vs-drag disambiguation, mirrors GachaScene's odds panel.
+  private body: PIXI.Container = new PIXI.Container();
+  private bodyMask: PIXI.Graphics | null = null;
+  private scrollY = 0;
+  private scrollMax = 0;
+  private scrollDirty = false;
+  private dragStart: { x: number; y: number; scroll: number; moved: boolean } | null = null;
+
   constructor(layout: ILayout, input: InputManager, cb: TitlesSceneCallbacks) {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
@@ -67,10 +78,14 @@ export class TitlesScene implements Scene {
     this.landscape = layout.orientation === 'landscape';
 
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
+    this.unsubs.push(input.onMove((_x, y) => this.handleMove(y)));
+    this.unsubs.push(input.onUp((x, y) => this.handleUp(x, y)));
     this.render();
   }
 
-  update(_dt: number): void {}
+  update(_dt: number): void {
+    if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
+  }
 
   destroy(): void {
     this.destroyed = true;
@@ -79,12 +94,29 @@ export class TitlesScene implements Scene {
   }
 
   private handleDown(x: number, y: number): void {
-    for (const h of this.hits) {
-      if (x >= h.rect.x && x <= h.rect.x + h.rect.w && y >= h.rect.y && y <= h.rect.y + h.rect.h) {
-        h.fn();
-        return;
+    this.dragStart = { x, y, scroll: this.scrollY, moved: false };
+  }
+
+  private handleMove(y: number): void {
+    if (!this.dragStart) return;
+    const dy = y - this.dragStart.y;
+    if (Math.abs(dy) > 6) {
+      this.dragStart.moved = true;
+      this.scrollY = Math.max(0, Math.min(this.scrollMax, this.dragStart.scroll - dy));
+      this.scrollDirty = true;
+    }
+  }
+
+  private handleUp(x: number, y: number): void {
+    if (this.dragStart && !this.dragStart.moved) {
+      for (const h of this.hits) {
+        if (x >= h.rect.x && x <= h.rect.x + h.rect.w && y >= h.rect.y && y <= h.rect.y + h.rect.h) {
+          h.fn();
+          break;
+        }
       }
     }
+    this.dragStart = null;
   }
 
   private render(): void {
@@ -94,6 +126,15 @@ export class TitlesScene implements Scene {
     this.drawBackground();
     const tbH = this.drawHeader();
     this.drawSidebar(tbH);
+
+    // Grid lives in its own masked layer so overscrolled cards never bleed into the header/sidebar.
+    this.body = new PIXI.Container();
+    this.container.addChild(this.body);
+    const mask = new PIXI.Graphics();
+    this.container.addChild(mask);
+    this.body.mask = mask;
+    this.bodyMask = mask;
+
     this.drawTitleList();
   }
 
@@ -148,10 +189,13 @@ export class TitlesScene implements Scene {
     const owned = new Set(this.cb.titles);
     const sorted = sortTitlesByWeight(allTitleIds(this.cb.titles));
 
+    const availH = h - gridTop - Math.round(h * 0.02);
+
     if (sorted.length === 0) {
+      this.maskGrid(gridTop, availH);
       const empty = txt(t('titles.empty'), FS.title, C.mid);
       empty.anchor.set(0.5, 0.5); empty.x = w / 2; empty.y = h / 2;
-      this.container.addChild(empty);
+      this.body.addChild(empty);
       return;
     }
 
@@ -161,13 +205,31 @@ export class TitlesScene implements Scene {
     const cols = Math.max(1, Math.floor((gridW + gap) / (cellWTarget + gap)));
     const cellW = Math.min(cellWTarget, (gridW - gap * (cols - 1)) / cols);
 
+    const rows = Math.ceil(sorted.length / cols);
+    const totalH = rows * (cellH + gap);
+    // Clamp the viewport so it always cuts mid-row when there's more below — a partial next card
+    // stays visibly peeking above the fold instead of the thin ScrollIndicator being the only hint.
+    const viewH = peekViewportH(availH, cellH + gap, totalH);
+    this.maskGrid(gridTop, viewH);
+    this.scrollMax = Math.max(0, totalH - viewH);
+    this.scrollY = Math.max(0, Math.min(this.scrollY, this.scrollMax));
+
     sorted.forEach((titleId, i) => {
       const col = i % cols;
       const row = Math.floor(i / cols);
       const x = padX + col * (cellW + gap);
-      const y = gridTop + row * (cellH + gap);
-      this.drawTitleCard(titleId, x, y, cellW, cellH, owned.has(titleId));
+      const y = gridTop + row * (cellH + gap) - this.scrollY;
+      if (y + cellH >= gridTop && y <= gridTop + viewH) {
+        this.drawTitleCard(titleId, x, y, cellW, cellH, owned.has(titleId));
+      }
     });
+
+    drawScrollIndicator(this.container, { x: padX, y: gridTop, w: gridW, h: viewH }, this.scrollY, this.scrollMax);
+  }
+
+  /** Size this render's grid mask to `top..top+viewH`, called once the peek-adjusted viewH is known. */
+  private maskGrid(top: number, viewH: number): void {
+    this.bodyMask?.clear().beginFill(0xffffff).drawRect(0, top, this.w, viewH).endFill();
   }
 
   /**
@@ -187,7 +249,7 @@ export class TitlesScene implements Scene {
     });
     card.x = x; card.y = y;
     card.alpha = isOwned ? 1 : 0.5;
-    this.container.addChild(card);
+    this.body.addChild(card);
 
     // Medal art is tall portrait (~0.5 aspect); fit it into the icon box preserving aspect so it
     // isn't squashed into a square. Box gets the top ~44% of the card.
@@ -208,7 +270,7 @@ export class TitlesScene implements Scene {
         sprite.x = x + cellW / 2 - iw / 2;
         sprite.y = iconTop + (boxH - ih) / 2;
         sprite.alpha = isOwned ? 1 : 0.6;
-        this.container.addChild(sprite);
+        this.body.addChild(sprite);
       } else if (!this.artHooked.has(iconUrl)) {
         // Sizing against an unloaded (0/1px) baseTexture yields garbage — re-render once it loads.
         this.artHooked.add(iconUrl);
@@ -219,7 +281,7 @@ export class TitlesScene implements Scene {
       const icon = buildIcon('medal', iconS, color);
       icon.x = x + cellW / 2 - iconS / 2; icon.y = iconTop + (boxH - iconS) / 2;
       icon.alpha = isOwned ? 1 : 0.6;
-      this.container.addChild(icon);
+      this.body.addChild(icon);
     }
 
     const keys = getTitleKeys(titleId);
@@ -235,27 +297,27 @@ export class TitlesScene implements Scene {
     shortLbl.anchor.set(0.5, 0); shortLbl.x = x + cellW / 2; shortLbl.y = shortY;
     if (shortLbl.width > cellW * 0.88) shortLbl.scale.set((cellW * 0.88) / shortLbl.width);
     shortLbl.alpha = isOwned ? 1 : 0.7;
-    this.container.addChild(shortLbl);
+    this.body.addChild(shortLbl);
 
     const fullLbl = txt(fullLabel, snapFont(Math.round(cellH * 0.07)), isOwned ? C.dark : C.mid, false, Math.round(cellW * 0.85));
     fullLbl.anchor.set(0.5, 0); fullLbl.x = x + cellW / 2; fullLbl.y = shortY + Math.round(cellH * 0.15);
     fullLbl.alpha = isOwned ? 0.85 : 0.65;
-    this.container.addChild(fullLbl);
+    this.body.addChild(fullLbl);
 
     if (!isOwned) {
       const badge = txt(t('titles.locked'), snapFont(Math.round(cellH * 0.08)), C.mid);
       badge.anchor.set(0.5, 1); badge.x = x + cellW / 2; badge.y = y + cellH - Math.round(cellH * 0.06);
-      this.container.addChild(badge);
+      this.body.addChild(badge);
       return;
     }
 
     if (equipped) {
       const badge = txt(t('titles.equipped'), snapFont(Math.round(cellH * 0.08)), C.gold, true);
       badge.anchor.set(0.5, 1); badge.x = x + cellW / 2; badge.y = y + cellH - Math.round(cellH * 0.14);
-      this.container.addChild(badge);
+      this.body.addChild(badge);
       const hint = txt(t('titles.tapUnequip'), snapFont(Math.round(cellH * 0.06)), C.mid);
       hint.anchor.set(0.5, 1); hint.x = x + cellW / 2; hint.y = y + cellH - Math.round(cellH * 0.06);
-      this.container.addChild(hint);
+      this.body.addChild(hint);
     }
 
     this.hits.push({

@@ -141,6 +141,8 @@ export class ShopSceneBase {
 
   // ── Scroll state (grid may overflow the body region) ──────────────────────
   protected scrollY = 0;
+  /** This render's body mask, sized per-tab by {@link maskBody} once its grid's peek-adjusted viewH is known. */
+  protected bodyMask: PIXI.Graphics | null = null;
   /**
    * Tap-vs-drag gesture tracker: defers a cell's hit action to pointer-up and drops it if the pointer
    * dragged (so a drag starting on a shop card scrolls instead of firing it). See ScrollTapGesture.
@@ -278,12 +280,13 @@ export class ShopSceneBase {
     const top = this.drawGroupTabs(tbH);
 
     // Body grid lives in a masked layer so overscrolled cells never bleed into the fixed header / tab strip.
+    // Mask height is set per-tab (see viewH below) so a partial next row always peeks above the fold.
     const body = new PIXI.Container();
     this.container.addChild(body);
     const mask = new PIXI.Graphics();
-    mask.beginFill(0xffffff).drawRect(0, top, this.w, this.h - top).endFill();
     this.container.addChild(mask);
     body.mask = mask;
+    this.bodyMask = mask;
 
     if (this.tab === 'coins') {
       this.drawCoinsGrid(body, top);
@@ -292,6 +295,12 @@ export class ShopSceneBase {
     }
 
     if (this.bt.loadingVisible) drawLoadingOverlay(this.container, this.w, this.h, this.bt.dots, t('common.processing'));
+  }
+
+  /** Size this render's body mask to `top..top+viewH` — called by each grid method once it knows its
+   *  own peek-adjusted viewH, so the clip line (and the deliberate partial-row peek above it) is exact. */
+  protected maskBody(top: number, viewH: number): void {
+    this.bodyMask?.clear().beginFill(0xffffff).drawRect(0, top, this.w, viewH).endFill();
   }
 
   private drawBackground(): void {

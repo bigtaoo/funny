@@ -6,6 +6,7 @@ import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
+import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { withTimeout, TimeoutError } from '../../ui/busyTracker';
 import type { SaveData } from '../../game/meta/SaveData';
 import { craftableDefs, getEquipDef, EQUIPMENT_INV_CAP } from '../../game/meta/equipmentDefs';
@@ -25,7 +26,7 @@ export function CraftMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): T
       const save = this.cb.getSave();
       const defs = craftableDefs();
       const listY = bodyTop + 4;
-      const listH = h - listY - 8;
+      const availH = h - listY - 8;
       const full = Object.keys(save.equipmentInv).length >= EQUIPMENT_INV_CAP;
 
       // Cells start right of the sidebar rail; right pad stays one CELL_GAP.
@@ -35,6 +36,8 @@ export function CraftMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): T
       const cellW = (avail - CELL_GAP_X * (cols - 1)) / cols;
       const rows = Math.ceil(defs.length / cols);
       const totalH = CELL_GAP + rows * (CRAFT_CELL_H + CELL_GAP);
+      // Clamp the viewport so it always cuts mid-row when there's more below (see inventory.ts).
+      const listH = peekViewportH(availH, CRAFT_CELL_H + CELL_GAP, totalH);
       this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
 
       // Masked sub-layer so an overscrolled row never bleeds up past listY and paints over the

@@ -22,6 +22,7 @@ import { CARD_DEFS } from '../game/meta/cardDefs';
 import { SKIN_TARGET_UNIT, skinDisplayName } from '../game/meta/skinDefs';
 import { UNIT_ART_URLS, getArtTexture } from '../render/cardArt';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
+import { peekViewportH } from '../ui/widgets/scrollPeek';
 import { FS, snapFont } from '../render/fontScale';
 
 /** itemId prefix → material icon glyph (mat_scrap/mat_lead/mat_binding). */
@@ -614,19 +615,21 @@ export class GachaScene implements Scene {
     const gridBottom = py + ph - Math.round(h * 0.135);
     const gridPad = Math.round(pw * 0.03);
     const gridX = px + gridPad, gridW = pw - gridPad * 2;
-    const gridH = Math.max(1, gridBottom - gridTop);
+    const availH = Math.max(1, gridBottom - gridTop);
 
     const n = Math.max(1, entries.length);
-    const cols = Math.min(7, Math.max(3, Math.round(Math.sqrt((n * gridW) / gridH))));
+    const cols = Math.min(7, Math.max(3, Math.round(Math.sqrt((n * gridW) / availH))));
     const rows = Math.ceil(n / cols);
     const cellW = gridW / cols;
-    // Fixed aspect ratio (not squished to fit gridH) — every entry gets a legible card; a pool with
+    // Fixed aspect ratio (not squished to fit availH) — every entry gets a legible card; a pool with
     // more rows than the panel can show scrolls instead (2026-07-15: was cramming all entries into one
     // page, making small-probability items unreadable).
     const cellH = cellW * 0.92;
     const gap = Math.round(cellW * 0.08);
 
     const contentH = rows * cellH;
+    // Clamp the viewport so, when it overflows, the cut always lands mid-row (partial next card peeks above the fold).
+    const gridH = peekViewportH(availH, cellH, contentH);
     this.oddsScrollMax = Math.max(0, contentH - gridH);
     this.oddsScrollY = Math.max(0, Math.min(this.oddsScrollY, this.oddsScrollMax));
 
@@ -645,7 +648,7 @@ export class GachaScene implements Scene {
       const cardX = gridX + col * cellW + gap / 2;
       const cardY = gridTop + row * cellH + gap / 2 - this.oddsScrollY;
       total += e.probability;
-      if (cardY + cardH < gridTop || cardY > gridBottom) return; // off-screen — skip drawing, still counted above
+      if (cardY + cardH < gridTop || cardY > gridTop + gridH) return; // off-screen — skip drawing, still counted above
 
       const card = sketchPanel(cardW, cardH, {
         fill: C.paper, border: RARITY_COLOR[e.rarity], width: 1.8, seed: seedFor(cardX, cardY, i + 1),

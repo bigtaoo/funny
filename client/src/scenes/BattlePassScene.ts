@@ -15,6 +15,7 @@ import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { showToastMessage, type ToastKind } from '../net/log';
 import { ScrollTapGesture } from '../ui/scrollTapGesture';
+import { peekViewportH } from '../ui/widgets/scrollPeek';
 import type { SaveData } from '../game/meta/SaveData';
 import {
   BATTLEPASS_DEFS, BATTLEPASS_MAX_LEVEL, BATTLEPASS_BUY_COST, BP_XP_PER_LEVEL,
@@ -343,8 +344,11 @@ export class BattlePassScene implements Scene {
     const freeX = pad;
     const paidX = pad + halfW + Math.round(w * 0.02);
 
-    const scrollBodyH = h - bodyTopY;
+    const availH = h - bodyTopY;
     const totalContentH = headerH + BATTLEPASS_MAX_LEVEL * (cellH + cellGap);
+    // Peek-adjusted viewport height: when the track overflows, the cut always lands mid-row so a
+    // partial next reward row is always visible above the fold (not just the thin scroll indicator).
+    const scrollBodyH = peekViewportH(availH, cellH + cellGap, totalContentH);
     const scrollMax = Math.max(0, totalContentH - scrollBodyH);
     this.scrollMax = scrollMax;
     this.scrollView = { x: pad, y: bodyTopY, w: barW, h: scrollBodyH };

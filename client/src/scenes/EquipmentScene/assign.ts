@@ -10,6 +10,7 @@ import { FACTION_COLOR } from '../../render/factionIcon';
 import { UNIT_ART_URLS, getArtTexture } from '../../render/cardArt';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
+import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import type { SaveData, EquipSlot, CardInstance } from '../../game/meta/SaveData';
 import { CARD_DEFS, cardPower } from '../../game/meta/cardDefs';
 import { type Constructor, type EquipmentSceneBaseCtor, RES_H, SLOTS } from './base';
@@ -79,11 +80,11 @@ export function AssignMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       this.bodyLayer.addChild(title);
 
       const listY = top + RES_H;
-      const listH = h - listY - 8;
+      const availH = h - listY - 8;
       const cards = Object.values(save.cardInv ?? {});
       if (cards.length === 0) {
         const lbl = txt(t('equip.assignEmpty'), FS.heading, C.mid);
-        lbl.anchor.set(0.5, 0.5); lbl.x = sidebarW + (w - sidebarW) / 2; lbl.y = listY + listH / 2;
+        lbl.anchor.set(0.5, 0.5); lbl.x = sidebarW + (w - sidebarW) / 2; lbl.y = listY + availH / 2;
         this.bodyLayer.addChild(lbl);
         return;
       }
@@ -104,6 +105,8 @@ export function AssignMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       const cellW = (avail - PICK_GAP * (cols - 1)) / cols;
       const rows = Math.ceil(sorted.length / cols);
       const totalH = rows * (PICK_CELL_H + PICK_GAP) + PICK_GAP;
+      // Clamp the viewport so it always cuts mid-row when there's more below (see inventory.ts).
+      const listH = peekViewportH(availH, PICK_CELL_H + PICK_GAP, totalH);
       this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
 
       sorted.forEach((card, i) => {
