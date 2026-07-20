@@ -76,6 +76,9 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         await new Promise<void>((resolve) => {
           const start = performance.now();
           const tick = (): void => {
+            // If anything tore down the modal layer (scene destroy, a texture-load redraw) the dots
+            // are destroyed graphics; touching them would throw. Bail cleanly so the fuse still settles.
+            if (dots.some((d) => d.g.destroyed)) { for (const d of dots) if (!d.g.destroyed) d.g.destroy(); resolve(); return; }
             const f = Math.min(1, (performance.now() - start) / CONVERGE_MS);
             const e = 1 - (1 - f) * (1 - f); // ease-out
             for (const d of dots) {
@@ -105,6 +108,9 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       await new Promise<void>((resolve) => {
         const start = performance.now();
         const tick = (): void => {
+          // Same guard as phase 1: a torn-down modal layer leaves flash/burst destroyed, and
+          // burst.clear() on a destroyed Graphics throws (null _geometry). Bail cleanly instead.
+          if (flash.destroyed || burst.destroyed) { resolve(); return; }
           const elapsed = performance.now() - start;
           const f = Math.min(1, elapsed / DURATION_MS);
           const pulse = Math.sin(f * Math.PI); // 0 → 1 → 0
@@ -219,19 +225,26 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         const def = CARD_DEFS[currentTarget.defId];
         if (!def) { this.closeModal(); this.render(); return; }
 
-        const S = 2;
         const topLimit = this.headerH + 4;
         const bottomLimit = h - 8;
         const availH = Math.max(0, bottomLimit - topLimit);
-        // Landscape's left column is narrower than the old single-column panel, so the hint line can
-        // wrap to 2 lines there (see drawHeaderAndRing's wordWrap) — a taller header block keeps the
-        // ring from crowding it.
-        const headerBlockH = (this.landscape ? 52 : 40) * S;
-        const ringH = 130 * S;
-        const rowH = 40 * S;
-        const footerBlockH = 52 * S;
         const groups = groupsOf();
         const listRows = Math.min(Math.max(groups.length, 1), 4);
+
+        // The panel fills 80% of the primary viewport axis — height in landscape, width in portrait —
+        // and S scales the whole panel (ring, rows, fonts) so the content grows to match, while the
+        // secondary axis stays content-driven (2026-07-20). The *U constants below are authored at S=1.
+        // Landscape's left column is narrower than portrait, so its hint line can wrap to 2 lines (see
+        // drawHeaderAndRing's wordWrap) — a taller header block keeps the ring from crowding it.
+        const headerBlockU = this.landscape ? 52 : 40;
+        const ringU = 130, rowU = 40, footerBlockU = 52;
+        const S = this.landscape
+          ? Math.min(h * 0.8, availH) / Math.max(headerBlockU + ringU + 8, listRows * rowU + footerBlockU + 8)
+          : (w * 0.8) / 340;
+        const headerBlockH = headerBlockU * S;
+        const ringH = ringU * S;
+        const rowH = rowU * S;
+        const footerBlockH = footerBlockU * S;
 
         const drawPortrait = (
           cardId: string | null, cx: number, cy: number, r: number, faction: Faction | undefined,

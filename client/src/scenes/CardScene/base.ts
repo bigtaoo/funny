@@ -187,6 +187,15 @@ export class CardSceneBase {
   protected flipTickerCleanup: (() => void) | null = null;
 
   protected destroyed = false;
+  /**
+   * True for the whole span of a fuse (network call + `playFusionAnim`). While set, the busy-dots
+   * re-render in `update()` must NOT run: `render()` would reopen the detail modal (detailId stays
+   * set through the fuse) and `tearDownChildren(modalLayer)` would destroy the live fusion-animation
+   * graphics out from under their own rAF loop — a `burst.clear()` on a destroyed Graphics then throws
+   * "Cannot read properties of null (reading 'clear')", which also leaves the fuse promise unresolved
+   * and `bt.busy` stuck on forever. The fuse ring is already drawn (feedRedraw) and stays put.
+   */
+  protected fuseInProgress = false;
   protected readonly unsubs: (() => void)[] = [];
   /** Portrait urls whose texture we've hooked for a one-shot re-render on load. */
   protected readonly artHooked = new Set<string>();
@@ -384,7 +393,10 @@ export class CardSceneBase {
   update(dt: number): void {
     if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
     if (this.feedScrollDirty) { this.feedScrollDirty = false; this.feedRedraw?.(); }
-    if (this.bt.tick(dt)) this.render();
+    // Advance the busy-dot state every frame, but skip the re-render mid-fuse: rebuilding the scene
+    // there tears down the fusion-animation graphics and crashes their rAF loop (see fuseInProgress).
+    const dirty = this.bt.tick(dt);
+    if (dirty && !this.fuseInProgress) this.render();
   }
 
   destroy(): void {
