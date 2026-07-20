@@ -13,6 +13,11 @@ export function DataMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBase
   return class extends Base {
     async loadData(): Promise<void> {
       if (this.destroyed) return;
+      // Best-effort, independent of the family fetch below — only gates the member-profile
+      // popup's "Add Friend" action, so a failure here shouldn't block showing the roster.
+      void this.cb.getFriendPublicIds().then((ids) => {
+        if (!this.destroyed) this.friendPublicIds = ids;
+      }).catch(() => { /* keep the empty default */ });
       try {
         // Family membership lives in socialsvc; worldsvc's playerWorld.familyId is a
         // join-time-only mirror that never reflects a family created/joined afterward.

@@ -49,6 +49,12 @@ export class FakeMeta implements SocialMetaClient {
     }
     return out;
   }
+
+  async getPlayerRank(accountId: string): Promise<{ rank?: string; elo?: number } | null> {
+    const p = this.byAccount.get(accountId);
+    if (!p) return null;
+    return { ...(p.rank ? { rank: p.rank } : {}) };
+  }
 }
 
 /** Recording SocialGatewayClient. Captures every push/pushMany; presence is configurable. */

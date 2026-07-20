@@ -45,6 +45,7 @@ function buildScene(): any {
   const cb = {
     onBack() {}, onOpenSect() {}, onNavTab() {},
     worldApi, worldId: 'w1', myAccountId: 'me', playerName: 'tao',
+    getFriendPublicIds: async () => new Set<string>(),
   };
   const scene = new FamilyScene(createLayout(390, 844), new InputManager(), cb as any) as any;
   const toasts: { msg: string; color: number }[] = [];

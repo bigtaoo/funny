@@ -130,7 +130,13 @@ export function WorldChatMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase):
     }
 
     private openWorldSenderProfile(m: WorldChatMessage): void {
-      this.popup.show({ name: m.senderName, publicId: m.senderPublicId });
+      this.popup.show({
+        name: m.senderName,
+        publicId: m.senderPublicId,
+        ...(m.title ? { equippedTitle: m.title } : {}),
+        ...(m.familyName ? { familyName: m.familyName } : {}),
+        ...(m.sectName ? { sectName: m.sectName } : {}),
+      });
     }
   };
 }

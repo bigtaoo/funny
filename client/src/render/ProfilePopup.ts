@@ -41,6 +41,10 @@ export interface ProfileData {
   equippedTitle?: string;
   /** Equipped avatar id (composite "<category>:<key>", see render/avatar.ts); omit for the letter-initial fallback. */
   avatarId?: string;
+  /** Family (家族) name, if the player is in one; omit to hide the line. */
+  familyName?: string;
+  /** Sect (帮会/宗门) name, if the player's family is in one; omit to hide the line. */
+  sectName?: string;
   /**
    * Optional action buttons rendered above Close (e.g. Send Message / Block from the friends
    * list). Each runs its `fn` then auto-closes the popup. Omit for display-only cards.
@@ -60,6 +64,14 @@ export class ProfilePopup {
 
   private open = false;
   private readonly card: PIXI.Container;
+
+  // Card bounds + button rects in container-space (design space), refreshed on every show() —
+  // back the manual hitTest() fallback below.
+  private cardX = 0;
+  private cardY = 0;
+  private cardW = 0;
+  private cardH = 0;
+  private tapRects: Array<{ x: number; y: number; w: number; h: number; action: () => void }> = [];
 
   constructor(
     private readonly w: number,
@@ -92,11 +104,14 @@ export class ProfilePopup {
   /** Build + reveal the card for `data`. */
   show(data: ProfileData): void {
     tearDownChildren(this.card);
+    this.tapRects = [];
 
-    const cardW = Math.min(Math.round(this.w * 0.78), 420);
-    const cardH = Math.round(Math.min(this.h * 0.5, 360));
+    // Caps doubled from the original 420×360 (2026-07-20: card read as too small to use comfortably).
+    const cardW = Math.min(Math.round(this.w * 0.78), 840);
+    const cardH = Math.round(Math.min(this.h * 0.5, 720));
     const cardX = (this.w - cardW) / 2;
     const cardY = (this.h - cardH) / 2;
+    this.cardX = cardX; this.cardY = cardY; this.cardW = cardW; this.cardH = cardH;
 
     const bg = new PIXI.Graphics();
     bg.beginFill(palette.paper);
@@ -170,7 +185,7 @@ export class ProfilePopup {
       yBottom = titleLine.y + titleLine.height;
     }
 
-    // Rank / ELO line (optional — only the local player carries this today).
+    // Rank / ELO line (optional).
     if (data.rankKey) {
       const rankName = t(('rank.' + data.rankKey.replace(/^rank\./, '')) as TranslationKey);
       const eloPart = data.elo !== undefined ? `  ·  ELO ${data.elo}` : '';
@@ -181,6 +196,21 @@ export class ProfilePopup {
       rankLine.x = cardW / 2;
       rankLine.y = yBottom + cardH * 0.025;
       this.card.addChild(rankLine);
+      yBottom = rankLine.y + rankLine.height;
+    }
+
+    // Family (家族) / sect (帮会) line (optional — either or both may be present).
+    if (data.familyName || data.sectName) {
+      const parts: string[] = [];
+      if (data.familyName) parts.push(`${t('profile.family')} ${data.familyName}`);
+      if (data.sectName) parts.push(`${t('profile.sect')} ${data.sectName}`);
+      const orgLine = makeText(parts.join('   '), {
+        fontSize: snapFont(Math.round(cardH * 0.05)), fill: palette.pencil, fontFamily: 'monospace',
+      });
+      orgLine.anchor.set(0.5, 0);
+      orgLine.x = cardW / 2;
+      orgLine.y = yBottom + cardH * 0.025;
+      this.card.addChild(orgLine);
     }
 
     // Close button.
@@ -214,6 +244,7 @@ export class ProfilePopup {
         al.anchor.set(0.5, 0.5);
         al.x = ax + aW / 2; al.y = aY + aH / 2;
         this.card.addChild(al);
+        this.tapRects.push({ x: cardX + ax, y: cardY + aY, w: aW, h: aH, action: () => { this.hide(); act.fn(); } });
       });
     }
     const btn = new PIXI.Graphics();
@@ -223,6 +254,7 @@ export class ProfilePopup {
     btn.cursor = 'pointer';
     btn.on('pointertap', () => this.hide());
     this.card.addChild(btn);
+    this.tapRects.push({ x: cardX + bX, y: cardY + bY, w: bW, h: bH, action: () => this.hide() });
 
     const btnLabel = makeText(t('profile.close'), {
       fontSize: snapFont(Math.round(bH * 0.42)), fill: hudButtonText('primary'), fontWeight: 'bold', fontFamily: 'monospace',
@@ -234,6 +266,26 @@ export class ProfilePopup {
 
     this.open = true;
     this.container.visible = true;
+  }
+
+  /**
+   * Manual hit-test fallback for host scenes whose input runs through a custom InputManager
+   * instead of genuine PIXI pointer events (FamilyScene, FriendsScene, GameRenderer, RoomScene —
+   * they all swallow their own manual hit-testing while `isOpen` and rely on this popup's own
+   * `eventMode`/`pointertap` wiring above to handle the close/action taps). Call this from the
+   * host's own pointer-up handling as a guaranteed-working second path; safe to call even when the
+   * native PIXI events also fire for the same tap — whichever runs first flips `open`/`visible` to
+   * false, so the second one is always a no-op (checked fresh via `this.open`, not a cached copy).
+   * Returns true whenever the popup was open (the caller should always swallow the tap in that case).
+   */
+  handleTap(x: number, y: number): boolean {
+    if (!this.open) return false;
+    for (const r of this.tapRects) {
+      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { r.action(); return true; }
+    }
+    const insideCard = x >= this.cardX && x <= this.cardX + this.cardW && y >= this.cardY && y <= this.cardY + this.cardH;
+    if (!insideCard) this.hide();
+    return true;
   }
 
   /** Copy the public id to clipboard and briefly swap the line's text to confirm. */
@@ -248,6 +300,7 @@ export class ProfilePopup {
   hide(): void {
     this.open = false;
     this.container.visible = false;
+    this.tapRects = [];
     tearDownChildren(this.card);
   }
 

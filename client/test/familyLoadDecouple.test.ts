@@ -29,6 +29,7 @@ class FakeBase {
       getMyFamily: vi.fn().mockResolvedValue(FAM),
       getFamilyChannel: vi.fn().mockResolvedValue([]),
     },
+    getFriendPublicIds: vi.fn().mockResolvedValue(new Set()),
   };
   render = vi.fn();
 }

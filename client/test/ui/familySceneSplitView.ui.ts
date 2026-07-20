@@ -68,6 +68,7 @@ function buildScene(w: number, h: number, family: FamilyDetailView, messages: Fa
   const cb = {
     onBack() {}, onOpenSect() {}, onNavTab() {},
     worldApi, worldId: 'w1', myAccountId: 'me', playerName: 'tao',
+    getFriendPublicIds: async () => new Set<string>(),
   };
   return new FamilyScene(createLayout(w, h), new InputManager(), cb as any);
 }
@@ -85,6 +86,7 @@ function buildSceneAtWidth(w: number, h: number, orientation: 'portrait' | 'land
   const cb = {
     onBack() {}, onOpenSect() {}, onNavTab() {},
     worldApi, worldId: 'w1', myAccountId: 'me', playerName: 'tao',
+    getFriendPublicIds: async () => new Set<string>(),
   };
   const layout = { designWidth: w, designHeight: h, orientation } as any;
   return new FamilyScene(layout, new InputManager(), cb as any);

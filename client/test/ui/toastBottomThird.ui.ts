@@ -108,7 +108,10 @@ describe('scene showToast() routes to the global toast sink (success/error kind)
 
   it('FamilyScene: neutral default → success, C.red → error', () => {
     const worldApi = { getMyFamily: () => new Promise<never>(() => {}) } as unknown as WorldApiClient;
-    const cb = { onBack() {}, onOpenSect() {}, onNavTab() {}, worldApi, worldId: 'w1', myAccountId: 'me', playerName: 'tao' };
+    const cb = {
+      onBack() {}, onOpenSect() {}, onNavTab() {}, worldApi, worldId: 'w1', myAccountId: 'me', playerName: 'tao',
+      getFriendPublicIds: async () => new Set<string>(),
+    };
     const scene = new FamilyScene(createLayout(W, H), new InputManager(), cb as any) as any;
     scene.showToast(MSG);
     expect(sink).toHaveBeenLastCalledWith(MSG, 'success');

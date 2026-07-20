@@ -104,7 +104,7 @@ function expectBlinkingCaret(
 describe('FamilyScene — create-form caret', () => {
   function build(): any {
     return new FamilyScene(createLayout(W, H), new InputManager(), {
-      onBack() {}, onOpenSect() {}, onNavTab() {}, async addFriend() {},
+      onBack() {}, onOpenSect() {}, onNavTab() {}, async addFriend() {}, async getFriendPublicIds() { return new Set<string>(); },
       worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: 'acc_test', playerName: 'Tester',
     });
   }

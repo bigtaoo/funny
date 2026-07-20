@@ -10,6 +10,8 @@ export interface SocialMetaClient {
   resolveByPublicId(publicId: string): Promise<{ accountId: string; profile: ProfileView } | null>;
   /** Batch accountId → profile map (missing accountIds are silently skipped). */
   batchProfiles(accountIds: string[]): Promise<Map<string, ProfileView>>;
+  /** Ladder rank + ELO for one accountId (unified profile popup, S8-4 family/friends rank display). Null on lookup failure. */
+  getPlayerRank(accountId: string): Promise<{ rank?: string; elo?: number } | null>;
 }
 
 export class HttpSocialMetaClient implements SocialMetaClient {
@@ -53,10 +55,25 @@ export class HttpSocialMetaClient implements SocialMetaClient {
     }
     return out;
   }
+
+  async getPlayerRank(accountId: string): Promise<{ rank?: string; elo?: number } | null> {
+    try {
+      const res = await fetch(
+        `${this.baseUrl}/internal/player?accountId=${encodeURIComponent(accountId)}`,
+        { headers: internalHeaders('socialsvc', this.internalKey) },
+      );
+      if (!res.ok) return null;
+      const data = (await res.json()) as { rank?: string; elo?: number };
+      return { ...(data.rank ? { rank: data.rank } : {}), ...(data.elo !== undefined ? { elo: data.elo } : {}) };
+    } catch {
+      return null;
+    }
+  }
 }
 
 export const nullSocialMetaClient: SocialMetaClient = {
   available: false,
   async resolveByPublicId() { return null; },
   async batchProfiles() { return new Map(); },
+  async getPlayerRank() { return null; },
 };

@@ -53,6 +53,7 @@ function buildScene(w: number, h: number, messages: FamilyMessageView[]): any {
   const cb = {
     onBack() {}, onOpenSect() {}, onNavTab() {},
     worldApi, worldId: 'w1', myAccountId: 'me', playerName: 'tao',
+    getFriendPublicIds: async () => new Set<string>(),
   };
   // Landscape split view keeps the channel column permanently visible (no tab switch needed).
   const layout = { designWidth: w, designHeight: h, orientation: 'landscape' } as any;

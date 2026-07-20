@@ -16,6 +16,7 @@ import {
 import type { FamilyService } from './familyService';
 import type { FriendService } from './friendService';
 import type { MailService } from './mailService';
+import type { SocialMetaClient } from './metaClient';
 import type { SocialGatewayClient, SocialPushMsg } from './gatewayClient';
 import { CHAT_SEND_RATE_PER_MIN, type ChatRegion } from '@nw/shared';
 
@@ -117,6 +118,7 @@ export function startHttpApi(
   friendSvc: FriendService,
   mailSvc: MailService,
   gateway: SocialGatewayClient,
+  meta: SocialMetaClient,
 ): Server {
   const internalAuth = loadInternalAuth(opts.internalKey);
 
@@ -442,6 +444,17 @@ export function startHttpApi(
               return send(res, 200, ok(await familySvc.sendMessage(accountId, senderName, msgBody)));
             }
             void familyId; // suppress unused var
+          }
+        }
+
+        // Ladder rank + ELO for an arbitrary player (unified profile popup — family roster / world chat
+        // sender / friends list all open the same popup and want the same "rank" line self-profile already had).
+        {
+          const m = /^\/social\/player\/([^/]+)\/rank$/.exec(path);
+          if (method === 'GET' && m) {
+            const targetId = decodeURIComponent(m[1]!);
+            const rank = await meta.getPlayerRank(targetId);
+            return send(res, 200, ok(rank ?? {}));
           }
         }
 

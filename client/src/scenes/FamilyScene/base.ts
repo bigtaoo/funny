@@ -41,6 +41,8 @@ export interface FamilySceneCallbacks {
   playerName: string;
   /** Send a friend request to another player (unified profile popup's "Add Friend" action). */
   addFriend(publicId: string): Promise<void>;
+  /** publicIds of the caller's current friends — hides "Add Friend" on rows that are already friends. */
+  getFriendPublicIds(): Promise<Set<string>>;
 }
 
 export type FamilyTab = 'members' | 'channel';
@@ -67,6 +69,9 @@ export class FamilySceneBase {
   protected messages: FamilyMessageView[] = [];
   /** Pending join requests for my family — populated only when I'm a leader/elder (see isFamilyApprover). */
   protected joinRequests: FamilyJoinRequestView[] = [];
+  /** publicIds of the caller's current friends (see FamilySceneCallbacks.getFriendPublicIds) — gates the
+   *  member-profile popup's "Add Friend" action so it doesn't show on rows that are already friends. */
+  protected friendPublicIds: Set<string> = new Set();
 
   protected bodyLayer!: PIXI.Container;
   protected modalLayer!: PIXI.Container;
@@ -380,7 +385,11 @@ export class FamilySceneBase {
     this.scrollDirty = true;
   }
 
-  handleUp(_x: number, _y: number): void {
+  handleUp(x: number, y: number): void {
+    // Popup taps never reach `gesture` (handleDown returned before arming it while open) — route
+    // them through the popup's own manual hit-test instead of trusting its PIXI-native pointertap
+    // alone (see ProfilePopup.handleTap doc comment: safe even if that native path also fires).
+    if (this.profilePopup.isOpen) { this.profilePopup.handleTap(x, y); return; }
     // Fires only for a genuine tap (pointer didn't drag); a released drag returns null.
     this.gesture.up()?.();
   }
@@ -406,21 +415,36 @@ export class FamilySceneBase {
 
   // ── Member profile popup ──────────────────────────────────────────────────
 
-  /** Opens the unified profile popup for a roster row; adds an "Add Friend" action unless it's my own row. */
+  /** accountId the popup is currently showing — guards the async rank refresh below against a stale reply
+   *  landing after the popup was closed or reopened for someone else. */
+  private profileAccountId: string | null = null;
+
+  /** Opens the unified profile popup for a roster row; adds an "Add Friend" action unless it's my own
+   *  row or we're already friends. Shows instantly with what the roster already has, then patches in
+   *  the ladder rank once the (async) lookup resolves. */
   protected openMemberProfile(mem: FamilyMemberView): void {
     const isMe = mem.accountId === this.cb.myAccountId;
+    const alreadyFriend = !!mem.publicId && this.friendPublicIds.has(mem.publicId);
     const actions: ProfileAction[] = [];
-    if (!isMe && mem.publicId) {
+    if (!isMe && mem.publicId && !alreadyFriend) {
       const publicId = mem.publicId;
       actions.push({ labelKey: 'friends.add', fn: () => void this.doAddFriend(publicId) });
     }
-    this.profilePopup.show({
-      name: mem.displayName ?? mem.publicId ?? '',
+    const base = {
+      name: mem.displayName ?? mem.publicId ?? t('family.unknownMember'),
       publicId: mem.publicId ?? '',
       isSelf: isMe,
       actions,
       ...(mem.avatarId ? { avatarId: mem.avatarId } : {}),
-    });
+      ...(this.family?.name ? { familyName: this.family.name } : {}),
+      ...(this.family?.sectName ? { sectName: this.family.sectName } : {}),
+    };
+    this.profilePopup.show(base);
+    this.profileAccountId = mem.accountId;
+    void this.cb.worldApi.getPlayerRank(mem.accountId).then((r) => {
+      if (this.destroyed || this.profileAccountId !== mem.accountId || !this.profilePopup.isOpen || !r.rank) return;
+      this.profilePopup.show({ ...base, rankKey: r.rank, ...(r.elo !== undefined ? { elo: r.elo } : {}) });
+    }).catch(() => { /* best-effort — popup stays without a rank line */ });
   }
 
   private async doAddFriend(publicId: string): Promise<void> {
