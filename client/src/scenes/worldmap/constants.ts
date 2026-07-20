@@ -10,13 +10,6 @@ export const CONFIRM_H = 280;
 // the isometric city art, so the drawn building visually fills its 3×3 block instead of floating small.
 export const BASE_SPRITE_TILES = 3.2;
 
-// Train economy mirrors (DRAFT; server @nw/shared is authoritative — these only
-// size the client's preview/cost estimates for the C4 panel). Keep in sync with
-// shared/slg.ts TROOP_TRAIN_INK_COST / TROOP_SPEEDUP_SECS_PER_COIN / *_BATCH_MAX.
-export const TRAIN_INK_PER         = 10;
-export const TRAIN_SPEEDUP_PER_COIN = 60; // seconds shortened per coin
-export const TRAIN_BATCH_MAX       = 500;
-export const TRAIN_PRESETS         = [10, 50];
 /** Coin cost for a voluntary capital relocation (display only; server @nw/shared RELOCATE_COST is authoritative). */
 export const RELOCATE_COST = 500;
 /** Resource cost to build a watchtower (display only; server @nw/shared WATCHTOWER_COST is authoritative). */

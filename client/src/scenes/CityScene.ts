@@ -33,6 +33,9 @@ import {
   CABINET_CAP_STEP,
   DRILL_TROOPCAP_STEP,
   DRILL_TRAIN_SPEED_STEP,
+  TROOP_TRAIN_INK_COST,
+  TROOP_TRAIN_BATCH_MAX,
+  TROOP_SPEEDUP_SECS_PER_COIN,
   baseDurabilityMax,
   ACADEMY_HP_STEP,
   ACADEMY_DAMAGE_STEP,
@@ -63,9 +66,6 @@ export interface CitySceneCallbacks {
   onBack(): void;
   worldApi: WorldApiClient;
   worldId: string;
-  /** Called after a successful troop training to keep map troop count fresh. */
-  onTrainTroops?(qty: number): Promise<PlayerWorldView>;
-  onSpeedupTraining?(coins: number): Promise<PlayerWorldView>;
   getCoins?(): number;
   /** Tapping a team card on the military page opens that team's formation editor (D-CITY-10). */
   onEditTeam?(teamId: string, teamName: string): void;
@@ -278,6 +278,39 @@ export class CityScene implements Scene {
     this.render();
     try {
       this.me = await this.cb.worldApi.speedupBuild(this.cb.worldId, key, coins);
+      this.showToast(t('city.speedupDone'), C.green as number);
+    } catch {
+      this.showToast(t('city.err.generic'), C.red as number);
+    } finally {
+      this.bt.stop();
+    }
+    this.render();
+  }
+
+  private async doTrain(qty: number): Promise<void> {
+    if (this.bt.busy || qty <= 0) return;
+    this.bt.start();
+    this.render();
+    try {
+      this.me = await this.cb.worldApi.trainTroops(this.cb.worldId, qty);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : '';
+      if (msg.includes('ink')) this.showToast(t('city.err.noInk'), C.red as number);
+      else if (msg.includes('cap')) this.showToast(t('city.err.troopCap'), C.red as number);
+      else if (msg.includes('queue')) this.showToast(t('city.err.trainQueueFull'), C.red as number);
+      else this.showToast(t('city.err.generic'), C.red as number);
+    } finally {
+      this.bt.stop();
+    }
+    this.render();
+  }
+
+  private async doSpeedupTraining(coins: number): Promise<void> {
+    if (this.bt.busy) return;
+    this.bt.start();
+    this.render();
+    try {
+      this.me = await this.cb.worldApi.speedupTraining(this.cb.worldId, coins);
       this.showToast(t('city.speedupDone'), C.green as number);
     } catch {
       this.showToast(t('city.err.generic'), C.red as number);
@@ -872,9 +905,10 @@ export class CityScene implements Scene {
     const bonusLines = this.buildingBonusLines(key, bld);
     const mw = Math.min(340, w - 24);
     const costEntries = RESOURCE_TYPES.map((rt) => ({ rt, need: cost[rt] ?? 0 })).filter((e) => e.need > 0);
+    const trainQueue = key === 'drillYard' ? (this.me?.trainingQueue ?? []) : [];
     const contentH = 12 + 28 + bonusLines.length * 16 + 4
       + (atMax ? 20 : (16 + (costEntries.length > 0 ? 16 : 0) + 24 + 36))
-      + (key === 'drillYard' ? 24 : 0)
+      + (key === 'drillYard' ? (20 + trainQueue.length * 16 + 4 + 36 + (trainQueue.length > 0 ? 34 : 0)) : 0)
       + 12;
     const mh = Math.min(contentH, h - 16);
 
@@ -993,7 +1027,9 @@ export class CityScene implements Scene {
       }
     }
 
-    // DrillYard special: show troop cap info
+    // DrillYard special: troop cap + training queue + train/speedup controls — the only
+    // reachable entry point for trainTroops()/speedupTraining() since the 2026-07-18 removal
+    // of the old world-map train panel (which assumed this modal already covered it).
     if (key === 'drillYard') {
       const tc = troopCapFor(bld);
       const ts = this.me?.troops ?? 0;
@@ -1001,6 +1037,78 @@ export class CityScene implements Scene {
       troopLbl.x = 10;
       troopLbl.y = iy;
       panelRoot.addChild(troopLbl);
+      iy += 20;
+
+      const queuedQty = trainQueue.reduce((s, e) => s + e.qty, 0);
+      const queueMax = trainQueueMaxFor(bld);
+      const queueFull = trainQueue.length >= queueMax;
+      const capLeft = Math.max(0, tc - ts - queuedQty);
+      const ink = Math.floor(resources?.ink ?? 0);
+      const now = Date.now();
+      for (const e of trainQueue) {
+        const sec = Math.max(0, Math.ceil((e.completeAt - now) / 1000));
+        const ql = st(t('city.trainEntry').replace('{n}', String(e.qty)).replace('{time}', formatDuration(sec)), FS.tiny, C.dark);
+        ql.x = 10;
+        ql.y = iy;
+        panelRoot.addChild(ql);
+        iy += 16;
+      }
+
+      const maxQty = Math.max(0, Math.min(TROOP_TRAIN_BATCH_MAX, capLeft, Math.floor(ink / TROOP_TRAIN_INK_COST)));
+      const presets: Array<{ label: string; qty: number }> = [
+        { label: '+10', qty: 10 },
+        { label: '+50', qty: 50 },
+        { label: t('city.trainMax').replace('{n}', String(maxQty)), qty: maxQty },
+      ];
+      const btnGap = 6;
+      const btnW = (mw - 20 - btnGap * 2) / 3;
+      let bx = 10;
+      for (const p of presets) {
+        const ok = !queueFull && p.qty > 0 && p.qty <= capLeft && p.qty * TROOP_TRAIN_INK_COST <= ink;
+        const rectLocal = { x: bx, y: iy, w: btnW, h: 30 };
+        const g = sketchPanel(rectLocal.w, rectLocal.h, {
+          fill: ok ? C.paper : C.btnDis, border: C.line, width: 1, seed: seedFor(rectLocal.x, rectLocal.y, rectLocal.w),
+        });
+        g.x = rectLocal.x;
+        g.y = rectLocal.y;
+        panelRoot.addChild(g);
+        const lbl = st(p.label, FS.tiny, ok ? C.dark : C.mid, true);
+        lbl.x = rectLocal.x + 6;
+        lbl.y = rectLocal.y + (rectLocal.h - 16) / 2;
+        panelRoot.addChild(lbl);
+        const screenRect = this.toScreen(rectLocal, screenX, screenY, scale);
+        this.hits.push({
+          x: screenRect.x, y: screenRect.y, w: screenRect.w, h: screenRect.h,
+          fn: () => {
+            if (ok) { void this.doTrain(p.qty); return; }
+            this.showToast(queueFull ? t('city.err.trainQueueFull') : (p.qty <= 0 || p.qty > capLeft ? t('city.err.troopCap') : t('city.err.noInk')), C.red);
+          },
+        });
+        bx += btnW + btnGap;
+      }
+      iy += 36;
+
+      if (trainQueue.length > 0) {
+        const lastDone = trainQueue[trainQueue.length - 1]!.completeAt;
+        const remainSec = Math.max(0, Math.ceil((lastDone - now) / 1000));
+        const coins = Math.max(1, Math.ceil(remainSec / TROOP_SPEEDUP_SECS_PER_COIN));
+        const rectLocal = { x: 10, y: iy, w: mw - 20, h: 30 };
+        const g = sketchPanel(rectLocal.w, rectLocal.h, {
+          fill: C.paper, border: C.accent, width: 1, seed: seedFor(rectLocal.x, rectLocal.y, rectLocal.w),
+        });
+        g.x = rectLocal.x;
+        g.y = rectLocal.y;
+        panelRoot.addChild(g);
+        const lbl = st(t('city.speedup').replace('{coins}', String(coins)), FS.tiny, C.dark, true);
+        lbl.x = rectLocal.x + 8;
+        lbl.y = rectLocal.y + (rectLocal.h - 16) / 2;
+        panelRoot.addChild(lbl);
+        const screenRect = this.toScreen(rectLocal, screenX, screenY, scale);
+        this.hits.push({
+          x: screenRect.x, y: screenRect.y, w: screenRect.w, h: screenRect.h,
+          fn: () => void this.doSpeedupTraining(coins),
+        });
+      }
     }
 
     // Close on tap-outside — pushed LAST so panel buttons above take priority.
