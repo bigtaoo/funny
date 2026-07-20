@@ -137,7 +137,7 @@ class PixiAppViews implements AppViews {
     this.manager.goto(scene, { fade: !this.resizing && !!opts?.fade });
     window.addEventListener('resize', this.onResize);
     return {
-      applySocialBadge: (n) => scene.applySocialBadge(n),
+      applySocialBadge: (n, mail) => scene.applySocialBadge(n, mail),
       applyAchievementBadge: (c) => scene.applyAchievementBadge(c),
       applyShopBadge: (c) => scene.applyShopBadge(c),
       applyRetentionBadge: (c) => scene.applyRetentionBadge(c),

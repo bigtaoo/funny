@@ -60,7 +60,7 @@ import type { CitySceneCallbacks } from '../scenes/CityScene';
 /** Live handle for the lobby scene — the core pushes the aggregate social badge into it. */
 export interface LobbyView {
   /** Update the social (friends/chat/mail) unread total shown on the bottom-nav dot. */
-  applySocialBadge(total: number): void;
+  applySocialBadge(total: number, mail: number): void;
   /** Toggle the achievement-claimable red dot on the stats nav slot (ACHIEVEMENT_DESIGN §4.1). */
   applyAchievementBadge(claimable: boolean): void;
   /** Toggle the monthly/year-card daily-reward-claimable red dot on the shop nav slot. */

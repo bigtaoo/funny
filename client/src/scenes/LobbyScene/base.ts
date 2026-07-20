@@ -263,6 +263,8 @@ export class LobbySceneBase {
 
   /** Aggregate social unread (friends + chat + mail) → red dot on the social nav slot. */
   protected socialBadge = 0;
+  /** Mail-only unread count → red dot on the dedicated mail strip item (must not include friend/chat unread). */
+  protected mailBadge = 0;
   /** Re-drawn layer for the social badge so updates don't rebuild the whole nav bar. */
   protected socialBadgeLayer: PIXI.Container | null = null;
   /** Any achievement tier is claimable (ACHIEVEMENT_DESIGN §4.1) → red dot on the stats nav slot. */
