@@ -32,9 +32,9 @@ type Captured = {
  * without isolation they bleed into each other. Globals are injected via vi.stubGlobal
  * (Node's built-in navigator is read-only and throws on direct assignment).
  */
-async function freshAnomaly(opts: { base?: string; publicId?: string | null } = {}): Promise<{
+async function freshAnomaly(opts: { base?: string; publicId?: string | null; longTaskObserver?: boolean } = {}): Promise<{
   mod: typeof import('../src/net/anomaly');
-  cap: Captured;
+  cap: Captured & { fireLongTask?: (entries: Array<{ startTime: number; duration: number }>) => void };
 }> {
   vi.resetModules();
   delete (globalThis as Record<string, unknown>).__nwAnomalyHooked; // release the one-shot installation gate
@@ -66,13 +66,29 @@ async function freshAnomaly(opts: { base?: string; publicId?: string | null } = 
   vi.stubGlobal('__NW_API_BASE__', opts.base ?? API_BASE);
   vi.stubGlobal('TARGET', undefined); // platformName() → 'web'
 
-  const cap: Captured = {
+  const cap: Captured & { fireLongTask?: (entries: Array<{ startTime: number; duration: number }>) => void } = {
     fetch: fetchMock,
     sendBeacon,
     store,
     doc,
     fire: (type, ev) => (listeners.get(type) ?? []).forEach((f) => f(ev)),
   };
+
+  // Long Tasks API (Chromium-only): feature-detected via `PerformanceObserver.supportedEntryTypes`.
+  // Only stubbed when a test opts in, so existing tests (no PerformanceObserver global) keep
+  // exercising the "observer unsupported/inactive" path, unaffected by the new suppression logic.
+  if (opts.longTaskObserver) {
+    let observerCb: ((list: { getEntries: () => Array<{ startTime: number; duration: number }> }) => void) | null = null;
+    class FakePerformanceObserver {
+      static supportedEntryTypes = ['longtask'];
+      constructor(cb: typeof observerCb) { observerCb = cb; }
+      observe(): void { /* no-op: entries are injected manually via cap.fireLongTask */ }
+      disconnect(): void { /* no-op */ }
+    }
+    vi.stubGlobal('PerformanceObserver', FakePerformanceObserver);
+    cap.fireLongTask = (entries) => observerCb?.({ getEntries: () => entries });
+  }
+
   const mod = await import('../src/net/anomaly');
   return { mod, cap };
 }
@@ -247,6 +263,37 @@ describe('ANR watchdog: backgrounded tab does not report a false stall (Bug: hid
     expect(detail.scene).toBe('WorldMapScene');
     expect(detail.gpu.baseTex).toBe(1105);
     expect(detail.stallMs).toBeGreaterThan(4000);
+  });
+
+  it('Long Tasks observer active + zero long tasks in the stall window → anr is suppressed (not sent, per FEATURE_FLAGS_DESIGN §9.7 2026-07-20)', async () => {
+    const { mod, cap } = await freshAnomaly({ publicId: PUBLIC_ID, longTaskObserver: true });
+    mod.installAnomalyWatchers();
+    await vi.advanceTimersByTimeAsync(1000);
+
+    vi.setSystemTime(new Date(Date.now() + 20_000)); // genuine visible stall, but Long Tasks API saw nothing
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(1500);
+
+    expect(cap.fetch).not.toHaveBeenCalled(); // confirmed thread suspension, not app code — suppressed locally
+  });
+
+  it('Long Tasks observer active but a long task overlaps the stall window → anr IS still reported with longTaskMs', async () => {
+    const { mod, cap } = await freshAnomaly({ publicId: PUBLIC_ID, longTaskObserver: true });
+    mod.installAnomalyWatchers();
+    await vi.advanceTimersByTimeAsync(1000);
+
+    vi.setSystemTime(new Date(Date.now() + 20_000));
+    // Inject a long-task entry overlapping the stall window before the watchdog's tick fires.
+    const origin = (globalThis as { performance: { timeOrigin: number } }).performance.timeOrigin;
+    cap.fireLongTask?.([{ startTime: Date.now() - origin, duration: 5000 }]);
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(1500);
+
+    expect(cap.fetch).toHaveBeenCalledTimes(1);
+    const body = JSON.parse((cap.fetch.mock.calls[0] as [string, RequestInit])[1].body as string);
+    const detail = JSON.parse(body.events[0].detail as string);
+    expect(detail.longTaskMs).toBeGreaterThan(0);
+    expect(detail.longTaskCount).toBe(1);
   });
 
   it('a throwing context provider never breaks the anr report', async () => {

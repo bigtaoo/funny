@@ -457,3 +457,13 @@ client_log_debug: { default: false, desc: '客户端日志上报-debug', side: '
 `anrContext()` 签名改为 `anrContext(stallSince?: number)`,`installAnrWatchdog` 调用时传入 `expected - WATCH_MS`。三个信号全部 feature-detect,不支持的浏览器(WeChat/Safari/Firefox)直接不生效,不影响现有上报。`tsc --noEmit` clean,`anomaly-chain.test.ts` 12/12 green,`client/test/` 全量 735/735 green(纯新增,未改动既有行为)。未提交(当日分支 `18.07.2026`)。
 
 **下一步**：等下一批线上 `anr` 日志,同时读六个字段(`longFrameMs`/`longConstructMs`/`longRenderMs`/`longTaskMs`/`longTaskCount`/`heapDeltaMB`)。三条"自己代码"路径 + longTask 都缺席 → 强烈指向真正的线程挂起(边界情况,考虑加更激进的挂起检测或直接接受为不可控);`heapDeltaMB` 大幅下降 → GC 停顿证据变实;`freeze`/`resume` crumb 配对出现在卡顿前后 → 是挂起检测的盲区被证实,需要扩大抑制逻辑或干脆把这类样本从"ANR"里过滤掉(它其实是正常的系统级挂起,不是 bug)。
+
+### 2026-07-20 · 确认「真挂起」后不再上报,而非继续加埋点(§9.7 anr)
+
+**动机**：2026-07-20 拿到 build `dc57b610`/`e530218d` 的第一批「六字段全部部署」线上日志——11 条 `anr`(4-54s)**全部**同时缺席 `longFrameMs`/`longConstructMs`/`longRenderMs`/`longTaskMs`/`longTaskCount`,而 `heapMB` 每条都有值(说明这些浏览器确实是 Chromium,Long Tasks API 的"零任务"读数不是"不支持"的假阴性,是真的零)。按 §9.7 一路铺垫的判定链:三条自己代码路径 + Long Tasks API 全暗 = 主线程这段时间根本没在跑 JS = 系统/浏览器级线程挂起,不是能修的应用 bug。此时用户明确要求:"目前只有三个人,每天都上报几百条日志,上线后没法辨别真假问题;如果认为是系统问题、我们修不了,就不要上报"。
+
+**实现**:`installAnrWatchdog()` 里,当 `longTaskObserverActive`(Long Tasks observer 已确认在跑)且这次 stall 窗口内 `longTasksSince(...)` 返回空(即 `anrContext()` 的结果里没有 `longTaskMs`)时,判定为"确认的系统级线程挂起",**不再调用 `reportAnomaly('anr', ...)`**,只留一条本地 `log.info` 方便本机调试。其余情况(observer 不支持/未激活的浏览器,或确实观测到 long task 说明主线程真的在跑东西)照常上报——保证在证据不足以下结论时,宁可多报不误杀。
+
+**为什么只查 `longTaskMs` 一个字段就够**:Long Tasks API 捕获主线程上**任何**来源、≥50ms 的任务,包括我们自己的 `scene.update()`/构造函数/`renderer.render()`——所以只要 `longFrameMs`/`longConstructMs`/`longRenderMs` 里有一个会触发,对应的时间窗口也必然会被记成一次 long task。反过来,`longTaskMs` 缺席时,这三个字段也必然同时缺席,单独查它是这四个信号里最强、最简洁的充分条件。
+
+`net/anomaly.ts` 新增 `longTaskObserverActive` 标志(在 `installLongTaskObserver()` 里,`observe()` 调用成功后置位,和"是否支持"绑在一起,不依赖是否观测到过任何具体的 task)。`anomaly-chain.test.ts` 新增 2 条回归测试(用 fake `PerformanceObserver` 模拟"激活但零 task" vs "激活且有重叠 task"两种场景),14/14 green,`tsc --noEmit` clean。范围**只限于 `anr`**——`mem`/`cpu`/`jserror`/`crash` 没有等价的"已确认不可修"证据链,继续照常上报。
