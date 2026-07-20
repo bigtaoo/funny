@@ -39,6 +39,11 @@ export function drawSocialTabRail(
   badges: Partial<Record<SocialTab, number>>,
   onSelect: (tab: SocialTab) => void,
   hidden: SocialTab[] = [],
+  // Only FriendsScene needs the active cell to be tappable (re-tapping the active Mail tab backs
+  // out of a drilled-in detail view to that tab's list — see switchTab()'s same-tab re-tap branch).
+  // FamilyScene/SectScene keep the convention every other hub tab bar follows: the active cell has
+  // no hit rect at all, so it defaults off here.
+  activeTappable = false,
 ): SocialTabRailHit[] {
   const railW = sidebarNavW(w, h, landscape);
   const defs = TAB_DEFS.filter((tabDef) => !hidden.includes(tabDef.id));
@@ -48,9 +53,6 @@ export function drawSocialTabRail(
     badge: (badges[tabDef.id] ?? 0) > 0,
   }));
 
-  // activeTappable: re-tapping the already-active tab must still fire onSelect — the social hub uses
-  // it to back out of a drilled-in detail view (an open mail) to that tab's list. Without this the
-  // active cell has no hit rect, so switchTab()'s same-tab re-tap branch could never be reached.
-  const { hits } = drawSidebarTabs(container, railW, top, h, tabs, (i) => onSelect(defs[i]!.id), { activeTappable: true });
+  const { hits } = drawSidebarTabs(container, railW, top, h, tabs, (i) => onSelect(defs[i]!.id), { activeTappable });
   return hits;
 }
