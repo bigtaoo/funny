@@ -394,7 +394,14 @@ export class ShopSceneBase {
     const targetW = Math.round(w * (landscape ? 0.24 : 0.30));
     const cols = Math.max(1, Math.floor((listW + gap) / (targetW + gap)));
     const cellW = Math.round((listW - gap * (cols - 1)) / cols);
-    const cellH = Math.round(cellW * 1.5);
+    // Cap the 1.5x portrait aspect against the *height* budget, not just derived from width: on a
+    // wide-but-vertically-short landscape window (LandscapeLayout grows designWidth to match the
+    // safe-area aspect while designHeight stays pinned, see ILayout), cellW keeps growing with the
+    // widened design width with nothing to check it, so an uncapped cellH can grow to rival the whole
+    // scrollable viewport height — leaving no room for scrollPeek's guaranteed next-row peek (or, at
+    // the extreme, clipping the row's own buttons). h * 0.6 keeps at least ~2 rows' worth of headroom
+    // below the body's ~0.84h viewport at any aspect.
+    const cellH = Math.min(Math.round(cellW * 1.5), Math.round(h * 0.6));
     return { listX, listW, gap, cols, cellW, cellH };
   }
 

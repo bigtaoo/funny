@@ -295,6 +295,8 @@ export const en: Record<TranslationKey, string> = {
   'profile.copied': 'Copied',
   'profile.rank': 'Rank',
   'profile.you': '(you)',
+  'profile.family': 'Family:',
+  'profile.sect': 'Sect:',
   'result.vs': 'vs {name}',
 
   // ── In-battle network status (S1-9) ─────────────────────────────────────────
@@ -928,6 +930,7 @@ export const en: Record<TranslationKey, string> = {
   'world.territoryTabList': 'Territory',
   'world.territoryEmpty': 'No territory yet',
   'world.territoryJump': 'Jump',
+  'world.weakGarrisonHint': 'Red = garrison below half the list median — reinforce',
   'world.err.troopCap': 'Troop cap reached',
   'world.err.noInk': 'Not enough ink',
   // Nations / season / shop panel (C5)
@@ -975,6 +978,7 @@ export const en: Record<TranslationKey, string> = {
   'family.leader': 'Leader',
   'family.elder': 'Elder',
   'family.member': 'Member',
+  'family.unknownMember': '(Unknown member)',
   'family.setElder': 'Promote to Elder',
   'family.setMember': 'Demote to Member',
   'family.kick': 'Kick',
@@ -1472,8 +1476,13 @@ export const en: Record<TranslationKey, string> = {
   'city.bonusSatchel': 'Per-march troop-carry cap: {n}',
   'city.trainPanel': 'Train Troops',
   'city.troopCap': 'Troops {cur}/{cap}',
+  'city.trainEntry': 'Training {n} · {time} left',
+  'city.trainMax': 'Max +{n}',
   'city.err.noResources': 'Not enough resources',
   'city.err.queueFull': 'Build queue is full',
+  'city.err.trainQueueFull': 'Training queue is full',
+  'city.err.troopCap': 'Troop cap reached',
+  'city.err.noInk': 'Not enough ink',
   'city.err.deskGate': 'Desk level too low',
   'city.err.generic': 'Action failed',
   'city.res.yield': 'Yield',

@@ -51,6 +51,21 @@ function findLabelPos(container: PIXI.Container, label: string): { x: number; y:
   return found;
 }
 
+/** Absolute top/bottom edge of the LAST Text node matching `label` (anchor-corrected; the whole
+ *  card tree hangs off body/container at 0,0, so node-local coords are already absolute here). */
+function labelBox(container: PIXI.Container, label: string): { top: number; bottom: number } | null {
+  let box: { top: number; bottom: number } | null = null;
+  const walk = (n: PIXI.Container): void => {
+    if (n instanceof PIXI.Text && n.text === label) {
+      const top = n.y - n.anchor.y * n.height;
+      box = { top, bottom: top + n.height };
+    }
+    for (const c of n.children) walk(c as PIXI.Container);
+  };
+  walk(container);
+  return box;
+}
+
 /** Tap the tab/field whose visible label is `label` via the scene's real hit list. */
 function tapLabel(scene: { container: PIXI.Container }, label: string): void {
   const pos = findLabelPos(scene.container, label);
@@ -509,21 +524,6 @@ describe('ShopScene — landscape shop grid is 3-up and the price never overlaps
       ...cb,
     });
 
-  /** Absolute top/bottom edge of the LAST Text node matching `label` (anchor-corrected; the whole
-   *  card tree hangs off body/container at 0,0, so node-local coords are already absolute here). */
-  function labelBox(container: PIXI.Container, label: string): { top: number; bottom: number } | null {
-    let box: { top: number; bottom: number } | null = null;
-    const walk = (n: PIXI.Container): void => {
-      if (n instanceof PIXI.Text && n.text === label) {
-        const top = n.y - n.anchor.y * n.height;
-        box = { top, bottom: top + n.height };
-      }
-      for (const c of n.children) walk(c as PIXI.Container);
-    };
-    walk(container);
-    return box;
-  }
-
   it('lays the grid out 3 columns wide in landscape', () => {
     const scene = buildLandscape({});
     const { cols } = (scene as unknown as { gridMetrics(): { cols: number } }).gridMetrics();
@@ -558,6 +558,83 @@ describe('ShopScene — landscape shop grid is 3-up and the price never overlaps
     expect(price, 'yuan price should render').not.toBeNull();
     expect(buy, 'buy button should render').not.toBeNull();
     expect(price!.bottom).toBeLessThanOrEqual(buy!.top);
+    scene.destroy();
+  });
+});
+
+// Regression coverage for the 2026-07-20 fix: on a wide-but-vertically-short landscape window,
+// LandscapeLayout grows `designWidth` to match the safe-area aspect (never narrower than the 1920
+// reference) while `designHeight` stays pinned at 1080 (see layout/LandscapeLayout.ts). gridMetrics()
+// derives cellW from the (now wider) design width and cellH = cellW*1.5 — with nothing checking cellH
+// against the *fixed* vertical scroll budget, a wide enough window made cellH rival or exceed the whole
+// scrollable viewport, leaving scrollPeek's peekViewportH (client/src/ui/widgets/scrollPeek.ts) zero
+// slack to guarantee its "always show a partial next row" affordance — the Coins/"Top Up" tier grid
+// rendered edge-to-edge with the second row of tiers completely invisible, indistinguishable from a
+// grid that simply had no more content below. gridMetrics() now caps cellH at `h * 0.6` so the cap
+// binds well before availH is exhausted, at any aspect ratio.
+describe('ShopScene — Coins tab always peeks the next tier row, even on a wide/short landscape window', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  // Matches the aspect ratio that reproduced the bug report (~2.12:1 CSS window) — wide enough that
+  // LandscapeLayout grows designWidth well past the 1920 reference (see LandscapeLayout.designWidth).
+  const buildWideCoins = (cb: Partial<ShopSceneCallbacks>): ShopScene =>
+    new ShopScene(createLayout(1896, 896), new InputManager(), {
+      onBack() {}, getCoins: () => 1000, getOwnedSkins: () => [],
+      loadItems: async () => [], buy: async () => ({ ok: true }), openGacha() {},
+      initialTab: 'coins', rechargeCoins: async () => ({ ok: true }),
+      getMonetization: () => ({ subscriptionExpiry: 0, starterUsed: [] }),
+      ...cb,
+    });
+
+  it('caps cellH against the height budget instead of letting it grow unbounded with a widened design width', () => {
+    const scene = buildWideCoins({});
+    const { w, h, landscape } = scene as unknown as { w: number; h: number; landscape: boolean };
+    expect(landscape).toBe(true);
+    expect(w).toBeGreaterThan(1920); // sanity: this aspect really does widen the design space
+    const { cellH } = (scene as unknown as { gridMetrics(): { cellH: number } }).gridMetrics();
+    expect(cellH).toBeLessThanOrEqual(Math.round(h * 0.6));
+    scene.destroy();
+  });
+
+  it("renders the second tier row's top edge inside the body mask, and keeps the first row's Buy button fully visible", async () => {
+    const scene = buildWideCoins({});
+    await flush();
+    expect(labelBox(scene.container, '$49.99'), 'second-row tier card should be in the render tree').not.toBeNull();
+
+    const { h } = scene as unknown as { h: number };
+    const { cols, cellH, gap } = (scene as unknown as {
+      gridMetrics(): { cols: number; cellH: number; gap: number };
+    }).gridMetrics();
+    expect(cols).toBe(3); // 5 tiers at 3-up → row 1 (0-indexed) holds tiers 4-5, the "second row"
+    const mask = (scene as unknown as { bodyMask: PIXI.Graphics | null }).bodyMask;
+    expect(mask).not.toBeNull();
+    const bounds = mask!.getLocalBounds();
+    const maskBottom = bounds.y + bounds.height;
+    // Mirrors CoinsMixin.drawCoinsGrid's own bodyTop derivation (top + h*0.02) — the mask's own y IS
+    // `top` (maskBody(top, viewH)), so this reconstructs the grid's real content origin.
+    const bodyTop = bounds.y + Math.round(h * 0.02);
+    const secondRowTop = bodyTop + 1 * (cellH + gap); // row index 1
+
+    // The whole point of the fix: the second row's top edge sits above the mask's bottom edge — i.e.
+    // genuinely peeking into view, not just present in the tree but fully clipped away.
+    expect(secondRowTop).toBeLessThan(maskBottom);
+
+    // And the first row's own Buy button is still fully visible (unclipped) — the fix must not trade
+    // the peek for cutting into content that already fit. Every tier's button reads "Buy", so collect
+    // all of them and take the topmost (first row's), not labelBox's usual "last match" pick.
+    const buyBoxes: { top: number; bottom: number }[] = [];
+    const walkBuy = (n: PIXI.Container): void => {
+      if (n instanceof PIXI.Text && n.text === t('shop.buy')) {
+        const top = n.y - n.anchor.y * n.height;
+        buyBoxes.push({ top, bottom: top + n.height });
+      }
+      for (const c of n.children) walkBuy(c as PIXI.Container);
+    };
+    walkBuy(scene.container);
+    expect(buyBoxes.length, 'all 5 tier Buy buttons should render').toBe(5);
+    const firstRowBuy = buyBoxes.reduce((a, b) => (a.top < b.top ? a : b));
+    expect(firstRowBuy.bottom).toBeLessThanOrEqual(maskBottom);
+
     scene.destroy();
   });
 });

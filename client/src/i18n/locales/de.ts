@@ -295,6 +295,8 @@ export const de: Record<TranslationKey, string> = {
   'profile.copied': 'Kopiert',
   'profile.rank': 'Rang',
   'profile.you': '(du)',
+  'profile.family': 'Familie:',
+  'profile.sect': 'Sekte:',
   'result.vs': 'vs {name}',
 
   // ── In-battle network status (S1-9) ─────────────────────────────────────────
@@ -928,6 +930,7 @@ export const de: Record<TranslationKey, string> = {
   'world.territoryTabList': 'Gebiete',
   'world.territoryEmpty': 'Noch kein Gebiet',
   'world.territoryJump': 'Springen',
+  'world.weakGarrisonHint': 'Rot = Garnison unter der Hälfte des Listen-Medians – verstärken',
   'world.err.troopCap': 'Truppenlimit erreicht',
   'world.err.noInk': 'Nicht genug Tinte',
   // Nationen / Saison / Shop (C5)
@@ -975,6 +978,7 @@ export const de: Record<TranslationKey, string> = {
   'family.leader': 'Anführer',
   'family.elder': 'Ältester',
   'family.member': 'Mitglied',
+  'family.unknownMember': '(Unbekanntes Mitglied)',
   'family.setElder': 'Zum Ältesten befördern',
   'family.setMember': 'Zum Mitglied degradieren',
   'family.kick': 'Rauswerfen',
@@ -1472,8 +1476,13 @@ export const de: Record<TranslationKey, string> = {
   'city.bonusSatchel': 'Truppenobergrenze pro Marsch: {n}',
   'city.trainPanel': 'Truppen ausbilden',
   'city.troopCap': 'Truppen {cur}/{cap}',
+  'city.trainEntry': 'Bildet aus: {n} · noch {time}',
+  'city.trainMax': 'Max +{n}',
   'city.err.noResources': 'Nicht genug Ressourcen',
   'city.err.queueFull': 'Bauwarteschlange voll',
+  'city.err.trainQueueFull': 'Ausbildungswarteschlange voll',
+  'city.err.troopCap': 'Truppenlimit erreicht',
+  'city.err.noInk': 'Nicht genug Tinte',
   'city.err.deskGate': 'Schreibtischstufe zu niedrig',
   'city.err.generic': 'Aktion fehlgeschlagen',
   'city.res.yield': 'Ertrag',

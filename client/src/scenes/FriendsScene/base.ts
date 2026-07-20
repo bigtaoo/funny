@@ -274,9 +274,13 @@ export class FriendsSceneBase {
   }
 
   protected onPointerUp(x: number, y: number): void {
+    // onPointerDown returns before setting pointerActive while the popup is open, so this must be
+    // checked before the pointerActive guard below — otherwise a popup tap-up short-circuits with
+    // "no gesture in progress" and never reaches the popup's own hit-test.
+    if (this.popup.isOpen) { this.popup.handleTap(x, y); return; }
     if (!this.pointerActive) return;
     this.pointerActive = false;
-    if (this.dragging || this.popup.isOpen) { this.dragging = false; return; }
+    if (this.dragging) { this.dragging = false; return; }
     for (const hit of this.hits) {
       const r = hit.rect;
       if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {

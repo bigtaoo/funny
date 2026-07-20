@@ -98,6 +98,12 @@ export interface SettingsSceneCallbacks {
   ownedTitles?: string[];
   /** Currently owned skin ids (save.inventory.skins) — unlocks the skin tab's items alongside everOwned.skin. */
   ownedSkins?: string[];
+  /** Currently owned hero def ids (save.cardInv[*].defId) — unlocks the hero tab's items alongside everOwned.hero; needed because everOwned wasn't backfilled for pre-existing rosters when the ledger shipped. */
+  ownedHeroes?: string[];
+  /** Currently owned equipment def ids (save.equipmentInv[*].defId) — unlocks the equip tab's items alongside everOwned.equipment; see ownedHeroes for why the fallback is needed. */
+  ownedEquipment?: string[];
+  /** Currently held material kinds (save.materials, count > 0) — unlocks the material tab's items alongside everOwned.material; see ownedHeroes for why the fallback is needed. */
+  ownedMaterials?: string[];
   /** Lifetime-owned ledger (save.everOwned) — unlocks the hero/equipment/material/skin tabs' items even after the item itself is gone from inventory. */
   everOwned?: { hero?: string[]; equipment?: string[]; material?: string[]; skin?: string[] };
   // ── rename (online only; absent → no rename UI) ──
@@ -432,15 +438,17 @@ export class SettingsScene implements Scene {
         return allTitleIds(this.cb.ownedTitles ?? []).map((id) => ({ id: makeAvatarId('title', id), locked: !owned.has(id) }));
       }
       case 'hero': {
-        const owned = new Set(everOwned.hero ?? []);
-        return Object.values(CARD_DEFS).map((d) => ({ id: makeAvatarId('hero', d.unitType), locked: !owned.has(d.unitType) }));
+        // everOwned.hero + cardInv are keyed by CARD_DEFS id (e.g. 'lichuang'), NOT unitType — only
+        // check against d.id, even though the avatarId itself is keyed by d.unitType (art lookup key).
+        const owned = new Set([...(this.cb.ownedHeroes ?? []), ...(everOwned.hero ?? [])]);
+        return Object.values(CARD_DEFS).map((d) => ({ id: makeAvatarId('hero', d.unitType), locked: !owned.has(d.id) }));
       }
       case 'equip': {
-        const owned = new Set(everOwned.equipment ?? []);
+        const owned = new Set([...(this.cb.ownedEquipment ?? []), ...(everOwned.equipment ?? [])]);
         return Object.values(EQUIPMENT_DEFS).map((d) => ({ id: makeAvatarId('equip', d.defId), locked: !owned.has(d.defId) }));
       }
       case 'material': {
-        const owned = new Set(everOwned.material ?? []);
+        const owned = new Set([...(this.cb.ownedMaterials ?? []), ...(everOwned.material ?? [])]);
         return (['scrap', 'lead', 'binding'] as const).map((kind) => ({ id: makeAvatarId('material', kind), locked: !owned.has(kind) }));
       }
       case 'skin': {

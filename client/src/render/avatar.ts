@@ -90,16 +90,22 @@ function spriteIcon(url: string | null, size: number): PIXI.DisplayObject | null
   return sprite;
 }
 
-/** A character portrait cropped to a circle of diameter `size`, biased toward the upper (head/torso) area. */
+/**
+ * A character portrait cropped to a circle of diameter `size`.
+ * All six unit illustrations (cardArt.ts UNIT_ART_URLS) are full-body renders with the head flush
+ * against the top edge and no meaningful aspect variance in width — so fitting by WIDTH alone and
+ * anchoring to the top keeps the head in frame regardless of how tall/narrow the body is (a fixed
+ * "cover then zoom in" fit was cropping straight through the torso on the tallest portraits, cutting
+ * the head off entirely). Cropping the lower body is fine; that's the point of an avatar bust crop.
+ */
 function buildPortraitIcon(url: string, size: number): PIXI.Container {
   const c = new PIXI.Container();
   const tex = PIXI.Texture.from(url);
   const sprite = new PIXI.Sprite(tex);
-  sprite.anchor.set(0.5, 0.5);
-  const base = tex.valid && tex.width > 0 && tex.height > 0 ? Math.max(size / tex.width, size / tex.height) : size / 256;
-  sprite.scale.set(base * 1.6);
+  sprite.anchor.set(0.5, 0);
+  sprite.scale.set(tex.valid && tex.width > 0 ? size / tex.width : size / 256);
   sprite.x = size / 2;
-  sprite.y = size * 0.42;
+  sprite.y = size * 0.03; // slight headroom so the art's top edge isn't flush with the circle's rim
   const mask = new PIXI.Graphics();
   mask.beginFill(0xffffff);
   mask.drawCircle(size / 2, size / 2, size / 2);

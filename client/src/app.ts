@@ -137,7 +137,7 @@ class PixiAppViews implements AppViews {
     this.manager.goto(scene, { fade: !this.resizing && !!opts?.fade });
     window.addEventListener('resize', this.onResize);
     return {
-      applySocialBadge: (n) => scene.applySocialBadge(n),
+      applySocialBadge: (n, mail) => scene.applySocialBadge(n, mail),
       applyAchievementBadge: (c) => scene.applyAchievementBadge(c),
       applyShopBadge: (c) => scene.applyShopBadge(c),
       applyRetentionBadge: (c) => scene.applyRetentionBadge(c),
@@ -330,6 +330,15 @@ class PixiAppViews implements AppViews {
   showCity(cb: CitySceneCallbacks): void {
     this.leaveLobby();
     this.manager.goto(this.timedBuild('CityScene', () => new CityScene(this.layout, this.input, cb)));
+  }
+
+  showCityOverlay(cb: CitySceneCallbacks): void {
+    // Reached only from within the still-live WorldMapScene — no lobby listener to detach.
+    this.manager.pushOverlay(this.timedBuild('CityScene', () => new CityScene(this.layout, this.input, cb)));
+  }
+
+  hideCityOverlay(): void {
+    this.manager.popOverlay();
   }
 
   showDeckBuilder(cb: DeckBuilderCallbacks): void {

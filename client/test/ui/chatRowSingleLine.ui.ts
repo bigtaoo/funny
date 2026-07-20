@@ -118,6 +118,7 @@ describe('Family chat — single-line name-tag row', () => {
     const scene: any = new FamilyScene(createLayout(1200, 950), new InputManager(), {
       onBack() {}, onOpenSect() {}, onNavTab() {},
       worldApi, worldId: 'w1', myAccountId: 'me', playerName: 'tao',
+      getFriendPublicIds: async () => new Set<string>(),
     } as any);
     await scene.loadData();
     scene.render();

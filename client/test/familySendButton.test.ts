@@ -147,12 +147,13 @@ describe('FamilyScene channel — submitMessage() optimistic echo (2026-07-15 la
 
     const pending = scene.submitMessage('hello family');
 
-    // Synchronously (POST still in flight): echo is already at the top, scroll reset, one paint,
-    // and the refetch has NOT run yet — this is what kills the 2-3s "frozen" feel.
+    // Synchronously (POST still in flight): echo is already prepended, scroll jumped to the bottom
+    // (the channel renders oldest-at-top, so the new line is now the last one), one paint, and the
+    // refetch has NOT run yet — this is what kills the 2-3s "frozen" feel.
     expect(scene.messages).toHaveLength(2);
     expect(scene.messages[0]).toMatchObject({ body: 'hello family', senderId: 'me', senderName: 'Tester' });
     expect(scene.messages[1]!.id).toBe('prev');
-    expect(scene.scrollYChannel).toBe(0);
+    expect(scene.scrollYChannel).toBe(Number.MAX_SAFE_INTEGER);
     expect(scene.render).toHaveBeenCalledTimes(1);
     expect(scene.loadChannel).not.toHaveBeenCalled();
 

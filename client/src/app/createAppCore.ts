@@ -63,6 +63,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     netSession: null,
     firstLobbyHandled: false,
     socialBadgeTotal: 0,
+    mailBadgeCount: 0,
     achievementClaimable: false,
     shopCardClaimable: false,
     achievementReached: null,

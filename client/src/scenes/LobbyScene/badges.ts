@@ -8,7 +8,7 @@ import { C, txt, type Constructor, type LobbySceneBaseCtor } from './base';
 import { snapFont } from '../../render/fontScale';
 
 export interface BadgesHandlers {
-  applySocialBadge(total: number): void;
+  applySocialBadge(total: number, mail: number): void;
   applyAchievementBadge(claimable: boolean): void;
   applyShopBadge(claimable: boolean): void;
   applyRetentionBadge(claimable: boolean): void;
@@ -25,12 +25,17 @@ export function BadgesMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBas
   return class extends Base {
     /**
      * Update the aggregate social unread count (friends requests + unread chats +
-     * unread mail). The core fetches GET /social/badges on lobby entry and forwards
-     * push-driven increments here; we redraw just the badge dot, not the nav bar.
+     * unread mail) for the social nav dot, and the mail-only unread count for the
+     * dedicated mail strip item. The core fetches GET /social/badges on lobby entry
+     * and forwards push-driven increments here; we redraw just the badge dots, not
+     * the nav bar. Mail must stay a separate count — the strip item opens straight
+     * into the mail list, so lighting it up on unrelated friend/chat unread makes it
+     * look empty when the user taps in.
      */
-    applySocialBadge(total: number): void {
+    applySocialBadge(total: number, mail: number): void {
       if (this.destroyed) return;
       this.socialBadge = Math.max(0, total | 0);
+      this.mailBadge = Math.max(0, mail | 0);
       this.drawSocialBadge();
       this.drawSideStripBadges();
     }
@@ -226,7 +231,7 @@ export function BadgesMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBas
       };
 
       if (this.retentionBadge)      drawDot(this.dailyBtnRect);
-      if (this.socialBadge > 0)     drawDot(this.mailStripRect);
+      if (this.mailBadge > 0)       drawDot(this.mailStripRect);
       if (this.achievementBadge)    drawDot(this.achieveStripRect);
       // Events strip item has no badge (it's a contextual entry, not a reward).
     }

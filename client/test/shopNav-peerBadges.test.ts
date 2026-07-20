@@ -38,7 +38,7 @@ function buildShopNav(): Harness {
   const views = new HeadlessAppViews();
   const state: AppState = {
     inLobby: true, offlineMode: false, gatewayUrl: null, netSession: null,
-    firstLobbyHandled: false, socialBadgeTotal: 0, achievementClaimable: false,
+    firstLobbyHandled: false, socialBadgeTotal: 0, mailBadgeCount: 0, achievementClaimable: false,
     shopCardClaimable: false, achievementReached: null,
   };
 

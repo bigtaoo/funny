@@ -106,6 +106,8 @@ export class HeadlessAppViews implements AppViews {
   chat?: ChatSceneCallbacks;
   /** Last aggregate social badge total the core pushed into the lobby handle. */
   lastSocialBadge?: number;
+  /** Last mail-only unread count the core pushed into the lobby handle. */
+  lastMailBadge?: number;
   lastRoomState?: RoomState;
   /** Last gateway net-state forwarded to the room view (wait for 'open' before acting). */
   lastRoomNetState?: NetState;
@@ -123,9 +125,10 @@ export class HeadlessAppViews implements AppViews {
     this.screen = 'lobby';
     this.lobby = cb;
     this.lastSocialBadge = undefined;
+    this.lastMailBadge = undefined;
     this.lastRetentionBadge = undefined;
     return {
-      applySocialBadge: (n) => { this.lastSocialBadge = n; },
+      applySocialBadge: (n, mail) => { this.lastSocialBadge = n; this.lastMailBadge = mail; },
       applyAchievementBadge: () => {},
       applyShopBadge: () => {},
       applyRetentionBadge: (c) => { this.lastRetentionBadge = c; },
@@ -155,6 +158,8 @@ export class HeadlessAppViews implements AppViews {
   showDaily(cb: DailyCallbacks): void { this.screen = 'daily'; this.daily = cb; }
   showEvents(cb: EventCallbacks): void { this.screen = 'events'; this.events = cb; }
   showCity(_cb: CitySceneCallbacks): void { this.screen = 'city'; }
+  showCityOverlay(_cb: CitySceneCallbacks): void { this.screen = 'city'; }
+  hideCityOverlay(): void { this.screen = 'worldMap'; }
   showReplay(replay: Replay, cb: ReplaySceneCallbacks): void {
     this.screen = 'replay';
     this.replay = cb;

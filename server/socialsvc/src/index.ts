@@ -53,6 +53,7 @@ async function main(): Promise<void> {
     friendSvc,
     mailSvc,
     gateway,
+    meta,
   );
 
   const shutdown = async (): Promise<void> => {

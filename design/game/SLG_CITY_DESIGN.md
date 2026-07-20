@@ -165,7 +165,8 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 
 ## 8. 客户端 UI（用户要的「点进主城界面」）
 
-- **入口**：`WorldMapScene` 点**自己主城**（`type:'base'` 且 `mine`）→ **不再弹菜单**，直接进入 **`CityScene`**（ADR-041，2026-07-18；此前的「进入主城/Train/Defense/Manage team」五按钮弹窗已移除——Train/队伍管理本就在 CityScene 内有完整入口，主城也没有「手动防守配置」这一概念，防守由留守队伍自动构成，见 ADR-026）。
+- **入口**：`WorldMapScene` 点**自己主城**（`type:'base'` 且 `mine`）→ **不再弹菜单**，直接进入 **`CityScene`**（ADR-041，2026-07-18；此前的「进入主城/Train/Defense/Manage team」五按钮弹窗已移除，主城也没有「手动防守配置」这一概念，防守由留守队伍自动构成，见 ADR-026）。
+  > ⚠️ **2026-07-18 移除时的误判 + 2026-07-20 补回**：当时的 commit 假设「Train/队伍管理本就在 CityScene 内有完整入口」，但 `drillYard` 详情弹窗实际只渲染了一行「兵力 {cur}/{cap}」静态文本——`trainTroops`/`speedupTraining` 在移除旧练兵面板后**变得完全不可达**（服务端 API、`@nw/shared` 常量、i18n key `city.trainPanel` 均仍在，唯独没有任何 UI 能调用）。真实账号「3 支队伍全部无兵」就是这个空窗期的直接后果。2026-07-20 在 `drillYard` 弹窗里补回 `+10`/`+50`/`Max` 三档训练按钮 + 训练队列倒计时 + 加速按钮（详见 §8.3），`onTrainTroops`/`onSpeedupTraining` 这两个从未被赋值/调用的 `CitySceneCallbacks` 字段一并删除。
 - **`CityScene`**（手绘书桌俯视，SketchPen 风）：
   - 书桌上摆一排文具建筑图标，标等级徽章；底部 5 资源条（当前量/产率/仓储上限）。
   - 点建筑 → 详情卡：当前等级 / 各级加成曲线 / 下一级消耗（5 资源 + 时长）/「升级」按钮（资源不足置灰）。
@@ -201,6 +202,17 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 - **`satchel`（书包）建筑**（新增，D-CITY-9）：单队出征携带兵力上限，独立于 `drillYard` 的总兵力上限，受 `desk` 门控。
 - **`desk` 等级上限改 10**（D-CITY-7）：需重新过 `econ-sim` 数值模拟，本次讨论只定方向，具体曲线延后。
 - **未决**：耐久扣减/自愈的具体数值、`satchel` 携带量曲线、双屏切换的具体交互，均待后续数值模拟 + UI 布局阶段细化。
+
+### 8.3 补回练兵入口（2026-07-20，修复 2026-07-18 移除时的误判）
+
+`drillYard` 详情弹窗在「升级」区块之下新增：
+
+- **训练队列**：逐条列出 `trainingQueue`（数量 + `formatDuration` 倒计时）。
+- **训练三档按钮**：`+10` / `+50` / `Max`（`Max` = `min(TROOP_TRAIN_BATCH_MAX, troopCap-troops-已排队, ink/TROOP_TRAIN_INK_COST)`）——用固定档位代替 §8 原设想的「数量滑杆」，与 2026-07-18 之前删除的旧 world-map 练兵面板手感一致，实现更省（复用同一套 `sketchPanel` 按钮 + `this.hits` 命中模式，不需要额外的拖动手势组件）。按钮在训练队列已满 / 兵力已达上限 / 墨水不足时置灰，点击给出对应 toast（`city.err.trainQueueFull`/`city.err.troopCap`/`city.err.noInk`）。
+- **加速按钮**：队列非空时显示，复用 `city.speedup`/`speedupTraining`（与建造队列加速同一套系数 `TROOP_SPEEDUP_SECS_PER_COIN`）。
+- 新增 i18n：`city.trainEntry`/`city.trainMax`/`city.err.trainQueueFull`（zh/en/de 三语）；复用既有 `city.trainPanel`（此前定义了但从未被引用的历史遗留 key，本次仍未使用其文案，留作弹窗标题的候选，未强行塞入布局）。
+- 覆盖测试：`client/test/ui/cityTrainTroops.ui.ts`（headless PIXI，驱动真实 `handleDown`/`handleUp` 命中测试，覆盖 +10 训练成功 / 队列已满不下单 / 加速按钮调用）。
+- **已知限制**：`CitySceneCallbacks.onTrainTroops`/`onSpeedupTraining` 两个从未被赋值的可选回调字段已删除——`CityScene` 现在直接调 `this.cb.worldApi.trainTroops/speedupTraining`，与 `doUpgrade`/`doSpeedup` 走同一模式，不再经过父级回调层。
 
 ---
 

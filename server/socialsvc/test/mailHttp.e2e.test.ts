@@ -47,7 +47,7 @@ describe.skipIf(!mongo)('socialsvc mail HTTP routes e2e', () => {
     const mailSvc = new MailService({ cols: m.collections, gateway, meta, now: () => t });
     server = startHttpApi(
       { host: '127.0.0.1', port: 0, jwtSecret: SECRET, internalKey: INTERNAL_KEY },
-      familySvc, friendSvc, mailSvc, gateway,
+      familySvc, friendSvc, mailSvc, gateway, meta,
     );
     await new Promise<void>((res) => server.on('listening', res));
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;

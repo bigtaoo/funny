@@ -65,6 +65,32 @@ export function txt(label: string, size: number, color: number, bold = false, wo
 }
 
 /**
+ * `txt()` factory for content that lives inside a container scaled up after layout —
+ * the "popup-scale-to-80%" convention (see CardSceneBase/EquipmentSceneBase's `modalScale`
+ * and CityScene's `renderDetailModal`): a modal is laid out in a small local frame, then
+ * the whole panel is `.scale.set(scale)`'d to fill most of the real screen.
+ *
+ * `PIXI.Text` rasterizes glyphs onto a canvas at its own native resolution; stretching
+ * that bitmap via a parent transform blurs it exactly like upscaling a photo — vector
+ * `Graphics` (panel borders, icons) don't suffer this, only baked text does. Rendering
+ * the glyph canvas at `scale`× up front cancels the later stretch back out.
+ *
+ * Safe to use unconditionally (including at `scale === 1`, e.g. no modal open): it then
+ * just matches PIXI's own default auto-resolution behavior.
+ */
+export function scaledTxt(scale: number) {
+  return (label: string, size: number, color: number, bold = false, wordWrapWidth?: number): PIXI.Text => {
+    const t = txt(label, size, color, bold, wordWrapWidth);
+    t.resolution = devicePixelRatioSafe() * scale;
+    return t;
+  };
+}
+
+function devicePixelRatioSafe(): number {
+  return (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+}
+
+/**
  * Detach AND destroy a container's children before a full re-render — the safe
  * replacement for a bare `container.removeChildren()` in any scene that re-renders
  * on **every keystroke / per frame / on a timer** (LoginScene caret, chat compose,

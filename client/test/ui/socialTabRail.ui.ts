@@ -100,7 +100,7 @@ function clickFriendsRailTab(scene: any, tab: SocialTab): void {
 describe('FamilyScene — social tab rail (onNavTab wiring)', () => {
   function build(onNavTab: (tab: SocialTab) => void): any {
     const scene: any = new FamilyScene(createLayout(W, H), new InputManager(), {
-      onBack() {}, onOpenSect() {}, onNavTab, async addFriend() {},
+      onBack() {}, onOpenSect() {}, onNavTab, async addFriend() {}, async getFriendPublicIds() { return new Set<string>(); },
       worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: 'acc_test', playerName: 'Tester',
     });
     scene.mode = 'myFamily';

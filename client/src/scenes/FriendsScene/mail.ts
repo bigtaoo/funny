@@ -5,8 +5,18 @@ import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../rende
 import { FS, snapFont } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import { makeText } from '../../render/pixiText';
+import { getEquipDef } from '../../game/meta/equipmentDefs';
+import { buildEquipIcon } from '../../render/equipmentAtlas';
+import { CARD_DEFS } from '../../game/meta/cardDefs';
+import { UNIT_ART_URLS, getArtTexture } from '../../render/cardArt';
+import { buildMaterialIcon, type MaterialKind } from '../../render/materialAtlas';
 import type { MailView, MailAttachmentView } from '../../net/ApiClient';
 import { type Constructor, type FriendsSceneBaseCtor } from './base';
+
+/** itemId → material icon glyph, same 3-id set GachaScene.MATERIAL_ICON / EquipmentScene track. */
+const MAT_ITEM_ICON: Record<string, MaterialKind> = {
+  mat_scrap: 'scrap', mat_lead: 'lead', mat_binding: 'binding',
+};
 
 export interface MailHandlers {
   drawMailList(): void;
@@ -15,6 +25,9 @@ export interface MailHandlers {
 
 export function MailMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): TBase & Constructor<MailHandlers> {
   return class extends Base {
+    /** Card art textures load async; tracks which URLs already have a re-render hooked on load. */
+    private mailArtHooked = new Set<string>();
+
     // ── Mail tab ──────────────────────────────────────────────────────────────────
 
     drawMailList(): void {
@@ -119,7 +132,15 @@ export function MailMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): TBas
           this.container.addChild(row);
           cy += Math.round(h * 0.04);
         }
-        cy += Math.round(h * 0.02);
+        // One picture per attachment, laid out left-to-right below the name list.
+        const iconSize = Math.round(h * 0.07);
+        const iconGap = Math.round(w * 0.015);
+        let ix = px + Math.round(w * 0.02);
+        for (const a of m.attachments!) {
+          this.drawAttachmentIcon(a, ix, cy, iconSize, seedFor(ix, cy, iconSize));
+          ix += iconSize + iconGap;
+        }
+        cy += iconSize + Math.round(h * 0.02);
         const bH = Math.round(h * 0.08);
         if (m.claimed) {
           const done = txt(t('mail.claimed'), FS.title, C.green, true);
@@ -135,6 +156,70 @@ export function MailMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): TBas
       const deleteBlocked = hasAtt && !m.claimed;
       this.addButton(t('mail.delete'), px, h - dH - Math.round(h * 0.03), panelW, dH, C.paper, deleteBlocked ? C.mid : C.red,
         () => deleteBlocked ? this.toast('mail.deleteBlockedAttachment') : void this.doMailDelete(m), deleteBlocked ? C.mid : C.red);
+    }
+
+    /**
+     * A single attachment's picture (framed square). Reuses the same "single source of truth"
+     * resolvers as Equipment/Auction/Gacha (buildEquipIcon / card art / buildMaterialIcon) so a
+     * claimed item's mail thumbnail matches how it looks everywhere else, instead of inventing a
+     * mail-only art path.
+     */
+    private drawAttachmentIcon(a: MailAttachmentView, x: number, y: number, size: number, seed: number): void {
+      const frame = sketchPanel(size, size, { fill: C.paper, border: C.mid, seed });
+      frame.x = x; frame.y = y;
+      this.container.addChild(frame);
+      const cx = x + size / 2;
+      const cy = y + size / 2;
+      const picSize = Math.round(size * 0.7);
+
+      if (a.kind === 'equipment' && a.instance) {
+        const def = getEquipDef(a.instance.defId);
+        if (def) {
+          const icon = buildEquipIcon(a.instance.defId, def.slot, def.rarity, picSize, seed);
+          icon.x = cx; icon.y = cy;
+          this.container.addChild(icon);
+          return;
+        }
+      } else if (a.kind === 'card' && a.instance) {
+        const cardDef = CARD_DEFS[a.instance.defId];
+        const artUrl = cardDef ? UNIT_ART_URLS[cardDef.unitType] : undefined;
+        if (artUrl) {
+          const tex = getArtTexture(artUrl);
+          if (tex.baseTexture.valid) {
+            const scale = Math.min(picSize / tex.width, picSize / tex.height);
+            const sp = new PIXI.Sprite(tex);
+            sp.anchor.set(0.5); sp.scale.set(scale); sp.position.set(cx, cy);
+            this.container.addChild(sp);
+            return;
+          }
+          if (!this.mailArtHooked.has(artUrl)) {
+            this.mailArtHooked.add(artUrl);
+            tex.baseTexture.once('loaded', () => this.render());
+          }
+        }
+      } else if (a.kind === 'material') {
+        const matKind = MAT_ITEM_ICON[a.id ?? ''];
+        if (matKind) {
+          const icon = buildMaterialIcon(matKind, picSize, C.dark);
+          icon.x = cx - picSize / 2; icon.y = cy - picSize / 2;
+          this.container.addChild(icon);
+          return;
+        }
+      } else if (a.kind === 'coins') {
+        const icon = buildIcon('coins', picSize, C.gold);
+        icon.x = cx - picSize / 2; icon.y = cy - picSize / 2;
+        this.container.addChild(icon);
+        return;
+      } else if (a.kind === 'skin') {
+        const icon = buildIcon('brush', picSize, C.dark);
+        icon.x = cx - picSize / 2; icon.y = cy - picSize / 2;
+        this.container.addChild(icon);
+        return;
+      }
+      // Unresolvable kind (generic "item", or an equipment/card def that vanished) → generic glyph.
+      const icon = buildIcon('capsule', picSize, C.dark);
+      icon.x = cx - picSize / 2; icon.y = cy - picSize / 2;
+      this.container.addChild(icon);
     }
   };
 }

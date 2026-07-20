@@ -299,6 +299,8 @@ export const zh = {
   'profile.copied': '已复制',
   'profile.rank': '段位',
   'profile.you': '（你）',
+  'profile.family': '家族：',
+  'profile.sect': '帮会：',
   'result.vs': 'vs {name}',
 
   // ── In-battle network status (S1-9) ─────────────────────────────────────────
@@ -940,6 +942,7 @@ export const zh = {
   'world.territoryTabList': '领地列表',
   'world.territoryEmpty': '暂无领地',
   'world.territoryJump': '跳转',
+  'world.weakGarrisonHint': '红色坐标：驻军低于列表中位数一半，建议增兵',
   'world.err.troopCap': '兵力已满',
   'world.err.noInk': '墨水不足',
   // ── Nations / season / shop panel (C5) ───────────────────────────────────
@@ -987,6 +990,7 @@ export const zh = {
   'family.leader': '族长',
   'family.elder': '长老',
   'family.member': '成员',
+  'family.unknownMember': '（未知成员）',
   'family.setElder': '设为长老',
   'family.setMember': '降为成员',
   'family.kick': '踢出',
@@ -1486,8 +1490,13 @@ export const zh = {
   'city.bonusSatchel': '单队出征携带兵力上限 {n}',
   'city.trainPanel': '练兵',
   'city.troopCap': '兵力 {cur}/{cap}',
+  'city.trainEntry': '训练中 {n} · 剩 {time}',
+  'city.trainMax': '最大 +{n}',
   'city.err.noResources': '资源不足',
   'city.err.queueFull': '建造队列已满',
+  'city.err.trainQueueFull': '训练队列已满',
+  'city.err.troopCap': '兵力已达上限',
+  'city.err.noInk': '墨水不足',
   'city.err.deskGate': '书桌等级不足',
   'city.err.generic': '操作失败',
   'city.res.yield': '产率',

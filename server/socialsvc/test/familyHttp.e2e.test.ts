@@ -42,14 +42,14 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
   beforeAll(async () => {
     await m.collections.families.deleteMany({});
     await m.collections.familyMembers.deleteMany({});
-    const meta = new FakeMeta().add('leader-a', 'P-A', 'Alice').add('leader-b', 'P-B', 'Bob');
+    const meta = new FakeMeta().add('leader-a', 'P-A', 'Alice', 'gold').add('leader-b', 'P-B', 'Bob');
     const gateway = new FakeGateway();
     const mailSvc = new MailService({ cols: m.collections, gateway, meta, now: () => t });
     familySvc = new FamilyService({ cols: m.collections, now: () => t, gateway, meta, mail: mailSvc });
     const friendSvc = new FriendService({ cols: m.collections, gateway, meta, now: () => t });
     server = startHttpApi(
       { host: '127.0.0.1', port: 0, jwtSecret: SECRET, internalKey: INTERNAL_KEY },
-      familySvc, friendSvc, mailSvc, gateway,
+      familySvc, friendSvc, mailSvc, gateway, meta,
     );
     await new Promise<void>((res) => server.on('listening', res));
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -71,6 +71,18 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
     const r = await fetch(`${base}/social/family/browse`);
     expect(r.status).toBe(401);
     expect((await r.json()).error.code).toBe('UNAUTHENTICATED');
+  });
+
+  it('GET /social/player/:accountId/rank: returns the rank the meta client resolved', async () => {
+    const r = await fetch(`${base}/social/player/leader-a/rank`, { headers: auth });
+    expect(r.status).toBe(200);
+    expect((await r.json()).data).toEqual({ rank: 'gold' });
+  });
+
+  it('GET /social/player/:accountId/rank: unranked/unknown account → empty object, not an error', async () => {
+    const r = await fetch(`${base}/social/player/no-such-account/rank`, { headers: auth });
+    expect(r.status).toBe(200);
+    expect((await r.json()).data).toEqual({});
   });
 
   it('GET /social/family/browse: no query → top families by prosperity desc', async () => {
