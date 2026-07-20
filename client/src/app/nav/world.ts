@@ -53,7 +53,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       onOpenAuction() { goAuctionHouse(worldApi, worldId); },
       onReplaySiege(siegeId) { void goSiegeReplay(worldApi, worldId, siegeId); },
       onOpenDefense(tileKey) { goDefenseEditor(worldApi, worldId, tileKey); },
-      onOpenCity() { goCity(worldApi, worldId); },
+      onOpenCity() { goCityOverlay(worldApi, worldId); },
       worldApi,
       worldId,
       playerName: playerName(),
@@ -128,11 +128,41 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
     });
   }
 
+  /**
+   * Enter City straight from the still-live WorldMapScene: mounts CityScene as an overlay
+   * (SceneManager.pushOverlay) instead of tearing the map down, so the common open/close Home Desk
+   * edge is instant and never re-fetches/rebuilds the SLG map. Only valid while WorldMapScene is
+   * current — the edit-team detour below drops to the plain full-scene {@link goCity}, since by
+   * then the map has already been replaced by DefenseEditorScene and there's nothing left to overlay.
+   */
+  function goCityOverlay(worldApi: WorldApiClient, worldId: string): void {
+    state.inLobby = false;
+    views.showCityOverlay({
+      onBack() { views.hideCityOverlay(); },
+      // Team card on the military page → that team's formation editor. This leaves the overlay for
+      // a real top-level scene, so drop it first (resumes the map) before the map itself is replaced.
+      onEditTeam(teamId, teamName) {
+        views.hideCityOverlay();
+        views.showDefenseEditor({
+          onBack() { goCity(worldApi, worldId); },
+          getSave: () => saveManager.get(),
+          worldApi,
+          worldId,
+          target: { mode: 'attack', teamId, teamName },
+        });
+      },
+      worldApi,
+      worldId,
+      getCoins: () => saveManager.get().wallet.coins,
+    });
+  }
+
+  /** Plain full-scene City entry — used to return from the edit-team detour, where the world map
+   * was already replaced by DefenseEditorScene and there's no live map left to overlay onto. */
   function goCity(worldApi: WorldApiClient, worldId: string): void {
     state.inLobby = false;
     views.showCity({
       onBack() { goWorldMap(worldApi, worldId); },
-      // Team card on the military page → that team's formation editor; back returns to the city.
       onEditTeam(teamId, teamName) {
         views.showDefenseEditor({
           onBack() { goCity(worldApi, worldId); },
@@ -167,6 +197,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       myAccountId,
       playerName: playerName(),
       addFriend: async (publicId) => { await api!.requestFriend(publicId); },
+      getFriendPublicIds: async () => new Set((await api!.getFriends()).map((f) => f.publicId)),
     });
   }
 

@@ -332,6 +332,15 @@ class PixiAppViews implements AppViews {
     this.manager.goto(this.timedBuild('CityScene', () => new CityScene(this.layout, this.input, cb)));
   }
 
+  showCityOverlay(cb: CitySceneCallbacks): void {
+    // Reached only from within the still-live WorldMapScene — no lobby listener to detach.
+    this.manager.pushOverlay(this.timedBuild('CityScene', () => new CityScene(this.layout, this.input, cb)));
+  }
+
+  hideCityOverlay(): void {
+    this.manager.popOverlay();
+  }
+
   showDeckBuilder(cb: DeckBuilderCallbacks): void {
     this.leaveLobby();
     this.manager.goto(this.timedBuild('DeckBuilderScene', () => new DeckBuilderScene(this.layout, this.input, cb)));

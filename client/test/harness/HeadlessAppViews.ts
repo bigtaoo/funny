@@ -158,6 +158,8 @@ export class HeadlessAppViews implements AppViews {
   showDaily(cb: DailyCallbacks): void { this.screen = 'daily'; this.daily = cb; }
   showEvents(cb: EventCallbacks): void { this.screen = 'events'; this.events = cb; }
   showCity(_cb: CitySceneCallbacks): void { this.screen = 'city'; }
+  showCityOverlay(_cb: CitySceneCallbacks): void { this.screen = 'city'; }
+  hideCityOverlay(): void { this.screen = 'worldMap'; }
   showReplay(replay: Replay, cb: ReplaySceneCallbacks): void {
     this.screen = 'replay';
     this.replay = cb;

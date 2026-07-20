@@ -10,6 +10,15 @@ export interface Scene {
   readonly container: PIXI.Container;
   update(dt: number): void;
   destroy(): void;
+  /**
+   * Optional: suspend/resume pointer-input subscriptions (not the scene itself) while an overlay
+   * sits on top via {@link SceneManager.pushOverlay}. Implement this if the scene subscribes to
+   * InputManager — otherwise a tap meant for the overlay also dispatches into this hidden scene's
+   * handlers underneath (InputManager broadcasts to every subscriber regardless of z-order). Scenes
+   * that never expect an overlay above them (most of them) can leave both unimplemented.
+   */
+  pause?(): void;
+  resume?(): void;
 }
 
 // ── Transition tuning ──────────────────────────────────────────────────────────
@@ -73,6 +82,13 @@ export class SceneManager {
   private readonly targetStage: PIXI.Container;
   /** Set once the current scene's update() has thrown, so we log the fault once instead of every frame. */
   private updateFaulted = false;
+  /**
+   * A scene mounted on top of `current` without destroying it (see {@link pushOverlay}). Unlike the
+   * fade transition below, this is a deliberate exception to the "never two scenes mounted" rule —
+   * used for panels (CityScene's Home Desk) that must open/close with the SLG map alive underneath,
+   * no teardown+rebuild. Only one slot: nothing today nests a second overlay on top of this one.
+   */
+  private overlayScene: Scene | null = null;
 
   /** Full-screen paper-tint cover, attached to `app.stage` (screen pixels) only while a fade is running. */
   private overlay: PIXI.Graphics | null = null;
@@ -98,6 +114,14 @@ export class SceneManager {
   }
 
   goto(scene: Scene, opts?: GotoOptions): void {
+    // A hard scene swap always means "done with this whole area" — drop any overlay riding on top
+    // of `current` first so it doesn't linger as an orphaned child on top of the new scene.
+    if (this.overlayScene) {
+      this.targetStage.removeChild(this.overlayScene.container);
+      this.destroyScene(this.overlayScene);
+      this.overlayScene = null;
+    }
+
     // Default (no fade requested), or cold start (nothing to cross-fade from): swap in the same
     // frame. An instant goto also wins over any fade already in flight — it cancels it outright
     // rather than queuing another cross-fade.
@@ -172,6 +196,31 @@ export class SceneManager {
     setActiveScene(next.constructor?.name ?? 'Scene');
   }
 
+  /**
+   * Mount `scene` on top of `current` instead of replacing it — `current` stays alive, mounted,
+   * and ticking underneath (so e.g. SLG marches keep animating), just no longer receiving pointer
+   * input (see {@link Scene.pause}) and visually covered by the overlay. Use {@link popOverlay} to
+   * reverse it. Not fade-aware: only call this from a settled (non-transitioning) state.
+   */
+  pushOverlay(scene: Scene): void {
+    if (this.overlayScene) this.destroyScene(this.overlayScene); // defensive — no caller stacks a second one today
+    this.overlayScene = scene;
+    this.current?.pause?.();
+    this.targetStage.addChild(scene.container); // addChild appends last → renders on top of `current`
+    setActiveScene(scene.constructor?.name ?? 'Scene');
+  }
+
+  /** Tear down the overlay scene mounted by {@link pushOverlay} and resume `current` underneath. */
+  popOverlay(): void {
+    const ov = this.overlayScene;
+    if (!ov) return;
+    this.overlayScene = null;
+    this.targetStage.removeChild(ov.container);
+    this.destroyScene(ov);
+    this.current?.resume?.();
+    setActiveScene(this.current?.constructor?.name ?? 'Scene');
+  }
+
   private destroyScene(scene: Scene): void {
     try {
       scene.destroy();
@@ -212,11 +261,16 @@ export class SceneManager {
   private onTick = (): void => {
     this.stepTransition(this.app.ticker.deltaMS);
 
-    const scene = this.current;
-    if (!scene) return;
-    // Timed (not just try/caught): a single scene.update() call running for seconds is one of the
-    // two things that can produce an ANR-watchdog report, and this is the only vantage point that can
-    // tell the difference — see recordFrameSample in net/anomaly for why that distinction matters.
+    if (this.current) this.tickScene(this.current);
+    // The overlay scene (if any) ticks too, right on top of `current` — it's the visible/interactive
+    // one, `current` just keeps simulating (paused only on input) underneath it.
+    if (this.overlayScene) this.tickScene(this.overlayScene);
+  };
+
+  // Timed (not just try/caught): a single scene.update() call running for seconds is one of the
+  // two things that can produce an ANR-watchdog report, and this is the only vantage point that can
+  // tell the difference — see recordFrameSample in net/anomaly for why that distinction matters.
+  private tickScene(scene: Scene): void {
     const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
     try {
       scene.update(this.app.ticker.deltaMS / 1000);
@@ -236,7 +290,7 @@ export class SceneManager {
       const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now();
       recordFrameSample(t1 - t0);
     }
-  };
+  }
 
   /** Advance the fade one frame. Fully contained: a throw here must never freeze the ticker. */
   private stepTransition(deltaMs: number): void {
