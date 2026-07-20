@@ -1500,6 +1500,7 @@ export const de: Record<TranslationKey, string> = {
   'roster.fuseTitle': 'Fusionsmaterial wählen',
   'roster.fuseHint': 'Gleiche Fraktion, gleiche Stufe · benötigt 5',
   'roster.fuseEmpty': 'Kein geeignetes Material',
+  'roster.fuseAutoRetarget': 'Nicht genug Karten für diesen Charakter — automatisch einen passenderen ausgewählt',
   'roster.fuseOk': 'Fusion abgeschlossen!',
   'roster.fuseErr': 'Fusion fehlgeschlagen',
   'roster.fuseMaterials': 'Material',

@@ -410,7 +410,7 @@ export interface CardSceneBase {
   openDetail(cardId: string): void;
   renderDetailGearSlots(card: CardInstance, mx: number, cy: number, mw: number, save: SaveData): void;
   openFuseSelect(target: CardInstance): void;
-  doFuse(targetId: string, materialIds: string[]): Promise<void>;
+  doFuse(targetId: string, materialIds: string[], onSettled?: (success: boolean) => void): Promise<void>;
   doSetLock(cardId: string, locked: boolean): Promise<void>;
   doRecover(cardId: string): Promise<void>;
   renderSkinsTab(): void;

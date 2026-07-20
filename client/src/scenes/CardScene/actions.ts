@@ -6,20 +6,30 @@ import { withTimeout, TimeoutError } from '../../ui/busyTracker';
 import { type Constructor, type CardSceneBaseCtor } from './base';
 
 export interface ActionHandlers {
-  doFuse(targetId: string, materialIds: string[]): Promise<void>;
+  /**
+   * `onSettled`, when given, replaces the default "close the modal" finish: it's called with whether
+   * the fuse succeeded and owns deciding what happens to the fusion panel next (feed.ts uses this to
+   * auto-continue onto another same-level target instead of closing — CHARACTER_CARDS_DESIGN §3.2).
+   */
+  doFuse(targetId: string, materialIds: string[], onSettled?: (success: boolean) => void): Promise<void>;
   doSetLock(cardId: string, locked: boolean): Promise<void>;
   doRecover(cardId: string): Promise<void>;
 }
 
 export function ActionsMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase & Constructor<ActionHandlers> {
   return class extends Base {
-    async doFuse(targetId: string, materialIds: string[]): Promise<void> {
+    async doFuse(targetId: string, materialIds: string[], onSettled?: (success: boolean) => void): Promise<void> {
       if (this.bt.busy) return;
       this.bt.start();
-      this.render(); // keep the modal open through the fusion animation; drawFusePanel() closes it after
+      // Redraw the fusion ring itself (busy → Fuse disabled) instead of a full this.render(), which
+      // would re-open the underlying card detail modal (detailId stays set through this whole flow)
+      // and blow away the ring — the animation needs to play over the ring, not the detail popup.
+      this.feedRedraw?.();
+      let success = false;
       try {
         const res = await withTimeout(this.cb.fuseCards(targetId, materialIds));
         if (res.ok) {
+          success = true;
           await this.playFusionAnim?.();
           this.showToast(t('roster.fuseOk'), C.green);
         } else {
@@ -29,9 +39,13 @@ export function ActionsMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBas
         this.showToast(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'roster.fuseErr'), C.red);
       } finally {
         this.bt.stop();
-        this.closeModal();
-        this.detailId = null;
-        this.render();
+        if (onSettled) {
+          onSettled(success);
+        } else {
+          this.closeModal();
+          this.detailId = null;
+          this.render();
+        }
       }
     }
 

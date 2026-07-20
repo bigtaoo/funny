@@ -1500,6 +1500,7 @@ export const en: Record<TranslationKey, string> = {
   'roster.fuseTitle': 'Select Fusion Materials',
   'roster.fuseHint': 'Same-faction, same-level cards · needs 5',
   'roster.fuseEmpty': 'No eligible material cards',
+  'roster.fuseAutoRetarget': 'Not enough cards to upgrade this character — auto-selected a more suitable one',
   'roster.fuseOk': 'Fusion complete!',
   'roster.fuseErr': 'Fusion failed',
   'roster.fuseMaterials': 'Materials',
