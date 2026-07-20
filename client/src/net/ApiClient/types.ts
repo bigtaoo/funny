@@ -31,7 +31,11 @@ export type MailView = Schemas['MailView'];
 export type MailAttachmentView = Schemas['MailAttachmentView'];
 /** Offline badge aggregate (friend requests / unread conversations / unread mail + total); fetched once after login. */
 export type SocialBadges = Schemas['SocialBadges'];
-/** Server-persisted replay (opaque frames, base64); decoded for playback on the client via net/serverReplay. */
+/**
+ * Server-persisted replay (opaque frames, base64). The wire transport is gzip-compressed (`replayGz`,
+ * S1-RP storage cost fix) — ApiClient decompresses to this structure via net/serverReplay's
+ * decodeReplayGz; net/serverReplay's serverReplayToReplay then decodes it for playback.
+ */
 export type ServerReplay = Schemas['MatchReplay'];
 // —— Achievement system (S9-5) ——
 /** Achievement definition (hard-coded in @nw/shared, delivered by the server; the client uses it together with stats to compute tiers locally). */

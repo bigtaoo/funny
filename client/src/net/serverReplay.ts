@@ -15,6 +15,7 @@ import {
 } from '../game';
 import { PlayerCommands, type PlayerCommand as ProtoPlayerCommand } from './proto/game';
 import type { ServerReplay } from './ApiClient';
+import { gunzipBase64 } from './gzip';
 
 /** base64 → Uint8Array (browser atob / Node 18+ global atob both work). */
 function base64ToBytes(b64: string): Uint8Array {
@@ -22,6 +23,18 @@ function base64ToBytes(b64: string): Uint8Array {
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
+}
+
+/**
+ * Decodes the server's transport wrapper for a match replay (S1-RP, 2026-07-20): the server stores/sends
+ * the replay gzip-compressed to control storage cost, and pushes decompression to the client to save
+ * bandwidth. `replayGz` is base64(gzip(JSON.stringify(ServerReplay))); the inner structure
+ * (frames/cmds/commands-base64) is unchanged and still decoded by {@link serverReplayToReplay}.
+ */
+export async function decodeReplayGz(replayGz: string): Promise<ServerReplay> {
+  const bytes = await gunzipBase64(replayGz);
+  const json = new TextDecoder().decode(bytes);
+  return JSON.parse(json) as ServerReplay;
 }
 
 /** game.proto PlayerCommand → engine PlayerCommand (same logic as NetInputSource.fromProto). */

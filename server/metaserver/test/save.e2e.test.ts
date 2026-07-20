@@ -3,7 +3,7 @@
 // Entire suite is skipped when Mongo is unreachable (does not block CI without a DB); prints a warning.
 // Imports from the build artifact dist (NodeNext .js extensions are awkward under vitest source resolution); run `tsc -b` first.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
+import { createMongo, compressReplayDoc, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../dist/app.js';
 
@@ -202,7 +202,7 @@ describe.skipIf(!mongo)('metaserver save-service e2e', () => {
           { side: 0, state_hash: 'H', winner_side: 0 },
           { side: 1, state_hash: 'H', winner_side: 0 },
         ],
-        replay: { engineVersion: 0, mode: 'netplay', seed: '7', endFrame: 0, frames: [], meta: { recordedAt: 0, winner: 0 } },
+        replay_gz: compressReplayDoc({ engineVersion: 0, mode: 'netplay', seed: '7', endFrame: 0, frames: [], meta: { recordedAt: 0, winner: 0 } }).toString('base64'),
       },
     });
     expect(report.statusCode).toBe(200);

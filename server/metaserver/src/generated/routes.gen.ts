@@ -3912,102 +3912,12 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
         "data": {
           "type": "object",
           "required": [
-            "replay"
+            "replayGz"
           ],
           "properties": {
-            "replay": {
-              "type": "object",
-              "required": [
-                "engineVersion",
-                "mode",
-                "seed",
-                "endFrame",
-                "frames"
-              ],
-              "description": "Server-persisted match replay (non-empty frame log). Commands are game.proto opaque bytes (base64); the client decodes and plays back.",
-              "properties": {
-                "engineVersion": {
-                  "type": "integer",
-                  "description": "Always 0 on the server side (logic-agnostic); clients validate against their own ENGINE_VERSION at replay time"
-                },
-                "mode": {
-                  "type": "string"
-                },
-                "seed": {
-                  "type": "string",
-                  "description": "uint64 decimal string"
-                },
-                "endFrame": {
-                  "type": "integer"
-                },
-                "frames": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "required": [
-                      "frame",
-                      "cmds"
-                    ],
-                    "properties": {
-                      "frame": {
-                        "type": "integer"
-                      },
-                      "cmds": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "required": [
-                            "side",
-                            "commands"
-                          ],
-                          "properties": {
-                            "side": {
-                              "type": "integer"
-                            },
-                            "commands": {
-                              "type": "string",
-                              "description": "PlayerCommands opaque bytes（base64）"
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                },
-                "meta": {
-                  "type": "object",
-                  "properties": {
-                    "recordedAt": {
-                      "type": "integer"
-                    },
-                    "winner": {
-                      "type": "integer"
-                    }
-                  }
-                },
-                "decks": {
-                  "type": "object",
-                  "description": "Deck loadouts the match was built with (PVP_LOADOUT_DESIGN §6.2); omitted for matches with no loadout gating",
-                  "required": [
-                    "top",
-                    "bottom"
-                  ],
-                  "properties": {
-                    "top": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "bottom": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    }
-                  }
-                }
-              }
+            "replayGz": {
+              "type": "string",
+              "description": "base64(gzip(JSON.stringify(MatchReplay))) — client decompresses (DecompressionStream) then JSON.parses to recover the MatchReplay structure"
             }
           }
         }
@@ -4060,102 +3970,12 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
         "data": {
           "type": "object",
           "required": [
-            "replay"
+            "replayGz"
           ],
           "properties": {
-            "replay": {
-              "type": "object",
-              "required": [
-                "engineVersion",
-                "mode",
-                "seed",
-                "endFrame",
-                "frames"
-              ],
-              "description": "Server-persisted match replay (non-empty frame log). Commands are game.proto opaque bytes (base64); the client decodes and plays back.",
-              "properties": {
-                "engineVersion": {
-                  "type": "integer",
-                  "description": "Always 0 on the server side (logic-agnostic); clients validate against their own ENGINE_VERSION at replay time"
-                },
-                "mode": {
-                  "type": "string"
-                },
-                "seed": {
-                  "type": "string",
-                  "description": "uint64 decimal string"
-                },
-                "endFrame": {
-                  "type": "integer"
-                },
-                "frames": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "required": [
-                      "frame",
-                      "cmds"
-                    ],
-                    "properties": {
-                      "frame": {
-                        "type": "integer"
-                      },
-                      "cmds": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "required": [
-                            "side",
-                            "commands"
-                          ],
-                          "properties": {
-                            "side": {
-                              "type": "integer"
-                            },
-                            "commands": {
-                              "type": "string",
-                              "description": "PlayerCommands opaque bytes（base64）"
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                },
-                "meta": {
-                  "type": "object",
-                  "properties": {
-                    "recordedAt": {
-                      "type": "integer"
-                    },
-                    "winner": {
-                      "type": "integer"
-                    }
-                  }
-                },
-                "decks": {
-                  "type": "object",
-                  "description": "Deck loadouts the match was built with (PVP_LOADOUT_DESIGN §6.2); omitted for matches with no loadout gating",
-                  "required": [
-                    "top",
-                    "bottom"
-                  ],
-                  "properties": {
-                    "top": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "bottom": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    }
-                  }
-                }
-              }
+            "replayGz": {
+              "type": "string",
+              "description": "base64(gzip(JSON.stringify(MatchReplay))) — client decompresses (DecompressionStream) then JSON.parses to recover the MatchReplay structure"
             }
           }
         }

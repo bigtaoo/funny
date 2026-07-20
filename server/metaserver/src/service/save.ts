@@ -7,6 +7,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { SyncPatch } from '@nw/shared';
 import { ErrorCode, err, ok, STARTER_TITLE } from '@nw/shared';
 import { getOrCreateSave, putSave, writeMigratedSave } from '../save.js';
+import { readArchivedMeta, readArchivedReplayGz } from '../replayArchive.js';
 import { grantTitleToPlayer } from '../titles.js';
 import { getCurrentSeason, migrateIfStale } from '../ladderSeason.js';
 import { getDisplayName, ensurePublicId, hasFreeRename } from '../accounts.js';
@@ -163,7 +164,17 @@ export function SaveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
       return ok({ matches });
     }
 
-    /** Retrieve the replay for a specific match (only matches the current account participated in); inline replay takes priority, large matches fall back to replayBlobs (S1-RP). */
+    /**
+     * Retrieve the replay for a specific match (only matches the current account participated in); inline
+     * replay takes priority, large matches fall back to replayBlobs (S1-RP). Returns the still-gzip-compressed
+     * bytes as base64 (`replayGz`) — decompression is pushed to the client (net/serverReplay.ts) to save
+     * bandwidth, never done server-side for this hot fetch path.
+     *
+     * Cold-tier fallback (S1-RP, 2026-07-20): once Mongo's 7-day TTL purges the `matches` doc, `doc` is
+     * null here — the participant-authorization check falls back to the archived `<roomId>.meta.json`
+     * sidecar (kept 365 days) instead of 404ing immediately, so the archive is actually reachable for the
+     * scenario it exists for.
+     */
     async getMatchReplay(req: FastifyRequest, reply: FastifyReply) {
       const accountId = accountIdOf(req);
       const { cols } = this.deps;
@@ -172,19 +183,23 @@ export function SaveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
         return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'match not found'));
       }
       const doc = await cols.matches.findOne({ roomId });
+      const players = doc?.players ?? (await readArchivedMeta(roomId))?.players;
       // Only matches the current account participated in can be retrieved (prevents unauthorized access to other players' replays).
-      if (!doc || !doc.players.some((p) => p.accountId === accountId)) {
+      if (!players || !players.some((p) => p.accountId === accountId)) {
         return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'match not found'));
       }
-      let replay = doc.replay;
-      if (!replay && doc.replayRef) {
+      let replayGz = doc?.replayGz;
+      if (!replayGz && doc?.replayRef) {
         const blob = await cols.replayBlobs.findOne({ _id: doc.replayRef });
-        replay = blob?.replay;
+        replayGz = blob?.replayGz;
       }
-      if (!replay) {
+      if (!replayGz) {
+        replayGz = (await readArchivedReplayGz(roomId)) ?? undefined;
+      }
+      if (!replayGz) {
         return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'replay unavailable'));
       }
-      return ok({ replay });
+      return ok({ replayGz: replayGz.toString('base64') });
     }
 
     /** S1-RP: Create a 7-day share link (shareId) for an existing Mongo replayBlob. */
@@ -200,15 +215,20 @@ export function SaveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
       return ok({ shareId });
     }
 
-    /** S1-RP: Retrieve a replay by shareId (no login required; automatically expires when the TTL elapses). */
+    /** S1-RP: Retrieve a replay by shareId (no login required; automatically expires when the TTL elapses). Returns compressed `replayGz` (base64) — client decompresses. */
     async getReplayByShare(req: FastifyRequest, reply: FastifyReply) {
       const { shareId } = req.params as { shareId: string };
       const { cols } = this.deps;
       const share = await cols.replayShares.findOne({ _id: shareId });
       if (!share) return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'share not found'));
       const blob = await cols.replayBlobs.findOne({ _id: share.roomId });
-      if (!blob) return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'replay not found'));
-      return ok({ replay: blob.replay });
+      let replayGz = blob?.replayGz;
+      // Cold-tier fallback (S1-RP, 2026-07-20): same as getMatchReplay above.
+      if (!replayGz) {
+        replayGz = (await readArchivedReplayGz(share.roomId)) ?? undefined;
+      }
+      if (!replayGz) return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'replay not found'));
+      return ok({ replayGz: replayGz.toString('base64') });
     }
 
     /**

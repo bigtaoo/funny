@@ -6,6 +6,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   createMongo,
   makeNewSave,
+  compressReplayDoc,
   type JwtConfig,
   type MongoHandle,
   type MatchDoc,
@@ -83,14 +84,14 @@ describe.skipIf(!mongo)('anti-cheat offline audit e2e', () => {
       winner: 0,
       reason: 'base',
       hashOk: true,
-      replay: {
+      replayGz: compressReplayDoc({
         engineVersion: 1,
         mode: 'ranked',
         seed: '12345',
         endFrame: 1,
         frames: [],
         meta: { recordedAt: 1, winner: 0 },
-      },
+      }),
       reportedStats,
       ts,
     });
