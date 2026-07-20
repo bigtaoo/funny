@@ -33,7 +33,7 @@ function frameBatchMsg(toFrame: number, frames: FrameCmds[] = []): ServerMsg {
 
 function matchStartMsg(seed: number, localSide: number, startFrame = 0): ServerMsg {
   return {
-    matchStart: { roomId: 'room-1', mode: 0, seed, startFrame, localSide, opponentName: '', opponentPublicId: '', opponentTitle: '', topDeck: [], bottomDeck: [] },
+    matchStart: { roomId: 'room-1', mode: 0, seed, startFrame, localSide, opponentName: '', opponentPublicId: '', opponentTitle: '', opponentAvatarId: '', topDeck: [], bottomDeck: [] },
   } as ServerMsg;
 }
 
