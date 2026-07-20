@@ -1,6 +1,7 @@
 // PvE server authority + replay sharing + match history/replay retrieval.
 import type { SaveData, EquipmentInstance } from '../../game/meta/SaveData';
 import { packReplayBlob, unpackReplayBlob } from '../replayCompress';
+import { decodeReplayGz } from '../serverReplay';
 import { type Constructor, type ApiClientBaseCtor } from './base';
 import type { ServerReplay, MatchHistoryEntry } from './types';
 
@@ -19,7 +20,7 @@ export interface PveApi {
     grantedEquipment?: EquipmentInstance;
   }>;
   createReplayShare(roomId: string): Promise<{ shareId: string }>;
-  getReplayByShare(shareId: string): Promise<{ replay: unknown }>;
+  getReplayByShare(shareId: string): Promise<{ replay: ServerReplay }>;
   createStateReplayShare(blob: unknown): Promise<{ shareCode: string }>;
   getStateReplayShare(shareCode: string): Promise<{ blob: unknown }>;
   pveVerify(
@@ -78,9 +79,10 @@ export function PveMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase & 
       return this.post<{ shareId: string }>(`/match/${roomId}/replay/share`, {});
     }
 
-    /** Retrieve a replay via share link (S1-RP): no login required. */
-    async getReplayByShare(shareId: string): Promise<{ replay: unknown }> {
-      return this.request<{ replay: unknown }>('GET', `/share/replay/${shareId}`);
+    /** Retrieve a replay via share link (S1-RP): no login required. Server returns compressed `replayGz`; decompressed here. */
+    async getReplayByShare(shareId: string): Promise<{ replay: ServerReplay }> {
+      const data = await this.request<{ replayGz: string }>('GET', `/share/replay/${shareId}`);
+      return { replay: await decodeReplayGz(data.replayGz) };
     }
 
     /**
@@ -146,13 +148,17 @@ export function PveMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase & 
       return data.matches;
     }
 
-    /** Retrieve the server-side replay for a match (participants only; opaque frames, decoded for playback by net/serverReplay). 404 → ApiError. */
+    /**
+     * Retrieve the server-side replay for a match (participants only; opaque frames, decoded for
+     * playback by net/serverReplay). The server sends the replay still gzip-compressed (`replayGz`,
+     * S1-RP storage cost fix) — decompression happens here, client-side, to save bandwidth. 404 → ApiError.
+     */
     async getMatchReplay(roomId: string): Promise<ServerReplay> {
-      const data = await this.request<{ replay: ServerReplay }>(
+      const data = await this.request<{ replayGz: string }>(
         'GET',
         `/match/${encodeURIComponent(roomId)}/replay`,
       );
-      return data.replay;
+      return decodeReplayGz(data.replayGz);
     }
   };
 }

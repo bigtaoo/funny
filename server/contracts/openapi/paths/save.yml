@@ -121,7 +121,7 @@
   get:
     operationId: getMatchReplay
     tags: [save]
-    summary: Fetch a match replay (only matches the account participated in); server opaque frames, client decodes for playback
+    summary: Fetch a match replay (only matches the account participated in); gzip-compressed opaque frames, client decompresses + decodes for playback
     security: [{ bearerAuth: [] }]
     parameters:
       - name: roomId
@@ -140,9 +140,11 @@
                 ok: { type: boolean, enum: [true] }
                 data:
                   type: object
-                  required: [replay]
+                  required: [replayGz]
                   properties:
-                    replay: { $ref: '#/components/schemas/MatchReplay' }
+                    replayGz:
+                      type: string
+                      description: base64(gzip(JSON.stringify(MatchReplay))) — client decompresses (DecompressionStream) then JSON.parses to recover the MatchReplay structure
       '401': { $ref: '#/components/responses/ErrorResp' }
       '404': { $ref: '#/components/responses/ErrorResp' }
 
@@ -199,9 +201,11 @@
                 ok: { type: boolean, enum: [true] }
                 data:
                   type: object
-                  required: [replay]
+                  required: [replayGz]
                   properties:
-                    replay: { $ref: '#/components/schemas/MatchReplay' }
+                    replayGz:
+                      type: string
+                      description: base64(gzip(JSON.stringify(MatchReplay))) — client decompresses (DecompressionStream) then JSON.parses to recover the MatchReplay structure
       '404': { $ref: '#/components/responses/ErrorResp' }
 
 /replay/share:

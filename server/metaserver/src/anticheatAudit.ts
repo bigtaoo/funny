@@ -8,6 +8,7 @@
 import type {
   Collections,
   MatchDoc,
+  MatchReplayDoc,
   SaveData,
   StatKey,
   AntiCheatReviewDoc,
@@ -16,6 +17,7 @@ import {
   compareAudit,
   applyRollback,
   shouldAuditSample,
+  decompressReplayDoc,
 } from '@nw/shared';
 import type { GatewayClient, JudgeFrame } from './gatewayClient.js';
 import { createLogger } from '@nw/shared';
@@ -58,9 +60,7 @@ function parsePerSideStats(
 }
 
 /** Converts archived replay frames (commands already as base64 strings) → judge frames. */
-function toJudgeFrames(doc: MatchDoc): JudgeFrame[] {
-  const replay = doc.replay;
-  if (!replay) return [];
+function toJudgeFrames(replay: MatchReplayDoc): JudgeFrame[] {
   return replay.frames.map((f) => ({
     frame: f.frame,
     cmds: f.cmds.map((c) => ({ side: c.side, commands: String(c.commands) })),
@@ -148,25 +148,27 @@ async function auditMatch(
   const maxSusp = saves.reduce((m, s) => Math.max(m, s?.save.antiCheat?.statSuspicion ?? 0), 0);
   if (!shouldAuditSample(maxSusp, rand(), opts)) return; // not sampled: do not mark, retain re-sample eligibility
 
-  // Fetch replay (inline preferred, fall back to external blob).
-  let replay = doc.replay;
-  if (!replay && doc.replayRef) {
+  // Fetch replay (inline preferred, fall back to external blob). Rare/periodic path — decompressing
+  // here (unlike the per-match write path in matchReport.ts) is fine.
+  let replayGz = doc.replayGz;
+  if (!replayGz && doc.replayRef) {
     const blob = await cols.replayBlobs.findOne({ _id: doc.replayRef });
-    replay = blob?.replay;
+    replayGz = blob?.replayGz;
   }
-  if (!replay) {
+  if (!replayGz) {
     await markAudited(cols, doc.roomId, { ts: now(), verdict: 'skipped' });
     result.audited++;
     result.skipped++;
     return;
   }
+  const replay = decompressReplayDoc(replayGz);
 
   // Headless re-computation via peer judge (mode 1 = ranked; frames forwarded as-is in base64, same as judgeMismatch).
   const verdict = await gateway.judge({
     seed: Number(doc.seed),
     mode: 1,
     endFrame: replay.endFrame,
-    frames: toJudgeFrames({ ...doc, replay }),
+    frames: toJudgeFrames(replay),
     exclude: doc.players.map((p) => p.accountId),
   });
   const parsed = verdict.ok ? parsePerSideStats(verdict.statsJson) : null;

@@ -4,7 +4,8 @@
 // the match; for ranked matches it returns each side's ELO delta back to gameserver →
 // forwarded into match_over.elo. When meta is unavailable, reports are queued for background
 // retry (active matches do not depend on meta being reachable in real time, M16).
-import { internalHeaders } from '@nw/shared';
+import { internalHeaders, compressReplayDoc } from '@nw/shared';
+import type { MatchReplayDoc } from '@nw/shared';
 import type { EloBySide, MatchReport } from './Room';
 
 interface QueuedReport {
@@ -28,6 +29,21 @@ export class MetaReporter {
    * do not trigger duplicate settlement).
    */
   async report(r: MatchReport): Promise<EloBySide | null> {
+    // Non-empty frame replay (M19/S1-RP). Opaque command bytes are base64-encoded (commands themselves
+    // are not decoded, M12); the whole replayDoc JSON is then gzip'd once (2026-07-20 storage cost fix)
+    // and base64-encoded a single time for internal HTTP JSON transport as `replay_gz`.
+    const replayDoc: MatchReplayDoc = {
+      engineVersion: r.replay.engineVersion,
+      mode: r.replay.mode,
+      seed: String(r.replay.seed),
+      endFrame: r.replay.endFrame,
+      frames: r.replay.frames.map((f) => ({
+        frame: f.frame,
+        cmds: f.cmds.map((c) => ({ side: c.side, commands: Buffer.from(c.commands).toString('base64') })),
+      })),
+      meta: r.replay.meta,
+      ...(r.replay.decks ? { decks: r.replay.decks } : {}),
+    };
     const body = {
       room_id: r.roomId,
       seed: String(r.seed),
@@ -42,21 +58,7 @@ export class MetaReporter {
         winner_side: x.winnerSide,
         ...(x.stats ? { stats: x.stats } : {}), // S9-6: per-side per-match achievement counters (meta accumulates after L1 validation, ranked only)
       })),
-      // Non-empty frame replay (M19/S1-RP). Opaque command bytes are base64-encoded for
-      // internal HTTP JSON transport (meta stores them verbatim in matches.replay; base64
-      // is decoded at replay time; commands themselves are not decoded, M12).
-      replay: {
-        engineVersion: r.replay.engineVersion,
-        mode: r.replay.mode,
-        seed: String(r.replay.seed),
-        endFrame: r.replay.endFrame,
-        frames: r.replay.frames.map((f) => ({
-          frame: f.frame,
-          cmds: f.cmds.map((c) => ({ side: c.side, commands: Buffer.from(c.commands).toString('base64') })),
-        })),
-        meta: r.replay.meta,
-        ...(r.replay.decks ? { decks: r.replay.decks } : {}),
-      },
+      replay_gz: compressReplayDoc(replayDoc).toString('base64'),
     };
     if (!this.baseUrl) return null;
     try {
