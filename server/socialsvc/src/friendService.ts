@@ -91,6 +91,7 @@ export class FriendService {
         online: presence[e.friend] ?? false,
         ...(p.rank ? { rank: p.rank } : {}),
         ...(e.alias ? { alias: e.alias } : {}),
+        ...(p.avatarId ? { avatarId: p.avatarId } : {}),
       });
     }
     return out;

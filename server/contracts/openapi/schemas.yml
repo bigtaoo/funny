@@ -378,6 +378,7 @@ schemas:
       displayName: { type: string }
       rank: { type: string }
       equippedTitle: { type: string, description: "Currently equipped title id (empty string = no title)" }
+      avatarId: { type: string, description: "Equipped avatar id, composite \"<category>:<key>\" (empty string = no avatar)" }
 
   FriendView:
     type: object
@@ -388,6 +389,7 @@ schemas:
       online: { type: boolean }
       rank: { type: string }
       alias: { type: string, description: owner's private alias }
+      avatarId: { type: string, description: "Equipped avatar id, composite \"<category>:<key>\" (empty string = no avatar)" }
 
   FriendRequestView:
     type: object

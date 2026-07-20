@@ -365,3 +365,36 @@
       '401': { $ref: '#/components/responses/ErrorResp' }
       '403': { $ref: '#/components/responses/ErrorResp' }
 
+/avatar/equip:
+  put:
+    operationId: equipAvatar
+    tags: [save]
+    summary: "Select the displayed avatar (writes equipped.avatar and pushes save). Composite id \"<category>:<key>\" (preset/title/hero/equip/material/skin); preset always allowed, other categories require the item to appear in the player's lifetime-owned records (titles / everOwned / inventory.skins)."
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [avatarId]
+            properties:
+              avatarId: { type: string, description: "Composite avatar id to equip, e.g. preset:3, title:t_champion, hero:archer, equip:sword_01, material:scrap, skin:skin_04" }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '403': { $ref: '#/components/responses/ErrorResp' }
+

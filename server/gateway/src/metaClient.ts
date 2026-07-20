@@ -33,13 +33,13 @@ export class MetaClient {
    * Fetch a player's public profile (display name + 9-digit public id) for room display.
    * meta not configured / error → return empty (gateway falls back to accountId prefix as name, publicId empty).
    */
-  async getProfile(accountId: string): Promise<{ displayName?: string; publicId?: string; equippedTitle?: string }> {
+  async getProfile(accountId: string): Promise<{ displayName?: string; publicId?: string; equippedTitle?: string; avatarId?: string }> {
     if (!this.baseUrl) return {};
     try {
       const url = `${this.baseUrl}/internal/profile?accountId=${encodeURIComponent(accountId)}`;
       const res = await fetch(url, { headers: internalHeaders('gateway', this.internalKey) });
       if (!res.ok) return {};
-      return (await res.json()) as { displayName?: string; publicId?: string; equippedTitle?: string };
+      return (await res.json()) as { displayName?: string; publicId?: string; equippedTitle?: string; avatarId?: string };
     } catch {
       return {};
     }

@@ -91,13 +91,21 @@ export async function deliverGrant(
   for (const [id, inst] of Object.entries(equipInstances ?? {})) set[`save.equipmentInv.${id}`] = inst;
   if (equipMailOverflowCount !== undefined) set['save.equipMailOverflowCount'] = equipMailOverflowCount;
   const inc: Record<string, number> = { 'save.rev': 1, rev: 1 };
-  for (const [mat, qty] of Object.entries(materialInc ?? {})) if (qty > 0) inc[`save.materials.${mat}`] = qty;
+  const grantedMaterialIds: string[] = [];
+  for (const [mat, qty] of Object.entries(materialInc ?? {})) if (qty > 0) { inc[`save.materials.${mat}`] = qty; grantedMaterialIds.push(mat); }
+  const grantedEquipDefIds = [...new Set(Object.values(equipInstances ?? {}).map((inst) => inst.defId))];
+  // Lifetime skin/material/equipment-owned ledgers (avatar unlock): additive-only, same rationale as
+  // deliverMailGrant above — these gacha-delivered items must stay unlocked even after being
+  // salvaged/consumed/sold, unlike inventory.skins/materials/equipmentInv themselves.
   const res = await cols.saves.findOneAndUpdate(
     { _id: accountId },
     {
       $addToSet: {
         'save.inventory.skins': { $each: newSkins },
         'save.deliveredOrders': orderId,
+        ...(newSkins.length > 0 ? { 'save.everOwned.skin': { $each: newSkins } } : {}),
+        ...(grantedMaterialIds.length > 0 ? { 'save.everOwned.material': { $each: grantedMaterialIds } } : {}),
+        ...(grantedEquipDefIds.length > 0 ? { 'save.everOwned.equipment': { $each: grantedEquipDefIds } } : {}),
       },
       $inc: inc,
       $set: set,
@@ -132,13 +140,19 @@ export async function deliverMailGrant(
   if (coinsAfter !== null) set['save.wallet.coins'] = coinsAfter;
   const inc: Record<string, number> = { 'save.rev': 1, rev: 1 };
   for (const [id, n] of Object.entries(itemInc)) if (n > 0) inc[`save.inventory.items.${id}`] = n;
-  for (const [id, n] of Object.entries(materialInc)) if (n > 0) inc[`save.materials.${id}`] = n;
+  const grantedMaterialIds: string[] = [];
+  for (const [id, n] of Object.entries(materialInc)) if (n > 0) { inc[`save.materials.${id}`] = n; grantedMaterialIds.push(id); }
+  // Lifetime skin/material-owned ledgers (avatar unlock): additive-only, alongside the existing
+  // inventory.skins $addToSet — everOwned.skin survives auction escrow removing a skin from
+  // inventory.skins, and everOwned.material survives the material later being spent to 0.
   const res = await cols.saves.findOneAndUpdate(
     { _id: accountId },
     {
       $addToSet: {
         'save.inventory.skins': { $each: newSkins },
         'save.deliveredOrders': orderId,
+        ...(newSkins.length > 0 ? { 'save.everOwned.skin': { $each: newSkins } } : {}),
+        ...(grantedMaterialIds.length > 0 ? { 'save.everOwned.material': { $each: grantedMaterialIds } } : {}),
       },
       $inc: inc,
       $set: set,

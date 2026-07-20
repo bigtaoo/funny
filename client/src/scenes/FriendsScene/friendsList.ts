@@ -4,6 +4,7 @@ import { t, TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { FS, snapFont } from '../../render/fontScale';
 import type { FriendView, FriendRequestView } from '../../net/ApiClient';
+import { buildAvatar } from '../../render/avatar';
 import { rankLabel, type Constructor, type FriendsSceneBaseCtor } from './base';
 
 export interface FriendsListHandlers {
@@ -130,14 +131,20 @@ export function FriendsListMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase
       sketchAccentBar(bg, rh, accent, seedFor(rx, rh, 7));
       layer.addChild(bg);
 
+      const avSize = Math.round(rh * 0.72);
+      const avatar = buildAvatar(avSize, f.alias || f.displayName, seedFor(rx, 2, rw), f.avatarId);
+      avatar.x = rx + Math.round(rw * 0.04); avatar.y = y + (rh - avSize) / 2;
+      layer.addChild(avatar);
+
       const dot = new PIXI.Graphics();
       dot.beginFill(f.online ? C.green : C.btnOff);
-      dot.drawCircle(0, 0, Math.round(rh * 0.1));
+      dot.lineStyle(1.5, C.paper);
+      dot.drawCircle(0, 0, Math.round(rh * 0.08));
       dot.endFill();
-      dot.x = rx + Math.round(rw * 0.06); dot.y = y + rh / 2;
+      dot.x = rx + Math.round(rw * 0.04) + avSize; dot.y = y + (rh - avSize) / 2 + avSize;
       layer.addChild(dot);
 
-      const tx = rx + Math.round(rw * 0.12);
+      const tx = rx + Math.round(rw * 0.04) + avSize + Math.round(rw * 0.03);
       const name = txt(f.alias || f.displayName, snapFont(Math.round(rh * 0.30)), C.dark, true);
       name.anchor.set(0, 0.5); name.x = tx; name.y = y + rh * 0.34;
       layer.addChild(name);
@@ -162,6 +169,7 @@ export function FriendsListMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase
         name: f.alias || f.displayName,
         publicId: f.publicId,
         ...(f.rank ? { rankKey: 'rank.' + f.rank } : {}),
+        ...(f.avatarId ? { avatarId: f.avatarId } : {}),
         actions: [
           { labelKey: 'friends.message', fn: () => this.cb.openChat(f.publicId, f.alias || f.displayName) },
           { labelKey: 'friends.block', fn: () => void this.doBlock(f.publicId), danger: true },

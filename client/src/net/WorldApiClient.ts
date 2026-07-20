@@ -49,6 +49,8 @@ export interface FamilyMemberView {
   /** Resolved by socialsvc via metaClient; absent if the profile lookup failed. */
   publicId?: string;
   displayName?: string;
+  /** Equipped avatar id (composite "<category>:<key>"), resolved by socialsvc via metaClient. */
+  avatarId?: string;
 }
 export interface FamilyView {
   familyId: string;

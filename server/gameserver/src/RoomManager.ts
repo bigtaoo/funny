@@ -31,6 +31,7 @@ export class RoomManager {
     mode: MatchModeVal,
     opponentTitle = '',
     decks?: { top: string[]; bottom: string[] },
+    opponentAvatarId = '',
   ): boolean {
     let room = this.rooms.get(conn.roomId);
     if (room) {
@@ -41,7 +42,7 @@ export class RoomManager {
       if (room.hasSide(conn.side)) {
         room.takeover(conn);
       } else {
-        room.addPlayer(conn, name, publicId, opponentTitle, decks);
+        room.addPlayer(conn, name, publicId, opponentTitle, decks, opponentAvatarId);
       }
       return true;
     }
@@ -50,7 +51,7 @@ export class RoomManager {
       report: this.deps.report,
     });
     this.rooms.set(conn.roomId, room);
-    room.addPlayer(conn, name, publicId, opponentTitle, decks);
+    room.addPlayer(conn, name, publicId, opponentTitle, decks, opponentAvatarId);
     return true;
   }
 

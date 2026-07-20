@@ -23,6 +23,8 @@ export interface TicketClaims {
   opponentPublicId: string;
   /** Opponent's currently equipped title ID (UI display only; defaults to empty string). */
   opponentTitle?: string;
+  /** Opponent's currently equipped avatar ID (UI display only; defaults to empty string). */
+  opponentAvatarId?: string;
   /** Public WebSocket address of the assigned gameserver (written into match_found.game_url). */
   gameUrl: string;
   /**

@@ -8,11 +8,14 @@ export async function profileOf(cols: Collections, accountId: string): Promise<P
   if (!doc?.publicId) return null;
   const save = await cols.saves.findOne({ _id: accountId }, { projection: { 'save.pvp.elo': 1, 'save.equipped': 1 } });
   const elo = save?.save.pvp.elo ?? INITIAL_ELO;
-  const equippedTitle = (save?.save.equipped as Record<string, string> | undefined)?.['title'];
+  const equipped = save?.save.equipped as Record<string, string> | undefined;
+  const equippedTitle = equipped?.['title'];
+  const avatarId = equipped?.['avatar'];
   return {
     publicId: doc.publicId,
     displayName: doc.displayName ?? `Player${doc.publicId.slice(-4)}`,
     rank: eloToRank(elo),
     ...(equippedTitle ? { equippedTitle } : {}),
+    ...(avatarId ? { avatarId } : {}),
   };
 }

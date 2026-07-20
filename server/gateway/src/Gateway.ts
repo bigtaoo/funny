@@ -453,10 +453,10 @@ export class Gateway {
       return;
     }
     const deck = this.resolvedDeck(accountId, submittedDeck, elo);
-    const { name, publicId, equippedTitle } = await this.resolveProfile(accountId);
+    const { name, publicId, equippedTitle, avatarId } = await this.resolveProfile(accountId);
     if (!this.conns.has(accountId)) return;
     log.info('-> matchsvc enqueue', { accountId, elo, deckSize: deck.length });
-    this.matchsvc.enqueue(accountId, name, publicId, elo, equippedTitle, '', deck);
+    this.matchsvc.enqueue(accountId, name, publicId, elo, equippedTitle, avatarId, '', deck);
   }
 
   /**
@@ -468,9 +468,9 @@ export class Gateway {
     const { elo } = await this.meta.getElo(accountId);
     if (!this.conns.has(accountId)) return;
     const deck = this.resolvedDeck(accountId, submittedDeck, elo);
-    const { name, publicId, equippedTitle } = await this.resolveProfile(accountId);
+    const { name, publicId, equippedTitle, avatarId } = await this.resolveProfile(accountId);
     if (!this.conns.has(accountId)) return;
-    this.matchsvc.roomCreate(accountId, name, publicId, equippedTitle, deck);
+    this.matchsvc.roomCreate(accountId, name, publicId, equippedTitle, avatarId, deck);
   }
 
   /** Friendly room join: same current-elo deck gating as create (PVP_LOADOUT §6.3). */
@@ -478,9 +478,9 @@ export class Gateway {
     const { elo } = await this.meta.getElo(accountId);
     if (!this.conns.has(accountId)) return;
     const deck = this.resolvedDeck(accountId, submittedDeck, elo);
-    const { name, publicId, equippedTitle } = await this.resolveProfile(accountId);
+    const { name, publicId, equippedTitle, avatarId } = await this.resolveProfile(accountId);
     if (!this.conns.has(accountId)) return;
-    this.matchsvc.roomJoin(accountId, name, publicId, code, equippedTitle, deck);
+    this.matchsvc.roomJoin(accountId, name, publicId, code, equippedTitle, avatarId, deck);
   }
 
   /**
@@ -503,9 +503,9 @@ export class Gateway {
    * If meta is unavailable or no profile exists, falls back to the first 12 characters of accountId for the name
    * and an empty string for publicId (room creation still works, the name just won't be user-friendly).
    */
-  private async resolveProfile(accountId: string): Promise<{ name: string; publicId: string; equippedTitle: string }> {
+  private async resolveProfile(accountId: string): Promise<{ name: string; publicId: string; equippedTitle: string; avatarId: string }> {
     const p = await this.meta.getProfile(accountId);
-    return { name: p.displayName || displayName(accountId), publicId: p.publicId ?? '', equippedTitle: p.equippedTitle ?? '' };
+    return { name: p.displayName || displayName(accountId), publicId: p.publicId ?? '', equippedTitle: p.equippedTitle ?? '', avatarId: p.avatarId ?? '' };
   }
 
   private sendPong(accountId: string): void {

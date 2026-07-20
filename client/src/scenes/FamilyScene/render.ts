@@ -5,6 +5,7 @@ import { ui as C, txt, sketchPanel, sketchButton, sketchAccentBar, seedFor } fro
 import { FS } from '../../render/fontScale';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { buildIcon } from '../../render/icons';
+import { buildAvatar } from '../../render/avatar';
 import { caretDisplay } from '../../render/inputDisplay';
 import { drawChatLine } from '../../render/chatRow';
 import { FAMILY_CAP } from '@nw/shared';
@@ -413,12 +414,18 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
           }
         }
 
-        // Name on the left, with the role label immediately to its right (was stacked above it).
+        // Avatar, then name on the left, with the role label immediately to its right (was stacked above it).
+        const avSize = Math.round((R - 4) * 0.7);
+        const avatar = buildAvatar(avSize, mem.displayName ?? mem.publicId ?? '', seedFor(cy, 6, avSize), mem.avatarId);
+        avatar.x = x0 + 12; avatar.y = cy + Math.round((R - avSize) / 2);
+        this.bodyLayer.addChild(avatar);
+
         const roleColor = mem.role === 'leader' ? C.accent : mem.role === 'elder' ? 0xd4a030 : MUTED;
         const roleLbl = txt(t(`family.${mem.role as 'leader' | 'member' | 'elder'}`), FS.bodyLg, roleColor);
-        const nameMaxW = Math.max(40, nameRight - (x0 + 18) - roleLbl.width - 10);
+        const nameX = x0 + 18 + avSize + 8;
+        const nameMaxW = Math.max(40, nameRight - nameX - roleLbl.width - 10);
         const nameLbl = truncateToWidth(mem.displayName ?? mem.publicId ?? '', FS.heading, C.dark, nameMaxW);
-        nameLbl.x = x0 + 18; nameLbl.y = cy + Math.round((R - nameLbl.height) / 2);
+        nameLbl.x = nameX; nameLbl.y = cy + Math.round((R - nameLbl.height) / 2);
         this.bodyLayer.addChild(nameLbl);
         roleLbl.x = nameLbl.x + nameLbl.width + 10; roleLbl.y = cy + Math.round((R - roleLbl.height) / 2);
         this.bodyLayer.addChild(roleLbl);

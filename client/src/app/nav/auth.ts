@@ -51,7 +51,16 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
       onBack() { nav.goLobby(); },
       playerName: playerName(),
       avatarId: avatarId(),
-      onSetAvatar: (id) => { platform.storage.setItem(PLAYER_AVATAR_KEY, id); },
+      onSetAvatar: (id) => {
+        // Local write is the offline-mode / not-yet-synced fallback; saveManager.update marks the
+        // save dirty and pushes equipped via the existing generic PUT /save sync (same mechanism
+        // TitlesScene's onEquip uses for equipped['title']) — this is what other players' clients see.
+        platform.storage.setItem(PLAYER_AVATAR_KEY, id);
+        saveManager.update((d) => { d.equipped['avatar'] = id; });
+      },
+      ownedTitles: saveManager.get().titles ?? [],
+      ownedSkins: saveManager.get().inventory.skins,
+      everOwned: saveManager.get().everOwned,
       ...(platform.storage.getItem(PLAYER_PUBLIC_ID_KEY)
         ? { publicId: platform.storage.getItem(PLAYER_PUBLIC_ID_KEY)! }
         : {}),

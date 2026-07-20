@@ -190,17 +190,20 @@ export async function ensureDisplayName(cols: Collections, accountId: string): P
 export async function getProfile(
   cols: Collections,
   accountId: string,
-): Promise<{ displayName?: string; publicId: string; equippedTitle?: string }> {
+): Promise<{ displayName?: string; publicId: string; equippedTitle?: string; avatarId?: string }> {
   const [displayName, saveDoc, publicId] = await Promise.all([
     ensureDisplayName(cols, accountId),
     cols.saves.findOne({ _id: accountId }, { projection: { 'save.equipped': 1 } }),
     ensurePublicId(cols, accountId),
   ]);
-  const equippedTitle = (saveDoc?.save.equipped as Record<string, string> | undefined)?.['title'];
+  const equipped = saveDoc?.save.equipped as Record<string, string> | undefined;
+  const equippedTitle = equipped?.['title'];
+  const avatarId = equipped?.['avatar'];
   return {
     displayName,
     publicId,
     ...(equippedTitle ? { equippedTitle } : {}),
+    ...(avatarId ? { avatarId } : {}),
   };
 }
 
