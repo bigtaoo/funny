@@ -1093,6 +1093,10 @@ if (path.startsWith('/admin/world/')) {
 3. 驻军数值低于当前过滤结果集中位数一半时文字变红——阈值取当次列表的中位数而非写死绝对值，避免不同账号规模下失真。
 4. 「放弃」不再直接调用 `doAbandonFromList`，先弹二次确认（复用 `panelButton` 在 `ctx.territoryAbandonConfirm` 非空时整体替换面板内容，避免遮挡态下误触底层按钮）；确认态复用面板已有的 dim+panel 外框，只替换正文为提示语 + 确定/取消。`WorldMapContext` 新增 `territoryAbandonConfirm: {x,y} | null` 字段；`world.abandonConfirm` i18n key（zh/en/de）。验证：`tsc --noEmit` 绿；临时 `?territorydbg` 调试入口（`territoryDebug.ts`，直接构造 `WorldMapScene` + reject-fast `WorldApiClient` stub + 18 行假数据，验证后已移除）在真实 dev server 里截图确认排序分组正确、过滤按钮计数、驻军红字、确认弹窗文案与按钮布局，以及 Cancel 能正确清空确认态回到列表。
 
+**过滤按钮换行策略 + 红字驻军提示语（2026-07-20）**：用户截图反馈两点——① 等级过滤按钮固定拆两行（`perRow = ceil(levels/2)`），账号等级种类少（如只有 Lv.1/Lv.2）时每个按钮被拉伸到几乎占满一整行；② 领地行坐标标红（低驻军预警，见上条 #3）在面板上没有任何文字说明，用户看不出红色代表什么。改动（`renderTerritoryPanel()`）：
+1. 过滤按钮改为每行最多 5 个（`perRow = min(5, levels.length)`），超过 5 个等级才换到下一行，行数按实际等级数动态算（`rows = ceil(levels.length / perRow)`），不再写死 2 行。
+2. 列表区顶部加一行灰色提示文字（`world.weakGarrisonHint`，`FS.tiny`/`C.mid`）："红色坐标：驻军低于列表中位数一半，建议增兵"，zh/en/de 三语。验证：`tsc --noEmit` 对改动文件绿；`SceneManager.ts` 当时有另一会话在建的 overlay 重构导致编译错误，未能启动 dev server 截图核实，用户确认按已知在建 WIP 处理、跳过截图。
+
 ---
 
 ## 27. 险地/关隘战力模拟补测（2026-07-16，DRAFT 数值收尾）

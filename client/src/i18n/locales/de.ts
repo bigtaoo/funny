@@ -928,6 +928,7 @@ export const de: Record<TranslationKey, string> = {
   'world.territoryTabList': 'Gebiete',
   'world.territoryEmpty': 'Noch kein Gebiet',
   'world.territoryJump': 'Springen',
+  'world.weakGarrisonHint': 'Rot = Garnison unter der Hälfte des Listen-Medians – verstärken',
   'world.err.troopCap': 'Truppenlimit erreicht',
   'world.err.noInk': 'Nicht genug Tinte',
   // Nationen / Saison / Shop (C5)

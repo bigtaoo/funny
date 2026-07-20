@@ -928,6 +928,7 @@ export const en: Record<TranslationKey, string> = {
   'world.territoryTabList': 'Territory',
   'world.territoryEmpty': 'No territory yet',
   'world.territoryJump': 'Jump',
+  'world.weakGarrisonHint': 'Red = garrison below half the list median — reinforce',
   'world.err.troopCap': 'Troop cap reached',
   'world.err.noInk': 'Not enough ink',
   // Nations / season / shop panel (C5)

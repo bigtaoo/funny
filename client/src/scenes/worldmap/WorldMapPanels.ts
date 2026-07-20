@@ -772,12 +772,15 @@ export class WorldMapPanels {
       for (const tv of this.ctx.territories) levelCounts.set(tv.level, (levelCounts.get(tv.level) ?? 0) + 1);
       const levels = Array.from(levelCounts.keys()).sort((a, b) => a - b);
       if (levels.length > 0) {
-        const perRow = Math.ceil(levels.length / 2);
+        // Capped at 5 chips per row so a handful of levels doesn't stretch each chip
+        // across the whole panel width — wraps to more rows only once levels exceed 5.
+        const perRow = Math.min(5, levels.length);
+        const rows = Math.ceil(levels.length / perRow);
         const chkW = (pw - 28 - MARGIN * (perRow - 1)) / perRow;
         for (let i = 0; i < levels.length; i++) {
           const lvl = levels[i]!;
-          const row = i < perRow ? 0 : 1;
-          const col = i < perRow ? i : i - perRow;
+          const row = Math.floor(i / perRow);
+          const col = i % perRow;
           const hidden = this.ctx.territoryHiddenLevels.has(lvl);
           const cx3 = px + 14 + col * (chkW + MARGIN);
           const cy3 = ly + row * 28;
@@ -786,7 +789,7 @@ export class WorldMapPanels {
             this.renderTerritoryPanel();
           }, 10);
         }
-        ly += 2 * 28 + 8;
+        ly += rows * 28 + 8;
       }
 
       // Sorted by level then coords so the level chips above actually correspond to contiguous
@@ -803,6 +806,8 @@ export class WorldMapPanels {
         const sortedGarrisons = filtered.map((tv) => tv.garrison ?? 0).sort((a, b) => a - b);
         const medianGarrison = sortedGarrisons[Math.floor(sortedGarrisons.length / 2)] ?? 0;
         const weakThreshold = medianGarrison * 0.5;
+        addText(t('world.weakGarrisonHint'), px + 14, ly, FS.tiny, C.mid);
+        ly += 20;
         const rowH = 34;
         const listLayer = this.beginScrollList(px, ly, pw, bodyBottom - ly, filtered.length * rowH, () => this.renderTerritoryPanel());
         let ry = ly - this.ctx.infoScrollY;

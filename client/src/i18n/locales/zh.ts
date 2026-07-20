@@ -940,6 +940,7 @@ export const zh = {
   'world.territoryTabList': '领地列表',
   'world.territoryEmpty': '暂无领地',
   'world.territoryJump': '跳转',
+  'world.weakGarrisonHint': '红色坐标：驻军低于列表中位数一半，建议增兵',
   'world.err.troopCap': '兵力已满',
   'world.err.noInk': '墨水不足',
   // ── Nations / season / shop panel (C5) ───────────────────────────────────
