@@ -60,6 +60,14 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
       },
       ownedTitles: saveManager.get().titles ?? [],
       ownedSkins: saveManager.get().inventory.skins,
+      // Current-inventory fallback for hero/equipment/material unlocks: the everOwned ledger was
+      // introduced after these accounts already owned items, and was never backfilled, so a
+      // pre-existing roster/kit must still unlock its avatars via what's held right now.
+      ownedHeroes: Object.values(saveManager.get().cardInv).map((c) => c.defId),
+      ownedEquipment: Object.values(saveManager.get().equipmentInv).map((e) => e.defId),
+      ownedMaterials: Object.entries(saveManager.get().materials)
+        .filter(([, count]) => count > 0)
+        .map(([kind]) => kind),
       everOwned: saveManager.get().everOwned,
       ...(platform.storage.getItem(PLAYER_PUBLIC_ID_KEY)
         ? { publicId: platform.storage.getItem(PLAYER_PUBLIC_ID_KEY)! }
