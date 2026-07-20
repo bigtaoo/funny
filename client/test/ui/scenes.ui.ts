@@ -374,6 +374,7 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         onBack() {},
         onOpenSect() {},
         onNavTab() {},
+        async addFriend() {},
         worldApi: stubWorldApi(),
         worldId: 'world:1:0',
         myAccountId: 'acc_test',
