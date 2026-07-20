@@ -534,13 +534,13 @@ export class GachaScene implements Scene {
     // Pulled down from the card top (portrait art was clipping heads against the
     // frame decoration otherwise) and sized to leave a small name plate at the
     // bottom rather than a half-card white gutter.
-    const picSize = Math.round(Math.min(w, h) * 0.72);
-    const picTop = y + h * 0.11;
+    const picSize = Math.round(Math.min(w, h) * 0.68);
+    const picTop = y + h * 0.15;
     this.drawEntryPicture(r.itemId, r.rarity, x + w / 2, picTop + picSize / 2, picSize, seed);
 
     // Name plate — a tight pill just big enough for the text, not a half-card
     // gutter, with its own bordered background so the name reads as a label.
-    const plateH = Math.round(h * 0.1);
+    const plateH = Math.round(h * 0.12);
     const plateY = y + h * 0.87 - plateH;
     const plate = new PIXI.Graphics();
     plate.lineStyle(Math.max(1.5, Math.round(h * 0.006)), RARITY_COLOR[r.rarity], 0.9);
