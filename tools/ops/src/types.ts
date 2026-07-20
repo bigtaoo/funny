@@ -116,6 +116,12 @@ export interface TrendPoint {
   ts: number;
   value: number;
 }
+/** Deck-composition PvP win-rate by card (BALANCE data pipeline P1, aggregated across days). */
+export interface PvpCardStatRow {
+  cardId: string;
+  games: number;
+  wins: number;
+}
 /** Anti-cheat review record (S9-7 + PvE reject 2026-07-18; mirror of the meta AntiCheatReviewDoc). Human resolves via resolveAntiCheatReview. */
 export interface AntiCheatReviewView {
   _id: string;

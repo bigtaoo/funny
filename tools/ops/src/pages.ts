@@ -11,6 +11,7 @@ export { pageAudit } from './pages/audit';
 export { pagePaddleEvents } from './pages/paddleEvents';
 export { pageAccounts } from './pages/accounts';
 export { pageLadderSeason } from './pages/ladder';
+export { pagePvpBalance } from './pages/pvpBalance';
 export { pageFlags } from './pages/flags';
 export { pageEvents } from './pages/events';
 export { pageSLGSeason } from './pages/slgSeason';

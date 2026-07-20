@@ -10,7 +10,7 @@ import { createAdminMongo } from './db';
 import { AdminService } from './service';
 import { startHttpApi } from './httpApi';
 import { seedSuperAdmin } from './seed';
-import { HttpAnalyticsClient, HttpAntiCheatClient, HttpAuctionClient, HttpEventsClient, HttpGachaPoolsClient, HttpLadderClient, HttpMailDispatcher, HttpMismatchClient, HttpPaddleEventsClient, HttpPlayerClient, HttpPromoClient, HttpStatsClient, HttpSuspiciousPveClient, HttpWorldClient } from './clients';
+import { HttpAnalyticsClient, HttpAntiCheatClient, HttpAuctionClient, HttpEventsClient, HttpGachaPoolsClient, HttpLadderClient, HttpMailDispatcher, HttpMismatchClient, HttpPaddleEventsClient, HttpPlayerClient, HttpPromoClient, HttpPvpCardStatsClient, HttpStatsClient, HttpSuspiciousPveClient, HttpWorldClient } from './clients';
 
 const log = createLogger('admin');
 
@@ -25,6 +25,7 @@ async function main(): Promise<void> {
   const players = new HttpPlayerClient(env.metaBaseUrl, env.internalKey);
   const antiCheat = new HttpAntiCheatClient(env.metaBaseUrl, env.internalKey);
   const mismatches = new HttpMismatchClient(env.metaBaseUrl, env.internalKey);
+  const pvpCardStats = new HttpPvpCardStatsClient(env.metaBaseUrl, env.internalKey);
   const suspiciousPve = new HttpSuspiciousPveClient(env.metaBaseUrl, env.internalKey);
   const mail = new HttpMailDispatcher(env.metaBaseUrl, env.internalKey);
   const analytics = new HttpAnalyticsClient(env.analyticsBaseUrl, env.internalKey);
@@ -36,7 +37,7 @@ async function main(): Promise<void> {
   const promo = new HttpPromoClient(env.metaBaseUrl, env.internalKey);
   const paddleEvents = new HttpPaddleEventsClient(env.metaBaseUrl, env.internalKey);
 
-  const svc = new AdminService({ cols: mongo.collections, stats, players, antiCheat, mismatches, suspiciousPve, mail, analytics, world, auction, ladder, events, gachaPools, promo, paddleEvents, now: () => Date.now() });
+  const svc = new AdminService({ cols: mongo.collections, stats, players, antiCheat, mismatches, pvpCardStats, suspiciousPve, mail, analytics, world, auction, ladder, events, gachaPools, promo, paddleEvents, now: () => Date.now() });
 
   const jwt: JwtConfig = { secret: env.adminJwtSecret, expiresIn: env.adminJwtTtl };
   const server = startHttpApi(

@@ -204,6 +204,14 @@ export function registerMatchReportRoutes(app: FastifyInstance, ctx: InternalCtx
         if ((e as { code?: number }).code !== 11000) log.error('archive match failed', { err: (e as Error).message });
       });
 
+    // BALANCE data pipeline (P1): deck-composition win-rate counters, best-effort. Disputed matches (hashMismatch/cheat)
+    // are excluded so they don't pollute the signal; only restricted-deck-pool matches carry `replay.decks`.
+    if (!disputed && body.replay.decks && body.winner_side >= 0) {
+      accruePvpCardStats(cols, now(), body.mode, body.winner_side, body.replay.decks).catch((e) =>
+        log.error('pvp card stats accrue failed', { roomId: body.room_id, err: (e as Error).message }),
+      );
+    }
+
     // C3: hash mismatch and not adjudicated by the peer judge → warning log (visible to admin via /admin/mismatches).
     if (!body.hash_ok && !cheat) {
       log.warn('hash mismatch unresolved', {
@@ -239,6 +247,70 @@ export function registerMatchReportRoutes(app: FastifyInstance, ctx: InternalCtx
       .toArray();
     return reply.send({ ok: true, matches });
   });
+
+  // ── GET /internal/pvp-card-stats (BALANCE P1) ──────────────────────────────
+  // Aggregates pvpCardStats across days into per-card totals (optionally filtered by mode/since); admin call.
+  app.get('/internal/pvp-card-stats', async (req, reply) => {
+    if (!authed(req.headers['x-internal-key'])) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    const query = req.query as { mode?: string; since?: string };
+    const match: Record<string, unknown> = {};
+    if (query.mode) match.mode = query.mode;
+    if (query.since) match.day = { $gte: query.since };
+    const cards = await cols.pvpCardStats
+      .aggregate<{ _id: string; games: number; wins: number }>([
+        { $match: match },
+        { $group: { _id: '$cardId', games: { $sum: '$games' }, wins: { $sum: '$wins' } } },
+        { $sort: { _id: 1 } },
+      ])
+      .toArray();
+    return reply.send({
+      ok: true,
+      cards: cards.map((c) => ({ cardId: c._id, games: c.games, wins: c.wins })),
+    });
+  });
+}
+
+/** UTC day key (YYYYMMDD) for `PvpCardStatDoc.day` bucketing. */
+function utcDayKey(ts: number): string {
+  return new Date(ts).toISOString().slice(0, 10).replace(/-/g, '');
+}
+
+/**
+ * BALANCE data pipeline (P1): credit games/wins to every card in each side's deck. A card appearing multiple
+ * times in a deck (shouldn't happen per PVP_LOADOUT_DESIGN's "each card at most once" rule, but de-duped
+ * defensively) is only counted once per match per side.
+ */
+async function accruePvpCardStats(
+  cols: Collections,
+  ts: number,
+  mode: string,
+  winnerSide: number,
+  decks: { top: string[]; bottom: string[] },
+): Promise<void> {
+  const day = utcDayKey(ts);
+  const sides: { side: number; deck: string[] }[] = [
+    { side: 0, deck: decks.top },
+    { side: 1, deck: decks.bottom },
+  ];
+  const ops = [];
+  for (const { side, deck } of sides) {
+    const won = side === winnerSide;
+    for (const cardId of new Set(deck)) {
+      ops.push({
+        updateOne: {
+          filter: { _id: `${day}:${cardId}:${mode}` },
+          update: {
+            $setOnInsert: { day, cardId, mode },
+            $inc: { games: 1, ...(won ? { wins: 1 } : {}) },
+          },
+          upsert: true,
+        },
+      });
+    }
+  }
+  if (ops.length) await cols.pvpCardStats.bulkWrite(ops);
 }
 
 /**
