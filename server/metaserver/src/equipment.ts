@@ -242,11 +242,17 @@ export async function grantEquipment(
     const doc = await cols.saves.findOne({ _id: accountId });
     if (!doc) return { error: 'save not found', code: 'NOT_FOUND' };
     const save = doc.save;
+    // Lifetime equipment-owned ledger (avatar unlock): grantEquipment is the only place a new
+    // equipment instance enters a save, so this is the single place to record "obtained once" —
+    // never pruned when the instance is later salvaged/enhanced away (unlike equipmentInv).
+    const everOwnedEquip = new Set(save.everOwned?.equipment ?? []);
+    everOwnedEquip.add(instance.defId);
     const next: SaveData = {
       ...save,
       rev: save.rev + 1,
       updatedAt: now(),
       equipmentInv: { ...(save.equipmentInv ?? {}), [instance.id]: instance },
+      everOwned: { ...save.everOwned, equipment: [...everOwnedEquip] },
     };
     const res = await cols.saves.findOneAndUpdate(
       { _id: accountId, rev: doc.rev },

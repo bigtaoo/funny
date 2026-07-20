@@ -41,8 +41,11 @@ import { accountIdOf, type Constructor, type MetaBaseCtor } from './base.js';
 type LiveOpsHandlers = Pick<
   MetaHandlers,
   | 'getAchievements' | 'claimAchievement' | 'getRetention' | 'claimCheckin' | 'claimDailyReward'
-  | 'getEvents' | 'claimEventReward' | 'getTitles' | 'equipTitle'
+  | 'getEvents' | 'claimEventReward' | 'getTitles' | 'equipTitle' | 'equipAvatar'
 >;
+
+/** Preset avatar slot ids (avatar.ts AVATAR_DEFS, indices 0-7) — always unlocked, no ownership check. */
+const PRESET_AVATAR_IDS = new Set(['0', '1', '2', '3', '4', '5', '6', '7']);
 
 export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Constructor<LiveOpsHandlers> {
   return class extends Base {
@@ -164,6 +167,7 @@ export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
           next = {
             ...next,
             materials: { ...next.materials, [matId]: (next.materials[matId] ?? 0) + result.reward.count },
+            everOwned: { ...next.everOwned, material: [...new Set([...(next.everOwned?.material ?? []), matId])] },
           };
         }
         return next;
@@ -335,6 +339,51 @@ export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       if ('error' in out) {
         if (out.error === 'NOT_OWNED') {
           return reply.code(403).send(err(ErrorCode.BAD_REQUEST, 'title not owned'));
+        }
+        return reply.code(409).send(err(ErrorCode.REV_CONFLICT, out.error));
+      }
+      return ok({ save: out.save });
+    }
+
+    /**
+     * Select the displayed avatar → write save.equipped.avatar → push back the full save.
+     * avatarId is a composite "<category>:<key>" (preset/title/hero/equip/material/skin), with bare
+     * digits ('0'-'7') accepted for backward compat with the old localStorage-only preset picker.
+     * `preset` is always allowed; every other category requires the key to appear in the account's
+     * lifetime-owned records (titles[] / everOwned.* / inventory.skins) — obtained once, unlocked forever,
+     * even if the item has since been salvaged/consumed/sold.
+     */
+    async equipAvatar(req: FastifyRequest, reply: FastifyReply) {
+      const accountId = accountIdOf(req);
+      const { avatarId } = req.body as { avatarId?: string };
+      const out = await this.mutateSave(accountId, (s) => {
+        if (avatarId === '' || avatarId == null) {
+          const { avatar: _drop, ...restEquipped } = s.equipped ?? {};
+          return { ...s, equipped: restEquipped };
+        }
+        if (PRESET_AVATAR_IDS.has(avatarId)) {
+          return { ...s, equipped: { ...s.equipped, avatar: avatarId } };
+        }
+        const sep = avatarId.indexOf(':');
+        const category = sep < 0 ? avatarId : avatarId.slice(0, sep);
+        const key = sep < 0 ? '' : avatarId.slice(sep + 1);
+        const owned = (() => {
+          switch (category) {
+            case 'preset': return true;
+            case 'title': return (s.titles ?? []).includes(key);
+            case 'hero': return (s.everOwned?.hero ?? []).includes(key);
+            case 'equip': return (s.everOwned?.equipment ?? []).includes(key);
+            case 'material': return (s.everOwned?.material ?? []).includes(key);
+            case 'skin': return (s.inventory?.skins ?? []).includes(key) || (s.everOwned?.skin ?? []).includes(key);
+            default: return false;
+          }
+        })();
+        if (!owned) return 'NOT_OWNED';
+        return { ...s, equipped: { ...s.equipped, avatar: avatarId } };
+      });
+      if ('error' in out) {
+        if (out.error === 'NOT_OWNED') {
+          return reply.code(403).send(err(ErrorCode.BAD_REQUEST, 'avatar item not owned'));
         }
         return reply.code(409).send(err(ErrorCode.REV_CONFLICT, out.error));
       }

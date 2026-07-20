@@ -65,6 +65,7 @@ export type ServerMsg =
       opponentName: string;
       opponentPublicId: string;
       opponentTitle?: string;
+      opponentAvatarId?: string;
       topDeck?: string[];
       bottomDeck?: string[];
     }
@@ -156,6 +157,7 @@ export function encodeServer(msg: ServerMsg): Uint8Array {
           opponentName: msg.opponentName,
           opponentPublicId: msg.opponentPublicId,
           opponentTitle: msg.opponentTitle ?? '',
+          opponentAvatarId: msg.opponentAvatarId ?? '',
           topDeck: msg.topDeck ?? [],
           bottomDeck: msg.bottomDeck ?? [],
         },

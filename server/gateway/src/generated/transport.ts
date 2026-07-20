@@ -162,6 +162,8 @@ export interface MatchStart {
   topDeck: string[];
   /** side-1 player's deck */
   bottomDeck: string[];
+  /** opponent's equipped avatar id (UI use, display only; empty string = no avatar) */
+  opponentAvatarId: string;
 }
 
 export interface ConnResync {
@@ -1571,6 +1573,7 @@ function createBaseMatchStart(): MatchStart {
     opponentTitle: "",
     topDeck: [],
     bottomDeck: [],
+    opponentAvatarId: "",
   };
 }
 
@@ -1605,6 +1608,9 @@ export const MatchStart: MessageFns<MatchStart> = {
     }
     for (const v of message.bottomDeck) {
       writer.uint32(82).string(v!);
+    }
+    if (message.opponentAvatarId !== "") {
+      writer.uint32(90).string(message.opponentAvatarId);
     }
     return writer;
   },
@@ -1696,6 +1702,14 @@ export const MatchStart: MessageFns<MatchStart> = {
           message.bottomDeck.push(reader.string());
           continue;
         }
+        case 11: {
+          if (tag !== 90) {
+            break;
+          }
+
+          message.opponentAvatarId = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1720,6 +1734,7 @@ export const MatchStart: MessageFns<MatchStart> = {
     message.opponentTitle = object.opponentTitle ?? "";
     message.topDeck = object.topDeck?.map((e) => e) || [];
     message.bottomDeck = object.bottomDeck?.map((e) => e) || [];
+    message.opponentAvatarId = object.opponentAvatarId ?? "";
     return message;
   },
 };

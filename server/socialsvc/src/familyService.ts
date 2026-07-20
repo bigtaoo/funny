@@ -59,6 +59,8 @@ export interface FamilyMemberView {
   /** Resolved via SocialMetaClient.batchProfiles; omitted if metaserver lookup is unavailable or the profile is gone. */
   publicId?: string;
   displayName?: string;
+  /** Equipped avatar id (composite "<category>:<key>"), resolved via SocialMetaClient.batchProfiles. */
+  avatarId?: string;
 }
 
 /** A pending join request as seen by the approving leader/elder (SS3.x join-approval). */
@@ -131,7 +133,7 @@ export class FamilyService {
     const profiles = await this.meta.batchProfiles(members.map((m) => m.accountId));
     return members.map((m) => {
       const p = profiles.get(m.accountId);
-      return p ? { ...m, publicId: p.publicId, displayName: p.displayName } : m;
+      return p ? { ...m, publicId: p.publicId, displayName: p.displayName, ...(p.avatarId ? { avatarId: p.avatarId } : {}) } : m;
     });
   }
 

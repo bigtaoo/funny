@@ -940,6 +940,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/avatar/equip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Select the displayed avatar (writes equipped.avatar and pushes save). Composite id "<category>:<key>" (preset/title/hero/equip/material/skin); preset always allowed, other categories require the item to appear in the player's lifetime-owned records (titles / everOwned / inventory.skins). */
+        put: operations["equipAvatar"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/friends": {
         parameters: {
             query?: never;
@@ -1604,6 +1621,8 @@ export interface components {
             rank?: string;
             /** @description Currently equipped title id (empty string = no title) */
             equippedTitle?: string;
+            /** @description Equipped avatar id, composite "<category>:<key>" (empty string = no avatar) */
+            avatarId?: string;
         };
         FriendView: {
             publicId: string;
@@ -1612,6 +1631,8 @@ export interface components {
             rank?: string;
             /** @description owner's private alias */
             alias?: string;
+            /** @description Equipped avatar id, composite "<category>:<key>" (empty string = no avatar) */
+            avatarId?: string;
         };
         FriendRequestView: {
             requestId: string;
@@ -3795,6 +3816,41 @@ export interface operations {
                 "application/json": {
                     /** @description Title id to equip; empty string means unequip the displayed title */
                     titleId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+        };
+    };
+    equipAvatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Composite avatar id to equip, e.g. preset:3, title:t_champion, hero:archer, equip:sword_01, material:scrap, skin:skin_04 */
+                    avatarId: string;
                 };
             };
         };

@@ -51,6 +51,8 @@ export interface ProfileView {
   rank?: string;
   /** Equipped title (称号), if any. */
   equippedTitle?: string;
+  /** Equipped avatar (composite "<category>:<key>", see avatar.ts), if any. */
+  avatarId?: string;
 }
 
 export interface FriendView {
@@ -60,6 +62,8 @@ export interface FriendView {
   rank?: string;
   /** Owner-private alias for the friend. */
   alias?: string;
+  /** Equipped avatar (composite "<category>:<key>", see avatar.ts), if any. */
+  avatarId?: string;
 }
 
 export interface FriendRequestView {

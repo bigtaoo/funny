@@ -329,11 +329,21 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
       // Material reward + equipment drop (single atomic write)
       const out = await this.mutateSave(accountId, (s) => {
         const materials = { ...s.materials };
-        for (const [m, n] of Object.entries(grant)) materials[m] = (materials[m] ?? 0) + n;
-        let next = { ...s, materials };
+        const everOwnedMaterial = new Set(s.everOwned?.material ?? []);
+        for (const [m, n] of Object.entries(grant)) {
+          materials[m] = (materials[m] ?? 0) + n;
+          if (n > 0) everOwnedMaterial.add(m);
+        }
+        let next = { ...s, materials, everOwned: { ...s.everOwned, material: [...everOwnedMaterial] } };
         // Store equipment (silently skipped when inventory is full)
         if (pendingDrop && equipmentInvCount(next) < EQUIPMENT_INV_CAP) {
-          next = { ...next, equipmentInv: { ...(next.equipmentInv ?? {}), [pendingDrop.id]: pendingDrop } };
+          const everOwnedEquip = new Set(next.everOwned?.equipment ?? []);
+          everOwnedEquip.add(pendingDrop.defId);
+          next = {
+            ...next,
+            equipmentInv: { ...(next.equipmentInv ?? {}), [pendingDrop.id]: pendingDrop },
+            everOwned: { ...next.everOwned, equipment: [...everOwnedEquip] },
+          };
         }
         return next;
       });

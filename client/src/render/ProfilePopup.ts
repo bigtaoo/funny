@@ -39,6 +39,8 @@ export interface ProfileData {
   isSelf?: boolean;
   /** Equipped title id (S10); omit or empty to hide the title line. */
   equippedTitle?: string;
+  /** Equipped avatar id (composite "<category>:<key>", see render/avatar.ts); omit for the letter-initial fallback. */
+  avatarId?: string;
   /**
    * Optional action buttons rendered above Close (e.g. Send Message / Block from the friends
    * list). Each runs its `fn` then auto-closes the popup. Omit for display-only cards.
@@ -117,7 +119,7 @@ export class ProfilePopup {
 
     // Avatar.
     const avSize = Math.round(cardH * 0.34);
-    const avatar = buildAvatar(avSize, data.name || '?', publicSeed(data.publicId));
+    const avatar = buildAvatar(avSize, data.name || '?', publicSeed(data.publicId), data.avatarId);
     avatar.x = (cardW - avSize) / 2;
     avatar.y = cardH * 0.2;
     this.card.addChild(avatar);

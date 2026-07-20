@@ -63,6 +63,8 @@ export interface MatchStartInfo {
   opponentPublicId: string;
   /** Opponent equipped title id (S10; empty if none). */
   opponentTitle: string;
+  /** Opponent equipped avatar id (empty if none). */
+  opponentAvatarId: string;
   /** PvP deck IDs for top/bottom players (P3). Absent for non-ranked or pre-P3 matches. */
   decks?: { top: string[]; bottom: string[] };
 }
@@ -179,6 +181,7 @@ export class NetInputSource implements InputSource {
       opponentName: m.opponentName,
       opponentPublicId: m.opponentPublicId,
       opponentTitle: m.opponentTitle,
+      opponentAvatarId: m.opponentAvatarId,
       decks: m.topDeck.length > 0 || m.bottomDeck.length > 0
         ? { top: m.topDeck, bottom: m.bottomDeck }
         : undefined,
