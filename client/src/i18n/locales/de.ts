@@ -411,6 +411,19 @@ export const de: Record<TranslationKey, string> = {
   'shop.starterDraw': 'Starter-Erstzugpaket',
   'shop.starterGrowth': 'Starter-Wachstumspaket',
   'shop.alreadyOwned': 'Gekauft',
+  // ── Erinnerung an Monatskarten-Ablauf (GACHA_DESIGN §9.3 / G10) ──
+  'shop.reminderSoonTitle': 'Monatskarte läuft bald ab',
+  'shop.reminderSoonBody': 'Deine Monatskarte läuft in 3 Tagen ab — jetzt verlängern, um den täglichen Bonus zu behalten.',
+  'shop.reminderExpiredTitle': 'Monatskarte abgelaufen',
+  'shop.reminderExpiredBody': 'Deine Monatskarte ist abgelaufen — jetzt verlängern, um weiterhin tägliche Belohnungen zu erhalten.',
+  // ── Wiederkehrende Erinnerung an offene Tagesbelohnungen (GACHA_DESIGN §5.2 / G10): einmal täglich um 12:30 Uhr, nur iOS ──
+  'shop.reminderDailyTitle': 'Deine Tagesbelohnungen warten',
+  'shop.reminderDailyBody': 'Du hast Belohnungen abzuholen: {items}',
+  'shop.reminderDailySeparator': ', ',
+  'shop.reminderDailyMonthlyCard': 'Monatskarten-Belohnung',
+  'shop.reminderDailyTask': 'Tagesaufgaben-Belohnung',
+  'shop.reminderDailyCheckin': 'tägliches Einloggen',
+  'shop.expiringSoonStamp': 'LÄUFT BALD AB',
 
   // ── Lootbox (S2-6) ───────────────────────────────────────────────────────────
   'gacha.title': 'Lootbox',
@@ -1362,6 +1375,14 @@ export const de: Record<TranslationKey, string> = {
   'daily.tasks.rewardClaimed': 'Heute abgeholt',
   'daily.tasks.claimFailed': 'Fehler, erneut versuchen',
   'daily.tasks.claimToast': '+{n} Münzen erhalten',
+  'daily.ads.title': 'Werbung ansehen',
+  'daily.ads.watchedCount': 'Heute {n} / {cap} angesehen',
+  'daily.ads.rewardCoins': '+{n} Münzen',
+  'daily.ads.watch': 'Werbung ansehen',
+  'daily.ads.capReached': 'Tageslimit erreicht',
+  'daily.ads.cooldown': 'Abklingzeit {time}',
+  'daily.ads.unavailable': 'Derzeit keine Werbung verfügbar',
+  'daily.ads.error': 'Fehlgeschlagen, bitte erneut versuchen',
 
   // ── Titelsystem (S10) ────────────────────────────────────────────────────────
   'settings.titles': 'Titel',

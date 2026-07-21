@@ -1,4 +1,4 @@
-name: obs-deploy
+name: grafana-deploy
 
 # Auto-redeploy the observability stack (Loki + Alloy + Grafana + optional cloudflared) to the Hetzner VPS (/root/funny).
 # Decoupled from the main stack: separate compose, separate trigger (only runs when observability/ changes), never touches game backend containers.
@@ -23,12 +23,12 @@ on:
     branches: [main]
     paths:
       - 'server/observability/**'
-      - '.github/workflows/obs-deploy.yml'
+      - '.github/workflows/grafana-deploy.yml'
   workflow_dispatch: {}
 
 # Only one obs deployment runs at a time; new run cancels the old one.
 concurrency:
-  group: obs-deploy
+  group: grafana-deploy
   cancel-in-progress: true
 
 jobs:

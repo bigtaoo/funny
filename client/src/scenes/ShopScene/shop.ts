@@ -89,7 +89,7 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
       const specs: CardSpec[] = [];
       const busy = this.bt.busy;
       const mon = this.cb.getMonetization?.() ?? { subscriptionExpiry: 0, starterUsed: [] };
-      const { active, claimedToday } = this.monthlyCardStatus();
+      const { active, claimedToday, expiringSoon } = this.monthlyCardStatus();
 
       // Monthly card: Buy (locked while a card is active) + daily Claim.
       if (this.cb.buyMonthlyCard) {
@@ -112,6 +112,7 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
           icon: 'coinChest', iconColor: C.gold, artUrl: monthlyCardArtUrl as string, title: t('shop.monthlyCard'), highlight: true,
           yuanPrice: MONTHLY_CARD_YUAN,
           lines: [{ text: active ? t('shop.monthlyActive') : t('shop.monthlyInactive'), color: active ? C.green : C.mid }],
+          expiringSoonStamp: expiringSoon,
           buttons,
         });
       }

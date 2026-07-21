@@ -6,7 +6,7 @@ import type { ShopItem } from './types';
 export interface ShopApi {
   getShopItems(): Promise<ShopItem[]>;
   shopBuy(itemId: string): Promise<{ save: SaveData; granted: string }>;
-  adsReward(adToken: string): Promise<{ save: SaveData; granted: number }>;
+  adsReward(adToken: string, platform?: string): Promise<{ save: SaveData; granted: number }>;
   iapVerify(platform: string, receipt: string): Promise<{ save: SaveData; granted: number }>;
   paddleCheckout(tierId: string): Promise<{ transactionId: string }>;
   redeemPromoCode(code: string): Promise<{ save: SaveData; granted: number }>;
@@ -29,9 +29,9 @@ export function ShopMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase &
       return this.post<{ save: SaveData; granted: string }>('/shop/buy', { itemId });
     }
 
-    /** Ad reward (daily cap; cap exceeded → ApiError('DAILY_CAP_REACHED'), 429). */
-    async adsReward(adToken: string): Promise<{ save: SaveData; granted: number }> {
-      return this.post<{ save: SaveData; granted: number }>('/ads/reward', { adToken });
+    /** Ad reward (daily cap or cooldown not elapsed → ApiError('DAILY_CAP_REACHED'), 429). */
+    async adsReward(adToken: string, platform?: string): Promise<{ save: SaveData; granted: number }> {
+      return this.post<{ save: SaveData; granted: number }>('/ads/reward', { adToken, platform });
     }
 
     /**

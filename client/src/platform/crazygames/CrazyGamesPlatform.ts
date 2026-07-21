@@ -116,6 +116,29 @@ export class CrazyGamesPlatform implements IPlatform {
     });
   }
 
+  /** CrazyGames always ships its own rewarded-ad SDK — the DailyScene "Ads" tab is always shown here. */
+  hasRewardedAd(): boolean {
+    return true;
+  }
+
+  /**
+   * CrazyGames rewards ad completion itself (via its own revenue share), so there is no
+   * platform-issued transaction id to verify server-side — submitted as `platform: 'dev'`
+   * (open fallback, relies on the per-account cooldown + daily cap to prevent abuse, same as
+   * every other 'dev' submission from a platform without a client signing key).
+   */
+  showRewardedAd(_accountId: string): Promise<{ adToken: string; platform: string } | null> {
+    return new Promise((resolve) => {
+      if (!this.sdk) { resolve(null); return; }
+      try {
+        this.sdk.ad.requestAd('rewarded', {
+          adFinished: () => resolve({ adToken: `cg-${Date.now()}-${Math.random().toString(36).slice(2)}`, platform: 'dev' }),
+          adError: () => resolve(null),
+        });
+      } catch { resolve(null); }
+    });
+  }
+
   async getAuthCredential(): Promise<AuthCredential> {
     return { kind: 'device', deviceId: getOrCreateDeviceId(this.storage) };
   }

@@ -26,10 +26,13 @@ import {
   CARD_DEFS,
   EQUIPMENT_DEFS,
   rollCraftedAffixes,
+  ADS_REWARD_COINS,
+  ADS_DAILY_CAP,
+  ADS_MIN_INTERVAL_MS,
   type EquipmentInstance,
 } from '@nw/shared';
 import { getOrCreateSave } from '../save.js';
-import { mirrorCoins } from '../economy.js';
+import { mirrorCoins, adsDayKey, peekAdsStatus } from '../economy.js';
 import { grantTitleToPlayer } from '../titles.js';
 import { getEventsForAccount, claimEventReward } from '../events.js';
 import { nullMetaSocialsvcClient } from '../socialsvcClient.js';
@@ -127,6 +130,7 @@ export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       const tsMs = now();
       const save = await getOrCreateSave(cols, accountId, tsMs);
       const retention = resetStaleRetention(save.retention, tsMs);
+      const adsStatus = await peekAdsStatus(cols, accountId, adsDayKey(tsMs), ADS_MIN_INTERVAL_MS, tsMs);
       return ok({
         checkin: retention.checkin ?? null,
         daily: retention.daily ?? null,
@@ -134,6 +138,13 @@ export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
         claimable: {
           checkin: nextCheckinDay(retention, tsMs) !== null,
           daily: dailyRewardClaimable(retention, tsMs),
+        },
+        ads: {
+          watchedToday: adsStatus.watchedToday,
+          cap: ADS_DAILY_CAP,
+          rewardCoins: ADS_REWARD_COINS,
+          cooldownMs: ADS_MIN_INTERVAL_MS,
+          nextAvailableAt: adsStatus.nextAvailableAt,
         },
       });
     }

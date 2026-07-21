@@ -59,6 +59,7 @@ export interface RetentionView {
     dailyCoinsReward: number;
   };
   claimable: { checkin: boolean; daily: boolean };
+  ads: { watchedToday: number; cap: number; rewardCoins: number; cooldownMs: number; nextAvailableAt: number };
 }
 
 export type ApiResp<T> =

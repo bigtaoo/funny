@@ -96,6 +96,12 @@ export class HeadlessPlatform implements IPlatform {
   onGameplayStop(): void { /* no-op */ }
   showMidgameAd(): Promise<void> { return Promise.resolve(); }
 
+  // No ad SDK in headless E2E — mirrors plain web with no ad network.
+  hasRewardedAd(): boolean { return false; }
+  showRewardedAd(): Promise<{ adToken: string; platform: string } | null> {
+    return Promise.reject(new Error('showRewardedAd unsupported in headless'));
+  }
+
   getAuthCredential(): Promise<AuthCredential> {
     return Promise.resolve({ kind: 'device', deviceId: this.deviceId });
   }

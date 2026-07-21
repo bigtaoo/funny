@@ -82,6 +82,30 @@ Paddle 作为 merchant of record，收银台内建以下支付方式；客户端
 
 > AdMob SSV 服务端回调用 Google 公开验证密钥（`gstatic.com/admob/reward/verifier-keys.json`），无需配置环境变量。
 
+### 2.1 AdMob 原生接入（iOS，2026-07-21 已实装，未在 Xcode 里编译验证）
+
+服务端（`/ads/reward` 客户端校验 + `/ads/callback/admob` SSV 回调）+ 客户端原生桥均已实现。**⚠️ 本机（Windows）无 Xcode/macOS 工具链，以下代码是照 Google 当前官方文档现查现写的，从未在 Xcode 里编译过**——接手 iOS 构建的人第一次跑 `pod install` + build 时请留意是否有 API 对不上（Google Mobile Ads SDK 的 Swift API 大改过一次，`GADXxx` 前缀已改成不带前缀的 `Xxx` 命名，本次实现按新命名写的）。
+
+**已落地的部分**：
+- **App ID**：`ca-app-pub-5437693117291100~7980565358`；**激励视频 Ad Unit ID**：`ca-app-pub-5437693117291100/3500329092`（2026-07-21 AdMob 后台创建，均已写入代码，见下）。
+- **`client/ios/App/Podfile`**：`capacitor_pods` 里加了 `pod 'Google-Mobile-Ads-SDK'`（CocoaPods 包名已核实，当前版本 12.12.0）。
+- **`client/ios/App/App/Info.plist`**：加了 `GADApplicationIdentifier`（真实 App ID）、`NSUserTrackingUsageDescription`（ATT 弹窗文案）、`SKAdNetworkItems`（Google 官方文档 47 条标识符列表，2026-07-21 现查）。
+- **`client/ios/App/App/AppDelegate.swift`**：`NWBridgeViewController` 扩了一个 `window.NWAds` 桥（与既有 `window.NWBilling` StoreKit 桥同一个类、同一套 `pending{jsId}` Promise-settle 模式）：
+  - `capacitorDidLoad()` 里 `MobileAds.shared.start(...)` + 预加载一条广告（`preloadRewardedAd()`）。
+  - `window.NWAds.showRewarded(accountId)` → 触发 ATT 弹窗（若尚未询问过）→ `present(from:)`；奖励回调只在**真正播完**时置位，`adDidDismissFullScreenContent`（`FullScreenContentDelegate`）里才 resolve/reject——提前关闭视为未看完，不发奖励。
+  - `accountId` 写入 `ServerSideVerificationOptions.customRewardText`，供 SSV 回调识别账号。
+  - Debug 编译用 Google 官方测试 Ad Unit（`ca-app-pub-3940256099942544/1712485313`），Release 才用真实 ID——避免本地/模拟器调试期间打真实广告请求。
+- **`client/src/platform/nativeAds.ts`**：新增 `getNativeAds()`，仿 `platform/iap.ts` 的 `getNativeBilling()` 探测 `window.NWAds`。
+- **`client/src/platform/web/WebPlatform.ts`**：`hasRewardedAd()` 探测到桥才返回 `true`（原生 App 装好桥、`WebPlatform` 也被 `entries/mobile.ts` 复用，纯网页浏览器则探测不到桥，保持隐藏）。
+
+**还没做、真正上线前必须补**：
+- **SSV 回调地址**：AdMob 后台已经配了 `https://api.gamestao.com/ads/callback/admob` 并验证通过（2026-07-21），`custom_data` 用 `customRewardText` 传 accountId，这是发币的权威通道——客户端 `/ads/reward` 只是「立即显示到账」的乐观 UI。
+- **拿真机/Xcode 编译一次**，确认 Swift API 版本对得上（尤其 `RewardedAd.load`/`FullScreenContentDelegate`/`ServerSideVerificationOptions.customRewardText` 这几个近期改过命名的 API）。
+- 沙盒测试：先用 Debug 编译（自动切到 Google 测试广告单元）跑通"点按钮 → 弹广告 → 关掉 → 领到金币"全流程，再切 Release 用真实 ID 测一次。
+- ATT 弹窗文案（`NSUserTrackingUsageDescription`）当前是占位英文，上线前找产品/法务过一遍措辞。
+6. **本地测试**：本地开发机没有公网 HTTPS，SSV 回调收不到——用 `ngrok http 18080` 之类临时穿透，把生成的 URL 填进 AdMob 测试配置；或先只验证客户端侧「能弹出广告、能拿到 reward 回调」，SSV 链路留到部署到 `api.gamestao.com` 后再连调。
+7. **Android**：`client/` 目前只有 `ios/`，没有 `android/` Capacitor 平台——若要上 Android 渠道，先 `npx cap add android`，原生桥用 Kotlin/Java 写等价的 `WebAppInterface`（Capacitor `@JavascriptInterface`）版本，AdMob SDK 换 Android 版依赖，其余（SSV、服务端校验）完全复用现有实现。
+
 ## 3. 上线前 checklist
 
 > **iOS 专项**：Apple 渠道的商店/证书/云构建全流程见 [`IOS_RELEASE.md`](IOS_RELEASE.md)。要点：App Bundle 为 `com.gamestao.nivara`，commercial 必须设 `NW_IAP_BUNDLE=com.gamestao.nivara`（默认 `com.nw` 匹配不到商品，fail closed），并在 ASC 建 7 个消耗型商品 `com.gamestao.nivara.coins.t099…t9999`。

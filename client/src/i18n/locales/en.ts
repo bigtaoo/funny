@@ -411,6 +411,19 @@ export const en: Record<TranslationKey, string> = {
   'shop.starterDraw': 'Starter First-Draw Pack',
   'shop.starterGrowth': 'Starter Growth Pack',
   'shop.alreadyOwned': 'Purchased',
+  // ── Monthly-card expiry reminder (GACHA_DESIGN §9.3 / G10) ──
+  'shop.reminderSoonTitle': 'Monthly card expiring soon',
+  'shop.reminderSoonBody': 'Your monthly card expires in 3 days — renew to keep your daily bonus.',
+  'shop.reminderExpiredTitle': 'Monthly card expired',
+  'shop.reminderExpiredBody': 'Your monthly card has expired — renew to keep claiming daily rewards.',
+  // ── Recurring daily-claimables reminder (GACHA_DESIGN §5.2 / G10): fires once at 12:30 local, iOS only ──
+  'shop.reminderDailyTitle': "Today's rewards are waiting",
+  'shop.reminderDailyBody': 'You have rewards to claim: {items}',
+  'shop.reminderDailySeparator': ', ',
+  'shop.reminderDailyMonthlyCard': 'monthly card reward',
+  'shop.reminderDailyTask': 'daily task reward',
+  'shop.reminderDailyCheckin': 'daily check-in',
+  'shop.expiringSoonStamp': 'EXPIRING SOON',
 
   // ── Gacha (S2-6) ─────────────────────────────────────────────────────────────
   'gacha.title': 'Gacha',
@@ -1362,6 +1375,14 @@ export const en: Record<TranslationKey, string> = {
   'daily.tasks.rewardClaimed': 'Claimed today',
   'daily.tasks.claimFailed': 'Claim failed, please retry',
   'daily.tasks.claimToast': 'Claimed +{n} coins',
+  'daily.ads.title': 'Watch Ads',
+  'daily.ads.watchedCount': 'Watched {n} / {cap} today',
+  'daily.ads.rewardCoins': '+{n} coins',
+  'daily.ads.watch': 'Watch Ad',
+  'daily.ads.capReached': 'Daily limit reached',
+  'daily.ads.cooldown': 'Cooldown {time}',
+  'daily.ads.unavailable': 'No ad available right now',
+  'daily.ads.error': 'Failed, please try again',
 
   // ── Title system (S10) ───────────────────────────────────────────────────────
   'settings.titles': 'Titles',

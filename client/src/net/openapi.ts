@@ -3597,6 +3597,19 @@ export interface operations {
                                 checkin: boolean;
                                 daily: boolean;
                             };
+                            /** @description Rewarded-ad status for the DailyScene "Ads" tab (RETENTION_DESIGN §6.2/ECONOMY_NUMBERS §6.2) */
+                            ads?: {
+                                /** @description Ads watched so far today (UTC dayKey) */
+                                watchedToday: number;
+                                /** @description Daily cap (ADS_DAILY_CAP) */
+                                cap: number;
+                                /** @description Coins granted per ad (ADS_REWARD_COINS) */
+                                rewardCoins: number;
+                                /** @description Minimum interval between two ads (ADS_MIN_INTERVAL_MS) */
+                                cooldownMs: number;
+                                /** @description Epoch ms when the next ad becomes available (0 = available now) */
+                                nextAvailableAt: number;
+                            };
                         };
                     };
                 };

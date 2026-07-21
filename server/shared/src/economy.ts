@@ -197,7 +197,7 @@ export const DUPE_REFUND_COINS: Record<Rarity, number> = {
 /** Rewarded ads (§2.1). 10 coins per ad (decided 2026-06-27, original 50 was too high; revisit after launch based on performance). */
 export const ADS_REWARD_COINS = 10;
 export const ADS_DAILY_CAP = 5;
-export const ADS_MIN_INTERVAL_MS = 30 * 60 * 1000; // 30min minimum interval between two ads (C2)
+export const ADS_MIN_INTERVAL_MS = 10 * 60 * 1000; // 10min minimum interval between two ads (2026-07-21, was 30min — DailyScene "Ads" tab)
 
 /** Rename cost (coins). Deducted once per display-name change (commercial wallet deducts → meta renames). */
 export const RENAME_COST = 500;

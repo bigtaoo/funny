@@ -97,6 +97,32 @@ export interface IPlatform {
   showMidgameAd(): Promise<void>;
 
   /**
+   * Whether this platform has a real rewarded-ad integration right now (checked synchronously,
+   * before ever calling {@link showRewardedAd}). The DailyScene "Ads" tab is hidden entirely when
+   * this is false — no mock/placeholder ad is ever shown to a real player. CrazyGames is always
+   * true (its own SDK); WeChat is true only once ops has configured a real ad unit id; the
+   * Capacitor iOS shell is true once the native AdMob bridge (`window.NWAds`) is present; plain web
+   * (no native bridge) is false until Google's Ad Placement API is wired up (IAP_CREDENTIALS.md §2.1).
+   */
+  hasRewardedAd(): boolean;
+
+  /**
+   * Show a rewarded video ad for the DailyScene "Ads" tab (ECONOMY_NUMBERS §6.2). Only ever called
+   * when {@link hasRewardedAd} is true. `accountId` is forwarded to platforms whose SSV callback
+   * needs it explicitly (AdMob's `customRewardText` — WeChat's SSV already identifies the account
+   * via openid, CrazyGames does no SSV at all, so both ignore it). Resolves with the ad token +
+   * platform id to submit to `POST /ads/reward`, or `null` if the ad failed to load or the player
+   * closed it before completion (no reward either way — the caller shows an error, never retries
+   * automatically).
+   *
+   * `platform` matches the server's `verifyAdPlatformToken` switch (`ads.ts`): 'dev' skips
+   * signature verification (used where the platform has no client-side signing key, e.g.
+   * CrazyGames — it rewards ad completion itself), 'admob_client' / 'wechat_client' are verified
+   * against the configured HMAC key.
+   */
+  showRewardedAd(accountId: string): Promise<{ adToken: string; platform: string } | null>;
+
+  /**
    * Anonymous-account credential the client trades to the server for a JWT
    * + accountId (S0-4). Server-side: /auth/wx (code→openid) or /auth/device.
    *
