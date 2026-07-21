@@ -24,7 +24,7 @@ on:
     branches: [main]
     paths:
       - 'server/**'
-      - '!server/observability/**'   # observability stack uses obs-deploy.yml; skip to avoid rebuilding the entire backend for it
+      - '!server/observability/**'   # observability stack uses grafana-deploy.yml; skip to avoid rebuilding the entire backend for it
       - '.github/workflows/server-deploy.yml'
   workflow_dispatch: {}
 

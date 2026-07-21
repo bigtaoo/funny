@@ -266,7 +266,7 @@ npx wrangler secret put ADMIN_PROXY_SECRET -c wrangler/ops.jsonc   # 粘贴 Step
 docker compose -f observability/docker-compose.obs.yml --env-file observability/.env up -d
 ```
 
-**自动发布**：`.github/workflows/obs-deploy.yml`——push 改动落在 `server/observability/**` 时自动 SSH 进 VPS `reset --hard + up -d --force-recreate`（预构建镜像，无 build；与 server-deploy 解耦，互不触发）。复用同套 `VPS_SSH_KEY`/`VPS_HOST`；开关 `OBS_DEPLOY_ENABLED=true`（首次需先在 VPS 手动建 `observability/.env`），可选 `OBS_TUNNEL_ENABLED=true` 才带 cloudflared。`server-deploy.yml` 已 `!server/observability/**` 排除该子树，避免为日志配置白白 rebuild 后端。
+**自动发布**：`.github/workflows/grafana-deploy.yml`——push 改动落在 `server/observability/**` 时自动 SSH 进 VPS `reset --hard + up -d --force-recreate`（预构建镜像，无 build；与 server-deploy 解耦，互不触发）。复用同套 `VPS_SSH_KEY`/`VPS_HOST`；开关 `OBS_DEPLOY_ENABLED=true`（首次需先在 VPS 手动建 `observability/.env`），可选 `OBS_TUNNEL_ENABLED=true` 才带 cloudflared。`server-deploy.yml` 已 `!server/observability/**` 排除该子树，避免为日志配置白白 rebuild 后端。
 
 ### 上线记录（2026-06-24 ✅ 已验证）
 
