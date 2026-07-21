@@ -289,16 +289,29 @@ export class DefenseEditorScene implements Scene {
     });
   }
 
+  /**
+   * Attack mode: persist this team slot (setTeams merge) so every placed card gets a server-side
+   * teamId. Shared by doSave (explicit Save) and doFillTroops (auto-save before 分兵, since
+   * distributeTroops rejects any card not yet assigned to a team). setTeams only frees/clears troops
+   * for cards *removed* from all teams — kept cards keep their currentTroops, so calling this before
+   * a fill is safe.
+   */
+  private async persistTeam(): Promise<void> {
+    if (this.cb.target.mode !== 'attack') return;
+    const { teamId, teamName } = this.cb.target;
+    const army = this.buildArmy();
+    const next = this.teams.filter((tm) => tm.id !== teamId);
+    next.push({ id: teamId, name: teamName, army });
+    await this.cb.worldApi.setTeams(this.cb.worldId, next);
+    this.teams = next;
+  }
+
   private async doSave(): Promise<void> {
     if (this.saving) return;
     this.saving = true;
     try {
       if (this.cb.target.mode === 'attack') {
-        const { teamId, teamName } = this.cb.target;
-        const army = this.buildArmy();
-        const next = this.teams.filter((tm) => tm.id !== teamId);
-        next.push({ id: teamId, name: teamName, army });
-        await this.cb.worldApi.setTeams(this.cb.worldId, next);
+        await this.persistTeam();
       } else {
         const config = {
           garrison: [...this.garrison.entries()].map(([key, entry]) => {
@@ -353,6 +366,10 @@ export class DefenseEditorScene implements Scene {
 
     this.filling = true;
     try {
+      // Auto-save the formation first: a card placed on the grid but not yet saved has no server-side
+      // teamId, so distributeTroops would reject it ("Card X is not assigned to a team"). Persisting
+      // here means the player can place cards and hit 分兵 without a separate Save tap.
+      await this.persistTeam();
       await this.cb.worldApi.distributeTroops(this.cb.worldId, allocations);
       let total = 0;
       for (const [id, amount] of Object.entries(allocations)) {

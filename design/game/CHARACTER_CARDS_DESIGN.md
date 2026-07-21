@@ -226,6 +226,7 @@ baseTroopStock ≤ cityTroopCap              // 当前存量
 从基地兵力池手动分配给队伍中的各卡：
 
 - **一键补满**：按战力降序，依次补至 `troopCap`；池不足则按比例分配剩余
+  - **先自动存队伍**：`distributeTroops` 要求每张卡已有 `teamId`（在队伍中），否则报 `Card X is not assigned to a team`。刚拖进格子但未点保存的卡只在客户端本地、server 无 `teamId`，会被拒。因此「补满兵力」在调 `distributeTroops` 前先 `persistTeam()`（= `setTeams` 合并本槽），玩家布阵后直接补兵、无需另点保存（`setTeams` 只对被移出所有队伍的卡清兵/退款，留队的卡兵力不变，先存后补安全）。
 - **手动调整**：可在一键后逐卡修改
 - **战前检查**：布阵中有卡 `currentTroops = 0` → UI 显示警告（不强制阻拦）
 - **新玩家**：进入 SLG 时系统赠送 10000 兵力，足够初始布阵
