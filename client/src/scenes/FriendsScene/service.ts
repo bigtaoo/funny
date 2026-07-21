@@ -29,15 +29,18 @@ export function NetworkMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
 
     async refresh(): Promise<void> {
       try {
-        const [friends, requests, mail] = await Promise.all([
+        const [friends, requests, mail, convs] = await Promise.all([
           this.cb.loadFriends(),
           this.cb.loadRequests(),
           this.cb.loadMail(),
+          // Unread chat feeds the friend-row unread bubble + Friends tab dot (see conversations doc).
+          this.cb.loadConversations?.() ?? Promise.resolve([]),
         ]);
         this.friends = friends;
         this.incoming = requests.incoming;
         this.mail = mail.mail;
         this.mailUnread = mail.unread;
+        this.conversations = convs;
       } catch {
         if (this.loading) this.toast('friends.error');
       } finally {

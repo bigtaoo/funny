@@ -126,6 +126,11 @@ export class FriendsSceneBase {
   protected loading = true;
   protected friends: FriendView[] = [];
   protected incoming: FriendRequestView[] = [];
+  /** Unread 1:1 chat conversations. Loaded alongside friends so the friends list can flag
+   *  which friend has unread messages — the bottom-nav Social dot counts unread chat, and
+   *  without surfacing it here that count opened onto a page showing nothing (aggregate-vs-
+   *  specific badge bug — see mail-badge-social-aggregate-bug memory). */
+  protected conversations: ConversationView[] = [];
 
   // Mail tab.
   protected mail: MailView[] = [];
@@ -252,6 +257,18 @@ export class FriendsSceneBase {
 
   protected rowVisible(yTop: number, rowH: number): boolean {
     return yTop + rowH >= this.regionTop && yTop <= this.regionBottom;
+  }
+
+  /** Unread 1:1 chat messages from a given friend (0 if no conversation / all read). */
+  protected unreadChatFor(publicId: string): number {
+    const c = this.conversations.find((x) => x.peer.publicId === publicId);
+    return c && c.unread > 0 ? c.unread : 0;
+  }
+
+  /** Total unread chat across all conversations — feeds the Friends rail-tab dot so the
+   *  bottom-nav Social badge (which includes unread chat) is explained once Social opens. */
+  protected get totalUnreadChat(): number {
+    return this.conversations.reduce((s, c) => s + (c.unread > 0 ? c.unread : 0), 0);
   }
 
   // ── Input ──────────────────────────────────────────────────────────────────
@@ -495,7 +512,7 @@ export class FriendsSceneBase {
     const hidden: SocialTab[] = s && !s.isLeader && !s.sectId ? ['sect'] : [];
     const hits = drawSocialTabRail(
       this.container, this.w, this.h, this.bodyTop, this.landscape, this.tab,
-      { friends: this.incoming.length, mail: this.mailUnread, family: this.slgStatus?.pendingJoinRequests ?? 0 },
+      { friends: this.incoming.length + this.totalUnreadChat, mail: this.mailUnread, family: this.slgStatus?.pendingJoinRequests ?? 0 },
       (tab) => this.switchTab(tab),
       hidden,
       true, // activeTappable: re-tapping the active Mail tab must close an open detail view
