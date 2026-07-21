@@ -46,6 +46,7 @@ import { defaultPvpDeck } from '../../src/game/meta/pvpLoadout';
 import type { AchievementCallbacks } from '../../src/scenes/AchievementScene';
 import type { LeaderboardCallbacks } from '../../src/scenes/LeaderboardScene';
 import type { BattlePassCallbacks } from '../../src/scenes/BattlePassScene';
+import type { RechargeCallbacks } from '../../src/scenes/RechargeScene';
 import type { WorldMapView } from '../../src/scenes/WorldMapScene';
 import type { DailyCallbacks } from '../../src/scenes/DailyScene';
 import type { EventCallbacks } from '../../src/scenes/EventScene';
@@ -85,6 +86,7 @@ export class HeadlessAppViews implements AppViews {
   shop?: ShopSceneCallbacks;
   gacha?: GachaSceneCallbacks;
   battlePass?: BattlePassCallbacks;
+  recharge?: RechargeCallbacks;
   campaignMap?: CampaignMapCallbacks;
   levelPrep?: LevelPrepCallbacks;
   cardCodex?: CardCodexCallbacks;
@@ -154,6 +156,7 @@ export class HeadlessAppViews implements AppViews {
   showAchievements(_cb: AchievementCallbacks): void { this.screen = 'achievements'; }
   showLeaderboard(_cb: LeaderboardCallbacks): void { this.screen = 'leaderboard'; }
   showBattlePass(cb: BattlePassCallbacks): void { this.screen = 'battlePass'; this.battlePass = cb; }
+  showRecharge(cb: RechargeCallbacks): void { this.screen = 'recharge'; this.recharge = cb; }
   showTitles(_cb: TitlesSceneCallbacks): void { this.screen = 'titles'; }
   showDaily(cb: DailyCallbacks): void { this.screen = 'daily'; this.daily = cb; }
   showEvents(cb: EventCallbacks): void { this.screen = 'events'; this.events = cb; }

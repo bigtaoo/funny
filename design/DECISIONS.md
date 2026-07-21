@@ -515,3 +515,12 @@
   - `client/src/app.ts` / `client/src/app/AppViews.ts`：新增 `showCityOverlay(cb)`/`hideCityOverlay()`（对应 `manager.pushOverlay`/`popOverlay`），`showCity(cb)` 原有全量语义不变；`client/test/harness/HeadlessAppViews.ts` 同步补最小实现。
   - `client/src/app/nav/world.ts`：新增 `goCityOverlay()`（`onOpenCity()` 改指向它），沿用原 `goCity()` 作为 edit-team 回程的全量兜底，两者 onEditTeam 回调各自独立，不互相递归。
   - 验证：`tsc --noEmit` + webpack dev build 全绿；用真实 `SceneManager` + 假 `Scene`（模拟 `WorldMapScene` 的 `pause/resume/destroy`）在浏览器里直接跑 `pushOverlay`→tick→`popOverlay` 全流程，断言 `current` 实例在覆盖层开关前后是同一个引用、未被销毁、`pause/resume` 各调用一次、两个场景都在 tick；另跑了 `goto()` 在覆盖层挂载期间被硬切换时的防御路径（覆盖层与旧 `current` 都应销毁，不留孤儿）。
+
+## ADR-045 累计充值：商城可见自主领取（非静默邮件）+ 退款扣计数器 + 不回填历史 — Accepted — 2026-07-21
+
+- **决策**（用户拍板）：新增终身累计充值奖励系统（[GACHA_DESIGN.md §13](game/GACHA_DESIGN.md)），三项关键取舍：
+  1. 商城常驻可见的阶梯进度条 + 玩家自主领取，**不做成静默达标发邮件**——这类系统的核心商业价值就是可视化进度驱动付费（"还差¥X解锁Y"），静默发放等于把促充值工具做成用户感知不到的隐藏彩蛋。
+  2. Paddle 退款（`adjustment.created` action=refund）按笔精确扣减 `totalRechargeCents`（下限0），但**已领取的奖励不追回**——只影响后续新档位解锁资格，防"充值→领奖→退款"薅羊毛，同时不做已交付内容的回滚。
+  3. 上线**不回填**老玩家历史充值金额——`recharges` 表历史记录只有折算币数没有真实金额，回填需要反推价位档且有 first-purchase 2× 加成误差，成本大于收益；所有账号从 0 开始累计。
+- **为什么**：三项都是"多花一点实现成本 vs 简单但有隐患/体验打折"的取舍，且都会影响后续人读文档/查代码时的预期（不回填 ≠ bug；退款不追回奖励 ≠ 漏洞），故各自记一条方向。
+- **影响**：`server/shared/src/rechargeMilestone.ts`（新增，档位表+纯领取逻辑，同构 `battlepass.ts`）；`commercial` `WalletDoc.totalRechargeCents`/`RechargeDoc.usdCents`+`refundedAt`；`SaveData.rechargeMilestone?: { claimed: number[] }`；`server/metaserver/src/paddle.ts` 退款事件处理；客户端 `goRecharge` 商城平级入口。

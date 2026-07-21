@@ -6,9 +6,10 @@ import { withTimeout, TimeoutError } from '../../ui/busyTracker';
 import type { AppCtx, Nav } from '../appCtx';
 import { log, TOKEN_KEY } from '../appConstants';
 import { hasBattlePassClaimable } from '../../game/meta/battlepass';
+import { hasRechargeClaimable } from '../../game/meta/rechargeMilestone';
 import { scheduleSubscriptionReminder } from '../../platform/localReminders';
 
-type ShopNav = Pick<Nav, 'goShop' | 'goGacha' | 'goDaily' | 'goEvents' | 'goBattlePass'>;
+type ShopNav = Pick<Nav, 'goShop' | 'goGacha' | 'goDaily' | 'goEvents' | 'goBattlePass' | 'goRecharge'>;
 
 export function createShopNav(ctx: AppCtx): ShopNav {
   const { api, saveManager, platform, state, views, nav, featureFlags } = ctx;
@@ -30,6 +31,11 @@ export function createShopNav(ctx: AppCtx): ShopNav {
   /** Mirrors the Shop-tab badge helper above, for the BattlePass peer tab's claimable-level-reward dot. */
   function battlePassBadgeClaimable(): boolean {
     return hasBattlePassClaimable(saveManager.get().battlePass);
+  }
+
+  /** Mirrors the Shop-tab badge helper above, for the Recharge peer tab's claimable-milestone-reward dot. */
+  function rechargeBadgeClaimable(): boolean {
+    return hasRechargeClaimable(saveManager.get());
   }
 
   /**
@@ -222,6 +228,7 @@ export function createShopNav(ctx: AppCtx): ShopNav {
       // threading shopBack lets all three pages navigate to each other and return to the same origin (lobby / level-prep).
       openGacha() { goGacha({ shopBack: onBack }); },
       ...(shopLoggedIn ? { openBattlePass: () => goBattlePass({ shopBack: onBack }), getBattlePassBadge: battlePassBadgeClaimable } : {}),
+      ...(shopLoggedIn ? { openRecharge: () => goRecharge({ shopBack: onBack }), getRechargeBadge: rechargeBadgeClaimable } : {}),
     });
   }
 
@@ -245,6 +252,7 @@ export function createShopNav(ctx: AppCtx): ShopNav {
       ...(inGroup ? { openShop: () => goShop(shopBack), getShopBadge: shopCardBadgeClaimable } : {}),
       ...(inGroup && coinsAvail ? { openCoins: () => goShop(shopBack, 'coins') } : {}),
       ...(inGroup && bpAvail ? { openBattlePass: () => goBattlePass({ shopBack }), getBattlePassBadge: battlePassBadgeClaimable } : {}),
+      ...(inGroup && bpAvail ? { openRecharge: () => goRecharge({ shopBack }), getRechargeBadge: rechargeBadgeClaimable } : {}),
       getCoins: () => saveManager.get().wallet.coins,
       getPity: (poolId) => saveManager.get().gacha.pity[poolId] ?? 0,
       getFatePoints: () => saveManager.get().monetization?.fatePoints ?? 0,
@@ -369,6 +377,7 @@ export function createShopNav(ctx: AppCtx): ShopNav {
       getCoins: () => saveManager.get().wallet.coins,
       ...(inGroup ? { openShop: () => goShop(shopBack), getShopBadge: shopCardBadgeClaimable, openGacha: () => goGacha({ shopBack }) } : {}),
       ...(inGroup && coinsAvail ? { openCoins: () => goShop(shopBack, 'coins') } : {}),
+      ...(inGroup && loggedIn ? { openRecharge: () => goRecharge({ shopBack }), getRechargeBadge: rechargeBadgeClaimable } : {}),
       ...(loggedIn
         ? {
             getBattlePass: () => saveManager.get().battlePass,
@@ -392,5 +401,40 @@ export function createShopNav(ctx: AppCtx): ShopNav {
     });
   }
 
-  return { goShop, goGacha, goDaily, goEvents, goBattlePass };
+  /**
+   * Cumulative recharge milestones (GACHA_DESIGN §13, ADR-045). When `group` is provided = shop-group
+   * context (top tab bar, back returns to the shop); omitted = standalone entry (back returns to the lobby).
+   */
+  function goRecharge(group?: { shopBack?: () => void }): void {
+    state.inLobby = false;
+    analytics.track('screen_view', { scene: 'RechargeScene' });
+    const loggedIn = !state.offlineMode && !!platform.storage.getItem(TOKEN_KEY);
+    const client = api;
+    const inGroup = !!group;
+    const shopBack = group?.shopBack;
+    const coinsAvail = loggedIn && platform.iapKind() !== null;
+    views.showRecharge({
+      onBack: () => { if (shopBack) shopBack(); else nav.goLobby(); },
+      getCoins: () => saveManager.get().wallet.coins,
+      ...(inGroup ? { openShop: () => goShop(shopBack), getShopBadge: shopCardBadgeClaimable, openGacha: () => goGacha({ shopBack }) } : {}),
+      ...(inGroup && coinsAvail ? { openCoins: () => goShop(shopBack, 'coins') } : {}),
+      ...(inGroup && loggedIn ? { openBattlePass: () => goBattlePass({ shopBack }), getBattlePassBadge: battlePassBadgeClaimable } : {}),
+      ...(loggedIn && client
+        ? {
+            getData: () => ({
+              totalRechargeCents: saveManager.get().monetization?.totalRechargeCents ?? 0,
+              claimed: saveManager.get().rechargeMilestone?.claimed ?? [],
+            }),
+            onClaim: async (tierId: number) => {
+              const { save, rewards } = await client.claimRechargeMilestone(tierId);
+              saveManager.adoptServer(save);
+              analytics.track('recharge_milestone_claim', { tier_id: tierId });
+              return rewards;
+            },
+          }
+        : {}),
+    });
+  }
+
+  return { goShop, goGacha, goDaily, goEvents, goBattlePass, goRecharge };
 }

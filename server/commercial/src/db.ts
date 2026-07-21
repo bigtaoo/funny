@@ -17,6 +17,12 @@ export interface WalletDoc {
   subscription?: { expiry: number; lastClaimDayKey?: string };
   /** One-off products already purchased (GACHA_DESIGN §6): product ids in economy.PRODUCT_STARTER_* (once-per-account guard). */
   starterUsed?: string[];
+  /**
+   * Lifetime cumulative real-money spend in usdCents (GACHA_DESIGN §13, ADR-045). Monotonic except for
+   * Paddle refunds (paddleRefund decrements, floored at 0). $inc'd in the same atomic op as credit()'s
+   * coins update — see credit()'s rechargeUsdCents ref. Absent = 0 (never purchased / pre-feature wallet).
+   */
+  totalRechargeCents?: number;
   updatedAt: number;
 }
 
@@ -64,6 +70,14 @@ export interface RechargeDoc {
   status: 'granted';
   rawReceipt: string;
   ts: number;
+  /**
+   * usdCents credited to totalRechargeCents for this recharge (GACHA_DESIGN §13). Stored so a later Paddle
+   * refund can decrement the wallet by the exact amount originally added, without re-deriving it from
+   * coinsGranted (which may include the first-purchase 2× bonus and would double-refund the counter).
+   */
+  usdCents?: number;
+  /** Set once this receipt has been refunded (paddleRefund), so a re-delivered refund event is a no-op. */
+  refundedAt?: number;
 }
 
 /**

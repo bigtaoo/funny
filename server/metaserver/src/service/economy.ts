@@ -22,7 +22,10 @@ import {
   GROWTH_PACK_WINDOW_DAYS,
   accrueRetentionTask,
   createLogger,
+  claimRechargeReward,
+  makeFreshRechargeMilestone,
   type GachaPoolDef,
+  type RechargeReward,
 } from '@nw/shared';
 import { getOrCreateSave } from '../save.js';
 import { accrueEventTask } from '../events.js';
@@ -49,7 +52,7 @@ const log = createLogger('meta:economy');
 type EconomyHandlers = Pick<
   MetaHandlers,
   | 'getShopItems' | 'getGachaPools' | 'shopBuy' | 'gachaDraw' | 'redeemFate'
-  | 'monthlyCardBuy' | 'yearCardBuy' | 'monthlyCardClaim' | 'starterBuy'
+  | 'monthlyCardBuy' | 'yearCardBuy' | 'monthlyCardClaim' | 'claimRechargeMilestone' | 'starterBuy'
   | 'adsReward' | 'iapVerify' | 'redeemPromoCode'
 >;
 
@@ -319,6 +322,64 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
         ? await mirrorWalletFrom(cols, accountId, w, now())
         : await getOrCreateSave(cols, accountId, now());
       return ok({ save, claimed: r.claimed });
+    }
+
+    /**
+     * Claim a cumulative-recharge milestone reward (GACHA_DESIGN §13, ADR-045). Progress (totalRechargeCents)
+     * is commercial-authoritative and read live from the wallet; claim state lives in save.rechargeMilestone
+     * (same split as battle pass's xp(commercial n/a, SaveData-native)/claimedFree(SaveData) — here the
+     * progress source is commercial instead). Atomic validate + record claim (optimistic lock prevents
+     * double-tap); material rewards are written to save.materials in the same transaction, coins are
+     * delivered via commercial.grant afterward (mirrors claimBattlePass).
+     */
+    async claimRechargeMilestone(req: FastifyRequest, reply: FastifyReply) {
+      if (!this.ensureCommercial(reply)) return;
+      const accountId = accountIdOf(req);
+      const { tierId } = req.body as { tierId: number };
+      const { cols, commercial, now } = this.deps;
+
+      const wallet = await commercial.getWallet(accountId);
+      if (!wallet) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'wallet unavailable'));
+
+      let claimedRewards: RechargeReward[] | null = null;
+      const out = await this.mutateSave(accountId, (s) => {
+        const data = s.rechargeMilestone ?? makeFreshRechargeMilestone();
+        const r = claimRechargeReward(data, wallet.totalRechargeCents, tierId);
+        if (!r.ok) return r.error;
+        claimedRewards = r.rewards;
+        const next = { ...s, rechargeMilestone: r.data };
+        for (const reward of r.rewards) {
+          if (reward.kind === 'material' && reward.id && reward.count > 0) {
+            next.materials = { ...s.materials, [reward.id]: (s.materials[reward.id] ?? 0) + reward.count };
+          }
+        }
+        return next;
+      });
+      if ('error' in out) {
+        switch (out.error) {
+          case 'BAD_REQUEST':
+            return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'bad request'));
+          case 'NOT_REACHED':
+            return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'threshold not reached'));
+          case 'ALREADY_CLAIMED':
+            return reply.code(409).send(err(ErrorCode.ALREADY_CLAIMED, 'already claimed'));
+          default:
+            return reply.code(409).send(err(ErrorCode.REV_CONFLICT, out.error));
+        }
+      }
+      const rewards = claimedRewards!;
+      let finalSave = out.save;
+      const coinsReward = rewards.find((r) => r.kind === 'coins');
+      if (coinsReward && coinsReward.count > 0 && commercial.available) {
+        try {
+          const orderId = `recharge.claim.${accountId}.${tierId}`;
+          const g = await commercial.grant({ accountId, amount: coinsReward.count, reason: 'recharge_milestone_claim', orderId });
+          if (g.ok) finalSave = await mirrorCoins(cols, accountId, g.coinsAfter, now());
+        } catch (e) {
+          req.log.warn({ err: e }, 'recharge milestone claim coin grant failed (coins may be delayed)');
+        }
+      }
+      return ok({ save: finalSave, rewards });
     }
 
     /** Buy a starter pack (GACHA_DESIGN §6): starter_draw (rare+ floored 10-pull) or starter_growth (coins + 7-day card). */

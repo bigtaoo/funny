@@ -1365,6 +1365,18 @@ export const zh = {
   'battlepass.maxLevel': '满级！',
   'battlepass.openBattlePass': '战令',
 
+  // —— 累计充值 (GACHA_DESIGN §13, ADR-045) ——
+  'recharge.title': '累计充值',
+  'recharge.progress': '已充值 {amount}',
+  'recharge.hint': '累计充值达到对应金额即可领取奖励；已领取的奖励不会因退款被收回。',
+  'recharge.loginRequired': '登录后查看',
+  'recharge.tierThreshold': '满 {amount}',
+  'recharge.claim': '领取',
+  'recharge.claimed': '已领',
+  'recharge.locked': '未达成',
+  'recharge.claimFailed': '领取失败，请重试',
+  'recharge.claimToast': '已领取 +{n} 金币',
+
   // ── Retention system (B5, RETENTION_DESIGN) ───────────────────────────────────
   'daily.title': '每日',
   'daily.loginRequired': '登录后可签到',

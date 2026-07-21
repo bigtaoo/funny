@@ -72,6 +72,7 @@ export interface SaveData {
     starterUsed: string[]; // one-off product ids already purchased (§6)
     starterGrowthEligible?: boolean; // still inside the growth pack's first-N-days account-age window; absent = eligible (§6)
     firstPurchaseUsed?: boolean; // true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves)
+    totalRechargeCents?: number; // lifetime cumulative real-money spend (usdCents), GACHA_DESIGN §13; absent = 0
   };
   // Delivered purchase orders (commercial orderId); server-authoritative, client read-only (S5-5).
   deliveredOrders: string[];
@@ -95,6 +96,11 @@ export interface SaveData {
     hasPass: boolean;
     claimedFree: number[];
     claimedPaid: number[];
+  };
+
+  // —— Cumulative recharge milestone claims (GACHA_DESIGN §13, ADR-045). Lazily created; absent = no tier ever claimed. ——
+  rechargeMilestone?: {
+    claimed: number[];
   };
 
   // —— Retention (B5, RETENTION_DESIGN). Server-authoritative; not sent up on PUT /save (client read-only). ——
