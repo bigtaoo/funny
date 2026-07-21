@@ -180,22 +180,26 @@ describe('FamilyScene — landscape split view', () => {
     const rosterX = scene.railW + 10;
     const chatX = scene.chatColX + 10;
 
+    // The channel opens pinned to the latest message (bottom), so its scroll starts at its extent.
+    const chatBottom = scene.scrollYChannel;
+    expect(chatBottom).toBeGreaterThan(0);
+
     // Drag up inside the roster column only.
     scene.handleDown(rosterX, midY);
     scene.handleMove(rosterX, midY - 80);
     scene.handleUp(rosterX, midY - 80);
 
     expect(scene.scrollY).toBeGreaterThan(0);
-    expect(scene.scrollYChannel).toBe(0);
+    expect(scene.scrollYChannel).toBe(chatBottom); // channel undisturbed
 
     const scrollYAfterFirstDrag = scene.scrollY;
 
-    // Drag up inside the channel column only — must not disturb the roster's scroll.
+    // Drag DOWN inside the channel column to scroll up into history — must not disturb the roster.
     scene.handleDown(chatX, midY);
-    scene.handleMove(chatX, midY - 80);
-    scene.handleUp(chatX, midY - 80);
+    scene.handleMove(chatX, midY + 80);
+    scene.handleUp(chatX, midY + 80);
 
-    expect(scene.scrollYChannel).toBeGreaterThan(0);
+    expect(scene.scrollYChannel).toBeLessThan(chatBottom);
     expect(scene.scrollY).toBe(scrollYAfterFirstDrag);
   });
 });

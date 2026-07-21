@@ -173,6 +173,9 @@ export class FriendsSceneBase {
   protected worldChatInput = '';
   protected worldChatActive = false;
   protected worldSending = false;
+  /** Pin the world channel to the latest message; cleared once the user scrolls up to read history,
+   *  re-armed when they drag back to the bottom, re-enter the tab, or post (see drawWorldTab). */
+  protected worldStick = true;
 
   // Shared HTML input (family/sect forms + world channel input box)
   protected hiddenInput: HTMLInputElement | null = null;
@@ -269,7 +272,13 @@ export class FriendsSceneBase {
     }
     if (this.dragging && this.maxScroll > 0) {
       const next = clamp(this.dragStartScroll + (this.downY - y), 0, this.maxScroll);
-      if (next !== this.scrollY) { this.scrollY = next; this.scrollDirty = true; }
+      if (next !== this.scrollY) {
+        this.scrollY = next;
+        // World channel: dragging back to the bottom re-pins to the latest; scrolling up releases the
+        // pin so a re-fetch (e.g. after posting) doesn't yank the reader down. Other tabs ignore it.
+        if (this.tab === 'world') this.worldStick = next >= this.maxScroll - 1;
+        this.scrollDirty = true;
+      }
     }
   }
 
@@ -309,6 +318,7 @@ export class FriendsSceneBase {
     this.view = 'list';
     this.openMailItem = null;
     this.scrollY = 0;
+    this.worldStick = true; // (re-)entering the world tab opens at the latest message
     this.clearHiddenInput();
     this.familySubview = 'info';
     this.sectSubview = 'info';

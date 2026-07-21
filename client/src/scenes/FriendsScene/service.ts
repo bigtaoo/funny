@@ -221,6 +221,7 @@ export function NetworkMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
         const senderName = this.cb.playerName?.() ?? '';
         await this.cb.sendWorldChat(body, senderName);
         this.worldChatInput = '';
+        this.worldStick = true; // snap to the just-posted message when the re-fetch lands
         this.toast('social.world.sent', 'success');
         // Re-sync coins so the HUD reflects the server-side deduction (see refreshWallet doc).
         await this.cb.refreshWallet?.();
