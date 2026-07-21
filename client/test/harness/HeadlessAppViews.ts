@@ -60,7 +60,7 @@ export type ScreenName =
   | 'campaignMap' | 'levelPrep' | 'cardCodex' | 'cardRoster' | 'equipment' | 'stats' | 'achievements'
   | 'leaderboard' | 'battlePass' | 'replay' | 'result' | 'room' | 'friends'
   | 'chat' | 'gameNet' | 'game' | 'worldMap' | 'family' | 'sect' | 'auction' | 'defenseEditor' | 'teams' | 'deckBuilder'
-  | 'consent' | 'reconnectPrompt' | 'daily' | 'events' | 'statePlayer' | 'titles' | 'city';
+  | 'consent' | 'reconnectPrompt' | 'daily' | 'events' | 'statePlayer' | 'titles' | 'city' | 'recharge';
 
 interface ActiveMatch {
   engine: IGameEngine;
