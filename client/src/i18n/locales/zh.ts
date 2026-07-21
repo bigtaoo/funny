@@ -415,6 +415,19 @@ export const zh = {
   'shop.starterDraw': '新手首抽包',
   'shop.starterGrowth': '新手成长包',
   'shop.alreadyOwned': '已购买',
+  // ── 月卡到期提醒（GACHA_DESIGN §9.3 / G10）：soon = 到期前提醒，expired = 到期后提醒；两组文案同时用于 iOS 本地推送标题/正文，以及 Web/微信应用内提示条 ──
+  'shop.reminderSoonTitle': '月卡即将到期',
+  'shop.reminderSoonBody': '你的月卡还有 3 天到期，记得续费保持每日奖励～',
+  'shop.reminderExpiredTitle': '月卡已到期',
+  'shop.reminderExpiredBody': '你的月卡已到期，快去续费吧～',
+  // ── 每日待领取常驻提醒（GACHA_DESIGN §5.2 / G10）：每天固定 12:30 一条，iOS 本地推送专用 ──
+  'shop.reminderDailyTitle': '今日奖励等你领取',
+  'shop.reminderDailyBody': '你有待领取奖励：{items}',
+  'shop.reminderDailySeparator': '、',
+  'shop.reminderDailyMonthlyCard': '月卡奖励',
+  'shop.reminderDailyTask': '每日任务奖励',
+  'shop.reminderDailyCheckin': '每日签到',
+  'shop.expiringSoonStamp': '即将到期',
 
   // ── Gacha / loot box (S2-6) ───────────────────────────────────────────────────
   'gacha.title': '盲盒',

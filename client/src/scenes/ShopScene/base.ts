@@ -111,6 +111,8 @@ export interface CardSpec {
   badge?: { text: string; color: number };
   /** Gold panel highlight (featured / best value). */
   highlight?: boolean;
+  /** Ink-stamp overlay on the art image, angled like GachaScene's "NEW" stamp (monthly-card expiring-soon state). */
+  expiringSoonStamp?: boolean;
   buttons: BtnSpec[];
 }
 
@@ -368,12 +370,16 @@ export class ShopSceneBase {
   }
 
   /** Monthly/year card status derived from the mirrored monetization save (shared by the sidebar badge and the card itself). */
-  protected monthlyCardStatus(): { active: boolean; claimedToday: boolean } {
+  protected monthlyCardStatus(): { active: boolean; claimedToday: boolean; expiringSoon: boolean } {
     const mon = this.cb.getMonetization?.() ?? { subscriptionExpiry: 0, starterUsed: [] };
     const active = mon.subscriptionExpiry > Date.now();
     const todayKey = new Date().toISOString().slice(0, 10);
     const claimedToday = active && mon.subscriptionLastClaimDay === todayKey;
-    return { active, claimedToday };
+    // 3-day lead window, mirroring platform/localReminders.ts's EXPIRY_LEAD_MS (the push/toast
+    // reminder fires on the same threshold) — duplicated here rather than imported so this
+    // pure-render scene layer stays free of the Capacitor-touching platform module.
+    const expiringSoon = active && mon.subscriptionExpiry - Date.now() <= 3 * 24 * 60 * 60 * 1000;
+    return { active, claimedToday, expiringSoon };
   }
 
   // ── Grid layout ────────────────────────────────────────────────────────────
@@ -463,6 +469,28 @@ export class ShopSceneBase {
       const icon = buildCoinIcon(spec.icon, imgSize, spec.iconColor);
       icon.x = imgX; icon.y = imgY;
       body.addChild(icon);
+    }
+
+    // "Expiring soon" ink stamp, printed at an angle straight onto the art — same rubber-stamp
+    // treatment as GachaScene's "NEW" badge (drawResultCard), reused here for visual consistency.
+    if (spec.expiringSoonStamp) {
+      const stamp = new PIXI.Container();
+      const stampW = Math.round(imgSize * 0.92);
+      const stampH = Math.round(imgSize * 0.26);
+      const ink = 0xaf2430;
+      const border = new PIXI.Graphics();
+      border.lineStyle(Math.max(2, Math.round(imgSize * 0.02)), ink, 0.9);
+      border.drawRoundedRect(-stampW / 2, -stampH / 2, stampW, stampH, stampH * 0.3);
+      stamp.addChild(border);
+      const label = txt(t('shop.expiringSoonStamp'), snapFont(Math.round(imgSize * 0.13)), ink, true);
+      label.anchor.set(0.5, 0.5);
+      if (label.width > stampW * 0.88) label.scale.set((stampW * 0.88) / label.width);
+      stamp.addChild(label);
+      stamp.rotation = -0.3;
+      stamp.alpha = 0.88;
+      stamp.x = imgX + imgSize / 2;
+      stamp.y = imgY + imgSize / 2;
+      body.addChild(stamp);
     }
 
     // Savings / best-value badge: top-right corner over the art.

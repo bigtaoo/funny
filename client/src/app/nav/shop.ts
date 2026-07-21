@@ -6,6 +6,7 @@ import { withTimeout, TimeoutError } from '../../ui/busyTracker';
 import type { AppCtx, Nav } from '../appCtx';
 import { log, TOKEN_KEY } from '../appConstants';
 import { hasBattlePassClaimable } from '../../game/meta/battlepass';
+import { scheduleSubscriptionReminder } from '../../platform/localReminders';
 
 type ShopNav = Pick<Nav, 'goShop' | 'goGacha' | 'goDaily' | 'goEvents' | 'goBattlePass'>;
 
@@ -176,6 +177,8 @@ export function createShopNav(ctx: AppCtx): ShopNav {
             saveManager.adoptServer(save);
             converted = true;
             analytics.track('monthly_card_buy', {});
+            // New expiry — (re)arm the iOS local-notification reminder (no-op elsewhere); see subscriptionReminder.ts.
+            void scheduleSubscriptionReminder(save.monetization?.subscriptionExpiry ?? 0);
             return { ok: true as const };
           } catch (e) {
             const key = e instanceof ApiError && e.code === 'ALREADY_ACTIVE' ? 'shop.cardActive' as const : 'shop.error' as const;
@@ -188,6 +191,7 @@ export function createShopNav(ctx: AppCtx): ShopNav {
             saveManager.adoptServer(save);
             converted = true;
             analytics.track('year_card_buy', {});
+            void scheduleSubscriptionReminder(save.monetization?.subscriptionExpiry ?? 0);
             return { ok: true as const };
           } catch (e) {
             const key = e instanceof ApiError && e.code === 'ALREADY_ACTIVE' ? 'shop.cardActive' as const : 'shop.error' as const;

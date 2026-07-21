@@ -10,6 +10,10 @@ import type { LobbyView } from '../AppViews';
 import type { AppCtx, Nav } from '../appCtx';
 import type { AIDifficulty } from '../../game';
 import { TOKEN_KEY, LAST_SEEN_SEASON_KEY, TUTORIAL_DONE_FLAG } from '../appConstants';
+import {
+  scheduleSubscriptionReminder, checkInAppSubscriptionReminder,
+  scheduleDailyReminder, type DailyReminderReason,
+} from '../../platform/localReminders';
 
 /**
  * Roll an AI level (1–10, engine AISystem.ts) for a manually-started practice match,
@@ -88,12 +92,22 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
     view.applyShopBadge(state.shopCardClaimable);
   }
 
-  /** Re-fetch retention claimable state and push the daily red dot into the lobby (B5, best-effort). */
+  /**
+   * Re-fetch retention claimable state, push the daily red dot into the lobby (B5, best-effort),
+   * and — iOS only — re-arm the recurring "today's rewards are waiting" local notification
+   * (localReminders.ts) with whatever's outstanding right now, bundling in the monthly-card claim
+   * from the same local check the shop nav dot uses. A failed fetch leaves both untouched.
+   */
   async function refreshRetentionBadge(view: LobbyView): Promise<void> {
     if (!api || state.offlineMode || !platform.storage.getItem(TOKEN_KEY)) { view.applyRetentionBadge(false); return; }
     try {
       const r = await api.getRetention();
       view.applyRetentionBadge(r.claimable.checkin || r.claimable.daily);
+      const reasons: DailyReminderReason[] = [];
+      if (computeShopCardClaimable()) reasons.push('monthlyCard');
+      if (r.claimable.daily) reasons.push('dailyTask');
+      if (r.claimable.checkin) reasons.push('checkin');
+      void scheduleDailyReminder(reasons);
     } catch { /* leave the dot off on failure */ }
   }
 
@@ -125,6 +139,14 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
     const pvp = saveManager.get().pvp;
     const loggedIn = !state.offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     const online = loggedIn && !!api && !!state.gatewayUrl;
+    // Monthly-card expiry reminder (GACHA_DESIGN §9.3 / G10): re-arm on every real lobby entry (not
+    // resize redraws), not just at buy/claim time — covers restore-after-reinstall / login-on-a-new-
+    // device, where the expiry is already set but this session never scheduled anything for it yet.
+    if (loggedIn && !opts?.fromResize) {
+      const expiry = saveManager.get().monetization?.subscriptionExpiry ?? 0;
+      void scheduleSubscriptionReminder(expiry);
+      checkInAppSubscriptionReminder(platform.storage, expiry);
+    }
     // First-time feature guide (ONBOARDING_DESIGN §4.1): if a feature's guide has not been seen,
     // show a dismissible guide card in the lobby before navigating; if already seen, navigate directly.
     // Covers all major lobby-reachable features (auction is inside the world map; each page's "?" button

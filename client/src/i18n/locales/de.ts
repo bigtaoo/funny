@@ -411,6 +411,19 @@ export const de: Record<TranslationKey, string> = {
   'shop.starterDraw': 'Starter-Erstzugpaket',
   'shop.starterGrowth': 'Starter-Wachstumspaket',
   'shop.alreadyOwned': 'Gekauft',
+  // ── Erinnerung an Monatskarten-Ablauf (GACHA_DESIGN §9.3 / G10) ──
+  'shop.reminderSoonTitle': 'Monatskarte läuft bald ab',
+  'shop.reminderSoonBody': 'Deine Monatskarte läuft in 3 Tagen ab — jetzt verlängern, um den täglichen Bonus zu behalten.',
+  'shop.reminderExpiredTitle': 'Monatskarte abgelaufen',
+  'shop.reminderExpiredBody': 'Deine Monatskarte ist abgelaufen — jetzt verlängern, um weiterhin tägliche Belohnungen zu erhalten.',
+  // ── Wiederkehrende Erinnerung an offene Tagesbelohnungen (GACHA_DESIGN §5.2 / G10): einmal täglich um 12:30 Uhr, nur iOS ──
+  'shop.reminderDailyTitle': 'Deine Tagesbelohnungen warten',
+  'shop.reminderDailyBody': 'Du hast Belohnungen abzuholen: {items}',
+  'shop.reminderDailySeparator': ', ',
+  'shop.reminderDailyMonthlyCard': 'Monatskarten-Belohnung',
+  'shop.reminderDailyTask': 'Tagesaufgaben-Belohnung',
+  'shop.reminderDailyCheckin': 'tägliches Einloggen',
+  'shop.expiringSoonStamp': 'LÄUFT BALD AB',
 
   // ── Lootbox (S2-6) ───────────────────────────────────────────────────────────
   'gacha.title': 'Lootbox',
