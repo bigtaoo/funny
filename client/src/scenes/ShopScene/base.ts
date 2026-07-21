@@ -61,6 +61,10 @@ export interface ShopSceneCallbacks {
   openBattlePass?(): void;
   /** Whether the BattlePass peer tab has a claimable level reward at the current XP (mirrors GachaScene's own peer-tab badges, LOBBY_IA_REDESIGN P1.5). */
   getBattlePassBadge?(): boolean;
+  /** Cumulative recharge milestone entry point (GACHA_DESIGN §13, ADR-045). Only provided when logged in online; absent = tab not drawn. */
+  openRecharge?(): void;
+  /** Whether the Recharge peer tab has a claimable milestone reward at the current cumulative spend. */
+  getRechargeBadge?(): boolean;
   /**
    * Initiate a Paddle coin-recharge checkout for the given tier ID (e.g. 't499').
    * Implementation calls /shop/paddle/checkout to get a transactionId, then opens Paddle.js.
@@ -349,21 +353,23 @@ export class ShopSceneBase {
     ];
     if (showCoins) tabs.push({ label: t('shop.coinsTab'), active: this.tab === 'coins', icon: 'coin' });
     tabs.push({ label: t('gacha.title'), active: false, icon: 'capsule' });
+    const actions: Array<() => void> = [() => this.cb.openGacha()];
     if (this.cb.openBattlePass) {
       tabs.push({ label: t('battlepass.title'), active: false, icon: 'trophy', badge: this.cb.getBattlePassBadge?.() ?? false });
+      actions.push(() => this.cb.openBattlePass?.());
+    }
+    if (this.cb.openRecharge) {
+      tabs.push({ label: t('recharge.title'), active: false, icon: 'coinChest', badge: this.cb.getRechargeBadge?.() ?? false });
+      actions.push(() => this.cb.openRecharge?.());
     }
 
     const switchTab = (tab: 'shop' | 'coins') => { this.tab = tab; this.scrollY = 0; this.render(); };
+    // Fixed [Shop, Coins?] leading tabs switch locally; the rest (Gacha/BattlePass?/Recharge?) dispatch via `actions`.
+    const fixedCount = showCoins ? 2 : 1;
     const { hits } = drawSidebarTabs(this.container, sidebarW, tbH, h, tabs, (i) => {
-      if (!showCoins) {
-        if (i === 1) this.cb.openGacha();
-        else if (i === 2) this.cb.openBattlePass?.();
-        return;
-      }
-      if (i === 0) switchTab('shop');
-      else if (i === 1) switchTab('coins');
-      else if (i === 2) this.cb.openGacha();
-      else if (i === 3) this.cb.openBattlePass?.();
+      if (i === 0) { switchTab('shop'); return; }
+      if (showCoins && i === 1) { switchTab('coins'); return; }
+      actions[i - fixedCount]?.();
     });
     this.hits.push(...hits);
     return tbH;

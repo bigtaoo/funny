@@ -51,6 +51,7 @@ describe.skipIf(!mongo)('commercial service e2e', () => {
       subscriptionExpiry: 0,
       starterUsed: [],
       firstPurchaseUsed: false,
+      totalRechargeCents: 0,
     });
   });
 

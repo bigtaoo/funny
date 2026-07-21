@@ -41,6 +41,7 @@ class FakeCommercial implements CommercialClient {
   }
   subscriptions = new Map<string, { expiry: number; lastClaimDayKey?: string }>();
   starterUsed = new Map<string, string[]>();
+  totalRecharge = new Map<string, number>();
   async getWallet(id: string) {
     const sub = this.subscriptions.get(id);
     return {
@@ -51,6 +52,7 @@ class FakeCommercial implements CommercialClient {
       subscriptionLastClaimDay: sub?.lastClaimDayKey,
       starterUsed: this.starterUsed.get(id) ?? [],
       firstPurchaseUsed: false,
+      totalRechargeCents: this.totalRecharge.get(id) ?? 0,
     };
   }
   async starterBuy(a: { accountId: string; productId: string; orderId: string }) {
@@ -123,8 +125,18 @@ class FakeCommercial implements CommercialClient {
   }
   async rechargeVerify(a: { accountId: string; platform: string; receipt: string; receiptId: string }) {
     if (!a.receipt) return { ok: false as const, error: 'INVALID_RECEIPT' };
-    this.coins.set(a.accountId, this.bal(a.accountId) + 550);
-    return { ok: true as const, coinsAfter: this.bal(a.accountId), coinsGranted: 550 };
+    // Tiny local tier→{coins,usdCents} table mirroring @nw/shared IAP_TIERS_LIST, just enough for the fake
+    // to grant tier-accurate amounts and drive totalRechargeCents in the recharge-milestone tests below.
+    const TIERS: Record<string, { coins: number; usdCents: number }> = {
+      t499: { coins: 550, usdCents: 499 },
+      t999: { coins: 1150, usdCents: 999 },
+      t1999: { coins: 2400, usdCents: 1999 },
+    };
+    const tier = a.receipt.startsWith('tier:') ? a.receipt.slice(5) : 't499';
+    const { coins, usdCents } = TIERS[tier] ?? TIERS.t499!;
+    this.coins.set(a.accountId, this.bal(a.accountId) + coins);
+    this.totalRecharge.set(a.accountId, (this.totalRecharge.get(a.accountId) ?? 0) + usdCents);
+    return { ok: true as const, coinsAfter: this.bal(a.accountId), coinsGranted: coins };
   }
   async adsCredit(a: { accountId: string; amount: number; dayKey: string }) {
     this.coins.set(a.accountId, this.bal(a.accountId) + a.amount);
@@ -196,6 +208,29 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     const r = body(await app.inject({ method: 'POST', url: '/iap/verify', headers: auth(), payload: { platform: 'web', receipt: 'tier:t499' } }));
     expect(r.data.granted).toBe(550);
     expect(r.data.save.wallet.coins).toBe(550);
+  });
+
+  it('recharge milestone (GACHA_DESIGN §13): totalRechargeCents mirrors, tier 1 claimable once crossed, not before', async () => {
+    // t999 = 999 usdCents, crosses tier 1's 600-cent threshold but not tier 2's 2000.
+    await app.inject({ method: 'POST', url: '/iap/verify', headers: auth(), payload: { platform: 'web', receipt: 'tier:t999' } });
+    const save = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    expect(save.data.save.monetization.totalRechargeCents).toBe(999);
+
+    // Tier 2 (threshold 2000) is not yet reached.
+    const tooEarly = body(await app.inject({ method: 'POST', url: '/recharge/claim', headers: auth(), payload: { tierId: 2 } }));
+    expect(tooEarly.ok).toBe(false);
+
+    // Tier 1 (threshold 600, reward coins(60)) is claimable.
+    const before = comm.bal(accountId);
+    const claim = body(await app.inject({ method: 'POST', url: '/recharge/claim', headers: auth(), payload: { tierId: 1 } }));
+    expect(claim.ok).toBe(true);
+    expect(claim.data.rewards).toEqual([{ kind: 'coins', count: 60 }]);
+    expect(claim.data.save.rechargeMilestone.claimed).toEqual([1]);
+    expect(comm.bal(accountId)).toBe(before + 60);
+
+    // Re-claiming the same tier is rejected (already claimed).
+    const again = body(await app.inject({ method: 'POST', url: '/recharge/claim', headers: auth(), payload: { tierId: 1 } }));
+    expect(again.ok).toBe(false);
   });
 
   it('rename: deduct 500 coins → write display name → mirror balance; GET /save returns new name', async () => {

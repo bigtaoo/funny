@@ -66,6 +66,7 @@ export interface Nav {
   goDaily(): void;
   goEvents(): void;
   goBattlePass(group?: { shopBack?: () => void }): void;
+  goRecharge(group?: { shopBack?: () => void }): void;
   goGame(opts?: { seed?: number; difficulty?: AIDifficulty; fromBotFallback?: boolean }): void;
   goCampaignMap(): void;
   goLevelPrep(levelId: string): void;

@@ -36,6 +36,7 @@ import type { StatsCallbacks } from '../scenes/StatsScene';
 import type { AchievementCallbacks } from '../scenes/AchievementScene';
 import type { LeaderboardCallbacks } from '../scenes/LeaderboardScene';
 import type { BattlePassCallbacks } from '../scenes/BattlePassScene';
+import type { RechargeCallbacks } from '../scenes/RechargeScene';
 import type { ReplaySceneCallbacks } from '../scenes/ReplayScene';
 import type { ResultSceneCallbacks, EloResult } from '../scenes/ResultScene';
 import type { StatePlayerSceneCallbacks } from '../scenes/StatePlayerScene';
@@ -182,6 +183,8 @@ export interface AppViews {
   showLeaderboard(cb: LeaderboardCallbacks): void;
   /** Battle pass panel (SE-9). */
   showBattlePass(cb: BattlePassCallbacks): void;
+  /** Cumulative recharge milestone panel (GACHA_DESIGN §13, ADR-045). */
+  showRecharge(cb: RechargeCallbacks): void;
   /** Title wall (S10). */
   showTitles(cb: TitlesSceneCallbacks): void;
   /** Daily check-in + daily tasks (B5, RETENTION_DESIGN). */

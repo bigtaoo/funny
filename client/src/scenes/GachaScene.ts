@@ -82,6 +82,10 @@ export interface GachaSceneCallbacks {
   getShopBadge?(): boolean;
   /** Whether the BattlePass peer tab has a claimable level reward at the current XP (mirrors ShopScene's own peer-tab badges, LOBBY_IA_REDESIGN P1.5). */
   getBattlePassBadge?(): boolean;
+  /** Cumulative recharge milestone entry point (GACHA_DESIGN §13, ADR-045). Only provided when logged in online; absent = tab not drawn. */
+  openRecharge?(): void;
+  /** Whether the Recharge peer tab has a claimable milestone reward at the current cumulative spend. */
+  getRechargeBadge?(): boolean;
 }
 
 interface Hit { rect: Rect; fn: () => void; }
@@ -303,6 +307,10 @@ export class GachaScene implements Scene {
     if (this.cb.openBattlePass) {
       tabs.push({ label: t('battlepass.title'), active: false, icon: 'trophy', badge: this.cb.getBattlePassBadge?.() ?? false });
       actions.push(() => this.cb.openBattlePass?.());
+    }
+    if (this.cb.openRecharge) {
+      tabs.push({ label: t('recharge.title'), active: false, icon: 'coinChest', badge: this.cb.getRechargeBadge?.() ?? false });
+      actions.push(() => this.cb.openRecharge?.());
     }
     const sidebarW = sidebarNavW(w, h, landscape);
     const { hits } = drawSidebarTabs(this.container, sidebarW, tbH, h, tabs, (i) => actions[i]?.());

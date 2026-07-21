@@ -59,6 +59,7 @@ const SHOP = t('shop.title');
 const COINS = t('shop.coinsTab');
 const GACHA = t('gacha.title');
 const BATTLEPASS = t('battlepass.title');
+const RECHARGE = t('recharge.title');
 
 function buildGacha(cb: Partial<GachaSceneCallbacks>): GachaScene {
   return new GachaScene(createLayout(800, 1280), new InputManager(), {
@@ -163,6 +164,30 @@ describe('GachaScene — shop-group tab bar Coins parity', () => {
     withBadge.destroy();
     withoutBadge.destroy();
   });
+
+  // GACHA_DESIGN §13 / ADR-045: Recharge is the 5th shop-group peer tab, added alongside BattlePass.
+  it('shows a Recharge tab and routes it to openRecharge when wired', () => {
+    let openedRecharge = 0;
+    const scene = buildGacha({ openShop() {}, openRecharge: () => { openedRecharge++; } });
+    expect(findLabelPos(scene.container, RECHARGE)).not.toBeNull();
+    tapTab(scene, RECHARGE);
+    expect(openedRecharge).toBe(1);
+    scene.destroy();
+  });
+
+  it('does not show a Recharge tab when openRecharge is not wired', () => {
+    const scene = buildGacha({ openShop() {} });
+    expect(findLabelPos(scene.container, RECHARGE)).toBeNull();
+    scene.destroy();
+  });
+
+  it('forwards getRechargeBadge onto the Recharge peer tab', () => {
+    const withBadge = buildGacha({ openShop() {}, openRecharge() {}, getRechargeBadge: () => true });
+    const withoutBadge = buildGacha({ openShop() {}, openRecharge() {}, getRechargeBadge: () => false });
+    expect(countGraphics(withBadge.container)).toBeGreaterThan(countGraphics(withoutBadge.container));
+    withBadge.destroy();
+    withoutBadge.destroy();
+  });
 });
 
 /** Rough proxy for "a badge dot got drawn": count PIXI.Graphics nodes in the tree. */
@@ -233,6 +258,24 @@ describe('BattlePassScene — shop-group tab bar Coins parity', () => {
     withBadge.destroy();
     withoutBadge.destroy();
   });
+
+  // GACHA_DESIGN §13 / ADR-045: Recharge is the 5th shop-group peer tab, added alongside BattlePass.
+  it('shows a Recharge tab and routes it to openRecharge when wired', () => {
+    let openedRecharge = 0;
+    const scene = buildBattlePass({ openShop() {}, openRecharge: () => { openedRecharge++; } });
+    expect(findLabelPos(scene.container, RECHARGE)).not.toBeNull();
+    tapTab(scene, RECHARGE);
+    expect(openedRecharge).toBe(1);
+    scene.destroy();
+  });
+
+  it('forwards getRechargeBadge onto the Recharge peer tab', () => {
+    const withBadge = buildBattlePass({ openShop() {}, openRecharge() {}, getRechargeBadge: () => true });
+    const withoutBadge = buildBattlePass({ openShop() {}, openRecharge() {}, getRechargeBadge: () => false });
+    expect(countGraphics(withBadge.container)).toBeGreaterThan(countGraphics(withoutBadge.container));
+    withBadge.destroy();
+    withoutBadge.destroy();
+  });
 });
 
 describe('ShopScene — BattlePass peer tab badge', () => {
@@ -244,5 +287,45 @@ describe('ShopScene — BattlePass peer tab badge', () => {
     expect(countGraphics(withBadge.container)).toBeGreaterThan(countGraphics(withoutBadge.container));
     withBadge.destroy();
     withoutBadge.destroy();
+  });
+});
+
+describe('ShopScene — Recharge peer tab (GACHA_DESIGN §13, ADR-045)', () => {
+  it('shows a Recharge tab and routes it to openRecharge when wired', () => {
+    let openedRecharge = 0;
+    const scene = buildShop({ openRecharge: () => { openedRecharge++; } });
+    expect(findLabelPos(scene.container, RECHARGE)).not.toBeNull();
+    tapTab(scene, RECHARGE);
+    expect(openedRecharge).toBe(1);
+    scene.destroy();
+  });
+
+  it('does not show a Recharge tab when openRecharge is not wired', () => {
+    const scene = buildShop({});
+    expect(findLabelPos(scene.container, RECHARGE)).toBeNull();
+    scene.destroy();
+  });
+
+  it('forwards getRechargeBadge onto the Recharge peer tab', () => {
+    const withBadge = buildShop({ openRecharge() {}, getRechargeBadge: () => true });
+    const withoutBadge = buildShop({ openRecharge() {}, getRechargeBadge: () => false });
+    expect(countGraphics(withBadge.container)).toBeGreaterThan(countGraphics(withoutBadge.container));
+    withBadge.destroy();
+    withoutBadge.destroy();
+  });
+
+  it('Recharge tab still lets Shop/Coins/Gacha/BattlePass tabs route correctly alongside it', () => {
+    let openedGacha = 0;
+    let openedBattlePass = 0;
+    const scene = buildShop({
+      openGacha: () => { openedGacha++; },
+      openBattlePass: () => { openedBattlePass++; },
+      openRecharge() {},
+    });
+    tapTab(scene, GACHA);
+    expect(openedGacha).toBe(1);
+    tapTab(scene, BATTLEPASS);
+    expect(openedBattlePass).toBe(1);
+    scene.destroy();
   });
 });

@@ -233,6 +233,42 @@
                     claimed: { type: integer, description: 'coins claimed this call (0 = no active card or already claimed today)' }
       '400': { $ref: '#/components/responses/ErrorResp' }
 
+/recharge/claim:
+  post:
+    operationId: claimRechargeMilestone
+    tags: [gacha]
+    summary: Claim a cumulative-recharge milestone reward (GACHA_DESIGN §13). Progress (totalRechargeCents) is read from save.monetization; this only records the claim + delivers the reward.
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [tierId]
+            properties:
+              tierId: { type: integer, minimum: 1 }
+    responses:
+      '200':
+        description: Claim successful
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save, rewards]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+                    rewards:
+                      type: array
+                      items: { $ref: '#/components/schemas/RechargeReward' }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+      '409': { $ref: '#/components/responses/ErrorResp' }
+
 /starter/buy:
   post:
     operationId: starterBuy

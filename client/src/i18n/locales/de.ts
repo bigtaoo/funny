@@ -1353,6 +1353,18 @@ export const de: Record<TranslationKey, string> = {
   'battlepass.maxLevel': 'Max-Level!',
   'battlepass.openBattlePass': 'Battle Pass',
 
+  // —— Kumulatives Aufladen (GACHA_DESIGN §13, ADR-045) ——
+  'recharge.title': 'Aufladen',
+  'recharge.progress': '{amount} aufgeladen',
+  'recharge.hint': 'Erreiche jede Aufladeschwelle, um die Belohnung freizuschalten. Bereits abgeholte Belohnungen werden bei einer Rückerstattung nicht entzogen.',
+  'recharge.loginRequired': 'Zum Anzeigen anmelden',
+  'recharge.tierThreshold': 'Ab {amount}',
+  'recharge.claim': 'Abholen',
+  'recharge.claimed': 'Abgeholt',
+  'recharge.locked': 'Gesperrt',
+  'recharge.claimFailed': 'Abholen fehlgeschlagen, bitte erneut versuchen',
+  'recharge.claimToast': '+{n} Münzen abgeholt',
+
   // ── Bindungssystem (B5) ─────────────────────────────────────────────────────
   'daily.title': 'Täglich',
   'daily.loginRequired': 'Anmelden zum Einchecken',

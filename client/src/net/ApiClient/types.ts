@@ -10,6 +10,8 @@ type Schemas = components['schemas'];
 
 export type ShopItem = Schemas['ShopItem'];
 export type GachaPool = Schemas['GachaPool'];
+/** Cumulative recharge milestone reward (GACHA_DESIGN §13, ADR-045). */
+export type RechargeReward = Schemas['RechargeReward'];
 export type GachaResultEntry = Schemas['GachaResult'];
 /** Roster/inventory-full overflow summary from a gacha draw (CHARACTER_CARDS_DESIGN §4 / EQUIPMENT_DESIGN §3.3); all-zero when nothing overflowed. */
 export type GachaOverflow =
