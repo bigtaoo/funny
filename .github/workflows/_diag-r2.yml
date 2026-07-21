@@ -15,10 +15,8 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - name: Put test object
-        run: |
-          echo "diag-ok $(date -u +%Y-%m-%dT%H:%M:%SZ)" > _diag-test.txt
-          npx wrangler@3.90.0 r2 object put nivara-ota/_diag-test.txt --file=_diag-test.txt --content-type=text/plain
+      - name: Delete test object
+        run: npx wrangler@3.90.0 r2 object delete nivara-ota/_diag-test.txt
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
