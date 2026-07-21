@@ -28,7 +28,26 @@ declare const wx: {
   connectSocket(opts: { url: string }): WxSocketTask;
   shareAppMessage(opts: { title?: string; query?: string; imageUrl?: string }): void;
   getLaunchOptionsSync(): { query?: Record<string, string> };
+  createRewardedVideoAd(opts: { adUnitId: string }): WxRewardedVideoAd;
 };
+
+/** Rewarded-video-ad instance (WeChat mini-game ads API). One instance is reused across watches. */
+interface WxRewardedVideoAd {
+  load(): Promise<void>;
+  show(): Promise<void>;
+  onLoad(cb: () => void): void;
+  onError(cb: (err: { errCode: number; errMsg: string }) => void): void;
+  /** `res.isEnded === true` (or `res` absent on some client versions) → watched to completion; `false` → skipped early, no reward. */
+  onClose(cb: (res?: { isEnded: boolean }) => void): void;
+  offClose(cb: (res?: { isEnded: boolean }) => void): void;
+}
+
+/**
+ * WeChat mini-game rewarded-video ad unit id (mp.weixin.qq.com → 广告 → 激励视频广告).
+ * Left blank until ops creates the ad unit for this appId — showRewardedAd() no-ops (resolves
+ * null) while empty, matching PARALLEL_DEV_PLAN.md C2 / ECONOMY_BALANCE_CN.md's "替代 AdMob" TODO.
+ */
+const WECHAT_REWARDED_AD_UNIT_ID = '';
 
 /** SocketTask returned by wx.connectSocket (subset of fields actually used). */
 interface WxSocketTask {
@@ -111,6 +130,38 @@ export class WechatPlatform implements IPlatform {
   onGameplayStart(): void { /* no-op */ }
   onGameplayStop(): void  { /* no-op */ }
   async showMidgameAd(): Promise<void> { /* no-op */ }
+
+  /** True only once ops has configured a real ad unit id — the DailyScene "Ads" tab stays hidden until then. */
+  hasRewardedAd(): boolean {
+    return !!WECHAT_REWARDED_AD_UNIT_ID;
+  }
+
+  /** Lazily created and reused — WeChat recommends one long-lived instance per ad unit, not one per watch. */
+  private rewardedAd: WxRewardedVideoAd | null = null;
+
+  showRewardedAd(_accountId: string): Promise<{ adToken: string; platform: string } | null> {
+    if (!WECHAT_REWARDED_AD_UNIT_ID) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      try {
+        const ad = this.rewardedAd ?? wx.createRewardedVideoAd({ adUnitId: WECHAT_REWARDED_AD_UNIT_ID });
+        this.rewardedAd = ad;
+        let settled = false;
+        const onClose = (res?: { isEnded: boolean }) => {
+          ad.offClose(onClose);
+          if (settled) return;
+          settled = true;
+          const watched = res === undefined || res.isEnded === true;
+          resolve(watched ? { adToken: `wx-${Date.now()}-${Math.random().toString(36).slice(2)}`, platform: 'wechat_client' } : null);
+        };
+        ad.onClose(onClose);
+        ad.load()
+          .then(() => ad.show())
+          .catch(() => { if (!settled) { settled = true; ad.offClose(onClose); resolve(null); } });
+      } catch {
+        resolve(null);
+      }
+    });
+  }
 
   /** wx.login → temporary code; exchange with server /auth/wx for openid → accountId (S0-4). */
   getAuthCredential(): Promise<AuthCredential> {

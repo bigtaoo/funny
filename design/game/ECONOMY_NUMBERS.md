@@ -226,7 +226,7 @@ F2P 金币龙头：广告（主力）+ 战斗 / 活动 / 称号 / 任务。
 
 | 来源 | 量 | 月度估算 `[可调]` | 说明 |
 |---|---|---|---|
-| 看广告 | **10 coins/条**，≤5 条/天，每条间隔 ≥30 min | ≤50/天上限（10×5）；活跃实际 ~900–1,500/月 | 主动小额，门槛=时间 |
+| 看广告 | **10 coins/条**，≤5 条/天，每条间隔 ≥10 min | ≤50/天上限（10×5）；活跃实际 ~900–1,500/月 | 主动小额，门槛=时间 |
 | 日常任务/签到 | 每日若干（机制见 [`RETENTION_DESIGN.md`](RETENTION_DESIGN.md)；数值 §12） | ~60 | 签到（金币极少，主发软通货）+ 每日任务满点金币（日上限收敛到此） |
 | 活动 | 限时 | ~40 | 周常 + 节日活动 |
 | 称号（天梯段位） | 一次性，~11,250 满爬 | 摊薄 ~20 | 保留龙头（ADR-009） |
@@ -241,9 +241,11 @@ F2P 金币龙头：广告（主力）+ 战斗 / 活动 / 称号 / 任务。
 
 ### 6.2 广告金币：固定 10 coins/条 `[可调]`
 
-- `AD_COIN = 10`（`ADS_REWARD_COINS`，`shared/economy.ts`）、每日 ≤5 条（`ADS_DAILY_CAP=5`）、每条间隔 ≥30 min（`ADS_MIN_INTERVAL_MS=30min`）。
+- `AD_COIN = 10`（`ADS_REWARD_COINS`，`shared/economy.ts`）、每日 ≤5 条（`ADS_DAILY_CAP=5`）、每条间隔 ≥10 min（`ADS_MIN_INTERVAL_MS=10min`，2026-07-21 由 30min 下调——DailyScene「看广告」页签上线时拍板，间隔太长会让这条龙头形同虚设）。
 - 与代码及 ECONOMY_BALANCE §2.1 一致（均为 10）。早期「50」「3 coins」「等值挂钩」提案均已弃（50 偏高，2026-06-27 下调至 10，上线后再议）。
 - 服务器 dayKey 计数 + 冷却时间戳校验（C2 反作弊）。
+- **客户端入口（2026-07-21 补齐）**：此前仅服务端 `/ads/reward` + 广告平台回调验签已实装，客户端从未接入——`DailyScene`「每日」页新增独立「看广告」页签（与「签到月历」「每日任务」并列，非任务池的第 4 项），展示今日已看/上限 + 领取按钮/冷却倒计时/上限态；`GET /retention` 响应新增 `ads: {watchedToday, cap, rewardCoins, cooldownMs, nextAvailableAt}` 供页签直接渲染，不必客户端自算冷却。
+- **平台落地范围（2026-07-21 拍板）**：`IPlatform.hasRewardedAd()` 决定该页签是否显示——**没有真实广告可看的平台直接隐藏整个页签，绝不放模拟广告占位**。CrazyGames（其 SDK 自带 `requestAd('rewarded', …)`）恒真；微信小游戏用真实 `wx.createRewardedVideoAd`，`WECHAT_REWARDED_AD_UNIT_ID` 待运营在 mp.weixin.qq.com 建好激励视频广告单元后填入，填之前页签保持隐藏；原生 App（Capacitor iOS）已接 AdMob（`window.NWAds` 原生桥，`IAP_CREDENTIALS.md §2.1`，代码已写但未经 Xcode 编译验证）；纯网页（Paddle/`a.gamestao.com` 渠道，无原生桥可探测）仍是 `false`——需要接入 Google AdSense 的 H5 Games Ads（`Ad Placement API`，与 AdMob 是两套账号体系，AdMob 不支持网页）才会显示。
 
 ### 6.3 消耗（sink）
 

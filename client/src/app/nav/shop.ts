@@ -301,6 +301,28 @@ export function createShopNav(ctx: AppCtx): ShopNav {
         analytics.track('daily_reward_claim', { coins });
         return { coins };
       },
+      // onWatchAd is only handed to DailyScene when the platform has a real ad integration —
+      // DailyScene hides the "Ads" tab entirely otherwise (no mock ad shown to a real player).
+      ...(platform.hasRewardedAd() ? {
+        // No blanket withTimeout: showRewardedAd() opens a user-paced ad player that may stay open
+        // for the length of the video. Only the follow-up /ads/reward network call needs bounding,
+        // and adsReward() itself already runs through ApiClient's own request timeout.
+        async onWatchAd() {
+          try {
+            const ad = await platform.showRewardedAd(saveManager.get()?.accountId ?? '');
+            if (!ad) return { ok: false, key: 'daily.ads.unavailable' };
+            const { save, granted } = await client.adsReward(ad.adToken, ad.platform);
+            saveManager.adoptServer(save);
+            analytics.track('ads_reward', { coins: granted, platform: ad.platform });
+            return { ok: true, coins: granted };
+          } catch {
+            // Both "cooldown not elapsed" and "daily cap reached" surface as DAILY_CAP_REACHED (429)
+            // from the server — the button is already disabled in either state, so this only fires on
+            // a race (e.g. two tabs open); a generic retry message is enough, no need to distinguish.
+            return { ok: false, key: 'daily.ads.error' };
+          }
+        },
+      } : {}),
     });
   }
 

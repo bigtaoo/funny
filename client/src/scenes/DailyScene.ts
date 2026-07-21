@@ -39,11 +39,21 @@ export interface DailyCallbacks {
   getRetention?(): Promise<RetentionView>;
   onCheckin?(): Promise<{ day: number; reward: { kind: string; count: number; id?: string } }>;
   onClaimDaily?(): Promise<{ coins: number }>;
+  /** Always resolves (never throws) — `ok: false` covers both "no ad available" and server rejection (cooldown/cap/error), distinguished by `key`. */
+  onWatchAd?(): Promise<{ ok: true; coins: number } | { ok: false; key: TranslationKey }>;
 }
 
 interface Hit { x: number; y: number; w: number; h: number; fn: () => void }
 
-type DailyTab = 'checkin' | 'tasks';
+type DailyTab = 'checkin' | 'tasks' | 'ads';
+
+/** Formats a remaining-ms duration as "mm:ss" for the ads-tab cooldown button label. */
+function formatCooldown(ms: number): string {
+  const totalSec = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
 
 /** Reward-kind glyph (mirrors BattlePassScene/EventScene's kind→IconKind mapping). */
 function rewardIcon(kind: string, id?: string): IconKind | null {
@@ -71,6 +81,9 @@ export class DailyScene implements Scene {
 
   private readonly landscape: boolean;
 
+  /** Seconds accumulator driving the ads-tab cooldown countdown (re-renders once/sec so "mm:ss" ticks down without a network refetch). */
+  private cooldownTick = 0;
+
   constructor(layout: ILayout, input: InputManager, cb: DailyCallbacks) {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
@@ -84,6 +97,13 @@ export class DailyScene implements Scene {
 
   update(dt: number): void {
     if (this.bt.tick(dt)) this.render();
+    if (this.activeTab === 'ads' && (this.retention?.ads.nextAvailableAt ?? 0) > 0) {
+      this.cooldownTick += dt;
+      if (this.cooldownTick >= 1) {
+        this.cooldownTick = 0;
+        this.render();
+      }
+    }
   }
 
   destroy(): void {
@@ -149,8 +169,10 @@ export class DailyScene implements Scene {
     const contentW = w - contentX - Math.round(w * 0.04);
     if (this.activeTab === 'checkin') {
       this.renderCheckin(contentX, contentTop, contentW, availH, save, nowMs);
-    } else {
+    } else if (this.activeTab === 'tasks') {
       this.renderDailyTasks(contentX, contentTop, contentW, availH, save, nowMs);
+    } else {
+      this.renderAds(contentX, contentTop, contentW, availH, nowMs);
     }
 
     if (this.bt.loadingVisible) drawLoadingOverlay(this.container, w, h, this.bt.dots, t('common.processing'));
@@ -165,11 +187,18 @@ export class DailyScene implements Scene {
     const { w, h } = this;
     const checkinBadge = nextCheckinDay(save, nowMs) !== null;
     const tasksBadge = dailyRewardClaimable(save, nowMs);
+    const adsBadge = !!this.retention && this.retention.ads.watchedToday < this.retention.ads.cap && this.retention.ads.nextAvailableAt <= nowMs;
     const tabs: HubTab[] = [
       { label: t('daily.checkin.title'), active: this.activeTab === 'checkin', badge: checkinBadge },
       { label: t('daily.tasks.title'), active: this.activeTab === 'tasks', badge: tasksBadge },
     ];
     const keys: DailyTab[] = ['checkin', 'tasks'];
+    // Hidden entirely (not just disabled) on platforms without a real ad integration — no
+    // mock/placeholder ad is ever shown to a real player (see IPlatform.hasRewardedAd).
+    if (this.cb.onWatchAd) {
+      tabs.push({ label: t('daily.ads.title'), active: this.activeTab === 'ads', badge: adsBadge });
+      keys.push('ads');
+    }
     const { hits } = drawSidebarTabsShared(this.container, sidebarNavW(w, h, this.landscape), top, h, tabs, (i) => {
       this.activeTab = keys[i]!;
       this.render();
@@ -355,6 +384,62 @@ export class DailyScene implements Scene {
     }
   }
 
+  /** "Watch an ad for coins" tab (ECONOMY_NUMBERS §6.2): watched/cap counter + reward button, or a live cooldown countdown once the per-ad interval gate is active. */
+  private renderAds(areaX: number, top: number, areaW: number, areaH: number, nowMs: number): void {
+    const { h } = this;
+    const sec = txt(t('daily.ads.title'), FS.title, C.dark, true);
+    sec.x = areaX + areaW * 0.05; sec.y = top;
+    this.container.addChild(sec);
+
+    const ads = this.retention?.ads;
+    const PAD = areaX + areaW * 0.05;
+    const cardW = areaW * 0.9;
+    const cardH = areaH * 0.24;
+    const cardY = top + sec.height + h * 0.02;
+
+    const watched = ads?.watchedToday ?? 0;
+    const cap = ads?.cap ?? 0;
+    const rewardCoins = ads?.rewardCoins ?? 0;
+    const nextAvailableAt = ads?.nextAvailableAt ?? 0;
+    const capReached = cap > 0 && watched >= cap;
+    const cooling = nextAvailableAt > nowMs;
+    const available = !!ads && !capReached && !cooling;
+
+    const countTxt = txt(t('daily.ads.watchedCount', { n: watched, cap }), FS.title, capReached ? 0xaa4444 : C.mid);
+    countTxt.x = PAD; countTxt.y = cardY;
+    this.container.addChild(countTxt);
+
+    const bg = sketchPanel(cardW, cardH, { fill: available ? 0xe0ecd8 : 0xf5f0e8, border: C.line, width: 1.2, seed: seedFor(PAD, cardY, 0) });
+    bg.x = PAD; bg.y = cardY + countTxt.height + h * 0.015;
+    this.container.addChild(bg);
+
+    const rewardTxt = txt(t('daily.ads.rewardCoins', { n: rewardCoins }), snapFont(Math.round(cardH * 0.3)), 0x333333);
+    rewardTxt.x = bg.x + cardW * 0.05;
+    rewardTxt.y = bg.y + cardH * 0.5 - rewardTxt.height / 2;
+    this.container.addChild(rewardTxt);
+
+    const btnW = cardW * 0.4;
+    const btnH = cardH * 0.6;
+    const btnX = bg.x + cardW - btnW - cardW * 0.05;
+    const btnY = bg.y + cardH * 0.5 - btnH / 2;
+    const btnBg = sketchPanel(btnW, btnH, { fill: available ? 0x336644 : 0xaaaaaa, border: 0x666666, width: 1.5, seed: seedFor(btnX, btnY, 0) });
+    btnBg.x = btnX; btnBg.y = btnY;
+    this.container.addChild(btnBg);
+
+    let btnLabelText: string;
+    if (capReached) btnLabelText = t('daily.ads.capReached');
+    else if (cooling) btnLabelText = t('daily.ads.cooldown', { time: formatCooldown(nextAvailableAt - nowMs) });
+    else btnLabelText = t('daily.ads.watch');
+    const btnLabel = txt(btnLabelText, snapFont(Math.round(btnH * 0.32)), 0xffffff);
+    btnLabel.anchor.set(0.5, 0.5);
+    btnLabel.x = btnX + btnW / 2; btnLabel.y = btnY + btnH / 2;
+    this.container.addChild(btnLabel);
+
+    if (available && this.cb.onWatchAd) {
+      this.hits.push({ x: btnX, y: btnY, w: btnW, h: btnH, fn: () => void this.doWatchAd() });
+    }
+  }
+
   private async doCheckin(): Promise<void> {
     if (this.bt.busy || !this.cb.onCheckin) return;
     this.bt.start();
@@ -383,6 +468,25 @@ export class DailyScene implements Scene {
       this.showToast(t('daily.tasks.claimToast', { n: r.coins }));
     } catch (e) {
       this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('daily.tasks.claimFailed'), 'error');
+    } finally {
+      this.bt.stop();
+      void this.load();
+    }
+  }
+
+  /**
+   * No withTimeout here: onWatchAd() opens a user-paced ad player (real ad duration, or the web
+   * mock's fixed countdown) before it ever touches the network — bounding it at BUSY_TIMEOUT_MS
+   * (10s) would fail a real ad mid-playback. The callback always resolves (never throws), so the
+   * busy spinner still clears deterministically.
+   */
+  private async doWatchAd(): Promise<void> {
+    if (this.bt.busy || !this.cb.onWatchAd) return;
+    this.bt.start();
+    try {
+      const r = await this.cb.onWatchAd();
+      if (r.ok) this.showToast(t('daily.tasks.claimToast', { n: r.coins }));
+      else this.showToast(t(r.key), 'error');
     } finally {
       this.bt.stop();
       void this.load();

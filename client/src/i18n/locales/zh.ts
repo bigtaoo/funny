@@ -1374,6 +1374,14 @@ export const zh = {
   'daily.tasks.rewardClaimed': '今日已领',
   'daily.tasks.claimFailed': '领取失败，请重试',
   'daily.tasks.claimToast': '已领取 +{n} 金币',
+  'daily.ads.title': '看广告',
+  'daily.ads.watchedCount': '今日已看 {n} / {cap} 条',
+  'daily.ads.rewardCoins': '+{n} 金币',
+  'daily.ads.watch': '观看广告',
+  'daily.ads.capReached': '今日已达上限',
+  'daily.ads.cooldown': '冷却 {time}',
+  'daily.ads.unavailable': '暂无可看的广告',
+  'daily.ads.error': '领取失败，请重试',
 
   // ── Title system (S10, TITLE_DESIGN) ─────────────────────────────────────────
   'settings.titles': '称号',

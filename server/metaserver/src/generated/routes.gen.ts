@@ -16120,6 +16120,39 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   "type": "boolean"
                 }
               }
+            },
+            "ads": {
+              "type": "object",
+              "description": "Rewarded-ad status for the DailyScene \"Ads\" tab (RETENTION_DESIGN §6.2/ECONOMY_NUMBERS §6.2)",
+              "required": [
+                "watchedToday",
+                "cap",
+                "rewardCoins",
+                "cooldownMs",
+                "nextAvailableAt"
+              ],
+              "properties": {
+                "watchedToday": {
+                  "type": "integer",
+                  "description": "Ads watched so far today (UTC dayKey)"
+                },
+                "cap": {
+                  "type": "integer",
+                  "description": "Daily cap (ADS_DAILY_CAP)"
+                },
+                "rewardCoins": {
+                  "type": "integer",
+                  "description": "Coins granted per ad (ADS_REWARD_COINS)"
+                },
+                "cooldownMs": {
+                  "type": "integer",
+                  "description": "Minimum interval between two ads (ADS_MIN_INTERVAL_MS)"
+                },
+                "nextAvailableAt": {
+                  "type": "integer",
+                  "description": "Epoch ms when the next ad becomes available (0 = available now)"
+                }
+              }
             }
           }
         }

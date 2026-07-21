@@ -7,6 +7,7 @@ import { BrowserGameSocket } from '../../net/BrowserGameSocket';
 import type { Locale } from '../../i18n';
 import type { SafeAreaInsets } from '../../layout/ILayout';
 import { getNativeBilling, type IapKind } from '../iap';
+import { getNativeAds } from '../nativeAds';
 
 // ── Paddle.js (web coin recharge) type shim ──────────────────────────────────
 interface PaddleCheckoutEvent { name?: string }
@@ -92,6 +93,21 @@ export class WebPlatform implements IPlatform {
   onGameplayStart(): void { /* no-op */ }
   onGameplayStop(): void  { /* no-op */ }
   async showMidgameAd(): Promise<void> { /* no-op */ }
+
+  /**
+   * True once the Capacitor iOS shell's native AdMob bridge (`window.NWAds`, AppDelegate.swift) is
+   * present. Plain browser (a.gamestao.com/Paddle channel, no native bridge) stays false — no
+   * placeholder ad is ever shown there until Google's Ad Placement API is wired up (IAP_CREDENTIALS.md §2.1).
+   */
+  hasRewardedAd(): boolean {
+    return getNativeAds() !== null;
+  }
+
+  showRewardedAd(accountId: string): Promise<{ adToken: string; platform: string } | null> {
+    const bridge = getNativeAds();
+    if (!bridge) return Promise.resolve(null);
+    return bridge.showRewarded(accountId).catch(() => null);
+  }
 
   async getAuthCredential(): Promise<AuthCredential> {
     return { kind: 'device', deviceId: getOrCreateDeviceId(this.storage) };

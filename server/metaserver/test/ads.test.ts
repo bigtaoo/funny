@@ -3,7 +3,7 @@
 //         WeChat ad SSV callback signature, AdMob SSV verification fallback (conservatively reject on network failure).
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createHmac } from 'node:crypto';
-import { hashAdToken, recordAdToken, checkAdInterval } from '../src/economy.js';
+import { hashAdToken, recordAdToken, checkAdInterval, peekAdsStatus } from '../src/economy.js';
 import { verifyAdPlatformToken } from '../src/ads.js';
 
 // ── token uniqueness ──────────────────────────────────────────────────────────────
@@ -95,6 +95,35 @@ describe('checkAdInterval', () => {
     const base = 1_000_000;
     await checkAdInterval(cols, 'acc1', '2026-06-22', base, INTERVAL);
     expect(await checkAdInterval(cols, 'acc1', '2026-06-22', base + INTERVAL + 1, INTERVAL)).toBe(true);
+  });
+});
+
+// ── peekAdsStatus (read-only status for GET /retention, DailyScene "Ads" tab) ────────────
+
+describe('peekAdsStatus', () => {
+  function makeCol(doc: { count: number; lastAdAt?: number } | null) {
+    return {
+      findOne: vi.fn(async () => doc),
+    } as unknown as Parameters<typeof peekAdsStatus>[0]['adsDaily'] extends infer T ? { adsDaily: T } : never;
+  }
+
+  it('no doc yet (never watched today) → watchedToday 0, available now', async () => {
+    const cols = { adsDaily: makeCol(null) } as Parameters<typeof peekAdsStatus>[0];
+    const r = await peekAdsStatus(cols, 'acc1', '2026-06-22', 10 * 60 * 1000, 1_000_000);
+    expect(r).toEqual({ watchedToday: 0, nextAvailableAt: 0 });
+  });
+
+  it('watched, still cooling down → nextAvailableAt in the future', async () => {
+    const cols = { adsDaily: makeCol({ count: 2, lastAdAt: 1_000_000 }) } as Parameters<typeof peekAdsStatus>[0];
+    const r = await peekAdsStatus(cols, 'acc1', '2026-06-22', 10 * 60 * 1000, 1_000_000 + 60_000);
+    expect(r.watchedToday).toBe(2);
+    expect(r.nextAvailableAt).toBe(1_000_000 + 10 * 60 * 1000);
+  });
+
+  it('watched, cooldown already elapsed → nextAvailableAt is 0 (available now)', async () => {
+    const cols = { adsDaily: makeCol({ count: 3, lastAdAt: 1_000_000 }) } as Parameters<typeof peekAdsStatus>[0];
+    const r = await peekAdsStatus(cols, 'acc1', '2026-06-22', 10 * 60 * 1000, 1_000_000 + 11 * 60 * 1000);
+    expect(r).toEqual({ watchedToday: 3, nextAvailableAt: 0 });
   });
 });
 

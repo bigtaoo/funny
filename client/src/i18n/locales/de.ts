@@ -1362,6 +1362,14 @@ export const de: Record<TranslationKey, string> = {
   'daily.tasks.rewardClaimed': 'Heute abgeholt',
   'daily.tasks.claimFailed': 'Fehler, erneut versuchen',
   'daily.tasks.claimToast': '+{n} Münzen erhalten',
+  'daily.ads.title': 'Werbung ansehen',
+  'daily.ads.watchedCount': 'Heute {n} / {cap} angesehen',
+  'daily.ads.rewardCoins': '+{n} Münzen',
+  'daily.ads.watch': 'Werbung ansehen',
+  'daily.ads.capReached': 'Tageslimit erreicht',
+  'daily.ads.cooldown': 'Abklingzeit {time}',
+  'daily.ads.unavailable': 'Derzeit keine Werbung verfügbar',
+  'daily.ads.error': 'Fehlgeschlagen, bitte erneut versuchen',
 
   // ── Titelsystem (S10) ────────────────────────────────────────────────────────
   'settings.titles': 'Titel',

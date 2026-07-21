@@ -501,3 +501,17 @@ export async function checkAdInterval(
   );
   return !!res;
 }
+
+/** Read-only snapshot of today's ad-watch state, for GET /retention (DailyScene "Ads" tab). Does not mutate. */
+export async function peekAdsStatus(
+  cols: Collections,
+  accountId: string,
+  dayKey: string,
+  minIntervalMs: number,
+  now: number,
+): Promise<{ watchedToday: number; nextAvailableAt: number }> {
+  const doc = await cols.adsDaily.findOne({ _id: `${accountId}:${dayKey}` });
+  const watchedToday = doc?.count ?? 0;
+  const nextAvailableAt = doc?.lastAdAt ? doc.lastAdAt + minIntervalMs : 0;
+  return { watchedToday, nextAvailableAt: nextAvailableAt > now ? nextAvailableAt : 0 };
+}
