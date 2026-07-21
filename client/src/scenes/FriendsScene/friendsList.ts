@@ -149,6 +149,23 @@ export function FriendsListMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase
       name.anchor.set(0, 0.5); name.x = tx; name.y = y + rh * 0.34;
       layer.addChild(name);
 
+      // Unread-chat bubble right of the name — this is what the bottom-nav Social dot was
+      // counting; tap the row → profile popup → Message to read it.
+      const unread = this.unreadChatFor(f.publicId);
+      if (unread > 0) {
+        const br = Math.round(rh * 0.15);
+        const bx = tx + name.width + br + Math.round(rw * 0.025);
+        const by = y + rh * 0.34;
+        const bub = new PIXI.Graphics();
+        bub.beginFill(C.red); bub.lineStyle(1.5, C.paper);
+        bub.drawCircle(0, 0, br); bub.endFill();
+        bub.x = bx; bub.y = by;
+        layer.addChild(bub);
+        const bl = txt(unread > 99 ? '99+' : String(unread), snapFont(Math.round(br * 1.1)), 0xffffff, true);
+        bl.anchor.set(0.5, 0.5); bl.x = bx; bl.y = by;
+        layer.addChild(bl);
+      }
+
       const statusTxt = t(f.online ? 'friends.online' : 'friends.offline');
       const idRank = `#${f.publicId}${f.rank ? '  ·  ' + rankLabel(f.rank) : ''}  ·  ${statusTxt}`;
       const sub = txt(idRank, snapFont(Math.round(rh * 0.2)), C.mid);

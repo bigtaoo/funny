@@ -28,6 +28,7 @@ export * from './logger';
 export * from './heartbeat';
 export * from './season';
 export * from './battlepass';
+export * from './rechargeMilestone';
 export * from './titles';
 export * from './retention';
 export * from './events';

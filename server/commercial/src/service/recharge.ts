@@ -15,7 +15,17 @@ export interface RechargeHandlers {
     accountId: string;
     transactionId: string;
     coins: number;
+    /** Real USD price charged (GACHA_DESIGN §13), pre-quantity-clamp-independent — the caller (paddle.ts)
+     * already resolved priceId × quantity into this. Absent/0 = not tracked (e.g. unmapped priceId). */
+    usdCents?: number;
   }): Promise<Result<{ coinsAfter: number; coinsGranted: number }>>;
+  /**
+   * Decrement totalRechargeCents for a refunded Paddle transaction (GACHA_DESIGN §13, ADR-045): looks up the
+   * original recharge's stored usdCents and subtracts it (floored at 0). Idempotent via refundedAt — a
+   * redelivered refund event (Paddle at-least-once) is a no-op on replay. Already-claimed reward tiers are
+   * NOT revoked, only future tier eligibility is affected.
+   */
+  paddleRefund(args: { transactionId: string }): Promise<Result<{ decrementedCents: number }>>;
   /** Record any Paddle webhook event (support/CS lookup — "why didn't this payment go through"). Upserts on
    * `transactionId:eventType` so Paddle's at-least-once redelivery doesn't create duplicate log rows. */
   recordPaddleEvent(args: {
@@ -61,6 +71,7 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
       }
       const v = await this.verifyReceipt(args.platform, args.receipt);
       if (!v.ok) return { ok: false, error: 'INVALID_RECEIPT' };
+      const usdCents = v.usdCents ?? 0;
 
       // First persist the receipt record (unique receiptId prevents concurrent duplicate grants), then credit coins.
       try {
@@ -72,6 +83,7 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
           status: 'granted',
           rawReceipt: args.receipt,
           ts: this.now(),
+          usdCents,
         });
       } catch (e) {
         // Concurrent race: a unique conflict means another request already processed it; re-read and return the existing result.
@@ -96,6 +108,7 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
       }
       const coinsAfter = await this.credit(args.accountId, coinsGranted, 'recharge', {
         receiptId: args.receiptId,
+        rechargeUsdCents: usdCents,
       });
       return { ok: true, coinsAfter, coinsGranted };
     }
@@ -109,6 +122,7 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
       accountId: string;
       transactionId: string;
       coins: number;
+      usdCents?: number;
     }): Promise<Result<{ coinsAfter: number; coinsGranted: number }>> {
       const receiptId = `paddle:${args.transactionId}`;
       const existing = await this.cols.recharges.findOne({ _id: receiptId });
@@ -121,6 +135,7 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
       await this.ensureWallet(args.accountId);
       const isFirst = await this.claimFirstPurchaseBonus(args.accountId);
       const coinsGranted = isFirst ? args.coins * FIRST_PURCHASE_BONUS_MULTIPLIER : args.coins;
+      const usdCents = args.usdCents ?? 0;
 
       try {
         await this.cols.recharges.insertOne({
@@ -131,6 +146,7 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
           status: 'granted',
           rawReceipt: args.transactionId,
           ts: this.now(),
+          usdCents,
         });
       } catch (e) {
         if ((e as { code?: number }).code === 11000) {
@@ -143,8 +159,32 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
       }
       const coinsAfter = await this.credit(args.accountId, coinsGranted, 'recharge', {
         receiptId,
+        rechargeUsdCents: usdCents,
       });
       return { ok: true, coinsAfter, coinsGranted };
+    }
+
+    /** Decrement totalRechargeCents for a refunded Paddle transaction (GACHA_DESIGN §13, ADR-045). See RechargeHandlers.paddleRefund doc. */
+    async paddleRefund(args: { transactionId: string }): Promise<Result<{ decrementedCents: number }>> {
+      const receiptId = `paddle:${args.transactionId}`;
+      const doc = await this.cols.recharges.findOne({ _id: receiptId });
+      if (!doc || doc.refundedAt || !doc.usdCents) return { ok: true, decrementedCents: 0 };
+
+      const amount = doc.usdCents;
+      await this.cols.wallets.findOneAndUpdate(
+        { _id: doc.accountId },
+        [
+          {
+            $set: {
+              totalRechargeCents: { $max: [0, { $subtract: [{ $ifNull: ['$totalRechargeCents', 0] }, amount] }] },
+              rev: { $add: ['$rev', 1] },
+              updatedAt: this.now(),
+            },
+          },
+        ],
+      );
+      await this.cols.recharges.updateOne({ _id: receiptId }, { $set: { refundedAt: this.now() } });
+      return { ok: true, decrementedCents: amount };
     }
 
     async recordPaddleEvent(args: {

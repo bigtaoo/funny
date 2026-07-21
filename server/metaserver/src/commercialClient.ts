@@ -15,7 +15,7 @@ export interface UndeliveredOrder {
   result: { itemId?: string; results?: GachaResultEntry[]; poolId?: string };
 }
 
-/** Wallet view mirrored into SaveData (coins/pity + monetization state §5–§7). */
+/** Wallet view mirrored into SaveData (coins/pity + monetization state §5–§7/§13). */
 export interface WalletView {
   coins: number;
   pity: Record<string, number>;
@@ -24,6 +24,7 @@ export interface WalletView {
   subscriptionLastClaimDay?: string; // UTC day (YYYY-MM-DD) of last daily-coin claim; absent = never claimed
   starterUsed: string[];
   firstPurchaseUsed: boolean; // true once the first-purchase 2× bonus has been claimed
+  totalRechargeCents: number; // lifetime cumulative real-money spend (usdCents), GACHA_DESIGN §13
 }
 
 /** Audit fields commercial stamps on every stored pool config. */
@@ -151,7 +152,10 @@ export interface CommercialClient {
     accountId: string;
     transactionId: string;
     coins: number;
+    usdCents?: number;
   }): Promise<Body<{ coinsAfter: number; coinsGranted: number }>>;
+  /** Decrement totalRechargeCents for a refunded Paddle transaction (GACHA_DESIGN §13, ADR-045). */
+  paddleRefund(args: { transactionId: string }): Promise<Body<{ decrementedCents: number }>>;
   /** Log a non-`transaction.completed` Paddle webhook event for support/CS lookup (ADMIN-facing, COMMERCIAL_DESIGN §10.4). */
   recordPaddleEvent(args: {
     transactionId: string;
@@ -222,6 +226,7 @@ export class HttpCommercialClient implements CommercialClient {
           subscriptionLastClaimDay: b.subscriptionLastClaimDay,
           starterUsed: b.starterUsed ?? [],
           firstPurchaseUsed: b.firstPurchaseUsed ?? false,
+          totalRechargeCents: b.totalRechargeCents ?? 0,
         }
       : null;
   }
@@ -369,11 +374,15 @@ export class HttpCommercialClient implements CommercialClient {
     return b.ok ? b.codes : [];
   }
 
-  paddleComplete(args: { accountId: string; transactionId: string; coins: number }) {
+  paddleComplete(args: { accountId: string; transactionId: string; coins: number; usdCents?: number }) {
     return this.post<{ coinsAfter: number; coinsGranted: number }>(
       '/internal/paddle/complete',
       args,
     );
+  }
+
+  paddleRefund(args: { transactionId: string }) {
+    return this.post<{ decrementedCents: number }>('/internal/paddle/refund', args);
   }
 
   async recordPaddleEvent(args: {

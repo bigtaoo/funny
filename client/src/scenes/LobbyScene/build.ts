@@ -278,23 +278,39 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
         // Logout intentionally omitted here — it sat right below the rank badge and
         // players fat-fingered it while tapping through to the leaderboard; log out
         // still lives in SettingsScene.
-        const coinsY = chipBandH * 0.20;
-        const rankY  = chipBandH * 0.74;
+        // Gap between the two frames: 0.26/0.70 of the band leaves a moderate
+        // seam (~a quarter chip-height). 0.20/0.74 read as drifting apart;
+        // 0.26/0.58 overlapped ("huddled"). This sits between the two.
+        const coinsY = chipBandH * 0.26;
+        const rankY  = chipBandH * 0.70;
         const chipPad = Math.round(h * 0.012);
         const iconSz  = Math.round(h * 0.032);
+        const iconGap = Math.round(h * 0.01);
+
+        // Measure both labels up front so the two chips can share ONE width and
+        // one left edge — they used to be fit to each label independently
+        // ("98948k" vs "Gold · 1271"), which left the frames ragged and
+        // misaligned. Icons align on a common left edge; text is left-anchored
+        // right after the icon; both frames end flush at chipX (+chipPad).
+        const hasCoins = typeof this.cb.coins === 'number';
+        const coinLbl = hasCoins
+          ? txt(fmtCoins(this.cb.coins as number), FS.label, C.gold, true) : null;
+        const rankName = t(('rank.' + pvp.rank) as TranslationKey);
+        const badge = pvp.rank === 'unranked' ? rankName : `${rankName} · ${pvp.elo}`;
+        const tierColor = TIER_COLORS[pvp.rank] ?? C.light;
+        const badgeLabel = txt(badge, FS.label, tierColor, true);
+
+        const maxLabelW = Math.max(coinLbl ? coinLbl.width : 0, badgeLabel.width);
+        const contentLeft = Math.round(chipX - (iconSz + iconGap + maxLabelW));
+        const chipRectX = contentLeft - chipPad;
+        const chipRectW = (chipX - contentLeft) + 2 * chipPad;
 
         // Soft-currency balance (server-authoritative mirror) — only meaningful online.
-        if (typeof this.cb.coins === 'number') {
-          const coinLbl = txt(fmtCoins(this.cb.coins), FS.label, C.gold, true);
-          coinLbl.anchor.set(1, 0.5); coinLbl.x = chipX; coinLbl.y = coinsY;
-          // Coin icon to the left of the number — same AI atlas glyph as the shop header (falls
-          // back to the procedural buildIcon draw until coinIconAtlas finishes loading).
-          const coinIconX = Math.round(chipX - coinLbl.width - Math.round(h * 0.01) - iconSz);
+        if (coinLbl) {
           const coinIconY = Math.round(coinsY - iconSz / 2);
           if (this.cb.onOpenRecharge) {
             this.coinsChipRect = {
-              x: coinIconX - chipPad, y: coinIconY - chipPad,
-              w: (chipX - coinIconX) + chipPad, h: iconSz + 2 * chipPad,
+              x: chipRectX, y: coinIconY - chipPad, w: chipRectW, h: iconSz + 2 * chipPad,
             };
             // Standard chip frame (§ shared sketchPanel) behind the coin readout so it
             // reads as a real button, not bare text floating on the dark title bar.
@@ -304,27 +320,22 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
             coinBg.x = this.coinsChipRect.x; coinBg.y = this.coinsChipRect.y;
             this.container.addChild(coinBg);
           }
+          // Coin icon at the shared left edge — same AI atlas glyph as the shop header
+          // (falls back to the procedural buildIcon draw until coinIconAtlas loads).
           const coinIcon = buildCoinIcon('coin', iconSz, C.gold);
-          coinIcon.x = coinIconX; coinIcon.y = coinIconY;
+          coinIcon.x = contentLeft; coinIcon.y = coinIconY;
           this.container.addChild(coinIcon);
+          coinLbl.anchor.set(0, 0.5);
+          coinLbl.x = contentLeft + iconSz + iconGap; coinLbl.y = coinsY;
           this.container.addChild(coinLbl);
         }
 
         // Ladder rank badge — its own tier color (not the currency gold, not flat
         // grey) so a glance tells coins and rank apart even before reading the text.
-        const rankName = t(('rank.' + pvp.rank) as TranslationKey);
-        const badge = pvp.rank === 'unranked' ? rankName : `${rankName} · ${pvp.elo}`;
-        const tierColor = TIER_COLORS[pvp.rank] ?? C.light;
-        const badgeLabel = txt(badge, FS.label, tierColor, true);
-        badgeLabel.anchor.set(1, 0.5); badgeLabel.x = chipX; badgeLabel.y = rankY;
-        // Trophy icon to the left of the badge text, mirroring the coin chip's layout
-        // so both chips read as the same component with a swapped glyph/color.
-        const rankIconX = Math.round(chipX - badgeLabel.width - Math.round(h * 0.01) - iconSz);
         const rankIconY = Math.round(rankY - iconSz / 2);
         if (this.cb.onOpenLeaderboard) {
           this.rankChipRect = {
-            x: rankIconX - chipPad, y: rankIconY - chipPad,
-            w: (chipX - rankIconX) + chipPad, h: iconSz + 2 * chipPad,
+            x: chipRectX, y: rankIconY - chipPad, w: chipRectW, h: iconSz + 2 * chipPad,
           };
           const rankBg = sketchPanel(this.rankChipRect.w, this.rankChipRect.h,
             { fill: C.paper, border: tierColor, width: 1.6, seed: 74 });
@@ -332,9 +343,13 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
           rankBg.x = this.rankChipRect.x; rankBg.y = this.rankChipRect.y;
           this.container.addChild(rankBg);
         }
+        // Trophy icon at the same left edge as the coin icon so both chips read as
+        // the same component with a swapped glyph/color.
         const rankIcon = buildIcon('trophy', iconSz, tierColor);
-        rankIcon.x = rankIconX; rankIcon.y = rankIconY;
+        rankIcon.x = contentLeft; rankIcon.y = rankIconY;
         this.container.addChild(rankIcon);
+        badgeLabel.anchor.set(0, 0.5);
+        badgeLabel.x = contentLeft + iconSz + iconGap; badgeLabel.y = rankY;
         this.container.addChild(badgeLabel);
       }
 

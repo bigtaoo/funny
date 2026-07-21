@@ -135,6 +135,8 @@ describe('FamilyScene — channel scroll clip (no header overlap while scrolling
     await flush(scene);
     // Half a row of scroll — the classic "row straddles the fold" case that used to bleed
     // upward into the header/tab band above the channel list before the mask was added.
+    // Release the bottom-pin first so the manual mid-row scroll isn't snapped back to the latest.
+    scene.channelStick = false;
     scene.scrollYChannel = Math.round(scene.rowH / 2);
     scene.render();
 
@@ -161,6 +163,9 @@ describe('FamilyScene — send scrolls to the newest message (bottom), not the t
     // different from "scroll stayed at 0".
     const scene = buildScene(1200, 950, makeMessagesNewestFirst(20));
     await flush(scene);
+    // Simulate the user having scrolled up to read history (released the bottom-pin, parked at top).
+    scene.channelStick = false;
+    scene.scrollYChannel = 0;
     scene.render();
     expect(scene.scrollYChannel).toBe(0);
 

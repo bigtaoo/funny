@@ -97,18 +97,21 @@ export function WorldChatMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase):
 
       const rh = Math.round(h * 0.06);
       const rowGap = Math.round(h * 0.01);
-      let cy = Math.round(h * 0.01);
-      const screenY = (c: number) => this.regionTop + c - this.scrollY;
+      const startCy = Math.round(h * 0.01);
 
+      // Settle the scroll BEFORE placing rows (all rows are fixed-height, so the content height is
+      // known up front): pin to the latest message unless the user scrolled up to read history.
+      this.maxScroll = Math.max(0, startCy + this.worldMessages.length * (rh + rowGap) - regionH);
+      if (this.worldStick) this.scrollY = this.maxScroll;
+      else if (this.scrollY > this.maxScroll) this.scrollY = this.maxScroll;
+
+      let cy = startCy;
+      const screenY = (c: number) => this.regionTop + c - this.scrollY;
       for (const m of this.worldMessages) {
         const sy = screenY(cy);
         if (this.rowVisible(sy, rh)) this.drawWorldMsgRow(layer, m, sy);
         cy += rh + rowGap;
       }
-      this.maxScroll = Math.max(0, cy - regionH);
-      // Auto-scroll to bottom on first load
-      if (this.scrollY === 0 && this.maxScroll > 0) this.scrollY = this.maxScroll;
-      if (this.scrollY > this.maxScroll) this.scrollY = this.maxScroll;
     }
 
     private drawWorldMsgRow(layer: PIXI.Container, m: WorldChatMessage, y: number): void {

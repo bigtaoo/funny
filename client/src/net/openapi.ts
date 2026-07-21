@@ -515,6 +515,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/recharge/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Claim a cumulative-recharge milestone reward (GACHA_DESIGN §13). Progress (totalRechargeCents) is read from save.monetization; this only records the claim + delivers the reward. */
+        post: operations["claimRechargeMilestone"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/starter/buy": {
         parameters: {
             query?: never;
@@ -1396,6 +1413,8 @@ export interface components {
                 starterGrowthEligible?: boolean;
                 /** @description true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge */
                 firstPurchaseUsed?: boolean;
+                /** @description lifetime cumulative real-money spend in usdCents (§13); absent = 0 */
+                totalRechargeCents?: number;
             };
             deliveredOrders?: string[];
             pvp: {
@@ -1422,6 +1441,7 @@ export interface components {
             /** @description Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order) */
             titles?: string[];
             battlePass?: components["schemas"]["BattlePassData"];
+            rechargeMilestone?: components["schemas"]["RechargeMilestoneData"];
             progress: {
                 cleared: string[];
                 stars: {
@@ -1697,6 +1717,17 @@ export interface components {
             hasPass: boolean;
             claimedFree: number[];
             claimedPaid: number[];
+        };
+        RechargeMilestoneData: {
+            /** @description Tier ids already claimed (lifetime, never reset) */
+            claimed: number[];
+        };
+        RechargeReward: {
+            /** @enum {string} */
+            kind: "coins" | "material";
+            /** @description kind=material → material id */
+            id?: string;
+            count: number;
         };
         AnalyticsConfig: {
             enabled?: boolean;
@@ -2849,6 +2880,41 @@ export interface operations {
                 };
             };
             400: components["responses"]["ErrorResp"];
+        };
+    };
+    claimRechargeMilestone: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    tierId: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Claim successful */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                            rewards: components["schemas"]["RechargeReward"][];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
         };
     };
     starterBuy: {

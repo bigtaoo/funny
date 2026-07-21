@@ -1353,6 +1353,18 @@ export const en: Record<TranslationKey, string> = {
   'battlepass.maxLevel': 'Max level!',
   'battlepass.openBattlePass': 'Battle Pass',
 
+  // —— Cumulative recharge (GACHA_DESIGN §13, ADR-045) ——
+  'recharge.title': 'Recharge',
+  'recharge.progress': 'Recharged {amount}',
+  'recharge.hint': 'Reach each cumulative spend threshold to unlock its reward. Already-claimed rewards are never revoked by a refund.',
+  'recharge.loginRequired': 'Log in to view',
+  'recharge.tierThreshold': 'Reach {amount}',
+  'recharge.claim': 'Claim',
+  'recharge.claimed': 'Claimed',
+  'recharge.locked': 'Locked',
+  'recharge.claimFailed': 'Claim failed, please retry',
+  'recharge.claimToast': 'Claimed +{n} coins',
+
   // ── Retention system (B5) ────────────────────────────────────────────────────
   'daily.title': 'Daily',
   'daily.loginRequired': 'Log in to check in',

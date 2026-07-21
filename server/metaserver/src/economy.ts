@@ -211,6 +211,7 @@ export async function mirrorWalletFrom(
           starterUsed: wallet.starterUsed,
           starterGrowthEligible,
           firstPurchaseUsed: wallet.firstPurchaseUsed,
+          totalRechargeCents: wallet.totalRechargeCents,
         },
         'save.updatedAt': now,
       },

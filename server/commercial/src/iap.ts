@@ -13,7 +13,7 @@
 // commercial.rechargeVerify guards idempotency — this file does not repeat that check.
 
 import { createHmac, createSign, randomBytes } from 'node:crypto';
-import { DEV_STUB_DEFAULT_TIER, IAP_TIERS_LIST } from '@nw/shared';
+import { DEV_STUB_DEFAULT_TIER, IAP_TIERS_LIST, usdCentsForCoins } from '@nw/shared';
 import type { IAP_TIERS } from '@nw/shared';
 
 export type IapTierMap = typeof IAP_TIERS;
@@ -21,6 +21,8 @@ export type IapTierMap = typeof IAP_TIERS;
 export interface IapVerifyResult {
   ok: boolean;
   coins: number;
+  /** Real USD price of the resolved tier (GACHA_DESIGN §13), for the cumulative-recharge counter. */
+  usdCents?: number;
 }
 
 // ── Product ID → tier mapping ──────────────────────────────────────────────────────
@@ -391,7 +393,7 @@ export function createReceiptVerifier(tierMap: IapTierMap): VerifyReceipt {
     }
   }
 
-  return async (platform: string, receipt: string): Promise<IapVerifyResult> => {
+  const dispatch = async (platform: string, receipt: string): Promise<IapVerifyResult> => {
     if (
       devEnabled &&
       (platform === 'dev' || platform.startsWith('dev-') || receipt.startsWith('tier:'))
@@ -415,5 +417,14 @@ export function createReceiptVerifier(tierMap: IapTierMap): VerifyReceipt {
       default:
         return { ok: false, coins: 0 };
     }
+  };
+
+  // Single attach point for usdCents (GACHA_DESIGN §13): every platform branch above resolves `coins` to an
+  // exact IAP_TIERS value via resolveCoinsFromProductId/resolveCoinsFromAmount, so the reverse lookup is safe
+  // — avoids threading tier/usdCents through each of the four platform-specific verify functions individually.
+  return async (platform: string, receipt: string): Promise<IapVerifyResult> => {
+    const result = await dispatch(platform, receipt);
+    if (!result.ok) return result;
+    return { ...result, usdCents: usdCentsForCoins(result.coins) };
   };
 }

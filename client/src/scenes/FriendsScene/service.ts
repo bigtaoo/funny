@@ -29,15 +29,18 @@ export function NetworkMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
 
     async refresh(): Promise<void> {
       try {
-        const [friends, requests, mail] = await Promise.all([
+        const [friends, requests, mail, convs] = await Promise.all([
           this.cb.loadFriends(),
           this.cb.loadRequests(),
           this.cb.loadMail(),
+          // Unread chat feeds the friend-row unread bubble + Friends tab dot (see conversations doc).
+          this.cb.loadConversations?.() ?? Promise.resolve([]),
         ]);
         this.friends = friends;
         this.incoming = requests.incoming;
         this.mail = mail.mail;
         this.mailUnread = mail.unread;
+        this.conversations = convs;
       } catch {
         if (this.loading) this.toast('friends.error');
       } finally {
@@ -221,6 +224,7 @@ export function NetworkMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
         const senderName = this.cb.playerName?.() ?? '';
         await this.cb.sendWorldChat(body, senderName);
         this.worldChatInput = '';
+        this.worldStick = true; // snap to the just-posted message when the re-fetch lands
         this.toast('social.world.sent', 'success');
         // Re-sync coins so the HUD reflects the server-side deduction (see refreshWallet doc).
         await this.cb.refreshWallet?.();
