@@ -1,0 +1,27 @@
+name: _diag - R2 bucket check (temporary)
+
+# Throwaway diagnostic: adds the agreed 180-day object lifecycle rule to nivara-ota,
+# then lists rules back to confirm. Delete this file once confirmed.
+
+on:
+  push:
+    branches:
+      - '21.07.2026'
+    paths:
+      - '.github/workflows/_diag-r2.yml'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add 180-day expiry lifecycle rule
+        run: npx wrangler@3.90.0 r2 bucket lifecycle add nivara-ota expire-180d --expire-days 180 --force
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: List lifecycle rules
+        run: npx wrangler@3.90.0 r2 bucket lifecycle list nivara-ota
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
