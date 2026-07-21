@@ -6,6 +6,11 @@ name: _diag - R2 bucket check (temporary)
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - '21.07.2026'
+    paths:
+      - '.github/workflows/_diag-r2.yml'
 
 jobs:
   check:
