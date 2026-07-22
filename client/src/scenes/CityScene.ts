@@ -937,7 +937,7 @@ export class CityScene implements Scene {
       + 12;
     const mh = Math.min(contentH, h - 16);
 
-    const scale = this.landscape ? (h * 0.8) / mh : (w * 0.8) / mw;
+    const scale = this.modalScaleFor(mw, mh);
     const screenW = mw * scale;
     const screenH = mh * scale;
     const screenX = (w - screenW) / 2;
@@ -1073,7 +1073,7 @@ export class CityScene implements Scene {
     const mw = Math.min(340, w - 24);
     const contentH = 12 + 28 + 20 + trainQueue.length * 16 + 4 + 36 + (trainQueue.length > 0 ? 34 : 0) + 12;
     const mh = Math.min(contentH, h - 16);
-    const scale = this.landscape ? (h * 0.8) / mh : (w * 0.8) / mw;
+    const scale = this.modalScaleFor(mw, mh);
     const screenW = mw * scale;
     const screenH = mh * scale;
     const screenX = (w - screenW) / 2;
@@ -1186,6 +1186,21 @@ export class CityScene implements Scene {
 
     // Close on tap-outside — pushed LAST so panel buttons above take priority.
     this.hits.push({ x: 0, y: 0, w, h, fn: () => { this.selectedTrain = false; this.render(); } });
+  }
+
+  /**
+   * Popup-scale-to-80% (see the modal renderers): the modal panel is laid out in a natural
+   * local frame (`mw × mh`) then this container is scaled up. The scale references the *fitted*
+   * (short) design axis — 1080 in both orientations — so a popup is the same physical size
+   * whether portrait or landscape, then it's clamped so it can never overflow either screen axis.
+   * The old `landscape ? (h*0.8)/mh : (w*0.8)/mw` divided by the modal's own height in landscape,
+   * which blew short-content modals (e.g. Train Troops) far past the screen width.
+   */
+  private modalScaleFor(mw: number, mh: number): number {
+    const { w, h } = this;
+    const ref = Math.min(w, h);            // fitted axis — 1080 for both portrait & landscape
+    const target = (ref * 0.8) / mw;       // popup ≈ 80% of the fitted axis wide (matches old portrait)
+    return Math.min(target, (w * 0.92) / mw, (h * 0.92) / mh);
   }
 
   /** Convert a rect drawn in the modal's local (unscaled) frame into real screen space. */
