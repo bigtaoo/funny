@@ -119,7 +119,7 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       // attack sieges (combatSiege/arrival.ts) — occupying land now reflects the player's actual army, not a
       // generic synthesized force. Flat/legacy army or none → synthesize as before.
       const attackerSave = hasCardArmy ? await this.core.meta.getSaveFields(m.ownerId).catch(() => null) : null;
-      // Morale (士气): scale attacker strength by the march's remaining morale (see combatSiege/arrival.ts applySiege for detail).
+      // Morale (行军疲劳, not the card 士气加成): scale attacker strength by the march's remaining morale (see combatSiege/arrival.ts applySiege for detail).
       const moraleMult = moraleCombatMultiplier(m.morale ?? MARCH_MORALE_MAX);
       const effTroops = Math.round(m.troops * moraleMult);
       const attackerArmy: GarrisonEntry[] = scaleArmyByRatio(
@@ -183,7 +183,7 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       const hasCardArmy = rawArmy.some((e) => !!e.cardInstanceId);
       const garrison = tile.contestedGarrison ?? 0;
       const attackerSave = hasCardArmy ? await this.core.meta.getSaveFields(m.ownerId).catch(() => null) : null;
-      // Morale (士气): scale attacker strength by the march's remaining morale (see combatSiege/arrival.ts applySiege for detail).
+      // Morale (行军疲劳, not the card 士气加成): scale attacker strength by the march's remaining morale (see combatSiege/arrival.ts applySiege for detail).
       const moraleMult = moraleCombatMultiplier(m.morale ?? MARCH_MORALE_MAX);
       const effTroops = Math.round(m.troops * moraleMult);
       const attackerArmy: GarrisonEntry[] = scaleArmyByRatio(

@@ -45,9 +45,11 @@ export class MapTemplateService {
 
   /**
    * Generate a template's seed data by batch-running proceduralTile() over its full grid (§24 "initial-package generation runs server-side").
-   * proceduralTile is currently hardcoded to the fixed SLG_MAP_W/H map (module-scope Voronoi capital precompute);
-   * multi-size support is blocked on the ADR-034 rewrite generalizing it — until then, generate only accepts the
-   * current fixed size so every produced tile is actually correct rather than silently wrong for other sizes.
+   * proceduralTile is currently hardcoded to the fixed SLG_MAP_W/H map (module-scope province/capital precompute
+   * in province.ts, ADR-034 model). Multi-size support would need that precompute generalized to an arbitrary
+   * grid — a separate, currently unscheduled piece of work, not something ADR-034 itself was going to unblock
+   * (that rewrite is already done). Until multi-size is actually built, generate only accepts the current fixed
+   * size so every produced tile is actually correct rather than silently wrong for other sizes.
    */
   async generateTemplate(templateId: string, width: number, height: number): Promise<MapTemplateSummary> {
     if (!templateId.trim()) throw new SlgError('BAD_REQUEST', 'templateId required');

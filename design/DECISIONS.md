@@ -540,11 +540,22 @@
   - **已知取舍**：社交/宗门覆盖层打开期间会把 `session.handlers` 改绑到自己的推送集，此时地图暂收不到 march/tile 增量（地图被完全遮挡、不可见）；`returnToMap` 弹出时 `bindMapNet` 恢复地图 handler、继续实时推送。不做返回时强制刷新（那本身就是一次可见重绘，与需求相悖）——仅接受弹窗打开期间的短暂陈旧。City/防守/拍卖覆盖层不改 handler，故连这点陈旧都没有。
   - 验证：`tsc --noEmit` + webpack 生产构建全绿；client `vitest run` 758/758 全绿（含 `world-family-sect-nav-tabs`/`social-family-hub-return`/`world-hub-account-id` 等 nav 边界回归）。覆盖层底层机制（`pushOverlay/popOverlay`）自 ADR-044 起已在生产验证，本次仅把更多入口接到同一已验证机制上，未改 `SceneManager`。
 
-## ADR-047 行军士气：绑定行军实例（非队伍）+ 只做距离消耗，不做静止回复 — Accepted — 2026-07-21
+## ADR-047 行军疲劳：绑定行军实例（非队伍）+ 只做距离消耗，不做静止回复 — Accepted — 2026-07-21
 
-- **决策**（用户拍板）：新增行军士气机制（[SLG_DESIGN.md §4.4](game/SLG_DESIGN.md)）解决"远征讨伐天然不利"的数值诉求，用户在澄清中拍板两处关键取舍：
-  1. **士气绑定行军实例（`MarchDoc`），不绑定队伍（`TeamTemplate`）**——每次出征都从满额 `MARCH_MORALE_MAX=100` 重新开始，不与该队伍上一次出征的结果延续，行军结束后不再追踪。
+> **命名说明（2026-07-22 审计）**：本条原文用"士气"，与 `CHARACTER_CARDS_DESIGN.md` §6.4 的卡牌"士气加成"（满编 ATK 加成，另一套机制）撞名，已在文档中改称"行军疲劳"消除歧义；代码字段/函数名（`morale`/`MARCH_MORALE_MAX`/`moraleCombatMultiplier`）未改动，仅中文叙述改名。
+
+- **决策**（用户拍板）：新增行军疲劳机制（[SLG_DESIGN.md §4.4](game/SLG_DESIGN.md)）解决"远征讨伐天然不利"的数值诉求，用户在澄清中拍板两处关键取舍：
+  1. **疲劳值绑定行军实例（`MarchDoc`），不绑定队伍（`TeamTemplate`）**——每次出征都从满额 `MARCH_MORALE_MAX=100` 重新开始，不与该队伍上一次出征的结果延续，行军结束后不再追踪。
   2. **本期只做「移动一格 -1」的距离消耗，不做「原地不动每 30 秒回复 1」的回复机制**——回复机制在当前架构下没有天然的触发点（见下），强行实现只会是永远不触发的死代码。
-- **为什么放弃回复机制**：`combatMarch.ts` 的行军模型不是逐格 tick 的实时模拟——`startMarch` 出征时一次性算好完整 A\* 路径（`findMarchPath`），只调度**一个**到达事件（`arriveAt`），中途没有"停留"状态；到达后 `MarchDoc` 被整条删除（`findOneAndDelete`）。既然士气本就每次出征重置为满额，"静止回复"这个动作永远等不到会触发它的对象（一支行军要么在赶路，要么已经不存在）。如果未来改成多段行军/驻留可以续航，需要先把士气改绑到 Team 并持久化，那是另一次设计决策，不在本次范围内。
-- **战力惩罚公式**：抵达时战力 = 剩余士气线性缩放到 `[MARCH_MORALE_COMBAT_FLOOR=0.7, 1.0]`（`moraleCombatMultiplier`）——满血 100% 战力，走满 100 格耗尽士气后仍保底 70% 战力，不会因为路途遥远而被削到形同虚设。
-- **影响**：`server/shared/src/slg/core.ts`（`MARCH_MORALE_MAX`/`MARCH_MORALE_COMBAT_FLOOR`）、`march.ts`（`marchMoraleFromPath`/`moraleCombatMultiplier`）；`worldsvc/src/db.ts`（`MarchDoc.morale?`）、`combatMarch.ts`（出征时算好存入）、`combatSiege/arrival.ts` + `combatSiege/occupation.ts`（到达结算时用 `scaleArmyByRatio` 缩放攻方军队 HP + 缩放廉价公式的有效兵力，覆盖 attack/occupy/sweep/驱逐四类需要战斗的到达路径）。未改 `MarchView`/openapi 契约（客户端本期不展示士气数值，纯服务端战力机制）。`server/shared`+`worldsvc` 全量测试验证（621+282 全绿，一处既有 e2e 因引入距离惩罚而调整预期值）。
+- **为什么放弃回复机制**：`combatMarch.ts` 的行军模型不是逐格 tick 的实时模拟——`startMarch` 出征时一次性算好完整 A\* 路径（`findMarchPath`），只调度**一个**到达事件（`arriveAt`），中途没有"停留"状态；到达后 `MarchDoc` 被整条删除（`findOneAndDelete`）。既然疲劳值本就每次出征重置为满额，"静止回复"这个动作永远等不到会触发它的对象（一支行军要么在赶路，要么已经不存在）。如果未来改成多段行军/驻留可以续航，需要先把疲劳值改绑到 Team 并持久化，那是另一次设计决策，不在本次范围内。
+- **战力惩罚公式**：抵达时战力 = 剩余疲劳值线性缩放到 `[MARCH_MORALE_COMBAT_FLOOR=0.7, 1.0]`（`moraleCombatMultiplier`）——满血 100% 战力，走满 100 格耗尽疲劳值后仍保底 70% 战力，不会因为路途遥远而被削到形同虚设。
+- **影响**：`server/shared/src/slg/core.ts`（`MARCH_MORALE_MAX`/`MARCH_MORALE_COMBAT_FLOOR`）、`march.ts`（`marchMoraleFromPath`/`moraleCombatMultiplier`）；`worldsvc/src/db.ts`（`MarchDoc.morale?`）、`combatMarch.ts`（出征时算好存入）、`combatSiege/arrival.ts` + `combatSiege/occupation.ts`（到达结算时用 `scaleArmyByRatio` 缩放攻方军队 HP + 缩放廉价公式的有效兵力，覆盖 attack/occupy/sweep/驱逐四类需要战斗的到达路径）。未改 `MarchView`/openapi 契约（客户端本期不展示疲劳值，纯服务端战力机制）。`server/shared`+`worldsvc` 全量测试验证（621+282 全绿，一处既有 e2e 因引入距离惩罚而调整预期值）。
+
+## ADR-048 SLG 兵力池统一：`baseTroopStock` 并入 `playerWorld.troops`（补记 ADR） — Accepted — 2026-07-22
+
+> **补记说明**：本条决策实际发生于 2026-07-22（worktree `unify-troops`），当时未按惯例写入本文件，2026-07-22 审计发现后补记。补记不改变决策已生效的事实，仅补齐记录。
+
+- **问题**：CC-4（2026-07-01）为卡牌兵力单独建了 `baseTroopStock` 字段，与地图兵力池 `playerWorld.troops` 并存但从不互通——`trainTroops` 写 `troops`，`distributeTroops` 读 `baseTroopStock`，训练出来的兵永远到不了队伍卡上，`CHARACTER_CARDS_DESIGN.md §6.3` 设想的"训练→分兵"闭环从未真正跑通。
+- **决策**（用户拍板"彻底统一"）：废弃 `baseTroopStock`，全部改用单一字段 `playerWorld.troops`；`TROOP_CAP_BASE` 从 2000 提到 10000（新号一次性坐拥满额基地兵力池）；`db.ts runMigrations()` 加一次性 boot 迁移，把存量文档的 `baseTroopStock` 折算进 `troops`（含 `troopCap` 一并刷新）后 `$unset`。
+- **客户端联动**：训练入口从练兵场（drillYard）详情弹窗改为主城桌面独立格子（`renderTrainModal`）；`DefenseEditorScene` 新增按卡 stepper 分兵（`+100/+500/补满此卡`），分兵前统一调用 `persistTeam()` 落库再 `distributeTroops`。
+- **影响**：`server/shared/src/slg/core.ts`（`TROOP_CAP_BASE`/`SATCHEL_CARRY_BASE` 联动）、`worldsvc/src/city.ts`（`trainTroops`/`distributeTroops`）、`worldsvc/src/db.ts`（迁移）；客户端 `CityScene.ts`/`DefenseEditorScene.ts`。详见 memory `slg-troop-pool-unified-2026-07-22`、`CHARACTER_CARDS_DESIGN.md §6.3`。`server/shared`+`worldsvc` 全量测试验证（含迁移测试）、client tsc/webpack + 20 项 UI 测试全绿。

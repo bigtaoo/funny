@@ -80,7 +80,7 @@
 
 ### 2.4 国家（Nations）系统
 
-> **⚠️ 本节模型已改版（[DECISIONS ADR-034](../DECISIONS.md)，2026-07-05）**：此前短暂落地过"10 首府三层同心环 + 距离衰减"模型（[ADR-033](../DECISIONS.md)，含代码实现），当天即被撤销、以 ADR-034 取代。**代码尚未跟进**——`server/shared/src/slg.ts` 现状仍是 ADR-033 的"10 首府点+`nearestCapitalIdx`+`GEN_MAX_CAP_DIST`距离衰减"实现，与本节描述的新模型不一致，需要重写（含 `proceduralTile()`、`server/worldsvc` 相关 e2e 测试）。以下描述的是**目标模型**，不是当前代码状态。
+> **✅ 已实现（[DECISIONS ADR-034](../DECISIONS.md)，拍板 2026-07-05，同日完成重写）**：此前短暂落地过"10 首府三层同心环 + 距离衰减"模型（[ADR-033](../DECISIONS.md)，含代码实现），当天即被撤销、以 ADR-034 取代并重写完成。**2026-07-22 审计更正**：本节曾长期标注"代码尚未跟进/以下是目标模型"，该标注本身已过期——实际代码早已按本节模型实现：`server/shared/src/slg/province.ts` 的 `provinceIdxAt()`（角度扇区+半径环归属，替代旧 `nearestCapitalIdx()`）+ `provinceCapitalPositions()`（替代旧固定表 `CAPITAL_FRACTIONS`），`server/shared/src/slg/mapgen.ts` 的环形地形带/墨河弦/支脉/城池节点生成。旧符号 `CAPITAL_FRACTIONS`/`GEN_MAX_CAP_DIST`/`nearestCapitalIdx` 已从源码中完全移除。以下描述的就是当前代码状态。
 
 - **环形分层结构**：放弃"首府点 + Voronoi/距离衰减"，改为**角度扇区 + 半径分层**：6 个"出生州"（外圈，各占 60°）+ 3 个"资源州"（中环，各占 120°，与出生州 2:1 对齐，资源州 i 正对出生州 2i/2i+1）+ 1 个"核心州"（中心圆域）。归属由角度扇区决定，不是最近点距离。
 - **地形天然隔离**：折痕岭（3 条山脉，= 出生州↔资源州环形边界本身）+ 墨河（2 条河流，横穿全图的独立层）负责大范围隔离；出生州之间另有 6 条支脉/支流（山脉/河流交替）逐个隔开相邻出生州。均完全不可通行。
@@ -112,10 +112,11 @@
   > **历史记录**（避免与旧数字混淆，仅留一条指针，其余口径已废止）：曾短暂拍板过 1500×1500/对应 1 万玩家（2026-06-18 "U2 ✅"），但从未真正实现——代码里 `SLG_MAP_W/H` 一直是 300，且 2026-06-30 的经济核验（`ECONOMY_VERIFICATION_LOG.md` §13-SLG-NATION）仍是在未升级的 300×300 上跑的。500×500 是重新核实代码现状后的新定案，不是"恢复旧值"也不是"1500×1500 打折"，详见 ADR-032。
 - **地块等级 1–10 ✅ 已实现（ADR-032）**：`SLG_MAP_MAX_LEVEL=10`（对齐三国志战略版真实地块等级上限，调研见 [`SGZ_LAND_REFERENCE.md`](SGZ_LAND_REFERENCE.md)）。**不是** 5（旧代码实际值）也不是 9（与装备/武将卡的 `MAX_LEVEL=9` 混淆过一次，二者无关）。
 - **无纯空地 ✅ 已实现（ADR-032）**：取消"中立地不产出"的分级（`resourceDensity` 从 0.34 提到 **1.0**）——除阻挡地形/关隘/据点/首府外，所有格子都是某一等级的资源地，呼应"地图上没有真正空地，只是低级地没人要"的设计前提。
-- **等级分布曲线 ⚠️ 待重写（ADR-032 定型的公式已被 ADR-034 取代，ADR-033 校准版同日作废）**：代码现状仍是 ADR-033 的"距最近首府距离衰减"公式（`GEN_MAX_CAP_DIST`/指数 1.9），但 ADR-033 已作废。目标模型改为**三层环各自独立的等级权重表**（出生州/资源州/核心州分别取值，不是单一连续公式）——出生州封顶 8 级且占比 ~1%、资源州 5 级+占比 ≥60%、核心州 10 级占比 18%（明显高于资源州）。完整权重表见 [`map-editor/DESIGN.md`](../tools/map-editor/DESIGN.md) §4；`proceduralTile()` 与相关 e2e 测试待按此重写。
+- **等级分布曲线 ✅ 已实现（ADR-034，2026-07-22 审计更正原"待重写"标注）**：三层环各自独立的等级权重表（出生州/资源州/核心州分别取值，不是单一连续公式）已实现为 `mapgen.ts` 的 `_levelFromRing()` + `_LEVEL_DIST_OUTER/_RESOURCE/_CORE` 三张累积分布表，旧 ADR-033 的 `GEN_MAX_CAP_DIST`/距离衰减公式已从源码移除。完整权重表见 [`map-editor/DESIGN.md`](../tools/map-editor/DESIGN.md) §4。
 - **稀疏存储**：DB 只落被占领/被改动的格子；阻挡格、险地等静态地形由 `proceduralTile()` 程序化生成，不落库。
-- **程序化分布（现状，待重写）**：现有 `SLG_GEN` 旋钮（`obstacleThreshold`/`obstacleMinDistRatio` 等）是 ADR-033（已作废）的实现，阻挡地形约 2.7-2.9%。目标模型改为§2.4 描述的"折痕岭/墨河/支脉"确定性地形（矢量路径栅格化，不是纯噪声阈值），详见 map-editor DESIGN.md §2.2/§2.3。
-- **国家版图布局 ⚠️ 待重写**：代码现状仍是 ADR-033（已作废）的"10 首府三层同心环 + Voronoi/距离衰减"（`CAPITAL_FRACTIONS`/`NATION_KIND_BY_IDX`/`GEN_MAX_CAP_DIST`/`nearestCapitalIdx`）。目标模型见 §2.4：6 出生州+3 资源州+1 核心州，角度扇区归属。详见 [DECISIONS.md ADR-034](../DECISIONS.md)。
+- **程序化分布 ✅ 已实现（ADR-034，2026-07-22 审计更正原"待重写"标注）**：§2.4 描述的"折痕岭/墨河/支脉"确定性地形（几何带模型，非噪声阈值）已实现为 `mapgen.ts` 的 `_ringTerrainAt()`/`_riverChordAt()`/`_branchKindAt()`，旧 `SLG_GEN.obstacleThreshold`/`obstacleMinDistRatio` 噪声阈值实现已移除，详见 map-editor DESIGN.md §2.2/§2.3。
+- **国家版图布局 ✅ 已实现（2026-07-22 审计更正原"待重写"标注）**：代码已是 ADR-034 的角度扇区模型（`province.ts` 的 `provinceIdxAt()`/`provinceCapitalPositions()`/`NATION_KIND_BY_IDX`），旧 ADR-033 符号 `CAPITAL_FRACTIONS`/`GEN_MAX_CAP_DIST`/`nearestCapitalIdx` 已不存在于源码中。详见 [DECISIONS.md ADR-034](../DECISIONS.md)。
+- **城池遮挡带地块等级封顶（占位数值，2026-07-22 补记）**：`server/shared/src/slg/mapgen.ts` 的 `RESOURCE_LEVEL_CAP_NEAR_CITY=5`/`RESOURCE_LEVEL_CAP_DEPTH=5` 把城池高层建筑贴图会遮挡的两条背向格带（`_inCityBackBands`）的资源等级封顶在 5 级，避免生成"看不清、点不到"的高等级地块。代码注释自述这是"用户临时拍板的占位数字，预期后续手工重调"，本文档此前从未记录这条规则——本次审计发现文档缺口，先补记于此，数值本身仍待重新校准，不代表已定案。
 - **视觉呈现（ADR-029）**：以上均为逻辑格数据模型（正交整数 `(x,y)`），不涉及渲染方式。客户端 `WorldMapScene.ts` 自 2026-07-02 起改为**等距菱形投影**渲染（纯客户端视觉层，见 `client/src/render/isoGrid.ts`），逻辑网格/寻路/契约仍是正交，不要把"格子"误读成屏幕上必是方形。
 
 ### 3.3 格子 = 玩家自定义关卡（SLG5）
@@ -173,7 +174,7 @@
 - **占领、增援、进攻都需行军**，有距离/时间成本（Redis 调度的定时事件）；家族抱团占**连续领地**才高效（连地加成 + 短行军距离 + 快速增援）。
 - **增援 / 代守 / 代打**：家族成员可向彼此领地派驻援军、被攻击时驰援（行军到达触发协防）。
 - **保护罩**：被打败后短时保护（防连续碾压），是变现/节奏旋钮。
-- **行军士气**：远距离讨伐天然处于不利地位，见 §4.4。
+- **行军疲劳**：远距离讨伐天然处于不利地位，见 §4.4。
 
 ### 4.2 卡牌部队 vs 地图兵力池——边界修复 + 占地真实战斗（2026-07-15）
 
@@ -210,14 +211,16 @@
 - 非卡牌行军（散兵占地/增援/扫荡/侦查、以及无布阵的裸攻击）行为不变，继续用现有的 `playerWorld.troops` 扣/退模型。
 - 受影响文件：`combatMarch.ts`（出征扣减按 `hasCardArmy` 分支跳过）、`combatSiege/arrival.ts` + `combatSiege/occupation.ts`（所有 `refundTroops` 调用按 `hasCardArmy` 分支跳过，含扑空/驱逐早退分支）；`combatShared.ts` 的 `refundTroops` 函数本身不变（继续服务非卡牌路径）。
 
-### 4.4 行军士气（远征战力惩罚，2026-07-21）
+### 4.4 行军疲劳（远征战力惩罚，2026-07-21）
 
 > 用户拍板：讨伐远距离敌人对自己天然不利，需要一个数值机制体现这一点。
+>
+> **命名说明（2026-07-22 审计）**：本节中文名从"行军士气"改为"行军疲劳"，避免与 [§6.4 卡牌"士气加成"](CHARACTER_CARDS_DESIGN.md)（`(currentTroops/troopCap)×0.2` 的出战 ATK 加成）撞名——两者是完全不同的机制（一个是距离惩罚，一个是满编加成），代码内部字段/函数名（`morale`/`MARCH_MORALE_MAX`/`moraleCombatMultiplier`）不受影响，仅中文叙述改名。
 
-- **规则**：每支行军（`MarchDoc`）出征时获得满额士气 `MARCH_MORALE_MAX=100`，每移动一格消耗 1 点，抵达时的剩余士气 = `100 - 路径格数`（下限 0）。**绑定行军实例，不绑定队伍**——每次出征都从满额重新开始，不与该队伍上一次出征的结果延续。
-- **战力惩罚**：抵达后的战斗力按剩余士气线性缩放，士气 100 → 100% 战力，士气 0 → `MARCH_MORALE_COMBAT_FLOOR=70%` 战力（`moraleCombatMultiplier`，`server/shared/src/slg/march.ts`）；覆盖所有需要战斗的行军类型（`attack`/`occupy`/`sweep`，含驱逐 `applyOccupationExpulsion`），`reinforce`/`return` 不涉及战斗，士气记录但不生效。
-- **架构约束（本期不做的部分）**：行军在服务端不是逐格 tick 的实时模拟——出征时一次性算好完整 A\* 路径并只调度一个到达事件（`combatMarch.ts` `startMarch`/`processDueArrivals`），中途没有"停留"状态。因此**「原地不动每 30 秒回复 1 点」这条回复机制在当前架构下没有天然的触发点**（每次出征本就从满额开始），本期不实现；士气消耗按路径长度一次性算好存在 `MarchDoc.morale`，供到达结算读取。
-- **实现**：`marchMoraleFromPath(path)` 在出征时算好存入 `MarchDoc.morale`（`server/shared/src/slg/march.ts` + `combatMarch.ts`）；到达结算时 `moraleCombatMultiplier(morale)` 缩放攻方有效兵力/军队 HP（`combatSiege/arrival.ts` 的 `applySiege`/`applyStrongholdSiege`/`applyCrossingSiege`/`applySweep`、`combatSiege/occupation.ts` 的 `applyOccupy`/`applyOccupationExpulsion`），廉价公式（`resolveSiege`）与真实引擎战斗（`runSiegeBattle`）两条结算路径都吃这个缩放，保持一致。未暴露到 `MarchView`/openapi 契约（客户端本期不展示士气数值）。
+- **规则**：每支行军（`MarchDoc`）出征时获得满额疲劳值 `MARCH_MORALE_MAX=100`，每移动一格消耗 1 点，抵达时的剩余疲劳值 = `100 - 路径格数`（下限 0）。**绑定行军实例，不绑定队伍**——每次出征都从满额重新开始，不与该队伍上一次出征的结果延续。
+- **战力惩罚**：抵达后的战斗力按剩余疲劳值线性缩放，疲劳值 100 → 100% 战力，疲劳值 0 → `MARCH_MORALE_COMBAT_FLOOR=70%` 战力（`moraleCombatMultiplier`，`server/shared/src/slg/march.ts`）；覆盖所有需要战斗的行军类型（`attack`/`occupy`/`sweep`，含驱逐 `applyOccupationExpulsion`），`reinforce`/`return` 不涉及战斗，疲劳值记录但不生效。
+- **架构约束（本期不做的部分）**：行军在服务端不是逐格 tick 的实时模拟——出征时一次性算好完整 A\* 路径并只调度一个到达事件（`combatMarch.ts` `startMarch`/`processDueArrivals`），中途没有"停留"状态。因此**「原地不动每 30 秒回复 1 点」这条回复机制在当前架构下没有天然的触发点**（每次出征本就从满额开始），本期不实现；疲劳值消耗按路径长度一次性算好存在 `MarchDoc.morale`，供到达结算读取。
+- **实现**：`marchMoraleFromPath(path)` 在出征时算好存入 `MarchDoc.morale`（`server/shared/src/slg/march.ts` + `combatMarch.ts`）；到达结算时 `moraleCombatMultiplier(morale)` 缩放攻方有效兵力/军队 HP（`combatSiege/arrival.ts` 的 `applySiege`/`applyStrongholdSiege`/`applyCrossingSiege`/`applySweep`、`combatSiege/occupation.ts` 的 `applyOccupy`/`applyOccupationExpulsion`），廉价公式（`resolveSiege`）与真实引擎战斗（`runSiegeBattle`）两条结算路径都吃这个缩放，保持一致。未暴露到 `MarchView`/openapi 契约（客户端本期不展示疲劳值）。
 
 ### 4.1 连地占领（硬性规则，ADR-039，2026-07-14）
 
@@ -227,9 +230,10 @@
   - 未加入家族的玩家：只认自己已占领的格子（主城落地即视为初始领地，不存在"第一块地怎么占"的鸡生蛋问题）。**"主城即初始领地"由 `mainBaseTile` 推出的 3×3 footprint 保证**（连地判定 + 行军寻路都吃这个），不依赖 8 个 ring 格是否带 `ownerId`——否则早期未给 ring 写 ownerId 的历史存档基地会"连自己主城旁的空地都占不了"（详见 DECISIONS ADR-039 核心规则 5）。
   - 已加入家族但宗门未成立：连地范围=家族全体成员领地并集（不强制要求先建宗门才能连地扩张）。
   - **盟友宗门的领地不计入连地判定**——结盟只是互不攻伐 + 桥栈道通行（§8.2），不合并版图；否则会让"结盟"变相等价于"合并宗门"，破坏宗门作为竞争单位的边界。
-- **适用目标一视同仁**：普通领地/资源点/险地/州府/桥栈道的占领与围攻均须满足连地判定（§3.1 各行已标注）——首府/桥栈道不豁免，否则"连地才有意义"这条规则本身就会被绕过（凭空跳打州府会让"为什么要一格格打过去"的前线叙事失效）。**扫荡（`sweep`，中立点一次性打劫不占地）与侦查（`scout`）不受限**——它们不改变领地归属，不涉及"抢地盘"。
+- **适用目标一视同仁**：普通领地/资源点/险地/州府/桥栈道的占领与围攻均须满足连地判定（§3.1 各行已标注）——首府/桥栈道不豁免，否则"连地才有意义"这条规则本身就会被绕过（凭空跳打州府会让"为什么要一格格打过去"的前线叙事失效）。**扫荡（`sweep`，中立点一次性打劫不占地）不受限**——它不改变领地归属，不涉及"抢地盘"。（侦查 `scout` 本身自 2026-07-21 起服务端整体禁用，见下方"当前状态"说明，此规则暂无实际适用对象。）
 - **服务端强制点（`worldsvc`）**：`startMarch` 的 `occupy`/`attack` 分支在发起时校验（`WorldCoreVision.isConnectedToSectTerritory`，4 方向邻接查询，源集合 = 宗门全体成员家族的 `playerWorld.accountId` 并集拥有的 `TileDoc`）；到达时在 `applySiege`/`applyOccupy` 再校验一次（宗门领地可能在行军途中因丢地而断连，断连按"扑空"处理——退还部队 + 推送 `recalled`，与既有的"目标已非敌方所有"重校验同一套模式）。不满足 → `TERRITORY_NOT_CONNECTED`（400）。
-- **客户端预过滤（`WorldMapInput`，2026-07-14）**：中立格弹出菜单里的 **占领** 按钮在不连地时**置灰**（`showModal` 的 `disabled` 态；点它弹 `world.err.notConnected` 提示而非直接发起），避免"点了才被服务端 400 拒"——等距投影下一块隔行的空地视觉上就贴着主城，玩家极易误判。**仅对单人玩家（无 `familyId`）启用**：服务端连地算"自己家族 ∪ 同宗门兄弟家族"，但客户端只给自己家族的格子打 `mine`/`ally` 标志，兄弟家族领地无客户端标志，无法可靠判"不连地"——故有家族的玩家一律不预禁用（保留按钮、交服务端校验），杜绝误禁用合法扩张。占领/围攻仍以服务端校验为准，此处纯 UX。**扫荡/侦查不置灰**（本就不须连地）。
+- **客户端预过滤（`WorldMapInput`，2026-07-14）**：中立格弹出菜单里的 **占领** 按钮在不连地时**置灰**（`showModal` 的 `disabled` 态；点它弹 `world.err.notConnected` 提示而非直接发起），避免"点了才被服务端 400 拒"——等距投影下一块隔行的空地视觉上就贴着主城，玩家极易误判。**仅对单人玩家（无 `familyId`）启用**：服务端连地算"自己家族 ∪ 同宗门兄弟家族"，但客户端只给自己家族的格子打 `mine`/`ally` 标志，兄弟家族领地无客户端标志，无法可靠判"不连地"——故有家族的玩家一律不预禁用（保留按钮、交服务端校验），杜绝误禁用合法扩张。占领/围攻仍以服务端校验为准，此处纯 UX。**扫荡不置灰**（本就不须连地）。
+- **侦查（scout）当前状态（2026-07-21 起，2026-07-22 审计核实仍成立）**：本节及本文档其余处提到的"侦查"均为**目标模型**描述——服务端 `combatMarch.ts` 目前对 `kind==='scout'` 的行军请求直接拒绝（`NOT_IMPLEMENTED`），客户端已同步移除所有侦查入口（菜单按钮不出现，而非出现后报错）。根因（"行军中的队伍被误拉去侦察"的用户反馈）尚未查明，功能暂时整体下线，底层结构保留待恢复。详见 memory `slg-scout-march-disabled-2026-07-21`。
 - **前沿高亮（`WorldMapRenderer.renderOccupyFrontier` + `occupyFrontier.ts`，2026-07-14，三战/率土式）**：地图上把与自己/家族领地**共边**、且可占领的中立空格描绿边（`overlayGfx` overlay，L1/L2 才画）。这是"连地=共边"这条规则的**根治性呈现**——之所以会有"看着相邻却占不了"的困惑，是因为格子本质是正方形（只有 4 个共边邻居），但等距投影把它画成菱形后，只共**顶点**的对角格被摆到屏幕正上/下/左/右，看着像紧挨着。三战/率土同样是斜 45°菱形、同样 4 向共边连地，之所以没这个问题，就是因为它把领地画成连续色块 + 明确高亮可扩张前沿，让"共边"一眼可见而非靠肉眼在投影里估。前沿计算是纯函数（`occupyFrontierCells`，含单测），描边仅取自己 `mainBaseTile` footprint + `mine`/`ally` 瓦片（同宗门兄弟家族前沿客户端不可见，故不描——但这是加法式提示，不描≠禁止，按钮仍在、服务端仍校验）。
 - **为何是 4 向共边而非 8 向含对角（已拍板，2026-07-14）**：正方形格子只有 4 个共享一条边的"相邻"格，另 4 个对角格只碰一个顶点。连地取共边（几何正确、前线干净、与三战/率土一致）；曾考虑放宽到 8 向"看着挨着就算"，否决——那会让版图斜向渗透、封锁墙可斜绕，且"相邻"定义含糊。正解是保持 4 向 + 前沿高亮把共边关系画清楚（见上条）。
 - **权衡（已知取舍，接受）**：先手/占据资源密集区的宗门扩张会更快滚雪球，弱势宗门可能被彻底堵死在外圈——但一个大区真正对抗的宗门通常只有两三个，连地规则逼着弱势方要么被兼并要么结盟，而不是绕开前线偷家，符合"明确前线 + 解释为何要夺关键城池"的设计目的。
@@ -244,7 +248,7 @@
 >
 > **NPC 单场围攻基地血量随等级缩放（2026-07-17，方案 2，见 [DECISIONS ADR-026](../DECISIONS.md) 细化条 + [LOG §29](SLG_DESIGN_LOG.md)）**：上面的分波 + `TileDoc.hp` 是**玩家主城/领地**路径；**NPC 地块**（占地/驱逐/据点/关口/领地单场）走 `runSiegeBattle`（`destroy_base`），其象征基地血量此前恒为 `BASE_HP=100`，与等级无关——一级地驻军仅 120 却要打 100 血基地，最小占地兵力清完守军也推不平基地（超时判守方胜）。现改为 `npcBaseHp(level)=40×level`（L1=40、L10=400），经 `defenderConfig.defenderBaseHp` 显式传入引擎（`Player.maxBaseHp`）。低级更软（L1 最小取胜 660→300 兵）、高级更硬（L10 1560→2940），与玩家城侧 `baseDurabilityMax(墙等级)` 对称。分波路径不受影响。
 >
-> **血量/受伤下行 + UI（任务 #8 已实现）**：`WorldTileView.hp/maxHp`（base/territory/stronghold）与 `PlayerWorldView.teamState`（+ 补齐 `cardState/baseTroopStock`）经 `getMe/getMap` 下行（主动查询，无实时推送）。客户端：`WorldMapScene` 地图建筑血条（**仅受损时显示**，绿→琥珀→红）+ 攻击弹窗 `world.buildingHp` 数值；`TeamsScene` 队伍受伤倒计时徽标（复用 `roster.injured`）。
+> **血量/受伤下行 + UI（任务 #8 已实现）**：`WorldTileView.hp/maxHp`（base/territory/stronghold）与 `PlayerWorldView.teamState`（+ 补齐 `cardState/baseTroopStock`）经 `getMe/getMap` 下行（主动查询，无实时推送）。客户端：`WorldMapScene` 地图建筑血条（**仅受损时显示**，绿→琥珀→红）+ 攻击弹窗 `world.buildingHp` 数值；`TeamsScene` 队伍受伤倒计时徽标（复用 `roster.injured`）。**`baseTroopStock` 已于 2026-07-22 并入 `playerWorld.troops`，见 §4.3 训练→分兵闭环说明，此处按当时落地原样保留历史记录。**
 
 ### 5.1 围攻 = 确定性引擎打防守 config + 录像（SLG5）
 

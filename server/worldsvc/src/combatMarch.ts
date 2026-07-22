@@ -273,7 +273,7 @@ export class MarchService {
     const path = await this.computeMarchPath(worldId, fromX, fromY, toX, toY, accountId);
     const departAt = t;
     const arriveAt = departAt + marchDurationFromPath(path) * 1000;
-    // Morale (士气): 1 point lost per tile moved, computed once from the full path since marches don't tick
+    // Morale (行军疲劳 — see SLG_DESIGN.md §4.4; distinct from the card "士气加成" bonus): 1 point lost per tile moved, computed once from the full path since marches don't tick
     // live in transit (single scheduled arrival event). Scales combat power on arrival — see moraleCombatMultiplier.
     const morale = marchMoraleFromPath(path);
     const mid = marchId(worldId, accountId, departAt, ++this.core.marchSeq);

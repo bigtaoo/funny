@@ -4,8 +4,9 @@
 //   scrollable building card grid, matches the Roster/Skins/Teams card-grid
 //   language, tap-to-open detail modal) and 军事 (tech-tree panel for `academy`,
 //   D-CITY-12; team panel D-CITY-10 still a placeholder below it).
-// Troop training is surfaced via the drillYard detail modal (replaces the
-// WorldMapScene train button for users who enter city).
+// Troop training is its own home-desk grid tile (renderTrainModal), spliced
+// next to the drillYard building; the drillYard detail modal itself only
+// shows cap/speed/queue bonuses, no training controls.
 
 import * as PIXI from 'pixi.js-legacy';
 import type { Scene } from './SceneManager';

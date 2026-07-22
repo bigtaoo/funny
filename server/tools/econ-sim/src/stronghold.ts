@@ -13,9 +13,11 @@
 // one resType) and the NPC garrison (360×level) are season-internal / battle concerns,
 // reported here for a one-pass sanity check.
 //
-// The count itself is PROCEDURAL: `proceduralTile(world,x,y)` decides stronghold cells
-// from smooth value-noise > strongholdThreshold. We count strongholds by running the
-// REAL generator over the REAL map (SLG_MAP_W×SLG_MAP_H) for many world seeds — no
+// The count itself is PROCEDURAL: `proceduralTile(world,x,y)` decides stronghold cells via a
+// per-tile hash gate (`rand2(x,y,seed^K) > strongholdThreshold=0.997`, i.e. Bernoulli(p≈0.003) —
+// this replaced an earlier smooth-value-noise design that clumped into blobs and swung wildly
+// seed-to-seed, see SLG_DESIGN_LOG.md §19.5, CLOSED 2026-07-02). We count strongholds by running
+// the REAL generator over the REAL map (SLG_MAP_W×SLG_MAP_H) for many world seeds — no
 // hand-assumed density.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -31,6 +33,9 @@ import {
   SLG_WORLD_CAPACITY_TARGET,
   RESOURCE_CAP,
   TROOP_CAP_BASE,
+  provinceIdxAt,
+  NATION_KIND_BY_IDX,
+  type NationKind,
 } from '@nw/shared';
 import { MATERIAL_COIN_VALUE, REGULAR_MONTHLY_MATERIAL, type MaterialKey } from './valuation';
 
@@ -55,7 +60,9 @@ export function countStrongholds(world: string): number {
 
 /**
  * Connected-component (flood-fill, 4-neighbour) analysis of stronghold cells for one seed.
- * Smooth value-noise > threshold yields CONTIGUOUS blobs, not isolated points — this quantifies it.
+ * Kept as a regression check: the old smooth-value-noise generator used to yield CONTIGUOUS blobs
+ * instead of isolated points (fixed 2026-07-02, see the per-tile hash gate note above) — this quantifies
+ * that the current generator still produces isolated points, not a re-litigation of the old bug.
  */
 export function strongholdBlobs(world: string): { count: number; components: number; maxBlob: number; meanBlob: number } {
   const mask = new Uint8Array(MAP_TILES);
@@ -107,6 +114,63 @@ export function countDistribution(nSeeds: number): { counts: number[]; stats: Pe
     counts,
     stats: { min: sorted[0] ?? 0, p10: at(0.1), median: at(0.5), mean, p90: at(0.9), max: sorted[sorted.length - 1] ?? 0, sd, zeroSeedPct },
   };
+}
+
+const RING_KINDS: readonly NationKind[] = ['outer', 'resource', 'core'];
+
+/** Ring-kind (outer/resource/core, ADR-034 §2.1) each map tile belongs to, precomputed once (geometry only, seed-independent). */
+function _tileRingKinds(): Uint8Array {
+  const ringOf = new Uint8Array(MAP_TILES);
+  for (let y = 0; y < SLG_MAP_H; y++) {
+    for (let x = 0; x < SLG_MAP_W; x++) {
+      const kind = NATION_KIND_BY_IDX[provinceIdxAt(x, y)]!;
+      ringOf[y * SLG_MAP_W + x] = RING_KINDS.indexOf(kind);
+    }
+  }
+  return ringOf;
+}
+
+export interface RingStats {
+  tileCount: number;
+  counts: number[];
+  mean: number; sd: number; cv: number;
+  /** strongholds per tile in this ring type — the fair way to compare rings of very different sizes. */
+  hitRatePerTile: number;
+}
+
+/**
+ * Stronghold-count distribution broken down by ring kind (outer/resource/core, ADR-034), across N world seeds.
+ * §2.4's "~0.3% of map" intent was only ever checked at the whole-map level (SLG_DESIGN_LOG §19.5, CLOSED
+ * 2026-07-02); this answers the follow-up: does a smaller ring type (e.g. one 60° outer sector vs the whole
+ * resource ring) end up systematically stronghold-starved or stronghold-flooded per tile?
+ */
+export function countDistributionByRing(nSeeds: number): Record<NationKind, RingStats> {
+  const ringOf = _tileRingKinds();
+  const tileCount: Record<NationKind, number> = { outer: 0, resource: 0, core: 0 };
+  for (let i = 0; i < MAP_TILES; i++) tileCount[RING_KINDS[ringOf[i]!]!]++;
+
+  const counts: Record<NationKind, number[]> = { outer: [], resource: [], core: [] };
+  for (let s = 0; s < nSeeds; s++) {
+    const world = `world-${s}`;
+    const seedCounts: Record<NationKind, number> = { outer: 0, resource: 0, core: 0 };
+    for (let y = 0; y < SLG_MAP_H; y++) {
+      for (let x = 0; x < SLG_MAP_W; x++) {
+        if (proceduralTile(world, x, y).type === 'stronghold') {
+          seedCounts[RING_KINDS[ringOf[y * SLG_MAP_W + x]!]!]++;
+        }
+      }
+    }
+    for (const k of RING_KINDS) counts[k].push(seedCounts[k]);
+  }
+
+  const out = {} as Record<NationKind, RingStats>;
+  for (const k of RING_KINDS) {
+    const arr = counts[k];
+    const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+    const sd = Math.sqrt(arr.reduce((a, b) => a + (b - mean) ** 2, 0) / arr.length);
+    out[k] = { tileCount: tileCount[k], counts: arr, mean, sd, cv: sd / Math.max(1, mean), hitRatePerTile: mean / Math.max(1, tileCount[k]) };
+  }
+  return out;
 }
 
 export const SEASON_MONTHS = 60 / 30; // SLG season = 60 days ≈ 2 months (§2.2)

@@ -5,6 +5,7 @@
 // The stronghold binding loot (strongholdMaterialLoot → meta.grantMaterial) is the one
 // persistent faucet the A-track (index.ts) never aggregated. This runner:
 //   ① counts strongholds with the REAL generator over the REAL map, across many seeds;
+//   ①b breaks that down per ADR-034 ring type (outer/resource/core), added 2026-07-22;
 //   ② quantifies the blob-clustering + seed-to-seed count variance;
 //   ③ aggregates the persistent binding faucet and judges it against A-track dilution;
 //   ④ sanity-checks the season-resource loot + NPC garrison accessibility;
@@ -14,6 +15,7 @@
 import {
   NUMBERS,
   countDistribution,
+  countDistributionByRing,
   strongholdBlobs,
   bindingFaucet,
   GRIND_BINDING_PER_SEASON,
@@ -50,6 +52,30 @@ const densityOnTarget = medianPct <= DESIGN_TARGET_PCT * 2; // within 2× of the
 const varianceOk = cv <= 0.5 && stats.zeroSeedPct <= 5;
 console.log(`  [${densityOnTarget ? 'PASS' : 'FAIL'}]  median density ${medianPct.toFixed(2)}% vs intent ~${DESIGN_TARGET_PCT}% (within 2×)`);
 console.log(`  [${varianceOk ? 'PASS' : 'FAIL'}]  count consistency — CV ${cv.toFixed(2)} ≤ 0.50 and zero-stronghold worlds ${stats.zeroSeedPct.toFixed(0)}% ≤ 5%\n`);
+
+// ── ①b per-ring-kind breakdown (ADR-034 angle-sector rings) ──────────────────
+console.log('── ①b  Per-ring-kind density (ADR-034: outer/resource/core rings differ hugely in area) ──\n');
+console.log('  §21.4/§19.5 only ever checked whole-map density. ADR-034 (2026-07-05, already implemented — see');
+console.log('  design/game/SLG_DESIGN.md §2.4) splits the map into 6 outer + 3 resource + 1 core provinces of very');
+console.log('  different area; strongholdMinDistRatio is measured from each tile\'s own province capital, not a');
+console.log('  global one, so it is worth checking per-tile hit rate is comparable across ring types.\n');
+const ringStats = countDistributionByRing(N_SEEDS);
+console.log('  ring       tiles(map)   mean count   sd     CV     hit-rate/tile');
+console.log('  ' + '─'.repeat(66));
+for (const kind of ['outer', 'resource', 'core'] as const) {
+  const r = ringStats[kind];
+  console.log(`  ${kind.padEnd(9)}  ${fmt(r.tileCount).padStart(10)}   ${r.mean.toFixed(1).padStart(10)}   ${r.cv.toFixed(2).padStart(4)}   ${(r.hitRatePerTile * 100).toFixed(4)}%`);
+}
+const hitRates = (['outer', 'resource', 'core'] as const).map((k) => ringStats[k].hitRatePerTile);
+const maxHit = Math.max(...hitRates), minHit = Math.min(...hitRates.filter((h) => h > 0)) || 0;
+const hitRateRatio = minHit > 0 ? maxHit / minHit : Infinity;
+const ringCvOk = (['outer', 'resource', 'core'] as const).every((k) => ringStats[k].cv <= 0.5);
+const ringHitRateOk = hitRateRatio <= 2; // no ring type should be starved/flooded by more than 2× vs another
+console.log(`\n  [${ringCvOk ? 'PASS' : 'FAIL'}]  each ring type's own CV ≤ 0.50 (per-ring generation is itself stable, not just the whole-map aggregate).`);
+console.log(`  [${ringHitRateOk ? 'PASS' : 'FAIL'}]  per-tile hit-rate ratio across ring types = ${hitRateRatio.toFixed(2)}× ≤ 2× (no ring type systematically starved or flooded).`);
+console.log(`  Note: the per-tile hash gate is seed/coordinate-driven, not ring-aware, so a uniform hit-rate across`);
+console.log(`  ring types is exactly what's expected — a large deviation here would flag a bug in how`);
+console.log(`  strongholdMinDistRatio's distance-to-capital measurement interacts with ring geometry.\n`);
 
 // ── ② blob clustering ────────────────────────────────────────────────────────
 console.log('── ②  Blob clustering (4-neighbour connected components; intent = isolated points) ──\n');
@@ -110,22 +136,20 @@ console.log(`    advantage gates strongholds behind tech/equipment (slg.ts:1055)
 bar('VERDICT — stronghold track (SLG_ECONOMY_CHECK §21.4)');
 console.log(`  ① density/variance:  ${densityOnTarget && varianceOk ? '✅ PASS' : '❌ FAIL'}`);
 console.log(`     median ${medianPct.toFixed(2)}% (intent ~0.3%), CV ${cv.toFixed(2)}, ${stats.zeroSeedPct.toFixed(0)}% zero-stronghold worlds, ${stats.min}→${stats.max} spread.`);
+console.log(`  ①b per-ring fairness: ${ringCvOk && ringHitRateOk ? '✅ PASS' : '❌ FAIL'}  (hit-rate ratio ${hitRateRatio.toFixed(2)}× across outer/resource/core, added 2026-07-22)`);
 console.log(`  ② blob clustering:   ${isolated ? '✅ PASS' : '❌ FAIL'}  (mean blob ${avgBlob.toFixed(1)} cells)`);
 console.log(`  ③ persistent faucet: ${anyFail ? '⚠️  CONDITIONAL  — safe at median×low-capture; breaches 15% at high-count seeds / full capture.' : '✅ PASS  — dilution ≤ 15% across all seeds even at 100% capture (per-tile hash gate removed the tail seeds).'}`);
 console.log(`  ④ season loot / garrison: ✅ sane (one-off capped injection; garrison gates loot behind progression).\n`);
 
-if (!densityOnTarget || !varianceOk || !isolated) {
-  console.log('  ROOT CAUSE: strongholds use smooth value-noise (valueNoise, freq 1/70) > threshold 0.92.');
-  console.log('  On a 300×300 map that noise field has only ~(300/70)²≈18 lattice points, so the count is');
-  console.log('  governed by a handful of lattice values → 0-to-thousands per seed, and cells clump into blobs.');
-  console.log('');
-  console.log('  RECOMMENDATION (→ ECONOMY_NUMBERS §13-SLG-STRONGHOLD): replace the smooth-noise gate with a');
-  console.log('  per-tile hash gate (rand2(x,y,seed^K) > t). A per-tile Bernoulli(p=0.003) draw over 90,000');
-  console.log('  tiles gives count ≈ 270 ± √(90000·0.003·0.997) ≈ ±16 (CV ≈ 0.06), isolated points, and hits');
-  console.log('  the "~0.3% extremely sparse" intent deterministically — turning ③ from CONDITIONAL to PASS by');
-  console.log('  removing the tail seeds that breach dilution. This is a shared/slg.ts generation change');
-  console.log('  (public dep — merge first per worktree rule 4); tune p to the final target density.');
+if (!densityOnTarget || !varianceOk || !isolated || !ringCvOk || !ringHitRateOk) {
+  console.log('  NOTE: the smooth-value-noise generator that used to cause blobby/inconsistent density (root-caused');
+  console.log('  and fixed 2026-07-02, see SLG_DESIGN_LOG.md §19.5) is gone — the generator has been a per-tile hash');
+  console.log('  gate (rand2(x,y,seed^K) > strongholdThreshold=0.997) since that fix, so ①/② failing today would be');
+  console.log('  a NEW regression, not the old known issue. If ①b specifically fails (ring-kind hit-rate imbalance),');
+  console.log('  check whether strongholdMinDistRatio\'s distance-to-capital measurement interacts badly with the');
+  console.log('  ADR-034 ring geometry (e.g. a ring type\'s tiles sitting disproportionately close to/far from their');
+  console.log('  own province capital) rather than re-applying the old noise-gate fix, which is unrelated.');
 } else {
-  console.log('  ✅ STRONGHOLD TRACK CLOSED');
+  console.log('  ✅ STRONGHOLD TRACK CLOSED (incl. per-ring fairness, added 2026-07-22)');
 }
 console.log('\nRegister conclusions → ECONOMY_VERIFICATION_LOG.md §13-SLG-STRONGHOLD');

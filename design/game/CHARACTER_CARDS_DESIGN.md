@@ -345,8 +345,9 @@ interface CardSLGState {
 
 // PlayerWorldDoc 新增字段
 cardState: Record<cardInstanceId, CardSLGState>  // 赛季重置时随 playerWorld 清除
-baseTroopStock: number   // 基地兵力池当前存量（≤ cityTroopCap）
 ```
+
+> **`baseTroopStock` 已退役（2026-07-22，见 §6.3 下方"训练→分兵闭环"说明）**：本节最初（2026-07-01，CC-4）把卡牌兵力池单独建模为 `baseTroopStock` 字段，与地图兵力池 `playerWorld.troops` 并存不通；2026-07-22 二者合并为单一 `playerWorld.troops`，`distributeTroops` 改从这里扣款，`baseTroopStock` 字段本身经 boot 迁移折算后 `$unset`。上面代码块按 2026-07-01 落地时的原样保留作历史记录，**当前实际字段是 `playerWorld.troops`，不是 `baseTroopStock`**。
 
 worldsvc 根据 `siege_result` 直接写 `cardState`，无需通知 metaserver。卡的 SLG 状态是 worldsvc 对卡属性的延伸，元系统（metaserver）不感知。
 

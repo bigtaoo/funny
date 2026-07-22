@@ -375,7 +375,7 @@ describe.skipIf(!mongo)('worldsvc occupy-march e2e (ADR-037 §5.4)', () => {
     expect(view.contestedByMe).toBeUndefined();
   });
 
-  it('morale (士气): a long-distance occupy arrives weaker than an identical nearby occupy against the same NPC garrison level (ADR-047)', async () => {
+  it('morale (行军疲劳): a long-distance occupy arrives weaker than an identical nearby occupy against the same NPC garrison level (ADR-047)', async () => {
     await svc.joinWorld(W, 'a', 10, 10);
     // Two connect() calls (500 troops each, GARRISON_PER_TILE) + two occupy marches would exceed the default
     // TROOP_CAP_BASE pool — top up directly (test-only convenience, mirrors setupDefender's direct writes elsewhere).

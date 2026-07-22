@@ -1203,7 +1203,9 @@ if (path.startsWith('/admin/world/')) {
 
 L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/L3 基本不变；L4+ 显著变硬，高级地成为真正的战力门槛。
 
-**验收**：shared/engine/worldsvc/client `tsc` 全绿；shared siege 单测 39/39（+npcBaseHp/defenderBaseHp 用例）；engine 66/66（+siege defenderBaseHp 初始化用例）；worldsvc occupy/base-siege/siege/stronghold/passage/cheap-fallback e2e 全绿（无结果翻盘）；econ-sim `tsc --noEmit` 通过。**数值仍 DRAFT**（README §0 铁律：只调常数不改公式）。
+**验收**：shared/engine/worldsvc/client `tsc` 全绿；shared siege 单测 39/39（+npcBaseHp/defenderBaseHp 用例）；engine 66/66（+siege defenderBaseHp 初始化用例）；worldsvc occupy/base-siege/siege/stronghold/passage/cheap-fallback e2e 全绿（无结果翻盘）；econ-sim `tsc --noEmit` 通过。
+
+**2026-07-22 更正**：上面"数值仍 DRAFT"已过期——`occupyBaseHpRun.ts` 补测了装备/学院攻城 hp 加成（0%/10%/20% 三档）叠加后曲线依然逐级单调、不溢出棋盘容量，且敏感度复测证实这个力量比区间下 hp 加成对胜负确无可测量影响（不是步进粒度掩盖）。`40×level` 系数**转正，DRAFT 标记已从 `siege.ts` 源码注释移除**，详见 `ECONOMY_VERIFICATION_LOG.md §13-SLG-NPC-BASEHP`。
 
 ## 30. 出征队伍编辑器：左右分栏布局（2026-07-18，用户拍板）
 

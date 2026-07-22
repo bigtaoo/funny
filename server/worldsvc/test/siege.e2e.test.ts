@@ -299,7 +299,7 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     expect(await svc.processDueArrivals()).toBe(1);
 
     const me = await svc.getMe(W, 'a');
-    // Morale (士气): the sweep march travels an unobstructed straight Manhattan route from (5,5) → tgt (no bases/
+    // Morale (行军疲劳): the sweep march travels an unobstructed straight Manhattan route from (5,5) → tgt (no bases/
     // crossings in between on this fixture), so the server's path-length-based morale cost matches the raw
     // Manhattan distance exactly; effective (post-morale) troops determine the cheap-formula survivor count.
     const dist = Math.abs(tgt.x - 5) + Math.abs(tgt.y - 5);
