@@ -77,10 +77,13 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
             sprite.mask = plotMask;
             const dotGfx = new PIXI.Graphics();
             dotGfx.name = 'dots';
+            const hpGfx = new PIXI.Graphics();  // damaged-base HP bar, hovers above the building
+            hpGfx.name = 'hpbar';
             cityC = new PIXI.Container();
             cityC.addChild(sprite);
             cityC.addChild(plotMask);
             cityC.addChild(dotGfx);
+            cityC.addChild(hpGfx);
             this.ctx.cityLayer.addChild(cityC);
             this.ctx.citySprites.set(cacheKey, cityC);
           }
@@ -138,6 +141,30 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
               dots.drawCircle(cx, by, dotR);
               dots.endFill();
             }
+          }
+
+          // ADR-026 §1: damaged-base HP bar. The tile-level bar (tileGraphics.drawHpBar) is drawn on
+          // the anchor tile in the pool layer but gets fully covered by this 3×3 city sprite, so a base
+          // under siege would otherwise show no durability at all. Redraw it here on the city layer,
+          // hovering just above the building. Only when damaged (hp < maxHp) — full bases stay uncluttered;
+          // hp absent = full HP per the WorldTileView contract, so the guard also skips those.
+          const hpbar = cityC.getChildByName('hpbar') as PIXI.Graphics;
+          hpbar.clear();
+          if (tile.maxHp && tile.hp != null && tile.hp < tile.maxHp) {
+            const ratio = Math.max(0, Math.min(1, tile.hp / tile.maxHp));
+            const barW = baseSpriteTiles * tp * 0.6;
+            const barH = Math.max(3, tp * 0.07);
+            const bxh = -barW / 2;
+            const byh = -sprite.height * 0.9 - barH;   // above the building silhouette (sprite is bottom-anchored → top edge at -height)
+            hpbar.lineStyle(0.8, 0x3a2a1a, 0.85);
+            hpbar.beginFill(0x2a1e12, 0.8);
+            hpbar.drawRect(bxh, byh, barW, barH);
+            hpbar.endFill();
+            const fillColor = ratio > 0.5 ? 0x3aa03a : (ratio > 0.25 ? 0xd8a520 : 0xcc2222);
+            hpbar.lineStyle(0);
+            hpbar.beginFill(fillColor, 0.95);
+            hpbar.drawRect(bxh, byh, barW * ratio, barH);
+            hpbar.endFill();
           }
         }
       }
