@@ -107,20 +107,19 @@ export class ProfilePopup {
     this.tapRects = [];
 
     // Caps doubled from the original 420×360 (2026-07-20: card read as too small to use comfortably).
+    // `cardH` is a *baseline* used to size the avatar/fonts/buttons; the actual card height is
+    // computed from the laid-out content below and grows past this when the info lines + action row
+    // would otherwise collide with the bottom-anchored buttons (2026-07-22 fix).
     const cardW = Math.min(Math.round(this.w * 0.78), 840);
     const cardH = Math.round(Math.min(this.h * 0.5, 720));
     const cardX = (this.w - cardW) / 2;
-    const cardY = (this.h - cardH) / 2;
-    this.cardX = cardX; this.cardY = cardY; this.cardW = cardW; this.cardH = cardH;
+    this.cardX = cardX; this.cardW = cardW;
 
+    // Background is drawn last (once the final height is known) but added first to keep it behind
+    // all content in the z-order.
     const bg = new PIXI.Graphics();
-    bg.beginFill(palette.paper);
-    bg.lineStyle(2.5, palette.pencil);
-    bg.drawRoundedRect(0, 0, cardW, cardH, 12);
-    bg.endFill();
     this.card.addChild(bg);
     this.card.x = cardX;
-    this.card.y = cardY;
 
     // Title bar.
     const title = makeText(t('profile.title'), {
@@ -213,19 +212,22 @@ export class ProfilePopup {
       this.card.addChild(orgLine);
     }
 
-    // Close button.
-    const bW = Math.round(cardW * 0.5);
+    // ── Buttons, laid out flowing *below* the content (never bottom-anchored, which used to make
+    // the action row overlap the name/id lines on a short card). Optional action row (Send Message /
+    // Block) sits first, then the Close button; the card height grows to fit whatever is below.
     const bH = Math.round(cardH * 0.16);
-    const bX = (cardW - bW) / 2;
-    const bY = cardH - bH - cardH * 0.07;
+    const gapY = Math.round(cardH * 0.05);
+    const bottomPad = Math.round(cardH * 0.07);
 
-    // Optional action row (Send Message / Block), laid out above Close.
+    let cursorY = yBottom + gapY;
+
+    // Optional action row (Send Message / Block).
     const actions = data.actions ?? [];
     if (actions.length > 0) {
       const gap = Math.round(cardW * 0.04);
       const aW = Math.round((cardW * 0.84 - gap * (actions.length - 1)) / actions.length);
       const aH = bH;
-      const aY = bY - aH - Math.round(cardH * 0.04);
+      const aY = cursorY;
       const aX0 = (cardW - (aW * actions.length + gap * (actions.length - 1))) / 2;
       actions.forEach((act, i) => {
         const ax = aX0 + i * (aW + gap);
@@ -244,9 +246,16 @@ export class ProfilePopup {
         al.anchor.set(0.5, 0.5);
         al.x = ax + aW / 2; al.y = aY + aH / 2;
         this.card.addChild(al);
-        this.tapRects.push({ x: cardX + ax, y: cardY + aY, w: aW, h: aH, action: () => { this.hide(); act.fn(); } });
+        // y is card-local here; offset to container space once the final cardY is known below.
+        this.tapRects.push({ x: cardX + ax, y: aY, w: aW, h: aH, action: () => { this.hide(); act.fn(); } });
       });
+      cursorY = aY + aH + gapY;
     }
+
+    // Close button.
+    const bW = Math.round(cardW * 0.5);
+    const bX = (cardW - bW) / 2;
+    const bY = cursorY;
     const btn = new PIXI.Graphics();
     drawHudButton(btn, bW, bH, 'primary', { radius: 8 });
     btn.x = bX; btn.y = bY;
@@ -254,7 +263,6 @@ export class ProfilePopup {
     btn.cursor = 'pointer';
     btn.on('pointertap', () => this.hide());
     this.card.addChild(btn);
-    this.tapRects.push({ x: cardX + bX, y: cardY + bY, w: bW, h: bH, action: () => this.hide() });
 
     const btnLabel = makeText(t('profile.close'), {
       fontSize: snapFont(Math.round(bH * 0.42)), fill: hudButtonText('primary'), fontWeight: 'bold', fontFamily: 'monospace',
@@ -263,6 +271,22 @@ export class ProfilePopup {
     btnLabel.x = bX + bW / 2;
     btnLabel.y = bY + bH / 2;
     this.card.addChild(btnLabel);
+
+    // Final height = the baseline, or taller when the content flow ran past it. Then draw the bg,
+    // centre the card vertically, and register the close tap-rect in the now-final card space.
+    const finalH = Math.max(cardH, bY + bH + bottomPad);
+    const cardY = Math.round((this.h - finalH) / 2);
+    this.cardY = cardY; this.cardH = finalH;
+    this.card.y = cardY;
+
+    bg.beginFill(palette.paper);
+    bg.lineStyle(2.5, palette.pencil);
+    bg.drawRoundedRect(0, 0, cardW, finalH, 12);
+    bg.endFill();
+
+    this.tapRects.push({ x: cardX + bX, y: bY, w: bW, h: bH, action: () => this.hide() });
+    // Action + close rects were registered in card-local y; shift them into container space.
+    for (const r of this.tapRects) r.y += cardY;
 
     this.open = true;
     this.container.visible = true;
