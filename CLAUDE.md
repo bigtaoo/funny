@@ -33,6 +33,7 @@ claudedocs/      模块级快查文档（按需加载）
 |---|---|---|
 | 游戏主代码 | [`claudedocs/client-modules.md`](claudedocs/client-modules.md) | `design/game/` |
 | 客户端测试 | [`claudedocs/client-testing.md`](claudedocs/client-testing.md) | — |
+| 客户端内存/生命周期 | [`claudedocs/client-memory-leak.md`](claudedocs/client-memory-leak.md) | — |
 | 服务端 | [`claudedocs/server.md`](claudedocs/server.md) | `design/game/META_DESIGN.md` |
 | botsvc | — | `design/game/BOTSVC_DESIGN.md` |
 | animator | [`claudedocs/animator.md`](claudedocs/animator.md) | `design/tools/animator/` |
