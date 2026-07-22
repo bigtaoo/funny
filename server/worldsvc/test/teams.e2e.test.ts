@@ -8,7 +8,7 @@
 // CC-3: every army entry is card-based (`cardInstanceId`, resolved via a fake meta client's `cardInv`) — the
 // pre-CC-3 raw `{unitType, initialHp}` format has no compat path (`sanitizeCardArmy` drops it silently on
 // save), so tests build teams from a pool of fake owned cards and set each card's `cardState.currentTroops`
-// directly (mirroring `distributeTroops`, without its baseTroopStock bookkeeping).
+// directly (mirroring `distributeTroops`, without its troop-pool bookkeeping).
 // Requires `cd server && docker compose up -d`.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -137,7 +137,7 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     return { entries, ids };
   }
 
-  /** Sets each card's cardState.currentTroops directly (mirrors distributeTroops without its baseTroopStock bookkeeping). */
+  /** Sets each card's cardState.currentTroops directly (mirrors distributeTroops without its troop-pool bookkeeping). */
   async function setTroops(accountId: string, ids: string[], hp: number): Promise<void> {
     const set: Record<string, number> = {};
     for (const id of ids) set[`cardState.${id}.currentTroops`] = hp;
@@ -398,8 +398,10 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     const tgt = findCoord(10, 5);
     await setupDefender('b', tgt.x, tgt.y, 50);
     await connect(svc, 'a', tgt);
-    // no satchel built → cap = SATCHEL_CARRY_BASE (2000, = TROOP_CAP_BASE); 12 units × 200 = 2400 committed exceeds it.
-    const entries = await armyWithTroops('a', 12, 200);
+    // no satchel built → cap = SATCHEL_CARRY_BASE (= TROOP_CAP_BASE = 10000); 12 units × 900 = 10800 committed
+    // exceeds it, but stays under base + one satchel step (10000 + SATCHEL_CARRY_STEP 1000 = 11000) so the
+    // satchel:1 upgrade below is exactly enough to let the same team depart.
+    const entries = await armyWithTroops('a', 12, 900);
     await svc.setTeams(W, 'a', [{ id: 't1', name: 'Overloaded', army: entries }]);
     await expect(svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 1, 't1')).rejects.toThrow(/satchel/i);
 

@@ -4,12 +4,13 @@ import * as analytics from '../../analytics';
 import { ENGINE_VERSION } from '../../game';
 import type { Replay, LevelDefinition } from '../../game';
 import { WorldApiClient } from '../../net/WorldApiClient';
+import type { WorldMapView } from '../../scenes/WorldMapScene';
 import type { AppCtx, Nav } from '../appCtx';
 import { TOKEN_KEY } from '../appConstants';
 
 type WorldNav = Pick<Nav,
   'goWorldEntry' | 'goAuctionFromLobby' | 'goWorldMap' | 'goSiegeReplay' | 'goDefenseEditor' |
-  'goCity' | 'goFamilyHub' | 'goSectHub' | 'goAuctionHouse'>;
+  'goFamilyHub' | 'goSectHub' | 'goAuctionHouse'>;
 
 export function createWorldNav(ctx: AppCtx): WorldNav {
   const { api, saveManager, platform, state, views, nav, getNetSession, playerName, resolveWorldShard } = ctx;
@@ -44,35 +45,72 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
 
   function goWorldMap(worldApi: WorldApiClient, worldId: string): void {
     state.inLobby = false;
-    const view = views.showWorldMap({
+
+    // The WorldMapScene stays `current` (alive, mounted, ticking) for the whole SLG session — every
+    // panel opened from it (City/team editor/defense editor/auction/social hub) mounts as an overlay
+    // (SceneManager.pushOverlay via `{ overlay: true }`) instead of replacing it, so returning to the
+    // map is a pop with no teardown+rebuild (ADR-044, extended from City-only to all SLG panels).
+    // `view` is captured by the callbacks/closures below; they only fire after showWorldMap assigns it.
+    let view: WorldMapView;
+
+    // (Re)bind the gateway push handlers to the live map handle (march/tile/under-attack/siege
+    // incremental refresh, §14.5). Called on entry and again by returnToMap — an overlay like the
+    // social/sect hub rebinds session.handlers to its own set, so popping back must restore the map's.
+    const bindMapNet = (): void => {
+      const session = getNetSession();
+      if (session) {
+        session.handlers = {
+          onMatchStart: (info) => nav.goGameNet(info),
+          onMarchUpdate: (m) => view.applyMarchUpdate(m),
+          onTileUpdate:  (tu) => view.applyTileUpdate(tu),
+          onUnderAttack: (u) => view.applyUnderAttack(u),
+          onSiegeResult: (s) => view.applySiegeResult(s),
+        };
+        session.connect();
+      }
+    };
+
+    // Close an SLG panel and reveal the live map underneath: pop the overlay (map resumes, no rebuild)
+    // and re-bind the map's push handlers (see bindMapNet). This is what every panel's back button runs.
+    const returnToMap = (): void => { views.hideOverlay(); bindMapNet(); };
+
+    // Home Desk (CityScene) as an overlay; its "edit team" detour swaps in the formation editor as a
+    // sibling overlay (map still alive underneath), and backing out of that rebuilds the City overlay.
+    const openCity = (): void => {
+      views.showCity({
+        onBack: returnToMap,
+        onEditTeam(teamId, teamName) {
+          views.showDefenseEditor({
+            onBack: openCity,
+            getSave: () => saveManager.get(),
+            worldApi,
+            worldId,
+            target: { mode: 'attack', teamId, teamName },
+          }, { overlay: true });
+        },
+        worldApi,
+        worldId,
+        getCoins: () => saveManager.get().wallet.coins,
+      }, { overlay: true });
+    };
+
+    view = views.showWorldMap({
       onBack() { nav.goLobby({ fade: true }); }, // exiting the SLG — one of the transitions that cross-fade
       // Social overlay (world chat tab) — also the entry point to family management,
       // since FriendsScene's family tab already delegates to goFamilyHub once the
       // player has joined a family (§25 HUD relayout: dropped the standalone Family button).
-      onOpenChat() { nav.goFriends({ defaultTab: 'world', onBack: () => goWorldMap(worldApi, worldId) }); },
-      onOpenAuction() { goAuctionHouse(worldApi, worldId); },
+      onOpenChat() { nav.goFriends({ defaultTab: 'world', onBack: returnToMap, overlay: true }); },
+      onOpenAuction() { goAuctionHouse(worldApi, worldId, { overlay: true, onBack: returnToMap }); },
       onReplaySiege(siegeId) { void goSiegeReplay(worldApi, worldId, siegeId); },
-      onOpenDefense(tileKey) { goDefenseEditor(worldApi, worldId, tileKey); },
-      onOpenCity() { goCityOverlay(worldApi, worldId); },
+      onOpenDefense(tileKey) { goDefenseEditor(worldApi, worldId, tileKey, { overlay: true, onBack: returnToMap }); },
+      onOpenCity() { openCity(); },
       worldApi,
       worldId,
       playerName: playerName(),
       accountId: saveManager.get().accountId,
       getCoins: () => saveManager.get().wallet.coins,
     });
-    // Keep the gateway connected + forward SLG pushes into the live map handle
-    // (march/tile/under-attack/siege incremental refresh, §14.5).
-    const session = getNetSession();
-    if (session) {
-      session.handlers = {
-        onMatchStart: (info) => nav.goGameNet(info),
-        onMarchUpdate: (m) => view.applyMarchUpdate(m),
-        onTileUpdate:  (tu) => view.applyTileUpdate(tu),
-        onUnderAttack: (u) => view.applyUnderAttack(u),
-        onSiegeResult: (s) => view.applySiegeResult(s),
-      };
-      session.connect();
-    }
+    bindMapNet();
   }
 
   /**
@@ -117,80 +155,40 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
     views.showReplay(replay, { onExit() { goWorldMap(worldApi, worldId); } }, level);
   }
 
-  /** Open the simplified defense editor (C3) for a tile; returns to the map on back. */
-  function goDefenseEditor(worldApi: WorldApiClient, worldId: string, tileKey: string): void {
+  /**
+   * Open the simplified defense editor (C3) for a tile. `opts.overlay` keeps the WorldMapScene alive
+   * underneath (opened from the map); `opts.onBack` is where its back button lands (the map-return
+   * pop for the overlay case). Omitting both falls back to the plain full-scene rebuild via goWorldMap.
+   */
+  function goDefenseEditor(
+    worldApi: WorldApiClient,
+    worldId: string,
+    tileKey: string,
+    opts?: { overlay?: boolean; onBack?: () => void },
+  ): void {
     state.inLobby = false;
     views.showDefenseEditor({
-      onBack() { goWorldMap(worldApi, worldId); },
+      onBack: opts?.onBack ?? (() => goWorldMap(worldApi, worldId)),
       worldApi,
       worldId,
       target: { mode: 'defense', tileKey },
-    });
-  }
-
-  /**
-   * Enter City straight from the still-live WorldMapScene: mounts CityScene as an overlay
-   * (SceneManager.pushOverlay) instead of tearing the map down, so the common open/close Home Desk
-   * edge is instant and never re-fetches/rebuilds the SLG map. Only valid while WorldMapScene is
-   * current — the edit-team detour below drops to the plain full-scene {@link goCity}, since by
-   * then the map has already been replaced by DefenseEditorScene and there's nothing left to overlay.
-   */
-  function goCityOverlay(worldApi: WorldApiClient, worldId: string): void {
-    state.inLobby = false;
-    views.showCityOverlay({
-      onBack() { views.hideCityOverlay(); },
-      // Team card on the military page → that team's formation editor. This leaves the overlay for
-      // a real top-level scene, so drop it first (resumes the map) before the map itself is replaced.
-      onEditTeam(teamId, teamName) {
-        views.hideCityOverlay();
-        views.showDefenseEditor({
-          onBack() { goCity(worldApi, worldId); },
-          getSave: () => saveManager.get(),
-          worldApi,
-          worldId,
-          target: { mode: 'attack', teamId, teamName },
-        });
-      },
-      worldApi,
-      worldId,
-      getCoins: () => saveManager.get().wallet.coins,
-    });
-  }
-
-  /** Plain full-scene City entry — used to return from the edit-team detour, where the world map
-   * was already replaced by DefenseEditorScene and there's no live map left to overlay onto. */
-  function goCity(worldApi: WorldApiClient, worldId: string): void {
-    state.inLobby = false;
-    views.showCity({
-      onBack() { goWorldMap(worldApi, worldId); },
-      onEditTeam(teamId, teamName) {
-        views.showDefenseEditor({
-          onBack() { goCity(worldApi, worldId); },
-          getSave: () => saveManager.get(),
-          worldApi,
-          worldId,
-          target: { mode: 'attack', teamId, teamName },
-        });
-      },
-      worldApi,
-      worldId,
-      getCoins: () => saveManager.get().wallet.coins,
-    });
+    }, { overlay: opts?.overlay });
   }
 
   // onExit is where the whole social hub (friends/family/sect/world/mail) returns to when the
   // user backs all the way out — the scene that originally opened it (lobby / world map / ...).
   // Defaults to the world map since that's the only entry point today that doesn't thread one
-  // through (e.g. a future direct "family" button on the map itself).
-  function goFamilyHub(worldApi: WorldApiClient, worldId: string, onExit: () => void = () => goWorldMap(worldApi, worldId)): void {
+  // through (e.g. a future direct "family" button on the map itself). `overlay` keeps the SLG map
+  // alive underneath when the hub was opened from the world map (see goWorldMap.returnToMap).
+  function goFamilyHub(worldApi: WorldApiClient, worldId: string, onExit: () => void = () => goWorldMap(worldApi, worldId), overlay = false): void {
     const myAccountId = saveManager.get().accountId;
     views.showFamily({
       onBack: onExit,
-      onOpenSect() { goSectHub(worldApi, worldId, onExit); },
+      onOpenSect() { goSectHub(worldApi, worldId, onExit, overlay); },
       onNavTab(tab) {
         if (tab === 'family') return;
-        if (tab === 'sect') { goSectHub(worldApi, worldId, onExit); return; }
-        nav.goFriends({ defaultTab: tab, onBack: onExit });
+        if (tab === 'sect') { goSectHub(worldApi, worldId, onExit, overlay); return; }
+        nav.goFriends({ defaultTab: tab, onBack: onExit, overlay });
       },
       worldApi,
       worldId,
@@ -198,17 +196,17 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       playerName: playerName(),
       addFriend: async (publicId) => { await api!.requestFriend(publicId); },
       getFriendPublicIds: async () => new Set((await api!.getFriends()).map((f) => f.publicId)),
-    });
+    }, { overlay });
   }
 
-  function goSectHub(worldApi: WorldApiClient, worldId: string, onExit: () => void = () => goWorldMap(worldApi, worldId)): void {
+  function goSectHub(worldApi: WorldApiClient, worldId: string, onExit: () => void = () => goWorldMap(worldApi, worldId), overlay = false): void {
     const myAccountId = saveManager.get().accountId;
     const view = views.showSect({
       onBack: onExit,
       onNavTab(tab) {
         if (tab === 'sect') return;
-        if (tab === 'family') { goFamilyHub(worldApi, worldId, onExit); return; }
-        nav.goFriends({ defaultTab: tab, onBack: onExit });
+        if (tab === 'family') { goFamilyHub(worldApi, worldId, onExit, overlay); return; }
+        nav.goFriends({ defaultTab: tab, onBack: onExit, overlay });
       },
       worldApi,
       worldId,
@@ -216,7 +214,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       playerName: playerName(),
       getCoins: () => saveManager.get().wallet.coins,
       refreshWallet: async () => { await saveManager.refresh(); },
-    });
+    }, { overlay });
     // Keep the gateway connected + forward live sect-channel messages into the scene
     // (S8-4b: worldsvc → Redis pub/sub → gateway → here). Offline → REST history poll.
     const session = getNetSession();
@@ -235,18 +233,18 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
     }
   }
 
-  function goAuctionHouse(worldApi: WorldApiClient, worldId: string): void {
+  function goAuctionHouse(worldApi: WorldApiClient, worldId: string, opts?: { overlay?: boolean; onBack?: () => void }): void {
     views.showAuction({
-      onBack() { goWorldMap(worldApi, worldId); },
+      onBack: opts?.onBack ?? (() => goWorldMap(worldApi, worldId)),
       worldApi,
       getSave: () => saveManager.get(),
       reloadSave: async () => { await saveManager.refresh(); },
       myAccountId: saveManager.get().accountId,
-    });
+    }, { overlay: opts?.overlay });
   }
 
   return {
     goWorldEntry, goAuctionFromLobby, goWorldMap, goSiegeReplay, goDefenseEditor,
-    goCity, goFamilyHub, goSectHub, goAuctionHouse,
+    goFamilyHub, goSectHub, goAuctionHouse,
   };
 }

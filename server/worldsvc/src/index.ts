@@ -21,6 +21,7 @@ async function main(): Promise<void> {
 
   const mongo = await createWorldMongo(env.worldMongoUri, env.worldMongoDb);
   await mongo.ensureIndexes();
+  await mongo.runMigrations();
 
   const redis = await connectRedis(env.redisUrl);
 

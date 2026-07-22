@@ -141,9 +141,13 @@ export class DefenseEditorScene implements Scene {
   private teams: TeamTemplate[] = [];
   // Attack mode: this account's live card ledger (troops/injury/teamId), fetched alongside teams.
   private cardState: Record<string, CardSLGState> = {};
-  // Attack mode: base troop stock available to distribute to this team's cards (CHARACTER_CARDS_DESIGN §6.5).
-  private baseTroopStock = 0;
+  // Attack mode: the unified base troop pool (playerWorld.troops) available to distribute to this team's
+  // cards (CHARACTER_CARDS_DESIGN §6.3/§6.5). Trained on the home desk's Train Troops tile.
+  private troops = 0;
   private tool: Tool = { kind: 'erase' };
+  // Attack mode: the placed-card cell ("col:row") currently selected for per-card troop allocation
+  // (tapping a placed card opens its allocate stepper). Null = no card selected / stepper hidden.
+  private selectedCell: string | null = null;
   private loading = true;
   private saving = false;
   private filling = false;
@@ -212,7 +216,7 @@ export class DefenseEditorScene implements Scene {
         if (!this.destroyed) {
           this.teams = teams;
           this.cardState = me.cardState ?? {};
-          this.baseTroopStock = me.baseTroopStock ?? 0;
+          this.troops = me.troops ?? 0;
           const team = teams.find((tm) => tm.id === (this.cb.target as { teamId: string }).teamId);
           if (team) this.applyArmy(team.army);
         }
@@ -289,16 +293,29 @@ export class DefenseEditorScene implements Scene {
     });
   }
 
+  /**
+   * Attack mode: persist this team slot (setTeams merge) so every placed card gets a server-side
+   * teamId. Shared by doSave (explicit Save) and doFillTroops (auto-save before 分兵, since
+   * distributeTroops rejects any card not yet assigned to a team). setTeams only frees/clears troops
+   * for cards *removed* from all teams — kept cards keep their currentTroops, so calling this before
+   * a fill is safe.
+   */
+  private async persistTeam(): Promise<void> {
+    if (this.cb.target.mode !== 'attack') return;
+    const { teamId, teamName } = this.cb.target;
+    const army = this.buildArmy();
+    const next = this.teams.filter((tm) => tm.id !== teamId);
+    next.push({ id: teamId, name: teamName, army });
+    await this.cb.worldApi.setTeams(this.cb.worldId, next);
+    this.teams = next;
+  }
+
   private async doSave(): Promise<void> {
     if (this.saving) return;
     this.saving = true;
     try {
       if (this.cb.target.mode === 'attack') {
-        const { teamId, teamName } = this.cb.target;
-        const army = this.buildArmy();
-        const next = this.teams.filter((tm) => tm.id !== teamId);
-        next.push({ id: teamId, name: teamName, army });
-        await this.cb.worldApi.setTeams(this.cb.worldId, next);
+        await this.persistTeam();
       } else {
         const config = {
           garrison: [...this.garrison.entries()].map(([key, entry]) => {
@@ -321,7 +338,8 @@ export class DefenseEditorScene implements Scene {
 
   /**
    * §6.5 一键补满: distribute the base troop pool to this formation's placed cards, highest combat-power
-   * first, up to each card's troopCap. Manual per-card adjustment is not yet supported.
+   * first, up to each card's troopCap. Per-card manual adjustment is available via the tap-a-cell stepper
+   * (allocateToCard) — this one-tap button just fills them all by power priority.
    */
   private async doFillTroops(): Promise<void> {
     if (this.filling || this.cb.target.mode !== 'attack') return;
@@ -334,7 +352,7 @@ export class DefenseEditorScene implements Scene {
     if (placed.length === 0) return;
     placed.sort((a, b) => cardPower(b.card, equipmentInv) - cardPower(a.card, equipmentInv));
 
-    let pool = this.baseTroopStock;
+    let pool = this.troops;
     const allocations: Record<string, number> = {};
     for (const { entry, card } of placed) {
       if (pool <= 0) break;
@@ -353,6 +371,10 @@ export class DefenseEditorScene implements Scene {
 
     this.filling = true;
     try {
+      // Auto-save the formation first: a card placed on the grid but not yet saved has no server-side
+      // teamId, so distributeTroops would reject it ("Card X is not assigned to a team"). Persisting
+      // here means the player can place cards and hit 分兵 without a separate Save tap.
+      await this.persistTeam();
       await this.cb.worldApi.distributeTroops(this.cb.worldId, allocations);
       let total = 0;
       for (const [id, amount] of Object.entries(allocations)) {
@@ -363,7 +385,7 @@ export class DefenseEditorScene implements Scene {
         const entry = [...this.garrison.values()].find((e) => e.cardInstanceId === id);
         if (entry) entry.hp = nextTroops;
       }
-      this.baseTroopStock -= total;
+      this.troops -= total;
       this.showToast(t('world.team.fillDone').replace('{n}', String(total)));
     } catch (e) {
       this.showToast(this.errorMsg(e), C.red);
@@ -413,6 +435,13 @@ export class DefenseEditorScene implements Scene {
 
     // Footer: counts + clear + save
     this.renderFooter(h - FOOTER_H);
+
+    // Per-card allocate stepper overlay (attack mode) — shown for the currently selected placed card.
+    if (this.mode === 'attack' && this.selectedCell) {
+      const entry = this.garrison.get(this.selectedCell);
+      if (entry?.cardInstanceId) this.renderAllocateStepper(entry.cardInstanceId, h - FOOTER_H);
+      else this.selectedCell = null;
+    }
 
     if (this.loading) {
       const lbl = txt(t('world.loading'), FS.tiny, C.mid);
@@ -520,6 +549,47 @@ export class DefenseEditorScene implements Scene {
   private cellForCard(cardInstanceId: string): string | undefined {
     for (const [key, entry] of this.garrison) if (entry.cardInstanceId === cardInstanceId) return key;
     return undefined;
+  }
+
+  /** Per-card troop cap (statistics-derived) for a placed card instance; 0 if the card is no longer owned. */
+  private capForCard(cardInstanceId: string): number {
+    const card = this.cb.getSave?.().cardInv?.[cardInstanceId];
+    return card ? troopCap(card) : 0;
+  }
+
+  /**
+   * Per-card 分兵: add `requested` troops from the base pool to one placed card (server distributeTroops
+   * is add-only — troops committed to a card are only released by removing the card from the team, §6.1).
+   * Amount is clamped to min(requested, troopCap gap, pool). Persists the team first (so the card has a
+   * server teamId), then distributes and mirrors local state — same order/rules as doFillTroops.
+   */
+  private async allocateToCard(cardInstanceId: string, requested: number): Promise<void> {
+    if (this.filling || this.cb.target.mode !== 'attack') return;
+    const card = this.cb.getSave?.().cardInv?.[cardInstanceId];
+    if (!card) return;
+    const current = this.cardState[cardInstanceId]?.currentTroops ?? 0;
+    const gap = Math.max(0, troopCap(card) - current);
+    const amount = Math.min(requested, gap, this.troops);
+    if (amount <= 0) {
+      this.showToast(gap <= 0 ? t('world.team.cardFull') : t('world.team.fillNone'), C.red);
+      return;
+    }
+    this.filling = true;
+    try {
+      await this.persistTeam();
+      await this.cb.worldApi.distributeTroops(this.cb.worldId, { [cardInstanceId]: amount });
+      const cs = this.cardState[cardInstanceId];
+      const nextTroops = current + amount;
+      this.cardState[cardInstanceId] = { ...cs, currentTroops: nextTroops };
+      const entry = [...this.garrison.values()].find((e) => e.cardInstanceId === cardInstanceId);
+      if (entry) entry.hp = nextTroops;
+      this.troops -= amount;
+      this.showToast(t('world.team.fillDone').replace('{n}', String(amount)));
+    } catch (e) {
+      this.showToast(this.errorMsg(e), C.red);
+    }
+    this.filling = false;
+    this.render();
   }
 
   /**
@@ -719,8 +789,12 @@ export class DefenseEditorScene implements Scene {
         } else {
           const row = this.gRows[dr - buildRows]!;
           if (isAttack) {
-            const u = this.garrison.get(`${col}:${row}`);
-            if (u) this.drawUnit(g, px, py, cellW, cellH, u.unitType, u.hp);
+            const key = `${col}:${row}`;
+            const u = this.garrison.get(key);
+            if (u) {
+              const cap = this.mode === 'attack' && u.cardInstanceId ? this.capForCard(u.cardInstanceId) : undefined;
+              this.drawUnit(g, px, py, cellW, cellH, u.unitType, u.hp, cap, key === this.selectedCell);
+            }
           }
         }
       }
@@ -751,26 +825,42 @@ export class DefenseEditorScene implements Scene {
     }
   }
 
-  private drawUnit(g: PIXI.Graphics, px: number, py: number, cw: number, ch: number, type: UnitType, hp?: number): void {
+  private drawUnit(g: PIXI.Graphics, px: number, py: number, cw: number, ch: number, type: UnitType, hp?: number, cap?: number, selected = false): void {
     const cx = px + cw / 2, cy = py + ch / 2;
     const size = Math.min(cw, ch) * 0.72;
     const bx = cx - size / 2, by = cy - size / 2;
     const artUrl = UNIT_ART_URLS[type];
     if (artUrl) {
-      const frame = sketchPanel(size, size, { fill: 0xf0eee7, border: 0x33425a, width: 1.2, seed: seedFor(px, py, size) });
+      const frame = sketchPanel(size, size, {
+        fill: 0xf0eee7, border: selected ? C.gold : 0x33425a, width: selected ? 2.4 : 1.2, seed: seedFor(px, py, size),
+      });
       frame.x = bx; frame.y = by;
       this.bodyLayer.addChild(frame);
       this.drawArtFit(artUrl, bx + 1, by + 1, size - 2, size - 2);
     } else {
       const r = size / 2;
-      g.lineStyle(1.2, 0x33425a, 1);
+      g.lineStyle(selected ? 2.4 : 1.2, selected ? C.gold : 0x33425a, 1);
       g.beginFill(0x4477cc, 0.92);
       g.drawCircle(cx, cy, r);
       g.endFill();
     }
 
-    // Attack mode: show the card's live troop count under the icon — a card's cardState ledger, not
-    // a blueprint-relative HP fraction (a card's troop count isn't bounded by the unit's base HP stat).
+    // Attack mode: a troop bar above the head showing currentTroops / troopCap(card), green→amber→red by
+    // fill ratio, so at-a-glance you see how many soldiers each on-field character carries.
+    if (hp !== undefined && this.mode === 'attack' && cap && cap > 0) {
+      const ratio = Math.max(0, Math.min(1, hp / cap));
+      const barW = size, barH = 3, byBar = by - barH - 1;
+      const barColor = ratio >= 0.66 ? 0x4caf50 : ratio >= 0.33 ? 0xe0a020 : 0xcc3b3b;
+      g.beginFill(0x000000, 0.28);
+      g.drawRect(bx, byBar, barW, barH);
+      g.endFill();
+      g.beginFill(barColor, 1);
+      g.drawRect(bx, byBar, barW * ratio, barH);
+      g.endFill();
+    }
+
+    // Live troop count under the icon — a card's cardState ledger, not a blueprint-relative HP fraction
+    // (a card's troop count isn't bounded by the unit's base HP stat).
     if (hp !== undefined && this.mode === 'attack') {
       const label = txt(String(hp), FS.micro, 0x222222, true);
       label.anchor.set(0.5, 0);
@@ -786,7 +876,7 @@ export class DefenseEditorScene implements Scene {
     this.bodyLayer.addChild(panel);
 
     const countsStr = this.mode === 'attack'
-      ? `${t('world.defense.garrison').replace('{n}', String(this.garrison.size))}   ${t('world.team.committed').replace('{n}', String(this.committedTroops()))}   ${t('world.team.pool').replace('{n}', String(this.baseTroopStock))}`
+      ? `${t('world.defense.garrison').replace('{n}', String(this.garrison.size))}   ${t('world.team.committed').replace('{n}', String(this.committedTroops()))}   ${t('world.team.pool').replace('{n}', String(this.troops))}`
       : `${t('world.defense.buildings')} ${this.buildings.size}   ${t('world.defense.garrison').replace('{n}', String(this.garrison.size))}`;
     const counts = txt(countsStr, FS.micro, C.dark);
     counts.x = PAD; counts.y = top + 8;
@@ -831,8 +921,53 @@ export class DefenseEditorScene implements Scene {
     clearLbl.x = clear.x + btnW / 2; clearLbl.y = clear.y + btnH / 2;
     this.bodyLayer.addChild(clearLbl);
     this.hits.push({ rect: { x: clear.x, y: clear.y, w: btnW, h: btnH }, action: () => {
-      this.buildings.clear(); this.garrison.clear(); this.baseLevel = 0; this.render();
+      this.buildings.clear(); this.garrison.clear(); this.baseLevel = 0; this.selectedCell = null; this.render();
     } });
+  }
+
+  /**
+   * Per-card allocate stepper (attack mode): a bar just above the footer for the selected placed card,
+   * showing name + currentTroops/troopCap + a set of add presets (+100 / +500 / 补满此卡) drawing from the
+   * base pool, plus a close ✕. Add-only (server distributeTroops cannot pull troops back off a card).
+   */
+  private renderAllocateStepper(cardInstanceId: string, footerTop: number): void {
+    const { w } = this;
+    const card = this.cb.getSave?.().cardInv?.[cardInstanceId];
+    if (!card) { this.selectedCell = null; return; }
+    const cur = this.cardState[cardInstanceId]?.currentTroops ?? 0;
+    const cap = troopCap(card);
+    const barH = 40;
+    const top = footerTop - barH - 2;
+
+    const panel = sketchPanel(w, barH, { fill: 0xfaf7ef, border: C.gold, width: 1.6, seed: seedFor(0, top, w) });
+    panel.y = top;
+    this.bodyLayer.addChild(panel);
+
+    const name = t(`card.${card.defId}.name` as TranslationKey);
+    const info = txt(`${name}  ${cur}/${cap}   ${t('world.team.pool').replace('{n}', String(this.troops))}`, FS.micro, C.dark, true);
+    info.x = PAD; info.y = top + (barH - 14) / 2;
+    if (info.width > w * 0.5) info.scale.set((w * 0.5) / info.width);
+    this.bodyLayer.addChild(info);
+
+    // Right-aligned: [close] [补满此卡] [+500] [+100]
+    const btnH = 28, gap = 6;
+    let rx = w - PAD;
+    const addBtn = (label: string, wdt: number, tint: number, fg: number, action: () => void) => {
+      rx -= wdt;
+      const b = sketchPanel(wdt, btnH, { fill: tint, border: C.dark, seed: seedFor(rx, top, wdt) });
+      b.x = rx; b.y = top + (barH - btnH) / 2;
+      this.bodyLayer.addChild(b);
+      const l = txt(label, FS.micro, fg, true);
+      l.anchor.set(0.5, 0.5); l.x = rx + wdt / 2; l.y = b.y + btnH / 2;
+      if (l.width > wdt - 6) l.scale.set((wdt - 6) / l.width);
+      this.bodyLayer.addChild(l);
+      this.hits.push({ rect: { x: rx, y: b.y, w: wdt, h: btnH }, action });
+      rx -= gap;
+    };
+    addBtn('✕', 26, C.paper, C.mid, () => { this.selectedCell = null; this.render(); });
+    addBtn(t('world.team.cardFill'), 84, C.gold, C.dark, () => void this.allocateToCard(cardInstanceId, cap - cur));
+    addBtn('+500', 54, C.paper, C.dark, () => void this.allocateToCard(cardInstanceId, 500));
+    addBtn('+100', 54, C.paper, C.dark, () => void this.allocateToCard(cardInstanceId, 100));
   }
 
   /** Attacker army committed troops = sum of each placed card's live cardState.currentTroops (consistent with TeamsScene / server). */
@@ -874,19 +1009,29 @@ export class DefenseEditorScene implements Scene {
       const key = `${col}:${row}`;
       if (this.tool.kind === 'erase') {
         this.garrison.delete(key);
+        if (this.selectedCell === key) this.selectedCell = null;
       } else if (this.mode === 'attack' && this.tool.kind === 'card') {
         const { cardInstanceId, unitType } = this.tool;
-        // A card can only occupy one cell — placing it elsewhere moves it. Net size only grows when
-        // both the card is brand-new to this team AND the target cell isn't already overwriting another card.
-        const prevCell = this.cellForCard(cardInstanceId);
-        const willGrow = !prevCell && !this.garrison.has(key);
-        if (willGrow && this.garrison.size >= CARD_TEAM_MAX_SIZE) {
-          this.showToast(t('world.team.full'), C.red);
-          return;
+        const occupant = this.garrison.get(key);
+        // Tapping a cell held by a DIFFERENT placed card selects THAT card for troop allocation rather
+        // than clobbering it (safe — no accidental overwrite of another placed card).
+        if (occupant?.cardInstanceId && occupant.cardInstanceId !== cardInstanceId) {
+          this.selectedCell = key;
+        } else {
+          // A card can only occupy one cell — placing it elsewhere moves it. Net size only grows when
+          // both the card is brand-new to this team AND the target cell isn't already overwriting another card.
+          const prevCell = this.cellForCard(cardInstanceId);
+          const willGrow = !prevCell && !this.garrison.has(key);
+          if (willGrow && this.garrison.size >= CARD_TEAM_MAX_SIZE) {
+            this.showToast(t('world.team.full'), C.red);
+            return;
+          }
+          if (prevCell && prevCell !== key) this.garrison.delete(prevCell);
+          const troops = this.cardState[cardInstanceId]?.currentTroops ?? 0;
+          this.garrison.set(key, { unitType, hp: troops, cardInstanceId });
+          // Select the just-placed card so its allocate stepper appears immediately.
+          this.selectedCell = key;
         }
-        if (prevCell && prevCell !== key) this.garrison.delete(prevCell);
-        const troops = this.cardState[cardInstanceId]?.currentTroops ?? 0;
-        this.garrison.set(key, { unitType, hp: troops, cardInstanceId });
       } else if (this.tool.kind === 'unit') {
         if (!this.garrison.has(key) && this.garrison.size >= MAX_GARRISON) {
           this.showToast(t('world.defense.full'), C.red);
@@ -943,6 +1088,9 @@ export class DefenseEditorScene implements Scene {
     this.destroyed = true;
     for (const u of this.unsubs) u();
     this.unsubs.length = 0;
+    // Free descendant Text baseTextures before dropping the container (overlay over the live
+    // WorldMapScene → leaks a screenful of Text per close otherwise). See sketchUi.tearDownChildren.
+    tearDownChildren(this.container);
     this.container.destroy({ children: true });
   }
 }

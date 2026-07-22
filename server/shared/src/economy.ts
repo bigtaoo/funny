@@ -241,6 +241,26 @@ export const IAP_TIERS_LIST: IapTierDef[] = [
 export const FIRST_PURCHASE_BONUS_MULTIPLIER = 2;
 
 /**
+ * Reverse-lookup a tier id from its (pre-bonus) coin grant. IAP_TIERS values are pairwise distinct,
+ * so this is unambiguous. Used to recover the real USD price of a recharge for the cumulative-recharge
+ * counter (GACHA_DESIGN §13), which the receipt-verification path only reports as a coin amount.
+ */
+export function tierIdForCoins(coins: number): string | undefined {
+  return Object.entries(IAP_TIERS).find(([, c]) => c === coins)?.[0];
+}
+
+/** USD cents (display price) for a given tier id, or 0 if unknown. */
+export function usdCentsForTier(tierId: string): number {
+  return IAP_TIERS_LIST.find((t) => t.id === tierId)?.usdCents ?? 0;
+}
+
+/** USD cents for a (pre-bonus) coin grant, via tierIdForCoins. 0 if the amount matches no known tier. */
+export function usdCentsForCoins(coins: number): number {
+  const tier = tierIdForCoins(coins);
+  return tier ? usdCentsForTier(tier) : 0;
+}
+
+/**
  * Fallback tier for the dev IAP stub when a receipt has no `tier:` prefix
  * (e.g. E2E `topup_<uid>` receipts). Must be a key of IAP_TIERS; the standard
  * web entry tier (t499 = 550 coins, > RENAME_COST) so dev top-ups are useful.

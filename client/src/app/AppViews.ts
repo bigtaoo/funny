@@ -36,6 +36,7 @@ import type { StatsCallbacks } from '../scenes/StatsScene';
 import type { AchievementCallbacks } from '../scenes/AchievementScene';
 import type { LeaderboardCallbacks } from '../scenes/LeaderboardScene';
 import type { BattlePassCallbacks } from '../scenes/BattlePassScene';
+import type { RechargeCallbacks } from '../scenes/RechargeScene';
 import type { ReplaySceneCallbacks } from '../scenes/ReplayScene';
 import type { ResultSceneCallbacks, EloResult } from '../scenes/ResultScene';
 import type { StatePlayerSceneCallbacks } from '../scenes/StatePlayerScene';
@@ -136,6 +137,17 @@ export interface FadeOpts {
   fade?: boolean;
 }
 
+/**
+ * Mount mode for the SLG panels that can be opened both as a top-level scene (from the lobby) and
+ * as an overlay on top of the still-live WorldMapScene (from within the SLG). When `overlay` is set,
+ * the panel is pushed via SceneManager.pushOverlay — the map stays alive, mounted and ticking
+ * underneath, so closing the panel ({@link AppViews.hideOverlay}) never tears down and rebuilds the
+ * SLG world map (ADR-044). When unset the panel is a normal full-scene `goto` swap.
+ */
+export interface MountOpts {
+  overlay?: boolean;
+}
+
 /** ResultScene takes positional args, so the core hands the view a props bag. */
 export interface ResultViewProps {
   winner: OwnerId | null;
@@ -182,6 +194,8 @@ export interface AppViews {
   showLeaderboard(cb: LeaderboardCallbacks): void;
   /** Battle pass panel (SE-9). */
   showBattlePass(cb: BattlePassCallbacks): void;
+  /** Cumulative recharge milestone panel (GACHA_DESIGN §13, ADR-045). */
+  showRecharge(cb: RechargeCallbacks): void;
   /** Title wall (S10). */
   showTitles(cb: TitlesSceneCallbacks): void;
   /** Daily check-in + daily tasks (B5, RETENTION_DESIGN). */
@@ -201,33 +215,36 @@ export interface AppViews {
 
   // Held-by-reference scenes return a handle the core pushes server events into.
   showRoom(cb: RoomSceneCallbacks): RoomView;
-  /** Social hub (friends / chat / mail tabs). The core pushes social events to the handle. */
-  showFriends(cb: FriendsSceneCallbacks): FriendsView;
-  /** 1:1 chat window. The core pushes chat_message to the handle. */
-  showChat(cb: ChatSceneCallbacks): ChatView;
+  /**
+   * Social hub (friends / chat / mail tabs). The core pushes social events to the handle.
+   * `opts.overlay` opens it over the live SLG map (see {@link MountOpts}) when entered from the world map.
+   */
+  showFriends(cb: FriendsSceneCallbacks, opts?: MountOpts): FriendsView;
+  /** 1:1 chat window. The core pushes chat_message to the handle. `opts.overlay` opens it over the live SLG map. */
+  showChat(cb: ChatSceneCallbacks, opts?: MountOpts): ChatView;
   /** SLG world map (S8). Returns a handle the core forwards live SLG pushes to. Always cross-fades in — entering the SLG. */
   showWorldMap(cb: WorldMapCallbacks): WorldMapView;
-  /** SLG family hub (S8-4). */
-  showFamily(cb: FamilySceneCallbacks): void;
-  /** SLG sect hub (S8-4b). Returns a handle the core forwards live sect-channel pushes to. */
-  showSect(cb: SectSceneCallbacks): SectSceneView;
-  /** SLG auction house (S8-5). */
-  showAuction(cb: AuctionSceneCallbacks): void;
-  /** SLG simplified defense placement editor (S8-9 C3). */
-  showDefenseEditor(cb: DefenseEditorCallbacks): void;
+  /** SLG family hub (S8-4). `opts.overlay` opens it over the live SLG map (see {@link MountOpts}). */
+  showFamily(cb: FamilySceneCallbacks, opts?: MountOpts): void;
+  /** SLG sect hub (S8-4b). Returns a handle the core forwards live sect-channel pushes to. `opts.overlay` opens it over the live SLG map. */
+  showSect(cb: SectSceneCallbacks, opts?: MountOpts): SectSceneView;
+  /** SLG auction house (S8-5). `opts.overlay` opens it over the live SLG map (see {@link MountOpts}). */
+  showAuction(cb: AuctionSceneCallbacks, opts?: MountOpts): void;
+  /** SLG simplified defense placement editor (S8-9 C3). `opts.overlay` opens it over the live SLG map. */
+  showDefenseEditor(cb: DefenseEditorCallbacks, opts?: MountOpts): void;
   /** PvP deck builder (P3, PVP_LOADOUT §8). */
   showDeckBuilder(cb: DeckBuilderCallbacks): void;
-  /** SLG home-city management (SLG_CITY_DESIGN P1). */
-  showCity(cb: CitySceneCallbacks): void;
   /**
-   * Same scene as {@link showCity}, but mounted as an overlay on top of the still-live WorldMapScene
-   * (SceneManager.pushOverlay) instead of replacing it — the common open/close Home Desk edge, so the
-   * SLG map never tears down and rebuilds. Only valid while a WorldMapScene is current. Reversed by
-   * {@link hideCityOverlay}.
+   * SLG home-city management (SLG_CITY_DESIGN P1). `opts.overlay` mounts it as an overlay on top of the
+   * still-live WorldMapScene (SceneManager.pushOverlay) instead of replacing it — the common open/close
+   * Home Desk edge, so the SLG map never tears down and rebuilds (ADR-044). Reversed by {@link hideOverlay}.
    */
-  showCityOverlay(cb: CitySceneCallbacks): void;
-  /** Pop the overlay pushed by {@link showCityOverlay}, resuming the WorldMapScene underneath. */
-  hideCityOverlay(): void;
+  showCity(cb: CitySceneCallbacks, opts?: MountOpts): void;
+  /**
+   * Pop whatever SLG panel was pushed with `{ overlay: true }`, resuming the WorldMapScene underneath.
+   * No-op when nothing is overlaid.
+   */
+  hideOverlay(): void;
   /**
    * Netplay match. The core passes the pre-built engine in `opts.engine` plus the
    * local side; the view turns `localSide` into the side-flipped layout. Always cross-fades in — entering a match.

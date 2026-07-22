@@ -475,9 +475,10 @@ export class CityService {
   }
 
   /**
-   * Distribute troops from baseTroopStock to card slots (CC-3, CHARACTER_CARDS_DESIGN §6.3).
-   * allocations: { [cardInstanceId]: troopsToAdd }. Each card must have a teamId (be in a team).
-   * Deducts total from baseTroopStock; updates cardState[id].currentTroops.
+   * Distribute troops from the base troop pool (`playerWorld.troops`, the unified 基地兵力池) to card
+   * slots (CC-3, CHARACTER_CARDS_DESIGN §6.3). allocations: { [cardInstanceId]: troopsToAdd }.
+   * Each card must have a teamId (be in a team). Deducts total from `troops`; updates cardState[id].currentTroops.
+   * Only decreases `troops`, so it can never violate the troopCap invariant (enforced on every way IN).
    */
   async distributeTroops(worldId: string, accountId: string, allocations: Record<string, number>): Promise<void> {
     const { cols, now } = this.core.deps;
@@ -486,7 +487,7 @@ export class CityService {
     if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
 
     const cardState = pw.cardState ?? {};
-    const stock = pw.baseTroopStock ?? 0;
+    const stock = pw.troops;
     let totalCost = 0;
     const cardStateSet: Record<string, unknown> = {};
 
@@ -506,7 +507,7 @@ export class CityService {
 
     await cols.playerWorld.updateOne(
       { _id: pwId },
-      { $set: cardStateSet, $inc: { baseTroopStock: -totalCost, rev: 1 } },
+      { $set: cardStateSet, $inc: { troops: -totalCost, rev: 1 } },
     );
     void now; // suppress unused warning
   }

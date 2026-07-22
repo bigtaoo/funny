@@ -106,7 +106,7 @@ export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TB
     private showJoinRequestsModal(): void {
       const { w, h } = this;
       const ml = this.modalLayer;
-      ml.removeChildren();
+      tearDownChildren(ml); // free prior modal Text (title/rows/labels) — bare removeChildren orphaned them
       this.modalHits = [];
       this.modalOpen = true;
 
@@ -265,7 +265,7 @@ export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TB
         ts: Number.MAX_SAFE_INTEGER,
       };
       this.messages = [optimistic, ...this.messages];
-      this.scrollYChannel = Number.MAX_SAFE_INTEGER;
+      this.channelStick = true; // sending always snaps to the newest line (renderChannel pins to bottom)
       if (!this.destroyed) this.render();
       try {
         await this.cb.worldApi.sendFamilyMessage(this.family.familyId, body, this.cb.playerName);

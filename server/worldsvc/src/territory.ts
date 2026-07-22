@@ -7,7 +7,6 @@ import {
   PROTECTION_SEC,
   GARRISON_PER_TILE,
   troopCapFor,
-  BASE_TROOP_STOCK_INITIAL,
   RELOCATE_COST,
   WATCHTOWER_COST,
   RESOURCE_TYPES,
@@ -120,7 +119,6 @@ export class TerritoryService {
       lastTickAt: t,
       mainBaseTile: tid,
       buildings,
-      baseTroopStock: BASE_TROOP_STOCK_INITIAL,
       ...(familyId ? { familyId } : {}),
       rev: 0,
     };

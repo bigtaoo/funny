@@ -8,6 +8,7 @@ import {
   playerWorldId,
   findMarchPath,
   marchDurationFromPath,
+  marchMoraleFromPath,
   OCCUPY_MIN_TROOPS,
   MARCH_MIN_TROOPS,
   isInVision,
@@ -123,6 +124,10 @@ export class MarchService {
     const { cols, now } = this.core.deps;
     if (!MARCHABLE_KINDS.has(kind)) {
       throw new SlgError('NOT_IMPLEMENTED', `March kind ${kind} is not implemented (siege S8-3)`);
+    }
+    // Scout temporarily disabled (2026-07-21): entry point hidden client-side; reject here too in case of a stale client or direct API call.
+    if (kind === 'scout') {
+      throw new SlgError('NOT_IMPLEMENTED', 'Scout is temporarily disabled');
     }
     const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
     if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
@@ -251,9 +256,6 @@ export class MarchService {
       }
       // Card armies have no server-side minimum-troops gate (see hasCardArmy note above) — only the legacy flat-troop path checks this.
       if (!hasCardArmy && troops < OCCUPY_MIN_TROOPS) throw new SlgError('NO_TROOPS', `Siege requires at least ${OCCUPY_MIN_TROOPS} troops`);
-    } else if (kind === 'scout') {
-      // Scout: no fighting or occupation; send a small force to any non-obstacle tile (including enemy/protected/neutral/center) to reveal vision, then auto-return.
-      // No ownership/center/protection-period restriction — blocking obstacle terrain above is sufficient. No defenderId (no under_attack warning).
     } else {
       // sweep: clear NPC garrison from neutral / resource tiles (no occupation; loot is carried back on return).
       if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'Cannot sweep the world center');
@@ -271,6 +273,9 @@ export class MarchService {
     const path = await this.computeMarchPath(worldId, fromX, fromY, toX, toY, accountId);
     const departAt = t;
     const arriveAt = departAt + marchDurationFromPath(path) * 1000;
+    // Morale (士气): 1 point lost per tile moved, computed once from the full path since marches don't tick
+    // live in transit (single scheduled arrival event). Scales combat power on arrival — see moraleCombatMultiplier.
+    const morale = marchMoraleFromPath(path);
     const mid = marchId(worldId, accountId, departAt, ++this.core.marchSeq);
     const doc: MarchDoc = {
       _id: mid,
@@ -280,6 +285,7 @@ export class MarchService {
       toTile: toTid,
       kind,
       troops,
+      morale,
       ...(army && army.length > 0 ? { army } : {}),
       // ADR-026: record the deployed team slot so it is skipped as a defender while out (meaningful for both team-based attacks and, since 2026-07-15, occupy marches).
       ...((kind === 'attack' || kind === 'occupy') && teamId ? { teamId } : {}),

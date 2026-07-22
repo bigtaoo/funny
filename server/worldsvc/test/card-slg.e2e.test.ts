@@ -9,7 +9,6 @@ import {
   SLG_MAP_H,
   TROOP_CAP_BASE,
   CARD_INJURY_DURATION_MS,
-  BASE_TROOP_STOCK_INITIAL,
   CARD_RECOVER_COIN_COST,
 } from '@nw/shared';
 import type { CardInstance } from '@nw/shared';
@@ -121,10 +120,29 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
     await m.close();
   });
 
-  it('joinWorld sets baseTroopStock to BASE_TROOP_STOCK_INITIAL', async () => {
+  it('joinWorld seeds the unified troop pool to the base cap and has no legacy baseTroopStock', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const pw = await m.collections.playerWorld.findOne({ _id: playerWorldId(W, 'a') });
-    expect(pw?.baseTroopStock).toBe(BASE_TROOP_STOCK_INITIAL);
+    // Fresh capital: desk:1, drillYard:0 → troopCapFor = TROOP_CAP_BASE; troops starts full at the cap.
+    expect(pw?.troops).toBe(TROOP_CAP_BASE);
+    expect(pw?.troopCap).toBe(TROOP_CAP_BASE);
+    expect((pw as { baseTroopStock?: number } | null)?.baseTroopStock).toBeUndefined();
+  });
+
+  it('runMigrations folds legacy baseTroopStock into troops, refreshes troopCap, and drops the field', async () => {
+    const pwId = playerWorldId(W, 'a');
+    await svc.joinWorld(W, 'a', 5, 5);
+    // Simulate a pre-unification doc: old base cap (2000) frozen in troopCap, plus a separate 10000 stock.
+    await m.collections.playerWorld.updateOne(
+      { _id: pwId },
+      { $set: { troops: 2000, troopCap: 2000, baseTroopStock: 10000 } as never },
+    );
+    await m.runMigrations();
+    const pw = await m.collections.playerWorld.findOne({ _id: pwId });
+    // desk:1, drillYard:0 → refreshed cap = TROOP_CAP_BASE (10000); folded min(10000, 2000+10000) = 10000.
+    expect(pw?.troopCap).toBe(TROOP_CAP_BASE);
+    expect(pw?.troops).toBe(TROOP_CAP_BASE);
+    expect((pw as { baseTroopStock?: number } | null)?.baseTroopStock).toBeUndefined();
   });
 
   it('setTeams with cardInstanceId — validates uniqueness across teams', async () => {
@@ -185,7 +203,7 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
     expect(pw?.resources?.paper).toBeGreaterThan(0);
   });
 
-  it('distributeTroops deducts from baseTroopStock and adds to cardState.currentTroops', async () => {
+  it('distributeTroops deducts from the troop pool and adds to cardState.currentTroops', async () => {
     const pwId = playerWorldId(W, 'a');
     await svc.joinWorld(W, 'a', 5, 5);
     // Assign card to team first.
@@ -196,7 +214,8 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
     await svc.distributeTroops(W, 'a', { 'card-d': 500 });
     const pw = await m.collections.playerWorld.findOne({ _id: pwId });
     expect(pw?.cardState?.['card-d']?.currentTroops).toBe(500);
-    expect(pw?.baseTroopStock).toBe(BASE_TROOP_STOCK_INITIAL - 500);
+    // Fresh pool = TROOP_CAP_BASE; distributing 500 to the card draws it from the same pool.
+    expect(pw?.troops).toBe(TROOP_CAP_BASE - 500);
   });
 
   it('distributeTroops rejects if card not in a team', async () => {
@@ -204,12 +223,12 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
     await expect(svc.distributeTroops(W, 'a', { 'unassigned-card': 100 })).rejects.toThrow();
   });
 
-  it('distributeTroops rejects when insufficient baseTroopStock', async () => {
+  it('distributeTroops rejects when the troop pool is insufficient', async () => {
     const pwId = playerWorldId(W, 'a');
     await svc.joinWorld(W, 'a', 5, 5);
     await m.collections.playerWorld.updateOne(
       { _id: pwId },
-      { $set: { baseTroopStock: 10, 'cardState.card-e': { currentTroops: 0, teamId: 't1' } as CardSLGState } },
+      { $set: { troops: 10, 'cardState.card-e': { currentTroops: 0, teamId: 't1' } as CardSLGState } },
     );
     await expect(svc.distributeTroops(W, 'a', { 'card-e': 100 })).rejects.toThrow('troop stock');
   });

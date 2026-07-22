@@ -278,9 +278,16 @@ export const SLG_GEN = {
 } as const;
 
 // ── Numeric constants (U6 DRAFT; tune after launch) ────────────────────
-export const TROOP_CAP_BASE = 2000;
+// Base city troop pool cap (drillYard adds +DRILL_TROOPCAP_STEP/level on top). Set to the
+// new-player join grant so a fresh capital holds its whole starting reserve (unified troop pool,
+// CHARACTER_CARDS_DESIGN §6.3/§6.5 — troops = 基地兵力池, distributed to cards from here).
+export const TROOP_CAP_BASE = 10000;
 export const MARCH_SPEED_SEC_PER_TILE = 6; // seconds of march time per tile
 export const MARCH_MIN_TROOPS = 1; // minimum troops required to send a march
+/** Morale ceiling for a fresh march (out of 100). Bound to the march instance — resets to full on every departure. */
+export const MARCH_MORALE_MAX = 100;
+/** Combat-power multiplier floor at zero morale — a long-distance march still fights at 70% strength, never worse. */
+export const MARCH_MORALE_COMBAT_FLOOR = 0.7;
 export const RESOURCE_CAP = 200_000;
 export const RESOURCE_YIELD_BASE = 100; // base yield per tile per hour (× level multiplier)
 export const PROTECTION_SEC = 8 * 3600; // protection duration for new players / after home-city is destroyed

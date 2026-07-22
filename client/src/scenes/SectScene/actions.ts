@@ -186,6 +186,7 @@ export function ActionsMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBas
       if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
       this.channelActive = false;
       this.channelSending = true;
+      this.channelStick = true; // sending always snaps to the newest line (renderChannel pins to bottom)
       this.render();
       try {
         await this.cb.worldApi.sendSectMessage(this.cb.worldId, body, this.cb.playerName);

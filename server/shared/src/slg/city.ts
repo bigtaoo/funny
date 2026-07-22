@@ -49,7 +49,7 @@ export const DRILL_TRAIN_SPEED_STEP = 0.08;    // drillYard: -8% training time p
 export const DRILL_TRAIN_SPEED_FLOOR = 0.5;    // drillYard: training-time multiplier never below 0.5
 export const DRILL_QUEUE_PER_LEVELS = 2;       // drillYard: +1 training queue slot per this many levels
 // DRAFT: base = TROOP_CAP_BASE (a single team can carry the whole starting pool with no satchel built) and
-// step mirrors DRILL_TROOPCAP_STEP so a maxed satchel (L10) lets one team carry the whole max troopCap (12,000) —
+// step mirrors DRILL_TROOPCAP_STEP so a maxed satchel (L10) lets one team carry the whole max troopCap (20,000) —
 // without it, surplus troops from a maxed drillYard must be split across multiple teams (D-CITY-9).
 export const SATCHEL_CARRY_BASE = TROOP_CAP_BASE; // per-march troop-carry cap with no satchel built
 export const SATCHEL_CARRY_STEP = 1000;           // satchel: +1000 per-march troop-carry cap per level

@@ -33,6 +33,7 @@ import { StatsScene, type StatsCallbacks } from './scenes/StatsScene';
 import { AchievementScene, type AchievementCallbacks } from './scenes/AchievementScene';
 import { LeaderboardScene, type LeaderboardCallbacks } from './scenes/LeaderboardScene';
 import { BattlePassScene, type BattlePassCallbacks } from './scenes/BattlePassScene';
+import { RechargeScene, type RechargeCallbacks } from './scenes/RechargeScene';
 import { TitlesScene, type TitlesSceneCallbacks } from './scenes/TitlesScene';
 import { WorldMapScene, type WorldMapCallbacks, type WorldMapView } from './scenes/WorldMapScene';
 import { FamilyScene, type FamilySceneCallbacks } from './scenes/FamilyScene';
@@ -58,7 +59,7 @@ import { installTextPaddingFloor } from './render/pixiText';
 import { preloadBoot } from './assets/bootManifest';
 import { LoadingOverlay } from './render/LoadingOverlay';
 import { createAppCore } from './app/createAppCore';
-import type { AppViews, LobbyView, RoomView, FriendsView, ChatView, NetGameView, ResultViewProps, FadeOpts } from './app/AppViews';
+import type { AppViews, LobbyView, RoomView, FriendsView, ChatView, NetGameView, ResultViewProps, FadeOpts, MountOpts } from './app/AppViews';
 
 /**
  * The PIXI implementation of AppViews: each show*() runs the same
@@ -214,6 +215,11 @@ class PixiAppViews implements AppViews {
     this.manager.goto(this.timedBuild('BattlePassScene', () => new BattlePassScene(this.layout, this.input, cb)));
   }
 
+  showRecharge(cb: RechargeCallbacks): void {
+    this.leaveLobby();
+    this.manager.goto(this.timedBuild('RechargeScene', () => new RechargeScene(this.layout, this.input, cb)));
+  }
+
   showTitles(cb: TitlesSceneCallbacks): void {
     this.leaveLobby();
     this.manager.goto(this.timedBuild('TitlesScene', () => new TitlesScene(this.layout, this.input, cb)));
@@ -272,10 +278,8 @@ class PixiAppViews implements AppViews {
     };
   }
 
-  showFriends(cb: FriendsSceneCallbacks): FriendsView {
-    this.leaveLobby();
-    const scene = this.timedBuild('FriendsScene', () => new FriendsScene(this.layout, this.input, cb));
-    this.manager.goto(scene);
+  showFriends(cb: FriendsSceneCallbacks, opts?: MountOpts): FriendsView {
+    const scene = this.mountSlg('FriendsScene', () => new FriendsScene(this.layout, this.input, cb), opts);
     return {
       applyFriendPresence: (p) => scene.applyFriendPresence(p),
       applyFriendRequest:  (r) => scene.applyFriendRequest(r),
@@ -285,10 +289,8 @@ class PixiAppViews implements AppViews {
     };
   }
 
-  showChat(cb: ChatSceneCallbacks): ChatView {
-    this.leaveLobby();
-    const scene = this.timedBuild('ChatScene', () => new ChatScene(this.layout, this.input, cb));
-    this.manager.goto(scene);
+  showChat(cb: ChatSceneCallbacks, opts?: MountOpts): ChatView {
+    const scene = this.mountSlg('ChatScene', () => new ChatScene(this.layout, this.input, cb), opts);
     return { applyIncoming: (m) => scene.applyIncoming(m) };
   }
 
@@ -305,39 +307,40 @@ class PixiAppViews implements AppViews {
     };
   }
 
-  showFamily(cb: FamilySceneCallbacks): void {
-    this.leaveLobby();
-    this.manager.goto(this.timedBuild('FamilyScene', () => new FamilyScene(this.layout, this.input, cb)));
-  }
-
-  showSect(cb: SectSceneCallbacks): SectSceneView {
-    this.leaveLobby();
-    const scene = this.timedBuild('SectScene', () => new SectScene(this.layout, this.input, cb));
-    this.manager.goto(scene);
+  /**
+   * Mount an SLG panel either as a full-scene swap (`goto`) or, when `opts.overlay` is set, as an
+   * overlay on top of the still-live WorldMapScene (`pushOverlay`) so the map never rebuilds (ADR-044).
+   * Overlay mounts are always reached from within the SLG, so there is no lobby resize listener to
+   * detach — `leaveLobby` is skipped there.
+   */
+  private mountSlg<T extends Scene>(name: string, build: () => T, opts?: MountOpts): T {
+    const scene = this.timedBuild(name, build);
+    if (opts?.overlay) this.manager.pushOverlay(scene);
+    else { this.leaveLobby(); this.manager.goto(scene); }
     return scene;
   }
 
-  showAuction(cb: AuctionSceneCallbacks): void {
-    this.leaveLobby();
-    this.manager.goto(this.timedBuild('AuctionScene', () => new AuctionScene(this.layout, this.input, cb)));
+  showFamily(cb: FamilySceneCallbacks, opts?: MountOpts): void {
+    this.mountSlg('FamilyScene', () => new FamilyScene(this.layout, this.input, cb), opts);
   }
 
-  showDefenseEditor(cb: DefenseEditorCallbacks): void {
-    this.leaveLobby();
-    this.manager.goto(this.timedBuild('DefenseEditorScene', () => new DefenseEditorScene(this.layout, this.input, cb)));
+  showSect(cb: SectSceneCallbacks, opts?: MountOpts): SectSceneView {
+    return this.mountSlg('SectScene', () => new SectScene(this.layout, this.input, cb), opts);
   }
 
-  showCity(cb: CitySceneCallbacks): void {
-    this.leaveLobby();
-    this.manager.goto(this.timedBuild('CityScene', () => new CityScene(this.layout, this.input, cb)));
+  showAuction(cb: AuctionSceneCallbacks, opts?: MountOpts): void {
+    this.mountSlg('AuctionScene', () => new AuctionScene(this.layout, this.input, cb), opts);
   }
 
-  showCityOverlay(cb: CitySceneCallbacks): void {
-    // Reached only from within the still-live WorldMapScene — no lobby listener to detach.
-    this.manager.pushOverlay(this.timedBuild('CityScene', () => new CityScene(this.layout, this.input, cb)));
+  showDefenseEditor(cb: DefenseEditorCallbacks, opts?: MountOpts): void {
+    this.mountSlg('DefenseEditorScene', () => new DefenseEditorScene(this.layout, this.input, cb), opts);
   }
 
-  hideCityOverlay(): void {
+  showCity(cb: CitySceneCallbacks, opts?: MountOpts): void {
+    this.mountSlg('CityScene', () => new CityScene(this.layout, this.input, cb), opts);
+  }
+
+  hideOverlay(): void {
     this.manager.popOverlay();
   }
 

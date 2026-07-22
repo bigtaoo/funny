@@ -13,11 +13,13 @@ import {
   npcGarrison,
   npcBaseHp,
   OCCUPY_HOLD_SEC,
+  MARCH_MORALE_MAX,
+  moraleCombatMultiplier,
   SlgError,
   type SiegeResolution,
   type ProceduralTile,
 } from '@nw/shared';
-import { runSiegeBattle, synthesizeArmy, resolveCardArmy, toEngineCardInstances, computeCardStateUpdates } from '../siegeEngine';
+import { runSiegeBattle, synthesizeArmy, scaleArmyByRatio, resolveCardArmy, toEngineCardInstances, computeCardStateUpdates } from '../siegeEngine';
 import type { GarrisonEntry, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import type { TileDoc, PlayerWorldDoc, MarchDoc, OccupationDoc } from '../db';
 import type { SiegeReplayInputs, OccupationView } from '../worldTypes';
@@ -117,10 +119,15 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       // attack sieges (combatSiege/arrival.ts) — occupying land now reflects the player's actual army, not a
       // generic synthesized force. Flat/legacy army or none → synthesize as before.
       const attackerSave = hasCardArmy ? await this.core.meta.getSaveFields(m.ownerId).catch(() => null) : null;
-      const attackerArmy: GarrisonEntry[] =
+      // Morale (士气): scale attacker strength by the march's remaining morale (see combatSiege/arrival.ts applySiege for detail).
+      const moraleMult = moraleCombatMultiplier(m.morale ?? MARCH_MORALE_MAX);
+      const effTroops = Math.round(m.troops * moraleMult);
+      const attackerArmy: GarrisonEntry[] = scaleArmyByRatio(
         hasCardArmy
           ? resolveCardArmy(rawArmy, pw.cardState ?? {}, attackerSave?.cardInv ?? {})
-          : (rawArmy.length > 0 ? (rawArmy as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker'));
+          : (rawArmy.length > 0 ? (rawArmy as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker')),
+        moraleMult,
+      );
       let cardInstances: EngineCardInstance[] | undefined;
       let cardEquipInv: EngineEquipInv | undefined;
       if (hasCardArmy && attackerSave) {
@@ -140,7 +147,7 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
           tile: m.toTile,
           err: (err as Error).message,
         });
-        res = resolveSiege(m.troops, garrison);
+        res = resolveSiege(effTroops, garrison);
         replay = null;
       }
 
@@ -176,10 +183,15 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       const hasCardArmy = rawArmy.some((e) => !!e.cardInstanceId);
       const garrison = tile.contestedGarrison ?? 0;
       const attackerSave = hasCardArmy ? await this.core.meta.getSaveFields(m.ownerId).catch(() => null) : null;
-      const attackerArmy: GarrisonEntry[] =
+      // Morale (士气): scale attacker strength by the march's remaining morale (see combatSiege/arrival.ts applySiege for detail).
+      const moraleMult = moraleCombatMultiplier(m.morale ?? MARCH_MORALE_MAX);
+      const effTroops = Math.round(m.troops * moraleMult);
+      const attackerArmy: GarrisonEntry[] = scaleArmyByRatio(
         hasCardArmy
           ? resolveCardArmy(rawArmy, pw.cardState ?? {}, attackerSave?.cardInv ?? {})
-          : (rawArmy.length > 0 ? (rawArmy as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker'));
+          : (rawArmy.length > 0 ? (rawArmy as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker')),
+        moraleMult,
+      );
       let cardInstances: EngineCardInstance[] | undefined;
       let cardEquipInv: EngineEquipInv | undefined;
       if (hasCardArmy && attackerSave) {
@@ -199,7 +211,7 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
           tile: m.toTile,
           err: (err as Error).message,
         });
-        res = resolveSiege(m.troops, garrison);
+        res = resolveSiege(effTroops, garrison);
         replay = null;
       }
 

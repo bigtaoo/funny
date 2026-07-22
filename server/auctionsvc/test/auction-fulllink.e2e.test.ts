@@ -221,14 +221,16 @@ describe.skipIf(!mongo)('Auction full-link E2E (real WorldApiClient → real auc
   it('equipment listing round-trips create → list → mine → buy across the wire (instance snapshot survives)', async () => {
     const seller = clientFor('seller1');
     const buyer = clientFor('buyer1');
-    // Seed a rare weapon (ref price 400) with a full affix snapshot in the seller's meta inventory.
+    // Seed a rare weapon at +3 with a full affix snapshot in the seller's meta inventory. Ref price rises
+    // with enhancement level (equip:{defId}:{level} category, see fix(auction): fold enhancement level
+    // into equipment price guardrail) — 800 clears the +3 floor where the old flat +0 price (400) no longer would.
     seedEquip('seller1', mkEquip('eq1', 'wp_marker', { level: 3, affixes: [{ id: 'm_atk', value: 8 }, { id: 's_hp', value: 5 }] }));
 
     // create: equipment is single-unit (qty coerced to 1); escrow removes it from the seller's inventory.
-    const view = await seller.createAuction('equipment', { instanceId: 'eq1' }, 1, DUR, { price: 400 });
+    const view = await seller.createAuction('equipment', { instanceId: 'eq1' }, 1, DUR, { price: 800 });
     expect(view.itemType).toBe('equipment');
     expect(view.qty).toBe(1);
-    expect(view.totalPrice).toBe(400);
+    expect(view.totalPrice).toBe(800);
     expect((view.item.instance as EquipmentInstance).id).toBe('eq1');
     expect(equipInv.get('seller1')?.has('eq1')).toBe(false); // escrowed out of seller inventory
 
@@ -238,9 +240,9 @@ describe.skipIf(!mongo)('Auction full-link E2E (real WorldApiClient → real auc
 
     // buy: buyer charged, seller paid net of tax, instance delivered to buyer via mail with its affix snapshot intact.
     await buyer.buyAuction(view.auctionId);
-    expect(spends).toContainEqual(expect.objectContaining({ account: 'buyer1', amount: 400 }));
-    const tax = Math.floor(400 * AUCTION_TAX_RATE);
-    expect(mailAtt('seller1', 'auction_buy:')).toMatchObject({ kind: 'coins', count: 400 - tax });
+    expect(spends).toContainEqual(expect.objectContaining({ account: 'buyer1', amount: 800 }));
+    const tax = Math.floor(800 * AUCTION_TAX_RATE);
+    expect(mailAtt('seller1', 'auction_buy:')).toMatchObject({ kind: 'coins', count: 800 - tax });
     const att = mailAtt('buyer1', 'auction_buy:');
     expect(att?.kind).toBe('equipment');
     expect(att?.instance as EquipmentInstance | undefined).toMatchObject({ id: 'eq1', level: 3 });

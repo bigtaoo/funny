@@ -27,6 +27,7 @@ import {
   SLG_MAP_W,
   SLG_MAP_H,
   TROOP_CAP_BASE,
+  MARCH_MORALE_MAX,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
 import type { TeamTemplate, CardSLGState } from '../src/db';
@@ -372,5 +373,44 @@ describe.skipIf(!mongo)('worldsvc occupy-march e2e (ADR-037 §5.4)', () => {
     expect(me.troops).toBeLessThan(before); // GARRISON_PER_TILE deducted, instantly, no battle/hold involved
     expect(view.contestedUntil).toBeUndefined();
     expect(view.contestedByMe).toBeUndefined();
+  });
+
+  it('morale (士气): a long-distance occupy arrives weaker than an identical nearby occupy against the same NPC garrison level (ADR-047)', async () => {
+    await svc.joinWorld(W, 'a', 10, 10);
+    // Two connect() calls (500 troops each, GARRISON_PER_TILE) + two occupy marches would exceed the default
+    // TROOP_CAP_BASE pool — top up directly (test-only convenience, mirrors setupDefender's direct writes elsewhere).
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { troops: 5000 } });
+    // Search center kept well clear of the player's own 3×3 base footprint around (10,10) — landing `near`
+    // (or one of its neighbors, which `connect()` also occupies) inside/adjacent to the base footprint would
+    // make `connect()`'s instant occupyTile throw "Cannot occupy a capital".
+    const near = findCoord((t) => t.type === 'resource' && t.level === 2, 25, 10);
+    const far = findCoord((t) => t.type === 'resource' && t.level === 2, 10, 130);
+    const nearDist = Math.abs(near.x - 10) + Math.abs(near.y - 10);
+    const farDist = Math.abs(far.x - 10) + Math.abs(far.y - 10);
+    expect(nearDist).toBeLessThan(25); // morale ≈ 100 (negligible penalty)
+    expect(farDist).toBeGreaterThanOrEqual(MARCH_MORALE_MAX); // morale = 0, hits the combat-power floor
+
+    // Same level → identical NPC garrison magnitude; the only difference between the two marches is distance.
+    const npc = npcGarrison(2);
+    const troops = npc + 800; // comfortable margin even at the 70% morale floor (real engine battle, not the cheap formula)
+
+    await connect(svc, 'a', near);
+    const mvNear = await svc.startMarch(W, 'a', 10, 10, near.x, near.y, 'occupy', troops);
+    nowMs = mvNear.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+    const occNear = await m.collections.occupations.findOne({ _id: tileId(W, near.x, near.y) });
+    expect(occNear!.garrison).toBeGreaterThan(0);
+
+    await connect(svc, 'a', far);
+    const mvFar = await svc.startMarch(W, 'a', 10, 10, far.x, far.y, 'occupy', troops);
+    nowMs = mvFar.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+    const occFar = await m.collections.occupations.findOne({ _id: tileId(W, far.x, far.y) });
+    expect(occFar!.garrison).toBeGreaterThan(0);
+
+    // The far march's morale penalty (scaleArmyByRatio scaling the attacker's effective HP down to the 70%
+    // floor) leaves it with measurably fewer surviving troops than the near march, despite committing the
+    // same troops against the same garrison — this is the whole point of the mechanic (SLG_DESIGN §4.4).
+    expect(occFar!.garrison).toBeLessThan(occNear!.garrison);
   });
 });

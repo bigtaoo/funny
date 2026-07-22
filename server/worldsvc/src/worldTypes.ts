@@ -150,8 +150,6 @@ export interface PlayerWorldView {
   buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: number }[];
   /** CC-4: per-card SLG run-time state (currentTroops / injuredUntil / teamId). Absent when the player has none. */
   cardState?: Record<string, CardSLGState>;
-  /** CC-4: base troop pool available to distribute to card slots. */
-  baseTroopStock?: number;
   /** ADR-026 §5: per-team injury state (team granularity). Present only for teams with active state; client renders an injury countdown in the team menu. */
   teamState?: Record<string, { injuredUntil?: number }>;
   /** D-CITY-8: own main base's current persistent durability, same field name/semantics as WorldTileView.hp (wall-level-derived cap, self-regenerating). Absent when mainBaseTile hasn't resolved to a stored tile doc yet. */

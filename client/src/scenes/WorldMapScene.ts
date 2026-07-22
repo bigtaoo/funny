@@ -18,6 +18,7 @@ import { WorldMapRenderer } from './worldmap/WorldMapRenderer';
 import { WorldMapPanels } from './worldmap/WorldMapPanels';
 import { WorldMapNet } from './worldmap/WorldMapNet';
 import { WorldMapInput } from './worldmap/WorldMapInput';
+import { tearDownChildren } from '../render/sketchUi';
 
 export type { WorldMapCallbacks, WorldMapView } from './worldmap/WorldMapContext';
 
@@ -80,8 +81,13 @@ export class WorldMapScene implements Scene {
   destroy(): void {
     this.ctx.destroyed = true;
     this.ctx.net.destroy();
-    this.ctx.view.destroy();
+    this.ctx.view.destroy(); // destroys pooled tile Graphics / city sprites / march+occupy token runtimes
     this.unsubscribeInput();
+    // view.destroy() above frees the sprite/graphics layers, but the HUD / header / modal / toast layers
+    // are full of resource-count / march-list / label Text whose baseTextures a bare container.destroy
+    // would orphan. Free them across the whole tree first (already-destroyed children are detached, so no
+    // double-destroy). Runs once per SLG-exit, but exiting is exactly when the map should release everything.
+    tearDownChildren(this.ctx.container);
     this.ctx.container.destroy({ children: true });
   }
 }

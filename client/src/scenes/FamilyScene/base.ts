@@ -96,6 +96,12 @@ export class FamilySceneBase {
   // scrolls independently alongside the roster column instead of sharing one tab's scroll state.
   protected scrollY = 0;
   protected scrollYChannel = 0;
+  /** Pin the channel to the latest message; cleared once the user scrolls up to read history, re-armed
+   *  when they drag back to the bottom or send a message (see renderChannel / handleMove / submitMessage). */
+  protected channelStick = true;
+  /** Channel scroll extent from the last renderChannel — lets handleMove classify a channel drag as
+   *  "back at the bottom" (re-stick) vs "scrolled up" (unstick) without recomputing the content height. */
+  protected channelMax = 0;
   /** X boundary between the roster and channel columns in the landscape split view; used by
    *  handleDown to route a drag to the right column's scroll state. Unused (0) in portrait. */
   protected chatColX = 0;
@@ -380,8 +386,12 @@ export class FamilySceneBase {
   handleMove(_x: number, y: number): void {
     const next = this.gesture.move(y);
     if (next === null) return;
-    if (this.dragTarget === 'channel') this.scrollYChannel = next;
-    else this.scrollY = next;
+    if (this.dragTarget === 'channel') {
+      this.scrollYChannel = next;
+      // Dragging to the bottom re-pins to the latest; scrolling up releases the pin so incoming
+      // messages don't yank the reader back down (the "channel jumps while I'm reading" complaint).
+      this.channelStick = next >= this.channelMax - 1;
+    } else this.scrollY = next;
     this.scrollDirty = true;
   }
 
@@ -410,6 +420,9 @@ export class FamilySceneBase {
     if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
     if (this.sendInput) { this.sendInput.remove(); this.sendInput = null; }
     this.profilePopup.destroy();
+    // Free descendant Text baseTextures before dropping the container (overlay over the live
+    // WorldMapScene → leaks a screenful of Text per close otherwise). See sketchUi.tearDownChildren.
+    tearDownChildren(this.container);
     this.container.destroy({ children: true });
   }
 

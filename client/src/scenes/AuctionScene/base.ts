@@ -583,6 +583,9 @@ export class AuctionSceneBase {
     for (const u of this.unsubs) u();
     this.unsubs.length = 0;
     if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
+    // Free descendant Text baseTextures before dropping the container (overlay over the live
+    // WorldMapScene → leaks a screenful of Text per close otherwise). See sketchUi.tearDownChildren.
+    tearDownChildren(this.container);
     this.container.destroy({ children: true });
   }
 }

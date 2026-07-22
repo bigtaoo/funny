@@ -924,6 +924,8 @@ export const en: Record<TranslationKey, string> = {
   'world.team.fill': 'Fill troops',
   'world.team.fillNone': 'Troop pool is empty, or the team is already full',
   'world.team.fillDone': 'Assigned {n} troops',
+  'world.team.cardFill': 'Fill card',
+  'world.team.cardFull': 'This card is already at its troop cap',
   'world.team.full': 'Formation is full',
   // ── SLG battle replay browser (last-100) ─────────────────────────────────
   'world.replays': 'Battle replays',
@@ -1353,6 +1355,18 @@ export const en: Record<TranslationKey, string> = {
   'battlepass.maxLevel': 'Max level!',
   'battlepass.openBattlePass': 'Battle Pass',
 
+  // —— Cumulative recharge (GACHA_DESIGN §13, ADR-045) ——
+  'recharge.title': 'Recharge',
+  'recharge.progress': 'Recharged {amount}',
+  'recharge.hint': 'Reach each cumulative spend threshold to unlock its reward. Already-claimed rewards are never revoked by a refund.',
+  'recharge.loginRequired': 'Log in to view',
+  'recharge.tierThreshold': 'Reach {amount}',
+  'recharge.claim': 'Claim',
+  'recharge.claimed': 'Claimed',
+  'recharge.locked': 'Locked',
+  'recharge.claimFailed': 'Claim failed, please retry',
+  'recharge.claimToast': 'Claimed +{n} coins',
+
   // ── Retention system (B5) ────────────────────────────────────────────────────
   'daily.title': 'Daily',
   'daily.loginRequired': 'Log in to check in',
@@ -1517,6 +1531,7 @@ export const en: Record<TranslationKey, string> = {
   'city.bld.stickerShop': 'Sticker Shop',
   'city.bld.cabinet': 'Cabinet',
   'city.bld.drillYard': 'Drill Yard',
+  'city.bld.trainTroops': 'Train Troops',
   'city.bld.wall': 'Wall',
   'city.bld.academy': 'Academy',
   'city.bld.satchel': 'Satchel',

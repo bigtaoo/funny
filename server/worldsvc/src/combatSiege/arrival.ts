@@ -25,6 +25,8 @@ import {
   waveSeed,
   SLG_SIEGE_DAMAGE_DELAY_MS,
   SLG_TEAM_INJURY_MS,
+  MARCH_MORALE_MAX,
+  moraleCombatMultiplier,
   type CardInstance,
   type ResourceType,
   type SiegeOutcome,
@@ -124,11 +126,18 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       // Attacker formation (G3-2c): marched with a team → use the real formation snapshot (m.army); otherwise synthesize from flat troop count as fallback (v1 bridge).
       // CC-3: when army entries carry cardInstanceId, resolve to engine GarrisonEntry[] via cardState.currentTroops + CARD_DEFS.unitType.
       const rawArmy = m.army ?? [];
+      // Morale (士气): long-distance marches arrive fatigued — scale the whole attacker formation's effective HP
+      // down by the march's remaining morale (captured once at departure, combatMarch.ts). Also used below to
+      // scale the cheap-formula troop count so both settlement paths stay consistent.
+      const moraleMult = moraleCombatMultiplier(m.morale ?? MARCH_MORALE_MAX);
+      const effTroops = Math.round(m.troops * moraleMult);
       // hasCardArmy already computed at the top of applySiege (miss/recall branches need it before we get here).
-      const attackerArmy: GarrisonEntry[] =
+      const attackerArmy: GarrisonEntry[] = scaleArmyByRatio(
         hasCardArmy
           ? resolveCardArmy(rawArmy, pw.cardState ?? {}, attackerSave?.cardInv ?? {})
-          : (rawArmy.length > 0 ? (rawArmy as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker'));
+          : (rawArmy.length > 0 ? (rawArmy as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker')),
+        moraleMult,
+      );
       // CC-3: extract EngineCardInstance[] from the attacker's card army for blueprint injection (level + gear); shared by both paths.
       let cardInstances: EngineCardInstance[] | undefined;
       let cardEquipInv: EngineEquipInv | undefined;
@@ -183,15 +192,15 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       // regardless of true strength); bad formation / engine error also falls back — a siege must never stall a march.
       let res: SiegeResolution;
       let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
-      if (shouldUseCheapSiege({ attackerTroops: m.troops, defenderTroops: effGarrison, attackerSynthesized, defenderSynthesized })) {
-        res = resolveSiege(m.troops, effGarrison);
+      if (shouldUseCheapSiege({ attackerTroops: effTroops, defenderTroops: effGarrison, attackerSynthesized, defenderSynthesized })) {
+        res = resolveSiege(effTroops, effGarrison);
         replay = null;
       } else {
         try {
           res = runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv, siegeAcademy });
         } catch (err) {
           console.error('[worldsvc] siege engine failed — fallback to cheap resolve', { tile: m.toTile, err: (err as Error).message });
-          res = resolveSiege(m.troops, effGarrison);
+          res = resolveSiege(effTroops, effGarrison);
           replay = null; // cheap fallback result is inconsistent with engine replay → do not store replay inputs (replay button degrades to hidden).
         }
       }
@@ -381,10 +390,15 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       const garrison = strongholdGarrison(proc.level);
       // E8/CC-3: fetch attacker's progression snapshot (equipment for the legacy path; cardInv+equipmentInv for a real card army).
       const attackerSave = await this.core.meta.getSaveFields(m.ownerId).catch(() => null);
-      const attackerArmy: GarrisonEntry[] =
+      // Morale (士气): scale attacker strength by the march's remaining morale (see applySiege above for detail).
+      const moraleMult = moraleCombatMultiplier(m.morale ?? MARCH_MORALE_MAX);
+      const effTroops = Math.round(m.troops * moraleMult);
+      const attackerArmy: GarrisonEntry[] = scaleArmyByRatio(
         hasCardArmy
           ? resolveCardArmy(rawArmy, pw.cardState ?? {}, attackerSave?.cardInv ?? {})
-          : (rawArmy.length > 0 ? (rawArmy as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker'));
+          : (rawArmy.length > 0 ? (rawArmy as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker')),
+        moraleMult,
+      );
       let cardInstances: EngineCardInstance[] | undefined;
       let cardEquipInv: EngineEquipInv | undefined;
       if (hasCardArmy && attackerSave) {
@@ -408,8 +422,8 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       const attackerSynthesized = !hasCardArmy && rawArmy.length === 0;
       let res: SiegeResolution;
       let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
-      if (shouldUseCheapSiege({ attackerTroops: m.troops, defenderTroops: garrison, attackerSynthesized, defenderSynthesized: true })) {
-        res = resolveSiege(m.troops, garrison);
+      if (shouldUseCheapSiege({ attackerTroops: effTroops, defenderTroops: garrison, attackerSynthesized, defenderSynthesized: true })) {
+        res = resolveSiege(effTroops, garrison);
         replay = null;
       } else {
         try {
@@ -425,7 +439,7 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
             tile: m.toTile,
             err: (err as Error).message,
           });
-          res = resolveSiege(m.troops, garrison);
+          res = resolveSiege(effTroops, garrison);
           replay = null;
         }
       }
@@ -517,10 +531,15 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
 
       const garrison = passageGarrison(proc.level);
       const attackerSave = await this.core.meta.getSaveFields(m.ownerId).catch(() => null);
-      const attackerArmy: GarrisonEntry[] =
+      // Morale (士气): scale attacker strength by the march's remaining morale (see applySiege above for detail).
+      const moraleMult = moraleCombatMultiplier(m.morale ?? MARCH_MORALE_MAX);
+      const effTroops = Math.round(m.troops * moraleMult);
+      const attackerArmy: GarrisonEntry[] = scaleArmyByRatio(
         hasCardArmy
           ? resolveCardArmy(rawArmy, pw.cardState ?? {}, attackerSave?.cardInv ?? {})
-          : (rawArmy.length > 0 ? (rawArmy as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker'));
+          : (rawArmy.length > 0 ? (rawArmy as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker')),
+        moraleMult,
+      );
       let cardInstances: EngineCardInstance[] | undefined;
       let cardEquipInv: EngineEquipInv | undefined;
       if (hasCardArmy && attackerSave) {
@@ -540,8 +559,8 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       const attackerSynthesized = !hasCardArmy && rawArmy.length === 0;
       let res: SiegeResolution;
       let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
-      if (shouldUseCheapSiege({ attackerTroops: m.troops, defenderTroops: garrison, attackerSynthesized, defenderSynthesized: true })) {
-        res = resolveSiege(m.troops, garrison);
+      if (shouldUseCheapSiege({ attackerTroops: effTroops, defenderTroops: garrison, attackerSynthesized, defenderSynthesized: true })) {
+        res = resolveSiege(effTroops, garrison);
         replay = null;
       } else {
         try {
@@ -557,7 +576,7 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
             tile: m.toTile,
             err: (err as Error).message,
           });
-          res = resolveSiege(m.troops, garrison);
+          res = resolveSiege(effTroops, garrison);
           replay = null;
         }
       }
@@ -721,7 +740,9 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
         return;
       }
       const proc = proceduralTile(m.worldId, this.core.coordX(m.toTile), this.core.coordY(m.toTile));
-      const res = resolveSiege(m.troops, npcGarrison(proc.level));
+      // Morale (士气): scale attacker strength by the march's remaining morale (see applySiege above for detail).
+      const effTroops = Math.round(m.troops * moraleCombatMultiplier(m.morale ?? MARCH_MORALE_MAX));
+      const res = resolveSiege(effTroops, npcGarrison(proc.level));
       let loot = emptyResources();
       if (res.outcome === 'attacker_win') {
         const rt: ResourceType = proc.resType ?? 'ink';

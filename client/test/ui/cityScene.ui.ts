@@ -133,15 +133,15 @@ function rectsOverlap(a: Rect, b: Rect): boolean {
 
 for (const [label, [w, h]] of [['portrait', PORTRAIT], ['landscape', LANDSCAPE]] as const) {
   describe(`CityScene building grid — ${label} ${w}x${h}`, () => {
-    it('all 11 building cards land fully within the screen and do not overlap each other', () => {
+    it('all domestic grid tiles land fully within the screen and do not overlap each other', () => {
       const { scene } = buildScene(w, h);
       const inner = internals(scene);
-      // hits[0] is the header Back button; contentHits() are the grid cards — BUILDING_KEYS.length
-      // (11, incl. satchel/D-CITY-9) minus academy, which D-CITY-12 moved to its own
-      // military-page panel. (The Domestic/Military rail's own hit is excluded — it lives left
-      // of contentX, see tabHit()/contentHits() above.)
+      // hits[0] is the header Back button; contentHits() are the grid tiles — BUILDING_KEYS.length
+      // (11, incl. satchel/D-CITY-9) minus academy (D-CITY-12 moved it to the military panel) = 10
+      // building cards, PLUS the synthetic "Train Troops" tile spliced after drillYard (2026-07-21) = 11.
+      // (The Domestic/Military rail's own hit is excluded — it lives left of contentX, see contentHits().)
       const cards = contentHits(inner);
-      expect(cards.length).toBe(10);
+      expect(cards.length).toBe(11);
 
       for (const c of cards) {
         expect(c.x).toBeGreaterThanOrEqual(inner.contentX);
@@ -307,8 +307,8 @@ describe('CityScene tech-tree panel (D-CITY-12, 2026-07-16)', () => {
   it('academy no longer appears as a card in the domestic building grid', () => {
     const { scene } = buildScene(...PORTRAIT);
     const inner = internals(scene);
-    // 10 cards now (11 BUILDING_KEYS minus academy).
-    expect(contentHits(inner).length).toBe(10);
+    // 11 tiles now: 10 building cards (11 BUILDING_KEYS minus academy) + the Train Troops tile.
+    expect(contentHits(inner).length).toBe(11);
     scene.destroy();
   });
 
@@ -620,9 +620,9 @@ describe('CityScene military page team panel (D-CITY-10, 2026-07-16)', () => {
     const domesticTab = inner.hits[1]!;
     tap(inner, domesticTab.x + domesticTab.w / 2, domesticTab.y + domesticTab.h / 2);
     expect(inner.page).toBe('domestic');
-    // Back + the rail tab hit + 10 building cards — no team hits survive on the domestic
-    // page, so the id-based tap-through can't misfire there.
-    expect(inner.hits.length).toBe(12);
+    // Back + the rail tab hit + 10 building cards + the Train Troops tile — no team hits survive on
+    // the domestic page, so the id-based tap-through can't misfire there.
+    expect(inner.hits.length).toBe(13);
     scene.destroy();
   });
 });

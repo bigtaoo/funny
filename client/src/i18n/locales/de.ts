@@ -924,6 +924,8 @@ export const de: Record<TranslationKey, string> = {
   'world.team.fill': 'Truppen auffüllen',
   'world.team.fillNone': 'Truppenpool ist leer, oder das Team ist bereits voll',
   'world.team.fillDone': '{n} Truppen zugewiesen',
+  'world.team.cardFill': 'Karte füllen',
+  'world.team.cardFull': 'Diese Karte hat ihr Truppenlimit erreicht',
   'world.team.full': 'Aufstellung ist voll',
   // ── SLG battle replay browser (last-100) ─────────────────────────────────
   'world.replays': 'Kampf-Wiederholungen',
@@ -1353,6 +1355,18 @@ export const de: Record<TranslationKey, string> = {
   'battlepass.maxLevel': 'Max-Level!',
   'battlepass.openBattlePass': 'Battle Pass',
 
+  // —— Kumulatives Aufladen (GACHA_DESIGN §13, ADR-045) ——
+  'recharge.title': 'Aufladen',
+  'recharge.progress': '{amount} aufgeladen',
+  'recharge.hint': 'Erreiche jede Aufladeschwelle, um die Belohnung freizuschalten. Bereits abgeholte Belohnungen werden bei einer Rückerstattung nicht entzogen.',
+  'recharge.loginRequired': 'Zum Anzeigen anmelden',
+  'recharge.tierThreshold': 'Ab {amount}',
+  'recharge.claim': 'Abholen',
+  'recharge.claimed': 'Abgeholt',
+  'recharge.locked': 'Gesperrt',
+  'recharge.claimFailed': 'Abholen fehlgeschlagen, bitte erneut versuchen',
+  'recharge.claimToast': '+{n} Münzen abgeholt',
+
   // ── Bindungssystem (B5) ─────────────────────────────────────────────────────
   'daily.title': 'Täglich',
   'daily.loginRequired': 'Anmelden zum Einchecken',
@@ -1517,6 +1531,7 @@ export const de: Record<TranslationKey, string> = {
   'city.bld.stickerShop': 'Aufkleberladen',
   'city.bld.cabinet': 'Aktenschrank',
   'city.bld.drillYard': 'Exerzierplatz',
+  'city.bld.trainTroops': 'Truppen ausbilden',
   'city.bld.wall': 'Stadtmauer',
   'city.bld.academy': 'Akademie',
   'city.bld.satchel': 'Beutel',

@@ -18,7 +18,7 @@
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { IAP_TIERS } from '@nw/shared';
+import { IAP_TIERS, IAP_TIERS_LIST } from '@nw/shared';
 import type { CommercialClient } from './commercialClient.js';
 import { mirrorCoins } from './economy.js';
 import type { Collections } from '@nw/shared';
@@ -45,6 +45,25 @@ export function coinsForPriceId(priceId: string): number {
     const tierKey = pair.slice(0, colonIdx).trim();
     const pid = pair.slice(colonIdx + 1).trim();
     if (pid === priceId && IAP_TIERS[tierKey]) return IAP_TIERS[tierKey]!;
+  }
+  return 0;
+}
+
+/**
+ * Resolves a Paddle price ID to its real USD price (GACHA_DESIGN §13), via the same tier-key mapping as
+ * coinsForPriceId. Returns 0 if the price ID is not mapped or the tier is unknown to IAP_TIERS_LIST.
+ */
+export function usdCentsForPriceId(priceId: string): number {
+  const raw = process.env.NW_PADDLE_PRICE_IDS ?? '';
+  for (const pair of raw.split(',')) {
+    const colonIdx = pair.indexOf(':');
+    if (colonIdx < 0) continue;
+    const tierKey = pair.slice(0, colonIdx).trim();
+    const pid = pair.slice(colonIdx + 1).trim();
+    if (pid === priceId) {
+      const def = IAP_TIERS_LIST.find((t) => t.id === tierKey);
+      if (def) return def.usdCents;
+    }
   }
   return 0;
 }
@@ -140,6 +159,9 @@ interface PaddleWebhookEvent {
     status?: string;
     custom_data?: { accountId?: string };
     items?: Array<{ price?: { id?: string }; quantity?: number }>;
+    // adjustment.created/updated fields (refunds, GACHA_DESIGN §13): the refunded transaction id + action/status.
+    transaction_id?: string;
+    action?: string;
   };
 }
 
@@ -254,6 +276,17 @@ export function registerPaddleRoutes(app: FastifyInstance, deps: PaddleDeps): vo
         const event = req.body as PaddleWebhookEvent;
         const txData = event.data;
 
+        // Refund (GACHA_DESIGN §13, ADR-045): Paddle Billing reports refunds as adjustment events, not a
+        // transaction.* event — approved refund-action adjustments decrement totalRechargeCents by exactly
+        // what that transaction originally credited (commercial looks it up by transactionId). Already-claimed
+        // reward tiers are not revoked, only future tier eligibility is affected.
+        if (event.event_type === 'adjustment.created' || event.event_type === 'adjustment.updated') {
+          if (txData?.action === 'refund' && txData.status === 'approved' && txData.transaction_id) {
+            await deps.commercial.paddleRefund({ transactionId: txData.transaction_id });
+          }
+          return reply.code(200).send('processed');
+        }
+
         // Only transaction.completed credits coins; every other transaction.* event (payment_failed,
         // canceled, past_due, …) is logged for support/CS lookup ("why didn't this payment go through")
         // instead of being silently dropped (COMMERCIAL_DESIGN.md §10.4).
@@ -300,8 +333,9 @@ export function registerPaddleRoutes(app: FastifyInstance, deps: PaddleDeps): vo
           );
         }
         const coins = unitCoins * clampedQuantity;
+        const usdCents = usdCentsForPriceId(priceId) * clampedQuantity;
 
-        const result = await deps.commercial.paddleComplete({ accountId, transactionId, coins });
+        const result = await deps.commercial.paddleComplete({ accountId, transactionId, coins, usdCents });
         if (!result.ok) {
           app.log.error(`paddle paddleComplete failed: ${result.error} tx=${transactionId}`);
           return reply.code(200).send('processed'); // still 200 to prevent retry loops on business errors

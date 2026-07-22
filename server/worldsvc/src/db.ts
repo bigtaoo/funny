@@ -14,7 +14,8 @@ import type {
   SettleTier,
   BuildingKey,
 } from '@nw/shared';
-import { FAMILY_MSG_RETENTION_SEC } from '@nw/shared';
+import { FAMILY_MSG_RETENTION_SEC, troopCapFor } from '@nw/shared';
+import type { Filter } from 'mongodb';
 
 /** Defense configuration: a restricted subset of the engine LevelDefinition (P2/P5, embedded rather than a separate collection). Opaque placeholder until S8-3 wires up the engine. */
 export type DefenseConfig = Record<string, unknown>;
@@ -24,7 +25,7 @@ export type DefenseConfig = Record<string, unknown>;
  * Stored in PlayerWorldDoc.cardState; cleared on season reset with the playerWorld document.
  */
 export interface CardSLGState {
-  /** Current card troop count (0 ~ troopCap). Derived from baseTroopStock allocation + battle casualties. */
+  /** Current card troop count (0 ~ troopCap). Derived from base-pool (playerWorld.troops) allocation + battle casualties. */
   currentTroops: number;
   /** Injury lock expiry (ms). Card cannot be added to a team until this timestamp passes. Absent = healthy. */
   injuredUntil?: number;
@@ -174,8 +175,6 @@ export interface PlayerWorldDoc {
   buildQueue?: BuildQueueEntry[];
   /** CC-3: per-card SLG run-time state (currentTroops / injuredUntil / teamId). Cleared on season reset. */
   cardState?: Record<string, CardSLGState>;
-  /** CC-3: base troop stock available to distribute to card instances. Initialised to BASE_TROOP_STOCK_INITIAL on joinWorld. */
-  baseTroopStock?: number;
   /** Per-shop-item daily purchase counter (SLG_DESIGN §7.2, 2026-07-15). day = UTC calendar day number (floor(ms / 86400000)); count resets whenever day advances. Absent = 0 purchases so far. */
   shopPurchaseCounts?: Record<string, { day: number; count: number }>;
   rev: number;
@@ -193,6 +192,8 @@ export interface MarchDoc {
   army?: ArmyEntry[];
   /** ADR-026: which team slot ('t1'..'t5') this march deployed. A team referenced by an active (non-recalled) march is "out" and skipped as a defender. */
   teamId?: string;
+  /** Remaining morale (0..MARCH_MORALE_MAX) computed once at departure from path length (1 lost per tile moved). Bound to this march instance only; scales combat power on arrival (moraleCombatMultiplier). Absent on legacy docs → treated as full (MARCH_MORALE_MAX). */
+  morale?: number;
   departAt: number;
   arriveAt: number;
   status: 'marching' | 'arrived' | 'recalled';
@@ -474,6 +475,7 @@ export interface WorldMongo {
   db: Db;
   collections: WorldCollections;
   ensureIndexes(): Promise<void>;
+  runMigrations(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -560,11 +562,43 @@ export async function createWorldMongo(
     await collections.mapBaselines.createIndex({ worldId: 1, x: 1, y: 1 });
   }
 
+  /**
+   * One-time data migrations run once at boot after ensureIndexes.
+   *
+   * Troop-pool unification (2026-07-21): the old `baseTroopStock` (card-army reserve, init 10000) and
+   * `troops` (map pool, init/cap = troopCapFor) were two disconnected buckets — training filled `troops`
+   * while distributeTroops drew from `baseTroopStock`, so trained troops could never reach cards. They are
+   * now unified onto `troops` (basecap raised to 10000). Fold any legacy `baseTroopStock` into `troops`
+   * (clamped to a freshly-recomputed troopCap, which also picks up the raised TROOP_CAP_BASE for existing
+   * docs whose stored troopCap froze at the old 2000) and drop the field. Near-lossless; no back-compat shim.
+   */
+  async function runMigrations(): Promise<void> {
+    const legacyFilter = { baseTroopStock: { $exists: true } } as unknown as Filter<PlayerWorldDoc>;
+    const cursor = collections.playerWorld.find(legacyFilter);
+    let migrated = 0;
+    for await (const doc of cursor) {
+      const legacyStock = (doc as { baseTroopStock?: number }).baseTroopStock ?? 0;
+      const newCap = troopCapFor(doc.buildings);
+      const newTroops = Math.min(newCap, (doc.troops ?? 0) + legacyStock);
+      await collections.playerWorld.updateOne(
+        { _id: doc._id },
+        {
+          $set: { troops: newTroops, troopCap: newCap },
+          $unset: { baseTroopStock: '' } as never,
+          $inc: { rev: 1 },
+        },
+      );
+      migrated++;
+    }
+    if (migrated > 0) console.log(`[world-mongo] troop-pool unification: folded baseTroopStock into troops for ${migrated} players`);
+  }
+
   return {
     client,
     db,
     collections,
     ensureIndexes,
+    runMigrations,
     close: () => client.close(),
   };
 }
