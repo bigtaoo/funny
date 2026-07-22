@@ -61,6 +61,11 @@ export const EQUIPMENT_INV_CAP = 300;
 export const SALVAGE_REFUND_RATIO = 0.7;
 export const SALVAGE_MAX_LEVEL = 4; // +5 and above cannot be salvaged
 
+/** Epic-rarity gear never salvages regardless of level (ADR-050): high-tier pieces exit via auction/wear only, never destruction. */
+export function isSalvageable(rarity: EquipRarity, level: number): boolean {
+  return rarity !== 'epic' && level <= SALVAGE_MAX_LEVEL;
+}
+
 /**
  * Enhancement success rate (by current level fromLevel): 0→1=90%, 1→2=80% … 8→9=10%.
  * fromLevel ≥ 9 = already max level (returns 0). Same formula as server/shared enhanceSuccessRate.

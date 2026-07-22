@@ -1,6 +1,6 @@
 # 装备系统设计 — Equipment
 
-> 状态：E0 数据模型 ✅ + E1 引擎注入 ✅ + E2 合成 ✅ + E2.5 拍卖托管转移 ✅（解锁拍卖行 A）+ E3 强化/分解 ✅ + E4 穿戴 ✅（2026-06-21）+ E5 客户端 UI ✅（2026-06-22）+ E6 词条/洗练 ✅（2026-06-22）+ E7 抽卡/保护道具 ✅（2026-06-22）+ E8 SLG 接入 ✅（2026-06-22）· 权威：**本文（装备系统机制单一来源）**；数值见 [`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md) §5（数字权威）、战斗运行值见 `@nw/engine` config.ts · 更新：2026-06-22
+> 状态：E0 数据模型 ✅ + E1 引擎注入 ✅ + E2 合成 ✅ + E2.5 拍卖托管转移 ✅（解锁拍卖行 A）+ E3 强化/分解 ✅ + E4 穿戴 ✅（2026-06-21）+ E5 客户端 UI ✅（2026-06-22）+ E6 词条/洗练 ✅（2026-06-22）+ E7 抽卡/保护道具 ✅（2026-06-22）+ E8 SLG 接入 ✅（2026-06-22）· 权威：**本文（装备系统机制单一来源）**；数值见 [`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md) §5（数字权威）、战斗运行值见 `@nw/engine` config.ts · 更新：2026-07-22（ADR-050 史诗永不可分解）
 
 本文是装备子系统的**机制设计基准**：数据模型、槽位、获取/强化/洗练、稀有度、战力挂钩、引擎注入、服务器权威、UI、经济联动、实现拆解。
 **数字不在本文定**——成功率/成本/掉率等去 [`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md) §5；本文只镜像并标注权威指针。
@@ -21,7 +21,7 @@
 | L1 | **公平红线**：装备战力只作用于 PvE + SLG；天梯/知己 PvP 永走 `buildPvpBlueprints()`（签名无养成参，编译期不可串味，硬墙单测守护）。 | ECONOMY_BALANCE §5、SLG7、`pveUpgrades.ts` |
 | L2 | **服务器权威**：装备影响 SLG PvP（真钱相邻），全链路（拥有/强化/洗练/穿戴生效）服务器权威，客户端只读/只发意图。复用 PVE_INTEGRITY 方案 B。 | SLG_DESIGN §6.3、PVE_INTEGRITY_PLAN |
 | L3 | **PvE+SLG 同一棵养成树**：PvE 攒的装备直接是 SLG 战力，PvE 是 SLG 的免费 on-ramp。SLG 不另造装备体系。 | SLG7/SLG8 |
-| L4 | **有限回收**（[ADR-012](DECISIONS.md) 取代旧"无销毁渠道"）：强化失败不掉级、不碎；**装备可分解回收 70% 打造材料**（强化投入不返还），但**+5 及以上不可分解**（已具价值，出口转拍卖/穿戴）。低级冗余件有回收阀治理膨胀；金币/材料 sink 仍主要来自"反复强化的失败损耗"。 | §6.3、ECONOMY_NUMBERS §5.1 / §5.3、ADR-009 / ADR-012 |
+| L4 | **有限回收**（[ADR-012](DECISIONS.md) 取代旧"无销毁渠道"）：强化失败不掉级、不碎；**装备可分解回收 70% 打造材料**（强化投入不返还），但**+5 及以上、或史诗 Epic 稀有度（不论等级，[ADR-050](DECISIONS.md)）不可分解**（已具价值，出口转拍卖/穿戴）。低级冗余件有回收阀治理膨胀；金币/材料 sink 仍主要来自"反复强化的失败损耗"。 | §6.3、ECONOMY_NUMBERS §5.1 / §5.3、ADR-009 / ADR-012 / ADR-050 |
 | L5 | **数值活在代码/数字文档**：本文不复述具体数字，引用 ECONOMY_NUMBERS §5 与 config.ts。 | README §0 三铁律 |
 
 ---
@@ -172,7 +172,7 @@ type SlotMap = Partial<Record<EquipSlot, string /*instanceId*/>>;
 - **保护道具**（氪点）：强化失败保底/不损材料 —— 大 R 向，**只 PvE/SLG**，不碰公平 PvP。
 - **分解回收**（§6.3）：低级冗余件回收，兼作库存阀；70% 返还 → 30% 损耗本身也是温和 sink。
 
-### 6.3 分解回收 Salvage（[ADR-012](DECISIONS.md)）
+### 6.3 分解回收 Salvage（[ADR-012](DECISIONS.md) + [ADR-050](DECISIONS.md)）
 
 库存治理（§3.3）+ 温和 sink 的回收口，**取代旧"无销毁渠道"**：
 
@@ -180,12 +180,13 @@ type SlotMap = Partial<Record<EquipSlot, string /*instanceId*/>>;
 |---|---|---|
 | **返还** | **70% 打造材料** | 只返还该 `defId` **打造基础成本**的材料；**强化投入的材料/金币不返还**（强化失败损耗是核心 sink，不能靠分解漏回） |
 | **等级门槛** | **+5 及以上不可分解** | +5 起已具价值，作为一种保护；出口转为**拍卖 / 穿戴**（§13） |
-| **可分解范围** | +0 ~ +4 | 含堆叠的 0 级冗余件（堆叠件可直接批量分解） |
-| **权威** | 服务器 `/equipment/salvage` | 扣实例、入材料，服务器权威（§10） |
+| **稀有度门槛** | **史诗 Epic 永不可分解**（ADR-050） | 与等级无关——哪怕 +0 也不可分解；史诗件只能**拍卖 / 穿戴**退出，不走销毁渠道 |
+| **可分解范围** | 普通/精良/稀有 的 +0 ~ +4 | 含堆叠的 0 级冗余件（堆叠件可直接批量分解） |
+| **权威** | 服务器 `/equipment/salvage` | 扣实例、入材料，服务器权威（§10）；`isSalvageable(rarity, level)` 单一判定函数（`server/shared/src/equipment.ts`），客户端镜像同名函数 |
 
 - **30% 损耗**是设计的：分解不是无损循环，避免"造了分、分了造"刷材料；它的主职是**清库存**，sink 是副产物。
-- 与"满仓禁获得"（§3.3）配合：玩家撞 300 上限时，分解 +0~+4 冗余件腾位，或拿去强化燃料/拍卖。
-- +5 以上想清掉只能**上拍卖**（§13，受同时挂拍上限约束）——给高投入件一个**有偿出口**而非销毁。
+- 与"满仓禁获得"（§3.3）配合：玩家撞 300 上限时，分解 +0~+4 冗余件（非史诗）腾位，或拿去强化燃料/拍卖。
+- +5 以上、或任意等级的史诗件，想清掉只能**上拍卖**（§13，受同时挂拍上限约束）——给高投入/高稀有度件一个**有偿出口**而非销毁。
 
 ---
 
@@ -602,7 +603,7 @@ buildSiegeBlueprints(levels, equipped, inv)
 | 词条加成数值/区间/权重、强化系数 | ECONOMY_NUMBERS §5（待铺） |
 | 装备基础属性 / `applyEquipment` 乘加算 | `@nw/engine/balance/`（待建） |
 | 装备定义目录（defId/槽位/稀有度/媒材） | 本文 §17（机制权威；属性区间→ECONOMY_NUMBERS §5） |
-| 库存硬上限 / 分解返还% / 分解等级门槛 | 300 / 70% / +5（本文 §3.3 / §6.3，ADR-012） |
+| 库存硬上限 / 分解返还% / 分解等级门槛 / 分解稀有度门槛 | 300 / 70% / +5 / 史诗永不可分解（本文 §3.3 / §6.3，ADR-012 / ADR-050） |
 | 同时挂拍上限 / 挂单时效 | 5 件 / 24–48h（本文 §13，ADR-012） |
 
 ---
@@ -654,7 +655,7 @@ buildSiegeBlueprints(levels, equipped, inv)
 |---|---|---|---|
 | `POST /equipment/craft` ✅ | `{ defId, idempotencyKey }` | `{ save, instance }` | 校验+扣材料，产 0 级基础装备（本切片产独立实例；堆叠优化待 E 后续） |
 | `POST /equipment/enhance` ✅ | `{ instanceId, idempotencyKey }` | `{ success, instance, save }` | **服务器掷骰**（成功率表）、扣材料 + 金币（commercial.spend），成功则 level+1、回执 |
-| `POST /equipment/salvage` ✅ | `{ instanceIds[], idempotencyKey }` | `{ refunded, save }` \| `NOT_SALVAGEABLE` | 分解回收：返 70% 打造材料，+5↑ 拒（§6.3，ADR-012）；批量整批校验、穿戴/锁定拒 |
+| `POST /equipment/salvage` ✅ | `{ instanceIds[], idempotencyKey }` | `{ refunded, save }` \| `NOT_SALVAGEABLE` | 分解回收：返 70% 打造材料，+5↑ 或史诗（不论等级）拒（§6.3，ADR-012/ADR-050）；批量整批校验、穿戴/锁定拒 |
 | `POST /equipment/reforge` | `{ instanceId, fuelInstanceId, lockedIndex?, idempotencyKey }` | `{ instance, consumed }` | 校验燃料（低一级同类）、扣金币、重 roll 副词条/特技（E6 待做） |
 | `POST /equipment/equip` ✅ | `{ slot, instanceId\|null, unitType? }` | `{ save }` | 改穿戴状态（纯状态，无随机，无 idem）；槽位与 def 不符 → INVALID_SLOT |
 

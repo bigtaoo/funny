@@ -91,8 +91,9 @@ function stubWorldApi(): WorldApiClient {
 
 /**
  * Equipment fixture (EQUIPMENT_DESIGN §11): one card ('card1', lichuang) wearing a fine weapon
- * (eqEquippedFine), plus two unequipped bag items — a common weapon (eqBagCommon, doubles as the
- * common-rarity reforge material) and a fine weapon (eqBagFine, the reforge target used below).
+ * (eqEquippedFine), plus unequipped bag items — a common weapon (eqBagCommon, doubles as the
+ * common-rarity reforge material), a fine weapon (eqBagFine, the reforge target used below), and
+ * an epic weapon (eqBagEpic, level 0 — never salvageable per ADR-050 regardless of level).
  * Materials/coins are set high so afford checks never gate the tests.
  */
 function buildEquipSave(): SaveData {
@@ -106,6 +107,7 @@ function buildEquipSave(): SaveData {
     eqEquippedFine: { id: 'eqEquippedFine', defId: 'wp_pen', rarity: 'fine', level: 0, affixes: [{ id: 'm_atk', value: 20 }] },
     eqBagCommon: { id: 'eqBagCommon', defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [{ id: 'm_atk', value: 10 }] },
     eqBagFine: { id: 'eqBagFine', defId: 'wp_pen', rarity: 'fine', level: 0, affixes: [{ id: 'm_atk', value: 20 }] },
+    eqBagEpic: { id: 'eqBagEpic', defId: 'wp_highlighter', rarity: 'epic', level: 0, affixes: [{ id: 'm_atk', value: 40 }] },
   };
   return save;
 }
@@ -1044,6 +1046,14 @@ describe('EquipmentScene — mixin-split wiring', () => {
     modalHits[0].action(); // OK → doSalvageAll
     await Promise.resolve();
     expect(calls.salvage).toEqual([['eqBagCommon', 'eqBagCommon2', 'eqBagCommon3']]);
+    scene.destroy();
+  });
+
+  it('epic-rarity items never offer Salvage/Salvage All, even at +0 (ADR-050)', async () => {
+    const { cb, save } = buildEquipCallbacks('card1');
+    const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
+    const actions = (scene as any).instanceActions(save, save.equipmentInv.eqBagEpic) as Array<{ key: string; fn: () => void }>;
+    expect(actions.map((a) => a.key)).toEqual(['enhance', 'equip']);
     scene.destroy();
   });
 

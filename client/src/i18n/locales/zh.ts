@@ -578,7 +578,7 @@ export const zh = {
   'equip.err.coins': '金币不足',
   'equip.err.full': '背包已满（300）',
   'equip.err.maxLevel': '已满级',
-  'equip.err.notSalvageable': '+5 及以上不可分解',
+  'equip.err.notSalvageable': '+5 及以上或史诗品质不可分解',
   'equip.err.invalidSlot': '槽位不符',
   'equip.err.locked': '装备已锁定',
   'equip.err.inUse': '装备穿戴中',

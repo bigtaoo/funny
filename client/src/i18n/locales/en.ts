@@ -575,7 +575,7 @@ export const en: Record<TranslationKey, string> = {
   'equip.err.coins': 'Not enough coins',
   'equip.err.full': 'Inventory full (300)',
   'equip.err.maxLevel': 'Already max level',
-  'equip.err.notSalvageable': '+5 and above cannot be salvaged',
+  'equip.err.notSalvageable': '+5 and above, or Epic rarity, cannot be salvaged',
   'equip.err.invalidSlot': 'Wrong slot',
   'equip.err.locked': 'Item is locked',
   'equip.err.inUse': 'Item is equipped',
