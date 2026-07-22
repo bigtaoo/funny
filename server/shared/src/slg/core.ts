@@ -382,7 +382,7 @@ export const TROOP_TRAIN_INK_COST = 10;
 /** Training time per troop (seconds, DRAFT). */
 export const TROOP_TRAIN_TIME_SEC = 5;
 /** Maximum troops per training batch (single-batch queue size cap). */
-export const TROOP_TRAIN_BATCH_MAX = 500;
+export const TROOP_TRAIN_BATCH_MAX = 5000;
 /** Maximum concurrent training batches (training queue slots). */
 export const TROOP_TRAIN_QUEUE_MAX = 2;
 /** Speed-up rate: seconds of training time per coin spent (DRAFT, 60 s/coin). */

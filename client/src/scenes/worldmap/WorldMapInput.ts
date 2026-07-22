@@ -3,7 +3,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
 import { WorldApiError } from '../../net/WorldApiClient';
-import { baseFootprintCells, baseFootprintInBounds } from '@nw/shared';
+import { baseFootprintCells, baseFootprintInBounds, npcGarrison } from '@nw/shared';
 import { loadResAtlas, getResTexture, isResAtlasReady } from '../../render/resAtlasLoader';
 import { loadCityAtlas, getCityTexture, isCityAtlasReady } from '../../render/cityAtlasLoader';
 import { loadTerrainAtlas, getTerrainTexture, isTerrainAtlasReady } from '../../render/terrainAtlasLoader';
@@ -214,7 +214,17 @@ export class WorldMapInput {
     // so relocation is initiated by clicking your own centre tile, not a neutral one.)
     buttons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
     const head = garrison > 0 ? t('world.garrison').replace('{n}', String(garrison)) : t('world.actOccupy');
-    this.ctx.panels.showModal([head, `(${tx}, ${ty})`], buttons);
+    const headLines = [head, `(${tx}, ${ty})`];
+    // Resource type + level (§ resourceDensity=1.0 — nearly every neutral tile is a resTyped resource tile)
+    // and a recommended-troops line (system NPC garrison strength for this level, ADR-037 §5.4's npcGarrison —
+    // the same reference strength the occupy battle resolves against) so the player can size their march
+    // before committing, instead of guessing.
+    if (tile?.resType) {
+      const RES_LABEL: Record<string, string> = { ink: t('world.ink'), paper: t('world.paper'), graphite: t('world.graphite'), metal: t('world.metal'), sticker: t('world.sticker') };
+      headLines.push(t('world.resLevel').replace('{res}', RES_LABEL[tile.resType] ?? tile.resType).replace('{lv}', String(tile.level ?? 1)));
+    }
+    headLines.push(t('world.recommendTroops').replace('{n}', String(npcGarrison(tile?.level ?? 1))));
+    this.ctx.panels.showModal(headLines, buttons);
   }
 
   // ── Deploy (troop-count dialog) ──────────────────────────────────────────────────

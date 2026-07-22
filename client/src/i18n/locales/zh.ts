@@ -832,6 +832,8 @@ export const zh = {
   'world.mine': '我的领地',
   'world.protected': '保护中（剩 {sec}s）',
   'world.garrison': '驻军 {n}',
+  'world.resLevel': '{res} · Lv.{lv}',
+  'world.recommendTroops': '建议兵力 {n}',
   'world.buildingHp': '耐久 {hp}/{max}',
   'world.center': '世界中心',
   'world.familyKeep': '家族驻地',

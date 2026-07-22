@@ -820,6 +820,8 @@ export const de: Record<TranslationKey, string> = {
   'world.mine': 'Mein Gebiet',
   'world.protected': 'Geschützt ({sec}s)',
   'world.garrison': 'Garnison {n}',
+  'world.resLevel': '{res} · Lv.{lv}',
+  'world.recommendTroops': 'Empfohlene Truppen {n}',
   'world.buildingHp': 'TP {hp}/{max}',
   'world.center': 'Weltzentrum',
   'world.familyKeep': 'Familienburg',

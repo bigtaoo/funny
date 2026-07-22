@@ -208,7 +208,7 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 `drillYard` 详情弹窗在「升级」区块之下新增：
 
 - **训练队列**：逐条列出 `trainingQueue`（数量 + `formatDuration` 倒计时）。
-- **训练三档按钮**：`+10` / `+50` / `Max`（`Max` = `min(TROOP_TRAIN_BATCH_MAX, troopCap-troops-已排队, ink/TROOP_TRAIN_INK_COST)`）——用固定档位代替 §8 原设想的「数量滑杆」，与 2026-07-18 之前删除的旧 world-map 练兵面板手感一致，实现更省（复用同一套 `sketchPanel` 按钮 + `this.hits` 命中模式，不需要额外的拖动手势组件）。按钮在训练队列已满 / 兵力已达上限 / 墨水不足时置灰，点击给出对应 toast（`city.err.trainQueueFull`/`city.err.troopCap`/`city.err.noInk`）。
+- **训练三档按钮**：`+100` / `+500` / `Max`（`Max` = `min(TROOP_TRAIN_BATCH_MAX, troopCap-troops-已排队, ink/TROOP_TRAIN_INK_COST)`）——用固定档位代替 §8 原设想的「数量滑杆」，与 2026-07-18 之前删除的旧 world-map 练兵面板手感一致，实现更省（复用同一套 `sketchPanel` 按钮 + `this.hits` 命中模式，不需要额外的拖动手势组件）。按钮在训练队列已满 / 兵力已达上限 / 墨水不足时置灰，点击给出对应 toast（`city.err.trainQueueFull`/`city.err.troopCap`/`city.err.noInk`）。**2026-07-22**：档位从 `+10`/`+50` 上调一个数量级，`TROOP_TRAIN_BATCH_MAX` 同步从 500 提到 5000（`server/shared/src/slg/core.ts`）——兵力上限普遍在万级，旧档位点满一次训练队列要点几十次。
 - **加速按钮**：队列非空时显示，复用 `city.speedup`/`speedupTraining`（与建造队列加速同一套系数 `TROOP_SPEEDUP_SECS_PER_COIN`）。
 - 新增 i18n：`city.trainEntry`/`city.trainMax`/`city.err.trainQueueFull`（zh/en/de 三语）；复用既有 `city.trainPanel`（此前定义了但从未被引用的历史遗留 key，本次仍未使用其文案，留作弹窗标题的候选，未强行塞入布局）。
 - 覆盖测试：`client/test/ui/cityTrainTroops.ui.ts`（headless PIXI，驱动真实 `handleDown`/`handleUp` 命中测试，覆盖 +10 训练成功 / 队列已满不下单 / 加速按钮调用）。
