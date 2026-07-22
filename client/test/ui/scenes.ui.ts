@@ -1057,6 +1057,15 @@ describe('EquipmentScene — mixin-split wiring', () => {
     scene.destroy();
   });
 
+  it('a stack of duplicate epic items still offers no Salvage All (stacking alone must not bypass the rarity gate)', async () => {
+    const { cb, save } = buildEquipCallbacks('card1');
+    save.equipmentInv.eqBagEpic2 = { id: 'eqBagEpic2', defId: 'wp_highlighter', rarity: 'epic', level: 0, affixes: [{ id: 'm_atk', value: 40 }] };
+    const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
+    const actions = (scene as any).instanceActions(save, save.equipmentInv.eqBagEpic) as Array<{ key: string; fn: () => void }>;
+    expect(actions.map((a) => a.key)).toEqual(['enhance', 'equip']);
+    scene.destroy();
+  });
+
   // initialFilterSlot (CardScene gear-slot tap → jump straight to that slot's filter tab, instead
   // of landing on "All"). The seeding happens in EquipmentSceneBase's constructor: verify the
   // default, that each slot value round-trips, and that render() honors the seeded filter without
