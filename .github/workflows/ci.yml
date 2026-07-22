@@ -137,6 +137,32 @@ jobs:
           NW_LOAD_CLIENTS: '20'
         run: npm run test:load
 
+      # Browser smoke (claudedocs/client-testing.md 缺口B): the only layer with a real renderer /
+      # real WebGL, driven via window.__nwE2E (see entries/web-e2e.ts) instead of pixel clicks.
+      # Reuses the stack already brought up above — no separate docker-compose bring-up. New as of
+      # 2026-07-22: continue-on-error until it's proven stable across a run of PRs, then remove the
+      # flag to make it a hard merge gate (this is the day-branch → main PR gate, chosen precisely
+      # because this job's stack cost is too high to pay on every feature-branch merge).
+      - name: install Playwright chromium
+        working-directory: client
+        run: npx playwright install --with-deps chromium
+
+      - name: run browser smoke (two-account, real WebGL)
+        id: browser_smoke
+        working-directory: client
+        continue-on-error: true
+        run: npm run test:browser
+
+      # continue-on-error above means `failure()` never sees this step fail — check its recorded
+      # outcome directly instead, or this upload (and the trial-period signal) would never fire.
+      - name: upload Playwright report on failure
+        if: steps.browser_smoke.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: client/playwright-report/
+          retention-days: 7
+
       # Dump full stack logs on failure to aid diagnosis (ports / handshakes / matchmaking queue).
       - name: dump server logs on failure
         if: failure()
