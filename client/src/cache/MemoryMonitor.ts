@@ -22,6 +22,17 @@ const MB = 1024 * 1024;
 // localStorage.setItem('nw_mem_warn_mb', '250') (e.g. low-end Android / WeChat).
 const DEFAULT_WARN_MB = 400;
 
+/**
+ * Soft budget for **generated** (non-URL) base textures — Text/RenderTexture/generateTexture results
+ * (see genTexCount). A healthy client keeps only a bounded live set (on-screen labels, baked chrome, a
+ * handful of tokens); legitimate peaks sit in the low hundreds. Crossing this *while still climbing* is a
+ * generated-texture leak caught early — before it inflates the JS heap past DEFAULT_WARN_MB (a generated
+ * texture is mostly GPU memory, which usedJSHeapSize barely reflects, so this fires long before the heap
+ * gate would). Tunable via localStorage.setItem('nw_gentex_budget', '400'). This is the regression guard
+ * for the leak class fixed in the overlay-scene teardown pass.
+ */
+const DEFAULT_GEN_TEX_BUDGET = 600;
+
 const SAMPLE_EVERY_MS = 5_000;   // sampling interval
 const REWARN_EVERY_MS = 30_000;  // minimum interval between two consecutive warnings (to avoid log spam)
 
@@ -47,6 +58,15 @@ function warnThresholdMB(): number {
     if (Number.isFinite(v) && v > 0) return v;
   } catch { /* localStorage unavailable: use default */ }
   return DEFAULT_WARN_MB;
+}
+
+function genTexBudget(): number {
+  try {
+    const raw = globalThis.localStorage?.getItem('nw_gentex_budget');
+    const v = raw == null ? NaN : Number(raw);
+    if (Number.isFinite(v) && v > 0) return v;
+  } catch { /* localStorage unavailable: use default */ }
+  return DEFAULT_GEN_TEX_BUDGET;
 }
 
 const round = (n: number, d = 1): number => {
@@ -86,13 +106,38 @@ function cacheSize(name: 'TextureCache' | 'BaseTextureCache'): number {
  * categories. Art is loaded via `PIXI.Texture.from(url)` (see cardArt/gachaArt/titleArt/CardScene.drawArtFit),
  * so keys are the webpack asset URLs — bucketing by directory tells us *which* art folder is filling the cache
  * (cards vs skins vs titles vs …). data:/blob: sources bucket by scheme.
+ *
+ * **Generated textures** (canvas-backed `PIXI.Text`, `RenderTexture`, `generateTexture` results) have no URL —
+ * PIXI keys them by an auto-incrementing uid like `pixiid_25`. Left un-collapsed, each becomes its own n=1
+ * bucket and the top-N list drowns in noise while hiding the fact that they are the dominant leak class.
+ * Since asset URLs always contain a '/' and generated uids never do, "no slash" ⇒ one `generated:` bucket.
+ * This is the single most important distinction for this game's leaks: the URL-keyed asset cache is bounded
+ * (dedup by URL) and the caching policy covers it; generated textures are freed only by an explicit
+ * `destroy(true)` and are where unbounded growth actually happens (see {@link genTexCount}).
  */
 function texBucket(key: string): string {
   if (key.startsWith('data:')) return 'data:';
   if (key.startsWith('blob:')) return 'blob:';
   const noQuery = key.split('?')[0];
   const slash = noQuery.lastIndexOf('/');
-  return slash > 0 ? noQuery.slice(0, slash) : noQuery;
+  if (slash < 0) return 'generated:'; // pixiid_* / canvas / RenderTexture — no URL, freed only by destroy(true)
+  return noQuery.slice(0, slash);
+}
+
+/**
+ * Count of **generated** (non-URL) base textures in the cache — Text/RenderTexture/generateTexture results,
+ * keyed by PIXI uid (no '/'). This is the leak signal that the URL-asset cache size can't show: it should
+ * stay bounded (a fixed set of live tokens/labels/baked chrome), so unbounded growth here is the smoking gun.
+ */
+function genTexCount(): number {
+  const c = (PIXI.utils as unknown as Record<string, Record<string, unknown> | undefined>).BaseTextureCache;
+  if (!c) return -1;
+  let n = 0;
+  for (const key of Object.keys(c)) {
+    if (key.startsWith('data:') || key.startsWith('blob:')) continue;
+    if (!key.includes('/')) n += 1;
+  }
+  return n;
 }
 
 /**
@@ -124,6 +169,12 @@ export class MemoryMonitor {
   private stage: PIXI.Container | null = null;
   private accMs = 0;
   private lastWarnMs = -Infinity;
+  /** Generated-texture count at the previous dump — lets each report carry the delta since last time, so a
+   * single sample shows whether generated textures are climbing (leak) or flat (bounded), not just their level. */
+  private lastGenTex = -1;
+  /** Generated-texture count at the previous *sample* (every SAMPLE_EVERY_MS, not just on warn) — the budget
+   * guard only fires when the count is over budget AND still growing, so a large-but-stable set stays quiet. */
+  private lastSampledGenTex = -1;
 
   install(ticker: PIXI.Ticker, stage?: PIXI.Container): void {
     this.ticker = ticker;
@@ -154,17 +205,32 @@ export class MemoryMonitor {
     if (this.accMs < SAMPLE_EVERY_MS) return;
     this.accMs = 0;
 
+    // Two independent triggers, either of which files a report:
+    //   ① JS heap over threshold (the classic pure-JS retention leak — needs performance.memory).
+    //   ② generated (non-URL) base-texture count over budget AND still climbing — the GPU-side leak the
+    //      heap gate is blind to (generated textures are mostly GPU memory). Works with no performance.memory,
+    //      so it also covers Safari/WeChat where heap sampling is unavailable.
     const heap = readHeap();
-    if (!heap) return; // environment does not support heap sampling: rely on wx signals only
-
-    const usedMB = heap.usedJSHeapSize / MB;
+    const usedMB = heap ? heap.usedJSHeapSize / MB : 0;
     const threshold = warnThresholdMB();
-    if (usedMB < threshold) return;
+    const heapOver = heap != null && usedMB >= threshold;
+
+    const generated = genTexCount();
+    const budget = genTexBudget();
+    const genClimbing = this.lastSampledGenTex < 0 || generated > this.lastSampledGenTex;
+    this.lastSampledGenTex = generated;
+    const genOver = generated > budget && genClimbing;
+
+    if (!heapOver && !genOver) return;
 
     const t = nowMs();
     if (t - this.lastWarnMs < REWARN_EVERY_MS) return;
     this.lastWarnMs = t;
-    this.dump(`JS heap ${usedMB.toFixed(0)}MB exceeds warning threshold of ${threshold}MB`);
+    this.dump(
+      heapOver
+        ? `JS heap ${usedMB.toFixed(0)}MB exceeds warning threshold of ${threshold}MB`
+        : `generated textures ${generated} exceed budget of ${budget} and still climbing (likely a Text/RenderTexture leak)`,
+    );
   };
 
   /** Immediately emit a memory + pool-usage warning (called when heap exceeds threshold or a wx low-memory signal is received). */
@@ -177,9 +243,18 @@ export class MemoryMonitor {
     const poolTotal = { idle: pools.totalIdle, estMB: round(pools.totalBytes / MB, 2) };
     // PIXI-level counters: when pools are empty (poolTotal.estMB≈0) but the heap keeps growing, these three numbers identify which category of retention leak is occurring.
     const nodes = countNodes(this.stage);
+    // `generated` (non-URL textures) + its delta since the last dump are the primary leak signal: baseTex alone
+    // conflates the bounded URL-asset cache with the unbounded generated class. genDelta > 0 across dumps ⇒ a
+    // generated-texture leak in progress; the accompanying nodes count separates a texture leak from a
+    // scene-graph-retention leak (both surface as heap growth with empty pools — see the file header).
+    const generated = genTexCount();
+    const genDelta = this.lastGenTex >= 0 ? generated - this.lastGenTex : 0;
+    this.lastGenTex = generated;
     const gpu = {
       tex: cacheSize('TextureCache'),
       baseTex: cacheSize('BaseTextureCache'),
+      generated,
+      genDelta,
       nodes: nodes >= NODE_WALK_CAP ? `${NODE_WALK_CAP}+` : nodes,
       tickers: this.ticker?.count ?? -1,
     };

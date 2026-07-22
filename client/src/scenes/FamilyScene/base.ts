@@ -420,6 +420,9 @@ export class FamilySceneBase {
     if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
     if (this.sendInput) { this.sendInput.remove(); this.sendInput = null; }
     this.profilePopup.destroy();
+    // Free descendant Text baseTextures before dropping the container (overlay over the live
+    // WorldMapScene → leaks a screenful of Text per close otherwise). See sketchUi.tearDownChildren.
+    tearDownChildren(this.container);
     this.container.destroy({ children: true });
   }
 

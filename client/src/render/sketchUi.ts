@@ -107,12 +107,30 @@ function devicePixelRatioSafe(): number {
  * everything else (Graphics geometry, and crucially Sprites backed by a shared
  * `bake()` RenderTexture like the paper background) is destroyed with the default
  * `texture: false` so the shared bake cache is never touched.
+ *
+ * Recurses into **sub-containers**: a plain `child.destroy({ children: true })` destroys any
+ * nested Text *object* but leaves its baseTexture orphaned (the `texture` flag defaults to false
+ * for descendants), so Text tucked inside a scroll body / modal / row container would still leak.
+ * Walking the tree lets the Text special-case apply at every depth while leaf Sprites/Graphics keep
+ * `texture: false` — the shared bake/atlas cache is never touched regardless of nesting depth.
  */
 export function tearDownChildren(container: PIXI.Container): void {
-  for (const child of container.removeChildren()) {
-    if (child instanceof PIXI.Text) child.destroy({ texture: true, baseTexture: true });
-    else child.destroy({ children: true });
+  for (const child of container.removeChildren()) disposeChild(child);
+}
+
+/** Destroy one display object, freeing Text textures at any nesting depth (see {@link tearDownChildren}). */
+function disposeChild(child: PIXI.DisplayObject): void {
+  if (child instanceof PIXI.Text) {
+    child.destroy({ texture: true, baseTexture: true });
+    return;
   }
+  // Detach + dispose grandchildren first, so the subsequent destroy() sees a childless node and
+  // can't double-destroy anything we already freed (a double free surfaces as the "_geometry.clear
+  // of null" crash). Only non-Text containers with children need the walk; leaves fall straight through.
+  if (child instanceof PIXI.Container && child.children.length > 0) {
+    for (const grandchild of child.removeChildren()) disposeChild(grandchild);
+  }
+  child.destroy({ children: true });
 }
 
 /**

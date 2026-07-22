@@ -194,6 +194,11 @@ export class CityScene implements Scene {
   destroy(): void {
     this.destroyed = true;
     for (const unsub of this.unsubs) unsub();
+    // Free the Text baseTextures across the whole tree before dropping the container — a bare
+    // container.destroy({children:true}) destroys the Text objects but orphans their textures
+    // (texture defaults to false for descendants). This scene opens/closes as an overlay on top of
+    // the long-lived WorldMapScene, so an un-freed screenful of Text leaks on every close (§mem-leak).
+    tearDownChildren(this.container);
     this.container.destroy({ children: true });
   }
 

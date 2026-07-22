@@ -1,5 +1,6 @@
 import * as PIXI from 'pixi.js-legacy';
 import { makeText } from './pixiText';
+import { tearDownChildren } from './sketchUi';
 import { CardType, SpellType, GameState } from '../game';
 import { ILayout, Rect } from '../layout/ILayout';
 import { t, type TranslationKey } from '../i18n';
@@ -443,7 +444,9 @@ export class TutorialDirector {
   }
 
   private clearPanel(): void {
-    this.cardPanel.removeChildren().forEach((c) => c.destroy());
+    // tearDownChildren frees each Text's baseTexture (texture:true); the prior removeChildren().forEach(destroy)
+    // used the default texture:false, orphaning the panel's makeText labels on every tutorial-beat advance.
+    tearDownChildren(this.cardPanel);
     this.nextBtnRect = null;
     this.actionBtnRect = null;
   }

@@ -106,7 +106,7 @@ export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TB
     private showJoinRequestsModal(): void {
       const { w, h } = this;
       const ml = this.modalLayer;
-      ml.removeChildren();
+      tearDownChildren(ml); // free prior modal Text (title/rows/labels) — bare removeChildren orphaned them
       this.modalHits = [];
       this.modalOpen = true;
 

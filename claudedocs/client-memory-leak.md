@@ -90,3 +90,28 @@ PIXI 的 `DisplayObject.destroy()` 会把自己从父容器移除。所以「先
 
 - [`claudedocs/client-modules.md`](client-modules.md) —— 「渲染层销毁契约」约束条目（指向本文）
 - 修复涉及：`client/src/render/{GameRenderer,BoardView,UnitView,BuildingView,HandView}.ts`、`client/src/cache/ObjectPool.ts`
+
+## 8. 第二类泄漏：UI/overlay 场景销毁时漏掉 Text 纹理（2026-07-22）
+
+> 状态：已修复（`worldmap-texleak` 分支）。与第 1 节的战斗场景泄漏是**不同的类** —— 这次漏的是**生成型纹理**（`PIXI.Text` 的 canvas 纹理），不是 tick 钉住的场景图。
+
+### 8.1 症状与定位
+Loki `type=mem` 埋点显示：`baseTexTop` 里按 URL 的资源纹理桶（`a.gamestao.com`）长期稳定 ~20，但 `pixiid_*`（无 URL 的生成型纹理）持续攀升——旧 build 曾冲到 baseTex 1600+/heap 3.5GB，近期 build 仍见 3 分钟内 +70 baseTex 而 `nodes` 反降。**纹理在涨、场景图节点没涨** = 生成型纹理泄漏，不是场景图残留。
+
+### 8.2 根因
+`PIXI.Text` 各自持有一张 canvas 纹理，只有 `destroy({texture:true, baseTexture:true})` 才释放。两个反模式漏掉它：
+- **场景 `destroy()` 用裸 `this.container.destroy({children:true})`** —— `destroy` 的 options 传给子节点时 `texture` 默认 false，Text *对象*被销毁但 baseTexture 被遗弃。全仓库 ~30 个场景 `destroy()` 都是这个写法。
+- **裸 `container.removeChildren()` / `removeChildren().forEach(c=>c.destroy())`** —— 同样不带 `texture:true`。
+
+关键放大因素：ADR-044 起 SLG 面板（City/Family/Sect/Auction/Defense）改为 **overlay 叠在常驻的 WorldMapScene 上**（`pushOverlay`，地图不重建，见 [SceneManager](../client/src/scenes/SceneManager.ts)）。全屏场景切换时 PIXI 的 ~60s textureGC 尚能勉强跟上一屏 Text；但 overlay 一局内反复开关、且底下地图从不重建触发整体回收，漏掉的 Text 纹理便持续累积。
+
+### 8.3 修复
+1. **`tearDownChildren`（[sketchUi.ts](../client/src/render/sketchUi.ts)）改为递归** —— 之前只释放顶层 Text，嵌在滚动体/弹窗/行容器里的 Text 仍漏；现在深度遍历，任意层级的 Text 都 `destroy({texture:true, baseTexture:true})`，非 Text 叶子仍 `texture:false`（共享 bake/atlas 底图不受影响）。移除子节点后再销毁空容器，避免二次销毁（见 §5「双重销毁注意」）。
+2. **SLG 根因站点接入 `tearDownChildren`** —— 5 个 overlay 场景 + `WorldMapScene`（其 `view.destroy()` 只清 sprite/token 层，HUD/header/modal 的 Text 层需另外释放）+ `FamilyScene/actions` 与 `TutorialDirector` 两处裸 `removeChildren`。
+3. **护栏（[MemoryMonitor.ts](../client/src/cache/MemoryMonitor.ts)）** —— mem 报告新增 `generated`（无 URL 的 baseTex 数）+ `genDelta`（相邻采样增量）；并新增独立触发器：`generated` 超软预算 `DEFAULT_GEN_TEX_BUDGET=600` 且仍在增长时上报（可 `localStorage.nw_gentex_budget` 调）。这条不依赖 `performance.memory`（生成型纹理主要占 GPU，heap 阈值照不到），Safari/微信也能测出。
+
+### 8.4 与 §5.4 的差别（重要）
+§5.4 对战斗视图说「**切勿**传 `{texture:true, baseTexture:true}`」——那是因为战斗 sprite 的纹理是**跨局共享**的 spritesheet/`Texture.from(url)`，销毁会导致下一局白图/双重释放。**Text 纹理恰恰相反：每个 Text 独占一张 canvas 纹理，从不共享，因此 `texture:true` 对 Text 恒安全且必须。** `tearDownChildren` 正是编码了这个区分——只对 `instanceof PIXI.Text` 的节点传 `texture:true`，其余一律 `texture:false`。新增 UI 场景销毁一屏 Text 时，用 `tearDownChildren(this.container)` 再 `this.container.destroy({children:true})`，不要裸销毁容器。
+
+### 8.5 剩余项
+其余 ~24 个全屏场景（Gacha/Shop/Login/Result/Leaderboard/Equipment/Card…）的 `destroy()` 是同款裸写法，每次导航漏一屏 Text，靠 60s textureGC 勉强跟上、非 SLG 泄漏源，未在本次一并清扫——若要根除全局该类泄漏，同样 `tearDownChildren(this.container)` 接入即可。
