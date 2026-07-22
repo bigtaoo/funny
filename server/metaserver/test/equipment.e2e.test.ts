@@ -3,6 +3,7 @@
 //   Player POST /equipment/enhance (server-side dice roll → deduct materials + coins → on success level+1; idempotent, max level, insufficient)
 //   Player POST /equipment/salvage (+0~4 returns 70% materials and removes; +5/equipped/locked rejected; batch, idempotent)
 //   Player POST /equipment/equip (equip/unequip, slot validation, global/byUnit)
+//   Player POST /equipment/reforge (E6, EQUIPMENT_DESIGN §7.8: material slot/rarity/level validation)
 //   Internal /internal/equipment/{escrow,grant} (worldsvc auction escrow/transfer; equipped/locked rejected, idempotent)
 // Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
@@ -77,6 +78,8 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     app.inject({ method: 'POST', url: '/equipment/salvage', headers: auth(), payload: { instanceIds, idempotencyKey } });
   const equip = (slot: string, instanceId: string | null, cardInstanceId: string) =>
     app.inject({ method: 'POST', url: '/equipment/equip', headers: auth(), payload: { slot, instanceId, cardInstanceId } });
+  const reforge = (targetId: string, materialId: string, idempotencyKey: string) =>
+    app.inject({ method: 'POST', url: '/equipment/reforge', headers: auth(), payload: { targetId, materialId, idempotencyKey } });
   const escrow = (instanceId: string, orderId: string, account = accountId) =>
     app.inject({ method: 'POST', url: '/internal/equipment/escrow', headers: { 'x-internal-key': IK }, payload: { accountId: account, instanceId, orderId } });
   const grant = (instance: EquipmentInstance, orderId: string, account = accountId) =>
@@ -334,6 +337,25 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     expect((await readSave()).equipmentInv['s4']).toBeTruthy(); // whole batch not executed
   });
 
+  it('salvage epic rarity at +0 → 409 NOT_SALVAGEABLE (ADR-050: epic never salvages, regardless of level)', async () => {
+    await seedInstance('s7', 'wp_highlighter', 0, { rarity: 'epic' });
+    const res = await salvage(['s7'], 'sk-epic');
+    expect(res.statusCode).toBe(409);
+    expect(body(res).error.code).toBe('NOT_SALVAGEABLE');
+    expect((await readSave()).equipmentInv['s7']).toBeTruthy();
+  });
+
+  it('salvage batch mixing a valid item with an epic item → whole batch 409 rejected, valid item not consumed', async () => {
+    await seedInstance('s8', 'wp_pencil', 0); // otherwise perfectly salvageable
+    await seedInstance('s9', 'wp_highlighter', 0, { rarity: 'epic' });
+    const res = await salvage(['s8', 's9'], 'sk-mixed');
+    expect(res.statusCode).toBe(409);
+    expect(body(res).error.code).toBe('NOT_SALVAGEABLE');
+    const save = await readSave();
+    expect(save.equipmentInv['s8']).toBeTruthy(); // whole batch not executed
+    expect(save.equipmentInv['s9']).toBeTruthy();
+  });
+
   it('salvage locked → 409 EQUIP_LOCKED; equipped → 409 EQUIP_IN_USE', async () => {
     await seedInstance('sl', 'wp_pencil', 0, { locked: true });
     expect((await salvage(['sl'], 'sk-lock')).statusCode).toBe(409);
@@ -402,5 +424,18 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     const cardId = await starterCardId();
     await equip('weapon', 'w4', cardId);
     expect(body(await salvage(['w4'], 'sk-equipped')).error.code).toBe('EQUIP_IN_USE');
+  });
+
+  // ── E6 Reforge ───────────────────────────────────────────────────────────────────
+  it('reforge rejects an already-enhanced material → 400 INVALID_MATERIAL_LEVEL (client restricts the picker to +0, but a direct API call must be rejected too so sunk enhance materials/rolls cannot be destroyed)', async () => {
+    await seedInstance('rt1', 'wp_pen', 0, { rarity: 'fine' }); // target: fine, needs a common material
+    await seedInstance('rm1', 'wp_pencil', 1, { rarity: 'common' }); // material: right slot+rarity, but already +1
+    const res = await reforge('rt1', 'rm1', 'rk-lvl');
+    expect(res.statusCode).toBe(400);
+    expect(body(res).error.code).toBe('INVALID_MATERIAL_LEVEL');
+    // no partial mutation: both items still present, target untouched, material not consumed
+    const save = await readSave();
+    expect(save.equipmentInv['rt1']).toBeTruthy();
+    expect(save.equipmentInv['rm1']).toMatchObject({ level: 1 });
   });
 });

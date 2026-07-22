@@ -91,8 +91,9 @@ function stubWorldApi(): WorldApiClient {
 
 /**
  * Equipment fixture (EQUIPMENT_DESIGN §11): one card ('card1', lichuang) wearing a fine weapon
- * (eqEquippedFine), plus two unequipped bag items — a common weapon (eqBagCommon, doubles as the
- * common-rarity reforge material) and a fine weapon (eqBagFine, the reforge target used below).
+ * (eqEquippedFine), plus unequipped bag items — a common weapon (eqBagCommon, doubles as the
+ * common-rarity reforge material), a fine weapon (eqBagFine, the reforge target used below), and
+ * an epic weapon (eqBagEpic, level 0 — never salvageable per ADR-050 regardless of level).
  * Materials/coins are set high so afford checks never gate the tests.
  */
 function buildEquipSave(): SaveData {
@@ -106,6 +107,7 @@ function buildEquipSave(): SaveData {
     eqEquippedFine: { id: 'eqEquippedFine', defId: 'wp_pen', rarity: 'fine', level: 0, affixes: [{ id: 'm_atk', value: 20 }] },
     eqBagCommon: { id: 'eqBagCommon', defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [{ id: 'm_atk', value: 10 }] },
     eqBagFine: { id: 'eqBagFine', defId: 'wp_pen', rarity: 'fine', level: 0, affixes: [{ id: 'm_atk', value: 20 }] },
+    eqBagEpic: { id: 'eqBagEpic', defId: 'wp_highlighter', rarity: 'epic', level: 0, affixes: [{ id: 'm_atk', value: 40 }] },
   };
   return save;
 }
@@ -973,6 +975,23 @@ describe('EquipmentScene — mixin-split wiring', () => {
     scene.destroy();
   });
 
+  it('instanceActions(Enhance) opens the (now info+confirm) detail modal instead of firing cb.enhance directly; the modal\'s confirm button fires it with the current protect toggle', async () => {
+    const { cb, calls } = buildEquipCallbacks('card1');
+    const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
+    const save = (scene as any).cb.getSave();
+    const actions = (scene as any).instanceActions(save, save.equipmentInv.eqEquippedFine) as Array<{ key: string; fn: () => void }>;
+    actions.find((a) => a.key === 'enhance')!.fn();
+    expect((scene as any).detailId).toBe('eqEquippedFine');
+    expect((scene as any).modalOpen).toBe(true);
+    expect(calls.enhance).toEqual([]); // opening the modal must not fire the request itself
+    // No protect stones in the fixture → the toggle hit is omitted, so modalHits[0] is the confirm button.
+    const modalHits = (scene as any).modalHits as Array<{ action: () => void }>;
+    modalHits[0].action();
+    await Promise.resolve();
+    expect(calls.enhance).toEqual([['eqEquippedFine', undefined]]);
+    scene.destroy();
+  });
+
   it('bag mode: instanceActions(Equip) → Assign(beginAssign) → base.render(renderAssign) → Assign(doEquipTo) → Detail(doEquip) → cb.equip', async () => {
     const { cb, calls } = buildEquipCallbacks(''); // '' activeCardInstanceId = bag mode
     const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
@@ -1044,6 +1063,23 @@ describe('EquipmentScene — mixin-split wiring', () => {
     modalHits[0].action(); // OK → doSalvageAll
     await Promise.resolve();
     expect(calls.salvage).toEqual([['eqBagCommon', 'eqBagCommon2', 'eqBagCommon3']]);
+    scene.destroy();
+  });
+
+  it('epic-rarity items never offer Salvage/Salvage All, even at +0 (ADR-050)', async () => {
+    const { cb, save } = buildEquipCallbacks('card1');
+    const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
+    const actions = (scene as any).instanceActions(save, save.equipmentInv.eqBagEpic) as Array<{ key: string; fn: () => void }>;
+    expect(actions.map((a) => a.key)).toEqual(['enhance', 'equip']);
+    scene.destroy();
+  });
+
+  it('a stack of duplicate epic items still offers no Salvage All (stacking alone must not bypass the rarity gate)', async () => {
+    const { cb, save } = buildEquipCallbacks('card1');
+    save.equipmentInv.eqBagEpic2 = { id: 'eqBagEpic2', defId: 'wp_highlighter', rarity: 'epic', level: 0, affixes: [{ id: 'm_atk', value: 40 }] };
+    const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
+    const actions = (scene as any).instanceActions(save, save.equipmentInv.eqBagEpic) as Array<{ key: string; fn: () => void }>;
+    expect(actions.map((a) => a.key)).toEqual(['enhance', 'equip']);
     scene.destroy();
   });
 

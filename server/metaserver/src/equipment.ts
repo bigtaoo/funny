@@ -18,7 +18,7 @@ import {
   EQUIPMENT_IDEM_TTL_SEC,
   EQUIP_MAX_LEVEL,
   EQUIP_SLOTS,
-  SALVAGE_MAX_LEVEL,
+  isSalvageable,
   REFORGE_MATERIAL_RARITY,
   reforgeCoinCost,
   PROTECT_ENHANCE_ITEM_ID,
@@ -53,6 +53,7 @@ export type EquipErrorCode =
   | 'NOT_REFORGE_ELIGIBLE'
   | 'INVALID_SLOT'
   | 'INVALID_RARITY'
+  | 'INVALID_MATERIAL_LEVEL'
   | 'REV_CONFLICT';
 
 export interface EquipError {
@@ -462,7 +463,7 @@ export async function salvageEquipment(
     if (!inst) return { error: `equipment instance not found: ${id}`, code: 'EQUIP_NOT_FOUND' };
     if (inst.locked) return { error: `equipment locked: ${id}`, code: 'EQUIP_LOCKED' };
     if (isEquipped(cur, id)) return { error: `equipment in use: ${id}`, code: 'EQUIP_IN_USE' };
-    if (inst.level > SALVAGE_MAX_LEVEL) return { error: `not salvageable (+${inst.level}): ${id}`, code: 'NOT_SALVAGEABLE' };
+    if (!isSalvageable(inst.rarity, inst.level)) return { error: `not salvageable (${inst.rarity} +${inst.level}): ${id}`, code: 'NOT_SALVAGEABLE' };
     for (const [mat, qty] of Object.entries(salvageRefund(inst.defId))) refunded[mat] = (refunded[mat] ?? 0) + qty;
   }
 
@@ -494,7 +495,7 @@ export async function salvageEquipment(
     const save = doc.save;
     for (const id of ids) {
       const inst = save.equipmentInv?.[id];
-      if (!inst || inst.locked || isEquipped(save, id) || inst.level > SALVAGE_MAX_LEVEL) {
+      if (!inst || inst.locked || isEquipped(save, id) || !isSalvageable(inst.rarity, inst.level)) {
         await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
         return { error: `equipment no longer salvageable: ${id}`, code: 'REV_CONFLICT' };
       }
@@ -571,6 +572,11 @@ export async function reforgeEquipment(
   if (matDef.slot !== targetDef.slot) return { error: `material slot ${matDef.slot} must match target slot ${targetDef.slot}`, code: 'INVALID_SLOT' };
   if (material.rarity !== requiredMatRarity) {
     return { error: `material must be ${requiredMatRarity} (got ${material.rarity})`, code: 'INVALID_RARITY' };
+  }
+  // Only never-enhanced (+0) items may be used as fuel (client restricts the picker to the same; EQUIPMENT_DESIGN §7.8),
+  // so an enhanced item's sunk materials/rolls can't be destroyed by a modified client or direct API call.
+  if (material.level !== 0) {
+    return { error: `material must be unenhanced (+0), got +${material.level}`, code: 'INVALID_MATERIAL_LEVEL' };
   }
 
   // Reforge coin fee (ADR-030): charged every attempt on top of the fuel item. Pre-validate (commercial authoritative; insufficient → no state changes).

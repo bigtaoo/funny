@@ -1059,7 +1059,7 @@ export class CityScene implements Scene {
   // ── Train-troops modal (its own home-desk tile, sibling to drillYard) ────────
 
   /**
-   * Standalone training modal: troop-pool cap line + training-queue countdown + +10/+50/Max presets
+   * Standalone training modal: troop-pool cap line + training-queue countdown + +100/+500/Max presets
    * + speedup. Feeds the unified base troop pool (`me.troops`, capped at troopCapFor(buildings)); the
    * trained troops are then distributed to team cards in the DefenseEditor. drillYard the building only
    * raises troopCap / training speed / queue slots — it no longer hosts these controls.
@@ -1130,8 +1130,8 @@ export class CityScene implements Scene {
 
     const maxQty = Math.max(0, Math.min(TROOP_TRAIN_BATCH_MAX, capLeft, Math.floor(ink / TROOP_TRAIN_INK_COST)));
     const presets: Array<{ label: string; qty: number }> = [
-      { label: '+10', qty: 10 },
-      { label: '+50', qty: 50 },
+      { label: '+100', qty: 100 },
+      { label: '+500', qty: 500 },
       { label: t('city.trainMax').replace('{n}', String(maxQty)), qty: maxQty },
     ];
     const btnGap = 6;

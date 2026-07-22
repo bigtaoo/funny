@@ -222,8 +222,9 @@ describe('Detail/reforge modal panel scales to 80% of the constrained screen axi
     expect(inner.landscape).toBe(true);
 
     // Natural size copied from EquipmentScene/detail.ts: 1 affix, not maxed →
-    // mh0 = 44 + affixCount*20 + (maxed ? 24 : 58) + 12.
-    const mh0 = 44 + 1 * 20 + 58 + 12;
+    // mh0 = 44 + affixCount*20 + (maxed ? 24 : 58 + 40) + 12 (the +40 is the enhance confirm
+    // button's gap/row, added 2026-07-22b alongside the protect-toggle-before-enhance flow).
+    const mh0 = 44 + 1 * 20 + (58 + 40) + 12;
     const expectedScale = (inner.h * 0.8) / mh0;
 
     expect(inner.modalScale).toBeCloseTo(expectedScale, 10);
@@ -255,11 +256,13 @@ describe('Detail/reforge modal panel scales to 80% of the constrained screen axi
       return scene;
     };
 
-    // Natural size copied from EquipmentScene/reforge.ts: mw0=min(320,w-24); rowH=48;
-    // mh0=min(60 + candidates.length*rowH + 40, h-80). Only 'i2' (common) qualifies as a
-    // reforge material for a 'fine' target, so candidates.length === 1.
-    const mw0 = 320;
-    const mh0 = 60 + 1 * 48 + 40;
+    // Natural size copied from EquipmentScene/reforge.ts's icon-card grid (2026-07-reforge-material-grid
+    // rewrite — no longer a row list). Only 'i2' (common) qualifies as a reforge material for a 'fine'
+    // target, so stacks.length === 1 → cols=3 (maxModalW=420 for both LANDSCAPE/PORTRAIT's w here),
+    // rows=1: mw0 = pad*2 + cols*cardW + (cols-1)*gap = 14*2+3*96+2*10 = 336;
+    // mh0 = titleH + pad + rows*cardH + closeAreaH = 30+14+120+44 = 208 (both < h-80, so unclamped).
+    const mw0 = 336;
+    const mh0 = 208;
 
     const landscape = build(...LANDSCAPE);
     const li = internals(landscape);

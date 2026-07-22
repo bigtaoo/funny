@@ -1295,3 +1295,26 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 - 页脚消失后棋盘/名册 `gridBottom` 由 `h - FOOTER_H - 4` 放宽到 `h - 4`；按卡分兵 stepper（`renderAllocateStepper`）锚点由 `h - FOOTER_H` 改为 `h`（贴屏底）。defense 模式布局完全不变（其 header 右上角已被 base-level stepper 占用）。
 
 **验证**：client `tsc --noEmit` 全绿；`defenseEditorFillTroops`/`defenseEditorAttackCards` 共 17 例 UI 测试全绿（均直调方法/读私有几何，不依赖按钮坐标）。另用临时 headless 用例读回 `this.hits`：attack 三键落在 header 带内（headerH=230 下 y=100，左→右 Fill/Clear/Save），defense 两键仍贴底（y≈1876），验证后删除。真实入图需完整 worldsvc + 登录 + 进城，未起全栈截图。
+
+## 36. 地图基地血条悬空过高修复（2026-07-22，用户截图报告）
+
+**背景（用户截图报告）**：地图上敌方基地受损时头顶的 HP 血条，离建筑本体（帐篷营地）明显偏高，飘在半空、靠近路过的行军单位，看不出是这座基地的血条。
+
+**根因**：`WorldMapRenderer/city.ts` 的城市图层血条（ADR-026 §1，专为遮住地块层血条的 3×3 建筑精灵补画一份）把纵向偏移写死为 `-sprite.height * 0.9`——即"整格画布高度的 90% 处"。但 `city_atlas`/`playerbase_atlas` 每格固定 256px 正方画布，各档位建筑素材实际占高差异极大（`pack_city_atlas.js` 底对齐合成，素材上方留白不等）：一级营地（帐篷+旗）实测只填满画布底部约 50%（`contentTop≈0.50`），十级大城几乎填满整格（`contentTop≈0.02`）。血条按固定 90% 高度定位，对矮建筑就飘在素材实际顶部之上一大截空白里；等级越低越明显——恰是截图里的一级营地。
+
+**修复**：
+- `art/ui/slg-building/pack_city_atlas.js` + `art/ui/slg-playerbase/pack_playerbase_atlas.js`：合成时已经算出内容在格内的实际高度（`fm.height`），顺手算出 `contentTop = (CELL - fm.height) / CELL` 写进各自 `*_atlas.json` 每帧的自定义字段（PIXI Spritesheet 解析器会忽略未知字段，不影响正常纹理加载）。跑了两个脚本重新生成两份 atlas（图像字节不变，只多了 JSON 字段）。
+- `cityAtlasLoader.ts`/`playerBaseAtlasLoader.ts` 新增 `getCityContentTopFracForLevel`/`getPlayerBaseContentTopFracForLevel`，直接读原始 JSON（不经过 `sheet.textures`，因为 Texture 对象不带这个自定义字段）解析出对应帧的 `contentTop`；旧 atlas（无该字段）回退 0。
+- `WorldMapRenderer/city.ts`：血条纵向偏移由 `-sprite.height*0.9` 改成 `-sprite.height*(1-contentTopFrac) - barH - gap`——即素材实际顶边再加一点小间隙，取代整格画布的固定比例；同时按 `tile.mine ? playerbase 纹理来源 : city 纹理` 的既有 fallback 逻辑镜像选取对应的 `contentTopFrac` 来源。
+
+**验证**：client `tsc --noEmit` 全绿。真实入图需完整登录+一个正被围攻的敌方基地，未起全栈；改用离线渲染核对——直接截取重新生成的 `city_atlas.png` 对应帧，套用代码里的公式画出 OLD/NEW 两条血条位置对比：一级营地（`city_lv1`）新位置紧贴帐篷/旗帜顶部，旧位置飘在空白画布上方一大截，与截图里的 bug 完全吻合；三级/四级（`city_lv3`/`city_lv4`）新位置也更贴合尖塔顶端，无回归。
+
+**测试**：新增 `cityAtlasContentTop.ui.ts`（7 例，用真实打包好的 atlas JSON，不 mock）——逐级/逐帧核对 `getCityContentTopFracForLevel`/`getPlayerBaseContentTopFracForLevel` 与 JSON 里的 `contentTop` 完全一致、无级图退回三级图的 fallback 分支、越界等级 clamp 到 [1,10]，以及直接断言"一级营地 `contentTop` 明显大于十级大城"（即 bug 的形状本身）；`cityAtlasContentTopFallback.ui.ts`（2 例，mock 一份不含 `contentTop` 字段的旧版 atlas JSON）验证回退到 0 而非 `undefined`/`NaN`（血条公式会直接乘这个值）。`worldMapBaseHpBar.ui.ts` 补 1 例：mock `getCityContentTopFracForLevel` 返回值分别代表"矮建筑"和"高建筑"，断言矮建筑的血条落点更靠近地面而非固定处——即 city.ts 确实用上了这个值，而不只是数据层算对了。两个 getter 顺手去掉了不必要的 `!sheet` 门（该值来自 bundle 内 JSON，不依赖 PNG 解码完成，门控只是抄了纹理 getter 的套路，且挡住了脱离场景直接单测）。UI 测试套件全量跑一遍：764/766 通过，另 2 例失败（`modalScaleAndBackButton.ui.ts` 的 EquipmentScene 弹窗缩放）与本次改动无关——同一共享检出里另一会话正在合并的 in-flight WIP（`server/metaserver/src/equipment.ts` 等仍处于 `MERGE_HEAD` 未提交状态）。
+
+## 37. 占领面板补充资源类型/等级 + 建议兵力（2026-07-22，用户截图请求）
+
+**背景（用户截图请求）**：中立地块的 Occupy 确认弹窗（`WorldMapInput.onTileClick` 中立地块分支）只有标题+坐标，玩家看不到这块地的资源类型、等级，也不知道该派多少兵才够打赢系统驻军，只能凭感觉出兵。
+
+**实现**：`WorldMapInput.ts` 该分支的弹窗行新增两行——① 资源类型 + 等级（`world.resLevel` = `'{res} · Lv.{lv}'`，资源名复用既有 `world.ink/paper/graphite/metal/sticker` 词条；`SLG_GEN.resourceDensity=1.0` 下几乎所有中立地都带 `resType`，无该字段则跳过这行）；② 建议兵力（`world.recommendTroops` = `'建议兵力 {n}'`，取 `@nw/shared` 的 `npcGarrison(level)` = `NPC_GARRISON_PER_LEVEL(120) × level`——占领结算走 `combatSiege/occupation.ts` 时，未被占过的中立地系统驻军就是现算的这个值，同一份口径，不是另起一套估算）。三语言词条（zh/en/de）同步补齐。真实战斗走完整引擎模拟（卡牌/装备加成），这个数字是无卡牌情况下的参考线，不是精确胜负保证。
+
+**验证**：client `tsc --noEmit` + webpack build 全绿；`worldMapOccupyConnectivity.ui.ts` 新增 1 例断言两行文案的具体内容（含 `npcGarrison(3)=360` 的数值）。真实入图同样需要完整 worldsvc + 登录 + 找到一块未占中立地，本会话未起全栈截图核对。

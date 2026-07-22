@@ -1,6 +1,6 @@
 # 装备系统设计 — Equipment
 
-> 状态：E0 数据模型 ✅ + E1 引擎注入 ✅ + E2 合成 ✅ + E2.5 拍卖托管转移 ✅（解锁拍卖行 A）+ E3 强化/分解 ✅ + E4 穿戴 ✅（2026-06-21）+ E5 客户端 UI ✅（2026-06-22）+ E6 词条/洗练 ✅（2026-06-22）+ E7 抽卡/保护道具 ✅（2026-06-22）+ E8 SLG 接入 ✅（2026-06-22）· 权威：**本文（装备系统机制单一来源）**；数值见 [`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md) §5（数字权威）、战斗运行值见 `@nw/engine` config.ts · 更新：2026-06-22
+> 状态：E0 数据模型 ✅ + E1 引擎注入 ✅ + E2 合成 ✅ + E2.5 拍卖托管转移 ✅（解锁拍卖行 A）+ E3 强化/分解 ✅ + E4 穿戴 ✅（2026-06-21）+ E5 客户端 UI ✅（2026-06-22）+ E6 词条/洗练 ✅（2026-06-22）+ E7 抽卡/保护道具 ✅（2026-06-22）+ E8 SLG 接入 ✅（2026-06-22）· 权威：**本文（装备系统机制单一来源）**；数值见 [`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md) §5（数字权威）、战斗运行值见 `@nw/engine` config.ts · 更新：2026-07-22（ADR-050 史诗永不可分解）
 
 本文是装备子系统的**机制设计基准**：数据模型、槽位、获取/强化/洗练、稀有度、战力挂钩、引擎注入、服务器权威、UI、经济联动、实现拆解。
 **数字不在本文定**——成功率/成本/掉率等去 [`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md) §5；本文只镜像并标注权威指针。
@@ -21,7 +21,7 @@
 | L1 | **公平红线**：装备战力只作用于 PvE + SLG；天梯/知己 PvP 永走 `buildPvpBlueprints()`（签名无养成参，编译期不可串味，硬墙单测守护）。 | ECONOMY_BALANCE §5、SLG7、`pveUpgrades.ts` |
 | L2 | **服务器权威**：装备影响 SLG PvP（真钱相邻），全链路（拥有/强化/洗练/穿戴生效）服务器权威，客户端只读/只发意图。复用 PVE_INTEGRITY 方案 B。 | SLG_DESIGN §6.3、PVE_INTEGRITY_PLAN |
 | L3 | **PvE+SLG 同一棵养成树**：PvE 攒的装备直接是 SLG 战力，PvE 是 SLG 的免费 on-ramp。SLG 不另造装备体系。 | SLG7/SLG8 |
-| L4 | **有限回收**（[ADR-012](DECISIONS.md) 取代旧"无销毁渠道"）：强化失败不掉级、不碎；**装备可分解回收 70% 打造材料**（强化投入不返还），但**+5 及以上不可分解**（已具价值，出口转拍卖/穿戴）。低级冗余件有回收阀治理膨胀；金币/材料 sink 仍主要来自"反复强化的失败损耗"。 | §6.3、ECONOMY_NUMBERS §5.1 / §5.3、ADR-009 / ADR-012 |
+| L4 | **有限回收**（[ADR-012](DECISIONS.md) 取代旧"无销毁渠道"）：强化失败不掉级、不碎；**装备可分解回收 70% 打造材料**（强化投入不返还），但**+5 及以上、或史诗 Epic 稀有度（不论等级，[ADR-050](DECISIONS.md)）不可分解**（已具价值，出口转拍卖/穿戴）。低级冗余件有回收阀治理膨胀；金币/材料 sink 仍主要来自"反复强化的失败损耗"。 | §6.3、ECONOMY_NUMBERS §5.1 / §5.3、ADR-009 / ADR-012 / ADR-050 |
 | L5 | **数值活在代码/数字文档**：本文不复述具体数字，引用 ECONOMY_NUMBERS §5 与 config.ts。 | README §0 三铁律 |
 
 ---
@@ -172,7 +172,7 @@ type SlotMap = Partial<Record<EquipSlot, string /*instanceId*/>>;
 - **保护道具**（氪点）：强化失败保底/不损材料 —— 大 R 向，**只 PvE/SLG**，不碰公平 PvP。
 - **分解回收**（§6.3）：低级冗余件回收，兼作库存阀；70% 返还 → 30% 损耗本身也是温和 sink。
 
-### 6.3 分解回收 Salvage（[ADR-012](DECISIONS.md)）
+### 6.3 分解回收 Salvage（[ADR-012](DECISIONS.md) + [ADR-050](DECISIONS.md)）
 
 库存治理（§3.3）+ 温和 sink 的回收口，**取代旧"无销毁渠道"**：
 
@@ -180,12 +180,13 @@ type SlotMap = Partial<Record<EquipSlot, string /*instanceId*/>>;
 |---|---|---|
 | **返还** | **70% 打造材料** | 只返还该 `defId` **打造基础成本**的材料；**强化投入的材料/金币不返还**（强化失败损耗是核心 sink，不能靠分解漏回） |
 | **等级门槛** | **+5 及以上不可分解** | +5 起已具价值，作为一种保护；出口转为**拍卖 / 穿戴**（§13） |
-| **可分解范围** | +0 ~ +4 | 含堆叠的 0 级冗余件（堆叠件可直接批量分解） |
-| **权威** | 服务器 `/equipment/salvage` | 扣实例、入材料，服务器权威（§10） |
+| **稀有度门槛** | **史诗 Epic 永不可分解**（ADR-050） | 与等级无关——哪怕 +0 也不可分解；史诗件只能**拍卖 / 穿戴**退出，不走销毁渠道 |
+| **可分解范围** | 普通/精良/稀有 的 +0 ~ +4 | 含堆叠的 0 级冗余件（堆叠件可直接批量分解） |
+| **权威** | 服务器 `/equipment/salvage` | 扣实例、入材料，服务器权威（§10）；`isSalvageable(rarity, level)` 单一判定函数（`server/shared/src/equipment.ts`），客户端镜像同名函数 |
 
 - **30% 损耗**是设计的：分解不是无损循环，避免"造了分、分了造"刷材料；它的主职是**清库存**，sink 是副产物。
-- 与"满仓禁获得"（§3.3）配合：玩家撞 300 上限时，分解 +0~+4 冗余件腾位，或拿去强化燃料/拍卖。
-- +5 以上想清掉只能**上拍卖**（§13，受同时挂拍上限约束）——给高投入件一个**有偿出口**而非销毁。
+- 与"满仓禁获得"（§3.3）配合：玩家撞 300 上限时，分解 +0~+4 冗余件（非史诗）腾位，或拿去强化燃料/拍卖。
+- +5 以上、或任意等级的史诗件，想清掉只能**上拍卖**（§13，受同时挂拍上限约束）——给高投入/高稀有度件一个**有偿出口**而非销毁。
 
 ---
 
@@ -520,6 +521,10 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 **操作按钮从详情弹窗移到图标卡 + 不可用即隐藏 + 直接触发**（2026-07-22 追加）：真人吐槽走查——库存图标卡此前整格只是"打开详情弹窗"的命中区，所有操作（强化/装备·卸下/洗练/分解/全部分解）都挤在弹窗底部一排按钮里，且不可用的按钮（如无素材的洗练、买不起的强化）只是**置灰**仍占位。改为把这排操作直接搬到每张图标卡底部满宽的按钮带上：① 新增 `DetailMixin.instanceActions(save, inst)`（`detail.ts`）集中算出**仅当前可用**的操作集合（沿用原弹窗的可用性判定：`!maxed && canAffordEnhance` 才有强化、同槽低一档素材存在才有洗练、未穿戴未锁定才有分解、堆叠 >1 才有全部分解），返回 `CellAction[]`（`base.ts` 新增共享类型：`{key,label,fill,stroke,fn}`，`fn` 直接触发动作/确认弹窗/选材弹窗，不再开信息弹窗）；不可用的操作**直接不进列表**（隐藏而非置灰）。② `InventoryMixin.renderInstanceCell`（`inventory.ts`）在格底预留 46px 按钮带（有操作才占位，图标框相应缩短留出 8px 间隙），逐个画**图标按钮**（上图标下小字标签：强化=`hammer`／装备=`check`／卸下=`close`／洗练=`replay`／分解·全部分解=`scrap`，`CellAction.icon` 携带；标签保留以区分分解 vs 全部分解）并把命中矩形 push 进 `hitRects`——**按钮命中先于整格命中入栈**，输入层首个命中即返回，故点按钮触发对应动作、点格子其余区域才开详情弹窗（真人反馈"整个卡片就是一个按钮、要能在一个界面上操作所有功能"，2026-07-22 二次调整为图标按钮形态）。③ 详情弹窗（`openDetail`）退化为**纯信息**：只剩词条列表 + 强化成功率/消耗 + 保护石开关（开关仍在，供强化前设置粘性 `useProtectEnhance`），底部按钮带整块移除、`mh` 相应缩短。测试：`scenes.ui.ts` 五条 mixin 接线用例从"驱动弹窗 `modalHits`"改为"驱动 `instanceActions().fn`"（enhance/equip·assign/reforge/salvage/salvageAll 全绿，83 项通过）。`tsc --noEmit` 通过；实机截图受阻——dev server `/bootstrap` 无本地后端连不上（既存未解决问题，非本次引入），本次靠 headless `test:ui` 冒烟层核对（构造+命中矩形回归）。
 
+**强化改回"点击开弹窗"，不再直接触发**（2026-07-22b 修正）：真人截图反馈——上一条改动把强化也变成图标卡直接触发后，玩家点"强化"按钮时来不及勾选详情弹窗里的保护石开关（弹窗根本不会打开），保护石功能形同失效。装备/卸下/洗练/分解都是"点了就该立刻发生"的动作，强化不是——它需要在**提交前**读一个由玩家设置的参数（`useProtectEnhance`），这个参数只有弹窗里那个开关能设。修复：① `instanceActions()` 里 `enhance` 的 `fn` 改回 `() => this.openDetail(inst.id)`，不再直接 `doEnhance`；② `openDetail`（`detail.ts`）的强化小节补回一个**确认按钮**（`mh` 相应增高 40px：8 间隙 + 32 按钮高），`enabled = canAffordEnhance && !busy` 时可点，点击触发 `doEnhance(inst.id)`；`doEnhance` 内 `finally` 块调用 `this.render()`，而 `render()` 只要 `detailId` 还在就重新 `openDetail`，所以确认后弹窗**保持打开**（可连续强化 / 调整开关后再强化一次），和 07-22 之前的老行为一致。装备/卸下/洗练/分解三个动作不受影响，仍直接触发。新增回归测试 `scenes.ui.ts`「instanceActions(Enhance) opens the ... detail modal ...」：验证 `fn()` 只开弹窗不发请求，弹窗自身确认命中触发 `cb.enhance(id, useProtect)`。验证：`tsc --noEmit` + `test:ui`（85 项全绿）；用与 07-17/07-22 同款临时 `__NW_DEBUG` 钩子（`app.ts` 挂 `{PIXI, app, manager, layout, input, EquipmentScene}`）在真实 `npm run start` 里手动 `new EquipmentScene(...)` + `manager.goto()` 挂载，控制台直接调用 `instanceActions().fn`/`modalHits[i].action()` 走完整流程（开弹窗 → 不发请求 → 勾保护石 → 点确认 → `cb.enhance` 收到 `useProtect:true`）——像素级截图这次也受阻（`#game-canvas` 内联样式停在 `width:0/height:0`，根因同样是本地无后端、bootstrap 从未走完，本次额外发现连 Browser 面板自身的 `screenshot`/`zoom` 也在本环境里超时挂起，与 canvas 尺寸无关，换一个全新空白 tab 截图同样超时，判定是当次会话的截图工具暂时不可用，非本次代码引入），验证后已移除钩子。
+
+**素材仅收未强化装备（服务端补齐校验，2026-07-22 追加）**：同日客户端改动（本节上方"操作按钮..."一条同批次）把选材 UI（`reforge.ts openReforgeSelect`）和 Reforge 按钮预检（`detail.ts instanceActions hasMaterials`）都收紧成只提供 `level===0`（从未强化过）的装备当素材，避免玩家不小心把强化过的装备当燃料烧掉——但排查发现 `reforgeEquipment()`（`server/metaserver/src/equipment.ts`）本身从未校验过 `material.level`，只查了槽位/稀有度，一台改过的客户端或直接调 API 仍可传入已强化件的 `instanceId` 当 `materialId`，服务端照单全收，静默销毁该装备沉没的强化材料/词条。补一条服务端校验：素材 `level !== 0` 直接拒（新错误码 `INVALID_MATERIAL_LEVEL`，与 `INVALID_RARITY`/`NOT_REFORGE_ELIGIBLE` 同风格，未加进 `@nw/shared ErrorCode`——这两个既有错误码本就没进那张表，走 `ERROR_HTTP_STATUS[...] ?? 400` 兜底），`openapi/paths/inventory.yml` 的 `materialId` 描述同步注明"must be unenhanced (level 0)"。测试见 [equipment.e2e.test.ts](../../server/metaserver/test/equipment.e2e.test.ts)。
+
 #### E2 掉落 faucet + E6 洗练 实现记录（2026-06-22，✅）
 
 **E2 关卡掉落 faucet**
@@ -535,8 +540,10 @@ buildSiegeBlueprints(levels, equipped, inv)
 落地 = `server/metaserver/src/equipment.ts`（`reforgeEquipment` 函数：幂等抢占 + 校验 + 原子 rev 守卫写）+ `service.ts`（`reforgeEquipment` handler）+ `contracts/openapi.yml`（`POST /equipment/reforge`）+ `client/src/net/ApiClient.ts`（`reforgeEquipment` 方法）+ `client/src/scenes/EquipmentScene.ts`（`openReforgeSelect` 选材 modal + `confirmReforge` 确认 + `doReforge` 执行）+ `client/src/game/meta/equipmentDefs.ts`（`REFORGE_MATERIAL_RARITY` 镜像）+ i18n zh/en/de（`equip.reforge*` / `equip.err.notReforgeEligible` / `equip.err.invalidRarity`）+ `createAppCore.goEquipment`（`reforge` 回调 + `equip_reforge` 埋点）。关键决策：
 
 1. **主词条锁定**：`rollReforgedAffixes` 先 push main affix（固定 id/base 值），再全量重 roll sub affixes；结果绑 `idempotencyKey` 种子，重放不变。
-2. **素材校验三层**：同槽 slot 匹配 → 稀有度恰低一档（`REFORGE_MATERIAL_RARITY`）→ 都未穿戴/未锁定；`common` 直接拒（无副词条）。
+2. **素材校验四层**：同槽 slot 匹配 → 稀有度恰低一档（`REFORGE_MATERIAL_RARITY`）→ 都未穿戴/未锁定 → 素材 `level === 0`（未强化过，2026-07-22 补，见下方"素材仅收未强化装备"记录）；`common` 直接拒（无副词条）。
 3. **客户端预检灰化**：`openDetail` 读当前 save 确认有符合条件的素材件（`hasMaterials`），无素材则按钮灰化；服务端仍做完整校验。
+
+**选材 UI 改图标卡 + 仅未强化装备可作素材（2026-07-22 追加）**：`openReforgeSelect`（`EquipmentScene/reforge.ts`）原为纯文字行列表（每件素材一行，可无限滚动溢出）；改为图标卡网格（`buildEquipIcon` 玻璃 + 名称 + `×N` 堆叠角标，最多 4 列，样式对齐 `AuctionScene/picker.ts` 的选品网格）。同时新增素材筛选条件 **`level === 0`**（未强化过）——同 defId 的未强化件本就等价（不同实例只是 rarity 固定、affix 随机而已，选材只按 defId+rarity 分组，不看 affix），折叠成一张卡；已强化过的同槽同稀有度装备不再出现在候选里，避免误将强化过的装备（词条/材料已投入）当炮灰消耗。`instanceActions()`（`detail.ts`）里门控 Reforge 按钮显隐的 `hasMaterials` 预检同步加了 `level === 0`，否则会出现"按钮亮着但打开选材是空的"。⚠️ 已知缺口：这条 `level===0` 规则目前只在客户端预检 + 选材 UI 生效，`server/metaserver/src/equipment.ts` 的 `reforgeEquipment` 尚未加对应校验（§538 三层校验里没有 level 一项）——修改过的客户端理论上仍可把已强化装备传成 `materialId` 走通服务器。是否需要服务端补这道校验属于独立的服务器改动，未在本次改动范围内。
 
 #### E7 抽卡/保护道具 实现记录（2026-06-22，✅）
 
@@ -602,7 +609,7 @@ buildSiegeBlueprints(levels, equipped, inv)
 | 词条加成数值/区间/权重、强化系数 | ECONOMY_NUMBERS §5（待铺） |
 | 装备基础属性 / `applyEquipment` 乘加算 | `@nw/engine/balance/`（待建） |
 | 装备定义目录（defId/槽位/稀有度/媒材） | 本文 §17（机制权威；属性区间→ECONOMY_NUMBERS §5） |
-| 库存硬上限 / 分解返还% / 分解等级门槛 | 300 / 70% / +5（本文 §3.3 / §6.3，ADR-012） |
+| 库存硬上限 / 分解返还% / 分解等级门槛 / 分解稀有度门槛 | 300 / 70% / +5 / 史诗永不可分解（本文 §3.3 / §6.3，ADR-012 / ADR-050） |
 | 同时挂拍上限 / 挂单时效 | 5 件 / 24–48h（本文 §13，ADR-012） |
 
 ---
@@ -654,7 +661,7 @@ buildSiegeBlueprints(levels, equipped, inv)
 |---|---|---|---|
 | `POST /equipment/craft` ✅ | `{ defId, idempotencyKey }` | `{ save, instance }` | 校验+扣材料，产 0 级基础装备（本切片产独立实例；堆叠优化待 E 后续） |
 | `POST /equipment/enhance` ✅ | `{ instanceId, idempotencyKey }` | `{ success, instance, save }` | **服务器掷骰**（成功率表）、扣材料 + 金币（commercial.spend），成功则 level+1、回执 |
-| `POST /equipment/salvage` ✅ | `{ instanceIds[], idempotencyKey }` | `{ refunded, save }` \| `NOT_SALVAGEABLE` | 分解回收：返 70% 打造材料，+5↑ 拒（§6.3，ADR-012）；批量整批校验、穿戴/锁定拒 |
+| `POST /equipment/salvage` ✅ | `{ instanceIds[], idempotencyKey }` | `{ refunded, save }` \| `NOT_SALVAGEABLE` | 分解回收：返 70% 打造材料，+5↑ 或史诗（不论等级）拒（§6.3，ADR-012/ADR-050）；批量整批校验、穿戴/锁定拒 |
 | `POST /equipment/reforge` | `{ instanceId, fuelInstanceId, lockedIndex?, idempotencyKey }` | `{ instance, consumed }` | 校验燃料（低一级同类）、扣金币、重 roll 副词条/特技（E6 待做） |
 | `POST /equipment/equip` ✅ | `{ slot, instanceId\|null, unitType? }` | `{ save }` | 改穿戴状态（纯状态，无随机，无 idem）；槽位与 def 不符 → INVALID_SLOT |
 

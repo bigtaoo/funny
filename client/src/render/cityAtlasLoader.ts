@@ -49,6 +49,24 @@ export function getCityTextureForLevel(level: number): PIXI.Texture | null {
 }
 
 /**
+ * Fraction (0-1) of the packed 256px cell that's transparent padding above the bottom-aligned
+ * building art, for the same frame getCityTextureForLevel(level) would resolve — see the
+ * `contentTop` field pack_city_atlas.js bakes into city_atlas.json. Every tier fills a different
+ * amount of the fixed cell (a lv1 camp barely reaches halfway; a lv10 citadel nearly fills it), so
+ * anything positioning itself off the sprite's full height (e.g. the city-layer HP bar in
+ * WorldMapRenderer/city.ts) needs this to land just above the ACTUAL art instead of floating above
+ * mostly-empty padding. Falls back to 0 (assume the art fills the cell) if the atlas predates this
+ * field. Unlike getCityTextureForLevel, this doesn't need the PNG decoded (no `sheet` gate) — the
+ * value comes straight off the bundled JSON, available as soon as the module loads.
+ */
+export function getCityContentTopFracForLevel(level: number): number {
+  const lv = Math.max(1, Math.min(10, Math.round(level)));
+  const frames = (atlasData as { frames: Record<string, { contentTop?: number }> }).frames;
+  const frame = frames[`city_l${lv}`] ?? frames[`city_lv${cityTier(lv)}`];
+  return frame?.contentTop ?? 0;
+}
+
+/**
  * Decode + parse the city atlas. Idempotent; concurrent calls share one
  * in-flight promise. Failure is non-fatal — tiles fall back to the
  * programmatic city icon.

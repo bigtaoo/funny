@@ -203,7 +203,14 @@ export class SceneManager {
    * reverse it. Not fade-aware: only call this from a settled (non-transitioning) state.
    */
   pushOverlay(scene: Scene): void {
-    if (this.overlayScene) this.destroyScene(this.overlayScene); // defensive — no caller stacks a second one today
+    // A caller replacing one overlay with a sibling (e.g. DefenseEditorScene's onBack rebuilding the
+    // City overlay it was opened over) lands here with `overlayScene` still set — detach before destroy,
+    // same as swap()/popOverlay(), or the destroyed container lingers in the display list and the new
+    // overlay's first render throws walking into it (frozen on the last good frame, screen never advances).
+    if (this.overlayScene) {
+      this.targetStage.removeChild(this.overlayScene.container);
+      this.destroyScene(this.overlayScene);
+    }
     this.overlayScene = scene;
     this.current?.pause?.();
     this.targetStage.addChild(scene.container); // addChild appends last → renders on top of `current`

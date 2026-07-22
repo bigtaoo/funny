@@ -12,6 +12,7 @@ import {
   enhanceCost,
   rollEnhanceSuccess,
   salvageRefund,
+  isSalvageable,
   MAIN_AFFIX_BY_SLOT,
   SUB_AFFIX_POOL,
   CRAFT_SUB_AFFIX_COUNT,
@@ -183,6 +184,23 @@ describe('salvageRefund', () => {
 
   it('unknown defId refunds nothing', () => {
     expect(salvageRefund('nope')).toEqual({});
+  });
+});
+
+describe('isSalvageable (ADR-050: epic never salvages, regardless of level)', () => {
+  it('epic is never salvageable, even at +0', () => {
+    expect(isSalvageable('epic', 0)).toBe(false);
+  });
+
+  it('epic stays unsalvageable at every level, including max (+9) — not just falling through the level check', () => {
+    for (let lv = 0; lv <= EQUIP_MAX_LEVEL; lv++) expect(isSalvageable('epic', lv)).toBe(false);
+  });
+
+  it('common/fine/rare follow the level threshold', () => {
+    for (const rarity of ['common', 'fine', 'rare'] as const) {
+      expect(isSalvageable(rarity, 4)).toBe(true);
+      expect(isSalvageable(rarity, 5)).toBe(false);
+    }
   });
 });
 

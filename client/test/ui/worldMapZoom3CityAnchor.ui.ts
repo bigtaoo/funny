@@ -39,6 +39,7 @@ import type { WorldTileView } from '../../src/net/WorldApiClient';
 vi.mock('../../src/render/cityAtlasLoader', () => ({
   isCityAtlasReady: () => true,
   getCityTextureForLevel: () => PIXI.Texture.WHITE,
+  getCityContentTopFracForLevel: () => 0,
 }));
 
 const memStore = (() => {

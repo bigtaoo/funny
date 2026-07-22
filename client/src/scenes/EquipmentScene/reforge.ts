@@ -4,9 +4,18 @@ import { t } from '../../i18n';
 import { ui as C, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { withTimeout, TimeoutError } from '../../ui/busyTracker';
-import type { EquipmentInstance } from '../../game/meta/SaveData';
+import type { EquipmentInstance, EquipRarity } from '../../game/meta/SaveData';
 import { getEquipDef, REFORGE_MATERIAL_RARITY } from '../../game/meta/equipmentDefs';
+import { buildEquipIcon } from '../../render/equipmentAtlas';
 import { type Constructor, type EquipmentSceneBaseCtor, RARITY_COLOR } from './base';
+
+/** One icon card in the reforge material grid: a defId stack of interchangeable (unenhanced) fuel. */
+interface MaterialStack {
+  defId: string;
+  /** Any one instance id from the stack — reforge only ever consumes a single instance. */
+  repId: string;
+  count: number;
+}
 
 export interface ReforgeHandlers {
   openReforgeSelect(target: EquipmentInstance): void;
@@ -21,10 +30,24 @@ export function ReforgeMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase):
       const requiredRarity = REFORGE_MATERIAL_RARITY[target.rarity];
       if (!slot || !requiredRarity) return;
 
+      // Fuel is restricted to never-enhanced (level 0) equipment — an enhanced item's affix rolls
+      // and sunk materials would otherwise be silently consumed as reforge fuel.
       const equippedSet = this.equippedIds(save);
       const candidates = Object.values(save.equipmentInv ?? {}).filter(
-        (m) => m.id !== target.id && getEquipDef(m.defId)?.slot === slot && m.rarity === requiredRarity && !equippedSet.has(m.id),
+        (m) => m.id !== target.id && getEquipDef(m.defId)?.slot === slot && m.rarity === requiredRarity
+          && m.level === 0 && !equippedSet.has(m.id),
       );
+
+      // Unenhanced items sharing a defId are interchangeable as fuel — one icon card per defId
+      // (×N badge) instead of a separate row per instance.
+      const stacks: MaterialStack[] = [];
+      const stackIdx = new Map<string, number>();
+      for (const c of candidates) {
+        const i = stackIdx.get(c.defId);
+        if (i !== undefined) { stacks[i].count++; continue; }
+        stackIdx.set(c.defId, stacks.length);
+        stacks.push({ defId: c.defId, repId: c.id, count: 1 });
+      }
 
       const { w, h } = this;
       const ml = this.modalLayer;
@@ -32,10 +55,17 @@ export function ReforgeMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase):
       this.modalHits = [];
       this.modalOpen = true;
 
+      // Icon-card grid metrics (mirrors AuctionScene/picker.ts's responsive card grid).
+      const cardW = 96, cardH = 120, gap = 10, pad = 14;
+      const titleH = 30, closeAreaH = 44;
+      const maxModalW = Math.min(420, w - 24);
+      const cols = Math.max(1, Math.min(4, Math.floor((maxModalW - pad * 2 + gap) / (cardW + gap))));
+      const rows = Math.max(1, Math.ceil((stacks.length || 1) / cols));
+      const gridH = stacks.length > 0 ? rows * cardH + (rows - 1) * gap : 60;
+
       // Natural (unscaled) content size — everything below is laid out in this local frame.
-      const mw = Math.min(320, w - 24);
-      const rowH = 48;
-      const mh = Math.min(60 + candidates.length * rowH + 40, h - 80);
+      const mw = Math.min(maxModalW, pad * 2 + cols * cardW + (cols - 1) * gap);
+      const mh = Math.min(titleH + pad + gridH + closeAreaH, h - 80);
       const mx = 0;
       const my = 0;
 
@@ -66,25 +96,17 @@ export function ReforgeMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase):
       titleLbl.anchor.set(0.5, 0); titleLbl.x = mx + mw / 2; titleLbl.y = my + 10;
       panelRoot.addChild(titleLbl);
 
-      let cy = my + 36;
-      for (const mat of candidates) {
-        const color = RARITY_COLOR[mat.rarity];
-        const rowBg = sketchPanel(mw - 16, rowH - 4, { fill: 0xf8f4e8, border: color, seed: seedFor(cy, 21, mw) });
-        rowBg.x = mx + 8; rowBg.y = cy;
-        panelRoot.addChild(rowBg);
-        const nameLbl = this.stxt(this.itemLabel(mat.defId, mat.level), FS.tiny, C.dark, true);
-        nameLbl.x = mx + 18; nameLbl.y = cy + 6;
-        panelRoot.addChild(nameLbl);
-        const rarLbl = this.stxt(t(`equip.rarity.${mat.rarity}` as import('../../i18n').TranslationKey), FS.micro, color);
-        rarLbl.x = mx + 18; rarLbl.y = cy + 24;
-        panelRoot.addChild(rarLbl);
-        const matId = mat.id;
-        this.modalHits.push({ rect: this.toModalScreen({ x: mx + 8, y: cy, w: mw - 16, h: rowH - 4 }), action: () => this.confirmReforge(target, matId) });
-        cy += rowH;
-      }
-      if (candidates.length === 0) {
+      const gridTop = my + titleH;
+      stacks.forEach((s, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const cx = mx + pad + col * (cardW + gap);
+        const cy = gridTop + row * (cardH + gap);
+        this.renderReforgeMaterialCard(target, s, requiredRarity, cx, cy, cardW, cardH);
+      });
+      if (stacks.length === 0) {
         const empty = this.stxt(t('equip.reforgeNoMat'), FS.tiny, C.mid);
-        empty.anchor.set(0.5, 0.5); empty.x = mx + mw / 2; empty.y = my + mh / 2;
+        empty.anchor.set(0.5, 0.5); empty.x = mx + mw / 2; empty.y = gridTop + gridH / 2;
         panelRoot.addChild(empty);
       }
 
@@ -97,6 +119,42 @@ export function ReforgeMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase):
       this.modalHits.push({ rect: this.toModalScreen({ x: closeBtn.x, y: closeBtn.y, w: 60, h: 26 }), action: () => { this.closeModal(); this.render(); } });
       this.modalHits.push({ rect: this.toModalScreen({ x: mx, y: my, w: mw, h: mh }), action: () => {} });
       this.modalHits.push({ rect: { x: 0, y: 0, w, h }, action: () => { this.closeModal(); this.render(); } });
+    }
+
+    /**
+     * One icon card in the material grid: glyph on top, name + stack count below, rarity-colored
+     * border (mirrors the inventory grid's icon-card language, InventoryMixin.renderInstanceCell).
+     * Drawn straight onto modalPanelRoot (not bodyLayer) since it lives inside the scaled modal frame.
+     */
+    private renderReforgeMaterialCard(
+      target: EquipmentInstance, stack: MaterialStack, rarity: EquipRarity,
+      x: number, y: number, cardW: number, cardH: number,
+    ): void {
+      const color = RARITY_COLOR[rarity];
+      const cardBg = sketchPanel(cardW, cardH, { fill: 0xf8f4e8, border: color, seed: seedFor(x, y, cardW) });
+      cardBg.x = x; cardBg.y = y;
+      this.modalPanelRoot.addChild(cardBg);
+
+      const padIn = 8;
+      const imgBox = cardW - padIn * 2;
+      const slot = getEquipDef(stack.defId)?.slot ?? 'weapon';
+      const icon = buildEquipIcon(stack.defId, slot, rarity, imgBox, seedFor(x, y, cardW));
+      icon.x = x + cardW / 2; icon.y = y + padIn + imgBox / 2;
+      this.modalPanelRoot.addChild(icon);
+
+      const nameLbl = this.stxt(this.itemName(stack.defId), FS.micro, C.dark, true);
+      nameLbl.anchor.set(0.5, 0); nameLbl.x = x + cardW / 2; nameLbl.y = y + padIn + imgBox + 6;
+      if (nameLbl.width > cardW - 6) nameLbl.scale.set(Math.max(0.4, (cardW - 6) / nameLbl.width));
+      this.modalPanelRoot.addChild(nameLbl);
+
+      if (stack.count > 1) {
+        const badge = this.stxt(`×${stack.count}`, FS.micro, C.mid, true);
+        badge.anchor.set(1, 0); badge.x = x + cardW - 4; badge.y = y + 3;
+        this.modalPanelRoot.addChild(badge);
+      }
+
+      const matId = stack.repId;
+      this.modalHits.push({ rect: this.toModalScreen({ x, y, w: cardW, h: cardH }), action: () => this.confirmReforge(target, matId) });
     }
 
     private confirmReforge(target: EquipmentInstance, materialId: string): void {

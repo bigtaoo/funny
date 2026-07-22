@@ -147,10 +147,12 @@ async function makeCell(srcPath) {
     .png()
     .toBuffer();
   const fm = await sharp(fitted).metadata();
-  return sharp({ create: { width: CELL, height: CELL, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
-    .composite([{ input: fitted, left: Math.round((CELL - (fm.width ?? CELL)) / 2), top: CELL - (fm.height ?? CELL) }])
+  const fittedH = fm.height ?? CELL;
+  const buf = await sharp({ create: { width: CELL, height: CELL, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .composite([{ input: fitted, left: Math.round((CELL - (fm.width ?? CELL)) / 2), top: CELL - fittedH }])
     .png()
     .toBuffer();
+  return { buf, contentTop: (CELL - fittedH) / CELL };
 }
 
 async function main() {
@@ -171,8 +173,8 @@ async function main() {
     }
     const dx = (i % COLS) * CELL;
     const dy = Math.floor(i / COLS) * CELL;
-    const cellBuf = await makeCell(srcPath);
-    console.log(`${name.padEnd(14)} ← ${file.padEnd(20)} → (${dx},${dy})`);
+    const { buf: cellBuf, contentTop } = await makeCell(srcPath);
+    console.log(`${name.padEnd(14)} ← ${file.padEnd(20)} → (${dx},${dy})  contentTop=${contentTop.toFixed(2)}`);
     composites.push({ input: cellBuf, left: dx, top: dy });
     frames[name] = {
       frame: { x: dx, y: dy, w: CELL, h: CELL },
@@ -180,6 +182,9 @@ async function main() {
       trimmed: false,
       spriteSourceSize: { x: 0, y: 0, w: CELL, h: CELL },
       sourceSize: { w: CELL, h: CELL },
+      // Non-standard field, see pack_city_atlas.js — read directly off the raw JSON by
+      // playerBaseAtlasLoader.getPlayerBaseContentTopFracForLevel.
+      contentTop,
     };
   }
 

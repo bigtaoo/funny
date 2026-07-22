@@ -129,4 +129,15 @@ describe('WorldMapInput occupy connectivity pre-filter (ADR-039)', () => {
     const { occupy } = occupyBtnFor(ANCHOR.x, ANCHOR.y + 3, { me: makeMe({ familyId: 'fam-1' }) });
     expect(occupy.disabled).toBeFalsy();
   });
+
+  it('shows the tile\'s resource type + level and a recommended-troops line so the player can size the march', () => {
+    const h = buildHarness();
+    const tx = ANCHOR.x, ty = ANCHOR.y + 2; // 4-adjacent to the capital footprint (enabled Occupy)
+    h.ctx.tileCache.set(`${tx}:${ty}`, { resType: 'metal', level: 3 } as WorldTileView);
+    h.input.onTileClick(tx, ty);
+    const lines = h.showModal.mock.calls[0][0] as string[];
+    expect(lines).toContain(t('world.resLevel').replace('{res}', t('world.metal')).replace('{lv}', '3'));
+    // npcGarrison(level) = NPC_GARRISON_PER_LEVEL(120) * level
+    expect(lines).toContain(t('world.recommendTroops').replace('{n}', '360'));
+  });
 });

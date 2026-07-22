@@ -7,7 +7,7 @@
 //
 // Note: the modal derives the cap from troopCapFor(buildings), NOT me.troopCap — so fixtures control the
 // cap via `buildings` (default {} → TROOP_CAP_BASE). The train modal has no Upgrade button, so its hit
-// order is [+10, +50, Max, speedup?, close-on-tap-outside].
+// order is [+100, +500, Max, speedup?, close-on-tap-outside].
 //
 // Runs under the headless PIXI adapter (test/harness/pixiHeadless.ts via vitest.ui.config.ts).
 // Run: npm run test:ui
@@ -62,8 +62,8 @@ function contentHits(inner: CitySceneInternals): Hit[] {
 
 /** While the train modal is open, render() replaces `this.hits` with just [backHit, ...modal hits]
  *  (the modal-hit-leak fix drops the background grid hits entirely). Push order inside renderTrainModal
- *  is always: [+10, +50, Max, speedup? , close-on-tap-outside (always last)] — no Upgrade button, unlike
- *  the building detail modal. So preset +10 is index 0 (not 1) and Max is index 2 (not 3). */
+ *  is always: [+100, +500, Max, speedup? , close-on-tap-outside (always last)] — no Upgrade button, unlike
+ *  the building detail modal. So preset +100 is index 0 (not 1) and Max is index 2 (not 3). */
 function trainModalHits(inner: CitySceneInternals): Hit[] {
   return inner.hits.slice(1);
 }
@@ -135,21 +135,21 @@ async function openTrainModal(fx: TrainFixture): Promise<{ scene: CityScene; inn
 }
 
 describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
-  it('tapping the +10 preset trains troops via worldApi.trainTroops(worldId, 10)', async () => {
+  it('tapping the +100 preset trains troops via worldApi.trainTroops(worldId, 100)', async () => {
     const { scene, inner, trainTroops } = await openTrainModal({ troops: 0, resources: { ink: 100000 } });
-    // [+10, +50, Max, close-catch-all] — no Upgrade button; see trainModalHits() doc comment.
+    // [+100, +500, Max, close-catch-all] — no Upgrade button; see trainModalHits() doc comment.
     const modalHits = trainModalHits(inner);
-    const preset10 = modalHits[0]!;
-    tap(inner, preset10.x + preset10.w / 2, preset10.y + preset10.h / 2);
+    const preset100 = modalHits[0]!;
+    tap(inner, preset100.x + preset100.w / 2, preset100.y + preset100.h / 2);
     await new Promise((r) => setTimeout(r, 0));
-    expect(trainTroops).toHaveBeenCalledWith('world:1:0', 10);
+    expect(trainTroops).toHaveBeenCalledWith('world:1:0', 100);
     scene.destroy();
   });
 
   it('tapping Max trains the computed max qty: min(batch cap, troopCap headroom, ink affordable)', async () => {
     // Ink is the binding constraint here: ink 200 / TROOP_TRAIN_INK_COST(10) → 20 affordable; troopCap
-    // headroom (troopCapFor({}) = TROOP_CAP_BASE) and TROOP_TRAIN_BATCH_MAX=500 are both larger.
-    // min(500, TROOP_CAP_BASE, 20) = 20.
+    // headroom (troopCapFor({}) = TROOP_CAP_BASE) and TROOP_TRAIN_BATCH_MAX=5000 are both larger.
+    // min(5000, TROOP_CAP_BASE, 20) = 20.
     const { scene, inner, trainTroops } = await openTrainModal({ troops: 0, resources: { ink: 200 } });
     const modalHits = trainModalHits(inner);
     const presetMax = modalHits[2]!;
@@ -170,8 +170,8 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
       ], // TROOP_TRAIN_QUEUE_MAX is 2 with no drillYard level — queue is full
     });
     const modalHits = trainModalHits(inner);
-    const preset10 = modalHits[0]!;
-    tap(inner, preset10.x + preset10.w / 2, preset10.y + preset10.h / 2);
+    const preset100 = modalHits[0]!;
+    tap(inner, preset100.x + preset100.w / 2, preset100.y + preset100.h / 2);
     await new Promise((r) => setTimeout(r, 0));
     expect(trainTroops).not.toHaveBeenCalled();
     expect(spy).toHaveBeenCalledWith(t('city.err.trainQueueFull'), 'error');
@@ -182,11 +182,11 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
   it('does not call trainTroops and shows a toast when the troop cap is already reached', async () => {
     const spy = vi.spyOn(log, 'showToastMessage');
     // Pool already at the cap: troops = troopCapFor({}) = TROOP_CAP_BASE (the modal derives cap from
-    // buildings, not me.troopCap), so there's no headroom and +10 is rejected with the cap toast.
+    // buildings, not me.troopCap), so there's no headroom and +100 is rejected with the cap toast.
     const { scene, inner, trainTroops } = await openTrainModal({ troops: TROOP_CAP_BASE, resources: { ink: 100000 } });
     const modalHits = trainModalHits(inner);
-    const preset10 = modalHits[0]!;
-    tap(inner, preset10.x + preset10.w / 2, preset10.y + preset10.h / 2);
+    const preset100 = modalHits[0]!;
+    tap(inner, preset100.x + preset100.w / 2, preset100.y + preset100.h / 2);
     await new Promise((r) => setTimeout(r, 0));
     expect(trainTroops).not.toHaveBeenCalled();
     expect(spy).toHaveBeenCalledWith(t('city.err.troopCap'), 'error');
@@ -196,11 +196,11 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
 
   it('does not call trainTroops and shows a toast when there is not enough ink', async () => {
     const spy = vi.spyOn(log, 'showToastMessage');
-    // ink 5 < TROOP_TRAIN_INK_COST(10) — can't even afford +10, but there's still troopCap headroom.
+    // ink 5 < TROOP_TRAIN_INK_COST(10) — can't even afford +100, but there's still troopCap headroom.
     const { scene, inner, trainTroops } = await openTrainModal({ troops: 0, troopCap: 2000, resources: { ink: 5 } });
     const modalHits = trainModalHits(inner);
-    const preset10 = modalHits[0]!;
-    tap(inner, preset10.x + preset10.w / 2, preset10.y + preset10.h / 2);
+    const preset100 = modalHits[0]!;
+    tap(inner, preset100.x + preset100.w / 2, preset100.y + preset100.h / 2);
     await new Promise((r) => setTimeout(r, 0));
     expect(trainTroops).not.toHaveBeenCalled();
     expect(spy).toHaveBeenCalledWith(t('city.err.noInk'), 'error');
@@ -222,7 +222,7 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
     scene.destroy();
   });
 
-  it('does not double-train when the +10 button is tapped twice before the first request resolves (busy guard)', async () => {
+  it('does not double-train when the +100 button is tapped twice before the first request resolves (busy guard)', async () => {
     let resolveFirst!: (v: PlayerWorldView) => void;
     const pending = new Promise<PlayerWorldView>((r) => { resolveFirst = r; });
     const { scene, inner, trainTroops } = await openTrainModal({
@@ -230,9 +230,9 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
       trainTroopsImpl: () => pending,
     });
     const modalHits = trainModalHits(inner);
-    const preset10 = modalHits[0]!;
-    tap(inner, preset10.x + preset10.w / 2, preset10.y + preset10.h / 2);
-    tap(inner, preset10.x + preset10.w / 2, preset10.y + preset10.h / 2);
+    const preset100 = modalHits[0]!;
+    tap(inner, preset100.x + preset100.w / 2, preset100.y + preset100.h / 2);
+    tap(inner, preset100.x + preset100.w / 2, preset100.y + preset100.h / 2);
     await new Promise((r) => setTimeout(r, 0));
     expect(trainTroops).toHaveBeenCalledTimes(1);
     resolveFirst({ joined: true, resources: {}, buildings: {}, buildQueue: [], trainingQueue: [], troops: 10, troopCap: 2000 } as unknown as PlayerWorldView);
@@ -247,8 +247,8 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
       trainTroopsImpl: () => Promise.reject(new Error('not enough ink')),
     });
     const modalHits = trainModalHits(inner);
-    const preset10 = modalHits[0]!;
-    tap(inner, preset10.x + preset10.w / 2, preset10.y + preset10.h / 2);
+    const preset100 = modalHits[0]!;
+    tap(inner, preset100.x + preset100.w / 2, preset100.y + preset100.h / 2);
     await new Promise((r) => setTimeout(r, 0));
     expect(spy).toHaveBeenCalledWith(t('city.err.noInk'), 'error');
     scene.destroy();

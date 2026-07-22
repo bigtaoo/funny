@@ -83,6 +83,11 @@ export const EQUIPMENT_IDEM_TTL_SEC = 7 * 24 * 3600;
 export const SALVAGE_REFUND_RATIO = 0.7;
 export const SALVAGE_MAX_LEVEL = 4; // +5 and above cannot be salvaged
 
+/** Epic-rarity gear never salvages regardless of level (ADR-050): high-tier pieces exit via auction/wear only, never destruction. */
+export function isSalvageable(rarity: EquipRarity, level: number): boolean {
+  return rarity !== 'epic' && level <= SALVAGE_MAX_LEVEL;
+}
+
 // ── Enhancement (E3, EQUIPMENT_DESIGN §6 / ECONOMY_NUMBERS §5.2, DRAFT [adjustable]) ────────
 //
 // Enhancement increments an instance's level by 1 (0→9), is probability-based, and can fail. Failure does not
@@ -131,7 +136,7 @@ export function rollEnhanceSuccess(seedKey: string, fromLevel: number): boolean 
 /**
  * Salvage refund (§6.3, ADR-012): returns SALVAGE_REFUND_RATIO (70%, floored) of the **base crafting cost** for the defId.
  * Enhancement investment is not refunded (failure cost is the core sink and must not leak back via salvage). Non-craftable items (no craftCost) return empty.
- * Caller is responsible for validating level ≤ SALVAGE_MAX_LEVEL (+5 and above cannot be salvaged).
+ * Caller is responsible for validating isSalvageable(rarity, level) (level ≤ SALVAGE_MAX_LEVEL and rarity !== 'epic').
  */
 export function salvageRefund(defId: string): Record<string, number> {
   const def = EQUIPMENT_DEFS[defId];
