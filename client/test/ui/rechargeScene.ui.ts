@@ -21,14 +21,19 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
 
 type Hit = { rect: { x: number; y: number; w: number; h: number }; fn: () => void };
 
+// Accumulates x/y down the tree so the returned position is in scene-container (screen) space —
+// the same space hit rects use. Matters since tier cards now live inside a scrolled `scrollContainer`
+// (offset by bodyTopY - scrollY); a plain node.x/node.y would be local to that container and miss.
 function findLabelPos(container: PIXI.Container, label: string): { x: number; y: number } | null {
   let found: { x: number; y: number } | null = null;
-  const walk = (node: PIXI.Container): void => {
+  const walk = (node: PIXI.Container, px: number, py: number): void => {
     if (found) return;
-    if (node instanceof PIXI.Text && node.text === label) { found = { x: node.x, y: node.y }; return; }
-    for (const c of node.children) walk(c as PIXI.Container);
+    const gx = px + node.x;
+    const gy = py + node.y;
+    if (node instanceof PIXI.Text && node.text === label) { found = { x: gx, y: gy }; return; }
+    for (const c of node.children) walk(c as PIXI.Container, gx, gy);
   };
-  walk(container);
+  walk(container, 0, 0);
   return found;
 }
 
