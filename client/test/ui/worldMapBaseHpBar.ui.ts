@@ -89,7 +89,7 @@ function renderAndSpyHpBar(ctx: WorldMapContext, cx: number, cy: number): {
     return this;
   });
   vi.spyOn(hpbar, 'beginFill').mockImplementation(function (this: PIXI.Graphics, color) {
-    fillColors.push(color ?? 0);
+    fillColors.push(Number(color ?? 0));
     return this;
   });
 
