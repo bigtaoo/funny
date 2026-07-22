@@ -520,6 +520,8 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 **操作按钮从详情弹窗移到图标卡 + 不可用即隐藏 + 直接触发**（2026-07-22 追加）：真人吐槽走查——库存图标卡此前整格只是"打开详情弹窗"的命中区，所有操作（强化/装备·卸下/洗练/分解/全部分解）都挤在弹窗底部一排按钮里，且不可用的按钮（如无素材的洗练、买不起的强化）只是**置灰**仍占位。改为把这排操作直接搬到每张图标卡底部满宽的按钮带上：① 新增 `DetailMixin.instanceActions(save, inst)`（`detail.ts`）集中算出**仅当前可用**的操作集合（沿用原弹窗的可用性判定：`!maxed && canAffordEnhance` 才有强化、同槽低一档素材存在才有洗练、未穿戴未锁定才有分解、堆叠 >1 才有全部分解），返回 `CellAction[]`（`base.ts` 新增共享类型：`{key,label,fill,stroke,fn}`，`fn` 直接触发动作/确认弹窗/选材弹窗，不再开信息弹窗）；不可用的操作**直接不进列表**（隐藏而非置灰）。② `InventoryMixin.renderInstanceCell`（`inventory.ts`）在格底预留 46px 按钮带（有操作才占位，图标框相应缩短留出 8px 间隙），逐个画**图标按钮**（上图标下小字标签：强化=`hammer`／装备=`check`／卸下=`close`／洗练=`replay`／分解·全部分解=`scrap`，`CellAction.icon` 携带；标签保留以区分分解 vs 全部分解）并把命中矩形 push 进 `hitRects`——**按钮命中先于整格命中入栈**，输入层首个命中即返回，故点按钮触发对应动作、点格子其余区域才开详情弹窗（真人反馈"整个卡片就是一个按钮、要能在一个界面上操作所有功能"，2026-07-22 二次调整为图标按钮形态）。③ 详情弹窗（`openDetail`）退化为**纯信息**：只剩词条列表 + 强化成功率/消耗 + 保护石开关（开关仍在，供强化前设置粘性 `useProtectEnhance`），底部按钮带整块移除、`mh` 相应缩短。测试：`scenes.ui.ts` 五条 mixin 接线用例从"驱动弹窗 `modalHits`"改为"驱动 `instanceActions().fn`"（enhance/equip·assign/reforge/salvage/salvageAll 全绿，83 项通过）。`tsc --noEmit` 通过；实机截图受阻——dev server `/bootstrap` 无本地后端连不上（既存未解决问题，非本次引入），本次靠 headless `test:ui` 冒烟层核对（构造+命中矩形回归）。
 
+**素材仅收未强化装备（服务端补齐校验，2026-07-22 追加）**：同日客户端改动（本节上方"操作按钮..."一条同批次）把选材 UI（`reforge.ts openReforgeSelect`）和 Reforge 按钮预检（`detail.ts instanceActions hasMaterials`）都收紧成只提供 `level===0`（从未强化过）的装备当素材，避免玩家不小心把强化过的装备当燃料烧掉——但排查发现 `reforgeEquipment()`（`server/metaserver/src/equipment.ts`）本身从未校验过 `material.level`，只查了槽位/稀有度，一台改过的客户端或直接调 API 仍可传入已强化件的 `instanceId` 当 `materialId`，服务端照单全收，静默销毁该装备沉没的强化材料/词条。补一条服务端校验：素材 `level !== 0` 直接拒（新错误码 `INVALID_MATERIAL_LEVEL`，与 `INVALID_RARITY`/`NOT_REFORGE_ELIGIBLE` 同风格，未加进 `@nw/shared ErrorCode`——这两个既有错误码本就没进那张表，走 `ERROR_HTTP_STATUS[...] ?? 400` 兜底），`openapi/paths/inventory.yml` 的 `materialId` 描述同步注明"must be unenhanced (level 0)"。测试见 [equipment.e2e.test.ts](../../server/metaserver/test/equipment.e2e.test.ts)。
+
 #### E2 掉落 faucet + E6 洗练 实现记录（2026-06-22，✅）
 
 **E2 关卡掉落 faucet**
@@ -535,7 +537,7 @@ buildSiegeBlueprints(levels, equipped, inv)
 落地 = `server/metaserver/src/equipment.ts`（`reforgeEquipment` 函数：幂等抢占 + 校验 + 原子 rev 守卫写）+ `service.ts`（`reforgeEquipment` handler）+ `contracts/openapi.yml`（`POST /equipment/reforge`）+ `client/src/net/ApiClient.ts`（`reforgeEquipment` 方法）+ `client/src/scenes/EquipmentScene.ts`（`openReforgeSelect` 选材 modal + `confirmReforge` 确认 + `doReforge` 执行）+ `client/src/game/meta/equipmentDefs.ts`（`REFORGE_MATERIAL_RARITY` 镜像）+ i18n zh/en/de（`equip.reforge*` / `equip.err.notReforgeEligible` / `equip.err.invalidRarity`）+ `createAppCore.goEquipment`（`reforge` 回调 + `equip_reforge` 埋点）。关键决策：
 
 1. **主词条锁定**：`rollReforgedAffixes` 先 push main affix（固定 id/base 值），再全量重 roll sub affixes；结果绑 `idempotencyKey` 种子，重放不变。
-2. **素材校验三层**：同槽 slot 匹配 → 稀有度恰低一档（`REFORGE_MATERIAL_RARITY`）→ 都未穿戴/未锁定；`common` 直接拒（无副词条）。
+2. **素材校验四层**：同槽 slot 匹配 → 稀有度恰低一档（`REFORGE_MATERIAL_RARITY`）→ 都未穿戴/未锁定 → 素材 `level === 0`（未强化过，2026-07-22 补，见下方"素材仅收未强化装备"记录）；`common` 直接拒（无副词条）。
 3. **客户端预检灰化**：`openDetail` 读当前 save 确认有符合条件的素材件（`hasMaterials`），无素材则按钮灰化；服务端仍做完整校验。
 
 #### E7 抽卡/保护道具 实现记录（2026-06-22，✅）

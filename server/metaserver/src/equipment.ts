@@ -53,6 +53,7 @@ export type EquipErrorCode =
   | 'NOT_REFORGE_ELIGIBLE'
   | 'INVALID_SLOT'
   | 'INVALID_RARITY'
+  | 'INVALID_MATERIAL_LEVEL'
   | 'REV_CONFLICT';
 
 export interface EquipError {
@@ -571,6 +572,11 @@ export async function reforgeEquipment(
   if (matDef.slot !== targetDef.slot) return { error: `material slot ${matDef.slot} must match target slot ${targetDef.slot}`, code: 'INVALID_SLOT' };
   if (material.rarity !== requiredMatRarity) {
     return { error: `material must be ${requiredMatRarity} (got ${material.rarity})`, code: 'INVALID_RARITY' };
+  }
+  // Only never-enhanced (+0) items may be used as fuel (client restricts the picker to the same; EQUIPMENT_DESIGN §7.8),
+  // so an enhanced item's sunk materials/rolls can't be destroyed by a modified client or direct API call.
+  if (material.level !== 0) {
+    return { error: `material must be unenhanced (+0), got +${material.level}`, code: 'INVALID_MATERIAL_LEVEL' };
   }
 
   // Reforge coin fee (ADR-030): charged every attempt on top of the fuel item. Pre-validate (commercial authoritative; insufficient → no state changes).
