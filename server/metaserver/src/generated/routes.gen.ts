@@ -802,7 +802,7 @@ const BODY_SCHEMAS: Record<string, unknown> = {
       },
       "materialId": {
         "type": "string",
-        "description": "Id of the material equipment instance to consume (same slot, one tier lower, e.g. rare → requires fine)"
+        "description": "Id of the material equipment instance to consume (same slot, one tier lower, e.g. rare → requires fine; must be unenhanced, i.e. level 0)"
       },
       "idempotencyKey": {
         "type": "string",
