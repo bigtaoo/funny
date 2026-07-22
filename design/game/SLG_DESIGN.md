@@ -173,6 +173,7 @@
 - **占领、增援、进攻都需行军**，有距离/时间成本（Redis 调度的定时事件）；家族抱团占**连续领地**才高效（连地加成 + 短行军距离 + 快速增援）。
 - **增援 / 代守 / 代打**：家族成员可向彼此领地派驻援军、被攻击时驰援（行军到达触发协防）。
 - **保护罩**：被打败后短时保护（防连续碾压），是变现/节奏旋钮。
+- **行军士气**：远距离讨伐天然处于不利地位，见 §4.4。
 
 ### 4.2 卡牌部队 vs 地图兵力池——边界修复 + 占地真实战斗（2026-07-15）
 
@@ -208,6 +209,15 @@
 - **修复（拍板规则）**：卡牌布阵（`army` 含 `cardInstanceId` 的行军）**全程不触碰 `playerWorld.troops`**——出征不扣、到达不管输赢/扑空一律不退。卡牌的兵力只活在 `cardState.currentTroops` 这一份账本里：分配（`distributeTroops`，从 `baseTroopStock` 转入）→ 出战消耗/结算存活（`computeCardStateUpdates`）→ 移出队伍销毁 + 退 80% 训练资源（`setTeams`，已有行为不变）。**分配给某张卡的兵力永远不会回到 `playerWorld.troops` 这个地图兵力池，唯一的"释放"路径是把该卡移出队伍**（销毁兵力、退部分训练资源，不是退兵）。
 - 非卡牌行军（散兵占地/增援/扫荡/侦查、以及无布阵的裸攻击）行为不变，继续用现有的 `playerWorld.troops` 扣/退模型。
 - 受影响文件：`combatMarch.ts`（出征扣减按 `hasCardArmy` 分支跳过）、`combatSiege/arrival.ts` + `combatSiege/occupation.ts`（所有 `refundTroops` 调用按 `hasCardArmy` 分支跳过，含扑空/驱逐早退分支）；`combatShared.ts` 的 `refundTroops` 函数本身不变（继续服务非卡牌路径）。
+
+### 4.4 行军士气（远征战力惩罚，2026-07-21）
+
+> 用户拍板：讨伐远距离敌人对自己天然不利，需要一个数值机制体现这一点。
+
+- **规则**：每支行军（`MarchDoc`）出征时获得满额士气 `MARCH_MORALE_MAX=100`，每移动一格消耗 1 点，抵达时的剩余士气 = `100 - 路径格数`（下限 0）。**绑定行军实例，不绑定队伍**——每次出征都从满额重新开始，不与该队伍上一次出征的结果延续。
+- **战力惩罚**：抵达后的战斗力按剩余士气线性缩放，士气 100 → 100% 战力，士气 0 → `MARCH_MORALE_COMBAT_FLOOR=70%` 战力（`moraleCombatMultiplier`，`server/shared/src/slg/march.ts`）；覆盖所有需要战斗的行军类型（`attack`/`occupy`/`sweep`，含驱逐 `applyOccupationExpulsion`），`reinforce`/`return` 不涉及战斗，士气记录但不生效。
+- **架构约束（本期不做的部分）**：行军在服务端不是逐格 tick 的实时模拟——出征时一次性算好完整 A\* 路径并只调度一个到达事件（`combatMarch.ts` `startMarch`/`processDueArrivals`），中途没有"停留"状态。因此**「原地不动每 30 秒回复 1 点」这条回复机制在当前架构下没有天然的触发点**（每次出征本就从满额开始），本期不实现；士气消耗按路径长度一次性算好存在 `MarchDoc.morale`，供到达结算读取。
+- **实现**：`marchMoraleFromPath(path)` 在出征时算好存入 `MarchDoc.morale`（`server/shared/src/slg/march.ts` + `combatMarch.ts`）；到达结算时 `moraleCombatMultiplier(morale)` 缩放攻方有效兵力/军队 HP（`combatSiege/arrival.ts` 的 `applySiege`/`applyStrongholdSiege`/`applyCrossingSiege`/`applySweep`、`combatSiege/occupation.ts` 的 `applyOccupy`/`applyOccupationExpulsion`），廉价公式（`resolveSiege`）与真实引擎战斗（`runSiegeBattle`）两条结算路径都吃这个缩放，保持一致。未暴露到 `MarchView`/openapi 契约（客户端本期不展示士气数值）。
 
 ### 4.1 连地占领（硬性规则，ADR-039，2026-07-14）
 

@@ -1,7 +1,14 @@
 // SLG territory yield (S8-1, §14.3) + march duration + A* march pathfinding (S8-6.6, §4).
 // Split out of slg.ts (god-file split, [[project_godfile_split_pattern]]).
 
-import { MARCH_SPEED_SEC_PER_TILE, RESOURCE_YIELD_BASE, type ResourceType, type TileType } from './core';
+import {
+  MARCH_SPEED_SEC_PER_TILE,
+  MARCH_MORALE_MAX,
+  MARCH_MORALE_COMBAT_FLOOR,
+  RESOURCE_YIELD_BASE,
+  type ResourceType,
+  type TileType,
+} from './core';
 import { proceduralTile } from './mapgen';
 
 /**
@@ -131,6 +138,25 @@ export function findMarchPath(
 /** March path → duration (seconds): (path.length-1) steps × MARCH_SPEED_SEC_PER_TILE. */
 export function marchDurationFromPath(path: PathCell[]): number {
   return Math.max(0, path.length - 1) * MARCH_SPEED_SEC_PER_TILE;
+}
+
+/**
+ * Remaining morale (out of MARCH_MORALE_MAX) for a march given its full path: 1 point lost per tile moved
+ * (path includes the start cell, so the cost is path.length - 1 tiles), floored at 0. Bound to the march
+ * instance — every departure starts fresh at MARCH_MORALE_MAX regardless of the team's history.
+ */
+export function marchMoraleFromPath(path: PathCell[]): number {
+  return Math.max(0, MARCH_MORALE_MAX - Math.max(0, path.length - 1));
+}
+
+/**
+ * Combat-power multiplier from remaining morale: linear from MARCH_MORALE_COMBAT_FLOOR (morale=0) up to 1.0
+ * (morale=MARCH_MORALE_MAX). Models a long-distance march arriving fatigued — attacking far-away targets is
+ * inherently weaker than attacking nearby ones.
+ */
+export function moraleCombatMultiplier(morale: number): number {
+  const clamped = Math.max(0, Math.min(MARCH_MORALE_MAX, morale));
+  return MARCH_MORALE_COMBAT_FLOOR + (1 - MARCH_MORALE_COMBAT_FLOOR) * (clamped / MARCH_MORALE_MAX);
 }
 
 function _slgInBounds(x: number, y: number, mapW: number, mapH: number): boolean {

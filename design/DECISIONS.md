@@ -539,3 +539,12 @@
   - `client/src/app/appCtx.ts` `Nav` 接口同步；`client/test/harness/HeadlessAppViews.ts` 同步（`hideOverlay` 置 `screen='worldMap'`）。
   - **已知取舍**：社交/宗门覆盖层打开期间会把 `session.handlers` 改绑到自己的推送集，此时地图暂收不到 march/tile 增量（地图被完全遮挡、不可见）；`returnToMap` 弹出时 `bindMapNet` 恢复地图 handler、继续实时推送。不做返回时强制刷新（那本身就是一次可见重绘，与需求相悖）——仅接受弹窗打开期间的短暂陈旧。City/防守/拍卖覆盖层不改 handler，故连这点陈旧都没有。
   - 验证：`tsc --noEmit` + webpack 生产构建全绿；client `vitest run` 758/758 全绿（含 `world-family-sect-nav-tabs`/`social-family-hub-return`/`world-hub-account-id` 等 nav 边界回归）。覆盖层底层机制（`pushOverlay/popOverlay`）自 ADR-044 起已在生产验证，本次仅把更多入口接到同一已验证机制上，未改 `SceneManager`。
+
+## ADR-047 行军士气：绑定行军实例（非队伍）+ 只做距离消耗，不做静止回复 — Accepted — 2026-07-21
+
+- **决策**（用户拍板）：新增行军士气机制（[SLG_DESIGN.md §4.4](game/SLG_DESIGN.md)）解决"远征讨伐天然不利"的数值诉求，用户在澄清中拍板两处关键取舍：
+  1. **士气绑定行军实例（`MarchDoc`），不绑定队伍（`TeamTemplate`）**——每次出征都从满额 `MARCH_MORALE_MAX=100` 重新开始，不与该队伍上一次出征的结果延续，行军结束后不再追踪。
+  2. **本期只做「移动一格 -1」的距离消耗，不做「原地不动每 30 秒回复 1」的回复机制**——回复机制在当前架构下没有天然的触发点（见下），强行实现只会是永远不触发的死代码。
+- **为什么放弃回复机制**：`combatMarch.ts` 的行军模型不是逐格 tick 的实时模拟——`startMarch` 出征时一次性算好完整 A\* 路径（`findMarchPath`），只调度**一个**到达事件（`arriveAt`），中途没有"停留"状态；到达后 `MarchDoc` 被整条删除（`findOneAndDelete`）。既然士气本就每次出征重置为满额，"静止回复"这个动作永远等不到会触发它的对象（一支行军要么在赶路，要么已经不存在）。如果未来改成多段行军/驻留可以续航，需要先把士气改绑到 Team 并持久化，那是另一次设计决策，不在本次范围内。
+- **战力惩罚公式**：抵达时战力 = 剩余士气线性缩放到 `[MARCH_MORALE_COMBAT_FLOOR=0.7, 1.0]`（`moraleCombatMultiplier`）——满血 100% 战力，走满 100 格耗尽士气后仍保底 70% 战力，不会因为路途遥远而被削到形同虚设。
+- **影响**：`server/shared/src/slg/core.ts`（`MARCH_MORALE_MAX`/`MARCH_MORALE_COMBAT_FLOOR`）、`march.ts`（`marchMoraleFromPath`/`moraleCombatMultiplier`）；`worldsvc/src/db.ts`（`MarchDoc.morale?`）、`combatMarch.ts`（出征时算好存入）、`combatSiege/arrival.ts` + `combatSiege/occupation.ts`（到达结算时用 `scaleArmyByRatio` 缩放攻方军队 HP + 缩放廉价公式的有效兵力，覆盖 attack/occupy/sweep/驱逐四类需要战斗的到达路径）。未改 `MarchView`/openapi 契约（客户端本期不展示士气数值，纯服务端战力机制）。`server/shared`+`worldsvc` 全量测试验证（621+282 全绿，一处既有 e2e 因引入距离惩罚而调整预期值）。
