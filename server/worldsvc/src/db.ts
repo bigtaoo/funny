@@ -530,6 +530,21 @@ export async function createWorldMongo(
     await collections.marches.createIndex({ worldId: 1, ownerId: 1 });
     // On-time scan fallback (primary scheduling uses Redis ZSET, S8-2; degrades to Mongo polling without Redis).
     await collections.marches.createIndex({ arriveAt: 1 });
+    // Idle-team invariant (2026-07-22): a team may hold only ONE active state. Team-based marches are the only
+    // docs carrying `teamId` (flat-pool marches have none; recall rewrites the SAME doc into a return leg; arrived
+    // marches are deleted) — so a partial-unique index on {worldId,ownerId,teamId} atomically forbids a second
+    // in-flight march for the same team, closing the check-then-insert race in combatMarch.startMarch that the
+    // pre-insert findOne cannot. Wrapped best-effort: if a pre-existing duplicate (from the very bug this fixes)
+    // blocks the build, log and continue — marches are transient (arrive within minutes) so a later boot succeeds;
+    // startMarch's E11000→TEAM_BUSY catch and the findOne pre-check still guard in the meantime.
+    try {
+      await collections.marches.createIndex(
+        { worldId: 1, ownerId: 1, teamId: 1 },
+        { unique: true, partialFilterExpression: { teamId: { $exists: true } } },
+      );
+    } catch (e) {
+      console.warn('[worldsvc] marches team-unique index not built (duplicate active team march?); will retry on next boot:', e);
+    }
     await collections.familyMessages.createIndex({ familyId: 1, ts: -1 });
     // TTL: auto-delete after 7 days (ts is a BSON Date field; Mongo TTL only works on Date).
     await collections.familyMessages.createIndex({ ts: 1 }, { expireAfterSeconds: FAMILY_MSG_RETENTION_SEC });

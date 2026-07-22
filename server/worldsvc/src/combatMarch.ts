@@ -294,7 +294,18 @@ export class MarchService {
       status: 'marching',
       rev: 0,
     };
-    await cols.marches.insertOne(doc);
+    // The partial-unique index on {worldId,ownerId,teamId} (db.ts) is the atomic backstop for the idle-team
+    // gate above: two concurrent dispatches of the same team both clear the findOne pre-check, but only one insert
+    // wins — the loser hits E11000 and is reported as TEAM_BUSY. Non-team (flat-pool) marches carry no teamId and
+    // are unaffected. No pool troops were deducted yet, so a rejected insert leaves player state untouched.
+    try {
+      await cols.marches.insertOne(doc);
+    } catch (e) {
+      if (teamId && (e as { code?: number }).code === 11000) {
+        throw new SlgError('TEAM_BUSY', 'Team is already marching or occupying; recall it first');
+      }
+      throw e;
+    }
     // Deduct troops on departure (in-transit; not in the pool) — skipped for card armies, whose strength
     // already lives in cardState.currentTroops and never touches playerWorld.troops (see hasCardArmy above).
     await cols.playerWorld.updateOne(

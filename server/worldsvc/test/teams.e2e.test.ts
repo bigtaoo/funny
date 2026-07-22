@@ -434,6 +434,37 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     await expect(svc.startMarch(W, 'a', 5, 5, tgt2.x, tgt2.y, 'attack', 1, 't1')).resolves.toBeTruthy();
   });
 
+  it('idle-team gate is race-safe: two CONCURRENT orders for the same team → exactly one wins (TEAM_BUSY on the other)', async () => {
+    // Regression for the 2026-07-22 report (§32): the pre-insert findOne check is not atomic, so two
+    // near-simultaneous dispatches of the same team both cleared it and both inserted → the team marched
+    // twice. The partial-unique index on {worldId,ownerId,teamId} is the atomic backstop; only one insert
+    // survives, the loser surfaces as TEAM_BUSY.
+    await svc.joinWorld(W, 'a', 5, 5);
+    const tgt1 = findCoord(10, 5);
+    const tgt2 = findCoord(5, 10);
+    await setupDefender('b', tgt1.x, tgt1.y, 50);
+    await setupDefender('c', tgt2.x, tgt2.y, 50);
+    await connect(svc, 'a', tgt1);
+    await connect(svc, 'a', tgt2);
+    const entries = await armyWithTroops('a', 10, 60);
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Vanguard', army: entries }]);
+
+    // Fire both without awaiting between them → their findOne pre-checks interleave before either insert.
+    const results = await Promise.allSettled([
+      svc.startMarch(W, 'a', 5, 5, tgt1.x, tgt1.y, 'attack', 1, 't1'),
+      svc.startMarch(W, 'a', 5, 5, tgt2.x, tgt2.y, 'attack', 1, 't1'),
+    ]);
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(String(rejected[0].reason)).toMatch(/marching or occupying|TEAM_BUSY/i);
+
+    // And the DB agrees: exactly one active march carries this teamId, never two.
+    const mine = await svc.getMarches(W, 'a');
+    expect(mine.filter((m) => m.teamId === 't1')).toHaveLength(1);
+  });
+
   it('idle-team gate: a team stays "out" through the occupation-hold countdown, not just in transit', async () => {
     await svc.joinWorld(W, 'a', 10, 10);
     const target = findCoord(30, 30, (t) => t.type === 'resource' && t.level <= 2);

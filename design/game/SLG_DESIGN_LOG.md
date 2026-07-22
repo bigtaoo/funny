@@ -1243,3 +1243,15 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 - 客户端 `client/src/game/meta/teamTroops.ts` 的 `isLegacyTeam`（已是死代码，生产 UI 早已无引用——`TeamsScene.ts` 在更早的重构里被删掉了）连同测试一并删除。
 
 **测试**：`server/worldsvc/test/teams.e2e.test.ts` + `card-slg.e2e.test.ts` 里引用旧原始 `{unitType,initialHp}` 格式的用例（迁移后从未更新过）改成卡牌格式；新增 3 例覆盖本次修复的实际行为——`setTeams` 丢弃失效 `cardInstanceId`（卡牌已被消耗/喂卡）并释放退款、`getTeams` 自愈直接写入数据库的脏数据并释放退款（幂等，不重复退款）、`meta` 不可用时 `setTeams`/`getTeams` 均不破坏已存数据。worldsvc 全量 e2e 串行跑通（33 文件 / 284 例）；client/server `tsc --noEmit` 全绿。
+
+## 32. 空闲队伍门禁的并发竞态加固（同一队伍被派出两次）（2026-07-22）
+
+**背景（用户报告）**：只有两支队伍，`Marches (3)` 却出现三条行军单，队伍 2 被派出了两次。§16.9「空闲队伍校验」（2026-07-15，见 §上）本应保证「一支队伍同时只能有一个状态、不能重复出征」，但仍被绕过。
+
+**根因**：`combatMarch.ts` 的 `startMarch` 是**先查后插**——先 `findOne(marches)`+`findOne(occupations)` 判队伍是否忙碌（无命中才继续），最后才 `insertOne` 落行军单。两步之间隔着多个 `await`，Node 事件循环会把两个几乎同时到达的同队伍出征请求交错处理：两者的 `findOne` 都在对方 `insertOne` 之前返回"空闲"，于是双双插入 → 同一队伍两条行军单。触发路径是客户端的在途窗口：玩家给格子 A 选了队伍 2 出征，服务端还没返回、`ctx.marches` 未刷新前，又给格子 B 选同一支队伍 2——`showTeamPicker` 的忙碌灰显只看 `ctx.marches`/`ctx.occupations`，此刻两者都还不含这笔在途单。
+
+**修复（双层）**：
+- **客户端**（`client/src/scenes/worldmap/WorldMapNet.ts`）：新增 `pendingTeamIds` 集合，`doMarchTeam` 在发请求前把 `teamId` 记为 in-flight、`finally` 里移除；`showTeamPicker` 的 `busyTeamIds` 并入 `pendingTeamIds`，`doMarchTeam` 开头也再挡一道（命中直接提示 `team.busy`）。堵住"响应回来前二次派同一队伍"的人类快速点击窗口。
+- **服务端**（权威兜底，`server/worldsvc/src/db.ts` + `combatMarch.ts`）：`marches` 集合加 `{worldId,ownerId,teamId}` **partial-unique 索引**（`partialFilterExpression: {teamId:{$exists:true}}`）。带队行军单是集合里**唯一**带 `teamId` 的文档——散兵行军无 `teamId`、撤军是改写同一 `_id` 成 return 腿、到点行军单 `findOneAndDelete`——所以该索引原子地禁止「同队伍第二条在途行军单」，正好补上先查后插关不掉的竞态。`startMarch` 的 `insertOne` 捕获 E11000 → 抛 `TEAM_BUSY`（此时尚未扣兵力池，玩家状态无副作用）。索引构建 best-effort try/catch 包裹：万一线上已存在本 bug 造成的重复在途单导致建索引失败，只告警不 crash 启动（行军单几分钟内到点消解，下次重启即可建成；期间靠 `findOne` 预检 + E11000 兜底）。
+
+**验证**：client + worldsvc `tsc --noEmit` 全绿。竞态本身依赖并发时序、preview 无法稳定复现，改动为逻辑门禁层。
