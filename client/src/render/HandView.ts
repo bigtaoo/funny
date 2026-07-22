@@ -8,7 +8,7 @@ import { t, type TranslationKey } from '../i18n';
 import { TICK_RATE } from '../game/math/fixed';
 import { SketchPen } from './sketch';
 import { palette } from './theme';
-import { CARD_ART_URLS, cardArtKey } from './cardArt';
+import { CARD_ART_URLS, cardArtKey, getArtTexture } from './cardArt';
 import { FS } from './fontScale';
 
 const CARD_BG              = 0xfaf6ee;
@@ -387,7 +387,7 @@ export class HandView {
 
     let tex = this.artTextures.get(key);
     if (!tex) {
-      tex = PIXI.Texture.from(url);
+      tex = getArtTexture(url); // mipmap opt-in shared with roster/avatar (see cardArt.getArtTexture)
       if (!tex.baseTexture.valid) {
         // Texture loads async — force a full re-sync AND invalidate content keys
         // so the affected slots re-run configureSlot and pick up the now-valid
