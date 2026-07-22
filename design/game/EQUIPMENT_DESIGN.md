@@ -518,6 +518,8 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 **已装备标签文字溢出格子修复**（2026-07-17 追加）：真人截图走查发现 Equipped 分区图标卡右列的「[Equipped · Weapon]」绿色标签文字比格子本身还宽，溢出格子右边界、盖住相邻卡片文字——`renderInstanceCell`（`inventory.ts`）此前只对顶部的名称文字做了「超宽则缩放」处理，右列的稀有度/已装备标签/堆叠数字没有同样的宽度约束。修复：已装备标签超出可用列宽 `colW` 时 `e.scale.set(colW / e.width)` 等比缩小，与名称文字用同一模式。用临时 `__NW_DEBUG` 钩子（`app.ts` 里挂 `{PIXI, app, EquipmentScene}`）直接 new 一个装了 3 件已装备道具的 `EquipmentScene`，遍历 `container` 找 `[Equipped · ...]` 文字节点核对 `scale`/`x`/`width` 不再越出格子右边界（验证后移除钩子）；`tsc --noEmit` 通过。新增回归测试 [equipmentEquippedTagOverflow.ui.ts](../../client/test/ui/equipmentEquippedTagOverflow.ui.ts)：反向验证过（去掉 scale 修复后测试确实失败），已装备标签的渲染右边界始终 ≤ 所在格子的右边界。
 
+**操作按钮从详情弹窗移到图标卡 + 不可用即隐藏 + 直接触发**（2026-07-22 追加）：真人吐槽走查——库存图标卡此前整格只是"打开详情弹窗"的命中区，所有操作（强化/装备·卸下/洗练/分解/全部分解）都挤在弹窗底部一排按钮里，且不可用的按钮（如无素材的洗练、买不起的强化）只是**置灰**仍占位。改为把这排操作直接搬到每张图标卡底部满宽的按钮带上：① 新增 `DetailMixin.instanceActions(save, inst)`（`detail.ts`）集中算出**仅当前可用**的操作集合（沿用原弹窗的可用性判定：`!maxed && canAffordEnhance` 才有强化、同槽低一档素材存在才有洗练、未穿戴未锁定才有分解、堆叠 >1 才有全部分解），返回 `CellAction[]`（`base.ts` 新增共享类型：`{key,label,fill,stroke,fn}`，`fn` 直接触发动作/确认弹窗/选材弹窗，不再开信息弹窗）；不可用的操作**直接不进列表**（隐藏而非置灰）。② `InventoryMixin.renderInstanceCell`（`inventory.ts`）在格底预留 34px 按钮带（有操作才占位，图标框相应缩短留出 8px 间隙），逐个画按钮并把命中矩形 push 进 `hitRects`——**按钮命中先于整格命中入栈**，输入层首个命中即返回，故点按钮触发对应动作、点格子其余区域才开详情弹窗。③ 详情弹窗（`openDetail`）退化为**纯信息**：只剩词条列表 + 强化成功率/消耗 + 保护石开关（开关仍在，供强化前设置粘性 `useProtectEnhance`），底部按钮带整块移除、`mh` 相应缩短。测试：`scenes.ui.ts` 五条 mixin 接线用例从"驱动弹窗 `modalHits`"改为"驱动 `instanceActions().fn`"（enhance/equip·assign/reforge/salvage/salvageAll 全绿，83 项通过）。`tsc --noEmit` 通过；实机截图受阻——dev server `/bootstrap` 无本地后端连不上（既存未解决问题，非本次引入），本次靠 headless `test:ui` 冒烟层核对（构造+命中矩形回归）。
+
 #### E2 掉落 faucet + E6 洗练 实现记录（2026-06-22，✅）
 
 **E2 关卡掉落 faucet**

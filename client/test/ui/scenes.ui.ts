@@ -957,33 +957,31 @@ describe('EquipmentScene — mixin-split wiring', () => {
     scene.destroy();
   });
 
-  it('detail modal (active-card mode): the Unequip button wired by DetailMixin.openDetail calls cb.equip', async () => {
+  it('instanceActions (equipped item): the Unequip action wired by DetailMixin calls cb.equip', async () => {
     const { cb, calls } = buildEquipCallbacks('card1');
     const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
-    (scene as any).openDetail('eqEquippedFine');
-    expect((scene as any).modalOpen).toBe(true);
-    const modalHits = (scene as any).modalHits as Array<{ action: () => void }>;
-    // Button order for this fixture (fine, level 0, equipped, no reforge material since
-    // it's equipped, not salvageable since equipped): [Enhance, Unequip, panel-inert, outside-close].
-    expect(modalHits.length).toBe(4);
-    modalHits[1].action();
+    const save = (scene as any).cb.getSave();
+    // Actions live on the grid cell now, not the (info-only) detail modal. For this fixture
+    // (fine, level 0, equipped): Enhance (materials/coins are stocked) + Unequip; not salvageable
+    // or reforgeable while equipped.
+    const actions = (scene as any).instanceActions(save, save.equipmentInv.eqEquippedFine) as Array<{ key: string; fn: () => void }>;
+    expect(actions.map((a) => a.key)).toEqual(['enhance', 'unequip']);
+    actions.find((a) => a.key === 'unequip')!.fn();
     await Promise.resolve();
     expect(calls.equip).toEqual([['weapon', null, 'card1']]);
     expect(calls.enhance).toEqual([]); // sanity: we hit Unequip, not Enhance
     scene.destroy();
   });
 
-  it('bag mode: Detail → Assign(beginAssign) → base.render(renderAssign) → Assign(doEquipTo) → Detail(doEquip) → cb.equip', async () => {
+  it('bag mode: instanceActions(Equip) → Assign(beginAssign) → base.render(renderAssign) → Assign(doEquipTo) → Detail(doEquip) → cb.equip', async () => {
     const { cb, calls } = buildEquipCallbacks(''); // '' activeCardInstanceId = bag mode
     const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
-    (scene as any).openDetail('eqBagCommon'); // unequipped common item
-    // Button order: [Enhance, Equip, Salvage, panel-inert, outside-close] (common rarity has no
-    // reforge material tier, so no Reforge button).
-    const modalHits = (scene as any).modalHits as Array<{ action: () => void }>;
-    expect(modalHits.length).toBe(5);
-    modalHits[1].action(); // Equip → bag mode → beginAssign('eqBagCommon', 'weapon')
+    const save = (scene as any).cb.getSave();
+    // Unequipped common item: Enhance, Equip, Salvage (common rarity has no reforge tier → no Reforge).
+    const actions = (scene as any).instanceActions(save, save.equipmentInv.eqBagCommon) as Array<{ key: string; fn: () => void }>;
+    expect(actions.map((a) => a.key)).toEqual(['enhance', 'equip', 'salvage']);
+    actions.find((a) => a.key === 'equip')!.fn(); // Equip → bag mode → beginAssign('eqBagCommon', 'weapon')
     expect((scene as any).assign).toEqual({ instId: 'eqBagCommon', slot: 'weapon' });
-    expect((scene as any).modalOpen).toBe(false); // beginAssign closes the detail modal
     // render() dispatched to AssignMixin.renderAssign, which laid out one row per card (only card1).
     // renderSidebar() also always runs (even in assign mode) and only pushes a hit for the
     // INACTIVE sub-tab (drawSidebarTabs skips the active one) — so [back, Craft tab, card1 row].
@@ -996,16 +994,16 @@ describe('EquipmentScene — mixin-split wiring', () => {
     scene.destroy();
   });
 
-  it('reforge flow: Detail → Reforge(openReforgeSelect) → base.showConfirm → Reforge(doReforge) → cb.reforge', async () => {
+  it('reforge flow: instanceActions(Reforge) → Reforge(openReforgeSelect) → base.showConfirm → Reforge(doReforge) → cb.reforge', async () => {
     const { cb, calls } = buildEquipCallbacks('card1');
     const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
-    (scene as any).openDetail('eqBagFine'); // unequipped fine item; eqBagCommon qualifies as its reforge material
-    // Button order: [Enhance, Equip, Reforge, Salvage, panel-inert, outside-close].
-    let modalHits = (scene as any).modalHits as Array<{ action: () => void }>;
-    expect(modalHits.length).toBe(6);
-    modalHits[2].action(); // Reforge → openReforgeSelect(eqBagFine)
+    const save = (scene as any).cb.getSave();
+    // Unequipped fine item (eqBagCommon qualifies as its reforge material): Enhance, Equip, Reforge, Salvage.
+    const actions = (scene as any).instanceActions(save, save.equipmentInv.eqBagFine) as Array<{ key: string; fn: () => void }>;
+    expect(actions.map((a) => a.key)).toEqual(['enhance', 'equip', 'reforge', 'salvage']);
+    actions.find((a) => a.key === 'reforge')!.fn(); // Reforge → openReforgeSelect(eqBagFine)
     expect((scene as any).modalOpen).toBe(true);
-    modalHits = (scene as any).modalHits;
+    let modalHits = (scene as any).modalHits as Array<{ action: () => void }>;
     modalHits[0].action(); // material row (eqBagCommon) → confirmReforge → showConfirm
     modalHits = (scene as any).modalHits;
     expect(modalHits.length).toBe(2); // showConfirm's [OK, Cancel]
@@ -1015,15 +1013,15 @@ describe('EquipmentScene — mixin-split wiring', () => {
     scene.destroy();
   });
 
-  it('salvage flow: Detail → base.showConfirm → Detail(doSalvage) → cb.salvage', async () => {
+  it('salvage flow: instanceActions(Salvage) → base.showConfirm → Detail(doSalvage) → cb.salvage', async () => {
     const { cb, calls } = buildEquipCallbacks('card1');
     const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
-    (scene as any).openDetail('eqBagCommon'); // unequipped common item, no reforge tier
-    // Button order: [Enhance, Equip, Salvage, panel-inert, outside-close].
-    let modalHits = (scene as any).modalHits as Array<{ action: () => void }>;
-    expect(modalHits.length).toBe(5);
-    modalHits[2].action(); // Salvage → confirmSalvage → showConfirm
-    modalHits = (scene as any).modalHits;
+    const save = (scene as any).cb.getSave();
+    // Unequipped common item, no reforge tier: Enhance, Equip, Salvage.
+    const actions = (scene as any).instanceActions(save, save.equipmentInv.eqBagCommon) as Array<{ key: string; fn: () => void }>;
+    expect(actions.map((a) => a.key)).toEqual(['enhance', 'equip', 'salvage']);
+    actions.find((a) => a.key === 'salvage')!.fn(); // Salvage → confirmSalvage → showConfirm
+    const modalHits = (scene as any).modalHits as Array<{ action: () => void }>;
     expect(modalHits.length).toBe(2); // showConfirm's [OK, Cancel]
     modalHits[0].action(); // OK → doSalvage
     await Promise.resolve();
@@ -1037,12 +1035,11 @@ describe('EquipmentScene — mixin-split wiring', () => {
     save.equipmentInv.eqBagCommon2 = { id: 'eqBagCommon2', defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [{ id: 'm_atk', value: 10 }] };
     save.equipmentInv.eqBagCommon3 = { id: 'eqBagCommon3', defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [{ id: 'm_atk', value: 10 }] };
     const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
-    (scene as any).openDetail('eqBagCommon');
-    // Button order: [Enhance, Equip, Salvage, Salvage All, panel-inert, outside-close].
-    let modalHits = (scene as any).modalHits as Array<{ action: () => void }>;
-    expect(modalHits.length).toBe(6);
-    modalHits[3].action(); // Salvage All → confirmSalvageAll → showConfirm
-    modalHits = (scene as any).modalHits;
+    // Action order: [Enhance, Equip, Salvage, Salvage All].
+    const actions = (scene as any).instanceActions(save, save.equipmentInv.eqBagCommon) as Array<{ key: string; fn: () => void }>;
+    expect(actions.map((a) => a.key)).toEqual(['enhance', 'equip', 'salvage', 'salvageAll']);
+    actions.find((a) => a.key === 'salvageAll')!.fn(); // Salvage All → confirmSalvageAll → showConfirm
+    const modalHits = (scene as any).modalHits as Array<{ action: () => void }>;
     expect(modalHits.length).toBe(2); // showConfirm's [OK, Cancel]
     modalHits[0].action(); // OK → doSalvageAll
     await Promise.resolve();

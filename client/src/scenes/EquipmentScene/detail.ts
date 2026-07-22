@@ -1,6 +1,7 @@
-// Detail modal: the instance panel (affix list, enhance / equip-unequip / reforge / salvage
-// buttons) plus the enhance and salvage actions. Equip/unequip itself (doEquip) lives here since
-// it's the target of both the detail modal's buttons and the assign mixin's card picker.
+// Detail modal + item actions. The modal itself is info-only (affix list, enhance rate/cost, the
+// protect toggle); the action set (enhance / equip-unequip / reforge / salvage / salvage-all) is
+// produced by instanceActions() and rendered as buttons on the grid cell (InventoryMixin), which
+// call the doEnhance / doEquip / confirmSalvage / openReforgeSelect handlers that also live here.
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
@@ -12,7 +13,7 @@ import {
   EQUIP_MAX_LEVEL, SALVAGE_MAX_LEVEL, REFORGE_MATERIAL_RARITY, PROTECT_ENHANCE_ITEM_ID,
 } from '../../game/meta/equipmentDefs';
 import { buildIcon, type IconKind } from '../../render/icons';
-import { type Constructor, type EquipmentSceneBaseCtor, RARITY_COLOR } from './base';
+import { type Constructor, type EquipmentSceneBaseCtor, type CellAction, RARITY_COLOR } from './base';
 
 /** Affix id (strip m_/s_/k_ prefix) → stat icon kind; returns null for unknown affixes. */
 function affixIconKind(affixId: string): IconKind | null {
@@ -41,20 +42,17 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       this.modalOpen = true;
 
       const color = RARITY_COLOR[inst.rarity];
-      const equipped = this.equippedIds(save).has(inst.id);
-      const slot = getEquipDef(inst.defId)?.slot;
       const maxed = inst.level >= EQUIP_MAX_LEVEL;
-      const salvageable = inst.level <= SALVAGE_MAX_LEVEL && !equipped && !inst.locked;
-      // Stack size (>1 when this is a merged ×N cell in the grid) — drives whether a
-      // separate "salvage all" action is offered alongside the single-item one (see stackSiblingIds).
-      const stackIds = salvageable ? this.stackSiblingIds(save, inst) : [inst.id];
 
       // Natural (unscaled) content size — everything below is laid out in this local frame.
+      // This modal is now info-only: the action buttons moved onto the grid cell (see
+      // InventoryMixin.renderInstanceCell), so it just shows affixes + enhance rate/cost + the
+      // protect toggle and no longer reserves a button band at the bottom.
       const mw = Math.min(330, w - 24);
       const affixCount = inst.affixes.length;
       const protectCount = save.inventory?.items?.[PROTECT_ENHANCE_ITEM_ID] ?? 0;
-      // Extra 22px for the protect-item row when not max level
-      const mh = 64 + affixCount * 20 + (maxed ? 24 : 64 + 22) + 44 + 24;
+      // 44 = top(12) + title(26) + affix-gap(6); enhance section is 58 (rate+cost+protect) or 24 (maxed); +12 bottom pad.
+      const mh = 44 + affixCount * 20 + (maxed ? 24 : 58) + 12;
       const mx = 0;
       const my = 0;
 
@@ -166,66 +164,62 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
         cy += 22;
       }
 
-      // Reforge availability
+      // Hit priority is first-match: the protect toggle (above) wins, then the panel area is inert,
+      // then a tap anywhere outside the panel closes the detail (added last = lowest). All actions
+      // (enhance / equip / reforge / salvage) now live on the grid cell, not here.
+      this.modalHits.push({ rect: this.toModalScreen({ x: mx, y: my, w: mw, h: mh }), action: () => {} });
+      this.modalHits.push({ rect: { x: 0, y: 0, w, h }, action: () => this.closeDetail() });
+    }
+
+    /**
+     * Available on-card actions for `inst`, in display order (Enhance / Equip|Unequip / Reforge /
+     * Salvage / Salvage All). Only *available* actions are returned — unavailable ones (unaffordable
+     * enhance, reforge without a matching material, salvage on an equipped/locked piece, …) are
+     * omitted so the grid cell hides them rather than greying them out. Each `fn` fires directly.
+     */
+    instanceActions(save: SaveData, inst: EquipmentInstance): CellAction[] {
+      const equipped = this.equippedIds(save).has(inst.id);
+      const slot = getEquipDef(inst.defId)?.slot;
+      const maxed = inst.level >= EQUIP_MAX_LEVEL;
+      const busy = this.bt.busy;
+      const salvageable = inst.level <= SALVAGE_MAX_LEVEL && !equipped && !inst.locked;
+      const stackIds = salvageable ? this.stackSiblingIds(save, inst) : [inst.id];
+      const actions: CellAction[] = [];
+
+      if (!maxed && this.canAffordEnhance(save, enhanceCost(inst.level)) && !busy) {
+        actions.push({ key: 'enhance', label: t('equip.enhance'), fill: C.dark, stroke: C.accent, fn: () => void this.doEnhance(inst.id) });
+      }
+      if (slot && !busy) {
+        if (equipped) {
+          // Unequip: in bag mode the item may be on any card → look up its owner; otherwise the active card.
+          actions.push({ key: 'unequip', label: t('equip.unequip'), fill: 0xf0e0e0, stroke: C.red, fn: () => {
+            const cardId = this.bag ? this.ownerCardId(save, inst.id) : this.cb.activeCardInstanceId;
+            if (cardId) void this.doEquip(slot, null, cardId);
+          } });
+        } else {
+          // Equip: in bag mode we don't know the target card yet → open the card picker; otherwise the active card.
+          actions.push({ key: 'equip', label: t('equip.equip'), fill: C.dark, stroke: C.green, fn: () => {
+            if (this.bag) this.beginAssign(inst.id, slot);
+            else void this.doEquip(slot, inst.id, this.cb.activeCardInstanceId);
+          } });
+        }
+      }
       const requiredMatRarity = REFORGE_MATERIAL_RARITY[inst.rarity];
       const hasMaterials = requiredMatRarity
         ? Object.values(save.equipmentInv ?? {}).some(
             (m) => m.id !== inst.id && getEquipDef(m.defId)?.slot === slot && m.rarity === requiredMatRarity && !this.equippedIds(save).has(m.id),
           )
         : false;
-      const reforgeOn = !!requiredMatRarity && hasMaterials && !equipped && !inst.locked && !this.bt.busy;
-
-      // Action buttons row.
-      const btnY = my + mh - 40;
-      const btnH = 30;
-      const buttons: { label: string; fill: number; stroke: number; fn: () => void; on: boolean }[] = [];
-      if (!maxed) {
-        const cost = enhanceCost(inst.level);
-        const on = this.canAffordEnhance(save, cost) && !this.bt.busy;
-        buttons.push({ label: t('equip.enhance'), fill: on ? C.dark : C.btnOff, stroke: on ? C.accent : C.mid, on, fn: () => void this.doEnhance(inst.id) });
+      if (!!requiredMatRarity && hasMaterials && !equipped && !inst.locked && !busy) {
+        actions.push({ key: 'reforge', label: t('equip.reforge'), fill: 0x3355aa, stroke: 0x6688dd, fn: () => this.openReforgeSelect(inst) });
       }
-      if (slot) {
-        if (equipped) {
-          // Unequip: in bag mode the item may be on any card → look up its owner; otherwise the active card.
-          buttons.push({ label: t('equip.unequip'), fill: 0xf0e0e0, stroke: C.red, on: !this.bt.busy, fn: () => {
-            const cardId = this.bag ? this.ownerCardId(save, inst.id) : this.cb.activeCardInstanceId;
-            if (cardId) void this.doEquip(slot, null, cardId);
-          } });
-        } else {
-          // Equip: in bag mode we don't know the target card yet → open the card picker; otherwise the active card.
-          buttons.push({ label: t('equip.equip'), fill: C.dark, stroke: C.green, on: !this.bt.busy, fn: () => {
-            if (this.bag) this.beginAssign(inst.id, slot);
-            else void this.doEquip(slot, inst.id, this.cb.activeCardInstanceId);
-          } });
-        }
-      }
-      if (requiredMatRarity) {
-        buttons.push({ label: t('equip.reforge'), fill: reforgeOn ? 0x3355aa : C.btnOff, stroke: reforgeOn ? 0x6688dd : C.mid, on: reforgeOn, fn: () => this.openReforgeSelect(inst) });
-      }
-      if (salvageable) {
-        buttons.push({ label: t('equip.salvage'), fill: 0xeeeeee, stroke: C.mid, on: !this.bt.busy, fn: () => this.confirmSalvage(inst, stackIds.length) });
+      if (salvageable && !busy) {
+        actions.push({ key: 'salvage', label: t('equip.salvage'), fill: 0xeeeeee, stroke: C.mid, fn: () => this.confirmSalvage(inst, stackIds.length) });
         if (stackIds.length > 1) {
-          buttons.push({ label: t('equip.salvageAll'), fill: 0xeeeeee, stroke: C.mid, on: !this.bt.busy, fn: () => this.confirmSalvageAll(inst, stackIds) });
+          actions.push({ key: 'salvageAll', label: t('equip.salvageAll'), fill: 0xeeeeee, stroke: C.mid, fn: () => this.confirmSalvageAll(inst, stackIds) });
         }
       }
-      const n = buttons.length;
-      const gap = 8;
-      const bw = (mw - 24 - gap * (n - 1)) / n;
-      buttons.forEach((b, i) => {
-        const x = mx + 12 + i * (bw + gap);
-        const g = sketchPanel(bw, btnH, { fill: b.on ? b.fill : C.btnOff, border: b.on ? b.stroke : C.mid, seed: seedFor(i, 11, bw) });
-        g.x = x; g.y = btnY;
-        panelRoot.addChild(g);
-        const lbl = this.stxt(b.label, FS.tiny, b.on ? (b.fill === 0xeeeeee || b.fill === 0xf0e0e0 ? C.dark : C.light) : C.mid, true);
-        lbl.anchor.set(0.5, 0.5); lbl.x = x + bw / 2; lbl.y = btnY + btnH / 2;
-        panelRoot.addChild(lbl);
-        if (b.on) this.modalHits.push({ rect: this.toModalScreen({ x, y: btnY, w: bw, h: btnH }), action: b.fn });
-      });
-
-      // Hit priority is first-match: buttons (above) win, then panel-area is inert,
-      // then a tap anywhere outside the panel closes the detail (added last = lowest).
-      this.modalHits.push({ rect: this.toModalScreen({ x: mx, y: my, w: mw, h: mh }), action: () => {} });
-      this.modalHits.push({ rect: { x: 0, y: 0, w, h }, action: () => this.closeDetail() });
+      return actions;
     }
 
     private closeDetail(): void {

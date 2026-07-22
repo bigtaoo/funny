@@ -355,6 +355,11 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
     private renderInstanceCell(inst: EquipmentInstance, x: number, y: number, cellW: number, equipped: boolean, count = 1): void {
       const pad = 8;
       const color = RARITY_COLOR[inst.rarity];
+      const save = this.cb.getSave();
+      // Available on-card actions (enhance / equip / reforge / salvage …) — unavailable ones are
+      // omitted so they're hidden rather than greyed (2026-07-22: actions moved off the detail modal
+      // onto the cell; a tap on a button fires it directly, a tap on the card body opens the info modal).
+      const actions = this.instanceActions(save, inst);
       // Border always encodes rarity (equipped or not) so the color language is consistent
       // across the Equipped strip and the Bag grid — it used to fall back to neutral grey
       // for unequipped items, which made rarity only readable via the text label.
@@ -384,9 +389,14 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
         this.bodyLayer.addChild(stars);
       }
 
+      // Bottom band reserved for the action button row (only when there are actions to show);
+      // the glyph frame shrinks to leave room for it.
+      const btnBandH = actions.length > 0 ? 34 : 0;
+      const bandGap = actions.length > 0 ? 8 : 0;
+
       // Left: glyph in a rarity-bordered frame.
       const slot = getEquipDef(inst.defId)?.slot ?? 'weapon';
-      const imgBox = EQUIP_CELL_H - (pad + headerH) - pad;
+      const imgBox = EQUIP_CELL_H - (pad + headerH) - pad - btnBandH - bandGap;
       const imgX = x + pad;
       const imgY = y + pad + headerH;
       const frame = sketchPanel(imgBox, imgBox, { fill: 0xf0eee7, border: color, seed: seedFor(x, y, imgBox) });
@@ -413,24 +423,30 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
         badge.x = ax; badge.y = ay; this.bodyLayer.addChild(badge);
       }
 
-      // Bottom-of-column action affordance: unequipped items get a real button (fill + border),
-      // so "this is the thing to tap to equip" reads at a glance instead of small corner text
-      // competing visually with the equipped row's quiet detail-view chevron.
-      const btnH = 36;
-      const btnY = imgY + imgBox - btnH;
-      if (equipped) {
-        const hint = txt('› ' + t('equip.viewDetails'), FS.small, C.mid);
-        hint.anchor.set(1, 1); hint.x = x + cellW - pad; hint.y = y + EQUIP_CELL_H - pad;
-        this.bodyLayer.addChild(hint);
-      } else {
-        const btn = sketchPanel(colW, btnH, { fill: 0xf3ede0, border: C.accent, seed: seedFor(ax, btnY, colW) });
-        btn.x = ax; btn.y = btnY;
-        this.bodyLayer.addChild(btn);
-        const label = txt(t('equip.hintEquip'), FS.body, C.accent, true);
-        label.anchor.set(0.5, 0.5); label.x = ax + colW / 2; label.y = btnY + btnH / 2;
-        this.bodyLayer.addChild(label);
+      // Action button row along the bottom of the cell, spanning its full width. Only available
+      // actions are drawn (hidden = unavailable); each fires directly on tap. Pushed to hitRects
+      // *before* the full-cell rect below so a button tap wins over the card-body detail tap.
+      if (actions.length > 0) {
+        const n = actions.length;
+        const bgap = 5;
+        const by = y + EQUIP_CELL_H - pad - btnBandH;
+        const bw = (cellW - pad * 2 - bgap * (n - 1)) / n;
+        actions.forEach((a, i) => {
+          const bx = x + pad + i * (bw + bgap);
+          const g = sketchPanel(bw, btnBandH, { fill: a.fill, border: a.stroke, seed: seedFor(bx, by, bw) });
+          g.x = bx; g.y = by;
+          this.bodyLayer.addChild(g);
+          // Light ink text on the dark/blue fills, dark on the pale (salvage/unequip) fills.
+          const onDark = a.fill === C.dark || a.fill === 0x3355aa;
+          const lbl = txt(a.label, FS.small, onDark ? C.light : C.dark, true);
+          lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + btnBandH / 2;
+          if (lbl.width > bw - 6) lbl.scale.set(Math.max(0.35, (bw - 6) / lbl.width));
+          this.bodyLayer.addChild(lbl);
+          this.hitRects.push({ rect: { x: bx, y: by, w: bw, h: btnBandH }, action: a.fn });
+        });
       }
 
+      // Card body (outside the buttons) opens the info modal — affixes, enhance rate/cost, protect toggle.
       this.hitRects.push({ rect: { x, y, w: cellW, h: EQUIP_CELL_H }, action: () => this.openDetail(inst.id) });
     }
   };
