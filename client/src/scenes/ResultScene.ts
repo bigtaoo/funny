@@ -122,6 +122,28 @@ function computeBadges(stats: PlayerStats): Badge[] {
     .slice(0, 3);
 }
 
+/**
+ * Telemetry payload for the `match_badges` analytics event (ANALYTICS_DESIGN §5.8).
+ * Uses the SAME {@link computeBadges} the scene renders from, so the logged `hero`/
+ * `shown` can never drift from what the player actually saw. The raw stat inputs are
+ * carried too so the backend can recalibrate the REF_* constants above from real
+ * distributions instead of estimates (badge_dist ops dashboard).
+ */
+export function matchBadgeTelemetry(local: PlayerStats): Record<string, unknown> {
+  const keys = computeBadges(local).map((b) => b.key);
+  return {
+    hero: keys[0] ?? 'none', // top badge = the "title" the player sees; 'none' if all scores ≤ 0
+    shown: keys,             // up to 3 medallions shown, hero first
+    kills: local.unitsKilled,
+    gold_spent: local.goldSpent,
+    units_sent: local.unitsSent,
+    dmg_dealt: local.damageDealtToBase,
+    dmg_taken: local.damageTakenByBase,
+    spell_hits: local.spellHits,
+    build_ticks: local.buildingSurvivalTicks,
+  };
+}
+
 // ─── ResultScene ──────────────────────────────────────────────────────────────
 
 export interface ResultSceneCallbacks {

@@ -28,7 +28,7 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
 
     const [
       summary, evCounts, dau, funnel, regions, osDist, loginHour, retention, firstSession,
-      levelFunnel, tutorialFunnel, sceneFunnel, browserDist, deviceTypeDist, geoDist,
+      levelFunnel, tutorialFunnel, sceneFunnel, browserDist, deviceTypeDist, geoDist, badgeDist,
     ] = await Promise.allSettled([
       api.analyticsSummary(),
       api.analyticsEvents('event_counts', days),
@@ -45,6 +45,7 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
       api.analyticsEvents('browser_dist', days),
       api.analyticsEvents('device_type_dist', days),
       api.analyticsEvents('geo_dist', days),
+      api.analyticsEvents('badge_dist', days),
     ]);
 
     // Monitoring overview (self-collected metrics + tickets)
@@ -187,6 +188,47 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
         h('div', { class: 'muted' }, `Level funnel — 20 levels with the lowest completion rate (last ${days} days)`),
         t,
       ));
+    }
+
+    // Post-match badge/title distribution (ANALYTICS_DESIGN §5.8) — per mode, which "hero" badge
+    // players actually get. A single badge with a near-100% share = the calibration is degenerate
+    // (everyone gets the same title). One pivot table per mode: badge rows × win/loss/draw + total.
+    if (badgeDist.status === 'fulfilled' && badgeDist.value.available && badgeDist.value.badge_dist?.length) {
+      const rows = badgeDist.value.badge_dist;
+      const modes = [...new Set(rows.map((r) => r.mode))].sort();
+      const resultsOrder = ['win', 'loss', 'draw'];
+      for (const mode of modes) {
+        const modeRows = rows.filter((r) => r.mode === mode);
+        const results = resultsOrder.filter((rr) => modeRows.some((r) => r.result === rr))
+          .concat([...new Set(modeRows.map((r) => r.result))].filter((rr) => !resultsOrder.includes(rr)));
+        const badges = [...new Set(modeRows.map((r) => r.badge))];
+        const cell = new Map(modeRows.map((r) => [`${r.badge}:${r.result}`, r.count]));
+        const badgeTotal = (b: string) => results.reduce((s, rr) => s + (cell.get(`${b}:${rr}`) ?? 0), 0);
+        badges.sort((a, b) => badgeTotal(b) - badgeTotal(a));
+        const grandTotal = badges.reduce((s, b) => s + badgeTotal(b), 0);
+
+        const t = h('table', {},
+          h('tr', {},
+            h('th', {}, 'Hero badge'),
+            ...results.map((rr) => h('th', { style: 'text-align:right' }, rr)),
+            h('th', { style: 'text-align:right' }, 'Total'),
+            h('th', {}, 'Share'),
+          ),
+        );
+        for (const b of badges) {
+          const tot = badgeTotal(b);
+          t.append(h('tr', {},
+            h('td', {}, b),
+            ...results.map((rr) => h('td', { style: 'text-align:right' }, String(cell.get(`${b}:${rr}`) ?? 0))),
+            h('td', { style: 'text-align:right' }, String(tot)),
+            h('td', {}, barCell(tot, grandTotal)),
+          ));
+        }
+        body.append(h('div', { class: 'card' },
+          h('div', { class: 'muted' }, `Result badge distribution — ${mode} (${grandTotal} matches, last ${days} days; one badge near 100% = miscalibrated)`),
+          t,
+        ));
+      }
     }
 
     // Locale distribution (this is a language code, not a geographic region — see Geo distribution below for actual country)
