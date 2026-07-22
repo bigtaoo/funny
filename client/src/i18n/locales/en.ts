@@ -1559,6 +1559,7 @@ export const en: Record<TranslationKey, string> = {
   'roster.fuseHint': 'Same-faction, same-level cards · needs 5',
   'roster.fuseEmpty': 'No eligible material cards',
   'roster.fuseAutoRetarget': 'Not enough cards to upgrade this character — auto-selected a more suitable one',
+  'roster.fuseCantContinue': "This character can't be upgraded further right now — switched to a lower-level card",
   'roster.fuseOk': 'Fusion complete!',
   'roster.fuseErr': 'Fusion failed',
   'roster.fuseMaterials': 'Materials',

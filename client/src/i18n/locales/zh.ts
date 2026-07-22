@@ -1575,6 +1575,7 @@ export const zh = {
   'roster.fuseHint': '同阵营同等级卡牌 · 需要 5 张',
   'roster.fuseEmpty': '无可用材料卡',
   'roster.fuseAutoRetarget': '当前没有足量的卡来升级该角色，已为您自动选择更合适的角色',
+  'roster.fuseCantContinue': '该角色暂时无法继续升级，已切换到低等级角色继续融合',
   'roster.fuseOk': '融合成功',
   'roster.fuseErr': '融合失败',
   'roster.fuseMaterials': '材料',

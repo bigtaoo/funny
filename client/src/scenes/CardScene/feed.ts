@@ -12,11 +12,13 @@
 // (candidate list + Fuse/Cancel), side by side, so the whole panel uses the wide aspect instead of
 // stacking everything down the middle.
 //
-// Auto-retarget + auto-continue (2026-07-20): if the tapped target doesn't have 5 eligible materials
-// on hand, the panel silently swaps in the best fusable card instead (highest level first) and toasts
-// the player. After a successful fuse, level-1/2 targets auto-load another same-level card and stay
-// open (fast-forward through the low levels); level-3+ targets close as before, requiring the player
-// to reopen the dialog for the next round.
+// Auto-retarget + auto-continue (2026-07-20, revised 2026-07-22): if the tapped target doesn't have 5
+// eligible materials on hand, the panel silently swaps in the best fusable card instead (highest level
+// first) and toasts the player. After a successful fuse of a level-1/2 target, the panel prefers to
+// KEEP the just-upgraded card (it retains its id, now one level higher) as the target and continue on
+// it while it's still fusable; only when it can't be fused further does it drop back to a lower-level
+// card that still has materials (toasting why the target changed). Level-3+ targets fuse once and
+// close, requiring the player to reopen the dialog for the next round.
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
@@ -163,9 +165,12 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
           this.showToast(t('roster.fuseAutoRetarget'), C.gold);
         }
       }
-      // Levels 1-2 auto-continue onto another same-level card after each successful fuse; level 3+
-      // always requires the player to reopen the dialog for the next round.
-      const continueLevel = currentTarget.level <= 2 ? currentTarget.level : null;
+      // Auto-continue fast-forwards through the low levels: after a successful fuse the panel keeps the
+      // just-upgraded card as the target (or, when it can't be fused further, drops back to a lower
+      // card) instead of closing. Armed only when we START at level 1-2; a level-3+ target fuses once
+      // and closes, as before. Evaluated per-fuse against the card's *current* level, not this initial
+      // one, so the same card can be carried Lv.1 → Lv.2 → Lv.3 within one open session.
+      const autoContinue = currentTarget.level <= 2;
 
       // slotIds[i] = the specific CardInstance id occupying material slot i, or null when empty.
       const slotIds: (string | null)[] = new Array(FUSION_MATERIAL_COUNT).fill(null);
@@ -207,11 +212,28 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       /** After a fuse settles: continue with another same-level target when the auto-continue rule
        * applies and one is available, otherwise close like before (doFuse's old default behavior). */
       const onFuseSettled = (success: boolean): void => {
-        if (success && continueLevel !== null) {
-          const next = findAutoTarget(continueLevel, currentTarget.defId);
-          if (next) {
-            currentTarget = next;
+        if (success && autoContinue) {
+          const inv = this.cb.getSave().cardInv ?? {};
+          // Priority 1: keep upgrading the SAME card the player just fused. It kept its id and is now
+          // one level higher; carry it forward as long as it stays in the low-level window and still
+          // has 5 eligible materials on hand (so Lv.1 → Lv.2 stays on the Lv.2 for its next fuse).
+          const upgraded = inv[currentTarget.id];
+          if (
+            upgraded && upgraded.level <= 2 &&
+            fusionMaterialCandidates(upgraded, inv).filter((m) => candidateOf(m.id)).length >= FUSION_MATERIAL_COUNT
+          ) {
+            currentTarget = upgraded;
             slotIds.fill(null);
+            drawFusePanel();
+            return;
+          }
+          // Priority 2: the upgraded card can't continue — drop back to a lower-level card that still
+          // has materials (prefer another copy of the same character), and say why the target changed.
+          const fallback = findAutoTarget(2, currentTarget.defId) ?? findAutoTarget(1, currentTarget.defId);
+          if (fallback) {
+            currentTarget = fallback;
+            slotIds.fill(null);
+            this.showToast(t('roster.fuseCantContinue'), C.gold);
             drawFusePanel();
             return;
           }

@@ -424,6 +424,59 @@ describe('CardScene fuse panel — auto-continue after a successful fuse', () =>
     expect(findLabelPos(scene.container, rowLabel)).toBeNull(); // old target's material group is gone (consumed)
   });
 
+  it('keeps the just-upgraded card as the target when it can still be fused (Lv.1 → Lv.2 → onward)', async () => {
+    const target = makeCard('target', 'lena', { level: 1 });   // faction anna
+    const cardInv: Record<string, CardInstance> = { target };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`matL1${i}`] = makeCard(`matL1${i}`, 'max', { level: 1 }); // target's Lv.1 pool
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`matL2${i}`] = makeCard(`matL2${i}`, 'max', { level: 2 }); // the upgraded Lv.2's pool
+
+    const calls: { targetId: string; ids: string[] }[] = [];
+    const spy = vi.spyOn(log, 'showToastMessage');
+    const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls) }));
+    openFuse(scene, target);
+
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
+      hitUnder(modalHitsOf(scene), findLabelPos(scene.container, `${MAX_NAME} Lv.1`)!)!.action();
+    }
+    hitUnder(modalHitsOf(scene), findLabelPos(scene.container, `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
+    await flushAsync();
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].targetId).toBe('target');
+    expect(target.level).toBe(2);          // the same card leveled up
+    expect(modalOpenOf(scene)).toBe(true); // stayed open, still targeting the upgraded card
+    // The ring/list now show the upgraded card's own Lv.2 material pool, not the consumed Lv.1 one.
+    expect(findLabelPos(scene.container, `${MAX_NAME} Lv.2`)).not.toBeNull();
+    expect(findLabelPos(scene.container, `${MAX_NAME} Lv.1`)).toBeNull();
+    // It continued on the SAME card, so the "can't continue, switched down" toast must not fire.
+    expect(spy.mock.calls.map((c) => c[0])).not.toContain(t('roster.fuseCantContinue'));
+    spy.mockRestore();
+  });
+
+  it('when the upgraded card can not continue, toasts and drops back to a lower-level card', async () => {
+    const target = makeCard('target', 'lena', { level: 1 });        // faction anna
+    const target2 = makeCard('target2', 'lichuang', { level: 1 });  // faction tao — a lower fusable card to fall back to
+    const cardInv: Record<string, CardInstance> = { target, target2 };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`matA${i}`] = makeCard(`matA${i}`, 'max', { level: 1 });      // target's materials
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`matB${i}`] = makeCard(`matB${i}`, 'chenshou', { level: 1 }); // target2's materials
+
+    const calls: { targetId: string; ids: string[] }[] = [];
+    const spy = vi.spyOn(log, 'showToastMessage');
+    const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls) }));
+    openFuse(scene, target);
+
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
+      hitUnder(modalHitsOf(scene), findLabelPos(scene.container, `${MAX_NAME} Lv.1`)!)!.action();
+    }
+    hitUnder(modalHitsOf(scene), findLabelPos(scene.container, `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
+    await flushAsync();
+
+    expect(modalOpenOf(scene)).toBe(true); // fell back to target2 instead of closing
+    expect(spy.mock.calls.map((c) => c[0])).toContain(t('roster.fuseCantContinue'));
+    expect(findLabelPos(scene.container, `${t('card.chenshou.name' as never)} Lv.1`)).not.toBeNull();
+    spy.mockRestore();
+  });
+
   it('level-3+ target: after Confirm succeeds, closes the panel like before the auto-continue feature', async () => {
     const target = makeCard('target', 'lena', { level: 3 });
     const cardInv: Record<string, CardInstance> = { target };

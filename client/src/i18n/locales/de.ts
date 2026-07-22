@@ -1559,6 +1559,7 @@ export const de: Record<TranslationKey, string> = {
   'roster.fuseHint': 'Gleiche Fraktion, gleiche Stufe · benötigt 5',
   'roster.fuseEmpty': 'Kein geeignetes Material',
   'roster.fuseAutoRetarget': 'Nicht genug Karten für diesen Charakter — automatisch einen passenderen ausgewählt',
+  'roster.fuseCantContinue': 'Dieser Charakter kann derzeit nicht weiter aufgewertet werden — zu einer niedrigeren Karte gewechselt',
   'roster.fuseOk': 'Fusion abgeschlossen!',
   'roster.fuseErr': 'Fusion fehlgeschlagen',
   'roster.fuseMaterials': 'Material',
