@@ -628,12 +628,12 @@ value(material) = DUPE_REFUND_COINS[该材料所在 gacha 稀有度档] / GACHA_
 |---|---|---|---|
 | 每队最大卡数 | `CARD_TEAM_MAX_SIZE` | 12 | CHARACTER_CARDS_DESIGN §8.2 |
 | 最大队伍数 | `SIEGE_TEAM_CAP` | 5 | 不变 |
-| 新玩家初始兵力池 | `BASE_TROOP_STOCK_INITIAL` | 10 000 | 首次进赛季赠送 |
+| 基地兵力池基础上限 | `TROOP_CAP_BASE` | 10 000 | 统一池（2026-07-21）；新手初始即满值，练兵场每级 +`DRILL_TROOPCAP_STEP`(1000)。退役了独立的 `BASE_TROOP_STOCK_INITIAL` |
 | HP 归零保底存活率 | `CARD_BASE_SURVIVAL` | 0.2 | `survivalRate = max(0.2, min(1, 残存/出战))` |
 | 受伤锁队时长 | `CARD_INJURY_DURATION_MS` | 5 min | 整队锁定 |
 | 受伤立即恢复价 | `CARD_RECOVER_COIN_COST` | 50 coins | 单卡 |
 | 移出队伍资源返还 | `CARD_TROOP_REFUND_RATE` | 0.8 | 返还训练资源（非兵力本身） |
-| 单兵训练粮成本 | `CARD_TROOP_PAPER_COST` | 2 paper/兵 | 入 baseTroopStock |
+| 单兵训练粮成本 | `CARD_TROOP_PAPER_COST` | 2 paper/兵 | 入基地兵力池 `playerWorld.troops` |
 | 士气加成 | — | (currentTroops/troopCap)×0.2 | 满员 +20% ATK |
 
 ### 15.5 卡池（`economy.ts` standard 池）

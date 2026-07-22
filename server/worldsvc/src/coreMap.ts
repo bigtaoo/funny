@@ -195,7 +195,6 @@ export class WorldCoreMap extends WorldCoreVision {
         ? { buildQueue: doc.buildQueue.map((e) => ({ key: e.key, toLevel: e.toLevel, startAt: e.startAt, completeAt: e.completeAt })) }
         : {}),
       ...(doc.cardState && Object.keys(doc.cardState).length > 0 ? { cardState: doc.cardState } : {}),
-      ...(doc.baseTroopStock != null ? { baseTroopStock: doc.baseTroopStock } : {}),
       ...(doc.teamState && Object.keys(doc.teamState).length > 0 ? { teamState: doc.teamState } : {}),
     };
   }

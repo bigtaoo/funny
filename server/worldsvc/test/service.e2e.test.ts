@@ -247,7 +247,13 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
     await expect(svc.occupyTile(W, 'a', CENTER_X, CENTER_Y)).rejects.toMatchObject({
       code: 'TILE_OCCUPIED',
     });
-    // TROOP_CAP_BASE/GARRISON_PER_TILE = 2000/500 = 4 squads → occupy 4 tiles to drain troops, 5th → NO_TROOPS.
+    // Seed exactly 4 squads' worth of troops (cap-independent — the unified pool now starts at
+    // TROOP_CAP_BASE=10000, so derive the drain from GARRISON_PER_TILE instead of the base cap):
+    // 4 × GARRISON_PER_TILE → occupy 4 tiles to drain troops, 5th → NO_TROOPS.
+    await m.collections.playerWorld.updateOne(
+      { _id: playerWorldId(W, 'a') },
+      { $set: { troops: 4 * GARRISON_PER_TILE } },
+    );
     // Start scanning past the 3×3 base footprint (anchor (5,5) occupies (4,4)..(6,6)) so occupy targets are free non-base tiles.
     const frees: { x: number; y: number }[] = [];
     let scanX = 6;

@@ -185,7 +185,8 @@ applyFusion(target) = target.level >= MAX_CARD_LEVEL
 - 新上阵的卡：`currentTroops = 0`，需要玩家手动从基地兵力池分配
 - 移出队伍的卡：`currentTroops` 清零，**返还 80% 的训练资源**（粮/铁/木材，不是兵力本身；因训练消耗时间，无法直接返还兵力）
 - 战斗后存活的兵：留在卡上，卡可继续出战（残兵状态）
-- **分配给某张卡的兵力永远不会回到地图兵力池（`playerWorld.troops`）**——本节这套账本与 §4 的地图兵力池是两个完全独立的池子，唯一的释放路径是上面「移出队伍」这一条。
+- **分配给某张卡的兵力（`cardState.currentTroops`）不会自动回到基地兵力池（`playerWorld.troops`）**——唯一的释放路径是上面「移出队伍」这一条（且只返还训练资源，不返还兵力本身）。
+- **兵力池统一（2026-07-21）**：曾经存在两个互不连通的池子——`playerWorld.troops`（§4 地图池，训练/无卡行军/驻防用）和 `baseTroopStock`（本节的卡牌后备池，入世赠送 10000）。训练写入前者、`distributeTroops` 却从后者扣，导致「训练出的兵永远分不到卡上」。现已**彻底合并为单一字段 `playerWorld.troops`**（退役 `baseTroopStock`）：训练、无卡行军、驻防、卡牌分兵全部共用这一个基地兵力池，上限 = `cityTroopCap`（见下）。存量存档由一次性 boot 迁移把旧 `baseTroopStock` 折叠进 `troops` 并刷新 `troopCap`。
 
 > **合规修复（2026-07-15）**：核验发现 `combatMarch.ts`/`combatSiege/*` 违反了本节的既有铁律——带卡牌布阵的行军出征时仍会额外从 `playerWorld.troops` 扣一份等额兵力、到达/扑空/结算时再退回去，与 `cardState.currentTroops` 的独立结算**同一批存活兵力记了两次账**。已按本节原意修复：卡牌布阵行军全程不触碰 `playerWorld.troops`，兵力只活在 `cardState.currentTroops` 里；同时把占地（`kind:'occupy'`）也接入真实卡牌军队（此前只有 `attack` 才读真实布阵，占地永远用合成的通用步兵，见 `SLG_DESIGN.md` §4.2）。
 
@@ -201,14 +202,14 @@ troopCap(card) = CardDef.troopCapBase + CardDef.troopCapGrowth × card.level
 
 ### 6.3 训练场与基地兵力池
 
-训练是**玩家手动发起**的操作，产出的兵力存入**基地兵力池**（不自动分配到卡）：
+训练是**玩家手动发起**的操作（主城桌面上独立的「训练士兵」格子，与练兵场同级；练兵场建筑本身只提供带兵上限/训练加速/队列槽加成），产出的兵力存入**基地兵力池**（`playerWorld.troops`，不自动分配到卡）：
 
 ```
-cityTroopCap = f(主城等级, 兵营科技等级)   // 基地可容纳的总兵力上限，见 ECONOMY_NUMBERS §15
-baseTroopStock ≤ cityTroopCap              // 当前存量
+cityTroopCap = troopCapFor(buildings) = TROOP_CAP_BASE + drillYard × DRILL_TROOPCAP_STEP   // 见 ECONOMY_NUMBERS §15
+playerWorld.troops ≤ cityTroopCap                                                          // 当前存量（新手一开始即装满 TROOP_CAP_BASE=10000）
 ```
 
-> 参考三国志战略版兵营机制：训练有队列，兵力存基地，分配靠玩家操作。
+> 参考三国志战略版兵营机制：训练有队列，兵力存基地，分配靠玩家操作。基地池同时也是无卡通用行军/驻防的兵源（统一池，见 §6.1）。
 
 ### 6.4 士气加成
 
@@ -227,17 +228,21 @@ baseTroopStock ≤ cityTroopCap              // 当前存量
 
 - **一键补满**：按战力降序，依次补至 `troopCap`；池不足则按比例分配剩余
   - **先自动存队伍**：`distributeTroops` 要求每张卡已有 `teamId`（在队伍中），否则报 `Card X is not assigned to a team`。刚拖进格子但未点保存的卡只在客户端本地、server 无 `teamId`，会被拒。因此「补满兵力」在调 `distributeTroops` 前先 `persistTeam()`（= `setTeams` 合并本槽），玩家布阵后直接补兵、无需另点保存（`setTeams` 只对被移出所有队伍的卡清兵/退款，留队的卡兵力不变，先存后补安全）。
-- **手动调整**：可在一键后逐卡修改
+- **手动调整（2026-07-21 落地）**：点布阵格里的某张卡打开逐卡分兵浮层（`+100 / +500 / 补满此卡`，受 `min(troopCap 余量, 池余量)` 约束，同样先 `persistTeam()` 再 `distributeTroops`）；每个上场角色头顶有一条血条显示 `currentTroops / troopCap`。分兵是**只增**操作（server `distributeTroops` 只加不减；兵力从卡上释放只能靠移出队伍，见 §6.1）
 - **战前检查**：布阵中有卡 `currentTroops = 0` → UI 显示警告（不强制阻拦）
-- **新玩家**：进入 SLG 时系统赠送 10000 兵力，足够初始布阵
+- **新玩家**：进入 SLG 时基地兵力池即为满值 `TROOP_CAP_BASE = 10000`，足够初始布阵（统一池后由 `troopCapFor(buildings)` 决定，不再是独立的赠送常量 `BASE_TROOP_STOCK_INITIAL`）
 
 > **客户端缺口修复**（2026-07-18）：server 端 CC-4（`distributeTroops`/`POST /world/troops/distribute`）
 > 2026-07-01 已完成，但客户端从未接入——`DefenseEditorScene`（布阵编辑器）只把卡片拖进队伍格子，
 > 从没有界面调用这个接口，导致玩家配好队伍后 `cardState.currentTroops` 永远是 0，`teamTroops.ts`
 > 的 `carriedTroops()` 算出 0，占地/进攻的队伍选择器（`WorldMapNet.showTeamPicker`）判定为"无可用队伍"
 > 直接过滤掉——即使 UI 上"看起来已经配置了两个队伍"。已在 `DefenseEditorScene` 底部加"补满兵力"
-> 按钮，实现上述"一键补满"规则（战力降序、补至 troopCap、池不足按顺序分配剩余）；"手动调整"逐卡改量
-> 仍未做，留作后续。
+> 按钮，实现上述"一键补满"规则（战力降序、补至 troopCap、池不足按顺序分配剩余）。
+>
+> **手动调整 + 兵力池统一**（2026-07-21）：逐卡分兵浮层（点上场卡 → `+100/+500/补满此卡`）+ 头顶血条落地；
+> 同时把训练入口从练兵场弹窗挪成主城桌面独立格子，并把 `baseTroopStock` 与 `playerWorld.troops` 合并为单一
+> 基地兵力池（退役 `baseTroopStock`，`TROOP_CAP_BASE` 2000→10000，一次性 boot 迁移折叠存量），使
+> 「训练 → 分兵给角色」首次形成闭环（此前训练写 `troops`、分兵读 `baseTroopStock`，两池不通）。
 
 ## 7. 战斗结算与受伤
 

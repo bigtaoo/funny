@@ -936,6 +936,8 @@ export const zh = {
   'world.team.fill': '补满兵力',
   'world.team.fillNone': '兵力池已空，或队伍已满员',
   'world.team.fillDone': '已分配 {n} 兵力',
+  'world.team.cardFill': '补满此卡',
+  'world.team.cardFull': '该卡已达带兵上限',
   'world.team.full': '编队已达上限',
   // ── SLG battle replay browser (last-100) ─────────────────────────────────
   'world.replays': '战斗录像',
@@ -1544,6 +1546,7 @@ export const zh = {
   'city.bld.stickerShop': '贴纸铺',
   'city.bld.cabinet': '文件柜',
   'city.bld.drillYard': '练兵场',
+  'city.bld.trainTroops': '训练士兵',
   'city.bld.wall': '城墙',
   'city.bld.academy': '书院',
   'city.bld.satchel': '书包',
