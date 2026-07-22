@@ -170,6 +170,7 @@ export class Api {
     browser_dist?: { browser: string; devices: number }[];
     device_type_dist?: { device_type: string; devices: number }[];
     geo_dist?: { country: string; devices: number }[];
+    badge_dist?: { mode: string; result: string; badge: string; count: number }[];
   }> {
     const qs = new URLSearchParams({ type, days: String(days) });
     if (platform) qs.set('platform', platform);

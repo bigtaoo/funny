@@ -39,18 +39,22 @@
 
 ### 2.1 Flag 注册表（代码侧白名单，`@nw/shared`）
 
-新建 `server/shared/src/featureFlags.ts`：
+`server/shared/src/featureFlags.ts`（**真源，下为当前实际登记的 flag**）：
 
 ```ts
 export const FEATURE_FLAGS = {
-  new_shop_ui:      { default: false, desc: '新商店界面', side: 'client' },
-  siege_v2:         { default: false, desc: '围攻 v2 引擎', side: 'both'   },
-  maintenance_mode: { default: false, desc: '全局维护(拒登录)', side: 'server' },
+  match_bot_fallback: { default: false, desc: 'Matchmaking timeout fallback to AI', side: 'server' },
+  client_log_error:   { default: false, desc: 'Client log upload - error', side: 'client' },
+  client_log_warn:    { default: false, desc: 'Client log upload - warn',  side: 'client' },
+  client_log_info:    { default: false, desc: 'Client log upload - info',  side: 'client' },
+  client_log_debug:   { default: false, desc: 'Client log upload - debug', side: 'client' },
   // …新增 flag 在此登记
 } as const;
 
 export type FlagKey = keyof typeof FEATURE_FLAGS;
 ```
+
+> ⚠️ **`new_shop_ui` / `siege_v2` / `maintenance_mode` 仅为机制示例，尚未在代码里登记。** 下文 §4/§6 以 `maintenance_mode` 举 kill-switch 用法——F3 下发通道已就绪（见 §8「2026-06-24」末），要真正启用维护模式须先在上表登记该 flag 并在 gateway/metaserver 登录入口接线。
 
 - `default`：库里查不到 / 库挂了时的兜底值，**必须存在**。
 - `side`：`client | server | both`，仅作文档/校验提示，标明这个 flag 在哪侧被读。
@@ -256,6 +260,8 @@ client_log_debug: { default: false, desc: '客户端日志上报-debug', side: '
 > **2026-06-27 两处健壮性修正**（修「iPad 注册崩溃 Grafana 无记录」时发现）：
 > - **`cleanExit` 误判**：原 `visibilitychange→hidden` 也调 `markCleanExit()`，但 hidden（切后台/弹软键盘/切 App）≠ 退出——iOS 恰在转后台时最易被内存压力杀标签页，于是「后台被杀」会被下次启动误判成正常退出、永不补报。已拆开：只有 `pagehide`（确凿卸载）标 `cleanExit`；`hidden` 只抢发不标。
 > - **补报卡 1.5s 合批**：崩溃常成串（重载后又崩），原补报走普通队列 1.5s 后才 fetch，若本次也在 1.5s 内崩则永远发不出。已改为补报后立即 beacon。
+
+> **2026-07-22 dev 构建崩溃噪声闸**（排查「Grafana crash 里一串 `aliveMs:0`+`buildVersion=0.0.0`」时加）：15s 心跳意味着**任何存活 <15s 的会话**都会记成 `aliveMs:0`，而 dev 态热重载 / 快速刷新恰好全落进这条路径——把 Loki 灌满没有任何线上意义的假「unclean exit」。**两处闸**（互为兜底）：① 客户端 `initCrashSentinel` 仅在**已烘焙的 prod 构建**（`readBuildVersion() !== '0.0.0'`）才补报 crash——prod 里的 `aliveMs:0` 是真·15s 内硬崩（干净刷新会走 `pagehide→markCleanExit`，永不补报），故不误伤真信号；沿用 `web.ts`（版本检查）/`ota.ts`（更新检查）已有的 dev 构建 gating。② 服务端 `telemetry.ts` handler 兜底：`type=crash` 且 `buildVersion==='0.0.0'` 直接丢，防漏改的客户端再灌脏数据（其它类型、以及无 `buildVersion` 的 crash 均放行）。回归：`anomaly-chain.test.ts`（dev 构建不补报）+ `clientLog.test.ts`（dev crash 丢弃、同批 mem 仍过、prod crash 保留）。
 - **传输**：客户端 `POST /client/anomaly`（body `{ publicId?, platform, buildVersion, events:[{type,msg,ts,detail?}] }`）；合批与离场急发一律走**无凭据 `fetch`（`keepalive:true, credentials:'omit'`）**。无 baseUrl / Loki 不可达 → 静默丢弃，绝不影响玩家。`buildVersion`（2026-07-15 加，见 §8）取自编译期烘焙的 `__NW_BUILD_VERSION__`（短 commit hash，未烘焙则 `'0.0.0'`）——同一 publicId 反复出现同一异常时，先比对 `buildVersion` 与部署时间线，排除「部署前就开着、之后一直没刷新的旧 tab 仍在跑修复前代码」这类混淆。
   - **为何弃用 `navigator.sendBeacon`**（2026-07-01 修）：sendBeacon 强制带凭据（cookie），浏览器遂要求跨域响应含 `Access-Control-Allow-Credentials: true`。本 API 用 Bearer token 认证、不下发任何 cookie，metaserver CORS 是 `origin:true` 反射来源但**不**带 ACAC——于是跨域（`api.gamestao.com` ≠ 游戏来源）的信标被浏览器直接拦截，崩溃/离场补报永远发不出（现象即 `/client/anomaly` 报 CORS 错）。改用无凭据 keepalive fetch：同样存活于页面卸载（fetch 规范），跨域默认不带 cookie，`credentials:'omit'` 明示意图。埋点本就无需认证（`publicId` 在 body 里）。服务端 CORS 一字未改，不引入任何新增攻击面。
 - **入 Loki 约定**：单 stream，**label 仅 `{source="client", kind="anomaly"}`**（低基数），`type/publicId/platform/buildVersion/detail/msg` 一律放**行内**（logfmt）。Grafana：`{source="client",kind="anomaly"} | logfmt | type="webgl_lost"`。

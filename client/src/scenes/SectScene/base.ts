@@ -345,9 +345,10 @@ export interface SectSceneBase {
   confirmDissolve(): void;
   confirmVote(nomineeFamilyId: string, nomineeLabel: string): void;
   openAllyList(): Promise<void>;
+  openAlliesView(): Promise<void>;
   openManageAllies(): Promise<void>;
   doSendChannelMessage(): Promise<void>;
   // modals
-  showSectPickModal(sects: SectView[], onPick: (sectId: string) => void, emptyKey: 'sect.noSects' | 'sect.noAllies'): void;
+  showSectPickModal(sects: SectView[], onPick: (sectId: string) => void, emptyKey: 'sect.noSects' | 'sect.noAllies', readOnly?: boolean): void;
   showConfirm(msg: string, onOk: () => void): void;
 }

@@ -200,6 +200,39 @@ describe('MetaService.clientAnomaly (full reporting: not restricted by targeting
     expect(fetchMock.mock.calls[0][1]).toBeDefined();
   });
 
+  it('dev-build crash (buildVersion 0.0.0) is dropped; a mem event in the same batch still passes (defense-in-depth dev gate)', async () => {
+    const svc = makeService(null, 'http://loki/push');
+    const out = (await svc.clientAnomaly(
+      req({
+        body: {
+          publicId: '1',
+          buildVersion: '0.0.0',
+          events: [
+            { type: 'crash', msg: 'prev unclean exit', ts: 1 },
+            { type: 'mem', msg: 'heap over', ts: 2 },
+          ],
+        },
+      }),
+      reply(),
+    )) as { data: { accepted: number } };
+    // The crash event is filtered (dev hot-reload noise); only the mem event survives.
+    expect(out.data.accepted).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const payload = fetchMock.mock.calls[0][1] as { body: string };
+    const line = JSON.parse(payload.body).streams[0].values[0][1] as string;
+    expect(line).toContain('type=mem');
+  });
+
+  it('baked-build crash (real buildVersion) is NOT dropped', async () => {
+    const svc = makeService(null, 'http://loki/push');
+    const out = (await svc.clientAnomaly(
+      req({ body: { publicId: '1', buildVersion: '68b6c7b', events: [{ type: 'crash', msg: 'prev unclean exit', ts: 1 }] } }),
+      reply(),
+    )) as { data: { accepted: number } };
+    expect(out.data.accepted).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('missing events → 400', async () => {
     const svc = makeService(null, 'http://loki/push');
     const rep = reply();

@@ -784,6 +784,7 @@ if (path.startsWith('/admin/world/')) {
 - ~~数值调参：`STRONGHOLD_GARRISON_PER_LEVEL`/`STRONGHOLD_LOOT_PER_LEVEL`/`STRONGHOLD_LOOT_MATERIAL_PER_LEVEL` 待战力模拟细化~~ **✅ 战力模拟已补测 CLOSED（2026-07-16）**：见 §27。生成密度已定案（见下）。**✅ 生成密度已修复 CLOSED（2026-07-02，econ-sim 险地轨）**：原 `strongholdFreq=1/70` value-noise 在 300×300 图上只 ~18 格点，险地数种子间 **0→6,436**（CV 1.02，14% 零险地，聚成 blob 均值 862 格），占领发的持久 `binding` 在高数量种子破 A 轨 15% 稀释判据。**修复**：生成层换逐格哈希 `rand2(x,y,seed^0x0555) > 0.997`（`shared/slg.ts`，merge-first 已合 main），删 `strongholdFreq`。**修复后实测**：236 中位（197→282，CV 0.07、0% 零险地、0.26% 命中意图）、平均 blob 1.0 格（孤立点）、binding 稀释 max 世界×100% 占领仅 2.8% ≪ 15%——①②③全 PASS。守军/掠夺量本身 sane。详见 [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md) §9 险地轨 + [`ECONOMY_VERIFICATION_LOG.md`](ECONOMY_VERIFICATION_LOG.md) §13-SLG-STRONGHOLD。
 - **攻克奖励材料 ✅（2026-06-21，随 G4 §15.6 落地）**：除单资源即时入袋，额外掉落养成材料 `binding`（`strongholdMaterialLoot(level)` 按等级线性，**DRAFT** `STRONGHOLD_LOOT_MATERIAL_PER_LEVEL=4`）——攻克胜经 `meta.grantMaterial` 发到 `SaveData.materials` 养成统一池（跨进程 best-effort，orderId=`stronghold_loot:{worldId}:{toTile}:{arriveAt}` 幂等），攻克败不掉。复用 G4 打通的材料通道，险地养成价值兑现。装备掉落仍待装备库 E2~E4。worldsvc `stronghold.e2e` 加掉落断言（胜掉/败不掉/orderId 幂等键）。
 - 险地系统守军当前为合成步兵；后续可换更强兵种/自定义系统布阵 config（§16.5 满血容量表/兵种当量调参后）。
+- **⚠️ 未解决 gap：核心州永远 0 险地（2026-07-22 体检发现）**：`mapgen.ts:465` 生成险地的门控是 `distToCap > SLG_GEN.strongholdMinDistRatio`（=0.25，`core.ts:277`，距最近州府的归一化距离）。但**核心州**（core province）的州府就在地图中心，核心州半径 `PROVINCE_CORE_RADIUS_RATIO=0.11`（`province.ts`）< 0.25 → 核心州内所有格子 `distToCap ≤ 0.11` 恒不满足门控 → **核心州永不生成险地**。这与「核心州是终局争夺焦点」的设计意图相悖（本该险地更密）。修复方向：门控改为「距**本州州府**的距离」或对核心州单列阈值。**尚未修复**，登记待办。
 
 ---
 
@@ -967,7 +968,7 @@ if (path.startsWith('/admin/world/')) {
 - 模板做成**按格子可寻址的集合**（类似 TileDoc 但用于模板而非运行时）。
 - **首包生成走服务器端**：admin 加一个「生成模板」endpoint，内部按 size 跑 `proceduralTile()` 批量写入模板集合种子数据；`proceduralTile()` 之后只用于这个一次性种子生成，不再作为运行时合并路径。
 - **编辑器工作流**：每次打开从数据库取最新地形（不是每次重新生成，也不是本地文件）；保存时**只上发本次改动的格子（diff）**，做 upsert，不整图重传。
-- **多尺寸模板并存**（现 500×500，半年后可能 1000×1000/1500×1500）：模板集合按 `templateId`（含 size/版本）区分；一个 world 实例创建时引用某个 `templateId` 作为地图基线。
+- **多尺寸模板并存**（现 1500×1500，ADR-049 起从 500×500 放大）：模板集合按 `templateId`（含 size/版本）区分；一个 world 实例创建时引用某个 `templateId` 作为地图基线。
 - **删除接口**：需要，但要挡一个安全检查——不能删除当前被设为「创建新世界用」配置的 `templateId`；已创建的历史世界实例不受影响（见下一条克隆语义），删除顾虑只针对「未来创建会引用」这一种。
 - **关键：世界创建时对模板是"克隆"而非"实时引用"**：worldsvc 创建世界实例时把模板整份**拷贝**成该实例自己的基线数据，之后编辑器再改模板**不会回溯影响已经在跑的世界**（不会出现玩家脚下地形突然变化），只影响此后新建的世界实例。
 - **编辑器需要「模板列表」接口**：按 size/templateId 选择打开哪一份模板，不能假设只有一份。
@@ -1122,6 +1123,8 @@ if (path.startsWith('/admin/world/')) {
 
 **结论**：`STRONGHOLD_GARRISON_PER_LEVEL=360`、`CROSSING_GARRISON_PER_LEVEL=200`、`STRONGHOLD_LOOT_MATERIAL_PER_LEVEL=4` 三处 DRAFT 标记均已清除（前者战力实测通过，后者经济稀释早已通过只是注释未同步）；`STRONGHOLD_LOOT_PER_LEVEL=5000` 本就非 DRAFT（季内一次性、已有 sanity check）。四项收尾完成，SLG 待调参数值清单清空。
 
+> **⚠️ 基线已变（2026-07-22 兵力池统一，ADR-048）**：上文第 2 点「新手（troopCap=2000）0% 胜率」的前提已失效——统一后新手初始 `TROOP_CAP_BASE=10000`（> 险地守军 3,600），理论上单队即可挑战险地，"新手 0% 胜率"结论不再成立，本节的开放门槛核验须按 10000 基线重跑。第 3 点/Follow-up 中「satchel 可堆到 12,000」现为 **20,000**（`SATCHEL_CARRY_BASE=10000 + 10×1000`）、`SIEGE_SYNTH_ARMY_MAX_TROOPS=9,600` 的 cheap-siege 兜底相应更常触发。上述战力结论按历史记录保留，重测前勿直接引用。
+
 **Follow-up（2026-07-16，独立 gap 已修复）**：第 3 点记录的路由缺口已在同日修复。`server/worldsvc/src/siegeEngine.ts` 新增 `SIEGE_SYNTH_ARMY_MAX_TROOPS`（=10 车道×16 行×60 血=9,600，`synthesizeArmy` 不发生车道碰撞的兵力上限）与 `shouldUseCheapSiege(...)`：当任一方是 `synthesizeArmy` 铺兵且兵力超过该上限（无论比率是否达到 `SIEGE_CHEAP_RATIO`），或攻守比率达到 `SIEGE_CHEAP_RATIO` 时，一律跳过真实引擎改走 `resolveSiege` 线性结算。已接入 `combatSiege/arrival.ts` 的全部三条路径——`applySiege` 普通地块围攻、`applyStrongholdSiege`、`applyCrossingSiege`——以及 `applyBaseSiege` 主城逐波围攻的每一波（防守方队伍恒为真实编队，从不铺兵，故只需查攻方）。真实卡牌编队（位置由关卡校验器约束、不会车道碰撞）不受影响，只有"无编队、纯兵力数"的旧式出征会命中该守卫。新增单测 `worldsvc/test/siege-cheap-fallback.test.ts`（纯函数，覆盖上限/比率/双向判定）+ `stronghold.e2e.test.ts`、`passage.e2e.test.ts` 各一条回归用例（12,000 兵出征验证 `attacker_win` 且 `siege.seed`/`attackerArmy` 缺失，证明走的是 cheap 路径而非拥堵的真实引擎）。
 
 ---
@@ -1203,7 +1206,9 @@ if (path.startsWith('/admin/world/')) {
 
 L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/L3 基本不变；L4+ 显著变硬，高级地成为真正的战力门槛。
 
-**验收**：shared/engine/worldsvc/client `tsc` 全绿；shared siege 单测 39/39（+npcBaseHp/defenderBaseHp 用例）；engine 66/66（+siege defenderBaseHp 初始化用例）；worldsvc occupy/base-siege/siege/stronghold/passage/cheap-fallback e2e 全绿（无结果翻盘）；econ-sim `tsc --noEmit` 通过。**数值仍 DRAFT**（README §0 铁律：只调常数不改公式）。
+**验收**：shared/engine/worldsvc/client `tsc` 全绿；shared siege 单测 39/39（+npcBaseHp/defenderBaseHp 用例）；engine 66/66（+siege defenderBaseHp 初始化用例）；worldsvc occupy/base-siege/siege/stronghold/passage/cheap-fallback e2e 全绿（无结果翻盘）；econ-sim `tsc --noEmit` 通过。
+
+**2026-07-22 更正**：上面"数值仍 DRAFT"已过期——`occupyBaseHpRun.ts` 补测了装备/学院攻城 hp 加成（0%/10%/20% 三档）叠加后曲线依然逐级单调、不溢出棋盘容量，且敏感度复测证实这个力量比区间下 hp 加成对胜负确无可测量影响（不是步进粒度掩盖）。`40×level` 系数**转正，DRAFT 标记已从 `siege.ts` 源码注释移除**，详见 `ECONOMY_VERIFICATION_LOG.md §13-SLG-NPC-BASEHP`。
 
 ## 30. 出征队伍编辑器：左右分栏布局（2026-07-18，用户拍板）
 
@@ -1238,3 +1243,55 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 - 客户端 `client/src/game/meta/teamTroops.ts` 的 `isLegacyTeam`（已是死代码，生产 UI 早已无引用——`TeamsScene.ts` 在更早的重构里被删掉了）连同测试一并删除。
 
 **测试**：`server/worldsvc/test/teams.e2e.test.ts` + `card-slg.e2e.test.ts` 里引用旧原始 `{unitType,initialHp}` 格式的用例（迁移后从未更新过）改成卡牌格式；新增 3 例覆盖本次修复的实际行为——`setTeams` 丢弃失效 `cardInstanceId`（卡牌已被消耗/喂卡）并释放退款、`getTeams` 自愈直接写入数据库的脏数据并释放退款（幂等，不重复退款）、`meta` 不可用时 `setTeams`/`getTeams` 均不破坏已存数据。worldsvc 全量 e2e 串行跑通（33 文件 / 284 例）；client/server `tsc --noEmit` 全绿。
+
+## 32. 空闲队伍门禁的并发竞态加固（同一队伍被派出两次）（2026-07-22）
+
+**背景（用户报告）**：只有两支队伍，`Marches (3)` 却出现三条行军单，队伍 2 被派出了两次。§16.9「空闲队伍校验」（2026-07-15，见 §上）本应保证「一支队伍同时只能有一个状态、不能重复出征」，但仍被绕过。
+
+**根因**：`combatMarch.ts` 的 `startMarch` 是**先查后插**——先 `findOne(marches)`+`findOne(occupations)` 判队伍是否忙碌（无命中才继续），最后才 `insertOne` 落行军单。两步之间隔着多个 `await`，Node 事件循环会把两个几乎同时到达的同队伍出征请求交错处理：两者的 `findOne` 都在对方 `insertOne` 之前返回"空闲"，于是双双插入 → 同一队伍两条行军单。触发路径是客户端的在途窗口：玩家给格子 A 选了队伍 2 出征，服务端还没返回、`ctx.marches` 未刷新前，又给格子 B 选同一支队伍 2——`showTeamPicker` 的忙碌灰显只看 `ctx.marches`/`ctx.occupations`，此刻两者都还不含这笔在途单。
+
+**修复（双层）**：
+- **客户端**（`client/src/scenes/worldmap/WorldMapNet.ts`）：新增 `pendingTeamIds` 集合，`doMarchTeam` 在发请求前把 `teamId` 记为 in-flight、`finally` 里移除；`showTeamPicker` 的 `busyTeamIds` 并入 `pendingTeamIds`，`doMarchTeam` 开头也再挡一道（命中直接提示 `team.busy`）。堵住"响应回来前二次派同一队伍"的人类快速点击窗口。
+- **服务端**（权威兜底，`server/worldsvc/src/db.ts` + `combatMarch.ts`）：`marches` 集合加 `{worldId,ownerId,teamId}` **partial-unique 索引**（`partialFilterExpression: {teamId:{$exists:true}}`）。带队行军单是集合里**唯一**带 `teamId` 的文档——散兵行军无 `teamId`、撤军是改写同一 `_id` 成 return 腿、到点行军单 `findOneAndDelete`——所以该索引原子地禁止「同队伍第二条在途行军单」，正好补上先查后插关不掉的竞态。`startMarch` 的 `insertOne` 捕获 E11000 → 抛 `TEAM_BUSY`（此时尚未扣兵力池，玩家状态无副作用）。索引构建 best-effort try/catch 包裹：万一线上已存在本 bug 造成的重复在途单导致建索引失败，只告警不 crash 启动（行军单几分钟内到点消解，下次重启即可建成；期间靠 `findOne` 预检 + E11000 兜底）。
+
+**验证**：client + worldsvc `tsc --noEmit` 全绿。竞态本身依赖并发时序、preview 无法稳定复现，改动为逻辑门禁层。
+
+## 33. 占领无主地误报「领地失守」修复（2026-07-22）
+
+**背景（用户报告）**：每次占领（occupy）一块**本就不属于自己**的地块时，屏幕都会闪一次「领地失守」（`world.defendLost`）的提示。
+
+**根因**：自 ADR-037 起，occupy 到达会先与目标格的 NPC 守军打一场权威 PvE 战斗（`combatSiege/occupation.ts` `applyOccupy`），打赢即进入占领驻守倒计时（`startOccupationHold`），并向**占领者本人**推送一条 `SiegeResult`（`outcome:'attacker_win'`，`pushSiege(m.ownerId,…)`）。但客户端 `WorldMapNet.applySiegeResult` 只凭 `myAttackTiles.has(tile)` 区分「这仗是我打的还是我在被打」，而 `myAttackTiles` 只在 `kind==='attack'` 时记录目标格（`doMarch`/`doMarchTeam`）——**occupy 从未登记**。于是玩家自己的占领结果落进「我是防守方」分支，看到 `attacker_win` 就弹「领地失守」；占领失败时同样错判成「守土成功」（`world.defendHeld`）。
+
+**修复（纯客户端）**：
+- `WorldMapContext` 新增 `myOccupyTiles` 集合，与 `myAttackTiles` 并列但语义分开（占领是「我主动去打」而非「敌人打我」）。
+- `doMarch`/`doMarchTeam` 在 `kind==='occupy'` 时把目标格记入 `myOccupyTiles`。
+- `applySiegeResult` 增加 occupy 分支：命中 `myOccupyTiles` → 轻量 toast（打赢 `world.occupyWin`「占领得手，驻守中」/ 未赢 `world.occupyLoss`「占领失败」），收到即从集合移除；**不弹**围攻复盘弹窗（占领是高频扩张动作，不像 PvP 围攻值得每次弹窗+复盘）。三语文案齐备。
+
+**验证**：client `tsc --noEmit` 全绿；新增 `worldMapSiegeResultToast.ui.ts`（6 例：占领胜/败分类、消费后不复触发，及 attack/防守两条原路径回归），占领选队测试补 `myOccupyTiles` mock。preview 无法稳定复现（需完整 worldsvc + 连地相邻 + NPC 战斗），改动为纯分类/展示层，靠单测覆盖。
+
+## 34. 地图尺寸放大 500×500 → 1500×1500（ADR-049，2026-07-22）
+
+**背景（用户报告）**：最远缩放档（L3，一屏约 96×50 格）下整张 500×500 地图约只有三屏大小，10 个州（ADR-034 环形布局：6 外围+3 资源+1 霸业）+ 险地/州府/城池等 PvE 关卡内容"展示不开"，视觉上过于局促。用户拍板对齐主流 SLG 常见量级 **1500×1500**。
+
+**改动本体**：`server/shared/src/slg/core.ts` 的 `SLG_MAP_W`/`SLG_MAP_H` 由 500 → **1500**（225 万格）。这是唯一的"内容"改动——全部下游几何均为比率制（州环半径 `PROVINCE_*_RADIUS_RATIO`、州府 `provinceCapitalPositions` 用 `halfDiag`、地块等级 `_normRadius`、险地/资源密度逐格 Bernoulli），随尺寸**等比缩放**：密度不变，只是画布变大。险地数（p≈0.003）~750 → ~6750，州府/城池节点仍固定 10/54 个（角度环形，与面积无关）。
+
+**为什么无性能回归（改前已核实）**：① 地块**稀疏落库**（只存被占/改动格），`proceduralTile` 按视口即时算，DB 不会凭空多出 225 万文档；② 视野/渲染均为**视口 bbox 限定的 Mongo 查询 + clamp 循环**，无 O(mapW·mapH) 全图遍历——`coreVision.computeVisionSources`（含 getMarches 传全图范围时也只按 `ownerId` 索引返回自己/家族格）、客户端 `occupyFrontier`/`fog` 循环均 clamp 到视口；③ `_worldCityNodes` 固定 54 节点带缓存；④ A\* 行军 `findMarchPath` 有 `MAX_NODES=500_000` 安全帽（1500² 下=全图 22%，合法长途行军够用；触顶 → `null` → `combatMarch` 干净抛 `PATH_BLOCKED`，不挂起）。U14 A\* 关注点在更大图上略升但受帽约束，登记为监控项（SLG_DESIGN §U14）。
+
+**运维生效路径（关键陷阱）**：`mapW/mapH` 在 `openSeason` 经 `$setOnInsert` **写死进 world 文档**，`getSeason` 返回存库值——故仅改常量**不会自动改变现有世界**（旧世界 `w.mapW` 仍冻结在 500，而生成/出生点/边界用常量 1500，会不一致）。本轮顺带让 `resetSeason` 的 `$set` **re-stamp `mapW/mapH`**（`server/worldsvc/src/season.ts`，与它早已 re-pin 的 `engineVersion` 同理：reset 清空全部 tiles/nations 并按 `deps` 重建州府，回收世界必须采用当前尺寸）。因此现有大区经正常「结算→重置」即可采用新尺寸；全新 worldId 天然拿到 1500；dev 直接起新库（`local-up.ps1 -Fresh`）。
+
+**客户端零改动**：`WorldMapScene` 全程用 `getSeason` 返回的 `mapW/mapH`、渲染视口化；`constants.ts` 的 `DEFAULT_MAP_SIZE` 早已是 1500 且仅为加载前占位（注释此前写"server default 1500"是历史错位，现与实际一致）。
+
+**验证**：`server/shared`+`worldsvc` `tsc --noEmit` 全绿；worldsvc **285 e2e**（在新 1500 尺寸下真实生成地图）全绿；`season-ops.e2e.test.ts` 新增 1 例（seed 一个 `mapW=500` 的旧世界 → settle → reset → 断言 `mapW/mapH` 被 re-stamp 成 `SLG_MAP_W`），共 10 例全绿。可见效果需完整 worldsvc + 新开世界 + 登录入图，本会话未起全栈截图核对。
+
+**未处理/留待**：① 更大图放大了"孤立据点四周空白"观感（§1008 既知），如需改善从中立地装饰密度/初始镶机位入手；② 横断行军实时时长约 ×3，属 SLG 类型常态，用户已认可；③ "一屏俯瞰全图的最远战略档（L4）"本轮**不做**（用户拍板暂缓），但地图越大越需要，登记为后续候选。
+
+## 35. 出征队伍编辑器：兵力读数 + Fill/Clear/Save 移入标题栏（2026-07-22，用户请求）
+
+**背景（用户请求）**：`DefenseEditorScene`（attack 模式，即出征队伍编辑器「Edit Team N」）此前把两组信息放在**底部页脚**——左下角兵力读数（`Garrison / Troops(committed) / Troop pool`）+ 右下角 `Fill troops / Clear / Save` 三键。用户在截图上画箭头，要求这两组"放到上面去"。
+
+**实现（仅改 attack 模式）**：
+- 页脚整条取消（`renderFooter` 收窄为 defense 专用：建筑/驻军计数 + 提示 + Clear/Save）。attack 模式改为把两组控件画进**标题栏空白区**（叠在已 bake 的 header chrome 上，与 defense 的 base-level stepper / 通用货币读数同一套路）：兵力读数居左（back pill 右侧，按需缩放避让居中标题）、`Fill/Clear/Save` 三键居右，均在 header 内垂直居中。
+- 抽出 `renderActionButtons(rightEdge, top, rowH)` 共享右对齐按钮簇（Fill 仅 attack；defense 页脚与 attack 标题栏共用），并抽 `titleText()` 供标题与读数避让测量复用。
+- 页脚消失后棋盘/名册 `gridBottom` 由 `h - FOOTER_H - 4` 放宽到 `h - 4`；按卡分兵 stepper（`renderAllocateStepper`）锚点由 `h - FOOTER_H` 改为 `h`（贴屏底）。defense 模式布局完全不变（其 header 右上角已被 base-level stepper 占用）。
+
+**验证**：client `tsc --noEmit` 全绿；`defenseEditorFillTroops`/`defenseEditorAttackCards` 共 17 例 UI 测试全绿（均直调方法/读私有几何，不依赖按钮坐标）。另用临时 headless 用例读回 `this.hits`：attack 三键落在 header 带内（headerH=230 下 y=100，左→右 Fill/Clear/Save），defense 两键仍贴底（y≈1876），验证后删除。真实入图需完整 worldsvc + 登录 + 进城，未起全栈截图。

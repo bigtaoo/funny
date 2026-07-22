@@ -53,7 +53,13 @@ const REF_DAMAGE   = 150; // ~1.5x BASE_HP=100, a strong hit/defense on the enem
 const REF_UNITS    = 60;  // units sent in a busy match
 const REF_BUILD_S  = 250; // seconds of building-survival summed across buildings
 const REF_HITS     = 5;   // spell hits in a spell-heavy match
-const REF_EFFICIENT = 5;  // kills-per-100-gold ratio
+// kills-per-100-ink ratio. EFFICIENT is the only badge scored as an (unbounded)
+// *rate* rather than a bounded magnitude, so its reference must match REAL play
+// or it silently wins almost every match: a solid game runs ~8-13 kills/100 ink
+// (a unit costs ~4-6 ink and typically trades for ≥1 enemy), so REF=5 scored
+// ~1.6-2.6x while the other badges peak near ~1.0. Calibrated to 12 so a solid
+// game centers at ~1.0 and it only wins when you were genuinely ink-efficient.
+const REF_EFFICIENT = 12; // kills-per-100-ink ratio (see note above)
 
 const BADGES: Badge[] = [
   {
@@ -114,6 +120,28 @@ function computeBadges(stats: PlayerStats): Badge[] {
     .filter((b) => b.score(stats) > 0)
     .sort((a, b) => b.score(stats) - a.score(stats))
     .slice(0, 3);
+}
+
+/**
+ * Telemetry payload for the `match_badges` analytics event (ANALYTICS_DESIGN §5.8).
+ * Uses the SAME {@link computeBadges} the scene renders from, so the logged `hero`/
+ * `shown` can never drift from what the player actually saw. The raw stat inputs are
+ * carried too so the backend can recalibrate the REF_* constants above from real
+ * distributions instead of estimates (badge_dist ops dashboard).
+ */
+export function matchBadgeTelemetry(local: PlayerStats): Record<string, unknown> {
+  const keys = computeBadges(local).map((b) => b.key);
+  return {
+    hero: keys[0] ?? 'none', // top badge = the "title" the player sees; 'none' if all scores ≤ 0
+    shown: keys,             // up to 3 medallions shown, hero first
+    kills: local.unitsKilled,
+    gold_spent: local.goldSpent,
+    units_sent: local.unitsSent,
+    dmg_dealt: local.damageDealtToBase,
+    dmg_taken: local.damageTakenByBase,
+    spell_hits: local.spellHits,
+    build_ticks: local.buildingSurvivalTicks,
+  };
 }
 
 // ─── ResultScene ──────────────────────────────────────────────────────────────
@@ -421,24 +449,32 @@ export class ResultScene implements Scene {
         pts.push(pts[0]!, pts[1]!);
         pen.stroke(pts, { color: gold, width: Math.max(1.4, r * 0.13), jitter: 0.35, taper: 0.9, double: false, alpha });
       };
-      // Scattered anywhere on the page (margins kept clear so nothing bleeds
-      // off-canvas). Position is re-rolled on every view; a minimum-distance
-      // floor between picks keeps them from clumping into one bright patch.
+      // Scattered inside the content frame only — never out to the page edges,
+      // so nothing bleeds into the margins. Position is re-rolled on every view;
+      // a minimum-distance floor between picks keeps them from clumping into one
+      // bright patch. Each star's centre is inset by its own radius (see below)
+      // so the whole star, not just its centre, stays within the frame.
       const starCount = 6;
-      const marginX = w * 0.03;
-      const marginY = h * 0.05;
+      // Inner frame bounds (fractions of the page) the stars must stay within.
+      const frameL = w * 0.13;
+      const frameR = w * 0.87;
+      const frameT = h * 0.13;
+      const frameB = h * 0.94;
       const minDist = Math.min(w, h) * 0.1;
       const placed: { x: number; y: number }[] = [];
       for (let i = 0; i < starCount; i++) {
+        const sr = h * (0.028 + Math.random() * 0.034);
+        // Sampling box inset by the star radius so tips don't cross the frame.
+        const loX = frameL + sr, hiX = frameR - sr;
+        const loY = frameT + sr, hiY = frameB - sr;
         let sx = 0;
         let sy = 0;
         for (let attempt = 0; attempt < 20; attempt++) {
-          sx = marginX + Math.random() * (w - marginX * 2);
-          sy = marginY + Math.random() * (h - marginY * 2);
+          sx = loX + Math.random() * (hiX - loX);
+          sy = loY + Math.random() * (hiY - loY);
           if (placed.every((p) => Math.hypot(p.x - sx, p.y - sy) >= minDist)) break;
         }
         placed.push({ x: sx, y: sy });
-        const sr = h * (0.028 + Math.random() * 0.034);
         // Celebratory stars are faded to 38% opacity so they read as a soft
         // backdrop behind the result text rather than competing with it.
         const sa = (0.6 + Math.random() * 0.35) * 0.38;

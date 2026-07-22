@@ -6,6 +6,7 @@
   "scripts": {
     "start": "webpack serve --mode development --port 9090 --env TARGET=web",
     "start:crazygames": "webpack serve --mode development --port 9090 --env TARGET=crazygames",
+    "start:e2e": "webpack serve --mode development --port 9096 --env TARGET=web-e2e",
     "build:web": "webpack --mode production --env TARGET=web",
     "build:crazygames": "webpack --mode production --env TARGET=crazygames",
     "build:wechat": "webpack --mode production --env TARGET=wechat",
@@ -23,6 +24,7 @@
     "test:watch": "vitest",
     "test:ui": "vitest run --config vitest.ui.config.ts",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:browser": "playwright test",
     "test:load": "vitest run --config vitest.load.config.ts"
   },
   "keywords": [],
@@ -33,6 +35,7 @@
     "@bufbuild/buf": "^1.70.0",
     "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^6.0.0",
+    "@playwright/test": "^1.61.1",
     "@rollup/plugin-commonjs": "^29.0.2",
     "@rollup/plugin-node-resolve": "^16.0.3",
     "@rollup/plugin-typescript": "^12.3.0",

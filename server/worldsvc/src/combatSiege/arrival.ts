@@ -126,7 +126,7 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       // Attacker formation (G3-2c): marched with a team → use the real formation snapshot (m.army); otherwise synthesize from flat troop count as fallback (v1 bridge).
       // CC-3: when army entries carry cardInstanceId, resolve to engine GarrisonEntry[] via cardState.currentTroops + CARD_DEFS.unitType.
       const rawArmy = m.army ?? [];
-      // Morale (士气): long-distance marches arrive fatigued — scale the whole attacker formation's effective HP
+      // Morale (行军疲劳 — see SLG_DESIGN.md §4.4; distinct from the card "士气加成" bonus): long-distance marches arrive fatigued — scale the whole attacker formation's effective HP
       // down by the march's remaining morale (captured once at departure, combatMarch.ts). Also used below to
       // scale the cheap-formula troop count so both settlement paths stay consistent.
       const moraleMult = moraleCombatMultiplier(m.morale ?? MARCH_MORALE_MAX);
@@ -390,7 +390,7 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       const garrison = strongholdGarrison(proc.level);
       // E8/CC-3: fetch attacker's progression snapshot (equipment for the legacy path; cardInv+equipmentInv for a real card army).
       const attackerSave = await this.core.meta.getSaveFields(m.ownerId).catch(() => null);
-      // Morale (士气): scale attacker strength by the march's remaining morale (see applySiege above for detail).
+      // Morale (行军疲劳, not the card 士气加成): scale attacker strength by the march's remaining morale (see applySiege above for detail).
       const moraleMult = moraleCombatMultiplier(m.morale ?? MARCH_MORALE_MAX);
       const effTroops = Math.round(m.troops * moraleMult);
       const attackerArmy: GarrisonEntry[] = scaleArmyByRatio(
@@ -531,7 +531,7 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
 
       const garrison = passageGarrison(proc.level);
       const attackerSave = await this.core.meta.getSaveFields(m.ownerId).catch(() => null);
-      // Morale (士气): scale attacker strength by the march's remaining morale (see applySiege above for detail).
+      // Morale (行军疲劳, not the card 士气加成): scale attacker strength by the march's remaining morale (see applySiege above for detail).
       const moraleMult = moraleCombatMultiplier(m.morale ?? MARCH_MORALE_MAX);
       const effTroops = Math.round(m.troops * moraleMult);
       const attackerArmy: GarrisonEntry[] = scaleArmyByRatio(
@@ -740,7 +740,7 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
         return;
       }
       const proc = proceduralTile(m.worldId, this.core.coordX(m.toTile), this.core.coordY(m.toTile));
-      // Morale (士气): scale attacker strength by the march's remaining morale (see applySiege above for detail).
+      // Morale (行军疲劳, not the card 士气加成): scale attacker strength by the march's remaining morale (see applySiege above for detail).
       const effTroops = Math.round(m.troops * moraleCombatMultiplier(m.morale ?? MARCH_MORALE_MAX));
       const res = resolveSiege(effTroops, npcGarrison(proc.level));
       let loot = emptyResources();

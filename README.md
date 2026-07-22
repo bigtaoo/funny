@@ -1,6 +1,8 @@
 # Notebook Wars
 
-A **hand-drawn turn-based strategy game**, playable in the browser and as a WeChat Mini Game, with a companion standalone skeletal-animation editor.
+A **hand-drawn turn-based strategy game**, playable in the browser and as a WeChat Mini Game, with a companion toolchain of standalone editors.
+
+Beyond the core 1v1 battle described below, the game ships a full meta layer: an SLG open world (`worldsvc`), social systems including families and sects (`socialsvc`), a player-driven auction house (`auctionsvc`), gacha, equipment, and account progression — see [`design/README.md`](design/README.md) for the authoritative design index.
 
 ---
 
@@ -50,9 +52,19 @@ Units advance vertically along their own column, then cross horizontally once th
 - `AISystem`: opponent AI, threat-driven decisions (defense / economy / upgrade planning, tiered difficulty), deterministic PRNG
 - `SpellSystem`: spell effect handling
 
-### Animation editor (`tools/animator/`)
+### Editor toolchain (`tools/`)
 
-A standalone skeletal-animation tool for authoring the game's character animations.
+Standalone TypeScript tools that back the game's content pipeline:
+
+| Tool | Port | Purpose |
+|---|---|---|
+| `animator` | 9091 | Skeletal-animation editor (`.tao` character animations) |
+| `level-editor` | 9092 | Campaign level editor |
+| `ops` | 9093 | Ops-console frontend |
+| `vfx-editor` | 9094 | Combat VFX editor |
+| `map-editor` | 9095 | SLG world-map editor |
+
+The animation editor is the most developed:
 
 - **11 fixed bones**, forward kinematics (FK)
 - Keyframe timeline with multi-clip management
@@ -70,7 +82,7 @@ npm run start   # dev server, port 9091
 
 ### Option 1: Docker full stack in one command (recommended, mirrors a real deployment)
 
-Requires Docker Desktop. A single command rebuilds the latest code and brings up **all 9 server processes + the main client + 3 tools + MongoDB + Redis**:
+Requires Docker Desktop. A single command rebuilds the latest code and brings up **all 10 server processes + the main client + 3 tools + MongoDB + Redis**:
 
 ```powershell
 ./docker/local-up.ps1            # rebuild and start; browser opens http://localhost:8088
@@ -91,19 +103,21 @@ Requires Docker Desktop. A single command rebuilds the latest code and brings up
 | http://localhost:9092 | **Level editor** level-editor |
 | http://localhost:9093 | **Ops console** ops (cross-origin calls to the admin backend at http://localhost:18083; seed account `admin` / `admin123`) |
 
-**The nine server processes** (all run the same image `nw-server:local`, the process is selected by `command`):
-`metaserver` (REST) · `commercial` (wallet) · `gateway` (control-plane WS) · `matchsvc` (matchmaking) · `gameserver` (battle data-plane WS) · `worldsvc` (SLG, fourth public-facing plane) · `socialsvc` (social, fifth public-facing plane) · `admin` (ops) · `analyticsvc` (telemetry).
-The only entry exposed to players is the main game at `:8088` (same-origin); the rest are reachable only via the nginx reverse proxy or on the internal network.
+**The ten server processes** (all run the same image `nw-server:local`, the process is selected by `command`):
+`metaserver` (REST) · `commercial` (wallet) · `gateway` (control-plane WS) · `matchsvc` (matchmaking) · `gameserver` (battle data-plane WS) · `worldsvc` (SLG) · `auctionsvc` (auction house, separate DB) · `socialsvc` (social) · `admin` (ops) · `analyticsvc` (telemetry).
+The only entry exposed to players is the main game at `:8088` (same-origin); the rest are reachable only via the nginx reverse proxy or on the internal network. An eleventh service, `botsvc` (bot players, internal admin plane on `:18087`), lives in the codebase but is not part of the local Docker stack.
 
 See the orchestration in [`docker/docker-compose.local.yml`](docker/docker-compose.local.yml).
 
 ### Option 2: single-module dev server (fastest hot-reload when working on the frontend)
 
 ```bash
-cd client && npm install && npm run start          # main game, port 19090
-cd tools/animator && npm install && npm run start  # animation editor, port 9091
+cd client && npm install && npm run start              # main game, port 9090
+cd tools/animator && npm install && npm run start      # animation editor, port 9091
 cd tools/level-editor && npm install && npm run start  # level editor, port 9092
-cd tools/ops && npm install && npm run start        # ops console, port 9093
+cd tools/ops && npm install && npm run start           # ops console, port 9093
+cd tools/vfx-editor && npm install && npm run start    # VFX editor, port 9094
+cd tools/map-editor && npm install && npm run start    # SLG map editor, port 9095
 ```
 
 The dev server defaults to a locally bare-run backend (see the default URLs injected in `client/webpack.config.js`); for full backend integration, Option 1 is still recommended.
@@ -119,8 +133,10 @@ funny/
 │   ├── animator/      Skeletal-animation editor (TypeScript + PixiJS)
 │   ├── level-editor/  Campaign level editor (TypeScript + pure Canvas)
 │   ├── ops/           Ops-console frontend (TypeScript)
-│   └── vfx-editor/    Combat VFX editor (TypeScript + PixiJS)
-├── server/        Node.js backend (npm workspaces, nine processes)
+│   ├── vfx-editor/    Combat VFX editor (TypeScript + PixiJS)
+│   └── map-editor/    SLG world-map editor (TypeScript)
+├── server/        Node.js backend (npm workspaces; 11 services + engine/contracts/shared)
 ├── art/           Map & character concept art
-└── design/        Product & art design docs
+├── design/        Product, game & tool design docs (see design/README.md)
+└── claudedocs/    Module-level quick-reference docs
 ```

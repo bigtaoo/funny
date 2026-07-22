@@ -11,6 +11,9 @@ import { buildCoinIcon } from '../render/coinIconAtlas';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
+import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
+import { ScrollTapGesture } from '../ui/scrollTapGesture';
+import { peekViewportH } from '../ui/widgets/scrollPeek';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { showToastMessage, type ToastKind } from '../net/log';
 import { RECHARGE_TIERS, type RechargeTierDef, type RechargeReward } from '../game/balance/rechargeTierDefs';
@@ -20,7 +23,8 @@ import { RECHARGE_TIERS, type RechargeTierDef, type RechargeReward } from '../ga
 // Entry point: Shop group peer tab [Shop|Coins|Gacha|BattlePass|Recharge].
 // Shows a lifetime progress bar (totalRechargeCents, never resets except on Paddle refund) and a
 // single-column list of tier cards, three states: claimable (green) → tap to claim; claimed (grey);
-// locked (dashed). Unlike BattlePassScene there is no scroll — 5 tiers fit the viewport directly.
+// locked (dashed). The list scrolls (drag + ScrollIndicator + peek) when the tiers overflow the
+// viewport — same scroll harness as BattlePassScene (ScrollTapGesture / updateScrollPosition).
 
 export interface RechargeCallbacks {
   onBack(): void;
@@ -64,6 +68,21 @@ export class RechargeScene implements Scene {
   private destroyed = false;
   private readonly bt = new BusyTracker();
 
+  // ── Scroll harness (mirrors BattlePassScene) ──────────────────────────────
+  private scrollY = 0;
+  private scrollMax = 0;
+  /** Tap-vs-drag tracker: defers a card's claim to pointer-up, dropped if the pointer dragged (→ scroll). */
+  private readonly gesture = new ScrollTapGesture();
+  // Scroll-drag fast path: handleMove only repositions scrollContainer + recomputes hit rects from
+  // cached cell defs, no full tearDownChildren/redraw (see BattlePassScene for the rationale).
+  private scrollContainer: PIXI.Container | null = null;
+  private bodyTopY = 0;
+  private staticHits: Hit[] = [];
+  private scrollCellDefs: Array<{ x: number; cellY: number; w: number; h: number; fn: () => void }> = [];
+  /** Scroll viewport rect (mask bounds), cached so the drag fast-path can redraw the indicator. */
+  private scrollView: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  private scrollbar: PIXI.Graphics | null = null;
+
   constructor(layout: ILayout, input: InputManager, cb: RechargeCallbacks) {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
@@ -71,6 +90,8 @@ export class RechargeScene implements Scene {
     this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
+    this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
+    this.unsubs.push(input.onUp(() => this.handleUp()));
     this.render();
   }
 
@@ -86,10 +107,46 @@ export class RechargeScene implements Scene {
 
   private handleDown(x: number, y: number): void {
     if (this.bt.busy) return;
+    // Defer the hit action to pointer-up — a drag past the threshold becomes a scroll and drops the tap,
+    // so a drag starting on a card scrolls instead of firing its claim (see BattlePassScene).
+    let hit: (() => void) | null = null;
     for (const h of this.hits) {
       const r = h.rect;
-      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { h.fn(); return; }
+      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit = h.fn; break; }
     }
+    this.gesture.down(this.scrollY, y, hit);
+  }
+
+  private handleMove(_x: number, y: number): void {
+    const scroll = this.gesture.move(y);
+    if (scroll !== null) { this.scrollY = Math.min(this.scrollMax, scroll); this.updateScrollPosition(); }
+  }
+
+  private handleUp(): void {
+    // Fires only for a genuine tap (pointer didn't drag); a released drag returns null.
+    this.gesture.up()?.();
+  }
+
+  /**
+   * Cheap per-move update: reposition the already-built scroll container and recompute hit rects
+   * from cached cell defs, without tearing down/redrawing the tier-card graphics.
+   */
+  private updateScrollPosition(): void {
+    if (!this.scrollContainer) return;
+    const sy = Math.min(this.scrollY, this.scrollMax);
+    this.scrollContainer.y = this.bodyTopY - sy;
+    // Hit rects are pure math, not clipped by the scroll mask — a card scrolled out of the viewport
+    // still has a live rect that could steal a tap meant for the header/sidebar. Keep only cards
+    // whose rect intersects the viewport.
+    const vTop = this.scrollView.y;
+    const vBot = this.scrollView.y + this.scrollView.h;
+    this.hits = this.staticHits.concat(
+      this.scrollCellDefs
+        .map((d) => ({ rect: { x: d.x, y: this.bodyTopY - sy + d.cellY, w: d.w, h: d.h }, fn: d.fn }))
+        .filter((hit) => hit.rect.y + hit.rect.h > vTop && hit.rect.y < vBot),
+    );
+    if (this.scrollbar) { this.scrollbar.destroy(); this.scrollbar = null; }
+    this.scrollbar = drawScrollIndicator(this.container, this.scrollView, sy, this.scrollMax);
   }
 
   private showToast(msg: string, kind: ToastKind = 'success'): void {
@@ -130,6 +187,9 @@ export class RechargeScene implements Scene {
     if (this.destroyed) return;
     tearDownChildren(this.container);
     this.hits = [];
+    this.scrollContainer = null;
+    this.scrollCellDefs = [];
+    this.scrollbar = null; // torn down with the container above; drop the stale ref
     const { w, h, landscape } = this;
 
     const railX = landscape ? sidebarNavW(w, h, true) : undefined;
@@ -171,11 +231,31 @@ export class RechargeScene implements Scene {
     this.container.addChild(hint);
     y += hint.height + Math.round(h * 0.02);
 
-    // ── Tier list (single column, no scroll — 5 tiers fit the viewport) ─────
+    // ── Scrollable tier list (single column) ────────────────────────────────
+    // Static hits captured before the scroll cards so the drag fast-path can rebuild card hits
+    // on top of them (back button, sidebar) without a full re-render.
+    this.staticHits = this.hits.slice();
     const n = RECHARGE_TIERS.length;
+    const cellH = Math.round(h * 0.13);
     const gap = Math.round(h * 0.012);
-    const availH = h - y - Math.round(h * 0.02);
-    const cellH = Math.min(Math.round(h * 0.13), Math.floor((availH - gap * (n - 1)) / n));
+    const rowStride = cellH + gap;
+
+    const bodyTopY = y;
+    const availH = h - bodyTopY - Math.round(h * 0.02);
+    const totalContentH = n * rowStride;
+    // Peek-adjusted viewport: when the list overflows, the cut lands mid-card so a partial next
+    // card peeks above the fold (not just the thin scroll indicator).
+    const scrollBodyH = peekViewportH(availH, rowStride, totalContentH);
+    this.scrollMax = Math.max(0, totalContentH - scrollBodyH);
+    this.scrollView = { x: pad, y: bodyTopY, w: cw, h: scrollBodyH };
+    const sy = Math.min(this.scrollY, this.scrollMax);
+
+    const scrollContainer = new PIXI.Container();
+    scrollContainer.x = 0;
+    scrollContainer.y = bodyTopY - sy;
+    this.scrollContainer = scrollContainer;
+    this.bodyTopY = bodyTopY;
+    this.scrollCellDefs = [];
 
     for (let i = 0; i < n; i++) {
       const def = RECHARGE_TIERS[i]!;
@@ -184,25 +264,37 @@ export class RechargeScene implements Scene {
         : totalRechargeCents >= def.thresholdCents
           ? 'claimable'
           : 'locked';
-      this.drawTierCard(pad, y, cw, cellH, def, state);
-      y += cellH + gap;
+      const cellY = i * rowStride;
+      this.drawTierCard(scrollContainer, pad, cellY, cw, cellH, def, state);
+      // Whole card is the claim target when claimable (bigger tap target than the button glyph, and
+      // matches BattlePassScene's whole-cell hit). updateScrollPosition() derives the absolute rect.
+      if (this.cb.onClaim && state === 'claimable') {
+        this.scrollCellDefs.push({ x: pad, cellY, w: cw, h: cellH, fn: () => this.doClaim(def.id) });
+      }
     }
+
+    const maskGfx = new PIXI.Graphics();
+    maskGfx.beginFill(0xffffff).drawRect(0, bodyTopY, w, scrollBodyH).endFill();
+    this.container.addChild(maskGfx);
+    scrollContainer.mask = maskGfx;
+    this.container.addChild(scrollContainer);
+    this.updateScrollPosition();
 
     if (this.bt.loadingVisible) drawLoadingOverlay(this.container, w, h, this.bt.dots, t('common.processing'));
   }
 
-  private drawTierCard(x: number, y: number, w: number, h: number, def: RechargeTierDef, state: CellState): void {
+  private drawTierCard(parent: PIXI.Container, x: number, y: number, w: number, h: number, def: RechargeTierDef, state: CellState): void {
     const fillColor = state === 'claimable' ? 0xe8f5e9 : state === 'claimed' ? 0xf0f0f0 : C.paper;
     const borderColor = state === 'claimable' ? C.green : state === 'claimed' ? C.line : C.line;
     const borderW = state === 'claimable' ? 2 : 1.2;
     const box = sketchPanel(w, h, { fill: fillColor, border: borderColor, width: borderW, seed: seedFor(x, y, w) });
     box.x = x; box.y = y;
-    this.container.addChild(box);
+    parent.addChild(box);
 
     const pad = Math.round(w * 0.03);
     const thresholdLbl = txt(t('recharge.tierThreshold', { amount: usd(def.thresholdCents) }), snapFont(Math.round(h * 0.28)), C.dark, true);
     thresholdLbl.anchor.set(0, 0); thresholdLbl.x = x + pad; thresholdLbl.y = y + Math.round(h * 0.1);
-    this.container.addChild(thresholdLbl);
+    parent.addChild(thresholdLbl);
 
     // Reward icons, stacked horizontally beneath the threshold label.
     let rx = x + pad;
@@ -216,14 +308,15 @@ export class RechargeScene implements Scene {
         ? buildCoinIcon(iconKind, ic, color)
         : buildMaterialIcon(iconKind as MaterialKind, ic, color);
       glyph.x = rx; glyph.y = ry;
-      this.container.addChild(glyph);
+      parent.addChild(glyph);
       const amt = txt(`×${reward.count}`, snapFont(Math.round(h * 0.22)), color, state === 'claimable');
       amt.anchor.set(0, 0.5); amt.x = rx + ic + Math.round(w * 0.01); amt.y = ry + ic / 2;
-      this.container.addChild(amt);
+      parent.addChild(amt);
       rx += ic + Math.round(w * 0.01) + amt.width + Math.round(w * 0.04);
     }
 
     // State control, bottom-right corner: claim button / claimed label / locked label.
+    // The whole card is the tap target (hit registered by render's scroll loop); the button is a visual affordance.
     const anchorX = x + w - Math.round(w * 0.03);
     const anchorY = y + h - Math.round(h * 0.12);
     if (state === 'claimable') {
@@ -233,18 +326,15 @@ export class RechargeScene implements Scene {
       const btnY = anchorY - btnH;
       const btn = sketchPanel(btnW, btnH, { fill: C.dark, border: C.green, width: 2, seed: seedFor(btnX, btnY, btnW) });
       btn.x = btnX; btn.y = btnY;
-      this.container.addChild(btn);
+      parent.addChild(btn);
       const lbl = txt(t('recharge.claim'), snapFont(Math.round(btnH * 0.45)), 0xffffff, true);
       lbl.anchor.set(0.5, 0.5); lbl.x = btnX + btnW / 2; lbl.y = btnY + btnH / 2;
-      this.container.addChild(lbl);
-      if (this.cb.onClaim) {
-        this.hits.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, fn: () => this.doClaim(def.id) });
-      }
+      parent.addChild(lbl);
     } else {
       const lbl = state === 'claimed' ? t('recharge.claimed') : t('recharge.locked');
       const l = txt(lbl, snapFont(Math.round(h * 0.24)), C.mid, false);
       l.anchor.set(1, 1); l.x = anchorX; l.y = anchorY;
-      this.container.addChild(l);
+      parent.addChild(l);
     }
   }
 

@@ -43,6 +43,8 @@ export interface AnalyticsStepFunnelResult {
 export interface AnalyticsBrowserRow { browser: string; devices: number }
 export interface AnalyticsDeviceTypeRow { device_type: string; devices: number }
 export interface AnalyticsGeoRow { country: string; devices: number }
+// Post-match badge/title distribution (ANALYTICS_DESIGN §5.8): count of matches per (mode, result, hero badge).
+export interface AnalyticsBadgeDistRow { mode: string; result: string; badge: string; count: number }
 
 export interface AnalyticsQueryResult {
   event_counts?: AnalyticsEventCountRow[];
@@ -59,6 +61,7 @@ export interface AnalyticsQueryResult {
   browser_dist?: AnalyticsBrowserRow[];
   device_type_dist?: AnalyticsDeviceTypeRow[];
   geo_dist?: AnalyticsGeoRow[];
+  badge_dist?: AnalyticsBadgeDistRow[];
 }
 
 export interface AnalyticsClient {
@@ -102,6 +105,7 @@ export class HttpAnalyticsClient implements AnalyticsClient {
         browser_dist?: AnalyticsBrowserRow[];
         device_type_dist?: AnalyticsDeviceTypeRow[];
         geo_dist?: AnalyticsGeoRow[];
+        badge_dist?: AnalyticsBadgeDistRow[];
       };
       const body = (await res.json()) as { data: Payload };
       const p = body.data;
@@ -120,6 +124,7 @@ export class HttpAnalyticsClient implements AnalyticsClient {
       if (p.type === 'browser_dist') return { browser_dist: p.browser_dist ?? [] };
       if (p.type === 'device_type_dist') return { device_type_dist: p.device_type_dist ?? [] };
       if (p.type === 'geo_dist') return { geo_dist: p.geo_dist ?? [] };
+      if (p.type === 'badge_dist') return { badge_dist: p.badge_dist ?? [] };
       return {};
     } catch (e) {
       log.warn('analytics query failed', { type, err: (e as Error).message });

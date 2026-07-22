@@ -23,6 +23,9 @@ export const DEFAULT_CONFIG: AnalyticsConfig = {
     screen_view:    { sample: 0.05 },
     game_start:     { sample: 1.0 },
     game_end:       { sample: 1.0 },
+    // Post-match badge/title distribution (ANALYTICS_DESIGN §5.8). Low-frequency (one per match),
+    // high-value for balance monitoring — 100% sampled so the badge_dist dashboard isn't skewed.
+    match_badges:   { sample: 1.0 },
     level_attempt:  { sample: 1.0 },
     level_complete: { sample: 1.0 },
     level_abandon:  { sample: 1.0 },
@@ -137,6 +140,8 @@ export interface DauRow {
 export interface RegionRow { locale: string; devices: number }
 export interface OsRow { os: string; devices: number }
 export interface LoginHourRow { hour: number; count: number }
+/** One (mode, result, badge) cell of the post-match badge/title distribution (ANALYTICS_DESIGN §5.8). */
+export interface BadgeDistRow { mode: string; result: string; badge: string; count: number }
 // Day offsets tracked for rolling retention (D1 = next-day return … D7 = seventh-day return).
 export const RETENTION_OFFSETS = [1, 2, 3, 4, 5, 6, 7] as const;
 export type RetentionOffset = (typeof RETENTION_OFFSETS)[number];
@@ -748,6 +753,33 @@ export class AnalyticsService {
     ];
     const rows = await this.cols.events.aggregate<{ _id: string; devices: number }>(pipeline).toArray();
     return rows.map((r) => ({ country: r._id || 'unknown', devices: r.devices }));
+  }
+
+  /**
+   * Post-match badge/title distribution (ANALYTICS_DESIGN §5.8): how often each `hero` badge is the
+   * one awarded, split by mode (pvp_ranked / pvp_friendly / campaign …) and result (win/loss/draw).
+   * Answers "is a single badge dominating for everyone" — the calibration-health signal for the
+   * ResultScene REF_* constants. Counts matches (events), not devices; one row per (mode,result,badge).
+   */
+  async queryBadgeDist(days: number): Promise<BadgeDistRow[]> {
+    const since = new Date(dayStart(this.now()) - (days - 1) * 86400_000);
+    const pipeline = [
+      { $match: { ts: { $gte: since }, event: 'match_badges' } },
+      { $group: {
+        _id: { mode: '$props.mode', result: '$props.result', badge: '$props.hero' },
+        count: { $sum: 1 },
+      } },
+      { $sort: { count: -1 as const } },
+    ];
+    const rows = await this.cols.events
+      .aggregate<{ _id: { mode?: string; result?: string; badge?: string }; count: number }>(pipeline)
+      .toArray();
+    return rows.map((r) => ({
+      mode: r._id.mode || 'unknown',
+      result: r._id.result || 'unknown',
+      badge: r._id.badge || 'none',
+      count: r.count,
+    }));
   }
 
   async ingestEvents(batch: EventBatch, userId: string | undefined, geo?: ResolvedGeo): Promise<void> {

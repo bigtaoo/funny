@@ -94,6 +94,7 @@ interface AssetIO {
 - ✅ `AssetIO` 抽象 + `WebAssetIO`（默认零回归）+ `WechatAssetIO`（downloadFile+缓存）。
 - ✅ 全部 `.tao` + 装饰 atlas 经 `AssetIO`（含 L1 英雄 `.tao`，因 UnitView→StickmanRuntime 统一入口）。
 - ✅ **L1 PNG 经 AssetIO 落缓存**（2026-06-30）：新建 `client/src/assets/preloadTextures.ts`，`preloadTexture(url)` 通过 `assetIO().textureSource(url)` 取本地路径，并在 PIXI 缓存里**同时注册原始 URL 别名**（`PIXI.BaseTexture.addToCache`）——否则微信下 `PIXI.Texture.from(url)` 查不到缓存、继续拉 CDN。同步修复 `bootManifest.ts` L0 图片（原 `preheatTexture` 有同样 alias 缺失问题）。场景触发：`GachaScene`/`CollectionScene`/`GameScene` 构造时 fire-and-forget 预加载。
+- ✅ **立绘 mipmap 开启，消除缩小噪点**（2026-07-22）：独立立绘（英雄/兵种/建筑/logo）都是大图小用——英雄名单里 Anna 阵营 max/lena/mara（约 900×1450）缩到约 177×246、约 6×。PIXI 7 默认 `MIPMAP_MODES.POW2`，这些非 2 幂大图**不生成 mipmap**，大倍率 LINEAR 缩小欠采样 → 边缘走样成白色杂点。`preloadTextures.ts` 导出 `ART_TEX_OPTIONS`（`mipmap: ON` + `scaleMode: LINEAR`），在 `preloadTexture` 统一入口生效；`cardArt.getArtTexture` 兜底同选项，`avatar.buildPortraitIcon` / `HandView` 改走 `getArtTexture`——因 baseTexture 按 url 共享缓存，任一处先建出"无 mipmap"版本会拖累其余复用方。PIXI 仅在 **WebGL2** 上给非 2 幂纹理生成 mipmap（`TextureSystem`：POW2 默认或 WebGL1+非 2 幂自动回落无 mipmap），故微信 WebGL1 路径优雅降级、无破坏。
 - ⏳ **遗留**：
   1. **微信后台白名单**：把 CDN 域名加进 `downloadFile` 合法域名（以及远程图片域名白名单）。
   2. **部署**：`build:wechat` 后把 `wechatgame/cdn/*` 上传到 `<CDN>/cdn/`；微信开发者工具上传主包（`pixigame.js`+`game.js`+`game.json`，`cdn/` 已被 packOptions 忽略）。

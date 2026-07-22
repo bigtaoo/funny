@@ -256,6 +256,17 @@ scene 取值：`IntroScene / LobbyScene / LoginScene / CampaignMapScene / LevelP
 
 > 漏斗分析关注：解锁→看墙转化（红点是否驱动点进）、看墙→领取转化（领取摩擦）。**「无人达成条目」**（某成就长期零 `unlock_toast`）= 查询侧聚合分析（阈值过高/路径稀有），非独立事件——据此调阈值或下线冷门条目。
 
+### 5.8 结算称号分布（Result badge，2026-07-22）
+
+结算页给玩家的「称号/勋章」（`ResultScene` 的 `hero` 徽章，如 `[Efficient]`/`[Iron Defense]`）此前完全是客户端渲染、**无任何埋点**，导致「是不是每局都发同一个称号」只能靠玩家主观反馈、无法从后台核实。新增 `match_badges` 事件（`sample:1.0`，一局一条，低频高价值），在每处 game-over 钩子随 `game_end`/`level_complete` 一起发（PvP 网战、练习/bot、战役），用**与展示同一个** `matchBadgeTelemetry()`（复用 `computeBadges`）计算，保证「记录的 = 玩家看到的」。
+
+| 事件 | 必填属性 | 可选属性 | 说明 |
+|---|---|---|---|
+| `match_badges` | `mode, result, hero, shown[]` | `level_id`, `kills, gold_spent, units_sent, dmg_dealt, dmg_taken, spell_hits, build_ticks` | `hero`=头徽章 key（玩家看到的称号，全 ≤0 时为 `none`）；`shown[]`=最多 3 个展示徽章；原始数值供后台**重新校准** `REF_*` 常量（见 §4.26 UI_DESIGN，那些常量目前是估算值）|
+
+- **聚合查询**：analyticsvc `/internal/query?type=badge_dist&days=N` → `queryBadgeDist`，按 `(mode, result, hero)` 分组计数（计**局数**非设备数），返回 `{ mode, result, badge, count }[]`。经 admin `/admin/analytics/events` 透传，ops「Analytics」页按 mode 各出一张透视表（徽章行 × win/loss/draw 列 + 合计 + 占比条）。
+- **健康判据**：某个 badge 在某 mode 下占比逼近 100% = 校准退化（人人同称号）；理想是多个徽章都有可观占比、且随打法变化。这正是 §4.26 把 `REF_EFFICIENT` 5→12 之后要盯的指标。
+
 ---
 
 ## §6 数据库

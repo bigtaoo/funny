@@ -221,9 +221,9 @@ describe('Detail/reforge modal panel scales to 80% of the constrained screen axi
     const inner = internals(scene);
     expect(inner.landscape).toBe(true);
 
-    // Natural size copied from EquipmentScene/detail.ts: mw0=min(330,w-24); 1 affix, not
-    // maxed → mh0 = 64 + affixCount*20 + (64+22) + 44 + 24.
-    const mh0 = 64 + 1 * 20 + (64 + 22) + 44 + 24;
+    // Natural size copied from EquipmentScene/detail.ts: 1 affix, not maxed →
+    // mh0 = 44 + affixCount*20 + (maxed ? 24 : 58) + 12.
+    const mh0 = 44 + 1 * 20 + 58 + 12;
     const expectedScale = (inner.h * 0.8) / mh0;
 
     expect(inner.modalScale).toBeCloseTo(expectedScale, 10);

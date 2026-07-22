@@ -10,6 +10,7 @@ import { decodeStateReplay, type EncodedStateReplay } from '../../game/replay/St
 import { ApiError } from '../../net/ApiClient';
 import { t } from '../../i18n';
 import { showToastMessage } from '../../net/log';
+import { matchBadgeTelemetry } from '../../scenes/ResultScene';
 import type { EloResult } from '../../scenes/ResultScene';
 import type { ProfileData } from '../../render/ProfilePopup';
 import type { NetGameView } from '../AppViews';
@@ -185,6 +186,9 @@ export function createResultNav(ctx: AppCtx): ResultNav {
           result,
           duration_sec: Math.round((Date.now() - netGameStartTs) / 1000),
         });
+        // Post-match badge/title distribution (ANALYTICS_DESIGN §5.8) — same computeBadges the
+        // ResultScene renders, so what we log is exactly what the player sees on the result screen.
+        analytics.track('match_badges', { mode: isRanked ? 'pvp_ranked' : 'pvp_friendly', result, ...matchBadgeTelemetry(stats[localOwner]) });
         if (isRanked) {
           pending = { winner, stats, replay };
           // gameserver awaits meta's report() before sending match_over, and that internal

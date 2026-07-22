@@ -13,6 +13,7 @@ import { genUuid } from '../../platform/uuid';
 import type { EquipSlot } from '../../game/meta/SaveData';
 import { toEngineCardInstances, CARD_DEFS } from '../../game/meta/cardDefs';
 import type { IconKind } from '../../render/icons';
+import { matchBadgeTelemetry } from '../../scenes/ResultScene';
 import type { AppCtx, Nav } from '../appCtx';
 import { PLAYER_PUBLIC_ID_KEY, PLAYER_NAME_KEY, TOKEN_KEY, TUTORIAL_DONE_FLAG } from '../appConstants';
 import { pickPracticeDifficulty } from './lobby';
@@ -39,11 +40,14 @@ export function createGameNav(ctx: AppCtx): GameNav {
     const gameStartTs = Date.now();
     views.showGame({
       onGameEnd(winner, stats, replay) {
+        const result = winner === 0 ? 'win' : winner === 1 ? 'loss' : 'draw';
         analytics.track('game_end', {
           mode,
-          result: winner === 0 ? 'win' : winner === 1 ? 'loss' : 'draw',
+          result,
           duration_sec: Math.round((Date.now() - gameStartTs) / 1000),
         });
+        // Post-match badge/title distribution (ANALYTICS_DESIGN §5.8) — local player is owner 0 in vs-AI.
+        analytics.track('match_badges', { mode, result, ...matchBadgeTelemetry(stats[0]) });
         // Bot-fallback matches are played entirely client-local (matchsvc issues no ticket/gameUrl),
         // so this is the only settlement hook for them: credits the daily task + (below threshold)
         // a small ELO nudge (SEASON_DESIGN §match_bot_fallback). Manually-chosen practice matches
@@ -483,6 +487,14 @@ export function createGameNav(ctx: AppCtx): GameNav {
             duration_sec: durationSec,
           });
         }
+        // Post-match badge/title distribution (ANALYTICS_DESIGN §5.8), both win and loss — same
+        // computeBadges the ResultScene renders. Local player is owner 0 in campaign.
+        analytics.track('match_badges', {
+          mode: 'campaign',
+          result: winner === 0 ? 'win' : winner === 1 ? 'loss' : 'draw',
+          level_id: levelId,
+          ...matchBadgeTelemetry(stats[0]),
+        });
         const outroText = (winner === 0 && level.story?.outroKey) ? t(level.story.outroKey as TranslationKey) : undefined;
         void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroText, goCampaignMap, t('result.backToMap'));
       },

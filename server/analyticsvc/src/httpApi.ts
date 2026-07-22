@@ -191,6 +191,10 @@ export function startHttpApi(
           const geo_dist = await svc.queryGeoDist(days);
           return send(res, 200, ok({ type, geo_dist }));
         }
+        if (type === 'badge_dist') {
+          const badge_dist = await svc.queryBadgeDist(days);
+          return send(res, 200, ok({ type, badge_dist }));
+        }
         return sendErr(res, ErrorCode.BAD_REQUEST, `unknown query type: ${type}`);
       }
 

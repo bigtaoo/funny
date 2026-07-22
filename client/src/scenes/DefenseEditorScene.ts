@@ -404,26 +404,36 @@ export class DefenseEditorScene implements Scene {
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
+  /** Scene title: team name (attack) / home base or tile (defense). */
+  private titleText(): string {
+    return this.cb.target.mode === 'attack'
+      ? t('world.team.editTitle').replace('{name}', this.cb.target.teamName)
+      : this.cb.target.tileKey === 'base'
+        ? t('world.defense.titleBase')
+        : t('world.defense.titleTile').replace('{tile}', this.cb.target.tileKey);
+  }
+
   private render(): void {
     tearDownChildren(this.bodyLayer);
     this.hits = [];
     const { w, h } = this;
 
     // Header: back + title + base-level stepper (drawn on the right slot below)
-    const titleStr = this.cb.target.mode === 'attack'
-      ? t('world.team.editTitle').replace('{name}', this.cb.target.teamName)
-      : this.cb.target.tileKey === 'base'
-        ? t('world.defense.titleBase')
-        : t('world.defense.titleTile').replace('{tile}', this.cb.target.tileKey);
-    const hdr = drawSceneHeader(this.bodyLayer, w, this.h, titleStr, {
+    const hdr = drawSceneHeader(this.bodyLayer, w, this.h, this.titleText(), {
       variant: 'paper', accent: HEADER_ACCENT.slg,
     });
     this.hits.push({ rect: hdr.backRect, action: () => this.cb.onBack() });
 
     // Base-level stepper (defense only — attacker has no base/buildings)
     if (this.hasBuildingRow) this.renderBaseStepper(w - PAD, 8);
+    // Attack mode: the troop readout (top-left) + Fill/Clear/Save (top-right) live in the header's
+    // free space instead of a bottom footer, so the whole footer band goes to the grid + roster
+    // (2026-07-22, user request "move these two up top").
+    if (this.mode === 'attack') this.renderAttackHeaderControls(hdr.headerH);
 
-    const gridBottom = h - FOOTER_H - 4;
+    // Attack mode has no bottom footer (controls moved into the header); defense keeps it.
+    const footerH = this.mode === 'attack' ? 0 : FOOTER_H;
+    const gridBottom = h - footerH - 4;
     if (this.mode === 'attack') {
       // Left half = formation grid, right half = scrollable card roster (布阵/选卡 split).
       this.renderAttackBody(hdr.headerH + 4, gridBottom);
@@ -433,13 +443,14 @@ export class DefenseEditorScene implements Scene {
       this.renderGrid(gridTop, gridBottom);
     }
 
-    // Footer: counts + clear + save
-    this.renderFooter(h - FOOTER_H);
+    // Footer: counts + clear + save (defense only)
+    if (this.mode !== 'attack') this.renderFooter(h - FOOTER_H);
 
     // Per-card allocate stepper overlay (attack mode) — shown for the currently selected placed card.
+    // With no footer it anchors to the screen bottom.
     if (this.mode === 'attack' && this.selectedCell) {
       const entry = this.garrison.get(this.selectedCell);
-      if (entry?.cardInstanceId) this.renderAllocateStepper(entry.cardInstanceId, h - FOOTER_H);
+      if (entry?.cardInstanceId) this.renderAllocateStepper(entry.cardInstanceId, h);
       else this.selectedCell = null;
     }
 
@@ -869,30 +880,57 @@ export class DefenseEditorScene implements Scene {
     }
   }
 
+  /** Defense footer: counts + hint on the left, action buttons on the right. (Attack mode has no footer.) */
   private renderFooter(top: number): void {
     const { w } = this;
     const panel = sketchPanel(w, FOOTER_H, { fill: C.paper, border: C.mid, seed: seedFor(0, top, w) });
     panel.y = top;
     this.bodyLayer.addChild(panel);
 
-    const countsStr = this.mode === 'attack'
-      ? `${t('world.defense.garrison').replace('{n}', String(this.garrison.size))}   ${t('world.team.committed').replace('{n}', String(this.committedTroops()))}   ${t('world.team.pool').replace('{n}', String(this.troops))}`
-      : `${t('world.defense.buildings')} ${this.buildings.size}   ${t('world.defense.garrison').replace('{n}', String(this.garrison.size))}`;
+    const countsStr = `${t('world.defense.buildings')} ${this.buildings.size}   ${t('world.defense.garrison').replace('{n}', String(this.garrison.size))}`;
     const counts = txt(countsStr, FS.micro, C.dark);
     counts.x = PAD; counts.y = top + 8;
     this.bodyLayer.addChild(counts);
 
-    // Attack mode already shows its hint in the grid-side toolbar (renderAttackToolbar).
-    if (this.mode !== 'attack') {
-      const hint = txt(t('world.defense.hint'), FS.micro, C.mid);
-      hint.x = PAD; hint.y = top + 26;
-      this.bodyLayer.addChild(hint);
-    }
+    const hint = txt(t('world.defense.hint'), FS.micro, C.mid);
+    hint.x = PAD; hint.y = top + 26;
+    this.bodyLayer.addChild(hint);
 
-    // Clear + Save (+ Fill troops, attack mode only) (right)
+    this.renderActionButtons(w - PAD, top, FOOTER_H);
+  }
+
+  /**
+   * Attack-mode header controls: the troop readout (garrison / committed / pool) at the top-left
+   * (right of the back pill, scaled to clear the centred title) + the Fill/Clear/Save cluster at the
+   * top-right — both drawn over the baked header chrome so the bottom footer band frees up entirely.
+   */
+  private renderAttackHeaderControls(headerH: number): void {
+    const { w } = this;
+    const countsStr = `${t('world.defense.garrison').replace('{n}', String(this.garrison.size))}   ${t('world.team.committed').replace('{n}', String(this.committedTroops()))}   ${t('world.team.pool').replace('{n}', String(this.troops))}`;
+    const counts = txt(countsStr, FS.small, C.dark, true);
+    counts.anchor.set(0, 0.5);
+    const startX = 210; // clears the back pill (constant width in the shared 1080 design space)
+    counts.x = startX; counts.y = headerH / 2;
+    // Keep clear of the horizontally-centred title (measure it to find its left edge).
+    const titleNode = txt(this.titleText(), FS.headline, C.dark, true);
+    const titleLeft = w / 2 - titleNode.width / 2;
+    titleNode.destroy({ texture: true, baseTexture: true });
+    const avail = titleLeft - 12 - startX;
+    if (avail > 20 && counts.width > avail) counts.scale.set(avail / counts.width);
+    this.bodyLayer.addChild(counts);
+
+    this.renderActionButtons(w - PAD, 0, headerH);
+  }
+
+  /**
+   * Right-aligned Fill troops (attack only) / Clear / Save cluster, vertically centred on the band
+   * [top, top+rowH] ending at `rightEdge`. Shared by the defense footer and the attack header.
+   */
+  private renderActionButtons(rightEdge: number, top: number, rowH: number): void {
     const btnW = 70, btnH = 30;
-    const save = sketchPanel(btnW, btnH, { fill: C.dark, border: C.gold, seed: seedFor(w, top, btnW) });
-    save.x = w - btnW - PAD; save.y = top + (FOOTER_H - btnH) / 2;
+    const cy = top + (rowH - btnH) / 2;
+    const save = sketchPanel(btnW, btnH, { fill: C.dark, border: C.gold, seed: seedFor(rightEdge, top, btnW) });
+    save.x = rightEdge - btnW; save.y = cy;
     this.bodyLayer.addChild(save);
     const saveLbl = txt(t('world.defense.save'), FS.tiny, C.light, true);
     saveLbl.anchor.set(0.5, 0.5);
@@ -900,14 +938,14 @@ export class DefenseEditorScene implements Scene {
     this.bodyLayer.addChild(saveLbl);
     this.hits.push({ rect: { x: save.x, y: save.y, w: btnW, h: btnH }, action: () => void this.doSave() });
 
-    const clear = sketchPanel(btnW, btnH, { fill: C.paper, border: C.red, seed: seedFor(w, top + 1, btnW) });
-    clear.x = save.x - btnW - 8; clear.y = save.y;
+    const clear = sketchPanel(btnW, btnH, { fill: C.paper, border: C.red, seed: seedFor(rightEdge, top + 1, btnW) });
+    clear.x = save.x - btnW - 8; clear.y = cy;
     this.bodyLayer.addChild(clear);
 
     if (this.mode === 'attack') {
       const fillW = 84;
-      const fill = sketchPanel(fillW, btnH, { fill: C.paper, border: C.gold, seed: seedFor(w, top + 2, fillW) });
-      fill.x = clear.x - fillW - 8; fill.y = save.y;
+      const fill = sketchPanel(fillW, btnH, { fill: C.paper, border: C.gold, seed: seedFor(rightEdge, top + 2, fillW) });
+      fill.x = clear.x - fillW - 8; fill.y = cy;
       this.bodyLayer.addChild(fill);
       const fillLbl = txt(t('world.team.fill'), FS.tiny, C.dark, true);
       fillLbl.anchor.set(0.5, 0.5);

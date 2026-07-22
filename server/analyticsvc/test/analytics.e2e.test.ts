@@ -280,6 +280,33 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     expect(oses).toContain('macOS');
   });
 
+  // ─── badge_dist ────────────────────────────────────────────────────────────
+
+  it('GET /internal/query?type=badge_dist aggregates hero badges by mode + result', async () => {
+    const now = Date.now();
+    const mk = (hero: string, result: string) => ({ event: 'match_badges', ts: now, props: { mode: 'pvp_ranked', result, hero } });
+    const batch = {
+      session_id: 'sess-badge', device_id: 'dev-badge', platform: 'web', os: 'Windows', game_version: '0.1.0', locale: 'en',
+      events: [mk('EFFICIENT', 'win'), mk('EFFICIENT', 'win'), mk('FLOOD', 'win'), mk('IRON_WALL', 'loss')],
+    };
+    const post = await fetch(`${base}/analytics/events`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(batch),
+    });
+    expect(post.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 200));
+
+    const res = await fetch(`${base}/internal/query?type=badge_dist&days=7`, { headers: { 'x-internal-key': INTERNAL_KEY } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; data: { type: string; badge_dist: { mode: string; result: string; badge: string; count: number }[] } };
+    expect(body.ok).toBe(true);
+    expect(body.data.type).toBe('badge_dist');
+    const dist = body.data.badge_dist;
+    const eff = dist.find((r) => r.badge === 'EFFICIENT' && r.result === 'win' && r.mode === 'pvp_ranked');
+    expect(eff?.count).toBe(2);
+    expect(dist.find((r) => r.badge === 'FLOOD' && r.result === 'win')?.count).toBe(1);
+    expect(dist.find((r) => r.badge === 'IRON_WALL' && r.result === 'loss')?.count).toBe(1);
+  });
+
   // ─── login_hour ──────────────────────────────────────────────────────────
 
   it('GET /internal/query?type=login_hour returns 24 hour buckets', async () => {

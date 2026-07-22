@@ -294,7 +294,8 @@ export function buildingMaxHp(level: number): number {
  * NOT applied to the ADR-026 main-base WAVE path (arrival.ts pins defenderBaseLevel:0 and keeps the symbolic
  * base a minimal terminator — the real durability there is TileDoc.hp = baseDurabilityMax). Callers opt in by
  * passing `defenderBaseHp: npcBaseHp(tileLevel)` explicitly; {@link buildSiegeLevel} does no implicit derivation.
- * [DRAFT → economy pass; econ-sim verified 2026-07-17]
+ * [Econ-sim verified 2026-07-17 (base curve) + 2026-07-22 (robust to equipment/academy attacker hp bonuses up
+ * to +20% — see ECONOMY_VERIFICATION_LOG.md §13-SLG-NPC-BASEHP); DRAFT marker removed, 40/level is final.]
  */
 export const SLG_NPC_BASE_HP_PER_LEVEL = 40;
 

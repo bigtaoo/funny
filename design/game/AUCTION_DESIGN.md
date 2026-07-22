@@ -500,6 +500,15 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
   - `tools/ops/src/pages/auctionAudit.ts`：在既有「SLG Audit」页顶部新增「Listing lookup」卡片（sellerId / itemType / status / item name 四个筛选框 + 结果表格，展示 Auction ID/Seller/Item/Qty/Price/Sale mode/Status/Designated buyer/Buyer/Expire-closed），复用同一 nav 项与 capability，不新增页面/导航条目。
 - **验收**：`tsc --noEmit` 对 `shared`/`auctionsvc`/`admin`/`tools/ops` 四个包全绿。未跑 e2e/UI 截图验证（无新增业务规则或可见渲染回归风险，纯新增只读查询通路）。
 
+### 修复：市场里点自己的挂单报 BAD_REQUEST（2026-07-22）
+
+- **问题**：玩家反馈市场（All 标签）里某个挂单点「Buy」报红 `BAD_REQUEST`（后端 400）。根因：`listAuctions`（`server/auctionsvc/src/auctionService.ts`）的 `$or` 含 `{ sellerId: accountId }`，会把**卖家自己的挂单**也带进市场视图（本是为满足 §「卖家/被指定买家可见定向单」的可见性需求，见 2026-07-18 条），但客户端 `list.ts`/`renderAuctionCell` 的 all 分支不区分归属、一律渲染 Buy/Bid，点下去必然命中服务端自购护栏 `if (doc.sellerId === buyerId) throw BAD_REQUEST`（`buyAuction`/`placeBid` 同）。公开自售单与定向自售单两种情况都会踩。
+- **方案**：治根点放在**客户端**。服务端不动——测试 `server/auctionsvc/test/auction.e2e.test.ts`「designated buyer: listAuctions hides… but seller + designated buyer」明确要求卖家在市场能看到自己的定向单，从服务端剔除会破坏该既定行为，且即便剔除公开自售单，定向自售单仍会留在市场触发同一 400，无法根治。
+- **改动**：
+  - `client/src/scenes/AuctionScene/list.ts`：all 标签下当 `auc.sellerId === this.cb.myAccountId` 时不再画 Buy/Bid 按钮，改为被动标记「你的挂单」（新增 i18n `auction.yourListing`，zh/en/de 三语）。
+  - 顺带修文案 bug：`auction.price`（固定价挂单价格标签）此前被误设成与 `auction.startPrice` 同文「起拍价（金币）/ Starting Price (coins) / Startpreis (Münzen)」，固定价单显示为「起拍价」误导玩家。改为「价格（金币）/ Price (coins) / Preis (Münzen)」。
+- **验收**：client `tsc --noEmit` 绿 + `webpack --mode development` 构建成功。真实复现需以卖家身份登录且自己的挂单出现在市场（依赖线上账号数据），本地 dev 无此数据，未做浏览器截图验证。
+
 ---
 
 *本文为拍卖行机制权威，DRAFT/⚠️ 处随实现与拍板细化；数值以 `server/shared/src/slg.ts` 为准。*

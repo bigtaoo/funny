@@ -7,3 +7,6 @@ wechatgame/pixigame.js.map
 wechatgame/pixigame.js.LICENSE.txt
 wechatgame/cdn/
 .DS_Store
+# Playwright artifacts (client/test/browser smoke, see claudedocs/client-testing.md 缺口B)
+/test-results
+/playwright-report

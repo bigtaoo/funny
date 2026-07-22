@@ -8,7 +8,7 @@
  */
 import * as PIXI from 'pixi.js-legacy';
 import { CardDefinition, CardType, UnitType, BuildingType, SpellType } from '../game/types';
-import { preloadTextureList } from '../assets/preloadTextures';
+import { preloadTextureList, ART_TEX_OPTIONS } from '../assets/preloadTextures';
 import infantryArtUrl from '../assets/infantry.png';
 import archerArtUrl from '../assets/archer.png';
 import shieldBearerArtUrl from '../assets/shieldbearer.png';
@@ -72,7 +72,10 @@ export const UNIT_ART_URLS: Record<string, string> = {
 
 /** Texture cache keyed by url — shared with the `PIXI.Texture.from` global cache. */
 export function getArtTexture(url: string): PIXI.Texture {
-  return PIXI.Texture.from(url);
+  // Match the mipmap opt-in preloadTexture() bakes in, so art created lazily here (not
+  // preloaded) still minifies cleanly instead of aliasing into white speckles. Options
+  // only apply on first creation; a no-op once the base texture is already cached.
+  return PIXI.Texture.from(url, ART_TEX_OPTIONS);
 }
 
 // L1 card art: heroes + spells (L0 trio infantry/archer/shieldbearer is already

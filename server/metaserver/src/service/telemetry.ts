@@ -135,6 +135,11 @@ export function TelemetryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
         const msg = typeof o.msg === 'string' ? o.msg.slice(0, 500) : '';
         const type = typeof o.type === 'string' ? o.type.slice(0, 32) : '';
         if (!msg || !type) return [];
+        // Defense-in-depth mirror of the client-side dev-build crash gate (client net/anomaly.ts initCrashSentinel):
+        // drop crash events from unbaked dev builds (buildVersion '0.0.0') so a client that missed the fix can't
+        // refill Loki with false "unclean exit" crashes from dev hot-reloads. Other anomaly types and real-build
+        // crashes (including crashes with no buildVersion reported) pass through untouched.
+        if (type === 'crash' && buildVersion === '0.0.0') return [];
         const e: ClientAnomalyEvent = {
           type,
           msg,

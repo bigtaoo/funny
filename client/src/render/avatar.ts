@@ -23,7 +23,7 @@ import { buildAvatarIcon } from './avatarAtlas';
 import { buildMaterialIcon, type MaterialKind } from './materialAtlas';
 import { buildEquipIcon } from './equipmentAtlas';
 import { titleIconUrl } from './titleArt';
-import { UNIT_ART_URLS } from './cardArt';
+import { UNIT_ART_URLS, getArtTexture } from './cardArt';
 import { EQUIPMENT_DEFS } from '../game/meta/equipmentDefs';
 import { SKIN_TARGET_UNIT } from '../game/meta/skinDefs';
 import { snapFont } from './fontScale';
@@ -100,7 +100,10 @@ function spriteIcon(url: string | null, size: number): PIXI.DisplayObject | null
  */
 function buildPortraitIcon(url: string, size: number): PIXI.Container {
   const c = new PIXI.Container();
-  const tex = PIXI.Texture.from(url);
+  // getArtTexture (not bare Texture.from) so bust crops share the mipmap opt-in — avatar
+  // circles shrink hero art hard, and a no-mipmap version winning the shared cache here
+  // would drag the roster/detail portraits back down with it.
+  const tex = getArtTexture(url);
   const sprite = new PIXI.Sprite(tex);
   sprite.anchor.set(0.5, 0);
   sprite.scale.set(tex.valid && tex.width > 0 ? size / tex.width : size / 256);

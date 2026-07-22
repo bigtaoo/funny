@@ -120,6 +120,22 @@ export function matIconKind(id: string): IconKind | null {
 
 export interface Rect { x: number; y: number; w: number; h: number; }
 
+/**
+ * A single on-card action button (Enhance / Equip / Unequip / Reforge / Salvage / Salvage All).
+ * Only *available* actions are emitted — unavailable ones are omitted entirely rather than shown
+ * disabled (the detail modal used to grey them out; per the 2026-07-22 pass they now live on the
+ * grid cell and hidden = unavailable). `fn` fires the action directly (enhance / equip / confirm
+ * dialog / material picker), bypassing the info modal. See DetailMixin.instanceActions.
+ */
+export interface CellAction {
+  key: string;
+  label: string;
+  icon: IconKind;
+  fill: number;
+  stroke: number;
+  fn: () => void;
+}
+
 // ── Mixin plumbing ────────────────────────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Constructor<T = object> = new (...args: any[]) => T;
@@ -594,6 +610,7 @@ export interface EquipmentSceneBase {
   renderAssign(save: SaveData): void;
   cancelAssign(): void;
   openDetail(instanceId: string): void;
+  instanceActions(save: SaveData, inst: EquipmentInstance): CellAction[];
   beginAssign(instId: string, slot: EquipSlot): void;
   ownerCardId(save: SaveData, instId: string): string | null;
   openReforgeSelect(target: EquipmentInstance): void;

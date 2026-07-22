@@ -1,7 +1,7 @@
 # Notebook Wars — 元系统与服务器设计文档
 
 > 创建：2026-06-13。本文件是元系统（存档 / 经济 / 养成 / 收集 / 商业化）+ 服务器（云存档 / 好友房联机）的设计基准，随实现推进同步更新。
-> 配套阅读：`CAMPAIGN_DESIGN.md`（PvE 战役）、`DESIGN.md`（引擎/系统）、`archive/IMPROVEMENT_PLAN.md`（迭代进度，已归档）、根 `../../CLAUDE.md`。
+> 配套阅读：`CAMPAIGN_DESIGN.md`（PvE 战役）、`DESIGN.md`（引擎/系统）、根 `../../CLAUDE.md`。
 > 子文档：`META_TASKS.md`（任务拆分）、`UI_DESIGN.md`（客户端 UI）、`SERVER_API.md`（接口契约）、`ECONOMY_BALANCE.md`（经济数值）。
 > 细分设计（2026-06-14）：`ACCOUNT_DESIGN.md`（账号/登录/单机门槛）、`COMMERCIAL_DESIGN.md`（commercial 商业服务：钱包/充值/消费/盲盒）、`MATCHSVC_DESIGN.md`（matchsvc 匹配大脑 + gameserver 瘦身 + 局末结算）、`GATEWAY_DESIGN.md`（gateway 控制面网关 + 客户端三通道）。
 > 社交（2026-06-16）：`SOCIAL_DESIGN.md`（好友 / 私聊 / 邮件，扩展 meta + 复用 gateway `/gw/push`；帮会/国家频道留 SLG 后 + Redis）。
@@ -230,8 +230,8 @@ function buildCampaignBlueprints(save: SaveData): UnitBlueprints {
 
 ### 6.1 拓扑：6 组件 + 控制面/数据面分离（M9 / M16–M21）
 
-> **范畴说明**：本节「6 组件」是 **meta 范畴**（S0–S5）。全系统后来加了 admin / worldsvc / analyticsvc / socialsvc，
-> 共 **9 个应用进程**——全量清单见 `design/README.md` §4 与 `claudedocs/server.md`。
+> **范畴说明**：本节「6 组件」是 **meta 范畴**（S0–S5）。全系统后来加了 admin / worldsvc / analyticsvc / socialsvc / auctionsvc / botsvc，
+> 共 **11 个应用进程**——全量清单见 `design/README.md` §4 与 `claudedocs/server.md`。
 
 > **架构修订（2026-06-13；2026-06-14 加 commercial）**：玩家只触达 **meta(REST)** + **gateway(WS 控制面)** + **game(WS 数据面)**；**matchsvc**（匹配大脑）+ **commercial**（钱包/商业，连自己专属库）对玩家不可见。S1 现实现是 gameserver 中心式（自管匹配/分配/结算且连 Mongo），按此修订迁移。
 
