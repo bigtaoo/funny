@@ -158,10 +158,12 @@ async function makeCell(srcPath) {
     .png()
     .toBuffer();
   const fm = await sharp(fitted).metadata();
-  return sharp({ create: { width: CELL, height: CELL, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
-    .composite([{ input: fitted, left: Math.round((CELL - (fm.width ?? CELL)) / 2), top: CELL - (fm.height ?? CELL) }])
+  const fittedH = fm.height ?? CELL;
+  const buf = await sharp({ create: { width: CELL, height: CELL, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .composite([{ input: fitted, left: Math.round((CELL - (fm.width ?? CELL)) / 2), top: CELL - fittedH }])
     .png()
     .toBuffer();
+  return { buf, contentTop: (CELL - fittedH) / CELL };
 }
 
 async function main() {
@@ -177,8 +179,8 @@ async function main() {
     const { file, name } = FILES[i];
     const dx = (i % COLS) * CELL;
     const dy = Math.floor(i / COLS) * CELL;
-    const cellBuf = await makeCell(path.join(SRC_DIR, file));
-    console.log(`${name.padEnd(9)} ← ${file.padEnd(14)} → (${dx},${dy})`);
+    const { buf: cellBuf, contentTop } = await makeCell(path.join(SRC_DIR, file));
+    console.log(`${name.padEnd(9)} ← ${file.padEnd(14)} → (${dx},${dy})  contentTop=${contentTop.toFixed(2)}`);
     composites.push({ input: cellBuf, left: dx, top: dy });
     frames[name] = {
       frame: { x: dx, y: dy, w: CELL, h: CELL },
@@ -186,6 +188,14 @@ async function main() {
       trimmed: false,
       spriteSourceSize: { x: 0, y: 0, w: CELL, h: CELL },
       sourceSize: { w: CELL, h: CELL },
+      // Non-standard field (ignored by PIXI's Spritesheet parser, read directly off the raw JSON by
+      // cityAtlasLoader.getCityContentTopFracForLevel): fraction of the CELL that's transparent padding
+      // above the bottom-aligned building art. Every tier/level fills a different amount of the fixed
+      // 256px cell (a lv1 camp barely reaches halfway; a lv10 citadel nearly fills it), so anything that
+      // positions itself relative to the sprite's full height — e.g. the ADR-026 HP bar in
+      // WorldMapRenderer/city.ts — must offset by the ACTUAL art top, not the cell top, or it floats far
+      // above short buildings (2026-07-22 bug: bar rendered a full tile-height+ above a lv1 camp roof).
+      contentTop,
     };
   }
 

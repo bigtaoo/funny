@@ -17,6 +17,7 @@ import { WorldMapContext, type WorldMapCallbacks } from '../../src/scenes/worldm
 import { WorldMapRenderer } from '../../src/scenes/worldmap/WorldMapRenderer';
 import { WorldMapPanels } from '../../src/scenes/worldmap/WorldMapPanels';
 import { WorldMapInput } from '../../src/scenes/worldmap/WorldMapInput';
+import { getCityContentTopFracForLevel } from '../../src/render/cityAtlasLoader';
 import type { ILayout } from '../../src/layout/ILayout';
 import type { WorldTileView } from '../../src/net/WorldApiClient';
 
@@ -25,6 +26,7 @@ import type { WorldTileView } from '../../src/net/WorldApiClient';
 vi.mock('../../src/render/cityAtlasLoader', () => ({
   isCityAtlasReady: () => true,
   getCityTextureForLevel: () => PIXI.Texture.WHITE,
+  getCityContentTopFracForLevel: vi.fn(() => 0),
 }));
 
 const memStore = (() => {
@@ -149,5 +151,30 @@ describe('WorldMap base HP bar (2026-07-22)', () => {
     expect(fillColorFor(80)).toBe(GREEN);
     expect(fillColorFor(40)).toBe(AMBER);
     expect(fillColorFor(10)).toBe(RED);
+  });
+
+  it('a short building (large contentTop, e.g. a lv1 camp) hovers the bar lower than a tall one — 2026-07-22 fix', () => {
+    // Regression for the reported bug: the bar used to sit at a flat 90% of the sprite's FULL cell
+    // height, so short buildings (whose art only fills the bottom fraction of the fixed-size cell —
+    // see cityAtlasLoader's `contentTop`) showed the bar floating far above the roof. It must now
+    // track the building's actual visible top instead of the cell's.
+    const mockedContentTop = vi.mocked(getCityContentTopFracForLevel);
+
+    mockedContentTop.mockReturnValue(0); // tall building: art fills the whole cell
+    const tallCtx = buildScene();
+    placeBase(tallCtx, 300, 300, { mine: false, hp: 50, maxHp: 100 });
+    const { rects: tallRects } = renderAndSpyHpBar(tallCtx, 300, 300);
+
+    mockedContentTop.mockReturnValue(0.5); // short building: art only fills the bottom half
+    const shortCtx = buildScene();
+    placeBase(shortCtx, 310, 310, { mine: false, hp: 50, maxHp: 100 });
+    const { rects: shortRects } = renderAndSpyHpBar(shortCtx, 310, 310);
+
+    mockedContentTop.mockReturnValue(0);
+    // Both bars sit above the building foot (negative local y), but the short building's bar must
+    // sit measurably lower (closer to zero / the ground) than the tall building's.
+    expect(tallRects[0].y).toBeLessThan(0);
+    expect(shortRects[0].y).toBeLessThan(0);
+    expect(shortRects[0].y).toBeGreaterThan(tallRects[0].y);
   });
 });

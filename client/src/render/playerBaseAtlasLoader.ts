@@ -28,6 +28,20 @@ export function getPlayerBaseTextureForLevel(level: number): PIXI.Texture | null
 }
 
 /**
+ * Fraction (0-1) of the packed 256px cell that's transparent padding above the bottom-aligned
+ * building art — see cityAtlasLoader.getCityContentTopFracForLevel for why this matters (the
+ * city-layer HP bar in WorldMapRenderer/city.ts needs it to avoid floating above short buildings).
+ * Falls back to 0 if the atlas predates the `contentTop` field. Unlike getPlayerBaseTextureForLevel,
+ * this doesn't need the PNG decoded (no `sheet` gate) — the value comes straight off the bundled
+ * JSON, available as soon as the module loads.
+ */
+export function getPlayerBaseContentTopFracForLevel(level: number): number {
+  const lv = Math.max(1, Math.min(10, Math.round(level)));
+  const frames = (atlasData as { frames: Record<string, { contentTop?: number }> }).frames;
+  return frames[`playerbase_l${lv}`]?.contentTop ?? 0;
+}
+
+/**
  * Decode + parse the player-base atlas. Idempotent; concurrent calls share one
  * in-flight promise. Failure is non-fatal — the base falls back to the shared
  * city atlas (see WorldMapRenderer/city.ts).

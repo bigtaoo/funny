@@ -2,8 +2,8 @@
 // deterministic procedural NPC cities (seed-derived, map-wide), pooled and culled per viewport.
 import * as PIXI from 'pixi.js-legacy';
 import { BASE_FOOTPRINT, citySpriteTiles, cityGroundFwdPx, cityPlotMaskPoints } from '@nw/shared';
-import { getCityTextureForLevel, isCityAtlasReady } from '../../../render/cityAtlasLoader';
-import { getPlayerBaseTextureForLevel } from '../../../render/playerBaseAtlasLoader';
+import { getCityTextureForLevel, getCityContentTopFracForLevel, isCityAtlasReady } from '../../../render/cityAtlasLoader';
+import { getPlayerBaseTextureForLevel, getPlayerBaseContentTopFracForLevel } from '../../../render/playerBaseAtlasLoader';
 import { tileToScreen, visibleTileBounds, ISO_RATIO } from '../../../render/isoGrid';
 import { HUD_H, BASE_SPRITE_TILES } from '../constants';
 import { type Constructor, type WorldMapRendererBaseCtor } from './base';
@@ -61,10 +61,14 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
           // The requester's own base renders from the separate "stationery fortress" playerbase_atlas,
           // keyed by desk building level rather than the tile's terrain-generated `level` (see
           // TileDoc.deskLevel). Other players' bases and NPC map cities keep the shared city_atlas below.
-          const tex = tile.mine
-            ? (getPlayerBaseTextureForLevel(tile.deskLevel ?? 1) ?? getCityTextureForLevel(lv))
-            : getCityTextureForLevel(lv);
+          const playerBaseTex = tile.mine ? getPlayerBaseTextureForLevel(tile.deskLevel ?? 1) : null;
+          const tex = playerBaseTex ?? getCityTextureForLevel(lv);
           if (!tex) continue;
+          // Which atlas actually supplied `tex` (see the fallback above) decides whose contentTop
+          // metadata applies to the HP bar offset below.
+          const contentTopFrac = playerBaseTex
+            ? getPlayerBaseContentTopFracForLevel(tile.deskLevel ?? 1)
+            : getCityContentTopFracForLevel(lv);
 
           // Reuse or create city container
           let cityC = this.ctx.citySprites.get(cacheKey);
@@ -155,7 +159,14 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
             const barW = baseSpriteTiles * tp * 0.6;
             const barH = Math.max(3, tp * 0.07);
             const bxh = -barW / 2;
-            const byh = -sprite.height * 0.9 - barH;   // above the building silhouette (sprite is bottom-anchored → top edge at -height)
+            // Above the ACTUAL building silhouette, not the sprite's full (mostly-empty, for short
+            // buildings) cell: sprite is bottom-anchored, so local y = -sprite.height is the cell's top
+            // edge and -sprite.height*(1-contentTopFrac) is where the art itself starts (see
+            // cityAtlasLoader.getCityContentTopFracForLevel — a lv1 camp's art only fills the bottom
+            // ~50% of its cell, so the old flat "0.9 of full height" floated the bar a tile-height above
+            // the roof for short buildings; 2026-07-22 bug report).
+            const gap = Math.max(2, tp * 0.04);
+            const byh = -sprite.height * (1 - contentTopFrac) - barH - gap;
             hpbar.lineStyle(0.8, 0x3a2a1a, 0.85);
             hpbar.beginFill(0x2a1e12, 0.8);
             hpbar.drawRect(bxh, byh, barW, barH);
