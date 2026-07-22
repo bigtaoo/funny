@@ -334,6 +334,14 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     expect((await readSave()).equipmentInv['s4']).toBeTruthy(); // whole batch not executed
   });
 
+  it('salvage epic rarity at +0 → 409 NOT_SALVAGEABLE (ADR-050: epic never salvages, regardless of level)', async () => {
+    await seedInstance('s7', 'wp_highlighter', 0, { rarity: 'epic' });
+    const res = await salvage(['s7'], 'sk-epic');
+    expect(res.statusCode).toBe(409);
+    expect(body(res).error.code).toBe('NOT_SALVAGEABLE');
+    expect((await readSave()).equipmentInv['s7']).toBeTruthy();
+  });
+
   it('salvage locked → 409 EQUIP_LOCKED; equipped → 409 EQUIP_IN_USE', async () => {
     await seedInstance('sl', 'wp_pencil', 0, { locked: true });
     expect((await salvage(['sl'], 'sk-lock')).statusCode).toBe(409);

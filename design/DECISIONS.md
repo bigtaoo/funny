@@ -567,3 +567,10 @@
 - **运维生效路径（关键）**：`mapW/mapH` 在 `openSeason` 时经 `$setOnInsert` **写死进 world 文档**，`getSeason` 返回存库值。故常量改动**不会自动改变现有世界**——旧世界的 `w.mapW` 仍冻结在 500，而生成/出生点/边界用常量 1500，会不一致。本 ADR 顺带让 `resetSeason` 的 `$set` **re-stamp `mapW/mapH`**（与它早已 re-pin 的 `engineVersion` 同理：reset 清空全部 tiles/nations 并按 `deps` 重建州府，回收世界必须采用当前尺寸）→ 现有大区经正常"结算→重置"即可采用新尺寸；全新 worldId 天然拿到 1500；dev 直接 `-Fresh` 起新库。
 - **影响**：`server/shared/src/slg/core.ts`（常量）、`worldsvc/src/season.ts`（reset re-stamp）；客户端零改动（`WorldMapScene` 全程用 `getSeason` 返回值、渲染视口化，`DEFAULT_MAP_SIZE` 早已是 1500 且仅为加载前占位）。worldsvc 285 e2e（新尺寸下真实生成地图）+ season-ops 新增 1 例（reset re-stamp）全绿；shared/worldsvc `tsc --noEmit` 全绿。
 - **未处理/留待**：① 更大图放大了"孤立据点四周空白"观感（SLG_DESIGN_LOG §1008 既知），如需改善要从中立地装饰密度/初始镶机位入手；② 横断行军实时时长约 ×3，属 SLG 类型常态，用户已认可；③ "一屏俯瞰全图的最远战略档（L4）"本轮**不做**（用户拍板暂缓），但地图越大越需要，登记为后续候选。
+
+## ADR-050 装备分解新增稀有度门槛：史诗 Epic 永不可分解，不论等级 — Accepted — 2026-07-22
+
+- **问题**：用户发现背包界面里 Highlighter / Foil Cover / Wax Seal（均为史诗 Epic 品质）在 +0~+4 时显示 Salvage / Salvage All 按钮，认为"紫色物品属于高级装备，不能销毁"。核查后确认这是 **ADR-012 既定行为**而非 bug——原规则纯按**强化等级**门控（+5 及以上不可分解），与稀有度无关。用户拍板：新增一条规则，史诗品质**不论等级**一律不可分解。
+- **决策**：分解可行性判定从单一等级门槛改为**等级门槛 OR 稀有度门槛**：`isSalvageable(rarity, level) = rarity !== 'epic' && level <= SALVAGE_MAX_LEVEL`。普通/精良/稀有三档行为不变（+0~+4 可分解，+5 起不可分解）；史诗档从"+0~+4 可分解"改为**永不可分解**。高稀有度件的销毁出口收窄为**拍卖 / 穿戴**（§13），与+5 以上高强化件的既有出口一致。
+- **实现**：新增单一判定函数 `isSalvageable`，服务器权威侧 `server/shared/src/equipment.ts`（`salvageEquipment` 校验 + rev-guard 复查两处引用），客户端 UI 侧镜像同名函数于 `client/src/game/meta/equipmentDefs.ts`（`instanceActions` 用于隐藏按钮，纯预览，不代替服务器校验）。`NOT_SALVAGEABLE` 错误文案三语同步更新为"+5 及以上或史诗品质不可分解"。
+- **影响**：`server/shared/src/equipment.ts`、`server/metaserver/src/equipment.ts`、`client/src/game/meta/equipmentDefs.ts`、`client/src/scenes/EquipmentScene/detail.ts`、三语 i18n（`equip.err.notSalvageable`）；[`game/EQUIPMENT_DESIGN.md`](game/EQUIPMENT_DESIGN.md) L4 + §6.3 + §17 数值表 + SERVER_API 端点说明同步。`server/shared` 单测新增 `isSalvageable` 用例，`metaserver` e2e 新增史诗 +0 分解拒绝用例，client UI 测试新增史诗件按钮隐藏用例。

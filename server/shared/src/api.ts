@@ -75,7 +75,7 @@ export const ErrorCode = {
   EQUIP_IN_USE: 'EQUIP_IN_USE',                     // equipment is equipped → may not be listed/salvaged
   // —— equipment E3 enhancement/salvage + E4 equip (EQUIPMENT_DESIGN §6/§18) ——
   ENHANCE_MAX_LEVEL: 'ENHANCE_MAX_LEVEL',           // already at +9 max level, cannot enhance further
-  NOT_SALVAGEABLE: 'NOT_SALVAGEABLE',               // not salvageable (+5 and above, §6.3)
+  NOT_SALVAGEABLE: 'NOT_SALVAGEABLE',               // not salvageable (+5 and above, or Epic rarity, §6.3/ADR-050)
   INVALID_SLOT: 'INVALID_SLOT',                     // equip slot does not match the equipment's defined slot
   // —— character card system (CC-5, CHARACTER_CARDS_DESIGN §11) ——
   CARD_NOT_FOUND: 'CARD_NOT_FOUND',                 // card instance not found in cardInv

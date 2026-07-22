@@ -575,7 +575,7 @@ export const de: Record<TranslationKey, string> = {
   'equip.err.coins': 'Nicht genug Münzen',
   'equip.err.full': 'Inventar voll (300)',
   'equip.err.maxLevel': 'Bereits Maximalstufe',
-  'equip.err.notSalvageable': '+5 und höher nicht zerlegbar',
+  'equip.err.notSalvageable': '+5 und höher oder epische Seltenheit nicht zerlegbar',
   'equip.err.invalidSlot': 'Falscher Slot',
   'equip.err.locked': 'Gegenstand gesperrt',
   'equip.err.inUse': 'Gegenstand ausgerüstet',

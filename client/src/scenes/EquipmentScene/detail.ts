@@ -10,7 +10,7 @@ import { withTimeout, TimeoutError } from '../../ui/busyTracker';
 import type { SaveData, EquipSlot, EquipmentInstance } from '../../game/meta/SaveData';
 import {
   getEquipDef, enhanceSuccessRate, enhanceCost, salvageRefund, affixKind,
-  EQUIP_MAX_LEVEL, SALVAGE_MAX_LEVEL, REFORGE_MATERIAL_RARITY, PROTECT_ENHANCE_ITEM_ID,
+  EQUIP_MAX_LEVEL, REFORGE_MATERIAL_RARITY, PROTECT_ENHANCE_ITEM_ID, isSalvageable,
 } from '../../game/meta/equipmentDefs';
 import { buildIcon, type IconKind } from '../../render/icons';
 import { type Constructor, type EquipmentSceneBaseCtor, type CellAction, RARITY_COLOR } from './base';
@@ -182,7 +182,7 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       const slot = getEquipDef(inst.defId)?.slot;
       const maxed = inst.level >= EQUIP_MAX_LEVEL;
       const busy = this.bt.busy;
-      const salvageable = inst.level <= SALVAGE_MAX_LEVEL && !equipped && !inst.locked;
+      const salvageable = isSalvageable(inst.rarity, inst.level) && !equipped && !inst.locked;
       const stackIds = salvageable ? this.stackSiblingIds(save, inst) : [inst.id];
       const actions: CellAction[] = [];
 
