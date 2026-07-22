@@ -237,7 +237,7 @@ POST /gw/social/invalidate { accountId }   → { ok }                  // 好友
   - 大厅「社交」入口扩为多 Tab：好友 / 聊天 / 邮件（现有社交格进 RoomScene 的房间功能保留或并入）。
   - 好友列表（在线态点 + 段位 + 复用 `ProfilePopup` 看资料）、申请红点；搜索框输 publicId 加好友。
   - 家族成员列表（FamilyScene）点击成员名同样弹出 `ProfilePopup`，非本人行带「加为好友」action（2026-07-19）；已是好友则不再显示该 action（先拉一次好友 publicId 集合缓存在场景内）。卡片放大一倍（420×360 → 840×720 上限），新增家族/帮会两行（家族场景固定为「我的家族/帮会」）与段位行（弹出即显示已知信息，段位异步补：新增 `GET /social/player/:accountId/rank` 转发 metaserver 既有 `/internal/player`）。世界频道点头像同理补上称号/家族/帮会（此前只传了昵称+ID）。另修复了 Close/加好友按钮点击无效——`ProfilePopup` 本身用真实 PIXI 事件响应点击，但宿主场景（Family/Friends/GameRenderer/Room）走自研 `InputManager` 手动命中测试并在弹层打开时整体吞掉输入，两者能否可靠共存未经验证；`ProfilePopup.handleTap(x,y)` 提供手动命中测试兜底，FamilyScene/FriendsScene 的 `handleUp` 在弹层打开时改为调用它（与原生事件谁先触发都安全——先动的一方把 `open`/`visible` 置为 false，另一方读到的已是新状态而变成空操作）（2026-07-20）。
-  - 会话列表 + 聊天窗（未读红点、历史上拉加载）。
+  - 会话列表 + 聊天窗（未读红点、历史上拉加载）。聊天窗（`ChatScene`）内所有内容须落在红色装订线右侧：对方气泡左对齐边缘、底部输入框左边缘都从 `marginLineX(w)+w*0.02` 起（此前用 `w*0.04`，压在装订线左侧页边距里），自己的气泡与 Send 按钮仍右对齐（2026-07-22）。
   - 邮件箱（未读/附件标记、一键领取、领取动画复用奖励揭示）。附件详情除名称文字列表外，另在下方横排一行图片（每件附件一张），复用 Equipment/Auction/Gacha 同一套图标解析（`buildEquipIcon`/卡图/`buildMaterialIcon`/`buildIcon`），未知种类落到通用图标兜底（2026-07-20）。
   - 顶部/底栏未读总红点：登录后拉一次 + push 增量更新。
 - **离线**：未登录/纯本地无社交（社交本质需账号 + 服务器）；入口置灰提示登录，同 economy 门控。

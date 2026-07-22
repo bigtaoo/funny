@@ -4,7 +4,7 @@ import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren, marginLineX } from '../render/sketchUi';
 import { showToastMessage } from '../net/log';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader, sceneHeaderHeight } from '../ui/widgets/SceneHeader';
@@ -341,7 +341,10 @@ export class ChatScene implements Scene {
     });
     const bw = Math.min(maxW, Math.ceil(body.width) + padX * 2);
     const bh = Math.ceil(body.height) + padY * 2;
-    const bx = mine ? w - Math.round(w * 0.04) - bw : Math.round(w * 0.04);
+    // Peer bubbles left-align just right of the red binding line so no content spills into the
+    // notebook margin; mine right-align near the right edge.
+    const leftEdge = marginLineX(w) + Math.round(w * 0.02);
+    const bx = mine ? w - Math.round(w * 0.04) - bw : leftEdge;
     const node = new PIXI.Container();
     node.x = bx;
     const bg = sketchPanel(bw, bh, {
@@ -364,8 +367,9 @@ export class ChatScene implements Scene {
 
     const sendW = Math.round(w * 0.2);
     const gap = Math.round(w * 0.03);
-    const fieldX = Math.round(w * 0.04);
-    const fieldW = w - fieldX * 2 - sendW - gap;
+    // Keep the compose field right of the red binding line (matches the message bubbles).
+    const fieldX = marginLineX(w) + Math.round(w * 0.02);
+    const fieldW = w - fieldX - Math.round(w * 0.04) - sendW - gap;
     const fieldH = Math.round(composeH * 0.66);
     const fieldY = cy + (composeH - fieldH) / 2;
     const field = sketchPanel(fieldW, fieldH, { fill: C.paper, border: (this.draft || this.composeFocused) ? C.accent : C.line, width: 2, seed: seedFor(fieldX, 0, fieldW) });
