@@ -1268,3 +1268,14 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 - `applySiegeResult` 增加 occupy 分支：命中 `myOccupyTiles` → 轻量 toast（打赢 `world.occupyWin`「占领得手，驻守中」/ 未赢 `world.occupyLoss`「占领失败」），收到即从集合移除；**不弹**围攻复盘弹窗（占领是高频扩张动作，不像 PvP 围攻值得每次弹窗+复盘）。三语文案齐备。
 
 **验证**：client `tsc --noEmit` 全绿；新增 `worldMapSiegeResultToast.ui.ts`（6 例：占领胜/败分类、消费后不复触发，及 attack/防守两条原路径回归），占领选队测试补 `myOccupyTiles` mock。preview 无法稳定复现（需完整 worldsvc + 连地相邻 + NPC 战斗），改动为纯分类/展示层，靠单测覆盖。
+
+## 35. 出征队伍编辑器：兵力读数 + Fill/Clear/Save 移入标题栏（2026-07-22，用户请求）
+
+**背景（用户请求）**：`DefenseEditorScene`（attack 模式，即出征队伍编辑器「Edit Team N」）此前把两组信息放在**底部页脚**——左下角兵力读数（`Garrison / Troops(committed) / Troop pool`）+ 右下角 `Fill troops / Clear / Save` 三键。用户在截图上画箭头，要求这两组"放到上面去"。
+
+**实现（仅改 attack 模式）**：
+- 页脚整条取消（`renderFooter` 收窄为 defense 专用：建筑/驻军计数 + 提示 + Clear/Save）。attack 模式改为把两组控件画进**标题栏空白区**（叠在已 bake 的 header chrome 上，与 defense 的 base-level stepper / 通用货币读数同一套路）：兵力读数居左（back pill 右侧，按需缩放避让居中标题）、`Fill/Clear/Save` 三键居右，均在 header 内垂直居中。
+- 抽出 `renderActionButtons(rightEdge, top, rowH)` 共享右对齐按钮簇（Fill 仅 attack；defense 页脚与 attack 标题栏共用），并抽 `titleText()` 供标题与读数避让测量复用。
+- 页脚消失后棋盘/名册 `gridBottom` 由 `h - FOOTER_H - 4` 放宽到 `h - 4`；按卡分兵 stepper（`renderAllocateStepper`）锚点由 `h - FOOTER_H` 改为 `h`（贴屏底）。defense 模式布局完全不变（其 header 右上角已被 base-level stepper 占用）。
+
+**验证**：client `tsc --noEmit` 全绿；`defenseEditorFillTroops`/`defenseEditorAttackCards` 共 17 例 UI 测试全绿（均直调方法/读私有几何，不依赖按钮坐标）。另用临时 headless 用例读回 `this.hits`：attack 三键落在 header 带内（headerH=230 下 y=100，左→右 Fill/Clear/Save），defense 两键仍贴底（y≈1876），验证后删除。真实入图需完整 worldsvc + 登录 + 进城，未起全栈截图。
