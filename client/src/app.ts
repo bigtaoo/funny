@@ -367,7 +367,16 @@ class PixiAppViews implements AppViews {
   }
 }
 
-export async function startApp(platform: IPlatform): Promise<void> {
+export async function startApp(
+  platform: IPlatform,
+  /**
+   * Test-only seam (client/src/entries/web-e2e.ts): lets a Playwright entry wrap the real
+   * PixiAppViews instance before createAppCore ever calls a show* method, so instrumentation
+   * (recording current screen / pushed state onto window.__nwE2E) sees every call from the very
+   * first one. Never passed by any production entry (web/wechat/mobile/crazygames).
+   */
+  wrapViews?: (views: AppViews) => AppViews,
+): Promise<void> {
   // Surface every uncaught error / rejection to the console (web-platform concern).
   installGlobalErrorHandlers();
 
@@ -454,8 +463,12 @@ export async function startApp(platform: IPlatform): Promise<void> {
   platform.onAppReady();
   await platform.onLoadingComplete();
 
-  const views = new PixiAppViews(platform, app, scaling, manager, input, layout);
+  // wrapViews (test-only) mutates methods on this same instance in place — pixiViews stays a
+  // valid handle for onResized below regardless of whether it ran.
+  const pixiViews = new PixiAppViews(platform, app, scaling, manager, input, layout);
+  let views: AppViews = pixiViews;
+  if (wrapViews) views = wrapViews(views);
   const core = createAppCore(platform, views);
-  views.onResized = () => core.onResized();
+  pixiViews.onResized = () => core.onResized();
   core.start();
 }
