@@ -924,6 +924,8 @@ export const de: Record<TranslationKey, string> = {
   'world.team.fill': 'Truppen auffüllen',
   'world.team.fillNone': 'Truppenpool ist leer, oder das Team ist bereits voll',
   'world.team.fillDone': '{n} Truppen zugewiesen',
+  'world.team.cardFill': 'Karte füllen',
+  'world.team.cardFull': 'Diese Karte hat ihr Truppenlimit erreicht',
   'world.team.full': 'Aufstellung ist voll',
   // ── SLG battle replay browser (last-100) ─────────────────────────────────
   'world.replays': 'Kampf-Wiederholungen',
@@ -1529,6 +1531,7 @@ export const de: Record<TranslationKey, string> = {
   'city.bld.stickerShop': 'Aufkleberladen',
   'city.bld.cabinet': 'Aktenschrank',
   'city.bld.drillYard': 'Exerzierplatz',
+  'city.bld.trainTroops': 'Truppen ausbilden',
   'city.bld.wall': 'Stadtmauer',
   'city.bld.academy': 'Akademie',
   'city.bld.satchel': 'Beutel',

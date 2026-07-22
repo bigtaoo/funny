@@ -308,7 +308,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** CC-3 — distribute troops from baseTroopStock to card slots */
+        /** CC-3 — distribute troops from the base troop pool (playerWorld.troops) to card slots */
         post: operations["distributeTroops"];
         delete?: never;
         options?: never;
@@ -937,8 +937,6 @@ export interface components {
             cardState?: {
                 [key: string]: components["schemas"]["CardSLGState"];
             };
-            /** @description Troops in the base pool available to distribute to card slots */
-            baseTroopStock?: number;
             /** @description Map of teamId (t1..t5) → TeamSLGState. Present only for teams with active state. */
             teamState?: {
                 [key: string]: components["schemas"]["TeamSLGState"];

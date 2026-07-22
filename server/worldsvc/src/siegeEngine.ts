@@ -89,7 +89,7 @@ export function synthesizeArmy(troops: number, role: 'attacker' | 'defender'): G
  * distinct columns × the number of depths before `row` clamps to the opposing spawn row × HP_PER_UNIT). Beyond this,
  * round-robin placement runs out of board depth and units clog lanes, so the auto-battle can hit its hard time limit
  * (defender advantage) regardless of true combat strength — discovered while calibrating stronghold/crossing garrison
- * constants (a maxed drillYard+satchel raises both troopCap and per-march carry cap to 12,000, comfortably over this
+ * constants (a maxed drillYard+satchel raises both troopCap and per-march carry cap to 20,000, comfortably over this
  * cap). Only meaningful for synthesized (flat-troop, no real per-unit layout) armies — a real card/team army places
  * each unit at an explicit, level-schema-validated col/row and never collides regardless of total troops.
  */

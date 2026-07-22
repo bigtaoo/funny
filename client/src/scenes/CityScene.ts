@@ -161,6 +161,9 @@ export class CityScene implements Scene {
    *  card-scene sidebar-nav convention (HubTabs.ts drawSidebarTabs). */
   private contentX = 0;
   private selectedBuilding: BuildingKey | null = null;
+  /** Train-troops modal open flag. Training is its own home-desk tile (sibling to drillYard), not
+   *  a drillYard sub-panel — drillYard the building only grants troopCap / train-speed / queue slots. */
+  private selectedTrain = false;
 
   // Building-grid scroll state (drag-to-scroll, matches the CardScene/TeamsScene pattern).
   private scrollY = 0;
@@ -402,6 +405,9 @@ export class CityScene implements Scene {
     if (this.selectedBuilding) {
       this.hits = [backHit];
       this.renderDetailModal(this.selectedBuilding);
+    } else if (this.selectedTrain) {
+      this.hits = [backHit];
+      this.renderTrainModal();
     }
 
     // Busy overlay
@@ -807,12 +813,18 @@ export class CityScene implements Scene {
     const cx0 = this.contentX;
     const w = this.w - cx0;
     const bld = this.me?.buildings;
-    const keys = DOMESTIC_BUILDING_KEYS;
+    // Grid tiles = the Domestic buildings plus a synthetic "Train Troops" action tile spliced in right
+    // after drillYard (sibling to it, not nested in its modal). Training feeds the unified troop pool.
+    const tiles: Array<{ kind: 'bld'; key: BuildingKey } | { kind: 'train' }> = [];
+    for (const key of DOMESTIC_BUILDING_KEYS) {
+      tiles.push({ kind: 'bld', key });
+      if (key === 'drillYard') tiles.push({ kind: 'train' });
+    }
 
     const availW = w - GRID_PAD * 2;
     const cols = Math.max(1, Math.floor((availW + CARD_GAP) / (CARD_W_TARGET + CARD_GAP)));
     const cellW = Math.floor((availW - (cols - 1) * CARD_GAP) / cols);
-    const rows = Math.ceil(keys.length / cols);
+    const rows = Math.ceil(tiles.length / cols);
     const contentH = rows * CARD_H + (rows - 1) * CARD_GAP;
 
     const viewY = startY;
@@ -831,42 +843,49 @@ export class CityScene implements Scene {
     gridLayer.mask = maskG;
     this.container.addChild(gridLayer);
 
-    keys.forEach((key, i) => {
+    tiles.forEach((tile, i) => {
       const col = i % cols;
       const row = Math.floor(i / cols);
       const cx = GRID_PAD + col * (cellW + CARD_GAP);
       // Local to gridLayer (which is itself offset by viewY - scrollY), so this is NOT absolute screen space.
       const cy = row * (CARD_H + CARD_GAP);
 
-      const lvl = buildingLevel(bld, key);
-      const inQueue = (this.me?.buildQueue ?? []).some(q => q.key === key);
+      // "Active" ring: a queued build for buildings, or an in-progress training batch for the train tile.
+      const active = tile.kind === 'bld'
+        ? (this.me?.buildQueue ?? []).some(q => q.key === tile.key)
+        : (this.me?.trainingQueue?.length ?? 0) > 0;
 
       const bg = sketchPanel(cellW, CARD_H, {
         fill: C.paper,
-        border: inQueue ? C.gold : C.line,
-        width: inQueue ? 2 : 1,
+        border: active ? C.gold : C.line,
+        width: active ? 2 : 1,
         seed: seedFor(cx, cy, i),
       });
       bg.x = cx;
       bg.y = cy;
       gridLayer.addChild(bg);
 
-      const icon = this.bldIcon(key, 60, C.dark);
+      const icon = tile.kind === 'bld' ? this.bldIcon(tile.key, 60, C.dark) : buildIcon('armor', 60, C.dark);
       icon.x = cx + (cellW - 60) / 2;
       icon.y = cy + 18;
       gridLayer.addChild(icon);
 
-      const nameLbl = txt(t(`city.bld.${key}` as 'city.bld.desk'), FS.body, C.dark, true, cellW - 18);
+      const name = tile.kind === 'bld' ? t(`city.bld.${tile.key}` as 'city.bld.desk') : t('city.bld.trainTroops');
+      const nameLbl = txt(name, FS.body, C.dark, true, cellW - 18);
       nameLbl.x = cx + 9;
       nameLbl.y = cy + 90;
       gridLayer.addChild(nameLbl);
 
-      const lvlLbl = txt(t('city.lvlLabel').replace('{lvl}', String(lvl)), FS.body, C.mid);
-      lvlLbl.x = cx + 9;
-      lvlLbl.y = cy + CARD_H - 33;
-      gridLayer.addChild(lvlLbl);
+      // Buildings show a level; the train tile shows the current troop pool / cap instead.
+      const subtitle = tile.kind === 'bld'
+        ? t('city.lvlLabel').replace('{lvl}', String(buildingLevel(bld, tile.key)))
+        : t('city.troopCap').replace('{cur}', String(this.me?.troops ?? 0)).replace('{cap}', String(troopCapFor(bld)));
+      const subLbl = txt(subtitle, FS.body, C.mid, false, cellW - 18);
+      subLbl.x = cx + 9;
+      subLbl.y = cy + CARD_H - 33;
+      gridLayer.addChild(subLbl);
 
-      if (inQueue) {
+      if (active) {
         const qDot = buildIcon('hammer', 24, C.gold);
         qDot.x = cx + cellW - 36;
         qDot.y = cy + 12;
@@ -879,7 +898,9 @@ export class CityScene implements Scene {
       if (screenY + CARD_H > viewY && screenY < viewY + viewH) {
         this.hits.push({
           x: cx0 + cx, y: screenY, w: cellW, h: CARD_H,
-          fn: () => { this.selectedBuilding = key; this.render(); },
+          fn: tile.kind === 'bld'
+            ? () => { this.selectedBuilding = tile.key; this.render(); }
+            : () => { this.selectedTrain = true; this.render(); },
         });
       }
     });
@@ -910,10 +931,8 @@ export class CityScene implements Scene {
     const bonusLines = this.buildingBonusLines(key, bld);
     const mw = Math.min(340, w - 24);
     const costEntries = RESOURCE_TYPES.map((rt) => ({ rt, need: cost[rt] ?? 0 })).filter((e) => e.need > 0);
-    const trainQueue = key === 'drillYard' ? (this.me?.trainingQueue ?? []) : [];
     const contentH = 12 + 28 + bonusLines.length * 16 + 4
       + (atMax ? 20 : (16 + (costEntries.length > 0 ? 16 : 0) + 24 + 36))
-      + (key === 'drillYard' ? (20 + trainQueue.length * 16 + 4 + 36 + (trainQueue.length > 0 ? 34 : 0)) : 0)
       + 12;
     const mh = Math.min(contentH, h - 16);
 
@@ -1032,92 +1051,140 @@ export class CityScene implements Scene {
       }
     }
 
-    // DrillYard special: troop cap + training queue + train/speedup controls — the only
-    // reachable entry point for trainTroops()/speedupTraining() since the 2026-07-18 removal
-    // of the old world-map train panel (which assumed this modal already covered it).
-    if (key === 'drillYard') {
-      const tc = troopCapFor(bld);
-      const ts = this.me?.troops ?? 0;
-      const troopLbl = st(t('city.troopCap').replace('{cur}', String(ts)).replace('{cap}', String(tc)), FS.tiny, C.mid);
-      troopLbl.x = 10;
-      troopLbl.y = iy;
-      panelRoot.addChild(troopLbl);
-      iy += 20;
+    // Close on tap-outside — pushed LAST so panel buttons above take priority.
+    this.hits.push({ x: 0, y: 0, w, h, fn: () => { this.selectedBuilding = null; this.render(); } });
+  }
 
-      const queuedQty = trainQueue.reduce((s, e) => s + e.qty, 0);
-      const queueMax = trainQueueMaxFor(bld);
-      const queueFull = trainQueue.length >= queueMax;
-      const capLeft = Math.max(0, tc - ts - queuedQty);
-      const ink = Math.floor(resources?.ink ?? 0);
-      const now = Date.now();
-      for (const e of trainQueue) {
-        const sec = Math.max(0, Math.ceil((e.completeAt - now) / 1000));
-        const ql = st(t('city.trainEntry').replace('{n}', String(e.qty)).replace('{time}', formatDuration(sec)), FS.tiny, C.dark);
-        ql.x = 10;
-        ql.y = iy;
-        panelRoot.addChild(ql);
-        iy += 16;
-      }
+  // ── Train-troops modal (its own home-desk tile, sibling to drillYard) ────────
 
-      const maxQty = Math.max(0, Math.min(TROOP_TRAIN_BATCH_MAX, capLeft, Math.floor(ink / TROOP_TRAIN_INK_COST)));
-      const presets: Array<{ label: string; qty: number }> = [
-        { label: '+10', qty: 10 },
-        { label: '+50', qty: 50 },
-        { label: t('city.trainMax').replace('{n}', String(maxQty)), qty: maxQty },
-      ];
-      const btnGap = 6;
-      const btnW = (mw - 20 - btnGap * 2) / 3;
-      let bx = 10;
-      for (const p of presets) {
-        const ok = !queueFull && p.qty > 0 && p.qty <= capLeft && p.qty * TROOP_TRAIN_INK_COST <= ink;
-        const rectLocal = { x: bx, y: iy, w: btnW, h: 30 };
-        const g = sketchPanel(rectLocal.w, rectLocal.h, {
-          fill: ok ? C.paper : C.btnDis, border: C.line, width: 1, seed: seedFor(rectLocal.x, rectLocal.y, rectLocal.w),
-        });
-        g.x = rectLocal.x;
-        g.y = rectLocal.y;
-        panelRoot.addChild(g);
-        const lbl = st(p.label, FS.tiny, ok ? C.dark : C.mid, true);
-        lbl.x = rectLocal.x + 6;
-        lbl.y = rectLocal.y + (rectLocal.h - 16) / 2;
-        panelRoot.addChild(lbl);
-        const screenRect = this.toScreen(rectLocal, screenX, screenY, scale);
-        this.hits.push({
-          x: screenRect.x, y: screenRect.y, w: screenRect.w, h: screenRect.h,
-          fn: () => {
-            if (ok) { void this.doTrain(p.qty); return; }
-            this.showToast(queueFull ? t('city.err.trainQueueFull') : (p.qty <= 0 || p.qty > capLeft ? t('city.err.troopCap') : t('city.err.noInk')), C.red);
-          },
-        });
-        bx += btnW + btnGap;
-      }
-      iy += 36;
+  /**
+   * Standalone training modal: troop-pool cap line + training-queue countdown + +10/+50/Max presets
+   * + speedup. Feeds the unified base troop pool (`me.troops`, capped at troopCapFor(buildings)); the
+   * trained troops are then distributed to team cards in the DefenseEditor. drillYard the building only
+   * raises troopCap / training speed / queue slots — it no longer hosts these controls.
+   */
+  private renderTrainModal(): void {
+    const { w, h } = this;
+    const bld = this.me?.buildings;
+    const resources = this.me?.resources as Partial<Record<ResourceType, number>> | undefined;
+    const trainQueue = this.me?.trainingQueue ?? [];
 
-      if (trainQueue.length > 0) {
-        const lastDone = trainQueue[trainQueue.length - 1]!.completeAt;
-        const remainSec = Math.max(0, Math.ceil((lastDone - now) / 1000));
-        const coins = Math.max(1, Math.ceil(remainSec / TROOP_SPEEDUP_SECS_PER_COIN));
-        const rectLocal = { x: 10, y: iy, w: mw - 20, h: 30 };
-        const g = sketchPanel(rectLocal.w, rectLocal.h, {
-          fill: C.paper, border: C.accent, width: 1, seed: seedFor(rectLocal.x, rectLocal.y, rectLocal.w),
-        });
-        g.x = rectLocal.x;
-        g.y = rectLocal.y;
-        panelRoot.addChild(g);
-        const lbl = st(t('city.speedup').replace('{coins}', String(coins)), FS.tiny, C.dark, true);
-        lbl.x = rectLocal.x + 8;
-        lbl.y = rectLocal.y + (rectLocal.h - 16) / 2;
-        panelRoot.addChild(lbl);
-        const screenRect = this.toScreen(rectLocal, screenX, screenY, scale);
-        this.hits.push({
-          x: screenRect.x, y: screenRect.y, w: screenRect.w, h: screenRect.h,
-          fn: () => void this.doSpeedupTraining(coins),
-        });
-      }
+    const mw = Math.min(340, w - 24);
+    const contentH = 12 + 28 + 20 + trainQueue.length * 16 + 4 + 36 + (trainQueue.length > 0 ? 34 : 0) + 12;
+    const mh = Math.min(contentH, h - 16);
+    const scale = this.landscape ? (h * 0.8) / mh : (w * 0.8) / mw;
+    const screenW = mw * scale;
+    const screenH = mh * scale;
+    const screenX = (w - screenW) / 2;
+    const screenY = Math.max(8, (h - screenH) / 2);
+
+    const dim = new PIXI.Graphics();
+    dim.beginFill(0x000000, 0.45).drawRect(0, 0, w, h).endFill();
+    this.container.addChild(dim);
+
+    const panelRoot = new PIXI.Container();
+    panelRoot.position.set(screenX, screenY);
+    panelRoot.scale.set(scale);
+    this.container.addChild(panelRoot);
+    const st = scaledTxt(scale);
+
+    const panel = sketchPanel(mw, mh, { fill: C.paper, border: C.accent, width: 2, seed: seedFor(0, 5, mw) });
+    panelRoot.addChild(panel);
+
+    let iy = 12;
+
+    // Header — troops glyph + "Train Troops".
+    const hIcon = buildIcon('armor', 22, C.dark);
+    hIcon.x = 10;
+    hIcon.y = iy - 2;
+    panelRoot.addChild(hIcon);
+    const hdrTxt = st(t('city.bld.trainTroops'), FS.small, C.dark, true);
+    hdrTxt.x = 38;
+    hdrTxt.y = iy;
+    panelRoot.addChild(hdrTxt);
+    iy += 28;
+
+    const tc = troopCapFor(bld);
+    const ts = this.me?.troops ?? 0;
+    const troopLbl = st(t('city.troopCap').replace('{cur}', String(ts)).replace('{cap}', String(tc)), FS.tiny, C.mid);
+    troopLbl.x = 10;
+    troopLbl.y = iy;
+    panelRoot.addChild(troopLbl);
+    iy += 20;
+
+    const queuedQty = trainQueue.reduce((s, e) => s + e.qty, 0);
+    const queueMax = trainQueueMaxFor(bld);
+    const queueFull = trainQueue.length >= queueMax;
+    const capLeft = Math.max(0, tc - ts - queuedQty);
+    const ink = Math.floor(resources?.ink ?? 0);
+    const now = Date.now();
+    for (const e of trainQueue) {
+      const sec = Math.max(0, Math.ceil((e.completeAt - now) / 1000));
+      const ql = st(t('city.trainEntry').replace('{n}', String(e.qty)).replace('{time}', formatDuration(sec)), FS.tiny, C.dark);
+      ql.x = 10;
+      ql.y = iy;
+      panelRoot.addChild(ql);
+      iy += 16;
+    }
+
+    const maxQty = Math.max(0, Math.min(TROOP_TRAIN_BATCH_MAX, capLeft, Math.floor(ink / TROOP_TRAIN_INK_COST)));
+    const presets: Array<{ label: string; qty: number }> = [
+      { label: '+10', qty: 10 },
+      { label: '+50', qty: 50 },
+      { label: t('city.trainMax').replace('{n}', String(maxQty)), qty: maxQty },
+    ];
+    const btnGap = 6;
+    const btnW = (mw - 20 - btnGap * 2) / 3;
+    let bx = 10;
+    for (const p of presets) {
+      const ok = !queueFull && p.qty > 0 && p.qty <= capLeft && p.qty * TROOP_TRAIN_INK_COST <= ink;
+      const rectLocal = { x: bx, y: iy, w: btnW, h: 30 };
+      const g = sketchPanel(rectLocal.w, rectLocal.h, {
+        fill: ok ? C.paper : C.btnDis, border: C.line, width: 1, seed: seedFor(rectLocal.x, rectLocal.y, rectLocal.w),
+      });
+      g.x = rectLocal.x;
+      g.y = rectLocal.y;
+      panelRoot.addChild(g);
+      const lbl = st(p.label, FS.tiny, ok ? C.dark : C.mid, true);
+      lbl.x = rectLocal.x + 6;
+      lbl.y = rectLocal.y + (rectLocal.h - 16) / 2;
+      panelRoot.addChild(lbl);
+      const screenRect = this.toScreen(rectLocal, screenX, screenY, scale);
+      this.hits.push({
+        x: screenRect.x, y: screenRect.y, w: screenRect.w, h: screenRect.h,
+        fn: () => {
+          if (ok) { void this.doTrain(p.qty); return; }
+          this.showToast(queueFull ? t('city.err.trainQueueFull') : (p.qty <= 0 || p.qty > capLeft ? t('city.err.troopCap') : t('city.err.noInk')), C.red);
+        },
+      });
+      bx += btnW + btnGap;
+    }
+    iy += 36;
+
+    if (trainQueue.length > 0) {
+      const lastDone = trainQueue[trainQueue.length - 1]!.completeAt;
+      const remainSec = Math.max(0, Math.ceil((lastDone - now) / 1000));
+      const coins = Math.max(1, Math.ceil(remainSec / TROOP_SPEEDUP_SECS_PER_COIN));
+      const rectLocal = { x: 10, y: iy, w: mw - 20, h: 30 };
+      const g = sketchPanel(rectLocal.w, rectLocal.h, {
+        fill: C.paper, border: C.accent, width: 1, seed: seedFor(rectLocal.x, rectLocal.y, rectLocal.w),
+      });
+      g.x = rectLocal.x;
+      g.y = rectLocal.y;
+      panelRoot.addChild(g);
+      const lbl = st(t('city.speedup').replace('{coins}', String(coins)), FS.tiny, C.dark, true);
+      lbl.x = rectLocal.x + 8;
+      lbl.y = rectLocal.y + (rectLocal.h - 16) / 2;
+      panelRoot.addChild(lbl);
+      const screenRect = this.toScreen(rectLocal, screenX, screenY, scale);
+      this.hits.push({
+        x: screenRect.x, y: screenRect.y, w: screenRect.w, h: screenRect.h,
+        fn: () => void this.doSpeedupTraining(coins),
+      });
     }
 
     // Close on tap-outside — pushed LAST so panel buttons above take priority.
-    this.hits.push({ x: 0, y: 0, w, h, fn: () => { this.selectedBuilding = null; this.render(); } });
+    this.hits.push({ x: 0, y: 0, w, h, fn: () => { this.selectedTrain = false; this.render(); } });
   }
 
   /** Convert a rect drawn in the modal's local (unscaled) frame into real screen space. */

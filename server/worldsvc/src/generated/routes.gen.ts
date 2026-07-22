@@ -1711,10 +1711,6 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   },
                   "description": "Map of cardInstanceId → CardSLGState (troops, injury, teamId)"
                 },
-                "baseTroopStock": {
-                  "type": "integer",
-                  "description": "Troops in the base pool available to distribute to card slots"
-                },
                 "teamState": {
                   "type": "object",
                   "additionalProperties": {
@@ -1957,10 +1953,6 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   },
                   "description": "Map of cardInstanceId → CardSLGState (troops, injury, teamId)"
                 },
-                "baseTroopStock": {
-                  "type": "integer",
-                  "description": "Troops in the base pool available to distribute to card slots"
-                },
                 "teamState": {
                   "type": "object",
                   "additionalProperties": {
@@ -2150,10 +2142,6 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     }
                   },
                   "description": "Map of cardInstanceId → CardSLGState (troops, injury, teamId)"
-                },
-                "baseTroopStock": {
-                  "type": "integer",
-                  "description": "Troops in the base pool available to distribute to card slots"
                 },
                 "teamState": {
                   "type": "object",
@@ -2376,10 +2364,6 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     }
                   },
                   "description": "Map of cardInstanceId → CardSLGState (troops, injury, teamId)"
-                },
-                "baseTroopStock": {
-                  "type": "integer",
-                  "description": "Troops in the base pool available to distribute to card slots"
                 },
                 "teamState": {
                   "type": "object",
@@ -3233,10 +3217,6 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   },
                   "description": "Map of cardInstanceId → CardSLGState (troops, injury, teamId)"
                 },
-                "baseTroopStock": {
-                  "type": "integer",
-                  "description": "Troops in the base pool available to distribute to card slots"
-                },
                 "teamState": {
                   "type": "object",
                   "additionalProperties": {
@@ -3426,10 +3406,6 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     }
                   },
                   "description": "Map of cardInstanceId → CardSLGState (troops, injury, teamId)"
-                },
-                "baseTroopStock": {
-                  "type": "integer",
-                  "description": "Troops in the base pool available to distribute to card slots"
                 },
                 "teamState": {
                   "type": "object",
@@ -3621,10 +3597,6 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   },
                   "description": "Map of cardInstanceId → CardSLGState (troops, injury, teamId)"
                 },
-                "baseTroopStock": {
-                  "type": "integer",
-                  "description": "Troops in the base pool available to distribute to card slots"
-                },
                 "teamState": {
                   "type": "object",
                   "additionalProperties": {
@@ -3814,10 +3786,6 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     }
                   },
                   "description": "Map of cardInstanceId → CardSLGState (troops, injury, teamId)"
-                },
-                "baseTroopStock": {
-                  "type": "integer",
-                  "description": "Troops in the base pool available to distribute to card slots"
                 },
                 "teamState": {
                   "type": "object",

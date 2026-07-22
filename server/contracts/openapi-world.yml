@@ -247,10 +247,6 @@ components:
           additionalProperties:
             $ref: '#/components/schemas/CardSLGState'
           description: Map of cardInstanceId → CardSLGState (troops, injury, teamId)
-        # CC-4: troop pool available for distribution. Absent defaults to 0.
-        baseTroopStock:
-          type: integer
-          description: Troops in the base pool available to distribute to card slots
         # ADR-026 §5: per-team injury state (team granularity, distinct from CC-3 card-level cardState[].injuredUntil).
         # Absent when no team is injured. Client renders an injury countdown in the team menu; injured teams never defend.
         teamState:
@@ -1111,7 +1107,7 @@ paths:
   /world/troops/distribute:
     post:
       operationId: distributeTroops
-      summary: CC-3 — distribute troops from baseTroopStock to card slots
+      summary: CC-3 — distribute troops from the base troop pool (playerWorld.troops) to card slots
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
