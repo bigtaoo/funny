@@ -45,7 +45,13 @@ function buildHarness(opts: {
   const getTeams = vi.fn().mockResolvedValue(opts.teams ?? [{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }, { cardInstanceId: 'c2' }] }]);
   const startMarch = vi.fn().mockResolvedValue({ toTile: `${WORLD_ID}:${ANCHOR.x}:${ANCHOR.y}` });
   const getMarches = vi.fn().mockResolvedValue([]);
-  const getMe = vi.fn().mockResolvedValue({ joined: true } as PlayerWorldView);
+  // Mirror the real getMe: it returns the FULL player view (with mainBaseTile + cardState), not a bare stub —
+  // doMarchTeam reassigns ctx.me from it, and a later showTeamPicker needs mainBaseTile to not early-return.
+  const getMe = vi.fn().mockResolvedValue({
+    joined: true,
+    mainBaseTile: `${WORLD_ID}:${ANCHOR.x}:${ANCHOR.y}`,
+    cardState: opts.cardState ?? { c1: { currentTroops: 60 }, c2: { currentTroops: 60 } },
+  } as PlayerWorldView);
 
   const ctx = {
     destroyed: false,
@@ -67,7 +73,14 @@ function buildHarness(opts: {
   } as unknown as WorldMapContext;
 
   const net = new WorldMapNet(ctx);
-  return { ctx, net, showModal, showDeployDialog, startMarch };
+  return { ctx, net, showModal, showToast, showDeployDialog, startMarch, getMarches };
+}
+
+/** A promise whose resolution is controlled from the test — lets us freeze startMarch mid-flight. */
+function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((r) => { resolve = r; });
+  return { promise, resolve };
 }
 
 describe('WorldMapNet.showTeamPicker — occupy uses the team picker (§4.2)', () => {
@@ -135,5 +148,65 @@ describe('WorldMapNet.showTeamPicker — occupy uses the team picker (§4.2)', (
     expect(buttons.some((b) => b.label.startsWith('Wiped'))).toBe(false);
     const head = showModal.mock.calls[0][0] as string[];
     expect(head).toContain(t('world.team.noTeamsOccupy'));
+  });
+});
+
+// In-flight dispatch gate (2026-07-22 §32): the reported bug had a team marched twice. The realistic client
+// trigger is a double-dispatch WINDOW: after picking a team, startMarch is in flight and ctx.marches has not
+// refreshed yet, so a second picker (on another tile) still saw the team as idle and sent it again. pendingTeamIds
+// marks a team busy from the tap until the response lands, so both the picker gate and doMarchTeam's own guard
+// treat it as busy meanwhile. (The server's partial-unique index is the authoritative backstop; tested there.)
+describe('WorldMapNet — in-flight dispatch gate (no double-send before ctx.marches refreshes)', () => {
+  it('a team with a dispatch still in flight is omitted from a second picker', async () => {
+    const { net, showModal, startMarch } = buildHarness();
+    const d = deferred<{ toTile: string }>();
+    startMarch.mockReturnValueOnce(d.promise); // freeze the first dispatch mid-flight
+
+    // First dispatch: pick the team; startMarch fires but never resolves yet.
+    await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'attack');
+    const buttons1 = showModal.mock.calls[0][1] as { label: string; action: () => void }[];
+    buttons1.find((b) => b.label.startsWith('Alpha'))!.action();
+    await Promise.resolve(); await Promise.resolve();
+    expect(startMarch).toHaveBeenCalledTimes(1);
+
+    // Second picker while the first is still in flight → team is gone (ctx.marches has not refreshed).
+    showModal.mockClear();
+    await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'attack');
+    const buttons2 = showModal.mock.calls[0][1] as { label: string }[];
+    expect(buttons2.some((b) => b.label.startsWith('Alpha'))).toBe(false);
+
+    // Once the first dispatch resolves, the team frees up and reappears.
+    d.resolve({ toTile: `${WORLD_ID}:${ANCHOR.x}:${ANCHOR.y}` });
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    showModal.mockClear();
+    await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'attack');
+    const buttons3 = showModal.mock.calls[0][1] as { label: string }[];
+    expect(buttons3.some((b) => b.label.startsWith('Alpha'))).toBe(true);
+  });
+
+  it('doMarchTeam refuses a second order for the same in-flight team (busy toast, startMarch fired only once)', async () => {
+    const { net, showToast, startMarch } = buildHarness();
+    const d = deferred<{ toTile: string }>();
+    startMarch.mockReturnValueOnce(d.promise);
+
+    // Two direct dispatches of t1 back-to-back, second before the first resolves.
+    void net.doMarchTeam(ANCHOR.x, ANCHOR.y, 't1', 'attack');
+    await Promise.resolve();
+    await net.doMarchTeam(5, 10, 't1', 'attack'); // different tile, same team, still in flight
+
+    expect(startMarch).toHaveBeenCalledTimes(1);
+    expect(showToast).toHaveBeenCalledWith(t('world.team.busy'), expect.anything());
+
+    d.resolve({ toTile: `${WORLD_ID}:${ANCHOR.x}:${ANCHOR.y}` });
+  });
+
+  it('a failed dispatch releases the pending hold (finally), so the team can be retried', async () => {
+    const { net, startMarch } = buildHarness();
+    startMarch.mockRejectedValueOnce(new Error('offline')); // first attempt fails; default resolve for the retry
+
+    await net.doMarchTeam(ANCHOR.x, ANCHOR.y, 't1', 'attack'); // errors, but finally clears pending
+    // Team is no longer pending → a retry actually reaches startMarch again.
+    await net.doMarchTeam(ANCHOR.x, ANCHOR.y, 't1', 'attack');
+    expect(startMarch).toHaveBeenCalledTimes(2);
   });
 });

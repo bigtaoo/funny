@@ -26,6 +26,15 @@ import type { WorldMapContext, WorldMapCallbacks, DeployKind } from './WorldMapC
 export class WorldMapNet {
   constructor(private readonly ctx: WorldMapContext) {}
 
+  /**
+   * Teams with a dispatch in flight (startMarch sent, response not yet applied to ctx.marches).
+   * Closes the double-dispatch window: a player could pick a team for tile A, then — before the
+   * server response refreshes ctx.marches — open the picker on tile B and pick the same team again,
+   * sending it out twice. Held here from the tap until the response lands (or errors) so the picker's
+   * idle-team gate treats it as busy in the meantime. Server enforces the same rule authoritatively.
+   */
+  private pendingTeamIds = new Set<string>();
+
   async loadData(): Promise<void> {
     if (this.ctx.destroyed) return;
     // Map bounds + nations are world-static; fetch once up front (best-effort).
@@ -149,6 +158,7 @@ export class WorldMapNet {
     const busyTeamIds = new Set([
       ...this.ctx.marches.filter((m) => m.mine && m.teamId).map((m) => m.teamId),
       ...this.ctx.occupations.filter((o) => o.teamId).map((o) => o.teamId),
+      ...this.pendingTeamIds, // in-flight dispatch not yet reflected in ctx.marches
     ]);
     // Committed troops = the strength the team actually CARRIES, from each card's cardState.currentTroops
     // ledger (§6.1). Legacy pre-migration teams (unit entries, no cardInstanceId) carry 0 — they can't be
@@ -178,6 +188,9 @@ export class WorldMapNet {
     this.ctx.panels.closeModal();
     const me = this.ctx.me;
     if (!me?.mainBaseTile) { this.ctx.panels.showToast(t('world.needBase'), C.red); return; }
+    // Guard against a second dispatch of the same team while the first is still in flight (see pendingTeamIds).
+    if (this.pendingTeamIds.has(teamId)) { this.ctx.panels.showToast(t('world.team.busy'), C.red); return; }
+    this.pendingTeamIds.add(teamId);
     const [fx, fy] = this.ctx.parseTileId(me.mainBaseTile);
     try {
       // troops=1 is a placeholder; the server overwrites it with the team's committed troop count (§16.2).
@@ -190,6 +203,8 @@ export class WorldMapNet {
       this.ctx.view.renderMap(); this.ctx.panels.renderHud();
     } catch (e) {
       this.ctx.panels.showToast(this.errorMsg(e), C.red);
+    } finally {
+      this.pendingTeamIds.delete(teamId);
     }
   }
 
