@@ -110,11 +110,17 @@ export const SLG_WORLD_CAPACITY_TARGET = 400;
 export const SLG_WORLD_CAPACITY_MAX = 500;
 
 /**
- * Map dimensions (ADR-032, 2026-07-04 finalized): 500×500 (250k tiles), targeting ~500 players × 200 level-5+ tiles each.
- * Sparse storage: dimensions only affect the pace of expansion and the feel of march distances; they do not affect storage (only occupied tiles are persisted).
+ * Map dimensions (ADR-032; enlarged 500→1500 on 2026-07-22): 1500×1500 (2.25M tiles), matching the scale
+ * common to mainstream SLG titles so the 10-province ring layout + PvE stronghold/capital content has room to
+ * breathe (the old 500×500 read as only ~3 screens at the coarsest zoom and left no headroom for the province spread).
+ * Everything downstream is ratio-based off these dims (province rings, capital positions, resource/stronghold
+ * density via per-tile Bernoulli), so all content scales proportionally — density is preserved, only the canvas grows.
+ * Sparse storage: dimensions only affect the pace of expansion and the feel of march distances; they do not affect
+ * storage (only occupied tiles are persisted) and there is no full-map iteration hotspot (vision/render are viewport-
+ * bounded Mongo queries + on-demand proceduralTile).
  */
-export const SLG_MAP_W = 500;
-export const SLG_MAP_H = 500;
+export const SLG_MAP_W = 1500;
+export const SLG_MAP_H = 1500;
 /** Tile level cap (ADR-032): aligned with Three Kingdoms Strategy Edition's real land-level cap (see SGZ_LAND_REFERENCE.md). */
 export const SLG_MAP_MAX_LEVEL = 10;
 

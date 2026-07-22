@@ -968,7 +968,7 @@ if (path.startsWith('/admin/world/')) {
 - 模板做成**按格子可寻址的集合**（类似 TileDoc 但用于模板而非运行时）。
 - **首包生成走服务器端**：admin 加一个「生成模板」endpoint，内部按 size 跑 `proceduralTile()` 批量写入模板集合种子数据；`proceduralTile()` 之后只用于这个一次性种子生成，不再作为运行时合并路径。
 - **编辑器工作流**：每次打开从数据库取最新地形（不是每次重新生成，也不是本地文件）；保存时**只上发本次改动的格子（diff）**，做 upsert，不整图重传。
-- **多尺寸模板并存**（现 500×500，半年后可能 1000×1000/1500×1500）：模板集合按 `templateId`（含 size/版本）区分；一个 world 实例创建时引用某个 `templateId` 作为地图基线。
+- **多尺寸模板并存**（现 1500×1500，ADR-049 起从 500×500 放大）：模板集合按 `templateId`（含 size/版本）区分；一个 world 实例创建时引用某个 `templateId` 作为地图基线。
 - **删除接口**：需要，但要挡一个安全检查——不能删除当前被设为「创建新世界用」配置的 `templateId`；已创建的历史世界实例不受影响（见下一条克隆语义），删除顾虑只针对「未来创建会引用」这一种。
 - **关键：世界创建时对模板是"克隆"而非"实时引用"**：worldsvc 创建世界实例时把模板整份**拷贝**成该实例自己的基线数据，之后编辑器再改模板**不会回溯影响已经在跑的世界**（不会出现玩家脚下地形突然变化），只影响此后新建的世界实例。
 - **编辑器需要「模板列表」接口**：按 size/templateId 选择打开哪一份模板，不能假设只有一份。
@@ -1268,6 +1268,22 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 - `applySiegeResult` 增加 occupy 分支：命中 `myOccupyTiles` → 轻量 toast（打赢 `world.occupyWin`「占领得手，驻守中」/ 未赢 `world.occupyLoss`「占领失败」），收到即从集合移除；**不弹**围攻复盘弹窗（占领是高频扩张动作，不像 PvP 围攻值得每次弹窗+复盘）。三语文案齐备。
 
 **验证**：client `tsc --noEmit` 全绿；新增 `worldMapSiegeResultToast.ui.ts`（6 例：占领胜/败分类、消费后不复触发，及 attack/防守两条原路径回归），占领选队测试补 `myOccupyTiles` mock。preview 无法稳定复现（需完整 worldsvc + 连地相邻 + NPC 战斗），改动为纯分类/展示层，靠单测覆盖。
+
+## 34. 地图尺寸放大 500×500 → 1500×1500（ADR-049，2026-07-22）
+
+**背景（用户报告）**：最远缩放档（L3，一屏约 96×50 格）下整张 500×500 地图约只有三屏大小，10 个州（ADR-034 环形布局：6 外围+3 资源+1 霸业）+ 险地/州府/城池等 PvE 关卡内容"展示不开"，视觉上过于局促。用户拍板对齐主流 SLG 常见量级 **1500×1500**。
+
+**改动本体**：`server/shared/src/slg/core.ts` 的 `SLG_MAP_W`/`SLG_MAP_H` 由 500 → **1500**（225 万格）。这是唯一的"内容"改动——全部下游几何均为比率制（州环半径 `PROVINCE_*_RADIUS_RATIO`、州府 `provinceCapitalPositions` 用 `halfDiag`、地块等级 `_normRadius`、险地/资源密度逐格 Bernoulli），随尺寸**等比缩放**：密度不变，只是画布变大。险地数（p≈0.003）~750 → ~6750，州府/城池节点仍固定 10/54 个（角度环形，与面积无关）。
+
+**为什么无性能回归（改前已核实）**：① 地块**稀疏落库**（只存被占/改动格），`proceduralTile` 按视口即时算，DB 不会凭空多出 225 万文档；② 视野/渲染均为**视口 bbox 限定的 Mongo 查询 + clamp 循环**，无 O(mapW·mapH) 全图遍历——`coreVision.computeVisionSources`（含 getMarches 传全图范围时也只按 `ownerId` 索引返回自己/家族格）、客户端 `occupyFrontier`/`fog` 循环均 clamp 到视口；③ `_worldCityNodes` 固定 54 节点带缓存；④ A\* 行军 `findMarchPath` 有 `MAX_NODES=500_000` 安全帽（1500² 下=全图 22%，合法长途行军够用；触顶 → `null` → `combatMarch` 干净抛 `PATH_BLOCKED`，不挂起）。U14 A\* 关注点在更大图上略升但受帽约束，登记为监控项（SLG_DESIGN §U14）。
+
+**运维生效路径（关键陷阱）**：`mapW/mapH` 在 `openSeason` 经 `$setOnInsert` **写死进 world 文档**，`getSeason` 返回存库值——故仅改常量**不会自动改变现有世界**（旧世界 `w.mapW` 仍冻结在 500，而生成/出生点/边界用常量 1500，会不一致）。本轮顺带让 `resetSeason` 的 `$set` **re-stamp `mapW/mapH`**（`server/worldsvc/src/season.ts`，与它早已 re-pin 的 `engineVersion` 同理：reset 清空全部 tiles/nations 并按 `deps` 重建州府，回收世界必须采用当前尺寸）。因此现有大区经正常「结算→重置」即可采用新尺寸；全新 worldId 天然拿到 1500；dev 直接起新库（`local-up.ps1 -Fresh`）。
+
+**客户端零改动**：`WorldMapScene` 全程用 `getSeason` 返回的 `mapW/mapH`、渲染视口化；`constants.ts` 的 `DEFAULT_MAP_SIZE` 早已是 1500 且仅为加载前占位（注释此前写"server default 1500"是历史错位，现与实际一致）。
+
+**验证**：`server/shared`+`worldsvc` `tsc --noEmit` 全绿；worldsvc **285 e2e**（在新 1500 尺寸下真实生成地图）全绿；`season-ops.e2e.test.ts` 新增 1 例（seed 一个 `mapW=500` 的旧世界 → settle → reset → 断言 `mapW/mapH` 被 re-stamp 成 `SLG_MAP_W`），共 10 例全绿。可见效果需完整 worldsvc + 新开世界 + 登录入图，本会话未起全栈截图核对。
+
+**未处理/留待**：① 更大图放大了"孤立据点四周空白"观感（§1008 既知），如需改善从中立地装饰密度/初始镶机位入手；② 横断行军实时时长约 ×3，属 SLG 类型常态，用户已认可；③ "一屏俯瞰全图的最远战略档（L4）"本轮**不做**（用户拍板暂缓），但地图越大越需要，登记为后续候选。
 
 ## 35. 出征队伍编辑器：兵力读数 + Fill/Clear/Save 移入标题栏（2026-07-22，用户请求）
 

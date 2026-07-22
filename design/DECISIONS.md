@@ -558,3 +558,12 @@
 - **决策**（用户拍板"彻底统一"）：废弃 `baseTroopStock`，全部改用单一字段 `playerWorld.troops`；`TROOP_CAP_BASE` 从 2000 提到 10000（新号一次性坐拥满额基地兵力池）；`db.ts runMigrations()` 加一次性 boot 迁移，把存量文档的 `baseTroopStock` 折算进 `troops`（含 `troopCap` 一并刷新）后 `$unset`。
 - **客户端联动**：训练入口从练兵场（drillYard）详情弹窗改为主城桌面独立格子（`renderTrainModal`）；`DefenseEditorScene` 新增按卡 stepper 分兵（`+100/+500/补满此卡`），分兵前统一调用 `persistTeam()` 落库再 `distributeTroops`。
 - **影响**：`server/shared/src/slg/core.ts`（`TROOP_CAP_BASE`/`SATCHEL_CARRY_BASE` 联动）、`worldsvc/src/city.ts`（`trainTroops`/`distributeTroops`）、`worldsvc/src/db.ts`（迁移）；客户端 `CityScene.ts`/`DefenseEditorScene.ts`。详见 memory `slg-troop-pool-unified-2026-07-22`、`CHARACTER_CARDS_DESIGN.md §6.3`。`server/shared`+`worldsvc` 全量测试验证（含迁移测试）、client tsc/webpack + 20 项 UI 测试全绿。
+
+## ADR-049 SLG 地图尺寸 500×500 → 1500×1500（对齐主流 SLG）— Accepted — 2026-07-22
+
+- **问题**：用户体验反馈——最远缩放档（L3）下整张 500×500 地图约只有三屏大小，10 个州（6 外围+3 资源+1 霸业，ADR-034 环形布局）+ 险地/州府/城池等 PvE 关卡内容"展示不开"，视觉上过于局促。用户拍板对齐主流 SLG 的常见量级 **1500×1500**（此前 ADR-032 曾定 500×500，并记载"1500×1500 于 2026-06-18 拍板但从未落地"；本 ADR 是**真正落地** 1500，非恢复旧口径）。
+- **决策**：`SLG_MAP_W/H` 500 → **1500**（`server/shared/src/slg/core.ts`）。这是本次唯一的"内容"改动——全部下游几何均为比率制（州环半径 `PROVINCE_*_RADIUS_RATIO`、州府位置 `provinceCapitalPositions` 用 `halfDiag`、`_normRadius`、险地/资源密度走逐格 Bernoulli），随尺寸等比缩放，**密度不变、画布变大**；险地数（p≈0.003）从 ~750 增至 ~6750，州府/城池节点仍固定 10/54 个（角度环形）。
+- **为什么安全（无性能回归）**：地块**稀疏落库**（只存被占/改动格），`proceduralTile` 按视口即时算；视野/渲染均为**视口 bbox 限定的 Mongo 查询 + clamp 循环**，无 O(mapW·mapH) 全图遍历（`coreVision.computeVisionSources`、客户端 `occupyFrontier`/`fog` 均如此）。A\* 行军寻路 `findMarchPath` 有 `MAX_NODES=500_000` 安全帽（1500² 下=全图 22%，合法长途行军绰绰有余；触顶 → 返回 `null` → `combatMarch` 干净抛 `PATH_BLOCKED`，不挂起）。U14 的 A\* 性能关注点在更大图上略升但仍受帽约束，登记为监控项。
+- **运维生效路径（关键）**：`mapW/mapH` 在 `openSeason` 时经 `$setOnInsert` **写死进 world 文档**，`getSeason` 返回存库值。故常量改动**不会自动改变现有世界**——旧世界的 `w.mapW` 仍冻结在 500，而生成/出生点/边界用常量 1500，会不一致。本 ADR 顺带让 `resetSeason` 的 `$set` **re-stamp `mapW/mapH`**（与它早已 re-pin 的 `engineVersion` 同理：reset 清空全部 tiles/nations 并按 `deps` 重建州府，回收世界必须采用当前尺寸）→ 现有大区经正常"结算→重置"即可采用新尺寸；全新 worldId 天然拿到 1500；dev 直接 `-Fresh` 起新库。
+- **影响**：`server/shared/src/slg/core.ts`（常量）、`worldsvc/src/season.ts`（reset re-stamp）；客户端零改动（`WorldMapScene` 全程用 `getSeason` 返回值、渲染视口化，`DEFAULT_MAP_SIZE` 早已是 1500 且仅为加载前占位）。worldsvc 285 e2e（新尺寸下真实生成地图）+ season-ops 新增 1 例（reset re-stamp）全绿；shared/worldsvc `tsc --noEmit` 全绿。
+- **未处理/留待**：① 更大图放大了"孤立据点四周空白"观感（SLG_DESIGN_LOG §1008 既知），如需改善要从中立地装饰密度/初始镶机位入手；② 横断行军实时时长约 ×3，属 SLG 类型常态，用户已认可；③ "一屏俯瞰全图的最远战略档（L4）"本轮**不做**（用户拍板暂缓），但地图越大越需要，登记为后续候选。

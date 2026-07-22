@@ -272,6 +272,18 @@ describe.skipIf(!mongo)('worldsvc season ops e2e', () => {
     expect(aa!.sectId).toBeUndefined();
   });
 
+  it('reset: re-stamps mapW/mapH from current process config (an enlarged map is adopted by recycled regions)', async () => {
+    await seed('active');
+    // Simulate a region opened under the old (smaller) map size before SLG_MAP_W was enlarged.
+    await m.collections.worlds.updateOne({ _id: W }, { $set: { mapW: 500, mapH: 500 } });
+    await svc.settleSeason(W);              // → settling
+    await svc.resetSeason(W);               // settling → resetting → open, re-stamps dims
+
+    const w = await m.collections.worlds.findOne({ _id: W });
+    expect(w!.mapW).toBe(SLG_MAP_W);
+    expect(w!.mapH).toBe(SLG_MAP_H);
+  });
+
   it('reset: resetting intermediate state can resume (idempotent)', async () => {
     await seed('resetting'); // simulate a previous reset that crashed mid-way at resetting
     await expect(svc.resetSeason(W)).resolves.toBeTruthy();

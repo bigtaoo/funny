@@ -351,9 +351,13 @@ export class SeasonService {
     await Promise.all(activeFamilyIds.map((fid) => this.core.socialsvc.resetSlgState(fid)));
 
     // ⑤ Reopen (re-pin engineVersion to the current process version, C7; fresh settleAt clock for the recycled world, §17.14).
+    // Re-stamp mapW/mapH from the current process config too: a reset wipes every tile/nation and re-inits capitals
+    // (step ⑥) at deps.mapW/mapH scale, so a recycled world must adopt the current map dimensions or the stored
+    // dims (frozen at first openSeason via $setOnInsert) would drift from the coordinates everything else now uses —
+    // e.g. after enlarging SLG_MAP_W/H, a reset is the ops path that makes an existing region actually adopt the new size.
     await cols.worlds.updateOne(
       { _id: worldId },
-      { $set: { status: 'open' as const, population: 0, resetAt: now(), engineVersion: ENGINE_VERSION, settleAt: now() + SLG_SEASON_DURATION_MS }, $inc: { rev: 1 } },
+      { $set: { status: 'open' as const, population: 0, resetAt: now(), engineVersion: ENGINE_VERSION, mapW: this.core.deps.mapW, mapH: this.core.deps.mapH, settleAt: now() + SLG_SEASON_DURATION_MS }, $inc: { rev: 1 } },
     );
     // Re-initialize capital documents
     await this.core.initNations(worldId);
