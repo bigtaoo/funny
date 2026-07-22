@@ -1310,3 +1310,11 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 **验证**：client `tsc --noEmit` 全绿。真实入图需完整登录+一个正被围攻的敌方基地，未起全栈；改用离线渲染核对——直接截取重新生成的 `city_atlas.png` 对应帧，套用代码里的公式画出 OLD/NEW 两条血条位置对比：一级营地（`city_lv1`）新位置紧贴帐篷/旗帜顶部，旧位置飘在空白画布上方一大截，与截图里的 bug 完全吻合；三级/四级（`city_lv3`/`city_lv4`）新位置也更贴合尖塔顶端，无回归。
 
 **测试**：新增 `cityAtlasContentTop.ui.ts`（7 例，用真实打包好的 atlas JSON，不 mock）——逐级/逐帧核对 `getCityContentTopFracForLevel`/`getPlayerBaseContentTopFracForLevel` 与 JSON 里的 `contentTop` 完全一致、无级图退回三级图的 fallback 分支、越界等级 clamp 到 [1,10]，以及直接断言"一级营地 `contentTop` 明显大于十级大城"（即 bug 的形状本身）；`cityAtlasContentTopFallback.ui.ts`（2 例，mock 一份不含 `contentTop` 字段的旧版 atlas JSON）验证回退到 0 而非 `undefined`/`NaN`（血条公式会直接乘这个值）。`worldMapBaseHpBar.ui.ts` 补 1 例：mock `getCityContentTopFracForLevel` 返回值分别代表"矮建筑"和"高建筑"，断言矮建筑的血条落点更靠近地面而非固定处——即 city.ts 确实用上了这个值，而不只是数据层算对了。两个 getter 顺手去掉了不必要的 `!sheet` 门（该值来自 bundle 内 JSON，不依赖 PNG 解码完成，门控只是抄了纹理 getter 的套路，且挡住了脱离场景直接单测）。UI 测试套件全量跑一遍：764/766 通过，另 2 例失败（`modalScaleAndBackButton.ui.ts` 的 EquipmentScene 弹窗缩放）与本次改动无关——同一共享检出里另一会话正在合并的 in-flight WIP（`server/metaserver/src/equipment.ts` 等仍处于 `MERGE_HEAD` 未提交状态）。
+
+## 37. 占领面板补充资源类型/等级 + 建议兵力（2026-07-22，用户截图请求）
+
+**背景（用户截图请求）**：中立地块的 Occupy 确认弹窗（`WorldMapInput.onTileClick` 中立地块分支）只有标题+坐标，玩家看不到这块地的资源类型、等级，也不知道该派多少兵才够打赢系统驻军，只能凭感觉出兵。
+
+**实现**：`WorldMapInput.ts` 该分支的弹窗行新增两行——① 资源类型 + 等级（`world.resLevel` = `'{res} · Lv.{lv}'`，资源名复用既有 `world.ink/paper/graphite/metal/sticker` 词条；`SLG_GEN.resourceDensity=1.0` 下几乎所有中立地都带 `resType`，无该字段则跳过这行）；② 建议兵力（`world.recommendTroops` = `'建议兵力 {n}'`，取 `@nw/shared` 的 `npcGarrison(level)` = `NPC_GARRISON_PER_LEVEL(120) × level`——占领结算走 `combatSiege/occupation.ts` 时，未被占过的中立地系统驻军就是现算的这个值，同一份口径，不是另起一套估算）。三语言词条（zh/en/de）同步补齐。真实战斗走完整引擎模拟（卡牌/装备加成），这个数字是无卡牌情况下的参考线，不是精确胜负保证。
+
+**验证**：client `tsc --noEmit` + webpack build 全绿；`worldMapOccupyConnectivity.ui.ts` 新增 1 例断言两行文案的具体内容（含 `npcGarrison(3)=360` 的数值）。真实入图同样需要完整 worldsvc + 登录 + 找到一块未占中立地，本会话未起全栈截图核对。
