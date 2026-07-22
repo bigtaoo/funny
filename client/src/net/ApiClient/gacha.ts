@@ -1,7 +1,7 @@
 // Gacha pools/draws + monetized card products (GACHA_DESIGN, requires login token).
 import type { SaveData } from '../../game/meta/SaveData';
 import { type Constructor, type ApiClientBaseCtor } from './base';
-import type { GachaOverflow, GachaPool, GachaResultEntry } from './types';
+import type { GachaOverflow, GachaPool, GachaResultEntry, RechargeReward } from './types';
 
 export interface GachaApi {
   getGachaPools(): Promise<GachaPool[]>;
@@ -11,6 +11,8 @@ export interface GachaApi {
   yearCardBuy(): Promise<{ save: SaveData }>;
   monthlyCardClaim(): Promise<{ save: SaveData; claimed: number }>;
   starterBuy(productId: 'starter_draw' | 'starter_growth'): Promise<{ save: SaveData; results: GachaResultEntry[] }>;
+  /** Claim a cumulative-recharge milestone reward (GACHA_DESIGN §13). Not yet reached → ApiError('BAD_REQUEST'); already claimed → ApiError('ALREADY_CLAIMED'). */
+  claimRechargeMilestone(tierId: number): Promise<{ save: SaveData; rewards: RechargeReward[] }>;
 }
 
 export function GachaMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase & Constructor<GachaApi> {
@@ -57,6 +59,10 @@ export function GachaMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase 
       productId: 'starter_draw' | 'starter_growth',
     ): Promise<{ save: SaveData; results: GachaResultEntry[] }> {
       return this.post<{ save: SaveData; results: GachaResultEntry[] }>('/starter/buy', { productId });
+    }
+
+    async claimRechargeMilestone(tierId: number): Promise<{ save: SaveData; rewards: RechargeReward[] }> {
+      return this.post<{ save: SaveData; rewards: RechargeReward[] }>('/recharge/claim', { tierId });
     }
   };
 }

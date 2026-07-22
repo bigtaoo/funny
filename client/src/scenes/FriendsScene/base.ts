@@ -126,6 +126,11 @@ export class FriendsSceneBase {
   protected loading = true;
   protected friends: FriendView[] = [];
   protected incoming: FriendRequestView[] = [];
+  /** Unread 1:1 chat conversations. Loaded alongside friends so the friends list can flag
+   *  which friend has unread messages — the bottom-nav Social dot counts unread chat, and
+   *  without surfacing it here that count opened onto a page showing nothing (aggregate-vs-
+   *  specific badge bug — see mail-badge-social-aggregate-bug memory). */
+  protected conversations: ConversationView[] = [];
 
   // Mail tab.
   protected mail: MailView[] = [];
@@ -173,6 +178,9 @@ export class FriendsSceneBase {
   protected worldChatInput = '';
   protected worldChatActive = false;
   protected worldSending = false;
+  /** Pin the world channel to the latest message; cleared once the user scrolls up to read history,
+   *  re-armed when they drag back to the bottom, re-enter the tab, or post (see drawWorldTab). */
+  protected worldStick = true;
 
   // Shared HTML input (family/sect forms + world channel input box)
   protected hiddenInput: HTMLInputElement | null = null;
@@ -251,6 +259,18 @@ export class FriendsSceneBase {
     return yTop + rowH >= this.regionTop && yTop <= this.regionBottom;
   }
 
+  /** Unread 1:1 chat messages from a given friend (0 if no conversation / all read). */
+  protected unreadChatFor(publicId: string): number {
+    const c = this.conversations.find((x) => x.peer.publicId === publicId);
+    return c && c.unread > 0 ? c.unread : 0;
+  }
+
+  /** Total unread chat across all conversations — feeds the Friends rail-tab dot so the
+   *  bottom-nav Social badge (which includes unread chat) is explained once Social opens. */
+  protected get totalUnreadChat(): number {
+    return this.conversations.reduce((s, c) => s + (c.unread > 0 ? c.unread : 0), 0);
+  }
+
   // ── Input ──────────────────────────────────────────────────────────────────
 
   protected onPointerDown(x: number, y: number): void {
@@ -269,7 +289,13 @@ export class FriendsSceneBase {
     }
     if (this.dragging && this.maxScroll > 0) {
       const next = clamp(this.dragStartScroll + (this.downY - y), 0, this.maxScroll);
-      if (next !== this.scrollY) { this.scrollY = next; this.scrollDirty = true; }
+      if (next !== this.scrollY) {
+        this.scrollY = next;
+        // World channel: dragging back to the bottom re-pins to the latest; scrolling up releases the
+        // pin so a re-fetch (e.g. after posting) doesn't yank the reader down. Other tabs ignore it.
+        if (this.tab === 'world') this.worldStick = next >= this.maxScroll - 1;
+        this.scrollDirty = true;
+      }
     }
   }
 
@@ -309,6 +335,7 @@ export class FriendsSceneBase {
     this.view = 'list';
     this.openMailItem = null;
     this.scrollY = 0;
+    this.worldStick = true; // (re-)entering the world tab opens at the latest message
     this.clearHiddenInput();
     this.familySubview = 'info';
     this.sectSubview = 'info';
@@ -485,7 +512,7 @@ export class FriendsSceneBase {
     const hidden: SocialTab[] = s && !s.isLeader && !s.sectId ? ['sect'] : [];
     const hits = drawSocialTabRail(
       this.container, this.w, this.h, this.bodyTop, this.landscape, this.tab,
-      { friends: this.incoming.length, mail: this.mailUnread, family: this.slgStatus?.pendingJoinRequests ?? 0 },
+      { friends: this.incoming.length + this.totalUnreadChat, mail: this.mailUnread, family: this.slgStatus?.pendingJoinRequests ?? 0 },
       (tab) => this.switchTab(tab),
       hidden,
       true, // activeTappable: re-tapping the active Mail tab must close an open detail view

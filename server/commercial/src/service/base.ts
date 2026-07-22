@@ -13,6 +13,7 @@ import {
   isLimitedPoolActive,
   IAP_TIERS,
   DEV_STUB_DEFAULT_TIER,
+  usdCentsForTier,
   buildLimitedPool,
   type Rarity,
   type GachaPoolDef,
@@ -55,6 +56,7 @@ export interface WalletView {
   subscriptionLastClaimDay?: string; // UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed
   starterUsed: string[];
   firstPurchaseUsed: boolean; // true once the first-purchase 2× bonus has been claimed; gates the "首充双倍" shop badge
+  totalRechargeCents: number; // lifetime cumulative real-money spend (usdCents), GACHA_DESIGN §13
 }
 
 export type Result<T> = ({ ok: true } & T) | { ok: false; error: ServiceErr };
@@ -68,16 +70,20 @@ export interface CommercialDeps {
    * Receipt verification function for recharge (S4-1).
    * Supports async (WeChat/Stripe require network requests); falls back to the built-in dev stub when omitted.
    * Dev stub: receipt is formatted as `tier:<tierId>` (e.g. `tier:t499`) and grants the corresponding coin tier; any other non-empty value grants the default dev-stub tier (DEV_STUB_DEFAULT_TIER).
+   * `usdCents` (GACHA_DESIGN §13): the real USD price of the tier, used to bump totalRechargeCents; absent/0 = not tracked.
    */
-  verifyReceipt?: (platform: string, receipt: string) => Promise<{ ok: boolean; coins: number }> | { ok: boolean; coins: number };
+  verifyReceipt?: (
+    platform: string,
+    receipt: string,
+  ) => Promise<{ ok: boolean; coins: number; usdCents?: number }> | { ok: boolean; coins: number; usdCents?: number };
 }
 
 /** Dev stub (used only in unit tests / when no real payment channel is configured). */
-export function devVerifyReceipt(_platform: string, receipt: string): { ok: boolean; coins: number } {
-  if (!receipt) return { ok: false, coins: 0 };
+export function devVerifyReceipt(_platform: string, receipt: string): { ok: boolean; coins: number; usdCents: number } {
+  if (!receipt) return { ok: false, coins: 0, usdCents: 0 };
   const tier = receipt.startsWith('tier:') ? receipt.slice(5) : DEV_STUB_DEFAULT_TIER;
-  const coins = IAP_TIERS[tier];
-  return coins ? { ok: true, coins } : { ok: true, coins: IAP_TIERS[DEV_STUB_DEFAULT_TIER]! };
+  const coins = IAP_TIERS[tier] ?? IAP_TIERS[DEV_STUB_DEFAULT_TIER]!;
+  return { ok: true, coins, usdCents: usdCentsForTier(IAP_TIERS[tier] ? tier : DEV_STUB_DEFAULT_TIER) };
 }
 
 /** Project a wallet document into the meta-facing view (defaults for lazily-absent monetization fields). */
@@ -90,6 +96,7 @@ export function walletView(w: WalletDoc | null): WalletView {
     subscriptionLastClaimDay: w?.subscription?.lastClaimDayKey,
     starterUsed: w?.starterUsed ?? [],
     firstPurchaseUsed: w?.firstPurchasedAt != null,
+    totalRechargeCents: w?.totalRechargeCents ?? 0,
   };
 }
 
@@ -129,7 +136,10 @@ export class CommercialServiceBase {
   protected readonly cols: CommercialCollections;
   protected readonly now: () => number;
   protected readonly rng?: RandInt;
-  protected readonly verifyReceipt: (platform: string, receipt: string) => Promise<{ ok: boolean; coins: number }>;
+  protected readonly verifyReceipt: (
+    platform: string,
+    receipt: string,
+  ) => Promise<{ ok: boolean; coins: number; usdCents?: number }>;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(...args: any[]) {
@@ -182,17 +192,24 @@ export class CommercialServiceBase {
     return { kind: 'derived', pool: buildLimitedPool(limitedConfigFromDoc(doc)) };
   }
 
-  /** Credit coins + write ledger entry (shared by recharge/ads/refund). Atomic $inc; returns the new balance. */
+  /**
+   * Credit coins + write ledger entry (shared by recharge/ads/refund). Atomic $inc; returns the new balance.
+   * `ref.rechargeUsdCents`, when present (real-money recharge callers only), bumps `totalRechargeCents` in
+   * the SAME atomic update (GACHA_DESIGN §13) — deliberately the pre-first-purchase-bonus USD amount, since
+   * this counter tracks actual money spent, not the (possibly doubled) coins granted.
+   */
   protected async credit(
     accountId: string,
     amount: number,
     reason: string,
-    ref: { orderId?: string; receiptId?: string },
+    ref: { orderId?: string; receiptId?: string; rechargeUsdCents?: number },
   ): Promise<number> {
     await this.ensureWallet(accountId);
+    const inc: Record<string, number> = { coins: amount, rev: 1 };
+    if (ref.rechargeUsdCents) inc.totalRechargeCents = ref.rechargeUsdCents;
     const res = await this.cols.wallets.findOneAndUpdate(
       { _id: accountId },
-      { $inc: { coins: amount, rev: 1 }, $set: { updatedAt: this.now() } },
+      { $inc: inc, $set: { updatedAt: this.now() } },
       { returnDocument: 'after' },
     );
     const coinsAfter = res!.coins;

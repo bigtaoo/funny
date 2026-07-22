@@ -183,7 +183,7 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
         const tl = txt(tabLabel, fitSize(tabLabel, FS.heading, tabW - 16), active ? C.accent : C.dark);
         tl.anchor.set(0.5, 0.5); tl.x = tx + tabW / 2; tl.y = this.headerH + tabH / 2;
         this.bodyLayer.addChild(tl);
-        this.hitRects.push({ rect: { x: tx, y: this.headerH, w: tabW, h: tabH }, action: () => { this.activeTab = tab; this.scrollY = 0; this.render(); } });
+        this.hitRects.push({ rect: { x: tx, y: this.headerH, w: tabW, h: tabH }, action: () => { this.activeTab = tab; this.scrollY = 0; this.channelStick = true; this.render(); } });
       }
 
       const infoY = this.headerH + tabH;
@@ -468,7 +468,10 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       // so a partial next message always peeks above the fold when there's more to scroll to.
       const msgH = this.messages.length * R;
       const viewH2 = peekViewportH(listH2, R, msgH);
-      this[scrollKey] = Math.max(0, Math.min(this[scrollKey], Math.max(0, msgH - viewH2)));
+      this.channelMax = Math.max(0, msgH - viewH2);
+      // Pin to the latest message (bottom) unless the user scrolled up to read history.
+      if (this.channelStick) this[scrollKey] = this.channelMax;
+      else this[scrollKey] = Math.max(0, Math.min(this[scrollKey], this.channelMax));
 
       const list = new PIXI.Container();
       const mask = new PIXI.Graphics().beginFill(0xffffff).drawRect(x0, y0, colW, viewH2).endFill();

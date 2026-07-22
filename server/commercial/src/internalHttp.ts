@@ -207,8 +207,11 @@ export function startInternalHttp(
                 accountId: str(b.accountId),
                 transactionId: str(b.transactionId),
                 coins: num(b.coins, 0),
+                usdCents: num(b.usdCents, 0),
               }),
             );
+          case '/internal/paddle/refund':
+            return send(res, 200, await svc.paddleRefund({ transactionId: str(b.transactionId) }));
           case '/internal/paddle/event':
             await svc.recordPaddleEvent({
               transactionId: str(b.transactionId),

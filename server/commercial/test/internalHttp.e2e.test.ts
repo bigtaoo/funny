@@ -77,6 +77,7 @@ describe.skipIf(!mongo)('commercial internalHttp', () => {
       subscriptionExpiry: 0,
       starterUsed: [],
       firstPurchaseUsed: false,
+      totalRechargeCents: 0,
     });
   });
 

@@ -74,6 +74,7 @@ schemas:
             description: 'one-off product ids already purchased (§6)'
           starterGrowthEligible: { type: boolean, description: 'still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)' }
           firstPurchaseUsed: { type: boolean, description: 'true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge' }
+          totalRechargeCents: { type: integer, minimum: 0, description: 'lifetime cumulative real-money spend in usdCents (§13); absent = 0' }
       # Delivered purchase orders (commercial orderId); idempotent delivery ledger (S5-5). May be absent in legacy saves, so not required.
       deliveredOrders:
         type: array
@@ -110,6 +111,10 @@ schemas:
       # —— S11 battle pass ——
       battlePass:
         $ref: '#/components/schemas/BattlePassData'
+      # —— Cumulative recharge milestone claims (GACHA_DESIGN §13, ADR-045). Server-authoritative; not writable
+      #    via PUT /save. May be absent in legacy saves (no tier ever claimed), not required. ——
+      rechargeMilestone:
+        $ref: '#/components/schemas/RechargeMilestoneData'
       progress:
         type: object
         required: [cleared, stars, best]
@@ -487,6 +492,24 @@ schemas:
       claimedPaid:
         type: array
         items: { type: integer }
+
+  # —— Cumulative recharge milestone claim state (GACHA_DESIGN §13, ADR-045) ——
+  RechargeMilestoneData:
+    type: object
+    required: [claimed]
+    properties:
+      claimed:
+        type: array
+        items: { type: integer }
+        description: Tier ids already claimed (lifetime, never reset)
+
+  RechargeReward:
+    type: object
+    required: [kind, count]
+    properties:
+      kind: { type: string, enum: [coins, material] }
+      id: { type: string, description: 'kind=material → material id' }
+      count: { type: integer }
 
   AnalyticsConfig:
     type: object

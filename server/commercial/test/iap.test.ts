@@ -65,7 +65,7 @@ describe('apple verify', () => {
 
     const verify = makeVerifier();
     const result = await verify('apple', 'base64receipt==');
-    expect(result).toEqual({ ok: true, coins: IAP_TIERS.t099 });
+    expect(result).toEqual({ ok: true, coins: IAP_TIERS.t099, usdCents: 99 });
   });
 
   it('retries sandbox when prod returns status 21007', async () => {
@@ -90,7 +90,7 @@ describe('apple verify', () => {
     const verify = makeVerifier();
     const result = await verify('apple', 'base64receipt==');
     expect(callCount).toBe(2);
-    expect(result).toEqual({ ok: true, coins: IAP_TIERS.t9999 });
+    expect(result).toEqual({ ok: true, coins: IAP_TIERS.t9999, usdCents: 9999 });
   });
 
   it('rejects forged receipt (status !== 0)', async () => {
@@ -133,7 +133,7 @@ describe('apple verify', () => {
 
     const verify = makeVerifier();
     const result = await verify('apple', 'base64receipt==');
-    expect(result).toEqual({ ok: true, coins: IAP_TIERS.t499 });
+    expect(result).toEqual({ ok: true, coins: IAP_TIERS.t499, usdCents: 499 });
   });
 
   it('returns ok:false when NW_APPLE_PASSWORD is not set', async () => {
@@ -161,7 +161,7 @@ describe('apple verify', () => {
 
     const verify = createReceiptVerifier(TIER_MAP);
     const result = await verify('apple', 'base64receipt==');
-    expect(result).toEqual({ ok: true, coins: IAP_TIERS.t9999 });
+    expect(result).toEqual({ ok: true, coins: IAP_TIERS.t9999, usdCents: 9999 });
   });
 });
 
@@ -198,7 +198,7 @@ describe('google verify', () => {
 
     const verify = makeVerifier();
     const result = await verify('google', 'com.nw.coins.t499:purchase-token-xyz');
-    expect(result).toEqual({ ok: true, coins: IAP_TIERS.t499 });
+    expect(result).toEqual({ ok: true, coins: IAP_TIERS.t499, usdCents: 499 });
   });
 
   it('rejects when purchaseState !== 0', async () => {
@@ -260,9 +260,9 @@ describe('dev stub', () => {
   it('returns coins for tier: prefix receipt when all credentials missing', async () => {
     process.env.NW_IAP_DEV = 'false'; // dev stub auto-enabled when no credentials present
     const verify = createReceiptVerifier(TIER_MAP);
-    expect(await verify('apple', 'tier:t099')).toEqual({ ok: true, coins: IAP_TIERS.t099 });
-    expect(await verify('google', 'tier:t9999')).toEqual({ ok: true, coins: IAP_TIERS.t9999 });
-    expect(await verify('dev', 'tier:t499')).toEqual({ ok: true, coins: IAP_TIERS.t499 });
+    expect(await verify('apple', 'tier:t099')).toEqual({ ok: true, coins: IAP_TIERS.t099, usdCents: 99 });
+    expect(await verify('google', 'tier:t9999')).toEqual({ ok: true, coins: IAP_TIERS.t9999, usdCents: 9999 });
+    expect(await verify('dev', 'tier:t499')).toEqual({ ok: true, coins: IAP_TIERS.t499, usdCents: 499 });
   });
 
   it('grants the default tier for a receipt with no tier: prefix (E2E topup_ path)', async () => {
@@ -273,7 +273,7 @@ describe('dev stub', () => {
     const verify = createReceiptVerifier(IAP_TIERS);
     const expected = IAP_TIERS[DEV_STUB_DEFAULT_TIER];
     expect(expected).toBeGreaterThan(0);
-    expect(await verify('dev', 'topup_abc123')).toEqual({ ok: true, coins: expected });
+    expect(await verify('dev', 'topup_abc123')).toEqual({ ok: true, coins: expected, usdCents: 499 });
   });
 
   it('dev stub disabled when real credentials present and NW_IAP_DEV not set', async () => {
@@ -283,6 +283,29 @@ describe('dev stub', () => {
     // tier: prefix no longer routes through the stub; it goes through real apple verification (which returns failure)
     const result = await verify('apple', 'tier:t099');
     expect(result).toEqual({ ok: false, coins: 0 });
+  });
+});
+
+// ── usdCents attachment (GACHA_DESIGN §13, ADR-045) ───────────────────────────────
+// createReceiptVerifier wraps every platform branch's result once at the end (reverse-mapping the
+// resolved coin amount back to a tier's usdCents), so this is exercised regardless of which
+// platform resolved the tier — a dedicated case here documents the behavior explicitly rather than
+// relying only on the incidental `usdCents` field in the tests above.
+
+describe('usdCents attachment', () => {
+  it('failed verification never carries a usdCents field', async () => {
+    process.env.NODE_ENV = 'production'; // forcibly disables the dev stub (L2-3) so 'apple' with no credentials fails closed
+    const verify = createReceiptVerifier(TIER_MAP);
+    const result = await verify('apple', 'tier:t099');
+    expect(result).toEqual({ ok: false, coins: 0 });
+    expect('usdCents' in result).toBe(false);
+  });
+
+  it('usdCents matches the resolved tier, not a hardcoded value, across different tiers', async () => {
+    const verify = createReceiptVerifier(TIER_MAP);
+    expect(await verify('dev', 'tier:t199')).toEqual({ ok: true, coins: IAP_TIERS.t199, usdCents: 199 });
+    expect(await verify('dev', 'tier:t1999')).toEqual({ ok: true, coins: IAP_TIERS.t1999, usdCents: 1999 });
+    expect(await verify('dev', 'tier:t4999')).toEqual({ ok: true, coins: IAP_TIERS.t4999, usdCents: 4999 });
   });
 });
 
@@ -308,6 +331,6 @@ describe('production hardening (L2-3)', () => {
   it('non-production + no credentials → dev stub enabled as normal (local integration testing unaffected)', async () => {
     process.env.NODE_ENV = 'development';
     const verify = createReceiptVerifier(TIER_MAP);
-    expect(await verify('dev', 'tier:t9999')).toEqual({ ok: true, coins: IAP_TIERS.t9999 });
+    expect(await verify('dev', 'tier:t9999')).toEqual({ ok: true, coins: IAP_TIERS.t9999, usdCents: 9999 });
   });
 });

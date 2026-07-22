@@ -731,6 +731,16 @@ if (path.startsWith('/admin/world/')) {
 - **client（`WorldMapScene.ts`）**：`DeployKind` 加 `'scout'`；敌方格 + 中立/未知格菜单加「侦察」按钮 → `doScout(tx,ty)` **直接派 1 名斥候**（不走派兵数对话框，侦察讲究轻量、不锁大军）；行军箭头 scout=紫 `0x9b59b6`、HUD 图标 `🔭`。i18n `world.actScout` / `world.scoutSent`（en/zh/de）。
 - **验收**：server `tsc -b shared engine worldsvc gateway` 全绿；client `tsc --noEmit` + **293 测试** + `build:web` 全绿；worldsvc **103 e2e**（新增 `scout.e2e.test.ts` 3 例：侦察敌方格不占不发预警归属不变 / 视野深度 chebyshev≤4 可见 >4 迷雾 / 到点自动回师且全程不占地兵力归池；既有 100 不破）。
 
+### 18.8.1 scout 暂时下线（2026-07-21）
+
+> 玩家反馈「行军中的队伍被拉去侦察」；排查代码（见下）未能在当前实现里找到该路径的直接复现——scout 从设计上就不携带 `teamId`（`doScout` 固定从主城派 1 名斥候，不走队伍选择器；服务端 `startMarch` 只在 `kind==='attack'||'occupy'` 时才把 `teamId` 落库/纳入 `TEAM_BUSY` 校验，scout 分支完全绕开）。根因未定位前先按用户要求下线入口，避免继续造成困惑；底层结构（`MarchKind`、`MarchDoc`、契约 enum、i18n、图标映射）原样保留，方便定位后快速恢复。
+
+- **client**：`WorldMapInput.ts` 的四处菜单（敌方格/据点/据点保持中/中立格）移除「侦察」按钮；`doScout()`（`WorldMapNet.ts`）保留但已无入口可触发。
+- **worldsvc**：`combatMarch.ts` `startMarch()` 在 `MARCHABLE_KINDS` 校验后新增 `if (kind === 'scout') throw NOT_IMPLEMENTED`，即便有客户端直连 API 也会拒绝；原 scout 分支（无战斗/无占领/无 `defenderId`）随之移除（已不可达）。
+- **测试**：`scout.e2e.test.ts` 由「验证 scout 正常工作」的 3 例改为「验证 scout 被拒绝」的 1 例；client 新增 `worldMapScoutDisabled.ui.ts`（5 例）断言四种菜单均不再出现侦察按钮。
+- **验收**：server `tsc -b` + worldsvc 全量 e2e（33 files / 282 tests）全绿；client `tsc --noEmit` + `build:web` + 全量 UI 测试（79 files / 721 tests）全绿。
+- **遗留**：真正的「行军队伍被误派侦察」根因仍未查明（怀疑是旧版本客户端，或 `showTeamPicker` 的 `busyTeamIds` 读到过期数据导致误判空闲）——待用户提供具体复现步骤后再排查；此前 §18.8 记录的 scout 功能设计/实现细节仍作为恢复参考保留不动。
+
 ### 18.9 瞭望塔（Watchtower）实现记录（2026-06-21，§18.1 V2 最后余项）
 
 > 把 §18.1 V2「瞭望塔建筑——固定半径持久视野源」从「列 v2」兑现：在**己方领地**花资源建塔，该格升级为**最大半径**（`VISION_WATCHTOWER_RADIUS=8` > 主城 5）持久视野源。区别于 scout（一次性照路后回师）：瞭望塔是**主动布点扩视野**的永久手段——「想看哪、就在哪建塔守着」。落库随 `TileDoc`（丢地即随格子消失，无单独退还），符合 V3「vision 零落库，但塔标记本身落库、视野仍读时实时算」。

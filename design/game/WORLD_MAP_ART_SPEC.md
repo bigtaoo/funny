@@ -134,6 +134,16 @@
 > 客户端 `WorldMapNet.applySiegeResult()` 据此把该令牌标记进 `ctx.marchAttackUntil`（截止时间 =
 > 当前 `attack` clip 时长，素材未加载时兜底 0.6s），`fog.ts::syncMarchTokens()` 的清理循环对标记中的
 > 令牌播放 `attacking` 状态而非立即销毁，到期后才真正 `destroy()`。
+>
+> **占领保持（hold）期间持续攻击动画 — ✅ 已接入（2026-07-21）**：上一条修复的 `marchAttackUntil` 只覆盖
+> 令牌抵达那一刻的短暂 attack 播放（≤1s），保持阶段（`contestedUntil` 倒计时，可长达数分钟）此前地图上
+> 完全没有视觉表现——只有点击弹出的纯文字倒计时弹窗（`WorldMapInput.ts`）。新增
+> `fog.ts::syncOccupyTokens()`：对 `ctx.occupations`（"我方进行中的占领保持"列表，随行军一起 ~5s 轮询）
+> 里的每一块地，在其坐标上常驻一个盾兵 `StickmanRuntime`，每帧调用 `syncState('attacking')` ——
+> `StickmanRuntime.syncState()` 对非循环 clip 会在播放完后自动重播，因此只要令牌存在就会一直挥砍，
+> 直到该地从 `ctx.occupations` 消失（保持结束/被放弃）才 `destroy()`。同时修了 `lifecycle.ts::update()`
+> 的每帧重绘门槛——此前只在 `ctx.marches`/`marchTokenRuntimes` 非空时才调 `renderOverlay()`，`occupations`
+> 单独存在时永远不会触发，新令牌根本不会被驱动。回归测试见 `client/test/ui/occupyTokenAnimation.ui.ts`。
 
 ---
 

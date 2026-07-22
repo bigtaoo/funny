@@ -110,6 +110,12 @@ export class SectSceneBase {
   // independently alongside the families column instead of sharing one tab's scroll state.
   protected scrollY = 0;
   protected scrollYChannel = 0;
+  /** Pin the channel to the latest message; cleared once the user scrolls up to read history, re-armed
+   *  when they drag back to the bottom or send a message (see renderChannel / handleMove). */
+  protected channelStick = true;
+  /** Channel scroll extent from the last renderChannel — lets handleMove classify a channel drag as
+   *  "back at the bottom" (re-stick) vs "scrolled up" (unstick) without recomputing the content height. */
+  protected channelMax = 0;
   /** X boundary between the families and channel columns in the landscape split view; used by
    *  handleDown to route a drag to the right column's scroll state. Unused (0) in portrait. */
   protected chatColX = 0;
@@ -275,8 +281,16 @@ export class SectSceneBase {
   handleMove(_x: number, y: number): void {
     const scroll = this.gesture.move(y);
     if (scroll === null) return;
-    if (this.dragTarget === 'channel') this.scrollYChannel = scroll;
-    else this.scrollY = scroll;
+    // Dragging to the bottom re-pins the channel to the latest; scrolling up releases the pin so
+    // incoming messages don't yank the reader back down. Portrait routes the channel tab through
+    // scrollY (dragTarget stays 'families'), so classify by the active tab there.
+    if (this.dragTarget === 'channel') {
+      this.scrollYChannel = scroll;
+      this.channelStick = scroll >= this.channelMax - 1;
+    } else {
+      this.scrollY = scroll;
+      if (this.activeTab === 'channel') this.channelStick = scroll >= this.channelMax - 1;
+    }
     this.scrollDirty = true;
   }
 

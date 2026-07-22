@@ -30,6 +30,7 @@ class FakeFamilySceneBase {
   members: unknown[] = [];
   messages: Msg[] = [];
   scrollYChannel = 0;
+  channelStick = true;
   sendInput: { value: string; remove: () => void } | null = null;
   sendText = '';
   cb = {
@@ -51,6 +52,7 @@ interface TestScene {
   family: { familyId: string } | null;
   messages: Msg[];
   scrollYChannel: number;
+  channelStick: boolean;
   sendInput: { value: string; remove: () => void } | null;
   sendText: string;
   cb: FakeFamilySceneBase['cb'];
@@ -137,7 +139,7 @@ describe('FamilyScene channel — submitMessage() optimistic echo (2026-07-15 la
   it('prepends the sender echo and repaints BEFORE the network round-trips resolve', async () => {
     const scene = new FamilyWithActions() as unknown as TestScene;
     scene.messages = [{ id: 'prev', senderId: 'other', senderName: 'Bob', body: 'earlier', ts: 1 }];
-    scene.scrollYChannel = 500;
+    scene.channelStick = false; // pretend the user had scrolled up; sending must re-pin to the bottom
 
     // Hold the POST pending so we can observe the state between the optimistic paint and reconcile.
     let resolvePost!: () => void;
@@ -147,13 +149,13 @@ describe('FamilyScene channel — submitMessage() optimistic echo (2026-07-15 la
 
     const pending = scene.submitMessage('hello family');
 
-    // Synchronously (POST still in flight): echo is already prepended, scroll jumped to the bottom
-    // (the channel renders oldest-at-top, so the new line is now the last one), one paint, and the
-    // refetch has NOT run yet — this is what kills the 2-3s "frozen" feel.
+    // Synchronously (POST still in flight): echo is already prepended, the channel re-pinned to the
+    // bottom (renderChannel snaps scrollYChannel to the latest line while channelStick is set), one
+    // paint, and the refetch has NOT run yet — this is what kills the 2-3s "frozen" feel.
     expect(scene.messages).toHaveLength(2);
     expect(scene.messages[0]).toMatchObject({ body: 'hello family', senderId: 'me', senderName: 'Tester' });
     expect(scene.messages[1]!.id).toBe('prev');
-    expect(scene.scrollYChannel).toBe(Number.MAX_SAFE_INTEGER);
+    expect(scene.channelStick).toBe(true);
     expect(scene.render).toHaveBeenCalledTimes(1);
     expect(scene.loadChannel).not.toHaveBeenCalled();
 

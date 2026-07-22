@@ -15,6 +15,7 @@ export interface LevelRecord {
 import type { EquipRarity, EquipSlot } from './equipment';
 import type { RankId } from './ladder';
 import type { BattlePassData } from './battlepass';
+import type { RechargeMilestoneData } from './rechargeMilestone';
 import type { RetentionSave } from './retention';
 import { STARTER_TITLE } from './titles';
 
@@ -87,6 +88,7 @@ export interface SaveData {
     starterUsed: string[]; // one-off product ids already bought (§6)
     starterGrowthEligible?: boolean; // still inside the growth pack's first-N-days account-age window; absent = eligible (legacy saves) (§6)
     firstPurchaseUsed?: boolean; // true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves)
+    totalRechargeCents?: number; // lifetime cumulative real-money spend (usdCents), GACHA_DESIGN §13; absent = 0 (never purchased / pre-feature save)
   };
   // Fulfilled purchase orders (commercial orderId). Idempotent delivery ledger: redelivery uses $addToSet + $ne guard for deduplication (S5-5).
   deliveredOrders: string[];
@@ -132,6 +134,11 @@ export interface SaveData {
 
   // —— Battle pass (S11-C, SEASON_DESIGN §C). Server-authoritative; not writable via PUT /save. Absent = treated as not enrolled, lazily created. ——
   battlePass?: BattlePassData;
+
+  // —— Cumulative recharge milestone claims (GACHA_DESIGN §13, ADR-045). Server-authoritative; not writable
+  //    via PUT /save. Progress itself (totalRechargeCents) lives in monetization above (commercial-authoritative
+  //    mirror); this only tracks which tiers have been claimed. Absent = no tier ever claimed, lazily created. ——
+  rechargeMilestone?: RechargeMilestoneData;
 
   // —— Retention system (B5, RETENTION_DESIGN). Server-authoritative; not writable via PUT /save. Lazily created. ——
   retention?: RetentionSave;
