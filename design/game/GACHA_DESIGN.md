@@ -124,6 +124,7 @@
 - 翻牌前：全屏**金光粒子爆发**（程序粒子，SketchPen 风格的笔触射线）
 - 翻牌时：卡牌慢翻（~ 0.8s tween），伴随金光围绕卡边
 - 翻牌后：卡牌有轻微光晕呼吸效果
+- **顺时针转圈流光（✅ 已实现 2026-07-22）**：结果面板里 legendary（橙/金）卡叠加一道**顺时针绕圈的流光**——`GachaScene.addLegendarySweep()` 用渐隐环形楔子（暖白 `0xfff2cc`，平方衰减出彗尾）拼出一条亮边+拖尾的光带，`ADD` 混合叠在金框之上，裁剪到卡面矩形；`revealFx` 持有该 `Graphics`，`update(dt)` 每帧 `rotation += dt * SWEEP_SPEED`（1.0 rad/s，PIXI 正旋转=屏幕顺时针）。**纯 Graphics 无纹理**（WebGL/headless 通吃），随 `tearDownChildren`/`destroy` 回收、**不挂 `Ticker.shared`**（见 client-memory-leak 契约）。仅 legendary 生效，epic/rare/common 静态。回归测试 `client/test/ui/gachaResultCard.ui.ts`。
 - 以上特效全部程序实现（VFX Editor），**不需要单独美术图**；仅需卡背景纹理（§9.1）
 
 ### 4.4 十连模式

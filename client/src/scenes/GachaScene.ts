@@ -111,6 +111,14 @@ export class GachaScene implements Scene {
   private readonly artHooked = new Set<string>();
   /** Reveal overlay: non-null while showing the latest draw's results. */
   private reveal: GachaResultEntry[] | null = null;
+  /** Angular speed (rad/s) of the legendary card's circling light sweep. Positive = clockwise (screen y-down). */
+  private static readonly SWEEP_SPEED = 1.0;
+  /**
+   * Rotating light-sweep graphics for legendary (orange) reveal cards — spun clockwise in update(dt).
+   * Rebuilt each render() (children are torn down by tearDownChildren), so this holds only live objects
+   * and never pins the Ticker (see client-memory-leak.md: fx must not outlive the container).
+   */
+  private revealFx: PIXI.Container[] = [];
   /** Roster/inventory-full overflow from the draw currently shown in `reveal`; toasted once the player dismisses the reveal. */
   private revealOverflow: GachaOverflow | null = null;
   /** Odds-detail overlay open (L1-3, Apple 3.1.1): lists per-item probability + pity rule. */
@@ -144,6 +152,11 @@ export class GachaScene implements Scene {
   }
 
   update(dt: number): void {
+    // Spin the legendary cards' light sweep in place — no re-render, so the streak flows smoothly.
+    if (this.revealFx.length) {
+      const d = dt * GachaScene.SWEEP_SPEED;
+      for (const fx of this.revealFx) fx.rotation += d;
+    }
     if (this.oddsScrollDirty) { this.oddsScrollDirty = false; this.render(); }
     if (this.bt.tick(dt)) this.render();
   }
@@ -258,6 +271,7 @@ export class GachaScene implements Scene {
     if (this.destroyed) return;
     tearDownChildren(this.container);
     this.hits = [];
+    this.revealFx = []; // torn down with the container above; repopulated by drawResultCard for legendary cards
 
     this.drawBackground();
     const tbH = this.drawHeader();
@@ -591,6 +605,52 @@ export class GachaScene implements Scene {
     frameSpr.x = x; frameSpr.y = y;
     frameSpr.width = w; frameSpr.height = h;
     this.container.addChild(frameSpr);
+
+    // Legendary (orange) cards get a clockwise-circling light sweep over the frame,
+    // spun each frame in update(). Purple/blue/grey tiers stay static.
+    if (r.rarity === 'legendary') this.addLegendarySweep(x, y, w, h);
+  }
+
+  /**
+   * Add a rotating light streak to a legendary reveal card, clipped to the card rect and blended
+   * additively over the frame so the gold catches the moving light. Built from fading annulus wedges
+   * (a bright leading edge with a trailing gradient tail) — pure Graphics, no canvas/texture, so it
+   * works under WebGL and the headless UI harness alike. The spinning object is pushed to `revealFx`;
+   * update() advances its rotation clockwise. Cleaned up with the container on the next render()/destroy().
+   */
+  private addLegendarySweep(x: number, y: number, w: number, h: number): void {
+    const cx = x + w / 2, cy = y + h / 2;
+    const R = Math.sqrt(w * w + h * h) / 2; // reach the far corners so the sweep covers the whole card
+    const Rin = R * 0.30;                    // hollow centre — keep the light near the frame, not a hot blob
+    const steps = 72;
+    const spin = new PIXI.Graphics();
+    for (let i = 0; i < steps; i++) {
+      const frac = i / steps;                // 0 at the leading edge, growing along the trailing tail
+      const fall = Math.max(0, 1 - frac / 0.28);
+      const alpha = fall * fall * 0.5;       // squared falloff → soft comet-like tail
+      if (alpha < 0.01) continue;
+      const a0 = (i / steps) * Math.PI * 2;
+      const a1 = ((i + 1) / steps) * Math.PI * 2;
+      const c0 = Math.cos(a0), s0 = Math.sin(a0), c1 = Math.cos(a1), s1 = Math.sin(a1);
+      spin.beginFill(0xfff2cc, alpha);
+      spin.moveTo(c0 * Rin, s0 * Rin);
+      spin.lineTo(c0 * R, s0 * R);
+      spin.lineTo(c1 * R, s1 * R);
+      spin.lineTo(c1 * Rin, s1 * Rin);
+      spin.closePath();
+      spin.endFill();
+    }
+    spin.blendMode = PIXI.BLEND_MODES.ADD;
+    spin.x = cx; spin.y = cy;
+
+    // Clip to the card so the streak never bleeds onto neighbouring cards / the dim backdrop.
+    const mask = new PIXI.Graphics();
+    mask.beginFill(0xffffff).drawRoundedRect(x, y, w, h, Math.round(Math.min(w, h) * 0.06)).endFill();
+    spin.mask = mask;
+
+    this.container.addChild(mask);
+    this.container.addChild(spin);
+    this.revealFx.push(spin);
   }
 
   /**
