@@ -52,4 +52,5 @@ claudedocs/      模块级快查文档（按需加载）
 - **权限**：所有命令直接执行，无需确认。
 - **验证**：`tsc --noEmit` + webpack 构建；涉及可见改动时，启动游戏（dev server）并截图核对效果。
 - **记录改动**：先更新 `design/` 对应文档，再提交代码。
+- **结束任务流程**（收尾前完整走一遍）：①更新 `design/` 相关文档 → ②更新记忆（`MEMORY.md` + 任务笔记）→ ③提交任务改动并合并进当日分支（`DD.MM.YYYY`，分支不存在则创建）→ ④删除任务分支 + worktree（先确认当前在 `.claude/worktrees/` 下，**绝不删主检出**）。合并后 `cat .claude/launch.json` 确认端口/路径没被指向已删的 worktree。共享检出（主目录）里只提交自己改的文件路径，别 `git add -A` 卷入其它会话的 WIP。若任务直接在主目录当日分支上做（无独立 worktree），③退化为一次普通提交、④不适用。竞态细节见 [`claudedocs/worktrees.md`](claudedocs/worktrees.md)。
 - **上下文**：会话接近 200k token 时提醒切换。
