@@ -243,16 +243,25 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
 
       if (this.activeTab === 'all') {
         const aucId = auc.auctionId;
-        const btn = sketchButton(btnW, btnH, seedFor(y, 0, btnW));
-        btn.x = btnX; btn.y = btnY;
-        this.bodyLayer.addChild(btn);
-        const bl = txt(isAuction ? t('auction.bid') : t('auction.buy'), FS.small, C.light);
-        bl.anchor.set(0.5, 0.5); bl.x = btnX + btnW / 2; bl.y = btnY + btnH / 2;
-        this.bodyLayer.addChild(bl);
-        this.hitRects.push({
-          rect: { x: btnX, y: btnY, w: btnW, h: btnH },
-          action: isAuction ? () => this.openBidForm(auc) : () => this.confirmBuy(aucId, auc.price),
-        });
+        // Own listings can surface in the market (e.g. a designated-buyer listing the seller is
+        // allowed to see, see listAuctions). Self-purchase/self-bid is rejected server-side
+        // (sellerId===buyerId → BAD_REQUEST), so show a passive marker instead of a dead Buy/Bid button.
+        if (auc.sellerId === this.cb.myAccountId) {
+          const ownLbl = txt(t('auction.yourListing'), FS.small, C.mid);
+          ownLbl.anchor.set(1, 0.5); ownLbl.x = btnX + btnW; ownLbl.y = btnY + btnH / 2;
+          this.bodyLayer.addChild(ownLbl);
+        } else {
+          const btn = sketchButton(btnW, btnH, seedFor(y, 0, btnW));
+          btn.x = btnX; btn.y = btnY;
+          this.bodyLayer.addChild(btn);
+          const bl = txt(isAuction ? t('auction.bid') : t('auction.buy'), FS.small, C.light);
+          bl.anchor.set(0.5, 0.5); bl.x = btnX + btnW / 2; bl.y = btnY + btnH / 2;
+          this.bodyLayer.addChild(bl);
+          this.hitRects.push({
+            rect: { x: btnX, y: btnY, w: btnW, h: btnH },
+            action: isAuction ? () => this.openBidForm(auc) : () => this.confirmBuy(aucId, auc.price),
+          });
+        }
       } else if (this.activeTab === 'mine') {
         if (auc.status === 'open') {
           // Live listing → cancel action.
