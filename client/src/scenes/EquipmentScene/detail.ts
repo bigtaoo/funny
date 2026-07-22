@@ -242,9 +242,12 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       try {
         const res = await withTimeout(this.cb.enhance(instanceId, useProtect || undefined));
         if (res.ok) {
+          // On failure, a protect stone was consumed to keep the materials (server skipMaterials, §6.2);
+          // show the "materials kept" wording so it doesn't contradict the protect toggle the player ticked.
+          const failKey = useProtect ? 'equip.enhanceFailKept' : 'equip.enhanceFail';
           this.showToast(res.success
             ? t('equip.enhanceOk').replace('{lv}', String(res.level))
-            : t('equip.enhanceFail'), res.success ? C.green : C.red);
+            : t(failKey), res.success ? C.green : C.red);
         } else {
           this.showToast(t(res.key), C.red);
         }
