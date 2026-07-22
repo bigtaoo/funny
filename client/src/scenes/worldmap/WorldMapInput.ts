@@ -143,8 +143,6 @@ export class WorldMapInput {
       if (!protectedNow) {
         buttons.push({ label: t('world.actAttack'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'attack') });
       }
-      // Scout: no attack, no capture — send a scout to reveal enemy info / defenses then auto-return (scouting is also allowed during a protection window).
-      buttons.push({ label: t('world.actScout'), action: () => void this.ctx.net.doScout(tx, ty) });
       buttons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
       const enemyHead = [t('world.enemyTile'), ownerLine, `(${tx}, ${ty})`];
       if (tile.maxHp && tile.hp != null) enemyHead.push(t('world.buildingHp').replace('{hp}', String(tile.hp)).replace('{max}', String(tile.maxHp)));
@@ -163,7 +161,6 @@ export class WorldMapInput {
         [t('world.stronghold'), t('world.strongholdHint'), `(${tx}, ${ty})`],
         [
           { label: t('world.actAttack'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'attack') },
-          { label: t('world.actScout'), action: () => void this.ctx.net.doScout(tx, ty) },
           { label: '✕', action: () => this.ctx.panels.closeModal() },
         ],
       );
@@ -185,7 +182,6 @@ export class WorldMapInput {
       // would just bounce off the pending holder's contestedBy at arrival; use attack to fight their held garrison).
       const holdButtons: { label: string; action: () => void }[] = [
         { label: t('world.actAttack'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'attack') },
-        { label: t('world.actScout'), action: () => void this.ctx.net.doScout(tx, ty) },
         { label: '✕', action: () => this.ctx.panels.closeModal() },
       ];
       this.ctx.panels.showModal([t('world.occupying').replace('{sec}', String(secLeft)), `(${tx}, ${ty})`], holdButtons);
@@ -214,8 +210,6 @@ export class WorldMapInput {
     if (garrison > 0) {
       buttons.push({ label: t('world.actSweep'), action: () => this.ctx.panels.showDeployDialog(tx, ty, 'sweep') });
     }
-    // Scout: send a scout to lift distant fog / reveal an unknown tile, then auto-return (no capture).
-    buttons.push({ label: t('world.actScout'), action: () => void this.ctx.net.doScout(tx, ty) });
     // (Relocate moved to the owned-tile branch: §3.4 now requires the target 3×3 to be already fully owned,
     // so relocation is initiated by clicking your own centre tile, not a neutral one.)
     buttons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });

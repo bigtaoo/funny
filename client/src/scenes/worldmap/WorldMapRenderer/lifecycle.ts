@@ -37,8 +37,13 @@ export function LifecycleMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBa
       // recalled, or the camera zoomed out to L3) so syncMarchTokens' cleanup pass actually tears
       // the orphans down — otherwise their sprites would linger forever, since nothing would ever
       // call renderOverlay again to reach that cleanup loop. renderOverlay/syncMarchTokens already
-      // gate their zoom<3-only drawing internally, so no zoom check is needed here.
-      if (this.ctx.marches.length > 0 || this.ctx.marchTokenRuntimes.size > 0) {
+      // gate their zoom<3-only drawing internally, so no zoom check is needed here. Occupy-hold
+      // tokens (syncOccupyTokens) need the same continuous redraw for their whole hold duration —
+      // otherwise the 'attacking' clip would only ever advance on the ~5s occupations poll tick.
+      if (
+        this.ctx.marches.length > 0 || this.ctx.marchTokenRuntimes.size > 0 ||
+        this.ctx.occupations.length > 0 || this.ctx.occupyTokenRuntimes.size > 0
+      ) {
         this.renderOverlay(dt);
       }
     }
@@ -73,6 +78,8 @@ export function LifecycleMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBa
       for (const { runtime } of this.ctx.marchTokenRuntimes.values()) runtime?.destroy();
       this.ctx.marchTokenRuntimes.clear();
       this.ctx.marchAttackUntil.clear();
+      for (const { runtime } of this.ctx.occupyTokenRuntimes.values()) runtime?.destroy();
+      this.ctx.occupyTokenRuntimes.clear();
     }
   };
 }

@@ -12,6 +12,7 @@ import type {
   ChatView,
   NetGameView,
   ResultViewProps,
+  MountOpts,
 } from '../../src/app/AppViews';
 import type { RoomState, RoomError } from '../../src/net/proto/transport';
 import type { NetState } from '../../src/net/NetClient';
@@ -160,9 +161,9 @@ export class HeadlessAppViews implements AppViews {
   showTitles(_cb: TitlesSceneCallbacks): void { this.screen = 'titles'; }
   showDaily(cb: DailyCallbacks): void { this.screen = 'daily'; this.daily = cb; }
   showEvents(cb: EventCallbacks): void { this.screen = 'events'; this.events = cb; }
-  showCity(_cb: CitySceneCallbacks): void { this.screen = 'city'; }
-  showCityOverlay(_cb: CitySceneCallbacks): void { this.screen = 'city'; }
-  hideCityOverlay(): void { this.screen = 'worldMap'; }
+  showCity(_cb: CitySceneCallbacks, _opts?: MountOpts): void { this.screen = 'city'; }
+  /** Pop any SLG overlay panel — the base scene underneath is always the world map. */
+  hideOverlay(): void { this.screen = 'worldMap'; }
   showReplay(replay: Replay, cb: ReplaySceneCallbacks): void {
     this.screen = 'replay';
     this.replay = cb;
@@ -204,7 +205,7 @@ export class HeadlessAppViews implements AppViews {
     };
   }
 
-  showFriends(cb: FriendsSceneCallbacks): FriendsView {
+  showFriends(cb: FriendsSceneCallbacks, _opts?: MountOpts): FriendsView {
     this.screen = 'friends';
     this.friends = cb;
     return {
@@ -216,7 +217,7 @@ export class HeadlessAppViews implements AppViews {
     };
   }
 
-  showChat(cb: ChatSceneCallbacks): ChatView {
+  showChat(cb: ChatSceneCallbacks, _opts?: MountOpts): ChatView {
     this.screen = 'chat';
     this.chat = cb;
     return { applyIncoming: () => {} };
@@ -226,14 +227,14 @@ export class HeadlessAppViews implements AppViews {
     this.screen = 'worldMap';
     return { applyMarchUpdate: () => {}, applyTileUpdate: () => {}, applyUnderAttack: () => {}, applySiegeResult: () => {} };
   }
-  showFamily(_cb: FamilySceneCallbacks): void { this.screen = 'family'; }
-  showSect(_cb: SectSceneCallbacks): SectSceneView { this.screen = 'sect'; return { applySectMsg() {} }; }
+  showFamily(_cb: FamilySceneCallbacks, _opts?: MountOpts): void { this.screen = 'family'; }
+  showSect(_cb: SectSceneCallbacks, _opts?: MountOpts): SectSceneView { this.screen = 'sect'; return { applySectMsg() {} }; }
   // Capture the auction callbacks so a test can drive the real auction flow the way the
   // AuctionScene would: cb.worldApi is the REAL WorldApiClient the app core built from the
   // signed-in platform.storage token (full-link E2E hits the live auctionsvc through it).
   auction?: AuctionSceneCallbacks;
-  showAuction(cb: AuctionSceneCallbacks): void { this.screen = 'auction'; this.auction = cb; }
-  showDefenseEditor(_cb: DefenseEditorCallbacks): void { this.screen = 'defenseEditor'; }
+  showAuction(cb: AuctionSceneCallbacks, _opts?: MountOpts): void { this.screen = 'auction'; this.auction = cb; }
+  showDefenseEditor(_cb: DefenseEditorCallbacks, _opts?: MountOpts): void { this.screen = 'defenseEditor'; }
 
   // Headless: the PvP deck builder gates ranked entry. Mirror a player who
   // confirms immediately — keep the current saved deck (or default) and save,

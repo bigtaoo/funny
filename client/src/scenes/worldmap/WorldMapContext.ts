@@ -107,6 +107,11 @@ export class WorldMapContext {
    * attack-animation fix). Populated by WorldMapNet.applySiegeResult, consumed/expired in
    * fog.ts syncMarchTokens. */
   marchAttackUntil: Map<string, number> = new Map();
+  /** tile key ("x:y") → live StickmanRuntime playing 'attacking' for the *entire* duration of one of
+   * my own occupation holds (ctx.occupations), not just the brief post-arrival beat covered by
+   * marchAttackUntil above — the user wants the attack motion to keep repeating for as long as the
+   * hold countdown runs, not fire once and vanish. Synced in fog.ts syncOccupyTokens. */
+  occupyTokenRuntimes: Map<string, { runtime: StickmanRuntime | null }> = new Map();
   hudLayer!: PIXI.Container;
   /** Title bar + back button — static, drawn once (unlike hudLayer, which is torn down on every ~5s march-poll re-render). */
   topLayer!: PIXI.Container;

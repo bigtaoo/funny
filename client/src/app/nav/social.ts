@@ -8,7 +8,7 @@ import { FALLBACK_SEASON, PLAYER_PUBLIC_ID_KEY } from '../appConstants';
 export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' | 'goChat'> {
   const { api, saveManager, platform, state, views, nav, getNetSession, playerName } = ctx;
 
-  function goFriends(opts?: { defaultTab?: 'friends' | 'family' | 'sect' | 'world' | 'mail'; onBack?: () => void }): void {
+  function goFriends(opts?: { defaultTab?: 'friends' | 'family' | 'sect' | 'world' | 'mail'; onBack?: () => void; overlay?: boolean }): void {
     // Social needs a server account; offline / no API → bounce to login.
     if (!api) { analytics.track('login_gate_hit', { scene: 'FriendsScene' }); nav.goLogin(); return; }
     analytics.track('screen_view', { scene: 'FriendsScene' });
@@ -62,7 +62,9 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
       blockUser: (publicId) => client.blockUser(publicId),
       // Direct messages (entry point is the friend profile popup)
       loadConversations: () => client.getConversations(),
-      openChat: (peerPublicId, peerName) => goChat(peerPublicId, peerName),
+      // Preserve the mount context so a DM opened from the SLG-overlay social hub stays an overlay
+      // (map alive) and backing out of it re-opens this same hub with the same onBack, not the lobby.
+      openChat: (peerPublicId, peerName) => goChat(peerPublicId, peerName, { overlay: opts?.overlay, onBack: () => goFriends(opts) }),
       // mail (S6-3)
       loadMail: () => client.getMail(),
       markMailRead: (mailId) => client.readMail(mailId),
@@ -117,8 +119,8 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
         viewFamily: (familyId) => worldApi.getFamily(familyId),
         createSect:   async (name, tag) => { const wid = await ensureWorldId(); await worldApi.createSect(wid, name, tag); },
         joinSect:     async (sectId) => { const wid = await ensureWorldId(); await worldApi.joinSect(wid, sectId); },
-        openFamilyHub: () => { if (slgWorldId) nav.goFamilyHub(worldApi, slgWorldId, backTo); },
-        openSectHub:   () => { if (slgWorldId) nav.goSectHub(worldApi, slgWorldId, backTo); },
+        openFamilyHub: () => { if (slgWorldId) nav.goFamilyHub(worldApi, slgWorldId, backTo, opts?.overlay); },
+        openSectHub:   () => { if (slgWorldId) nav.goSectHub(worldApi, slgWorldId, backTo, opts?.overlay); },
         loadWorldChat: async (before) => { const wid = await ensureWorldId(); return worldApi.getWorldChannel(wid, { before }); },
         sendWorldChat: async (body, senderName) => { const wid = await ensureWorldId(); await worldApi.sendWorldChannelMessage(wid, body, senderName); },
         playerName: () => playerName(),
@@ -130,7 +132,7 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
           saveManager.adoptServer(save);
         },
       } : {}),
-    });
+    }, { overlay: opts?.overlay });
     // Live social pushes (presence / request / friend add-remove / chat / mail)
     // arrive over the gateway control plane; forward them so the tabs stay fresh.
     if (session) {
@@ -149,7 +151,7 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
   /** Right-column mail shortcut → opens FriendsScene directly on the mail tab. */
   function goMail(): void { goFriends({ defaultTab: 'mail' }); }
 
-  function goChat(peerPublicId: string, peerName: string): void {
+  function goChat(peerPublicId: string, peerName: string, opts?: { overlay?: boolean; onBack?: () => void }): void {
     if (!api) { nav.goLogin(); return; }
     const client = api;
     state.inLobby = false;
@@ -158,11 +160,14 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
     const restore = (): void => {
       if (session) session.handlers = { onMatchStart: (info) => nav.goGameNet(info) };
     };
+    // Back lands on wherever the chat was opened from — the SLG-overlay social hub (map kept alive)
+    // when threaded through, else the plain friends list.
+    const backToFriends = opts?.onBack ?? (() => goFriends());
     const view: ChatView = views.showChat({
       peerName,
       peerPublicId,
       myPublicId,
-      onBack() { restore(); goFriends(); },
+      onBack() { restore(); backToFriends(); },
       async resolveConvId(pid) {
         const convs = await client.getConversations();
         return convs.find((c) => c.peer.publicId === pid)?.convId ?? null;
@@ -170,7 +175,7 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
       loadMessages: (convId, before) => client.getMessages(convId, before),
       send: (body) => client.sendChat(peerPublicId, body),
       markRead: (convId) => client.readChat(convId),
-    });
+    }, { overlay: opts?.overlay });
     // Forward inbound chat pushes to the open window (others ignored here).
     if (session) {
       session.handlers = {

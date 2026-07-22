@@ -25,6 +25,8 @@ import {
   GARRISON_PER_TILE,
   OCCUPY_MIN_TROOPS,
   TROOP_CAP_BASE,
+  MARCH_MORALE_MAX,
+  moraleCombatMultiplier,
   type ResourceType,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
@@ -297,8 +299,13 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     expect(await svc.processDueArrivals()).toBe(1);
 
     const me = await svc.getMe(W, 'a');
-    // 600 survivors return: 2000 - troops + 600 = 2000 - npc.
-    expect(me.troops).toBe(TROOP_CAP_BASE - npc);
+    // Morale (士气): the sweep march travels an unobstructed straight Manhattan route from (5,5) → tgt (no bases/
+    // crossings in between on this fixture), so the server's path-length-based morale cost matches the raw
+    // Manhattan distance exactly; effective (post-morale) troops determine the cheap-formula survivor count.
+    const dist = Math.abs(tgt.x - 5) + Math.abs(tgt.y - 5);
+    const morale = Math.max(0, MARCH_MORALE_MAX - dist);
+    const effTroops = Math.round(troops * moraleCombatMultiplier(morale));
+    expect(me.troops).toBe(TROOP_CAP_BASE - troops + (effTroops - npc));
     // Loot = SWEEP_LOOT_PER_LEVEL × level (resType≠ink, no yield contamination).
     const rt = proc.resType as ResourceType;
     expect(me.resources?.[rt]).toBe(SWEEP_LOOT_PER_LEVEL * Math.max(1, proc.level));

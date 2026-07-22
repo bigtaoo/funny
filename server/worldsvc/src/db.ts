@@ -192,6 +192,8 @@ export interface MarchDoc {
   army?: ArmyEntry[];
   /** ADR-026: which team slot ('t1'..'t5') this march deployed. A team referenced by an active (non-recalled) march is "out" and skipped as a defender. */
   teamId?: string;
+  /** Remaining morale (0..MARCH_MORALE_MAX) computed once at departure from path length (1 lost per tile moved). Bound to this march instance only; scales combat power on arrival (moraleCombatMultiplier). Absent on legacy docs → treated as full (MARCH_MORALE_MAX). */
+  morale?: number;
   departAt: number;
   arriveAt: number;
   status: 'marching' | 'arrived' | 'recalled';

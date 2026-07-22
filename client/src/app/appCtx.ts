@@ -49,18 +49,21 @@ export interface Nav {
   resolveEntry(): Promise<void>;
   goDeckBuilder(onSave: (deck: string[]) => void): void;
   goRoom(opts?: { autoRanked?: boolean }): void;
-  goFriends(opts?: { defaultTab?: 'friends' | 'family' | 'sect' | 'world' | 'mail'; onBack?: () => void }): void;
+  // `overlay`: mount the social hub over the still-live SLG world map (see AppViews.MountOpts) — set
+  // only when entered from the world map, so backing out never rebuilds the map.
+  goFriends(opts?: { defaultTab?: 'friends' | 'family' | 'sect' | 'world' | 'mail'; onBack?: () => void; overlay?: boolean }): void;
   goMail(): void;
-  goChat(peerPublicId: string, peerName: string): void;
+  goChat(peerPublicId: string, peerName: string, opts?: { overlay?: boolean; onBack?: () => void }): void;
   goWorldEntry(): void;
   goAuctionFromLobby(): void;
   goWorldMap(worldApi: WorldApiClient, worldId: string): void;
   goSiegeReplay(worldApi: WorldApiClient, worldId: string, siegeId: string): Promise<void>;
-  goDefenseEditor(worldApi: WorldApiClient, worldId: string, tileKey: string): void;
-  goCity(worldApi: WorldApiClient, worldId: string): void;
-  goFamilyHub(worldApi: WorldApiClient, worldId: string, onExit?: () => void): void;
-  goSectHub(worldApi: WorldApiClient, worldId: string, onExit?: () => void): void;
-  goAuctionHouse(worldApi: WorldApiClient, worldId: string): void;
+  // SLG panels reachable from the world map take `opts.overlay` (keep the map alive) + `opts.onBack`
+  // (where the panel's back button lands — defaults to a full goWorldMap rebuild when omitted).
+  goDefenseEditor(worldApi: WorldApiClient, worldId: string, tileKey: string, opts?: { overlay?: boolean; onBack?: () => void }): void;
+  goFamilyHub(worldApi: WorldApiClient, worldId: string, onExit?: () => void, overlay?: boolean): void;
+  goSectHub(worldApi: WorldApiClient, worldId: string, onExit?: () => void, overlay?: boolean): void;
+  goAuctionHouse(worldApi: WorldApiClient, worldId: string, opts?: { overlay?: boolean; onBack?: () => void }): void;
   goShop(onBack?: () => void, initialTab?: 'shop' | 'coins'): void;
   goGacha(group?: { shopBack?: () => void }): void;
   goDaily(): void;
