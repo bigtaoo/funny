@@ -897,6 +897,8 @@ export const zh = {
   'world.siegeDraw': '围攻僵持',
   'world.defendHeld': '守土成功',
   'world.defendLost': '领地失守',
+  'world.occupyWin': '占领得手，驻守中',
+  'world.occupyLoss': '占领失败',
   'world.replaySiege': '复盘并验证',
   'world.siegePlaying': '复盘围攻中…',
   'world.siegeVerified': '录像已复算',

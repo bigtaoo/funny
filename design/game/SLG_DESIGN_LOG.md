@@ -1255,3 +1255,16 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 - **服务端**（权威兜底，`server/worldsvc/src/db.ts` + `combatMarch.ts`）：`marches` 集合加 `{worldId,ownerId,teamId}` **partial-unique 索引**（`partialFilterExpression: {teamId:{$exists:true}}`）。带队行军单是集合里**唯一**带 `teamId` 的文档——散兵行军无 `teamId`、撤军是改写同一 `_id` 成 return 腿、到点行军单 `findOneAndDelete`——所以该索引原子地禁止「同队伍第二条在途行军单」，正好补上先查后插关不掉的竞态。`startMarch` 的 `insertOne` 捕获 E11000 → 抛 `TEAM_BUSY`（此时尚未扣兵力池，玩家状态无副作用）。索引构建 best-effort try/catch 包裹：万一线上已存在本 bug 造成的重复在途单导致建索引失败，只告警不 crash 启动（行军单几分钟内到点消解，下次重启即可建成；期间靠 `findOne` 预检 + E11000 兜底）。
 
 **验证**：client + worldsvc `tsc --noEmit` 全绿。竞态本身依赖并发时序、preview 无法稳定复现，改动为逻辑门禁层。
+
+## 33. 占领无主地误报「领地失守」修复（2026-07-22）
+
+**背景（用户报告）**：每次占领（occupy）一块**本就不属于自己**的地块时，屏幕都会闪一次「领地失守」（`world.defendLost`）的提示。
+
+**根因**：自 ADR-037 起，occupy 到达会先与目标格的 NPC 守军打一场权威 PvE 战斗（`combatSiege/occupation.ts` `applyOccupy`），打赢即进入占领驻守倒计时（`startOccupationHold`），并向**占领者本人**推送一条 `SiegeResult`（`outcome:'attacker_win'`，`pushSiege(m.ownerId,…)`）。但客户端 `WorldMapNet.applySiegeResult` 只凭 `myAttackTiles.has(tile)` 区分「这仗是我打的还是我在被打」，而 `myAttackTiles` 只在 `kind==='attack'` 时记录目标格（`doMarch`/`doMarchTeam`）——**occupy 从未登记**。于是玩家自己的占领结果落进「我是防守方」分支，看到 `attacker_win` 就弹「领地失守」；占领失败时同样错判成「守土成功」（`world.defendHeld`）。
+
+**修复（纯客户端）**：
+- `WorldMapContext` 新增 `myOccupyTiles` 集合，与 `myAttackTiles` 并列但语义分开（占领是「我主动去打」而非「敌人打我」）。
+- `doMarch`/`doMarchTeam` 在 `kind==='occupy'` 时把目标格记入 `myOccupyTiles`。
+- `applySiegeResult` 增加 occupy 分支：命中 `myOccupyTiles` → 轻量 toast（打赢 `world.occupyWin`「占领得手，驻守中」/ 未赢 `world.occupyLoss`「占领失败」），收到即从集合移除；**不弹**围攻复盘弹窗（占领是高频扩张动作，不像 PvP 围攻值得每次弹窗+复盘）。三语文案齐备。
+
+**验证**：client `tsc --noEmit` 全绿；新增 `worldMapSiegeResultToast.ui.ts`（6 例：占领胜/败分类、消费后不复触发，及 attack/防守两条原路径回归），占领选队测试补 `myOccupyTiles` mock。preview 无法稳定复现（需完整 worldsvc + 连地相邻 + NPC 战斗），改动为纯分类/展示层，靠单测覆盖。

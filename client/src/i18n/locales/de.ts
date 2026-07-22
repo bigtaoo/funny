@@ -885,6 +885,8 @@ export const de: Record<TranslationKey, string> = {
   'world.siegeDraw': 'Belagerung Patt',
   'world.defendHeld': 'Verteidigung gehalten',
   'world.defendLost': 'Gebiet verloren',
+  'world.occupyWin': 'Gebiet gesichert – wird gehalten',
+  'world.occupyLoss': 'Besetzung fehlgeschlagen',
   'world.replaySiege': 'Nachspielen & prüfen',
   'world.siegePlaying': 'Belagerung wird nachgespielt…',
   'world.siegeVerified': 'Aufzeichnung geprüft',

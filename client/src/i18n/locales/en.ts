@@ -885,6 +885,8 @@ export const en: Record<TranslationKey, string> = {
   'world.siegeDraw': 'Siege stalemate',
   'world.defendHeld': 'Defense held',
   'world.defendLost': 'Territory lost',
+  'world.occupyWin': 'Territory secured — holding',
+  'world.occupyLoss': 'Occupation failed',
   'world.replaySiege': 'Replay & verify',
   'world.siegePlaying': 'Replaying siege…',
   'world.siegeVerified': 'Replay verified',

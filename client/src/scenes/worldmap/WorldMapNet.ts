@@ -183,6 +183,7 @@ export class WorldMapNet {
       // troops=1 is a placeholder; the server overwrites it with the team's committed troop count (§16.2).
       const march = await this.ctx.cb.worldApi.startMarch(this.ctx.cb.worldId, fx, fy, tx, ty, kind, 1, teamId);
       if (kind === 'attack') this.ctx.myAttackTiles.add(march.toTile);
+      else if (kind === 'occupy') this.ctx.myOccupyTiles.add(march.toTile);
       this.ctx.marches = await this.ctx.cb.worldApi.getMarches(this.ctx.cb.worldId);
       this.ctx.me = await this.ctx.cb.worldApi.getMe(this.ctx.cb.worldId);
       this.ctx.panels.showToast(t('world.dispatched'));
@@ -201,6 +202,7 @@ export class WorldMapNet {
     try {
       const march = await this.ctx.cb.worldApi.startMarch(this.ctx.cb.worldId, fx, fy, tx, ty, kind, troops);
       if (kind === 'attack') this.ctx.myAttackTiles.add(march.toTile);
+      else if (kind === 'occupy') this.ctx.myOccupyTiles.add(march.toTile);
       this.ctx.marches = await this.ctx.cb.worldApi.getMarches(this.ctx.cb.worldId);
       this.ctx.me = await this.ctx.cb.worldApi.getMe(this.ctx.cb.worldId);
       this.ctx.panels.showToast(t('world.dispatched'));
@@ -460,6 +462,13 @@ export class WorldMapNet {
           { label: '✕', action: () => this.ctx.panels.closeModal() },
         ],
       );
+    } else if (this.ctx.myOccupyTiles.has(s.tile)) {
+      // We launched an occupy (PvE land-grab, ADR-037). It reports back as a SiegeResult but is our own action —
+      // a win begins the occupation hold, a non-win means the NPC garrison held. Lightweight toast (no replay
+      // modal): occupy is high-frequency expansion, unlike a deliberate PvP siege.
+      this.ctx.myOccupyTiles.delete(s.tile);
+      const line = s.outcome === 'attacker_win' ? t('world.occupyWin') : t('world.occupyLoss');
+      this.ctx.panels.showToast(line, s.outcome === 'attacker_win' ? C.dark : C.red);
     } else {
       // We were the defender (or a bystander) — toast only.
       const line = s.outcome === 'attacker_win' ? t('world.defendLost') : t('world.defendHeld');

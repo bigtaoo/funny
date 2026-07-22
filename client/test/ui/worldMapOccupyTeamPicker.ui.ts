@@ -52,6 +52,7 @@ function buildHarness(opts: {
     marches: [],
     occupations: [],
     myAttackTiles: new Set<string>(),
+    myOccupyTiles: new Set<string>(),
     me: { joined: true, mainBaseTile: `${WORLD_ID}:${ANCHOR.x}:${ANCHOR.y}`, cardState: opts.cardState ?? { c1: { currentTroops: 60 }, c2: { currentTroops: 60 } } } as PlayerWorldView,
     parseTileId(tileId: string): [number, number] {
       const parts = tileId.split(':');
