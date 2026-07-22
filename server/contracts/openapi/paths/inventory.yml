@@ -174,7 +174,7 @@
             required: [targetId, materialId, idempotencyKey]
             properties:
               targetId: { type: string, description: Id of the equipment instance to reforge }
-              materialId: { type: string, description: 'Id of the material equipment instance to consume (same slot, one tier lower, e.g. rare → requires fine)' }
+              materialId: { type: string, description: 'Id of the material equipment instance to consume (same slot, one tier lower, e.g. rare → requires fine; must be unenhanced, i.e. level 0)' }
               idempotencyKey: { type: string, description: Client-generated idempotency key; re-roll is bound to this key; replay returns the first result }
     responses:
       '200':
