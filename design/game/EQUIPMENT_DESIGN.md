@@ -538,6 +538,8 @@ buildSiegeBlueprints(levels, equipped, inv)
 2. **素材校验三层**：同槽 slot 匹配 → 稀有度恰低一档（`REFORGE_MATERIAL_RARITY`）→ 都未穿戴/未锁定；`common` 直接拒（无副词条）。
 3. **客户端预检灰化**：`openDetail` 读当前 save 确认有符合条件的素材件（`hasMaterials`），无素材则按钮灰化；服务端仍做完整校验。
 
+**选材 UI 改图标卡 + 仅未强化装备可作素材（2026-07-22 追加）**：`openReforgeSelect`（`EquipmentScene/reforge.ts`）原为纯文字行列表（每件素材一行，可无限滚动溢出）；改为图标卡网格（`buildEquipIcon` 玻璃 + 名称 + `×N` 堆叠角标，最多 4 列，样式对齐 `AuctionScene/picker.ts` 的选品网格）。同时新增素材筛选条件 **`level === 0`**（未强化过）——同 defId 的未强化件本就等价（不同实例只是 rarity 固定、affix 随机而已，选材只按 defId+rarity 分组，不看 affix），折叠成一张卡；已强化过的同槽同稀有度装备不再出现在候选里，避免误将强化过的装备（词条/材料已投入）当炮灰消耗。`instanceActions()`（`detail.ts`）里门控 Reforge 按钮显隐的 `hasMaterials` 预检同步加了 `level === 0`，否则会出现"按钮亮着但打开选材是空的"。⚠️ 已知缺口：这条 `level===0` 规则目前只在客户端预检 + 选材 UI 生效，`server/metaserver/src/equipment.ts` 的 `reforgeEquipment` 尚未加对应校验（§538 三层校验里没有 level 一项）——修改过的客户端理论上仍可把已强化装备传成 `materialId` 走通服务器。是否需要服务端补这道校验属于独立的服务器改动，未在本次改动范围内。
+
 #### E7 抽卡/保护道具 实现记录（2026-06-22，✅）
 
 **抽卡 — 装备入标准抽奖池（与皮肤共池，ADR-017）**

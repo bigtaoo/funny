@@ -207,7 +207,8 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       const requiredMatRarity = REFORGE_MATERIAL_RARITY[inst.rarity];
       const hasMaterials = requiredMatRarity
         ? Object.values(save.equipmentInv ?? {}).some(
-            (m) => m.id !== inst.id && getEquipDef(m.defId)?.slot === slot && m.rarity === requiredMatRarity && !this.equippedIds(save).has(m.id),
+            (m) => m.id !== inst.id && getEquipDef(m.defId)?.slot === slot && m.rarity === requiredMatRarity
+              && m.level === 0 && !this.equippedIds(save).has(m.id),
           )
         : false;
       if (!!requiredMatRarity && hasMaterials && !equipped && !inst.locked && !busy) {
