@@ -26,6 +26,7 @@ export interface FogHandlers {
   renderOccupyFrontier(): void;
   renderOverlay(dt?: number): void;
   syncMarchTokens(dt: number): void;
+  syncOccupyTokens(dt: number): void;
   renderMap(): void;
 }
 
@@ -243,6 +244,7 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
       }
 
       this.syncMarchTokens(dt);
+      this.syncOccupyTokens(dt);
     }
 
     /**
@@ -323,6 +325,52 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
         this.ctx.marchAttackUntil.delete(id);
         entry.runtime?.destroy();
         this.ctx.marchTokenRuntimes.delete(id);
+      }
+    }
+
+    /**
+     * Keep a siege-rig token playing the 'attacking' clip on every tile I currently have an
+     * occupation hold on (ctx.occupations, refreshed alongside marches), for the full hold
+     * duration rather than the brief post-arrival beat syncMarchTokens/marchAttackUntil covers.
+     * syncState('attacking') replays a finished non-loop clip on every call (see
+     * StickmanRuntime.syncState), so simply calling it every frame the hold is still active
+     * makes the swing repeat for as long as the countdown runs.
+     */
+    syncOccupyTokens(dt: number): void {
+      const live = new Set<string>();
+      if (this.ctx.zoom < 3) {
+        const tp = this.ctx.tp;
+        for (const o of this.ctx.occupations) {
+          const key = `${o.x}:${o.y}`;
+          live.add(key);
+          const s = tileToScreen(o.x, o.y, tp);
+          const cx = this.ctx.panX + s.x;
+          const cy = this.ctx.panY + s.y;
+
+          let entry = this.ctx.occupyTokenRuntimes.get(key);
+          if (!entry) {
+            entry = { runtime: null };
+            this.ctx.occupyTokenRuntimes.set(key, entry);
+            const { url, type } = MARCH_TOKEN_ASSET.siege;
+            StickmanRuntime.loadAsset(url, targetScreenHeight(type)).then((asset) => {
+              const current = this.ctx.occupyTokenRuntimes.get(key);
+              if (!current || current !== entry) return; // hold ended meanwhile
+              const runtime = new StickmanRuntime(asset, { targetHeight: tp * 1.1, showShadow: false });
+              this.ctx.marchTokenLayer.addChild(runtime.container);
+              current.runtime = runtime;
+            }).catch(err => { console.warn('[WorldMap] occupy token .tao failed to load:', err); });
+          }
+          if (entry.runtime) {
+            entry.runtime.syncState('attacking');
+            entry.runtime.update(dt);
+            entry.runtime.container.position.set(cx, cy);
+          }
+        }
+      }
+      for (const [key, entry] of this.ctx.occupyTokenRuntimes) {
+        if (live.has(key)) continue;
+        entry.runtime?.destroy();
+        this.ctx.occupyTokenRuntimes.delete(key);
       }
     }
 
