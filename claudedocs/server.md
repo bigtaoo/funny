@@ -13,7 +13,7 @@
 - **钱包权威**：`SaveData.wallet.coins` 是只读镜像；商业操作经 commercial → meta 编排 → 回推
 - **PvE 服务器权威**：通关/升级走 `/pve/clear`、`/pve/upgrade` API；`SyncPatch` 只同步 `equipped`/`flags`
 
-## 10 个应用进程（+ mongo/redis 基础设施）+ 端口
+## 11 个应用进程（+ mongo/redis 基础设施）+ 端口
 
 | 进程 | 端口 | 说明 |
 |---|---|---|
@@ -27,6 +27,7 @@
 | analyticsvc | 18085 | 埋点分析，fire-and-forget |
 | socialsvc | 8085 | 社交第五面（家族/好友/邮件/频道/push路由） |
 | auctionsvc | 18086 | 拍卖行第六面（订正 2026-07-07：从 worldsvc 解耦为独立进程，连 `notebook_wars_auction`；已进 prod compose + ecosystem） |
+| botsvc | 18087 | 机器人玩家服务，内部管理面（仅 prod compose，本地全栈默认不拉） |
 | mongo | 27017 | 副本集（单节点） |
 
 **Windows TCP 排除端口注意**：`netsh interface ipv4 show excludedportrange` 查被 WinNAT/Hyper-V 保留的端口段，撞上换端口（8082/8083 曾被保留，现用 8086）。
@@ -55,9 +56,9 @@ npm run dev:all             # 起全部进程（dev-up.ps1）
 >
 > **系统邮件写入权威修复（2026-07-02，见 `SOCIAL_DESIGN.md` S6-3 / `META_TASKS.md` S6-3、S7-3）**：P2 把 `GET /mail` 读路径迁到 socialsvc 代理后，`insertSystemMail`/`bulkInsertSystemMail` 的**写路径**一直漏改，还在写 meta 自己那个没人再读的 `mail` 集合——运营补偿工单/赛季结算奖励/活动奖励/PvE 警告邮件全部"发出去"但玩家永远收不到。commercial/admin 接上内存 Mongo 让 `admin/test/comp-mail.e2e.test.ts` 首次真正跑起来，才暴露这个「契约接好但从没跑过」的缺口（该测试文件头部注释原话）。修复：`metaserver/src/mail.ts` 的两个函数改为委托 `MetaSocialsvcClient.insertSystemMail/bulkInsertSystemMail`（真调 socialsvc 早已实现但从未被接上的 `/internal/mail/system{,/bulk}`），4 个调用点（`internal.ts` 补偿工单单发/全服群发 + ranked ELO 懒迁移、`ladderSeason.ts` 赛季结算、`events.ts` 活动奖励、`service.ts` PvE 警告）全部改线；全服群发场景信任 socialsvc 自己 push，meta 不再重复推。`comp-mail.e2e.test.ts` 同步升级为真起一个 socialsvc 子进程（复用同一内存 Mongo）做完整三进程联调，6 例全绿。
 
-### 本地全栈模拟（完整：9 进程 + 主客户端 + 3 工具 + mongo + redis）
+### 本地全栈模拟（完整：10 进程 + 主客户端 + 3 工具 + mongo + redis）
 
-`docker/docker-compose.local.yml` 拉起**全部 9 个服务端进程 + redis + 主客户端(nginx) + animator/level-editor/ops 三个工具前端**，每次 up 都 `--build`（从当前代码重建镜像）。编排文件在 `docker/`，所有 build context 相对它写（`../` = 仓库根），并 pin 了 `name: funny` 保持项目名/数据卷不变。
+`docker/docker-compose.local.yml` 拉起**10 个服务端进程（除 botsvc，本地不拉）+ redis + 主客户端(nginx) + animator/level-editor/ops 三个工具前端**，每次 up 都 `--build`（从当前代码重建镜像）。编排文件在 `docker/`，所有 build context 相对它写（`../` = 仓库根），并 pin 了 `name: funny` 保持项目名/数据卷不变。
 
 ```powershell
 ./docker/local-up.ps1              # 构建最新代码 + docker compose，浏览器开 http://localhost:8088
@@ -80,7 +81,7 @@ npm run dev:all             # 起全部进程（dev-up.ps1）
 
 nginx 同源反代（`client/nginx.conf`）：`/` SPA · `/api/`→metaserver:8080 · `/gw`→gateway WS · `/ws`→gameserver WS · `/world`→worldsvc:18084（不剥前缀）· `/auction`→auctionsvc:18086 · `/social`→socialsvc:8085（含已迁入的 `/family`）· `/analytics`→analyticsvc:18085（订正 2026-07-07：`/family` 已迁 socialsvc、`/auction` 已迁独立进程 auctionsvc）。worldsvc 内部需 redis + gateway/commercial/meta 内网基址；socialsvc 内部需 gateway 内网基址；analyticsvc/worldsvc/socialsvc 不暴露宿主，仅经 nginx。
 
-**容器内端口与 dev 不同**：镜像里各进程固定监听 metaserver:8080 / gateway:8082(内部 8090) / gameserver:8081 / commercial:8092 / matchsvc:8091 / worldsvc:18084 / admin:8083 / analyticsvc:18085 / auctionsvc:18086（订正 2026-07-07：admin 容器端口=8083，非 18083；auctionsvc 补入。dev 裸跑的 18080/8086 等仅 webpack 注入默认值用）。
+**容器内端口与 dev 不同**：镜像里各进程固定监听 metaserver:8080 / gateway:8082(内部 8090) / gameserver:8081 / commercial:8092 / matchsvc:8091 / worldsvc:18084 / socialsvc:8085 / admin:8083 / analyticsvc:18085 / auctionsvc:18086 / botsvc:18087（订正 2026-07-07：admin 容器端口=8083，非 18083；auctionsvc 补入。botsvc 仅 prod compose。dev 裸跑的 18080/8086 等仅 webpack 注入默认值用）。
 
 **工具镜像**：animator/ops 自带上下文构建；level-editor 的 Dockerfile 用**仓库根**作上下文（webpack `@game` alias 引用 `client/src/game`，需把 client/src 拷进镜像）。
 

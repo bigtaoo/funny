@@ -49,7 +49,7 @@
 - **铜矿是特例**：只在 **6 级地及以上**才会出现，不能通过"屯田"获取，是比前四种更晚解锁的高阶资源类型（不是独立地域专属，而是等级门槛专属）
 - 未找到"某地域只产某一种资源"的地域专属证据——资源类型看起来主要跟地块等级/大类挂钩，跟具体地理区域的关系没有确凿资料支持这一点应被当作真、不应照搬
 
-> Notebook Wars 对齐（2026-07-07 反转）：本项目的"贴纸"（对应铜币位）**回到三战规则**——铜矿**上地图、只在等级 ≥6 的格子生成**（本节 §49），占领后产铜钱，用于野外征兵等软操作。**推翻**旧分叉「贴纸=非地块、家城自产、主动避开铜矿只在高级地」（原 `SLG_DESIGN.md` §3.4 已改）。地图美术侧铜矿只有 l6–10 五级，见 [`design/product/slg-resource-art.md`](../product/slg-resource-art.md) §5.7-sticker。家城 `stickerShop` 是否仍并存产出=经济侧待定。
+> Notebook Wars 对齐（2026-07-07 反转）：本项目的"贴纸"（对应铜币位）**回到三战规则**——铜矿**上地图、只在等级 ≥6 的格子生成**（本节 §49），占领后产铜钱，用于野外征兵等软操作。**推翻**旧分叉「贴纸=非地块、家城自产、主动避开铜矿只在高级地」（原 `SLG_DESIGN.md` §3.4 已改）。地图美术侧铜矿只有 l6–10 五级，见 [`design/product/slg-resource-art.md`](../product/slg-resource-art.md) §5.7-sticker。家城 `stickerShop`（民居模型自产 sticker）与地图铜矿**并存产出**已在 `SLG_DESIGN.md` §3.4（2026-07-07 ✅）拍板保留（双 faucet），不再待定。
 
 来源：[三国志战略版各等级资源地详解](https://www.gamersky.com/handbooksy/201910/1233907.shtml)
 
@@ -98,7 +98,7 @@
 
 来源：[三国志战略版地图/州结构](https://www.gamersky.com/handbooksy/202303/1580885.shtml)、[知乎：新手攻略](https://zhuanlan.zhihu.com/p/506202375)、[9game 关卡等级](https://www.9game.cn/wenda/561839.html)
 
-> Notebook Wars 现状对照：现有 `CAPITAL_FRACTIONS`（[`slg.ts:553-564`](../../server/shared/src/slg.ts)）是 8 外围+1 内环+1 中心的对称 10 国布局，等级公式只看距地图中心距离、跟"属于哪个国家"完全无关。要复刻三战这套"环形分层+等级跟国家身份绑定"的结构，需要改国家数量（10→9）和等级公式（加入"国家身份"输入）。**已由 [ADR-034](../DECISIONS.md) 拍板（2026-07-05）并合 main**：改为**环形分层 + 角度扇区**归属（6 出生州+3 资源州+1 核心州），Voronoi/10 首府点旧模型已废，见 `SLG_DESIGN.md` §2.4。注：上文提到的 `CAPITAL_FRACTIONS`/距离衰减公式为 ADR-033 旧实现，代码待按 ADR-034 重写。
+> Notebook Wars 现状对照：**[ADR-034](../DECISIONS.md) 已拍板（2026-07-05）并落地**——国家归属改为**环形分层 + 角度扇区**（6 出生州+3 资源州+1 核心州），Voronoi/10 首府点旧模型已废，见 `SLG_DESIGN.md` §2.4。旧的 `CAPITAL_FRACTIONS`/`nearestCapitalIdx`/距离衰减公式（ADR-033）**已从代码删除**，归属计算现在 [`server/shared/src/slg/province.ts`](../../server/shared/src/slg/province.ts)（`slg.ts` 已拆分为 `slg/` 目录）。
 
 ---
 

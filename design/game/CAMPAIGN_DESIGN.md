@@ -1,7 +1,7 @@
 # Notebook Wars — 单机战役模式设计文档
 
 > 创建：2026-06-12。本文件是战役（PvE）模式的设计基准，随实现推进同步更新。
-> 配套阅读：`DESIGN.md`（引擎/系统）、`archive/IMPROVEMENT_PLAN.md`（迭代进度，已归档）、根 `../../CLAUDE.md`。
+> 配套阅读：`DESIGN.md`（引擎/系统）、根 `../../CLAUDE.md`。
 
 ---
 

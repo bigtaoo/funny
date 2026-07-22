@@ -12,7 +12,7 @@
 - **资源结构（对齐三战的「4 地块 + 1 铜币」，SLG §3.4 五种）**：`ink/paper/graphite/metal` = 三战的**粮/木/石/铁，四种地块资源**（`biomeAt` 地图产）；`sticker`（贴纸）= 三战的**铜币位**，通用流通资源，**由主城产**（民居模型），非地块。
 - **要解决的两个真问题**（SLG §15 盘点遗留）：
   1. **`graphite`（石墨=石料）空转的真因 = `biomeAt` 漏了它**——现行 biome 只三分（`ink<t0<paper<t1<metal`，`slg.ts:587`，注释明说「only the three land-mined resources」），graphite 本该是**第 4 种地块资源**却没进 biome → **补成四分即给它地图 faucet**（不是「让主城自产」，我早先方案此处搞反）。`sticker`（铜币位）空转的真因 = 没有「民居」式主城产出 → 由主城 `stickerShop` 自产补 faucet。两者的 sink 都来自**高级建筑升级消耗**。
-  2. **`troopCap`（兵力上限）是死值**——恒为 `TROOP_CAP_BASE`，没有成长曲线；练兵（`trainTroops`）已落地但训练速度/队列/上限都没有可升级的来源。
+  2. **`troopCap`（兵力上限）曾是死值**——原本恒为 `TROOP_CAP_BASE`，没有成长曲线；练兵（`trainTroops`）已落地但训练速度/队列/上限都没有可升级的来源。**（此为待解问题的原始陈述；P1 后 `troopCapFor(buildings)=TROOP_CAP_BASE+drillYard·step` 已给出成长曲线，见 §5/§6。）**
 - **方案**：仿三战，**主城点进去 = 独立内政界面（`CityScene`）**，里面摆「书桌（Desk，总等级门控）+ 一排文具建筑」。建筑升级吃**赛季资源 + 时间**（时间 = coin 加速变现点），分别驱动：**4 地块资源产率乘数 / sticker 主城自产 / 仓储上限 / 兵力上限 + 练兵 / 主城城防**。
 - **这一刀让经济循环转起来**：①`biomeAt` 补 graphite 第 4 地块 → graphite 有地图 faucet；②主城 `stickerShop`（民居模型）自产 sticker → sticker 有 faucet；③高级建筑升级**消耗** graphite（高阶建材）+ sticker（通用）→ 两者有 sink；④4 个资源建筑给 `ink/paper/graphite/metal` **全局产率乘数**（地图仍是主产）。
 - **赛季边界（D-CITY-1，✅ 2026-06-30 拍板：清空）**：建筑/资源/兵力/地图态等 **SLG 赛季内战略态全部赛季重置清空**（对齐 SLG4），是变现发动机「重肝」。**跨季只留 meta 系统资产**——主要是**材料**（scrap/lead/binding，赛季产出经邮件入 `SaveData.materials`，G4 已通），材料再合成装备（meta 主产是材料，**直接发装备的地方很少**）。建筑**不进跨季养成**，**天梯红线不动**（建筑永不喂 `buildPvpBlueprints`）。
@@ -71,7 +71,7 @@
 | `stickerShop` | 贴纸铺 | 资源（民居模型） | **sticker 主城自产**（铜币位/通用资源 faucet，非地块）→ **激活 sticker faucet**；绝不产 coin | `recomputeYield` 自产项 | P1 |
 | `cabinet` | 文件柜 | 仓储 | 提 `RESOURCE_CAP`（仓储上限）+ 被掠夺时保护一部分（三战仓库护粮） | `settleResources` cap + `applySiege` loot | P1 |
 | `drillYard` | 练兵场 | 军事 | 提 `troopCap`（**总兵力上限**）+ 训练速度（`trainTroops` 时长）+ 训练队列上限（`TROOP_TRAIN_QUEUE_MAX`）+ 解锁更高兵种训练 | `trainTroops` / `troopCap` | P1 |
-| `satchel` | 书包 | 军事 | 提**单支队伍出征携带兵力上限**（与 `drillYard` 的总兵力上限是两个独立维度，D-CITY-9）：`satchelCarryCapFor`=`SATCHEL_CARRY_BASE`(=`TROOP_CAP_BASE`=2000，零级即可单队带满初始兵力池) + `satchel` 每级 `SATCHEL_CARRY_STEP`(=1000)，满级(L10)=12,000，与 `drillYard` 满级总 `troopCap` 相等（满配才能单队打满仓）。 | `server/worldsvc/src/combatMarch.ts` `startMarch`：team 出征时校验实际携带兵力（flat army 用 `troops`；card army 用 `cardState.currentTroops` 求和）不超过该 cap，超限 `SATCHEL_CAP_EXCEEDED` | **已实现** |
+| `satchel` | 书包 | 军事 | 提**单支队伍出征携带兵力上限**（与 `drillYard` 的总兵力上限是两个独立维度，D-CITY-9）：`satchelCarryCapFor`=`SATCHEL_CARRY_BASE`(=`TROOP_CAP_BASE`=**10000**，2026-07-22 兵力池统一后，零级即可单队带满初始兵力池) + `satchel` 每级 `SATCHEL_CARRY_STEP`(=1000)，满级(L10)=**20,000**，与 `drillYard` 满级总 `troopCap` 相等（满配才能单队打满仓）。 | `server/worldsvc/src/combatMarch.ts` `startMarch`：team 出征时校验实际携带兵力（flat army 用 `troops`；card army 用 `cardState.currentTroops` 求和）不超过该 cap，超限 `SATCHEL_CAP_EXCEEDED` | **已实现** |
 | `wall` | 城墙 | 城防 | **主城耐久（durability）上限来源**（D-CITY-8，2026-07-16 已实现，由"围攻时临时给守军加 HP"升级为持久化耐久值）：被围攻战斗获胜后 5 分钟宽限期，按攻方攻城值扣耐久；耐久随时间自愈；归零 = 城池摧毁 + 丢失全部领地 + 强制迁城 + 系统邮件 | 主城 `settleSiegeDamage` + `baseDurabilityMax`/`regenDurability`（`shared/src/slg/siege.ts`） | P2（耐久化改造 P3 已实现，客户端血条/特效待后续） |
 | `academy` | 书院 | 科技 | **SLG 赛季内**蓝图 buff（HP/伤害/速度），季末清；UI 独立成军事屏的科技树面板（D-CITY-12） | `buildSiegeBlueprints` 赛季叠加层 | P2 |
 | ~~（委任）~~ | ~~内政官~~ | ~~加成~~ | ~~派角色卡进建筑，按角色属性给该建筑额外加成~~ | ~~各建筑乘数~~ | **DROPPED** |
@@ -148,7 +148,7 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 
 | 常量（占位名） | 占位值 | 说明 |
 |---|---|---|
-| `DESK_MAX_LEVEL` | 20 | 书桌（总门控）上限，对齐三战 20 级 |
+| `DESK_MAX_LEVEL` | 10 | 书桌（总门控）上限，对齐三战君王殿 10 级（2026-07-15 由 20 改 10，见 D-CITY-7；STEP 常量翻倍保满级加成一致） |
 | `BUILDING_MAX_LEVEL` | =desk 当前等级 | 各建筑 ≤ 书桌等级 |
 | `biomeGraphiteMax` 等四分阈值 | DRAFT | `biomeAt` 三分→四分（加 graphite 地块）的分区阈值（★P1 前置） |
 | `BUILD_YIELD_STEP` | 0.05（+5%/级） | inkPot/paperTray/graphiteMill/metalForge 每级产率乘数（4 地块） |
@@ -242,7 +242,7 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 > **P1 实现进度（2026-06-30，branch `slg-city-p1`，服务端先行刀）**
 > 已落（纯服务端，未碰 client UI）：
 > - **biomeAt 四分**（`shared/slg.ts`）：`ink<0.30<paper<0.55<graphite<0.78<metal`，graphite 获地图 faucet；`sticker` 永不进 biome（主城自产）。⚠ ADR-022 确定性注记：改的是程序地图，已占地块持久化 resType 不变；上线后再改须按赛季版本闸门，勿改活动赛季地图。
-> - **建筑数据模型 + 纯函数**（`shared/slg.ts`）：`BuildingKey`/`BUILDING_KEYS(_P1)`/常量（DESK_MAX_LEVEL=20、BUILD_YIELD_STEP=0.05、STICKER_SELF_BASE=200、CABINET_CAP_STEP=0.1、DRILL_TROOPCAP_STEP=500、DRILL_TRAIN_SPEED_STEP=0.04、BUILD_QUEUE_SLOTS=1 等，全 DRAFT）+ `buildingYieldMult`/`buildingSelfYield`/`resourceCapFor`/`troopCapFor`/`drillTrainMult`/`trainQueueMaxFor`/`buildCost`/`buildTimeSec`/`buildGateReason`（单测 8 例全绿）。
+> - **建筑数据模型 + 纯函数**（`shared/slg.ts`）：`BuildingKey`/`BUILDING_KEYS(_P1)`/常量（DESK_MAX_LEVEL=20、BUILD_YIELD_STEP=0.05、STICKER_SELF_BASE=200、CABINET_CAP_STEP=0.1、DRILL_TROOPCAP_STEP=500、DRILL_TRAIN_SPEED_STEP=0.04、BUILD_QUEUE_SLOTS=1 等，全 DRAFT。**⚠️ 此为 2026-06-30 当时值；2026-07-15 D-CITY-7 后 DESK_MAX_LEVEL=10、各 STEP 翻倍：DRILL_TROOPCAP_STEP=1000 等**）+ `buildingYieldMult`/`buildingSelfYield`/`resourceCapFor`/`troopCapFor`/`drillTrainMult`/`trainQueueMaxFor`/`buildCost`/`buildTimeSec`/`buildGateReason`（单测 8 例全绿）。
 > - **数据库**（`worldsvc/db.ts`）：`PlayerWorldDoc.buildings`/`buildQueue` + `BuildQueueEntry`。
 > - **注入**（`worldsvc/service.ts`）：`recomputeYield`（末乘建筑乘数 + sticker 自产，支持 buildingsOverride 解决完工前算率的写读时序）/`settle`（cap 走 `resourceCapFor`）/`trainTroops`（队列上限 `trainQueueMaxFor` + 时长 ×`drillTrainMult`）/`joinWorld`（初始 `{desk:1}`、troopCap 走 `troopCapFor`）。
 > - **服务方法 + 调度**：`upgradeBuilding`/`speedupBuild`/`processCompletedBuilds`/`applyDueBuilds`（复刻 trainingQueue 链式队列）+ scheduler 接入 + httpApi `POST /world/build/upgrade|speedup`。

@@ -90,6 +90,8 @@
 
 ### 13-SLG-CITY.1 可调参数表（`@nw/shared/slg.ts`，全 DRAFT）
 
+> **⚠️ 常量已改（本表为 2026-06-30 核验时值，保留作审计记录）**：① 2026-07-15 D-CITY-7 把 `DESK_MAX_LEVEL` 20→**10**、各每级 STEP 翻倍（`DRILL_TROOPCAP_STEP` 500→**1000** 等）、`STICKER_SELF_BASE` 翻倍、`BUILD_COST/TIME` ×4，**满级总量与旧 L20 一致**；② 2026-07-22 兵力池统一（ADR-048）`TROOP_CAP_BASE` 2000→**10000**。故下表 `DESK_MAX_LEVEL=20`/`DRILL_TROOPCAP_STEP=500` 及 §13-SLG-CITY.2 的「L20 / troopCap 2000→12000」是旧基线，**当前代码值 = DESK 10 / step 1000 / base 10000 / satchel 满级 20000**；节奏结论（量级/满级倍率/赛季窗口）仍成立。
+
 | 常量 | 默认 | 作用 |
 |---|---|---|
 | `DESK_MAX_LEVEL` | 20 | 书桌总等级门控（其余建筑 ≤ desk）|

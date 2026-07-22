@@ -39,18 +39,22 @@
 
 ### 2.1 Flag 注册表（代码侧白名单，`@nw/shared`）
 
-新建 `server/shared/src/featureFlags.ts`：
+`server/shared/src/featureFlags.ts`（**真源，下为当前实际登记的 flag**）：
 
 ```ts
 export const FEATURE_FLAGS = {
-  new_shop_ui:      { default: false, desc: '新商店界面', side: 'client' },
-  siege_v2:         { default: false, desc: '围攻 v2 引擎', side: 'both'   },
-  maintenance_mode: { default: false, desc: '全局维护(拒登录)', side: 'server' },
+  match_bot_fallback: { default: false, desc: 'Matchmaking timeout fallback to AI', side: 'server' },
+  client_log_error:   { default: false, desc: 'Client log upload - error', side: 'client' },
+  client_log_warn:    { default: false, desc: 'Client log upload - warn',  side: 'client' },
+  client_log_info:    { default: false, desc: 'Client log upload - info',  side: 'client' },
+  client_log_debug:   { default: false, desc: 'Client log upload - debug', side: 'client' },
   // …新增 flag 在此登记
 } as const;
 
 export type FlagKey = keyof typeof FEATURE_FLAGS;
 ```
+
+> ⚠️ **`new_shop_ui` / `siege_v2` / `maintenance_mode` 仅为机制示例，尚未在代码里登记。** 下文 §4/§6 以 `maintenance_mode` 举 kill-switch 用法——F3 下发通道已就绪（见 §8「2026-06-24」末），要真正启用维护模式须先在上表登记该 flag 并在 gateway/metaserver 登录入口接线。
 
 - `default`：库里查不到 / 库挂了时的兜底值，**必须存在**。
 - `side`：`client | server | both`，仅作文档/校验提示，标明这个 flag 在哪侧被读。

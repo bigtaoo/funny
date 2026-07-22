@@ -25,7 +25,7 @@
 ## 2. 西方大区内部分层
 
 ### 2.1 共享 Meta 层（单实例，托管欧洲）
-- 进程：`metaserver` · `MongoDB` · `worldsvc` · `commercial` · `admin` · `analyticsvc` · 社交。
+- 进程：`metaserver` · `MongoDB` · `worldsvc` · `commercial` · `admin` · `analyticsvc` · `socialsvc` · `auctionsvc`（自带专属库 `notebook_wars_auction`） · `botsvc`。
 - 这些**非帧实时**：美洲玩家跨洋 REST ~150ms 可接受。
 - **MongoDB 单主在欧洲，禁止跨大西洋副本集写**（跨洋写延迟会拖垮 meta）。游戏帧永不触库（gameserver 不连库），故对战不受 DB 位置影响。
 

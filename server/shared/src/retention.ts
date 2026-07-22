@@ -93,8 +93,8 @@ export const DAILY_TASKS: DailyTaskDef[] = [
 /** Daily full-point threshold (= all tasks completed). */
 export const DAILY_POINTS_THRESHOLD: number = 3;
 
-/** Full-point coin reward (daily cap: 2 coins × 30 ≈ 60/month, §12.2 R1). */
-export const DAILY_COINS_REWARD: number = 2;
+/** Full-point coin reward (daily cap: 5 coins × 30 = 150/month, §12.2 R1). */
+export const DAILY_COINS_REWARD: number = 5;
 
 // ── Save data types (SaveData.retention sub-block) ──────────────────────────────────
 

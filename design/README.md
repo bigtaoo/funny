@@ -1,6 +1,6 @@
 # Notebook Wars — 设计文档索引与治理
 
-> 状态：实现中 · 权威：本文（文档治理的单一入口）· 更新：2026-06-24
+> 状态：实现中 · 权威：本文（文档治理的单一入口）· 更新：2026-07-22
 
 本文件是 **所有设计文档的统一入口**：去哪找、谁是权威、新文档放哪、数值怎么管。
 新增/搬动/废弃任何 `design/` 下文档，**必须同步更新本文的文档地图**。
@@ -32,10 +32,12 @@
 | [DESIGN.md](game/DESIGN.md) | 引擎 / 系统设计基准（机制，非数值权威） | 实现中 |
 | [BALANCE.md](game/BALANCE.md) | **战斗数值快照（镜像 config.ts）— 文档侧唯一数值参考** | 实现中 |
 | [ECONOMY_BALANCE.md](game/ECONOMY_BALANCE.md) | 经济**哲学/政策**（faucet/sink、鲸鱼天花板、反通胀） | 实现中 |
+| [ECONOMY_BALANCE_CN.md](game/ECONOMY_BALANCE_CN.md) | 中国区专属 IAP 定价档（CNY 档位；版号申请中暂不实施，ECONOMY_BALANCE §2.2 链入） | 待落地 |
 | [ECONOMY_NUMBERS.md](game/ECONOMY_NUMBERS.md) | **经济/养成数值演算表（数字权威：体力/合成/护甲/金币/皮肤）** | 设计中 |
 | [ECONOMY_VERIFICATION_LOG.md](game/ECONOMY_VERIFICATION_LOG.md) | econ-sim 各轨（NATION/CITY/C/D/E/F/STRONGHOLD）核验过程与结论（已 CLOSED，非数值权威） | 已完成 |
 | [CHARACTER_CARDS_DESIGN.md](game/CHARACTER_CARDS_DESIGN.md) | **角色卡实例系统（Hero Roster/喂卡升级/兵力/受伤/布阵对接；数字→ECONOMY_NUMBERS §6）** | 设计中 |
 | [EQUIPMENT_DESIGN.md](game/EQUIPMENT_DESIGN.md) | **装备系统机制基准（槽位/获取/强化/洗练/引擎注入；数字→ECONOMY_NUMBERS §5）** | 已实现（`shared/equipment.ts` craft/enhance+0..9/reforge/salvage+e2e）；⚠️洗练当前不扣金币 |
+| [EQUIPMENT_ICON_PROMPTS.md](game/EQUIPMENT_ICON_PROMPTS.md) | 装备图标 AI 生成 prompt 清单（美术素材，非机制基准） | 参考 |
 | [ACHIEVEMENT_DESIGN.md](game/ACHIEVEMENT_DESIGN.md) | **成就系统机制基准（统计里程碑→一次性金币；服务器权威/领取；数字→ECONOMY_BALANCE §2.4）** | 已实现（`shared/achievements.ts` StatKey/分阶/反作弊L1+测试） |
 | [RETENTION_DESIGN.md](game/RETENTION_DESIGN.md) | **留存系统机制基准（签到/每日任务/周常；服务器权威+dayKey；不新增金币龙头；数字→ECONOMY_NUMBERS §12）** | 已实现（`shared/retention.ts` 30格签到/每日任务/dayKey+e2e；周常预留） |
 | [EVENTS_DESIGN.md](game/EVENTS_DESIGN.md) | **活动/Live-ops 编排（配置/生命周期/限定直购/双倍期；发奖走邮件、计数复用 statKey；不新增金币龙头 ADR-014）** | 设计中 |
@@ -50,6 +52,7 @@
 | [CAMPAIGN_STORY.md](game/CAMPAIGN_STORY.md) | 战役剧情文案（叙事铁律见 world.md / ADR） | 设计中 |
 | [PVE_INTEGRITY_PLAN.md](game/PVE_INTEGRITY_PLAN.md) | **PvE 反作弊 + 服务器权威方案（PvE 数据权威真源）** | 实现中 |
 | [DIFFICULTY_SIM.md](game/DIFFICULTY_SIM.md) | 关卡难度模拟器（真实引擎+基线 AI 量化战役难度；代码 `client/test/difficultySim.ts`） | 工具/实现中 |
+| [STAR_SCORING.md](game/STAR_SCORING.md) | PvE 关卡三星评分机制（评分维度/阈值；client-modules 引用） | 实现中 |
 | [REPLAY_SHARE_DESIGN.md](game/REPLAY_SHARE_DESIGN.md) | **录像游戏外分享（状态流·客户端自产·无登录直达哑播放器·公开 /r/{code}·微信 shareAppMessage；与输入流录像分工）** | 待实现 |
 | [MYTHOLOGY_DESIGN.md](game/MYTHOLOGY_DESIGN.md) | 神话「神力赋予」叠加层 | 设计中 |
 | [META_DESIGN.md](game/META_DESIGN.md) | 元系统 + 服务器架构基准（meta 范畴 6 组件） | 已实现 |
@@ -81,13 +84,12 @@
 | [AUCTION_DESIGN.md](game/AUCTION_DESIGN.md) | **拍卖行机制基准（交易模型/状态机/反 RMT；从 SLG §7/§14 抽出；数字→server/shared/src/slg.ts）** | 实现中 |
 | [UI_DESIGN.md](game/UI_DESIGN.md) | **菜单 / 元系统客户端 UI**（与战斗 UI 分工，见 §3） | 实现中 |
 | [LOBBY_IA_REDESIGN.md](game/LOBBY_IA_REDESIGN.md) | 大厅信息架构重规划（一级入口/底部 tab 重分组；装备并入养成、战绩升级为生涯、克制付费曝光） | 设计中 |
-| [IMPROVEMENT_PLAN.md](game/archive/IMPROVEMENT_PLAN.md) | 6 项工程改进（全完成） | 已归档 |
-| [PROFILE_POPUP_PLAN.md](game/archive/PROFILE_POPUP_PLAN.md) | 资料弹层（已实现） | 已归档 |
-| [PARALLEL_DEV_PLAN.md](game/PARALLEL_DEV_PLAN.md) | **并行开发计划（按依赖耦合分三条轨道 A/B/C，各自 worktree）** | 已完成 |
+| [PARALLEL_DEV_PLAN.md](game/archive/PARALLEL_DEV_PLAN.md) | **并行开发计划（按依赖耦合分三条轨道 A/B/C，各自 worktree）** | 已归档 |
 | [LAUNCH_TRACK_1_CLIENT.md](game/archive/LAUNCH_TRACK_1_CLIENT.md) | 上线收口 Track 1 — 客户端合规 UI + 孤儿场景接线（已完成） | 已归档 |
 | [LAUNCH_TRACK_2_SERVER.md](game/archive/LAUNCH_TRACK_2_SERVER.md) | 上线收口 Track 2 — 服务端闭环补全（已完成） | 已归档 |
 | [LAUNCH_TRACK_3_RELEASE.md](game/archive/LAUNCH_TRACK_3_RELEASE.md) | 上线收口 Track 3 — 法务素材 + 真机验收 + 发布物料（已完成） | 已归档 |
 | [IAP_CREDENTIALS.md](game/IAP_CREDENTIALS.md) | IAP / 广告凭据上线手册（commercial 验单 + metaserver 广告验签；验签权威=iap.ts/ads.ts） | 实现中 |
+| [IOS_RELEASE.md](game/IOS_RELEASE.md) | iOS 发布手册（TestFlight/OTA R2/提审清单；TestFlight 已上、IAP 产品+提审待办） | 实现中 |
 
 #### 1.2.1 验收清单（`design/game/release/`）
 | 文档 | 范围 |
@@ -129,10 +131,11 @@
 | [animator/ARCHITECTURE.md](tools/animator/ARCHITECTURE.md) · [REQUIREMENTS.md](tools/animator/REQUIREMENTS.md) | 骨骼动画编辑器（端口 9091） |
 | [animator/WORKSPACE_SYNC.md](tools/animator/WORKSPACE_SYNC.md) | **animator 在线工作区 + 云盘→仓库同步桥（Cloudflare Pages + Supabase + 自动 PR；状态：设计中）** |
 | [level-editor/DESIGN.md](tools/level-editor/DESIGN.md) | 关卡编辑器（端口 9092） |
+| [map-editor/DESIGN.md](tools/map-editor/DESIGN.md) | SLG 大地图编辑器（端口 9095） |
 | [vfx-editor/DESIGN.md](tools/vfx-editor/DESIGN.md) | 特效编辑器（端口 9094，方案 A 墨线矢量程序特效；状态：设计中） |
 
 ### 1.5 快查文档（`claudedocs/`，模块级速查，非设计基准）
-`animator.md` · `client-modules.md` · `file-formats.md` · **`server.md`（进程拓扑/端口权威）**
+`animator.md` · `client-modules.md` · `client-testing.md` · `client-memory-leak.md` · `file-formats.md` · `worktrees.md` · **`server.md`（进程拓扑/端口权威）**
 
 ---
 
@@ -157,7 +160,7 @@
 | PvE 奖励 / 养成数据权威 | 服务器 `server/shared/src/pveRewards.ts` + [PVE_INTEGRITY_PLAN.md](game/PVE_INTEGRITY_PLAN.md)（方案 B：服务器权威） | 客户端 JSON 仅参考/编辑器用 |
 | 接口契约（REST/WS/proto/DB 集合） | [game/SERVER_API.md](game/SERVER_API.md) + `server/contracts/` | — |
 | 功能开关机制（白名单/定向求值/分发/后台） | [game/FEATURE_FLAGS_DESIGN.md](game/FEATURE_FLAGS_DESIGN.md) | 接口落 SERVER_API/openapi；flag 白名单+default 真源 `server/shared/src/featureFlags.ts`；≠ SaveData.flags（玩家态） |
-| 进程拓扑 / 端口 | [claudedocs/server.md](../claudedocs/server.md) | 9 个应用进程，见 §4 |
+| 进程拓扑 / 端口 | [claudedocs/server.md](../claudedocs/server.md) | 11 个应用进程，见 §4 |
 | 多区域部署（区域划分/匹配域/数据驻留） | [game/DEPLOY_TOPOLOGY.md](game/DEPLOY_TOPOLOGY.md) | Meta 共享+对战层按区隔离+中国独立；同区匹配、好友房跨区（ADR-019）；进程拓扑仍归 server.md |
 | 配色 / 渲染 / 美术资产分工 | [product/art-direction.md](product/art-direction.md) + `client/src/render/theme.ts` | 阵营色 **我蓝敌红**（v0.3） |
 | 客户端 UI | 菜单/元系统 → [game/UI_DESIGN.md](game/UI_DESIGN.md)；战斗内 → [product/ui-design.md](product/ui-design.md) | 互补分工，见 §3 |
@@ -179,13 +182,13 @@
 
 ---
 
-## 4. 进程拓扑（9 个应用进程）
+## 4. 进程拓扑（11 个应用进程）
 
-权威清单见 [claudedocs/server.md](../claudedocs/server.md)。应用进程 = **9 个**（`engine`/`shared`/`contracts` 是 npm 包不算进程，mongo/redis 是基础设施）：
+权威清单见 [claudedocs/server.md](../claudedocs/server.md)。应用进程 = **11 个**（`engine`/`shared`/`contracts` 是 npm 包不算进程，mongo/redis 是基础设施）：
 
-`metaserver` · `gateway` · `matchsvc` · `gameserver` · `commercial` · `admin` · `worldsvc` · `socialsvc` · `analyticsvc`
+`metaserver` · `gateway` · `matchsvc` · `gameserver` · `commercial` · `admin` · `worldsvc` · `socialsvc` · `analyticsvc` · `auctionsvc` · `botsvc`
 
-> [META_DESIGN.md](game/META_DESIGN.md) §6.1 的「6 组件」是 **meta 范畴**（S0–S5）的拓扑，不含后加的 admin/worldsvc/socialsvc/analyticsvc——以本节为全量。
+> [META_DESIGN.md](game/META_DESIGN.md) §6.1 的「6 组件」是 **meta 范畴**（S0–S5）的拓扑，不含后加的 admin/worldsvc/socialsvc/analyticsvc/auctionsvc/botsvc——以本节为全量。
 
 ---
 

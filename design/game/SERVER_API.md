@@ -3,13 +3,14 @@
 > 创建：2026-06-13。本文件是客户端 ↔ 服务器的**接口契约**：REST 端点 + WebSocket 消息 + 锁步时序。
 > 双端实现以本文件为准（客户端 `NetClient`/`SaveStore`/`EconomyClient` 与 `server/` 各 service）。
 > 配套：`META_DESIGN.md`（系统/架构）、`META_TASKS.md`（任务）、`ECONOMY_BALANCE.md`（数值）；SLG 大世界（worldsvc）契约见 `SLG_DESIGN.md §14`；埋点见 `ANALYTICS_DESIGN.md §8`。
-> 契约单一来源在 `server/contracts/`（5 文件）：`openapi.yml`（meta REST）+ `openapi-world.yml`（worldsvc REST）+ `transport.proto`（WS 控制面/数据面）+ `game.proto`（PlayerCommand，对服务器 opaque）+ `replay.proto`（录像），双端 codegen（见 `META_TASKS.md` C-2）。
+> 契约单一来源在 `server/contracts/`：`openapi.yml`（meta REST）+ `openapi-world.yml`（worldsvc REST）+ `openapi-auction.yml`（auctionsvc REST）+ `transport.proto`（WS 控制面/数据面）+ `game.proto`（PlayerCommand，对服务器 opaque）+ `replay.proto`（录像），双端 codegen（见 `META_TASKS.md` C-2）。
+> **⚠️ ADR-040（2026-07-14）**：`openapi.yml` 本身已是**生成产物**（文件头 `AUTO-GENERATED … DO NOT EDIT`）——真源是 `contracts/openapi/paths/<domain>.yml`（9 fragment）+ `openapi/schemas.yml`，改契约改 fragment 后跑 `npm run gen:api:contracts` 重新合并，**勿手改 `openapi.yml`**。
 
 ---
 
 ## 0. 总览
 
-> **架构现状（10 应用进程 + 6 公网面）**（订正 2026-07-07：进程 8→10，补 `socialsvc`/`auctionsvc`）：服务端现为 **10 个应用进程**（外加包 `contracts`、`@nw/shared`、`@nw/engine`）。**公网面 = 6**：`meta`(REST 请求面) + `gateway`(WS 控制面) + `game`(WS 数据面) + `worldsvc`(SLG 大世界 REST 第四面，`/world` `/sect` `/nation`) + `socialsvc`(社交第五面，`/social/*`) + `auctionsvc`(拍卖行第六面，`/auction`)；`/family` 已迁 `socialsvc`、`/auction` 已迁独立进程 `auctionsvc`(端口 18086)；**玩家不可达 = `matchsvc`/`commercial`/`admin`**（仅内网，反代不路由）；`analyticsvc` 的 ingest 两端点（`/analytics/config` `/analytics/events`）经反代公开、`/internal/query` 内网。早期「5 组件 + 三面分离」（`META_DESIGN.md §1.1/§6.1`）三面仍是 PvP 对战层骨架：玩家触达 meta + gateway + game，**matchsvc** 是玩家不可达的私有匹配大脑（gateway 当门面 / game 注册），开局走 matchsvc 签名 ticket、结算 game→meta 上报（M16–M20）。内部契约见 §8/§9。
+> **架构现状（11 应用进程 + 6 公网面）**（订正 2026-07-07：进程 8→10，补 `socialsvc`/`auctionsvc`；2026-07-22：补 `botsvc` → 11）：服务端现为 **11 个应用进程**（外加包 `contracts`、`@nw/shared`、`@nw/engine`；`botsvc` 是机器人玩家服务，玩家不可达、内部管理面 18087）。**公网面 = 6**：`meta`(REST 请求面) + `gateway`(WS 控制面) + `game`(WS 数据面) + `worldsvc`(SLG 大世界 REST 第四面，`/world` `/sect` `/nation`) + `socialsvc`(社交第五面，`/social/*`) + `auctionsvc`(拍卖行第六面，`/auction`)；`/family` 已迁 `socialsvc`、`/auction` 已迁独立进程 `auctionsvc`(端口 18086)；**玩家不可达 = `matchsvc`/`commercial`/`admin`**（仅内网，反代不路由）；`analyticsvc` 的 ingest 两端点（`/analytics/config` `/analytics/events`）经反代公开、`/internal/query` 内网。早期「5 组件 + 三面分离」（`META_DESIGN.md §1.1/§6.1`）三面仍是 PvP 对战层骨架：玩家触达 meta + gateway + game，**matchsvc** 是玩家不可达的私有匹配大脑（gateway 当门面 / game 注册），开局走 matchsvc 签名 ticket、结算 game→meta 上报（M16–M20）。内部契约见 §8/§9。
 
 | 通道（面） | 协议 | 服务 | 暴露 | 承载 |
 |---|---|---|---|---|
@@ -17,7 +18,7 @@
 | 房间 / 匹配 / 在线 / 通知（控制面） | **WSS（双向实时）** | `gateway`（有状态连接层，M20） | 公网 `/gw` | 常驻连接：开始/取消匹配、friendly 建房/加入/ready/start、match-found+ticket 下发、在线状态、家族/宗门/国家频道扇出 |
 | 锁步对战（数据面） | **WSS（protobuf 二进制）** | `gameserver`（无状态哑中继，永不连库 M16） | 公网 `/ws` | 每局新建：ticket 握手 → 逐 tick 输入中继 / 重连 / 局末上报 meta |
 | **SLG 大世界（第四面）** | **HTTPS REST（JSON）** | `worldsvc`（连 `notebook_wars_world`，按赛季分服/shard） | 公网 `/world` `/sect` `/nation` | 地图/行军/占领、宗门、国家、赛季、围攻（§10；权威契约 `openapi-world.yml`）（订正 2026-07-07：`/family` 已迁 socialsvc、`/auction` 已迁 auctionsvc） |
-| **社交（第五面）** | **HTTPS REST（JSON）** | `socialsvc`（连 `notebook_wars_social`） | 公网 `/social/*` | 家族/好友/邮件/频道（家族已从 worldsvc 迁入，去 worldId 全局持久；SOCIAL_SVC_DESIGN） |
+| **社交（第五面）** | **HTTPS REST（JSON）** | `socialsvc`（连专属库 `nw_social`） | 公网 `/social/*` | 家族/好友/邮件/频道（家族已从 worldsvc 迁入，去 worldId 全局持久；SOCIAL_SVC_DESIGN） |
 | **拍卖行（第六面）** | **HTTPS REST（JSON）** | `auctionsvc`（连 `notebook_wars_auction`，端口 18086） | 公网 `/auction` | 挂单/竞拍/买断/托管结算（从 worldsvc 解耦为独立进程，AUCTION_DESIGN §9） |
 | 埋点 ingest | HTTPS REST（JSON，fire-and-forget） | `analyticsvc`（连 `notebook_wars_analytics`，端口 18085） | 公网 `/analytics` | `GET /analytics/config`（拉采集配置）+ `POST /analytics/events`（批量上报，`w:0`）（§11） |
 | **内部：匹配 + 分配** | 内部 HTTP（gateway↔matchsvc）+ game 注册 | `matchsvc`（单点，玩家不可达 M17） | 仅内网 | 匹配队列、房间状态、game 注册表/分配、签 ticket（§8.1） |
@@ -27,7 +28,7 @@
 
 > **线协议分层（M12）**：WS 用 protobuf（`transport.proto` = 控制层，服务器认得；`game.proto` = `PlayerCommand` 结构，仅客户端↔客户端）。服务器把 `PlayerCommand` 当 **`bytes` opaque 转发不解码** → 与游戏逻辑零依赖。REST 保持 JSON（低频、利于浏览器/支付回调/调试）。
 
-- 各服务可独立部署（`META_DESIGN.md §6.1`），共享 `@nw/shared`（协议类型 + JWT 校验 + Mongo client + ladder/economy）；确定性战斗内核抽为 library 包 `@nw/engine`（PvP netplay / PvE / SLG 围攻共用）。反代按 `/api/*`(meta)、`/gw`(gateway)、`/ws`(game)、`/world` `/family` `/auction`(worldsvc)、`/analytics`(analyticsvc) 分流；matchsvc / commercial / admin 不暴露公网。gateway 与 matchsvc 各为独立进程，经内部 HTTP 互通（M22/M23，S1-M5）。
+- 各服务可独立部署（`META_DESIGN.md §6.1`），共享 `@nw/shared`（协议类型 + JWT 校验 + Mongo client + ladder/economy）；确定性战斗内核抽为 library 包 `@nw/engine`（PvP netplay / PvE / SLG 围攻共用）。反代按 `/api/*`(meta)、`/gw`(gateway)、`/ws`(game)、`/world` `/sect` `/nation`(worldsvc)、`/social/*`(socialsvc，含已迁入的 `/family`)、`/auction`(auctionsvc)、`/analytics`(analyticsvc) 分流；matchsvc / commercial / admin / botsvc 不暴露公网。gateway 与 matchsvc 各为独立进程，经内部 HTTP 互通（M22/M23，S1-M5）。
 - 服务器权威段（钱包 / 库存 / 盲盒 / IAP / **天梯**）只能经服务器改，**客户端永不直接写**（`META_DESIGN.md §2`）。
 - 所有时间戳由服务器盖，客户端不可信。
 
@@ -40,7 +41,7 @@
 - `accountId` 由服务端从 token 解出，**客户端请求体里不带 accountId**（防越权）。
 
 ### 1.2 编码（契约单一来源 + 双端 codegen）
-- **REST = JSON / `openapi.yml`（design-first，M15）**：`contracts/openapi.yml` 是机器契约单一来源；客户端 typed fetch（`openapi-typescript` + `openapi-fetch`，`client/scripts/gen-openapi.mjs` 生成入库）。服务端 metaserver 路由+校验经**构建期代码生成**装配（ADR-023，已落地 2026-06-30）：`server/contracts/scripts/gen-openapi-server.mjs` 解析 openapi.yml，生成 `server/metaserver/src/generated/routes.gen.ts` 并入库——坏 spec 在 codegen/tsc 阶段即失败，契约变更有服务端 diff 可供 CD 卡版本；运行时不再依赖 `fastify-openapi-glue`。CI 检查：`npm run gen:api:server:check`（在 metaserver 目录）。统一响应包络：
+- **REST = JSON / `openapi.yml`（design-first，M15）**：`contracts/openapi.yml` 是机器契约的合并产物（真源 = `openapi/` 分域 fragment，见 §0 ADR-040 提示，勿手改）；客户端 typed fetch（`openapi-typescript` + `openapi-fetch`，`client/scripts/gen-openapi.mjs` 生成入库）。服务端 metaserver 路由+校验经**构建期代码生成**装配（ADR-023，已落地 2026-06-30）：`server/contracts/scripts/gen-openapi-server.mjs` 解析 openapi.yml，生成 `server/metaserver/src/generated/routes.gen.ts` 并入库——坏 spec 在 codegen/tsc 阶段即失败，契约变更有服务端 diff 可供 CD 卡版本；运行时不再依赖 `fastify-openapi-glue`。CI 检查：`npm run gen:api:server:check`（在 metaserver 目录）。统一响应包络：
   ```ts
   type ApiResp<T> =
     | { ok: true;  data: T }
@@ -171,6 +172,19 @@ POST /equipment/equip    { slot, instanceId|null, unitType? }              → {
 - **`/equipment/reforge`**：吞低一级同类装备作燃料、扣金币、重 roll 副词条（可锁一条）。
 - **`/equipment/equip`**：纯穿戴状态变更（无随机）；穿戴数结构性自限 = 3 槽 × loadout 套数，不占 300 库存。
 - 扣料 + 改实例 + 写账本**单事务**（Mongo 事务或乐观锁 rev 守卫），失败整体回滚。数字权威 → `ECONOMY_NUMBERS §5`。
+
+### 2.8a 角色卡实例（服务器权威，`CHARACTER_CARDS_DESIGN.md §3` 融合改制 CC-2/CC-4）
+
+> 卡实例段（`cardInv`）同样移出 `PUT /save` 可写范围，由 `/cards/*` 服务器权威端点写。喂卡升级=融合 5 张同阵营同级材料。
+
+```
+POST /cards/fuse    { targetId, materialIds[5], idempotencyKey }  → { card, save } | 400/404/409
+POST /cards/lock    { cardInstanceId }                            → { save }   // 幂等：重复锁定成功
+POST /cards/unlock  { cardInstanceId }                            → { save }
+```
+
+- **`/cards/fuse`**：恰好 5 张同阵营同级材料卡升目标卡一级；**锁定的材料被拒**；`idempotencyKey` 防重试双扣。
+- **`/cards/lock` / `/cards/unlock`**：锁定卡不可作喂卡材料（防误吞）。
 
 ### 2.9 活动 / Live-ops（ADR-014 / `EVENTS_DESIGN.md`）
 

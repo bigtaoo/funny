@@ -374,7 +374,7 @@ export type GameEvent =
       owner: 0 | 1; handIndex: number }
 
   | { type: 'card_expired';
-      /** 2 分钟未使用，逻辑层自动刷新，紧接着会发出新的 card_drawn */
+      /** 30 秒未使用，逻辑层自动刷新，紧接着会发出新的 card_drawn */
       owner: 0 | 1; handIndex: number }
 
   // ── 结算统计 ──────────────────────────────────────
@@ -530,7 +530,7 @@ interface HandSlot {
 }
 ```
 
-- 开局抽牌时，每个槽的 `remainingTicks` = `CARD_REFRESH_TICKS`（= 2 × 60 × 30 = 3600）加上初始随机偏移（PRNG 生成 0～1800 ticks，即 0～60 秒）。
+- 开局抽牌时，每个槽的 `remainingTicks` = `CARD_REFRESH_TICKS`（= 30 × 30 = 900，即 30 秒）加上初始随机偏移（`CARD_REFRESH_INITIAL_OFFSET_MAX = 15 × 30 = 450` ticks，即 0～15 秒）。
 - 每 tick 递减。归零时发出 `card_expired`，随即抽新牌发出 `card_drawn`（含新的 `refreshDurationTicks`）。
 - 出牌后新抽的牌倒计时从 `CARD_REFRESH_TICKS` 重新开始（无随机偏移）。
 
