@@ -321,7 +321,13 @@ export function initCrashSentinel(): void {
   if (raw) {
     try {
       const prev = JSON.parse(raw) as Sentinel;
-      if (prev && typeof prev.startedAt === 'number' && !prev.cleanExit) {
+      // Dev/unbaked builds (__NW_BUILD_VERSION__ === '0.0.0') never report crashes. The heartbeat only updates
+      // every HEARTBEAT_MS (15s), so any session shorter than one beat records aliveMs:0 — and dev-time hot
+      // reloads / quick refreshes trip exactly that path, flooding Loki with false "unclean exit" crashes that
+      // carry no field signal. Prod builds bake a real commit hash and still report: an aliveMs:0 there is a
+      // genuine hard death within 15s (a clean reload fires pagehide → markCleanExit and is never reported).
+      // Mirrors the dev-build gating already used in web.ts (version check) and ota.ts (update check).
+      if (prev && typeof prev.startedAt === 'number' && !prev.cleanExit && readBuildVersion() !== '0.0.0') {
         const aliveMs = Math.max(0, (prev.lastSeenAt ?? prev.startedAt) - prev.startedAt);
         reportAnomaly('crash', 'previous session ended without clean exit', {
           startedAt: prev.startedAt,

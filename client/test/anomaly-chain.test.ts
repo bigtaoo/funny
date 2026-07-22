@@ -32,7 +32,7 @@ type Captured = {
  * without isolation they bleed into each other. Globals are injected via vi.stubGlobal
  * (Node's built-in navigator is read-only and throws on direct assignment).
  */
-async function freshAnomaly(opts: { base?: string; publicId?: string | null; longTaskObserver?: boolean } = {}): Promise<{
+async function freshAnomaly(opts: { base?: string; publicId?: string | null; longTaskObserver?: boolean; buildVersion?: string } = {}): Promise<{
   mod: typeof import('../src/net/anomaly');
   cap: Captured & { fireLongTask?: (entries: Array<{ startTime: number; duration: number }>) => void };
 }> {
@@ -65,6 +65,9 @@ async function freshAnomaly(opts: { base?: string; publicId?: string | null; lon
 
   vi.stubGlobal('__NW_API_BASE__', opts.base ?? API_BASE);
   vi.stubGlobal('TARGET', undefined); // platformName() → 'web'
+  // __NW_BUILD_VERSION__ is unbaked ('0.0.0') in the test env by default. initCrashSentinel now only reports
+  // crashes on baked prod builds, so a test exercising the crash report must opt into a prod-like version.
+  if (opts.buildVersion !== undefined) vi.stubGlobal('__NW_BUILD_VERSION__', opts.buildVersion);
 
   const cap: Captured & { fireLongTask?: (entries: Array<{ startTime: number; duration: number }>) => void } = {
     fetch: fetchMock,
@@ -316,7 +319,7 @@ describe('Crash sentinel immediate eager flush on catch-up report (Bug B regress
   beforeEach(() => vi.useFakeTimers());
 
   it('startup detects previous unclean exit → eager flush sends crash immediately (no need to advance the 1.5s batch timer)', async () => {
-    const { mod, cap } = await freshAnomaly({ publicId: PUBLIC_ID });
+    const { mod, cap } = await freshAnomaly({ publicId: PUBLIC_ID, buildVersion: 'abc1234' });
     // Pre-populate a sentinel indicating the previous session exited abnormally (has startedAt, no cleanExit).
     cap.store.set(
       SENTINEL,
@@ -335,5 +338,24 @@ describe('Crash sentinel immediate eager flush on catch-up report (Bug B regress
     expect(init.credentials).toBe('omit');
     const sent = JSON.parse(init.body as string);
     expect(sent.events.some((e: { type: string }) => e.type === 'crash')).toBe(true);
+  });
+
+  it('dev/unbaked build (__NW_BUILD_VERSION__ 0.0.0) does NOT report the previous unclean exit (hot-reload noise gate)', async () => {
+    // Default buildVersion is unbaked '0.0.0' (no buildVersion opt) → dev build.
+    const { mod, cap } = await freshAnomaly({ publicId: PUBLIC_ID });
+    cap.store.set(
+      SENTINEL,
+      JSON.stringify({ startedAt: 1000, lastSeenAt: 5000, lastError: 'TypeError x' }),
+    );
+
+    mod.initCrashSentinel();
+
+    // No crash report is queued or flushed: dev hot-reloads / quick refreshes look like aliveMs:0 crashes and
+    // would otherwise flood Loki. The new session sentinel is still re-armed for the current run.
+    expect(cap.fetch).not.toHaveBeenCalled();
+    expect(cap.sendBeacon).not.toHaveBeenCalled();
+    const sentinel = JSON.parse(cap.store.get(SENTINEL)!);
+    expect(sentinel.cleanExit).toBeUndefined();
+    expect(typeof sentinel.startedAt).toBe('number');
   });
 });
