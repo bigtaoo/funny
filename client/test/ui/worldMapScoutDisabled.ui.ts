@@ -52,7 +52,7 @@ function buildHarness(opts: { me?: PlayerWorldView } = {}) {
 describe('WorldMapInput.onTileClick — scout entry point removed (2026-07-21)', () => {
   it('enemy tile menu: no scout button', () => {
     const { ctx, input, showModal, doScout } = buildHarness();
-    ctx.tileCache.set('40:40', { occupied: true, ownerId: 'other' } as WorldTileView);
+    ctx.tileCache.set('40:40', { occupied: true, ownerPublicId: 'other' } as WorldTileView);
     input.onTileClick(40, 40);
     const buttons = showModal.mock.calls[0][1] as { label: string }[];
     expect(buttons.map((b) => b.label)).toEqual([t('world.actAttack'), '✕']);
