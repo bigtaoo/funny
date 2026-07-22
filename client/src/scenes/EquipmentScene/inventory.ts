@@ -390,8 +390,8 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       }
 
       // Bottom band reserved for the action button row (only when there are actions to show);
-      // the glyph frame shrinks to leave room for it.
-      const btnBandH = actions.length > 0 ? 34 : 0;
+      // the glyph frame shrinks to leave room for it. Icon + small label stack → a bit taller.
+      const btnBandH = actions.length > 0 ? 46 : 0;
       const bandGap = actions.length > 0 ? 8 : 0;
 
       // Left: glyph in a rarity-bordered frame.
@@ -423,9 +423,11 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
         badge.x = ax; badge.y = ay; this.bodyLayer.addChild(badge);
       }
 
-      // Action button row along the bottom of the cell, spanning its full width. Only available
-      // actions are drawn (hidden = unavailable); each fires directly on tap. Pushed to hitRects
-      // *before* the full-cell rect below so a button tap wins over the card-body detail tap.
+      // Action buttons along the bottom of the cell, spanning its full width. Each is an icon-forward
+      // button (glyph on top, small label under it) so every operation is a tap away on this one
+      // screen — no need to open the item first. Only available actions are drawn (hidden =
+      // unavailable). Pushed to hitRects *before* the full-cell rect below so a button tap wins over
+      // the card-body detail tap.
       if (actions.length > 0) {
         const n = actions.length;
         const bgap = 5;
@@ -436,11 +438,16 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
           const g = sketchPanel(bw, btnBandH, { fill: a.fill, border: a.stroke, seed: seedFor(bx, by, bw) });
           g.x = bx; g.y = by;
           this.bodyLayer.addChild(g);
-          // Light ink text on the dark/blue fills, dark on the pale (salvage/unequip) fills.
+          // Light ink on the dark/blue fills, dark on the pale (salvage/unequip) fills.
           const onDark = a.fill === C.dark || a.fill === 0x3355aa;
-          const lbl = txt(a.label, FS.small, onDark ? C.light : C.dark, true);
-          lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + btnBandH / 2;
-          if (lbl.width > bw - 6) lbl.scale.set(Math.max(0.35, (bw - 6) / lbl.width));
+          const inkColor = onDark ? C.light : C.dark;
+          const iconSz = 20;
+          const ic = buildIcon(a.icon, iconSz, inkColor);
+          ic.x = bx + bw / 2 - iconSz / 2; ic.y = by + 5;
+          this.bodyLayer.addChild(ic);
+          const lbl = txt(a.label, FS.micro, inkColor, true);
+          lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + btnBandH - 10;
+          if (lbl.width > bw - 4) lbl.scale.set(Math.max(0.35, (bw - 4) / lbl.width));
           this.bodyLayer.addChild(lbl);
           this.hitRects.push({ rect: { x: bx, y: by, w: bw, h: btnBandH }, action: a.fn });
         });

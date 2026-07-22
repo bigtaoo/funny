@@ -187,18 +187,18 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       const actions: CellAction[] = [];
 
       if (!maxed && this.canAffordEnhance(save, enhanceCost(inst.level)) && !busy) {
-        actions.push({ key: 'enhance', label: t('equip.enhance'), fill: C.dark, stroke: C.accent, fn: () => void this.doEnhance(inst.id) });
+        actions.push({ key: 'enhance', label: t('equip.enhance'), icon: 'hammer', fill: C.dark, stroke: C.accent, fn: () => void this.doEnhance(inst.id) });
       }
       if (slot && !busy) {
         if (equipped) {
           // Unequip: in bag mode the item may be on any card → look up its owner; otherwise the active card.
-          actions.push({ key: 'unequip', label: t('equip.unequip'), fill: 0xf0e0e0, stroke: C.red, fn: () => {
+          actions.push({ key: 'unequip', label: t('equip.unequip'), icon: 'close', fill: 0xf0e0e0, stroke: C.red, fn: () => {
             const cardId = this.bag ? this.ownerCardId(save, inst.id) : this.cb.activeCardInstanceId;
             if (cardId) void this.doEquip(slot, null, cardId);
           } });
         } else {
           // Equip: in bag mode we don't know the target card yet → open the card picker; otherwise the active card.
-          actions.push({ key: 'equip', label: t('equip.equip'), fill: C.dark, stroke: C.green, fn: () => {
+          actions.push({ key: 'equip', label: t('equip.equip'), icon: 'check', fill: C.dark, stroke: C.green, fn: () => {
             if (this.bag) this.beginAssign(inst.id, slot);
             else void this.doEquip(slot, inst.id, this.cb.activeCardInstanceId);
           } });
@@ -211,12 +211,12 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
           )
         : false;
       if (!!requiredMatRarity && hasMaterials && !equipped && !inst.locked && !busy) {
-        actions.push({ key: 'reforge', label: t('equip.reforge'), fill: 0x3355aa, stroke: 0x6688dd, fn: () => this.openReforgeSelect(inst) });
+        actions.push({ key: 'reforge', label: t('equip.reforge'), icon: 'replay', fill: 0x3355aa, stroke: 0x6688dd, fn: () => this.openReforgeSelect(inst) });
       }
       if (salvageable && !busy) {
-        actions.push({ key: 'salvage', label: t('equip.salvage'), fill: 0xeeeeee, stroke: C.mid, fn: () => this.confirmSalvage(inst, stackIds.length) });
+        actions.push({ key: 'salvage', label: t('equip.salvage'), icon: 'scrap', fill: 0xeeeeee, stroke: C.mid, fn: () => this.confirmSalvage(inst, stackIds.length) });
         if (stackIds.length > 1) {
-          actions.push({ key: 'salvageAll', label: t('equip.salvageAll'), fill: 0xeeeeee, stroke: C.mid, fn: () => this.confirmSalvageAll(inst, stackIds) });
+          actions.push({ key: 'salvageAll', label: t('equip.salvageAll'), icon: 'scrap', fill: 0xeeeeee, stroke: C.mid, fn: () => this.confirmSalvageAll(inst, stackIds) });
         }
       }
       return actions;
