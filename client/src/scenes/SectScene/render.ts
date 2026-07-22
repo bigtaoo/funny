@@ -236,6 +236,7 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       );
       summary.anchor.set(0, 0.5); summary.x = left + 18; summary.y = summaryY + summaryH / 2;
       this.bodyLayer.addChild(summary);
+      this.drawAllianceControls(rightEdge, summaryY, summaryH);
 
       // Removal vote banner (if a removal is in progress).
       let bannerBottom = summaryY + summaryH + 8;
@@ -310,6 +311,7 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       );
       summary.anchor.set(0, 0.5); summary.x = left + 18; summary.y = y0 + summaryH / 2;
       this.bodyLayer.addChild(summary);
+      this.drawAllianceControls(w - 8, y0, summaryH);
 
       // Removal vote banner.
       let listTop = y0 + summaryH + 8;
@@ -402,13 +404,44 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       const left = this.railW;
       const midX = (left + w) / 2;
       const bw = 150;
+      // Alliance controls (ally / manage allies / allies-view) now live on the top summary band —
+      // see drawAllianceControls. The bottom bar keeps only the leave/dissolve action.
       if (this.isSectLeader) {
-        // Leader: dissolve / ally / manage allies.
         this.addBarButton(t('sect.dissolve'), left + 6, y, C.red, () => this.confirmDissolve(), 0);
-        this.addBarButton(t('sect.ally'), midX - bw / 2, y, C.accent, () => void this.openAllyList(), 1);
-        this.addBarButton(t('sect.manageAllies'), w - bw - 8, y, C.dark, () => void this.openManageAllies(), 2);
       } else if (this.isFamilyLeader) {
         this.addBarButton(t('sect.leave'), midX - bw / 2, y, C.accent, () => this.confirmLeave(), 0);
+      }
+    }
+
+    /** Alliance controls seated at the right edge of the top summary band (laid out right-to-left).
+     *  Viewing the ally list is open to every member (regular members need to know who the sect's
+     *  allies are); forming (ally) and breaking (manage allies) alliances stay sect-leader only. */
+    private drawAllianceControls(rightEdge: number, bandY: number, bandH: number): void {
+      if (!this.sect) return;
+      const bh = Math.min(bandH - 4, 32);
+      const by = bandY + (bandH - bh) / 2;
+      const padX = 14;
+      let x = rightEdge - 8; // right anchor; each button is placed to the left of the previous one
+
+      const addBtn = (label: string, color: number, action: () => void, seed: number): void => {
+        const lbl = txt(label, FS.tiny, color);
+        const bw = Math.ceil(lbl.width) + padX * 2;
+        const bx = x - bw;
+        const btn = sketchPanel(bw, bh, { fill: 0xf8f8f0, border: color, seed: seedFor(seed, 3, bw) });
+        btn.x = bx; btn.y = by;
+        this.bodyLayer.addChild(btn);
+        lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
+        this.bodyLayer.addChild(lbl);
+        this.hitRects.push({ rect: { x: bx, y: by, w: bw, h: bh }, action });
+        x = bx - 8;
+      };
+
+      if (this.isSectLeader) {
+        // Rightmost = manage (break), then ally (form) to its left.
+        addBtn(t('sect.manageAllies'), C.dark, () => void this.openManageAllies(), 2);
+        addBtn(t('sect.ally'), C.accent, () => void this.openAllyList(), 1);
+      } else {
+        addBtn(t('sect.allies', { n: this.sect.allySectIds.length }), C.accent, () => void this.openAlliesView(), 1);
       }
     }
 

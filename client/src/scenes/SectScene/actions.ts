@@ -16,6 +16,7 @@ export interface ActionsHandlers {
   confirmVote(nomineeFamilyId: string, nomineeLabel: string): void;
   doVote(nomineeFamilyId: string): Promise<void>;
   openAllyList(): Promise<void>;
+  openAlliesView(): Promise<void>;
   confirmAlly(targetSectId: string, label: string): void;
   doAlly(targetSectId: string): Promise<void>;
   openManageAllies(): Promise<void>;
@@ -127,6 +128,22 @@ export function ActionsMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBas
           const target = candidates.find(s => s.sectId === sid);
           this.confirmAlly(sid, target ? `[${target.tag}] ${target.name}` : sid);
         }, 'sect.noSects');
+      } catch (e) {
+        this.showToast(this.errorMsg(e), C.red);
+      }
+    }
+
+    /** Read-only current-allies list — open to every member (not just the leader) so regular
+     *  members can see who the sect is allied with. No unally action (management is leader-only). */
+    async openAlliesView(): Promise<void> {
+      if (!this.sect) return;
+      const sect = this.sect;
+      try {
+        this.sectsCache = await this.cb.worldApi.listSects(this.cb.worldId);
+        const allies = sect.allySectIds
+          .map(id => this.sectsCache.find(s => s.sectId === id))
+          .filter((s): s is SectView => !!s);
+        this.showSectPickModal(allies, () => {}, 'sect.noAllies', true);
       } catch (e) {
         this.showToast(this.errorMsg(e), C.red);
       }

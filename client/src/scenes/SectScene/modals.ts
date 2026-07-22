@@ -8,13 +8,13 @@ import { type Constructor, type SectSceneBaseCtor } from './base';
 import { FS } from '../../render/fontScale';
 
 export interface ModalsHandlers {
-  showSectPickModal(sects: SectView[], onPick: (sectId: string) => void, emptyKey: 'sect.noSects' | 'sect.noAllies'): void;
+  showSectPickModal(sects: SectView[], onPick: (sectId: string) => void, emptyKey: 'sect.noSects' | 'sect.noAllies', readOnly?: boolean): void;
   showConfirm(msg: string, onOk: () => void): void;
 }
 
 export function ModalsMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase & Constructor<ModalsHandlers> {
   return class extends Base {
-    showSectPickModal(sects: SectView[], onPick: (sectId: string) => void, emptyKey: 'sect.noSects' | 'sect.noAllies'): void {
+    showSectPickModal(sects: SectView[], onPick: (sectId: string) => void, emptyKey: 'sect.noSects' | 'sect.noAllies', readOnly = false): void {
       const { w, h } = this;
       const ml = this.modalLayer;
       tearDownChildren(ml);
@@ -54,7 +54,8 @@ export function ModalsMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
         lbl.x = mx + 14; lbl.y = cy + 10;
         ml.addChild(lbl);
         const sid = s.sectId;
-        this.modalHits.push({ rect: { x: mx + 8, y: cy, w: mw - 16, h: 36 }, action: () => onPick(sid) });
+        // Read-only view (member-facing allies list) registers no row hit — rows are display-only.
+        if (!readOnly) this.modalHits.push({ rect: { x: mx + 8, y: cy, w: mw - 16, h: 36 }, action: () => onPick(sid) });
         cy += 40;
       }
     }
