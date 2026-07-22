@@ -539,6 +539,8 @@
   - **已知取舍**：社交/宗门覆盖层打开期间会把 `session.handlers` 改绑到自己的推送集，此时地图暂收不到 march/tile 增量（地图被完全遮挡、不可见）；`returnToMap` 弹出时 `bindMapNet` 恢复地图 handler、继续实时推送。不做返回时强制刷新（那本身就是一次可见重绘，与需求相悖）——仅接受弹窗打开期间的短暂陈旧。City/防守/拍卖覆盖层不改 handler，故连这点陈旧都没有。
   - 验证：`tsc --noEmit` + webpack 生产构建全绿；client `vitest run` 758/758 全绿（含 `world-family-sect-nav-tabs`/`social-family-hub-return`/`world-hub-account-id` 等 nav 边界回归）。覆盖层底层机制（`pushOverlay/popOverlay`）自 ADR-044 起已在生产验证，本次仅把更多入口接到同一已验证机制上，未改 `SceneManager`。
 
+> **勘误（2026-07-22）**：本条"机制"一段断言"`SceneManager` 本身零改动——`pushOverlay()` 既有语义已支持'替换当前覆盖层'"是错的。`pushOverlay()` 在覆盖层已存在时只 `destroy()` 旧覆盖层，没有先 `removeChild` 把它的 `container` 从 `targetStage` 上摘掉——`goto()`/`popOverlay()` 都遵守"先摘再毁"，唯独这条替换分支漏了。后果：编辑队伍 Save 后 `onBack` 重建 City 覆盖层（正是本条落地的"兄弟覆盖层替换"用例）时，已销毁的阵型编辑器 container 仍挂在显示树上，下一帧渲染走到它抛错，画面卡死在抛错前的最后一帧——表现为"点保存后停在编辑队伍界面不返回"。已在 `client/src/scenes/SceneManager.ts` 的 `pushOverlay()` 补上 `removeChild`，回归测试见 `client/test/ui/sceneManager.ui.ts`「SceneManager overlays」。
+
 ## ADR-047 行军疲劳：绑定行军实例（非队伍）+ 只做距离消耗，不做静止回复 — Accepted — 2026-07-21
 
 > **命名说明（2026-07-22 审计）**：本条原文用"士气"，与 `CHARACTER_CARDS_DESIGN.md` §6.4 的卡牌"士气加成"（满编 ATK 加成，另一套机制）撞名，已在文档中改称"行军疲劳"消除歧义；代码字段/函数名（`morale`/`MARCH_MORALE_MAX`/`moraleCombatMultiplier`）未改动，仅中文叙述改名。

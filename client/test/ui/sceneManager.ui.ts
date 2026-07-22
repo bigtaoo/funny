@@ -247,6 +247,50 @@ describe('SceneManager input gating', () => {
   });
 });
 
+describe('SceneManager overlays (pushOverlay/popOverlay)', () => {
+  it('pushOverlay mounts on top of current and pauses it; popOverlay tears it down and resumes current', () => {
+    const { app, stage } = makeApp();
+    const mgr = new SceneManager(app);
+    const base = makeScene({ destroy: vi.fn() }) as Scene & { pause: ReturnType<typeof vi.fn>; resume: ReturnType<typeof vi.fn> };
+    base.pause = vi.fn();
+    base.resume = vi.fn();
+    mgr.goto(base);
+
+    const overlay = makeScene({ destroy: vi.fn() });
+    mgr.pushOverlay(overlay);
+    expect(stage.children).toContain(base.container);
+    expect(stage.children).toContain(overlay.container);
+    expect(base.pause).toHaveBeenCalledTimes(1);
+
+    mgr.popOverlay();
+    expect(overlay.destroy).toHaveBeenCalledTimes(1);
+    expect(stage.children).not.toContain(overlay.container);
+    expect(stage.children).toContain(base.container);
+    expect(base.resume).toHaveBeenCalledTimes(1);
+  });
+
+  it('pushOverlay while an overlay is already mounted replaces it cleanly (no stale container left on stage)', () => {
+    // Regression: DefenseEditorScene's onBack rebuilds the City overlay it was opened over — a
+    // second pushOverlay landing on top of an existing one, not a pop-then-push. The old overlay
+    // must be detached from the display list before it's destroyed, or the destroyed container
+    // lingers as a stage child and the next render walking into it throws (frozen screen, see
+    // SceneManager.pushOverlay).
+    const { app, stage } = makeApp();
+    const mgr = new SceneManager(app);
+    mgr.goto(makeScene());
+
+    const first = makeScene({ destroy: vi.fn() });
+    mgr.pushOverlay(first);
+    expect(stage.children).toContain(first.container);
+
+    const second = makeScene({ destroy: vi.fn() });
+    mgr.pushOverlay(second); // no popOverlay() in between
+    expect(first.destroy).toHaveBeenCalledTimes(1);
+    expect(stage.children).not.toContain(first.container);
+    expect(stage.children).toContain(second.container);
+  });
+});
+
 describe('SceneManager × InputManager (integration)', () => {
   it('a tap during a fade aborts it, its release is swallowed, and the next tap reaches the new scene', () => {
     const { app, stage } = makeApp();
