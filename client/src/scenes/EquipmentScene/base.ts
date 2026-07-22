@@ -124,8 +124,10 @@ export interface Rect { x: number; y: number; w: number; h: number; }
  * A single on-card action button (Enhance / Equip / Unequip / Reforge / Salvage / Salvage All).
  * Only *available* actions are emitted — unavailable ones are omitted entirely rather than shown
  * disabled (the detail modal used to grey them out; per the 2026-07-22 pass they now live on the
- * grid cell and hidden = unavailable). `fn` fires the action directly (enhance / equip / confirm
- * dialog / material picker), bypassing the info modal. See DetailMixin.instanceActions.
+ * grid cell and hidden = unavailable). `fn` fires the action directly (equip / confirm dialog /
+ * material picker), bypassing the info modal — except Enhance, whose `fn` opens that modal instead
+ * (it needs the modal's protect-stone toggle before it can commit, 2026-07-22b). See
+ * DetailMixin.instanceActions.
  */
 export interface CellAction {
   key: string;

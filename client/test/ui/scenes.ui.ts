@@ -975,6 +975,23 @@ describe('EquipmentScene — mixin-split wiring', () => {
     scene.destroy();
   });
 
+  it('instanceActions(Enhance) opens the (now info+confirm) detail modal instead of firing cb.enhance directly; the modal\'s confirm button fires it with the current protect toggle', async () => {
+    const { cb, calls } = buildEquipCallbacks('card1');
+    const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
+    const save = (scene as any).cb.getSave();
+    const actions = (scene as any).instanceActions(save, save.equipmentInv.eqEquippedFine) as Array<{ key: string; fn: () => void }>;
+    actions.find((a) => a.key === 'enhance')!.fn();
+    expect((scene as any).detailId).toBe('eqEquippedFine');
+    expect((scene as any).modalOpen).toBe(true);
+    expect(calls.enhance).toEqual([]); // opening the modal must not fire the request itself
+    // No protect stones in the fixture → the toggle hit is omitted, so modalHits[0] is the confirm button.
+    const modalHits = (scene as any).modalHits as Array<{ action: () => void }>;
+    modalHits[0].action();
+    await Promise.resolve();
+    expect(calls.enhance).toEqual([['eqEquippedFine', undefined]]);
+    scene.destroy();
+  });
+
   it('bag mode: instanceActions(Equip) → Assign(beginAssign) → base.render(renderAssign) → Assign(doEquipTo) → Detail(doEquip) → cb.equip', async () => {
     const { cb, calls } = buildEquipCallbacks(''); // '' activeCardInstanceId = bag mode
     const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);

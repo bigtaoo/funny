@@ -1,7 +1,8 @@
-// Detail modal + item actions. The modal itself is info-only (affix list, enhance rate/cost, the
-// protect toggle); the action set (enhance / equip-unequip / reforge / salvage / salvage-all) is
-// produced by instanceActions() and rendered as buttons on the grid cell (InventoryMixin), which
-// call the doEnhance / doEquip / confirmSalvage / openReforgeSelect handlers that also live here.
+// Detail modal + item actions. The action set (equip-unequip / reforge / salvage / salvage-all) is
+// produced by instanceActions() and rendered as buttons on the grid cell (InventoryMixin), firing
+// directly. Enhance is the one exception: it opens this modal instead, since committing it needs
+// the protect-stone toggle the modal exposes — the modal's own confirm button is what fires it.
+// The doEnhance / doEquip / confirmSalvage / openReforgeSelect handlers all live here.
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
@@ -45,14 +46,16 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       const maxed = inst.level >= EQUIP_MAX_LEVEL;
 
       // Natural (unscaled) content size — everything below is laid out in this local frame.
-      // This modal is now info-only: the action buttons moved onto the grid cell (see
-      // InventoryMixin.renderInstanceCell), so it just shows affixes + enhance rate/cost + the
-      // protect toggle and no longer reserves a button band at the bottom.
+      // Equip/unequip/reforge/salvage moved onto the grid cell (InventoryMixin.renderInstanceCell)
+      // and fire directly; this modal keeps affixes + enhance rate/cost + the protect toggle, plus
+      // its own confirm button for enhance (see the file header comment for why).
       const mw = Math.min(330, w - 24);
       const affixCount = inst.affixes.length;
       const protectCount = save.inventory?.items?.[PROTECT_ENHANCE_ITEM_ID] ?? 0;
-      // 44 = top(12) + title(26) + affix-gap(6); enhance section is 58 (rate+cost+protect) or 24 (maxed); +12 bottom pad.
-      const mh = 44 + affixCount * 20 + (maxed ? 24 : 58) + 12;
+      // 44 = top(12) + title(26) + affix-gap(6); enhance section is 58 (rate+cost+protect) + 40
+      // (gap+confirm button, 2026-07-22b — enhance now requires opening this modal to set the
+      // protect toggle first, see instanceActions) or 24 (maxed); +12 bottom pad.
+      const mh = 44 + affixCount * 20 + (maxed ? 24 : 58 + 40) + 12;
       const mx = 0;
       const my = 0;
 
@@ -162,11 +165,32 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
           });
         }
         cy += 22;
+
+        // Confirm-enhance button (2026-07-22b): unlike equip/reforge/salvage, enhance takes the
+        // protect toggle above as a parameter, so it can't just fire from the grid cell — the
+        // cell button opens this modal instead (see instanceActions) and commits here once the
+        // toggle is set the way the player wants.
+        cy += 8;
+        const btnH = 32;
+        const enabled = affordable && !this.bt.busy;
+        const btn = sketchPanel(mw - 24, btnH, { fill: enabled ? C.dark : C.btnOff, border: enabled ? C.accent : C.mid, seed: seedFor(0, 17, mw) });
+        btn.x = mx + 12; btn.y = cy;
+        panelRoot.addChild(btn);
+        const btnLbl = this.stxt(t('equip.enhance'), FS.tiny, enabled ? C.light : C.mid, true);
+        btnLbl.anchor.set(0.5, 0.5); btnLbl.x = mx + mw / 2; btnLbl.y = cy + btnH / 2;
+        panelRoot.addChild(btnLbl);
+        if (enabled) {
+          this.modalHits.push({
+            rect: this.toModalScreen({ x: mx + 12, y: cy, w: mw - 24, h: btnH }),
+            action: () => void this.doEnhance(inst.id),
+          });
+        }
+        cy += btnH;
       }
 
-      // Hit priority is first-match: the protect toggle (above) wins, then the panel area is inert,
-      // then a tap anywhere outside the panel closes the detail (added last = lowest). All actions
-      // (enhance / equip / reforge / salvage) now live on the grid cell, not here.
+      // Hit priority is first-match: the confirm button / protect toggle (above) win, then the
+      // panel area is inert, then a tap anywhere outside the panel closes the detail (added last =
+      // lowest). The remaining actions (equip / reforge / salvage) still live on the grid cell.
       this.modalHits.push({ rect: this.toModalScreen({ x: mx, y: my, w: mw, h: mh }), action: () => {} });
       this.modalHits.push({ rect: { x: 0, y: 0, w, h }, action: () => this.closeDetail() });
     }
@@ -187,7 +211,9 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       const actions: CellAction[] = [];
 
       if (!maxed && this.canAffordEnhance(save, enhanceCost(inst.level)) && !busy) {
-        actions.push({ key: 'enhance', label: t('equip.enhance'), icon: 'hammer', fill: C.dark, stroke: C.accent, fn: () => void this.doEnhance(inst.id) });
+        // Opens the detail modal rather than firing directly (unlike the other actions below):
+        // enhance takes the protect-stone toggle as a parameter, which only the modal exposes.
+        actions.push({ key: 'enhance', label: t('equip.enhance'), icon: 'hammer', fill: C.dark, stroke: C.accent, fn: () => this.openDetail(inst.id) });
       }
       if (slot && !busy) {
         if (equipped) {
