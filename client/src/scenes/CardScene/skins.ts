@@ -15,7 +15,6 @@ import { FACTION_COLOR } from '../../render/factionIcon';
 import { UNIT_ART_URLS } from '../../render/cardArt';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
-import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { CARD_DEFS, type CardDef } from '../../game/meta/cardDefs';
 import { skinsForUnitType } from '../../game/meta/skinDefs';
 import type { UnitType } from '../../game/types';
@@ -55,51 +54,25 @@ export function SkinsMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase 
       // portrait + tile content once cardW exceeded what the content actually needed.
       const cellW = Math.min((avail - CELL_GAP * (cols - 1)) / cols, CARD_W_TARGET * 1.15);
 
-      // Dry sizing pass (no drawing): masonry card heights vary per character (more skins → more tile
-      // rows), so the real content height isn't known until the columns are packed. Run that packing
-      // once against heights alone so the viewport can be peek-clamped before the real (drawing) pass.
-      const dryColY = new Array(cols).fill(0);
-      let cardHSum = 0;
-      for (const def of defs) {
-        const cardH = this.skinCardHeight(def, owned, cellW);
-        cardHSum += cardH;
-        const col = dryColY.indexOf(Math.min(...dryColY));
-        dryColY[col] += cardH + CELL_GAP;
-      }
-      const totalH = Math.max(0, ...dryColY);
-      // No fixed row pitch in a masonry layout — use the mean card height as the peek's row-pitch unit
-      // so the clamp still lands mid-card instead of flush with the last full one.
-      const avgUnit = defs.length > 0 ? cardHSum / defs.length + CELL_GAP : CELL_GAP;
-      const viewH = peekViewportH(availH, avgUnit, totalH);
-
       // Masonry: each character card can be a different height (more skins → more tile rows), so
       // columns are packed independently — every card goes into whichever column is currently shortest.
+      // No PIXI mask backs this grid (draw-cull only, see renderSkinCard) — a card is either drawn in
+      // full or skipped entirely, never cropped, so the cull/clamp/indicator use the naive `availH`
+      // rather than a peekViewportH-shrunk value (that shrink is for masked grids; here it would just
+      // exclude a card that'd otherwise render in full, see the roster-grid fix in list.ts).
       const colY = new Array(cols).fill(listY + CELL_GAP);
 
       for (const def of defs) {
         const col = colY.indexOf(Math.min(...colY));
         const x = left + col * (cellW + CELL_GAP);
         const y = colY[col];
-        const cardH = this.renderSkinCard(def, x, y, cellW, owned, listY, viewH);
+        const cardH = this.renderSkinCard(def, x, y, cellW, owned, listY, availH);
         colY[col] = y + cardH + CELL_GAP;
       }
 
-      this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - viewH)));
-      drawScrollIndicator(this.bodyLayer, { x: left, y: listY, w: avail, h: viewH }, this.scrollY, Math.max(0, totalH - viewH));
-    }
-
-    /** Height a character's wardrobe card would render at, without drawing — used for the dry sizing
-     *  pass above. Must mirror {@link renderSkinCard}'s tile-layout math exactly. */
-    private skinCardHeight(def: CardDef, owned: string[], cardW: number): number {
-      const unitType = def.unitType as UnitType;
-      const skins = skinsForUnitType(unitType, owned);
-      const tileCount = 1 + skins.length; // default look + owned skins
-      const portraitW = Math.round(PORTRAIT_MAX_H * PORTRAIT_RATIO);
-      const tileAreaW = cardW - CARD_PAD * 2 - portraitW - PORTRAIT_TILE_GAP;
-      const tilesPerRow = Math.max(1, Math.floor((tileAreaW + TILE_GAP) / (TILE_W + TILE_GAP)));
-      const rows = Math.ceil(tileCount / tilesPerRow);
-      const tileAreaH = rows * (TILE_H + TILE_GAP) - TILE_GAP;
-      return Math.max(PORTRAIT_MAX_H, HEADER_H + tileAreaH) + CARD_PAD * 2;
+      const totalH = Math.max(...colY) - listY;
+      this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - availH)));
+      drawScrollIndicator(this.bodyLayer, { x: left, y: listY, w: avail, h: availH }, this.scrollY, Math.max(0, totalH - availH));
     }
 
     /** One character's wardrobe card: portrait + name on the left header, skin tiles wrapped to the right. Returns the card's height. */
