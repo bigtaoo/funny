@@ -3,6 +3,7 @@
 > 更新：2026-06-28
 > 配套文档：[`design/game/GACHA_DESIGN.md`](../game/GACHA_DESIGN.md) §9 美术资源清单
 > 美术总纲：[`design/product/art-direction.md`](art-direction.md)
+> 同类文档：[`shop-art-prompts.md`](shop-art-prompts.md)（商店图标）· [`skin-art-prompts.md`](skin-art-prompts.md)（皮肤全身立绘，本文档 §附 的皮肤图标模板只是方形小图，全身立绘 prompt 在那边）
 
 ---
 
