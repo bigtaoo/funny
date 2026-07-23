@@ -10,7 +10,7 @@
 
 | 皮肤 id | 角色 / 兵种 | 稀有度 | 配色 | 状态 |
 |---|---|---|---|---|
-| `skin_shop_c1` | 李川 / Infantry | common | 灰白调 | ✅ 已出图定稿，[`art/skins/infantry .png`](../../art/skins/infantry%20.png)（另存基准 [`6f05948d….png`](../../art/skins/6f05948d-51b0-4343-92cf-5b61ac7d296f.png)）；§1 prompt 为此图基准 |
+| `skin_shop_c1` | 李川 / Infantry | common | 灰白调 | ✅ 已出图定稿，[`art/skins/infantry.png`](../../art/skins/infantry.png)；§1 prompt 为此图基准 |
 | `skin_shop_r1` | 苏远 / Archer | rare | 蓝色调 | ✅ 已出图定稿，[`art/skins/archer.png`](../../art/skins/archer.png)；§2 v3 prompt 命中（3/4 侧身回望 + 侧分短发 + 弓上弦） |
 | `skin_shop_e1` | 陈守 / ShieldBearer | epic | 紫色调 | 🟡 已出图 [`art/skins/shieldbearer.png`](../../art/skins/shieldbearer.png)（§3 v2 prompt，体型/叉腿盾墙/寸头全中）；**留 1 项待调**：肤色偏深 + 黑卷发，与另两人（浅暖褐肤 + 棕发）不一致，破坏"方家三兄弟"读感，重出时加 `light warm tan skin matching his friends, brown hair not black` |
 | `skin_e1` | Anna·Lena | epic | 紫色调 | 未开始 |
@@ -78,7 +78,7 @@ low body, missing legs, missing feet
 
 ## 1. `skin_shop_c1` — 李川 · Infantry（common，灰白调）✅ 已出图
 
-**已产出**：[`art/skins/6f05948d-51b0-4343-92cf-5b61ac7d296f.png`](../../art/skins/6f05948d-51b0-4343-92cf-5b61ac7d296f.png)。作为**基准款**，李川的辨识三件套：①体型中等（M）；②站姿**穿行**——迈步走动、重心前倾（闲不住的躁动，另外两人不要照抄这个步态）；③发型四散炸开的乱发。下方 prompt 留作复现/微调基准。
+**已产出**：[`art/skins/infantry.png`](../../art/skins/infantry.png)。作为**基准款**，李川的辨识三件套：①体型中等（M）；②站姿**穿行**——迈步走动、重心前倾（闲不住的躁动，另外两人不要照抄这个步态）；③发型四散炸开的乱发。下方 prompt 留作复现/微调基准。
 
 ```
 Full-body character illustration of a child warrior, standing/walking pose,
