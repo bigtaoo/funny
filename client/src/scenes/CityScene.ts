@@ -153,6 +153,15 @@ export class CityScene implements Scene {
   private destroyed = false;
 
   private me: PlayerWorldView | null = null;
+  /** Wall-clock (ms) when `me` was last fetched from the server. Baseline for the client-side
+   *  resource-total simulation — mirrors worldsvc settle() so the displayed totals climb between
+   *  server round-trips instead of sitting frozen until the next action. */
+  private meLoadedAt = 0;
+  /** Accumulates update() dt; drives the once-per-second resource-total tick. */
+  private simTimer = 0;
+  /** Resource-bar total labels, repopulated each render() and updated in place per second by
+   *  tickResourceTotals() — a text-only nudge that avoids a full scene rebuild every second. */
+  private resTotalLbls: Array<{ rt: ResourceType; lbl: PIXI.Text }> = [];
   private teams: TeamTemplate[] = [];
   private marches: MarchView[] = [];
   private occupations: OccupationView[] = [];
@@ -193,6 +202,35 @@ export class CityScene implements Scene {
   update(dt: number): void {
     if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
     if (this.bt.tick(dt)) this.render();
+    this.simTimer += dt;
+    if (this.simTimer >= 1) { this.simTimer = 0; this.tickResourceTotals(); }
+  }
+
+  /** Advance the resource-bar total labels in place (no full render). Mirrors worldsvc settle():
+   *  displayed total = min(cap, base + yieldRate·elapsedHours). Cheap enough to run every second. */
+  private tickResourceTotals(): void {
+    for (const { rt, lbl } of this.resTotalLbls) {
+      const next = this.fmtNum(this.liveResource(rt));
+      if (lbl.text !== next) lbl.text = next;
+    }
+  }
+
+  /** Assign `me` and stamp the sim baseline so liveResource() grows from this fetch onward.
+   *  Every consuming action (upgrade/speedup/train) round-trips through here, re-syncing the
+   *  simulated totals to the server's authoritative post-consume amounts. */
+  private setMe(me: PlayerWorldView): void {
+    this.me = me;
+    this.meLoadedAt = Date.now();
+  }
+
+  /** Server-consistent client-side resource total: base amount fetched with `me`, grown by the
+   *  hourly yield rate since fetch, capped at the cabinet-adjusted storage cap. */
+  private liveResource(rt: ResourceType): number {
+    const base = this.me?.resources?.[rt] ?? 0;
+    const rate = this.me?.yieldRate?.[rt] ?? 0;
+    const cap = resourceCapFor(this.me?.buildings);
+    const dtHours = Math.max(0, (Date.now() - this.meLoadedAt) / 3_600_000);
+    return Math.min(cap, base + rate * dtHours);
   }
 
   destroy(): void {
@@ -219,7 +257,7 @@ export class CityScene implements Scene {
         this.cb.worldApi.getMarches(this.cb.worldId),
         this.cb.worldApi.getOccupations(this.cb.worldId),
       ]);
-      this.me = me;
+      this.setMe(me);
       this.teams = teams;
       this.marches = marches;
       this.occupations = occupations;
@@ -263,7 +301,7 @@ export class CityScene implements Scene {
     this.bt.start();
     this.render();
     try {
-      this.me = await this.cb.worldApi.upgradeBuilding(this.cb.worldId, key);
+      this.setMe(await this.cb.worldApi.upgradeBuilding(this.cb.worldId, key));
       this.showToast(t('city.upgrading'), C.green as number);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : '';
@@ -286,7 +324,7 @@ export class CityScene implements Scene {
     this.bt.start();
     this.render();
     try {
-      this.me = await this.cb.worldApi.speedupBuild(this.cb.worldId, key, coins);
+      this.setMe(await this.cb.worldApi.speedupBuild(this.cb.worldId, key, coins));
       this.showToast(t('city.speedupDone'), C.green as number);
     } catch {
       this.showToast(t('city.err.generic'), C.red as number);
@@ -301,7 +339,7 @@ export class CityScene implements Scene {
     this.bt.start();
     this.render();
     try {
-      this.me = await this.cb.worldApi.trainTroops(this.cb.worldId, qty);
+      this.setMe(await this.cb.worldApi.trainTroops(this.cb.worldId, qty));
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : '';
       if (msg.includes('ink')) this.showToast(t('city.err.noInk'), C.red as number);
@@ -319,7 +357,7 @@ export class CityScene implements Scene {
     this.bt.start();
     this.render();
     try {
-      this.me = await this.cb.worldApi.speedupTraining(this.cb.worldId, coins);
+      this.setMe(await this.cb.worldApi.speedupTraining(this.cb.worldId, coins));
       this.showToast(t('city.speedupDone'), C.green as number);
     } catch {
       this.showToast(t('city.err.generic'), C.red as number);
@@ -364,6 +402,7 @@ export class CityScene implements Scene {
     if (this.destroyed) return;
     tearDownChildren(this.container);
     this.hits = [];
+    this.resTotalLbls = [];
     const { w, h } = this;
 
     // Draw the red binding line at the tab rail's right edge (railX) instead of the default
@@ -710,7 +749,6 @@ export class CityScene implements Scene {
     const cx0 = this.contentX;
     const w = this.w - cx0;
     const bld = this.me?.buildings;
-    const resources = this.me?.resources as Partial<Record<ResourceType, number>> | undefined;
 
     const panH = 108;
     const pg = sketchPanel(w - 16, panH, { fill: C.paper, border: C.line, width: 1, seed: seedFor(w, panH, 3) });
@@ -721,10 +759,10 @@ export class CityScene implements Scene {
     const cellW = Math.floor((w - 16) / 5);
     RESOURCE_TYPES.forEach((rt, i) => {
       const cx = cx0 + 8 + i * cellW;
-      const cur = resources?.[rt] ?? 0;
       const cap = resourceCapFor(bld);
-      const yld = buildingYieldMult(bld, rt);
-      const self = buildingSelfYield(bld, rt);
+      // Actual hourly production (server-computed: tile yield × building mult + self-yield + BP),
+      // not the raw building multiplier — this is the "产量" the player cares about.
+      const rate = Math.round(this.me?.yieldRate?.[rt] ?? 0);
 
       // Color accent bar
       const ab = new PIXI.Graphics();
@@ -738,19 +776,19 @@ export class CityScene implements Scene {
       icon.y = startY + 24;
       this.container.addChild(icon);
 
-      const curLbl = txt(this.fmtNum(cur), FS.label, C.dark, true);
+      // Live total: grown client-side from the last fetch (tickResourceTotals updates it per second).
+      const curLbl = txt(this.fmtNum(this.liveResource(rt)), FS.label, C.dark, true);
       curLbl.x = cx + 52;
       curLbl.y = startY + 24;
       this.container.addChild(curLbl);
+      this.resTotalLbls.push({ rt, lbl: curLbl });
 
       const capLbl = txt(`/${this.fmtNum(cap)}`, FS.small, C.mid);
       capLbl.x = cx + 12;
       capLbl.y = startY + 62;
       this.container.addChild(capLbl);
 
-      const yldPct = Math.round(yld * 100);
-      const yldStr = self > 0 ? `+${self}/h` : `×${yldPct}%`;
-      const yldLbl = txt(yldStr, FS.small, C.mid);
+      const yldLbl = txt(`+${this.fmtNum(rate)}/h`, FS.small, rate > 0 ? RES_COLORS[rt] : C.mid);
       yldLbl.x = cx + 12;
       yldLbl.y = startY + 84;
       this.container.addChild(yldLbl);

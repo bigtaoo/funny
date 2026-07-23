@@ -214,6 +214,14 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 - 覆盖测试：`client/test/ui/cityTrainTroops.ui.ts`（headless PIXI，驱动真实 `handleDown`/`handleUp` 命中测试，覆盖 +10 训练成功 / 队列已满不下单 / 加速按钮调用）。
 - **已知限制**：`CitySceneCallbacks.onTrainTroops`/`onSpeedupTraining` 两个从未被赋值的可选回调字段已删除——`CityScene` 现在直接调 `this.cb.worldApi.trainTroops/speedupTraining`，与 `doUpgrade`/`doSpeedup` 走同一模式，不再经过父级回调层。
 
+### 8.4 资源条：真产量 + 客户端实时结算（2026-07-23）
+
+§8 line 171 早就写明资源条应显示「当前量/**产率**/仓储上限」，但实现里第三行一直画的是**建筑乘数** `×110%`（`buildingYieldMult`），既不是真产量，也和 sticker 那格的 `+N/h` 自产文案不统一。且顶部「当前量」是**读取时的服务端快照**，只有升级/加速/练兵这类动作 round-trip 后才刷新——玩家盯着看总量**纹丝不动**（服务端其实在惰性累积，见 §5 `settle`）。本次两处修：
+
+- **真产量**：第三行改画 `me.yieldRate[rt]`（服务端单出口算好的：地块产出 × 建筑乘数 + 自产 + BP），格式统一为 `+{rate}/h`，产率 >0 时染该资源主题色。这才是玩家关心的「产量」，且已含建筑乘数效果，比原来的裸乘数信息量更大。建筑乘数 `×{pct}%` 仍保留在建筑详情弹窗的加成行（`city.bonusYield`），没丢。
+- **客户端实时结算（镜像 `settle()`）**：`CityScene` 记录每次拉取 `me` 的 wall-clock（`meLoadedAt`，经统一 `setMe()` 落点），资源条总量按 `min(cap, base + yieldRate·经过小时数)` 客户端外推——与 worldsvc `settle()` 同式。`update(dt)` 累加到 1 秒就 `tickResourceTotals()` 只改总量标签文本（不整屏重渲，避开拖拽滚动/闪烁与 Text 纹理反复重建）。**只客户端模拟，不额外请求**；升级/加速/练兵每次都过 `setMe()`，用服务端消耗后的权威值重置基线——即「消耗时才同步」。达到仓储上限后停止增长（cap 由 `liveResource()` 夹取）。
+- 验证：`tsc --noEmit` 全绿、`webpack` 构建成功；深层 SLG 场景需整套后端 + 入世流程，本环境未起后端，未做浏览器内视觉核对。
+
 ---
 
 ## 9. 契约 / 端点（→ SERVER_API + openapi-world）
