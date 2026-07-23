@@ -110,6 +110,14 @@ export type SectVoteResult = components['schemas']['SectVoteResult'];
 export type BuildingKey = components['schemas']['BuildingKey'];
 export type CardSLGState = components['schemas']['CardSLGState'];
 
+/** Rank/ELO/family/sect for an arbitrary player, fetched by public id (see {@link getProfileExtra}). */
+export interface PlayerProfileExtra {
+  rank?: string;
+  elo?: number;
+  familyName?: string;
+  sectName?: string;
+}
+
 export interface WorldChatMessage {
   id: string;
   senderId: string;
@@ -499,6 +507,13 @@ export class WorldApiClient {
    *  player has no ranked history yet. */
   async getPlayerRank(accountId: string): Promise<{ rank?: string; elo?: number }> {
     return this.req('GET', `/social/player/${encodeURIComponent(accountId)}/rank`, undefined, 10_000, getSocialBaseUrl());
+  }
+
+  /** Unified profile-popup extras (rank/ELO + family/sect, if any) for an arbitrary player, looked up
+   *  by public id — {@link ProfilePopup} fetches this itself on open rather than each screen threading
+   *  its own copy of the same fields. All fields absent when the player has none of them. */
+  async getProfileExtra(publicId: string): Promise<PlayerProfileExtra> {
+    return this.req('GET', `/social/profile/${encodeURIComponent(publicId)}/extra`, undefined, 10_000, getSocialBaseUrl());
   }
 
   // ── Auction ────────────────────────────────────────────────────────────────

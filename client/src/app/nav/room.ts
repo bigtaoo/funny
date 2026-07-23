@@ -3,6 +3,7 @@ import * as analytics from '../../analytics';
 import type { RoomView } from '../AppViews';
 import type { AppCtx, Nav } from '../appCtx';
 import type { AIDifficulty } from '../../game';
+import { WorldApiClient } from '../../net/WorldApiClient';
 import { log } from '../appConstants';
 
 /** Parse the server's decimal-string AI level (1–10, see AISystem.ts), or undefined if malformed. */
@@ -12,7 +13,7 @@ function parseAiDifficulty(raw: string): AIDifficulty | undefined {
 }
 
 export function createRoomNav(ctx: AppCtx): Pick<Nav, 'goRoom' | 'goDeckBuilder'> {
-  const { api, saveManager, views, state, nav, getNetSession, resolvePvpDeck } = ctx;
+  const { api, saveManager, views, state, nav, getNetSession, resolvePvpDeck, platform } = ctx;
 
   function goDeckBuilder(onSave: (deck: string[]) => void): void {
     const save = saveManager.get();
@@ -39,6 +40,9 @@ export function createRoomNav(ctx: AppCtx): Pick<Nav, 'goRoom' | 'goDeckBuilder'
       });
     }
     const getSavedDeck = resolvePvpDeck;
+    // Cheap/stateless (just wraps platform.storage) — profile popups fetch rank/ELO/family/sect
+    // straight from socialsvc by publicId, same as the friends/family social surfaces.
+    const worldApi = api ? new WorldApiClient(platform.storage) : null;
     let rankedQueued = false;
     const queueRanked = (): void => {
       if (rankedQueued) return;
@@ -50,6 +54,7 @@ export function createRoomNav(ctx: AppCtx): Pick<Nav, 'goRoom' | 'goDeckBuilder'
     const view: RoomView = views.showRoom({
       available: session !== null,
       autoRanked,
+      ...(worldApi ? { getProfileExtra: (publicId: string) => worldApi.getProfileExtra(publicId) } : {}),
       onBack() {
         session?.close();
         if (session) session.handlers = { onMatchStart: (info) => nav.goGameNet(info) };

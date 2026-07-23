@@ -55,6 +55,7 @@ const MSG: WorldChatMessage = {
 function buildScene(opts: { slgStatusHangs: boolean; loadSLGStatusCalls: { count: number } }): any {
   const cb = {
     onBack() {}, onOpenRoom() {},
+    myPublicId: '', getProfileExtra: async () => ({}),
     loadFriends: async () => [],
     loadRequests: async () => ({ incoming: [], outgoing: [] }),
     search: async () => ({ publicId: '1', displayName: 'x' }),

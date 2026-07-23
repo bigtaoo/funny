@@ -39,6 +39,8 @@ function famDetail(id: string, name: string, tag: string, extra: Partial<FamilyD
 function buildScene(cb: Partial<FriendsSceneCallbacks> = {}): any {
   return new FriendsScene(createLayout(W, H), new InputManager(), {
     onBack() {}, onOpenRoom() {},
+    myPublicId: '',
+    getProfileExtra: async () => ({}),
     loadFriends: async () => [],
     loadRequests: async () => ({ incoming: [], outgoing: [] }),
     search: async () => ({ publicId: '233784986', displayName: 'Bob' }),
