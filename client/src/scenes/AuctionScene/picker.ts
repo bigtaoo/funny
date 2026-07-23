@@ -195,6 +195,9 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
       const contentX = this.renderPickerSidebar();
       const listY = this.headerH + 40;
       const availH = h - listY - 10;
+      // Default to "nothing to scroll" — overwritten below once the real grid geometry is known;
+      // covers the empty-entries early-return so a stale wheel event can't scroll a hidden grid.
+      this.scrollMax = 0;
 
       const entries = this.buildPickEntries().filter((e) => this.pickerFilter === '' || e.cls === this.pickerFilter);
       if (entries.length === 0) {
@@ -212,7 +215,10 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
       const totalH = rows * (CARD_H + CARD_GAP);
       // Clamp the viewport so it always cuts mid-row when there's more below (see scrollPeek.ts).
       const listH = peekViewportH(availH, CARD_H + CARD_GAP, totalH);
-      this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
+      this.scrollMax = Math.max(0, totalH - listH);
+      this.scrollY = Math.max(0, Math.min(this.scrollY, this.scrollMax));
+      this.scrollRegionTop = listY;
+      this.scrollRegionBottom = listY + listH;
 
       entries.forEach((entry, i) => {
         const col = i % cols;

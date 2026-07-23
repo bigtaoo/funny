@@ -86,6 +86,7 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = listY + availH / 2;
         lbl.style.wordWrap = true; lbl.style.wordWrapWidth = w - 32;
         this.bodyLayer.addChild(lbl);
+        this.maxScroll = 0;
         return;
       }
 
@@ -101,7 +102,11 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       // Clamp the viewport so it always cuts mid-row when there's more below — a partial next card
       // peeks above the fold instead of the screen looking "full" with only the scrollbar hinting more.
       const viewH = peekViewportH(availH, CARD_CELL_H + ROSTER_GAP, totalH);
-      this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - viewH)));
+      const maxScroll = Math.max(0, totalH - viewH);
+      this.scrollY = Math.max(0, Math.min(this.scrollY, maxScroll));
+      this.scrollRegionTop = listY;
+      this.scrollRegionBottom = listY + viewH;
+      this.maxScroll = maxScroll;
 
       const now = Date.now();
       sorted.forEach((card, i) => {

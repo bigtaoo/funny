@@ -84,8 +84,12 @@ export function SkinsMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase 
         colY[col] = y + cardH + CELL_GAP;
       }
 
-      this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - viewH)));
-      drawScrollIndicator(this.bodyLayer, { x: left, y: listY, w: avail, h: viewH }, this.scrollY, Math.max(0, totalH - viewH));
+      const maxScroll = Math.max(0, totalH - viewH);
+      this.scrollY = Math.max(0, Math.min(this.scrollY, maxScroll));
+      this.scrollRegionTop = listY;
+      this.scrollRegionBottom = listY + viewH;
+      this.maxScroll = maxScroll;
+      drawScrollIndicator(this.bodyLayer, { x: left, y: listY, w: avail, h: viewH }, this.scrollY, maxScroll);
     }
 
     /** Height a character's wardrobe card would render at, without drawing — used for the dry sizing

@@ -27,6 +27,7 @@ import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { BusyTracker } from '../../ui/busyTracker';
 import { showToastMessage } from '../../net/log';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
+import { wheelScrollY } from '../../ui/wheelScroll';
 import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
 import type { CardSLGState } from '../../net/WorldApiClient';
 import { CARD_DEFS, cardPower } from '../../game/meta/cardDefs';
@@ -161,6 +162,16 @@ export class CardSceneBase {
   protected detailId: string | null = null;
   protected scrollY = 0;
   /**
+   * Vertical bounds + max scroll of whichever grid is currently on screen (roster list / skins
+   * wardrobe — mutually exclusive, so one set of fields covers both). Set at the end of each
+   * renderList/renderSkinsTab's layout pass; consumed by the wheel handler below (PC-only — see
+   * wheelScroll.ts) since neither render pass otherwise stores its listY/viewH/maxScroll past the
+   * render() call that computed them.
+   */
+  protected scrollRegionTop = 0;
+  protected scrollRegionBottom = 0;
+  protected maxScroll = 0;
+  /**
    * Tap-vs-drag gesture tracker: defers a cell's hit action to pointer-up and drops it if the pointer
    * dragged (so a drag starting on a card scrolls instead of opening its detail). See ScrollTapGesture.
    */
@@ -213,6 +224,14 @@ export class CardSceneBase {
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
     this.unsubs.push(input.onUp(() => this.handleUp()));
+    // Desktop mouse-wheel scroll (browser only — see wheelScroll.ts); the detail/feed modal doesn't
+    // scroll via this path, so a wheel event while one is open is ignored, mirroring handleMove's
+    // modalOpen guard below.
+    this.unsubs.push(input.onWheel((x, y, deltaY) => {
+      if (this.modalOpen) return;
+      const next = wheelScrollY(this.scrollRegionTop, this.scrollRegionBottom, y, deltaY, this.scrollY, this.maxScroll);
+      if (next !== null) { this.scrollY = next; this.scrollDirty = true; }
+    }));
   }
 
   private build(): void {

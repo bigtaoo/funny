@@ -10,6 +10,7 @@ import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { buildIcon } from '../render/icons';
 import { FS, snapFont } from '../render/fontScale';
 import { formatLadderTitle, getTitleKeys } from '../game/meta/titles';
+import { wheelScrollY } from '../ui/wheelScroll';
 
 // ── LeaderboardScene — global ladder leaderboard (SE-6) ─────────────────────────
 //
@@ -100,6 +101,7 @@ export class LeaderboardScene implements Scene {
     this.unsubs.push(input.onDown((x, y) => this.onPointerDown(x, y)));
     this.unsubs.push(input.onMove((x, y) => this.onPointerMove(x, y)));
     this.unsubs.push(input.onUp((x, y) => this.onPointerUp(x, y)));
+    this.unsubs.push(input.onWheel((_x, y, deltaY) => this.onWheel(y, deltaY)));
     this.render();
     if (this.cb.loadLeaderboard) void this.fetchData();
   }
@@ -143,6 +145,13 @@ export class LeaderboardScene implements Scene {
       const next = Math.max(0, Math.min(this.scrollMax, this.dragStartScroll + (this.downY - y)));
       if (next !== this.scrollY) { this.scrollY = next; this.updateScrollPosition(); }
     }
+  }
+
+  /** Mouse-wheel scroll over the ranking list (browser only, see InputManager.onWheel). Uses the same
+   *  cheap reposition path as drag-scroll (updateScrollPosition), not a full render(). */
+  private onWheel(y: number, deltaY: number): void {
+    const next = wheelScrollY(this.listTop, this.listTop + this.listH, y, deltaY, this.scrollY, this.scrollMax);
+    if (next !== null) { this.scrollY = next; this.updateScrollPosition(); }
   }
 
   /** Cheap per-move update: reposition the already-built list container and redraw the scroll indicator. */

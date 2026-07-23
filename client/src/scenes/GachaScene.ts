@@ -24,6 +24,7 @@ import { UNIT_ART_URLS, getArtTexture } from '../render/cardArt';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../ui/widgets/scrollPeek';
 import { FS, snapFont } from '../render/fontScale';
+import { wheelScrollY } from '../ui/wheelScroll';
 
 /** itemId prefix → material icon glyph (mat_scrap/mat_lead/mat_binding). */
 const MATERIAL_ICON: Record<string, 'scrap' | 'lead' | 'binding'> = {
@@ -146,6 +147,7 @@ export class GachaScene implements Scene {
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((_x, y) => this.handleOddsMove(y)));
     this.unsubs.push(input.onUp(() => this.handleOddsUp()));
+    this.unsubs.push(input.onWheel((_x, y, deltaY) => this.handleOddsWheel(y, deltaY)));
     this.render();
     void this.loadPools();
     void preloadGachaTextures();
@@ -263,6 +265,25 @@ export class GachaScene implements Scene {
   private handleOddsUp(): void {
     if (this.oddsDragStart && !this.oddsDragStart.moved) { this.oddsOpen = false; this.oddsScrollY = 0; this.render(); }
     this.oddsDragStart = null;
+  }
+
+  /** Mouse-wheel scroll over the odds grid (browser only, see InputManager.onWheel). Gated to while the
+   *  odds overlay is open; bounds mirror drawOdds's gridTop/gridBottom (a pure function of the constant
+   *  design height, so it's safe to recompute here without caching them as fields). */
+  private handleOddsWheel(y: number, deltaY: number): void {
+    if (!this.oddsOpen) return;
+    const { top, bottom } = this.oddsGridBounds();
+    const next = wheelScrollY(top, bottom, y, deltaY, this.oddsScrollY, this.oddsScrollMax);
+    if (next !== null) { this.oddsScrollY = next; this.oddsScrollDirty = true; }
+  }
+
+  /** Odds-grid vertical bounds — mirrors the gridTop/gridBottom computation in drawOdds (py/ph/gridTop/
+   *  gridBottom all derive only from the scene's constant design height `h`, never from pool data). */
+  private oddsGridBounds(): { top: number; bottom: number } {
+    const { h } = this;
+    const ph = Math.round(h * 0.86);
+    const py = (h - ph) / 2;
+    return { top: py + Math.round(h * 0.075), bottom: py + ph - Math.round(h * 0.135) };
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -679,8 +700,7 @@ export class GachaScene implements Scene {
     this.container.addChild(header);
 
     const entries = pool.entries;
-    const gridTop = py + Math.round(h * 0.075);
-    const gridBottom = py + ph - Math.round(h * 0.135);
+    const { top: gridTop, bottom: gridBottom } = this.oddsGridBounds();
     const gridPad = Math.round(pw * 0.03);
     const gridX = px + gridPad, gridW = pw - gridPad * 2;
     const availH = Math.max(1, gridBottom - gridTop);

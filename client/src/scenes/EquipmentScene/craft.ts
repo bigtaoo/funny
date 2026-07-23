@@ -38,7 +38,11 @@ export function CraftMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): T
       const totalH = CELL_GAP + rows * (CRAFT_CELL_H + CELL_GAP);
       // Clamp the viewport so it always cuts mid-row when there's more below (see inventory.ts).
       const listH = peekViewportH(availH, CRAFT_CELL_H + CELL_GAP, totalH);
-      this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
+      const maxScroll = Math.max(0, totalH - listH);
+      this.scrollY = Math.max(0, Math.min(this.scrollY, maxScroll));
+      this.scrollRegionTop = listY;
+      this.scrollRegionBottom = listY + listH;
+      this.maxScroll = maxScroll;
 
       // Masked sub-layer so an overscrolled row never bleeds up past listY and paints over the
       // materials band above it (see the matching fix in inventory.ts's renderInventory).

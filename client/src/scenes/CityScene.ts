@@ -57,6 +57,7 @@ import { BusyTracker } from '../ui/busyTracker';
 import { showToastMessage } from '../net/log';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { ScrollTapGesture } from '../ui/scrollTapGesture';
+import { wheelScrollY } from '../ui/wheelScroll';
 import { buildIcon, type IconKind } from '../render/icons';
 import { loadResAtlas, getResTexture } from '../render/resAtlasLoader';
 import { loadCityBldAtlas, getCityBldTexture } from '../render/cityBldAtlasLoader';
@@ -169,6 +170,11 @@ export class CityScene implements Scene {
   // Building-grid scroll state (drag-to-scroll, matches the CardScene/TeamsScene pattern).
   private scrollY = 0;
   private scrollMax = 0;
+  /** Vertical bounds of whichever grid (domestic building grid / military team panel) is currently
+   *  on-screen — set each render() by that grid's own renderer, so the wheel handler below can gate
+   *  on the currently-active region without guessing which page is showing. */
+  private regionTop = 0;
+  private regionBottom = 0;
   /**
    * Tap-vs-drag gesture tracker: defers a hit action to pointer-up and drops it if the pointer
    * dragged (so a drag starting on a building cell scrolls instead of firing it). See ScrollTapGesture.
@@ -186,6 +192,12 @@ export class CityScene implements Scene {
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((_x, y) => this.handleMove(y)));
     this.unsubs.push(input.onUp(() => this.handleUp()));
+    this.unsubs.push(input.onWheel((x, y, deltaY) => {
+      // Scroll is disabled while a building is selected — mirrors handleMove exactly.
+      if (this.selectedBuilding) return;
+      const next = wheelScrollY(this.regionTop, this.regionBottom, y, deltaY, this.scrollY, this.scrollMax);
+      if (next !== null) { this.scrollY = next; this.scrollDirty = true; }
+    }));
     this.render();
     void this.load();
   }
@@ -554,6 +566,8 @@ export class CityScene implements Scene {
     const viewH = peekViewportH(availH, TEAM_CARD_H + CARD_GAP, contentH);
     this.scrollMax = Math.max(0, contentH - viewH);
     if (this.scrollY > this.scrollMax) this.scrollY = this.scrollMax;
+    this.regionTop = viewY;
+    this.regionBottom = viewY + viewH;
 
     const gridLayer = new PIXI.Container();
     gridLayer.x = cx0;
@@ -834,6 +848,8 @@ export class CityScene implements Scene {
     const viewH = peekViewportH(availH, CARD_H + CARD_GAP, contentH);
     this.scrollMax = Math.max(0, contentH - viewH);
     if (this.scrollY > this.scrollMax) this.scrollY = this.scrollMax;
+    this.regionTop = viewY;
+    this.regionBottom = viewY + viewH;
 
     const gridLayer = new PIXI.Container();
     gridLayer.x = cx0;

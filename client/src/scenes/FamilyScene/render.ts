@@ -329,7 +329,10 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       // Clamp the viewport so it always cuts mid-row when there's more below — a partial next
       // member card peeks above the fold instead of the row grid landing flush with the edge.
       const viewH = peekViewportH(maxH, R, listH);
-      this[scrollKey] = Math.max(0, Math.min(this[scrollKey], Math.max(0, listH - viewH)));
+      this.membersMax = Math.max(0, listH - viewH);
+      this.membersRegionTop = y0;
+      this.membersRegionBottom = y0 + viewH;
+      this[scrollKey] = Math.max(0, Math.min(this[scrollKey], this.membersMax));
 
       const btnH = Math.round(R * 0.44);
       // Buttons are sized to their (i18n-variable-length) label + padding rather than a fixed width,
@@ -469,6 +472,8 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       const msgH = this.messages.length * R;
       const viewH2 = peekViewportH(listH2, R, msgH);
       this.channelMax = Math.max(0, msgH - viewH2);
+      this.channelRegionTop = y0;
+      this.channelRegionBottom = y0 + viewH2;
       // Pin to the latest message (bottom) unless the user scrolled up to read history.
       if (this.channelStick) this[scrollKey] = this.channelMax;
       else this[scrollKey] = Math.max(0, Math.min(this[scrollKey], this.channelMax));

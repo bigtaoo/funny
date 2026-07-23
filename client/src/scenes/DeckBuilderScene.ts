@@ -20,6 +20,7 @@ import { peekViewportH } from '../ui/widgets/scrollPeek';
 import { buildIcon } from '../render/icons';
 import { FS } from '../render/fontScale';
 import { ScrollTapGesture } from '../ui/scrollTapGesture';
+import { wheelScrollY } from '../ui/wheelScroll';
 import { CARD_DEFINITIONS } from '../game/config';
 import {
   PVP_DECK_SIZE,
@@ -96,6 +97,7 @@ export class DeckBuilderScene implements Scene {
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
     this.unsubs.push(input.onUp(() => this.handleUp()));
+    this.unsubs.push(input.onWheel((_x, y, deltaY) => this.handleWheel(y, deltaY)));
 
     this.render();
   }
@@ -130,6 +132,12 @@ export class DeckBuilderScene implements Scene {
   private handleUp(): void {
     // Fires only for a genuine tap (pointer didn't drag); a released drag returns null.
     this.gesture.up()?.();
+  }
+
+  /** Mouse-wheel scroll over the card grid (browser/PC only — see wheelScroll.ts). */
+  private handleWheel(y: number, deltaY: number): void {
+    const next = wheelScrollY(this.listStartY, this.listStartY + this.listH, y, deltaY, this.scrollY, this.scrollMax);
+    if (next !== null) { this.scrollY = next; this.scrollDirty = true; }
   }
 
   private toggleCard(id: string): void {

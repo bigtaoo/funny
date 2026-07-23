@@ -18,6 +18,7 @@ import { drawSocialTabRail, type SocialTab } from '../../render/socialTabRail';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { drawSceneHeader, drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
+import { wheelScrollY } from '../../ui/wheelScroll';
 import type {
   FriendView,
   FriendRequestView,
@@ -219,6 +220,7 @@ export class FriendsSceneBase {
     this.unsubs.push(input.onDown((x, y) => this.onPointerDown(x, y)));
     this.unsubs.push(input.onMove((x, y) => this.onPointerMove(x, y)));
     this.unsubs.push(input.onUp((x, y) => this.onPointerUp(x, y)));
+    this.unsubs.push(input.onWheel((x, y, deltaY) => this.onWheel(y, deltaY)));
 
     this.render();
     void this.refresh();
@@ -315,6 +317,16 @@ export class FriendsSceneBase {
         return;
       }
     }
+  }
+
+  protected onWheel(y: number, deltaY: number): void {
+    if (this.popup.isOpen) return;
+    const next = wheelScrollY(this.regionTop, this.regionBottom, y, deltaY, this.scrollY, this.maxScroll);
+    if (next === null) return;
+    this.scrollY = next;
+    // World channel: scrolling up releases the "stick to latest" pin, same as drag — see onPointerMove.
+    if (this.tab === 'world') this.worldStick = next >= this.maxScroll - 1;
+    this.scrollDirty = true;
   }
 
   protected onBack(): void {
