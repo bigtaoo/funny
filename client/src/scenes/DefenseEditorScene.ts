@@ -145,9 +145,6 @@ export class DefenseEditorScene implements Scene {
   // cards (CHARACTER_CARDS_DESIGN §6.3/§6.5). Trained on the home desk's Train Troops tile.
   private troops = 0;
   private tool: Tool = { kind: 'erase' };
-  // Attack mode: the placed-card cell ("col:row") currently selected for per-card troop allocation
-  // (tapping a placed card opens its allocate stepper). Null = no card selected / stepper hidden.
-  private selectedCell: string | null = null;
   private loading = true;
   private saving = false;
   private filling = false;
@@ -164,6 +161,18 @@ export class DefenseEditorScene implements Scene {
   private rosterW = 0;
   private rosterH = 0;
   private readonly artHooked = new Set<string>();
+
+  // Attack mode drag-to-place: press a roster card and drag it onto a grid cell to deploy it, as an
+  // alternative to tap-select-then-tap-place. A candidate is armed on pointer-down over a roster card;
+  // it promotes to an active drag once the pointer leaves the roster (crosses into the grid half), which
+  // also cancels the scroll gesture so a horizontal drag-out never scrolls the list. The drop reuses
+  // onGridTap (selecting the card as the active tool first), so all placement rules stay in one place.
+  private rosterCardHits: { rect: { x: number; y: number; w: number; h: number }; cardId: string; unitType: UnitType }[] = [];
+  private dragCardId: string | null = null;
+  private dragUnitType: UnitType | null = null;
+  private dragging = false;
+  private dragLayer!: PIXI.Container;      // persistent ghost layer (survives bodyLayer teardown)
+  private dragGhost: PIXI.Container | null = null;
 
   // Layers
   private bodyLayer!: PIXI.Container;
@@ -195,10 +204,14 @@ export class DefenseEditorScene implements Scene {
     if (decoC) this.container.addChild(decoC);
     this.bodyLayer = new PIXI.Container();
     this.container.addChild(this.bodyLayer);
+    // Drag ghost lives above the body layer and is NOT torn down by render(), so it can follow the
+    // pointer without a full re-render per move (attack-mode drag-to-place).
+    this.dragLayer = new PIXI.Container();
+    this.container.addChild(this.dragLayer);
 
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
-    this.unsubs.push(input.onMove((_x, y) => this.handleMove(y)));
-    this.unsubs.push(input.onUp(() => this.handleUp()));
+    this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
+    this.unsubs.push(input.onUp((x, y) => this.handleUp(x, y)));
     // Card roster (attack mode, right half) mouse-wheel scroll — same region gate as handleDown's
     // inRoster check, browser/PC only (see wheelScroll.ts).
     this.unsubs.push(input.onWheel((x, y, deltaY) => {
@@ -346,8 +359,8 @@ export class DefenseEditorScene implements Scene {
 
   /**
    * §6.5 一键补满: distribute the base troop pool to this formation's placed cards, highest combat-power
-   * first, up to each card's troopCap. Per-card manual adjustment is available via the tap-a-cell stepper
-   * (allocateToCard) — this one-tap button just fills them all by power priority.
+   * first, up to each card's troopCap. This is the only troop-allocation control in the editor now —
+   * the per-card manual stepper was removed 2026-07-23 (redundant with this bulk fill).
    */
   private async doFillTroops(): Promise<void> {
     if (this.filling || this.cb.target.mode !== 'attack') return;
@@ -424,6 +437,7 @@ export class DefenseEditorScene implements Scene {
   private render(): void {
     tearDownChildren(this.bodyLayer);
     this.hits = [];
+    this.rosterCardHits = [];
     const { w, h } = this;
 
     // Header: back + title + base-level stepper (drawn on the right slot below)
@@ -453,14 +467,6 @@ export class DefenseEditorScene implements Scene {
 
     // Footer: counts + clear + save (defense only)
     if (this.mode !== 'attack') this.renderFooter(h - FOOTER_H);
-
-    // Per-card allocate stepper overlay (attack mode) — shown for the currently selected placed card.
-    // With no footer it anchors to the screen bottom.
-    if (this.mode === 'attack' && this.selectedCell) {
-      const entry = this.garrison.get(this.selectedCell);
-      if (entry?.cardInstanceId) this.renderAllocateStepper(entry.cardInstanceId, h);
-      else this.selectedCell = null;
-    }
 
     if (this.loading) {
       const lbl = txt(t('world.loading'), FS.tiny, C.mid);
@@ -574,41 +580,6 @@ export class DefenseEditorScene implements Scene {
   private capForCard(cardInstanceId: string): number {
     const card = this.cb.getSave?.().cardInv?.[cardInstanceId];
     return card ? troopCap(card) : 0;
-  }
-
-  /**
-   * Per-card 分兵: add `requested` troops from the base pool to one placed card (server distributeTroops
-   * is add-only — troops committed to a card are only released by removing the card from the team, §6.1).
-   * Amount is clamped to min(requested, troopCap gap, pool). Persists the team first (so the card has a
-   * server teamId), then distributes and mirrors local state — same order/rules as doFillTroops.
-   */
-  private async allocateToCard(cardInstanceId: string, requested: number): Promise<void> {
-    if (this.filling || this.cb.target.mode !== 'attack') return;
-    const card = this.cb.getSave?.().cardInv?.[cardInstanceId];
-    if (!card) return;
-    const current = this.cardState[cardInstanceId]?.currentTroops ?? 0;
-    const gap = Math.max(0, troopCap(card) - current);
-    const amount = Math.min(requested, gap, this.troops);
-    if (amount <= 0) {
-      this.showToast(gap <= 0 ? t('world.team.cardFull') : t('world.team.fillNone'), C.red);
-      return;
-    }
-    this.filling = true;
-    try {
-      await this.persistTeam();
-      await this.cb.worldApi.distributeTroops(this.cb.worldId, { [cardInstanceId]: amount });
-      const cs = this.cardState[cardInstanceId];
-      const nextTroops = current + amount;
-      this.cardState[cardInstanceId] = { ...cs, currentTroops: nextTroops };
-      const entry = [...this.garrison.values()].find((e) => e.cardInstanceId === cardInstanceId);
-      if (entry) entry.hp = nextTroops;
-      this.troops -= amount;
-      this.showToast(t('world.team.fillDone').replace('{n}', String(amount)));
-    } catch (e) {
-      this.showToast(this.errorMsg(e), C.red);
-    }
-    this.filling = false;
-    this.render();
   }
 
   /**
@@ -736,10 +707,13 @@ export class DefenseEditorScene implements Scene {
       this.bodyLayer.addChild(tag);
     }
 
-    this.hits.push({ rect: { x, y, w: cellW, h: cellH }, action: () => {
+    const rect = { x, y, w: cellW, h: cellH };
+    this.hits.push({ rect, action: () => {
       this.tool = { kind: 'card', cardInstanceId: c.card.id, unitType: c.unitType };
       this.render();
     } });
+    // Also expose this cell for drag-to-place (arm a drag candidate on pointer-down over it).
+    this.rosterCardHits.push({ rect, cardId: c.card.id, unitType: c.unitType });
   }
 
   /** Draw a unit portrait fit into a box, centered; re-render once its texture loads (mirrors TeamsScene). */
@@ -814,7 +788,7 @@ export class DefenseEditorScene implements Scene {
             const u = this.garrison.get(key);
             if (u) {
               const cap = this.mode === 'attack' && u.cardInstanceId ? this.capForCard(u.cardInstanceId) : undefined;
-              this.drawUnit(g, px, py, cellW, cellH, u.unitType, u.hp, cap, key === this.selectedCell);
+              this.drawUnit(g, px, py, cellW, cellH, u.unitType, u.hp, cap);
             }
           }
         }
@@ -846,21 +820,21 @@ export class DefenseEditorScene implements Scene {
     }
   }
 
-  private drawUnit(g: PIXI.Graphics, px: number, py: number, cw: number, ch: number, type: UnitType, hp?: number, cap?: number, selected = false): void {
+  private drawUnit(g: PIXI.Graphics, px: number, py: number, cw: number, ch: number, type: UnitType, hp?: number, cap?: number): void {
     const cx = px + cw / 2, cy = py + ch / 2;
     const size = Math.min(cw, ch) * 0.72;
     const bx = cx - size / 2, by = cy - size / 2;
     const artUrl = UNIT_ART_URLS[type];
     if (artUrl) {
       const frame = sketchPanel(size, size, {
-        fill: 0xf0eee7, border: selected ? C.gold : 0x33425a, width: selected ? 2.4 : 1.2, seed: seedFor(px, py, size),
+        fill: 0xf0eee7, border: 0x33425a, width: 1.2, seed: seedFor(px, py, size),
       });
       frame.x = bx; frame.y = by;
       this.bodyLayer.addChild(frame);
       this.drawArtFit(artUrl, bx + 1, by + 1, size - 2, size - 2);
     } else {
       const r = size / 2;
-      g.lineStyle(selected ? 2.4 : 1.2, selected ? C.gold : 0x33425a, 1);
+      g.lineStyle(1.2, 0x33425a, 1);
       g.beginFill(0x4477cc, 0.92);
       g.drawCircle(cx, cy, r);
       g.endFill();
@@ -917,7 +891,8 @@ export class DefenseEditorScene implements Scene {
   private renderAttackHeaderControls(headerH: number): void {
     const { w } = this;
     const countsStr = `${t('world.defense.garrison').replace('{n}', String(this.garrison.size))}   ${t('world.team.committed').replace('{n}', String(this.committedTroops()))}   ${t('world.team.pool').replace('{n}', String(this.troops))}`;
-    const counts = txt(countsStr, FS.small, C.dark, true);
+    // ~2x the old FS.small readout — approved 2026-07-23 (user: PC screen, top-bar text too small).
+    const counts = txt(countsStr, FS.title, C.dark, true);
     counts.anchor.set(0, 0.5);
     const startX = 210; // clears the back pill (constant width in the shared 1080 design space)
     counts.x = startX; counts.y = headerH / 2;
@@ -929,93 +904,51 @@ export class DefenseEditorScene implements Scene {
     if (avail > 20 && counts.width > avail) counts.scale.set(avail / counts.width);
     this.bodyLayer.addChild(counts);
 
-    this.renderActionButtons(w - PAD, 0, headerH);
+    // ~2x the shared button size, only in the roomy attack header (the defense footer keeps scale 1).
+    this.renderActionButtons(w - PAD, 0, headerH, 2);
   }
 
   /**
    * Right-aligned Fill troops (attack only) / Clear / Save cluster, vertically centred on the band
-   * [top, top+rowH] ending at `rightEdge`. Shared by the defense footer and the attack header.
+   * [top, top+rowH] ending at `rightEdge`. Shared by the defense footer (scale 1) and the attack header
+   * (scale 2 — the header band is tall enough and the PC readout needs to be legible).
    */
-  private renderActionButtons(rightEdge: number, top: number, rowH: number): void {
-    const btnW = 70, btnH = 30;
+  private renderActionButtons(rightEdge: number, top: number, rowH: number, scale = 1): void {
+    const btnW = 70 * scale, btnH = 30 * scale, gap = 8 * scale;
+    const labelSize = scale >= 2 ? FS.heading : FS.tiny;
     const cy = top + (rowH - btnH) / 2;
     const save = sketchPanel(btnW, btnH, { fill: C.dark, border: C.gold, seed: seedFor(rightEdge, top, btnW) });
     save.x = rightEdge - btnW; save.y = cy;
     this.bodyLayer.addChild(save);
-    const saveLbl = txt(t('world.defense.save'), FS.tiny, C.light, true);
+    const saveLbl = txt(t('world.defense.save'), labelSize, C.light, true);
     saveLbl.anchor.set(0.5, 0.5);
     saveLbl.x = save.x + btnW / 2; saveLbl.y = save.y + btnH / 2;
     this.bodyLayer.addChild(saveLbl);
     this.hits.push({ rect: { x: save.x, y: save.y, w: btnW, h: btnH }, action: () => void this.doSave() });
 
     const clear = sketchPanel(btnW, btnH, { fill: C.paper, border: C.red, seed: seedFor(rightEdge, top + 1, btnW) });
-    clear.x = save.x - btnW - 8; clear.y = cy;
+    clear.x = save.x - btnW - gap; clear.y = cy;
     this.bodyLayer.addChild(clear);
 
     if (this.mode === 'attack') {
-      const fillW = 84;
+      const fillW = 84 * scale;
       const fill = sketchPanel(fillW, btnH, { fill: C.paper, border: C.gold, seed: seedFor(rightEdge, top + 2, fillW) });
-      fill.x = clear.x - fillW - 8; fill.y = cy;
+      fill.x = clear.x - fillW - gap; fill.y = cy;
       this.bodyLayer.addChild(fill);
-      const fillLbl = txt(t('world.team.fill'), FS.tiny, C.dark, true);
+      const fillLbl = txt(t('world.team.fill'), labelSize, C.dark, true);
       fillLbl.anchor.set(0.5, 0.5);
       fillLbl.x = fill.x + fillW / 2; fillLbl.y = fill.y + btnH / 2;
       if (fillLbl.width > fillW - 6) fillLbl.scale.set((fillW - 6) / fillLbl.width);
       this.bodyLayer.addChild(fillLbl);
       this.hits.push({ rect: { x: fill.x, y: fill.y, w: fillW, h: btnH }, action: () => void this.doFillTroops() });
     }
-    const clearLbl = txt(t('world.defense.clear'), FS.tiny, C.red, true);
+    const clearLbl = txt(t('world.defense.clear'), labelSize, C.red, true);
     clearLbl.anchor.set(0.5, 0.5);
     clearLbl.x = clear.x + btnW / 2; clearLbl.y = clear.y + btnH / 2;
     this.bodyLayer.addChild(clearLbl);
     this.hits.push({ rect: { x: clear.x, y: clear.y, w: btnW, h: btnH }, action: () => {
-      this.buildings.clear(); this.garrison.clear(); this.baseLevel = 0; this.selectedCell = null; this.render();
+      this.buildings.clear(); this.garrison.clear(); this.baseLevel = 0; this.render();
     } });
-  }
-
-  /**
-   * Per-card allocate stepper (attack mode): a bar just above the footer for the selected placed card,
-   * showing name + currentTroops/troopCap + a set of add presets (+100 / +500 / 补满此卡) drawing from the
-   * base pool, plus a close ✕. Add-only (server distributeTroops cannot pull troops back off a card).
-   */
-  private renderAllocateStepper(cardInstanceId: string, footerTop: number): void {
-    const { w } = this;
-    const card = this.cb.getSave?.().cardInv?.[cardInstanceId];
-    if (!card) { this.selectedCell = null; return; }
-    const cur = this.cardState[cardInstanceId]?.currentTroops ?? 0;
-    const cap = troopCap(card);
-    const barH = 40;
-    const top = footerTop - barH - 2;
-
-    const panel = sketchPanel(w, barH, { fill: 0xfaf7ef, border: C.gold, width: 1.6, seed: seedFor(0, top, w) });
-    panel.y = top;
-    this.bodyLayer.addChild(panel);
-
-    const name = t(`card.${card.defId}.name` as TranslationKey);
-    const info = txt(`${name}  ${cur}/${cap}   ${t('world.team.pool').replace('{n}', String(this.troops))}`, FS.micro, C.dark, true);
-    info.x = PAD; info.y = top + (barH - 14) / 2;
-    if (info.width > w * 0.5) info.scale.set((w * 0.5) / info.width);
-    this.bodyLayer.addChild(info);
-
-    // Right-aligned: [close] [补满此卡] [+500] [+100]
-    const btnH = 28, gap = 6;
-    let rx = w - PAD;
-    const addBtn = (label: string, wdt: number, tint: number, fg: number, action: () => void) => {
-      rx -= wdt;
-      const b = sketchPanel(wdt, btnH, { fill: tint, border: C.dark, seed: seedFor(rx, top, wdt) });
-      b.x = rx; b.y = top + (barH - btnH) / 2;
-      this.bodyLayer.addChild(b);
-      const l = txt(label, FS.micro, fg, true);
-      l.anchor.set(0.5, 0.5); l.x = rx + wdt / 2; l.y = b.y + btnH / 2;
-      if (l.width > wdt - 6) l.scale.set((wdt - 6) / l.width);
-      this.bodyLayer.addChild(l);
-      this.hits.push({ rect: { x: rx, y: b.y, w: wdt, h: btnH }, action });
-      rx -= gap;
-    };
-    addBtn('✕', 26, C.paper, C.mid, () => { this.selectedCell = null; this.render(); });
-    addBtn(t('world.team.cardFill'), 84, C.gold, C.dark, () => void this.allocateToCard(cardInstanceId, cap - cur));
-    addBtn('+500', 54, C.paper, C.dark, () => void this.allocateToCard(cardInstanceId, 500));
-    addBtn('+100', 54, C.paper, C.dark, () => void this.allocateToCard(cardInstanceId, 100));
   }
 
   /** Attacker army committed troops = sum of each placed card's live cardState.currentTroops (consistent with TeamsScene / server). */
@@ -1057,29 +990,20 @@ export class DefenseEditorScene implements Scene {
       const key = `${col}:${row}`;
       if (this.tool.kind === 'erase') {
         this.garrison.delete(key);
-        if (this.selectedCell === key) this.selectedCell = null;
       } else if (this.mode === 'attack' && this.tool.kind === 'card') {
         const { cardInstanceId, unitType } = this.tool;
-        const occupant = this.garrison.get(key);
-        // Tapping a cell held by a DIFFERENT placed card selects THAT card for troop allocation rather
-        // than clobbering it (safe — no accidental overwrite of another placed card).
-        if (occupant?.cardInstanceId && occupant.cardInstanceId !== cardInstanceId) {
-          this.selectedCell = key;
-        } else {
-          // A card can only occupy one cell — placing it elsewhere moves it. Net size only grows when
-          // both the card is brand-new to this team AND the target cell isn't already overwriting another card.
-          const prevCell = this.cellForCard(cardInstanceId);
-          const willGrow = !prevCell && !this.garrison.has(key);
-          if (willGrow && this.garrison.size >= CARD_TEAM_MAX_SIZE) {
-            this.showToast(t('world.team.full'), C.red);
-            return;
-          }
-          if (prevCell && prevCell !== key) this.garrison.delete(prevCell);
-          const troops = this.cardState[cardInstanceId]?.currentTroops ?? 0;
-          this.garrison.set(key, { unitType, hp: troops, cardInstanceId });
-          // Select the just-placed card so its allocate stepper appears immediately.
-          this.selectedCell = key;
+        // A card can only occupy one cell — placing it elsewhere moves it; dropping onto a cell held by
+        // another card overwrites that card (removes it from the team). Net size only grows when the card
+        // is brand-new to this team AND the target cell was empty.
+        const prevCell = this.cellForCard(cardInstanceId);
+        const willGrow = !prevCell && !this.garrison.has(key);
+        if (willGrow && this.garrison.size >= CARD_TEAM_MAX_SIZE) {
+          this.showToast(t('world.team.full'), C.red);
+          return;
         }
+        if (prevCell && prevCell !== key) this.garrison.delete(prevCell);
+        const troops = this.cardState[cardInstanceId]?.currentTroops ?? 0;
+        this.garrison.set(key, { unitType, hp: troops, cardInstanceId });
       } else if (this.tool.kind === 'unit') {
         if (!this.garrison.has(key) && this.garrison.size >= MAX_GARRISON) {
           this.showToast(t('world.defense.full'), C.red);
@@ -1112,18 +1036,88 @@ export class DefenseEditorScene implements Scene {
     // starts on a card scrolls instead of selecting it (see scroll-drag-throttle-pattern memory).
     const inRoster = this.mode === 'attack' && x >= this.rosterX && x <= this.rosterX + this.rosterW
       && y >= this.rosterY && y <= this.rosterY + this.rosterH;
-    if (inRoster) { this.gesture.down(this.scrollY, y, hit); return; }
+    if (inRoster) {
+      // Arm a drag candidate if the down landed on a roster card — promotes to a real drag in
+      // handleMove once the pointer leaves the roster. Scroll/tap are still handled by the gesture.
+      for (const rc of this.rosterCardHits) {
+        if (x >= rc.rect.x && x <= rc.rect.x + rc.rect.w && y >= rc.rect.y && y <= rc.rect.y + rc.rect.h) {
+          this.dragCardId = rc.cardId; this.dragUnitType = rc.unitType; break;
+        }
+      }
+      this.gesture.down(this.scrollY, y, hit);
+      return;
+    }
     if (hit) { hit(); return; }
     this.onGridTap(x, y);
   }
 
-  private handleMove(y: number): void {
+  private handleMove(x: number, y: number): void {
+    // Promote an armed roster candidate to an active card-drag once the pointer crosses out of the
+    // roster into the grid half — cancel the scroll gesture so a horizontal drag-out never scrolls.
+    if (this.dragCardId && !this.dragging && x < this.rosterX) {
+      this.dragging = true;
+      this.gesture.up(); // discard: cancels any pending scroll/tap for this gesture
+      this.startDragGhost(x, y);
+    }
+    if (this.dragging) { this.moveDragGhost(x, y); return; }
     const scroll = this.gesture.move(y);
     if (scroll !== null) { this.scrollY = Math.min(this.scrollMax, scroll); this.scrollDirty = true; }
   }
 
-  private handleUp(): void {
+  private handleUp(x: number, y: number): void {
+    if (this.dragging) {
+      const cardId = this.dragCardId, unitType = this.dragUnitType;
+      this.clearDrag();
+      if (cardId && unitType) {
+        // Reuse the tap-placement path: select the dragged card, then drop it at the release point.
+        this.tool = { kind: 'card', cardInstanceId: cardId, unitType };
+        this.onGridTap(x, y); // places (and renders) if the drop is on a valid cell; no-op otherwise
+      }
+      this.render(); // reflect selection / guarantee the (already-removed) ghost is gone
+      return;
+    }
+    this.dragCardId = null; this.dragUnitType = null;
     this.gesture.up()?.();
+  }
+
+  // ── Drag ghost (attack mode drag-to-place) ─────────────────────────────────
+
+  /** Build a translucent unit portrait that follows the pointer while dragging a card onto the grid. */
+  private startDragGhost(x: number, y: number): void {
+    this.clearDragGhost();
+    const size = this.cellW > 0 ? this.cellW * 0.72 : 60;
+    const ghost = new PIXI.Container();
+    const frame = sketchPanel(size, size, { fill: 0xf0eee7, border: C.gold, width: 2.4, seed: seedFor(0, 0, size) });
+    frame.x = -size / 2; frame.y = -size / 2;
+    ghost.addChild(frame);
+    const url = this.dragUnitType ? UNIT_ART_URLS[this.dragUnitType] : undefined;
+    if (url) {
+      const tex = getArtTexture(url);
+      if (tex.baseTexture.valid) {
+        const sp = new PIXI.Sprite(tex);
+        sp.anchor.set(0.5);
+        sp.scale.set(Math.min((size - 2) / tex.width, (size - 2) / tex.height));
+        ghost.addChild(sp);
+      }
+    }
+    ghost.alpha = 0.75;
+    ghost.x = x; ghost.y = y;
+    this.dragLayer.addChild(ghost);
+    this.dragGhost = ghost;
+  }
+
+  private moveDragGhost(x: number, y: number): void {
+    if (this.dragGhost) { this.dragGhost.x = x; this.dragGhost.y = y; }
+  }
+
+  private clearDragGhost(): void {
+    if (this.dragGhost) { this.dragGhost.destroy({ children: true }); this.dragGhost = null; }
+  }
+
+  /** Reset all drag state (candidate + active flag + ghost). */
+  private clearDrag(): void {
+    this.dragCardId = null; this.dragUnitType = null; this.dragging = false;
+    this.clearDragGhost();
   }
 
   update(_dt: number): void {

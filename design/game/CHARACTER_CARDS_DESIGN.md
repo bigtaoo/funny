@@ -228,7 +228,7 @@ playerWorld.troops ≤ cityTroopCap                                             
 
 - **一键补满**：按战力降序，依次补至 `troopCap`；池不足则按比例分配剩余
   - **先自动存队伍**：`distributeTroops` 要求每张卡已有 `teamId`（在队伍中），否则报 `Card X is not assigned to a team`。刚拖进格子但未点保存的卡只在客户端本地、server 无 `teamId`，会被拒。因此「补满兵力」在调 `distributeTroops` 前先 `persistTeam()`（= `setTeams` 合并本槽），玩家布阵后直接补兵、无需另点保存（`setTeams` 只对被移出所有队伍的卡清兵/退款，留队的卡兵力不变，先存后补安全）。
-- **手动调整（2026-07-21 落地）**：点布阵格里的某张卡打开逐卡分兵浮层（`+100 / +500 / 补满此卡`，受 `min(troopCap 余量, 池余量)` 约束，同样先 `persistTeam()` 再 `distributeTroops`）；每个上场角色头顶有一条血条显示 `currentTroops / troopCap`。分兵是**只增**操作（server `distributeTroops` 只加不减；兵力从卡上释放只能靠移出队伍，见 §6.1）
+- ~~**手动调整（2026-07-21 落地）**：点布阵格里的某张卡打开逐卡分兵浮层（`+100 / +500 / 补满此卡`）~~ **（2026-07-23 移除）** 逐卡分兵浮层已删除——与「一键补满」冗余，且浮层里重复显示了顶栏已有的兵力池数字。分兵现在只有「补满兵力」一条入口（`allocateToCard` 一并删除）。每个上场角色头顶仍有一条血条显示 `currentTroops / troopCap`。分兵仍是**只增**操作（server `distributeTroops` 只加不减；兵力从卡上释放只能靠移出队伍，见 §6.1）
 - **战前检查**：布阵中有卡 `currentTroops = 0` → UI 显示警告（不强制阻拦）
 - **新玩家**：进入 SLG 时基地兵力池即为满值 `TROOP_CAP_BASE = 10000`，足够初始布阵（统一池后由 `troopCapFor(buildings)` 决定，不再是独立的赠送常量 `BASE_TROOP_STOCK_INITIAL`）
 
@@ -243,6 +243,8 @@ playerWorld.troops ≤ cityTroopCap                                             
 > 同时把训练入口从练兵场弹窗挪成主城桌面独立格子，并把 `baseTroopStock` 与 `playerWorld.troops` 合并为单一
 > 基地兵力池（退役 `baseTroopStock`，`TROOP_CAP_BASE` 2000→10000，一次性 boot 迁移折叠存量），使
 > 「训练 → 分兵给角色」首次形成闭环（此前训练写 `troops`、分兵读 `baseTroopStock`，两池不通）。
+>
+> **布阵编辑器 PC 调整**（2026-07-23）：①顶栏兵力读数（Garrison / Troops / Troop pool）字号 `FS.small → FS.title`，右上 `Fill/Clear/Save` 按钮组 `renderActionButtons` 加 `scale` 参数、攻击模式传 `scale=2`（防守页脚仍 1），PC 大屏上不再过小；②删除逐卡分兵浮层（见 §6.5）；③布阵新增**拖拽放置**：在右侧卡池按住某张卡拖到左侧格子即部署，作为「点选→点放」之外的第二种方式。实现：`onDown` 命中卡池格时武装 `dragCardId`，`onMove` 指针越过卡池左边界（`x < rosterX`）时提升为拖拽（同时 `gesture.up()` 取消滚动手势并起一个半透明 ghost 跟随），`onUp` 落点复用 `onGridTap`（先把该卡设为当前 tool，再在落点放置——放置规则单点维护）。ghost 挂在独立 `dragLayer`，不随 `render()` 重建。
 
 ## 7. 战斗结算与受伤
 
