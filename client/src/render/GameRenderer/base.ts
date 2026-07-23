@@ -9,6 +9,8 @@ import { BOTTOM_BUILDING_ROW, BOTTOM_SPAWN_ROW, TOP_BUILDING_ROW, TOP_SPAWN_ROW 
 
 /** HP fraction at/under which a base is "critical" (~last HP cell) — triggers the board ring. */
 const BASE_CRITICAL_RATIO = 0.15;
+/** Reused empty list so the common (no lanes blocked) path allocates nothing per frame. */
+const NO_BLOCKED_LANES: { col: number; remainingSec: number }[] = [];
 import {
   IGameEngine,
   OwnerId,
@@ -18,6 +20,7 @@ import {
   GameState,
   Side,
   sideToOwner,
+  TICK_RATE,
 } from '../../game';
 import { ILayout, Rect } from '../../layout/ILayout';
 import { t } from '../../i18n';
@@ -258,6 +261,17 @@ export class GameRendererBase {
     stateRecorder.capture(state);
     for (const event of state.events) this.handleEvent(event, state);
     this.boardView.update(dt);
+    // 断路: persistent overlay on every column BridgeCollapse has blocked, for the full
+    // block (tempBlockedCols maps col → expiry tick). Empty most of the time — cheap early-out.
+    if (state.tempBlockedCols.size > 0) {
+      const blocked: { col: number; remainingSec: number }[] = [];
+      for (const [col, expiresAt] of state.tempBlockedCols) {
+        blocked.push({ col, remainingSec: Math.max(0, (expiresAt - state.elapsedTicks) / TICK_RATE) });
+      }
+      this.boardView.syncBlockedLanes(blocked);
+    } else if (this.boardView.hasBlockedLanes()) {
+      this.boardView.syncBlockedLanes(NO_BLOCKED_LANES);
+    }
     this.boardView.setBaseUpgradeLevel(0, state.bottomPlayer.upgradeLevel);
     this.boardView.setBaseUpgradeLevel(1, state.topPlayer.upgradeLevel);
     // Critical-HP ring on the board (both bases): one haste-rush from ending. Threshold is a fraction of each

@@ -30,6 +30,12 @@ const BASE_HIT_PULSE_GROW  = 0.18;  // outline expands by this fraction as it fa
 // where a haste-rush ends the game, so it draws the eye to the board, not the HUD.
 const CRIT_RING_SPEED = 7.5; // rad/s → fast, urgent throb
 
+// 断路 (BridgeCollapse) persistent lane overlay. The 0.6s cast VFX alone was easy to
+// miss while the lane stays blocked for 8s; this overlay marks the lane for its full
+// duration and blinks in the final seconds to telegraph the lane reopening.
+const BLOCK_BLINK_SEC   = 1.6; // start blinking when this many seconds of block remain
+const BLOCK_BLINK_SPEED = 9;   // rad/s — fast "about to clear" pulse
+
 interface BaseRef {
   sprite:   PIXI.Sprite;
   crackGfx: PIXI.Graphics;
@@ -71,8 +77,13 @@ export class BoardView {
     { label: 'fx.meteor', bytesEach: 2 * 1024 },
   );
 
-  /** In-flight one-shot effect ticks (meteor), tracked so teardown can unregister them. */
+  /** In-flight one-shot effect ticks (meteor / rockslide), tracked so teardown can unregister them. */
   private readonly fxTicks = new Set<() => void>();
+
+  /** Persistent 断路 overlay layer (below highlights); one child Graphics per blocked column. */
+  private blockedLaneLayer!: PIXI.Container;
+  /** 断路 overlays keyed by blocked column — drawn once on appear, alpha-blinked per frame. */
+  private readonly blockedLanes = new Map<number, PIXI.Graphics>();
 
   constructor(layout: ILayout) {
     this.layout    = layout;
@@ -81,6 +92,7 @@ export class BoardView {
     this.inactiveLaneLayer = new PIXI.Graphics();
     this.noBuildLayer   = new PIXI.Graphics();
     this.highlightLayer = new PIXI.Graphics();
+    this.blockedLaneLayer = new PIXI.Container();
 
     this.drawBoard();
     this.drawDecorations();
@@ -88,6 +100,7 @@ export class BoardView {
     loadBaseUpgradeAtlas().catch((err) => console.warn('[BoardView] base upgrade atlas load failed:', err));
     this.container.addChild(this.inactiveLaneLayer); // below no-build + highlights
     this.container.addChild(this.noBuildLayer);
+    this.container.addChild(this.blockedLaneLayer);  // 断路 overlay: board floor, under units
     this.container.addChild(this.highlightLayer);
   }
 
@@ -148,6 +161,73 @@ export class BoardView {
       g.drawRect(pos.x - cs / 2, pos.y - cs / 2, cs, cs);
       g.endFill();
     }
+  }
+
+  // ── 断路 (BridgeCollapse) persistent lane overlay ─────────────────────────
+
+  /**
+   * Reconcile the persistent blocked-lane overlays against the engine's blocked
+   * columns (called every frame from GameRenderer with each lane's remaining
+   * block seconds). Overlays are built once when a lane becomes blocked and torn
+   * down when it clears; per frame only their alpha changes — steady while the
+   * block has time left, blinking in the final BLOCK_BLINK_SEC to signal that the
+   * lane is about to reopen. Empty `entries` clears any lingering overlay.
+   */
+  syncBlockedLanes(entries: { col: number; remainingSec: number }[]): void {
+    const t = this.baseTime;
+    const active = new Set<number>();
+    for (const { col, remainingSec } of entries) {
+      active.add(col);
+      let gfx = this.blockedLanes.get(col);
+      if (!gfx) {
+        gfx = this.buildBarricade(col);
+        this.blockedLaneLayer.addChild(gfx);
+        this.blockedLanes.set(col, gfx);
+      }
+      gfx.alpha = remainingSec < BLOCK_BLINK_SEC
+        ? 0.4 + 0.45 * (0.5 + 0.5 * Math.sin(t * BLOCK_BLINK_SPEED)) // fast pulse: reopening soon
+        : 0.9;
+    }
+    for (const [col, gfx] of this.blockedLanes) {
+      if (!active.has(col)) { gfx.destroy(); this.blockedLanes.delete(col); }
+    }
+  }
+
+  /** True while at least one lane overlay is live (lets the caller skip clearing when idle). */
+  hasBlockedLanes(): boolean {
+    return this.blockedLanes.size > 0;
+  }
+
+  /**
+   * Draw a hand-drawn "road blocked" barricade over one lane: a faint red rubble
+   * tint, cross-hatch fill, a scribbled frame, and a row of ✕ marks down the lane.
+   * Geometry is seeded per column (SketchPen fixed seed) so it never wobbles — the
+   * overlay is drawn once and only alpha-animated afterwards. Orientation-agnostic:
+   * the lane is a vertical stripe (portrait) or horizontal band (landscape).
+   */
+  private buildBarricade(col: number): PIXI.Graphics {
+    const g = new PIXI.Graphics();
+    const r = this.laneRect(col);
+    g.beginFill(fx.laneBlocked, 0.12);
+    g.drawRect(r.x, r.y, r.w, r.h);
+    g.endFill();
+
+    const pen = new SketchPen(g, ((col + 1) * 0x9e3779b1) >>> 0 || 1);
+    pen.hatch(r.x + 3, r.y + 3, r.w - 6, r.h - 6, { color: fx.laneBlocked, angle: Math.PI / 4, spacing: 18, width: 1.8, alpha: 0.45 });
+    pen.rect(r.x + 3, r.y + 3, r.w - 6, r.h - 6, { color: fx.laneBlocked, width: 2.4, jitter: 1.5, alpha: 0.8, double: false });
+
+    const vertical = r.h >= r.w;
+    const span = vertical ? r.h : r.w;
+    const s = Math.min(r.w, r.h) * 0.26;
+    const n = Math.max(3, Math.round(span / (this.layout.cellSize * 1.6)));
+    for (let i = 0; i < n; i++) {
+      const f  = (i + 0.5) / n;
+      const mx = vertical ? r.x + r.w / 2 : r.x + span * f;
+      const my = vertical ? r.y + span * f : r.y + r.h / 2;
+      pen.stroke([{ x: mx - s, y: my - s }, { x: mx + s, y: my + s }], { color: fx.laneBlocked, width: 2.8, alpha: 0.9, taper: 0.3, double: false });
+      pen.stroke([{ x: mx - s, y: my + s }, { x: mx + s, y: my - s }], { color: fx.laneBlocked, width: 2.8, alpha: 0.9, taper: 0.3, double: false });
+    }
+    return g;
   }
 
   // ── Per-frame update ──────────────────────────────────────────────────────
@@ -382,6 +462,87 @@ export class BoardView {
     };
     this.fxTicks.add(tick);
     PIXI.Ticker.shared.add(tick);
+  }
+
+  /**
+   * 直线伤害 (Rockslide) map effect: a brief red telegraph line flashes down the whole
+   * lane, then rock impacts cascade cell-by-cell from one end to the other — so the
+   * player reads "the ENTIRE column was hit" rather than a single localized poof (the
+   * old single center VFX). Pure render (damage is applied instantly engine-side);
+   * self-contained in one Graphics + one tracked tick, unregistered in destroy().
+   */
+  playRockslideEffect(col: number): void {
+    const g = new PIXI.Graphics();
+    this.container.addChild(g);
+
+    const r        = this.laneRect(col);
+    const vertical = r.h >= r.w;
+    const span     = vertical ? r.h : r.w;
+    const cs       = this.layout.cellSize;
+    const rows     = BOARD_ROWS;
+    const seed     = ((col + 7) * 0x9e3779b1) >>> 0 || 1;
+
+    const TELEGRAPH   = 0.18; // s — warning line before the first rock lands
+    const PER_ROW     = 0.03; // s — stagger between successive cells
+    const IMPACT_LIFE = 0.34; // s — how long each rock burst lingers
+    const total       = TELEGRAPH + PER_ROW * rows + IMPACT_LIFE;
+
+    let e = 0;
+    const tick = (): void => {
+      e += PIXI.Ticker.shared.deltaMS / 1000;
+      g.clear();
+
+      // Telegraph: bright warning line + faint lane tint, fading out early.
+      const tel = Math.max(0, 1 - e / (TELEGRAPH * 2.2));
+      if (tel > 0) {
+        g.beginFill(fx.meteor, 0.16 * tel);
+        g.drawRect(r.x, r.y, r.w, r.h);
+        g.endFill();
+        g.lineStyle(3, fx.meteor, 0.9 * tel);
+        if (vertical) { g.moveTo(r.x + r.w / 2, r.y); g.lineTo(r.x + r.w / 2, r.y + r.h); }
+        else          { g.moveTo(r.x, r.y + r.h / 2); g.lineTo(r.x + r.w, r.y + r.h / 2); }
+      }
+
+      // Cascading rock impacts, one per cell, front sweeping along the lane.
+      const pen = new SketchPen(g, seed);
+      for (let i = 0; i < rows; i++) {
+        const age = e - (TELEGRAPH + i * PER_ROW);
+        if (age < 0 || age > IMPACT_LIFE) continue;
+        const f  = (i + 0.5) / rows;
+        const mx = vertical ? r.x + r.w / 2 : r.x + span * f;
+        const my = vertical ? r.y + span * f : r.y + r.h / 2;
+        this.drawRockImpact(g, pen, mx, my, cs * 0.32, 1 - age / IMPACT_LIFE);
+      }
+
+      if (e >= total) {
+        PIXI.Ticker.shared.remove(tick);
+        this.fxTicks.delete(tick);
+        g.destroy();
+      }
+    };
+    this.fxTicks.add(tick);
+    PIXI.Ticker.shared.add(tick);
+  }
+
+  /** One rock burst for the rockslide sweep: a jagged chunk + debris dots spreading as it settles (k: 1→0). */
+  private drawRockImpact(g: PIXI.Graphics, pen: SketchPen, x: number, y: number, sz: number, k: number): void {
+    const a = 0.9 * k;
+    pen.stroke([
+      { x: x - sz,        y: y - sz * 0.6 },
+      { x: x - sz * 0.2,  y: y - sz },
+      { x: x + sz * 0.9,  y: y - sz * 0.3 },
+      { x: x + sz * 0.5,  y: y + sz * 0.8 },
+      { x: x - sz * 0.7,  y: y + sz * 0.6 },
+      { x: x - sz,        y: y - sz * 0.6 },
+    ], { color: palette.pencil, width: 2, alpha: a, taper: 0, double: false });
+
+    const spread = sz * (0.8 + (1 - k) * 1.8);
+    for (let d = 0; d < 4; d++) {
+      const ang = d * 1.9; // fixed spokes — deterministic, exact angle is cosmetic
+      g.beginFill(palette.pencilLight, 0.7 * k);
+      g.drawCircle(x + Math.cos(ang) * spread, y + Math.sin(ang) * spread, 1.4 * k + 0.6);
+      g.endFill();
+    }
   }
 
   /**
@@ -643,6 +804,9 @@ export class BoardView {
     for (const tick of this.fxTicks) PIXI.Ticker.shared.remove(tick);
     this.fxTicks.clear();
     this.meteorPool.drain((gfx) => gfx.destroy());
+    // Blocked-lane overlays are children of blockedLaneLayer (a container child),
+    // so container.destroy({children:true}) frees the Graphics; just drop the refs.
+    this.blockedLanes.clear();
     this.playerBase = null;
     this.enemyBase  = null;
     this.container.destroy({ children: true });

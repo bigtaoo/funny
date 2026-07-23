@@ -16,10 +16,12 @@ import type { Constructor, GameRendererBaseCtor } from './base';
  * cast-end signal on `spell_cast`, so it is wired with the trait/buff effects
  * (aura_heal/shield/slow/summon) once a buff lifecycle event exists. The mapped
  * ids must exist in `client/src/effects/` (see vfx-editor DESIGN §5).
+ *
+ * Rockslide is intentionally absent: its single center VFX read as a localized poof,
+ * so it is routed to BoardView.playRockslideEffect (a telegraph + full-lane cascade).
  */
 const SPELL_VFX: Partial<Record<SpellType, string>> = {
   [SpellType.Meteor]:         'meteor',
-  [SpellType.Rockslide]:      'rockslide',
   [SpellType.BridgeCollapse]: 'bridge_collapse',
 };
 
@@ -104,6 +106,12 @@ export function EventMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
           break;
         }
         case 'spell_cast': {
+          // 直线伤害 (Rockslide): custom telegraph + cascading sweep down the whole lane
+          // (see BoardView.playRockslideEffect) — not driven by SPELL_VFX.
+          if (event.spellType === SpellType.Rockslide) {
+            this.boardView.playRockslideEffect(event.center.col);
+            break;
+          }
           const vfxId = SPELL_VFX[event.spellType];
           if (vfxId) {
             // Spell ink follows the caster's faction (us = blue / enemy = red,
@@ -127,12 +135,6 @@ export function EventMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
           // One-shot celebratory flash; the persistent tier texture is reconciled
           // separately by BoardView.setBaseUpgradeLevel each frame.
           this.boardView.playBaseUpgradeEffect(event.owner);
-          break;
-        case 'spell_cast':
-          if (event.spellType === SpellType.Meteor) {
-            const row = Math.round(event.center.y_fp / 1000);
-            this.boardView.playMeteorEffect(event.center.col, row);
-          }
           break;
         case 'card_played':
           if (event.owner === this.localOwner) { this.cancelDrag(); this.cancelTapSelect(); }

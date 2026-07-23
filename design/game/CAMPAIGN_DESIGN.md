@@ -337,6 +337,11 @@ LevelDef.levelSpells?: { cardId: string; initialCount: number }[]
 - 滚石 / 炸桥打出后选列（同单位/建筑出牌选列，复用现有拖拽逻辑）
 - **客户端 bug 修复（2026-07-05）**：`GameRenderer/input.ts` 的 `commitCardPlay`/`updatePlacementHighlights` 此前只接了 `Haste`/`Meteor` 两个 case，`Rockslide`/`BridgeCollapse` 从未被 wire 上——选中卡后点列没有任何反应（引擎侧一直是好的）。已补上两个 spell 的 `engine.playCard(handIndex, col)` 调用和列高亮（`BoardView.showColumnTargetHighlight`），并在 `client/test/ui/gameRendererSpellInput.ui.ts` 加了 tap-select/drag 的回归测试。
 
+**地图效果强化（2026-07-23）：** 两法术此前各只有一次性施法 VFX，玩家常注意不到「整列被打」/「这列封了」，故按各自持续时间重做地图表现：
+- **炸桥（`bridge_collapse`）持续覆盖层**：施法 VFX 只闪 0.6s 但封锁持续 8s，期间车道无任何持续标记。新增 `BoardView.syncBlockedLanes()`——由 `GameRenderer/base.ts` 每帧从 `state.tempBlockedCols`（col→到期 tick）算出各封锁列剩余秒数并 reconcile：每列建一个红色手绘「✕栅栏 + 交叉阴影」覆盖层（`fx.laneBlocked`，画在 units 之下的 `blockedLaneLayer`），列出现时用固定 seed 的 `SketchPen` 画一次（不逐帧抖动），之后仅调 `alpha`；剩余 <1.6s 时快速闪烁提示即将恢复；列一解封即销毁该覆盖层。
+- **滚石（`rockslide`）预警 + 级联扫描**：`BoardView.playRockslideEffect(col)`——先 0.18s 红色预警线贯穿整条车道，再从一端到另一端逐格（`PER_ROW≈0.03s`）落下岩块（手绘碎块 + 飞溅碎屑），读作「整列被砸」而非一处小爆点。纯渲染（伤害仍在引擎侧瞬时结算），单个 `Ticker.shared` tick，`destroy()` 里经 `fxTicks` 注销（GC-root 泄漏契约）。据此把 `rockslide` 从 `events.ts` 的 `SPELL_VFX` 表移除、改路由到该方法，并顺手删掉 `handleEvent` 里那个走不到的重复 `case 'spell_cast'`（meteor 的 `playMeteorEffect` 方框描边死代码，meteor 一直靠 `SPELL_VFX['meteor']` 正常显示）。
+- 回归测试：`client/test/ui/spellMapEffects.ui.ts`（封锁覆盖层增删/剩余时间闪烁/滚石 tick 增删与 destroy 注销）+ `gameRendererEvents.ui.ts` 加 rockslide 路由断言。
+
 ### 4.9.3 escort 护送目标（原 `multi_objective`，2026-06-17 拍板）
 
 **核心玩法：** 玩家侧有一个（或多个）友方护送单位，沿设定路径从玩家端向敌方端移动；到达终点 = 胜利条件之一。玩家用手牌和建筑为护送单位清路/护卫。
