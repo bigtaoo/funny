@@ -133,12 +133,18 @@ export function WorldChatMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase):
     }
 
     private openWorldSenderProfile(m: WorldChatMessage): void {
+      const isSelf = !!this.cb.myPublicId && m.senderPublicId === this.cb.myPublicId;
+      const alreadyFriend = this.friends.some((f) => f.publicId === m.senderPublicId);
       this.popup.show({
         name: m.senderName,
         publicId: m.senderPublicId,
+        isSelf,
         ...(m.title ? { equippedTitle: m.title } : {}),
-        ...(m.familyName ? { familyName: m.familyName } : {}),
-        ...(m.sectName ? { sectName: m.sectName } : {}),
+        ...(!isSelf ? {
+          actions: alreadyFriend
+            ? [{ labelKey: 'friends.message', fn: () => this.cb.openChat(m.senderPublicId, m.senderName) }]
+            : [{ labelKey: 'friends.add', fn: () => void this.doAdd(m.senderPublicId) }],
+        } : {}),
       });
     }
   };

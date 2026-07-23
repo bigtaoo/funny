@@ -42,8 +42,10 @@ export interface FamilySceneCallbacks {
   playerName: string;
   /** Send a friend request to another player (unified profile popup's "Add Friend" action). */
   addFriend(publicId: string): Promise<void>;
-  /** publicIds of the caller's current friends — hides "Add Friend" on rows that are already friends. */
+  /** publicIds of the caller's current friends — gates the profile popup's Add Friend / Message action. */
   getFriendPublicIds(): Promise<Set<string>>;
+  /** Open a 1:1 chat with a member who's already a friend (unified profile popup's "Message" action). */
+  openChat(peerPublicId: string, peerName: string): void;
 }
 
 export type FamilyTab = 'members' | 'channel';
@@ -149,7 +151,7 @@ export class FamilySceneBase {
     this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
     this.container = new PIXI.Container();
-    this.profilePopup = new ProfilePopup(this.w, this.h);
+    this.profilePopup = new ProfilePopup(this.w, this.h, (publicId) => cb.worldApi.getProfileExtra(publicId));
     this.build();
     // Paint the rail + loading state on the same frame the scene mounts, so switching to the
     // family tab shows the chrome instantly instead of a blank body while loadData()'s network
@@ -461,36 +463,29 @@ export class FamilySceneBase {
 
   // ── Member profile popup ──────────────────────────────────────────────────
 
-  /** accountId the popup is currently showing — guards the async rank refresh below against a stale reply
-   *  landing after the popup was closed or reopened for someone else. */
-  private profileAccountId: string | null = null;
-
-  /** Opens the unified profile popup for a roster row; adds an "Add Friend" action unless it's my own
-   *  row or we're already friends. Shows instantly with what the roster already has, then patches in
-   *  the ladder rank once the (async) lookup resolves. */
+  /** Opens the unified profile popup for a roster row: "Message" when we're already friends with
+   *  them, "Add Friend" otherwise (neither for my own row). Rank/ELO/family/sect are fetched by the
+   *  popup itself (see ProfilePopup's `fetchExtra`) — this only supplies what the roster already has
+   *  for free (name/avatar). */
   protected openMemberProfile(mem: FamilyMemberView): void {
     const isMe = mem.accountId === this.cb.myAccountId;
     const alreadyFriend = !!mem.publicId && this.friendPublicIds.has(mem.publicId);
     const actions: ProfileAction[] = [];
-    if (!isMe && mem.publicId && !alreadyFriend) {
+    if (!isMe && mem.publicId) {
       const publicId = mem.publicId;
-      actions.push({ labelKey: 'friends.add', fn: () => void this.doAddFriend(publicId) });
+      actions.push(
+        alreadyFriend
+          ? { labelKey: 'friends.message', fn: () => this.cb.openChat(publicId, mem.displayName ?? publicId) }
+          : { labelKey: 'friends.add', fn: () => void this.doAddFriend(publicId) },
+      );
     }
-    const base = {
+    this.profilePopup.show({
       name: mem.displayName ?? mem.publicId ?? t('family.unknownMember'),
       publicId: mem.publicId ?? '',
       isSelf: isMe,
       actions,
       ...(mem.avatarId ? { avatarId: mem.avatarId } : {}),
-      ...(this.family?.name ? { familyName: this.family.name } : {}),
-      ...(this.family?.sectName ? { sectName: this.family.sectName } : {}),
-    };
-    this.profilePopup.show(base);
-    this.profileAccountId = mem.accountId;
-    void this.cb.worldApi.getPlayerRank(mem.accountId).then((r) => {
-      if (this.destroyed || this.profileAccountId !== mem.accountId || !this.profilePopup.isOpen || !r.rank) return;
-      this.profilePopup.show({ ...base, rankKey: r.rank, ...(r.elo !== undefined ? { elo: r.elo } : {}) });
-    }).catch(() => { /* best-effort — popup stays without a rank line */ });
+    });
   }
 
   private async doAddFriend(publicId: string): Promise<void> {

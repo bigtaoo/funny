@@ -13,6 +13,7 @@ import { showToastMessage } from '../../net/log';
 import { matchBadgeTelemetry } from '../../scenes/ResultScene';
 import type { EloResult } from '../../scenes/ResultScene';
 import type { ProfileData } from '../../render/ProfilePopup';
+import { WorldApiClient } from '../../net/WorldApiClient';
 import type { NetGameView } from '../AppViews';
 import type { AppCtx, Nav } from '../appCtx';
 import { log, PLAYER_PUBLIC_ID_KEY } from '../appConstants';
@@ -120,7 +121,14 @@ export function createResultNav(ctx: AppCtx): ResultNav {
       elo: localPvp.elo,
       isSelf: true,
     };
-    const profiles = { opponent: oppProfile, local: localProfile };
+    // Cheap/stateless (just wraps platform.storage) — the in-battle profile popup fetches
+    // rank/ELO/family/sect straight from socialsvc by publicId, same as the social surfaces.
+    const worldApi = api ? new WorldApiClient(platform.storage) : null;
+    const profiles = {
+      opponent: oppProfile,
+      local: localProfile,
+      ...(worldApi ? { getProfileExtra: (publicId: string) => worldApi.getProfileExtra(publicId) } : {}),
+    };
 
     const recorder = new RecordingInputSource(session.input);
     const engine = createGameEngine(
@@ -237,6 +245,9 @@ export function createResultNav(ctx: AppCtx): ResultNav {
     platform.onGameplayStop();
     analytics.track('screen_view', { scene: 'ResultScene' });
     await platform.showMidgameAd();
+    // Cheap/stateless (just wraps platform.storage) — the opponent/local profile popups fetch
+    // rank/ELO/family/sect straight from socialsvc by publicId, same as the social surfaces.
+    const worldApi = api ? new WorldApiClient(platform.storage) : null;
     views.showResult({
       winner,
       stats,
@@ -255,6 +266,7 @@ export function createResultNav(ctx: AppCtx): ResultNav {
         ...(replay ? { onWatchReplay: () => goReplay(replay) } : {}),
         ...(api ? { onShare: () => void doShareReplay({ winner: winner ?? -1 }) } : {}),
         ...(playAgainLabel ? { playAgainLabel } : {}),
+        ...(worldApi ? { getProfileExtra: (publicId: string) => worldApi.getProfileExtra(publicId) } : {}),
       },
     });
   }

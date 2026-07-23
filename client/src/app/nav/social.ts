@@ -48,6 +48,8 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
     const view: FriendsView = views.showFriends({
       onBack: backTo,
       onOpenRoom() { nav.goRoom(); },
+      myPublicId: platform.storage.getItem(PLAYER_PUBLIC_ID_KEY) ?? '',
+      getProfileExtra: (publicId) => worldApi.getProfileExtra(publicId),
       ...(opts?.defaultTab ? { defaultTab: opts.defaultTab } : {}),
       loadFriends: () => client.getFriends(),
       loadRequests: () => client.getFriendRequests(),

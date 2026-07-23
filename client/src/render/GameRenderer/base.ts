@@ -35,7 +35,7 @@ import { TutorialDrawPolicy } from '@nw/engine';
 import { TutorialDirector, type TutorialHost } from '../TutorialDirector';
 import { VFXSystem } from '../VFXSystem';
 import { buildWearOverlay } from '../wearOverlay';
-import { ProfilePopup, type ProfileData } from '../ProfilePopup';
+import { ProfilePopup, type ProfileData, type ProfileExtra } from '../ProfilePopup';
 import { stateRecorder } from '../../game/replay/StateRecorder';
 import { registerPool } from '../../cache/poolRegistry';
 import { snapFont } from '../fontScale';
@@ -45,6 +45,8 @@ import { factionInk } from '../theme';
 export interface GameProfiles {
   opponent?: ProfileData;
   local?: ProfileData;
+  /** Unified profile-popup extras (rank/ELO + family/sect) — see ProfilePopup's `fetchExtra`. Omitted in replays/AI matches. */
+  getProfileExtra?(publicId: string): Promise<ProfileExtra>;
 }
 
 // ── Mixin plumbing ────────────────────────────────────────────────────────────
@@ -88,6 +90,7 @@ export class GameRendererBase {
   /** Opponent / local identities for the tap-to-view profile popup (netplay only). */
   protected readonly oppProfile:  ProfileData | null;
   protected readonly selfProfile: ProfileData | null;
+  protected readonly fetchProfileExtra?: (publicId: string) => Promise<ProfileExtra>;
   protected profilePopup: ProfilePopup | null = null;
 
   protected boardView!:    BoardView;
@@ -155,6 +158,7 @@ export class GameRendererBase {
     this.container  = new PIXI.Container();
     this.oppProfile  = profiles.opponent ?? null;
     this.selfProfile = profiles.local ?? null;
+    this.fetchProfileExtra = profiles.getProfileExtra;
 
     this.localOwner    = sideToOwner(layout.localSide);
     this.localBuildRow = layout.localSide === Side.Bottom ? BOTTOM_BUILDING_ROW : TOP_BUILDING_ROW;
@@ -380,7 +384,7 @@ export class GameRendererBase {
     // the AI/anonymous opponent non-clickable.
     if (this.netEnabled && this.oppProfile) {
       this.drawOpponentLabel();
-      this.profilePopup = new ProfilePopup(this.layout.designWidth, this.layout.designHeight);
+      this.profilePopup = new ProfilePopup(this.layout.designWidth, this.layout.designHeight, this.fetchProfileExtra);
       this.container.addChild(this.profilePopup.container); // topmost — above status pill
     }
 

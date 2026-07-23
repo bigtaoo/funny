@@ -85,6 +85,35 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
     expect((await r.json()).data).toEqual({});
   });
 
+  // Unified profile-popup extras (rank/ELO + family/sect by publicId) — the single fetch every
+  // ProfilePopup instance makes on open, replacing what used to be threaded through per-caller.
+  it('GET /social/profile/:publicId/extra: rank + family (leader-a is in AlphaKnight, no sect yet)', async () => {
+    const r = await fetch(`${base}/social/profile/P-A/extra`, { headers: auth });
+    expect(r.status).toBe(200);
+    expect((await r.json()).data).toEqual({ rank: 'gold', familyName: 'AlphaKnight' });
+  });
+
+  it('GET /social/profile/:publicId/extra: family in a sect → sectName included', async () => {
+    await familySvc.setSect('fam:ALFA', 'sect:DRAGON', 'DragonSect');
+    const r = await fetch(`${base}/social/profile/P-A/extra`, { headers: auth });
+    expect(r.status).toBe(200);
+    expect((await r.json()).data).toEqual({ rank: 'gold', familyName: 'AlphaKnight', sectName: 'DragonSect' });
+    await familySvc.setSect('fam:ALFA', null); // reset for subsequent tests
+  });
+
+  it('GET /social/profile/:publicId/extra: no rank registered → family-only', async () => {
+    // leader-b (Bob) leads BetaRaiders but has no rank registered in FakeMeta.
+    const r = await fetch(`${base}/social/profile/P-B/extra`, { headers: auth });
+    expect(r.status).toBe(200);
+    expect((await r.json()).data).toEqual({ familyName: 'BetaRaiders' });
+  });
+
+  it('GET /social/profile/:publicId/extra: unresolvable publicId → empty object, not an error', async () => {
+    const r = await fetch(`${base}/social/profile/no-such-public-id/extra`, { headers: auth });
+    expect(r.status).toBe(200);
+    expect((await r.json()).data).toEqual({});
+  });
+
   it('GET /social/family/browse: no query → top families by prosperity desc', async () => {
     const r = await fetch(`${base}/social/family/browse`, { headers: auth });
     expect(r.status).toBe(200);

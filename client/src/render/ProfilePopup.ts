@@ -31,9 +31,15 @@ export interface ProfileData {
   name: string;
   /** 9-digit public id (display only); empty if unknown. */
   publicId: string;
-  /** Localized rank key (e.g. 'rank.gold'); omit to hide the rank line. */
+  /**
+   * Localized rank key (e.g. 'rank.gold'); omit to hide the rank line. Normally left unset — when the
+   * constructor's `fetchExtra` is supplied, `show()` fetches this (and `elo`/`familyName`/`sectName`)
+   * itself by `publicId` and patches it in once resolved, so callers don't thread their own copy
+   * through (that's what used to make the same popup show a different subset of fields depending on
+   * which screen opened it). Set it directly only where no fetcher is wired up (display-only cards).
+   */
   rankKey?: string;
-  /** ELO score; shown next to rank when present. */
+  /** ELO score; shown next to rank when present. See `rankKey`. */
   elo?: number;
   /** Marks this card as the local player (adds a "you" tag to the name). */
   isSelf?: boolean;
@@ -41,9 +47,9 @@ export interface ProfileData {
   equippedTitle?: string;
   /** Equipped avatar id (composite "<category>:<key>", see render/avatar.ts); omit for the letter-initial fallback. */
   avatarId?: string;
-  /** Family (家族) name, if the player is in one; omit to hide the line. */
+  /** Family (家族) name, if the player is in one; omit to hide the line. See `rankKey`. */
   familyName?: string;
-  /** Sect (帮会/宗门) name, if the player's family is in one; omit to hide the line. */
+  /** Sect (帮会/宗门) name, if the player's family is in one; omit to hide the line. See `rankKey`. */
   sectName?: string;
   /**
    * Optional action buttons rendered above Close (e.g. Send Message / Block from the friends
@@ -57,6 +63,14 @@ export interface ProfileAction {
   fn: () => void;
   /** Render in a warning style (e.g. block / remove). */
   danger?: boolean;
+}
+
+/** Rank/ELO/family/sect for an arbitrary player — the shape `fetchExtra` resolves to. */
+export interface ProfileExtra {
+  rank?: string;
+  elo?: number;
+  familyName?: string;
+  sectName?: string;
 }
 
 export class ProfilePopup {
@@ -73,9 +87,15 @@ export class ProfilePopup {
   private cardH = 0;
   private tapRects: Array<{ x: number; y: number; w: number; h: number; action: () => void }> = [];
 
+  // Bumped on every show()/hide() so a slow in-flight extras fetch can tell it's gone stale (popup
+  // closed, or reopened for someone else) and skip its patch-in re-render.
+  private showToken = 0;
+
   constructor(
     private readonly w: number,
     private readonly h: number,
+    /** Resolves rank/ELO/family/sect for a publicId; omit to render display-only cards (no extras row). */
+    private readonly fetchExtra?: (publicId: string) => Promise<ProfileExtra>,
   ) {
     this.container = new PIXI.Container();
     this.container.visible = false;
@@ -101,8 +121,31 @@ export class ProfilePopup {
     return this.open;
   }
 
-  /** Build + reveal the card for `data`. */
+  /**
+   * Build + reveal the card for `data`. This also kicks off a single `fetchExtra(publicId)` call (if
+   * the host scene supplied one) and re-renders once it resolves — every caller used to fetch + patch
+   * this in by hand (or not at all), which is exactly why the same popup looked different depending on
+   * which screen opened it.
+   */
   show(data: ProfileData): void {
+    const token = ++this.showToken;
+    this.renderCard(data);
+    if (this.fetchExtra && data.publicId) {
+      void this.fetchExtra(data.publicId).then((extra) => {
+        if (this.showToken !== token) return; // popup closed / reopened for someone else meanwhile
+        this.renderCard({
+          ...data,
+          ...(extra.rank ? { rankKey: extra.rank } : {}),
+          ...(extra.elo !== undefined ? { elo: extra.elo } : {}),
+          ...(extra.familyName ? { familyName: extra.familyName } : {}),
+          ...(extra.sectName ? { sectName: extra.sectName } : {}),
+        });
+      }).catch(() => { /* best-effort — card stays without the extras row */ });
+    }
+  }
+
+  /** Synchronous card layout/draw for `data`, with whatever fields are already known. */
+  private renderCard(data: ProfileData): void {
     tearDownChildren(this.card);
     this.tapRects = [];
 
@@ -210,6 +253,7 @@ export class ProfilePopup {
       orgLine.x = cardW / 2;
       orgLine.y = yBottom + cardH * 0.025;
       this.card.addChild(orgLine);
+      yBottom = orgLine.y + orgLine.height;
     }
 
     // ── Buttons, laid out flowing *below* the content (never bottom-anchored, which used to make
@@ -326,6 +370,7 @@ export class ProfilePopup {
     this.container.visible = false;
     this.tapRects = [];
     tearDownChildren(this.card);
+    ++this.showToken; // invalidate any in-flight extras fetch for the card just closed
   }
 
   destroy(): void {

@@ -60,6 +60,8 @@ function build(): { scene: any; input: InputManager } {
   const input = new InputManager();
   const scene = new FriendsScene(createLayout(W, H), input, {
     onBack() {}, onOpenRoom() {},
+    myPublicId: '',
+    getProfileExtra: async () => ({}),
     loadFriends: async () => [],
     loadRequests: async () => ({ incoming: [], outgoing: [] }),
     search: async () => ({ publicId: '123456789', displayName: 'Bob' }),

@@ -54,6 +54,7 @@ describe('World chat — single-line name-tag row', () => {
     }];
     const scene: any = new FriendsScene(createLayout(W, H), new InputManager(), {
       onBack() {}, onOpenRoom() {},
+      myPublicId: '', getProfileExtra: async () => ({}),
       loadFriends: async () => [],
       loadRequests: async () => ({ incoming: [], outgoing: [] }),
       search: async () => ({ publicId: '999999999', displayName: 'Nobody' }),
@@ -83,6 +84,7 @@ describe('World chat — single-line name-tag row', () => {
     }];
     const scene: any = new FriendsScene(createLayout(W, H), new InputManager(), {
       onBack() {}, onOpenRoom() {},
+      myPublicId: '', getProfileExtra: async () => ({}),
       loadFriends: async () => [],
       loadRequests: async () => ({ incoming: [], outgoing: [] }),
       search: async () => ({ publicId: '999999999', displayName: 'Nobody' }),

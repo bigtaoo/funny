@@ -126,6 +126,7 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
     const input = new InputManager();
     const scene = new FamilyScene(createLayout(W, H), input, {
       onBack() {}, onOpenSect() {}, onNavTab() {}, async addFriend() {}, async getFriendPublicIds() { return new Set<string>(); },
+      openChat() {},
       worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: 'acc_test', playerName: 'Tester',
     }) as any;
     assertScrollDragThrottled(scene, input);
@@ -250,6 +251,7 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
     const input = new InputManager();
     const scene = new FriendsScene(createLayout(W, H), input, {
       onBack() {}, onOpenRoom() {},
+      myPublicId: '', getProfileExtra: async () => ({}),
       loadFriends: async () => friends,
       loadRequests: async () => ({ incoming: [], outgoing: [] }),
       search: async () => ({ publicId: '123456789', displayName: 'Bob' }),
@@ -274,6 +276,7 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
     const input = new InputManager();
     const scene = new FriendsScene(createLayout(W, H), input, {
       onBack() {}, onOpenRoom() {},
+      myPublicId: '', getProfileExtra: async () => ({}),
       loadFriends: async () => friends,
       loadRequests: async () => ({ incoming: [], outgoing: [] }),
       search: async () => ({ publicId: '123456789', displayName: 'Bob' }),
@@ -303,6 +306,7 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
     const opened: string[] = [];
     const scene = new FriendsScene(createLayout(W, H), input, {
       onBack() {}, onOpenRoom() {},
+      myPublicId: '', getProfileExtra: async () => ({}),
       loadFriends: async () => friends,
       loadRequests: async () => ({ incoming: [], outgoing: [] }),
       search: async () => ({ publicId: '123456789', displayName: 'Bob' }),

@@ -39,6 +39,8 @@ function buildFriends(
   return new FriendsScene(createLayout(w, h), input, {
     onBack() {},
     onOpenRoom() {},
+    myPublicId: '',
+    getProfileExtra: async () => ({}),
     loadFriends: async () => [],
     loadRequests: async () => ({ incoming: [], outgoing: [] }),
     search: async () => ({ publicId: '233784986', displayName: 'TestPlayer' }),

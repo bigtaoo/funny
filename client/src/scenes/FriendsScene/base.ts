@@ -8,7 +8,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { ILayout, Rect } from '../../layout/ILayout';
 import { InputManager } from '../../inputSystem/InputManager';
 import { t, TranslationKey } from '../../i18n';
-import { ProfilePopup } from '../../render/ProfilePopup';
+import { ProfilePopup, type ProfileExtra } from '../../render/ProfilePopup';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { showToastMessage, type ToastKind } from '../../net/log';
 import { FS, snapFont } from '../../render/fontScale';
@@ -58,6 +58,10 @@ export interface SLGSocialStatus {
 export interface FriendsSceneCallbacks {
   onBack(): void;
   onOpenRoom(): void;
+  /** Local player's own public id — used to skip "add friend" on your own world-chat messages. */
+  myPublicId: string;
+  /** Unified profile-popup extras (rank/ELO + family/sect) — see {@link ProfilePopup}'s `fetchExtra`. */
+  getProfileExtra(publicId: string): Promise<ProfileExtra>;
   loadFriends(): Promise<FriendView[]>;
   loadRequests(): Promise<{ incoming: FriendRequestView[]; outgoing: FriendRequestView[] }>;
   search(publicId: string): Promise<ProfileView>;
@@ -215,7 +219,7 @@ export class FriendsSceneBase {
     this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
     if (cb.defaultTab) this.tab = cb.defaultTab;
-    this.popup = new ProfilePopup(this.w, this.h);
+    this.popup = new ProfilePopup(this.w, this.h, (publicId) => cb.getProfileExtra(publicId));
 
     this.unsubs.push(input.onDown((x, y) => this.onPointerDown(x, y)));
     this.unsubs.push(input.onMove((x, y) => this.onPointerMove(x, y)));

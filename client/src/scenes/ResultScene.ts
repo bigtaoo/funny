@@ -3,7 +3,7 @@ import { makeText } from '../render/pixiText';
 import { Scene } from './SceneManager';
 import { OwnerId, PlayerStats } from '../game/types';
 import { t, TranslationKey } from '../i18n';
-import { ProfilePopup, type ProfileData } from '../render/ProfilePopup';
+import { ProfilePopup, type ProfileData, type ProfileExtra } from '../render/ProfilePopup';
 import { ui, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildIcon, IconKind } from '../render/icons';
 import { SketchPen } from '../render/sketch';
@@ -156,6 +156,8 @@ export interface ResultSceneCallbacks {
   onShare?(): void;
   /** Override the "play again" button label (e.g. campaign uses 'Back to Map'). */
   playAgainLabel?: string;
+  /** Unified profile-popup extras (rank/ELO + family/sect) — see ProfilePopup's `fetchExtra`. Omitted offline/AI. */
+  getProfileExtra?(publicId: string): Promise<ProfileExtra>;
 }
 
 export class ResultScene implements Scene {
@@ -186,7 +188,7 @@ export class ResultScene implements Scene {
     this.localOwner = localOwner;
     this.elo = elo;
     this.profiles = profiles;
-    this.popup = new ProfilePopup(w, h);
+    this.popup = new ProfilePopup(w, h, cb.getProfileExtra);
 
     if (outroText) {
       this.buildOutroOverlay(outroText, () => {
