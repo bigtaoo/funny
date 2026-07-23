@@ -36,7 +36,6 @@ import { buildDecorCLayer } from '../render/decorCLayer';
 import { FS } from '../render/fontScale';
 import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
-import { peekViewportH } from '../ui/widgets/scrollPeek';
 import { ScrollTapGesture } from '../ui/scrollTapGesture';
 import { UNIT_ART_URLS, getArtTexture } from '../render/cardArt';
 import type { WorldApiClient, TeamTemplate, ArmyEntry, CardSLGState } from '../net/WorldApiClient';
@@ -670,9 +669,11 @@ export class DefenseEditorScene implements Scene {
     const cellW = (w - gap * (cols - 1)) / cols;
     const rows = Math.ceil(cards.length / cols);
     const totalH = rows * (cellH + gap) + gap;
-    // Pull the visible viewport in so a partial next row always peeks above the fold (see scrollPeek).
-    const listH = peekViewportH(availH, cellH + gap, totalH);
-    this.scrollMax = Math.max(0, totalH - listH);
+    // No PIXI mask backs this grid (draw-cull only, below) — a row is either drawn in full or
+    // skipped entirely, never cropped, so peekViewportH's mid-row shrink would just exclude a
+    // row that fits fine and leave a dead gap (2026-07-23 correction, UI_DESIGN.md §25). Use the
+    // naive availH directly.
+    this.scrollMax = Math.max(0, totalH - availH);
     this.scrollY = Math.max(0, Math.min(this.scrollY, this.scrollMax));
 
     cards.forEach((c, i) => {
@@ -680,10 +681,10 @@ export class DefenseEditorScene implements Scene {
       const row = Math.floor(i / cols);
       const cx = x + col * (cellW + gap);
       const cy = listY + gap + row * (cellH + gap) - this.scrollY;
-      if (cy + cellH >= listY && cy <= listY + listH) this.renderRosterCell(c, cx, cy, cellW, cellH);
+      if (cy + cellH >= listY && cy <= listY + availH) this.renderRosterCell(c, cx, cy, cellW, cellH);
     });
 
-    drawScrollIndicator(this.bodyLayer, { x, y: listY, w, h: listH }, this.scrollY, this.scrollMax);
+    drawScrollIndicator(this.bodyLayer, { x, y: listY, w, h: availH }, this.scrollY, this.scrollMax);
   }
 
   private renderRosterCell(
