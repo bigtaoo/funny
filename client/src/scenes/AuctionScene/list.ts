@@ -109,6 +109,9 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
       const emptyKeys: Record<AucTab, 'auction.empty' | 'auction.myEmpty' | 'auction.bidsEmpty'> = {
         all: 'auction.empty', mine: 'auction.myEmpty', bids: 'auction.bidsEmpty',
       };
+      // Default to "nothing to scroll" — overwritten below once the real grid geometry is known;
+      // covers the loading/empty early-returns so a stale wheel event can't scroll a hidden list.
+      this.scrollMax = 0;
 
       if (this.loading) {
         const lbl = txt(t('world.loading'), FS.small, C.dark);
@@ -134,8 +137,11 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
       // No PIXI mask backs this grid (draw-cull only, below) — a row is either drawn in full or
       // skipped entirely, never cropped, so peekViewportH's mid-row shrink would just exclude a
       // row that fits fine and leave a dead gap (2026-07-23 correction, UI_DESIGN.md §25). Use the
-      // naive availH directly.
-      this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - availH)));
+      // naive availH directly (also the wheel-scroll viewport bounds, see wheelScroll.ts).
+      this.scrollMax = Math.max(0, totalH - availH);
+      this.scrollY = Math.max(0, Math.min(this.scrollY, this.scrollMax));
+      this.scrollRegionTop = listY;
+      this.scrollRegionBottom = listY + availH;
 
       const now = Date.now();
       auctions.forEach((auc, i) => {

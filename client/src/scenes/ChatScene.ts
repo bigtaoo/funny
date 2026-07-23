@@ -13,6 +13,7 @@ import { caretDisplay } from '../render/inputDisplay';
 import { FS, snapFont } from '../render/fontScale';
 import type { ChatMessageView } from '../net/ApiClient';
 import type { ChatMessagePush } from '../net/proto/transport';
+import { wheelScrollY } from '../ui/wheelScroll';
 
 // ── ChatScene (S6-2) — a 1:1 conversation window ──────────────────────────────
 //
@@ -94,6 +95,14 @@ export class ChatScene implements Scene {
     this.unsubs.push(input.onDown((x, y) => this.onPointerDown(x, y)));
     this.unsubs.push(input.onMove((x, y) => this.onPointerMove(x, y)));
     this.unsubs.push(input.onUp((x, y) => this.onPointerUp(x, y)));
+    this.unsubs.push(input.onWheel((x, y, deltaY) => {
+      const next = wheelScrollY(this.regionTop, this.regionBottom, y, deltaY, this.scrollY, this.maxScroll);
+      if (next !== null) {
+        this.scrollY = next;
+        this.stickBottom = next >= this.maxScroll - 1;
+        this.scrollDirty = true;
+      }
+    }));
     this.render();
     void this.load();
   }

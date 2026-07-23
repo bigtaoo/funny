@@ -49,6 +49,7 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
 
       if (this.loading) {
         this.maskBody(top, availH);
+        this.maxScroll = 0;
         const lbl = txt(t('shop.loading'), FS.title, C.mid);
         lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = bodyTop + Math.round(h * 0.14);
         body.addChild(lbl);
@@ -64,7 +65,8 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
       // ScrollIndicator thumb hinting it).
       const viewH = peekViewportH(availH, cellH + gap, totalH);
       this.maskBody(top, viewH);
-      this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - viewH)));
+      this.maxScroll = Math.max(0, totalH - viewH);
+      this.scrollY = Math.max(0, Math.min(this.scrollY, this.maxScroll));
 
       if (specs.length === 0) {
         const lbl = txt(t('shop.empty'), FS.title, C.mid);

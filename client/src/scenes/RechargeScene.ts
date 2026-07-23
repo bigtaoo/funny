@@ -13,6 +13,7 @@ import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../ui/widget
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { ScrollTapGesture } from '../ui/scrollTapGesture';
+import { wheelScrollY } from '../ui/wheelScroll';
 import { peekViewportH } from '../ui/widgets/scrollPeek';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { showToastMessage, type ToastKind } from '../net/log';
@@ -92,6 +93,14 @@ export class RechargeScene implements Scene {
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
     this.unsubs.push(input.onUp(() => this.handleUp()));
+    // Tier-list mouse-wheel scroll (browser/PC only — see wheelScroll.ts). scrollView is the same
+    // viewport rect the drag-scroll fast path (updateScrollPosition) already clips/culls against.
+    this.unsubs.push(input.onWheel((x, y, deltaY) => {
+      const sv = this.scrollView;
+      if (x < sv.x || x > sv.x + sv.w) return;
+      const next = wheelScrollY(sv.y, sv.y + sv.h, y, deltaY, this.scrollY, this.scrollMax);
+      if (next !== null) { this.scrollY = next; this.updateScrollPosition(); }
+    }));
     this.render();
   }
 

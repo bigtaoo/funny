@@ -26,6 +26,7 @@ import type { WorldApiClient, FamilyDetailView, FamilyMemberView, FamilyMessageV
 import { WorldApiError } from '../../net/WorldApiClient';
 import { drawSocialTabRail, type SocialTab } from '../../render/socialTabRail';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
+import { wheelScrollY } from '../../ui/wheelScroll';
 
 export interface FamilySceneCallbacks {
   onBack(): void;
@@ -105,6 +106,16 @@ export class FamilySceneBase {
   /** X boundary between the roster and channel columns in the landscape split view; used by
    *  handleDown to route a drag to the right column's scroll state. Unused (0) in portrait. */
   protected chatColX = 0;
+  /** Roster viewport vertical bounds + scroll extent, set each renderMembers call — mirrors
+   *  channelMax/channelRegion* but for the members column. Touch-drag scroll doesn't need an upfront
+   *  region/max (it just clamps on the next render), but wheel scroll (handleWheel) needs both known
+   *  before the event is handled, so they're captured here purely for that. */
+  protected membersRegionTop = 0;
+  protected membersRegionBottom = 0;
+  protected membersMax = 0;
+  /** Channel viewport vertical bounds, set each renderChannel call — same reasoning as membersRegion*. */
+  protected channelRegionTop = 0;
+  protected channelRegionBottom = 0;
   /** Title-bar height, set from the shared header — drives all body layout below it. */
   protected headerH = 0;
   /** Live header text nodes (title + landscape family identity), drawn on top of the cached header
@@ -149,6 +160,7 @@ export class FamilySceneBase {
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
     this.unsubs.push(input.onUp((x, y) => this.handleUp(x, y)));
+    this.unsubs.push(input.onWheel((x, y, deltaY) => this.handleWheel(x, y, deltaY)));
   }
 
   /** Width of the social hub rail left of the notebook binding line (matches every other left-edge tab rail). */
@@ -402,6 +414,27 @@ export class FamilySceneBase {
     if (this.profilePopup.isOpen) { this.profilePopup.handleTap(x, y); return; }
     // Fires only for a genuine tap (pointer didn't drag); a released drag returns null.
     this.gesture.up()?.();
+  }
+
+  /** PC-only mouse-wheel scroll (see wheelScroll.ts). Mirrors handleMove's routing: in the landscape
+   *  split view the roster/channel columns scroll independently (routed by chatColX, same as
+   *  handleDown); portrait's single-column tab view scrolls whichever tab is active (members ↔
+   *  scrollY, channel ↔ scrollYChannel — see renderTabbedView). */
+  handleWheel(x: number, y: number, deltaY: number): void {
+    if (this.profilePopup.isOpen || this.modalOpen || this.mode !== 'myFamily') return;
+    const useChannel = this.landscape ? x >= this.chatColX : this.activeTab === 'channel';
+    if (useChannel) {
+      const next = wheelScrollY(this.channelRegionTop, this.channelRegionBottom, y, deltaY, this.scrollYChannel, this.channelMax);
+      if (next === null) return;
+      this.scrollYChannel = next;
+      this.channelStick = next >= this.channelMax - 1;
+      this.scrollDirty = true;
+    } else {
+      const next = wheelScrollY(this.membersRegionTop, this.membersRegionBottom, y, deltaY, this.scrollY, this.membersMax);
+      if (next === null) return;
+      this.scrollY = next;
+      this.scrollDirty = true;
+    }
   }
 
   update(dt: number): void {

@@ -71,8 +71,12 @@ export function SkinsMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase 
       }
 
       const totalH = Math.max(...colY) - listY;
-      this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - availH)));
-      drawScrollIndicator(this.bodyLayer, { x: left, y: listY, w: avail, h: availH }, this.scrollY, Math.max(0, totalH - availH));
+      const maxScroll = Math.max(0, totalH - availH);
+      this.scrollY = Math.max(0, Math.min(this.scrollY, maxScroll));
+      this.scrollRegionTop = listY;
+      this.scrollRegionBottom = listY + availH;
+      this.maxScroll = maxScroll;
+      drawScrollIndicator(this.bodyLayer, { x: left, y: listY, w: avail, h: availH }, this.scrollY, maxScroll);
     }
 
     /** One character's wardrobe card: portrait + name on the left header, skin tiles wrapped to the right. Returns the card's height. */

@@ -18,6 +18,7 @@ import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { BusyTracker } from '../../ui/busyTracker';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
+import { wheelScrollY } from '../../ui/wheelScroll';
 import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance } from '../../game/meta/SaveData';
 import { affixKind, EQUIPMENT_INV_CAP, EQUIP_MAX_LEVEL, type EnhanceCost } from '../../game/meta/equipmentDefs';
 import { ENHANCE_COEFF_PER_LEVEL } from '@nw/engine/balance/equipment';
@@ -185,6 +186,16 @@ export class EquipmentSceneBase {
 
   protected scrollY = 0;
   /**
+   * Vertical bounds + max scroll of whichever list is currently on screen (inventory grid / craft
+   * grid / assign card-picker — mutually exclusive, so one set of fields covers all three). Set at
+   * the end of each renderX's layout pass; consumed by the wheel handler below (PC-only — see
+   * wheelScroll.ts) since none of those render passes otherwise store their listY/listH/maxScroll
+   * past the render() call that computed them.
+   */
+  protected scrollRegionTop = 0;
+  protected scrollRegionBottom = 0;
+  protected maxScroll = 0;
+  /**
    * Tap-vs-drag gesture tracker: defers an item cell's hit action to pointer-up and drops it if the
    * pointer dragged (so a drag starting on an item scrolls instead of opening its detail; mirrors
    * CardSceneBase). See ScrollTapGesture.
@@ -228,6 +239,13 @@ export class EquipmentSceneBase {
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
     this.unsubs.push(input.onUp(() => this.handleUp()));
+    // Desktop mouse-wheel scroll (browser only — see wheelScroll.ts); the modal doesn't scroll, so a
+    // wheel event while one is open is ignored, mirroring handleMove's modalOpen guard below.
+    this.unsubs.push(input.onWheel((x, y, deltaY) => {
+      if (this.modalOpen) return;
+      const next = wheelScrollY(this.scrollRegionTop, this.scrollRegionBottom, y, deltaY, this.scrollY, this.maxScroll);
+      if (next !== null) { this.scrollY = next; this.scrollDirty = true; }
+    }));
   }
 
   protected build(): void {

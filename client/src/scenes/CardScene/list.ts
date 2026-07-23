@@ -85,6 +85,7 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = listY + availH / 2;
         lbl.style.wordWrap = true; lbl.style.wordWrapWidth = w - 32;
         this.bodyLayer.addChild(lbl);
+        this.maxScroll = 0;
         return;
       }
 
@@ -102,7 +103,12 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       // where it produces a genuine partial-row crop; applied here it just excludes a row that would
       // otherwise render in full within the naive viewport, leaving a dead gap at the bottom that
       // pops the row in only once scrolling pushes it past the shrunk cutoff (2026-07-23 roster bug).
-      this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - availH)));
+      // Also the wheel-scroll viewport bounds, see wheelScroll.ts.
+      const maxScroll = Math.max(0, totalH - availH);
+      this.scrollY = Math.max(0, Math.min(this.scrollY, maxScroll));
+      this.scrollRegionTop = listY;
+      this.scrollRegionBottom = listY + availH;
+      this.maxScroll = maxScroll;
 
       const now = Date.now();
       sorted.forEach((card, i) => {

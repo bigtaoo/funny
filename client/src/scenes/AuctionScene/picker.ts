@@ -194,6 +194,9 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
       const contentX = this.renderPickerSidebar();
       const listY = this.headerH + 40;
       const availH = h - listY - 10;
+      // Default to "nothing to scroll" — overwritten below once the real grid geometry is known;
+      // covers the empty-entries early-return so a stale wheel event can't scroll a hidden grid.
+      this.scrollMax = 0;
 
       const entries = this.buildPickEntries().filter((e) => this.pickerFilter === '' || e.cls === this.pickerFilter);
       if (entries.length === 0) {
@@ -212,8 +215,11 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
       // No PIXI mask backs this grid (draw-cull only, below) — a row is either drawn in full or
       // skipped entirely, never cropped, so peekViewportH's mid-row shrink would just exclude a
       // row that fits fine and leave a dead gap (2026-07-23 correction, UI_DESIGN.md §25). Use the
-      // naive availH directly.
-      this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - availH)));
+      // naive availH directly (also the wheel-scroll viewport bounds, see wheelScroll.ts).
+      this.scrollMax = Math.max(0, totalH - availH);
+      this.scrollY = Math.max(0, Math.min(this.scrollY, this.scrollMax));
+      this.scrollRegionTop = listY;
+      this.scrollRegionBottom = listY + availH;
 
       entries.forEach((entry, i) => {
         const col = i % cols;

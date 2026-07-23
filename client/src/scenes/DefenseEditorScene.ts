@@ -37,6 +37,7 @@ import { FS } from '../render/fontScale';
 import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { ScrollTapGesture } from '../ui/scrollTapGesture';
+import { wheelScrollY } from '../ui/wheelScroll';
 import { UNIT_ART_URLS, getArtTexture } from '../render/cardArt';
 import type { WorldApiClient, TeamTemplate, ArmyEntry, CardSLGState } from '../net/WorldApiClient';
 import { WorldApiError } from '../net/WorldApiClient';
@@ -198,6 +199,14 @@ export class DefenseEditorScene implements Scene {
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((_x, y) => this.handleMove(y)));
     this.unsubs.push(input.onUp(() => this.handleUp()));
+    // Card roster (attack mode, right half) mouse-wheel scroll — same region gate as handleDown's
+    // inRoster check, browser/PC only (see wheelScroll.ts).
+    this.unsubs.push(input.onWheel((x, y, deltaY) => {
+      if (this.mode !== 'attack') return;
+      if (x < this.rosterX || x > this.rosterX + this.rosterW) return;
+      const next = wheelScrollY(this.rosterY, this.rosterY + this.rosterH, y, deltaY, this.scrollY, this.scrollMax);
+      if (next !== null) { this.scrollY = next; this.scrollDirty = true; }
+    }));
 
     this.render();
     void this.loadData();

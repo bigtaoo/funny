@@ -77,7 +77,8 @@ export function CoinsMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase 
       // row boundary, so a partial next card is visibly peeking above the fold.
       const viewH = peekViewportH(availH, cellH + gap, totalH);
       this.maskBody(top, viewH);
-      this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - viewH)));
+      this.maxScroll = Math.max(0, totalH - viewH);
+      this.scrollY = Math.max(0, Math.min(this.scrollY, this.maxScroll));
 
       specs.forEach((spec, i) => {
         const col = i % cols;
