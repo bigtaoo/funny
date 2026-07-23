@@ -378,6 +378,7 @@ export const zh = {
   'shop.owned': '已拥有',
   'shop.free': '免费',
   'shop.bought': '购买成功',
+  'shop.boughtNamed': '购买成功：{name}',
   'shop.insufficient': '金币不足',
   'shop.error': '购买失败，请重试',
   'shop.back': '← 返回',
@@ -1496,6 +1497,7 @@ export const zh = {
   'settings.deleteAccount.failed': '删除失败，请重试',
 
   // ── City / Home Desk (SLG_CITY_DESIGN P1) ────────────────────────────────
+  'city.title': '主城',
   'city.page.domestic': '主城·书桌',
   'city.page.military': '主城·军情',
   'city.tab.domestic': '内政',

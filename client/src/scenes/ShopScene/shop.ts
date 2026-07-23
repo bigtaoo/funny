@@ -49,6 +49,7 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
 
       if (this.loading) {
         this.maskBody(top, availH);
+        this.maxScroll = 0;
         const lbl = txt(t('shop.loading'), FS.title, C.mid);
         lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = bodyTop + Math.round(h * 0.14);
         body.addChild(lbl);
@@ -64,7 +65,8 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
       // ScrollIndicator thumb hinting it).
       const viewH = peekViewportH(availH, cellH + gap, totalH);
       this.maskBody(top, viewH);
-      this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - viewH)));
+      this.maxScroll = Math.max(0, totalH - viewH);
+      this.scrollY = Math.max(0, Math.min(this.scrollY, this.maxScroll));
 
       if (specs.length === 0) {
         const lbl = txt(t('shop.empty'), FS.title, C.mid);
@@ -96,7 +98,7 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
         const buttons: BtnSpec[] = [
           active
             ? { label: t('shop.monthlyActive'), enabled: false, primary: true }
-            : { label: t('shop.buy'), enabled: !busy, primary: true, fn: () => void this.runDeal(() => this.cb.buyMonthlyCard!(), 'shop.bought') },
+            : { label: t('shop.buy'), enabled: !busy, primary: true, fn: () => void this.runDeal(() => this.cb.buyMonthlyCard!(), 'shop.bought', t('shop.monthlyCard')) },
         ];
         if (this.cb.claimMonthlyCard) {
           // Claim greys out both when the card is inactive (not purchased) and once today's reward is taken.
@@ -127,7 +129,7 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
           buttons: [
             active
               ? { label: t('shop.monthlyActive'), enabled: false, primary: true }
-              : { label: t('shop.buy'), enabled: !busy, primary: true, fn: () => void this.runDeal(() => this.cb.buyYearCard!(), 'shop.bought') },
+              : { label: t('shop.buy'), enabled: !busy, primary: true, fn: () => void this.runDeal(() => this.cb.buyYearCard!(), 'shop.bought', t('shop.yearCard')) },
           ],
         });
       }
@@ -147,7 +149,7 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
             lines: [{ text: t('shop.free'), color: C.green }],
             buttons: [{
               label: t('shop.buy'), enabled: !busy, primary: true,
-              fn: () => void this.runDeal(() => this.cb.buyStarter!(pk.id), 'shop.bought'),
+              fn: () => void this.runDeal(() => this.cb.buyStarter!(pk.id), 'shop.bought', t(pk.label)),
             }],
           });
         }
@@ -162,25 +164,27 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
           // Consumables aren't "owned" — always re-buyable while affordable.
           const canBuy = !busy && this.cb.getCoins() >= item.cost;
           const known = item.id === 'protect_enhance';
+          const itemTitle = known ? t('shop.item.protect_enhance.name') : `${t('shop.itemLabel')} · ${item.id}`;
           specs.push({
             icon: 'armor', iconColor: C.accent, artUrl: known ? protectStoneArtUrl as string : undefined,
-            title: known ? t('shop.item.protect_enhance.name') : `${t('shop.itemLabel')} · ${item.id}`,
+            title: itemTitle,
             lines: known ? [{ text: t('shop.item.protect_enhance.desc'), color: C.mid }] : [],
             coinAmount: item.cost,
-            buttons: [{ label: t('shop.buy'), enabled: canBuy, primary: true, fn: () => void this.onBuy(item.id) }],
+            buttons: [{ label: t('shop.buy'), enabled: canBuy, primary: true, fn: () => void this.onBuy(item.id, itemTitle) }],
           });
         }
         for (const item of this.items) {
           if (item.kind === 'item') continue;
           const isOwned = owned.has(item.grants ?? item.id);
           const canBuy = !isOwned && !busy && this.cb.getCoins() >= item.cost;
+          const skinTitle = skinDisplayName(item.id);
           specs.push({
             icon: 'brush', iconColor: C.accent, artUrl: SKIN_PLACEHOLDER_ART[item.id],
-            title: skinDisplayName(item.id),
+            title: skinTitle,
             coinAmount: item.cost,
             buttons: [{
               label: isOwned ? t('shop.owned') : t('shop.buy'), enabled: canBuy, primary: true,
-              fn: () => void this.onBuy(item.id),
+              fn: () => void this.onBuy(item.id, skinTitle),
             }],
           });
         }

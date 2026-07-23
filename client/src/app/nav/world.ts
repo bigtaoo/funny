@@ -196,6 +196,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       playerName: playerName(),
       addFriend: async (publicId) => { await api!.requestFriend(publicId); },
       getFriendPublicIds: async () => new Set((await api!.getFriends()).map((f) => f.publicId)),
+      openChat: (peerPublicId, peerName) => nav.goChat(peerPublicId, peerName, { overlay, onBack: () => goFamilyHub(worldApi, worldId, onExit, overlay) }),
     }, { overlay });
   }
 

@@ -110,6 +110,7 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
         const lbl = txt(t('equip.invEmpty'), FS.heading, C.mid);
         lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = listY + availH / 2;
         this.bodyLayer.addChild(lbl);
+        this.maxScroll = 0;
         return;
       }
 
@@ -166,8 +167,11 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       // Clamp the viewport so it always cuts mid-row when there's more below — a partial next card
       // always peeks above the fold instead of the screen looking coincidentally "full".
       const listH = peekViewportH(availH, EQUIP_CELL_H + CELL_GAP, totalH);
-
-      this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
+      const maxScroll = Math.max(0, totalH - listH);
+      this.scrollY = Math.max(0, Math.min(this.scrollY, maxScroll));
+      this.scrollRegionTop = listY;
+      this.scrollRegionBottom = listY + listH;
+      this.maxScroll = maxScroll;
 
       // Cards are drawn into a masked sub-layer so an overscrolled row never bleeds up past listY
       // and paints over the slot filter bar / loadout strip above it (they only skip rows fully

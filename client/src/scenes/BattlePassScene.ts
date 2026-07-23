@@ -16,6 +16,7 @@ import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { showToastMessage, type ToastKind } from '../net/log';
 import { ScrollTapGesture } from '../ui/scrollTapGesture';
 import { peekViewportH } from '../ui/widgets/scrollPeek';
+import { wheelScrollY } from '../ui/wheelScroll';
 import type { SaveData } from '../game/meta/SaveData';
 import {
   BATTLEPASS_DEFS, BATTLEPASS_MAX_LEVEL, BATTLEPASS_BUY_COST, BP_XP_PER_LEVEL,
@@ -124,6 +125,7 @@ export class BattlePassScene implements Scene {
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
     this.unsubs.push(input.onUp(() => this.handleUp()));
+    this.unsubs.push(input.onWheel((_x, y, deltaY) => this.handleWheel(y, deltaY)));
     this.render();
   }
 
@@ -179,6 +181,12 @@ export class BattlePassScene implements Scene {
   private handleUp(): void {
     // Fires only for a genuine tap (pointer didn't drag); a released drag returns null.
     this.gesture.up()?.();
+  }
+
+  /** Mouse-wheel scroll over the reward track (browser/PC only — see wheelScroll.ts). */
+  private handleWheel(y: number, deltaY: number): void {
+    const next = wheelScrollY(this.scrollView.y, this.scrollView.y + this.scrollView.h, y, deltaY, this.scrollY, this.scrollMax);
+    if (next !== null) { this.scrollY = next; this.updateScrollPosition(); }
   }
 
   private showToast(msg: string, kind: ToastKind = 'success'): void {

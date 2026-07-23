@@ -105,6 +105,7 @@ describe('FamilyScene — create-form caret', () => {
   function build(): any {
     return new FamilyScene(createLayout(W, H), new InputManager(), {
       onBack() {}, onOpenSect() {}, onNavTab() {}, async addFriend() {}, async getFriendPublicIds() { return new Set<string>(); },
+      openChat() {},
       worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: 'acc_test', playerName: 'Tester',
     });
   }
@@ -179,6 +180,8 @@ describe('FriendsScene — family/sect/world tab carets', () => {
   function build(): any {
     return new FriendsScene(createLayout(W, H), new InputManager(), {
       onBack() {}, onOpenRoom() {},
+      myPublicId: '',
+      getProfileExtra: async () => ({}),
       loadFriends: async () => [],
       loadRequests: async () => ({ incoming: [], outgoing: [] }),
       search: async () => ({ publicId: '123456789', displayName: 'Bob' }),

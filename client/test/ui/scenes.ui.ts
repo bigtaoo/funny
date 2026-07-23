@@ -311,6 +311,8 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
       new FriendsScene(createLayout(w, h), new InputManager(), {
         onBack() {},
         onOpenRoom() {},
+        myPublicId: '',
+        getProfileExtra: async () => ({}),
         loadFriends: async () => [],
         loadRequests: async () => ({ incoming: [], outgoing: [] }),
         search: async () => ({ publicId: '123456789', displayName: 'Bob' }),
@@ -378,6 +380,7 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         onNavTab() {},
         async addFriend() {},
         async getFriendPublicIds() { return new Set<string>(); },
+        openChat() {},
         worldApi: stubWorldApi(),
         worldId: 'world:1:0',
         myAccountId: 'acc_test',

@@ -33,6 +33,7 @@ import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../../ui/wid
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
 import { BusyTracker } from '../../ui/busyTracker';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
+import { wheelScrollY } from '../../ui/wheelScroll';
 import { snapFont } from '../../render/fontScale';
 
 /** Outcome of a buy — ok, or a message key to surface as a toast. */
@@ -147,8 +148,16 @@ export class ShopSceneBase {
 
   // ── Scroll state (grid may overflow the body region) ──────────────────────
   protected scrollY = 0;
+  /** Max scrollY for whichever tab (shop/coins) is currently active — set by that tab's own grid
+   *  renderer alongside its clamp of scrollY, so the wheel handler below can read it without
+   *  recomputing the grid layout. */
+  protected maxScroll = 0;
   /** This render's body mask, sized per-tab by {@link maskBody} once its grid's peek-adjusted viewH is known. */
   protected bodyMask: PIXI.Graphics | null = null;
+  /** Vertical bounds of the body mask set by {@link maskBody} — reused by the wheel handler to gate
+   *  scroll to the visible list region. */
+  private regionTop = 0;
+  private regionBottom = 0;
   /**
    * Tap-vs-drag gesture tracker: defers a cell's hit action to pointer-up and drops it if the pointer
    * dragged (so a drag starting on a shop card scrolls instead of firing it). See ScrollTapGesture.
@@ -173,6 +182,10 @@ export class ShopSceneBase {
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((_x, y) => this.handleMove(y)));
     this.unsubs.push(input.onUp(() => this.handleUp()));
+    this.unsubs.push(input.onWheel((x, y, deltaY) => {
+      const next = wheelScrollY(this.regionTop, this.regionBottom, y, deltaY, this.scrollY, this.maxScroll);
+      if (next !== null) { this.scrollY = next; this.scrollDirty = true; }
+    }));
     if (cb.redeemPromo) this.setupHiddenInput();
     this.render();
     void this.loadItems();
@@ -307,6 +320,8 @@ export class ShopSceneBase {
    *  own peek-adjusted viewH, so the clip line (and the deliberate partial-row peek above it) is exact. */
   protected maskBody(top: number, viewH: number): void {
     this.bodyMask?.clear().beginFill(0xffffff).drawRect(0, top, this.w, viewH).endFill();
+    this.regionTop = top;
+    this.regionBottom = top + viewH;
   }
 
   private drawBackground(): void {
@@ -589,10 +604,10 @@ export class ShopSceneBase {
 // methods provided by the mixins run and all method bodies stay verbatim.
 export interface ShopSceneBase {
   loadItems(): Promise<void>;
-  onBuy(itemId: string): Promise<void>;
+  onBuy(itemId: string, itemName: string): Promise<void>;
   onRedeem(): Promise<void>;
   onRecharge(tierId: string): Promise<void>;
-  runDeal(action: () => Promise<ShopActionResult>, okKey: TranslationKey): Promise<void>;
+  runDeal(action: () => Promise<ShopActionResult>, okKey: TranslationKey, itemName?: string): Promise<void>;
   drawShopGrid(body: PIXI.Container, top: number): void;
   drawCoinsGrid(body: PIXI.Container, top: number): void;
 }

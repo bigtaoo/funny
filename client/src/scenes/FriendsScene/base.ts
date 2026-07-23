@@ -8,7 +8,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { ILayout, Rect } from '../../layout/ILayout';
 import { InputManager } from '../../inputSystem/InputManager';
 import { t, TranslationKey } from '../../i18n';
-import { ProfilePopup } from '../../render/ProfilePopup';
+import { ProfilePopup, type ProfileExtra } from '../../render/ProfilePopup';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { showToastMessage, type ToastKind } from '../../net/log';
 import { FS, snapFont } from '../../render/fontScale';
@@ -18,6 +18,7 @@ import { drawSocialTabRail, type SocialTab } from '../../render/socialTabRail';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { drawSceneHeader, drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
+import { wheelScrollY } from '../../ui/wheelScroll';
 import type {
   FriendView,
   FriendRequestView,
@@ -57,6 +58,10 @@ export interface SLGSocialStatus {
 export interface FriendsSceneCallbacks {
   onBack(): void;
   onOpenRoom(): void;
+  /** Local player's own public id — used to skip "add friend" on your own world-chat messages. */
+  myPublicId: string;
+  /** Unified profile-popup extras (rank/ELO + family/sect) — see {@link ProfilePopup}'s `fetchExtra`. */
+  getProfileExtra(publicId: string): Promise<ProfileExtra>;
   loadFriends(): Promise<FriendView[]>;
   loadRequests(): Promise<{ incoming: FriendRequestView[]; outgoing: FriendRequestView[] }>;
   search(publicId: string): Promise<ProfileView>;
@@ -214,11 +219,12 @@ export class FriendsSceneBase {
     this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
     if (cb.defaultTab) this.tab = cb.defaultTab;
-    this.popup = new ProfilePopup(this.w, this.h);
+    this.popup = new ProfilePopup(this.w, this.h, (publicId) => cb.getProfileExtra(publicId));
 
     this.unsubs.push(input.onDown((x, y) => this.onPointerDown(x, y)));
     this.unsubs.push(input.onMove((x, y) => this.onPointerMove(x, y)));
     this.unsubs.push(input.onUp((x, y) => this.onPointerUp(x, y)));
+    this.unsubs.push(input.onWheel((x, y, deltaY) => this.onWheel(y, deltaY)));
 
     this.render();
     void this.refresh();
@@ -315,6 +321,16 @@ export class FriendsSceneBase {
         return;
       }
     }
+  }
+
+  protected onWheel(y: number, deltaY: number): void {
+    if (this.popup.isOpen) return;
+    const next = wheelScrollY(this.regionTop, this.regionBottom, y, deltaY, this.scrollY, this.maxScroll);
+    if (next === null) return;
+    this.scrollY = next;
+    // World channel: scrolling up releases the "stick to latest" pin, same as drag — see onPointerMove.
+    if (this.tab === 'world') this.worldStick = next >= this.maxScroll - 1;
+    this.scrollDirty = true;
   }
 
   protected onBack(): void {

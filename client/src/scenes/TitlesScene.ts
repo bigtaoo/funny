@@ -12,6 +12,7 @@ import { drawCareerTabs } from '../ui/widgets/CareerTabs';
 import { sidebarNavW } from '../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../ui/widgets/scrollPeek';
+import { wheelScrollY } from '../ui/wheelScroll';
 import { sortTitlesByWeight, getTitleKeys, formatLadderTitle, allTitleIds } from '../game/meta/titles';
 import { FS, snapFont } from '../render/fontScale';
 
@@ -69,6 +70,9 @@ export class TitlesScene implements Scene {
   private scrollMax = 0;
   private scrollDirty = false;
   private dragStart: { x: number; y: number; scroll: number; moved: boolean } | null = null;
+  /** Grid viewport y-bounds (set each render by drawTitleList), gates mouse-wheel scroll (browser/PC only). */
+  private regionTop = 0;
+  private regionBottom = 0;
 
   constructor(layout: ILayout, input: InputManager, cb: TitlesSceneCallbacks) {
     this.container = new PIXI.Container();
@@ -80,6 +84,7 @@ export class TitlesScene implements Scene {
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((_x, y) => this.handleMove(y)));
     this.unsubs.push(input.onUp((x, y) => this.handleUp(x, y)));
+    this.unsubs.push(input.onWheel((_x, y, deltaY) => this.handleWheel(y, deltaY)));
     this.render();
   }
 
@@ -117,6 +122,12 @@ export class TitlesScene implements Scene {
       }
     }
     this.dragStart = null;
+  }
+
+  /** Mouse-wheel scroll over the title grid (browser/PC only — see wheelScroll.ts). */
+  private handleWheel(y: number, deltaY: number): void {
+    const next = wheelScrollY(this.regionTop, this.regionBottom, y, deltaY, this.scrollY, this.scrollMax);
+    if (next !== null) { this.scrollY = next; this.scrollDirty = true; }
   }
 
   private render(): void {
@@ -190,8 +201,10 @@ export class TitlesScene implements Scene {
     const sorted = sortTitlesByWeight(allTitleIds(this.cb.titles));
 
     const availH = h - gridTop - Math.round(h * 0.02);
+    this.regionTop = gridTop;
 
     if (sorted.length === 0) {
+      this.regionBottom = gridTop + availH;
       this.maskGrid(gridTop, availH);
       const empty = txt(t('titles.empty'), FS.title, C.mid);
       empty.anchor.set(0.5, 0.5); empty.x = w / 2; empty.y = h / 2;
@@ -210,6 +223,7 @@ export class TitlesScene implements Scene {
     // Clamp the viewport so it always cuts mid-row when there's more below — a partial next card
     // stays visibly peeking above the fold instead of the thin ScrollIndicator being the only hint.
     const viewH = peekViewportH(availH, cellH + gap, totalH);
+    this.regionBottom = gridTop + viewH;
     this.maskGrid(gridTop, viewH);
     this.scrollMax = Math.max(0, totalH - viewH);
     this.scrollY = Math.max(0, Math.min(this.scrollY, this.scrollMax));

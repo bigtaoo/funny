@@ -35,6 +35,8 @@ describe('FriendsScene — world chat load failure surfaces an error + retry ins
 
     const scene: any = new FriendsScene(createLayout(W, H), new InputManager(), {
       onBack() {}, onOpenRoom() {},
+      myPublicId: '',
+      getProfileExtra: async () => ({}),
       loadFriends: async () => [],
       loadRequests: async () => ({ incoming: [], outgoing: [] }),
       search: async () => ({ publicId: '123456789', displayName: 'Bob' }),

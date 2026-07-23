@@ -5,7 +5,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import type { NetState } from '../net/NetClient';
 import type { PeerDc, RoomError, RoomState, PlayerSlot } from '../net/proto/transport';
-import { ProfilePopup } from '../render/ProfilePopup';
+import { ProfilePopup, type ProfileExtra } from '../render/ProfilePopup';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
 import { showToastMessage, type ToastKind } from '../net/log';
 import { buildDecorCLayer } from '../render/decorCLayer';
@@ -52,6 +52,8 @@ export interface RoomSceneCallbacks {
    * connects; this only sets the initial view.
    */
   autoRanked?: boolean;
+  /** Unified profile-popup extras (rank/ELO + family/sect) — see ProfilePopup's `fetchExtra`. Omitted offline. */
+  getProfileExtra?(publicId: string): Promise<ProfileExtra>;
 }
 
 type View = 'idle' | 'codeEntry' | 'connecting' | 'searching' | 'inRoom';
@@ -92,7 +94,7 @@ export class RoomScene implements Scene {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.cb = cb;
-    this.popup = new ProfilePopup(this.w, this.h);
+    this.popup = new ProfilePopup(this.w, this.h, cb.getProfileExtra);
     // Lobby match button → land straight in the ranked searching view (app fires
     // the queue join once the gateway opens). Unavailable → fall through to idle
     // so guardAvailable can surface the "no server" toast on user action.

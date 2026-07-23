@@ -9,7 +9,6 @@ import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubT
 import { t } from '../../i18n';
 import { buildIcon, type IconKind } from '../../render/icons';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
-import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import type { EquipmentInstance, CardInstance, EquipRarity } from '../../game/meta/SaveData';
 import { getEquipDef } from '../../game/meta/equipmentDefs';
 import { buildEquipIcon } from '../../render/equipmentAtlas';
@@ -195,6 +194,9 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
       const contentX = this.renderPickerSidebar();
       const listY = this.headerH + 40;
       const availH = h - listY - 10;
+      // Default to "nothing to scroll" — overwritten below once the real grid geometry is known;
+      // covers the empty-entries early-return so a stale wheel event can't scroll a hidden grid.
+      this.scrollMax = 0;
 
       const entries = this.buildPickEntries().filter((e) => this.pickerFilter === '' || e.cls === this.pickerFilter);
       if (entries.length === 0) {
@@ -210,20 +212,25 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
       const cardW = (avail - CARD_GAP * (cols - 1)) / cols;
       const rows = Math.ceil(entries.length / cols);
       const totalH = rows * (CARD_H + CARD_GAP);
-      // Clamp the viewport so it always cuts mid-row when there's more below (see scrollPeek.ts).
-      const listH = peekViewportH(availH, CARD_H + CARD_GAP, totalH);
-      this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
+      // No PIXI mask backs this grid (draw-cull only, below) — a row is either drawn in full or
+      // skipped entirely, never cropped, so peekViewportH's mid-row shrink would just exclude a
+      // row that fits fine and leave a dead gap (2026-07-23 correction, UI_DESIGN.md §25). Use the
+      // naive availH directly (also the wheel-scroll viewport bounds, see wheelScroll.ts).
+      this.scrollMax = Math.max(0, totalH - availH);
+      this.scrollY = Math.max(0, Math.min(this.scrollY, this.scrollMax));
+      this.scrollRegionTop = listY;
+      this.scrollRegionBottom = listY + availH;
 
       entries.forEach((entry, i) => {
         const col = i % cols;
         const row = Math.floor(i / cols);
         const cx = contentX + pad + col * (cardW + CARD_GAP);
         const cy = listY + row * (CARD_H + CARD_GAP) - this.scrollY;
-        if (cy + CARD_H < listY || cy > listY + listH) return;
+        if (cy + CARD_H < listY || cy > listY + availH) return;
         this.renderPickCard(entry, cx, cy, cardW);
       });
 
-      drawScrollIndicator(this.bodyLayer, { x: contentX + pad, y: listY, w: avail, h: listH }, this.scrollY, Math.max(0, totalH - listH));
+      drawScrollIndicator(this.bodyLayer, { x: contentX + pad, y: listY, w: avail, h: availH }, this.scrollY, Math.max(0, totalH - availH));
     }
 
     /**

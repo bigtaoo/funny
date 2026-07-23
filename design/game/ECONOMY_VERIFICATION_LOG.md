@@ -91,6 +91,8 @@
 ### 13-SLG-CITY.1 可调参数表（`@nw/shared/slg.ts`，全 DRAFT）
 
 > **⚠️ 常量已改（本表为 2026-06-30 核验时值，保留作审计记录）**：① 2026-07-15 D-CITY-7 把 `DESK_MAX_LEVEL` 20→**10**、各每级 STEP 翻倍（`DRILL_TROOPCAP_STEP` 500→**1000** 等）、`STICKER_SELF_BASE` 翻倍、`BUILD_COST/TIME` ×4，**满级总量与旧 L20 一致**；② 2026-07-22 兵力池统一（ADR-048）`TROOP_CAP_BASE` 2000→**10000**。故下表 `DESK_MAX_LEVEL=20`/`DRILL_TROOPCAP_STEP=500` 及 §13-SLG-CITY.2 的「L20 / troopCap 2000→12000」是旧基线，**当前代码值 = DESK 10 / step 1000 / base 10000 / satchel 满级 20000**；节奏结论（量级/满级倍率/赛季窗口）仍成立。
+>
+> **⚠️ 常量已改 ③（2026-07-23，`BUILD_COST_BASE` 自产资源自引用修复）**：用户发现 4 个**资源产出建筑**升级时都要吃**自己产出的那种资源**（`inkPot` 吃 ink / `paperTray` 吃 paper / `graphiteMill` 吃 graphite / `metalForge` 吃 metal）——产量最低（最需要升级）的玩家恰恰付不起，自相矛盾。**修复原则**：产率建筑**绝不吃自己的产出物**；一切建筑只由两种**建材**建成——`paper`（基础建材）+ `graphite`（高阶建材），paper↔graphite 在各自 faucet 上互为建材（`paperTray` 用 graphite 建、`graphiteMill` 用 paper 建，均不自引用）；`ink` 净化为**纯练兵资源**（只被 `TROOP_TRAIN_INK_COST` 吃，建筑零消耗）。**新满城总成本（`cityRun.ts` 导出，DESK/建筑 L10）**：paper **1,663,200**（8.3× cap，仍是承重肝点）、graphite **475,200**（2.4×，吸收了移除的自引用成本→第 2 肝点）、metal **151,200**（0.8×）、sticker **237,600**（1.2×）、ink **0**（建筑不再吃）。串行建造 93.6 h ≈ 3.9 天（全跳 5,616 coins）；days-to-max 三档全部落在 60 天赛季窗内（casual paper ~28d / graphite ~16d 最慢）。**节奏结论（PASS，量级/满级倍率/窗口）不变**——自引用死锁消除，faucet/sink 闭环与「paper 承重、graphite 高阶 sink」意图保持。
 
 | 常量 | 默认 | 作用 |
 |---|---|---|

@@ -86,6 +86,7 @@ export function AssignMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
         const lbl = txt(t('equip.assignEmpty'), FS.heading, C.mid);
         lbl.anchor.set(0.5, 0.5); lbl.x = sidebarW + (w - sidebarW) / 2; lbl.y = listY + availH / 2;
         this.bodyLayer.addChild(lbl);
+        this.maxScroll = 0;
         return;
       }
 
@@ -107,7 +108,11 @@ export function AssignMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       const totalH = rows * (PICK_CELL_H + PICK_GAP) + PICK_GAP;
       // Clamp the viewport so it always cuts mid-row when there's more below (see inventory.ts).
       const listH = peekViewportH(availH, PICK_CELL_H + PICK_GAP, totalH);
-      this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
+      const maxScroll = Math.max(0, totalH - listH);
+      this.scrollY = Math.max(0, Math.min(this.scrollY, maxScroll));
+      this.scrollRegionTop = listY;
+      this.scrollRegionBottom = listY + listH;
+      this.maxScroll = maxScroll;
 
       sorted.forEach((card, i) => {
         const col = i % cols;

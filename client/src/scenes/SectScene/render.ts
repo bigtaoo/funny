@@ -349,7 +349,10 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       // Clamp the viewport so it always cuts mid-row when there's more below — a partial next
       // family row always peeks above the fold instead of landing flush with the column edge.
       const viewH = peekViewportH(maxH, ROW_H, listH);
-      this[scrollKey] = Math.max(0, Math.min(this[scrollKey], Math.max(0, listH - viewH)));
+      this.familiesMax = Math.max(0, listH - viewH);
+      this.familiesRegionTop = y0;
+      this.familiesRegionBottom = y0 + viewH;
+      this[scrollKey] = Math.max(0, Math.min(this[scrollKey], this.familiesMax));
 
       const list = new PIXI.Container();
       const mask = new PIXI.Graphics().beginFill(0xffffff).drawRect(x0, y0, colW, viewH).endFill();
@@ -463,6 +466,8 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       // message always peeks above the fold instead of landing flush with the input box.
       const viewH2 = peekViewportH(availH2, ROW_H, msgH);
       this.channelMax = Math.max(0, msgH - viewH2);
+      this.channelRegionTop = y0;
+      this.channelRegionBottom = y0 + viewH2;
       // Pin to the latest message (bottom) unless the user scrolled up to read history.
       if (this.channelStick) this[scrollKey] = this.channelMax;
       else this[scrollKey] = Math.max(0, Math.min(this[scrollKey], this.channelMax));

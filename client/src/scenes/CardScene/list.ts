@@ -10,7 +10,6 @@ import { UNIT_ART_URLS } from '../../render/cardArt';
 import { drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
-import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
 import type { CardSLGState } from '../../net/WorldApiClient';
 import { CARD_DEFS, CARD_INV_CAP, CARD_INV_OVERFLOW_BUFFER, troopCap, cardPower } from '../../game/meta/cardDefs';
@@ -86,6 +85,7 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = listY + availH / 2;
         lbl.style.wordWrap = true; lbl.style.wordWrapWidth = w - 32;
         this.bodyLayer.addChild(lbl);
+        this.maxScroll = 0;
         return;
       }
 
@@ -98,10 +98,17 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       const cellW = (avail - ROSTER_GAP * (cols - 1)) / cols;
       const rows = Math.ceil(sorted.length / cols);
       const totalH = rows * (CARD_CELL_H + ROSTER_GAP) + ROSTER_GAP;
-      // Clamp the viewport so it always cuts mid-row when there's more below — a partial next card
-      // peeks above the fold instead of the screen looking "full" with only the scrollbar hinting more.
-      const viewH = peekViewportH(availH, CARD_CELL_H + ROSTER_GAP, totalH);
-      this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - viewH)));
+      // No PIXI mask backs this grid (draw-cull only, see renderCardCell) — a row is either drawn in
+      // full or skipped entirely, never cropped. peekViewportH's mid-row shrink is for *masked* grids
+      // where it produces a genuine partial-row crop; applied here it just excludes a row that would
+      // otherwise render in full within the naive viewport, leaving a dead gap at the bottom that
+      // pops the row in only once scrolling pushes it past the shrunk cutoff (2026-07-23 roster bug).
+      // Also the wheel-scroll viewport bounds, see wheelScroll.ts.
+      const maxScroll = Math.max(0, totalH - availH);
+      this.scrollY = Math.max(0, Math.min(this.scrollY, maxScroll));
+      this.scrollRegionTop = listY;
+      this.scrollRegionBottom = listY + availH;
+      this.maxScroll = maxScroll;
 
       const now = Date.now();
       sorted.forEach((card, i) => {
@@ -109,12 +116,12 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         const row = Math.floor(i / cols);
         const x = left + col * (cellW + ROSTER_GAP);
         const y = listY + ROSTER_GAP + row * (CARD_CELL_H + ROSTER_GAP) - this.scrollY;
-        if (y + CARD_CELL_H >= listY && y <= listY + viewH) {
+        if (y + CARD_CELL_H >= listY && y <= listY + availH) {
           this.renderCardCell(card, x, y, cellW, cardState[card.id], now, save);
         }
       });
 
-      drawScrollIndicator(this.bodyLayer, { x: left, y: listY, w: avail, h: viewH }, this.scrollY, Math.max(0, totalH - viewH));
+      drawScrollIndicator(this.bodyLayer, { x: left, y: listY, w: avail, h: availH }, this.scrollY, Math.max(0, totalH - availH));
     }
 
     /**

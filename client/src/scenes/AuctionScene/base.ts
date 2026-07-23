@@ -22,6 +22,7 @@ import { WorldApiError } from '../../net/WorldApiClient';
 import type { SaveData, EquipmentInstance, CardInstance } from '../../game/meta/SaveData';
 import { caretDisplay } from '../../render/inputDisplay';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
+import { wheelScrollY } from '../../ui/wheelScroll';
 
 // ── AuctionScene (S8-5) — SLG auction scene ─────────────────────────────────
 //
@@ -166,6 +167,16 @@ export class AuctionSceneBase {
   // Scroll
   protected scrollY = 0;
   /**
+   * Max scrollY for the currently-visible scrollable region (market/mine/bids list in list.ts, or the
+   * item picker in picker.ts — only one is ever visible at once, so they share scrollY/scrollMax).
+   * Refreshed every render() by whichever of renderList/renderItemPicker actually ran.
+   */
+  protected scrollMax = 0;
+  /** Vertical bounds (design px) of the currently-visible scrollable region, refreshed alongside
+   *  scrollMax — used to gate PC mouse-wheel scrolling to the actual list/picker area (see onWheel below). */
+  protected scrollRegionTop = 0;
+  protected scrollRegionBottom = 0;
+  /**
    * Tap-vs-drag gesture tracker: defers a listing card's hit action to pointer-up and drops it if the
    * pointer dragged (so a drag starting on a card scrolls instead of firing it). See ScrollTapGesture.
    */
@@ -194,6 +205,7 @@ export class AuctionSceneBase {
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
     this.unsubs.push(input.onUp((x, y) => this.handleUp(x, y)));
+    this.unsubs.push(input.onWheel((_x, y, deltaY) => this.handleWheel(y, deltaY)));
   }
 
   private build(): void {
@@ -474,6 +486,9 @@ export class AuctionSceneBase {
       if (inp.value !== digits) inp.value = digits;
       onChange(parse());
     });
+    // Enter commits the value the same way blur does (PC keyboard convenience — mobile taps
+    // elsewhere to blur, so this is additive, not a replacement path).
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } });
     inp.addEventListener('blur', () => {
       const v = parse();
       this.numEditKey = null;
@@ -562,6 +577,15 @@ export class AuctionSceneBase {
   handleUp(_x: number, _y: number): void {
     // Fires only for a genuine tap (pointer didn't drag); a released drag returns null.
     this.gesture.up()?.();
+  }
+
+  /** Mouse-wheel scroll over the market/mine/bids list or the item picker (browser only, see
+   *  InputManager.onWheel). Skipped while a modal (create form/bid/confirm) sits on top — modals aren't
+   *  scrollable, and scrolling the list underneath while one is open would be confusing. */
+  handleWheel(y: number, deltaY: number): void {
+    if (this.modalOpen) return;
+    const next = wheelScrollY(this.scrollRegionTop, this.scrollRegionBottom, y, deltaY, this.scrollY, this.scrollMax);
+    if (next !== null) { this.scrollY = next; this.scrollDirty = true; }
   }
 
   update(dt: number): void {

@@ -374,6 +374,7 @@ export const de: Record<TranslationKey, string> = {
   'shop.owned': 'Im Besitz',
   'shop.free': 'Kostenlos',
   'shop.bought': 'Gekauft',
+  'shop.boughtNamed': 'Gekauft: {name}',
   'shop.insufficient': 'Nicht genug Münzen',
   'shop.error': 'Kauf fehlgeschlagen — bitte erneut versuchen',
   'shop.back': '← Zurück',
@@ -1482,6 +1483,7 @@ export const de: Record<TranslationKey, string> = {
   'settings.deleteAccount.failed': 'Löschen fehlgeschlagen — bitte erneut versuchen',
 
   // ── Heimatstadt / Schreibtisch (SLG_CITY_DESIGN P1) ──────────────────────
+  'city.title': 'Heimatstadt',
   'city.page.domestic': 'Heimatstadt · Schreibtisch',
   'city.page.military': 'Heimatstadt · Militär',
   'city.tab.domestic': 'Inneres',

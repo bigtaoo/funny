@@ -32,6 +32,7 @@ import { WorldApiError } from '../../net/WorldApiClient';
 import { drawSocialTabRail, type SocialTab } from '../../render/socialTabRail';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { FS } from '../../render/fontScale';
+import { wheelScrollY } from '../../ui/wheelScroll';
 
 export interface SectSceneCallbacks {
   onBack(): void;
@@ -119,6 +120,16 @@ export class SectSceneBase {
   /** X boundary between the families and channel columns in the landscape split view; used by
    *  handleDown to route a drag to the right column's scroll state. Unused (0) in portrait. */
   protected chatColX = 0;
+  /** Families-list viewport vertical bounds + scroll extent, set each renderFamiliesList call — mirrors
+   *  channelMax/channelRegion* but for the families column. Touch-drag scroll doesn't need an upfront
+   *  region/max (it just clamps on the next render), but wheel scroll (onWheel) needs both known before
+   *  the event is handled, so they're captured here purely for that. */
+  protected familiesRegionTop = 0;
+  protected familiesRegionBottom = 0;
+  protected familiesMax = 0;
+  /** Channel viewport vertical bounds, set each renderChannel call — same reasoning as familiesRegion*. */
+  protected channelRegionTop = 0;
+  protected channelRegionBottom = 0;
   /** Title-bar height, set from the shared header — drives all body layout below it. */
   protected headerH = 0;
   /**
@@ -151,6 +162,7 @@ export class SectSceneBase {
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
     this.unsubs.push(input.onUp((x, y) => this.handleUp(x, y)));
+    this.unsubs.push(input.onWheel((x, y, deltaY) => this.handleWheel(x, y, deltaY)));
   }
 
   /** Width of the social hub rail left of the notebook binding line (matches every other left-edge tab rail). */
@@ -297,6 +309,30 @@ export class SectSceneBase {
   handleUp(_x: number, _y: number): void {
     // Fires only for a genuine tap (pointer didn't drag); a released drag returns null.
     this.gesture.up()?.();
+  }
+
+  /** PC-only mouse-wheel scroll (see wheelScroll.ts). Mirrors handleMove's routing: in the landscape
+   *  split view the families/channel columns scroll independently (routed by chatColX, same as
+   *  handleDown); portrait's single-column tab view scrolls whichever tab is active, both sharing
+   *  scrollY (see renderTabbedView). */
+  handleWheel(x: number, y: number, deltaY: number): void {
+    if (this.modalOpen || this.mode !== 'mySect') return;
+    const useChannel = this.landscape ? x >= this.chatColX : this.activeTab === 'channel';
+    if (useChannel) {
+      // renderChannel is called with scrollKey='scrollYChannel' in the landscape split view but
+      // 'scrollY' in the portrait tabbed view (single shared field) — see renderTabbedView/renderSplitView.
+      const cur = this.landscape ? this.scrollYChannel : this.scrollY;
+      const next = wheelScrollY(this.channelRegionTop, this.channelRegionBottom, y, deltaY, cur, this.channelMax);
+      if (next === null) return;
+      if (this.landscape) this.scrollYChannel = next; else this.scrollY = next;
+      this.channelStick = next >= this.channelMax - 1;
+      this.scrollDirty = true;
+    } else {
+      const next = wheelScrollY(this.familiesRegionTop, this.familiesRegionBottom, y, deltaY, this.scrollY, this.familiesMax);
+      if (next === null) return;
+      this.scrollY = next;
+      this.scrollDirty = true;
+    }
   }
 
   update(dt: number): void {

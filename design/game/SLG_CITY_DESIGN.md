@@ -51,9 +51,10 @@
 | **D-CITY-7** | `desk` 等级上限 | **20 → 10（2026-07-15 拍板，修正早先错案，已实现）**：早先 `DESK_MAX_LEVEL=20` 的注释「aligned with Three-Kingdoms 20」未经查证，网络核实三战主城（君王殿）实际满级为 **10 级**（[来源](http://m.7724.com/sggame/news/23083.html)）。改为 10 级对齐。`server/shared/src/slg/city.ts`：`DESK_MAX_LEVEL=10`；所有每级加成 STEP 常量（`BUILD_YIELD_STEP`/`CABINET_CAP_STEP`/`DRILL_TROOPCAP_STEP`/`DRILL_TRAIN_SPEED_STEP`/`WALL_DEFENSE_STEP`/`ACADEMY_*_STEP`/`CABINET_PROTECT_STEP`）翻倍、`STICKER_SELF_BASE` 翻倍，使满级总加成与旧 L20 一致；`BUILD_COST_BASE`/`BUILD_TIME_BASE_SEC` 统一 ×4（sum₂..₂₀lvl / sum₂..₁₀lvl ≈3.87，取整 4×）使总投入量级不变。已用 `econ-sim`（`cityRun.ts`）核对：满级倍率/上限与旧数值一致，总花费/耗时/各画像天数与旧基线同量级，休闲档仍在 60 天赛季窗口内。 | **已实现**（`server/shared/src/slg/city.ts`；econ-sim 核对通过） |
 | **D-CITY-8** | 城池耐久（durability）机制 | **新增持久化状态（2026-07-16 服务端已实现）**。上限由 `wall`（城墙）等级决定（`baseDurabilityMax(wallLevel) = BASE_DURABILITY_BASE + wallLevel×BASE_DURABILITY_WALL_STEP`；不采用三战「君王殿本身给耐久」的路数，我们刻意偏离参考，城墙专职耐久；wall 原先「围攻时临时给守军加HP」的 `wallDefenseMult` 机制已移除，全部改走耐久）。攻城结算：**先打赢驻军战斗 → 胜利后 5 分钟宽限期 → 按攻方攻城值（与地图上攻占城池同一套规则）扣减耐久**（`settleSiegeDamage`，`durability`/`durabilityMax` 落在主城 anchor `TileDoc` 上，替代原先复用的 `hp`/`buildingMaxHp(level)`）。耐久随时间**缓慢自愈**（`regenDurability`，`BASE_DURABILITY_REGEN_PER_HOUR` 每小时定量恢复，具体速率待数值模拟；读路径惰性计算展示值、不落库，只有真实结算/城墙升级完成才落库，同 `yieldRate` 的惰性结算风格）。**耐久归零 → 城池被摧毁 → 玩家丢失全部领地 → 服务端强制迁城**（复用既有 `passiveRelocate`，新增系统邮件 `slg.city.durabilityBreached.{subject,body}`，此前玩家对该结果**没有任何通知**）。城墙升级完成时按差值调整 `durabilityMax`（保留已损伤的绝对值，不重置满血）；玩家主动 `relocate` 同样保留已损伤耐久（不是免费回血）。**世界地图 HP 血条 + 被围攻全屏泛红特效仍是 DRAFT，客户端未实现**（服务端 view 字段沿用既有 `hp`/`maxHp` 命名，契约不变，客户端可直接接线）。 | **已实现（服务端）**，`server/shared/src/slg/siege.ts` + `worldsvc/src/combatSiege/{damage,helpers,arrival}.ts` + `city.ts`/`coreSpawn.ts`/`coreHelpers.ts`；客户端血条/泛红特效待后续 |
 | **D-CITY-9** | 队伍出征携带兵力上限 | 新建筑（`satchel`，书包，隐喻文具书包能装多少东西，**已实现**）：**只管单支队伍出征时最多携带多少兵**，与 `drillYard`（总兵力上限 + 训练速度 + 训练队列上限）是两个独立维度，不合并。同样受 `desk` 门控。 | **已实现**（`server/shared/src/slg/city.ts` + `combatMarch.ts` 出征校验） |
-| **D-CITY-10** | 队伍面板（5 队 t1-t5） | `CityScene` 新增队伍信息栏：5 支队伍（复用现有 `SIEGE_TEAM_CAP=5` / `t1..t5` 数据模型），每队显示当前兵力（`cardState.currentTroops`）/ 状态（驻军在家 / 出征中 / 受伤冷却 `teamState.injuredUntil`）。未指派 march 的队伍 = 驻军，血量与兵力信息同样在这里查看。**委任（角色派进建筑）维持 P1 已拍板的 DROPPED，不恢复**。**已实现（2026-07-16）**：军事页 2 列卡片网格，只读展示（编辑仍走地图入口的 `TeamsScene`），复用其 `teamOrder`/`committedTroops` 判定逻辑；状态优先级 受伤>行军/占领>驻军在家>空。 | **已实现**，`client/src/scenes/CityScene.ts`（`renderTeamPanel`/`renderTeamCard`） |
-| **D-CITY-11** | 双屏拆分 | 内容扩容后单屏挤不下，拆两屏、玩家可切换：**屏 1（内政）** = 资源条 + 现有建筑网格（含新 `satchel`）；**屏 2（军事）** = 队伍面板（D-CITY-10）+ 科技树独立面板（`academy` 从建筑网格挪出，见下）+ 耐久状态展示。**切换机制已实现**（`CityScene` 头部下方双 tab，内政/军事）；队伍面板（D-CITY-10）+ 科技树面板（D-CITY-12）均已落地，军事页仅剩耐久状态展示待做。 | **已实现（切换机制 + 队伍面板 + 科技树面板）**，`client/src/scenes/CityScene.ts` |
-| **D-CITY-12** | 科技树面板 | `academy` 从「建筑网格里普通一栋楼」升级为**军事屏内独立面板**，给赛季内蓝图 buff 投入应有的仪式感；底层注入逻辑（`buildSiegeBlueprints` 叠加层）不变，只是 UI 呈现独立出来。 | **已实现**（2026-07-16），`client/src/scenes/CityScene.ts`（`renderTechTreePanel` + `DOMESTIC_BUILDING_KEYS`），回归测试 `client/test/ui/cityScene.ui.ts` |
+| **D-CITY-10** | 队伍面板（5 队 t1-t5） | `CityScene` 新增队伍信息栏：5 支队伍（复用现有 `SIEGE_TEAM_CAP=5` / `t1..t5` 数据模型），每队显示当前兵力（`cardState.currentTroops`）/ 状态（驻军在家 / 出征中 / 受伤冷却 `teamState.injuredUntil`）。未指派 march 的队伍 = 驻军，血量与兵力信息同样在这里查看。**委任（角色派进建筑）维持 P1 已拍板的 DROPPED，不恢复**。**已实现（2026-07-16）**：军事页 2 列卡片网格，只读展示（编辑仍走地图入口的 `TeamsScene`），复用其 `teamOrder`/`committedTroops` 判定逻辑；状态优先级 受伤>行军/占领>驻军在家>空。**2026-07-23 单页合并（见 §8.5）**：从军事页 2 列滚动网格改为**贴底固定一行 5 张紧凑卡**，判定逻辑不变。 | **已实现**，`client/src/scenes/CityScene.ts`（`renderTeamsRow`/`renderTeamCard`） |
+| **D-CITY-11** | ~~双屏拆分~~ **已撤销** | 曾拆内政/军事双页（左侧竖排 tab）；**2026-07-23 撤销**——军事页信息量不足以独占一屏，全部并回单页（耐久进标题栏、科技树回建筑网格、五队贴底一行）。详见 §8.5。 | **已撤销**（2026-07-23），`client/src/scenes/CityScene.ts` |
+| **D-CITY-12** | ~~科技树独立面板~~ **已撤销** | 曾把 `academy` 从建筑网格挪出成军事屏独立面板；**2026-07-23 随 D-CITY-11 单页合并一并撤销**——`academy` 回到建筑网格当普通卡，点开走通用详情弹窗（加成行本就含其 buff），注入逻辑（`buildSiegeBlueprints`）自始至终不变。详见 §8.5。 | **已撤销**（2026-07-23），`client/src/scenes/CityScene.ts` |
+| **D-CITY-13** | 建筑升级成本不得自引用产出物 | **拍板（2026-07-23，用户从 `inkPot` 详情卡发现）**：4 个资源产出建筑原本升级都吃**自己产出的那种资源**（`inkPot`↔ink / `paperTray`↔paper / `graphiteMill`↔graphite / `metalForge`↔metal）——产量最低（最需要该建筑加成）的玩家恰恰付不起，自相矛盾。**新规则**：资源产率建筑**绝不吃自己的产出物**；一切建筑只由两种**建材**建成——`paper`（基础建材）+ `graphite`（高阶建材），且 paper↔graphite 在各自 faucet 上**互为建材**（`paperTray` 用 graphite 建、`graphiteMill` 用 paper 建，均不自引用）；`ink` 净化为**纯练兵资源**（只被 `TROOP_TRAIN_INK_COST` 吃，建筑零消耗）。econ-sim 复核：paper 8.3×cap 仍是承重肝点、graphite 2.4×升为第 2 肝点、三档 days-to-max 全落在 60 天赛季窗内，faucet/sink 闭环与节奏结论不变。 | **已实现**，`server/shared/src/slg/city.ts` `BUILD_COST_BASE`；econ-sim 核对通过（详见 [`ECONOMY_VERIFICATION_LOG §13-SLG-CITY`](ECONOMY_VERIFICATION_LOG.md) 常量已改③） |
 
 ---
 
@@ -214,6 +215,26 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 - 覆盖测试：`client/test/ui/cityTrainTroops.ui.ts`（headless PIXI，驱动真实 `handleDown`/`handleUp` 命中测试，覆盖 +10 训练成功 / 队列已满不下单 / 加速按钮调用）。
 - **已知限制**：`CitySceneCallbacks.onTrainTroops`/`onSpeedupTraining` 两个从未被赋值的可选回调字段已删除——`CityScene` 现在直接调 `this.cb.worldApi.trainTroops/speedupTraining`，与 `doUpgrade`/`doSpeedup` 走同一模式，不再经过父级回调层。
 
+### 8.4 资源条：真产量 + 客户端实时结算（2026-07-23）
+
+§8 line 171 早就写明资源条应显示「当前量/**产率**/仓储上限」，但实现里第三行一直画的是**建筑乘数** `×110%`（`buildingYieldMult`），既不是真产量，也和 sticker 那格的 `+N/h` 自产文案不统一。且顶部「当前量」是**读取时的服务端快照**，只有升级/加速/练兵这类动作 round-trip 后才刷新——玩家盯着看总量**纹丝不动**（服务端其实在惰性累积，见 §5 `settle`）。本次两处修：
+
+- **真产量**：第三行改画 `me.yieldRate[rt]`（服务端单出口算好的：地块产出 × 建筑乘数 + 自产 + BP），格式统一为 `+{rate}/h`，产率 >0 时染该资源主题色。这才是玩家关心的「产量」，且已含建筑乘数效果，比原来的裸乘数信息量更大。建筑乘数 `×{pct}%` 仍保留在建筑详情弹窗的加成行（`city.bonusYield`），没丢。
+- **客户端实时结算（镜像 `settle()`）**：`CityScene` 记录每次拉取 `me` 的 wall-clock（`meLoadedAt`，经统一 `setMe()` 落点），资源条总量按 `min(cap, base + yieldRate·经过小时数)` 客户端外推——与 worldsvc `settle()` 同式。`update(dt)` 累加到 1 秒就 `tickResourceTotals()` 只改总量标签文本（不整屏重渲，避开拖拽滚动/闪烁与 Text 纹理反复重建）。**只客户端模拟，不额外请求**；升级/加速/练兵每次都过 `setMe()`，用服务端消耗后的权威值重置基线——即「消耗时才同步」。达到仓储上限后停止增长（cap 由 `liveResource()` 夹取）。
+- 验证：`tsc --noEmit` 全绿、`webpack` 构建成功；深层 SLG 场景需整套后端 + 入世流程，本环境未起后端，未做浏览器内视觉核对。
+
+### 8.5 单页合并：军事屏并回内政（2026-07-23）
+
+D-CITY-11 的内政/军事双页拆分（左侧竖排 tab 切换）本次**撤销**——用户反馈军事页信息量不足以独占一屏，全部并回单页 `CityScene`：
+
+- **无 tab / 无侧栏**：删除 `renderPageTabs`/`switchPage`/`page` 状态与 `sidebarNavW` 侧栏轨；红色装订线回到默认 9%（`marginLineX`），正文 `contentX = marginLineX(w)`，内容紧贴其右。
+- **耐久进标题栏**（D-CITY-8）：原军事页的独立耐久面板（`renderDurabilityPanel`）删除，改为标题栏右侧一个紧凑读数 `renderHeaderDurability`——`wall` 图标 + HP 条 + `hp/maxHp`（沿用世界地图 tile 血条的绿/琥珀/红三段色），纯展示不吃命中。标题文案新增 `city.title`（主城 / Home City / Heimatstadt）取代原按页切换的 `city.page.{domestic,military}`。
+- **科技树回建筑网格**（撤销 D-CITY-12）：`academy` 不再是独立面板，回到建筑网格里当普通一栋楼（`GRID_BUILDING_KEYS = BUILDING_KEYS`，不再 filter 掉 academy）；点开走的还是通用 `renderDetailModal`，其加成行本就含 academy 的 HP/伤害 buff，注入逻辑（`buildSiegeBlueprints`）不变。
+- **五队并排贴底**（D-CITY-10）：原 2 列可滚动队伍面板（`renderTeamPanel`）换成**贴底固定一行 5 张紧凑卡**（`renderTeamsRow` + 重写的 `renderTeamCard`）——队名 + 状态标签（驻军/出征/受伤/空位）+ 已填队伍的驻军/携带兵力；卡片不滚动，只有上方建筑网格滚动（网格 viewport 底边被 `renderTeamsRow` 返回的 `bandTop` 限住，永不压到队伍行）。点卡仍走 `onEditTeam` → 队伍编队编辑器。
+- 遗留死 key：`city.page.military`/`city.tab.*`/`city.military.techTree`/`city.military.durability` 已无引用，暂留三语文件未删（无害）；`city.military.teams`/`teamIdle` 仍在用。
+- 覆盖测试：`client/test/ui/cityScene.ui.ts` 按单页布局重写（28 例）——网格 12 格全在屏内不重叠、`contentX = marginLineX`、弹窗命中门控、`academy` 现为网格卡、耐久读数在标题栏、五队贴底单行不重叠且不压网格、`onEditTeam` 命中数。
+- 验证：`tsc --noEmit -p tsconfig.test.json` 全绿、`webpack build:web` 构建成功、`test:ui` 全绿（含 `scenes`/`scrollDragThrottle`/`sidebarRailOrientation`）；深层 SLG 场景需整套后端 + 入世流程，本环境浏览器面板未显示，未能截图视觉核对。
+
 ---
 
 ## 9. 契约 / 端点（→ SERVER_API + openapi-world）
@@ -281,6 +302,7 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
   - **验收标准待定**：军事页耐久状态展示尚未进入实现/契约设计（D-CITY-10/12 均已收口）。
   - **建筑图标出图（2026-07-17）**：`desk`/`cabinet`/`drillYard`/`wall`/`satchel` 五个此前用 `icons.ts` 程序化线稿/emoji 占位的建筑，换成手绘钢笔线稿真图——桌面文具书桌 / 文件柜 / 尺规交叉演武场 / 文具堆砌城墙 / 帆布书包。源图 `art/ui/slg-desk/`（5 张 AI 生成 UUID 命名图），`pack_city_bld.cjs` 打包成 `client/src/assets/slg/city_bld_atlas.{png,json}`（近白阈值抠图 + 连通域降噪去除源图背景纸纹杂点 + shelf-pack，同 `slg-map/pack_buildings.cjs` 套路），`client/src/render/cityBldAtlasLoader.ts` 懒加载，`CityScene.bldIcon()` 新增 `BLD_ATLAS` 映射优先命中，未就绪时仍回落原程序化图标。资源类建筑（inkPot 等）不受影响，继续走 `res_atlas`。
   - 内政/军事 tab 布局改为左侧竖排（装订线左侧，复用 Roster/Equipment 的 `HubTabs.drawSidebarTabs`/`sidebarNavW` 侧栏组件），取代原顶部横排 tab — **已实现**（2026-07-16，`client/src/scenes/CityScene.ts` `renderPageTabs`）：正文内容（资源条/建造队列/建筑网格/军事页各面板）整体右移 `contentX = sidebarNavW(...)`。
+  - **⚠️ 2026-07-23 单页合并（撤销 D-CITY-11/12，详见 §8.2 → §8.5）**：军事页并回内政单页——删侧栏 tab、耐久进标题栏、科技树（`academy`）回建筑网格、五队改贴底固定一行。上面几条「双屏 / 侧栏 tab / 科技树独立面板」的实现描述均已**作废**，仅留作历史记录。军事页耐久状态展示的「待做」项因此一并关闭（耐久已在标题栏）。
   - **世界地图"玩家基地"独立美术（2026-07-17）**：此前 `desk`（基地，1-10级）升级只改数值，世界地图上基地贴图沿用和"可攻占城池"同一套 `city_atlas`（其 tier 来自地形生成的 `TileDoc.level`，与 desk 等级无关联，desk 升满10级贴图不变）。现拆成两套完全独立的资源：可攻占城池继续用 `city_atlas`（`getCityTextureForLevel(tile.level)`）；玩家自己的基地（`tile.mine`）新增 `playerbase_atlas`（10张，一级一图，"文具搭建的桌面堡垒"主题，见 `design/product/player-base-image-prompts.md`）。数据链：desk 升级完工时（`worldsvc/src/city.ts` `applyDueBuilds`）把新等级写入 `TileDoc.deskLevel`（新字段，不复用/覆盖既有 `level`），经 `coreMap.ts tileDocView` 透出到 `WorldTileView.deskLevel`；客户端 `WorldMapRenderer/city.ts` 按 `tile.mine` 分支取 `getPlayerBaseTextureForLevel(tile.deskLevel)`，取不到（美术未就位）时回落 `getCityTextureForLevel`。**已上线**（`client/src/render/playerBaseAtlasLoader.ts` + `art/ui/slg-playerbase/pack_playerbase_atlas.js`）：10张正式美术图已生成、打包进 `playerbase_atlas.png/json`。打包脚本的去背算法针对这批白底源图做了调整（`TSEED` 72→0，见 `design/product/player-base-image-prompts.md` 接入现状）。
 
 ---

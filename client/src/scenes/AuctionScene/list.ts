@@ -9,7 +9,6 @@ import type { AuctionView } from '../../net/WorldApiClient';
 import type { EquipmentInstance, CardInstance } from '../../game/meta/SaveData';
 import { buildIcon, type IconKind } from '../../render/icons';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
-import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { getEquipDef } from '../../game/meta/equipmentDefs';
 import { buildEquipIcon } from '../../render/equipmentAtlas';
 import { CARD_DEFS } from '../../game/meta/cardDefs';
@@ -110,6 +109,9 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
       const emptyKeys: Record<AucTab, 'auction.empty' | 'auction.myEmpty' | 'auction.bidsEmpty'> = {
         all: 'auction.empty', mine: 'auction.myEmpty', bids: 'auction.bidsEmpty',
       };
+      // Default to "nothing to scroll" — overwritten below once the real grid geometry is known;
+      // covers the loading/empty early-returns so a stale wheel event can't scroll a hidden list.
+      this.scrollMax = 0;
 
       if (this.loading) {
         const lbl = txt(t('world.loading'), FS.small, C.dark);
@@ -132,10 +134,14 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
       const cellW = (avail - AUC_CELL_GAP * (cols - 1)) / cols;
       const rows = Math.ceil(auctions.length / cols);
       const totalH = rows * (AUC_CELL_H + AUC_CELL_GAP) + AUC_CELL_GAP;
-      // Clamp the viewport so it always cuts mid-row when there's more below, so a partial next
-      // card always peeks above the fold (see scrollPeek.ts).
-      const listH = peekViewportH(availH, AUC_CELL_H + AUC_CELL_GAP, totalH);
-      this.scrollY = Math.max(0, Math.min(this.scrollY, Math.max(0, totalH - listH)));
+      // No PIXI mask backs this grid (draw-cull only, below) — a row is either drawn in full or
+      // skipped entirely, never cropped, so peekViewportH's mid-row shrink would just exclude a
+      // row that fits fine and leave a dead gap (2026-07-23 correction, UI_DESIGN.md §25). Use the
+      // naive availH directly (also the wheel-scroll viewport bounds, see wheelScroll.ts).
+      this.scrollMax = Math.max(0, totalH - availH);
+      this.scrollY = Math.max(0, Math.min(this.scrollY, this.scrollMax));
+      this.scrollRegionTop = listY;
+      this.scrollRegionBottom = listY + availH;
 
       const now = Date.now();
       auctions.forEach((auc, i) => {
@@ -143,12 +149,12 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
         const row = Math.floor(i / cols);
         const x = left + col * (cellW + AUC_CELL_GAP);
         const y = listY + AUC_CELL_GAP + row * (AUC_CELL_H + AUC_CELL_GAP) - this.scrollY;
-        if (y + AUC_CELL_H >= listY && y <= listY + listH) {
+        if (y + AUC_CELL_H >= listY && y <= listY + availH) {
           this.renderAuctionCell(auc, x, y, cellW, now);
         }
       });
 
-      drawScrollIndicator(this.bodyLayer, { x: left, y: listY, w: avail, h: listH }, this.scrollY, Math.max(0, totalH - listH));
+      drawScrollIndicator(this.bodyLayer, { x: left, y: listY, w: avail, h: availH }, this.scrollY, Math.max(0, totalH - availH));
     }
 
     /**

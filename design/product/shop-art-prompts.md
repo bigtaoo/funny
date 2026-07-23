@@ -3,7 +3,7 @@
 > 更新：2026-07-17
 > 配套代码：[`client/src/scenes/ShopScene/shop.ts`](../../client/src/scenes/ShopScene/shop.ts)（`buildShopCards()` 里的 `artUrl` 接线）
 > 美术总纲：[`design/product/art-direction.md`](art-direction.md)
-> 同类文档：[`gacha-art-prompts.md`](gacha-art-prompts.md) · [`design/game/EQUIPMENT_ICON_PROMPTS.md`](../game/EQUIPMENT_ICON_PROMPTS.md)
+> 同类文档：[`gacha-art-prompts.md`](gacha-art-prompts.md) · [`skin-art-prompts.md`](skin-art-prompts.md)（皮肤全身立绘） · [`design/game/EQUIPMENT_ICON_PROMPTS.md`](../game/EQUIPMENT_ICON_PROMPTS.md)
 
 ---
 

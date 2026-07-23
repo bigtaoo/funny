@@ -46,6 +46,8 @@ export interface FamilyMembershipView {
   name: string;
   tag: string;
   memberCount: number;
+  /** Sect the family belongs to, if any (mirrored from FamilyDoc.sectName). */
+  sectName?: string;
 }
 
 export interface FamilyDetailView extends FamilyView {
@@ -519,7 +521,10 @@ export class FamilyService {
     if (!mem) return null;
     const fam = await this.deps.cols.families.findOne({ _id: mem.familyId });
     if (!fam) return null;
-    return { familyId: mem.familyId, role: mem.role, leaderId: fam.leaderId, name: fam.name, tag: fam.tag, memberCount: fam.memberCount };
+    return {
+      familyId: mem.familyId, role: mem.role, leaderId: fam.leaderId, name: fam.name, tag: fam.tag,
+      memberCount: fam.memberCount, ...(fam.sectName ? { sectName: fam.sectName } : {}),
+    };
   }
 
   /** Internal API: batch fetch families by id (called by worldsvc for sect roster display / season settlement). Missing ids are silently skipped. */

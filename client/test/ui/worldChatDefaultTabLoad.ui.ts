@@ -39,6 +39,8 @@ describe('FriendsScene — entering via defaultTab kicks off the same loads as s
 
     const scene: any = new FriendsScene(createLayout(W, H), new InputManager(), {
       onBack() {}, onOpenRoom() {},
+      myPublicId: '',
+      getProfileExtra: async () => ({}),
       loadFriends: async () => [],
       loadRequests: async () => ({ incoming: [], outgoing: [] }),
       search: async () => ({ publicId: '123456789', displayName: 'Bob' }),

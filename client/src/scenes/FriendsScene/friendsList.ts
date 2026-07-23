@@ -185,7 +185,6 @@ export function FriendsListMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase
       this.popup.show({
         name: f.alias || f.displayName,
         publicId: f.publicId,
-        ...(f.rank ? { rankKey: 'rank.' + f.rank } : {}),
         ...(f.avatarId ? { avatarId: f.avatarId } : {}),
         actions: [
           { labelKey: 'friends.message', fn: () => this.cb.openChat(f.publicId, f.alias || f.displayName) },

@@ -16,6 +16,7 @@ import { buildIcon } from '../render/icons';
 import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { ScrollTapGesture } from '../ui/scrollTapGesture';
+import { wheelScrollY } from '../ui/wheelScroll';
 import { CARD_DEFS } from '../game/meta/cardDefs';
 import { EQUIPMENT_DEFS } from '../game/meta/equipmentDefs';
 import { SKIN_TARGET_UNIT } from '../game/meta/skinDefs';
@@ -172,6 +173,15 @@ export class SettingsScene implements Scene {
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((x, y) => this.handlePickerMove(y)));
     this.unsubs.push(input.onUp(() => this.handlePickerUp()));
+    // Avatar picker grid mouse-wheel scroll (browser/PC only — see wheelScroll.ts); only live while
+    // the picker overlay is open, same viewport rect handleDown's inRect gate uses.
+    this.unsubs.push(input.onWheel((x, y, deltaY) => {
+      if (!this.avatarPickerOpen || !this.pickerViewRect) return;
+      const r = this.pickerViewRect;
+      if (x < r.x || x > r.x + r.w) return;
+      const next = wheelScrollY(r.y, r.y + r.h, y, deltaY, this.pickerScrollY, this.pickerMaxScroll);
+      if (next !== null) { this.pickerScrollY = next; this.render(); }
+    }));
     this.setupHiddenInput();
     this.render();
   }

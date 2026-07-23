@@ -9,10 +9,10 @@ import { type Constructor, type ShopSceneBaseCtor, type ShopActionResult } from 
 
 export interface ActionHandlers {
   loadItems(): Promise<void>;
-  onBuy(itemId: string): Promise<void>;
+  onBuy(itemId: string, itemName: string): Promise<void>;
   onRedeem(): Promise<void>;
   onRecharge(tierId: string): Promise<void>;
-  runDeal(action: () => Promise<ShopActionResult>, okKey: TranslationKey): Promise<void>;
+  runDeal(action: () => Promise<ShopActionResult>, okKey: TranslationKey, itemName?: string): Promise<void>;
 }
 
 export function ActionsMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase & Constructor<ActionHandlers> {
@@ -33,14 +33,14 @@ export function ActionsMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBas
 
     // ── Buy ───────────────────────────────────────────────────────────────────
 
-    async onBuy(itemId: string): Promise<void> {
+    async onBuy(itemId: string, itemName: string): Promise<void> {
       if (this.bt.busy) return;
       this.blurPromo();
       this.bt.start();
       this.render();
       try {
         const res = await withTimeout(this.cb.buy(itemId));
-        if (res.ok) showToastMessage(t('shop.bought'), 'success');
+        if (res.ok) showToastMessage(t('shop.boughtNamed', { name: itemName }), 'success');
         else showToastMessage(t(res.key), 'error');
       } catch (e) {
         showToastMessage(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'shop.error'), 'error');
@@ -100,14 +100,14 @@ export function ActionsMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBas
 
     // ── Monetization deals (monthly / year card, starter packs) ────────────────
 
-    async runDeal(action: () => Promise<ShopActionResult>, okKey: TranslationKey): Promise<void> {
+    async runDeal(action: () => Promise<ShopActionResult>, okKey: TranslationKey, itemName?: string): Promise<void> {
       if (this.bt.busy) return;
       this.blurPromo();
       this.bt.start();
       this.render();
       try {
         const res = await withTimeout(action());
-        if (res.ok) showToastMessage(t(okKey), 'success');
+        if (res.ok) showToastMessage(itemName ? t('shop.boughtNamed', { name: itemName }) : t(okKey), 'success');
         else showToastMessage(t(res.key), 'error');
       } catch (e) {
         showToastMessage(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'shop.error'), 'error');

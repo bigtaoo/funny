@@ -12,6 +12,7 @@ import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawCareerTabs, type CareerNavCallbacks } from '../ui/widgets/CareerTabs';
 import { sidebarNavW } from '../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
+import { wheelScrollY } from '../ui/wheelScroll';
 import { CARD_DEFINITIONS, UNIT_BLUEPRINTS, BUILDING_BLUEPRINTS } from '../game/config';
 import { CardType, type CardDefinition } from '../game/types';
 
@@ -82,6 +83,7 @@ export class CardCodexScene implements Scene {
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
     this.unsubs.push(input.onUp((x, y) => this.handleUp(x, y)));
+    this.unsubs.push(input.onWheel((x, y, deltaY) => this.handleWheel(x, y, deltaY)));
     this.render();
     void preloadL1CardArtTextures();
   }
@@ -116,6 +118,17 @@ export class CardCodexScene implements Scene {
       if (this.scrollbar) { this.scrollbar.destroy(); this.scrollbar = null; }
       this.scrollbar = drawScrollIndicator(this.container, this.scrollView, this.scrollY, this.maxScroll);
     }
+  }
+
+  /** Desktop mouse-wheel scroll over the card grid (browser only — see wheelScroll.ts). */
+  private handleWheel(x: number, y: number, deltaY: number): void {
+    if (x < this.scrollView.x || x > this.scrollView.x + this.scrollView.w) return;
+    const next = wheelScrollY(this.scrollView.y, this.scrollView.y + this.scrollView.h, y, deltaY, this.scrollY, this.maxScroll);
+    if (next === null) return;
+    this.scrollY = next;
+    this.layer.y = -this.scrollY;
+    if (this.scrollbar) { this.scrollbar.destroy(); this.scrollbar = null; }
+    this.scrollbar = drawScrollIndicator(this.container, this.scrollView, this.scrollY, this.maxScroll);
   }
 
   private handleUp(x: number, y: number): void {

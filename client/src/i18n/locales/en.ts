@@ -374,6 +374,7 @@ export const en: Record<TranslationKey, string> = {
   'shop.owned': 'Owned',
   'shop.free': 'Free',
   'shop.bought': 'Purchased',
+  'shop.boughtNamed': 'Purchased: {name}',
   'shop.insufficient': 'Not enough coins',
   'shop.error': 'Purchase failed — please retry',
   'shop.back': '← Back',
@@ -1482,6 +1483,7 @@ export const en: Record<TranslationKey, string> = {
   'settings.deleteAccount.failed': 'Deletion failed — please retry',
 
   // ── City / Home Desk (SLG_CITY_DESIGN P1) ────────────────────────────────
+  'city.title': 'Home City',
   'city.page.domestic': 'Home Desk',
   'city.page.military': 'Home City · Military',
   'city.tab.domestic': 'Domestic',
