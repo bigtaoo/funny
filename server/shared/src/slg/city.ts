@@ -58,14 +58,26 @@ export const BUILD_SPEEDUP_SECS_PER_COIN = 60; // build speedup rate (aligned wi
 export const BUILD_TIME_BASE_SEC = 480;        // base build time per level; time(toLevel) = base × toLevel
 export const DESK_BUILD_TIME_MULT = 5;         // desk upgrades take longer (hub)
 
-/** Per-building base resource cost; buildCost(toLevel) = base × toLevel (DRAFT linear curve). High-tier keys eat graphite + sticker (sink). */
+/**
+ * Per-building base resource cost; buildCost(toLevel) = base × toLevel (DRAFT linear curve).
+ *
+ * ★ DESIGN RULE (self-reference fix, 2026-07-23): a resource-YIELD building NEVER costs the very
+ * resource it produces — inkPot≠ink, paperTray≠paper, graphiteMill≠graphite, metalForge≠metal.
+ * Otherwise the player whose output of that resource is lowest (and who therefore most needs the
+ * yield boost) is exactly the one who cannot afford the upgrade — a self-defeating deadlock the
+ * user flagged on inkPot. All buildings are made from the two BUILDING MATERIALS: paper (basic) +
+ * graphite (advanced). paper↔graphite fund each other reciprocally across the paper/graphite
+ * faucets (paperTray built from graphite, graphiteMill built from paper) so neither faucet is
+ * self-referential. `ink` is a pure troop-sustain resource now — consumed only by troop training
+ * (TROOP_TRAIN_INK_COST), by no building. High-tier keys additionally eat sticker/metal (sink).
+ */
 const BUILD_COST_BASE: Readonly<Record<BuildingKey, Partial<Record<ResourceType, number>>>> = {
-  desk:         { paper: 8000, graphite: 3200, sticker: 2000 },
-  inkPot:       { paper: 2400, ink: 1200 },
-  paperTray:    { paper: 2400 },
-  graphiteMill: { paper: 3200, graphite: 800 },
-  metalForge:   { paper: 3200, metal: 1200 },
-  stickerShop:  { paper: 2800, graphite: 800 },
+  desk:         { paper: 8000, graphite: 3200, sticker: 2000 }, // hub — produces nothing, so no self-reference
+  inkPot:       { paper: 2400, graphite: 800 },                 // ink faucet → built from paper+graphite (was self-costing ink)
+  paperTray:    { graphite: 1600 },                             // paper faucet → built from graphite (was self-costing paper)
+  graphiteMill: { paper: 3200 },                                // graphite faucet → built from paper (was self-costing graphite)
+  metalForge:   { paper: 3200, graphite: 800 },                 // metal faucet → built from paper+graphite (was self-costing metal)
+  stickerShop:  { paper: 2800, graphite: 800 },                 // sticker faucet → built from paper+graphite (already non-self)
   cabinet:      { paper: 4000, graphite: 1600, sticker: 800 },
   drillYard:    { paper: 3600, metal: 1600, sticker: 800 },
   wall:         { paper: 4800, graphite: 2400, metal: 1600 },
