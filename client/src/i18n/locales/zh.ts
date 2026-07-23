@@ -1497,6 +1497,7 @@ export const zh = {
   'settings.deleteAccount.failed': '删除失败，请重试',
 
   // ── City / Home Desk (SLG_CITY_DESIGN P1) ────────────────────────────────
+  'city.title': '主城',
   'city.page.domestic': '主城·书桌',
   'city.page.military': '主城·军情',
   'city.tab.domestic': '内政',
