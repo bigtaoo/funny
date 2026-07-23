@@ -19,9 +19,9 @@ import {
   type PathCell,
   type MarchKind,
 } from '@nw/shared';
-import type { MarchDoc, ArmyEntry } from './db';
+import type { MarchDoc, ArmyEntry, StationedDoc, PlayerWorldDoc } from './db';
 import { WorldCore, MARCHABLE_KINDS } from './core';
-import type { MarchView } from './worldTypes';
+import type { MarchView, StationedView } from './worldTypes';
 import { refundTroops } from './combatShared';
 import type { SiegeService } from './combatSiege';
 
@@ -139,20 +139,24 @@ export class MarchService {
     // after departure without affecting the in-transit march (the army snapshot is persisted with MarchDoc).
     // Neither attack nor occupy, or no team → use flat troops (synthesized generic units at combat time).
     let army: ArmyEntry[] | undefined;
-    if ((kind === 'attack' || kind === 'occupy') && teamId) {
+    // 'move' (2026-07-23) is always team-based — "选中的部队" is a team, and a moved team parks on the tile as a
+    // whole (unlike reinforce's faceless garrison), so there is no flat-pool move path.
+    if (kind === 'move' && !teamId) throw new SlgError('BAD_REQUEST', 'Move requires a team');
+    if ((kind === 'attack' || kind === 'occupy' || kind === 'move') && teamId) {
       const team = (pw.teams ?? []).find((t) => t.id === teamId);
       if (!team || team.army.length === 0) throw new SlgError('BAD_REQUEST', 'Team does not exist or is empty');
       // Idle-team gate (2026-07-15): a team already committed to an active (non-recalled) march must not accept
       // a new order — same "out" predicate as the defender-skip check in combatSiege/arrival.ts (ADR-026 §2).
       // Marches are deleted from the collection once processed (combatMarch.ts claim-and-delete), so "marching"
       // covers transit; a won occupy/siege then hands the team off to an OccupationDoc for the hold countdown
-      // (combatSiege/occupation.ts) — check both so the team stays "out" end-to-end until the player recalls it
-      // (recall mid-hold is out of scope here; the hold simply has to run its course today).
-      const [busyMarch, busyHold] = await Promise.all([
+      // (combatSiege/occupation.ts). Since 2026-07-23 a settled team can also STAY stationed on a tile (a
+      // StationedDoc) — check all three so the team stays "out" end-to-end until the player recalls it.
+      const [busyMarch, busyHold, busyStationed] = await Promise.all([
         cols.marches.findOne({ worldId, ownerId: accountId, teamId, status: { $ne: 'recalled' } }),
         cols.occupations.findOne({ worldId, ownerId: accountId, teamId }),
+        cols.stationed.findOne({ worldId, ownerId: accountId, teamId }),
       ]);
-      if (busyMarch || busyHold) throw new SlgError('TEAM_BUSY', 'Team is already marching or occupying; recall it first');
+      if (busyMarch || busyHold || busyStationed) throw new SlgError('TEAM_BUSY', 'Team is already marching, occupying, or stationed; recall it first');
       army = team.army;
       troops = team.army.reduce((s, e) => s + Math.max(1, Math.floor(e.initialHp ?? 0)), 0);
       // D-CITY-9: satchel gates how many troops a SINGLE team may carry per march/siege — independent of the
@@ -256,6 +260,26 @@ export class MarchService {
       }
       // Card armies have no server-side minimum-troops gate (see hasCardArmy note above) — only the legacy flat-troop path checks this.
       if (!hasCardArmy && troops < OCCUPY_MIN_TROOPS) throw new SlgError('NO_TROOPS', `Siege requires at least ${OCCUPY_MIN_TROOPS} troops`);
+    } else if (kind === 'move') {
+      // Move (2026-07-23): reposition a team to a tile with NO combat — it walks over and STANDS there (stationed).
+      // Two legal targets (user decision): (a) the player's OWN tile (territory/base), or (b) an EMPTY neutral tile
+      // (no owner, not mid-hold, not a PvE-only choke — center/stronghold/bridge/plankway are captured via attack,
+      // never merely stood on). A tile that already holds a stationed team (anyone's) is rejected: one park per tile.
+      if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'Cannot move onto the world center');
+      const stationedHere = await cols.stationed.findOne({ _id: toTid });
+      if (stationedHere) throw new SlgError('TILE_OCCUPIED', 'A team is already stationed on this tile');
+      if (toTile?.ownerId) {
+        if (toTile.ownerId !== accountId) throw new SlgError('TILE_OCCUPIED', 'Cannot move onto another player\'s tile (use attack)');
+        // own tile → fine
+      } else {
+        // Unowned target: only plain neutral/resource land may be stood on; PvE-garrisoned specials are attack-only.
+        if (proc.type === 'stronghold' || proc.type === 'bridge' || proc.type === 'plankway') {
+          throw new SlgError('TILE_OCCUPIED', 'This tile must be captured via attack, not moved onto');
+        }
+        if (toTile?.contestedBy && (toTile.contestedUntil ?? 0) > now()) {
+          throw new SlgError('TILE_OCCUPIED', 'Tile is mid occupation-hold; cannot move onto it');
+        }
+      }
     } else {
       // sweep: clear NPC garrison from neutral / resource tiles (no occupation; loot is carried back on return).
       if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'Cannot sweep the world center');
@@ -287,8 +311,9 @@ export class MarchService {
       troops,
       morale,
       ...(army && army.length > 0 ? { army } : {}),
-      // ADR-026: record the deployed team slot so it is skipped as a defender while out (meaningful for both team-based attacks and, since 2026-07-15, occupy marches).
-      ...((kind === 'attack' || kind === 'occupy') && teamId ? { teamId } : {}),
+      // ADR-026: record the deployed team slot so it is skipped as a defender while out (meaningful for team-based
+      // attacks, occupy marches (2026-07-15), and move orders (2026-07-23) — a moved team stays out until recalled).
+      ...((kind === 'attack' || kind === 'occupy' || kind === 'move') && teamId ? { teamId } : {}),
       departAt,
       arriveAt,
       status: 'marching',
@@ -302,7 +327,7 @@ export class MarchService {
       await cols.marches.insertOne(doc);
     } catch (e) {
       if (teamId && (e as { code?: number }).code === 11000) {
-        throw new SlgError('TEAM_BUSY', 'Team is already marching or occupying; recall it first');
+        throw new SlgError('TEAM_BUSY', 'Team is already marching, occupying, or stationed; recall it first');
       }
       throw e;
     }
@@ -450,6 +475,11 @@ export class MarchService {
       return;
     }
 
+    if (m.kind === 'move') {
+      await this.applyMove(m, pw, t);
+      return;
+    }
+
     if (m.kind === 'occupy') {
       // ADR-037 (§5.4): occupy arrival now fights the target's system garrison (or an in-progress occupier's held
       // garrison, if expelling) via the same deterministic engine siege uses, and — on victory — starts a delayed
@@ -494,5 +524,95 @@ export class MarchService {
     await cols.marches.insertOne(back);
     await this.core.scheduleMarch(m.worldId, back._id, back.arriveAt);
     void this.core.pushMarch(m.ownerId, this.core.marchView(back));
+  }
+
+  /**
+   * Move arrival (2026-07-23): no combat — the team simply STANDS on the target tile. Re-validate the tile is
+   * still a legal stand (own tile, or an empty neutral not since owned / mid-hold / already parked); on success
+   * write a StationedDoc so the team stays "out" here until recalled, and push. On a lost race just drop the
+   * order — a card army keeps its cardState troops regardless, and a team-based move never deducted the pool,
+   * so there is nothing to refund.
+   */
+  private async applyMove(m: MarchDoc, pw: PlayerWorldDoc, t: number): Promise<void> {
+    const { cols } = this.core.deps;
+    const x = this.core.coordX(m.toTile);
+    const y = this.core.coordY(m.toTile);
+    const proc = proceduralTile(m.worldId, x, y);
+    const [occ, stationedHere] = await Promise.all([
+      cols.tiles.findOne({ _id: m.toTile }),
+      cols.stationed.findOne({ _id: m.toTile }),
+    ]);
+    const blocked =
+      proc.type === 'center' ||
+      !!stationedHere ||
+      (occ?.ownerId != null && occ.ownerId !== m.ownerId) ||
+      (!occ?.ownerId && !!occ?.contestedBy && (occ.contestedUntil ?? 0) > t);
+    if (blocked || !m.teamId) {
+      void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
+      return;
+    }
+    const doc: StationedDoc = {
+      _id: m.toTile,
+      worldId: m.worldId,
+      ownerId: m.ownerId,
+      ...(pw.familyId ? { familyId: pw.familyId } : {}),
+      tile: m.toTile,
+      x,
+      y,
+      teamId: m.teamId,
+      army: m.army ?? [],
+      troops: m.troops,
+      sinceAt: t,
+    };
+    await cols.stationed.updateOne({ _id: m.toTile }, { $set: doc }, { upsert: true });
+    void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'arrived' }));
+    const after = await cols.tiles.findOne({ _id: m.toTile });
+    if (after) void this.core.pushTile(m.ownerId, after);
+  }
+
+  /**
+   * Recall a stationed team home (2026-07-23): claim-and-delete the StationedDoc, then dispatch a 'return' leg
+   * tile→base carrying the SAME teamId so the team stays "out" through the trip (freed only when the return
+   * arrives and the shared return handler deletes the doc). A flat army's troops are refunded to the pool on
+   * arrival; a card army carries 0 here (its strength lives in cardState) so the return credits nothing.
+   */
+  async recallStationed(worldId: string, accountId: string, teamId: string): Promise<MarchView | Record<string, never>> {
+    const { cols, now } = this.core.deps;
+    const claimed = await cols.stationed.findOneAndDelete({ worldId, ownerId: accountId, teamId });
+    if (!claimed) throw new SlgError('MARCH_NOT_FOUND', 'No stationed team to recall');
+    const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+    if (!pw?.mainBaseTile) return {}; // no home to return to (should not happen) — team is simply freed
+    const bx = this.core.coordX(pw.mainBaseTile);
+    const by = this.core.coordY(pw.mainBaseTile);
+    const hasCardArmy = (claimed.army ?? []).some((e) => !!e.cardInstanceId);
+    const t = now();
+    const path = await this.computeMarchPath(worldId, claimed.x, claimed.y, bx, by, accountId);
+    const arriveAt = t + marchDurationFromPath(path) * 1000;
+    const back: MarchDoc = {
+      _id: marchId(worldId, accountId, t, ++this.core.marchSeq),
+      worldId,
+      ownerId: accountId,
+      fromTile: claimed.tile,
+      toTile: pw.mainBaseTile,
+      kind: 'return',
+      troops: hasCardArmy ? 0 : claimed.troops,
+      ...(claimed.army && claimed.army.length > 0 ? { army: claimed.army } : {}),
+      teamId,
+      departAt: t,
+      arriveAt,
+      status: 'marching',
+      rev: 0,
+    };
+    await cols.marches.insertOne(back);
+    await this.core.scheduleMarch(worldId, back._id, arriveAt);
+    const view = this.core.marchView(back);
+    void this.core.pushMarch(accountId, view);
+    return view;
+  }
+
+  /** List the player's own stationed teams (2026-07-23: field-stationing status + recall affordance + idle-sprite rendering). */
+  async getStationed(worldId: string, accountId: string): Promise<StationedView[]> {
+    const own = await this.core.deps.cols.stationed.find({ worldId, ownerId: accountId }).toArray();
+    return own.map((d) => ({ tile: d.tile, x: d.x, y: d.y, teamId: d.teamId, troops: d.troops, sinceAt: d.sinceAt }));
   }
 }

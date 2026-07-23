@@ -7,7 +7,7 @@
 // CombatService re-exposes the exact same public API so WorldService (service.ts) composes it unchanged.
 // Depends on WorldCore for shared state, vision, spawn, push/schedule infra, settle/yield, and nations. No behavior change.
 import type { MarchKind } from '@nw/shared';
-import type { MarchView, OccupationView } from './worldTypes';
+import type { MarchView, OccupationView, StationedView } from './worldTypes';
 import { WorldCore } from './core';
 import { SiegeService } from './combatSiege';
 import { MarchService } from './combatMarch';
@@ -40,6 +40,13 @@ export class CombatService {
   }
   processDueArrivals(nowMs?: number): Promise<number> {
     return this.march.processDueArrivals(nowMs);
+  }
+  // Field-stationing (2026-07-23): list / recall teams parked on tiles.
+  getStationed(worldId: string, accountId: string): Promise<StationedView[]> {
+    return this.march.getStationed(worldId, accountId);
+  }
+  recallStationed(worldId: string, accountId: string, teamId: string): Promise<MarchView | Record<string, never>> {
+    return this.march.recallStationed(worldId, accountId, teamId);
   }
 
   // ── siege / sweep settlement (combatSiege.ts) ────────────────

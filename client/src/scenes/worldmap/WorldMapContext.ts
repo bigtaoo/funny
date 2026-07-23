@@ -6,7 +6,7 @@ import { makeZoomCfgs } from './zoom';
 import { DEFAULT_MAP_SIZE } from './constants';
 import type { ILayout } from '../../layout/ILayout';
 import type { ZoomCfg, PoolSlot } from './zoom';
-import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, OccupationView, NationView, SeasonView, SlgShopItemView, WorldChatMessage, SiegeSummaryView } from '../../net/WorldApiClient';
+import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, OccupationView, StationedView, NationView, SeasonView, SlgShopItemView, WorldChatMessage, SiegeSummaryView } from '../../net/WorldApiClient';
 import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult } from '../../net/proto/transport';
 import type { WorldMapRenderer } from './WorldMapRenderer';
 import type { WorldMapPanels } from './WorldMapPanels';
@@ -71,6 +71,8 @@ export class WorldMapContext {
   marches: MarchView[] = [];
   /** Own active occupation-holds (2026-07-15) — used alongside marches for the team-picker busy gate. */
   occupations: OccupationView[] = [];
+  /** Own teams stationed on tiles (2026-07-23) — drives the idle-sprite rendering (fog.ts syncStationedTokens) and the team-picker busy gate. */
+  stationed: StationedView[] = [];
   nations: NationView[] = [];
   season: SeasonView | null = null;
   shopItems: SlgShopItemView[] = [];
@@ -112,6 +114,10 @@ export class WorldMapContext {
    * marchAttackUntil above — the user wants the attack motion to keep repeating for as long as the
    * hold countdown runs, not fire once and vanish. Synced in fog.ts syncOccupyTokens. */
   occupyTokenRuntimes: Map<string, { runtime: StickmanRuntime | null }> = new Map();
+  /** tile key ("x:y") → live StickmanRuntime standing idle on one of my stationed tiles (ctx.stationed).
+   * Unlike march/occupy tokens these are NOT torn down on arrival — the team stands there until moved or
+   * recalled (2026-07-23 field-stationing). Synced in fog.ts syncStationedTokens. */
+  stationedTokenRuntimes: Map<string, { runtime: StickmanRuntime | null }> = new Map();
   hudLayer!: PIXI.Container;
   /** Title bar + back button — static, drawn once (unlike hudLayer, which is torn down on every ~5s march-poll re-render). */
   topLayer!: PIXI.Container;

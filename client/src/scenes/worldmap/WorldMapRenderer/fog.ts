@@ -27,6 +27,7 @@ export interface FogHandlers {
   renderOverlay(dt?: number): void;
   syncMarchTokens(dt: number): void;
   syncOccupyTokens(dt: number): void;
+  syncStationedTokens(dt: number): void;
   renderMap(): void;
 }
 
@@ -245,6 +246,7 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
 
       this.syncMarchTokens(dt);
       this.syncOccupyTokens(dt);
+      this.syncStationedTokens(dt);
     }
 
     /**
@@ -371,6 +373,50 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
         if (live.has(key)) continue;
         entry.runtime?.destroy();
         this.ctx.occupyTokenRuntimes.delete(key);
+      }
+    }
+
+    /**
+     * Idle-standing sprite on every tile with one of my stationed teams (ctx.stationed, refreshed alongside
+     * marches). Unlike march/occupy tokens these are NOT torn down on arrival — the team stands there (playing
+     * the 'idle' clip, state = 空闲) until moved or recalled (2026-07-23 field-stationing). Mirrors
+     * syncOccupyTokens' pooled-runtime pattern; runtimes for tiles no longer stationed are torn down.
+     */
+    syncStationedTokens(dt: number): void {
+      const live = new Set<string>();
+      if (this.ctx.zoom < 3) {
+        const tp = this.ctx.tp;
+        for (const s of this.ctx.stationed) {
+          const key = `${s.x}:${s.y}`;
+          live.add(key);
+          const scr = tileToScreen(s.x, s.y, tp);
+          const cx = this.ctx.panX + scr.x;
+          const cy = this.ctx.panY + scr.y;
+
+          let entry = this.ctx.stationedTokenRuntimes.get(key);
+          if (!entry) {
+            entry = { runtime: null };
+            this.ctx.stationedTokenRuntimes.set(key, entry);
+            const { url, type } = MARCH_TOKEN_ASSET.normal;
+            StickmanRuntime.loadAsset(url, targetScreenHeight(type)).then((asset) => {
+              const current = this.ctx.stationedTokenRuntimes.get(key);
+              if (!current || current !== entry) return; // team moved/recalled meanwhile
+              const runtime = new StickmanRuntime(asset, { targetHeight: tp * 1.1, showShadow: false });
+              this.ctx.marchTokenLayer.addChild(runtime.container);
+              current.runtime = runtime;
+            }).catch(err => { console.warn('[WorldMap] stationed token .tao failed to load:', err); });
+          }
+          if (entry.runtime) {
+            entry.runtime.syncState('idle'); // unknown state → 'idle' clip (STATE_ANIM fallback)
+            entry.runtime.update(dt);
+            entry.runtime.container.position.set(cx, cy);
+          }
+        }
+      }
+      for (const [key, entry] of this.ctx.stationedTokenRuntimes) {
+        if (live.has(key)) continue;
+        entry.runtime?.destroy();
+        this.ctx.stationedTokenRuntimes.delete(key);
       }
     }
 

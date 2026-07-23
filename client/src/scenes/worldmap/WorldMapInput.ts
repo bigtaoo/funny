@@ -104,8 +104,14 @@ export class WorldMapInput {
         return;
       }
       const tileKey = `${this.ctx.cb.worldId}:${tx}:${ty}`;
+      const stationedHere = this.ctx.stationed.find((s) => s.x === tx && s.y === ty);
       const myButtons: { label: string; action: () => void; disabled?: boolean }[] = [
         { label: t('world.actReinforce'), action: () => this.ctx.panels.showDeployDialog(tx, ty, 'reinforce') },
+        // Move (2026-07-23): park an idle home team on this tile (it walks over and stands idle). Recall sends a
+        // team already stationed here back home. One stationed team per tile → offer Move only when none stands here.
+        ...(stationedHere
+          ? [{ label: t('world.actRecallStation'), action: () => void this.ctx.net.doRecallStationed(stationedHere.teamId) }]
+          : [{ label: t('world.actMove'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'move') }]),
         { label: t('world.actDefense'), action: () => { this.ctx.panels.closeModal(); this.ctx.cb.onOpenDefense(tileKey); } },
       ];
       // Watchtower (§18 G5 V2): build a long-radius persistent vision source on an owned tile. If a tower already exists, show a status line instead of the build button.
@@ -209,6 +215,14 @@ export class WorldMapInput {
     ];
     if (garrison > 0) {
       buttons.push({ label: t('world.actSweep'), action: () => this.ctx.panels.showDeployDialog(tx, ty, 'sweep') });
+    }
+    // Move (2026-07-23): station a team on this empty neutral tile (no combat, no claim — it just stands there).
+    // Recall if one of my teams already stands here.
+    const stationedNeutral = this.ctx.stationed.find((s) => s.x === tx && s.y === ty);
+    if (stationedNeutral) {
+      buttons.push({ label: t('world.actRecallStation'), action: () => void this.ctx.net.doRecallStationed(stationedNeutral.teamId) });
+    } else {
+      buttons.push({ label: t('world.actMove'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'move') });
     }
     // (Relocate moved to the owned-tile branch: §3.4 now requires the target 3×3 to be already fully owned,
     // so relocation is initiated by clicking your own centre tile, not a neutral one.)

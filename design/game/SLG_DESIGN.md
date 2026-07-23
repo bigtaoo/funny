@@ -567,7 +567,8 @@
 | `worlds` | `worldId` | `season, shard, status(open/active/settling/closed), mapW, mapH, openAt, resetAt, capacity` | `{status:1}` |
 | `tiles` | `tileId` | `worldId, x, y, type, level, ownerId?, familyId?, defenseRef?, resType?, garrison?, protectedUntil?, rev` | `{worldId,x,y}`、`{ownerId}`、`{familyId}` |
 | `playerWorld` | `worldId:accountId` | `troops, troopCap, resources{ink,paper,graphite,metal,sticker}, yieldRate{...}, lastTickAt, mainBaseTile, defenseRef, materials镜像?, familyId?, rev` | `{worldId,accountId}`、`{familyId}` |
-| `marches` | `marchId` | `worldId, ownerId, fromTile, toTile, kind(attack/reinforce/occupy/sweep/return), troops, departAt, arriveAt, status, rev` | `{worldId,ownerId}`、`{arriveAt}` |
+| `marches` | `marchId` | `worldId, ownerId, fromTile, toTile, kind(attack/reinforce/occupy/sweep/return/move), troops, departAt, arriveAt, status, rev` | `{worldId,ownerId}`、`{arriveAt}` |
+| `stationed` | `tileId` | `worldId, ownerId, tile, x, y, teamId, army, troops, sinceAt`（队伍就地驻留 idle，§38） | `{worldId,ownerId}`、`{worldId,ownerId,teamId}`(unique) |
 | `families` | `familyId` | `worldId, name, tag, leaderId, memberCount, territoryCount, rev` | `{worldId,tag}` 唯一、`{worldId}` |
 | `familyMembers` | `worldId:accountId` | `familyId, role(leader/elder/member), joinedAt` | `{familyId}` |
 | `auctions`（在独立 `auctionsvc` 库，非 world 库） | `auctionId` | `sellerId, itemType, item, qty, price, currency, designatedBuyerId?, expireAt, status(open/sold/expired/cancelled), buyerId?, rev`（**不含 `worldId`**——拍卖与 SLG shard 无关） | `{itemType,status}`、`{sellerId}`、`{designatedBuyerId}`；过期由扫描器处理（**非 TTL**）。机制权威见 [`AUCTION_DESIGN.md`](AUCTION_DESIGN.md) |
@@ -613,7 +614,9 @@ GET  /world/me                      自己在当前世界的状态（playerWorld
 GET  /world/map?cx&cy&r             视区格子（中心+半径，稀疏+程序化默认合并）
 GET  /world/tile/{tileId}           单格详情（含防守摘要）
 PUT  /world/defense                 设/改主城或领地防守 config
-POST /world/march                   发起行军（attack/reinforce/occupy/sweep）
+POST /world/march                   发起行军（attack/reinforce/occupy/sweep/move）
+GET  /world/stationed               我方就地驻留队伍列表（§38）
+POST /world/team/{teamId}/recall-stationed  召回驻留队伍回城（§38）
 POST /world/march/{id}/recall       撤军
 POST /world/sweep                   扫荡（自己领地/中立 NPC，廉价结算）
 # 兵力

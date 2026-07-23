@@ -21,7 +21,7 @@ import {
 } from '@nw/shared';
 import { runSiegeBattle, synthesizeArmy, scaleArmyByRatio, resolveCardArmy, toEngineCardInstances, computeCardStateUpdates } from '../siegeEngine';
 import type { GarrisonEntry, EngineCardInstance, EngineEquipInv } from '@nw/engine';
-import type { TileDoc, PlayerWorldDoc, MarchDoc, OccupationDoc } from '../db';
+import type { TileDoc, PlayerWorldDoc, MarchDoc, OccupationDoc, StationedDoc } from '../db';
 import type { SiegeReplayInputs, OccupationView } from '../worldTypes';
 import { refundTroops } from '../combatShared';
 import type { SiegeServiceBaseCtor, Constructor } from './base';
@@ -390,6 +390,30 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
         const yieldRate = await this.core.recomputeYield(d.worldId, d.ownerId);
         await cols.playerWorld.updateOne({ _id: pw._id }, { $set: { yieldRate }, $inc: { rev: 1 } });
         void this.core.bumpFamilyActivity(d.worldId, pw.familyId, 1);
+      }
+      // Post-capture disposition (2026-07-23, user decision): by default the capturing team STAYS stationed on
+      // the tile it just took (idle in the field) — write a StationedDoc so it stays "out" and renders a standing
+      // sprite. Only when that team opted into `autoReturn` do we skip this: the OccupationDoc was already
+      // claim-deleted upstream (processDueOccupations), so the team is already freed = idle at home, which is
+      // exactly the pre-2026-07-23 behavior ("和现在那样自动返回"). Flat "散兵占领" (no teamId) never stations.
+      if (d.teamId) {
+        const team = pw?.teams?.find((tm) => tm.id === d.teamId);
+        if (!team?.autoReturn) {
+          const stDoc: StationedDoc = {
+            _id: d.tile,
+            worldId: d.worldId,
+            ownerId: d.ownerId,
+            ...(d.familyId ? { familyId: d.familyId } : {}),
+            tile: d.tile,
+            x: d.x,
+            y: d.y,
+            teamId: d.teamId,
+            army: team?.army ?? [],
+            troops: d.garrison,
+            sinceAt: t,
+          };
+          await cols.stationed.updateOne({ _id: d.tile }, { $set: stDoc }, { upsert: true });
+        }
       }
       void this.core.applyNationChange(d.worldId, d.x, d.y, d.ownerId, d.familyId);
 

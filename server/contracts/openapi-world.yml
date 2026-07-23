@@ -276,7 +276,7 @@ components:
           type: string
         kind:
           type: string
-          enum: [attack, reinforce, occupy, sweep, scout, return]
+          enum: [attack, reinforce, occupy, sweep, scout, return, move]
         fromTile:
           type: string
         toTile:
@@ -316,6 +316,27 @@ components:
         teamId:
           type: string
           description: "Which team slot ('t1'..'t5') is tied up holding this tile, if the march was dispatched with one."
+
+    # Stationed team (2026-07-23): a team parked on a tile, standing idle until moved or recalled. Own teams only.
+    StationedView:
+      type: object
+      required: [tile, x, y, teamId, troops, sinceAt]
+      properties:
+        tile:
+          type: string
+        x:
+          type: integer
+        y:
+          type: integer
+        teamId:
+          type: string
+          description: "Team slot ('t1'..'t5') stationed on this tile."
+        troops:
+          type: integer
+          description: "Troop count carried when the team arrived (display; recall refund for flat armies)."
+        sinceAt:
+          type: number
+          description: "ms the team became stationed."
 
     # ── Auction ────────────────────────────────────────────────────────────────
 
@@ -615,6 +636,9 @@ components:
         army:
           type: array
           items: { $ref: '#/components/schemas/ArmyEntry' }
+        autoReturn:
+          type: boolean
+          description: "2026-07-23: when true, this team marches home after a 'move' arrival / occupy capture instead of staying stationed on the tile (default false = stay in place)."
 
     # Defense config = constrained subset of the engine LevelDefinition (garrison/defenderBuildings/defenderBaseLevel).
     # Shape is constrained by the client's own meta mirror; the contract layer uses a loose object (to avoid duplicating the engine schema).
@@ -970,11 +994,11 @@ paths:
                 fromY: { type: integer }
                 toX: { type: integer }
                 toY: { type: integer }
-                kind: { type: string, enum: [occupy, reinforce, attack, sweep, scout] }
+                kind: { type: string, enum: [occupy, reinforce, attack, sweep, scout, move] }
                 troops: { type: integer }
                 teamId:
                   type: string
-                  description: "Siege attack team (G3-2c): attack formation template to use when kind=attack; committed troops = sum of troops allocated across all team units (overrides the troops field)"
+                  description: "Team (G3-2c): attack-formation template to use for kind=attack/occupy/move; committed troops = sum of troops carried across the team's cards (overrides the troops field). Required for kind=move."
       responses:
         '200':
           description: March started
@@ -1029,6 +1053,26 @@ paths:
                         type: array
                         items: { $ref: '#/components/schemas/OccupationView' }
 
+  /world/stationed:
+    get:
+      operationId: getStationed
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: worldId, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: "Own teams stationed on tiles (2026-07-23 field-stationing: status + recall + idle-sprite rendering)"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/StationedView' }
+
   /world/territories:
     get:
       operationId: listTerritories
@@ -1073,6 +1117,33 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /world/team/{teamId}/recall-stationed:
+    post:
+      operationId: recallStationed
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: teamId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId]
+              properties:
+                worldId: { type: string }
+      responses:
+        '200':
+          description: "Stationed team recalled — a return leg marches it home; on arrival the slot is idle again"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/MarchView' }
 
   /world/sweep:
     post:

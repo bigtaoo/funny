@@ -426,7 +426,7 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
 
     // t1 is still en route → a second order onto the same team is rejected, not silently re-dispatched
     // (this is the reported bug: the UI let a busy team's order get silently overridden by a new one).
-    await expect(svc.startMarch(W, 'a', 5, 5, tgt2.x, tgt2.y, 'attack', 1, 't1')).rejects.toThrow(/marching or occupying/i);
+    await expect(svc.startMarch(W, 'a', 5, 5, tgt2.x, tgt2.y, 'attack', 1, 't1')).rejects.toThrow(/marching, occupying, or stationed/i);
 
     // once the attack lands (instant — no hold for an owned-territory siege), the team is free again.
     nowMs = mv.arriveAt;
@@ -458,7 +458,7 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
     expect(fulfilled).toHaveLength(1);
     expect(rejected).toHaveLength(1);
-    expect(String(rejected[0].reason)).toMatch(/marching or occupying|TEAM_BUSY/i);
+    expect(String(rejected[0].reason)).toMatch(/marching, occupying, or stationed|TEAM_BUSY/i);
 
     // And the DB agrees: exactly one active march carries this teamId, never two.
     const mine = await svc.getMarches(W, 'a');
@@ -483,14 +483,23 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     const held = await svc.getTile(W, 'a', target.x, target.y);
     expect(held.contestedByMe).toBe(true);
     const other = findCoord(5, 5);
-    await expect(svc.startMarch(W, 'a', 10, 10, other.x, other.y, 'attack', 1, 't1')).rejects.toThrow(/marching or occupying/i);
+    await expect(svc.startMarch(W, 'a', 10, 10, other.x, other.y, 'attack', 1, 't1')).rejects.toThrow(/marching, occupying, or stationed/i);
 
-    // hold elapses → ownership lands → team is free again.
+    // hold elapses → ownership lands, but by default (autoReturn off) the capturing team STAYS stationed on
+    // the captured tile (2026-07-23) — it is still "out" and cannot take a fresh order until recalled.
     nowMs = held.contestedUntil!;
     expect(await svc.processDueOccupations()).toBe(1);
+    const stationed = await svc.getStationed(W, 'a');
+    expect(stationed.some((s) => s.teamId === 't1' && s.x === target.x && s.y === target.y)).toBe(true);
     const target2 = findCoord(20, 40);
     await setupDefender('d', target2.x, target2.y, 50);
     await connect(svc, 'a', target2);
+    await expect(svc.startMarch(W, 'a', 10, 10, target2.x, target2.y, 'attack', 1, 't1')).rejects.toThrow(/marching, occupying, or stationed/i);
+
+    // recall the stationed team home → return leg → on arrival the slot is idle again and can take a new order.
+    const back = await svc.recallStationed(W, 'a', 't1');
+    nowMs = (back as { arriveAt: number }).arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
     await expect(svc.startMarch(W, 'a', 10, 10, target2.x, target2.y, 'attack', 1, 't1')).resolves.toBeTruthy();
   });
 
@@ -531,5 +540,60 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
 
     // cancelling again (nothing left to cancel) is rejected.
     await expect(svc.cancelOccupation(W, 'a', 't1')).rejects.toThrow();
+  });
+
+  it('move: a team walks to an empty neutral tile with no combat and stays stationed there; recall frees it', async () => {
+    await svc.joinWorld(W, 'a', 10, 10);
+    const entries = await armyWithTroops('a', 6, 200);
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Watch', army: entries }]);
+    // A plain neutral tile (no owner) reachable from base — move stands on it without fighting/claiming.
+    const target = findCoord(14, 14, (t) => (t.type === 'resource' || t.type === 'neutral'));
+    const mv = await svc.startMarch(W, 'a', 10, 10, target.x, target.y, 'move', 1, 't1');
+    expect(mv.kind).toBe('move');
+    nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+
+    // Arrived → stationed. No combat, so the tile stays unowned; the team is parked and reported by getStationed.
+    const stationed = await svc.getStationed(W, 'a');
+    expect(stationed.some((s) => s.teamId === 't1' && s.x === target.x && s.y === target.y)).toBe(true);
+    const tile = await svc.getTile(W, 'a', target.x, target.y);
+    expect(tile.mine).toBeFalsy();
+
+    // Stationed = "out" → a fresh order is rejected until the team is recalled.
+    await expect(svc.startMarch(W, 'a', 10, 10, target.x, target.y, 'move', 1, 't1')).rejects.toThrow(/marching, occupying, or stationed/i);
+
+    // Recall home → return leg → on arrival the slot is idle and can move again.
+    const back = await svc.recallStationed(W, 'a', 't1');
+    expect(await svc.getStationed(W, 'a')).toHaveLength(0);
+    nowMs = (back as { arriveAt: number }).arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+    await expect(svc.startMarch(W, 'a', 10, 10, target.x, target.y, 'move', 1, 't1')).resolves.toBeTruthy();
+  });
+
+  it('occupy with autoReturn=true: the captured tile lands owned but the team does NOT stay stationed (freed for a new order)', async () => {
+    await svc.joinWorld(W, 'a', 10, 10);
+    const target = findCoord(30, 30, (t) => t.type === 'resource' && t.level <= 2);
+    const proc = proceduralTile(W, target.x, target.y);
+    const npc = npcGarrison(proc.level);
+    await connect(svc, 'a', target);
+    const entries = await armyWithTroops('a', 12, Math.ceil(npc / 8) + 100);
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Vanguard', army: entries, autoReturn: true }]);
+
+    const mv = await svc.startMarch(W, 'a', 10, 10, target.x, target.y, 'occupy', 1, 't1');
+    nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+    const held = await svc.getTile(W, 'a', target.x, target.y);
+    nowMs = held.contestedUntil!;
+    expect(await svc.processDueOccupations()).toBe(1);
+
+    // Ownership landed…
+    const owned = await svc.getTile(W, 'a', target.x, target.y);
+    expect(owned.mine).toBe(true);
+    // …but autoReturn=true means the team did NOT stay stationed — the slot is free again.
+    expect(await svc.getStationed(W, 'a')).toHaveLength(0);
+    const target2 = findCoord(20, 40);
+    await setupDefender('d', target2.x, target2.y, 50);
+    await connect(svc, 'a', target2);
+    await expect(svc.startMarch(W, 'a', 10, 10, target2.x, target2.y, 'attack', 1, 't1')).resolves.toBeTruthy();
   });
 });
