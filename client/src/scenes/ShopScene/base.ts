@@ -589,10 +589,10 @@ export class ShopSceneBase {
 // methods provided by the mixins run and all method bodies stay verbatim.
 export interface ShopSceneBase {
   loadItems(): Promise<void>;
-  onBuy(itemId: string): Promise<void>;
+  onBuy(itemId: string, itemName: string): Promise<void>;
   onRedeem(): Promise<void>;
   onRecharge(tierId: string): Promise<void>;
-  runDeal(action: () => Promise<ShopActionResult>, okKey: TranslationKey): Promise<void>;
+  runDeal(action: () => Promise<ShopActionResult>, okKey: TranslationKey, itemName?: string): Promise<void>;
   drawShopGrid(body: PIXI.Container, top: number): void;
   drawCoinsGrid(body: PIXI.Container, top: number): void;
 }
