@@ -221,6 +221,37 @@ describe.skipIf(!mongo)('worldsvc fog/vision e2e (G5)', () => {
     expect(tile.garrison).toBeUndefined();
   });
 
+  it('regression (zoom consistency): an out-of-vision enemy base appears in BOTH getMap (L1) and getMapSparse (L2/L3) — no more "bases vanish when zooming in"', async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    await svc.joinWorld(W, 'e', 200, 200); // far beyond a's vision
+
+    // L2/L3 bird's-eye (sparse, skips vision): e's base is listed as an occupied tile.
+    for (const lod of ['mid', 'thin'] as const) {
+      const sparse = await svc.getMapSparse(W, 'a', 200, 200, 5, lod);
+      const eSparse = sparse.tiles.find((t) => t.x === 200 && t.y === 200);
+      expect(eSparse, `sparse(${lod}) should list e's base`).toBeDefined();
+      expect(eSparse!.type).toBe('base');
+      expect(eSparse!.mine).toBeUndefined();
+    }
+
+    // L1 detail (getMap): the SAME base is present — the original bug was that fog hid it here,
+    // so the client's city layer drew nothing when zoomed in even though L2/L3 showed it.
+    const detail = await svc.getMap(W, 'a', 200, 200, 5);
+    const eDetail = detail.tiles.find((t) => t.x === 200 && t.y === 200)!;
+    expect(eDetail).toMatchObject({ type: 'base', occupied: true, visible: true });
+    expect(eDetail.mine).toBeUndefined();
+
+    // Every one of the 3×3 footprint cells comes back as an owned base tile, so the client's
+    // isBaseAnchor (center + 4 orthogonal neighbours all base + same owner) succeeds and renders
+    // the city sprite — the concrete precondition that used to fail under fog model 2a.
+    const byKey = new Map(detail.tiles.map((t) => [`${t.x}:${t.y}`, t]));
+    for (const c of baseFootprintCells(200, 200)) {
+      const cell = byKey.get(`${c.x}:${c.y}`)!;
+      expect(cell.type, `footprint cell (${c.x},${c.y})`).toBe('base');
+      expect(cell.occupied).toBe(true);
+    }
+  });
+
   it('family shared vision: distant territory of a same-family member is visible to me (occupied but not mine)', async () => {
     // a and mate are in the same family: register membership in socialsvc first so joinWorld mirrors familyId onto
     // each PlayerWorldDoc (computeVisionSources / familyMemberIds resolve members from playerWorld.familyId).
