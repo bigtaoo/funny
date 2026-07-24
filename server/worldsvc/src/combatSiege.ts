@@ -15,11 +15,14 @@ import { SiegeHelpersMixin } from './combatSiege/helpers';
 import { SiegeDamageMixin } from './combatSiege/damage';
 import { SiegeArrivalMixin } from './combatSiege/arrival';
 import { OccupationMixin } from './combatSiege/occupation';
+import { EncounterMixin } from './combatSiege/encounter';
 
-const Assembled = SiegeArrivalMixin(
-  OccupationMixin(
-    SiegeDamageMixin(
-      SiegeHelpersMixin(SiegeServiceBase),
+const Assembled = EncounterMixin(
+  SiegeArrivalMixin(
+    OccupationMixin(
+      SiegeDamageMixin(
+        SiegeHelpersMixin(SiegeServiceBase),
+      ),
     ),
   ),
 );

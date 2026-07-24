@@ -485,17 +485,23 @@ export class MarchService {
   }
 
   /**
-   * ADR-051 (P1): advance a stepping march tile-by-tile up to time `t`, writing the occupancy index at each cell
-   * entered. Returns true iff the march reached its final path cell and its arrival was applied (claimed+deleted).
+   * ADR-051 (P1/P2b): advance a stepping march tile-by-tile up to time `t`, writing the occupancy index at each
+   * cell entered and (P2b) resolving a field encounter whenever the cell already holds an ENEMY unit. Returns
+   * true iff the march is fully handled and must not be rescheduled — either it reached its final path cell and
+   * its arrival was applied (claimed+deleted), or it was destroyed by a lost en-route encounter (also deleted).
    * Otherwise the step cursor (stepIndex/nextStepAt) is persisted and the ZSET wake-up rescheduled to the next
-   * step. Behavior-preserving in P1: no combat happens en route (that is the P2 encounter check, which will slot
-   * in where noted); the only new side effect is the best-effort occupancy write.
+   * step. The occupancy write stays best-effort (Redis-absent = no encounters, arrival still correct via Mongo).
    */
   private async advanceMarch(m: MarchDoc, t: number): Promise<boolean> {
     const { cols } = this.core.deps;
     const path = m.path!;
     const last = path.length - 1;
     let idx = m.stepIndex!;
+    // ADR-051 (P2b): the marcher's world doc — needed for friend/foe (familyId) on the encounter check and for
+    // its card/pool survivor ledger inside resolveFieldEncounter (which keeps pw.cardState in sync across a
+    // multi-encounter step batch). Loaded once per advance; a missing pw simply disables encounters this tick.
+    const pw = await cols.playerWorld.findOne({ _id: playerWorldId(m.worldId, m.ownerId) });
+    const familyId = pw?.familyId;
     // Step through every cell whose arrival time has already elapsed by t. Each hop vacates the cell just left
     // (match-guarded clear) and occupies the new one, so the index holds exactly the march's CURRENT cell — never
     // a trail of stale entries.
@@ -505,16 +511,59 @@ export class MarchService {
       const cell = path[idx]!;
       await this.core.clearOccupancy(m.worldId, tileId(m.worldId, left.x, left.y), m._id);
       const tid = tileId(m.worldId, cell.x, cell.y);
-      const leaveAt = idx < last ? marchStepArriveAt(m.departAt, idx + 1) : Number.MAX_SAFE_INTEGER;
-      await this.core.setOccupancy(m.worldId, tid, {
-        kind: 'march',
-        id: m._id,
-        ownerId: m.ownerId,
-        teamId: m.teamId,
-        tile: tid,
-        leaveAt,
-      });
-      // (P2: tile-entry encounter check at `cell` slots in here — occ/cover lookup → runSiegeBattle.)
+
+      // ADR-051 (P2b) tile-entry encounter check: who already holds this cell (occ region still overlapping —
+      // leaveAt > now)? Check BEFORE writing our own occ (which would overwrite theirs). An ENEMY resident is
+      // fought (scenario 1 = a parked stationed team; scenario 2 = an earlier-arriving march still on the cell);
+      // a FRIENDLY resident is passed peacefully — but we must NOT clobber their occ entry (a stationed ally
+      // would otherwise vanish from the index), so we skip writing our own occ on that one cell.
+      let skipOwnOcc = false;
+      if (pw) {
+        const occ = await this.core.getOccupancy(m.worldId, tid);
+        if (occ && occ.id !== m._id && occ.leaveAt > t) {
+          const isEnemy = occ.ownerId !== m.ownerId && !(familyId && occ.familyId === familyId);
+          if (isEnemy) {
+            const enc = await this.siege.resolveFieldEncounter(m, pw, occ, tid, t);
+            if (enc.fought && !enc.marcherContinues) {
+              // Marcher destroyed en route: delete the march (its survivors were already folded back by the
+              // encounter). `left` is already vacated and we never wrote our occ on `tid`, so nothing to clear.
+              const claimed = await cols.marches.findOneAndDelete({ _id: m._id, status: 'marching' });
+              if (claimed) {
+                await this.core.unscheduleMarch(claimed.worldId, claimed._id);
+                void this.core.pushMarch(m.ownerId, this.core.marchView({ ...claimed, status: 'recalled' }));
+              }
+              return true; // fully handled (removed) — do not reschedule
+            }
+            if (enc.fought) {
+              // Marcher won → carry survivors forward. Persist onto the MarchDoc (and the in-memory `m`) so a later
+              // encounter this batch, and the final arrival settlement, use the reduced force. The resident
+              // defender + its occ were already removed by resolveFieldEncounter, so the cell is ours to take.
+              m.troops = enc.marcherTroops;
+              if (enc.marcherArmy !== undefined) m.army = enc.marcherArmy;
+              await cols.marches.updateOne(
+                { _id: m._id, status: 'marching', kind: { $ne: 'return' } },
+                { $set: { troops: m.troops, ...(enc.marcherArmy !== undefined ? { army: enc.marcherArmy } : {}) }, $inc: { rev: 1 } },
+              );
+            }
+          } else {
+            // Friendly resident still present → leave their occ untouched (don't overwrite a stationed ally).
+            skipOwnOcc = true;
+          }
+        }
+      }
+
+      if (!skipOwnOcc) {
+        const leaveAt = idx < last ? marchStepArriveAt(m.departAt, idx + 1) : Number.MAX_SAFE_INTEGER;
+        await this.core.setOccupancy(m.worldId, tid, {
+          kind: 'march',
+          id: m._id,
+          ownerId: m.ownerId,
+          ...(familyId ? { familyId } : {}),
+          teamId: m.teamId,
+          tile: tid,
+          leaveAt,
+        });
+      }
     }
     if (idx >= last) {
       // Reached the destination cell → settle arrival (atomic claim + delete, then apply by kind). Clear the

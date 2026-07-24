@@ -117,6 +117,21 @@ export class WorldCorePush extends WorldCoreYield {
       /* best-effort */
     }
   }
+  /**
+   * ADR-051 (P2b): read the unit currently occupying `tile`, or null (no occupant / Redis absent / parse error).
+   * The P2b tile-entry encounter check calls this BEFORE a stepping march overwrites the cell with its own entry,
+   * so a resident enemy (stationed team = scenario 1, or an earlier-arriving march still on the cell = scenario 2)
+   * is detected first. Best-effort: a null return only disables the encounter for this step, never arrival.
+   */
+  async getOccupancy(worldId: string, tile: string): Promise<OccEntry | null> {
+    if (!this.deps.redis) return null;
+    try {
+      const cur = await this.deps.redis.hget(this.occKey(worldId), tile);
+      return cur ? (JSON.parse(cur) as OccEntry) : null;
+    } catch {
+      return null;
+    }
+  }
 
   // ── Real-time push (best-effort, §14.5) ──
   async pushMarch(accountId: string, v: MarchView): Promise<void> {

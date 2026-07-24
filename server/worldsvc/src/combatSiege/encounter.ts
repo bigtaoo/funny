@@ -1,0 +1,249 @@
+// ADR-051 (P2b): real-time field encounter settlement. `resolveFieldEncounter` is invoked by a stepping march
+// (combatMarch.ts advanceMarch) the moment it enters a cell already held by an ENEMY field unit — either a
+// parked/stationed team (scenario 1) or an earlier-arriving march still on the cell (scenario 2, occ region
+// overlap). Both are the same check: the entering march is the ATTACKER, the resident unit is the DEFENDER
+// (§3.4). The battle runs through the shared deterministic engine (runSiegeBattle) with a weak symbolic base
+// (defenderBaseLevel:0) so the outcome is decided army-vs-army, mirroring the ADR-026 per-wave base model.
+//
+// Outcome propagation (§2.2 — the winner keeps marching / standing with survivors; the loser folds back per the
+// existing 折返/永损 rules):
+//   attacker_win  → marcher continues (survivors carried forward, persisted on the MarchDoc by advanceMarch);
+//                   the resident defender is destroyed (StationedDoc/MarchDoc removed, occ cleared, survivors=0).
+//   defender_win  → marcher is destroyed (flat survivors refunded to pool / card survivors to cardState; the
+//                   MarchDoc is deleted by advanceMarch); the resident defender stays with reduced survivors.
+// Card armies on either side keep their own strength ledger (cardState.currentTroops via computeCardStateUpdates,
+// never playerWorld.troops); flat armies deduct/refund the pool exactly like a siege. Card blueprints (level/gear)
+// are injected for the ATTACKER only (defender uses base blueprints — same v1 simplification as applyBaseSiege).
+import {
+  tileId,
+  siegeSeedFromId,
+  playerWorldId,
+  resolveSiege,
+  MARCH_MORALE_MAX,
+  moraleCombatMultiplier,
+  type SiegeResolution,
+} from '@nw/shared';
+import {
+  runSiegeBattle,
+  synthesizeArmy,
+  scaleArmyByRatio,
+  resolveCardArmy,
+  toEngineCardInstances,
+  computeCardStateUpdates,
+  sumArmyHp,
+  toDefenderFormation,
+  shouldUseCheapSiege,
+} from '../siegeEngine';
+import type { GarrisonEntry, EngineCardInstance, EngineEquipInv } from '@nw/engine';
+import type { MarchDoc, PlayerWorldDoc, StationedDoc, ArmyEntry } from '../db';
+import type { SiegeReplayInputs } from '../worldTypes';
+import type { OccEntry } from '../corePush';
+import { refundTroops } from '../combatShared';
+import type { SiegeServiceBaseCtor, Constructor } from './base';
+import type { WorldCore } from '../core';
+
+/**
+ * Result handed back to advanceMarch. The encounter module owns every combat ledger (both sides' cardState /
+ * pool, and the DESTRUCTION of the resident defender); advanceMarch owns the entering march's OWN lifecycle
+ * (persisting survivors on victory, deleting the MarchDoc on defeat) since it already claims/reschedules it.
+ */
+export interface FieldEncounterResult {
+  /** True iff a battle actually ran (false = the occupant turned out to be a friend / no longer present). */
+  fought: boolean;
+  /** True iff the entering march survived and should keep marching. False → advanceMarch must remove the march. */
+  marcherContinues: boolean;
+  /** New (unscaled) troop count to persist on the MarchDoc when it continues (flat armies; unchanged for card). */
+  marcherTroops: number;
+  /** New army snapshot to persist when it continues (scaled flat/team army). Undefined → leave MarchDoc.army as-is. */
+  marcherArmy?: ArmyEntry[];
+}
+
+export interface EncounterHandlers {
+  resolveFieldEncounter(m: MarchDoc, pw: PlayerWorldDoc, defenderOcc: OccEntry, tid: string, t: number): Promise<FieldEncounterResult>;
+}
+
+/** Two field units are friends (no encounter) when they share an owner or a family. */
+function isFriendlyOcc(pwFamilyId: string | undefined, ownerId: string, occ: OccEntry): boolean {
+  return occ.ownerId === ownerId || (!!pwFamilyId && !!occ.familyId && occ.familyId === pwFamilyId);
+}
+
+export function EncounterMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase): TBase & Constructor<EncounterHandlers> {
+  return class extends Base {
+    /**
+     * Write post-battle card survivors (currentTroops + injuredUntil) for one side's card army, and mirror the
+     * change onto the in-memory playerWorld doc so a march that fights MULTIPLE encounters in one step batch
+     * computes each subsequent survival off the already-reduced troops (not the stale departure count).
+     */
+    private async writeFieldCardState(pw: PlayerWorldDoc, army: ArmyEntry[], survivors: number, t: number): Promise<void> {
+      const core = this.core as WorldCore;
+      const cardUpdates = computeCardStateUpdates(army, pw.cardState ?? {}, survivors, t);
+      const cardStateSet: Record<string, unknown> = {};
+      pw.cardState = pw.cardState ?? {};
+      for (const [id, update] of Object.entries(cardUpdates)) {
+        cardStateSet[`cardState.${id}.currentTroops`] = update.currentTroops;
+        cardStateSet[`cardState.${id}.injuredUntil`] = update.injuredUntil != null ? update.injuredUntil : null;
+        // Keep the in-memory copy consistent for a possible second encounter in the same advanceMarch loop.
+        pw.cardState[id] = {
+          ...(pw.cardState[id] ?? { currentTroops: 0 }),
+          currentTroops: update.currentTroops,
+          ...(update.injuredUntil != null ? { injuredUntil: update.injuredUntil } : {}),
+        };
+      }
+      if (Object.keys(cardStateSet).length > 0) {
+        await core.deps.cols.playerWorld.updateOne({ _id: pw._id }, { $set: cardStateSet, $inc: { rev: 1 } });
+      }
+    }
+
+    async resolveFieldEncounter(m: MarchDoc, pw: PlayerWorldDoc, defenderOcc: OccEntry, tid: string, t: number): Promise<FieldEncounterResult> {
+      const core = this.core as WorldCore;
+      const { cols } = core.deps;
+      const noFight: FieldEncounterResult = { fought: false, marcherContinues: true, marcherTroops: m.troops, marcherArmy: m.army };
+
+      // Friend on the tile (same owner / same family) → no encounter (O1: passing an ally's field unit is free).
+      if (isFriendlyOcc(pw.familyId, m.ownerId, defenderOcc)) return noFight;
+
+      // Load the resident defender doc. Scenario 1: a StationedDoc keyed by the tile. Scenario 2: a MarchDoc by id.
+      // If it has vanished since the occ read (recalled / already settled), treat as no encounter — advanceMarch
+      // will overwrite the stale occ entry with its own as it steps on.
+      let defRaw: ArmyEntry[];
+      let defTroops: number;
+      const defOwnerId = defenderOcc.ownerId;
+      let defMarch: MarchDoc | null = null;
+      let defStationed: StationedDoc | null = null;
+      if (defenderOcc.kind === 'stationed') {
+        defStationed = await cols.stationed.findOne({ _id: defenderOcc.id });
+        if (!defStationed) return noFight;
+        defRaw = defStationed.army ?? [];
+        defTroops = defStationed.troops;
+      } else {
+        defMarch = await cols.marches.findOne({ _id: defenderOcc.id, status: 'marching' });
+        if (!defMarch) return noFight;
+        defRaw = defMarch.army ?? [];
+        defTroops = defMarch.troops;
+      }
+
+      // ── Build both armies (attacker = the entering march, morale-scaled + card blueprints; defender = resident,
+      //    no morale, base blueprints — same asymmetry as applyBaseSiege). ──
+      const rawA = m.army ?? [];
+      const aHasCard = rawA.some((e) => !!e.cardInstanceId);
+      const aSave = aHasCard ? await core.meta.getSaveFields(m.ownerId).catch(() => null) : null;
+      const moraleMult = moraleCombatMultiplier(m.morale ?? MARCH_MORALE_MAX);
+      const attackerArmy: GarrisonEntry[] = scaleArmyByRatio(
+        aHasCard
+          ? resolveCardArmy(rawA, pw.cardState ?? {}, aSave?.cardInv ?? {})
+          : (rawA.length > 0 ? (rawA as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker')),
+        moraleMult,
+      );
+      let aCardInstances: EngineCardInstance[] | undefined;
+      let aCardEquipInv: EngineEquipInv | undefined;
+      if (aHasCard && aSave) {
+        const { cardInstances, engEquipInv } = toEngineCardInstances(rawA, aSave.cardInv, aSave.equipmentInv);
+        aCardInstances = cardInstances;
+        aCardEquipInv = engEquipInv;
+      }
+
+      const dHasCard = defRaw.some((e) => !!e.cardInstanceId);
+      const defPw = await cols.playerWorld.findOne({ _id: playerWorldId(m.worldId, defOwnerId) });
+      const dSave = dHasCard ? await core.meta.getSaveFields(defOwnerId).catch(() => null) : null;
+      const defenderGarrison: GarrisonEntry[] = toDefenderFormation(
+        dHasCard
+          ? resolveCardArmy(defRaw, defPw?.cardState ?? {}, dSave?.cardInv ?? {})
+          : (defRaw.length > 0 ? (defRaw as GarrisonEntry[]) : synthesizeArmy(defTroops, 'defender')),
+      );
+
+      const attackerHp = sumArmyHp(attackerArmy);
+      const defenderHp = sumArmyHp(defenderGarrison);
+      // Pure army-vs-army: pin the symbolic base to the weakest level so it never tanks the fight (§3.4/ADR-026).
+      const defenderConfig = { garrison: defenderGarrison, defenderBaseLevel: 0 };
+      const tileLevel = 1;
+      // Seed from the encounter instance (marcher × defender × tile) so a re-computation / replay is identical.
+      const seed = siegeSeedFromId(`${m._id}:${defenderOcc.id}:${tid}`);
+
+      const attackerSynthesized = !aHasCard && rawA.length === 0;
+      const defenderSynthesized = !dHasCard && defRaw.length === 0;
+      let res: SiegeResolution;
+      let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
+      if (shouldUseCheapSiege({ attackerTroops: attackerHp, defenderTroops: defenderHp, attackerSynthesized, defenderSynthesized })) {
+        res = resolveSiege(attackerHp, defenderHp);
+        replay = null;
+      } else {
+        try {
+          res = runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances: aCardInstances, equipmentInv: aCardEquipInv });
+        } catch (err) {
+          console.error('[worldsvc] field encounter engine failed — fallback to cheap resolve', { tile: tid, err: (err as Error).message });
+          res = resolveSiege(attackerHp, defenderHp);
+          replay = null;
+        }
+      }
+
+      const marcherWon = res.outcome === 'attacker_win';
+      const aSurvivors = res.attackerSurvivors;
+      const dSurvivors = res.outcome === 'defender_win' ? res.defenderSurvivors : 0;
+      const aRatio = attackerHp > 0 ? aSurvivors / attackerHp : 0;
+      const dRatio = defenderHp > 0 ? dSurvivors / defenderHp : 0;
+
+      // ── Marcher (attacker) ledger. Card survivors → cardState (both outcomes). Flat: carry forward on win
+      //    (troops stay in transit), refund to pool on defeat (exactly like a repelled siege). ──
+      if (aHasCard) {
+        await this.writeFieldCardState(pw, rawA, aSurvivors, t);
+      } else if (!marcherWon && aSurvivors > 0) {
+        await refundTroops(core, pw, aSurvivors, t);
+      }
+
+      // ── Defender ledger. Card survivors → cardState (both outcomes). ──
+      if (dHasCard && defPw) {
+        await this.writeFieldCardState(defPw, defRaw, dSurvivors, t);
+      }
+      if (marcherWon) {
+        // Resident defender destroyed: remove its doc + occupancy so the marcher can take the cell (advanceMarch
+        // writes its own occ next). Flat survivors are 0 (permanent loss); card floor already written above.
+        if (defStationed) {
+          await cols.stationed.deleteOne({ _id: defenderOcc.id });
+        } else if (defMarch) {
+          const claimed = await cols.marches.findOneAndDelete({ _id: defenderOcc.id, status: 'marching' });
+          if (claimed) {
+            await core.unscheduleMarch(claimed.worldId, claimed._id);
+            void core.pushMarch(defOwnerId, core.marchView({ ...claimed, status: 'recalled' }));
+          }
+        }
+        await core.clearOccupancy(m.worldId, tid, defenderOcc.id);
+      } else {
+        // Defender holds with reduced survivors; occupancy stays. Flat: rewrite troops (+ scaled army snapshot).
+        if (!dHasCard) {
+          const newDefTroops = Math.round(defTroops * dRatio);
+          const newDefArmy = defRaw.length > 0 ? (scaleArmyByRatio(defRaw as GarrisonEntry[], dRatio) as ArmyEntry[]) : undefined;
+          if (defStationed) {
+            await cols.stationed.updateOne(
+              { _id: defenderOcc.id },
+              { $set: { troops: newDefTroops, ...(newDefArmy ? { army: newDefArmy } : {}) } },
+            );
+          } else if (defMarch) {
+            await cols.marches.updateOne(
+              { _id: defenderOcc.id, status: 'marching' },
+              { $set: { troops: newDefTroops, ...(newDefArmy ? { army: newDefArmy } : {}) }, $inc: { rev: 1 } },
+            );
+          }
+        }
+      }
+
+      // Battle report (attacker=marcher, defender=resident owner) pinned to the ENCOUNTER cell, not the march's
+      // ultimate destination — so the replay/report points where the fight happened. Pushed to both owners.
+      const siege = await this.recordSiege({ ...m, toTile: tid }, defOwnerId, res.outcome, t, replay);
+      void core.bumpFamilyActivity(m.worldId, pw.familyId, 1);
+      void core.bumpFamilyActivity(m.worldId, defPw?.familyId, 1);
+      void core.pushSiege(m.ownerId, siege, '');
+      void core.pushSiege(defOwnerId, siege, '');
+
+      if (marcherWon) {
+        return {
+          fought: true,
+          marcherContinues: true,
+          marcherTroops: aHasCard ? m.troops : Math.round(m.troops * aRatio),
+          marcherArmy: aHasCard ? m.army : (rawA.length > 0 ? (scaleArmyByRatio(rawA as GarrisonEntry[], aRatio) as ArmyEntry[]) : undefined),
+        };
+      }
+      // Marcher defeated: advanceMarch deletes the MarchDoc; survivors already handled above.
+      return { fought: true, marcherContinues: false, marcherTroops: 0 };
+    }
+  };
+}
