@@ -156,24 +156,43 @@ describe('crossing (bridge/plankway) transit rule', () => {
   // gate→bridge/plankway migration: an unoccupied crossing blocks transit like an obstacle; it is passable
   // mid-route only when its key is in passableGateKeys (occupied by the marcher/allies), and is always
   // reachable AS A DESTINATION (so a marcher can reach it to besiege it). Crossings are a seed-derived terrain
-  // feature at arbitrary angles, so we scan a fixed pool of seeds for one whose perpendicular sides land on an
-  // axis (its L→R only 2-step route then runs straight through the crossing C — a clean, deterministic setup).
+  // feature at arbitrary angles: a 1-tile-wide crossing arc rasterizes into a diagonal staircase, so a single
+  // crossing cell typically borders open ground on two *perpendicular* sides (never a clean opposite pair — the
+  // band is ≥5 tiles thick, so the straight-through-the-band config the old ADR-034/500² test relied on no
+  // longer occurs at ADR-049's 1500² size). We therefore scan a fixed seed pool for a crossing cell C with two
+  // orthogonal open neighbours A,B whose only shortest route, once C is occupied, is the 2-step L-turn A→C→B —
+  // using findMarchPath itself as the oracle so the setup stays self-consistent regardless of map dimensions.
   const SEEDS = ['open-world-no-obstacle', 's1-passage', 'pf-a', 'pf-b', 'pf-c', 'pf-d', 'pf-e', 'pf-f', 'pf-g', 'pf-h'];
   const isOpen = (seed: string, x: number, y: number): boolean => {
     if (x < 0 || y < 0 || x >= SLG_MAP_W || y >= SLG_MAP_H) return false;
     const type = proceduralTile(seed, x, y).type;
     return type !== 'obstacle' && type !== 'bridge' && type !== 'plankway';
   };
-  /** First crossing (over the seed pool) with two opposite axis-aligned open sides (L,R). */
-  function findCrossingWithSides(): { seed: string; C: { x: number; y: number }; L: { x: number; y: number }; R: { x: number; y: number } } | null {
+  const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
+  /**
+   * First crossing (over the seed pool) with two orthogonal open neighbours A,B such that occupying C opens a
+   * clean 2-step through-route A→C→B (verified with findMarchPath — the exact same pathfinder under test, so
+   * the found cell is guaranteed to satisfy the assertions below no matter how the terrain rasterizes).
+   */
+  function findTransitCrossing(): { seed: string; C: { x: number; y: number }; A: { x: number; y: number }; B: { x: number; y: number } } | null {
     for (const seed of SEEDS) {
-      for (let y = 0; y < SLG_MAP_H; y++) {
-        for (let x = 0; x < SLG_MAP_W; x++) {
+      for (let y = 1; y < SLG_MAP_H - 1; y++) {
+        for (let x = 1; x < SLG_MAP_W - 1; x++) {
           const t = proceduralTile(seed, x, y).type;
           if (t !== 'bridge' && t !== 'plankway') continue;
-          for (const [dx, dy] of [[1, 0], [0, 1]] as const) {
-            if (isOpen(seed, x - dx, y - dy) && isOpen(seed, x + dx, y + dy)) {
-              return { seed, C: { x, y }, L: { x: x - dx, y: y - dy }, R: { x: x + dx, y: y + dy } };
+          const opens = DIRS.filter(([dx, dy]) => isOpen(seed, x + dx, y + dy));
+          if (opens.length < 2) continue;
+          const cKey = `${x}:${y}`;
+          for (const [adx, ady] of opens) {
+            for (const [bdx, bdy] of opens) {
+              if (adx === bdx && ady === bdy) continue;
+              const A = { x: x + adx, y: y + ady };
+              const B = { x: x + bdx, y: y + bdy };
+              // With only C occupied, the shortest A→B must run straight through C.
+              const p = findMarchPath(seed, SLG_MAP_W, SLG_MAP_H, A.x, A.y, B.x, B.y, new Set([cKey]));
+              if (p && p.length === 3 && p[1].x === x && p[1].y === y) {
+                return { seed, C: { x, y }, A, B };
+              }
             }
           }
         }
@@ -182,31 +201,31 @@ describe('crossing (bridge/plankway) transit rule', () => {
     return null;
   }
 
-  const found = findCrossingWithSides();
+  const found = findTransitCrossing();
 
-  it('at least one seed yields a crossing with open perpendicular sides (auto-crossing fallback carves the band open)', () => {
+  it('at least one seed yields a crossing whose occupation opens a 2-step through-route (auto-crossing fallback carves the band open)', () => {
     expect(found).not.toBeNull();
   });
 
   it('occupied crossing is passable mid-route; unoccupied crossing blocks transit; crossing is always reachable as a destination', () => {
-    if (!found) throw new Error('no crossing with axis-aligned open sides found in the seed pool');
-    const { seed, C, L, R } = found;
+    if (!found) throw new Error('no transit crossing found in the seed pool');
+    const { seed, C, A, B } = found;
     const cKey = `${C.x}:${C.y}`;
 
-    // Occupied (key present): the shortest L→R route is the 2-step run straight through the crossing.
-    const withKey = findMarchPath(seed, SLG_MAP_W, SLG_MAP_H, L.x, L.y, R.x, R.y, new Set([cKey]));
+    // Occupied (key present): the shortest A→B route is the 2-step run straight through the crossing.
+    const withKey = findMarchPath(seed, SLG_MAP_W, SLG_MAP_H, A.x, A.y, B.x, B.y, new Set([cKey]));
     expect(withKey).not.toBeNull();
     expect(withKey!.length).toBe(3);
     expect(withKey![1]).toEqual(C);
 
     // Unoccupied (empty keys): the crossing blocks — any route found must NOT step through it mid-path.
-    const withoutKey = findMarchPath(seed, SLG_MAP_W, SLG_MAP_H, L.x, L.y, R.x, R.y, new Set());
+    const withoutKey = findMarchPath(seed, SLG_MAP_W, SLG_MAP_H, A.x, A.y, B.x, B.y, new Set());
     if (withoutKey) {
       expect(withoutKey.some((p) => p.x === C.x && p.y === C.y)).toBe(false);
     }
 
     // Destination exemption: an unowned crossing is reachable as the march target (so you can march on to besiege it).
-    const toCrossing = findMarchPath(seed, SLG_MAP_W, SLG_MAP_H, L.x, L.y, C.x, C.y, new Set());
+    const toCrossing = findMarchPath(seed, SLG_MAP_W, SLG_MAP_H, A.x, A.y, C.x, C.y, new Set());
     expect(toCrossing).not.toBeNull();
     expect(toCrossing![toCrossing!.length - 1]).toEqual(C);
   });
