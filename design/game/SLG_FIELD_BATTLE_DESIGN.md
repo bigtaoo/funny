@@ -165,7 +165,9 @@
 > 建筑层**架构现在设计进去**，实现放核心引擎之后（都插在同一「踏格检查」里，先验证引擎再堆建筑，风险最低）。
 
 - **P1 — 实时行军基础** ✅（2026-07-24 完成）：MarchDoc 持久化 `path`/`stepIndex`/`nextStepAt`（+ shared `marchStepArriveAt`）；`processDueArrivals` 扫 `nextStepAt`（legacy/return 腿回退 `arriveAt`），`advanceMarch` 逐格步进、仅在终格 settle（到达时刻不变 = path[last]）；每跳更新 Redis `occ` 占格索引（`world:{w}:occ`，field=tileId，vacate 旧格只留当前格），到达/召回清除；召回 `$unset` 步进游标 → 返程走 legacy 单一到达（途中不遭遇，按约定）。验证：全量 worldsvc 287 passed（2 个既有 pathfinding 种子失败无关），新增 field-occupancy e2e 覆盖 occ set/clear 生命周期。行为对齐现状。
-- **P2 — 遭遇引擎**：统一踏格检查（场景 1/2）+ `runSiegeBattle` 接入 + 遭遇结果（胜方继续）。含回放种子、士气规则复用。
+- **P2 — 遭遇引擎**：
+  - **P2a ✅（2026-07-24）**：把停留/驻扎队伍也注册进 `occ` 索引（`OccEntry` 泛化 `kind: march|stationed`；`applyMove`/`settleOccupation` 写入 leaveAt=∞，`recallStationed`/`abandonTile` 清除）——场景1检测的前提。含 field-occupancy e2e 覆盖停留注册/召回清除。
+  - **P2b 待做**：`advanceMarch` 踏格时查 `occ` 敌方占格 → 新 `combatSiege/encounter.ts` 用 `runSiegeBattle` 结算（双方军队构建、生还双向传播、胜方带残兵继续）；场景1（撞停留）+ 场景2（两行军同格）。含回放种子、士气规则复用。
 - **P3 — 停留/驻扎拆分**：`StationedDoc.mode` + 发兵选意图 + busy 门禁 + `cover` 反向索引 + 驻扎 9 格拦截（场景 3）+ 就地占领。
 - **P4 — 客户端实时野战视图**：敌方野外队伍近实时渲染 + 驻扎防区 + 两意图/就地占领 UI。
 - **P5 — 建筑层**：`TileDoc.structure` + 箭塔（9 格掉血）+ 必拆除阻挡（寻路接入）+ 建造/拆除/攻毁 + 渲染。

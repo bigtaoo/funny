@@ -230,6 +230,7 @@ export class TerritoryService {
     // 2026-07-23: giving up the tile frees any team stationed on it (the team pops back to idle-at-home). Recall
     // would also work, but abandon is a deliberate surrender — just release the "out" lock so the slot is usable.
     await cols.stationed.deleteOne({ _id: tid });
+    await this.core.clearOccupancy(worldId, tid, tid); // ADR-051 (P2): drop the freed team's occupancy entry
     const yieldRate = await this.core.recomputeYield(worldId, accountId);
     await cols.playerWorld.updateOne(
       { _id: pw._id },

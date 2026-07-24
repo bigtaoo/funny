@@ -7,6 +7,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   proceduralTile,
   tileId,
+  playerWorldId,
   findMarchPath,
   MARCH_SPEED_SEC_PER_TILE,
   SLG_MAP_W,
@@ -14,10 +15,26 @@ import {
   OCCUPY_MIN_TROOPS,
   npcGarrison,
 } from '@nw/shared';
+import type { CardInstance } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
+import type { TeamTemplate, CardSLGState } from '../src/db';
 import { WorldService } from '../src/service';
 import type { WorldRedis } from '../src/redis';
+import type { WorldMetaClient } from '../src/metaClient';
 import type { WorldGatewayClient, SlgPushMsg } from '../src/gatewayClient';
+
+// Reuse the card-slg fake-meta pattern: any cardInstanceId resolves to an owned infantry card so setTeams/move
+// can build a real card team without a live hero roster.
+const CARD_INV_ANY: Record<string, CardInstance> = new Proxy({} as Record<string, CardInstance>, {
+  get: (_t, prop: string) => ({ id: prop, defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false }),
+});
+const fakeMeta: WorldMetaClient = {
+  available: true,
+  async getSaveFields() { return { pveUpgrades: {}, unitLevels: {}, gear: {}, equipmentInv: {}, cardInv: CARD_INV_ANY }; },
+  async getProfile() { return null; },
+  async grantMaterial() {},
+  async grantTitle() {},
+};
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_world_occ_test';
@@ -63,7 +80,7 @@ class FakeRedis implements WorldRedis {
   /** Test helper: number of occupied tiles in a world's occ hash. */
   occSize(worldId: string): number { return this.hashes.get(`world:${worldId}:occ`)?.size ?? 0; }
   /** Test helper: parsed occupant on a given tile, or null. */
-  occAt(worldId: string, tid: string): { marchId: string; ownerId: string; tile: string } | null {
+  occAt(worldId: string, tid: string): { kind: string; id: string; ownerId: string; tile: string; leaveAt: number } | null {
     const raw = this.hashes.get(`world:${worldId}:occ`)?.get(tid);
     return raw ? JSON.parse(raw) : null;
   }
@@ -112,7 +129,7 @@ describe.skipIf(!mongo)('worldsvc field-occupancy index e2e (ADR-051 P1)', () =>
     nowMs = 1_000_000;
     pushes = [];
     redis = new FakeRedis();
-    svc = new WorldService({ cols: m.collections, redis, gateway: fakeGateway, mapW: SLG_MAP_W, mapH: SLG_MAP_H, now });
+    svc = new WorldService({ cols: m.collections, redis, gateway: fakeGateway, meta: fakeMeta, mapW: SLG_MAP_W, mapH: SLG_MAP_H, now });
   });
 
   afterAll(async () => {
@@ -140,7 +157,8 @@ describe.skipIf(!mongo)('worldsvc field-occupancy index e2e (ADR-051 P1)', () =>
     expect(redis.occSize(W)).toBe(1);
     const occ1 = redis.occAt(W, tileId(W, step1.x, step1.y));
     expect(occ1).not.toBeNull();
-    expect(occ1!.marchId).toBe(mv.marchId);
+    expect(occ1!.kind).toBe('march');
+    expect(occ1!.id).toBe(mv.marchId);
     expect(occ1!.ownerId).toBe('a');
 
     // Advance to an intermediate cell further along; occ moves with the march (still exactly one occupied tile).
@@ -149,7 +167,7 @@ describe.skipIf(!mongo)('worldsvc field-occupancy index e2e (ADR-051 P1)', () =>
     nowMs = mv.departAt + midIdx * MARCH_SPEED_SEC_PER_TILE * 1000;
     expect(await svc.processDueArrivals()).toBe(0);
     expect(redis.occSize(W)).toBe(1);
-    expect(redis.occAt(W, tileId(W, midCell.x, midCell.y))!.marchId).toBe(mv.marchId);
+    expect(redis.occAt(W, tileId(W, midCell.x, midCell.y))!.id).toBe(mv.marchId);
 
     // Arrival: the march settles and its occupancy entry is cleared.
     nowMs = mv.arriveAt;
@@ -180,5 +198,36 @@ describe.skipIf(!mongo)('worldsvc field-occupancy index e2e (ADR-051 P1)', () =>
     nowMs = back.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
     expect(redis.occSize(W)).toBe(0);
+  });
+
+  it('a stationed (parked) team is registered in the occupancy index with leaveAt=∞ and cleared on recall', async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    // A card team with some troops so the move carries a real army (occ registration is independent of troops).
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Scout', army: [{ cardInstanceId: 'card-1', col: 0, row: 1 }] }] as TeamTemplate[]);
+    await m.collections.playerWorld.updateOne(
+      { _id: playerWorldId(W, 'a') },
+      { $set: { 'cardState.card-1': { currentTroops: 100, teamId: 't1' } as CardSLGState } },
+    );
+    // Move (no combat) to a nearby empty neutral/resource tile; the team parks (stations) there on arrival.
+    const target = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 10, 10);
+    const mv = await svc.startMarch(W, 'a', 5, 5, target.x, target.y, 'move', 1, 't1');
+    const tid = tileId(W, target.x, target.y);
+
+    nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+    // Parked team is in occ at the target, tagged stationed with an effectively-infinite leaveAt.
+    expect(redis.occSize(W)).toBe(1);
+    const occ = redis.occAt(W, tid) as { kind?: string; id?: string; leaveAt?: number } | null;
+    expect(occ).not.toBeNull();
+    expect(occ!.kind).toBe('stationed');
+    expect(occ!.id).toBe(tid);
+    expect(occ!.leaveAt).toBe(Number.MAX_SAFE_INTEGER);
+    // The StationedDoc itself exists.
+    expect(await m.collections.stationed.findOne({ _id: tid })).not.toBeNull();
+
+    // Recall frees the field → occupancy entry is dropped immediately.
+    await svc.recallStationed(W, 'a', 't1');
+    expect(redis.occSize(W)).toBe(0);
+    expect(await m.collections.stationed.findOne({ _id: tid })).toBeNull();
   });
 });

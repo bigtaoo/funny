@@ -6,14 +6,18 @@ import type { MarchView } from './worldTypes';
 import type { SiegeDoc, TileDoc } from './db';
 
 /**
- * ADR-051 (P1): one entry in the field-unit occupancy index (`world:{worldId}:occ`, field=tileId). Describes the
- * unit currently standing on a tile so the P2 tile-entry encounter check can identify friend/foe by O(1) lookup.
- * `leaveAt` = when a moving march vacates the tile (reaches the next path cell); MAX_SAFE_INTEGER for the final
- * cell (settled to a stationed team) or a parked unit.
+ * ADR-051: one entry in the field-unit occupancy index (`world:{worldId}:occ`, field=tileId). Describes the unit
+ * currently standing on a tile so the P2 tile-entry encounter check can identify friend/foe by O(1) lookup.
+ * `kind` distinguishes a moving march (P1) from a parked stationed team (P2). `id` is the match key used by
+ * clearOccupancy so a unit never deletes another's entry: the marchId for a march, the tileId for a stationed
+ * team. `leaveAt` = when a moving march vacates the tile (reaches the next path cell); MAX_SAFE_INTEGER for a
+ * parked/stationed unit or a march's final cell.
  */
 export interface OccEntry {
-  marchId: string;
+  kind: 'march' | 'stationed';
+  id: string;
   ownerId: string;
+  familyId?: string;
   teamId?: string;
   tile: string;
   leaveAt: number;
@@ -101,14 +105,14 @@ export class WorldCorePush extends WorldCoreYield {
       /* best-effort: a lost write only weakens the encounter index, never arrival */
     }
   }
-  async clearOccupancy(worldId: string, tile: string, marchId: string): Promise<void> {
+  async clearOccupancy(worldId: string, tile: string, id: string): Promise<void> {
     if (!this.deps.redis) return;
     try {
       const cur = await this.deps.redis.hget(this.occKey(worldId), tile);
       if (!cur) return;
       const e = JSON.parse(cur) as OccEntry;
-      // Only clear if we still hold the tile — another unit may have stepped on since (encounter hand-off, P2).
-      if (e.marchId === marchId) await this.deps.redis.hdel(this.occKey(worldId), tile);
+      // Only clear if we still hold the tile — another unit may have taken it since (encounter hand-off, P2).
+      if (e.id === id) await this.deps.redis.hdel(this.occKey(worldId), tile);
     } catch {
       /* best-effort */
     }

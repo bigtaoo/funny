@@ -507,7 +507,8 @@ export class MarchService {
       const tid = tileId(m.worldId, cell.x, cell.y);
       const leaveAt = idx < last ? marchStepArriveAt(m.departAt, idx + 1) : Number.MAX_SAFE_INTEGER;
       await this.core.setOccupancy(m.worldId, tid, {
-        marchId: m._id,
+        kind: 'march',
+        id: m._id,
         ownerId: m.ownerId,
         teamId: m.teamId,
         tile: tid,
@@ -653,6 +654,17 @@ export class MarchService {
       sinceAt: t,
     };
     await cols.stationed.updateOne({ _id: m.toTile }, { $set: doc }, { upsert: true });
+    // ADR-051 (P2): register the parked team in the occupancy index (leaveAt=∞) so an enemy march entering this
+    // tile detects it as an occupant (scenario 1). Cleared on recall (recallStationed) or capture (abandonTile).
+    await this.core.setOccupancy(m.worldId, m.toTile, {
+      kind: 'stationed',
+      id: m.toTile,
+      ownerId: m.ownerId,
+      ...(pw.familyId ? { familyId: pw.familyId } : {}),
+      teamId: m.teamId,
+      tile: m.toTile,
+      leaveAt: Number.MAX_SAFE_INTEGER,
+    });
     void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'arrived' }));
     const after = await cols.tiles.findOne({ _id: m.toTile });
     if (after) void this.core.pushTile(m.ownerId, after);
@@ -668,6 +680,8 @@ export class MarchService {
     const { cols, now } = this.core.deps;
     const claimed = await cols.stationed.findOneAndDelete({ worldId, ownerId: accountId, teamId });
     if (!claimed) throw new SlgError('MARCH_NOT_FOUND', 'No stationed team to recall');
+    // ADR-051 (P2): the parked team leaves the field → drop its occupancy entry (match-guarded on tileId).
+    await this.core.clearOccupancy(worldId, claimed.tile, claimed.tile);
     const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
     if (!pw?.mainBaseTile) return {}; // no home to return to (should not happen) — team is simply freed
     const bx = this.core.coordX(pw.mainBaseTile);
