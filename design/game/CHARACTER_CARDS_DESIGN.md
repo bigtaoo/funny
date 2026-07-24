@@ -245,6 +245,8 @@ playerWorld.troops ≤ cityTroopCap                                             
 > 「训练 → 分兵给角色」首次形成闭环（此前训练写 `troops`、分兵读 `baseTroopStock`，两池不通）。
 >
 > **布阵编辑器 PC 调整**（2026-07-23）：①顶栏兵力读数（Garrison / Troops / Troop pool）字号 `FS.small → FS.title`，右上 `Fill/Clear/Save` 按钮组 `renderActionButtons` 加 `scale` 参数、攻击模式传 `scale=2`（防守页脚仍 1），PC 大屏上不再过小；②删除逐卡分兵浮层（见 §6.5）；③布阵新增**拖拽放置**：在右侧卡池按住某张卡拖到左侧格子即部署，作为「点选→点放」之外的第二种方式。实现：`onDown` 命中卡池格时武装 `dragCardId`，`onMove` 指针越过卡池左边界（`x < rosterX`）时提升为拖拽（同时 `gesture.up()` 取消滚动手势并起一个半透明 ghost 跟随），`onUp` 落点复用 `onGridTap`（先把该卡设为当前 tool，再在落点放置——放置规则单点维护）。ghost 挂在独立 `dragLayer`，不随 `render()` 重建。
+>
+> **顶栏读数格式 + Fill 按钮置灰**（2026-07-24）：①顶栏 `Troops {n}` 改为 `已分兵/队伍总容量`（新增 `teamCapacity()` = 布阵中各卡 `troopCap()` 求和，只算已上场的卡，不含右侧未部署的卡池）；②队伍满员（`committedTroops() >= teamCapacity()`）时「补满兵力」按钮描边/文字转灰（`C.mid`）且不再注册点击命中区（`hits` 里不再 push 该按钮），避免满员时误触发一次空操作的 `distributeTroops` 往返。覆盖：`test/ui/defenseEditorFillTroops.ui.ts` 新增 `teamCapacity` 计算 + 按钮命中区存在/消失的用例。
 
 ## 7. 战斗结算与受伤
 

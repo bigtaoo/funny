@@ -912,7 +912,8 @@ export class DefenseEditorScene implements Scene {
    */
   private renderAttackHeaderControls(headerH: number): void {
     const { w } = this;
-    const countsStr = `${t('world.defense.garrison').replace('{n}', String(this.garrison.size))}   ${t('world.team.committed').replace('{n}', String(this.committedTroops()))}   ${t('world.team.pool').replace('{n}', String(this.troops))}`;
+    const troopsStr = `${this.committedTroops()}/${this.teamCapacity()}`;
+    const countsStr = `${t('world.defense.garrison').replace('{n}', String(this.garrison.size))}   ${t('world.team.committed').replace('{n}', troopsStr)}   ${t('world.team.pool').replace('{n}', String(this.troops))}`;
     // ~2x the old FS.small readout — approved 2026-07-23 (user: PC screen, top-bar text too small).
     const counts = txt(countsStr, FS.title, C.dark, true);
     counts.anchor.set(0, 0.5);
@@ -953,16 +954,19 @@ export class DefenseEditorScene implements Scene {
     this.bodyLayer.addChild(clear);
 
     if (this.mode === 'attack') {
+      const fillFull = this.teamCapacity() > 0 && this.committedTroops() >= this.teamCapacity();
       const fillW = 84 * scale;
-      const fill = sketchPanel(fillW, btnH, { fill: C.paper, border: C.gold, seed: seedFor(rightEdge, top + 2, fillW) });
+      const fill = sketchPanel(fillW, btnH, { fill: C.paper, border: fillFull ? C.mid : C.gold, seed: seedFor(rightEdge, top + 2, fillW) });
       fill.x = clear.x - fillW - gap; fill.y = cy;
       this.bodyLayer.addChild(fill);
-      const fillLbl = txt(t('world.team.fill'), labelSize, C.dark, true);
+      const fillLbl = txt(t('world.team.fill'), labelSize, fillFull ? C.mid : C.dark, true);
       fillLbl.anchor.set(0.5, 0.5);
       fillLbl.x = fill.x + fillW / 2; fillLbl.y = fill.y + btnH / 2;
       if (fillLbl.width > fillW - 6) fillLbl.scale.set((fillW - 6) / fillLbl.width);
       this.bodyLayer.addChild(fillLbl);
-      this.hits.push({ rect: { x: fill.x, y: fill.y, w: fillW, h: btnH }, action: () => void this.doFillTroops() });
+      if (!fillFull) {
+        this.hits.push({ rect: { x: fill.x, y: fill.y, w: fillW, h: btnH }, action: () => void this.doFillTroops() });
+      }
     }
     const clearLbl = txt(t('world.defense.clear'), labelSize, C.red, true);
     clearLbl.anchor.set(0.5, 0.5);
@@ -978,6 +982,18 @@ export class DefenseEditorScene implements Scene {
     let sum = 0;
     for (const entry of this.garrison.values()) {
       sum += entry.cardInstanceId ? (this.cardState[entry.cardInstanceId]?.currentTroops ?? 0) : entry.hp;
+    }
+    return sum;
+  }
+
+  /** Sum of troopCap() over placed cards — the formation's max troop capacity, for the "committed/cap" readout and the Fill-troops disabled state. */
+  private teamCapacity(): number {
+    const cardInv = this.cb.getSave?.().cardInv ?? {};
+    let sum = 0;
+    for (const entry of this.garrison.values()) {
+      if (!entry.cardInstanceId) continue;
+      const card = cardInv[entry.cardInstanceId];
+      if (card) sum += troopCap(card);
     }
     return sum;
   }

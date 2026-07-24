@@ -189,3 +189,45 @@ describe('DefenseEditorScene attack mode — fill troops (§6.5, 2026-07-18)', (
     expect((scene as unknown as { committedTroops(): number }).committedTroops()).toBe(200);
   });
 });
+
+describe('DefenseEditorScene attack mode — troop readout + Fill-troops disabled state (2026-07-24)', () => {
+  it('teamCapacity sums troopCap() over placed cards only', async () => {
+    // level1 lichuang troopCap = 200 (troopCapBase); two placed cards -> 400. An unplaced roster
+    // card (no cardInstanceId in garrison) must not count toward capacity.
+    const { scene } = buildHarness({
+      cards: [{ id: 'c0', level: 1 }, { id: 'c1', level: 1 }, { id: 'c2', level: 1 }],
+      cardState: { c0: { currentTroops: 0 }, c1: { currentTroops: 0 } },
+      teams: [{
+        id: 't1', name: 'Team 1',
+        army: [{ cardInstanceId: 'c0', col: 0, row: 8 }, { cardInstanceId: 'c1', col: 1, row: 8 }],
+      }],
+    });
+    await flush();
+    const capacity = (scene as unknown as { teamCapacity(): number }).teamCapacity();
+    expect(capacity).toBe(400);
+  });
+
+  it('Fill-troops hit rect is registered while the team has room', async () => {
+    const { scene } = buildHarness({
+      cards: [{ id: 'c0', level: 1 }], // troopCap 200
+      cardState: { c0: { currentTroops: 0 } },
+      teams: [{ id: 't1', name: 'Team 1', army: [{ cardInstanceId: 'c0', col: 0, row: 8 }] }],
+      troops: 500,
+    });
+    await flush();
+    const hits = (scene as unknown as { hits: { action: () => void }[] }).hits;
+    expect(hits.some((h) => h.action.toString().includes('doFillTroops'))).toBe(true);
+  });
+
+  it('Fill-troops hit rect is dropped once committed troops reach the team capacity', async () => {
+    const { scene } = buildHarness({
+      cards: [{ id: 'c0', level: 1 }], // troopCap 200, already at cap
+      cardState: { c0: { currentTroops: 200 } },
+      teams: [{ id: 't1', name: 'Team 1', army: [{ cardInstanceId: 'c0', col: 0, row: 8 }] }],
+      troops: 500,
+    });
+    await flush();
+    const hits = (scene as unknown as { hits: { action: () => void }[] }).hits;
+    expect(hits.some((h) => h.action.toString().includes('doFillTroops'))).toBe(false);
+  });
+});
