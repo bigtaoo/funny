@@ -194,6 +194,8 @@ export interface StationedView {
   teamId: string;
   troops: number;
   sinceAt: number;
+  /** ADR-051 (P3a): 停留 idle vs 驻扎 garrison (see StationedDoc.mode). Absent → 'idle'. */
+  mode?: 'idle' | 'garrison';
 }
 
 /** Maximum viewport radius (prevents fetching too many tiles at once; hard cap before P9 viewport subscription model scales up). */

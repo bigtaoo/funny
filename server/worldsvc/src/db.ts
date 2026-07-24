@@ -218,6 +218,11 @@ export interface MarchDoc {
   /** ADR-051 (P1): timestamp (ms) at which the march next advances one cell (reaches path[stepIndex+1]). The scheduler's step scan is keyed on this. Absent → legacy single-arrival march (driven by arriveAt). */
   nextStepAt?: number;
   status: 'marching' | 'arrived' | 'recalled';
+  /**
+   * ADR-051 (P3a): dispatch intent for a 'move' order — whether the team parks as idle (停留) or garrison (驻扎)
+   * on arrival (applyMove writes it to StationedDoc.mode). Only meaningful for kind='move'; absent → 'idle'.
+   */
+  stationMode?: 'idle' | 'garrison';
   rev: number;
 }
 
@@ -386,6 +391,12 @@ export interface StationedDoc {
   army: ArmyEntry[];    // army snapshot (card entries; strength lives in cardState.currentTroops)
   troops: number;       // committed troop count carried when the team arrived (display / recall refund for flat armies)
   sinceAt: number;      // ms the team arrived and became stationed
+  /**
+   * ADR-051 (P3a): 停留 idle vs 驻扎 garrison. idle = free (defends only its own cell, can be re-commanded);
+   * garrison = busy, actively defends its 9-cell footprint (covered via the `cover` reverse index, intercepting
+   * enemies that pass — P3b). Absent on legacy docs → treated as 'idle' (the pre-split behavior).
+   */
+  mode?: 'idle' | 'garrison';
 }
 
 /** Nation document (S8-6.5). One record per capital; ownerId/nationName absent when unclaimed. */

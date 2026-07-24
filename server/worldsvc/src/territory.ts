@@ -229,8 +229,10 @@ export class TerritoryService {
     await cols.tiles.deleteOne({ _id: tid }); // abandon → revert to procedural neutral (sparse storage leaves no empty shell)
     // 2026-07-23: giving up the tile frees any team stationed on it (the team pops back to idle-at-home). Recall
     // would also work, but abandon is a deliberate surrender — just release the "out" lock so the slot is usable.
-    await cols.stationed.deleteOne({ _id: tid });
+    const freedStationed = await cols.stationed.findOneAndDelete({ _id: tid });
     await this.core.clearOccupancy(worldId, tid, tid); // ADR-051 (P2): drop the freed team's occupancy entry
+    // ADR-051 (P3a): a freed garrison also drops its 9-cell coverage from the reverse index.
+    if (freedStationed?.mode === 'garrison') await this.core.removeCover(worldId, freedStationed.x, freedStationed.y, freedStationed.tile);
     const yieldRate = await this.core.recomputeYield(worldId, accountId);
     await cols.playerWorld.updateOne(
       { _id: pw._id },

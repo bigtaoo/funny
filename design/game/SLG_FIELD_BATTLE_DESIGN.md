@@ -168,7 +168,10 @@
 - **P2 — 遭遇引擎**：
   - **P2a ✅（2026-07-24）**：把停留/驻扎队伍也注册进 `occ` 索引（`OccEntry` 泛化 `kind: march|stationed`；`applyMove`/`settleOccupation` 写入 leaveAt=∞，`recallStationed`/`abandonTile` 清除）——场景1检测的前提。含 field-occupancy e2e 覆盖停留注册/召回清除。
   - **P2b ✅（2026-07-24）**：`advanceMarch` 踏格时先 `getOccupancy(cell)`（新增于 corePush），命中 `leaveAt>now` 的**敌方**（非同 owner/同 familyId）占格 → 新 `combatSiege/encounter.ts` 的 `resolveFieldEncounter` 用 `runSiegeBattle`（`defenderBaseLevel:0` 纯军队对撞，参照 base-wave 模型）结算。双方军队构建复用 `resolveCardArmy/synthesizeArmy/scaleArmyByRatio + toDefenderFormation`；进攻方（踏入的行军）带**士气缩放 + 卡牌蓝图注入**，防守方用基础蓝图（v1，与 `applyBaseSiege` 同简化）；卡牌军两边各自 `meta.getSaveFields`。生还双向传播：卡牌走 `computeCardStateUpdates` 写 cardState、flat 走 `refundTroops`（进攻方败）/ 直接改 `StationedDoc.troops`/`MarchDoc.troops`（防守方胜）；**胜方带残兵继续原行动**（`advanceMarch` 把进攻方残兵持久化回 MarchDoc 后继续步进，或在终格 settle），败方 doc + occ 移除。场景1（撞停留）+ 场景2（两行军同格，先到者 occ `leaveAt` 未到）。友军（同 owner/同 familyId）过格不战、且**不覆盖**其 occ（避免把驻留友军挤出索引）。回放种子由 `${marchId}:${defenderId}:${tile}` 派生；SiegeDoc 记在**遭遇格**。含 field-encounter e2e 4 例（场景1 胜/负、场景2 胜、友军过格）。全量 worldsvc 294 passed（2 个既有 pathfinding 失败无关）。
-- **P3 — 停留/驻扎拆分**：`StationedDoc.mode` + 发兵选意图 + busy 门禁 + `cover` 反向索引 + 驻扎 9 格拦截（场景 3）+ 就地占领。
+- **P3 — 停留/驻扎拆分**：
+  - **P3a ✅（2026-07-24）**：`StationedDoc.mode`(idle/garrison) + `StationedView.mode` + `MarchDoc.stationMode`（发兵意图，`POST /world/march` body `stationMode:'garrison'`，穿 service/combat/httpApi + openapi-world）；`applyMove` 按意图写 mode，garrison 额外注册 `cover` 反向索引（`world:{w}:cover`，field=被覆盖格 → `{sourceTile→CoverEntry}` map，摊平 `baseFootprintCells` 9 格，见 corePush `addCover/removeCover/getCover`）；idle（含 `settleOccupation` 占领后留守、默认）**不**注册 cover；`recallStationed`/`abandonTile` 清 garrison 的 cover。含 field-garrison e2e（garrison 注册 9 格/召回清除、idle 不注册）。
+  - **P3b ✅（2026-07-24）**：`advanceMarch` 踏格在 occ 检查（场景1/2）之后加 `cover` 检查（场景3）——命中敌方 garrison 覆盖格 → 以该 garrison 的驻扎点（sourceTile）为防守方走 `resolveFieldEncounter` 拦截；胜方带残兵继续，garrison 败则删 doc + 清 occ + 清 cover（9 格）。一格一战（occ 优先）。友军覆盖不拦。含 field-encounter e2e 场景3 胜/负 2 例。
+  - **P3c 待做**：idle 队伍再指挥（从驻留点重新发兵，需放宽 `TEAM_BUSY`/`busyTeamIds` 只认 garrison + 从驻留格发起 move/occupy 的 dispatch 路径）+ 就地占领（§4.3，解决 §1.1）。
 - **P4 — 客户端实时野战视图**：敌方野外队伍近实时渲染 + 驻扎防区 + 两意图/就地占领 UI。
 - **P5 — 建筑层**：`TileDoc.structure` + 箭塔（9 格掉血）+ 必拆除阻挡（寻路接入）+ 建造/拆除/攻毁 + 渲染。
 

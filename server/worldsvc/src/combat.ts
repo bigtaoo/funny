@@ -28,9 +28,9 @@ export class CombatService {
   startMarch(
     worldId: string, accountId: string,
     fromX: number, fromY: number, toX: number, toY: number,
-    kind: MarchKind, troops: number, teamId?: string,
+    kind: MarchKind, troops: number, teamId?: string, stationMode?: 'idle' | 'garrison',
   ): Promise<MarchView> {
-    return this.march.startMarch(worldId, accountId, fromX, fromY, toX, toY, kind, troops, teamId);
+    return this.march.startMarch(worldId, accountId, fromX, fromY, toX, toY, kind, troops, teamId, stationMode);
   }
   recallMarch(worldId: string, accountId: string, mid: string): Promise<MarchView> {
     return this.march.recallMarch(worldId, accountId, mid);

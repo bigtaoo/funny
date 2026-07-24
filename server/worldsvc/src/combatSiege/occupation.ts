@@ -411,6 +411,9 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
             army: team?.army ?? [],
             troops: d.garrison,
             sinceAt: t,
+            // ADR-051 (P3a): a team that just captured a tile stays 停留 idle by default (可再动/就地占领); it does
+            // not auto-garrison. No cover registered (idle only defends its own cell). 驻扎 is an explicit intent.
+            mode: 'idle',
           };
           await cols.stationed.updateOne({ _id: d.tile }, { $set: stDoc }, { upsert: true });
           // ADR-051 (P2): register the parked team in the occupancy index so an enemy march entering this tile

@@ -337,6 +337,10 @@ components:
         sinceAt:
           type: number
           description: "ms the team became stationed."
+        mode:
+          type: string
+          enum: [idle, garrison]
+          description: "ADR-051 (P3a): 停留 idle (free, defends own cell) vs 驻扎 garrison (busy, defends its 3×3 footprint). Absent → idle."
 
     # ── Auction ────────────────────────────────────────────────────────────────
 
@@ -999,6 +1003,10 @@ paths:
                 teamId:
                   type: string
                   description: "Team (G3-2c): attack-formation template to use for kind=attack/occupy/move; committed troops = sum of troops carried across the team's cards (overrides the troops field). Required for kind=move."
+                stationMode:
+                  type: string
+                  enum: [idle, garrison]
+                  description: "ADR-051 (P3a): kind=move dispatch intent — 'garrison' parks the team as a 驻扎 garrison (defends its 3×3 footprint); default/absent → 停留 idle. Ignored for other kinds."
       responses:
         '200':
           description: March started

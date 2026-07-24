@@ -11,6 +11,7 @@ import {
   proceduralTile,
   tileId,
   playerWorldId,
+  baseFootprintCells,
   MARCH_SPEED_SEC_PER_TILE,
   MARCH_MORALE_MAX,
   SLG_MAP_W,
@@ -81,6 +82,7 @@ class FakeRedis implements WorldRedis {
     const raw = this.hashes.get(`world:${worldId}:occ`)?.get(tid);
     return raw ? JSON.parse(raw) : null;
   }
+  coverSize(worldId: string): number { return this.hashes.get(`world:${worldId}:cover`)?.size ?? 0; }
   setOcc(worldId: string, tid: string, entry: unknown): void {
     void this.hset(`world:${worldId}:occ`, tid, JSON.stringify(entry));
   }
@@ -291,5 +293,82 @@ describe.skipIf(!mongo)('worldsvc field-encounter e2e (ADR-051 P2b)', () => {
     // A's march marches on (still alive, cursor advanced past the ally cell).
     const aDoc = await m.collections.marches.findOne({ _id: marchId });
     expect(aDoc!.status).toBe('marching');
+  });
+
+  /**
+   * Place an enemy (B) GARRISON on a center tile G + its occ + its 3×3 coverage index (scenario 3 resident). G is
+   * chosen adjacent to `near` (so `near` falls inside G's footprint) but NOT on A's path (so only the cover check —
+   * not an occ scenario-1 hit — fires as A passes `near`). Returns the garrison's center tileId.
+   */
+  async function garrisonEnemyAround(near: { x: number; y: number }, avoid: { x: number; y: number }[], cardId: string, troops: number): Promise<string> {
+    const dirs: [number, number][] = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+    const cand = dirs
+      .map((d) => ({ x: near.x + d[0], y: near.y + d[1] }))
+      .filter((g) => g.x >= 0 && g.y >= 0 && g.x < SLG_MAP_W && g.y < SLG_MAP_H && !avoid.some((a) => a.x === g.x && a.y === g.y));
+    const G = cand[0]!;
+    const tidG = tileId(W, G.x, G.y);
+    await setupCardArmy('b', 'bt1', cardId, troops);
+    await m.collections.stationed.insertOne({
+      _id: tidG, worldId: W, ownerId: 'b', tile: tidG, x: G.x, y: G.y,
+      teamId: 'bt1', army: [{ cardInstanceId: cardId, col: 0, row: 1 }], troops: 1, sinceAt: now(), mode: 'garrison',
+    });
+    redis.setOcc(W, tidG, { kind: 'stationed', id: tidG, ownerId: 'b', teamId: 'bt1', tile: tidG, leaveAt: Number.MAX_SAFE_INTEGER });
+    for (const c of baseFootprintCells(G.x, G.y)) {
+      if (c.x < 0 || c.y < 0 || c.x >= SLG_MAP_W || c.y >= SLG_MAP_H) continue;
+      await redis.hset(`world:${W}:cover`, tileId(W, c.x, c.y),
+        JSON.stringify({ [tidG]: { kind: 'garrison', sourceTile: tidG, ownerId: 'b', teamId: 'bt1' } }));
+    }
+    return tidG;
+  }
+
+  it('scenario 3 — an enemy garrison intercepts a march passing through its 9-cell footprint (garrison wiped on loss)', async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    await svc.joinWorld(W, 'b', 40, 40);
+    await setupCardArmy('a', 'at1', 'a-card', 9_000); // overwhelming attacker
+
+    const dest = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 5, 22);
+    const { marchId, departAt, path } = await startAMove(dest);
+    expect(path.length).toBeGreaterThan(3);
+
+    const C = path[2]!;                          // A passes C (not the garrison's own cell)
+    const tidC = tileId(W, C.x, C.y);
+    const tidG = await garrisonEnemyAround(C, [path[1]!, path[3]!], 'b-card', 30); // weak garrison off the path
+
+    nowMs = departAt + 2 * MARCH_SPEED_SEC_PER_TILE * 1000;
+    expect(await svc.processDueArrivals()).toBe(0); // A halts mid-route after the interception
+
+    // Garrison destroyed: its stationed doc, its occ (on G), and its whole coverage index are gone.
+    expect(await m.collections.stationed.findOne({ _id: tidG })).toBeNull();
+    expect(redis.coverSize(W)).toBe(0);
+    // A holds the passed cell and keeps marching.
+    expect(redis.occAt(W, tidC)!.id).toBe(marchId);
+    const aDoc = await m.collections.marches.findOne({ _id: marchId });
+    expect(aDoc!.status).toBe('marching');
+    // Report recorded at the garrison's cell.
+    const siege = await m.collections.sieges.findOne({ marchId, tile: tidG });
+    expect(siege!.outcome).toBe('attacker_win');
+  });
+
+  it('scenario 3 — a march that loses to an intercepting garrison is destroyed; the garrison + its coverage hold', async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    await svc.joinWorld(W, 'b', 40, 40);
+    await setupCardArmy('a', 'at1', 'a-card', 30); // weak attacker
+
+    const dest = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 5, 22);
+    const { marchId, departAt, path } = await startAMove(dest);
+    expect(path.length).toBeGreaterThan(3);
+
+    const C = path[2]!;
+    const tidG = await garrisonEnemyAround(C, [path[1]!, path[3]!], 'b-card', 3_000); // decisively stronger garrison
+
+    nowMs = departAt + 2 * MARCH_SPEED_SEC_PER_TILE * 1000;
+    await svc.processDueArrivals();
+
+    // A destroyed; garrison + its coverage index untouched.
+    expect(await m.collections.marches.findOne({ _id: marchId })).toBeNull();
+    expect(await m.collections.stationed.findOne({ _id: tidG })).not.toBeNull();
+    expect(redis.coverSize(W)).toBe(9); // full 3×3 footprint still covered (G is interior)
+    const siege = await m.collections.sieges.findOne({ marchId, tile: tidG });
+    expect(siege!.outcome).toBe('defender_win');
   });
 });

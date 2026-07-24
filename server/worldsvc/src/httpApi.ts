@@ -370,6 +370,9 @@ export function startHttpApi(
           const kind = typeof body.kind === 'string' ? body.kind : '';
           const troops = Number(body.troops);
           const teamId = typeof body.teamId === 'string' ? body.teamId : undefined;
+          // ADR-051 (P3a): 'move' dispatch intent — 'garrison' parks the team as a 驻扎 garrison (defends 9 cells);
+          // anything else (default) keeps 停留 idle. Only honored for kind='move'.
+          const stationMode = body.stationMode === 'garrison' ? 'garrison' : undefined;
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
           if (![fromX, fromY, toX, toY].every(Number.isFinite)) {
             return sendErr(res, ErrorCode.BAD_REQUEST, 'fromX/fromY/toX/toY required');
@@ -377,7 +380,7 @@ export function startHttpApi(
           return send(
             res,
             200,
-            ok(await svc.startMarch(worldId, accountId, fromX, fromY, toX, toY, kind as MarchKind, troops, teamId)),
+            ok(await svc.startMarch(worldId, accountId, fromX, fromY, toX, toY, kind as MarchKind, troops, teamId, stationMode)),
           );
         }
         {

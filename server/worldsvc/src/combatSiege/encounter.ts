@@ -199,6 +199,8 @@ export function EncounterMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase):
         // writes its own occ next). Flat survivors are 0 (permanent loss); card floor already written above.
         if (defStationed) {
           await cols.stationed.deleteOne({ _id: defenderOcc.id });
+          // A destroyed garrison (P3b scenario-3 interception) also drops its 3×3 coverage from the reverse index.
+          if (defStationed.mode === 'garrison') await core.removeCover(m.worldId, defStationed.x, defStationed.y, defStationed.tile);
         } else if (defMarch) {
           const claimed = await cols.marches.findOneAndDelete({ _id: defenderOcc.id, status: 'marching' });
           if (claimed) {

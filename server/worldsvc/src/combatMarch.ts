@@ -121,6 +121,7 @@ export class MarchService {
     kind: MarchKind,
     troops: number,
     teamId?: string,
+    stationMode?: 'idle' | 'garrison',
   ): Promise<MarchView> {
     const { cols, now } = this.core.deps;
     if (!MARCHABLE_KINDS.has(kind)) {
@@ -321,6 +322,9 @@ export class MarchService {
       // ADR-026: record the deployed team slot so it is skipped as a defender while out (meaningful for team-based
       // attacks, occupy marches (2026-07-15), and move orders (2026-07-23) — a moved team stays out until recalled).
       ...((kind === 'attack' || kind === 'occupy' || kind === 'move') && teamId ? { teamId } : {}),
+      // ADR-051 (P3a): a 'move' dispatched with garrison intent parks as a garrison on arrival (applyMove reads
+      // this). Default (absent / 'idle') keeps the pre-split 停留 idle behavior.
+      ...(kind === 'move' && stationMode === 'garrison' ? { stationMode: 'garrison' as const } : {}),
       departAt,
       arriveAt,
       path,
@@ -512,43 +516,63 @@ export class MarchService {
       await this.core.clearOccupancy(m.worldId, tileId(m.worldId, left.x, left.y), m._id);
       const tid = tileId(m.worldId, cell.x, cell.y);
 
-      // ADR-051 (P2b) tile-entry encounter check: who already holds this cell (occ region still overlapping —
-      // leaveAt > now)? Check BEFORE writing our own occ (which would overwrite theirs). An ENEMY resident is
-      // fought (scenario 1 = a parked stationed team; scenario 2 = an earlier-arriving march still on the cell);
-      // a FRIENDLY resident is passed peacefully — but we must NOT clobber their occ entry (a stationed ally
+      // ADR-051 tile-entry encounter check. Two enemy sources, resolved through the same runSiegeBattle path:
+      //   P2b — occ: an enemy unit standing ON this cell (leaveAt still overlapping). scenario 1 = a parked
+      //         stationed team; scenario 2 = an earlier-arriving march still on the cell.
+      //   P3b — cover: this cell falls inside an enemy GARRISON's 3×3 defended footprint (scenario 3) — the
+      //         garrison sits on a different (center) cell but intercepts anyone passing its 9 cells.
+      // The occ check runs first (a fight there settles the cell); only if it did not fight do we consult cover.
+      // A FRIENDLY occ resident is passed peacefully, but we must NOT clobber its occ entry (a stationed ally
       // would otherwise vanish from the index), so we skip writing our own occ on that one cell.
       let skipOwnOcc = false;
       if (pw) {
+        let enc: Awaited<ReturnType<typeof this.siege.resolveFieldEncounter>> | null = null;
         const occ = await this.core.getOccupancy(m.worldId, tid);
         if (occ && occ.id !== m._id && occ.leaveAt > t) {
-          const isEnemy = occ.ownerId !== m.ownerId && !(familyId && occ.familyId === familyId);
-          if (isEnemy) {
-            const enc = await this.siege.resolveFieldEncounter(m, pw, occ, tid, t);
-            if (enc.fought && !enc.marcherContinues) {
-              // Marcher destroyed en route: delete the march (its survivors were already folded back by the
-              // encounter). `left` is already vacated and we never wrote our occ on `tid`, so nothing to clear.
-              const claimed = await cols.marches.findOneAndDelete({ _id: m._id, status: 'marching' });
-              if (claimed) {
-                await this.core.unscheduleMarch(claimed.worldId, claimed._id);
-                void this.core.pushMarch(m.ownerId, this.core.marchView({ ...claimed, status: 'recalled' }));
-              }
-              return true; // fully handled (removed) — do not reschedule
-            }
-            if (enc.fought) {
-              // Marcher won → carry survivors forward. Persist onto the MarchDoc (and the in-memory `m`) so a later
-              // encounter this batch, and the final arrival settlement, use the reduced force. The resident
-              // defender + its occ were already removed by resolveFieldEncounter, so the cell is ours to take.
-              m.troops = enc.marcherTroops;
-              if (enc.marcherArmy !== undefined) m.army = enc.marcherArmy;
-              await cols.marches.updateOne(
-                { _id: m._id, status: 'marching', kind: { $ne: 'return' } },
-                { $set: { troops: m.troops, ...(enc.marcherArmy !== undefined ? { army: enc.marcherArmy } : {}) }, $inc: { rev: 1 } },
-              );
-            }
+          if (occ.ownerId !== m.ownerId && !(familyId && occ.familyId === familyId)) {
+            enc = await this.siege.resolveFieldEncounter(m, pw, occ, tid, t);
           } else {
-            // Friendly resident still present → leave their occ untouched (don't overwrite a stationed ally).
-            skipOwnOcc = true;
+            skipOwnOcc = true; // friendly resident — leave its occ untouched
           }
+        }
+        // P3b scenario 3: no occ fight → is this cell covered by an ENEMY garrison? Intercept the first one found
+        // (its stationed team is the defender; resolveFieldEncounter loads it by its center/source tile).
+        if (!enc) {
+          const covers = await this.core.getCover(m.worldId, tid);
+          const enemyCover = covers.find((c) => c.ownerId !== m.ownerId && !(familyId && c.familyId === familyId));
+          if (enemyCover) {
+            const garrisonOcc = {
+              kind: 'stationed' as const,
+              id: enemyCover.sourceTile,
+              ownerId: enemyCover.ownerId,
+              ...(enemyCover.familyId ? { familyId: enemyCover.familyId } : {}),
+              ...(enemyCover.teamId ? { teamId: enemyCover.teamId } : {}),
+              tile: enemyCover.sourceTile,
+              leaveAt: Number.MAX_SAFE_INTEGER,
+            };
+            enc = await this.siege.resolveFieldEncounter(m, pw, garrisonOcc, enemyCover.sourceTile, t);
+          }
+        }
+        if (enc && enc.fought && !enc.marcherContinues) {
+          // Marcher destroyed en route: delete the march (its survivors were already folded back by the
+          // encounter). `left` is already vacated and we never wrote our occ on `tid`, so nothing to clear.
+          const claimed = await cols.marches.findOneAndDelete({ _id: m._id, status: 'marching' });
+          if (claimed) {
+            await this.core.unscheduleMarch(claimed.worldId, claimed._id);
+            void this.core.pushMarch(m.ownerId, this.core.marchView({ ...claimed, status: 'recalled' }));
+          }
+          return true; // fully handled (removed) — do not reschedule
+        }
+        if (enc && enc.fought) {
+          // Marcher won → carry survivors forward. Persist onto the MarchDoc (and the in-memory `m`) so a later
+          // encounter this batch, and the final arrival settlement, use the reduced force. The resident defender
+          // (occ) or garrison (cover) + its indexes were already removed by resolveFieldEncounter.
+          m.troops = enc.marcherTroops;
+          if (enc.marcherArmy !== undefined) m.army = enc.marcherArmy;
+          await cols.marches.updateOne(
+            { _id: m._id, status: 'marching', kind: { $ne: 'return' } },
+            { $set: { troops: m.troops, ...(enc.marcherArmy !== undefined ? { army: enc.marcherArmy } : {}) }, $inc: { rev: 1 } },
+          );
         }
       }
 
@@ -689,6 +713,8 @@ export class MarchService {
       void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
       return;
     }
+    // ADR-051 (P3a): the dispatch intent decides 停留 idle vs 驻扎 garrison on arrival.
+    const mode: 'idle' | 'garrison' = m.stationMode === 'garrison' ? 'garrison' : 'idle';
     const doc: StationedDoc = {
       _id: m.toTile,
       worldId: m.worldId,
@@ -701,6 +727,7 @@ export class MarchService {
       army: m.army ?? [],
       troops: m.troops,
       sinceAt: t,
+      mode,
     };
     await cols.stationed.updateOne({ _id: m.toTile }, { $set: doc }, { upsert: true });
     // ADR-051 (P2): register the parked team in the occupancy index (leaveAt=∞) so an enemy march entering this
@@ -714,6 +741,17 @@ export class MarchService {
       tile: m.toTile,
       leaveAt: Number.MAX_SAFE_INTEGER,
     });
+    // ADR-051 (P3a): a garrison also covers its 3×3 footprint in the reverse index so P3b can intercept enemies
+    // passing any of the 9 cells. An idle team only defends its own cell (via the occ scenario-1 check) → no cover.
+    if (mode === 'garrison') {
+      await this.core.addCover(m.worldId, x, y, {
+        kind: 'garrison',
+        sourceTile: m.toTile,
+        ownerId: m.ownerId,
+        ...(pw.familyId ? { familyId: pw.familyId } : {}),
+        teamId: m.teamId,
+      });
+    }
     void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'arrived' }));
     const after = await cols.tiles.findOne({ _id: m.toTile });
     if (after) void this.core.pushTile(m.ownerId, after);
@@ -731,6 +769,8 @@ export class MarchService {
     if (!claimed) throw new SlgError('MARCH_NOT_FOUND', 'No stationed team to recall');
     // ADR-051 (P2): the parked team leaves the field → drop its occupancy entry (match-guarded on tileId).
     await this.core.clearOccupancy(worldId, claimed.tile, claimed.tile);
+    // ADR-051 (P3a): a recalled garrison also drops its 9-cell coverage from the reverse index.
+    if (claimed.mode === 'garrison') await this.core.removeCover(worldId, claimed.x, claimed.y, claimed.tile);
     const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
     if (!pw?.mainBaseTile) return {}; // no home to return to (should not happen) — team is simply freed
     const bx = this.core.coordX(pw.mainBaseTile);
@@ -764,6 +804,6 @@ export class MarchService {
   /** List the player's own stationed teams (2026-07-23: field-stationing status + recall affordance + idle-sprite rendering). */
   async getStationed(worldId: string, accountId: string): Promise<StationedView[]> {
     const own = await this.core.deps.cols.stationed.find({ worldId, ownerId: accountId }).toArray();
-    return own.map((d) => ({ tile: d.tile, x: d.x, y: d.y, teamId: d.teamId, troops: d.troops, sinceAt: d.sinceAt }));
+    return own.map((d) => ({ tile: d.tile, x: d.x, y: d.y, teamId: d.teamId, troops: d.troops, sinceAt: d.sinceAt, mode: d.mode ?? 'idle' }));
   }
 }
