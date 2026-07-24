@@ -64,6 +64,7 @@ function buildInputHarness(topInset = TOP_INSET) {
     me: { joined: true, mainBaseTile: undefined },
     tileCache: new Map(),
     selectedTile: null,
+    stationed: [],
     view: { renderMap: () => {}, screenToTile: () => ({ x: 0, y: 0 }) },
     net: { loadMapViewport: vi.fn().mockResolvedValue(undefined) },
     panels: { showModal: vi.fn(), closeModal: vi.fn() },

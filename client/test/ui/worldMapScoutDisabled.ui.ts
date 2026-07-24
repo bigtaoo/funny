@@ -36,6 +36,7 @@ function buildHarness(opts: { me?: PlayerWorldView } = {}) {
     tileCache: new Map<string, WorldTileView>(),
     me: opts.me ?? makeMe(),
     selectedTile: null,
+    stationed: [],
     parseTileId(tileId: string): [number, number] {
       const parts = tileId.split(':');
       return [Number(parts[parts.length - 2]), Number(parts[parts.length - 1])];
@@ -82,7 +83,7 @@ describe('WorldMapInput.onTileClick — scout entry point removed (2026-07-21)',
     ctx.tileCache.set('40:40', { garrison: 50 } as WorldTileView);
     input.onTileClick(40, 40);
     const buttons = showModal.mock.calls[0][1] as { label: string }[];
-    expect(buttons.map((b) => b.label)).toEqual([t('world.actOccupy'), t('world.actSweep'), '✕']);
+    expect(buttons.map((b) => b.label)).toEqual([t('world.actOccupy'), t('world.actSweep'), t('world.actMove'), '✕']);
     expect(doScout).not.toHaveBeenCalled();
   });
 
@@ -91,7 +92,7 @@ describe('WorldMapInput.onTileClick — scout entry point removed (2026-07-21)',
     ctx.tileCache.set('40:40', {} as WorldTileView);
     input.onTileClick(40, 40);
     const buttons = showModal.mock.calls[0][1] as { label: string }[];
-    expect(buttons.map((b) => b.label)).toEqual([t('world.actOccupy'), '✕']);
+    expect(buttons.map((b) => b.label)).toEqual([t('world.actOccupy'), t('world.actMove'), '✕']);
     expect(doScout).not.toHaveBeenCalled();
   });
 });
