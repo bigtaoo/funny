@@ -224,6 +224,15 @@
 - **架构约束（本期不做的部分）**：行军在服务端不是逐格 tick 的实时模拟——出征时一次性算好完整 A\* 路径并只调度一个到达事件（`combatMarch.ts` `startMarch`/`processDueArrivals`），中途没有"停留"状态。因此**「原地不动每 30 秒回复 1 点」这条回复机制在当前架构下没有天然的触发点**（每次出征本就从满额开始），本期不实现；疲劳值消耗按路径长度一次性算好存在 `MarchDoc.morale`，供到达结算读取。
 - **实现**：`marchMoraleFromPath(path)` 在出征时算好存入 `MarchDoc.morale`（`server/shared/src/slg/march.ts` + `combatMarch.ts`）；到达结算时 `moraleCombatMultiplier(morale)` 缩放攻方有效兵力/军队 HP（`combatSiege/arrival.ts` 的 `applySiege`/`applyStrongholdSiege`/`applyCrossingSiege`/`applySweep`、`combatSiege/occupation.ts` 的 `applyOccupy`/`applyOccupationExpulsion`），廉价公式（`resolveSiege`）与真实引擎战斗（`runSiegeBattle`）两条结算路径都吃这个缩放，保持一致。未暴露到 `MarchView`/openapi 契约（客户端本期不展示疲劳值）。
 
+### 4.5 实时野战遭遇系统（停留/驻扎 + 建筑层，ADR-051，2026-07-24）
+
+> 野外驻扎 v1（2026-07-23，见 [`SLG_DESIGN_LOG.md`](SLG_DESIGN_LOG.md)）的 **v2 升级**。完整设计见独立文档 **[`SLG_FIELD_BATTLE_DESIGN.md`](SLG_FIELD_BATTLE_DESIGN.md)**。
+
+- **停留 idle vs 驻扎 garrison**：单一 `stationed` 态拆两态——停留（空闲、可就地占领/再移动、仅本格被动应战）与驻扎（忙碌、守本格+周围8格、主动拦截路过敌军）；**发兵时选定意图**。停留放出忙碌门禁，修复「站在地上却不能就地占领」。
+- **实时野战引擎**：位置权威进 Redis（占格索引 + 9格反向索引），行军改逐格步进、路径持久化，三种遭遇（撞停留 / 两行军同格 / 驻扎拦截）合并为一次「踏格检查」，全部走 `runSiegeBattle`，胜方带残兵继续原行动。**注意：本节升级会改动 §4.4「架构约束（本期不做）」所述的「一次性算路径、单一到达事件」模型**——行军将变为逐格步进；疲劳仍按路径长度一次性算好、仅影响战力不影响时长（ADR-047 语义不变）。
+- **建筑层（玩家建造）**：`TileDoc.structure` 叠加位——箭塔（踏入9格掉血不拦停、可攻毁）、必拆除阻挡（接入寻路）。只能建己方/家族领地格。
+- 分阶段 P1–P5 实现（见设计文档 §7）。
+
 ### 4.1 连地占领（硬性规则，ADR-039，2026-07-14）
 
 > **用户拍板**：三战「连地」是核心规则之一，不是软性效率加成——**占领/围攻目标格必须与本宗门已占领地相邻**，否则无法发起。
