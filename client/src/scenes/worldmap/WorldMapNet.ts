@@ -157,10 +157,12 @@ export class WorldMapNet {
     // Idle-team gate (2026-07-15): a team already committed to an active (non-recalled) march — marching or
     // holding a captured tile — must not accept a new order (mirrors the server-side TEAM_BUSY check in
     // combatMarch.ts, which checks both `marches` and `occupations`).
+    // ADR-051 (P3c): a 停留 idle field team is NOT busy — it can be re-commanded (move / 就地占领) straight from
+    // where it stands, so only 驻扎 garrison stationed teams count as busy here (mirrors the relaxed server gate).
     const busyTeamIds = new Set([
       ...this.ctx.marches.filter((m) => m.mine && m.teamId).map((m) => m.teamId),
       ...this.ctx.occupations.filter((o) => o.teamId).map((o) => o.teamId),
-      ...this.ctx.stationed.map((s) => s.teamId), // stationed = "out in the field" (2026-07-23)
+      ...this.ctx.stationed.filter((s) => s.mode === 'garrison').map((s) => s.teamId), // 驻扎 = locked; 停留 idle = free
       ...this.pendingTeamIds, // in-flight dispatch not yet reflected in ctx.marches
     ]);
     // Committed troops = the strength the team actually CARRIES, from each card's cardState.currentTroops

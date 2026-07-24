@@ -1019,6 +1019,11 @@ export interface components {
             troops: number;
             /** @description ms the team became stationed. */
             sinceAt: number;
+            /**
+             * @description ADR-051 (P3a): 停留 idle (free, defends own cell) vs 驻扎 garrison (busy, defends its 3×3 footprint). Absent → idle.
+             * @enum {string}
+             */
+            mode?: "idle" | "garrison";
         };
         AuctionView: {
             auctionId: string;
@@ -1586,6 +1591,11 @@ export interface operations {
                     troops: number;
                     /** @description Team (G3-2c): attack-formation template to use for kind=attack/occupy/move; committed troops = sum of troops carried across the team's cards (overrides the troops field). Required for kind=move. */
                     teamId?: string;
+                    /**
+                     * @description ADR-051 (P3a): kind=move dispatch intent — 'garrison' parks the team as a 驻扎 garrison (defends its 3×3 footprint); default/absent → 停留 idle. Ignored for other kinds.
+                     * @enum {string}
+                     */
+                    stationMode?: "idle" | "garrison";
                 };
             };
         };

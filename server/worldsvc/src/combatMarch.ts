@@ -141,6 +141,10 @@ export class MarchService {
     // after departure without affecting the in-transit march (the army snapshot is persisted with MarchDoc).
     // Neither attack nor occupy, or no team → use flat troops (synthesized generic units at combat time).
     let army: ArmyEntry[] | undefined;
+    // ADR-051 (P3c): re-dispatch of an *idle* (停留) field team — commanded again straight from where it stands
+    // (move/occupy), without recalling home first. Set inside the team block below; drives the origin override,
+    // the from-tile ownership skip, the pool-deduction skip, and the atomic StationedDoc claim before insert.
+    let idleRedispatch = false;
     // 'move' (2026-07-23) is always team-based — "选中的部队" is a team, and a moved team parks on the tile as a
     // whole (unlike reinforce's faceless garrison), so there is no flat-pool move path.
     if (kind === 'move' && !teamId) throw new SlgError('BAD_REQUEST', 'Move requires a team');
@@ -158,19 +162,36 @@ export class MarchService {
         cols.occupations.findOne({ worldId, ownerId: accountId, teamId }),
         cols.stationed.findOne({ worldId, ownerId: accountId, teamId }),
       ]);
-      if (busyMarch || busyHold || busyStationed) throw new SlgError('TEAM_BUSY', 'Team is already marching, occupying, or stationed; recall it first');
-      army = team.army;
-      troops = team.army.reduce((s, e) => s + Math.max(1, Math.floor(e.initialHp ?? 0)), 0);
-      // D-CITY-9: satchel gates how many troops a SINGLE team may carry per march/siege — independent of the
-      // total troopCap pool (troopCapFor/drillYard). Card-army teams carry real strength in cardState.currentTroops
-      // (the flat `troops` above degenerates to card count for them, per the CC-3 note below), so sum that instead.
-      const teamHasCardArmy = team.army.some((e) => !!e.cardInstanceId);
-      const carried = teamHasCardArmy
-        ? team.army.reduce((s, e) => s + (e.cardInstanceId ? (pw.cardState?.[e.cardInstanceId]?.currentTroops ?? 0) : 0), 0)
-        : troops;
-      const satchelCap = satchelCarryCapFor(pw.buildings);
-      if (carried > satchelCap) {
-        throw new SlgError('SATCHEL_CAP_EXCEEDED', `Team carries ${carried} troops, exceeds satchel cap of ${satchelCap}`);
+      // ADR-051 (P3c): a 停留 idle field team is NOT busy — it can be re-commanded in place (move/occupy) straight
+      // from where it stands (§4.3). A 驻扎 garrison stays locked (must recall first), as do marching/holding teams.
+      idleRedispatch = !!busyStationed && busyStationed.mode !== 'garrison' && (kind === 'occupy' || kind === 'move');
+      if (busyMarch || busyHold || (busyStationed && !idleRedispatch)) {
+        throw new SlgError('TEAM_BUSY', 'Team is already marching, occupying, or stationed; recall it first');
+      }
+      if (idleRedispatch) {
+        // Depart from where the team STANDS (ignore any client-supplied origin — an idle field team is not at the
+        // base) and carry its STATIONED snapshot forward: army + troops reflect field-encounter losses (P2b/P3b),
+        // not the roster template. Mirrors recallStationed, which likewise forwards claimed.army/claimed.troops.
+        // Troops already left the pool at the original dispatch and satchel was validated then (can only shrink),
+        // so no pool deduction and no satchel re-check below.
+        fromX = busyStationed!.x;
+        fromY = busyStationed!.y;
+        army = busyStationed!.army;
+        troops = busyStationed!.troops;
+      } else {
+        army = team.army;
+        troops = team.army.reduce((s, e) => s + Math.max(1, Math.floor(e.initialHp ?? 0)), 0);
+        // D-CITY-9: satchel gates how many troops a SINGLE team may carry per march/siege — independent of the
+        // total troopCap pool (troopCapFor/drillYard). Card-army teams carry real strength in cardState.currentTroops
+        // (the flat `troops` above degenerates to card count for them, per the CC-3 note below), so sum that instead.
+        const teamHasCardArmy = team.army.some((e) => !!e.cardInstanceId);
+        const carried = teamHasCardArmy
+          ? team.army.reduce((s, e) => s + (e.cardInstanceId ? (pw.cardState?.[e.cardInstanceId]?.currentTroops ?? 0) : 0), 0)
+          : troops;
+        const satchelCap = satchelCarryCapFor(pw.buildings);
+        if (carried > satchelCap) {
+          throw new SlgError('SATCHEL_CAP_EXCEEDED', `Team carries ${carried} troops, exceeds satchel cap of ${satchelCap}`);
+        }
       }
     }
     // CC-3 card-based team (cardInstanceId entries): committed strength lives entirely in cardState.currentTroops
@@ -193,7 +214,10 @@ export class MarchService {
 
     const fromTid = tileId(worldId, fromX, fromY);
     const fromTile = await cols.tiles.findOne({ _id: fromTid });
-    if (!fromTile || fromTile.ownerId !== accountId) {
+    // ADR-051 (P3c): an idle re-dispatch departs from the team's stationed cell, which is often neutral (unowned)
+    // land — skip the own-territory requirement for it. The cell is legal by construction (the team stands there),
+    // and fromX/fromY were overridden above to the StationedDoc's coordinates, so `fromTid` is that exact cell.
+    if (!idleRedispatch && (!fromTile || fromTile.ownerId !== accountId)) {
       throw new SlgError('TILE_NOT_OWNED', 'Can only march from your own tile');
     }
 
@@ -294,7 +318,9 @@ export class MarchService {
 
     const t = now();
     const resources = this.core.settle(pw, t);
-    if (!hasCardArmy && pw.troops < troops) throw new SlgError('NO_TROOPS', 'Insufficient troops');
+    // ADR-051 (P3c): a re-dispatched idle team's troops already left the pool at its original dispatch (they are
+    // "out in the field"), so there is no pool balance to check or deduct — same exemption as a card army.
+    if (!hasCardArmy && !idleRedispatch && pw.troops < troops) throw new SlgError('NO_TROOPS', 'Insufficient troops');
 
     const path = await this.computeMarchPath(worldId, fromX, fromY, toX, toY, accountId);
     const departAt = t;
@@ -333,6 +359,18 @@ export class MarchService {
       status: 'marching',
       rev: 0,
     };
+    // ADR-051 (P3c): for an idle re-dispatch, atomically claim (remove) the StationedDoc *before* inserting the new
+    // march. This frees the field cell and doubles as the team lock: two racing re-dispatches of the same team both
+    // pass the findOne gate above, but only one findOneAndDelete wins — the loser gets TEAM_BUSY. The parked team's
+    // occupancy entry is dropped too (idle teams register no cover, so there is nothing to remove from that index).
+    // Ordering: the path was already computed (read-only) above, so nothing between here and the insert can throw
+    // and orphan the team. A same-tile occupy (to === from) is an in-place occupation (§4.3): the length-1 path
+    // settles instantly and flows through the normal applyOccupy pipeline.
+    if (idleRedispatch) {
+      const claim = await cols.stationed.findOneAndDelete({ worldId, ownerId: accountId, teamId });
+      if (!claim) throw new SlgError('TEAM_BUSY', 'Team is no longer stationed (already re-commanded); recall it first');
+      await this.core.clearOccupancy(worldId, claim.tile, claim.tile);
+    }
     // The partial-unique index on {worldId,ownerId,teamId} (db.ts) is the atomic backstop for the idle-team
     // gate above: two concurrent dispatches of the same team both clear the findOne pre-check, but only one insert
     // wins — the loser hits E11000 and is reported as TEAM_BUSY. Non-team (flat-pool) marches carry no teamId and
@@ -349,7 +387,7 @@ export class MarchService {
     // already lives in cardState.currentTroops and never touches playerWorld.troops (see hasCardArmy above).
     await cols.playerWorld.updateOne(
       { _id: pw._id },
-      hasCardArmy
+      hasCardArmy || idleRedispatch
         ? { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } }
         : { $set: { resources, lastTickAt: t }, $inc: { troops: -troops, rev: 1 } },
     );
