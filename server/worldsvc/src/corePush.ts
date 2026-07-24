@@ -5,6 +5,20 @@ import { WorldCoreYield } from './coreYield';
 import type { MarchView } from './worldTypes';
 import type { SiegeDoc, TileDoc } from './db';
 
+/**
+ * ADR-051 (P1): one entry in the field-unit occupancy index (`world:{worldId}:occ`, field=tileId). Describes the
+ * unit currently standing on a tile so the P2 tile-entry encounter check can identify friend/foe by O(1) lookup.
+ * `leaveAt` = when a moving march vacates the tile (reaches the next path cell); MAX_SAFE_INTEGER for the final
+ * cell (settled to a stationed team) or a parked unit.
+ */
+export interface OccEntry {
+  marchId: string;
+  ownerId: string;
+  teamId?: string;
+  tile: string;
+  leaveAt: number;
+}
+
 export class WorldCorePush extends WorldCoreYield {
   // ── Redis scheduling (best-effort, §14.4 `world:{worldId}:march` ZSET, score=arriveAt) ──
   // Processing uses the Mongo arriveAt scan as authoritative; the ZSET is only for future precise wake-ups; silently skipped when Redis is absent.
@@ -65,6 +79,36 @@ export class WorldCorePush extends WorldCoreYield {
     if (!this.deps.redis) return;
     try {
       await this.deps.redis.zrem(this.occupationZsetKey(worldId), id);
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  // ── ADR-051 (P1): field-unit occupancy index (best-effort Redis hash, field=tileId → occupant JSON) ──
+  // Records which field unit currently stands on each tile so the P2 tile-entry encounter check is an O(1)
+  // lookup by tile (no Mongo scan). Best-effort like the ZSETs — a missing/failed Redis only disables the
+  // future real-time encounter feature; arrival correctness stays on the authoritative Mongo scan. Written as
+  // a march steps tile-to-tile (setOccupancy) and cleared on arrival/recall (clearOccupancy, match-guarded so a
+  // unit never deletes another unit's entry after a hand-off on the same tile).
+  private occKey(worldId: string): string {
+    return `world:${worldId}:occ`;
+  }
+  async setOccupancy(worldId: string, tile: string, occ: OccEntry): Promise<void> {
+    if (!this.deps.redis) return;
+    try {
+      await this.deps.redis.hset(this.occKey(worldId), tile, JSON.stringify(occ));
+    } catch {
+      /* best-effort: a lost write only weakens the encounter index, never arrival */
+    }
+  }
+  async clearOccupancy(worldId: string, tile: string, marchId: string): Promise<void> {
+    if (!this.deps.redis) return;
+    try {
+      const cur = await this.deps.redis.hget(this.occKey(worldId), tile);
+      if (!cur) return;
+      const e = JSON.parse(cur) as OccEntry;
+      // Only clear if we still hold the tile — another unit may have stepped on since (encounter hand-off, P2).
+      if (e.marchId === marchId) await this.deps.redis.hdel(this.occKey(worldId), tile);
     } catch {
       /* best-effort */
     }

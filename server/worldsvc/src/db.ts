@@ -575,6 +575,9 @@ export async function createWorldMongo(
     await collections.marches.createIndex({ worldId: 1, ownerId: 1 });
     // On-time scan fallback (primary scheduling uses Redis ZSET, S8-2; degrades to Mongo polling without Redis).
     await collections.marches.createIndex({ arriveAt: 1 });
+    // ADR-051 (P1): stepping marches are driven off their next per-tile step time; the arrival scan matches on
+    // nextStepAt for them (and falls back to arriveAt for legacy/return legs that carry no stepping cursor).
+    await collections.marches.createIndex({ nextStepAt: 1 });
     // Idle-team invariant (2026-07-22): a team may hold only ONE active state. Team-based marches are the only
     // docs carrying `teamId` (flat-pool marches have none; recall rewrites the SAME doc into a return leg; arrived
     // marches are deleted) — so a partial-unique index on {worldId,ownerId,teamId} atomically forbids a second

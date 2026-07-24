@@ -389,6 +389,9 @@ export class MarchService {
     const traveled = Math.max(0, Math.min(t - m.departAt, total));
     const backArrive = t + traveled;
     // Atomic claim (prevents race with arrival processing): only an outbound march still in 'marching' state is flipped to a return leg.
+    // ADR-051 (P1): drop the stepping cursor ($unset path/stepIndex/nextStepAt) — the return leg reverts to the
+    // legacy single-arrival model (arriveAt-driven; it does not step tile-by-tile and so is not subject to P2
+    // en-route encounters, per the agreed scope). backArrive keeps the existing time-based return semantics.
     const claimed = await cols.marches.findOneAndUpdate(
       { _id: mid, status: 'marching', kind: { $ne: 'return' } },
       {
@@ -399,11 +402,17 @@ export class MarchService {
           departAt: t,
           arriveAt: backArrive,
         },
+        $unset: { path: '', stepIndex: '', nextStepAt: '' },
         $inc: { rev: 1 },
       },
       { returnDocument: 'after' },
     );
     if (!claimed) throw new SlgError('MARCH_NOT_FOUND', 'March has already arrived or been recalled');
+    // Clear the occupancy entry the outbound leg left on the cell it had reached (best-effort; match-guarded).
+    if (m.path && m.stepIndex != null) {
+      const cur = m.path[m.stepIndex];
+      if (cur) await this.core.clearOccupancy(worldId, tileId(worldId, cur.x, cur.y), mid);
+    }
     await this.core.scheduleMarch(worldId, mid, backArrive); // update score on the same member (ZSET)
     const view = this.core.marchView(claimed);
     void this.core.pushMarch(accountId, view);
@@ -442,20 +451,89 @@ export class MarchService {
   async processDueArrivals(nowMs?: number): Promise<number> {
     const { cols } = this.core.deps;
     const t = nowMs ?? this.core.deps.now();
+    // ADR-051 (P1): a march needs processing when its next per-tile step is due (stepping marches carry
+    // `nextStepAt`) or — for legacy docs and 'return' legs that carry no stepping cursor — when its final arrival
+    // is due (`arriveAt`). Stepping marches advance tile-by-tile (updating the occupancy index for the P2
+    // encounter check) and only settle when they reach the final path cell; the net arrival timing is unchanged
+    // (path[last] is reached at arriveAt), so callers that jump the clock past arriveAt still settle in one call.
     const due = await cols.marches
-      .find({ status: 'marching', arriveAt: { $lte: t } })
+      .find({
+        status: 'marching',
+        $or: [
+          { nextStepAt: { $lte: t } },
+          { nextStepAt: { $exists: false }, arriveAt: { $lte: t } },
+        ],
+      })
       .limit(500)
       .toArray();
     let n = 0;
     for (const m of due) {
-      // Atomic claim + delete (transient document consumed on arrival); skip if lost to a recall or concurrent processor.
-      const claimed = await cols.marches.findOneAndDelete({ _id: m._id, status: 'marching' });
-      if (!claimed) continue;
-      await this.core.unscheduleMarch(claimed.worldId, claimed._id);
-      await this.applyArrival(claimed, t);
-      n++;
+      if (m.path && m.stepIndex != null && m.nextStepAt != null) {
+        // Stepping march: advance cell-by-cell up to t; settles (and counts) only on reaching the final cell.
+        if (await this.advanceMarch(m, t)) n++;
+      } else {
+        // Legacy / return leg: single-arrival model (unchanged). Atomic claim + delete; skip if lost to a recall
+        // or concurrent processor.
+        const claimed = await cols.marches.findOneAndDelete({ _id: m._id, status: 'marching' });
+        if (!claimed) continue;
+        await this.core.unscheduleMarch(claimed.worldId, claimed._id);
+        await this.applyArrival(claimed, t);
+        n++;
+      }
     }
     return n;
+  }
+
+  /**
+   * ADR-051 (P1): advance a stepping march tile-by-tile up to time `t`, writing the occupancy index at each cell
+   * entered. Returns true iff the march reached its final path cell and its arrival was applied (claimed+deleted).
+   * Otherwise the step cursor (stepIndex/nextStepAt) is persisted and the ZSET wake-up rescheduled to the next
+   * step. Behavior-preserving in P1: no combat happens en route (that is the P2 encounter check, which will slot
+   * in where noted); the only new side effect is the best-effort occupancy write.
+   */
+  private async advanceMarch(m: MarchDoc, t: number): Promise<boolean> {
+    const { cols } = this.core.deps;
+    const path = m.path!;
+    const last = path.length - 1;
+    let idx = m.stepIndex!;
+    // Step through every cell whose arrival time has already elapsed by t. Each hop vacates the cell just left
+    // (match-guarded clear) and occupies the new one, so the index holds exactly the march's CURRENT cell — never
+    // a trail of stale entries.
+    while (idx < last && marchStepArriveAt(m.departAt, idx + 1) <= t) {
+      const left = path[idx]!;
+      idx++;
+      const cell = path[idx]!;
+      await this.core.clearOccupancy(m.worldId, tileId(m.worldId, left.x, left.y), m._id);
+      const tid = tileId(m.worldId, cell.x, cell.y);
+      const leaveAt = idx < last ? marchStepArriveAt(m.departAt, idx + 1) : Number.MAX_SAFE_INTEGER;
+      await this.core.setOccupancy(m.worldId, tid, {
+        marchId: m._id,
+        ownerId: m.ownerId,
+        teamId: m.teamId,
+        tile: tid,
+        leaveAt,
+      });
+      // (P2: tile-entry encounter check at `cell` slots in here — occ/cover lookup → runSiegeBattle.)
+    }
+    if (idx >= last) {
+      // Reached the destination cell → settle arrival (atomic claim + delete, then apply by kind). Clear the
+      // occupancy entry for the final cell (applyArrival may re-register it as a stationed team via P3).
+      const claimed = await cols.marches.findOneAndDelete({ _id: m._id, status: 'marching' });
+      if (!claimed) return false; // lost to a concurrent recall / processor
+      await this.core.unscheduleMarch(claimed.worldId, claimed._id);
+      await this.core.clearOccupancy(claimed.worldId, claimed.toTile, claimed._id);
+      await this.applyArrival(claimed, t);
+      return true;
+    }
+    // Mid-route: persist the new cursor and reschedule the next step. Guard on status:'marching' AND kind≠return
+    // so a concurrent recall (which flips to a return leg and $unsets the cursor) is never clobbered back.
+    const nextStepAt = marchStepArriveAt(m.departAt, idx + 1);
+    const res = await cols.marches.updateOne(
+      { _id: m._id, status: 'marching', kind: { $ne: 'return' } },
+      { $set: { stepIndex: idx, nextStepAt }, $inc: { rev: 1 } },
+    );
+    if (res.matchedCount > 0) await this.core.scheduleMarch(m.worldId, m._id, nextStepAt);
+    return false;
   }
 
   /** Apply the effects of a single arrived march (already removed from marches collection). */
