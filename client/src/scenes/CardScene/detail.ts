@@ -10,7 +10,7 @@ import { buildEquipIcon } from '../../render/equipmentAtlas';
 import { buildFactionIcon, FACTION_COLOR } from '../../render/factionIcon';
 import { RARITY_COLOR } from '../EquipmentScene/base';
 import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
-import { CARD_DEFS, MAX_CARD_LEVEL, FUSION_MATERIAL_COUNT, fusionMaterialCandidates, troopCap, cardPower } from '../../game/meta/cardDefs';
+import { CARD_DEFS, MAX_CARD_LEVEL, FUSION_MATERIAL_COUNT, fusionMaterialCandidates, troopCap, cardPower, cardHp, cardSiegeValue } from '../../game/meta/cardDefs';
 import { skinsForUnitType } from '../../game/meta/skinDefs';
 import type { UnitType } from '../../game/types';
 import {
@@ -54,8 +54,9 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
 
       // Natural (unscaled) content size — everything below is laid out in this local frame.
       const mw = Math.min(380, w - 24);
-      // Content height: pad(12) + name(26) + portrait row(106) + injury(26|4) + skill(28) + xp(26) + gear(82) + button row(40).
-      const contentH = 12 + 26 + 106 + (isInjured ? 26 : 4) + 28 + 26 + 82 + 40;
+      // Content height: pad(12) + name(26) + portrait row(122, stat column now has 5 lines + inTeam
+      // tag so it can outgrow the 96px portrait) + injury(26|4) + skill(28) + xp(26) + gear(82) + button row(40).
+      const contentH = 12 + 26 + 122 + (isInjured ? 26 : 4) + 28 + 26 + 82 + 40;
       const mh = Math.min(contentH, h - 60);
       const mx = 0;
       const my = 0;
@@ -141,10 +142,25 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
       }
 
       const statX = portraitX + portraitBox + 14;
+      const statMaxW = mx + mw - 12 - statX;
       let statY = portraitY + 2;
-      const lvLine = this.stxt(t('roster.level').replace('{lv}', String(card.level)), FS.tiny, C.mid, true);
-      lvLine.x = statX; lvLine.y = statY;
-      panelRoot.addChild(lvLine);
+
+      // Level as a row of gold stars, not "Lv.N" text — matches the roster grid card convention
+      // (list.ts renderCardCell): level is the headline stat, one filled star per level (max 9).
+      const stars = new PIXI.Container();
+      stars.name = 'levelStars';
+      const starN = Math.max(1, Math.min(9, card.level));
+      const starSize = 14;
+      const starGap = 3;
+      for (let i = 0; i < starN; i++) {
+        const st = buildIcon('star', starSize, C.gold);
+        st.x = i * (starSize + starGap);
+        stars.addChild(st);
+      }
+      const starsW = starN * starSize + (starN - 1) * starGap;
+      if (starsW > statMaxW) stars.scale.set(Math.max(0.01, statMaxW / starsW));
+      stars.x = statX; stars.y = statY;
+      panelRoot.addChild(stars);
       statY += 20;
 
       const pwrLine = this.stxt(`${t('roster.power')} ${power}`, FS.tiny, C.dark, true);
@@ -161,8 +177,21 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
       panelRoot.addChild(troopLine);
       statY += 18;
 
+      // HP + siege value: static per-unit-type combat stats (engine UNIT_BLUEPRINTS), not per-instance.
+      const hpLine = this.stxt(`${t('roster.hp')}: ${cardHp(card)}`, FS.micro, C.dark);
+      hpLine.x = statX; hpLine.y = statY;
+      panelRoot.addChild(hpLine);
+      statY += 18;
+
+      const siegeLine = this.stxt(`${t('roster.siege')}: ${cardSiegeValue(card)}`, FS.micro, C.dark);
+      siegeLine.x = statX; siegeLine.y = statY;
+      panelRoot.addChild(siegeLine);
+      statY += 18;
+
       if (inTeam) {
-        const tag = this.stxt(`[${t('roster.inTeam')}]`, FS.micro, C.accent, true);
+        const teamName = state?.teamId ? this.cb.getTeamName?.(state.teamId) : undefined;
+        const tagText = teamName ? t('roster.inTeamNamed').replace('{team}', teamName) : t('roster.inTeam');
+        const tag = this.stxt(`[${tagText}]`, FS.micro, C.accent, true);
         tag.x = statX; tag.y = statY;
         panelRoot.addChild(tag);
         statY += 16;

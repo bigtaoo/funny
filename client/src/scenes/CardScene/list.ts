@@ -221,9 +221,12 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         ay += 24;
       }
 
-      // Status tag (deployed / injured).
+      // Status tag (deployed / injured) — named to the actual team when the caller can resolve it.
       if (inTeam) {
-        const tag = txt(`[${t('roster.inTeam')}]`, FS.tiny, C.accent, true);
+        const teamName = state?.teamId ? this.cb.getTeamName?.(state.teamId) : undefined;
+        const tagText = teamName ? t('roster.inTeamNamed').replace('{team}', teamName) : t('roster.inTeam');
+        const tag = txt(`[${tagText}]`, FS.tiny, C.accent, true);
+        if (tag.width > rightW) tag.scale.set(Math.max(0.01, rightW / tag.width));
         tag.x = ax; tag.y = ay; this.bodyLayer.addChild(tag); ay += 20;
       } else if (isInjured) {
         const tag = txt(`[${t('roster.injured').replace('{time}', injuryCountdown(injuredUntil, now))}]`, FS.tiny, C.red);

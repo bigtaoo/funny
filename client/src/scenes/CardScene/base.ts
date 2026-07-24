@@ -42,6 +42,8 @@ export interface CardCallbacks {
   getSave(): SaveData;
   /** SLG per-card state (troops/injury/teamId); undefined when outside SLG. */
   getCardState?(): Record<string, CardSLGState> | undefined;
+  /** Human-readable name for an SLG team id; undefined when outside SLG or the team can't be resolved. */
+  getTeamName?(teamId: string): string | undefined;
   /** Fuse cards: consumes exactly 5 materialCardIds (same faction+level as target), targetCardId +1 level. */
   fuseCards(targetCardId: string, materialCardIds: string[]): Promise<CardActionResult>;
   /** Toggle card lock. */
