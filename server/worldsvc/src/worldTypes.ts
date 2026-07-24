@@ -88,11 +88,11 @@ export interface WorldTileView {
    */
   allySect?: boolean;
   /**
-   * G5 vision: whether this tile is within the requester's current vision.
-   * - true: the dynamic layer (ownership/garrison/defense/protection shield) is returned as-is;
-   * - false: outside vision — only the procedural base terrain (type/level/resType) is returned;
-   *   all dynamic layers are hidden (not even "occupied" is leaked — type falls back to base terrain rather than 'territory').
-   * Populated only by getMap viewport reads; single-tile responses like getTile/occupy do not include this field.
+   * G5 vision. Since the 2026-07-24 fog-model change this is always `true` on getMap/getTile reads: the static
+   * structure layer (location / ownership / base identity / level / occupation) is public map-wide, so fog no
+   * longer withholds whole tiles. Fog now gates only the INTEL fields (garrison / hp / maxHp / watchtower),
+   * which are simply omitted for out-of-vision tiles (see coreMap.gateIntel), and marching troops (getMarches).
+   * The field is retained so existing clients keep rendering the map un-dimmed (they darken only on `=== false`).
    */
   visible?: boolean;
 }

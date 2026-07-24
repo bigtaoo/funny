@@ -640,7 +640,7 @@ if (path.startsWith('/admin/world/')) {
 
 | # | 决策 | 结论 |
 |---|---|---|
-| **V1 迷雾模型** | 永久黑雾 vs 战争迷雾 | **2a**：地形层（程序化、确定性）**全图始终可见**；动态层（归属/驻军/防守/保护罩/行军）仅当前视野内可见，视野外**退回 `proceduralTile` 底层地形**（连「已被占领」信号都不泄露——type 不返 `territory`/`base`）。不做持久化 explored-set 黑雾——地形不是秘密，机密是动态层。**资源图案（含等级细节）归地形层，全图始终可见（2026-07-07 拍板，见 §18.6 客户端渲染条）——原「视野外只显资源类型、隐等级」的收窄已作废。** |
+| **V1 迷雾模型** | 永久黑雾 vs 战争迷雾 | **2a**：地形层（程序化、确定性）**全图始终可见**；动态层（归属/驻军/防守/保护罩/行军）仅当前视野内可见，视野外**退回 `proceduralTile` 底层地形**（连「已被占领」信号都不泄露——type 不返 `territory`/`base`）。不做持久化 explored-set 黑雾——地形不是秘密，机密是动态层。**资源图案（含等级细节）归地形层，全图始终可见（2026-07-07 拍板，见 §18.6 客户端渲染条）——原「视野外只显资源类型、隐等级」的收窄已作废。** **⚠️ 2a 的「动态层整层藏雾」已于 2026-07-24 让位给模型 2b（§18.10）：归属/base/占领等静态结构改为全图公开，迷雾只藏情报字段（驻军/耐久/瞭望塔）与行军。** |
 | **V2 视野来源 + 共享** | 半径来源 / 共享到哪一级 | 己方领地半径 `VISION_TERRITORY_RADIUS=2` + 主城 `VISION_BASE_RADIUS=5` + 在途行军 `VISION_MARCH_RADIUS=2`（侦察行军价值）。**共享 = 家族级（≤30）**，复用 `sameFamily`/`familyMembers` 反查。**§8.2 字面「宗门级共享」降级为家族级**——宗门 900 人并集近乎整图，迷雾名存实亡；宗门/联盟只做领地颜色标记不并视野。`scout` 侦察行军 kind 已落地（§18.8，半径 `VISION_SCOUT_RADIUS=4`、不打不占自动回师）；瞭望塔建筑已落地（§18.9，`VISION_WATCHTOWER_RADIUS=8` 固定半径持久视野源）。 |
 | **V3 计算/存储** | 实时算 vs 落库 | **实时算 + 短 TTL 缓存（缓存留后续），vision 零落库**（避 U11 规模爆炸）。视区半径有 `MAP_VIEW_MAX_RADIUS=40` 上限，计算量有界；源领地查询复用 `{ownerId}` 索引。 |
 | **V4 推送门控** | 读路径门控 / 反向视野推送 | **v1 即做反向视野推送**（用户拍板，覆盖初版「仅读路径」建议）。工程化:反向查询**只在「行军发起 / 格易主」两个低频事件点做一次**（查路径沿途半径内有视野源的玩家 → 一次性推完整 `march_update`/`tile_update`，客户端在自己视野内的路径段渲染），**不逐 tick 反向扇出**（避 U11）。`under_attack` 仍无条件发防守方（§16 布阵预设=反应窗口）。→ G5-2。 |
@@ -752,6 +752,20 @@ if (path.startsWith('/admin/world/')) {
 - **验收**：server `tsc -b shared engine worldsvc gateway` 全绿；client `tsc --noEmit` + `build:web` 全绿 + 312 测试通过（1 例 `headless-nav` 因 S9 成就 stub 缺 `applyAchievementBadge` 预先失败，与本片无关）；worldsvc **141 e2e**（新增 `watchtower.e2e.test.ts` 6 例：建塔扣资源+置标记+视图透出 / 扩视野原迷雾远格建塔后可见且超半径仍迷雾 / 非己方拒绝 / 主城拒绝 / 资源不足拒绝不动地图 / 幂等不重复扣费；既有 135 不破）。
 
 > **G5 视野/迷雾全 ✅（2026-06-21）**：读路径门控（G5-1）+ 反向视野推送（G5-2）+ 客户端渲染（G5-3）+ 联盟领地黄标（§18.7）+ scout 侦察行军（§18.8）+ **瞭望塔建筑（§18.9）**。「加家族才守得住」的视野维度**完整闭环**——地形全见、敌情藏雾、家族共享、侦察行军照路（含深探斥候）、瞭望塔主动布点固定视野、敌军进视野即现、联盟领地黄描边勿攻。V2 余项全部兑现。
+
+### 18.10 迷雾模型 2a → 2b：静态层全图公开、迷雾只藏情报与行军（2026-07-24 用户拍板）
+
+> **动机**：三档缩放曾走两条服务端读路径——L1 详情 `getMap`（做 G5 视野门控）、L2/L3 概览 `getMapSparse`（**为性能跳过视野计算**，返回全部有主格）。结果：**同一片地图在 L2/L3 满是别人的基地，切到 L1 却全消失**（视野外的 base 被 `getMap` 退回程序化地形、type 不再是 `base`，客户端 `refreshCityLayer` 画不出；且 `getMap` 逐格覆盖会把 L2 缓存的稀疏 base 覆写成迷雾地形）。这是信息泄露式的不一致：战略概览泄露了详情视图刻意隐藏的占领信息。
+>
+> **拍板**：迷雾**只对地图上的行军队伍生效**，对建筑/基地不生效——玩家随时可以看到其他玩家**在什么位置**（位置/归属/名字/等级/占领状态全图公开），只是看不到别人**队伍的行军**，以及**未进视野的情报**（守军兵力/耐久/瞭望塔）。这与率土之滨一致（静态政治地图恒可见、行军藏雾）。
+
+- **server（`coreMap.ts`）**：
+  - 新 helper `gateIntel(view, inVision)`：视野内原样返回；视野外只**剥离情报字段** `garrison` / `hp` / `maxHp` / `watchtower`（结构照常返回）。行军已在 `getMarches`（己方 + 视野内敌方）门控，无需改。
+  - `getMap`：删掉「视野外退回程序化地形 + `visible:false`」的整段——现在逐格恒返回完整 `tileDocView`（归属/base/occupied），只过 `gateIntel(view, vis(x,y))`，`visible` 恒 `true`。`ally`/`allySect` 标记也改为**不分视野**计算（派生自现已公开的归属 + 自己已知的宗盟关系，视为公开的政治色）。他人档案（名字）拉取去掉 `vis()` 过滤（归属公开→名字全图显）。
+  - `getTile`：同口径——结构公开、`gateIntel` 只藏情报。
+  - `WorldTileView.visible` 语义：自此**恒为 true**（静态层不再整格门控），保留字段仅为客户端兼容（客户端只在 `=== false` 时变暗，故恒 true → 不变暗，正合「静态地图无雾」）。见 `worldTypes.ts` 注释。
+- **client**：**零改动**。`visible:true` 使 `pool.ts` 的 `fogged` 恒 false → 底图不再变暗；`city.ts refreshCityLayer` 本就不看 `visible`，base 精灵按 `type==='base'` 恒绘。
+- **验收**：worldsvc `tsc --noEmit` 绿；`fog.e2e`（5）/`watchtower.e2e`（6）/`alliance-mark.e2e`（3）全绿。三处**视野探针从 `visible` 改为情报（`maxHp`）**：`fog` 视野外敌 base 现断言 `type:base + occupied + visible:true` 但 `garrison/hp/maxHp/watchtower` 全 undefined、march 照亮改测敌 base 的 `maxHp` 显形；`watchtower` 扩视野改测敌领地 `maxHp` 由 undefined→>0；`alliance` 远处联盟领地现 `allySect` 标记公开、仅 `maxHp` 藏雾。（`pathfinding.test.ts` 2 例失败为既有 seed-pool flake，与本改无关。）
 
 ## 19. G8 险地（Stronghold）实现记录（2026-06-21，§3.1 / §15.2 G8）
 

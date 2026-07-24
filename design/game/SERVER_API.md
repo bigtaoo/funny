@@ -571,7 +571,7 @@ POST /internal/ads/credit  { accountId, amount, dayKey } → { ok, coinsAfter }
 
 ### 10.1 World（地图 / 行军 / 养城）
 ```
-GET  /world/map           ?worldId&cx&cy&r          → WorldMapView（视区，含视野 visible/ally）
+GET  /world/map           ?worldId&cx&cy&r          → WorldMapView（视区；静态层全图公开，迷雾只藏情报 garrison/hp/watchtower，§18.10）
 GET  /world/map/sparse    ?worldId&cx&cy&r&lod      → WorldMapSparseView（鸟瞰只含占领格，lod=thin|mid）
 GET  /world/tile/{tileId}                           → WorldTileView
 GET  /world/me            ?worldId                  → PlayerWorldView（兵力/资源/产率/训练队列）
