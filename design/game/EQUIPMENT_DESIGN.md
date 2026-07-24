@@ -402,6 +402,13 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 > **i18n**：装备名 / 词条 / 特技 / 稀有度 一律走 i18n key（`equip.<defId>.name`、`affix.<id>.desc`、`skill.<id>.*`），不硬编码中文（项目 i18n 纪律，见 UI_DESIGN）。
 
+### 11.2 实现记录（2026-07-24，✅）— 背包卡片：词条直显 + 数量角标右上
+
+背包网格卡片（`InventoryMixin.renderInstanceCell`）原右侧信息列只显示稀有度 / 已装备标签 / 堆叠数量，词条要点开详情弹窗才能看到；数量角标也挤在同一列，读起来费劲。改为：
+
+- **词条直显**：右侧信息列在稀有度/已装备标签下方，直接列出该件的词条描述（`affixDesc`，如 `Health +10%` / `Crit Damage +21%`），主词条用 accent 高亮色、副/特技用中性深色——与详情弹窗（`DetailMixin.openDetail`）的词条配色语言一致，玩家不用点开就能比较货架上的件。
+- **数量角标移至右上角**：堆叠数量（`×N`）从信息列移到卡片右上角，与锁定图标共用同一角（二者互斥——按 `buildDisplayEntries` 的堆叠规则，锁定件恒为独立行、`count` 恒为 1，不会与角标数量同框）。
+
 ---
 
 ## 12. 经济联动

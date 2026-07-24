@@ -9,7 +9,7 @@ import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { buildIcon } from '../../render/icons';
 import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance } from '../../game/meta/SaveData';
-import { getEquipDef } from '../../game/meta/equipmentDefs';
+import { getEquipDef, affixKind } from '../../game/meta/equipmentDefs';
 import {
   type Constructor, type EquipmentSceneBaseCtor, type EquipTab,
   LOADOUT_H, FILTER_H, SECTION_H, CELL_GAP, CELL_GAP_X, EQUIP_CELL_H, EQUIP_CELL_W_TARGET,
@@ -352,9 +352,9 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
     }
 
     /**
-     * Icon-card cell: name +level across the top, equipment glyph on the left,
-     * rarity / equipped tag / stack count on the right, action hint bottom-right.
-     * Border color encodes rarity when equipped, neutral otherwise.
+     * Icon-card cell: name + level across the top (stack count / lock badge in the top-right
+     * corner), equipment glyph on the left, rarity / equipped tag / affix stat lines on the right,
+     * action hint bottom-right. Border color encodes rarity when equipped, neutral otherwise.
      */
     private renderInstanceCell(inst: EquipmentInstance, x: number, y: number, cellW: number, equipped: boolean, count = 1): void {
       const pad = 8;
@@ -371,18 +371,28 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       cell.x = x; cell.y = y;
       this.bodyLayer.addChild(cell);
 
-      // Top: name (scaled down to fit if too wide).
-      const name = txt(this.itemName(inst.defId), FS.bodyLg, C.dark, true);
-      name.x = x + pad; name.y = y + pad;
-      if (name.width > cellW - pad * 2 - 20) name.scale.set(Math.min(1, cellW / (name.width + 40)));
-      this.bodyLayer.addChild(name);
-
-      // Lock badge (top-right).
+      // Top-right corner badge: lock icon takes priority; otherwise the stack count (×N). The two
+      // never coexist — stacked entries are always unlocked/level 0 (see buildDisplayEntries), so a
+      // locked instance is never also a counted stack.
+      let cornerBadgeW = 0;
       if (inst.locked) {
         const l = buildIcon('lock', 18, C.mid);
         l.x = x + cellW - pad - 18; l.y = y + pad;
         this.bodyLayer.addChild(l);
+        cornerBadgeW = 18;
+      } else if (count > 1) {
+        const badge = txt(`×${count}`, FS.body, C.mid, true);
+        badge.anchor.set(1, 0); badge.x = x + cellW - pad; badge.y = y + pad;
+        this.bodyLayer.addChild(badge);
+        cornerBadgeW = badge.width;
       }
+
+      // Top: name (scaled down to fit if too wide, leaving room for the corner badge above).
+      const name = txt(this.itemName(inst.defId), FS.bodyLg, C.dark, true);
+      name.x = x + pad; name.y = y + pad;
+      const nameMaxW = cellW - pad * 2 - (cornerBadgeW > 0 ? cornerBadgeW + 8 : 0);
+      if (name.width > nameMaxW) name.scale.set(Math.min(1, nameMaxW / name.width));
+      this.bodyLayer.addChild(name);
 
       // Enhance level as a row of gold stars beneath the name, in place of the old "+N" suffix
       // (matches the Hero Roster / Card level-star convention). Header row grows to make room.
@@ -408,23 +418,27 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       this.bodyLayer.addChild(frame);
       this.addGlyph(slot, inst.rarity, imgX + imgBox / 2, imgY + imgBox / 2, imgBox - 8, seedFor(x, imgBox, cellW), 1, inst.defId);
 
-      // Right: rarity / equipped tag / stack count on top, action affordance anchored to the
-      // bottom of the column — sized to the glyph frame's height so the column no longer reads
-      // as mostly blank paper for common items with nothing but a rarity line to show.
+      // Right: rarity / equipped tag on top, then the item's affix lines (its stats, e.g.
+      // "Health +10%") shown directly beside the icon — no need to open the detail modal just to
+      // see what a piece rolls. Main affix highlighted in accent color, sub/skill in neutral dark
+      // (mirrors the detail modal's affix list styling). Stack count moved to the top-right corner
+      // badge above, so this column is now stat space instead of duplicate count text.
       const ax = imgX + imgBox + 12;
       const colW = x + cellW - pad - ax;
       let ay = imgY + 4;
       const rar = txt(t(`equip.rarity.${inst.rarity}` as TranslationKey), FS.body, color, true);
-      rar.x = ax; rar.y = ay; this.bodyLayer.addChild(rar); ay += 28;
+      rar.x = ax; rar.y = ay; this.bodyLayer.addChild(rar); ay += 26;
       if (equipped) {
         const slotLabel = t(`equip.slot.${slot}` as TranslationKey);
         const e = txt(`[${t('equip.equipped')} · ${slotLabel}]`, FS.small, C.green, true);
         if (e.width > colW) e.scale.set(Math.max(0.01, colW / e.width));
-        e.x = ax; e.y = ay; this.bodyLayer.addChild(e); ay += 24;
+        e.x = ax; e.y = ay; this.bodyLayer.addChild(e); ay += 22;
       }
-      if (count > 1) {
-        const badge = txt(`×${count}`, FS.body, C.mid);
-        badge.x = ax; badge.y = ay; this.bodyLayer.addChild(badge);
+      for (const af of inst.affixes) {
+        const afColor = affixKind(af.id) === 'main' ? C.accent : C.dark;
+        const line = txt(this.affixDesc(af.id, af.value, inst.level), FS.small, afColor);
+        if (line.width > colW) line.scale.set(Math.max(0.01, colW / line.width));
+        line.x = ax; line.y = ay; this.bodyLayer.addChild(line); ay += 20;
       }
 
       // Action buttons along the bottom of the cell, spanning its full width. Each is an icon-forward
