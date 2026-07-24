@@ -14,7 +14,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { palette } from './theme';
 
-export type HudButtonVariant = 'primary' | 'accent' | 'secondary' | 'danger' | 'disabled';
+export type HudButtonVariant = 'primary' | 'accent' | 'secondary' | 'danger' | 'disabled' | 'gold';
 
 interface HudButtonStyle {
   fill: number;
@@ -35,6 +35,8 @@ const HUD_BUTTON_STYLES: Record<HudButtonVariant, HudButtonStyle> = {
   danger:    { fill: 0xf6eceb,        border: palette.inkRed, borderWidth: 2, text: palette.inkRed },
   /** Non-interactive state of primary/accent buttons. */
   disabled:  { fill: 0x999999,        border: 0x333333,      borderWidth: 1, text: 0xdddddd },
+  /** Affordable gold-cost action (base Upgrade) — needs to read as "spend me now". */
+  gold:      { fill: palette.marker,  border: palette.pencil, borderWidth: 1, text: palette.pencil },
 };
 
 /**

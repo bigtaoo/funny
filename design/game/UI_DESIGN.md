@@ -447,7 +447,7 @@ LeaderboardScene 前三名用 🥇🥈🥉 emoji。新增 **1 个** `icons.ts` �
 - **血条按阵营配色**：`HUDView.drawHpBar` 改为吃 `color`——我方 `factionInk.friend`(蓝)、敌方 `factionInk.enemy`(红)；对方名字文字（`GameRenderer/base.ts drawOpponentLabel`）也改红。
 - **低血告警＝动效，不用红**（用户拍板）：色相恒表阵营，危险靠「闪」表达，避免我方低血红与敌方红撞色。两级——**低血（≤3 格）**在自身色相里轻微脉动；**危急（最后一格 / ≤15% 基地血）**升级为快速闪烁 + 血条上方琥珀 ⚠（`drawHpWarning`）＋**棋盘上对应基地城堡四周脉动光环**（敌红催补刀/己蓝催防守，`BoardView.setBaseCritical(owner,on)`＋`applyCriticalRing`，环在 sprite 之下；`GameRenderer` 每帧按 ≤15% 触发）。棋盘光环是关键——突脸发生在棋盘、也是视线焦点，把注意力钉在真正要出事的地方。敌我基地同享此逻辑。
 - **墨汁图标**：`render/icons/currency.ts` 新增 `drawInk(g,s,color)`（手绘墨水瓶＋一滴墨，我方蓝），替换 HUD 里裸的 `⬤`；每帧由 `positionInkIcon` 贴在数值左侧（横竖屏皆可）。真图待 AI 立绘替换（prompt 见提交记录）。
-- **升级按钮特效**：够钱时除变 `primary` 蓝外，`animateUpgradeFx` 加马克笔黄（`fx.upgrade`）呼吸光环 + 上方跳动 `▼`。
+- **升级按钮特效**：够钱时除变 `primary` 外，`animateUpgradeFx` 加马克笔黄（`fx.upgrade`）呼吸光环 + 上方跳动 `▼`（§4.27 起 `primary` 换成专门的 `gold` 变体）。
 - **投降按钮加高**：`BTN_H` 30 → 44。
 - **单位阵营地面标记加强**：`UnitView.drawFactionMarker` 由 0.16/0.22 双椭圆改为 0.22/0.38/0.55 三层，脚下红/蓝更醒目。
 - **.tao 瘦身**：`client/src/assets` 里 `infantry/max/shieldbearer` 三个仍残留 `shadow` 帧的旧包，外科式删掉 `spritesheet.json` 的 shadow 帧（保留 shadow 挂点＋PNG，程序阴影照常渲染），见 §file-formats。
@@ -481,6 +481,14 @@ LeaderboardScene 前三名用 🥇🥈🥉 emoji。新增 **1 个** `icons.ts` �
 - **后台统计（2026-07-22 补）**：徽章原本完全是 `ResultScene` 客户端渲染、无埋点，无法从后台核实分布。已新增 `match_badges` 事件 + `badge_dist` 聚合 + ops「Analytics」页透视表，专门盯「是否人人同称号」——详见 `ANALYTICS_DESIGN.md` §5.8。事件里带原始数值（击杀/花费 ink 等），供后续用真实分布**精确重校** `REF_*`（当前值仍是估算）。
 - **修法**：`REF_EFFICIENT` 5 → 12，使一局像样对局的效率分数居中到 ~1.0，与 `FLOOD`/`IRON_WALL` 等公平竞争——只在你**确实打得省 ink** 时才拿这个徽章。仅改 `score()` 排序口径，展示（仍显示原始击杀数「Killed N enemy units」）、i18n、`value()`/`detail()` 均不动。
 - 验证：`tsc --noEmit` 全绿。完整对局才能触发真实结算页，未做浏览器截图验证。
+
+#### 4.27 升级按钮可负担态改专属金色变体（2026-07-24）
+
+用户对着对战截图问：基地升级按钮（够钱时）背景颜色不太合适。排查确认它当时复用 `HudButtonVariant.primary`（`palette.pencil`，近黑深炭色），和旁边 `disabled` 灰（`0x999999`）观感接近，都偏暗——远不如刷新按钮的 `accent` 蓝显眼，全靠 §4.23 加的呼吸光环硬补"这个能点"的信号。
+
+- **新增 `gold` 变体**：`hudButton.ts` 的 `HudButtonVariant` 加 `'gold'`，底色用 `palette.marker`（`0xf2c14e`，三支笔里本就有的马克笔高亮色），边框/文字用 `palette.pencil` 保证在浅色底上够对比——不是新开一个颜色，沿用既有调色板。
+- **接线**：`HUDView.setUpgradeBtnStyle` 可负担时的 variant 从 `'primary'` 换成 `'gold'`，不可负担仍是 `'disabled'`；呼吸光环 + `▼` 特效不变，作为锦上添花而非唯一信号。
+- 验证：`tsc --noEmit` 全绿；`npm run test:ui`（88 文件 762 用例，含 `gameScenes.ui.ts` 的 GameScene/HUDView 构造冒烟）全绿。**未做浏览器截图验证**：本机后端 11 个服务未拉起进不了真实对战场景，且当次会话 Browser 面板本身无法合成帧截图；待人工在客户端里眼看确认对比度。
 
 ---
 
