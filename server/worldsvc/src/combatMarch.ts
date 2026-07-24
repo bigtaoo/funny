@@ -8,6 +8,7 @@ import {
   playerWorldId,
   findMarchPath,
   marchDurationFromPath,
+  marchStepArriveAt,
   marchMoraleFromPath,
   OCCUPY_MIN_TROOPS,
   MARCH_MIN_TROOPS,
@@ -301,6 +302,12 @@ export class MarchService {
     // live in transit (single scheduled arrival event). Scales combat power on arrival — see moraleCombatMultiplier.
     const morale = marchMoraleFromPath(path);
     const mid = marchId(worldId, accountId, departAt, ++this.core.marchSeq);
+    // ADR-051 (P1): persist the full A* path + stepping cursor so the march can advance tile-by-tile for
+    // real-time encounter checks (P2). stepIndex 0 = at fromTile (path[0]); nextStepAt = when it reaches path[1].
+    // A same-tile path (length 1, e.g. reinforce on self) has no next step → nextStepAt = arriveAt so it still
+    // settles. These fields are additive in P1 (the scheduler still drives arrival off arriveAt); the step scan
+    // is wired in P2.
+    const nextStepAt = path.length > 1 ? marchStepArriveAt(departAt, 1) : arriveAt;
     const doc: MarchDoc = {
       _id: mid,
       worldId,
@@ -316,6 +323,9 @@ export class MarchService {
       ...((kind === 'attack' || kind === 'occupy' || kind === 'move') && teamId ? { teamId } : {}),
       departAt,
       arriveAt,
+      path,
+      stepIndex: 0,
+      nextStepAt,
       status: 'marching',
       rev: 0,
     };

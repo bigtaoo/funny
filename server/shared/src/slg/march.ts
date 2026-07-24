@@ -141,6 +141,16 @@ export function marchDurationFromPath(path: PathCell[]): number {
 }
 
 /**
+ * ADR-051 (P1): wall-clock time (ms) at which a stepping march reaches `path[stepIndex]`, given its `departAt`.
+ * Per-tile time is uniform (MARCH_SPEED_SEC_PER_TILE), so cell i is reached at departAt + i·speed·1000. Note
+ * path[0] is reached at departAt and path[last] at departAt + (len-1)·speed·1000 == arriveAt
+ * (consistent with marchDurationFromPath). Pure; used by both dispatch and the scheduler's step scan.
+ */
+export function marchStepArriveAt(departAt: number, stepIndex: number): number {
+  return departAt + Math.max(0, stepIndex) * MARCH_SPEED_SEC_PER_TILE * 1000;
+}
+
+/**
  * Remaining morale (out of MARCH_MORALE_MAX) for a march given its full path: 1 point lost per tile moved
  * (path includes the start cell, so the cost is path.length - 1 tiles), floored at 0. Bound to the march
  * instance — every departure starts fresh at MARCH_MORALE_MAX regardless of the team's history.

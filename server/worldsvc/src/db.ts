@@ -13,6 +13,7 @@ import type {
   SiegeOutcome,
   SettleTier,
   BuildingKey,
+  PathCell,
 } from '@nw/shared';
 import { FAMILY_MSG_RETENTION_SEC, troopCapFor } from '@nw/shared';
 import type { Filter } from 'mongodb';
@@ -204,6 +205,18 @@ export interface MarchDoc {
   morale?: number;
   departAt: number;
   arriveAt: number;
+  /**
+   * ADR-051 (P1): the full A* path (start..end inclusive), persisted so the march can advance tile-by-tile for
+   * real-time encounter checks (previously the path was computed at dispatch and discarded). Per-tile step time
+   * is uniform: the march reaches `path[i]` at `departAt + i * MARCH_SPEED_SEC_PER_TILE * 1000` (so the final
+   * cell's time == arriveAt, since marchDurationFromPath = (path.length-1) * MARCH_SPEED_SEC_PER_TILE). Absent on
+   * legacy docs and on 'return' legs not yet migrated to stepping → those fall back to the single-arrival model.
+   */
+  path?: PathCell[];
+  /** ADR-051 (P1): index into `path` of the cell the march currently occupies (0 = fromTile). Absent → not yet stepping. */
+  stepIndex?: number;
+  /** ADR-051 (P1): timestamp (ms) at which the march next advances one cell (reaches path[stepIndex+1]). The scheduler's step scan is keyed on this. Absent → legacy single-arrival march (driven by arriveAt). */
+  nextStepAt?: number;
   status: 'marching' | 'arrived' | 'recalled';
   rev: number;
 }
