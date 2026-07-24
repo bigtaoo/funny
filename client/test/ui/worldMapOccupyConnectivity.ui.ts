@@ -58,6 +58,7 @@ function buildHarness(opts: { me?: PlayerWorldView } = {}) {
     tileCache: new Map<string, WorldTileView>(),
     me: opts.me ?? makeMe(),
     selectedTile: null,
+    stationed: [],
     parseTileId(tileId: string): [number, number] {
       const parts = tileId.split(':');
       return [Number(parts[parts.length - 2]), Number(parts[parts.length - 1])];

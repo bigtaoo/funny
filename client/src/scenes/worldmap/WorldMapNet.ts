@@ -106,12 +106,14 @@ export class WorldMapNet {
   async refreshMarches(): Promise<void> {
     if (this.ctx.destroyed) return;
     try {
-      const [marches, occupations] = await Promise.all([
+      const [marches, occupations, stationed] = await Promise.all([
         this.ctx.cb.worldApi.getMarches(this.ctx.cb.worldId),
         this.ctx.cb.worldApi.getOccupations(this.ctx.cb.worldId),
+        this.ctx.cb.worldApi.getStationed(this.ctx.cb.worldId),
       ]);
       this.ctx.marches = marches;
       this.ctx.occupations = occupations;
+      this.ctx.stationed = stationed;
       if (!this.ctx.destroyed) { this.ctx.panels.renderHud(); this.ctx.view.renderMap(); }
     } catch { /* offline */ }
   }
@@ -145,7 +147,7 @@ export class WorldMapNet {
    * For occupy we also keep the legacy "散兵占领" flat-pool option, so early players with no card team can
    * still grab land the old way.
    */
-  async showTeamPicker(tx: number, ty: number, kind: 'attack' | 'occupy' = 'attack'): Promise<void> {
+  async showTeamPicker(tx: number, ty: number, kind: 'attack' | 'occupy' | 'move' = 'attack'): Promise<void> {
     const me = this.ctx.me;
     if (!me?.joined || !me.mainBaseTile) { this.ctx.panels.showToast(t('world.needBase'), C.red); return; }
     let teams: TeamTemplate[] = [];
@@ -158,6 +160,7 @@ export class WorldMapNet {
     const busyTeamIds = new Set([
       ...this.ctx.marches.filter((m) => m.mine && m.teamId).map((m) => m.teamId),
       ...this.ctx.occupations.filter((o) => o.teamId).map((o) => o.teamId),
+      ...this.ctx.stationed.map((s) => s.teamId), // stationed = "out in the field" (2026-07-23)
       ...this.pendingTeamIds, // in-flight dispatch not yet reflected in ctx.marches
     ]);
     // Committed troops = the strength the team actually CARRIES, from each card's cardState.currentTroops
@@ -179,12 +182,12 @@ export class WorldMapNet {
     }
     buttons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
     const head = usable.length > 0
-      ? (kind === 'occupy' ? t('world.team.pickTitleOccupy') : t('world.team.pickTitle'))
-      : (kind === 'occupy' ? t('world.team.noTeamsOccupy') : t('world.team.noTeams'));
+      ? (kind === 'occupy' ? t('world.team.pickTitleOccupy') : kind === 'move' ? t('world.team.pickTitleMove') : t('world.team.pickTitle'))
+      : (kind === 'occupy' ? t('world.team.noTeamsOccupy') : kind === 'move' ? t('world.team.noTeamsMove') : t('world.team.noTeams'));
     this.ctx.panels.showModal([head, `(${tx}, ${ty})`], buttons);
   }
 
-  async doMarchTeam(tx: number, ty: number, teamId: string, kind: 'attack' | 'occupy' = 'attack'): Promise<void> {
+  async doMarchTeam(tx: number, ty: number, teamId: string, kind: 'attack' | 'occupy' | 'move' = 'attack'): Promise<void> {
     this.ctx.panels.closeModal();
     const me = this.ctx.me;
     if (!me?.mainBaseTile) { this.ctx.panels.showToast(t('world.needBase'), C.red); return; }
@@ -274,6 +277,24 @@ export class WorldMapNet {
       await this.ctx.cb.worldApi.recallMarch(marchId, worldId);
       this.ctx.marches = await this.ctx.cb.worldApi.getMarches(this.ctx.cb.worldId);
       this.ctx.panels.renderHud();
+    } catch (e) {
+      this.ctx.panels.showToast(this.errorMsg(e), C.red);
+    }
+  }
+
+  /** Recall a team stationed on a tile back home (2026-07-23): dispatches a return leg, then refreshes the map. */
+  async doRecallStationed(teamId: string): Promise<void> {
+    this.ctx.panels.closeModal();
+    try {
+      await this.ctx.cb.worldApi.recallStationed(teamId, this.ctx.cb.worldId);
+      const [marches, stationed] = await Promise.all([
+        this.ctx.cb.worldApi.getMarches(this.ctx.cb.worldId),
+        this.ctx.cb.worldApi.getStationed(this.ctx.cb.worldId),
+      ]);
+      this.ctx.marches = marches;
+      this.ctx.stationed = stationed;
+      this.ctx.panels.showToast(t('world.stationRecalled'));
+      this.ctx.view.renderMap(); this.ctx.panels.renderHud();
     } catch (e) {
       this.ctx.panels.showToast(this.errorMsg(e), C.red);
     }

@@ -19,7 +19,7 @@ import { SeasonService } from './season';
 import { CityService } from './city';
 import { CombatService } from './combat';
 import { TransferService, type ShardSummary } from './transfer';
-import type { PlayerWorldView, WorldTileView, MarchView, OccupationView } from './worldTypes';
+import type { PlayerWorldView, WorldTileView, MarchView, OccupationView, StationedView } from './worldTypes';
 import type { SLG_SHOP_ITEMS, BuildingKey, MarchKind } from '@nw/shared';
 import type { TeamTemplate } from './db';
 
@@ -54,6 +54,12 @@ export class WorldService extends WorldCore {
   }
   getOccupations(worldId: string, accountId: string): Promise<OccupationView[]> {
     return this.combat.getOccupations(worldId, accountId);
+  }
+  getStationed(worldId: string, accountId: string): Promise<StationedView[]> {
+    return this.combat.getStationed(worldId, accountId);
+  }
+  recallStationed(worldId: string, accountId: string, teamId: string): Promise<MarchView | Record<string, never>> {
+    return this.combat.recallStationed(worldId, accountId, teamId);
   }
   processDueArrivals(nowMs?: number): Promise<number> {
     return this.combat.processDueArrivals(nowMs);

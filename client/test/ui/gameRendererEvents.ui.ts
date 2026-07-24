@@ -228,6 +228,23 @@ describe('GameRenderer EventMixin — spell VFX color follows faction, not the c
     expect(play).not.toHaveBeenCalled();
     renderer.destroy();
   });
+
+  it('a Rockslide cast is routed to the board sweep, not the generic one-shot VFX', () => {
+    const { engine, renderer } = buildRenderer();
+    const r = renderer as any;
+    const play  = vi.spyOn(r.vfxSystem, 'play');
+    const sweep = vi.spyOn(r.boardView, 'playRockslideEffect');
+
+    r.handleEvent(
+      { type: 'spell_cast', spellType: SpellType.Rockslide, owner: 0, center: { col: 4, y_fp: toFp(0) } },
+      engine.state,
+    );
+
+    // The single center VFX read as a localized poof; Rockslide now sweeps the whole lane.
+    expect(sweep).toHaveBeenCalledWith(4);
+    expect(play).not.toHaveBeenCalled();
+    renderer.destroy();
+  });
 });
 
 describe('GameRenderer EventMixin — settlement gate (render-side)', () => {

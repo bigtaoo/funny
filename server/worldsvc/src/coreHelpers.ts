@@ -70,7 +70,7 @@ export async function deleteInBatches(
 }
 
 /** Player-facing march kinds that are permitted (return is an internal recall leg only; external initiation is prohibited). */
-export const MARCHABLE_KINDS: ReadonlySet<string> = new Set(['occupy', 'reinforce', 'attack', 'sweep', 'scout']);
+export const MARCHABLE_KINDS: ReadonlySet<string> = new Set(['occupy', 'reinforce', 'attack', 'sweep', 'scout', 'move']);
 
 /** Vision radius of an in-transit march: scout marches see farther (VISION_SCOUT_RADIUS); all others use normal march radius (VISION_MARCH_RADIUS). */
 export function marchVisionRadius(kind: MarchKind): number {

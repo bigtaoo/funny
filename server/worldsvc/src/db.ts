@@ -58,6 +58,14 @@ export interface TeamTemplate {
   id: string;   // slot id ('t1'..'t5')
   name: string;
   army: ArmyEntry[];
+  /**
+   * 'move' / occupy post-battle disposition (2026-07-23): when FALSE or absent (default), a team that arrives
+   * on a tile — via a 'move' order, or by winning an occupy hold — STAYS stationed on that tile (idle in the
+   * field). When TRUE, the team instead marches home after the objective completes (a 'return' leg refunds its
+   * troops to the pool and frees the slot). Default off because "stay in place" is the more natural 三国-style
+   * behavior (user decision 2026-07-23).
+   */
+  autoReturn?: boolean;
 }
 
 export interface WorldDoc {
@@ -345,6 +353,28 @@ export interface OccupationDoc {
   teamId?: string;
 }
 
+/**
+ * Stationed team (2026-07-23): a team parked on a tile, standing idle "out in the field" until the owner
+ * moves or recalls it. Written when a 'move' march arrives (combatMarch.applyMove) or when an occupy hold
+ * settles for a team whose `autoReturn` is off (occupation.settleOccupation). Keyed by tileId (one stationed
+ * team per tile). Keeps the team "busy" via the same partial-unique {worldId,ownerId,teamId} index the march
+ * idle-gate relies on, so a stationed team can't accept a fresh order until recalled. The tile's own ownership
+ * is orthogonal — a team may stand on its own territory OR on an unclaimed neutral tile it does not own.
+ */
+export interface StationedDoc {
+  _id: string;          // = tileId (one stationed team per tile)
+  worldId: string;
+  ownerId: string;      // the team's owner accountId
+  familyId?: string;
+  tile: string;         // same value as _id (parity with OccupationDoc.tile)
+  x: number;
+  y: number;
+  teamId: string;       // team slot ('t1'..'t5') parked here
+  army: ArmyEntry[];    // army snapshot (card entries; strength lives in cardState.currentTroops)
+  troops: number;       // committed troop count carried when the team arrived (display / recall refund for flat armies)
+  sinceAt: number;      // ms the team arrived and became stationed
+}
+
 /** Nation document (S8-6.5). One record per capital; ownerId/nationName absent when unclaimed. */
 export interface NationDoc {
   _id: string;            // `nation:{worldId}:{capitalIdx}`
@@ -461,6 +491,7 @@ export interface WorldCollections {
   sieges: Collection<SiegeDoc>;
   siegeDamage: Collection<SiegeDamageDoc>;
   occupations: Collection<OccupationDoc>;
+  stationed: Collection<StationedDoc>;
   nations: Collection<NationDoc>;
   seasonResults: Collection<SeasonResultDoc>;
   shardAllocations: Collection<ShardAllocationDoc>;
@@ -508,6 +539,7 @@ export async function createWorldMongo(
     sieges: db.collection<SiegeDoc>('sieges'),
     siegeDamage: db.collection<SiegeDamageDoc>('siegeDamage'),
     occupations: db.collection<OccupationDoc>('occupations'),
+    stationed: db.collection<StationedDoc>('stationed'),
     nations: db.collection<NationDoc>('nations'),
     seasonResults: db.collection<SeasonResultDoc>('seasonResults'),
     shardAllocations: db.collection<ShardAllocationDoc>('shardAllocations'),
@@ -563,6 +595,18 @@ export async function createWorldMongo(
     await collections.siegeDamage.createIndex({ tile: 1 });
     // ADR-037 (§5.4): occupation-hold settlement scan (mirrors siegeDamage.dueAt: due-time polling; Redis ZSET optional wake-up hint).
     await collections.occupations.createIndex({ dueAt: 1 });
+    // Stationed teams (2026-07-23): listed per owner (getStationed); the partial-unique {worldId,ownerId,teamId}
+    // is the counterpart of the marches team-unique index — together they enforce "a team holds ONE active state"
+    // across in-transit marches, occupation holds, and now field stationing. Wrapped best-effort like the marches one.
+    await collections.stationed.createIndex({ worldId: 1, ownerId: 1 });
+    try {
+      await collections.stationed.createIndex(
+        { worldId: 1, ownerId: 1, teamId: 1 },
+        { unique: true },
+      );
+    } catch (e) {
+      console.warn('[worldsvc] stationed team-unique index not built (duplicate stationed team?); will retry on next boot:', e);
+    }
     // Nation: unique by capital index within worldId
     await collections.nations.createIndex({ worldId: 1, capitalIdx: 1 }, { unique: true });
     await collections.nations.createIndex({ ownerId: 1 });

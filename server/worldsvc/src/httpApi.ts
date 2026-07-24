@@ -278,6 +278,13 @@ export function startHttpApi(
           return send(res, 200, ok(await svc.getOccupations(worldId, accountId)));
         }
 
+        // ── Stationed-team list (2026-07-23, field-stationing status + recall + idle-sprite rendering) ──
+        if (method === 'GET' && path === '/world/stationed') {
+          const worldId = q.get('worldId');
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          return send(res, 200, ok(await svc.getStationed(worldId, accountId)));
+        }
+
         // ── Territory Overview panel (2026-07-16, SLG_DESIGN_LOG.md §26): full list of owned tiles ──
         if (method === 'GET' && path === '/world/territories') {
           const worldId = q.get('worldId');
@@ -392,6 +399,17 @@ export function startHttpApi(
             if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
             await svc.cancelOccupation(worldId, accountId, decodeURIComponent(m[1]!));
             return send(res, 200, ok({}));
+          }
+        }
+
+        // ── Recall a stationed team home (2026-07-23): dispatch a return leg tile→base, freeing the team ──
+        {
+          const m = /^\/world\/team\/([^/]+)\/recall-stationed$/.exec(path);
+          if (method === 'POST' && m) {
+            const body = await readJson(req);
+            const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+            if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+            return send(res, 200, ok(await svc.recallStationed(worldId, accountId, decodeURIComponent(m[1]!))));
           }
         }
 

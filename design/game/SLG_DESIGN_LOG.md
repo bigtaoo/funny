@@ -1318,3 +1318,28 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 **实现**：`WorldMapInput.ts` 该分支的弹窗行新增两行——① 资源类型 + 等级（`world.resLevel` = `'{res} · Lv.{lv}'`，资源名复用既有 `world.ink/paper/graphite/metal/sticker` 词条；`SLG_GEN.resourceDensity=1.0` 下几乎所有中立地都带 `resType`，无该字段则跳过这行）；② 建议兵力（`world.recommendTroops` = `'建议兵力 {n}'`，取 `@nw/shared` 的 `npcGarrison(level)` = `NPC_GARRISON_PER_LEVEL(120) × level`——占领结算走 `combatSiege/occupation.ts` 时，未被占过的中立地系统驻军就是现算的这个值，同一份口径，不是另起一套估算）。三语言词条（zh/en/de）同步补齐。真实战斗走完整引擎模拟（卡牌/装备加成），这个数字是无卡牌情况下的参考线，不是精确胜负保证。
 
 **验证**：client `tsc --noEmit` + webpack build 全绿；`worldMapOccupyConnectivity.ui.ts` 新增 1 例断言两行文案的具体内容（含 `npcGarrison(3)=360` 的数值）。真实入图同样需要完整 worldsvc + 登录 + 找到一块未占中立地，本会话未起全栈截图核对。
+
+## 38. 部队「移动/驻留」+ 占领后就地驻守（新 `move` 行军种别 + `autoReturn` 开关，2026-07-23，用户拍板）
+
+**背景（用户需求）**：三国志战略版式的「队伍出去后留在原地」体感。此前 SLG 的行军全是「解决即消失」——`MarchKind = attack|reinforce|occupy|sweep|scout|return`，到达即结算（战斗/占领/侦察），地图上的行走 stickman 到点即销毁；占领成功后生存兵化为该地块的 `garrison` 统计、`OccupationDoc` 结算删除 → 队伍被释放（等于「回家空闲」）。用户澄清心智模型：**队伍站在格子上时本来就是空闲，只是「在家空闲」还是「在外空闲」的区别**；三战里是留在原地，且留在原地更合理。
+
+**拍板（两个决定）**：
+1. **占领后默认就地驻守**：占领结算后，夺地的队伍默认**留在该格子站立待机（idle）**，持续「占用」该队伍，直到玩家移动或召回；只有队伍勾选了 `autoReturn` 才恢复旧行为（队伍释放=回家空闲，"和现在那样"）。
+2. **新 `move` 行军**：点格子 → 弹窗「移动到此」→ 选队伍（team picker，与占领同流程，从主城出发）→ 队伍走过去、**无战斗**、到达后就地驻守。目标允许：**自己的领地/城**，或**空的中立地**（不占领、不宣示归属，只是站在那）。
+
+**新概念「驻留（stationed）」**：一支队伍停在某格子站立 idle，跨重载存活，移动/召回前一直「使用中」。持久化于新 `stationed` 集合（键=tileId，与 `occupations` 同型），部分唯一索引 `{worldId,ownerId,teamId}` 与 marches 的同名索引一起保证「一支队伍同时只处于一种活动态：在途行军 / 占领 hold / 驻留」。
+
+**实现（服务端）**：
+- `@nw/shared` `MarchKind += 'move'`；worldsvc `MARCHABLE_KINDS += 'move'`。
+- `db.ts`：`TeamTemplate.autoReturn?: boolean`（默认 false）；新增 `StationedDoc` + `stationed` 集合 + 索引。
+- `combatMarch.ts`：`startMarch` 加 `move` 分支（要求 teamId；目标必须自有地块或空中立地，非 center/stronghold/bridge/plankway/mid-hold，且该格无他人驻留）；team-based army 抽取 & 空闲门禁 & MarchDoc.teamId 记录三处均纳入 `move`；空闲门禁 `Promise.all` 增查 `stationed`。到达 `applyArrival → applyMove` 写 `StationedDoc`（无战斗）。新增 `recallStationed`（删 stationed → 发 `return` 腿回城，flat army 到达退兵力池、card army 携 0 不重复入账 → 队伍解放）+ `getStationed`。
+- `combatSiege/occupation.ts` `settleOccupation`：领有写入后，若有 `teamId` 且队伍 `autoReturn` 非真 → 写 `StationedDoc`（队伍就地驻守）；`autoReturn=true` → 不做额外动作（OccupationDoc 已在 `processDueOccupations` claim-delete，队伍即释放=旧行为）。
+- `territory.ts` `abandonTile`：放弃地块顺带 `stationed.deleteOne` 释放该格驻留队伍。
+- 门禁 `TEAM_BUSY` 文案更新为「marching, occupying, or stationed」（两处 throw 点 + E11000 catch）。
+- `service.ts`/`combat.ts` 转发 `getStationed`/`recallStationed`；`httpApi.ts` 加 `GET /world/stationed` + `POST /world/team/{teamId}/recall-stationed`；`openapi-world.yml` 加 `move` 到两处 kind enum、`Team.autoReturn`、`StationedView` schema + 两个端点。
+
+**实现（客户端）**：`rest:gen` 重生成 `openapi-world.ts`；`WorldApiClient` 加 `getStationed`/`recallStationed`（`startMarch` 的 `MarchKind` 自动含 `move`）；`WorldMapContext` 加 `stationed` 状态 + `stationedTokenRuntimes`；`WorldMapNet` 轮询增拉 stationed、team picker/busy 门禁纳入 stationed、`doRecallStationed`；`WorldMapInput` 自有地块与中立地块弹窗新增「移动到此」（有驻留时改显「召回驻军」）；`WorldMapRenderer/fog.ts` 新增 `syncStationedTokens`——在每个我方驻留格子上放一个 idle StickmanRuntime（播 idle clip，**到达后不销毁**，直到移动/召回），lifecycle 的持续重绘条件与销毁清理同步纳入；`DefenseEditorScene` 攻击队伍编辑加「占领后回城」toggle（存于 `TeamTemplate.autoReturn`）。三语言词条补齐（`world.actMove`/`world.actRecallStation`/`world.stationRecalled`/`world.team.pickTitleMove`/`world.team.noTeamsMove`/`world.team.autoReturn`）。
+
+**已知限制（v1，留作后续）**：① 驻留在**未占领中立地**上的队伍不参与该格防御——他人占领/攻打该地仍只打系统 NPC 驻军，我方驻留队伍不自动应战（玩家可随时召回；召回始终可用，不会永久卡住）；② 他人夺取我方驻留所在地块时不自动清理 stationed（sprite 会留到玩家召回）；③ `autoReturn=true` 采「队伍即释放」旧语义，不额外播放一段回城行军（对齐用户「和现在那样」的参照）。
+
+**验证**：`server/shared` build + worldsvc `tsc --noEmit` 全绿；worldsvc vitest **全绿**，`teams.e2e.test.ts` 新增 2 例（`move`→驻留→召回→再可用；`occupy autoReturn=true`→领有但队伍不驻留）并修正 1 例旧断言（占领结算后队伍现在默认**仍占用**而非释放）；client `tsc --noEmit` + webpack build 全绿。真实入图需完整 worldsvc + gateway + meta + 登录入世 + 派队，本会话未起全栈截图核对（服务端权威逻辑以 e2e 覆盖）。

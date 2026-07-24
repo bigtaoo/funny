@@ -42,7 +42,8 @@ export function LifecycleMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBa
       // otherwise the 'attacking' clip would only ever advance on the ~5s occupations poll tick.
       if (
         this.ctx.marches.length > 0 || this.ctx.marchTokenRuntimes.size > 0 ||
-        this.ctx.occupations.length > 0 || this.ctx.occupyTokenRuntimes.size > 0
+        this.ctx.occupations.length > 0 || this.ctx.occupyTokenRuntimes.size > 0 ||
+        this.ctx.stationed.length > 0 || this.ctx.stationedTokenRuntimes.size > 0
       ) {
         this.renderOverlay(dt);
       }
@@ -80,6 +81,8 @@ export function LifecycleMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBa
       this.ctx.marchAttackUntil.clear();
       for (const { runtime } of this.ctx.occupyTokenRuntimes.values()) runtime?.destroy();
       this.ctx.occupyTokenRuntimes.clear();
+      for (const { runtime } of this.ctx.stationedTokenRuntimes.values()) runtime?.destroy();
+      this.ctx.stationedTokenRuntimes.clear();
     }
   };
 }

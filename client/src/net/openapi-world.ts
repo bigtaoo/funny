@@ -251,6 +251,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/world/stationed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getStationed"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/world/territories": {
         parameters: {
             query?: never;
@@ -277,6 +293,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["cancelOccupation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/world/team/{teamId}/recall-stationed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["recallStationed"];
         delete?: never;
         options?: never;
         head?: never;
@@ -954,7 +986,7 @@ export interface components {
         MarchView: {
             marchId: string;
             /** @enum {string} */
-            kind: "attack" | "reinforce" | "occupy" | "sweep" | "scout" | "return";
+            kind: "attack" | "reinforce" | "occupy" | "sweep" | "scout" | "return" | "move";
             fromTile: string;
             toTile: string;
             troops: number;
@@ -976,6 +1008,17 @@ export interface components {
             dueAt: number;
             /** @description Which team slot ('t1'..'t5') is tied up holding this tile, if the march was dispatched with one. */
             teamId?: string;
+        };
+        StationedView: {
+            tile: string;
+            x: number;
+            y: number;
+            /** @description Team slot ('t1'..'t5') stationed on this tile. */
+            teamId: string;
+            /** @description Troop count carried when the team arrived (display; recall refund for flat armies). */
+            troops: number;
+            /** @description ms the team became stationed. */
+            sinceAt: number;
         };
         AuctionView: {
             auctionId: string;
@@ -1150,6 +1193,8 @@ export interface components {
             id: string;
             name: string;
             army: components["schemas"]["ArmyEntry"][];
+            /** @description 2026-07-23: when true, this team marches home after a 'move' arrival / occupy capture instead of staying stationed on the tile (default false = stay in place). */
+            autoReturn?: boolean;
         };
         DefenseConfig: {
             [key: string]: unknown;
@@ -1537,9 +1582,9 @@ export interface operations {
                     toX: number;
                     toY: number;
                     /** @enum {string} */
-                    kind: "occupy" | "reinforce" | "attack" | "sweep" | "scout";
+                    kind: "occupy" | "reinforce" | "attack" | "sweep" | "scout" | "move";
                     troops: number;
-                    /** @description Siege attack team (G3-2c): attack formation template to use when kind=attack; committed troops = sum of troops allocated across all team units (overrides the troops field) */
+                    /** @description Team (G3-2c): attack-formation template to use for kind=attack/occupy/move; committed troops = sum of troops carried across the team's cards (overrides the troops field). Required for kind=move. */
                     teamId?: string;
                 };
             };
@@ -1610,6 +1655,30 @@ export interface operations {
             };
         };
     };
+    getStationed: {
+        parameters: {
+            query: {
+                worldId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Own teams stationed on tiles (2026-07-23 field-stationing: status + recall + idle-sprite rendering) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["StationedView"][];
+                    };
+                };
+            };
+        };
+    };
     listTerritories: {
         parameters: {
             query: {
@@ -1658,6 +1727,36 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+        };
+    };
+    recallStationed: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                teamId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    worldId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Stationed team recalled — a return leg marches it home; on arrival the slot is idle again */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["MarchView"];
+                    };
                 };
             };
         };

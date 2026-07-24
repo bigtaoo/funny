@@ -139,6 +139,9 @@ export class DefenseEditorScene implements Scene {
   private baseLevel = 0;
   // Attack mode: the full team list (loaded once) so save merges this slot without clobbering others.
   private teams: TeamTemplate[] = [];
+  // Attack mode: 占领后自动回城 (2026-07-23). false (default) = the team stays stationed on a tile it moves to /
+  // captures; true = it marches home afterward. Persisted on the TeamTemplate via setTeams.
+  private autoReturn = false;
   // Attack mode: this account's live card ledger (troops/injury/teamId), fetched alongside teams.
   private cardState: Record<string, CardSLGState> = {};
   // Attack mode: the unified base troop pool (playerWorld.troops) available to distribute to this team's
@@ -239,7 +242,7 @@ export class DefenseEditorScene implements Scene {
           this.cardState = me.cardState ?? {};
           this.troops = me.troops ?? 0;
           const team = teams.find((tm) => tm.id === (this.cb.target as { teamId: string }).teamId);
-          if (team) this.applyArmy(team.army);
+          if (team) { this.applyArmy(team.army); this.autoReturn = !!team.autoReturn; }
         }
       } else {
         const cfg = await this.cb.worldApi.getDefense(this.cb.worldId, this.cb.target.tileKey);
@@ -326,7 +329,7 @@ export class DefenseEditorScene implements Scene {
     const { teamId, teamName } = this.cb.target;
     const army = this.buildArmy();
     const next = this.teams.filter((tm) => tm.id !== teamId);
-    next.push({ id: teamId, name: teamName, army });
+    next.push({ id: teamId, name: teamName, army, autoReturn: this.autoReturn });
     await this.cb.worldApi.setTeams(this.cb.worldId, next);
     this.teams = next;
   }
@@ -602,17 +605,36 @@ export class DefenseEditorScene implements Scene {
     this.renderCardRosterPanel(rightX, top, rightW, bottom - top);
   }
 
-  /** Hint text + erase toggle, sized to the left (grid) half only. */
+  /** Hint text + 自动回城 toggle + erase toggle, sized to the left (grid) half only. */
   private renderAttackToolbar(x: number, y: number, w: number, h: number): void {
+    const eraseW = 60, eraseH = h - 6;
+    const eraseX = x + w - eraseW;
+
+    // 占领后自动回城 toggle (2026-07-23): a compact pill just left of the erase toggle. Off (default) = the team
+    // stays stationed on a captured/moved-to tile; on = it marches home afterward.
+    const arActive = this.autoReturn;
+    const arW = 116, arH = eraseH;
+    const arX = eraseX - 8 - arW;
+    const arBox = sketchPanel(arW, arH, {
+      fill: arActive ? C.gold : C.paper, border: arActive ? C.dark : C.gold,
+      width: arActive ? 2.4 : 1.4, seed: seedFor(arX, y, arW),
+    });
+    arBox.x = arX; arBox.y = y + 3;
+    this.bodyLayer.addChild(arBox);
+    const arLbl = txt(`${t('world.team.autoReturn')} ${arActive ? '✓' : '✕'}`, FS.micro, arActive ? C.dark : C.gold, true);
+    arLbl.anchor.set(0.5, 0.5); arLbl.x = arBox.x + arW / 2; arLbl.y = arBox.y + arH / 2;
+    if (arLbl.width > arW - 8) arLbl.scale.set((arW - 8) / arLbl.width);
+    this.bodyLayer.addChild(arLbl);
+    this.hits.push({ rect: { x: arBox.x, y: arBox.y, w: arW, h: arH }, action: () => { this.autoReturn = !this.autoReturn; this.render(); } });
+
     const hint = txt(t('world.team.hint'), FS.micro, C.mid);
     hint.anchor.set(0, 0.5);
     hint.x = x; hint.y = y + h / 2;
-    if (hint.width > w - 66) hint.scale.set((w - 66) / hint.width);
+    const hintMax = arX - 8 - x;
+    if (hint.width > hintMax) hint.scale.set(hintMax / hint.width);
     this.bodyLayer.addChild(hint);
 
-    const eraseW = 60, eraseH = h - 6;
     const eraseActive = this.tool.kind === 'erase';
-    const eraseX = x + w - eraseW;
     const box = sketchPanel(eraseW, eraseH, {
       fill: eraseActive ? C.red : C.paper, border: eraseActive ? C.dark : C.red,
       width: eraseActive ? 2.4 : 1.4, seed: seedFor(eraseX, y, eraseW),

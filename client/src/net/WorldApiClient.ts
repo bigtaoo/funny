@@ -38,6 +38,7 @@ export interface WorldMapSparseView {
 export type PlayerWorldView = components['schemas']['PlayerWorldView'];
 export type MarchView = components['schemas']['MarchView'];
 export type OccupationView = components['schemas']['OccupationView'];
+export type StationedView = components['schemas']['StationedView'];
 
 // Family DTOs are NOT in openapi-world.yml: family moved to socialsvc (/social/family/*, no
 // openapi contract of its own). Shapes are hand-mirrored from server/socialsvc/src/familyService.ts —
@@ -270,6 +271,11 @@ export class WorldApiClient {
     return this.req('GET', `/world/occupations?worldId=${encodeURIComponent(worldId)}`);
   }
 
+  /** Own teams stationed on tiles (2026-07-23 field-stationing: idle-sprite rendering + recall affordance). */
+  async getStationed(worldId: string): Promise<StationedView[]> {
+    return this.req('GET', `/world/stationed?worldId=${encodeURIComponent(worldId)}`);
+  }
+
   /** Full list of owned tiles (territory + captured stronghold; excludes the 3×3 capital footprint). Backs the Territory Overview panel (SLG_DESIGN_LOG.md §26). */
   async getTerritories(worldId: string): Promise<WorldTileView[]> {
     return this.req('GET', `/world/territories?worldId=${encodeURIComponent(worldId)}`);
@@ -349,6 +355,11 @@ export class WorldApiClient {
   /** Force a team stuck in an occupation-hold back to idle immediately (garrison forfeited, no refund). */
   async cancelOccupation(teamId: string, worldId: string): Promise<{ ok: true }> {
     return this.req('POST', `/world/team/${encodeURIComponent(teamId)}/cancel-occupation`, { worldId });
+  }
+
+  /** Recall a stationed team home (2026-07-23): dispatches a return leg tile→base; the slot frees when it arrives. */
+  async recallStationed(teamId: string, worldId: string): Promise<MarchView> {
+    return this.req('POST', `/world/team/${encodeURIComponent(teamId)}/recall-stationed`, { worldId });
   }
 
   // ── Troops (training queue S8-2) ──────────────────────────────────────────────────

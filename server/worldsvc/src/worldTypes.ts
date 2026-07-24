@@ -186,6 +186,16 @@ export interface OccupationView {
   teamId?: string;
 }
 
+/** Stationed-team view (REST response — own stationed teams only; 2026-07-23 field-stationing feature). */
+export interface StationedView {
+  tile: string;
+  x: number;
+  y: number;
+  teamId: string;
+  troops: number;
+  sinceAt: number;
+}
+
 /** Maximum viewport radius (prevents fetching too many tiles at once; hard cap before P9 viewport subscription model scales up). */
 export const MAP_VIEW_MAX_RADIUS = 40;
 

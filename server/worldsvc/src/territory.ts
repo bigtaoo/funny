@@ -227,6 +227,9 @@ export class TerritoryService {
     const resources = this.core.settle(pw, t);
     const refund = tile.garrison ?? 0;
     await cols.tiles.deleteOne({ _id: tid }); // abandon → revert to procedural neutral (sparse storage leaves no empty shell)
+    // 2026-07-23: giving up the tile frees any team stationed on it (the team pops back to idle-at-home). Recall
+    // would also work, but abandon is a deliberate surrender — just release the "out" lock so the slot is usable.
+    await cols.stationed.deleteOne({ _id: tid });
     const yieldRate = await this.core.recomputeYield(worldId, accountId);
     await cols.playerWorld.updateOne(
       { _id: pw._id },
