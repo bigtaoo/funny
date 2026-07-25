@@ -222,6 +222,23 @@ export class SaveManager {
   }
 
   /**
+   * Discard the client-sync sections (equipped/flags/pvpDeck) from the in-memory local save.
+   * reconcile() always merges these over the incoming cloud value (`{ ...cloud.equipped, ...local.equipped }`)
+   * so that offline edits survive a sync — but that means, without this, whatever account we just logged
+   * out of leaks its equipped avatar/title and flags (including gdprConsent) into the next account that
+   * logs in, since adoptSession()'s reconcile() has no other way to tell "stale previous-account local
+   * state" apart from "legitimate offline edit made under the account now syncing". Call from doLogout()
+   * before the next login. Authoritative sections (wallet/cardInv/etc.) don't need this: reconcile() always
+   * replaces them wholesale from cloud, never merges local into them.
+   */
+  clearSyncedLocalSections(): void {
+    this.save.equipped = {};
+    this.save.flags = {};
+    delete this.save.pvpDeck;
+    this.store.saveLocal(this.save);
+  }
+
+  /**
    * Adopt an authoritative save pushed back by a server-side economy operation (shop/gacha/recharge/ad) (S2).
    * Authoritative sections (wallet/inventory/gacha/pvp etc.) use the server value; client-sync sections are merged from local.
    * Unlike refresh, this directly consumes the receipt without issuing an additional request.

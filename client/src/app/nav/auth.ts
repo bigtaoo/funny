@@ -182,6 +182,12 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
     platform.storage.removeItem(TOKEN_KEY);
     platform.storage.removeItem(PLAYER_NAME_KEY);
     platform.storage.removeItem(PLAYER_PUBLIC_ID_KEY);
+    // Pre-sync-era fallback key (see avatarId()'s comment in createAppCore.ts) — not account-scoped,
+    // so left uncleared it keeps showing this account's avatar under the next login too.
+    platform.storage.removeItem(PLAYER_AVATAR_KEY);
+    // Otherwise this account's equipped avatar/title/flags survive in saveManager's in-memory save
+    // and reconcile() merges them into whichever account logs in next (see clearSyncedLocalSections' doc).
+    saveManager.clearSyncedLocalSections();
     api?.setToken(null);
     // Tear down any live gateway connection too — otherwise it keeps sitting there
     // authenticated as the account we just logged out of (see doAuth's reset for why).

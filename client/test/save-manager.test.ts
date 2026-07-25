@@ -129,6 +129,46 @@ describe('SaveManager.adoptSession (SA-3/SA-4 session adoption)', () => {
     expect(await mgr.adoptSession('real-123')).toBe(false);
     expect(mgr.get().accountId).toBe('real-123');
   });
+
+  // Regression (2026-07-25): reconcile() always merges local.equipped/flags over cloud (by design,
+  // so offline edits under the *same* account survive a sync — see the previous describe block).
+  // But doLogout() never reset that in-memory local state, so account A's equipped avatar/title and
+  // flags (e.g. gdprConsent) leaked into account B's session on the very next adoptSession() — and,
+  // since reconcile() marks the save dirty, would even get pushed back and overwrite B's cloud save.
+  it('without clearSyncedLocalSections(), a previous account\'s equipped avatar leaks into the next account adopted', async () => {
+    const store = new LocalSaveStore(new MemStorage());
+    const local = makeNewSave('acc-a', 1);
+    local.equipped = { avatar: 'preset:3' }; // account A's chosen avatar, still resident in-memory
+    local.flags = { gdprConsent: true };
+    store.saveLocal(local);
+
+    const cloudB = makeNewSave('acc-b', 1); // account B has never equipped an avatar
+    const mgr = new SaveManager({ store, api: fakeApi(cloudB) });
+    await mgr.adoptSession('acc-b'); // simulates doAuth() logging into B without a prior doLogout() reset
+
+    expect(mgr.get().equipped.avatar).toBe('preset:3'); // bug: B sees A's avatar
+    expect(mgr.get().flags.gdprConsent).toBe(true); // bug: B silently inherits A's consent flag
+  });
+
+  it('clearSyncedLocalSections() before the next adoptSession() prevents the leak (doLogout() fix)', async () => {
+    const store = new LocalSaveStore(new MemStorage());
+    const local = makeNewSave('acc-a', 1);
+    local.equipped = { avatar: 'preset:3' };
+    local.flags = { gdprConsent: true };
+    local.pvpDeck = ['card1', 'card2'];
+    store.saveLocal(local);
+
+    const cloudB = makeNewSave('acc-b', 1);
+    const mgr = new SaveManager({ store, api: fakeApi(cloudB) });
+    mgr.clearSyncedLocalSections(); // called from doLogout()
+    expect(mgr.get().equipped).toEqual({});
+    expect(mgr.get().flags).toEqual({});
+    expect(mgr.get().pvpDeck).toBeUndefined();
+
+    await mgr.adoptSession('acc-b');
+    expect(mgr.get().equipped.avatar).toBeUndefined();
+    expect(mgr.get().flags.gdprConsent).toBeUndefined();
+  });
 });
 
 // ── PvE server authority: clear / upgrade / offline queue (§8) ──────────────────────────
