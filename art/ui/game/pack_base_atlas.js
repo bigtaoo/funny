@@ -20,6 +20,26 @@ const ATLAS_H = 256;
 // background instead of true transparency) — zeroed out before cropping.
 const NOISE_ALPHA_THRESHOLD = 40;
 
+// Downsampling a 1024-1920px AI source down to the CELL (256px) atlas cell blends every
+// edge over several output pixels, and the AI source's own edges are already soft
+// (feathered/glow-like, not the crisp near-binary alpha of the hand-inked game_base.png
+// tier-0 art) — together this leaves a wide gradient band instead of a thin AA fringe,
+// which reads in-game as "this castle looks translucent/washed out" (2026-07-25 user report,
+// levels 2/3 only — tier 0 doesn't go through this resize path). Harden the alpha channel
+// post-resize: snap outside [LOW,HIGH] to 0/255 and linearly remap the narrow band between,
+// so the silhouette is crisp with only a couple pixels of true edge AA, matching tier 0.
+const ALPHA_HARD_LOW = 90;
+const ALPHA_HARD_HIGH = 170;
+
+function hardenAlpha(raw) {
+  for (let i = 3; i < raw.length; i += 4) {
+    const a = raw[i];
+    if (a <= ALPHA_HARD_LOW) raw[i] = 0;
+    else if (a >= ALPHA_HARD_HIGH) raw[i] = 255;
+    else raw[i] = Math.round(((a - ALPHA_HARD_LOW) / (ALPHA_HARD_HIGH - ALPHA_HARD_LOW)) * 255);
+  }
+}
+
 // lv1 = castle-town (walled settlement), lv2 = palace (grandest tier)
 const FILES = [
   { file: 'rOhtChw7aebowR6NpxcLfX_1783267912263_na1fn_L2hvbWUvdWJ1bnR1L2Nhc3RsZV90b3duX2ljb25fZmluYWw.webp', name: 'base_lv1' },
@@ -76,9 +96,14 @@ async function main() {
     const { image, bbox } = await cleanAndCropBbox(srcPath);
     console.log(`${name} (${file.slice(0, 8)}…): crop ${JSON.stringify(bbox)} → (${dx},${dy})`);
 
-    const cellBuf = await image
+    const resizedRaw = await image
       .extract(bbox)
       .resize(CELL, CELL, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .ensureAlpha()
+      .raw()
+      .toBuffer();
+    hardenAlpha(resizedRaw);
+    const cellBuf = await sharp(resizedRaw, { raw: { width: CELL, height: CELL, channels: 4 } })
       .png()
       .toBuffer();
 
