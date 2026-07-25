@@ -3,7 +3,8 @@
 import { ISO_RATIO, tileToScreen, diamondPath, visibleTileBounds, clipConvexToRect } from '../../../render/isoGrid';
 import { occupyFrontierCells } from '../occupyFrontier';
 import { HUD_H } from '../constants';
-import { ENEMY_BASE_TINT, CLOUD_COLOR, tileColor, proceduralTileColor } from '../tileStyle';
+import { ENEMY_BASE_TINT, MINE_BASE_TINT, CLOUD_COLOR, tileColor, proceduralTileColor } from '../tileStyle';
+import { baseFootprintCells } from '@nw/shared';
 import { drawStar } from '../tileGraphics';
 import { StickmanRuntime } from '../../../render/stickman/StickmanRuntime';
 import { UnitType } from '../../../game/types';
@@ -24,6 +25,7 @@ export interface FogHandlers {
   renderMapL3(): void;
   renderFog(): void;
   renderOccupyFrontier(): void;
+  renderGarrisonZones(): void;
   renderOverlay(dt?: number): void;
   syncMarchTokens(dt: number): void;
   syncOccupyTokens(dt: number): void;
@@ -166,6 +168,45 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
       g.lineStyle(0);
     }
 
+    /**
+     * ADR-051 (P4): draw the 3×3 defense-zone aura under every visible 驻扎 garrison team — own (red) and
+     * enemy (blue), from ctx.stationed (getStationed now returns enemy stationed teams within vision). This
+     * is the footprint the garrison actively intercepts through (worldsvc `cover` reverse-index): a march
+     * that steps onto any of these 9 cells is fought by the garrison, so the halo tells the player which
+     * ground to route around (enemy) or is safely held (own). 停留 idle teams have no zone — only their cell
+     * is passively defended — so they get a token but no halo. L1/L2 only (matches token rendering).
+     */
+    renderGarrisonZones(): void {
+      if (this.ctx.zoom >= 3) return;
+      const stationed = this.ctx.stationed;
+      if (!stationed.length) return;
+      const g = this.ctx.overlayGfx;
+      const tp = this.ctx.tp;
+      const { panX, panY, mapW, mapH } = this.ctx;
+      const diamond = diamondPath(tp);
+      // Group by ownership so each color batches one fill/stroke pass (own = red ink, enemy = blue ink —
+      // the same convention as territory tints / march arrows).
+      for (const mine of [true, false]) {
+        const zones = stationed.filter((s) => s.mode === 'garrison' && (s.mine !== false) === mine);
+        if (!zones.length) continue;
+        const col = mine ? MINE_BASE_TINT : ENEMY_BASE_TINT;
+        g.lineStyle(Math.max(1.5, tp * 0.05), col, 0.55);
+        g.beginFill(col, 0.12);
+        for (const s of zones) {
+          for (const { x, y } of baseFootprintCells(s.x, s.y)) {
+            if (x < 0 || y < 0 || x >= mapW || y >= mapH) continue; // clamp footprint to the map
+            const scr = tileToScreen(x, y, tp);
+            const cx = panX + scr.x, cy = panY + scr.y;
+            const pts: number[] = new Array(diamond.length);
+            for (let k = 0; k < diamond.length; k += 2) { pts[k] = diamond[k]! + cx; pts[k + 1] = diamond[k + 1]! + cy; }
+            g.drawPolygon(pts);
+          }
+        }
+        g.endFill();
+      }
+      g.lineStyle(0);
+    }
+
     renderOverlay(dt = 0): void {
       this.renderFog();
       const g = this.ctx.overlayGfx;
@@ -179,6 +220,10 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
       // 4-directional (shared-edge) adjacency, matching worldsvc isConnectedToSectTerritory. Guidance only;
       // drawn under everything else. L1/L2 only (L3 bird's-eye is too dense for per-tile outlines).
       this.renderOccupyFrontier();
+
+      // 驻扎 garrison defense zones (ADR-051 P4): the 3×3 footprint each garrison actively defends /
+      // intercepts through. Drawn low (under selection/stars/arrows) so it reads as a ground aura.
+      this.renderGarrisonZones();
 
       // Selected tile highlight — diamond outline centered on the tile (was a square
       // anchored at its top-left corner; tileToScreen gives the diamond center instead).
@@ -303,6 +348,7 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
             }).catch(err => { console.warn(`[WorldMap] march token .tao failed to load (${kind}):`, err); });
           }
           if (entry.runtime) {
+            entry.runtime.setSilhouette(march.mine === false ? ENEMY_BASE_TINT : null); // enemy march = flat blue (ADR-051 P4)
             entry.runtime.syncState('moving');
             entry.runtime.update(dt);
             entry.runtime.container.position.set(hx, hy);
@@ -377,9 +423,12 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
     }
 
     /**
-     * Idle-standing sprite on every tile with one of my stationed teams (ctx.stationed, refreshed alongside
-     * marches). Unlike march/occupy tokens these are NOT torn down on arrival — the team stands there (playing
-     * the 'idle' clip, state = 空闲) until moved or recalled (2026-07-23 field-stationing). Mirrors
+     * Idle-standing sprite on every tile holding a stationed team (ctx.stationed, refreshed alongside marches).
+     * Unlike march/occupy tokens these are NOT torn down on arrival — the team stands there (playing the 'idle'
+     * clip) until moved or recalled (2026-07-23 field-stationing). ADR-051 (P4): ctx.stationed now also carries
+     * ENEMY stationed teams within vision (s.mine === false); those are recolored to a flat blue silhouette
+     * (setSilhouette(ENEMY_BASE_TINT)) so friend/foe reads at a glance, while own teams keep their full-color
+     * rig. 驻扎 vs 停留 is conveyed by the 3×3 zone aura (renderGarrisonZones), not the token itself. Mirrors
      * syncOccupyTokens' pooled-runtime pattern; runtimes for tiles no longer stationed are torn down.
      */
     syncStationedTokens(dt: number): void {
@@ -407,6 +456,7 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
             }).catch(err => { console.warn('[WorldMap] stationed token .tao failed to load:', err); });
           }
           if (entry.runtime) {
+            entry.runtime.setSilhouette(s.mine === false ? ENEMY_BASE_TINT : null); // enemy = flat blue; own keeps art
             entry.runtime.syncState('idle'); // unknown state → 'idle' clip (STATE_ANIM fallback)
             entry.runtime.update(dt);
             entry.runtime.container.position.set(cx, cy);

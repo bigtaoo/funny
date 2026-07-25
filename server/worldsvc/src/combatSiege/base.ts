@@ -7,6 +7,7 @@
 //   damage.ts  — processDueSiegeDamage / settleSiegeDamage (ADR-026 delayed building-HP settlement)
 //   arrival.ts — applySiege / applyBaseSiege / applyStrongholdSiege / landSiege / applySweep (siege / sweep arrival)
 //   occupation.ts — applyOccupy / applyOccupationExpulsion / processDueOccupations (ADR-037 §5.4 occupation-hold settlement)
+//   encounter.ts — resolveFieldEncounter (ADR-051 §3.4 P2b real-time tile-entry field battle)
 import type { WorldCore } from '../core';
 import type { SiegeReplayInputs } from '../worldTypes';
 import type { TileDoc, PlayerWorldDoc, MarchDoc, SiegeDoc } from '../db';

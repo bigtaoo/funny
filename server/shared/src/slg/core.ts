@@ -374,6 +374,25 @@ export const RELOCATE_COST = 500;
 export const WATCHTOWER_COST: Readonly<Record<ResourceType, number>> = { ink: 0, paper: 3000, graphite: 0, metal: 2000, sticker: 0 };
 
 /**
+ * ADR-051 (P5): player-built map structures overlaid on a tile (the `TileDoc.structure` layer). Buildable only on
+ * the player's own or same-family territory (§8-O2), never the home-city anchor. All values DRAFT (§8-O3, pending
+ * economy review):
+ * - **arrowTower**: chips passing ENEMY marches — each covered cell an enemy steps on subtracts
+ *   `min(troops × ARROW_TOWER_DMG_RATIO, ARROW_TOWER_DMG_CAP)` from its army, without stopping it (an auto-weaken
+ *   tower). Covers its 3×3 footprint via the `cover` reverse index. Its own hp is reduced only by an attack march.
+ * - **blocker**: a hard path obstacle enemies must route around or destroy (pathing treats it like an enemy base
+ *   footprint — blocked, but reachable as a siege destination).
+ */
+export const ARROW_TOWER_COST: Readonly<Record<ResourceType, number>> = { ink: 0, paper: 2000, graphite: 0, metal: 3000, sticker: 0 };
+export const BLOCKER_COST: Readonly<Record<ResourceType, number>> = { ink: 0, paper: 1000, graphite: 0, metal: 4000, sticker: 0 };
+/** Structure durability (hp/hpMax) — reduced only by an attack march; 0 → the structure is removed. */
+export const ARROW_TOWER_HP = 2000;
+export const BLOCKER_HP = 3000;
+/** Arrow-tower pass-through damage, applied once per covered cell an enemy march enters: min(troops·ratio, cap). */
+export const ARROW_TOWER_DMG_RATIO = 0.1;
+export const ARROW_TOWER_DMG_CAP = 300;
+
+/**
  * Gateway horizontal-scale push channel (SOC9 / §8.4): worldsvc publishes "one message + recipient list" to this Redis
  * pub/sub channel; each gateway instance subscribes and fans out to recipient sockets that are online on that instance.
  * This avoids O(n) direct HTTP pushes from worldsvc to sects of ≤900 players (too much traffic), and naturally supports routing across multiple gateway instances.

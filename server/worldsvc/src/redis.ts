@@ -17,6 +17,10 @@ export interface WorldRedis {
   publish(channel: string, message: string): Promise<unknown>;
   get(key: string): Promise<string | null>;
   set(key: string, value: string): Promise<unknown>;
+  // ADR-051 (P1): hash ops for the field-unit occupancy index (`world:{w}:occ`, field=tileId → occupant JSON).
+  hset(key: string, field: string, value: string): Promise<unknown>;
+  hget(key: string, field: string): Promise<string | null>;
+  hdel(key: string, ...fields: string[]): Promise<unknown>;
   quit(): Promise<unknown>;
 }
 

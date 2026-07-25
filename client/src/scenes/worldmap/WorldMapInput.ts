@@ -104,19 +104,35 @@ export class WorldMapInput {
         return;
       }
       const tileKey = `${this.ctx.cb.worldId}:${tx}:${ty}`;
-      const stationedHere = this.ctx.stationed.find((s) => s.x === tx && s.y === ty);
+      // Only MY stationed team here can be recalled — ctx.stationed now also carries enemy teams (P4), whose
+      // teamId is blanked; matching one would send an un-actionable recall.
+      const stationedHere = this.ctx.stationed.find((s) => s.mine !== false && s.x === tx && s.y === ty);
       const myButtons: { label: string; action: () => void; disabled?: boolean }[] = [
         { label: t('world.actReinforce'), action: () => this.ctx.panels.showDeployDialog(tx, ty, 'reinforce') },
-        // Move (2026-07-23): park an idle home team on this tile (it walks over and stands idle). Recall sends a
-        // team already stationed here back home. One stationed team per tile → offer Move only when none stands here.
+        // Move (2026-07-23): park a home team on this tile. ADR-051 (P4) two intents — 移动到此(停留 idle, free to
+        // re-command) vs 移动并驻扎 (garrison, defends its 3×3 footprint + intercepts passers, stays busy). Recall
+        // sends a team already stationed here back home. One stationed team per tile → offer Move/Garrison only
+        // when none of mine stands here.
         ...(stationedHere
           ? [{ label: t('world.actRecallStation'), action: () => void this.ctx.net.doRecallStationed(stationedHere.teamId) }]
-          : [{ label: t('world.actMove'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'move') }]),
+          : [
+              { label: t('world.actMove'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'move', 'idle') },
+              { label: t('world.actGarrison'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'move', 'garrison') },
+            ]),
         { label: t('world.actDefense'), action: () => { this.ctx.panels.closeModal(); this.ctx.cb.onOpenDefense(tileKey); } },
       ];
       // Watchtower (§18 G5 V2): build a long-radius persistent vision source on an owned tile. If a tower already exists, show a status line instead of the build button.
       if (!tile.watchtower) {
         myButtons.push({ label: t('world.actWatchtower'), action: () => this.ctx.net.confirmWatchtower(tx, ty) });
+      }
+      // ADR-051 (P5): player structures — one per tile. Build an arrow tower (chips passing enemies over 9 cells)
+      // or a blocker (forces enemy detours) on own territory; demolish one's own structure. (Not offered on the
+      // base anchor — that branch returns above.)
+      if (tile.structure) {
+        myButtons.push({ label: t('world.actDemolish'), action: () => void this.ctx.net.doDemolishStructure(tx, ty) });
+      } else {
+        myButtons.push({ label: t('world.actArrowTower'), action: () => this.ctx.net.confirmBuildStructure(tx, ty, 'arrowTower') });
+        myButtons.push({ label: t('world.actBlocker'), action: () => this.ctx.net.confirmBuildStructure(tx, ty, 'blocker') });
       }
       // Relocate here (§3.4): the capital may only move onto a 3×3 block the player already fully owns —
       // this clicked cell as centre plus all 8 neighbours. Offered on every owned tile so the intent is
@@ -134,7 +150,10 @@ export class WorldMapInput {
       }
       myButtons.push({ label: t('world.actAbandon'), action: () => this.ctx.net.doAbandon(tx, ty) });
       myButtons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
-      const head = tile.watchtower ? [t('world.mine'), t('world.hasWatchtower'), `(${tx}, ${ty})`] : [t('world.mine'), `(${tx}, ${ty})`];
+      const head = [t('world.mine')];
+      if (tile.watchtower) head.push(t('world.hasWatchtower'));
+      if (tile.structure) head.push(t(tile.structure.kind === 'arrowTower' ? 'world.hasArrowTower' : 'world.hasBlocker'));
+      head.push(`(${tx}, ${ty})`);
       this.ctx.panels.showModal(head, myButtons);
       return;
     }
@@ -151,6 +170,8 @@ export class WorldMapInput {
       }
       buttons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
       const enemyHead = [t('world.enemyTile'), ownerLine, `(${tx}, ${ty})`];
+      // ADR-051 (P5): flag an enemy structure so the player knows attacking this tile razes it.
+      if (tile.structure) enemyHead.push(t(tile.structure.kind === 'arrowTower' ? 'world.hasArrowTower' : 'world.hasBlocker'));
       if (tile.maxHp && tile.hp != null) enemyHead.push(t('world.buildingHp').replace('{hp}', String(tile.hp)).replace('{max}', String(tile.maxHp)));
       this.ctx.panels.showModal(enemyHead, buttons);
       return;
@@ -217,12 +238,26 @@ export class WorldMapInput {
       buttons.push({ label: t('world.actSweep'), action: () => this.ctx.panels.showDeployDialog(tx, ty, 'sweep') });
     }
     // Move (2026-07-23): station a team on this empty neutral tile (no combat, no claim — it just stands there).
-    // Recall if one of my teams already stands here.
-    const stationedNeutral = this.ctx.stationed.find((s) => s.x === tx && s.y === ty);
+    // ADR-051 (P4): two intents — 移动到此(停留 idle) vs 移动并驻扎 (garrison). If a 停留 idle team of MINE already
+    // stands here it can 就地占领 this very tile (P4 §4.3) without marching, or be recalled. Enemy stationed teams
+    // (mine===false, blanked teamId) never match here — they're not actionable from my menu.
+    const stationedNeutral = this.ctx.stationed.find((s) => s.mine !== false && s.x === tx && s.y === ty);
     if (stationedNeutral) {
+      // 就地占领 only for a 停留 idle team (a 驻扎 garrison team is locked/busy). Gated by the same ADR-039
+      // connectivity pre-check as the march-occupy button above (server re-validates on dispatch).
+      if (stationedNeutral.mode !== 'garrison') {
+        buttons.push({
+          label: t('world.actOccupyInPlace'),
+          disabled: !occupyConnected,
+          action: occupyConnected
+            ? () => void this.ctx.net.doInPlaceOccupy(tx, ty, stationedNeutral.teamId)
+            : () => this.ctx.panels.showToast(t('world.err.notConnected'), C.red),
+        });
+      }
       buttons.push({ label: t('world.actRecallStation'), action: () => void this.ctx.net.doRecallStationed(stationedNeutral.teamId) });
     } else {
-      buttons.push({ label: t('world.actMove'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'move') });
+      buttons.push({ label: t('world.actMove'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'move', 'idle') });
+      buttons.push({ label: t('world.actGarrison'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'move', 'garrison') });
     }
     // (Relocate moved to the owned-tile branch: §3.4 now requires the target 3×3 to be already fully owned,
     // so relocation is initiated by clicking your own centre tile, not a neutral one.)

@@ -559,8 +559,11 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     const tile = await svc.getTile(W, 'a', target.x, target.y);
     expect(tile.mine).toBeFalsy();
 
-    // Stationed = "out" → a fresh order is rejected until the team is recalled.
-    await expect(svc.startMarch(W, 'a', 10, 10, target.x, target.y, 'move', 1, 't1')).rejects.toThrow(/marching, occupying, or stationed/i);
+    // ADR-051 (P3c): a 停留 idle team is no longer locked — it can be re-commanded straight from the field
+    // (re-dispatch move / 就地占领; see field-redispatch.e2e). But re-issuing a move onto the SAME cell it already
+    // stands on is a no-op error — the origin snaps to the station cell, so this is a move target→target and the
+    // "one park per tile" gate rejects it (the doc is still there). Positive re-dispatch is covered elsewhere.
+    await expect(svc.startMarch(W, 'a', 10, 10, target.x, target.y, 'move', 1, 't1')).rejects.toThrow(/already stationed on this tile/i);
 
     // Recall home → return leg → on arrival the slot is idle and can move again.
     const back = await svc.recallStationed(W, 'a', 't1');

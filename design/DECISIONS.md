@@ -576,3 +576,14 @@
 - **决策**：分解可行性判定从单一等级门槛改为**等级门槛 OR 稀有度门槛**：`isSalvageable(rarity, level) = rarity !== 'epic' && level <= SALVAGE_MAX_LEVEL`。普通/精良/稀有三档行为不变（+0~+4 可分解，+5 起不可分解）；史诗档从"+0~+4 可分解"改为**永不可分解**。高稀有度件的销毁出口收窄为**拍卖 / 穿戴**（§13），与+5 以上高强化件的既有出口一致。
 - **实现**：新增单一判定函数 `isSalvageable`，服务器权威侧 `server/shared/src/equipment.ts`（`salvageEquipment` 校验 + rev-guard 复查两处引用），客户端 UI 侧镜像同名函数于 `client/src/game/meta/equipmentDefs.ts`（`instanceActions` 用于隐藏按钮，纯预览，不代替服务器校验）。`NOT_SALVAGEABLE` 错误文案三语同步更新为"+5 及以上或史诗品质不可分解"。
 - **影响**：`server/shared/src/equipment.ts`、`server/metaserver/src/equipment.ts`、`client/src/game/meta/equipmentDefs.ts`、`client/src/scenes/EquipmentScene/detail.ts`、三语 i18n（`equip.err.notSalvageable`）；[`game/EQUIPMENT_DESIGN.md`](game/EQUIPMENT_DESIGN.md) L4 + §6.3 + §17 数值表 + SERVER_API 端点说明同步。`server/shared` 单测新增 `isSalvageable` 用例，`metaserver` e2e 新增史诗 +0 分解拒绝用例，client UI 测试新增史诗件按钮隐藏用例。
+
+## ADR-051 SLG 实时野战遭遇系统：停留/驻扎拆分 + Redis 逐格行军 + 玩家建筑层 — Accepted — 2026-07-24
+
+- **问题**：野外驻扎 v1（2026-07-23）只有单一 `stationed` 态，是个「四不像」——忙碌得像驻扎（锁队伍槽、不能接新指令），却连本格都不防守（march/siege 结算链路从不读 `stationed` 集合）。直接后果：玩家用队伍走到中立格「停留」后想「就地占领」，占领选择器却把它当忙碌排除（[`WorldMapNet.ts:163`](../client/src/scenes/worldmap/WorldMapNet.ts)）。且行军模型非实时（一次性算好路径、丢弃、只调度一个到点事件），无法实现「路过拦截」。
+- **决策**（用户拍板，全设计见 [`game/SLG_FIELD_BATTLE_DESIGN.md`](game/SLG_FIELD_BATTLE_DESIGN.md)）：
+  1. **状态拆分**：`stationed` 分 **停留 idle**（空闲、可接指令、仅本格被动应战）与 **驻扎 garrison**（忙碌、守本格+周围8格=9格、主动拦截路过敌军）；**发兵时选定意图**，抵达即进对应态；停留放出忙碌门禁 → 修复就地占领。
+  2. **实时野战引擎**：位置权威搬进 Redis（`occ` 占格索引 + `cover` 9格反向索引）；行军改**逐格步进**、路径持久化到 MarchDoc、每步只调度下一步；三种遭遇场景（撞停留 / 两行军同格 / 驻扎拦截）合并为**一次 O(1)「踏格检查」**，不扫 Mongo；全部战斗走现成 `runSiegeBattle`（可回放、士气规则复用）；**遭遇结果=胜方带残兵继续原行动**。
+  3. **建筑层**（玩家建造）：`TileDoc` 新增通用 `structure` 叠加位（泛化 `watchtower`）；**箭塔**=敌军踏入9格射程即掉血、不拦停、可攻毁；**必拆除阻挡**=接入寻路的硬阻挡（参照敌方主城 `blockedBaseKeys`），对建造者+家族放行。
+- **待审点拍板（提议默认全采纳）**：O1 路过敌方领地 garrison **不**触发 pass-through 战斗（拦截靠驻扎/箭塔，否则领地不可穿行）；O2 建筑只能建**己方/家族领地**格；O3 箭塔数值/驻扎维护/步进疲劳进 `config.ts` 标 DRAFT；O4 逐格步进事件量登记监控 + 粗粒度降级预案；O5 相邻格对穿不触发遭遇，接受为常态。
+- **分阶段**：P1 实时行军基础（路径持久化+步进+`occ`，行为对齐现状）→ P2 遭遇引擎（场景1/2+`runSiegeBattle`）→ P3 停留/驻扎拆分+`cover`+驻扎拦截+就地占领 → P4 客户端实时野战视图 → P5 建筑层。每阶段独立可验证、独立合入当日分支。
+- **影响**（预估，详见设计文档 §6）：`worldsvc`（`db.ts`/`combatMarch.ts`/新 `combatSiege/encounter.ts`/`corePush.ts`/`territory.ts`/建筑 API/`httpApi.ts`）、`@nw/shared`（`walkable` 接入建筑、`config.ts` 数值）、`openapi-world.yml`；客户端 `WorldMap*` + `WorldMapRenderer` + 三语 i18n。

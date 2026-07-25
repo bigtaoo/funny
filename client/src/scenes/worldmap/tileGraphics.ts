@@ -189,6 +189,39 @@ export function drawTileL1(
       g.endFill();
     }
   }
+
+  // ADR-051 (P5): player-built structure marker (arrowTower / blocker), tinted by ownership (own red / enemy
+  // blue, matching the territory/march colour convention). Geometric for v1 — no dedicated atlas art yet.
+  if (tile?.structure) {
+    const col = tile.structure.mine === true ? 0xcc3333 : 0x4477cc;
+    const baseY = hh - 4;
+    if (tile.structure.kind === 'arrowTower') {
+      const towerW = Math.max(4, tp * 0.16);
+      const towerH = Math.max(8, tp * 0.42);
+      g.lineStyle(1, 0x3a2a18, 0.9);
+      g.beginFill(0xe8dcc0, 0.95);
+      g.drawRect(-towerW / 2, baseY - towerH, towerW, towerH);
+      g.endFill();
+      g.lineStyle(0);
+      g.beginFill(col, 0.95); // ownership-tinted pointed roof
+      g.drawPolygon([-towerW / 2 - 1, baseY - towerH, towerW / 2 + 1, baseY - towerH, 0, baseY - towerH - towerW]);
+      g.endFill();
+      g.beginFill(0x3a2a18, 0.9); // arrow slit
+      g.drawRect(-1, baseY - towerH * 0.62, 2, towerH * 0.3);
+      g.endFill();
+    } else {
+      const w = Math.max(6, tp * 0.5);
+      const h = Math.max(5, tp * 0.22);
+      g.lineStyle(2, col, 0.95);
+      g.beginFill(0xe8dcc0, 0.9);
+      g.drawRect(-w / 2, baseY - h, w, h);
+      g.endFill();
+      g.lineStyle(1.5, col, 0.9); // X-brace
+      g.moveTo(-w / 2, baseY - h); g.lineTo(w / 2, baseY);
+      g.moveTo(w / 2, baseY - h); g.lineTo(-w / 2, baseY);
+      g.lineStyle(0);
+    }
+  }
 }
 
 /**

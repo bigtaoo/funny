@@ -82,6 +82,8 @@ components:
         watchtower:
           type: boolean
           description: §18 G5 V2：A watchtower has been built on this tile (large-radius persistent vision source). The client renders the tower marker.
+        structure:
+          $ref: '#/components/schemas/TileStructureView'
         visible:
           type: boolean
           description: >-
@@ -317,7 +319,31 @@ components:
           type: string
           description: "Which team slot ('t1'..'t5') is tied up holding this tile, if the march was dispatched with one."
 
-    # Stationed team (2026-07-23): a team parked on a tile, standing idle until moved or recalled. Own teams only.
+    # ADR-051 (P5): a player-built structure overlaid on a tile (arrowTower / blocker). Rendered map-wide
+    # (public static layer); hp/hpMax are intel-gated (omitted for tiles outside the requester's vision).
+    TileStructureView:
+      type: object
+      required: [kind, level]
+      properties:
+        kind:
+          type: string
+          enum: [arrowTower, blocker]
+          description: "arrowTower: chips passing enemies over its 3×3 footprint (no stop). blocker: hard path obstacle enemies must destroy."
+        level:
+          type: integer
+        hp:
+          type: integer
+          description: "Current durability (intel-gated — omitted out of vision). Reduced only by an attack march; 0 → removed."
+        hpMax:
+          type: integer
+          description: "Max durability (intel-gated — omitted out of vision)."
+        mine:
+          type: boolean
+          description: "Whether the requester built this structure (client shows Demolish only on own structures)."
+
+    # Stationed team (2026-07-23): a team parked on a tile, standing idle until moved or recalled.
+    # ADR-051 (P4): now also carries ENEMY stationed teams within the requester's vision (mine=false),
+    # so the client can render enemy field troops + their garrison defense zones. Own teams: mine=true.
     StationedView:
       type: object
       required: [tile, x, y, teamId, troops, sinceAt]
@@ -337,6 +363,13 @@ components:
         sinceAt:
           type: number
           description: "ms the team became stationed."
+        mode:
+          type: string
+          enum: [idle, garrison]
+          description: "ADR-051 (P3a): 停留 idle (free, defends own cell) vs 驻扎 garrison (busy, defends its 3×3 footprint). Absent → idle."
+        mine:
+          type: boolean
+          description: "ADR-051 (P4): whether this stationed team belongs to the requester (false = enemy stationed team within vision). Absent → treat as own (legacy). teamId is blanked for enemy teams (not the requester's slot)."
 
     # ── Auction ────────────────────────────────────────────────────────────────
 
@@ -959,6 +992,63 @@ paths:
                     properties:
                       data: { $ref: '#/components/schemas/WorldTileView' }
 
+  /world/structure:
+    post:
+      operationId: buildStructure
+      summary: "ADR-051 (P5): build a player structure (arrowTower / blocker) on own or same-family territory"
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, x, y, kind]
+              properties:
+                worldId: { type: string }
+                x: { type: integer }
+                y: { type: integer }
+                kind: { type: string, enum: [arrowTower, blocker] }
+      responses:
+        '200':
+          description: Structure built
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/WorldTileView' }
+
+  /world/structure/demolish:
+    post:
+      operationId: demolishStructure
+      summary: "ADR-051 (P5): demolish one's own structure on a tile"
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, x, y]
+              properties:
+                worldId: { type: string }
+                x: { type: integer }
+                y: { type: integer }
+      responses:
+        '200':
+          description: Structure demolished
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/WorldTileView' }
+
   /world/march:
     get:
       operationId: getMarches
@@ -999,6 +1089,10 @@ paths:
                 teamId:
                   type: string
                   description: "Team (G3-2c): attack-formation template to use for kind=attack/occupy/move; committed troops = sum of troops carried across the team's cards (overrides the troops field). Required for kind=move."
+                stationMode:
+                  type: string
+                  enum: [idle, garrison]
+                  description: "ADR-051 (P3a): kind=move dispatch intent — 'garrison' parks the team as a 驻扎 garrison (defends its 3×3 footprint); default/absent → 停留 idle. Ignored for other kinds."
       responses:
         '200':
           description: March started

@@ -334,6 +334,16 @@ export class WorldApiClient {
     return this.req('POST', '/world/watchtower', { worldId, x, y });
   }
 
+  /** ADR-051 (P5): build a player structure (arrowTower / blocker) on own or same-family territory at (x,y). */
+  async buildStructure(worldId: string, x: number, y: number, kind: 'arrowTower' | 'blocker'): Promise<WorldTileView> {
+    return this.req('POST', '/world/structure', { worldId, x, y, kind });
+  }
+
+  /** ADR-051 (P5): demolish one's own structure at (x,y). */
+  async demolishStructure(worldId: string, x: number, y: number): Promise<WorldTileView> {
+    return this.req('POST', '/world/structure/demolish', { worldId, x, y });
+  }
+
   async startMarch(
     worldId: string,
     fromX: number, fromY: number,
@@ -341,10 +351,14 @@ export class WorldApiClient {
     kind: MarchKind,
     troops: number,
     teamId?: string,
+    /** ADR-051 (P3a/P4): 'garrison' parks the arriving team as a 驻扎 garrison (defends its 3×3 footprint, stays busy);
+     * omitted / 'idle' keeps it 停留 idle (free to re-command). Only honored server-side for kind='move'. */
+    stationMode?: 'idle' | 'garrison',
   ): Promise<MarchView> {
     return this.req('POST', '/world/march', {
       worldId, fromX, fromY, toX, toY, kind, troops,
       ...(teamId ? { teamId } : {}),
+      ...(stationMode === 'garrison' ? { stationMode } : {}),
     });
   }
 
