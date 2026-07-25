@@ -88,6 +88,19 @@ export class MarchService {
         for (const c of baseFootprintCells(bx, by)) blockedBaseKeys.delete(`${c.x}:${c.y}`);
       }
     }
+    // ADR-051 (P5b): enemy player-built blockers are hard path obstacles too — the marcher must route around them
+    // (or, since findMarchPath exempts the destination, march ONTO one to attack/destroy it). Own & same-family
+    // blockers are passable (对建造者+家族放行). Reuses the same blockedBaseKeys set as enemy bases (identical
+    // "path-blocking, destination-exempt" semantics).
+    const blockerTiles = await this.core.deps.cols.tiles
+      .find({ worldId, 'structure.kind': 'blocker' })
+      .project<{ x: number; y: number; structure?: { ownerId?: string; familyId?: string } }>({ x: 1, y: 1, 'structure.ownerId': 1, 'structure.familyId': 1 })
+      .toArray();
+    for (const b of blockerTiles) {
+      const so = b.structure;
+      const friendly = so?.ownerId === requesterId || (!!allyFamilyId && so?.familyId === allyFamilyId);
+      if (!friendly) blockedBaseKeys.add(`${b.x}:${b.y}`);
+    }
     const path = findMarchPath(
       worldId,
       this.core.deps.mapW,

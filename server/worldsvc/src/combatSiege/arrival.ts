@@ -666,11 +666,14 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
                 garrison: res.attackerSurvivors,
                 ...(isCrossing && pw.familyId ? { familyId: pw.familyId } : {}),
               },
-              // Clear stale family passage on a crossing captured by a familyless player, plus the protection shield.
-              $unset: { protectedUntil: '', ...(isCrossing && !pw.familyId ? { familyId: '' } : {}) },
+              // Clear stale family passage on a crossing captured by a familyless player, the protection shield, and
+              // (ADR-051 P5) any player structure the previous owner built — a captured tile's tower/blocker is razed.
+              $unset: { protectedUntil: '', structure: '', ...(isCrossing && !pw.familyId ? { familyId: '' } : {}) },
               $inc: { rev: 1 },
             },
           );
+          // ADR-051 (P5): clear a razed arrow tower's 3×3 coverage from the reverse index (its TileDoc.structure was unset above).
+          if (target.structure?.kind === 'arrowTower') await this.core.removeCover(m.worldId, target.x, target.y, m.toTile);
           const atkYield = await this.core.recomputeYield(m.worldId, m.ownerId);
           await cols.playerWorld.updateOne(
             { _id: pw._id },

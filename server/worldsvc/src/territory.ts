@@ -237,6 +237,9 @@ export class TerritoryService {
     await this.core.clearOccupancy(worldId, tid, tid); // ADR-051 (P2): drop the freed team's occupancy entry
     // ADR-051 (P3a): a freed garrison also drops its 9-cell coverage from the reverse index.
     if (freedStationed?.mode === 'garrison') await this.core.removeCover(worldId, freedStationed.x, freedStationed.y, freedStationed.tile);
+    // ADR-051 (P5): an abandoned tile's arrow tower is destroyed with it — clear its 3×3 coverage too (the TileDoc
+    // is deleted above, so the structure is gone; only the Redis cover index needs the explicit sweep).
+    if (tile.structure?.kind === 'arrowTower') await this.core.removeCover(worldId, x, y, tid);
     const yieldRate = await this.core.recomputeYield(worldId, accountId);
     await cols.playerWorld.updateOne(
       { _id: pw._id },
