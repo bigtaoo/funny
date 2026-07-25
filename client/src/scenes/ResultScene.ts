@@ -244,7 +244,11 @@ export class ResultScene implements Scene {
 
     this.container.eventMode = 'static';
     this.container.once('pointerdown', () => {
-      this.container.eventMode = 'none';
+      // Restore the container's default eventMode ('passive') rather than 'none' — PIXI's
+      // EventBoundary prunes the *entire* subtree under an eventMode:'none' node (see
+      // EventBoundary._interactivePrune), so leaving it 'none' after this tap permanently
+      // swallows every click on whatever onDone() builds next (badges/buttons never respond).
+      this.container.eventMode = 'passive';
       tearDownChildren(this.container);
       onDone();
     });
