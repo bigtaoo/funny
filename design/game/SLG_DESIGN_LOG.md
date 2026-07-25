@@ -1357,3 +1357,24 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 **已知限制（v1，留作后续）**：① 驻留在**未占领中立地**上的队伍不参与该格防御——他人占领/攻打该地仍只打系统 NPC 驻军，我方驻留队伍不自动应战（玩家可随时召回；召回始终可用，不会永久卡住）；② 他人夺取我方驻留所在地块时不自动清理 stationed（sprite 会留到玩家召回）；③ `autoReturn=true` 采「队伍即释放」旧语义，不额外播放一段回城行军（对齐用户「和现在那样」的参照）。
 
 **验证**：`server/shared` build + worldsvc `tsc --noEmit` 全绿；worldsvc vitest **全绿**，`teams.e2e.test.ts` 新增 2 例（`move`→驻留→召回→再可用；`occupy autoReturn=true`→领有但队伍不驻留）并修正 1 例旧断言（占领结算后队伍现在默认**仍占用**而非释放）；client `tsc --noEmit` + webpack build 全绿。真实入图需完整 worldsvc + gateway + meta + 登录入世 + 派队，本会话未起全栈截图核对（服务端权威逻辑以 e2e 覆盖）。
+
+## 39. 队伍领队图标 + 兵力 carried/cap 显示（2026-07-25，用户截图请求）
+
+**背景（用户截图请求）**：城内 Teams 面板五张队伍卡只靠「Team 1..5」文字区分，用户截图圈出 `Troops 150` 问一句「兵力显示为 当前/最大」，同时问能不能给每支队伍配一张图便于识别，并提了个候选方案——在编队地图上标一个特殊格子，放进去的角色就是该队图标。
+
+**方案取舍（AskUserQuestion 拍板）**：特殊格子方案被否——它把「战术站位」和「身份标识」绑死，换头像要动阵型（阵型是要打仗的），格子空着还得设计回退，且防守编辑器共用同一份场景代码，会平白多出一个没意义的格子。拍板为**显式「设为领队」+ 自动兜底**：`TeamTemplate` 新增 `leaderCardId?: string`（放队伍上而非某个格子，天然唯一）；编队编辑器里选中已上阵的卡即可设为领队（★ 角标 + 金框），不设也没关系——客户端自动回退到全队战力最高的卡，五支现有队伍无需任何操作立刻就有图标。`Garrison N`（其实是卡牌张数，与旁边 `Troops N` 挤在一起容易读成两份兵力）一并改名 `Heroes N` / `武将 N`。
+
+**实现（契约 + 服务端）**：
+- `openapi-world.yml` `TeamTemplate` 加 `leaderCardId`（string，可选）；`server/worldsvc/src/db.ts` 镜像该字段，注释写明"必须在 army 中出现，否则被清空"。
+- `city.ts` 新增 `withValidLeader(team, army)`：`getTeams`（自愈）与 `setTeams`（保存）都过一遍——`leaderCardId` 若不在当前 `army` 里（卡被卖掉/挪去别队/从阵型里删掉）就整字段删除（不是置 null，避免存量文档里躺一个 null），不因领队失效而拒绝整次保存。
+- `rest:gen`/`gen:api:world` 重生成 `openapi-world.ts`/`routes.gen.ts`。
+
+**实现（客户端共享逻辑）**：`teamTroops.ts` 新增两个函数：`teamTroopCap(army, cardInv)` = 各卡 `troopCap()` 求和（把 `DefenseEditorScene.teamCapacity()` 的私有实现提出来共用，避免城内/编辑器/后续新增页面各自重算再次踩"两套账本"的历史坑）；`teamLeaderCard(team, cardInv, equipmentInv)` = 显式 `leaderCardId`（仍在本队 army 里才生效）优先，否则按 `cardPower` 取本队最强卡，同战力按 `cardInstanceId` 排序兜底（避免并列时图标在渲染间跳动）。`cardArt.ts` 新增 `cardInstanceArtUrl(card)`：`defId → CARD_DEFS.unitType → UNIT_ART_URLS` 一步到位，城内团队卡/编辑器统一走它取头像，不会各画各的。
+
+**实现（编队编辑器）**：`DefenseEditorScene` 新增 `Tool.kind:'leader'`——工具栏新增「★ 领队」按钮（与既有「擦除」同一排、同一套 armed/hint 机制），激活后点击已上阵的格子即把该卡设为 `this.leaderCardId`（点空格子提示"请点击有武将的格子"）；`doSave`/`persistTeam` 落盘时校验领队仍在本次保存的 army 里，否则该字段整个不发；`Clear` 顺带清空领队。渲染：`effectiveLeaderId()`（复用 `teamLeaderCard` 的同一套优先级逻辑）算出的领队格子画金色描边 + 右上角 ★，包括从未手动选过、纯靠战力兜底选中的那张——玩家能在编辑器里直接看到"如果现在保存，谁会是图标"。
+
+**实现（团队卡列表）**：`CitySceneCallbacks` 新增 `getSave` 回调（`app/nav/world.ts` 接入 `saveManager.get()`），团队卡右侧新画一个金框头像（`teamLeaderCard` 选出的卡 → `cardInstanceArtUrl` → 复用 `DefenseEditorScene` 的懒加载纹理重绘套路），有头像时名字/状态/子标签文字列宽度收窄让位；兵力子标签从裸数字改成 `carried/cap`（`teamTroopCap` 撑不出上限时——没有 `getSave` 回调——退化回裸数字，向后兼容）；`Garrison N` 文案改用新词条 `world.team.cards`（"Heroes N"/"武将 N"）。`WorldMapNet`/`WorldMapPanels` 的选队弹窗暂未加头像（超出本次截图请求范围，留作后续，弹窗本身的 committed 文案不变）。
+
+**i18n 新增**：`world.team.cards`（复用位替代旧 `world.defense.garrison` 在攻击模式下的调用点）、`world.team.leader`、`world.team.leaderHint`、`world.team.leaderNeedsCard`，三语言（zh/en/de）齐备；`world.defense.garrison` 词条本身保留给防守编辑器（防守模式的建筑/驻军统计与本次改动无关）。
+
+**验证**：`server/worldsvc tsc --noEmit` 全绿；worldsvc `teams.e2e.test.ts` 新增 2 例（`leaderCardId` 随保存/领队离队清空往返；`getTeams` 自愈直接写入文档、army 里不存在的幽灵领队）+ 修正 1 处集合访问器笔误，15 例全绿（需 `docker compose up -d` 起 Mongo）；client `tsc --noEmit -p tsconfig.test.json` 全绿；`teamTroops.test.ts` 新增 `teamTroopCap`/`teamLeaderCard` 8 例；`defenseEditorAttackCards.ui.ts` 新增领队工具 5 例；`cityScene.ui.ts` 更新兩例文案改名断言 + 新增 1 例 carried/cap 断言；全量 `vitest.ui.config.ts`（88 文件）除 5 个与本次改动无关的既有失败（`worldMapBaseClick`/`worldMapScoutDisabled`/`marchTokenAnimation`/`modalScaleAndBackButton`/`worldMapOccupyTeamPicker` 各自的既有断言，主分支同样失败，已核实非本次改动引入）外全部通过。真实入图截图未做——本次纯代码改动，无可交互 dev server 场景需要截图核对（团队卡布局改动细小，头像资源已在编辑器验证过渲染管线）。

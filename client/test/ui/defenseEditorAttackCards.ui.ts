@@ -167,3 +167,72 @@ describe('DefenseEditorScene attack mode — card-based formation (2026-07-17 mi
     expect(s.garrison.size).toBe(12); // rejected — cap held
   });
 });
+
+// The team leader (2026-07-25) picks which card's portrait represents the team in the city / world-map
+// team lists. It is an identity marker on the TeamTemplate, deliberately NOT a fixed "leader cell" on
+// the grid — the player can rearrange the formation freely without changing who leads.
+describe('DefenseEditorScene attack mode — team leader', () => {
+  const teamWithTwo = [{
+    id: 't1', name: 'Team 1',
+    army: [{ cardInstanceId: 'c0', col: 0, row: 8 }, { cardInstanceId: 'c1', col: 1, row: 8 }],
+  }];
+
+  it('tapping a placed card with the leader tool marks it, and save persists leaderCardId', async () => {
+    const { scene, setTeams } = buildHarness({ cardCount: 2, cardState: {}, teams: teamWithTwo });
+    await flush();
+    const s = scene as unknown as { tool: unknown; onGridTap(x: number, y: number): void; leaderCardId: string | null };
+    s.tool = { kind: 'leader' };
+    const [sx, sy] = cellCenter(scene, 1, 0); // the cell holding c1
+    s.onGridTap(sx, sy);
+    expect(s.leaderCardId).toBe('c1');
+
+    await (scene as unknown as { doSave(): Promise<void> }).doSave();
+    const [, teams] = setTeams.mock.calls[0] as [string, TeamTemplate[]];
+    expect(teams.find((tm) => tm.id === 't1')!.leaderCardId).toBe('c1');
+  });
+
+  it('the leader tool does nothing on an empty cell', async () => {
+    const { scene } = buildHarness({ cardCount: 2, cardState: {}, teams: teamWithTwo });
+    await flush();
+    const s = scene as unknown as { tool: unknown; onGridTap(x: number, y: number): void; leaderCardId: string | null };
+    s.tool = { kind: 'leader' };
+    const [sx, sy] = cellCenter(scene, 4, 3); // empty lane/row
+    s.onGridTap(sx, sy);
+    expect(s.leaderCardId).toBeNull();
+  });
+
+  it('an existing leaderCardId is loaded from the team and round-trips through save', async () => {
+    const { scene, setTeams } = buildHarness({
+      cardCount: 2, cardState: {},
+      teams: [{ ...teamWithTwo[0]!, leaderCardId: 'c0' }],
+    });
+    await flush();
+    expect((scene as unknown as { leaderCardId: string | null }).leaderCardId).toBe('c0');
+    await (scene as unknown as { doSave(): Promise<void> }).doSave();
+    const [, teams] = setTeams.mock.calls[0] as [string, TeamTemplate[]];
+    expect(teams.find((tm) => tm.id === 't1')!.leaderCardId).toBe('c0');
+  });
+
+  it('a leader erased from the formation is dropped on save (server would clear it anyway)', async () => {
+    const { scene, setTeams } = buildHarness({
+      cardCount: 2, cardState: {},
+      teams: [{ ...teamWithTwo[0]!, leaderCardId: 'c0' }],
+    });
+    await flush();
+    const s = scene as unknown as { tool: unknown; onGridTap(x: number, y: number): void };
+    s.tool = { kind: 'erase' };
+    const [sx, sy] = cellCenter(scene, 0, 0); // the cell holding the leader c0
+    s.onGridTap(sx, sy);
+
+    await (scene as unknown as { doSave(): Promise<void> }).doSave();
+    const [, teams] = setTeams.mock.calls[0] as [string, TeamTemplate[]];
+    expect(teams.find((tm) => tm.id === 't1')!.leaderCardId).toBeUndefined();
+  });
+
+  it('with no explicit pick, the grid stars the strongest card so the automatic icon is visible', async () => {
+    const { scene, save } = buildHarness({ cardCount: 2, cardState: {}, teams: teamWithTwo });
+    save.cardInv!['c1']!.level = 5; // c1 outranks c0 → it becomes the fallback leader
+    await flush();
+    expect((scene as unknown as { effectiveLeaderId(): string | undefined }).effectiveLeaderId()).toBe('c1');
+  });
+});

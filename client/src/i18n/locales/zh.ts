@@ -972,7 +972,11 @@ export const zh = {
   'world.team.fill': '补满兵力',
   'world.team.fillNone': '兵力池已空，或队伍已满员',
   'world.team.fillDone': '已分配 {n} 兵力',
-  'world.team.cardFill': '补满此卡',
+  'world.team.cards': '武将 {n}',
+  'world.team.leader': '领队',
+  'world.team.leaderHint': '点击已上阵的武将，用它作为该队伍的图标',
+  'world.team.leaderNeedsCard': '请点击有武将的格子',
+  'world.team.cardFill':'补满此卡',
   'world.team.cardFull': '该卡已达带兵上限',
   'world.team.full': '编队已达上限',
   // ── SLG battle replay browser (last-100) ─────────────────────────────────

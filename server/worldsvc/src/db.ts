@@ -67,6 +67,14 @@ export interface TeamTemplate {
    * behavior (user decision 2026-07-23).
    */
   autoReturn?: boolean;
+  /**
+   * Team leader (2026-07-25): a `cardInstanceId` that must also appear in `army` — `setTeams`/`getTeams`
+   * clear it otherwise (card sold, moved to another team, or removed from the formation). Today it carries
+   * no combat effect: it only picks which card's portrait represents the team in the city / world-map team
+   * lists. Absent = the client falls back to the strongest card in the army, so every team has an icon
+   * without the player having to choose one.
+   */
+  leaderCardId?: string;
 }
 
 export interface WorldDoc {

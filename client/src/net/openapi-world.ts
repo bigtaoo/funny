@@ -1251,6 +1251,8 @@ export interface components {
             army: components["schemas"]["ArmyEntry"][];
             /** @description 2026-07-23: when true, this team marches home after a 'move' arrival / occupy capture instead of staying stationed on the tile (default false = stay in place). */
             autoReturn?: boolean;
+            /** @description 2026-07-25: the team's leader — a cardInstanceId that MUST also appear in `army`; the server clears it otherwise. Purely an identity marker today (its portrait is the team's icon in the city/world-map team lists); absent = the client falls back to the strongest card in the army. */
+            leaderCardId?: string;
         };
         DefenseConfig: {
             [key: string]: unknown;

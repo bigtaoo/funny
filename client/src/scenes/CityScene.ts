@@ -25,7 +25,7 @@ import { formatDuration } from './worldmap/formatDuration';
 import type {
   WorldApiClient, PlayerWorldView, BuildingKey, TeamTemplate, MarchView, OccupationView,
 } from '../net/WorldApiClient';
-import { teamSlotId, teamSlotName, TEAM_CAP, carriedTroops } from '../game/meta/teamTroops';
+import { teamSlotId, teamSlotName, TEAM_CAP, carriedTroops, teamTroopCap, teamLeaderCard } from '../game/meta/teamTroops';
 import {
   BUILDING_KEYS,
   RESOURCE_TYPES,
@@ -61,6 +61,8 @@ import { wheelScrollY } from '../ui/wheelScroll';
 import { buildIcon, type IconKind } from '../render/icons';
 import { loadResAtlas, getResTexture } from '../render/resAtlasLoader';
 import { loadCityBldAtlas, getCityBldTexture } from '../render/cityBldAtlasLoader';
+import { cardInstanceArtUrl, getArtTexture } from '../render/cardArt';
+import type { SaveData } from '../game/meta/SaveData';
 
 // ── Public interface ─────────────────────────────────────────────────────────
 
@@ -71,6 +73,8 @@ export interface CitySceneCallbacks {
   getCoins?(): number;
   /** Tapping a team card on the military page opens that team's formation editor (D-CITY-10). */
   onEditTeam?(teamId: string, teamName: string): void;
+  /** Current authoritative save — the team row needs cardInv for each team's troop cap + leader portrait. */
+  getSave?(): SaveData;
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -152,6 +156,8 @@ export class CityScene implements Scene {
   private readonly unsubs: Array<() => void> = [];
   /** Set in destroy(); guards render() so a late async load() re-render can't paint into a torn-down container. */
   private destroyed = false;
+  /** Portrait urls we've already subscribed a one-shot 'loaded' re-render to (see drawArtFit). */
+  private readonly artHooked = new Set<string>();
 
   private me: PlayerWorldView | null = null;
   /** Wall-clock (ms) when `me` was last fetched from the server. Baseline for the client-side
@@ -582,7 +588,27 @@ export class CityScene implements Scene {
     panel.y = y;
     this.container.addChild(panel);
 
-    const name = txt(team?.name || teamSlotName(i), FS.body, C.dark, true, cardW - pad * 2);
+    // Leader portrait (2026-07-25): the team's own picture, so the five slots are told apart at a glance
+    // instead of by reading "Team 1..5". Explicit 领队 pick from the formation editor, else the strongest
+    // card — see teamLeaderCard(). Occupies the card's right edge; the text column shrinks to clear it.
+    const save = this.cb.getSave?.();
+    const leader = filled ? teamLeaderCard(team, save?.cardInv, save?.equipmentInv) : undefined;
+    const artUrl = leader ? cardInstanceArtUrl(leader) : null;
+    let textW = cardW - pad * 2;
+    if (artUrl) {
+      const artSize = Math.min(cardH - pad * 2, 76);
+      const ax = x + cardW - pad - artSize;
+      const ay = y + (cardH - artSize) / 2;
+      const frame = sketchPanel(artSize, artSize, {
+        fill: 0xf0eee7, border: C.gold, width: 1.6, seed: seedFor(ax, ay, artSize),
+      });
+      frame.x = ax; frame.y = ay;
+      this.container.addChild(frame);
+      this.drawArtFit(artUrl, ax + 2, ay + 2, artSize - 4, artSize - 4);
+      textW = Math.max(40, ax - 8 - (x + pad));
+    }
+
+    const name = txt(team?.name || teamSlotName(i), FS.body, C.dark, true, textW);
     name.x = x + pad;
     name.y = y + pad;
     this.container.addChild(name);
@@ -608,15 +634,20 @@ export class CityScene implements Scene {
       statusLbl = t('world.team.empty');
       statusColor = C.mid as number;
     }
-    const statusTag = txt(statusLbl, FS.small, statusColor, true, cardW - pad * 2);
+    const statusTag = txt(statusLbl, FS.small, statusColor, true, textW);
     statusTag.x = x + pad;
     statusTag.y = y + pad + 26;
     this.container.addChild(statusTag);
 
     if (filled) {
+      // Troops as carried/cap (2026-07-25): a bare number said nothing about how full the team is, and
+      // the same carried/cap pair is what the formation editor's header shows. "Heroes N" replaces the old
+      // "Garrison N" label — N counts cards, which read as a second troop figure sitting right beside the real one.
       const committed = this.committedTroops(team!.army);
-      const sub = `${t('world.defense.garrison').replace('{n}', String(team!.army.length))}   ${t('world.team.committed').replace('{n}', String(committed))}`;
-      const subLbl = txt(sub, FS.small, C.mid, false, cardW - pad * 2);
+      const cap = teamTroopCap(team!.army, save?.cardInv);
+      const troopsStr = cap > 0 ? `${committed}/${cap}` : String(committed);
+      const sub = `${t('world.team.cards').replace('{n}', String(team!.army.length))}   ${t('world.team.committed').replace('{n}', troopsStr)}`;
+      const subLbl = txt(sub, FS.small, C.mid, false, textW);
       subLbl.x = x + pad;
       subLbl.y = y + cardH - pad - 34;
       this.container.addChild(subLbl);
@@ -628,6 +659,24 @@ export class CityScene implements Scene {
       const teamName = team?.name || teamSlotName(i);
       this.hits.push({ x, y, w: cardW, h: cardH, fn: () => this.cb.onEditTeam!(id, teamName) });
     }
+  }
+
+  /** Draw a card portrait centred inside a box; re-render once its texture decodes (mirrors DefenseEditorScene). */
+  private drawArtFit(url: string, x: number, y: number, boxW: number, boxH: number): void {
+    const tex = getArtTexture(url);
+    if (!tex.baseTexture.valid) {
+      if (!this.artHooked.has(url)) {
+        this.artHooked.add(url);
+        tex.baseTexture.once('loaded', () => { if (!this.destroyed) this.render(); });
+      }
+      return;
+    }
+    const scale = Math.min(boxW / tex.width, boxH / tex.height);
+    const sp = new PIXI.Sprite(tex);
+    sp.anchor.set(0.5);
+    sp.scale.set(scale);
+    sp.position.set(x + boxW / 2, y + boxH / 2);
+    this.container.addChild(sp);
   }
 
   // ── Resource bar ──────────────────────────────────────────────────────────
