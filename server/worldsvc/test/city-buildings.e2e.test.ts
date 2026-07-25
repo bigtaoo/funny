@@ -189,6 +189,25 @@ describe.skipIf(!mongo)('worldsvc home-city buildings e2e', () => {
     expect(after.resources!.paper).toBeGreaterThan(0);
   });
 
+  it('speedupBuild: insufficient coins (commercial rejects spend) → build stays queued, untouched', async () => {
+    const { x, y } = findCoord(65, 65);
+    await svc.joinWorld(W, 'a', x, y);
+    await fund('a');
+    await svc.upgradeBuilding(W, 'a', 'cabinet');
+    expect((await svc.getMe(W, 'a')).buildQueue ?? []).toHaveLength(1);
+    const before = await svc.getMe(W, 'a');
+    const originalSpend = fakeCommercial.spend;
+    fakeCommercial.spend = async () => { throw new Error('INSUFFICIENT_FUNDS'); };
+    try {
+      await expect(svc.speedupBuild(W, 'a', 100_000)).rejects.toThrow('INSUFFICIENT_FUNDS');
+    } finally {
+      fakeCommercial.spend = originalSpend;
+    }
+    const after = await svc.getMe(W, 'a');
+    expect(after.buildQueue).toEqual(before.buildQueue);
+    expect(after.buildings).toEqual(before.buildings);
+  });
+
   it('cabinet raises the storage cap (resources settle above base RESOURCE_CAP)', async () => {
     const { x, y } = findCoord(70, 70);
     await svc.joinWorld(W, 'a', x, y);

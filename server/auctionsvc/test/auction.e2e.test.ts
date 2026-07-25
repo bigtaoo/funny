@@ -248,6 +248,24 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     await expect(svc.buyAuction('carol', view.auctionId)).rejects.toMatchObject({ code: 'AUCTION_CLOSED' });
   });
 
+  it('buy: insufficient funds (commercial rejects spend) → no sale, listing stays open, nothing delivered', async () => {
+    const view = await svc.createAuction({
+      sellerId: 'alice', itemType: 'material',
+      item: { material: 'scrap' }, qty: 1, price: 10, durationSec: DUR,
+    });
+    const originalSpend = commercial.spend;
+    commercial.spend = async () => { throw new Error('INSUFFICIENT_FUNDS'); };
+    try {
+      await expect(svc.buyAuction('bob', view.auctionId)).rejects.toThrow('INSUFFICIENT_FUNDS');
+    } finally {
+      commercial.spend = originalSpend;
+    }
+    const stored = await mongo!.collections.auctions.findOne({ _id: view.auctionId });
+    expect(stored?.status).toBe('open');
+    expect(mailAtt('bob', 'auction_buy:')).toBeUndefined();
+    expect(mailAtt('alice', 'auction_buy:')).toBeUndefined();
+  });
+
   it('buy: concurrently sniped between doc read and settle → buyer refunded via mail', async () => {
     const view = await svc.createAuction({
       sellerId: 'alice', itemType: 'material',
