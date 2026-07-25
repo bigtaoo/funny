@@ -969,6 +969,7 @@ export const en: Record<TranslationKey, string> = {
   'world.team.cardFill': 'Fill card',
   'world.team.cardFull': 'This card is already at its troop cap',
   'world.team.full': 'Formation is full',
+  'world.team.cardInjuredRemoved': '{name} is injured (recovers in {time}) — removed from the formation',
   // ── SLG battle replay browser (last-100) ─────────────────────────────────
   'world.replays': 'Battle replays',
   'world.replaysTitle': 'Battle replays (last 100)',

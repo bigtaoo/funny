@@ -969,6 +969,7 @@ export const de: Record<TranslationKey, string> = {
   'world.team.cardFill':'Karte füllen',
   'world.team.cardFull': 'Diese Karte hat ihr Truppenlimit erreicht',
   'world.team.full': 'Aufstellung ist voll',
+  'world.team.cardInjuredRemoved': '{name} ist verletzt (Genesung in {time}) — aus der Aufstellung entfernt',
   // ── SLG battle replay browser (last-100) ─────────────────────────────────
   'world.replays': 'Kampf-Wiederholungen',
   'world.replaysTitle': 'Kampf-Wiederholungen (letzte 100)',

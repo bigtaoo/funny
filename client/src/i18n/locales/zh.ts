@@ -981,6 +981,7 @@ export const zh = {
   'world.team.cardFill':'补满此卡',
   'world.team.cardFull': '该卡已达带兵上限',
   'world.team.full': '编队已达上限',
+  'world.team.cardInjuredRemoved': '{name} 正在养伤（剩余 {time}），已将其移出编队',
   // ── SLG battle replay browser (last-100) ─────────────────────────────────
   'world.replays': '战斗录像',
   'world.replaysTitle': '战斗录像（最近 100 场）',

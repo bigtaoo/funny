@@ -480,7 +480,7 @@ export class CityService {
     for (const id of cardIds) {
       const cs = cardState[id];
       if (cs?.injuredUntil && cs.injuredUntil > now) {
-        throw new SlgError('BAD_REQUEST', `Card ${id} is injured and cannot be assigned until ${cs.injuredUntil}`);
+        throw new SlgError('CARD_INJURED', `Card ${id} is injured and cannot be assigned until ${cs.injuredUntil}`);
       }
     }
 

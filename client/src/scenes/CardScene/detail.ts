@@ -47,9 +47,13 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
       const power = Math.round(cardPower(card, save.equipmentInv ?? {}));
       const maxLevel = card.level >= MAX_CARD_LEVEL;
 
-      // Fusion-readiness: how many eligible (same faction, same level, unlocked) material cards
-      // are currently owned, out of the FUSION_MATERIAL_COUNT needed for the next fusion.
-      const materialsOwned = maxLevel ? 0 : fusionMaterialCandidates(card, save.cardInv ?? {}).length;
+      // Fusion-readiness: how many eligible (same faction, same level, unlocked, not deployed to an
+      // SLG team) material cards are currently owned, out of the FUSION_MATERIAL_COUNT needed for
+      // the next fusion. Must mirror feed.ts's candidateOf filter — this used to count deployed
+      // duplicates as available, so the bar could read "5/5 ready" while the fuse panel itself
+      // silently excluded some of those same cards, leaving the ring short of materials.
+      const materialsOwned = maxLevel ? 0
+        : fusionMaterialCandidates(card, save.cardInv ?? {}).filter((c) => !cardState?.[c.id]?.teamId).length;
       const materialsFrac = maxLevel ? 1 : Math.min(1, materialsOwned / FUSION_MATERIAL_COUNT);
 
       // Natural (unscaled) content size — everything below is laid out in this local frame.
