@@ -116,7 +116,7 @@ describe('WorldMapNet.showTeamPicker — occupy uses the team picker (§4.2)', (
     buttons.find((b) => b.label.startsWith('Alpha'))!.action();
     // doMarchTeam is async but fire-and-forget from the button; flush microtasks.
     await Promise.resolve(); await Promise.resolve();
-    expect(startMarch).toHaveBeenCalledWith(WORLD_ID, ANCHOR.x, ANCHOR.y, ANCHOR.x, ANCHOR.y, 'occupy', 1, 't1');
+    expect(startMarch).toHaveBeenCalledWith(WORLD_ID, ANCHOR.x, ANCHOR.y, ANCHOR.x, ANCHOR.y, 'occupy', 1, 't1', undefined);
   });
 
   it('a busy team is omitted from the occupy picker entirely (TEAM_BUSY mirror; 2026-07-17: not shown at all, not just disabled)', async () => {

@@ -43,7 +43,7 @@ describe('FriendsScene — world chat load failure surfaces an error + retry ins
       addFriend: async () => {},
       respond: async () => {},
       removeFriend: async () => {},
-      blockUser: async () => {},
+      blockUser: async () => {}, duelInvite: () => {}, duelRespond: () => {},
       loadConversations: async () => [],
       openChat() {},
       loadMail: async () => ({ mail: [], unread: 0 }),

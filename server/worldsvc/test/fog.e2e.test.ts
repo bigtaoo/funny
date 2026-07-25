@@ -1,6 +1,8 @@
 // worldsvc vision/fog end-to-end (G5-1, §8.2 / §15.2 G5): real Mongo. Entire suite skipped if Mongo is unreachable.
-//   Fog model 2a: terrain layer visible across the whole map; dynamic layer (ownership/garrison/shield) only visible within
-//   current vision; falls back to procedural terrain outside vision.
+//   Fog model 2b (2026-07-24): the STATIC structure layer (location / ownership / base identity / level / occupation)
+//   is public map-wide — a player can always see WHERE others are. Fog now gates only the INTEL fields
+//   (garrison / hp / maxHp / watchtower) and marching troops (getMarches). Out-of-vision tiles keep visible:true
+//   but have their intel fields stripped (coreMap.gateIntel).
 //   Vision sources = own territories/home base + same-family member territories (shared) + marches in transit. getMap / getTile use the same gate.
 // Requires `cd server && docker compose up -d`.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
@@ -12,6 +14,7 @@ import {
   SLG_MAP_W,
   SLG_MAP_H,
   VISION_BASE_RADIUS,
+  VISION_MARCH_RADIUS,
   type FamilyRole,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
@@ -181,42 +184,72 @@ describe.skipIf(!mongo)('worldsvc fog/vision e2e (G5)', () => {
     await m.close();
   });
 
-  it('within vision: own home base and surrounding dynamic layer visible (visible:true + mine + type:base)', async () => {
+  it('within vision: own home base structure + intel (garrison/HP) visible (visible:true + mine + type:base + maxHp)', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const view = await svc.getMap(W, 'a', 5, 5, 2);
     const base = view.tiles.find((t) => t.x === 5 && t.y === 5)!;
     expect(base).toMatchObject({ type: 'base', mine: true, occupied: true, visible: true });
+    expect(base.maxHp).toBeGreaterThan(0); // own base is in vision → HP intel present
     // Surrounding tiles (within base vision radius) are also visible:true.
     expect(view.tiles.every((t) => t.visible === true)).toBe(true);
   });
 
-  it('outside vision: distant enemy territory fully hidden (visible:false + falls back to procedural terrain, no owner/occupied)', async () => {
+  it('outside vision (model 2b): enemy STRUCTURE is public (type:base + occupied), only INTEL (garrison/HP/watchtower) is hidden', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     // Enemy e settles at (200,200), far beyond a's base vision radius.
     await svc.joinWorld(W, 'e', 200, 200);
 
     const view = await svc.getMap(W, 'a', 200, 200, 2);
     const enemyBase = view.tiles.find((t) => t.x === 200 && t.y === 200)!;
-    // Key: enemy home base is outside vision → "occupied" status not exposed; type falls back to procedural base (not 'base'/'territory').
-    const proc = proceduralTile(W, 200, 200);
-    expect(enemyBase.visible).toBe(false);
-    expect(enemyBase.type).toBe(proc.type);
-    expect(enemyBase.occupied).toBeUndefined();
+    // Structure/ownership is public map-wide now — a player can always see WHERE others are.
+    expect(enemyBase).toMatchObject({ type: 'base', occupied: true, visible: true });
     expect(enemyBase.mine).toBeUndefined();
-    expect(enemyBase.ownerPublicId).toBeUndefined();
+    // But intel stays fog-gated: garrison / HP / watchtower are stripped outside vision.
     expect(enemyBase.garrison).toBeUndefined();
-    // But the terrain layer (type/level) is still returned as-is (model 2a: terrain is not a secret).
-    expect(enemyBase.level).toBe(proc.level);
+    expect(enemyBase.hp).toBeUndefined();
+    expect(enemyBase.maxHp).toBeUndefined();
+    expect(enemyBase.watchtower).toBeUndefined();
   });
 
-  it('getTile same gate: enemy tile outside vision also returns only procedural terrain (prevents getMap bypass)', async () => {
+  it('getTile same gate: enemy tile outside vision → structure public (base/occupied), intel (HP) hidden', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     await svc.joinWorld(W, 'e', 200, 200);
     const tile = await svc.getTile(W, 'a', 200, 200);
-    expect(tile.visible).toBe(false);
+    expect(tile).toMatchObject({ type: 'base', occupied: true, visible: true });
     expect(tile.mine).toBeUndefined();
-    expect(tile.occupied).toBeUndefined();
-    expect(tile.type).toBe(proceduralTile(W, 200, 200).type);
+    expect(tile.maxHp).toBeUndefined();   // intel fogged
+    expect(tile.garrison).toBeUndefined();
+  });
+
+  it('regression (zoom consistency): an out-of-vision enemy base appears in BOTH getMap (L1) and getMapSparse (L2/L3) — no more "bases vanish when zooming in"', async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    await svc.joinWorld(W, 'e', 200, 200); // far beyond a's vision
+
+    // L2/L3 bird's-eye (sparse, skips vision): e's base is listed as an occupied tile.
+    for (const lod of ['mid', 'thin'] as const) {
+      const sparse = await svc.getMapSparse(W, 'a', 200, 200, 5, lod);
+      const eSparse = sparse.tiles.find((t) => t.x === 200 && t.y === 200);
+      expect(eSparse, `sparse(${lod}) should list e's base`).toBeDefined();
+      expect(eSparse!.type).toBe('base');
+      expect(eSparse!.mine).toBeUndefined();
+    }
+
+    // L1 detail (getMap): the SAME base is present — the original bug was that fog hid it here,
+    // so the client's city layer drew nothing when zoomed in even though L2/L3 showed it.
+    const detail = await svc.getMap(W, 'a', 200, 200, 5);
+    const eDetail = detail.tiles.find((t) => t.x === 200 && t.y === 200)!;
+    expect(eDetail).toMatchObject({ type: 'base', occupied: true, visible: true });
+    expect(eDetail.mine).toBeUndefined();
+
+    // Every one of the 3×3 footprint cells comes back as an owned base tile, so the client's
+    // isBaseAnchor (center + 4 orthogonal neighbours all base + same owner) succeeds and renders
+    // the city sprite — the concrete precondition that used to fail under fog model 2a.
+    const byKey = new Map(detail.tiles.map((t) => [`${t.x}:${t.y}`, t]));
+    for (const c of baseFootprintCells(200, 200)) {
+      const cell = byKey.get(`${c.x}:${c.y}`)!;
+      expect(cell.type, `footprint cell (${c.x},${c.y})`).toBe('base');
+      expect(cell.occupied).toBe(true);
+    }
   });
 
   it('family shared vision: distant territory of a same-family member is visible to me (occupied but not mine)', async () => {
@@ -234,32 +267,38 @@ describe.skipIf(!mongo)('worldsvc fog/vision e2e (G5)', () => {
     expect(mateBase).toMatchObject({ type: 'base', occupied: true, visible: true, ally: true });
     expect(mateBase.mine).toBeUndefined(); // belongs to ally, not me (ally=true tells the client to use ally color instead of enemy color)
 
-    // Control: non-family e (distant) is still fogged.
+    // Control: to non-family e, mate's base structure is still public (occupied, not ally), but its intel stays fogged.
     const ePos = findBaseCoord(280, 280);
     await svc.joinWorld(W, 'e', ePos.x, ePos.y);
-    const v2 = await svc.getMap(W, 'e', matePos.x, matePos.y, 2); // from e's perspective, mate's base → fog
-    expect(v2.tiles.find((t) => t.x === matePos.x && t.y === matePos.y)!.visible).toBe(false);
+    const v2 = await svc.getMap(W, 'e', matePos.x, matePos.y, 2); // from e's perspective, mate's base
+    const mateFromE = v2.tiles.find((t) => t.x === matePos.x && t.y === matePos.y)!;
+    expect(mateFromE).toMatchObject({ type: 'base', occupied: true, visible: true });
+    expect(mateFromE.ally).toBeUndefined();  // e is not in mate's family → no friendly tag
+    expect(mateFromE.maxHp).toBeUndefined(); // intel still fogged from e's perspective
   });
 
-  it('march in transit illuminates path: tiles near the mid-march position are visible even outside base vision', async () => {
+  it('march in transit illuminates intel: an enemy base within the marching column\'s vision reveals its HP even outside base vision', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
-    // March south to a distant neutral tile (outside base vision radius).
-    const dst = findCoord(NEUTRAL, 5, 40);
+    const ePos = findBaseCoord(5, 60); // distant enemy base, well beyond a's base vision radius
+    expect(ePos.y).toBeGreaterThan(5 + VISION_BASE_RADIUS);
+    await svc.joinWorld(W, 'e', ePos.x, ePos.y);
+
+    // Baseline: e's base structure is public to a, but its HP intel is fogged (no vision on it yet).
+    const before = await svc.getMap(W, 'a', ePos.x, ePos.y, 2);
+    const eBefore = before.tiles.find((t) => t.x === ePos.x && t.y === ePos.y)!;
+    expect(eBefore).toMatchObject({ type: 'base', occupied: true, visible: true });
+    expect(eBefore.maxHp).toBeUndefined();
+
+    // March a column to a neutral tile bordering e's base (within VISION_MARCH_RADIUS of the anchor).
+    const dst = findCoord(NEUTRAL, ePos.x, ePos.y + 2); // ~Chebyshev 2 below the anchor → its arrival vision covers e's base
+    expect(Math.max(Math.abs(dst.x - ePos.x), Math.abs(dst.y - ePos.y))).toBeLessThanOrEqual(VISION_MARCH_RADIUS);
     await connect(svc, 'a', dst); // ADR-039: border the target before marching
     const mv = await svc.startMarch(W, 'a', 5, 5, dst.x, dst.y, 'occupy', 500);
 
-    // Advance to the midpoint of the march: interpolated position is far from the base (y well beyond 5+VISION_BASE_RADIUS).
-    nowMs = Math.floor((mv.departAt + mv.arriveAt) / 2);
-    const midY = Math.round(5 + (dst.y - 5) * 0.5);
-    expect(midY).toBeGreaterThan(5 + VISION_BASE_RADIUS); // confirm it is truly outside base vision
-
-    const view = await svc.getMap(W, 'a', dst.x, midY, 1);
-    const here = view.tiles.find((t) => t.x === dst.x && t.y === midY)!;
-    expect(here.visible).toBe(true); // march vision illuminates the tile
-
-    // Control: tiles outside march vision radius and outside base vision remain fogged.
-    const far = await svc.getMap(W, 'a', dst.x, midY + 20, 1);
-    expect(far.tiles.find((t) => t.x === dst.x && t.y === midY + 20)!.visible).toBe(false);
-    void (mv as { marchId: string });
+    // Advance to just before arrival: the column sits on dst, whose march vision now covers e's base.
+    nowMs = mv.arriveAt - 1;
+    const after = await svc.getMap(W, 'a', ePos.x, ePos.y, 2);
+    const eAfter = after.tiles.find((t) => t.x === ePos.x && t.y === ePos.y)!;
+    expect(eAfter.maxHp).toBeGreaterThan(0); // march vision reveals the HP intel
   });
 });

@@ -33,6 +33,19 @@ import { WorldCore } from './core';
 import type { TrainingEntry, BuildQueueEntry, TeamTemplate } from './db';
 import type { PlayerWorldView } from './worldTypes';
 
+/**
+ * Rebuild a team around its sanitized army, keeping `leaderCardId` only while the leader is still
+ * one of the team's cards (2026-07-25). A stale leader is dropped rather than rejected — the card
+ * may have been sold, moved to another team, or simply erased from the formation, and none of those
+ * are worth failing a whole save over; the client then falls back to the strongest card for the icon.
+ * The key is deleted (not set to undefined) so it doesn't linger as a null in the stored document.
+ */
+function withValidLeader(team: TeamTemplate, army: TeamTemplate['army']): TeamTemplate {
+  const next: TeamTemplate = { ...team, army };
+  if (!next.leaderCardId || !army.some((e) => e.cardInstanceId === next.leaderCardId)) delete next.leaderCardId;
+  return next;
+}
+
 export class CityService {
   constructor(private readonly core: WorldCore) {}
 
@@ -368,7 +381,9 @@ export class CityService {
     const cleaned = teams.map((team) => {
       const { army } = sanitizeCardArmy(team.army, save.cardInv);
       if (army.length !== team.army.length) changed = true;
-      return { ...team, army };
+      const healed = withValidLeader(team, army);
+      if (healed.leaderCardId !== team.leaderCardId) changed = true;
+      return healed;
     });
     if (!changed) return teams;
 
@@ -456,7 +471,7 @@ export class CityService {
       } catch (err) {
         throw new SlgError('BAD_REQUEST', `Team ${team.id} formation is invalid: ${(err as Error).message}`);
       }
-      cleanedTeams.push({ ...team, army });
+      cleanedTeams.push(withValidLeader(team, army));
     }
 
     const now = this.core.deps.now();

@@ -91,6 +91,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
         worldApi,
         worldId,
         getCoins: () => saveManager.get().wallet.coins,
+        getSave: () => saveManager.get(),
       }, { overlay: true });
     };
 

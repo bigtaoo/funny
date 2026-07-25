@@ -217,7 +217,11 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       }
     }
 
-    /** Landscape: families roster (left) + sect channel (right) always visible side by side. */
+    /** Landscape: families roster (left) + sect channel (right) always visible side by side. Sect
+     *  identity (name/tag/families/prosperity) + alliance controls live in the header itself now
+     *  (see SectSceneBase.drawHeaderTitle) — this used to duplicate them in a hand-drawn band right
+     *  below the header, which stacked with the column-title band into a cluttered top-left corner
+     *  (see the 25.07.2026 header-declutter pass). */
     private renderSplitView(): void {
       if (!this.sect) return;
       const { w, h } = this;
@@ -225,21 +229,8 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       const sect = this.sect;
       const rightEdge = w - 8;
 
-      // Sect summary line (name [tag] · families · prosperity), full width across the top, seated on
-      // a header band that it shares (same style) with the column-title row below.
-      const summaryY = this.headerH + 12;
-      const summaryH = Math.round(FS.label * 1.6);
-      this.drawHeaderBand(left + 6, summaryY, rightEdge - (left + 6), summaryH);
-      const summary = txt(
-        `[${sect.tag}] ${sect.name}   ${t('sect.families', { n: sect.memberFamilyCount })}   ${t('sect.prosperity', { n: sect.prosperity })}`,
-        FS.label, C.dark,
-      );
-      summary.anchor.set(0, 0.5); summary.x = left + 18; summary.y = summaryY + summaryH / 2;
-      this.bodyLayer.addChild(summary);
-      this.drawAllianceControls(rightEdge, summaryY, summaryH);
-
-      // Removal vote banner (if a removal is in progress).
-      let bannerBottom = summaryY + summaryH + 8;
+      // Removal vote banner (if a removal is in progress), directly below the header.
+      let bannerBottom = this.headerH + 12;
       if (sect.removalVote) {
         const nom = sect.memberFamilies.find(f => f.familyId === sect.removalVote!.nomineeFamilyId);
         const banner = txt(
@@ -256,8 +247,8 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       }
 
       const colLblSize = FS.label;
-      const colLblBandH = Math.round(colLblSize * 1.5);
-      const contentY = bannerBottom + colLblBandH + 6;
+      const colLblGap = Math.round(colLblSize * 1.4);
+      const contentY = bannerBottom + colLblGap + 4;
       const bottomBarH = 42;
       const contentH = h - contentY - bottomBarH - 8;
 
@@ -267,19 +258,28 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       const chatW = w - chatX - 8;
       this.chatColX = chatX - 6;
 
-      // Column-title row — shares the same header-band background as the sect-name row above.
-      const colBandY = bannerBottom;
-      this.drawHeaderBand(left + 6, colBandY, rightEdge - (left + 6), colLblBandH);
-      const familiesLbl = txt(t('sect.tabFamilies'), colLblSize, C.dark);
-      familiesLbl.anchor.set(0, 0.5); familiesLbl.x = left + 18; familiesLbl.y = colBandY + colLblBandH / 2;
+      // Column-title row: a flat tint strip (no hand-drawn border) so it reads as a subtle section
+      // divider rather than another decorative panel — matches FamilyScene's renderSplitView.
+      const bandY = bannerBottom;
+      const bandH = colLblGap + 4;
+      const band = new PIXI.Graphics();
+      band.beginFill(C.dark, 0.06);
+      band.drawRect(left, bandY, rightEdge - left, bandH);
+      band.endFill();
+      band.lineStyle(1, C.mid, 0.5);
+      band.moveTo(left, bandY + bandH).lineTo(rightEdge, bandY + bandH);
+      this.bodyLayer.addChild(band);
+
+      const familiesLbl = txt(t('sect.tabFamilies'), colLblSize, C.mid);
+      familiesLbl.x = left + 12; familiesLbl.y = bandY + 4;
       this.bodyLayer.addChild(familiesLbl);
-      const channelLbl = txt(t('sect.tabChannel'), colLblSize, C.dark);
-      channelLbl.anchor.set(0, 0.5); channelLbl.x = chatX + 6; channelLbl.y = colBandY + colLblBandH / 2;
+      const channelLbl = txt(t('sect.tabChannel'), colLblSize, C.mid);
+      channelLbl.x = chatX + 4; channelLbl.y = bandY + 4;
       this.bodyLayer.addChild(channelLbl);
 
       const divider = new PIXI.Graphics();
       divider.lineStyle(1, C.mid, 0.5);
-      divider.moveTo(this.chatColX, contentY - 4).lineTo(this.chatColX, contentY + contentH);
+      divider.moveTo(this.chatColX, bandY).lineTo(this.chatColX, contentY + contentH);
       this.bodyLayer.addChild(divider);
 
       this.renderFamiliesList(left, familiesW, contentY, contentH, 'scrollY');
@@ -288,30 +288,24 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       this.renderBottomBar(h - bottomBarH - 4);
     }
 
-    /** Subtle hand-drawn header band shared by the sect-name row and the column-title row so they
-     *  read as one unified header strip (rather than labels floating on the ruled paper). */
-    private drawHeaderBand(x: number, y: number, bandW: number, bandH: number): void {
-      const band = sketchPanel(bandW, bandH, { fill: 0xf0ece2, border: C.mid, seed: seedFor(9, Math.round(y), bandW) });
-      band.x = x; band.y = y;
-      this.bodyLayer.addChild(band);
-    }
-
     renderFamilies(y0: number, maxH: number): void {
       if (!this.sect) return;
       const { w } = this;
       const left = this.railW;
       const sect = this.sect;
 
-      // Sect summary line (name [tag] · families · prosperity), on the shared header band.
+      // Sect summary line (name [tag] · families · prosperity) — plain text directly on the paper.
+      // Portrait's narrow header can't fit this on the title bar (landscape lifts it there instead —
+      // see SectSceneBase.drawHeaderTitle), so it stays here, but no longer behind a decorative
+      // hand-drawn band (see the 25.07.2026 header-declutter pass).
       const summaryH = Math.round(FS.label * 1.6);
-      this.drawHeaderBand(left + 6, y0, (w - 8) - (left + 6), summaryH);
       const summary = txt(
         `[${sect.tag}] ${sect.name}   ${t('sect.families', { n: sect.memberFamilyCount })}   ${t('sect.prosperity', { n: sect.prosperity })}`,
         FS.label, C.dark,
       );
       summary.anchor.set(0, 0.5); summary.x = left + 18; summary.y = y0 + summaryH / 2;
       this.bodyLayer.addChild(summary);
-      this.drawAllianceControls(w - 8, y0, summaryH);
+      this.drawAllianceControlsRow(w - 8, y0, summaryH);
 
       // Removal vote banner.
       let listTop = y0 + summaryH + 8;
@@ -407,8 +401,9 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       const left = this.railW;
       const midX = (left + w) / 2;
       const bw = 150;
-      // Alliance controls (ally / manage allies / allies-view) now live on the top summary band —
-      // see drawAllianceControls. The bottom bar keeps only the leave/dissolve action.
+      // Alliance controls (ally / manage allies / allies-view) live in the header in landscape
+      // (see SectSceneBase.drawHeaderTitle) or the summary row in portrait (drawAllianceControlsRow).
+      // The bottom bar keeps only the leave/dissolve action.
       if (this.isSectLeader) {
         this.addBarButton(t('sect.dissolve'), left + 6, y, C.red, () => this.confirmDissolve(), 0);
       } else if (this.isFamilyLeader) {
@@ -416,10 +411,12 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       }
     }
 
-    /** Alliance controls seated at the right edge of the top summary band (laid out right-to-left).
-     *  Viewing the ally list is open to every member (regular members need to know who the sect's
-     *  allies are); forming (ally) and breaking (manage allies) alliances stay sect-leader only. */
-    private drawAllianceControls(rightEdge: number, bandY: number, bandH: number): void {
+    /** Alliance controls seated at the right edge of the portrait summary row (laid out
+     *  right-to-left). Landscape draws the equivalent in the header instead — see
+     *  SectSceneBase.drawHeaderAllianceButtons. Viewing the ally list is open to every member
+     *  (regular members need to know who the sect's allies are); forming (ally) and breaking
+     *  (manage allies) alliances stay sect-leader only. */
+    private drawAllianceControlsRow(rightEdge: number, bandY: number, bandH: number): void {
       if (!this.sect) return;
       const bh = Math.min(bandH - 4, 32);
       const by = bandY + (bandH - bh) / 2;

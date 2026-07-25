@@ -10,6 +10,8 @@
 // apart; they now all route through carriedTroops() here.
 
 import type { TeamTemplate, CardSLGState } from '../../net/WorldApiClient';
+import type { CardInstance, EquipmentInstance } from './SaveData';
+import { troopCap, cardPower } from './cardDefs';
 import { t } from '../../i18n';
 
 type Army = TeamTemplate['army'];
@@ -37,4 +39,57 @@ export function carriedTroops(
     if (entry.cardInstanceId) total += cs[entry.cardInstanceId]?.currentTroops ?? 0;
   }
   return total;
+}
+
+/**
+ * Ceiling for {@link carriedTroops} — the sum of each placed card's troopCap. Pairs with carriedTroops
+ * so the team lists can show `carried/cap` instead of a bare number that means nothing on its own
+ * (2026-07-25); the formation editor's own readout goes through here too.
+ * Cards missing from `cardInv` (stale reference) contribute 0, exactly as they do to carriedTroops.
+ */
+export function teamTroopCap(
+  army: Army | undefined,
+  cardInv: Record<string, CardInstance> | undefined,
+): number {
+  if (!army) return 0;
+  const inv = cardInv ?? {};
+  let total = 0;
+  for (const entry of army) {
+    const card = entry.cardInstanceId ? inv[entry.cardInstanceId] : undefined;
+    if (card) total += troopCap(card);
+  }
+  return total;
+}
+
+/**
+ * The card whose portrait represents this team (2026-07-25). Explicit pick first — the player marks a
+ * leader in the formation editor and it survives any re-arranging of the grid — otherwise the strongest
+ * card in the army, so a team that has never been given a leader still gets a stable, meaningful icon
+ * without the player doing anything. Ties break on cardInstanceId so the icon doesn't flicker between
+ * two equal cards across renders.
+ */
+export function teamLeaderCard(
+  team: Pick<TeamTemplate, 'army' | 'leaderCardId'> | undefined,
+  cardInv: Record<string, CardInstance> | undefined,
+  equipmentInv: Record<string, EquipmentInstance> = {},
+): CardInstance | undefined {
+  if (!team) return undefined;
+  const inv = cardInv ?? {};
+  const explicit = team.leaderCardId ? inv[team.leaderCardId] : undefined;
+  // Only honour the explicit pick while that card is actually in this team's army (the server enforces
+  // the same rule on save, but a client-side team edit can be one step ahead of the round trip).
+  if (explicit && team.army.some((e) => e.cardInstanceId === team.leaderCardId)) return explicit;
+
+  let best: CardInstance | undefined;
+  let bestPower = -1;
+  for (const entry of team.army) {
+    const card = entry.cardInstanceId ? inv[entry.cardInstanceId] : undefined;
+    if (!card) continue;
+    const power = cardPower(card, equipmentInv);
+    if (power > bestPower || (power === bestPower && best && card.id < best.id)) {
+      best = card;
+      bestPower = power;
+    }
+  }
+  return best;
 }

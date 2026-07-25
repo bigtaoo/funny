@@ -13,6 +13,7 @@ import type {
   SiegeOutcome,
   SettleTier,
   BuildingKey,
+  PathCell,
 } from '@nw/shared';
 import { FAMILY_MSG_RETENTION_SEC, troopCapFor } from '@nw/shared';
 import type { Filter } from 'mongodb';
@@ -66,6 +67,14 @@ export interface TeamTemplate {
    * behavior (user decision 2026-07-23).
    */
   autoReturn?: boolean;
+  /**
+   * Team leader (2026-07-25): a `cardInstanceId` that must also appear in `army` — `setTeams`/`getTeams`
+   * clear it otherwise (card sold, moved to another team, or removed from the formation). Today it carries
+   * no combat effect: it only picks which card's portrait represents the team in the city / world-map team
+   * lists. Absent = the client falls back to the strongest card in the army, so every team has an icon
+   * without the player having to choose one.
+   */
+  leaderCardId?: string;
 }
 
 export interface WorldDoc {
@@ -87,6 +96,19 @@ export interface WorldDoc {
 }
 
 /** Occupied or modified tiles (neutral default tiles are not persisted; computed by proceduralTile). */
+/** ADR-051 (P5): a player-built structure on a tile. `kind` picks the behavior (arrowTower / blocker); `hp`/`hpMax`
+ * are its siege durability (attack-only); `ownerId`/`familyId` gate friend-vs-foe (own & family pass a blocker
+ * freely, enemies are chipped by a tower / blocked by a blocker). */
+export interface TileStructure {
+  kind: 'arrowTower' | 'blocker';
+  level: number;
+  hp: number;
+  hpMax: number;
+  ownerId: string;
+  familyId?: string;
+  builtAt: number;
+}
+
 export interface TileDoc {
   _id: string; // tileId = `{worldId}:{x}:{y}`
   worldId: string;
@@ -116,6 +138,13 @@ export interface TileDoc {
   durabilityRegenAt?: number;
   protectedUntil?: number; // ms
   watchtower?: boolean; // watchtower (§18 G5 V2): once built, this tile becomes a large-radius persistent vision source; lost together with TileDoc when tile is lost
+  /**
+   * ADR-051 (P5): player-built map structure overlaid on this tile (generalizes the boolean `watchtower`; the two
+   * coexist for now). arrowTower chips passing enemies over its 3×3 `cover` footprint (no stop); blocker is a hard
+   * path obstacle enemies must destroy. `hp` is reduced only by an attack march; 0 → the structure is removed and
+   * its cover cleared. Built only on own/family territory (never the base anchor); lost with the TileDoc.
+   */
+  structure?: TileStructure;
   /** ADR-025: true on the 8 non-anchor cells of a 3×3 main-base footprint (the anchor omits this). Ring cells hold ownerId + protection but no garrison/yield. */
   baseRing?: boolean;
   /** ADR-025: on ring cells only — the tileId of this base's anchor, so a siege landing on a ring cell resolves against the anchor's garrison/defense. Anchor omits this. */
@@ -204,7 +233,24 @@ export interface MarchDoc {
   morale?: number;
   departAt: number;
   arriveAt: number;
+  /**
+   * ADR-051 (P1): the full A* path (start..end inclusive), persisted so the march can advance tile-by-tile for
+   * real-time encounter checks (previously the path was computed at dispatch and discarded). Per-tile step time
+   * is uniform: the march reaches `path[i]` at `departAt + i * MARCH_SPEED_SEC_PER_TILE * 1000` (so the final
+   * cell's time == arriveAt, since marchDurationFromPath = (path.length-1) * MARCH_SPEED_SEC_PER_TILE). Absent on
+   * legacy docs and on 'return' legs not yet migrated to stepping → those fall back to the single-arrival model.
+   */
+  path?: PathCell[];
+  /** ADR-051 (P1): index into `path` of the cell the march currently occupies (0 = fromTile). Absent → not yet stepping. */
+  stepIndex?: number;
+  /** ADR-051 (P1): timestamp (ms) at which the march next advances one cell (reaches path[stepIndex+1]). The scheduler's step scan is keyed on this. Absent → legacy single-arrival march (driven by arriveAt). */
+  nextStepAt?: number;
   status: 'marching' | 'arrived' | 'recalled';
+  /**
+   * ADR-051 (P3a): dispatch intent for a 'move' order — whether the team parks as idle (停留) or garrison (驻扎)
+   * on arrival (applyMove writes it to StationedDoc.mode). Only meaningful for kind='move'; absent → 'idle'.
+   */
+  stationMode?: 'idle' | 'garrison';
   rev: number;
 }
 
@@ -373,6 +419,12 @@ export interface StationedDoc {
   army: ArmyEntry[];    // army snapshot (card entries; strength lives in cardState.currentTroops)
   troops: number;       // committed troop count carried when the team arrived (display / recall refund for flat armies)
   sinceAt: number;      // ms the team arrived and became stationed
+  /**
+   * ADR-051 (P3a): 停留 idle vs 驻扎 garrison. idle = free (defends only its own cell, can be re-commanded);
+   * garrison = busy, actively defends its 9-cell footprint (covered via the `cover` reverse index, intercepting
+   * enemies that pass — P3b). Absent on legacy docs → treated as 'idle' (the pre-split behavior).
+   */
+  mode?: 'idle' | 'garrison';
 }
 
 /** Nation document (S8-6.5). One record per capital; ownerId/nationName absent when unclaimed. */
@@ -562,6 +614,9 @@ export async function createWorldMongo(
     await collections.marches.createIndex({ worldId: 1, ownerId: 1 });
     // On-time scan fallback (primary scheduling uses Redis ZSET, S8-2; degrades to Mongo polling without Redis).
     await collections.marches.createIndex({ arriveAt: 1 });
+    // ADR-051 (P1): stepping marches are driven off their next per-tile step time; the arrival scan matches on
+    // nextStepAt for them (and falls back to arriveAt for legacy/return legs that carry no stepping cursor).
+    await collections.marches.createIndex({ nextStepAt: 1 });
     // Idle-team invariant (2026-07-22): a team may hold only ONE active state. Team-based marches are the only
     // docs carrying `teamId` (flat-pool marches have none; recall rewrites the SAME doc into a return leg; arrived
     // marches are deleted) — so a partial-unique index on {worldId,ownerId,teamId} atomically forbids a second

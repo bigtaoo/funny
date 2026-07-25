@@ -652,8 +652,22 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
           if (!hasCardArmy) await refundTroops(this.core, pw, res.attackerSurvivors, t);
           await this.applySectLeaderPenalty(m.worldId, defenderId, t);
           await this.passiveRelocate(m.worldId, defenderId, t);
+        } else if (target.structure && (target.structure.hp ?? target.structure.hpMax) - res.attackerSurvivors > 0) {
+          // ADR-051 (§5.2 structure durability): the tile carries a player-built structure (arrowTower / blocker) with
+          // hp remaining. Attack-only wear — clearing the garrison chips the structure's hp by the surviving assault
+          // force (troop-scale) instead of instantly razing+capturing. While the structure stands the tile is NOT taken:
+          // the assault retreats (survivors refunded / card survival written below), the garrison is spent, and the
+          // reduced hp persists. Only when hp≤0 (the else branch's raze + capture) does the structure fall and the tile
+          // change hands — so repeated assaults grind the bar down before it drops (§5.2 "多次攻打把血条磨到 0 才倒").
+          const remainingHp = (target.structure.hp ?? target.structure.hpMax) - res.attackerSurvivors;
+          await cols.tiles.updateOne(
+            { _id: m.toTile },
+            { $set: { 'structure.hp': remainingHp, garrison: 0 }, $inc: { rev: 1 } }, // garrison was wiped by the assault; structure alone remains
+          );
+          if (!hasCardArmy && res.attackerSurvivors > 0) await refundTroops(this.core, pw, res.attackerSurvivors, t);
+          // The tile did not change hands → no ownership/nation/yield change; the defender simply keeps a weakened structure.
         } else {
-          // Territory changes hands: survivors become the new garrison (troops were deducted on departure; do not modify the attacker pool again); both sides recompute yield.
+          // Territory changes hands (or a structure was ground to hp≤0 in this assault → razed by the $unset below): survivors become the new garrison (troops were deducted on departure; do not modify the attacker pool again); both sides recompute yield.
           // A captured crossing (bridge/plankway) KEEPS its type so it stays a passage, and carries the new owner's
           // familyId so `passableGateKeys` grants the owner & family transit (plain territory captures set no familyId).
           const isCrossing = target.type === 'bridge' || target.type === 'plankway';
@@ -666,11 +680,14 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
                 garrison: res.attackerSurvivors,
                 ...(isCrossing && pw.familyId ? { familyId: pw.familyId } : {}),
               },
-              // Clear stale family passage on a crossing captured by a familyless player, plus the protection shield.
-              $unset: { protectedUntil: '', ...(isCrossing && !pw.familyId ? { familyId: '' } : {}) },
+              // Clear stale family passage on a crossing captured by a familyless player, the protection shield, and
+              // (ADR-051 P5) any player structure the previous owner built — a captured tile's tower/blocker is razed.
+              $unset: { protectedUntil: '', structure: '', ...(isCrossing && !pw.familyId ? { familyId: '' } : {}) },
               $inc: { rev: 1 },
             },
           );
+          // ADR-051 (P5): clear a razed arrow tower's 3×3 coverage from the reverse index (its TileDoc.structure was unset above).
+          if (target.structure?.kind === 'arrowTower') await this.core.removeCover(m.worldId, target.x, target.y, m.toTile);
           const atkYield = await this.core.recomputeYield(m.worldId, m.ownerId);
           await cols.playerWorld.updateOne(
             { _id: pw._id },

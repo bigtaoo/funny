@@ -74,6 +74,9 @@ export interface WorldTileView {
   contestedByMe?: boolean;
   /** §18 G5 V2: this tile has a watchtower (only exposed for tiles visible to the player) — large-radius persistent vision source; client renders the tower marker. */
   watchtower?: boolean;
+  /** ADR-051 (P5): player-built structure on this tile (arrowTower / blocker). Rendered map-wide (public);
+   * hp/hpMax are intel-gated (omitted out of vision, like garrison/watchtower). */
+  structure?: TileStructureView;
   /**
    * G5: this tile is owned by an ally in the same family (not the requester, within vision). The client
    * renders it in "friendly color" — after family vision sharing, ally territory should no longer appear
@@ -88,11 +91,11 @@ export interface WorldTileView {
    */
   allySect?: boolean;
   /**
-   * G5 vision: whether this tile is within the requester's current vision.
-   * - true: the dynamic layer (ownership/garrison/defense/protection shield) is returned as-is;
-   * - false: outside vision — only the procedural base terrain (type/level/resType) is returned;
-   *   all dynamic layers are hidden (not even "occupied" is leaked — type falls back to base terrain rather than 'territory').
-   * Populated only by getMap viewport reads; single-tile responses like getTile/occupy do not include this field.
+   * G5 vision. Since the 2026-07-24 fog-model change this is always `true` on getMap/getTile reads: the static
+   * structure layer (location / ownership / base identity / level / occupation) is public map-wide, so fog no
+   * longer withholds whole tiles. Fog now gates only the INTEL fields (garrison / hp / maxHp / watchtower),
+   * which are simply omitted for out-of-vision tiles (see coreMap.gateIntel), and marching troops (getMarches).
+   * The field is retained so existing clients keep rendering the map un-dimmed (they darken only on `=== false`).
    */
   visible?: boolean;
 }
@@ -186,7 +189,18 @@ export interface OccupationView {
   teamId?: string;
 }
 
-/** Stationed-team view (REST response — own stationed teams only; 2026-07-23 field-stationing feature). */
+/** ADR-051 (P5): player-built structure view (arrowTower / blocker). hp/hpMax intel-gated out of vision. */
+export interface TileStructureView {
+  kind: 'arrowTower' | 'blocker';
+  level: number;
+  hp?: number;
+  hpMax?: number;
+  /** Whether the requester built it (client shows Demolish only on own structures). */
+  mine?: boolean;
+}
+
+/** Stationed-team view (REST response). 2026-07-23 field-stationing; ADR-051 (P4) also returns ENEMY stationed
+ * teams within the requester's vision so the client can render enemy field troops + garrison zones. */
 export interface StationedView {
   tile: string;
   x: number;
@@ -194,6 +208,11 @@ export interface StationedView {
   teamId: string;
   troops: number;
   sinceAt: number;
+  /** ADR-051 (P3a): 停留 idle vs 驻扎 garrison (see StationedDoc.mode). Absent → 'idle'. */
+  mode?: 'idle' | 'garrison';
+  /** ADR-051 (P4): whether this team belongs to the requester (false = enemy stationed team within vision).
+   * Absent → treat as own (legacy). teamId is blanked for enemy teams. */
+  mine?: boolean;
 }
 
 /** Maximum viewport radius (prevents fetching too many tiles at once; hard cap before P9 viewport subscription model scales up). */

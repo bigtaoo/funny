@@ -171,16 +171,18 @@ describe.skipIf(!mongo)('worldsvc alliance territory marking e2e (G5 / §8.2 V5)
     expect(enemyTile.ally).toBeUndefined();
   });
 
-  it('alliance does not share vision: distant allied territory remains fogged (visible:false, no allySect mark)', async () => {
+  it('alliance does not share vision: distant allied territory structure + allySect mark are public, but its INTEL stays fogged', async () => {
     await setupAlliance();
     await svc.joinWorld(W, 'a', A_POS.x, A_POS.y);
     await svc.joinWorld(W, 'ally2', 400, 400); // allied member but far beyond a's vision
 
     const view = await svc.getMap(W, 'a', 400, 400, 2);
     const far = view.tiles.find((t) => t.x === 400 && t.y === 400)!;
-    expect(far.visible).toBe(false);          // alliance does not share vision → not visible
-    expect(far.allySect).toBeUndefined();     // nothing in the dynamic layer (including alliance marks) is leaked outside vision
-    expect(far.occupied).toBeUndefined();
+    // Fog model 2b: structure + allegiance mark are public map-wide (both derive from now-public ownership).
+    expect(far).toMatchObject({ type: 'base', occupied: true, visible: true, allySect: true });
+    // But alliance does not share vision → the base's intel (garrison/HP) is still withheld.
+    expect(far.maxHp).toBeUndefined();
+    expect(far.garrison).toBeUndefined();
   });
 
   it('no sect / sect with no alliance: visible tiles of others are not marked allySect', async () => {

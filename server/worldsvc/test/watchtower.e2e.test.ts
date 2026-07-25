@@ -132,29 +132,42 @@ describe.skipIf(!mongo)('worldsvc watchtower e2e (§18 G5 V2)', () => {
     expect(pw?.resources.paper).toBe(5000 - WATCHTOWER_COST.paper);
   });
 
-  it('extends vision: previously fogged distant tile becomes visible after watchtower, beyond radius stays fogged', async () => {
+  it('extends vision: watchtower reveals a distant enemy tile\'s intel (maxHp) that territory vision could not; beyond radius stays fogged', async () => {
+    // Fog model 2b: `visible` is always true now, so vision extension is probed via the INTEL layer (garrison/HP)
+    // — an enemy territory tile carries maxHp, which is stripped outside vision and revealed once in vision.
     const terr = await setupTerritoryWithResources('a');
-    // F is at chebyshev distance 6 from the territory: > VISION_TERRITORY_RADIUS(2) and < VISION_WATCHTOWER_RADIUS(8).
-    const dist = 6;
-    expect(dist).toBeGreaterThan(VISION_TERRITORY_RADIUS);
-    expect(dist).toBeLessThan(VISION_WATCHTOWER_RADIUS);
-    const fx = terr.x;
-    const fy = terr.y + dist;
+    // F sits at chebyshev distance in (VISION_TERRITORY_RADIUS, VISION_WATCHTOWER_RADIUS): unreachable by territory
+    // vision (2) but inside watchtower vision (8). `far` sits beyond the watchtower radius.
+    const F = findCoord(OCCUPIABLE, terr.x, terr.y + 6);
+    const far = findCoord(OCCUPIABLE, terr.x, terr.y + 11);
+    const dF = Math.max(Math.abs(F.x - terr.x), Math.abs(F.y - terr.y));
+    const dFar = Math.max(Math.abs(far.x - terr.x), Math.abs(far.y - terr.y));
+    expect(dF).toBeGreaterThan(VISION_TERRITORY_RADIUS);
+    expect(dF).toBeLessThan(VISION_WATCHTOWER_RADIUS);
+    expect(dFar).toBeGreaterThan(VISION_WATCHTOWER_RADIUS);
 
-    // Before building: F is in fog (territory vision radius is only 2, cannot reach it).
-    const before = await svc.getMap(W, 'a', fx, fy, 0);
-    expect(before.tiles.find((t) => t.x === fx && t.y === fy)!.visible).toBe(false);
+    // Enemy e owns both tiles (occupyTile → type:'territory', HP-bearing → they carry maxHp intel).
+    const eHome = findCapitalSite(HOME.x, HOME.y + 200);
+    await svc.joinWorld(W, 'e', eHome.x, eHome.y);
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'e') }, { $set: { troops: 100000 } });
+    await svc.occupyTile(W, 'e', F.x, F.y);
+    await svc.occupyTile(W, 'e', far.x, far.y);
+
+    // Before building: F's structure is public to a, but its intel is fogged (territory vision radius is only 2).
+    const before = await svc.getMap(W, 'a', F.x, F.y, 0);
+    const fBefore = before.tiles.find((t) => t.x === F.x && t.y === F.y)!;
+    expect(fBefore.occupied).toBe(true);      // structure public map-wide
+    expect(fBefore.maxHp).toBeUndefined();    // intel fogged
 
     await svc.buildWatchtower(W, 'a', terr.x, terr.y);
 
-    // After building: F enters watchtower vision (radius 8) → visible.
-    const after = await svc.getMap(W, 'a', fx, fy, 0);
-    expect(after.tiles.find((t) => t.x === fx && t.y === fy)!.visible).toBe(true);
+    // After building: F enters watchtower vision (radius 8) → its intel is revealed.
+    const after = await svc.getMap(W, 'a', F.x, F.y, 0);
+    expect(after.tiles.find((t) => t.x === F.x && t.y === F.y)!.maxHp).toBeGreaterThan(0);
 
-    // Control: beyond watchtower radius (distance 10 > 8) still in fog.
-    const farY = terr.y + 10;
-    const far = await svc.getMap(W, 'a', fx, farY, 0);
-    expect(far.tiles.find((t) => t.x === fx && t.y === farY)!.visible).toBe(false);
+    // Control: beyond watchtower radius intel stays fogged.
+    const farView = await svc.getMap(W, 'a', far.x, far.y, 0);
+    expect(farView.tiles.find((t) => t.x === far.x && t.y === far.y)!.maxHp).toBeUndefined();
   });
 
   it('guard: non-own / unoccupied tile rejected (TILE_NOT_OWNED)', async () => {

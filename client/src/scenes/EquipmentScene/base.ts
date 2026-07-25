@@ -27,6 +27,11 @@ import { buildIcon, type IconKind } from '../../render/icons';
 import { buildMaterialIcon, type MaterialKind } from '../../render/materialAtlas';
 import { buildCoinIcon } from '../../render/coinIconAtlas';
 
+/** Angular speed (rad/s) of the maxed-star flip in buildLevelStars/update — a full front-edge-back-edge-front cycle every ~2.6s. */
+const STAR_FLIP_SPEED = 2.4;
+/** Phase offset (rad) between adjacent stars in a maxed row, so they flip in a ripple rather than a synced blink. */
+const STAR_FLIP_STAGGER = 0.35;
+
 export type EquipResult = { ok: true } | { ok: false; key: TranslationKey };
 export type EnhanceResult =
   | { ok: true; success: boolean; level: number }
@@ -205,6 +210,16 @@ export class EquipmentSceneBase {
    *  display refresh rate, and render() fully tears down/rebuilds the scene, so calling it per-event
    *  caused visible jank while dragging. update() (ticker-gated, once per frame) drains this instead. */
   private scrollDirty = false;
+
+  /**
+   * Star sprites belonging to a maxed-out (EQUIP_MAX_LEVEL) star row, driven every frame in update()
+   * to spin left-right — a continuous callout for fully-enhanced items, distinct from the static row
+   * everyone else gets. Populated by buildLevelStars() on every render pass (inventory grid, detail
+   * modal, …); entries whose sprite has since been torn down (scrolled off, modal closed, re-render)
+   * are pruned lazily in update() rather than tracked per call site — self-healing, no reset needed.
+   */
+  private flipStars: { obj: PIXI.DisplayObject; phase: number }[] = [];
+  private flipT = 0;
 
   protected hitRects: { rect: Rect; action: () => void }[] = [];
   protected modalHits: { rect: Rect; action: () => void }[] = [];
@@ -468,13 +483,27 @@ export class EquipmentSceneBase {
     return level > 0 ? `${this.itemName(defId)} ${'★'.repeat(Math.min(level, EQUIP_MAX_LEVEL))}` : this.itemName(defId);
   }
 
-  /** Row of gold star icons for the enhance level (one per level, max EQUIP_MAX_LEVEL), scaled down to fit maxW. Mirrors the card-level star row (CardScene/list.ts). */
+  /**
+   * Row of gold star icons for the enhance level (one per level, max EQUIP_MAX_LEVEL), scaled down to
+   * fit maxW. Mirrors the card-level star row (CardScene/list.ts). At EQUIP_MAX_LEVEL the whole row is
+   * registered for the continuous left-right flip driven by update() (see flipStars) — a maxed item's
+   * stars keep spinning in place to call it out among the mostly-static rows.
+   */
   protected buildLevelStars(level: number, maxW: number, size = 14, gap = 3): PIXI.Container {
     const stars = new PIXI.Container();
     const starN = Math.max(0, Math.min(EQUIP_MAX_LEVEL, level));
+    const maxed = starN === EQUIP_MAX_LEVEL;
     for (let i = 0; i < starN; i++) {
       const st = buildIcon('star', size, C.gold);
-      st.x = i * (size + gap);
+      if (maxed) {
+        // Pivot to the icon's own center so scale.x flipping stays in place instead of sliding.
+        st.pivot.set(size / 2, size / 2);
+        st.x = i * (size + gap) + size / 2;
+        st.y = size / 2;
+        this.flipStars.push({ obj: st, phase: i * STAR_FLIP_STAGGER });
+      } else {
+        st.x = i * (size + gap);
+      }
       stars.addChild(st);
     }
     const starsW = starN * size + Math.max(0, starN - 1) * gap;
@@ -606,6 +635,11 @@ export class EquipmentSceneBase {
   update(dt: number): void {
     if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
     if (this.bt.tick(dt)) this.render();
+    if (this.flipStars.length) {
+      this.flipT += dt;
+      this.flipStars = this.flipStars.filter((f) => !f.obj.destroyed);
+      for (const { obj, phase } of this.flipStars) obj.scale.x = Math.cos(this.flipT * STAR_FLIP_SPEED + phase);
+    }
   }
 
   destroy(): void {

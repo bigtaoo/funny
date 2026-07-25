@@ -18,6 +18,7 @@ import type { NetState } from '../net/NetClient';
 import type {
   RoomState, RoomError, PeerDc, MatchOver,
   FriendPresence, FriendRequestPush, FriendUpdate, ChatMessagePush, MailNew,
+  DuelInvited, DuelCancelled,
 } from '../net/proto/transport';
 import type { ProfileData } from '../render/ProfilePopup';
 
@@ -112,6 +113,8 @@ export interface FriendsView {
   applyFriendUpdate(u: FriendUpdate): void;
   applyChatMessage(m: ChatMessagePush): void;
   applyMailNew(m: MailNew): void;
+  applyDuelInvited(d: DuelInvited): void;
+  applyDuelCancelled(d: DuelCancelled): void;
 }
 
 /** Live handle for the chat window — the core forwards chat_message push to it. */

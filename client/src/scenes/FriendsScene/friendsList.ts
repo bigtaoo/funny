@@ -57,6 +57,15 @@ export function FriendsListMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase
         cy += Math.round(h * 0.045);
       };
 
+      // Incoming duel invite banner — always first (60s response window, more time-sensitive
+      // than friend requests, which have no expiry).
+      if (this.incomingDuelInvite) {
+        const dh = Math.round(h * 0.09);
+        const sy = screenY(cy);
+        if (this.rowVisible(sy, dh)) this.drawDuelInviteBanner(layer, this.incomingDuelInvite, sy, dh);
+        cy += dh + rowGap + Math.round(h * 0.01);
+      }
+
       if (this.incoming.length > 0) {
         sectionLabel('friends.requests', this.incoming.length);
         const reqH = Math.round(h * 0.09);
@@ -119,6 +128,36 @@ export function FriendsListMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase
         () => void this.doRespond(r.requestId, false), C.red, snapFont(Math.round(bH * 0.4)), layer);
     }
 
+    private drawDuelInviteBanner(
+      layer: PIXI.Container,
+      invite: { inviteId: string; fromPublicId: string; fromName: string; expiresAt: number },
+      y: number, rh: number,
+    ): void {
+      const rx = this.cX;
+      const rw = this.cW;
+
+      const bg = sketchPanel(rw, rh, { fill: C.paper, border: C.red, width: 2, seed: seedFor(rx, 3, rw) });
+      bg.x = rx; bg.y = y;
+      sketchAccentBar(bg, rh, C.red, seedFor(rx, rh, 9));
+      layer.addChild(bg);
+
+      const secsLeft = Math.max(0, Math.ceil((invite.expiresAt - Date.now()) / 1000));
+      const label = txt(t('friends.duelInviteBanner', { name: invite.fromName || invite.fromPublicId, secs: secsLeft }),
+        snapFont(Math.round(rh * 0.28)), C.dark, true);
+      label.anchor.set(0, 0.5); label.x = rx + Math.round(rw * 0.06); label.y = y + rh * 0.5;
+      layer.addChild(label);
+
+      const bW = Math.round(rw * 0.18);
+      const bH = Math.round(rh * 0.5);
+      const bY = y + (rh - bH) / 2;
+      const rejX = rx + rw - bW - Math.round(rw * 0.03);
+      const accX = rejX - bW - Math.round(rw * 0.02);
+      this.addButton(t('friends.accept'), accX, bY, bW, bH, C.green, C.green,
+        () => this.doDuelRespond(invite.inviteId, true), 0xffffff, snapFont(Math.round(bH * 0.4)), layer);
+      this.addButton(t('friends.reject'), rejX, bY, bW, bH, C.paper, C.red,
+        () => this.doDuelRespond(invite.inviteId, false), C.red, snapFont(Math.round(bH * 0.4)), layer);
+    }
+
     private drawFriendRow(layer: PIXI.Container, f: FriendView, _contentY: number, y: number): void {
       const { h } = this;
       const rh = Math.round(h * 0.10);
@@ -176,9 +215,34 @@ export function FriendsListMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase
       const xX = rx + rw - xW - Math.round(rw * 0.03);
       const xY = y + (rh - xW) / 2;
       this.addButton('✕', xX, xY, xW, xW, C.paper, C.red,
-        () => void this.doRemove(f.publicId), C.red, snapFont(Math.round(xW * 0.5)), layer);
+        () => this.confirmRemove(f.publicId, f.alias || f.displayName), C.red, snapFont(Math.round(xW * 0.5)), layer);
+
+      // Duel ("切磋", ADR friends-duel-confirm): offline friends can't receive a real-time invite, and
+      // matchsvc only tracks one outstanding sent invite at a time — so ALL rows disable together while
+      // any invite is in flight, not just the row it was sent to (that row's label just also changes).
+      const duelSentHere = this.sendingDuelTo === f.publicId;
+      const canDuel = f.online && this.sendingDuelTo === null;
+      const duelW = Math.round(rh * 1.7);
+      const duelH = Math.round(rh * 0.5);
+      const duelX = xX - duelW - Math.round(rw * 0.02);
+      const duelY = y + (rh - duelH) / 2;
+      this.addButton(
+        t(duelSentHere ? 'friends.duelSent' : 'friends.duel'), duelX, duelY, duelW, duelH,
+        canDuel ? C.dark : C.btnOff, canDuel ? C.gold : C.light,
+        canDuel ? () => this.doDuel(f.publicId) : () => {},
+        canDuel ? 0xffffff : C.mid, snapFont(Math.round(duelH * 0.42)), layer,
+      );
 
       this.hits.push({ rect: { x: rx, y, w: rw, h: rh }, scroll: true, fn: () => this.openFriendProfile(f) });
+    }
+
+    /** Removing a friend is a one-click ✕ tap away from the row — a stray tap used to delete
+     *  immediately with no way back, so confirm first (reuses the shared OK/Cancel modal). */
+    private confirmRemove(publicId: string, name: string): void {
+      this.showConfirm(t('friends.confirmRemove', { name }), () => {
+        this.closeModal();
+        void this.doRemove(publicId);
+      });
     }
 
     private openFriendProfile(f: FriendView): void {

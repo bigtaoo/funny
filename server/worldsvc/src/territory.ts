@@ -9,6 +9,10 @@ import {
   troopCapFor,
   RELOCATE_COST,
   WATCHTOWER_COST,
+  ARROW_TOWER_COST,
+  BLOCKER_COST,
+  ARROW_TOWER_HP,
+  BLOCKER_HP,
   RESOURCE_TYPES,
   SlgError,
   buildingLevel,
@@ -16,7 +20,7 @@ import {
   type BuildingKey,
 } from '@nw/shared';
 import { WorldCore, emptyResources } from './core';
-import type { TileDoc, PlayerWorldDoc } from './db';
+import type { TileDoc, TileStructure, PlayerWorldDoc } from './db';
 import type { WorldTileView, PlayerWorldView } from './worldTypes';
 
 export class TerritoryService {
@@ -229,7 +233,13 @@ export class TerritoryService {
     await cols.tiles.deleteOne({ _id: tid }); // abandon → revert to procedural neutral (sparse storage leaves no empty shell)
     // 2026-07-23: giving up the tile frees any team stationed on it (the team pops back to idle-at-home). Recall
     // would also work, but abandon is a deliberate surrender — just release the "out" lock so the slot is usable.
-    await cols.stationed.deleteOne({ _id: tid });
+    const freedStationed = await cols.stationed.findOneAndDelete({ _id: tid });
+    await this.core.clearOccupancy(worldId, tid, tid); // ADR-051 (P2): drop the freed team's occupancy entry
+    // ADR-051 (P3a): a freed garrison also drops its 9-cell coverage from the reverse index.
+    if (freedStationed?.mode === 'garrison') await this.core.removeCover(worldId, freedStationed.x, freedStationed.y, freedStationed.tile);
+    // ADR-051 (P5): an abandoned tile's arrow tower is destroyed with it — clear its 3×3 coverage too (the TileDoc
+    // is deleted above, so the structure is gone; only the Redis cover index needs the explicit sweep).
+    if (tile.structure?.kind === 'arrowTower') await this.core.removeCover(worldId, x, y, tid);
     const yieldRate = await this.core.recomputeYield(worldId, accountId);
     await cols.playerWorld.updateOne(
       { _id: pw._id },
@@ -344,6 +354,77 @@ export class TerritoryService {
     if (after) {
       void this.core.pushTile(accountId, after); // owner refetch → expanded vision from the new tower takes effect on next getMap
       await this.core.pushTileToObservers(after, new Set([accountId])); // tower is a visible structure; observers within vision also see it
+    }
+    return this.core.tileDocView(after!, accountId);
+  }
+
+  /**
+   * ADR-051 (P5): build a player structure (arrowTower / blocker) on own or same-family territory (§8-O2). Mirrors
+   * buildWatchtower's settle→validate→deduct flow. arrowTower registers its 3×3 coverage in the `cover` reverse
+   * index (kind:'tower') so advanceMarch's tile-entry check chips passing enemies; blocker registers no coverage —
+   * it is enforced at pathfinding time (findMarchPath) instead. One structure per tile.
+   */
+  async buildStructure(worldId: string, accountId: string, x: number, y: number, kind: 'arrowTower' | 'blocker'): Promise<WorldTileView> {
+    const { cols, now } = this.core.deps;
+    const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+    if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
+
+    const tid = tileId(worldId, x, y);
+    const tile = await cols.tiles.findOne({ _id: tid });
+    if (!tile) throw new SlgError('TILE_NOT_OWNED', 'Not your territory');
+    // §8-O2: own or same-family territory only (prevents malicious choke-point building on neutral/enemy land).
+    const family = await this.core.familyMemberIds(worldId, accountId);
+    const friendly = tile.ownerId === accountId || (!!tile.ownerId && family.has(tile.ownerId));
+    if (!friendly) throw new SlgError('TILE_NOT_OWNED', 'Structures can only be built on your own or family territory');
+    if (tile.type === 'base') throw new SlgError('BAD_REQUEST', 'Cannot build a structure on the capital');
+    if (tile.structure) throw new SlgError('TILE_OCCUPIED', 'This tile already has a structure'); // one structure per tile
+
+    const cost = kind === 'arrowTower' ? ARROW_TOWER_COST : BLOCKER_COST;
+    const hpMax = kind === 'arrowTower' ? ARROW_TOWER_HP : BLOCKER_HP;
+    const t = now();
+    const resources = this.core.settle(pw, t);
+    for (const rt of RESOURCE_TYPES) {
+      if ((resources[rt] ?? 0) < (cost[rt] ?? 0)) throw new SlgError('INSUFFICIENT_RESOURCES', 'Insufficient resources to build this structure');
+    }
+    for (const rt of RESOURCE_TYPES) resources[rt] -= cost[rt] ?? 0;
+
+    const structure: TileStructure = {
+      kind, level: 1, hp: hpMax, hpMax, ownerId: accountId,
+      ...(pw.familyId ? { familyId: pw.familyId } : {}), builtAt: t,
+    };
+    await cols.tiles.updateOne({ _id: tid }, { $set: { structure }, $inc: { rev: 1 } });
+    await cols.playerWorld.updateOne({ _id: pw._id }, { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } });
+
+    if (kind === 'arrowTower') {
+      await this.core.addCover(worldId, x, y, {
+        kind: 'tower', sourceTile: tid, ownerId: accountId, ...(pw.familyId ? { familyId: pw.familyId } : {}),
+      });
+    }
+
+    const after = await cols.tiles.findOne({ _id: tid });
+    if (after) {
+      void this.core.pushTile(accountId, after);
+      await this.core.pushTileToObservers(after, new Set([accountId]));
+    }
+    return this.core.tileDocView(after!, accountId);
+  }
+
+  /** ADR-051 (P5): demolish one's own structure. Clears the arrowTower's 3×3 coverage; blocker just drops off the tile. */
+  async demolishStructure(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
+    const { cols } = this.core.deps;
+    const tid = tileId(worldId, x, y);
+    const tile = await cols.tiles.findOne({ _id: tid });
+    if (!tile || !tile.structure) throw new SlgError('TILE_NOT_OWNED', 'No structure here');
+    if (tile.structure.ownerId !== accountId) throw new SlgError('TILE_NOT_OWNED', 'Not your structure');
+
+    const wasTower = tile.structure.kind === 'arrowTower';
+    await cols.tiles.updateOne({ _id: tid }, { $unset: { structure: '' }, $inc: { rev: 1 } });
+    if (wasTower) await this.core.removeCover(worldId, x, y, tid);
+
+    const after = await cols.tiles.findOne({ _id: tid });
+    if (after) {
+      void this.core.pushTile(accountId, after);
+      await this.core.pushTileToObservers(after, new Set([accountId]));
     }
     return this.core.tileDocView(after!, accountId);
   }

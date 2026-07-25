@@ -402,6 +402,13 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 > **i18n**：装备名 / 词条 / 特技 / 稀有度 一律走 i18n key（`equip.<defId>.name`、`affix.<id>.desc`、`skill.<id>.*`），不硬编码中文（项目 i18n 纪律，见 UI_DESIGN）。
 
+### 11.2 实现记录（2026-07-24，✅）— 背包卡片：词条直显 + 数量角标右上
+
+背包网格卡片（`InventoryMixin.renderInstanceCell`）原右侧信息列只显示稀有度 / 已装备标签 / 堆叠数量，词条要点开详情弹窗才能看到；数量角标也挤在同一列，读起来费劲。改为：
+
+- **词条直显**：右侧信息列在稀有度/已装备标签下方，直接列出该件的词条描述（`affixDesc`，如 `Health +10%` / `Crit Damage +21%`），主词条用 accent 高亮色、副/特技用中性深色——与详情弹窗（`DetailMixin.openDetail`）的词条配色语言一致，玩家不用点开就能比较货架上的件。
+- **数量角标移至右上角**：堆叠数量（`×N`）从信息列移到卡片右上角，与锁定图标共用同一角（二者互斥——按 `buildDisplayEntries` 的堆叠规则，锁定件恒为独立行、`count` 恒为 1，不会与角标数量同框）。
+
 ---
 
 ## 12. 经济联动
@@ -755,6 +762,15 @@ buildSiegeBlueprints(levels, equipped, inv)
 - 新增 `EquipmentSceneBase.buildLevelStars(level, maxW, size?, gap?)` 共享辅助方法。
 - 0 级不显示任何符号（与旧的省略 "+0" 后缀语义一致）。
 - 用假 `save`/`cb` 构造 `EquipmentScene` 两次 `app.renderer.render` 后 `toDataURL` 截图验证（背包卡片、loadout 预览、详情弹窗三处），`tsc --noEmit` 通过。
+
+### 20.6c 实现记录（2026-07-25，✅）— 满级星星左右翻转动画
+
+强化到 `EQUIP_MAX_LEVEL`（满级）的星星行现在持续播放左右翻转动画，与其余等级的静态星星行区分，一眼认出满级装备。
+
+- `buildLevelStars()`：仅当 `starN === EQUIP_MAX_LEVEL` 时，把每颗星星图标的 pivot 移到自身中心（否则 `scale.x` 翻转会带偏位置），并把它连同一个按下标错开的相位一起登记进 `EquipmentSceneBase.flipStars`。
+- `update(dt)`：对 `flipStars` 中的精灵按 `scale.x = cos(t·STAR_FLIP_SPEED + phase)` 逐帧驱动（约 2.6s 一个完整翻转周期，相邻星星错相位形成波纹感，而非齐刷刷同步闪烁），与既有的 scrollDirty/忙碌指示器重绘互不影响——直接改精灵属性，不触发整帧重绘。
+- 每帧顺带过滤掉 `obj.destroyed` 的精灵（PIXI `destroy()` 后 `transform` 置空，再写 `scale.x` 会抛错）：背包网格滚动出屏、详情弹窗关闭重开都会拆旧建新，这样自愈式清理即可，不需要在每个调用点手动清空 `flipStars`。
+- 落点：`EquipmentScene/base.ts`（`buildLevelStars`/`update`/两个新增模块常量 `STAR_FLIP_SPEED`/`STAR_FLIP_STAGGER`）；背包卡片、详情弹窗两处星星行共用同一份逻辑，无需改动 `inventory.ts`/`detail.ts` 调用点。`tsc --noEmit` + 相关 `equipment*` vitest 套件通过。
 
 ### 20.3 实现记录（2026-06-24，✅）— UI 装备图标程序化
 

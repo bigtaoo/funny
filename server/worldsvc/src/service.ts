@@ -39,9 +39,9 @@ export class WorldService extends WorldCore {
   startMarch(
     worldId: string, accountId: string,
     fromX: number, fromY: number, toX: number, toY: number,
-    kind: MarchKind, troops: number, teamId?: string,
+    kind: MarchKind, troops: number, teamId?: string, stationMode?: 'idle' | 'garrison',
   ): Promise<MarchView> {
-    return this.combat.startMarch(worldId, accountId, fromX, fromY, toX, toY, kind, troops, teamId);
+    return this.combat.startMarch(worldId, accountId, fromX, fromY, toX, toY, kind, troops, teamId, stationMode);
   }
   recallMarch(worldId: string, accountId: string, mid: string): Promise<MarchView> {
     return this.combat.recallMarch(worldId, accountId, mid);
@@ -183,6 +183,13 @@ export class WorldService extends WorldCore {
   }
   buildWatchtower(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
     return this.territory.buildWatchtower(worldId, accountId, x, y);
+  }
+  // ADR-051 (P5): player-built map structures (arrowTower / blocker).
+  buildStructure(worldId: string, accountId: string, x: number, y: number, kind: 'arrowTower' | 'blocker'): Promise<WorldTileView> {
+    return this.territory.buildStructure(worldId, accountId, x, y, kind);
+  }
+  demolishStructure(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
+    return this.territory.demolishStructure(worldId, accountId, x, y);
   }
 
   // ── SLG shop (shop.ts) ──────────────────────────────────────

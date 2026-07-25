@@ -296,6 +296,138 @@ describe('Matchsvc bot-fallback (feature flag match_bot_fallback)', () => {
   });
 });
 
+describe('Matchsvc duel invite ("切磋", ADR friends-duel-confirm)', () => {
+  const player = (accountId: string, name: string, publicId: string, deck: string[] = []) => ({
+    accountId, name, publicId, equippedTitle: '', avatarId: '', deck,
+  });
+
+  it('invite → duel_invited pushed to the target only (inviter gets nothing yet)', () => {
+    const { svc, last, pushed } = setup();
+    svc.duelInvite(player('a', 'Alice', '100000001'), 'b');
+
+    const inv = last('b', 'duel_invited');
+    expect(inv?.kind).toBe('duel_invited');
+    if (inv?.kind !== 'duel_invited') throw new Error();
+    expect(inv.fromPublicId).toBe('100000001');
+    expect(inv.fromName).toBe('Alice');
+    expect(inv.inviteId).toBeTruthy();
+    expect(pushed.some((p) => p.acc === 'a')).toBe(false);
+  });
+
+  it('accept → startMatch fires exactly like the room-ready flow (same roomId/seed, distinct sides, valid ticket)', () => {
+    const { svc, last } = setup();
+    svc.duelInvite(player('a', 'Alice', '100000001', defaultPvpDeck()), 'b');
+    const inv = last('b', 'duel_invited');
+    if (inv?.kind !== 'duel_invited') throw new Error();
+
+    svc.duelRespond('b', inv.inviteId, true, player('b', 'Bob', '100000002', defaultPvpDeck()));
+
+    const fa = last('a', 'match_found');
+    const fb = last('b', 'match_found');
+    if (fa?.kind !== 'match_found' || fb?.kind !== 'match_found') throw new Error('no match_found');
+    const ta = verifyTicket(fa.ticket, { key: KEY });
+    const tb = verifyTicket(fb.ticket, { key: KEY });
+    expect(ta.roomId).toBe(tb.roomId);
+    expect(ta.seed).toBe(tb.seed);
+    expect(ta.mode).toBe('friendly');
+    expect([ta.side, tb.side].sort()).toEqual([0, 1]);
+    expect(ta.decks).toEqual({ top: defaultPvpDeck(), bottom: defaultPvpDeck() });
+  });
+
+  it('decline → duel_cancelled{reason:declined} pushed to the inviter only, no match_found', () => {
+    const { svc, last, pushed } = setup();
+    svc.duelInvite(player('a', 'Alice', '100000001'), 'b');
+    const inv = last('b', 'duel_invited');
+    if (inv?.kind !== 'duel_invited') throw new Error();
+
+    svc.duelRespond('b', inv.inviteId, false);
+
+    const cancel = last('a', 'duel_cancelled');
+    expect(cancel?.kind).toBe('duel_cancelled');
+    if (cancel?.kind !== 'duel_cancelled') throw new Error();
+    expect(cancel.reason).toBe('declined');
+    expect(cancel.inviteId).toBe(inv.inviteId);
+    expect(pushed.some((p) => p.msg.kind === 'match_found')).toBe(false);
+  });
+
+  it('accept without a profile (defensive: gateway contract violation) is treated as a decline', () => {
+    const { svc, last, pushed } = setup();
+    svc.duelInvite(player('a', 'Alice', '100000001'), 'b');
+    const inv = last('b', 'duel_invited');
+    if (inv?.kind !== 'duel_invited') throw new Error();
+
+    svc.duelRespond('b', inv.inviteId, true); // accept=true but no profile passed
+    expect(last('a', 'duel_cancelled')?.kind).toBe('duel_cancelled');
+    expect(pushed.some((p) => p.msg.kind === 'match_found')).toBe(false);
+  });
+
+  it('60s timeout with no response → duel_cancelled{reason:timeout} pushed to the inviter', () => {
+    vi.useFakeTimers();
+    try {
+      const { svc, last } = setup();
+      svc.duelInvite(player('a', 'Alice', '100000001'), 'b');
+      vi.advanceTimersByTime(60_000);
+
+      const cancel = last('a', 'duel_cancelled');
+      expect(cancel?.kind).toBe('duel_cancelled');
+      if (cancel?.kind !== 'duel_cancelled') throw new Error();
+      expect(cancel.reason).toBe('timeout');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('responding after the 60s timeout already fired is a no-op (invite is gone)', () => {
+    vi.useFakeTimers();
+    try {
+      const { svc, last, pushed } = setup();
+      svc.duelInvite(player('a', 'Alice', '100000001'), 'b');
+      const inv = last('b', 'duel_invited');
+      if (inv?.kind !== 'duel_invited') throw new Error();
+      vi.advanceTimersByTime(60_000);
+      const before = pushed.length;
+
+      svc.duelRespond('b', inv.inviteId, true, player('b', 'Bob', '100000002'));
+      expect(pushed.length).toBe(before); // no additional push (no double-fire, no late match_found)
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('one outstanding sent invite at a time: re-inviting cancels the stale invite (declined) before creating the new one', () => {
+    const { svc, last, pushed } = setup();
+    svc.duelInvite(player('a', 'Alice', '100000001'), 'b');
+    const inv1 = last('b', 'duel_invited');
+    if (inv1?.kind !== 'duel_invited') throw new Error();
+
+    svc.duelInvite(player('a', 'Alice', '100000001'), 'c');
+
+    const cancel = last('a', 'duel_cancelled');
+    expect(cancel?.kind).toBe('duel_cancelled');
+    if (cancel?.kind !== 'duel_cancelled') throw new Error();
+    expect(cancel.reason).toBe('declined');
+    expect(cancel.inviteId).toBe(inv1.inviteId);
+    expect(last('c', 'duel_invited')).toBeDefined();
+
+    // The stale invite (to b) can no longer be accepted — it was already torn down.
+    const before = pushed.length;
+    svc.duelRespond('b', inv1.inviteId, true, player('b', 'Bob', '100000002'));
+    expect(pushed.length).toBe(before);
+  });
+
+  it('respond with a mismatched accountId or unknown inviteId is silently ignored (no push either way)', () => {
+    const { svc, last, pushed } = setup();
+    svc.duelInvite(player('a', 'Alice', '100000001'), 'b');
+    const inv = last('b', 'duel_invited');
+    if (inv?.kind !== 'duel_invited') throw new Error();
+
+    const before = pushed.length;
+    svc.duelRespond('z', inv.inviteId, true, player('z', 'Zed', '100000099')); // wrong recipient
+    svc.duelRespond('b', 'not-a-real-invite-id', true, player('b', 'Bob', '100000002')); // wrong inviteId
+    expect(pushed.length).toBe(before);
+  });
+});
+
 // ── Room code character set ───────────────────────────────────────────────────
 // The server generator and the client keyboard must use the same character set;
 // otherwise codes containing characters that cannot be typed will be issued.

@@ -348,6 +348,14 @@ export class Gateway {
       case 'room_leave':
         this.matchsvc.roomLeave(accountId);
         break;
+      case 'duel_invite':
+        log.info('-> matchsvc duelInvite', { accountId, toPublicId: msg.toPublicId });
+        void this.handleDuelInvite(accountId, msg.toPublicId, msg.deck ?? []);
+        break;
+      case 'duel_respond':
+        log.info('-> matchsvc duelRespond', { accountId, inviteId: msg.inviteId, accept: msg.accept });
+        void this.handleDuelRespond(accountId, msg.inviteId, msg.accept, msg.deck ?? []);
+        break;
       case 'client_caps': {
         const conn = this.conns.get(accountId);
         if (conn) conn.canJudge = msg.canJudge;
@@ -481,6 +489,48 @@ export class Gateway {
     const { name, publicId, equippedTitle, avatarId } = await this.resolveProfile(accountId);
     if (!this.conns.has(accountId)) return;
     this.matchsvc.roomJoin(accountId, name, publicId, code, equippedTitle, avatarId, deck);
+  }
+
+  /**
+   * Friend challenge ("切磋", ADR friends-duel-confirm) invite: the client only knows the friend's
+   * publicId, so this resolves it to an accountId (meta) before ever touching matchsvc — matchsvc
+   * itself only ever deals in accountIds (like every other command here). Same current-elo deck
+   * gating as room create/join/ranked (PVP_LOADOUT §6.3). Offline/unknown target short-circuits
+   * with an immediate duel_cancelled back to the inviter instead of creating a pending invite that
+   * could never be answered.
+   */
+  private async handleDuelInvite(accountId: string, toPublicId: string, submittedDeck: string[]): Promise<void> {
+    const resolved = await this.meta.resolveByPublicId(toPublicId);
+    if (!this.conns.has(accountId)) return;
+    if (!resolved || resolved.accountId === accountId) {
+      this.push(accountId, { kind: 'duel_cancelled', inviteId: '', reason: 'not_found' });
+      return;
+    }
+    if (!this.conns.has(resolved.accountId)) {
+      this.push(accountId, { kind: 'duel_cancelled', inviteId: '', reason: 'offline' });
+      return;
+    }
+    const { elo } = await this.meta.getElo(accountId);
+    if (!this.conns.has(accountId)) return;
+    const deck = this.resolvedDeck(accountId, submittedDeck, elo);
+    const { name, publicId, equippedTitle, avatarId } = await this.resolveProfile(accountId);
+    if (!this.conns.has(accountId)) return;
+    this.matchsvc.duelInvite(accountId, name, publicId, equippedTitle, avatarId, resolved.accountId, deck);
+  }
+
+  /** Accept/decline a friend-challenge invite. Only accept needs the responder's own profile + deck
+   *  (elo-gated same as create/join) — decline is a plain pass-through, no lookups needed. */
+  private async handleDuelRespond(accountId: string, inviteId: string, accept: boolean, submittedDeck: string[]): Promise<void> {
+    if (!accept) {
+      this.matchsvc.duelRespond(accountId, inviteId, false);
+      return;
+    }
+    const { elo } = await this.meta.getElo(accountId);
+    if (!this.conns.has(accountId)) return;
+    const deck = this.resolvedDeck(accountId, submittedDeck, elo);
+    const { name, publicId, equippedTitle, avatarId } = await this.resolveProfile(accountId);
+    if (!this.conns.has(accountId)) return;
+    this.matchsvc.duelRespond(accountId, inviteId, true, name, publicId, equippedTitle, avatarId, deck);
   }
 
   /**
@@ -650,5 +700,9 @@ function toServerMsg(msg: PushMsg): ServerMsg {
         body: msg.body,
         ts: msg.ts,
       };
+    case 'duel_invited':
+      return { case: 'duel_invited', inviteId: msg.inviteId, fromPublicId: msg.fromPublicId, fromName: msg.fromName };
+    case 'duel_cancelled':
+      return { case: 'duel_cancelled', inviteId: msg.inviteId, reason: msg.reason };
   }
 }

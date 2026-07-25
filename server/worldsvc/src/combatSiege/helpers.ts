@@ -164,6 +164,14 @@ export function SiegeHelpersMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, defenderId) });
       if (!pw) return;
 
+      // ADR-051 (P5b): before wiping the territory, sweep any arrow-tower coverage it registered — the tiles are
+      // deleted below (structure gone with them), so only the Redis `cover` reverse index needs the explicit
+      // removeCover, exactly like abandonTile/landSiege. Blockers register no coverage, so only towers matter.
+      const towerTiles = await cols.tiles
+        .find({ worldId, ownerId: defenderId, 'structure.kind': 'arrowTower' })
+        .toArray();
+      for (const tt of towerTiles) await this.core.removeCover(worldId, tt.x, tt.y, tt._id);
+
       // Lose territory: delete all of the player's own tiles (old capital + all territory); revert to procedural neutral.
       await cols.tiles.deleteMany({ worldId, ownerId: defenderId });
 

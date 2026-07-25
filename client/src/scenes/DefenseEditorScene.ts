@@ -45,6 +45,7 @@ import { ATTACK_LANES, BASE_COLS, BASE_UPGRADE_COSTS, CARD_DEFINITIONS, UNIT_BLU
 import { CardType, UnitType, BuildingType } from '../game/types';
 import type { SaveData, CardInstance } from '../game/meta/SaveData';
 import { CARD_DEFS, troopCap, cardPower } from '../game/meta/cardDefs';
+import { teamTroopCap, teamLeaderCard } from '../game/meta/teamTroops';
 import { CARD_TEAM_MAX_SIZE } from '@nw/shared';
 
 /** Max defender base upgrade level the engine schema accepts (0..BASE_UPGRADE_COSTS.length). */
@@ -96,6 +97,8 @@ type Tool =
   | { kind: 'unit'; type: UnitType }
   | { kind: 'building'; type: BuildingType }
   | { kind: 'card'; cardInstanceId: string; unitType: UnitType }
+  // Attack mode: tap a placed card to make it the team's leader (its portrait becomes the team icon).
+  | { kind: 'leader' }
   | { kind: 'erase' };
 
 // Defender deployment zone shown top→bottom: building row first, then garrison rows
@@ -142,6 +145,10 @@ export class DefenseEditorScene implements Scene {
   // Attack mode: 占领后自动回城 (2026-07-23). false (default) = the team stays stationed on a tile it moves to /
   // captures; true = it marches home afterward. Persisted on the TeamTemplate via setTeams.
   private autoReturn = false;
+  // Attack mode: the card whose portrait stands for this team in the city / world-map team lists
+  // (2026-07-25). null = never chosen, and the lists fall back to the strongest card — see
+  // teamLeaderCard(). Purely cosmetic today; persisted on the TeamTemplate via setTeams.
+  private leaderCardId: string | null = null;
   // Attack mode: this account's live card ledger (troops/injury/teamId), fetched alongside teams.
   private cardState: Record<string, CardSLGState> = {};
   // Attack mode: the unified base troop pool (playerWorld.troops) available to distribute to this team's
@@ -242,7 +249,11 @@ export class DefenseEditorScene implements Scene {
           this.cardState = me.cardState ?? {};
           this.troops = me.troops ?? 0;
           const team = teams.find((tm) => tm.id === (this.cb.target as { teamId: string }).teamId);
-          if (team) { this.applyArmy(team.army); this.autoReturn = !!team.autoReturn; }
+          if (team) {
+            this.applyArmy(team.army);
+            this.autoReturn = !!team.autoReturn;
+            this.leaderCardId = team.leaderCardId ?? null;
+          }
         }
       } else {
         const cfg = await this.cb.worldApi.getDefense(this.cb.worldId, this.cb.target.tileKey);
@@ -329,7 +340,10 @@ export class DefenseEditorScene implements Scene {
     const { teamId, teamName } = this.cb.target;
     const army = this.buildArmy();
     const next = this.teams.filter((tm) => tm.id !== teamId);
-    next.push({ id: teamId, name: teamName, army, autoReturn: this.autoReturn });
+    const leaderCardId = this.leaderCardId && army.some((e) => e.cardInstanceId === this.leaderCardId)
+      ? this.leaderCardId
+      : undefined;
+    next.push({ id: teamId, name: teamName, army, autoReturn: this.autoReturn, leaderCardId });
     await this.cb.worldApi.setTeams(this.cb.worldId, next);
     this.teams = next;
   }
@@ -627,10 +641,31 @@ export class DefenseEditorScene implements Scene {
     this.bodyLayer.addChild(arLbl);
     this.hits.push({ rect: { x: arBox.x, y: arBox.y, w: arW, h: arH }, action: () => { this.autoReturn = !this.autoReturn; this.render(); } });
 
-    const hint = txt(t('world.team.hint'), FS.micro, C.mid);
+    // 领队 tool (2026-07-25): armed like the erase toggle — while it's active, tapping a placed card
+    // makes that card the team's icon. Deliberately NOT a fixed "leader cell" on the grid: the leader is
+    // an identity, and tying it to a square would force the player to break their formation to change it.
+    const ldActive = this.tool.kind === 'leader';
+    const ldW = 76, ldH = eraseH;
+    const ldX = arX - 8 - ldW;
+    const ldBox = sketchPanel(ldW, ldH, {
+      fill: ldActive ? C.accent : C.paper, border: ldActive ? C.dark : C.accent,
+      width: ldActive ? 2.4 : 1.4, seed: seedFor(ldX, y, ldW),
+    });
+    ldBox.x = ldX; ldBox.y = y + 3;
+    this.bodyLayer.addChild(ldBox);
+    const ldLbl = txt(`★ ${t('world.team.leader')}`, FS.micro, ldActive ? C.light : C.accent, true);
+    ldLbl.anchor.set(0.5, 0.5); ldLbl.x = ldBox.x + ldW / 2; ldLbl.y = ldBox.y + ldH / 2;
+    if (ldLbl.width > ldW - 8) ldLbl.scale.set((ldW - 8) / ldLbl.width);
+    this.bodyLayer.addChild(ldLbl);
+    this.hits.push({ rect: { x: ldBox.x, y: ldBox.y, w: ldW, h: ldH }, action: () => {
+      this.tool = ldActive ? { kind: 'erase' } : { kind: 'leader' };
+      this.render();
+    } });
+
+    const hint = txt(this.tool.kind === 'leader' ? t('world.team.leaderHint') : t('world.team.hint'), FS.micro, C.mid);
     hint.anchor.set(0, 0.5);
     hint.x = x; hint.y = y + h / 2;
-    const hintMax = arX - 8 - x;
+    const hintMax = ldX - 8 - x;
     if (hint.width > hintMax) hint.scale.set(hintMax / hint.width);
     this.bodyLayer.addChild(hint);
 
@@ -774,6 +809,7 @@ export class DefenseEditorScene implements Scene {
 
     const attackSet = new Set<number>(ATTACK_LANES as readonly number[]);
     const [baseLo, baseHi] = BASE_COLS;
+    const leaderId = this.effectiveLeaderId();
 
     // Display rows: (defense only) dr 0 = building row; remaining = this.gRows
     for (let dr = 0; dr < rows; dr++) {
@@ -810,7 +846,7 @@ export class DefenseEditorScene implements Scene {
             const u = this.garrison.get(key);
             if (u) {
               const cap = this.mode === 'attack' && u.cardInstanceId ? this.capForCard(u.cardInstanceId) : undefined;
-              this.drawUnit(g, px, py, cellW, cellH, u.unitType, u.hp, cap);
+              this.drawUnit(g, px, py, cellW, cellH, u.unitType, u.hp, cap, !!u.cardInstanceId && u.cardInstanceId === leaderId);
             }
           }
         }
@@ -842,14 +878,15 @@ export class DefenseEditorScene implements Scene {
     }
   }
 
-  private drawUnit(g: PIXI.Graphics, px: number, py: number, cw: number, ch: number, type: UnitType, hp?: number, cap?: number): void {
+  private drawUnit(g: PIXI.Graphics, px: number, py: number, cw: number, ch: number, type: UnitType, hp?: number, cap?: number, isLeader = false): void {
     const cx = px + cw / 2, cy = py + ch / 2;
     const size = Math.min(cw, ch) * 0.72;
     const bx = cx - size / 2, by = cy - size / 2;
     const artUrl = UNIT_ART_URLS[type];
     if (artUrl) {
       const frame = sketchPanel(size, size, {
-        fill: 0xf0eee7, border: 0x33425a, width: 1.2, seed: seedFor(px, py, size),
+        // The leader wears a gold frame so its portrait reads as "this is the team" even before the ★.
+        fill: 0xf0eee7, border: isLeader ? C.gold : 0x33425a, width: isLeader ? 2.4 : 1.2, seed: seedFor(px, py, size),
       });
       frame.x = bx; frame.y = by;
       this.bodyLayer.addChild(frame);
@@ -874,6 +911,14 @@ export class DefenseEditorScene implements Scene {
       g.beginFill(barColor, 1);
       g.drawRect(bx, byBar, barW * ratio, barH);
       g.endFill();
+    }
+
+    // ★ badge on the team's leader (the card whose portrait represents the team elsewhere).
+    if (isLeader) {
+      const star = txt('★', FS.small, C.gold, true);
+      star.anchor.set(0.5, 0.5);
+      star.x = bx + size - 2; star.y = by + 2;
+      this.bodyLayer.addChild(star);
     }
 
     // Live troop count under the icon — a card's cardState ledger, not a blueprint-relative HP fraction
@@ -912,7 +957,10 @@ export class DefenseEditorScene implements Scene {
    */
   private renderAttackHeaderControls(headerH: number): void {
     const { w } = this;
-    const countsStr = `${t('world.defense.garrison').replace('{n}', String(this.garrison.size))}   ${t('world.team.committed').replace('{n}', String(this.committedTroops()))}   ${t('world.team.pool').replace('{n}', String(this.troops))}`;
+    const troopsStr = `${this.committedTroops()}/${this.teamCapacity()}`;
+    // "Garrison N" used to head this readout, but in attack mode N is the number of hero cards placed,
+    // not a garrison size — it sat next to the troop count and read as if the two measured the same thing.
+    const countsStr = `${t('world.team.cards').replace('{n}', String(this.garrison.size))}   ${t('world.team.committed').replace('{n}', troopsStr)}   ${t('world.team.pool').replace('{n}', String(this.troops))}`;
     // ~2x the old FS.small readout — approved 2026-07-23 (user: PC screen, top-bar text too small).
     const counts = txt(countsStr, FS.title, C.dark, true);
     counts.anchor.set(0, 0.5);
@@ -953,23 +1001,26 @@ export class DefenseEditorScene implements Scene {
     this.bodyLayer.addChild(clear);
 
     if (this.mode === 'attack') {
+      const fillFull = this.teamCapacity() > 0 && this.committedTroops() >= this.teamCapacity();
       const fillW = 84 * scale;
-      const fill = sketchPanel(fillW, btnH, { fill: C.paper, border: C.gold, seed: seedFor(rightEdge, top + 2, fillW) });
+      const fill = sketchPanel(fillW, btnH, { fill: C.paper, border: fillFull ? C.mid : C.gold, seed: seedFor(rightEdge, top + 2, fillW) });
       fill.x = clear.x - fillW - gap; fill.y = cy;
       this.bodyLayer.addChild(fill);
-      const fillLbl = txt(t('world.team.fill'), labelSize, C.dark, true);
+      const fillLbl = txt(t('world.team.fill'), labelSize, fillFull ? C.mid : C.dark, true);
       fillLbl.anchor.set(0.5, 0.5);
       fillLbl.x = fill.x + fillW / 2; fillLbl.y = fill.y + btnH / 2;
       if (fillLbl.width > fillW - 6) fillLbl.scale.set((fillW - 6) / fillLbl.width);
       this.bodyLayer.addChild(fillLbl);
-      this.hits.push({ rect: { x: fill.x, y: fill.y, w: fillW, h: btnH }, action: () => void this.doFillTroops() });
+      if (!fillFull) {
+        this.hits.push({ rect: { x: fill.x, y: fill.y, w: fillW, h: btnH }, action: () => void this.doFillTroops() });
+      }
     }
     const clearLbl = txt(t('world.defense.clear'), labelSize, C.red, true);
     clearLbl.anchor.set(0.5, 0.5);
     clearLbl.x = clear.x + btnW / 2; clearLbl.y = clear.y + btnH / 2;
     this.bodyLayer.addChild(clearLbl);
     this.hits.push({ rect: { x: clear.x, y: clear.y, w: btnW, h: btnH }, action: () => {
-      this.buildings.clear(); this.garrison.clear(); this.baseLevel = 0; this.render();
+      this.buildings.clear(); this.garrison.clear(); this.baseLevel = 0; this.leaderCardId = null; this.render();
     } });
   }
 
@@ -980,6 +1031,26 @@ export class DefenseEditorScene implements Scene {
       sum += entry.cardInstanceId ? (this.cardState[entry.cardInstanceId]?.currentTroops ?? 0) : entry.hp;
     }
     return sum;
+  }
+
+  /** Sum of troopCap() over placed cards — the formation's max troop capacity, for the "committed/cap" readout and the Fill-troops disabled state. */
+  private teamCapacity(): number {
+    return teamTroopCap(this.buildArmy(), this.cb.getSave?.().cardInv);
+  }
+
+  /**
+   * The card currently standing for this team — the explicit 领队 pick, or the strongest placed card
+   * while none has been made. Drawn with a ★ on the grid so the player can see which portrait the city /
+   * world-map lists will use, including the automatic one they never chose.
+   */
+  private effectiveLeaderId(): string | undefined {
+    if (this.mode !== 'attack') return undefined;
+    const save = this.cb.getSave?.();
+    return teamLeaderCard(
+      { army: this.buildArmy(), leaderCardId: this.leaderCardId ?? undefined },
+      save?.cardInv,
+      save?.equipmentInv,
+    )?.id;
   }
 
   // ── Cell placement ───────────────────────────────────────────────────────────
@@ -1010,7 +1081,14 @@ export class DefenseEditorScene implements Scene {
       // Garrison / army row
       const row = this.gRows[dr - buildRows]!;
       const key = `${col}:${row}`;
-      if (this.tool.kind === 'erase') {
+      if (this.tool.kind === 'leader') {
+        const entry = this.garrison.get(key);
+        if (!entry?.cardInstanceId) {
+          this.showToast(t('world.team.leaderNeedsCard'), C.red);
+          return;
+        }
+        this.leaderCardId = entry.cardInstanceId;
+      } else if (this.tool.kind === 'erase') {
         this.garrison.delete(key);
       } else if (this.mode === 'attack' && this.tool.kind === 'card') {
         const { cardInstanceId, unitType } = this.tool;

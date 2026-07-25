@@ -96,6 +96,28 @@ export function startInternalHttp(
           case '/mm/conn/disconnected':
             svc.onDisconnected(str(b.accountId));
             break;
+          // Friend challenge ("切磋", ADR friends-duel-confirm): gateway has already resolved the
+          // target friend's publicId → accountId (and, for invite, the inviter's own profile/deck).
+          case '/mm/duel/invite':
+            svc.duelInvite(
+              {
+                accountId: str(b.accountId), name: str(b.name), publicId: str(b.publicId),
+                equippedTitle: str(b.equippedTitle), avatarId: str(b.avatarId), deck: strArr(b.deck),
+              },
+              str(b.toAccountId),
+            );
+            break;
+          case '/mm/duel/respond':
+            svc.duelRespond(
+              str(b.accountId), str(b.inviteId), Boolean(b.accept),
+              b.accept
+                ? {
+                    accountId: str(b.accountId), name: str(b.name), publicId: str(b.publicId),
+                    equippedTitle: str(b.equippedTitle), avatarId: str(b.avatarId), deck: strArr(b.deck),
+                  }
+                : undefined,
+            );
+            break;
           // —— gameserver registration / heartbeat ——
           case '/mm/game/register':
             if (!b.gameId || !b.wsUrl) {

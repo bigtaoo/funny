@@ -45,7 +45,7 @@ function buildScene(openFamilyHub: () => void, openSectHub: () => void): any {
     addFriend: async () => {},
     respond: async () => {},
     removeFriend: async () => {},
-    blockUser: async () => {},
+    blockUser: async () => {}, duelInvite: () => {}, duelRespond: () => {},
     loadConversations: async () => [],
     openChat() {},
     loadMail: async () => ({ mail: [], unread: 0 }),

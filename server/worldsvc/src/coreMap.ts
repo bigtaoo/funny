@@ -45,7 +45,9 @@ export class WorldCoreMap extends WorldCoreVision {
     const baseByKey = new Map(baselines.map((b) => [`${b.x}:${b.y}`, b]));
 
     const now = this.deps.now(); // D-CITY-8: shared `now` for lazy durability regen across the whole viewport batch
-    // G5 vision: compute the requester's currently visible tile set (own/family territory + capitals + in-transit marches), gate the dynamic layer per tile.
+    // G5 vision: compute the requester's currently visible tile set (own/family territory + capitals + in-transit marches).
+    // Fog now gates only INTEL (garrison / HP / watchtower) per tile — the static structure layer (location /
+    // ownership / base identity / level / occupation state) is public map-wide (2026-07-24 fog-model change, see gateIntel).
     const sources = await this.computeVisionSources(worldId, accountId, x0, x1, y0, y1);
     const vis = (x: number, y: number): boolean => isInVision(sources, x, y);
     // Family member set (including self): visible family ally territory is tagged ally (client renders in friendly color, not enemy color).
@@ -53,10 +55,12 @@ export class WorldCoreMap extends WorldCoreVision {
     // Allied sect member set (≤2 allied sects): visible allied territory is tagged allySect (client renders yellow border, §8.2).
     const allySect = await this.allySectMemberIds(worldId, accountId);
 
-    // Batch-resolve display names for other players' territory: only fetch profiles for "visible other players' territory" (outside vision, ownership is not shown, so no profile needed).
+    // Batch-resolve display names for every other player's territory in the viewport. Ownership is now public
+    // map-wide (fog gates only marching troops + garrison/HP intel), so owner names show regardless of vision —
+    // no `vis()` filter here.
     const otherOwnerIds = [...new Set(
       overrides
-        .filter((o) => o.ownerId && o.ownerId !== accountId && vis(o.x, o.y))
+        .filter((o) => o.ownerId && o.ownerId !== accountId)
         .map((o) => o.ownerId!),
     )];
     const profileMap = new Map<string, PlayerProfile>();
@@ -72,20 +76,16 @@ export class WorldCoreMap extends WorldCoreVision {
     const tiles: WorldTileView[] = [];
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
-        if (!vis(x, y)) {
-          // Outside vision: return only the terrain baseline; all dynamic layers (including the "occupied" signal) are hidden.
-          tiles.push({ ...this.terrainView(worldId, x, y, baseByKey.get(`${x}:${y}`)), visible: false });
-          continue;
-        }
         const o = byKey.get(`${x}:${y}`);
         const ownerProfile = (o?.ownerId && o.ownerId !== accountId)
           ? profileMap.get(o.ownerId) : undefined;
         const view = o ? this.tileDocView(o, accountId, ownerProfile, now) : this.terrainView(worldId, x, y, baseByKey.get(`${x}:${y}`));
         const ally = !!o?.ownerId && o.ownerId !== accountId && family.has(o.ownerId);
-        // Alliance tag: visible, not own tile, not family, belongs to an allied sect member (family ally takes priority; the two are mutually exclusive).
+        // Alliance tag: not own tile, not family, belongs to an allied sect member (family ally takes priority; the two are mutually exclusive).
         const allied = !ally && !!o?.ownerId && o.ownerId !== accountId && allySect.has(o.ownerId);
+        // Static structure layer is public map-wide; only intel (garrison/HP/watchtower) is fog-gated (see gateIntel).
         tiles.push({
-          ...view,
+          ...this.gateIntel(view, vis(x, y)),
           visible: true,
           ...(ally ? { ally: true } : {}),
           ...(allied ? { allySect: true } : {}),
@@ -154,10 +154,10 @@ export class WorldCoreMap extends WorldCoreVision {
     ]);
     if (!o) return this.terrainView(worldId, x, y, baseline);
     const sources = await this.computeVisionSources(worldId, accountId, x, x, y, y);
-    if (!isInVision(sources, x, y)) return { ...this.terrainView(worldId, x, y, baseline), visible: false };
     const ownerProfile = (o.ownerId && o.ownerId !== accountId && this.meta.available)
       ? await this.meta.getProfile(o.ownerId).catch(() => null) : undefined;
-    return { ...this.tileDocView(o, accountId, ownerProfile ?? undefined), visible: true };
+    // Structure/ownership is public map-wide; only intel (garrison/HP/watchtower) needs vision (same gate as getMap).
+    return { ...this.gateIntel(this.tileDocView(o, accountId, ownerProfile ?? undefined), isInVision(sources, x, y)), visible: true };
   }
 
   /** Player state in the world: resources are lazily settled (computed on read as yieldRate × dt, capped at RESOURCE_CAP). §14.3. */
@@ -217,8 +217,34 @@ export class WorldCoreMap extends WorldCoreVision {
       ...(o.contestedUntil ? { contestedUntil: o.contestedUntil } : {}),
       ...(o.contestedBy === accountId ? { contestedByMe: true } : {}),
       ...(o.watchtower ? { watchtower: true } : {}),
+      ...(o.structure ? { structure: {
+        kind: o.structure.kind,
+        level: o.structure.level,
+        hp: o.structure.hp,
+        hpMax: o.structure.hpMax,
+        ...(o.structure.ownerId === accountId ? { mine: true } : {}),
+      } } : {}),
       ...(o.deskLevel ? { deskLevel: o.deskLevel } : {}),
     };
+  }
+
+  /**
+   * Fog of war hides only marching troops, not static structures (2026-07-24 fog-model change): a tile's
+   * location / ownership / base identity / level / occupation state is public map-wide — a player can always
+   * see WHERE others are. Only the *intel* fields — garrison strength, siege durability (hp/maxHp), and
+   * watchtower presence — stay vision-gated, preserving the value of scouting. In vision → returned as-is;
+   * out of vision → intel stripped (the structure still renders, just without troop/durability readouts).
+   */
+  private gateIntel(view: WorldTileView, inVision: boolean): WorldTileView {
+    if (inVision) return view;
+    const gated = { ...view };
+    delete gated.garrison;
+    delete gated.hp;
+    delete gated.maxHp;
+    delete gated.watchtower;
+    // Structure stays visible (public static layer) but its durability readout is intel — strip hp/hpMax.
+    if (gated.structure) gated.structure = { kind: gated.structure.kind, level: gated.structure.level, ...(gated.structure.mine ? { mine: true } : {}) };
+    return gated;
   }
 
   /**

@@ -8,6 +8,7 @@
  */
 import * as PIXI from 'pixi.js-legacy';
 import { CardDefinition, CardType, UnitType, BuildingType, SpellType } from '../game/types';
+import { CARD_DEFS } from '../game/meta/cardDefs';
 import { preloadTextureList, ART_TEX_OPTIONS } from '../assets/preloadTextures';
 import infantryArtUrl from '../assets/infantry.png';
 import archerArtUrl from '../assets/archer.png';
@@ -69,6 +70,16 @@ export const UNIT_ART_URLS: Record<string, string> = {
   lena:         lenaArtUrl as string,
   mara:         maraArtUrl as string,
 };
+
+/**
+ * Portrait for an owned character-card instance (CC-3): defId → CARD_DEFS.unitType → UNIT_ART_URLS.
+ * Every scene that shows a card's picture (formation editor, city team row, world-map team picker)
+ * goes through here so they can never drift onto different art for the same card.
+ */
+export function cardInstanceArtUrl(card: { defId: string } | undefined | null): string | null {
+  const def = card ? CARD_DEFS[card.defId] : undefined;
+  return def ? UNIT_ART_URLS[def.unitType] ?? null : null;
+}
 
 /** Texture cache keyed by url — shared with the `PIXI.Texture.from` global cache. */
 export function getArtTexture(url: string): PIXI.Texture {

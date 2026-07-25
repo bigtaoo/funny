@@ -68,7 +68,7 @@ function build(): { scene: any; input: InputManager } {
     addFriend: async () => {},
     respond: async () => {},
     removeFriend: async () => {},
-    blockUser: async () => {},
+    blockUser: async () => {}, duelInvite: () => {}, duelRespond: () => {},
     loadConversations: async () => [],
     openChat() {},
     loadMail: async () => ({ mail: [], unread: 0 }),

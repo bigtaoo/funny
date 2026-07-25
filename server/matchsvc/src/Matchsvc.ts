@@ -47,7 +47,14 @@ export type PushMsg =
   // kept as `string` on the wire (transport.proto field is string) to avoid a proto/codegen
   // change; parse with Number(...) on the receiving end. Rolled by pickBotDifficulty(elo).
   | { kind: 'match_bot'; seed: number; opponentName: string; elo: number; difficulty: string }
-  | { kind: 'room_error'; code: string; message: string };
+  | { kind: 'room_error'; code: string; message: string }
+  // Friend-challenge ("切磋") invite, pushed to the invited friend (gateway resolves their publicId
+  // → accountId before calling duelInvite). Accepting skips straight to match_found (startMatch) —
+  // there is no separate "duel accepted" push.
+  | { kind: 'duel_invited'; inviteId: string; fromPublicId: string; fromName: string }
+  // Pushed back to the inviter on the unhappy path only. reason: declined | timeout | offline | not_found
+  // (the last two originate at the gateway, before a matchsvc invite record even exists).
+  | { kind: 'duel_cancelled'; inviteId: string; reason: string };
 
 /**
  * Push callback. `roomId` is a cross-process correlation id — it is included in logs across
@@ -80,11 +87,28 @@ interface Room {
   reapTimer: NodeJS.Timeout | null;
 }
 
+/** Player identity + loadout carried by a pending duel invite, same shape startMatch() takes for each side. */
+interface DuelPlayer {
+  accountId: string;
+  name: string;
+  publicId: string;
+  equippedTitle: string;
+  avatarId: string;
+  deck: string[];
+}
+interface DuelInvite {
+  inviteId: string;
+  from: DuelPlayer;
+  toAccountId: string;
+  timer: NodeJS.Timeout;
+}
+
 // MUST stay identical to client RoomScene.ts (its keypad can only type these
 // chars). 10 digits + 11 letters; letters skip I/O/L so they don't read as 0/1.
 export const CODE_ALPHABET = '0123456789ABCDEFGHJKM';
 const CODE_LEN = 6;
 const REAP_MS = 60_000; // grace period to keep the room after all players disconnect
+const DUEL_TIMEOUT_MS = 60_000; // friend-challenge response window (ADR: friends-duel-confirm)
 
 export interface MatchsvcOpts {
   ticketTtlSec?: number;
@@ -104,6 +128,8 @@ export class Matchsvc {
   private readonly rooms = new Map<string, Room>(); // roomId → room
   private readonly byCode = new Map<string, string>(); // code → roomId
   private readonly accountRoom = new Map<string, string>(); // accountId → roomId
+  private readonly duelInvites = new Map<string, DuelInvite>(); // inviteId → invite
+  private readonly pendingDuelByAccount = new Map<string, string>(); // fromAccountId → inviteId (one outstanding sent invite at a time)
   private readonly matchmaking: Matchmaking;
   private readonly internalKey: string;
   private readonly ticketTtlSec: number;
@@ -298,6 +324,68 @@ export class Matchsvc {
     const room = this.roomOf(accountId);
     if (!room) return;
     this.removeFromRoom(room, accountId);
+  }
+
+  // ───────────────────────── Friend challenge ("切磋") ─────────────────────────
+  // No room code exchange: the gateway already knows both accountIds (its own connection for the
+  // inviter, resolved from the target's publicId for the invitee) — this is a pending-invite +
+  // 60s-timeout layer on top of the same startMatch() the room-ready flow already uses.
+
+  /** `from` is fully resolved by the gateway (profile + elo-validated deck) before this is called. */
+  duelInvite(from: DuelPlayer, toAccountId: string): void {
+    // A second invite from the same inviter replaces the first (re-clicking "duel" reads as "retry",
+    // not "queue another one") — cancel the stale one the same way a decline would.
+    const prevId = this.pendingDuelByAccount.get(from.accountId);
+    if (prevId) this.cancelDuel(prevId, 'declined');
+
+    const inviteId = randomUUID();
+    const timer = setTimeout(() => this.expireDuel(inviteId), DUEL_TIMEOUT_MS);
+    timer.unref?.();
+    this.duelInvites.set(inviteId, { inviteId, from, toAccountId, timer });
+    this.pendingDuelByAccount.set(from.accountId, inviteId);
+    log.info('duel invite sent', { from: from.accountId, toAccountId, inviteId });
+    this.push(toAccountId, { kind: 'duel_invited', inviteId, fromPublicId: from.publicId, fromName: from.name });
+  }
+
+  /**
+   * `toAccountId` must be the invite's actual recipient (mismatched/unknown inviteId is silently
+   * ignored — stale UI on a slow client, nothing to correct). `profile` is the responder's own
+   * resolved identity + elo-validated deck (gateway); omitted on decline, required to accept.
+   */
+  duelRespond(toAccountId: string, inviteId: string, accept: boolean, profile?: DuelPlayer): void {
+    const invite = this.duelInvites.get(inviteId);
+    if (!invite || invite.toAccountId !== toAccountId) return;
+    clearTimeout(invite.timer);
+    this.duelInvites.delete(inviteId);
+    this.pendingDuelByAccount.delete(invite.from.accountId);
+    if (!accept || !profile) {
+      log.info('duel declined', { inviteId, from: invite.from.accountId, toAccountId });
+      this.push(invite.from.accountId, { kind: 'duel_cancelled', inviteId, reason: 'declined' });
+      return;
+    }
+    log.info('duel accepted -> startMatch', { inviteId, from: invite.from.accountId, toAccountId });
+    this.startMatch('friendly', invite.from, profile);
+  }
+
+  /** Invite timed out with no response (60s) — notify the inviter only; the never-responding
+   *  invitee's client self-clears the banner locally once its own countdown reaches zero. */
+  private expireDuel(inviteId: string): void {
+    const invite = this.duelInvites.get(inviteId);
+    if (!invite) return;
+    this.duelInvites.delete(inviteId);
+    this.pendingDuelByAccount.delete(invite.from.accountId);
+    log.info('duel invite timed out', { inviteId, from: invite.from.accountId });
+    this.push(invite.from.accountId, { kind: 'duel_cancelled', inviteId, reason: 'timeout' });
+  }
+
+  /** Shared by duelInvite's replace-on-reinvite path; same effect as a decline from the invitee's side. */
+  private cancelDuel(inviteId: string, reason: string): void {
+    const invite = this.duelInvites.get(inviteId);
+    if (!invite) return;
+    clearTimeout(invite.timer);
+    this.duelInvites.delete(inviteId);
+    this.pendingDuelByAccount.delete(invite.from.accountId);
+    this.push(invite.from.accountId, { kind: 'duel_cancelled', inviteId, reason });
   }
 
   // ───────────────────────── Connection lifecycle (gateway notifications) ─────────────────────────

@@ -46,6 +46,25 @@ export class MetaClient {
   }
 
   /**
+   * publicId → accountId reverse lookup (friend-challenge invite, ADR friends-duel-confirm): the
+   * client only ever knows a friend's publicId, never their accountId. Mirrors socialsvc's
+   * HttpSocialMetaClient.resolveByPublicId — same metaserver endpoint, different caller header.
+   * meta not configured / not found / error → null.
+   */
+  async resolveByPublicId(publicId: string): Promise<{ accountId: string } | null> {
+    if (!this.baseUrl) return null;
+    try {
+      const url = `${this.baseUrl}/internal/account/by-public-id/${encodeURIComponent(publicId)}`;
+      const res = await fetch(url, { headers: internalHeaders('gateway', this.internalKey) });
+      if (!res.ok) return null;
+      const body = (await res.json()) as { accountId?: string };
+      return body.accountId ? { accountId: body.accountId } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Fetch the list of friend accountIds for an account (presence broadcast scope, SOC9). meta not configured / error → empty.
    */
   async getFriends(accountId: string): Promise<string[]> {

@@ -71,7 +71,9 @@ export class WorldMapContext {
   marches: MarchView[] = [];
   /** Own active occupation-holds (2026-07-15) — used alongside marches for the team-picker busy gate. */
   occupations: OccupationView[] = [];
-  /** Own teams stationed on tiles (2026-07-23) — drives the idle-sprite rendering (fog.ts syncStationedTokens) and the team-picker busy gate. */
+  /** Teams stationed on tiles — drives the idle-sprite rendering (fog.ts syncStationedTokens) and the team-picker busy gate.
+   * ADR-051 (P4): includes ENEMY stationed teams within vision (mine === false) for field-troop + garrison-zone
+   * rendering; own-only consumers (busy gate, recall / in-place-occupy lookups) must filter mine !== false. */
   stationed: StationedView[] = [];
   nations: NationView[] = [];
   season: SeasonView | null = null;

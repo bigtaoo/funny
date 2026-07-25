@@ -12,13 +12,16 @@
 // (candidate list + Fuse/Cancel), side by side, so the whole panel uses the wide aspect instead of
 // stacking everything down the middle.
 //
-// Auto-retarget + auto-continue (2026-07-20, revised 2026-07-22): if the tapped target doesn't have 5
-// eligible materials on hand, the panel silently swaps in the best fusable card instead (highest level
-// first) and toasts the player. After a successful fuse of a level-1/2 target, the panel prefers to
-// KEEP the just-upgraded card (it retains its id, now one level higher) as the target and continue on
-// it while it's still fusable; only when it can't be fused further does it drop back to a lower-level
-// card that still has materials (toasting why the target changed). Level-3+ targets fuse once and
-// close, requiring the player to reopen the dialog for the next round.
+// Auto-retarget + auto-continue (2026-07-20, revised 2026-07-22, toast trimmed 2026-07-25): if the
+// tapped target doesn't have 5 eligible materials on hand, the panel silently swaps in the best fusable
+// card instead (highest level first) and toasts the player. After a successful fuse of a level-1/2
+// target, the panel prefers to KEEP the just-upgraded card (it retains its id, now one level higher) as
+// the target and continue on it while it's still fusable; only when it can't be fused further does it
+// drop back to a lower-level card that still has materials — silently, no toast (the ring already shows
+// the swap by changing which portrait sits at the center; the "auto-continue" fast-forward hits this
+// branch on nearly every fuse, so a toast here fired far too often — see roster.fuseAutoRetarget below,
+// which stays toasted since it only fires once per panel-open). Level-3+ targets fuse once and close,
+// requiring the player to reopen the dialog for the next round.
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
@@ -26,6 +29,7 @@ import { snapFont } from '../../render/fontScale';
 import { FACTION_COLOR } from '../../render/factionIcon';
 import { UNIT_ART_URLS, getArtTexture } from '../../render/cardArt';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
+import { buildIcon } from '../../render/icons';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import type { Rect } from '../../layout/ILayout';
 import type { CardInstance } from '../../game/meta/SaveData';
@@ -228,12 +232,13 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
             return;
           }
           // Priority 2: the upgraded card can't continue — drop back to a lower-level card that still
-          // has materials (prefer another copy of the same character), and say why the target changed.
+          // has materials (prefer another copy of the same character). No toast: this branch fires on
+          // nearly every fuse once auto-continue exhausts a low-level card, and the ring already shows
+          // the swap by changing which portrait sits at the center (2026-07-25, was too frequent/long).
           const fallback = findAutoTarget(2, currentTarget.defId) ?? findAutoTarget(1, currentTarget.defId);
           if (fallback) {
             currentTarget = fallback;
             slotIds.fill(null);
-            this.showToast(t('roster.fuseCantContinue'), C.gold);
             drawFusePanel();
             return;
           }
@@ -329,9 +334,21 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
           }
 
           drawPortrait(currentTarget.id, ringCx, ringCy, centerR, def.faction);
-          const lvlLbl = txt(`Lv.${currentTarget.level}`, snapFont(9 * S), C.dark, true);
-          lvlLbl.anchor.set(0.5, 0); lvlLbl.x = ringCx; lvlLbl.y = ringCy + centerR + 2 * S;
-          ml.addChild(lvlLbl);
+          // Level as a row of gold stars, not "Lv.N" text (2026-07-25) — matches the roster grid
+          // (list.ts) / detail modal (detail.ts) convention: one filled star per level, capped at 9.
+          const stars = new PIXI.Container();
+          stars.name = 'levelStars';
+          const starN = Math.max(1, Math.min(9, currentTarget.level));
+          const starSize = 8 * S;
+          const starGap = 2 * S;
+          for (let i = 0; i < starN; i++) {
+            const st = buildIcon('star', starSize, C.gold);
+            st.x = i * (starSize + starGap);
+            stars.addChild(st);
+          }
+          const starsW = starN * starSize + (starN - 1) * starGap;
+          stars.x = ringCx - starsW / 2; stars.y = ringCy + centerR + 2 * S;
+          ml.addChild(stars);
 
           const slotPositions: { x: number; y: number }[] = [];
           for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
@@ -425,8 +442,11 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
               }
             }
 
+            // Level suffix dropped (2026-07-25): every row already matches the target's current level
+            // (fusionMaterialCandidates enforces it), and the level itself now shows once as stars on
+            // the ring target above — restating "Lv.N" per row was redundant.
             const matName = t(`card.${g.defId}.name` as TranslationKey);
-            const nameLbl = txt(`${matName} Lv.${currentTarget.level}`, snapFont(11 * S), C.dark, true);
+            const nameLbl = txt(matName, snapFont(11 * S), C.dark, true);
             nameLbl.anchor.set(0, 0.5); nameLbl.x = thumbX + thumbBox + 8 * S; nameLbl.y = rowTop + rowH / 2;
             listC.addChild(nameLbl);
 

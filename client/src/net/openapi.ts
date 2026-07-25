@@ -3249,7 +3249,7 @@ export interface operations {
                 "application/json": {
                     /** @description Id of the equipment instance to reforge */
                     targetId: string;
-                    /** @description Id of the material equipment instance to consume (same slot, one tier lower, e.g. rare → requires fine) */
+                    /** @description Id of the material equipment instance to consume (same slot, one tier lower, e.g. rare → requires fine; must be unenhanced, i.e. level 0) */
                     materialId: string;
                     /** @description Client-generated idempotency key; re-roll is bound to this key; replay returns the first result */
                     idempotencyKey: string;

@@ -11,6 +11,7 @@ import type { CardInstance } from './SaveData';
 import type { EquipmentInstance } from './SaveData';
 import type { EngineCardInstance, UnitType } from '@nw/engine';
 import { CARD_INV_CAP, CARD_INV_OVERFLOW_BUFFER, MAX_CARD_LEVEL, FUSION_MATERIAL_COUNT } from '@nw/shared/cards';
+import { UNIT_BLUEPRINTS } from '../config';
 
 export { CARD_INV_CAP, CARD_INV_OVERFLOW_BUFFER, MAX_CARD_LEVEL, FUSION_MATERIAL_COUNT };
 
@@ -63,6 +64,20 @@ export function troopCap(card: CardInstance): number {
   if (!def) return 0;
   const lv = Math.max(1, Math.min(Math.floor(card.level), MAX_CARD_LEVEL));
   return def.troopCapBase + def.troopCapGrowth * (lv - 1);
+}
+
+/** Base HP for a card's unit type (engine blueprint — see UNIT_BLUEPRINTS[unitType].hp, not per-level). */
+export function cardHp(card: CardInstance): number {
+  const def = CARD_DEFS[card.defId];
+  if (!def) return 0;
+  return UNIT_BLUEPRINTS[def.unitType as UnitType]?.hp ?? 0;
+}
+
+/** Structure-damage rating for a card's unit type (engine blueprint — see UNIT_BLUEPRINTS[unitType].siegeValue). */
+export function cardSiegeValue(card: CardInstance): number {
+  const def = CARD_DEFS[card.defId];
+  if (!def) return 0;
+  return UNIT_BLUEPRINTS[def.unitType as UnitType]?.siegeValue ?? 0;
 }
 
 /** Approximate combat power score (CHARACTER_CARDS_DESIGN §2.4). Same proxy formula as server/shared/src/cards.ts. */

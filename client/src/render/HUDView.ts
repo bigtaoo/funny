@@ -565,7 +565,7 @@ export class HUDView {
   }
 
   private setUpgradeBtnStyle(enabled: boolean): void {
-    const variant: HudButtonVariant = enabled ? 'primary' : 'disabled';
+    const variant: HudButtonVariant = enabled ? 'gold' : 'disabled';
     this.upgradeBtnBg.clear();
     drawHudButton(this.upgradeBtnBg, this.actionBtnW, this.actionBtnH, variant, { radius: 6 });
     this.upgradeBtnLabel.style.fill = hudButtonText(variant);

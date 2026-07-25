@@ -5,7 +5,7 @@ import { buildIcon } from '../../render/icons';
 import { WorldApiError } from '../../net/WorldApiClient';
 import type { TeamTemplate } from '../../net/WorldApiClient';
 import { carriedTroops } from '../../game/meta/teamTroops';
-import { proceduralTile } from '@nw/shared';
+import { proceduralTile, ARROW_TOWER_COST, BLOCKER_COST } from '@nw/shared';
 import { loadResAtlas, getResTexture, isResAtlasReady } from '../../render/resAtlasLoader';
 import { loadCityAtlas, getCityTexture, isCityAtlasReady } from '../../render/cityAtlasLoader';
 import { loadTerrainAtlas, getTerrainTexture, isTerrainAtlasReady } from '../../render/terrainAtlasLoader';
@@ -147,7 +147,7 @@ export class WorldMapNet {
    * For occupy we also keep the legacy "散兵占领" flat-pool option, so early players with no card team can
    * still grab land the old way.
    */
-  async showTeamPicker(tx: number, ty: number, kind: 'attack' | 'occupy' | 'move' = 'attack'): Promise<void> {
+  async showTeamPicker(tx: number, ty: number, kind: 'attack' | 'occupy' | 'move' = 'attack', stationMode?: 'idle' | 'garrison'): Promise<void> {
     const me = this.ctx.me;
     if (!me?.joined || !me.mainBaseTile) { this.ctx.panels.showToast(t('world.needBase'), C.red); return; }
     let teams: TeamTemplate[] = [];
@@ -157,10 +157,12 @@ export class WorldMapNet {
     // Idle-team gate (2026-07-15): a team already committed to an active (non-recalled) march — marching or
     // holding a captured tile — must not accept a new order (mirrors the server-side TEAM_BUSY check in
     // combatMarch.ts, which checks both `marches` and `occupations`).
+    // ADR-051 (P3c): a 停留 idle field team is NOT busy — it can be re-commanded (move / 就地占领) straight from
+    // where it stands, so only 驻扎 garrison stationed teams count as busy here (mirrors the relaxed server gate).
     const busyTeamIds = new Set([
       ...this.ctx.marches.filter((m) => m.mine && m.teamId).map((m) => m.teamId),
       ...this.ctx.occupations.filter((o) => o.teamId).map((o) => o.teamId),
-      ...this.ctx.stationed.map((s) => s.teamId), // stationed = "out in the field" (2026-07-23)
+      ...this.ctx.stationed.filter((s) => s.mine !== false && s.mode === 'garrison').map((s) => s.teamId), // own 驻扎 = locked; own 停留 idle = free; enemy stationed ignored (teamId blanked anyway)
       ...this.pendingTeamIds, // in-flight dispatch not yet reflected in ctx.marches
     ]);
     // Committed troops = the strength the team actually CARRIES, from each card's cardState.currentTroops
@@ -177,27 +179,32 @@ export class WorldMapNet {
       const committed = committedOf(tm);
       buttons.push({
         label: `${tm.name} · ${t('world.team.committed').replace('{n}', String(committed))}`,
-        action: () => void this.doMarchTeam(tx, ty, tm.id, kind),
+        action: () => void this.doMarchTeam(tx, ty, tm.id, kind, stationMode),
       });
     }
     buttons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
+    // 移动并驻扎 (stationMode==='garrison') gets its own picker title so the intent is unmistakable at team-select time.
+    const moveTitle = stationMode === 'garrison' ? t('world.team.pickTitleGarrison') : t('world.team.pickTitleMove');
     const head = usable.length > 0
-      ? (kind === 'occupy' ? t('world.team.pickTitleOccupy') : kind === 'move' ? t('world.team.pickTitleMove') : t('world.team.pickTitle'))
+      ? (kind === 'occupy' ? t('world.team.pickTitleOccupy') : kind === 'move' ? moveTitle : t('world.team.pickTitle'))
       : (kind === 'occupy' ? t('world.team.noTeamsOccupy') : kind === 'move' ? t('world.team.noTeamsMove') : t('world.team.noTeams'));
     this.ctx.panels.showModal([head, `(${tx}, ${ty})`], buttons);
   }
 
-  async doMarchTeam(tx: number, ty: number, teamId: string, kind: 'attack' | 'occupy' | 'move' = 'attack'): Promise<void> {
+  async doMarchTeam(tx: number, ty: number, teamId: string, kind: 'attack' | 'occupy' | 'move' = 'attack', stationMode?: 'idle' | 'garrison'): Promise<void> {
     this.ctx.panels.closeModal();
     const me = this.ctx.me;
     if (!me?.mainBaseTile) { this.ctx.panels.showToast(t('world.needBase'), C.red); return; }
     // Guard against a second dispatch of the same team while the first is still in flight (see pendingTeamIds).
     if (this.pendingTeamIds.has(teamId)) { this.ctx.panels.showToast(t('world.team.busy'), C.red); return; }
     this.pendingTeamIds.add(teamId);
+    // Origin is always the main base for a fresh dispatch. ADR-051 (P3c): if the picked team is actually a 停留
+    // idle field team being re-commanded, worldsvc overrides fromX/fromY to its stationed cell server-side, so
+    // passing the base coords here is harmless (the client can't send a wrong origin that matters).
     const [fx, fy] = this.ctx.parseTileId(me.mainBaseTile);
     try {
       // troops=1 is a placeholder; the server overwrites it with the team's committed troop count (§16.2).
-      const march = await this.ctx.cb.worldApi.startMarch(this.ctx.cb.worldId, fx, fy, tx, ty, kind, 1, teamId);
+      const march = await this.ctx.cb.worldApi.startMarch(this.ctx.cb.worldId, fx, fy, tx, ty, kind, 1, teamId, stationMode);
       if (kind === 'attack') this.ctx.myAttackTiles.add(march.toTile);
       else if (kind === 'occupy') this.ctx.myOccupyTiles.add(march.toTile);
       this.ctx.marches = await this.ctx.cb.worldApi.getMarches(this.ctx.cb.worldId);
@@ -209,6 +216,17 @@ export class WorldMapNet {
     } finally {
       this.pendingTeamIds.delete(teamId);
     }
+  }
+
+  /**
+   * ADR-051 (P4 §4.3): 就地占领 — an idle 停留 team standing on a neutral tile occupies that very tile without
+   * marching. Dispatched as a normal team `occupy` on the tile the team already stands on: worldsvc's P3c
+   * idle-redispatch forces the origin to the team's stationed cell (= this tile), so origin === destination →
+   * a zero-distance occupy that fights the tile's NPC garrison and, on winning the hold, flips it to owned with
+   * the team left standing there (idle). Reuses doMarchTeam verbatim (pendingTeamIds guard, occupy toast/refresh).
+   */
+  async doInPlaceOccupy(tx: number, ty: number, teamId: string): Promise<void> {
+    await this.doMarchTeam(tx, ty, teamId, 'occupy');
   }
 
   async doMarch(tx: number, ty: number, kind: DeployKind, troops: number): Promise<void> {
@@ -354,6 +372,50 @@ export class WorldMapNet {
       this.ctx.tileCache.clear();                                  // new tower expands vision → re-fetch entire viewport to reveal tiles
       await this.loadMapViewport();
       this.ctx.panels.showToast(t('world.watchtowerBuilt'));
+      this.ctx.view.renderMap(); this.ctx.panels.renderHud();
+    } catch (e) {
+      this.ctx.panels.showToast(this.errorMsg(e), C.red);
+    }
+  }
+
+  /** ADR-051 (P5): confirm dialog (shows resource cost) before building a structure; confirm → doBuildStructure. */
+  confirmBuildStructure(tx: number, ty: number, kind: 'arrowTower' | 'blocker'): void {
+    const cost = kind === 'arrowTower' ? ARROW_TOWER_COST : BLOCKER_COST;
+    this.ctx.panels.showModal(
+      [
+        t(kind === 'arrowTower' ? 'world.arrowTowerTitle' : 'world.blockerTitle'),
+        t('world.structureConfirm')
+          .replace('{paper}', String(cost.paper ?? 0))
+          .replace('{metal}', String(cost.metal ?? 0)),
+      ],
+      [
+        { label: t('world.buildBtn'), action: () => void this.doBuildStructure(tx, ty, kind) },
+        { label: '✕', action: () => this.ctx.panels.closeModal() },
+      ],
+    );
+  }
+
+  async doBuildStructure(tx: number, ty: number, kind: 'arrowTower' | 'blocker'): Promise<void> {
+    this.ctx.panels.closeModal();
+    try {
+      await this.ctx.cb.worldApi.buildStructure(this.ctx.cb.worldId, tx, ty, kind);
+      this.ctx.me = await this.ctx.cb.worldApi.getMe(this.ctx.cb.worldId); // resources deducted — refresh
+      this.ctx.tileCache.delete(`${tx}:${ty}`);
+      await this.loadMapViewport();
+      this.ctx.panels.showToast(t('world.structureBuilt'));
+      this.ctx.view.renderMap(); this.ctx.panels.renderHud();
+    } catch (e) {
+      this.ctx.panels.showToast(this.errorMsg(e), C.red);
+    }
+  }
+
+  async doDemolishStructure(tx: number, ty: number): Promise<void> {
+    this.ctx.panels.closeModal();
+    try {
+      await this.ctx.cb.worldApi.demolishStructure(this.ctx.cb.worldId, tx, ty);
+      this.ctx.tileCache.delete(`${tx}:${ty}`);
+      await this.loadMapViewport();
+      this.ctx.panels.showToast(t('world.structureDemolished'));
       this.ctx.view.renderMap(); this.ctx.panels.renderHud();
     } catch (e) {
       this.ctx.panels.showToast(this.errorMsg(e), C.red);

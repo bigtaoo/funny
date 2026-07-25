@@ -214,6 +214,8 @@ export class HeadlessAppViews implements AppViews {
       applyFriendUpdate: () => {},
       applyChatMessage: () => {},
       applyMailNew: () => {},
+      applyDuelInvited: () => {},
+      applyDuelCancelled: () => {},
     };
   }
 

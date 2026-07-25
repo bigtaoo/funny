@@ -55,6 +55,7 @@
 | `scenes/FamilyScene.ts` / `scenes/AuctionScene.ts` | SLG 家族 / 拍卖行场景 |
 | `net/proto/{transport,game}.ts` | ts-proto 生成（勿手改） |
 | `scenes/RoomScene.ts` | 好友房 UI：idle→codeEntry→connecting→inRoom |
+| `scenes/FriendsScene/{base,friendsList,service}.ts` | **删除好友二次确认 + 切磋邀请**（2026-07-25）：`FriendsSceneBase` 新增 `modalLayer`/`modalHits`/`modalOpen`/`showConfirm`/`closeModal`（照抄 `FamilyScene/base.ts` 那套，之前 FriendsScene 没有这条通用确认弹窗管线），✕ 删除按钮改走 `confirmRemove()`。切磋："切磋"按钮直接发 `NetSession.duelInvite(publicId, deck)`（控制面新消息，不走 `RoomScene` 的手动房间码流程），matchsvc 端接受后直接复用既有 `startMatch()`（详见 `design/game/MATCHSVC_DESIGN.md §10`）；client 侧无需处理"已接受"——沿用既有 `onMatchStart`。matchsvc 同一时刻只认一条在途邀请（`pendingDuelByAccount`），故客户端也让**所有**好友行的切磋按钮一起置灰（`sendingDuelTo`），不只是被邀请的那一行；收到邀请显示在列表顶部的横幅（`incomingDuelInvite`，本地 60 秒倒计时仅做显示，权威超时在服务端）。 |
 | `render/sketch.ts` | `SketchPen`：确定性 Prng 抖动的手绘笔触 |
 | `render/sketchUi.ts` | 共享手绘 UI 原语（纸底/手绘按钮/面板/色板单一来源） |
 | `ui/wheelScroll.ts` | **PC 鼠标滚轮滚动的共享判定**（2026-07-23）：`wheelScrollY(regionTop, regionBottom, y, deltaY, scrollY, maxScroll)`——纯函数，命中视口 y 范围内且有滚动余量才返回新 `scrollY`，否则 `null`（场景据此决定要不要重绘）。`InputManager.onWheel` 只在浏览器/PC 平台派发（微信小游戏无 wheel 事件，二者天然不冲突，场景侧无需平台判断）；此前仅 `WorldMapScene` 接了滚轮，现已铺到全部可滚动场景（Chat/Friends/Family/Sect/Shop/Equipment/Card/CardCodex/Gacha/Auction/City/Leaderboard/BattlePass/Titles/DeckBuilder/DefenseEditor/Recharge/Settings）——多 Tab/多列共享一份 `scrollY` 的场景（如 FriendsScene 五个 Tab、Sect/Family 的成员列+频道列双栏）一份 `input.onWheel` 订阅按当前激活的列/Tab 路由即可，双栏场景新增了 `xxxRegionTop/Bottom`+`xxxMax` 字段（触屏拖拽本就不需要提前知道视口边界，滚轮判定必须要）。 |

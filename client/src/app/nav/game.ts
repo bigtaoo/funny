@@ -12,6 +12,7 @@ import { allEquippedSkins, skinEquipKey } from '../../game/meta/skinDefs';
 import { genUuid } from '../../platform/uuid';
 import type { EquipSlot } from '../../game/meta/SaveData';
 import { toEngineCardInstances, CARD_DEFS } from '../../game/meta/cardDefs';
+import { WorldApiClient, type CardSLGState } from '../../net/WorldApiClient';
 import type { IconKind } from '../../render/icons';
 import { matchBadgeTelemetry } from '../../scenes/ResultScene';
 import type { AppCtx, Nav } from '../appCtx';
@@ -23,7 +24,7 @@ type GameNav = Pick<Nav,
   'goStats' | 'goLeaderboard' | 'goAchievements' | 'goCampaign' | 'goTutorial' | 'goTitles' | 'goCodex'>;
 
 export function createGameNav(ctx: AppCtx): GameNav {
-  const { api, saveManager, platform, state, views, nav, keepReplay, resolvePvpDeck } = ctx;
+  const { api, saveManager, platform, state, views, nav, keepReplay, resolvePvpDeck, resolveWorldShard } = ctx;
 
   /**
    * Local PvP-vs-AI match. `opts.fromBotFallback` = triggered by a matchmaking-timeout fallback
@@ -160,43 +161,81 @@ export function createGameNav(ctx: AppCtx): GameNav {
     const online = !!client;
     state.inLobby = false;
     analytics.track('screen_view', { scene: 'CardScene' });
-    views.showCardRoster({
-      onBack() { back(); },
-      initialTab,
-      getSave: () => saveManager.get(),
-      async fuseCards(targetCardId, materialCardIds) {
-        if (!client) return { ok: false as const, key: 'roster.err.offline' as TranslationKey };
-        try {
-          const { save } = await client.fuseCards(targetCardId, materialCardIds, genUuid());
-          saveManager.adoptServer(save);
-          analytics.track('card_fuse', { target_id: targetCardId, material_count: materialCardIds.length });
-          return { ok: true as const };
-        } catch { return { ok: false as const, key: 'roster.err.generic' as TranslationKey }; }
-      },
-      async setCardLock(cardInstanceId, locked) {
-        if (!client) return { ok: false as const, key: 'roster.err.offline' as TranslationKey };
-        try {
-          const { save } = await client.setCardLock(cardInstanceId, locked);
-          saveManager.adoptServer(save);
-          analytics.track('card_lock', { card_instance_id: cardInstanceId, locked });
-          return { ok: true as const };
-        } catch { return { ok: false as const, key: 'roster.err.generic' as TranslationKey }; }
-      },
-      // Per-card gear editing + the standalone equipment bag are server-authoritative — omitted offline.
-      ...(online ? {
-        openEquipment: (cardInstanceId: string, slot?: EquipSlot) => goEquipment(() => goCardRoster(back), 'none', cardInstanceId, undefined, slot),
-        openEquipmentBag: () => goEquipment(() => goCardRoster(back), 'roster', '', () => goCardRoster(back, 'skins')),
-      } : {}),
-      getOwnedSkins: () => saveManager.get().inventory.skins,
-      getEquippedSkin: (unitType) => saveManager.get().equipped[skinEquipKey(unitType)] ?? null,
-      equipSkin: (unitType, skinId) => {
-        saveManager.update((d) => {
-          const key = skinEquipKey(unitType);
-          if (skinId === null) delete d.equipped[key];
-          else d.equipped[key] = skinId;
-        });
-      },
-    });
+
+    const openRoster = (cardState?: Record<string, CardSLGState>, teamNames?: Record<string, string>): void => {
+      views.showCardRoster({
+        onBack() { back(); },
+        initialTab,
+        getSave: () => saveManager.get(),
+        ...(cardState ? { getCardState: () => cardState } : {}),
+        ...(teamNames ? { getTeamName: (teamId: string) => teamNames[teamId] } : {}),
+        async fuseCards(targetCardId, materialCardIds) {
+          if (!client) return { ok: false as const, key: 'roster.err.offline' as TranslationKey };
+          try {
+            const { save } = await client.fuseCards(targetCardId, materialCardIds, genUuid());
+            saveManager.adoptServer(save);
+            analytics.track('card_fuse', { target_id: targetCardId, material_count: materialCardIds.length });
+            return { ok: true as const };
+          } catch { return { ok: false as const, key: 'roster.err.generic' as TranslationKey }; }
+        },
+        async setCardLock(cardInstanceId, locked) {
+          if (!client) return { ok: false as const, key: 'roster.err.offline' as TranslationKey };
+          try {
+            const { save } = await client.setCardLock(cardInstanceId, locked);
+            saveManager.adoptServer(save);
+            analytics.track('card_lock', { card_instance_id: cardInstanceId, locked });
+            return { ok: true as const };
+          } catch { return { ok: false as const, key: 'roster.err.generic' as TranslationKey }; }
+        },
+        // Per-card gear editing + the standalone equipment bag are server-authoritative — omitted offline.
+        ...(online ? {
+          openEquipment: (cardInstanceId: string, slot?: EquipSlot) => goEquipment(() => goCardRoster(back), 'none', cardInstanceId, undefined, slot),
+          openEquipmentBag: () => goEquipment(() => goCardRoster(back), 'roster', '', () => goCardRoster(back, 'skins')),
+        } : {}),
+        getOwnedSkins: () => saveManager.get().inventory.skins,
+        getEquippedSkin: (unitType) => saveManager.get().equipped[skinEquipKey(unitType)] ?? null,
+        equipSkin: (unitType, skinId) => {
+          saveManager.update((d) => {
+            const key = skinEquipKey(unitType);
+            if (skinId === null) delete d.equipped[key];
+            else d.equipped[key] = skinId;
+          });
+        },
+      });
+    };
+
+    // SLG per-card state (troop count / deployed team) lives in worldsvc's PlayerWorldView, separate
+    // from the account-scoped SaveData mirror — fetch it best-effort before opening the roster so
+    // troop cap / deployed-team status render on first paint (CardScene has no live-refresh hook once
+    // shown, unlike WorldMapView/LobbyView's apply* methods, so a late-arriving fetch couldn't update it
+    // anyway). Silently falls back to no SLG state when offline, logged out, or the player has never
+    // touched the SLG (getMe/getTeams failure) — the roster still works, it just won't show those fields.
+    // Bounded to 1.5s regardless of resolveWorldShard's own 3s worldsvc-unreachable fallback: unlike
+    // the explicit "enter the SLG" flow (goWorldEntry), the roster is a frequently-tapped lobby screen
+    // and shouldn't inherit that full stall if worldsvc is slow/down — better to just open without
+    // troop/team data than freeze the lobby for multiple seconds.
+    const token = platform.storage.getItem(TOKEN_KEY);
+    if (online && token) {
+      const worldApi = new WorldApiClient(platform.storage);
+      let settled = false;
+      const giveUp = setTimeout(() => { if (!settled) { settled = true; openRoster(); } }, 1500);
+      resolveWorldShard(worldApi, (worldId) => {
+        Promise.all([worldApi.getMe(worldId), worldApi.getTeams(worldId)])
+          .then(([me, teams]) => {
+            if (settled) return;
+            settled = true; clearTimeout(giveUp);
+            const teamNames = Object.fromEntries(teams.map((tt) => [tt.id, tt.name]));
+            openRoster(me.cardState, teamNames);
+          })
+          .catch(() => {
+            if (settled) return;
+            settled = true; clearTimeout(giveUp);
+            openRoster();
+          });
+      });
+    } else {
+      openRoster();
+    }
   }
 
   /** Map equipment endpoint error codes → i18n key (E5). */

@@ -640,7 +640,7 @@ if (path.startsWith('/admin/world/')) {
 
 | # | 决策 | 结论 |
 |---|---|---|
-| **V1 迷雾模型** | 永久黑雾 vs 战争迷雾 | **2a**：地形层（程序化、确定性）**全图始终可见**；动态层（归属/驻军/防守/保护罩/行军）仅当前视野内可见，视野外**退回 `proceduralTile` 底层地形**（连「已被占领」信号都不泄露——type 不返 `territory`/`base`）。不做持久化 explored-set 黑雾——地形不是秘密，机密是动态层。**资源图案（含等级细节）归地形层，全图始终可见（2026-07-07 拍板，见 §18.6 客户端渲染条）——原「视野外只显资源类型、隐等级」的收窄已作废。** |
+| **V1 迷雾模型** | 永久黑雾 vs 战争迷雾 | **2a**：地形层（程序化、确定性）**全图始终可见**；动态层（归属/驻军/防守/保护罩/行军）仅当前视野内可见，视野外**退回 `proceduralTile` 底层地形**（连「已被占领」信号都不泄露——type 不返 `territory`/`base`）。不做持久化 explored-set 黑雾——地形不是秘密，机密是动态层。**资源图案（含等级细节）归地形层，全图始终可见（2026-07-07 拍板，见 §18.6 客户端渲染条）——原「视野外只显资源类型、隐等级」的收窄已作废。** **⚠️ 2a 的「动态层整层藏雾」已于 2026-07-24 让位给模型 2b（§18.10）：归属/base/占领等静态结构改为全图公开，迷雾只藏情报字段（驻军/耐久/瞭望塔）与行军。** |
 | **V2 视野来源 + 共享** | 半径来源 / 共享到哪一级 | 己方领地半径 `VISION_TERRITORY_RADIUS=2` + 主城 `VISION_BASE_RADIUS=5` + 在途行军 `VISION_MARCH_RADIUS=2`（侦察行军价值）。**共享 = 家族级（≤30）**，复用 `sameFamily`/`familyMembers` 反查。**§8.2 字面「宗门级共享」降级为家族级**——宗门 900 人并集近乎整图，迷雾名存实亡；宗门/联盟只做领地颜色标记不并视野。`scout` 侦察行军 kind 已落地（§18.8，半径 `VISION_SCOUT_RADIUS=4`、不打不占自动回师）；瞭望塔建筑已落地（§18.9，`VISION_WATCHTOWER_RADIUS=8` 固定半径持久视野源）。 |
 | **V3 计算/存储** | 实时算 vs 落库 | **实时算 + 短 TTL 缓存（缓存留后续），vision 零落库**（避 U11 规模爆炸）。视区半径有 `MAP_VIEW_MAX_RADIUS=40` 上限，计算量有界；源领地查询复用 `{ownerId}` 索引。 |
 | **V4 推送门控** | 读路径门控 / 反向视野推送 | **v1 即做反向视野推送**（用户拍板，覆盖初版「仅读路径」建议）。工程化:反向查询**只在「行军发起 / 格易主」两个低频事件点做一次**（查路径沿途半径内有视野源的玩家 → 一次性推完整 `march_update`/`tile_update`，客户端在自己视野内的路径段渲染），**不逐 tick 反向扇出**（避 U11）。`under_attack` 仍无条件发防守方（§16 布阵预设=反应窗口）。→ G5-2。 |
@@ -752,6 +752,20 @@ if (path.startsWith('/admin/world/')) {
 - **验收**：server `tsc -b shared engine worldsvc gateway` 全绿；client `tsc --noEmit` + `build:web` 全绿 + 312 测试通过（1 例 `headless-nav` 因 S9 成就 stub 缺 `applyAchievementBadge` 预先失败，与本片无关）；worldsvc **141 e2e**（新增 `watchtower.e2e.test.ts` 6 例：建塔扣资源+置标记+视图透出 / 扩视野原迷雾远格建塔后可见且超半径仍迷雾 / 非己方拒绝 / 主城拒绝 / 资源不足拒绝不动地图 / 幂等不重复扣费；既有 135 不破）。
 
 > **G5 视野/迷雾全 ✅（2026-06-21）**：读路径门控（G5-1）+ 反向视野推送（G5-2）+ 客户端渲染（G5-3）+ 联盟领地黄标（§18.7）+ scout 侦察行军（§18.8）+ **瞭望塔建筑（§18.9）**。「加家族才守得住」的视野维度**完整闭环**——地形全见、敌情藏雾、家族共享、侦察行军照路（含深探斥候）、瞭望塔主动布点固定视野、敌军进视野即现、联盟领地黄描边勿攻。V2 余项全部兑现。
+
+### 18.10 迷雾模型 2a → 2b：静态层全图公开、迷雾只藏情报与行军（2026-07-24 用户拍板）
+
+> **动机**：三档缩放曾走两条服务端读路径——L1 详情 `getMap`（做 G5 视野门控）、L2/L3 概览 `getMapSparse`（**为性能跳过视野计算**，返回全部有主格）。结果：**同一片地图在 L2/L3 满是别人的基地，切到 L1 却全消失**（视野外的 base 被 `getMap` 退回程序化地形、type 不再是 `base`，客户端 `refreshCityLayer` 画不出；且 `getMap` 逐格覆盖会把 L2 缓存的稀疏 base 覆写成迷雾地形）。这是信息泄露式的不一致：战略概览泄露了详情视图刻意隐藏的占领信息。
+>
+> **拍板**：迷雾**只对地图上的行军队伍生效**，对建筑/基地不生效——玩家随时可以看到其他玩家**在什么位置**（位置/归属/名字/等级/占领状态全图公开），只是看不到别人**队伍的行军**，以及**未进视野的情报**（守军兵力/耐久/瞭望塔）。这与率土之滨一致（静态政治地图恒可见、行军藏雾）。
+
+- **server（`coreMap.ts`）**：
+  - 新 helper `gateIntel(view, inVision)`：视野内原样返回；视野外只**剥离情报字段** `garrison` / `hp` / `maxHp` / `watchtower`（结构照常返回）。行军已在 `getMarches`（己方 + 视野内敌方）门控，无需改。
+  - `getMap`：删掉「视野外退回程序化地形 + `visible:false`」的整段——现在逐格恒返回完整 `tileDocView`（归属/base/occupied），只过 `gateIntel(view, vis(x,y))`，`visible` 恒 `true`。`ally`/`allySect` 标记也改为**不分视野**计算（派生自现已公开的归属 + 自己已知的宗盟关系，视为公开的政治色）。他人档案（名字）拉取去掉 `vis()` 过滤（归属公开→名字全图显）。
+  - `getTile`：同口径——结构公开、`gateIntel` 只藏情报。
+  - `WorldTileView.visible` 语义：自此**恒为 true**（静态层不再整格门控），保留字段仅为客户端兼容（客户端只在 `=== false` 时变暗，故恒 true → 不变暗，正合「静态地图无雾」）。见 `worldTypes.ts` 注释。
+- **client**：**零改动**。`visible:true` 使 `pool.ts` 的 `fogged` 恒 false → 底图不再变暗；`city.ts refreshCityLayer` 本就不看 `visible`，base 精灵按 `type==='base'` 恒绘。
+- **验收**：worldsvc `tsc --noEmit` 绿；`fog.e2e`（5）/`watchtower.e2e`（6）/`alliance-mark.e2e`（3）全绿。三处**视野探针从 `visible` 改为情报（`maxHp`）**：`fog` 视野外敌 base 现断言 `type:base + occupied + visible:true` 但 `garrison/hp/maxHp/watchtower` 全 undefined、march 照亮改测敌 base 的 `maxHp` 显形；`watchtower` 扩视野改测敌领地 `maxHp` 由 undefined→>0；`alliance` 远处联盟领地现 `allySect` 标记公开、仅 `maxHp` 藏雾。（`pathfinding.test.ts` 2 例失败为既有 seed-pool flake，与本改无关。）
 
 ## 19. G8 险地（Stronghold）实现记录（2026-06-21，§3.1 / §15.2 G8）
 
@@ -1343,3 +1357,24 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 **已知限制（v1，留作后续）**：① 驻留在**未占领中立地**上的队伍不参与该格防御——他人占领/攻打该地仍只打系统 NPC 驻军，我方驻留队伍不自动应战（玩家可随时召回；召回始终可用，不会永久卡住）；② 他人夺取我方驻留所在地块时不自动清理 stationed（sprite 会留到玩家召回）；③ `autoReturn=true` 采「队伍即释放」旧语义，不额外播放一段回城行军（对齐用户「和现在那样」的参照）。
 
 **验证**：`server/shared` build + worldsvc `tsc --noEmit` 全绿；worldsvc vitest **全绿**，`teams.e2e.test.ts` 新增 2 例（`move`→驻留→召回→再可用；`occupy autoReturn=true`→领有但队伍不驻留）并修正 1 例旧断言（占领结算后队伍现在默认**仍占用**而非释放）；client `tsc --noEmit` + webpack build 全绿。真实入图需完整 worldsvc + gateway + meta + 登录入世 + 派队，本会话未起全栈截图核对（服务端权威逻辑以 e2e 覆盖）。
+
+## 39. 队伍领队图标 + 兵力 carried/cap 显示（2026-07-25，用户截图请求）
+
+**背景（用户截图请求）**：城内 Teams 面板五张队伍卡只靠「Team 1..5」文字区分，用户截图圈出 `Troops 150` 问一句「兵力显示为 当前/最大」，同时问能不能给每支队伍配一张图便于识别，并提了个候选方案——在编队地图上标一个特殊格子，放进去的角色就是该队图标。
+
+**方案取舍（AskUserQuestion 拍板）**：特殊格子方案被否——它把「战术站位」和「身份标识」绑死，换头像要动阵型（阵型是要打仗的），格子空着还得设计回退，且防守编辑器共用同一份场景代码，会平白多出一个没意义的格子。拍板为**显式「设为领队」+ 自动兜底**：`TeamTemplate` 新增 `leaderCardId?: string`（放队伍上而非某个格子，天然唯一）；编队编辑器里选中已上阵的卡即可设为领队（★ 角标 + 金框），不设也没关系——客户端自动回退到全队战力最高的卡，五支现有队伍无需任何操作立刻就有图标。`Garrison N`（其实是卡牌张数，与旁边 `Troops N` 挤在一起容易读成两份兵力）一并改名 `Heroes N` / `武将 N`。
+
+**实现（契约 + 服务端）**：
+- `openapi-world.yml` `TeamTemplate` 加 `leaderCardId`（string，可选）；`server/worldsvc/src/db.ts` 镜像该字段，注释写明"必须在 army 中出现，否则被清空"。
+- `city.ts` 新增 `withValidLeader(team, army)`：`getTeams`（自愈）与 `setTeams`（保存）都过一遍——`leaderCardId` 若不在当前 `army` 里（卡被卖掉/挪去别队/从阵型里删掉）就整字段删除（不是置 null，避免存量文档里躺一个 null），不因领队失效而拒绝整次保存。
+- `rest:gen`/`gen:api:world` 重生成 `openapi-world.ts`/`routes.gen.ts`。
+
+**实现（客户端共享逻辑）**：`teamTroops.ts` 新增两个函数：`teamTroopCap(army, cardInv)` = 各卡 `troopCap()` 求和（把 `DefenseEditorScene.teamCapacity()` 的私有实现提出来共用，避免城内/编辑器/后续新增页面各自重算再次踩"两套账本"的历史坑）；`teamLeaderCard(team, cardInv, equipmentInv)` = 显式 `leaderCardId`（仍在本队 army 里才生效）优先，否则按 `cardPower` 取本队最强卡，同战力按 `cardInstanceId` 排序兜底（避免并列时图标在渲染间跳动）。`cardArt.ts` 新增 `cardInstanceArtUrl(card)`：`defId → CARD_DEFS.unitType → UNIT_ART_URLS` 一步到位，城内团队卡/编辑器统一走它取头像，不会各画各的。
+
+**实现（编队编辑器）**：`DefenseEditorScene` 新增 `Tool.kind:'leader'`——工具栏新增「★ 领队」按钮（与既有「擦除」同一排、同一套 armed/hint 机制），激活后点击已上阵的格子即把该卡设为 `this.leaderCardId`（点空格子提示"请点击有武将的格子"）；`doSave`/`persistTeam` 落盘时校验领队仍在本次保存的 army 里，否则该字段整个不发；`Clear` 顺带清空领队。渲染：`effectiveLeaderId()`（复用 `teamLeaderCard` 的同一套优先级逻辑）算出的领队格子画金色描边 + 右上角 ★，包括从未手动选过、纯靠战力兜底选中的那张——玩家能在编辑器里直接看到"如果现在保存，谁会是图标"。
+
+**实现（团队卡列表）**：`CitySceneCallbacks` 新增 `getSave` 回调（`app/nav/world.ts` 接入 `saveManager.get()`），团队卡右侧新画一个金框头像（`teamLeaderCard` 选出的卡 → `cardInstanceArtUrl` → 复用 `DefenseEditorScene` 的懒加载纹理重绘套路），有头像时名字/状态/子标签文字列宽度收窄让位；兵力子标签从裸数字改成 `carried/cap`（`teamTroopCap` 撑不出上限时——没有 `getSave` 回调——退化回裸数字，向后兼容）；`Garrison N` 文案改用新词条 `world.team.cards`（"Heroes N"/"武将 N"）。`WorldMapNet`/`WorldMapPanels` 的选队弹窗暂未加头像（超出本次截图请求范围，留作后续，弹窗本身的 committed 文案不变）。
+
+**i18n 新增**：`world.team.cards`（复用位替代旧 `world.defense.garrison` 在攻击模式下的调用点）、`world.team.leader`、`world.team.leaderHint`、`world.team.leaderNeedsCard`，三语言（zh/en/de）齐备；`world.defense.garrison` 词条本身保留给防守编辑器（防守模式的建筑/驻军统计与本次改动无关）。
+
+**验证**：`server/worldsvc tsc --noEmit` 全绿；worldsvc `teams.e2e.test.ts` 新增 2 例（`leaderCardId` 随保存/领队离队清空往返；`getTeams` 自愈直接写入文档、army 里不存在的幽灵领队）+ 修正 1 处集合访问器笔误，15 例全绿（需 `docker compose up -d` 起 Mongo）；client `tsc --noEmit -p tsconfig.test.json` 全绿；`teamTroops.test.ts` 新增 `teamTroopCap`/`teamLeaderCard` 8 例；`defenseEditorAttackCards.ui.ts` 新增领队工具 5 例；`cityScene.ui.ts` 更新兩例文案改名断言 + 新增 1 例 carried/cap 断言；全量 `vitest.ui.config.ts`（88 文件）除 5 个与本次改动无关的既有失败（`worldMapBaseClick`/`worldMapScoutDisabled`/`marchTokenAnimation`/`modalScaleAndBackButton`/`worldMapOccupyTeamPicker` 各自的既有断言，主分支同样失败，已核实非本次改动引入）外全部通过。真实入图截图未做——本次纯代码改动，无可交互 dev server 场景需要截图核对（团队卡布局改动细小，头像资源已在编辑器验证过渲染管线）。
