@@ -59,7 +59,7 @@ function buildScene(opts: { slgStatusHangs: boolean; loadSLGStatusCalls: { count
     loadFriends: async () => [],
     loadRequests: async () => ({ incoming: [], outgoing: [] }),
     search: async () => ({ publicId: '1', displayName: 'x' }),
-    addFriend: async () => {}, respond: async () => {}, removeFriend: async () => {}, blockUser: async () => {},
+    addFriend: async () => {}, respond: async () => {}, removeFriend: async () => {}, blockUser: async () => {}, duelInvite: () => {}, duelRespond: () => {},
     loadConversations: async () => [], openChat() {},
     loadMail: async () => ({ mail: [], unread: 0 }),
     markMailRead: async () => {}, claimMail: async () => true, deleteMail: async () => {},

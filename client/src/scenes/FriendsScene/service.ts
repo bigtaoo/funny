@@ -13,6 +13,8 @@ export interface NetworkHandlers {
   doRespond(requestId: string, accept: boolean): Promise<void>;
   doRemove(publicId: string): Promise<void>;
   doBlock(publicId: string): Promise<void>;
+  doDuel(publicId: string): void;
+  doDuelRespond(inviteId: string, accept: boolean): void;
   doCreateFamily(): Promise<void>;
   loadFamilyBrowse(query: string): Promise<void>;
   doJoinFamily(familyId: string): Promise<void>;
@@ -124,6 +126,18 @@ export function NetworkMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
     async doBlock(publicId: string): Promise<void> {
       try { await this.cb.blockUser(publicId); this.toast('friends.blockedDone', 'success'); } catch { this.toast('friends.error'); }
       void this.refresh();
+    }
+
+    doDuel(publicId: string): void {
+      this.sendingDuelTo = publicId;
+      this.cb.duelInvite(publicId);
+      this.render();
+    }
+
+    doDuelRespond(inviteId: string, accept: boolean): void {
+      this.incomingDuelInvite = null;
+      this.cb.duelRespond(inviteId, accept);
+      this.render();
     }
 
     async doCreateFamily(): Promise<void> {

@@ -720,6 +720,7 @@ export const zh = {
   'friends.notFound': '未找到该玩家',
   'friends.requestSent': '申请已发送',
   'friends.removed': '已删除好友',
+  'friends.confirmRemove': '确定要删除好友 {name} 吗？',
   'friends.alreadyFriend': '你们已是好友',
   'friends.capReached': '好友数量已达上限',
   'friends.blocked': '无法添加（已被屏蔽）',
@@ -732,6 +733,14 @@ export const zh = {
   'friends.message': '发消息',
   'friends.block': '拉黑',
   'friends.blockedDone': '已拉黑',
+  // Duel invite ("切磋")
+  'friends.duel': '切磋',
+  'friends.duelSent': '已发送',
+  'friends.duelInviteBanner': '{name} 邀请你切磋（{secs}s）',
+  'friends.duel.declined': '对方拒绝了切磋邀请',
+  'friends.duel.timeout': '切磋邀请已超时',
+  'friends.duel.offline': '好友不在线，无法切磋',
+  'friends.duel.notFound': '找不到该玩家',
   // Family tab (embedded inside social hub, S6-4)
   'social.noSlg': '进入大世界后才能使用此功能',
   'social.family.none': '未加入任何家族',

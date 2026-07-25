@@ -183,3 +183,14 @@ POST /internal/match/report
 - **读取/下发**：metaserver `GET /save`（`service/save.ts` `getSave()`）响应内联一个可选字段 `activeMatch`（`base.ts` 新增异步 helper `activeMatchFieldFor`，仿 `gatewayField` 写法），Redis 未配置或查无记录时字段整体省略。选它而不是塞进 `AuthResult`（`/auth/*`），是因为 `getSave()` 是 client `SaveManager.bootstrap()/refresh()/adoptSession()` 三条登录路径（微信自动登录、token 免密续期、账号密码登录）的唯一共同调用点，一次改动天然覆盖全部入口。
 - **Redis 可选**：matchsvc/metaserver 均新增 `NW_REDIS_URL`（`redisUrl: string | null`），未配置时整条链路静默禁用（写入/清除 no-op，`getSave()` 不带该字段）——本地/测试环境没有 Redis 不影响正常开局和登录。
 - **client 侧**：`SaveManager` 用"读后清空"语义（`consumeActiveMatch()`）而非直接暴露字段，避免对局结算后常见的 `refresh()`（如 `pvp` 段刷新）误触发弹窗；只有 `auth.ts` 的三条登录入口显式调用一次。弹窗是仿 `ConsentDialog` 的独立全屏 Scene `ReconnectPromptDialog`（两个按钮，非强制单选），确认后走 `NetSession.rejoinMatch(gameUrl, ticket)`——内部复用既有的私有 `connectGame()`，重连成功后既有的 `onMatchStart` 流程自动接管场景跳转，未新增连接逻辑。
+
+## 10. 好友切磋邀请（friend duel invite，2026-07-25 补文档）
+
+好友列表页新增"切磋"按钮：A 邀请在线好友 B → B 60 秒内接受/拒绝/超时 → 接受则两人直接进同一局，**不走 `RoomScene` 的手动房间码流程**，而是直接复用 §3 的 `startMatch('friendly', a, b)`——省掉了创建房间/交换码/双方 ready 的整套 UI 交互，两个 accountId 一早就都知道。
+
+- **状态机落在 matchsvc**：新增 `duelInvites: Map<inviteId, DuelInvite>` + `pendingDuelByAccount: Map<fromAccountId, inviteId>`（后者保证**每个发起方同一时刻只有一条在途邀请**，镜像 `accountRoom` 的"一人一房"约束）。60 秒 `setTimeout` 到期未响应 → 从发起方视角等价于对方拒绝，推 `duel_cancelled{reason:'timeout'}`；被邀请方无需任何推送（本地倒计时到 0 直接自行隐藏横幅，权威结果始终以服务端为准）。
+- **`duelRespond(accept=true)` 直接调用同一个类里的私有 `startMatch()`**——这是这个功能唯一"新增"的撮合逻辑，其余（拿 gameserver 分配、签 ticket、写 activeMatch、推 `match_found`）与 §3/§9 完全一致，未新建任何撮合路径。
+- **两条新内部端点**（`internalHttp.ts`，同 §2.2 的 fire-and-forget 约定）：`POST /mm/duel/invite { accountId, name, publicId, equippedTitle, avatarId, deck, toAccountId }`、`POST /mm/duel/respond { accountId, inviteId, accept, [name/publicId/equippedTitle/avatarId/deck] }`（后四个字段仅 `accept=true` 时有意义）。
+- **publicId → accountId 解析在 gateway，不在 matchsvc**：好友列表页只知道对方的 publicId（matchsvc 从来不认识 publicId 之外的身份，符合"不连库"的既有约束）。gateway 新增 `MetaClient.resolveByPublicId()`，直接复用 metaserver 已有的 `GET /internal/account/by-public-id/:publicId`（socialsvc 的 `SocialMetaClient.resolveByPublicId` 早就在用同一个端点）——**没有新建 metaserver 接口**。目标好友不在线 / 查无此人 → gateway 直接短路回 `duel_cancelled{reason:'offline'|'not_found'}`，不会在 matchsvc 里创建一条永远等不到回应的邀请。
+- **新协议消息**（`transport.proto`，紧邻 `RoomCreate/RoomJoin` 与 `FriendRequestPush` 之后）：`DuelInvite`/`DuelRespond`（client→server）、`DuelInvited`/`DuelCancelled`（server→client）。**接受邀请没有单独的"已接受"推送**——直接沿用 `MatchFound`，客户端既有的 `onMatchStart` 处理链路不用改一行。
+- **好友关系不做服务端二次校验**（v1 有意为之）：好友列表页面本身已经限定了只有好友才能点到这个按钮，与现有 friend-request 流程同一信任边界（客户端侧把关，控制面命令不重复鉴权）。若后续要收紧，需要 gateway → socialsvc 新增一条跨服务调用核实好友关系，是独立的后续项，不在本次范围内。

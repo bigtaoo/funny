@@ -6,7 +6,7 @@ import type { AppCtx, Nav } from '../appCtx';
 import { FALLBACK_SEASON, PLAYER_PUBLIC_ID_KEY } from '../appConstants';
 
 export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' | 'goChat'> {
-  const { api, saveManager, platform, state, views, nav, getNetSession, playerName } = ctx;
+  const { api, saveManager, platform, state, views, nav, getNetSession, playerName, resolvePvpDeck } = ctx;
 
   function goFriends(opts?: { defaultTab?: 'friends' | 'family' | 'sect' | 'world' | 'mail'; onBack?: () => void; overlay?: boolean }): void {
     // Social needs a server account; offline / no API → bounce to login.
@@ -62,6 +62,8 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
       },
       removeFriend: (publicId) => client.removeFriend(publicId),
       blockUser: (publicId) => client.blockUser(publicId),
+      duelInvite: (publicId) => session?.duelInvite(publicId, resolvePvpDeck()),
+      duelRespond: (inviteId, accept) => session?.duelRespond(inviteId, accept, resolvePvpDeck()),
       // Direct messages (entry point is the friend profile popup)
       loadConversations: () => client.getConversations(),
       // Preserve the mount context so a DM opened from the SLG-overlay social hub stays an overlay
@@ -145,6 +147,8 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
         onFriendUpdate:   (u) => view.applyFriendUpdate(u),
         onChatMessage:    (m) => view.applyChatMessage(m),
         onMailNew:        (m) => view.applyMailNew(m),
+        onDuelInvited:    (d) => view.applyDuelInvited(d),
+        onDuelCancelled:  (d) => view.applyDuelCancelled(d),
       };
       session.connect();
     }

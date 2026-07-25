@@ -34,6 +34,8 @@ import {
   type SiegeResult,
   type FamilyMsg,
   type SectMsg,
+  type DuelInvited,
+  type DuelCancelled,
 } from './proto/transport';
 import { NetInputSource, type MatchStartInfo } from '../game';
 import { runJudge } from './judgeRunner';
@@ -69,6 +71,10 @@ export interface NetSessionHandlers {
   onSiegeResult?(s: SiegeResult): void;
   onFamilyMsg?(f: FamilyMsg): void;
   onSectMsg?(s: SectMsg): void;
+  // —— Friend challenge ("切磋", ADR friends-duel-confirm). Accepting skips straight to onMatchStart
+  // (via match_found, same as any other match) — there is no separate "accepted" handler. ——
+  onDuelInvited?(d: DuelInvited): void;
+  onDuelCancelled?(d: DuelCancelled): void;
 }
 
 export class NetSession {
@@ -172,6 +178,14 @@ export class NetSession {
   cancelQueue(): void {
     this.gateway.leaveRoom();
   }
+  /** Friend challenge ("切磋"): send an invite to a friend addressed by publicId. */
+  duelInvite(toPublicId: string, deck: string[] = []): void {
+    this.gateway.duelInvite(toPublicId, deck);
+  }
+  /** Accept/decline an incoming duel invite (handlers.onDuelInvited carries the inviteId). */
+  duelRespond(inviteId: string, accept: boolean, deck: string[] = []): void {
+    this.gateway.duelRespond(inviteId, accept, deck);
+  }
 
   // ── Match actions (data plane) ────────────────────────────────────────────────
 
@@ -264,6 +278,10 @@ export class NetSession {
       this.handlers.onFamilyMsg?.(msg.familyMsg);
     } else if (msg.sectMsg) {
       this.handlers.onSectMsg?.(msg.sectMsg);
+    } else if (msg.duelInvited) {
+      this.handlers.onDuelInvited?.(msg.duelInvited);
+    } else if (msg.duelCancelled) {
+      this.handlers.onDuelCancelled?.(msg.duelCancelled);
     }
   }
 

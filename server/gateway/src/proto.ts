@@ -31,6 +31,8 @@ export type ClientMsg =
   | { case: 'room_ready'; ready: boolean }
   | { case: 'room_leave' }
   | { case: 'room_start' }
+  | { case: 'duel_invite'; toPublicId: string; deck: string[] }
+  | { case: 'duel_respond'; inviteId: string; accept: boolean; deck: string[] }
   | { case: 'ping' }
   | { case: 'client_caps'; canJudge: boolean }
   | {
@@ -117,6 +119,8 @@ export type ServerMsg =
   | { case: 'family_msg'; familyId: string; fromPublicId: string; fromName: string; body: string; ts: number }
   | { case: 'sect_msg'; sectId: string; fromPublicId: string; fromName: string; body: string; ts: number }
   | { case: 'nation_msg'; worldId: string; fromPublicId: string; fromName: string; body: string; ts: number }
+  | { case: 'duel_invited'; inviteId: string; fromPublicId: string; fromName: string }
+  | { case: 'duel_cancelled'; inviteId: string; reason: string }
   | { case: 'pong' };
 
 export function decodeClient(buf: Uint8Array): ClientMsg {
@@ -132,6 +136,15 @@ export function decodeClient(buf: Uint8Array): ClientMsg {
   if (client.roomLeave !== undefined) return { case: 'room_leave' };
   if (client.roomStart !== undefined) return { case: 'room_start' };
   if (client.ping !== undefined) return { case: 'ping' };
+  if (client.duelInvite) return { case: 'duel_invite', toPublicId: client.duelInvite.toPublicId, deck: client.duelInvite.deck };
+  if (client.duelRespond) {
+    return {
+      case: 'duel_respond',
+      inviteId: client.duelRespond.inviteId,
+      accept: client.duelRespond.accept,
+      deck: client.duelRespond.deck,
+    };
+  }
   if (client.clientCaps) return { case: 'client_caps', canJudge: client.clientCaps.canJudge };
   if (client.judgeVerdict) {
     const v = client.judgeVerdict;
@@ -230,6 +243,12 @@ export function encodeServer(msg: ServerMsg): Uint8Array {
       break;
     case 'nation_msg':
       server = { nationMsg: { worldId: msg.worldId, fromPublicId: msg.fromPublicId, fromName: msg.fromName, text: msg.body, ts: msg.ts } };
+      break;
+    case 'duel_invited':
+      server = { duelInvited: { inviteId: msg.inviteId, fromPublicId: msg.fromPublicId, fromName: msg.fromName } };
+      break;
+    case 'duel_cancelled':
+      server = { duelCancelled: { inviteId: msg.inviteId, reason: msg.reason } };
       break;
     case 'pong':
       server = { pong: {} };
