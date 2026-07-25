@@ -841,7 +841,25 @@ export class MarchService {
 
   /** List the player's own stationed teams (2026-07-23: field-stationing status + recall affordance + idle-sprite rendering). */
   async getStationed(worldId: string, accountId: string): Promise<StationedView[]> {
-    const own = await this.core.deps.cols.stationed.find({ worldId, ownerId: accountId }).toArray();
-    return own.map((d) => ({ tile: d.tile, x: d.x, y: d.y, teamId: d.teamId, troops: d.troops, sinceAt: d.sinceAt, mode: d.mode ?? 'idle' }));
+    const { cols, mapW, mapH } = this.core.deps;
+    const own = await cols.stationed.find({ worldId, ownerId: accountId }).toArray();
+    const result: StationedView[] = own.map((d) => ({
+      tile: d.tile, x: d.x, y: d.y, teamId: d.teamId, troops: d.troops, sinceAt: d.sinceAt, mode: d.mode ?? 'idle', mine: true,
+    }));
+
+    // ADR-051 (P4): enemy stationed teams within vision, so the client can render enemy field troops + their
+    // garrison defense zones (mirrors getMarches' vision-gated enemy-march inclusion). Family allies are excluded
+    // (they're rendered as own-side / not enemies); a team standing on a fixed tile is either in vision or not, so
+    // the position test is a plain isInVision on its cell. teamId is blanked — it is the enemy's slot, not ours,
+    // and leaking it would collide with our own slot ids in the client's team-busy gate.
+    const family = await this.core.familyMemberIds(worldId, accountId);
+    const sources = await this.core.computeVisionSources(worldId, accountId, 0, mapW - 1, 0, mapH - 1);
+    const others = await cols.stationed.find({ worldId, ownerId: { $ne: accountId } }).toArray();
+    for (const d of others) {
+      if (family.has(d.ownerId)) continue; // own / family — not treated as enemy
+      if (!isInVision(sources, d.x, d.y)) continue;
+      result.push({ tile: d.tile, x: d.x, y: d.y, teamId: '', troops: d.troops, sinceAt: d.sinceAt, mode: d.mode ?? 'idle', mine: false });
+    }
+    return result;
   }
 }

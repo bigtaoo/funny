@@ -317,7 +317,9 @@ components:
           type: string
           description: "Which team slot ('t1'..'t5') is tied up holding this tile, if the march was dispatched with one."
 
-    # Stationed team (2026-07-23): a team parked on a tile, standing idle until moved or recalled. Own teams only.
+    # Stationed team (2026-07-23): a team parked on a tile, standing idle until moved or recalled.
+    # ADR-051 (P4): now also carries ENEMY stationed teams within the requester's vision (mine=false),
+    # so the client can render enemy field troops + their garrison defense zones. Own teams: mine=true.
     StationedView:
       type: object
       required: [tile, x, y, teamId, troops, sinceAt]
@@ -341,6 +343,9 @@ components:
           type: string
           enum: [idle, garrison]
           description: "ADR-051 (P3a): 停留 idle (free, defends own cell) vs 驻扎 garrison (busy, defends its 3×3 footprint). Absent → idle."
+        mine:
+          type: boolean
+          description: "ADR-051 (P4): whether this stationed team belongs to the requester (false = enemy stationed team within vision). Absent → treat as own (legacy). teamId is blanked for enemy teams (not the requester's slot)."
 
     # ── Auction ────────────────────────────────────────────────────────────────
 

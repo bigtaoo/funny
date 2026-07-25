@@ -1024,6 +1024,8 @@ export interface components {
              * @enum {string}
              */
             mode?: "idle" | "garrison";
+            /** @description ADR-051 (P4): whether this stationed team belongs to the requester (false = enemy stationed team within vision). Absent → treat as own (legacy). teamId is blanked for enemy teams (not the requester's slot). */
+            mine?: boolean;
         };
         AuctionView: {
             auctionId: string;

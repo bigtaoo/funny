@@ -161,6 +161,37 @@ describe.skipIf(!mongo)('worldsvc garrison coverage e2e (ADR-051 P3a)', () => {
     expect(await m.collections.stationed.findOne({ _id: tid })).toBeNull();
   });
 
+  it('getStationed returns ENEMY stationed teams within vision (mine:false, blanked teamId), own as mine:true (P4)', async () => {
+    // a's base at (5,5) → home-city vision is Chebyshev radius VISION_BASE_RADIUS(=5), so [0..10]² is visible.
+    await svc.joinWorld(W, 'a', 5, 5);
+    await svc.joinWorld(W, 'b', 60, 60); // enemy (solo → not family), base far outside a's vision
+
+    const mk = (ownerId: string, x: number, y: number, teamId: string, mode: 'idle' | 'garrison') => ({
+      _id: tileId(W, x, y), worldId: W, ownerId, tile: tileId(W, x, y), x, y, teamId,
+      army: [], troops: 400, sinceAt: now(), mode,
+    });
+    // Own idle team (visible regardless), enemy garrison in vision (9,5), enemy idle far out of vision (58,58).
+    await m.collections.stationed.insertOne(mk('a', 8, 5, 't1', 'idle'));
+    await m.collections.stationed.insertOne(mk('b', 9, 5, 't3', 'garrison'));
+    await m.collections.stationed.insertOne(mk('b', 58, 58, 't4', 'idle'));
+
+    const list = await svc.getStationed(W, 'a');
+
+    const own = list.find((s) => s.x === 8 && s.y === 5);
+    expect(own).toBeTruthy();
+    expect(own!.mine).toBe(true);
+    expect(own!.teamId).toBe('t1'); // own slot preserved
+
+    const enemyNear = list.find((s) => s.x === 9 && s.y === 5);
+    expect(enemyNear).toBeTruthy();
+    expect(enemyNear!.mine).toBe(false);
+    expect(enemyNear!.teamId).toBe(''); // blanked — not the requester's slot
+    expect(enemyNear!.mode).toBe('garrison'); // mode surfaced so the client draws the 9-cell zone
+
+    // Enemy team outside a's vision must not leak.
+    expect(list.find((s) => s.x === 58 && s.y === 58)).toBeUndefined();
+  });
+
   it('an idle (default) move registers occupancy but NO coverage', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     await setupTeam('t1', 'card-1');

@@ -341,10 +341,14 @@ export class WorldApiClient {
     kind: MarchKind,
     troops: number,
     teamId?: string,
+    /** ADR-051 (P3a/P4): 'garrison' parks the arriving team as a 驻扎 garrison (defends its 3×3 footprint, stays busy);
+     * omitted / 'idle' keeps it 停留 idle (free to re-command). Only honored server-side for kind='move'. */
+    stationMode?: 'idle' | 'garrison',
   ): Promise<MarchView> {
     return this.req('POST', '/world/march', {
       worldId, fromX, fromY, toX, toY, kind, troops,
       ...(teamId ? { teamId } : {}),
+      ...(stationMode === 'garrison' ? { stationMode } : {}),
     });
   }
 

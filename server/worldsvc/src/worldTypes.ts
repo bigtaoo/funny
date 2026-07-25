@@ -186,7 +186,8 @@ export interface OccupationView {
   teamId?: string;
 }
 
-/** Stationed-team view (REST response — own stationed teams only; 2026-07-23 field-stationing feature). */
+/** Stationed-team view (REST response). 2026-07-23 field-stationing; ADR-051 (P4) also returns ENEMY stationed
+ * teams within the requester's vision so the client can render enemy field troops + garrison zones. */
 export interface StationedView {
   tile: string;
   x: number;
@@ -196,6 +197,9 @@ export interface StationedView {
   sinceAt: number;
   /** ADR-051 (P3a): 停留 idle vs 驻扎 garrison (see StationedDoc.mode). Absent → 'idle'. */
   mode?: 'idle' | 'garrison';
+  /** ADR-051 (P4): whether this team belongs to the requester (false = enemy stationed team within vision).
+   * Absent → treat as own (legacy). teamId is blanked for enemy teams. */
+  mine?: boolean;
 }
 
 /** Maximum viewport radius (prevents fetching too many tiles at once; hard cap before P9 viewport subscription model scales up). */
