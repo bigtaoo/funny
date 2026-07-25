@@ -185,6 +185,7 @@
     ① **`structure.hp` 逐次耗损（§5.2）**：`landSiege` 的 `attacker_win` 非基地分支新增中间态——目标格带**残 hp>0** 的结构时，清完守军的进攻按**存活突入兵力 `res.attackerSurvivors`**（兵量级，与结构 2000/3000 hp 同量纲；非 base 的 siege-value 量纲）削 `structure.hp`，**不易主**：结构仍立着则该格保持敌方所有、`garrison` 归 0（守军已被清）、进攻方带残兵折返（散兵 `refundTroops` / 卡牌走既有 cardState），`structure.hp` 落库；仅当此击使 `hp≤0` 才落入原易主分支——`$unset:{structure}` raze + 箭塔 `removeCover`（9 格）+ 该格易主并以残兵为新守军。于是「多次攻打把血条磨到 0 才倒」。塔的过路群削（P5a `applyTowerDamage`）仍不碰塔自身 hp，只有 attack 削——量纲一致。
     ② **`passiveRelocate` 扫塔 cover**：`helpers.passiveRelocate` 在 `deleteMany({ownerId})` 清全领地**前**，先 `find({ownerId, 'structure.kind':'arrowTower'})` 并逐格 `removeCover`（tile 随后删除、结构随之消失，仅 Redis `cover` 反向索引需显式扫除；blocker 无 cover 故只扫塔），与 `abandonTile`/`landSiege` 的清理范式一致。
     含 `field-structure-attack.e2e.test.ts` 3 例（箭塔 hold→raze+capture+清 cover、阻挡 hold→capture、passiveRelocate 扫塔 cover）。全量 worldsvc **312 passed**。
+    **实机 live-HTTP 核验（2026-07-25，本地全栈 docker mongo/redis + meta/gateway/social/world + client 9090）**：设备登录→开服 s1→A 入世→建塔(`hp2000/2000`)/建阻挡(`hp3000/3000`,`mine:true`)→`/world/map` 正确回结构、Redis `cover` 恰 9 格、拆除清 0；A 攻打敌方塔(seed enemyZ,`hp2000`)——600 兵 → 不易主、`hp→1402`（hold 分支 live），1600 兵 → 塔毁+该格易主+残兵 1595 为新守军（hp≤0 capture 分支 live）。**唯一仍未核**：驻扎光圈/结构贴图/敌方 token 的**像素渲染**——本机 Browser pane 不 compositing 无法截图（环境限制，非代码问题；客户端所读 map 数据已 live 核正确）。
 
 每阶段独立可验证、可分别提交合入当日分支。
 
