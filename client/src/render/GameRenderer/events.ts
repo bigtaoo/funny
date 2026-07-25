@@ -140,7 +140,13 @@ export function EventMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
           if (event.owner === this.localOwner) { this.cancelDrag(); this.cancelTapSelect(); }
           break;
         case 'card_expired':
-          if (event.owner === this.localOwner) this.handView.notifyCardExpired(event.handIndex);
+          if (event.owner === this.localOwner) {
+            this.handView.notifyCardExpired(event.handIndex);
+            // The refreshed card is a different card now — drop any in-progress
+            // selection/drag on this slot instead of letting the next tap commit it.
+            if (this.tapSelect?.handIndex === event.handIndex) this.cancelTapSelect();
+            if (this.drag?.handIndex === event.handIndex) this.cancelDrag();
+          }
           break;
         case 'game_stats':
           this.pendingStats = event.stats;

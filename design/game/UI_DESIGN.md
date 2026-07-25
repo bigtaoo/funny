@@ -490,6 +490,14 @@ LeaderboardScene 前三名用 🥇🥈🥉 emoji。新增 **1 个** `icons.ts` �
 - **接线**：`HUDView.setUpgradeBtnStyle` 可负担时的 variant 从 `'primary'` 换成 `'gold'`，不可负担仍是 `'disabled'`；呼吸光环 + `▼` 特效不变，作为锦上添花而非唯一信号。
 - 验证：`tsc --noEmit` 全绿；`npm run test:ui`（88 文件 762 用例，含 `gameScenes.ui.ts` 的 GameScene/HUDView 构造冒烟）全绿。**未做浏览器截图验证**：本机后端 11 个服务未拉起进不了真实对战场景，且当次会话 Browser 面板本身无法合成帧截图；待人工在客户端里眼看确认对比度。
 
+#### 4.28 基地透明度呼吸动效误留 + 手牌自动过期未取消已选中态（2026-07-25）
+
+用户对着对战截图标注两处问题：① 1/2/3 级基地（`game_base.png`/城池/宫殿三档贴图）透明度都不对；② 选中的手牌还没释放就被刷新了，此时应取消选中，而不是直接把新抽到的卡当成玩家选的那张打出去。
+
+- **基地透明度**：`BoardView.ts` 里 `applyBasePulse`（`BASE_ALPHA_MIN=0.65`/`BASE_ALPHA_RANGE=0.35`，4s 周期正弦）是 `base.sprite.alpha` 唯一的写入点，`update()` 每帧对 `playerBase`/`enemyBase` 无条件调用——不看 `upgradeTier`，三档贴图（含 §736b7b2e 加入的城池/宫殿）全部被拖进 0.65~1.0 的呼吸闪烁。查 §5.4 呼吸线规范，棋盘类"信息载体"本就该**静止**（"呼吸会晕"），基地贴图同理；且这段呼吸早于三级美术资产（`git log -S` 只能追到 code→client 改名前），像是给单一贴图占位期做的临时"活着"提示，三级美术落地后没跟着清理。**直接删除**该呼吸逻辑（连同 `BASE_ALPHA_MIN/RANGE/PULSE_SPEED` 常量与 `applyBasePulse` 方法），基地贴图现在始终 `alpha=1`（PIXI Sprite 默认值，不再被任何代码改写）。
+- **手牌刷新未取消选中**：手动刷新按钮（10g，`input.ts` 里 `refreshHand` 分支）本就在提交前调用 `cancelTapSelect()+cancelDrag()`，没问题。漏的是**免费单卡自动过期**（`card_expired` 事件，2 分钟未用自动换卡）——`GameRenderer/events.ts` 的 `case 'card_expired'` 只调 `handView.notifyCardExpired()` 触发白闪特效，从未清 `tapSelect`/`drag`。若玩家选中某槽卡牌等待放置期间它自动过期换新卡，`tapSelect.handIndex`/`drag.handIndex` 仍指向该槽且视觉仍显示"已选中"（卡牌抬升+高亮），玩家下一次点棋盘时 `commitCardPlay` 按**槽位索引**取牌，实际打出的是刚换上的新卡——新卡在玩家毫不知情下被打出。修复：`card_expired` handler 里若 `event.handIndex` 命中当前 `tapSelect`/`drag`，调用对应的 `cancelTapSelect()`/`cancelDrag()`（对齐 `card_played`/`game_over`/`game_draw` 已有的取消模式）。
+- 验证：`tsc --noEmit`/`npm run typecheck` 全绿；`npx vitest run --config vitest.render.config.ts`（7 文件 30 用例）、`--config vitest.ui.config.ts`（89 文件 788 用例）、默认 `npx vitest run`（108 文件 767 用例，含难度模拟）全绿；`webpack --mode production --env TARGET=web` 构建通过。**未做浏览器截图验证**：本机后端未拉起（`/bootstrap` 网络请求失败），进不了真实对战场景无法复现基地贴图/手牌选中态的可视效果；且手牌自动过期需等 2 分钟真实计时触发，非快速可控复现路径——两处均待人工在客户端里实机确认。
+
 ---
 
 ## 5. 战斗内 UI 的联机增量（GameScene/HUD）

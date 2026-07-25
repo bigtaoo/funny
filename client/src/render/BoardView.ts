@@ -17,11 +17,6 @@ const HIGHLIGHT_BUILDING = fx.buildingValid; // valid building slot
 const HIGHLIGHT_ALPHA    = 0.18;
 const HIGHLIGHT_METEOR   = fx.meteor;        // meteor targeting
 
-// Base idle: alpha pulse only
-const BASE_ALPHA_MIN    = 0.65;
-const BASE_ALPHA_RANGE  = 0.35;    // 0.65 → 1.0
-const BASE_PULSE_SPEED  = Math.PI / 2; // rad/s → period = 4s
-
 // Base under-attack: a hand-drawn outline pops around the base and fades out.
 const BASE_HIT_PULSE_SEC   = 0.5;   // duration of one pulse
 const BASE_HIT_PULSE_GROW  = 0.18;  // outline expands by this fraction as it fades
@@ -235,19 +230,10 @@ export class BoardView {
   update(dt: number): void {
     this.baseTime += dt;
     const t = this.baseTime;
-    this.applyBasePulse(this.playerBase, t, 0);
-    // Enemy base slightly out of phase
-    this.applyBasePulse(this.enemyBase,  t, 1.2);
     this.applyHitPulse(this.playerBase, dt);
     this.applyHitPulse(this.enemyBase,  dt);
     this.applyCriticalRing(this.playerBase, t);
     this.applyCriticalRing(this.enemyBase,  t);
-  }
-
-  private applyBasePulse(base: BaseRef | null, t: number, phaseOffset: number): void {
-    if (!base) return;
-    const v = Math.sin(t * BASE_PULSE_SPEED + phaseOffset);
-    base.sprite.alpha = BASE_ALPHA_MIN + BASE_ALPHA_RANGE * (v * 0.5 + 0.5); // map -1..1 → 0..1
   }
 
   /** Animate the under-attack outline: fade out + slight expand, then clear. */
