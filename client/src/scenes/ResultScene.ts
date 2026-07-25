@@ -605,6 +605,7 @@ export class ResultScene implements Scene {
     bg.y = y;
     bg.eventMode = 'static';
     bg.cursor = 'pointer';
+    bg.name = 'resultPrimaryCta'; // test hook — see test/ui/scenes.ui.ts "outro tap-through"
     bg.on('pointertap', onTap);
     this.container.addChild(bg);
     this.addIconLabel(x, y, w, h, text, icon, 0xfffdf4, snapFont(Math.round(h * 0.40)), true);
@@ -619,6 +620,7 @@ export class ResultScene implements Scene {
     bg.y = y;
     bg.eventMode = 'static';
     bg.cursor = 'pointer';
+    bg.name = `resultSecondary:${icon}`; // test hook — see test/ui/scenes.ui.ts "outro tap-through"
     bg.on('pointertap', onTap);
     this.container.addChild(bg);
     this.addIconLabel(x, y, w, h, text, icon, 0x444444, snapFont(Math.round(h * 0.34)), false);

@@ -1153,3 +1153,79 @@ describe('ResultScene — top-left back chip', () => {
     }
   });
 });
+
+// ── ResultScene: outro tap-through must leave the result interactive ───────────
+// Regression for the 2026-07-25 "victory screen buttons dead after a campaign
+// level with a story outro" bug: buildOutroOverlay's tap-to-continue handler set
+// `this.container.eventMode = 'none'` after the tap, before build() populated the
+// SAME container with the real badges/buttons. PIXI's EventBoundary prunes hit
+// testing for an entire subtree once an ancestor is eventMode:'none' (see
+// @pixi/events EventBoundary._interactivePrune) — a bare `.emit('pointertap')` on
+// the found node would pass even with the bug present (it bypasses hit-testing
+// entirely, see ui-test-must-drive-real-hit-test memory), so this test drives a
+// real `PIXI.EventBoundary(scene.container).hitTest(x,y)` instead, exactly like a
+// live pointer event would.
+describe('ResultScene — outro tap-through leaves buttons clickable', () => {
+  function centerOf(node: PIXI.DisplayObject): { x: number; y: number } {
+    const b = node.getBounds();
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+  }
+
+  function emitTap(node: PIXI.DisplayObject, event: string): void {
+    (node.emit as (event: string) => void)(event);
+  }
+
+  it('a real hit-test finds the primary CTA and back chip after the tap, and taps fire callbacks', () => {
+    let playAgainCalls = 0;
+    let backCalls = 0;
+    const scene = new ResultScene(
+      PORTRAIT[0], PORTRAIT[1], 0,
+      [zeroStats(0), zeroStats(1)],
+      { onPlayAgain() { playAgainCalls++; }, onBack() { backCalls++; } },
+      0, undefined, undefined,
+      'Some outro story text.', // outroText — arms the tap-through overlay path
+    );
+
+    // Before the tap: the outro overlay owns the screen, so the CTA doesn't exist yet.
+    expect(scene.container.getChildByName('resultPrimaryCta')).toBeNull();
+
+    // Simulate the tap-through (matches how buildOutroOverlay's own listener is wired:
+    // a single full-screen `once('pointerdown')` on the container).
+    emitTap(scene.container, 'pointerdown');
+
+    const boundary = new PIXI.EventBoundary(scene.container);
+
+    const cta = scene.container.getChildByName('resultPrimaryCta');
+    if (!cta) throw new Error('primary CTA not found after outro tap-through');
+    const ctaCenter = centerOf(cta);
+    const ctaHit = boundary.hitTest(ctaCenter.x, ctaCenter.y);
+    expect(ctaHit).not.toBeNull();
+    emitTap(ctaHit as PIXI.DisplayObject, 'pointertap');
+    expect(playAgainCalls).toBe(1);
+
+    const backChip = scene.container.getChildByName('resultBackChip');
+    if (!backChip) throw new Error('back chip not found after outro tap-through');
+    const backCenter = centerOf(backChip);
+    const backHit = boundary.hitTest(backCenter.x, backCenter.y);
+    expect(backHit).not.toBeNull();
+    emitTap(backHit as PIXI.DisplayObject, 'pointertap');
+    expect(backCalls).toBe(1);
+
+    scene.destroy();
+  });
+
+  it('leaves container.eventMode able to hit descendants (not "none") after the tap', () => {
+    const scene = new ResultScene(
+      PORTRAIT[0], PORTRAIT[1], 0,
+      [zeroStats(0), zeroStats(1)],
+      { onPlayAgain() {}, onBack() {} },
+      0, undefined, undefined,
+      'Some outro story text.',
+    );
+    emitTap(scene.container, 'pointerdown');
+    // 'none' prunes the whole subtree (the exact bug); 'passive' (the container
+    // default) and 'static'/'auto'/'dynamic' all still allow descendants to be hit.
+    expect(scene.container.eventMode).not.toBe('none');
+    scene.destroy();
+  });
+});
