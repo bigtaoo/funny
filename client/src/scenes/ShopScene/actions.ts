@@ -13,6 +13,7 @@ export interface ActionHandlers {
   onRedeem(): Promise<void>;
   onRecharge(tierId: string): Promise<void>;
   runDeal(action: () => Promise<ShopActionResult>, okKey: TranslationKey, itemName?: string): Promise<void>;
+  runUnboundedDeal(action: () => Promise<ShopActionResult>, okKey: TranslationKey, itemName?: string): Promise<void>;
 }
 
 export function ActionsMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase & Constructor<ActionHandlers> {
@@ -111,6 +112,28 @@ export function ActionsMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBas
         else showToastMessage(t(res.key), 'error');
       } catch (e) {
         showToastMessage(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'shop.error'), 'error');
+      } finally {
+        this.bt.stop();
+        this.render();
+      }
+    }
+
+    /**
+     * Like runDeal, but without the blanket withTimeout (mirrors onRecharge's reasoning): monthly/year
+     * card buys may open a user-paced Paddle overlay that stays open for minutes, which withTimeout would
+     * kill. The callback bounds its own network calls internally and always resolves with a result key.
+     */
+    async runUnboundedDeal(action: () => Promise<ShopActionResult>, okKey: TranslationKey, itemName?: string): Promise<void> {
+      if (this.bt.busy) return;
+      this.blurPromo();
+      this.bt.start();
+      this.render();
+      try {
+        const res = await action();
+        if (res.ok) showToastMessage(itemName ? t('shop.boughtNamed', { name: itemName }) : t(okKey), 'success');
+        else showToastMessage(t(res.key), 'error');
+      } catch {
+        showToastMessage(t('shop.error'), 'error');
       } finally {
         this.bt.stop();
         this.render();

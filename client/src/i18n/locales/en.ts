@@ -402,6 +402,7 @@ export const en: Record<TranslationKey, string> = {
   'shop.monthlyCard': 'Monthly Card',
   'shop.yearCard': 'Year Card',
   'shop.cardActive': 'Card active — buy again once it expires',
+  'shop.monthlyPending': 'Payment received — card will activate shortly',
   'shop.save': 'Save {amount}',
   'shop.monthlyActive': 'Active',
   'shop.monthlyInactive': 'Not active',

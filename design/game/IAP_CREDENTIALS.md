@@ -45,6 +45,8 @@ Web 端充值走 Paddle（非上面的 `/iap/verify`，而是 `metaserver/src/pa
 
 > **客户端 token 下发路径（本轮新增）**：`NW_PADDLE_CLIENT_TOKEN` 配置后，`metaserver.MetaService.bootstrap` 在 `GET /bootstrap` 响应里附带 `paddleClientToken`；web 客户端 `FeatureFlags` 缓存并交给 `ShopScene` 的 Paddle checkout。token 前缀 `test_` 时客户端自动切 Paddle sandbox 环境。详见 `COMMERCIAL_DESIGN.md §10`。
 
+> **月卡/年卡也走这条通道（2026-07-25 新增）**：`NW_PADDLE_PRICE_IDS` 里额外加两个保留档位键 `monthly_card` / `year_card`（例如 `...,monthly_card:pri_zzz,year_card:pri_www`），分别对应 Paddle 后台为月卡/年卡建的 Product/Price。这两个键**不进 `IAP_TIERS`**（不是币值档位），checkout/webhook 端靠键名本身分流：`/shop/paddle/checkout` 校验 tierId 时把它们当作合法商品放行，并在创建 transaction 前先查一次钱包 `subscriptionExpiry` 挡掉"卡生效中还想买"（避免真扣了钱却被 `subscriptionCardBuy` 单卡门控拒发）；`/paddle/webhook` 收到 `transaction.completed` 后先用 `subscriptionForPriceId(priceId)` 判断是不是这两个保留键，是则调 `commercial.monthlyCardBuy`/`yearCardBuy`（`orderId = paddle:${transactionId}`，天然幂等，同 `paddleComplete` 的 `paddle:${transactionId}` 收据键思路一致），否则按原币值流程走 `coinsForPriceId`。**这两个 Paddle Price 应在后台关掉可调数量**（quantity 固定 1）——webhook 侧不支持"一次买 N 张卡"的语义，多报的 quantity 只会被忽略并记日志，不会多发。客户端 `nav/shop.ts` 的 `doBuySubscription` 是这条路径的入口，落地位置对称于 `doRechargeCoins`。原生 App（Apple/Google）与隐藏渠道（微信/CrazyGames）暂未接真实订阅 IAP，`buyMonthlyCard`/`buyYearCard` 在这些平台仍走直接授权的旧行为（范围外，见 `GACHA_DESIGN.md §5` 落地记录）。
+
 #### Paddle 商户域名审核 — 法务页要求（2026-07-09）
 
 Paddle 作为 merchant of record，审核商户域名时会爬取法务页，硬性要求**退款政策体现 Buyer Terms 的 14 天最低退款窗口**。踩过的拦点：退款政策原写「final and non-refundable」（绝对不退），与 Paddle Buyer Terms 直接冲突 → 被打回。

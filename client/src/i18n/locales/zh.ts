@@ -406,6 +406,7 @@ export const zh = {
   'shop.monthlyCard': '月卡',
   'shop.yearCard': '年卡',
   'shop.cardActive': '订阅卡生效中，用完后再购买',
+  'shop.monthlyPending': '支付成功，卡片稍后生效',
   'shop.save': '省 {amount}',
   'shop.monthlyActive': '生效中',
   'shop.monthlyInactive': '未开通',

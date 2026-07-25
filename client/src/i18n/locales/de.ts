@@ -402,6 +402,7 @@ export const de: Record<TranslationKey, string> = {
   'shop.monthlyCard': 'Monatskarte',
   'shop.yearCard': 'Jahreskarte',
   'shop.cardActive': 'Karte aktiv – nach Ablauf erneut kaufbar',
+  'shop.monthlyPending': 'Zahlung erhalten – Karte wird in Kürze aktiviert',
   'shop.save': '{amount} sparen',
   'shop.monthlyActive': 'Aktiv',
   'shop.monthlyInactive': 'Nicht aktiv',
