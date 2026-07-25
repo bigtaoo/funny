@@ -60,17 +60,22 @@ describe('fuse modal Confirm/Cancel buttons auto-fit label width per locale', ()
       (scene as unknown as { openFuseSelect: (c: CardInstance) => void }).openFuseSelect(target);
 
       const hitsOf = (): Hit[] => (scene as unknown as { modalHits: Hit[] }).modalHits;
+      // The fuse panel's own layer, searched instead of the whole scene: target is 'lena' with 5 owned
+      // 'max' materials, so the background roster grid also renders 5 cells named "Max" — searching
+      // scene.container for the bare row label (no more "Lv.N" suffix, 2026-07-25) would collide with
+      // those background cells instead of the fuse row.
+      const modalLayer = (scene as unknown as { modalLayer: PIXI.Container }).modalLayer;
       // Fill all 5 slots so Confirm renders "(5/5)" and registers a tappable hit.
-      const rowLabel = `${t('card.max.name' as never)} Lv.1`;
+      const rowLabel = t('card.max.name' as never);
       for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-        const rowText = collectTexts(scene.container).find((tt) => tt.text === rowLabel);
+        const rowText = collectTexts(modalLayer).find((tt) => tt.text === rowLabel);
         expect(rowText, `${loc}: candidate row missing before assigning material ${i}`).toBeDefined();
         hitsOf().find((h) => rowText!.x >= h.rect.x && rowText!.x <= h.rect.x + h.rect.w && rowText!.y >= h.rect.y && rowText!.y <= h.rect.y + h.rect.h)!.action();
       }
 
       const confirmLabel = `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`;
       const cancelLabel = t('equip.cancel');
-      const texts = collectTexts(scene.container);
+      const texts = collectTexts(modalLayer);
       const hits = hitsOf();
 
       for (const label of [confirmLabel, cancelLabel]) {

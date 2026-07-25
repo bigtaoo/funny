@@ -60,12 +60,36 @@ function countLabels(container: PIXI.Container, label: string): number {
   return n;
 }
 
+/** Star count of the ring's target-level indicator (feed.ts draws it as one 'levelStars' container
+ * under the center portrait — see the roster-grid convention in cardSceneLevelStars.ui.ts). The fuse
+ * panel has exactly one such container (candidate rows no longer show their own, 2026-07-25). */
+function ringStarCount(container: PIXI.Container): number {
+  let found: PIXI.Container | null = null;
+  const walk = (node: PIXI.Container): void => {
+    if (found) return;
+    if (node.name === 'levelStars') { found = node; return; }
+    for (const c of node.children) walk(c as PIXI.Container);
+  };
+  walk(container);
+  return found ? (found as PIXI.Container).children.length : 0;
+}
+
 function hitUnder(hits: Hit[], pos: { x: number; y: number }): Hit | undefined {
   return hits.find(({ rect: r }) => pos.x >= r.x && pos.x <= r.x + r.w && pos.y >= r.y && pos.y <= r.y + r.h);
 }
 
 function modalHitsOf(scene: CardScene): Hit[] {
   return (scene as unknown as { modalHits: Hit[] }).modalHits;
+}
+
+/** The fuse panel draws everything into modalLayer, which sits on top of (and independent from) the
+ * background roster grid (bodyLayer) — but both hang off the same scene.container tree. Since the
+ * grid can easily own other cards sharing a candidate's defId (e.g. the 'max' materials used
+ * throughout this file), searching scene.container for a bare card name like "Max" can match a
+ * background grid cell instead of (or in addition to) the fuse row. Restricting the search to
+ * modalLayer sidesteps that collision entirely. */
+function modalLayerOf(scene: CardScene): PIXI.Container {
+  return (scene as unknown as { modalLayer: PIXI.Container }).modalLayer;
 }
 
 function feedScrollPxOf(scene: CardScene): number {
@@ -184,8 +208,8 @@ describe('CardScene fuse panel — candidate grouping + filtering', () => {
     const scene = buildScene(baseCb(cardInv));
     openFuse(scene, target);
 
-    expect(countLabels(scene.container, `${MAX_NAME} Lv.1`)).toBe(1);
-    expect(findLabelPos(scene.container, 'x3')).not.toBeNull();
+    expect(countLabels(modalLayerOf(scene), MAX_NAME)).toBe(1);
+    expect(findLabelPos(modalLayerOf(scene), 'x3')).not.toBeNull();
   });
 
   it('excludes the target itself, locked, cross-faction, different-level, and deployed cards', () => {
@@ -205,10 +229,10 @@ describe('CardScene fuse panel — candidate grouping + filtering', () => {
     openFuse(scene, target);
 
     // Only the one eligible 'max' remains ⇒ exactly one candidate row.
-    expect(findLabelPos(scene.container, `${MAX_NAME} Lv.2`)).not.toBeNull();
-    expect(findLabelPos(scene.container, 'x1')).not.toBeNull();
-    expect(findLabelPos(scene.container, `${t('card.lichuang.name' as never)} Lv.2`)).toBeNull();
-    expect(findLabelPos(scene.container, `${MARA_NAME} Lv.2`)).toBeNull();
+    expect(findLabelPos(modalLayerOf(scene), MAX_NAME)).not.toBeNull();
+    expect(findLabelPos(modalLayerOf(scene), 'x1')).not.toBeNull();
+    expect(findLabelPos(modalLayerOf(scene), t('card.lichuang.name' as never))).toBeNull();
+    expect(findLabelPos(modalLayerOf(scene), MARA_NAME)).toBeNull();
   });
 
   it('shows the empty state and a non-tappable Confirm when nothing is eligible', () => {
@@ -222,8 +246,8 @@ describe('CardScene fuse panel — candidate grouping + filtering', () => {
     const scene = buildScene(baseCb(cardInv, { fuseCards: async () => { fused = true; return { ok: true }; } }));
     openFuse(scene, target);
 
-    expect(findLabelPos(scene.container, t('roster.fuseEmpty'))).not.toBeNull();
-    const confirmPos = findLabelPos(scene.container, `${t('roster.fuseBtn')} (0/${FUSION_MATERIAL_COUNT})`);
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fuseEmpty'))).not.toBeNull();
+    const confirmPos = findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (0/${FUSION_MATERIAL_COUNT})`);
     expect(confirmPos).not.toBeNull();
     hitUnder(modalHitsOf(scene), confirmPos!)?.action();
     expect(fused).toBe(false);
@@ -238,17 +262,17 @@ describe('CardScene fuse panel — filling the ring', () => {
 
     const scene = buildScene(baseCb(cardInv));
     openFuse(scene, target);
-    const rowLabel = `${MAX_NAME} Lv.1`;
+    const rowLabel = MAX_NAME;
 
     for (let want = 1; want <= FUSION_MATERIAL_COUNT; want++) {
-      const pos = findLabelPos(scene.container, rowLabel);
+      const pos = findLabelPos(modalLayerOf(scene), rowLabel);
       expect(pos, `row missing before tap ${want}`).not.toBeNull();
       hitUnder(modalHitsOf(scene), pos!)!.action();
-      expect(findLabelPos(scene.container, `${t('roster.fuseBtn')} (${want}/${FUSION_MATERIAL_COUNT})`)).not.toBeNull();
+      expect(findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${want}/${FUSION_MATERIAL_COUNT})`)).not.toBeNull();
     }
 
     // All 5 materials consumed into slots ⇒ the candidate row itself is gone.
-    expect(findLabelPos(scene.container, rowLabel)).toBeNull();
+    expect(findLabelPos(modalLayerOf(scene), rowLabel)).toBeNull();
   });
 
   it('Confirm is not tappable (no-op) until all 5 slots are filled', () => {
@@ -259,13 +283,13 @@ describe('CardScene fuse panel — filling the ring', () => {
     let fused = false;
     const scene = buildScene(baseCb(cardInv, { fuseCards: async () => { fused = true; return { ok: true }; } }));
     openFuse(scene, target);
-    const rowLabel = `${MAX_NAME} Lv.1`;
+    const rowLabel = MAX_NAME;
 
     // Fill only 4 of 5.
     for (let i = 0; i < FUSION_MATERIAL_COUNT - 1; i++) {
-      hitUnder(modalHitsOf(scene), findLabelPos(scene.container, rowLabel)!)!.action();
+      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), rowLabel)!)!.action();
     }
-    const confirmPos = findLabelPos(scene.container, `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT - 1}/${FUSION_MATERIAL_COUNT})`);
+    const confirmPos = findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT - 1}/${FUSION_MATERIAL_COUNT})`);
     expect(confirmPos).not.toBeNull();
     // At this position there's only the panel's whole-area no-op backdrop hit (Confirm itself
     // registers no hit while disabled) — tapping it must not trigger a fuse.
@@ -284,12 +308,12 @@ describe('CardScene fuse panel — filling the ring', () => {
       fuseCards: async (targetId: string, ids: string[]) => { fusedTarget = targetId; fusedIds = ids; return { ok: true }; },
     }));
     openFuse(scene, target);
-    const rowLabel = `${MAX_NAME} Lv.1`;
+    const rowLabel = MAX_NAME;
 
     for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-      hitUnder(modalHitsOf(scene), findLabelPos(scene.container, rowLabel)!)!.action();
+      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), rowLabel)!)!.action();
     }
-    const confirmPos = findLabelPos(scene.container, `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`);
+    const confirmPos = findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`);
     expect(confirmPos).not.toBeNull();
     hitUnder(modalHitsOf(scene), confirmPos!)!.action();
     await Promise.resolve();
@@ -308,11 +332,11 @@ describe('CardScene fuse panel — filling the ring', () => {
 
     const scene = buildScene(baseCb(cardInv));
     openFuse(scene, target);
-    const rowLabel = `${MAX_NAME} Lv.1`;
+    const rowLabel = MAX_NAME;
 
     // Assign one of the two — the candidate row now reads "x1".
-    hitUnder(modalHitsOf(scene), findLabelPos(scene.container, rowLabel)!)!.action();
-    expect(findLabelPos(scene.container, 'x1')).not.toBeNull();
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), rowLabel)!)!.action();
+    expect(findLabelPos(modalLayerOf(scene), 'x1')).not.toBeNull();
 
     // Tap the ring slot it landed in (always slot 0, the first assigned) to return it.
     const slotPos = slotZeroPos(scene, 1);
@@ -320,7 +344,7 @@ describe('CardScene fuse panel — filling the ring', () => {
     expect(slotHit, 'no hit rect at the filled ring slot').toBeDefined();
     slotHit!.action();
 
-    expect(findLabelPos(scene.container, 'x2')).not.toBeNull();
+    expect(findLabelPos(modalLayerOf(scene), 'x2')).not.toBeNull();
   });
 });
 
@@ -340,7 +364,7 @@ describe('CardScene fuse panel — candidate list scroll state', () => {
     expect((scene as unknown as { feedScrollMax: number }).feedScrollMax).toBe(0);
 
     // A drag over the (non-overflowing) list is a no-op, not a crash.
-    const startPos = findLabelPos(scene.container, `${MAX_NAME} Lv.1`)!;
+    const startPos = findLabelPos(modalLayerOf(scene), MAX_NAME)!;
     input._emitDown(startPos.x, startPos.y);
     input._emitMove(startPos.x, startPos.y - 120);
     input._emitUp(startPos.x, startPos.y - 120);
@@ -363,9 +387,9 @@ describe('CardScene fuse panel — auto-retarget when the tapped card has too fe
 
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy.mock.calls[0][0]).toBe(t('roster.fuseAutoRetarget'));
-    // The ring now centers on altHigh (Lv.2), not the tapped target or altLow (both Lv.1).
-    expect(findLabelPos(scene.container, 'Lv.2')).not.toBeNull();
-    expect(findLabelPos(scene.container, 'Lv.1')).toBeNull();
+    // The ring now centers on altHigh (Lv.2), not the tapped target or altLow (both Lv.1) — level is
+    // shown as a star row (2026-07-25), so assert the star count instead of "Lv.N" text.
+    expect(ringStarCount(modalLayerOf(scene))).toBe(2);
     spy.mockRestore();
   });
 
@@ -379,7 +403,7 @@ describe('CardScene fuse panel — auto-retarget when the tapped card has too fe
     openFuse(scene, target);
 
     expect(spy).not.toHaveBeenCalled();
-    expect(findLabelPos(scene.container, 'Lv.1')).not.toBeNull();
+    expect(ringStarCount(modalLayerOf(scene))).toBe(1);
     spy.mockRestore();
   });
 });
@@ -407,11 +431,11 @@ describe('CardScene fuse panel — auto-continue after a successful fuse', () =>
     const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls) }));
     openFuse(scene, target);
 
-    const rowLabel = `${MAX_NAME} Lv.1`;
+    const rowLabel = MAX_NAME;
     for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-      hitUnder(modalHitsOf(scene), findLabelPos(scene.container, rowLabel)!)!.action();
+      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), rowLabel)!)!.action();
     }
-    const confirmPos = findLabelPos(scene.container, `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`);
+    const confirmPos = findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`);
     hitUnder(modalHitsOf(scene), confirmPos!)!.action();
     await flushAsync();
 
@@ -420,8 +444,8 @@ describe('CardScene fuse panel — auto-continue after a successful fuse', () =>
     expect(target.level).toBe(2); // the original target really did level up
     expect(modalOpenOf(scene)).toBe(true); // stayed open instead of closing
     // The ring/list now reflect target2 (still Lv.1) and its own material pool.
-    expect(findLabelPos(scene.container, `${t('card.chenshou.name' as never)} Lv.1`)).not.toBeNull();
-    expect(findLabelPos(scene.container, rowLabel)).toBeNull(); // old target's material group is gone (consumed)
+    expect(findLabelPos(modalLayerOf(scene), t('card.chenshou.name' as never))).not.toBeNull();
+    expect(findLabelPos(modalLayerOf(scene), rowLabel)).toBeNull(); // old target's material group is gone (consumed)
   });
 
   it('keeps the just-upgraded card as the target when it can still be fused (Lv.1 → Lv.2 → onward)', async () => {
@@ -436,24 +460,28 @@ describe('CardScene fuse panel — auto-continue after a successful fuse', () =>
     openFuse(scene, target);
 
     for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-      hitUnder(modalHitsOf(scene), findLabelPos(scene.container, `${MAX_NAME} Lv.1`)!)!.action();
+      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), MAX_NAME)!)!.action();
     }
-    hitUnder(modalHitsOf(scene), findLabelPos(scene.container, `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
     await flushAsync();
 
     expect(calls).toHaveLength(1);
     expect(calls[0].targetId).toBe('target');
     expect(target.level).toBe(2);          // the same card leveled up
     expect(modalOpenOf(scene)).toBe(true); // stayed open, still targeting the upgraded card
-    // The ring/list now show the upgraded card's own Lv.2 material pool, not the consumed Lv.1 one.
-    expect(findLabelPos(scene.container, `${MAX_NAME} Lv.2`)).not.toBeNull();
-    expect(findLabelPos(scene.container, `${MAX_NAME} Lv.1`)).toBeNull();
-    // It continued on the SAME card, so the "can't continue, switched down" toast must not fire.
-    expect(spy.mock.calls.map((c) => c[0])).not.toContain(t('roster.fuseCantContinue'));
+    // The ring now shows 2 stars (the upgraded card's own Lv.2 material pool), and the row is still
+    // present because 5 Lv.2 materials exist — if it had wrongly kept querying the consumed Lv.1 pool,
+    // the row would be gone instead.
+    expect(ringStarCount(modalLayerOf(scene))).toBe(2);
+    expect(findLabelPos(modalLayerOf(scene), MAX_NAME)).not.toBeNull();
+    // Only the ordinary "fusion complete" toast fires — no separate "switched target" toast
+    // (auto-continue never toasts on its own, 2026-07-25).
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0][0]).toBe(t('roster.fuseOk'));
     spy.mockRestore();
   });
 
-  it('when the upgraded card can not continue, toasts and drops back to a lower-level card', async () => {
+  it('when the upgraded card can not continue, silently drops back to a lower-level card (no toast — 2026-07-25, was too frequent/long)', async () => {
     const target = makeCard('target', 'lena', { level: 1 });        // faction anna
     const target2 = makeCard('target2', 'lichuang', { level: 1 });  // faction tao — a lower fusable card to fall back to
     const cardInv: Record<string, CardInstance> = { target, target2 };
@@ -466,14 +494,17 @@ describe('CardScene fuse panel — auto-continue after a successful fuse', () =>
     openFuse(scene, target);
 
     for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-      hitUnder(modalHitsOf(scene), findLabelPos(scene.container, `${MAX_NAME} Lv.1`)!)!.action();
+      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), MAX_NAME)!)!.action();
     }
-    hitUnder(modalHitsOf(scene), findLabelPos(scene.container, `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
     await flushAsync();
 
     expect(modalOpenOf(scene)).toBe(true); // fell back to target2 instead of closing
-    expect(spy.mock.calls.map((c) => c[0])).toContain(t('roster.fuseCantContinue'));
-    expect(findLabelPos(scene.container, `${t('card.chenshou.name' as never)} Lv.1`)).not.toBeNull();
+    // Only the ordinary "fusion complete" toast fires — no separate "switched target" toast (removed
+    // 2026-07-25); the ring's portrait swap is visible on its own without one.
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0][0]).toBe(t('roster.fuseOk'));
+    expect(findLabelPos(modalLayerOf(scene), t('card.chenshou.name' as never))).not.toBeNull();
     spy.mockRestore();
   });
 
@@ -486,11 +517,11 @@ describe('CardScene fuse panel — auto-continue after a successful fuse', () =>
     const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls) }));
     openFuse(scene, target);
 
-    const rowLabel = `${MAX_NAME} Lv.3`;
+    const rowLabel = MAX_NAME;
     for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-      hitUnder(modalHitsOf(scene), findLabelPos(scene.container, rowLabel)!)!.action();
+      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), rowLabel)!)!.action();
     }
-    const confirmPos = findLabelPos(scene.container, `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`);
+    const confirmPos = findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`);
     hitUnder(modalHitsOf(scene), confirmPos!)!.action();
     await flushAsync();
 
@@ -508,11 +539,11 @@ describe('CardScene fuse panel — auto-continue after a successful fuse', () =>
     const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls) }));
     openFuse(scene, target);
 
-    const rowLabel = `${MAX_NAME} Lv.1`;
+    const rowLabel = MAX_NAME;
     for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-      hitUnder(modalHitsOf(scene), findLabelPos(scene.container, rowLabel)!)!.action();
+      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), rowLabel)!)!.action();
     }
-    const confirmPos = findLabelPos(scene.container, `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`);
+    const confirmPos = findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`);
     hitUnder(modalHitsOf(scene), confirmPos!)!.action();
     await flushAsync();
 
@@ -535,19 +566,19 @@ describe('CardScene fuse panel — auto-continue after a successful fuse', () =>
     const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls) }));
     openFuse(scene, target);
 
-    const rowLabel = `${MAX_NAME} Lv.1`;
+    const rowLabel = MAX_NAME;
     for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-      hitUnder(modalHitsOf(scene), findLabelPos(scene.container, rowLabel)!)!.action();
+      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), rowLabel)!)!.action();
     }
-    const confirmPos = findLabelPos(scene.container, `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`);
+    const confirmPos = findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`);
     hitUnder(modalHitsOf(scene), confirmPos!)!.action();
     await flushAsync();
 
     expect(calls).toHaveLength(1);
     expect(modalOpenOf(scene)).toBe(true); // stayed open, continuing
     // Continued onto lena2 (still anna-faction 'max' materials), not otherLine (tao-faction 'chenshou').
-    expect(findLabelPos(scene.container, rowLabel)).not.toBeNull();
-    expect(findLabelPos(scene.container, `${t('card.chenshou.name' as never)} Lv.1`)).toBeNull();
+    expect(findLabelPos(modalLayerOf(scene), rowLabel)).not.toBeNull();
+    expect(findLabelPos(modalLayerOf(scene), t('card.chenshou.name' as never))).toBeNull();
   });
 });
 
@@ -573,11 +604,11 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
     let releaseAnim: () => void = () => {};
     priv(scene).playFusionAnim = () => new Promise<void>((r) => { releaseAnim = r; });
 
-    const rowLabel = `${MAX_NAME} Lv.3`;
+    const rowLabel = MAX_NAME;
     for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-      hitUnder(modalHitsOf(scene), findLabelPos(scene.container, rowLabel)!)!.action();
+      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), rowLabel)!)!.action();
     }
-    hitUnder(modalHitsOf(scene), findLabelPos(scene.container, `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
     await flushAsync(); // doFuse → fuseCards resolves → parks on the awaited playFusionAnim
 
     expect(priv(scene).fuseInProgress).toBe(true);
@@ -588,7 +619,7 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
     for (let i = 0; i < 5; i++) priv(scene).update(0.45);
 
     expect(openDetailSpy).not.toHaveBeenCalled();
-    expect(findLabelPos(scene.container, t('roster.fuseTitle'))).not.toBeNull(); // fuse ring still standing
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fuseTitle'))).not.toBeNull(); // fuse ring still standing
 
     releaseAnim();
     await flushAsync();
@@ -641,11 +672,11 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
       priv(scene).openFuseSelect(target); // REAL playFusionAnim, driven by the controllable rAF + clock
       priv(scene).detailId = target.id;
 
-      const rowLabel = `${MAX_NAME} Lv.3`;
+      const rowLabel = MAX_NAME;
       for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-        hitUnder(modalHitsOf(scene), findLabelPos(scene.container, rowLabel)!)!.action();
+        hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), rowLabel)!)!.action();
       }
-      hitUnder(modalHitsOf(scene), findLabelPos(scene.container, `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
+      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
       await flushAsync(); // fuseCards resolves; playFusionAnim registers its first (converge) frame
       expect(rafQueue.length).toBeGreaterThan(0);
 
@@ -686,11 +717,11 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
     openFuse(scene, target);
     priv(scene).detailId = target.id;
 
-    const rowLabel = `${MAX_NAME} Lv.3`;
+    const rowLabel = MAX_NAME;
     for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-      hitUnder(modalHitsOf(scene), findLabelPos(scene.container, rowLabel)!)!.action();
+      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), rowLabel)!)!.action();
     }
-    hitUnder(modalHitsOf(scene), findLabelPos(scene.container, `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
     await flushAsync();
 
     expect(priv(scene).fuseInProgress).toBe(false); // finally cleared it even though the fuse failed
