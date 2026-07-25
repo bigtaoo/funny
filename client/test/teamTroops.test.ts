@@ -6,13 +6,19 @@
 // These are pure functions — no PIXI harness needed, so this runs under the default vitest config.
 
 import { describe, it, expect } from 'vitest';
-import { carriedTroops, TEAM_CAP, teamSlotId, teamSlotName } from '../src/game/meta/teamTroops';
+import {
+  carriedTroops, teamTroopCap, teamLeaderCard, TEAM_CAP, teamSlotId, teamSlotName,
+} from '../src/game/meta/teamTroops';
 import type { TeamTemplate, CardSLGState } from '../src/net/WorldApiClient';
+import type { CardInstance } from '../src/game/meta/SaveData';
 
 type Army = TeamTemplate['army'];
 
 // Minimal army-entry builder (cast to the openapi type — only the fields the helpers read matter).
 const card = (id: string, col = 0, row = 0): Army[number] => ({ cardInstanceId: id, col, row } as Army[number]);
+
+/** Owned-card builder. 'lichuang' = troopCapBase 200 / growth 50; 'suyuan' = 100 / 25 (see cardDefs.ts). */
+const inst = (id: string, defId: string, level: number): CardInstance => ({ id, defId, level, gear: {}, locked: false });
 
 describe('carriedTroops', () => {
   const cardState: Record<string, CardSLGState> = {
@@ -31,6 +37,60 @@ describe('carriedTroops', () => {
 
   it('a card absent from cardState contributes 0 (not NaN)', () => {
     expect(carriedTroops([card('c1'), card('unknown')], cardState)).toBe(100);
+  });
+});
+
+describe('teamTroopCap', () => {
+  const cardInv = { c1: inst('c1', 'lichuang', 1), c2: inst('c2', 'suyuan', 3) };
+
+  it('a missing army or cardInv has 0 capacity', () => {
+    expect(teamTroopCap(undefined, cardInv)).toBe(0);
+    expect(teamTroopCap([card('c1')], undefined)).toBe(0);
+  });
+
+  it('sums troopCap() across placed cards, scaling with level', () => {
+    expect(teamTroopCap([card('c1')], cardInv)).toBe(200);          // 200 + 50*(1-1)
+    expect(teamTroopCap([card('c2')], cardInv)).toBe(150);          // 100 + 25*(3-1)
+    expect(teamTroopCap([card('c1'), card('c2')], cardInv)).toBe(350);
+  });
+
+  it('a card absent from cardInv contributes 0 (same as carriedTroops)', () => {
+    expect(teamTroopCap([card('c1'), card('sold')], cardInv)).toBe(200);
+  });
+});
+
+describe('teamLeaderCard', () => {
+  // Same defId, different levels → cardPower is strictly ordered by level, so 'strong' wins the fallback.
+  const cardInv = {
+    weak: inst('weak', 'lichuang', 1),
+    strong: inst('strong', 'lichuang', 5),
+    other: inst('other', 'suyuan', 2),
+  };
+  const army = [card('weak'), card('strong')];
+
+  it('an empty or unknown team has no leader', () => {
+    expect(teamLeaderCard(undefined, cardInv)).toBeUndefined();
+    expect(teamLeaderCard({ army: [], leaderCardId: undefined }, cardInv)).toBeUndefined();
+    expect(teamLeaderCard({ army: [card('sold')], leaderCardId: undefined }, cardInv)).toBeUndefined();
+  });
+
+  it('honours an explicit leaderCardId even when it is not the strongest card', () => {
+    expect(teamLeaderCard({ army, leaderCardId: 'weak' }, cardInv)?.id).toBe('weak');
+  });
+
+  it('falls back to the strongest card when no leader was ever chosen', () => {
+    expect(teamLeaderCard({ army, leaderCardId: undefined }, cardInv)?.id).toBe('strong');
+  });
+
+  it('ignores a leader that is no longer in this team\'s army, or no longer owned', () => {
+    expect(teamLeaderCard({ army, leaderCardId: 'other' }, cardInv)?.id).toBe('strong');
+    expect(teamLeaderCard({ army, leaderCardId: 'sold' }, cardInv)?.id).toBe('strong');
+  });
+
+  it('breaks power ties on the lower cardInstanceId so the icon does not flicker', () => {
+    const tied = { b: inst('b', 'lichuang', 2), a: inst('a', 'lichuang', 2) };
+    expect(teamLeaderCard({ army: [card('b'), card('a')], leaderCardId: undefined }, tied)?.id).toBe('a');
+    expect(teamLeaderCard({ army: [card('a'), card('b')], leaderCardId: undefined }, tied)?.id).toBe('a');
   });
 });
 

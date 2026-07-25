@@ -960,7 +960,11 @@ export const de: Record<TranslationKey, string> = {
   'world.team.fill': 'Truppen auffüllen',
   'world.team.fillNone': 'Truppenpool ist leer, oder das Team ist bereits voll',
   'world.team.fillDone': '{n} Truppen zugewiesen',
-  'world.team.cardFill': 'Karte füllen',
+  'world.team.cards': 'Helden {n}',
+  'world.team.leader': 'Anführer',
+  'world.team.leaderHint': 'Tippe einen aufgestellten Helden an, um ihn zum Team-Symbol zu machen',
+  'world.team.leaderNeedsCard': 'Tippe ein Feld mit einem Helden an',
+  'world.team.cardFill':'Karte füllen',
   'world.team.cardFull': 'Diese Karte hat ihr Truppenlimit erreicht',
   'world.team.full': 'Aufstellung ist voll',
   // ── SLG battle replay browser (last-100) ─────────────────────────────────

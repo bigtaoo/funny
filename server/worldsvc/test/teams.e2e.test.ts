@@ -235,6 +235,39 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     expect(await svc.getTeams(W, 'a')).toEqual(teams);
   });
 
+  // 2026-07-25: leaderCardId marks which card's portrait stands for the team in the client's team lists.
+  // It's cosmetic, so a stale value is cleared rather than rejected — the client then falls back to the
+  // strongest card. Both write (setTeams) and read (getTeams self-heal) enforce membership in `army`.
+  it('leaderCardId round-trips while the leader is in the army, and is cleared once it is not', async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    const { entries, ids } = army(3);
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Vanguard', army: entries, leaderCardId: ids[1] }]);
+    expect((await svc.getTeams(W, 'a'))[0]!.leaderCardId).toBe(ids[1]);
+
+    // Leader dropped from the formation → the field goes away entirely (not persisted as null).
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Vanguard', army: entries.filter((e) => e.cardInstanceId !== ids[1]) }]);
+    const afterRemove = (await svc.getTeams(W, 'a'))[0]!;
+    expect(afterRemove.leaderCardId).toBeUndefined();
+    expect('leaderCardId' in afterRemove).toBe(false);
+
+    // A leader naming a card that isn't in this team's army is rejected the same way (save still succeeds).
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Vanguard', army: entries, leaderCardId: 'card_not_here' }]);
+    expect((await svc.getTeams(W, 'a'))[0]!.leaderCardId).toBeUndefined();
+  });
+
+  it('getTeams self-heals a leaderCardId written directly into the document but absent from the army', async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    const { entries, ids } = army(2);
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Vanguard', army: entries }]);
+    // Bypass setTeams: plant a leader that no army entry references.
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { 'teams.0.leaderCardId': 'card_ghost' } });
+    expect((await svc.getTeams(W, 'a'))[0]!.leaderCardId).toBeUndefined();
+    // The cleanup is persisted, so it doesn't have to run again on the next read.
+    const doc = await m.collections.playerWorld.findOne({ _id: playerWorldId(W, 'a') });
+    expect(doc!.teams![0]!.leaderCardId).toBeUndefined();
+    expect(doc!.teams![0]!.army.map((e) => e.cardInstanceId)).toEqual(ids);
+  });
+
   it('an army entry with no cardInstanceId (pre-CC-3 raw unit-type format) is dropped silently, not rejected', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const { entries, ids } = army(2);

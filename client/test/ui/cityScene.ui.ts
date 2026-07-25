@@ -27,6 +27,7 @@ import { marginLineX } from '../../src/render/sketchUi';
 import { teamSlotId, teamSlotName, TEAM_CAP } from '../../src/game/meta/teamTroops';
 import { formatDuration } from '../../src/scenes/worldmap/formatDuration';
 import type { WorldApiClient, PlayerWorldView } from '../../src/net/WorldApiClient';
+import type { SaveData, CardInstance } from '../../src/game/meta/SaveData';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -305,6 +306,8 @@ describe('CityScene bottom team row (D-CITY-10; pinned single row 2026-07-23)', 
     teams?: { id: string; name: string; army: { cardInstanceId?: string; initialHp?: number }[] }[];
     marches?: { marchId: string; mine?: boolean; teamId: string; arriveAt: number }[];
     occupations?: { teamId: string; dueAt: number }[];
+    /** Owned cards; present = the scene gets a getSave callback (see buildLoaded). */
+    cardInv?: Record<string, CardInstance>;
   };
 
   /** Unlike stubWorldApi(), resolves getMe/getTeams/getMarches/getOccupations so the team
@@ -326,7 +329,8 @@ describe('CityScene bottom team row (D-CITY-10; pinned single row 2026-07-23)', 
   }
 
   /** Builds a scene and waits for the async load() to resolve. Pass onEditTeam to wire the
-   *  team-card tap-through (D-CITY-10). */
+   *  team-card tap-through (D-CITY-10). `fx.cardInv` opts into the getSave callback, which is what
+   *  turns the troop readout into carried/cap and resolves the leader portrait (2026-07-25). */
   async function buildLoaded(
     fx: TeamsFixture,
     onEditTeam?: (teamId: string, teamName: string) => void,
@@ -338,6 +342,7 @@ describe('CityScene bottom team row (D-CITY-10; pinned single row 2026-07-23)', 
       worldApi: stubWorldApiWithTeams(fx),
       worldId: 'world:1:0',
       onEditTeam,
+      ...(fx.cardInv ? { getSave: () => ({ cardInv: fx.cardInv, equipmentInv: {} } as unknown as SaveData) } : {}),
     };
     const scene = new CityScene(createLayout(...dims), input, cb);
     await new Promise((r) => setTimeout(r, 0));
@@ -359,7 +364,7 @@ describe('CityScene bottom team row (D-CITY-10; pinned single row 2026-07-23)', 
     scene.destroy();
   });
 
-  it('shows the section header and, for a filled idle team, garrison + committed troops and the idle tag', async () => {
+  it('shows the section header and, for a filled idle team, hero count + committed troops and the idle tag', async () => {
     const { scene } = await buildLoaded({
       teams: [{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] }],
       me: { cardState: { c1: { currentTroops: 400 } } },
@@ -367,8 +372,22 @@ describe('CityScene bottom team row (D-CITY-10; pinned single row 2026-07-23)', 
     const texts = collectTexts(scene.container);
     expect(texts).toContain(t('city.military.teams'));
     expect(texts).toContain(t('city.military.teamIdle'));
-    // Garrison count + committed troops render as one combined sub-label, not separate nodes.
-    const sub = `${t('world.defense.garrison').replace('{n}', '1')}   ${t('world.team.committed').replace('{n}', '400')}`;
+    // Hero count + committed troops render as one combined sub-label, not separate nodes. With no
+    // getSave callback there's no cardInv to cap against, so troops stay a bare number.
+    const sub = `${t('world.team.cards').replace('{n}', '1')}   ${t('world.team.committed').replace('{n}', '400')}`;
+    expect(texts).toContain(sub);
+    scene.destroy();
+  });
+
+  it('shows troops as carried/cap once cardInv is reachable (2026-07-25)', async () => {
+    const { scene } = await buildLoaded({
+      teams: [{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] }],
+      me: { cardState: { c1: { currentTroops: 300 } } },
+      // lichuang Lv.5 → troopCap 200 + 50*4 = 400.
+      cardInv: { c1: { id: 'c1', defId: 'lichuang', level: 5, gear: {}, locked: false } },
+    });
+    const texts = collectTexts(scene.container);
+    const sub = `${t('world.team.cards').replace('{n}', '1')}   ${t('world.team.committed').replace('{n}', '300/400')}`;
     expect(texts).toContain(sub);
     scene.destroy();
   });
@@ -379,7 +398,7 @@ describe('CityScene bottom team row (D-CITY-10; pinned single row 2026-07-23)', 
       me: { cardState: {} },
     });
     const texts = collectTexts(scene.container);
-    const sub = `${t('world.defense.garrison').replace('{n}', '2')}   ${t('world.team.committed').replace('{n}', '0')}`;
+    const sub = `${t('world.team.cards').replace('{n}', '2')}   ${t('world.team.committed').replace('{n}', '0')}`;
     expect(texts).toContain(sub);
     scene.destroy();
   });

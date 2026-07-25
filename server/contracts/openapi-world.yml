@@ -672,6 +672,9 @@ components:
         autoReturn:
           type: boolean
           description: "2026-07-23: when true, this team marches home after a 'move' arrival / occupy capture instead of staying stationed on the tile (default false = stay in place)."
+        leaderCardId:
+          type: string
+          description: "2026-07-25: the team's leader — a cardInstanceId that MUST also appear in `army`; the server clears it otherwise. Purely an identity marker today (its portrait is the team's icon in the city/world-map team lists); absent = the client falls back to the strongest card in the army."
 
     # Defense config = constrained subset of the engine LevelDefinition (garrison/defenderBuildings/defenderBaseLevel).
     # Shape is constrained by the client's own meta mirror; the contract layer uses a loose object (to avoid duplicating the engine schema).
