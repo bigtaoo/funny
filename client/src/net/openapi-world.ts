@@ -203,6 +203,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/world/structure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** ADR-051 (P5): build a player structure (arrowTower / blocker) on own or same-family territory */
+        post: operations["buildStructure"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/world/structure/demolish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** ADR-051 (P5): demolish one's own structure on a tile */
+        post: operations["demolishStructure"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/world/march": {
         parameters: {
             query?: never;
@@ -884,6 +918,7 @@ export interface components {
             contestedByMe?: boolean;
             /** @description §18 G5 V2：A watchtower has been built on this tile (large-radius persistent vision source). The client renders the tower marker. */
             watchtower?: boolean;
+            structure?: components["schemas"]["TileStructureView"];
             /** @description G5 vision: whether this tile is within the requester's current field of view. true = dynamic layer returned as-is; false = outside vision range, only the procedurally-generated base terrain is returned (all dynamic-layer data hidden, including the "occupied" signal). Populated only for /world/map viewport reads. */
             visible?: boolean;
             /** @description G5: this tile is owned by a family ally (within vision, not self). Client renders with friendly colour. */
@@ -1008,6 +1043,20 @@ export interface components {
             dueAt: number;
             /** @description Which team slot ('t1'..'t5') is tied up holding this tile, if the march was dispatched with one. */
             teamId?: string;
+        };
+        TileStructureView: {
+            /**
+             * @description arrowTower: chips passing enemies over its 3×3 footprint (no stop). blocker: hard path obstacle enemies must destroy.
+             * @enum {string}
+             */
+            kind: "arrowTower" | "blocker";
+            level: number;
+            /** @description Current durability (intel-gated — omitted out of vision). Reduced only by an attack march; 0 → removed. */
+            hp?: number;
+            /** @description Max durability (intel-gated — omitted out of vision). */
+            hpMax?: number;
+            /** @description Whether the requester built this structure (client shows Demolish only on own structures). */
+            mine?: boolean;
         };
         StationedView: {
             tile: string;
@@ -1537,6 +1586,68 @@ export interface operations {
         };
         responses: {
             /** @description Watchtower built */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["WorldTileView"];
+                    };
+                };
+            };
+        };
+    };
+    buildStructure: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    worldId: string;
+                    x: number;
+                    y: number;
+                    /** @enum {string} */
+                    kind: "arrowTower" | "blocker";
+                };
+            };
+        };
+        responses: {
+            /** @description Structure built */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["WorldTileView"];
+                    };
+                };
+            };
+        };
+    };
+    demolishStructure: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    worldId: string;
+                    x: number;
+                    y: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Structure demolished */
             200: {
                 headers: {
                     [name: string]: unknown;

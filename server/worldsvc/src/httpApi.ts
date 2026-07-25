@@ -359,6 +359,28 @@ export function startHttpApi(
           return send(res, 200, ok(await svc.abandonTile(worldId, accountId, x, y)));
         }
 
+        // ── ADR-051 (P5): build / demolish a player structure (arrowTower / blocker) ──
+        if (method === 'POST' && path === '/world/structure') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const x = Number(body.x);
+          const y = Number(body.y);
+          const kind = body.kind === 'arrowTower' || body.kind === 'blocker' ? body.kind : null;
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          if (!Number.isFinite(x) || !Number.isFinite(y)) return sendErr(res, ErrorCode.BAD_REQUEST, 'x/y required');
+          if (!kind) return sendErr(res, ErrorCode.BAD_REQUEST, 'kind must be arrowTower or blocker');
+          return send(res, 200, ok(await svc.buildStructure(worldId, accountId, x, y, kind)));
+        }
+        if (method === 'POST' && path === '/world/structure/demolish') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          const x = Number(body.x);
+          const y = Number(body.y);
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          if (!Number.isFinite(x) || !Number.isFinite(y)) return sendErr(res, ErrorCode.BAD_REQUEST, 'x/y required');
+          return send(res, 200, ok(await svc.demolishStructure(worldId, accountId, x, y)));
+        }
+
         // ── March (S8-2, implemented) ──
         if (method === 'POST' && path === '/world/march') {
           const body = await readJson(req);

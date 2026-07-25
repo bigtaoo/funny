@@ -21,6 +21,8 @@ import {
   resolveSiege,
   MARCH_MORALE_MAX,
   moraleCombatMultiplier,
+  ARROW_TOWER_DMG_RATIO,
+  ARROW_TOWER_DMG_CAP,
   type SiegeResolution,
 } from '@nw/shared';
 import {
@@ -37,7 +39,7 @@ import {
 import type { GarrisonEntry, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import type { MarchDoc, PlayerWorldDoc, StationedDoc, ArmyEntry } from '../db';
 import type { SiegeReplayInputs } from '../worldTypes';
-import type { OccEntry } from '../corePush';
+import type { OccEntry, CoverEntry } from '../corePush';
 import { refundTroops } from '../combatShared';
 import type { SiegeServiceBaseCtor, Constructor } from './base';
 import type { WorldCore } from '../core';
@@ -58,8 +60,21 @@ export interface FieldEncounterResult {
   marcherArmy?: ArmyEntry[];
 }
 
+/** ADR-051 (P5): result of one arrow-tower chip on a march entering a covered cell. */
+export interface TowerDamageResult {
+  /** False = friendly tower / nothing to chip (no persistence needed). */
+  applied: boolean;
+  /** True = a flat army was reduced to 0 → advanceMarch must delete the march. Card armies never wipe from towers. */
+  marcherDestroyed: boolean;
+  /** New troop count to persist on the MarchDoc (flat survivors; card total after reduction, for display). */
+  marcherTroops: number;
+  /** New flat army snapshot to persist; undefined → leave MarchDoc.army as-is (card armies keep their entries). */
+  marcherArmy?: ArmyEntry[];
+}
+
 export interface EncounterHandlers {
   resolveFieldEncounter(m: MarchDoc, pw: PlayerWorldDoc, defenderOcc: OccEntry, tid: string, t: number): Promise<FieldEncounterResult>;
+  applyTowerDamage(m: MarchDoc, pw: PlayerWorldDoc, tower: CoverEntry, t: number): Promise<TowerDamageResult>;
 }
 
 /** Two field units are friends (no encounter) when they share an owner or a family. */
@@ -92,6 +107,47 @@ export function EncounterMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase):
       if (Object.keys(cardStateSet).length > 0) {
         await core.deps.cols.playerWorld.updateOne({ _id: pw._id }, { $set: cardStateSet, $inc: { rev: 1 } });
       }
+    }
+
+    /**
+     * ADR-051 (P5 §5.2): apply one arrow-tower's pass-through chip to a march entering a cell inside the tower's
+     * 3×3 coverage. No battle, no stop — just `min(troops·ratio, cap)` off the marcher's army, once per covered
+     * cell. Card armies scale each card's currentTroops (floored, never wiped/injured — an auto-weaken tower);
+     * flat armies lose troops and can be destroyed outright (0 survivors). The tower's own hp is untouched (only an
+     * attack march damages it). advanceMarch owns persisting the returned troops/army and deleting on destruction.
+     */
+    async applyTowerDamage(m: MarchDoc, pw: PlayerWorldDoc, tower: CoverEntry, t: number): Promise<TowerDamageResult> {
+      const noOp: TowerDamageResult = { applied: false, marcherDestroyed: false, marcherTroops: m.troops, marcherArmy: m.army };
+      // Own / same-family tower never chips (advanceMarch already filters, but stay defensive).
+      if (tower.ownerId === m.ownerId || (!!pw.familyId && tower.familyId === pw.familyId)) return noOp;
+
+      const rawA = m.army ?? [];
+      const aHasCard = rawA.some((e) => !!e.cardInstanceId);
+
+      if (aHasCard) {
+        // Reduce card strength proportionally off the CURRENT card total (reflects earlier encounters this batch,
+        // so repeated tower hits compound). Kept > 0 so a tower only weakens — never wipes or injures — a card army.
+        const cardIds = rawA.map((e) => e.cardInstanceId).filter((id): id is string => !!id);
+        const cs = pw.cardState ?? {};
+        const currentTotal = cardIds.reduce((s, id) => s + (cs[id]?.currentTroops ?? 0), 0);
+        if (currentTotal <= 0) return noOp;
+        const dmg = Math.min(Math.round(currentTotal * ARROW_TOWER_DMG_RATIO), ARROW_TOWER_DMG_CAP);
+        if (dmg <= 0) return noOp;
+        const survivors = Math.max(1, currentTotal - dmg);
+        await this.writeFieldCardState(pw, rawA, survivors, t);
+        const newTotal = cardIds.reduce((s, id) => s + (pw.cardState?.[id]?.currentTroops ?? 0), 0);
+        return { applied: true, marcherDestroyed: false, marcherTroops: newTotal, marcherArmy: m.army };
+      }
+
+      // Flat / synthesized army: subtract troops and scale the army snapshot; 0 survivors → the march is destroyed.
+      const troops = m.troops;
+      if (troops <= 0) return noOp;
+      const dmg = Math.min(Math.round(troops * ARROW_TOWER_DMG_RATIO), ARROW_TOWER_DMG_CAP);
+      if (dmg <= 0) return noOp;
+      const survivors = Math.max(0, troops - dmg);
+      const ratio = survivors / troops;
+      const newArmy = rawA.length > 0 ? (scaleArmyByRatio(rawA as GarrisonEntry[], ratio) as ArmyEntry[]) : undefined;
+      return { applied: true, marcherDestroyed: survivors <= 0, marcherTroops: survivors, marcherArmy: newArmy };
     }
 
     async resolveFieldEncounter(m: MarchDoc, pw: PlayerWorldDoc, defenderOcc: OccEntry, tid: string, t: number): Promise<FieldEncounterResult> {

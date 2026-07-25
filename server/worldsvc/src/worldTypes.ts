@@ -74,6 +74,9 @@ export interface WorldTileView {
   contestedByMe?: boolean;
   /** §18 G5 V2: this tile has a watchtower (only exposed for tiles visible to the player) — large-radius persistent vision source; client renders the tower marker. */
   watchtower?: boolean;
+  /** ADR-051 (P5): player-built structure on this tile (arrowTower / blocker). Rendered map-wide (public);
+   * hp/hpMax are intel-gated (omitted out of vision, like garrison/watchtower). */
+  structure?: TileStructureView;
   /**
    * G5: this tile is owned by an ally in the same family (not the requester, within vision). The client
    * renders it in "friendly color" — after family vision sharing, ally territory should no longer appear
@@ -184,6 +187,16 @@ export interface OccupationView {
   dueAt: number;
   /** Which team slot ('t1'..'t5') is tied up holding this tile, if the march was dispatched with one. */
   teamId?: string;
+}
+
+/** ADR-051 (P5): player-built structure view (arrowTower / blocker). hp/hpMax intel-gated out of vision. */
+export interface TileStructureView {
+  kind: 'arrowTower' | 'blocker';
+  level: number;
+  hp?: number;
+  hpMax?: number;
+  /** Whether the requester built it (client shows Demolish only on own structures). */
+  mine?: boolean;
 }
 
 /** Stationed-team view (REST response). 2026-07-23 field-stationing; ADR-051 (P4) also returns ENEMY stationed

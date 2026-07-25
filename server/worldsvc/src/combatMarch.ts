@@ -573,22 +573,45 @@ export class MarchService {
             skipOwnOcc = true; // friendly resident — leave its occ untouched
           }
         }
-        // P3b scenario 3: no occ fight → is this cell covered by an ENEMY garrison? Intercept the first one found
-        // (its stationed team is the defender; resolveFieldEncounter loads it by its center/source tile).
+        // No occ fight → consult the coverage index (§3.4). Two kinds of enemy cover, resolved in order:
+        //   P5 (§5.2) arrow tower → chip the marcher's army (pass-through damage, no stop). Applied first so a
+        //             marcher shot down by tower fire never reaches the melee; a flat army wiped to 0 dies here.
+        //   P3b garrison → the FIRST enemy garrison covering this cell intercepts with a real battle.
         if (!enc) {
           const covers = await this.core.getCover(m.worldId, tid);
-          const enemyCover = covers.find((c) => c.ownerId !== m.ownerId && !(familyId && c.familyId === familyId));
-          if (enemyCover) {
+          const enemyCovers = covers.filter((c) => c.ownerId !== m.ownerId && !(familyId && c.familyId === familyId));
+          for (const tower of enemyCovers) {
+            if (tower.kind !== 'tower') continue;
+            const dmg = await this.siege.applyTowerDamage(m, pw, tower, t);
+            if (!dmg.applied) continue;
+            m.troops = dmg.marcherTroops;
+            if (dmg.marcherArmy !== undefined) m.army = dmg.marcherArmy;
+            await cols.marches.updateOne(
+              { _id: m._id, status: 'marching', kind: { $ne: 'return' } },
+              { $set: { troops: m.troops, ...(dmg.marcherArmy !== undefined ? { army: dmg.marcherArmy } : {}) }, $inc: { rev: 1 } },
+            );
+            if (dmg.marcherDestroyed) {
+              // Wiped by tower fire mid-route: delete the march. `left` is already vacated; no occ was written on `tid`.
+              const claimed = await cols.marches.findOneAndDelete({ _id: m._id, status: 'marching' });
+              if (claimed) {
+                await this.core.unscheduleMarch(claimed.worldId, claimed._id);
+                void this.core.pushMarch(m.ownerId, this.core.marchView({ ...claimed, status: 'recalled' }));
+              }
+              return true; // fully handled (removed) — do not reschedule
+            }
+          }
+          const garCover = enemyCovers.find((c) => c.kind === 'garrison');
+          if (garCover) {
             const garrisonOcc = {
               kind: 'stationed' as const,
-              id: enemyCover.sourceTile,
-              ownerId: enemyCover.ownerId,
-              ...(enemyCover.familyId ? { familyId: enemyCover.familyId } : {}),
-              ...(enemyCover.teamId ? { teamId: enemyCover.teamId } : {}),
-              tile: enemyCover.sourceTile,
+              id: garCover.sourceTile,
+              ownerId: garCover.ownerId,
+              ...(garCover.familyId ? { familyId: garCover.familyId } : {}),
+              ...(garCover.teamId ? { teamId: garCover.teamId } : {}),
+              tile: garCover.sourceTile,
               leaveAt: Number.MAX_SAFE_INTEGER,
             };
-            enc = await this.siege.resolveFieldEncounter(m, pw, garrisonOcc, enemyCover.sourceTile, t);
+            enc = await this.siege.resolveFieldEncounter(m, pw, garrisonOcc, garCover.sourceTile, t);
           }
         }
         if (enc && enc.fought && !enc.marcherContinues) {

@@ -88,6 +88,19 @@ export interface WorldDoc {
 }
 
 /** Occupied or modified tiles (neutral default tiles are not persisted; computed by proceduralTile). */
+/** ADR-051 (P5): a player-built structure on a tile. `kind` picks the behavior (arrowTower / blocker); `hp`/`hpMax`
+ * are its siege durability (attack-only); `ownerId`/`familyId` gate friend-vs-foe (own & family pass a blocker
+ * freely, enemies are chipped by a tower / blocked by a blocker). */
+export interface TileStructure {
+  kind: 'arrowTower' | 'blocker';
+  level: number;
+  hp: number;
+  hpMax: number;
+  ownerId: string;
+  familyId?: string;
+  builtAt: number;
+}
+
 export interface TileDoc {
   _id: string; // tileId = `{worldId}:{x}:{y}`
   worldId: string;
@@ -117,6 +130,13 @@ export interface TileDoc {
   durabilityRegenAt?: number;
   protectedUntil?: number; // ms
   watchtower?: boolean; // watchtower (§18 G5 V2): once built, this tile becomes a large-radius persistent vision source; lost together with TileDoc when tile is lost
+  /**
+   * ADR-051 (P5): player-built map structure overlaid on this tile (generalizes the boolean `watchtower`; the two
+   * coexist for now). arrowTower chips passing enemies over its 3×3 `cover` footprint (no stop); blocker is a hard
+   * path obstacle enemies must destroy. `hp` is reduced only by an attack march; 0 → the structure is removed and
+   * its cover cleared. Built only on own/family territory (never the base anchor); lost with the TileDoc.
+   */
+  structure?: TileStructure;
   /** ADR-025: true on the 8 non-anchor cells of a 3×3 main-base footprint (the anchor omits this). Ring cells hold ownerId + protection but no garrison/yield. */
   baseRing?: boolean;
   /** ADR-025: on ring cells only — the tileId of this base's anchor, so a siege landing on a ring cell resolves against the anchor's garrison/defense. Anchor omits this. */

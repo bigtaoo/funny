@@ -217,6 +217,13 @@ export class WorldCoreMap extends WorldCoreVision {
       ...(o.contestedUntil ? { contestedUntil: o.contestedUntil } : {}),
       ...(o.contestedBy === accountId ? { contestedByMe: true } : {}),
       ...(o.watchtower ? { watchtower: true } : {}),
+      ...(o.structure ? { structure: {
+        kind: o.structure.kind,
+        level: o.structure.level,
+        hp: o.structure.hp,
+        hpMax: o.structure.hpMax,
+        ...(o.structure.ownerId === accountId ? { mine: true } : {}),
+      } } : {}),
       ...(o.deskLevel ? { deskLevel: o.deskLevel } : {}),
     };
   }
@@ -235,6 +242,8 @@ export class WorldCoreMap extends WorldCoreVision {
     delete gated.hp;
     delete gated.maxHp;
     delete gated.watchtower;
+    // Structure stays visible (public static layer) but its durability readout is intel — strip hp/hpMax.
+    if (gated.structure) gated.structure = { kind: gated.structure.kind, level: gated.structure.level, ...(gated.structure.mine ? { mine: true } : {}) };
     return gated;
   }
 
