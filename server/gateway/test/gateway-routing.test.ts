@@ -44,6 +44,12 @@ class RecordingMatchsvc extends MatchsvcClient {
   override enqueue(a: string, n: string, p: string, e: number): void { this.calls.push({ m: 'enqueue', args: [a, n, p, e] }); }
   override connected(a: string): void { this.calls.push({ m: 'connected', args: [a] }); }
   override disconnected(a: string): void { this.calls.push({ m: 'disconnected', args: [a] }); }
+  override duelInvite(a: string, n: string, p: string, e: string, av: string, to: string, deck: string[] = []): void {
+    this.calls.push({ m: 'duelInvite', args: [a, n, p, e, av, to, deck] });
+  }
+  override duelRespond(a: string, inviteId: string, accept: boolean, n = '', p = '', e = '', av = '', deck: string[] = []): void {
+    this.calls.push({ m: 'duelRespond', args: [a, inviteId, accept, n, p, e, av, deck] });
+  }
 }
 
 /** MetaClient stub reporting a fixed ELO (available), so deck-unlock gating can be exercised. */
@@ -53,6 +59,22 @@ class FakeMeta extends MetaClient {
   override async getElo(): Promise<{ elo: number }> { return { elo: this.elo }; }
   override async getProfile(): Promise<{ displayName?: string; publicId?: string; equippedTitle?: string }> {
     return { displayName: 'Player', publicId: '100000001', equippedTitle: '' };
+  }
+}
+
+/** MetaClient stub for duel-invite tests: fixed elo + a configurable publicId → accountId directory. */
+class FakeMetaWithDirectory extends MetaClient {
+  constructor(private readonly directory: Record<string, string>) { super('http://meta.invalid', KEY); }
+  override get available(): boolean { return true; }
+  override async getElo(): Promise<{ elo: number }> { return { elo: 1000 }; }
+  override async getProfile(accountId: string): Promise<{ displayName?: string; publicId?: string; equippedTitle?: string; avatarId?: string }> {
+    // Reverse-lookup for readable names/publicIds in assertions below (real meta would look these up by accountId).
+    const publicId = Object.entries(this.directory).find(([, acc]) => acc === accountId)?.[0] ?? '';
+    return { displayName: `name-${accountId}`, publicId, equippedTitle: '', avatarId: '' };
+  }
+  override async resolveByPublicId(publicId: string): Promise<{ accountId: string } | null> {
+    const accountId = this.directory[publicId];
+    return accountId ? { accountId } : null;
   }
 }
 
@@ -235,5 +257,102 @@ describe('Gateway control-plane routing', () => {
     expect(err['code']).toBe('RANKED_UNAVAILABLE');
     await sleep(40);
     expect(mm.calls.some((c) => c.m === 'enqueue')).toBe(false);
+  });
+
+  // ── Friend challenge ("切磋", ADR friends-duel-confirm) ─────────────────────
+  describe('duel invite routing', () => {
+    it('duel_invite resolves the target publicId to an accountId and forwards to matchsvc with the elo-validated deck', async () => {
+      const port = 19540;
+      const mm = new RecordingMatchsvc();
+      const meta = new FakeMetaWithDirectory({ '100000002': 'acc-b' });
+      startGateway(port, mm, meta);
+      const a = await connect(port, 'acc-a');
+      await connect(port, 'acc-b'); // target must be online for the invite to go through
+
+      a.send(encodeClient({ duel_invite: { to_public_id: '100000002', deck: defaultPvpDeck() } }));
+      await sleep(80);
+
+      const invite = mm.calls.find((c) => c.m === 'duelInvite');
+      expect(invite).toBeDefined();
+      // args: [accountId, name, publicId, equippedTitle, avatarId, toAccountId, deck]
+      expect(invite?.args[0]).toBe('acc-a');
+      expect(invite?.args[5]).toBe('acc-b'); // resolved from publicId, not the raw publicId itself
+      expect(invite?.args[6]).toEqual(defaultPvpDeck());
+    });
+
+    it('duel_invite to an unknown publicId → gateway pushes duel_cancelled{reason:not_found} directly, matchsvc never called', async () => {
+      const port = 19541;
+      const mm = new RecordingMatchsvc();
+      startGateway(port, mm, new FakeMetaWithDirectory({})); // empty directory → nothing resolves
+      const a = await connect(port, 'acc-a');
+
+      const cancelP = waitForServer(a, 'duel_cancelled');
+      a.send(encodeClient({ duel_invite: { to_public_id: '999999999', deck: [] } }));
+
+      const cancel = await cancelP;
+      expect(cancel['reason']).toBe('not_found');
+      await sleep(40);
+      expect(mm.calls.some((c) => c.m === 'duelInvite')).toBe(false);
+    });
+
+    it('duel_invite to a resolved but offline target → gateway pushes duel_cancelled{reason:offline} directly, matchsvc never called', async () => {
+      const port = 19542;
+      const mm = new RecordingMatchsvc();
+      // Resolves fine, but 'acc-b' never actually connects to this gateway instance.
+      startGateway(port, mm, new FakeMetaWithDirectory({ '100000002': 'acc-b' }));
+      const a = await connect(port, 'acc-a');
+
+      const cancelP = waitForServer(a, 'duel_cancelled');
+      a.send(encodeClient({ duel_invite: { to_public_id: '100000002', deck: [] } }));
+
+      const cancel = await cancelP;
+      expect(cancel['reason']).toBe('offline');
+      await sleep(40);
+      expect(mm.calls.some((c) => c.m === 'duelInvite')).toBe(false);
+    });
+
+    it('duel_invite to yourself (publicId resolves to your own accountId) → not_found, not a self-duel', async () => {
+      const port = 19543;
+      const mm = new RecordingMatchsvc();
+      startGateway(port, mm, new FakeMetaWithDirectory({ '100000001': 'acc-a' }));
+      const a = await connect(port, 'acc-a');
+
+      const cancelP = waitForServer(a, 'duel_cancelled');
+      a.send(encodeClient({ duel_invite: { to_public_id: '100000001', deck: [] } }));
+
+      const cancel = await cancelP;
+      expect(cancel['reason']).toBe('not_found');
+      await sleep(40);
+      expect(mm.calls.some((c) => c.m === 'duelInvite')).toBe(false);
+    });
+
+    it('duel_respond accept=true forwards the responder’s own elo-validated profile + deck to matchsvc', async () => {
+      const port = 19544;
+      const mm = new RecordingMatchsvc();
+      startGateway(port, mm, new FakeMetaWithDirectory({ '100000002': 'acc-b' }));
+      const b = await connect(port, 'acc-b');
+
+      b.send(encodeClient({ duel_respond: { invite_id: 'inv-1', accept: true, deck: defaultPvpDeck() } }));
+      await sleep(80);
+
+      const respond = mm.calls.find((c) => c.m === 'duelRespond');
+      expect(respond).toBeDefined();
+      // args: [accountId, inviteId, accept, name, publicId, equippedTitle, avatarId, deck]
+      expect(respond?.args.slice(0, 3)).toEqual(['acc-b', 'inv-1', true]);
+      expect(respond?.args[7]).toEqual(defaultPvpDeck());
+    });
+
+    it('duel_respond accept=false forwards a bare decline (no profile lookups needed)', async () => {
+      const port = 19545;
+      const mm = new RecordingMatchsvc();
+      startGateway(port, mm, new FakeMetaWithDirectory({}));
+      const b = await connect(port, 'acc-b');
+
+      b.send(encodeClient({ duel_respond: { invite_id: 'inv-2', accept: false, deck: [] } }));
+      await sleep(40);
+
+      const respond = mm.calls.find((c) => c.m === 'duelRespond');
+      expect(respond?.args).toEqual(['acc-b', 'inv-2', false, '', '', '', '', []]);
+    });
   });
 });
