@@ -84,6 +84,22 @@ export interface RoomLeave {
 export interface RoomStart {
 }
 
+/**
+ * Friend-challenge ("切磋") invite: skips the room-code exchange — the target is a friend, addressed
+ * by public_id, resolved to an accountId server-side (gateway). deck mirrors RoomCreate.deck.
+ */
+export interface DuelInvite {
+  toPublicId: string;
+  deck: string[];
+}
+
+/** deck is only meaningful when accept=true (server assigns defaultPvpDeck if empty, same as RoomJoin). */
+export interface DuelRespond {
+  inviteId: string;
+  accept: boolean;
+  deck: string[];
+}
+
 export interface CmdSubmit {
   commands: Uint8Array;
 }
@@ -137,6 +153,8 @@ export interface ClientMsg {
   ping?: Ping | undefined;
   clientCaps?: ClientCaps | undefined;
   judgeVerdict?: JudgeVerdict | undefined;
+  duelInvite?: DuelInvite | undefined;
+  duelRespond?: DuelRespond | undefined;
 }
 
 /** ── Server → Client ────────────────────────────────── */
@@ -313,6 +331,25 @@ export interface MailNew {
 }
 
 /**
+ * Friend-challenge ("切磋") invite pushed to the invited friend; a plain accept/decline turns straight
+ * into MatchFound (via matchsvc's existing startMatch), so there is no separate "duel accepted" push.
+ */
+export interface DuelInvited {
+  inviteId: string;
+  fromPublicId: string;
+  fromName: string;
+}
+
+/**
+ * Pushed back to the inviter on the unhappy path only (accept never reaches here — see DuelInvited doc).
+ * reason: declined | timeout | offline | not_found.
+ */
+export interface DuelCancelled {
+  inviteId: string;
+  reason: string;
+}
+
+/**
  * ── SLG world map (S8): server→client push only ──────────────────
  * Same principle as social (SOC3 / §14.5): SLG player actions go via REST to worldsvc (single writer),
  * real-time events go via WS push (worldsvc → gateway /gw/push → targeted delivery per account→socket).
@@ -427,6 +464,8 @@ export interface ServerMsg {
   worldEvent?: WorldEvent | undefined;
   nationMsg?: NationMsg | undefined;
   matchBot?: MatchBot | undefined;
+  duelInvited?: DuelInvited | undefined;
+  duelCancelled?: DuelCancelled | undefined;
 }
 
 /** One Envelope per frame on the wire */
@@ -933,6 +972,134 @@ export const RoomStart: MessageFns<RoomStart> = {
   },
 };
 
+function createBaseDuelInvite(): DuelInvite {
+  return { toPublicId: "", deck: [] };
+}
+
+export const DuelInvite: MessageFns<DuelInvite> = {
+  encode(message: DuelInvite, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.toPublicId !== "") {
+      writer.uint32(10).string(message.toPublicId);
+    }
+    for (const v of message.deck) {
+      writer.uint32(18).string(v!);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): DuelInvite {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseDuelInvite();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.toPublicId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.deck.push(reader.string());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<DuelInvite>, I>>(base?: I): DuelInvite {
+    return DuelInvite.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<DuelInvite>, I>>(object: I): DuelInvite {
+    const message = createBaseDuelInvite();
+    message.toPublicId = object.toPublicId ?? "";
+    message.deck = object.deck?.map((e) => e) || [];
+    return message;
+  },
+};
+
+function createBaseDuelRespond(): DuelRespond {
+  return { inviteId: "", accept: false, deck: [] };
+}
+
+export const DuelRespond: MessageFns<DuelRespond> = {
+  encode(message: DuelRespond, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.inviteId !== "") {
+      writer.uint32(10).string(message.inviteId);
+    }
+    if (message.accept !== false) {
+      writer.uint32(16).bool(message.accept);
+    }
+    for (const v of message.deck) {
+      writer.uint32(26).string(v!);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): DuelRespond {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseDuelRespond();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.inviteId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 16) {
+            break;
+          }
+
+          message.accept = reader.bool();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.deck.push(reader.string());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<DuelRespond>, I>>(base?: I): DuelRespond {
+    return DuelRespond.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<DuelRespond>, I>>(object: I): DuelRespond {
+    const message = createBaseDuelRespond();
+    message.inviteId = object.inviteId ?? "";
+    message.accept = object.accept ?? false;
+    message.deck = object.deck?.map((e) => e) || [];
+    return message;
+  },
+};
+
 function createBaseCmdSubmit(): CmdSubmit {
   return { commands: new Uint8Array(0) };
 }
@@ -1306,6 +1473,8 @@ function createBaseClientMsg(): ClientMsg {
     ping: undefined,
     clientCaps: undefined,
     judgeVerdict: undefined,
+    duelInvite: undefined,
+    duelRespond: undefined,
   };
 }
 
@@ -1343,6 +1512,12 @@ export const ClientMsg: MessageFns<ClientMsg> = {
     }
     if (message.judgeVerdict !== undefined) {
       JudgeVerdict.encode(message.judgeVerdict, writer.uint32(90).fork()).join();
+    }
+    if (message.duelInvite !== undefined) {
+      DuelInvite.encode(message.duelInvite, writer.uint32(98).fork()).join();
+    }
+    if (message.duelRespond !== undefined) {
+      DuelRespond.encode(message.duelRespond, writer.uint32(106).fork()).join();
     }
     return writer;
   },
@@ -1442,6 +1617,22 @@ export const ClientMsg: MessageFns<ClientMsg> = {
           message.judgeVerdict = JudgeVerdict.decode(reader, reader.uint32());
           continue;
         }
+        case 12: {
+          if (tag !== 98) {
+            break;
+          }
+
+          message.duelInvite = DuelInvite.decode(reader, reader.uint32());
+          continue;
+        }
+        case 13: {
+          if (tag !== 106) {
+            break;
+          }
+
+          message.duelRespond = DuelRespond.decode(reader, reader.uint32());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1486,6 +1677,12 @@ export const ClientMsg: MessageFns<ClientMsg> = {
       : undefined;
     message.judgeVerdict = (object.judgeVerdict !== undefined && object.judgeVerdict !== null)
       ? JudgeVerdict.fromPartial(object.judgeVerdict)
+      : undefined;
+    message.duelInvite = (object.duelInvite !== undefined && object.duelInvite !== null)
+      ? DuelInvite.fromPartial(object.duelInvite)
+      : undefined;
+    message.duelRespond = (object.duelRespond !== undefined && object.duelRespond !== null)
+      ? DuelRespond.fromPartial(object.duelRespond)
       : undefined;
     return message;
   },
@@ -2931,6 +3128,134 @@ export const MailNew: MessageFns<MailNew> = {
   },
 };
 
+function createBaseDuelInvited(): DuelInvited {
+  return { inviteId: "", fromPublicId: "", fromName: "" };
+}
+
+export const DuelInvited: MessageFns<DuelInvited> = {
+  encode(message: DuelInvited, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.inviteId !== "") {
+      writer.uint32(10).string(message.inviteId);
+    }
+    if (message.fromPublicId !== "") {
+      writer.uint32(18).string(message.fromPublicId);
+    }
+    if (message.fromName !== "") {
+      writer.uint32(26).string(message.fromName);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): DuelInvited {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseDuelInvited();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.inviteId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.fromPublicId = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.fromName = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<DuelInvited>, I>>(base?: I): DuelInvited {
+    return DuelInvited.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<DuelInvited>, I>>(object: I): DuelInvited {
+    const message = createBaseDuelInvited();
+    message.inviteId = object.inviteId ?? "";
+    message.fromPublicId = object.fromPublicId ?? "";
+    message.fromName = object.fromName ?? "";
+    return message;
+  },
+};
+
+function createBaseDuelCancelled(): DuelCancelled {
+  return { inviteId: "", reason: "" };
+}
+
+export const DuelCancelled: MessageFns<DuelCancelled> = {
+  encode(message: DuelCancelled, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.inviteId !== "") {
+      writer.uint32(10).string(message.inviteId);
+    }
+    if (message.reason !== "") {
+      writer.uint32(18).string(message.reason);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): DuelCancelled {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseDuelCancelled();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.inviteId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.reason = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<DuelCancelled>, I>>(base?: I): DuelCancelled {
+    return DuelCancelled.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<DuelCancelled>, I>>(object: I): DuelCancelled {
+    const message = createBaseDuelCancelled();
+    message.inviteId = object.inviteId ?? "";
+    message.reason = object.reason ?? "";
+    return message;
+  },
+};
+
 function createBaseMarchUpdate(): MarchUpdate {
   return { marchId: "", kind: "", fromTile: "", toTile: "", arriveAt: 0, status: "" };
 }
@@ -3721,6 +4046,8 @@ function createBaseServerMsg(): ServerMsg {
     worldEvent: undefined,
     nationMsg: undefined,
     matchBot: undefined,
+    duelInvited: undefined,
+    duelCancelled: undefined,
   };
 }
 
@@ -3797,6 +4124,12 @@ export const ServerMsg: MessageFns<ServerMsg> = {
     }
     if (message.matchBot !== undefined) {
       MatchBot.encode(message.matchBot, writer.uint32(194).fork()).join();
+    }
+    if (message.duelInvited !== undefined) {
+      DuelInvited.encode(message.duelInvited, writer.uint32(202).fork()).join();
+    }
+    if (message.duelCancelled !== undefined) {
+      DuelCancelled.encode(message.duelCancelled, writer.uint32(210).fork()).join();
     }
     return writer;
   },
@@ -4000,6 +4333,22 @@ export const ServerMsg: MessageFns<ServerMsg> = {
           message.matchBot = MatchBot.decode(reader, reader.uint32());
           continue;
         }
+        case 25: {
+          if (tag !== 202) {
+            break;
+          }
+
+          message.duelInvited = DuelInvited.decode(reader, reader.uint32());
+          continue;
+        }
+        case 26: {
+          if (tag !== 210) {
+            break;
+          }
+
+          message.duelCancelled = DuelCancelled.decode(reader, reader.uint32());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -4083,6 +4432,12 @@ export const ServerMsg: MessageFns<ServerMsg> = {
       : undefined;
     message.matchBot = (object.matchBot !== undefined && object.matchBot !== null)
       ? MatchBot.fromPartial(object.matchBot)
+      : undefined;
+    message.duelInvited = (object.duelInvited !== undefined && object.duelInvited !== null)
+      ? DuelInvited.fromPartial(object.duelInvited)
+      : undefined;
+    message.duelCancelled = (object.duelCancelled !== undefined && object.duelCancelled !== null)
+      ? DuelCancelled.fromPartial(object.duelCancelled)
       : undefined;
     return message;
   },

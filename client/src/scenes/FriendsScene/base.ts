@@ -9,6 +9,7 @@ import { ILayout, Rect } from '../../layout/ILayout';
 import { InputManager } from '../../inputSystem/InputManager';
 import { t, TranslationKey } from '../../i18n';
 import { ProfilePopup, type ProfileExtra } from '../../render/ProfilePopup';
+import { drawConfirmDialog, type ModalHit } from '../../render/confirmDialog';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { showToastMessage, type ToastKind } from '../../net/log';
 import { FS, snapFont } from '../../render/fontScale';
@@ -32,6 +33,8 @@ import type {
   FriendUpdate,
   ChatMessagePush,
   MailNew,
+  DuelInvited,
+  DuelCancelled,
 } from '../../net/proto/transport';
 import type { WorldChatMessage, FamilyView, FamilyDetailView } from '../../net/WorldApiClient';
 
@@ -69,6 +72,9 @@ export interface FriendsSceneCallbacks {
   respond(requestId: string, accept: boolean): Promise<void>;
   removeFriend(publicId: string): Promise<void>;
   blockUser(publicId: string): Promise<void>;
+  /** Friend challenge ("切磋"): fire-and-forget, result arrives via applyDuelInvited/applyDuelCancelled pushes. */
+  duelInvite(publicId: string): void;
+  duelRespond(inviteId: string, accept: boolean): void;
   // Direct chat entry point (triggered from friend profile popup, Tab bar no longer lists it separately)
   loadConversations?(): Promise<ConversationView[]>;
   openChat(peerPublicId: string, peerName: string): void;
@@ -137,6 +143,17 @@ export class FriendsSceneBase {
    *  specific badge bug — see mail-badge-social-aggregate-bug memory). */
   protected conversations: ConversationView[] = [];
 
+  // Duel invites ("切磋", ADR friends-duel-confirm). At most one outstanding invite per direction:
+  // matchsvc only tracks one pending sent-invite per account, so the client mirrors that instead of
+  // letting the UI imply concurrent invites it can't actually track back to a specific inviteId
+  // (the sender is never told the inviteId matchsvc minted — see DuelInvite proto doc).
+  /** publicId of the friend I just invited, while awaiting their response — every row's duel button
+   *  is disabled while this is set (not just theirs), matching the server's one-outstanding-invite rule. */
+  protected sendingDuelTo: string | null = null;
+  /** Invite currently shown as an accept/decline banner at the top of the friends list. expiresAt is a
+   *  local-display-only countdown (authoritative timeout lives server-side, see applyDuelCancelled). */
+  protected incomingDuelInvite: { inviteId: string; fromPublicId: string; fromName: string; expiresAt: number } | null = null;
+
   // Mail tab.
   protected mail: MailView[] = [];
   protected mailUnread = 0;
@@ -192,6 +209,8 @@ export class FriendsSceneBase {
   /** Blink state for whichever field openHiddenInput last opened — shared across all callers. */
   protected caretOn = true;
   protected caretTimer = 0;
+  /** Drives the incoming-duel-invite banner's once-a-second countdown re-render (see update()). */
+  protected duelBannerTimer = 0;
 
 
   protected scrollY = 0;
@@ -212,6 +231,11 @@ export class FriendsSceneBase {
   protected readonly popup: ProfilePopup;
   protected dead = false;
 
+  // ── Confirm modal (remove-friend, S6-1b) ──────────────────────────────────
+  protected modalLayer!: PIXI.Container;
+  protected modalHits: ModalHit[] = [];
+  protected modalOpen = false;
+
   constructor(layout: ILayout, input: InputManager, cb: FriendsSceneCallbacks) {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
@@ -220,6 +244,10 @@ export class FriendsSceneBase {
     this.cb = cb;
     if (cb.defaultTab) this.tab = cb.defaultTab;
     this.popup = new ProfilePopup(this.w, this.h, (publicId) => cb.getProfileExtra(publicId));
+    // Persistent singleton, added once and reused across renders — render()/tearDownChildren()
+    // never touch it (mirrors FamilyScene/base.ts's modalLayer treatment).
+    this.modalLayer = new PIXI.Container();
+    this.container.addChild(this.modalLayer);
 
     this.unsubs.push(input.onDown((x, y) => this.onPointerDown(x, y)));
     this.unsubs.push(input.onMove((x, y) => this.onPointerMove(x, y)));
@@ -238,6 +266,18 @@ export class FriendsSceneBase {
     if (this.familyActiveInput || this.sectActiveInput || this.worldChatActive) {
       this.caretTimer += dt;
       if (this.caretTimer >= 0.5) { this.caretTimer = 0; this.caretOn = !this.caretOn; this.render(); }
+    }
+    if (this.incomingDuelInvite) {
+      // Local-only countdown display; if it runs out before the server's own duel_cancelled/match_found
+      // arrives, just hide the banner — the authoritative outcome (declined/timeout) always resolves
+      // server-side regardless of what this client shows in the meantime.
+      if (Date.now() >= this.incomingDuelInvite.expiresAt) {
+        this.incomingDuelInvite = null;
+        this.render();
+      } else {
+        this.duelBannerTimer += dt;
+        if (this.duelBannerTimer >= 1) { this.duelBannerTimer = 0; this.render(); }
+      }
     }
   }
 
@@ -261,6 +301,24 @@ export class FriendsSceneBase {
   applyChatMessage(_m: ChatMessagePush): void { void this.refresh(); }
   applyMailNew(_m: MailNew): void { void this.refresh(); }
 
+  applyDuelInvited(d: DuelInvited): void {
+    this.incomingDuelInvite = { inviteId: d.inviteId, fromPublicId: d.fromPublicId, fromName: d.fromName, expiresAt: Date.now() + 60_000 };
+    this.render();
+  }
+
+  /** Only ever about MY own outstanding sent invite (accept never reaches here — see DuelInvited doc;
+   *  matchsvc allows exactly one at a time, so there's nothing to disambiguate by inviteId here). */
+  applyDuelCancelled(d: DuelCancelled): void {
+    this.sendingDuelTo = null;
+    const key: TranslationKey =
+      d.reason === 'declined' ? 'friends.duel.declined'
+      : d.reason === 'timeout' ? 'friends.duel.timeout'
+      : d.reason === 'offline' ? 'friends.duel.offline'
+      : 'friends.duel.notFound';
+    this.toast(key);
+    this.render();
+  }
+
   protected rowVisible(yTop: number, rowH: number): boolean {
     return yTop + rowH >= this.regionTop && yTop <= this.regionBottom;
   }
@@ -280,7 +338,7 @@ export class FriendsSceneBase {
   // ── Input ──────────────────────────────────────────────────────────────────
 
   protected onPointerDown(x: number, y: number): void {
-    if (this.popup.isOpen) return;
+    if (this.popup.isOpen || this.modalOpen) return;
     this.pointerActive = true;
     this.dragging = false;
     this.downX = x;
@@ -306,10 +364,19 @@ export class FriendsSceneBase {
   }
 
   protected onPointerUp(x: number, y: number): void {
-    // onPointerDown returns before setting pointerActive while the popup is open, so this must be
-    // checked before the pointerActive guard below — otherwise a popup tap-up short-circuits with
-    // "no gesture in progress" and never reaches the popup's own hit-test.
+    // onPointerDown returns before setting pointerActive while the popup/modal is open, so this must
+    // be checked before the pointerActive guard below — otherwise a popup/modal tap-up short-circuits
+    // with "no gesture in progress" and never reaches its own hit-test.
     if (this.popup.isOpen) { this.popup.handleTap(x, y); return; }
+    if (this.modalOpen) {
+      // Reverse order: the full-screen dim rect is pushed first, so checking in push order would
+      // let it win over the OK/Cancel buttons drawn on top of it (see FamilyScene/base.ts precedent).
+      for (let i = this.modalHits.length - 1; i >= 0; i--) {
+        const { rect, action } = this.modalHits[i]!;
+        if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) { action(); return; }
+      }
+      return;
+    }
     if (!this.pointerActive) return;
     this.pointerActive = false;
     if (this.dragging) { this.dragging = false; return; }
@@ -324,7 +391,7 @@ export class FriendsSceneBase {
   }
 
   protected onWheel(y: number, deltaY: number): void {
-    if (this.popup.isOpen) return;
+    if (this.popup.isOpen || this.modalOpen) return;
     const next = wheelScrollY(this.regionTop, this.regionBottom, y, deltaY, this.scrollY, this.maxScroll);
     if (next === null) return;
     this.scrollY = next;
@@ -464,11 +531,12 @@ export class FriendsSceneBase {
 
   protected render(): void {
     if (this.dead) return;
-    // popup.container is a persistent singleton (built once in ctor, reused across
-    // renders) — detach it first so tearDownChildren doesn't destroy it. Otherwise
+    // popup.container / modalLayer are persistent singletons (built once in ctor, reused
+    // across renders) — detach them first so tearDownChildren doesn't destroy them. Otherwise
     // the next render re-adds a destroyed container (transform === null) and Pixi
     // throws "can't access property _parentID, e.transform is null".
     this.container.removeChild(this.popup.container);
+    this.container.removeChild(this.modalLayer);
     tearDownChildren(this.container);
     this.hits = [];
     // Cleared each render; only a scroll panel (friends list / world chat / mail) sets it
@@ -503,6 +571,20 @@ export class FriendsSceneBase {
 
     this.drawScrollbar();
     this.container.addChild(this.popup.container);
+    this.container.addChild(this.modalLayer);
+  }
+
+  // ── Confirm modal (remove-friend) ─────────────────────────────────────────
+
+  protected showConfirm(msg: string, onOk: () => void): void {
+    this.modalOpen = true;
+    this.modalHits = drawConfirmDialog(this.modalLayer, this.w, this.h, msg, onOk, () => this.closeModal());
+  }
+
+  protected closeModal(): void {
+    tearDownChildren(this.modalLayer);
+    this.modalHits = [];
+    this.modalOpen = false;
   }
 
   /**
@@ -623,6 +705,8 @@ export interface FriendsSceneBase {
   doRespond(requestId: string, accept: boolean): Promise<void>;
   doRemove(publicId: string): Promise<void>;
   doBlock(publicId: string): Promise<void>;
+  doDuel(publicId: string): void;
+  doDuelRespond(inviteId: string, accept: boolean): void;
   doCreateFamily(): Promise<void>;
   loadFamilyBrowse(query: string): Promise<void>;
   doJoinFamily(familyId: string): Promise<void>;

@@ -286,6 +286,8 @@ class PixiAppViews implements AppViews {
       applyFriendUpdate:   (u) => scene.applyFriendUpdate(u),
       applyChatMessage:    (m) => scene.applyChatMessage(m),
       applyMailNew:        (m) => scene.applyMailNew(m),
+      applyDuelInvited:    (d) => scene.applyDuelInvited(d),
+      applyDuelCancelled:  (d) => scene.applyDuelCancelled(d),
     };
   }
 

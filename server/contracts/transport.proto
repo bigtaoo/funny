@@ -57,6 +57,11 @@ message RoomJoin   {
 message RoomReady  { bool ready = 1; }
 message RoomLeave  {}
 message RoomStart  {}
+// Friend-challenge ("切磋") invite: skips the room-code exchange — the target is a friend, addressed
+// by public_id, resolved to an accountId server-side (gateway). deck mirrors RoomCreate.deck.
+message DuelInvite  { string to_public_id = 1; repeated string deck = 2; }
+// deck is only meaningful when accept=true (server assigns defaultPvpDeck if empty, same as RoomJoin).
+message DuelRespond { string invite_id = 1; bool accept = 2; repeated string deck = 3; }
 message CmdSubmit  { bytes commands = 1; }          // sent only when playing a card
 message MatchResult{ string state_hash = 1; uint32 winner_side = 2; string stats_json = 3; }   // winner_side: the winning side as determined by the authoritative client simulation (used for ranked; both sides must agree; ignored for friendly). stats_json: per-match achievement counter JSON for the local player (S9-6, {"kill.archer":n,…}; only fed for ranked, accumulated by meta after L1 validation; ignored for friendly)
 message ConnResume { string room_id = 1; uint32 last_frame = 2; }
@@ -89,6 +94,8 @@ message ClientMsg {
     Ping         ping          = 9;
     ClientCaps   client_caps   = 10;
     JudgeVerdict judge_verdict = 11;
+    DuelInvite   duel_invite   = 12;
+    DuelRespond  duel_respond  = 13;
   }
 }
 
@@ -199,6 +206,12 @@ message ChatMessagePush {
   uint64 ts = 5;
 }
 message MailNew { string mail_id = 1; bool has_attachment = 2; }
+// Friend-challenge ("切磋") invite pushed to the invited friend; a plain accept/decline turns straight
+// into MatchFound (via matchsvc's existing startMatch), so there is no separate "duel accepted" push.
+message DuelInvited { string invite_id = 1; string from_public_id = 2; string from_name = 3; }
+// Pushed back to the inviter on the unhappy path only (accept never reaches here — see DuelInvited doc).
+// reason: declined | timeout | offline | not_found.
+message DuelCancelled { string invite_id = 1; string reason = 2; }
 
 // ── SLG world map (S8): server→client push only ──────────────────
 // Same principle as social (SOC3 / §14.5): SLG player actions go via REST to worldsvc (single writer),
@@ -292,6 +305,8 @@ message ServerMsg {
     WorldEvent        world_event     = 22;
     NationMsg         nation_msg      = 23;
     MatchBot          match_bot       = 24;
+    DuelInvited       duel_invited    = 25;
+    DuelCancelled     duel_cancelled  = 26;
   }
 }
 

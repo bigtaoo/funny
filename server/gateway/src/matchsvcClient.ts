@@ -74,7 +74,10 @@ export type PushMsg =
   // Sect channel message (S8-4b, worldsvc fans out via Redis pub/sub → gateway delivers to online members; ≤900 members).
   | { kind: 'sect_msg'; sectId: string; fromPublicId: string; fromName: string; body: string; ts: number }
   // Nation / world public channel (B7, worldsvc fans out via Redis pub/sub → gateway delivers to online players in the same world).
-  | { kind: 'nation_msg'; worldId: string; fromPublicId: string; fromName: string; body: string; ts: number };
+  | { kind: 'nation_msg'; worldId: string; fromPublicId: string; fromName: string; body: string; ts: number }
+  // Friend challenge ("切磋", ADR friends-duel-confirm) — see matchsvc's own PushMsg doc comment.
+  | { kind: 'duel_invited'; inviteId: string; fromPublicId: string; fromName: string }
+  | { kind: 'duel_cancelled'; inviteId: string; reason: string };
 
 export class MatchsvcClient {
   constructor(
@@ -133,5 +136,19 @@ export class MatchsvcClient {
   }
   disconnected(accountId: string): void {
     this.post('/mm/conn/disconnected', { accountId });
+  }
+  // Friend challenge ("切磋", ADR friends-duel-confirm) — not idempotent (a dup would create a second
+  // pending invite / re-decide an already-resolved one), so stays retries=0 like room create/join.
+  duelInvite(
+    accountId: string, name: string, publicId: string, equippedTitle: string, avatarId: string,
+    toAccountId: string, deck: string[] = [],
+  ): void {
+    this.post('/mm/duel/invite', { accountId, name, publicId, equippedTitle, avatarId, toAccountId, deck });
+  }
+  duelRespond(
+    accountId: string, inviteId: string, accept: boolean,
+    name = '', publicId = '', equippedTitle = '', avatarId = '', deck: string[] = [],
+  ): void {
+    this.post('/mm/duel/respond', { accountId, inviteId, accept, name, publicId, equippedTitle, avatarId, deck });
   }
 }

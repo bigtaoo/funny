@@ -47,7 +47,7 @@ function buildScene(cb: Partial<FriendsSceneCallbacks> = {}): any {
     addFriend: async () => {},
     respond: async () => {},
     removeFriend: async () => {},
-    blockUser: async () => {},
+    blockUser: async () => {}, duelInvite: () => {}, duelRespond: () => {},
     openChat() {},
     loadMail: async () => ({ mail: [], unread: 0 }),
     markMailRead: async () => {},

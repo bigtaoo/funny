@@ -106,6 +106,14 @@ export class NetClient {
   leaveRoom(): void {
     this.sendClient({ roomLeave: {} });
   }
+  /** Friend challenge ("切磋"): skips the manual room-code exchange, addressed by the friend's publicId. */
+  duelInvite(toPublicId: string, deck: string[] = []): void {
+    this.sendClient({ duelInvite: { toPublicId, deck } });
+  }
+  /** deck is only meaningful when accept=true (server assigns defaultPvpDeck if empty, same as joinRoom). */
+  duelRespond(inviteId: string, accept: boolean, deck: string[] = []): void {
+    this.sendClient({ duelRespond: { inviteId, accept, deck } });
+  }
   /** Submit a play command (PlayerCommands bytes already encoded with game.proto, opaque). */
   submitCmd(commands: Uint8Array): void {
     this.sendClient({ cmdSubmit: { commands } });
