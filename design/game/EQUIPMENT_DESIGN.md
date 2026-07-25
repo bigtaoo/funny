@@ -763,6 +763,15 @@ buildSiegeBlueprints(levels, equipped, inv)
 - 0 级不显示任何符号（与旧的省略 "+0" 后缀语义一致）。
 - 用假 `save`/`cb` 构造 `EquipmentScene` 两次 `app.renderer.render` 后 `toDataURL` 截图验证（背包卡片、loadout 预览、详情弹窗三处），`tsc --noEmit` 通过。
 
+### 20.6c 实现记录（2026-07-25，✅）— 满级星星左右翻转动画
+
+强化到 `EQUIP_MAX_LEVEL`（满级）的星星行现在持续播放左右翻转动画，与其余等级的静态星星行区分，一眼认出满级装备。
+
+- `buildLevelStars()`：仅当 `starN === EQUIP_MAX_LEVEL` 时，把每颗星星图标的 pivot 移到自身中心（否则 `scale.x` 翻转会带偏位置），并把它连同一个按下标错开的相位一起登记进 `EquipmentSceneBase.flipStars`。
+- `update(dt)`：对 `flipStars` 中的精灵按 `scale.x = cos(t·STAR_FLIP_SPEED + phase)` 逐帧驱动（约 2.6s 一个完整翻转周期，相邻星星错相位形成波纹感，而非齐刷刷同步闪烁），与既有的 scrollDirty/忙碌指示器重绘互不影响——直接改精灵属性，不触发整帧重绘。
+- 每帧顺带过滤掉 `obj.destroyed` 的精灵（PIXI `destroy()` 后 `transform` 置空，再写 `scale.x` 会抛错）：背包网格滚动出屏、详情弹窗关闭重开都会拆旧建新，这样自愈式清理即可，不需要在每个调用点手动清空 `flipStars`。
+- 落点：`EquipmentScene/base.ts`（`buildLevelStars`/`update`/两个新增模块常量 `STAR_FLIP_SPEED`/`STAR_FLIP_STAGGER`）；背包卡片、详情弹窗两处星星行共用同一份逻辑，无需改动 `inventory.ts`/`detail.ts` 调用点。`tsc --noEmit` + 相关 `equipment*` vitest 套件通过。
+
 ### 20.3 实现记录（2026-06-24，✅）— UI 装备图标程序化
 
 落地 = 新建 `client/src/render/equipmentGlyph.ts`（`drawEquipmentGlyph(g, slot, rarity, size, seed)` + `MEDIA` 媒材色表，用 `SketchPen` 画 3 类基形：weapon=笔杆+笔尖 / armor=封皮+书脊 / trinket=小配件，稀有度色驱动填充与点缀）+ 接入 `EquipmentScene`（loadout 三槽、背包实例行、锻造行把原"纯文字"替换为程序图标）。零位图资产，`tsc --noEmit` + webpack 构建验证。
