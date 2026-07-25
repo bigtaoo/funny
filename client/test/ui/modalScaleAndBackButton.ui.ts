@@ -164,9 +164,9 @@ describe('Detail/reforge modal panel scales to 80% of the constrained screen axi
     expect(inner.landscape).toBe(true);
 
     // Natural (unscaled) content size copied from CardScene/detail.ts openDetail() — not
-    // injured, so contentH = 12+26+106+4+28+26+82+40.
+    // injured, so contentH = 12+26+122+4+28+26+82+40.
     const mw0 = 380;
-    const mh0 = 12 + 26 + 106 + 4 + 28 + 26 + 82 + 40;
+    const mh0 = 12 + 26 + 122 + 4 + 28 + 26 + 82 + 40;
     const expectedScale = (inner.h * 0.8) / mh0;
 
     expect(inner.modalScale).toBeCloseTo(expectedScale, 10);

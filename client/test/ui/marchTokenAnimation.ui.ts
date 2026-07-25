@@ -72,6 +72,7 @@ function marchLeft(marchId: string, kind: MarchView['kind']): MarchView {
  *  syncMarchTokens to call syncState/update and reposition the container. */
 function makeFakeRuntime() {
   return {
+    setSilhouette: vi.fn(),
     syncState: vi.fn(),
     update: vi.fn(),
     destroy: vi.fn(),
