@@ -1,6 +1,8 @@
-// Coverage for the 2026-07-22 alliance-controls move: the ally / manage-allies actions moved off
-// the bottom bar onto the top summary band. Viewing allies is open to every member (a read-only
-// "Allies (n)" button); forming (ally) and breaking (manage allies) alliances stay sect-leader only.
+// Coverage for the 2026-07-22 alliance-controls move (off the bottom bar) and the 2026-07-25
+// header-declutter pass (landscape lifts them again, off the body's summary band and into the
+// header itself, alongside the sect identity — see SectSceneBase.drawHeaderTitle). Viewing allies
+// is open to every member (a read-only "Allies (n)" button); forming (ally) and breaking (manage
+// allies) alliances stay sect-leader only.
 //
 // Runs under the headless PIXI adapter (test/harness/pixiHeadless.ts via vitest.ui.config.ts).
 // Run: npm run test:ui
@@ -67,9 +69,14 @@ function buildScene(sect: SectDetailView, fam: FamilyDetailView): any {
   return new SectScene(layout, new InputManager(), cb as any);
 }
 
-/** All Text objects with their absolute-ish y (position within bodyLayer subtree). */
+/** All Text objects with their absolute-ish y, from both the header (this.container's direct
+ *  children — see SectSceneBase.drawHeaderTitle) and the body subtree, since landscape now draws
+ *  the alliance controls in the header while portrait still draws them in the body. */
 function texts(scene: any): { text: string; y: number }[] {
   const out: { text: string; y: number }[] = [];
+  for (const c of scene.container.children) {
+    if (c instanceof PIXI.Text) out.push({ text: c.text, y: c.y });
+  }
   const walk = (node: PIXI.Container): void => {
     for (const c of node.children) {
       if (c instanceof PIXI.Text) out.push({ text: c.text, y: c.y });
@@ -81,7 +88,7 @@ function texts(scene: any): { text: string; y: number }[] {
 }
 
 describe('SectScene — alliance controls', () => {
-  it('sect leader sees Ally + Manage Allies on the top summary band', async () => {
+  it('sect leader sees Ally + Manage Allies in the header (landscape)', async () => {
     const scene = buildScene(makeSect({ leaderId: 'me' }), makeMyFamily('leader', 'me'));
     await scene.loadData();
     scene.render();
@@ -91,7 +98,7 @@ describe('SectScene — alliance controls', () => {
     const ally = all.find((t) => t.text === 'Ally');
     expect(manage).toBeTruthy();
     expect(ally).toBeTruthy();
-    // Seated near the header (top summary band), not down in the old bottom bar.
+    // Seated in the header, not down in the old bottom bar.
     expect(manage!.y).toBeLessThan(scene.h / 2);
     // The member-only read-only view button is not shown to the leader.
     expect(all.some((t) => t.text.startsWith('Allies ('))).toBe(false);
