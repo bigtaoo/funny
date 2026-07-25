@@ -509,6 +509,14 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
   - 顺带修文案 bug：`auction.price`（固定价挂单价格标签）此前被误设成与 `auction.startPrice` 同文「起拍价（金币）/ Starting Price (coins) / Startpreis (Münzen)」，固定价单显示为「起拍价」误导玩家。改为「价格（金币）/ Price (coins) / Preis (Münzen)」。
 - **验收**：client `tsc --noEmit` 绿 + `webpack --mode development` 构建成功。真实复现需以卖家身份登录且自己的挂单出现在市场（依赖线上账号数据），本地 dev 无此数据，未做浏览器截图验证。
 
+### 修复：余额不足仍能买走拍卖行商品（2026-07-25）
+
+- **问题**：玩家反馈金币只有 300 多，却买走了标价 1200 的紫装，卖家还真收到了税后 1080 金币——买家没扣钱，物权和卖家收益都正常结算。
+- **根因**：`commercial` 服务的内部接口 `/internal/spend`（`server/commercial/src/internalHttp.ts`）无论扣款成功还是余额不足，HTTP 状态码永远是 200，业务结果放在响应体 `{ok, error}` 里（`INSUFFICIENT_FUNDS` 走这条路，见 `server/commercial/src/service/shop.ts` 的 `spend()`）。但 `server/auctionsvc/src/commercialClient.ts` 的 `HttpAuctionCommercialClient.spend()` 只检查了 HTTP 层 `res.ok`（2xx 恒真），从没解析响应体的 `ok` 字段——余额不足时钱包压根没扣款，但调用方以为成功，`buyAuction` 照常往下走完「物权判给买家 + 税后打款给卖家」全流程。同款代码（注释写着从 worldsvc 迁移过来）在 `server/worldsvc/src/commercialClient.ts` 里一模一样，SLG 侧建筑加速/商店购买/世界频道发言/宗门创建/卡牌恢复/领地迁移的花费扣款同样能被绕过。metaserver 的对应客户端（`server/metaserver/src/commercialClient.ts`）写法是对的，规范地解析了 `Body<T>` 再判断 `ok`，可以对照。
+- **改动**：`auctionsvc`/`worldsvc` 的 `commercialClient.ts` 的 `spend()` 都补上响应体 `ok` 字段校验，`ok:false` 时抛错（携带 `error`），行为对齐 metaserver 侧的实现。
+- **测试**：`server/auctionsvc/test/commercial-client.test.ts`、`server/worldsvc/test/commercial-client.test.ts` 新增单测（canned HTTP 服务器模拟 `/internal/spend` 返回 HTTP 200 + `{ok:false, error:'INSUFFICIENT_FUNDS'}`，断言 `spend()` 必须抛错而非静默成功）——这也是此前两个服务的测试都靠内存假客户端打桩、从未真正跑过 `Http*CommercialClient` 网络解析层的覆盖缺口。
+- **验收**：`auctionsvc`/`worldsvc` 两包 `tsc --noEmit` 全绿；`vitest run` 全量跑过（auctionsvc 69/69，worldsvc 316/316）。纯服务端逻辑改动，无可见渲染变化，未做浏览器截图验证。
+
 ---
 
 *本文为拍卖行机制权威，DRAFT/⚠️ 处随实现与拍板细化；数值以 `server/shared/src/slg.ts` 为准。*
