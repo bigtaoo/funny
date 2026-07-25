@@ -67,4 +67,30 @@ describe('MatchsvcClient', () => {
     c.roomCreate('a', 'A', '100000001');
     expect(calls).toHaveLength(0);
   });
+
+  it('duelInvite/duelRespond ("切磋") hit the correct endpoints with the expected bodies', () => {
+    const c = new MatchsvcClient(BASE, KEY);
+    c.duelInvite('a', 'Alice', '100000001', 'title-1', 'avatar-1', 'b', ['card_1']);
+    c.duelRespond('b', 'invite-1', false); // decline: no profile args
+    c.duelRespond('b', 'invite-2', true, 'Bob', '100000002', 'title-2', 'avatar-2', ['card_2']);
+
+    expect(calls.map((x) => x.url)).toEqual([
+      `${BASE}/mm/duel/invite`,
+      `${BASE}/mm/duel/respond`,
+      `${BASE}/mm/duel/respond`,
+    ]);
+    expect(calls.every((x) => x.key === KEY)).toBe(true);
+    expect(calls[0]!.body).toEqual({
+      accountId: 'a', name: 'Alice', publicId: '100000001',
+      equippedTitle: 'title-1', avatarId: 'avatar-1', toAccountId: 'b', deck: ['card_1'],
+    });
+    expect(calls[1]!.body).toEqual({
+      accountId: 'b', inviteId: 'invite-1', accept: false,
+      name: '', publicId: '', equippedTitle: '', avatarId: '', deck: [],
+    });
+    expect(calls[2]!.body).toEqual({
+      accountId: 'b', inviteId: 'invite-2', accept: true,
+      name: 'Bob', publicId: '100000002', equippedTitle: 'title-2', avatarId: 'avatar-2', deck: ['card_2'],
+    });
+  });
 });
