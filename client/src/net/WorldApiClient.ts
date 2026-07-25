@@ -334,6 +334,16 @@ export class WorldApiClient {
     return this.req('POST', '/world/watchtower', { worldId, x, y });
   }
 
+  /** ADR-051 (P5): build a player structure (arrowTower / blocker) on own or same-family territory at (x,y). */
+  async buildStructure(worldId: string, x: number, y: number, kind: 'arrowTower' | 'blocker'): Promise<WorldTileView> {
+    return this.req('POST', '/world/structure', { worldId, x, y, kind });
+  }
+
+  /** ADR-051 (P5): demolish one's own structure at (x,y). */
+  async demolishStructure(worldId: string, x: number, y: number): Promise<WorldTileView> {
+    return this.req('POST', '/world/structure/demolish', { worldId, x, y });
+  }
+
   async startMarch(
     worldId: string,
     fromX: number, fromY: number,

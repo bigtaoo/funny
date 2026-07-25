@@ -5,7 +5,7 @@ import { buildIcon } from '../../render/icons';
 import { WorldApiError } from '../../net/WorldApiClient';
 import type { TeamTemplate } from '../../net/WorldApiClient';
 import { carriedTroops } from '../../game/meta/teamTroops';
-import { proceduralTile } from '@nw/shared';
+import { proceduralTile, ARROW_TOWER_COST, BLOCKER_COST } from '@nw/shared';
 import { loadResAtlas, getResTexture, isResAtlasReady } from '../../render/resAtlasLoader';
 import { loadCityAtlas, getCityTexture, isCityAtlasReady } from '../../render/cityAtlasLoader';
 import { loadTerrainAtlas, getTerrainTexture, isTerrainAtlasReady } from '../../render/terrainAtlasLoader';
@@ -372,6 +372,50 @@ export class WorldMapNet {
       this.ctx.tileCache.clear();                                  // new tower expands vision → re-fetch entire viewport to reveal tiles
       await this.loadMapViewport();
       this.ctx.panels.showToast(t('world.watchtowerBuilt'));
+      this.ctx.view.renderMap(); this.ctx.panels.renderHud();
+    } catch (e) {
+      this.ctx.panels.showToast(this.errorMsg(e), C.red);
+    }
+  }
+
+  /** ADR-051 (P5): confirm dialog (shows resource cost) before building a structure; confirm → doBuildStructure. */
+  confirmBuildStructure(tx: number, ty: number, kind: 'arrowTower' | 'blocker'): void {
+    const cost = kind === 'arrowTower' ? ARROW_TOWER_COST : BLOCKER_COST;
+    this.ctx.panels.showModal(
+      [
+        t(kind === 'arrowTower' ? 'world.arrowTowerTitle' : 'world.blockerTitle'),
+        t('world.structureConfirm')
+          .replace('{paper}', String(cost.paper ?? 0))
+          .replace('{metal}', String(cost.metal ?? 0)),
+      ],
+      [
+        { label: t('world.buildBtn'), action: () => void this.doBuildStructure(tx, ty, kind) },
+        { label: '✕', action: () => this.ctx.panels.closeModal() },
+      ],
+    );
+  }
+
+  async doBuildStructure(tx: number, ty: number, kind: 'arrowTower' | 'blocker'): Promise<void> {
+    this.ctx.panels.closeModal();
+    try {
+      await this.ctx.cb.worldApi.buildStructure(this.ctx.cb.worldId, tx, ty, kind);
+      this.ctx.me = await this.ctx.cb.worldApi.getMe(this.ctx.cb.worldId); // resources deducted — refresh
+      this.ctx.tileCache.delete(`${tx}:${ty}`);
+      await this.loadMapViewport();
+      this.ctx.panels.showToast(t('world.structureBuilt'));
+      this.ctx.view.renderMap(); this.ctx.panels.renderHud();
+    } catch (e) {
+      this.ctx.panels.showToast(this.errorMsg(e), C.red);
+    }
+  }
+
+  async doDemolishStructure(tx: number, ty: number): Promise<void> {
+    this.ctx.panels.closeModal();
+    try {
+      await this.ctx.cb.worldApi.demolishStructure(this.ctx.cb.worldId, tx, ty);
+      this.ctx.tileCache.delete(`${tx}:${ty}`);
+      await this.loadMapViewport();
+      this.ctx.panels.showToast(t('world.structureDemolished'));
       this.ctx.view.renderMap(); this.ctx.panels.renderHud();
     } catch (e) {
       this.ctx.panels.showToast(this.errorMsg(e), C.red);

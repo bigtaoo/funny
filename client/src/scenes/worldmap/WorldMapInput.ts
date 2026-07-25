@@ -125,6 +125,15 @@ export class WorldMapInput {
       if (!tile.watchtower) {
         myButtons.push({ label: t('world.actWatchtower'), action: () => this.ctx.net.confirmWatchtower(tx, ty) });
       }
+      // ADR-051 (P5): player structures — one per tile. Build an arrow tower (chips passing enemies over 9 cells)
+      // or a blocker (forces enemy detours) on own territory; demolish one's own structure. (Not offered on the
+      // base anchor — that branch returns above.)
+      if (tile.structure) {
+        myButtons.push({ label: t('world.actDemolish'), action: () => void this.ctx.net.doDemolishStructure(tx, ty) });
+      } else {
+        myButtons.push({ label: t('world.actArrowTower'), action: () => this.ctx.net.confirmBuildStructure(tx, ty, 'arrowTower') });
+        myButtons.push({ label: t('world.actBlocker'), action: () => this.ctx.net.confirmBuildStructure(tx, ty, 'blocker') });
+      }
       // Relocate here (§3.4): the capital may only move onto a 3×3 block the player already fully owns —
       // this clicked cell as centre plus all 8 neighbours. Offered on every owned tile so the intent is
       // discoverable; when the surrounding ring isn't all mine the button is disabled and taps explain why
@@ -141,7 +150,10 @@ export class WorldMapInput {
       }
       myButtons.push({ label: t('world.actAbandon'), action: () => this.ctx.net.doAbandon(tx, ty) });
       myButtons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
-      const head = tile.watchtower ? [t('world.mine'), t('world.hasWatchtower'), `(${tx}, ${ty})`] : [t('world.mine'), `(${tx}, ${ty})`];
+      const head = [t('world.mine')];
+      if (tile.watchtower) head.push(t('world.hasWatchtower'));
+      if (tile.structure) head.push(t(tile.structure.kind === 'arrowTower' ? 'world.hasArrowTower' : 'world.hasBlocker'));
+      head.push(`(${tx}, ${ty})`);
       this.ctx.panels.showModal(head, myButtons);
       return;
     }
@@ -158,6 +170,8 @@ export class WorldMapInput {
       }
       buttons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
       const enemyHead = [t('world.enemyTile'), ownerLine, `(${tx}, ${ty})`];
+      // ADR-051 (P5): flag an enemy structure so the player knows attacking this tile razes it.
+      if (tile.structure) enemyHead.push(t(tile.structure.kind === 'arrowTower' ? 'world.hasArrowTower' : 'world.hasBlocker'));
       if (tile.maxHp && tile.hp != null) enemyHead.push(t('world.buildingHp').replace('{hp}', String(tile.hp)).replace('{max}', String(tile.maxHp)));
       this.ctx.panels.showModal(enemyHead, buttons);
       return;
