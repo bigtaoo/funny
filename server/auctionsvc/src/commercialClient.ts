@@ -30,10 +30,14 @@ export class HttpAuctionCommercialClient implements AuctionCommercialClient {
       headers: { 'content-type': 'application/json', ...internalHeaders('auctionsvc', this.internalKey) },
       body: JSON.stringify({ accountId, amount, orderId }),
     });
+    // commercial's /internal/spend always answers HTTP 200; business failures (e.g. INSUFFICIENT_FUNDS)
+    // are carried in the JSON body as {ok:false, error}, not the HTTP status — res.ok alone can't detect them.
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       throw new Error(body.error ?? `spend failed: ${res.status}`);
     }
+    const body = (await res.json()) as { ok: boolean; error?: string };
+    if (!body.ok) throw new Error(body.error ?? 'spend failed');
   }
 }
 
