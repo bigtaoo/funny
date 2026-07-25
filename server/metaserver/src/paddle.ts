@@ -9,6 +9,8 @@
 //   NW_PADDLE_WEBHOOK_SECRET    Paddle webhook signature secret (from Paddle dashboard)
 //   NW_PADDLE_CLIENT_TOKEN      Paddle.js client-side token (sent to client via /bootstrap; ptok_…)
 //   NW_PADDLE_PRICE_IDS         Tier → Paddle price ID map: "t499:pri_xxx,t999:pri_yyy,..."
+//                               Also carries the subscription products (GACHA_DESIGN §5) under the
+//                               reserved keys `monthly_card` / `year_card`, e.g. "...,monthly_card:pri_zzz,year_card:pri_www"
 //   NW_PADDLE_SANDBOX           "true" = use sandbox API (default false)
 //
 // Paddle webhook signature (h1 scheme):
@@ -20,7 +22,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { IAP_TIERS, IAP_TIERS_LIST } from '@nw/shared';
 import type { CommercialClient } from './commercialClient.js';
-import { mirrorCoins } from './economy.js';
+import { mirrorCoins, mirrorWalletFrom } from './economy.js';
 import type { Collections } from '@nw/shared';
 
 const PADDLE_PROD_API = 'https://api.paddle.com';
@@ -66,6 +68,25 @@ export function usdCentsForPriceId(priceId: string): number {
     }
   }
   return 0;
+}
+
+/**
+ * Resolves a Paddle price ID to a subscription product via the same NW_PADDLE_PRICE_IDS mapping as
+ * coinsForPriceId, using the reserved tier keys `monthly_card` / `year_card` (GACHA_DESIGN §5) instead
+ * of an IAP_TIERS coin lookup. Returns null if the price ID isn't mapped to either.
+ */
+export function subscriptionForPriceId(priceId: string): 'monthly' | 'year' | null {
+  const raw = process.env.NW_PADDLE_PRICE_IDS ?? '';
+  for (const pair of raw.split(',')) {
+    const colonIdx = pair.indexOf(':');
+    if (colonIdx < 0) continue;
+    const tierKey = pair.slice(0, colonIdx).trim();
+    const pid = pair.slice(colonIdx + 1).trim();
+    if (pid !== priceId) continue;
+    if (tierKey === 'monthly_card') return 'monthly';
+    if (tierKey === 'year_card') return 'year';
+  }
+  return null;
 }
 
 /**
@@ -208,10 +229,25 @@ export function registerPaddleRoutes(app: FastifyInstance, deps: PaddleDeps): vo
       }
 
       const { tierId } = req.body as { tierId?: string };
-      if (!tierId || !IAP_TIERS[tierId]) {
+      // tierId is either a coin tier (IAP_TIERS) or one of the subscription products (GACHA_DESIGN §5),
+      // which share the same checkout+webhook plumbing but aren't coin-tier priced.
+      const isSubscription = tierId === 'monthly_card' || tierId === 'year_card';
+      if (!tierId || (!IAP_TIERS[tierId] && !isSubscription)) {
         return reply
           .code(400)
-          .send({ ok: false, error: { code: 'INVALID_TIER', message: 'unknown coin tier' } });
+          .send({ ok: false, error: { code: 'INVALID_TIER', message: 'unknown product' } });
+      }
+
+      if (isSubscription) {
+        // Refuse before charging when a card is already active (single-slot gate, same rule
+        // subscriptionCardBuy enforces at grant time) — never take payment for a purchase the
+        // server will end up refusing to grant.
+        const wallet = await deps.commercial.getWallet(accountId);
+        if (wallet && wallet.subscriptionExpiry > deps.now()) {
+          return reply
+            .code(400)
+            .send({ ok: false, error: { code: 'ALREADY_ACTIVE', message: 'subscription already active' } });
+        }
       }
 
       const priceId = priceIdForTier(tierId);
@@ -311,6 +347,35 @@ export function registerPaddleRoutes(app: FastifyInstance, deps: PaddleDeps): vo
 
         if (!transactionId || status !== 'completed' || !accountId || !priceId) {
           return reply.code(400).send('missing required fields');
+        }
+
+        // Monthly/year card (GACHA_DESIGN §5): grants a subscription instead of coins. Uses the Paddle
+        // transactionId as the orderId, so a redelivered webhook (Paddle at-least-once) is idempotent the
+        // same way paddleComplete dedupes coin recharges on `paddle:${transactionId}`.
+        const subscriptionProduct = subscriptionForPriceId(priceId);
+        if (subscriptionProduct) {
+          // These SKUs aren't meant to be quantity-adjustable (buying N cards isn't a supported grant
+          // shape) — the Paddle dashboard price should disable quantity selection; log if it ever shows up.
+          if (typeof rawQuantity === 'number' && Number.isFinite(rawQuantity) && rawQuantity !== 1) {
+            app.log.warn(`paddle webhook: subscription tx ${transactionId} reported quantity ${rawQuantity}, ignoring (grants exactly one card)`);
+          }
+          const orderId = `paddle:${transactionId}`;
+          const result = subscriptionProduct === 'monthly'
+            ? await deps.commercial.monthlyCardBuy({ accountId, orderId })
+            : await deps.commercial.yearCardBuy({ accountId, orderId });
+          if (!result.ok) {
+            // Real money already changed hands but the grant was refused (e.g. an extreme same-instant
+            // race against another purchase slipping past the checkout-time pre-check) — log for CS/refund
+            // lookup instead of silently dropping it.
+            app.log.error(`paddle webhook: subscription grant failed ${result.error} tx=${transactionId}`);
+            await deps.commercial.recordPaddleEvent({
+              transactionId, eventType: 'transaction.completed', status, accountId, rawEvent: rawBody,
+            });
+            return reply.code(200).send('processed');
+          }
+          const w = await deps.commercial.getWallet(accountId);
+          if (w) await mirrorWalletFrom(deps.cols, accountId, w, deps.now());
+          return reply.code(200).send('ok');
         }
 
         const unitCoins = coinsForPriceId(priceId);

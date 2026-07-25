@@ -608,6 +608,7 @@ export interface ShopSceneBase {
   onRedeem(): Promise<void>;
   onRecharge(tierId: string): Promise<void>;
   runDeal(action: () => Promise<ShopActionResult>, okKey: TranslationKey, itemName?: string): Promise<void>;
+  runUnboundedDeal(action: () => Promise<ShopActionResult>, okKey: TranslationKey, itemName?: string): Promise<void>;
   drawShopGrid(body: PIXI.Container, top: number): void;
   drawCoinsGrid(body: PIXI.Container, top: number): void;
 }

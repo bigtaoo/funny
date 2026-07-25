@@ -28,8 +28,10 @@ const SKIN_PLACEHOLDER_ART: Record<string, string> = {
   skin_shop_e1: shieldBearerArtUrl as string,
 };
 
-// Subscription-card display prices (¥). Mirror of @nw/shared MONTHLY/YEAR_CARD_PRICE_YUAN — the real IAP charge is
-// server-authorized (no coins debited); these drive the strike-through + savings badge only. Year = 12×¥30 (¥360) at ~10% off → ¥298.
+// Subscription-card display prices (¥). Mirror of @nw/shared MONTHLY/YEAR_CARD_PRICE_YUAN; these drive the
+// strike-through + savings badge only, no client-side coin debit. On web the buy button now runs a real Paddle
+// checkout for this amount (nav/shop.ts doBuySubscription); native/hidden-store platforms still treat the buy
+// as already-authorized (no IAP wired there yet). Year = 12×¥30 (¥360) at ~10% off → ¥298.
 const MONTHLY_CARD_YUAN = 30;
 const YEAR_CARD_YUAN = 298;
 const YEAR_CARD_LIST_YUAN = 360;
@@ -98,7 +100,7 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
         const buttons: BtnSpec[] = [
           active
             ? { label: t('shop.monthlyActive'), enabled: false, primary: true }
-            : { label: t('shop.buy'), enabled: !busy, primary: true, fn: () => void this.runDeal(() => this.cb.buyMonthlyCard!(), 'shop.bought', t('shop.monthlyCard')) },
+            : { label: t('shop.buy'), enabled: !busy, primary: true, fn: () => void this.runUnboundedDeal(() => this.cb.buyMonthlyCard!(), 'shop.bought', t('shop.monthlyCard')) },
         ];
         if (this.cb.claimMonthlyCard) {
           // Claim greys out both when the card is inactive (not purchased) and once today's reward is taken.
@@ -129,7 +131,7 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
           buttons: [
             active
               ? { label: t('shop.monthlyActive'), enabled: false, primary: true }
-              : { label: t('shop.buy'), enabled: !busy, primary: true, fn: () => void this.runDeal(() => this.cb.buyYearCard!(), 'shop.bought', t('shop.yearCard')) },
+              : { label: t('shop.buy'), enabled: !busy, primary: true, fn: () => void this.runUnboundedDeal(() => this.cb.buyYearCard!(), 'shop.bought', t('shop.yearCard')) },
           ],
         });
       }

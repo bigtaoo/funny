@@ -379,3 +379,41 @@ metaserver /paddle/webhook（HMAC 校验后）
 `commercial.paddleComplete()`——首充 2× 奖励逻辑不变（乘的是发币总额，不关心是 1 份还是 5 份换来的）。
 `createPaddleTransaction` 建交易时仍传 `quantity: 1` 作为 overlay 的初始默认值，玩家在浮层里自行调到 Paddle 后台
 允许的上限。
+
+### 10.7 月卡/年卡接入真实 Paddle 扣款（2026-07-25）
+
+> 状态：✅ 已实现（web/Paddle）。原生（Apple/Google）与隐藏渠道（微信/CrazyGames）维持旧的直接授权行为，范围外——
+> 这两类平台目前没有真实订阅 IAP 基础设施（原生商店的"订阅"概念与本仓一次性天数延长的 grant 模型不同，是独立项目）。
+
+此前 `buyMonthlyCard`/`buyYearCard`（`GACHA_DESIGN.md §5`）无论平台都直接调 `POST /monthly-card/buy` /
+`/year-card/buy`，服务端"当作已授权购买"立即生效——玩家点 Buy 就直接拿到卡，网页端从未真的走过 Paddle 扣款
+（现象与本节其它小节修的"钱扣了没到账"相反：这里是**根本没扣钱**）。
+
+web 端（`platform.iapKind()==='paddle'`）现在复用 §10.2 同一套 checkout+webhook 通道：
+
+```
+ShopScene → buyMonthlyCard()/buyYearCard() → createAppCore.doBuySubscription('monthly_card'|'year_card', ...)
+  1) api.paddleCheckout('monthly_card'|'year_card') → POST /shop/paddle/checkout → { transactionId }
+     - 服务端先查钱包 subscriptionExpiry：卡生效中 → 400 ALREADY_ACTIVE（挡在扣款之前，不让真钱落在一个
+       注定被拒发的请求上）
+  2) platform.openPaddleCheckout(transactionId, clientToken)   # 同 §10.2，用户节奏，不设超时
+  3) Paddle 服务器异步回调 /paddle/webhook：
+       subscriptionForPriceId(priceId) 命中 'monthly'|'year' → commercial.monthlyCardBuy/yearCardBuy
+       （orderId = paddle:${transactionId}，天然幂等，同 paddleComplete 的 paddle:${transactionId} 收据键思路）
+       → mirrorWalletFrom 把新 expiry + 即赠 coins 一起镜像回 save（不只是 mirrorCoins）
+  4) 客户端轮询 saveManager.refresh() 直到 monetization.subscriptionExpiry 变化（同 pollForCoinIncrease 套路）
+     - 到账 → shop.bought 提示；超时未到账 → shop.monthlyPending（卡仍会随后生效）
+```
+
+- **价格 ID 映射**：`NW_PADDLE_PRICE_IDS` 沿用同一个环境变量，新增两个保留档位键 `monthly_card` / `year_card`
+  （不进 `IAP_TIERS`，`coinsForPriceId` 天然查不到会返回 0；`subscriptionForPriceId` 专门查这两个键，两套查找互不
+  干扰）。详见 `IAP_CREDENTIALS.md §1.1`。
+- **数量语义**：这两个 Paddle Price 应在后台关闭"可调数量"——本仓的订阅 grant 是"买一张卡延长 N 天"，没有"一次
+  买 3 张卡"的语义。webhook 侧忽略非 1 的 quantity（只记 warn 日志，不多发），呼应 §10.6 的夹紧思路但方向不同
+  （§10.6 是多退少补，这里是干脆不认）。
+- **超时/UI 改动**：`ShopScene` 月卡/年卡的 Buy 按钮此前经 `runDeal`（内部 `withTimeout` 包裹 action），会把
+  Paddle 弹层这种用户节奏的等待错杀成超时；新增 `runUnboundedDeal`（无 `withTimeout`，语义同 §10.2 提到的
+  `ShopScene.onRecharge` 特例）专供这两个按钮使用，其余 `runDeal` 调用点（领取每日奖励、新手包）不受影响。
+- **同实例竞态**：`subscriptionCardBuy` 的单卡门控在 webhook 时仍会兜底（极端情况——两个标签页同时下单——checkout
+  时的预检查没拦住），此时钱已经真扣了但卡拒发，走 `recordPaddleEvent` 留痕供客服/退款排查（同 §10.5 的落地方式），
+  不静默丢弃。
