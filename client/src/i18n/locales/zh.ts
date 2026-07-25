@@ -477,6 +477,7 @@ export const zh = {
   'campaign.ch6.venue': '宗门大比',
   'campaign.locked': '🔒 未解锁',
   'campaign.lockedOffline': '🔒 联网解锁',
+  'campaign.lockedStamp': '封',
   'campaign.pending': '待结算',
   'campaign.equipment': '装备',
   'campaign.chapters': '章节',

@@ -473,6 +473,7 @@ export const de: Record<TranslationKey, string> = {
   'campaign.ch6.venue': 'Großes Turnier',
   'campaign.locked': '🔒 Gesperrt',
   'campaign.lockedOffline': '🔒 Online freischalten',
+  'campaign.lockedStamp': 'GESPERRT',
   'campaign.pending': 'Ausstehend',
   'campaign.equipment': 'Ausrüstung',
   'campaign.chapters': 'Kapitel',

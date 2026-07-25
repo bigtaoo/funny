@@ -473,6 +473,7 @@ export const en: Record<TranslationKey, string> = {
   'campaign.ch6.venue': 'Grand Tournament',
   'campaign.locked': '🔒 Locked',
   'campaign.lockedOffline': '🔒 Online to unlock',
+  'campaign.lockedStamp': 'LOCKED',
   'campaign.pending': 'Pending',
   'campaign.equipment': 'Gear',
   'campaign.chapters': 'Chapters',

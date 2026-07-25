@@ -581,6 +581,11 @@ export class CampaignMapScene implements Scene {
     new SketchPen(tape, seed).rect(-tw / 2, -th / 2, tw, th, { color: C.gold, width: 1.4, alpha: 0.5, double: false });
     tape.x = w * 0.5; tape.y = h * 0.5; tape.rotation = -0.35;
     card.addChild(tape);
+
+    // Stamped word across the tape (reads with the tape's own tilt).
+    const label = txt(t('campaign.lockedStamp'), snapFont(Math.round(th * 0.44)), C.dark, true);
+    label.anchor.set(0.5); label.alpha = 0.6;
+    tape.addChild(label);
   }
 
   /** Rotated "Chapter N · Cleared" stamp near the chapter title. */
