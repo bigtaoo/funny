@@ -165,6 +165,17 @@ export interface CommercialClient {
     rawEvent: string;
   }): Promise<void>;
   listPaddleEvents(args: { accountId?: string; transactionId?: string; limit?: number }): Promise<PaddleEventView[]>;
+  /**
+   * Coin-anomaly daily audit (COMMERCIAL_DESIGN §6.6): accounts whose non-recharge ledger gain within the
+   * UTC day `dayKey` (YYYY-MM-DD) is >= minGain, sorted by gain descending. Unavailable/error → empty array
+   * (best-effort — the caller is an offline review scan, not a request path).
+   */
+  auditCoinGains(dayKey: string, minGain: number): Promise<CoinGainRow[]>;
+}
+
+export interface CoinGainRow {
+  accountId: string;
+  nonRechargeGain: number;
 }
 
 export interface PaddleEventView {
@@ -409,5 +420,13 @@ export class HttpCommercialClient implements CommercialClient {
     const res = await fetch(`${this.baseUrl}/internal/paddle/events?${q}`, { headers: this.headers() });
     const b = (await res.json()) as Body<{ events: PaddleEventView[] }>;
     return b.ok ? b.events : [];
+  }
+
+  async auditCoinGains(dayKey: string, minGain: number): Promise<CoinGainRow[]> {
+    if (!this.baseUrl) return [];
+    const q = new URLSearchParams({ dayKey, minGain: String(minGain) });
+    const res = await fetch(`${this.baseUrl}/internal/audit/coin-gains?${q}`, { headers: this.headers() });
+    const b = (await res.json()) as Body<{ accounts: CoinGainRow[] }>;
+    return b.ok ? b.accounts : [];
   }
 }

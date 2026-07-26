@@ -240,6 +240,19 @@ POST /internal/ads/credit
 - **历史 bug（2026-07-26 修）：`paddleRefund`（Paddle 退款事件扣减 `totalRechargeCents`）曾是 check-then-act**——读 `doc.refundedAt` 判断后分两次非原子写（钱包扣减 + `recharges.updateOne` 标记 `refundedAt`）。Paddle 保证 webhook 至少投递一次，并发重复的退款事件都能通过预检查、都执行扣减，`totalRechargeCents`（首充/进度门槛统计）被多扣。已改为先原子 `updateOne({_id, refundedAt:{$exists:false}})` 抢占标记位，只有抢到的那次才继续扣减钱包。
 - **三处修复均补了 `server/commercial/test/service-idempotency.e2e.test.ts` 里的并发回归测试**（`Promise.all` 打并发请求，断言业务效果只发生一次），对照当前唯一遵守本节写对的 `gachaDraw` 主抽奖路径 / `shopCharge` / `spend` 作为参照实现。
 
+### 6.6 金币异常离线审计（反 RMT，2026-07-26）
+
+> 承接 §6.5 修复带出的排查需求：账号一天内非充值入账超过阈值，视为可疑，进 OPS 人工审核队列——不自动处理，人来判断是不是真的 bug/漏洞产出还是正常玩法奖励堆叠。
+
+- **数据源**：commercial 自己的 `ledger` 集合已经记录**每一笔**余额变更（`accountId, delta, reason, ts`，见 §3.1），`credit()`/`spend()`/`shopCharge()` 等所有改余额的路径都无条件写一条，不存在漏记的口子（详见 [[commercial-internal-http-always-200-check-body-ok]] 审计里逐路径核实的记录）。审计只需按 UTC 自然日聚合，不需要新建任何数据管道。
+- **判定口径**：`reason !== 'recharge'` 且 `delta > 0` 的行，同一 `accountId` 同一 UTC 天求和 ≥ `COIN_ANOMALY_DAILY_THRESHOLD`（`shared/src/economy.ts`，默认 3000）即命中。**只看非充值的毛入账**，不扣当天的消费（哪怕当天净值是负的，只要非充值入账单项已经超阈值就该被人看一眼——真金白银充值买的钱不算异常，这条是唯一排除项）。`monthly_card`（月卡首充即时到账）虽标记非 `recharge`，但本质是已在 Paddle webhook 验证过的真实付费——目前仍计入统计（判定口径偏保守，宁可多审一眼），产品如需精细化排除需再拍板。
+- **实现**：
+  - `server/commercial/src/service/audit.ts`（`AuditMixin.auditCoinGains(dayKey, minGain)`）：纯读聚合（`$match ts 范围 + delta>0 + reason≠recharge` → `$group` 按 accountId 求和 → `$match gain≥minGain` → `$sort` 降序），不改任何数据。内部端点 `GET /internal/audit/coin-gains?dayKey=&minGain=`（X-Internal-Key 鉴权，与其余 commercial 内部端点同款）。
+  - `server/metaserver/src/coinAnomalyAudit.ts`（`auditCoinAnomaliesOnce`）：每 24h 跑一次（`index.ts` 里的 `setInterval`，与既有「回放归档每日清扫」同款节奏，不新增环境变量），扫「昨天」（相对 `now()` 已完整结束的最近一个 UTC 天）——只扫已完结的整天，避免当天还在累积时被半截数据误判。命中账号逐个写入 `AntiCheatReviewDoc`（`kind:'coin_anomaly'`，`_id=coin:{accountId}:{dayKey}` 天然幂等，重复扫描不会重复入队，已解决的记录也不会被扫描覆盖）——复用 S9-7 反作弊审核队列（同一张表、同一套 OPS 页面、同一条 dismiss/ban 流程），不新建通道。
+  - `AntiCheatReviewDoc.kind` 新增 `'coin_anomaly'` 分支，字段 `dayKey`/`nonRechargeGain`/`threshold`（`server/shared/src/mongo.ts`）。OPS 页面 `tools/ops/src/pages/suspicions.ts` 新增第三种 kind 的展示分支（`Coin` 标签 + `{dayKey}: 入账 {nonRechargeGain}（阈值 {threshold}）` 详情文案），admin 后端/内部路由无需改动——本就是按 `AntiCheatReviewDoc` 原样透传，不区分 kind。
+- **测试**：`server/commercial/test/audit.e2e.test.ts`（真实 Mongo 聚合：日窗口边界正确性、charge 类型排除、debit 不冲抵、多账号降序排序、非法 dayKey 不抛错）+ `server/metaserver/test/coin-anomaly-audit.e2e.test.ts`（假 commercial 客户端 + 真实 `antiCheatReviews`：正确入队/幂等重扫不重复/已处理记录不被覆盖/commercial 不可用时空跑不抛错）。
+- **验收**：`shared`/`commercial`/`metaserver`/`tools/ops` 四包 `tsc --noEmit` 全绿；`vitest run` commercial 120/120、metaserver 663+4/663+4（新增 4 个）。纯后台离线扫描 + OPS 内部页面改动，未做浏览器截图验证（ops 页面无本地可跑的开发预览环境，且改动只是给既有表格加一个 kind 分支，风险低）。
+
 ---
 
 ## 7. 服务形态与部署

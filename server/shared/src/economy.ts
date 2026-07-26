@@ -446,3 +446,11 @@ export const PRODUCT_MONTHLY_CARD = 'monthly_card';
 export const PRODUCT_YEAR_CARD = 'year_card';
 export const PRODUCT_STARTER_DRAW = 'starter_draw';
 export const PRODUCT_STARTER_GROWTH = 'starter_growth';
+
+/**
+ * Anti-RMT coin-anomaly audit (2026-07-26): an account whose ledger shows more than this many coins
+ * gained in a single UTC day from non-recharge sources (grants/refunds/rewards — anything but `reason:'recharge'`)
+ * is flagged into the OPS anti-cheat review queue (`AntiCheatReviewDoc.kind:'coin_anomaly'`) for manual review.
+ * Real-money recharges are excluded by design — a whale buying coins is not an anomaly.
+ */
+export const COIN_ANOMALY_DAILY_THRESHOLD = 3000;

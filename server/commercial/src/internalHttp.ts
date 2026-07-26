@@ -85,6 +85,13 @@ export function startInternalHttp(
           });
           return send(res, 200, { ok: true, events });
         }
+        if (req.method === 'GET' && url.pathname === '/internal/audit/coin-gains') {
+          const dayKey = url.searchParams.get('dayKey');
+          if (!dayKey) return send(res, 400, { ok: false, error: 'dayKey required' });
+          const minGain = Number(url.searchParams.get('minGain'));
+          const accounts = await svc.auditCoinGains(dayKey, Number.isFinite(minGain) && minGain > 0 ? minGain : 1);
+          return send(res, 200, { ok: true, accounts });
+        }
 
         if (req.method !== 'POST') return send(res, 404, { ok: false, error: 'not found' });
         const b = await readJson(req);

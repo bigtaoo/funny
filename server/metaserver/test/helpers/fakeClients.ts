@@ -23,15 +23,22 @@ export function fakeCommercial(available = true): CommercialClient & {
   grantCalls: GrantCall[];
   promoCodes: Map<string, unknown>;
   pools: Map<string, unknown>;
+  /** Seedable per-dayKey result for auditCoinGains (tests set this directly instead of a real ledger). */
+  coinGainsByDay: Map<string, Array<{ accountId: string; nonRechargeGain: number }>>;
 } {
   const grantCalls: GrantCall[] = [];
   const promoCodes = new Map<string, unknown>();
   const pools = new Map<string, unknown>();
+  const coinGainsByDay = new Map<string, Array<{ accountId: string; nonRechargeGain: number }>>();
   return {
     available,
     grantCalls,
     promoCodes,
     pools,
+    coinGainsByDay,
+    async auditCoinGains(dayKey: string, minGain: number) {
+      return (coinGainsByDay.get(dayKey) ?? []).filter((r) => r.nonRechargeGain >= minGain);
+    },
     async grant(a: GrantCall) {
       grantCalls.push(a);
       return { ok: true as const, coinsAfter: 0, credited: a.amount };
@@ -65,7 +72,12 @@ export function fakeCommercial(available = true): CommercialClient & {
     async listLimitedPools() {
       return [...pools.values()] as never[];
     },
-  } as unknown as CommercialClient & { grantCalls: GrantCall[]; promoCodes: Map<string, unknown>; pools: Map<string, unknown> };
+  } as unknown as CommercialClient & {
+    grantCalls: GrantCall[];
+    promoCodes: Map<string, unknown>;
+    pools: Map<string, unknown>;
+    coinGainsByDay: Map<string, Array<{ accountId: string; nonRechargeGain: number }>>;
+  };
 }
 
 /** Fake socialsvc: mail is the sole write authority (P2) — mirrors socialsvc's idempotent-upsert semantics with a plain Map. */
