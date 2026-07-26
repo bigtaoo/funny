@@ -292,8 +292,8 @@ export function createGameNav(ctx: AppCtx): GameNav {
       getSave: () => saveManager.get(),
       async craft(defId: string) {
         try {
-          const { save } = await client.craftEquipment(defId, genUuid());
-          saveManager.adoptServer(save);
+          const { save, instance } = await client.craftEquipment(defId, genUuid());
+          saveManager.adoptServerPartial(save, { upsert: [instance] });
           analytics.track('equip_craft', { def_id: defId });
           return { ok: true as const };
         } catch (e) { return { ok: false as const, key: equipErrKey(e) }; }
@@ -301,7 +301,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
       async enhance(instanceId: string, useProtect?: boolean) {
         try {
           const { success, instance, save } = await client.enhanceEquipment(instanceId, genUuid(), useProtect);
-          saveManager.adoptServer(save);
+          saveManager.adoptServerPartial(save, { upsert: [instance] });
           analytics.track('equip_enhance', { def_id: instance.defId, from_level: instance.level - (success ? 1 : 0), success, use_protect: !!useProtect });
           return { ok: true as const, success, level: instance.level };
         } catch (e) { return { ok: false as const, key: equipErrKey(e) }; }
@@ -309,7 +309,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
       async salvage(instanceIds: string[]) {
         try {
           const { save } = await client.salvageEquipment(instanceIds, genUuid());
-          saveManager.adoptServer(save);
+          saveManager.adoptServerPartial(save, { remove: instanceIds });
           analytics.track('equip_salvage', { count: instanceIds.length });
           return { ok: true as const };
         } catch (e) { return { ok: false as const, key: equipErrKey(e) }; }
@@ -317,15 +317,15 @@ export function createGameNav(ctx: AppCtx): GameNav {
       async equip(slot: EquipSlot, instanceId: string | null, cid: string) {
         try {
           const { save } = await client.equipEquipment(slot, instanceId, cid);
-          saveManager.adoptServer(save);
+          saveManager.adoptServerPartial(save, {}); // equip only moves cardInv.gear pointers; equipmentInv itself never changes
           analytics.track('equip_equip', { slot, instance_id: instanceId ?? '', card_instance_id: cid });
           return { ok: true as const };
         } catch (e) { return { ok: false as const, key: equipErrKey(e) }; }
       },
       async reforge(targetId: string, materialId: string) {
         try {
-          const { save } = await client.reforgeEquipment(targetId, materialId, genUuid());
-          saveManager.adoptServer(save);
+          const { instance, save } = await client.reforgeEquipment(targetId, materialId, genUuid());
+          saveManager.adoptServerPartial(save, { upsert: [instance], remove: [materialId] });
           analytics.track('equip_reforge', { target_id: targetId });
           return { ok: true as const };
         } catch (e) { return { ok: false as const, key: equipErrKey(e) }; }

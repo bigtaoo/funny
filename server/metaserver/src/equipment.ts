@@ -6,12 +6,16 @@
 // Storage (2026-07-26, perf): instances live in the `equipmentInstances` collection (_id=instanceId),
 // NOT embedded in SaveData.equipmentInv anymore — an embedded map blew up save-doc size (81KB for a
 // heavy account) and every save write (not just equipment ones) paid to rewrite it on Atlas M0. `save`
-// only carries an `equipmentInvCount` mirror for cheap cap checks; the full `equipmentInv` map is
-// reassembled on demand (`assembleEquipmentInv`/`withEquipmentInv`) purely for wire-format compatibility
-// — GET /save, /internal/save-fields, and every function below that returns `save: SaveData` still hand
-// back the full map, unchanged from the client/worldsvc's point of view (phase 1 of the split; see
-// EQUIPMENT_DESIGN.md — a later phase may switch mutation responses to delta-only, which is the part
-// that would actually need client changes).
+// only carries an `equipmentInvCount` mirror for cheap cap checks. GET /save and /internal/save-fields
+// still reassemble the full `equipmentInv` map on demand (`assembleEquipmentInv`) — those are the
+// "pull the whole inventory once" points (login/refresh), so client/worldsvc get the complete map there
+// unchanged. Every mutation function below (craft/enhance/salvage/reforge/equip) instead returns
+// `equipmentInv: null` (`leanSave`, phase 2 of the split, 2026-07-26 — see EQUIPMENT_DESIGN.md §3.3):
+// the caller already holds everything needed to update its own copy (the `instance` handed back, or the
+// `instanceIds`/`materialId` it sent as request params), so paying for a fresh
+// `equipmentInstances.find({accountId})` on every single-item craft/enhance just to re-hand back a
+// 51KB map the caller already knows how to reconstruct is pure waste — both in bytes over the wire and
+// in the query itself.
 //
 // No Mongo transactions in this codebase (see shared/src/mongo.ts header) — cross-collection consistency
 // here relies on ordering discipline + idempotency, same house style as the existing equipmentIdem
@@ -126,9 +130,17 @@ export async function assembleEquipmentInv(
   return inv;
 }
 
-/** Attaches the full equipmentInv map onto a SaveData for a player-facing response (phase 1: shape unchanged). */
-async function withEquipmentInv(cols: Collections, save: SaveData): Promise<SaveData> {
-  return { ...save, equipmentInv: await assembleEquipmentInv(cols, save.accountId, save) };
+/**
+ * Marks a mutation response as intentionally not carrying the full equipmentInv map (phase 2 of the
+ * storage split, EQUIPMENT_DESIGN §3.3): the caller already has everything it needs to update its local
+ * copy — the returned/consumed `instance`(s) for craft/enhance/reforge, or the `instanceIds`/`materialId`
+ * it sent as request params for salvage/reforge/equip — so there is no need to pay for an
+ * `equipmentInstances.find({accountId})` just to hand back a map the caller can reconstruct for free.
+ * `null` (not simply omitting the field) is required so the `app.ts` preSerialization backstop — which
+ * fills in the full map whenever `equipmentInv === undefined` — knows this response opted out on purpose.
+ */
+function leanSave(save: SaveData): SaveData {
+  return { ...save, equipmentInv: null };
 }
 
 /**
@@ -203,7 +215,7 @@ export async function craftEquipment(
         { upsert: true },
       );
       const save = await getOrCreateSave(cols, accountId, now());
-      return { instance: replayInstance, save: await withEquipmentInv(cols, save) };
+      return { instance: replayInstance, save: leanSave(save) };
     }
     throw e;
   }
@@ -248,7 +260,7 @@ export async function craftEquipment(
         { $set: toInstanceDoc(instance, accountId) },
         { upsert: true },
       );
-      return { instance, save: await withEquipmentInv(cols, next) };
+      return { instance, save: leanSave(next) };
     }
     // rev conflict (concurrent PUT /save / pve write) → re-read and retry
   }
@@ -416,7 +428,7 @@ export async function enhanceEquipment(
       { upsert: true },
     );
     const save = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, r.coins);
-    return { success: r.success, instance: r.instance, save: await withEquipmentInv(cols, save) };
+    return { success: r.success, instance: r.instance, save: leanSave(save) };
   }
 
   // Coins go through commercial authority; if not configured, enhancement is unavailable (same 503 as shop/gacha).
@@ -467,7 +479,7 @@ export async function enhanceEquipment(
         { upsert: true },
       );
       const save = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, r.coins);
-      return { success: r.success, instance: r.instance, save: await withEquipmentInv(cols, save) };
+      return { success: r.success, instance: r.instance, save: leanSave(save) };
     }
     throw e;
   }
@@ -527,7 +539,7 @@ export async function enhanceEquipment(
         { $set: toInstanceDoc(instanceAfter, accountId) },
       );
       const saveFinal = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, cost.coins);
-      return { success, instance: instanceAfter, save: await withEquipmentInv(cols, saveFinal) };
+      return { success, instance: instanceAfter, save: leanSave(saveFinal) };
     }
     // rev conflict → re-read and retry
   }
@@ -578,7 +590,7 @@ export async function salvageEquipment(
     const r = replay.result as { refunded: Record<string, number>; instanceIds: string[] };
     // Verify-and-heal: re-assert the whole batch is actually gone.
     if (r.instanceIds?.length) await cols.equipmentInstances.deleteMany({ _id: { $in: r.instanceIds } });
-    return { refunded: r.refunded, save: await withEquipmentInv(cols, await getOrCreateSave(cols, accountId, now())) };
+    return { refunded: r.refunded, save: leanSave(await getOrCreateSave(cols, accountId, now())) };
   }
 
   const ids = [...new Set(instanceIds)];
@@ -614,7 +626,7 @@ export async function salvageEquipment(
       const prev = await cols.equipmentIdem.findOne({ _id: idempotencyKey });
       const r = prev?.result as { refunded: Record<string, number>; instanceIds: string[] };
       if (r.instanceIds?.length) await cols.equipmentInstances.deleteMany({ _id: { $in: r.instanceIds } });
-      return { refunded: r.refunded, save: await withEquipmentInv(cols, await getOrCreateSave(cols, accountId, now())) };
+      return { refunded: r.refunded, save: leanSave(await getOrCreateSave(cols, accountId, now())) };
     }
     throw e;
   }
@@ -643,7 +655,7 @@ export async function salvageEquipment(
       { _id: accountId, rev: doc.rev },
       { $set: { save: next, rev: next.rev } },
     );
-    if (res) return { refunded, save: await withEquipmentInv(cols, next) };
+    if (res) return { refunded, save: leanSave(next) };
   }
   await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
   return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
@@ -682,7 +694,7 @@ export async function reforgeEquipment(
     );
     await cols.equipmentInstances.deleteOne({ _id: materialId });
     const save = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, r.coins ?? 0, 'equip_reforge');
-    return { instance: r.instance, save: await withEquipmentInv(cols, save) };
+    return { instance: r.instance, save: leanSave(save) };
   }
 
   // Reforge is a coin sink (ADR-030): coins go through commercial authority; if not configured, reforge is unavailable (same 503 as enhance/shop).
@@ -747,7 +759,7 @@ export async function reforgeEquipment(
       );
       await cols.equipmentInstances.deleteOne({ _id: materialId });
       const save = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, r.coins ?? 0, 'equip_reforge');
-      return { instance: r.instance, save: await withEquipmentInv(cols, save) };
+      return { instance: r.instance, save: leanSave(save) };
     }
     throw e;
   }
@@ -784,7 +796,7 @@ export async function reforgeEquipment(
     if (res) {
       // Save committed → deduct coins (idemKey idempotent) + mirror. If coin deduction is interrupted the replay path re-settles.
       const saveFinal = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, coins, 'equip_reforge');
-      return { instance: reforged, save: await withEquipmentInv(cols, saveFinal) };
+      return { instance: reforged, save: leanSave(saveFinal) };
     }
   }
   await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
@@ -843,7 +855,7 @@ export async function equipEquipment(
       { _id: accountId, rev: doc.rev },
       { $set: { save: next, rev: next.rev } },
     );
-    if (res) return { save: await withEquipmentInv(cols, next) };
+    if (res) return { save: leanSave(next) };
   }
   return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
 }

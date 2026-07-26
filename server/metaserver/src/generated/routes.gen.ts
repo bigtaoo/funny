@@ -2173,6 +2173,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -2712,6 +2713,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -3284,6 +3286,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -3824,6 +3827,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
             },
             "equipmentInv": {
               "type": "object",
+              "nullable": true,
               "additionalProperties": {
                 "type": "object",
                 "required": [
@@ -4612,6 +4616,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -5227,6 +5232,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -5874,6 +5880,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -6458,6 +6465,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -7103,6 +7111,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -7708,6 +7717,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -8244,6 +8254,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -8777,6 +8788,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -9311,6 +9323,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -9849,6 +9862,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -10409,6 +10423,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -10986,6 +11001,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -11523,6 +11539,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -12092,6 +12109,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -12737,6 +12755,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -13278,6 +13297,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -13811,6 +13831,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -14398,6 +14419,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -14968,6 +14990,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -15501,6 +15524,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -16034,6 +16058,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -16939,6 +16964,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -17656,6 +17682,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -18220,6 +18247,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -18992,6 +19020,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -19525,6 +19554,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -20867,6 +20897,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "equipmentInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [

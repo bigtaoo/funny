@@ -172,8 +172,14 @@ schemas:
         description: achId→set of already-claimed tier numbers, idempotent to prevent double-claiming
       # —— Equipment system (server-authoritative, EQUIPMENT_DESIGN §3.1). May be absent in legacy saves, not required ——
       # Written only by /equipment/* endpoints; not writable via PUT /save (not in SyncPatch).
+      # nullable (2026-07-26, EQUIPMENT_DESIGN §3.3 phase 2): /equipment/* mutation responses (craft/
+      # enhance/salvage/reforge/equip) send this as null on purpose — the client already has what changed
+      # via the response's own `instance` field or the `instanceIds`/`materialId` it sent as request
+      # params, so the server skips reassembling the full map. GET /save / /internal/save-fields still
+      # send the real map (the "pull it all once" points).
       equipmentInv:
         type: object
+        nullable: true
         additionalProperties: { $ref: '#/components/schemas/EquipmentInstance' }
       # —— Retention (B5, RETENTION_DESIGN §4). Server-authoritative, not uploaded via PUT /save; may be absent in legacy saves, not required.
       # ⚠ Must be declared: otherwise response serialization strips retention (same +undefined regression as §10.1) → adoptServer

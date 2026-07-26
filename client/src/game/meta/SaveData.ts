@@ -169,6 +169,20 @@ export interface SaveData {
  */
 export type SyncPatch = Partial<Pick<SaveData, 'equipped' | 'flags'>>;
 
+/**
+ * Wire shape returned by the /equipment/* mutation endpoints (craft/enhance/salvage/reforge/equip)
+ * (EQUIPMENT_DESIGN §3.3 phase 2, 2026-07-26). Unlike every other `save: SaveData` response (GET /save,
+ * putSave, pveClear, ...), these deliberately send `equipmentInv: null` — the caller already has what
+ * changed via the response's own `instance` field or the `instanceIds`/`materialId` it sent as request
+ * params, so the server skips reassembling the full map. Kept distinct from `SaveData` (whose
+ * `equipmentInv` is always a real map once held in memory) so the compiler catches any code that tries
+ * to read `.equipmentInv` off a lean response directly instead of going through
+ * `SaveManager.adoptServerPartial`.
+ */
+export type LeanSaveResponse = Omit<SaveData, 'equipmentInv'> & {
+  equipmentInv?: Record<string, EquipmentInstance> | null;
+};
+
 /** Field names for the client sync section (single source of truth for push extraction / merge). */
 export const SYNC_KEYS = ['equipped', 'flags'] as const;
 
