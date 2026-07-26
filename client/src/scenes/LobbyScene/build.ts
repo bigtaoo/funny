@@ -185,7 +185,7 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       const { chipBandH, tbH, brandMidY, logoSize, subtitleY, nameMaxFactor, ulH } =
         headerMetrics(w, h, this.portrait);
       const titleBg = new PIXI.Graphics();
-      titleBg.beginFill(C.dark);
+      titleBg.beginFill(C.cover);
       titleBg.drawRect(0, 0, w, tbH);
       titleBg.endFill();
       this.container.addChild(titleBg);
@@ -555,7 +555,7 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       // Shop/stats/social need an account → greyed (not removed) in offline mode so the
       // tab layout stays stable; collection + home stay live.
       const navBg = new PIXI.Graphics();
-      navBg.beginFill(C.dark, 0.9);
+      navBg.beginFill(C.cover, 0.9);
       navBg.drawRect(0, h - navH, w, navH);
       navBg.endFill();
       this.container.addChild(navBg);

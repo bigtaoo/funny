@@ -171,6 +171,15 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
       if (!doc || doc.refundedAt || !doc.usdCents) return { ok: true, decrementedCents: 0 };
 
       const amount = doc.usdCents;
+      // Claim the refund atomically first (refundedAt-absent guard): Paddle redelivers webhooks at-least-once,
+      // so two concurrent refund events for the same transaction must not both pass the pre-check above and
+      // both decrement totalRechargeCents. Only the request that wins this guarded update proceeds to decrement.
+      const claimed = await this.cols.recharges.updateOne(
+        { _id: receiptId, refundedAt: { $exists: false } },
+        { $set: { refundedAt: this.now() } },
+      );
+      if (claimed.matchedCount === 0) return { ok: true, decrementedCents: 0 };
+
       await this.cols.wallets.findOneAndUpdate(
         { _id: doc.accountId },
         [
@@ -183,7 +192,6 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
           },
         ],
       );
-      await this.cols.recharges.updateOne({ _id: receiptId }, { $set: { refundedAt: this.now() } });
       return { ok: true, decrementedCents: amount };
     }
 

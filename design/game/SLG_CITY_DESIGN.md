@@ -314,6 +314,23 @@ D-CITY-11 的内政/军事双页拆分（左侧竖排 tab 切换）本次**撤�
 - **惰性结算不变**：建筑只改 `recomputeYield` 的乘数/自产项 + `settleResources` 的 cap，不引入每格 tick。
 - **变现合规**：coin 买速度不买上限（D-CITY-5/§6），对齐 ECONOMY_BALANCE 反 P2W 政策。
 
+### 修复：资源/兵力扣费的并发竞态可套利（2026-07-26）
+
+- **问题**：拍卖行余额校验漏洞（`AUCTION_DESIGN.md` 同日条目）修复后，应用户要求对全站金币/资源流程做了一轮排查，发现 SLG 侧内政资源（纸/墨/石墨/金属/贴纸）与兵力的扣费全部是「读取 → JS 里判断够不够 → 写回」，没有一处用 Mongo 原子 `findOneAndUpdate` 加余量守卫（金币走 `commercial.spend()` 的部分本身没问题——已确认扣款始终在状态提交前 await 完成）。命中的具体函数：
+  - `city.ts` `distributeTroops`：`$inc:{troops:-totalCost}` 的过滤条件只有 `_id`，没有 `troops:{$gte:totalCost}`——并发调用能把兵力冲成负数。
+  - `city.ts` `upgradeBuilding`/`trainTroops`：资源用整对象 `$set`（不是 `$inc`）写回，过滤条件只有 `_id`——并发升级/练兵时，两次调用都读到同一份扣费前快照、都通过够不够的检查，后写的那次把资源字段整体覆盖，等于其中一次白扣。
+  - `territory.ts` `buildWatchtower`/`buildStructure`：同款「读-判断-整体 `$set`」模式，且原代码先落地图（瞭望塔/建筑标记）再扣资源——竞态输家会在扣费失败前就已经把地图标记写上，出现「免费建筑」。
+- **改动**：以上五处的 `playerWorld` 写入过滤条件统一加上 `rev: pw.rev`（乐观锁守卫，读到的 `rev` 快照），写入失败（`matchedCount===0`）抛 `REV_CONFLICT`（`shared/src/api.ts` 既有错误码，客户端需重试；用法与 metaserver `mutateSave` 的既有约定一致）。`distributeTroops` 额外把兵力扣减和每张卡的 `currentTroops` 累加都改成 `$inc`（而非算好绝对值再 `$set`），配合 `troops:{$gte:totalCost}` 的过滤条件守卫，比单纯 rev 锁更直接。`buildWatchtower`/`buildStructure` 额外调整了写入顺序——资源扣费（rev 守卫）先于地图标记写入，避免"扣费失败但建筑已经落地"的部分应用态。
+- **测试**：`server/worldsvc/test/card-slg.e2e.test.ts`「distributeTroops: concurrent calls cannot drive the troop pool negative」、`server/worldsvc/test/city-buildings.e2e.test.ts`「upgradeBuilding: concurrent calls cannot double-queue off a shared stale resource read」、`server/worldsvc/test/watchtower.e2e.test.ts`「concurrent buildWatchtower on two different tiles cannot both deduct from the same stale resource read」——均先在修复前的代码上跑通（确认能复现套利：并发全部成功），修复后断言恰好一次成功、其余 `REV_CONFLICT`/`NO_TROOPS`，资源/兵力最终值正确。
+- **验收**：`worldsvc` `tsc --noEmit` 全绿；`vitest run` 全量 320/320。纯服务端逻辑改动，无可见渲染变化，未做浏览器截图验证。
+
+### 修复：练兵/建造调度每 2 秒全表扫描导致 VPS CPU 随时间升高（2026-07-26）
+
+- **问题**：用户反馈线上游戏变卡，登 VPS（Hetzner CX23，2 vCPU）查资源发现 `worldsvc`/`socialsvc` 会周期性一起飙 CPU，且是部署完 19 小时后才逐渐变严重。定位到 `scheduler.ts` 每 2 秒无条件调用的 `processCompletedTraining()`（`city.ts`）查询 `playerWorld.find({'trainingQueue.0.completeAt':{$lte:t}})`——`trainingQueue.0.completeAt` 这个数组下标字段完全没建索引（`db.ts` 的 `ensureIndexes` 只给了 `{worldId,accountId}`/`{familyId}`），每次调用都是对整个 `playerWorld` 集合的全表扫描。线上 `explain()` 实测：1643 篇文档，`totalKeysExamined=0`，全扫。开销跟**文档总数**成正比而非在线人数，越攒越多所以才会"部署完没事、隔天变严重"；又因为所有服务共用同一个 Atlas M0 免费集群（单节点，CPU/IOPS 都很紧），`worldsvc` 这个扫描一贵，`socialsvc` 自己那些几十条数据的查询也跟着排队变慢——这就是"social 服务器本该几乎空闲却一起飙"的真正原因。复查发现 `buildQueue`（建造队列，同一调度器、同一模式、`city.ts` 注释里自己写的"复刻 trainingQueue"）踩了一模一样的坑：`processCompletedBuilds()` 查 `'buildQueue.0.completeAt'`，同样没有支持索引。顺手还发现 `sieges`（机器人攻城记录，`combatDefense.ts` 的 `listSieges`）的 `defenderId` 分支也没索引，且该集合本来就没有 TTL、已经攒了 8650 条会持续变大——这条只加了索引，TTL 是否要引入涉及"要不要保留完整对战历史"的产品决策，本次未动。
+- **改动**：`trainingQueue`/`buildQueue` 各自新增一个标量镜像字段（`nextTrainingCompleteAt`/`nextBuildCompleteAt`，见 `db.ts`），值等于队列头（最早的 `completeAt`），队列清空时用 `$unset` 而非置 `null`（缺字段才能配合 partial index 保持索引本身很小，且能被 `$lte` 的范围查询自然排除，不用担心 null 跨类型比较的坑）。`ensureIndexes()` 给这两个字段各建一个 `partialFilterExpression:{$exists:true}` 的索引；`processCompletedTraining`/`processCompletedBuilds` 的查询改用这两个新字段。所有写路径（`trainTroops`/`speedupTraining`/`upgradeBuilding`/`speedupBuild`/`applyDueBuilds`/shop 的 `troop_speedup`）在写 `trainingQueue`/`buildQueue` 的同时原子维护镜像字段，靠 `db.ts` 里新增的 `trainingQueueOps`/`buildQueueOps` 两个纯函数统一计算，避免四五处写入各自算一遍算漏。另外给 `sieges` 补了 `{worldId,defenderId}` 索引（`listSieges` 的 `$or` 分支之一此前全表扫）。
+- **测试**：新增 `server/worldsvc/test/city-training.e2e.test.ts`（7 例）+ `city-buildqueue.e2e.test.ts`（5 例），覆盖：入队时镜像字段跟着设置、队列非空时二次入队不误改、`processCompletedTraining`/`processCompletedBuilds` 把镜像字段推进到下一条或清空、`speedupTraining`/`speedupBuild`/商店加速路径清空队列时镜像字段跟着清空、以及用真实 `explain('executionStats')` 断言新查询 `totalKeysExamined>0`（确认真的走了索引而非裸扫）。
+- **验收**：`worldsvc` `tsc --noEmit` 全绿；`vitest run` 全量 43 files / 332 tests 通过（含新增 12 例）。纯服务端逻辑改动，无可见渲染变化，未做浏览器截图验证；索引改动已用线上真实 Mongo Atlas 数据做过 `explain()` 验证（修复前 COLLSCAN 1643 篇文档，修复后走索引）。**尚未部署到 VPS**——修复只在 worktree 分支，需要走一次 `docker compose up -d --build` 才能在生产生效。
+
 ---
 
 *本文档为 SLG 主城建筑系统设计基准，状态：设计中。D-CITY-1（赛季清空）待用户拍板后落 ADR；DRAFT 数值随经济模拟细化。*

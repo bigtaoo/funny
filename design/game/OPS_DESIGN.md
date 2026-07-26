@@ -200,9 +200,10 @@ POST /admin/players/{accountId}/reset-password  { password }  → { ok }        
 POST /admin/accounts/{accountId}/ban                 → { ok }                          // anticheat.action（S4-4 手动封禁，详情页内联按钮，幂等）
 POST /admin/accounts/{accountId}/unban               → { ok }                          // anticheat.action（S4-4 手动解封，同上；此前只有拍卖异常审计的自动封禁会调用这两个已有端点，玩家查询页从未接入，导致封禁状态不可见、无法手动解封）
 
-# 反作弊审核队列（S9-7 PvP 超报 + 2026-07-18 PvE reject 复用同一队列，详见 ACHIEVEMENT_DESIGN §S9-7）
-GET  /admin/anticheat/reviews?accountId=&status=&limit=  → { reviews: [...] }          // anticheat.view，kind='pvp_overclaim'|'pve_reject'
+# 反作弊审核队列（S9-7 PvP 超报 + 2026-07-18 PvE reject + 2026-07-26 金币异常 复用同一队列，详见 ACHIEVEMENT_DESIGN §S9-7 / COMMERCIAL_DESIGN §6.6）
+GET  /admin/anticheat/reviews?accountId=&status=&limit=  → { reviews: [...] }          // anticheat.view，kind='pvp_overclaim'|'pve_reject'|'coin_anomaly'
 POST /admin/anticheat/reviews/{id}/resolve  { accountId, resolution }  → { ok }        // anticheat.action：resolution='dismissed'|'banned'；banned 内部走上面同一条 ban 端点，全库仅此一条封号执行路径
+> **金币异常（2026-07-26）**：`kind='coin_anomaly'` 由 metaserver 每 24h 一次的离线扫描产生（`coinAnomalyAudit.ts`），向 commercial 查询「昨天」这个 UTC 自然日里，哪些账号从非充值来源（`ledger.reason !== 'recharge'`）净入账超过 `COIN_ANOMALY_DAILY_THRESHOLD`（3000）金币，逐个写入本队列（`_id=coin:{accountId}:{dayKey}`，天然幂等，重复扫描不会重复入队）。不自动封号，`详情`列展示 `dayKey`/`nonRechargeGain`/`threshold`，人工判定后走上面同一条 dismiss/ban 流程。
 
 # 补偿工单
 POST /admin/comp/tickets       { scope, target, mail, reason }  → { ticketId }        // comp.initiate.*

@@ -91,6 +91,12 @@ function nameKeyFor(kind: 'unit' | 'building', type: string): TranslationKey {
   return 'world.defense.title';
 }
 
+/** ms remaining → compact countdown string ("12m" / "45s"); mirrors CardScene's injuryCountdown. */
+function msCountdown(untilMs: number, nowMs: number): string {
+  const secsLeft = Math.max(0, Math.ceil((untilMs - nowMs) / 1000));
+  return secsLeft >= 60 ? `${Math.ceil(secsLeft / 60)}m` : `${secsLeft}s`;
+}
+
 // ── Tools ──────────────────────────────────────────────────────────────────────
 
 type Tool =
@@ -371,6 +377,7 @@ export class DefenseEditorScene implements Scene {
     } catch (e) {
       this.saving = false;
       this.showToast(this.errorMsg(e), C.red);
+      this.render();
     }
   }
 
@@ -435,9 +442,30 @@ export class DefenseEditorScene implements Scene {
   private errorMsg(e: unknown): string {
     if (e instanceof WorldApiError) {
       if (e.code === 'TILE_NOT_OWNED') return t('world.err.notOwner');
+      if (e.code === 'CARD_INJURED') return this.injuredCardMsg(e.message);
       return e.message;
     }
     return t('world.defense.saveFail');
+  }
+
+  /**
+   * CARD_INJURED's e.message is a diagnostic string ("Card <id> is injured and cannot be assigned
+   * until <ms>") meant for logs, not players — surfacing it raw left the toast unreadable (bare
+   * instance id + epoch ms). Parse the id back out, name the card, show a readable countdown, and
+   * drop it from the in-progress formation: the slot was already invalid the moment the server
+   * rejected the save, so leaving it placed would just repeat the same error on the next Save/Fill.
+   */
+  private injuredCardMsg(raw: string): string {
+    const match = /^Card (\S+) is injured and cannot be assigned until (\d+)$/.exec(raw);
+    if (!match) return t('world.defense.saveFail');
+    const [, cardId, untilStr] = match;
+    const card = this.cb.getSave?.().cardInv?.[cardId];
+    const name = card ? t(`card.${card.defId}.name` as TranslationKey) : cardId;
+    const key = this.cellForCard(cardId);
+    if (key) this.garrison.delete(key);
+    return t('world.team.cardInjuredRemoved')
+      .replace('{name}', name)
+      .replace('{time}', msCountdown(Number(untilStr), Date.now()));
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────

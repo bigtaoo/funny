@@ -8,6 +8,7 @@ import { log, TOKEN_KEY } from '../appConstants';
 import { hasBattlePassClaimable } from '../../game/meta/battlepass';
 import { hasRechargeClaimable } from '../../game/meta/rechargeMilestone';
 import { scheduleSubscriptionReminder } from '../../platform/localReminders';
+import type { SaveData } from '../../game/meta/SaveData';
 
 type ShopNav = Pick<Nav, 'goShop' | 'goGacha' | 'goDaily' | 'goEvents' | 'goBattlePass' | 'goRecharge'>;
 
@@ -99,6 +100,65 @@ export function createShopNav(ctx: AppCtx): ShopNav {
     return false;
   }
 
+  /** Poll the authoritative save until subscriptionExpiry rises above `before` (Paddle webhook lag), mirrors pollForCoinIncrease. */
+  async function pollForSubscriptionIncrease(before: number): Promise<boolean> {
+    const delays = [1000, 1500, 2000, 2500, 3000];
+    for (const ms of delays) {
+      await new Promise((r) => setTimeout(r, ms));
+      try { await withTimeout(saveManager.refresh()); } catch { /* keep polling; transient / timed out */ }
+      if ((saveManager.get().monetization?.subscriptionExpiry ?? 0) > before) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Monthly/year card purchase (GACHA_DESIGN §5). Branches on the platform store, same as doRechargeCoins:
+   * - web ('paddle'): real checkout + webhook grant, async — poll the save for the expiry bump.
+   * - everything else (native / hidden-store platforms): no subscription IAP wired yet, so the direct
+   *   buy endpoint is used as-is (server treats it as an already-authorized purchase — GACHA_DESIGN §5,
+   *   unchanged pre-existing behavior, out of scope here).
+   * Same unbounded-payment-UI timeout policy as doRechargeCoins: only the network legs are bounded.
+   */
+  async function doBuySubscription(
+    product: 'monthly_card' | 'year_card',
+    buyDirect: () => Promise<{ save: SaveData }>,
+    client: ApiClient,
+    onConverted: () => void,
+  ): Promise<ShopActionResult> {
+    const trackEvent = product === 'monthly_card' ? 'monthly_card_buy' : 'year_card_buy';
+    if (platform.iapKind() !== 'paddle') {
+      try {
+        const { save } = await buyDirect();
+        saveManager.adoptServer(save);
+        onConverted();
+        analytics.track(trackEvent, {});
+        void scheduleSubscriptionReminder(save.monetization?.subscriptionExpiry ?? 0);
+        return { ok: true };
+      } catch (e) {
+        const key = e instanceof ApiError && e.code === 'ALREADY_ACTIVE' ? 'shop.cardActive' as const : 'shop.error' as const;
+        return { ok: false, key };
+      }
+    }
+    const token = featureFlags?.getPaddleClientToken() ?? null;
+    if (!token) { log.warn('paddle subscription: client token unavailable (server NW_PADDLE_CLIENT_TOKEN unset?)'); return { ok: false, key: 'shop.error' }; }
+    try {
+      const { transactionId } = await withTimeout(client.paddleCheckout(product));
+      const { completed } = await platform.openPaddleCheckout(transactionId, token); // user-paced overlay — unbounded
+      if (!completed) return { ok: false, key: 'shop.rechargeCancelled' };
+      onConverted();
+      analytics.track(trackEvent, { platform: 'paddle' });
+      // Webhook grants the subscription asynchronously — poll the authoritative save for the expiry bump.
+      const before = saveManager.get().monetization?.subscriptionExpiry ?? 0;
+      const granted = await pollForSubscriptionIncrease(before);
+      if (granted) void scheduleSubscriptionReminder(saveManager.get().monetization?.subscriptionExpiry ?? 0);
+      return granted ? { ok: true } : { ok: false, key: 'shop.monthlyPending' };
+    } catch (e) {
+      const key = e instanceof ApiError && e.code === 'ALREADY_ACTIVE' ? 'shop.cardActive' as const
+        : e instanceof TimeoutError ? 'common.networkTimeout' as const : 'shop.error' as const;
+      return { ok: false, key };
+    }
+  }
+
   function goShop(onBack?: () => void, initialTab?: 'shop' | 'coins'): void {
     if (!api) { nav.goLobby(); return; }
     const client = api;
@@ -177,33 +237,8 @@ export function createShopNav(ctx: AppCtx): ShopNav {
             firstPurchaseUsed: m?.firstPurchaseUsed,
           };
         },
-        async buyMonthlyCard() {
-          try {
-            const { save } = await client.monthlyCardBuy();
-            saveManager.adoptServer(save);
-            converted = true;
-            analytics.track('monthly_card_buy', {});
-            // New expiry — (re)arm the iOS local-notification reminder (no-op elsewhere); see subscriptionReminder.ts.
-            void scheduleSubscriptionReminder(save.monetization?.subscriptionExpiry ?? 0);
-            return { ok: true as const };
-          } catch (e) {
-            const key = e instanceof ApiError && e.code === 'ALREADY_ACTIVE' ? 'shop.cardActive' as const : 'shop.error' as const;
-            return { ok: false as const, key };
-          }
-        },
-        async buyYearCard() {
-          try {
-            const { save } = await client.yearCardBuy();
-            saveManager.adoptServer(save);
-            converted = true;
-            analytics.track('year_card_buy', {});
-            void scheduleSubscriptionReminder(save.monetization?.subscriptionExpiry ?? 0);
-            return { ok: true as const };
-          } catch (e) {
-            const key = e instanceof ApiError && e.code === 'ALREADY_ACTIVE' ? 'shop.cardActive' as const : 'shop.error' as const;
-            return { ok: false as const, key };
-          }
-        },
+        buyMonthlyCard: () => doBuySubscription('monthly_card', () => client.monthlyCardBuy(), client, () => { converted = true; }),
+        buyYearCard: () => doBuySubscription('year_card', () => client.yearCardBuy(), client, () => { converted = true; }),
         async claimMonthlyCard() {
           try {
             const { save, claimed } = await client.monthlyCardClaim();

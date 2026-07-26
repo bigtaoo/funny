@@ -297,20 +297,27 @@ export interface StateReplayShareDoc {
 }
 
 /**
- * Anti-cheat review queue (S9-7 L2/L3, ACHIEVEMENT_DESIGN §4.4; PvE side added 2026-07-18, PVE_INTEGRITY_PLAN §8.6).
- * Two kinds share one collection/queue: `kind` is absent on pre-existing rows, which are implicitly `'pvp_overclaim'`.
+ * Anti-cheat review queue (S9-7 L2/L3, ACHIEVEMENT_DESIGN §4.4; PvE side added 2026-07-18, PVE_INTEGRITY_PLAN §8.6;
+ * coin-anomaly side added 2026-07-26, COMMERCIAL_DESIGN §6.6).
+ * Three kinds share one collection/queue: `kind` is absent on pre-existing rows, which are implicitly `'pvp_overclaim'`.
  * - `pvp_overclaim`: an offline audit re-simulation conclusively confirms a side over-reported kill/cast → roll back
  *   the over-reported stats + escalate statSuspicion + write this entry for ops manual review/ban.
  *   `_id = `${roomId}:${accountId}``: one entry per cheating side per match, naturally idempotent (prevents double rollback).
  * - `pve_reject`: a PvE replay spot-check re-simulation yields fewer stars than claimed (`pveVerify`, no automatic ban
  *   as of 2026-07-18 — a legitimate, over-leveled account can clear early content passively with zero input, which is
  *   indistinguishable from a forged empty replay without human judgment). `_id = `pve:${verifyId}``.
+ * - `coin_anomaly`: an offline daily scan finds an account whose commercial `ledger` shows more than
+ *   `COIN_ANOMALY_DAILY_THRESHOLD` coins gained in one UTC day from non-recharge sources (see
+ *   `coinAnomalyAudit.ts` / `commercial`'s `GET /internal/audit/coin-gains`). No automatic action — just a flag for
+ *   human review (a legitimate whale-recharge day is excluded by construction; everything else is judgment-call
+ *   territory, same reasoning as `pve_reject`). `_id = `coin:${accountId}:${dayKey}``: one entry per account per
+ *   flagged day, naturally idempotent against re-scans.
  * Lives in the business database (meta), proxied by admin via `GET /internal/anticheat/reviews` (admin database is
  * physically isolated); resolved (dismiss/ban) via `POST /internal/anticheat/reviews/:id/resolve`.
  */
 export interface AntiCheatReviewDoc {
-  _id: string; // `${roomId}:${accountId}` (pvp_overclaim) | `pve:${verifyId}` (pve_reject)
-  kind?: 'pvp_overclaim' | 'pve_reject'; // absent = 'pvp_overclaim' (pre-existing rows, back-compat)
+  _id: string; // `${roomId}:${accountId}` (pvp_overclaim) | `pve:${verifyId}` (pve_reject) | `coin:${accountId}:${dayKey}` (coin_anomaly)
+  kind?: 'pvp_overclaim' | 'pve_reject' | 'coin_anomaly'; // absent = 'pvp_overclaim' (pre-existing rows, back-compat)
   accountId: string;
   publicId?: string; // snapshot at archive time (for OPS display)
   status: 'open' | 'reviewed';
@@ -330,7 +337,11 @@ export interface AntiCheatReviewDoc {
   judgedStars?: number;
   rejectCountAfter?: number;
   severity?: 'normal' | 'high'; // 'high' once rejectCountAfter crosses the old auto-ban threshold — triage signal only
-  // —— resolution (both kinds) ——
+  // —— coin_anomaly fields ——
+  dayKey?: string; // UTC day (YYYY-MM-DD) the gain was measured over
+  nonRechargeGain?: number; // total non-recharge coin gain that day (the amount that tripped the threshold)
+  threshold?: number; // threshold in effect at scan time (COIN_ANOMALY_DAILY_THRESHOLD, snapshotted for audit history)
+  // —— resolution (all kinds) ——
   resolvedBy?: string; // admin id
   resolvedAt?: number;
   resolution?: 'dismissed' | 'banned';

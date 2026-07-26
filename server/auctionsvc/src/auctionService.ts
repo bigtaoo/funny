@@ -745,8 +745,13 @@ export class AuctionService {
     if (doc.status !== 'open') throw new SlgError('AUCTION_CLOSED');
     if ((doc.saleMode ?? 'fixed') === 'auction' && doc.topBid) throw new SlgError('BAD_REQUEST'); // cannot cancel with existing bids
 
+    // rev-guard (not just status:'open'): a bid landing between the read above and this write does not change
+    // status, so a bare {status:'open'} filter would let the cancel through anyway and orphan the bidder's
+    // already-escrowed coins (cancelAuction has no bid-refund path). Guarding on rev makes any concurrent write
+    // to this doc — a bid, a buy, another cancel — fail this update instead, so the seller must retry and pick
+    // up the fresh (bid-carrying) doc, which then correctly rejects at the topBid check above.
     const updated = await cols.auctions.findOneAndUpdate(
-      { _id: auctionId, status: 'open' },
+      { _id: auctionId, status: 'open', rev: doc.rev },
       { $set: { status: 'cancelled', closedAt: this.deps.now(), rev: doc.rev + 1 } },
       { returnDocument: 'after' },
     );

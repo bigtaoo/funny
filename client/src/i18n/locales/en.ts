@@ -402,6 +402,7 @@ export const en: Record<TranslationKey, string> = {
   'shop.monthlyCard': 'Monthly Card',
   'shop.yearCard': 'Year Card',
   'shop.cardActive': 'Card active — buy again once it expires',
+  'shop.monthlyPending': 'Payment received — card will activate shortly',
   'shop.save': 'Save {amount}',
   'shop.monthlyActive': 'Active',
   'shop.monthlyInactive': 'Not active',
@@ -473,6 +474,7 @@ export const en: Record<TranslationKey, string> = {
   'campaign.ch6.venue': 'Grand Tournament',
   'campaign.locked': '🔒 Locked',
   'campaign.lockedOffline': '🔒 Online to unlock',
+  'campaign.lockedStamp': 'LOCKED',
   'campaign.pending': 'Pending',
   'campaign.equipment': 'Gear',
   'campaign.chapters': 'Chapters',
@@ -967,6 +969,7 @@ export const en: Record<TranslationKey, string> = {
   'world.team.cardFill': 'Fill card',
   'world.team.cardFull': 'This card is already at its troop cap',
   'world.team.full': 'Formation is full',
+  'world.team.cardInjuredRemoved': '{name} is injured (recovers in {time}) — removed from the formation',
   // ── SLG battle replay browser (last-100) ─────────────────────────────────
   'world.replays': 'Battle replays',
   'world.replaysTitle': 'Battle replays (last 100)',

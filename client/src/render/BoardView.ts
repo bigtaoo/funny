@@ -17,10 +17,14 @@ const HIGHLIGHT_BUILDING = fx.buildingValid; // valid building slot
 const HIGHLIGHT_ALPHA    = 0.18;
 const HIGHLIGHT_METEOR   = fx.meteor;        // meteor targeting
 
-// Base idle: alpha pulse only
-const BASE_ALPHA_MIN    = 0.65;
-const BASE_ALPHA_RANGE  = 0.35;    // 0.65 → 1.0
-const BASE_PULSE_SPEED  = Math.PI / 2; // rad/s → period = 4s
+// Base idle: a subtle uniform scale breathe (NOT alpha — a 2026-07-25 user report found
+// alpha-based idle pulsing on the upgraded tier-1/2 art read as "wrong transparency"; scale
+// keeps the castle at all times fully opaque while still feeling alive, same ask as the
+// unit stickmen's idle motion). Applied to the whole per-base container (sprite + crack/ring
+// overlays together) so nothing drifts out of registration with the castle art.
+const BASE_BREATH_SCALE_MIN   = 0.985;
+const BASE_BREATH_SCALE_RANGE = 0.03;   // 0.985 → 1.015
+const BASE_BREATH_SPEED       = Math.PI / 2; // rad/s → period = 4s
 
 // Base under-attack: a hand-drawn outline pops around the base and fades out.
 const BASE_HIT_PULSE_SEC   = 0.5;   // duration of one pulse
@@ -54,6 +58,8 @@ interface BaseRef {
   ringColor: number;
   /** True while HP is critical — drives the ring throb in update(). */
   critical: boolean;
+  /** Parent container (sprite + crack/ring overlays) — scaled as one for the idle breathe. */
+  container: PIXI.Container;
 }
 
 export class BoardView {
@@ -235,19 +241,20 @@ export class BoardView {
   update(dt: number): void {
     this.baseTime += dt;
     const t = this.baseTime;
-    this.applyBasePulse(this.playerBase, t, 0);
-    // Enemy base slightly out of phase
-    this.applyBasePulse(this.enemyBase,  t, 1.2);
+    this.applyBaseBreath(this.playerBase, t, 0);
+    // Enemy base slightly out of phase, same feel as the old alpha pulse.
+    this.applyBaseBreath(this.enemyBase,  t, 1.2);
     this.applyHitPulse(this.playerBase, dt);
     this.applyHitPulse(this.enemyBase,  dt);
     this.applyCriticalRing(this.playerBase, t);
     this.applyCriticalRing(this.enemyBase,  t);
   }
 
-  private applyBasePulse(base: BaseRef | null, t: number, phaseOffset: number): void {
+  /** Idle "alive" cue: a gentle uniform scale breathe on the whole base container (never alpha). */
+  private applyBaseBreath(base: BaseRef | null, t: number, phaseOffset: number): void {
     if (!base) return;
-    const v = Math.sin(t * BASE_PULSE_SPEED + phaseOffset);
-    base.sprite.alpha = BASE_ALPHA_MIN + BASE_ALPHA_RANGE * (v * 0.5 + 0.5); // map -1..1 → 0..1
+    const v = Math.sin(t * BASE_BREATH_SPEED + phaseOffset);
+    base.container.scale.set(BASE_BREATH_SCALE_MIN + BASE_BREATH_SCALE_RANGE * (v * 0.5 + 0.5));
   }
 
   /** Animate the under-attack outline: fade out + slight expand, then clear. */
@@ -647,7 +654,7 @@ export class BoardView {
     const pulseGfx = new PIXI.Graphics();   // under-attack outline, drawn on top
     con.addChild(ringGfx, s, crackGfx, pulseGfx);
     this.container.addChild(con);
-    return { sprite: s, crackGfx, pulseGfx, pulseT: 0, pulseSeed: 1, rect, upgradeTier: 0, ringGfx, ringColor, critical: false };
+    return { sprite: s, crackGfx, pulseGfx, pulseT: 0, pulseSeed: 1, rect, upgradeTier: 0, ringGfx, ringColor, critical: false, container: con };
   }
 
   /**

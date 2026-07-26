@@ -122,10 +122,10 @@ export interface PvpCardStatRow {
   games: number;
   wins: number;
 }
-/** Anti-cheat review record (S9-7 + PvE reject 2026-07-18; mirror of the meta AntiCheatReviewDoc). Human resolves via resolveAntiCheatReview. */
+/** Anti-cheat review record (S9-7 + PvE reject 2026-07-18 + coin anomaly 2026-07-26; mirror of the meta AntiCheatReviewDoc). Human resolves via resolveAntiCheatReview. */
 export interface AntiCheatReviewView {
   _id: string;
-  kind?: 'pvp_overclaim' | 'pve_reject'; // absent = 'pvp_overclaim' (pre-existing rows)
+  kind?: 'pvp_overclaim' | 'pve_reject' | 'coin_anomaly'; // absent = 'pvp_overclaim' (pre-existing rows)
   accountId: string;
   publicId?: string;
   status: 'open' | 'reviewed';
@@ -145,6 +145,10 @@ export interface AntiCheatReviewView {
   judgedStars?: number;
   rejectCountAfter?: number;
   severity?: 'normal' | 'high';
+  // coin_anomaly
+  dayKey?: string;
+  nonRechargeGain?: number;
+  threshold?: number;
   // resolution
   resolvedBy?: string;
   resolvedAt?: number;

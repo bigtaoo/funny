@@ -168,6 +168,8 @@ initI18n
 | 匿名 device | 一直用 | 保留作单机/未登录态身份；绑定后该 accountId 升级，device identity 仍挂着（同设备免登录入口） |
 | 登出 | 无 | 新增：清 `nw_token` + 回 LoginScene；本地存档保留（下次登录 reconcile） |
 
+> **订正（2026-07-25，avatar-leak-across-account-switch bug）**：「本地存档保留」不能整段照字面实现——`reconcile` 对 `equipped`/`flags` 是**本地覆盖云端**（§4.4 就是靠这点让单机转正的进度不丢），但这条规则默认「本地 = 当前账号自己的离线改动」。若真按登出即保留本地存档，账号 A 登出、账号 B 登入时，A 残留在内存里的 `equipped`（含头像/称号）与 `flags`（含 `gdprConsent`）会被当成「A 的离线改动」原样合并进 B 的会话，甚至被标脏后反向覆盖 B 云端的存档。修复：`doLogout()` 现在会调用 `SaveManager.clearSyncedLocalSections()` 清空内存中的 `equipped`/`flags`/`pvpDeck`（`client/src/game/meta/SaveManager.ts`），并清掉头像的本地 fallback key `nw_player_avatar`（`client/src/app/nav/auth.ts`）——权威段（wallet/cardInv 等）不受影响，`reconcile` 本来就整段以云端为准。§4.3/4.4 的「单机转正」路径不受影响：`accountId` 从空串首次写入不算「切换」，所以离线试玩的头像/进度依旧照常并入登录后的账号。
+
 > JWT 仍由 meta 签（`shared/src/jwt.ts`，30d）。持久化 token 只是免去重输密码，过期/失效仍回登录。
 
 ---

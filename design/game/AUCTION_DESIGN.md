@@ -509,6 +509,22 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
   - 顺带修文案 bug：`auction.price`（固定价挂单价格标签）此前被误设成与 `auction.startPrice` 同文「起拍价（金币）/ Starting Price (coins) / Startpreis (Münzen)」，固定价单显示为「起拍价」误导玩家。改为「价格（金币）/ Price (coins) / Preis (Münzen)」。
 - **验收**：client `tsc --noEmit` 绿 + `webpack --mode development` 构建成功。真实复现需以卖家身份登录且自己的挂单出现在市场（依赖线上账号数据），本地 dev 无此数据，未做浏览器截图验证。
 
+### 修复：余额不足仍能买走拍卖行商品（2026-07-25）
+
+- **问题**：玩家反馈金币只有 300 多，却买走了标价 1200 的紫装，卖家还真收到了税后 1080 金币——买家没扣钱，物权和卖家收益都正常结算。
+- **根因**：`commercial` 服务的内部接口 `/internal/spend`（`server/commercial/src/internalHttp.ts`）无论扣款成功还是余额不足，HTTP 状态码永远是 200，业务结果放在响应体 `{ok, error}` 里（`INSUFFICIENT_FUNDS` 走这条路，见 `server/commercial/src/service/shop.ts` 的 `spend()`）。但 `server/auctionsvc/src/commercialClient.ts` 的 `HttpAuctionCommercialClient.spend()` 只检查了 HTTP 层 `res.ok`（2xx 恒真），从没解析响应体的 `ok` 字段——余额不足时钱包压根没扣款，但调用方以为成功，`buyAuction` 照常往下走完「物权判给买家 + 税后打款给卖家」全流程。同款代码（注释写着从 worldsvc 迁移过来）在 `server/worldsvc/src/commercialClient.ts` 里一模一样，SLG 侧建筑加速/商店购买/世界频道发言/宗门创建/卡牌恢复/领地迁移的花费扣款同样能被绕过。metaserver 的对应客户端（`server/metaserver/src/commercialClient.ts`）写法是对的，规范地解析了 `Body<T>` 再判断 `ok`，可以对照。
+- **改动**：`auctionsvc`/`worldsvc` 的 `commercialClient.ts` 的 `spend()` 都补上响应体 `ok` 字段校验，`ok:false` 时抛错（携带 `error`），行为对齐 metaserver 侧的实现。
+- **测试**：`server/auctionsvc/test/commercial-client.test.ts`、`server/worldsvc/test/commercial-client.test.ts` 新增单测（canned HTTP 服务器模拟 `/internal/spend` 返回 HTTP 200 + `{ok:false, error:'INSUFFICIENT_FUNDS'}`，断言 `spend()` 必须抛错而非静默成功）——这也是此前两个服务的测试都靠内存假客户端打桩、从未真正跑过 `Http*CommercialClient` 网络解析层的覆盖缺口。另在业务层补上等价断言，锁死「commercial 拒绝扣款 → 不成交」这条不变量本身（不只是 HTTP 客户端解析层）：`server/auctionsvc/test/auction.e2e.test.ts`「buy: insufficient funds (commercial rejects spend) → no sale, listing stays open, nothing delivered」、`server/worldsvc/test/city-buildings.e2e.test.ts`「speedupBuild: insufficient coins (commercial rejects spend) → build stays queued, untouched」。
+- **验收**：`auctionsvc`/`worldsvc` 两包 `tsc --noEmit` 全绿；`vitest run` 全量跑过（auctionsvc 53/53，worldsvc 317/317）。纯服务端逻辑改动，无可见渲染变化，未做浏览器截图验证。
+- **后续排查（同日）**：应用户要求对全站金币相关流程做了一轮排查，发现多处与本次根因不同、但同属"支付/结算竞态或未校验"性质的问题（`commercial.redeemFate` 并发双扣 + 未捕获的重复键异常、`orderDelivered` 并发双退款、`auctionsvc.cancelAuction` 竞态吞没竞拍者已托管金币、`worldsvc` 多处资源扣费为「读-判断-写」而非原子 `findOneAndUpdate` 守卫导致可并发套利、`metaserver.claimEventReward` 的 `maxClaims` 校验非原子且用随机 orderId 削弱了 commercial 侧幂等兜底）。用户确认后已在同日全部修复，见下条及 `COMMERCIAL_DESIGN.md` §6.5 / `SLG_CITY_DESIGN.md`。
+
+### 修复：`cancelAuction` 竞态可吞没竞拍者已托管金币（2026-07-26）
+
+- **问题**：上条排查发现的后续项之一。`cancelAuction`（`server/auctionsvc/src/auctionService.ts`）「不能取消已有出价的拍卖」这条护栏只在读取时检查了一次（`doc.topBid`），写入时的过滤条件只有 `{_id, status:'open'}`，没有重新校验。时序：卖家读到「无出价」时刻 → 此时另一竞拍者出价成功（`commercial.spend` 已托管其金币，`placeBid` 的原子写把 `topBid`/`rev` 写进文档，但不改 `status`）→ 卖家的取消写入照样命中 `status:'open'` 而成功，物品退给卖家，**竞拍者已托管的金币没有任何退款路径被触发**（`cancelAuction` 本身压根没有退款逻辑）。更狠的情形：若这笔出价是一口价（`buyoutPrice`），`placeBid` 会紧接着调用 `settleAuctionWin` 结算，其自身的原子守卫同样只查 `{status:'open'}`；一旦竞态输给了卖家的取消，会**静默返回**当前（已取消）状态而不抛错、不退款、不发货——竞拍者的钱直接消失，没有邮件、没有 ops 可查的痕迹。
+- **改动**：把 `cancelAuction` 写入时的过滤条件从 `{_id, status:'open'}` 加上 `rev: doc.rev`（乐观锁守卫，和 `placeBid`/`settleAuctionWin` 已经在用的模式一致）。任何并发写入（出价 / 购买 / 另一次取消）都会先把 `rev` 推进，卖家的取消写入因 `rev` 不匹配而失败、抛 `AUCTION_CLOSED`，卖家需重新读取（此时会读到带 `topBid` 的最新文档，命中读取时的护栏正确拒绝）。无论出价写入和取消写入谁先谁后，两者现在互斥，不再有中间态让竞拍者的托管金币悬空。
+- **测试**：`server/auctionsvc/test/auction.e2e.test.ts`「cancel: a bid landing between read and write must not silently succeed and orphan the bidder's escrow」——拦截 `mongo.collections.auctions.findOne` 在返回读取时快照的同时于底层并发写入一笔出价（模拟竞态窗口），断言修复前会静默"成交"取消并留下悬空 `topBid`，修复后必须 `AUCTION_CLOSED` 且挂单保持 `open`、出价不受影响。
+- **验收**：`auctionsvc` `tsc --noEmit` 全绿；`vitest run` 71/71（54 in `auction.e2e.test.ts`）。纯服务端逻辑改动，无可见渲染变化，未做浏览器截图验证。
+
 ---
 
 *本文为拍卖行机制权威，DRAFT/⚠️ 处随实现与拍板细化；数值以 `server/shared/src/slg.ts` 为准。*

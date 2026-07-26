@@ -192,23 +192,48 @@ export function GachaDrawMixin<TBase extends CommercialBaseCtor>(Base: TBase): T
       if (!known) return { ok: false, error: 'FATE_INVALID_ITEM' };
 
       await this.ensureWallet(args.accountId);
+
+      // Insert-first idempotency (§6.5, mirrors gachaDraw above): reserve the orderId slot BEFORE debiting so two
+      // concurrent calls with the same orderId cannot both debit fate points. E11000 → replay the existing redemption.
+      try {
+        await this.cols.orders.insertOne({
+          _id: args.orderId,
+          accountId: args.accountId,
+          kind: 'fate',
+          cost: 0,
+          status: 'charged',
+          coinsAfter: 0, // back-filled after the debit succeeds
+          result: { itemId: args.itemId },
+          ts: this.now(),
+        });
+      } catch (e) {
+        if ((e as { code?: number }).code === 11000) {
+          const o = await this.cols.orders.findOne({ _id: args.orderId });
+          const w = await this.cols.wallets.findOne({ _id: args.accountId });
+          return {
+            ok: true,
+            orderId: args.orderId,
+            itemId: o?.result.itemId ?? args.itemId,
+            coinsAfter: o?.coinsAfter ?? 0,
+            fatePointsAfter: w?.fatePoints ?? 0,
+          };
+        }
+        throw e;
+      }
+
       const charged = await this.cols.wallets.findOneAndUpdate(
         { _id: args.accountId, fatePoints: { $gte: FATE_POINT_REDEEM_COST } },
         { $inc: { fatePoints: -FATE_POINT_REDEEM_COST, rev: 1 }, $set: { updatedAt: this.now() } },
         { returnDocument: 'after' },
       );
-      if (!charged) return { ok: false, error: 'FATE_INSUFFICIENT' };
+      if (!charged) {
+        // Insufficient fate points (raced drain after the pre-check): release the reserved slot so a later
+        // retry with the same orderId isn't stuck replaying a charge that never actually happened.
+        await this.cols.orders.deleteOne({ _id: args.orderId });
+        return { ok: false, error: 'FATE_INSUFFICIENT' };
+      }
 
-      await this.cols.orders.insertOne({
-        _id: args.orderId,
-        accountId: args.accountId,
-        kind: 'fate',
-        cost: 0,
-        status: 'charged',
-        coinsAfter: charged.coins,
-        result: { itemId: args.itemId },
-        ts: this.now(),
-      });
+      await this.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter: charged.coins } });
       return {
         ok: true,
         orderId: args.orderId,

@@ -244,7 +244,11 @@ export class ResultScene implements Scene {
 
     this.container.eventMode = 'static';
     this.container.once('pointerdown', () => {
-      this.container.eventMode = 'none';
+      // Restore the container's default eventMode ('passive') rather than 'none' — PIXI's
+      // EventBoundary prunes the *entire* subtree under an eventMode:'none' node (see
+      // EventBoundary._interactivePrune), so leaving it 'none' after this tap permanently
+      // swallows every click on whatever onDone() builds next (badges/buttons never respond).
+      this.container.eventMode = 'passive';
       tearDownChildren(this.container);
       onDone();
     });
@@ -601,6 +605,7 @@ export class ResultScene implements Scene {
     bg.y = y;
     bg.eventMode = 'static';
     bg.cursor = 'pointer';
+    bg.name = 'resultPrimaryCta'; // test hook — see test/ui/scenes.ui.ts "outro tap-through"
     bg.on('pointertap', onTap);
     this.container.addChild(bg);
     this.addIconLabel(x, y, w, h, text, icon, 0xfffdf4, snapFont(Math.round(h * 0.40)), true);
@@ -615,6 +620,7 @@ export class ResultScene implements Scene {
     bg.y = y;
     bg.eventMode = 'static';
     bg.cursor = 'pointer';
+    bg.name = `resultSecondary:${icon}`; // test hook — see test/ui/scenes.ui.ts "outro tap-through"
     bg.on('pointertap', onTap);
     this.container.addChild(bg);
     this.addIconLabel(x, y, w, h, text, icon, 0x444444, snapFont(Math.round(h * 0.34)), false);

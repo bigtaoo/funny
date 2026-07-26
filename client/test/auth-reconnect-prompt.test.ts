@@ -27,6 +27,7 @@ function fakeSaveManager(opts: { activeMatch?: ActiveMatchInfo | null; accountId
   return {
     adoptSession: vi.fn(async () => true),
     bootstrap: vi.fn(async () => true),
+    clearSyncedLocalSections: vi.fn(),
     get: vi.fn(() => ({ accountId: opts.accountId ?? 'acc-1' })),
     consumeActiveMatch: vi.fn(() => {
       const m = pending;
@@ -286,6 +287,37 @@ describe('account-switch NetSession reset (2026-07-18: elo credited to previous 
 
     expect(() => authNav.doLogout()).not.toThrow();
     expect(ctx.state.netSession).toBeNull();
+  });
+});
+
+// Regression (2026-07-25): user logged out and into a different account, but the topbar kept
+// showing the previous account's avatar. Two independent leaks fed into the same symptom:
+// (1) the pre-sync-era `nw_player_avatar` fallback key (avatarId()'s local-only fallback,
+// see createAppCore.ts) is not account-scoped and was never cleared on logout; (2) SaveManager's
+// reconcile() merges `equipped`/`flags` from whatever is in-memory over the incoming cloud value,
+// so the previous account's in-memory save leaked into the next account's adoptSession() too.
+describe('doLogout() clears stale avatar state (2026-07-25: avatar carried over into next account)', () => {
+  it('removes the local PLAYER_AVATAR_KEY fallback', () => {
+    const saveManager = fakeSaveManager({ activeMatch: null });
+    const views = fakeViews();
+    const { ctx } = buildCtx({ saveManager, views, token: 'existing-token' });
+    ctx.platform.storage.setItem('nw_player_avatar', 'preset:3');
+    const authNav = createAuthNav(ctx);
+
+    authNav.doLogout();
+
+    expect(ctx.platform.storage.getItem('nw_player_avatar')).toBeNull();
+  });
+
+  it('calls saveManager.clearSyncedLocalSections() so equipped/flags cannot leak into the next login', () => {
+    const saveManager = fakeSaveManager({ activeMatch: null });
+    const views = fakeViews();
+    const { ctx } = buildCtx({ saveManager, views, token: 'existing-token' });
+    const authNav = createAuthNav(ctx);
+
+    authNav.doLogout();
+
+    expect(saveManager.clearSyncedLocalSections).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -402,6 +402,7 @@ export const de: Record<TranslationKey, string> = {
   'shop.monthlyCard': 'Monatskarte',
   'shop.yearCard': 'Jahreskarte',
   'shop.cardActive': 'Karte aktiv – nach Ablauf erneut kaufbar',
+  'shop.monthlyPending': 'Zahlung erhalten – Karte wird in Kürze aktiviert',
   'shop.save': '{amount} sparen',
   'shop.monthlyActive': 'Aktiv',
   'shop.monthlyInactive': 'Nicht aktiv',
@@ -473,6 +474,7 @@ export const de: Record<TranslationKey, string> = {
   'campaign.ch6.venue': 'Großes Turnier',
   'campaign.locked': '🔒 Gesperrt',
   'campaign.lockedOffline': '🔒 Online freischalten',
+  'campaign.lockedStamp': 'GESPERRT',
   'campaign.pending': 'Ausstehend',
   'campaign.equipment': 'Ausrüstung',
   'campaign.chapters': 'Kapitel',
@@ -967,6 +969,7 @@ export const de: Record<TranslationKey, string> = {
   'world.team.cardFill':'Karte füllen',
   'world.team.cardFull': 'Diese Karte hat ihr Truppenlimit erreicht',
   'world.team.full': 'Aufstellung ist voll',
+  'world.team.cardInjuredRemoved': '{name} ist verletzt (Genesung in {time}) — aus der Aufstellung entfernt',
   // ── SLG battle replay browser (last-100) ─────────────────────────────────
   'world.replays': 'Kampf-Wiederholungen',
   'world.replaysTitle': 'Kampf-Wiederholungen (letzte 100)',

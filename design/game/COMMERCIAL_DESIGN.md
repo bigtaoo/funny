@@ -235,6 +235,23 @@ POST /internal/ads/credit
 - **返回值仅供参考**：并发竞争的败者走 E11000 分支读订单时，赢者可能尚未回填 `coinsAfter`（读到占位 0）。余额权威以 `getWallet` / 后续镜像为准，`coinsAfter` 非权威。
 - **首充 2× 奖励时序**：`rechargeVerify` / `paddleComplete` 均须在 `claimFirstPurchaseBonus()` **之前** `ensureWallet`——`claim` 的 `findOneAndUpdate({firstPurchasedAt:{$exists:false}})` 无 upsert，钱包不存在时匹配不到会把 2× 漏到第二笔。
 - **首充状态回传（客户端徽标门控）**：`WalletView.firstPurchaseUsed`（= `wallets.firstPurchasedAt != null`）经 `meta` `mirrorWalletFrom` 写入 `save.monetization.firstPurchaseUsed`。客户端充值档位仅在 `firstPurchaseUsed !== true` 时展示「首充双倍」徽标——老玩家用掉首充后不再显示（否则会误导：徽标在，实际不再翻倍）。离线/无镜像时默认视为可用（仍显示）。
+- **历史 bug（2026-07-26 修）：`redeemFate`（命定池兑换）曾未遵守本节的先占槽再动账顺序**——直接原子扣 `fatePoints`，**之后**才 `orders.insertOne` 且无 E11000 catch。并发同 orderId 请求都能通过「无已有订单」检查、都扣一次 `fatePoints`（余额够两次时双扣），败者的 `insertOne` 抛 E11000 冒泡成未捕获异常。已改为与 `gachaDraw` 一致的先占槽后扣款顺序。
+- **历史 bug（2026-07-26 修）：`orderDelivered`（发货回调，含 gacha 重复保底退款）曾未检查幂等 `updateOne` 的匹配结果**——`{_id, status:'charged'}` 守卫的状态翻转写入之后无条件执行退款 `credit()`。并发重复的发货回调（如 meta 超时重试同一订单的 delivered 回调）都能读到 `status:'charged'`、都执行退款，导致**保底金币重复入账**。已改为检查 `matchedCount`，只有真正翻转状态的那次调用才退款。
+- **历史 bug（2026-07-26 修）：`paddleRefund`（Paddle 退款事件扣减 `totalRechargeCents`）曾是 check-then-act**——读 `doc.refundedAt` 判断后分两次非原子写（钱包扣减 + `recharges.updateOne` 标记 `refundedAt`）。Paddle 保证 webhook 至少投递一次，并发重复的退款事件都能通过预检查、都执行扣减，`totalRechargeCents`（首充/进度门槛统计）被多扣。已改为先原子 `updateOne({_id, refundedAt:{$exists:false}})` 抢占标记位，只有抢到的那次才继续扣减钱包。
+- **三处修复均补了 `server/commercial/test/service-idempotency.e2e.test.ts` 里的并发回归测试**（`Promise.all` 打并发请求，断言业务效果只发生一次），对照当前唯一遵守本节写对的 `gachaDraw` 主抽奖路径 / `shopCharge` / `spend` 作为参照实现。
+
+### 6.6 金币异常离线审计（反 RMT，2026-07-26）
+
+> 承接 §6.5 修复带出的排查需求：账号一天内非充值入账超过阈值，视为可疑，进 OPS 人工审核队列——不自动处理，人来判断是不是真的 bug/漏洞产出还是正常玩法奖励堆叠。
+
+- **数据源**：commercial 自己的 `ledger` 集合已经记录**每一笔**余额变更（`accountId, delta, reason, ts`，见 §3.1），`credit()`/`spend()`/`shopCharge()` 等所有改余额的路径都无条件写一条，不存在漏记的口子（详见 [[commercial-internal-http-always-200-check-body-ok]] 审计里逐路径核实的记录）。审计只需按 UTC 自然日聚合，不需要新建任何数据管道。
+- **判定口径**：`reason !== 'recharge'` 且 `delta > 0` 的行，同一 `accountId` 同一 UTC 天求和 ≥ `COIN_ANOMALY_DAILY_THRESHOLD`（`shared/src/economy.ts`，默认 3000）即命中。**只看非充值的毛入账**，不扣当天的消费（哪怕当天净值是负的，只要非充值入账单项已经超阈值就该被人看一眼——真金白银充值买的钱不算异常，这条是唯一排除项）。`monthly_card`（月卡首充即时到账）虽标记非 `recharge`，但本质是已在 Paddle webhook 验证过的真实付费——目前仍计入统计（判定口径偏保守，宁可多审一眼），产品如需精细化排除需再拍板。
+- **实现**：
+  - `server/commercial/src/service/audit.ts`（`AuditMixin.auditCoinGains(dayKey, minGain)`）：纯读聚合（`$match ts 范围 + delta>0 + reason≠recharge` → `$group` 按 accountId 求和 → `$match gain≥minGain` → `$sort` 降序），不改任何数据。内部端点 `GET /internal/audit/coin-gains?dayKey=&minGain=`（X-Internal-Key 鉴权，与其余 commercial 内部端点同款）。
+  - `server/metaserver/src/coinAnomalyAudit.ts`（`auditCoinAnomaliesOnce`）：每 24h 跑一次（`index.ts` 里的 `setInterval`，与既有「回放归档每日清扫」同款节奏，不新增环境变量），扫「昨天」（相对 `now()` 已完整结束的最近一个 UTC 天）——只扫已完结的整天，避免当天还在累积时被半截数据误判。命中账号逐个写入 `AntiCheatReviewDoc`（`kind:'coin_anomaly'`，`_id=coin:{accountId}:{dayKey}` 天然幂等，重复扫描不会重复入队，已解决的记录也不会被扫描覆盖）——复用 S9-7 反作弊审核队列（同一张表、同一套 OPS 页面、同一条 dismiss/ban 流程），不新建通道。
+  - `AntiCheatReviewDoc.kind` 新增 `'coin_anomaly'` 分支，字段 `dayKey`/`nonRechargeGain`/`threshold`（`server/shared/src/mongo.ts`）。OPS 页面 `tools/ops/src/pages/suspicions.ts` 新增第三种 kind 的展示分支（`Coin` 标签 + `{dayKey}: 入账 {nonRechargeGain}（阈值 {threshold}）` 详情文案），admin 后端/内部路由无需改动——本就是按 `AntiCheatReviewDoc` 原样透传，不区分 kind。
+- **测试**：`server/commercial/test/audit.e2e.test.ts`（真实 Mongo 聚合：日窗口边界正确性、charge 类型排除、debit 不冲抵、多账号降序排序、非法 dayKey 不抛错）+ `server/metaserver/test/coin-anomaly-audit.e2e.test.ts`（假 commercial 客户端 + 真实 `antiCheatReviews`：正确入队/幂等重扫不重复/已处理记录不被覆盖/commercial 不可用时空跑不抛错）。
+- **验收**：`shared`/`commercial`/`metaserver`/`tools/ops` 四包 `tsc --noEmit` 全绿；`vitest run` commercial 120/120、metaserver 663+4/663+4（新增 4 个）。纯后台离线扫描 + OPS 内部页面改动，未做浏览器截图验证（ops 页面无本地可跑的开发预览环境，且改动只是给既有表格加一个 kind 分支，风险低）。
 
 ---
 
@@ -379,3 +396,41 @@ metaserver /paddle/webhook（HMAC 校验后）
 `commercial.paddleComplete()`——首充 2× 奖励逻辑不变（乘的是发币总额，不关心是 1 份还是 5 份换来的）。
 `createPaddleTransaction` 建交易时仍传 `quantity: 1` 作为 overlay 的初始默认值，玩家在浮层里自行调到 Paddle 后台
 允许的上限。
+
+### 10.7 月卡/年卡接入真实 Paddle 扣款（2026-07-25）
+
+> 状态：✅ 已实现（web/Paddle）。原生（Apple/Google）与隐藏渠道（微信/CrazyGames）维持旧的直接授权行为，范围外——
+> 这两类平台目前没有真实订阅 IAP 基础设施（原生商店的"订阅"概念与本仓一次性天数延长的 grant 模型不同，是独立项目）。
+
+此前 `buyMonthlyCard`/`buyYearCard`（`GACHA_DESIGN.md §5`）无论平台都直接调 `POST /monthly-card/buy` /
+`/year-card/buy`，服务端"当作已授权购买"立即生效——玩家点 Buy 就直接拿到卡，网页端从未真的走过 Paddle 扣款
+（现象与本节其它小节修的"钱扣了没到账"相反：这里是**根本没扣钱**）。
+
+web 端（`platform.iapKind()==='paddle'`）现在复用 §10.2 同一套 checkout+webhook 通道：
+
+```
+ShopScene → buyMonthlyCard()/buyYearCard() → createAppCore.doBuySubscription('monthly_card'|'year_card', ...)
+  1) api.paddleCheckout('monthly_card'|'year_card') → POST /shop/paddle/checkout → { transactionId }
+     - 服务端先查钱包 subscriptionExpiry：卡生效中 → 400 ALREADY_ACTIVE（挡在扣款之前，不让真钱落在一个
+       注定被拒发的请求上）
+  2) platform.openPaddleCheckout(transactionId, clientToken)   # 同 §10.2，用户节奏，不设超时
+  3) Paddle 服务器异步回调 /paddle/webhook：
+       subscriptionForPriceId(priceId) 命中 'monthly'|'year' → commercial.monthlyCardBuy/yearCardBuy
+       （orderId = paddle:${transactionId}，天然幂等，同 paddleComplete 的 paddle:${transactionId} 收据键思路）
+       → mirrorWalletFrom 把新 expiry + 即赠 coins 一起镜像回 save（不只是 mirrorCoins）
+  4) 客户端轮询 saveManager.refresh() 直到 monetization.subscriptionExpiry 变化（同 pollForCoinIncrease 套路）
+     - 到账 → shop.bought 提示；超时未到账 → shop.monthlyPending（卡仍会随后生效）
+```
+
+- **价格 ID 映射**：`NW_PADDLE_PRICE_IDS` 沿用同一个环境变量，新增两个保留档位键 `monthly_card` / `year_card`
+  （不进 `IAP_TIERS`，`coinsForPriceId` 天然查不到会返回 0；`subscriptionForPriceId` 专门查这两个键，两套查找互不
+  干扰）。详见 `IAP_CREDENTIALS.md §1.1`。
+- **数量语义**：这两个 Paddle Price 应在后台关闭"可调数量"——本仓的订阅 grant 是"买一张卡延长 N 天"，没有"一次
+  买 3 张卡"的语义。webhook 侧忽略非 1 的 quantity（只记 warn 日志，不多发），呼应 §10.6 的夹紧思路但方向不同
+  （§10.6 是多退少补，这里是干脆不认）。
+- **超时/UI 改动**：`ShopScene` 月卡/年卡的 Buy 按钮此前经 `runDeal`（内部 `withTimeout` 包裹 action），会把
+  Paddle 弹层这种用户节奏的等待错杀成超时；新增 `runUnboundedDeal`（无 `withTimeout`，语义同 §10.2 提到的
+  `ShopScene.onRecharge` 特例）专供这两个按钮使用，其余 `runDeal` 调用点（领取每日奖励、新手包）不受影响。
+- **同实例竞态**：`subscriptionCardBuy` 的单卡门控在 webhook 时仍会兜底（极端情况——两个标签页同时下单——checkout
+  时的预检查没拦住），此时钱已经真扣了但卡拒发，走 `recordPaddleEvent` 留痕供客服/退款排查（同 §10.5 的落地方式），
+  不静默丢弃。

@@ -177,12 +177,29 @@ export interface TrainingEntry {
   completeAt: number; // ms epoch (scheduler adds troops to troops and removes entry when reached)
 }
 
+/**
+ * Every write to `trainingQueue` must mirror its head (earliest completeAt, the queue is always kept
+ * sorted — chained scheduling) onto this scalar so `processCompletedTraining`'s due-scan can use a real
+ * index instead of `trainingQueue.0.completeAt` (unindexable in practice, was a full COLLSCAN every
+ * scheduler tick — 2026-07-26 VPS CPU investigation). Returns the `$set`/`$unset` fragments to merge into
+ * the caller's update; `unset` is only non-empty once the queue drains, since a missing field (not `null`)
+ * is what keeps it out of the partial index and out of the due-scan's match.
+ */
+export function trainingQueueOps(queue: TrainingEntry[]): { set: Record<string, number>; unset: Record<string, ''> } {
+  return queue.length > 0 ? { set: { nextTrainingCompleteAt: queue[0]!.completeAt }, unset: {} } : { set: {}, unset: { nextTrainingCompleteAt: '' } };
+}
+
 /** Build queue entry (SLG_CITY_DESIGN §4). Mirrors TrainingEntry: chained scheduling, scheduler applies the level when completeAt is reached. */
 export interface BuildQueueEntry {
   key: BuildingKey;   // which building is being upgraded
   toLevel: number;    // target level after this upgrade completes
   startAt: number;    // ms epoch
   completeAt: number; // ms epoch (scheduler $inc buildings[key] and removes entry when reached)
+}
+
+/** Same fix as `trainingQueueOps`, for `buildQueue` (identical unindexed-`.0.completeAt`-scan bug, same scheduler). */
+export function buildQueueOps(queue: BuildQueueEntry[]): { set: Record<string, number>; unset: Record<string, ''> } {
+  return queue.length > 0 ? { set: { nextBuildCompleteAt: queue[0]!.completeAt }, unset: {} } : { set: {}, unset: { nextBuildCompleteAt: '' } };
 }
 
 /** Player state in a given world (lazy resource settlement: stores aggregate yieldRate + lastTickAt, computes delta on read, no per-tile tick). */
@@ -205,11 +222,15 @@ export interface PlayerWorldDoc {
   teamState?: Record<string, { injuredUntil?: number }>;
   familyId?: string;
   trainingQueue?: TrainingEntry[]; // training queue (S8-2, ≤ TROOP_TRAIN_QUEUE_MAX entries)
+  /** Mirror of `trainingQueue[0].completeAt`, absent when the queue is empty — see `trainingQueueOps`. Indexed; scheduler-only, never read by clients. */
+  nextTrainingCompleteAt?: number;
   hasBattlePass?: boolean;         // current season battle pass (S8-8, cleared on season reset)
   /** Home-city building levels (SLG_CITY_DESIGN; desk defaults to 1, others to 0 when absent). Season-scoped — cleared with the doc on resetSeason. */
   buildings?: Partial<Record<BuildingKey, number>>;
   /** Build queue (SLG_CITY_DESIGN §4, ≤ BUILD_QUEUE_SLOTS entries; chained by completeAt). */
   buildQueue?: BuildQueueEntry[];
+  /** Mirror of `buildQueue[0].completeAt`, absent when the queue is empty — see `buildQueueOps` (same reasoning as `nextTrainingCompleteAt`). Indexed; scheduler-only, never read by clients. */
+  nextBuildCompleteAt?: number;
   /** CC-3: per-card SLG run-time state (currentTroops / injuredUntil / teamId). Cleared on season reset. */
   cardState?: Record<string, CardSLGState>;
   /** Per-shop-item daily purchase counter (SLG_DESIGN §7.2, 2026-07-15). day = UTC calendar day number (floor(ms / 86400000)); count resets whenever day advances. Absent = 0 purchases so far. */
@@ -611,6 +632,19 @@ export async function createWorldMongo(
     await collections.tiles.createIndex({ familyId: 1 });
     await collections.playerWorld.createIndex({ worldId: 1, accountId: 1 });
     await collections.playerWorld.createIndex({ familyId: 1 });
+    // Due-training scan (processCompletedTraining, every 2s): was `trainingQueue.0.completeAt` with no
+    // supporting index — a full COLLSCAN every tick, cost scaling with total playerWorld doc count rather
+    // than online-player count (2026-07-26 VPS CPU investigation). Partial: only docs with an active queue
+    // carry the field, so the index stays small regardless of how many players have never trained.
+    await collections.playerWorld.createIndex(
+      { nextTrainingCompleteAt: 1 },
+      { partialFilterExpression: { nextTrainingCompleteAt: { $exists: true } } },
+    );
+    // Same fix, same reasoning, for processCompletedBuilds' `buildQueue.0.completeAt` due-scan.
+    await collections.playerWorld.createIndex(
+      { nextBuildCompleteAt: 1 },
+      { partialFilterExpression: { nextBuildCompleteAt: { $exists: true } } },
+    );
     await collections.marches.createIndex({ worldId: 1, ownerId: 1 });
     // On-time scan fallback (primary scheduling uses Redis ZSET, S8-2; degrades to Mongo polling without Redis).
     await collections.marches.createIndex({ arriveAt: 1 });
@@ -645,6 +679,9 @@ export async function createWorldMongo(
     await collections.nationMessages.createIndex({ ts: 1 }, { expireAfterSeconds: FAMILY_MSG_RETENTION_SEC });
     await collections.sieges.createIndex({ worldId: 1, ts: -1 });
     await collections.sieges.createIndex({ attackerId: 1 });
+    // listSieges' `defenderId` branch of its $or had no supporting index — a full COLLSCAN on every
+    // replay-browser open, growing with `sieges` (which has no TTL; 2026-07-26 VPS CPU investigation).
+    await collections.sieges.createIndex({ worldId: 1, defenderId: 1 });
     // ADR-026: delayed building-HP settlement scan (mirrors marches.arriveAt: due-time polling; Redis ZSET optional later).
     await collections.siegeDamage.createIndex({ dueAt: 1 });
     await collections.siegeDamage.createIndex({ tile: 1 });

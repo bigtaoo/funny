@@ -2,7 +2,7 @@
 // price→coins mapping. Route-level integration (signature check, full webhook handler) is not covered
 // here — these are the pure functions the webhook handler composes coins from.
 import { describe, it, expect, afterEach } from 'vitest';
-import { clampPaddleQuantity, coinsForPriceId, MIN_PADDLE_QUANTITY, MAX_PADDLE_QUANTITY } from '../src/paddle.js';
+import { clampPaddleQuantity, coinsForPriceId, subscriptionForPriceId, MIN_PADDLE_QUANTITY, MAX_PADDLE_QUANTITY } from '../src/paddle.js';
 
 describe('clampPaddleQuantity', () => {
   it('passes through values inside [1,5]', () => {
@@ -59,6 +59,32 @@ describe('coinsForPriceId', () => {
 
   it('unset env var returns 0 for any price id', () => {
     expect(coinsForPriceId('pri_499')).toBe(0);
+  });
+});
+
+describe('subscriptionForPriceId', () => {
+  afterEach(() => {
+    delete process.env.NW_PADDLE_PRICE_IDS;
+  });
+
+  it('resolves the reserved monthly_card/year_card tier keys, not a coin lookup', () => {
+    process.env.NW_PADDLE_PRICE_IDS = 't499:pri_499,monthly_card:pri_monthly,year_card:pri_year';
+    expect(subscriptionForPriceId('pri_monthly')).toBe('monthly');
+    expect(subscriptionForPriceId('pri_year')).toBe('year');
+  });
+
+  it('a coin-tier price id is not mistaken for a subscription', () => {
+    process.env.NW_PADDLE_PRICE_IDS = 't499:pri_499';
+    expect(subscriptionForPriceId('pri_499')).toBeNull();
+  });
+
+  it('unmapped price id returns null', () => {
+    process.env.NW_PADDLE_PRICE_IDS = 'monthly_card:pri_monthly';
+    expect(subscriptionForPriceId('pri_unknown')).toBeNull();
+  });
+
+  it('unset env var returns null', () => {
+    expect(subscriptionForPriceId('pri_monthly')).toBeNull();
   });
 });
 

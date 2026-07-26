@@ -440,3 +440,13 @@
 - **测试**：`client/test/ui/shopScene.ui.ts` 新增 1 例——故意把皮肤放在 `loadItems` 数组前面、石头在后，断言石头在渲染树里按行主序位于皮肤之前（更靠上，或同行更靠左）。既有 23 例（含消耗品命名/永远可买）保持绿。
 - **验证**：`tsc --noEmit` 干净；`test/ui/shopScene.ui.ts` 全绿（23 例）。纯排序逻辑，headless 场景图测试直接断言坐标顺序，未另开 dev server。
 - **涉及文件**：`client/src/scenes/ShopScene/shop.ts`、`client/test/ui/shopScene.ui.ts`。
+
+## 18. 大厅顶栏/底栏与 START MATCH 按钮的黑色分层（2026-07-26）
+
+> 状态：**已实现**。用户看大厅首页截图后问：顶栏、START MATCH 主按钮、底部导航三处全用同一纯黑 `C.dark`（`0x2c2c2a`），会不会让玩家审美疲劳？
+
+- **诊断**：三块黑色视觉权重完全相同，`START MATCH`（本该是最高优先级的 CTA）反而被两侧同色的顶栏/底栏衬得像普通 chrome，层级被磨平。
+- **第一版尝试（金色 CTA，已否）**：把 `drawBtn`（`client/src/scenes/LobbyScene/base.ts`）的启用态填充从 `C.dark` 换成 `C.gold`，配深色文字。真人截图反馈：大面积纯金色**太晃眼**，且原本"藏在按钮里的跳舞小人剪影"（`heroFigure`，黑色 22% 透明度，专为深色底设计）在浅色底上直接被"吃掉"，看不见了。已回滚。
+- **拍板方案（顶栏/底栏改色，CTA 保持纯黑）**：反过来做——`START MATCH` 按钮保留 `C.dark` 填充 + 原有蓝色描边（找回小人剪影），顶栏和底部导航改用新色 `C.cover`（`0x3a352f`，比 `C.dark` 暖一丝、亮一丝的深棕灰，定义于 `base.ts` 的 `C` 调色板）。差值刻意选得小：肉眼能分辨"这两条是外框、中间是按钮"，但不会像金色那样跳出来抢戏。真人截图确认效果满意，未再调整。
+- **涉及文件**：`client/src/scenes/LobbyScene/base.ts`（`C.cover` 常量）、`client/src/scenes/LobbyScene/build.ts`（顶栏 `titleBg`、底栏 `navBg` 两处填充色改用 `C.cover`）。
+- **验证**：`tsc --noEmit` 干净；真人在本地 dev server（`localhost:9090`）截图确认两版效果（金色版 → 否决；`cover` 版 → 通过）。未新增自动化测试（纯配色调整，无行为变化）。

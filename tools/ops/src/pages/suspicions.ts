@@ -55,6 +55,8 @@ export async function pageSuspicions(ctx: Ctx): Promise<void> {
         const detail =
           kind === 'pve_reject'
             ? `${r.levelId ?? '—'}: claimed ${r.claimedStars ?? '—'}★, judged ${r.judgedStars ?? '—'}★ (reject #${r.rejectCountAfter ?? '—'})`
+            : kind === 'coin_anomaly'
+            ? `${r.dayKey ?? '—'}: gained ${r.nonRechargeGain ?? '—'} non-recharge coins (threshold ${r.threshold ?? '—'})`
             : `${r.roomId ?? '—'} (side ${r.side ?? '—'}) reported ${fmtStats(r.reported)} / auth ${fmtStats(r.authoritative)} / overclaim ${fmtStats(r.overclaim)} / rolled back ${fmtStats(r.rolledBack)} / suspicion ${r.suspicionAfter ?? '—'}`;
         const statusCell = h('td', {},
           pill(r.status, r.status === 'open' ? 'warn' : 'ok'),
@@ -87,7 +89,11 @@ export async function pageSuspicions(ctx: Ctx): Promise<void> {
         t.append(
           h('tr', {},
             h('td', {}, fmtTime(r.ts)),
-            h('td', {}, kind === 'pve_reject' ? pill('PvE', r.severity === 'high' ? 'failed' : 'warn') : 'PvP'),
+            h('td', {},
+              kind === 'pve_reject' ? pill('PvE', r.severity === 'high' ? 'failed' : 'warn')
+                : kind === 'coin_anomaly' ? pill('Coin', 'warn')
+                : 'PvP',
+            ),
             h('td', {}, r.publicId ? '#' + r.publicId : r.accountId),
             h('td', {}, detail),
             statusCell,

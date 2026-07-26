@@ -406,6 +406,7 @@ export const zh = {
   'shop.monthlyCard': '月卡',
   'shop.yearCard': '年卡',
   'shop.cardActive': '订阅卡生效中，用完后再购买',
+  'shop.monthlyPending': '支付成功，卡片稍后生效',
   'shop.save': '省 {amount}',
   'shop.monthlyActive': '生效中',
   'shop.monthlyInactive': '未开通',
@@ -477,6 +478,7 @@ export const zh = {
   'campaign.ch6.venue': '宗门大比',
   'campaign.locked': '🔒 未解锁',
   'campaign.lockedOffline': '🔒 联网解锁',
+  'campaign.lockedStamp': '封',
   'campaign.pending': '待结算',
   'campaign.equipment': '装备',
   'campaign.chapters': '章节',
@@ -979,6 +981,7 @@ export const zh = {
   'world.team.cardFill':'补满此卡',
   'world.team.cardFull': '该卡已达带兵上限',
   'world.team.full': '编队已达上限',
+  'world.team.cardInjuredRemoved': '{name} 正在养伤（剩余 {time}），已将其移出编队',
   // ── SLG battle replay browser (last-100) ─────────────────────────────────
   'world.replays': '战斗录像',
   'world.replaysTitle': '战斗录像（最近 100 场）',
