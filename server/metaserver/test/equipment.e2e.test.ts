@@ -20,6 +20,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 import type { CommercialClient } from '../dist/commercialClient.js';
 import { buildApp } from '../dist/app.js';
+import { seedEquipment, seedEquipmentBatch, readEquipmentInv } from './helpers/equipment.js';
 
 /** Minimal fake commercial client: only getWallet/spend are real (enhance uses coins); everything else is stubbed. */
 function makeFakeCommercial(): CommercialClient & {
@@ -90,10 +91,15 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
   /** Directly seed one equipment instance into inventory (with specified level/locked), returning its id. */
   const seedInstance = async (id: string, defId: string, level = 0, extra: Partial<EquipmentInstance> = {}) => {
     const inst: EquipmentInstance = { id, defId, rarity: 'common', level, affixes: [], ...extra };
-    await m.collections.saves.updateOne({ _id: accountId }, { $set: { [`save.equipmentInv.${id}`]: inst } });
+    await seedEquipment(m, accountId, inst);
+    // Keep the cap-check mirror in sync (equipment.ts reads save.equipmentInvCount, not a live count).
+    await m.collections.saves.updateOne({ _id: accountId }, { $inc: { 'save.equipmentInvCount': 1 } });
     return id;
   };
   const readSave = async () => (await m.collections.saves.findOne({ _id: accountId }))!.save;
+  /** equipmentInv now lives in its own collection (2026-07-26 split) — read it directly for assertions
+   * against internal storage state (HTTP responses still carry the full map via app.ts's join hook). */
+  const readInv = (account = accountId) => readEquipmentInv(m, account);
 
   beforeEach(async () => {
     await m.db.dropDatabase();
@@ -145,17 +151,17 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     expect(r2.data.instance.id).toBe(r1.data.instance.id); // same instance
     const save = await readSave();
     expect(save.materials.scrap).toBe(15); // deducted only once
-    expect(Object.keys(save.equipmentInv)).toHaveLength(1); // only one item produced
+    expect(Object.keys(await readInv())).toHaveLength(1); // only one item produced
   });
 
   it('craft full inventory → 409 INVENTORY_FULL', async () => {
     await seedMaterials({ scrap: 20 });
     // Directly seed 300 placeholder instances to fill the inventory
-    const full: Record<string, EquipmentInstance> = {};
+    const full: EquipmentInstance[] = [];
     for (let i = 0; i < EQUIPMENT_INV_CAP; i++) {
-      full[`fill_${i}`] = { id: `fill_${i}`, defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [] };
+      full.push({ id: `fill_${i}`, defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [] });
     }
-    await m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.equipmentInv': full } });
+    await seedEquipmentBatch(m, accountId, full);
     const res = await craft('wp_pencil', 'ik-full');
     expect(res.statusCode).toBe(409);
     expect(body(res).error.code).toBe('INVENTORY_FULL');
@@ -174,14 +180,14 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     const er = body(await escrow(inst.id, 'order1'));
     expect(er.ok).toBe(true);
     expect(er.instance.id).toBe(inst.id);
-    expect((await readSave()).equipmentInv[inst.id]).toBeUndefined(); // already removed
+    expect((await readInv())[inst.id]).toBeUndefined(); // already removed
     // transfer to buyer (a separate account)
     const buyer = body(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'eq-buyer' } }));
     await app.inject({ method: 'GET', url: '/save', headers: { authorization: `Bearer ${buyer.data.token}` } });
     const gr = body(await grant(er.instance, 'order1:item', buyer.data.accountId));
     expect(gr.ok).toBe(true);
-    const buyerSave = (await m.collections.saves.findOne({ _id: buyer.data.accountId }))!.save;
-    expect(buyerSave.equipmentInv[inst.id]).toMatchObject({ id: inst.id, defId: 'wp_pencil' });
+    const buyerInv = await readInv(buyer.data.accountId);
+    expect(buyerInv[inst.id]).toMatchObject({ id: inst.id, defId: 'wp_pencil' });
   });
 
   it('escrow idempotency: replaying with the same orderId returns the same snapshot (no double-removal)', async () => {
@@ -200,10 +206,7 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
   });
 
   it('escrow locked instance → 409 EQUIP_LOCKED', async () => {
-    await m.collections.saves.updateOne(
-      { _id: accountId },
-      { $set: { 'save.equipmentInv.locked1': { id: 'locked1', defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [], locked: true } } },
-    );
+    await seedInstance('locked1', 'wp_pencil', 0, { locked: true });
     const res = await escrow('locked1', 'order-locked');
     expect(res.statusCode).toBe(409);
     expect(body(res).code).toBe('EQUIP_LOCKED');
@@ -222,9 +225,9 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     const inst: EquipmentInstance = { id: 'g1', defId: 'wp_marker', rarity: 'rare', level: 2, affixes: [{ id: 'm_atk', value: 8 }] };
     await grant(inst, 'gorder');
     await grant(inst, 'gorder');
-    const save = await readSave();
-    expect(save.equipmentInv['g1']).toMatchObject({ level: 2 });
-    expect(Object.keys(save.equipmentInv).filter((k) => k === 'g1')).toHaveLength(1);
+    const inv = await readInv();
+    expect(inv['g1']).toMatchObject({ level: 2 });
+    expect(Object.keys(inv).filter((k) => k === 'g1')).toHaveLength(1);
   });
 
   // ── E3 Enhancement ───────────────────────────────────────────────────────────────────
@@ -286,7 +289,7 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     const res = await enhance('e4', 'ek-nomat');
     expect(res.statusCode).toBe(402);
     expect(body(res).error.code).toBe('INSUFFICIENT_MATERIALS');
-    expect((await readSave()).equipmentInv['e4'].level).toBe(0);
+    expect((await readInv())['e4']!.level).toBe(0);
     expect(comm.bal(accountId)).toBe(1000); // coins untouched
   });
 
@@ -323,9 +326,9 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     await seedMaterials({ scrap: 0 });
     const r = body(await salvage(['s2', 's3'], 'sk-batch'));
     expect(r.data.refunded.scrap).toBe(salvageRefund('wp_pencil').scrap * 2);
-    const save = await readSave();
-    expect(save.equipmentInv['s2']).toBeUndefined();
-    expect(save.equipmentInv['s3']).toBeUndefined();
+    const inv = await readInv();
+    expect(inv['s2']).toBeUndefined();
+    expect(inv['s3']).toBeUndefined();
   });
 
   it('salvage +5 and above → 409 NOT_SALVAGEABLE (whole batch rejected, no partial execution)', async () => {
@@ -334,7 +337,7 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     const res = await salvage(['s4', 's5'], 'sk-hi');
     expect(res.statusCode).toBe(409);
     expect(body(res).error.code).toBe('NOT_SALVAGEABLE');
-    expect((await readSave()).equipmentInv['s4']).toBeTruthy(); // whole batch not executed
+    expect((await readInv())['s4']).toBeTruthy(); // whole batch not executed
   });
 
   it('salvage epic rarity at +0 → 409 NOT_SALVAGEABLE (ADR-050: epic never salvages, regardless of level)', async () => {
@@ -342,7 +345,7 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     const res = await salvage(['s7'], 'sk-epic');
     expect(res.statusCode).toBe(409);
     expect(body(res).error.code).toBe('NOT_SALVAGEABLE');
-    expect((await readSave()).equipmentInv['s7']).toBeTruthy();
+    expect((await readInv())['s7']).toBeTruthy();
   });
 
   it('salvage batch mixing a valid item with an epic item → whole batch 409 rejected, valid item not consumed', async () => {
@@ -351,9 +354,9 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     const res = await salvage(['s8', 's9'], 'sk-mixed');
     expect(res.statusCode).toBe(409);
     expect(body(res).error.code).toBe('NOT_SALVAGEABLE');
-    const save = await readSave();
-    expect(save.equipmentInv['s8']).toBeTruthy(); // whole batch not executed
-    expect(save.equipmentInv['s9']).toBeTruthy();
+    const inv = await readInv();
+    expect(inv['s8']).toBeTruthy(); // whole batch not executed
+    expect(inv['s9']).toBeTruthy();
   });
 
   it('salvage locked → 409 EQUIP_LOCKED; equipped → 409 EQUIP_IN_USE', async () => {
@@ -434,8 +437,8 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     expect(res.statusCode).toBe(400);
     expect(body(res).error.code).toBe('INVALID_MATERIAL_LEVEL');
     // no partial mutation: both items still present, target untouched, material not consumed
-    const save = await readSave();
-    expect(save.equipmentInv['rt1']).toBeTruthy();
-    expect(save.equipmentInv['rm1']).toMatchObject({ level: 1 });
+    const inv = await readInv();
+    expect(inv['rt1']).toBeTruthy();
+    expect(inv['rm1']).toMatchObject({ level: 1 });
   });
 });
