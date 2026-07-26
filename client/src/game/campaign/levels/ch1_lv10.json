@@ -138,6 +138,32 @@
         "spacingTicks": 18
       },
       {
+        "atTick": 1020,
+        "unitType": "max",
+        "col": 0,
+        "count": 2,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 1020,
+        "unitType": "max",
+        "col": 11,
+        "count": 2,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 1032,
+        "unitType": "max",
+        "col": 1,
+        "count": 1
+      },
+      {
+        "atTick": 1032,
+        "unitType": "max",
+        "col": 10,
+        "count": 1
+      },
+      {
         "atTick": 1260,
         "unitType": "lena",
         "col": 4,
@@ -185,7 +211,7 @@
     "starThresholds": [
       1,
       50,
-      80
+      65
     ],
     "materials": {
       "scrap": 18,
