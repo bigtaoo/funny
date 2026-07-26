@@ -98,7 +98,10 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
   };
   const readSave = async () => (await m.collections.saves.findOne({ _id: accountId }))!.save;
   /** equipmentInv now lives in its own collection (2026-07-26 split) — read it directly for assertions
-   * against internal storage state (HTTP responses still carry the full map via app.ts's join hook). */
+   * against internal storage state. /equipment/* mutation responses deliberately send `equipmentInv: null`
+   * (EQUIPMENT_DESIGN §3.3 phase 2) rather than the full map, so tests must assert against this helper,
+   * not `r.data.save.equipmentInv` — only GET /save (and other non-equipment endpoints, via app.ts's join
+   * hook) still carry the full map. */
   const readInv = (account = accountId) => readEquipmentInv(m, account);
 
   beforeEach(async () => {
@@ -125,7 +128,10 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     expect(r.data.instance.affixes).toHaveLength(1); // primary affix only
     expect(r.data.instance.affixes[0].id).toBe('m_atk');
     expect(r.data.save.materials.scrap).toBe(15); // 20-5 = 15
-    expect(r.data.save.equipmentInv[r.data.instance.id]).toBeTruthy();
+    // Lean response (EQUIPMENT_DESIGN §3.3 phase 2): craft hands back the new instance directly, so it
+    // doesn't also need to pay for + return the full equipmentInv map.
+    expect(r.data.save.equipmentInv).toBeNull();
+    expect((await readInv())[r.data.instance.id]).toBeTruthy();
   });
 
   it('craft rarity secondary affixes: wp_pen (fine) rolls 1 secondary affix', async () => {
@@ -245,6 +251,8 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     expect(r.data.save.materials.scrap).toBe(100 - cost.materials.scrap);
     expect(r.data.save.wallet.coins).toBe(1000 - cost.coins);
     expect(comm.bal(accountId)).toBe(1000 - cost.coins);
+    // Lean response (EQUIPMENT_DESIGN §3.3 phase 2): enhance hands back the updated instance directly.
+    expect(r.data.save.equipmentInv).toBeNull();
   });
 
   it('enhance failure: level unchanged, materials + coins still deducted (gentle tier: no level loss, no break)', async () => {
@@ -317,7 +325,9 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     const r = body(await salvage(['s1'], 'sk1'));
     expect(r.data.refunded).toEqual(refund);
     expect(r.data.save.materials.scrap).toBe(10 + refund.scrap);
-    expect(r.data.save.equipmentInv['s1']).toBeUndefined();
+    // Lean response (EQUIPMENT_DESIGN §3.3 phase 2): the caller already sent instanceIds ['s1'] itself.
+    expect(r.data.save.equipmentInv).toBeNull();
+    expect((await readInv())['s1']).toBeUndefined();
   });
 
   it('salvage batch: total refund across all items', async () => {
@@ -390,6 +400,8 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     const cardId = await starterCardId();
     const r = body(await equip('weapon', 'w1', cardId));
     expect(r.data.save.cardInv[cardId].gear.weapon).toBe('w1');
+    // Lean response (EQUIPMENT_DESIGN §3.3 phase 2): equip never touches equipmentInv at all.
+    expect(r.data.save.equipmentInv).toBeNull();
     const r2 = body(await equip('weapon', null, cardId));
     expect(r2.data.save.cardInv[cardId].gear.weapon).toBeUndefined();
   });

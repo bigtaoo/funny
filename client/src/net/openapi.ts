@@ -1485,7 +1485,7 @@ export interface components {
             };
             equipmentInv?: {
                 [key: string]: components["schemas"]["EquipmentInstance"];
-            };
+            } | null;
             retention?: {
                 checkin?: {
                     monthKey: string;

@@ -79,9 +79,13 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
   // live in their own collection now, not embedded in SaveData.equipmentInv. ~30 handlers across
   // auth/save/pve/economy/liveops/cards/ladderSeason return a `save: SaveData` (either nested under
   // `ok()`'s `{data:{save}}` envelope, or — putSave's 409 conflict case — at the top level); rather than
-  // trust every one of those call sites to remember an explicit join (equipment.ts's own mutation
-  // endpoints already do, via withEquipmentInv, so this is a no-op there), this single hook is the
-  // centralized guarantee that no player-facing response can ever ship without the full map.
+  // trust every one of those call sites to remember an explicit join, this single hook is the centralized
+  // guarantee that no OTHER response can ever accidentally ship without the full map.
+  // equipment.ts's own mutation endpoints (craft/enhance/salvage/reforge/equip) are the deliberate
+  // exception (phase 2, EQUIPMENT_DESIGN §3.3): they set `equipmentInv: null` (via `leanSave`), not
+  // `undefined` — this hook only backfills on `undefined` ("forgot to populate"), so `null` ("explicitly
+  // omitted, caller already knows what changed") passes through untouched, and those endpoints skip the
+  // `equipmentInstances.find({accountId})` entirely instead of paying for it just to throw it away.
   app.addHook('preSerialization', async (_req, _reply, payload) => {
     const p = payload as { save?: SaveData; data?: { save?: SaveData } } | null;
     const save = p?.data?.save ?? p?.save;

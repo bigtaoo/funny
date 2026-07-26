@@ -296,6 +296,7 @@ components:
           description: achId→set of already-claimed tier numbers, idempotent to prevent double-claiming
         equipmentInv:
           type: object
+          nullable: true
           additionalProperties:
             $ref: '#/components/schemas/EquipmentInstance'
         retention:

@@ -191,11 +191,15 @@ export interface SaveData {
 
   // —— Equipment system (server-authoritative, EQUIPMENT_DESIGN §3.1). Not writable via PUT /save; only /equipment/* endpoints write. ——
   // Equipment instances themselves live in the `equipmentInstances` collection since 2026-07-26 (perf: an
-  // embedded map blew up save-doc size on Atlas M0 — see EQUIPMENT_DESIGN.md). This field is now only ever
-  // populated transiently, by GET /save and /internal/save-fields, as a join for wire-format compatibility
-  // (client/worldsvc still expect the full map); it is never written back to the `saves` document. Kept
-  // optional as a safety net during the migration window, not because any code path still stores into it.
-  equipmentInv?: Record<string, EquipmentInstance>; // instanceId → instance
+  // embedded map blew up save-doc size on Atlas M0 — see EQUIPMENT_DESIGN.md). This field is never written
+  // back to the `saves` document; it is only ever populated transiently for a wire response, and it means
+  // different things depending on which: GET /save / /internal/save-fields join in the full map (§3.1
+  // "pull the whole inventory once" points). Every /equipment/* mutation response (phase 2, 2026-07-26,
+  // §3.3) instead sets it to `null` — an explicit "unchanged, use your local copy" signal, distinct from
+  // `undefined` (which the `app.ts` preSerialization backstop treats as "forgot to populate this, fill in
+  // the full map") — because the caller already has what changed via the response's own `instance`
+  // field or the `instanceIds`/`materialId` it sent as request params.
+  equipmentInv?: Record<string, EquipmentInstance> | null; // instanceId → instance; null = intentionally omitted (see above)
   // Cheap cap-check mirror of `equipmentInstances` count for this account (EQUIPMENT_INV_CAP); may drift by
   // a small, self-healing amount (see GET /save's join, which corrects it opportunistically) — never treat
   // as more authoritative than an actual `equipmentInstances` count for a security-sensitive check.
