@@ -90,7 +90,11 @@ export interface SaveData {
     firstPurchaseUsed?: boolean; // true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves)
     totalRechargeCents?: number; // lifetime cumulative real-money spend (usdCents), GACHA_DESIGN §13; absent = 0 (never purchased / pre-feature save)
   };
-  // Fulfilled purchase orders (commercial orderId). Idempotent delivery ledger: redelivery uses $addToSet + $ne guard for deduplication (S5-5).
+  // Fulfilled purchase orders (commercial orderId), most-recent last. Write-only history trail — nothing
+  // reads it back (real idempotency is commercial's `orders` collection / metaserver's `equipmentIdem`);
+  // capped to the most recent DELIVERED_ORDERS_CAP entries via $push+$slice to bound save-doc size
+  // (2026-07-26: an unbounded $addToSet let a heavy account's array grow past 900 entries, adding ~1s
+  // to every read/write of that account's save).
   deliveredOrders: string[];
   pvp: {
     elo: number;

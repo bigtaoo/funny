@@ -23,6 +23,17 @@ import type { CommercialClient, GachaResultEntry, WalletView } from './commercia
 /** 30-day expiry, matching the auction/ladder-settlement system-mail convention. */
 const EQUIP_OVERFLOW_MAIL_EXPIRE_DAYS = 30;
 
+/**
+ * save.deliveredOrders is a write-only history trail (nothing in server or client ever reads it back
+ * for a decision — real idempotency is the orderId-keyed lookup in commercial's `orders` collection /
+ * metaserver's `equipmentIdem`). Left as an unbounded $addToSet it grows forever with every gacha draw
+ * / shop purchase, and a long-lived heavy account's save document balloons (900+ entries observed in
+ * prod, 2026-07-26 lag triage) — every read/write of that account's save then has to transfer/parse the
+ * whole array, adding ~1s to every action that touches the save (achievements/retention/shop/gacha/pve).
+ * Capped via $push+$slice (keeps only the most recent N; drops the Set-dedup property, which nothing relied on).
+ */
+const DELIVERED_ORDERS_CAP = 200;
+
 /** Roster/inventory-full overflow summary for one delivery call (used by gachaDraw to surface a client toast). */
 export interface OverflowSummary {
   cardMailed: number;
@@ -102,11 +113,13 @@ export async function deliverGrant(
     {
       $addToSet: {
         'save.inventory.skins': { $each: newSkins },
-        'save.deliveredOrders': orderId,
         ...(newSkins.length > 0 ? { 'save.everOwned.skin': { $each: newSkins } } : {}),
         ...(grantedMaterialIds.length > 0 ? { 'save.everOwned.material': { $each: grantedMaterialIds } } : {}),
         ...(grantedEquipDefIds.length > 0 ? { 'save.everOwned.equipment': { $each: grantedEquipDefIds } } : {}),
       },
+      // $push+$slice (not $addToSet: no operator supports both dedup and capping) — keeps only the
+      // most recent DELIVERED_ORDERS_CAP entries; see the constant's comment for why this is safe.
+      $push: { 'save.deliveredOrders': { $each: [orderId], $slice: -DELIVERED_ORDERS_CAP } },
       $inc: inc,
       $set: set,
     },
@@ -150,10 +163,10 @@ export async function deliverMailGrant(
     {
       $addToSet: {
         'save.inventory.skins': { $each: newSkins },
-        'save.deliveredOrders': orderId,
         ...(newSkins.length > 0 ? { 'save.everOwned.skin': { $each: newSkins } } : {}),
         ...(grantedMaterialIds.length > 0 ? { 'save.everOwned.material': { $each: grantedMaterialIds } } : {}),
       },
+      $push: { 'save.deliveredOrders': { $each: [orderId], $slice: -DELIVERED_ORDERS_CAP } },
       $inc: inc,
       $set: set,
     },
