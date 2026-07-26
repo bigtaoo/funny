@@ -85,14 +85,18 @@ export class CityService {
       startAt: lastComplete,
       completeAt: lastComplete + duration,
     };
-    await cols.playerWorld.updateOne(
-      { _id: pw._id },
+    // rev-guard: resources/queue above were computed from this exact read (`pw`); a concurrent trainTroops/
+    // upgradeBuilding/etc. call that lands first bumps rev, so this write must fail rather than silently
+    // overwrite the other call's debit with a whole-object $set computed from stale resources (double-spend).
+    const result = await cols.playerWorld.updateOne(
+      { _id: pw._id, rev: pw.rev },
       {
         $set: { resources, lastTickAt: t },
         $push: { trainingQueue: entry } as never,
         $inc: { rev: 1 },
       },
     );
+    if (result.matchedCount === 0) throw new SlgError('REV_CONFLICT', 'Concurrent update, please retry');
     return this.core.getMe(worldId, accountId);
   }
 
@@ -227,10 +231,15 @@ export class CityService {
     const lastComplete = queue.length > 0 ? queue[queue.length - 1]!.completeAt : t;
     const duration = buildTimeSec(key, toLevel) * 1000;
     const entry: BuildQueueEntry = { key, toLevel, startAt: lastComplete, completeAt: lastComplete + duration };
-    await cols.playerWorld.updateOne(
-      { _id: pw._id },
+    // rev-guard: `resources` was computed from this exact read (`pw`). Without guarding the write on rev, two
+    // concurrent upgradeBuilding calls both read the same pre-debit resources, both pass the sufficiency check,
+    // and the second $set overwrites the first's already-debited resources with its own (also under-debited)
+    // computation — net effect, a second building queues without an actual matching resource deduction.
+    const result = await cols.playerWorld.updateOne(
+      { _id: pw._id, rev: pw.rev },
       { $set: { resources, lastTickAt: t }, $push: { buildQueue: entry } as never, $inc: { rev: 1 } },
     );
+    if (result.matchedCount === 0) throw new SlgError('REV_CONFLICT', 'Concurrent update, please retry');
     return this.core.getMe(worldId, accountId);
   }
 
@@ -496,15 +505,14 @@ export class CityService {
    * Only decreases `troops`, so it can never violate the troopCap invariant (enforced on every way IN).
    */
   async distributeTroops(worldId: string, accountId: string, allocations: Record<string, number>): Promise<void> {
-    const { cols, now } = this.core.deps;
+    const { cols } = this.core.deps;
     const pwId = playerWorldId(worldId, accountId);
     const pw = await cols.playerWorld.findOne({ _id: pwId });
     if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
 
     const cardState = pw.cardState ?? {};
-    const stock = pw.troops;
     let totalCost = 0;
-    const cardStateSet: Record<string, unknown> = {};
+    const cardStateInc: Record<string, number> = {};
 
     for (const [id, amount] of Object.entries(allocations)) {
       if (typeof amount !== 'number' || amount < 0 || !Number.isInteger(amount)) {
@@ -514,17 +522,19 @@ export class CityService {
       const cs = cardState[id];
       if (!cs?.teamId) throw new SlgError('BAD_REQUEST', `Card ${id} is not assigned to a team`);
       totalCost += amount;
-      cardStateSet[`cardState.${id}.currentTroops`] = (cs.currentTroops ?? 0) + amount;
+      cardStateInc[`cardState.${id}.currentTroops`] = amount;
     }
 
     if (totalCost === 0) return;
-    if (totalCost > stock) throw new SlgError('NO_TROOPS', `Not enough troop stock (have ${stock}, need ${totalCost})`);
 
-    await cols.playerWorld.updateOne(
-      { _id: pwId },
-      { $set: cardStateSet, $inc: { troops: -totalCost, rev: 1 } },
+    // Atomic guarded debit (troops:{$gte:totalCost} in the filter, $inc not $set): a stale JS-side
+    // read-then-check would let two concurrent distributeTroops calls both pass and drive troops negative.
+    // The per-card currentTroops bump is also a $inc (not a computed $set) for the same reason.
+    const result = await cols.playerWorld.updateOne(
+      { _id: pwId, troops: { $gte: totalCost } },
+      { $inc: { ...cardStateInc, troops: -totalCost, rev: 1 } },
     );
-    void now; // suppress unused warning
+    if (result.matchedCount === 0) throw new SlgError('NO_TROOPS', `Not enough troop stock (need ${totalCost})`);
   }
 
   /**

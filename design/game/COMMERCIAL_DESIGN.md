@@ -235,6 +235,10 @@ POST /internal/ads/credit
 - **返回值仅供参考**：并发竞争的败者走 E11000 分支读订单时，赢者可能尚未回填 `coinsAfter`（读到占位 0）。余额权威以 `getWallet` / 后续镜像为准，`coinsAfter` 非权威。
 - **首充 2× 奖励时序**：`rechargeVerify` / `paddleComplete` 均须在 `claimFirstPurchaseBonus()` **之前** `ensureWallet`——`claim` 的 `findOneAndUpdate({firstPurchasedAt:{$exists:false}})` 无 upsert，钱包不存在时匹配不到会把 2× 漏到第二笔。
 - **首充状态回传（客户端徽标门控）**：`WalletView.firstPurchaseUsed`（= `wallets.firstPurchasedAt != null`）经 `meta` `mirrorWalletFrom` 写入 `save.monetization.firstPurchaseUsed`。客户端充值档位仅在 `firstPurchaseUsed !== true` 时展示「首充双倍」徽标——老玩家用掉首充后不再显示（否则会误导：徽标在，实际不再翻倍）。离线/无镜像时默认视为可用（仍显示）。
+- **历史 bug（2026-07-26 修）：`redeemFate`（命定池兑换）曾未遵守本节的先占槽再动账顺序**——直接原子扣 `fatePoints`，**之后**才 `orders.insertOne` 且无 E11000 catch。并发同 orderId 请求都能通过「无已有订单」检查、都扣一次 `fatePoints`（余额够两次时双扣），败者的 `insertOne` 抛 E11000 冒泡成未捕获异常。已改为与 `gachaDraw` 一致的先占槽后扣款顺序。
+- **历史 bug（2026-07-26 修）：`orderDelivered`（发货回调，含 gacha 重复保底退款）曾未检查幂等 `updateOne` 的匹配结果**——`{_id, status:'charged'}` 守卫的状态翻转写入之后无条件执行退款 `credit()`。并发重复的发货回调（如 meta 超时重试同一订单的 delivered 回调）都能读到 `status:'charged'`、都执行退款，导致**保底金币重复入账**。已改为检查 `matchedCount`，只有真正翻转状态的那次调用才退款。
+- **历史 bug（2026-07-26 修）：`paddleRefund`（Paddle 退款事件扣减 `totalRechargeCents`）曾是 check-then-act**——读 `doc.refundedAt` 判断后分两次非原子写（钱包扣减 + `recharges.updateOne` 标记 `refundedAt`）。Paddle 保证 webhook 至少投递一次，并发重复的退款事件都能通过预检查、都执行扣减，`totalRechargeCents`（首充/进度门槛统计）被多扣。已改为先原子 `updateOne({_id, refundedAt:{$exists:false}})` 抢占标记位，只有抢到的那次才继续扣减钱包。
+- **三处修复均补了 `server/commercial/test/service-idempotency.e2e.test.ts` 里的并发回归测试**（`Promise.all` 打并发请求，断言业务效果只发生一次），对照当前唯一遵守本节写对的 `gachaDraw` 主抽奖路径 / `shopCharge` / `spend` 作为参照实现。
 
 ---
 

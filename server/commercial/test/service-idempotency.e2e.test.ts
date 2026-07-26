@@ -166,6 +166,26 @@ describe.skipIf(!mongo)('commercial service — idempotency / concurrency / boun
     expect(await m.collections.gachaHistory.countDocuments({ accountId: 'gcd' })).toBe(10);
   });
 
+  it('redeemFate: concurrent duplicate orderId debits fate points exactly once and never throws', async () => {
+    await svc.createLimitedPool({
+      config: { id: 'lim-race', name: 'Race', featuredLegendary: 'skin_lim_race', startAt: 0, endAt: 9_999_999_999_999 },
+      createdBy: 'admin',
+    });
+    await fund('frc', 0); // ensure a full wallet doc exists (raw upsert would skip the gacha:{pity:{}} default)
+    // Enough points for all 6 concurrent calls to pass the $gte debit guard individually (6×30=180) — this is
+    // what actually exercises the insert-first idempotency: without it, every caller sees "no existing order"
+    // and each debits its own 30, so a race can drain far more than one redemption's worth.
+    await m.collections.wallets.updateOne({ _id: 'frc' }, { $set: { fatePoints: 180 } });
+    const calls = Array.from({ length: 6 }, () =>
+      svc.redeemFate({ accountId: 'frc', itemId: 'skin_lim_race', orderId: 'dup-fate' }),
+    );
+    const res = await Promise.allSettled(calls);
+    expect(res.every((r) => r.status === 'fulfilled')).toBe(true);
+    // FATE_POINT_REDEEM_COST=30: exactly one redemption's worth debited, not 6×.
+    expect((await svc.getWallet('frc')).fatePoints).toBe(150);
+    expect(await m.collections.orders.countDocuments({ _id: 'dup-fate' })).toBe(1);
+  });
+
   // ── rechargeVerify: receipt-id conflict + cross-account guard under concurrency ──
   it('rechargeVerify: concurrent calls with the same receiptId (same account) credit exactly once', async () => {
     const calls = Array.from({ length: 10 }, () =>
@@ -366,5 +386,30 @@ describe.skipIf(!mongo)('commercial service — idempotency / concurrency / boun
     expect((await ledgerOf('od')).filter((l) => l.reason === 'gacha_refund').length).toBe(1);
     // Unknown order → NOT_FOUND.
     expect(await svc.orderDelivered({ orderId: 'nope' })).toEqual({ ok: false, error: 'NOT_FOUND' });
+  });
+
+  it('orderDelivered: CONCURRENT duplicate delivery callbacks credit the refund exactly once', async () => {
+    await fund('odc', 1000);
+    await svc.shopCharge({ accountId: 'odc', itemId: 'skin_shop_c1', cost: 300, orderId: 'odc1' }); // 700
+    const calls = Array.from({ length: 8 }, () => svc.orderDelivered({ orderId: 'odc1', refundCoins: 50 }));
+    const res = await Promise.all(calls);
+    expect(res.every((r) => r.ok)).toBe(true);
+    // Only the call that wins the status:'charged'→'delivered' race may credit; 700+50, never 700+8×50.
+    expect((await svc.getWallet('odc')).coins).toBe(750);
+    expect((await ledgerOf('odc')).filter((l) => l.reason === 'gacha_refund').length).toBe(1);
+  });
+
+  // ── paddleRefund: totalRechargeCents decremented exactly once under concurrent redelivery ──
+  it('paddleRefund: concurrent duplicate refund-webhook deliveries decrement totalRechargeCents exactly once', async () => {
+    await svc.paddleComplete({ accountId: 'pr', transactionId: 'txn-refund', coins: 550, usdCents: 499 });
+    const before = (await svc.getWallet('pr')).totalRechargeCents;
+    expect(before).toBe(499);
+    const calls = Array.from({ length: 6 }, () => svc.paddleRefund({ transactionId: 'txn-refund' }));
+    const res = await Promise.all(calls);
+    expect(res.every((r) => r.ok)).toBe(true);
+    // Exactly one call decremented; the rest are no-ops (decrementedCents: 0) via the refundedAt-claim guard.
+    expect(res.filter((r) => r.ok && r.decrementedCents === 499).length).toBe(1);
+    expect(res.filter((r) => r.ok && r.decrementedCents === 0).length).toBe(5);
+    expect((await svc.getWallet('pr')).totalRechargeCents).toBe(0);
   });
 });

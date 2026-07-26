@@ -318,19 +318,29 @@ export async function claimEventReward(
   const doc = await cols.eventParticipants.findOne({ _id: pid });
   if (!doc) return { ok: false, error: 'NOT_FOUND' };
 
-  // Check maxClaims limit
+  // Fast, friendly pre-checks for the common (non-racing) case. They are NOT the actual guard — both are
+  // re-checked atomically in the write below, because a concurrent claim can slip in between these reads
+  // and that write.
   if (reward.maxClaims !== undefined) {
     const alreadyClaimed = rewardClaimedCount(doc.claimedRewards, rewardId);
     if (alreadyClaimed >= reward.maxClaims) return { ok: false, error: 'CLAIM_LIMIT_REACHED' };
   }
-
-  // Check that the account has enough points
   if (doc.points < reward.cost) return { ok: false, error: 'INSUFFICIENT_POINTS' };
 
-  // Atomically deduct points ($gte guard prevents concurrent over-deduction)
-  const claimIndex = doc.claimedRewards.length;
+  // Atomic guard: points AND (when capped) the claim-count are both re-checked in the SAME update filter, so
+  // two concurrent claims for a maxClaims-limited reward cannot both pass — the $expr counts matching entries
+  // in claimedRewards live against the current document, not the stale `doc` read above.
+  const filter: Record<string, unknown> = { _id: pid, points: { $gte: reward.cost } };
+  if (reward.maxClaims !== undefined) {
+    filter.$expr = {
+      $lt: [
+        { $size: { $filter: { input: { $ifNull: ['$claimedRewards', []] }, cond: { $eq: ['$$this', rewardId] } } } },
+        reward.maxClaims,
+      ],
+    };
+  }
   const updated = await cols.eventParticipants.findOneAndUpdate(
-    { _id: pid, points: { $gte: reward.cost } },
+    filter,
     {
       $inc: { points: -reward.cost },
       $push: { claimedRewards: rewardId },
@@ -338,15 +348,26 @@ export async function claimEventReward(
     },
     { returnDocument: 'after' },
   );
-  if (!updated) return { ok: false, error: 'INSUFFICIENT_POINTS' }; // lost concurrent race
+  if (!updated) {
+    // Lost a concurrent race — re-read to report which guard actually failed.
+    const cur = await cols.eventParticipants.findOne({ _id: pid });
+    if (reward.maxClaims !== undefined && rewardClaimedCount(cur?.claimedRewards ?? [], rewardId) >= reward.maxClaims) {
+      return { ok: false, error: 'CLAIM_LIMIT_REACHED' };
+    }
+    return { ok: false, error: 'INSUFFICIENT_POINTS' };
+  }
 
   const pointsLeft = updated.points;
+  // Index from the POST-commit array (not a pre-read length): under a concurrent race for a maxClaims>1
+  // reward, two claims can both legitimately succeed, and each must land its own unique index — a pre-read
+  // length would let both compute the same index and collide on dispatchKey/orderId.
+  const claimIndex = updated.claimedRewards.length - 1;
   const dispatchKey = `event.claim:${pid}:${rewardId}:${claimIndex}`;
 
   // Dispatch reward
   if (reward.kind === 'coins' && (reward.count ?? 0) > 0 && commercial.available) {
     await commercial
-      .grant({ accountId, amount: reward.count!, reason: 'event_reward', orderId: randomUUID() })
+      .grant({ accountId, amount: reward.count!, reason: 'event_reward', orderId: dispatchKey })
       .catch(() => {/* best-effort; points already deducted, no rollback for now (ops compensation fallback) */});
   } else if (reward.kind !== 'coins') {
     // material / skin → mail attachment

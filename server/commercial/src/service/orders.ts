@@ -20,10 +20,14 @@ export function OrdersMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBas
       if (order.status === 'delivered') return { ok: true }; // Idempotent: already delivered, do not refund again.
 
       const refund = Math.max(0, Math.floor(args.refundCoins ?? 0));
-      await this.cols.orders.updateOne(
+      const updated = await this.cols.orders.updateOne(
         { _id: args.orderId, status: 'charged' },
         { $set: { status: 'delivered', deliveredAt: this.now(), refundCoins: refund } },
       );
+      // status:'charged' in the filter is the idempotency guard: Mongo only lets one concurrent call actually
+      // flip the status (matchedCount 1). A duplicate delivery callback that loses that race (matchedCount 0 —
+      // another call already delivered it) must NOT credit the refund again.
+      if (updated.matchedCount === 0) return { ok: true };
       if (refund > 0) {
         await this.credit(order.accountId, refund, 'gacha_refund', { orderId: args.orderId });
       }

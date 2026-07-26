@@ -127,6 +127,8 @@ draft(admin编辑) → scheduled(已排期未到点) → active(窗口内) → e
 > - **上线注意**：`events.manage` 是后端下发能力（`capabilitiesForRole`），VPS admin 后端需 `--build` 重建重启菜单才出现（ops 前端发布≠看到新菜单）。
 > - **本期范围**：手动单条活动 CRUD + 校验。仍未建：生命周期调度器（scheduled→active→ended→settled 的自动结算/清积分/归档，目前靠窗口时间戳被动判定）、限定直购、双倍/加成期。
 
+> **修复：`claimEventReward` 的 `maxClaims` 并发校验非原子（2026-07-26）**：拍卖行余额校验漏洞排查带出的全站问题之一（详见 `AUCTION_DESIGN.md`/`COMMERCIAL_DESIGN.md`/`SLG_CITY_DESIGN.md` 同日条目）。`maxClaims`（限领 N 次）的检查是先 `findOne` 读一次判断，原子扣分那步（`findOneAndUpdate`）的过滤条件却只查了 `points:{$gte:cost}`，从没重新校验已领次数——并发两个请求都能通过读时检查、都通过扣分守卫，`maxClaims:1` 的奖励被领两次。另外，`coins` 类奖励发放时用的是 `randomUUID()` 当 `commercial.grant` 的 orderId，没用同函数紧接着算出的确定性 `dispatchKey`（mail 类奖励一直在用这个 key 保证幂等），等于把 commercial 侧本可兜底的幂等性也主动废掉了。metaserver 其余所有奖励发放路径（成就/签到/每日/战令）都走 `MetaServiceBase.mutateSave` 的乐观锁读改写模式，不受影响——只有 `events.ts` 这条例外。**改动**：把过滤条件改成同一个 `findOneAndUpdate` 里用聚合表达式 `$expr:{$lt:[{$size:{$filter:...}}, maxClaims]}` 同时校验积分和已领次数（两者原子生效，不再是分两步的 TOCTOU）；`dispatchKey`/orderId 的领取序号改用**写入成功后**的 `claimedRewards.length-1`（而非写入前的预读长度）——`maxClaims>1` 的可重复奖励在并发下两次都能合法成功时，用预读长度会让两次的 key 算出同一个值、在 commercial 侧撞车（第二次被误判成重放，积分扣了但金币没发），用提交后的长度则每次成功领取都有各自唯一的序号。**测试**：`server/metaserver/test/events-claim.e2e.test.ts`（新增，真实 Mongo + 假 commercial/socialsvc 客户端）——`maxClaims:1` 8 个并发只成功 1 个、`maxClaims:3` 6 个并发恰好成功 3 个且 3 次金币发放的 orderId 互不相同、顺序重复领取仍被正确拒绝；均先在修复前代码上确认能复现超领（8 个/6 个并发全部"成功"），修复后行为符合预期。**验收**：`tsc --noEmit`/`tsc -b` 全绿；`vitest run` 全量 663/663（含跨包 socialsvc dist 依赖，`mail-claim.e2e.test.ts` 需先 `tsc -b` socialsvc）。
+
 | 项 | 复用/现状 | 待建 |
 |---|---|---|
 | 配置编辑/下发 | ✅ OPS admin 活动管理 CRUD（GET/POST/PATCH/DELETE `/admin/events`，events.manage）+ `validateEventInput` 校验 | 生命周期自动调度器（settled 结算/清积分/归档） |

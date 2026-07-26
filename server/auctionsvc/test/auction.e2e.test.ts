@@ -356,6 +356,40 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     await expect(svc.cancelAuction('bob', view.auctionId)).rejects.toMatchObject({ code: 'NO_PERMISSION' });
   });
 
+  it('cancel: a bid landing between read and write must not silently succeed and orphan the bidder\'s escrow', async () => {
+    const v = await svc.createAuction({
+      sellerId: 'alice', itemType: 'material', saleMode: 'auction',
+      item: { material: 'scrap' }, qty: 1, startPrice: 10, durationSec: DUR,
+    });
+    // Simulate a bid landing between cancelAuction's doc read and its atomic write (same interleave technique
+    // as the "B bid: concurrently superseded" test above, applied to the read side instead of commercial.spend):
+    // intercept the read to return the pre-bid snapshot while a bid concurrently lands in the DB underneath it.
+    const originalFindOne = mongo!.collections.auctions.findOne.bind(mongo!.collections.auctions);
+    let intercepted = false;
+    mongo!.collections.auctions.findOne = (async (filter: never) => {
+      const doc = await originalFindOne(filter);
+      if (!intercepted && doc?._id === v.auctionId) {
+        intercepted = true;
+        await mongo!.collections.auctions.updateOne(
+          { _id: v.auctionId },
+          { $set: { topBid: { bidderId: 'bob', amount: 12, ts: nowMs } }, $inc: { rev: 1 } },
+        );
+      }
+      return doc; // stale (pre-bid) snapshot, exactly what cancelAuction's own read would have seen mid-race
+    }) as typeof originalFindOne;
+    try {
+      await expect(svc.cancelAuction('alice', v.auctionId)).rejects.toMatchObject({ code: 'AUCTION_CLOSED' });
+    } finally {
+      mongo!.collections.auctions.findOne = originalFindOne;
+    }
+    // The listing must stay open with the bid intact — not silently cancelled while the bid's escrow is orphaned.
+    const stored = await mongo!.collections.auctions.findOne({ _id: v.auctionId });
+    expect(stored?.status).toBe('open');
+    expect(stored?.topBid).toMatchObject({ bidderId: 'bob', amount: 12 });
+    // Item was never returned to the seller — the cancel did not go through.
+    expect(mailAtt('alice', 'auction_cancel:')).toBeUndefined();
+  });
+
   it('expiry scan: process expired listings + mail seller items back', async () => {
     const view = await svc.createAuction({
       sellerId: 'alice', itemType: 'material',
