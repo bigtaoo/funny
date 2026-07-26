@@ -144,14 +144,20 @@ export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TB
         nameLbl.x = mx + 28; nameLbl.y = cy + 24;
         ml.addChild(nameLbl);
 
-        const approveW = 112, rejectW = 112, btnH = 52, gap = 12;
+        // Button width follows the measured label width (not a fixed literal) — locales like
+        // German ("Ablehnen"/"Annehmen") run longer than English and would clip a fixed box.
+        const btnH = 52, gap = 12, btnPadX = 28;
+        const al = txt(t('family.approve'), FS.label * 2, 0x2f6b2f);
+        const approveW = al.width + btnPadX * 2;
+        const rl = txt(t('family.reject'), FS.label * 2, C.red);
+        const rejectW = rl.width + btnPadX * 2;
+
         const rejectX = mx + mw - 16 - rejectW;
         const approveX = rejectX - gap - approveW;
 
         const approveBtn = sketchPanel(approveW, btnH, { fill: 0xe0f0e0, border: 0x4a8a4a, seed: seedFor(cy, 1, approveW) });
         approveBtn.x = approveX; approveBtn.y = cy + 14;
         ml.addChild(approveBtn);
-        const al = txt(t('family.approve'), FS.label * 2, 0x2f6b2f);
         al.anchor.set(0.5, 0.5); al.x = approveX + approveW / 2; al.y = cy + 14 + btnH / 2;
         ml.addChild(al);
         const rid = reqv.requestId;
@@ -160,7 +166,6 @@ export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TB
         const rejectBtn = sketchPanel(rejectW, btnH, { fill: 0xf0e0e0, border: C.red, seed: seedFor(cy, 2, rejectW) });
         rejectBtn.x = rejectX; rejectBtn.y = cy + 14;
         ml.addChild(rejectBtn);
-        const rl = txt(t('family.reject'), FS.label * 2, C.red);
         rl.anchor.set(0.5, 0.5); rl.x = rejectX + rejectW / 2; rl.y = cy + 14 + btnH / 2;
         ml.addChild(rl);
         this.modalHits.push({ rect: { x: rejectX, y: cy + 14, w: rejectW, h: btnH }, action: () => void this.doRespondJoinRequest(rid, false) });
