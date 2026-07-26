@@ -184,6 +184,10 @@ export class FriendsSceneBase {
   // joins directly without going through this).
   protected familyDetailView: FamilyDetailView | null = null;
   protected familyDetailLoading = false;
+  // Set once a join request is known to be outstanding (fresh success, or the server told us
+  // ALREADY_REQUESTED on a retry) — only one pending request per account, so this disables every
+  // Join button in the browse list/detail popup rather than tracking it per-family.
+  protected familyJoinPending = false;
 
   // Sect tab subview
   protected sectSubview: 'info' | 'create' | 'joinById' = 'info';

@@ -56,22 +56,24 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
         return;
       } else {
         if (this.familySubview === 'info') {
-          const lbl = txt(t('social.family.none'), FS.heading, C.mid);
+          const lbl = txt(t(this.familyJoinPending ? 'social.family.joinRequested' : 'social.family.none'), FS.heading, C.mid);
           lbl.anchor.set(0.5, 0); lbl.x = this.cCX; lbl.y = cy;
           this.container.addChild(lbl);
           cy += Math.round(h * 0.06);
 
-          const bH = Math.round(h * 0.08);
-          const bGap = Math.round(w * 0.04);
-          const bW = Math.round((panelW - bGap) / 2);
-          this.addButton(t('social.family.create'), px, cy, bW, bH, C.dark, C.accent,
-            () => { this.familySubview = 'create'; this.render(); });
-          this.addButton(t('social.family.joinById'), px + bW + bGap, cy, bW, bH, C.paper, C.line,
-            () => {
-              this.familySubview = 'joinById';
-              if (!this.familyBrowseLoaded && !this.familyBrowseLoading) void this.loadFamilyBrowse('');
-              this.render();
-            }, C.dark);
+          if (!this.familyJoinPending) {
+            const bH = Math.round(h * 0.08);
+            const bGap = Math.round(w * 0.04);
+            const bW = Math.round((panelW - bGap) / 2);
+            this.addButton(t('social.family.create'), px, cy, bW, bH, C.dark, C.accent,
+              () => { this.familySubview = 'create'; this.render(); });
+            this.addButton(t('social.family.joinById'), px + bW + bGap, cy, bW, bH, C.paper, C.line,
+              () => {
+                this.familySubview = 'joinById';
+                if (!this.familyBrowseLoaded && !this.familyBrowseLoading) void this.loadFamilyBrowse('');
+                this.render();
+              }, C.dark);
+          }
         } else if (this.familySubview === 'create') {
           this.drawFamilyCreateForm(px, panelW, cy);
         } else {
@@ -223,8 +225,10 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
 
         const famId = fam.familyId;
         const joinBtnX = px + panelW - joinBtnW - joinBtnGap;
-        this.addButton(t('family.join'), joinBtnX, cy + (rowH - joinBtnH) / 2, joinBtnW, joinBtnH, C.dark, C.accent,
-          () => void this.doJoinFamily(famId), 0xffffff, undefined);
+        const pending = this.familyJoinPending;
+        this.addButton(t(pending ? 'social.family.pending' : 'family.join'), joinBtnX, cy + (rowH - joinBtnH) / 2, joinBtnW, joinBtnH,
+          pending ? C.btnDis : C.dark, pending ? C.btnOff : C.accent,
+          () => { if (!pending) void this.doJoinFamily(famId); }, pending ? C.mid : 0xffffff, undefined);
         // Tapping the rest of the row (left of the Join button) previews the family's info.
         this.hits.push({ rect: { x: px, y: cy, w: joinBtnX - joinBtnGap - px, h: rowH }, fn: () => this.openFamilyDetail(famId) });
         cy += rowH + rowGap;
@@ -282,8 +286,10 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       this.addButton(t('social.family.cancel'), px, bY, bW, bH, C.paper, C.line,
         () => { this.familyDetailView = null; this.render(); }, C.dark);
       const famId = fam.familyId;
-      this.addButton(t('family.join'), px + bW + bGap, bY, bW, bH, C.dark, C.accent,
-        () => void this.doJoinFamily(famId));
+      const pending = this.familyJoinPending;
+      this.addButton(t(pending ? 'social.family.pending' : 'family.join'), px + bW + bGap, bY, bW, bH,
+        pending ? C.btnDis : C.dark, pending ? C.btnOff : C.accent,
+        () => { if (!pending) void this.doJoinFamily(famId); }, pending ? C.mid : 0xffffff);
     }
 
     // ── Sect tab ──────────────────────────────────────────────────────────────────

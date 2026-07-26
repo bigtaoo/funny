@@ -127,6 +127,8 @@ interface FamilyJoinRequestDoc {
 
 **加入需审批**（O1 已拍板，18.07.2026）：`POST /join` 不再直接入队，而是插入一条 `pending` 申请；leader/elder 通过 `GET /requests` 查看、`POST /requests/:id/respond` 同意（走原直接入队逻辑）或拒绝（拒绝会给申请人发一封系统邮件，`family.mail.rejected.*` i18n key，见 §4.1）。
 
+申请人侧没有单独的“查我的申请状态”接口——客户端仅靠 `POST /join` 的返回/报错反推：成功或收到 `ALREADY_REQUESTED` 都代表“已有待批申请”。`FriendsScene`（`orgForm.ts`/`service.ts`）据此置位 `familyJoinPending`，把浏览列表和详情弹窗里的 Join 按钮变灰并改文案为 `social.family.pending`（等待批准），同时把 info 子页的 Create/Join-by-search 入口隐藏（26.07.2026，修复"已申请却仍显示 Join failed"）。该状态只存在于当前 `FriendsScene` 实例内存中，重新打开场景或等 `loadSLGStatus` 查到 `familyId`（批准通过）才会清除——如果申请被拒绝但场景没有重开，按钮会一直灰到重新进入 Family 分页为止；这是已知的取舍，不做服务端往返查询。
+
 注意：**无 worldId 字段**。家族进入 SLG 大区时，worldsvc 把 `familyId` 写入 `playerWorld.familyId`（只读镜像，socialsvc 不拥有 `playerWorld`）。
 
 ### 3.2 好友（从 metaserver 迁入，P2 期）

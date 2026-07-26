@@ -756,6 +756,7 @@ export const zh = {
   'social.family.enter': '进入家族',
   'social.family.created': '家族创建成功',
   'social.family.joinRequested': '申请已提交，请等待家族审批',
+  'social.family.pending': '等待批准',
   'social.family.createFail': '创建失败，请重试',
   'social.family.joinFail': '加入失败，请重试',
   'social.family.confirm': '确认',
