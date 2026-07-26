@@ -1,8 +1,23 @@
 // Equipment inventory backend (E2 crafting + worldsvc auction escrow/transfer). EQUIPMENT_DESIGN §3 / §6 / §18.
 //
-// Fully server-authoritative (L2): SaveData.equipmentInv is written exclusively by this
-// module; PUT /save cannot write it (SyncPatch has been narrowed). Writes use optimistic-lock
-// rev guards + retries (same pattern as internal.ts material deduction).
+// Fully server-authoritative (L2): equipment instances are written exclusively by this module;
+// PUT /save cannot write them (SyncPatch has been narrowed).
+//
+// Storage (2026-07-26, perf): instances live in the `equipmentInstances` collection (_id=instanceId),
+// NOT embedded in SaveData.equipmentInv anymore — an embedded map blew up save-doc size (81KB for a
+// heavy account) and every save write (not just equipment ones) paid to rewrite it on Atlas M0. `save`
+// only carries an `equipmentInvCount` mirror for cheap cap checks; the full `equipmentInv` map is
+// reassembled on demand (`assembleEquipmentInv`/`withEquipmentInv`) purely for wire-format compatibility
+// — GET /save, /internal/save-fields, and every function below that returns `save: SaveData` still hand
+// back the full map, unchanged from the client/worldsvc's point of view (phase 1 of the split; see
+// EQUIPMENT_DESIGN.md — a later phase may switch mutation responses to delta-only, which is the part
+// that would actually need client changes).
+//
+// No Mongo transactions in this codebase (see shared/src/mongo.ts header) — cross-collection consistency
+// here relies on ordering discipline + idempotency, same house style as the existing equipmentIdem
+// ledger: commit the costly/guarded side of an operation first (so a crash before the second write can
+// only under-deliver, never over-deliver), and make every idempotent-replay branch *re-assert* the
+// target state rather than trust that a prior attempt's second write actually landed ("verify-and-heal").
 //
 // Responsibilities:
 //   · craftEquipment   Player crafting (E2): deduct stationery materials → roll a +0 base item → add to inventory (300 cap). idemKey idempotent.
@@ -22,7 +37,6 @@ import {
   REFORGE_MATERIAL_RARITY,
   reforgeCoinCost,
   PROTECT_ENHANCE_ITEM_ID,
-  equipmentInvCount,
   rollCraftedAffixes,
   rollEnhanceSuccess,
   rollReforgedAffixes,
@@ -32,6 +46,7 @@ import {
   type SaveData,
   type EquipSlot,
   type EquipmentInstance,
+  type EquipmentInstanceDoc,
 } from '@nw/shared';
 import { getOrCreateSave } from './save.js';
 import { mirrorCoins } from './economy.js';
@@ -67,9 +82,59 @@ function idemExpireAt(now: number): Date {
   return new Date(now + EQUIPMENT_IDEM_TTL_SEC * 1000);
 }
 
+export function toInstanceDoc(instance: EquipmentInstance, accountId: string): EquipmentInstanceDoc {
+  return {
+    _id: instance.id,
+    accountId,
+    defId: instance.defId,
+    rarity: instance.rarity,
+    level: instance.level,
+    affixes: instance.affixes,
+    ...(instance.locked !== undefined ? { locked: instance.locked } : {}),
+  };
+}
+
+function fromInstanceDoc(doc: EquipmentInstanceDoc): EquipmentInstance {
+  return {
+    id: doc._id,
+    defId: doc.defId,
+    rarity: doc.rarity,
+    level: doc.level,
+    affixes: doc.affixes,
+    ...(doc.locked !== undefined ? { locked: doc.locked } : {}),
+  };
+}
+
+/**
+ * Reassembles the full equipmentInv map from `equipmentInstances`, for wire-format compatibility
+ * (phase 1 of the storage split keeps every player-facing response shape unchanged). Also opportunistically
+ * self-heals `equipmentInvCount` drift (a plain field $set, no rev guard — it's an informational mirror
+ * never used as a lock, so this can never spuriously conflict with a real optimistic-lock write) since this
+ * call already has the true count in hand.
+ */
+export async function assembleEquipmentInv(
+  cols: Collections,
+  accountId: string,
+  save?: SaveData,
+): Promise<Record<string, EquipmentInstance>> {
+  const docs = await cols.equipmentInstances.find({ accountId }).toArray();
+  const inv: Record<string, EquipmentInstance> = {};
+  for (const doc of docs) inv[doc._id] = fromInstanceDoc(doc);
+  if (save && save.equipmentInvCount !== docs.length) {
+    await cols.saves.updateOne({ _id: accountId }, { $set: { 'save.equipmentInvCount': docs.length } });
+  }
+  return inv;
+}
+
+/** Attaches the full equipmentInv map onto a SaveData for a player-facing response (phase 1: shape unchanged). */
+async function withEquipmentInv(cols: Collections, save: SaveData): Promise<SaveData> {
+  return { ...save, equipmentInv: await assembleEquipmentInv(cols, save.accountId, save) };
+}
+
 /**
  * Returns whether an equipment instance is currently equipped by any card in the Hero Roster.
  * Scans every CardInstance.gear (CC-2); an equipped item cannot be listed for auction or removed.
+ * Unchanged by the storage split — cardInv still lives in the save document.
  */
 function isEquipped(save: SaveData, instanceId: string): boolean {
   for (const card of Object.values(save.cardInv ?? {})) {
@@ -112,7 +177,7 @@ export async function craftEquipment(
   for (const [mat, qty] of Object.entries(craftCost)) {
     if ((cur.materials?.[mat] ?? 0) < qty) return { error: `insufficient ${mat}`, code: 'INSUFFICIENT_MATERIALS' };
   }
-  if (equipmentInvCount(cur.equipmentInv) >= EQUIPMENT_INV_CAP) {
+  if (cur.equipmentInvCount >= EQUIPMENT_INV_CAP) {
     return { error: 'equipment inventory full', code: 'INVENTORY_FULL' };
   }
 
@@ -127,14 +192,25 @@ export async function craftEquipment(
     });
   } catch (e) {
     if ((e as { code?: number }).code === 11000) {
+      // Verify-and-heal: a prior attempt may have committed the material deduction without the instance
+      // upsert ever landing (crash between the two writes below) — re-assert the instance exists rather
+      // than trusting the claim alone.
       const prev = await cols.equipmentIdem.findOne({ _id: idempotencyKey });
+      const replayInstance = (prev?.result as EquipmentInstance) ?? instance;
+      await cols.equipmentInstances.updateOne(
+        { _id: replayInstance.id },
+        { $set: toInstanceDoc(replayInstance, accountId) },
+        { upsert: true },
+      );
       const save = await getOrCreateSave(cols, accountId, now());
-      return { instance: (prev?.result as EquipmentInstance) ?? instance, save };
+      return { instance: replayInstance, save: await withEquipmentInv(cols, save) };
     }
     throw e;
   }
 
-  // Claim succeeded → deduct materials + add to inventory (optimistic-lock rev guard + retries).
+  // Cost-and-grant: commit the costly/guarded side FIRST (materials + count, rev-guarded). If this
+  // exhausts retries, the player paid nothing and received nothing — safe. Only once it succeeds do we
+  // grant the instance (an idempotent upsert, safe to repeat on any later replay).
   for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
     const doc = await cols.saves.findOne({ _id: accountId });
     if (!doc) {
@@ -149,7 +225,7 @@ export async function craftEquipment(
         return { error: `insufficient ${mat}`, code: 'INSUFFICIENT_MATERIALS' };
       }
     }
-    if (equipmentInvCount(save.equipmentInv) >= EQUIPMENT_INV_CAP) {
+    if (save.equipmentInvCount >= EQUIPMENT_INV_CAP) {
       await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
       return { error: 'equipment inventory full', code: 'INVENTORY_FULL' };
     }
@@ -160,16 +236,23 @@ export async function craftEquipment(
       rev: save.rev + 1,
       updatedAt: now(),
       materials: nextMaterials,
-      equipmentInv: { ...(save.equipmentInv ?? {}), [instance.id]: instance },
+      equipmentInvCount: save.equipmentInvCount + 1,
     };
     const res = await cols.saves.findOneAndUpdate(
       { _id: accountId, rev: doc.rev },
       { $set: { save: next, rev: next.rev } },
     );
-    if (res) return { instance, save: next };
+    if (res) {
+      await cols.equipmentInstances.updateOne(
+        { _id: instance.id },
+        { $set: toInstanceDoc(instance, accountId) },
+        { upsert: true },
+      );
+      return { instance, save: await withEquipmentInv(cols, next) };
+    }
     // rev conflict (concurrent PUT /save / pve write) → re-read and retry
   }
-  // Retries exhausted: retain the idem claim (result instance is recorded; next replay will return it without re-deducting materials).
+  // Retries exhausted: retain the idem claim (result instance is recorded; next replay will verify-and-heal).
   return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
 }
 
@@ -191,23 +274,36 @@ export async function escrowEquipment(
   const existing = await cols.equipmentIdem.findOne({ _id: orderId });
   if (existing?.op === 'escrow') return { instance: existing.result as EquipmentInstance };
 
+  const [cur, instDoc] = await Promise.all([
+    getOrCreateSave(cols, accountId, now()),
+    cols.equipmentInstances.findOne({ _id: instanceId, accountId }),
+  ]);
+  if (!instDoc) {
+    // Concurrently escrowed (idem already written) → replay; otherwise the instance genuinely does not exist.
+    const replay = await cols.equipmentIdem.findOne({ _id: orderId });
+    if (replay?.op === 'escrow') return { instance: replay.result as EquipmentInstance };
+    return { error: 'equipment instance not found', code: 'EQUIP_NOT_FOUND' };
+  }
+  const inst = fromInstanceDoc(instDoc);
+  if (inst.locked) return { error: 'equipment locked', code: 'EQUIP_LOCKED' };
+  if (isEquipped(cur, instanceId)) return { error: 'equipment in use (equipped)', code: 'EQUIP_IN_USE' };
+
+  // Destructive op: remove from equipmentInstances once, up front (idempotent delete — safe even if the
+  // saves-side rev-guard below has to loop on a concurrent write to this account's save, since we never
+  // repeat this delete). Worst-case crash window after this line is a briefly-overcounted cap mirror
+  // (benign, self-heals on the next GET /save), never a duplicated/still-visible item.
+  await cols.equipmentInstances.deleteOne({ _id: instanceId });
+
   for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
     const doc = await cols.saves.findOne({ _id: accountId });
     if (!doc) return { error: 'save not found', code: 'NOT_FOUND' };
     const save = doc.save;
-    const inst = save.equipmentInv?.[instanceId];
-    if (!inst) {
-      // Concurrently escrowed (idem already written) → replay; otherwise the instance genuinely does not exist.
-      const replay = await cols.equipmentIdem.findOne({ _id: orderId });
-      if (replay?.op === 'escrow') return { instance: replay.result as EquipmentInstance };
-      return { error: 'equipment instance not found', code: 'EQUIP_NOT_FOUND' };
-    }
-    if (inst.locked) return { error: 'equipment locked', code: 'EQUIP_LOCKED' };
-    if (isEquipped(save, instanceId)) return { error: 'equipment in use (equipped)', code: 'EQUIP_IN_USE' };
-
-    const nextInv = { ...(save.equipmentInv ?? {}) };
-    delete nextInv[instanceId];
-    const next: SaveData = { ...save, rev: save.rev + 1, updatedAt: now(), equipmentInv: nextInv };
+    const next: SaveData = {
+      ...save,
+      rev: save.rev + 1,
+      updatedAt: now(),
+      equipmentInvCount: Math.max(0, save.equipmentInvCount - 1),
+    };
     const res = await cols.saves.findOneAndUpdate(
       { _id: accountId, rev: doc.rev },
       { $set: { save: next, rev: next.rev } },
@@ -239,20 +335,31 @@ export async function grantEquipment(
   instance: EquipmentInstance,
 ): Promise<{ ok: true } | EquipError> {
   if (!instance?.id) return { error: 'instance required', code: 'BAD_REQUEST' };
+
+  // Idempotent by instance.id: if this exact instance already exists for this account, a prior call
+  // already completed (including the count increment below) — replay without double-incrementing.
+  const already = await cols.equipmentInstances.findOne({ _id: instance.id, accountId });
+  await cols.equipmentInstances.updateOne(
+    { _id: instance.id },
+    { $set: toInstanceDoc(instance, accountId) },
+    { upsert: true },
+  );
+  if (already) return { ok: true };
+
   for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
     const doc = await cols.saves.findOne({ _id: accountId });
     if (!doc) return { error: 'save not found', code: 'NOT_FOUND' };
     const save = doc.save;
     // Lifetime equipment-owned ledger (avatar unlock): grantEquipment is the only place a new
     // equipment instance enters a save, so this is the single place to record "obtained once" —
-    // never pruned when the instance is later salvaged/enhanced away (unlike equipmentInv).
+    // never pruned when the instance is later salvaged/enhanced away (unlike equipmentInstances).
     const everOwnedEquip = new Set(save.everOwned?.equipment ?? []);
     everOwnedEquip.add(instance.defId);
     const next: SaveData = {
       ...save,
       rev: save.rev + 1,
       updatedAt: now(),
-      equipmentInv: { ...(save.equipmentInv ?? {}), [instance.id]: instance },
+      equipmentInvCount: save.equipmentInvCount + 1,
       everOwned: { ...save.everOwned, equipment: [...everOwnedEquip] },
     };
     const res = await cols.saves.findOneAndUpdate(
@@ -278,8 +385,8 @@ export async function grantEquipment(
  * commercial.spend uses idemKey as orderId and is naturally idempotent → replaying the call
  * does not double-charge coins.
  *
- * Ordering (player safety): first atomically update the save (deduct materials + level+1 on
- * success, rev guard), **then** deduct coins.
+ * Ordering (player safety): first atomically update the save (deduct materials, rev guard),
+ * then apply the level/affix change to the equipmentInstances document, **then** deduct coins.
  * If the save update fails (rev exhausted / insufficient materials), coins are untouched and
  * the idempotency claim can safely be released for a retry; if the save update succeeds and the
  * coin-deduction step hits a network hiccup, the replay path idempotently re-charges
@@ -297,20 +404,30 @@ export async function enhanceEquipment(
   if (!instanceId) return { error: 'instanceId required', code: 'BAD_REQUEST' };
   if (!idempotencyKey) return { error: 'idempotencyKey required', code: 'BAD_REQUEST' };
 
-  // Replay: return first dice result + idempotently settle coins (covers the "save updated but coin deduction interrupted" window).
+  // Replay: verify-and-heal (re-assert the instance reflects the replayed result — a prior attempt may
+  // have deducted materials/consumed the protect item but crashed before the equipmentInstances write)
+  // + idempotently settle coins (covers the "save updated but coin deduction interrupted" window).
   const replay = await cols.equipmentIdem.findOne({ _id: idempotencyKey });
   if (replay?.op === 'enhance') {
     const r = replay.result as { success: boolean; instance: EquipmentInstance; coins: number; skipMaterials?: boolean };
+    await cols.equipmentInstances.updateOne(
+      { _id: r.instance.id },
+      { $set: toInstanceDoc(r.instance, accountId) },
+      { upsert: true },
+    );
     const save = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, r.coins);
-    return { success: r.success, instance: r.instance, save };
+    return { success: r.success, instance: r.instance, save: await withEquipmentInv(cols, save) };
   }
 
   // Coins go through commercial authority; if not configured, enhancement is unavailable (same 503 as shop/gacha).
   if (!commercial.available) return { error: 'commercial service unavailable', code: 'NOT_IMPLEMENTED' };
 
-  const cur = await getOrCreateSave(cols, accountId, now());
-  const inst0 = cur.equipmentInv?.[instanceId];
-  if (!inst0) return { error: 'equipment instance not found', code: 'EQUIP_NOT_FOUND' };
+  const [cur, inst0Doc] = await Promise.all([
+    getOrCreateSave(cols, accountId, now()),
+    cols.equipmentInstances.findOne({ _id: instanceId, accountId }),
+  ]);
+  if (!inst0Doc) return { error: 'equipment instance not found', code: 'EQUIP_NOT_FOUND' };
+  const inst0 = fromInstanceDoc(inst0Doc);
   if (inst0.level >= EQUIP_MAX_LEVEL) return { error: 'already max level', code: 'ENHANCE_MAX_LEVEL' };
 
   const fromLevel = inst0.level;
@@ -344,30 +461,34 @@ export async function enhanceEquipment(
     if ((e as { code?: number }).code === 11000) {
       const prev = await cols.equipmentIdem.findOne({ _id: idempotencyKey });
       const r = prev?.result as { success: boolean; instance: EquipmentInstance; coins: number; skipMaterials?: boolean };
+      await cols.equipmentInstances.updateOne(
+        { _id: r.instance.id },
+        { $set: toInstanceDoc(r.instance, accountId) },
+        { upsert: true },
+      );
       const save = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, r.coins);
-      return { success: r.success, instance: r.instance, save };
+      return { success: r.success, instance: r.instance, save: await withEquipmentInv(cols, save) };
     }
     throw e;
   }
 
-  // Atomic save update: deduct materials (when skipMaterials=false) + level+1 on success + consume protect_enhance (when skipMaterials=true).
-  // Rev guard; only applies if the instance still exists and its level has not changed.
+  // Cost side first (materials / protect-item consumption, rev-guarded save write). The per-instance
+  // level check below (instDoc.level !== fromLevel) replaces the old whole-save rev check for "did the
+  // instance change since I read it" — same safety property, just scoped to one document.
   for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
-    const doc = await cols.saves.findOne({ _id: accountId });
+    const [doc, instDoc] = await Promise.all([
+      cols.saves.findOne({ _id: accountId }),
+      cols.equipmentInstances.findOne({ _id: instanceId, accountId }),
+    ]);
     if (!doc) {
       await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
       return { error: 'save not found', code: 'NOT_FOUND' };
     }
-    const save = doc.save;
-    const inst = save.equipmentInv?.[instanceId];
-    if (!inst) {
-      await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
-      return { error: 'equipment instance not found', code: 'EQUIP_NOT_FOUND' };
-    }
-    if (inst.level !== fromLevel) {
+    if (!instDoc || instDoc.level !== fromLevel) {
       await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
       return { error: 'instance level changed, retry', code: 'REV_CONFLICT' };
     }
+    const save = doc.save;
     if (!skipMaterials) {
       // No protect item / success path: deduct materials normally
       for (const [mat, qty] of Object.entries(cost.materials)) {
@@ -381,7 +502,6 @@ export async function enhanceEquipment(
     if (!skipMaterials) {
       for (const [mat, qty] of Object.entries(cost.materials)) nextMaterials[mat] = (nextMaterials[mat] ?? 0) - qty;
     }
-    const nextInv = { ...(save.equipmentInv ?? {}), [instanceId]: instanceAfter };
     const nextItems = { ...(save.inventory?.items ?? {}) };
     if (skipMaterials) {
       // Consume the protect item
@@ -392,7 +512,6 @@ export async function enhanceEquipment(
       rev: save.rev + 1,
       updatedAt: now(),
       materials: nextMaterials,
-      equipmentInv: nextInv,
       inventory: { ...(save.inventory ?? { skins: [] }), items: nextItems },
     };
     const res = await cols.saves.findOneAndUpdate(
@@ -400,9 +519,15 @@ export async function enhanceEquipment(
       { $set: { save: next, rev: next.rev } },
     );
     if (res) {
-      // Save update committed → deduct coins (idemKey idempotent) + mirror. If coin deduction fails (concurrent exhaustion) it is merely under-charged; the enhancement is already finalized (§6.2).
+      // Cost committed → apply the level/affix change (filtered on fromLevel, mirroring the check above;
+      // in the extreme case this doesn't match — a concurrent write to this exact instanceId within the
+      // few-ms window since the check just above — the replay path's verify-and-heal re-applies it later).
+      await cols.equipmentInstances.updateOne(
+        { _id: instanceId, level: fromLevel },
+        { $set: toInstanceDoc(instanceAfter, accountId) },
+      );
       const saveFinal = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, cost.coins);
-      return { success, instance: instanceAfter, save: saveFinal };
+      return { success, instance: instanceAfter, save: await withEquipmentInv(cols, saveFinal) };
     }
     // rev conflict → re-read and retry
   }
@@ -450,16 +575,24 @@ export async function salvageEquipment(
 
   const replay = await cols.equipmentIdem.findOne({ _id: idempotencyKey });
   if (replay?.op === 'salvage') {
-    const r = replay.result as { refunded: Record<string, number> };
-    return { refunded: r.refunded, save: await getOrCreateSave(cols, accountId, now()) };
+    const r = replay.result as { refunded: Record<string, number>; instanceIds: string[] };
+    // Verify-and-heal: re-assert the whole batch is actually gone.
+    if (r.instanceIds?.length) await cols.equipmentInstances.deleteMany({ _id: { $in: r.instanceIds } });
+    return { refunded: r.refunded, save: await withEquipmentInv(cols, await getOrCreateSave(cols, accountId, now())) };
   }
 
   const ids = [...new Set(instanceIds)];
-  // Validate + accumulate refund (using current save; existence re-checked inside rev loop).
-  const cur = await getOrCreateSave(cols, accountId, now());
+  // Validate + accumulate refund (using current instances/save; not re-checked after this point — see
+  // the up-front destructive delete below, which commits to this validation rather than re-checking
+  // against a partially-mutated batch on a later retry).
+  const [cur, instDocs] = await Promise.all([
+    getOrCreateSave(cols, accountId, now()),
+    cols.equipmentInstances.find({ _id: { $in: ids }, accountId }).toArray(),
+  ]);
+  const instMap = new Map(instDocs.map((d) => [d._id, fromInstanceDoc(d)]));
   const refunded: Record<string, number> = {};
   for (const id of ids) {
-    const inst = cur.equipmentInv?.[id];
+    const inst = instMap.get(id);
     if (!inst) return { error: `equipment instance not found: ${id}`, code: 'EQUIP_NOT_FOUND' };
     if (inst.locked) return { error: `equipment locked: ${id}`, code: 'EQUIP_LOCKED' };
     if (isEquipped(cur, id)) return { error: `equipment in use: ${id}`, code: 'EQUIP_IN_USE' };
@@ -473,19 +606,23 @@ export async function salvageEquipment(
       _id: idempotencyKey,
       accountId,
       op: 'salvage',
-      result: { refunded },
+      result: { refunded, instanceIds: ids },
       expireAt: idemExpireAt(now()),
     });
   } catch (e) {
     if ((e as { code?: number }).code === 11000) {
       const prev = await cols.equipmentIdem.findOne({ _id: idempotencyKey });
-      const r = prev?.result as { refunded: Record<string, number> };
-      return { refunded: r.refunded, save: await getOrCreateSave(cols, accountId, now()) };
+      const r = prev?.result as { refunded: Record<string, number>; instanceIds: string[] };
+      if (r.instanceIds?.length) await cols.equipmentInstances.deleteMany({ _id: { $in: r.instanceIds } });
+      return { refunded: r.refunded, save: await withEquipmentInv(cols, await getOrCreateSave(cols, accountId, now())) };
     }
     throw e;
   }
 
-  // Atomic write: remove instances + credit materials (rev guard; loop re-checks all are still present and salvageable).
+  // Destructive batch op: delete all instances once, up front (idempotent — a re-run over an
+  // already-emptied batch is a no-op), then just retry the saves-side refund/count decrement.
+  await cols.equipmentInstances.deleteMany({ _id: { $in: ids } });
+
   for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
     const doc = await cols.saves.findOne({ _id: accountId });
     if (!doc) {
@@ -493,15 +630,6 @@ export async function salvageEquipment(
       return { error: 'save not found', code: 'NOT_FOUND' };
     }
     const save = doc.save;
-    for (const id of ids) {
-      const inst = save.equipmentInv?.[id];
-      if (!inst || inst.locked || isEquipped(save, id) || !isSalvageable(inst.rarity, inst.level)) {
-        await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
-        return { error: `equipment no longer salvageable: ${id}`, code: 'REV_CONFLICT' };
-      }
-    }
-    const nextInv = { ...(save.equipmentInv ?? {}) };
-    for (const id of ids) delete nextInv[id];
     const nextMaterials = { ...save.materials };
     for (const [mat, qty] of Object.entries(refunded)) nextMaterials[mat] = (nextMaterials[mat] ?? 0) + qty;
     const next: SaveData = {
@@ -509,13 +637,13 @@ export async function salvageEquipment(
       rev: save.rev + 1,
       updatedAt: now(),
       materials: nextMaterials,
-      equipmentInv: nextInv,
+      equipmentInvCount: Math.max(0, save.equipmentInvCount - ids.length),
     };
     const res = await cols.saves.findOneAndUpdate(
       { _id: accountId, rev: doc.rev },
       { $set: { save: next, rev: next.rev } },
     );
-    if (res) return { refunded, save: next };
+    if (res) return { refunded, save: await withEquipmentInv(cols, next) };
   }
   await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
   return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
@@ -542,28 +670,39 @@ export async function reforgeEquipment(
   if (!idempotencyKey) return { error: 'idempotencyKey required', code: 'BAD_REQUEST' };
   if (targetId === materialId) return { error: 'target and material must differ', code: 'BAD_REQUEST' };
 
-  // Replay: return first re-roll result + idempotently settle coins (covers the "save updated but coin deduction interrupted" window).
+  // Replay: verify-and-heal (re-assert target reflects the reroll + material is gone) + idempotently
+  // settle coins (covers the "save updated but coin deduction interrupted" window).
   const replay = await cols.equipmentIdem.findOne({ _id: idempotencyKey });
   if (replay?.op === 'reforge') {
     const r = replay.result as { instance: EquipmentInstance; coins?: number };
+    await cols.equipmentInstances.updateOne(
+      { _id: r.instance.id },
+      { $set: toInstanceDoc(r.instance, accountId) },
+      { upsert: true },
+    );
+    await cols.equipmentInstances.deleteOne({ _id: materialId });
     const save = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, r.coins ?? 0, 'equip_reforge');
-    return { instance: r.instance, save };
+    return { instance: r.instance, save: await withEquipmentInv(cols, save) };
   }
 
   // Reforge is a coin sink (ADR-030): coins go through commercial authority; if not configured, reforge is unavailable (same 503 as enhance/shop).
   if (!commercial.available) return { error: 'commercial service unavailable', code: 'NOT_IMPLEMENTED' };
 
-  const cur = await getOrCreateSave(cols, accountId, now());
-  const target = cur.equipmentInv?.[targetId];
-  if (!target) return { error: 'target equipment not found', code: 'EQUIP_NOT_FOUND' };
+  const [cur, targetDoc, materialDoc] = await Promise.all([
+    getOrCreateSave(cols, accountId, now()),
+    cols.equipmentInstances.findOne({ _id: targetId, accountId }),
+    cols.equipmentInstances.findOne({ _id: materialId, accountId }),
+  ]);
+  if (!targetDoc) return { error: 'target equipment not found', code: 'EQUIP_NOT_FOUND' };
+  const target = fromInstanceDoc(targetDoc);
   if (isEquipped(cur, targetId)) return { error: 'target is equipped', code: 'EQUIP_IN_USE' };
   if (target.locked) return { error: 'target is locked', code: 'EQUIP_LOCKED' };
 
   const requiredMatRarity = REFORGE_MATERIAL_RARITY[target.rarity];
   if (!requiredMatRarity) return { error: `${target.rarity} equipment cannot be reforged`, code: 'NOT_REFORGE_ELIGIBLE' };
 
-  const material = cur.equipmentInv?.[materialId];
-  if (!material) return { error: 'material equipment not found', code: 'EQUIP_NOT_FOUND' };
+  if (!materialDoc) return { error: 'material equipment not found', code: 'EQUIP_NOT_FOUND' };
+  const material = fromInstanceDoc(materialDoc);
   if (isEquipped(cur, materialId)) return { error: 'material is equipped', code: 'EQUIP_IN_USE' };
 
   const targetDef = EQUIPMENT_DEFS[target.defId];
@@ -601,13 +740,30 @@ export async function reforgeEquipment(
     if ((e as { code?: number }).code === 11000) {
       const prev = await cols.equipmentIdem.findOne({ _id: idempotencyKey });
       const r = prev?.result as { instance: EquipmentInstance; coins?: number };
+      await cols.equipmentInstances.updateOne(
+        { _id: r.instance.id },
+        { $set: toInstanceDoc(r.instance, accountId) },
+        { upsert: true },
+      );
+      await cols.equipmentInstances.deleteOne({ _id: materialId });
       const save = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, r.coins ?? 0, 'equip_reforge');
-      return { instance: r.instance, save };
+      return { instance: r.instance, save: await withEquipmentInv(cols, save) };
     }
     throw e;
   }
 
-  // Atomic write: update target affixes + remove material (rev guard)
+  // Two-document effect (target upgrade + material consumption) can't be one atomic write without a
+  // transaction (this codebase deliberately has none — see shared/src/mongo.ts header). Target first
+  // (idempotent upsert-by-id, deterministic from idemKey), material delete second (idempotent): a crash
+  // between the two leaves "target upgraded, material still present" — recoverable via the replay branch
+  // above — rather than the worse "material consumed, target not upgraded."
+  await cols.equipmentInstances.updateOne(
+    { _id: targetId, accountId },
+    { $set: toInstanceDoc(reforged, accountId) },
+  );
+  await cols.equipmentInstances.deleteOne({ _id: materialId });
+
+  // Saves-side: count decrement (material instance removed), rev-guarded.
   for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
     const doc = await cols.saves.findOne({ _id: accountId });
     if (!doc) {
@@ -615,18 +771,12 @@ export async function reforgeEquipment(
       return { error: 'save not found', code: 'NOT_FOUND' };
     }
     const save = doc.save;
-    // Re-validate inside rev loop: both items must still exist, target must not be equipped/locked
-    if (!save.equipmentInv?.[targetId] || !save.equipmentInv?.[materialId]) {
-      await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
-      return { error: 'equipment no longer available', code: 'REV_CONFLICT' };
-    }
-    if (save.equipmentInv[targetId]!.locked || isEquipped(save, targetId)) {
-      await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
-      return { error: 'target no longer reformable', code: 'REV_CONFLICT' };
-    }
-    const nextInv = { ...(save.equipmentInv ?? {}), [targetId]: reforged };
-    delete nextInv[materialId];
-    const next: SaveData = { ...save, rev: save.rev + 1, updatedAt: now(), equipmentInv: nextInv };
+    const next: SaveData = {
+      ...save,
+      rev: save.rev + 1,
+      updatedAt: now(),
+      equipmentInvCount: Math.max(0, save.equipmentInvCount - 1),
+    };
     const res = await cols.saves.findOneAndUpdate(
       { _id: accountId, rev: doc.rev },
       { $set: { save: next, rev: next.rev } },
@@ -634,7 +784,7 @@ export async function reforgeEquipment(
     if (res) {
       // Save committed → deduct coins (idemKey idempotent) + mirror. If coin deduction is interrupted the replay path re-settles.
       const saveFinal = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, coins, 'equip_reforge');
-      return { instance: reforged, save: saveFinal };
+      return { instance: reforged, save: await withEquipmentInv(cols, saveFinal) };
     }
   }
   await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
@@ -649,6 +799,8 @@ export async function reforgeEquipment(
  * instanceId=null unequips the slot; otherwise validates instance existence + slot match (INVALID_SLOT).
  * cardInstanceId must reference an existing CardInstance in save.cardInv; gear is written to
  * CardInstance.gear[slot] (CC-2 per-card loadout; CHARACTER_CARDS_DESIGN §5).
+ * Never touches equipmentInstances (only cardInv.gear, a pointer) — the storage split does not change
+ * this function's saves-only write, just where the pointed-to instance's own data lives.
  */
 export async function equipEquipment(
   cols: Collections,
@@ -661,6 +813,13 @@ export async function equipEquipment(
   if (!EQUIP_SLOTS.includes(slot as EquipSlot)) return { error: 'invalid slot', code: 'INVALID_SLOT' };
   if (!cardInstanceId) return { error: 'cardInstanceId required', code: 'BAD_REQUEST' };
 
+  if (instanceId !== null) {
+    const instDoc = await cols.equipmentInstances.findOne({ _id: instanceId, accountId });
+    if (!instDoc) return { error: 'equipment instance not found', code: 'EQUIP_NOT_FOUND' };
+    const def = EQUIPMENT_DEFS[instDoc.defId];
+    if (def && def.slot !== slot) return { error: `slot mismatch: ${instDoc.defId} is ${def.slot}`, code: 'INVALID_SLOT' };
+  }
+
   for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
     const doc = await cols.saves.findOne({ _id: accountId });
     if (!doc) return { error: 'save not found', code: 'NOT_FOUND' };
@@ -668,13 +827,6 @@ export async function equipEquipment(
 
     const card = (save.cardInv ?? {})[cardInstanceId];
     if (!card) return { error: 'card instance not found', code: 'NOT_FOUND' };
-
-    if (instanceId !== null) {
-      const inst = save.equipmentInv?.[instanceId];
-      if (!inst) return { error: 'equipment instance not found', code: 'EQUIP_NOT_FOUND' };
-      const def = EQUIPMENT_DEFS[inst.defId];
-      if (def && def.slot !== slot) return { error: `slot mismatch: ${inst.defId} is ${def.slot}`, code: 'INVALID_SLOT' };
-    }
 
     const updatedGear = { ...(card.gear ?? {}) };
     if (instanceId === null) delete (updatedGear as Record<string, string | undefined>)[slot];
@@ -691,7 +843,7 @@ export async function equipEquipment(
       { _id: accountId, rev: doc.rev },
       { $set: { save: next, rev: next.rev } },
     );
-    if (res) return { save: next };
+    if (res) return { save: await withEquipmentInv(cols, next) };
   }
   return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
 }

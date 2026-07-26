@@ -3,9 +3,10 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
-import type { Collections, JwtConfig, FeatureFlagCache, RedisLike } from '@nw/shared';
+import type { Collections, JwtConfig, FeatureFlagCache, RedisLike, SaveData } from '@nw/shared';
 import { createLogger, internalKeysFromEnv } from '@nw/shared';
 import { MetaService } from './service.js';
+import { assembleEquipmentInv } from './equipment.js';
 import { registerAdCallbackRoutes } from './ads.js';
 import { registerPaddleRoutes } from './paddle.js';
 
@@ -72,6 +73,26 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     if (req.url === '/health') return;
     const ms = Math.round(reply.elapsedTime ?? 0);
     log.info(`${req.method} ${req.url} -> ${reply.statusCode}`, { ms });
+  });
+
+  // Equipment storage split backstop (2026-07-26, perf — see equipment.ts header): equipment instances
+  // live in their own collection now, not embedded in SaveData.equipmentInv. ~30 handlers across
+  // auth/save/pve/economy/liveops/cards/ladderSeason return a `save: SaveData` (either nested under
+  // `ok()`'s `{data:{save}}` envelope, or — putSave's 409 conflict case — at the top level); rather than
+  // trust every one of those call sites to remember an explicit join (equipment.ts's own mutation
+  // endpoints already do, via withEquipmentInv, so this is a no-op there), this single hook is the
+  // centralized guarantee that no player-facing response can ever ship without the full map.
+  app.addHook('preSerialization', async (_req, _reply, payload) => {
+    const p = payload as { save?: SaveData; data?: { save?: SaveData } } | null;
+    const save = p?.data?.save ?? p?.save;
+    // opts.cols.equipmentInstances may be absent in tests that build their own minimal fake Collections
+    // (many unit-style suites drive buildApp() directly with a hand-rolled `{saves, accounts}` stub, not
+    // the full interface) — skip gracefully rather than throwing, same defensive style as the rest of
+    // this codebase's optional-dependency checks (e.g. `commercial.available`).
+    if (save && typeof save === 'object' && save.accountId && save.equipmentInv === undefined && opts.cols.equipmentInstances) {
+      save.equipmentInv = await assembleEquipmentInv(opts.cols, save.accountId, save);
+    }
+    return payload;
   });
 
   // Unified error envelope: validation failures and security-handler throws are all converted to ApiResp.

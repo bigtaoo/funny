@@ -22,7 +22,8 @@ function saveRow(id: string, extra: Partial<SaveData> = {}): SaveDocRow {
 
 function build(seedSaves: SaveDocRow[] = []) {
   const saves = new FakeCollection<SaveDocRow>().seed(...seedSaves);
-  const cols = { saves } as unknown as Collections;
+  const equipmentInstances = new FakeCollection<{ _id: string; accountId: string }>();
+  const cols = { saves, equipmentInstances } as unknown as Collections;
   const ctx: InternalCtx = {
     cols,
     now: () => 1000,
@@ -227,7 +228,6 @@ describe('GET /internal/save-fields', () => {
     const { app } = build([saveRow('a', {
       pveUpgrades: { atk: 3 },
       cardInv: { c1: card('c1') },
-      equipmentInv: {},
     } as Partial<SaveData>)]);
     const res = await app.inject({ method: 'GET', url: '/internal/save-fields?accountId=a', headers: authHeaders });
     const body = JSON.parse(res.payload);

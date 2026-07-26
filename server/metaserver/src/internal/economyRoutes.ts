@@ -2,7 +2,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { SaveData, EquipmentInstance, CardInstance } from '@nw/shared';
 import { createLogger, ERROR_HTTP_STATUS } from '@nw/shared';
-import { escrowEquipment, grantEquipment } from '../equipment.js';
+import { escrowEquipment, grantEquipment, assembleEquipmentInv } from '../equipment.js';
 import { grantCard } from '../cards.js';
 import { escrowSkin, grantSkin } from '../skin.js';
 import type { InternalCtx } from './context.js';
@@ -223,10 +223,14 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: InternalCtx): v
     if (!accountId) return reply.code(400).send({ ok: false, error: 'accountId required' });
     const doc = await cols.saves.findOne({ _id: accountId });
     const s = doc?.save;
+    // Equipment instances live in their own collection (2026-07-26 split, see equipment.ts) — join them
+    // in here for wire-format compatibility (worldsvc's siege engine expects the full map, unchanged).
+    // Null-safe for an unknown account (no doc → still returns {} rather than erroring, same as before).
+    const equipmentInv = s ? await assembleEquipmentInv(cols, accountId, s) : {};
     return reply.send({
       pveUpgrades: s?.pveUpgrades ?? {},
       cardInv: s?.cardInv ?? {},
-      equipmentInv: s?.equipmentInv ?? {},
+      equipmentInv,
     });
   });
 }
