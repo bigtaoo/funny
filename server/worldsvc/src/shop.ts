@@ -1,6 +1,7 @@
 // worldsvc SLG shop domain (S8-8). Peeled out of the WorldService god-class (2026-07-03).
 // Depends only on WorldCore (shared state + settle + getMe). No behavior change.
 import { SLG_SHOP_ITEMS, isSlgShopItemId, SlgError, playerWorldId, RESOURCE_TYPES, RESOURCE_CAP } from '@nw/shared';
+import { trainingQueueOps } from './db';
 import type { WorldCore } from './core';
 import type { PlayerWorldView } from './worldTypes';
 
@@ -55,9 +56,14 @@ export class ShopService {
         }
       }
       const newTroops = Math.min(pw.troopCap, pw.troops + troopsReady);
+      const tq = trainingQueueOps(queue);
       await cols.playerWorld.updateOne(
         { _id: pw._id },
-        { $set: { resources, troops: newTroops, trainingQueue: queue, lastTickAt: t, ...shopCountSet }, $inc: { rev: 1 } },
+        {
+          $set: { resources, troops: newTroops, trainingQueue: queue, lastTickAt: t, ...shopCountSet, ...tq.set },
+          $inc: { rev: 1 },
+          ...(Object.keys(tq.unset).length ? { $unset: tq.unset } : {}),
+        },
       );
     } else if (item.kind === 'resource_pack') {
       const each = Number(item.effect['each'] ?? 0);
