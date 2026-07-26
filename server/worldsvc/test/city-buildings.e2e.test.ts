@@ -132,6 +132,23 @@ describe.skipIf(!mongo)('worldsvc home-city buildings e2e', () => {
     expect(me.buildQueue ?? []).toHaveLength(0);
   });
 
+  it('upgradeBuilding: concurrent calls cannot double-queue off a shared stale resource read', async () => {
+    const { x, y } = findCoord(15, 15);
+    await svc.joinWorld(W, 'a', x, y);
+    await fund('a');
+    const before = (await svc.getMe(W, 'a')).resources!.paper;
+    // All four calls read the same pre-debit resources/queue snapshot; without a rev guard on the write, each
+    // would independently pass the sufficiency check and $set its own (stale) resources object, so whichever
+    // commits last silently erases the others' deduction while every build still gets queued.
+    const calls = Array.from({ length: 4 }, () => svc.upgradeBuilding(W, 'a', 'inkPot'));
+    const res = await Promise.allSettled(calls);
+    expect(res.filter((r) => r.status === 'fulfilled').length).toBe(1);
+    expect(res.filter((r) => r.status === 'rejected').length).toBe(3);
+    const after = await svc.getMe(W, 'a');
+    expect(after.buildQueue).toHaveLength(1);
+    expect(before - after.resources!.paper).toBe(buildCost('inkPot', 1).paper);
+  });
+
   it('stickerShop self-produces sticker after completion (sticker faucet activated)', async () => {
     const { x, y } = findCoord(20, 20);
     await svc.joinWorld(W, 'a', x, y);

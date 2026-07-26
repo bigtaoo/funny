@@ -191,6 +191,30 @@ describe.skipIf(!mongo)('worldsvc watchtower e2e (§18 G5 V2)', () => {
     expect(doc?.watchtower).toBeUndefined(); // watchtower not built
   });
 
+  it('concurrent buildWatchtower on two different tiles cannot both deduct from the same stale resource read', async () => {
+    await svc.joinWorld(W, 'a', HOME.x, HOME.y);
+    const terr1 = findCoord(OCCUPIABLE, HOME.x, HOME.y + 55);
+    const terr2 = findCoord(OCCUPIABLE, HOME.x, HOME.y + 60);
+    await svc.occupyTile(W, 'a', terr1.x, terr1.y);
+    await svc.occupyTile(W, 'a', terr2.x, terr2.y);
+    // Seed exactly enough resources for ONE watchtower — a stale read-then-set race would let both concurrent
+    // calls pass the sufficiency check against the same pre-debit snapshot and both build for the price of one.
+    await m.collections.playerWorld.updateOne(
+      { _id: playerWorldId(W, 'a') },
+      { $set: { resources: { ...WATCHTOWER_COST }, lastTickAt: nowMs } },
+    );
+    const [r1, r2] = await Promise.allSettled([
+      svc.buildWatchtower(W, 'a', terr1.x, terr1.y),
+      svc.buildWatchtower(W, 'a', terr2.x, terr2.y),
+    ]);
+    expect([r1, r2].filter((r) => r.status === 'fulfilled').length).toBe(1);
+    expect([r1, r2].filter((r) => r.status === 'rejected').length).toBe(1);
+    // Only the winning tile actually got its watchtower — the loser's write was rejected before touching the tile.
+    const doc1 = await m.collections.tiles.findOne({ _id: tileId(W, terr1.x, terr1.y) });
+    const doc2 = await m.collections.tiles.findOne({ _id: tileId(W, terr2.x, terr2.y) });
+    expect([doc1?.watchtower, doc2?.watchtower].filter(Boolean).length).toBe(1);
+  });
+
   it('idempotent: building watchtower again returns watchtower:true without double charging', async () => {
     const terr = await setupTerritoryWithResources('a');
     await svc.buildWatchtower(W, 'a', terr.x, terr.y);

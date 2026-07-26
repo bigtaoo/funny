@@ -314,6 +314,16 @@ D-CITY-11 的内政/军事双页拆分（左侧竖排 tab 切换）本次**撤�
 - **惰性结算不变**：建筑只改 `recomputeYield` 的乘数/自产项 + `settleResources` 的 cap，不引入每格 tick。
 - **变现合规**：coin 买速度不买上限（D-CITY-5/§6），对齐 ECONOMY_BALANCE 反 P2W 政策。
 
+### 修复：资源/兵力扣费的并发竞态可套利（2026-07-26）
+
+- **问题**：拍卖行余额校验漏洞（`AUCTION_DESIGN.md` 同日条目）修复后，应用户要求对全站金币/资源流程做了一轮排查，发现 SLG 侧内政资源（纸/墨/石墨/金属/贴纸）与兵力的扣费全部是「读取 → JS 里判断够不够 → 写回」，没有一处用 Mongo 原子 `findOneAndUpdate` 加余量守卫（金币走 `commercial.spend()` 的部分本身没问题——已确认扣款始终在状态提交前 await 完成）。命中的具体函数：
+  - `city.ts` `distributeTroops`：`$inc:{troops:-totalCost}` 的过滤条件只有 `_id`，没有 `troops:{$gte:totalCost}`——并发调用能把兵力冲成负数。
+  - `city.ts` `upgradeBuilding`/`trainTroops`：资源用整对象 `$set`（不是 `$inc`）写回，过滤条件只有 `_id`——并发升级/练兵时，两次调用都读到同一份扣费前快照、都通过够不够的检查，后写的那次把资源字段整体覆盖，等于其中一次白扣。
+  - `territory.ts` `buildWatchtower`/`buildStructure`：同款「读-判断-整体 `$set`」模式，且原代码先落地图（瞭望塔/建筑标记）再扣资源——竞态输家会在扣费失败前就已经把地图标记写上，出现「免费建筑」。
+- **改动**：以上五处的 `playerWorld` 写入过滤条件统一加上 `rev: pw.rev`（乐观锁守卫，读到的 `rev` 快照），写入失败（`matchedCount===0`）抛 `REV_CONFLICT`（`shared/src/api.ts` 既有错误码，客户端需重试；用法与 metaserver `mutateSave` 的既有约定一致）。`distributeTroops` 额外把兵力扣减和每张卡的 `currentTroops` 累加都改成 `$inc`（而非算好绝对值再 `$set`），配合 `troops:{$gte:totalCost}` 的过滤条件守卫，比单纯 rev 锁更直接。`buildWatchtower`/`buildStructure` 额外调整了写入顺序——资源扣费（rev 守卫）先于地图标记写入，避免"扣费失败但建筑已经落地"的部分应用态。
+- **测试**：`server/worldsvc/test/card-slg.e2e.test.ts`「distributeTroops: concurrent calls cannot drive the troop pool negative」、`server/worldsvc/test/city-buildings.e2e.test.ts`「upgradeBuilding: concurrent calls cannot double-queue off a shared stale resource read」、`server/worldsvc/test/watchtower.e2e.test.ts`「concurrent buildWatchtower on two different tiles cannot both deduct from the same stale resource read」——均先在修复前的代码上跑通（确认能复现套利：并发全部成功），修复后断言恰好一次成功、其余 `REV_CONFLICT`/`NO_TROOPS`，资源/兵力最终值正确。
+- **验收**：`worldsvc` `tsc --noEmit` 全绿；`vitest run` 全量 320/320。纯服务端逻辑改动，无可见渲染变化，未做浏览器截图验证。
+
 ---
 
 *本文档为 SLG 主城建筑系统设计基准，状态：设计中。D-CITY-1（赛季清空）待用户拍板后落 ADR；DRAFT 数值随经济模拟细化。*

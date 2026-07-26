@@ -344,11 +344,17 @@ export class TerritoryService {
     }
     for (const rt of RESOURCE_TYPES) resources[rt] -= WATCHTOWER_COST[rt] ?? 0;
 
-    await cols.tiles.updateOne({ _id: tid }, { $set: { watchtower: true }, $inc: { rev: 1 } });
-    await cols.playerWorld.updateOne(
-      { _id: pw._id },
+    // Deduct resources first, guarded on rev (computed from this exact `pw` read): a concurrent build/upgrade
+    // call that lands first bumps rev, so this write must fail rather than silently overwrite it with a
+    // stale-computed resources object. Deduct BEFORE marking the tile so a losing race (REV_CONFLICT) never
+    // leaves a free, un-paid-for watchtower on the tile.
+    const deducted = await cols.playerWorld.updateOne(
+      { _id: pw._id, rev: pw.rev },
       { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } },
     );
+    if (deducted.matchedCount === 0) throw new SlgError('REV_CONFLICT', 'Concurrent update, please retry');
+
+    await cols.tiles.updateOne({ _id: tid }, { $set: { watchtower: true }, $inc: { rev: 1 } });
 
     const after = await cols.tiles.findOne({ _id: tid });
     if (after) {
@@ -392,8 +398,15 @@ export class TerritoryService {
       kind, level: 1, hp: hpMax, hpMax, ownerId: accountId,
       ...(pw.familyId ? { familyId: pw.familyId } : {}), builtAt: t,
     };
+    // Deduct resources first, guarded on rev (same reasoning as buildWatchtower above): a concurrent build/
+    // upgrade call landing first must fail this write rather than silently double-spend, and it must fail
+    // BEFORE the tile is marked with the structure so a losing race never leaves a free structure.
+    const deducted = await cols.playerWorld.updateOne(
+      { _id: pw._id, rev: pw.rev },
+      { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } },
+    );
+    if (deducted.matchedCount === 0) throw new SlgError('REV_CONFLICT', 'Concurrent update, please retry');
     await cols.tiles.updateOne({ _id: tid }, { $set: { structure }, $inc: { rev: 1 } });
-    await cols.playerWorld.updateOne({ _id: pw._id }, { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } });
 
     if (kind === 'arrowTower') {
       await this.core.addCover(worldId, x, y, {

@@ -233,6 +233,24 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
     await expect(svc.distributeTroops(W, 'a', { 'card-e': 100 })).rejects.toThrow('troop stock');
   });
 
+  it('distributeTroops: concurrent calls cannot drive the troop pool negative', async () => {
+    const pwId = playerWorldId(W, 'a');
+    await svc.joinWorld(W, 'a', 5, 5);
+    await m.collections.playerWorld.updateOne(
+      { _id: pwId },
+      { $set: { troops: 500, 'cardState.card-race': { currentTroops: 0, teamId: 't1' } as CardSLGState } },
+    );
+    // 500 troops, 300 each: only one of three concurrent allocations can fit — a stale read-then-check race
+    // would let all three pass and drive troops negative (500 - 900 = -400).
+    const calls = Array.from({ length: 3 }, () => svc.distributeTroops(W, 'a', { 'card-race': 300 }));
+    const res = await Promise.allSettled(calls);
+    expect(res.filter((r) => r.status === 'fulfilled').length).toBe(1);
+    expect(res.filter((r) => r.status === 'rejected').length).toBe(2);
+    const pw = await m.collections.playerWorld.findOne({ _id: pwId });
+    expect(pw?.troops).toBe(200);
+    expect(pw?.cardState?.['card-race']?.currentTroops).toBe(300);
+  });
+
   it('setTeams rejects injured card', async () => {
     const pwId = playerWorldId(W, 'a');
     await svc.joinWorld(W, 'a', 5, 5);
