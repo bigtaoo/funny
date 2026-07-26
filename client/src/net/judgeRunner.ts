@@ -25,6 +25,8 @@ import {
   type ReplayFrame,
 } from '../game';
 import { computeStars, buildStarContext } from '../game/meta/campaignRewards';
+import { toEngineCardInstances } from '../game/meta/cardDefs';
+import type { CardInstance, EquipmentInstance } from '../game/meta/SaveData';
 import { PlayerCommands, type PlayerCommand as ProtoPlayerCommand } from './proto/game';
 import type { JudgeRequest } from './proto/transport';
 
@@ -105,10 +107,11 @@ function runPveJudge(req: JudgeRequest): JudgeOutcome {
         players: [{ id: 0 }, { id: 1 }],
         mode: 'campaign',
         level,
-        // S12: prefer unitLevels (new progression model); fall back to pveUpgrades (old model, backward compatibility) when absent
-        ...(Object.keys(req.unitLevels ?? {}).length > 0
-          ? { unitLevels: req.unitLevels }
-          : { pveUpgrades: req.pveUpgrades }),
+        // CC-1 Hero Roster snapshot (2026-07-26 fix, PVE_INTEGRITY §9): server-authoritative cardInv/equipmentInv,
+        // same conversion the live match uses (app/nav/game.ts) — ensures the recompute uses the player's real card
+        // levels/gear instead of the (removed) pveUpgrades/unitLevels params, which GameConfig no longer accepts.
+        cardInstances: toEngineCardInstances(parseJsonRecord<CardInstance>(req.cardInstancesJson)),
+        equipmentInv: parseJsonRecord<EquipmentInstance>(req.equipmentInvJson),
       },
       new ReplayInputSource(replay),
       req.endFrame + 600,
@@ -161,9 +164,9 @@ function runSiegeJudge(req: JudgeRequest): JudgeOutcome {
         players: [{ id: 0 }, { id: 1 }],
         mode: 'siege',
         level,
-        ...(Object.keys(req.unitLevels ?? {}).length > 0
-          ? { unitLevels: req.unitLevels }
-          : { pveUpgrades: req.pveUpgrades }),
+        // CC-1 Hero Roster snapshot (2026-07-26 fix, PVE_INTEGRITY §9): see runPveJudge above for rationale.
+        cardInstances: toEngineCardInstances(parseJsonRecord<CardInstance>(req.cardInstancesJson)),
+        equipmentInv: parseJsonRecord<EquipmentInstance>(req.equipmentInvJson),
       },
       new ReplayInputSource(replay),
       req.endFrame + 600,
@@ -178,6 +181,12 @@ function runSiegeJudge(req: JudgeRequest): JudgeOutcome {
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
+
+/** Parses a cardInstancesJson/equipmentInvJson field (empty string → {}); malformed JSON propagates to the caller's try/catch → FAIL. */
+function parseJsonRecord<T>(json: string): Record<string, T> {
+  if (!json) return {};
+  return JSON.parse(json) as Record<string, T>;
+}
 
 /** Convert non-empty frames from a judge_request (game.proto opaque bytes) → a replayable Replay. */
 function buildReplay(req: JudgeRequest, mode: GameMode, seed: number, levelId?: string): Replay {

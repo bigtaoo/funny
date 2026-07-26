@@ -447,8 +447,12 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
             accountId,
             levelId,
             claimedStars: stars,
-            pveUpgrades: { ...cur.pveUpgrades }, // legacy snapshot (kept for compatibility)
-            unitLevels: {}, // unitLevels removed in CC-1 (SaveData v4); re-simulation uses cardInv
+            // CC-1 Hero Roster snapshot (2026-07-26 fix, PVE_INTEGRITY §9): server-authoritative, taken at settlement
+            // time — feeds the L1 judge re-simulation blueprint so a legitimately progressed account isn't recomputed
+            // with unleveled, gear-less units (previously pveUpgrades/unitLevels, both dead since the engine dropped
+            // those params in the CC-1 migration; see server/engine/src/types.ts GameConfig).
+            cardInv: { ...cur.cardInv },
+            equipmentInv: { ...cur.equipmentInv },
             reason,
             status: 'pending',
             // S9-3b: store client-reported counts as an audit comparison baseline (verdict.statsJson is the authoritative source; the reported field is for ops visibility only).
@@ -536,8 +540,8 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
         frames: frames ?? [],
         exclude: [accountId],
         levelId: doc.levelId,
-        pveUpgrades: doc.pveUpgrades,
-        ...(doc.unitLevels ? { unitLevels: doc.unitLevels } : {}),
+        cardInstancesJson: JSON.stringify(doc.cardInv ?? {}),
+        equipmentInvJson: JSON.stringify(doc.equipmentInv ?? {}),
       });
 
       const judgedStars = verdict.stars ?? 0;

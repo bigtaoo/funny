@@ -23,8 +23,10 @@ export interface JudgeReq {
   exclude: string[];
   /** PvE spot-check re-computation (PVE_INTEGRITY §8.6 L1): non-empty → judge re-computes this level in campaign mode. */
   levelId?: string;
-  /** Server-authoritative blueprint snapshot (upgrade levels), ensures PvE re-computation is deterministic. */
-  pveUpgrades?: Record<string, number>;
+  /** CC-1 Hero Roster snapshot (2026-07-26 fix, PVE_INTEGRITY §9): JSON of Record<string, CardInstance>, server-authoritative, ensures PvE re-computation uses the player's real card levels. */
+  cardInstancesJson?: string;
+  /** JSON of Record<string, EquipmentInstance>, paired with cardInstancesJson. */
+  equipmentInvJson?: string;
   /** Ranked PvP deck restriction (PVP_LOADOUT §6.2): the two real match clients' decks, needed for a deterministic re-simulation. */
   decks?: { top: string[]; bottom: string[] };
 }

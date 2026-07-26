@@ -259,39 +259,36 @@ export interface JudgeRequest {
   frames: FrameCmds[];
   /**
    * PvE spot-check re-simulation (PVE_INTEGRITY §8.6 L1): non-empty level_id → judge re-simulates the level headlessly in campaign mode,
-   * using seed (derived from the level, judge looks up the levels JSON locally) + pve_upgrades (server-authoritative blueprint snapshot,
-   * ensures deterministic re-simulation) + frames (player commands) to run to the final state and compute stars, reported back via judge_verdict.stars.
+   * using seed (derived from the level, judge looks up the levels JSON locally) + card_instances_json/equipment_inv_json (server-authoritative
+   * Hero Roster blueprint snapshot) + frames (player commands) to run to the final state and compute stars, reported back via judge_verdict.stars.
    */
   levelId: string;
-  pveUpgrades: { [key: string]: number };
   /**
    * SLG siege re-simulation (S8-3, SLG_DESIGN §5.3): non-empty defense_json → judge re-simulates headlessly in siege mode.
    * The defense config is a LevelDefinition JSON (constructed on-the-fly by worldsvc for the attacked tile, opaque to worldsvc,
-   * interpreted only by the client engine); judge uses seed + this config + pve_upgrades (server-authoritative attacker progression snapshot) + frames
-   * (attacker commands) to run to the final state; winner_side=0 → attacker breached (attacker_win), reported back via judge_verdict.
+   * interpreted only by the client engine); judge uses seed + this config + card_instances_json/equipment_inv_json (server-authoritative attacker
+   * progression snapshot) + frames (attacker commands) to run to the final state; winner_side=0 → attacker breached (attacker_win), reported
+   * back via judge_verdict.
    */
   defenseJson: string;
-  /**
-   * S12 unit progression re-simulation: non-empty unit_levels → judge uses this level map to rebuild the blueprint (replaces pve_upgrades, ensures
-   * that spot-check re-simulations for highly-progressed players use the exact same blueprint as the original match, preventing false verdicts from a weaker blueprint).
-   */
-  unitLevels: { [key: string]: number };
   /**
    * Ranked PvP deck restriction (PVP_LOADOUT §6.2): same decks the two real match clients drew from via match_start.top_deck/bottom_deck.
    * Required for a deterministic re-simulation when the original match applied deck-restricted draw filtering; empty on PvE/siege requests.
    */
   topDeck: string[];
   bottomDeck: string[];
-}
-
-export interface JudgeRequest_PveUpgradesEntry {
-  key: string;
-  value: number;
-}
-
-export interface JudgeRequest_UnitLevelsEntry {
-  key: string;
-  value: number;
+  /**
+   * CC-1 Hero Roster progression snapshot for PvE/siege headless re-simulation (2026-07-26 fix, PVE_INTEGRITY §9): replaces
+   * the removed pve_upgrades/unit_levels fields (reserved 7/9 above), which the engine had silently ignored since the CC-1
+   * migration (GameConfig dropped them — campaign/siege blueprints are built only from cardInstances/equipmentInv,
+   * server/engine/src/types.ts). Every PvE L1 spot-check re-simulation was therefore recomputing with unleveled, gear-less
+   * units regardless of the player's real Hero Roster progression, causing false `rejected` verdicts for any legitimately
+   * invested account. JSON of Record<string, CardInstance> (shared/types.ts), opaque to gateway/meta, interpreted only by
+   * the judge client engine — same opacity contract as defense_json.
+   */
+  cardInstancesJson: string;
+  /** JSON of Record<string, EquipmentInstance> (shared/types.ts), paired with card_instances_json. */
+  equipmentInvJson: string;
 }
 
 /**
@@ -2468,11 +2465,11 @@ function createBaseJudgeRequest(): JudgeRequest {
     endFrame: 0,
     frames: [],
     levelId: "",
-    pveUpgrades: {},
     defenseJson: "",
-    unitLevels: {},
     topDeck: [],
     bottomDeck: [],
+    cardInstancesJson: "",
+    equipmentInvJson: "",
   };
 }
 
@@ -2496,20 +2493,20 @@ export const JudgeRequest: MessageFns<JudgeRequest> = {
     if (message.levelId !== "") {
       writer.uint32(50).string(message.levelId);
     }
-    globalThis.Object.entries(message.pveUpgrades).forEach(([key, value]: [string, number]) => {
-      JudgeRequest_PveUpgradesEntry.encode({ key: key as any, value }, writer.uint32(58).fork()).join();
-    });
     if (message.defenseJson !== "") {
       writer.uint32(66).string(message.defenseJson);
     }
-    globalThis.Object.entries(message.unitLevels).forEach(([key, value]: [string, number]) => {
-      JudgeRequest_UnitLevelsEntry.encode({ key: key as any, value }, writer.uint32(74).fork()).join();
-    });
     for (const v of message.topDeck) {
       writer.uint32(82).string(v!);
     }
     for (const v of message.bottomDeck) {
       writer.uint32(90).string(v!);
+    }
+    if (message.cardInstancesJson !== "") {
+      writer.uint32(98).string(message.cardInstancesJson);
+    }
+    if (message.equipmentInvJson !== "") {
+      writer.uint32(106).string(message.equipmentInvJson);
     }
     return writer;
   },
@@ -2569,34 +2566,12 @@ export const JudgeRequest: MessageFns<JudgeRequest> = {
           message.levelId = reader.string();
           continue;
         }
-        case 7: {
-          if (tag !== 58) {
-            break;
-          }
-
-          const entry7 = JudgeRequest_PveUpgradesEntry.decode(reader, reader.uint32());
-          if (entry7.value !== undefined) {
-            message.pveUpgrades[entry7.key] = entry7.value;
-          }
-          continue;
-        }
         case 8: {
           if (tag !== 66) {
             break;
           }
 
           message.defenseJson = reader.string();
-          continue;
-        }
-        case 9: {
-          if (tag !== 74) {
-            break;
-          }
-
-          const entry9 = JudgeRequest_UnitLevelsEntry.decode(reader, reader.uint32());
-          if (entry9.value !== undefined) {
-            message.unitLevels[entry9.key] = entry9.value;
-          }
           continue;
         }
         case 10: {
@@ -2613,6 +2588,22 @@ export const JudgeRequest: MessageFns<JudgeRequest> = {
           }
 
           message.bottomDeck.push(reader.string());
+          continue;
+        }
+        case 12: {
+          if (tag !== 98) {
+            break;
+          }
+
+          message.cardInstancesJson = reader.string();
+          continue;
+        }
+        case 13: {
+          if (tag !== 106) {
+            break;
+          }
+
+          message.equipmentInvJson = reader.string();
           continue;
         }
       }
@@ -2635,145 +2626,11 @@ export const JudgeRequest: MessageFns<JudgeRequest> = {
     message.endFrame = object.endFrame ?? 0;
     message.frames = object.frames?.map((e) => FrameCmds.fromPartial(e)) || [];
     message.levelId = object.levelId ?? "";
-    message.pveUpgrades = (globalThis.Object.entries(object.pveUpgrades ?? {}) as [string, number][]).reduce(
-      (acc: { [key: string]: number }, [key, value]: [string, number]) => {
-        if (value !== undefined) {
-          acc[key] = globalThis.Number(value);
-        }
-        return acc;
-      },
-      {},
-    );
     message.defenseJson = object.defenseJson ?? "";
-    message.unitLevels = (globalThis.Object.entries(object.unitLevels ?? {}) as [string, number][]).reduce(
-      (acc: { [key: string]: number }, [key, value]: [string, number]) => {
-        if (value !== undefined) {
-          acc[key] = globalThis.Number(value);
-        }
-        return acc;
-      },
-      {},
-    );
     message.topDeck = object.topDeck?.map((e) => e) || [];
     message.bottomDeck = object.bottomDeck?.map((e) => e) || [];
-    return message;
-  },
-};
-
-function createBaseJudgeRequest_PveUpgradesEntry(): JudgeRequest_PveUpgradesEntry {
-  return { key: "", value: 0 };
-}
-
-export const JudgeRequest_PveUpgradesEntry: MessageFns<JudgeRequest_PveUpgradesEntry> = {
-  encode(message: JudgeRequest_PveUpgradesEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.key !== "") {
-      writer.uint32(10).string(message.key);
-    }
-    if (message.value !== 0) {
-      writer.uint32(16).uint32(message.value);
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): JudgeRequest_PveUpgradesEntry {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseJudgeRequest_PveUpgradesEntry();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 1: {
-          if (tag !== 10) {
-            break;
-          }
-
-          message.key = reader.string();
-          continue;
-        }
-        case 2: {
-          if (tag !== 16) {
-            break;
-          }
-
-          message.value = reader.uint32();
-          continue;
-        }
-      }
-      if ((tag & 7) === 4 || tag === 0) {
-        break;
-      }
-      reader.skip(tag & 7);
-    }
-    return message;
-  },
-
-  create<I extends Exact<DeepPartial<JudgeRequest_PveUpgradesEntry>, I>>(base?: I): JudgeRequest_PveUpgradesEntry {
-    return JudgeRequest_PveUpgradesEntry.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<JudgeRequest_PveUpgradesEntry>, I>>(
-    object: I,
-  ): JudgeRequest_PveUpgradesEntry {
-    const message = createBaseJudgeRequest_PveUpgradesEntry();
-    message.key = object.key ?? "";
-    message.value = object.value ?? 0;
-    return message;
-  },
-};
-
-function createBaseJudgeRequest_UnitLevelsEntry(): JudgeRequest_UnitLevelsEntry {
-  return { key: "", value: 0 };
-}
-
-export const JudgeRequest_UnitLevelsEntry: MessageFns<JudgeRequest_UnitLevelsEntry> = {
-  encode(message: JudgeRequest_UnitLevelsEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.key !== "") {
-      writer.uint32(10).string(message.key);
-    }
-    if (message.value !== 0) {
-      writer.uint32(16).uint32(message.value);
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): JudgeRequest_UnitLevelsEntry {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseJudgeRequest_UnitLevelsEntry();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 1: {
-          if (tag !== 10) {
-            break;
-          }
-
-          message.key = reader.string();
-          continue;
-        }
-        case 2: {
-          if (tag !== 16) {
-            break;
-          }
-
-          message.value = reader.uint32();
-          continue;
-        }
-      }
-      if ((tag & 7) === 4 || tag === 0) {
-        break;
-      }
-      reader.skip(tag & 7);
-    }
-    return message;
-  },
-
-  create<I extends Exact<DeepPartial<JudgeRequest_UnitLevelsEntry>, I>>(base?: I): JudgeRequest_UnitLevelsEntry {
-    return JudgeRequest_UnitLevelsEntry.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<JudgeRequest_UnitLevelsEntry>, I>>(object: I): JudgeRequest_UnitLevelsEntry {
-    const message = createBaseJudgeRequest_UnitLevelsEntry();
-    message.key = object.key ?? "";
-    message.value = object.value ?? 0;
+    message.cardInstancesJson = object.cardInstancesJson ?? "";
+    message.equipmentInvJson = object.equipmentInvJson ?? "";
     return message;
   },
 };

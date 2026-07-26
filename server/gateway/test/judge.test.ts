@@ -90,7 +90,7 @@ describe('Gateway peer judge', () => {
     void a; void b;
   });
 
-  it('PvE spot-check: transport level_id/pve_upgrades forwarded to judge, verdict.stars resolved', async () => {
+  it('PvE spot-check: transport level_id/card_instances_json forwarded to judge, verdict.stars resolved', async () => {
     const port = 19513;
     const gw = startGateway(port);
     const [p, j] = await Promise.all([connect(port, 'p'), connect(port, 'j')]);
@@ -114,16 +114,17 @@ describe('Gateway peer judge', () => {
     });
 
     await sleep(50);
+    const cardInstancesJson = JSON.stringify({ card_1: { id: 'card_1', defId: 'lichuang', level: 9, gear: {} } });
     const verdict = await gw.judge({
       seed: 0, mode: 0, endFrame: 99, frames: [], exclude: ['p'],
-      levelId: 'ch1_lv2', pveUpgrades: { inf_hp: 3 },
+      levelId: 'ch1_lv2', cardInstancesJson,
     });
     expect(verdict).toEqual({
       ok: true, stateHash: '', winnerSide: 0, stars: 2, statsJson: '{"kill.archer":3}', judgeAccountId: 'j',
     });
-    // Judge received PvE recomputation parameters (level_id + authoritative blueprint snapshot).
+    // Judge received PvE recomputation parameters (level_id + authoritative Hero Roster blueprint snapshot).
     expect(seenReq?.['level_id']).toBe('ch1_lv2');
-    expect(seenReq?.['pve_upgrades']).toEqual({ inf_hp: 3 });
+    expect(seenReq?.['card_instances_json']).toBe(cardInstancesJson);
     void p;
   });
 

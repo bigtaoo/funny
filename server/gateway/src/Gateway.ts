@@ -45,12 +45,12 @@ export interface JudgeArgs {
   exclude: string[];
   /** PvE spot-check re-computation (PVE_INTEGRITY §8.6 L1): if non-empty, the judge re-runs the specified campaign level. */
   levelId?: string;
-  /** @deprecated S3-2 blueprint snapshot; replaced by unitLevels from S12 onwards (retained for backward compatibility). */
-  pveUpgrades?: Record<string, number>;
-  /** S12 unit progression level snapshot (unitId→1..9), ensures deterministic PvE/siege re-computation. Takes precedence over pveUpgrades. */
-  unitLevels?: Record<string, number>;
   /** SLG siege defense config JSON string (S8-3b): if non-empty, the judge re-runs in siege mode. */
   defenseJson?: string;
+  /** CC-1 Hero Roster snapshot (2026-07-26 fix, PVE_INTEGRITY §9): JSON of Record<string, CardInstance>, server-authoritative, ensures deterministic PvE/siege re-computation using the player's real card levels. */
+  cardInstancesJson?: string;
+  /** JSON of Record<string, EquipmentInstance>, paired with cardInstancesJson. */
+  equipmentInvJson?: string;
   /** Ranked PvP deck restriction (PVP_LOADOUT §6.2): the two real match clients' decks, needed for a deterministic re-simulation. */
   decks?: { top: string[]; bottom: string[] };
 }
@@ -418,8 +418,8 @@ export class Gateway {
             endFrame: args.endFrame,
             frames: args.frames,
             levelId: args.levelId ?? '',
-            pveUpgrades: args.pveUpgrades ?? {},
-            unitLevels: args.unitLevels ?? {},
+            cardInstancesJson: args.cardInstancesJson ?? '',
+            equipmentInvJson: args.equipmentInvJson ?? '',
             topDeck: args.decks?.top ?? [],
             bottomDeck: args.decks?.bottom ?? [],
           }),
