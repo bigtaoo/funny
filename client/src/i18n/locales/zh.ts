@@ -1604,6 +1604,7 @@ export const zh = {
   'roster.power': '战力',
   'roster.troops': '{cur}/{cap} 兵',
   'roster.troopCap': '带兵上限',
+  'roster.atk': '攻击',
   'roster.hp': '血量',
   'roster.siege': '攻城值',
   'roster.injured': '受伤 {time}',

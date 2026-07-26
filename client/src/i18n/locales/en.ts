@@ -1588,6 +1588,7 @@ export const en: Record<TranslationKey, string> = {
   'roster.power': 'Power',
   'roster.troops': '{cur}/{cap} troops',
   'roster.troopCap': 'Troop Cap',
+  'roster.atk': 'Attack',
   'roster.hp': 'HP',
   'roster.siege': 'Siege',
   'roster.injured': 'Injured {time}',

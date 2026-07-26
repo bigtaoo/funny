@@ -80,6 +80,13 @@ export function cardSiegeValue(card: CardInstance): number {
   return UNIT_BLUEPRINTS[def.unitType as UnitType]?.siegeValue ?? 0;
 }
 
+/** Base attack for a card's unit type (engine blueprint — see UNIT_BLUEPRINTS[unitType].attack, not per-level). */
+export function cardAttack(card: CardInstance): number {
+  const def = CARD_DEFS[card.defId];
+  if (!def) return 0;
+  return UNIT_BLUEPRINTS[def.unitType as UnitType]?.attack ?? 0;
+}
+
 /** Approximate combat power score (CHARACTER_CARDS_DESIGN §2.4). Same proxy formula as server/shared/src/cards.ts. */
 export function cardPower(card: CardInstance, equipmentInv: Record<string, EquipmentInstance> = {}): number {
   const def = CARD_DEFS[card.defId];
