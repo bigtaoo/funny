@@ -5,6 +5,7 @@ import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor, marginLineX, tearDownChildren } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
+import { buildEquipIcon } from '../../render/equipmentAtlas';
 import { FACTION_COLOR } from '../../render/factionIcon';
 import { UNIT_ART_URLS } from '../../render/cardArt';
 import { drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
@@ -12,7 +13,7 @@ import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubT
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
 import type { CardSLGState } from '../../net/WorldApiClient';
-import { CARD_DEFS, CARD_INV_CAP, CARD_INV_OVERFLOW_BUFFER, troopCap, cardPower } from '../../game/meta/cardDefs';
+import { CARD_DEFS, CARD_INV_CAP, CARD_INV_OVERFLOW_BUFFER, troopCap, cardPower, cardAttack, cardHp } from '../../game/meta/cardDefs';
 import {
   type Constructor, type CardSceneBaseCtor,
   CARD_CELL_H, CARD_CELL_W_TARGET, sortCards, injuryCountdown,
@@ -213,6 +214,14 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       pwrLbl.x = ax; pwrLbl.y = ay; this.bodyLayer.addChild(pwrLbl);
       ay += 24;
 
+      const atkLbl = txt(`${t('roster.atk')} ${cardAttack(card)}`, FS.small, C.dark);
+      atkLbl.x = ax; atkLbl.y = ay; this.bodyLayer.addChild(atkLbl);
+      ay += 24;
+
+      const hpLbl = txt(`${t('roster.hp')} ${cardHp(card)}`, FS.small, C.dark);
+      hpLbl.x = ax; hpLbl.y = ay; this.bodyLayer.addChild(hpLbl);
+      ay += 24;
+
       if (def && state !== undefined) {
         const cap = troopCap(card);
         const cur = state.currentTroops;
@@ -233,14 +242,20 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         tag.x = ax; tag.y = ay; this.bodyLayer.addChild(tag); ay += 20;
       }
 
-      // Gear slot indicators (3 dots: filled = has equipment) — bottom-right of the info column.
-      const gearY = y + CARD_CELL_H - pad - 4;
+      // Gear slot icons (weapon/armor/trinket) — the actual equipped item art, or a dimmed
+      // gray procedural glyph when the slot is empty (matches renderDetailGearSlots' treatment,
+      // replacing the old 3-dot filled/empty indicator).
+      const gearIconSize = 22;
+      const gearGap = 4;
+      const gearStep = gearIconSize + gearGap;
+      const gearCenterY = y + CARD_CELL_H - pad - gearIconSize / 2;
       (['weapon', 'armor', 'trinket'] as EquipSlot[]).forEach((slot, i) => {
-        const filled = !!(card.gear[slot]);
-        const g = new PIXI.Graphics();
-        g.beginFill(filled ? C.accent : 0xddddcc).drawCircle(0, 0, 4).endFill();
-        g.x = x + cellW - pad - (2 - i) * 12; g.y = gearY;
-        this.bodyLayer.addChild(g);
+        const instId = card.gear[slot];
+        const inst = instId ? save.equipmentInv?.[instId] : undefined;
+        const icon = buildEquipIcon(inst?.defId, slot, inst?.rarity ?? 'common', gearIconSize, seedFor(x, y, i + 1));
+        icon.alpha = inst ? 1 : 0.35;
+        icon.position.set(x + cellW - pad - gearIconSize / 2 - (2 - i) * gearStep, gearCenterY);
+        this.bodyLayer.addChild(icon);
       });
 
       this.hitRects.push({

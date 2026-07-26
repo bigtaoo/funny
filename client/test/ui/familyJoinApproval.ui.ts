@@ -143,11 +143,12 @@ describe('FamilyScene — pending join-request approval', () => {
     scene.render();
     scene.openJoinRequests();
 
-    // Approve sits left of Reject — the two 56-wide buttons in the (single) request row.
+    // Approve/Reject buttons are the only 52-tall hit rects (width now follows the measured
+    // label, not a fixed literal — German "Ablehnen"/"Annehmen" run longer than English).
     // (Hits fire-and-forget the async handler — `action()` returns void, not a promise — so call
     // the underlying handler directly to await it deterministically; the rect count above already
     // proves the button wiring exists.)
-    const rowHits = scene.modalHits.filter((h: any) => h.rect.w === 112);
+    const rowHits = scene.modalHits.filter((h: any) => h.rect.h === 52);
     expect(rowHits).toHaveLength(2);
     await scene.doRespondJoinRequest('r1', true);
 
@@ -169,7 +170,7 @@ describe('FamilyScene — pending join-request approval', () => {
     scene.render();
     scene.openJoinRequests();
 
-    const rowHits = scene.modalHits.filter((h: any) => h.rect.w === 112);
+    const rowHits = scene.modalHits.filter((h: any) => h.rect.h === 52);
     expect(rowHits).toHaveLength(4); // 2 requests × (approve + reject)
     await scene.doRespondJoinRequest('r1', false);
 

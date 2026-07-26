@@ -354,12 +354,13 @@ export class RechargeScene implements Scene {
     withTimeout(this.cb.onClaim(tierId))
       .then((rewards) => {
         this.bt.stop();
+        this.render();
         const coinsReward = rewards.find((r) => r.kind === 'coins');
         if (coinsReward) this.showToast(t('recharge.claimToast', { n: String(coinsReward.count) }));
-        else this.render();
       })
       .catch((e) => {
         this.bt.stop();
+        this.render();
         this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('recharge.claimFailed'), 'error');
       });
   }

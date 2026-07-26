@@ -11,6 +11,7 @@
 > 4. **对账**目前仅 `GET /save` 顺带（拉 commercial `orders/undelivered` 补发）；兜底定时扫描待办。
 > 5. **新增 `GET /internal/orders/undelivered`**（对账拉单）+ `order/delivered` 加 `refundCoins`，已登记 `SERVER_API §9`。
 > 6. **catalog 单一来源 `shared/src/economy.ts`**（商品/盲盒池/权重/退币/广告/IAP 档），meta 列表 + commercial RNG 共用，避免漂移。
+> 7. **`SaveData.deliveredOrders` 改为封顶 200 条（2026-07-26 卡顿排查）**：该字段本意是幂等发货记录（§2 提到的 `$addToSet` 去重），但全代码库排查后确认**没有任何地方读它做判断**——真正的幂等保护是 commercial `orders` 集合的 orderId 唯一键 / meta `equipmentIdem`。无限增长的 `$addToSet` 让长期测试的重度账号这个数组堆到 900+ 条，单账号存档文档涨到 81KB，在 Atlas M0 这种共享/带宽受限的免费档上，每次读写这条存档（几乎所有玩法操作都会触发）多花约 1 秒。改为 `$push` + `$slice:-200`（`deliverGrant`/`deliverMailGrant`，`server/metaserver/src/economy.ts`），只保留最近 200 条，牺牲掉从未被依赖的 Set 去重语义。
 
 ---
 

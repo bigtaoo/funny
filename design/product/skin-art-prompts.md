@@ -13,9 +13,9 @@
 | `skin_shop_c1` | 李川 / Infantry | common | 灰白调 | ✅ 已出图定稿，[`art/skins/infantry.png`](../../art/skins/infantry.png)；§1 prompt 为此图基准 |
 | `skin_shop_r1` | 苏远 / Archer | rare | 蓝色调 | ✅ 已出图定稿，[`art/skins/archer.png`](../../art/skins/archer.png)；§2 v3 prompt 命中（3/4 侧身回望 + 侧分短发 + 弓上弦） |
 | `skin_shop_e1` | 陈守 / ShieldBearer | epic | 紫色调 | 🟡 已出图 [`art/skins/shieldbearer.png`](../../art/skins/shieldbearer.png)（§3 v2 prompt，体型/叉腿盾墙/寸头全中）；**留 1 项待调**：肤色偏深 + 黑卷发，与另两人（浅暖褐肤 + 棕发）不一致，破坏"方家三兄弟"读感，重出时加 `light warm tan skin matching his friends, brown hair not black` |
-| `skin_e1` | Anna·Lena | epic | 紫色调 | 未开始 |
-| `skin_e2` | Anna·Mara | epic | 紫色调 | 未开始 |
-| `skin_l1` | Anna·Max | legendary | 金米调 | 未开始 |
+| `skin_e1` | Anna·Lena | epic | 紫色调 | ✅ 已出图定稿（2026-07-26），[`art/skins/lena.png`](../../art/skins/lena.png)；§6 v2 prompt 命中 |
+| `skin_e2` | Anna·Mara | epic | 紫色调 | ✅ 已出图定稿（2026-07-26），[`art/skins/mara.png`](../../art/skins/mara.png)；§5 v2 prompt 命中 |
+| `skin_l1` | Anna·Max | legendary | 金米调 | ✅ 已出图定稿（2026-07-26），[`art/skins/max.png`](../../art/skins/max.png)；§4 v2 prompt 命中 |
 
 三个角色的身高档位（`art-direction.md` 身高规格表）：李川 M 普通 / 苏远 **S 小个子** / 陈守 **L 高个子**——立绘构图要读得出这个身高差，不能三人等高。
 
@@ -217,6 +217,61 @@ hand, held low and NOT raised to strike.
 - 三人若还像"同一身体换色"，先确认三件套读出来没：他明显最高最壮、占地面最宽？双脚叉开钉住（对比苏远缩成一团、李川在走）？寸头（对比另两人）？缺哪个补哪个，别加背带/护具凑数。
 - 身高/体型差不够就加 `broad shoulders, stocky, towering over an average child, chubby sturdy build`；盾纹太精致跳风格就加 `simple crude childlike hand-drawn skull, minimal detail on shield`。
 - 体型"最壮"和苏远"最瘦"一样，单图难自证，最终以三人并排比对为准。
+
+---
+
+## Anna 阵营皮肤：共用地基与踩坑（2026-07-26）
+
+Anna 三人（Lena/Mara/Max）不套用上面 Tao 侧的"共用前缀"——那条前缀锁的是**大圆头+两点眼+无鼻无嘴**的简笔卡通脸，是陶方专属画风；Anna 阵营角色卡本身就是写实五官（见 `ANNA_CHARACTERS.md`），皮肤延续写实脸，不改成卡通脸。三人共用的是下面这几条：
+
+- **配色按稀有度走官方公式，不按角色个人色**：皮肤的"紫/金"来自 `EQUIPMENT_DESIGN.md` 已定的稀有度双色公式（epic = 荧光紫 `#aa55cc` + 烫金 `#d9b44a`；legendary 本文取金米 `#C9A227`+`#F0E6C8`，比装备的橙 `#e08a2c` 更暖，是皮肤文档自己的既定基调，见进度表），不是 `ANNA_CHARACTERS.md` 里三人各自的私有蓝色调——这样同稀有度的皮肤（Lena/Mara 都是 epic）天然配色统一，区分度全靠体型/站姿/道具/发型，和 Tao 侧"用职业道具+体型站姿区分"是同一个方法论。
+- **每人身上留一处冷色点缀**（Max 胸口蓝钻、Mara 手腕蓝绳），呼应"仍是蓝方阵营成员"——皮肤换色但不脱队。
+- **"精致一档"不等于可以数码渲染**：皮肤 tier 的 prompt 要求"clean ink, not sketchy-wobbly"，比角色卡的抖动铅笔线更干净，但**去掉抖动线这道天然刹车后，AI 会直接冲向专业幻想原画的抛光金属/渐变高光**（Max v1、Mara v1 都踩了这个坑——盔甲镜面反光、皮革渐变光泽）。**每次都要显式写"flat matte, no gradient, no glossy sheen"，而且要点名到每个部件**（Max v1 漏了这句导致全身反光；Mara v1 只在上衣提了平涂，裤子/靴子没提名，照样长出了光泽感）——不能指望一句笼统的"matte overall"能兜住全身。
+- **女性角色要显式写"实用/非性感化"**：Mara v1 出来是收腰胸衣式紧身皮衣+低胸开领+高跟靴，偏时装猎手而非实用猎手，也踩了 `ANNA_CHARACTERS.md` 给 Lena 定过的红线（负向提示 `sexualized, revealing armor`——这条对全阵营通用，游戏全年龄向）。v2 改成"立领扣到底、不露领口、平底靴"才收回来。
+- **头盔/面部遮挡类道具要写清楚"哪部分必须露脸"**：Max v1 给了全罩盔（面部虽然露出但不是"面罩上翻"那个读法），v2 明确写"开面盔+前段面罩掀起、额头到下巴全露"才对上他的标志性半开面罩。
+- **佩剑等"入鞘不用"的副武器要显式写"完全被剑鞘遮住，不露刃"**：Lena v1 只写了"短剑挂腰间，未拔出"，出来是一截贴腿垂下的长条渐变银紫色刀刃状物体，像没入鞘的长剑；v2 加上"opaque scabbard fully conceals the blade, no visible blade/metal, reaching only to mid-thigh"才收成正常的入鞘佩剑。
+
+---
+
+## 4. `skin_l1` — Anna·Max（legendary，金米调）✅ 已出图
+
+**人设参照**（`ANNA_CHARACTERS.md` Max）：独行骑士，半开面罩露出冷静的眼睛，单手阔剑不持盾，一击而定。旗舰皮肤主题定调见 [`gacha-art-prompts.md`](gacha-art-prompts.md)：`a majestic armored commander with gold ink details`，金米色调。辨识特征保留：①半开面罩露脸；②单手阔剑垂地待发姿态；③空手无盾。新增旗舰元素：奶白滚金披风；胸甲留一颗小蓝钻作为"仍属蓝方"的锚点（配色本身已全面转金米，不再是他角色卡的冷钢蓝）。
+
+> 2026-07-26 v2（可直接复制的完整版）：v1 用"clean ink not sketchy-wobbly"但没压住数码渲染倾向，出来是专业幻想游戏立绘级别的抛光镜面盔甲+渐变高光+过密蚀刻花纹，且头盔是全罩式而非"面罩上翻"。v2 在开头加"flat matte picture-book, not digital painting, not concept art"压顶句，逐部件重申"no gradient/no glossy"，收紧纹样密度，并把头盔明确写成"开面盔+前段面罩掀起"。
+
+```
+A full-length head-to-toe character illustration of a teenage boy knight standing in a confident three-quarter side view, his body turned about forty-five degrees so one shoulder faces the viewer, weight settled back on his rear leg in a calm, commanding stance rather than a crouched combat pose. This must read as a flat, matte, hand-drawn picture-book illustration, like ink-and-marker artwork in a notebook, absolutely not a digital painting, not professional fantasy concept art, not video game splash art, not a 3D render, and not a photorealistic or airbrushed image. He wears golden full plate armor made of flat faceted metal plates with sharp clean edges, colored in completely flat single-tone gold blocks with only a few simple hand-drawn cross-hatch pencil lines for shadow in the recessed corners — no gradients anywhere, no soft blending, no chrome-like mirror reflections, no bright specular highlight streaks, no glossy sheen of any kind on the metal, which should look as dull and matte as colored paper. Keep any etched trim minimal: a few simple repeated linear borders along the plate edges only, not dense ornamental engraving covering the surfaces. He wears an open-faced helmet with the front visor section fully flipped up above his brow, so his whole face from forehead to chin is plainly visible, not a closed helm, nothing obscuring any part of his face: a calm, serious, realistic European teenage boy face with a soft natural eye, light eyebrow, a small straight nose, and a tight closed mouth, short neat hair, ordinary grounded human proportions. A short cream-and-gold trimmed cape hangs from his shoulders in a few clean flat folds, colored as flat cream with simple hatch-line shading only, no fabric sheen. In his near hand he holds a single-handed broad straight steel sword with a gold-wrapped hilt and a gold cross-guard, the blade flat pale grey with hatch-line shading only and no shiny reflection, its tip resting on the ground in a quiet grounded stance. His other hand rests open and empty at his side, carrying no shield. Color palette is warm flat gold around hex C9A227 for the main armor plates, flat pale cream-ivory around hex F0E6C8 for the cape, flat deep bronze-brown around hex 6B4E1E used only as small hatch-shaded recesses, with one small flat cool steel-blue diamond gem around hex 6E8CAB set into the chest plate as his only cold-toned detail. A soft cross-hatched oval ground shadow sits beneath his boots. The background is plain clean white paper with only a faint paper texture, nothing else in frame. Full body visible from head to boots, centered and filling most of the frame, vertical portrait composition about a 2:3 ratio.
+```
+
+**调整建议**：若重出时又滑向抛光渲染，先检查是不是漏点了具体部位（"no gloss"必须点名到腿甲/靴子，不能只在开头笼统提一句）；若头盔又变回全罩式，加强"visor flipped up, whole face visible, NOT a closed grand helm"。
+
+---
+
+## 5. `skin_e2` — Anna·Mara（epic，紫色调）✅ 已出图
+
+**人设参照**（`ANNA_CHARACTERS.md` Mara）：战场织网者，标记机制，眼神望向战场远处而非箭尖，弓半张但不急着射。辨识特征保留：①三人里最纤细高挑，长腿；②站姿松弛望远，非拉弓瞄准姿态；③松散波浪卷发半扎；④左手腕蓝绳缠三圈。配色改用 epic 官方双色公式（荧光紫 `#aa55cc` + 烫金 `#d9b44a`），不再是她角色卡的暖棕+天蓝。
+
+> 2026-07-26 v2（可直接复制的完整版）：v1 配色/道具/姿态都对，但两处需要打回：① 裤子/靴子仍有数码渐变光泽（v1 的"no gloss"只写在上衣皮革那句里，没有点名裤子和靴子）；② 服装偏性感时装猎手——收腰胸衣式紧身剪裁+低胸开领+高跟及膝靴，踩了游戏全年龄向的红线（`ANNA_CHARACTERS.md` Lena 负向提示 `sexualized, revealing armor` 对全阵营通用）。v2 把领口改立领扣到底、靴子改平底，并把"no gradient/no gloss"扩展到裤子和靴子。
+
+```
+A full-length head-to-toe character illustration of a slender, tall young huntress standing in a light, poised three-quarter side view, her body turned about forty-five degrees so one shoulder faces the viewer, weight even between both feet, one foot set slightly forward in a calm, watchful stance rather than a drawn-bow action pose. This must read as a flat, matte, hand-drawn picture-book illustration, like ink-and-marker artwork in a notebook, absolutely not a digital painting, not professional fantasy concept art, not video game splash art, not a 3D render, and not a photorealistic or airbrushed image. She has an elongated, slender, elegant build with long legs, clearly the leanest and tallest silhouette of the three friends. She wears a practical, modest huntress outfit in flat deep-purple leather — a fitted but loose-cut jacket buttoned up to the collar with no exposed neckline or chest, straight-cut trousers, and flat-soled knee-high boots with no heel — colored in completely flat single-tone purple blocks with only simple hand-drawn cross-hatch pencil lines for shadow in the folds and seams, no gradients anywhere on the jacket, trousers, or boots, no soft blending, no glossy sheen or shine of any kind on the leather, which must look as dull and matte as colored paper across every part of the outfit including the legs and boots. Along the jacket edges, seams, belt, and boot tops runs a thin gilt-gold trim line with a few simple flat marker-drawn decorative flourishes — small hand-drawn curling vine-like linework, not dense embroidery, kept minimal and clean. A slim quiver of purple-and-gold fletched arrows sits diagonally across her back. Her face is calm, warm, and slightly wistful, a realistic young European woman's face with a soft natural eye, light eyebrow, a small straight nose and a gently closed mouth, her gaze lifted and looking off into the distance past the viewer rather than at anything close — watchful, reading the wider scene, not focused on a nearby target. Her hair is loose and wavy, half pulled back and half falling free, rendered with a few flowing hand-drawn ink strokes, no shine. Around her left wrist, wrapped three times, is a simple sky-blue cord, colored flat around hex 7EB5D6, her only cool-toned accent tying her back to the blue faction. In one hand she holds a slim recurve longbow at rest by her side, string slack and not drawn, the bow itself flat pale wood-brown with a gilt-gold wrapped grip, hatch-line shading only and no shine on the wood or string. Color palette is flat deep purple around hex 6B3F73 for the main leather, bright accent purple around hex AA55CC used sparingly on small trim details and buckles, gilt gold around hex D9B44A for the trim lines and grip, pale lavender-white around hex E4D6E8 for flat highlights, and deep plum-black around hex 3A2440 used only as small hatch-shaded recesses. A soft cross-hatched oval ground shadow sits beneath her boots. The background is plain clean white paper with only a faint paper texture, nothing else in frame — no scenery, no other characters, no text, no watermark. Full body visible from head to boots, centered and filling most of the frame, vertical portrait composition about a 2:3 ratio.
+```
+
+**调整建议**：Lena（`skin_e1`）出图时可直接复用这套 epic 紫金配色公式，靠体型（三人里最矮壮，圆盾+护具）/站姿（钉住不动）/发型（战辫）区分，不必重新试配色；同样要提防"clean ink"降低了对性感化剪裁和数码光泽的天然抵抗力，两条负向要求要显式写进去。
+
+---
+
+## 6. `skin_e1` — Anna·Lena（epic，紫色调）✅ 已出图
+
+**人设参照**（`ANNA_CHARACTERS.md` Lena）：铁盾算法师，纪律减伤，钉在原地不动的盾卫。辨识特征保留：①三人里最矮壮，肩宽重心低；②站姿钉住不动，盾护身前；③无头盔、战辫；④副武器短剑入鞘挂腰，不是主战武器。配色改用 epic 官方双色公式（同 Mara，荧光紫 `#aa55cc` + 烫金 `#d9b44a`），盾心一颗小蓝宝石作为"仍属蓝方"的锚点。
+
+> 2026-07-26 v2（可直接复制的完整版）：v1 盾牌几何格纹+无头盔+站姿+配色全部一次命中，唯独佩剑翻车——只写"未拔出"不够，出来是一截贴腿垂下的渐变银紫刀刃状物体，读起来像没入鞘的长剑。v2 把佩剑那句改成"入鞘完全遮住刀刃、长度到大腿附近、只露剑柄"，其余不变。
+
+```
+A full-length head-to-toe character illustration of a sturdy young woman warrior standing in a firm, grounded three-quarter side view, her body turned about forty-five degrees so one shoulder faces the viewer, feet planted a little more than shoulder-width apart, weight low and centered, rooted in place like she is not going anywhere — a calm, immovable defensive stance, not walking, not mid-stride, not an attacking pose. This must read as a flat, matte, hand-drawn picture-book illustration, like ink-and-marker artwork in a notebook, absolutely not a digital painting, not professional fantasy concept art, not video game splash art, not a 3D render, and not a photorealistic or airbrushed image. She has a sturdy, broad-shouldered build with a low, solid center of gravity — noticeably broader and shorter than a willowy figure, reading as the sturdiest and most grounded of the three friends, not slender, not delicate. She wears practical chainmail and leather armor — a fitted mail hauberk over a padded underlayer, sturdy leather leg wraps, and flat-soled leather boots — fully covering her from neck to boots with no exposed midriff or chest, colored in completely flat single-tone purple blocks with only simple hand-drawn cross-hatch pencil lines suggesting the texture of the mail links and leather folds, no gradients anywhere on the armor, leggings, or boots, no soft blending, no glossy sheen or metallic shine of any kind, which must look as dull and matte as colored paper across every part of her outfit. Along the armor edges, belt, and boot cuffs runs a thin gilt-gold trim line with a few simple flat marker-drawn decorative flourishes, kept minimal and clean, not dense embroidery. Her hair is pulled back into a tight, neat war braid at the nape of her neck, no helmet, her whole face plainly visible: a calm, composed, realistic young European woman's face with a soft steady eye, light eyebrow, a small straight nose, and a calm closed mouth, an expression of quiet confidence, not smiling, not fierce. In front of her torso she holds a large round shield up at a calm, steady angle, the shield face a flat deep-purple with a fine gilt-gold geometric grid pattern etched across it like an engineering diagram, flat rivets along the rim, a small cool steel-blue gem set at the very center of the shield boss as her only cold-toned accent tying her back to the blue faction. A short plain sword hangs at her hip, fully hidden inside an opaque solid-color scabbard that completely conceals the blade — no visible blade, no exposed metal — the scabbard reaching only to about mid-thigh, clearly shorter than a longsword, with just the hilt and cross-guard visible above the scabbard's mouth, not drawn, not held, not touching her hand. Color palette is flat deep purple around hex 6B3F73 for the main armor, bright accent purple around hex AA55CC used sparingly on small trim details and the shield's grid lines, gilt gold around hex D9B44A for the trim and rivets, pale lavender-white around hex E4D6E8 for flat highlights, and deep plum-black around hex 3A2440 used only as small hatch-shaded recesses. A soft cross-hatched oval ground shadow sits beneath her boots. The background is plain clean white paper with only a faint paper texture, nothing else in frame — no scenery, no other characters, no text, no watermark. Full body visible from head to boots, centered and filling most of the frame, vertical portrait composition about a 2:3 ratio.
+```
+
+**六款上线皮肤（`GACHA_DESIGN.md §9.5`）全部出图定稿**，三人并排比对若发现体型区分度不够（Lena 矮壮 vs Mara 纤细高挑 vs 陶方三兄弟的身高梯度），再回头加强 build 描述；否则可以进入"出图后流程"。
 
 ---
 
