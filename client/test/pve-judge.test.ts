@@ -14,6 +14,8 @@ import { Side, GamePhase } from '../src/game/types';
 import type { GameConfig, IGameEngine, OwnerId } from '../src/game/types';
 import { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER } from '../src/game/campaign/levels';
 import { computeStars, buildStarContext } from '../src/game/meta/campaignRewards';
+import { toEngineCardInstances } from '../src/game/meta/cardDefs';
+import type { CardInstance, EquipmentInstance } from '../src/game/meta/SaveData';
 import type { LevelDefinition } from '@nw/engine';
 import { runJudge } from '../src/net/judgeRunner';
 import { replayToUploadFrames } from '../src/net/replayUpload';
@@ -88,8 +90,8 @@ describe('judgeRunner — PvE spot-check re-verification', () => {
       endFrame: replay.endFrame,
       frames,
       levelId: level.id,
-      pveUpgrades: {}, // no upgrades (consistent with the recording)
-      unitLevels: {},
+      cardInstancesJson: '', // no cards (consistent with the recording)
+      equipmentInvJson: '',
       defenseJson: '',
       topDeck: [],
       bottomDeck: [],
@@ -101,6 +103,70 @@ describe('judgeRunner — PvE spot-check re-verification', () => {
     expect(ran).toBeGreaterThan(0);
   });
 
+  it('recompute uses the real Hero Roster card level + equipment, not a level-1/gearless baseline (regression, 2026-07-26 fix)', () => {
+    // Root cause: judgeRunner used to build the recompute GameConfig from the dead pveUpgrades/unitLevels
+    // fields (removed by the CC-1 migration; GameConfig only reads cardInstances/equipmentInv), so every L1
+    // spot-check silently recomputed with unleveled, gear-less units — regardless of the player's real Hero
+    // Roster investment — causing false `rejected` verdicts for legitimately progressed, actively-played clears.
+    const level = CAMPAIGN_LEVELS[CAMPAIGN_LEVEL_ORDER[0]!]!;
+    const script: PlayScript = { plays: { 30: [0, 1], 120: [0, 8], 260: [1, 4] }, upgrades: [60] };
+
+    const equipmentInv: Record<string, EquipmentInstance> = {
+      eq_test_weapon: { id: 'eq_test_weapon', defId: 'test_weapon', rarity: 'epic', level: 9, affixes: [{ id: 'm_atk', value: 80 }] },
+    };
+    const cardInv: Record<string, CardInstance> = {
+      card_test_infantry: { id: 'card_test_infantry', defId: 'lichuang', level: 9, gear: { weapon: 'eq_test_weapon' }, locked: false },
+    };
+
+    // Record the "true" match exactly as the live client would (app/nav/game.ts: cardInstances + equipmentInv
+    // from the player's real save), using the same script as the closed-loop test above.
+    const cfg: GameConfig = {
+      seed: level.seed,
+      players: [{ id: 0 }, { id: 1 }],
+      mode: 'campaign',
+      level,
+      cardInstances: toEngineCardInstances(cardInv),
+      equipmentInv,
+    };
+    const rec = new RecordingInputSource(new LocalInputSource());
+    const original = createGameEngine(cfg, rec);
+    const ran = driveToEnd(original, 6000, script);
+    expect(original.state.phase).toBe(GameOver);
+    const expectedStars = trueStars(original, level);
+    const replay = rec.snapshot({ seed: level.seed, mode: 'campaign', configRef: level.id });
+    const frames = toJudgeFrames(replayToUploadFrames(replay));
+
+    // Judge recompute WITH the server-authoritative snapshot (the fix): must reproduce the true star count exactly.
+    const reqWithSnapshot: JudgeRequest = {
+      requestId: 'pve-cardinv-fixed',
+      seed: 0,
+      mode: 0,
+      endFrame: replay.endFrame,
+      frames,
+      levelId: level.id,
+      cardInstancesJson: JSON.stringify(cardInv),
+      equipmentInvJson: JSON.stringify(equipmentInv),
+      defenseJson: '',
+      topDeck: [],
+      bottomDeck: [],
+    };
+    const withSnapshot = runJudge(reqWithSnapshot);
+    expect(withSnapshot.ok).toBe(true);
+    expect(withSnapshot.stars).toBe(expectedStars);
+
+    // Judge recompute WITHOUT the snapshot (the old, buggy behavior: an empty/dead blueprint) must NOT silently
+    // reproduce the same claimed result — it either scores strictly lower (weaker units under the same script)
+    // or fails to resolve within the tick budget. Either way this is exactly the false-`rejected` failure mode
+    // this fix closes; asserting it still misbehaves without the snapshot proves the assertion above is non-vacuous.
+    const reqBare: JudgeRequest = { ...reqWithSnapshot, requestId: 'pve-cardinv-bare', cardInstancesJson: '', equipmentInvJson: '' };
+    const bare = runJudge(reqBare);
+    // Empirically: the same script that scores 2★ with the real card/gear drops the player's base entirely
+    // (winnerSide flips, stars:0) once the card/gear snapshot is stripped — i.e. exactly the false-`rejected`
+    // verdict an honest, actively-played clear would have suffered under the pre-fix judge.
+    expect(bare.ok === false || bare.stars < expectedStars).toBe(true);
+    expect(ran).toBeGreaterThan(0);
+  });
+
   it('unknown level id → re-verification fails (version/data mismatch)', () => {
     const req: JudgeRequest = {
       requestId: 'x',
@@ -109,8 +175,8 @@ describe('judgeRunner — PvE spot-check re-verification', () => {
       endFrame: 10,
       frames: [],
       levelId: 'no_such_level',
-      pveUpgrades: {},
-      unitLevels: {},
+      cardInstancesJson: '',
+      equipmentInvJson: '',
       defenseJson: '',
       topDeck: [],
       bottomDeck: [],
@@ -127,8 +193,8 @@ describe('judgeRunner — PvE spot-check re-verification', () => {
       endFrame: 2,
       frames: [],
       levelId: '',
-      pveUpgrades: {},
-      unitLevels: {},
+      cardInstancesJson: '',
+      equipmentInvJson: '',
       defenseJson: '',
       topDeck: [],
       bottomDeck: [],

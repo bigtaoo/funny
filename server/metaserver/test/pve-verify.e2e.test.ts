@@ -44,6 +44,7 @@ describe.skipIf(!mongo)('pve L1 verify e2e', () => {
   let app: FastifyInstance;
   let gateway: FakeGateway;
   let token: string;
+  let starterCardInv: Record<string, unknown>;
   const b = (r: { payload: string }) => JSON.parse(r.payload);
   const auth = () => ({ authorization: `Bearer ${token}` });
   const clear = (levelId: string, stars = 3, pveUpgrades?: Record<string, number>) =>
@@ -59,6 +60,10 @@ describe.skipIf(!mongo)('pve L1 verify e2e', () => {
     app = await buildApp({ cols: m.collections, jwt, internalKey: 'k', gateway });
     const r = b(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'pve-verify-dev-1' } }));
     token = r.data.token;
+    // fresh accounts start with a non-empty Hero Roster (starter cards, CHARACTER_CARDS_DESIGN §4) — /auth/device
+    // itself doesn't return `save`, so fetch it separately.
+    const save = b(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    starterCardInv = save.data.save.cardInv;
   });
   afterAll(async () => { if (app) await app.close(); });
 
@@ -79,9 +84,34 @@ describe.skipIf(!mongo)('pve L1 verify e2e', () => {
     expect(v.data.verified).toBe(true);
     expect(v.data.granted).toEqual({ scrap: 6, lead: 2 });
     expect(v.data.save.materials.scrap).toBe(6);
-    // Judge received PvE re-computation arguments (levelId + server-authoritative blueprint).
+    // Judge received PvE re-computation arguments (levelId + server-authoritative blueprint: the account's
+    // real starter Hero Roster, not an empty one — see the regression test below for a non-starter snapshot).
     expect(gateway.last?.levelId).toBe('ch1_lv1');
-    expect(gateway.last?.pveUpgrades).toEqual({});
+    expect(JSON.parse(gateway.last?.cardInstancesJson ?? '{}')).toEqual(starterCardInv);
+    expect(gateway.last?.equipmentInvJson).toBe('{}');
+  });
+
+  it('regression (2026-07-26 fix, PVE_INTEGRITY §9): the judge receives the account\'s real cardInv/equipmentInv, not an empty blueprint', async () => {
+    // Root cause: pveVerify used to snapshot the dead pveUpgrades/unitLevels fields (the engine dropped those
+    // GameConfig params in the CC-1 migration), so the judge always recomputed with unleveled, gear-less units
+    // regardless of the player's real Hero Roster investment. Seed a leveled + equipped card onto the account
+    // (mirrors CardInstance/EquipmentInstance, server/shared/src/types.ts) before the spot-checked clear, then
+    // assert the exact snapshot reaches gateway.judge() as JSON — proving pveVerify no longer discards it.
+    const seededCardInv = {
+      card_test: { id: 'card_test', defId: 'lichuang', level: 9, gear: { weapon: 'eq_test' }, locked: false },
+    };
+    const seededEquipmentInv = {
+      eq_test: { id: 'eq_test', defId: 'test_weapon', rarity: 'epic', level: 9, affixes: [{ id: 'm_atk', value: 80 }] },
+    };
+    await m.collections.saves.updateOne(
+      { _id: (await m.collections.accounts.findOne({}))!._id },
+      { $set: { 'save.cardInv': seededCardInv, 'save.equipmentInv': seededEquipmentInv } },
+    );
+    gateway.next = { ok: true, stars: 3 };
+    const c = b(await clear('ch1_lv1', 3));
+    await verify(c.data.verifyId); // gateway.judge() is only actually invoked here, not by /pve/clear itself
+    expect(JSON.parse(gateway.last?.cardInstancesJson ?? '{}')).toEqual(seededCardInv);
+    expect(JSON.parse(gateway.last?.equipmentInvJson ?? '{}')).toEqual(seededEquipmentInv);
   });
 
   it('re-computation stars < claimed → mark suspicious, do not grant materials', async () => {

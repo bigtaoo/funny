@@ -222,7 +222,7 @@ export interface PveDailyDoc {
  * progress/stars already written); the client then uploads the replay → third-party headless re-simulation via gateway → materials are granted
  * only if the re-simulated star count is >= the claimed count. status:
  * `pending` = awaiting replay, `verified` = re-simulation passed and materials granted, `unverified` = no judge available (benefit-of-doubt, materials granted),
- * `rejected` = re-simulation mismatch, materials not granted (suspicious). `pveUpgrades` is the server-authoritative blueprint snapshot at settlement time (used for re-simulation, prevents drift).
+ * `rejected` = re-simulation mismatch, materials not granted (suspicious). `cardInv`/`equipmentInv` are the server-authoritative Hero Roster blueprint snapshot at settlement time (used for re-simulation, prevents drift).
  */
 export interface PveVerificationDoc {
   _id: string; // verifyId（uuid）
@@ -230,10 +230,14 @@ export interface PveVerificationDoc {
   levelId: string;
   /** Star count claimed by the client (pending re-simulation verification). */
   claimedStars: number;
-  /** @deprecated S3-2 snapshot, replaced by unitLevels from S12 onwards (kept for backward compatibility with old records). */
-  pveUpgrades: Record<string, number>;
-  /** S12 server-authoritative unitLevels snapshot at settlement time (re-simulation blueprint). */
-  unitLevels?: Record<string, number>;
+  /**
+   * CC-1 Hero Roster snapshot (2026-07-26 fix, PVE_INTEGRITY §9): server-authoritative `SaveData.cardInv`/`equipmentInv`
+   * at settlement time, fed to the L1 judge re-simulation so the recompute uses the player's real card levels/gear
+   * instead of the removed pveUpgrades/unitLevels fields (both dead since the engine dropped those GameConfig params
+   * in the CC-1 migration — campaign/siege blueprints are built only from cardInstances/equipmentInv).
+   */
+  cardInv: Record<string, CardInstance>;
+  equipmentInv: Record<string, EquipmentInstance>;
   /** Trigger reason (audit): first | anomaly | sample. */
   reason: string;
   status: 'pending' | 'verified' | 'unverified' | 'rejected';

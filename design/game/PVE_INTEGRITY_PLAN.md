@@ -221,3 +221,34 @@ bump（字段不变）。客户端 `extractSyncPatch` 去掉这三段；服务�
 ## 9. 已知未修 gap（2026-07-22 体检登记）
 
 - **裁判选取缺 idle 校验（`gateway/src/Gateway.ts:428 pickJudge`）**：`pickJudge` 只筛 `canJudge` + ws OPEN + 不在 exclude，**没有校验候选人是否正在对局**（函数注释 §doc line 388 写的是「picks an eligible **idle** online player」，与实现不符）。当前只靠客户端自报的 `canJudge` 兜底——若客户端在对局中未及时把 `canJudge` 置 false，一个正在打 PvP 的玩家可能被抽去做 L1 无头复算，抢占其 CPU/内存、影响手感。**尚未修复**：应在 `pickJudge` 服务端加「不在活跃对局」判据（如查 Redis `activeMatch` 或连接态），不能只信客户端标志。
+
+- ✅（2026-07-26 修复）**L1 裁判复算长期用「裸蓝图」跑，完全无视玩家真实练度/装备**：`metaserver/pve.ts` 的
+  `pveVerifications` 快照 + `gateway.judge()` 调用此前一直传 `pveUpgrades`/`unitLevels`（`JudgeRequest` 字段 7/9），
+  但 CC-1（Hero Roster，2026-07-01 SaveData v4）把这两个字段从 engine `GameConfig` 里整个删掉了——`buildCampaignBlueprints`
+  / `buildSiegeBlueprints` 自那以后只读 `cardInstances`/`equipmentInv`（`server/engine/src/types.ts`
+  `GameConfig`、`engine/base.ts:114`）。也就是说自 CC-1 上线起，**所有 PvE 首通抽检复算都在用 1 级、无装备的裸蓝图**，
+  不管玩家 Hero Roster 实际练到多高、装备了什么——复算引擎打得比真实对局弱，容易把"真实、全程主动操作"的通关误判成
+  `rejected`（星数不足），完全命中 §0 的公平性顾虑，但这次不是"分不清真弱智秒过和假回放"，而是纯粹的参数传递遗漏
+  （engine 侧早已改用新字段，judge 侧的调用方从没跟着迁）。**排查触发案例**：账号 `tao1`（`publicId 160491111`）
+  `ch1_lv3`/`ch1_lv8` 两次首通被误判 `rejected`——录像解码后是横跨全程、密度合理的真实 `PlayCard`/`UpgradeBase` 指令流
+  （23/37 帧覆盖 2639/3369 tick），不是空回放；账号 `cardInv` 有一张 2 级 `lichuang` + `chenshou` 挂了护甲/饰品，
+  裸蓝图复算漏了这部分加成，导致刚好卡在星数门槛下。**修复**：`transport.proto` `JudgeRequest` 移除死字段
+  `pve_upgrades`(7)/`unit_levels`(9)（`reserved`），新增 `card_instances_json`(12)/`equipment_inv_json`(13)（JSON
+  字符串，opaque，同 `defense_json` 的约定）；`pve.ts` 在 spot-check 时机快照服务器权威的 `cur.cardInv`/`cur.equipmentInv`
+  存进 `pveVerifications`（替换原 `pveUpgrades`/`unitLevels` 字段），`pveVerify` 里 `JSON.stringify` 后传给
+  `gateway.judge()`；`gateway/src/{Gateway,proto,internalHttp}.ts` 透传新字段；`judgeRunner.ts` `runPveJudge`/
+  `runSiegeJudge`（后者当前无实际调用方，但同一个死字段问题，顺手一起修）改为解析这两个 JSON 字段、用
+  `toEngineCardInstances`（`game/meta/cardDefs.ts`，与真实对局 `app/nav/game.ts:551` 同一条转换路径）建
+  `cardInstances`/`equipmentInv` 传给 `runHeadless`。**回归测试**：`client/test/pve-judge.test.ts` 新增一例——同一段
+  录像分别带真实 `cardInv`/`equipmentInv` 快照 vs 不带，前者精确复现真实星数，后者（模拟修复前行为）直接输掉整局
+  （`winnerSide` 反转，`stars:0`），证明修复前必然误杀这类对局；`server/metaserver/test/pve-verify.e2e.test.ts` 新增
+  e2e 用例断言 `gateway.judge()` 收到的 `cardInstancesJson`/`equipmentInvJson` 与账号真实 `cardInv`/`equipmentInv`
+  完全一致。
+
+- **⚠️ 新发现的相关 gap（2026-07-26 排查副产品，未修）：L0"开局战力不符"异常检测自 CC-1 起永久失效**：
+  `pve.ts:412-416` 的 `blueprintMismatch` 判据比较客户端上报的 `unitLevels`/`pveUpgrades`（`/pve/clear` 请求体，
+  §0"开局战力不符→必作弊"的判据来源）与服务器权威值；但客户端 `SaveManager.recordClear` 目前**永远**只传
+  `{}`（`client/src/game/meta/SaveManager.ts:357,421`），因为 CC-1 之后开局蓝图快照的真实来源是 `cardInv`，
+  没人把这条 L0 上报路径迁过去——`clientUnitLevels = {}` 恒等于 `normUpgrades({})`，`blueprintMismatch` 恒为
+  `false`。跟本次修的 L1 gap 是同一次迁移漏的，但方向相反：**这个是"永远不触发"（失效开放），不是"假阳性"**，
+  优先级更低但同样需要设计决策（真开局战力校验要不要基于 `cardInv` 重做，还是干脆废弃 L0、只靠 L1 兜底）。
