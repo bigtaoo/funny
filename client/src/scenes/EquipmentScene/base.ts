@@ -27,10 +27,17 @@ import { buildIcon, type IconKind } from '../../render/icons';
 import { buildMaterialIcon, type MaterialKind } from '../../render/materialAtlas';
 import { buildCoinIcon } from '../../render/coinIconAtlas';
 
-/** Angular speed (rad/s) of the maxed-star flip in buildLevelStars/update — a full front-edge-back-edge-front cycle every ~2.6s. */
-const STAR_FLIP_SPEED = 2.4;
-/** Phase offset (rad) between adjacent stars in a maxed row, so they flip in a ripple rather than a synced blink. */
-const STAR_FLIP_STAGGER = 0.35;
+/**
+ * Maxed-star sweep timing (2026-07-26 UX pass): a continuous per-frame flip read as flickery/noisy
+ * once a grid held several maxed items flipping independently, so the row now sits static gold and
+ * only sweeps briefly on an interval — see buildLevelStars()/update().
+ */
+/** Seconds between successive sweeps of a maxed star row; static gold in between. */
+const STAR_SWEEP_INTERVAL = 6;
+/** Seconds a single star's flip lasts once its sweep starts (one front-edge-back-edge-front cycle). */
+const STAR_SWEEP_DURATION = 0.7;
+/** Seconds delay between adjacent stars' sweep start, so the flip ripples left-to-right rather than firing as one synced blink. */
+const STAR_SWEEP_STAGGER = 0.08;
 
 export type EquipResult = { ok: true } | { ok: false; key: TranslationKey };
 export type EnhanceResult =
@@ -212,11 +219,14 @@ export class EquipmentSceneBase {
   private scrollDirty = false;
 
   /**
-   * Star sprites belonging to a maxed-out (EQUIP_MAX_LEVEL) star row, driven every frame in update()
-   * to spin left-right — a continuous callout for fully-enhanced items, distinct from the static row
-   * everyone else gets. Populated by buildLevelStars() on every render pass (inventory grid, detail
-   * modal, …); entries whose sprite has since been torn down (scrolled off, modal closed, re-render)
-   * are pruned lazily in update() rather than tracked per call site — self-healing, no reset needed.
+   * Star sprites belonging to a maxed-out (EQUIP_MAX_LEVEL) star row. Sits static (scale.x = 1) most
+   * of the time; update() briefly sweeps it (flip left-right) once per STAR_SWEEP_INTERVAL — a
+   * periodic callout for fully-enhanced items instead of a permanent per-frame animation (which read
+   * as flickery/noisy once several maxed items were on screen at once). `phase` is a per-star seconds
+   * delay (not radians) so the sweep ripples left-to-right across the row. Populated by
+   * buildLevelStars() on every render pass (inventory grid, detail modal, …); entries whose sprite has
+   * since been torn down (scrolled off, modal closed, re-render) are pruned lazily in update() rather
+   * than tracked per call site — self-healing, no reset needed.
    */
   private flipStars: { obj: PIXI.DisplayObject; phase: number }[] = [];
   private flipT = 0;
@@ -486,8 +496,9 @@ export class EquipmentSceneBase {
   /**
    * Row of gold star icons for the enhance level (one per level, max EQUIP_MAX_LEVEL), scaled down to
    * fit maxW. Mirrors the card-level star row (CardScene/list.ts). At EQUIP_MAX_LEVEL the whole row is
-   * registered for the continuous left-right flip driven by update() (see flipStars) — a maxed item's
-   * stars keep spinning in place to call it out among the mostly-static rows.
+   * registered for the periodic left-right sweep driven by update() (see flipStars) — a maxed item's
+   * stars sit static gold and flip briefly every few seconds to call it out among the static rows,
+   * rather than animating every frame.
    */
   protected buildLevelStars(level: number, maxW: number, size = 14, gap = 3): PIXI.Container {
     const stars = new PIXI.Container();
@@ -500,7 +511,7 @@ export class EquipmentSceneBase {
         st.pivot.set(size / 2, size / 2);
         st.x = i * (size + gap) + size / 2;
         st.y = size / 2;
-        this.flipStars.push({ obj: st, phase: i * STAR_FLIP_STAGGER });
+        this.flipStars.push({ obj: st, phase: i * STAR_SWEEP_STAGGER });
       } else {
         st.x = i * (size + gap);
       }
@@ -638,7 +649,13 @@ export class EquipmentSceneBase {
     if (this.flipStars.length) {
       this.flipT += dt;
       this.flipStars = this.flipStars.filter((f) => !f.obj.destroyed);
-      for (const { obj, phase } of this.flipStars) obj.scale.x = Math.cos(this.flipT * STAR_FLIP_SPEED + phase);
+      const cyclePos = this.flipT % STAR_SWEEP_INTERVAL;
+      for (const { obj, phase } of this.flipStars) {
+        const localT = cyclePos - phase;
+        obj.scale.x = localT >= 0 && localT < STAR_SWEEP_DURATION
+          ? Math.cos((localT / STAR_SWEEP_DURATION) * Math.PI * 2)
+          : 1;
+      }
     }
   }
 

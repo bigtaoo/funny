@@ -772,6 +772,14 @@ buildSiegeBlueprints(levels, equipped, inv)
 - 每帧顺带过滤掉 `obj.destroyed` 的精灵（PIXI `destroy()` 后 `transform` 置空，再写 `scale.x` 会抛错）：背包网格滚动出屏、详情弹窗关闭重开都会拆旧建新，这样自愈式清理即可，不需要在每个调用点手动清空 `flipStars`。
 - 落点：`EquipmentScene/base.ts`（`buildLevelStars`/`update`/两个新增模块常量 `STAR_FLIP_SPEED`/`STAR_FLIP_STAGGER`）；背包卡片、详情弹窗两处星星行共用同一份逻辑，无需改动 `inventory.ts`/`detail.ts` 调用点。`tsc --noEmit` + 相关 `equipment*` vitest 套件通过。
 
+### 20.6d 实现记录（2026-07-26，✅）— 满级星星改为间歇扫光
+
+玩家反馈 §20.6c 的常驻逐帧翻转在一屏多个满级装备同时出现时"眼花"——每颗星星永远在小幅抖动，视觉噪音大于信息量。改为**大部分时间静止金色，每隔几秒整排快速扫一次**，满级装备依旧一眼可辨，但不再持续动。
+
+- 常量替换：`STAR_FLIP_SPEED`/`STAR_FLIP_STAGGER`（rad/s、弧度相位）→ `STAR_SWEEP_INTERVAL`（两次扫光间隔，6s）/`STAR_SWEEP_DURATION`（单颗星星扫光时长，0.7s）/`STAR_SWEEP_STAGGER`（相邻星星扫光起始的秒级延迟，0.08s，形成左→右波纹）。
+- `update(dt)`：`flipT % STAR_SWEEP_INTERVAL` 得到本轮周期内的位置 `cyclePos`；每颗星星 `localT = cyclePos - phase` 落在 `[0, STAR_SWEEP_DURATION)` 内时才播放 `scale.x = cos((localT/STAR_SWEEP_DURATION)·2π)`（从 1 平滑扫到 1，无跳变），否则 `scale.x = 1`（静止）。`buildLevelStars()` 登记进 `flipStars` 的逻辑不变，仅 `phase` 单位从弧度改为秒。
+- 用 Node 脚本离线模拟该公式（7 颗星、60fps 步进 13 秒）验证：每个周期内约 1.18s 处于扫光窗口、其余时间恒为 1，扫光起止都平滑落在 1，周期性正确；`tsc --noEmit` 通过。未能在本机走完整后端+登录截图核对（需 11 个服务全起来才能到装备格子界面），纯数学公式改动，走查+离线模拟确认。
+
 ### 20.3 实现记录（2026-06-24，✅）— UI 装备图标程序化
 
 落地 = 新建 `client/src/render/equipmentGlyph.ts`（`drawEquipmentGlyph(g, slot, rarity, size, seed)` + `MEDIA` 媒材色表，用 `SketchPen` 画 3 类基形：weapon=笔杆+笔尖 / armor=封皮+书脊 / trinket=小配件，稀有度色驱动填充与点缀）+ 接入 `EquipmentScene`（loadout 三槽、背包实例行、锻造行把原"纯文字"替换为程序图标）。零位图资产，`tsc --noEmit` + webpack 构建验证。
