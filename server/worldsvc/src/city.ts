@@ -30,7 +30,7 @@ import {
 } from '@nw/shared';
 import { validateAttackerArmy, sanitizeCardArmy } from './siegeEngine';
 import { WorldCore } from './core';
-import type { TrainingEntry, BuildQueueEntry, TeamTemplate } from './db';
+import { trainingQueueOps, buildQueueOps, type TrainingEntry, type BuildQueueEntry, type TeamTemplate } from './db';
 import type { PlayerWorldView } from './worldTypes';
 
 /**
@@ -85,13 +85,16 @@ export class CityService {
       startAt: lastComplete,
       completeAt: lastComplete + duration,
     };
+    // The queue is chained (entry.completeAt ≥ every existing entry's), so the head never changes here
+    // unless the queue was empty — either way it's just the earlier of the two.
+    const { set: nextTrainingCompleteAt } = trainingQueueOps([queue[0] ?? entry]);
     // rev-guard: resources/queue above were computed from this exact read (`pw`); a concurrent trainTroops/
     // upgradeBuilding/etc. call that lands first bumps rev, so this write must fail rather than silently
     // overwrite the other call's debit with a whole-object $set computed from stale resources (double-spend).
     const result = await cols.playerWorld.updateOne(
       { _id: pw._id, rev: pw.rev },
       {
-        $set: { resources, lastTickAt: t },
+        $set: { resources, lastTickAt: t, ...nextTrainingCompleteAt },
         $push: { trainingQueue: entry } as never,
         $inc: { rev: 1 },
       },
@@ -152,9 +155,14 @@ export class CityService {
     }
 
     const newTroops = Math.min(fresh.troopCap, fresh.troops + troopsReady);
+    const tq = trainingQueueOps(newQueue);
     await cols.playerWorld.updateOne(
       { _id: fresh._id },
-      { $set: { resources, troops: newTroops, trainingQueue: newQueue, lastTickAt: t }, $inc: { rev: 1 } },
+      {
+        $set: { resources, troops: newTroops, trainingQueue: newQueue, lastTickAt: t, ...tq.set },
+        $inc: { rev: 1 },
+        ...(Object.keys(tq.unset).length ? { $unset: tq.unset } : {}),
+      },
     );
     return this.core.getMe(worldId, accountId);
   }
@@ -167,9 +175,10 @@ export class CityService {
   async processCompletedTraining(nowMs?: number): Promise<number> {
     const { cols } = this.core.deps;
     const t = nowMs ?? this.core.deps.now();
-    // Find all players with a non-empty queue whose first entry has completed (the first entry finishes earliest)
+    // Find all players with a non-empty queue whose first entry has completed (the first entry finishes
+    // earliest) — via the indexed `nextTrainingCompleteAt` mirror, not the array itself (see trainingQueueOps).
     const docs = await cols.playerWorld
-      .find({ 'trainingQueue.0.completeAt': { $lte: t } })
+      .find({ nextTrainingCompleteAt: { $lte: t } })
       .project<{ _id: string; troops: number; troopCap: number; trainingQueue: TrainingEntry[] }>({
         _id: 1, troops: 1, troopCap: 1, trainingQueue: 1,
       })
@@ -180,6 +189,7 @@ export class CityService {
       const queue = doc.trainingQueue ?? [];
       const done = queue.filter((e) => e.completeAt <= t);
       if (done.length === 0) continue;
+      const remaining = queue.filter((e) => e.completeAt > t);
       const troopsReady = done.reduce((s, e) => s + e.qty, 0);
       const newTroops = Math.min(doc.troopCap, doc.troops + troopsReady);
       // Atomic: $inc troops + remove completed batches (matched precisely by completeAt)
@@ -189,9 +199,10 @@ export class CityService {
           { $pull: { trainingQueue: { completeAt: e.completeAt } } as never },
         );
       }
+      const tq = trainingQueueOps(remaining);
       await cols.playerWorld.updateOne(
         { _id: doc._id },
-        { $set: { troops: newTroops }, $inc: { rev: 1 } },
+        { $set: { troops: newTroops, ...tq.set }, $inc: { rev: 1 }, ...(Object.keys(tq.unset).length ? { $unset: tq.unset } : {}) },
       );
       n += done.length;
     }
@@ -231,13 +242,15 @@ export class CityService {
     const lastComplete = queue.length > 0 ? queue[queue.length - 1]!.completeAt : t;
     const duration = buildTimeSec(key, toLevel) * 1000;
     const entry: BuildQueueEntry = { key, toLevel, startAt: lastComplete, completeAt: lastComplete + duration };
+    // Head is unaffected by appending unless the queue was empty (same reasoning as trainTroops).
+    const { set: nextBuildCompleteAt } = buildQueueOps([queue[0] ?? entry]);
     // rev-guard: `resources` was computed from this exact read (`pw`). Without guarding the write on rev, two
     // concurrent upgradeBuilding calls both read the same pre-debit resources, both pass the sufficiency check,
     // and the second $set overwrites the first's already-debited resources with its own (also under-debited)
     // computation — net effect, a second building queues without an actual matching resource deduction.
     const result = await cols.playerWorld.updateOne(
       { _id: pw._id, rev: pw.rev },
-      { $set: { resources, lastTickAt: t }, $push: { buildQueue: entry } as never, $inc: { rev: 1 } },
+      { $set: { resources, lastTickAt: t, ...nextBuildCompleteAt }, $push: { buildQueue: entry } as never, $inc: { rev: 1 } },
     );
     if (result.matchedCount === 0) throw new SlgError('REV_CONFLICT', 'Concurrent update, please retry');
     return this.core.getMe(worldId, accountId);
@@ -286,9 +299,14 @@ export class CityService {
       const dur = cur.completeAt - cur.startAt;
       newQueue[i] = { ...cur, startAt: prev.completeAt, completeAt: prev.completeAt + dur };
     }
+    const bq = buildQueueOps(newQueue);
     await cols.playerWorld.updateOne(
       { _id: fresh._id },
-      { $set: { resources, buildQueue: newQueue, lastTickAt: t }, $inc: { rev: 1 } },
+      {
+        $set: { resources, buildQueue: newQueue, lastTickAt: t, ...bq.set },
+        $inc: { rev: 1 },
+        ...(Object.keys(bq.unset).length ? { $unset: bq.unset } : {}),
+      },
     );
     await this.applyDueBuilds(fresh._id, worldId, accountId);
     return this.core.getMe(worldId, accountId);
@@ -301,8 +319,9 @@ export class CityService {
   async processCompletedBuilds(nowMs?: number): Promise<number> {
     const { cols } = this.core.deps;
     const t = nowMs ?? this.core.deps.now();
+    // Via the indexed `nextBuildCompleteAt` mirror, not the array itself — see buildQueueOps.
     const docs = await cols.playerWorld
-      .find({ 'buildQueue.0.completeAt': { $lte: t } })
+      .find({ nextBuildCompleteAt: { $lte: t } })
       .project<{ _id: string; worldId: string; accountId: string }>({ _id: 1, worldId: 1, accountId: 1 })
       .toArray();
     let n = 0;
@@ -331,11 +350,13 @@ export class CityService {
     const resources = this.core.settle(fresh, t); // settle at the old rate/cap up to now, before the rate changes
     // Compute the post-upgrade yield from the new levels directly (buildings not yet persisted).
     const yieldRate = await this.core.recomputeYield(worldId, accountId, next, fresh.hasBattlePass);
+    const bq = buildQueueOps(newQueue);
     await cols.playerWorld.updateOne(
       { _id: docId },
       {
-        $set: { buildings: next, buildQueue: newQueue, resources, yieldRate, troopCap: troopCapFor(next), lastTickAt: t },
+        $set: { buildings: next, buildQueue: newQueue, resources, yieldRate, troopCap: troopCapFor(next), lastTickAt: t, ...bq.set },
         $inc: { rev: 1 },
+        ...(Object.keys(bq.unset).length ? { $unset: bq.unset } : {}),
       },
     );
     // D-CITY-8: a completed `wall` upgrade raises durabilityMax — regen up to now, then apply the delta
