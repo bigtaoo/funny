@@ -35,6 +35,13 @@ export const C = {
   bg:     0xf5f0e8,
   paper:  0xfaf6ee,
   dark:   0x2c2c2a,
+  /**
+   * Header + bottom-nav fill. Deliberately a shade off `C.dark` (not identical) so
+   * the two chrome bars don't read as the exact same block as the START MATCH
+   * button between them — same dark family, just a hair warmer/lighter, enough to
+   * separate "frame" from "action" without introducing a loud accent color there.
+   */
+  cover:  0x3a352f,
   mid:    0x888888,
   light:  0xdddddd,
   btnOff: 0xbbbbbb,
