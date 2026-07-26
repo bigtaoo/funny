@@ -229,6 +229,9 @@ export async function createCommercialMongo(
 
   async function ensureIndexes(): Promise<void> {
     await collections.ledger.createIndex({ accountId: 1, ts: -1 });
+    // Coin-anomaly daily audit (COMMERCIAL_DESIGN §6.6): scans/groups the whole ledger by ts range across ALL
+    // accounts, not just one — {accountId,ts} above doesn't help that scan pattern.
+    await collections.ledger.createIndex({ ts: 1 });
     await collections.orders.createIndex({ accountId: 1, status: 1 });
     // Reconciliation scan: undelivered orders (status:'charged') by time.
     await collections.orders.createIndex({ status: 1, ts: 1 });

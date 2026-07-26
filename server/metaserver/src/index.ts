@@ -5,6 +5,8 @@ import { loadMetaEnv } from './config.js';
 import { buildApp, SPEC_PATH } from './app.js';
 import { HttpGatewayClient } from './gatewayClient.js';
 import { auditOnce } from './anticheatAudit.js';
+import { auditCoinAnomaliesOnce } from './coinAnomalyAudit.js';
+import { HttpCommercialClient } from './commercialClient.js';
 import { ensureArchiveDir, sweepArchive } from './replayArchive.js';
 
 const log = createLogger('meta');
@@ -119,9 +121,23 @@ async function main() {
   }, 24 * 3600 * 1000);
   archiveSweepTimer.unref();
 
+  // Coin-anomaly daily audit (COMMERCIAL_DESIGN §6.6, 2026-07-26): once a day, ask commercial which accounts
+  // gained an anomalous amount of coins from non-recharge sources yesterday, file each into the OPS
+  // anti-cheat review queue. Own client instance (mirrors auditGateway above) — independent of buildApp's.
+  const coinAuditCommercial = new HttpCommercialClient(env.commercialUrl, env.internalKey);
+  const coinAnomalyTimer = setInterval(() => {
+    void auditCoinAnomaliesOnce({ cols: mongo.collections, commercial: coinAuditCommercial, now: () => Date.now() })
+      .then((r) => {
+        if (r.scanned > 0) log.info('coin-anomaly audit tick', { ...r });
+      })
+      .catch((e) => log.error('coin-anomaly audit tick failed', { err: (e as Error).message }));
+  }, 24 * 3600 * 1000);
+  coinAnomalyTimer.unref();
+
   const shutdown = async () => {
     if (auditTimer) clearInterval(auditTimer);
     clearInterval(archiveSweepTimer);
+    clearInterval(coinAnomalyTimer);
     await app.close();
     await mongo.close();
     process.exit(0);

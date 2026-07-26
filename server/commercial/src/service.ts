@@ -16,18 +16,22 @@ import { RechargeMixin } from './service/recharge';
 import { PromoMixin } from './service/promo';
 import { RewardsMixin } from './service/rewards';
 import { OrdersMixin } from './service/orders';
+import { AuditMixin } from './service/audit';
 
 export type { ServiceErr, WalletView, Result, CommercialDeps, Rarity } from './service/base';
+export type { CoinGainRow } from './service/audit';
 
-const Assembled = OrdersMixin(
-  RewardsMixin(
-    PromoMixin(
-      RechargeMixin(
-        StarterMixin(
-          SubscriptionMixin(
-            GachaDrawMixin(
-              ShopMixin(
-                GachaPoolMixin(CommercialServiceBase),
+const Assembled = AuditMixin(
+  OrdersMixin(
+    RewardsMixin(
+      PromoMixin(
+        RechargeMixin(
+          StarterMixin(
+            SubscriptionMixin(
+              GachaDrawMixin(
+                ShopMixin(
+                  GachaPoolMixin(CommercialServiceBase),
+                ),
               ),
             ),
           ),
