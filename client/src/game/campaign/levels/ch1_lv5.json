@@ -69,21 +69,55 @@
         "atTick": 600,
         "unitType": "lena",
         "col": 7,
-        "count": 1
+        "count": 1,
+        "spacingTicks": 10
       },
       {
         "atTick": 600,
         "unitType": "lena",
         "col": 4,
         "count": 1,
-        "spacingTicks": 20
+        "spacingTicks": 10
+      },
+      {
+        "atTick": 600,
+        "unitType": "lena",
+        "col": 0,
+        "count": 1,
+        "spacingTicks": 10
+      },
+      {
+        "atTick": 600,
+        "unitType": "lena",
+        "col": 11,
+        "count": 1,
+        "spacingTicks": 10
       },
       {
         "atTick": 600,
         "unitType": "max",
         "col": 1,
         "count": 2,
-        "spacingTicks": 15
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 600,
+        "unitType": "max",
+        "col": 10,
+        "count": 2,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 612,
+        "unitType": "max",
+        "col": 3,
+        "count": 1
+      },
+      {
+        "atTick": 612,
+        "unitType": "max",
+        "col": 8,
+        "count": 1
       },
       {
         "atTick": 840,
@@ -172,7 +206,7 @@
   "rewards": {
     "starThresholds": [
       1,
-      50,
+      58,
       80
     ],
     "materials": {

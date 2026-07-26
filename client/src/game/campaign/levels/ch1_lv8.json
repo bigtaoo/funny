@@ -111,6 +111,20 @@
       },
       {
         "atTick": 780,
+        "unitType": "lena",
+        "col": 0,
+        "count": 2,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 780,
+        "unitType": "lena",
+        "col": 11,
+        "count": 2,
+        "spacingTicks": 8
+      },
+      {
+        "atTick": 780,
         "unitType": "max",
         "col": 4,
         "count": 2,
@@ -122,6 +136,18 @@
         "col": 7,
         "count": 2,
         "spacingTicks": 6
+      },
+      {
+        "atTick": 792,
+        "unitType": "max",
+        "col": 1,
+        "count": 1
+      },
+      {
+        "atTick": 792,
+        "unitType": "max",
+        "col": 10,
+        "count": 1
       },
       {
         "atTick": 1020,
@@ -212,8 +238,8 @@
   "rewards": {
     "starThresholds": [
       1,
-      50,
-      80
+      58,
+      75
     ],
     "materials": {
       "scrap": 14,
