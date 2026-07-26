@@ -699,7 +699,7 @@ export class GachaScene implements Scene {
     header.anchor.set(0.5, 0); header.x = w / 2; header.y = py + Math.round(h * 0.02);
     this.container.addChild(header);
 
-    const entries = pool.entries;
+    const entries = [...pool.entries].sort((a, b) => b.probability - a.probability);
     const { top: gridTop, bottom: gridBottom } = this.oddsGridBounds();
     const gridPad = Math.round(pw * 0.03);
     const gridX = px + gridPad, gridW = pw - gridPad * 2;
@@ -764,7 +764,7 @@ export class GachaScene implements Scene {
 
     // Total + pity rule + close hint.
     const totalLbl = txt(t('gacha.oddsDetail.total', { pct: (total * 100).toFixed(2) }), FS.label, C.mid, true);
-    totalLbl.anchor.set(0.5, 1); totalLbl.x = w / 2; totalLbl.y = gridBottom + Math.round(h * 0.005);
+    totalLbl.anchor.set(0.5, 1); totalLbl.x = w / 2; totalLbl.y = gridBottom + Math.round(h * 0.005) + 5;
     this.container.addChild(totalLbl);
 
     const pity = pool.pityThreshold ?? 0;
