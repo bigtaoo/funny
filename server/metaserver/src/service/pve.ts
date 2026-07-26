@@ -30,7 +30,7 @@ import {
 } from '@nw/shared';
 import { getOrCreateSave } from '../save.js';
 import { grantCards } from '../cards.js';
-import { toInstanceDoc } from '../equipment.js';
+import { toInstanceDoc, assembleEquipmentInv } from '../equipment.js';
 import { insertSystemMail } from '../mail.js';
 import { accrueEventTask } from '../events.js';
 import { nullMetaSocialsvcClient } from '../socialsvcClient.js';
@@ -452,7 +452,9 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
             // with unleveled, gear-less units (previously pveUpgrades/unitLevels, both dead since the engine dropped
             // those params in the CC-1 migration; see server/engine/src/types.ts GameConfig).
             cardInv: { ...cur.cardInv },
-            equipmentInv: { ...cur.equipmentInv },
+            // equipmentInv was split into its own `equipmentInstances` collection (2026-07-26, equipment.ts) —
+            // `cur.equipmentInv` is no longer populated on the raw save doc, so reassemble it explicitly.
+            equipmentInv: await assembleEquipmentInv(cols, accountId, cur),
             reason,
             status: 'pending',
             // S9-3b: store client-reported counts as an audit comparison baseline (verdict.statsJson is the authoritative source; the reported field is for ops visibility only).
