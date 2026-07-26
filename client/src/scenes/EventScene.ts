@@ -356,6 +356,7 @@ export class EventScene implements Scene {
       this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('event.rewards.claimFailed'), 'error');
     } finally {
       this.bt.stop();
+      this.render();
     }
   }
 }

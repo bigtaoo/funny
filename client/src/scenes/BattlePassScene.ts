@@ -344,7 +344,7 @@ export class BattlePassScene implements Scene {
           this.render();
           withTimeout(this.cb.onBuy!())
             .then(() => { this.bt.stop(); this.render(); })
-            .catch((e) => { this.bt.stop(); this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('battlepass.buyFailed'), 'error'); });
+            .catch((e) => { this.bt.stop(); this.render(); this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('battlepass.buyFailed'), 'error'); });
         },
       });
       y += buyAreaH + Math.round(h * 0.015);
@@ -549,11 +549,12 @@ export class BattlePassScene implements Scene {
     withTimeout(this.cb.onClaim(track, level))
       .then((coins) => {
         this.bt.stop();
+        this.render();
         if (coins > 0) this.showToast(t('battlepass.claimToast', { n: String(coins) }));
-        else this.render();
       })
       .catch((e) => {
         this.bt.stop();
+        this.render();
         this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('battlepass.claimFailed'), 'error');
       });
   }

@@ -7,7 +7,7 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { RechargeScene, type RechargeCallbacks } from '../../src/scenes/RechargeScene';
-import { RECHARGE_TIERS } from '../../src/game/balance/rechargeTierDefs';
+import { RECHARGE_TIERS, type RechargeReward } from '../../src/game/balance/rechargeTierDefs';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -116,6 +116,75 @@ describe('RechargeScene — tier states', () => {
     tapLabel(scene, CLAIM);
     // onClaim is invoked synchronously from the tap handler (before awaiting the promise).
     expect(claimedTierId).toBe(tier1.id);
+    scene.destroy();
+  });
+});
+
+// Regression coverage for the "stuck Processing..." overlay bug (2026-07-26, same root cause and
+// copy-pasted pattern as BattlePassScene's doClaim — see battlePassClaimOverlay.ui.ts): update()
+// only re-renders while BusyTracker.busy is true, so once the request settles and bt.stop() flips
+// busy off, clearing the drawn overlay requires an explicit render() call right there. doClaim's
+// success branch only called render() when the reward wasn't coins, and its catch branch never
+// called it at all — so claiming a coins reward or hitting an error left the overlay hanging.
+describe('RechargeScene — claim loading overlay always clears', () => {
+  const PROCESSING = t('common.processing');
+
+  function hasProcessingOverlay(container: PIXI.Container): boolean {
+    let found = false;
+    const walk = (node: PIXI.Container): void => {
+      if (found) return;
+      if (node instanceof PIXI.Text && node.text.startsWith(PROCESSING)) { found = true; return; }
+      for (const c of node.children) walk(c as PIXI.Container);
+    };
+    walk(container);
+    return found;
+  }
+
+  function flush(): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  it('clears the overlay once a coins-reward claim resolves', async () => {
+    const tier1 = RECHARGE_TIERS[0]!;
+    let resolveClaim!: (rewards: RechargeReward[]) => void;
+    const scene = buildRecharge({
+      getData: () => ({ totalRechargeCents: tier1.thresholdCents, claimed: [] }),
+      onClaim: () => new Promise<RechargeReward[]>((res) => { resolveClaim = res; }),
+    });
+    const s = scene as unknown as { bt: { busy: boolean; loadingVisible: boolean }; update(dt: number): void };
+
+    tapLabel(scene, CLAIM);
+    expect(s.bt.busy).toBe(true);
+    s.update(1.1);
+    expect(s.bt.loadingVisible).toBe(true);
+    expect(hasProcessingOverlay(scene.container)).toBe(true);
+
+    resolveClaim([{ kind: 'coins', count: tier1.rewards[0]!.count }]);
+    await flush();
+
+    expect(s.bt.busy).toBe(false);
+    expect(hasProcessingOverlay(scene.container)).toBe(false);
+    scene.destroy();
+  });
+
+  it('clears the overlay when a claim fails (timeout / server error)', async () => {
+    const tier1 = RECHARGE_TIERS[0]!;
+    let rejectClaim!: (e: Error) => void;
+    const scene = buildRecharge({
+      getData: () => ({ totalRechargeCents: tier1.thresholdCents, claimed: [] }),
+      onClaim: () => new Promise<RechargeReward[]>((_res, rej) => { rejectClaim = rej; }),
+    });
+    const s = scene as unknown as { bt: { busy: boolean; loadingVisible: boolean }; update(dt: number): void };
+
+    tapLabel(scene, CLAIM);
+    s.update(1.1);
+    expect(hasProcessingOverlay(scene.container)).toBe(true);
+
+    rejectClaim(new Error('boom'));
+    await flush();
+
+    expect(s.bt.busy).toBe(false);
+    expect(hasProcessingOverlay(scene.container)).toBe(false);
     scene.destroy();
   });
 });
