@@ -8,6 +8,7 @@ import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../dist/app.js';
 import type { GatewayClient, JudgeReq, JudgeRes } from '../dist/gatewayClient.js';
+import { seedEquipment } from './helpers/equipment.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_pveverify_test';
@@ -100,13 +101,12 @@ describe.skipIf(!mongo)('pve L1 verify e2e', () => {
     const seededCardInv = {
       card_test: { id: 'card_test', defId: 'lichuang', level: 9, gear: { weapon: 'eq_test' }, locked: false },
     };
-    const seededEquipmentInv = {
-      eq_test: { id: 'eq_test', defId: 'test_weapon', rarity: 'epic', level: 9, affixes: [{ id: 'm_atk', value: 80 }] },
-    };
-    await m.collections.saves.updateOne(
-      { _id: (await m.collections.accounts.findOne({}))!._id },
-      { $set: { 'save.cardInv': seededCardInv, 'save.equipmentInv': seededEquipmentInv } },
-    );
+    const seededEquipment = { id: 'eq_test', defId: 'test_weapon', rarity: 'epic' as const, level: 9, affixes: [{ id: 'm_atk', value: 80 }] };
+    const seededEquipmentInv = { eq_test: seededEquipment };
+    const accountId = (await m.collections.accounts.findOne({}))!._id;
+    await m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.cardInv': seededCardInv } });
+    // equipmentInv lives in its own `equipmentInstances` collection since the 2026-07-26 storage split (equipment.ts).
+    await seedEquipment(m, accountId, seededEquipment);
     gateway.next = { ok: true, stars: 3 };
     const c = b(await clear('ch1_lv1', 3));
     await verify(c.data.verifyId); // gateway.judge() is only actually invoked here, not by /pve/clear itself
