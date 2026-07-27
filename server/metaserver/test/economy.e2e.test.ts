@@ -548,8 +548,14 @@ describe.skipIf(!mongo2)('gacha inventory-full overflow → mail', () => {
     await fillCardInv(CARD_INV_CAP);
     comm.nextResults = Array.from({ length: 10 }, () => ({ itemId: 'lichuang', rarity: 'common' as const }));
     await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } });
-    // Free up room: drop back to CARD_INV_CAP - 1 entries.
-    await m.collections.saves.updateOne({ _id: accountId }, { $unset: { 'save.cardInv.card_filler_0': '' } });
+    // Free up room: drop back to CARD_INV_CAP - 1 entries. Bumps rev alongside the raw mutation (matching every
+    // real write path's convention) so it can't be silently clobbered by the first draw's still-in-flight
+    // fire-and-forget bumpRetentionTask (service/base.ts mutateSave) racing to land its own stale-read rewrite —
+    // without this, mutateSave's optimistic-lock rev-check has nothing to detect the conflict against.
+    await m.collections.saves.updateOne(
+      { _id: accountId },
+      { $unset: { 'save.cardInv.card_filler_0': '' }, $inc: { rev: 1, 'save.rev': 1 } },
+    );
     const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } }));
     // 1 slot free → 1 card lands in cardInv; remaining 9 overflow, and since room was seen the mail quota reset to 0 first.
     expect(r.data.overflow).toMatchObject({ cardMailed: 9, cardCompensatedCoins: 0 });
@@ -579,9 +585,13 @@ describe.skipIf(!mongo2)('gacha inventory-full overflow → mail', () => {
     await fillEquipInv(300);
     comm.nextResults = Array.from({ length: 10 }, () => ({ itemId: 'wp_pencil', rarity: 'common' as const }));
     await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } });
-    // Free up room: drop back to 299 entries.
+    // Free up room: drop back to 299 entries. Bumps rev alongside the raw mutation for the same reason as the
+    // card-roster case above — otherwise this can race against the first draw's fire-and-forget bumpRetentionTask.
     await m.collections.equipmentInstances.deleteOne({ _id: 'eq_filler_0' });
-    await m.collections.saves.updateOne({ _id: accountId }, { $inc: { 'save.equipmentInvCount': -1 } });
+    await m.collections.saves.updateOne(
+      { _id: accountId },
+      { $inc: { 'save.equipmentInvCount': -1, rev: 1, 'save.rev': 1 } },
+    );
     const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } }));
     // 1 slot free → 1 instance lands in equipmentInv; remaining 9 overflow, quota reset to 0 first since room was seen.
     expect(r.data.overflow).toMatchObject({ equipMailed: 9, equipCompensatedCoins: 0 });
