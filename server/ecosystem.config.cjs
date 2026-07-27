@@ -46,6 +46,9 @@ module.exports = {
         NW_WX_SECRET: process.env.NW_WX_SECRET || '',
         NW_COMMERCIAL_INTERNAL_URL: COMM_INTERNAL, // meta orchestrates economy calls to commercial
         NW_GATEWAY_INTERNAL_URL: GW_INTERNAL, // peer judge (Phase C): meta → gateway /gw/judge
+        // Active-match resume tracking (login-reconnect-prompt, shared with matchsvc). Missing this
+        // meant the resume prompt was silently dead in prod (matchsvc wrote the key, meta never read it).
+        NW_REDIS_URL: process.env.NW_REDIS_URL || 'redis://127.0.0.1:6379',
       },
     },
     {
@@ -96,6 +99,8 @@ module.exports = {
         NW_MM_HOST: process.env.NW_MM_HOST || '127.0.0.1',
         NW_GATEWAY_INTERNAL_URL: GW_INTERNAL,
         NW_GAME_PUBLIC_WS_URL: GAME_PUBLIC_WS,
+        // Active-match resume tracking + multi-instance gateway push fan-out (2026-07-18).
+        NW_REDIS_URL: process.env.NW_REDIS_URL || 'redis://127.0.0.1:6379',
       },
     },
     {

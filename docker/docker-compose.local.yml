@@ -52,7 +52,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: nw-local-redis
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
     restart: unless-stopped
 
   metaserver:
@@ -71,9 +71,12 @@ services:
       NW_SOCIALSVC_INTERNAL_URL: http://socialsvc:8085
       # Gateway address sent back to the client in the auth response (via nginx same-origin).
       NW_GATEWAY_PUBLIC_WS_URL: ${NW_PUBLIC_GW:-ws://localhost:8088/gw}
+      # Active-match resume tracking (login-reconnect-prompt), shared with matchsvc's write side.
+      NW_REDIS_URL: redis://redis:6379
     depends_on:
       mongo: { condition: service_healthy }
       commercial: { condition: service_started }
+      redis: { condition: service_started }
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8080/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 5s
@@ -129,6 +132,10 @@ services:
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
       # Data-plane address baked into tickets (fallback before gameserver registers; via nginx same-origin).
       NW_GAME_PUBLIC_WS_URL: ${NW_PUBLIC_GAME:-ws://localhost:8088/ws}
+      # Active-match resume tracking + multi-instance gateway push fan-out (2026-07-18).
+      NW_REDIS_URL: redis://redis:6379
+    depends_on:
+      - redis
     restart: unless-stopped
 
   gameserver:

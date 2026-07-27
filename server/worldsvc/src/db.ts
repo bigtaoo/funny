@@ -642,8 +642,17 @@ export async function createWorldMongo(
     await collections.tiles.createIndex({ worldId: 1, x: 1, y: 1 });
     await collections.tiles.createIndex({ ownerId: 1 });
     await collections.tiles.createIndex({ familyId: 1 });
+    // Vision's `contestedBy` branch of its $or (computeVisionSources) had no supporting index — only the
+    // `ownerId` side of the $or could use one. Sparse: most tiles never carry contestedBy (2026-07-27 audit).
+    await collections.tiles.createIndex({ contestedBy: 1 }, { sparse: true });
     await collections.playerWorld.createIndex({ worldId: 1, accountId: 1 });
     await collections.playerWorld.createIndex({ familyId: 1 });
+    // settleSeason's battle-pass payout scan (`find({worldId, hasBattlePass:true})`) had no supporting index —
+    // COLLSCAN over every playerWorld doc in the world. Partial: only battle-pass holders are indexed (2026-07-27 audit).
+    await collections.playerWorld.createIndex(
+      { worldId: 1, hasBattlePass: 1 },
+      { partialFilterExpression: { hasBattlePass: true } },
+    );
     // Due-training scan (processCompletedTraining, every 2s): was `trainingQueue.0.completeAt` with no
     // supporting index — a full COLLSCAN every tick, cost scaling with total playerWorld doc count rather
     // than online-player count (2026-07-26 VPS CPU investigation). Partial: only docs with an active queue
@@ -699,6 +708,11 @@ export async function createWorldMongo(
     await collections.siegeDamage.createIndex({ tile: 1 });
     // ADR-037 (§5.4): occupation-hold settlement scan (mirrors siegeDamage.dueAt: due-time polling; Redis ZSET optional wake-up hint).
     await collections.occupations.createIndex({ dueAt: 1 });
+    // TEAM_BUSY gate (`findOne({worldId,ownerId,teamId})`, every march dispatch) and getStationed's
+    // `find({worldId,ownerId})` had no supporting index beyond {dueAt} — COLLSCAN on the hottest occupation
+    // read path. Compound covers both (teamId optional trailing key still lets the {worldId,ownerId} prefix
+    // serve the two-field query). Found 2026-07-27 audit.
+    await collections.occupations.createIndex({ worldId: 1, ownerId: 1, teamId: 1 });
     // Stationed teams (2026-07-23): listed per owner (getStationed); the partial-unique {worldId,ownerId,teamId}
     // is the counterpart of the marches team-unique index — together they enforce "a team holds ONE active state"
     // across in-transit marches, occupation holds, and now field stationing. Wrapped best-effort like the marches one.
